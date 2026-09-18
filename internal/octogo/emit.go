@@ -5174,6 +5174,7 @@ type emitter struct {
 	aliasOf            map[string]string        // `type A = B`: mangled alias name -> mangled target name
 	localTypes         map[string]string        // a LOCAL type declaration's source name -> its minted C name, per function
 	gotoTargets        map[string]bool          // labels a goto of the CURRENT function names, scanned before its body is emitted
+	aliasedLocals      map[string]bool          // locals of the CURRENT function whose storage something else may reach (see scanAliasedLocals)
 	localTypeSeq       int                      // uniquifies minted local-type names across the program
 	chanElemByName     map[string]string        // ogo_chan_<T> C type name -> its element C type
 	funcValueTypes     map[string]funcValueType // top-level function C name -> its type as C text, for the name used as a value
@@ -10199,6 +10200,8 @@ func (e *emitter) emitFuncDecl(ast []int32) {
 	e.localTypes = map[string]string{}
 	e.gotoTargets = map[string]bool{}
 	e.scanGotoTargets(body)
+	e.aliasedLocals = map[string]bool{}
+	e.scanAliasedLocals(body)
 	e.localConsts = map[string]bool{}
 	e.hoistedArrayCalls = map[int32]string{}
 	e.curParams = map[string]bool{}
@@ -10372,6 +10375,7 @@ func (e *emitter) liftFuncLit(lit Node) (string, bool) {
 		w                              io.Writer
 		hoistedArrayCalls              map[int32]string
 		pkgScope                       bool
+		aliasedLocals                  map[string]bool
 	}
 	saved := state{
 		locals: e.locals, arrays: e.arrays, sliceVars: e.sliceVars,
@@ -10380,6 +10384,7 @@ func (e *emitter) liftFuncLit(lit Node) (string, bool) {
 		curFunc: e.curFunc, curResultNames: e.curResultNames, curResultTypes: e.curResultTypes,
 		prologue: e.prologue, w: e.w,
 		hoistedArrayCalls: e.hoistedArrayCalls, pkgScope: e.pkgScope,
+		aliasedLocals: e.aliasedLocals,
 	}
 	// A literal lifted out of a package variable's initializer is a function with a
 	// frame of its own: what it allocates is per call, not the package's
@@ -10389,6 +10394,8 @@ func (e *emitter) liftFuncLit(lit Node) (string, bool) {
 	e.localTypes = map[string]string{}
 	e.gotoTargets = map[string]bool{}
 	e.scanGotoTargets(body)
+	e.aliasedLocals = map[string]bool{}
+	e.scanAliasedLocals(body)
 	e.localConsts = map[string]bool{}
 	e.hoistedArrayCalls = map[int32]string{}
 	e.curParams = map[string]bool{}
@@ -10441,6 +10448,7 @@ func (e *emitter) liftFuncLit(lit Node) (string, bool) {
 	e.frameBacked, e.frameHolder = saved.frameBacked, saved.frameHolder
 	e.tmp, e.indent, e.deferReplay, e.defers = saved.tmp, saved.indent, saved.deferReplay, saved.defers
 	e.curFunc, e.curResultNames, e.curResultTypes = saved.curFunc, saved.curResultNames, saved.curResultTypes
+	e.aliasedLocals = saved.aliasedLocals
 	e.prologue, e.w = saved.prologue, saved.w
 	e.hoistedArrayCalls, e.pkgScope = saved.hoistedArrayCalls, saved.pkgScope
 	if proto == "" {
@@ -10858,6 +10866,8 @@ func (e *emitter) emitMain(sig, body []int32) {
 	e.localTypes = map[string]string{}
 	e.gotoTargets = map[string]bool{}
 	e.scanGotoTargets(body)
+	e.aliasedLocals = map[string]bool{}
+	e.scanAliasedLocals(body)
 	e.localConsts = map[string]bool{}
 	e.hoistedArrayCalls = map[int32]string{}
 	e.curParams = map[string]bool{}
@@ -11657,6 +11667,298 @@ func (e *emitter) stmtLabelOperand(nodes []Node) (string, bool) {
 // scanGotoTargets records which labels the gotos of a function body name, so a
 // forward goto's label -- emitted before the goto is reached -- knows to emit its
 // C target line.
+// scanAliasedLocals records every name whose storage something other than the name
+// may reach, anywhere in a function: one whose address is taken, `&h` or `&h.xs`,
+// one that is sliced, `a[:]`, and one a method is called on, since a pointer
+// receiver is an address taken. It answers whether a write through a pointer or a
+// slice, or a call, can touch a LOCAL array behind the name (rangeBodyMayWrite).
+func (e *emitter) scanAliasedLocals(ast []int32) {
+	for n := range it(ast) {
+		if n.sym == 0 {
+			continue
+		}
+		// A statement-level call is an AssignHead and a Postfix, not a Factor:
+		// `h.set(9)` for a pointer receiver takes h's address.
+		if n.sym == Statement {
+			nodes := slices.Collect(it(n.ast))
+			if len(nodes) == 2 && nodes[0].sym == AssignHead && nodes[1].sym == Postfix {
+				if name := e.soleIdent(nodes[0].ast); name != "" {
+					for st := range it(nodes[1].ast) {
+						if st.sym == CallSuffix {
+							e.aliasedLocals[name] = true
+						}
+					}
+				}
+			}
+		}
+		if n.sym == UnaryExpr {
+			if kids := slices.Collect(it(n.ast)); len(kids) >= 2 && kids[0].sym == UnaryOp {
+				if tok, ok := e.unaryOpTok(kids[0].ast); ok && e.f.ch(tok) == AND {
+					if name := e.firstIdent(kids[len(kids)-1].ast); name != "" {
+						e.aliasedLocals[name] = true
+					}
+				}
+			}
+		}
+		if n.sym == Factor {
+			if kids := slices.Collect(it(n.ast)); len(kids) == 2 && kids[0].sym == 0 && e.f.ch(kids[0].tok) == IDENT && kids[1].sym == FactorSuffix {
+				for st := range it(kids[1].ast) {
+					if st.sym == CallSuffix {
+						e.aliasedLocals[e.src(kids[0].tok)] = true // a method's receiver, or an argument's owner
+					}
+					if _, _, _, isSlice := e.sliceParts(st.ast); st.sym == Index && isSlice {
+						e.aliasedLocals[e.src(kids[0].tok)] = true
+					}
+				}
+			}
+		}
+		e.scanAliasedLocals(n.ast)
+	}
+}
+
+// firstIdent names the first identifier in an expression, "" for none.
+func (e *emitter) firstIdent(ast []int32) string {
+	for n := range it(ast) {
+		if n.sym == 0 {
+			if e.f.ch(n.tok) == IDENT {
+				return e.src(n.tok)
+			}
+			continue
+		}
+		if name := e.firstIdent(n.ast); name != "" {
+			return name
+		}
+	}
+	return ""
+}
+
+// rangeBodyMayWrite reports whether the body of a range loop may change the array
+// the loop ranges over, whose storage is rooted at the variable root: then Go's
+// copy of the operand is observable and has to be made (see emitRange). It is
+// deliberately conservative -- a copy costs a memcpy and the array's size on the
+// stack, and a wrong "no" costs a wrong answer -- and deliberately not blind: the
+// loop that sums a table into a local writes nothing the array can see.
+//
+// A store rooted at root writes it. A store through a pointer or a slice, or a
+// call of anything that may write memory -- a user's function or method, a
+// literal, a function value, append, copy, clear -- may write it too, when its
+// storage is EXPOSED: a package variable, a parameter's pointee, or a local whose
+// address was taken or which was sliced somewhere in the function
+// (scanAliasedLocals). A local nothing points at is written only by its name.
+//
+// unknown says the storage is behind a POINTER the loop dereferences, `range *p`,
+// so it may be any variable something points at: a store to any package variable,
+// or to any local whose address was taken, may be a store to it.
+func (e *emitter) rangeBodyMayWrite(body []int32, root string, exposed, unknown bool) bool {
+	may := false
+	e.eachStmt(body, func(nodes []Node) {
+		if may {
+			return
+		}
+		for _, t := range e.stmtStoreTargets(nodes) {
+			if t.root == root || t.throughRef && exposed {
+				may = true
+				return
+			}
+			if unknown && (e.isPackageVar(t.root) || e.aliasedLocals[t.root]) {
+				may = true
+				return
+			}
+		}
+		if exposed && e.stmtMayWriteMemory(nodes) {
+			may = true
+		}
+	})
+	return may
+}
+
+// storeTarget is one target a statement writes: the variable at its root, and
+// whether the write goes THROUGH a pointer or a slice on its way, which is where a
+// name other than the root's storage can be reached.
+type storeTarget struct {
+	root       string
+	throughRef bool
+}
+
+// stmtStoreTargets lists what a statement writes: the head and every LhsItem of an
+// assignment, a compound assignment, an increment or a decrement. A declaration
+// writes only what it declares.
+func (e *emitter) stmtStoreTargets(nodes []Node) []storeTarget {
+	if len(nodes) != 2 || nodes[0].sym != AssignHead || nodes[1].sym != Postfix {
+		return nil
+	}
+	postfix := slices.Collect(it(nodes[1].ast))
+	if len(postfix) == 0 || postfix[len(postfix)-1].sym != PostfixOp {
+		return nil
+	}
+	op := slices.Collect(it(postfix[len(postfix)-1].ast))
+	writes := false
+	for _, n := range op {
+		if n.sym == AssignOp {
+			writes = true // `+=` and the rest
+			continue
+		}
+		if n.sym != 0 {
+			continue
+		}
+		switch sym := e.f.ch(n.tok); {
+		case sym == ASSIGN || sym == INC || sym == DEC || isCompoundAssign(sym):
+			writes = true
+		case sym == DEFINE || sym == ARROW:
+			return nil
+		}
+	}
+	if !writes {
+		return nil
+	}
+	var out []storeTarget
+	add := func(head Node, chain []Node) {
+		root := e.soleIdent(head.ast)
+		if root == "" {
+			root = e.firstIdent(head.ast) // `(*p).x = v`, `(&v).x = v`
+			out = append(out, storeTarget{root: root, throughRef: true})
+			return
+		}
+		out = append(out, storeTarget{root: root, throughRef: e.derefStars(head.ast) != "" || e.chainThroughRef(root, chain)})
+	}
+	add(nodes[0], postfix[:len(postfix)-1])
+	for _, n := range op {
+		if n.sym != LhsItem {
+			continue
+		}
+		items := slices.Collect(it(n.ast))
+		if len(items) != 0 && items[0].sym == AssignHead {
+			add(items[0], items[1:])
+		}
+	}
+	return out
+}
+
+// chainThroughRef reports whether a chain of selectors and indexes from root passes
+// THROUGH a pointer or a slice before it ends, so that what it writes may be
+// storage the root does not own.
+func (e *emitter) chainThroughRef(root string, chain []Node) bool {
+	cur, ok := e.accessBase(root)
+	if !ok {
+		return true // unknown: taken to reach anything
+	}
+	if ct, isVar := e.varType(root); isVar && e.isPointer(ct) && len(chain) != 0 {
+		return true
+	}
+	for _, st := range chain {
+		if cur.slice || e.isPointer(cur.ctype) {
+			return true
+		}
+		switch st.sym {
+		case Selector:
+			if cur, ok = e.accessSelect(cur, e.soleIdent(st.ast)); !ok {
+				return true
+			}
+		case Index:
+			if _, _, _, isSlice := e.sliceParts(st.ast); isSlice {
+				return true
+			}
+			if cur, _, ok = e.accessIndex(cur, "?"); !ok {
+				return true
+			}
+		default:
+			return true
+		}
+	}
+	return false
+}
+
+// stmtMayWriteMemory reports whether a statement calls something that may write
+// memory it does not own: a user's function or method, a function literal or a
+// value, or one of the builtins that write into a slice -- append, copy, clear. A
+// conversion, len, cap, print and println, min and max, the p2 intrinsics and the
+// math package write nothing of the program's.
+func (e *emitter) stmtMayWriteMemory(nodes []Node) bool {
+	may := false
+	var walk func(ast []int32)
+	walk = func(ast []int32) {
+		for n := range it(ast) {
+			if may || n.sym == 0 {
+				continue
+			}
+			if n.sym == Factor {
+				kids := slices.Collect(it(n.ast))
+				if e.factorCallMayWrite(kids) {
+					may = true
+					return
+				}
+			}
+			walk(n.ast)
+		}
+	}
+	walk(nil)
+	for _, n := range nodes {
+		if n.sym != 0 {
+			walk(n.ast)
+		}
+	}
+	// A go statement's call and a statement-level call are the head and the suffix,
+	// siblings rather than a factor.
+	if len(nodes) != 0 && (nodes[0].sym == AssignHead || nodes[0].sym == 0 && e.f.ch(nodes[0].tok) == GO) {
+		if name := e.soleIdent(headOf(nodes).ast); name != "" {
+			var steps []Node
+			for _, n := range nodes {
+				if n.sym == CallSuffix || n.sym == Selector || n.sym == Index {
+					steps = append(steps, n)
+				}
+				if n.sym == Postfix {
+					steps = append(steps, slices.Collect(it(n.ast))...)
+				}
+			}
+			if containsSym(steps, CallSuffix) && e.calleeMayWrite(name, steps) {
+				may = true
+			}
+		}
+	}
+	return may
+}
+
+// factorCallMayWrite is stmtMayWriteMemory for one factor's children.
+func (e *emitter) factorCallMayWrite(kids []Node) bool {
+	if len(kids) == 0 {
+		return false
+	}
+	if kids[0].sym == FuncLiteral {
+		return len(kids) > 1 // called where it stands
+	}
+	if len(kids) != 2 || kids[0].sym != 0 || e.f.ch(kids[0].tok) != IDENT || kids[1].sym != FactorSuffix {
+		return false
+	}
+	steps := slices.Collect(it(kids[1].ast))
+	if !containsSym(steps, CallSuffix) {
+		return false
+	}
+	return e.calleeMayWrite(e.src(kids[0].tok), steps)
+}
+
+// calleeMayWrite says whether a call headed by name, with these suffix steps, may
+// write memory the caller does not own.
+func (e *emitter) calleeMayWrite(name string, steps []Node) bool {
+	if len(steps) != 0 && steps[0].sym == Selector {
+		switch name {
+		case "p2", "math":
+			return false
+		}
+		return true // a method, or another package's function
+	}
+	switch name {
+	case "append", "copy", "clear", "close":
+		return true
+	case "len", "cap", "print", "println", "min", "max", "panic", "string", "int", "int8", "int16", "int32", "int64",
+		"uint", "uint8", "uint16", "uint32", "uint64", "uintptr", "byte", "rune", "float32", "float64", "bool":
+		return false
+	}
+	if _, isType := e.namedTypes[e.typeCName(name)]; isType {
+		return false // a conversion
+	}
+	return true
+}
+
 func (e *emitter) scanGotoTargets(ast []int32) {
 	for n := range it(ast) {
 		if n.sym != 0 {
@@ -19846,6 +20148,14 @@ func (e *emitter) emitRange(h *forHeader, body []int32) {
 	}
 	switch {
 	case name != "":
+		if h.valVar == nil || e.exprC(h.valVar) == "_" {
+			// The index-only form reads no element, so the binding is read by
+			// nothing but the loop's bound, which is its length -- and the host's
+			// compiler refuses an unused variable. The literal was still evaluated,
+			// as Go evaluates one holding a call: its length is not a constant then.
+			e.ind()
+			e.emit("(void)" + name + ";\n")
+		}
 		if a, isArray := e.arrays[name]; isArray {
 			e.emitRangeArray(h, body, key, a, name)
 			break
@@ -19857,13 +20167,35 @@ func (e *emitter) emitRange(h *forHeader, body []int32) {
 	// field. The operand's own shape is what decides, and a slice has none -- this
 	// answers for arrays only, so no slice is claimed here.
 	case e.rangeArray(h.rangeExpr) != nil:
-		text, a, ok := e.rangeArrayBase(h.rangeExpr, h.valVar != nil)
+		text, a, byValue, ok := e.rangeArrayBase(h.rangeExpr, h.valVar != nil)
 		if !ok {
 			// The predicate reads the operand's SHAPE and this reads its storage, so
 			// an operand whose shape is known and whose storage cannot be named lands
 			// here. Said rather than ranged over an empty base.
 			e.fail("cannot range over this array: it has no storage to name")
 			return
+		}
+		// Go evaluates the range expression once, and for an ARRAY that value is a
+		// copy: the elements the loop hands out are the ones the array held when the
+		// loop began, whatever the body writes into it. `for i, v := range arr {
+		// arr[i+1] = 99 ... }` read 1 99 99 99 here where Go reads 1 2 3 4, and so
+		// did a loop assigning the whole array, or ranging an array of structs. The
+		// copy is made where the body can write the array (rangeBodyMayWrite): the
+		// loop that reads a table into a local was right without one and keeps its
+		// cost. A pointer operand is read live, as Go reads it.
+		if byValue && h.valVar != nil && e.exprC(h.valVar) != "_" {
+			root := e.firstIdent(h.rangeExpr)
+			_, isDeref := e.derefOperand(h.rangeExpr)
+			exposed := isDeref || e.isPackageVar(root) || e.curParams[root] || e.aliasedLocals[root]
+			if e.rangeBodyMayWrite(body, root, exposed, isDeref) {
+				tmp := e.newTmp()
+				e.includes["string.h"] = true
+				e.ind()
+				e.emit(a.elem + " " + tmp + a.declSuffix() + ";\n")
+				e.ind()
+				e.emit("memcpy(" + tmp + ", " + text + ", sizeof(" + tmp + "));\n")
+				text = tmp
+			}
 		}
 		e.emitRangeArray(h, body, key, a, text)
 	case e.isChanCType(ct):
@@ -20201,32 +20533,38 @@ func (e *emitter) ptrArrayOperand(ast []int32) (ct string, a arrDim, ok bool) {
 //
 // It RENDERS, so it is asked exactly once; rangeArray is the pure predicate that
 // decides whether to ask at all.
-func (e *emitter) rangeArrayBase(expr []int32, readsElements bool) (string, arrDim, bool) {
-	if base, ok := e.exprIdent(expr); ok {
+//
+// byValue says the operand IS an array rather than a pointer to one -- the
+// variable, `*p`, a field or an element -- which is what Go copies before the loop
+// (see emitRange); a pointer is evaluated once and the array it points at is read
+// live, in Go too.
+func (e *emitter) rangeArrayBase(expr []int32, readsElements bool) (text string, a arrDim, byValue, ok bool) {
+	if base, isName := e.exprIdent(expr); isName {
 		if a, isPtr := e.arrayPtrVar(base); isPtr {
 			// The value form reads through the pointer and takes the nil check,
 			// once, before the loop -- which is where Go evaluates the range
 			// expression. The index-only form dereferences nothing, in Go too, and
 			// a nil pointer counts to N there without complaint.
 			if readsElements {
-				return e.arrayPtrDeref(base), a, true
+				return e.arrayPtrDeref(base), a, false, true
 			}
-			return "(*" + e.varRef(base) + ")", a, true
+			return "(*" + e.varRef(base) + ")", a, false, true
 		}
 		if a, isArr := e.arrayVar(base); isArr {
-			return e.varRef(base), a, true
+			return e.varRef(base), a, true, true
 		}
-		return "", arrDim{}, false
+		return "", arrDim{}, false, false
 	}
-	if text, a, ok := e.arrayDerefOperand(expr); ok {
-		return text, a, true
+	if text, a, isDeref := e.arrayDerefOperand(expr); isDeref {
+		return text, a, true, true
 	}
 	// The field form is asked first because it keeps the type's NAME, so the pointer
 	// is spelled `Row*` rather than by a mint.
-	text, a, ok := e.arrayFieldOperand(expr)
+	text, a, ok = e.arrayFieldOperand(expr)
 	if !ok {
 		if text, a, ok = e.arrayChainOperand(expr); !ok {
-			return e.rangePtrArrayBase(expr, readsElements)
+			text, a, ok = e.rangePtrArrayBase(expr, readsElements)
+			return text, a, false, ok
 		}
 	}
 	if !readsElements {
@@ -20241,12 +20579,12 @@ func (e *emitter) rangeArrayBase(expr []int32, readsElements bool) (string, arrD
 			e.ind()
 			e.emit("(void)(" + text + ");\n")
 		}
-		return text, a, true
+		return text, a, true, true
 	}
 	tmp := e.newTmp()
 	e.ind()
 	e.emit(e.arrayTypedef(a) + "* " + tmp + " = &" + text + ";\n")
-	return "(*" + tmp + ")", a, true
+	return "(*" + tmp + ")", a, true, true
 }
 
 // rangePtrArrayBase is rangeArrayBase for a POINTER to an array that is not a

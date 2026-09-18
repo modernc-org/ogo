@@ -2199,9 +2199,15 @@
 // A range clause iterates over an integer, an array or a slice, and over a
 // string by rune: "for range n", "for i := range x", and "for i, v := range x",
 // where for a string i is each rune's start byte index and v the rune itself.
-// The operand is evaluated once. Ranging over a map or a channel is not
-// implemented (a map needs a heap; a channel range needs a close, which the
-// rendezvous does not model yet).
+// The operand is evaluated once, and for an ARRAY that value is a copy, as in Go:
+// the elements the loop hands out are the ones the array held when the loop
+// began, whatever the body writes into it. A pointer to an array is evaluated once
+// and the array it points at is read live, and so is a slice, with its length
+// taken once. (OctoGo Specific): the copy is made only where the body can write
+// the array -- a store into it, a store through a pointer or a slice, or a call
+// that may -- so a loop that only reads costs no copy. Ranging over a map or a
+// channel is not implemented (a map needs a heap; a channel range needs a close,
+// which the rendezvous does not model yet).
 //
 // # Switch Statements
 //

@@ -91,6 +91,17 @@ shipped section tells a reader on that version that they have behaviour they do 
 
 ### Fixed
 
+- **A range over an array iterates a copy.** Go evaluates a range expression once,
+  and an array's value is a copy, so the loop hands out the elements the array
+  held when it began. The loop read the live array: `for i, v := range arr {
+  arr[i+1] = 99 ... }` saw its own writes, and so did a loop assigning the whole
+  array, one writing through a slice of it, one calling a method that writes it,
+  and one over an array of structs, each silently. The copy is made where the
+  body can write the array -- a store into it, a store through a pointer or a
+  slice, a call that may -- and not otherwise, so a loop that reads a table costs
+  what it did. A pointer operand is read live, as Go reads it. An index-only
+  range over a literal holding a call no longer draws the host compiler's
+  unused-variable refusal.
 - **`math.Sqrt(2)` was 1 on the board.** An untyped constant argument to a math
   function went to C as the integer it defaults to, `sqrt(2)`; the host's libm
   converts it, and the target's `sqrt` is a macro over a compiler builtin that

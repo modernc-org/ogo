@@ -27542,6 +27542,172 @@ func main() {
 }
 `,
 		want: "r32 0.3 true 0.020000001 0.5 -0.1 0.09 0.6 1.4901161e-08 0.060000006\nacc 1.0000001 false 1.1920929e-07 10.000001 0.33333337\ncompound -0.23333335 0.23333335 false true\ninf +Inf -Inf +Inf 0 0 -0 0 +Inf -Inf 2e+38 -2e+38\nnan NaN false true false false false true true true true\nord true false false true true NaN NaN +Inf NaN -Inf\ncmp true true true true true true true false\nminmax 3 2.5 +Inf true\ni2f 1.6777216e+07 -1.6777216e+07 2.1474836e+09 -2.1474836e+09 7 -7 0 true\ni2f2 3.5 -3.5 -1 -49 2.3333333\ni64f 9.007199e+15 -9.007199e+15 4.611686e+18 true false 512\nf2i -2 3 -5 -7 1 -1 3 3 -2 0 -2500000\nf2i2 3000000000 3000000 0 -1 3000000000 2999999884200771584 999999984306749440\ntrunc -2 -3 -2 -3 1 1 2 1 -1 1\np32 0.1 0.2 0.3 1e+38 1e-45 3 -2.5 0\npmix 1 2.5 0 100 1e-07 1.2345679e+08 0.33333334 0.14285715 39.0625 1e+10\npmath 1.4142135 3.1415927 1024 -1 1.7320508 1.7320508\nbig 1.5e+10 1.5e+20 1.5000001e+30 +Inf 1.5e-20 0\n",
+	}, {
+		// A range over an ARRAY iterates a copy of it, taken once before the loop: Go
+		// evaluates the range expression once, and an array's value is a copy. The loop
+		// read the live array, so `for i, v := range arr { arr[i+1] = 99 }` saw its own
+		// writes, 1 99 99 where Go reads 1 2 3, and so did a loop assigning the whole
+		// array, one writing through a slice of it, one calling a method that writes it,
+		// and one over an array of structs. The copy is made where the body can write the
+		// array (rangeBodyMayWrite); a pointer operand is read live, as in Go, and a slice
+		// is live with its length taken once. Beside them: the index-only form over a
+		// literal holding a call, which is evaluated once, and a deferred call writing a
+		// named result after the return has set it.
+		name: "a range over an array iterates a copy",
+		src: `type H struct {
+	xs [3]int
+	n  int
+}
+
+type P struct {
+	x int
+}
+
+var garr = [3]int{1, 2, 3}
+var gh = H{xs: [3]int{1, 2, 3}}
+var pool = [2][3]int{{1, 2, 3}, {4, 5, 6}}
+var ps = [2]P{{1}, {2}}
+var calls int
+
+func clobber() {
+	garr[1] = 77
+	pool[1][1] = 77
+}
+
+func (h *H) set(v int) {
+	h.xs[1] = v
+}
+
+func inc(p *int) {
+	*p++
+}
+
+func named() (r int) {
+	defer inc(&r)
+	return 1
+}
+
+func bump() int {
+	calls++
+	return calls
+}
+
+func viaArr(a [3]int) int {
+	t := 0
+	for i, v := range a {
+		if i == 0 {
+			a[1] = 50
+		}
+		t += v
+	}
+	return t + a[1]
+}
+
+func viaPtr(p *[3]int) int {
+	t := 0
+	for i, v := range p {
+		if i == 0 {
+			p[1] = 50
+		}
+		t += v
+	}
+	return t
+}
+
+func main() {
+	// A range over an ARRAY iterates a copy taken once: the body's writes are not seen.
+	arr := [3]int{1, 2, 3}
+	for i, v := range arr {
+		if i < 2 {
+			arr[i+1] = 99
+		}
+		print(v, " ")
+	}
+	println("|", arr[1], arr[2])
+	arr = [3]int{1, 2, 3}
+	for i, v := range arr {
+		arr = [3]int{7, 7, 7}
+		print(i, v, " ")
+	}
+	println("|", arr[0])
+	arr = [3]int{1, 2, 3}
+	s := arr[:]
+	for i, v := range arr {
+		if i == 0 {
+			s[1] += 9
+			arr[2]++
+		}
+		print(v, " ")
+	}
+	println("|", arr[1], arr[2])
+	// Over a SLICE the elements are live, and the length is taken once.
+	for i, v := range s {
+		if i < 2 {
+			s[i+1] = 50 + i
+		}
+		print(v, " ")
+	}
+	println("|", s[1], s[2])
+	// A field, a row, a package array, and what a call may write.
+	h := H{xs: [3]int{1, 2, 3}}
+	t := 0
+	for i, v := range h.xs {
+		if i == 0 {
+			h.set(9)
+		}
+		t += v
+	}
+	for i, v := range pool[1] {
+		if i == 0 {
+			clobber()
+		}
+		t += v
+	}
+	for i, v := range gh.xs {
+		if i == 0 {
+			gh.set(9)
+		}
+		t += v
+	}
+	println(t, h.xs[1], pool[1][1], gh.xs[1])
+	// Through a POINTER the array is read live, as Go reads it; through its
+	// dereference it is a value again.
+	garr = [3]int{1, 2, 3}
+	p := &garr
+	for i, v := range p {
+		if i == 0 {
+			garr[1] = 9
+		}
+		print(v, " ")
+	}
+	garr = [3]int{1, 2, 3}
+	for i, v := range *p {
+		if i == 0 {
+			garr[1] = 9
+		}
+		print(v, " ")
+	}
+	println("|", viaArr(arr), viaPtr(&garr))
+	// An array of structs: a copy too.
+	for i, q := range ps {
+		ps[1-i].x = 40
+		print(q.x, " ")
+	}
+	println("|", ps[0].x, ps[1].x)
+	// The index-only form sees no element; a literal operand holding a call is
+	// still evaluated, once; a deferred call writes a named result after the return.
+	n := 0
+	for i := range [3]int{bump(), bump(), bump()} {
+		arr[i] = 0
+		n += i
+	}
+	for range []int{bump(), bump()} {
+		n++
+	}
+	println(n, calls, named())
+}
+`,
+		want: "1 2 3 | 99 99\n01 12 23 | 7\n1 2 3 | 11 4\n1 50 51 | 50 51\n27 9 77 9\n1 9 3 1 2 3 | 152 54\n1 2 | 40 40\n5 5 2\n",
 	}}
 
 // TestEmitCRun compiles emitted C with a host compiler and runs it, checking what
