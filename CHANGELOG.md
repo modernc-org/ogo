@@ -385,6 +385,11 @@ program handed out a reference to storage that was gone by the time it was read.
 
 ### Verified
 
+- Channel semantics against Go on a P2-EDGE, three runs: a range over a channel
+  ends when the producer closes it; a receive from a closed channel yields the
+  zero value at once with ok false, for an int, a struct and a string; a select
+  with a default arm takes it when nobody is sending or receiving. All matched;
+  the program is a run case.
 - String semantics against Go on a P2-EDGE: length and indexing in bytes,
   comparison by content, slicing across a rune, a range over a multibyte string
   and over bytes that are not UTF-8, the conversions of a rune, a byte and an

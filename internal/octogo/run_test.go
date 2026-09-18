@@ -27973,6 +27973,78 @@ func main() {
 }
 `,
 		want: "len 6 3 0 3 195 169 255 65\ncmp true false true true true true true true true\nslice é h\xc3 llo b   true 5\n0:104 1:233 3:108 4:108 5:111 \n0:65533 1:65533 2:65 \n0:97 1:98 2:99 \ncount 5 6\nrune a é 2 4 � � � 3\nbyte A 2 È 2 true\nconv b A 98 195 195 b b\nconcat xyz true true 7\nidx 97 99 111 122 true true\nassign abd bc 3 2 true true\n",
+	}, {
+		// Channel semantics measured against Go on a P2-EDGE on 2026-09-18, three runs:
+		// a range over a channel ends when the producer closes it; a receive from a
+		// closed channel yields the zero value at once, with ok false, for an int, a
+		// struct and a string alike; a select with a default arm takes it when nobody is
+		// sending or receiving, for a receive and a send. All matched.
+		name: "channel semantics: close, the comma-ok receive, range and a default arm",
+		src: `type Msg struct {
+	id  int
+	val int
+	tag string
+}
+
+var ch chan int
+var done chan int
+var msgs chan Msg
+var strs chan string
+var idle chan int
+
+func produce(n int) {
+	for i := 1; i <= n; i++ {
+		ch <- i * i
+	}
+	close(ch)
+	for i := 0; i < 2; i++ {
+		msgs <- Msg{i, i * 10, "m"}
+	}
+	close(msgs)
+	strs <- "héllo"
+	strs <- ""
+	close(strs)
+	done <- 1
+}
+
+func main() {
+	go produce(4)
+	sum := 0
+	for v := range ch {
+		sum += v
+	}
+	v, ok := <-ch
+	w := <-ch
+	println("range", sum, v, ok, w)
+	for m := range msgs {
+		println("msg", m.id, m.val, m.tag)
+	}
+	m, ok2 := <-msgs
+	println("closed", m.id, m.val, len(m.tag), ok2)
+	a, ok3 := <-strs
+	b := <-strs
+	c, ok4 := <-strs
+	println("strs", a, len(a), ok3, len(b), b == "", len(c), ok4)
+	// select with a default arm when nobody is sending or receiving.
+	polls := 0
+	for i := 0; i < 3; i++ {
+		select {
+		case x := <-idle:
+			println("got", x)
+		default:
+			polls++
+		}
+	}
+	select {
+	case idle <- 1:
+		println("sent")
+	default:
+		polls += 10
+	}
+	println("polls", polls, <-done)
+}
+`,
+		want: "range 30 0 false 0\nmsg 0 0 m\nmsg 1 10 m\nclosed 0 0 0 false\nstrs héllo 6 true 0 true 0 false\npolls 13 1\n",
 	}}
 
 // TestEmitCRun compiles emitted C with a host compiler and runs it, checking what
