@@ -30158,6 +30158,226 @@ func main() {
 `,
 		want: "G1 55 210 465 820 1275 1830\nG2 152535 3 9\nG3 30 4 0 false\nG4 7 true\nG5 314\n",
 	}, {
+		// A struct holding an array was not comparable -- "struct comparison with an
+		// array field is not supported: the backend cannot pass a struct with an
+		// array field by value" -- where Go compares it field by field (2026-09-18).
+		// Its helper takes the operands by pointer now; nested, in an array and
+		// through a pointer. Measured against Go on the host and a P2-EDGE.
+		name: "comparing structs that hold arrays",
+		src: `type Pkt struct {
+	hdr [4]byte
+	n   int
+}
+
+type Frame struct {
+	p    Pkt
+	tags [2]string
+}
+
+func main() {
+	a := Pkt{[4]byte{1, 2, 3, 4}, 5}
+	b := a
+	c := a
+	c.hdr[3] = 9
+	println("E1", a == b, a == c, a != c, b == Pkt{[4]byte{1, 2, 3, 4}, 5})
+	f := Frame{a, [2]string{"x", "y"}}
+	g := f
+	g.tags[1] = "z"
+	println("E2", f == f, f == g, f.p == g.p)
+	arr := [2]Pkt{a, c}
+	arr2 := arr
+	println("E3", arr == arr2, arr[0] == arr[1])
+	p := &a
+	println("E4", *p == b, *p != c)
+}
+`,
+		want: "E1 true false true true\nE2 true false true\nE3 true false\nE4 true true\n",
+	}, {
+		// The same, wider: a switch over such a struct (whose case literal crashed
+		// the checker, "TODO ... CompositeLit"), an embedded one, a string array
+		// field, a float array field holding a NaN, arrays of them, a
+		// two-dimensional array field, pointees.
+		name: "comparing structs that hold arrays: switch, embedding, NaN and arrays of them",
+		src: `type Pkt struct {
+	hdr [4]byte
+	n   int
+}
+
+type Frame struct {
+	Pkt
+	tags [2]string
+	vals [2]float32
+}
+
+type Grid struct {
+	cells [2][2]int
+}
+
+var zero float32
+
+func sw(p *Pkt) int {
+	switch *p {
+	case Pkt{[4]byte{1, 2, 3, 4}, 5}:
+		return 1
+	case Pkt{}:
+		return 2
+	}
+	return 3
+}
+
+func main() {
+	a := Pkt{[4]byte{1, 2, 3, 4}, 5}
+	var z Pkt
+	o := Pkt{[4]byte{9}, 5}
+	println("W1", sw(&a), sw(&z), sw(&o), a == Pkt{[4]byte{1, 2, 3, 4}, 5}, Pkt{} == z)
+	f := Frame{a, [2]string{"x", "y"}, [2]float32{1, 2}}
+	g := f
+	println("W2", f == g, f.Pkt == g.Pkt, f.tags == g.tags)
+	g.vals[1] = zero / zero
+	h := g
+	println("W3", f == g, g == h, g != h)
+	frames := [2]Frame{f, f}
+	fr2 := frames
+	println("W4", frames == fr2, frames[0] == frames[1])
+	fr2[1].hdr[0] = 7
+	println("W5", frames == fr2, frames[1] == fr2[1])
+	g1 := Grid{[2][2]int{{1, 2}, {3, 4}}}
+	g2 := g1
+	g2.cells[1][1] = 0
+	println("W6", g1 == g1, g1 == g2)
+	pa, pb := &f, &g
+	println("W7", *pa == *pb, *pa == f, *pb != h)
+}
+`,
+		want: "W1 1 2 3 true true\nW2 true true true\nW3 false false true\nW4 true true\nW5 false false\nW6 true false\nW7 false true true\n",
+	}, {
+		// Operands whose address the by-pointer helper takes: conversions between a
+		// struct holding an array and a type defined over it, elements of an array
+		// of them indexed by a variable, and a literal on either side.
+		name: "comparing structs that hold arrays: conversions and indexed elements",
+		src: `type Pkt struct {
+	hdr [2]byte
+	n   int
+}
+
+type Tagged Pkt
+
+func main() {
+	a := Pkt{[2]byte{1, 2}, 3}
+	t := Tagged(a)
+	u := Tagged{[2]byte{1, 2}, 3}
+	println(t == u, Tagged(a) == u, u == Tagged(a), Pkt(u) == a, Pkt(t) != Pkt{})
+	ps := [2]Pkt{a, a}
+	i := 1
+	println(ps[i] == ps[0], ps[0] == Pkt{[2]byte{1, 2}, 3})
+}
+`,
+		want: "true true true true true\ntrue true\n",
+	}, {
+		// A switch compared its tag with each case by C's ==: a struct or an
+		// interface tag did not compile, and an ARRAY tag compared where the two
+		// arrays are, so `switch a { case [2]int{1, 2}: }` took the default,
+		// silently, on the host and the board (2026-09-18). Each is compared as the
+		// expression form compares it now: several values in a case, a tag computed
+		// by a call and by an init statement, nil and another interface as cases.
+		name: "a switch on a struct, an array or an interface",
+		src: `type P struct {
+	x, y int
+}
+
+type Pkt struct {
+	hdr [2]byte
+	n   int
+}
+
+type Shape interface {
+	Area() int
+}
+
+type Sq struct {
+	s int
+}
+
+func (q *Sq) Area() int {
+	return q.s * q.s
+}
+
+var calls int
+
+func mk(k int) P {
+	calls = calls*10 + k
+	return P{k, k}
+}
+
+var s1, s2 Sq
+
+func structs() {
+	for i := 0; i < 3; i++ {
+		switch mk(i) {
+		case P{0, 0}, P{2, 2}:
+			println("S1 even", i)
+		case P{1, 1}:
+			println("S1 one", i)
+		}
+	}
+	switch p := mk(5); p {
+	case P{5, 5}:
+		println("S2 five", calls)
+	default:
+		println("S2 other")
+	}
+	pk := Pkt{[2]byte{1, 2}, 3}
+	other := pk
+	switch pk {
+	case Pkt{}:
+		println("S3 zero")
+	case other:
+		println("S3 same")
+	}
+}
+
+func arrays() {
+	a := [3]int{1, 2, 3}
+	b := [3]int{1, 2, 4}
+	for _, v := range [2][3]int{a, b} {
+		switch v {
+		case [3]int{1, 2, 4}:
+			println("A1 b")
+		case a:
+			println("A1 a")
+		}
+	}
+	names := [2]string{"x", "y"}
+	switch names {
+	case [2]string{"x", "z"}, [2]string{"x", "y"}:
+		println("A2 xy")
+	}
+}
+
+func ifaces() {
+	var sh Shape = &s1
+	var other Shape = &s2
+	var none Shape
+	for _, cur := range [3]Shape{sh, other, none} {
+		switch cur {
+		case nil:
+			println("I1 nil")
+		case sh:
+			println("I1 s1")
+		case &s2:
+			println("I1 s2")
+		}
+	}
+}
+
+func main() {
+	structs()
+	arrays()
+	ifaces()
+}
+`,
+		want: "S1 even 0\nS1 one 1\nS1 even 2\nS2 five 125\nS3 same\nA1 a\nA1 b\nA2 xy\nI1 s1\nI1 s2\nI1 nil\n",
+	}, {
 		// `[2]Shape{sh, other}` of interface VARIABLES was emitted as an array
 		// initializer of the two structs as they stand, which the target's compiler
 		// refuses ("expected pointer to void but got _struct__Shape") and the host's

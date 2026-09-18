@@ -4730,23 +4730,22 @@ func emitProgram(pkg *Package, w io.Writer, opts []EmitOption, rename map[string
 	// (a string field compares through it) and the struct typedefs. All are
 	// forward-declared first, then defined, so a nested-struct field's helper need
 	// not precede the outer one regardless of the map's iteration order.
-	if len(e.eqStructs) > 0 {
+	//
+	// Per-array-type equality helpers (Go's array ==) likewise. Every prototype of
+	// both kinds comes before any definition: an array of structs compares its
+	// elements through the struct helper, a struct holding an array its array fields
+	// through the array helper, and a multi-dimensional array its rows through the
+	// helper for one dimension less, which name order does not put first
+	// ("ogo_eq_arr_2_2_int" sorts before "ogo_eq_arr_2_int").
+	if len(e.eqStructs) > 0 || len(e.eqArrays) > 0 {
 		for _, ct := range sortedKeys(e.eqStructs) {
-			fmt.Fprintf(&out, "static int %s(%s _ogo_l, %s _ogo_r);\n", structEqName(ct), ct, ct)
+			out.WriteString(e.structEqSig(ct) + ";\n")
+		}
+		for _, name := range sortedArrayKeys(e.eqArrays) {
+			out.WriteString(e.arrayEqSig(name, e.eqArrays[name]) + ";\n")
 		}
 		for _, ct := range sortedKeys(e.eqStructs) {
 			out.WriteString(e.structEqDef(ct))
-		}
-		out.WriteByte('\n')
-	}
-	// Per-array-type equality helpers (Go's array ==). After the struct ones, which
-	// an array of structs compares its elements through. Forward-declared first and
-	// defined after, as the struct helpers are: a multi-dimensional array compares
-	// its rows through the helper for one dimension less, and name order does not
-	// put that one first ("ogo_eq_arr_2_2_int" sorts before "ogo_eq_arr_2_int").
-	if len(e.eqArrays) > 0 {
-		for _, name := range sortedArrayKeys(e.eqArrays) {
-			out.WriteString(e.arrayEqSig(name, e.eqArrays[name]) + ";\n")
 		}
 		for _, name := range sortedArrayKeys(e.eqArrays) {
 			out.WriteString(e.arrayEqDef(name, e.eqArrays[name]))
@@ -21791,6 +21790,46 @@ func (e *emitter) emitCaseCond(guardVar string, exprs []Node) {
 			e.emit(")")
 			return
 		}
+		// A tag C's == cannot compare, compared as the expression form compares it:
+		// an ARRAY element by element -- C's == compared where the two arrays are,
+		// never equal for two of them, and `switch a { case [2]int{1, 2}: }` took the
+		// default silently on the host and the board alike -- and a STRUCT field by
+		// field and an INTERFACE by its two words, which C refused to compile. Until
+		// 2026-09-18.
+		if cname != "" {
+			if a, isArr := e.arrayVar(guardVar); isArr {
+				r, ok := e.arrayCompareOperand(ex)
+				if !ok || r.elem != a.elem || !slices.Equal(r.bounds(), a.bounds()) {
+					e.failAt(ex.ast, "invalid case %s in switch on %s (mismatched types)",
+						e.f.exprSource(ex), e.goArrayTypeName(a))
+					return
+				}
+				e.needArrayEq(a)
+				e.emit(arrayEqName(a) + "(" + cname + ", ")
+				e.emitArrayOperand(ex)
+				e.emit(")")
+				return
+			}
+			if ct, ok := e.varType(guardVar); ok {
+				switch _, isStruct := e.structs[ct]; {
+				case e.isIfaceCType(ct):
+					e.emitIfaceCompareC("==", cname, ct, ex)
+					return
+				case isStruct:
+					e.needStructEq(ct)
+					e.emit(structEqName(ct) + "(")
+					if e.structEqByPtr(ct) {
+						e.emit("&" + cname + ", ")
+						e.emitStructAddr(ex, ct)
+					} else {
+						e.emit(cname + ", ")
+						e.emitStructOperand(ex)
+					}
+					e.emit(")")
+					return
+				}
+			}
+		}
 		if cname != "" {
 			// A case value is compared with the tag, so it takes the tag's type.
 			if ct, ok := e.varType(guardVar); ok {
@@ -32156,6 +32195,13 @@ func (e *emitter) ifaceComparableConcrete(iface string, n Node) bool {
 // evaluated twice -- which emitStructOperand's hoist already arranges.
 func (e *emitter) emitIfaceCompareTriple(op string, l, r Node) {
 	lt := e.captureC(func() { e.emitStructOperand(l) })
+	lct, _ := e.inferCType(l.ast)
+	e.emitIfaceCompareC(op, lt, lct, r)
+}
+
+// emitIfaceCompareC is emitIfaceCompareTriple for a left operand already in C, lt,
+// of the interface type lct: the tag of a switch, which is a name.
+func (e *emitter) emitIfaceCompareC(op, lt, lct string, r Node) {
 	if e.isNilExpr(r.ast) {
 		// The zero interface carries no table, so that word alone answers it.
 		e.emit("(" + lt + ".vt " + op + " 0)")
@@ -32174,7 +32220,6 @@ func (e *emitter) emitIfaceCompareTriple(op string, l, r Node) {
 			e.fail("cannot compare an interface with this value")
 			return
 		}
-		lct, _ := e.inferCType(l.ast)
 		e.emit("(" + lt + ".vt " + eq + " &" + ifaceVTVar(lct, concrete) + join +
 			lt + ".data " + eq + " (void*)" + data + ")")
 		return
@@ -32235,9 +32280,55 @@ func (e *emitter) emitStructCompareTriple(l, r Node, op, ctype string) {
 		e.emit("!")
 	}
 	e.emit(structEqName(ctype) + "(")
+	if e.structEqByPtr(ctype) {
+		e.emitStructAddr(l, ctype)
+		e.emit(", ")
+		e.emitStructAddr(r, ctype)
+		e.emit(")")
+		return
+	}
 	e.emitStructOperand(l)
 	e.emit(", ")
 	e.emitStructOperand(r)
+	e.emit(")")
+}
+
+// structEqByPtr reports a struct type whose equality helper takes its operands by
+// POINTER: one holding an array, which the target's compiler cannot pass by value
+// (see hasArrayField). Such structs were not comparable at all until 2026-09-18 --
+// "struct comparison with an array field is not supported" -- where Go compares
+// them field by field and the array fields element by element.
+func (e *emitter) structEqByPtr(ctype string) bool { return e.hasArrayField(ctype) }
+
+// structEqSig renders a struct equality helper's signature, shared by the forward
+// declaration and the definition.
+func (e *emitter) structEqSig(ctype string) string {
+	if e.structEqByPtr(ctype) {
+		// No const, as for the array helpers: an array field is handed on to one.
+		return fmt.Sprintf("static int %s(%s* _ogo_l, %s* _ogo_r)", structEqName(ctype), ctype, ctype)
+	}
+	return fmt.Sprintf("static int %s(%s _ogo_l, %s _ogo_r)", structEqName(ctype), ctype, ctype)
+}
+
+// emitStructAddr emits the address of one operand of a comparison of structs that
+// hold arrays. A variable, a field, an element and a pointer's pointee have one; a
+// composite literal has none and is bound to a temporary of its type first, its
+// braces being the form the target's compiler initializes such a struct from.
+func (e *emitter) emitStructAddr(n Node, ctype string) {
+	if name, lit, ok := e.soleCompositeLit(n.ast); ok {
+		var fixups []litFixup
+		tmp := e.hoist(ctype, func() {
+			fixups = e.captureLitFixups(func() { e.emitCompositeLit(name, lit, true) })
+		})
+		if len(fixups) != 0 {
+			e.fail("comparing with a %s literal that fills an array field from a value is not supported yet; bind it to a variable first",
+				e.goTypeName(ctype))
+		}
+		e.emit("&" + tmp)
+		return
+	}
+	e.emit("&(")
+	e.emitExprNode(n)
 	e.emit(")")
 }
 
@@ -32285,11 +32376,10 @@ func (e *emitter) needStructEq(ctype string) {
 	for _, fld := range e.structs[ctype] {
 		switch {
 		case fld.dim.bound != "":
-			// The eq helper takes the struct by value, and flexcc cannot pass a struct
-			// with an array field by value (see refuseArrayStructABI / the memcpy
-			// workaround). So a struct with an array field -- directly, or through a
-			// nested struct, since this recurses -- cannot be compared yet.
-			e.fail("struct comparison with an array field (%s) is not supported: the backend cannot pass a struct with an array field by value", fld.name)
+			// An array field compares through its array's helper, element by element;
+			// the struct's own helper then takes its operands by pointer
+			// (structEqByPtr), the target's compiler passing no such struct by value.
+			e.needArrayEq(fld.dim)
 		case fld.ctype == cString:
 			e.usesStringEq = true
 		case e.isSliceCType(fld.ctype):
@@ -32307,6 +32397,8 @@ func (e *emitter) fieldEqCmp(ct, l, r string) string {
 	switch {
 	case ct == cString:
 		return "ogo_string_eq(" + l + ", " + r + ")"
+	case e.structs[ct] != nil && e.structEqByPtr(ct):
+		return structEqName(ct) + "(&(" + l + "), &(" + r + "))"
 	case e.structs[ct] != nil:
 		return structEqName(ct) + "(" + l + ", " + r + ")"
 	default:
@@ -32323,7 +32415,11 @@ func (e *emitter) structEqDef(ctype string) string {
 	// The parameters use the emitter's reserved _ogo_ prefix so they cannot collide
 	// with any struct field name -- `a`/`b` would clash with a field named a or b
 	// (and flexcc then mishandles the resulting `b.b`).
-	fmt.Fprintf(&b, "static int %s(%s _ogo_l, %s _ogo_r) {\n\treturn ", structEqName(ctype), ctype, ctype)
+	b.WriteString(e.structEqSig(ctype) + " {\n\treturn ")
+	sel := "."
+	if e.structEqByPtr(ctype) {
+		sel = "->"
+	}
 	fields := e.structs[ctype]
 	if len(fields) == 0 {
 		b.WriteString("1") // an empty struct (its C form's hidden byte is not compared) is always equal
@@ -32333,7 +32429,12 @@ func (e *emitter) structEqDef(ctype string) string {
 			b.WriteString(" && ")
 		}
 		nm := e.fieldIdent(fld.name)
-		b.WriteString(e.fieldEqCmp(fld.ctype, "_ogo_l."+nm, "_ogo_r."+nm))
+		l, r := "_ogo_l"+sel+nm, "_ogo_r"+sel+nm
+		if fld.dim.bound != "" {
+			b.WriteString(arrayEqName(fld.dim) + "(" + l + ", " + r + ")")
+			continue
+		}
+		b.WriteString(e.fieldEqCmp(fld.ctype, l, r))
 	}
 	b.WriteString(";\n}\n")
 	return b.String()

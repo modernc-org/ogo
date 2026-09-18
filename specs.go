@@ -1671,7 +1671,11 @@
 // helper the compiler emits for that type; ordering ("<") is defined on the
 // numeric types and on strings, which compare lexicographically, but not on
 // structs or arrays. An array's element type must itself be comparable, and a
-// slice may only be compared with nil, never with another slice.
+// slice may only be compared with nil, never with another slice. A struct holding
+// an array compares like any other, its helper taking the operands by pointer where
+// the target's C compiler passes no such struct by value; and a switch compares its
+// tag with each case the same way, a struct, an array or an interface as the
+// expression form compares it.
 //
 // The bit-clear operator "a &^ b" is Go's AND NOT: the bits of a that b does not
 // have set. Until it was made an operator of its own it still computed the right

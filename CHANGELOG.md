@@ -20,6 +20,12 @@ shipped section tells a reader on that version that they have behaviour they do 
 
 ### Language
 
+- **Structs that hold arrays are comparable.** `a == b` of a struct with an array
+  field was refused -- "struct comparison with an array field is not supported: the
+  backend cannot pass a struct with an array field by value" -- where Go compares
+  it field by field and the array element by element. Its equality helper takes
+  the operands by pointer now, in an expression, in a switch, nested, embedded and
+  in an array of them.
 - **printf's %v takes a flag, a width and a precision.** `%-10v %5v` -- the way a
   table's columns are aligned -- was refused: %v under a spec is now the type's
   default verb under it, as fmt lays it out, %d, %g, %s or %t, element by element
@@ -129,6 +135,12 @@ shipped section tells a reader on that version that they have behaviour they do 
 
 ### Fixed
 
+- **A switch on an array compared where the arrays are.** `switch a { case [2]int{1,
+  2}: }` compared the tag with each case by C's `==`, which for two arrays asks
+  whether they are the same storage: never, so the default ran, silently, on the
+  host and the board. A tag of struct or interface type did not compile at all.
+  Each is compared as the expression form compares it now: element by element,
+  field by field, and by an interface's two words.
 - **An array or a slice literal of interface values did not build for the
   target.** `[2]Shape{sh, other}`, `[]Shape{sh, other, nil}`, `[3]Shape{pick(1),
   pick(2)}` and a package-level array of interface variables wrote each value into
