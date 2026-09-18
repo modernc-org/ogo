@@ -27336,6 +27336,123 @@ func main() {
 }
 `,
 		want: "el 98 120 121\n48 48 48 48 98 101 101 102 \nel\nllo\n788 132 7 true true 92\n",
+	}, {
+		// The integer edges Go defines and C leaves undefined -- signed overflow, the
+		// most negative value divided by -1, a shift by the width or more, narrow
+		// arithmetic, conversions -- measured against Go on a P2-EDGE on 2026-09-18 and
+		// matching on every line, with the operands read out of tables through a loop
+		// index and, in a second program, received from another cog. The host build passes
+		// -fwrapv, so only the target's compiler can disagree here: this is the battery a
+		// backend regeneration is checked against. A signed compare decided by an
+		// overflowing difference was a real fault of it once (doc/signed-compare-overflow.c).
+		name: "integer edges: overflow, division, shifts and conversions",
+		src: `// Integer edges: what Go defines and C leaves undefined. Every operand comes out of
+// a table through a loop index, so nothing here is a constant to the C compiler.
+var vals = [6]int{2147483647, -2147483648, 1, -1, 2, 0}
+var vals64 = [6]int64{9223372036854775807, -9223372036854775808, 1, -1, 2, 0}
+var uvals = [4]uint32{4294967295, 0, 1, 2147483648}
+var uvals64 = [3]uint64{18446744073709551615, 0, 1}
+var small = [4]int8{127, -128, 1, -1}
+var usmall = [3]uint8{255, 0, 1}
+var counts = [7]uint{0, 1, 31, 32, 33, 63, 64}
+
+func wrap32() {
+	for i := 0; i < 1; i++ {
+		max, min, one, neg, two := vals[i], vals[i+1], vals[i+2], vals[i+3], vals[i+4]
+		println("wrap32", max+one, min-one, max*two, min*neg, -min, max+max, min+min)
+		println("cmp32", max+one > max, min-one < min, max*two > max, -min < 0, max+1 > max)
+		println("div32", min/neg, min%neg, neg/two, neg%two, min/two, min%two, -7/2, -7%2)
+		x := max
+		x++
+		y := min
+		y--
+		z := max
+		z += one
+		w := min
+		w *= two
+		println("inc32", x, y, z, w)
+		println("sub32", min-one > 0, min-one, max-neg, max-neg < 0)
+		println("mul32", max*max, min*min, max*min, (max+one)-one == max, max*two/two)
+	}
+}
+
+func wrap64() {
+	for i := 0; i < 1; i++ {
+		max, min, one, neg, two := vals64[i], vals64[i+1], vals64[i+2], vals64[i+3], vals64[i+4]
+		println("wrap64", max+one, min-one, max*two, min*neg, -min)
+		println("cmp64", max+one > max, min-one < min, -min < 0, max+1 > max)
+		println("div64", min/neg, min%neg, neg/two, neg%two, min/two)
+		println("mul64", max*max, min*min, max*min, (max+one)-one == max)
+	}
+}
+
+func unsigned() {
+	for i := 0; i < 1; i++ {
+		max, zero, one, half := uvals[i], uvals[i+1], uvals[i+2], uvals[i+3]
+		println("u32", max+one, zero-one, max*max, half*2, half+half, -one, -max)
+		println("ucmp", max+one > max, zero-one > zero, half*2 < half, int32(half), int32(max), int(half))
+		m64, z64, o64 := uvals64[i], uvals64[i+1], uvals64[i+2]
+		println("u64", m64+o64, z64-o64, m64*m64, -o64, int64(m64), uint32(m64), uint16(m64), uint8(m64))
+	}
+}
+
+func shifts() {
+	for i := 0; i < 1; i++ {
+		max, min, one := vals[i], vals[i+1], vals[i+2]
+		umax := uvals[i]
+		for _, c := range counts {
+			println("shl", c, one<<c, max<<c, min<<c, umax<<c, int64(one)<<c, uint64(umax)<<c)
+			println("shr", c, max>>c, min>>c, umax>>c, int64(min)>>c, uint64(umax)>>c, (-7)>>c)
+		}
+		var s8 int8 = small[i]
+		var u8 uint8 = usmall[i]
+		println("shl8", s8<<1, s8<<7, s8<<8, u8<<1, u8<<8, s8>>1, u8>>1, int8(-128)>>7)
+	}
+}
+
+func narrow() {
+	for i := 0; i < 1; i++ {
+		a, b, one, neg := small[i], small[i+1], small[i+2], small[i+3]
+		println("i8", a+one, b-one, a*a, b*neg, -b, a+b, a*2, ^a, ^b, b/neg, b%neg)
+		println("i8cmp", a+one < a, b-one > b, -b < 0, a+one > 0)
+		var c int8 = a
+		c++
+		var d int8 = b
+		d--
+		var e int8 = b
+		e = -e
+		println("i8inc", c, d, e)
+		x, z, o := usmall[i], usmall[i+1], usmall[i+2]
+		println("u8", x+o, z-o, x*x, -o, x+x, ^z, x/o, x%o)
+		var s16 int16 = 32767
+		var u16 uint16 = 65535
+		s16 += int16(one)
+		u16 += uint16(one)
+		println("16", s16, u16, int16(a)*int16(a)*4, uint16(x)*uint16(x))
+	}
+}
+
+func conversions() {
+	for i := 0; i < 1; i++ {
+		max, min, neg := vals[i], vals[i+1], vals[i+3]
+		m64, mn64 := vals64[i], vals64[i+1]
+		umax, half := uvals[i], uvals[i+3]
+		println("conv", int32(m64), int32(mn64), int8(max), int8(min), uint8(neg), uint32(neg), uint64(neg), int16(m64))
+		println("conv2", int(umax), int32(half), int64(umax), uint16(umax), int8(umax), uint32(m64), uint32(mn64))
+		println("conv3", uint(neg), uint64(mn64), int8(half), int64(int32(umax)), uint32(int8(neg)))
+	}
+}
+
+func main() {
+	wrap32()
+	wrap64()
+	unsigned()
+	shifts()
+	narrow()
+	conversions()
+}
+`,
+		want: "wrap32 -2147483648 2147483647 -2 -2147483648 -2147483648 -2 0\ncmp32 false false false true false\ndiv32 -2147483648 0 0 -1 -1073741824 0 -3 -1\ninc32 -2147483648 2147483647 -2147483648 0\nsub32 true 2147483647 -2147483648 true\nmul32 1 0 -2147483648 true -1\nwrap64 -9223372036854775808 9223372036854775807 -2 -9223372036854775808 -9223372036854775808\ncmp64 false false true false\ndiv64 -9223372036854775808 0 0 -1 -4611686018427387904\nmul64 1 0 -9223372036854775808 true\nu32 0 4294967295 1 0 0 4294967295 1\nucmp false true true -2147483648 -1 -2147483648\nu64 0 18446744073709551615 1 18446744073709551615 -1 4294967295 65535 255\nshl 0 1 2147483647 -2147483648 4294967295 1 4294967295\nshr 0 2147483647 -2147483648 4294967295 -2147483648 4294967295 -7\nshl 1 2 -2 0 4294967294 2 8589934590\nshr 1 1073741823 -1073741824 2147483647 -1073741824 2147483647 -4\nshl 31 -2147483648 -2147483648 0 2147483648 2147483648 9223372034707292160\nshr 31 0 -1 1 -1 1 -1\nshl 32 0 0 0 0 4294967296 18446744069414584320\nshr 32 0 -1 0 -1 0 -1\nshl 33 0 0 0 0 8589934592 18446744065119617024\nshr 33 0 -1 0 -1 0 -1\nshl 63 0 0 0 0 -9223372036854775808 9223372036854775808\nshr 63 0 -1 0 -1 0 -1\nshl 64 0 0 0 0 0 0\nshr 64 0 -1 0 -1 0 -1\nshl8 -2 -128 0 254 0 63 127 -1\ni8 -128 127 1 -128 -128 -1 -2 -128 127 -128 0\ni8cmp true true true false\ni8inc -128 127 -128\nu8 0 255 1 255 254 255 255 0\n16 -32768 0 -1020 65025\nconv -1 0 -1 0 255 4294967295 18446744073709551615 -1\nconv2 -1 -2147483648 4294967295 65535 -1 4294967295 0\nconv3 4294967295 9223372036854775808 0 -1 4294967295\n",
 	}}
 
 // TestEmitCRun compiles emitted C with a host compiler and runs it, checking what

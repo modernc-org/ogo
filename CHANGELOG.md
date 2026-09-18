@@ -359,6 +359,16 @@ program handed out a reference to storage that was gone by the time it was read.
 
 ### Verified
 
+- The integer edges Go defines and C leaves undefined, against Go on a P2-EDGE:
+  signed overflow of every width in `+`, `-`, `*`, negation, `++` and `--`, and
+  the comparisons that depend on it; the most negative value divided by `-1`, in
+  both quotient and remainder; a shift by 31, 32, 33, 63, 64 and more, signed and
+  unsigned, 8 to 64 bits wide; arithmetic in int8, uint8, int16 and uint16; and
+  every narrowing and sign-changing conversion. Every line matched, with the
+  operands read out of tables and, in a second program, received from another
+  cog, and in the checked, unchecked and release builds. The host passes -fwrapv
+  and cannot see this; the run case is what a backend regeneration is measured
+  against, and the fuzzer never writes these, since C leaves them undefined.
 - Three domain programs over the accessor shapes, each measured against Go with
   the calls counted and run on the board: a device driver over accessors (which
   found the promoted-array and multi-result fixes above), a frame parser over an
