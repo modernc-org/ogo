@@ -9993,6 +9993,7 @@ type W struct {
 	fiface  Any
 	fanon   struct{ d []int }
 	frows   [1][]int
+	faddrs  [1]*Box
 }
 
 var back [4]int
@@ -10010,6 +10011,8 @@ var garray [1]Box
 var giface Any
 var ganon struct{ d []int }
 var grows [1][]int
+var gaddrs [1]*Box
+var gbox Box
 
 var chslice chan []int
 var chaddr chan *int
@@ -10018,6 +10021,7 @@ var charray chan [1]Box
 var chiface chan Any
 var chanon chan struct{ d []int }
 var chrows chan [1][]int
+var chaddrs chan [1]*Box
 
 var gaslice [1][]int
 var gaaddr [1]*int
@@ -10026,6 +10030,7 @@ var gaarray [1][1]Box
 var gaiface [1]Any
 var gaanon [1]struct{ d []int }
 var garows [1][1][]int
+var gaaddrs [1][1]*Box
 
 func workslice(v []int) { done <- len(v) }
 func workaddr(v *int) { done <- *v }
@@ -10034,6 +10039,7 @@ func workarray(v [1]Box) { done <- len(v[0].d) }
 func workiface(v Any) { done <- 1 }
 func workanon(v struct{ d []int }) { done <- len(v.d) }
 func workrows(v [1][]int) { done <- len(v[0]) }
+func workaddrs(v [1]*Box) { done <- len(v[0].d) }
 
 func keepslice(v []int) { gslice = v }
 func keepaddr(v *int) { gaddr = v }
@@ -10042,6 +10048,7 @@ func keeparray(v [1]Box) { garray = v }
 func keepiface(v Any) { giface = v }
 func keepanon(v struct{ d []int }) { ganon = v }
 func keeprows(v [1][]int) { grows = v }
+func keepaddrs(v [1]*Box) { gaddrs = v }
 
 func retslice(v []int) { gslice = idslice(v) }
 func retaddr(v *int) { gaddr = idaddr(v) }
@@ -10050,6 +10057,7 @@ func retarray(v [1]Box) { garray = idarray(v) }
 func retiface(v Any) { giface = idiface(v) }
 func retanon(v struct{ d []int }) { ganon = idanon(v) }
 func retrows(v [1][]int) { grows = idrows(v) }
+func retaddrs(v [1]*Box) { gaddrs = idaddrs(v) }
 
 func idslice(v []int) []int { return v }
 func idaddr(v *int) *int { return v }
@@ -10058,6 +10066,7 @@ func idarray(v [1]Box) [1]Box { return v }
 func idiface(v Any) Any { return v }
 func idanon(v struct{ d []int }) struct{ d []int } { return v }
 func idrows(v [1][]int) [1][]int { return v }
+func idaddrs(v [1]*Box) [1]*Box { return v }
 
 `
 	kinds := []struct{ name, v, okV string }{
@@ -10068,6 +10077,7 @@ func idrows(v [1][]int) [1][]int { return v }
 		{"iface", "Any(&x)", "Any(&gx)"},
 		{"anon", "struct{ d []int }{a[:]}", "struct{ d []int }{back[:]}"},
 		{"rows", "[1][]int{{x}}", "[1][]int{back[:]}"},
+		{"addrs", "[1]*Box{{}}", "[1]*Box{&gbox}"},
 	}
 	sinks := []struct{ name, stmt string }{
 		{"store", "g{K} = s"},
@@ -10353,6 +10363,8 @@ var back, back2 [4]int
 
 var gx, gy int
 
+var gb, gb2 Box
+
 `
 	kinds := []struct {
 		name, typ    string
@@ -10368,6 +10380,8 @@ var gx, gy int
 		// A row with its type elided is a slice literal, whose backing array is this
 		// frame's however it is spelled; the control is a row over package storage.
 		{"elided row", "[1][]int", "[1][]int{{x}}", "[1][]int{{y}}", "[1][]int{back[:]}", "[1][]int{back2[:]}", false},
+		// An element `{...}` of a `[]*T` is `&T{...}`, a temporary of this frame.
+		{"elided address", "[1]*Box", "[1]*Box{{}}", "[1]*Box{{}}", "[1]*Box{&gb}", "[1]*Box{&gb2}", false},
 		{"array", "[1]Box", "[1]Box{{a[:]}}", "[1]Box{{a2[:]}}", "[1]Box{{back[:]}}", "[1]Box{{back2[:]}}", false},
 		{"interface", "Any", "Any(&x)", "Any(&y)", "Any(&gx)", "Any(&gy)", false},
 	}
@@ -10465,13 +10479,13 @@ var gx, gy int
 }
 
 // frameRefFormsSkipped is the number of cells TestEmitCFrameRefForms cannot test
-// yet, each a form one kind does not take for a reason of its own. All thirty-two
-// are the two ARRAY kinds', the array and the elided row, eight forms each in both
-// variants: a typed var list ("a multi-name array var with an initializer is not
-// supported yet"), the three destructured forms ("cannot return an array beside
-// another result"), and the switch and for init declarations, whose array the
-// emitter cannot type yet.
-const frameRefFormsSkipped = 32
+// yet, each a form one kind does not take for a reason of its own. All forty-eight
+// are the three ARRAY kinds', the array, the elided row and the elided address,
+// eight forms each in both variants: a typed var list ("a multi-name array var with
+// an initializer is not supported yet"), the three destructured forms ("cannot
+// return an array beside another result"), and the switch and for init
+// declarations, whose array the emitter cannot type yet.
+const frameRefFormsSkipped = 48
 
 func TestEmitCSliceEscapeRefused(t *testing.T) {
 	for _, test := range []struct {

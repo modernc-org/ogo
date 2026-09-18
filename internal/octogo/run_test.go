@@ -4853,6 +4853,43 @@ func main() {
 		want: "2 2 3 6 c\n9\n3 4 6 9 0\n",
 	},
 	{
+		// An element with its type elided where the element is a pointer, `{1, "a"}`
+		// of a `[]*P`, is `&P{1, "a"}`, as Go reads it: a temporary of this frame in
+		// a function, the package's own object in a package variable's initializer,
+		// at any depth. It was "a type-elided composite literal element is only
+		// supported for a struct element type yet".
+		name: "type-elided addresses in a slice of pointers",
+		src: `type P struct {
+	n    int
+	name string
+}
+
+var gps = []*P{{3, "c"}, {4, "d"}}
+
+var garr = [2]*P{{5, "e"}, nil}
+
+func total(ps []*P) int {
+	t := 0
+	for _, p := range ps {
+		t += p.n
+	}
+	return t
+}
+
+func main() {
+	ps := []*P{{1, "a"}, {n: 2}}
+	ps[1].n++
+	println(ps[0].name, ps[1].n, total(ps), total([]*P{{10, ""}, {20, ""}}))
+	println(gps[1].name, gps[0].n, garr[0].name, garr[1] == nil)
+	gps[0].n = 30
+	println(total(gps))
+	grid := [][]*P{{{7, "g"}}, {{8, "h"}, {9, "i"}}}
+	println(grid[1][1].name)
+}
+`,
+		want: "a 3 4 30\nd 3 e true\n34\ni\n",
+	},
+	{
 		// A struct type written out in its literal, as Go allows: a package
 		// variable's initializer and element, a signal value, a channel element, a
 		// result, an argument, an operand of == and of a switch, an element beside

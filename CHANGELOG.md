@@ -20,6 +20,11 @@ shipped section tells a reader on that version that they have behaviour they do 
 
 ### Language
 
+- **An element of a `[]*T` literal may leave out `&T`.** `[]*P{{1, "a"}, {n: 2}}`
+  is `[]*P{&P{1, "a"}, &P{n: 2}}`, as Go reads it -- the table of pointers a test
+  or a driver registry is written as. Each element is what the written `&P{...}` is:
+  a temporary of this frame, held by the lifetime rules to the frame, and in a
+  package variable's initializer an object of the program.
 - **A row may leave its type out, and a package may hold a slice of slices.**
   `[][]int{{1, 2}, {3}}`, `[2][]string{{"a"}, {"b"}}` and deeper nestings were
   "unsupported operand '{'": each elided row is now what `[]int{1, 2}` written out
@@ -636,7 +641,8 @@ program handed out a reference to storage that was gone by the time it was read.
   with the inner types elided, a call as an element, pointers as elements, an
   indexed literal in a field, sparse indexes, zero literals compared, variables
   as elements. All matched; the program is a run case, as is the suffix battery
-  above. An elided `&P{}` element of a `[]*P` literal is a loud refusal.
+  above. An elided `&P{}` element of a `[]*P` literal was a loud refusal then, and
+  is taken since (see Language).
 - Pointer semantics against Go on the host and a P2-EDGE: pointers to elements,
   fields and pointees, through a pointer to a pointer, equality, a pointer to a
   literal, pointers through calls, a copy of a pointee, a chain walked to nil and
