@@ -4774,6 +4774,85 @@ func main() {
 		want: "4 a bc lit yes\nno bc\n2 3 1\n9\n3 9\n6\n7 4\npkg vars\n",
 	},
 	{
+		// A row may leave its type out where the literal gives it, as Go allows:
+		// `[][]int{{1, 2}, {3}}`. Each row is what `[]int{1, 2}` is -- a backing
+		// array of this frame and a header over it -- evaluated in the order
+		// written, at any depth, in an array of slices as in a slice of them. It was
+		// "unsupported operand '{'".
+		name: "type-elided rows of a slice of slices",
+		src: `type Pt struct {
+	x, y int
+}
+
+var calls int
+
+func v(k int) int {
+	calls = calls*10 + k
+	return k
+}
+
+func sum(rows [][]int) int {
+	t := 0
+	for _, r := range rows {
+		for _, x := range r {
+			t += x
+		}
+	}
+	return t
+}
+
+func main() {
+	rows := [][]int{{v(1), v(2)}, {v(3)}, {}, {v(4), v(5), v(6)}}
+	println(len(rows), len(rows[2]), calls, rows[3][2])
+	calls = 0
+	println(sum([][]int{{v(7)}, {v(8), v(9)}}), calls)
+	names := [][]string{{"x"}, {"y", "z"}}
+	names[1][0] = "w"
+	println(names[1][0], names[1][1])
+	var grid [2][]int = [2][]int{{v(1)}, {v(2), v(3)}}
+	grid[1] = append(grid[1][:1], 7)
+	println(grid[1][1], len(grid[0]))
+	deep := [][][]int{{{1}, {2, 3}}, {{4}}}
+	pts := [][]Pt{{{1, 2}}, {{3, 4}, {5, 6}}}
+	cube := [2][2][]int{{{7}, {8}}, {{9}, {}}}
+	println(deep[0][1][1], pts[1][0].x, cube[0][1][0], len(cube[1][1]))
+}
+`,
+		want: "4 0 123456 6\n24 789\nw z\n7 1\n3 3 8 0\n",
+	},
+	{
+		// The same rows in a package variable's initializer are static objects of
+		// the program, and the table holding them is filled at initialization. A
+		// package slice of slices was refused in either spelling ("a package slice
+		// literal's elements must be constant") until the target could take its
+		// rows in an initializer at all.
+		name: "package tables of slices",
+		src: `type Pt struct {
+	x, y int
+}
+
+var table = [][]int{{1, 2}, {3}}
+
+var spelled = [][]int{[]int{4}, []int{5, 6}}
+
+var names = [][]string{{"a"}, {"b", "c"}}
+
+var deep = [][][]int{{{1}, {2, 3}}, {{4}}}
+
+var pts = [][]Pt{{{1, 2}}, {{3, 4}, {5, 6}}}
+
+var cube = [2][2][]int{{{7}, {8}}, {{9}, {}}}
+
+func main() {
+	println(len(table), table[0][1], table[1][0], spelled[1][1], names[1][1])
+	table[1][0] = 9
+	println(table[1][0])
+	println(deep[0][1][1], deep[1][0][0], pts[1][1].y, cube[1][0][0], len(cube[1][1]))
+}
+`,
+		want: "2 2 3 6 c\n9\n3 4 6 9 0\n",
+	},
+	{
 		// A struct type written out in its literal, as Go allows: a package
 		// variable's initializer and element, a signal value, a channel element, a
 		// result, an argument, an operand of == and of a switch, an element beside

@@ -20,6 +20,14 @@ shipped section tells a reader on that version that they have behaviour they do 
 
 ### Language
 
+- **A row may leave its type out, and a package may hold a slice of slices.**
+  `[][]int{{1, 2}, {3}}`, `[2][]string{{"a"}, {"b"}}` and deeper nestings were
+  "unsupported operand '{'": each elided row is now what `[]int{1, 2}` written out
+  is, evaluated in the order written, and the lifetime rules take it for this
+  frame's storage as they take the written form. In a package variable's
+  initializer the rows are static objects of the program, which is also what lets
+  a package slice of slices exist in either spelling -- `var table = [][]int{...}`
+  was refused as "a package slice literal's elements must be constant".
 - **printf prints a struct.** `%v` of a struct was refused, named or not; it
   prints field by field now, `{1 x}`, with the fields' names under `%+v`, `{a:1
   b:x}`, a pointer to one as `&{1 x}` and a slice or an array of them element by

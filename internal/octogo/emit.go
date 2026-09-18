@@ -2730,8 +2730,8 @@ func (e *emitter) staticInitOK(initExpr []int32) bool {
 	}
 	// An array or slice literal, which a struct literal may hold as an element and
 	// which is as constant as what is inside it.
-	if _, lit, ok := e.soleArrayLit(initExpr); ok {
-		return e.staticLitElementsOK(lit)
+	if typeAST, lit, ok := e.soleArrayLit(initExpr); ok {
+		return e.staticLitElementsOKLevels(lit, e.elemSliceLevels(typeAST))
 	}
 	// Anything that folds to an integer constant is one -- a negative literal, a
 	// shift, a conversion, a named constant, arithmetic over those -- and is
@@ -2816,9 +2816,21 @@ func (e *emitter) signedFloatLit(ast []int32) (string, bool) {
 // CompositeLit node rather than as an initializer's nodes, so it is recognised here
 // rather than by staticInitOK.
 func (e *emitter) staticLitElementsOK(lit Node) bool {
+	return e.staticLitElementsOKLevels(lit, nil)
+}
+
+// staticLitElementsOKLevels is staticLitElementsOK knowing which levels of the
+// literal's elements are slices (see elemSliceLevels): an elided row there, `{1, 2}`
+// of a `[2][]int`, is a slice literal, a header over storage of its own, however
+// constant its values are.
+func (e *emitter) staticLitElementsOKLevels(lit Node, levels []bool) bool {
+	var inner []bool
+	if len(levels) != 0 {
+		inner = levels[1:]
+	}
 	for _, el := range compositeLitElements(lit) {
 		if el.value.sym == CompositeLit {
-			if !e.staticLitElementsOK(el.value) {
+			if len(levels) != 0 && levels[0] || !e.staticLitElementsOKLevels(el.value, inner) {
 				return false
 			}
 			continue
@@ -7603,7 +7615,7 @@ func (e *emitter) emitPackageVarDecl(ast []int32) {
 				// what the scalar and struct forms already did -- staticInitOK
 				// answered for an array literal all along and only this position
 				// never asked it.
-				if !e.staticLitElementsOK(lit) {
+				if !e.staticLitElementsOKLevels(lit, e.elemSliceLevels(litType)) {
 					if a, isArr := e.pkgArrayInit(initExpr); isArr {
 						e.emitPkgArrayVar(e.globalC(names[0]), names[0], a, initExpr)
 						continue
@@ -13602,9 +13614,19 @@ func (e *emitter) emitPositionalValues(values []*Node, elemCType string) {
 		if u := e.underlyingCType(elemCType); (u == cString || e.isSliceCType(u)) && !e.isNilExpr(v.ast) {
 			if _, isConst := e.foldConstString(v.ast); !isConst {
 				base, isName := e.exprIdent(v.ast)
-				if isName {
+				switch {
+				case isName:
 					base = e.varRef(base)
-				} else {
+				case v.sym == CompositeLit:
+					// A row with its type left out, `{1, 2}` of a `[][]int`.
+					name, ok := e.hoistElidedSliceLit(elemCType, *v)
+					if !ok {
+						e.fail("a type-elided slice literal is not supported here yet; write its type, []%s{...}",
+							e.goTypeName(sliceElemFromCName(u)))
+						return
+					}
+					base = name
+				default:
 					base = e.hoist(elemCType, func() { e.emitExpr(v.ast) })
 				}
 				e.emit(e.structBraceC(base, elemCType))
@@ -13856,7 +13878,7 @@ func (e *emitter) emitArrayLitVar(name string, typeAST []int32, lit Node, static
 			// ASSIGNMENT marked it (noteFrameHolder) and the declaration did not, so
 			// declaring the array and then storing it, or an element of it, in a
 			// package variable carried the slice out of the frame.
-			if r, isRef := e.frameRefInLitNode(lit); isRef {
+			if r, isRef := e.frameRefInLitLevels(lit, e.elemSliceLevels(typeAST)); isRef {
 				e.frameHolder[name] = r.origin
 			}
 		}
@@ -13906,6 +13928,14 @@ func (e *emitter) emitArrayLitVar(name string, typeAST []int32, lit Node, static
 	if nm, ok := e.namedSliceLitType(typeAST); ok {
 		cname = nm
 	}
+	e.emitSliceLitVar(name, elem, cname, lit, values, length, static, lead)
+}
+
+// emitSliceLitVar is emitArrayLitVar for a SLICE literal of element C type elem,
+// declaring name, of C type cname, over a backing array of the values. It is split
+// out for a literal whose type is not written where it stands -- a row `{1, 2}` of a
+// `[][]int` -- and which has only its element's type to go by (hoistElidedSliceLit).
+func (e *emitter) emitSliceLitVar(name, elem, cname string, lit Node, values []*Node, length int, static bool, lead func()) {
 	if static {
 		e.globalSliceVars[name] = elem
 		e.globals[name] = cname
@@ -13954,8 +13984,8 @@ func (e *emitter) emitArrayLitVar(name string, typeAST []int32, lit Node, static
 	// (a named array type, or a struct holding one) cannot go in even a local
 	// initializer, C copying no array there. That one is still refused with the
 	// shape that works.
-	if static && !e.staticLitElementsOK(lit) {
-		if _, isArrElem := e.namedArrays[elem]; isArrElem || e.hasArrayField(elem) || e.isSliceCType(elem) {
+	if static && !e.staticLitElementsOKLevels(lit, []bool{e.isSliceCType(e.underlyingCType(elem))}) {
+		if _, isArrElem := e.namedArrays[elem]; isArrElem || e.hasArrayField(elem) {
 			e.fail("a package slice literal's elements must be constant: declare the values as an "+
 				"array and slice it, `var back = [%s]%s{...}` and `var %s = back[:]`", n, e.goTypeName(elem), name)
 			return
@@ -14424,6 +14454,43 @@ func (e *emitter) hoistLitVar(typeAST []int32, lit Node) (string, bool) {
 	return name, true
 }
 
+// hoistElidedSliceLit is hoistLitVar for a slice literal whose type is left out, a
+// row `{1, 2}` of a `[][]int`, taking the type the position gives it, sliceCType.
+// Go admits the elision in an array's, a slice's and a map's element, and each row
+// here becomes what `[]int{1, 2}` becomes: a backing array of this frame and a
+// header over it, or in a package variable's initializer a static object.
+func (e *emitter) hoistElidedSliceLit(sliceCType string, lit Node) (string, bool) {
+	u := e.underlyingCType(sliceCType)
+	if !e.isSliceCType(u) || e.declInit {
+		return "", false
+	}
+	if e.pkgScope {
+		// A static object of the program, as a written `[]int{1, 2}` is there.
+		return e.pkgSliceLitVar(sliceElemFromCName(u), sliceCType, lit)
+	}
+	values, length, ok := e.litPositions(lit)
+	if !ok {
+		return "", false
+	}
+	elem := sliceElemFromCName(u)
+	e.needSlice(elem)
+	name := e.newTmp()
+	saved := e.indent
+	e.indent = 0
+	text := e.captureC(func() {
+		defer e.bindLitValues(lit)()
+		e.emitSliceLitVar(name, elem, sliceCType, lit, values, length, false, e.ind)
+	})
+	e.indent = saved
+	if text == "" {
+		return "", false
+	}
+	for _, line := range strings.Split(strings.TrimSuffix(text, "\n"), "\n") {
+		e.prologue = append(e.prologue, line+"\n")
+	}
+	return name, true
+}
+
 // pkgLitVar is hoistLitVar for a SLICE literal in a package variable's initializer,
 // which runs in ogo_pkg_init and whose frame is gone when it returns: the literal
 // becomes a static object of the program (see pkgLitObject), declared ahead of the
@@ -14434,14 +14501,37 @@ func (e *emitter) hoistLitVar(typeAST []int32, lit Node) (string, bool) {
 // tables, which a package variable has none of -- and had it been made, its backing
 // array would have died with the frame the header points into.
 func (e *emitter) pkgLitVar(typeAST []int32, lit Node) (string, bool) {
+	elem, isSlice := e.litSliceType(typeAST)
+	if !isSlice {
+		return "", false
+	}
+	cname := sliceCName(elem)
+	if nm, isNamed := e.namedSliceLitType(typeAST); isNamed {
+		cname = nm
+	}
+	return e.pkgSliceLitVar(elem, cname, lit)
+}
+
+// pkgSliceLitVar is pkgLitVar for a slice literal of element C type elem and slice
+// C type cname, which is all an elided row `{1, 2}` of a package `[2][]int` has to
+// go by (hoistElidedSliceLit).
+func (e *emitter) pkgSliceLitVar(elem, cname string, lit Node) (string, bool) {
 	if e.locals == nil {
 		e.locals = map[string]string{}
 	}
 	name := fmt.Sprintf("ogo_plit_%d", e.makeN)
 	e.makeN++
-	if e.staticLitElementsOK(lit) {
+	if e.staticLitElementsOKLevels(lit, []bool{e.isSliceCType(e.underlyingCType(elem))}) {
 		// Constant elements: the declarations are static initializers as they are.
-		decls := e.captureC(func() { e.emitArrayLitVar(name, typeAST, lit, true) })
+		values, length, ok := e.litPositions(lit)
+		if !ok {
+			return "", false
+		}
+		e.needSlice(elem)
+		decls := e.captureC(func() {
+			defer e.bindLitValues(lit)()
+			e.emitSliceLitVar(name, elem, cname, lit, values, length, true, func() { e.emit("static ") })
+		})
 		if decls == "" {
 			return "", false
 		}
@@ -14457,20 +14547,12 @@ func (e *emitter) pkgLitVar(typeAST []int32, lit Node) (string, bool) {
 	if !ok {
 		return "", false
 	}
-	elem, isSlice := e.litSliceType(typeAST)
-	if !isSlice {
-		return "", false
-	}
 	// An element that is itself an array cannot go in a local initializer either, C
 	// copying no array there: left to the refusal, with the shape that works.
-	if _, isArrElem := e.namedArrays[elem]; isArrElem || e.hasArrayField(elem) || e.isSliceCType(elem) {
+	if _, isArrElem := e.namedArrays[elem]; isArrElem || e.hasArrayField(elem) {
 		return "", false
 	}
 	e.needSlice(elem)
-	cname := sliceCName(elem)
-	if nm, isNamed := e.namedSliceLitType(typeAST); isNamed {
-		cname = nm
-	}
 	e.globalSliceVars[name], e.globals[name] = elem, cname
 	e.sliceVars[name], e.locals[name] = elem, cname
 	if length == 0 {
@@ -35286,16 +35368,13 @@ func (e *emitter) soleSliceLit(ast []int32) (string, Node, bool) {
 // (`[]Box{{a[:]}}`). Nesting is covered because each element is asked of frameRefOf,
 // which comes back here for a literal of its own.
 func (e *emitter) frameRefInLit(ast []int32) (frameRef, bool) {
-	lit, ok := Node{}, false
 	if _, l, isNamed := e.soleCompositeLit(ast); isNamed {
-		lit, ok = l, true
-	} else if _, l, isBracket := e.soleArrayLit(ast); isBracket {
-		lit, ok = l, true
+		return e.frameRefInLitNode(l)
 	}
-	if !ok {
-		return frameRef{}, false
+	if typeAST, l, isBracket := e.soleArrayLit(ast); isBracket {
+		return e.frameRefInLitLevels(l, e.elemSliceLevels(typeAST))
 	}
-	return e.frameRefInLitNode(lit)
+	return frameRef{}, false
 }
 
 // frameRefInLitNode is frameRefInLit for the literal's own node, which is all a
@@ -35306,9 +35385,25 @@ func (e *emitter) frameRefInLit(ast []int32) (frameRef, bool) {
 // with the type written out, was refused -- and the elided spelling is the one a
 // program uses.
 func (e *emitter) frameRefInLitNode(lit Node) (frameRef, bool) {
+	return e.frameRefInLitLevels(lit, nil)
+}
+
+// frameRefInLitLevels is frameRefInLitNode knowing, level by level, which elements
+// are SLICES (see elemSliceLevels): an elided element standing where a slice does,
+// the row `{1, 2}` of a `[2][]int`, is a slice literal, whose backing array is this
+// frame's -- the same storage `[]int{1, 2}` written out there is, and was refused
+// for, while the elided row passed every rule into a package variable.
+func (e *emitter) frameRefInLitLevels(lit Node, levels []bool) (frameRef, bool) {
+	var inner []bool
+	if len(levels) != 0 {
+		inner = levels[1:]
+	}
 	for _, el := range compositeLitElements(lit) {
 		if el.value.sym == CompositeLit {
-			if r, isRef := e.frameRefInLitNode(el.value); isRef {
+			if len(levels) != 0 && levels[0] {
+				return litRef(), true
+			}
+			if r, isRef := e.frameRefInLitLevels(el.value, inner); isRef {
 				return r, true
 			}
 			continue
@@ -35318,6 +35413,32 @@ func (e *emitter) frameRefInLitNode(lit Node) (frameRef, bool) {
 		}
 	}
 	return frameRef{}, false
+}
+
+// elemSliceLevels answers, for a bracketed literal type, whether its elements are
+// slices, then whether theirs are, and so on inward: `[2][]int` is [true], `[][2][]T`
+// is [false, true]. It stops at the first element type that is not bracketed, whose
+// elements -- a struct's fields -- are no level of it.
+func (e *emitter) elemSliceLevels(typeAST []int32) (levels []bool) {
+	for range 16 {
+		var inner []int32
+		for n := range it(typeAST) {
+			if n.sym == Type {
+				inner = n.ast
+			}
+		}
+		if inner == nil {
+			return levels
+		}
+		kids := slices.Collect(it(inner))
+		if len(kids) == 0 || kids[0].sym != 0 || e.f.ch(kids[0].tok) != LBRACK {
+			return levels
+		}
+		_, isSlice := e.sliceType(inner)
+		levels = append(levels, isSlice)
+		typeAST = inner
+	}
+	return levels
 }
 
 // litChainFrameRef is frameRefOf for a bracketed literal read through a chain of
@@ -35339,7 +35460,7 @@ func (e *emitter) litChainFrameRef(ast []int32) (frameRef, bool) {
 	if e.litChainViewsLit(typeAST, steps) {
 		return litRef(), true
 	}
-	return e.frameRefInLitNode(lit)
+	return e.frameRefInLitLevels(lit, e.elemSliceLevels(typeAST))
 }
 
 // litChainViewsLit reports a chain after a bracketed literal whose value is a slice
