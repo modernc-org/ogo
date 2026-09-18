@@ -6602,9 +6602,20 @@ func (e *emitter) ifaceBraceC(iface string, rhs []int32) (string, bool) {
 	if operand, ok := e.ifaceConvOperand(iface, rhs); ok {
 		return e.ifaceBraceC(iface, operand)
 	}
-	// Already an interface value: its two words, copied as they stand.
+	// Already an interface value: its two words, braced. Copied as the value stands,
+	// the target's C compiler refused it inside an array initializer -- "expected
+	// pointer to void but got _struct__Shape" of `[2]Shape{sh, other}`, which the
+	// host's compiler takes -- the limit structBraceC answers for a struct value. A
+	// value that does something is bound once first.
 	if ct, ok := e.inferCType(rhs); ok && ct == iface {
-		return e.captureC(func() { e.emitExpr(rhs) }), true
+		text := e.captureC(func() { e.emitExpr(rhs) })
+		if e.exprHasEffect(rhs) {
+			if e.declInit {
+				return text, true
+			}
+			text = e.hoist(iface, func() { e.emit(text) })
+		}
+		return "{(" + text + ").data, (" + text + ").vt}", true
 	}
 	concrete, data, _, ok := e.ifaceOperand(rhs)
 	if !ok || !e.needVTable(iface, concrete) {

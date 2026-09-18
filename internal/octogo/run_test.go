@@ -30144,6 +30144,97 @@ func main() {
 }
 `,
 		want: "G1 55 210 465 820 1275 1830\nG2 152535 3 9\nG3 30 4 0 false\nG4 7 true\nG5 314\n",
+	}, {
+		// `[2]Shape{sh, other}` of interface VARIABLES was emitted as an array
+		// initializer of the two structs as they stand, which the target's compiler
+		// refuses ("expected pointer to void but got _struct__Shape") and the host's
+		// takes. Braced as their two words now (2026-09-18).
+		name: "an array literal of interface values",
+		src: `type Shape interface {
+	Area() int
+}
+
+type Sq struct {
+	s int
+}
+
+func (q *Sq) Area() int {
+	return q.s * q.s
+}
+
+var s1, s2 Sq
+
+func main() {
+	var sh Shape = &s1
+	var other Shape = &s2
+	arr := [2]Shape{sh, other}
+	n := 0
+	for _, cur := range arr {
+		n += cur.Area() + 1
+	}
+	println(n)
+}
+`,
+		want: "2\n",
+	}, {
+		// The same in every position an interface VALUE fills an array element:
+		// a package array and slice of interface variables, a local slice with
+		// nil among them, calls, and a struct field beside them. The target's
+		// compiler refused the four array and slice forms (2026-09-18).
+		name: "interface values as array and slice elements, local and package-level",
+		src: `type Shape interface {
+	Area() int
+}
+
+type Sq struct {
+	s int
+}
+
+func (q *Sq) Area() int {
+	return q.s * q.s
+}
+
+type Box struct {
+	sh Shape
+	n  int
+}
+
+var s1 = Sq{2}
+var s2 = Sq{3}
+var g1 Shape = &s1
+var g2 Shape = &s2
+var pkgArr = [2]Shape{g1, g2}
+var pkgSl = []Shape{g2, g1}
+
+var calls int
+
+func pick(k int) Shape {
+	calls = calls*10 + k
+	if k == 1 {
+		return g1
+	}
+	return g2
+}
+
+func main() {
+	sh, other := g1, g2
+	sl := []Shape{sh, other, nil}
+	boxes := [2]Box{{sh, 1}, {other, 2}}
+	b := Box{other, 3}
+	calls = 0
+	calc := [3]Shape{pick(1), pick(2), pick(1)}
+	sum := 0
+	for _, x := range sl {
+		if x != nil {
+			sum = sum*100 + x.Area()
+		}
+	}
+	println(sum, len(sl), sl[2] == nil, boxes[0].sh.Area(), boxes[1].sh.Area(), b.sh.Area(), b.n)
+	println(calc[0].Area(), calc[1].Area(), calc[2].Area(), calls)
+	println(pkgArr[0].Area(), pkgArr[1].Area(), pkgSl[0].Area(), pkgSl[1].Area(), pkgArr[0] == g1)
+}
+`,
+		want: "409 3 true 4 9 9 3\n4 9 4 121\n4 9 9 4 true\n",
 	}}
 
 // TestEmitCRun compiles emitted C with a host compiler and runs it, checking what

@@ -129,6 +129,12 @@ shipped section tells a reader on that version that they have behaviour they do 
 
 ### Fixed
 
+- **An array or a slice literal of interface values did not build for the
+  target.** `[2]Shape{sh, other}`, `[]Shape{sh, other, nil}`, `[3]Shape{pick(1),
+  pick(2)}` and a package-level array of interface variables wrote each value into
+  the C initializer as the struct it is, which the target's compiler refuses
+  ("incompatible types in assignment") and the host's takes, so the host tests were
+  green. Each element is braced as its two words now.
 - **A composite literal in a switch case crashed the compiler.** `switch p { case
   P{1, 2}: }` and `const c = P{1, 2}` panicked the checker ("factor-range1 TODO
   ... CompositeLit"): the constant folder, which a case is put through to find
