@@ -1,0 +1,87 @@
+// A channel goes only where Go lets it: a bidirectional channel narrows to either
+// direction, and nothing widens a direction back, turns it around or changes the
+// element -- in a declaration, an assignment, an argument, a return, a literal, a
+// send, a conversion and a comparison.
+
+type Source <-chan int
+
+type Sink chan<- int
+
+type Pipe chan int
+
+type Ports struct {
+	in  <-chan int
+	out chan<- int
+}
+
+var gbi chan int
+
+var gro <-chan int = gbi
+
+// ERROR cannot use gro \(variable of type <-chan int\) as chan int value in variable declaration
+var gbad chan int = gro
+
+func take(c chan int) {}
+
+func give(c chan<- int) {}
+
+func many(cs ...chan int) {}
+
+func widen(ro <-chan int) chan int {
+	// ERROR cannot use ro \(variable of type <-chan int\) as chan int value in return statement
+	return ro
+}
+
+func get() <-chan int { return gro }
+
+func main() {
+	var bi chan int
+	var ro <-chan int = bi
+	var so chan<- int = bi
+	var p Ports
+	// ERROR cannot use ro \(variable of type <-chan int\) as chan<- int value in variable declaration
+	var c1 chan<- int = ro
+	// ERROR cannot use bi \(variable of type chan int\) as chan string value in variable declaration
+	var c2 chan string = bi
+	// ERROR cannot use so \(variable of type chan<- int\) as Source value in variable declaration
+	var c3 Source = so
+	// ERROR cannot use p.in \(variable of type <-chan int\) as Sink value in variable declaration
+	var c4 Sink = p.in
+	// ERROR cannot use get\(\) \(value of type <-chan int\) as chan int value in variable declaration
+	var c5 chan int = get()
+	// ERROR cannot use ro \(variable of type <-chan int\) as chan int value in argument to take
+	take(ro)
+	// ERROR cannot use ro \(variable of type <-chan int\) as chan<- int value in argument to give
+	give(ro)
+	// ERROR cannot use ro \(variable of type <-chan int\) as chan int value in argument to many
+	many(bi, ro)
+	inf := ro
+	// ERROR cannot send to receive-only channel inf
+	inf <- 1
+	b2 := bi
+	// ERROR cannot use ro \(variable of type <-chan int\) as chan int value in assignment
+	b2 = ro
+	// ERROR cannot use ro \(variable of type <-chan int\) as chan<- int value in assignment
+	p.out = ro
+	// ERROR cannot use so \(variable of type chan<- int\) as <-chan int value in struct literal
+	q := Ports{in: so}
+	// ERROR cannot use ro \(variable of type <-chan int\) as chan int value in array or slice literal
+	cs := []chan int{bi, ro}
+	var cc chan chan int
+	// ERROR cannot use ro \(variable of type <-chan int\) as chan int value in send
+	cc <- ro
+	var pp Pipe
+	// ERROR cannot convert pp \(variable of chan type Pipe\) to type Source
+	s := Source(pp)
+	// ERROR cannot convert ro \(variable of type <-chan int\) to type Pipe
+	s2 := Pipe(ro)
+	// ERROR mismatched types <-chan int and chan<- int
+	println(ro == so)
+	// ERROR cannot use pp of type Pipe as type Source
+	var c6 Source = pp
+	var fs func(chan<- int)
+	// ERROR cannot use fs \(value of type func\(chan<- int\)\) as func\(chan int\) value
+	var fb func(chan int) = fs
+	_, _, _, _, _, _, _, _ = c1, c2, c3, c4, c5, q, cs, s
+	_, _, _, _ = s2, c6, b2, fb
+}

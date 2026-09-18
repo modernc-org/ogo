@@ -1,0 +1,55 @@
+// COMPILE
+
+// What a channel may be assigned, passed, converted and compared as: a
+// bidirectional channel narrows to either direction, named or not; a defined
+// channel type and its unnamed spelling are interchangeable; and a directional
+// channel keeps its direction through a second name.
+
+type Source <-chan int
+
+type Sink chan<- int
+
+type Pipe chan int
+
+type Ports struct {
+	in  <-chan int
+	out chan<- int
+}
+
+var work chan int
+
+func take(c chan int) {}
+
+func give(c chan<- int) {}
+
+func recvOnly() <-chan int { return work }
+
+func narrow(c chan int) <-chan int { return c }
+
+func main() {
+	var bi chan int
+	var ro <-chan int = bi
+	var so chan<- int = bi
+	var src Source = bi
+	var snk Sink = bi
+	var pp Pipe = bi
+	var ro2 <-chan int = pp
+	var bi2 chan int = pp
+	take(pp)
+	give(bi)
+	give(pp)
+	p := Ports{in: bi, out: pp}
+	p.in = ro
+	p.out = so
+	s := Source(bi)
+	t := Pipe(bi)
+	u := Source(ro)
+	alias := ro
+	var again <-chan int = alias
+	var cs = []<-chan int{bi, ro, pp}
+	var fs func(chan<- int) = give
+	println(ro == bi, so == bi, pp == bi, ro == nil, pp != ro)
+	_, _, _, _, _, _, _ = src, snk, ro2, bi2, p, s, t
+	_, _, _, _, _ = u, again, cs, fs, recvOnly
+	_ = narrow
+}

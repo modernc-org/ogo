@@ -38,7 +38,15 @@ string_lit             = raw_string_lit | interpreted_string_lit .
 raw_string_lit         = '`' { `[^\x60]` } '`' .
 interpreted_string_lit = '"' { `[^"\\\n\r]` | unicode_value | byte_value } '"' .
 Type = [ identifier "." ] identifier
-	| "chan" Type
+	| "chan" [ "<-" ] ChanElemType
+	| "<-" "chan" Type
+	| "[" [ Expression ] "]" Type
+	| "*" Type
+	| InterfaceType
+	| StructType
+	| "func" Signature .
+ChanElemType = [ identifier "." ] identifier
+	| "chan" [ "<-" ] ChanElemType
 	| "[" [ Expression ] "]" Type
 	| "*" Type
 	| InterfaceType

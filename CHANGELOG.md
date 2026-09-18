@@ -20,6 +20,19 @@ shipped section tells a reader on that version that they have behaviour they do 
 
 ### Language
 
+- **Directional channel types.** `chan<- T` and `<-chan T` are in the language and
+  mean what they mean in Go: a send on a receive-only channel, a receive, range or
+  select from a send-only one and a close of a receive-only one are refused in Go's
+  words, and a bidirectional channel narrows to either direction wherever a value
+  is assigned, passed, returned, sent or put in a literal -- nothing widens it back
+  or turns it around, by assignment or by conversion. `ogo fmt` writes both the way
+  gofmt does. What cannot be written is a receive-only element after a `chan`,
+  `chan<- <-chan T` and `chan (<-chan T)`, where a named element type stands in.
+- **A channel's type is compared where it is assigned.** `var c chan string = bi`
+  for a `chan int` bi built, with only flexcc's warning about C the program never
+  wrote, into a binary reading a string out of an int's cell; two channels of
+  different elements compared the same way. Both are refused now, as Go refuses
+  them.
 - **Structs that hold arrays are comparable.** `a == b` of a struct with an array
   field was refused -- "struct comparison with an array field is not supported: the
   backend cannot pass a struct with an array field by value" -- where Go compares

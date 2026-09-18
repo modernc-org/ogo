@@ -47,6 +47,10 @@ type formatter struct {
 	// it before the walk. An operator token not in the map prints spaced.
 	tightOps map[int32]bool
 
+	// sendArrows holds every "<-" that is a channel type's SEND-ONLY marker, the one
+	// right after "chan" in "chan<- int"; markSendArrows fills it before the walk.
+	sendArrows map[int32]bool
+
 	// Elastic Tabstops maps
 	targetCol2          map[int32]int // token index -> absolute target column for Col2 (Types)
 	targetComment       map[int32]int // token index -> absolute target column for inline comments
@@ -276,6 +280,17 @@ func needsSpace(prevPrev, prev, curr Symbol, c formatterCtx) bool {
 		return false
 	case curr == ELLIPSIS:
 		return c.inParamDecl
+	// A channel type's direction binds to its keyword, as gofmt writes it: "chan<-
+	// int" and "<-chan int". An arrow right after "chan" is the send-only marker,
+	// save after the "chan" of a "<-chan", whose element may be receive-only in
+	// turn: "<-chan <-chan int". A gap measured without token indexes tells the
+	// two apart by neither, and still comes out the same width.
+	case curr == ARROW && prev == CHAN:
+		return !c.sendArrows[c.currTokIdx]
+	case prev == ARROW && c.sendArrows[c.prevTokIdx]:
+		return true
+	case prev == ARROW && curr == CHAN:
+		return false
 	case prev == ARROW:
 		if prevPrev == IDENT || prevPrev == RBRACK || prevPrev == RPAREN {
 			return true
@@ -674,6 +689,7 @@ type formatterCtx struct {
 	prevTokIdx int32
 	currTokIdx int32
 	tight      map[int32]bool
+	sendArrows map[int32]bool // see formatter.sendArrows
 	// nextTok is the token AFTER the one this gap precedes, which two rules need:
 	// a binary "+"/"-" directly before a unary one of the same sign takes a space,
 	// so the pair cannot be read as "++" or "--" (see needsSpace).
@@ -1355,7 +1371,7 @@ func FormatFile(fn string, b []byte, w io.Writer) (err error) {
 				sepCtx := c
 				sepCtx.nextTok = f.tokAfter(tokIdx)
 				sepCtx.prevTokIdx, sepCtx.currTokIdx = f.prevTokIdx, tokIdx
-				sepCtx.tight = f.tightOps
+				sepCtx.tight, sepCtx.sendArrows = f.tightOps, f.sendArrows
 				f.formatSep(seps, sepIndent, Symbol(tok.Ch), sepCtx)
 				f.tabs(f.nl, c.indentLevel+indentDelta)
 
@@ -1386,6 +1402,8 @@ func FormatFile(fn string, b []byte, w io.Writer) (err error) {
 	f.tightOps = map[int32]bool{}
 	f.indexDepth = map[int32]int{}
 	f.computeTightOps(f.ast, 1)
+	f.sendArrows = map[int32]bool{}
+	f.markSendArrows(f.ast)
 	f.alignFuncBraces(f.ast)
 	f.skipTok = map[int32]bool{}
 	f.markRedundantParens(f.ast)
@@ -1584,7 +1602,7 @@ func (f *formatter) measureFuncHeader(fd Node) int {
 				if !first {
 					cc := c
 					cc.prevTokIdx, cc.currTokIdx = prevIdx, tokIdx
-					cc.tight = f.tightOps
+					cc.tight, cc.sendArrows = f.tightOps, f.sendArrows
 					if needsSpace(prevPrev, prev, curr, cc) {
 						width++
 					}
@@ -1598,6 +1616,25 @@ func (f *formatter) measureFuncHeader(fd Node) int {
 	}
 	walk(fd.ast, formatterCtx{})
 	return width
+}
+
+// markSendArrows fills sendArrows: the "<-" of a Type that begins "chan <-" (a
+// ChanElemType reads as a Type). The grammar is what tells it from a receive-only
+// type's "<-", which is the same token in front of the keyword instead.
+func (f *formatter) markSendArrows(ast []int32) {
+	for c := range it(ast) {
+		if c.sym == 0 {
+			continue
+		}
+		if c.sym == Type {
+			kids := slices.Collect(it(c.ast))
+			if len(kids) >= 2 && kids[0].sym == 0 && kids[1].sym == 0 &&
+				Symbol(f.p.Token(kids[0].tok).Ch) == CHAN && Symbol(f.p.Token(kids[1].tok).Ch) == ARROW {
+				f.sendArrows[kids[1].tok] = true
+			}
+		}
+		f.markSendArrows(c.ast)
+	}
 }
 
 // markRedundantParens records the tokens of parenthesis pairs that directly wrap

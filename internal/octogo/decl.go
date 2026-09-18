@@ -434,6 +434,12 @@ type VarDeclaration struct {
 	chanElemPtr     bool  // the element is a POINTER; chanElemName names the pointee
 	elemTypeName    Token // an array's or slice's element type NAME, for a field reached through an index
 
+	// chanType is the channel type of a variable that has no written one: `c := ro`
+	// takes ro's, `c := src()` the result's, as written there. It is what a direction
+	// and an element's identity are read from when declType is nil -- a receive-only
+	// channel bound to a second name is still receive-only. See chanTypeNode.
+	chanType TypeNode
+
 	// elemTypeNode is an array's or slice's ELEMENT type as resolved, kept for the
 	// questions no flat field can carry: a channel has no Kind and no name, so `var
 	// qs [7]chan req` records nothing about its elements without this, and `qs[i]`
@@ -447,6 +453,15 @@ type VarDeclaration struct {
 	declType  TypeNode
 	init      Node
 	declScope *Scope
+}
+
+// chanTypeNode is the variable's channel type as some declaration wrote it: its own
+// written type, or the one it took from its initializer. nil when neither is known.
+func (d *VarDeclaration) chanTypeNode() TypeNode {
+	if d.declType != nil {
+		return d.declType
+	}
+	return d.chanType
 }
 
 // FuncDeclaration represents a named function.

@@ -1,0 +1,36 @@
+// COMPILE
+
+// Directional channel types: a producer sends on a send-only channel, a consumer
+// receives from a receive-only one, and a bidirectional channel is passed to both.
+
+type Source <-chan int
+
+var work chan int
+var results chan int
+
+func producer(out chan<- int, n int) {
+	for i := 0; i < n; i++ {
+		out <- i
+	}
+	close(out)
+}
+
+func consumer(in <-chan int, out chan<- int) {
+	s := 0
+	for v := range in {
+		s += v
+	}
+	out <- s
+}
+
+func drain(src Source) int {
+	return <-src
+}
+
+func main() {
+	go producer(work, 3)
+	go consumer(work, results)
+	var ro <-chan int = results
+	var so chan<- int = work
+	println(<-ro, so != nil, drain(results))
+}

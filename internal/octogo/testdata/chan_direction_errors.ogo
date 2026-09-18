@@ -1,0 +1,42 @@
+// A channel's direction is enforced: no send on a receive-only channel, no
+// receive, range or select receive from a send-only one, no close of a
+// receive-only one.
+
+type Sink chan<- int
+
+type Ports struct {
+	in  <-chan int
+	out chan<- int
+}
+
+func use(in <-chan int, out chan<- int, snk Sink, p Ports, bank [2]<-chan int) {
+	// ERROR cannot send to receive-only channel in
+	in <- 1
+	// ERROR cannot receive from send-only channel out
+	v := <-out
+	// ERROR range out: receive from send-only channel
+	for x := range out {
+		println(x)
+	}
+	// ERROR cannot close receive-only channel in
+	close(in)
+	// ERROR cannot receive from send-only channel snk
+	w := <-snk
+	// ERROR cannot receive from send-only channel p.out
+	y := <-p.out
+	// ERROR cannot send to receive-only channel p
+	p.in <- 2
+	// ERROR cannot send to receive-only channel bank
+	bank[0] <- 3
+	select {
+	// ERROR cannot receive from send-only channel out
+	case z := <-out:
+		println(z)
+	// ERROR cannot send to receive-only channel in
+	case in <- 4:
+	}
+	println(v, w, y)
+}
+
+func main() {
+}

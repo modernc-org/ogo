@@ -14445,6 +14445,73 @@ func main() {
 		want: "got 1\ngot 2\ngot 3\ndrained\n0 0\n7 true true\n0 false false\n0 false\n",
 	},
 	{
+		// Directional channel types, as a pipeline is written: a producer given a
+		// named send-only type, a stage holding one end of each kind, a consumer
+		// taking a named receive-only type, and an accessor handing out a
+		// receive-only view. Directions are the checker's; at run time the three
+		// spellings are one cell.
+		name: "directional channels: a pipeline",
+		src: `type Source <-chan int
+
+type Sink chan<- int
+
+type Stage struct {
+	in  <-chan int
+	out chan<- int
+	k   int
+}
+
+var raw chan int
+var mid chan int
+var done chan int
+
+func producer(out Sink, n int) {
+	for i := 1; i <= n; i++ {
+		out <- i
+	}
+	close(out)
+}
+
+func (s *Stage) run() {
+	for v := range s.in {
+		s.out <- v * s.k
+	}
+	close(s.out)
+}
+
+func results() <-chan int { return done }
+
+func sum(in Source) int {
+	t := 0
+	for v := range in {
+		t += v
+	}
+	return t
+}
+
+var st Stage
+
+func main() {
+	go producer(raw, 4)
+	st = Stage{in: raw, out: mid, k: 10}
+	go st.run()
+	var ro <-chan int = mid
+	in := ro
+	println(sum(in))
+	var src Source = done
+	println(src == results(), ro == mid)
+	go func() {
+		done <- 7
+	}()
+	select {
+	case v := <-results():
+		println("result", v)
+	}
+}
+`,
+		want: "100\ntrue true\nresult 7\n",
+	},
+	{
 		// A CLOSED channel is always ready, and a select has to know it: the poll's
 		// non-blocking receive reported "nothing yet" for one, so a select with no
 		// default polled for ever and a select WITH one took the default -- a silent

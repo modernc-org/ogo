@@ -26,8 +26,9 @@ This distinction matters because it is easy to get backwards. The grammar was
 frozen early to reach a proof of concept, and the notes written then ("OctoGo does
 not support X") have been read since as design decisions when they were only
 status. Floats, the sized integer types, `&&`/`||`, three-clause and range `for`,
-labels, and multi-package programs were all once "not supported" and are now in
-the language. **Before treating any such note as settled, check whether the
+labels, multi-package programs and directional channels were all once "not
+supported" and are now in the language (specs.go called the last "To maintain a
+strict LL(1) grammar" -- it took one extra production, 2026-09-18). **Before treating any such note as settled, check whether the
 feature actually works** -- and if a stale note is found, fix the note.
 
 The deliberate exceptions, all rooted in the Propeller 2 hardware:

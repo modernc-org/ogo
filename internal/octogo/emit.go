@@ -2868,9 +2868,14 @@ func (e *emitter) pkgInitDefs() string {
 // needsPkgInit reports whether the package has anything to initialize.
 func (e *emitter) needsPkgInit() bool { return len(e.pkgInit) != 0 }
 
-// chanType recognises a channel type `chan T`, returning its element C type.
+// chanType recognises a channel type `chan T`, returning its element C type. A
+// directional one, `chan<- T` or `<-chan T`, is the same cell: the direction is
+// the checker's to enforce and leaves nothing for C to know.
 func (e *emitter) chanType(typeAST []int32) (elem string, ok bool) {
 	nodes := slices.Collect(it(typeAST))
+	if len(nodes) != 0 && nodes[0].sym == 0 && e.f.ch(nodes[0].tok) == ARROW {
+		nodes = nodes[1:]
+	}
 	if len(nodes) == 0 || nodes[0].sym != 0 || e.f.ch(nodes[0].tok) != CHAN {
 		return "", false
 	}

@@ -145,6 +145,11 @@ func baseSym(s Symbol) Symbol {
 		return UnaryExpr
 	case HeaderFactor:
 		return Factor
+	case ChanElemType:
+		// A channel's element type is a Type that cannot start with "<-", which is
+		// what keeps `chan<- T` LL(1) (see specs.go's Type production); to everything
+		// reading the tree it is a Type.
+		return Type
 	default:
 		return s
 	}
@@ -2323,6 +2328,7 @@ func (f *File) checkReturnValue(s *Scope, rt retResult, e Node) {
 	// Pointer-ness first: a *P result has no predeclared Kind, so the guard below
 	// would return before ever asking.
 	wantPtr := f.isPointerType(s, rt.typeNode)
+	f.checkChanAssign(s, s, rt.typeNode, e, "return statement")
 	f.checkPointerValue(s, wantPtr, f.typeNodeString(rt.typeNode, false), e, "return statement")
 	f.checkImplements(s, f.typeNodeString(rt.typeNode, false), e, "return statement")
 	f.checkDefinedType(s, f.typeNodeString(rt.typeNode, false), e, "return statement")
@@ -2714,6 +2720,9 @@ func (f *File) checkForHeader(s *Scope, results []retResult, kw string, n Node) 
 func (f *File) checkRange(s *Scope, kw string, fi forInfo) {
 	f.checkNames(s, fi.rangeExpr)
 	elem, hasElem, isInt, isChan := f.rangeElem(s, fi.rangeExpr)
+	if isChan && f.exprChanDir(s, fi.rangeExpr) == sendDir {
+		f.err(f.tok(fi.rangeExpr.Pos()).Position(), "invalid operation: range %s: receive from send-only channel", f.exprSource(fi.rangeExpr))
+	}
 	elemName, elemQual, _ := f.rangeElemNamed(s, fi.rangeExpr)
 	declared := false
 	switch {
@@ -3460,6 +3469,8 @@ func (f *File) inferChanFrom(s *Scope, vd *VarDeclaration, init Node) bool {
 		return false
 	}
 	vd.isChan, vd.chanElemKind, vd.hasChanElemKind = true, elem, hasElem
+	// Its TYPE as written where it came from: `c := ro` is as receive-only as ro.
+	vd.chanType, _ = f.exprChanTypeNode(s, init)
 	// The element's NAME as well as its Kind: a channel of a named type is checked
 	// for identity, and a named interface element has no Kind at all to be checked by.
 	if id, ok := f.exprIdent(init); ok {
@@ -4720,6 +4731,7 @@ func (f *File) declareLocalVar(s *Scope, n Node) {
 			f.checkNilAssignable(s, nilTarget(kind, hasKind, typeName), e, "variable declaration")
 			f.checkFuncAssign(s, funcSig, e, "variable declaration")
 			if len(names) == len(initExprs) {
+				f.checkChanAssign(s, s, declType, e, "variable declaration")
 				f.checkPointerValue(s, isPtr, f.typeNodeString(declType, false), e, "variable declaration")
 				f.checkImplements(s, f.typeNodeString(declType, false), e, "variable declaration")
 				f.checkDefinedType(s, f.typeNodeString(declType, false), e, "variable declaration")
@@ -5423,7 +5435,7 @@ func (f *File) typeNodeString(tn TypeNode, withNames bool) string {
 		}
 	case *TypeNodeChan:
 		if inner := f.typeNodeString(x.TypeNode, withNames); inner != "" {
-			return "chan " + inner
+			return chanSpelling(x, inner)
 		}
 	case *TypeNodeSlice:
 		if inner := f.typeNodeString(x.TypeNode, withNames); inner != "" {
@@ -5435,6 +5447,24 @@ func (f *File) typeNodeString(tn TypeNode, withNames bool) string {
 	// An array (its length is an expression), a struct or interface literal: not
 	// rendered, so no comparison is made rather than a wrong one.
 	return ""
+}
+
+// chanSpelling renders a channel type around its element's rendering, inner, with
+// its direction: a `chan<- int` and a `<-chan int` are types of their own, and so
+// are the function types taking one. A bidirectional channel of a receive-only one
+// is parenthesized as Go prints it, `chan (<-chan int)`, being the one spelling that
+// `chan <-chan int` does not mean.
+func chanSpelling(x *TypeNodeChan, inner string) string {
+	switch x.Dir {
+	case sendDir:
+		return "chan<- " + inner
+	case recvDir:
+		return "<-chan " + inner
+	}
+	if e, ok := x.TypeNode.(*TypeNodeChan); ok && e.Dir == recvDir {
+		return "chan (" + inner + ")"
+	}
+	return "chan " + inner
 }
 
 // sigString renders a signature as "func(T, U) V", the form typeNodeString gives a
@@ -5510,7 +5540,7 @@ func (f *File) typeNodeIdentity(tn TypeNode) string {
 		}
 	case *TypeNodeChan:
 		if inner := f.typeNodeIdentity(x.TypeNode); inner != "" {
-			return "chan " + inner
+			return chanSpelling(x, inner)
 		}
 	case *TypeNodeSlice:
 		if inner := f.typeNodeIdentity(x.TypeNode); inner != "" {
@@ -6287,6 +6317,10 @@ func (f *File) checkSend(s *Scope, chTok Token, fields []Token, indexed, tailInd
 			return
 		}
 		elem, hasElem, _ := f.chanElem(s, tn)
+		if f.sendToRecvOnly(s, tn, chTok) {
+			return
+		}
+		f.checkSentChan(s, tn, valNode)
 		f.checkSentValue(s, elem, hasElem, f.chanElemTypeName(s, tn), valNode)
 		return
 	}
@@ -6328,6 +6362,10 @@ func (f *File) checkSend(s *Scope, chTok Token, fields []Token, indexed, tailInd
 			f.err(at.Position(), "invalid operation: cannot send to non-channel")
 			return
 		}
+		if f.sendToRecvOnly(s, tn, chTok) {
+			return
+		}
+		f.checkSentChan(s, tn, valNode)
 		f.checkSentValue(s, elem, hasElem, f.chanElemTypeName(s, tn), valNode)
 		return
 	}
@@ -6336,11 +6374,13 @@ func (f *File) checkSend(s *Scope, chTok Token, fields []Token, indexed, tailInd
 	// much as a variable is.
 	elem, hasElem, isChan := f.chanElemOf(d)
 	elemName := d.chanElemName
+	dirTN := d.chanTypeNode()
 	if indexed && len(fields) == 0 {
 		// `qs[i] <- v` for a `var qs [7]chan req`: what is sent to is the ELEMENT,
 		// and the element is the channel. A bank of channels indexed by worker
 		// number is the shape an eight-cog machine is written in.
 		elem, hasElem, isChan, elemName = f.chanElemOfElement(s, d)
+		dirTN = f.arrayElemTypeNode(d.declType)
 	}
 	if len(fields) != 0 {
 		// The whole run is walked, so a channel two fields deep is the one the send
@@ -6353,6 +6393,7 @@ func (f *File) checkSend(s *Scope, chTok Token, fields []Token, indexed, tailInd
 			tn = f.arrayElemTypeNode(tn)
 		}
 		elem, hasElem, isChan = 0, false, false
+		dirTN = tn
 		if tn != nil {
 			elem, hasElem, isChan = f.chanElem(s, tn)
 			elemName = f.chanElemTypeName(s, tn)
@@ -6366,7 +6407,29 @@ func (f *File) checkSend(s *Scope, chTok Token, fields []Token, indexed, tailInd
 		f.err(at.Position(), "invalid operation: cannot send to non-channel")
 		return
 	}
+	if f.sendToRecvOnly(s, dirTN, chTok) {
+		return
+	}
+	f.checkSentChan(s, dirTN, valNode)
 	f.checkSentValue(s, elem, hasElem, elemName, valNode)
+}
+
+// checkSentChan asks of a channel sent on a channel of channels, tn, what an
+// assignment asks of it (see checkChanAssign): the element is the type it lands in.
+func (f *File) checkSentChan(s *Scope, tn TypeNode, valNode Node) {
+	if ch, _ := f.chanTypeUnder(s, tn); ch != nil {
+		f.checkChanAssign(s, s, ch.TypeNode, valNode, "send")
+	}
+}
+
+// sendToRecvOnly reports a send to a channel whose type, tn, is receive-only, and
+// answers whether it did.
+func (f *File) sendToRecvOnly(s *Scope, tn TypeNode, at Token) bool {
+	if f.chanDirOf(s, tn) != recvDir {
+		return false
+	}
+	f.err(at.Position(), "invalid operation: cannot send to receive-only channel %s", at.Src())
+	return true
 }
 
 // sendNeedsWalk reports a send target whose chain postfixFields cannot flatten: an
@@ -6527,6 +6590,7 @@ func (f *File) checkSendTo(s *Scope, d *VarDeclaration, at Token, valNode Node) 
 		return
 	}
 
+	f.checkSentChan(s, d.chanTypeNode(), valNode)
 	f.checkSentValue(s, elem, hasElem, Token{}, valNode)
 }
 
@@ -6559,7 +6623,12 @@ func (f *File) checkRecvAssign(s *Scope, target Token, rhs Node) {
 // that checkUnaryExpr would otherwise apply is made here explicitly.
 func (f *File) checkReceiveOperand(s *Scope, chanExpr Node) {
 	f.checkNames(s, chanExpr)
-	if _, _, isChan := f.exprChan(s, chanExpr); !isChan {
+	_, _, isChan := f.exprChan(s, chanExpr)
+	if isChan && f.exprChanDir(s, chanExpr) == sendDir {
+		f.err(f.tok(chanExpr.Pos()).Position(), "invalid operation: cannot receive from send-only channel %s", f.exprSource(chanExpr))
+		return
+	}
+	if !isChan {
 		// A CALL that yields something other than one channel is refused here too:
 		// its type is not one exprType can report, so without this the operand
 		// reached the emitter and was named as an unsupported operand -- a missing
@@ -7523,6 +7592,7 @@ func (f *File) checkCompositeLit(s *Scope, t litType, hasID bool, fac, lit Node)
 // the DECLARING package's scope and would resolve here to a different type of the
 // same name, or to nothing.
 func (f *File) checkLitValue(s *Scope, t litType, tn TypeNode, value Node, what string) {
+	f.checkChanAssign(s, s, tn, value, what)
 	if t.qual.IsValid() {
 		return
 	}
@@ -8477,6 +8547,34 @@ func (f *File) compositeOperandMismatch(s *Scope, a, b Node) (an, bn string, mis
 		return an, bn, true
 	}
 	return "", "", false
+}
+
+// chanOperandMismatch reports two channel operands neither of which could be
+// assigned to the other, which is what Go compares by: a different element, two
+// different defined types, or two directions of which neither is both.
+func (f *File) chanOperandMismatch(s *Scope, a, b Node) (an, bn string, mismatched bool) {
+	atn, _ := f.exprChanTypeNode(s, a)
+	btn, _ := f.exprChanTypeNode(s, b)
+	ac, aNamed := f.chanTypeUnder(s, atn)
+	bc, bNamed := f.chanTypeUnder(s, btn)
+	if ac == nil || bc == nil {
+		return "", "", false
+	}
+	ai, bi := f.typeNodeIdentity(ac.TypeNode), f.typeNodeIdentity(bc.TypeNode)
+	an, bn = f.typeNodeString(atn, false), f.typeNodeString(btn, false)
+	if ai == "" || bi == "" || an == "" || bn == "" {
+		return "", "", false
+	}
+	switch {
+	case ai != bi:
+		mismatched = true
+	case aNamed != "" && bNamed != "":
+		aid, bid := f.typeNodeIdentity(atn), f.typeNodeIdentity(btn)
+		mismatched = aid != "" && bid != "" && aid != bid
+	default:
+		mismatched = ac.Dir != bc.Dir && ac.Dir != bothDir && bc.Dir != bothDir
+	}
+	return an, bn, mismatched
 }
 
 // ifaceComparisonOperands recognises a comparison between an INTERFACE operand and
@@ -9655,6 +9753,11 @@ func (f *File) checkRelOp(s *Scope, opNode, lNode, rNode Node) {
 		f.err(f.tok(opNode.Pos()).Position(), "mismatched types %s and %s", ln, rn)
 		return
 	}
+	// Two channels have no Kind either, and C compares any two pointers.
+	if ln, rn, mismatched := f.chanOperandMismatch(s, lNode, rNode); mismatched {
+		f.err(f.tok(opNode.Pos()).Position(), "mismatched types %s and %s", ln, rn)
+		return
+	}
 	// One operand an INTERFACE and the other a concrete value: Go converts the
 	// concrete side to the interface and compares the pair, so what a comparison
 	// asks is what an assignment asks -- does this type implement it. Nothing asked
@@ -10160,6 +10263,9 @@ func (f *File) checkAssignType(s *Scope, lhsTok Token, rhsNode Node, plainTarget
 	if d, ok := s.find(lhsTok.Src()).(*VarDeclaration); ok {
 		f.checkNilAssignable(s, nilTarget(d.kind, d.hasKind, d.typeName), rhsNode, "assignment")
 		f.checkFuncAssign(s, d.funcSig, rhsNode, "assignment")
+		if plainTarget {
+			f.checkChanAssign(s, s, d.chanTypeNode(), rhsNode, "assignment")
+		}
 		if plainTarget && d.typeName.IsValid() {
 			// The type as WRITTEN, qualifier included: an imported interface read as
 			// the bare "Shape" is not an interface in this package's scope, so the
@@ -10225,6 +10331,7 @@ func (f *File) checkDeclType(s *Scope, kind Kind, hasKind bool, typeName Token, 
 // rhs": the right-hand side's type category must match the struct field's. It is
 // the struct-field analogue of checkAssignType.
 func (f *File) checkFieldAssign(s *Scope, head, field Token, rhsNode Node) {
+	f.checkChanAssign(s, s, f.fieldTypeNode(s, head, field), rhsNode, "assignment")
 	f.checkImplements(s, f.typeNodeString(f.fieldTypeNode(s, head, field), false), rhsNode, "assignment")
 	f.checkDefinedType(s, f.typeNodeString(f.fieldTypeNode(s, head, field), false), rhsNode, "assignment")
 	lk, lok := f.fieldKind(s, head, field)
@@ -10541,7 +10648,12 @@ func (f *File) checkUnaryExpr(s *Scope, n Node) {
 		}
 		return
 	case ARROW:
-		if _, _, isChan := f.exprChan(s, fac); !isChan {
+		_, _, isChan := f.exprChan(s, fac)
+		if isChan && f.exprChanDir(s, fac) == sendDir {
+			f.err(f.tok(inner.Pos()).Position(), "invalid operation: cannot receive from send-only channel %s", f.exprSource(fac))
+			return
+		}
+		if !isChan {
 			// A CALL that yields something other than one channel is refused here
 			// too. Its type is not one exprType can report, so without this the
 			// operand reached the emitter, which named it an unsupported operand --
@@ -11224,6 +11336,124 @@ func (f *File) exprChan(s *Scope, n Node) (elem Kind, hasElem, isChan bool) {
 		return f.chanElem(s, tn)
 	}
 	return 0, false, false
+}
+
+// chanDirOf answers the direction of a channel type node, followed through the
+// definitions of named types -- `type Sink chan<- int` is send-only. Anything else,
+// and a type this cannot see, is bothDir: the checks built on it refuse only what is
+// known to be wrong.
+func (f *File) chanDirOf(s *Scope, tn TypeNode) chanDir {
+	if ch, _ := f.chanTypeUnder(s, tn); ch != nil {
+		return ch.Dir
+	}
+	return bothDir
+}
+
+// chanTypeUnder follows a type node through the definitions of named types to the
+// channel type it is, and names the defined type it went through first -- the
+// named-ness Go's assignability asks about. A name is resolved in the file that
+// wrote it, so another package's `Sink` is that package's. It answers nil for what
+// is not a channel type and for a name it cannot resolve.
+func (f *File) chanTypeUnder(s *Scope, tn TypeNode) (ch *TypeNodeChan, named string) {
+	for range 16 { // bounded; a type cycle is reported by its own pass
+		switch x := tn.(type) {
+		case *TypeNodeChan:
+			return x, named
+		case *TypeNodeIdent:
+			written := x.Name.Src()
+			if x.Qualifier.IsValid() {
+				written = x.Qualifier.Src() + "." + written
+			}
+			wf, ws := f.fileOfToken(x.Name), s
+			if wf != f {
+				ws = wf.Scope
+			}
+			td, home, ok := wf.typeDeclNamed(ws, written)
+			if !ok || td.TypeSpec == nil {
+				return nil, ""
+			}
+			if named == "" && !td.TypeSpec.Alias {
+				named = written
+			}
+			tn, s = td.TypeSpec.TypeNode, home
+		default:
+			return nil, ""
+		}
+	}
+	return nil, ""
+}
+
+// exprChanTypeNode is the channel type an operand has, as the declaration it comes
+// from wrote it: a variable's, a field's, an element's of an array of channels, a
+// call's result. nil when the operand is none of those shapes or its type is not
+// known here. variable says the operand is one -- what Go's diagnostics call it,
+// as against the value a call yields.
+func (f *File) exprChanTypeNode(s *Scope, n Node) (tn TypeNode, variable bool) {
+	if id, ok := f.exprIdent(n); ok {
+		if d, ok := s.find(id.Src()).(*VarDeclaration); ok {
+			return d.chanTypeNode(), true
+		}
+		return nil, false
+	}
+	if head, field, ok := f.exprFieldRead(n); ok {
+		return f.fieldChainTypeNode(s, head, []Token{field}, false), true
+	}
+	if head, ok := f.exprIndexedIdent(n); ok {
+		if d, isVar := s.find(head.Src()).(*VarDeclaration); isVar {
+			return f.arrayElemTypeNode(d.declType), true
+		}
+		return nil, false
+	}
+	tn, _ = f.callChanTypeNode(s, n)
+	return tn, false
+}
+
+// exprChanDir is exprChan for the channel's direction: the shapes a channel operand
+// takes -- a variable, a field, an element of an array of channels, a call's result
+// -- answered from the type each was declared with.
+func (f *File) exprChanDir(s *Scope, n Node) chanDir {
+	tn, _ := f.exprChanTypeNode(s, n)
+	return f.chanDirOf(s, tn)
+}
+
+// checkChanAssign reports a channel value used where a channel of another type is
+// wanted. Go admits three things there: the same type; the same underlying type
+// when one of the two is not a defined type; and a BIDIRECTIONAL channel where a
+// directional one of the same element is wanted, again when one is not defined. So
+// a direction is only ever narrowed -- a receive-only channel never becomes one that
+// sends -- and the element never changes. Nothing after this asks: a direction is
+// no part of the C type, and a channel of another element is a pointer to another
+// cell type, which flexcc only warns about -- `var c chan string = bi` built, with
+// a warning about C the program never wrote, and read a string out of an int's cell.
+//
+// want is resolved in wantScope, a callee's for its parameters. Both types must be
+// known, and two defined types are checkDefinedType's to compare.
+func (f *File) checkChanAssign(s, wantScope *Scope, want TypeNode, value Node, what string) {
+	wc, wantNamed := f.chanTypeUnder(wantScope, want)
+	if wc == nil {
+		return
+	}
+	haveTN, variable := f.exprChanTypeNode(s, value)
+	hc, haveNamed := f.chanTypeUnder(s, haveTN)
+	if hc == nil || wantNamed != "" && haveNamed != "" {
+		return
+	}
+	wi, hi := f.typeNodeIdentity(wc.TypeNode), f.typeNodeIdentity(hc.TypeNode)
+	if (wi == "" || hi == "" || wi == hi) && (hc.Dir == wc.Dir || hc.Dir == bothDir) {
+		return
+	}
+	have, wantS := f.typeNodeString(haveTN, false), f.typeNodeString(want, false)
+	if have == "" || wantS == "" {
+		return
+	}
+	if wantScope != s {
+		wantS = f.qualifiedTypeName(wantScope, wantS)
+	}
+	mode := "value"
+	if variable {
+		mode = "variable"
+	}
+	f.err(f.tok(value.Pos()).Position(), "cannot use %s (%s of type %s) as %s value in %s", f.exprSource(value), mode, have, wantS, what)
 }
 
 // callChanTypeNode reads an expression that is exactly a CALL. tn is the channel
@@ -12530,6 +12760,14 @@ func (f *File) checkCall(s *Scope, callee Token, direct bool, argList Node) {
 	if f.blankRead(callee) {
 		return
 	}
+	// Closing is the SENDER's act, which a receive-only channel cannot do. The
+	// builtin is asked for by name, it being declared nowhere a user's close could
+	// not shadow it.
+	if callee.Src() == "close" && len(args) == 1 && s.find("close") == nil {
+		if _, _, isChan := f.exprChan(s, args[0]); isChan && f.exprChanDir(s, args[0]) == recvDir {
+			f.err(f.tok(args[0].Pos()).Position(), "invalid operation: cannot close receive-only channel %s", f.exprSource(args[0]))
+		}
+	}
 	switch d := s.find(callee.Src()).(type) {
 	case *FuncDeclaration:
 		if d.FuncDecl != nil && d.FuncDecl.Type != nil {
@@ -12668,6 +12906,40 @@ func (f *File) checkCall(s *Scope, callee Token, direct bool, argList Node) {
 	}
 }
 
+// checkChanConversion refuses a conversion to a channel type of a channel that is
+// not one of it: a channel converts to another name for the same underlying type,
+// and a bidirectional one of no name converts where it could be assigned (see
+// checkChanAssign) -- nothing turns a direction around or changes an element. ok is
+// false when it reported.
+func (f *File) checkChanConversion(s *Scope, callee Token, arg Node) bool {
+	wc, _ := f.chanTypeUnder(s, &TypeNodeIdent{Name: callee})
+	if wc == nil {
+		return true
+	}
+	haveTN, variable := f.exprChanTypeNode(s, arg)
+	hc, haveNamed := f.chanTypeUnder(s, haveTN)
+	if hc == nil {
+		return true
+	}
+	wi, hi := f.typeNodeIdentity(wc.TypeNode), f.typeNodeIdentity(hc.TypeNode)
+	if wi == "" || hi == "" || wi == hi && (hc.Dir == wc.Dir || hc.Dir == bothDir && haveNamed == "") {
+		return true
+	}
+	have := f.typeNodeString(haveTN, false)
+	if have == "" {
+		return true
+	}
+	mode := "value of "
+	if variable {
+		mode = "variable of "
+	}
+	if haveNamed != "" {
+		mode += "chan "
+	}
+	f.err(f.tok(arg.Pos()).Position(), "cannot convert %s (%stype %s) to type %s", f.exprSource(arg), mode, have, callee.Src())
+	return false
+}
+
 // checkConversion refuses a conversion `T(x)` to a basic type, or to a type defined
 // over one, from an operand Go converts to it no way at all: a bool from anything but
 // a bool, a number from a bool or a string, a string from a bool or a float (an
@@ -12677,6 +12949,9 @@ func (f *File) checkCall(s *Scope, callee Token, direct bool, argList Node) {
 // Go refuses, in these words, at the operand; the rest reached the C compiler. ok is
 // false when it reported.
 func (f *File) checkConversion(s *Scope, callee Token, arg Node) bool {
+	if !f.checkChanConversion(s, callee, arg) {
+		return false
+	}
 	tk, ok := f.nameKind(s, callee.Src())
 	if !ok || kindCategory(tk) == catUnknown {
 		return true // no basic type underneath: a struct, an array, an interface
@@ -13039,6 +13314,7 @@ func (f *File) checkArgsIn(s, paramScope *Scope, name Token, sig *SignatureNode,
 				// a pointer -- is most of what a variadic is called with, and
 				// skipping it left the whole class to the C compiler.
 				f.checkFuncAssign(s, f.funcSig(paramScope, sl.TypeNode), arg, "argument to "+name.Src())
+				f.checkChanAssign(s, paramScope, sl.TypeNode, arg, "argument to "+name.Src())
 				f.checkPointerArg(s, paramScope, elem, arg, name)
 				if !elem.known {
 					continue
@@ -13067,6 +13343,7 @@ func (f *File) checkArgsIn(s, paramScope *Scope, name Token, sig *SignatureNode,
 			// A function-typed parameter has no predeclared Kind, so this stands
 			// ahead of the known-kind guard below.
 			f.checkFuncAssign(s, f.funcSig(paramScope, p.typeNode), arg, "argument to "+name.Src())
+			f.checkChanAssign(s, paramScope, p.typeNode, arg, "argument to "+name.Src())
 			f.checkPointerArg(s, paramScope, p, arg, name)
 			if !p.known {
 				continue
@@ -14844,6 +15121,7 @@ func (f *File) varSpec(s *Scope, n Node) {
 				f.checkNames(s, e)
 				f.checkNilAssignable(s, nilTarget(kind, hasKind, typeName), e, "variable declaration")
 				if len(names) == len(exprs) {
+					f.checkChanAssign(s, s, typ, e, "variable declaration")
 					f.checkPointerValue(s, typIsPtr, f.typeNodeString(typ, false), e, "variable declaration")
 					f.checkDeclType(s, kind, hasKind, typeName, e)
 				}
@@ -14895,13 +15173,24 @@ func (t *TypeNodeIdent) Type() Typ {
 	panic(todo("", origin(1)))
 }
 
-// TypeNodeChan describes the Type production case
+// TypeNodeChan describes the Type production cases
 //
-//	| "chan" Type
+//	| "chan" [ "<-" ] ChanElemType
+//	| "<-" "chan" Type
 type TypeNodeChan struct {
 	gate
 	TypeNode TypeNode // T in chan T
+	Dir      chanDir  // bothDir for `chan T`, sendDir for `chan<- T`, recvDir for `<-chan T`
 }
+
+// chanDir is a channel type's direction: which of send and receive it permits.
+type chanDir int
+
+const (
+	bothDir chanDir = iota
+	sendDir         // chan<- T: send only
+	recvDir         // <-chan T: receive only
+)
 
 // Type implements TypeNode.
 func (t *TypeNodeChan) Type() Typ {
@@ -15038,6 +15327,7 @@ func (f *File) arrayBound(s *Scope, n Node) ExpressionNode {
 
 func (f *File) typ(s *Scope, n Node) (r TypeNode) {
 	var ident TypeNodeIdent
+	recv := false // the arrow of `<-chan T`, met before the chan
 	for n := range it(n.ast) {
 		switch n.sym {
 		case Type:
@@ -15100,7 +15390,20 @@ func (f *File) typ(s *Scope, n Node) (r TypeNode) {
 				// The separator in a qualified type name "pkg.T": the qualifier was
 				// recorded on the preceding IDENT, the type name follows.
 			case CHAN:
+				// `<-chan T` has already met its arrow, and the channel it opens is
+				// receive-only.
+				if recv {
+					r = &TypeNodeChan{Dir: recvDir}
+					break
+				}
 				r = &TypeNodeChan{}
+			case ARROW:
+				// `chan<- T` meets the arrow after chan, `<-chan T` before it.
+				if c, ok := r.(*TypeNodeChan); ok {
+					c.Dir = sendDir
+					break
+				}
+				recv = true
 			case FUNC:
 				r = &FunctionType{}
 			case MUL:

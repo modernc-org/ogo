@@ -430,7 +430,15 @@
 // specific to those values.
 //
 //	Type = [ identifier "." ] identifier
-//		| "chan" Type
+//		| "chan" [ "<-" ] ChanElemType
+//		| "<-" "chan" Type
+//		| "[" [ Expression ] "]" Type
+//		| "*" Type
+//		| InterfaceType
+//		| StructType
+//		| "func" Signature .
+//	ChanElemType = [ identifier "." ] identifier
+//		| "chan" [ "<-" ] ChanElemType
 //		| "[" [ Expression ] "]" Type
 //		| "*" Type
 //		| InterfaceType
@@ -1037,8 +1045,8 @@
 // A value already in the cell is taken even after the close, so nothing sent before
 // it is lost. Sending on a closed channel and closing a closed channel both panic,
 // as in Go: each is the producer and the closer disagreeing about who was finished.
-// A receive-only channel type cannot be spelled here, so "close" is not restricted
-// by direction the way Go restricts it.
+// Closing a receive-only channel is refused, as Go refuses it: only a sender can
+// know it has finished.
 //
 // A nil channel behaves as Go's does: a send or receive on one blocks forever --
 // parking the cog it runs on while the rest of the chip continues -- a nil
@@ -2435,9 +2443,32 @@
 // A channel provides a thread-safe conduit for concurrently executing Cogs to
 // communicate by sending and receiving values of a specified type.
 //
-// (OctoGo Specific): * No Directional Channels: To maintain a strict LL(1)
-// grammar, OctoGo simplifies channel types. All channels are bidirectional
-// (chan Type).
+// A channel type may allow one direction only, as in Go: "chan<- T" is only sent
+// to and "<-chan T" only received from. The arrow binds to the leftmost "chan" it
+// can, so "chan<- chan int" is a send-only channel of channels. A bidirectional
+// channel is assignable to either direction of the same element type -- which is
+// how a function says what it does with the channel it is given -- and nothing
+// makes a directional channel bidirectional again, by assignment or conversion.
+// The direction is the compiler's to enforce and costs nothing at run time: the
+// three are the same cell.
+//
+//	func producer(out chan<- int) {
+//		out <- 1
+//		close(out)
+//	}
+//
+//	func consumer(in <-chan int) {
+//		for v := range in {
+//			println(v)
+//		}
+//	}
+//
+// (OctoGo Specific): a channel type's element cannot begin with an arrow, which
+// is what keeps the grammar LL(1), so a send-only channel of receive-only ones,
+// Go's "chan<- <-chan T", and its bidirectional "chan (<-chan T)" cannot be
+// written. A named element type stands in for both: "type Src <-chan T" and then
+// "chan<- Src". A receive-only channel's element may be receive-only itself,
+// "<-chan <-chan T", since there the arrow cannot be read as the outer one's.
 //
 //   - Hardware Representation: A channel is a reference to a rendezvous cell in
 //     Hub RAM, synchronized by one of the P2's native hardware locks (0-15).
