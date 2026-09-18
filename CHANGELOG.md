@@ -175,6 +175,13 @@ shipped section tells a reader on that version that they have behaviour they do 
 
 ### Fixed
 
+- **An unnamed struct type and a declared one of the same fields mix.** Go
+  assigns between `struct{ x int }` and a `type P struct{ x int }` either way; the
+  target's compiler refused, "incompatible types in assignment", in a declaration,
+  an assignment, an argument, a result, a send and `==`. The unnamed type's typedef
+  names the declared struct now. Where several declared structs share the fields,
+  the unnamed type mixes with the first of them by name only, and the rest stay
+  refused by the C compiler.
 - **A slice or a pointer of the wrong type is refused where it is written.** `var
   d []int = s` for a `[]string` s, `take(s)`, a field, a literal's element, a
   return: none had their types compared, a slice and a pointer having no Kind for

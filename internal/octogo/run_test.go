@@ -4970,6 +4970,87 @@ func main() {
 		want: "115200 62 uart 2 20\n1 2 pt 0 5\n7 42\n3 7 15\nequal\ndiffer\n2 3\n10\n2 2 6\nfive\nasserted 5\n",
 	},
 	{
+		// A struct type written out and a declared struct of the same fields are
+		// types Go assigns between either way, and the target's compiler refused to
+		// mix their C types. The unnamed one's typedef names the declared struct now:
+		// a declaration, an assignment, an argument, a result, a send, append and ==,
+		// a struct holding an array among them.
+		name: "an unnamed struct type and a declared one of the same fields",
+		src: `type P struct {
+	x    int
+	name string
+}
+
+type Grid struct {
+	cells [3]int
+	n     int
+}
+
+var ch chan P
+
+func takeP(p P) int { return p.x }
+
+func takeAnon(a struct {
+	x    int
+	name string
+}) string {
+	return a.name
+}
+
+func mkAnon() struct {
+	x    int
+	name string
+} {
+	return P{9, "nine"}
+}
+
+func mkP() P {
+	return struct {
+		x    int
+		name string
+	}{8, "eight"}
+}
+
+func main() {
+	a := struct {
+		x    int
+		name string
+	}{1, "one"}
+	var p P = a
+	a = p
+	p = struct {
+		x    int
+		name string
+	}{2, "two"}
+	println(takeP(a), takeAnon(p), mkAnon().name, mkP().x, p.x, a.x)
+	ps := []P{a, p}
+	ps = append(ps[:1], a)
+	println(len(ps), ps[1].name)
+	println(p == a, a == P{2, "two"}, p == struct {
+		x    int
+		name string
+	}{2, "two"})
+	g := struct {
+		cells [3]int
+		n     int
+	}{[3]int{1, 2, 3}, 3}
+	var gg Grid = g
+	gg.cells[0] = 7
+	g = gg
+	println(g.cells[0], g.n)
+	go func() {
+		ch <- struct {
+			x    int
+			name string
+		}{5, "five"}
+	}()
+	r := <-ch
+	printf("%v %+v\n", r, a)
+}
+`,
+		want: "1 two nine 8 2 1\n2 one\nfalse false true\n7 3\n{5 five} {x:1 name:one}\n",
+	},
+	{
 		// A labeled break or continue names an enclosing loop or switch: "break L"
 		// leaves the labeled "for"/"switch" from any depth, and "continue L" begins
 		// the labeled "for"'s next iteration. Each lowers to a goto -- to a label

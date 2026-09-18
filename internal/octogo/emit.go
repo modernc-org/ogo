@@ -3060,6 +3060,44 @@ func (e *emitter) anonStructType(structAST []int32) string {
 	return name
 }
 
+// aliasAnonStructs makes a struct type written out one C type with a declared struct
+// of the same fields. Go gives the two identical underlying types, so a value of
+// either is assigned, passed and returned where the other is wanted, both ways --
+// `var u struct{ x int } = p` for a `type P struct{ x int }` -- and to the target's
+// compiler they were two struct types it refuses to mix, "incompatible types in
+// assignment". The unnamed one's typedef names the declared struct instead of
+// spelling a struct of its own; with several of the same fields the first by name
+// is taken, which leaves the unnamed type mixable with that one only -- the others
+// stay a refusal, as they were. Only a struct declared at file scope is named, the
+// one kind of typedef every other can see.
+func (e *emitter) aliasAnonStructs() {
+	anon := map[string]bool{}
+	for _, name := range e.anonStructNames {
+		anon[name] = true
+	}
+	if len(anon) == 0 {
+		return
+	}
+	var declared []string
+	for _, u := range e.typedefUnits {
+		if !anon[u.name] && strings.HasPrefix(u.text, "struct "+u.name+" {") {
+			declared = append(declared, u.name)
+		}
+	}
+	slices.Sort(declared)
+	for i, u := range e.typedefUnits {
+		if !anon[u.name] {
+			continue
+		}
+		for _, named := range declared {
+			if e.sameStructLayout(u.name, named) {
+				e.typedefUnits[i] = typedefUnit{name: u.name, text: "typedef " + named + " " + u.name + ";\n", deps: []string{named}}
+				break
+			}
+		}
+	}
+}
+
 // typedefUnit is one declaration of the typedef section: the C name it declares,
 // the text declaring it, and the names that must be declared before it. The section
 // is emitted in dependency order rather than in fixed groups (see orderTypedefs),
@@ -4674,6 +4712,7 @@ func emitProgram(pkg *Package, w io.Writer, opts []EmitOption, rename map[string
 			fmt.Sprintf("typedef struct { %s slice; int ok; } %s;\n", sliceCName(el), appendokCName(el)),
 			sliceCName(el))
 	}
+	e.aliasAnonStructs()
 	var typedefUnits bytes.Buffer
 	for _, u := range orderTypedefs(e.typedefUnits) {
 		typedefUnits.WriteString(u.text)
