@@ -28945,6 +28945,299 @@ func main() {
 }
 `,
 		want: "A1 4 8 0\nA2 7 8 5 6 7 18\nA3 3 6 0 5\nA4 9 9\nA5 2 3 0 9\nA6 3 3 8 8\nA7 2 5 8\nA8 6 6 0\nA9 1 1 9 37\nB1 0 0 true 0\nB2 0 0 false\nB3 3 3 6\nB4 3 4 5 6 4\nB5 4 4 4 5 6 4 6\nB6 4 5 6 4 6 4 6\nB7 4 104 195 169 108\nB8 30 60 30\nB9 40 2 3\nB10 123 1\nB11 3 2 9 2\nN1 true false false false true\nN2 false false true false 0 0\nN3 true 0 false false false true 0 0 0 0\nN4 false 0 0\n",
+	}, {
+		// Embedding semantics measured against Go on the host and a P2-EDGE
+		// (2026-09-18): an outer field shadows the embedded one of its name and
+		// the embedded one stays reachable by the path, a method at a shallower
+		// depth wins, a pointer receiver promoted through an embedded value writes
+		// the outer variable, an embedded pointer's fields and methods reach the
+		// pointee, two levels of embedding, promoted methods satisfying an
+		// interface, equality, whole-embedded-field assignment, keyed and
+		// positional literals, through a pointer and in an array. All matched.
+		name: "embedding semantics: shadowed fields, promotion depth, pointer embedding and interfaces",
+		src: `type A struct {
+	x, y int
+}
+
+func (a A) Name() string {
+	return "A"
+}
+
+func (a A) Sum() int {
+	return a.x + a.y
+}
+
+func (a *A) Inc() {
+	a.x++
+}
+
+type B struct {
+	A
+	x int
+}
+
+func (b B) Name() string {
+	return "B"
+}
+
+type C struct {
+	*A
+	tag int
+}
+
+type D struct {
+	B
+	z int
+}
+
+type Namer interface {
+	Name() string
+}
+
+type Summer interface {
+	Sum() int
+}
+
+func describe(n Namer) string {
+	return n.Name()
+}
+
+func main() {
+	b := B{A{1, 2}, 30}
+	println("E1", b.x, b.A.x, b.y, b.Name(), b.A.Name(), b.Sum())
+	b.Inc()
+	b.x++
+	println("E2", b.x, b.A.x, b.Sum())
+	b2 := B{A: A{2, 2}, x: 31}
+	println("E3", b == b2, b.A == b2.A, b2.x)
+	b.A = A{5, 5}
+	println("E4", b.x, b.A.x, b.Sum())
+	var a A = A{7, 8}
+	c := C{&a, 1}
+	c.Inc()
+	c.y = 9
+	println("E5", a.x, a.y, c.x, c.Sum(), c.Name(), c.tag)
+	d := D{B{A{1, 1}, 2}, 3}
+	d.Inc()
+	println("E6", d.x, d.B.x, d.A.x, d.B.A.x, d.y, d.z, d.Name(), d.Sum())
+	var n Namer = &b
+	var s Summer = &d
+	println("E7", describe(n), describe(&d), describe(&c), s.Sum())
+	pd := &d
+	pd.z = 4
+	pd.B.x = 5
+	pd.Inc()
+	println("E8", d.z, d.x, d.A.x)
+	arr := [2]B{{A{1, 2}, 3}, {A{4, 5}, 6}}
+	arr[1].Inc()
+	arr[0].x = 9
+	println("E9", arr[1].A.x, arr[0].x, arr[0].Sum(), arr[1].Name())
+}
+`,
+		want: "E1 30 1 2 B A 3\nE2 31 2 4\nE3 true true 31\nE4 31 5 10\nE5 8 9 8 17 A 1\nE6 2 2 2 2 1 3 B 3\nE7 B B A 3\nE8 4 5 3\nE9 5 9 3 B\n",
+	}, {
+		// Function value semantics measured against Go on the host and a P2-EDGE
+		// (2026-09-18): the nil zero value and comparison with it, a defined
+		// function type, values in an array and a struct field called through the
+		// element and the field, a function returning a function called where it
+		// stands, a literal as an argument and called where it stands, a method
+		// value on a package variable. All matched.
+		name: "function value semantics: nil, arrays and fields of them, results, literals and a method value",
+		src: `type Op func(int, int) int
+
+type Calc struct {
+	op   Op
+	name string
+}
+
+func add(a, b int) int { return a + b }
+
+func sub(a, b int) int { return a - b }
+
+func mul(a, b int) int { return a * b }
+
+func pick(k int) Op {
+	if k == 0 {
+		return add
+	}
+	if k == 1 {
+		return sub
+	}
+	return mul
+}
+
+func apply(f Op, a, b int) int {
+	return f(a, b)
+}
+
+func twice(f func(int) int, x int) int {
+	return f(f(x))
+}
+
+func double(x int) int { return x * 2 }
+
+type Acc struct {
+	total int
+}
+
+func (a *Acc) Add(v int) {
+	a.total += v
+}
+
+func each(s []int, f func(int)) {
+	for _, v := range s {
+		f(v)
+	}
+}
+
+var acc Acc
+
+func main() {
+	var f Op
+	println("F1", f == nil)
+	f = add
+	println("F2", f == nil, f(2, 3), apply(f, 4, 5), apply(sub, 4, 5))
+	ops := [3]Op{add, sub, mul}
+	total := 0
+	for i := 0; i < 3; i++ {
+		total = total*100 + ops[i](7, 3)
+	}
+	println("F3", total, pick(2)(6, 7), apply(pick(1), 6, 7))
+	calcs := [2]Calc{{add, "add"}, {mul, "mul"}}
+	for _, c := range calcs {
+		println("F4", c.name, c.op(3, 4))
+	}
+	calcs[0].op = sub
+	println("F5", calcs[0].op(3, 4), calcs[0].name)
+	println("F6", twice(double, 5), twice(func(x int) int { return x + 1 }, 5))
+	each([]int{1, 2, 3}, acc.Add)
+	println("F7", acc.total)
+	g := acc.Add
+	g(10)
+	println("F8", acc.total)
+	f = nil
+	println("F9", f == nil, ops[1] == nil)
+	lit := func(a, b int) int { return a*10 + b }
+	println("F10", lit(1, 2), apply(lit, 3, 4), func(x int) int { return -x }(5))
+}
+`,
+		want: "F1 true\nF2 false 5 9 -1\nF3 100421 42 -1\nF4 add 7\nF4 mul 12\nF5 -1 add\nF6 20 7\nF7 6\nF8 16\nF9 true false\nF10 12 34 -5\n",
+	}, {
+		// Switch semantics measured against Go on the host and a P2-EDGE
+		// (2026-09-18): a tagless switch, a string switch with a case list and a
+		// default in the middle, an init statement, cases evaluated in order and
+		// only until one matches, a fallthrough chain past a default, a type switch
+		// with a list of types and a nil case, continue and break to a label from
+		// inside a switch, and an init with no tag. All matched.
+		name: "switch semantics: tagless, lists, default anywhere, evaluation order, fallthrough, type lists and labels",
+		src: `type Shape interface {
+	Area() int
+}
+
+type Sq struct{ s int }
+
+func (q *Sq) Area() int { return q.s * q.s }
+
+type Rect struct{ w, h int }
+
+func (r *Rect) Area() int { return r.w * r.h }
+
+type Tri struct{ b, h int }
+
+func (t *Tri) Area() int { return t.b * t.h / 2 }
+
+var calls int
+
+func f(k int) int {
+	calls = calls*10 + k
+	return k
+}
+
+func classify(x int) string {
+	switch {
+	case x < 0:
+		return "neg"
+	case x == 0:
+		return "zero"
+	case x < 10:
+		return "small"
+	}
+	return "big"
+}
+
+func kind(s string) int {
+	switch s {
+	case "a", "b":
+		return 1
+	case "":
+		return 0
+	default:
+		return 2
+	case "z":
+		return 26
+	}
+}
+
+func main() {
+	println("G1", classify(-1), classify(0), classify(5), classify(50))
+	println("G2", kind("a"), kind("b"), kind(""), kind("q"), kind("z"))
+	switch v := f(2) * 2; v {
+	case 1, 2, 3:
+		println("G3 low", v)
+	case f(4), f(5):
+		println("G3 mid", v, calls)
+	default:
+		println("G3 none")
+	}
+	calls = 0
+	switch f(1) {
+	case f(2), f(1):
+		println("G4", calls)
+	case f(3):
+		println("G4 wrong")
+	}
+	n := 0
+	switch {
+	case n == 0:
+		n += 1
+		fallthrough
+	case n == 100:
+		n += 10
+		fallthrough
+	default:
+		n += 100
+	case n == 200:
+		n += 1000
+	}
+	println("G5", n)
+	shapes := [4]Shape{&Sq{2}, &Rect{2, 3}, &Tri{4, 5}, nil}
+	for i := 0; i < 4; i++ {
+		switch v := shapes[i].(type) {
+		case *Sq, *Rect:
+			println("G6 quad", v.Area())
+		case nil:
+			println("G6 nil")
+		default:
+			println("G6 other", v.Area())
+		}
+	}
+outer:
+	for i := 0; i < 3; i++ {
+		switch i {
+		case 1:
+			continue outer
+		case 2:
+			break outer
+		}
+		println("G7", i)
+	}
+	switch x := 5; {
+	case x > 3:
+		println("G8", x)
+	}
+}
+`,
+		want: "G1 neg zero small big\nG2 1 1 0 2 26\nG3 mid 4 24\nG4 121\nG5 111\nG6 quad 4\nG6 quad 6\nG6 other 10\nG6 nil\nG7 0\nG8 5\n",
 	}}
 
 // TestEmitCRun compiles emitted C with a host compiler and runs it, checking what

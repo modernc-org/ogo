@@ -425,6 +425,15 @@ program handed out a reference to storage that was gone by the time it was read.
 
 ### Verified
 
+- Embedding, function value and switch semantics against Go on the host and a
+  P2-EDGE: shadowed and promoted fields at every depth, methods promoted through
+  an embedded value and an embedded pointer, interfaces satisfied by promotion;
+  nil function values, arrays and fields of them, a function returned and
+  called where it stands, literals as arguments, a method value on a package
+  variable; tagless switches, case lists, a default in the middle, cases
+  evaluated in order until one matches, fallthrough past a default, type lists
+  and a nil case in a type switch, labelled continue and break from a switch.
+  All matched; the three programs are run cases.
 - Slice semantics against Go on the host and a P2-EDGE: a view's length and
   capacity, growth up to the capacity, re-slicing and the three-index form,
   aliasing through every view, copy with a shorter destination, overlapping
