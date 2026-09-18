@@ -27749,6 +27749,153 @@ func main() {
 }
 `,
 		want: "mul 8 0 2 0 12 0 1 0 1 2 0 8\nadd 5 7 9 11 7 11 5 3 3 1 7 1 1\nandnot 6 7 6 7 8 12 0 0 7 8 16\nshift 18 50 5 72 72 4 24 -24 21 8 16\ncmp true false true true true true true\nunary 1 -3 2 -2 -4 -10 -24 -28 -25 -7\nuns 243 61680 61680 61443 7713 62190 489360 29040 1920 1920 536863201 61680 65523 65283 61682 0\ncmp2 false true true true true false\ncompound 6\n",
+	}, {
+		// The control-flow statements whose C lowering is easy to get wrong, measured
+		// against Go on the host and a P2-EDGE on 2026-09-18: break inside a switch or
+		// a select inside a loop leaves the switch; continue there runs the loop's post;
+		// fallthrough runs the next clause whatever its case; labeled break and continue
+		// across a switch and an inner loop; goto forward and backward; several values
+		// per case, evaluated in order until one matches; a switch init beside a loop's
+		// post. And a mixed chain of && and || in an argument, which the host compiler
+		// warned about until it was grouped as a condition's is.
+		name: "control flow: break, continue, fallthrough, labels and goto",
+		src: `var trace int
+
+func t(k int) {
+	trace = trace*10 + k
+}
+
+func main() {
+	// break inside a switch inside a loop leaves the switch, not the loop.
+	for i := 0; i < 4; i++ {
+		switch i {
+		case 1:
+			break
+		case 2:
+			t(2)
+		}
+		t(i)
+	}
+	println(trace)
+	trace = 0
+	// continue inside a switch continues the loop, running its post statement.
+	for i := 0; i < 4; i++ {
+		switch {
+		case i%2 == 0:
+			continue
+		}
+		t(i)
+	}
+	println(trace)
+	trace = 0
+	// fallthrough runs the next clause's body, whatever its case; break inside a
+	// clause ends the switch.
+	for i := 0; i < 4; i++ {
+		switch i {
+		case 0:
+			t(0)
+			fallthrough
+		case 1:
+			t(1)
+			if i == 1 {
+				break
+			}
+			t(9)
+		case 2:
+			t(2)
+			fallthrough
+		default:
+			t(7)
+		}
+	}
+	println(trace)
+	trace = 0
+	// Labeled break and continue across a switch and an inner loop.
+outer:
+	for i := 0; i < 3; i++ {
+		for j := 0; j < 3; j++ {
+			switch {
+			case j == 1:
+				continue outer
+			case i == 2:
+				break outer
+			}
+			t(i*3 + j)
+		}
+		t(8)
+	}
+	println(trace)
+	trace = 0
+	// goto forward and backward, and a label on a block.
+	i := 0
+again:
+	i++
+	if i < 3 {
+		goto again
+	}
+	t(i)
+	if i == 3 {
+		goto done
+	}
+	t(5)
+done:
+	t(6)
+	println(trace)
+	trace = 0
+	// A switch with no condition and several values per case; a case expression
+	// with a call is evaluated in order and only until one matches.
+	for i := 0; i < 5; i++ {
+		switch i {
+		case 0, 1:
+			t(1)
+		case pick(2), pick(3):
+			t(2)
+		default:
+			t(0)
+		}
+	}
+	println(trace, calls)
+	trace = 0
+	// break from a select's default inside a loop leaves the select.
+	for i := 0; i < 2; i++ {
+		select {
+		default:
+			if i == 0 {
+				break
+			}
+			t(i)
+		}
+		t(4)
+	}
+	println(trace)
+	trace = 0
+	// A switch's init and a loop's post together.
+	for i := 0; i < 3; i++ {
+		switch k := i * 2; {
+		case k > 2:
+			continue
+		case k == 2:
+			t(k)
+			fallthrough
+		default:
+			t(3)
+		}
+		t(i)
+	}
+	println(trace)
+	// A mixed chain of && and || in an argument, grouped as in a condition.
+	a, b, c := trace > 0, calls > 3, trace < 0
+	println(a && b || c, a || b && c, !a && b || !c, a || c && a || b)
+}
+
+var calls int
+
+func pick(k int) int {
+	calls++
+	return k
+}
+`,
+		want: "1223\n13\n191277\n3\n36\n11220 5\n414\n30231\ntrue true true true\n",
 	}}
 
 // TestEmitCRun compiles emitted C with a host compiler and runs it, checking what

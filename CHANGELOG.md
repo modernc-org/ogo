@@ -385,6 +385,13 @@ program handed out a reference to storage that was gone by the time it was read.
 
 ### Verified
 
+- The control-flow statements whose C lowering is easy to get wrong, against Go on
+  a P2-EDGE: `break` and `continue` inside a `switch` or a `select` inside a loop,
+  `fallthrough`, labeled `break` and `continue` across a switch and an inner
+  loop, `goto` both ways, several values per case evaluated in order, a switch
+  init beside a loop's post. All matched; the program is a run case. A mixed
+  chain of `&&` and `||` in an argument is grouped as a condition's now, which
+  changes nothing but the host compiler's warning.
 - The floating point edges, in float32 -- which every float is on this target --
   against Go on a P2-EDGE: rounding per operation, the special values and every
   comparison of them, conversions each way and the printing of each. One line was

@@ -31129,7 +31129,9 @@ func (e *emitter) emitExpr(ast []int32) {
 	// emitKidsStringCompare rewrites both a standalone and an embedded string compare and
 	// is otherwise identical to emitting the kids in order.
 	kids := slices.Collect(it(ast))
-	if !e.emitShortCircuit(kids, false) {
+	// Grouped, as a condition's chain is: `println(a && b || c)` drew the same
+	// -Wparentheses the condition form was grouped for.
+	if !e.emitShortCircuit(kids, true) {
 		e.emitKidsStringCompare(kids)
 	}
 }
