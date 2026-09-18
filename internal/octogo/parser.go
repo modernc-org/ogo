@@ -8564,7 +8564,7 @@ state2:
 
 // PostfixComm grammar:
 //
-//	PostfixComm = { Selector | Index | CallSuffix } ( [ "," AssignHead ] ( "=" | ":=" ) "<-" Expression | "<-" Expression ) .
+//	PostfixComm = { Selector | Index | CallSuffix } ( [ "," LhsItem ] ( "=" | ":=" ) "<-" Expression | "<-" Expression ) .
 //
 //	State 0
 //		on  ":=", '='
@@ -8589,7 +8589,7 @@ state2:
 //		Accept
 //	State 4
 //		on  '(', '*', identifier
-//			call AssignHead and goto state 5
+//			call LhsItem and goto state 5
 //	State 5
 //		on  ":=", '='
 //			shift and goto state 1
@@ -8654,10 +8654,10 @@ state3:
 	accept, errorSet = true, 0
 	return p.stop(r, accept, errorSet)
 state4:
-	accept, errorSet = false, 82
+	accept, errorSet = false, 81
 	switch Symbol(p.tok.Ch) {
 	case TOK_0028, TOK_002a, identifier:
-		r = p.add(r, p.AssignHead())
+		r = p.add(r, p.LhsItem())
 		goto state5
 	}
 	return p.stop(r, accept, errorSet)

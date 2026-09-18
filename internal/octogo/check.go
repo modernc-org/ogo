@@ -4387,8 +4387,8 @@ func (f *File) commRecvOkVar(commClause Node) (Token, bool) {
 					continue
 				}
 				for pc := range it(c.ast) {
-					if pc.sym == AssignHead {
-						return f.assignHeadIdent(pc)
+					if pc.sym == LhsItem {
+						return f.lhsItemIdent(pc)
 					}
 				}
 			}
@@ -4459,15 +4459,15 @@ func (f *File) commOp(s *Scope, op Node) {
 	// <- v", "v[i] = <-ch"), then locate the "<-" operand and the "="/":=" that, when
 	// present, marks a receive rather than a send.
 	f.checkIndexExprs(s, postfixComm)
-	var operand, okHead Node
-	hasOperand, hasOkHead := false, false
+	var operand, okItem Node
+	hasOperand, hasOkItem := false, false
 	var assignOp Symbol
 	for c := range it(postfixComm.ast) {
 		switch c.sym {
 		case Expression:
 			operand, hasOperand = c, true
-		case AssignHead:
-			okHead, hasOkHead = c, true // the comma-ok flag's target, `case v, ok := <-ch`
+		case LhsItem:
+			okItem, hasOkItem = c, true // the comma-ok flag's target, `case v, ok := <-ch`
 		case 0:
 			switch f.ch(c.tok) {
 			case ASSIGN, DEFINE:
@@ -4484,16 +4484,16 @@ func (f *File) commOp(s *Scope, op Node) {
 		f.checkReceiveOperand(s, operand)
 		if assignOp == ASSIGN {
 			f.commRecvAssignTarget(s, assignHead, postfixComm, operand)
-			if hasOkHead {
-				f.commRecvOkTarget(s, okHead)
+			if hasOkItem {
+				f.commRecvOkTarget(s, okItem)
 			}
 			break
 		}
 		// ":=" declares a name, here as much as in an ordinary short declaration, so
 		// a target that is not one has nothing for it to declare. The grammar admits
-		// them -- PostfixComm carries selectors and indexes, which the "=" form needs
-		// -- so the rule is a check.
-		if hasSelectorOrIndex(postfixComm) || f.headIsDeref(assignHead) || (hasOkHead && f.headIsDeref(okHead)) {
+		// them -- PostfixComm carries selectors and indexes, which the "=" form needs,
+		// and the flag's LhsItem its own -- so the rule is a check.
+		if hasSelectorOrIndex(postfixComm) || f.headIsDeref(assignHead) || (hasOkItem && !f.lhsItemIsName(okItem)) {
 			f.err(f.tok(assignHead.Pos()).Position(), "non-name target on the left side of := (a field, element or pointee target takes =)")
 		}
 	default:
@@ -4550,13 +4550,19 @@ func (f *File) commRecvAssignTarget(s *Scope, assignHead, postfixComm, chanExpr 
 
 // commRecvOkTarget resolves the second target of a "case v, ok = <-ch" receive
 // assignment, the comma-ok flag: it must exist, be assignable, and take a bool.
-func (f *File) commRecvOkTarget(s *Scope, okHead Node) {
-	id, ok := f.assignHeadIdent(okHead)
+func (f *File) commRecvOkTarget(s *Scope, okItem Node) {
+	id, ok := f.lhsItemIdent(okItem)
 	if !ok {
 		return
 	}
 	nm := id.Src()
+	// A suffixed target, `case v, r.ok = <-ch`, reads its base, so a blank one is
+	// an illegal read and a whole blank target a legal discard.
+	suffixed := !f.lhsItemIsName(okItem)
 	if nm == "_" {
+		if suffixed {
+			f.err(id.Position(), "cannot use _ as value")
+		}
 		return
 	}
 	switch s.find(nm).(type) {
@@ -4569,9 +4575,40 @@ func (f *File) commRecvOkTarget(s *Scope, okHead Node) {
 		f.err(id.Position(), "cannot assign to %s", nm)
 		return
 	}
+	if suffixed {
+		f.checkIndexExprs(s, okItem)
+		return // what the chain reaches is typed by the emitter, as an assignment's is
+	}
 	if tk, tok := f.identKind(s, id); tok && !assignableKind(tk, PredeclaredBool) {
 		f.err(id.Position(), "cannot assign the bool of a comma-ok receive to %s (type %s)", nm, kindName(tk))
 	}
+}
+
+// lhsItemIdent is assignHeadIdent for an LhsItem (LhsItem = AssignHead { Selector
+// | Index }): the identifier its head names.
+func (f *File) lhsItemIdent(item Node) (Token, bool) {
+	for c := range it(item.ast) {
+		if c.sym == AssignHead {
+			return f.assignHeadIdent(c)
+		}
+	}
+	return Token{}, false
+}
+
+// lhsItemIsName reports an LhsItem that is a bare name: no selector or index after
+// the head, and no dereference in it.
+func (f *File) lhsItemIsName(item Node) bool {
+	for c := range it(item.ast) {
+		switch c.sym {
+		case Selector, Index:
+			return false
+		case AssignHead:
+			if f.headIsDeref(c) {
+				return false
+			}
+		}
+	}
+	return true
 }
 
 // checkClauseBody walks the statement body of a case or comm clause in scope s.

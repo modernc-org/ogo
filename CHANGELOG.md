@@ -20,6 +20,12 @@ shipped section tells a reader on that version that they have behaviour they do 
 
 ### Language
 
+- **A select's comma-ok flag stored anywhere an assignment writes.** `case r.val,
+  r.ok = <-ch:`, `case vals[i], flags[i] = <-ch:` and `case p.val, p.ok = <-ch:`
+  were syntax errors: the grammar took a bare name for the flag's target where
+  the value's could carry a suffix, and the statement form has always taken both.
+  The `:=` form's targets must still be names, as a short declaration's are, and
+  says so.
 - **A string literal indexed and sliced.** `"0123456789abcdef"[n&15]` -- how a digit
   is looked up -- `"hello"[1:3]`, `for i, r := range "héllo"[1:]` and `switch
   "abc"[1] {` were syntax errors: the grammar gave a string literal no suffix, in a

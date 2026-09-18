@@ -1,8 +1,15 @@
 // The comma-ok clause's targets are checked as the statement form's are.
 
+type R struct {
+	val int
+	ok  bool
+}
+
 func main() {
 	var ch chan int
 	var n int
+	var r R
+	var flags [2]bool
 	select {
 	// ERROR no new variables on left side of :=
 	case _, _ := <-ch:
@@ -10,6 +17,14 @@ func main() {
 	case _, n = <-ch:
 	// ERROR undefined: nope
 	case _, nope = <-ch:
+	// ERROR non-name target on the left side of :=
+	case r.val, r.ok := <-ch:
+	// ERROR non-name target on the left side of :=
+	case n, flags[0] := <-ch:
+	// ERROR undefined: k
+	case n, flags[k] = <-ch:
+	// ERROR cannot use _ as value
+	case n, _.ok = <-ch:
 	}
-	println(n)
+	println(n, r.val, flags[0])
 }

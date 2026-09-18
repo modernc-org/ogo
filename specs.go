@@ -2278,7 +2278,7 @@
 //	CommHead    = "case" CommOp | "default" .
 //	CommOp      = "<-" Expression
 //		| AssignHead PostfixComm .
-//	PostfixComm = { Selector | Index | CallSuffix } ( [ "," AssignHead ] ( "=" | ":=" ) "<-" Expression | "<-" Expression ) .
+//	PostfixComm = { Selector | Index | CallSuffix } ( [ "," LhsItem ] ( "=" | ":=" ) "<-" Expression | "<-" Expression ) .
 //
 // (OctoGo Specific): A select polls its clauses in order, retrying the
 // non-blocking form of each communication. A default clause makes the select
@@ -2324,7 +2324,9 @@
 // A receive clause may take the comma-ok form, "case v, ok := <-ch:" or "case v, ok
 // = <-ch:", whose second value is false for that zero and true for a value sent, as
 // the statement form's is -- which is how a select tells a closed producer from a
-// sent zero. A send clause on one panics, as a plain send does, and it panics on
+// sent zero. The "=" form's targets may be anything an assignment writes to,
+// "case r.val, r.ok = <-ch:"; the ":=" form's must be names, as a short
+// declaration's are. A send clause on one panics, as a plain send does, and it panics on
 // entering the select whether or not another clause is ready.
 //
 // Two limits follow from the rendezvous having no scheduler behind it, and both

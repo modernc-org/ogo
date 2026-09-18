@@ -28349,6 +28349,51 @@ func main() {
 }
 `,
 		want: "D1 5 3 3\nD2 9 3\nD3 9 4 4\nD4 8 5 5\nD5 7 3 3\nD6 6 3\nD7 5 6\nD8 4 6\nD9 9 4\nE1 3 0 2\nE2 9 0 0 1\nE3 8 0 2\nE4 7 3 1\nE5 true false true 0\nE8 6 6 5 2 2\nF1 2 1 3\nF2 5 4\nF3 9 4\nF4 true true false 0\n",
+	}, {
+		// The comma-ok receive's second target in a select may be a field, an
+		// element or a field through a pointer, as the statement form's may; the
+		// grammar took a bare name there until 2026-09-18. Matched against Go.
+		name: "a select's comma-ok flag stored in a field, an element and through a pointer",
+		src: `type R struct {
+	val int
+	ok  bool
+}
+
+var ch chan int
+var done chan int
+
+func produce() {
+	ch <- 7
+	close(ch)
+	done <- 1
+}
+
+func main() {
+	go produce()
+	var r R
+	flags := [3]bool{false, false, false}
+	vals := [3]int{0, 0, 0}
+	var pr *R = &r
+	n := 0
+	for n < 3 {
+		select {
+		case r.val, r.ok = <-ch:
+			println("field", r.val, r.ok)
+		}
+		select {
+		case vals[n], flags[n] = <-ch:
+			println("element", vals[0], vals[1], vals[2], flags[0], flags[1], flags[2])
+		}
+		select {
+		case pr.val, pr.ok = <-ch:
+			println("through", r.val, r.ok)
+		}
+		n++
+	}
+	println("done", <-done)
+}
+`,
+		want: "field 7 true\nelement 0 0 0 false false false\nthrough 0 false\nfield 0 false\nelement 0 0 0 false false false\nthrough 0 false\nfield 0 false\nelement 0 0 0 false false false\nthrough 0 false\ndone 1\n",
 	}}
 
 // TestEmitCRun compiles emitted C with a host compiler and runs it, checking what

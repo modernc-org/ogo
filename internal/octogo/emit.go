@@ -2336,10 +2336,16 @@ func (e *emitter) selectCommOp(n Node, c *selectCase) bool {
 	assigns, hasValue := false, false
 	for q := range it(post.ast) {
 		switch {
-		case q.sym == AssignHead:
+		case q.sym == LhsItem:
 			// `case v, ok := <-ch:` -- the comma-ok receive's second target, which
-			// the grammar keeps inside PostfixComm, after the comma.
-			c.okTgt, c.hasOk = assignTarget{name: e.soleIdent(q.ast), stars: e.derefStars(q.ast)}, true
+			// the grammar keeps inside PostfixComm, after the comma: a name, or
+			// with "=" anything an assignment writes to, `case v, r.ok = <-ch:`.
+			t, ok := e.lhsItemTarget(q.ast)
+			if !ok {
+				e.fail("unsupported target for the comma-ok flag of a receive clause")
+				return false
+			}
+			c.okTgt, c.hasOk = t, true
 		case q.sym == Selector, q.sym == Index, q.sym == CallSuffix:
 			chain = append(chain, q)
 		case q.sym == 0 && e.f.ch(q.tok) == DEFINE:

@@ -1,0 +1,26 @@
+// COMPILE
+
+// The comma-ok flag's target may be anything an assignment writes to, with "=":
+// a field, an element, a field through a pointer.
+
+type R struct {
+	val int
+	ok  bool
+}
+
+func main() {
+	var ch chan int
+	var r R
+	var flags [2]bool
+	var vals [2]int
+	p := &r
+	i := 1
+	select {
+	case r.val, r.ok = <-ch:
+		println(r.val, r.ok)
+	case vals[i], flags[i] = <-ch:
+		println(vals[i], flags[i])
+	case p.val, p.ok = <-ch:
+		println(p.val, p.ok)
+	}
+}
