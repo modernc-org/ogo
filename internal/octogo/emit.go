@@ -25788,15 +25788,24 @@ func (e *emitter) typeNameForT(ct string) string {
 // before a Stringer. Asking for String() alone printed a `type Code int` with an
 // Error() method as the number it holds, and a type with both as its String().
 func (e *emitter) stringerCallC(ct, tmp string) (text string, isIface, ok bool) {
+	text, isIface, _, ok = e.stringerMethodC(ct, tmp)
+	return text, isIface, ok
+}
+
+// stringerMethodC is stringerCallC reporting as well whether the method takes a
+// POINTER receiver. Through a nil pointer only such a method can be called: a value
+// one copies its receiver out first, which panics, and fmt prints the panic as
+// <nil>.
+func (e *emitter) stringerMethodC(ct, tmp string) (text string, isIface, ptrRecv, ok bool) {
 	if e.isIfaceCType(ct) {
 		for _, want := range []string{"Error", "String"} {
 			for _, m := range e.ifaceMethods[ct] {
 				if m.name == want && m.res == cString && len(m.params) == 0 && m.out == "" {
-					return tmp + ".vt->" + vtMember(m.name) + "(" + tmp + ".data)", true, true
+					return tmp + ".vt->" + vtMember(m.name) + "(" + tmp + ".data)", true, false, true
 				}
 			}
 		}
-		return "", false, false
+		return "", false, false, false
 	}
 	isPtr := e.isPointer(ct)
 	base := ct
@@ -25804,7 +25813,7 @@ func (e *emitter) stringerCallC(ct, tmp string) (text string, isIface, ok bool) 
 		base = strings.TrimSuffix(ct, "*")
 	}
 	if !e.isMethodBase(methodBaseType(base)) {
-		return "", false, false
+		return "", false, false, false
 	}
 	for _, want := range []string{"Error", "String"} {
 		cname, path, _, found := e.promotedMethod(base, want)
@@ -25819,9 +25828,9 @@ func (e *emitter) stringerCallC(ct, tmp string) (text string, isIface, ok bool) 
 		if !okr {
 			continue
 		}
-		return cname + "(" + recv + ")", false, true
+		return cname + "(" + recv + ")", false, ptrRecv, true
 	}
-	return "", false, false
+	return "", false, false, false
 }
 
 // stringerVerb reports the verbs fmt formats a Stringer's String() -- or an error's
@@ -25850,7 +25859,7 @@ func (e *emitter) emitStringerElems(idx int, arg Node, verb byte, value func()) 
 		return false
 	}
 	el := e.newTmp()
-	text, isIface, ok := e.stringerCallC(elem, el)
+	text, isIface, ptrRecv, ok := e.stringerMethodC(elem, el)
 	if !ok {
 		return false
 	}
@@ -25886,11 +25895,15 @@ func (e *emitter) emitStringerElems(idx int, arg Node, verb byte, value func()) 
 			print = "ogo_print_hex_bytes(" + text + ", " + strconv.Itoa(boolToInt(verb == 'X')) + ");"
 		}
 	}
-	if isIface {
+	switch {
+	case isIface:
 		// "<nil>" under every verb: fmt's complaint, "%!s(<nil>)", is for a nil
 		// interface standing as the argument, and an element of one is printed by
 		// its value instead.
 		print = "if (" + el + ".vt) { " + print + " } else { printf(\"<nil>\"); }"
+	case e.isPointer(elem) && !ptrRecv:
+		// A value method through a nil pointer panics, which fmt prints as <nil>.
+		print = "if (" + el + ") { " + print + " } else { printf(\"<nil>\"); }"
 	}
 	e.emit(print + " } printf(\"]\"); }\n")
 	return true
@@ -26027,7 +26040,7 @@ func (e *emitter) emitPrintfVerb(item printfItem, idx int, arg Node) bool {
 	// silently -- and refused an error outright.
 	if dct, declared := e.printfArgType(idx, arg); stringerVerb(verb) && declared {
 		tmp := e.newTmp()
-		if text, isIface, ok := e.stringerCallC(dct, tmp); ok {
+		if text, isIface, ptrRecv, ok := e.stringerMethodC(dct, tmp); ok {
 			// Bound in a block first: the value may be a call, whose field a chain
 			// must not read off the returned struct (doc/return-nonword-struct.c),
 			// and a block keeps the arguments in source order where the prologue
@@ -26067,6 +26080,13 @@ func (e *emitter) emitPrintfVerb(item printfItem, idx int, arg Node) bool {
 					none = "%!" + string(verb) + "(<nil>)"
 				}
 				e.emit("; if (" + tmp + ".vt) { " + print + "; } else { printf(\"" + strings.ReplaceAll(none, "%", "%%") + "\"); } }\n")
+				return true
+			}
+			if e.isPointer(dct) && !ptrRecv {
+				// A value method through a nil pointer panics copying its receiver
+				// out, and fmt writes the panic as <nil> -- under every verb and
+				// whatever the width, which it does not pad.
+				e.emit("; if (" + tmp + ") { " + print + "; } else { printf(\"<nil>\"); } }\n")
 				return true
 			}
 			e.emit("; " + print + "; }\n")

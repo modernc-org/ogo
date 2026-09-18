@@ -1996,6 +1996,10 @@
 // the struct-field form. A slice of values with a String() method takes none yet,
 // and says so where it is written.
 //
+// A nil pointer whose type has Error() or String() on a VALUE receiver prints
+// "<nil>", which is what fmt prints for the panic calling the method would raise; a
+// method on a pointer receiver is called with the nil, as Go calls it.
+//
 // A verb that does not suit its argument, an unknown verb, and a count of verbs
 // that does not match the count of arguments are each refused where the call is
 // written.

@@ -154,6 +154,11 @@ shipped section tells a reader on that version that they have behaviour they do 
 
 ### Fixed
 
+- **A nil pointer whose type has String() or Error() on a value receiver prints
+  <nil>.** Calling such a method through a nil pointer panics in Go too, copying
+  the receiver out, and fmt prints that panic as `<nil>`; here `%v` of one panicked
+  with "nil pointer dereference", and so did an element of a slice of them. A
+  pointer receiver's method is called with the nil, as Go calls it.
 - **A deferred printf read its arguments one place off.** The arguments a `defer
   printf(...)` captures include the format, and the replay read argument i from
   slot i: `defer printf("alone %v|\n", s)` built without a word and printed its own

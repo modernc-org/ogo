@@ -30048,6 +30048,35 @@ func main() {
 `,
 		want: "body 1\nalone orig|\nwidth [    1] [orig] [  1.50]\nmore C! 10|\ndeferred 1 1 orig \"orig\" main.Celsius 1|\nafter 1\nearly 30 1\nearly 1 20|\nearly returned 2, calls 3\n",
 	}, {
+		// A value method through a nil pointer panics copying its receiver out, and
+		// fmt prints that panic as <nil>, unpadded, under every verb; a pointer
+		// method is called with the nil, as Go calls it. %v of the first panicked
+		// with "nil pointer dereference" here.
+		name: "printf of a nil pointer whose type has String() on a value receiver",
+		src: `type V struct {
+	n int
+}
+
+func (v V) String() string { return "value method" }
+
+type P struct {
+	n int
+}
+
+func (p *P) String() string { return "pointer method" }
+
+func main() {
+	var v *V
+	var p *P
+	printf("%v|%s|%v|%8v|%-7s|%q\n", v, v, p, v, v, v)
+	vs := []*V{nil, &V{1}}
+	printf("%v %s\n", vs, vs)
+	w := &V{2}
+	printf("%v %x\n", w, w)
+}
+`,
+		want: "<nil>|<nil>|pointer method|<nil>|<nil>|<nil>\n[<nil> value method] [<nil> value method]\nvalue method 76616c7565206d6574686f64\n",
+	}, {
 		// The embedded strings package measured against Go's on the host and a
 		// P2-EDGE (2026-09-18): Contains, ContainsAny, ContainsRune, Count
 		// (overlapping, empty, multi-byte), Index, LastIndex, IndexAny, IndexByte,
