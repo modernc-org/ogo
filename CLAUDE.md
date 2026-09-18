@@ -534,7 +534,8 @@ operator or a suffix of its own -- read or written through a suffix: `(&p).x`,
 `(&arr)[1:]`, `(get()).x`, `(*get()).x`, `(arr[1:])[1:]`, `("hello")[1:]`, the targets
 `(p).x = 5` and `(&p).x = 3`, and the send `(&bus.ports[1]).ch <- 5` (`(*p).x`, `(a)[i]`,
 `(&v).m()` and `(a - b).m()` work); a chain after a NAMED string constant's slice,
-`hexdigits[1:][0]` (the literal's works). No grammar gap is
+`hexdigits[1:][0]` (the literal's works), and after a slice step inside a chain,
+`rows[0][1:][1]` ("this combination of indexes and fields is not supported yet"). No grammar gap is
 known: the ones recorded before all closed that day, and two nobody had recorded --
 HeaderFactor had dropped the suffix from three of Factor's alternatives, and a string
 literal took none at all, `"0123456789abcdef"[n&15]`. **Check Factor and HeaderFactor

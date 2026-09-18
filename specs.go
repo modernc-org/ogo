@@ -654,7 +654,9 @@
 //
 // A slice's backing comes either from slicing an existing array ("var a [N]T"
 // then "a[i:j]") or from "make([]T, len, cap)", which reserves a fixed, compile-
-// time-sized backing array. "append(s, x)" grows the length in place: the form
+// time-sized backing array. An empty slice is not nil, as in Go: "[]T{}" and
+// "make([]T, 0)" compare unequal to nil where "var s []T" and a nil slice re-sliced
+// compare equal, and each has length 0 and capacity 0. "append(s, x)" grows the length in place: the form
 // "s = append(s, x)" panics when the slice is already at capacity, while
 // "s, ok = append(s, x)" instead reports a full slice through ok — a bool — and
 // leaves s unchanged. len(s) and cap(s) report the header's length and capacity.

@@ -28796,6 +28796,155 @@ func main() {
 }
 `,
 		want: "order body\nin a block 3\nsecond deferred 2\nfirst deferred 1\nargs body 2 123\nmarks 3\nx at defer 1\nreceivers body 9\npointer at return 9\nvalue through pointer at defer 1\npointer receiver at return 9\nvalue receiver at defer 1\ndeferred in results 7\nresults 10\nearly body 1\nearly 1\nearly 3\nearly -1 3\n",
+	}, {
+		// Slice semantics measured against Go on the host and a P2-EDGE
+		// (2026-09-18): a view's length and capacity, growth up to the capacity,
+		// re-slicing within it and the three-index form, aliasing through every
+		// view, copy with a shorter destination and overlapping ranges and from a
+		// string, pointers into a slice of structs, a row of a two-dimensional
+		// array, a range that evaluates its header once, a header copied before an
+		// append -- and nil against empty: `[]int{}` and `make([]int, 0)` are not
+		// nil, local or package-level, where `var s []int` and a nil slice re-sliced
+		// are. The two were nil until then (the fault), and the make's zero-length
+		// backing array did not compile on the host.
+		name: "slice semantics: views, growth, copy, aliasing, and nil against empty",
+		src: `var pe = []int{}
+var pm []string = make([]string, 0)
+var ps = []P{}
+var pn []int
+
+type P struct {
+	x, y int
+}
+
+func sum(s []int) int {
+	t := 0
+	for _, v := range s {
+		t += v
+	}
+	return t
+}
+
+func fill(s []int, v int) {
+	for i := range s {
+		s[i] = v
+	}
+}
+
+func part1() {
+	var backing [8]int
+	s := backing[:4]
+	println("A1", len(s), cap(s), sum(s))
+	s = append(s, 5)
+	s = append(s, 6, 7)
+	println("A2", len(s), cap(s), backing[4], backing[5], backing[6], sum(s))
+	t := s[2:5]
+	println("A3", len(t), cap(t), t[0], t[2])
+	t[0] = 9
+	println("A4", s[2], backing[2])
+	u := s[1:3:4]
+	println("A5", len(u), cap(u), u[0], u[1])
+	u = append(u, 8)
+	println("A6", len(u), cap(u), s[3], backing[3])
+	w := t[1:]
+	println("A7", len(w), cap(w), w[0])
+	x := t[:cap(t)]
+	println("A8", len(x), cap(x), x[len(x)-1])
+	fill(s[:2], 1)
+	println("A9", backing[0], backing[1], backing[2], sum(s))
+}
+
+func part2() {
+	// nil and empty slices
+	var n []int
+	println("B1", len(n), cap(n), n == nil, sum(n))
+	for range n {
+		println("never")
+	}
+	e := []int{}
+	println("B2", len(e), cap(e), e == nil)
+	// a literal, its capacity and growth up to it
+	lit := []int{1, 2, 3}
+	println("B3", len(lit), cap(lit), sum(lit))
+	// copy: shorter destination, overlapping ranges
+	var a [6]int
+	for i := range a {
+		a[i] = i + 1
+	}
+	dst := a[:3]
+	k := copy(dst, a[3:])
+	println("B4", k, a[0], a[1], a[2], a[3])
+	k = copy(a[1:], a[:4])
+	println("B5", k, a[0], a[1], a[2], a[3], a[4], a[5])
+	k = copy(a[:], a[2:])
+	println("B6", k, a[0], a[1], a[2], a[3], a[4], a[5])
+	var bs [4]byte
+	k = copy(bs[:], "héllo")
+	println("B7", k, bs[0], bs[1], bs[2], bs[3])
+	// a slice of structs and pointers into it
+	ps := [3]P{{1, 2}, {3, 4}, {5, 6}}
+	sp := ps[:]
+	p := &sp[1]
+	p.x = 30
+	sp[2].y = 60
+	println("B8", ps[1].x, ps[2].y, sp[1].x)
+	// slices of slices
+	rows := [2][3]int{{1, 2, 3}, {4, 5, 6}}
+	r := rows[1][:]
+	r[0] = 40
+	rr := rows[0][1:]
+	println("B9", rows[1][0], len(rows[0][1:]), rr[1])
+	// range over a slice evaluates the header once
+	s := lit[:]
+	c := 0
+	for i, v := range s {
+		if i == 0 {
+			s = s[:1]
+		}
+		c = c*10 + v
+	}
+	println("B10", c, len(s))
+	// a slice sent by value shares its backing, a header copy does not follow appends
+	h := lit[:2]
+	h2 := h
+	h = append(h, 9)
+	println("B11", len(h), len(h2), lit[2], h2[1])
+}
+
+func isNil(s []int) bool {
+	return s == nil
+}
+
+func count(s []P) int {
+	return len(s)
+}
+
+func part3() {
+	var n []int
+	e := []int{}
+	m := make([]int, 0)
+	var arr [2]int
+	z := arr[:0]
+	nz := n[:0]
+	println("N1", n == nil, e == nil, m == nil, z == nil, nz == nil)
+	n = []int{}
+	println("N2", n == nil, isNil([]int{}), isNil(nil), isNil(m), len(m), cap(m))
+	n = nil
+	println("N3", n == nil, len(n), pe == nil, pm == nil, ps == nil, pn == nil, len(pe), cap(pm), count(ps), count([]P{}))
+	for range pe {
+		println("never")
+	}
+	es := []string{}
+	println("N4", es == nil, len(es), len(pm))
+}
+
+func main() {
+	part1()
+	part2()
+	part3()
+}
+`,
+		want: "A1 4 8 0\nA2 7 8 5 6 7 18\nA3 3 6 0 5\nA4 9 9\nA5 2 3 0 9\nA6 3 3 8 8\nA7 2 5 8\nA8 6 6 0\nA9 1 1 9 37\nB1 0 0 true 0\nB2 0 0 false\nB3 3 3 6\nB4 3 4 5 6 4\nB5 4 4 4 5 6 4 6\nB6 4 5 6 4 6 4 6\nB7 4 104 195 169 108\nB8 30 60 30\nB9 40 2 3\nB10 123 1\nB11 3 2 9 2\nN1 true false false false true\nN2 false false true false 0 0\nN3 true 0 false false false true 0 0 0 0\nN4 false 0 0\n",
 	}}
 
 // TestEmitCRun compiles emitted C with a host compiler and runs it, checking what

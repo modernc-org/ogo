@@ -97,6 +97,12 @@ shipped section tells a reader on that version that they have behaviour they do 
 
 ### Fixed
 
+- **An empty slice was nil.** `[]int{} == nil` and `make([]int, 0) == nil` were
+  true, where Go's empty slice is not nil -- it points at a zero-size object --
+  and `make([]int, 0)` declared a zero-length C backing array, which the host's
+  compiler refused. An empty literal or make points at a backing array of one
+  element nothing reads now, local or package-level, with length 0 and capacity
+  0; `var s []int`, a nil argument and a nil slice re-sliced stay nil.
 - **A constant beyond 64 bits was computed at run time, as 0.** `const huge = 1 <<
   100` was declared as a `static const int` initialized by a run-time shift of an
   int64 by 100, and `huge >> 98`, `(1 << 64) / 4`, `1 << 62 * 4 / 8` and `1<<64 -
@@ -419,6 +425,14 @@ program handed out a reference to storage that was gone by the time it was read.
 
 ### Verified
 
+- Slice semantics against Go on the host and a P2-EDGE: a view's length and
+  capacity, growth up to the capacity, re-slicing and the three-index form,
+  aliasing through every view, copy with a shorter destination, overlapping
+  ranges and from a string, pointers into a slice of structs, a row of a
+  two-dimensional array, a range evaluating its header once, a header copied
+  before an append, and nil against empty. One fault (the empty slice above);
+  the program is a run case. A chain after a slice step, `rows[0][1:][1]`, is a
+  loud refusal, recorded with the others of its family.
 - Constant, method and defer semantics against Go on the host and a P2-EDGE:
   constant division and truncation, iota idioms, typed and untyped constants
   (`x / 3.0` for an int x is 3), rune constants, wrapping of a sized variable,

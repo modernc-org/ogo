@@ -13726,14 +13726,6 @@ func (e *emitter) emitArrayLitVar(name string, typeAST []int32, lit Node, static
 		e.locals[name] = cname
 		e.frameBacked[name] = true // the backing array is a local of this frame
 	}
-	if length == 0 {
-		// "[]T{}" is an empty slice, not a slice of one zero element. C has no
-		// zero-length array to point it at, and it needs none: the header is the
-		// zero value, whose pointer is never dereferenced because the length is 0.
-		lead()
-		e.emit(cname + " " + name + " = {0};\n")
-		return
-	}
 	backing := e.newBacking()
 	n := strconv.Itoa(length)
 	// An ARRAY element is declared through the element's own extents rather than
@@ -13744,6 +13736,22 @@ func (e *emitter) emitArrayLitVar(name string, typeAST []int32, lit Node, static
 	decl, suffix := elem, ""
 	if a, isArr := e.namedArrays[elem]; isArr {
 		decl, suffix = a.elem, a.declSuffix()
+	}
+	if length == 0 {
+		// "[]T{}" is an empty slice, not a slice of one zero element -- and not
+		// nil: Go's points at a zero-size object, and `[]int{} == nil` is false. C
+		// has no zero-length array, so it points at one element nothing reads, the
+		// length being 0. Until 2026-09-18 the header was the zero value, which IS
+		// nil, and the comparison said true.
+		lead()
+		e.emit(decl + " " + backing + "[1]" + suffix)
+		if !static {
+			e.emit(" = {0}")
+		}
+		e.emit(";\n")
+		lead()
+		e.emit(cname + " " + name + " = {" + backing + ", 0, 0};\n")
+		return
 	}
 	// A file-scope backing array whose elements are not all constant cannot be
 	// written as a static initializer -- C evaluates one at compile time. It is
@@ -19346,6 +19354,18 @@ func (e *emitter) newBacking() string {
 	return s
 }
 
+// backingSize is the C extent of the array behind a make of the capacity cap, a
+// rendered constant: the capacity, or one for none. `make([]int, 0)` is an empty
+// slice that is not nil, and C has no zero-length array -- `int b[0] = {0}` was
+// "excess elements in array initializer" on the host, and the header pointed at
+// nothing.
+func backingSize(cap string) string {
+	if v, ok := parseCIntLit(cap); ok && v == 0 {
+		return "1"
+	}
+	return cap
+}
+
 // peelToFactorAST descends single-child expression wrappers (Expression/SimpleExpr/
 // Term/UnaryExpr) and returns the innermost node's child AST -- the Factor level.
 func (e *emitter) peelToFactorAST(ast []int32) []int32 {
@@ -19409,7 +19429,7 @@ func (e *emitter) emitMakeSliceAssign(lhs, cname, elem string, lenAST, capAST []
 	}
 	backing := e.newBacking()
 	e.ind()
-	e.emit(elem + " " + backing + "[" + size + "] = {0};\n")
+	e.emit(elem + " " + backing + "[" + backingSize(size) + "] = {0};\n")
 	e.ind()
 	e.emit(lhs + " = (" + cname + "){" + backing + ", ")
 	if capAST != nil {
@@ -19436,10 +19456,10 @@ func (e *emitter) emitMakeSliceVar(name, cname, elem string, lenAST, capAST []in
 	}
 	// Backing array.
 	if static {
-		e.emit("static " + elem + " " + backing + "[" + size + "];\n")
+		e.emit("static " + elem + " " + backing + "[" + backingSize(size) + "];\n")
 	} else {
 		e.ind()
-		e.emit(elem + " " + backing + "[" + size + "] = {0};\n")
+		e.emit(elem + " " + backing + "[" + backingSize(size) + "] = {0};\n")
 	}
 	// Header { backing, len, cap }. cap == the backing size; len is the initial
 	// length (the size for the two-argument form).

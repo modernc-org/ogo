@@ -7244,9 +7244,10 @@ func main() {
 		"\tint typed[3] = {7, 8, 9};\n",
 		// A slice literal: backing array, then the header over it.
 		"\tint ogo_backing_0[2] = {5, 6};\n\togo_slice_int xs = {ogo_backing_0, 2, 2};\n",
-		// "[]T{}" gets no backing array: C has no zero-length one, and the zero
-		// header never dereferences its pointer because the length is 0.
-		"\togo_slice_int empty = {0};\n",
+		// "[]T{}" is empty and not nil, so it points at a backing array of one
+		// element nothing reads: C has no zero-length one, and the zero header
+		// would be nil, which Go's empty literal is not.
+		"\tint ogo_backing_1[1] = {0};\n\togo_slice_int empty = {ogo_backing_1, 0, 0};\n",
 		// A string element is a { pointer, length } struct, so it is braced rather
 		// than written as a compound literal.
 		"\togo_string strs[2] = {{\"a\", 1}, {\"b\", 1}};\n",
