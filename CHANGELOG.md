@@ -197,6 +197,11 @@ shipped section tells a reader on that version that they have behaviour they do 
 
 ### Fixed
 
+- **A package name is not a variable to assign.** `lib = 3`, `lib++`, `lib += 2`
+  and `n, lib = 1, 2` for an imported lib were accepted and reached the C compiler
+  as a store to a name nothing declares; they are refused as Go refuses them, "use
+  of package lib not in selector". A member, `lib.V = 3`, and a local named lib are
+  what they were.
 - **A function literal reads its own names, and is refused a local of the function
   around it however it is found.** Every name a literal's body wrote was taken for a
   capture when the function around it had a variable of the name, so a literal was

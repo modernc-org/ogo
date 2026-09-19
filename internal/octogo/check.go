@@ -5150,6 +5150,12 @@ func (f *File) checkAssignment(s *Scope, head, postfix Node) {
 					f.err(tok.Position(), "undefined: %s", nm)
 					break
 				}
+				if !lhsSuffixed[i] {
+					// `lib = 3`: the package name itself, which is no variable -- it
+					// reached the C compiler as an assignment to an undeclared name.
+					f.err(tok.Position(), "use of package %s not in selector", nm)
+					break
+				}
 				// `pkg.K = 2`: what a qualifier selects may be a constant, a function
 				// or a type, none of which can be assigned to. The qualifier is not a
 				// variable, so the case below never saw one and every such assignment
@@ -5181,6 +5187,12 @@ func (f *File) checkAssignment(s *Scope, head, postfix Node) {
 			case nil:
 				if !f.isImportQualifier(s, nm) {
 					f.err(tok.Position(), "undefined: %s", nm)
+					break
+				}
+				if !lhsSuffixed[i] {
+					// `lib = 3`: the package name itself, which is no variable -- it
+					// reached the C compiler as an assignment to an undeclared name.
+					f.err(tok.Position(), "use of package %s not in selector", nm)
 					break
 				}
 				// `pkg.K = 2`: what a qualifier selects may be a constant, a function
@@ -5303,6 +5315,12 @@ func (f *File) checkAssignment(s *Scope, head, postfix Node) {
 			case nil:
 				if !f.isImportQualifier(s, nm) {
 					f.err(tok.Position(), "undefined: %s", nm)
+					break
+				}
+				if !lhsSuffixed[i] {
+					// `lib = 3`: the package name itself, which is no variable -- it
+					// reached the C compiler as an assignment to an undeclared name.
+					f.err(tok.Position(), "use of package %s not in selector", nm)
 					break
 				}
 				// `pkg.K = 2`: what a qualifier selects may be a constant, a function

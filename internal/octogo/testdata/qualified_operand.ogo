@@ -48,3 +48,25 @@ func bare() {
 	x := p
 	_ = x
 }
+
+// ... and as a TARGET, where it reached the C compiler as an assignment to a name
+// nothing declares. A member of it is a target like any other variable, and a local
+// may take the name, as in Go.
+func targets() {
+	// ERROR "use of package p not in selector"
+	p = 3
+	// ERROR "use of package p not in selector"
+	p++
+	// ERROR "use of package p not in selector"
+	p += 2
+	var n int
+	// ERROR "use of package p not in selector"
+	n, p = 1, 2
+	p.Value = n
+	p.Value++
+	{
+		p := 4
+		p++
+		_ = p
+	}
+}
