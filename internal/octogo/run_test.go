@@ -28458,6 +28458,38 @@ func main() {
 		want: "1\n2\n1 true\n",
 	},
 	{
+		name: "a typed package slice from a slice value",
+		src: `var gx, gy = 3, 4
+
+var gback = [4]*int{&gx, &gy}
+
+var gps []*int = gback[:2]
+
+var gall []*int = gback[:]
+
+var nums = [5]int{1, 2, 3, 4, 5}
+
+var mid []int = nums[1:4]
+
+var other []int = mid
+
+func mk() []int { return nums[:2] }
+
+var fromCall []int = mk()
+
+// A package slice declared with its type written, from a slice of a package
+// array, another package slice or a call's result: only the inferred form, var s =
+// back[:0], was accepted.
+func main() {
+	println(len(gps), cap(gps), *gps[1], len(gall))
+	println(len(mid), mid[0], cap(mid), len(other), other[2])
+	mid[1] = 30
+	println(nums[2], len(fromCall), fromCall[1])
+}
+`,
+		want: "2 4 4 4\n3 2 4 3 4\n30 2 2\n",
+	},
+	{
 		// A function literal called where it stands, as a statement of its own, which
 		// the grammar had no production for: a statement could not begin with "func".
 		// It is lifted as a literal is anywhere and called by name; arguments are how a

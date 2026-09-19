@@ -197,6 +197,10 @@ shipped section tells a reader on that version that they have behaviour they do 
 
 ### Fixed
 
+- **A package slice may be declared with its type from any slice value.** `var s
+  []T = back[:2]`, from another package slice or from a call's result, was refused
+  ("a package slice initializer must be make([]T, ...) or a []T literal") where the
+  same declaration with its type inferred, `var s = back[:2]`, was accepted.
 - **An interface made from a pointer points where the pointer does.** Made from a
   pointer parameter, `var s Saver = p`, it was taken to point at the parameter
   itself, so calling a method that keeps its receiver, or storing the interface in

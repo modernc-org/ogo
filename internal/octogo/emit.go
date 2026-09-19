@@ -7910,8 +7910,32 @@ func (e *emitter) emitPackageVarDecl(ast []int32) {
 				}
 				me, lenAST, capAST, ok := e.makeSliceInit(initExpr)
 				if !ok {
-					e.fail("a package slice initializer must be make([]T, ...) or a []T literal")
-					return
+					// Any other slice value -- a slice of a package array, another
+					// package slice, a call's result -- is what the inferred form takes:
+					// a static initializer where C has one, the package init's
+					// assignment otherwise. `var s = back[:0]` was accepted, and the
+					// same declaration with its type written, `var s []T = back[:0]`,
+					// refused.
+					if len(names) != 1 || names[0] == "_" {
+						e.fail("a slice initializer needs a single named variable")
+						return
+					}
+					if ct, typed := e.inferCType(initExpr); !typed || e.underlyingCType(ct) != cname {
+						e.fail("a package slice initializer must be a slice of the declared type")
+						return
+					}
+					gn := e.globalC(names[0])
+					e.globals[gn] = cname
+					e.globalSliceVars[gn] = elem
+					if e.staticInitOK(initExpr) {
+						e.emit("static " + cname + " " + gn + " = ")
+						e.emitGlobalInit(cname, initExpr)
+						e.emit(";\n")
+						continue
+					}
+					e.emit("static " + cname + " " + gn + " = " + e.zeroInitC(cname) + ";\n")
+					e.pkgInitAssign(gn, names[0], initExpr)
+					continue
 				}
 				if me != elem {
 					e.fail("make element type %q does not match the declared slice element type %q", me, elem)
