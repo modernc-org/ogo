@@ -187,6 +187,13 @@ shipped section tells a reader on that version that they have behaviour they do 
 
 ### Fixed
 
+- **An interface is satisfied, or not, however its pointer is written.** `var _
+  Shape = &T{}`, the compile-time assertion that T implements Shape, was asked by
+  nothing: a blank package variable is emitted nowhere, so a T missing a method
+  compiled. And `&T{...}` or a call returning `*T` where an interface was wanted
+  was left to the emitter, which refused the first of them with no position. The
+  checker asks about them all now -- a package variable once every method is
+  known, a method declared below the assertion counting.
 - **nil in a list assignment takes its target's type.** `p, k = nil, 1` was
   "cannot infer the type of a value in a multiple assignment", for a pointer, a
   slice, a function and an interface alike.

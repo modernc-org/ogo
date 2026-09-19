@@ -1,0 +1,58 @@
+// An interface is satisfied by a pointer however the pointer is written -- the
+// address of a variable or of a literal, a call's result -- and at package scope as
+// in a function. The compile-time assertion `var _ Shape = &T{}` is emitted
+// nowhere, so nothing but the checker asks it, and a method declared below the
+// assertion counts: the question waits until every method is known.
+
+type Shape interface {
+	Area() int
+}
+
+type NotShape struct {
+	S int
+}
+
+var gn NotShape
+
+func mkNot() *NotShape { return &gn }
+
+func mk() *Sq { return &gq }
+
+func show(s Shape) { println(s.Area()) }
+
+// ERROR cannot use &NotShape\{\} \(value of type \*NotShape\) as Shape value in variable declaration: NotShape does not implement Shape \(missing method Area\)
+var _ Shape = &NotShape{}
+
+// ERROR cannot use mkNot\(\) \(value of type \*NotShape\) as Shape value in variable declaration
+var _ Shape = mkNot()
+
+// ERROR cannot use &gn \(variable of type \*NotShape\) as Shape value in variable declaration
+var _ Shape = &gn
+
+// ERROR cannot use gn \(variable of type NotShape\) as Shape value in variable declaration: an interface holds a pointer here
+var _ Shape = gn
+
+var _ Shape = &gq
+
+var _ Shape = mk()
+
+func main() {
+	// ERROR cannot use &NotShape\{\} \(value of type \*NotShape\) as Shape value in variable declaration
+	var a Shape = &NotShape{}
+	// ERROR cannot use mkNot\(\) \(value of type \*NotShape\) as Shape value in argument to show
+	show(mkNot())
+	var e Shape
+	// ERROR cannot use &NotShape\{\} \(value of type \*NotShape\) as Shape value in assignment
+	e = &NotShape{}
+	var c Shape = &Sq{2}
+	_, _, _ = a, c, e
+	show(mk())
+}
+
+var gq Sq
+
+type Sq struct {
+	S int
+}
+
+func (q *Sq) Area() int { return q.S * q.S }

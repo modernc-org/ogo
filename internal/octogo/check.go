@@ -240,6 +240,7 @@ type File struct {
 	gotoLabels        map[string]bool      // labels any goto of the function names, scanned ahead: a targeted label is reachable however the flow above it ended
 	labelUsed         map[string]bool      // the labels a break or continue named, for the unused report
 	localVars         []*VarDeclaration    // local variables of the function body being checked, for the unused-variable report
+	ifaceInits        []ifaceInit          // package variables' initializers of an interface type, checked once every method is known
 	writeTargets      map[string]bool      // positions of bare "="/":=" assignment-target identifiers in the body: writes, which do not count as uses
 	clauseFallthrough map[string]bool      // positions of "fallthrough" keywords checkSwitch has accounted for, so the statement walk reports only the misplaced ones
 	makeTypeArgs      map[string]bool      // positions of identifiers standing as make's first argument, which is a TYPE and not a value: "make(List, n)" over "type List []int" names one, and the bare-type-name check would otherwise report it as "cannot use type List as a value"
@@ -575,8 +576,23 @@ func (f *File) funcDecl(s *Scope, n Node) {
 	}
 }
 
+// ifaceInit is a package variable's initializer of a type that may be an
+// interface, `var _ Shape = &Sq{}`: whether the value satisfies it is asked in phase
+// 4, when every method of every type has been registered. At the declaration a
+// method written further down the file is not yet there to be found.
+type ifaceInit struct {
+	iface string
+	value Node
+}
+
 // checkBodies walks a source file's function and method bodies (Phase 4).
 func (f *File) checkBodies(pkg *Scope, n Node) {
+	// A package variable of an interface type -- the compile-time assertion `var _
+	// Shape = &Sq{}` above all, which nothing emits and so nothing else asks about
+	// -- is checked as a local one is.
+	for _, x := range f.ifaceInits {
+		f.checkImplements(pkg, x.iface, x.value, "variable declaration")
+	}
 	for n := range it(n.ast) {
 		if n.sym != TopLevelDecl {
 			continue
@@ -8924,6 +8940,13 @@ func (f *File) operandTypeName(s *Scope, n Node, k Kind) string {
 // package. It asks the same two questions in the same order: an interface holds a
 // pointer here, and does this type's method set satisfy that interface.
 func (f *File) checkImplementsNamed(s *Scope, ifaceName string, value Node, from, shown string, valueIsPtr bool, what string) {
+	f.checkImplementsKind(s, ifaceName, value, from, shown, "", valueIsPtr, what)
+}
+
+// checkImplementsKind is checkImplementsNamed with the value's kind as the message
+// says it -- "value of type *T" for a pointer written as an expression, which a
+// variable's wording would misname -- or "" for the variable's.
+func (f *File) checkImplementsKind(s *Scope, ifaceName string, value Node, from, shown, kindText string, valueIsPtr bool, what string) {
 	if from == "" || from == ifaceName {
 		return
 	}
@@ -8942,6 +8965,9 @@ func (f *File) checkImplementsNamed(s *Scope, ifaceName string, value Node, from
 	kind := "variable of type " + from
 	if valueIsPtr && !strings.HasPrefix(shown, "&") {
 		kind = "variable of type *" + from
+	}
+	if kindText != "" {
+		kind = kindText
 	}
 	head := fmt.Sprintf("cannot use %s (%s) as %s value in %s: %s does not implement %s",
 		shown, kind, ifaceName, what, from, ifaceName)
@@ -9006,8 +9032,12 @@ func (f *File) checkImplements(s *Scope, ifaceName string, value Node, what stri
 	valueIsPtr := false
 	id, ok := f.exprIdent(value)
 	if !ok {
+		// `&x` for a VARIABLE x. The root of `&T{...}` is the literal's type name,
+		// which is no variable and is asked about below instead.
 		if root, suffixed, isAddr := f.addressOperandRoot(s, value); isAddr && !suffixed {
-			id, valueIsPtr, ok = root, true, true
+			if _, isVar := s.find(root.Src()).(*VarDeclaration); isVar {
+				id, valueIsPtr, ok = root, true, true
+			}
 		}
 	}
 	// `pkg.V` and `&pkg.V`: the variable is another package's, so it is looked up
@@ -9019,6 +9049,21 @@ func (f *File) checkImplements(s *Scope, ifaceName string, value Node, what stri
 		if from, isPtr, isQual := f.qualifiedValueType(s, value); isQual {
 			f.checkImplementsNamed(s, ifaceName, value, from, f.exprSource(value), isPtr, what)
 			return
+		}
+		// A POINTER of a named type written otherwise -- `&T{...}`, a call returning
+		// one: its method set is the pointer's, which is no guess. The assertion
+		// `var _ Shape = &Sq{}` is written for exactly this question, and a blank one
+		// is not emitted, so nothing else asks it.
+		if name, qual, isPtr, named := f.exprNamedType(s, value); named && isPtr {
+			from := name.Src()
+			if qual.IsValid() {
+				from = qual.Src() + "." + from
+			}
+			// A type this cannot resolve -- another package's unexported one, whose
+			// methods are not this file's to read -- is not judged.
+			if _, _, resolved := f.typeDeclNamed(s, from); resolved {
+				f.checkImplementsKind(s, ifaceName, value, from, f.exprSource(value), "value of type *"+from, true, what)
+			}
 		}
 		return
 	}
@@ -16121,6 +16166,9 @@ func (f *File) varSpec(s *Scope, n Node) {
 					f.checkRefAssign(s, s, typ, e, "variable declaration")
 					f.checkPointerValue(s, typIsPtr, f.typeNodeString(typ, false), e, "variable declaration")
 					f.checkDeclType(s, kind, hasKind, typeName, e)
+					if typ != nil {
+						f.ifaceInits = append(f.ifaceInits, ifaceInit{f.typeNodeString(typ, false), e})
+					}
 				}
 				if hasKind {
 					f.checkValueOverflow(s, sizedTarget(kind, typeName), e)
