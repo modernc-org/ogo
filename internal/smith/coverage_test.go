@@ -187,6 +187,12 @@ var generatedConstructs = []struct {
 	// (the emitter's label pass) and the checker's jump rules had no fuzz coverage
 	// until this construct; the two entries keep the guard and the target each a
 	// tested property.
+	// A labeled CONTINUE and BREAK out of nested loops, the jump that leaves more
+	// than one at once. Both loops carry their step in a post clause, which is what
+	// a labeled continue still runs.
+	{"labeled loop", `\n\s*L_\d+:\n\s*for \w+ := 0;`},
+	{"labeled continue", `\n\s*continue L_\d+`},
+	{"labeled break", `\n\s*break L_\d+`},
 	// A POINTER to a struct: a write through it, read back through both names, and
 	// a method whose receiver is what the pointer holds.
 	{"pointer to a struct", `\n\s*sp_\d+ := &st_\d+`},

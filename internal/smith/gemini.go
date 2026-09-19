@@ -893,6 +893,11 @@ func (f *Fuzzer) genStatement(vm Machine, mem Memory) Node {
 		// label), and its codegen -- the emitter's label pass and the checker's
 		// jump rules -- had no fuzz coverage at all.
 		return f.genGotoStmt(vm, mem)
+	case r < 0.999:
+		// 0.15% for a labeled continue or break out of nested loops, from the same
+		// filler: it is several statements too, and the jump out of more than one
+		// loop is a lowering nothing else generates.
+		return f.genLabeledLoopStmt(vm, mem)
 	}
 	return f.genChecksumMutation(vm, mem)
 }
@@ -3368,6 +3373,92 @@ func (f *Fuzzer) genInterfaceStmt(vm Machine, mem Memory) Node {
 	cs, _ := vm.Eval("^", mem.Load(f.ChecksumName), taken)
 	mem.Store(f.ChecksumName, cs)
 	return &BlockNode{Statements: stmts}
+}
+
+// genLabeledLoopStmt writes two nested loops with a LABEL on the outer one and a
+// labeled continue or break out of the inner: the statement that leaves more than
+// one loop at once. It lowers to a jump and a target placed where the outer loop's
+// post step either still runs (continue) or does not (break), which is the part
+// that has gone wrong here before -- a continue after an inner loop once skipped
+// the post and the loop never ended.
+//
+// Both loops run once, so what the jump skips is fixed: the fold after the inner
+// loop is never reached, and its value is a constant rather than a generated
+// expression, which would count a call the program never makes.
+func (f *Fuzzer) genLabeledLoopStmt(vm Machine, mem Memory) Node {
+	outer, inner := f.newVarName("i"), f.newVarName("i")
+	label := fmt.Sprintf("L_%d", func() int { f.VarSeq++; return f.VarSeq }())
+	isContinue := f.Rand.Intn(2) == 0
+	mem.PushScope()
+	f.CurrentEnv = NewScope(f.CurrentEnv)
+	zero, _ := vm.Eval("int_lit", "0")
+	mem.Store(outer, zero)
+	f.CurrentEnv.Declare(outer, BasicType{Kind: KindInt}, false)
+	f.CurrentEnv.Lookup(outer).LoopVar = true
+	taken, takenVal, _ := f.genExpression(BasicType{Kind: KindInt}, vm, mem, 1)
+	newSum, _ := vm.Eval("^", mem.Load(f.ChecksumName), takenVal.(Int32))
+	mem.Store(f.ChecksumName, newSum)
+	skipped := Int32(f.Rand.Int31())
+	// A continue runs the outer post, which is what ends the loop; a break leaves
+	// it where it stands, so the variable keeps the value it had.
+	if isContinue {
+		one, _ := vm.Eval("int_lit", "1")
+		mem.Store(outer, one)
+	}
+	f.CurrentEnv.Lookup(outer).Used = true
+	mem.PopScope()
+	f.CurrentEnv = f.CurrentEnv.Parent
+	return &LabeledLoopNode{
+		Label: label, Outer: outer, Inner: inner, Continue: isContinue,
+		Taken: taken, Skipped: skipped.Literal(), Checksum: f.ChecksumName,
+	}
+}
+
+// LabeledLoopNode writes what genLabeledLoopStmt builds:
+//
+//	L_N:
+//	for i_1 := 0; i_1 < 1; i_1 = i_1 + 1 {
+//		for i_2 := 0; i_2 < 1; i_2 = i_2 + 1 {
+//			<checksum> = <checksum> ^ <taken>
+//			continue L_N
+//		}
+//		<checksum> = <checksum> ^ <skipped>
+//	}
+//
+// The loops carry their step in a POST clause, which is what a labeled continue
+// still runs: written as the last statement of the body instead, the continue
+// would skip it and the loop would never end -- in Go as here.
+type LabeledLoopNode struct {
+	Label, Outer, Inner string
+	Continue            bool
+	Taken               Node
+	Skipped             string
+	Checksum            string
+}
+
+func (n *LabeledLoopNode) Write(w io.Writer, indent int) {
+	writeIndent(w, indent)
+	fmt.Fprintf(w, "%s:\n", n.Label)
+	writeIndent(w, indent)
+	fmt.Fprintf(w, "for %s := 0; %s < 1; %s = %s + 1 {\n", n.Outer, n.Outer, n.Outer, n.Outer)
+	writeIndent(w, indent+1)
+	fmt.Fprintf(w, "for %s := 0; %s < 1; %s = %s + 1 {\n", n.Inner, n.Inner, n.Inner, n.Inner)
+	writeIndent(w, indent+2)
+	fmt.Fprintf(w, "%s = %s ^ ", n.Checksum, n.Checksum)
+	n.Taken.Write(w, 0)
+	fmt.Fprint(w, "\n")
+	writeIndent(w, indent+2)
+	if n.Continue {
+		fmt.Fprintf(w, "continue %s\n", n.Label)
+	} else {
+		fmt.Fprintf(w, "break %s\n", n.Label)
+	}
+	writeIndent(w, indent+1)
+	fmt.Fprint(w, "}\n")
+	writeIndent(w, indent+1)
+	fmt.Fprintf(w, "%s = %s ^ %s\n", n.Checksum, n.Checksum, n.Skipped)
+	writeIndent(w, indent)
+	fmt.Fprint(w, "}")
 }
 
 // genGotoStmt generates a forward goto that conditionally skips a checksum fold,

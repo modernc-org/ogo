@@ -955,7 +955,10 @@ program handed out a reference to storage that was gone by the time it was read.
   nothing generated it before. And it takes a POINTER to a struct, writes a field
   through it and reads that field back through both names, then calls a method on
   the pointer: `p.f = e` lowers to `p->f` where the variable's lowers to `v.f`, and
-  a copy anywhere between them would leave the variable unchanged.
+  a copy anywhere between them would leave the variable unchanged. It writes a
+  labeled CONTINUE and BREAK out of nested loops as well -- the jump that leaves
+  more than one loop at once, whose target is placed where the outer loop's post
+  step either still runs or does not.
 - Function semantics against Go on the host and a P2-EDGE: variadic calls with
   none, several and a spread slice the callee writes through, a two-result call
   forwarded as another's arguments, named results returned bare and swapped, a
