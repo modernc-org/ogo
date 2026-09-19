@@ -27837,6 +27837,33 @@ func main() {
 		want: "7 true\n5 25\n",
 	},
 	{
+		// Two function types that C spells alike: `func() T` is `void (*)(T*)`,
+		// its result travelling through the out parameter, and so is `func(*T)`.
+		// They were one typedef carrying the first one's results, and the call
+		// through a `func(*T)` handed it an out parameter it does not take.
+		//
+		// Every line of this prints what real Go prints for the same program.
+		name: "two function types of one C shape",
+		src: `type T struct {
+	N int
+}
+
+func inc(p *T) { p.N++ }
+
+func mk() T { return T{N: 9} }
+
+func main() {
+	t := T{N: 4}
+	h := mk
+	println(h().N)
+	var f func(*T) = inc
+	f(&t)
+	println(t.N)
+}
+`,
+		want: "9\n5\n",
+	},
+	{
 		// A function literal called where it stands, as a statement of its own, which
 		// the grammar had no production for: a statement could not begin with "func".
 		// It is lifted as a literal is anywhere and called by name; arguments are how a

@@ -182,6 +182,11 @@ shipped section tells a reader on that version that they have behaviour they do 
 
 ### Fixed
 
+- **Two function types C spells alike are two types.** `func() T` travels its
+  result through an out parameter and is written `void (*)(T*)`, as `func(*T)` is:
+  the two shared one typedef carrying the first one's results, and a call through a
+  `func(*T)` in the same program was handed an out parameter it does not take --
+  "too many arguments", from both compilers.
 - **A function literal of a struct result, or of several, works as a value.** Bound
   to a variable, passed, held in a field or a table, `h := func() T { ... }` was
   taken as the literal itself where such a value must point at a wrapper writing

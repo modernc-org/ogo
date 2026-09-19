@@ -3020,11 +3020,17 @@ func (e *emitter) funcTypeOfSig(sig []int32) (string, bool) {
 // minting it on first sight. Distinct written types rendering the same C signature
 // share one typedef, which is what makes `func(int) int` written twice mint once.
 func (e *emitter) funcTypeFor(fv funcValueType) string {
-	if name, ok := e.funcTypeNames[fv.key]; ok {
+	// Keyed by the results as well as the C shape: `func() T` is written as
+	// `void (*)(T*)`, its result travelling through the out parameter, and so is
+	// `func(*T)`. Keyed by the shape alone the two were one typedef carrying the
+	// first one's results, and a call through a `func(*T)` handed it an out
+	// parameter it does not take -- "too many arguments", from both compilers.
+	id := fv.key + " -> " + strings.Join(fv.res, ", ")
+	if name, ok := e.funcTypeNames[id]; ok {
 		return name
 	}
 	name := fmt.Sprintf("%s%d", funcTypePrefix, len(e.funcTypeNames))
-	e.funcTypeNames[fv.key] = name
+	e.funcTypeNames[id] = name
 	e.funcTypeRet[name] = fv.res
 	e.funcTypeParams[name] = fv.params
 	// "ret (*)(params)" -> "typedef ret (*name)(params);"
