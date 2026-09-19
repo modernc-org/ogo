@@ -1,0 +1,33 @@
+// A value is assigned only where its type goes: a scalar is no slice, and a call's
+// several results are each held to the target in their position.
+
+type Ints []int
+
+func two(k int) (int, int) { return k, k }
+
+func pair() ([]int, int) { return nil, 1 }
+
+func take(xs []int) int { return len(xs) }
+
+func main() {
+	var s []int
+	var n int
+	var f float32
+	// ERROR cannot use 1 \(value of type int\) as \[\]int value in assignment
+	s = 1
+	// ERROR cannot use n \(value of type int\) as \[\]int value in assignment
+	s = n
+	// ERROR cannot use "x" \(value of type string\) as \[\]int value in variable declaration
+	var t []int = "x"
+	// ERROR cannot use n \(value of type int\) as \[\]int value in argument to take
+	_ = take(n)
+	// ERROR cannot use 5 \(value of type int\) as Ints value in variable declaration
+	var u Ints = 5
+	// ERROR cannot use result 2 of two\(5\) \(type int\) as type \[\]int in assignment
+	n, s = two(5)
+	// ERROR cannot use result 2 of two\(5\) \(type int\) as type float32 in assignment
+	n, f = two(5)
+	s, n = pair()
+	s = nil
+	_, _, _, _ = s, t, u, f
+}

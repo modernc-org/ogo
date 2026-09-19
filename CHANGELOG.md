@@ -182,6 +182,11 @@ shipped section tells a reader on that version that they have behaviour they do 
 
 ### Fixed
 
+- **A scalar is refused where a slice is wanted, and a call's several results
+  are checked against their targets.** `s = 1`, `s = n` for an int n, `take(n)`
+  for a slice parameter, and `n, s = two(5)` passed the checker, and the C compiler
+  refused an int stored in a slice header, about C; `n, f = two(5)` for a float32 f
+  was not checked either. They are refused as Go refuses them.
 - **Another package's struct type is compared as this package's are.** A `T` of
   this package passed where a `lib.T` was wanted, and the other way round -- an
   argument, a return, a declaration, an assignment, a field of a literal -- and

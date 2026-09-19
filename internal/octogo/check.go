@@ -5235,6 +5235,9 @@ func (f *File) checkAssignment(s *Scope, head, postfix Node) {
 				f.checkAssignType(s, lhs[i], e, !lhsSuffixed[i])
 			}
 		}
+		if len(rhs) == 1 && lhsItems > 0 {
+			f.checkResultsAssign(s, lhs, lhsSuffixed, rhs[0])
+		}
 	}
 	// A send "ch <- v" checks that ch is a channel and v matches its element type.
 	if op == ARROW {
@@ -11762,6 +11765,16 @@ func (f *File) checkRefAssign(s, wantScope *Scope, want TypeNode, value Node, wh
 	}
 	have, variable, ok := f.operandTypeAt(s, value)
 	if !ok || have.tn == nil || have.f == nil {
+		// A SCALAR where a slice is wanted, `s = 1`, `f(x)` for an int x: no type
+		// written to compare, but a Kind that says it is no slice. Nothing asked,
+		// and the C compiler refused an int stored in a slice header, about C.
+		if _, wSlice := wu.(*TypeNodeSlice); wSlice {
+			if k, known := f.exprType(s, value); known && kindCategory(k) != catUnknown {
+				f.err(f.tok(value.Pos()).Position(), "cannot use %s (value of type %s) as %s value in %s",
+					f.exprSource(value), kindName(k), f.qualifiedTypeName(wantScope, f.typeNodeString(want, false)), what)
+				return
+			}
+		}
 		// `&x` for an x whose type its initializer gave it, `x := 2.5`: no type
 		// written anywhere to read, and a Kind to name it by.
 		if _, isPtr := wu.(*TypeNodePointer); isPtr {
@@ -11775,10 +11788,23 @@ func (f *File) checkRefAssign(s, wantScope *Scope, want TypeNode, value Node, wh
 		return
 	}
 	hu, haveNamed := have.f.refTypeUnder(have.s, have.tn)
+	_, wSlice := wu.(*TypeNodeSlice)
+	_, hSliceOrPtr := hu.(*TypeNodeSlice)
+	if _, hPtr := hu.(*TypeNodePointer); hPtr {
+		hSliceOrPtr = true
+	}
+	if wSlice && !hSliceOrPtr {
+		// A variable of a SCALAR type where a slice is wanted, `s = n`: its Kind
+		// says so, as a constant's does above.
+		if k, known := f.exprType(s, value); known && kindCategory(k) != catUnknown {
+			f.err(f.tok(value.Pos()).Position(), "cannot use %s (value of type %s) as %s value in %s",
+				f.exprSource(value), kindName(k), f.qualifiedTypeName(wantScope, f.typeNodeString(want, false)), what)
+			return
+		}
+	}
 	if hu == nil || wantNamed && haveNamed {
 		return
 	}
-	_, wSlice := wu.(*TypeNodeSlice)
 	_, hSlice := hu.(*TypeNodeSlice)
 	_, hPtr := hu.(*TypeNodePointer)
 	if wSlice != hSlice || !hSlice && !hPtr {
@@ -14217,6 +14243,47 @@ func (f *File) checkCallArgs(s, paramScope *Scope, at Token, callee string, sig 
 			// Same type class: a constant argument may still overflow a sized
 			// integer parameter, e.g. passing 300 for a uint8 parameter.
 			f.checkValueOverflow(s, p, arg)
+		}
+	}
+}
+
+// checkResultsAssign checks a call of several results assigned to as many bare
+// targets, `n, s = two(5)`: each result against the target in its position, by the
+// rules a single value is held to where a Kind can say -- a scalar where a slice is
+// wanted, and a Kind the target's does not accept. No result was checked against
+// any target, and the C compiler refused an int stored in a slice header.
+func (f *File) checkResultsAssign(s *Scope, lhs []Token, suffixed []bool, call Node) {
+	res, _, ok := f.qualifiedCallResults(s, call)
+	if !ok {
+		if res, ok = f.exprCallResults(s, call); !ok {
+			return
+		}
+	}
+	if len(res) != len(lhs) {
+		return // the count is the mismatch check's to report
+	}
+	for i, tok := range lhs {
+		if suffixed[i] || tok.Src() == "_" || !res[i].known {
+			continue
+		}
+		d, isVar := s.find(tok.Src()).(*VarDeclaration)
+		if !isVar {
+			continue
+		}
+		want := ""
+		if t, ok := f.varTypeAt(d); ok {
+			if u, _ := t.f.refTypeUnder(t.s, t.tn); u != nil {
+				if _, isSlice := u.(*TypeNodeSlice); isSlice && kindCategory(res[i].kind) != catUnknown {
+					want = t.f.typeNodeString(t.tn, false)
+				}
+			}
+		}
+		if lk, lok := f.identKind(s, tok); want == "" && lok && !assignableKind(lk, res[i].kind) {
+			want = kindName(lk)
+		}
+		if want != "" {
+			f.err(f.tok(call.Pos()).Position(), "cannot use result %d of %s (type %s) as type %s in assignment",
+				i+1, f.exprSource(call), res[i].name, want)
 		}
 	}
 }
