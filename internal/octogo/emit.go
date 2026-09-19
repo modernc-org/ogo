@@ -23133,8 +23133,9 @@ func (e *emitter) checkDeferLeaks(d *deferredCall, head Node, suffix []Node, arg
 			return
 		}
 		if d.cname != "" {
-			// `defer v.m(args)`: the receiver's lifetime is the call site's question.
-			e.checkRecvLeak(d.cname, base, args)
+			// `defer v.m(args)`: the receiver's lifetime is the call site's question,
+			// asked of the embedded field's storage for a promoted m.
+			e.checkRecvAt(d.cname, e.recvStorage(base, nil, e.promotionPath(base, nil, method)), args)
 		}
 	}
 	cname := d.cname
@@ -24168,6 +24169,11 @@ func (e *emitter) emitCallExpr(recv string, suffix []Node) bool {
 			// A method PROMOTED from an embedded field is called on that field, which
 			// the source did not name and C requires: `d.Get()` is `base_Get(&d.base)`.
 			if cn, path, _, okp := e.promotedMethod(rct, method); okp && len(path) != 0 {
+				// The receiver rules, asked of the storage the embedded field is:
+				// the variable's own, or what an embedded POINTER holds.
+				if !e.checkRecvAt(cn, e.recvStorage(recv, nil, path), e.callArgExprs(suffix[1].ast)) {
+					return false
+				}
 				recvArg, _ := e.promotedRecvC(e.varRef(recv), rct, path, e.methodPtr[cn], true)
 				e.emit(cn + "(" + recvArg)
 				if args := e.argsCText(cn, suffix[1].ast); args != "" {
@@ -24922,6 +24928,7 @@ func (e *emitter) chainCText(base string, steps []Node) (text, ctype string, add
 			}
 			cname := methodCName(bt, field)
 			rts, okm := e.funcRet[cname]
+			var promoted []string // the embedded fields a promoted method is reached through
 			// A method PROMOTED from an embedded field is called on that field, which
 			// the source did not name and C requires: the receiver text reaches into
 			// the sub-object and the call is the OWNING type's. Without this a chain
@@ -24935,7 +24942,7 @@ func (e *emitter) chainCText(base string, steps []Node) (text, ctype string, add
 				}
 				if cn, path, rt, okp := e.promotedMethod(pct, field); okp && len(path) != 0 {
 					if prts, isM := e.funcRet[cn]; isM {
-						cname, rts, okm = cn, prts, true
+						cname, rts, okm, promoted = cn, prts, true, path
 						var mct string
 						text, mct = e.embeddedPathC(text, pct, path)
 						// Reaching THROUGH a pointer yields an lvalue whatever the
@@ -24981,13 +24988,12 @@ func (e *emitter) chainCText(base string, steps []Node) (text, ctype string, add
 					text, addr = e.hoistResult(text, cur.ctype, resultTok), true
 					resultTok = -1
 				}
-				// A pointer method that keeps its receiver, called on storage of this
-				// frame reached through the chain: `h.c.Save()`, `arr[1].Save()`.
-				if e.methodPtr[cname] && e.recvLeaks[cname]&(leakGlobal|leakCog) != 0 {
-					if storage, local := e.chainStorage(base, steps[:i]); local {
-						e.failRecvKept(cname, storage)
-						return "", "", false, false
-					}
+				// The receiver rules, of storage reached through the chain: a pointer
+				// method that keeps its receiver on this frame's, `h.c.Save()`,
+				// `arr[1].Save()`, and an argument stored into a receiver that
+				// outlives it, `gh.c.Set(a[:])`, which nothing asked.
+				if !e.checkRecvAt(cname, e.recvStorage(base, steps[:i], promoted), e.callArgExprs(steps[i+1].ast)) {
+					return "", "", false, false
 				}
 				recv, okr := e.chainReceiver(text, cur.ctype, addr, e.methodPtr[cname])
 				if !okr {
@@ -30902,6 +30908,15 @@ func (e *emitter) callResultInfo(recv string, suffix []Node) (cname string, resT
 		// fine. It is the same lookup the call itself dispatches through.
 		if rct, isRecv := e.methodRecvCType(recv); isRecv {
 			cname = methodCName(methodBaseType(rct), member)
+			// A method PROMOTED from an embedded field is the embedded type's: the
+			// outer type has no function of the name, and answering none left a
+			// promoted call's results unknown -- `return o.Two()` was refused and
+			// `g = o.Self()` handed out the address of a local o unasked.
+			if _, has := e.funcRet[cname]; !has {
+				if cn, _, _, okp := e.promotedMethod(rct, member); okp {
+					cname = cn
+				}
+			}
 		} else if prefix, isPkg := e.importQualifiers[recv]; isPkg {
 			cname = mangle(prefix, member)
 		} else {
@@ -31713,6 +31728,27 @@ func (e *emitter) promotedMethod(ctype, method string) (cname string, path []str
 		level = next
 	}
 	return "", nil, "", false
+}
+
+// promotionPath is the embedded fields a method is promoted through when it is
+// called on what steps reach from base -- nil for a method of that type's own, or
+// for anything the chain typer cannot name.
+func (e *emitter) promotionPath(base string, steps []Node, method string) []string {
+	ct := ""
+	if len(steps) == 0 {
+		if rct, ok := e.methodRecvCType(base); ok {
+			ct = rct
+		}
+	} else if cur, ok := e.accessChainType(base, steps); ok {
+		ct = cur.ctype
+	}
+	if ct == "" || method == "" {
+		return nil
+	}
+	if _, path, _, ok := e.promotedMethod(ct, method); ok {
+		return path
+	}
+	return nil
 }
 
 // pathThroughPointer reports whether a promotion path from ctype -- the embedded
@@ -35952,7 +35988,16 @@ func (e *emitter) frameRefOf(ast []int32) (frameRef, bool) {
 			return frameRef{}, false
 		}
 	}
-	if recv, suffix, ok := e.directCall(ast); ok && len(suffix) != 0 && suffix[len(suffix)-1].sym == CallSuffix {
+	recv, suffix, isCall := e.directCall(ast)
+	if !isCall {
+		// `(&v).Self()` is `v.Self()` (see factorAddrCall): the same call, handing
+		// back the same storage. It handed back nothing here, so `g = (&lc).Self()`
+		// stored what `g = lc.Self()` is refused for.
+		if kids := e.factorKids(ast); kids != nil {
+			recv, suffix, isCall = e.factorAddrCall(kids)
+		}
+	}
+	if isCall && len(suffix) != 0 && suffix[len(suffix)-1].sym == CallSuffix {
 		// A CONVERSION to a slice type is not a call: it renames the same header
 		// over the same storage, so whatever the operand referred to, the result
 		// refers to. `g = L(a[:])` for a local a laundered the reference past every
@@ -35985,10 +36030,12 @@ func (e *emitter) frameRefOf(ast []int32) (frameRef, bool) {
 			}
 		}
 		// A method returning its RECEIVER hands back the address of what it was
-		// called on: `g = lc.Self()` reaches lc as `g = &lc` does.
-		if cname != "" && e.retRecv[cname] && e.methodPtr[cname] {
-			if storage, local := e.chainStorage(recv, suffix[:len(suffix)-2]); local {
-				return addrRef(storage), true
+		// called on: `g = lc.Self()` reaches lc as `g = &lc` does -- or, promoted
+		// through an embedded pointer, what that pointer holds.
+		if cname != "" && e.retRecv[cname] && e.methodPtr[cname] && len(suffix) >= 2 {
+			steps := suffix[:len(suffix)-2]
+			if r := e.recvStorage(recv, steps, e.promotionPath(recv, steps, e.soleIdent(suffix[len(suffix)-2].ast))); r.local {
+				return addrRef(r.storage), true
 			}
 		}
 	}
@@ -36514,16 +36561,91 @@ func (e *emitter) checkRecvLeak(cname, recv string, args []Node) {
 	if recv == "" {
 		return
 	}
-	e.checkRecvKept(cname, recv)
-	// The storage the receiver IS: the variable, or -- for a local pointer -- what
-	// it points at, which is what the callee stores into.
-	storage, local := e.storageBehind(recv)
+	e.checkRecvAt(cname, e.recvStorage(recv, nil, nil), args)
+}
+
+// recvRef is the storage a method's receiver refers to, as far as the lifetime
+// rules can name it (see recvStorage).
+type recvRef struct {
+	root    string // the variable the receiver is reached from, for a message
+	storage string // the storage named: the root's own, or a local it points at
+	local   bool   // storage is this frame's
+	viaPtr  bool   // a pointer was followed after the root: storage is what it holds
+	opaque  bool   // a step the rules cannot see through, a call's result
+}
+
+// recvStorage names the storage a method's receiver refers to when the method is
+// reached from base through steps -- the fields and indexes written -- and path,
+// the embedded fields a promotion adds. It is base's own storage, or what base
+// points at for a local pointer (storageBehind), unless a POINTER is followed on
+// the way: the chain's value itself, `w.Point.Save()`, or a field embedded as one,
+// `w.Save()` for a W embedding *Point. Then the method is handed what that pointer
+// holds, which the per-variable marks answer for -- a local base holds the address
+// of -- and nothing else can.
+//
+// The storage a promoted method is handed was never asked about: `o.Save()` kept
+// the address of a local o where `o.Holder.Save()` was refused. And a chain whose
+// value is a pointer was taken for the storage it is read from, so `w.Point.Save()`
+// was refused for keeping w, which it does not, with w.Point = &g.
+func (e *emitter) recvStorage(base string, steps []Node, path []string) recvRef {
+	r := recvRef{root: base}
+	for _, st := range steps {
+		if st.sym != Selector && st.sym != Index {
+			r.storage, r.opaque = base, true
+			return r
+		}
+	}
+	r.storage, r.local = e.chainStorage(base, steps)
+	vt := ""
+	if len(steps) == 0 {
+		vt, _ = e.varType(base) // its own pointer, if any, storageBehind followed
+	} else if cur, ok := e.accessChainType(base, steps); ok {
+		vt = cur.ctype
+		r.viaPtr = e.isPointer(vt)
+	}
+	if vt != "" && e.pathThroughPointer(vt, path) {
+		r.viaPtr = true
+	}
+	if !r.viaPtr || !r.local {
+		return r
+	}
+	if x, isLocal := strings.CutPrefix(e.frameHolder[r.storage], "local "); isLocal && e.isFrameVar(x) {
+		r.storage = x
+		return r
+	}
+	r.local = false
+	return r
+}
+
+// checkRecvAt asks the receiver rules of a call of cname on the storage at r, and
+// reports whether the call may go ahead. A pointer method that KEEPS its receiver --
+// stores it where it outlives every frame, sends it, hands it to a goroutine,
+// directly or through what it calls (see recvEdge) -- must not be handed storage
+// this frame owns; and an argument reaching this frame must not be stored into a
+// receiver that outlives it.
+func (e *emitter) checkRecvAt(cname string, r recvRef, args []Node) bool {
+	if r.opaque {
+		return true // what a call returns is storage nothing here can name
+	}
+	if e.recvLeaks[cname]&(leakGlobal|leakCog) != 0 && e.methodPtr[cname] {
+		kept := r.local
+		if !kept && !r.viaPtr {
+			// A parameter's storage is the caller's -- unless it is a VALUE, a copy
+			// in this frame, whose address the method is handed.
+			ct, isVar := e.varType(r.root)
+			kept = r.storage == r.root && e.curParams[r.root] && isVar && !e.isPointer(ct)
+		}
+		if kept {
+			e.failRecvKept(cname, r.storage)
+			return false
+		}
+	}
 	crosses := e.crossParams[cname]
 	for i, a := range args {
 		if i >= len(crosses) || crosses[i]&leakRecv == 0 {
 			continue
 		}
-		r, ok := e.frameRefOf(a.ast)
+		fr, ok := e.frameRefOf(a.ast)
 		if !ok {
 			continue
 		}
@@ -36531,46 +36653,25 @@ func (e *emitter) checkRecvLeak(cname, recv string, args []Node) {
 		// -- but not the BLOCK question: a receiver declared outside the block the
 		// reference points into still outlives it.
 		outlives := "this function"
-		if local {
-			if e.blockDepthOf(r.name) <= e.blockDepthOf(storage) {
+		if r.local {
+			if e.blockDepthOf(fr.name) <= e.blockDepthOf(r.storage) {
 				// The two die together -- but the receiver now HOLDS the reference,
 				// and a copy of it carried it out: `var lb Box; lb.set(a[:]); gb = lb`
 				// stored a slice of the local array in a package variable, where the
 				// same store through `lb.d = a[:]` was refused. Marked as that store
 				// marks it.
-				e.noteHolderRef(storage, r)
+				e.noteHolderRef(r.storage, fr)
 				continue
 			}
-			outlives = "the block " + r.origin + " is declared in"
-		} else if storage != recv {
+			outlives = "the block " + fr.origin + " is declared in"
+		} else if r.storage != r.root || r.viaPtr {
 			outlives = "this function, or may"
 		}
 		e.fail("%v: cannot pass %s to %s: it is stored in the receiver %s, which outlives %s; %s",
-			e.f.tok(a.Pos()).Position(), r.what, e.funcSourceName(cname), recv, outlives, r.advice())
-		return
+			e.f.tok(a.Pos()).Position(), fr.what, e.funcSourceName(cname), e.displayName(r.root), outlives, fr.advice())
+		return false
 	}
-}
-
-// checkRecvKept refuses calling a pointer method that KEEPS its receiver -- stores it
-// where it outlives every frame, sends it, hands it to a goroutine, directly or
-// through what it calls -- on storage this frame owns: the method is handed the
-// address of that storage and keeps it past the frame's end (see recvEdge).
-func (e *emitter) checkRecvKept(cname, recv string) {
-	kept := e.recvLeaks[cname] & (leakGlobal | leakCog)
-	if kept == 0 || !e.methodPtr[cname] {
-		return
-	}
-	storage, local := e.storageBehind(recv)
-	if !local {
-		// A parameter's storage is the caller's -- unless it is a VALUE, a copy in
-		// this frame, whose address the method is handed.
-		ct, isVar := e.varType(recv)
-		if !e.curParams[recv] || !isVar || e.isPointer(ct) {
-			return
-		}
-		storage = recv
-	}
-	e.failRecvKept(cname, storage)
+	return true
 }
 
 // failRecvKept reports a call of a method that keeps its receiver, on storage of

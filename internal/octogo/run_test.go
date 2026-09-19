@@ -6641,6 +6641,50 @@ func main() {
 		want: "3 1\n2 4 12\n8 2 1233\n32 12333\n4 2 4 1233344\n2 12333444\n6 123334441\n6 12 1233344412\n11 688798604\n5 -1701948545\n2 160383741\n",
 	},
 	{
+		// A PROMOTED method of several results, destructured and forwarded by a
+		// return: the results are the embedded type's method's, which nothing
+		// asked for -- the outer type has no function of the name -- so `return
+		// o.Two()` was refused, "a return supplying every result needs a call
+		// whose results are exactly int, int".
+		//
+		// Every line of this prints what real Go prints for the same program.
+		name: "a promoted method's several results",
+		src: `type Holder struct {
+	n int
+}
+
+func (h Holder) Two() (int, int) { return h.n, h.n * 2 }
+
+func (h *Holder) Inc() int {
+	h.n++
+	return h.n
+}
+
+type Outer struct {
+	Holder
+	tag int
+}
+
+func pair() (int, int) {
+	var o Outer
+	o.n = 4
+	return o.Two()
+}
+
+func main() {
+	var o Outer
+	o.n = 3
+	a, b := o.Two()
+	println(a, b)
+	c, d := pair()
+	println(c, d)
+	x := o.Inc()
+	println(x, o.n)
+}
+`,
+		want: "3 6\n4 8\n4 4\n",
+	},
+	{
 		// An anonymous struct type, written where a type is wanted rather than
 		// declared with a name of its own. Go gives two of them the same identity
 		// when their fields match, so the typedef is minted once per SHAPE -- which

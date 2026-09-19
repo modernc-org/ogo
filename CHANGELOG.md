@@ -182,6 +182,20 @@ shipped section tells a reader on that version that they have behaviour they do 
 
 ### Fixed
 
+- **A promoted method's receiver asks the lifetime rules.** A method promoted from
+  an embedded field is handed that field, and nothing asked about it: `o.Save()`
+  for an o embedding Counter left a package variable holding the address of a local
+  where `o.Counter.Save()` was refused, `gob.set(a[:])` stored a slice of a local
+  array in a package variable, and so did `gob.Box.set(a[:])` through a chain,
+  where only the receiver-keeping rule was asked. Through an embedded POINTER the
+  storage is what the pointer holds: `w.Save()` for a W embedding *Counter is
+  refused when it holds a local's address and accepted when it holds a package
+  variable's -- `w.Counter.Save()` was refused for keeping w, which it does not.
+  `g = o.Self()` and `g = (&lc).Self()` hand back the receiver as `g = lc.Self()`
+  does, and are refused as it is.
+- **A promoted method's results are its own.** `return o.Two()` and `a, b :=
+  o.Two()` for a method promoted from an embedded field were refused, "a return
+  supplying every result needs a call whose results are exactly int, int".
 - **A range clause storing into a package variable asks the lifetime rules.** `for
   _, g = range ps` over a ps holding the address of a local, or `range
   [][]int{a[:]}` into a package slice, left the package variable pointing into a

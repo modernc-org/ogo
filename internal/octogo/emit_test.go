@@ -10247,8 +10247,11 @@ var N int
 // its own -- is handed the address of whatever it is called on. On storage of this
 // frame that address outlived the frame in silence until 2026-09-19: the parameters'
 // summaries never asked about a receiver, and `lc.Save()` left g pointing into a dead
-// frame where `keep(&lc)` was refused. Every shape a receiver is reached by is a row,
-// each beside a control over package storage or a method that keeps nothing.
+// frame where `keep(&lc)` was refused. A PROMOTED method was asked nothing either,
+// `o.Save()` for an o embedding Counter, and through an embedded POINTER the storage
+// is what the pointer holds, not the variable -- refused for w when w.Counter was
+// &gc, and kept in silence when it was &lc. Every shape a receiver is reached by is
+// a row, each beside a control over package storage or a method that keeps nothing.
 func TestEmitCRecvKeptEscape(t *testing.T) {
 	const head = `type Counter struct {
 	n int
@@ -10292,6 +10295,12 @@ type Wrap struct {
 	*Counter
 }
 
+type Outer struct {
+	Counter
+}
+
+var gout Outer
+
 func run() {
 	var lc Counter
 	var h Holder
@@ -10330,6 +10339,16 @@ func main() {
 		// Promoted through an embedded pointer: what the method keeps is what the
 		// value carries.
 		{"w := Wrap{&lc}\n\tWrap.Save(w)", "cannot pass local w, which holds a pointer into local lc to Wrap.Save"},
+		// A PROMOTED method is handed the embedded field: the variable's own storage
+		// through a value, what the pointer holds through an embedded pointer.
+		{"var o Outer\n\to.Save()", "cannot call Save on o: its receiver is stored where it outlives every frame"},
+		{"var o Outer\n\tdefer o.Save()", "cannot call Save on o"},
+		{"var o Outer\n\tg = o.Self()", "cannot store the address of local variable o in package variable g"},
+		{"g = (&lc).Self()", "cannot store the address of local variable lc in package variable g"},
+		{"w := Wrap{&lc}\n\tw.Save()", "cannot call Save on lc"},
+		{"w := Wrap{&lc}\n\tw.Counter.Save()", "cannot call Save on lc"},
+		{"w := Wrap{&lc}\n\tdefer w.Save()", "cannot call Save on lc"},
+		{"w := Wrap{&lc}\n\tg = w.Self()", "cannot store w.Self(), which holds a pointer into local lc in package variable g"},
 		// Controls: package storage, and a method that keeps nothing.
 		{"gc.Save()", ""},
 		{"p := &gc\n\tp.Save()", ""},
@@ -10345,6 +10364,12 @@ func main() {
 		{"g = (*Counter).Self(&gc)", ""},
 		{"(*Counter).Bump(&lc)", ""},
 		{"w := Wrap{&gc}\n\tWrap.Save(w)", ""},
+		{"gout.Save()", ""},
+		{"g = (&gc).Self()", ""},
+		{"w := Wrap{&gc}\n\tw.Save()", ""},
+		{"w := Wrap{&gc}\n\tw.Counter.Save()", ""},
+		{"w := Wrap{&gc}\n\tdefer w.Save()", ""},
+		{"w := Wrap{&gc}\n\tg = w.Self()", ""},
 	} {
 		t.Run(test.stmt, func(t *testing.T) {
 			src := head + "\t" + test.stmt + "\n" + tail
@@ -10406,6 +10431,16 @@ func (b *Box) set(xs []int) { b.d = xs }
 
 func fill(b *Box, xs []int) { b.d = xs }
 
+type OuterBox struct {
+	Box
+}
+
+type PBox struct {
+	*Box
+}
+
+var gob OuterBox
+
 func leak() {
 	var a [4]int
 	x := 1
@@ -10452,6 +10487,15 @@ func main() {
 		{"defer (*Box).set(&gb, a[:])", "cannot pass a slice backed by local a to (*Box).set: it is stored through gb"},
 		{"f := (*Box).set\n\tf(&gb, a[:])", "cannot pass a slice backed by local a to (*Box).set: it is stored through gb"},
 		{"var lb Box\n\t(*Box).set(&lb, a[:])\n\tgb = lb", "cannot store local lb, which holds a pointer into local a"},
+		// A PROMOTED method storing into its receiver, and a method called through
+		// a chain: the embedded field's storage is the receiver's.
+		{"gob.set(a[:])", "cannot pass a slice backed by local a to set: it is stored in the receiver gob, which outlives this function"},
+		{"gob.Box.set(a[:])", "it is stored in the receiver gob, which outlives this function"},
+		{"defer gob.set(a[:])", "it is stored in the receiver gob, which outlives this function"},
+		{"pb := PBox{&gb}\n\tpb.set(a[:])", "it is stored in the receiver pb, which outlives this function, or may"},
+		{"pb := PBox{&gb}\n\tpb.Box.set(a[:])", "it is stored in the receiver pb, which outlives this function, or may"},
+		{"var lob OuterBox\n\tlob.set(a[:])\n\tgob = lob", "cannot store local lob, which holds a pointer into local a"},
+		{"var lb Box\n\tpb := PBox{&lb}\n\tpb.set(a[:])\n\tgb = lb", "cannot store local lb, which holds a pointer into local a"},
 		// A local the callee stores into, copied out afterwards.
 		{"var lb Box\n\tlb.set(a[:])\n\tgb = lb", "cannot store local lb, which holds a pointer into local a"},
 		{"var lb Box\n\tlb.set(a[:])\n\tkeepBox(lb)", "cannot pass local lb, which holds a pointer into local a to keepBox"},
@@ -10480,6 +10524,9 @@ func main() {
 		{"id := func(xs []int) []int { return xs }\n\tback[0] = len(id(a[:]))", ""},
 		{"var lb Box\n\t(*Box).set(&lb, a[:])\n\tback[0] = len(lb.d)", ""},
 		{"(*Box).set(&gb, back[:])\n\tf := (*Box).set\n\tf(&gb, back[1:])", ""},
+		{"var lob OuterBox\n\tlob.set(a[:])\n\tback[0] = len(lob.d)", ""},
+		{"var lb Box\n\tpb := PBox{&lb}\n\tpb.set(a[:])\n\tback[0] = len(lb.d)", ""},
+		{"gob.set(back[:])\n\tgob.Box.set(back[1:])\n\tpb := PBox{&gb}\n\tpb.set(back[2:])", ""},
 	} {
 		t.Run(test.stmt, func(t *testing.T) {
 			src := head + "\t" + test.stmt + "\n" + tail

@@ -539,7 +539,9 @@ first it works); a PARENTHESISED HEAD the emitter cannot peel -- one holding a u
 operator or a suffix of its own -- read or written through a suffix: `(&p).x`,
 `(&arr)[1:]`, `(get()).x`, `(*get()).x`, `(arr[1:])[1:]`, `("hello")[1:]`, the targets
 `(p).x = 5` and `(&p).x = 3`, and the send `(&bus.ports[1]).ch <- 5` (`(*p).x`, `(a)[i]`,
-`(&v).m()` and `(a - b).m()` work); an ELEMENT or another package's variable as a `range` clause's target, `for _,
+`(&v).m()` and `(a - b).m()` work); a `go` statement calling a method promoted through an embedded POINTER on a local,
+`w := W{&g}; go w.Save()` (refused for handing the goroutine w, where Go hands it the
+pointer); an ELEMENT or another package's variable as a `range` clause's target, `for _,
 q[0] = range ptrs`, `for _, geo.P = range ptrs` ("a range target must be a variable
 or a struct field"); a chain after a NAMED
 string constant's slice,
