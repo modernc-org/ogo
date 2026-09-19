@@ -12625,13 +12625,14 @@ var gb, gb2 Box
 }
 
 // frameRefFormsSkipped is the number of cells TestEmitCFrameRefForms cannot test
-// yet, each a form one kind does not take for a reason of its own. All forty-eight
-// are the three ARRAY kinds', the array, the elided row and the elided address,
-// eight forms each in both variants: a typed var list ("a multi-name array var with
-// an initializer is not supported yet"), the three destructured forms ("cannot
-// return an array beside another result"), and the switch and for init
-// declarations, whose array the emitter cannot type yet.
-const frameRefFormsSkipped = 48
+// yet, each a form one kind does not take for a reason of its own. All thirty are
+// the three ARRAY kinds', the array, the elided row and the elided address, five
+// forms each in both variants: a typed var list ("a multi-name array var with an
+// initializer is not supported yet") and the three destructured forms ("cannot
+// return an array beside another result"). The switch and for init declarations
+// were here too until they learned to declare an array, and their cells are tested
+// from then on.
+const frameRefFormsSkipped = 30
 
 func TestEmitCSliceEscapeRefused(t *testing.T) {
 	for _, test := range []struct {

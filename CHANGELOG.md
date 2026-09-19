@@ -20,6 +20,13 @@ shipped section tells a reader on that version that they have behaviour they do 
 
 ### Language
 
+- **A `switch` or `for` clause may declare an array.** `switch a := [2]int{1, 2};
+  len(a) {` and `for b := [3]int{1, 2, 3}; b[0] < 3; b[0] += 2 {` were refused,
+  "cannot infer the type of the switch guard variable" and "... of a for-loop init
+  variable": an array has no C value type, where the statement form declares one
+  with its extents and fills it. The `if` form always worked, which is what said
+  the two were a gap rather than a rule. As in Go, a named array type takes
+  parentheses in a header, `switch a := (grid{{1, 2}}); len(a) {`.
 - **A named array result.** `func mk() (r [2]int) { r[0] = 1; return r }` was
   refused, "an array result must be returned as a variable or an array literal",
   which is exactly what r is: an array travels through the caller's storage rather

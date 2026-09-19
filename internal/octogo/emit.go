@@ -22601,11 +22601,13 @@ func (e *emitter) emitForInitDefine(h forHeader) {
 	names := make([]string, len(h.initLHSs))
 	cts := make([]string, len(h.initLHSs))
 	vals := make([]string, len(h.initLHSs))
+	arrays := make([]bool, len(h.initLHSs))
 	for i, lhs := range h.initLHSs {
 		ct, ok := e.inferCType(h.initRHSs[i])
 		if !ok {
 			ct = "int"
 		}
+		_, arrays[i] = e.arrayShapeOf(h.initRHSs[i])
 		cts[i], vals[i] = ct, e.exprC(h.initRHSs[i])
 		names[i] = e.exprC(lhs)
 		if src, isName := e.exprIdent(lhs); isName {
@@ -22636,6 +22638,12 @@ func (e *emitter) emitForInitDefine(h forHeader) {
 		elemOrigins[i], _, _ = e.sliceElemOrigin(rhs)
 	}
 	for i, name := range names {
+		if arrays[i] {
+			// An ARRAY is declared with its extents and filled; emitInferredLocal
+			// records what it holds as it does for a statement's declaration.
+			e.emitInferredLocal(name, h.initRHSs[i])
+			continue
+		}
 		e.shadow(name)
 		e.locals[name] = cts[i]
 		if carries[i] {
@@ -22814,7 +22822,17 @@ func (e *emitter) emitFor(nodes []Node) {
 			initName = e.exprC(h.initLHS)
 		}
 		var ok bool
-		if initCType, ok = e.inferCType(h.initRHS); !ok {
+		if _, isArr := e.arrayShapeOf(h.initRHS); isArr {
+			// An ARRAY is declared with its extents and filled, which C's init
+			// clause has no room for: the statement form's declaration
+			// (emitInferredLocal) in a block around the loop, where Go scopes it too
+			// -- the same place a multi-name init is declared.
+			e.ind()
+			e.emit("{\n")
+			e.indent++
+			e.emitInferredLocal(initName, h.initRHS)
+			h.initLHS, initName, blockInit = nil, "", true
+		} else if initCType, ok = e.inferCType(h.initRHS); !ok {
 			e.fail("cannot infer the type of a for-loop init variable")
 			return
 		}
@@ -22822,6 +22840,9 @@ func (e *emitter) emitFor(nodes []Node) {
 		// outside the loop: `for xs := xs[1:]; len(xs) > 0; xs = xs[1:]` over an
 		// array xs slices the ARRAY. One that reads the name is captured ahead of
 		// the loop as well, since C's `int c = c + 1` reads the c it is declaring.
+		if initName == "" {
+			goto condition // the array above is declared; the loop has no init clause
+		}
 		initVal = e.exprC(h.initRHS)
 		if e.initRefsName(h.initRHS, initName) {
 			text := initVal
@@ -22841,6 +22862,7 @@ func (e *emitter) emitFor(nodes []Node) {
 			e.frameHolder[initName] = elemOrigin // what its elements reach (noteSliceElemRefs)
 		}
 	}
+condition:
 	var condText string
 	var condPro []string
 	if h.cond != nil {
@@ -24453,10 +24475,10 @@ func (e *emitter) emitSwitchGuard(guardAST []int32) (guardVar string, block, ok 
 			e.fail("unsupported switch guard variable")
 			return "", false, false
 		}
-		if _, tok := e.inferCType(g.value.ast); !tok {
-			e.fail("cannot infer the type of the switch guard variable")
-			return "", false, false
-		}
+		// What the value is, is emitInferredLocal's question, as it is for the `if`
+		// form: asking inferCType here first refused an ARRAY, which has no C value
+		// type but is declared with its extents and filled, and said "cannot infer
+		// the type of the switch guard variable" of a value it declares fine.
 		openBlock()
 		// Declared before the expression switched on is typed, since that one may
 		// name it -- which is the whole point of an init statement.

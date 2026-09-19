@@ -6320,6 +6320,61 @@ func main() {
 `,
 	},
 	{
+		// An ARRAY declared by a clause: `switch a := [2]int{1, 2}; len(a)` and `for
+		// b := [3]int{...}; ...`, which were "cannot infer the type of the switch
+		// guard variable" and "... of a for-loop init variable" -- an array has no C
+		// value type, and the clauses asked for one where the statement form
+		// declares the array with its extents and fills it. The `if` form always
+		// worked, which is what said the two were a gap rather than a rule. A named
+		// array type takes parentheses in a header, as it does in Go.
+		name: "an array declared by a switch or for clause",
+		src: `type grid [2][2]int
+
+func mk(n int) [3]int {
+	var r [3]int
+	r[0], r[1], r[2] = n, n+1, n+2
+	return r
+}
+
+var a = [2]int{9, 9}
+
+func main() {
+	switch a := (grid{{1, 2}, {3, 4}}); len(a) {
+	case 2:
+		println("grid", a[0][0], a[1][1])
+	}
+	switch a := mk(5); a[2] {
+	case 7:
+		println("call", a[0], a[1], a[2])
+	default:
+		println("call-default", a[0])
+	}
+	for i, b := 0, [2]int{3, 4}; i < 2; i++ {
+		println("multi", i, b[i])
+	}
+	for b := [3]int{1, 2, 3}; b[0] < 3; b[0] += 2 {
+		s := 0
+		for _, v := range b {
+			s += v
+		}
+		println("range", b[0], s)
+	}
+	println("outer", a[0], a[1])
+	if a := mk(1); a[0] == 1 {
+		println("if", a[0], a[2])
+	}
+}
+`,
+		want: `grid 1 4
+call 5 6 7
+multi 0 3
+multi 1 4
+range 1 6
+outer 9 9
+if 1 3
+`,
+	},
+	{
 		// A NAMED array result. An array is written through the caller's storage
 		// rather than returned, so the name the signature gives it had nothing
 		// declared for it: the body's `r[0] = n` named nothing and `return r` was
