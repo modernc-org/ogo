@@ -11062,6 +11062,142 @@ func main() {
 	}
 }
 
+// TestEmitCSummaryFuncValues: a callee RELAYING its parameter through a function
+// value nothing names -- a package variable, a field, an element, a local holding
+// one, a call's result -- or through a literal called where it stands, or in a
+// defer, was summarised as keeping nothing of it, so `relay(a[:])` handed a local's
+// storage to whatever the value held, in silence, until 2026-09-19. Such a call is a
+// call of every function of the value's type (unionSummary). Each relay is called
+// with a local's storage, which must be refused, and with package storage, which
+// must not; one relaying to functions that keep nothing keeps nothing.
+func TestEmitCSummaryFuncValues(t *testing.T) {
+	const head = `var gs []int
+
+var gp *int
+
+var gx int
+
+var gback [4]int
+
+func keepGlobal(v []int) { gs = v }
+
+func keepNone(v []int) {}
+
+func ident(v []int) []int { return v }
+
+func keepFirst(ps []*int) { gp = ps[0] }
+
+func noneN(v []int, n int) {}
+
+type Dev struct {
+	onData func([]int)
+}
+
+var gdev = Dev{onData: keepGlobal}
+
+var handler = keepGlobal
+
+var table = [2]func([]int){keepNone, keepGlobal}
+
+var idf = ident
+
+var hp = keepFirst
+
+var hn = noneN
+
+func pick() func([]int) { return keepGlobal }
+
+type K struct {
+	v []int
+}
+
+func (k *K) keep(v []int) { gs = v }
+
+var gk K
+
+type H struct {
+	d []int
+}
+
+var gh H
+
+func fill(h *H, v []int) { h.d = v }
+
+var hf = fill
+
+func each(f func([]int), v []int) { f(v) }
+
+var applyf = each
+
+`
+	for _, test := range []struct {
+		callee    string
+		kept, ok  string
+		keepsNone bool
+	}{
+		{"func relay(v []int) { handler(v) }", "relay(a[:])", "relay(gback[:])", false},
+		{"func relay(v []int) { gdev.onData(v) }", "relay(a[:])", "relay(gback[:])", false},
+		{"func relay(v []int) { table[1](v) }", "relay(a[:])", "relay(gback[:])", false},
+		{"func relay(i int, v []int) {\n\th := table[i]\n\th(v)\n}", "relay(1, a[:])", "relay(1, gback[:])", false},
+		{"func relay(v []int) {\n\tf := gdev.onData\n\tf(v)\n}", "relay(a[:])", "relay(gback[:])", false},
+		{"func relay(v []int) { pick()(v) }", "relay(a[:])", "relay(gback[:])", false},
+		{"func relay(v []int) {\n\tf := pick()\n\tf(v)\n}", "relay(a[:])", "relay(gback[:])", false},
+		{"func relay(d *Dev, v []int) { d.onData(v) }", "relay(&gdev, a[:])", "relay(&gdev, gback[:])", false},
+		{"func (d *Dev) relay(v []int) { d.onData(v) }", "gdev.relay(a[:])", "gdev.relay(gback[:])", false},
+		{"func relay(v []int) {\n\td := &gdev\n\td.onData(v)\n}", "relay(a[:])", "relay(gback[:])", false},
+		{"func relay(v []int) {\n\tfor _, f := range table {\n\t\tf(v)\n\t}\n}", "relay(a[:])", "relay(gback[:])", false},
+		{"func relay(f func([]int), v []int) {\n\tf = pick()\n\tf(v)\n}", "relay(keepNone, a[:])", "relay(keepNone, gback[:])", false},
+		{"func relay(v []int) { gs = idf(v) }", "relay(a[:])", "relay(gback[:])", false},
+		{"func relay(v []int) []int { return idf(v) }", "gs = relay(a[:])", "gs = relay(gback[:])", false},
+		{"func relay(f func([]int) []int, v []int) []int { return f(v) }", "gs = relay(ident, a[:])", "gs = relay(ident, gback[:])", false},
+		{"func relay(v []int) { defer handler(v) }", "relay(a[:])", "relay(gback[:])", false},
+		{"func relay(v []int) { defer keepGlobal(v) }", "relay(a[:])", "relay(gback[:])", false},
+		{"func relay(v []int) { defer gk.keep(v) }", "relay(a[:])", "relay(gback[:])", false},
+		{"func relay(v []int) { func(w []int) { gs = w }(v) }", "relay(a[:])", "relay(gback[:])", false},
+		{"func relay(v []int) { defer func(w []int) { gs = w }(v) }", "relay(a[:])", "relay(gback[:])", false},
+		{"func relay(v []int) {\n\tn := func(w []int) int { gs = w; return len(w) }(v)\n\tprintln(n)\n}", "relay(a[:])", "relay(gback[:])", false},
+		{"func relay(v []int) []int { return func(w []int) []int { return w }(v) }", "gs = relay(a[:])", "gs = relay(gback[:])", false},
+		{"func relay(ps []*int) { hp(ps) }", "relay([]*int{&x})", "relay([]*int{&gx})", false},
+		{"func relay(h *H, v []int) { hf(h, v) }", "relay(&gh, a[:])", "relay(&gh, gback[:])", false},
+		{"func relay(v []int) { applyf(keepGlobal, v) }", "relay(a[:])", "relay(gback[:])", false},
+		{"func relay1(v []int) { handler(v) }\n\nfunc relay(v []int) { relay1(v) }", "relay(a[:])", "relay(gback[:])", false},
+		{"func relay(v []int) { hn(v, 1) }", "relay(a[:])", "relay(gback[:])", true},
+		{"func relay(v []int) { func(w []int) { println(len(w)) }(v) }", "relay(a[:])", "relay(gback[:])", true},
+	} {
+		for _, call := range []string{test.kept, test.ok} {
+			src := head + test.callee + `
+
+func run() {
+	x := 1
+	var a [4]int
+	_, _ = x, a
+	` + call + `
+}
+
+func main() {
+	run()
+}
+`
+			t.Run(test.callee+"/"+call, func(t *testing.T) {
+				fsys := fstest.MapFS{"main.ogo": &fstest.MapFile{Data: []byte(src)}}
+				pkg, err := Build(-1, []string{"main.ogo"}, fsys)
+				if err == nil {
+					err = EmitC(pkg, io.Discard, Checked())
+				}
+				refuse := !test.keepsNone && call == test.kept
+				switch {
+				case refuse && err == nil:
+					t.Errorf("a reference to this frame left it:\n%s", src)
+				case refuse && !strings.Contains(err.Error(), "outlive") && !strings.Contains(err.Error(), "hold"):
+					t.Errorf("refused, but not for its lifetime: %v", err)
+				case !refuse && err != nil:
+					t.Errorf("refused: %v\n%s", err, src)
+				}
+			})
+		}
+	}
+}
+
 // TestEmitCSummaryCallbacks: a function CALLING a function it was handed, `func
 // each(v []int, f func([]int)) { f(v) }`, hands its v to whatever the caller
 // passes as f, and only the call site knows what that is. The summary of each
@@ -12013,6 +12149,17 @@ func poll() {
 }
 
 func main() { h = lib.Keep; poll() }
+`, true},
+		{"a relay through its variable", `import "lib"
+
+func relay(v []int) { lib.Handler(v) }
+
+func poll() {
+	var b [4]int
+	relay(b[:])
+}
+
+func main() { lib.Arm(); poll() }
 `, true},
 		{"its variable, no member keeping", `import "lib"
 

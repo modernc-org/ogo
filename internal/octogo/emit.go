@@ -4588,7 +4588,7 @@ func typeNameCollisions(src []byte, names map[string]bool) map[string]bool {
 // emitProgram is EmitC's one pass. rename lists the main-package types spelled
 // ogo_T_<name> in C (see typeMangle).
 func emitProgram(pkg *Package, w io.Writer, opts []EmitOption, rename map[string]bool) error {
-	e := &emitter{renameTypes: rename, renamedTypes: map[string]string{}, includes: map[string]bool{}, funcRet: map[string][]string{}, funcSliceParams: map[string][]string{}, funcVariadic: map[string]int{}, nilHelpers: map[string]bool{}, funcArrayRet: map[string]arrDim{}, funcArrayParams: map[string][]arrDim{}, anonStructNames: map[string]string{}, methodValueTypes: map[string]funcValueType{}, methodValueOf: map[string]string{}, methodExprNames: map[string]string{}, funcParams: map[string][]string{}, methodPtr: map[string]bool{}, globals: map[string]string{}, structs: map[string][]structField{}, namedTypes: map[string]bool{}, typeNames: map[string]bool{}, interfaceTypes: map[string]bool{}, ifaceMethods: map[string][]ifaceMethod{}, anonIfaceNames: map[string]string{}, anonIfaceMinted: map[string]bool{}, ifaceASTs: map[string]ifaceAST{}, ifaceVTables: map[string]bool{}, namedUnderlying: map[string]string{}, namedArrays: map[string]arrDim{}, constInt: map[string]string{}, constVal: map[string]constant.Value{}, constWide: map[string]string{}, constStr: map[string]string{}, constUntyped: map[string]bool{}, constHuge: map[string]bool{}, arrays: map[string]arrDim{}, globalArrays: map[string]arrDim{}, sliceVars: map[string]string{}, globalSliceVars: map[string]string{}, chanElems: map[string]bool{}, chanInitElems: map[string]bool{}, chanSendElems: map[string]bool{}, chanRecvElems: map[string]bool{}, chanTryRecvElems: map[string]bool{}, chanTrySendElems: map[string]bool{}, chanGatedSendElems: map[string]bool{}, aliasOf: map[string]string{}, localTypes: map[string]string{}, gotoTargets: map[string]bool{}, chanCloseElems: map[string]bool{}, chanRecv2Elems: map[string]bool{}, mathWrappers: map[string]bool{}, chanElemByName: map[string]string{}, sliceElems: map[string]bool{}, sliceElemByName: map[string]string{}, appendElems: map[string]bool{}, tryappendElems: map[string]bool{}, appendSliceElems: map[string]bool{}, tryappendSliceEls: map[string]bool{}, appendokStructs: map[string]bool{}, copyElems: map[string]bool{}, resliceElems: map[string]bool{}, reslice3Elems: map[string]bool{}, clearElems: map[string]bool{}, minElems: map[string]bool{}, maxElems: map[string]bool{}, printSliceElems: map[string]bool{}, printStructs: map[string]string{}, printlnElems: map[string]bool{}, switchBreakUsed: map[string]bool{}, labelBreak: map[string]string{}, labelContinue: map[string]string{}, labelUsed: map[string]bool{}, eqStructs: map[string]bool{}, eqArrays: map[string]arrDim{}, frameBacked: map[string]bool{}, frameHolder: map[string]string{}, crossParams: map[string][]leak{}, crossContents: map[string][]leak{}, retContents: map[string][]bool{}, recvContents: map[string]leak{}, paramCalls: map[string][]paramCall{}, frameCalls: map[string][]frameCall{}, funcValueMembers: map[string][]string{}, methodExprMembers: map[string]emMethodExpr{}, memberShown: map[string]string{}, litLifted: map[string][]string{}, methodNames: map[string]bool{}, recvLeaks: map[string]leak{}, retRecv: map[string]bool{}, crossInto: map[string][]uint32{}, ifaceSummaries: map[string]ifaceSummary{}, retParams: map[string][]bool{}, funcValueOf: map[string]string{}, crossNames: map[string]string{}, initNames: map[string]string{}, funcValueTypes: map[string]funcValueType{}, funcTypeNames: map[string]string{}, funcTypeRet: map[string][]string{}, funcTypeParams: map[string][]string{}, retStructs: map[string]string{}, retStructByKey: map[string]string{}, shiftHelpers: map[string][2]string{}, shiftCTypes: map[*int32]string{}, shiftWalked: map[shiftWalkKey]bool{}, shiftIn: map[*int32]bool{}, divHelpers: map[string][2]string{}, funcValueWrappers: map[string]string{}, deferReplay: -1, iota: -1}
+	e := &emitter{renameTypes: rename, renamedTypes: map[string]string{}, includes: map[string]bool{}, funcRet: map[string][]string{}, funcSliceParams: map[string][]string{}, funcVariadic: map[string]int{}, nilHelpers: map[string]bool{}, funcArrayRet: map[string]arrDim{}, funcArrayParams: map[string][]arrDim{}, anonStructNames: map[string]string{}, methodValueTypes: map[string]funcValueType{}, methodValueOf: map[string]string{}, methodExprNames: map[string]string{}, funcParams: map[string][]string{}, methodPtr: map[string]bool{}, globals: map[string]string{}, structs: map[string][]structField{}, namedTypes: map[string]bool{}, typeNames: map[string]bool{}, interfaceTypes: map[string]bool{}, ifaceMethods: map[string][]ifaceMethod{}, anonIfaceNames: map[string]string{}, anonIfaceMinted: map[string]bool{}, ifaceASTs: map[string]ifaceAST{}, ifaceVTables: map[string]bool{}, namedUnderlying: map[string]string{}, namedArrays: map[string]arrDim{}, constInt: map[string]string{}, constVal: map[string]constant.Value{}, constWide: map[string]string{}, constStr: map[string]string{}, constUntyped: map[string]bool{}, constHuge: map[string]bool{}, arrays: map[string]arrDim{}, globalArrays: map[string]arrDim{}, sliceVars: map[string]string{}, globalSliceVars: map[string]string{}, chanElems: map[string]bool{}, chanInitElems: map[string]bool{}, chanSendElems: map[string]bool{}, chanRecvElems: map[string]bool{}, chanTryRecvElems: map[string]bool{}, chanTrySendElems: map[string]bool{}, chanGatedSendElems: map[string]bool{}, aliasOf: map[string]string{}, localTypes: map[string]string{}, gotoTargets: map[string]bool{}, chanCloseElems: map[string]bool{}, chanRecv2Elems: map[string]bool{}, mathWrappers: map[string]bool{}, chanElemByName: map[string]string{}, sliceElems: map[string]bool{}, sliceElemByName: map[string]string{}, appendElems: map[string]bool{}, tryappendElems: map[string]bool{}, appendSliceElems: map[string]bool{}, tryappendSliceEls: map[string]bool{}, appendokStructs: map[string]bool{}, copyElems: map[string]bool{}, resliceElems: map[string]bool{}, reslice3Elems: map[string]bool{}, clearElems: map[string]bool{}, minElems: map[string]bool{}, maxElems: map[string]bool{}, printSliceElems: map[string]bool{}, printStructs: map[string]string{}, printlnElems: map[string]bool{}, switchBreakUsed: map[string]bool{}, labelBreak: map[string]string{}, labelContinue: map[string]string{}, labelUsed: map[string]bool{}, eqStructs: map[string]bool{}, eqArrays: map[string]arrDim{}, frameBacked: map[string]bool{}, frameHolder: map[string]string{}, crossParams: map[string][]leak{}, crossContents: map[string][]leak{}, retContents: map[string][]bool{}, recvContents: map[string]leak{}, paramCalls: map[string][]paramCall{}, frameCalls: map[string][]frameCall{}, funcValueMembers: map[string][]string{}, methodExprMembers: map[string]emMethodExpr{}, memberShown: map[string]string{}, litLifted: map[string][]string{}, typeNamed: map[string]bool{}, methodNames: map[string]bool{}, recvLeaks: map[string]leak{}, retRecv: map[string]bool{}, crossInto: map[string][]uint32{}, ifaceSummaries: map[string]ifaceSummary{}, retParams: map[string][]bool{}, funcValueOf: map[string]string{}, crossNames: map[string]string{}, initNames: map[string]string{}, funcValueTypes: map[string]funcValueType{}, funcTypeNames: map[string]string{}, funcTypeRet: map[string][]string{}, funcTypeParams: map[string][]string{}, retStructs: map[string]string{}, retStructByKey: map[string]string{}, shiftHelpers: map[string][2]string{}, shiftCTypes: map[*int32]string{}, shiftWalked: map[shiftWalkKey]bool{}, shiftIn: map[*int32]bool{}, divHelpers: map[string][2]string{}, funcValueWrappers: map[string]string{}, deferReplay: -1, iota: -1}
 	for _, opt := range opts {
 		opt(e)
 	}
@@ -5547,6 +5547,8 @@ type emitter struct {
 	methodExprMembers  map[string]emMethodExpr // a method expression among those members, by its member name (see methodExprSummary)
 	memberShown        map[string]string       // how a diagnostic names each of those members
 	litLifted          map[string][]string     // a function literal's summary key -> the C names it was lifted to, whose frameCalls are its own
+	typeCallees        []string                // the "type:" callees the summaries have edges to, refreshed by the fixed point (unionSummary)
+	typeNamed          map[string]bool         // a "type:" callee whose union is final and named for diagnostics (typeSummary)
 	methodNames        map[string]bool         // the name of every method of every type, which a selector calling one is known by (scanBindings)
 	bindWrites         map[string]int          // in the function being emitted, how often a name -- or one field of it, funcFieldKey -- is declared or assigned (see boundFunc)
 	bindBlock          map[string]int          // ... the block all those writes are in, or -1 for more than one
@@ -9407,73 +9409,97 @@ func (e *emitter) fieldCallee(base, field, ft string) string {
 	return e.indirectCallee(e.boundFunc(funcFieldKey(base, field)), ft)
 }
 
-// typeSummary fills the summaries of a "type:" callee (see indirectCallee): the
-// union over every function of the type used as a value. A store into a receiver
-// is taken to outlive the call: the receiver of a method value is bound to a
-// package variable, and nothing else has one.
+// typeSummary fills the summaries of a "type:" callee (see indirectCallee) -- the
+// union over every function of the type used as a value -- and names it for a
+// diagnostic, after one that keeps what it is handed.
 func (e *emitter) typeSummary(cname string) {
-	if _, done := e.crossParams[cname]; done {
+	if e.typeNamed[cname] {
 		return
 	}
+	e.typeNamed[cname] = true
+	e.typeCallee(cname)
+	culprit, _ := e.unionSummary(cname)
 	ct := strings.TrimPrefix(cname, "type:")
-	id := e.funcTypeID(ct)
-	var crosses, contents []leak
-	var intos []uint32
-	var rets, carries []bool
-	grow := func(n int) {
-		for len(crosses) < n {
-			crosses, contents, intos = append(crosses, 0), append(contents, 0), append(intos, 0)
-			rets, carries = append(rets, false), append(carries, false)
-		}
+	e.crossNames[cname] = "a " + e.goTypeName(ct) + " value"
+	if culprit != "" {
+		e.crossNames[cname] += ", which may hold " + culprit
 	}
-	outlive := func(f leak) leak {
+}
+
+// typeCallee makes the summaries of a "type:" callee exist, one entry per parameter
+// of its type, for the edges of a call through such a value (collectFuncCross) to
+// have something to read.
+func (e *emitter) typeCallee(cname string) {
+	if _, ok := e.crossParams[cname]; ok {
+		return
+	}
+	n := len(e.funcTypeParams[strings.TrimPrefix(cname, "type:")])
+	e.crossParams[cname], e.crossContents[cname], e.crossInto[cname] = make([]leak, n), make([]leak, n), make([]uint32, n)
+	e.retParams[cname], e.retContents[cname] = make([]bool, n), make([]bool, n)
+	e.typeCallees = append(e.typeCallees, cname)
+}
+
+// unionSummary ORs into a "type:" callee's summaries those of every function of its
+// type used as a value, answering a member that keeps what it is handed and whether
+// anything was added. A store into a receiver is taken to outlive the call: the
+// receiver of a method value is bound to a package variable, and nothing else has
+// one. The members' summaries grow while the fixed point runs, so it is asked again
+// on every pass (closeCrossParams).
+func (e *emitter) unionSummary(cname string) (culprit string, changed bool) {
+	ct := strings.TrimPrefix(cname, "type:")
+	crosses, contents, intos := e.crossParams[cname], e.crossContents[cname], e.crossInto[cname]
+	rets, carries := e.retParams[cname], e.retContents[cname]
+	or := func(dst []leak, i int, f leak) {
 		if f&leakRecv != 0 {
 			f = f&^leakRecv | leakGlobal
 		}
-		return f
+		if i < len(dst) && dst[i]|f != dst[i] {
+			dst[i] |= f
+			changed = true
+		}
 	}
-	culprit := ""
-	for _, m := range e.funcValueMembers[id] {
+	set := func(dst []bool, i int, b bool) {
+		if b && i < len(dst) && !dst[i] {
+			dst[i] = true
+			changed = true
+		}
+	}
+	for _, m := range e.funcValueMembers[e.funcTypeID(ct)] {
 		if me, isME := e.methodExprMembers[m]; isME {
 			e.methodExprMember(m, me)
 		}
 		leaky := false
 		for i, f := range e.crossParams[m] {
-			grow(i + 1)
-			crosses[i] |= outlive(f)
+			or(crosses, i, f)
 			leaky = leaky || f != 0
 		}
 		for i, f := range e.crossContents[m] {
-			grow(i + 1)
-			contents[i] |= outlive(f)
+			or(contents, i, f)
 			leaky = leaky || f != 0
 		}
 		for i, b := range e.crossInto[m] {
-			grow(i + 1)
-			intos[i] |= b
+			if i < len(intos) && intos[i]|b != intos[i] {
+				intos[i] |= b
+				changed = true
+			}
 			leaky = leaky || b != 0
 		}
 		for i, r := range e.retParams[m] {
-			grow(i + 1)
-			rets[i] = rets[i] || r
+			set(rets, i, r)
 		}
 		for i, r := range e.retContents[m] {
-			grow(i + 1)
-			carries[i] = carries[i] || r
+			set(carries, i, r)
 		}
 		for _, pc := range e.paramCalls[m] {
-			e.noteParamCall(cname, pc)
+			if e.noteParamCall(cname, pc) {
+				changed = true
+			}
 		}
 		if leaky && culprit == "" {
 			culprit = e.memberShown[m]
 		}
 	}
-	e.crossParams[cname], e.crossContents[cname], e.crossInto[cname] = crosses, contents, intos
-	e.retParams[cname], e.retContents[cname] = rets, carries
-	e.crossNames[cname] = "a " + e.goTypeName(ct) + " value"
-	if culprit != "" {
-		e.crossNames[cname] += ", which may hold " + culprit
-	}
+	return culprit, changed
 }
 
 // funcTypeID is the funcShapeID of a minted function typedef.
@@ -9518,9 +9544,6 @@ func (e *emitter) calleeFrameCalls(callee string) []frameCall {
 // of its type (collectFuncValues), under its member name: the ones liftMethodExpr
 // gives the function it is lifted to.
 func (e *emitter) methodExprMember(name string, me emMethodExpr) {
-	if _, done := e.crossParams[name]; done {
-		return
-	}
 	mcname, path, _, found := e.promotedMethod(me.typeC, me.member)
 	fv, typed := e.methodValueTypes[mcname]
 	if !found || !typed {
@@ -9795,6 +9818,233 @@ func (e *emitter) collectFuncCross(fi funcInfo) {
 		resolve([]held{{root, heldAlias}}, func(n string, contents bool) { found = found || !contents && e.isPackageVar(n) })
 		return found
 	}
+	// A call through a function value nothing names -- a package variable, a field,
+	// an element, another package's variable, a call's result -- is a call of every
+	// function of the value's type ("type:", unionSummary), which needs the type.
+	// This pass has no locals, so it types what it can: a parameter, the receiver
+	// and a package variable, and a local through what it holds.
+	paramTypes := e.funcParams[cname]
+	typeOf := func(n string) string {
+		switch i := slices.Index(params, n); {
+		case i >= 0:
+			if i < len(paramTypes) {
+				return paramTypes[i]
+			}
+		case recvName != "" && n == recvName:
+			return fi.recvCType
+		case e.isPackageVar(n):
+			ct, _ := e.varType(n)
+			return ct
+		}
+		return ""
+	}
+	curOf := func(n string) (accessCur, bool) {
+		if slices.Contains(params, n) || recvName != "" && n == recvName {
+			if ct := typeOf(n); ct != "" {
+				return e.plainOrSlice(ct), true
+			}
+			return accessCur{}, false
+		}
+		if e.isPackageVar(n) {
+			return e.accessBase(n)
+		}
+		return accessCur{}, false
+	}
+	unionOf := func(ct string) string {
+		if ct == "" || !e.isFuncCType(ct) {
+			return ""
+		}
+		name := "type:" + e.underlyingCType(ct)
+		e.typeCallee(name)
+		return name
+	}
+	// contentUnions: every function type of nargs parameters an element or a field
+	// of n may hold -- `h := table[i]; h(v)` holds table's contents.
+	contentUnions := func(n string, nargs int) (out []string) {
+		cur, ok := curOf(n)
+		if !ok {
+			return nil
+		}
+		var cands []string
+		if cur.slice || len(cur.dims) != 0 {
+			cands = append(cands, cur.elem)
+		} else {
+			for _, f := range e.structs[e.underlyingCType(strings.TrimSuffix(cur.ctype, "*"))] {
+				cands = append(cands, f.ctype)
+			}
+		}
+		for _, ct := range cands {
+			if e.isFuncCType(ct) && len(e.funcTypeParams[e.underlyingCType(ct)]) == nargs {
+				out = append(out, unionOf(ct))
+			}
+		}
+		return out
+	}
+	// valueUnions: what a call through the name may reach beyond the declared
+	// functions it holds. A callback parameter is its caller's question (paramCall)
+	// for what the call is handed; for what it hands BACK, forResult, it is every
+	// function of its type, the caller's function among them.
+	valueUnions := func(name string, nargs int, forResult bool) (out []string) {
+		resolve([]held{{name, heldAlias}}, func(n string, contents bool) {
+			switch {
+			case strings.HasPrefix(n, "?"):
+				if !contents {
+					out = append(out, unionOf(n[1:]))
+				}
+			case contents:
+				out = append(out, contentUnions(n, nargs)...)
+			case slices.Contains(params, n) && !forResult:
+			default:
+				if _, isFunc := e.userFunc(n); !isFunc || slices.Contains(params, n) {
+					out = append(out, unionOf(typeOf(n)))
+				}
+			}
+		})
+		out = slices.DeleteFunc(out, func(s string) bool { return s == "" })
+		slices.Sort(out)
+		return slices.Compact(out)
+	}
+	// chainUnions: the callee of a call through the value base's steps reach, a
+	// field, an element, another package's variable or a call's result.
+	chainUnions := func(base string, steps []Node) (out []string) {
+		// Another package's variable is its mangled global, `lib.Handler`.
+		folded := false
+		if prefix, isImport := e.importQualifiers[base]; isImport && len(steps) != 0 && steps[0].sym == Selector {
+			base, steps, folded = mangle(prefix, e.soleIdent(steps[0].ast)), steps[1:], true
+		}
+		switch {
+		case len(steps) == 0:
+			if folded {
+				ct, _ := e.varType(base)
+				out = append(out, unionOf(ct))
+			}
+		case steps[0].sym == CallSuffix:
+			if _, isFunc := e.userFunc(base); isFunc && !folded && len(steps) == 1 {
+				if rts := e.funcRet[e.funcCallC(base)]; len(rts) == 1 {
+					out = append(out, unionOf(rts[0])) // `pick()(v)`
+				}
+			}
+		case !slices.ContainsFunc(steps, func(n Node) bool { return n.sym == CallSuffix }):
+			var curs []accessCur
+			switch cur, ok := curOf(base); {
+			case folded:
+				if cur, ok := e.accessBase(base); ok {
+					curs = append(curs, cur)
+				}
+			case ok:
+				curs = append(curs, cur)
+			default:
+				// A local: the chain applies to what it holds, `d := &gdev; d.onData(v)`.
+				resolve([]held{{base, heldAlias}}, func(n string, contents bool) {
+					if cur, ok := curOf(n); ok && !contents {
+						curs = append(curs, cur)
+					}
+				})
+			}
+			for _, cur := range curs {
+				if c, ok := e.accessChainTypeAt(cur, steps, true); ok {
+					out = append(out, unionOf(c.ctype))
+				}
+			}
+		}
+		out = slices.DeleteFunc(out, func(s string) bool { return s == "" })
+		slices.Sort(out)
+		return slices.Compact(out)
+	}
+	// chainCalls finds the calls a statement makes through a value a chain reaches,
+	// `gdev.onData(v)`, `table[i](v)`, `lib.Handler(v)`, `pick()(v)` -- and of a
+	// function literal where it stands, `func(w []int) { ... }(v)`, whose summary is
+	// kept under its place (litKey).
+	chainCalls := func(nodes []Node) (out []stmtCall) {
+		lit := func(fl Node, steps []Node) {
+			if len(steps) != 0 && steps[0].sym == CallSuffix {
+				out = append(out, stmtCall{callee: e.litKey(fl), args: e.callArgExprs(steps[0].ast)})
+			}
+		}
+		switch {
+		case len(nodes) >= 2 && nodes[0].sym == FuncLiteral:
+			lit(nodes[0], nodes[1:])
+		case len(nodes) >= 3 && nodes[0].sym == 0 && (e.f.ch(nodes[0].tok) == GO || e.f.ch(nodes[0].tok) == DEFER) && nodes[1].sym == FuncLiteral:
+			lit(nodes[1], nodes[2:])
+		}
+		try := func(base string, steps []Node) {
+			if base == "" {
+				return
+			}
+			for k, st := range steps {
+				if st.sym != CallSuffix {
+					continue
+				}
+				if k == 0 {
+					continue // a plain name's call is valueCalls'
+				}
+				for _, u := range chainUnions(base, steps[:k]) {
+					out = append(out, stmtCall{callee: u, args: e.callArgExprs(st.ast)})
+				}
+			}
+		}
+		if len(nodes) == 2 && nodes[0].sym == AssignHead && nodes[1].sym == Postfix {
+			post := slices.Collect(it(nodes[1].ast))
+			if len(post) != 0 && post[len(post)-1].sym == PostfixOp {
+				post = post[:len(post)-1]
+			}
+			try(e.soleIdent(nodes[0].ast), post)
+		}
+		if len(nodes) >= 3 && nodes[0].sym == 0 && (e.f.ch(nodes[0].tok) == GO || e.f.ch(nodes[0].tok) == DEFER) && nodes[1].sym == AssignHead {
+			try(e.soleIdent(nodes[1].ast), nodes[2:])
+		}
+		var walk func(ast []int32)
+		walk = func(ast []int32) {
+			for n := range it(ast) {
+				if n.sym == 0 {
+					continue
+				}
+				if n.sym == Factor {
+					kids := slices.Collect(it(n.ast))
+					switch {
+					case len(kids) == 2 && kids[0].sym == 0 && e.f.ch(kids[0].tok) == IDENT && kids[1].sym == FactorSuffix:
+						try(e.src(kids[0].tok), slices.Collect(it(kids[1].ast)))
+					case len(kids) == 2 && kids[0].sym == FuncLiteral && kids[1].sym == FactorSuffix:
+						lit(kids[0], slices.Collect(it(kids[1].ast)))
+					}
+				}
+				walk(n.ast)
+			}
+		}
+		for _, n := range nodes {
+			walk(n.ast)
+		}
+		return out
+	}
+	// valueCallees is valueCall for a value that is a call through a function value
+	// -- a name holding one, or a chain reaching one -- for what its result carries.
+	valueCallees := func(v []int32) ([]string, []Node, bool) {
+		if kids, isFac := e.soleFactor(v); isFac && len(kids) == 2 && kids[0].sym == FuncLiteral && kids[1].sym == FactorSuffix {
+			if steps := slices.Collect(it(kids[1].ast)); len(steps) == 1 && steps[0].sym == CallSuffix {
+				return []string{e.litKey(kids[0])}, e.callArgExprs(steps[0].ast), true
+			}
+		}
+		recv, suffix, ok := e.directCall(v)
+		if !ok || len(suffix) == 0 || suffix[len(suffix)-1].sym != CallSuffix {
+			return nil, nil, false
+		}
+		args := e.callArgExprs(suffix[len(suffix)-1].ast)
+		var callees []string
+		if len(suffix) == 1 {
+			if _, isFunc := e.userFunc(recv); isFunc {
+				return nil, nil, false
+			}
+			resolve([]held{{recv, heldAlias}}, func(n string, contents bool) {
+				if _, isFunc := e.userFunc(n); !contents && isFunc && n != recv {
+					callees = append(callees, e.funcCallC(n))
+				}
+			})
+			callees = append(callees, valueUnions(recv, len(args), true)...)
+		} else {
+			callees = chainUnions(recv, suffix[:len(suffix)-1])
+		}
+		return callees, args, len(callees) != 0
+	}
 	// sink records that a value goes where flag says: every parameter it may carry
 	// by value, every one whose contents it may carry, and the receiver likewise.
 	sink := func(v []int32, flag leak) {
@@ -9852,17 +10102,23 @@ func (e *emitter) collectFuncCross(fi funcInfo) {
 	// return summary says later whether the result was that parameter.
 	derived := func(v []int32, flag leak, slot int) {
 		callee, args, isCall := e.valueCall(v)
+		callees := []string{callee}
 		if !isCall {
-			return
-		}
-		for j, a := range args {
-			r := reachOf(e.summaryReach(a.ast))
-			for _, i := range r.vals {
-				e.derivedEdges = append(e.derivedEdges, derivedEdge{caller: cname, from: i, callee: callee, to: j, sink: flag, slot: slot})
+			// `g = f(v)` through a function value: each function it may be.
+			if callees, args, isCall = valueCallees(v); !isCall {
+				return
 			}
-			if slot < 0 {
-				for _, i := range r.conts {
-					e.derivedEdges = append(e.derivedEdges, derivedEdge{caller: cname, from: i, callee: callee, to: j, sink: flag, slot: -1, contents: true})
+		}
+		for _, callee := range callees {
+			for j, a := range args {
+				r := reachOf(e.summaryReach(a.ast))
+				for _, i := range r.vals {
+					e.derivedEdges = append(e.derivedEdges, derivedEdge{caller: cname, from: i, callee: callee, to: j, sink: flag, slot: slot})
+				}
+				if slot < 0 {
+					for _, i := range r.conts {
+						e.derivedEdges = append(e.derivedEdges, derivedEdge{caller: cname, from: i, callee: callee, to: j, sink: flag, slot: -1, contents: true})
+					}
 				}
 			}
 		}
@@ -9939,8 +10195,21 @@ func (e *emitter) collectFuncCross(fi funcInfo) {
 				}
 			}
 			// `return g(p)`: whatever g hands back of its own parameter, this
-			// function hands back of the parameter it passed there.
-			for _, c := range e.stmtCalls(nodes) {
+			// function hands back of the parameter it passed there -- and through a
+			// function value, whatever each function it may be hands back.
+			rcalls := e.stmtCalls(nodes)
+			for _, c := range e.valueCalls(nodes) {
+				resolve([]held{{c.name, heldAlias}}, func(n string, contents bool) {
+					if _, isFunc := e.userFunc(n); !contents && isFunc && n != c.name {
+						rcalls = append(rcalls, stmtCall{callee: e.funcCallC(n), args: c.args})
+					}
+				})
+				for _, u := range valueUnions(c.name, len(c.args), true) {
+					rcalls = append(rcalls, stmtCall{callee: u, args: c.args})
+				}
+			}
+			rcalls = append(rcalls, chainCalls(nodes)...)
+			for _, c := range rcalls {
 				for j, a := range c.args {
 					r := reachOf(e.summaryReach(a.ast))
 					for _, i := range r.vals {
@@ -9973,7 +10242,7 @@ func (e *emitter) collectFuncCross(fi funcInfo) {
 				})
 			}
 		}
-		for _, c := range e.stmtCalls(nodes) {
+		for _, c := range append(e.stmtCalls(nodes), chainCalls(nodes)...) {
 			owner := owners(c.args)
 			site := e.siteSeq
 			e.siteSeq++
@@ -10056,6 +10325,7 @@ func (e *emitter) collectFuncCross(fi funcInfo) {
 					callees = append(callees, e.funcCallC(n))
 				}
 			})
+			callees = append(callees, valueUnions(c.name, len(c.args), false)...)
 			for _, k := range ats(c.name) {
 				for j, a := range c.args {
 					r := reachOf(e.summaryReach(a.ast))
@@ -10148,6 +10418,13 @@ func (e *emitter) closeCrossParams() {
 	})
 	for changed := true; changed; {
 		changed = false
+		// A call through a function value nothing names is a call of every function
+		// of its type (unionSummary), which grows as those functions' summaries do.
+		for _, tc := range e.typeCallees {
+			if _, grew := e.unionSummary(tc); grew {
+				changed = true
+			}
+		}
 		// orContents adds flags to what the caller's parameter from -- or, with from
 		// < 0, its receiver -- lets its CONTENTS do.
 		orContents := func(caller string, from int, flags leak) {
@@ -10921,6 +11198,14 @@ func (e *emitter) summaryHolds(body []int32) map[string][]held {
 	add := func(targets []string, into []bool, values [][]int32) {
 		reach := func(i int, v []int32) []held {
 			hs := e.summaryReach(v)
+			if len(hs) == 0 {
+				// `f := pick()`: a function value nothing names, which is every
+				// function of its type (see valueUnions) -- the type is all there
+				// is to hold.
+				if ct := e.summaryCallResult(v); ct != "" {
+					hs = []held{{"?" + ct, heldAlias}}
+				}
+			}
 			if i < len(into) && into[i] {
 				hs = asPart(hs) // `b.xs = v`: the value is a part of b
 			}
@@ -10973,6 +11258,31 @@ func (e *emitter) summaryHolds(body []int32) map[string][]held {
 	}
 	walk(body)
 	return holds
+}
+
+// summaryCallResult is the function type a value is, when it is the call of a
+// declared function -- this package's or another's -- returning one, `pick()`, and ""
+// otherwise.
+func (e *emitter) summaryCallResult(v []int32) string {
+	recv, suffix, ok := e.directCall(v)
+	if !ok {
+		return ""
+	}
+	cname := ""
+	switch {
+	case len(suffix) == 1 && suffix[0].sym == CallSuffix:
+		if _, isFunc := e.userFunc(recv); isFunc {
+			cname = e.funcCallC(recv)
+		}
+	case len(suffix) == 2 && suffix[0].sym == Selector && suffix[1].sym == CallSuffix:
+		if prefix, isImport := e.importQualifiers[recv]; isImport {
+			cname = mangle(prefix, e.soleIdent(suffix[0].ast))
+		}
+	}
+	if rts := e.funcRet[cname]; cname != "" && len(rts) == 1 && e.isFuncCType(rts[0]) {
+		return rts[0]
+	}
+	return ""
 }
 
 // forClauseBinding is summaryBinding for a for clause's targets and values.
@@ -11194,6 +11504,16 @@ func (e *emitter) stmtMethodCalls(nodes []Node, fi funcInfo) []methodCall {
 	// The statement-level call, `t.inner(d)`. It is an AssignHead beside a Postfix
 	// and carries no Factor at all, which is why the walk below -- which reads
 	// Factors -- sees nothing of it. stmtCalls makes the same distinction.
+	// A deferred method call is a call for everything handed to it, only later.
+	if len(nodes) >= 4 && nodes[0].sym == 0 && e.f.ch(nodes[0].tok) == DEFER && nodes[1].sym == AssignHead {
+		if recv := e.soleIdent(nodes[1].ast); recv != "" && len(nodes) == 4 && nodes[2].sym == Selector && nodes[3].sym == CallSuffix {
+			if c, isM := e.methodCallOf(recv, nodes[2:], fi); isM {
+				out = append(out, c)
+			} else {
+				out = append(out, e.ifaceMethodCallsOf(recv, nodes[2:], fi)...)
+			}
+		}
+	}
 	if len(nodes) == 2 && nodes[0].sym == AssignHead && nodes[1].sym == Postfix {
 		suffix := slices.Collect(it(nodes[1].ast))
 		if me, isME := e.headMethodExpr(nodes[0], suffix); isME {
@@ -11387,22 +11707,21 @@ type nameCall struct {
 // eachNameCall calls fn for every call a statement makes on a plain name, with the
 // call's suffix: the statement-level call, `f(x)`, and one inside an expression.
 func (e *emitter) eachNameCall(nodes []Node, add func(name string, suffix []int32)) {
-	// The statement-level call and the go statement: the callee is in the
-	// AssignHead, a sibling of the Postfix holding the CallSuffix.
-	if len(nodes) != 0 {
-		if head := nodes[0]; head.sym == AssignHead || (head.sym == 0 && e.f.ch(head.tok) == GO) {
-			if name := e.soleIdent(headOf(nodes).ast); name != "" {
-				for _, n := range nodes {
-					for c := range it(n.ast) {
-						if c.sym == CallSuffix {
-							add(name, c.ast)
-						}
-					}
-					if n.sym == CallSuffix {
-						add(name, n.ast)
-					}
-				}
-			}
+	// The statement-level call, the go statement and the defer: the callee is in
+	// the AssignHead, and the call is the step right after it -- in a Postfix, or a
+	// sibling. Only that one: `x.m(v)` calls no x, and `f(x)(y)` calls f with x
+	// alone, the second call being its result's (chainCalls). A deferred call is a
+	// call for everything handed to it, only later.
+	if len(nodes) >= 2 {
+		var steps []Node
+		switch head := nodes[0]; {
+		case head.sym == AssignHead && nodes[1].sym == Postfix:
+			steps = slices.Collect(it(nodes[1].ast))
+		case head.sym == 0 && (e.f.ch(head.tok) == GO || e.f.ch(head.tok) == DEFER) && nodes[1].sym == AssignHead:
+			steps = nodes[2:]
+		}
+		if name := e.soleIdent(headOf(nodes).ast); name != "" && len(steps) != 0 && steps[0].sym == CallSuffix {
+			add(name, steps[0].ast)
 		}
 	}
 	// A call inside an expression: the callee is the identifier before the CallSuffix.

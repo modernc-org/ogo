@@ -650,9 +650,15 @@ of a function without a goto, never address-taken or method-called, never a pack
 variable -- before, a rebinding in a branch, a loop, a select or through `&f` left the
 first binding in force. `TestEmitCFuncValueUnion` (and `...Packages`) is the matrix: a
 new place a function value can live, or a new way to write one, is a new row there.
-Still open: a function RELAYING its parameter through such a value, `func relay(v
-[]int) { handler(v) }`, summarises nothing of it -- the summaries follow names to the
-declared functions they hold (`valueCalls`) and nothing else.
+The SUMMARIES follow such a call too (`TestEmitCSummaryFuncValues`): a "type:" callee
+is an edge target like a function (`typeCallee`), its union refreshed on every pass of
+the fixed point as its members' summaries grow (`unionSummary`). This pass has no
+locals, so it types what it can -- a parameter (`funcParams`), the receiver, a package
+variable -- and a local through what it holds; a value only a call's result type
+names is held as `?<type>` (`summaryCallResult`). A deferred call and a literal called
+where it stands are calls here as well; neither was, so `defer keep(v)` and
+`func(w []int) { gs = w }(v)` laundered a parameter. Still open: a call through a
+method's result, `s.handler()(v)`, and a chain whose base is a literal's parameter.
 
 ## Notes
 

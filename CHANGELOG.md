@@ -719,6 +719,15 @@ shipped section tells a reader on that version that they have behaviour they do 
 Each of these is the compiler refusing a program it used to accept, and each such
 program handed out a reference to storage that was gone by the time it was read.
 
+- **A callee is followed through the function values it calls, the literals it
+  calls where they stand, and its defers.** `func relay(v []int) { handler(v) }`
+  -- and the same through a field, an element, a local holding one, a call's
+  result, another package's variable, or a callback parameter the body rebinds --
+  was summarised as keeping nothing of v, and so was `defer keep(v)`, `defer
+  k.keep(v)` and `func(w []int) { gs = w }(v)`, called or deferred: `relay(a[:])`
+  left a slice of the local a wherever the function kept it. Each is a call now, of
+  every function of the value's type where nothing names which, and a result such
+  a call hands back is followed too.
 - **A call through a function value the compiler cannot name is asked of every
   function of its type.** A function held in a package variable set elsewhere, in a
   field, in an element of a table, returned by a call, or in a variable written on
