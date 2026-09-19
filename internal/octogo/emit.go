@@ -30278,6 +30278,18 @@ func (e *emitter) emitValueList(targets []assignTarget, declare []bool, rhs []No
 		if typedTarget {
 			e.typeUntypedShifts(r.ast, tt) // the target's type is the value's context
 		}
+		// The predeclared nil has no type of its own and takes its target's, as it
+		// does standing alone: `p, k = nil, 1` was "cannot infer the type of a value".
+		if typedTarget && e.isNilExpr(r.ast) {
+			zero := e.zeroInitC(tt)
+			if e.isIfaceCType(tt) {
+				zero = "{0}"
+			}
+			types[i], tmps[i] = tt, e.newTmp()
+			e.ind()
+			e.emit(tt + " " + tmps[i] + " = " + zero + ";\n")
+			continue
+		}
 		ct, ok := e.inferCType(r.ast)
 		if !ok {
 			e.fail("cannot infer the type of a value in a multiple assignment")

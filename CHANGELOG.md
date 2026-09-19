@@ -187,6 +187,9 @@ shipped section tells a reader on that version that they have behaviour they do 
 
 ### Fixed
 
+- **nil in a list assignment takes its target's type.** `p, k = nil, 1` was
+  "cannot infer the type of a value in a multiple assignment", for a pointer, a
+  slice, a function and an interface alike.
 - **An interface value is widened from anything that has one.** A value of one
   interface type where another is wanted -- an element, a field, a call's result,
   not only a variable -- was refused ("an interface holds a pointer") in a

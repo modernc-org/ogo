@@ -28141,6 +28141,49 @@ func main() {
 		want: "sq sq sq 11\nsq 12 12 sq 11221\nsq sq sq 6 111\n2 11\nshow nil\nshow sq\nshow sq\nend 11\n",
 	},
 	{
+		// The predeclared nil in a list assignment takes the type of its target, as
+		// it does alone. Each of these was "cannot infer the type of a value in a
+		// multiple assignment".
+		//
+		// Every line of this prints what real Go prints for the same program.
+		name: "nil in a list assignment",
+		src: `type Named interface {
+	Name() string
+}
+
+type T struct {
+	n int
+}
+
+func (t *T) Name() string { return "t" }
+
+var gt T
+
+// The predeclared nil in a list assignment takes the type of the target in its
+// position, as it does alone: each of these was "cannot infer the type of a value
+// in a multiple assignment".
+func main() {
+	x := 5
+	p := &x
+	xs := []int{1, 2}
+	var f func()
+	var n Named = &gt
+	var k int
+	p, k = nil, 1
+	println(p == nil, k)
+	xs, p = nil, &x
+	println(xs == nil, len(xs), *p)
+	f, k = nil, 2
+	println(f == nil, k)
+	n, k = nil, 3
+	println(n == nil, k)
+	n, p = &gt, nil
+	println(n.Name(), p == nil)
+}
+`,
+		want: "true 1\ntrue 0 5\ntrue 2\ntrue 3\nt true\n",
+	},
+	{
 		// A function literal called where it stands, as a statement of its own, which
 		// the grammar had no production for: a statement could not begin with "func".
 		// It is lifted as a literal is anywhere and called by name; arguments are how a
