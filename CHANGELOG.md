@@ -197,6 +197,11 @@ shipped section tells a reader on that version that they have behaviour they do 
 
 ### Fixed
 
+- **A value computed as a statement and not used is refused, as in Go.** A
+  conversion, `int(x)`, `T(v)`, `pkg.T(v)`, and a call of a builtin whose only
+  effect is its result -- `len`, `cap`, `append`, `make`, `min`, `max` -- compiled
+  as statements, and `append(s, 1)` alone even ran, panicking on a slice with no
+  room for a value nothing kept.
 - **Declarations may use types declared below them.** A package variable's
   literal of a type declared further down, `var g = Pt{1, 2}` above `type Pt
   struct{...}`, was "Pt is not a struct type", and a type over one declared later

@@ -1,0 +1,41 @@
+// A statement that computes a value and does nothing else is refused, as Go
+// refuses it: a conversion and a call of a builtin whose only effect is its
+// result. A call of anything else -- copy among the builtins, a function, a
+// method of a conversion's value -- is a statement.
+
+import "p"
+
+type Celsius int
+
+func (c Celsius) Double() Celsius { return c * 2 }
+
+func two() int { return 2 }
+
+func main() {
+	x := 7
+	s := []int{1, 2}
+	// ERROR int\(x\) \(value of type int\) is not used
+	int(x)
+	// ERROR Celsius\(x\) \(value of type Celsius\) is not used
+	Celsius(x)
+	// ERROR \(int\)\(x\) \(value of type int\) is not used
+	(int)(x)
+	// ERROR p\.T\(p\.Make\(\)\) \(value of type p\.T\) is not used
+	p.T(p.Make())
+	// ERROR len\(s\) \(value of type int\) is not used
+	len(s)
+	// ERROR cap\(s\) \(value of type int\) is not used
+	cap(s)
+	// ERROR append\(s, 1\) is not used
+	append(s, 1)
+	// ERROR min\(1, 2\) is not used
+	min(1, 2)
+	// ERROR max\(x, 2\) is not used
+	max(x, 2)
+	// ERROR make\(\[\]int, 2\) is not used
+	make([]int, 2)
+	copy(s, s)
+	println(len(s))
+	Celsius(x).Double()
+	two()
+}

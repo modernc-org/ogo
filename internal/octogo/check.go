@@ -2199,6 +2199,53 @@ func (f *File) checkCallStmt(s *Scope, head, stmt Node, kw string, kwTok Token, 
 	}
 }
 
+// reportUnusedValue reports a statement that computes a value and does nothing
+// else, which Go refuses: a conversion, `int(x)`, `T(v)`, `(T)(v)`, `pkg.T(v)`, or a
+// call of a builtin whose only effect is its result -- len, cap, append, make, min,
+// max. They compiled, and `append(s, 1)` alone even ran, panicking on a slice with
+// no room for a value nothing kept.
+func (f *File) reportUnusedValue(s *Scope, head Node, steps []Node, postfix Node) bool {
+	var name, qual Token
+	switch {
+	case len(steps) == 1 && steps[0].sym == CallSuffix:
+		if id, ok := f.assignHeadIdent(head); ok {
+			name = id
+		} else if inner, ok := f.parenInner(head); ok {
+			name, _ = f.exprIdent(inner)
+		}
+	case len(steps) == 2 && steps[0].sym == Selector && steps[1].sym == CallSuffix:
+		if id, ok := f.assignHeadIdent(head); ok && f.isImportQualifier(s, id.Src()) {
+			qual, name = id, selectorTok(f, steps[0])
+		}
+	}
+	if !name.IsValid() {
+		return false
+	}
+	at, span := f.tok(head.Pos()).Position(), f.sourceSpan(head.Pos(), postfix.End())
+	if qual.IsValid() {
+		if _, _, isType := f.typeDeclNamed(s, qual.Src()+"."+name.Src()); isType {
+			f.err(at, "%s (value of type %s.%s) is not used", span, qual.Src(), name.Src())
+			return true
+		}
+		return false
+	}
+	switch s.find(name.Src()).(type) {
+	case *PredeclaredType, *TypeDeclaration:
+		f.err(at, "%s (value of type %s) is not used", span, name.Src())
+		return true
+	case *PredeclaredFunc, nil:
+		switch name.Src() {
+		case "len", "cap":
+			f.err(at, "%s (value of type int) is not used", span)
+			return true
+		case "append", "make", "min", "max":
+			f.err(at, "%s is not used", span)
+			return true
+		}
+	}
+	return false
+}
+
 // reportNotACall reports the two shapes that END IN A CALL and are still not one, so
 // endsInCall admits them and Go does not.
 //
@@ -4976,6 +5023,9 @@ func (f *File) checkAssignment(s *Scope, head, postfix Node) {
 				return
 			}
 			f.checkPtrConv(s, pc)
+			return
+		}
+		if f.reportUnusedValue(s, head, steps, postfix) {
 			return
 		}
 		if _, named := f.assignHeadIdent(head); !named {
@@ -14575,9 +14625,9 @@ func (f *File) checkAppendValues(s *Scope, argList Node, args []Node) {
 }
 
 // isBuiltinFuncName reports whether name is one of Go's predeclared function
-// names. OctoGo does not register these in the Universe yet, so a direct call to
-// one must not be reported as undefined; registering them, with signatures for
-// argument checking, is separate work.
+// names. Only the emitted ones are registered in the Universe (as PredeclaredFunc);
+// make, new and the ones not implemented resolve to nothing, so a direct call to
+// one must not be reported as undefined.
 func isBuiltinFuncName(name string) bool {
 	switch name {
 	case "append", "cap", "clear", "close", "complex", "copy", "delete",
