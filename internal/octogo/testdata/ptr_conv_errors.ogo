@@ -1,0 +1,73 @@
+// A conversion to a pointer type converts nil or a pointer whose base type has the
+// target's underlying type, as in Go. C casts any pointer to any other without a
+// word, so `(*int)(&i32)` read an int32 as an int. The result has the target's
+// method set, and a conversion is a value, not a statement.
+
+import "p"
+
+type Shape interface {
+	Area() int
+}
+
+type Sq struct {
+	S int
+}
+
+func (q *Sq) Area() int { return q.S * q.S }
+
+type Sq2 struct {
+	S int
+}
+
+type Other struct {
+	S string
+}
+
+type Swapped struct {
+	T int
+	S int
+}
+
+type Mine struct {
+	F int
+	g int
+}
+
+type Celsius int
+
+// ERROR cannot use \(\*Sq2\)\(nil\) \(value of type \*Sq2\) as Shape value in variable declaration: Sq2 does not implement Shape \(missing method Area\)
+var _ Shape = (*Sq2)(nil)
+
+var gq Sq
+
+var gm Mine
+
+func main() {
+	x := 7
+	var i32 int32 = 4
+	var c Celsius = 30
+	var bs = []byte{1}
+	// ERROR cannot convert &i32 \(value of type \*int32\) to type \*int
+	p1 := (*int)(&i32)
+	// ERROR cannot convert x \(value of type int\) to type \*int
+	p2 := (*int)(x)
+	// ERROR cannot convert &gq \(value of type \*Sq\) to type \*Other
+	p3 := (*Other)(&gq)
+	// ERROR cannot convert &gq \(value of type \*Sq\) to type \*Swapped
+	p4 := (*Swapped)(&gq)
+	// ERROR cannot convert &c \(value of type \*Celsius\) to type \*Sq
+	p5 := (*Sq)(&c)
+	// ERROR cannot convert &gm \(value of type \*Mine\) to type \*p.T
+	p6 := (*p.T)(&gm)
+	// ERROR wrong argument count in conversion to \*int
+	p7 := (*int)(&x, &x)
+	// ERROR a conversion to \*\[\]byte, a pointer to a type written out, is not supported yet
+	p8 := (*[]byte)(&bs)
+	// ERROR type Sq2 has no method Area
+	(*Sq2)(&gq).Area()
+	// ERROR \(\*int\)\(&x\) \(value of type \*int\) is not used
+	(*int)(&x)
+	// ERROR defer requires function call, not conversion \(\*Sq\)\(&gq\)
+	defer (*Sq)(&gq)
+	_, _, _, _, _, _, _, _ = p1, p2, p3, p4, p5, p6, p7, p8
+}

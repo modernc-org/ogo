@@ -545,8 +545,10 @@ struct under a width; a named ARRAY result returned by name, `func f() (r
 [2]int{1, 2}; len(a) {` (the `if` form works); a PARENTHESISED HEAD the emitter cannot peel -- one holding a unary
 operator or a suffix of its own -- read or written through a suffix: `(&p).x`,
 `(&arr)[1:]`, `(get()).x`, `(*get()).x`, `(arr[1:])[1:]`, `("hello")[1:]`, the targets
-`(p).x = 5` and `(&p).x = 3`, and the send `(&bus.ports[1]).ch <- 5` (`(*p).x`, `(a)[i]`,
-`(&v).m()` and `(a - b).m()` work);
+`(p).x = 5` and `(&p).x = 3` and a conversion's, `(*T)(p).x = 5` and `*(*T)(p) = 5`,
+and the send `(&bus.ports[1]).ch <- 5` (`(*p).x`, `(a)[i]`, `(v).m()`, `(&v).m()`,
+`(*T)(p).m()` and `(a - b).m()` work); a conversion to a pointer to a type written
+out, `(*[]byte)(p)` or `(*[4]byte)(s)` (refused by name; a named type's converts);
 an ELEMENT or another package's variable as a `range` clause's target, `for _,
 q[0] = range ptrs`, `for _, geo.P = range ptrs` ("a range target must be a variable
 or a struct field"); a chain after a NAMED

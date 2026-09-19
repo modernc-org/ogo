@@ -588,8 +588,8 @@ type ifaceInit struct {
 // checkBodies walks a source file's function and method bodies (Phase 4).
 func (f *File) checkBodies(pkg *Scope, n Node) {
 	// A package variable of an interface type -- the compile-time assertion `var _
-	// Shape = &Sq{}` above all, which nothing emits and so nothing else asks about
-	// -- is checked as a local one is.
+	// Shape = (*Sq)(nil)` above all, which nothing emits and so nothing else asks
+	// about -- is checked as a local one is.
 	for _, x := range f.ifaceInits {
 		f.checkImplements(pkg, x.iface, x.value, "variable declaration")
 	}
@@ -2149,6 +2149,14 @@ func (f *File) checkCallStmt(s *Scope, head, stmt Node, kw string, kwTok Token, 
 	if steps, _ := callSteps(stmt); len(steps) != 0 {
 		if me, rest, ok := f.methodExprOfHead(s, head, steps); ok {
 			f.checkMethodExpr(s, me, rest)
+			return
+		}
+		if pc, ok := f.ptrConvOfHead(s, head, steps); ok {
+			if len(pc.rest) == 0 && pc.unnamed == "" {
+				f.err(pc.at.Position(), "%s requires function call, not conversion %s", kw, f.sourceSpan(head.Pos(), stmt.End()))
+				return
+			}
+			f.checkPtrConv(s, pc)
 			return
 		}
 		if _, named := f.assignHeadIdent(head); !named {
@@ -4934,6 +4942,16 @@ func (f *File) checkAssignment(s *Scope, head, postfix Node) {
 	if steps, pure := callSteps(postfix); pure && endsInCall(postfix) {
 		if me, rest, ok := f.methodExprOfHead(s, head, steps); ok {
 			f.checkMethodExpr(s, me, rest)
+			return
+		}
+		// `(*T)(x).m()`, a method called on a conversion to a pointer type; the
+		// conversion alone is a value nothing uses.
+		if pc, ok := f.ptrConvOfHead(s, head, steps); ok {
+			if len(pc.rest) == 0 && pc.unnamed == "" {
+				f.err(pc.at.Position(), "%s (value of type *%s) is not used", f.sourceSpan(head.Pos(), postfix.End()), pc.typeName())
+				return
+			}
+			f.checkPtrConv(s, pc)
 			return
 		}
 		if _, named := f.assignHeadIdent(head); !named {
@@ -9060,10 +9078,10 @@ func (f *File) checkImplements(s *Scope, ifaceName string, value Node, what stri
 			f.checkImplementsNamed(s, ifaceName, value, from, f.exprSource(value), isPtr, what)
 			return
 		}
-		// A POINTER of a named type written otherwise -- `&T{...}`, a call returning
-		// one: its method set is the pointer's, which is no guess. The assertion
-		// `var _ Shape = &Sq{}` is written for exactly this question, and a blank one
-		// is not emitted, so nothing else asks it.
+		// A POINTER of a named type written otherwise -- `&T{...}`, `(*T)(nil)`, a
+		// call returning one: its method set is the pointer's, which is no guess.
+		// The assertion `var _ Shape = (*Sq)(nil)` is written for exactly this
+		// question, and a blank one is not emitted, so nothing else asks it.
 		if name, qual, isPtr, named := f.exprNamedType(s, value); named && isPtr {
 			from := name.Src()
 			if qual.IsValid() {
@@ -11388,6 +11406,13 @@ func (f *File) importedMethodResultType(qual, typeName, member Token) (Token, To
 // it while "var p P = P{1, 2}" was checked. Neither the emitter's C nor the target's
 // compiler was fooled; the errors simply surfaced there instead, as C diagnostics.
 func (f *File) exprNamedType(s *Scope, n Node) (name, qual Token, isPtr, ok bool) {
+	// `(*T)(x)` is a *T, which is what `var _ Shape = (*Sq)(nil)` asks the
+	// interface rules about.
+	if fac, isFac := f.soleFactorOf(n); isFac {
+		if pc, isConv := f.ptrConvOf(s, fac); isConv && len(pc.rest) == 0 && !pc.predecl && pc.unnamed == "" {
+			return pc.typ, pc.qual, true, true
+		}
+	}
 	// "v := x.(*T)" carries *T, so v's fields and methods are checked as an
 	// explicitly typed pointer's are. Without this v had no type and a field read
 	// off it reached the emitter as a puzzle.
@@ -12876,6 +12901,222 @@ func (f *File) checkMethodExpr(s *Scope, me methodExpr, rest []Node) {
 	}
 }
 
+// ptrConvExpr is a conversion to a POINTER type, which Go requires written
+// parenthesized: `(*T)(x)` -- the typed nil `(*T)(nil)` above all, and with it the
+// compile-time assertion `var _ Shape = (*Sq)(nil)` programs write to say a type
+// implements an interface. Unrecognised, `*T` read as the dereference of a value T,
+// "cannot use type T as a value".
+type ptrConvExpr struct {
+	qual, typ Token  // T, qualified when another package's; typ may name a predeclared type
+	predecl   bool   // T is a predeclared type, `(*int)(nil)`
+	unnamed   string // T is written out, `(*[]byte)(p)`: the target as written, refused
+	args      []Node // what is converted: one value, or a count mismatch to report
+	at        Token  // where the conversion is written, for a message
+	rest      []Node // the steps after the conversion
+}
+
+// ptrConvOf recognises a Factor that is a conversion to a pointer type, `(*T)(x)`.
+// A starred VARIABLE, `(*p)(x)`, is the dereference it reads as -- a function p
+// points at, called -- and is not one.
+func (f *File) ptrConvOf(s *Scope, fac Node) (ptrConvExpr, bool) {
+	if fac.sym != Factor {
+		return ptrConvExpr{}, false
+	}
+	kids := slices.Collect(it(fac.ast))
+	if len(kids) != 4 || kids[0].sym != 0 || f.ch(kids[0].tok) != LPAREN || kids[1].sym != Expression ||
+		kids[2].sym != 0 || f.ch(kids[2].tok) != RPAREN || kids[3].sym != FactorSuffix {
+		return ptrConvExpr{}, false
+	}
+	return f.ptrConvParts(s, f.tok(kids[0].tok), kids[1], slices.Collect(it(kids[3].ast)))
+}
+
+// ptrConvOfHead is ptrConvOf for a statement, `(*T)(x).m()`, which the grammar
+// parts differently: the parenthesized `*T` is the head, and the call converting is
+// the first of the steps after it.
+func (f *File) ptrConvOfHead(s *Scope, head Node, steps []Node) (ptrConvExpr, bool) {
+	if head.sym != AssignHead {
+		return ptrConvExpr{}, false
+	}
+	kids := slices.Collect(it(head.ast))
+	if len(kids) != 3 || kids[0].sym != 0 || f.ch(kids[0].tok) != LPAREN || kids[1].sym != Expression ||
+		kids[2].sym != 0 || f.ch(kids[2].tok) != RPAREN {
+		return ptrConvExpr{}, false
+	}
+	return f.ptrConvParts(s, f.tok(kids[0].tok), kids[1], steps)
+}
+
+// ptrConvParts is a conversion to a pointer type made of the parenthesized `*T`,
+// written at at, and the steps after it, the first of which is the call converting.
+func (f *File) ptrConvParts(s *Scope, at Token, typ Node, steps []Node) (ptrConvExpr, bool) {
+	pc := ptrConvExpr{at: at}
+	var ok bool
+	if pc.qual, pc.typ, ok = f.starTypeName(s, typ); !ok {
+		if pc.typ, ok = f.starPredeclaredName(s, typ); ok {
+			pc.predecl = true
+		} else if f.starTypeLiteral(s, typ) {
+			pc.unnamed = f.exprSource(typ)
+		} else {
+			return ptrConvExpr{}, false
+		}
+	}
+	if len(steps) == 0 || steps[0].sym != CallSuffix {
+		return ptrConvExpr{}, false
+	}
+	for a := range it(f.callArgList(steps[0]).ast) {
+		if a.sym == Expression {
+			pc.args = append(pc.args, a)
+		}
+	}
+	pc.rest = steps[1:]
+	return pc, true
+}
+
+// starPredeclaredName is starTypeName for a predeclared type, `*int` in `(*int)(x)`.
+func (f *File) starPredeclaredName(s *Scope, e Node) (Token, bool) {
+	for e.sym == Expression || e.sym == SimpleExpr || e.sym == Term {
+		kids := slices.Collect(it(e.ast))
+		if len(kids) != 1 {
+			return Token{}, false
+		}
+		e = kids[0]
+	}
+	if e.sym != UnaryExpr {
+		return Token{}, false
+	}
+	kids := slices.Collect(it(e.ast))
+	if len(kids) != 2 || kids[0].sym != UnaryOp || kids[1].sym != Factor || f.unaryOp(s, kids[0]) != MUL {
+		return Token{}, false
+	}
+	fk := slices.Collect(it(kids[1].ast))
+	if len(fk) != 1 || fk[0].sym != 0 || f.ch(fk[0].tok) != IDENT {
+		return Token{}, false
+	}
+	tok := f.tok(fk[0].tok)
+	if _, isPre := s.find(tok.Src()).(*PredeclaredType); !isPre {
+		return Token{}, false
+	}
+	return tok, true
+}
+
+// starTypeLiteral reports whether e is a pointer to a type written out, `*[]byte`
+// or `*[4]byte` in `(*[]byte)(p)`: a bracketed type with no literal after it.
+func (f *File) starTypeLiteral(s *Scope, e Node) bool {
+	for e.sym == Expression || e.sym == SimpleExpr || e.sym == Term {
+		kids := slices.Collect(it(e.ast))
+		if len(kids) != 1 {
+			return false
+		}
+		e = kids[0]
+	}
+	if e.sym != UnaryExpr {
+		return false
+	}
+	kids := slices.Collect(it(e.ast))
+	if len(kids) != 2 || kids[0].sym != UnaryOp || kids[1].sym != Factor || f.unaryOp(s, kids[0]) != MUL {
+		return false
+	}
+	fk := slices.Collect(it(kids[1].ast))
+	if len(fk) == 0 || fk[0].sym != 0 || f.ch(fk[0].tok) != LBRACK {
+		return false
+	}
+	for _, k := range fk {
+		if k.sym == CompositeLit {
+			return false
+		}
+	}
+	return true
+}
+
+// typeName spells T as this file writes it.
+func (pc ptrConvExpr) typeName() string {
+	if pc.qual.IsValid() {
+		return pc.qual.Src() + "." + pc.typ.Src()
+	}
+	return pc.typ.Src()
+}
+
+// checkPtrConv checks a conversion to a pointer type: one value, which is nil or a
+// pointer whose base type has T's underlying type -- `(*int)(&c)` for a `type
+// Celsius int`, `(*Sq2)(&q)` for two struct types spelt alike. A value that is not a
+// pointer at all is refused, as Go refuses it, and so is a pointer to another
+// underlying type: C casts one pointer to another without a word, so `(*int)(&i32)`
+// read an int32 as an int. A pointer whose base type this cannot tell is let pass.
+func (f *File) checkPtrConv(s *Scope, pc ptrConvExpr) {
+	for _, a := range pc.args {
+		f.checkNames(s, a)
+	}
+	f.checkStepNames(s, pc.rest)
+	if pc.unnamed != "" {
+		f.err(pc.at.Position(), "a conversion to %s, a pointer to a type written out, is not supported yet", pc.unnamed)
+		return
+	}
+	if len(pc.args) != 1 {
+		f.err(pc.at.Position(), "wrong argument count in conversion to *%s", pc.typeName())
+		return
+	}
+	f.checkPtrConvOperand(s, pc)
+	d := &VarDeclaration{typeName: pc.typ, typeQual: pc.qual, hasKind: pc.predecl}
+	f.checkStepsOn(s, d, "(*"+pc.typeName()+")("+f.exprSource(pc.args[0])+")", pc.rest)
+}
+
+// checkPtrConvOperand checks what a conversion to a pointer type converts (see
+// checkPtrConv).
+func (f *File) checkPtrConvOperand(s *Scope, pc ptrConvExpr) {
+	target := "*" + pc.typeName()
+	arg := pc.args[0]
+	if f.isNilOperand(arg) {
+		return
+	}
+	refuse := func(have string) {
+		f.err(f.tok(arg.Pos()).Position(), "cannot convert %s (value of type %s) to type %s", f.exprSource(arg), have, target)
+	}
+	want := typeAt{&TypeNodeIdent{Qualifier: pc.qual, Name: pc.typ}, s, f}
+	// A value of a NAMED type, or a pointer to one.
+	if name, qual, isPtr, ok := f.exprNamedType(s, arg); ok {
+		have := name.Src()
+		if qual.IsValid() {
+			have = qual.Src() + "." + have
+		}
+		if !isPtr {
+			refuse(have)
+			return
+		}
+		if same, known := f.sameUnderlying(typeAt{&TypeNodeIdent{Qualifier: qual, Name: name}, s, f}, want); known && !same {
+			refuse("*" + have)
+		}
+		return
+	}
+	// A pointer to a variable of a predeclared type -- `&x`, or a pointer variable
+	// of one: the base's Kind against what T's chain of definitions ends in.
+	var base Kind
+	baseKnown, isPointer := false, false
+	if root, suffixed, isAddr := f.addressOperandRoot(s, arg); isAddr {
+		isPointer = true
+		if !suffixed {
+			base, baseKnown = f.identKind(s, root)
+		}
+	} else if id, isName := f.exprIdent(arg); isName {
+		if d, isVar := s.find(id.Src()).(*VarDeclaration); isVar && d.isPtr {
+			isPointer = true
+			base, baseKnown = d.elemKind, d.hasElemKind
+		}
+	}
+	if isPointer {
+		if !baseKnown {
+			return
+		}
+		u := f.underlyingTypeAt(want)
+		if k, isPre := underlyingKind(u); isPre && k != base || !isPre && isTypeLiteral(u) {
+			refuse("*" + kindName(base))
+		}
+		return
+	}
+	// Anything else that is plainly no pointer.
+	if k, known := f.exprType(s, arg); known && kindCategory(k) != catUnknown {
+		refuse(kindName(k))
+	}
+}
+
 // checkStepsOn checks the first step taken on a value of the type d describes -- a
 // method called, `.m(x)`, or a field read, `.f` -- as the same step on a variable
 // of the type is checked. It is how a value with no name of its own is checked: a
@@ -12916,6 +13157,133 @@ func (f *File) parenInner(n Node) (Node, bool) {
 	return kids[1], true
 }
 
+// sameUnderlying reports whether two written types have one underlying type, which
+// is what a conversion between pointers asks of their base types, and whether that
+// could be told at all. Each is followed through its chain of definitions where it
+// is written, to a predeclared type -- compared by Kind, byte being uint8 -- or to
+// a type literal: a struct compared by its spelling, anything else by its identity
+// as far as that renders. Two structs of different packages spelt differently may
+// still be one type, their fields' types named differently in each, and are not
+// told.
+func (f *File) sameUnderlying(a, b typeAt) (same, known bool) {
+	a, b = f.underlyingTypeAt(a), f.underlyingTypeAt(b)
+	ka, preA := underlyingKind(a)
+	kb, preB := underlyingKind(b)
+	litA, litB := isTypeLiteral(a), isTypeLiteral(b)
+	switch {
+	case preA && preB:
+		return ka == kb, true
+	case preA && litB, litA && preB:
+		return false, true
+	case !litA || !litB:
+		return false, false // a name that resolves to no type
+	case a.tn == b.tn:
+		return true, true // one declaration, reached twice
+	}
+	sa, isA := a.tn.(*TypeNodeStruct)
+	sb, isB := b.tn.(*TypeNodeStruct)
+	switch {
+	case isA && isB:
+		return sameStruct(a.f, sa, b.f, sb)
+	case isA != isB:
+		return false, true
+	}
+	ia, ib := a.f.typeNodeIdentity(a.tn), b.f.typeNodeIdentity(b.tn)
+	if ia == "" || ib == "" {
+		return false, false
+	}
+	return ia == ib, true
+}
+
+// sameStruct reports whether two struct types, written in the files fa and fb, are
+// one type as Go has it -- the same field names in the same order, of identical
+// types, embedded alike -- and whether that could be told. A field's type is
+// compared by its identity across packages (see typeIdentityOf), so `Vec` written in
+// geom and `geom.Vec` written here are one type; a field of a type that does not
+// render so is not told. An unexported field name of another package is never this
+// package's, which is why `struct{s int}` is two types when two packages write it.
+func sameStruct(fa *File, a *TypeNodeStruct, fb *File, b *TypeNodeStruct) (same, known bool) {
+	type field struct {
+		name     string
+		embedded bool
+		tn       TypeNode
+	}
+	flat := func(st *TypeNodeStruct) (r []field) {
+		for _, fd := range st.Fields {
+			for _, nm := range fd.Names {
+				r = append(r, field{nm.Src(), fd.TypeNode == nil, fd.TypeNode})
+			}
+		}
+		return r
+	}
+	x, y := flat(a), flat(b)
+	if len(x) != len(y) {
+		return false, true
+	}
+	samePkg := fa.Package == fb.Package
+	known = true
+	for i := range x {
+		switch {
+		case x[i].name != y[i].name, x[i].embedded != y[i].embedded:
+			return false, true
+		case !samePkg && !token.IsExported(x[i].name):
+			return false, true
+		case x[i].embedded:
+			known = false // the embedded type's name alone says too little to compare
+			continue
+		}
+		ix, iy := fa.typeNodeIdentity(x[i].tn), fb.typeNodeIdentity(y[i].tn)
+		switch {
+		case ix == "" || iy == "":
+			known = false
+		case ix != iy:
+			return false, true
+		}
+	}
+	return known, known
+}
+
+// underlyingKind is the Kind of the predeclared type t names, when it names one.
+func underlyingKind(t typeAt) (Kind, bool) {
+	id, ok := t.tn.(*TypeNodeIdent)
+	if !ok || id.Qualifier.IsValid() || t.f == nil {
+		return 0, false
+	}
+	if d, ok := t.s.find(id.Name.Src()).(*PredeclaredType); ok {
+		return d.Kind(), true
+	}
+	return 0, false
+}
+
+// isTypeLiteral reports whether t is written out rather than named: a struct, an
+// array, a slice, a pointer, a function, a channel or an interface type.
+func isTypeLiteral(t typeAt) bool {
+	switch t.tn.(type) {
+	case nil, *TypeNodeIdent:
+		return false
+	}
+	return true
+}
+
+// checkStepNames resolves the names the steps after an expression use: an index,
+// a call's arguments.
+func (f *File) checkStepNames(s *Scope, steps []Node) {
+	var walk func(n Node)
+	walk = func(n Node) {
+		for c := range it(n.ast) {
+			switch {
+			case c.sym == Expression:
+				f.checkNames(s, c)
+			case c.sym != 0:
+				walk(c)
+			}
+		}
+	}
+	for _, st := range steps {
+		walk(st)
+	}
+}
+
 // checkFactorNames resolves a Factor's identifier. A parenthesized expression is
 // recursed into, and the identifier -- whether bare or the base of an index,
 // selector or method-call read ("x[i]", "x.f", "x.m()") -- is resolved and
@@ -12936,6 +13304,11 @@ func (f *File) checkFactorNames(s *Scope, n Node) {
 	// `T.M` and `(*T).M`: a method as a function taking its receiver first.
 	if me, rest, ok := f.methodExprOf(s, n); ok {
 		f.checkMethodExpr(s, me, rest)
+		return
+	}
+	// `(*T)(x)`: a conversion to a pointer type, the typed nil `(*T)(nil)` above all.
+	if pc, ok := f.ptrConvOf(s, n); ok {
+		f.checkPtrConv(s, pc)
 		return
 	}
 	var id, lbrack Token

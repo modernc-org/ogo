@@ -1455,12 +1455,14 @@ func (e *emitter) emitGo(nodes []Node) {
 		}
 	}
 	base := e.soleIdent(head.ast)
-	// `go (&v).M(args)`, `go (v).M(args)` and `go (*p).M(args)` are the call on v
-	// or p (see parenRecvHead).
+	// `go (&v).M(args)` is `go v.M(args)`; `go (*T)(x).M(args)` calls M on the
+	// converted pointer, bound here, where Go evaluates a receiver.
 	me, isME := e.headMethodExpr(head, suffix)
 	if base == "" && lit.sym != FuncLiteral && !isME {
 		if name, ok := e.parenRecvHead(head, suffix); ok {
 			base = name
+		} else if pc, ok := e.ptrConvHead(head, suffix); ok && len(pc.rest) >= 2 {
+			base, suffix = e.bindPtrConv(pc), pc.rest
 		}
 	}
 	crossed := func(what, advice string, at Node) {
@@ -5734,6 +5736,11 @@ type deferredCall struct {
 	recvCType  string // the temporary's type, already pointer-adjusted for the method
 	cname      string // the method's C name, empty when the temporary IS the callee
 	callsValue bool   // the temporary holds a function value, so it is called rather than passed
+	// convRecv is the temporary a conversion's value was bound to, `(*T)(x)` in
+	// `defer (*T)(x).m(args)`, and convSteps the steps taken on it: the receiver the
+	// lifetime rules ask about, which the head does not name.
+	convRecv  string
+	convSteps []Node
 	// litName is the file-scope function a deferred FUNCTION LITERAL was lifted to.
 	// There is no head node naming it -- the source wrote no name -- so the replay
 	// calls it directly.
@@ -11132,6 +11139,155 @@ func (e *emitter) starTypeCAt(x Node) string {
 		}
 	}
 	return ""
+}
+
+// emPtrConv is a conversion to a pointer type as the emitter reads it, `(*T)(x)`:
+// the C type it converts to, the operand, and the steps written after it.
+type emPtrConv struct {
+	ct   string // T*
+	arg  Node
+	rest []Node
+}
+
+// ptrConvAt recognises a Factor's children as a conversion to a pointer type,
+// `(*T)(x)` -- `(*p)(x)` for a pointer VARIABLE p is the call through what it
+// points at, and is not one (starTypeCAt answers nothing for a variable).
+func (e *emitter) ptrConvAt(kids []Node) (emPtrConv, bool) {
+	if len(kids) != 4 || kids[0].sym != 0 || e.f.ch(kids[0].tok) != LPAREN || kids[1].sym != Expression ||
+		kids[2].sym != 0 || e.f.ch(kids[2].tok) != RPAREN || kids[3].sym != FactorSuffix {
+		return emPtrConv{}, false
+	}
+	return e.ptrConvParts(kids[1], slices.Collect(it(kids[3].ast)))
+}
+
+// ptrConvHead is ptrConvAt for a statement's head and postfix, `(*T)(x).m()`, which
+// the grammar parts differently: the parenthesized type is the head, and the
+// conversion's call is the first step of the postfix.
+func (e *emitter) ptrConvHead(head Node, postfix []Node) (emPtrConv, bool) {
+	kids := slices.Collect(it(head.ast))
+	if len(kids) != 3 || kids[0].sym != 0 || e.f.ch(kids[0].tok) != LPAREN || kids[1].sym != Expression ||
+		kids[2].sym != 0 || e.f.ch(kids[2].tok) != RPAREN {
+		return emPtrConv{}, false
+	}
+	return e.ptrConvParts(kids[1], postfix)
+}
+
+// ptrConvParts is a conversion to a pointer type made of the parenthesized `*T` and
+// the steps after it, the first of which is the call converting.
+func (e *emitter) ptrConvParts(typ Node, steps []Node) (emPtrConv, bool) {
+	base := e.starTypeCAt(typ)
+	if base == "" || !e.typeNames[base] {
+		base = e.starPredeclaredCAt(typ)
+	}
+	if base == "" {
+		return emPtrConv{}, false
+	}
+	if len(steps) == 0 || steps[0].sym != CallSuffix {
+		return emPtrConv{}, false
+	}
+	args := e.callArgExprs(steps[0].ast)
+	if len(args) != 1 {
+		return emPtrConv{}, false
+	}
+	return emPtrConv{ct: base + "*", arg: args[0], rest: steps[1:]}, true
+}
+
+// ptrConvOperand is what an expression that is exactly a conversion to a pointer
+// type converts, `&x` in `(*T)(&x)`: the same address, which is what the lifetime
+// rules ask about. Without it `gp = (*int)(&x)` stored what `gp = &x` is refused for.
+func (e *emitter) ptrConvOperand(ast []int32) ([]int32, bool) {
+	kids, ok := e.soleFactor(ast)
+	if !ok {
+		return nil, false
+	}
+	pc, ok := e.ptrConvAt(kids)
+	if !ok || len(pc.rest) != 0 {
+		return nil, false
+	}
+	return pc.arg.ast, true
+}
+
+// starPredeclaredCAt answers the C type of a predeclared T for an expression that
+// is exactly `*T`, `*int` in `(*int)(nil)`, and "" for anything else.
+func (e *emitter) starPredeclaredCAt(x Node) string {
+	nodes := slices.Collect(it(x.ast))
+	for len(nodes) == 1 && (nodes[0].sym == Expression || nodes[0].sym == SimpleExpr || nodes[0].sym == Term) {
+		nodes = slices.Collect(it(nodes[0].ast))
+	}
+	if len(nodes) != 1 || nodes[0].sym != UnaryExpr {
+		return ""
+	}
+	kids := slices.Collect(it(nodes[0].ast))
+	if len(kids) != 2 || kids[0].sym != UnaryOp || kids[1].sym != Factor {
+		return ""
+	}
+	if tok, isOp := e.unaryOpTok(kids[0].ast); !isOp || e.f.ch(tok) != MUL {
+		return ""
+	}
+	name := e.soleIdent(kids[1].ast)
+	if name == "" {
+		return ""
+	}
+	if _, isVar := e.varType(name); isVar || e.typeNames[e.typeCName(name)] {
+		return "" // a name of this program's, not the predeclared one
+	}
+	return cTypes[name]
+}
+
+// ptrConvC renders the conversion itself: the operand cast to the pointer type, nil
+// being that type's null pointer.
+func (e *emitter) ptrConvC(pc emPtrConv) string {
+	if e.isNilExpr(pc.arg.ast) {
+		return "((" + pc.ct + ")0)"
+	}
+	return "((" + pc.ct + ")(" + e.captureC(func() { e.emitExpr(pc.arg.ast) }) + "))"
+}
+
+// emitPtrConv emits a conversion to a pointer type standing as an operand, and the
+// steps written after it -- a field, a method -- taken on its value bound first.
+func (e *emitter) emitPtrConv(pc emPtrConv) {
+	if len(pc.rest) == 0 {
+		e.emit(e.ptrConvC(pc))
+		return
+	}
+	tmp := e.bindPtrConv(pc)
+	if slices.ContainsFunc(pc.rest, func(st Node) bool { return st.sym == CallSuffix }) {
+		if !e.emitCallExpr(tmp, pc.rest) {
+			e.fail("a conversion to a pointer type read through a step is not supported here yet")
+		}
+		return
+	}
+	if _, ok := e.emitAccessChainAt(tmp, e.plainOrSlice(pc.ct), pc.rest, true); !ok {
+		e.fail("a conversion to a pointer type read through a step is not supported here yet")
+	}
+}
+
+// bindPtrConv binds a conversion's value to a temporary for the steps after it to
+// start from. The temporary holds what the operand pointed at, and says so to the
+// lifetime rules: `(*T)(&q).Save()` hands Save the local q as `q.Save()` does.
+func (e *emitter) bindPtrConv(pc emPtrConv) string {
+	text := e.ptrConvC(pc)
+	tmp := e.hoist(pc.ct, func() { e.emit(text) })
+	e.locals[tmp] = pc.ct
+	if r, ok := e.frameRefOf(pc.arg.ast); ok {
+		e.frameHolder[tmp] = r.origin
+	}
+	return tmp
+}
+
+// ptrConvCType is the C type a conversion to a pointer type has as an operand: the
+// pointer, or what the steps after it reach.
+func (e *emitter) ptrConvCType(pc emPtrConv) (string, bool) {
+	if len(pc.rest) == 0 {
+		return pc.ct, true
+	}
+	if slices.ContainsFunc(pc.rest, func(st Node) bool { return st.sym == CallSuffix }) {
+		return "", false
+	}
+	if cur, ok := e.accessChainTypeAt(e.plainOrSlice(pc.ct), pc.rest, true); ok {
+		return e.chainValueCType(cur)
+	}
+	return "", false
 }
 
 // liftMethodExpr emits a method expression as a function of its own, the receiver
@@ -23215,7 +23371,10 @@ func (e *emitter) checkDeferLeaks(d *deferredCall, head Node, suffix []Node, arg
 	if base == "" {
 		var isAddr bool
 		if base, isAddr = e.parenRecvHead(head, suffix); !isAddr {
-			return
+			if d.convRecv == "" {
+				return
+			}
+			base, suffix = d.convRecv, d.convSteps // `defer (*T)(x).m(args)`
 		}
 	}
 	steps := suffix[:len(suffix)-1]
@@ -23344,7 +23503,21 @@ func (e *emitter) deferReceiver(d *deferredCall, head Node, suffix []Node) (stri
 		// holds then rather than now. `(&v).m()` is `v.m()`, so the base is v and
 		// everything downstream is the shorthand's.
 		var isAddr bool
-		if base, isAddr = e.parenRecvHead(head, suffix); !isAddr {
+		base, isAddr = e.parenRecvHead(head, suffix)
+		// `defer (*T)(x).m(args)`: the receiver is the converted pointer, bound here
+		// for the same reason. Left to the replay, the conversion was bound to a
+		// temporary declared where the replay could not see it.
+		if pc, isConv := e.ptrConvHead(head, suffix); !isAddr && isConv && len(pc.rest) >= 2 {
+			var tmp string
+			_, pro := e.capturePrologue(func() { tmp = e.bindPtrConv(pc) })
+			for _, line := range pro {
+				e.ind()
+				e.emit(line)
+			}
+			base, suffix, isAddr = tmp, pc.rest, true
+			d.convRecv, d.convSteps = tmp, pc.rest
+		}
+		if !isAddr {
 			return "", true
 		}
 	}
@@ -24061,6 +24234,15 @@ func (e *emitter) emitCall(head Node, postfix []Node) {
 		if name, ok := e.parenRecvHead(head, postfix); ok {
 			e.ind()
 			e.emitCallStmtExpr(name, postfix)
+			e.emit(";\n")
+			return
+		}
+		// `(*T)(x).m()` as a statement: the method called on the converted pointer,
+		// bound first.
+		if pc, ok := e.ptrConvHead(head, postfix); ok && len(pc.rest) != 0 {
+			tmp := e.bindPtrConv(pc)
+			e.ind()
+			e.emitCallStmtExpr(tmp, pc.rest)
 			e.emit(";\n")
 			return
 		}
@@ -32716,6 +32898,9 @@ func (e *emitter) inferNode(n Node) (string, bool) {
 			if me, isME := e.methodExprAt(kids); isME {
 				return e.methodExprCType(me)
 			}
+			if pc, isConv := e.ptrConvAt(kids); isConv {
+				return e.ptrConvCType(pc)
+			}
 		}
 		if len(kids) == 3 && kids[0].sym == 0 && e.f.ch(kids[0].tok) == LPAREN {
 			return e.inferNode(kids[1])
@@ -34604,6 +34789,10 @@ func (e *emitter) emitExprNode(n Node) {
 				e.emitMethodExpr(me)
 				return
 			}
+			if pc, isConv := e.ptrConvAt(kids); isConv {
+				e.emitPtrConv(pc)
+				return
+			}
 		}
 		if len(kids) == 3 && kids[0].sym == 0 && e.f.ch(kids[0].tok) == LPAREN {
 			e.emit("(")
@@ -36132,8 +36321,16 @@ func (r frameRef) returnAdvice() string {
 // per field, so the variable carries the mark instead.
 func (e *emitter) frameRefOf(ast []int32) (frameRef, bool) {
 	// Through any parentheses, which name nothing and hid everything: see
-	// sliceBackingIsFrame. Every sink and every mark asks through here.
+	// sliceBackingIsFrame. Every sink and every mark asks through here. And through
+	// a conversion to a pointer type, `(*T)(&x)`, which is the address it converts.
 	ast = e.unparenExpr(ast)
+	for {
+		arg, ok := e.ptrConvOperand(ast)
+		if !ok {
+			break
+		}
+		ast = e.unparenExpr(arg)
+	}
 	if name, frame := e.sliceBackingIsFrame(ast); frame {
 		return sliceRef(name), true
 	}
@@ -36299,6 +36496,12 @@ func (e *emitter) frameRefOf(ast []int32) (frameRef, bool) {
 			return frameRef{}, false
 		}
 	}
+	// `(*T)(&v).Self()`: a method called on a conversion's value, which is its
+	// operand -- so a method handing back its receiver, or an argument it derives
+	// its result from, hands back what the operand reaches.
+	if r, ok, isConv := e.ptrConvCallFrameRef(ast); isConv {
+		return r, ok
+	}
 	recv, suffix, isCall := e.directCall(ast)
 	if !isCall {
 		// `(&v).Self()` is `v.Self()` (see factorAddrCall): the same call, handing
@@ -36351,6 +36554,44 @@ func (e *emitter) frameRefOf(ast []int32) (frameRef, bool) {
 		}
 	}
 	return frameRef{}, false
+}
+
+// ptrConvCallFrameRef is frameRefOf for a method called on a conversion to a
+// pointer type, `(*T)(&v).M(args)`, and whether ast is one at all. A method
+// promoted through an embedded POINTER is handed what that pointer holds, which
+// the operand does not name; it answers nothing, as a call's result does.
+func (e *emitter) ptrConvCallFrameRef(ast []int32) (frameRef, bool, bool) {
+	kids, ok := e.soleFactor(ast)
+	if !ok {
+		return frameRef{}, false, false
+	}
+	pc, ok := e.ptrConvAt(kids)
+	if !ok || len(pc.rest) != 2 || pc.rest[0].sym != Selector || pc.rest[1].sym != CallSuffix {
+		return frameRef{}, false, false
+	}
+	base := strings.TrimSuffix(pc.ct, "*")
+	cname := methodCName(base, e.soleIdent(pc.rest[0].ast))
+	viaPtr := false
+	if _, declared := e.funcRet[cname]; !declared {
+		cn, path, _, found := e.promotedMethod(base, e.soleIdent(pc.rest[0].ast))
+		if !found {
+			return frameRef{}, false, true
+		}
+		cname, viaPtr = cn, e.pathThroughPointer(base, path)
+	}
+	derives := e.retParams[cname]
+	for i, a := range e.callArgExprs(pc.rest[1].ast) {
+		if i < len(derives) && derives[i] {
+			if r, ok := e.frameRefOf(a.ast); ok {
+				return r, true, true
+			}
+		}
+	}
+	if e.retRecv[cname] && e.methodPtr[cname] && !viaPtr {
+		r, ok := e.frameRefOf(pc.arg.ast)
+		return r, ok, true
+	}
+	return frameRef{}, false, true
 }
 
 // qualifiedWholeTarget is the C name of another package's variable written as the

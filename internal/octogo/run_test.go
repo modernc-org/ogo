@@ -28226,6 +28226,89 @@ func main() {
 		want: "6 6 6 6\nbefore 36\n136\n",
 	},
 	{
+		name: "conversions to pointer types",
+		src: `type Shape interface {
+	Area() int
+}
+
+type Sq struct {
+	S int
+}
+
+func (q *Sq) Area() int { return q.S * q.S }
+
+func (q *Sq) Set(n int) { q.S = n }
+
+func (q *Sq) Run(n int, done chan bool) {
+	q.S = n
+	done <- true
+}
+
+// Sq2 has Sq's underlying type and none of its methods.
+type Sq2 struct {
+	S int
+}
+
+func (q *Sq2) Twice() { q.S *= 2 }
+
+type Celsius int
+
+var _ Shape = (*Sq)(nil)
+
+var gq Sq
+
+var done chan bool
+
+var calls int
+
+func pick(p *Sq) *Sq {
+	calls++
+	return p
+}
+
+func typed() {
+	var p *int = (*int)(nil)
+	var s Shape = (*Sq)(nil)
+	println(p == nil, s != nil, (*Sq)(nil) == nil)
+}
+
+func views() {
+	x := 7
+	var c Celsius = 30
+	pc := (*Celsius)(&x)
+	*pc = 8
+	px := (*int)(&c)
+	*px += 1
+	q := (*Sq2)(&gq)
+	q.Twice()
+	println(x, c, gq.S, (*Sq)(&gq).Area())
+}
+
+func stmts() {
+	(*Sq)(&gq).Set(3)
+	(*Sq2)(&gq).Twice()
+	go (*Sq)(&gq).Run(5, done)
+	<-done
+	println(gq.S)
+	defer (*Sq)(pick(&gq)).Set(9)
+	gq.S = 4
+	println(gq.S, calls)
+}
+
+// A conversion to a pointer type: the typed nil, a pointer taken as one to another
+// type of its underlying type, and a method called on the result where it stands
+// -- in a call, a go statement, and a defer, which converts where it stands.
+func main() {
+	gq.S = 2
+	typed()
+	views()
+	stmts()
+	println(gq.S, calls)
+}
+`,
+		want: "true true true\n8 31 4 16\n5\n4 1\n9 1\n",
+	},
+	{
 		// A function literal called where it stands, as a statement of its own, which
 		// the grammar had no production for: a statement could not begin with "func".
 		// It is lifted as a literal is anywhere and called by name; arguments are how a
@@ -32644,7 +32727,7 @@ const multiPkgWant = "300\nLOUD\n50\n6\n5\n45\n6 1000\n200\n207\n3 100\n4 9\n" +
 	"17 gx-7 true 10 19\n" +
 	"2 7 56 9 3 8 false 2 1 2 6 3 true 7\n" +
 	"[2]greet.Row [2]greet.Reader greet.Row\n" +
-	"123 p2 9 3 2 3\n1 1 2 1 102 3\n2 1 4 3 4 4 5 134\n21 10 100 200 7 0\n1 5 1 2 4 1 3 21 1 2 12 12 123 123 11\n10 21 110 21 14 true 3 42\n10 3 4\n6 10 2\n6 11\n6 5 8 6\ntrue true\n" +
+	"123 p2 9 3 2 3\n1 1 2 1 102 3\n2 1 4 3 4 4 5 134\n21 10 100 200 7 0\n1 5 1 2 4 1 3 21 1 2 12 12 123 123 11\n10 21 110 21 14 true 3 42\n10 3 4\n6 10 2\n6 11\n6 5 8 6\ntrue 110 6 106\ntrue true\n" +
 	"1234567891 1 3 8 14 30 39\n"
 
 var multiPkgProgram = map[string]string{
@@ -33152,6 +33235,8 @@ func libShapes() {
 	// and "lib.DevAlias{...}" was no struct.
 	var ld LD = lib.D1
 	println(ld.Val(), lib.DevAlias{Id: 5}.Val(), LD{Id: 8}.Val(), byID(&ld))
+	// A conversion to another package's pointer type, by its name and by aliases.
+	println((*lib.Dev)(nil) == nil, (*lib.Dev)(&lib.D2).Ptr(), (*LD)(&ld).Val(), (*lib.DevAlias)(&ld).Ptr())
 	lib.P = nil
 	println(lib.P == nil, lib.None() == nil)
 }

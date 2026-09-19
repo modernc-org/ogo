@@ -1,0 +1,55 @@
+// COMPILE
+
+// A conversion to a pointer type, written parenthesized as Go writes it: the typed
+// nil, the compile-time assertion that a type implements an interface, and a
+// pointer taken as a pointer to another type of the same underlying type --
+// predeclared, defined, another package's -- with a method called on the result
+// where it stands.
+
+import "p"
+
+type Shape interface {
+	Area() int
+}
+
+type Sq struct {
+	S int
+}
+
+func (q *Sq) Area() int { return q.S * q.S }
+
+func (q *Sq) Set(n int) { q.S = n }
+
+type Sq2 struct {
+	S int
+}
+
+type Celsius int
+
+type MyHolder struct {
+	S p.T
+	N int
+}
+
+var _ Shape = (*Sq)(nil)
+
+var gq Sq
+
+var mh MyHolder
+
+func main() {
+	x := 7
+	var c Celsius = 30
+	var b8 byte = 1
+	var pi *int = (*int)(nil)
+	var s Shape = (*Sq)(&gq)
+	q := (*Sq2)(&gq)
+	pc := (*Celsius)(&x)
+	px := (*int)(&c)
+	pu := (*uint8)(&b8)
+	ph := (*p.Holder)(&mh)
+	var pt *p.T = (*p.T)(nil)
+	(*Sq)(&gq).Set(3)
+	defer (*Sq)(&gq).Set(4)
+	println(pi == nil, s.Area(), q.S, *pc, *px, *pu, ph.N, pt == nil, (*Sq)(&gq).Area())
+}

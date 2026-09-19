@@ -20,6 +20,16 @@ shipped section tells a reader on that version that they have behaviour they do 
 
 ### Language
 
+- **Conversions to pointer types.** `(*T)(x)` -- the typed nil `(*T)(nil)`, the
+  compile-time assertion `var _ Shape = (*T)(nil)`, and a pointer taken as one to
+  another type of the same underlying type, `(*Celsius)(&n)` -- was refused,
+  "cannot use type T as a value". T may be predeclared, defined or another
+  package's; a method may be called on the result where it stands, in a call, a
+  `go` and a `defer`, which converts where it stands; and the lifetime rules see
+  the address through the conversion. As in Go, what is converted must be nil or a
+  pointer whose base type has T's underlying type: `(*int)(&i32)` is refused,
+  where a C cast would have read an int32 as an int. A pointer to a type written
+  out, `(*[]byte)(p)`, is not supported yet.
 - **An alias may name another package's type.** `type LT = lib.T` was refused;
   it is lib.T now, its fields and methods with it, in a literal, a conversion, a
   declaration and an argument. And another package's own alias, `lib.A{...}` for a

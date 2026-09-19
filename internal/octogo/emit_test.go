@@ -10358,6 +10358,12 @@ func main() {
 		{"(lc).Save()", "cannot call Save on lc"},
 		{"defer (lc).Save()", "cannot call Save on lc"},
 		{"go (&lc).Bump()", "cannot pass the address of local variable lc to a goroutine"},
+		// And through a conversion to a pointer type, which is the address it converts.
+		{"(*Counter)(&lc).Save()", "cannot call Save on lc"},
+		{"defer (*Counter)(&lc).Save()", "cannot call Save on lc"},
+		{"go (*Counter)(&lc).Bump()", "cannot pass the address of local variable lc to a goroutine"},
+		{"g = (*Counter)(&lc).Self()", "lc"},
+		{"g = (*Counter)(&lc)", "cannot store the address of local variable lc in package variable g"},
 		// Controls: package storage, and a method that keeps nothing.
 		{"gc.Save()", ""},
 		{"p := &gc\n\tp.Save()", ""},
@@ -10384,6 +10390,11 @@ func main() {
 		{"(&gc).Save()", ""},
 		{"(gc).Save()", ""},
 		{"go (&gc).Bump()", ""},
+		{"(*Counter)(&gc).Save()", ""},
+		{"defer (*Counter)(&gc).Save()", ""},
+		{"go (*Counter)(&gc).Bump()", ""},
+		{"(*Counter)(&lc).Bump()", ""},
+		{"g = (*Counter)(&gc).Self()", ""},
 	} {
 		t.Run(test.stmt, func(t *testing.T) {
 			src := head + "\t" + test.stmt + "\n" + tail
@@ -10401,6 +10412,83 @@ func main() {
 				t.Errorf("got %v, want %q", err, test.want)
 			}
 		})
+	}
+}
+
+// TestEmitCPtrConvEscape: a conversion to a pointer type, `(*T)(&x)`, is the
+// address it converts, written straight into every sink -- a store, a return, a
+// send, a goroutine's argument, a callee that keeps it, now or deferred -- and
+// through a second conversion. Each row beside a control over package storage.
+func TestEmitCPtrConvEscape(t *testing.T) {
+	const head = `type Sq struct {
+	S int
+}
+
+type Shape interface {
+	Area() int
+}
+
+func (q *Sq) Area() int { return q.S }
+
+var gp *int
+
+var gs Shape
+
+var gq *Sq
+
+var gx int
+
+var gsq Sq
+
+var ch chan *int
+
+func keep(p *int) { gp = p }
+
+func show(p *int) { println(*p) }
+
+func run() *int {
+	x := 5
+	q := Sq{2}
+	_, _ = x, q
+`
+	const tail = `	return nil
+}
+
+func main() {
+	run()
+}
+`
+	for _, test := range []struct{ stmt, control string }{
+		{"gp = (*int)(&x)", "gp = (*int)(&gx)"},
+		{"if x > 0 {\n\t\treturn (*int)(&x)\n\t}", "if x > 0 {\n\t\treturn (*int)(&gx)\n\t}"},
+		{"if x > 0 {\n\t\treturn (*int)((*int)(&x))\n\t}", "if x > 0 {\n\t\treturn (*int)((*int)(&gx))\n\t}"},
+		{"if x > 0 {\n\t\treturn ((*int)(&x))\n\t}", "if x > 0 {\n\t\treturn ((*int)(&gx))\n\t}"},
+		{"gq = (*Sq)(&q)", "gq = (*Sq)(&gsq)"},
+		{"gs = (*Sq)(&q)", "gs = (*Sq)(&gsq)"},
+		{"ch <- (*int)(&x)", "ch <- (*int)(&gx)"},
+		{"go show((*int)(&x))", "go show((*int)(&gx))"},
+		{"keep((*int)(&x))", "keep((*int)(&gx))"},
+		{"defer keep((*int)(&x))", "defer keep((*int)(&gx))"},
+		{"gp, x = (*int)(&x), 2", "gp, x = (*int)(&gx), 2"},
+	} {
+		for _, stmt := range []string{test.stmt, test.control} {
+			t.Run(stmt, func(t *testing.T) {
+				src := head + "\t" + stmt + "\n" + tail
+				fsys := fstest.MapFS{"main.ogo": &fstest.MapFile{Data: []byte(src)}}
+				pkg, err := Build(-1, []string{"main.ogo"}, fsys)
+				if err == nil {
+					err = EmitC(pkg, io.Discard, Checked())
+				}
+				switch {
+				case stmt == test.control && err != nil:
+					t.Errorf("the control over package storage is refused: %v\n%s", err, src)
+				case stmt != test.control && err == nil:
+					t.Errorf("a reference to this frame left it:\n%s", src)
+				case stmt != test.control && !strings.Contains(err.Error(), "outlive"):
+					t.Errorf("refused, but not for its lifetime: %v", err)
+				}
+			})
+		}
 	}
 }
 
@@ -10693,6 +10781,8 @@ var gb, gb2 Box
 		{"elided address", "[1]*Box", "[1]*Box{{}}", "[1]*Box{{}}", "[1]*Box{&gb}", "[1]*Box{&gb2}", false},
 		{"array", "[1]Box", "[1]Box{{a[:]}}", "[1]Box{{a2[:]}}", "[1]Box{{back[:]}}", "[1]Box{{back2[:]}}", false},
 		{"interface", "Any", "Any(&x)", "Any(&y)", "Any(&gx)", "Any(&gy)", false},
+		// A conversion to a pointer type is the address it converts.
+		{"converted address", "*int", "(*int)(&x)", "(*int)(&y)", "(*int)(&gx)", "(*int)(&gy)", false},
 	}
 	forms := []struct {
 		name, body string
