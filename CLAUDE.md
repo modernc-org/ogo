@@ -594,6 +594,10 @@ stores `c` in a package variable, left a dangling pointer in silence while `keep
 was refused. `recvLeaks`/`recvEdges`/`retRecv` summarise it now; a new way to REACH a
 receiver -- a field, an element, a slice, an interface, a pointer -- is a new row
 there.
+What `make` allocates in a function is a backing array of the frame wherever the
+slice is bound (`makeRef`, 2026-09-19; `TestEmitCMakeEscape`): only the declaration
+from make was modelled, so a package variable given one from a function -- `main`
+included -- held a view of a dead frame, and `s = make(...)` then `gs = s` compiled.
 
 ## Notes
 

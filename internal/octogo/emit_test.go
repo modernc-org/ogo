@@ -10492,6 +10492,70 @@ func main() {
 	}
 }
 
+// TestEmitCMakeEscape: what make allocates in a function is a backing array of the
+// frame wherever the slice lands. Only a declaration from make recorded it, so `s =
+// make([]int, 2)`, a field assigned one, and make stored or passed directly each
+// carried a view of a dead frame into a package variable, silently, until
+// 2026-09-19. Each row beside a control.
+func TestEmitCMakeEscape(t *testing.T) {
+	const head = `type Box struct {
+	d []int
+}
+
+var gs []int
+
+var gbox Box
+
+var back [4]int
+
+func keep(v []int) { gs = v }
+
+func run() {
+	var s []int
+	var b Box
+	_, _ = s, b
+`
+	const tail = `}
+
+func main() {
+	run()
+}
+`
+	for _, test := range []struct {
+		stmt string
+		want string // "" means the program must be accepted
+	}{
+		{"s = make([]int, 2)\n\tgs = s", "cannot store a slice backed by local s in package variable gs"},
+		{"gs = make([]int, 2)", "cannot store a slice from make, whose backing array is this function's in package variable gs"},
+		{"b.d = make([]int, 2)\n\tgbox = b", "cannot store local b, which holds a pointer into the backing array make allocates"},
+		{"b.d = make([]int, 2)\n\tgs = b.d", "cannot store b.d, which holds a pointer into the backing array make allocates"},
+		{"keep(make([]int, 2))", "cannot pass a slice from make, whose backing array is this function's to keep"},
+		{"t := make([]int, 2)\n\tgs = t", "cannot store a slice backed by local t in package variable gs"},
+		// Controls: the storage stays in the frame, or is the package's.
+		{"s = make([]int, 2)\n\ts[0] = 1", ""},
+		{"b.d = make([]int, 2)\n\tb.d[0] = 1", ""},
+		{"gs = back[:]", ""},
+		{"s = back[:]\n\tgs = s", ""},
+	} {
+		t.Run(test.stmt, func(t *testing.T) {
+			src := head + "\t" + test.stmt + "\n" + tail
+			fsys := fstest.MapFS{"main.ogo": &fstest.MapFile{Data: []byte(src)}}
+			pkg, err := Build(-1, []string{"main.ogo"}, fsys)
+			if err == nil {
+				err = EmitC(pkg, io.Discard, Checked())
+			}
+			switch {
+			case test.want == "" && err != nil:
+				t.Errorf("refused: %v\n%s", err, src)
+			case test.want != "" && err == nil:
+				t.Errorf("accepted, want %q\n%s", test.want, src)
+			case test.want != "" && !strings.Contains(err.Error(), test.want):
+				t.Errorf("got %v, want %q", err, test.want)
+			}
+		})
+	}
+}
+
 func TestEmitCCalleeKeepsEscape(t *testing.T) {
 	const head = `type Box struct {
 	d []int
@@ -10783,6 +10847,8 @@ var gb, gb2 Box
 		{"interface", "Any", "Any(&x)", "Any(&y)", "Any(&gx)", "Any(&gy)", false},
 		// A conversion to a pointer type is the address it converts.
 		{"converted address", "*int", "(*int)(&x)", "(*int)(&y)", "(*int)(&gx)", "(*int)(&gy)", false},
+		// What append hands back is its operand's backing while that has room.
+		{"append", "[]int", "append(a[:0], x)", "append(a2[:0], y)", "append(back[:0], x)", "append(back2[:0], y)", false},
 	}
 	forms := []struct {
 		name, body string

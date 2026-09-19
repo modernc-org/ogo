@@ -691,6 +691,13 @@ shipped section tells a reader on that version that they have behaviour they do 
 Each of these is the compiler refusing a program it used to accept, and each such
 program handed out a reference to storage that was gone by the time it was read.
 
+- **What make allocates in a function is that function's storage, however it is
+  bound.** Only a declaration from make recorded it: `s = make([]int, 2)` then `gs =
+  s`, a field assigned one and then the struct stored, and `gs = make(...)` directly
+  each put a view of a dead frame in a package variable. `main` is a function like
+  any other here, as it is for a slice literal: a package slice's backing array is
+  declared at package scope. And an append's result is its operand's backing while
+  that has room, so `gs = append(ls, 1)` for a local ls is refused as `gs = ls` is.
 - **A pointer method that keeps its receiver is not called on a local.** `func (c
   *Counter) Save() { g = c }` stores what it is called on, and `lc.Save()` on a
   local handed it the local's address -- which outlived the frame in silence, a

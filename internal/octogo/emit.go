@@ -36152,6 +36152,26 @@ func litRef() frameRef {
 	}
 }
 
+// makeRef is the reference a slice make allocates in a function holds: a backing
+// array of the frame, as a literal's is.
+func makeRef() frameRef {
+	return frameRef{
+		origin: "the backing array make allocates",
+		what:   "a slice from make, whose backing array is this function's",
+		view:   true,
+	}
+}
+
+// isMakeCall reports whether ast is a call of the predeclared make.
+func (e *emitter) isMakeCall(ast []int32) bool {
+	recv, suffix, ok := e.directCall(e.unparenExpr(ast))
+	if !ok || recv != "make" || len(suffix) != 1 || suffix[0].sym != CallSuffix {
+		return false
+	}
+	_, isUser := e.userFunc(recv)
+	return !isUser
+}
+
 // tempOrigin names the storage the emitter mints for a value that has none of its
 // own -- a literal or a call's result put into an interface. There is no variable a
 // reader could be told to move to package scope, so advice() answers differently.
@@ -36339,6 +36359,13 @@ func (e *emitter) frameRefOf(ast []int32) (frameRef, bool) {
 	if elem, _, ok := e.soleSliceLit(ast); ok && elem != "" {
 		return litRef(), true
 	}
+	// And so is what make allocates in a function: a backing array of the frame.
+	// Only a declaration from make recorded it (emitMakeSliceVar), so `s = make([]int,
+	// 2)` then `gs = s`, and `b.xs = make(...)` then `gb = b`, stored a view of a
+	// dead frame in a package variable, and `gs = make(...)` did it directly.
+	if e.isMakeCall(ast) && !e.pkgScope {
+		return makeRef(), true
+	}
 	// `&T{...}`, the same by another spelling: a struct literal given a frame
 	// temporary to be the address of.
 	if _, _, isAddrLit := e.addrOfCompositeLit(ast); isAddrLit {
@@ -36494,6 +36521,15 @@ func (e *emitter) frameRefOf(ast []int32) (frameRef, bool) {
 				}
 			}
 			return frameRef{}, false
+		}
+	}
+	// `append(s, v)` is s's backing while s has room, which is the only case a
+	// fixed backing allows at all: `gs = append(ls, 1)` for a local ls stored a view
+	// of the frame in a package variable. What the values appended reach is the
+	// elements' question (checkAppendBacking).
+	if args, _, isAppend := e.appendCallArgs(ast); isAppend && len(args) != 0 {
+		if r, ok := e.frameRefOf(args[0].ast); ok {
+			return r, true
 		}
 	}
 	// `(*T)(&v).Self()`: a method called on a conversion's value, which is its
@@ -36909,6 +36945,19 @@ func (e *emitter) noteFrameHolder(base string, op []Node) {
 			return
 		}
 	}
+}
+
+// appendCallArgs recognises a call of the predeclared append, answering its
+// arguments and whether the last is spread.
+func (e *emitter) appendCallArgs(ast []int32) ([]Node, bool, bool) {
+	recv, suffix, ok := e.directCall(ast)
+	if !ok || recv != "append" || len(suffix) != 1 || suffix[0].sym != CallSuffix {
+		return nil, false, false
+	}
+	if _, isUser := e.userFunc(recv); isUser {
+		return nil, false, false
+	}
+	return e.callArgExprs(suffix[0].ast), e.spreadCall(suffix[0].ast), true
 }
 
 // noteHolderRef is noteFrameHolder for a reference already found: the local base,

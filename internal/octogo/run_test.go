@@ -13669,12 +13669,16 @@ func (o Outer) sum() int { return o.n }
 var g Outer
 var gp *Outer
 
+// The field's backing array is the package's too: one make allocated in a
+// function, main included, is that function's storage.
+var xsBack [2]int
+
 func main() {
 	gp = &g
 	g.in.name = "pkg"
 	g.in.on = true
 	g.n = 4
-	g.in.xs = make([]int, 2, 2)
+	g.in.xs = xsBack[:]
 	g.in.xs[1] = 6
 	q := g.in.name
 	println(g.in.name, g.in.on, len(g.in.xs), g.in.xs[1])
