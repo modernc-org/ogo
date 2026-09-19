@@ -1,0 +1,28 @@
+// COMPILE
+
+// Another package's struct type, as values of it travel: declared, returned,
+// passed, held in a field and a slice, read back out of both.
+
+import "p"
+
+type Holds struct {
+	t p.T
+}
+
+func take(t p.T) int { return t.F }
+
+func back() p.T { return p.Make() }
+
+func main() {
+	var t p.T = p.Make()
+	_ = take(t)
+	_ = p.Take(p.Make())
+	h := Holds{t: p.Make()}
+	h.t = t
+	_ = take(h.t)
+	xs := []p.T{t, p.Make()}
+	_ = take(xs[1])
+	var u p.T
+	u = back()
+	_ = p.Take(u)
+}

@@ -182,6 +182,11 @@ shipped section tells a reader on that version that they have behaviour they do 
 
 ### Fixed
 
+- **Another package's struct type is compared as this package's are.** A `T` of
+  this package passed where a `lib.T` was wanted, and the other way round -- an
+  argument, a return, a declaration, an assignment, a field of a literal -- and
+  reached the C compiler, which refused two struct types about names the program
+  never wrote. Within one package the same mismatch was refused as Go refuses it.
 - **A call through what a call returns works as a statement and deferred.**
   `pick()(x)` for a function of no results was refused as a call statement, and
   `defer pick()(x)` did not compile for any function: the callee's call is Go's to

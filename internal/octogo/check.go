@@ -7249,9 +7249,12 @@ func (f *File) qualifiedVarTypeName(s *Scope, qual, member Token) (string, bool)
 	if !isVar || !vd.typeName.IsValid() {
 		return "", false
 	}
+	if vd.typeQual.IsValid() {
+		return "", false // a third package's type, named as that one imports it
+	}
 	name := qual.Src() + "." + vd.typeName.Src()
 	if _, _, ok := f.typeDeclNamed(s, name); ok {
-		return name, true
+		return f.canonicalQualified(name), true
 	}
 	if _, isPre := imp.Import.Pkg.Scope.Declarations[vd.typeName.Src()].(*TypeDeclaration); isPre {
 		return name, true
@@ -8031,7 +8034,10 @@ func (f *File) structTypeNamed(s *Scope, nm string) (*TypeNodeStruct, bool) {
 // resolves to nothing here and goes unchecked rather than misreported.
 func (f *File) kindlessCategory(s *Scope, nm string) string {
 	for range 16 { // bounded; a type cycle is reported by its own pass
-		td, ok := s.find(nm).(*TypeDeclaration)
+		// typeDeclNamed, not s.find: a name may be another package's, `lib.T`,
+		// which s.find answers nothing for -- so no struct of another package was
+		// ever compared, and a `T` of this one passed where a `lib.T` was wanted.
+		td, home, ok := f.typeDeclNamed(s, nm)
 		if !ok || td.TypeSpec == nil {
 			return ""
 		}
@@ -8047,7 +8053,18 @@ func (f *File) kindlessCategory(s *Scope, nm string) string {
 		case *TypeNodeChan:
 			return "chan"
 		case *TypeNodeIdent:
-			nm = tn.Name.Src() // through a chain of definitions
+			// Through a chain of definitions, each resolved where it is written. A
+			// qualified name met in ANOTHER package's scope is named as THAT package
+			// imports it, which this file cannot resolve.
+			switch {
+			case !tn.Qualifier.IsValid():
+				nm = tn.Name.Src()
+			case home == s:
+				nm = tn.Qualifier.Src() + "." + tn.Name.Src()
+			default:
+				return ""
+			}
+			s = home
 		default:
 			return ""
 		}
@@ -8354,6 +8371,34 @@ func (f *File) interfaceMethodsNamed(s *Scope, name string) (map[string]*MethodS
 // name stays as written.
 // canonicalName is canonicalType for a bare name string, for the comparison
 // sites that carry names rather than tokens.
+// canonicalQualified is canonicalName for another package's type: `lib.A` for a
+// `type A = T` there is `lib.T`, the alias resolved in the package declaring it
+// and qualified as this file names that package. Anything else is its own.
+func (f *File) canonicalQualified(name string) string {
+	qual, member, ok := strings.Cut(name, ".")
+	if !ok {
+		return name
+	}
+	imp, isImp := f.Scope.Declarations[qual].(*ImportDeclaration)
+	if !isImp || imp.Import == nil || imp.Import.Pkg == nil || imp.Import.Pkg.Scope == nil {
+		return name
+	}
+	ps := imp.Import.Pkg.Scope
+	td, isType := ps.Declarations[member].(*TypeDeclaration)
+	for i := 0; isType && i < 16 && td.TypeSpec != nil && td.TypeSpec.Alias; i++ {
+		tn, isIdent := td.TypeSpec.TypeNode.(*TypeNodeIdent)
+		if !isIdent || tn.Qualifier.IsValid() {
+			break
+		}
+		next, isDecl := ps.Declarations[tn.Name.Src()].(*TypeDeclaration)
+		if !isDecl {
+			break // a predeclared target: the alias names no defined type
+		}
+		member, td = tn.Name.Src(), next
+	}
+	return qual + "." + member
+}
+
 func (f *File) canonicalName(s *Scope, name string) string {
 	td, ok := s.find(name).(*TypeDeclaration)
 	for i := 0; ok && i < 16 && td.TypeSpec != nil && td.TypeSpec.Alias; i++ {
@@ -8583,7 +8628,8 @@ func (f *File) typeIdentity(s *Scope, n Node) (string, bool) {
 		// of a defined type went unchecked: the two share a Kind, and the name was
 		// the only thing that could have told them apart.
 		if ql.IsValid() {
-			return f.definedName(s, ql.Src()+"."+nm.Src())
+			name, ok := f.definedName(s, ql.Src()+"."+nm.Src())
+			return f.canonicalQualified(name), ok
 		}
 		return f.definedName(s, nm.Src())
 	}
@@ -8702,7 +8748,7 @@ func (f *File) checkDefinedType(s *Scope, wantName string, value Node, what stri
 		// The wanted type may be another package's too, `var x geo.Temp = ...`, and
 		// is then named the same way the value's is (see typeIdentity).
 		if _, _, ok := f.typeDeclNamed(s, wantName); ok {
-			want = wantName
+			want = f.canonicalQualified(wantName)
 		}
 	}
 	if have == want {
@@ -10488,7 +10534,9 @@ func (f *File) checkAssignType(s *Scope, lhsTok Token, rhsNode Node, plainTarget
 			}
 			f.checkPointerValue(s, d.isPtr, want, rhsNode, "assignment")
 			f.checkImplements(s, d.declaredTypeName(), rhsNode, "assignment")
-			f.checkDefinedType(s, d.typeName.Src(), rhsNode, "assignment")
+			// Qualified too: `var u lib.T` is a lib.T, and the bare "T" names this
+			// package's T, if it has one.
+			f.checkDefinedType(s, d.declaredTypeName(), rhsNode, "assignment")
 		}
 	}
 	lk, lok := f.identKind(s, lhsTok)
@@ -11010,8 +11058,10 @@ func (f *File) localValueNamedType(s *Scope, id Token, fac Node) (Token, Token, 
 			if tn == nil {
 				return Token{}, Token{}, false, false
 			}
+			// With the qualifier the field was declared with: a `t lib.T` field
+			// read as the bare T named this package's T, if it had one.
 			nm, named := namedTypeToken(tn)
-			return nm, Token{}, named && f.isPointerType(s, tn), named
+			return nm, namedTypeQual(tn), named && f.isPointerType(s, tn), named
 		case len(steps) == 2 && steps[1].sym == CallSuffix:
 			// `b.Get()`: the method's single result.
 			if !d.typeName.IsValid() {
@@ -11033,7 +11083,7 @@ func (f *File) localValueNamedType(s *Scope, id Token, fac Node) (Token, Token, 
 				return Token{}, Token{}, false, false
 			}
 			nm, named := namedTypeToken(res[0].typeNode)
-			return nm, Token{}, named && f.isPointerType(s, res[0].typeNode), named
+			return nm, namedTypeQual(res[0].typeNode), named && f.isPointerType(s, res[0].typeNode), named
 		}
 		return Token{}, Token{}, false, false
 	}

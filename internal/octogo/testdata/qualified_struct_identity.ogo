@@ -1,0 +1,41 @@
+// A value of one named struct type is not another's across a package boundary, as
+// it is not within one: a struct of this package where another package's is wanted,
+// or the other way round, is refused where it is written.
+
+import "p"
+
+type Mine struct {
+	F int
+}
+
+type Holds struct {
+	t p.T
+}
+
+func take(t p.T) int { return t.F }
+
+func back() p.T {
+	var m Mine
+	// ERROR cannot use m of type Mine as type p.T in return statement
+	return m
+}
+
+func main() {
+	var m Mine
+	// ERROR cannot use m of type Mine as type p.T in argument to take
+	_ = take(m)
+	// ERROR cannot use m of type Mine as type p.T in argument to Take
+	_ = p.Take(m)
+	// ERROR cannot use p.Make\(\) of type p.T as type Mine in variable declaration
+	var x Mine = p.Make()
+	var t p.T
+	// ERROR cannot use t of type p.T as type Mine in assignment
+	m = t
+	// ERROR cannot use Mine{} of type Mine as type p.T in struct literal
+	h := Holds{t: Mine{}}
+	var w Holds
+	// ERROR cannot use m of type Mine as type p.T in assignment
+	w.t = m
+	_, _, _ = x, h, w
+	_ = back()
+}

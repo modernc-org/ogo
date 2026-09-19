@@ -93,3 +93,7 @@ type Deg int32
 func (d Deg) Scaled() int32 { return int32(d) * 10 }
 
 func (d Deg) scaled() int32 { return int32(d) }
+
+// Take takes a T, so an importer's argument of another struct type can be checked
+// against a parameter of this package's (qualified_struct_identity.ogo).
+func Take(t T) int { return t.F }

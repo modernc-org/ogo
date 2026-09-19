@@ -537,7 +537,11 @@ struct under a width; a named ARRAY result returned by name, `func f() (r
 operator or a suffix of its own -- read or written through a suffix: `(&p).x`,
 `(&arr)[1:]`, `(get()).x`, `(*get()).x`, `(arr[1:])[1:]`, `("hello")[1:]`, the targets
 `(p).x = 5` and `(&p).x = 3`, and the send `(&bus.ports[1]).ch <- 5` (`(*p).x`, `(a)[i]`,
-`(&v).m()` and `(a - b).m()` work); a `go` statement calling a method promoted through an embedded POINTER on a local,
+`(&v).m()` and `(a - b).m()` work); an alias of another package's type, `type LT = lib.T` ("cannot alias another
+package's type yet"), and a composite literal through another package's alias, `lib.A{N:
+3}` ("lib.A is not a struct type"); an ELEMENT store of a different struct type,
+`arr[0] = A{}` for a `[2]B`, which the checker does not compare and C refuses;
+a `go` statement calling a method promoted through an embedded POINTER on a local,
 `w := W{&g}; go w.Save()` (refused for handing the goroutine w, where Go hands it the
 pointer); an ELEMENT or another package's variable as a `range` clause's target, `for _,
 q[0] = range ptrs`, `for _, geo.P = range ptrs` ("a range target must be a variable
