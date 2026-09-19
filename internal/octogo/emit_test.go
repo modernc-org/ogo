@@ -10953,6 +10953,105 @@ func main() {
 	}
 }
 
+// TestEmitCSummaryIndirect: a callee handing its parameter on through a call the
+// summary pass could not name -- an INTERFACE method, `kk.Keep(v)`, or a function
+// VALUE it holds, `f := keepGlobal; f(v)` -- was summarised as keeping nothing of it,
+// and the caller's local storage went where the method or the function put it, in
+// silence, until 2026-09-19. An interface call is a call of every implementation; a
+// function value is followed to the declared functions it may hold. Each callee is
+// called with a local's storage, which must be refused, and with package storage,
+// which must not; a callee handing it to a function that keeps nothing keeps nothing.
+func TestEmitCSummaryIndirect(t *testing.T) {
+	const head = `type K interface {
+	Keep(v []int)
+	KeepElem(v []*int)
+}
+
+type T struct{}
+
+func (T) Keep(v []int) { gs = v }
+
+func (T) KeepElem(v []*int) { gp = v[0] }
+
+type S interface {
+	Save()
+}
+
+type Box struct {
+	n int
+}
+
+func (b *Box) Save() { gbox = b }
+
+var gs []int
+
+var gp *int
+
+var gx int
+
+var gbox *Box
+
+var gb Box
+
+var gback [4]int
+
+var kk K = &T{}
+
+func keepGlobal(v []int) { gs = v }
+
+func keepNone(v []int) {}
+
+`
+	for _, test := range []struct {
+		callee    string
+		kept, ok  string
+		keepsNone bool
+	}{
+		{"func keep(v []int) { kk.Keep(v) }", "keep(a[:])", "keep(gback[:])", false},
+		{"func keep(iv K, v []int) { iv.Keep(v) }", "keep(&T{}, a[:])", "keep(&T{}, gback[:])", false},
+		{"func keep(v []int) { var iv K = &T{}; iv.Keep(v) }", "keep(a[:])", "keep(gback[:])", false},
+		{"func keep(v []*int) { kk.KeepElem(v) }", "keep([]*int{&x})", "keep([]*int{&gx})", false},
+		{"func keep(s S) { s.Save() }", "keep(&lb)", "keep(&gb)", false},
+		{"func keep(v []int) { f := keepGlobal; f(v) }", "keep(a[:])", "keep(gback[:])", false},
+		{"func keep(v []int) { f := keepGlobal; g := f; g(v) }", "keep(a[:])", "keep(gback[:])", false},
+		{"func keep(v []int) { var f func([]int) = keepGlobal; f(v) }", "keep(a[:])", "keep(gback[:])", false},
+		{"func keep(v []int) { f := keepNone; f(v) }", "keep(a[:])", "keep(gback[:])", true},
+	} {
+		for _, call := range []string{test.kept, test.ok} {
+			src := head + test.callee + `
+
+func run() {
+	x := 1
+	var a [4]int
+	var lb Box
+	_, _, _ = x, a, lb
+	` + call + `
+}
+
+func main() {
+	run()
+}
+`
+			t.Run(test.callee+"/"+call, func(t *testing.T) {
+				fsys := fstest.MapFS{"main.ogo": &fstest.MapFile{Data: []byte(src)}}
+				pkg, err := Build(-1, []string{"main.ogo"}, fsys)
+				if err == nil {
+					err = EmitC(pkg, io.Discard, Checked())
+				}
+				refuse := !test.keepsNone && call == test.kept
+				switch {
+				case refuse && err == nil:
+					t.Errorf("a reference to this frame left it:\n%s", src)
+				case refuse && !strings.Contains(err.Error(), "outlive") && !strings.Contains(err.Error(), "hold"):
+					t.Errorf("refused, but not for its lifetime: %v", err)
+				case !refuse && err != nil:
+					t.Errorf("refused: %v\n%s", err, src)
+				}
+			})
+		}
+	}
+}
+
 func TestEmitCCalleeKeepsEscape(t *testing.T) {
 	const head = `type Box struct {
 	d []int

@@ -699,6 +699,13 @@ shipped section tells a reader on that version that they have behaviour they do 
 Each of these is the compiler refusing a program it used to accept, and each such
 program handed out a reference to storage that was gone by the time it was read.
 
+- **A callee is followed through the interface methods and function values it
+  calls.** A function handing its parameter on to `kk.Keep(v)`, through an
+  interface held in a package variable, a parameter or a local, or to `f(v)` for a
+  local `f := keep`, was summarised as keeping nothing of it, and the caller's
+  local storage went wherever the method or the function put it. An interface call
+  counts as a call of every implementation, and a function value is followed to the
+  declared functions it may hold.
 - **What a callee does with its parameter's contents is followed.** A function
   keeping an element or a field of its parameter -- `gp = v[0]` of a `v []*int`,
   `gs = b.xs` of a `b *B`, by value or through a pointer, directly, through a local,

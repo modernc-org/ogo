@@ -623,9 +623,12 @@ struct literal's contents are the original itself, and taking one for the other
 either lets a reference through or refuses every caller passing a local slice. A new
 way for a callee to hold or write a value is a row in `TestEmitCSummaryThroughLocals`,
 and a new way to read contents out of one a row in `TestEmitCSummaryContents`.
-Still open, SILENT: a callee handing its parameter on through an INTERFACE method or
-a function VALUE it holds, `kk.Keep(v)`, `f := keep; f(v)` -- the summary pass makes
-no edge for a call it cannot name, for values and contents alike.
+A call the summary pass cannot name by the callee's own name is followed too
+(`TestEmitCSummaryIndirect`): an interface method is a call of every implementation
+(`ifaceMethodCallsOf`), and a function value is followed through the holds to the
+declared functions it may hold (`valueCalls`). Still open, SILENT: a callback received
+as a PARAMETER and called, `func each(v []int, f func([]int)) { f(v) }` -- the callee
+the summary would need is whatever the caller passes, which is higher-order.
 
 ## Notes
 

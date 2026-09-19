@@ -9251,6 +9251,7 @@ func (e *emitter) litParamNames(lit Node) (funcInfo, bool) {
 			fi.params = append(fi.params, nm)
 			fi.ptrParam = append(fi.ptrParam, e.isPtrParam(ta))
 			fi.ptrBase = append(fi.ptrBase, e.ptrParamBase(ta))
+			fi.paramType = append(fi.paramType, e.paramTypeName(ta))
 		})
 	}
 	return fi, true
@@ -9558,6 +9559,47 @@ func (e *emitter) collectFuncCross(fi funcInfo) {
 				e.recvEdges = append(e.recvEdges, recvEdge{caller: cname, from: -1, callee: c.callee, to: -1})
 			case c.recv == recvParam:
 				e.recvEdges = append(e.recvEdges, recvEdge{caller: cname, from: c.recvAt, callee: c.callee, to: -1})
+			}
+			// An interface's method is handed what the interface value holds: what
+			// the callee keeps of its receiver, this function keeps of that.
+			if c.recvName != "" {
+				r := reachOf([]held{{c.recvName, heldAlias}})
+				for _, i := range r.vals {
+					e.recvEdges = append(e.recvEdges, recvEdge{caller: cname, from: i, callee: c.callee, to: -1})
+				}
+				for _, i := range r.conts {
+					e.recvEdges = append(e.recvEdges, recvEdge{caller: cname, from: i, callee: c.callee, to: -1, contents: true})
+				}
+				if r.recvVal {
+					e.recvEdges = append(e.recvEdges, recvEdge{caller: cname, from: -1, callee: c.callee, to: -1})
+				}
+			}
+		}
+		// A call through a NAME holding a function, `f := keep; f(v)`: the edges of
+		// a call of every declared function it may hold (see valueCalls).
+		for _, c := range e.valueCalls(nodes) {
+			var callees []string
+			resolve([]held{{c.name, heldAlias}}, func(n string, contents bool) {
+				if _, isFunc := e.userFunc(n); !contents && isFunc && n != c.name {
+					callees = append(callees, e.funcCallC(n))
+				}
+			})
+			for _, callee := range callees {
+				owner := owners(c.args)
+				for j, a := range c.args {
+					r := reachOf(e.summaryReach(a.ast))
+					for _, i := range r.vals {
+						e.crossEdges = append(e.crossEdges,
+							crossEdge{caller: cname, from: i, callee: callee, to: j, recvAt: argLocal, argOwner: owner})
+					}
+					for _, i := range r.conts {
+						e.crossEdges = append(e.crossEdges,
+							crossEdge{caller: cname, from: i, callee: callee, to: j, recvAt: argLocal, argOwner: owner, contents: true})
+					}
+					if r.recvVal {
+						e.recvEdges = append(e.recvEdges, recvEdge{caller: cname, from: -1, callee: callee, to: j})
+					}
+				}
 			}
 		}
 	})
@@ -9872,6 +9914,7 @@ func (e *emitter) funcParamNames(d []int32) (funcInfo, bool) {
 			fi.params = append(fi.params, nm)
 			fi.ptrParam = append(fi.ptrParam, e.isPtrParam(ta))
 			fi.ptrBase = append(fi.ptrBase, e.ptrParamBase(ta))
+			fi.paramType = append(fi.paramType, e.paramTypeName(ta))
 		})
 	}
 	return fi, true
@@ -9897,6 +9940,21 @@ func (e *emitter) funcParamNames(d []int32) (funcInfo, bool) {
 func (e *emitter) isPtrParam(ta []int32) bool {
 	nodes := slices.Collect(it(ta))
 	return len(nodes) == 2 && nodes[0].sym == 0 && e.f.ch(nodes[0].tok) == MUL && nodes[1].sym == Type
+}
+
+// paramTypeName is the defined type a parameter is declared with, `iv Keeper`, read
+// as written and kept only when it names a type this package declares -- as
+// localTypeNames reads a local's.
+func (e *emitter) paramTypeName(ta []int32) string {
+	tok, ok := e.soleToken(ta)
+	if !ok || e.f.ch(tok) != IDENT {
+		return ""
+	}
+	name := e.typeMangle(e.curPkgPrefix, e.src(tok))
+	if !e.typeNames[name] {
+		return ""
+	}
+	return name
 }
 
 func (e *emitter) ptrParamBase(ta []int32) string {
@@ -10032,6 +10090,7 @@ type funcInfo struct {
 	params    []string
 	ptrParam  []bool
 	ptrBase   []string
+	paramType []string // the DEFINED type a parameter is declared with, mangled, or ""
 	body      []int32
 	recvName  string
 	recvCType string
@@ -10546,6 +10605,9 @@ type methodCall struct {
 	recv   recvKind
 	recvAt int
 	args   []Node
+	// recvName is the name an interface's method was called on, which may hold one
+	// of the caller's parameters (see ifaceMethodCallsOf).
+	recvName string
 }
 
 // stmtMethodCalls finds the METHOD calls a statement makes, which stmtCalls does not:
@@ -10582,6 +10644,8 @@ func (e *emitter) stmtMethodCalls(nodes []Node, fi funcInfo) []methodCall {
 			if len(suffix) == 2 && suffix[0].sym == Selector && suffix[1].sym == CallSuffix {
 				if c, isM := e.methodCallOf(recv, suffix, fi); isM {
 					out = append(out, c)
+				} else {
+					out = append(out, e.ifaceMethodCallsOf(recv, suffix, fi)...)
 				}
 			}
 		}
@@ -10602,6 +10666,8 @@ func (e *emitter) stmtMethodCalls(nodes []Node, fi funcInfo) []methodCall {
 					suffix[0].sym == Selector && suffix[1].sym == CallSuffix {
 					if c, isM := e.methodCallOf(recv, suffix, fi); isM {
 						out = append(out, c)
+					} else {
+						out = append(out, e.ifaceMethodCallsOf(recv, suffix, fi)...)
 					}
 				}
 			}
@@ -10610,6 +10676,41 @@ func (e *emitter) stmtMethodCalls(nodes []Node, fi funcInfo) []methodCall {
 	}
 	for _, n := range nodes {
 		walk(n.ast)
+	}
+	return out
+}
+
+// ifaceMethodCallsOf is methodCallOf for a receiver of INTERFACE type -- a package
+// variable, a parameter or a local declared with one -- which names no method until
+// run time: a call of the method of every type implementing the interface, whose
+// receiver is storage this cannot name, so a store into it is taken to outlive the
+// caller. With none, a callee handing its parameter to `kk.Keep(v)` was summarised
+// as keeping nothing of it.
+func (e *emitter) ifaceMethodCallsOf(recv string, suffix []Node, fi funcInfo) (out []methodCall) {
+	method := e.soleIdent(suffix[0].ast)
+	if method == "" {
+		return nil
+	}
+	ct := ""
+	switch i := slices.Index(fi.params, recv); {
+	case e.isPackageVar(recv):
+		ct = e.globals[e.globalC(recv)]
+	case i >= 0 && i < len(fi.paramType):
+		ct = fi.paramType[i]
+	default:
+		ct = fi.locals[recv]
+	}
+	if ct == "" || !e.isIfaceCType(ct) {
+		return nil
+	}
+	args := e.callArgExprs(suffix[1].ast)
+	for _, concrete := range slices.Sorted(maps.Keys(e.typeNames)) {
+		if e.isIfaceCType(concrete) || !e.implementsIface(concrete, ct) {
+			continue
+		}
+		if cname, _, _, ok := e.promotedMethod(concrete, method); ok {
+			out = append(out, methodCall{callee: cname, recv: recvOutlives, recvAt: argLocal, args: args, recvName: recv})
+		}
 	}
 	return out
 }
@@ -10696,11 +10797,36 @@ func (e *emitter) methodCallOf(recv string, suffix []Node, fi funcInfo) (methodC
 // it. That errs the way the rest of the analysis does: towards accepting.
 func (e *emitter) stmtCalls(nodes []Node) []stmtCall {
 	var out []stmtCall
-	add := func(name string, suffix []int32) {
+	e.eachNameCall(nodes, func(name string, suffix []int32) {
 		if _, ok := e.userFunc(name); ok {
 			out = append(out, stmtCall{callee: e.funcCallC(name), args: e.callArgExprs(suffix)})
 		}
-	}
+	})
+	return out
+}
+
+// valueCalls finds the calls a statement makes through a NAME that is no declared
+// function -- a local or a parameter holding one, `f := keep; f(v)` -- which
+// stmtCalls leaves out, having no callee to name. The summary follows the name to
+// the functions it may hold.
+func (e *emitter) valueCalls(nodes []Node) (out []nameCall) {
+	e.eachNameCall(nodes, func(name string, suffix []int32) {
+		if _, ok := e.userFunc(name); !ok {
+			out = append(out, nameCall{name: name, args: e.callArgExprs(suffix)})
+		}
+	})
+	return out
+}
+
+// nameCall is a call on a plain name, `f(args)`.
+type nameCall struct {
+	name string
+	args []Node
+}
+
+// eachNameCall calls fn for every call a statement makes on a plain name, with the
+// call's suffix: the statement-level call, `f(x)`, and one inside an expression.
+func (e *emitter) eachNameCall(nodes []Node, add func(name string, suffix []int32)) {
 	// The statement-level call and the go statement: the callee is in the
 	// AssignHead, a sibling of the Postfix holding the CallSuffix.
 	if len(nodes) != 0 {
@@ -10748,7 +10874,6 @@ func (e *emitter) stmtCalls(nodes []Node) []stmtCall {
 	for _, n := range nodes {
 		walk(n.ast, "")
 	}
-	return out
 }
 
 // headOf returns the AssignHead of a statement's children, which a go statement
