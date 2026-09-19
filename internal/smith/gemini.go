@@ -851,8 +851,10 @@ func (f *Fuzzer) genStatement(vm Machine, mem Memory) Node {
 		return f.genDestructure(vm, mem) // 1.5% chance for a two-result call
 	case r < 0.617:
 		return f.genMinMax(vm, mem) // 0.2% chance for a min or max
+	case r < 0.621:
+		return f.genFuncValueStmt(vm, mem) // 0.4% chance for a call through a function value
 	case r < 0.625:
-		return f.genFuncValueStmt(vm, mem) // 0.8% chance for a call through a function value
+		return f.genFuncLitStmt(vm, mem) // 0.4% chance for a call of a function literal
 	case r < 0.63:
 		return f.genDeferCall(vm, mem) // 1% chance for a call that defers
 	case r < 0.66:
@@ -2095,6 +2097,112 @@ func (f *Fuzzer) genFuncValueStmt(vm Machine, mem Memory) Node {
 	fold(f.evalBody(fn, fn.Body, args, vm), &IdentNode{Name: a})
 	fold(f.evalBody(fn, fn.Body2, args, vm), &IdentNode{Name: b})
 	return &BlockNode{Statements: stmts}
+}
+
+// genFuncLitStmt calls a function LITERAL: bound to a variable and called through
+// it, or called where it stands. Each is a different lowering from a declared
+// function's call -- a literal is lifted to a function of its own, and what its
+// body may read is only its parameters, there being no heap to hold a captured
+// frame -- and the lifting is where the emitter's per-function state has gone wrong
+// before, the function around it losing its local types and constants to it.
+//
+// The body is generated as a declared function's is, over the parameters and
+// literals alone, so the VM predicts the call by evaluating it against the same
+// arguments; the literal carries a weight into the calls counter too, which is what
+// makes a call evaluated twice, or not at all, show as a number.
+func (f *Fuzzer) genFuncLitStmt(vm Machine, mem Memory) Node {
+	fn := &FuncDef{Name: "lit"}
+	for i, n := 0, 1+f.Rand.Intn(2); i < n; i++ {
+		fn.Params = append(fn.Params, f.newVarName("p"))
+	}
+	fn.Body = f.genPureExpr(fn.Params, 0)
+	f.litSeq++
+	fn.Weight = 1 << (4 * (f.litSeq % 6))
+	args := map[string]Int32{}
+	var argNodes []Node
+	for _, p := range fn.Params {
+		node, val, _ := f.genExpression(BasicType{Kind: KindInt}, vm, mem, 1)
+		argNodes = append(argNodes, node)
+		args[p] = val.(Int32)
+	}
+	lit := &FuncLitNode{Params: fn.Params, Body: fn.Body, Calls: f.CallsName, Weight: fn.Weight}
+	f.noteCall(fn)
+	got := f.evalBody(fn, fn.Body, args, vm)
+	newSum, _ := vm.Eval("^", mem.Load(f.ChecksumName), got)
+	mem.Store(f.ChecksumName, newSum)
+	var stmts []Node
+	var callee Node = lit
+	if f.Rand.Intn(2) == 0 {
+		// Bound to a variable first: the call is then through a function VALUE
+		// holding a literal, which is what the emitter binds by the literal's place
+		// rather than by a name.
+		name := f.newVarName("lv")
+		ints := make([]string, len(fn.Params))
+		for i := range ints {
+			ints[i] = "int"
+		}
+		stmts = append(stmts, &VarDeclNode{Name: name, Type: "func(" + strings.Join(ints, ", ") + ") int", Expr: lit})
+		callee = &IdentNode{Name: name}
+	}
+	stmts = append(stmts, &AssignStmtNode{
+		Lhs: f.ChecksumName,
+		Op:  "=",
+		Rhs: &BinaryExprNode{
+			Left:  &IdentNode{Name: f.ChecksumName},
+			Op:    "^",
+			Right: &CallExprNode{Callee: callee, Args: argNodes},
+		},
+	})
+	return &BlockNode{Statements: stmts}
+}
+
+// FuncLitNode is a function literal standing as a value: `func(p int) int { ...
+// return <body> }`, written as a declared function's body is (FuncDeclNode).
+type FuncLitNode struct {
+	Params []string
+	Body   Node
+	Calls  string
+	Weight int32
+}
+
+func (n *FuncLitNode) Write(w io.Writer, indent int) {
+	fmt.Fprint(w, "func(")
+	for i, p := range n.Params {
+		if i != 0 {
+			fmt.Fprint(w, ", ")
+		}
+		fmt.Fprintf(w, "%s int", p)
+	}
+	fmt.Fprint(w, ") int {\n")
+	if n.Calls != "" {
+		writeIndent(w, indent+1)
+		fmt.Fprintf(w, "%s = %s + %d\n", n.Calls, n.Calls, n.Weight)
+	}
+	writeIndent(w, indent+1)
+	fmt.Fprint(w, "return ")
+	n.Body.Write(w, 0)
+	fmt.Fprint(w, "\n")
+	writeIndent(w, indent)
+	fmt.Fprint(w, "}")
+}
+
+// CallExprNode is a call of whatever expression stands as the callee: a name, or a
+// function literal called where it stands.
+type CallExprNode struct {
+	Callee Node
+	Args   []Node
+}
+
+func (n *CallExprNode) Write(w io.Writer, indent int) {
+	n.Callee.Write(w, indent)
+	fmt.Fprint(w, "(")
+	for i, a := range n.Args {
+		if i != 0 {
+			fmt.Fprint(w, ", ")
+		}
+		a.Write(w, 0)
+	}
+	fmt.Fprint(w, ")")
 }
 
 // genMinMax declares a variable holding min or max over two to four generated

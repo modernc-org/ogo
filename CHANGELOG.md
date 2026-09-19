@@ -939,6 +939,12 @@ program handed out a reference to storage that was gone by the time it was read.
 
 ### Verified
 
+- The oracle fuzzer writes FUNCTION LITERALS: one called where it stands and one
+  bound to a variable and called through it, each carrying its weight into the
+  calls counter as a declared function does, so a call evaluated twice or not at
+  all shows as a number. A literal is lifted to a function of its own, which is
+  where the emitter's per-function state has gone wrong before. Two hundred seeds
+  compile and check out on the host, and the literal-carrying ones on a P2-EDGE.
 - Function semantics against Go on the host and a P2-EDGE: variadic calls with
   none, several and a spread slice the callee writes through, a two-result call
   forwarded as another's arguments, named results returned bare and swapped, a

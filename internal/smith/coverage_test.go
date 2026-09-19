@@ -187,6 +187,14 @@ var generatedConstructs = []struct {
 	// (the emitter's label pass) and the checker's jump rules had no fuzz coverage
 	// until this construct; the two entries keep the guard and the target each a
 	// tested property.
+	// A function LITERAL, which is lifted to a function of its own: called where it
+	// stands, and bound to a variable and called through it -- a function value
+	// holding a literal, which the emitter binds by the literal's place rather than
+	// by a name.
+	{"function literal", `func\(p_\d+ int[^)]*\) int \{`},
+	{"function literal bound to a value", `\n\s*var lv_\d+ func\([^)]*\) int = func\(`},
+	{"call through a function literal value", `\^ lv_\d+\(`},
+	{"function literal called where it stands", `\^ func\(p_\d+ int`},
 	{"forward goto", `\n\s*goto L_\d+\n`},
 	{"goto target label", `\n\s*L_\d+:\n`},
 }

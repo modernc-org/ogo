@@ -161,6 +161,9 @@ type Fuzzer struct {
 	// in a send and an appended element, that nothing noticed.
 	CallsName string
 	calls     int32
+	// litSeq numbers the function LITERALS a program calls, so each carries a
+	// weight into the counter as a declared function does (see FuncDef.Weight).
+	litSeq int
 }
 
 func NewFuzzer(seed int64, out io.Writer) *Fuzzer {
