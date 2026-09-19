@@ -4584,7 +4584,7 @@ func typeNameCollisions(src []byte, names map[string]bool) map[string]bool {
 // emitProgram is EmitC's one pass. rename lists the main-package types spelled
 // ogo_T_<name> in C (see typeMangle).
 func emitProgram(pkg *Package, w io.Writer, opts []EmitOption, rename map[string]bool) error {
-	e := &emitter{renameTypes: rename, renamedTypes: map[string]string{}, includes: map[string]bool{}, funcRet: map[string][]string{}, funcSliceParams: map[string][]string{}, funcVariadic: map[string]int{}, nilHelpers: map[string]bool{}, funcArrayRet: map[string]arrDim{}, funcArrayParams: map[string][]arrDim{}, anonStructNames: map[string]string{}, methodValueTypes: map[string]funcValueType{}, methodValueOf: map[string]string{}, methodExprNames: map[string]string{}, funcParams: map[string][]string{}, methodPtr: map[string]bool{}, globals: map[string]string{}, structs: map[string][]structField{}, namedTypes: map[string]bool{}, typeNames: map[string]bool{}, interfaceTypes: map[string]bool{}, ifaceMethods: map[string][]ifaceMethod{}, anonIfaceNames: map[string]string{}, anonIfaceMinted: map[string]bool{}, ifaceASTs: map[string]ifaceAST{}, ifaceVTables: map[string]bool{}, namedUnderlying: map[string]string{}, namedArrays: map[string]arrDim{}, constInt: map[string]string{}, constVal: map[string]constant.Value{}, constWide: map[string]string{}, constStr: map[string]string{}, constUntyped: map[string]bool{}, constHuge: map[string]bool{}, arrays: map[string]arrDim{}, globalArrays: map[string]arrDim{}, sliceVars: map[string]string{}, globalSliceVars: map[string]string{}, chanElems: map[string]bool{}, chanInitElems: map[string]bool{}, chanSendElems: map[string]bool{}, chanRecvElems: map[string]bool{}, chanTryRecvElems: map[string]bool{}, chanTrySendElems: map[string]bool{}, chanGatedSendElems: map[string]bool{}, aliasOf: map[string]string{}, localTypes: map[string]string{}, gotoTargets: map[string]bool{}, chanCloseElems: map[string]bool{}, chanRecv2Elems: map[string]bool{}, mathWrappers: map[string]bool{}, chanElemByName: map[string]string{}, sliceElems: map[string]bool{}, sliceElemByName: map[string]string{}, appendElems: map[string]bool{}, tryappendElems: map[string]bool{}, appendSliceElems: map[string]bool{}, tryappendSliceEls: map[string]bool{}, appendokStructs: map[string]bool{}, copyElems: map[string]bool{}, resliceElems: map[string]bool{}, reslice3Elems: map[string]bool{}, clearElems: map[string]bool{}, minElems: map[string]bool{}, maxElems: map[string]bool{}, printSliceElems: map[string]bool{}, printStructs: map[string]string{}, printlnElems: map[string]bool{}, switchBreakUsed: map[string]bool{}, labelBreak: map[string]string{}, labelContinue: map[string]string{}, labelUsed: map[string]bool{}, eqStructs: map[string]bool{}, eqArrays: map[string]arrDim{}, frameBacked: map[string]bool{}, frameHolder: map[string]string{}, crossParams: map[string][]leak{}, crossContents: map[string][]leak{}, retContents: map[string][]bool{}, recvContents: map[string]leak{}, recvLeaks: map[string]leak{}, retRecv: map[string]bool{}, crossInto: map[string][]uint32{}, ifaceSummaries: map[string]ifaceSummary{}, retParams: map[string][]bool{}, funcValueOf: map[string]string{}, crossNames: map[string]string{}, initNames: map[string]string{}, funcValueTypes: map[string]funcValueType{}, funcTypeNames: map[string]string{}, funcTypeRet: map[string][]string{}, funcTypeParams: map[string][]string{}, retStructs: map[string]string{}, retStructByKey: map[string]string{}, shiftHelpers: map[string][2]string{}, shiftCTypes: map[*int32]string{}, shiftWalked: map[shiftWalkKey]bool{}, shiftIn: map[*int32]bool{}, divHelpers: map[string][2]string{}, funcValueWrappers: map[string]string{}, deferReplay: -1, iota: -1}
+	e := &emitter{renameTypes: rename, renamedTypes: map[string]string{}, includes: map[string]bool{}, funcRet: map[string][]string{}, funcSliceParams: map[string][]string{}, funcVariadic: map[string]int{}, nilHelpers: map[string]bool{}, funcArrayRet: map[string]arrDim{}, funcArrayParams: map[string][]arrDim{}, anonStructNames: map[string]string{}, methodValueTypes: map[string]funcValueType{}, methodValueOf: map[string]string{}, methodExprNames: map[string]string{}, funcParams: map[string][]string{}, methodPtr: map[string]bool{}, globals: map[string]string{}, structs: map[string][]structField{}, namedTypes: map[string]bool{}, typeNames: map[string]bool{}, interfaceTypes: map[string]bool{}, ifaceMethods: map[string][]ifaceMethod{}, anonIfaceNames: map[string]string{}, anonIfaceMinted: map[string]bool{}, ifaceASTs: map[string]ifaceAST{}, ifaceVTables: map[string]bool{}, namedUnderlying: map[string]string{}, namedArrays: map[string]arrDim{}, constInt: map[string]string{}, constVal: map[string]constant.Value{}, constWide: map[string]string{}, constStr: map[string]string{}, constUntyped: map[string]bool{}, constHuge: map[string]bool{}, arrays: map[string]arrDim{}, globalArrays: map[string]arrDim{}, sliceVars: map[string]string{}, globalSliceVars: map[string]string{}, chanElems: map[string]bool{}, chanInitElems: map[string]bool{}, chanSendElems: map[string]bool{}, chanRecvElems: map[string]bool{}, chanTryRecvElems: map[string]bool{}, chanTrySendElems: map[string]bool{}, chanGatedSendElems: map[string]bool{}, aliasOf: map[string]string{}, localTypes: map[string]string{}, gotoTargets: map[string]bool{}, chanCloseElems: map[string]bool{}, chanRecv2Elems: map[string]bool{}, mathWrappers: map[string]bool{}, chanElemByName: map[string]string{}, sliceElems: map[string]bool{}, sliceElemByName: map[string]string{}, appendElems: map[string]bool{}, tryappendElems: map[string]bool{}, appendSliceElems: map[string]bool{}, tryappendSliceEls: map[string]bool{}, appendokStructs: map[string]bool{}, copyElems: map[string]bool{}, resliceElems: map[string]bool{}, reslice3Elems: map[string]bool{}, clearElems: map[string]bool{}, minElems: map[string]bool{}, maxElems: map[string]bool{}, printSliceElems: map[string]bool{}, printStructs: map[string]string{}, printlnElems: map[string]bool{}, switchBreakUsed: map[string]bool{}, labelBreak: map[string]string{}, labelContinue: map[string]string{}, labelUsed: map[string]bool{}, eqStructs: map[string]bool{}, eqArrays: map[string]arrDim{}, frameBacked: map[string]bool{}, frameHolder: map[string]string{}, crossParams: map[string][]leak{}, crossContents: map[string][]leak{}, retContents: map[string][]bool{}, recvContents: map[string]leak{}, paramCalls: map[string][]paramCall{}, recvLeaks: map[string]leak{}, retRecv: map[string]bool{}, crossInto: map[string][]uint32{}, ifaceSummaries: map[string]ifaceSummary{}, retParams: map[string][]bool{}, funcValueOf: map[string]string{}, crossNames: map[string]string{}, initNames: map[string]string{}, funcValueTypes: map[string]funcValueType{}, funcTypeNames: map[string]string{}, funcTypeRet: map[string][]string{}, funcTypeParams: map[string][]string{}, retStructs: map[string]string{}, retStructByKey: map[string]string{}, shiftHelpers: map[string][2]string{}, shiftCTypes: map[*int32]string{}, shiftWalked: map[shiftWalkKey]bool{}, shiftIn: map[*int32]bool{}, divHelpers: map[string][2]string{}, funcValueWrappers: map[string]string{}, deferReplay: -1, iota: -1}
 	for _, opt := range opts {
 		opt(e)
 	}
@@ -5526,6 +5526,9 @@ type emitter struct {
 	crossContents      map[string][]leak       // per function, how each parameter's CONTENTS escape -- what its elements, or its pointee's fields, hold -- `gp = v[0]` (see heldKind)
 	retContents        map[string][]bool       // per function, which parameters' CONTENTS a result carries, `return v[0]`
 	recvContents       map[string]leak         // a method's receiver's CONTENTS kept where they outlive the call, `gs = c.d`
+	paramCalls         map[string][]paramCall  // per function, which of its parameters it CALLS and with what of its others (see paramCall)
+	siteSeq            int                     // numbers the calls the summaries record, so edges of one call can be paired (see crossEdge.site)
+	siteFuncs          []siteFunc              // declared functions handed as arguments, by call (see siteFunc)
 	recvLeaks          map[string]leak         // a pointer method's RECEIVER kept where it outlives the call: leakGlobal, leakCog (see recvEdge)
 	recvEdges          []recvEdge              // how a receiver's keeping travels to callers (see recvEdge)
 	retRecv            map[string]bool         // a pointer method returns its receiver, so its result is what it was called on
@@ -9242,6 +9245,52 @@ type crossEdge struct {
 	// what the callee does with its parameter to, the caller does with those
 	// contents.
 	contents bool
+	// site numbers the call the edge was made for: two edges of one site are two
+	// arguments of one call, which is what pairs a callback handed on with the
+	// value handed on to it (see paramCall).
+	site int
+}
+
+// funcLitArg is the function literal an argument is, `func(w []int) { ... }`.
+func (e *emitter) funcLitArg(ast []int32) (Node, bool) {
+	kids, ok := e.soleFactor(ast)
+	if !ok || len(kids) == 0 || kids[0].sym != FuncLiteral {
+		return Node{}, false
+	}
+	if len(kids) > 1 {
+		return Node{}, false // called where it stands: its result is the argument
+	}
+	return kids[0], true
+}
+
+// siteFunc records a declared function -- or a function literal, by its summary's
+// key -- handed as argument to of the call site, to callee: what callee calls that
+// argument with, the function does with it.
+type siteFunc struct {
+	site   int
+	callee string
+	to     int
+	fn     string
+}
+
+// noteParamCall records pc for the function cname, once, and reports whether it was
+// new.
+func (e *emitter) noteParamCall(cname string, pc paramCall) bool {
+	if slices.Contains(e.paramCalls[cname], pc) {
+		return false
+	}
+	e.paramCalls[cname] = append(e.paramCalls[cname], pc)
+	return true
+}
+
+// paramCall records that a function CALLS one of its parameters, fn, a function
+// value, handing it at argument to what its parameter from holds -- its value, or
+// with contents its contents: `func each(v []int, f func([]int)) { f(v) }` is
+// {fn: 1, from: 0, to: 0}. Which function that is, only a call of `each` knows, and
+// that call site asks the function it passes (checkCallbackArgs).
+type paramCall struct {
+	fn, from, to int
+	contents     bool
 }
 
 const (
@@ -9628,17 +9677,38 @@ func (e *emitter) collectFuncCross(fi funcInfo) {
 		// Any call in the statement, go statement and send included: an
 		// argument that is one of this function's parameters, or its contents,
 		// ties the two together.
+		// funcArgs records the declared functions an argument may be, at a site.
+		funcArgs := func(site int, callee string, args []Node) {
+			for j, a := range args {
+				if lit, isLit := e.funcLitArg(a.ast); isLit {
+					e.siteFuncs = append(e.siteFuncs, siteFunc{site, callee, j, e.litKey(lit)})
+					continue
+				}
+				name, isName := e.exprIdent(a.ast)
+				if !isName {
+					continue
+				}
+				resolve([]held{{name, heldAlias}}, func(n string, contents bool) {
+					if _, isFunc := e.userFunc(n); !contents && isFunc {
+						e.siteFuncs = append(e.siteFuncs, siteFunc{site, callee, j, e.funcCallC(n)})
+					}
+				})
+			}
+		}
 		for _, c := range e.stmtCalls(nodes) {
 			owner := owners(c.args)
+			site := e.siteSeq
+			e.siteSeq++
+			funcArgs(site, c.callee, c.args)
 			for j, a := range c.args {
 				r := reachOf(e.summaryReach(a.ast))
 				for _, i := range r.vals {
 					e.crossEdges = append(e.crossEdges,
-						crossEdge{caller: cname, from: i, callee: c.callee, to: j, recvAt: argLocal, argOwner: owner})
+						crossEdge{caller: cname, from: i, callee: c.callee, to: j, recvAt: argLocal, argOwner: owner, site: site})
 				}
 				for _, i := range r.conts {
 					e.crossEdges = append(e.crossEdges,
-						crossEdge{caller: cname, from: i, callee: c.callee, to: j, recvAt: argLocal, argOwner: owner, contents: true})
+						crossEdge{caller: cname, from: i, callee: c.callee, to: j, recvAt: argLocal, argOwner: owner, contents: true, site: site})
 				}
 				if r.recvVal {
 					e.recvEdges = append(e.recvEdges, recvEdge{caller: cname, from: -1, callee: c.callee, to: j})
@@ -9653,15 +9723,17 @@ func (e *emitter) collectFuncCross(fi funcInfo) {
 		// callee's leakRecv is a leak here too or the end of the matter.
 		for _, c := range e.stmtMethodCalls(nodes, fi) {
 			owner := owners(c.args)
+			site := e.siteSeq
+			e.siteSeq++
 			for j, a := range c.args {
 				r := reachOf(e.summaryReach(a.ast))
 				for _, i := range r.vals {
 					e.crossEdges = append(e.crossEdges, crossEdge{caller: cname, from: i,
-						callee: c.callee, to: j, recv: c.recv, recvAt: c.recvAt, argOwner: owner})
+						callee: c.callee, to: j, recv: c.recv, recvAt: c.recvAt, argOwner: owner, site: site})
 				}
 				for _, i := range r.conts {
 					e.crossEdges = append(e.crossEdges, crossEdge{caller: cname, from: i,
-						callee: c.callee, to: j, recv: c.recv, recvAt: c.recvAt, argOwner: owner, contents: true})
+						callee: c.callee, to: j, recv: c.recv, recvAt: c.recvAt, argOwner: owner, contents: true, site: site})
 				}
 				if r.recvVal {
 					e.recvEdges = append(e.recvEdges, recvEdge{caller: cname, from: -1, callee: c.callee, to: j})
@@ -9695,7 +9767,10 @@ func (e *emitter) collectFuncCross(fi funcInfo) {
 			}
 		}
 		// A call through a NAME holding a function, `f := keep; f(v)`: the edges of
-		// a call of every declared function it may hold (see valueCalls).
+		// a call of every declared function it may hold (see valueCalls). And one
+		// holding a PARAMETER, `f(v)` for an `f func([]int)` handed in: which
+		// function that is, the caller knows, so what the call hands it is recorded
+		// for the caller to ask (paramCall).
 		for _, c := range e.valueCalls(nodes) {
 			var callees []string
 			resolve([]held{{c.name, heldAlias}}, func(n string, contents bool) {
@@ -9703,17 +9778,31 @@ func (e *emitter) collectFuncCross(fi funcInfo) {
 					callees = append(callees, e.funcCallC(n))
 				}
 			})
+			for _, k := range ats(c.name) {
+				for j, a := range c.args {
+					r := reachOf(e.summaryReach(a.ast))
+					for _, i := range r.vals {
+						e.noteParamCall(cname, paramCall{fn: k, from: i, to: j})
+					}
+					for _, i := range r.conts {
+						e.noteParamCall(cname, paramCall{fn: k, from: i, to: j, contents: true})
+					}
+				}
+			}
+			site := e.siteSeq
+			e.siteSeq++
 			for _, callee := range callees {
+				funcArgs(site, callee, c.args)
 				owner := owners(c.args)
 				for j, a := range c.args {
 					r := reachOf(e.summaryReach(a.ast))
 					for _, i := range r.vals {
 						e.crossEdges = append(e.crossEdges,
-							crossEdge{caller: cname, from: i, callee: callee, to: j, recvAt: argLocal, argOwner: owner})
+							crossEdge{caller: cname, from: i, callee: callee, to: j, recvAt: argLocal, argOwner: owner, site: site})
 					}
 					for _, i := range r.conts {
 						e.crossEdges = append(e.crossEdges,
-							crossEdge{caller: cname, from: i, callee: callee, to: j, recvAt: argLocal, argOwner: owner, contents: true})
+							crossEdge{caller: cname, from: i, callee: callee, to: j, recvAt: argLocal, argOwner: owner, contents: true, site: site})
 					}
 					if r.recvVal {
 						e.recvEdges = append(e.recvEdges, recvEdge{caller: cname, from: -1, callee: callee, to: j})
@@ -9763,6 +9852,22 @@ type recvEdge struct {
 // until it stops changing. Every pass over the edges can only set flags, and there
 // are finitely many, so it terminates.
 func (e *emitter) closeCrossParams() {
+	// The edges of each call, for pairing a callback with what is handed to it.
+	type siteKey struct {
+		site   int
+		callee string
+	}
+	sites := map[siteKey][]crossEdge{}
+	for _, g := range e.crossEdges {
+		k := siteKey{g.site, g.callee}
+		sites[k] = append(sites[k], g)
+	}
+	keys := slices.SortedFunc(maps.Keys(sites), func(a, b siteKey) int {
+		if a.site != b.site {
+			return a.site - b.site
+		}
+		return strings.Compare(a.callee, b.callee)
+	})
 	for changed := true; changed; {
 		changed = false
 		// orContents adds flags to what the caller's parameter from -- or, with from
@@ -9799,6 +9904,64 @@ func (e *emitter) closeCrossParams() {
 				flags |= leakGlobal
 			}
 			return flags
+		}
+		// A callback handed on: `each(v, f)` calling `apply(v, f)`, and apply calling
+		// its f with its v -- each calls its own f with its own v, the two being
+		// arguments of one call.
+		for _, k := range keys {
+			edges := sites[k]
+			for _, pc := range e.paramCalls[k.callee] {
+				for _, fe := range edges {
+					if fe.to != pc.fn || fe.contents {
+						continue
+					}
+					for _, de := range edges {
+						if de.to != pc.from {
+							continue
+						}
+						if e.noteParamCall(fe.caller, paramCall{fn: fe.from, from: de.from, to: pc.to, contents: pc.contents || de.contents}) {
+							changed = true
+						}
+					}
+				}
+			}
+		}
+		// A declared function handed where the callee calls it: what the function
+		// does with what it is handed, the caller does with what it handed along.
+		for _, sf := range e.siteFuncs {
+			edges := sites[siteKey{sf.site, sf.callee}]
+			for _, pc := range e.paramCalls[sf.callee] {
+				if pc.fn != sf.to {
+					continue
+				}
+				var fv, fc leak
+				if v := e.crossParams[sf.fn]; pc.to < len(v) {
+					fv = v[pc.to]
+				}
+				if c := e.crossContents[sf.fn]; pc.to < len(c) {
+					fc = c[pc.to]
+				}
+				if fv&leakRecv != 0 {
+					fv = fv&^leakRecv | leakGlobal
+				}
+				if fc&leakRecv != 0 {
+					fc = fc&^leakRecv | leakGlobal
+				}
+				for _, de := range edges {
+					if de.to != pc.from {
+						continue
+					}
+					if pc.contents || de.contents {
+						orContents(de.caller, de.from, fv|fc)
+						continue
+					}
+					if caller := e.crossParams[de.caller]; de.from < len(caller) && caller[de.from]&(fv&(leakGlobal|leakCog)) != fv&(leakGlobal|leakCog) {
+						caller[de.from] |= fv & (leakGlobal | leakCog)
+						changed = true
+					}
+					orContents(de.caller, de.from, fc)
+				}
+			}
 		}
 		for _, g := range e.crossEdges {
 			calleeC := e.crossContents[g.callee]
@@ -38596,6 +38759,87 @@ func (e *emitter) checkCrossArgs(cname string, args []Node, spread bool) {
 	}
 	e.checkCrossArgsIn(crosses, e.funcSourceName(cname), args)
 	e.checkContentArgsIn(e.crossContents[cname], e.funcSourceName(cname), args)
+	e.checkCallbackArgs(cname, e.funcSourceName(cname), args)
+}
+
+// checkCallbackArgs asks, of every function a call hands a callee that calls it
+// (paramCall), what that function does with what the callee hands it:
+// `each(a[:], keepGlobal)` for an `each` calling its f with its v put a slice of the
+// local a where keepGlobal keeps it, in silence, the summary of each having no way
+// to know which function it would call. The call site knows.
+func (e *emitter) checkCallbackArgs(cname, who string, args []Node) {
+	for _, pc := range e.paramCalls[cname] {
+		if pc.fn >= len(args) || pc.from >= len(args) {
+			continue
+		}
+		fn, shown := e.callbackSummaryName(args[pc.fn].ast)
+		if fn == "" {
+			continue
+		}
+		var fv, fc leak
+		if v := e.crossParams[fn]; pc.to < len(v) {
+			fv = v[pc.to]
+		}
+		if c := e.crossContents[fn]; pc.to < len(c) {
+			fc = c[pc.to]
+		}
+		if fv&leakRecv != 0 {
+			fv = fv&^leakRecv | leakGlobal
+		}
+		if fc&leakRecv != 0 {
+			fc = fc&^leakRecv | leakGlobal
+		}
+		a := args[pc.from]
+		var r frameRef
+		ok, flags := false, leak(0)
+		if pc.contents {
+			if flags = (fv | fc) & (leakGlobal | leakCog); flags != 0 {
+				r, ok = e.contentsRef(a.ast)
+			}
+		} else {
+			if fv&(leakGlobal|leakCog) != 0 {
+				r, ok = e.frameRefOf(a.ast)
+				flags = fv
+			}
+			if !ok && fc&(leakGlobal|leakCog) != 0 {
+				r, ok = e.contentsRef(a.ast)
+				flags = fc
+			}
+		}
+		if !ok {
+			continue
+		}
+		why := "stores it where it outlives every frame"
+		if flags&leakGlobal == 0 {
+			why = "hands it to another cog, which may outlive this function"
+		}
+		e.fail("%v: cannot pass %s to %s: it calls its parameter %d, %s, with it, which %s; %s",
+			e.f.tok(a.Pos()).Position(), r.what, who, pc.fn+1, shown, why, r.advice())
+		return
+	}
+}
+
+// callbackSummaryName names the summary of a function handed as an argument -- a
+// declared function, a function variable bound to one, or a literal, whose summary
+// is kept under its place -- and how to call it in a message.
+func (e *emitter) callbackSummaryName(ast []int32) (cname, shown string) {
+	if lit, ok := e.funcLitArg(ast); ok {
+		return e.litKey(lit), "a function literal"
+	}
+	name, ok := e.exprIdent(ast)
+	if !ok {
+		return "", ""
+	}
+	if ct, isVar := e.varType(name); isVar && e.isFuncCType(ct) {
+		if fn := e.funcValueOf[name]; fn != "" {
+			return fn, name
+		}
+		return "", ""
+	}
+	if _, isFunc := e.userFunc(name); isFunc {
+		return e.funcCallC(name), name
+	}
+	return "", ""
 }
 
 // checkContentArgsIn is checkCrossArgsIn for what the arguments' CONTENTS reach: a

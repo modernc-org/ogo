@@ -11062,6 +11062,90 @@ func main() {
 	}
 }
 
+// TestEmitCSummaryCallbacks: a function CALLING a function it was handed, `func
+// each(v []int, f func([]int)) { f(v) }`, hands its v to whatever the caller
+// passes as f, and only the call site knows what that is. The summary of each
+// could say nothing, so `each(a[:], keepGlobal)` kept a slice of the local a in a
+// package variable, in silence, until 2026-09-19. Each shape is called with a
+// callback keeping what it is handed and a local's storage, which must be refused,
+// and beside it the same over package storage, or with a callback keeping nothing.
+func TestEmitCSummaryCallbacks(t *testing.T) {
+	const head = `var gs []int
+
+var gp *int
+
+var gback [4]int
+
+var gx int
+
+func keepGlobal(v []int) { gs = v }
+
+func keepNone(v []int) {}
+
+func keepElem(v []*int) { gp = v[0] }
+
+func each(v []int, f func([]int)) { f(v) }
+
+func eachCopy(v []int, f func([]int)) {
+	g := f
+	g(v[1:])
+}
+
+func eachElem(v []*int, f func([]*int)) { f(v) }
+
+func apply(w []int, h func([]int)) { h(w) }
+
+func handOn(v []int, f func([]int)) { apply(v, f) }
+
+func outer(v []int) { each(v, keepGlobal) }
+
+func outerNone(v []int) { each(v, keepNone) }
+
+`
+	for _, test := range []struct {
+		kept, ok string
+	}{
+		{"each(a[:], keepGlobal)", "each(gback[:], keepGlobal)"},
+		{"each(a[:], keepGlobal)", "each(a[:], keepNone)"},
+		{"each(a[:], func(w []int) { gs = w })", "each(a[:], func(w []int) {})"},
+		{"eachCopy(a[:], keepGlobal)", "eachCopy(gback[:], keepGlobal)"},
+		{"eachElem([]*int{&x}, keepElem)", "eachElem([]*int{&gx}, keepElem)"},
+		{"handOn(a[:], keepGlobal)", "handOn(a[:], keepNone)"},
+		{"k := keepGlobal\n\teach(a[:], k)", "k := keepNone\n\teach(a[:], k)"},
+		{"outer(a[:])", "outerNone(a[:])"},
+	} {
+		for _, call := range []string{test.kept, test.ok} {
+			src := head + `func run() {
+	x := 1
+	var a [4]int
+	_, _ = x, a
+	` + call + `
+}
+
+func main() {
+	run()
+}
+`
+			t.Run(call, func(t *testing.T) {
+				fsys := fstest.MapFS{"main.ogo": &fstest.MapFile{Data: []byte(src)}}
+				pkg, err := Build(-1, []string{"main.ogo"}, fsys)
+				if err == nil {
+					err = EmitC(pkg, io.Discard, Checked())
+				}
+				refuse := call == test.kept
+				switch {
+				case refuse && err == nil:
+					t.Errorf("a reference to this frame left it:\n%s", src)
+				case refuse && !strings.Contains(err.Error(), "outlive"):
+					t.Errorf("refused, but not for its lifetime: %v", err)
+				case !refuse && err != nil:
+					t.Errorf("refused: %v\n%s", err, src)
+				}
+			})
+		}
+	}
+}
+
 func TestEmitCCalleeKeepsEscape(t *testing.T) {
 	const head = `type Box struct {
 	d []int

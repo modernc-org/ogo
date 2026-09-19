@@ -626,9 +626,15 @@ and a new way to read contents out of one a row in `TestEmitCSummaryContents`.
 A call the summary pass cannot name by the callee's own name is followed too
 (`TestEmitCSummaryIndirect`): an interface method is a call of every implementation
 (`ifaceMethodCallsOf`), and a function value is followed through the holds to the
-declared functions it may hold (`valueCalls`). Still open, SILENT: a callback received
-as a PARAMETER and called, `func each(v []int, f func([]int)) { f(v) }` -- the callee
-the summary would need is whatever the caller passes, which is higher-order.
+declared functions it may hold (`valueCalls`). A callback received as a PARAMETER
+and called, `func each(v []int, f func([]int)) { f(v) }`, is recorded as a
+`paramCall` -- which parameter is called with what of the others -- and the call site,
+which knows the function it passes, asks that function's summary
+(`checkCallbackArgs`); a callback handed on pairs the two edges of one call by their
+`site` (`TestEmitCSummaryCallbacks`). Still open, SILENT: a function calling its
+callback with its OWN frame, `func each(f func([]int)) { var b [4]int; f(b[:]) }` --
+by shape a local cannot be told from a scalar, and the call site may be emitted
+before the body that would say so.
 
 ## Notes
 

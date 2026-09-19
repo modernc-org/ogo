@@ -719,6 +719,13 @@ shipped section tells a reader on that version that they have behaviour they do 
 Each of these is the compiler refusing a program it used to accept, and each such
 program handed out a reference to storage that was gone by the time it was read.
 
+- **A callback is asked what it does with what it is handed.** A function calling
+  a function it was given, `func each(v []int, f func([]int)) { f(v) }`, hands its
+  v to whatever the caller passes, and `each(a[:], keepGlobal)` left a slice of the
+  local a where keepGlobal keeps it. The call site asks the function it passes --
+  declared, bound to a variable or written as a literal -- through a copy of the
+  callback, one handed on to another function, and a function passing a known one
+  itself.
 - **A callee is followed through the interface methods and function values it
   calls.** A function handing its parameter on to `kk.Keep(v)`, through an
   interface held in a package variable, a parameter or a local, or to `f(v)` for a
