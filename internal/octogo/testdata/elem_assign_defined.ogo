@@ -1,0 +1,32 @@
+// An element is assigned only a value of its type: a struct of another type is
+// refused where it is written, as the same store into a variable is.
+
+import "p"
+
+type A struct {
+	N int
+}
+
+type B struct {
+	N int
+}
+
+type Row [2]B
+
+func main() {
+	var arr [2]B
+	var r Row
+	var a A
+	var b B
+	var ts [2]p.T
+	// ERROR cannot use A\{\} of type A as type B in assignment
+	arr[0] = A{}
+	// ERROR cannot use a of type A as type B in assignment
+	r[1] = a
+	// ERROR cannot use b of type B as type p.T in assignment
+	ts[0] = b
+	arr[1] = b
+	r[0] = arr[1]
+	ts[1] = p.Make()
+	_, _, _ = arr, r, ts
+}

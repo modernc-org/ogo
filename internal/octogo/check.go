@@ -10780,6 +10780,16 @@ func (f *File) checkIndexAssign(s *Scope, base Token, rhsNode Node) {
 	if d.hasElemKind && !d.isPtr {
 		f.checkElemAssignType(s, d.elemKind, rhsNode)
 	}
+	// An element of a DEFINED type -- a struct above all, which has no Kind to be
+	// asked about: `arr[0] = A{}` for a [2]B reached the C compiler, which refused
+	// two struct types, where the same store into a variable was refused here.
+	if d.elemTypeName.IsValid() && !d.isPtr {
+		want := d.elemTypeName.Src()
+		if q := namedTypeQual(d.elemTypeNode); q.IsValid() {
+			want = q.Src() + "." + want
+		}
+		f.checkDefinedType(s, want, rhsNode, "assignment")
+	}
 }
 
 // indexingPointer reports that base names a POINTER an index does not apply to. Go

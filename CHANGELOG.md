@@ -182,6 +182,10 @@ shipped section tells a reader on that version that they have behaviour they do 
 
 ### Fixed
 
+- **An element is assigned only a value of its type.** `arr[0] = A{}` for a `[2]B`
+  passed the checker and the C compiler refused two struct types; the same store
+  into a variable was refused as Go refuses it. An element of another package's
+  struct type is compared as well.
 - **A scalar is refused where a slice is wanted, and a call's several results
   are checked against their targets.** `s = 1`, `s = n` for an int n, `take(n)`
   for a slice parameter, and `n, s = two(5)` passed the checker, and the C compiler
