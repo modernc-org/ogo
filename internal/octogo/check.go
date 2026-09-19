@@ -7359,7 +7359,16 @@ func (f *File) importedStruct(qual, name Token) (*TypeDeclaration, *TypeNodeStru
 	if !ok || imp.Import == nil || imp.Import.Pkg == nil || imp.Import.Pkg == noPkg {
 		return nil, nil, false
 	}
-	td, ok := imp.Import.Pkg.Scope.Declarations[name.Src()].(*TypeDeclaration)
+	ps := imp.Import.Pkg.Scope
+	td, ok := ps.Declarations[name.Src()].(*TypeDeclaration)
+	// An alias there, `lib.A` for a `type A = T`, is T's struct.
+	for i := 0; ok && i < 16 && td.TypeSpec != nil && td.TypeSpec.Alias; i++ {
+		tn, isIdent := td.TypeSpec.TypeNode.(*TypeNodeIdent)
+		if !isIdent || tn.Qualifier.IsValid() {
+			break
+		}
+		td, ok = ps.Declarations[tn.Name.Src()].(*TypeDeclaration)
+	}
 	if !ok || td.TypeSpec == nil {
 		return nil, nil, false
 	}
@@ -7634,6 +7643,14 @@ func compositeLitElements(lit Node) (r []litElement) {
 // in any order. "T{}" supplies none and zeroes every field.
 func (f *File) checkCompositeLit(s *Scope, t litType, hasID bool, fac, lit Node) {
 	id := t.name
+	// A literal of an alias of another package's type, `LT{...}` for `type LT =
+	// lib.T`, is a literal of lib.T, whose fields are spelled in lib: checked as the
+	// qualified literal is, rather than read in this package's scope.
+	if hasID && !t.qual.IsValid() && t.spelled == "" {
+		if name, qual := f.canonicalType(s, t.name, Token{}); qual.IsValid() {
+			t = litType{name: name, qual: qual}
+		}
+	}
 	elements := compositeLitElements(lit)
 	// Resolve the names the values use whatever the literal's type turns out to
 	// be, so an undefined name inside is reported even for a bad type. A key names
@@ -8406,8 +8423,12 @@ func (f *File) canonicalName(s *Scope, name string) string {
 	td, ok := s.find(name).(*TypeDeclaration)
 	for i := 0; ok && i < 16 && td.TypeSpec != nil && td.TypeSpec.Alias; i++ {
 		tn, isIdent := td.TypeSpec.TypeNode.(*TypeNodeIdent)
-		if !isIdent || tn.Qualifier.IsValid() {
+		if !isIdent {
 			break
+		}
+		if tn.Qualifier.IsValid() {
+			// `type LT = lib.T` is lib.T, as another package names its types.
+			return f.canonicalQualified(tn.Qualifier.Src() + "." + tn.Name.Src())
 		}
 		name = tn.Name.Src()
 		td, ok = s.find(name).(*TypeDeclaration)
@@ -8422,8 +8443,11 @@ func (f *File) canonicalType(s *Scope, name, qual Token) (Token, Token) {
 	td, ok := s.find(name.Src()).(*TypeDeclaration)
 	for i := 0; ok && i < 16 && td.TypeSpec != nil && td.TypeSpec.Alias; i++ {
 		tn, isIdent := td.TypeSpec.TypeNode.(*TypeNodeIdent)
-		if !isIdent || tn.Qualifier.IsValid() {
+		if !isIdent {
 			break
+		}
+		if tn.Qualifier.IsValid() {
+			return tn.Name, tn.Qualifier // `type LT = lib.T` is lib.T
 		}
 		name = tn.Name
 		td, ok = s.find(name.Src()).(*TypeDeclaration)
@@ -8440,7 +8464,14 @@ func (f *File) typeDeclNamed(s *Scope, name string) (*TypeDeclaration, *Scope, b
 		// Bounded: an alias cycle is reported at the declaration.
 		for i := 0; ok && i < 16 && td.TypeSpec != nil && td.TypeSpec.Alias; i++ {
 			tn, isIdent := td.TypeSpec.TypeNode.(*TypeNodeIdent)
-			if !isIdent || tn.Qualifier.IsValid() {
+			if !isIdent {
+				break
+			}
+			// `type LT = lib.T`: the questions are answered in lib, by T.
+			if tn.Qualifier.IsValid() {
+				if next, home, okNext := f.typeDeclNamed(s, tn.Qualifier.Src()+"."+tn.Name.Src()); okNext {
+					return next, home, true
+				}
 				break
 			}
 			next, okNext := s.find(tn.Name.Src()).(*TypeDeclaration)
@@ -8458,8 +8489,22 @@ func (f *File) typeDeclNamed(s *Scope, name string) (*TypeDeclaration, *Scope, b
 	if !ok || imp.Import == nil || imp.Import.Pkg == nil || imp.Import.Pkg.Scope == nil {
 		return nil, nil, false
 	}
-	td, ok := imp.Import.Pkg.Scope.Declarations[member].(*TypeDeclaration)
-	return td, imp.Import.Pkg.Scope, ok
+	ps := imp.Import.Pkg.Scope
+	td, ok := ps.Declarations[member].(*TypeDeclaration)
+	// An alias THERE, `lib.A` for a `type A = T`, is T, resolved where it is
+	// declared; one naming a third package's type is left as written.
+	for i := 0; ok && i < 16 && td.TypeSpec != nil && td.TypeSpec.Alias; i++ {
+		tn, isIdent := td.TypeSpec.TypeNode.(*TypeNodeIdent)
+		if !isIdent || tn.Qualifier.IsValid() {
+			break
+		}
+		next, okNext := ps.Declarations[tn.Name.Src()].(*TypeDeclaration)
+		if !okNext {
+			break // a predeclared target
+		}
+		td = next
+	}
+	return td, ps, ok
 }
 
 // collectIfaceMethods adds an interface's methods to set, expanding every EMBEDDED
@@ -15573,7 +15618,19 @@ func (f *File) checkAliasSpec(s *Scope, r *TypeSpecNode) {
 		return
 	}
 	if tn.Qualifier.IsValid() {
-		f.err(r.Name.Position(), "cannot alias another package's type yet")
+		// Another package's type, `type LT = lib.T`: it must be one, exported, and
+		// the questions about LT are then answered there (typeDeclNamed).
+		if !f.isImportQualifier(s, tn.Qualifier.Src()) {
+			f.err(tn.Qualifier.Position(), "undefined: %s", tn.Qualifier.Src())
+			return
+		}
+		if !token.IsExported(tn.Name.Src()) {
+			f.err(tn.Name.Position(), "cannot refer to unexported name %s.%s", tn.Qualifier.Src(), tn.Name.Src())
+			return
+		}
+		if _, _, ok := f.typeDeclNamed(s, tn.Qualifier.Src()+"."+tn.Name.Src()); !ok {
+			f.err(tn.Name.Position(), "undefined: %s.%s", tn.Qualifier.Src(), tn.Name.Src())
+		}
 		return
 	}
 	// A predeclared target resolves to no declaration and is fine; a named one

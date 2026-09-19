@@ -1,0 +1,23 @@
+// An alias of another package's type names one that package declares and
+// exports, and is that type: a value of another is not one.
+
+import "p"
+
+type Mine struct {
+	F int
+}
+
+// ERROR undefined: p.Missing
+type PX = p.Missing
+
+// ERROR cannot refer to unexported name p.t
+type Pt = p.t
+
+type PT = p.T
+
+func main() {
+	var m Mine
+	// ERROR cannot use m of type Mine as type PT in variable declaration
+	var a PT = m
+	_ = a
+}

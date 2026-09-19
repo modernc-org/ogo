@@ -32362,7 +32362,7 @@ const multiPkgWant = "300\nLOUD\n50\n6\n5\n45\n6 1000\n200\n207\n3 100\n4 9\n" +
 	"17 gx-7 true 10 19\n" +
 	"2 7 56 9 3 8 false 2 1 2 6 3 true 7\n" +
 	"[2]greet.Row [2]greet.Reader greet.Row\n" +
-	"123 p2 9 3 2 3\n1 1 2 1 102 3\n2 1 4 3 4 4 5 134\n21 10 100 200 7 0\n1 5 1 2 4 1 3 21 1 2 12 12 123 123 11\n10 21 110 21 14 true 3 42\n10 3 4\n6 10 2\n6 11\ntrue true\n" +
+	"123 p2 9 3 2 3\n1 1 2 1 102 3\n2 1 4 3 4 4 5 134\n21 10 100 200 7 0\n1 5 1 2 4 1 3 21 1 2 12 12 123 123 11\n10 21 110 21 14 true 3 42\n10 3 4\n6 10 2\n6 11\n6 5 8 6\ntrue true\n" +
 	"1234567891 1 3 8 14 30 39\n"
 
 var multiPkgProgram = map[string]string{
@@ -32379,6 +32379,9 @@ func scale(n int) int { return n + 1 }
 // main's own Point, same name (and method) as greet's: per-package mangling of
 // types and methods keeps them distinct in the single translation unit.
 type Point struct{ x, y int }
+
+// An alias of another package's type: that type, fields and methods.
+type LD = lib.Dev
 
 func (p Point) sum() int { return p.x + p.y }
 
@@ -32862,6 +32865,11 @@ func libShapes() {
 	// for a name shadowing it -- "lib (package name) is not a type".
 	byID := func(d *lib.Dev) int { return d.Id }
 	println(byID(&lib.D1), func(d lib.Dev) int { return d.Id + 1 }(lib.D2))
+	// Aliases across the boundary, this package's and that one's, through a
+	// declaration, a literal and a method call: "type LD = lib.Dev" was refused,
+	// and "lib.DevAlias{...}" was no struct.
+	var ld LD = lib.D1
+	println(ld.Val(), lib.DevAlias{Id: 5}.Val(), LD{Id: 8}.Val(), byID(&ld))
 	lib.P = nil
 	println(lib.P == nil, lib.None() == nil)
 }
@@ -33271,6 +33279,9 @@ return s
 	Next *Dev
 	Regs *[4]int
 }
+
+// DevAlias is another name for Dev, for main to name through the qualifier.
+type DevAlias = Dev
 
 func (d Dev) Val() int { return d.Id }
 

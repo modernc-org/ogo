@@ -1222,9 +1222,9 @@
 // literals may be written with either name, and the two compare as one type. A
 // method may not be declared ON an alias -- it would be a method on the target
 // through the back door, which is Go's rule too. The target must be a NAMED type
-// of this package or a predeclared one: a type literal ("type S = struct{...}")
-// and another package's name ("type T = lib.X") are refused until built, and an
-// alias cycle is refused where it is written.
+// -- of this package, of another one ("type T = lib.X", which must be exported),
+// or a predeclared one; a type literal ("type S = struct{...}") is refused until
+// built, and an alias cycle is refused where it is written.
 //
 //	TypeDecl = "type" ( TypeSpec | "(" { TypeSpec ";" } [ TypeSpec ] ")" ) .
 //	TypeSpec = identifier [ "=" ] Type .

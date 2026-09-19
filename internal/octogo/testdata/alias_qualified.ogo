@@ -1,0 +1,20 @@
+// COMPILE
+
+// An alias may name another package's type: it is that type, with its fields and
+// its methods, in a literal, a conversion, a declaration and an argument.
+
+import "p"
+
+type PT = p.T
+
+type PT2 = PT
+
+func get(t PT) int { return t.Get() }
+
+func main() {
+	var a PT = p.Make()
+	b := PT{F: 1}
+	var c p.T = b
+	var d PT2 = c
+	_ = get(a) + get(c) + d.F + p.Take(d)
+}

@@ -13388,7 +13388,9 @@ func (e *emitter) factorCompositeLit(kids []Node) (name string, lit Node, ok boo
 	if !isImport || !okFields || len(fields) != 1 {
 		return "", Node{}, false
 	}
-	return mangle(prefix, fields[0]), kids[2], true
+	// Through an alias of that package's, `lib.A{...}` for a `type A = T`, as a
+	// literal of this package's type is: the methods and fields are T's.
+	return e.unaliased(mangle(prefix, fields[0])), kids[2], true
 }
 
 // factorStructLitChain recognises a STRUCT literal read through a suffix, `P{1,
@@ -16115,7 +16117,9 @@ func (e *emitter) qualConvType(qualifier, name string) (string, bool) {
 	if !ok {
 		return "", false
 	}
-	mn := mangle(prefix, name)
+	// Through an alias of that package's, `lib.C(0)` for a `type C = Celsius`: the
+	// conversion is to what it names, whose methods are the ones a step calls.
+	mn := e.unaliased(mangle(prefix, name))
 	if _, isArr := e.namedArrays[mn]; isArr || e.namedTypes[mn] || e.isStruct(mn) {
 		return mn, true
 	}

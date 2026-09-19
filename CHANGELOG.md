@@ -20,6 +20,11 @@ shipped section tells a reader on that version that they have behaviour they do 
 
 ### Language
 
+- **An alias may name another package's type.** `type LT = lib.T` was refused;
+  it is lib.T now, its fields and methods with it, in a literal, a conversion, a
+  declaration and an argument. And another package's own alias, `lib.A{...}` for a
+  `type A = T` there, was no struct type in a literal and no type with methods in
+  a conversion; it is what it names.
 - **Method expressions.** `T.M` and `(*T).M` are the method as a function whose
   first parameter is the receiver -- `Point.Sum` is a `func(Point) int`,
   `(*Point).Scale` a `func(*Point, int)` -- called where they stand, bound to a
