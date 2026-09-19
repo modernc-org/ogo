@@ -752,6 +752,11 @@ shipped section tells a reader on that version that they have behaviour they do 
 Each of these is the compiler refusing a program it used to accept, and each such
 program handed out a reference to storage that was gone by the time it was read.
 
+- **A callee is followed through a literal it holds and through its parameters'
+  fields.** `f := func(d *Dev, w []int) { d.onData(w) }` called as `f(&gdev, v)`
+  was summarised as keeping nothing of v: a name holding a literal resolved to no
+  function, and a literal's parameters had no type to reach a field through, so a
+  call handing such a callee a local's storage was accepted.
 - **A callee is followed through the function values it calls, the literals it
   calls where they stand, and its defers.** `func relay(v []int) { handler(v) }`
   -- and the same through a field, an element, a local holding one, a call's

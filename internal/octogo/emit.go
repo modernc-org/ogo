@@ -9739,6 +9739,13 @@ func (e *emitter) litParamNames(lit Node) (funcInfo, bool) {
 		return funcInfo{}, false
 	}
 	fi := funcInfo{cname: e.litKey(lit), srcName: "func", body: body, locals: e.localTypeNames(body)}
+	// A literal's parameters are typed from its signature: nothing else has, this
+	// early. One naming a type its function declares does not resolve yet, and the
+	// error that would latch is put back.
+	saved := e.err
+	if fi.paramCType, _ = e.cParamTypes(sig); e.err != saved {
+		e.err, fi.paramCType = saved, nil
+	}
 	for n := range it(sig) {
 		if n.sym != ParameterList {
 			continue
@@ -9850,7 +9857,7 @@ func (e *emitter) collectFuncCross(fi funcInfo) {
 	// function of the value's type ("type:", unionSummary), which needs the type.
 	// This pass has no locals, so it types what it can: a parameter, the receiver
 	// and a package variable, and a local through what it holds.
-	paramTypes := e.funcParams[cname]
+	paramTypes := fi.paramCType
 	typeOf := func(n string) string {
 		switch i := slices.Index(params, n); {
 		case i >= 0:
@@ -10062,7 +10069,11 @@ func (e *emitter) collectFuncCross(fi funcInfo) {
 				return nil, nil, false
 			}
 			resolve([]held{{recv, heldAlias}}, func(n string, contents bool) {
-				if _, isFunc := e.userFunc(n); !contents && isFunc && n != recv {
+				switch _, isFunc := e.userFunc(n); {
+				case contents || n == recv:
+				case strings.HasPrefix(n, "lit@"):
+					callees = append(callees, n)
+				case isFunc:
 					callees = append(callees, e.funcCallC(n))
 				}
 			})
@@ -10227,7 +10238,11 @@ func (e *emitter) collectFuncCross(fi funcInfo) {
 			rcalls := e.stmtCalls(nodes)
 			for _, c := range e.valueCalls(nodes) {
 				resolve([]held{{c.name, heldAlias}}, func(n string, contents bool) {
-					if _, isFunc := e.userFunc(n); !contents && isFunc && n != c.name {
+					switch _, isFunc := e.userFunc(n); {
+					case contents || n == c.name:
+					case strings.HasPrefix(n, "lit@"):
+						rcalls = append(rcalls, stmtCall{callee: n, args: c.args})
+					case isFunc:
 						rcalls = append(rcalls, stmtCall{callee: e.funcCallC(n), args: c.args})
 					}
 				})
@@ -10348,7 +10363,14 @@ func (e *emitter) collectFuncCross(fi funcInfo) {
 		for _, c := range e.valueCalls(nodes) {
 			var callees []string
 			resolve([]held{{c.name, heldAlias}}, func(n string, contents bool) {
-				if _, isFunc := e.userFunc(n); !contents && isFunc && n != c.name {
+				if contents || n == c.name {
+					return
+				}
+				if strings.HasPrefix(n, "lit@") {
+					callees = append(callees, n) // a literal the name holds
+					return
+				}
+				if _, isFunc := e.userFunc(n); isFunc {
 					callees = append(callees, e.funcCallC(n))
 				}
 			})
@@ -10770,6 +10792,7 @@ func (e *emitter) funcParamNames(d []int32) (funcInfo, bool) {
 		fi.cname = methodCName(methodBaseType(rct), name)
 		fi.recvName, fi.recvCType = rn, rct
 	}
+	fi.paramCType = e.funcParams[fi.cname]
 	for n := range it(sig) {
 		if n.sym != ParameterList {
 			continue // parameters are the only ParameterList; results are ResultList/Type
@@ -10955,9 +10978,14 @@ type funcInfo struct {
 	ptrParam  []bool
 	ptrBase   []string
 	paramType []string // the DEFINED type a parameter is declared with, mangled, or ""
-	body      []int32
-	recvName  string
-	recvCType string
+	// paramCType is each parameter's C type, for the pass that has no locals to ask
+	// (collectFuncCross): a declared function's is known from Pass 0, a literal's is
+	// read from its signature -- and left out where that names a type only its
+	// function declares, which nothing can resolve before the bodies are walked.
+	paramCType []string
+	body       []int32
+	recvName   string
+	recvCType  string
 	// locals maps a local variable to the DEFINED type it was declared with, for
 	// the receivers only a body scan can name (see localTypeNames).
 	locals map[string]string
@@ -11105,6 +11133,12 @@ func (e *emitter) summaryReach(ast []int32) (out []held) {
 	ast = e.unparenExpr(ast)
 	if name, ok := e.exprIdent(ast); ok {
 		return []held{{name, heldAlias}}
+	}
+	// `f := func(w []int) { ... }`: the literal, by the key its summary is under --
+	// a name nothing else can spell, so it resolves as one and is what a call
+	// through f is a call of (valueCalls).
+	if lit, isLit := e.funcLitArg(ast); isLit {
+		return []held{{e.litKey(lit), heldAlias}}
 	}
 	if name, ok := e.addrOfRoot(ast); ok {
 		return []held{{name, heldAlias}}

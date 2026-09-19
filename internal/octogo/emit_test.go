@@ -11162,6 +11162,9 @@ var applyf = each
 		{"func relay(h *H, v []int) { hf(h, v) }", "relay(&gh, a[:])", "relay(&gh, gback[:])", false},
 		{"func relay(v []int) { applyf(keepGlobal, v) }", "relay(a[:])", "relay(gback[:])", false},
 		{"func relay1(v []int) { handler(v) }\n\nfunc relay(v []int) { relay1(v) }", "relay(a[:])", "relay(gback[:])", false},
+		{"func relay(v []int) {\n\tf := func(d *Dev, w []int) { d.onData(w) }\n\tf(&gdev, v)\n}", "relay(a[:])", "relay(gback[:])", false},
+		{"func relay(v []int) {\n\tf := func(d Dev, w []int) { d.onData(w) }\n\tf(gdev, v)\n}", "relay(a[:])", "relay(gback[:])", false},
+		{"func relay(v []int) {\n\tf := func(w []int) { println(len(w)) }\n\tf(v)\n}", "relay(a[:])", "relay(gback[:])", true},
 		{"func relay(v []int) { hn(v, 1) }", "relay(a[:])", "relay(gback[:])", true},
 		{"func relay(v []int) { func(w []int) { println(len(w)) }(v) }", "relay(a[:])", "relay(gback[:])", true},
 	} {

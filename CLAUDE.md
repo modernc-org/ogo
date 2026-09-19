@@ -662,8 +662,10 @@ new place a function value can live, or a new way to write one, is a new row the
 The SUMMARIES follow such a call too (`TestEmitCSummaryFuncValues`): a "type:" callee
 is an edge target like a function (`typeCallee`), its union refreshed on every pass of
 the fixed point as its members' summaries grow (`unionSummary`). This pass has no
-locals, so it types what it can -- a parameter (`funcParams`), the receiver, a package
-variable -- and a local through what it holds; a value only a call's result type
+locals, so it types what it can -- a parameter (a declared function's from `funcParams`,
+a literal's read from its signature, `funcInfo.paramCType`), the receiver, a package
+variable -- and a local through what it holds, a literal it holds among them (its
+summary key resolves as a name would); a value only a call's result type
 names is held as `?<type>` (`summaryCallResult`). A deferred call and a literal called
 where it stands are calls here as well; neither was, so `defer keep(v)` and
 `func(w []int) { gs = w }(v)` laundered a parameter. Still open: a call through a
