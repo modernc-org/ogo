@@ -246,6 +246,221 @@ func TestOnBoardStrings(t *testing.T) {
 	}
 }
 
+// bytesExercise is stringsExercise for the bytes package: every function it
+// exports, on the arguments where a plausible implementation and a correct one part
+// company -- an empty needle, a needle longer than the haystack, overlapping
+// matches, a multi-byte rune, invalid UTF-8, and white space that is white space
+// only to Unicode. The values are package byte arrays because `[]byte("x")` is a
+// copy the target cannot make, which is the whole reason this package exists.
+//
+// As for strings, what Go prints is the expectation: nothing here writes an answer
+// down.
+const bytesExercise = `import "bytes"
+
+var seafood = [7]byte{'s', 'e', 'a', 'f', 'o', 'o', 'd'}
+
+var foo = [3]byte{'f', 'o', 'o'}
+
+var zz = [2]byte{'z', 'z'}
+
+var gopher = [6]byte{'G', 'o', 'p', 'h', 'e', 'r'}
+
+var goo = [2]byte{'G', 'o'}
+
+var erb = [2]byte{'e', 'r'}
+
+var empty [0]byte
+
+var aaa = [3]byte{'a', 'a', 'a'}
+
+var aa = [2]byte{'a', 'a'}
+
+var keyval = [9]byte{'k', 'e', 'y', '=', 'v', 'a', 'l', 'u', 'e'}
+
+var eq = [1]byte{'='}
+
+var spaced = [8]byte{' ', 9, 'h', 'i', ' ', 10, ' ', ' '}
+
+var bad = [3]byte{'a', 0xff, 'b'}
+
+var hello = [6]byte{'h', 0xc3, 0xa9, 'l', 'l', 'o'}
+
+func searching() {
+	printf("%t %t %t %t\n", bytes.Contains(seafood[:], foo[:]), bytes.Contains(seafood[:], zz[:]),
+		bytes.HasPrefix(gopher[:], goo[:]), bytes.HasSuffix(gopher[:], erb[:]))
+	printf("%d %d %d %d\n", bytes.Index(seafood[:], foo[:]), bytes.Index(seafood[:], zz[:]),
+		bytes.LastIndex(aaa[:], aa[:]), bytes.LastIndex(seafood[:], zz[:]))
+}
+
+func emptyNeedle() {
+	printf("%d %d %d %d\n", bytes.Index(aaa[:], empty[:]), bytes.LastIndex(aaa[:], empty[:]),
+		bytes.Count(hello[:], empty[:]), bytes.Count(empty[:], empty[:]))
+}
+
+func sizes() {
+	printf("%d %t %t %t\n", bytes.Index(aa[:], aaa[:]), bytes.HasPrefix(aa[:], aaa[:]),
+		bytes.HasSuffix(empty[:], zz[:]), bytes.Equal(empty[:], empty[:]))
+}
+
+func counting() {
+	printf("%d %d %d\n", bytes.Count(aaa[:], aa[:]), bytes.Count(seafood[:], foo[:]),
+		bytes.Count(bad[:], empty[:]))
+}
+
+func runes() {
+	printf("%d %d %d\n", bytes.IndexRune(hello[:], 'é'), bytes.IndexRune(hello[:], 'z'),
+		bytes.IndexRune(bad[:], 0xFFFD))
+	printf("%d %d %d\n", bytes.IndexByte(gopher[:], 'p'), bytes.LastIndexByte(aaa[:], 'a'),
+		bytes.IndexAny(seafood[:], "aeiouy"))
+	printf("%d %t %t\n", bytes.IndexAny(seafood[:], ""), bytes.ContainsAny(seafood[:], "ui"),
+		bytes.ContainsRune(hello[:], 'é'))
+}
+
+func trimming() {
+	printf("[%s] [%s] [%s]\n", bytes.TrimSpace(spaced[:]), bytes.TrimSpace(empty[:]),
+		bytes.TrimPrefix(gopher[:], goo[:]))
+	printf("[%s] [%s] %d\n", bytes.TrimSuffix(gopher[:], erb[:]), bytes.TrimPrefix(gopher[:], zz[:]),
+		len(bytes.TrimSpace(spaced[:])))
+}
+
+func cutting() {
+	b, a, ok := bytes.Cut(keyval[:], eq[:])
+	printf("%s|%s|%t\n", b, a, ok)
+	b2, a2, ok2 := bytes.Cut(gopher[:], eq[:])
+	printf("%s|%s|%t %d\n", b2, a2, ok2, len(a2))
+	p, hadp := bytes.CutPrefix(gopher[:], goo[:])
+	q, hadq := bytes.CutSuffix(gopher[:], erb[:])
+	printf("%s %t %s %t\n", p, hadp, q, hadq)
+}
+
+func comparing() {
+	printf("%d %d %d %t\n", bytes.Compare(aa[:], aaa[:]), bytes.Compare(zz[:], aa[:]),
+		bytes.Compare(aa[:], aa[:]), bytes.Equal(aa[:], aaa[:]))
+}
+
+func main() {
+	searching()
+	emptyNeedle()
+	sizes()
+	counting()
+	runes()
+	trimming()
+	cutting()
+	comparing()
+}
+`
+
+// bytesGoTwin turns the exercise into the Go program it is modelled on.
+func bytesGoTwin(src string) string {
+	src = strings.Replace(src, `import "bytes"`, "package main\n\nimport (\n\t\"bytes\"\n\t\"fmt\"\n)", 1)
+	return printfCall.ReplaceAllString(src, "fmt.Printf(")
+}
+
+// TestBytesMatchesGo runs the exercise twice, once compiled by this compiler
+// against the embedded bytes package and once by Go against its own, and requires
+// the two to print the same bytes. See TestStringsMatchesGo for why it is written
+// this way.
+func TestBytesMatchesGo(t *testing.T) {
+	cc := ""
+	for _, c := range []string{"cc", "gcc", "clang"} {
+		if p, err := exec.LookPath(c); err == nil {
+			cc = p
+			break
+		}
+	}
+	if cc == "" {
+		t.Skip("no C compiler found; skipping the compare-with-Go test")
+	}
+	if _, err := exec.LookPath("go"); err != nil {
+		t.Skip("no go tool found; skipping the compare-with-Go test")
+	}
+	shim, err := filepath.Abs(filepath.Join("testdata", "hostp2"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	dir := t.TempDir()
+
+	goSrc := filepath.Join(dir, "twin.go")
+	if err := os.WriteFile(goSrc, []byte(bytesGoTwin(bytesExercise)), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	want, err := exec.Command("go", "run", goSrc).CombinedOutput()
+	if err != nil {
+		t.Fatalf("go run: %v\n%s", err, want)
+	}
+
+	fsys := fstest.MapFS{"main.ogo": &fstest.MapFile{Data: []byte(bytesExercise)}}
+	pkg, err := Build(-1, []string{"main.ogo"}, fsys)
+	if err != nil {
+		t.Fatalf("Build: %v", err)
+	}
+	var buf bytes.Buffer
+	if err := EmitC(pkg, &buf, Checked()); err != nil {
+		t.Fatalf("EmitC: %v", err)
+	}
+	csrc := filepath.Join(dir, "main.c")
+	if err := os.WriteFile(csrc, buf.Bytes(), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	bin := filepath.Join(dir, "prog")
+	ccOut, err := exec.Command(cc, "-std=gnu11", "-fwrapv", "-Wall", "-Wextra",
+		"-Wno-unused-function", "-Wno-format", "-I", shim, "-o", bin, csrc, "-lpthread").CombinedOutput()
+	if err != nil {
+		t.Fatalf("cc: %v\n%s\n--- emitted ---\n%s", err, ccOut, buf.String())
+	}
+	if len(bytes.TrimSpace(ccOut)) != 0 {
+		t.Errorf("cc warned:\n%s", ccOut)
+	}
+	got, err := exec.Command(bin).CombinedOutput()
+	if err != nil {
+		t.Fatalf("run: %v\n%s", err, got)
+	}
+	if g, w := strings.ReplaceAll(string(got), "\r\n", "\n"), string(want); g != w {
+		t.Errorf("bytes differs from Go's:\n%s", firstDiff(g, w))
+	}
+}
+
+// TestOnBoardBytes runs the same exercise on real hardware, for the reason
+// TestOnBoardStrings does: it is loops over bytes, which is where the two C
+// compilers have disagreed before.
+func TestOnBoardBytes(t *testing.T) {
+	port := os.Getenv("OGO_BOARD_PORT")
+	if port == "" {
+		t.Skip("set OGO_BOARD_PORT (e.g. /dev/ttyUSB0) to run the on-board tests")
+	}
+	if _, err := exec.LookPath("go"); err != nil {
+		t.Skip("no go tool found; skipping the compare-with-Go test")
+	}
+	ogo := buildOgoCLI(t)
+	dir := t.TempDir()
+
+	goSrc := filepath.Join(dir, "twin.go")
+	if err := os.WriteFile(goSrc, []byte(bytesGoTwin(bytesExercise)), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	want, err := exec.Command("go", "run", goSrc).CombinedOutput()
+	if err != nil {
+		t.Fatalf("go run: %v\n%s", err, want)
+	}
+
+	bin := filepath.Join(dir, "prog.binary")
+	if err := boardBuild(ogo, dir, "prog", bytesExercise, bin, ""); err != nil {
+		t.Fatalf("build: %v", err)
+	}
+	var out string
+	var matched bool
+	for attempt := 0; attempt < boardAttempts && !matched; attempt++ {
+		if attempt > 0 {
+			t.Logf("retry %d/%d (transient serial flake)", attempt, boardAttempts-1)
+		}
+		out, matched = boardLoad(ogo, port, bin, string(want))
+	}
+	if !matched {
+		t.Errorf("board output does not match Go's after %d attempts:\n%s",
+			boardAttempts, firstDiff(out, string(want)))
+	}
+}
+
 // mathExercise calls every function and names every constant the math package
 // exports, on the arguments where a plausible implementation and a correct one part
 // company: a negative half-way value for each of the four roundings, a negative zero

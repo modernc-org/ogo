@@ -30,7 +30,7 @@ var intrinsicImports = map[string]bool{"p2": true}
 // from a directory. They are ORDINARY OctoGo, compiled and mangled like any other
 // package -- nothing about them is intrinsic -- so the day one of them ships as
 // source on disk, the only change is where it is read from.
-var embeddedPkgs = map[string]string{"testing": testingSrc, "p2": p2Src, "strings": stringsSrc, "math": mathSrc}
+var embeddedPkgs = map[string]string{"testing": testingSrc, "p2": p2Src, "strings": stringsSrc, "bytes": bytesSrc, "math": mathSrc}
 
 // mathSrc is the math package. Every function whose body is missing is one call of
 // the C backend's math library, substituted at the call site (mathIntrinsics in
@@ -464,6 +464,334 @@ func (t *T) Skipped() bool { return t.skipped }
 // and nothing in it is C -- which is the point as much as the functions are. A
 // standard library a language cannot express is a standard library written in
 // something else.
+// bytesSrc is the bytes package: the allocation-free part of Go's. It is the
+// strings package over a byte slice, which is what a program reading a device has
+// -- the string conversion of a received buffer allocates, and comparing bytes by
+// hand is where a parser gets its edges wrong.
+const bytesSrc = `// Package bytes is the allocation-free part of Go's bytes.
+//
+// It is the strings package over a byte slice: everything here either answers a
+// question about one -- a bool, an int -- or returns a SUBSLICE of it, which costs
+// nothing, a slice being a pointer and a length. What is missing is what allocates.
+// Split and Fields want a slice of slices; Join, Repeat, Replace and ToUpper want
+// bytes that did not exist before; there is no heap here for either, and a program
+// that must build bytes writes into memory it owns.
+//
+// This is what a program reading a device reaches for: what arrives is bytes, and
+// string(b) is a copy the target cannot make. Each function means exactly what Go's
+// of the same name means, including for an empty argument, for a nil one -- which
+// is an empty one, as in Go -- and for invalid UTF-8.
+
+// Compare returns -1 if a sorts before b, 0 if they are equal, and 1 if a sorts
+// after b: the bytes in order, and where one is a prefix of the other, the shorter
+// first.
+func Compare(a, b []byte) int {
+	n := len(a)
+	if len(b) < n {
+		n = len(b)
+	}
+	for i := 0; i < n; i++ {
+		if a[i] != b[i] {
+			if a[i] < b[i] {
+				return -1
+			}
+			return 1
+		}
+	}
+	if len(a) < len(b) {
+		return -1
+	}
+	if len(a) > len(b) {
+		return 1
+	}
+	return 0
+}
+
+// Equal reports whether a and b hold the same bytes.
+func Equal(a, b []byte) bool {
+	if len(a) != len(b) {
+		return false
+	}
+	for i := 0; i < len(a); i++ {
+		if a[i] != b[i] {
+			return false
+		}
+	}
+	return true
+}
+
+// Contains reports whether subslice is within b.
+func Contains(b, subslice []byte) bool {
+	return Index(b, subslice) >= 0
+}
+
+// ContainsAny reports whether any rune of chars is within b.
+func ContainsAny(b []byte, chars string) bool {
+	return IndexAny(b, chars) >= 0
+}
+
+// ContainsRune reports whether r is within b.
+func ContainsRune(b []byte, r rune) bool {
+	return IndexRune(b, r) >= 0
+}
+
+// Count counts the non-overlapping instances of sep in s. If sep is empty it
+// returns 1 plus the number of runes in s, as Go's does.
+func Count(s, sep []byte) int {
+	if len(sep) == 0 {
+		n := 1
+		i := 0
+		for i < len(s) {
+			_, w := decodeRune(s[i:])
+			i = i + w
+			n = n + 1
+		}
+		return n
+	}
+	n := 0
+	i := 0
+	for i+len(sep) <= len(s) {
+		if Equal(s[i:i+len(sep)], sep) {
+			n = n + 1
+			i = i + len(sep)
+		} else {
+			i = i + 1
+		}
+	}
+	return n
+}
+
+// Cut slices s around the first instance of sep, returning what precedes it and
+// what follows it. found reports whether sep appears at all; if it does not, Cut
+// returns s, nil, false.
+func Cut(s, sep []byte) ([]byte, []byte, bool) {
+	i := Index(s, sep)
+	if i >= 0 {
+		return s[:i], s[i+len(sep):], true
+	}
+	var none []byte
+	return s, none, false
+}
+
+// CutPrefix returns s without its leading prefix and reports whether it had one.
+// If it did not, CutPrefix returns s, false.
+func CutPrefix(s, prefix []byte) ([]byte, bool) {
+	if HasPrefix(s, prefix) {
+		return s[len(prefix):], true
+	}
+	return s, false
+}
+
+// CutSuffix returns s without its trailing suffix and reports whether it had one.
+func CutSuffix(s, suffix []byte) ([]byte, bool) {
+	if HasSuffix(s, suffix) {
+		return s[:len(s)-len(suffix)], true
+	}
+	return s, false
+}
+
+// HasPrefix reports whether s begins with prefix.
+func HasPrefix(s, prefix []byte) bool {
+	return len(s) >= len(prefix) && Equal(s[:len(prefix)], prefix)
+}
+
+// HasSuffix reports whether s ends with suffix.
+func HasSuffix(s, suffix []byte) bool {
+	return len(s) >= len(suffix) && Equal(s[len(s)-len(suffix):], suffix)
+}
+
+// Index returns the index of the first instance of sep in s, or -1. An empty sep
+// is at 0, as Go has it.
+func Index(s, sep []byte) int {
+	n := len(sep)
+	if n == 0 {
+		return 0
+	}
+	if n > len(s) {
+		return -1
+	}
+	for i := 0; i+n <= len(s); i++ {
+		if Equal(s[i:i+n], sep) {
+			return i
+		}
+	}
+	return -1
+}
+
+// IndexAny returns the byte index of the first rune of s that is also in chars, or
+// -1 if there is none. An invalid encoding in s is the rune U+FFFD, so chars
+// holding U+FFFD finds the first bad byte -- which is what Go's does.
+func IndexAny(s []byte, chars string) int {
+	if len(chars) == 0 {
+		return -1
+	}
+	i := 0
+	for i < len(s) {
+		r, w := decodeRune(s[i:])
+		for _, c := range chars {
+			if c == r {
+				return i
+			}
+		}
+		i = i + w
+	}
+	return -1
+}
+
+// IndexByte returns the index of the first instance of c in b, or -1.
+func IndexByte(b []byte, c byte) int {
+	for i := 0; i < len(b); i++ {
+		if b[i] == c {
+			return i
+		}
+	}
+	return -1
+}
+
+// IndexRune returns the byte index of the first instance of r in s, or -1. Asking
+// for U+FFFD finds the first byte of an invalid encoding, as it does in Go, and a
+// rune that is no code point at all is nowhere.
+func IndexRune(s []byte, r rune) int {
+	i := 0
+	for i < len(s) {
+		c, w := decodeRune(s[i:])
+		if c == r {
+			return i
+		}
+		i = i + w
+	}
+	return -1
+}
+
+// LastIndex returns the index of the last instance of sep in s, or -1. An empty
+// sep is at len(s), as Go has it.
+func LastIndex(s, sep []byte) int {
+	n := len(sep)
+	if n == 0 {
+		return len(s)
+	}
+	for i := len(s) - n; i >= 0; i-- {
+		if Equal(s[i:i+n], sep) {
+			return i
+		}
+	}
+	return -1
+}
+
+// LastIndexByte returns the index of the last instance of c in s, or -1.
+func LastIndexByte(s []byte, c byte) int {
+	for i := len(s) - 1; i >= 0; i-- {
+		if s[i] == c {
+			return i
+		}
+	}
+	return -1
+}
+
+// TrimPrefix returns s without its leading prefix. If it has none, s is returned
+// unchanged.
+func TrimPrefix(s, prefix []byte) []byte {
+	if HasPrefix(s, prefix) {
+		return s[len(prefix):]
+	}
+	return s
+}
+
+// TrimSuffix returns s without its trailing suffix.
+func TrimSuffix(s, suffix []byte) []byte {
+	if HasSuffix(s, suffix) {
+		return s[:len(s)-len(suffix)]
+	}
+	return s
+}
+
+// TrimSpace returns s without leading and trailing white space, as Unicode defines
+// it -- not merely as ASCII does, which would leave a non-breaking space behind and
+// look right until it did not.
+func TrimSpace(s []byte) []byte {
+	start := 0
+	for start < len(s) {
+		r, w := decodeRune(s[start:])
+		if !isSpace(r) {
+			break
+		}
+		start = start + w
+	}
+	end := start
+	i := start
+	for i < len(s) {
+		r, w := decodeRune(s[i:])
+		i = i + w
+		if !isSpace(r) {
+			end = i
+		}
+	}
+	return s[start:end]
+}
+
+// decodeRune decodes the UTF-8 encoding at the start of b: the code point and the
+// bytes it took. An invalid, overlong, surrogate or out-of-range encoding is U+FFFD
+// and one byte, and an empty b is U+FFFD and no bytes -- which is what Go's
+// utf8.DecodeRune answers and what ranging a string here does.
+func decodeRune(b []byte) (rune, int) {
+	if len(b) == 0 {
+		return 0xFFFD, 0
+	}
+	b0 := b[0]
+	if b0 < 0x80 {
+		return rune(b0), 1
+	}
+	if b0 < 0xC0 {
+		return 0xFFFD, 1
+	}
+	if b0 < 0xE0 {
+		if len(b) < 2 || b[1]&0xC0 != 0x80 {
+			return 0xFFFD, 1
+		}
+		r := rune(b0&0x1F)<<6 | rune(b[1]&0x3F)
+		if r < 0x80 {
+			return 0xFFFD, 1
+		}
+		return r, 2
+	}
+	if b0 < 0xF0 {
+		if len(b) < 3 || b[1]&0xC0 != 0x80 || b[2]&0xC0 != 0x80 {
+			return 0xFFFD, 1
+		}
+		r := rune(b0&0x0F)<<12 | rune(b[1]&0x3F)<<6 | rune(b[2]&0x3F)
+		if r < 0x800 || (r >= 0xD800 && r <= 0xDFFF) {
+			return 0xFFFD, 1
+		}
+		return r, 3
+	}
+	if b0 < 0xF8 {
+		if len(b) < 4 || b[1]&0xC0 != 0x80 || b[2]&0xC0 != 0x80 || b[3]&0xC0 != 0x80 {
+			return 0xFFFD, 1
+		}
+		r := rune(b0&0x07)<<18 | rune(b[1]&0x3F)<<12 | rune(b[2]&0x3F)<<6 | rune(b[3]&0x3F)
+		if r < 0x10000 || r > 0x10FFFF {
+			return 0xFFFD, 1
+		}
+		return r, 4
+	}
+	return 0xFFFD, 1
+}
+
+// isSpace is unicode.IsSpace for the code points Go's bytes package trims.
+func isSpace(r rune) bool {
+	if r == ' ' || r == '\t' || r == '\n' || r == '\v' || r == '\f' || r == '\r' {
+		return true
+	}
+	if r == 0x85 || r == 0xA0 || r == 0x1680 {
+		return true
+	}
+	if r >= 0x2000 && r <= 0x200A {
+		return true
+	}
+	return r == 0x2028 || r == 0x2029 || r == 0x202F || r == 0x205F || r == 0x3000
+}
+`
+
 const stringsSrc = `// Package strings is the allocation-free part of Go's strings.
 //
 // Everything here either answers a question about a string -- a bool, an int -- or

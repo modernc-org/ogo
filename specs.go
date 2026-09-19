@@ -2769,8 +2769,21 @@
 // program, so the program does not carry it anywhere.
 //
 // The intrinsic package p2 and the packages the compiler carries as source (testing,
-// strings, math) are imported by their bare names whether or not there is a module,
-// as Go imports its standard library.
+// strings, bytes, math) are imported by their bare names whether or not there is a
+// module, as Go imports its standard library.
+//
+// strings and bytes are the allocation-free part of Go's packages of those names:
+// every function either answers a question about what it was given -- a bool, an
+// int -- or returns a SUBSTRING or a SUBSLICE of it, which costs nothing, a string
+// and a slice each being a pointer and a length. What they leave out is what
+// allocates: Split and Fields want a slice of slices, Join, Repeat, Replace and
+// ToUpper want bytes that did not exist before, and there is no heap here for
+// either; Builder is how a program builds a string, over memory it owns. bytes is
+// what a program reading a device reaches for, what arrives being bytes and
+// string(b) a copy the target cannot make. Each function means exactly what Go's of
+// the same name means, including for an empty argument, a nil one and invalid
+// UTF-8; what says so is a program calling every one of them, run under this
+// compiler and under Go, and required to print the same bytes.
 //
 // math is the elementary functions, each meaning exactly what Go's of the same name
 // means. Every one whose body the package does not carry is one call of the C

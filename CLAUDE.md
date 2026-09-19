@@ -418,8 +418,8 @@ still design-only.
   imports, transitively -- is emitted into **one C translation unit** in dependency
   order, with top-level symbols mangled into their package's namespace. `import
   "p2"` remains the one dotless, directory-less import, mapping to the hardware
-  intrinsics; `testing` and `strings` are likewise bare, module or not. There is no
-  standard library beyond those.
+  intrinsics; `testing`, `strings`, `bytes` and `math` are likewise bare, module or
+  not. There is no standard library beyond those.
 - **Two test suites.** `TestEmitCRun` builds each program in the `emitRunCases`
   table with the host C compiler and runs it against a pthread shim
   (`testdata/hostp2`). `TestOnBoard` builds the *same* table with the real

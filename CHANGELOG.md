@@ -20,6 +20,16 @@ shipped section tells a reader on that version that they have behaviour they do 
 
 ### Language
 
+- **A `bytes` package.** The allocation-free part of Go's, which is the `strings`
+  package over a byte slice: Compare, Equal, Contains, ContainsAny, ContainsRune,
+  Count, Cut, CutPrefix, CutSuffix, HasPrefix, HasSuffix, Index, IndexAny,
+  IndexByte, IndexRune, LastIndex, LastIndexByte, TrimPrefix, TrimSuffix and
+  TrimSpace. It is what a program reading a device wants: what arrives is bytes,
+  and `string(b)` is a copy the target cannot make, so comparing them meant writing
+  the loops by hand. Each function means exactly what Go's of the same name means,
+  including for an empty argument, a nil one and invalid UTF-8 -- the test runs one
+  program calling every one of them under this compiler and under Go and requires
+  the same bytes, on the host and on the board.
 - **A function literal uses the constants and the types of the function around
   it.** Neither is storage, so reading one captures nothing, and Go's literal
   reads them as it reads its own -- `const n = 4` and `type pair struct{...}` in a

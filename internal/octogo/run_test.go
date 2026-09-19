@@ -6217,6 +6217,109 @@ func main() {
 		want: "6 0 7\nthree 3 3\n6\nnone 0 0\n0\n10\n3 3 6\n17\n",
 	},
 	{
+		// The program the bytes package exists for: a command line arriving as bytes
+		// in a receive buffer, cut on a space, compared with a name, parsed and
+		// dispatched. string(rx[:n]) is a copy the target cannot make, so before
+		// bytes every one of these steps was a loop the program wrote itself. Every
+		// line is what real Go prints for the same program.
+		name: "a command parser over a byte buffer",
+		src: `import "bytes"
+
+var calls int
+
+type dev struct {
+	led   int
+	speed int
+	n     int
+}
+
+func (d *dev) set(v int) int {
+	calls = calls*10 + 1
+	d.led = v
+	d.n++
+	return d.led
+}
+
+var board dev
+
+var ledName = [3]byte{'l', 'e', 'd'}
+
+var speedName = [5]byte{'s', 'p', 'e', 'e', 'd'}
+
+var sep = [1]byte{' '}
+
+var slash = [1]byte{'/'}
+
+func atoi(b []byte) (int, bool) {
+	if len(b) == 0 {
+		return 0, false
+	}
+	n := 0
+	for i := 0; i < len(b); i++ {
+		c := b[i]
+		if c < '0' || c > '9' {
+			return 0, false
+		}
+		n = n*10 + int(c-'0')
+	}
+	return n, true
+}
+
+func doLed(arg []byte) int {
+	calls = calls*10 + 2
+	v, ok := atoi(arg)
+	if !ok {
+		return -1
+	}
+	return board.set(v)
+}
+
+func doSpeed(arg []byte) int {
+	calls = calls*10 + 3
+	head, tail, found := bytes.Cut(arg, slash[:])
+	num, okn := atoi(head)
+	den, okd := atoi(tail)
+	if !found || !okn || !okd || den == 0 {
+		return -1
+	}
+	board.speed = num / den
+	return board.speed
+}
+
+func dispatch(line []byte) (int, bool) {
+	line = bytes.TrimSpace(line)
+	name, arg, _ := bytes.Cut(line, sep[:])
+	arg = bytes.TrimSpace(arg)
+	switch {
+	case bytes.Equal(name, ledName[:]):
+		return doLed(arg), true
+	case bytes.Equal(name, speedName[:]):
+		return doSpeed(arg), true
+	}
+	return 0, false
+}
+
+func main() {
+	var rx [32]byte
+	inputs := [5]string{"  led 7 ", "speed 10/3", "led x", "nope", "speed 4/0"}
+	for i := 0; i < len(inputs); i++ {
+		n := copy(rx[:], inputs[i])
+		line := rx[:n]
+		v, ok := dispatch(line)
+		printf("%d %d %t %q %d\n", i, v, ok, bytes.TrimSpace(line), bytes.IndexByte(line, ' '))
+	}
+	printf("%d %d %d %d\n", board.led, board.speed, board.n, calls)
+}
+`,
+		want: `0 7 true "led 7" 0
+1 3 true "speed 10/3" 5
+2 -1 true "led x" 3
+3 0 false "nope" -1
+4 -1 true "speed 4/0" 5
+7 3 1 21323
+`,
+	},
+	{
 		// A literal uses the constants and the types of the function around it, as
 		// Go's does: they were "undefined" in one. The C constants are declared again
 		// in the lifted function, in a block of their own around the body, so its own
