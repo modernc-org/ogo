@@ -164,6 +164,9 @@ type Fuzzer struct {
 	// litSeq numbers the function LITERALS a program calls, so each carries a
 	// weight into the counter as a declared function does (see FuncDef.Weight).
 	litSeq int
+	// idleChan is the package channel a select's never-ready arm receives from
+	// (see idleChannel), written on first use.
+	idleChan string
 }
 
 func NewFuzzer(seed int64, out io.Writer) *Fuzzer {

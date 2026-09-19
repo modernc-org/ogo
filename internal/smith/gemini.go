@@ -1977,6 +1977,33 @@ func (n *RecvNode) Write(w io.Writer, indent int) {
 	fmt.Fprintf(w, "%s := <-%s", n.Name, n.Chan)
 }
 
+// SelectRecvNode takes the same value through a SELECT of two arms: the channel a
+// worker sends to, and one nothing ever sends to. Which arm runs is therefore not
+// a matter of timing -- the oracle could not predict it if it were -- while the
+// lowering still has to poll both, claim the ready one and leave the other's
+// bookkeeping as it found it. The arm never taken folds differently, so taking it
+// would show.
+type SelectRecvNode struct {
+	Name, Chan         string
+	IdleName, IdleChan string
+	Checksum           string
+}
+
+func (n *SelectRecvNode) Write(w io.Writer, indent int) {
+	writeIndent(w, indent)
+	fmt.Fprint(w, "select {\n")
+	writeIndent(w, indent)
+	fmt.Fprintf(w, "case %s := <-%s:\n", n.Name, n.Chan)
+	writeIndent(w, indent+1)
+	fmt.Fprintf(w, "%s = %s ^ %s\n", n.Checksum, n.Checksum, n.Name)
+	writeIndent(w, indent)
+	fmt.Fprintf(w, "case %s := <-%s:\n", n.IdleName, n.IdleChan)
+	writeIndent(w, indent+1)
+	fmt.Fprintf(w, "%s = %s ^ (%s * 7)\n", n.Checksum, n.Checksum, n.IdleName)
+	writeIndent(w, indent)
+	fmt.Fprint(w, "}")
+}
+
 // cogWorker is a generated function meant to run on a cog of its own: it sends a
 // fixed number of values into its channel and returns, which frees the cog.
 //
@@ -1989,6 +2016,17 @@ func (n *RecvNode) Write(w io.Writer, indent int) {
 type cogWorker struct {
 	Name, Chan, Param string
 	Sends             []Node
+}
+
+// idleChannel names a package channel nothing ever sends to, for a select's second
+// arm (SelectRecvNode). One per program is enough: what it is there for is to be
+// polled and not ready, and every select may poll the same one.
+func (f *Fuzzer) idleChannel() string {
+	if f.idleChan == "" {
+		f.idleChan = f.newVarName("idle")
+		fmt.Fprintf(f.Out, "var %s chan int\n\n", f.idleChan)
+	}
+	return f.idleChan
 }
 
 // genCogWorker writes a worker and its channel, both at package scope: a `go`
@@ -2025,9 +2063,16 @@ func (f *Fuzzer) genCogStmt(w *cogWorker, vm Machine, mem Memory) Node {
 	fn := &FuncDef{Name: w.Name, Params: []string{w.Param}}
 	for _, send := range w.Sends {
 		name := f.newVarName("r")
-		stmts = append(stmts, &RecvNode{Name: name, Chan: w.Chan})
 		newSum, _ := vm.Eval("^", mem.Load(f.ChecksumName), f.evalBody(fn, send, args, vm))
 		mem.Store(f.ChecksumName, newSum)
+		if f.Rand.Intn(3) == 0 {
+			// Through a SELECT, whose arm is decided by which channel has a sender
+			// and not by timing (see SelectRecvNode).
+			stmts = append(stmts, &SelectRecvNode{Name: name, Chan: w.Chan,
+				IdleName: f.newVarName("r"), IdleChan: f.idleChannel(), Checksum: f.ChecksumName})
+			continue
+		}
+		stmts = append(stmts, &RecvNode{Name: name, Chan: w.Chan})
 		stmts = append(stmts, &AssignStmtNode{
 			Lhs: f.ChecksumName,
 			Op:  "=",

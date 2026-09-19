@@ -948,7 +948,11 @@ program handed out a reference to storage that was gone by the time it was read.
   it, with the field read back after the call: the receiver rule parts the two
   forms there as it does at a method call, in a lowering that is newer. Two hundred
   and fifty seeds compile and check out on the host, and the ones carrying each new
-  shape on a P2-EDGE.
+  shape on a P2-EDGE. And it takes a worker's value through a SELECT of two arms --
+  the worker's channel and one nothing ever sends to -- so the arm that runs is
+  decided by the senders rather than by timing, while the lowering still has to
+  poll both and claim the ready one; that lowering is the target's locks, and
+  nothing generated it before.
 - Function semantics against Go on the host and a P2-EDGE: variadic calls with
   none, several and a spread slice the callee writes through, a two-result call
   forwarded as another's arguments, named results returned bare and swapped, a

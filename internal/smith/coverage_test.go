@@ -187,6 +187,12 @@ var generatedConstructs = []struct {
 	// (the emitter's label pass) and the checker's jump rules had no fuzz coverage
 	// until this construct; the two entries keep the guard and the target each a
 	// tested property.
+	// A SELECT taking a worker's value: two arms, one on the channel the worker
+	// sends to and one on a channel nothing ever sends to, so which arm runs is
+	// decided by the senders and not by timing.
+	{"select receive", `\n\s*select \{`},
+	{"select arm on a worker's channel", `\n\s*case r_\d+ := <-ch_\d+:`},
+	{"select arm never ready", `\n\s*case r_\d+ := <-idle_\d+:`},
 	// A METHOD EXPRESSION, the method as a function whose first parameter is the
 	// receiver, bound to a value and called through it. The two receivers part
 	// company here as they do at a method call: the pointer form is handed this
