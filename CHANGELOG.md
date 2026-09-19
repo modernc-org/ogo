@@ -550,6 +550,16 @@ shipped section tells a reader on that version that they have behaviour they do 
 Each of these is the compiler refusing a program it used to accept, and each such
 program handed out a reference to storage that was gone by the time it was read.
 
+- **A pointer method that keeps its receiver is not called on a local.** `func (c
+  *Counter) Save() { g = c }` stores what it is called on, and `lc.Save()` on a
+  local handed it the local's address -- which outlived the frame in silence, a
+  later read of `g.n` finding 32765 on the host where Go says 5 -- while `keep(&lc)`
+  with the same body was refused. The summaries asked what a method did with its
+  parameters and never with its receiver. They ask now, through a helper the
+  receiver is passed to, another method called on it and a result that is the
+  receiver, and the call is refused on every storage of the frame it reaches: a
+  local, a field or an element of one, a slice over a local array, a local pointer
+  to one, and an interface holding one.
 - **Parentheses hide nothing from the lifetime rules.** `return (a[:])` for a local
   array was accepted, and so were `g = (a[:])`, `keep((a[:]))`, `ch <- (a[:])`, `go
   work((a[:]))`, `return ([]int{1, 2, 3})`, `return (s)[1:]` and a declaration from

@@ -10130,6 +10130,111 @@ func idaddrs(v [1]*Box) [1]*Box { return v }
 // local POINTER as the receiver or the target, whose pointee -- a package variable,
 // or a local it was given the address of -- is the storage that matters. Each cell
 // has a neighbour that must still compile.
+// TestEmitCRecvKeptEscape: a pointer method that KEEPS its receiver -- stores it in a
+// package variable, sends it, keeps it through a helper or through another method of
+// its own -- is handed the address of whatever it is called on. On storage of this
+// frame that address outlived the frame in silence until 2026-09-19: the parameters'
+// summaries never asked about a receiver, and `lc.Save()` left g pointing into a dead
+// frame where `keep(&lc)` was refused. Every shape a receiver is reached by is a row,
+// each beside a control over package storage or a method that keeps nothing.
+func TestEmitCRecvKeptEscape(t *testing.T) {
+	const head = `type Counter struct {
+	n int
+}
+
+type Holder struct {
+	c Counter
+}
+
+type Saver interface {
+	Save()
+}
+
+var g *Counter
+
+var gc Counter
+
+var gh Holder
+
+var ga [2]Counter
+
+var ch chan *Counter
+
+func (c *Counter) Save() { g = c }
+
+func (c *Counter) Send() { ch <- c }
+
+func (c *Counter) Chain() { c.Save() }
+
+func keep(c *Counter) { g = c }
+
+func (c *Counter) Via() { keep(c) }
+
+func (c *Counter) Self() *Counter { return c }
+
+func (c *Counter) Bump() { c.n++ }
+
+func byParam(p *Counter) { p.Save() }
+
+func run() {
+	var lc Counter
+	var h Holder
+	var arr [2]Counter
+	_, _, _ = lc, h, arr
+`
+	const tail = `}
+
+func main() {
+	run()
+}
+`
+	for _, test := range []struct {
+		stmt string
+		want string // "" means the program must be accepted
+	}{
+		{"lc.Save()", "cannot call Save on lc: its receiver is stored where it outlives every frame"},
+		{"lc.Send()", "cannot call Send on lc: its receiver is handed to another cog"},
+		{"lc.Chain()", "cannot call Chain on lc"},
+		{"lc.Via()", "cannot call Via on lc"},
+		{"defer lc.Save()", "cannot call Save on lc"},
+		{"p := &lc\n\tp.Save()", "cannot call Save on lc"},
+		{"h.c.Save()", "cannot call Save on h"},
+		{"arr[1].Save()", "cannot call Save on arr"},
+		{"s := arr[:]\n\ts[1].Save()", "cannot call Save on s"},
+		{"var sv Saver = &lc\n\tsv.Save()", "cannot call Save on lc"},
+		{"g = lc.Self()", "cannot store the address of local variable lc in package variable g"},
+		{"x := lc.Self()\n\tg = x", "cannot store local x, which holds a pointer into local lc"},
+		{"byParam(&lc)", "cannot pass the address of local variable lc to byParam"},
+		// Controls: package storage, and a method that keeps nothing.
+		{"gc.Save()", ""},
+		{"p := &gc\n\tp.Save()", ""},
+		{"gh.c.Save()", ""},
+		{"ga[1].Save()", ""},
+		{"var sv Saver = &gc\n\tsv.Save()", ""},
+		{"g = gc.Self()", ""},
+		{"byParam(&gc)", ""},
+		{"lc.Bump()", ""},
+		{"h.c.Bump()", ""},
+	} {
+		t.Run(test.stmt, func(t *testing.T) {
+			src := head + "\t" + test.stmt + "\n" + tail
+			fsys := fstest.MapFS{"main.ogo": &fstest.MapFile{Data: []byte(src)}}
+			pkg, err := Build(-1, []string{"main.ogo"}, fsys)
+			if err == nil {
+				err = EmitC(pkg, io.Discard, Checked())
+			}
+			switch {
+			case test.want == "" && err != nil:
+				t.Errorf("refused: %v\n%s", err, src)
+			case test.want != "" && err == nil:
+				t.Errorf("accepted, want %q\n%s", test.want, src)
+			case test.want != "" && !strings.Contains(err.Error(), test.want):
+				t.Errorf("got %v, want %q", err, test.want)
+			}
+		})
+	}
+}
+
 func TestEmitCCalleeKeepsEscape(t *testing.T) {
 	const head = `type Box struct {
 	d []int

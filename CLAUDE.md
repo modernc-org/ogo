@@ -573,6 +573,13 @@ unmarked; and a local pointer was taken for the storage it points at. A new way 
 CALL something is a new row there. `TestEmitCFrameRefSinks` is the forms matrix turned
 around, five kinds through eight sinks with controls; it found the summaries following
 no helper that returns its argument, `g = id(v)`. A new SINK is a new row there.
+A method KEEPING ITS RECEIVER is the same hole from the other side
+(`TestEmitCRecvKeptEscape`, 2026-09-19): the summaries asked what a method did with
+its parameters and never with its receiver, so `lc.Save()` on a local, where `Save`
+stores `c` in a package variable, left a dangling pointer in silence while `keep(&lc)`
+was refused. `recvLeaks`/`recvEdges`/`retRecv` summarise it now; a new way to REACH a
+receiver -- a field, an element, a slice, an interface, a pointer -- is a new row
+there.
 
 ## Notes
 

@@ -4512,7 +4512,7 @@ func typeNameCollisions(src []byte, names map[string]bool) map[string]bool {
 // emitProgram is EmitC's one pass. rename lists the main-package types spelled
 // ogo_T_<name> in C (see typeMangle).
 func emitProgram(pkg *Package, w io.Writer, opts []EmitOption, rename map[string]bool) error {
-	e := &emitter{renameTypes: rename, renamedTypes: map[string]string{}, includes: map[string]bool{}, funcRet: map[string][]string{}, funcSliceParams: map[string][]string{}, funcVariadic: map[string]int{}, nilHelpers: map[string]bool{}, funcArrayRet: map[string]arrDim{}, funcArrayParams: map[string][]arrDim{}, anonStructNames: map[string]string{}, methodValueTypes: map[string]funcValueType{}, methodValueOf: map[string]string{}, funcParams: map[string][]string{}, methodPtr: map[string]bool{}, globals: map[string]string{}, structs: map[string][]structField{}, namedTypes: map[string]bool{}, typeNames: map[string]bool{}, interfaceTypes: map[string]bool{}, ifaceMethods: map[string][]ifaceMethod{}, anonIfaceNames: map[string]string{}, anonIfaceMinted: map[string]bool{}, ifaceASTs: map[string]ifaceAST{}, ifaceVTables: map[string]bool{}, namedUnderlying: map[string]string{}, namedArrays: map[string]arrDim{}, constInt: map[string]string{}, constVal: map[string]constant.Value{}, constWide: map[string]string{}, constStr: map[string]string{}, constUntyped: map[string]bool{}, constHuge: map[string]bool{}, arrays: map[string]arrDim{}, globalArrays: map[string]arrDim{}, sliceVars: map[string]string{}, globalSliceVars: map[string]string{}, chanElems: map[string]bool{}, chanInitElems: map[string]bool{}, chanSendElems: map[string]bool{}, chanRecvElems: map[string]bool{}, chanTryRecvElems: map[string]bool{}, chanTrySendElems: map[string]bool{}, chanGatedSendElems: map[string]bool{}, aliasOf: map[string]string{}, localTypes: map[string]string{}, gotoTargets: map[string]bool{}, chanCloseElems: map[string]bool{}, chanRecv2Elems: map[string]bool{}, mathWrappers: map[string]bool{}, chanElemByName: map[string]string{}, sliceElems: map[string]bool{}, sliceElemByName: map[string]string{}, appendElems: map[string]bool{}, tryappendElems: map[string]bool{}, appendSliceElems: map[string]bool{}, tryappendSliceEls: map[string]bool{}, appendokStructs: map[string]bool{}, copyElems: map[string]bool{}, resliceElems: map[string]bool{}, reslice3Elems: map[string]bool{}, clearElems: map[string]bool{}, minElems: map[string]bool{}, maxElems: map[string]bool{}, printSliceElems: map[string]bool{}, printStructs: map[string]string{}, printlnElems: map[string]bool{}, switchBreakUsed: map[string]bool{}, labelBreak: map[string]string{}, labelContinue: map[string]string{}, labelUsed: map[string]bool{}, eqStructs: map[string]bool{}, eqArrays: map[string]arrDim{}, frameBacked: map[string]bool{}, frameHolder: map[string]string{}, crossParams: map[string][]leak{}, crossInto: map[string][]uint32{}, ifaceSummaries: map[string]ifaceSummary{}, retParams: map[string][]bool{}, funcValueOf: map[string]string{}, crossNames: map[string]string{}, initNames: map[string]string{}, funcValueTypes: map[string]funcValueType{}, funcTypeNames: map[string]string{}, funcTypeRet: map[string][]string{}, funcTypeParams: map[string][]string{}, retStructs: map[string]string{}, retStructByKey: map[string]string{}, shiftHelpers: map[string][2]string{}, shiftCTypes: map[*int32]string{}, shiftWalked: map[shiftWalkKey]bool{}, shiftIn: map[*int32]bool{}, divHelpers: map[string][2]string{}, funcValueWrappers: map[string]string{}, deferReplay: -1, iota: -1}
+	e := &emitter{renameTypes: rename, renamedTypes: map[string]string{}, includes: map[string]bool{}, funcRet: map[string][]string{}, funcSliceParams: map[string][]string{}, funcVariadic: map[string]int{}, nilHelpers: map[string]bool{}, funcArrayRet: map[string]arrDim{}, funcArrayParams: map[string][]arrDim{}, anonStructNames: map[string]string{}, methodValueTypes: map[string]funcValueType{}, methodValueOf: map[string]string{}, funcParams: map[string][]string{}, methodPtr: map[string]bool{}, globals: map[string]string{}, structs: map[string][]structField{}, namedTypes: map[string]bool{}, typeNames: map[string]bool{}, interfaceTypes: map[string]bool{}, ifaceMethods: map[string][]ifaceMethod{}, anonIfaceNames: map[string]string{}, anonIfaceMinted: map[string]bool{}, ifaceASTs: map[string]ifaceAST{}, ifaceVTables: map[string]bool{}, namedUnderlying: map[string]string{}, namedArrays: map[string]arrDim{}, constInt: map[string]string{}, constVal: map[string]constant.Value{}, constWide: map[string]string{}, constStr: map[string]string{}, constUntyped: map[string]bool{}, constHuge: map[string]bool{}, arrays: map[string]arrDim{}, globalArrays: map[string]arrDim{}, sliceVars: map[string]string{}, globalSliceVars: map[string]string{}, chanElems: map[string]bool{}, chanInitElems: map[string]bool{}, chanSendElems: map[string]bool{}, chanRecvElems: map[string]bool{}, chanTryRecvElems: map[string]bool{}, chanTrySendElems: map[string]bool{}, chanGatedSendElems: map[string]bool{}, aliasOf: map[string]string{}, localTypes: map[string]string{}, gotoTargets: map[string]bool{}, chanCloseElems: map[string]bool{}, chanRecv2Elems: map[string]bool{}, mathWrappers: map[string]bool{}, chanElemByName: map[string]string{}, sliceElems: map[string]bool{}, sliceElemByName: map[string]string{}, appendElems: map[string]bool{}, tryappendElems: map[string]bool{}, appendSliceElems: map[string]bool{}, tryappendSliceEls: map[string]bool{}, appendokStructs: map[string]bool{}, copyElems: map[string]bool{}, resliceElems: map[string]bool{}, reslice3Elems: map[string]bool{}, clearElems: map[string]bool{}, minElems: map[string]bool{}, maxElems: map[string]bool{}, printSliceElems: map[string]bool{}, printStructs: map[string]string{}, printlnElems: map[string]bool{}, switchBreakUsed: map[string]bool{}, labelBreak: map[string]string{}, labelContinue: map[string]string{}, labelUsed: map[string]bool{}, eqStructs: map[string]bool{}, eqArrays: map[string]arrDim{}, frameBacked: map[string]bool{}, frameHolder: map[string]string{}, crossParams: map[string][]leak{}, recvLeaks: map[string]leak{}, retRecv: map[string]bool{}, crossInto: map[string][]uint32{}, ifaceSummaries: map[string]ifaceSummary{}, retParams: map[string][]bool{}, funcValueOf: map[string]string{}, crossNames: map[string]string{}, initNames: map[string]string{}, funcValueTypes: map[string]funcValueType{}, funcTypeNames: map[string]string{}, funcTypeRet: map[string][]string{}, funcTypeParams: map[string][]string{}, retStructs: map[string]string{}, retStructByKey: map[string]string{}, shiftHelpers: map[string][2]string{}, shiftCTypes: map[*int32]string{}, shiftWalked: map[shiftWalkKey]bool{}, shiftIn: map[*int32]bool{}, divHelpers: map[string][2]string{}, funcValueWrappers: map[string]string{}, deferReplay: -1, iota: -1}
 	for _, opt := range opts {
 		opt(e)
 	}
@@ -5448,6 +5448,9 @@ type emitter struct {
 	litFixable         bool                    // the literal being rendered has an owner that will emit those copies -- one that gives it a NAME. False in the positions that have no storage to copy into.
 	frameBacked        map[string]bool         // local slice variables whose backing array is storage of this frame, so returning one would dangle (see checkReturnBacking)
 	crossParams        map[string][]leak       // per function, how each parameter lets a value escape the caller's frame -- a cog crossing or a store that outlives it, directly or through a call (see collectCrossParams)
+	recvLeaks          map[string]leak         // a pointer method's RECEIVER kept where it outlives the call: leakGlobal, leakCog (see recvEdge)
+	recvEdges          []recvEdge              // how a receiver's keeping travels to callers (see recvEdge)
+	retRecv            map[string]bool         // a pointer method returns its receiver, so its result is what it was called on
 	crossInto          map[string][]uint32     // per function, which PARAMETERS each parameter is stored through, as a bitmask of their indices. leakRecv answers this for a method's receiver; a plain function has no receiver and needed the general form (see storedInPointerParam)
 	ifaceSummaries     map[string]ifaceSummary // "<iface>.<method>" -> the union of the summaries of every implementation, since which one a call reaches is the vtable's answer (see ifaceCallSummary)
 	retParams          map[string][]bool       // per function, which parameters a RESULT derives from, so a reference handed back out is followed to the storage it came from (see frameRefOf)
@@ -9120,6 +9123,10 @@ func (e *emitter) litParamNames(lit Node) (funcInfo, bool) {
 // collectCrossParams.
 func (e *emitter) collectFuncCross(fi funcInfo) {
 	cname, srcName, params, body, recvName := fi.cname, fi.srcName, fi.params, fi.body, fi.recvName
+	// A POINTER receiver is the address of whatever the method is called on; what
+	// the method keeps of it is summarised as a parameter's is (recvLeaks).
+	recvPtr := recvName != "" && e.isPointer(fi.recvCType)
+	isRecv := func(root string) bool { return recvPtr && root == recvName }
 	// A type switch BINDS a new name to the value it switched on, so a store of
 	// that name is a store of whatever the operand was. Without following it, a
 	// parameter reached a package variable through `switch x := p.(type)` with
@@ -9192,12 +9199,18 @@ func (e *emitter) collectFuncCross(fi funcInfo) {
 				if i := at(e.crossRoot(a.ast)); i >= 0 {
 					e.crossParams[cname][i] |= leakCog
 				}
+				if isRecv(e.crossRoot(a.ast)) {
+					e.recvLeaks[cname] |= leakCog
+				}
 				derived(a.ast, leakCog, -1)
 			}
 		default:
 			if v, ok := e.sendValue(nodes); ok {
 				if i := at(e.crossRoot(v)); i >= 0 {
 					e.crossParams[cname][i] |= leakCog
+				}
+				if isRecv(e.crossRoot(v)) {
+					e.recvLeaks[cname] |= leakCog
 				}
 				derived(v, leakCog, -1)
 			}
@@ -9206,6 +9219,9 @@ func (e *emitter) collectFuncCross(fi funcInfo) {
 			for _, v := range e.storedInPackageVar(nodes) {
 				if i := at(e.leakRoot(v)); i >= 0 {
 					e.crossParams[cname][i] |= leakGlobal
+				}
+				if isRecv(e.leakRoot(v)) {
+					e.recvLeaks[cname] |= leakGlobal
 				}
 				derived(v, leakGlobal, -1)
 			}
@@ -9241,6 +9257,9 @@ func (e *emitter) collectFuncCross(fi funcInfo) {
 				if i := at(e.leakRoot(v)); i >= 0 {
 					e.retParams[cname][i] = true
 				}
+				if isRecv(e.leakRoot(v)) {
+					e.retRecv[cname] = true
+				}
 			}
 			// `return g(p)`: whatever g hands back of its own parameter, this
 			// function hands back of the parameter it passed there.
@@ -9262,6 +9281,9 @@ func (e *emitter) collectFuncCross(fi funcInfo) {
 					e.crossEdges = append(e.crossEdges,
 						crossEdge{caller: cname, from: i, callee: c.callee, to: j, recvAt: argLocal, argOwner: owner})
 				}
+				if isRecv(e.crossRoot(a.ast)) {
+					e.recvEdges = append(e.recvEdges, recvEdge{caller: cname, from: -1, callee: c.callee, to: j})
+				}
 			}
 		}
 		// The same for a METHOD call, which stmtCalls cannot name. The edge
@@ -9274,6 +9296,18 @@ func (e *emitter) collectFuncCross(fi funcInfo) {
 					e.crossEdges = append(e.crossEdges, crossEdge{caller: cname, from: i,
 						callee: c.callee, to: j, recv: c.recv, recvAt: c.recvAt, argOwner: owner})
 				}
+				if isRecv(e.crossRoot(a.ast)) {
+					e.recvEdges = append(e.recvEdges, recvEdge{caller: cname, from: -1, callee: c.callee, to: j})
+				}
+			}
+			// The method's receiver is this function's own pointer receiver, or one
+			// of its pointer parameters: what the callee keeps of its receiver, this
+			// function keeps of that.
+			switch {
+			case c.recv == recvOwn && recvPtr:
+				e.recvEdges = append(e.recvEdges, recvEdge{caller: cname, from: -1, callee: c.callee, to: -1})
+			case c.recv == recvParam:
+				e.recvEdges = append(e.recvEdges, recvEdge{caller: cname, from: c.recvAt, callee: c.callee, to: -1})
 			}
 		}
 	})
@@ -9293,6 +9327,20 @@ type derivedEdge struct {
 	to     int
 	sink   leak // what the caller does with the result, or 0 for a store through a parameter
 	slot   int  // the parameter stored through, for crossInto; -1 otherwise
+}
+
+// recvEdge records that a function hands a POINTER it holds to a callee: its own
+// receiver (from < 0) or its parameter from, passed as the callee's parameter to or
+// -- to < 0 -- as the receiver of a method called on it. Whatever the callee keeps of
+// it, the caller keeps: a method that stores its receiver, `g = c`, is handed the
+// address of whatever it is called on, and `lc.Save()` on a local left that address
+// in g after the frame was gone -- silently, the parameters' summaries having never
+// asked about a receiver.
+type recvEdge struct {
+	caller string
+	from   int
+	callee string
+	to     int
 }
 
 // closeCrossParams propagates the crossing summary along the recorded call edges
@@ -9378,6 +9426,28 @@ func (e *emitter) closeCrossParams() {
 			}
 			if caller := e.crossParams[g.caller]; g.from < len(caller) && caller[g.from]&g.sink != g.sink {
 				caller[g.from] |= g.sink
+				changed = true
+			}
+		}
+		// A pointer handed on as a receiver or an argument: what the callee keeps of
+		// it, the caller keeps of its own receiver or parameter.
+		for _, g := range e.recvEdges {
+			var kept leak
+			if g.to < 0 {
+				kept = e.recvLeaks[g.callee]
+			} else if callee := e.crossParams[g.callee]; g.to < len(callee) {
+				kept = callee[g.to]
+			}
+			if kept &= leakGlobal | leakCog; kept == 0 {
+				continue
+			}
+			if g.from < 0 {
+				if e.recvLeaks[g.caller]&kept != kept {
+					e.recvLeaks[g.caller] |= kept
+					changed = true
+				}
+			} else if caller := e.crossParams[g.caller]; g.from < len(caller) && caller[g.from]&kept != kept {
+				caller[g.from] |= kept
 				changed = true
 			}
 		}
@@ -23616,6 +23686,7 @@ func (e *emitter) emitCallExpr(recv string, suffix []Node) bool {
 			// the implementations -- the call names no function for them to be
 			// looked up by, and asking nothing made this the way around them.
 			e.checkIfaceArgs(ct, method, e.callArgExprs(suffix[1].ast))
+			e.checkIfaceRecvKept(ct, method, recv)
 			if out, single := e.ifaceSingleOut(ct, method); single {
 				// One struct result, written through the out parameter; see
 				// outResultOf.
@@ -24475,6 +24546,14 @@ func (e *emitter) chainCText(base string, steps []Node) (text, ctype string, add
 				if !addr && !e.methodPtr[cname] && e.isPointer(cur.ctype) {
 					text, addr = e.hoistResult(text, cur.ctype, resultTok), true
 					resultTok = -1
+				}
+				// A pointer method that keeps its receiver, called on storage of this
+				// frame reached through the chain: `h.c.Save()`, `arr[1].Save()`.
+				if e.methodPtr[cname] && e.recvLeaks[cname]&(leakGlobal|leakCog) != 0 {
+					if storage, local := e.chainStorage(base, steps[:i]); local {
+						e.failRecvKept(cname, storage)
+						return "", "", false, false
+					}
 				}
 				recv, okr := e.chainReceiver(text, cur.ctype, addr, e.methodPtr[cname])
 				if !okr {
@@ -35346,6 +35425,13 @@ func (e *emitter) frameRefOf(ast []int32) (frameRef, bool) {
 				}
 			}
 		}
+		// A method returning its RECEIVER hands back the address of what it was
+		// called on: `g = lc.Self()` reaches lc as `g = &lc` does.
+		if cname != "" && e.retRecv[cname] && e.methodPtr[cname] {
+			if storage, local := e.chainStorage(recv, suffix[:len(suffix)-2]); local {
+				return addrRef(storage), true
+			}
+		}
 	}
 	return frameRef{}, false
 }
@@ -35844,6 +35930,7 @@ func (e *emitter) checkRecvLeak(cname, recv string, args []Node) {
 	if recv == "" {
 		return
 	}
+	e.checkRecvKept(cname, recv)
 	// The storage the receiver IS: the variable, or -- for a local pointer -- what
 	// it points at, which is what the callee stores into.
 	storage, local := e.storageBehind(recv)
@@ -35877,6 +35964,90 @@ func (e *emitter) checkRecvLeak(cname, recv string, args []Node) {
 		e.fail("%v: cannot pass %s to %s: it is stored in the receiver %s, which outlives %s; %s",
 			e.f.tok(a.Pos()).Position(), r.what, e.funcSourceName(cname), recv, outlives, r.advice())
 		return
+	}
+}
+
+// checkRecvKept refuses calling a pointer method that KEEPS its receiver -- stores it
+// where it outlives every frame, sends it, hands it to a goroutine, directly or
+// through what it calls -- on storage this frame owns: the method is handed the
+// address of that storage and keeps it past the frame's end (see recvEdge).
+func (e *emitter) checkRecvKept(cname, recv string) {
+	kept := e.recvLeaks[cname] & (leakGlobal | leakCog)
+	if kept == 0 || !e.methodPtr[cname] {
+		return
+	}
+	storage, local := e.storageBehind(recv)
+	if !local {
+		// A parameter's storage is the caller's -- unless it is a VALUE, a copy in
+		// this frame, whose address the method is handed.
+		ct, isVar := e.varType(recv)
+		if !e.curParams[recv] || !isVar || e.isPointer(ct) {
+			return
+		}
+		storage = recv
+	}
+	e.failRecvKept(cname, storage)
+}
+
+// failRecvKept reports a call of a method that keeps its receiver, on storage of
+// this frame.
+func (e *emitter) failRecvKept(cname, storage string) {
+	how := "stored where it outlives every frame"
+	if e.recvLeaks[cname]&leakGlobal == 0 {
+		how = "handed to another cog"
+	}
+	e.fail("cannot call %s on %s: its receiver is %s, and %s is this function's; declare it at package scope",
+		e.funcSourceName(cname), e.displayName(storage), how, e.displayName(storage))
+}
+
+// chainStorage names the storage a run of fields and indexes from base reaches, as
+// far as the lifetime rules need it: local says it is this frame's -- base is a
+// local value, a local pointer to one, or a slice over a local array, and no step
+// went on through a pointer or a slice to storage somewhere else, which is left
+// unknown and so not local.
+func (e *emitter) chainStorage(base string, steps []Node) (storage string, local bool) {
+	storage, local = e.storageBehind(base)
+	if !local {
+		return storage, false
+	}
+	for k, st := range steps {
+		if st.sym != Selector && st.sym != Index {
+			return storage, false
+		}
+		cur, ok := e.accessChainType(base, steps[:k])
+		if !ok {
+			return storage, false
+		}
+		switch {
+		case cur.slice:
+			if k != 0 || !e.frameBacked[base] {
+				return storage, false
+			}
+		case e.isPointer(cur.ctype):
+			// The root's own pointer was followed by storageBehind; any other
+			// leads to storage this cannot see.
+			if k != 0 {
+				return storage, false
+			}
+		}
+	}
+	return storage, true
+}
+
+// checkIfaceRecvKept is checkRecvKept for a call through an interface: the value is
+// a pointer to storage of this frame -- `var s Saver = &lc` -- and some type
+// implementing the interface keeps its receiver in the method called.
+func (e *emitter) checkIfaceRecvKept(iface, method, recv string) {
+	origin, isLocal := strings.CutPrefix(e.frameHolder[recv], "local ")
+	if !isLocal {
+		return
+	}
+	for _, ct := range e.ifaceImplementors(iface) {
+		cname := methodCName(methodBaseType(ct), method)
+		if e.methodPtr[cname] && e.recvLeaks[cname]&(leakGlobal|leakCog) != 0 {
+			e.failRecvKept(cname, origin)
+			return
+		}
 	}
 }
 
