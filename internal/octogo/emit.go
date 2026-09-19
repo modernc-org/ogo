@@ -10695,8 +10695,12 @@ func (e *emitter) liftFuncLit(lit Node) (string, bool) {
 	}
 
 	// Recorded before the body is walked, so a literal that calls itself through a
-	// variable, or another literal lifted after it, resolves.
-	e.funcRet[cname] = nil
+	// variable, or another literal lifted after it, resolves -- and with its RESULT
+	// types, which the prototype and every return in the body name the result
+	// struct by: recorded as nil, a literal of several results was emitted with no
+	// return type at all and `return (){...}` for each of its returns.
+	_, litRes := e.cSig(sig)
+	e.funcRet[cname] = litRes
 	e.funcValueTypes[cname] = e.funcSigCParts(sig)
 	e.funcSliceParams[cname] = e.paramSliceTypes(sig)
 	if _, at := e.variadicElem(sig); at >= 0 {
@@ -11313,18 +11317,6 @@ func (e *emitter) emitFuncLitStmt(nodes []Node) {
 	if len(suffix) != 1 || suffix[0].sym != CallSuffix {
 		e.fail("a function literal standing as a statement must be called, func() { ... }(), and nothing more")
 		return
-	}
-	// A literal with SEVERAL results is lifted with the result struct a declared
-	// function's pre-pass registers, which a literal called where it stands never
-	// went through: its prototype came out with no return type at all. Bound to a
-	// variable first it takes the function-value lowering, which has one.
-	for n := range it(nodes[0].ast) {
-		if n.sym == Signature {
-			if _, res := e.cSig(n.ast); len(res) > 1 {
-				e.fail("a function literal with several results cannot be called as a statement yet; bind it to a variable and call that")
-				return
-			}
-		}
 	}
 	cname, ok := e.liftFuncLit(nodes[0])
 	if !ok {
@@ -30491,6 +30483,28 @@ func (e *emitter) emitDestructure(targets []assignTarget, declare []bool, rhs []
 			}
 			return
 		}
+		// `v, ok := func() (int, bool) { ... }()`: a literal called where it
+		// stands, which has no name for the paths below either.
+		if lit, lsuffix, isLit := e.factorFuncLit(e.factorKids(rhs)); isLit && len(lsuffix) == 1 && lsuffix[0].sym == CallSuffix {
+			name, lifted := e.liftFuncLit(lit)
+			if !lifted {
+				return
+			}
+			res := e.funcRet[name]
+			if len(res) != len(targets) {
+				e.fail("multiple-assignment target/result count mismatch")
+				return
+			}
+			tmp := e.newTmp()
+			e.ind()
+			e.emit(e.retStructNameOf(res) + " " + tmp + " = " + name + "(")
+			e.emitCallArgs(name, lsuffix[0].ast)
+			e.emit(");\n")
+			for i, tgt := range targets {
+				e.emitStore(tgt, declare[i], res[i], fmt.Sprintf("%s._%d", tmp, i))
+			}
+			return
+		}
 		e.fail("multiple assignment requires a single function call on the right-hand side")
 		return
 	}
@@ -34443,6 +34457,17 @@ func (e *emitter) emitExprNode(n Node) {
 					e.fail("a function literal may only be called where it stands")
 					return
 				}
+				// A VALUE of a function type returning a struct or several results
+				// points at a wrapper writing them through an out parameter, never at
+				// a function returning a struct (see funcValueWrapper), which is how a
+				// named function is taken as one. The literal itself was taken: the
+				// host's compiler refused the pointer, and the target's warned and
+				// called it with an out parameter it does not have -- `h := func() T
+				// { return T{N: 9} }` printed 0 for h().N on a P2-EDGE.
+				if w, wrapped := e.funcValueWrapper(cname); wrapped {
+					e.emit(w)
+					return
+				}
 				e.emit(cname)
 				return
 			}
@@ -35971,6 +35996,23 @@ func (e *emitter) frameRefOf(ast []int32) (frameRef, bool) {
 	// provenance back out: `id(&x)` reaches x's storage exactly as `&x` does. Without
 	// this a single call launders a reference past every sink -- `return id(&x)`
 	// compiled, and so did storing or sending one.
+	// `func(q *int) *int { return q }(&x)`, a literal called where it stands: what
+	// its summary -- collected under the literal's place -- says it hands back, as a
+	// named helper's does. It handed back nothing, so `g = func(...){...}(&x)`
+	// stored the address of a local where `id := func(...){...}; g = id(&x)` did not.
+	if kids := e.factorKids(ast); kids != nil {
+		if lit, lsuffix, isLit := e.factorFuncLit(kids); isLit && len(lsuffix) == 1 && lsuffix[0].sym == CallSuffix {
+			derives := e.retParams[e.litKey(lit)]
+			for i, a := range e.callArgExprs(lsuffix[0].ast) {
+				if i < len(derives) && derives[i] {
+					if r, ok := e.frameRefOf(a.ast); ok {
+						return r, true
+					}
+				}
+			}
+			return frameRef{}, false
+		}
+	}
 	// `(*C).Self(&lc)`, a method expression called: what the function it is lifted
 	// to hands back of its arguments -- the receiver among them.
 	if kids := e.factorKids(ast); kids != nil {

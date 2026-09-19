@@ -533,9 +533,7 @@ Go admits and the target's compiler refuses; printf's `%v` of an
 interface value (fmt prints what it holds, `&{1 2}` for a struct pointer) and of a
 struct under a width; a named ARRAY result returned by name, `func f() (r
 [2]int) { ...; return r }`; a `switch` or `for` init that declares an array, `switch a :=
-[2]int{1, 2}; len(a) {` (the `if` form works); a function literal with SEVERAL results
-called where it stands, `v, ok := func() (int, bool) { ... }()` (bound to a variable
-first it works); a PARENTHESISED HEAD the emitter cannot peel -- one holding a unary
+[2]int{1, 2}; len(a) {` (the `if` form works); a PARENTHESISED HEAD the emitter cannot peel -- one holding a unary
 operator or a suffix of its own -- read or written through a suffix: `(&p).x`,
 `(&arr)[1:]`, `(get()).x`, `(*get()).x`, `(arr[1:])[1:]`, `("hello")[1:]`, the targets
 `(p).x = 5` and `(&p).x = 3`, and the send `(&bus.ports[1]).ch <- 5` (`(*p).x`, `(a)[i]`,

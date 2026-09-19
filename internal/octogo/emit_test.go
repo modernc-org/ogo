@@ -10481,6 +10481,9 @@ func main() {
 		{"bus.fn(a[:])", "cannot pass a slice backed by local a to keep"},
 		{"defer bus.fn(a[:])", "cannot pass a slice backed by local a to keep"},
 		{"id := func(xs []int) []int { return xs }\n\tg = id(a[:])", "cannot store a slice backed by local a in package variable g"},
+		// A literal called where it stands, handing back its argument.
+		{"g = func(xs []int) []int { return xs }(a[:])", "cannot store a slice backed by local a in package variable g"},
+		{"s, n := func(xs []int) ([]int, int) { return xs, 1 }(a[:])\n\tg = s\n\tback[0] = n", "cannot store local s, which holds a pointer into local a"},
 		// A method expression, its receiver the first argument -- called, deferred
 		// and bound to a variable.
 		{"(*Box).set(&gb, a[:])", "cannot pass a slice backed by local a to (*Box).set: it is stored through gb, which outlives this function"},
@@ -10522,6 +10525,8 @@ func main() {
 		{"p := &gb\n\tgp = &p.d[0]\n\tq := *p\n\tgb = q", ""},
 		{"bus.dev.Keep(back[:])\n\tdefer bus.fn(back[1:])\n\tf := gb.set\n\tf(back[2:])", ""},
 		{"id := func(xs []int) []int { return xs }\n\tback[0] = len(id(a[:]))", ""},
+		{"g = func(xs []int) []int { return xs }(back[:])", ""},
+		{"back[0] = len(func(xs []int) []int { return xs }(a[:]))", ""},
 		{"var lb Box\n\t(*Box).set(&lb, a[:])\n\tback[0] = len(lb.d)", ""},
 		{"(*Box).set(&gb, back[:])\n\tf := (*Box).set\n\tf(&gb, back[1:])", ""},
 		{"var lob OuterBox\n\tlob.set(a[:])\n\tback[0] = len(lob.d)", ""},

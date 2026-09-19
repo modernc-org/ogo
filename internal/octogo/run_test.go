@@ -27779,6 +27779,64 @@ func main() {
 		want: "value 3\ndeferred 2\n",
 	},
 	{
+		// A function LITERAL whose results are a struct, or several, taken as a
+		// value: bound, passed, held in a field and in a table. Such a value points
+		// at a wrapper writing the results through an out parameter, as a named
+		// function's does (funcValueWrapper); the literal itself was taken, and the
+		// target's compiler only warned -- `h := func() T { return T{N: 9} }`
+		// printed 0 for h().N on a P2-EDGE. And a literal of several results was
+		// lifted with no return type at all, its results recorded as none.
+		//
+		// Every line of this prints what real Go prints for the same program.
+		name: "function literals of struct and several results as values",
+		src: `type T struct {
+	N  int
+	OK bool
+}
+
+type Op struct {
+	f func(int) T
+}
+
+func apply(f func(int) T, k int) T { return f(k) }
+
+func main() {
+	two := func(k int) (int, bool) { return k * 2, k > 1 }
+	a, b := two(3)
+	println(a, b)
+	h := func() T { return T{N: 9, OK: true} }
+	println(h().N, h().OK)
+	var g func(int) T = func(k int) T { return T{N: k, OK: k > 2} }
+	println(g(5).N, g(1).OK)
+	println(apply(func(k int) T { return T{N: k + 1} }, 6).N)
+	o := Op{f: func(k int) T { return T{N: k * 3} }}
+	println(o.f(4).N)
+	fs := []func(int) T{func(k int) T { return T{N: -k} }}
+	println(fs[0](7).N)
+}
+`,
+		want: "6 true\n9 true\n5 false\n7\n12\n-7\n",
+	},
+	{
+		// A function literal of several results called where it stands:
+		// destructured, and as a statement whose results are dropped. The first
+		// was "multiple assignment requires a single function call on the
+		// right-hand side", the second refused by name -- both for want of the
+		// result struct, which the literal was lifted without.
+		//
+		// Every line of this prints what real Go prints for the same program.
+		name: "a function literal of several results called where it stands",
+		src: `func main() {
+	v, ok := func() (int, bool) { return 7, true }()
+	println(v, ok)
+	a, b := func(k int) (int, int) { return k, k * k }(5)
+	println(a, b)
+	func() (int, bool) { return 1, false }()
+}
+`,
+		want: "7 true\n5 25\n",
+	},
+	{
 		// A function literal called where it stands, as a statement of its own, which
 		// the grammar had no production for: a statement could not begin with "func".
 		// It is lifted as a literal is anywhere and called by name; arguments are how a

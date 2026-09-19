@@ -182,6 +182,17 @@ shipped section tells a reader on that version that they have behaviour they do 
 
 ### Fixed
 
+- **A function literal of a struct result, or of several, works as a value.** Bound
+  to a variable, passed, held in a field or a table, `h := func() T { ... }` was
+  taken as the literal itself where such a value must point at a wrapper writing
+  the results through an out parameter, as a named function's does: the host's
+  compiler refused the pointer and the target's only warned, and `h().N` printed 0
+  on a P2-EDGE for a literal returning `T{N: 9}`. A literal of several results was
+  lifted with no return type at all; called where it stands it was refused,
+  destructured or as a statement, and bound to a variable it did not compile. And a
+  literal called where it stands that hands back its argument, `g = func(q *int)
+  *int { return q }(&x)`, handed nothing to the lifetime rules, which a helper
+  bound to a variable first had been held to.
 - **Another package's function used as a value is type-checked.** `var h
   func(int) string = lib.Add`, and a call through `add := lib.Add` with the wrong
   arguments, `add(1)`, passed the checker and reached the C compiler: nothing
