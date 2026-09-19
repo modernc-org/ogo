@@ -613,12 +613,19 @@ shape a value is written in (`summaryRoots`, `summaryHolds`, 2026-09-19): they r
 the parameter where it was named, so `w := v; gs = w`, `gs = v[1:]`, `gb = B{v}` and
 a list, an append, a for clause or a send of any of them kept a view of the caller's
 frame in silence. The analysis is by SHAPE -- no local has a type when summaries are
-collected -- so a field or an element READ is left out: it carries the CONTENTS of
-its root, and `gn = v[0]` would otherwise refuse every caller passing a local slice.
-What a callee does with those contents -- `gp = v[0]` for a `v []*int`, `gs = p.xs`
-through a pointer -- is still unsummarised: a SILENT gap, the next one to close. A
-new way for a callee to hold or write a value is a row in
-`TestEmitCSummaryThroughLocals`.
+collected -- so how a value reaches a name has a KIND (`heldKind`): as its value, as
+a part of something larger, or as its CONTENTS, an element or a field read out of it.
+Contents are summarised apart (`crossContents`, `retContents`, `recvContents`) and a
+call site asks what the argument's contents reach (`contentsRef`): `gp = v[0]` of a
+`v []*int` refuses `keep([]*int{&x})`, while `gn = v[0]` of a `[]int` refuses
+nothing. The kinds cannot be one: a copy's contents are the original's contents, a
+struct literal's contents are the original itself, and taking one for the other
+either lets a reference through or refuses every caller passing a local slice. A new
+way for a callee to hold or write a value is a row in `TestEmitCSummaryThroughLocals`,
+and a new way to read contents out of one a row in `TestEmitCSummaryContents`.
+Still open, SILENT: a callee handing its parameter on through an INTERFACE method or
+a function VALUE it holds, `kk.Keep(v)`, `f := keep; f(v)` -- the summary pass makes
+no edge for a call it cannot name, for values and contents alike.
 
 ## Notes
 

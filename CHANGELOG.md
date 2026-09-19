@@ -699,6 +699,15 @@ shipped section tells a reader on that version that they have behaviour they do 
 Each of these is the compiler refusing a program it used to accept, and each such
 program handed out a reference to storage that was gone by the time it was read.
 
+- **What a callee does with its parameter's contents is followed.** A function
+  keeping an element or a field of its parameter -- `gp = v[0]` of a `v []*int`,
+  `gs = b.xs` of a `b *B`, by value or through a pointer, directly, through a local,
+  a range, a call it is handed to or returned from -- kept what the caller's slice
+  or struct held, and `keep([]*int{&x})` left x's address in a package variable.
+  The summaries record the contents apart from the parameter, and the call is
+  refused where the argument's contents reach the frame; a method keeping what its
+  receiver holds, `gs = c.d`, likewise. A callee keeping an int read out of its
+  parameter keeps nothing, and is not refused.
 - **A callee is followed through its own locals.** What a function does with a
   parameter was summarised where the parameter was NAMED, so any step between the
   two laundered it: a local copy, `w := v; gs = w`, a reslice, `gs = v[1:]`, a

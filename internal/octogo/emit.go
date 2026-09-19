@@ -4584,7 +4584,7 @@ func typeNameCollisions(src []byte, names map[string]bool) map[string]bool {
 // emitProgram is EmitC's one pass. rename lists the main-package types spelled
 // ogo_T_<name> in C (see typeMangle).
 func emitProgram(pkg *Package, w io.Writer, opts []EmitOption, rename map[string]bool) error {
-	e := &emitter{renameTypes: rename, renamedTypes: map[string]string{}, includes: map[string]bool{}, funcRet: map[string][]string{}, funcSliceParams: map[string][]string{}, funcVariadic: map[string]int{}, nilHelpers: map[string]bool{}, funcArrayRet: map[string]arrDim{}, funcArrayParams: map[string][]arrDim{}, anonStructNames: map[string]string{}, methodValueTypes: map[string]funcValueType{}, methodValueOf: map[string]string{}, methodExprNames: map[string]string{}, funcParams: map[string][]string{}, methodPtr: map[string]bool{}, globals: map[string]string{}, structs: map[string][]structField{}, namedTypes: map[string]bool{}, typeNames: map[string]bool{}, interfaceTypes: map[string]bool{}, ifaceMethods: map[string][]ifaceMethod{}, anonIfaceNames: map[string]string{}, anonIfaceMinted: map[string]bool{}, ifaceASTs: map[string]ifaceAST{}, ifaceVTables: map[string]bool{}, namedUnderlying: map[string]string{}, namedArrays: map[string]arrDim{}, constInt: map[string]string{}, constVal: map[string]constant.Value{}, constWide: map[string]string{}, constStr: map[string]string{}, constUntyped: map[string]bool{}, constHuge: map[string]bool{}, arrays: map[string]arrDim{}, globalArrays: map[string]arrDim{}, sliceVars: map[string]string{}, globalSliceVars: map[string]string{}, chanElems: map[string]bool{}, chanInitElems: map[string]bool{}, chanSendElems: map[string]bool{}, chanRecvElems: map[string]bool{}, chanTryRecvElems: map[string]bool{}, chanTrySendElems: map[string]bool{}, chanGatedSendElems: map[string]bool{}, aliasOf: map[string]string{}, localTypes: map[string]string{}, gotoTargets: map[string]bool{}, chanCloseElems: map[string]bool{}, chanRecv2Elems: map[string]bool{}, mathWrappers: map[string]bool{}, chanElemByName: map[string]string{}, sliceElems: map[string]bool{}, sliceElemByName: map[string]string{}, appendElems: map[string]bool{}, tryappendElems: map[string]bool{}, appendSliceElems: map[string]bool{}, tryappendSliceEls: map[string]bool{}, appendokStructs: map[string]bool{}, copyElems: map[string]bool{}, resliceElems: map[string]bool{}, reslice3Elems: map[string]bool{}, clearElems: map[string]bool{}, minElems: map[string]bool{}, maxElems: map[string]bool{}, printSliceElems: map[string]bool{}, printStructs: map[string]string{}, printlnElems: map[string]bool{}, switchBreakUsed: map[string]bool{}, labelBreak: map[string]string{}, labelContinue: map[string]string{}, labelUsed: map[string]bool{}, eqStructs: map[string]bool{}, eqArrays: map[string]arrDim{}, frameBacked: map[string]bool{}, frameHolder: map[string]string{}, crossParams: map[string][]leak{}, recvLeaks: map[string]leak{}, retRecv: map[string]bool{}, crossInto: map[string][]uint32{}, ifaceSummaries: map[string]ifaceSummary{}, retParams: map[string][]bool{}, funcValueOf: map[string]string{}, crossNames: map[string]string{}, initNames: map[string]string{}, funcValueTypes: map[string]funcValueType{}, funcTypeNames: map[string]string{}, funcTypeRet: map[string][]string{}, funcTypeParams: map[string][]string{}, retStructs: map[string]string{}, retStructByKey: map[string]string{}, shiftHelpers: map[string][2]string{}, shiftCTypes: map[*int32]string{}, shiftWalked: map[shiftWalkKey]bool{}, shiftIn: map[*int32]bool{}, divHelpers: map[string][2]string{}, funcValueWrappers: map[string]string{}, deferReplay: -1, iota: -1}
+	e := &emitter{renameTypes: rename, renamedTypes: map[string]string{}, includes: map[string]bool{}, funcRet: map[string][]string{}, funcSliceParams: map[string][]string{}, funcVariadic: map[string]int{}, nilHelpers: map[string]bool{}, funcArrayRet: map[string]arrDim{}, funcArrayParams: map[string][]arrDim{}, anonStructNames: map[string]string{}, methodValueTypes: map[string]funcValueType{}, methodValueOf: map[string]string{}, methodExprNames: map[string]string{}, funcParams: map[string][]string{}, methodPtr: map[string]bool{}, globals: map[string]string{}, structs: map[string][]structField{}, namedTypes: map[string]bool{}, typeNames: map[string]bool{}, interfaceTypes: map[string]bool{}, ifaceMethods: map[string][]ifaceMethod{}, anonIfaceNames: map[string]string{}, anonIfaceMinted: map[string]bool{}, ifaceASTs: map[string]ifaceAST{}, ifaceVTables: map[string]bool{}, namedUnderlying: map[string]string{}, namedArrays: map[string]arrDim{}, constInt: map[string]string{}, constVal: map[string]constant.Value{}, constWide: map[string]string{}, constStr: map[string]string{}, constUntyped: map[string]bool{}, constHuge: map[string]bool{}, arrays: map[string]arrDim{}, globalArrays: map[string]arrDim{}, sliceVars: map[string]string{}, globalSliceVars: map[string]string{}, chanElems: map[string]bool{}, chanInitElems: map[string]bool{}, chanSendElems: map[string]bool{}, chanRecvElems: map[string]bool{}, chanTryRecvElems: map[string]bool{}, chanTrySendElems: map[string]bool{}, chanGatedSendElems: map[string]bool{}, aliasOf: map[string]string{}, localTypes: map[string]string{}, gotoTargets: map[string]bool{}, chanCloseElems: map[string]bool{}, chanRecv2Elems: map[string]bool{}, mathWrappers: map[string]bool{}, chanElemByName: map[string]string{}, sliceElems: map[string]bool{}, sliceElemByName: map[string]string{}, appendElems: map[string]bool{}, tryappendElems: map[string]bool{}, appendSliceElems: map[string]bool{}, tryappendSliceEls: map[string]bool{}, appendokStructs: map[string]bool{}, copyElems: map[string]bool{}, resliceElems: map[string]bool{}, reslice3Elems: map[string]bool{}, clearElems: map[string]bool{}, minElems: map[string]bool{}, maxElems: map[string]bool{}, printSliceElems: map[string]bool{}, printStructs: map[string]string{}, printlnElems: map[string]bool{}, switchBreakUsed: map[string]bool{}, labelBreak: map[string]string{}, labelContinue: map[string]string{}, labelUsed: map[string]bool{}, eqStructs: map[string]bool{}, eqArrays: map[string]arrDim{}, frameBacked: map[string]bool{}, frameHolder: map[string]string{}, crossParams: map[string][]leak{}, crossContents: map[string][]leak{}, retContents: map[string][]bool{}, recvContents: map[string]leak{}, recvLeaks: map[string]leak{}, retRecv: map[string]bool{}, crossInto: map[string][]uint32{}, ifaceSummaries: map[string]ifaceSummary{}, retParams: map[string][]bool{}, funcValueOf: map[string]string{}, crossNames: map[string]string{}, initNames: map[string]string{}, funcValueTypes: map[string]funcValueType{}, funcTypeNames: map[string]string{}, funcTypeRet: map[string][]string{}, funcTypeParams: map[string][]string{}, retStructs: map[string]string{}, retStructByKey: map[string]string{}, shiftHelpers: map[string][2]string{}, shiftCTypes: map[*int32]string{}, shiftWalked: map[shiftWalkKey]bool{}, shiftIn: map[*int32]bool{}, divHelpers: map[string][2]string{}, funcValueWrappers: map[string]string{}, deferReplay: -1, iota: -1}
 	for _, opt := range opts {
 		opt(e)
 	}
@@ -5521,6 +5521,9 @@ type emitter struct {
 	litFixable         bool                    // the literal being rendered has an owner that will emit those copies -- one that gives it a NAME. False in the positions that have no storage to copy into.
 	frameBacked        map[string]bool         // local slice variables whose backing array is storage of this frame, so returning one would dangle (see checkReturnBacking)
 	crossParams        map[string][]leak       // per function, how each parameter lets a value escape the caller's frame -- a cog crossing or a store that outlives it, directly or through a call (see collectCrossParams)
+	crossContents      map[string][]leak       // per function, how each parameter's CONTENTS escape -- what its elements, or its pointee's fields, hold -- `gp = v[0]` (see heldKind)
+	retContents        map[string][]bool       // per function, which parameters' CONTENTS a result carries, `return v[0]`
+	recvContents       map[string]leak         // a method's receiver's CONTENTS kept where they outlive the call, `gs = c.d`
 	recvLeaks          map[string]leak         // a pointer method's RECEIVER kept where it outlives the call: leakGlobal, leakCog (see recvEdge)
 	recvEdges          []recvEdge              // how a receiver's keeping travels to callers (see recvEdge)
 	retRecv            map[string]bool         // a pointer method returns its receiver, so its result is what it was called on
@@ -9115,6 +9118,11 @@ type crossEdge struct {
 	// anything else. It is what turns the callee's "stored through my parameter 2"
 	// into a fact about the caller, whose parameter 2 is not the callee's.
 	argOwner []int
+	// contents says the argument is the CONTENTS of the caller's parameter from --
+	// an element or a field read out of it -- rather than the parameter itself, so
+	// what the callee does with its parameter to, the caller does with those
+	// contents.
+	contents bool
 }
 
 const (
@@ -9266,62 +9274,96 @@ func (e *emitter) collectFuncCross(fi funcInfo) {
 	// its switch anyway, and merging two switches' bindings can only refuse more.
 	holds := e.summaryHolds(body)
 	for name, operand := range e.typeSwitchAliases(body) {
-		holds[name] = append(holds[name], operand)
+		holds[name] = append(holds[name], held{operand, heldAlias})
 	}
-	// reach calls fn for every name a value of name may reach through the holds,
-	// name itself included.
-	reach := func(name string, fn func(string)) {
-		seen := map[string]bool{}
-		var walk func(n string)
-		walk = func(n string) {
-			if n == "" || seen[n] || len(seen) > 256 {
+	// resolve walks what a value reaching hs may carry through the holds, calling fn
+	// with each name and whether it is that name's CONTENTS rather than its value
+	// (see heldKind). A name's value is what it holds by value or as a part, and the
+	// contents of what it holds as contents; its contents are the contents of what it
+	// holds by value, the value and the contents of what it holds as a part, and the
+	// contents of what it holds as contents.
+	type visit struct {
+		name     string
+		contents bool
+	}
+	resolve := func(hs []held, fn func(name string, contents bool)) {
+		seen := map[visit]bool{}
+		var walk func(v visit)
+		walk = func(v visit) {
+			if v.name == "" || seen[v] || len(seen) > 512 {
 				return
 			}
-			seen[n] = true
-			fn(n)
-			for _, h := range holds[n] {
-				walk(h)
+			seen[v] = true
+			fn(v.name, v.contents)
+			for _, h := range holds[v.name] {
+				switch {
+				case h.kind == heldContents:
+					walk(visit{h.name, true})
+				case h.kind == heldPart && v.contents:
+					walk(visit{h.name, false})
+					walk(visit{h.name, true})
+				default:
+					walk(visit{h.name, v.contents})
+				}
 			}
 		}
-		walk(name)
+		for _, h := range hs {
+			walk(visit{h.name, h.kind == heldContents})
+		}
 	}
-	// ats is every parameter a name may hold, and at the first of them.
-	ats := func(name string) (out []int) {
-		reach(name, func(n string) {
-			if i := slices.Index(params, n); i >= 0 && !slices.Contains(out, i) {
-				out = append(out, i)
+	// reached is what a value may carry of this function's parameters and receiver.
+	type reached struct {
+		vals, conts       []int
+		recvVal, recvCont bool
+	}
+	reachOf := func(hs []held) (r reached) {
+		resolve(hs, func(name string, contents bool) {
+			if i := slices.Index(params, name); i >= 0 {
+				if contents && !slices.Contains(r.conts, i) {
+					r.conts = append(r.conts, i)
+				} else if !contents && !slices.Contains(r.vals, i) {
+					r.vals = append(r.vals, i)
+				}
+			}
+			if recvName != "" && name == recvName {
+				if contents {
+					r.recvCont = true
+				} else if recvPtr {
+					r.recvVal = true
+				}
 			}
 		})
-		return out
+		return r
 	}
+	// ats is every parameter a name may hold by value, and at the first of them.
+	ats := func(name string) []int { return reachOf([]held{{name, heldAlias}}).vals }
 	at := func(name string) int {
 		if is := ats(name); len(is) != 0 {
 			return is[0]
 		}
 		return -1
 	}
-	isRecv := func(root string) (found bool) {
-		if recvPtr {
-			reach(root, func(n string) { found = found || n == recvName })
-		}
-		return found
-	}
+	isRecv := func(root string) bool { return reachOf([]held{{root, heldAlias}}).recvVal }
 	holdsPackageVar := func(root string) (found bool) {
-		reach(root, func(n string) { found = found || e.isPackageVar(n) })
+		resolve([]held{{root, heldAlias}}, func(n string, contents bool) { found = found || !contents && e.isPackageVar(n) })
 		return found
 	}
-	// valueParams is every parameter a value may reach, and whether it may reach
-	// the receiver.
-	valueParams := func(v []int32) (out []int, recv bool) {
-		for _, r := range e.summaryRoots(v) {
-			for _, i := range ats(r) {
-				if !slices.Contains(out, i) {
-					out = append(out, i)
-				}
-			}
-			recv = recv || isRecv(r)
+	// sink records that a value goes where flag says: every parameter it may carry
+	// by value, every one whose contents it may carry, and the receiver likewise.
+	sink := func(v []int32, flag leak) {
+		r := reachOf(e.summaryReach(v))
+		for _, i := range r.vals {
+			e.crossParams[cname][i] |= flag
 		}
-		return out, recv
+		for _, i := range r.conts {
+			e.crossContents[cname][i] |= flag
+		}
+		if r.recvVal {
+			e.recvLeaks[cname] |= flag
+		}
+		if r.recvCont {
+			e.recvContents[cname] |= flag
+		}
 	}
 	// owners says what this call passed at each position, in the terms the
 	// CALLER's summary is written in: its own parameters by index, or a package
@@ -9345,25 +9387,36 @@ func (e *emitter) collectFuncCross(fi funcInfo) {
 	if _, seen := e.crossParams[cname]; !seen {
 		e.crossParams[cname] = make([]leak, len(params))
 	}
+	if _, seen := e.crossContents[cname]; !seen {
+		e.crossContents[cname] = make([]leak, len(params))
+	}
 	if _, seen := e.crossInto[cname]; !seen {
 		e.crossInto[cname] = make([]uint32, len(params))
 	}
 	if _, seen := e.retParams[cname]; !seen {
 		e.retParams[cname] = make([]bool, len(params))
 	}
+	if _, seen := e.retContents[cname]; !seen {
+		e.retContents[cname] = make([]bool, len(params))
+	}
 	e.crossNames[cname] = srcName
 	// derived records what a sink does with a CALL's result, for every parameter
-	// the call was passed (derivedEdge); the callee's return summary says later
-	// whether the result was that parameter.
-	derived := func(v []int32, sink leak, slot int) {
+	// the call was passed, by value or by its contents (derivedEdge); the callee's
+	// return summary says later whether the result was that parameter.
+	derived := func(v []int32, flag leak, slot int) {
 		callee, args, isCall := e.valueCall(v)
 		if !isCall {
 			return
 		}
 		for j, a := range args {
-			is, _ := valueParams(a.ast)
-			for _, i := range is {
-				e.derivedEdges = append(e.derivedEdges, derivedEdge{caller: cname, from: i, callee: callee, to: j, sink: sink, slot: slot})
+			r := reachOf(e.summaryReach(a.ast))
+			for _, i := range r.vals {
+				e.derivedEdges = append(e.derivedEdges, derivedEdge{caller: cname, from: i, callee: callee, to: j, sink: flag, slot: slot})
+			}
+			if slot < 0 {
+				for _, i := range r.conts {
+					e.derivedEdges = append(e.derivedEdges, derivedEdge{caller: cname, from: i, callee: callee, to: j, sink: flag, slot: -1, contents: true})
+				}
 			}
 		}
 	}
@@ -9371,24 +9424,12 @@ func (e *emitter) collectFuncCross(fi funcInfo) {
 		switch {
 		case len(nodes) != 0 && nodes[0].sym == 0 && e.f.ch(nodes[0].tok) == GO:
 			for _, a := range e.goStmtArgs(nodes) {
-				is, recv := valueParams(a.ast)
-				for _, i := range is {
-					e.crossParams[cname][i] |= leakCog
-				}
-				if recv {
-					e.recvLeaks[cname] |= leakCog
-				}
+				sink(a.ast, leakCog)
 				derived(a.ast, leakCog, -1)
 			}
 		default:
 			if v, ok := e.sendValue(nodes); ok {
-				is, recv := valueParams(v)
-				for _, i := range is {
-					e.crossParams[cname][i] |= leakCog
-				}
-				if recv {
-					e.recvLeaks[cname] |= leakCog
-				}
+				sink(v, leakCog)
 				derived(v, leakCog, -1)
 			}
 			// A store into a package variable, `g = p` or `g.f = p`, alone or in
@@ -9400,13 +9441,7 @@ func (e *emitter) collectFuncCross(fi funcInfo) {
 				stores = append(stores, e.storedThrough(nodes, holdsPackageVar)...)
 			}
 			for _, v := range stores {
-				is, recv := valueParams(v)
-				for _, i := range is {
-					e.crossParams[cname][i] |= leakGlobal
-				}
-				if recv {
-					e.recvLeaks[cname] |= leakGlobal
-				}
+				sink(v, leakGlobal)
 				derived(v, leakGlobal, -1)
 			}
 			// A store into the RECEIVER, `t.d = p` -- the setter every struct
@@ -9415,22 +9450,27 @@ func (e *emitter) collectFuncCross(fi funcInfo) {
 			// call site, which knows whether it picked storage that outlives
 			// its own frame.
 			for _, v := range e.storedThrough(nodes, isRecv) {
-				is, _ := valueParams(v)
-				for _, i := range is {
+				r := reachOf(e.summaryReach(v))
+				for _, i := range r.vals {
 					e.crossParams[cname][i] |= leakRecv
+				}
+				for _, i := range r.conts {
+					e.crossContents[cname][i] |= leakRecv
 				}
 				derived(v, leakRecv, -1)
 			}
-			// A store through a POINTER PARAMETER, `h.d = p` -- the same
-			// setter, written as a plain function rather than a method. WHICH
-			// parameter it reaches is what has to be carried: the call site
-			// decides by the lifetime of the argument at that position, and
-			// `fill(&g, a[:])` and `fill(&local, a[:])` differ in nothing else.
+			// A store through a POINTER PARAMETER, `h.d = p` (see
+			// pointerParamsThrough).
 			for _, slot := range e.pointerParamsThrough(fi, nodes, ats) {
 				for _, v := range e.storedThrough(nodes, func(string) bool { return true }) {
-					is, _ := valueParams(v)
-					for _, i := range is {
+					r := reachOf(e.summaryReach(v))
+					for _, i := range r.vals {
 						e.crossInto[cname][i] |= 1 << slot
+					}
+					// Its contents land in storage the caller chose at that position,
+					// which this summary has no slot for: kept conservatively.
+					for _, i := range r.conts {
+						e.crossContents[cname][i] |= leakGlobal
 					}
 					derived(v, 0, slot)
 				}
@@ -9440,11 +9480,14 @@ func (e *emitter) collectFuncCross(fi funcInfo) {
 		// from is what lets the caller follow it to the storage it chose.
 		if len(nodes) != 0 && nodes[0].sym == 0 && e.f.ch(nodes[0].tok) == RETURN {
 			for _, v := range e.returnedExprs(nodes) {
-				is, recv := valueParams(v)
-				for _, i := range is {
+				r := reachOf(e.summaryReach(v))
+				for _, i := range r.vals {
 					e.retParams[cname][i] = true
 				}
-				if recv {
+				for _, i := range r.conts {
+					e.retContents[cname][i] = true
+				}
+				if r.recvVal {
 					e.retRecv[cname] = true
 				}
 			}
@@ -9452,26 +9495,36 @@ func (e *emitter) collectFuncCross(fi funcInfo) {
 			// function hands back of the parameter it passed there.
 			for _, c := range e.stmtCalls(nodes) {
 				for j, a := range c.args {
-					is, _ := valueParams(a.ast)
-					for _, i := range is {
+					r := reachOf(e.summaryReach(a.ast))
+					for _, i := range r.vals {
 						e.retEdges = append(e.retEdges, crossEdge{caller: cname, from: i, callee: c.callee, to: j})
+					}
+					for _, i := range r.conts {
+						e.retEdges = append(e.retEdges, crossEdge{caller: cname, from: i, callee: c.callee, to: j, contents: true})
 					}
 				}
 			}
 		}
 		// Any call in the statement, go statement and send included: an
-		// argument that is one of this function's parameters ties the two
-		// together.
+		// argument that is one of this function's parameters, or its contents,
+		// ties the two together.
 		for _, c := range e.stmtCalls(nodes) {
 			owner := owners(c.args)
 			for j, a := range c.args {
-				is, recv := valueParams(a.ast)
-				for _, i := range is {
+				r := reachOf(e.summaryReach(a.ast))
+				for _, i := range r.vals {
 					e.crossEdges = append(e.crossEdges,
 						crossEdge{caller: cname, from: i, callee: c.callee, to: j, recvAt: argLocal, argOwner: owner})
 				}
-				if recv {
+				for _, i := range r.conts {
+					e.crossEdges = append(e.crossEdges,
+						crossEdge{caller: cname, from: i, callee: c.callee, to: j, recvAt: argLocal, argOwner: owner, contents: true})
+				}
+				if r.recvVal {
 					e.recvEdges = append(e.recvEdges, recvEdge{caller: cname, from: -1, callee: c.callee, to: j})
+				}
+				if r.recvCont {
+					e.recvEdges = append(e.recvEdges, recvEdge{caller: cname, from: -1, callee: c.callee, to: j, contents: true})
 				}
 			}
 		}
@@ -9481,13 +9534,20 @@ func (e *emitter) collectFuncCross(fi funcInfo) {
 		for _, c := range e.stmtMethodCalls(nodes, fi) {
 			owner := owners(c.args)
 			for j, a := range c.args {
-				is, recv := valueParams(a.ast)
-				for _, i := range is {
+				r := reachOf(e.summaryReach(a.ast))
+				for _, i := range r.vals {
 					e.crossEdges = append(e.crossEdges, crossEdge{caller: cname, from: i,
 						callee: c.callee, to: j, recv: c.recv, recvAt: c.recvAt, argOwner: owner})
 				}
-				if recv {
+				for _, i := range r.conts {
+					e.crossEdges = append(e.crossEdges, crossEdge{caller: cname, from: i,
+						callee: c.callee, to: j, recv: c.recv, recvAt: c.recvAt, argOwner: owner, contents: true})
+				}
+				if r.recvVal {
 					e.recvEdges = append(e.recvEdges, recvEdge{caller: cname, from: -1, callee: c.callee, to: j})
+				}
+				if r.recvCont {
+					e.recvEdges = append(e.recvEdges, recvEdge{caller: cname, from: -1, callee: c.callee, to: j, contents: true})
 				}
 			}
 			// The method's receiver is this function's own pointer receiver, or one
@@ -9517,6 +9577,8 @@ type derivedEdge struct {
 	to     int
 	sink   leak // what the caller does with the result, or 0 for a store through a parameter
 	slot   int  // the parameter stored through, for crossInto; -1 otherwise
+	// contents: the argument was the CONTENTS of the caller's parameter from.
+	contents bool
 }
 
 // recvEdge records that a function hands a POINTER it holds to a callee: its own
@@ -9531,6 +9593,9 @@ type recvEdge struct {
 	from   int
 	callee string
 	to     int
+	// contents: what is handed on is the CONTENTS of the caller's receiver or
+	// parameter, `keep(c.d)`, rather than the pointer itself.
+	contents bool
 }
 
 // closeCrossParams propagates the crossing summary along the recorded call edges
@@ -9539,7 +9604,62 @@ type recvEdge struct {
 func (e *emitter) closeCrossParams() {
 	for changed := true; changed; {
 		changed = false
+		// orContents adds flags to what the caller's parameter from -- or, with from
+		// < 0, its receiver -- lets its CONTENTS do.
+		orContents := func(caller string, from int, flags leak) {
+			flags &= leakGlobal | leakCog
+			if flags == 0 {
+				return
+			}
+			if from < 0 {
+				if e.recvContents[caller]&flags != flags {
+					e.recvContents[caller] |= flags
+					changed = true
+				}
+				return
+			}
+			if c := e.crossContents[caller]; from < len(c) && c[from]&flags != flags {
+				c[from] |= flags
+				changed = true
+			}
+		}
+		// outlives is what a callee's flags mean at a call whose receiver is recv: a
+		// store into that receiver outlives the caller unless the receiver is its own
+		// local -- kept conservatively where it is the caller's parameter, the
+		// contents having no slot to be stored through.
+		outlives := func(flags leak, recv recvKind, intos uint32) leak {
+			if flags&leakRecv != 0 {
+				flags &^= leakRecv
+				if recv != recvLocal {
+					flags |= leakGlobal
+				}
+			}
+			if intos != 0 {
+				flags |= leakGlobal
+			}
+			return flags
+		}
 		for _, g := range e.crossEdges {
+			calleeC := e.crossContents[g.callee]
+			calleeV := e.crossParams[g.callee]
+			var intos uint32
+			if ci := e.crossInto[g.callee]; g.to < len(ci) {
+				intos = ci[g.to]
+			}
+			if g.to < len(calleeC) {
+				// What the callee does with its parameter's contents, the caller does
+				// with what it passed there: its own parameter's contents, or -- for
+				// an argument that WAS those contents -- their contents in turn.
+				orContents(g.caller, g.from, outlives(calleeC[g.to], g.recv, 0))
+			}
+			if g.contents {
+				// The caller passed its parameter's CONTENTS: where the callee puts
+				// its parameter, those contents go.
+				if g.to < len(calleeV) {
+					orContents(g.caller, g.from, outlives(calleeV[g.to], g.recv, intos))
+				}
+				continue
+			}
 			callee, caller := e.crossParams[g.callee], e.crossParams[g.caller]
 			if g.to >= len(callee) || g.from >= len(caller) {
 				continue
@@ -9593,6 +9713,24 @@ func (e *emitter) closeCrossParams() {
 			changed = true
 		}
 		for _, g := range e.retEdges {
+			// A result carrying the callee's parameter's contents carries the
+			// caller's parameter's contents; a result that IS the callee's parameter
+			// carries, for an argument that was contents, those contents.
+			if rc := e.retContents[g.callee]; g.to < len(rc) {
+				carries := rc[g.to]
+				if g.contents {
+					if rp := e.retParams[g.callee]; g.to < len(rp) && rp[g.to] {
+						carries = true
+					}
+				}
+				if cc := e.retContents[g.caller]; carries && g.from < len(cc) && !cc[g.from] {
+					cc[g.from] = true
+					changed = true
+				}
+			}
+			if g.contents {
+				continue
+			}
 			callee, caller := e.retParams[g.callee], e.retParams[g.caller]
 			if g.to >= len(callee) || g.from >= len(caller) || !callee[g.to] || caller[g.from] {
 				continue
@@ -9603,6 +9741,23 @@ func (e *emitter) closeCrossParams() {
 		// A result the callee derived from its parameter, stored or crossed by the
 		// caller: the caller's parameter goes where the result went.
 		for _, g := range e.derivedEdges {
+			// A result carrying contents of what was passed: where the result goes,
+			// those contents go.
+			if g.slot < 0 {
+				carries := false
+				if rc := e.retContents[g.callee]; g.to < len(rc) && rc[g.to] {
+					carries = true
+				}
+				if rp := e.retParams[g.callee]; g.contents && g.to < len(rp) && rp[g.to] {
+					carries = true
+				}
+				if carries {
+					orContents(g.caller, g.from, g.sink)
+				}
+			}
+			if g.contents {
+				continue
+			}
 			returned := e.retParams[g.callee]
 			if g.to >= len(returned) || !returned[g.to] {
 				continue
@@ -9622,6 +9777,25 @@ func (e *emitter) closeCrossParams() {
 		// A pointer handed on as a receiver or an argument: what the callee keeps of
 		// it, the caller keeps of its own receiver or parameter.
 		for _, g := range e.recvEdges {
+			// What the callee keeps of its receiver's or parameter's contents, the
+			// caller keeps of what it handed on -- and of a pointer's contents,
+			// handed on as contents, everything the callee keeps.
+			var keptC, keptV leak
+			if g.to < 0 {
+				keptC, keptV = e.recvContents[g.callee], e.recvLeaks[g.callee]
+			} else {
+				if c := e.crossContents[g.callee]; g.to < len(c) {
+					keptC = c[g.to]
+				}
+				if v := e.crossParams[g.callee]; g.to < len(v) {
+					keptV = v[g.to]
+				}
+			}
+			orContents(g.caller, g.from, keptC)
+			if g.contents {
+				orContents(g.caller, g.from, keptV)
+				continue
+			}
 			var kept leak
 			if g.to < 0 {
 				kept = e.recvLeaks[g.callee]
@@ -9972,45 +10146,108 @@ func (e *emitter) storedInPackageVar(nodes []Node) [][]int32 {
 	return values
 }
 
-// summaryRoots names every variable whose storage a value may reach, by SHAPE: the
+// heldKind says how a value reaches a name it was given (summaryReach): as the name's
+// own value or a view of it -- a copy, a reslice, a conversion -- as a PART of
+// something larger holding that value -- a struct literal's field, an appended
+// element, a store into the holder's storage -- or as the name's CONTENTS -- an
+// element or a field read out of it, a range value, a dereference. The three cannot
+// be one: a copy's contents are the original's contents, while a struct literal's
+// contents are the original itself, and taking one for the other either lets a
+// reference through or refuses `w := v; gn = w[0]` for every caller.
+type heldKind uint8
+
+const (
+	heldAlias heldKind = iota
+	heldPart
+	heldContents
+)
+
+// held is one name a value reaches, and how.
+type held struct {
+	name string
+	kind heldKind
+}
+
+// summaryReach names every variable a value may reach and how, by SHAPE: the
 // summaries are collected before any body has declared a local, so there is no type
-// to ask. A name, parenthesized or not; the root of an address, `&x.f`; the base of
-// a slice step, `v[1:]`; each value of a composite literal, `B{v}`, `[]T{v}`,
-// `&B{xs: v}`, an elided element's too; the operand and the values of an append; the
-// operand of a conversion, `L(v)`. The summaries asked of the first three alone, so
-// `gs = v[1:]` -- which it could not resolve before the parameter was declared --
-// `gb = B{v}` and `gs = append(v, 1)` stored a parameter in a package variable with
-// nothing recorded. A field or an element READ is not among them: it carries the
-// CONTENTS of its root, which a shape cannot tell from an int.
-func (e *emitter) summaryRoots(ast []int32) (roots []string) {
+// to ask. A name, parenthesized or not, the root of an address, `&x.f`, the base of
+// a slice step, `v[1:]`, and the operand of a conversion, `L(v)`, are the name's
+// value; each value of a composite literal, `B{v}`, `[]T{v}`, `&B{xs: v}`, an elided
+// element's too, and each value an append adds are PARTS of the result; and an
+// element or a field read, `v[i]`, `p.xs`, `*p`, is the name's CONTENTS. The summaries
+// asked about the plainest of these alone, so `gs = v[1:]` -- which could not be
+// resolved before the parameter was declared -- `gb = B{v}` and `gs = append(v, 1)`
+// stored a parameter in a package variable with nothing recorded.
+func (e *emitter) summaryReach(ast []int32) (out []held) {
 	ast = e.unparenExpr(ast)
 	if name, ok := e.exprIdent(ast); ok {
-		return []string{name}
+		return []held{{name, heldAlias}}
 	}
 	if name, ok := e.addrOfRoot(ast); ok {
-		return []string{name}
+		return []held{{name, heldAlias}}
 	}
 	if lit, isLit := e.summaryLit(ast); isLit {
-		return e.summaryLitRoots(lit)
+		return e.summaryLitReach(lit)
 	}
 	if args, _, isAppend := e.appendCallArgs(ast); isAppend {
-		for _, a := range args {
-			roots = append(roots, e.summaryRoots(a.ast)...)
+		for i, a := range args {
+			if i == 0 {
+				out = append(out, e.summaryReach(a.ast)...)
+				continue
+			}
+			out = append(out, asPart(e.summaryReach(a.ast))...)
 		}
-		return roots
+		return out
 	}
 	if recv, suffix, ok := e.directCall(ast); ok && len(suffix) != 0 && suffix[len(suffix)-1].sym == CallSuffix &&
 		(e.convToSliceType(recv, suffix) || e.convToIfaceType(recv, suffix)) {
 		if args := e.callArgExprs(suffix[len(suffix)-1].ast); len(args) == 1 {
-			return e.summaryRoots(args[0].ast)
+			return e.summaryReach(args[0].ast)
 		}
 	}
+	if name, ok := e.derefOperand(ast); ok {
+		return []held{{name, heldContents}}
+	}
 	if fac, ok := e.soleFactorNode(ast); ok {
-		if base, steps, isChain := e.factorAccessChain(e.unparenKids(slices.Collect(it(fac.ast)))); isChain && e.endsInSliceStep(steps) {
-			return []string{base}
+		kids := e.unparenKids(slices.Collect(it(fac.ast)))
+		if base, steps, isChain := e.factorAccessChain(kids); isChain && len(steps) != 0 {
+			if e.endsInSliceStep(steps) && len(steps) == 1 {
+				return []held{{base, heldAlias}}
+			}
+			return []held{{base, heldContents}}
+		}
+		if name, steps, isDeref := e.factorDerefChain(kids); isDeref && len(steps) != 0 {
+			return []held{{name, heldContents}}
 		}
 	}
 	return nil
+}
+
+// asPart is what a value reaching hs is as a part of something larger: the names it
+// holds by value it now holds as a part, and contents stay contents.
+func asPart(hs []held) []held {
+	out := make([]held, len(hs))
+	for i, h := range hs {
+		if h.kind == heldAlias {
+			h.kind = heldPart
+		}
+		out[i] = h
+	}
+	return out
+}
+
+// asElem is what an element read out of a value reaching hs reaches: what the value
+// holds by value, its element is contents of; a part stays a part; contents stay
+// contents.
+func asElem(hs []held) []held {
+	out := make([]held, len(hs))
+	for i, h := range hs {
+		if h.kind == heldAlias {
+			h.kind = heldContents
+		}
+		out[i] = h
+	}
+	return out
 }
 
 // summaryLit finds the composite literal a value is, `T{...}`, `[]T{...}`,
@@ -10034,43 +10271,52 @@ func (e *emitter) summaryLit(ast []int32) (Node, bool) {
 	return kids[len(kids)-1], true
 }
 
-// summaryLitRoots is summaryRoots over a composite literal's values.
-func (e *emitter) summaryLitRoots(lit Node) (roots []string) {
+// summaryLitReach is summaryReach over a composite literal's values, each a part of
+// the literal.
+func (e *emitter) summaryLitReach(lit Node) (out []held) {
 	for _, el := range compositeLitElements(lit) {
 		if el.value.sym == CompositeLit {
-			roots = append(roots, e.summaryLitRoots(el.value)...)
+			out = append(out, e.summaryLitReach(el.value)...)
 			continue
 		}
-		roots = append(roots, e.summaryRoots(el.value.ast)...)
+		out = append(out, asPart(e.summaryReach(el.value.ast))...)
 	}
-	return roots
+	return out
 }
 
-// summaryHolds maps each name a body binds to the names whose storage its value may
-// reach (summaryRoots): `w := v`, `var w = B{v}`, `w = v[1:]`, a list of them, a
-// for clause's, and a store INTO a name's own storage, `b.xs = v`, `arr[0] = v`.
-// It is flow-insensitive -- a name holds what any statement gives it -- which can only
-// refuse more. The summaries followed a parameter only where it was named, so a
-// local copy laundered it: `w := v; gs = w` kept the caller's slice in a package
+// summaryHolds maps each name a body binds to what its value may reach, and how
+// (summaryReach): `w := v`, `var w = B{v}`, `w = v[1:]`, a list of them, a for
+// clause's, a store INTO a name's own storage, `b.xs = v`, `arr[0] = v`, which makes
+// the value a part of it, and a range clause's value, an element of what is ranged.
+// It is flow-insensitive -- a name holds what any statement gives it -- which can
+// only refuse more. The summaries followed a parameter only where it was named, so
+// a local copy laundered it: `w := v; gs = w` kept the caller's slice in a package
 // variable with nothing recorded.
-func (e *emitter) summaryHolds(body []int32) map[string][]string {
-	holds := map[string][]string{}
-	add := func(targets []string, values [][]int32) {
+func (e *emitter) summaryHolds(body []int32) map[string][]held {
+	holds := map[string][]held{}
+	put := func(target string, hs []held) {
+		if target != "" && target != "_" {
+			holds[target] = append(holds[target], hs...)
+		}
+	}
+	add := func(targets []string, into []bool, values [][]int32) {
+		reach := func(i int, v []int32) []held {
+			hs := e.summaryReach(v)
+			if i < len(into) && into[i] {
+				hs = asPart(hs) // `b.xs = v`: the value is a part of b
+			}
+			return hs
+		}
 		switch {
 		case len(targets) == len(values):
 			for i, t := range targets {
-				if t != "" && t != "_" {
-					holds[t] = append(holds[t], e.summaryRoots(values[i])...)
-				}
+				put(t, reach(i, values[i]))
 			}
 		case len(values) == 1:
-			// Several targets from one value -- a multi-result call -- take its roots
-			// every one of them.
-			roots := e.summaryRoots(values[0])
-			for _, t := range targets {
-				if t != "" && t != "_" {
-					holds[t] = append(holds[t], roots...)
-				}
+			// Several targets from one value -- a multi-result call -- each may hold
+			// what it reaches.
+			for i, t := range targets {
+				put(t, reach(i, values[0]))
 			}
 		}
 	}
@@ -10084,16 +10330,23 @@ func (e *emitter) summaryHolds(body []int32) map[string][]string {
 				continue
 			}
 			if n.sym == ForHeader {
-				if h, ok := e.parseForHeader(n); ok && !h.isRange {
-					// The one-name forms fill the singles only; emitFor lists them.
-					if len(h.initLHSs) == 0 && h.initLHS != nil && h.initRHS != nil {
-						h.initLHSs, h.initRHSs = [][]int32{h.initLHS}, [][]int32{h.initRHS}
+				if h, ok := e.parseForHeader(n); ok {
+					if h.isRange {
+						// The value of a range clause is an element of what it ranges.
+						if v, isName := e.exprIdent(h.valVar); isName {
+							put(v, asElem(e.summaryReach(h.rangeExpr)))
+						}
+					} else {
+						// The one-name forms fill the singles only; emitFor lists them.
+						if len(h.initLHSs) == 0 && h.initLHS != nil && h.initRHS != nil {
+							h.initLHSs, h.initRHSs = [][]int32{h.initLHS}, [][]int32{h.initRHS}
+						}
+						if len(h.postLHSs) == 0 && h.postLHS != nil && h.postRHS != nil {
+							h.postLHSs, h.postRHSs = [][]int32{h.postLHS}, [][]int32{h.postRHS}
+						}
+						add(e.forClauseBinding(h.initLHSs, h.initRHSs))
+						add(e.forClauseBinding(h.postLHSs, h.postRHSs))
 					}
-					if len(h.postLHSs) == 0 && h.postLHS != nil && h.postRHS != nil {
-						h.postLHSs, h.postRHSs = [][]int32{h.postLHS}, [][]int32{h.postRHS}
-					}
-					add(e.forClauseBinding(h.initLHSs, h.initRHSs))
-					add(e.forClauseBinding(h.postLHSs, h.postRHSs))
 				}
 			}
 			walk(n.ast)
@@ -10104,12 +10357,12 @@ func (e *emitter) summaryHolds(body []int32) map[string][]string {
 }
 
 // forClauseBinding is summaryBinding for a for clause's targets and values.
-func (e *emitter) forClauseBinding(lhss, rhss [][]int32) ([]string, [][]int32) {
-	var targets []string
+func (e *emitter) forClauseBinding(lhss, rhss [][]int32) (targets []string, into []bool, values [][]int32) {
 	for _, l := range lhss {
-		targets = append(targets, e.bindingRoot(l))
+		_, whole := e.exprIdent(l)
+		targets, into = append(targets, e.bindingRoot(l)), append(into, !whole)
 	}
-	return targets, rhss
+	return targets, into, rhss
 }
 
 // bindingRoot is the name a target is rooted at, `b` of `b.xs[0]`, by shape.
@@ -10127,8 +10380,9 @@ func (e *emitter) bindingRoot(ast []int32) string {
 
 // summaryBinding reads a statement that binds values to names -- `w := v`, `a, b =
 // x, y`, `b.xs = v`, `var w, u = x, y` -- answering the names the targets are rooted
-// at and the values, by shape.
-func (e *emitter) summaryBinding(nodes []Node) (targets []string, values [][]int32) {
+// at, whether each writes INTO that name's storage rather than rebinding it, and
+// the values, by shape.
+func (e *emitter) summaryBinding(nodes []Node) (targets []string, into []bool, values [][]int32) {
 	if len(nodes) == 1 && nodes[0].sym == VarDecl {
 		for spec := range it(nodes[0].ast) {
 			if spec.sym != VarSpec {
@@ -10153,27 +10407,29 @@ func (e *emitter) summaryBinding(nodes []Node) (targets []string, values [][]int
 				}
 			}
 			targets, values = append(targets, names...), append(values, vals...)
+			into = append(into, make([]bool, len(names))...)
 		}
-		return targets, values
+		return targets, into, values
 	}
 	if len(nodes) != 2 || nodes[0].sym != AssignHead || nodes[1].sym != Postfix {
-		return nil, nil
+		return nil, nil, nil
 	}
 	head := e.soleIdent(nodes[0].ast)
 	if head == "" {
-		return nil, nil
+		return nil, nil, nil
 	}
 	postfix := slices.Collect(it(nodes[1].ast))
 	if len(postfix) == 0 || postfix[len(postfix)-1].sym != PostfixOp {
-		return nil, nil
+		return nil, nil, nil
 	}
 	targets = []string{head}
+	into = []bool{len(postfix) > 1 || e.derefStars(nodes[0].ast) != ""}
 	assigns := false
 	for c := range it(postfix[len(postfix)-1].ast) {
 		switch {
 		case c.sym == LhsItem:
 			t, _ := e.lhsItemTarget(c.ast)
-			targets = append(targets, t.name)
+			targets, into = append(targets, t.name), append(into, len(t.chain) != 0 || t.stars != "")
 		case c.sym == 0 && (e.f.ch(c.tok) == ASSIGN || e.f.ch(c.tok) == DEFINE):
 			assigns = true
 		case c.sym == ExpressionList && assigns:
@@ -10185,9 +10441,9 @@ func (e *emitter) summaryBinding(nodes []Node) (targets []string, values [][]int
 		}
 	}
 	if !assigns {
-		return nil, nil
+		return nil, nil, nil
 	}
-	return targets, values
+	return targets, into, values
 }
 
 // storedInPackageVars returns the values a statement stores into package variables
@@ -10195,7 +10451,7 @@ func (e *emitter) summaryBinding(nodes []Node) (targets []string, values [][]int
 // is storedInPackageVar's, which read no list: a parameter stored in a package
 // variable beside another value was recorded as kept nowhere.
 func (e *emitter) storedInPackageVars(nodes []Node) [][]int32 {
-	targets, values := e.summaryBinding(nodes)
+	targets, _, values := e.summaryBinding(nodes)
 	if len(targets) < 2 || len(targets) != len(values) {
 		return nil
 	}
@@ -11080,6 +11336,7 @@ func (e *emitter) liftFuncLit(lit Node) (string, bool) {
 	// literal and a deferred one make, is judged by it.
 	if key := e.litKey(lit); e.crossNames[key] != "" || e.crossParams[key] != nil {
 		e.crossParams[cname], e.crossInto[cname], e.retParams[cname] = e.crossParams[key], e.crossInto[key], e.retParams[key]
+		e.crossContents[cname], e.retContents[cname] = e.crossContents[key], e.retContents[key]
 		e.crossNames[cname] = e.crossNames[key]
 	}
 
@@ -11684,6 +11941,24 @@ func (e *emitter) liftMethodExpr(me emMethodExpr) (string, bool) {
 		}
 	}
 	e.crossParams[name], e.crossInto[name], e.retParams[name] = crosses, intos, rets
+	// And what it does with its receiver's contents and its parameters', the
+	// receiver being the first parameter here.
+	contents, carries := make([]leak, len(allParams)), make([]bool, len(allParams))
+	contents[0] = e.recvContents[mcname]
+	for j, f := range e.crossContents[mcname] {
+		if j+1 < len(contents) {
+			if f&leakRecv != 0 {
+				f = f&^leakRecv | leakGlobal
+			}
+			contents[j+1] = f
+		}
+	}
+	for j, r := range e.retContents[mcname] {
+		if j+1 < len(carries) {
+			carries[j+1] = r
+		}
+	}
+	e.crossContents[name], e.retContents[name] = contents, carries
 	e.crossNames[name] = spelled
 	e.methodExprNames[key] = name
 	return name, true
@@ -11840,6 +12115,13 @@ func (e *emitter) liftMethodValue(base, method string) (string, bool) {
 		}
 	}
 	e.crossParams[cname], e.crossInto[cname], e.retParams[cname] = crosses, e.crossInto[mcname], e.retParams[mcname]
+	contents := slices.Clone(e.crossContents[mcname])
+	for i, f := range contents {
+		if f&leakRecv != 0 {
+			contents[i] = f&^leakRecv | leakGlobal
+		}
+	}
+	e.crossContents[cname], e.retContents[cname] = contents, e.retContents[mcname]
 	e.crossNames[cname] = method
 	return cname, true
 }
@@ -36928,10 +37210,18 @@ func (e *emitter) frameRefOf(ast []int32) (frameRef, bool) {
 			}
 		}
 		derives := e.retParams[cname]
+		carries := e.retContents[cname]
 		args := e.callArgExprs(suffix[len(suffix)-1].ast)
 		for i, a := range args {
 			if i < len(derives) && derives[i] {
 				if r, ok := e.frameRefOf(a.ast); ok {
+					return r, true
+				}
+			}
+			// `first(s)` for a `func first(v []*int) *int { return v[0] }`: the
+			// result is what s's elements hold.
+			if i < len(carries) && carries[i] {
+				if r, ok := e.contentsRef(a.ast); ok {
 					return r, true
 				}
 			}
@@ -37749,12 +38039,33 @@ func (e *emitter) checkRecvAt(cname string, r recvRef, args []Node) bool {
 			return false
 		}
 	}
+	// What the receiver HOLDS, kept by a method that stores its contents -- `gs =
+	// c.d` -- is what the storage it is called on holds: that storage's own mark.
+	if e.recvContents[cname]&(leakGlobal|leakCog) != 0 && r.local {
+		if origin := e.frameHolder[r.storage]; origin != "" {
+			how := "stored where it outlives every frame"
+			if e.recvContents[cname]&leakGlobal == 0 {
+				how = "handed to another cog"
+			}
+			e.fail("cannot call %s on %s: what its receiver holds is %s, and %s holds a pointer into %s; declare it at package scope",
+				e.funcSourceName(cname), e.displayName(r.storage), how, e.displayName(r.storage), origin)
+			return false
+		}
+	}
 	crosses := e.crossParams[cname]
+	contents := e.crossContents[cname]
 	for i, a := range args {
-		if i >= len(crosses) || crosses[i]&leakRecv == 0 {
+		if i >= len(crosses) && i >= len(contents) {
 			continue
 		}
-		fr, ok := e.frameRefOf(a.ast)
+		var fr frameRef
+		ok := false
+		if i < len(crosses) && crosses[i]&leakRecv != 0 {
+			fr, ok = e.frameRefOf(a.ast)
+		}
+		if !ok && i < len(contents) && contents[i]&leakRecv != 0 {
+			fr, ok = e.contentsRef(a.ast)
+		}
 		if !ok {
 			continue
 		}
@@ -37906,12 +38217,14 @@ func (e *emitter) checkIfaceArgs(iface, method string, args []Node) {
 	who := method + " (through " + e.goTypeName(iface) + ")"
 	e.checkCrossArgsIn(crosses, who, args)
 	e.checkIntoArgsIn(intos, who, args)
+	e.checkContentArgsIn(e.ifaceSummaries[iface+"."+method].contents, who, args)
 }
 
 // ifaceCallSummary unions the crossing summaries of the method named, over every
 // concrete type implementing the interface. any is false when no implementation is
 // known, which consults nothing rather than guessing.
 func (e *emitter) ifaceCallSummary(iface, method string) (crosses []leak, intos []uint32, any bool) {
+	var contents []leak
 	if s, ok := e.ifaceSummaries[iface+"."+method]; ok {
 		return s.crosses, s.intos, s.any
 	}
@@ -37940,19 +38253,30 @@ func (e *emitter) ifaceCallSummary(iface, method string) (crosses []leak, intos 
 			intos[i] |= m
 			any = true
 		}
+		for i, f := range e.crossContents[cname] {
+			for len(contents) <= i {
+				contents = append(contents, 0)
+			}
+			if f&leakRecv != 0 {
+				f = f&^leakRecv | leakGlobal
+			}
+			contents[i] |= f
+			any = true
+		}
 	}
 	// Memoised: the set of implementations cannot change once emission has begun,
 	// and a hot interface is called from many sites.
-	e.ifaceSummaries[iface+"."+method] = ifaceSummary{crosses: crosses, intos: intos, any: any}
+	e.ifaceSummaries[iface+"."+method] = ifaceSummary{crosses: crosses, intos: intos, contents: contents, any: any}
 	return crosses, intos, any
 }
 
 // ifaceSummary is one interface method's unioned escape summary (see
 // ifaceCallSummary).
 type ifaceSummary struct {
-	crosses []leak
-	intos   []uint32
-	any     bool
+	crosses  []leak
+	intos    []uint32
+	contents []leak
+	any      bool
 }
 
 // checkIntoArgsIn is checkIntoArgs against a summary handed in rather than looked
@@ -38027,6 +38351,79 @@ func (e *emitter) checkCrossArgs(cname string, args []Node, spread bool) {
 		return
 	}
 	e.checkCrossArgsIn(crosses, e.funcSourceName(cname), args)
+	e.checkContentArgsIn(e.crossContents[cname], e.funcSourceName(cname), args)
+}
+
+// checkContentArgsIn is checkCrossArgsIn for what the arguments' CONTENTS reach: a
+// callee storing an element or a field of its parameter, `gp = v[0]`, keeps what the
+// caller's slice holds, and `keep(s)` for an `s := []*int{&x}` left x's address in a
+// package variable, in silence, while the slice itself was the caller's to keep.
+func (e *emitter) checkContentArgsIn(contents []leak, who string, args []Node) {
+	for i, a := range args {
+		if i >= len(contents) || contents[i]&(leakCog|leakGlobal) == 0 {
+			continue
+		}
+		r, ok := e.contentsRef(a.ast)
+		if !ok {
+			continue
+		}
+		why := "are stored where they outlive every frame"
+		if contents[i]&leakCog != 0 {
+			why = "reach another cog, which may outlive this function"
+		}
+		e.fail("%v: cannot pass %s to %s: its parameter %d's contents %s; %s",
+			e.f.tok(a.Pos()).Position(), r.what, who, i+1, why, r.advice())
+		return
+	}
+}
+
+// contentsRef is what the CONTENTS of a value reach of this frame: a slice's
+// elements (sliceElemOrigin), what the storage reached by an address or a pointer
+// holds, a struct's or an array's fields and elements -- a variable's own holder
+// mark -- and a literal's parts.
+func (e *emitter) contentsRef(ast []int32) (frameRef, bool) {
+	ast = e.unparenExpr(ast)
+	src := e.f.exprSource(Node{sym: Expression, ast: ast})
+	ref := func(origin string) (frameRef, bool) {
+		r := frameRef{origin: origin, what: src + ", whose contents hold a pointer into " + origin}
+		if v, isVar := strings.CutPrefix(origin, "local "); isVar {
+			r.name = v
+		} else {
+			r.view = true // a backing array the emitter minted, which has no name to move
+		}
+		return r, true
+	}
+	if ct, ok := e.inferCType(ast); ok && e.isSliceCType(e.underlyingCType(ct)) {
+		if origin, has, decided := e.sliceElemOrigin(ast); decided {
+			if has {
+				return ref(origin)
+			}
+			return frameRef{}, false
+		}
+	}
+	if name, ok := e.addrOfRoot(ast); ok {
+		if origin := e.frameHolder[name]; origin != "" {
+			return ref(origin)
+		}
+		return frameRef{}, false
+	}
+	if name, ok := e.exprIdent(ast); ok {
+		origin := e.frameHolder[name]
+		if ct, isVar := e.varType(name); isVar && e.isPointer(ct) {
+			// A pointer's contents are what the storage it points at holds.
+			if x, isLocal := strings.CutPrefix(origin, "local "); isLocal && e.isFrameVar(x) {
+				if o := e.frameHolder[x]; o != "" {
+					return ref(o)
+				}
+			}
+			return frameRef{}, false
+		}
+		if origin != "" {
+			return ref(origin)
+		}
+		return frameRef{}, false
+	}
+	return e.frameRefInLit(ast)
 }
 
 // checkCrossArgsIn is checkCrossArgs' per-argument half against a summary handed in

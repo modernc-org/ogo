@@ -10837,6 +10837,122 @@ func main() {
 	}
 }
 
+// TestEmitCSummaryContents: what a callee does with its parameter's CONTENTS -- an
+// element or a field read out of it, directly, through a local, a range, a call it
+// is handed to or returned from -- is summarised apart from the parameter itself,
+// and the call site asks what the argument's contents reach. A callee keeping
+// `v[0]` of a `[]*int` kept x's address from `keep([]*int{&x})` in silence until
+// 2026-09-19, and keeping `b.xs` of a *B kept a view of a local array. Each callee
+// is called with contents reaching the frame, which must be refused, and with
+// contents over package storage, which must not; a callee keeping only an int keeps
+// nothing.
+func TestEmitCSummaryContents(t *testing.T) {
+	const head = `type B struct {
+	xs []int
+	p  *int
+}
+
+type K interface {
+	Keep(v []*int)
+}
+
+type T struct{}
+
+func (T) Keep(v []*int) { gp = v[0] }
+
+type C struct {
+	d []int
+}
+
+var gp *int
+
+var gn int
+
+var gs []int
+
+var gx int
+
+var gback [4]int
+
+var ch chan *int
+
+var kk K = &T{}
+
+func work(p *int) { ch <- p }
+
+func pass(p *int) *int { return p }
+
+func first(v []*int) *int { return v[0] }
+
+func (c *C) Keep() { gs = c.d }
+
+func (c C) KeepValue() { gs = c.d }
+
+`
+	for _, test := range []struct {
+		callee    string
+		kept, ok  string // the call with frame contents, and the same over package storage
+		keepsNone bool   // the callee keeps nothing of its parameter's contents
+	}{
+		{"func keep(v []*int) { gp = v[0] }", "keep([]*int{&x})", "keep([]*int{&gx})", false},
+		{"func keep(v []*int) { w := v; gp = w[0] }", "keep([]*int{&x})", "keep([]*int{&gx})", false},
+		{"func keep(v []*int) { for _, p := range v { gp = p } }", "keep([]*int{&x})", "keep([]*int{&gx})", false},
+		{"func keep(v []*int) { p := v[0]; gp = p }", "keep([]*int{&x})", "keep([]*int{&gx})", false},
+		{"func keep(v []*int) { ch <- v[0] }", "keep([]*int{&x})", "keep([]*int{&gx})", false},
+		{"func keep(v []*int) { go work(v[0]) }", "keep([]*int{&x})", "keep([]*int{&gx})", false},
+		{"func keep(v []*int) { gp = pass(v[0]) }", "keep([]*int{&x})", "keep([]*int{&gx})", false},
+		{"func keep(v []*int) { b := B{p: v[0]}; gp = b.p }", "keep([]*int{&x})", "keep([]*int{&gx})", false},
+		{"func keep(v []*int) { gp = first(v) }", "keep([]*int{&x})", "keep([]*int{&gx})", false},
+		{"func keep(b *B) { gs = b.xs }", "lb := B{xs: a[:]}\n\tkeep(&lb)", "lb := B{xs: gback[:]}\n\tkeep(&lb)", false},
+		{"func keep(b *B) { gp = b.p }", "lb := B{p: &x}\n\tkeep(&lb)", "lb := B{p: &gx}\n\tkeep(&lb)", false},
+		{"func keep(b B) { gs = b.xs }", "lb := B{xs: a[:]}\n\tkeep(lb)", "lb := B{xs: gback[:]}\n\tkeep(lb)", false},
+		{"func keep(b *B) { gs = b.xs }", "lb := B{xs: a[:]}\n\tpb := &lb\n\tkeep(pb)", "lb := B{xs: gback[:]}\n\tpb := &lb\n\tkeep(pb)", false},
+		{"func keep(v []*int) { gn = len(v) }", "keep([]*int{&x})", "keep([]*int{&gx})", true},
+		{"func keep(v []*int) { pass(v[0]) }", "keep([]*int{&x})", "keep([]*int{&gx})", true},
+		{"func keep(v []*int) { b := B{p: v[0]}; gn = len(b.xs) }", "keep([]*int{&x})", "keep([]*int{&gx})", true},
+		{"func keep(v []int) { gn = v[0] }", "keep(a[:])", "keep(gback[:])", true},
+		// A result carrying a parameter's contents, stored by the caller.
+		{"", "gp = first([]*int{&x})", "gp = first([]*int{&gx})", false},
+		// A method keeping its receiver's contents, pointer or value receiver.
+		{"", "lc := C{d: a[:]}\n\tlc.Keep()", "lc := C{d: gback[:]}\n\tlc.Keep()", false},
+		{"", "lc := C{d: a[:]}\n\tlc.KeepValue()", "lc := C{d: gback[:]}\n\tlc.KeepValue()", false},
+		// Through an interface: the union of what the implementations keep.
+		{"", "kk.Keep([]*int{&x})", "kk.Keep([]*int{&gx})", false},
+	} {
+		for _, call := range []string{test.kept, test.ok} {
+			src := head + test.callee + `
+
+func run() {
+	x := 1
+	var a [4]int
+	_, _ = x, a
+	` + call + `
+}
+
+func main() {
+	run()
+}
+`
+			t.Run(test.callee+"/"+call, func(t *testing.T) {
+				fsys := fstest.MapFS{"main.ogo": &fstest.MapFile{Data: []byte(src)}}
+				pkg, err := Build(-1, []string{"main.ogo"}, fsys)
+				if err == nil {
+					err = EmitC(pkg, io.Discard, Checked())
+				}
+				refuse := !test.keepsNone && call == test.kept
+				switch {
+				case refuse && err == nil:
+					t.Errorf("a reference to this frame left it:\n%s", src)
+				case refuse && !strings.Contains(err.Error(), "hold") && !strings.Contains(err.Error(), "outlive"):
+					t.Errorf("refused, but not for its lifetime: %v", err)
+				case !refuse && err != nil:
+					t.Errorf("refused: %v\n%s", err, src)
+				}
+			})
+		}
+	}
+}
+
 func TestEmitCCalleeKeepsEscape(t *testing.T) {
 	const head = `type Box struct {
 	d []int
