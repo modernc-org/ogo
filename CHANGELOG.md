@@ -952,7 +952,10 @@ program handed out a reference to storage that was gone by the time it was read.
   the worker's channel and one nothing ever sends to -- so the arm that runs is
   decided by the senders rather than by timing, while the lowering still has to
   poll both and claim the ready one; that lowering is the target's locks, and
-  nothing generated it before.
+  nothing generated it before. And it takes a POINTER to a struct, writes a field
+  through it and reads that field back through both names, then calls a method on
+  the pointer: `p.f = e` lowers to `p->f` where the variable's lowers to `v.f`, and
+  a copy anywhere between them would leave the variable unchanged.
 - Function semantics against Go on the host and a P2-EDGE: variadic calls with
   none, several and a spread slice the callee writes through, a two-result call
   forwarded as another's arguments, named results returned bare and swapped, a

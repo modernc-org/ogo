@@ -869,8 +869,10 @@ func (f *Fuzzer) genStatement(vm Machine, mem Memory) Node {
 		return f.genStructDecl(vm, mem) // 5% chance for a struct declaration
 	case r < 0.91:
 		return f.genFieldWrite(vm, mem) // 6% chance for a struct field write
+	case r < 0.93:
+		return f.genStructCopy(vm, mem) // 2% chance for a by-value struct copy
 	case r < 0.94:
-		return f.genStructCopy(vm, mem) // 3% chance for a by-value struct copy
+		return f.genStructPtrStmt(vm, mem) // 1% chance for a pointer to a struct
 	case r < 0.97:
 		return f.genCompoundAssign(vm, mem) // 3% chance for a compound assignment
 	case r < 0.985:
@@ -3044,6 +3046,61 @@ func (f *Fuzzer) genStructDecl(vm Machine, mem Memory) Node {
 	mem.Store(name, sv)
 	f.CurrentEnv.Declare(name, StructType{Def: def}, false)
 	return &StructDeclNode{Name: name, TypeName: def.Name}
+}
+
+// genStructPtrStmt takes a pointer to a struct variable and writes a field through
+// it, then reads that field back through BOTH names: a pointer and the variable it
+// points at are one storage, which is what the lowering of `p.f = e` for a pointer
+// has to get right -- the field access is `p->f` where the variable's is `v.f`, and
+// a copy anywhere between them would leave the variable unchanged. The method
+// through the pointer is the same question for the receiver a method takes.
+//
+// The pointer is kept inside a block of its own and is not declared to the
+// environment: the generators that write through a struct symbol would take it for
+// a struct, and a by-value copy of a pointer is not a copy of what it points at.
+func (f *Fuzzer) genStructPtrStmt(vm Machine, mem Memory) Node {
+	structs := f.CurrentEnv.GetStructSymbols()
+	if len(structs) == 0 {
+		return f.genChecksumMutation(vm, mem)
+	}
+	sym := structs[f.Rand.Intn(len(structs))]
+	sym.Used = true
+	sv := mem.Load(sym.Name).(*StructVal)
+	fld := sv.Def.Fields[f.Rand.Intn(len(sv.Def.Fields))]
+	name := f.newVarName("sp")
+	exprNode, exprVal, _ := f.genExpression(BasicType{Kind: KindInt}, vm, mem, 0)
+	stmts := []Node{
+		&AssignStmtNode{Lhs: name, Op: ":=", Rhs: &IdentNode{Name: "&" + sym.Name}},
+		&AssignStmtNode{Lhs: name + "." + fld, Op: "=", Rhs: exprNode},
+	}
+	sv.Fields[fld] = exprVal.(Int32)
+	fold := func(n Node, v Int32) {
+		stmts = append(stmts, &AssignStmtNode{
+			Lhs: f.ChecksumName,
+			Op:  "=",
+			Rhs: &BinaryExprNode{Left: &IdentNode{Name: f.ChecksumName}, Op: "^", Right: n},
+		})
+		newSum, _ := vm.Eval("^", mem.Load(f.ChecksumName), v)
+		mem.Store(f.ChecksumName, newSum)
+	}
+	// Through the pointer and through the variable: the same value, or the write
+	// did not land where both names read.
+	fold(&FieldNode{Name: name, Field: fld}, sv.Fields[fld])
+	fold(&FieldNode{Name: sym.Name, Field: fld}, sv.Fields[fld])
+	// A method on the pointer, whose receiver is what the pointer holds: the setter
+	// writes the first field, which both names read afterwards.
+	argNode, argVal, _ := f.genExpression(BasicType{Kind: KindInt}, vm, mem, 0)
+	stmts = append(stmts, &AssignStmtNode{
+		Lhs: f.ChecksumName,
+		Op:  "=",
+		Rhs: &BinaryExprNode{Left: &IdentNode{Name: f.ChecksumName}, Op: "^",
+			Right: &MethodCallNode{Recv: name, Method: sv.Def.Set, Arg: argNode}},
+	})
+	newSum, _ := vm.Eval("^", mem.Load(f.ChecksumName), argVal.(Int32))
+	mem.Store(f.ChecksumName, newSum)
+	sv.Fields[sv.Def.Fields[0]] = argVal.(Int32)
+	fold(&FieldNode{Name: sym.Name, Field: sv.Def.Fields[0]}, sv.Fields[sv.Def.Fields[0]])
+	return &BlockNode{Statements: stmts}
 }
 
 // genFieldWrite assigns an integer expression to one field, `v.f = e`.

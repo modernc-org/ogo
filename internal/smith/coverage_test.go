@@ -187,6 +187,11 @@ var generatedConstructs = []struct {
 	// (the emitter's label pass) and the checker's jump rules had no fuzz coverage
 	// until this construct; the two entries keep the guard and the target each a
 	// tested property.
+	// A POINTER to a struct: a write through it, read back through both names, and
+	// a method whose receiver is what the pointer holds.
+	{"pointer to a struct", `\n\s*sp_\d+ := &st_\d+`},
+	{"write through a pointer to a struct", `\n\s*sp_\d+\.f_\d+ = `},
+	{"method on a pointer to a struct", `sp_\d+\.set_\d+\(`},
 	// A SELECT taking a worker's value: two arms, one on the channel the worker
 	// sends to and one on a channel nothing ever sends to, so which arm runs is
 	// decided by the senders and not by timing.
