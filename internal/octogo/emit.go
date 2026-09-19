@@ -5510,6 +5510,7 @@ type emitter struct {
 	curFunc            string                  // name of the function whose body is being emitted (for its result-struct type)
 	pkgScope           bool                    // a package variable's initializer is being emitted, where this frame's storage does not exist
 	curResultNames     []string                // current function's result C-variable names, for a bare "return" (naked return)
+	curArrayResult     string                  // the NAME its single array result was declared with, which a return copies into the caller's storage
 	curResultTypes     []string                // current function's result C types, for typing a `return nil` in a slice-returning function
 	tmp                int                     // per-function counter for generated temporaries (destructuring)
 	makeN              int                     // translation-unit counter for make() backing arrays
@@ -12269,6 +12270,7 @@ func (e *emitter) emitFuncDecl(ast []int32) {
 	e.deferReplay = -1
 	e.curResultNames = nil
 	e.curResultTypes = nil
+	e.curArrayResult = ""
 	// A method is a function with a mangled name and its receiver as the first
 	// parameter, bound in the local environment so the body reads it like any local
 	// (a pointer receiver's field access is then `->`, exactly as for a `*T` param).
@@ -12435,7 +12437,7 @@ func (e *emitter) liftFuncLit(lit Node) (string, bool) {
 		frameHolder                    map[string]string
 		tmp, indent, deferReplay       int
 		defers                         []deferredCall
-		curFunc                        string
+		curFunc, curArrayResult        string
 		curResultNames, curResultTypes []string
 		prologue                       []string
 		w                              io.Writer
@@ -12471,7 +12473,8 @@ func (e *emitter) liftFuncLit(lit Node) (string, bool) {
 		frameBacked: e.frameBacked, frameHolder: e.frameHolder,
 		tmp: e.tmp, indent: e.indent, deferReplay: e.deferReplay, defers: e.defers,
 		curFunc: e.curFunc, curResultNames: e.curResultNames, curResultTypes: e.curResultTypes,
-		prologue: e.prologue, w: e.w,
+		curArrayResult: e.curArrayResult,
+		prologue:       e.prologue, w: e.w,
 		hoistedArrayCalls: e.hoistedArrayCalls, pkgScope: e.pkgScope,
 		aliasedLocals: e.aliasedLocals,
 		funcValueOf:   maps.Clone(e.funcValueOf), funcParamAlias: e.funcParamAlias,
@@ -12512,7 +12515,7 @@ func (e *emitter) liftFuncLit(lit Node) (string, bool) {
 	e.frameBacked = map[string]bool{}
 	e.frameHolder = map[string]string{}
 	e.tmp, e.indent, e.deferReplay, e.defers, e.prologue = 0, 0, -1, nil, nil
-	e.curFunc = cname
+	e.curFunc, e.curArrayResult = cname, ""
 	// A literal written in main is not main: its bare `return` returns nothing. Left
 	// set, the flag made it `return 0;` in a void function, which the host's C
 	// compiler refuses.
@@ -12568,6 +12571,7 @@ func (e *emitter) liftFuncLit(lit Node) (string, bool) {
 	e.frameBacked, e.frameHolder = saved.frameBacked, saved.frameHolder
 	e.tmp, e.indent, e.deferReplay, e.defers = saved.tmp, saved.indent, saved.deferReplay, saved.defers
 	e.curFunc, e.curResultNames, e.curResultTypes = saved.curFunc, saved.curResultNames, saved.curResultTypes
+	e.curArrayResult = saved.curArrayResult
 	e.aliasedLocals = saved.aliasedLocals
 	e.prologue, e.w = saved.prologue, saved.w
 	e.hoistedArrayCalls, e.pkgScope = saved.hoistedArrayCalls, saved.pkgScope
@@ -13359,6 +13363,25 @@ func (e *emitter) bodyEndsInReturn(body []int32) bool {
 // unused-variable warning ("(q, r int) { return a, b }" is idiomatic Go). Its
 // values are supplied directly by each explicit return.
 func (e *emitter) declareNamedResults(sig, body []int32) {
+	// A single ARRAY result is written through the caller's storage, so resultInfo
+	// names nothing for it. A NAME the signature gives it is a variable of this
+	// frame all the same -- `func mk() (r [2]int) { r[0] = 1; return r }` -- and a
+	// return copies it out (emitReturn). Until it was declared here, the body's
+	// `r[0] = 1` named nothing and the return was refused.
+	if a, isArr := e.arrayResultOf(sig); isArr {
+		nm, named := e.arrayResultName(sig)
+		if !named {
+			return
+		}
+		e.arrays[nm] = a
+		e.curArrayResult = nm
+		if !e.bodyHasNakedReturn(body) && !e.bodyMentions(body, nm) {
+			return
+		}
+		e.ind()
+		e.emit(a.elem + " " + nm + a.declSuffix() + " = {0};\n")
+		return
+	}
 	names, types := e.resultInfo(sig)
 	naked := e.bodyHasNakedReturn(body)
 	for i, nm := range names {
@@ -13374,6 +13397,24 @@ func (e *emitter) declareNamedResults(sig, body []int32) {
 		// zero for an aggregate, and "= 0" is an invalid initializer there.
 		e.emit(types[i] + " " + nm + " = " + e.zeroInitC(types[i]) + ";\n")
 	}
+}
+
+// arrayResultName is the name a signature gives its single array result, `(r
+// [2]int)`, and whether it named one at all.
+func (e *emitter) arrayResultName(sig []int32) (string, bool) {
+	for n := range it(sig) {
+		if n.sym != ResultList {
+			continue
+		}
+		for _, d := range e.f.paramDecls(n.ast) {
+			for _, nm := range d.Names {
+				if nm.Src() != "" && nm.Src() != "_" {
+					return nm.Src(), true
+				}
+			}
+		}
+	}
+	return "", false
 }
 
 // bodyHasNakedReturn reports whether ast contains a bare "return" -- a return
@@ -25742,6 +25783,20 @@ func (e *emitter) emitReturn(nodes []Node) {
 	// returned: C cannot return an array. The copy is by size, so a
 	// multi-dimensional result travels as one block.
 	if a, ok := e.funcArrayRet[e.curFunc]; ok {
+		if len(exprs) == 0 && e.curArrayResult != "" {
+			// A bare `return` in a function with a NAMED array result: what the
+			// caller gets is that variable, copied into its storage as `return r`
+			// copies it.
+			e.includes["string.h"] = true
+			if len(e.defers) != 0 {
+				e.emitDeferred()
+			}
+			e.ind()
+			e.emit("memcpy(" + arrayResultParam + ", " + e.curArrayResult + ", sizeof(" + a.elem + ")" + arrayCountC(a) + ");\n")
+			e.ind()
+			e.emit("return;\n")
+			return
+		}
 		if len(exprs) != 1 {
 			e.fail("a function with an array result returns exactly one value")
 			return

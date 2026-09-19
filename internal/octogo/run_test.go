@@ -6320,6 +6320,132 @@ func main() {
 `,
 	},
 	{
+		// A NAMED array result. An array is written through the caller's storage
+		// rather than returned, so the name the signature gives it had nothing
+		// declared for it: the body's `r[0] = n` named nothing and `return r` was
+		// "an array result must be returned as a variable or an array literal",
+		// which is what r is. It is a variable of the frame now, copied out by a
+		// return that names it and by a bare one -- through a method, a whole
+		// assignment, recursion and a defer, and beside a literal's own r. Every
+		// line is what real Go prints.
+		name: "a named array result",
+		src: `type grid [2][3]int
+
+func mk(n int) (r [2]int) {
+	r[0] = n
+	r[1] = n * 2
+	return r
+}
+
+func naked(n int) (r [3]int) {
+	for i := 0; i < len(r); i++ {
+		r[i] = n + i
+	}
+	return
+}
+
+func early(n int) (r [2]int) {
+	if n < 0 {
+		return
+	}
+	r[0] = n
+	return r
+}
+
+func twoDim(n int) (g grid) {
+	g[1][2] = n
+	return g
+}
+
+func deferred(n int) (r [2]int) {
+	defer func(v int) { println("defer", v) }(n)
+	r[0] = n
+	return r
+}
+
+func lit(n int) (r [2]int) {
+	return [2]int{n, n + 1}
+}
+
+type box struct{ base int }
+
+var pkgArr = [2]int{8, 9}
+
+func (b *box) pair(n int) (r [2]int) {
+	r[0] = b.base
+	r[1] = n
+	return r
+}
+
+func whole(n int) (r [2]int) {
+	r = [2]int{n, n + 1}
+	return r
+}
+
+func fromVar() (r [2]int) {
+	r = pkgArr
+	r[0]++
+	return
+}
+
+func rec(n int) (r [3]int) {
+	if n > 0 {
+		r = rec(n - 1)
+	}
+	r[0] = r[0] + n
+	return
+}
+
+func inner(n int) (r [2]int) {
+	f := func(v int) int {
+		r := v * 3
+		return r
+	}
+	r[0] = f(n)
+	return r
+}
+
+func first() {
+	a := mk(3)
+	b := naked(10)
+	c := early(-1)
+	d := early(4)
+	g := twoDim(7)
+	e := deferred(5)
+	f := lit(8)
+	println(a[0], a[1], b[0], b[1], b[2])
+	println(c[0], c[1], d[0], d[1])
+	println(g[0][0], g[1][2], e[0], e[1], f[0], f[1])
+}
+
+func second() {
+	var b box
+	b.base = 2
+	p := b.pair(5)
+	w := whole(1)
+	v := fromVar()
+	c := rec(3)
+	i := inner(4)
+	println(p[0], p[1], w[0], w[1])
+	println(v[0], v[1], c[0], c[1], c[2])
+	println(i[0], i[1], pkgArr[0])
+}
+
+func main() {
+	first()
+	second()
+}
+`,
+		want: `defer 5
+3 6 10 11 12
+0 0 4 0
+0 7 5 0 8 9
+2 5 1 2
+9 9 6 0 0
+12 0 8
+`,
+	},
+	{
 		// A literal uses the constants and the types of the function around it, as
 		// Go's does: they were "undefined" in one. The C constants are declared again
 		// in the lifted function, in a block of their own around the body, so its own

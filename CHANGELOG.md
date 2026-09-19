@@ -20,6 +20,14 @@ shipped section tells a reader on that version that they have behaviour they do 
 
 ### Language
 
+- **A named array result.** `func mk() (r [2]int) { r[0] = 1; return r }` was
+  refused, "an array result must be returned as a variable or an array literal",
+  which is exactly what r is: an array travels through the caller's storage rather
+  than being returned, so the name the signature gave it had nothing declared for
+  it and the body's `r[0] = 1` named nothing either. It is a variable of the frame
+  now, copied out by a return that names it and by a bare `return` -- in a method,
+  through a whole assignment, a recursive call and a defer, of one dimension or
+  more.
 - **A `bytes` package.** The allocation-free part of Go's, which is the `strings`
   package over a byte slice: Compare, Equal, Contains, ContainsAny, ContainsRune,
   Count, Cut, CutPrefix, CutSuffix, HasPrefix, HasSuffix, Index, IndexAny,
