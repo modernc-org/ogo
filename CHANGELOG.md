@@ -770,7 +770,9 @@ program handed out a reference to storage that was gone by the time it was read.
   wherever the function kept it. Such a call is judged now by every function of
   that type the program uses as a value, declared, another package's, a literal, a
   method value or a method expression, and the refusal names one that keeps what
-  it is handed; a program in which none does is unaffected. A function remembered
+  it is handed; a program in which none does is unaffected. A literal whose
+  signature names a local type, `func(m msg)`, counts among them as well, though
+  its type is known only once the function around it is walked. A function remembered
   from an assignment is believed only where nothing can have changed it: rebound in
   a branch, a loop, a select or through its address, a field after a method call on
   its struct, and anything in a function with a goto, was read as holding what the

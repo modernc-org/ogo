@@ -11998,6 +11998,34 @@ func main() { apply(zero) }
 
 func main() { keepGlobal(garr[:]); run(keepNone) }
 `, false},
+		{"a literal of a local type among the members", `func poll() {
+	type msg struct{ b []int }
+	type dev struct{ on func(msg) }
+	var d dev
+	arm := func(p *dev) {
+		p.on = func(m msg) { gs = m.b }
+	}
+	arm(&d)
+	var b [4]int
+	d.on(msg{b[:]})
+}
+
+func main() { poll() }
+`, true},
+		{"a literal of a local type keeping nothing", `func poll() {
+	type msg struct{ b []int }
+	type dev struct{ on func(msg) }
+	var d dev
+	arm := func(p *dev) {
+		p.on = func(m msg) { println(len(m.b)) }
+	}
+	arm(&d)
+	var b [4]int
+	d.on(msg{b[:]})
+}
+
+func main() { keepGlobal(garr[:]); poll() }
+`, false},
 		{"no member keeps its argument", `func setup() { handler = keepNone }
 
 func poll() {

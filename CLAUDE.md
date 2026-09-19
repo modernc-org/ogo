@@ -649,6 +649,10 @@ another package's, literals, method values, method expressions). Whatever reache
 function value was one of those once, so the union is sound; it is by TYPE, so a table
 of harmless functions is refused when a keeper of that type is a value anywhere, and a
 per-location may-hold analysis is how that price would come down. A binding
+A literal whose signature names a LOCAL type is typed by nothing before the bodies
+are walked, so it joins its type's members when it is LIFTED and the union is
+computed afresh at each call site; a call written before that literal is the one
+place it is missed. A binding
 `bindFuncValue` records is believed only where `boundFunc` says nothing can have
 changed it (`scanBindings`): written once, or only by plain assignments in one block
 of a function without a goto, never address-taken or method-called, never a package

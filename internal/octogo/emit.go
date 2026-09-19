@@ -4588,7 +4588,7 @@ func typeNameCollisions(src []byte, names map[string]bool) map[string]bool {
 // emitProgram is EmitC's one pass. rename lists the main-package types spelled
 // ogo_T_<name> in C (see typeMangle).
 func emitProgram(pkg *Package, w io.Writer, opts []EmitOption, rename map[string]bool) error {
-	e := &emitter{renameTypes: rename, renamedTypes: map[string]string{}, includes: map[string]bool{}, funcRet: map[string][]string{}, funcSliceParams: map[string][]string{}, funcVariadic: map[string]int{}, nilHelpers: map[string]bool{}, funcArrayRet: map[string]arrDim{}, funcArrayParams: map[string][]arrDim{}, anonStructNames: map[string]string{}, methodValueTypes: map[string]funcValueType{}, methodValueOf: map[string]string{}, methodExprNames: map[string]string{}, funcParams: map[string][]string{}, methodPtr: map[string]bool{}, globals: map[string]string{}, structs: map[string][]structField{}, namedTypes: map[string]bool{}, typeNames: map[string]bool{}, interfaceTypes: map[string]bool{}, ifaceMethods: map[string][]ifaceMethod{}, anonIfaceNames: map[string]string{}, anonIfaceMinted: map[string]bool{}, ifaceASTs: map[string]ifaceAST{}, ifaceVTables: map[string]bool{}, namedUnderlying: map[string]string{}, namedArrays: map[string]arrDim{}, constInt: map[string]string{}, constVal: map[string]constant.Value{}, constWide: map[string]string{}, constStr: map[string]string{}, constUntyped: map[string]bool{}, constHuge: map[string]bool{}, arrays: map[string]arrDim{}, globalArrays: map[string]arrDim{}, sliceVars: map[string]string{}, globalSliceVars: map[string]string{}, chanElems: map[string]bool{}, chanInitElems: map[string]bool{}, chanSendElems: map[string]bool{}, chanRecvElems: map[string]bool{}, chanTryRecvElems: map[string]bool{}, chanTrySendElems: map[string]bool{}, chanGatedSendElems: map[string]bool{}, aliasOf: map[string]string{}, localTypes: map[string]string{}, gotoTargets: map[string]bool{}, chanCloseElems: map[string]bool{}, chanRecv2Elems: map[string]bool{}, mathWrappers: map[string]bool{}, chanElemByName: map[string]string{}, sliceElems: map[string]bool{}, sliceElemByName: map[string]string{}, appendElems: map[string]bool{}, tryappendElems: map[string]bool{}, appendSliceElems: map[string]bool{}, tryappendSliceEls: map[string]bool{}, appendokStructs: map[string]bool{}, copyElems: map[string]bool{}, resliceElems: map[string]bool{}, reslice3Elems: map[string]bool{}, clearElems: map[string]bool{}, minElems: map[string]bool{}, maxElems: map[string]bool{}, printSliceElems: map[string]bool{}, printStructs: map[string]string{}, printlnElems: map[string]bool{}, switchBreakUsed: map[string]bool{}, labelBreak: map[string]string{}, labelContinue: map[string]string{}, labelUsed: map[string]bool{}, eqStructs: map[string]bool{}, eqArrays: map[string]arrDim{}, frameBacked: map[string]bool{}, frameHolder: map[string]string{}, crossParams: map[string][]leak{}, crossContents: map[string][]leak{}, retContents: map[string][]bool{}, recvContents: map[string]leak{}, paramCalls: map[string][]paramCall{}, frameCalls: map[string][]frameCall{}, localConstSpecs: map[string]localConstSpec{}, inheritedTypes: map[string]bool{}, funcValueMembers: map[string][]string{}, methodExprMembers: map[string]emMethodExpr{}, memberShown: map[string]string{}, litLifted: map[string][]string{}, typeNamed: map[string]bool{}, methodNames: map[string]bool{}, recvLeaks: map[string]leak{}, retRecv: map[string]bool{}, crossInto: map[string][]uint32{}, ifaceSummaries: map[string]ifaceSummary{}, retParams: map[string][]bool{}, funcValueOf: map[string]string{}, crossNames: map[string]string{}, initNames: map[string]string{}, funcValueTypes: map[string]funcValueType{}, funcTypeNames: map[string]string{}, funcTypeRet: map[string][]string{}, funcTypeParams: map[string][]string{}, retStructs: map[string]string{}, retStructByKey: map[string]string{}, shiftHelpers: map[string][2]string{}, shiftCTypes: map[*int32]string{}, shiftWalked: map[shiftWalkKey]bool{}, shiftIn: map[*int32]bool{}, divHelpers: map[string][2]string{}, funcValueWrappers: map[string]string{}, deferReplay: -1, iota: -1}
+	e := &emitter{renameTypes: rename, renamedTypes: map[string]string{}, includes: map[string]bool{}, funcRet: map[string][]string{}, funcSliceParams: map[string][]string{}, funcVariadic: map[string]int{}, nilHelpers: map[string]bool{}, funcArrayRet: map[string]arrDim{}, funcArrayParams: map[string][]arrDim{}, anonStructNames: map[string]string{}, methodValueTypes: map[string]funcValueType{}, methodValueOf: map[string]string{}, methodExprNames: map[string]string{}, funcParams: map[string][]string{}, methodPtr: map[string]bool{}, globals: map[string]string{}, structs: map[string][]structField{}, namedTypes: map[string]bool{}, typeNames: map[string]bool{}, interfaceTypes: map[string]bool{}, ifaceMethods: map[string][]ifaceMethod{}, anonIfaceNames: map[string]string{}, anonIfaceMinted: map[string]bool{}, ifaceASTs: map[string]ifaceAST{}, ifaceVTables: map[string]bool{}, namedUnderlying: map[string]string{}, namedArrays: map[string]arrDim{}, constInt: map[string]string{}, constVal: map[string]constant.Value{}, constWide: map[string]string{}, constStr: map[string]string{}, constUntyped: map[string]bool{}, constHuge: map[string]bool{}, arrays: map[string]arrDim{}, globalArrays: map[string]arrDim{}, sliceVars: map[string]string{}, globalSliceVars: map[string]string{}, chanElems: map[string]bool{}, chanInitElems: map[string]bool{}, chanSendElems: map[string]bool{}, chanRecvElems: map[string]bool{}, chanTryRecvElems: map[string]bool{}, chanTrySendElems: map[string]bool{}, chanGatedSendElems: map[string]bool{}, aliasOf: map[string]string{}, localTypes: map[string]string{}, gotoTargets: map[string]bool{}, chanCloseElems: map[string]bool{}, chanRecv2Elems: map[string]bool{}, mathWrappers: map[string]bool{}, chanElemByName: map[string]string{}, sliceElems: map[string]bool{}, sliceElemByName: map[string]string{}, appendElems: map[string]bool{}, tryappendElems: map[string]bool{}, appendSliceElems: map[string]bool{}, tryappendSliceEls: map[string]bool{}, appendokStructs: map[string]bool{}, copyElems: map[string]bool{}, resliceElems: map[string]bool{}, reslice3Elems: map[string]bool{}, clearElems: map[string]bool{}, minElems: map[string]bool{}, maxElems: map[string]bool{}, printSliceElems: map[string]bool{}, printStructs: map[string]string{}, printlnElems: map[string]bool{}, switchBreakUsed: map[string]bool{}, labelBreak: map[string]string{}, labelContinue: map[string]string{}, labelUsed: map[string]bool{}, eqStructs: map[string]bool{}, eqArrays: map[string]arrDim{}, frameBacked: map[string]bool{}, frameHolder: map[string]string{}, crossParams: map[string][]leak{}, crossContents: map[string][]leak{}, retContents: map[string][]bool{}, recvContents: map[string]leak{}, paramCalls: map[string][]paramCall{}, frameCalls: map[string][]frameCall{}, localConstSpecs: map[string]localConstSpec{}, inheritedTypes: map[string]bool{}, funcValueMembers: map[string][]string{}, methodExprMembers: map[string]emMethodExpr{}, memberShown: map[string]string{}, litLifted: map[string][]string{}, methodNames: map[string]bool{}, recvLeaks: map[string]leak{}, retRecv: map[string]bool{}, crossInto: map[string][]uint32{}, ifaceSummaries: map[string]ifaceSummary{}, retParams: map[string][]bool{}, funcValueOf: map[string]string{}, crossNames: map[string]string{}, initNames: map[string]string{}, funcValueTypes: map[string]funcValueType{}, funcTypeNames: map[string]string{}, funcTypeRet: map[string][]string{}, funcTypeParams: map[string][]string{}, retStructs: map[string]string{}, retStructByKey: map[string]string{}, shiftHelpers: map[string][2]string{}, shiftCTypes: map[*int32]string{}, shiftWalked: map[shiftWalkKey]bool{}, shiftIn: map[*int32]bool{}, divHelpers: map[string][2]string{}, funcValueWrappers: map[string]string{}, deferReplay: -1, iota: -1}
 	for _, opt := range opts {
 		opt(e)
 	}
@@ -5551,7 +5551,6 @@ type emitter struct {
 	memberShown        map[string]string       // how a diagnostic names each of those members
 	litLifted          map[string][]string     // a function literal's summary key -> the C names it was lifted to, whose frameCalls are its own
 	typeCallees        []string                // the "type:" callees the summaries have edges to, refreshed by the fixed point (unionSummary)
-	typeNamed          map[string]bool         // a "type:" callee whose union is final and named for diagnostics (typeSummary)
 	methodNames        map[string]bool         // the name of every method of every type, which a selector calling one is known by (scanBindings)
 	bindWrites         map[string]int          // in the function being emitted, how often a name -- or one field of it, funcFieldKey -- is declared or assigned (see boundFunc)
 	bindBlock          map[string]int          // ... the block all those writes are in, or -1 for more than one
@@ -9326,14 +9325,18 @@ func (e *emitter) collectFuncValues(ast []int32) {
 }
 
 // noteFuncValue records the function a Factor is, when it is one used as a value.
-func (e *emitter) noteFuncValue(kids []Node) {
-	add := func(fv funcValueType, name, shown string) {
-		id := funcShapeID(fv)
-		if !slices.Contains(e.funcValueMembers[id], name) {
-			e.funcValueMembers[id] = append(e.funcValueMembers[id], name)
-			e.memberShown[name] = shown
-		}
+// noteFuncValueMember records one function as a value of its type, for the union a
+// call through a value of that type is judged by (typeSummary).
+func (e *emitter) noteFuncValueMember(fv funcValueType, name, shown string) {
+	id := funcShapeID(fv)
+	if !slices.Contains(e.funcValueMembers[id], name) {
+		e.funcValueMembers[id] = append(e.funcValueMembers[id], name)
+		e.memberShown[name] = shown
 	}
+}
+
+func (e *emitter) noteFuncValue(kids []Node) {
+	add := e.noteFuncValueMember
 	if len(kids) == 1 && kids[0].sym == FuncLiteral {
 		for c := range it(kids[0].ast) {
 			if c.sym != Signature {
@@ -9438,10 +9441,9 @@ func (e *emitter) fieldCallee(base, field, ft string) string {
 // union over every function of the type used as a value -- and names it for a
 // diagnostic, after one that keeps what it is handed.
 func (e *emitter) typeSummary(cname string) {
-	if e.typeNamed[cname] {
-		return
-	}
-	e.typeNamed[cname] = true
+	// Asked again at every call site: a literal whose signature names a LOCAL type
+	// cannot be typed before the bodies are walked, so it joins its type's members
+	// when it is lifted (noteFuncValueMember) -- after this may have been asked.
 	e.typeCallee(cname)
 	culprit, _ := e.unionSummary(cname)
 	ct := strings.TrimPrefix(cname, "type:")
@@ -12380,6 +12382,11 @@ func (e *emitter) liftFuncLit(lit Node) (string, bool) {
 	_, litRes := e.cSig(sig)
 	e.funcRet[cname] = litRes
 	e.funcValueTypes[cname] = e.funcSigCParts(sig)
+	// The scan before the bodies could not type a signature naming a LOCAL type, so
+	// a literal of one was no member of its type: a call through a value holding it
+	// was judged by a union without it. Its types resolve here.
+	key := e.litKey(lit)
+	e.noteFuncValueMember(e.funcValueTypes[cname], key, "the function literal at "+strings.TrimPrefix(key, "lit@"))
 	e.funcSliceParams[cname] = e.paramSliceTypes(sig)
 	if _, at := e.variadicElem(sig); at >= 0 {
 		e.funcVariadic[cname] = at
@@ -35426,6 +35433,9 @@ func (e *emitter) goTypeName(ct string) string {
 	}
 	if name, ok := e.renamedTypes[ct]; ok {
 		return name // a type of this one spelled otherwise in C (see typeMangle)
+	}
+	if name, ok := e.userTypeNames[ct]; ok {
+		return name // a LOCAL type, whose C name is minted (see emitLocalTypeDecl)
 	}
 	// A MINTED interface name has no source spelling to return -- the program wrote
 	// the shape, not a name -- so the shape is what a message about it says. Left to
