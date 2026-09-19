@@ -11179,6 +11179,880 @@ func eachElemsPkg(f func([]*int)) { f([]*int{&gx}) }
 	}
 }
 
+// TestEmitCFuncValueUnion: a call through a function VALUE whose function the
+// emitter cannot name -- a package variable set somewhere else, a field, an element
+// of a table, a call's result, a variable written on more than one path -- consulted
+// no summary at all until 2026-09-19, so any of them could hand a local's storage
+// to a function keeping it, in silence. It is judged now by every function of its
+// type the program uses as a value (typeSummary), and a binding is believed only
+// where nothing can have changed it since (boundFunc). Each case is refused for a
+// reference to the frame or accepted; the accepted ones are what the rules must not
+// cost.
+func TestEmitCFuncValueUnion(t *testing.T) {
+	const head = `var gs []int
+
+var garr [4]int
+
+func keepGlobal(v []int) { gs = v }
+
+func keepNone(v []int) {}
+
+func ident(v []int) []int { return v }
+
+type Dev struct {
+	onData func([]int)
+}
+
+type Keeper struct {
+	v []int
+}
+
+func (k *Keeper) Keep(v []int) { k.v = v }
+
+var gk Keeper
+
+var gdev Dev
+
+var handler func([]int)
+
+`
+	for _, test := range []struct {
+		name, src string
+		refuse    bool
+	}{
+		{"a package variable set elsewhere", `func setup() { handler = keepGlobal }
+
+func poll() {
+	var b [4]int
+	handler(b[:])
+}
+
+func main() { setup(); poll() }
+`, true},
+		{"a package variable declared harmless and set elsewhere", `var h2 = keepNone
+
+func setup() { h2 = keepGlobal }
+
+func poll() {
+	var b [4]int
+	h2(b[:])
+}
+
+func main() { setup(); poll() }
+`, true},
+		{"a package variable bound here, a call between", `func setup() { handler = keepGlobal }
+
+func poll() {
+	var b [4]int
+	handler = keepNone
+	setup()
+	handler(b[:])
+}
+
+func main() { poll() }
+`, true},
+		{"a package variable's field", `func setup() { gdev.onData = keepGlobal }
+
+func poll() {
+	var b [4]int
+	gdev.onData(b[:])
+}
+
+func main() { setup(); poll() }
+`, true},
+		{"a local's field, its address handed on", `func setup(d *Dev) { d.onData = keepGlobal }
+
+func poll() {
+	var b [4]int
+	var d Dev
+	d.onData = keepNone
+	setup(&d)
+	d.onData(b[:])
+}
+
+func main() { poll() }
+`, true},
+		{"a pointer parameter's field", `func poll(d *Dev) {
+	var b [4]int
+	d.onData(b[:])
+}
+
+func main() { gdev.onData = keepGlobal; poll(&gdev) }
+`, true},
+		{"an element", `var table = [2]func([]int){keepNone, keepGlobal}
+
+func poll() {
+	var b [4]int
+	table[1](b[:])
+}
+
+func main() { poll() }
+`, true},
+		{"an element at a variable index", `var table = [2]func([]int){keepNone, keepGlobal}
+
+func poll(i int) {
+	var b [4]int
+	table[i](b[:])
+}
+
+func main() { poll(1) }
+`, true},
+		{"a ranged element", `var table = [2]func([]int){keepNone, keepGlobal}
+
+func poll() {
+	var b [4]int
+	for _, f := range table {
+		f(b[:])
+	}
+}
+
+func main() { poll() }
+`, true},
+		{"a call's result called", `func pick() func([]int) { return keepGlobal }
+
+func poll() {
+	var b [4]int
+	pick()(b[:])
+}
+
+func main() { poll() }
+`, true},
+		{"a call's result held", `func pick() func([]int) { return keepGlobal }
+
+func poll() {
+	var b [4]int
+	f := pick()
+	f(b[:])
+}
+
+func main() { poll() }
+`, true},
+		{"a literal among the members", `func setup() { handler = func(v []int) { gs = v } }
+
+func poll() {
+	var b [4]int
+	handler(b[:])
+}
+
+func main() { setup(); poll() }
+`, true},
+		{"a method value among the members", `func setup() { handler = gk.Keep }
+
+func poll() {
+	var b [4]int
+	handler(b[:])
+}
+
+func main() { setup(); poll() }
+`, true},
+		{"a method expression among the members", `var hk func(*Keeper, []int)
+
+func setup() { hk = (*Keeper).Keep }
+
+func poll() {
+	var b [4]int
+	hk(&gk, b[:])
+}
+
+func main() { setup(); poll() }
+`, true},
+		{"a result derived from the argument", `var idf func([]int) []int
+
+func setup() { idf = ident }
+
+func poll() {
+	var b [4]int
+	gs = idf(b[:])
+}
+
+func main() { setup(); poll() }
+`, true},
+		{"deferred through a package variable", `func setup() { handler = keepGlobal }
+
+func poll() {
+	var b [4]int
+	defer handler(b[:])
+}
+
+func main() { setup(); poll() }
+`, true},
+		{"deferred through a field", `func setup() { gdev.onData = keepGlobal }
+
+func poll() {
+	var b [4]int
+	defer gdev.onData(b[:])
+}
+
+func main() { setup(); poll() }
+`, true},
+		{"deferred through an element", `var table = [2]func([]int){keepNone, keepGlobal}
+
+func poll() {
+	var b [4]int
+	defer table[1](b[:])
+}
+
+func main() { poll() }
+`, true},
+		{"a call in an expression", `var cnt func([]int) int
+
+func count(v []int) int { gs = v; return len(v) }
+
+func setup() { cnt = count }
+
+func poll() int {
+	var b [4]int
+	n := cnt(b[:]) + 1
+	return n
+}
+
+func main() { setup(); println(poll()) }
+`, true},
+		{"a struct result, through a field", `type R struct{ a, b int }
+
+type Dev2 struct {
+	fn func([]int) R
+}
+
+var gd2 Dev2
+
+func keepR(v []int) R { gs = v; return R{1, 2} }
+
+func setup() { gd2.fn = keepR }
+
+func poll() {
+	var b [4]int
+	r := gd2.fn(b[:])
+	println(r.a)
+}
+
+func main() { setup(); poll() }
+`, true},
+		{"several results, through an element", `func keep2(v []int) (int, int) { gs = v; return 1, 2 }
+
+var tab2 = [1]func([]int) (int, int){keep2}
+
+func poll() {
+	var b [4]int
+	x, y := tab2[0](b[:])
+	println(x, y)
+}
+
+func main() { poll() }
+`, true},
+		{"a local's address", `var gp *int
+
+func keepP(p *int) { gp = p }
+
+var hp func(*int)
+
+func setup() { hp = keepP }
+
+func poll() {
+	var x int
+	hp(&x)
+}
+
+func main() { setup(); poll() }
+`, true},
+		{"rebound in a branch", `func poll(c bool) {
+	var b [4]int
+	f := keepNone
+	if c {
+		f = keepGlobal
+	}
+	f(b[:])
+}
+
+func main() { poll(true) }
+`, true},
+		{"rebound after the call in a loop", `func poll() {
+	var b [4]int
+	f := keepNone
+	for i := 0; i < 2; i++ {
+		f(b[:])
+		f = keepGlobal
+	}
+}
+
+func main() { poll() }
+`, true},
+		{"rebound through its address", `func rebind(p *func([]int)) { *p = keepGlobal }
+
+func poll() {
+	var b [4]int
+	f := keepNone
+	rebind(&f)
+	f(b[:])
+}
+
+func main() { poll() }
+`, true},
+		{"a field rebound in a branch", `func poll(c bool) {
+	var b [4]int
+	var d Dev
+	d.onData = keepNone
+	if c {
+		d.onData = keepGlobal
+	}
+	d.onData(b[:])
+}
+
+func main() { poll(true) }
+`, true},
+		{"a field rebound by a method", `func (d *Dev) arm() { d.onData = keepGlobal }
+
+func poll() {
+	var b [4]int
+	var d Dev
+	d.onData = keepNone
+	d.arm()
+	d.onData(b[:])
+}
+
+func main() { poll() }
+`, true},
+		{"rebound in a switch clause", `func poll(n int) {
+	var b [4]int
+	f := keepNone
+	switch n {
+	case 1:
+		f = keepGlobal
+	}
+	f(b[:])
+}
+
+func main() { poll(1) }
+`, true},
+		{"a package variable handed as a callback", `func run(f func([]int)) {
+	var b [4]int
+	f(b[:])
+}
+
+func main() { handler = keepGlobal; run(handler) }
+`, true},
+		{"a field handed as a callback", `func run(f func([]int)) {
+	var b [4]int
+	f(b[:])
+}
+
+func main() { gdev.onData = keepGlobal; run(gdev.onData) }
+`, true},
+		{"an element handed as a callback", `var table = [2]func([]int){keepNone, keepGlobal}
+
+func run(f func([]int)) {
+	var b [4]int
+	f(b[:])
+}
+
+func main() { run(table[1]) }
+`, true},
+		{"a call's result handed as a callback", `func pick() func([]int) { return keepGlobal }
+
+func run(f func([]int)) {
+	var b [4]int
+	f(b[:])
+}
+
+func main() { run(pick()) }
+`, true},
+		{"a package variable handed to a function calling it", `func each(f func([]int), v []int) { f(v) }
+
+func poll() {
+	var b [4]int
+	each(handler, b[:])
+}
+
+func main() { handler = keepGlobal; poll() }
+`, true},
+		{"a callback parameter rebound", `func run(f func([]int)) {
+	var b [4]int
+	f = keepGlobal
+	f(b[:])
+}
+
+func main() { run(keepNone) }
+`, true},
+		{"a callback parameter rebound in a branch", `func run(f func([]int), c bool) {
+	var b [4]int
+	if c {
+		f = keepGlobal
+	}
+	f(b[:])
+}
+
+func main() { run(keepNone, true) }
+`, true},
+		{"a callback parameter shadowed by an if", `func pick() func([]int) { return keepGlobal }
+
+func run(f func([]int)) {
+	var b [4]int
+	if f := pick(); f != nil {
+		f(b[:])
+	}
+}
+
+func main() { run(keepNone) }
+`, true},
+		{"a named callback", `func run(f func([]int)) {
+	var b [4]int
+	f(b[:])
+}
+
+func main() { handler = keepGlobal; handler(garr[:]); run(keepNone) }
+`, false},
+		{"a callback parameter handed on", `func run(f func([]int)) {
+	var b [4]int
+	f(b[:])
+}
+
+func outer(g func([]int)) { run(g) }
+
+func main() { handler = keepGlobal; handler(garr[:]); outer(keepNone) }
+`, false},
+		{"a local's field bound once", `func poll() {
+	var b [4]int
+	d := Dev{onData: keepNone}
+	d.onData(b[:])
+}
+
+func main() { gdev.onData = keepGlobal; gdev.onData(garr[:]); poll() }
+`, false},
+		{"declared, then bound once", `func poll() {
+	var b [4]int
+	var f func([]int)
+	f = keepNone
+	f(b[:])
+}
+
+func main() { handler = keepGlobal; handler(garr[:]); poll() }
+`, false},
+		{"a callback parameter shadowed by a switch", `func pick() func([]int) { return keepGlobal }
+
+func run(f func([]int)) {
+	var b [4]int
+	switch f := pick(); {
+	default:
+		f(b[:])
+	}
+}
+
+func main() { run(keepNone) }
+`, true},
+		{"a callback parameter shadowed by a for clause", `func pick() func([]int) { return keepGlobal }
+
+func run(f func([]int)) {
+	var b [4]int
+	for f := pick(); ; {
+		f(b[:])
+		break
+	}
+}
+
+func main() { run(keepNone) }
+`, true},
+		{"rebound by a select", `var fch chan func([]int)
+
+func feed() { fch <- keepGlobal }
+
+func poll() {
+	var b [4]int
+	f := keepNone
+	select {
+	case f = <-fch:
+	default:
+	}
+	f(b[:])
+}
+
+func main() { go feed(); poll() }
+`, true},
+		{"rebound by a range", `var table = [2]func([]int){keepNone, keepGlobal}
+
+func poll() {
+	var b [4]int
+	f := keepNone
+	for _, f = range table {
+	}
+	f(b[:])
+}
+
+func main() { poll() }
+`, true},
+		{"rebound by a list, in a branch", `func poll(c bool) {
+	var b [4]int
+	f, n := keepNone, 1
+	if c {
+		f, n = keepGlobal, 2
+	}
+	f(b[:])
+	println(n)
+}
+
+func main() { poll(true) }
+`, true},
+		{"a struct reassigned in a branch", `func poll(c bool) {
+	var b [4]int
+	d := Dev{onData: keepNone}
+	if c {
+		d = gdev
+	}
+	d.onData(b[:])
+}
+
+func main() { gdev.onData = keepGlobal; poll(true) }
+`, true},
+		{"rebound in a line to a keeping function", `func poll() {
+	var b [4]int
+	f := keepNone
+	f = keepGlobal
+	f(b[:])
+}
+
+func main() { poll() }
+`, true},
+		{"rebound across a goto", `func poll() {
+	var b [4]int
+	n := 0
+	f := keepNone
+L:
+	f(b[:])
+	f = keepGlobal
+	n++
+	if n < 2 {
+		goto L
+	}
+}
+
+func main() { poll() }
+`, true},
+		{"rebound by a call of several results", `func pick2() (func([]int), int) { return keepGlobal, 1 }
+
+func poll() {
+	var b [4]int
+	f, n := keepNone, 0
+	f, n = pick2()
+	f(b[:])
+	println(n)
+}
+
+func main() { poll() }
+`, true},
+		{"a literal's field rebound in a branch", `func poll(c bool) {
+	var b [4]int
+	d := Dev{onData: keepNone}
+	if c {
+		d.onData = keepGlobal
+	}
+	d.onData(b[:])
+}
+
+func main() { poll(true) }
+`, true},
+		{"a struct parameter's field rebound in a branch", `func poll(d Dev, c bool) {
+	var b [4]int
+	d.onData = keepNone
+	if c {
+		d.onData = keepGlobal
+	}
+	d.onData(b[:])
+}
+
+func main() { poll(gdev, true) }
+`, true},
+		{"rebound in a line to a harmless function", `func poll() {
+	var b [4]int
+	f := keepGlobal
+	f = keepNone
+	f(b[:])
+}
+
+func main() { poll() }
+`, false},
+		{"a literal's field rebound in a line", `func poll() {
+	var b [4]int
+	d := Dev{onData: keepGlobal}
+	d.onData = keepNone
+	d.onData(b[:])
+}
+
+func main() { poll() }
+`, false},
+		{"declared afresh in each pass of a loop", `func poll() {
+	var b [4]int
+	for i := 0; i < 2; i++ {
+		f := keepNone
+		f(b[:])
+		f = keepGlobal
+		f(garr[:])
+	}
+}
+
+func main() { poll() }
+`, false},
+		{"a callback handed to a value whose function hands it its frame", `var runner func(func([]int))
+
+func runLocal(f func([]int)) {
+	var b [4]int
+	f(b[:])
+}
+
+func setup() { runner = runLocal }
+
+func main() { setup(); runner(keepGlobal) }
+`, true},
+		{"a callback handed to a value whose literal hands it its frame", `var runner func(func([]int))
+
+func setup() {
+	runner = func(f func([]int)) {
+		var b [4]int
+		f(b[:])
+	}
+}
+
+func main() { setup(); runner(keepGlobal) }
+`, true},
+		{"a callback keeping nothing handed to a value handing it its frame", `var runner func(func([]int))
+
+func runLocal(f func([]int)) {
+	var b [4]int
+	f(b[:])
+}
+
+func setup() { runner = runLocal }
+
+func main() { setup(); runner(keepNone) }
+`, false},
+		{"a result through a callback parameter", `func apply(f func([]int) []int) {
+	var b [4]int
+	gs = f(b[:])
+}
+
+func main() { apply(ident) }
+`, true},
+		{"a callback parameter deferred", `func run(f func([]int)) {
+	var b [4]int
+	defer f(b[:])
+}
+
+func main() { run(keepGlobal) }
+`, true},
+		{"a callback parameter's alias deferred", `func run(f func([]int)) {
+	var b [4]int
+	g := f
+	defer g(b[:])
+}
+
+func main() { run(keepGlobal) }
+`, true},
+		{"a result through a callback parameter, none returning its argument", `func zero(v []int) []int { return nil }
+
+func apply(f func([]int) []int) {
+	var b [4]int
+	gs = f(b[:])
+}
+
+func main() { apply(zero) }
+`, false},
+		{"a callback parameter deferred, handed a harmless function", `func run(f func([]int)) {
+	var b [4]int
+	defer f(b[:])
+}
+
+func main() { keepGlobal(garr[:]); run(keepNone) }
+`, false},
+		{"no member keeps its argument", `func setup() { handler = keepNone }
+
+func poll() {
+	var b [4]int
+	handler(b[:])
+	keepGlobal(garr[:])
+}
+
+func main() { setup(); poll() }
+`, false},
+		{"package storage", `func setup() { handler = keepGlobal }
+
+func poll() {
+	handler(garr[:])
+}
+
+func main() { setup(); poll() }
+`, false},
+		{"a callback parameter", `func run(f func([]int)) {
+	var b [4]int
+	f(b[:])
+}
+
+func main() {
+	handler = keepGlobal
+	run(keepNone)
+	handler(garr[:])
+}
+`, false},
+		{"a local bound once", `func poll() {
+	var b [4]int
+	f := keepNone
+	f(b[:])
+}
+
+func main() { handler = keepGlobal; handler(garr[:]); poll() }
+`, false},
+		{"a table of harmless functions", `var table = [2]func([]int){keepNone, keepNone}
+
+func poll(i int) {
+	var b [4]int
+	table[i](b[:])
+}
+
+func main() { keepGlobal(garr[:]); poll(1) }
+`, false},
+		{"a type no keeper has", `var hs func([]int, int)
+
+func keepNone2(v []int, n int) {}
+
+func poll() {
+	var b [4]int
+	hs = keepNone2
+	hs(b[:], 1)
+}
+
+func main() { handler = keepGlobal; handler(garr[:]); poll() }
+`, false},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			src := head + test.src
+			fsys := fstest.MapFS{"main.ogo": &fstest.MapFile{Data: []byte(src)}}
+			pkg, err := Build(-1, []string{"main.ogo"}, fsys)
+			if err == nil {
+				err = EmitC(pkg, io.Discard, Checked())
+			}
+			switch {
+			case test.refuse && err == nil:
+				t.Errorf("a reference to this frame left it:\n%s", src)
+			case test.refuse && !strings.Contains(err.Error(), "outlive"):
+				t.Errorf("refused, but not for its lifetime: %v", err)
+			case !test.refuse && err != nil:
+				t.Errorf("refused: %v\n%s", err, src)
+			}
+		})
+	}
+}
+
+// TestEmitCFuncValueUnionPackages is TestEmitCFuncValueUnion across a package
+// boundary: another package's variable holding a function, called, deferred and
+// handed on, and another package's function among the members.
+func TestEmitCFuncValueUnionPackages(t *testing.T) {
+	const lib = `var Gs []int
+
+func Keep(v []int) { Gs = v }
+
+func None(v []int) {}
+
+func Count(v []int) int { return len(v) }
+
+var Handler func([]int)
+
+var Counter func([]int) int
+
+func Arm() { Handler = Keep }
+
+func Disarm() { Handler = None }
+`
+	for _, test := range []struct {
+		name, src string
+		refuse    bool
+	}{
+		{"its variable called", `import "lib"
+
+func poll() {
+	var b [4]int
+	lib.Handler(b[:])
+}
+
+func main() { lib.Arm(); poll() }
+`, true},
+		{"its variable called in an expression", `import "lib"
+
+var gs []int
+
+func keepCount(v []int) int { gs = v; return 0 }
+
+func poll() int {
+	var b [4]int
+	return lib.Counter(b[:]) + 1
+}
+
+func main() { lib.Counter = keepCount; println(poll()) }
+`, true},
+		{"its variable deferred", `import "lib"
+
+func poll() {
+	var b [4]int
+	defer lib.Handler(b[:])
+}
+
+func main() { lib.Arm(); poll() }
+`, true},
+		{"its variable handed as a callback", `import "lib"
+
+func run(f func([]int)) {
+	var b [4]int
+	f(b[:])
+}
+
+func main() { lib.Arm(); run(lib.Handler) }
+`, true},
+		{"its function among the members", `import "lib"
+
+var h func([]int)
+
+func poll() {
+	var b [4]int
+	h(b[:])
+}
+
+func main() { h = lib.Keep; poll() }
+`, true},
+		{"its variable, no member keeping", `import "lib"
+
+func poll() {
+	var b [4]int
+	lib.Handler(b[:])
+	println(lib.Counter == nil)
+}
+
+func main() { lib.Disarm(); lib.Keep(nil); poll() }
+`, false},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			// Keep is used as a value by lib itself (Arm), except where the case
+			// replaces lib with the variant whose Arm is not called: the members are
+			// the program's, so the last case's lib must not name Keep as a value.
+			libSrc := lib
+			if !test.refuse {
+				libSrc = strings.Replace(lib, "func Arm() { Handler = Keep }", "func Arm() {}", 1)
+			}
+			fsys := fstest.MapFS{
+				"main.ogo":    &fstest.MapFile{Data: []byte(test.src)},
+				"lib/lib.ogo": &fstest.MapFile{Data: []byte(libSrc)},
+			}
+			pkg, err := Build(-1, []string{"main.ogo"}, fsys)
+			if err == nil {
+				err = EmitC(pkg, io.Discard, Checked())
+			}
+			switch {
+			case test.refuse && err == nil:
+				t.Errorf("a reference to this frame left it:\n%s", test.src)
+			case test.refuse && !strings.Contains(err.Error(), "outlive"):
+				t.Errorf("refused, but not for its lifetime: %v", err)
+			case !test.refuse && err != nil:
+				t.Errorf("refused: %v\n%s", err, test.src)
+			}
+		})
+	}
+}
+
 func TestEmitCCalleeKeepsEscape(t *testing.T) {
 	const head = `type Box struct {
 	d []int
@@ -11267,8 +12141,8 @@ func main() {
 		{"bus.dev.Keep(a[:])", "cannot pass a slice backed by local a to Keep (through Keeper)"},
 		{"bus.devs[0].Keep(a[:])", "cannot pass a slice backed by local a to Keep (through Keeper)"},
 		{"defer bus.dev.Keep(a[:])", "cannot pass a slice backed by local a to Keep (through Keeper)"},
-		{"bus.fn(a[:])", "cannot pass a slice backed by local a to keep"},
-		{"defer bus.fn(a[:])", "cannot pass a slice backed by local a to keep"},
+		{"bus.fn(a[:])", "cannot pass a slice backed by local a to a func([]int) value, which may hold keep"},
+		{"defer bus.fn(a[:])", "cannot pass a slice backed by local a to a func([]int) value, which may hold keep"},
 		{"id := func(xs []int) []int { return xs }\n\tg = id(a[:])", "cannot store a slice backed by local a in package variable g"},
 		// A literal called where it stands, handing back its argument.
 		{"g = func(xs []int) []int { return xs }(a[:])", "cannot store a slice backed by local a in package variable g"},
@@ -13307,7 +14181,7 @@ func main() {
 	println(*g)
 }
 `,
-			want: "cannot pass the address of local variable x to keep",
+			want: "cannot pass the address of local variable x to a func(*int) value, which may hold keep",
 		},
 		{
 			name: "a frame-backed slice through a function value",

@@ -719,6 +719,21 @@ shipped section tells a reader on that version that they have behaviour they do 
 Each of these is the compiler refusing a program it used to accept, and each such
 program handed out a reference to storage that was gone by the time it was read.
 
+- **A call through a function value the compiler cannot name is asked of every
+  function of its type.** A function held in a package variable set elsewhere, in a
+  field, in an element of a table, returned by a call, or in a variable written on
+  more than one path consulted nothing: `handler(b[:])`, `gdev.onData(b[:])`,
+  `table[i](b[:])` and `pick()(b[:])` -- called, deferred or handed on as a
+  callback, in this package or another's -- each left a slice of the local b
+  wherever the function kept it. Such a call is judged now by every function of
+  that type the program uses as a value, declared, another package's, a literal, a
+  method value or a method expression, and the refusal names one that keeps what
+  it is handed; a program in which none does is unaffected. A function remembered
+  from an assignment is believed only where nothing can have changed it: rebound in
+  a branch, a loop, a select or through its address, a field after a method call on
+  its struct, and anything in a function with a goto, was read as holding what the
+  first assignment gave it. A deferred call of a callback parameter, and a result a
+  callback parameter hands back, are asked too.
 - **A callback is asked what it does with the storage of the function calling
   it.** `func each(f func([]int)) { var b [4]int; f(b[:]) }` called as
   `each(keepGlobal)` left a slice of each's local b where keepGlobal keeps it, after

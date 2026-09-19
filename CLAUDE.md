@@ -635,8 +635,24 @@ which knows the function it passes, asks that function's summary
 frame, `func each(f func([]int)) { var b [4]int; f(b[:]) }`, is recorded while its
 body is emitted -- where `frameRefOf` answers exactly, which a shape cannot -- as a
 `frameCall`, and every function handed to it is asked after all bodies are emitted
-(`checkPendingCallbacks`), since the call site may come first. Still open: a callback
-kept in a FIELD and called later, `h.cb = f; ...; h.cb(b[:])`.
+(`checkPendingCallbacks`), since the call site may come first.
+A call through a function VALUE nothing can name -- a package variable set somewhere,
+a field, an element, a call's result, a variable written on more than one path -- is
+judged by EVERY function of its type the program uses as a value (2026-09-19;
+`typeSummary` over `funcValueMembers`, collected by `collectFuncValues`: declared,
+another package's, literals, method values, method expressions). Whatever reaches a
+function value was one of those once, so the union is sound; it is by TYPE, so a table
+of harmless functions is refused when a keeper of that type is a value anywhere, and a
+per-location may-hold analysis is how that price would come down. A binding
+`bindFuncValue` records is believed only where `boundFunc` says nothing can have
+changed it (`scanBindings`): written once, or only by plain assignments in one block
+of a function without a goto, never address-taken or method-called, never a package
+variable -- before, a rebinding in a branch, a loop, a select or through `&f` left the
+first binding in force. `TestEmitCFuncValueUnion` (and `...Packages`) is the matrix: a
+new place a function value can live, or a new way to write one, is a new row there.
+Still open: a function RELAYING its parameter through such a value, `func relay(v
+[]int) { handler(v) }`, summarises nothing of it -- the summaries follow names to the
+declared functions they hold (`valueCalls`) and nothing else.
 
 ## Notes
 

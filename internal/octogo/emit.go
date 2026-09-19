@@ -3063,6 +3063,10 @@ func (e *emitter) funcTypeOfSig(sig []int32) (string, bool) {
 	return e.funcTypeFor(e.funcSigCParts(sig)), true
 }
 
+// funcShapeID identifies a function type as funcTypeFor keys its typedef, without
+// minting one.
+func funcShapeID(fv funcValueType) string { return fv.key + " -> " + strings.Join(fv.res, ", ") }
+
 // funcTypeFor returns the typedef standing for a C function-pointer signature,
 // minting it on first sight. Distinct written types rendering the same C signature
 // share one typedef, which is what makes `func(int) int` written twice mint once.
@@ -3072,7 +3076,7 @@ func (e *emitter) funcTypeFor(fv funcValueType) string {
 	// `func(*T)`. Keyed by the shape alone the two were one typedef carrying the
 	// first one's results, and a call through a `func(*T)` handed it an out
 	// parameter it does not take -- "too many arguments", from both compilers.
-	id := fv.key + " -> " + strings.Join(fv.res, ", ")
+	id := funcShapeID(fv)
 	if name, ok := e.funcTypeNames[id]; ok {
 		return name
 	}
@@ -4584,7 +4588,7 @@ func typeNameCollisions(src []byte, names map[string]bool) map[string]bool {
 // emitProgram is EmitC's one pass. rename lists the main-package types spelled
 // ogo_T_<name> in C (see typeMangle).
 func emitProgram(pkg *Package, w io.Writer, opts []EmitOption, rename map[string]bool) error {
-	e := &emitter{renameTypes: rename, renamedTypes: map[string]string{}, includes: map[string]bool{}, funcRet: map[string][]string{}, funcSliceParams: map[string][]string{}, funcVariadic: map[string]int{}, nilHelpers: map[string]bool{}, funcArrayRet: map[string]arrDim{}, funcArrayParams: map[string][]arrDim{}, anonStructNames: map[string]string{}, methodValueTypes: map[string]funcValueType{}, methodValueOf: map[string]string{}, methodExprNames: map[string]string{}, funcParams: map[string][]string{}, methodPtr: map[string]bool{}, globals: map[string]string{}, structs: map[string][]structField{}, namedTypes: map[string]bool{}, typeNames: map[string]bool{}, interfaceTypes: map[string]bool{}, ifaceMethods: map[string][]ifaceMethod{}, anonIfaceNames: map[string]string{}, anonIfaceMinted: map[string]bool{}, ifaceASTs: map[string]ifaceAST{}, ifaceVTables: map[string]bool{}, namedUnderlying: map[string]string{}, namedArrays: map[string]arrDim{}, constInt: map[string]string{}, constVal: map[string]constant.Value{}, constWide: map[string]string{}, constStr: map[string]string{}, constUntyped: map[string]bool{}, constHuge: map[string]bool{}, arrays: map[string]arrDim{}, globalArrays: map[string]arrDim{}, sliceVars: map[string]string{}, globalSliceVars: map[string]string{}, chanElems: map[string]bool{}, chanInitElems: map[string]bool{}, chanSendElems: map[string]bool{}, chanRecvElems: map[string]bool{}, chanTryRecvElems: map[string]bool{}, chanTrySendElems: map[string]bool{}, chanGatedSendElems: map[string]bool{}, aliasOf: map[string]string{}, localTypes: map[string]string{}, gotoTargets: map[string]bool{}, chanCloseElems: map[string]bool{}, chanRecv2Elems: map[string]bool{}, mathWrappers: map[string]bool{}, chanElemByName: map[string]string{}, sliceElems: map[string]bool{}, sliceElemByName: map[string]string{}, appendElems: map[string]bool{}, tryappendElems: map[string]bool{}, appendSliceElems: map[string]bool{}, tryappendSliceEls: map[string]bool{}, appendokStructs: map[string]bool{}, copyElems: map[string]bool{}, resliceElems: map[string]bool{}, reslice3Elems: map[string]bool{}, clearElems: map[string]bool{}, minElems: map[string]bool{}, maxElems: map[string]bool{}, printSliceElems: map[string]bool{}, printStructs: map[string]string{}, printlnElems: map[string]bool{}, switchBreakUsed: map[string]bool{}, labelBreak: map[string]string{}, labelContinue: map[string]string{}, labelUsed: map[string]bool{}, eqStructs: map[string]bool{}, eqArrays: map[string]arrDim{}, frameBacked: map[string]bool{}, frameHolder: map[string]string{}, crossParams: map[string][]leak{}, crossContents: map[string][]leak{}, retContents: map[string][]bool{}, recvContents: map[string]leak{}, paramCalls: map[string][]paramCall{}, frameCalls: map[string][]frameCall{}, recvLeaks: map[string]leak{}, retRecv: map[string]bool{}, crossInto: map[string][]uint32{}, ifaceSummaries: map[string]ifaceSummary{}, retParams: map[string][]bool{}, funcValueOf: map[string]string{}, crossNames: map[string]string{}, initNames: map[string]string{}, funcValueTypes: map[string]funcValueType{}, funcTypeNames: map[string]string{}, funcTypeRet: map[string][]string{}, funcTypeParams: map[string][]string{}, retStructs: map[string]string{}, retStructByKey: map[string]string{}, shiftHelpers: map[string][2]string{}, shiftCTypes: map[*int32]string{}, shiftWalked: map[shiftWalkKey]bool{}, shiftIn: map[*int32]bool{}, divHelpers: map[string][2]string{}, funcValueWrappers: map[string]string{}, deferReplay: -1, iota: -1}
+	e := &emitter{renameTypes: rename, renamedTypes: map[string]string{}, includes: map[string]bool{}, funcRet: map[string][]string{}, funcSliceParams: map[string][]string{}, funcVariadic: map[string]int{}, nilHelpers: map[string]bool{}, funcArrayRet: map[string]arrDim{}, funcArrayParams: map[string][]arrDim{}, anonStructNames: map[string]string{}, methodValueTypes: map[string]funcValueType{}, methodValueOf: map[string]string{}, methodExprNames: map[string]string{}, funcParams: map[string][]string{}, methodPtr: map[string]bool{}, globals: map[string]string{}, structs: map[string][]structField{}, namedTypes: map[string]bool{}, typeNames: map[string]bool{}, interfaceTypes: map[string]bool{}, ifaceMethods: map[string][]ifaceMethod{}, anonIfaceNames: map[string]string{}, anonIfaceMinted: map[string]bool{}, ifaceASTs: map[string]ifaceAST{}, ifaceVTables: map[string]bool{}, namedUnderlying: map[string]string{}, namedArrays: map[string]arrDim{}, constInt: map[string]string{}, constVal: map[string]constant.Value{}, constWide: map[string]string{}, constStr: map[string]string{}, constUntyped: map[string]bool{}, constHuge: map[string]bool{}, arrays: map[string]arrDim{}, globalArrays: map[string]arrDim{}, sliceVars: map[string]string{}, globalSliceVars: map[string]string{}, chanElems: map[string]bool{}, chanInitElems: map[string]bool{}, chanSendElems: map[string]bool{}, chanRecvElems: map[string]bool{}, chanTryRecvElems: map[string]bool{}, chanTrySendElems: map[string]bool{}, chanGatedSendElems: map[string]bool{}, aliasOf: map[string]string{}, localTypes: map[string]string{}, gotoTargets: map[string]bool{}, chanCloseElems: map[string]bool{}, chanRecv2Elems: map[string]bool{}, mathWrappers: map[string]bool{}, chanElemByName: map[string]string{}, sliceElems: map[string]bool{}, sliceElemByName: map[string]string{}, appendElems: map[string]bool{}, tryappendElems: map[string]bool{}, appendSliceElems: map[string]bool{}, tryappendSliceEls: map[string]bool{}, appendokStructs: map[string]bool{}, copyElems: map[string]bool{}, resliceElems: map[string]bool{}, reslice3Elems: map[string]bool{}, clearElems: map[string]bool{}, minElems: map[string]bool{}, maxElems: map[string]bool{}, printSliceElems: map[string]bool{}, printStructs: map[string]string{}, printlnElems: map[string]bool{}, switchBreakUsed: map[string]bool{}, labelBreak: map[string]string{}, labelContinue: map[string]string{}, labelUsed: map[string]bool{}, eqStructs: map[string]bool{}, eqArrays: map[string]arrDim{}, frameBacked: map[string]bool{}, frameHolder: map[string]string{}, crossParams: map[string][]leak{}, crossContents: map[string][]leak{}, retContents: map[string][]bool{}, recvContents: map[string]leak{}, paramCalls: map[string][]paramCall{}, frameCalls: map[string][]frameCall{}, funcValueMembers: map[string][]string{}, methodExprMembers: map[string]emMethodExpr{}, memberShown: map[string]string{}, litLifted: map[string][]string{}, methodNames: map[string]bool{}, recvLeaks: map[string]leak{}, retRecv: map[string]bool{}, crossInto: map[string][]uint32{}, ifaceSummaries: map[string]ifaceSummary{}, retParams: map[string][]bool{}, funcValueOf: map[string]string{}, crossNames: map[string]string{}, initNames: map[string]string{}, funcValueTypes: map[string]funcValueType{}, funcTypeNames: map[string]string{}, funcTypeRet: map[string][]string{}, funcTypeParams: map[string][]string{}, retStructs: map[string]string{}, retStructByKey: map[string]string{}, shiftHelpers: map[string][2]string{}, shiftCTypes: map[*int32]string{}, shiftWalked: map[shiftWalkKey]bool{}, shiftIn: map[*int32]bool{}, divHelpers: map[string][2]string{}, funcValueWrappers: map[string]string{}, deferReplay: -1, iota: -1}
 	for _, opt := range opts {
 		opt(e)
 	}
@@ -4708,6 +4712,7 @@ func emitProgram(pkg *Package, w io.Writer, opts []EmitOption, rename map[string
 	// It runs AFTER the package variables, not before: asking whether an assignment
 	// targets one of them is what seeds the store half, and until they are emitted
 	// the global environment is empty and the answer is always no.
+	forEachFile(func() { e.collectFuncValues(e.f.AST) })
 	forEachFile(func() { e.collectCrossParams(e.f.AST) })
 	e.closeCrossParams()
 
@@ -5538,6 +5543,18 @@ type emitter struct {
 	funcParamAlias     map[string]string       // a local holding one of those parameters, a function value, `g := f`: the parameter
 	frameCalls         map[string][]frameCall  // per function, the calls of its callback parameters handed this frame's storage (see frameCall)
 	pendingCallbacks   []pendingCallback       // functions handed to a callee, asked about its frameCalls once every body is emitted
+	funcValueMembers   map[string][]string     // per function type (funcShapeID), the summary names of every function used as a VALUE of it (see collectFuncValues)
+	methodExprMembers  map[string]emMethodExpr // a method expression among those members, by its member name (see methodExprSummary)
+	memberShown        map[string]string       // how a diagnostic names each of those members
+	litLifted          map[string][]string     // a function literal's summary key -> the C names it was lifted to, whose frameCalls are its own
+	methodNames        map[string]bool         // the name of every method of every type, which a selector calling one is known by (scanBindings)
+	bindWrites         map[string]int          // in the function being emitted, how often a name -- or one field of it, funcFieldKey -- is declared or assigned (see boundFunc)
+	bindBlock          map[string]int          // ... the block all those writes are in, or -1 for more than one
+	bindOpaque         map[string]bool         // ... a write the binding does not follow: a range, a receive, several results
+	bindLits           map[string]int          // ... a name declared with a value, which may set its fields, and the block it is in
+	bindAliased        map[string]bool         // ... a name something else may write through: its address is taken, or a method is called on it
+	bindGotos          bool                    // ... it has a goto, which may run a block's writes again after a later one
+	bindBody, bindSeq  int                     // ... the block of its body, where its parameters are written, and the last block numbered
 	recvLeaks          map[string]leak         // a pointer method's RECEIVER kept where it outlives the call: leakGlobal, leakCog (see recvEdge)
 	recvEdges          []recvEdge              // how a receiver's keeping travels to callers (see recvEdge)
 	retRecv            map[string]bool         // a pointer method returns its receiver, so its result is what it was called on
@@ -9125,6 +9142,7 @@ func (e *emitter) collectResults(ast []int32) {
 			_, rct, _ := e.receiverInfo(recv)
 			cname = methodCName(methodBaseType(rct), name)
 			e.methodPtr[cname] = e.isPointer(rct)
+			e.methodNames[name] = true
 		}
 		_, resTypes := e.resultInfo(sig)
 		e.funcRet[cname] = resTypes
@@ -9258,6 +9276,257 @@ type crossEdge struct {
 	// arguments of one call, which is what pairs a callback handed on with the
 	// value handed on to it (see paramCall).
 	site int
+}
+
+// collectFuncValues records every function the program uses as a VALUE, by its
+// function type: a declared function named without being called, `handler =
+// keepGlobal`, another package's, a literal not called where it stands, a method
+// value and a method expression. A call through a value whose function this cannot
+// tell -- a package variable set somewhere, a field, an element of a table, a
+// call's result -- is judged by all of them (typeSummary): which one it is, only
+// run time knows, and it can be any of them. Whatever reaches a function value was
+// one of these once, so nothing else can be behind it.
+func (e *emitter) collectFuncValues(ast []int32) {
+	for n := range it(ast) {
+		if n.sym == 0 {
+			continue
+		}
+		if n.sym == Factor {
+			e.noteFuncValue(slices.Collect(it(n.ast)))
+		}
+		e.collectFuncValues(n.ast)
+	}
+}
+
+// noteFuncValue records the function a Factor is, when it is one used as a value.
+func (e *emitter) noteFuncValue(kids []Node) {
+	add := func(fv funcValueType, name, shown string) {
+		id := funcShapeID(fv)
+		if !slices.Contains(e.funcValueMembers[id], name) {
+			e.funcValueMembers[id] = append(e.funcValueMembers[id], name)
+			e.memberShown[name] = shown
+		}
+	}
+	if len(kids) == 1 && kids[0].sym == FuncLiteral {
+		for c := range it(kids[0].ast) {
+			if c.sym != Signature {
+				continue
+			}
+			// Typed here, ahead of the body that declares what it may name: a type
+			// this cannot resolve yet leaves the literal out rather than failing the
+			// program, and the error it would have latched is put back.
+			saved := e.err
+			fv := e.funcSigCParts(c.ast)
+			if e.err != saved {
+				e.err = saved
+				return
+			}
+			key := e.litKey(kids[0])
+			add(fv, key, "the function literal at "+strings.TrimPrefix(key, "lit@"))
+		}
+		return
+	}
+	if me, isME := e.methodExprAt(kids); isME {
+		if len(me.rest) != 0 {
+			return
+		}
+		mcname, _, _, found := e.promotedMethod(me.typeC, me.member)
+		fv, typed := e.methodValueTypes[mcname]
+		if !found || !typed {
+			return
+		}
+		recvCT, spelled := me.typeC, e.goTypeName(me.typeC)+"."+me.member
+		if me.ptr {
+			recvCT, spelled = recvCT+"*", "(*"+e.goTypeName(me.typeC)+")."+me.member
+		}
+		key := "mexpr:" + recvCT + "." + me.member
+		e.methodExprMembers[key] = me
+		add(e.cFuncValueType(fv.res, append([]string{recvCT}, fv.params...)), key, spelled)
+		return
+	}
+	if base, method, isMV := e.factorMethodValue(kids); isMV {
+		if mcname, _, fv, ok := e.methodValueBinding(base, method); ok && mcname != "" {
+			add(fv, mcname, e.displayName(base)+"."+method)
+		}
+		return
+	}
+	if len(kids) == 0 || kids[0].sym != 0 || e.f.ch(kids[0].tok) != IDENT {
+		return
+	}
+	name := e.src(kids[0].tok)
+	var steps []Node
+	if len(kids) >= 2 && kids[1].sym == FactorSuffix {
+		steps = slices.Collect(it(kids[1].ast))
+	}
+	switch {
+	case len(steps) == 0:
+		if _, isFunc := e.userFunc(name); isFunc {
+			if fv, ok := e.funcValueTypes[e.funcCallC(name)]; ok {
+				add(fv, e.funcCallC(name), name)
+			}
+		}
+	case steps[0].sym == Selector && (len(steps) < 2 || steps[1].sym != CallSuffix):
+		if prefix, isImport := e.importQualifiers[name]; isImport {
+			fn := e.soleIdent(steps[0].ast)
+			if fv, ok := e.funcValueTypes[mangle(prefix, fn)]; ok {
+				add(fv, mangle(prefix, fn), name+"."+fn)
+			}
+		}
+	}
+}
+
+// indirectCallee names the summary a call through a function value is judged by:
+// the function it is known to hold, or else every function of its type the program
+// uses as a value ("type:", see typeSummary) -- filled here, so whoever reads the
+// summaries under the name finds them.
+func (e *emitter) indirectCallee(bound, ct string) string {
+	if bound != "" || !e.isFuncCType(ct) {
+		return bound
+	}
+	name := "type:" + e.underlyingCType(ct)
+	e.typeSummary(name)
+	return name
+}
+
+// valueCallee is indirectCallee for a call through the variable recv, which may be
+// known to hold one function (boundFunc). A callback PARAMETER, or a local given one,
+// is left to the calls of the function it belongs to, which know what they hand it
+// (frameCall, paramCall).
+func (e *emitter) valueCallee(recv, ct string) string {
+	if fn := e.boundFunc(recv); fn != "" {
+		return fn
+	}
+	if e.callbackParam(recv) >= 0 {
+		return ""
+	}
+	return e.indirectCallee("", ct)
+}
+
+// fieldCallee is valueCallee for a call through a field, `d.onData(v)`.
+func (e *emitter) fieldCallee(base, field, ft string) string {
+	return e.indirectCallee(e.boundFunc(funcFieldKey(base, field)), ft)
+}
+
+// typeSummary fills the summaries of a "type:" callee (see indirectCallee): the
+// union over every function of the type used as a value. A store into a receiver
+// is taken to outlive the call: the receiver of a method value is bound to a
+// package variable, and nothing else has one.
+func (e *emitter) typeSummary(cname string) {
+	if _, done := e.crossParams[cname]; done {
+		return
+	}
+	ct := strings.TrimPrefix(cname, "type:")
+	id := e.funcTypeID(ct)
+	var crosses, contents []leak
+	var intos []uint32
+	var rets, carries []bool
+	grow := func(n int) {
+		for len(crosses) < n {
+			crosses, contents, intos = append(crosses, 0), append(contents, 0), append(intos, 0)
+			rets, carries = append(rets, false), append(carries, false)
+		}
+	}
+	outlive := func(f leak) leak {
+		if f&leakRecv != 0 {
+			f = f&^leakRecv | leakGlobal
+		}
+		return f
+	}
+	culprit := ""
+	for _, m := range e.funcValueMembers[id] {
+		if me, isME := e.methodExprMembers[m]; isME {
+			e.methodExprMember(m, me)
+		}
+		leaky := false
+		for i, f := range e.crossParams[m] {
+			grow(i + 1)
+			crosses[i] |= outlive(f)
+			leaky = leaky || f != 0
+		}
+		for i, f := range e.crossContents[m] {
+			grow(i + 1)
+			contents[i] |= outlive(f)
+			leaky = leaky || f != 0
+		}
+		for i, b := range e.crossInto[m] {
+			grow(i + 1)
+			intos[i] |= b
+			leaky = leaky || b != 0
+		}
+		for i, r := range e.retParams[m] {
+			grow(i + 1)
+			rets[i] = rets[i] || r
+		}
+		for i, r := range e.retContents[m] {
+			grow(i + 1)
+			carries[i] = carries[i] || r
+		}
+		for _, pc := range e.paramCalls[m] {
+			e.noteParamCall(cname, pc)
+		}
+		if leaky && culprit == "" {
+			culprit = e.memberShown[m]
+		}
+	}
+	e.crossParams[cname], e.crossContents[cname], e.crossInto[cname] = crosses, contents, intos
+	e.retParams[cname], e.retContents[cname] = rets, carries
+	e.crossNames[cname] = "a " + e.goTypeName(ct) + " value"
+	if culprit != "" {
+		e.crossNames[cname] += ", which may hold " + culprit
+	}
+}
+
+// funcTypeID is the funcShapeID of a minted function typedef.
+func (e *emitter) funcTypeID(ct string) string {
+	for k, v := range e.funcTypeNames {
+		if v == ct {
+			return k
+		}
+	}
+	return ""
+}
+
+// calleeFrameCalls is frameCalls for a callee by the name its summaries are under:
+// for a "type:" one every member's (typeSummary), a literal's being its lifted
+// function's and a method expression's its method's, the receiver first.
+func (e *emitter) calleeFrameCalls(callee string) []frameCall {
+	ct, isType := strings.CutPrefix(callee, "type:")
+	if !isType {
+		return e.frameCalls[callee]
+	}
+	var out []frameCall
+	for _, m := range e.funcValueMembers[e.funcTypeID(ct)] {
+		switch me, isME := e.methodExprMembers[m]; {
+		case isME:
+			mcname, _, _, _ := e.promotedMethod(me.typeC, me.member)
+			for _, fc := range e.frameCalls[mcname] {
+				fc.fn++
+				out = append(out, fc)
+			}
+		case strings.HasPrefix(m, "lit@"):
+			for _, cn := range e.litLifted[m] {
+				out = append(out, e.frameCalls[cn]...)
+			}
+		default:
+			out = append(out, e.frameCalls[m]...)
+		}
+	}
+	return out
+}
+
+// methodExprMember fills the summaries of a method expression recorded as a member
+// of its type (collectFuncValues), under its member name: the ones liftMethodExpr
+// gives the function it is lifted to.
+func (e *emitter) methodExprMember(name string, me emMethodExpr) {
+	if _, done := e.crossParams[name]; done {
+		return
+	}
+	mcname, path, _, found := e.promotedMethod(me.typeC, me.member)
+	fv, typed := e.methodValueTypes[mcname]
+	if !found || !typed {
+		return
+	}
+	e.methodExprSummary(name, mcname, e.methodPtr[mcname] && (me.ptr || e.pathThroughPointer(me.typeC, path)), 1+len(fv.params))
 }
 
 // funcLitArg is the function literal an argument is, `func(w []int) { ... }`.
@@ -11606,6 +11875,7 @@ func (e *emitter) emitFuncDecl(ast []int32) {
 	e.scanGotoTargets(body)
 	e.aliasedLocals = map[string]bool{}
 	e.scanAliasedLocals(body)
+	e.scanBindings(body)
 	e.localConsts = map[string]bool{}
 	e.hoistedArrayCalls = map[int32]string{}
 	e.curParams = map[string]bool{}
@@ -11754,6 +12024,7 @@ func (e *emitter) liftFuncLit(lit Node) (string, bool) {
 		e.crossParams[cname], e.crossInto[cname], e.retParams[cname] = e.crossParams[key], e.crossInto[key], e.retParams[key]
 		e.crossContents[cname], e.retContents[cname] = e.crossContents[key], e.retContents[key]
 		e.crossNames[cname] = e.crossNames[key]
+		e.litLifted[key] = append(e.litLifted[key], cname)
 	}
 
 	// Recorded before the body is walked, so a literal that calls itself through a
@@ -11785,6 +12056,17 @@ func (e *emitter) liftFuncLit(lit Node) (string, bool) {
 		hoistedArrayCalls              map[int32]string
 		pkgScope                       bool
 		aliasedLocals                  map[string]bool
+		// Which function a name holds, and what may have changed it (boundFunc),
+		// and which names are the enclosing function's parameters: the literal's
+		// own replaced them, and the enclosing function read the literal's after it.
+		funcValueOf, funcParamAlias map[string]string
+		bindWrites, bindBlock       map[string]int
+		bindLits                    map[string]int
+		bindOpaque, bindAliased     map[string]bool
+		bindGotos                   bool
+		bindBody                    int
+		curParams                   map[string]bool
+		curParamOrder               []string
 	}
 	saved := state{
 		locals: e.locals, arrays: e.arrays, sliceVars: e.sliceVars,
@@ -11794,6 +12076,10 @@ func (e *emitter) liftFuncLit(lit Node) (string, bool) {
 		prologue: e.prologue, w: e.w,
 		hoistedArrayCalls: e.hoistedArrayCalls, pkgScope: e.pkgScope,
 		aliasedLocals: e.aliasedLocals,
+		funcValueOf:   maps.Clone(e.funcValueOf), funcParamAlias: e.funcParamAlias,
+		bindWrites: e.bindWrites, bindBlock: e.bindBlock, bindLits: e.bindLits,
+		bindOpaque: e.bindOpaque, bindAliased: e.bindAliased, bindGotos: e.bindGotos, bindBody: e.bindBody,
+		curParams: e.curParams, curParamOrder: e.curParamOrder,
 	}
 	// A literal lifted out of a package variable's initializer is a function with a
 	// frame of its own: what it allocates is per call, not the package's
@@ -11805,6 +12091,7 @@ func (e *emitter) liftFuncLit(lit Node) (string, bool) {
 	e.scanGotoTargets(body)
 	e.aliasedLocals = map[string]bool{}
 	e.scanAliasedLocals(body)
+	e.scanBindings(body)
 	e.localConsts = map[string]bool{}
 	e.hoistedArrayCalls = map[int32]string{}
 	e.curParams = map[string]bool{}
@@ -11860,6 +12147,10 @@ func (e *emitter) liftFuncLit(lit Node) (string, bool) {
 	e.aliasedLocals = saved.aliasedLocals
 	e.prologue, e.w = saved.prologue, saved.w
 	e.hoistedArrayCalls, e.pkgScope = saved.hoistedArrayCalls, saved.pkgScope
+	e.funcValueOf, e.funcParamAlias = saved.funcValueOf, saved.funcParamAlias
+	e.bindWrites, e.bindBlock, e.bindLits = saved.bindWrites, saved.bindBlock, saved.bindLits
+	e.bindOpaque, e.bindAliased, e.bindGotos, e.bindBody = saved.bindOpaque, saved.bindAliased, saved.bindGotos, saved.bindBody
+	e.curParams, e.curParamOrder = saved.curParams, saved.curParamOrder
 	if proto == "" {
 		return "", false
 	}
@@ -12329,8 +12620,17 @@ func (e *emitter) liftMethodExpr(me emMethodExpr) (string, bool) {
 	// where the method is promoted through an embedded one -- `W.Save` for a W
 	// embedding *Point, which Go admits -- so either way what it keeps of its
 	// receiver, it keeps of what parameter 0 holds.
-	byRef := ptrRecv && (me.ptr || e.pathThroughPointer(me.typeC, path))
-	crosses, intos, rets := make([]leak, len(allParams)), make([]uint32, len(allParams)), make([]bool, len(allParams))
+	e.methodExprSummary(name, mcname, ptrRecv && (me.ptr || e.pathThroughPointer(me.typeC, path)), len(allParams))
+	e.crossNames[name] = spelled
+	e.methodExprNames[key] = name
+	return name, true
+}
+
+// methodExprSummary writes under name the summaries of a method expression calling
+// the method mcname, of n parameters with the receiver the first. byRef says the
+// method is handed what parameter 0 holds, a pointer to a pointer method.
+func (e *emitter) methodExprSummary(name, mcname string, byRef bool, n int) {
+	crosses, intos, rets := make([]leak, n), make([]uint32, n), make([]bool, n)
 	if byRef {
 		crosses[0], rets[0] = e.recvLeaks[mcname], e.retRecv[mcname]
 	}
@@ -12359,7 +12659,7 @@ func (e *emitter) liftMethodExpr(me emMethodExpr) (string, bool) {
 	e.crossParams[name], e.crossInto[name], e.retParams[name] = crosses, intos, rets
 	// And what it does with its receiver's contents and its parameters', the
 	// receiver being the first parameter here.
-	contents, carries := make([]leak, len(allParams)), make([]bool, len(allParams))
+	contents, carries := make([]leak, n), make([]bool, n)
 	contents[0] = e.recvContents[mcname]
 	for j, f := range e.crossContents[mcname] {
 		if j+1 < len(contents) {
@@ -12375,9 +12675,6 @@ func (e *emitter) liftMethodExpr(me emMethodExpr) (string, bool) {
 		}
 	}
 	e.crossContents[name], e.retContents[name] = contents, carries
-	e.crossNames[name] = spelled
-	e.methodExprNames[key] = name
-	return name, true
 }
 
 // emitMethodExpr emits a method expression standing as an operand: the function it
@@ -12748,6 +13045,7 @@ func (e *emitter) emitMain(sig, body []int32) {
 	e.scanGotoTargets(body)
 	e.aliasedLocals = map[string]bool{}
 	e.scanAliasedLocals(body)
+	e.scanBindings(body)
 	e.localConsts = map[string]bool{}
 	e.hoistedArrayCalls = map[int32]string{}
 	e.curParams = map[string]bool{}
@@ -24385,6 +24683,16 @@ func (e *emitter) checkDeferLeaks(d *deferredCall, head Node, suffix []Node, arg
 	steps := suffix[:len(suffix)-1]
 	spread := e.spreadCall(suffix[len(suffix)-1].ast)
 	if len(steps) == 0 {
+		// `defer f(args)` for a callback parameter: its callers are asked what it
+		// does with what it is handed of this frame, as for a call of it
+		// (frameCall). The replay hands it temporaries, which name nothing, so it is
+		// recorded here or nowhere.
+		if k := e.callbackParam(base); k >= 0 && e.boundFunc(base) == "" {
+			for j, a := range args {
+				e.noteFrameCall(k, j, a, false)
+			}
+			return
+		}
 		// `defer f(args)`: a declared function, or a variable bound to one.
 		if cname := e.calleeSummaryName(base); cname != "" {
 			e.checkCrossArgs(cname, args, spread)
@@ -24403,10 +24711,9 @@ func (e *emitter) checkDeferLeaks(d *deferredCall, head Node, suffix []Node, arg
 		// `defer h.fn(args)` for a field holding a function value: what the field was
 		// last bound to.
 		if ft, ok := e.fieldType(base, []string{method}); ok && e.isFuncCType(ft) {
-			if cname := e.funcValueOf[funcFieldKey(base, method)]; cname != "" {
-				e.checkCrossArgs(cname, args, spread)
-				e.checkIntoArgs(cname, args)
-			}
+			cname := e.fieldCallee(base, method, ft)
+			e.checkCrossArgs(cname, args, spread)
+			e.checkIntoArgs(cname, args)
 			return
 		}
 		if d.cname != "" {
@@ -24422,10 +24729,41 @@ func (e *emitter) checkDeferLeaks(d *deferredCall, head Node, suffix []Node, arg
 			cname = n
 		}
 	}
+	if cname == "" {
+		// `defer table[i](args)`, `defer pick()(args)`, `defer lib.Handler(args)`: a
+		// function value this cannot name, judged as a call through one is.
+		if ct, ok := e.calleeValueType(base, steps); ok {
+			cname = e.indirectCallee("", ct)
+		}
+	}
 	if cname != "" {
 		e.checkCrossArgs(cname, args, spread)
 		e.checkIntoArgs(cname, args)
 	}
+}
+
+// calleeValueType is the function type of what a call applies to when that is a
+// VALUE reached from base by steps -- an element, a field, a call's result -- and
+// whether it is one.
+func (e *emitter) calleeValueType(base string, steps []Node) (string, bool) {
+	var ct string
+	switch prefix, isImport := e.importQualifiers[base]; {
+	case isImport && len(steps) == 1 && steps[0].sym == Selector:
+		ct = e.globals[mangle(prefix, e.soleIdent(steps[0].ast))] // another package's variable
+	case len(steps) == 0:
+		ct, _ = e.varType(base)
+	case len(steps) == 1 && steps[0].sym == CallSuffix:
+		if _, isFunc := e.userFunc(base); isFunc {
+			if rts := e.funcRet[e.funcCallC(base)]; len(rts) == 1 {
+				ct = rts[0]
+			}
+		}
+	case !slices.ContainsFunc(steps, func(n Node) bool { return n.sym == CallSuffix }):
+		if cur, ok := e.accessChainType(base, steps); ok {
+			ct = cur.ctype
+		}
+	}
+	return ct, ct != "" && e.isFuncCType(ct)
 }
 
 // emitDeferCaptures writes the capture of a deferred call's arguments into their
@@ -24820,7 +25158,7 @@ func (e *emitter) valueOutCallC(callee string, suffix []Node, out string) (strin
 			return "", false
 		}
 		text := e.varRef(callee) + "(&" + out
-		if args := e.argsCText(e.funcValueOf[callee], suffix[0].ast); args != "" {
+		if args := e.argsCText(e.valueCallee(callee, ct), suffix[0].ast); args != "" {
 			text += ", " + args
 		}
 		return text + ")", true
@@ -24837,7 +25175,7 @@ func (e *emitter) valueOutCallC(callee string, suffix []Node, out string) (strin
 			return "", false
 		}
 		text := first + "(&" + out
-		if args := e.argsCText("", suffix[1].ast); args != "" {
+		if args := e.argsCText(e.indirectCallee("", ct), suffix[1].ast); args != "" {
 			text += ", " + args
 		}
 		return text + ")", true
@@ -24848,7 +25186,7 @@ func (e *emitter) valueOutCallC(callee string, suffix []Node, out string) (strin
 			return "", false
 		}
 		text := e.fieldAccessC(callee, []string{field}) + "(&" + out
-		if args := e.argsCText(e.funcValueOf[funcFieldKey(callee, field)], suffix[1].ast); args != "" {
+		if args := e.argsCText(e.fieldCallee(callee, field, ft), suffix[1].ast); args != "" {
 			text += ", " + args
 		}
 		return text + ")", true
@@ -25446,7 +25784,7 @@ func (e *emitter) emitCallExpr(recv string, suffix []Node) bool {
 				// hoisted ahead of the statement unless the statement throws it away
 				// (emitOutValueCall).
 				e.noteFrameCalls(recv, suffix[0].ast)
-				args := e.argsCText(e.funcValueOf[recv], suffix[0].ast)
+				args := e.argsCText(e.valueCallee(recv, ct), suffix[0].ast)
 				e.emitOutValueCall(e.outResultOf(rets), discard || len(rets) > 1, func(tmp string) string {
 					call := e.varRef(recv) + "(&" + tmp
 					if args != "" {
@@ -25459,7 +25797,7 @@ func (e *emitter) emitCallExpr(recv string, suffix []Node) bool {
 			e.noteFrameCalls(recv, suffix[0].ast)
 			e.emit(e.varRef(recv) + "(")
 			e.callParams = e.funcTypeParams[e.underlyingCType(ct)]
-			e.emitCallArgs(e.funcValueOf[recv], suffix[0].ast)
+			e.emitCallArgs(e.valueCallee(recv, ct), suffix[0].ast)
 			e.callParams = nil
 			e.emit(")")
 			return true
@@ -25507,7 +25845,7 @@ func (e *emitter) emitCallExpr(recv string, suffix []Node) bool {
 			// Several results are written through a leading out parameter, as for a
 			// value held in a variable (see funcSigCParts).
 			if rets := e.funcTypeRet[e.underlyingCType(ft)]; e.outResultOf(rets) != "" {
-				args := e.argsCText(e.funcValueOf[funcFieldKey(recv, method)], suffix[1].ast)
+				args := e.argsCText(e.fieldCallee(recv, method, ft), suffix[1].ast)
 				e.emitOutValueCall(e.outResultOf(rets), discard || len(rets) > 1, func(tmp string) string {
 					call := e.fieldAccessC(recv, []string{method}) + "(&" + tmp
 					if args != "" {
@@ -25522,7 +25860,7 @@ func (e *emitter) emitCallExpr(recv string, suffix []Node) bool {
 			// summaries -- the callee really is that function. An unbound field
 			// yields "", which consults nothing and accepts, as the rest of the
 			// analysis does with a callee it cannot name.
-			e.emitCallArgs(e.funcValueOf[funcFieldKey(recv, method)], suffix[1].ast)
+			e.emitCallArgs(e.fieldCallee(recv, method, ft), suffix[1].ast)
 			e.emit(")")
 			return true
 		}
@@ -25630,8 +25968,17 @@ func (e *emitter) emitCallExpr(recv string, suffix []Node) bool {
 			// A call into an imported user package: the exported function is emitted
 			// in that package's namespace, so the call resolves to the mangled name.
 			cname := mangle(prefix, method)
+			summary := cname
+			if ct, isVar := e.globals[cname]; isVar && e.isFuncCType(ct) {
+				// Its VARIABLE holding a function, anybody's to set: every function
+				// of the type (indirectCallee), and the parameter types a constant
+				// argument is spelled by, as through any function value.
+				summary = e.indirectCallee("", ct)
+				e.callParams = e.funcTypeParams[e.underlyingCType(ct)]
+			}
 			e.emit(cname + "(")
-			e.emitCallArgs(cname, suffix[1].ast)
+			e.emitCallArgs(summary, suffix[1].ast)
+			e.callParams = nil
 			e.emit(")")
 			return true
 		}
@@ -25682,7 +26029,7 @@ func (e *emitter) emitCallExpr(recv string, suffix []Node) bool {
 				if out := e.outResultOf(rts); out != "" {
 					// Several results travel through the out parameter; only a
 					// statement reaches here, so they are discarded.
-					args := e.argsCText("", callAst)
+					args := e.argsCText(e.indirectCallee("", ct), callAst)
 					e.emitOutValueCall(out, true, func(tmp string) string {
 						call := bound + "(&" + tmp
 						if args != "" {
@@ -25694,7 +26041,7 @@ func (e *emitter) emitCallExpr(recv string, suffix []Node) bool {
 				}
 				e.emit(bound + "(")
 				e.callParams = e.funcTypeParams[e.underlyingCType(ct)]
-				e.emitCallArgs("", callAst)
+				e.emitCallArgs(e.indirectCallee("", ct), callAst)
 				e.callParams = nil
 				e.emit(")")
 				return true
@@ -26193,7 +26540,7 @@ func (e *emitter) chainCText(base string, steps []Node) (text, ctype string, add
 					// element is bound first for the reason given just below.
 					tmp := e.newTmp()
 					call := e.hoist(cur.ctype, func() { e.emit(text) }) + "(&" + tmp
-					if args := e.argsCText("", n.ast); args != "" {
+					if args := e.argsCText(e.indirectCallee("", cur.ctype), n.ast); args != "" {
 						call += ", " + args
 					}
 					e.prologue = append(e.prologue, out+" "+tmp+";\n", call+");\n")
@@ -26209,7 +26556,7 @@ func (e *emitter) chainCText(base string, steps []Node) (text, ctype string, add
 				// what is emitted. gcc compiles the direct form correctly, which is
 				// why this needed the board to find.
 				text = e.hoist(cur.ctype, func() { e.emit(text) }) +
-					"(" + e.argsCText("", n.ast) + ")"
+					"(" + e.argsCText(e.indirectCallee("", cur.ctype), n.ast) + ")"
 				cur, addr = e.plainOrSlice(rts[0]), false
 				resultTok = n.Pos()
 				continue
@@ -32035,7 +32382,7 @@ func (e *emitter) emitDestructure(targets []assignTarget, declare []bool, rhs []
 			text, ct, _, okc := e.chainCText(callee, suffix[:len(suffix)-1])
 			if okc && e.isFuncCType(ct) && e.outResultOf(e.funcTypeRet[e.underlyingCType(ct)]) != "" {
 				bound := e.hoist(ct, func() { e.emit(text) })
-				args := e.argsCText("", suffix[len(suffix)-1].ast)
+				args := e.argsCText(e.indirectCallee("", ct), suffix[len(suffix)-1].ast)
 				e.ind()
 				e.emit(e.retStructNameOf(resTypes) + " " + tmp + ";\n")
 				call := bound + "(&" + tmp
@@ -34680,6 +35027,25 @@ func (e *emitter) goTypeName(ct string) string {
 		}
 		b.WriteString(" }")
 		return b.String()
+	}
+	// A minted FUNCTION type likewise: the typedef is named for the shape.
+	if params, isFunc := e.funcTypeParams[ct]; isFunc {
+		names := func(ts []string) string {
+			var out []string
+			for _, t := range ts {
+				out = append(out, e.goTypeName(t))
+			}
+			return strings.Join(out, ", ")
+		}
+		text := "func(" + names(params) + ")"
+		switch res := e.funcTypeRet[ct]; len(res) {
+		case 0:
+		case 1:
+			text += " " + e.goTypeName(res[0])
+		default:
+			text += " (" + names(res) + ")"
+		}
+		return text
 	}
 	return ct
 }
@@ -38745,6 +39111,9 @@ func (e *emitter) checkIntoArgsIn(intos []uint32, who string, args []Node) {
 }
 
 func (e *emitter) checkCrossArgs(cname string, args []Node, spread bool) {
+	if strings.HasPrefix(cname, "type:") {
+		e.typeSummary(cname)
+	}
 	crosses := e.crossParams[cname]
 	// The pack a variadic call builds is an array of THIS frame, so a callee that
 	// lets its variadic parameter outlive the call is handed a reference that does
@@ -38798,7 +39167,7 @@ func (e *emitter) checkCallbackArgs(cname, who string, args []Node) {
 		if fn == "" {
 			// The callback is this function's OWN parameter, handed on: what the
 			// callee hands it of this frame, this function does (frameCall).
-			if name, isName := e.exprIdent(args[pc.fn].ast); isName && e.funcValueOf[name] == "" {
+			if name, isName := e.exprIdent(args[pc.fn].ast); isName && e.boundFunc(name) == "" {
 				if k := e.callbackParam(name); k >= 0 && pc.from < len(args) {
 					e.noteFrameCall(k, pc.to, args[pc.from], pc.contents)
 				}
@@ -38870,7 +39239,7 @@ type pendingCallback struct {
 // noteFrameCalls records the arguments of a call through recv, when recv is a
 // parameter of the function being emitted, that reach this frame (frameCall).
 func (e *emitter) noteFrameCalls(recv string, callSuffix []int32) {
-	if e.funcValueOf[recv] != "" {
+	if e.boundFunc(recv) != "" {
 		return
 	}
 	k := e.callbackParam(recv)
@@ -38884,14 +39253,371 @@ func (e *emitter) noteFrameCalls(recv string, callSuffix []int32) {
 
 // callbackParam is which parameter of the function being emitted name is -- itself,
 // or a local given one (funcParamAlias) -- or -1.
+//
+// Only while it can hold nothing else: a local given it once and never written
+// again, or the parameter itself, never written by the body -- a name written twice
+// may hold what either write gave it (see boundFunc) -- and neither name's address
+// taken.
 func (e *emitter) callbackParam(name string) int {
 	if p := e.funcParamAlias[name]; p != "" {
+		if e.bindWrites[name] > 1 || e.bindAliased[name] {
+			return -1
+		}
 		name = p
 	}
 	if !e.curParams[name] && !slices.Contains(e.curParamOrder, name) {
 		return -1
 	}
+	if e.bindWrites[name] > 0 || e.bindAliased[name] {
+		return -1
+	}
 	return slices.Index(e.curParamOrder, name)
+}
+
+// boundFunc is the function a variable -- or a variable's field, funcFieldKey -- is
+// known to hold here (bindFuncValue), or "".
+//
+// The binding follows the statements in the order they are emitted, and a block
+// forgets what was bound inside it when it ends (enterScope). That is right exactly
+// when nothing else can have changed the name since, which is what is asked: it is a
+// local -- a package variable is anybody's to change -- its address is never taken
+// and no method is called on it, a pointer receiver being able to assign its
+// fields; and it is written once in the whole function -- a parameter counting its
+// call, a declaration without a value not counting -- or every write is one the
+// binding follows and all of them are in ONE block of a function without a goto,
+// so that none is on a path the others are not. A field is its variable's, of a
+// struct and not a pointer to one, the variable written only where it is declared,
+// and the field held to the same rule, a declaration with a value counting as a
+// write of every field. Short of that, a binding made on one path is not the one
+// every path leaves: `f := keep; if c { f = other }` and the second pass of a loop
+// were each read as the first binding, and so was a field after `d.arm()` or
+// `setup(&d)`.
+func (e *emitter) boundFunc(key string) string {
+	fn := e.funcValueOf[key]
+	if fn == "" {
+		return ""
+	}
+	root, field, isField := strings.Cut(key, ".")
+	if e.bindAliased[root] || e.isPackageVar(root) {
+		return ""
+	}
+	param := slices.Contains(e.curParamOrder, root)
+	writes, block := e.bindWrites[root], e.bindBlock[root]
+	if param {
+		writes++
+		if e.bindWrites[root] != 0 && block != e.bindBody {
+			block = -1
+		}
+	}
+	if !isField {
+		if !e.bindFollows(writes, block, e.bindOpaque[root]) {
+			return ""
+		}
+		return fn
+	}
+	ct, ok := e.varType(root)
+	if !ok || e.isPointer(ct) || writes > 1 || !slices.ContainsFunc(e.structs[e.underlyingCType(ct)], func(f structField) bool { return f.name == field }) {
+		return ""
+	}
+	writes, block = e.bindWrites[key], e.bindBlock[key]
+	if lit, declared := e.bindLits[root]; declared {
+		if writes == 0 {
+			block = lit
+		} else if block != lit {
+			block = -1
+		}
+		writes++
+	}
+	if !e.bindFollows(writes, block, e.bindOpaque[key]) {
+		return ""
+	}
+	return fn
+}
+
+// bindFollows reports whether writes to a name, all in block (-1 for several), leave
+// the binding what the emitted statements say it is.
+func (e *emitter) bindFollows(writes, block int, opaque bool) bool {
+	return writes <= 1 || block >= 0 && !opaque && !e.bindGotos
+}
+
+// scanBindings records, for the function about to be emitted, what boundFunc asks:
+// how often each name, and each field of one, is written and in which block, which
+// names are declared with a value, and which something else may write through.
+func (e *emitter) scanBindings(body []int32) {
+	e.bindWrites, e.bindBlock, e.bindLits = map[string]int{}, map[string]int{}, map[string]int{}
+	e.bindOpaque, e.bindAliased, e.bindGotos = map[string]bool{}, map[string]bool{}, false
+	e.bindSeq++
+	e.bindBody = e.bindSeq
+	e.scanBindingsIn(body, e.bindBody)
+}
+
+// noteBindTarget counts one write of a target in block: a name, or a name and one
+// selector. opaque says the binding does not follow it (see bindOpaque), valued that
+// it declares the name with a value.
+func (e *emitter) noteBindTarget(root string, chain []Node, block int, opaque, valued bool) {
+	if root == "" || root == "_" {
+		return
+	}
+	note := func(key string) {
+		e.bindWrites[key]++
+		if b, seen := e.bindBlock[key]; !seen {
+			e.bindBlock[key] = block
+		} else if b != block {
+			e.bindBlock[key] = -1
+		}
+		if opaque {
+			e.bindOpaque[key] = true
+		}
+	}
+	switch {
+	case len(chain) == 0:
+		note(root)
+		if valued {
+			e.bindLits[root] = block
+		}
+	case len(chain) == 1 && chain[0].sym == Selector:
+		if fld := e.soleIdent(chain[0].ast); fld != "" {
+			note(funcFieldKey(root, fld))
+		}
+	}
+}
+
+// noteBindExpr is noteBindTarget for a target written as an expression, a clause's.
+func (e *emitter) noteBindExpr(ast []int32, block int, valued bool) {
+	if name, ok := e.exprIdent(ast); ok {
+		e.noteBindTarget(name, nil, block, true, valued)
+		return
+	}
+	if kids, ok := e.soleFactor(ast); ok && len(kids) == 2 && kids[0].sym == 0 && e.f.ch(kids[0].tok) == IDENT && kids[1].sym == FactorSuffix {
+		e.noteBindTarget(e.src(kids[0].tok), slices.Collect(it(kids[1].ast)), block, true, valued)
+	}
+}
+
+// noteMethodCalls marks root when steps call a method on it, `d.arm()`: a pointer
+// receiver is its address.
+func (e *emitter) noteMethodCalls(root string, steps []Node) {
+	for i := 0; i+1 < len(steps); i++ {
+		if steps[i].sym == Selector && steps[i+1].sym == CallSuffix && e.methodNames[e.soleIdent(steps[i].ast)] {
+			e.bindAliased[root] = true
+		}
+	}
+}
+
+// scanBindingsIn is scanBindings for the nodes of ast, in block. A construct that
+// scopes what it declares is a block of its own, as the emitter's scopes are.
+func (e *emitter) scanBindingsIn(ast []int32, block int) {
+	for n := range it(ast) {
+		if n.sym == 0 {
+			if e.f.ch(n.tok) == GOTO {
+				e.bindGotos = true
+			}
+			continue
+		}
+		if n.sym == FuncLiteral {
+			continue // a function of its own, scanned when it is lifted
+		}
+		kids := slices.Collect(it(n.ast))
+		inner := block
+		switch n.sym {
+		case Block, IfStmt, SwitchStmt, SelectStmt, CaseClause, CommClause:
+			e.bindSeq++
+			inner = e.bindSeq
+		case Statement:
+			if len(kids) != 0 && kids[0].sym == 0 && e.f.ch(kids[0].tok) == FOR {
+				e.bindSeq++
+				inner = e.bindSeq
+			}
+		}
+		switch n.sym {
+		case VarSpec:
+			var names []string
+			values := 0
+			for _, c := range kids {
+				switch c.sym {
+				case IdentifierList:
+					for t := range it(c.ast) {
+						if t.sym == 0 && e.f.ch(t.tok) == IDENT {
+							names = append(names, e.src(t.tok))
+						}
+					}
+				case ExpressionList:
+					for x := range it(c.ast) {
+						if x.sym == Expression {
+							values++
+						}
+					}
+				}
+			}
+			if values != 0 {
+				for _, nm := range names {
+					e.noteBindTarget(nm, nil, block, values != len(names), true)
+				}
+			}
+		case Statement:
+			switch {
+			case len(kids) == 2 && kids[0].sym == AssignHead && kids[1].sym == Postfix:
+				root := e.soleIdent(kids[0].ast)
+				post := slices.Collect(it(kids[1].ast))
+				e.noteMethodCalls(root, post)
+				if len(post) == 0 || post[len(post)-1].sym != PostfixOp {
+					break
+				}
+				op := slices.Collect(it(post[len(post)-1].ast))
+				// A binding follows `x = v`, `x := v` and the lists of as many values
+				// as targets, and nothing else: a compound assignment, an increment,
+				// several results of one call.
+				plain, decl, targets, values := false, false, 1, 0
+				writes := false
+				for _, o := range op {
+					switch {
+					case o.sym == AssignOp:
+						writes = true
+					case o.sym == LhsItem:
+						targets++
+					case o.sym == ExpressionList:
+						for x := range it(o.ast) {
+							if x.sym == Expression {
+								values++
+							}
+						}
+					case o.sym == 0:
+						switch sym := e.f.ch(o.tok); {
+						case sym == ASSIGN:
+							writes, plain = true, true
+						case sym == DEFINE:
+							writes, plain, decl = true, true, true
+						case sym == INC || sym == DEC || isCompoundAssign(sym):
+							writes = true
+						}
+					}
+				}
+				if !writes {
+					break
+				}
+				opaque := !plain || values != targets
+				if e.derefStars(kids[0].ast) == "" {
+					e.noteBindTarget(root, post[:len(post)-1], block, opaque, decl)
+				}
+				for _, o := range op {
+					if o.sym != LhsItem {
+						continue
+					}
+					items := slices.Collect(it(o.ast))
+					if len(items) != 0 && items[0].sym == AssignHead && e.derefStars(items[0].ast) == "" {
+						e.noteBindTarget(e.soleIdent(items[0].ast), items[1:], block, opaque, decl)
+					}
+				}
+			case len(kids) >= 2 && kids[0].sym == 0 && (e.f.ch(kids[0].tok) == GO || e.f.ch(kids[0].tok) == DEFER) && kids[1].sym == AssignHead:
+				e.noteMethodCalls(e.soleIdent(kids[1].ast), kids[2:])
+			case inner != block:
+				for _, c := range kids {
+					if c.sym != ForHeader {
+						continue
+					}
+					h, ok := e.parseForHeader(c)
+					if !ok {
+						break
+					}
+					// The single clause is not always in the lists as well.
+					inits, posts := h.initLHSs, h.postLHSs
+					if len(inits) == 0 && h.initLHS != nil {
+						inits = [][]int32{h.initLHS}
+					}
+					if len(posts) == 0 && h.postLHS != nil {
+						posts = [][]int32{h.postLHS}
+					}
+					for _, l := range inits {
+						e.noteBindExpr(l, inner, h.initOp == DEFINE)
+					}
+					for _, l := range posts {
+						e.noteBindExpr(l, inner, h.postOp == DEFINE)
+					}
+					if h.keyVar != nil {
+						e.noteBindExpr(h.keyVar, inner, h.rangeDef)
+					}
+					if h.valVar != nil {
+						e.noteBindExpr(h.valVar, inner, h.rangeDef)
+					}
+				}
+			}
+		case IfStmt, SwitchGuard:
+			// `if f := pick(); ...` and `switch f := pick(); ...`: the names before
+			// the `:=` are declared with a value, in the statement's own scope.
+			define := slices.ContainsFunc(kids, func(c Node) bool {
+				return c.sym == IfInit || c.sym == 0 && e.f.ch(c.tok) == DEFINE
+			})
+			if !define {
+				break
+			}
+			first := true
+			for _, c := range kids {
+				switch c.sym {
+				case HeaderExpression, Expression:
+					if first { // the first name; the rest are values
+						if name := e.firstIdent(c.ast); name != "" {
+							e.noteBindTarget(name, nil, inner, true, true)
+						}
+					}
+					first = false
+				case IfInit, LhsItem:
+					items := []Node{c}
+					if c.sym == IfInit {
+						items = slices.Collect(it(c.ast))
+					}
+					for _, item := range items {
+						if item.sym != LhsItem {
+							continue
+						}
+						li := slices.Collect(it(item.ast))
+						if len(li) != 0 && li[0].sym == AssignHead {
+							e.noteBindTarget(e.soleIdent(li[0].ast), li[1:], inner, true, true)
+						}
+					}
+				}
+			}
+		case CommOp:
+			// `case f = <-fs:` and `case f, ok := <-fs:`.
+			if len(kids) == 2 && kids[0].sym == AssignHead && kids[1].sym == PostfixComm {
+				var chain []Node
+				decl, assigns := false, false
+				for _, c := range slices.Collect(it(kids[1].ast)) {
+					switch {
+					case c.sym == Selector || c.sym == Index || c.sym == CallSuffix:
+						if !assigns {
+							chain = append(chain, c)
+						}
+					case c.sym == LhsItem:
+						li := slices.Collect(it(c.ast))
+						if len(li) != 0 && li[0].sym == AssignHead {
+							e.noteBindTarget(e.soleIdent(li[0].ast), li[1:], block, true, false)
+						}
+					case c.sym == 0 && (e.f.ch(c.tok) == ASSIGN || e.f.ch(c.tok) == DEFINE):
+						assigns, decl = true, e.f.ch(c.tok) == DEFINE
+					}
+				}
+				if assigns {
+					e.noteBindTarget(e.soleIdent(kids[0].ast), chain, block, true, decl)
+				}
+			}
+		case UnaryExpr:
+			if len(kids) >= 2 && kids[0].sym == UnaryOp {
+				if tok, ok := e.unaryOpTok(kids[0].ast); ok && e.f.ch(tok) == AND {
+					if name := e.firstIdent(kids[len(kids)-1].ast); name != "" {
+						e.bindAliased[name] = true
+					}
+				}
+			}
+		case Factor:
+			if len(kids) == 2 && kids[0].sym == 0 && e.f.ch(kids[0].tok) == IDENT && kids[1].sym == FactorSuffix {
+				e.noteMethodCalls(e.src(kids[0].tok), slices.Collect(it(kids[1].ast)))
+			}
+		case LhsItem:
+			if len(kids) != 0 && kids[0].sym == AssignHead {
+				e.noteMethodCalls(e.soleIdent(kids[0].ast), kids[1:])
+			}
+		}
+		e.scanBindingsIn(n.ast, inner)
+	}
 }
 
 // noteFrameCall records that the function being emitted hands its callback
@@ -38926,7 +39652,7 @@ func (e *emitter) noteFrameCall(k, to int, a Node, ofContents bool) {
 // and the body no way to know which function it called.
 func (e *emitter) checkPendingCallbacks() {
 	for _, p := range e.pendingCallbacks {
-		for _, fc := range e.frameCalls[p.callee] {
+		for _, fc := range e.calleeFrameCalls(p.callee) {
 			if fc.fn != p.fn {
 				continue
 			}
@@ -38963,23 +39689,44 @@ func (e *emitter) checkPendingCallbacks() {
 
 // callbackSummaryName names the summary of a function handed as an argument -- a
 // declared function, a function variable bound to one, or a literal, whose summary
-// is kept under its place -- and how to call it in a message.
+// is kept under its place -- and how to call it in a message. Any other function
+// value -- a variable this cannot follow, a field, an element, a call's result -- is
+// every function of its type (indirectCallee); a callback parameter handed on is
+// the caller's question and answers "" (frameCall).
 func (e *emitter) callbackSummaryName(ast []int32) (cname, shown string) {
 	if lit, ok := e.funcLitArg(ast); ok {
 		return e.litKey(lit), "a function literal"
 	}
-	name, ok := e.exprIdent(ast)
-	if !ok {
-		return "", ""
-	}
-	if ct, isVar := e.varType(name); isVar && e.isFuncCType(ct) {
-		if fn := e.funcValueOf[name]; fn != "" {
-			return fn, name
+	if name, ok := e.exprIdent(ast); ok {
+		if ct, isVar := e.varType(name); isVar && e.isFuncCType(ct) {
+			if fn := e.boundFunc(name); fn != "" {
+				return fn, name
+			}
+			if e.callbackParam(name) >= 0 {
+				return "", ""
+			}
+			return e.indirectCallee("", ct), name
+		}
+		if _, isFunc := e.userFunc(name); isFunc {
+			return e.funcCallC(name), name
 		}
 		return "", ""
 	}
-	if _, isFunc := e.userFunc(name); isFunc {
-		return e.funcCallC(name), name
+	if kids, isFac := e.soleFactor(ast); isFac {
+		if base, fields, ok := e.factorFieldAccess(kids); ok && len(fields) == 1 {
+			if prefix, isImport := e.importQualifiers[base]; isImport {
+				cn := mangle(prefix, fields[0])
+				if e.funcValueTypes[cn].key != "" {
+					return cn, base + "." + fields[0] // another package's function
+				}
+				if ct, isVar := e.globals[cn]; isVar && e.isFuncCType(ct) {
+					return e.indirectCallee("", ct), base + "." + fields[0] // ... or its variable
+				}
+			}
+		}
+	}
+	if ct, ok := e.inferCType(ast); ok && e.isFuncCType(ct) {
+		return e.indirectCallee("", ct), "a " + e.goTypeName(ct) + " value"
 	}
 	return "", ""
 }
@@ -39158,11 +39905,11 @@ func (e *emitter) bindFuncValue(name string, initExpr []int32) {
 // calleeSummaryName is the C name whose summaries a call through recv should be
 // judged by. It is recv's own mangled name for a declared function, and the bound
 // function for a variable holding one; a variable holding a function this cannot
-// name yields "", which consults nothing and accepts, as the rest of the analysis
-// does with what it cannot see.
+// name -- a callback parameter too, since what its call hands back only the caller
+// knows -- is every function of its type (indirectCallee).
 func (e *emitter) calleeSummaryName(recv string) string {
 	if ct, ok := e.varType(recv); ok && e.isFuncCType(ct) {
-		return e.funcValueOf[recv]
+		return e.indirectCallee(e.boundFunc(recv), ct)
 	}
 	return e.funcCallC(recv)
 }
