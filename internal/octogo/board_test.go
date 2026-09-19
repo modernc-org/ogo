@@ -249,9 +249,10 @@ func TestOnBoardSmith(t *testing.T) {
 					return
 				}
 				// A checksum failure is a miscompile, not a flaky serial line, so
-				// report it at once rather than retrying it boardAttempts times.
-				if strings.Contains(out, "Checksum Failure") {
-					t.Errorf("the generated program's checksum did not hold ON THE BOARD "+
+				// report it at once rather than retrying it boardAttempts times --
+				// and so is a call count gone wrong, a call run twice or not at all.
+				if strings.Contains(out, "Checksum Failure") || strings.Contains(out, "Call Count Failure") {
+					t.Errorf("the generated program's checksum or call count did not hold ON THE BOARD "+
 						"(it holds on the host, so this is the backend or the target)\ngot:\n%s"+
 						"\n--- program ---\n%s", out, src)
 					return

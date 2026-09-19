@@ -152,6 +152,15 @@ type Fuzzer struct {
 
 	// Checksum variable name to ensure deterministic execution validation
 	ChecksumName string
+
+	// CallsName is the package variable every generated function adds its weight
+	// to when it is called (see FuncDef.Weight), and calls is what the VM expects
+	// it to hold: the sum over the calls main has made so far. The functions are
+	// pure otherwise, so without it a call evaluated twice, or not at all, left the
+	// checksum as it was -- and nine programs of the corpus carried a doubled call,
+	// in a send and an appended element, that nothing noticed.
+	CallsName string
+	calls     int32
 }
 
 func NewFuzzer(seed int64, out io.Writer) *Fuzzer {
@@ -165,5 +174,6 @@ func NewFuzzer(seed int64, out io.Writer) *Fuzzer {
 		CurrentEnv:   global,
 		CogCount:     1, // Main starts on the first Cog
 		ChecksumName: "octosmith_checksum",
+		CallsName:    "octosmith_calls",
 	}
 }

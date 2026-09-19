@@ -98,13 +98,18 @@ var generatedConstructs = []struct {
 	// A function whose whole return operand is a widening conversion, and a sized
 	// variable drawn from a call of one: `return int64(p)` is what the target
 	// returned with a garbage high word.
-	{"widening function", `\nfunc fn_\d+\([^)]*\) int64 \{\n\treturn int64\(`},
+	{"widening function", `\nfunc fn_\d+\([^)]*\) int64 \{\n(\toctosmith_calls = [^\n]*\n)?\treturn int64\(`},
 	{"sized variable from a widening call", `\n\s*var z_\d+ int64 = fn_\d+\(`},
 	{"defined int64 variable from a widening call", `\n\s*var z_\d+ D_\d+ = D_\d+\(fn_\d+\(`},
 	// A function of 64-bit parameters, and a call of one with a constant after an
 	// argument that is an arithmetic expression of 64-bit type -- a product or a
 	// negation -- which the target passed as one word; see FuncDef.Params64.
-	{"function of int64 parameters", `\nfunc fn_\d+\(p_\d+ int64[^)]*\) int64 \{\n\treturn `},
+	{"function of int64 parameters", `\nfunc fn_\d+\(p_\d+ int64[^)]*\) int64 \{\n(\toctosmith_calls = [^\n]*\n)?\treturn `},
+	// Every generated function counts its calls, and main asserts the count: a call
+	// evaluated twice or not at all changes nothing else a pure function's caller
+	// can see (see Fuzzer.CallsName).
+	{"call counted", `\n\toctosmith_calls = octosmith_calls \+ \d+\n\treturn `},
+	{"call count asserted", `\n\tif octosmith_calls != -?\d+ \{`},
 	{"constant after an expression argument", `fn_\d+\(\(z_\d+ ?[-+*] ?-?\d+\), -?\d+`},
 	{"constant after a negated argument", `fn_\d+\(-\(z_\d+\), -?\d+`},
 	// A float32 variable, its arithmetic in Go's float32 semantics, and the three

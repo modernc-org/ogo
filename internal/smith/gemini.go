@@ -37,6 +37,10 @@ func (f *Fuzzer) GenerateProgram(vm Machine, mem Memory) error {
 	f.CurrentEnv.Lookup(f.ChecksumName).Used = true
 
 	fmt.Fprintf(f.Out, "var %s int = 0\n\n", f.ChecksumName)
+	// Not declared in the environment: no expression may read it. Its value moves
+	// at every call, and Go leaves unspecified whether `x + f()` reads x before or
+	// after f runs.
+	fmt.Fprintf(f.Out, "var %s int = 0\n\n", f.CallsName)
 
 	// 3. Generate the struct types, ahead of the functions and of main so both can
 	// use them.
@@ -135,6 +139,13 @@ func (f *Fuzzer) GenerateProgram(vm Machine, mem Memory) error {
 	mem.PushScope()
 	f.CurrentEnv = NewScope(f.CurrentEnv)
 
+	// The calls counted are main's: the package initializers call functions too,
+	// in dependency order, which is what the cluster below tests and the VM does
+	// not model call by call.
+	writeIndent(f.Out, 1)
+	fmt.Fprintf(f.Out, "%s = 0\n", f.CallsName)
+	f.calls = 0
+
 	// Fold the cluster into the checksum first thing: a compiler that ran the
 	// initializers in written order rather than dependency order computes
 	// different values, and the assertion at the end convicts it.
@@ -178,6 +189,15 @@ func (f *Fuzzer) GenerateProgram(vm Machine, mem Memory) error {
 	// 6. Retrieve the FINAL generation-time state of the checksum
 	finalChecksum := mem.Load(f.ChecksumName)
 
+	// 6.5. Every call main made, each once: a call evaluated twice or not at all
+	// changes nothing else a generated program can see.
+	writeIndent(f.Out, 1)
+	fmt.Fprintf(f.Out, "if %s != %d {\n", f.CallsName, f.calls)
+	writeIndent(f.Out, 2)
+	fmt.Fprintf(f.Out, "panic(\"OctoSmith Call Count Failure!\")\n")
+	writeIndent(f.Out, 1)
+	fmt.Fprint(f.Out, "}\n")
+
 	// 7. Emit the Oracle Assertion
 	// If the compiled P2 binary gets a different result, it prints the error and halts.
 	writeIndent(f.Out, 1)
@@ -208,6 +228,10 @@ type FuncDef struct {
 	Name   string
 	Params []string
 	Body   Node // over Params and literals only; see genFuncDecl for why it is total
+	// Weight is what the function adds to the calls counter each time it runs
+	// (see Fuzzer.CallsName): its one side effect, which is what makes a call
+	// evaluated twice, or not at all, show.
+	Weight int32
 	// Body2 makes this a two-result function, `func f(p int) (int, int)`. It is a
 	// second expression over the same parameters, so the VM predicts both results
 	// the same way it predicts one. Such a function is not usable in expression
@@ -229,6 +253,13 @@ type FuncDef struct {
 	// Its type is neither `func(int) int` nor the widening one, so both
 	// funcsWithResults and wideFuncs leave it out and funcs64 is how it is found.
 	Params64 bool
+}
+
+// noteCall is the VM's side of a call main makes: the callee adds its weight to the
+// counter as it runs (see FuncDef.Weight), so the VM does -- once per call, however
+// many of the callee's results it evaluates, and in no position the program skips.
+func (f *Fuzzer) noteCall(fn *FuncDef) {
+	f.calls += fn.Weight
 }
 
 // results reports how many values a generated function returns.
@@ -301,8 +332,13 @@ func (f *Fuzzer) genFunc64Decl() *FuncDef {
 
 // declareFunc records a generated function and writes its declaration.
 func (f *Fuzzer) declareFunc(fn *FuncDef) *FuncDef {
+	// A field of four bits per function: a failing seed's count says which
+	// function was called how many times. Six fields and a program's few dozen
+	// calls stay far from the sign bit, whose overflow C leaves undefined.
+	fn.Weight = 1 << (4 * (len(f.Funcs) % 6))
 	f.Funcs = append(f.Funcs, fn)
-	(&FuncDeclNode{Name: fn.Name, Params: fn.Params, Body: fn.Body, Body2: fn.Body2, Wide: fn.Wide, Params64: fn.Params64}).Write(f.Out, 0)
+	(&FuncDeclNode{Name: fn.Name, Params: fn.Params, Body: fn.Body, Body2: fn.Body2, Wide: fn.Wide, Params64: fn.Params64,
+		Calls: f.CallsName, Weight: fn.Weight}).Write(f.Out, 0)
 	fmt.Fprint(f.Out, "\n")
 	return fn
 }
@@ -573,6 +609,7 @@ func (f *Fuzzer) genCall(vm Machine, mem Memory, depth int) (Node, Value) {
 		argNodes = append(argNodes, node)
 		args[p] = val.(Int32)
 	}
+	f.noteCall(fn) // after its arguments, as it runs
 	return &CallNode{Fn: fn.Name, Args: argNodes}, f.evalCall(fn, args, vm)
 }
 
@@ -954,10 +991,16 @@ func (f *Fuzzer) genBoolExpr(vm Machine, mem Memory, depth int) (Node, bool) {
 			return &UnaryExprNode{Op: "!", X: x}, !v
 		case r < 0.35: // x && y, x || y
 			left, lv := f.genBoolExpr(vm, mem, depth+1)
+			before := f.calls
 			right, rv := f.genBoolExpr(vm, mem, depth+1)
 			op, val := "&&", lv && rv
 			if f.Rand.Float32() < 0.5 {
 				op, val = "||", lv || rv
+			}
+			// The right operand is not evaluated when the left one decides, so no
+			// call in it happens.
+			if op == "&&" && !lv || op == "||" && lv {
+				f.calls = before
 			}
 			return &BinaryExprNode{Left: left, Op: op, Right: right}, val
 		}
@@ -1228,6 +1271,7 @@ func (f *Fuzzer) genSizedStmt(vm Machine, mem Memory) Node {
 			argNodes = append(argNodes, node)
 			args[p] = val.(Int32)
 		}
+		f.noteCall(fn)
 		cur = NewSized(int64(f.evalCall(fn, args, vm)), k)
 		init = &CallNode{Fn: fn.Name, Args: argNodes}
 		if typeName != "int64" {
@@ -1355,7 +1399,7 @@ func (f *Fuzzer) genSizedStmt(vm Machine, mem Memory) Node {
 		// variable's type has to be the parameter's, int64, so a type defined over
 		// one is left out.
 		if typeName == "int64" && f.Rand.Float32() < 0.8 {
-			if node, v, ok := f.genSizedCall(name, cur); ok {
+			if node, v, callee, ok := f.genSizedCall(name, cur); ok {
 				c4, _ := vm.Eval("^", mem.Load(f.ChecksumName), v.Int32())
 				mem.Store(f.ChecksumName, c4)
 				stmts = append(stmts, &AssignStmtNode{
@@ -1364,6 +1408,7 @@ func (f *Fuzzer) genSizedStmt(vm Machine, mem Memory) Node {
 					Rhs: &BinaryExprNode{Left: &IdentNode{Name: f.ChecksumName}, Op: "^", Right: &ConvNode{Type: "int", X: node}},
 				})
 				if vhi, err := v.binOp(">>", NewSized(32, k)); err == nil {
+					f.noteCall(callee) // the call is written again, and runs again
 					c5, _ := vm.Eval("^", mem.Load(f.ChecksumName), vhi.(Sized).Int32())
 					mem.Store(f.ChecksumName, c5)
 					stmts = append(stmts, &AssignStmtNode{
@@ -1469,7 +1514,7 @@ func (u *untypedShift) fold(f *Fuzzer, name string, cur Sized) (Node, Sized) {
 // it yields. ok is false when the expression's operands would reach something the
 // emitted C leaves undefined, or when no function takes two parameters, a call of
 // one taking one having no constant to place after the expression.
-func (f *Fuzzer) genSizedCall(name string, cur Sized) (Node, Sized, bool) {
+func (f *Fuzzer) genSizedCall(name string, cur Sized) (Node, Sized, *FuncDef, bool) {
 	var fns []*FuncDef
 	for _, fn := range f.funcs64() {
 		if len(fn.Params) >= 2 {
@@ -1477,7 +1522,7 @@ func (f *Fuzzer) genSizedCall(name string, cur Sized) (Node, Sized, bool) {
 		}
 	}
 	if len(fns) == 0 {
-		return nil, cur, false
+		return nil, cur, nil, false
 	}
 	fn := fns[f.Rand.Intn(len(fns))]
 	id := &IdentNode{Name: name}
@@ -1491,7 +1536,7 @@ func (f *Fuzzer) genSizedCall(name string, cur Sized) (Node, Sized, bool) {
 		c := int64(1 + f.Rand.Intn(100))
 		r, err := cur.binOp(op, NewSized(c, cur.k))
 		if err != nil {
-			return nil, cur, false
+			return nil, cur, nil, false
 		}
 		first, v0 = &BinaryExprNode{Left: id, Op: op, Right: &IntLitNode{Value: sizedLitText(c, cur.k)}}, r.(Sized)
 	}
@@ -1505,7 +1550,8 @@ func (f *Fuzzer) genSizedCall(name string, cur Sized) (Node, Sized, bool) {
 		args[p] = c
 		argNodes = append(argNodes, &IntLitNode{Value: fmt.Sprintf("%d", c)})
 	}
-	return &CallNode{Fn: fn.Name, Args: argNodes}, NewSized(f.evalCall64(fn, args), cur.k), true
+	f.noteCall(fn)
+	return &CallNode{Fn: fn.Name, Args: argNodes}, NewSized(f.evalCall64(fn, args), cur.k), fn, true
 }
 
 // pickSized draws a value of kind k as the BIT PATTERN the VM holds it by. At 64
@@ -1896,6 +1942,7 @@ func (f *Fuzzer) genDestructure(vm Machine, mem Memory) Node {
 		args[p] = val.(Int32)
 	}
 	a, b := f.newVarName("d"), f.newVarName("d")
+	f.noteCall(fn) // one call, two results
 	mem.Store(a, f.evalBody(fn, fn.Body, args, vm))
 	mem.Store(b, f.evalBody(fn, fn.Body2, args, vm))
 	f.CurrentEnv.Declare(a, BasicType{Kind: KindInt}, false)
@@ -2038,6 +2085,7 @@ func (f *Fuzzer) genFuncValueStmt(vm Machine, mem Memory) Node {
 		})
 	}
 	call := &CallNode{Fn: name, Args: argNodes}
+	f.noteCall(fn) // one call, whichever of its results are read
 	if want == 1 {
 		fold(f.evalCall(fn, args, vm), call)
 		return &BlockNode{Statements: stmts}
@@ -2605,6 +2653,10 @@ type FuncDeclNode struct {
 	Body2    Node // non-nil for a two-result function
 	Wide     bool // the result is int64(Body); see FuncDef.Wide
 	Params64 bool // see FuncDef.Params64
+	// Calls and Weight write the call counter's update ahead of the return (see
+	// FuncDef.Weight); an empty Calls writes none.
+	Calls  string
+	Weight int32
 }
 
 func (n *FuncDeclNode) Write(w io.Writer, indent int) {
@@ -2627,6 +2679,10 @@ func (n *FuncDeclNode) Write(w io.Writer, indent int) {
 		fmt.Fprint(w, ") int64 {\n")
 	default:
 		fmt.Fprint(w, ") int {\n")
+	}
+	if n.Calls != "" {
+		writeIndent(w, indent+1)
+		fmt.Fprintf(w, "%s = %s + %d\n", n.Calls, n.Calls, n.Weight)
 	}
 	writeIndent(w, indent+1)
 	fmt.Fprint(w, "return ")

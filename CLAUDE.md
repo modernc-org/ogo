@@ -451,6 +451,15 @@ still design-only.
   programs from compiling are fixed, and the generator now mints unique variable
   names (a counter, not a random suffix) so it never accidentally shadows. Widen
   `oracleSeeds` to hunt for new bugs.
+  **Calls are counted** (2026-09-19): every generated function adds its weight -- a
+  4-bit field per function -- to `octosmith_calls`, and main asserts the sum before
+  the checksum. The functions are pure otherwise, so a call evaluated twice or not
+  at all changed nothing the checksum could see: nine corpus programs carried a
+  doubled call (`ch <- len(name())`, 3e2d5a1) and the oracle passed them all. The
+  VM counts a call where the program makes it -- once per call whichever results are
+  read, never in an `&&`/`||` operand the left one decides, and not in package
+  initialization, main resetting the counter first. **A new call site in the
+  generator calls `noteCall`**, once for each time the program runs the call.
 - **Fixed miscompile (found by the oracle):** a shadowing local whose initializer
   references the shadowed name — `var x = x + 5` with an outer `x` in scope — used
   to miscompile, because the emitter names locals verbatim so the C initializer read
