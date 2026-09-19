@@ -97,3 +97,9 @@ func (d Deg) scaled() int32 { return int32(d) }
 // Take takes a T, so an importer's argument of another struct type can be checked
 // against a parameter of this package's (qualified_struct_identity.ogo).
 func Take(t T) int { return t.F }
+
+// Cur and Max are what qualified_operand.ogo reads in a switch case and in a
+// constant declaration: a variable, which is no constant, and a constant.
+var Cur int
+
+const Max = 9

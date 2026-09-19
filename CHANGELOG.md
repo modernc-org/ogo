@@ -197,6 +197,11 @@ shipped section tells a reader on that version that they have behaviour they do 
 
 ### Fixed
 
+- **Another package's member in a switch case is checked.** `case lib.Nope:` was
+  refused only by the emitter, calling lib "not a value with fields or elements",
+  and `case lib.Nope():` reached the C compiler as a call of nothing declared; an
+  unexported member and a call with the wrong arguments passed alike. A case says
+  "undefined: lib.Nope" and the rest as any other expression does.
 - **A package name is not a variable to assign.** `lib = 3`, `lib++`, `lib += 2`
   and `n, lib = 1, 2` for an imported lib were accepted and reached the C compiler
   as a store to a name nothing declares; they are refused as Go refuses them, "use

@@ -18,7 +18,7 @@ func cases() {
 	n := 1
 	switch n {
 	case p.Cur:
-	case p.Two():
+	case p.Add(1, 2):
 	case p.Max:
 	case local:
 	}
@@ -31,6 +31,23 @@ func cases() {
 	switch n {
 	// ERROR "undefined: nope"
 	case nope:
+	}
+
+	// A qualified member is resolved in a case as anywhere else: the fold took one
+	// that is not there for a value that is not a constant, which a case may be.
+	switch n {
+	// ERROR "undefined: p.Nope"
+	case p.Nope:
+	// ERROR "undefined: p.Nope"
+	case p.Nope():
+	// ERROR "cannot refer to unexported name p.p"
+	case p.p:
+	// ERROR "too many arguments in call to Add"
+	case p.Add(1, 2, 3):
+	}
+	switch {
+	// ERROR "undefined: p.Nope"
+	case n == p.Nope:
 	}
 }
 

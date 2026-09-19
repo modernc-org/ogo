@@ -3757,6 +3757,7 @@ func (f *File) checkSwitch(s *Scope, results []retResult, n Node) {
 				f.checkCaseExprs(ss, guardKind, c)
 			}
 			if !isTypeSwitch {
+				f.checkCaseQualified(ss, c)
 				f.typeCaseShifts(ss, guardKind, guardOK, c)
 			}
 			// A break inside a case names the switch, so the body is checked one
@@ -4309,6 +4310,37 @@ func (f *File) typeCaseShifts(s *Scope, guardKind Kind, guardOK bool, n Node) {
 					f.typeShiftOperands(s, e, t)
 				}
 			}
+		}
+	}
+}
+
+// checkCaseQualified resolves the package-qualified references in a case clause's
+// expressions, `case lib.Max:`. The case's fold (caseConstValue) reports a plain
+// name that is undefined, and took a qualified one for a value that is "not a
+// constant" -- legal in a case, so nothing was said: `case lib.Nope:` reached the
+// emitter, which called lib "not a value with fields", and `case lib.Nope():` the
+// C compiler.
+func (f *File) checkCaseQualified(s *Scope, clause Node) {
+	var walk func(n Node)
+	walk = func(n Node) {
+		for c := range it(n.ast) {
+			if c.sym == 0 {
+				continue
+			}
+			if c.sym == Factor {
+				kids := slices.Collect(it(c.ast))
+				if len(kids) >= 2 && kids[0].sym == 0 && f.ch(kids[0].tok) == IDENT && kids[1].sym == FactorSuffix {
+					if id := f.tok(kids[0].tok); f.isImportQualifier(s, id.Src()) {
+						f.checkQualifiedRef(s, id, kids[1])
+					}
+				}
+			}
+			walk(c)
+		}
+	}
+	for head := range it(clause.ast) {
+		if head.sym == CaseHead {
+			walk(head)
 		}
 	}
 }
