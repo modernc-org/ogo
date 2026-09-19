@@ -182,6 +182,13 @@ shipped section tells a reader on that version that they have behaviour they do 
 
 ### Fixed
 
+- **A call through what a call returns works as a statement and deferred.**
+  `pick()(x)` for a function of no results was refused as a call statement, and
+  `defer pick()(x)` did not compile for any function: the callee's call is Go's to
+  run at the defer, and the replay rendered it at the return instead. And a deferred
+  call through a function value whose results are a struct or several, `f :=
+  pickMk(); defer f(9)`, was called without the out parameter they travel through;
+  neither compiler took it.
 - **A function literal's signature may name another package's types.** `func(p
   *lib.T) { ... }` was refused, "lib (package name) is not a type": a literal is
   checked in a scope reaching the file's, where the import itself was taken for a

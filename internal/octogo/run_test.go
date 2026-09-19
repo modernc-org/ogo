@@ -27864,6 +27864,86 @@ func main() {
 		want: "9\n5\n",
 	},
 	{
+		// A call through what a call returns, `pick()(x)`: as a statement for a
+		// function of no results, which was "only <pkg>.<Func>(args) ... call
+		// statements are supported yet" -- the chain typer has no head for a
+		// function's name -- and deferred, which compiled for no function at all:
+		// the callee's call is Go's to run at the defer, and the replay rendered it
+		// at the return into a temporary it could not see. And a deferred call
+		// through a function VALUE whose results travel through an out parameter,
+		// `f := pickMk(); defer f(9)`, was called without one.
+		//
+		// Every line of this prints what real Go prints for the same program.
+		name: "a call through what a call returns, as a statement and deferred",
+		src: `var calls int
+
+type T struct {
+	N int
+}
+
+func inc(p *T) {
+	calls = calls*10 + 1
+	p.N++
+}
+
+func two(k int) (int, bool) {
+	calls = calls*10 + 2
+	return k, k > 0
+}
+
+func mk(k int) T {
+	calls = calls*10 + 3
+	return T{N: k}
+}
+
+func pick() func(*T) {
+	calls = calls*10 + 4
+	return inc
+}
+
+func pickTwo() func(int) (int, bool) {
+	calls = calls*10 + 5
+	return two
+}
+
+func pickMk() func(int) T {
+	calls = calls*10 + 6
+	return mk
+}
+
+var t T
+
+// Each deferred call's function is a CALL's result: that call runs where the
+// defer stands, and what it returned is called at the return.
+func run() {
+	defer pick()(&t)
+	defer pickMk()(8)
+	defer pickTwo()(3)
+	f := pickMk()
+	defer f(9)
+	println("before", calls, t.N)
+}
+
+func main() {
+	pick()(&t)
+	println(t.N, calls)
+	calls = 0
+	pickTwo()(3)
+	pickMk()(8)
+	println(calls)
+	calls = 0
+	println(pickMk()(9).N, calls)
+	calls = 0
+	v, ok := pickTwo()(-1)
+	println(v, ok, calls)
+	calls = 0
+	run()
+	println("after", calls, t.N)
+}
+`,
+		want: "1 41\n5263\n9 63\n-1 false 52\nbefore 4656 1\nafter 46563231 2\n",
+	},
+	{
 		// A function literal called where it stands, as a statement of its own, which
 		// the grammar had no production for: a statement could not begin with "func".
 		// It is lifted as a literal is anywhere and called by name; arguments are how a

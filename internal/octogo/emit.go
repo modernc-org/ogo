@@ -18704,6 +18704,14 @@ func (e *emitter) constChainType(base string, steps []Node) (accessCur, bool) {
 			return accessCur{}, false
 		}
 	}
+	return e.renderedChainType(base, steps)
+}
+
+// renderedChainType types a chain by rendering it, under capturePrologue so that
+// nothing the renderer writes or hoists reaches the output: the same chain is
+// rendered for real where it stands. It answers for heads the chain typer does not
+// start from -- an import qualifier, a constant, a function called.
+func (e *emitter) renderedChainType(base string, steps []Node) (accessCur, bool) {
 	ctype, ok := "", false
 	e.capturePrologue(func() { _, ctype, _, ok = e.chainCText(base, steps) })
 	if !ok || ctype == "" {
@@ -23218,6 +23226,27 @@ func (e *emitter) deferReceiver(d *deferredCall, head Node, suffix []Node) (stri
 		}
 		return "", true
 	}
+	// `defer pick()(args)`: what is called is the function a CALL returns. Go runs
+	// that call where the defer stands and calls its value at the return, so the
+	// value is captured as a function variable's is. Left to the replay, the chain
+	// was rendered at the return: its call ran then, and the temporary it was bound
+	// to was declared where the replay could not see it -- no deferral of this shape
+	// compiled.
+	if steps[len(steps)-1].sym == CallSuffix {
+		var ct, text string
+		okc := false
+		_, pro := e.capturePrologue(func() { text, ct, _, okc = e.chainCText(base, steps) })
+		if !okc || !e.isFuncCType(ct) {
+			return "", true
+		}
+		for _, line := range pro {
+			e.ind()
+			e.emit(line)
+		}
+		d.recvCType = ct
+		d.callsValue = true
+		return text, true
+	}
 	if steps[len(steps)-1].sym != Selector {
 		return "", true
 	}
@@ -23418,7 +23447,18 @@ func (e *emitter) emitDeferred() {
 			}
 			args := e.argsCText(d.cname, d.suffix[len(d.suffix)-1].ast)
 			if d.callsValue {
-				e.emit(deferRecvName(d.slot) + "(" + args + ");\n")
+				// A value whose results travel through an out parameter (see
+				// funcSigCParts) is handed one, which the dropped results go to. It
+				// was called without, and neither compiler took the call.
+				if out := e.outResultOf(e.funcTypeRet[e.underlyingCType(d.recvCType)]); out != "" {
+					tmp := e.newTmp()
+					if args != "" {
+						args = ", " + args
+					}
+					e.emit("{ " + out + " " + tmp + "; " + deferRecvName(d.slot) + "(&" + tmp + args + "); }\n")
+				} else {
+					e.emit(deferRecvName(d.slot) + "(" + args + ");\n")
+				}
 			} else {
 				if args != "" {
 					args = ", " + args
@@ -24298,6 +24338,14 @@ func (e *emitter) emitCallExpr(recv string, suffix []Node) bool {
 		// it walks, and a speculative walk that then declines leaves its
 		// temporaries behind, unused.
 		cur, okt := e.accessChainType(recv, suffix[:len(suffix)-1])
+		if !okt && suffix[0].sym == CallSuffix {
+			// `pick()(x)`: a function's result called. A function name is no head
+			// the chain typer starts from, so the chain before the last call is
+			// typed by rendering it -- which left a result of NO results refused as
+			// a call statement, "only <pkg>.<Func>(args) ... supported yet", where
+			// one with a result went through the fallback below.
+			cur, okt = e.renderedChainType(recv, suffix[:len(suffix)-1])
+		}
 		if !okt || !e.isFuncCType(cur.ctype) || len(e.funcTypeRet[e.underlyingCType(cur.ctype)]) == 1 {
 			// The single-result form belongs to the fallback below -- declining
 			// AFTER the lowering walk would leave its hoists behind, unused.
