@@ -197,6 +197,11 @@ shipped section tells a reader on that version that they have behaviour they do 
 
 ### Fixed
 
+- **An interface made from a pointer points where the pointer does.** Made from a
+  pointer parameter, `var s Saver = p`, it was taken to point at the parameter
+  itself, so calling a method that keeps its receiver, or storing the interface in
+  a package variable, was refused though the pointer is the caller's -- and made
+  from a local pointer to a package variable it was refused likewise.
 - **An element of a slice or an array of pointers is a pointer.** Read by index,
   `p := ps[i]`, or ranged over, `for _, p := range ps`, it was taken for what it
   points at, so `*p` was "cannot indirect p" -- in the loop a table of pointers is

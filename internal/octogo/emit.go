@@ -6481,9 +6481,12 @@ func (e *emitter) ifaceStoreC(target, iface string, rhs []int32) string {
 	if root, isRoot := e.addrOfRoot(rhs); isRoot && e.isFrameVar(root) {
 		e.frameHolder[target] = "local " + root
 	} else if name, isName := e.exprIdent(rhs); isName {
-		if e.isFrameVar(name) {
-			e.frameHolder[target] = "local " + name
-		} else if origin := e.frameHolder[name]; origin != "" {
+		// A bare name reaching here is a POINTER (see ifaceOperand), and the value
+		// is its value: the interface points where the pointer does, which is the
+		// pointer's own mark. Taken for the pointer variable's storage, an interface
+		// made from a pointer PARAMETER held "local p", and a method keeping its
+		// receiver was refused on the caller's storage, which Go accepts.
+		if origin := e.frameHolder[name]; origin != "" {
 			e.frameHolder[target] = origin
 		}
 	}

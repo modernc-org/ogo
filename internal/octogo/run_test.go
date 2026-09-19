@@ -28411,6 +28411,53 @@ func main() {
 		want: "7\n0 7\n1 4\n36 6\n7 5 5\n",
 	},
 	{
+		name: "an interface made from a pointer points where the pointer does",
+		src: `type Saver interface {
+	Save()
+}
+
+type Box struct {
+	n int
+}
+
+var gbox *Box
+
+var gb, gb2 Box
+
+var gsv Saver
+
+func (b *Box) Save() { gbox = b }
+
+func keep(p *Box) {
+	var s Saver = p
+	s.Save()
+}
+
+func store(p *Box) {
+	var s Saver = p
+	gsv = s
+}
+
+// An interface made from a pointer points where the pointer does: made from a
+// pointer parameter it holds the caller's storage, which a method may keep and a
+// package variable may hold -- both were refused as if it pointed at the parameter.
+func main() {
+	gb.n, gb2.n = 1, 2
+	keep(&gb)
+	println(gbox.n)
+	store(&gb2)
+	gsv.Save()
+	println(gbox.n)
+	p := &gb
+	var s Saver = p
+	s.Save()
+	gsv = s
+	println(gbox.n, gbox == &gb)
+}
+`,
+		want: "1\n2\n1 true\n",
+	},
+	{
 		// A function literal called where it stands, as a statement of its own, which
 		// the grammar had no production for: a statement could not begin with "func".
 		// It is lifted as a literal is anywhere and called by name; arguments are how a

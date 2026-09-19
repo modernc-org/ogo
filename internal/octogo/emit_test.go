@@ -10296,6 +10296,11 @@ func (c *Counter) Copied() {
 
 func byParam(p *Counter) { p.Save() }
 
+func viaIface(p *Counter) {
+	var sv Saver = p
+	sv.Save()
+}
+
 type Wrap struct {
 	*Counter
 }
@@ -10360,6 +10365,9 @@ func main() {
 		{"w := Wrap{&lc}\n\tgo w.Counter.Bump()", "cannot pass local w, which holds a pointer into local lc to a goroutine"},
 		// Kept through a local copy of the receiver.
 		{"lc.Copied()", "cannot call Copied on lc: its receiver is stored where it outlives every frame"},
+		// Through an interface made from a pointer: it points where the pointer does.
+		{"p := &lc\n\tvar sv Saver = p\n\tsv.Save()", "cannot call Save on lc"},
+		{"viaIface(&lc)", "cannot pass the address of local variable lc to viaIface"},
 		// Through parentheses: the receiver is the storage the operand names.
 		{"(&lc).Save()", "cannot call Save on lc"},
 		{"(lc).Save()", "cannot call Save on lc"},
@@ -10395,6 +10403,8 @@ func main() {
 		{"w := Wrap{&gc}\n\tgo w.Bump()", ""},
 		{"w := Wrap{&gc}\n\tgo w.Counter.Bump()", ""},
 		{"gc.Copied()", ""},
+		{"p := &gc\n\tvar sv Saver = p\n\tsv.Save()", ""},
+		{"viaIface(&gc)", ""},
 		{"(&gc).Save()", ""},
 		{"(gc).Save()", ""},
 		{"go (&gc).Bump()", ""},
