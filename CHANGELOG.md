@@ -719,6 +719,12 @@ shipped section tells a reader on that version that they have behaviour they do 
 Each of these is the compiler refusing a program it used to accept, and each such
 program handed out a reference to storage that was gone by the time it was read.
 
+- **A callback is asked what it does with the storage of the function calling
+  it.** `func each(f func([]int)) { var b [4]int; f(b[:]) }` called as
+  `each(keepGlobal)` left a slice of each's local b where keepGlobal keeps it, after
+  each had returned: the call site has no body to read, and the body no way to know
+  which function it calls. The function passed is asked once every body is known,
+  through a copy of the callback and a function it is handed on to alike.
 - **A callback is asked what it does with what it is handed.** A function calling
   a function it was given, `func each(v []int, f func([]int)) { f(v) }`, hands its
   v to whatever the caller passes, and `each(a[:], keepGlobal)` left a slice of the

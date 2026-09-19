@@ -11101,6 +11101,32 @@ func outer(v []int) { each(v, keepGlobal) }
 
 func outerNone(v []int) { each(v, keepNone) }
 
+func eachLocal(f func([]int)) {
+	var b [4]int
+	f(b[:])
+}
+
+func eachPkg(f func([]int)) { f(gback[:]) }
+
+func eachAlias(f func([]int)) {
+	g := f
+	h := g
+	var b [4]int
+	h(b[:])
+}
+
+func eachApply(f func([]int)) {
+	var b [4]int
+	apply(b[:], f)
+}
+
+func eachElems(f func([]*int)) {
+	y := 1
+	f([]*int{&y})
+}
+
+func eachElemsPkg(f func([]*int)) { f([]*int{&gx}) }
+
 `
 	for _, test := range []struct {
 		kept, ok string
@@ -11113,16 +11139,23 @@ func outerNone(v []int) { each(v, keepNone) }
 		{"handOn(a[:], keepGlobal)", "handOn(a[:], keepNone)"},
 		{"k := keepGlobal\n\teach(a[:], k)", "k := keepNone\n\teach(a[:], k)"},
 		{"outer(a[:])", "outerNone(a[:])"},
+		{"eachLocal(keepGlobal)", "eachLocal(keepNone)"},
+		{"eachLocal(func(w []int) { gs = w })", "eachPkg(keepGlobal)"},
+		{"eachApply(keepGlobal)", "eachApply(keepNone)"},
+		{"eachElems(keepElem)", "eachElemsPkg(keepElem)"},
+		{"eachAlias(keepGlobal)", "eachAlias(keepNone)"},
 	} {
 		for _, call := range []string{test.kept, test.ok} {
-			src := head + `func run() {
+			// The call is written ABOVE the callees, so a callee handing the
+			// callback its own frame is asked about after its body is emitted.
+			src := `func run() {
 	x := 1
 	var a [4]int
 	_, _ = x, a
 	` + call + `
 }
 
-func main() {
+` + head + `func main() {
 	run()
 }
 `

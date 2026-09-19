@@ -631,10 +631,12 @@ and called, `func each(v []int, f func([]int)) { f(v) }`, is recorded as a
 `paramCall` -- which parameter is called with what of the others -- and the call site,
 which knows the function it passes, asks that function's summary
 (`checkCallbackArgs`); a callback handed on pairs the two edges of one call by their
-`site` (`TestEmitCSummaryCallbacks`). Still open, SILENT: a function calling its
-callback with its OWN frame, `func each(f func([]int)) { var b [4]int; f(b[:]) }` --
-by shape a local cannot be told from a scalar, and the call site may be emitted
-before the body that would say so.
+`site` (`TestEmitCSummaryCallbacks`). A function calling its callback with its OWN
+frame, `func each(f func([]int)) { var b [4]int; f(b[:]) }`, is recorded while its
+body is emitted -- where `frameRefOf` answers exactly, which a shape cannot -- as a
+`frameCall`, and every function handed to it is asked after all bodies are emitted
+(`checkPendingCallbacks`), since the call site may come first. Still open: a callback
+kept in a FIELD and called later, `h.cb = f; ...; h.cb(b[:])`.
 
 ## Notes
 

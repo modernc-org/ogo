@@ -4584,7 +4584,7 @@ func typeNameCollisions(src []byte, names map[string]bool) map[string]bool {
 // emitProgram is EmitC's one pass. rename lists the main-package types spelled
 // ogo_T_<name> in C (see typeMangle).
 func emitProgram(pkg *Package, w io.Writer, opts []EmitOption, rename map[string]bool) error {
-	e := &emitter{renameTypes: rename, renamedTypes: map[string]string{}, includes: map[string]bool{}, funcRet: map[string][]string{}, funcSliceParams: map[string][]string{}, funcVariadic: map[string]int{}, nilHelpers: map[string]bool{}, funcArrayRet: map[string]arrDim{}, funcArrayParams: map[string][]arrDim{}, anonStructNames: map[string]string{}, methodValueTypes: map[string]funcValueType{}, methodValueOf: map[string]string{}, methodExprNames: map[string]string{}, funcParams: map[string][]string{}, methodPtr: map[string]bool{}, globals: map[string]string{}, structs: map[string][]structField{}, namedTypes: map[string]bool{}, typeNames: map[string]bool{}, interfaceTypes: map[string]bool{}, ifaceMethods: map[string][]ifaceMethod{}, anonIfaceNames: map[string]string{}, anonIfaceMinted: map[string]bool{}, ifaceASTs: map[string]ifaceAST{}, ifaceVTables: map[string]bool{}, namedUnderlying: map[string]string{}, namedArrays: map[string]arrDim{}, constInt: map[string]string{}, constVal: map[string]constant.Value{}, constWide: map[string]string{}, constStr: map[string]string{}, constUntyped: map[string]bool{}, constHuge: map[string]bool{}, arrays: map[string]arrDim{}, globalArrays: map[string]arrDim{}, sliceVars: map[string]string{}, globalSliceVars: map[string]string{}, chanElems: map[string]bool{}, chanInitElems: map[string]bool{}, chanSendElems: map[string]bool{}, chanRecvElems: map[string]bool{}, chanTryRecvElems: map[string]bool{}, chanTrySendElems: map[string]bool{}, chanGatedSendElems: map[string]bool{}, aliasOf: map[string]string{}, localTypes: map[string]string{}, gotoTargets: map[string]bool{}, chanCloseElems: map[string]bool{}, chanRecv2Elems: map[string]bool{}, mathWrappers: map[string]bool{}, chanElemByName: map[string]string{}, sliceElems: map[string]bool{}, sliceElemByName: map[string]string{}, appendElems: map[string]bool{}, tryappendElems: map[string]bool{}, appendSliceElems: map[string]bool{}, tryappendSliceEls: map[string]bool{}, appendokStructs: map[string]bool{}, copyElems: map[string]bool{}, resliceElems: map[string]bool{}, reslice3Elems: map[string]bool{}, clearElems: map[string]bool{}, minElems: map[string]bool{}, maxElems: map[string]bool{}, printSliceElems: map[string]bool{}, printStructs: map[string]string{}, printlnElems: map[string]bool{}, switchBreakUsed: map[string]bool{}, labelBreak: map[string]string{}, labelContinue: map[string]string{}, labelUsed: map[string]bool{}, eqStructs: map[string]bool{}, eqArrays: map[string]arrDim{}, frameBacked: map[string]bool{}, frameHolder: map[string]string{}, crossParams: map[string][]leak{}, crossContents: map[string][]leak{}, retContents: map[string][]bool{}, recvContents: map[string]leak{}, paramCalls: map[string][]paramCall{}, recvLeaks: map[string]leak{}, retRecv: map[string]bool{}, crossInto: map[string][]uint32{}, ifaceSummaries: map[string]ifaceSummary{}, retParams: map[string][]bool{}, funcValueOf: map[string]string{}, crossNames: map[string]string{}, initNames: map[string]string{}, funcValueTypes: map[string]funcValueType{}, funcTypeNames: map[string]string{}, funcTypeRet: map[string][]string{}, funcTypeParams: map[string][]string{}, retStructs: map[string]string{}, retStructByKey: map[string]string{}, shiftHelpers: map[string][2]string{}, shiftCTypes: map[*int32]string{}, shiftWalked: map[shiftWalkKey]bool{}, shiftIn: map[*int32]bool{}, divHelpers: map[string][2]string{}, funcValueWrappers: map[string]string{}, deferReplay: -1, iota: -1}
+	e := &emitter{renameTypes: rename, renamedTypes: map[string]string{}, includes: map[string]bool{}, funcRet: map[string][]string{}, funcSliceParams: map[string][]string{}, funcVariadic: map[string]int{}, nilHelpers: map[string]bool{}, funcArrayRet: map[string]arrDim{}, funcArrayParams: map[string][]arrDim{}, anonStructNames: map[string]string{}, methodValueTypes: map[string]funcValueType{}, methodValueOf: map[string]string{}, methodExprNames: map[string]string{}, funcParams: map[string][]string{}, methodPtr: map[string]bool{}, globals: map[string]string{}, structs: map[string][]structField{}, namedTypes: map[string]bool{}, typeNames: map[string]bool{}, interfaceTypes: map[string]bool{}, ifaceMethods: map[string][]ifaceMethod{}, anonIfaceNames: map[string]string{}, anonIfaceMinted: map[string]bool{}, ifaceASTs: map[string]ifaceAST{}, ifaceVTables: map[string]bool{}, namedUnderlying: map[string]string{}, namedArrays: map[string]arrDim{}, constInt: map[string]string{}, constVal: map[string]constant.Value{}, constWide: map[string]string{}, constStr: map[string]string{}, constUntyped: map[string]bool{}, constHuge: map[string]bool{}, arrays: map[string]arrDim{}, globalArrays: map[string]arrDim{}, sliceVars: map[string]string{}, globalSliceVars: map[string]string{}, chanElems: map[string]bool{}, chanInitElems: map[string]bool{}, chanSendElems: map[string]bool{}, chanRecvElems: map[string]bool{}, chanTryRecvElems: map[string]bool{}, chanTrySendElems: map[string]bool{}, chanGatedSendElems: map[string]bool{}, aliasOf: map[string]string{}, localTypes: map[string]string{}, gotoTargets: map[string]bool{}, chanCloseElems: map[string]bool{}, chanRecv2Elems: map[string]bool{}, mathWrappers: map[string]bool{}, chanElemByName: map[string]string{}, sliceElems: map[string]bool{}, sliceElemByName: map[string]string{}, appendElems: map[string]bool{}, tryappendElems: map[string]bool{}, appendSliceElems: map[string]bool{}, tryappendSliceEls: map[string]bool{}, appendokStructs: map[string]bool{}, copyElems: map[string]bool{}, resliceElems: map[string]bool{}, reslice3Elems: map[string]bool{}, clearElems: map[string]bool{}, minElems: map[string]bool{}, maxElems: map[string]bool{}, printSliceElems: map[string]bool{}, printStructs: map[string]string{}, printlnElems: map[string]bool{}, switchBreakUsed: map[string]bool{}, labelBreak: map[string]string{}, labelContinue: map[string]string{}, labelUsed: map[string]bool{}, eqStructs: map[string]bool{}, eqArrays: map[string]arrDim{}, frameBacked: map[string]bool{}, frameHolder: map[string]string{}, crossParams: map[string][]leak{}, crossContents: map[string][]leak{}, retContents: map[string][]bool{}, recvContents: map[string]leak{}, paramCalls: map[string][]paramCall{}, frameCalls: map[string][]frameCall{}, recvLeaks: map[string]leak{}, retRecv: map[string]bool{}, crossInto: map[string][]uint32{}, ifaceSummaries: map[string]ifaceSummary{}, retParams: map[string][]bool{}, funcValueOf: map[string]string{}, crossNames: map[string]string{}, initNames: map[string]string{}, funcValueTypes: map[string]funcValueType{}, funcTypeNames: map[string]string{}, funcTypeRet: map[string][]string{}, funcTypeParams: map[string][]string{}, retStructs: map[string]string{}, retStructByKey: map[string]string{}, shiftHelpers: map[string][2]string{}, shiftCTypes: map[*int32]string{}, shiftWalked: map[shiftWalkKey]bool{}, shiftIn: map[*int32]bool{}, divHelpers: map[string][2]string{}, funcValueWrappers: map[string]string{}, deferReplay: -1, iota: -1}
 	for _, opt := range opts {
 		opt(e)
 	}
@@ -4725,6 +4725,11 @@ func emitProgram(pkg *Package, w io.Writer, opts []EmitOption, rename map[string
 	e.wroteDecl = false
 	forEachFile(func() { e.emitFileDecls(e.f.AST) })
 	if e.err != nil {
+		return e.err
+	}
+	// A function handed to a callee that calls it with the callee's own storage:
+	// known only once the callee's body has been emitted, which may follow the call.
+	if e.checkPendingCallbacks(); e.err != nil {
 		return e.err
 	}
 
@@ -5529,6 +5534,10 @@ type emitter struct {
 	paramCalls         map[string][]paramCall  // per function, which of its parameters it CALLS and with what of its others (see paramCall)
 	siteSeq            int                     // numbers the calls the summaries record, so edges of one call can be paired (see crossEdge.site)
 	siteFuncs          []siteFunc              // declared functions handed as arguments, by call (see siteFunc)
+	curParamOrder      []string                // the parameter names of the function being emitted, in order, unnamed ones as bindParams names them
+	funcParamAlias     map[string]string       // a local holding one of those parameters, a function value, `g := f`: the parameter
+	frameCalls         map[string][]frameCall  // per function, the calls of its callback parameters handed this frame's storage (see frameCall)
+	pendingCallbacks   []pendingCallback       // functions handed to a callee, asked about its frameCalls once every body is emitted
 	recvLeaks          map[string]leak         // a pointer method's RECEIVER kept where it outlives the call: leakGlobal, leakCog (see recvEdge)
 	recvEdges          []recvEdge              // how a receiver's keeping travels to callers (see recvEdge)
 	retRecv            map[string]bool         // a pointer method returns its receiver, so its result is what it was called on
@@ -13325,12 +13334,15 @@ func paramArgName(name string) string { return "_ogo_" + userIdent(name) }
 // not the results.
 func (e *emitter) bindParams(sig []int32) {
 	e.curParams = map[string]bool{}
+	e.curParamOrder = nil
+	e.funcParamAlias = map[string]string{}
 	seenRPar := false
 	for n := range it(sig) {
 		switch n.sym {
 		case ParameterList:
 			if !seenRPar {
 				e.forEachParamV(n.ast, func(name string, ta []int32, synthetic, variadic bool) {
+					e.curParamOrder = append(e.curParamOrder, name)
 					if synthetic {
 						return // an unnamed parameter binds nothing; the body cannot name it
 					}
@@ -25433,6 +25445,7 @@ func (e *emitter) emitCallExpr(recv string, suffix []Node) bool {
 				// One struct result takes the same parameter and is USED: it is
 				// hoisted ahead of the statement unless the statement throws it away
 				// (emitOutValueCall).
+				e.noteFrameCalls(recv, suffix[0].ast)
 				args := e.argsCText(e.funcValueOf[recv], suffix[0].ast)
 				e.emitOutValueCall(e.outResultOf(rets), discard || len(rets) > 1, func(tmp string) string {
 					call := e.varRef(recv) + "(&" + tmp
@@ -25443,6 +25456,7 @@ func (e *emitter) emitCallExpr(recv string, suffix []Node) bool {
 				})
 				return true
 			}
+			e.noteFrameCalls(recv, suffix[0].ast)
 			e.emit(e.varRef(recv) + "(")
 			e.callParams = e.funcTypeParams[e.underlyingCType(ct)]
 			e.emitCallArgs(e.funcValueOf[recv], suffix[0].ast)
@@ -38768,12 +38782,27 @@ func (e *emitter) checkCrossArgs(cname string, args []Node, spread bool) {
 // local a where keepGlobal keeps it, in silence, the summary of each having no way
 // to know which function it would call. The call site knows.
 func (e *emitter) checkCallbackArgs(cname, who string, args []Node) {
+	// Every function handed along is asked, once the callee's body is known, what
+	// it does with the callee's own storage (checkPendingCallbacks).
+	for k, a := range args {
+		if fn, shown := e.callbackSummaryName(a.ast); fn != "" {
+			e.pendingCallbacks = append(e.pendingCallbacks,
+				pendingCallback{callee: cname, who: who, fn: k, cb: fn, shown: shown, pos: e.f.tok(a.Pos()).Position()})
+		}
+	}
 	for _, pc := range e.paramCalls[cname] {
 		if pc.fn >= len(args) || pc.from >= len(args) {
 			continue
 		}
 		fn, shown := e.callbackSummaryName(args[pc.fn].ast)
 		if fn == "" {
+			// The callback is this function's OWN parameter, handed on: what the
+			// callee hands it of this frame, this function does (frameCall).
+			if name, isName := e.exprIdent(args[pc.fn].ast); isName && e.funcValueOf[name] == "" {
+				if k := e.callbackParam(name); k >= 0 && pc.from < len(args) {
+					e.noteFrameCall(k, pc.to, args[pc.from], pc.contents)
+				}
+			}
 			continue
 		}
 		var fv, fc leak
@@ -38816,6 +38845,119 @@ func (e *emitter) checkCallbackArgs(cname, who string, args []Node) {
 		e.fail("%v: cannot pass %s to %s: it calls its parameter %d, %s, with it, which %s; %s",
 			e.f.tok(a.Pos()).Position(), r.what, who, pc.fn+1, shown, why, r.advice())
 		return
+	}
+}
+
+// frameCall records that a function calls its parameter fn, a function value, with
+// a reference to its OWN frame at argument to -- `func each(f func([]int)) { var b
+// [4]int; f(b[:]) }` -- or, with contents, with something whose contents reach it.
+// Which function f is, the caller knows; checkPendingCallbacks asks it.
+type frameCall struct {
+	fn, to   int
+	contents bool
+	what     string
+	pos      token.Position
+}
+
+// pendingCallback is a function handed as argument fn of a call of callee.
+type pendingCallback struct {
+	callee, who string
+	fn          int
+	cb, shown   string
+	pos         token.Position
+}
+
+// noteFrameCalls records the arguments of a call through recv, when recv is a
+// parameter of the function being emitted, that reach this frame (frameCall).
+func (e *emitter) noteFrameCalls(recv string, callSuffix []int32) {
+	if e.funcValueOf[recv] != "" {
+		return
+	}
+	k := e.callbackParam(recv)
+	if k < 0 {
+		return
+	}
+	for j, a := range e.callArgExprs(callSuffix) {
+		e.noteFrameCall(k, j, a, false)
+	}
+}
+
+// callbackParam is which parameter of the function being emitted name is -- itself,
+// or a local given one (funcParamAlias) -- or -1.
+func (e *emitter) callbackParam(name string) int {
+	if p := e.funcParamAlias[name]; p != "" {
+		name = p
+	}
+	if !e.curParams[name] && !slices.Contains(e.curParamOrder, name) {
+		return -1
+	}
+	return slices.Index(e.curParamOrder, name)
+}
+
+// noteFrameCall records that the function being emitted hands its callback
+// parameter k, at argument to, the value a -- or, with ofContents, a's contents --
+// when what is handed reaches this frame.
+func (e *emitter) noteFrameCall(k, to int, a Node, ofContents bool) {
+	pos := e.f.tok(a.Pos()).Position()
+	note := func(r frameRef, contents bool) {
+		e.frameCalls[e.curFunc] = append(e.frameCalls[e.curFunc], frameCall{fn: k, to: to, contents: contents, what: r.what, pos: pos})
+	}
+	if ofContents {
+		// The callback is handed a's contents: what they reach, it holds by value.
+		if r, ok := e.contentsRef(a.ast); ok {
+			note(r, false)
+		}
+		return
+	}
+	// The value and its contents are separate questions: a slice literal's backing
+	// is this frame's, and so may be what its elements point at.
+	if r, ok := e.frameRefOf(a.ast); ok {
+		note(r, false)
+	}
+	if r, ok := e.contentsRef(a.ast); ok {
+		note(r, true)
+	}
+}
+
+// checkPendingCallbacks asks every function handed to a callee what it does with
+// what the callee's own frame hands it (frameCall): `each(keepGlobal)` for an each
+// calling its f with a slice of its local b left that slice where keepGlobal keeps
+// it, after each had returned -- silently, the call site having no body to read yet
+// and the body no way to know which function it called.
+func (e *emitter) checkPendingCallbacks() {
+	for _, p := range e.pendingCallbacks {
+		for _, fc := range e.frameCalls[p.callee] {
+			if fc.fn != p.fn {
+				continue
+			}
+			var fv, fcs leak
+			if v := e.crossParams[p.cb]; fc.to < len(v) {
+				fv = v[fc.to]
+			}
+			if c := e.crossContents[p.cb]; fc.to < len(c) {
+				fcs = c[fc.to]
+			}
+			if fv&leakRecv != 0 {
+				fv = fv&^leakRecv | leakGlobal
+			}
+			if fcs&leakRecv != 0 {
+				fcs = fcs&^leakRecv | leakGlobal
+			}
+			flags := fv
+			if fc.contents {
+				flags |= fcs
+			}
+			if flags&(leakGlobal|leakCog) == 0 {
+				continue
+			}
+			why := "keeps it where it outlives every frame"
+			if flags&leakGlobal == 0 {
+				why = "hands it to another cog"
+			}
+			e.fail("%v: cannot pass %s to %s: at %v it calls it with %s, which does not outlive that call, and %s %s",
+				p.pos, p.shown, p.who, fc.pos, fc.what, p.shown, why)
+			return
+		}
 	}
 }
 
@@ -38971,9 +39113,17 @@ func (e *emitter) bindLitFuncFields(varName string, initExpr []int32) {
 }
 
 func (e *emitter) bindFuncValue(name string, initExpr []int32) {
+	delete(e.funcParamAlias, name)
 	if fn, ok := e.exprIdent(initExpr); ok {
 		if _, isFunc := e.userFunc(fn); isFunc {
 			e.funcValueOf[name] = e.funcCallC(fn)
+			return
+		}
+		// A parameter of the function being emitted, or a local holding one: which
+		// function it is, only a caller knows (see frameCall).
+		if p := e.callbackParam(fn); p >= 0 {
+			e.funcParamAlias[name] = e.curParamOrder[p]
+			delete(e.funcValueOf, name)
 			return
 		}
 	}
