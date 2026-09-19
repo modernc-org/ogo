@@ -4588,7 +4588,7 @@ func typeNameCollisions(src []byte, names map[string]bool) map[string]bool {
 // emitProgram is EmitC's one pass. rename lists the main-package types spelled
 // ogo_T_<name> in C (see typeMangle).
 func emitProgram(pkg *Package, w io.Writer, opts []EmitOption, rename map[string]bool) error {
-	e := &emitter{renameTypes: rename, renamedTypes: map[string]string{}, includes: map[string]bool{}, funcRet: map[string][]string{}, funcSliceParams: map[string][]string{}, funcVariadic: map[string]int{}, nilHelpers: map[string]bool{}, funcArrayRet: map[string]arrDim{}, funcArrayParams: map[string][]arrDim{}, anonStructNames: map[string]string{}, methodValueTypes: map[string]funcValueType{}, methodValueOf: map[string]string{}, methodExprNames: map[string]string{}, funcParams: map[string][]string{}, methodPtr: map[string]bool{}, globals: map[string]string{}, structs: map[string][]structField{}, namedTypes: map[string]bool{}, typeNames: map[string]bool{}, interfaceTypes: map[string]bool{}, ifaceMethods: map[string][]ifaceMethod{}, anonIfaceNames: map[string]string{}, anonIfaceMinted: map[string]bool{}, ifaceASTs: map[string]ifaceAST{}, ifaceVTables: map[string]bool{}, namedUnderlying: map[string]string{}, namedArrays: map[string]arrDim{}, constInt: map[string]string{}, constVal: map[string]constant.Value{}, constWide: map[string]string{}, constStr: map[string]string{}, constUntyped: map[string]bool{}, constHuge: map[string]bool{}, arrays: map[string]arrDim{}, globalArrays: map[string]arrDim{}, sliceVars: map[string]string{}, globalSliceVars: map[string]string{}, chanElems: map[string]bool{}, chanInitElems: map[string]bool{}, chanSendElems: map[string]bool{}, chanRecvElems: map[string]bool{}, chanTryRecvElems: map[string]bool{}, chanTrySendElems: map[string]bool{}, chanGatedSendElems: map[string]bool{}, aliasOf: map[string]string{}, localTypes: map[string]string{}, gotoTargets: map[string]bool{}, chanCloseElems: map[string]bool{}, chanRecv2Elems: map[string]bool{}, mathWrappers: map[string]bool{}, chanElemByName: map[string]string{}, sliceElems: map[string]bool{}, sliceElemByName: map[string]string{}, appendElems: map[string]bool{}, tryappendElems: map[string]bool{}, appendSliceElems: map[string]bool{}, tryappendSliceEls: map[string]bool{}, appendokStructs: map[string]bool{}, copyElems: map[string]bool{}, resliceElems: map[string]bool{}, reslice3Elems: map[string]bool{}, clearElems: map[string]bool{}, minElems: map[string]bool{}, maxElems: map[string]bool{}, printSliceElems: map[string]bool{}, printStructs: map[string]string{}, printlnElems: map[string]bool{}, switchBreakUsed: map[string]bool{}, labelBreak: map[string]string{}, labelContinue: map[string]string{}, labelUsed: map[string]bool{}, eqStructs: map[string]bool{}, eqArrays: map[string]arrDim{}, frameBacked: map[string]bool{}, frameHolder: map[string]string{}, crossParams: map[string][]leak{}, crossContents: map[string][]leak{}, retContents: map[string][]bool{}, recvContents: map[string]leak{}, paramCalls: map[string][]paramCall{}, frameCalls: map[string][]frameCall{}, funcValueMembers: map[string][]string{}, methodExprMembers: map[string]emMethodExpr{}, memberShown: map[string]string{}, litLifted: map[string][]string{}, typeNamed: map[string]bool{}, methodNames: map[string]bool{}, recvLeaks: map[string]leak{}, retRecv: map[string]bool{}, crossInto: map[string][]uint32{}, ifaceSummaries: map[string]ifaceSummary{}, retParams: map[string][]bool{}, funcValueOf: map[string]string{}, crossNames: map[string]string{}, initNames: map[string]string{}, funcValueTypes: map[string]funcValueType{}, funcTypeNames: map[string]string{}, funcTypeRet: map[string][]string{}, funcTypeParams: map[string][]string{}, retStructs: map[string]string{}, retStructByKey: map[string]string{}, shiftHelpers: map[string][2]string{}, shiftCTypes: map[*int32]string{}, shiftWalked: map[shiftWalkKey]bool{}, shiftIn: map[*int32]bool{}, divHelpers: map[string][2]string{}, funcValueWrappers: map[string]string{}, deferReplay: -1, iota: -1}
+	e := &emitter{renameTypes: rename, renamedTypes: map[string]string{}, includes: map[string]bool{}, funcRet: map[string][]string{}, funcSliceParams: map[string][]string{}, funcVariadic: map[string]int{}, nilHelpers: map[string]bool{}, funcArrayRet: map[string]arrDim{}, funcArrayParams: map[string][]arrDim{}, anonStructNames: map[string]string{}, methodValueTypes: map[string]funcValueType{}, methodValueOf: map[string]string{}, methodExprNames: map[string]string{}, funcParams: map[string][]string{}, methodPtr: map[string]bool{}, globals: map[string]string{}, structs: map[string][]structField{}, namedTypes: map[string]bool{}, typeNames: map[string]bool{}, interfaceTypes: map[string]bool{}, ifaceMethods: map[string][]ifaceMethod{}, anonIfaceNames: map[string]string{}, anonIfaceMinted: map[string]bool{}, ifaceASTs: map[string]ifaceAST{}, ifaceVTables: map[string]bool{}, namedUnderlying: map[string]string{}, namedArrays: map[string]arrDim{}, constInt: map[string]string{}, constVal: map[string]constant.Value{}, constWide: map[string]string{}, constStr: map[string]string{}, constUntyped: map[string]bool{}, constHuge: map[string]bool{}, arrays: map[string]arrDim{}, globalArrays: map[string]arrDim{}, sliceVars: map[string]string{}, globalSliceVars: map[string]string{}, chanElems: map[string]bool{}, chanInitElems: map[string]bool{}, chanSendElems: map[string]bool{}, chanRecvElems: map[string]bool{}, chanTryRecvElems: map[string]bool{}, chanTrySendElems: map[string]bool{}, chanGatedSendElems: map[string]bool{}, aliasOf: map[string]string{}, localTypes: map[string]string{}, gotoTargets: map[string]bool{}, chanCloseElems: map[string]bool{}, chanRecv2Elems: map[string]bool{}, mathWrappers: map[string]bool{}, chanElemByName: map[string]string{}, sliceElems: map[string]bool{}, sliceElemByName: map[string]string{}, appendElems: map[string]bool{}, tryappendElems: map[string]bool{}, appendSliceElems: map[string]bool{}, tryappendSliceEls: map[string]bool{}, appendokStructs: map[string]bool{}, copyElems: map[string]bool{}, resliceElems: map[string]bool{}, reslice3Elems: map[string]bool{}, clearElems: map[string]bool{}, minElems: map[string]bool{}, maxElems: map[string]bool{}, printSliceElems: map[string]bool{}, printStructs: map[string]string{}, printlnElems: map[string]bool{}, switchBreakUsed: map[string]bool{}, labelBreak: map[string]string{}, labelContinue: map[string]string{}, labelUsed: map[string]bool{}, eqStructs: map[string]bool{}, eqArrays: map[string]arrDim{}, frameBacked: map[string]bool{}, frameHolder: map[string]string{}, crossParams: map[string][]leak{}, crossContents: map[string][]leak{}, retContents: map[string][]bool{}, recvContents: map[string]leak{}, paramCalls: map[string][]paramCall{}, frameCalls: map[string][]frameCall{}, localConstSpecs: map[string]localConstSpec{}, inheritedTypes: map[string]bool{}, funcValueMembers: map[string][]string{}, methodExprMembers: map[string]emMethodExpr{}, memberShown: map[string]string{}, litLifted: map[string][]string{}, typeNamed: map[string]bool{}, methodNames: map[string]bool{}, recvLeaks: map[string]leak{}, retRecv: map[string]bool{}, crossInto: map[string][]uint32{}, ifaceSummaries: map[string]ifaceSummary{}, retParams: map[string][]bool{}, funcValueOf: map[string]string{}, crossNames: map[string]string{}, initNames: map[string]string{}, funcValueTypes: map[string]funcValueType{}, funcTypeNames: map[string]string{}, funcTypeRet: map[string][]string{}, funcTypeParams: map[string][]string{}, retStructs: map[string]string{}, retStructByKey: map[string]string{}, shiftHelpers: map[string][2]string{}, shiftCTypes: map[*int32]string{}, shiftWalked: map[shiftWalkKey]bool{}, shiftIn: map[*int32]bool{}, divHelpers: map[string][2]string{}, funcValueWrappers: map[string]string{}, deferReplay: -1, iota: -1}
 	for _, opt := range opts {
 		opt(e)
 	}
@@ -5368,6 +5368,9 @@ type emitter struct {
 	funcParams        map[string][]string       // same key -> its parameter C types, so a value handed to it is stored as the parameter's type
 	callParams        []string                  // the parameter C types of the next call emitted through a function VALUE or an interface slot, which names no callee to look up; emitCallArgs takes them (see wideConstArg)
 	localConsts       map[string]bool           // block-scope CONSTANTS in scope, by name: the locals a constant fold may still resolve (see shadowedByLocal)
+	localConstSpecs   map[string]localConstSpec // ... and how each was declared, for a function literal to declare again what it reads (liftFuncLit)
+	localConstSeq     int                       // orders localConstSpecs as they were declared
+	inheritedTypes    map[string]bool           // the local types a function literal has of the function around it, which its own may shadow
 	boundOperands     map[*int32]*boundOperand  // the operands of the level being emitted bound to temporaries for their evaluation order, by their place in the AST (see bindEffectOperands)
 	hoistedArrayCalls map[int32]string          // source position of an ARRAY-returning call, or of the star of a dereferenced pointer-to-array expression -> the temporary it was bound to, so one occurrence is evaluated once (see hoistArrayCallArg, arrayPtrExprDeref); the statement's
 	methodPtr         map[string]bool           // mangled method name -> receiver is a pointer, for &/* adjustment at the call site
@@ -6057,10 +6060,11 @@ func (e *emitter) emitLocalTypeDecl(ast []int32) {
 			e.fail("malformed type declaration")
 			return
 		}
-		if _, dup := e.localTypes[name]; dup {
+		if _, dup := e.localTypes[name]; dup && !e.inheritedTypes[name] {
 			e.fail("a second local type named %s in one function is not supported yet", name)
 			return
 		}
+		delete(e.inheritedTypes, name) // a literal's own, shadowing its function's
 		e.localTypeSeq++
 		mn := mangle(e.curPkgPrefix, name) + "_l" + strconv.Itoa(e.localTypeSeq)
 		e.localTypes[name] = mn // before the body, so `type node struct{ next *node }` resolves
@@ -8701,6 +8705,10 @@ func (e *emitter) emitConstSpecName(name, ownType string, hasType bool, initExpr
 		if pkg {
 			cname = mangle(e.curPkgPrefix, name)
 		}
+		if !pkg && !e.constPreScan {
+			e.localConstSpecs[name] = localConstSpec{ownType, hasType, initExpr, curIota, e.localConstSeq}
+			e.localConstSeq++
+		}
 		if e.constPreScan {
 			// Values only: what an array bound needs, and all it can use.
 			e.iota = curIota
@@ -8860,8 +8868,25 @@ func (e *emitter) emitConstSpecName(name, ownType string, hasType bool, initExpr
 			e.emitExpr(initExpr)
 		}
 		e.emit(";\n")
+		if !pkg {
+			// Go takes a constant nothing reads; a C local nothing reads is what the
+			// host's compiler warns of, and a function literal's reading one is not
+			// its function's.
+			e.ind()
+			e.emit("(void)" + cname + ";\n")
+		}
 		e.iota = -1
 	}
+}
+
+// localConstSpec is how a block constant was declared: what emitConstSpecName was
+// handed, to declare it again in a function literal that reads it (liftFuncLit).
+type localConstSpec struct {
+	ownType  string
+	hasType  bool
+	initExpr []int32
+	iota     int
+	seq      int
 }
 
 // pkgConstDecl is a package-level integer constant's C declaration, held back until
@@ -12196,6 +12221,7 @@ func (e *emitter) emitFuncDecl(ast []int32) {
 	e.scanAliasedLocals(body)
 	e.scanBindings(body)
 	e.localConsts = map[string]bool{}
+	e.localConstSpecs = map[string]localConstSpec{}
 	e.hoistedArrayCalls = map[int32]string{}
 	e.curParams = map[string]bool{}
 	e.arrays = map[string]arrDim{}
@@ -12386,6 +12412,18 @@ func (e *emitter) liftFuncLit(lit Node) (string, bool) {
 		bindBody                    int
 		curParams                   map[string]bool
 		curParamOrder               []string
+		// The names the function around the literal has -- its local types, the
+		// labels its gotos name, its block constants and their folds. The literal's
+		// replaced them and they were never put back: after a literal, the function
+		// lost its local types, `p has no field a`, the target of a forward goto,
+		// "label used but not defined", and a string constant to the literal's own of
+		// its name.
+		localTypes, constStr, constWide        map[string]string
+		gotoTargets, localConsts, constUntyped map[string]bool
+		inheritedTypes, constHuge              map[string]bool
+		localConstSpecs                        map[string]localConstSpec
+		constInt                               map[string]string
+		constVal                               map[string]constant.Value
 	}
 	saved := state{
 		locals: e.locals, arrays: e.arrays, sliceVars: e.sliceVars,
@@ -12399,19 +12437,33 @@ func (e *emitter) liftFuncLit(lit Node) (string, bool) {
 		bindWrites: e.bindWrites, bindBlock: e.bindBlock, bindLits: e.bindLits,
 		bindOpaque: e.bindOpaque, bindAliased: e.bindAliased, bindGotos: e.bindGotos, bindBody: e.bindBody,
 		curParams: e.curParams, curParamOrder: e.curParamOrder,
+		localTypes: e.localTypes, gotoTargets: e.gotoTargets, localConsts: e.localConsts,
+		localConstSpecs: e.localConstSpecs, inheritedTypes: e.inheritedTypes,
+		constInt: maps.Clone(e.constInt), constStr: maps.Clone(e.constStr), constVal: maps.Clone(e.constVal),
+		constUntyped: maps.Clone(e.constUntyped), constWide: maps.Clone(e.constWide), constHuge: maps.Clone(e.constHuge),
 	}
 	// A literal lifted out of a package variable's initializer is a function with a
 	// frame of its own: what it allocates is per call, not the package's
 	// (pkgLitObject).
 	e.pkgScope = false
 	e.locals = map[string]string{}
-	e.localTypes = map[string]string{}
+	// A literal written in a function has its local types, as Go's does: the
+	// typedefs are at file scope, so the names are all it needs -- and one of its
+	// own may shadow them.
+	e.localTypes, e.inheritedTypes = map[string]string{}, map[string]bool{}
+	if !saved.pkgScope {
+		e.localTypes = maps.Clone(saved.localTypes)
+		for n := range e.localTypes {
+			e.inheritedTypes[n] = true
+		}
+	}
 	e.gotoTargets = map[string]bool{}
 	e.scanGotoTargets(body)
 	e.aliasedLocals = map[string]bool{}
 	e.scanAliasedLocals(body)
 	e.scanBindings(body)
 	e.localConsts = map[string]bool{}
+	e.localConstSpecs = map[string]localConstSpec{}
 	e.hoistedArrayCalls = map[int32]string{}
 	e.curParams = map[string]bool{}
 	e.arrays = map[string]arrDim{}
@@ -12446,9 +12498,17 @@ func (e *emitter) liftFuncLit(lit Node) (string, bool) {
 		var bodyBuf bytes.Buffer
 		inner := e.w
 		e.w = &bodyBuf
+		wrapped := !saved.pkgScope && e.inheritConsts(saved.localConstSpecs, body)
 		e.emitBlockStmts(body)
 		if len(e.defers) != 0 && !e.bodyEndsInReturn(body) {
 			e.emitDeferred()
+		}
+		if wrapped {
+			for range 2 {
+				e.indent--
+				e.ind()
+				e.emit("}\n")
+			}
 		}
 		e.w = inner
 		e.emitDeferDecls()
@@ -12458,6 +12518,10 @@ func (e *emitter) liftFuncLit(lit Node) (string, bool) {
 	}
 	_, resTypes := e.cSig(sig)
 	e.funcRet[cname] = resTypes
+	e.localTypes, e.gotoTargets, e.localConsts = saved.localTypes, saved.gotoTargets, saved.localConsts
+	e.localConstSpecs, e.inheritedTypes = saved.localConstSpecs, saved.inheritedTypes
+	e.constInt, e.constStr, e.constVal = saved.constInt, saved.constStr, saved.constVal
+	e.constUntyped, e.constWide, e.constHuge = saved.constUntyped, saved.constWide, saved.constHuge
 
 	e.locals, e.arrays, e.sliceVars = saved.locals, saved.arrays, saved.sliceVars
 	e.frameBacked, e.frameHolder = saved.frameBacked, saved.frameHolder
@@ -13158,6 +13222,41 @@ func (e *emitter) liftMethodValue(base, method string) (string, bool) {
 	return cname, true
 }
 
+// inheritConsts declares, at the top of a function literal's body, the block
+// constants of the function around it that the body mentions: a constant is no
+// storage, and Go's literal reads its function's as it reads its own. A C constant
+// of the function is not the lifted function's, so each is declared again from the
+// declaration it was made from, in a block of their own, and the body is opened
+// another inside it, where its own declarations of those names shadow them -- after
+// reading them, `y := x; x := 2`, as in Go. A parameter or a named result of the
+// literal has the name already. It reports whether it opened the two blocks.
+func (e *emitter) inheritConsts(outer map[string]localConstSpec, body []int32) bool {
+	type named struct {
+		name string
+		spec localConstSpec
+	}
+	var take []named
+	for n, spec := range outer {
+		if !e.localName(n) && e.bodyMentions(body, n) {
+			take = append(take, named{n, spec})
+		}
+	}
+	if len(take) == 0 {
+		return false
+	}
+	slices.SortFunc(take, func(a, b named) int { return a.spec.seq - b.spec.seq })
+	e.ind()
+	e.emit("{\n")
+	e.indent++
+	for _, t := range take {
+		e.emitConstSpecName(t.name, t.spec.ownType, t.spec.hasType, t.spec.initExpr, t.spec.iota, false)
+	}
+	e.ind()
+	e.emit("{\n")
+	e.indent++
+	return true
+}
+
 // emitFuncLitStmt emits a function literal called where it stands, as a statement:
 // `func(n int) { total += n }(5)`. The literal is lifted to a function of its own,
 // as one standing in an expression or behind a go or a defer is, and the statement
@@ -13366,6 +13465,7 @@ func (e *emitter) emitMain(sig, body []int32) {
 	e.scanAliasedLocals(body)
 	e.scanBindings(body)
 	e.localConsts = map[string]bool{}
+	e.localConstSpecs = map[string]localConstSpec{}
 	e.hoistedArrayCalls = map[int32]string{}
 	e.curParams = map[string]bool{}
 	e.arrays = map[string]arrDim{}
@@ -14069,7 +14169,7 @@ func (e *emitter) enterScope() func() {
 	// every outer one (see blockDepthOf).
 	e.scopeNames = append(e.scopeNames, e.visibleLocals())
 	locals, arrays, sliceVars := maps.Clone(e.locals), maps.Clone(e.arrays), maps.Clone(e.sliceVars)
-	localConsts := maps.Clone(e.localConsts)
+	localConsts, localConstSpecs := maps.Clone(e.localConsts), maps.Clone(e.localConstSpecs)
 	frameBacked, frameHolder := maps.Clone(e.frameBacked), maps.Clone(e.frameHolder)
 	constInt, constStr := maps.Clone(e.constInt), maps.Clone(e.constStr)
 	constUntyped := maps.Clone(e.constUntyped)
@@ -14105,7 +14205,7 @@ func (e *emitter) enterScope() func() {
 		}
 		e.scopeNames = e.scopeNames[:len(e.scopeNames)-1]
 		e.locals, e.arrays, e.sliceVars = locals, arrays, sliceVars
-		e.localConsts = localConsts
+		e.localConsts, e.localConstSpecs = localConsts, localConstSpecs
 		e.frameBacked, e.frameHolder = frameBacked, frameHolder
 		e.constInt, e.constStr = constInt, constStr
 		e.constUntyped = constUntyped

@@ -20,6 +20,12 @@ shipped section tells a reader on that version that they have behaviour they do 
 
 ### Language
 
+- **A function literal uses the constants and the types of the function around
+  it.** Neither is storage, so reading one captures nothing, and Go's literal
+  reads them as it reads its own -- `const n = 4` and `type pair struct{...}` in a
+  function, then `func(x, y pair) bool { return x.a*n < y.a*n }` -- but both were
+  "undefined" in a literal. A literal's own declaration of such a name shadows it,
+  before or after the literal has read it.
 - **Conversions to pointer types.** `(*T)(x)` -- the typed nil `(*T)(nil)`, the
   compile-time assertion `var _ Shape = (*T)(nil)`, and a pointer taken as one to
   another type of the same underlying type, `(*Celsius)(&n)` -- was refused,
@@ -197,6 +203,13 @@ shipped section tells a reader on that version that they have behaviour they do 
 
 ### Fixed
 
+- **A function keeps its own names after a literal in it.** Lifting a literal
+  replaced the function's local types, the labels its gotos name and its block
+  constants with the literal's, and never put them back: after `f := func() {...}`
+  the function's local struct had "no field", a forward `goto` had no target and
+  the C did not compile, and a string constant the literal declared again was
+  undeclared in the function. And a local constant nothing reads, which Go takes,
+  failed the host build's unused-variable check.
 - **Another package's member in a switch case is checked.** `case lib.Nope:` was
   refused only by the emitter, calling lib "not a value with fields or elements",
   and `case lib.Nope():` reached the C compiler as a call of nothing declared; an

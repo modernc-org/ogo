@@ -275,7 +275,8 @@ type Scope struct {
 	// literal is written in. A literal captures nothing (checkFuncLiterals), so a
 	// lookup leaving it without finding a name that is a VARIABLE there records the
 	// name in captures: whatever the lookup then finds outside -- a package
-	// variable of the same name, say -- is not what Go would read.
+	// variable of the same name, say -- is not what Go would read. A CONSTANT or a
+	// TYPE there is no storage, and the lookup answers with it, as Go's does.
 	litOf    *Scope
 	captures []string
 }
@@ -295,9 +296,14 @@ func (s *Scope) find2(nm string) (resolvedIn *Scope, d Declaration) {
 		if d = s.Declarations[nm]; d != nil {
 			return s, d
 		}
-		if s.litOf != nil && !slices.Contains(s.captures, nm) {
-			if _, isVar := enclosingLocal(s.litOf, nm).(*VarDeclaration); isVar {
-				s.captures = append(s.captures, nm)
+		if s.litOf != nil {
+			switch in, d := enclosingLocal(s.litOf, nm); d.(type) {
+			case *VarDeclaration:
+				if !slices.Contains(s.captures, nm) {
+					s.captures = append(s.captures, nm)
+				}
+			case *ConstDeclaration, *TypeDeclaration:
+				return in, d
 			}
 		}
 		s = s.Parent
@@ -307,15 +313,15 @@ func (s *Scope) find2(nm string) (resolvedIn *Scope, d Declaration) {
 
 // enclosingLocal resolves nm among the locals of the functions -- and literals --
 // enclosing s, stopping before the file and package scopes: what a literal written
-// in s would have to capture to read nm.
-func enclosingLocal(s *Scope, nm string) Declaration {
+// in s would have to capture to read nm, and the scope declaring it.
+func enclosingLocal(s *Scope, nm string) (*Scope, Declaration) {
 	for s != nil {
 		switch s.Kind {
 		case FileScope, PackageScope, UniverseScope:
-			return nil
+			return nil, nil
 		}
 		if d := s.Declarations[nm]; d != nil {
-			return d
+			return s, d
 		}
 		if s.litOf != nil {
 			s = s.litOf // a literal in a literal: on to where that one is written
@@ -323,7 +329,7 @@ func enclosingLocal(s *Scope, nm string) Declaration {
 		}
 		s = s.Parent
 	}
-	return nil
+	return nil, nil
 }
 
 func (s *Scope) String() string {

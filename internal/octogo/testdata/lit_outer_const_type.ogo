@@ -1,0 +1,60 @@
+// COMPILE
+// A function literal uses the constants and the types of the function around it:
+// neither is storage, so reading one captures nothing, and Go's literal reads them
+// as it reads its own. They were "undefined" in a literal. Its own declarations of
+// those names shadow them, before or after it has read them.
+
+func constants() {
+	const n = 4
+	const (
+		a = iota
+		b
+	)
+	const s = "x"
+	const t = s + s
+	const big = 1 << 40
+	f := func(v int) int {
+		var arr [n]int
+		arr[n-1] = v
+		return arr[n-1]*n + a + b + len(t)
+	}
+	g := func() int64 { return big + 1 }
+	h := func() int {
+		y := n
+		n := 2
+		return n + y
+	}
+	k := func(n int) int { return n }
+	println(f(1), g(), h(), k(9))
+}
+
+func types() {
+	type pair struct{ a, b int }
+	type celsius int
+	type deg = celsius
+	const boil celsius = 100
+	less := func(x, y pair) bool { return x.a < y.a }
+	mk := func(a int) pair { return pair{a, a * 2} }
+	warm := func(d deg) deg { return d + boil }
+	own := func() int {
+		type pair struct{ c int }
+		return pair{3}.c
+	}
+	println(less(mk(1), mk(2)), warm(1), own())
+}
+
+func nested() {
+	const n = 6
+	type box struct{ v int }
+	f := func() int {
+		g := func() box { return box{n} }
+		return g().v
+	}
+	println(f())
+}
+
+func main() {
+	constants()
+	types()
+	nested()
+}

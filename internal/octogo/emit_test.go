@@ -813,6 +813,7 @@ func main() {
 		"static const _Bool on = 1;\n\n" +
 		"int main(void) {\n" +
 		"\tconst int step = 2;\n" +
+		"\t(void)step;\n" + // a constant nothing reads is Go's to take, and C's to warn of
 		"\tint x = (led + step);\n" +
 		"\tprintf(\"%d\\n\", x);\n" +
 		"\tprintf(\"%d\\n\", area);\n" +

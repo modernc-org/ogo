@@ -6217,6 +6217,81 @@ func main() {
 		want: "6 0 7\nthree 3 3\n6\nnone 0 0\n0\n10\n3 3 6\n17\n",
 	},
 	{
+		// A literal uses the constants and the types of the function around it, as
+		// Go's does: they were "undefined" in one. The C constants are declared again
+		// in the lifted function, in a block of their own around the body, so its own
+		// `n := 2` after reading n reads the function's first (h). And the function
+		// keeps its names after a literal is lifted: it lost its local types, the
+		// target of a forward goto and a string constant the literal redeclared
+		// (after). An unused local constant, which Go takes, compiles for the host too.
+		name: "a literal using its function's constants and types",
+		src: `func consts() {
+	const n = 4
+	const (
+		a = iota
+		b
+	)
+	const s = "x"
+	const t = s + s
+	const big = 1 << 40
+	const unused = 7
+	f := func(v int) int {
+		var arr [n]int
+		arr[n-1] = v
+		return arr[n-1]*n + a + b + len(t)
+	}
+	g := func() int64 { return big + 1 }
+	h := func() int {
+		y := n
+		n := 2
+		return n*10 + y
+	}
+	k := func(n int) int { return n }
+	println(f(1), g(), h(), k(9), n)
+}
+
+func types() {
+	type pair struct{ a, b int }
+	type celsius int
+	type deg = celsius
+	const boil celsius = 100
+	less := func(x, y pair) bool { return x.a < y.a }
+	mk := func(a int) pair { return pair{a, a * 2} }
+	warm := func(d deg) deg { return d + boil }
+	own := func() int {
+		type pair struct{ c int }
+		return pair{3}.c
+	}
+	p := mk(5)
+	println(less(mk(1), mk(2)), warm(1), own(), p.a, p.b)
+}
+
+func after() {
+	type pair struct{ a, b int }
+	const s = "outer"
+	i := 0
+	f := func() string {
+		const s = "inner"
+		return s
+	}
+	if f() == "inner" {
+		goto done
+	}
+	i = 5
+done:
+	q := pair{1, 2}
+	println(f(), s, i, q.a+q.b)
+}
+
+func main() {
+	consts()
+	types()
+	after()
+}
+`,
+		want: "7 1099511627777 24 9 4\ntrue 101 3 5 10\ninner outer 0 3\n",
+	},
+	{
 		// A literal's names are its own: a local it declares, a loop's or a clause's
 		// variable, a parameter or a result it names, a field it selects and a key it
 		// writes, each named as a variable of main is. The checker took every such

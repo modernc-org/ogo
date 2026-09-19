@@ -1650,16 +1650,26 @@
 //
 // (OctoGo Specific): Because OctoGo strictly enforces a zero-allocation memory
 // model without a Garbage Collector, function literals cannot act as dynamic
-// closures. A literal MAY NOT read a local or a parameter of the surrounding
-// function -- there is no heap to hold a captured frame, and no frame that
-// outlives the call, so the pointer would be the only honest part of a closure.
-// Doing so is refused where it is written:
+// closures. A literal MAY NOT read a local variable or a parameter of the
+// surrounding function -- there is no heap to hold a captured frame, and no frame
+// that outlives the call, so the pointer would be the only honest part of a
+// closure. Doing so is refused where it is written, and so it is where a package
+// variable of the same name exists, which is not what Go's literal would read:
 //
 //	k := 5
 //	f := func(a int) int { return a * k }   // a function literal may not capture k
 //
 // A package-level name is not a capture: it is there for every function, and a
-// literal reads one as any function does.
+// literal reads one as any function does. Nor is a CONSTANT or a TYPE the
+// surrounding function declares, neither being storage; a literal uses them as
+// Go's does:
+//
+//	const n = 4
+//	type pair struct{ a, b int }
+//	less := func(x, y pair) bool { return x.a*n < y.a*n }
+//
+// And a name the literal declares -- a local, a parameter or a result, a loop's
+// variable -- is its own, whatever the surrounding function calls its variables.
 //
 // Each literal is lifted to a function of file scope with a name of the compiler's
 // choosing, and the expression becomes that name -- so what a literal costs is a
