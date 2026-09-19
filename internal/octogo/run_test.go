@@ -9981,6 +9981,54 @@ func main() {
 		want: "0 5\n1 6\n2 7\n2 7\n1 6\n2\n",
 	},
 	{
+		// A struct field of ARRAY type as the target: the element is copied in, as
+		// into an array variable. It was refused, "a range target must be a
+		// variable or a struct field" -- an array field has no C value type, and
+		// the field test asked for one. The element is a copy, so writing the
+		// target in the body leaves the operand alone.
+		//
+		// Every line of this prints what real Go prints for the same program.
+		name: "a range clause assigning into array fields",
+		src: `type Pair [2]int
+
+type Rec struct {
+	last Pair
+	rows [2][3]int
+	n    int
+}
+
+var g Rec
+
+var table = [3]Pair{{1, 2}, {3, 4}, {5, 6}}
+
+var ptrs [2]*int
+
+var gx, gy = 10, 20
+
+func main() {
+	var r Rec
+	for r.n, r.last = range table {
+		r.last[0] += 100
+	}
+	println(r.n, r.last[0], r.last[1], table[2][0])
+	for _, g.last = range [2]Pair{{7, 8}, {9, 10}} {
+	}
+	println(g.last[0], g.last[1])
+	grid := [2][2][3]int{{{1, 2, 3}, {4, 5, 6}}, {{7, 8, 9}, {10, 11, 12}}}
+	var i int
+	for i, r.rows = range grid {
+		println(i, r.rows[1][2])
+	}
+	ptrs = [2]*int{&gx, &gy}
+	var w struct{ p *int }
+	for _, w.p = range ptrs {
+	}
+	println(*w.p)
+}
+`,
+		want: "2 105 6 5\n9 10\n0 6\n1 12\n20\n",
+	},
+	{
 		name: "a channel whose element is an array",
 		src: `type T struct {
 	v [3]int

@@ -21336,8 +21336,13 @@ func (e *emitter) isFieldTarget(v []int32) bool {
 	if !ok || len(fields) == 0 {
 		return false
 	}
-	_, isField := e.fieldType(base, fields)
-	return isField
+	if _, isField := e.fieldType(base, fields); isField {
+		return true
+	}
+	// An ARRAY field, which has no C value type for fieldType to answer with: its
+	// element is copied in as an array variable's is.
+	_, isArr := e.fieldArray(base, fields)
+	return isArr
 }
 
 func (e *emitter) rangeValueInject(h *forHeader, key, elem, access string) func() {
@@ -21351,7 +21356,7 @@ func (e *emitter) rangeValueInject(h *forHeader, key, elem, access string) func(
 			if h.rangeDef {
 				e.shadow(val)
 			}
-			e.noteRangeValueHolder(h.rangeExpr, val, elem)
+			e.noteRangeValue(h, val, elem)
 			// An ARRAY element is COPIED, as Go copies it, and C cannot assign one:
 			// `T v = xs.ptr[i]` is not an initializer it accepts. A ":=" clause
 			// declares the value here; an "=" clause writes into a variable that
@@ -35660,26 +35665,61 @@ func holderRef(name, origin string) frameRef {
 	return r
 }
 
-// noteRangeValueHolder passes a container's frame mark on to the value variable a
-// range binds. `for _, s := range xs` over an xs that holds a reference to this
-// frame binds an s that holds it too, and without this the loop handed the element
-// out under a new name that every sink accepted.
+// noteRangeValue applies the lifetime rules to what a range clause stores each
+// iteration: an element of the operand, carrying what the operand's elements carry
+// (rangeElemRef). A declared value, or an assigned local, is marked as holding it,
+// so a sink it later reaches refuses it; a PACKAGE variable is refused it outright,
+// as `g = xs[0]` is.
 //
-// The element's own type decides, as it does for a field read: a slice element
-// inherits the backing mark, a pointer or struct element inherits the holder mark,
-// and a scalar element carries nothing.
-func (e *emitter) noteRangeValueHolder(rangeExpr []int32, val, elem string) {
-	r, reaches := e.frameRefOf(rangeExpr)
-	if !reaches {
+// An assigned target is marked at its ROOT: `for _, lb.d = range ...` makes lb a
+// holder. The mark used to be keyed by the target's C text, "lb.d", which is no
+// variable, so `h = lb` carried the reference out; and a package variable, `for _, g
+// = range ps`, was asked nothing at all -- g kept the address of a local after the
+// function returned.
+func (e *emitter) noteRangeValue(h *forHeader, val, elem string) {
+	r, reaches := e.rangeElemRef(h.rangeExpr)
+	isSlice := e.isSliceCType(e.underlyingCType(elem))
+	if !reaches || !isSlice && !e.carriesReference(elem) {
 		return
 	}
-	if e.isSliceCType(e.underlyingCType(elem)) {
-		e.frameBacked[val] = true
+	root, whole := val, true
+	if name, ok := e.exprIdent(h.valVar); ok {
+		root = name
+	} else if base, fields, ok := e.factorFieldAccess(e.factorKids(h.valVar)); ok && len(fields) != 0 {
+		root, whole = base, false
+	}
+	if !h.rangeDef {
+		at := Node{sym: Expression, ast: h.rangeExpr}
+		if e.isPackageVar(root) {
+			e.refuseStoreBacking(root, at, r)
+			return
+		}
+		if e.refuseBlockOutlives(root, at, r) {
+			return
+		}
+	}
+	if whole && isSlice {
+		e.frameBacked[root] = true
 		return
 	}
-	if e.carriesReference(elem) {
-		e.frameHolder[val] = r.origin
+	e.frameHolder[root] = r.origin
+}
+
+// rangeElemRef is what an ELEMENT of a range operand reaches of this frame. A
+// literal's elements carry what they carry: its backing array is this frame's by
+// construction, which is what the operand as a whole reaches (frameRefOf) and says
+// nothing about the elements -- taken for theirs, `for _, p := range []*int{&gx}`
+// made p a holder of the literal's storage and `g = p` was refused. Anything else
+// carries what the operand does, which is all the per-variable marks can say.
+func (e *emitter) rangeElemRef(rangeExpr []int32) (frameRef, bool) {
+	ast := e.unparenExpr(rangeExpr)
+	if _, _, isLit := e.soleArrayLit(ast); isLit {
+		return e.frameRefInLit(ast)
 	}
+	if _, _, isLit := e.soleCompositeLit(ast); isLit {
+		return e.frameRefInLit(ast)
+	}
+	return e.frameRefOf(rangeExpr)
 }
 
 // initViewsFrame reports whether a slice variable's initializer views storage of
@@ -35716,6 +35756,11 @@ func readHolderRef(read, origin string) frameRef {
 // field a great many structs have.
 func (e *emitter) carriesReference(ctype string) bool {
 	u := e.underlyingCType(ctype)
+	// An ARRAY carries what its elements do: `[1]*Box` holds pointers, and a range
+	// value or a field of that type was taken to hold nothing.
+	if a, isArr := e.namedArrays[u]; isArr {
+		return e.carriesReference(a.elem)
+	}
 	return e.isSliceCType(u) || e.isPointer(u) || e.isStruct(u)
 }
 

@@ -182,6 +182,16 @@ shipped section tells a reader on that version that they have behaviour they do 
 
 ### Fixed
 
+- **A range clause storing into a package variable asks the lifetime rules.** `for
+  _, g = range ps` over a ps holding the address of a local, or `range
+  [][]int{a[:]}` into a package slice, left the package variable pointing into a
+  dead frame; and a field target, `for _, lb.p = range ...`, marked nothing, so
+  copying lb out afterwards carried the reference. Refused as the matching
+  assignments are. The other way, ranging a slice literal of PACKAGE pointers,
+  `for _, p := range []*int{&gx}`, made p a holder of the literal's storage and
+  refused `g = p`; what an element carries is what the elements carry now.
+- **A struct field of array type is a range clause's target.** `for i, r.rows =
+  range grid` was refused, "a range target must be a variable or a struct field".
 - **A reference to this frame stored in another package's variable is refused.**
   `geo.P = &x`, `geo.I = &q`, `geo.B = geo.Box{a[:]}`, a local holding one copied
   in, and the same in a `for` clause: the store to one of this package's variables

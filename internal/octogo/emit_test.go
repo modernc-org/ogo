@@ -10069,15 +10069,15 @@ func idrows(v [1][]int) [1][]int { return v }
 func idaddrs(v [1]*Box) [1]*Box { return v }
 
 `
-	kinds := []struct{ name, v, okV string }{
-		{"slice", "a[:]", "back[:]"},
-		{"addr", "&x", "&gx"},
-		{"struct", "Box{a[:]}", "Box{back[:]}"},
-		{"array", "[1]Box{{a[:]}}", "[1]Box{{back[:]}}"},
-		{"iface", "Any(&x)", "Any(&gx)"},
-		{"anon", "struct{ d []int }{a[:]}", "struct{ d []int }{back[:]}"},
-		{"rows", "[1][]int{{x}}", "[1][]int{back[:]}"},
-		{"addrs", "[1]*Box{{}}", "[1]*Box{&gbox}"},
+	kinds := []struct{ name, typ, v, okV string }{
+		{"slice", "[]int", "a[:]", "back[:]"},
+		{"addr", "*int", "&x", "&gx"},
+		{"struct", "Box", "Box{a[:]}", "Box{back[:]}"},
+		{"array", "[1]Box", "[1]Box{{a[:]}}", "[1]Box{{back[:]}}"},
+		{"iface", "Any", "Any(&x)", "Any(&gx)"},
+		{"anon", "struct{ d []int }", "struct{ d []int }{a[:]}", "struct{ d []int }{back[:]}"},
+		{"rows", "[1][]int", "[1][]int{{x}}", "[1][]int{back[:]}"},
+		{"addrs", "[1]*Box", "[1]*Box{{}}", "[1]*Box{&gbox}"},
 	}
 	sinks := []struct{ name, stmt string }{
 		{"store", "g{K} = s"},
@@ -10088,6 +10088,9 @@ func idaddrs(v [1]*Box) [1]*Box { return v }
 		{"field", "gw.f{K} = s"},
 		{"element", "ga{K}[0] = s"},
 		{"returned by a helper", "ret{K}(s)"},
+		// A range clause assigning an element of an operand holding s.
+		{"range", "for _, g{K} = range [1]{T}{s} {\n\t}"},
+		{"range into a field", "for _, gw.f{K} = range [1]{T}{s} {\n\t}"},
 	}
 	emit := func(src string) error {
 		fsys := fstest.MapFS{"main.ogo": &fstest.MapFile{Data: []byte(src)}}
@@ -10101,7 +10104,7 @@ func idaddrs(v [1]*Box) [1]*Box { return v }
 		for _, sink := range sinks {
 			program := func(v string) string {
 				return decls + "func bind() {\n\tvar a [4]int\n\tx := 1\n\ta[0] = x\n\ts := " + v + "\n\t" +
-					strings.ReplaceAll(sink.stmt, "{K}", k.name) + "\n}\n\nfunc main() {\n\tbind()\n}\n"
+					strings.NewReplacer("{K}", k.name, "{T}", k.typ).Replace(sink.stmt) + "\n}\n\nfunc main() {\n\tbind()\n}\n"
 			}
 			t.Run(k.name+"/"+sink.name, func(t *testing.T) {
 				if err := emit(program(k.okV)); err != nil {
@@ -10657,6 +10660,11 @@ var gb, gb2 Box
 		{"for init, assigned", "\tvar s {T}\n\tfor s = {V}; x > 0; {\n\t\treturn s\n\t}\n\treturn s\n", true},
 		{"for post", "\tvar s {T}\n\tfor i := 0; i < 2; s = {V} {\n\t\ti++\n\t}\n\treturn s\n", true},
 		{"for post list", "\tvar s {T}\n\tfor i := 0; i < 2; i, s = i+1, {V} {\n\t}\n\treturn s\n", true},
+		// A range clause binds an element of its operand, which carries what the
+		// operand's elements carry.
+		{"range value, declared", "\tfor _, s := range [1]{T}{{V}} {\n\t\treturn s\n\t}\n\tvar z {T}\n\treturn z\n", true},
+		{"range value, assigned", "\tvar s {T}\n\tfor _, s = range [1]{T}{{V}} {\n\t}\n\treturn s\n", true},
+		{"range value, assigned to a field", "\tvar b struct{ s {T} }\n\tfor _, b.s = range [1]{T}{{V}} {\n\t}\n\treturn b.s\n", true},
 	}
 	emit := func(src string) error {
 		fsys := fstest.MapFS{"main.ogo": &fstest.MapFile{Data: []byte(src)}}
