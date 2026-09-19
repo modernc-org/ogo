@@ -13477,11 +13477,18 @@ func (e *emitter) emitVarSpec(names []string, typeAST []int32, initExprs [][]int
 			// dead frame -- the plainest way there is to write it. Asked before the
 			// name is taken, since the value may read the name it shadows.
 			views := initExpr != nil && e.initViewsFrame(initExpr)
+			elemOrigin, elemRefs := "", false
+			if initExpr != nil {
+				elemOrigin, elemRefs, _ = e.sliceElemOrigin(initExpr)
+			}
 			e.shadow(nm)
 			e.sliceVars[nm] = elem
 			e.locals[nm] = cname
 			if views {
 				e.frameBacked[nm] = true
+			}
+			if elemRefs {
+				e.frameHolder[nm] = elemOrigin // what its elements reach (noteSliceElemRefs)
 			}
 			// A self-referential shadowing copy (`var xs []T = xs` with an outer
 			// xs) means the outer header; capture it before the new one shadows it
@@ -14691,6 +14698,14 @@ func (e *emitter) emitArrayLitVar(name string, typeAST []int32, lit Node, static
 		cname = nm
 	}
 	e.emitSliceLitVar(name, elem, cname, lit, values, length, static, lead)
+	// What the elements refer to, the slice holds, as the array above does: its
+	// backing is this frame's by construction, which frameBacked says, and an element
+	// read out of it carries what the elements carry (noteSliceElemRefs).
+	if !static {
+		if r, isRef := e.frameRefInLitLevels(lit, e.elemLitLevels(typeAST)); isRef {
+			e.frameHolder[name] = r.origin
+		}
+	}
 }
 
 // emitSliceLitVar is emitArrayLitVar for a SLICE literal of element C type elem,
@@ -20835,14 +20850,19 @@ func (e *emitter) emitForInitDefine(h forHeader) {
 	// they mean outside the loop (see emitFor's single-name form).
 	refs := make([]frameRef, len(names))
 	carries := make([]bool, len(names))
+	elemOrigins := make([]string, len(names))
 	for i, rhs := range h.initRHSs {
 		refs[i], carries[i] = e.frameRefOf(rhs)
+		elemOrigins[i], _, _ = e.sliceElemOrigin(rhs)
 	}
 	for i, name := range names {
 		e.shadow(name)
 		e.locals[name] = cts[i]
 		if carries[i] {
 			e.noteHolderRef(name, refs[i])
+		}
+		if elemOrigins[i] != "" && e.isSliceVar(name) {
+			e.frameHolder[name] = elemOrigins[i] // what its elements reach (noteSliceElemRefs)
 		}
 		e.ind()
 		// localIdent: a loop variable named after a type is ordinary Go and the
@@ -21031,10 +21051,14 @@ func (e *emitter) emitFor(nodes []Node) {
 		// declaration records (emitInferredLocal). A loop's clauses are lowered on
 		// their own and recorded nothing: `for s := a[:]; ...; { return s }`.
 		ref, carries := e.frameRefOf(h.initRHS)
+		elemOrigin, _, _ := e.sliceElemOrigin(h.initRHS)
 		e.shadow(initName)
 		e.locals[initName] = initCType
 		if carries {
 			e.noteHolderRef(initName, ref)
+		}
+		if elemOrigin != "" && e.isSliceVar(initName) {
+			e.frameHolder[initName] = elemOrigin // what its elements reach (noteSliceElemRefs)
 		}
 	}
 	var condText string
@@ -25999,6 +26023,19 @@ func (e *emitter) checkAppendBacking(elem string, spread bool, args []Node) {
 	if spread && !e.carriesReference(elem) {
 		return
 	}
+	// A spread's elements carry what the slice spread records they reach, which is
+	// its holder mark and not its backing: spreading a scratch slice of pointers to
+	// package variables stores no reference to this frame at all.
+	if spread && len(args) == 2 {
+		if origin, has, decided := e.sliceElemOrigin(args[1].ast); decided {
+			if has {
+				e.fail("%v: cannot append the elements of %s: the slice they are appended to outlives this "+
+					"function, and they hold a pointer into %s, which does not",
+					e.f.tok(args[1].Pos()).Position(), e.f.exprSource(args[1]), origin)
+			}
+			return
+		}
+	}
 	if n, r, ok := e.frameRefIn(args[1:]); ok {
 		e.fail("%v: cannot append %s: the slice it is appended to outlives this function, "+
 			"and its storage does not; %s",
@@ -26106,6 +26143,29 @@ func (e *emitter) needBuilder() {
 	e.includes["string.h"] = true
 }
 
+// checkCopyElems is the lifetime rule of a copy: the destination's elements are
+// given what the source's reach. Into a backing this frame owns that is a holder
+// mark on the destination's root, as an element store makes one; into any other --
+// a package slice, a parameter's, one aliasing either -- it is a reference to this
+// frame in storage that outlives it, and `copy(gs, []*int{&x})` put one there in
+// silence.
+func (e *emitter) checkCopyElems(dst, src Node) {
+	origin, has, _ := e.sliceElemOrigin(src.ast)
+	if !has {
+		return
+	}
+	root, frame := e.sliceBackingIsFrame(dst.ast)
+	if !frame {
+		e.fail("%v: cannot copy %s into %s: its elements hold a pointer into %s, and %s's storage outlives "+
+			"this function", e.f.tok(dst.Pos()).Position(), e.f.exprSource(src), e.f.exprSource(dst), origin,
+			e.f.exprSource(dst))
+		return
+	}
+	if root != "" && e.isFrameVar(root) {
+		e.frameHolder[root] = origin
+	}
+}
+
 func (e *emitter) emitCopy(callSuffix []int32) {
 	args := e.callArgExprs(callSuffix)
 	if len(args) != 2 {
@@ -26140,6 +26200,7 @@ func (e *emitter) emitCopy(callSuffix []int32) {
 		return
 	}
 	elem := sliceElemFromCName(dstCT)
+	e.checkCopyElems(args[0], args[1])
 	e.needSlice(elem)
 	e.copyElems[elem] = true
 	e.includes["string.h"] = true
@@ -28581,6 +28642,7 @@ func (e *emitter) emitAssignment(head Node, postfix []Node) {
 	}
 	e.checkStoreBacking(storedIn, op)
 	e.checkBlockOutlives(storedIn, op)
+	e.checkStoreThroughSlice(storedIn, postfix[:len(postfix)-1], op)
 	e.noteFrameHolder(storedIn, op)
 	// A written-out dereference applies to the WHOLE target and not to its head:
 	// `*h.p = v` is `*(h.p) = v` and `*a[i] = v` is `*(a[i]) = v`, C's precedence and
@@ -29346,6 +29408,10 @@ func (e *emitter) declareCopy(name, tmp string) {
 // carrying it out -- `n := len(a[:])` is an int -- so the type is what says whether
 // there is anything to carry.
 func (e *emitter) noteDeclFrameHolder(ctype, name string, initExpr []int32) {
+	if e.isSliceCType(e.underlyingCType(ctype)) {
+		e.noteSliceElemRefs(name, initExpr)
+		return
+	}
 	// A BUILDER is considered too. It is a pointer into a backing array the caller
 	// owns -- that is the whole point of it -- so one built over a LOCAL array holds
 	// a reference to this frame as surely as a struct with a slice field does, and
@@ -36258,6 +36324,17 @@ func (e *emitter) rangeElemRef(rangeExpr []int32) (frameRef, bool) {
 	if _, _, isLit := e.soleCompositeLit(ast); isLit {
 		return e.frameRefInLit(ast)
 	}
+	// A SLICE's elements carry what its holder mark records (sliceElemOrigin), and
+	// its backing array is no element's: taken for theirs, ranging over `s :=
+	// []*int{&gx}` made the value a holder of s, and `g = p` was refused.
+	if ct, typed := e.inferCType(ast); typed && e.isSliceCType(e.underlyingCType(ct)) {
+		if origin, has, decided := e.sliceElemOrigin(ast); decided {
+			if !has {
+				return frameRef{}, false
+			}
+			return frameRef{origin: origin, what: e.f.exprSource(Node{sym: Expression, ast: ast}) + "'s element, which holds a pointer into " + origin}, true
+		}
+	}
 	return e.frameRefOf(rangeExpr)
 }
 
@@ -36526,7 +36603,7 @@ func (e *emitter) frameRefOf(ast []int32) (frameRef, bool) {
 	// `append(s, v)` is s's backing while s has room, which is the only case a
 	// fixed backing allows at all: `gs = append(ls, 1)` for a local ls stored a view
 	// of the frame in a package variable. What the values appended reach is the
-	// elements' question (checkAppendBacking).
+	// elements' question (sliceElemOrigin, checkAppendBacking).
 	if args, _, isAppend := e.appendCallArgs(ast); isAppend && len(args) != 0 {
 		if r, ok := e.frameRefOf(args[0].ast); ok {
 			return r, true
@@ -36940,11 +37017,81 @@ func (e *emitter) noteFrameHolder(base string, op []Node) {
 		if n.sym != Expression {
 			continue
 		}
+		if _, isSlice := e.sliceVars[base]; isSlice {
+			e.noteSliceElemRefs(base, n.ast)
+		}
 		if r, ok := e.frameRefOf(n.ast); ok {
 			e.noteHolderRef(base, r)
 			return
 		}
 	}
+}
+
+// noteSliceElemRefs marks a slice given a literal whose ELEMENTS reach this frame.
+// Its backing array is this frame's, which frameBacked answers for; what an element
+// reaches is a question of its own, and nothing asked it: `s := []*int{&x}` then
+// `g = s[0]` stored x's address in a package variable, where the array `[1]*int{&x}`
+// read out the same way was refused -- a slice was neither a struct nor a pointer,
+// the only holders a declaration marked. Only the elements are asked, since the
+// literal as a whole reaches this frame by construction, which says nothing about
+// what is read out of it.
+func (e *emitter) noteSliceElemRefs(name string, value []int32) {
+	if origin, has, _ := e.sliceElemOrigin(value); has && e.isFrameVar(name) {
+		e.frameHolder[name] = origin
+	}
+}
+
+// sliceElemOrigin is what the ELEMENTS of a slice value reach of this frame, and
+// whether the value's shape says: a literal's elements carry what they carry; a
+// variable's -- or a reslice of one, or a slice of an array, `s`, `s[1:]`, `arr[:]`
+// -- carry what the variable's holder mark records, which for a slice is what its
+// elements reach; and a value reached through a chain carries, as far as the
+// per-variable marks can say, what its root is marked with. Any other shape, a
+// call's result above all, is undecided.
+func (e *emitter) sliceElemOrigin(value []int32) (origin string, has, decided bool) {
+	ast := e.unparenExpr(value)
+	if _, _, isLit := e.soleArrayLit(ast); isLit {
+		r, ok := e.frameRefInLit(ast)
+		return r.origin, ok, true
+	}
+	if _, _, isLit := e.soleCompositeLit(ast); isLit {
+		r, ok := e.frameRefInLit(ast)
+		return r.origin, ok, true
+	}
+	if name, ok := e.exprIdent(ast); ok {
+		origin = e.frameHolder[name]
+		return origin, origin != "", true
+	}
+	// `append(s, v...)`: s's elements and each value appended; of a spread, the
+	// elements of the slice spread.
+	if args, spread, isAppend := e.appendCallArgs(ast); isAppend {
+		if len(args) == 0 {
+			return "", false, true
+		}
+		if origin, has, _ := e.sliceElemOrigin(args[0].ast); has {
+			return origin, true, true
+		}
+		for i, a := range args[1:] {
+			if spread && i == len(args)-2 {
+				origin, has, _ = e.sliceElemOrigin(a.ast)
+				return origin, has, true
+			}
+			if r, ok := e.frameRefOf(a.ast); ok {
+				return r.origin, true, true
+			}
+		}
+		return "", false, true
+	}
+	fac, ok := e.soleFactorNode(ast)
+	if !ok {
+		return "", false, false
+	}
+	base, _, isChain := e.factorAccessChain(e.unparenKids(slices.Collect(it(fac.ast))))
+	if !isChain {
+		return "", false, false
+	}
+	origin = e.frameHolder[base]
+	return origin, origin != "", true
 }
 
 // appendCallArgs recognises a call of the predeclared append, answering its
@@ -36960,19 +37107,90 @@ func (e *emitter) appendCallArgs(ast []int32) ([]Node, bool, bool) {
 	return e.callArgExprs(suffix[0].ast), e.spreadCall(suffix[0].ast), true
 }
 
+// checkStoreThroughSlice refuses storing a value that reaches this frame into an
+// ELEMENT of a slice whose backing is not provably this frame's: `t := gs; t[0] =
+// &x` put a local's address into package storage through a local alias of it, where
+// the store into gs itself was refused -- the block rule, asked of t, found t and x
+// dying together. What is written is the backing of the LAST slice the target
+// indexes -- an array element or a field lives inline in whatever holds it -- and
+// that backing is the root's own when the root is that slice, and otherwise what the
+// root's holder mark records its elements or fields reach, the only per-variable
+// record there is. checkAppendBacking is the same rule for append.
+func (e *emitter) checkStoreThroughSlice(base string, steps []Node, op []Node) {
+	if !e.isFrameVar(base) || len(op) != 2 || op[0].sym != 0 || e.f.ch(op[0].tok) != ASSIGN {
+		return
+	}
+	last := -1
+	for i, st := range steps {
+		if st.sym != Index {
+			continue
+		}
+		if _, _, _, sliced := e.sliceParts(st.ast); sliced {
+			return // a store into a slice step is no element store
+		}
+		indexed := e.isSliceVar(base)
+		if i != 0 {
+			cur, ok := e.accessChainType(base, steps[:i])
+			indexed = ok && cur.slice
+		}
+		if indexed {
+			last = i
+		}
+	}
+	if last < 0 {
+		return
+	}
+	frame := e.frameBacked[base]
+	if last != 0 {
+		frame = e.frameHolder[base] != ""
+	}
+	if frame {
+		return
+	}
+	for _, v := range e.rhsExprs(op[1]) {
+		if r, ok := e.frameRefOf(v.ast); ok {
+			e.fail("%v: cannot store %s in an element of %s: its storage is not this function's, "+
+				"and may outlive it; %s", e.f.tok(v.Pos()).Position(), r.what,
+				e.chainSource(base, steps[:last]), r.advice())
+			return
+		}
+	}
+}
+
+// chainSource spells base followed by steps as the source writes them.
+func (e *emitter) chainSource(base string, steps []Node) string {
+	var b strings.Builder
+	b.WriteString(base)
+	for _, st := range steps {
+		b.WriteString(e.f.exprSource(st))
+	}
+	return b.String()
+}
+
 // noteHolderRef is noteFrameHolder for a reference already found: the local base,
 // or something reached from it, was given r.
 func (e *emitter) noteHolderRef(base string, r frameRef) {
 	if !e.isFrameVar(base) {
 		return
 	}
-	if _, isSlice := e.sliceVars[base]; isSlice && r.view {
+	if r.view && e.isSliceVar(base) {
 		// A slice variable assigned a view of this frame is the shape frameBacked
-		// already models, and the one its wording fits.
+		// already models, and the one its wording fits. Taken for a holder, a slice
+		// declared in a list, `s, u := []*int{&gx}, ...`, had its literal's backing
+		// recorded as what its ELEMENTS reach, and `g = s[0]` was refused.
 		e.frameBacked[base] = true
 		return
 	}
 	e.frameHolder[base] = r.origin
+}
+
+// isSliceVar reports whether name is a slice variable, by its record or its type.
+func (e *emitter) isSliceVar(name string) bool {
+	if _, ok := e.sliceVars[name]; ok {
+		return true
+	}
+	ct, ok := e.varType(name)
+	return ok && e.isSliceCType(e.underlyingCType(ct))
 }
 
 // checkReturnBacking refuses returning a value that reaches storage of this frame.
@@ -37118,7 +37336,17 @@ func (e *emitter) carryInto(t assignTarget, declare bool, ctype string, c *carri
 		e.refuseStoreBacking(base, c.at, c.r)
 		e.refuseBlockOutlives(base, c.at, c.r)
 	}
-	return func() { e.noteHolderRef(base, c.r) }
+	// A whole slice is given, besides its backing, what its elements reach.
+	origin, elemRefs := "", false
+	if len(t.chain) == 0 {
+		origin, elemRefs, _ = e.sliceElemOrigin(c.at.ast)
+	}
+	return func() {
+		e.noteHolderRef(base, c.r)
+		if elemRefs && e.isSliceVar(base) && e.isFrameVar(base) {
+			e.frameHolder[base] = origin
+		}
+	}
 }
 
 // crossBackedByFrame finds, among values about to cross to another cog, one that is

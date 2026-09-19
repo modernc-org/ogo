@@ -28313,6 +28313,55 @@ func main() {
 		want: "true true true\n8 31 4 16\n5\n4 1\n9 1\n",
 	},
 	{
+		name: "a slice's elements are what they point at",
+		src: `var gx, gy int
+
+var gp *int
+
+var gback [4]*int
+
+var gps = gback[:0]
+
+var gb [2]int
+
+var gs []int
+
+func sum(ps []*int) int {
+	t := 0
+	for i := range ps {
+		t += *ps[i]
+	}
+	return t
+}
+
+// A slice's elements carry what they point at, and its backing array is no
+// element's: ranging over a scratch slice of pointers to package variables,
+// reading one out of a slice declared in a list, and spreading one into a
+// package slice were refused as if each element pointed into the scratch slice.
+func main() {
+	gx, gy = 3, 4
+	s := []*int{&gx, &gy}
+	for _, e := range s {
+		gp = e
+	}
+	println(*gp)
+	a, b := []*int{&gy}, []*int{&gx}
+	gp = a[0]
+	println(*gp, *b[0])
+	gps = append(gps, s...)
+	println(len(gps), sum(gps))
+	var rows [1][]int
+	rows[0] = gb[:]
+	for _, r := range rows[:] {
+		gs = r
+	}
+	gs[1] = 7
+	println(gb[1])
+}
+`,
+		want: "4\n4 3\n2 7\n7\n",
+	},
+	{
 		// A function literal called where it stands, as a statement of its own, which
 		// the grammar had no production for: a statement could not begin with "func".
 		// It is lifted as a literal is anywhere and called by name; arguments are how a

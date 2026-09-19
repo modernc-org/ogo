@@ -598,6 +598,16 @@ What `make` allocates in a function is a backing array of the frame wherever the
 slice is bound (`makeRef`, 2026-09-19; `TestEmitCMakeEscape`): only the declaration
 from make was modelled, so a package variable given one from a function -- `main`
 included -- held a view of a dead frame, and `s = make(...)` then `gs = s` compiled.
+A SLICE has two marks answering two questions (2026-09-19): `frameBacked` says its
+BACKING is this frame's, its holder mark says what its ELEMENTS reach
+(`noteSliceElemRefs`, `sliceElemOrigin`). Only the first was kept, so an element read
+out -- `g = s[0]` for `s := []*int{&x}`, or ranged over -- passed after a literal, a
+copy, a reslice, a slice of a marked array, an append or a copy into it, and was
+refused for the backing where only package variables were pointed at.
+`TestEmitCSliceElemEscape` crosses the binding forms with element kinds; a new way to
+bind a slice is a new row there. Writing a reference INTO an element of storage the
+frame does not own is the same rule from the other side (`checkStoreThroughSlice`,
+`checkCopyElems`, `checkAppendBacking`; rows in `TestEmitCSliceStoreEscape`).
 
 ## Notes
 

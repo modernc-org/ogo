@@ -10492,6 +10492,97 @@ func main() {
 	}
 }
 
+// TestEmitCSliceElemEscape: a slice literal's ELEMENTS are values the slice holds.
+// Its backing array is this frame's and frameBacked answers for that; what an
+// element reaches is a question of its own, and nobody asked it: `s := []*int{&x}`
+// then `g = s[0]` stored x's address in a package variable, where the array
+// `[1]*int{&x}` read out the same way was refused -- a slice was neither a struct
+// nor a pointer, the only holders a declaration marked. Every binding form, read
+// out into a store, a callee that keeps it and a range, beside a control over
+// package storage.
+func TestEmitCSliceElemEscape(t *testing.T) {
+	const decls = `type Box struct {
+	d []int
+}
+
+var back [4]int
+
+var gx int
+
+var gbox Box
+
+var gaddress *int
+
+var gslice []int
+
+var gstruct Box
+
+var grow []int
+
+var gelided *Box
+
+func keepaddress(v *int) { gaddress = v }
+
+func keepslice(v []int) { gslice = v }
+
+func keepstruct(v Box) { gstruct = v }
+
+func keeprow(v []int) { grow = v }
+
+func keepelided(v *Box) { gelided = v }
+
+`
+	kinds := []struct{ name, typ, v, okV string }{
+		{"address", "[]*int", "[]*int{&x}", "[]*int{&gx}"},
+		{"slice", "[][]int", "[][]int{a[:]}", "[][]int{back[:]}"},
+		{"struct", "[]Box", "[]Box{{a[:]}}", "[]Box{{back[:]}}"},
+		// An elided row is a slice literal, whose backing array is this frame's.
+		{"row", "[][]int", "[][]int{{x}}", "[][]int{back[:]}"},
+		// An elided element of a []*T is &T{...}, a temporary of this frame.
+		{"elided", "[]*Box", "[]*Box{{}}", "[]*Box{&gbox}"},
+	}
+	forms := []struct{ name, body string }{
+		{"short declaration", "\ts := {V}\n\tg{K} = s[0]\n"},
+		{"var, inferred", "\tvar s = {V}\n\tg{K} = s[0]\n"},
+		{"var, typed", "\tvar s {T} = {V}\n\tg{K} = s[0]\n"},
+		{"var list, typed", "\tvar s, u {T} = {V}, {V}\n\t_ = u\n\tg{K} = s[0]\n"},
+		{"var list, inferred", "\tvar s, u = {V}, {V}\n\t_ = u\n\tg{K} = s[0]\n"},
+		{"short list", "\ts, u := {V}, {V}\n\t_ = u\n\tg{K} = s[0]\n"},
+		{"assignment", "\tvar s {T}\n\ts = {V}\n\tg{K} = s[0]\n"},
+		{"assignment list", "\tvar s, u {T}\n\ts, u = {V}, {V}\n\t_ = u\n\tg{K} = s[0]\n"},
+		{"kept by a callee", "\ts := {V}\n\tkeep{K}(s[0])\n"},
+		{"range", "\ts := {V}\n\tfor _, e := range s {\n\t\tg{K} = e\n\t}\n"},
+	}
+	emit := func(src string) error {
+		fsys := fstest.MapFS{"main.ogo": &fstest.MapFile{Data: []byte(src)}}
+		pkg, err := Build(-1, []string{"main.ogo"}, fsys)
+		if err != nil {
+			return err
+		}
+		return EmitC(pkg, io.Discard, Checked())
+	}
+	for _, k := range kinds {
+		for _, form := range forms {
+			program := func(v string) string {
+				body := strings.NewReplacer("{V}", v, "{T}", k.typ, "{K}", k.name).Replace(form.body)
+				return decls + "func bind() {\n\tvar a [4]int\n\tx := 1\n\ta[0] = x\n" + body + "}\n\nfunc main() {\n\tbind()\n}\n"
+			}
+			t.Run(k.name+"/"+form.name, func(t *testing.T) {
+				if err := emit(program(k.okV)); err != nil {
+					t.Fatalf("the control over package storage is refused: %v\n%s", err, program(k.okV))
+				}
+				err := emit(program(k.v))
+				switch {
+				case err == nil:
+					t.Errorf("a reference to this frame left it:\n%s", program(k.v))
+				case !strings.Contains(err.Error(), "outlive"):
+					t.Errorf("refused, but not for its lifetime: %v", err)
+				}
+			})
+		}
+	}
+}
+
 // TestEmitCMakeEscape: what make allocates in a function is a backing array of the
 // frame wherever the slice lands. Only a declaration from make recorded it, so `s =
 // make([]int, 2)`, a field assigned one, and make stored or passed directly each
@@ -10536,6 +10627,83 @@ func main() {
 		{"b.d = make([]int, 2)\n\tb.d[0] = 1", ""},
 		{"gs = back[:]", ""},
 		{"s = back[:]\n\tgs = s", ""},
+	} {
+		t.Run(test.stmt, func(t *testing.T) {
+			src := head + "\t" + test.stmt + "\n" + tail
+			fsys := fstest.MapFS{"main.ogo": &fstest.MapFile{Data: []byte(src)}}
+			pkg, err := Build(-1, []string{"main.ogo"}, fsys)
+			if err == nil {
+				err = EmitC(pkg, io.Discard, Checked())
+			}
+			switch {
+			case test.want == "" && err != nil:
+				t.Errorf("refused: %v\n%s", err, src)
+			case test.want != "" && err == nil:
+				t.Errorf("accepted, want %q\n%s", test.want, src)
+			case test.want != "" && !strings.Contains(err.Error(), test.want):
+				t.Errorf("got %v, want %q", err, test.want)
+			}
+		})
+	}
+}
+
+// TestEmitCSliceStoreEscape: a slice's elements are given what the values written
+// into them reach -- by an element store, a copy, an append -- and storage that is
+// not this frame's must not be given this frame. A local alias of package storage,
+// `t := gps; t[0] = &x`, a copy into one, and a row of a slice of slices holding a
+// package slice each put a local's address into package storage in silence until
+// 2026-09-19; and a spread of pointers to package variables was refused for its
+// backing, which a spread does not copy. Each row beside a control.
+func TestEmitCSliceStoreEscape(t *testing.T) {
+	const head = `var gp *int
+
+var gx int
+
+var gback [4]*int
+
+var gps = gback[:1]
+
+var grows [1][]int
+
+var gb [2]int
+
+var gs []int
+
+func run() {
+	x := 1
+	_ = x
+`
+	const tail = `}
+
+func main() {
+	run()
+}
+`
+	for _, test := range []struct {
+		stmt string
+		want string // "" means the program must be accepted
+	}{
+		{"t := gps\n\tt[0] = &x", "cannot store the address of local variable x in an element of t"},
+		{"var t []*int\n\tt[0] = &x", "cannot store the address of local variable x in an element of t"},
+		{"ss := [][]*int{gps}\n\tss[0][0] = &x", "cannot store the address of local variable x in an element of ss[0]"},
+		{"var b struct{ ps []*int }\n\tb.ps = gps\n\tb.ps[0] = &x", "in an element of b.ps"},
+		{"copy(gps, []*int{&x})", "cannot copy []*int{&x} into gps: its elements hold a pointer into local x"},
+		{"t := gps\n\tcopy(t, []*int{&x})", "cannot copy []*int{&x} into t"},
+		{"s := make([]*int, 1)\n\tcopy(s, []*int{&x})\n\tgp = s[0]", "cannot store s[0], which holds a pointer into local x"},
+		{"s := make([]*int, 0, 2)\n\ts = append(s, &x)\n\tgp = s[0]", "cannot store s[0], which holds a pointer into local x"},
+		{"s := make([]*int, 1, 2)\n\tt := append(s, &x)\n\tgp = t[1]", "cannot store t[1], which holds a pointer into local x"},
+		{"ls := []*int{&x}\n\tgps = append(gps, ls...)", "cannot append the elements of ls"},
+		{"var arr [1]*int\n\tarr[0] = &x\n\ts := arr[:]\n\tgp = s[0]", "cannot store s[0], which holds a pointer into local x"},
+		{"var a [2]int\n\tvar rows [1][]int\n\trows[0] = a[:]\n\ts := rows[:]\n\tgs = s[0]", "cannot store s[0], which holds a pointer into local a"},
+		// Controls.
+		{"s := make([]*int, 1)\n\ts[0] = &x", ""},
+		{"ss := [][]*int{{nil}}\n\tss[0][0] = &x", ""},
+		{"copy(gps, []*int{&gx})", ""},
+		{"ls := []*int{&gx}\n\tgps = append(gps, ls...)", ""},
+		{"s := []*int{&gx}\n\tfor _, e := range s {\n\t\tgp = e\n\t}", ""},
+		{"s, u := []*int{&gx}, []*int{&gx}\n\t_ = u\n\tgp = s[0]", ""},
+		{"grows[0] = gb[:]\n\ts := grows[:]\n\tfor _, e := range s {\n\t\tgs = e\n\t}", ""},
+		{"var rows [1][]int\n\trows[0] = gb[:]\n\ts := rows[:]\n\tfor _, e := range s {\n\t\tgs = e\n\t}", ""},
 	} {
 		t.Run(test.stmt, func(t *testing.T) {
 			src := head + "\t" + test.stmt + "\n" + tail
@@ -10649,7 +10817,7 @@ func main() {
 		{"id := func(xs []int) []int { return xs }\n\tg = id(a[:])", "cannot store a slice backed by local a in package variable g"},
 		// A literal called where it stands, handing back its argument.
 		{"g = func(xs []int) []int { return xs }(a[:])", "cannot store a slice backed by local a in package variable g"},
-		{"s, n := func(xs []int) ([]int, int) { return xs, 1 }(a[:])\n\tg = s\n\tback[0] = n", "cannot store local s, which holds a pointer into local a"},
+		{"s, n := func(xs []int) ([]int, int) { return xs, 1 }(a[:])\n\tg = s\n\tback[0] = n", "cannot store a slice backed by local s in package variable g"},
 		// A method expression, its receiver the first argument -- called, deferred
 		// and bound to a variable.
 		{"(*Box).set(&gb, a[:])", "cannot pass a slice backed by local a to (*Box).set: it is stored through gb, which outlives this function"},

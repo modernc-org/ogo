@@ -197,6 +197,10 @@ shipped section tells a reader on that version that they have behaviour they do 
 
 ### Fixed
 
+- **A slice's elements are not its backing array.** Ranging over a scratch slice
+  of pointers to package variables, reading one out of a slice declared in a list,
+  `s, u := []*int{&gx}, ...`, and spreading one into a package slice were refused
+  as if each element pointed into the scratch slice.
 - **A method called on a parenthesized value is checked, and compiles in every
   statement.** `(&v).Nope()` reached the C compiler, and `(&v).Set(1, 2)` for a
   Set of one parameter compiled for the target without a word, handing it two
@@ -691,6 +695,16 @@ shipped section tells a reader on that version that they have behaviour they do 
 Each of these is the compiler refusing a program it used to accept, and each such
 program handed out a reference to storage that was gone by the time it was read.
 
+- **A slice's elements are given what they reach, and keep it.** `s :=
+  []*int{&x}` then `g = s[0]` stored x's address in a package variable, where the
+  array `[1]*int{&x}` read out the same way was refused: a slice was never asked
+  what its elements reach, and a copy, a reslice, a slice of a marked array, an
+  append and a copy into one each lost what was known. An element read out of such
+  a slice, or ranged over, is refused at every sink now. And a reference to the
+  frame written into an element of storage the frame does not own -- through a
+  local alias of a package slice, `t := gs; t[0] = &x`, a row of a slice of slices
+  holding one, or `copy(gs, ...)` -- is refused where it is written, as appending
+  it was.
 - **What make allocates in a function is that function's storage, however it is
   bound.** Only a declaration from make recorded it: `s = make([]int, 2)` then `gs =
   s`, a field assigned one and then the struct stored, and `gs = make(...)` directly
