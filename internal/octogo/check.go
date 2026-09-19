@@ -5451,6 +5451,15 @@ func (f *File) exprFuncSig(s *Scope, n Node) *SignatureNode {
 		return nil
 	}
 	if head, field, ok := f.exprFieldRead(n); ok {
+		// Another package's function as a value, `h := lib.Add`, or its variable
+		// of a function type: the signature, its types named as this file names
+		// them (requalifiedSig). There was no answer for either, so neither the
+		// variable it was bound to nor a call through that variable was checked --
+		// `var h func(int) string = lib.Add` and `h(1)` for a function of two
+		// parameters reached the C compiler.
+		if f.isImportQualifier(s, head.Src()) {
+			return f.qualifiedFuncSig(head, field)
+		}
 		// A METHOD VALUE, `f := gq.Bump`, has the method's signature -- the receiver
 		// is bound, not a parameter -- so a call through the variable is checked
 		// against it exactly as a call on the receiver would be.
@@ -5488,6 +5497,34 @@ func (f *File) exprFuncSig(s *Scope, n Node) *SignatureNode {
 		return nil
 	}
 	return f.funcSig(s, sig.Results.List[0].TypeNode)
+}
+
+// qualifiedFuncSig is the function type of another package's function, or of its
+// variable of a function type, `qual.member`, as this file writes it; nil for
+// anything else, or for a signature that cannot be carried across (see
+// requalifiedType).
+func (f *File) qualifiedFuncSig(qual, member Token) *SignatureNode {
+	imp, ok := f.Scope.Declarations[qual.Src()].(*ImportDeclaration)
+	if !ok || imp.Import == nil || imp.Import.Pkg == nil || imp.Import.Pkg.Scope == nil || !token.IsExported(member.Src()) {
+		return nil
+	}
+	scope := imp.Import.Pkg.Scope
+	var sig *SignatureNode
+	switch d := scope.Declarations[member.Src()].(type) {
+	case *FuncDeclaration:
+		if d.FuncDecl != nil && d.FuncDecl.Type != nil && d.FuncDecl.Type.Receiver == nil {
+			sig = d.FuncDecl.Type.Signature
+		}
+	case *VarDeclaration:
+		sig = d.funcSig
+	}
+	if sig == nil {
+		return nil
+	}
+	if r, ok := f.requalifiedSig(scope, qual, sig); ok {
+		return r
+	}
+	return nil
 }
 
 // typeNodeString renders a resolved type as canonical OctoGo source. It exists so

@@ -1,0 +1,18 @@
+// Another package's function as a value has its signature, named as this file
+// names its types: a variable it is bound to is checked against it, and so is a
+// call through that variable.
+
+import "p"
+
+func main() {
+	// ERROR cannot use p.Add \(value of type func\(a int, b int\) int\) as func\(int\) string value in variable declaration
+	var h func(int) string = p.Add
+	add := p.Add
+	// ERROR not enough arguments in call to add
+	_ = add(1)
+	// ERROR cannot use "x" of type string as type int in argument to add
+	_ = add(1, "x")
+	// ERROR cannot use p.Make \(value of type func\(\) p.T\) as func\(\) int value in variable declaration
+	var m func() int = p.Make
+	_, _ = h, m
+}

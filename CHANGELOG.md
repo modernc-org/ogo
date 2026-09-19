@@ -182,6 +182,13 @@ shipped section tells a reader on that version that they have behaviour they do 
 
 ### Fixed
 
+- **Another package's function used as a value is type-checked.** `var h
+  func(int) string = lib.Add`, and a call through `add := lib.Add` with the wrong
+  arguments, `add(1)`, passed the checker and reached the C compiler: nothing
+  answered what type `lib.Add` has. Its signature does now, its types named as the
+  importing file names them, and so does another package's variable of a function
+  type. And a function type naming another package's type is compared as Go
+  compares it: such a comparison had been skipped whenever either side named one.
 - **A promoted method's receiver asks the lifetime rules.** A method promoted from
   an embedded field is handed that field, and nothing asked about it: `o.Save()`
   for an o embedding Counter left a package variable holding the address of a local

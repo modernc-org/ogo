@@ -1,0 +1,18 @@
+// COMPILE
+
+// Another package's function as a value, bound to a variable of its type and
+// called through it.
+
+import "p"
+
+func apply(f func(int, int) int) int { return f(2, 3) }
+
+func main() {
+	add := p.Add
+	_ = add(1, 2)
+	var sum func(a, b int) int = p.Add
+	_ = sum(3, 4)
+	var mk func() p.T = p.Make
+	_ = mk().F
+	_ = apply(p.Add)
+}
