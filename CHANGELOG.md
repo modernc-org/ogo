@@ -182,6 +182,17 @@ shipped section tells a reader on that version that they have behaviour they do 
 
 ### Fixed
 
+- **A reference to this frame stored in another package's variable is refused.**
+  `geo.P = &x`, `geo.I = &q`, `geo.B = geo.Box{a[:]}`, a local holding one copied
+  in, and the same in a `for` clause: the store to one of this package's variables
+  was refused and this one compiled, leaving another package's variable pointing
+  into a dead frame -- the lifetime rules read the target as the qualifier `geo`,
+  no variable at all. A field, an element and a slice of another package's were
+  already refused.
+- **Another package's variables are the targets of a list assignment.** `geo.N,
+  geo.M = geo.M, geo.N`, `geo.P, n = &gx, 1`, `geo.N, geo.B.N = geo.Two(5)` and the
+  same in a `for` clause were refused as an unsupported target in a multiple
+  assignment; they assign as Go assigns now, the lifetime rules asked of each.
 - **An unnamed struct type and a declared one of the same fields mix.** Go
   assigns between `struct{ x int }` and a `type P struct{ x int }` either way; the
   target's compiler refused, "incompatible types in assignment", in a declaration,

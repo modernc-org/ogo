@@ -539,7 +539,9 @@ first it works); a PARENTHESISED HEAD the emitter cannot peel -- one holding a u
 operator or a suffix of its own -- read or written through a suffix: `(&p).x`,
 `(&arr)[1:]`, `(get()).x`, `(*get()).x`, `(arr[1:])[1:]`, `("hello")[1:]`, the targets
 `(p).x = 5` and `(&p).x = 3`, and the send `(&bus.ports[1]).ch <- 5` (`(*p).x`, `(a)[i]`,
-`(&v).m()` and `(a - b).m()` work); a chain after a NAMED string constant's slice,
+`(&v).m()` and `(a - b).m()` work); another package's variable as a `range` clause's target, `for _, geo.P = range
+ptrs` ("a range target must be a variable or a struct field"); a chain after a NAMED
+string constant's slice,
 `hexdigits[1:][0]` (the literal's works), and after a slice step of an array of
 arrays, `grid[1][1:][1]` ("this combination of indexes and fields is not supported
 yet"; the slice of slices' `rows[0][1:][1]` works). No grammar gap is

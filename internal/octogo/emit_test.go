@@ -10119,6 +10119,115 @@ func idaddrs(v [1]*Box) [1]*Box { return v }
 	}
 }
 
+// TestEmitCForeignStoreEscape: a reference to this frame stored in ANOTHER
+// package's variable, by every form a store is written in. A package variable
+// outlives every frame whichever package declares it, and the store to one of this
+// package's was refused -- but a whole-variable target of another's, `geo.P = &x`,
+// reached the rules as the qualifier "geo", no variable at all, and passed them
+// until 2026-09-19. A field, an element, a slice and a list assignment were
+// already refused; they stay rows. Each cell beside a control over package storage.
+func TestEmitCForeignStoreEscape(t *testing.T) {
+	const geo = `type Box struct {
+	D []int
+}
+
+type Shape interface {
+	Area() int
+}
+
+type Sq struct {
+	W int
+}
+
+func (q *Sq) Area() int { return q.W }
+
+var P *int
+
+var S []int
+
+var B Box
+
+var PB *Box
+
+var I Shape
+
+var A [1]*int
+
+var N int
+`
+	kinds := []struct {
+		name, target, v, okV string
+		parenthesize         bool // a literal in a for clause needs the parentheses Go needs
+	}{
+		{"address", "geo.P", "&x", "&gx", false},
+		{"slice", "geo.S", "a[:]", "back[:]", false},
+		{"struct", "geo.B", "geo.Box{a[:]}", "geo.Box{back[:]}", true},
+		{"pointer to a struct", "geo.PB", "&lb", "&gb", false},
+		{"interface", "geo.I", "&q", "&gq", false},
+		{"field", "geo.B.D", "a[:]", "back[:]", false},
+		{"element", "geo.A[0]", "&x", "&gx", false},
+	}
+	forms := []struct {
+		name, body string
+		header     bool
+	}{
+		{"assignment", "\t{X} = {V}\n", false},
+		{"parenthesized", "\t{X} = ({V})\n", false},
+		{"through a local", "\tl := {V}\n\t{X} = l\n", false},
+		{"assignment list, first", "\t{X}, geo.N = {V}, 1\n", false},
+		{"assignment list, second", "\tgeo.N, {X} = 1, {V}\n", false},
+		{"destructured", "\t{X}, geo.N = two({V})\n", false},
+		{"for init", "\tfor {X} = {V}; geo.N < 1; geo.N++ {\n\t}\n", true},
+		{"for post", "\tfor geo.N = 0; geo.N < 1; {X} = {V} {\n\t\tgeo.N++\n\t}\n", true},
+		{"for post list", "\tfor geo.N = 0; geo.N < 1; geo.N, {X} = 1, {V} {\n\t}\n", true},
+	}
+	emit := func(main string) error {
+		fsys := fstest.MapFS{
+			"main.ogo":    &fstest.MapFile{Data: []byte(main)},
+			"geo/geo.ogo": &fstest.MapFile{Data: []byte(geo)},
+		}
+		pkg, err := Build(-1, []string{"main.ogo"}, fsys)
+		if err != nil {
+			return err
+		}
+		return EmitC(pkg, io.Discard, Checked())
+	}
+	for _, k := range kinds {
+		for _, form := range forms {
+			program := func(v string) string {
+				if form.header && k.parenthesize {
+					v = "(" + v + ")"
+				}
+				body := strings.NewReplacer("{X}", k.target, "{V}", v).Replace(form.body)
+				two := ""
+				if strings.Contains(form.body, "two(") {
+					// The value's own type, whatever the target's: a pointer handed
+					// to an interface target is converted at the store.
+					typ := map[string]string{"&x": "*int", "&gx": "*int", "a[:]": "[]int", "back[:]": "[]int",
+						"geo.Box{a[:]}": "geo.Box", "geo.Box{back[:]}": "geo.Box", "&lb": "*geo.Box", "&gb": "*geo.Box",
+						"&q": "*geo.Sq", "&gq": "*geo.Sq"}[v]
+					two = "func two(v " + typ + ") (" + typ + ", int) {\n\treturn v, 1\n}\n\n"
+				}
+				return "import \"geo\"\n\nvar gx int\n\nvar back [4]int\n\nvar gq geo.Sq\n\nvar gb geo.Box\n\n" + two +
+					"func store() {\n\tvar a [4]int\n\tx := 1\n\ta[0] = x\n\tvar q geo.Sq\n\tq.W = x\n\tvar lb geo.Box\n\tlb.D = back[:]\n" +
+					body + "}\n\nfunc main() {\n\tstore()\n\tprintln(geo.N)\n}\n"
+			}
+			t.Run(k.name+"/"+form.name, func(t *testing.T) {
+				if err := emit(program(k.okV)); err != nil {
+					t.Fatalf("the control over package storage is refused: %v\n%s", err, program(k.okV))
+				}
+				err := emit(program(k.v))
+				switch {
+				case err == nil:
+					t.Errorf("a reference to this frame was stored in another package's variable:\n%s", program(k.v))
+				case !strings.Contains(err.Error(), "does not outlive the function"):
+					t.Errorf("refused, but not for its lifetime: %v", err)
+				}
+			})
+		}
+	}
+}
+
 // TestEmitCCalleeKeepsEscape: a reference to this frame handed to a callee that
 // keeps it, by every route that asked nothing until 2026-09-18. A deferred call,
 // which is checked at the replay, after the body's scope has been left and the local

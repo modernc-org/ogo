@@ -32105,7 +32105,7 @@ const multiPkgWant = "300\nLOUD\n50\n6\n5\n45\n6 1000\n200\n207\n3 100\n4 9\n" +
 	"17 gx-7 true 10 19\n" +
 	"2 7 56 9 3 8 false 2 1 2 6 3 true 7\n" +
 	"[2]greet.Row [2]greet.Reader greet.Row\n" +
-	"123 p2 9 3 2 3\n1 1 2 1 102 3\n2 1 4 3 4 4 5 134\n21 10 100 200 7 0\n1 5 1 2 4 1 3 21 1 2 12 12 123 123 11\n10 21 110 21 14 true 3 42\ntrue true\n" +
+	"123 p2 9 3 2 3\n1 1 2 1 102 3\n2 1 4 3 4 4 5 134\n21 10 100 200 7 0\n1 5 1 2 4 1 3 21 1 2 12 12 123 123 11\n10 21 110 21 14 true 3 42\n10 3 4\n6 10 2\ntrue true\n" +
 	"1234567891 1 3 8 14 30 39\n"
 
 var multiPkgProgram = map[string]string{
@@ -32589,6 +32589,18 @@ func libShapes() {
 	gv, gok := (*greet.Gauge).Read(&greet.G1)
 	var sumf func(greet.Vec) int = greet.Vec.Sum
 	println(val(lib.D1), lib.Dev.Val(lib.D2), (*lib.Dev).Ptr(&lib.D1), (*lib.Dev).Val(lib.Get()), gv, gok, sumf(greet.Vec{A: 1, B: 2}), greet.Celsius.Double(21))
+	// Another package's variables as the targets of a list assignment, a
+	// destructuring, a swap and a for clause: each was refused as an unsupported
+	// target, the whole-variable ones read as the package qualifier.
+	lib.Calls = 0
+	lib.P, lib.Calls = &lib.D1, lib.F(4)
+	lib.Calls, lib.D2.Id = lib.Two(3)
+	println(lib.P.Id, lib.Calls, lib.D2.Id)
+	lib.D1.Id, lib.D2.Id = lib.D2.Id, lib.D1.Id
+	for lib.Calls = 0; lib.Calls < 2; lib.Calls, lib.D1.Id = lib.Calls+1, lib.D1.Id+1 {
+	}
+	println(lib.D1.Id, lib.D2.Id, lib.Calls)
+	lib.P = nil
 	println(lib.P == nil, lib.None() == nil)
 }
 `,

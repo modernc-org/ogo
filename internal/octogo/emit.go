@@ -2386,7 +2386,7 @@ func (e *emitter) selectCommOp(n Node, c *selectCase) bool {
 		return false
 	}
 	if assigns {
-		c.target = assignTarget{name: e.soleIdent(head.ast), stars: e.derefStars(head.ast), chain: chain}
+		c.target = e.qualifiedTarget(assignTarget{name: e.soleIdent(head.ast), stars: e.derefStars(head.ast), chain: chain})
 		return e.selectChan(value, c)
 	}
 	c.send, c.val = true, value
@@ -20609,6 +20609,8 @@ func (e *emitter) carryIntoClause(lhs, rhs []int32) {
 	}
 	if mn, _, isQualified := e.qualifiedChainBase(base, steps); isQualified {
 		base = mn
+	} else if mn, isWhole := e.qualifiedWholeTarget(base, steps); isWhole {
+		base = mn
 	}
 	at := Node{sym: Expression, ast: rhs}
 	e.refuseStoreBacking(base, at, ref)
@@ -20655,10 +20657,32 @@ func (e *emitter) clauseTarget(ast []int32) (assignTarget, bool) {
 		return assignTarget{}, false
 	}
 	base, steps, isChain := e.factorAccessChain(kids)
-	if !isChain || len(steps) == 0 {
+	if !isChain {
 		return assignTarget{}, false
 	}
-	return assignTarget{name: base, chain: steps, tok: -1}, true
+	if len(steps) == 0 {
+		// `geo.S`, another package's slice or array, which the chain folds into
+		// its C name with nothing after it: a variable, as a name is.
+		if !e.isPackageVar(base) {
+			return assignTarget{}, false
+		}
+		return assignTarget{name: base, tok: -1}, true
+	}
+	return e.qualifiedTarget(assignTarget{name: base, chain: steps, tok: -1}), true
+}
+
+// qualifiedTarget folds a target written through an import qualifier -- `geo.P`,
+// `geo.B.D`, `geo.A[0]` -- into the variable's C name and the steps after it, which
+// is how the store lowerings and the lifetime rules name another package's
+// variable (see qualifiedChainBase). Left as written, a list assignment took "geo"
+// for the variable and refused every such target as unsupported.
+func (e *emitter) qualifiedTarget(t assignTarget) assignTarget {
+	if mn, rest, ok := e.qualifiedChainBase(t.name, t.chain); ok {
+		t.name, t.chain = mn, rest
+	} else if mn, ok := e.qualifiedWholeTarget(t.name, t.chain); ok {
+		t.name, t.chain = mn, nil
+	}
+	return t
 }
 
 func (e *emitter) emitFor(nodes []Node) {
@@ -28158,9 +28182,13 @@ func (e *emitter) emitAssignment(head Node, postfix []Node) {
 	// that necessary -- `n.p = &x` leaves through the access-chain path, so a check
 	// placed after it saw slice fields only.
 	op := slices.Collect(it(postfix[len(postfix)-1].ast))
-	e.checkStoreBacking(base, op)
-	e.checkBlockOutlives(base, op)
-	e.noteFrameHolder(base, op)
+	storedIn := base
+	if mn, ok := e.qualifiedWholeTarget(base, postfix[:len(postfix)-1]); ok {
+		storedIn = mn
+	}
+	e.checkStoreBacking(storedIn, op)
+	e.checkBlockOutlives(storedIn, op)
+	e.noteFrameHolder(storedIn, op)
 	// A written-out dereference applies to the WHOLE target and not to its head:
 	// `*h.p = v` is `*(h.p) = v` and `*a[i] = v` is `*(a[i]) = v`, C's precedence and
 	// Go's alike. Claimed here, ahead of every shape below, because each of those
@@ -29919,7 +29947,7 @@ func (e *emitter) lhsItemTarget(ast []int32) (assignTarget, bool) {
 	if name == "" || (len(nodes) > 1 && !isAccessChain(nodes[1:])) {
 		return assignTarget{}, false
 	}
-	t := assignTarget{name: name, stars: e.derefStars(nodes[0].ast), chain: nodes[1:], tok: -1}
+	t := e.qualifiedTarget(assignTarget{name: name, stars: e.derefStars(nodes[0].ast), chain: nodes[1:], tok: -1})
 	if tok, ok := e.soleToken(nodes[0].ast); ok {
 		t.tok = tok
 	}
@@ -29938,7 +29966,7 @@ func (e *emitter) emitMultiAssign(head Node, first, stars string, headChain []No
 		e.fail("unsupported target in a multiple assignment")
 		return
 	}
-	targets := []assignTarget{{name: first, stars: stars, chain: headChain, tok: -1}}
+	targets := []assignTarget{e.qualifiedTarget(assignTarget{name: first, stars: stars, chain: headChain, tok: -1})}
 	if tok, ok := e.soleToken(head.ast); ok {
 		targets[0].tok = tok
 	}
@@ -35920,6 +35948,31 @@ func (e *emitter) frameRefOf(ast []int32) (frameRef, bool) {
 		}
 	}
 	return frameRef{}, false
+}
+
+// qualifiedWholeTarget is the C name of another package's variable written as the
+// WHOLE of a store's target, `lib.P = v`, which is what the provenance rules ask
+// about. qualifiedChainBase leaves that form unfolded -- the shapes that write it
+// have a path of their own -- and the rules, asking what storage "lib" is, found no
+// variable and let `lib.P = &x` store a local's address in a package variable while
+// the same store to a variable of this package was refused.
+func (e *emitter) qualifiedWholeTarget(base string, steps []Node) (string, bool) {
+	if len(steps) != 1 || steps[0].sym != Selector || base == "p2" {
+		return "", false
+	}
+	prefix, isImport := e.importQualifiers[base]
+	if !isImport {
+		return "", false
+	}
+	member := e.soleIdent(steps[0].ast)
+	if member == "" {
+		return "", false
+	}
+	mn := mangle(prefix, member)
+	if _, isVar := e.globals[mn]; !isVar {
+		return "", false
+	}
+	return mn, true
 }
 
 // convToSliceType reports whether recv names a defined type whose underlying type is
