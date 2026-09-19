@@ -530,7 +530,12 @@ local over a package variable, in a block, a clause and a parameter list -- and 
 the value read the shadowed name: the emitter's maps are keyed by source name, one
 per kind, and twelve of twenty-four such shapes were wrong until a declaration
 learned to forget the other kinds (`shadow`) and to read its value first
-(`declareCopy`).
+(`declareCopy`). The checker had the same trap (2026-09-19): the literal-capture rule
+tested a literal's identifiers BY NAME, so it refused a literal's own `i`, a field
+`p.x` and a key `P{x: 1}`, and let a package variable of a captured name through --
+the literal read the package's x where Go reads the local. It is asked of the lookup
+now (`Scope.find2` records what leaves a literal's scope, `litOf`); a rule about what
+a name MEANS belongs where names are resolved.
 
 Known open items, all loud refusals or design walls (2026-09-17): an
 array-returning call as a package literal element; the method expression of an

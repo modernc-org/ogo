@@ -6217,6 +6217,67 @@ func main() {
 		want: "6 0 7\nthree 3 3\n6\nnone 0 0\n0\n10\n3 3 6\n17\n",
 	},
 	{
+		// A literal's names are its own: a local it declares, a loop's or a clause's
+		// variable, a parameter or a result it names, a field it selects and a key it
+		// writes, each named as a variable of main is. The checker took every such
+		// name for a capture of main's and refused the program. The package x beside
+		// main's x is the other half: a literal reading x reads main's in Go, and the
+		// package's here, silently, until the capture was asked of the lookup itself
+		// (lit_scope.ogo has the refusals).
+		name: "a literal's own names beside the function's",
+		src: `type P struct{ x, y int }
+
+func (p *P) bump() { p.x++ }
+
+var x = 10
+
+var arr = [3]int{1, 2, 3}
+
+func gx() int { return x }
+
+func main() {
+	x := 1
+	i, v := 100, 200
+	p := P{1, 2}
+	f := func(q P) int {
+		x := q.x
+		var y int = 3
+		for i := 0; i < 2; i++ {
+			y += i
+		}
+		for i, v := range arr {
+			y += i * v
+		}
+		if x := y; x > 0 {
+			y++
+		}
+		switch x := y + 1; x {
+		case 13:
+			y--
+		}
+		p := P{x: x, y: y}
+		p.bump()
+		return p.x*100 + p.y
+	}
+	g := func(x int) (y int) {
+		y = x * 2
+		return
+	}
+	h := func() int {
+		x := 5
+		{
+			x++
+		}
+		ptr := &x
+		*ptr += 10
+		return x
+	}
+	println(f(p), g(21), h(), x, i, v, p.x, p.y, gx())
+}
+`,
+		want: "213 42 16 1 100 200 1 2 10\n",
+	},
+	{
 		// Function literals. C has no nested functions and this language has no
 		// closures to need them, so each literal is LIFTED to a file-scope function
 		// of a minted name and the expression becomes that name. What a literal may

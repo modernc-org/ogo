@@ -197,6 +197,16 @@ shipped section tells a reader on that version that they have behaviour they do 
 
 ### Fixed
 
+- **A function literal reads its own names, and is refused a local of the function
+  around it however it is found.** Every name a literal's body wrote was taken for a
+  capture when the function around it had a variable of the name, so a literal was
+  refused for declaring its own `x`, for a `for i := ...` loop, a parameter, a
+  field `p.x` or a key `P{x: 1}` -- where Go reads none of them as the function's.
+  And a name the function around it declares where a package variable of the name
+  exists, `x := 1; f := func() int { return x }`, compiled and read the package's
+  x, where Go reads the local: a different program, silently. The literal is refused
+  that, as it is any other capture. A capture is what a lookup leaving the literal
+  finds now, which is what Go asks.
 - **A value computed as a statement and not used is refused, as in Go.** A
   conversion, `int(x)`, `T(v)`, `pkg.T(v)`, and a call of a builtin whose only
   effect is its result -- `len`, `cap`, `append`, `make`, `min`, `max` -- compiled

@@ -5999,10 +5999,10 @@ func (f *File) checkFuncLiterals(s *Scope, n Node) {
 		// function: package-level names are in scope inside it, locals are not, and
 		// that is the capture rule expressed as a scope rather than as a check.
 		ls := f.Scope.child()
+		ls.litOf = s
 		sig := f.signature(ls, sigNode)
 		f.declareParamList(ls, sig.Params, roleParam)
 		f.declareParamList(ls, sig.Results, roleResult)
-		f.reportCaptures(s, ls, body)
 		// A literal CALLED where it stands -- `func(n int) { ... }(5)` as a statement,
 		// behind a go or a defer, or in an expression -- is a call like any other, and
 		// its arguments were checked by nothing: a string for an int reached the C
@@ -6030,6 +6030,7 @@ func (f *File) checkFuncLiterals(s *Scope, n Node) {
 		f.labelSites, f.gotos, f.gotoLabels = map[string]labelSite{}, nil, map[string]bool{}
 		f.scanGotoLabels(body.ast)
 		f.checkBlock(ls.child(), f.flattenResults(ls, sig), body)
+		f.reportCaptures(ls, body)
 		f.checkGotos(ls)
 		f.reportUnusedLabels()
 		f.labels, f.labelDecls, f.labelUsed = savedLabels, savedDecls, savedUsed
@@ -6037,54 +6038,39 @@ func (f *File) checkFuncLiterals(s *Scope, n Node) {
 	}
 }
 
-// reportCaptures names every identifier in a literal's body that resolves to a
-// local of the surrounding function and to nothing the literal itself declares.
-// The test is by name, as the unused-variable rule's is, which over-reports only
-// where a literal declares a name the enclosing function also has -- and there the
-// two are the same name for different storage, which is worth saying anyway.
-func (f *File) reportCaptures(outer, lit *Scope, body Node) {
-	seen := map[string]bool{}
-	var walk func(n Node)
-	walk = func(n Node) {
-		for c := range it(n.ast) {
-			if c.sym != 0 {
-				walk(c)
-				continue
+// reportCaptures refuses every name the literal's body reads that is a local of a
+// function enclosing it: the lookups that left the literal's scope for one recorded
+// it (Scope.find2), so a name the literal declares itself, a field selected, `p.x`,
+// and a composite literal's key are not taken for one. It is reported where the name
+// is first written, a selector's field aside. It was a test of the body's
+// identifiers by name, which refused `for i := ...` in a literal written where an i
+// was in scope, and let a package variable of the name through: `x := 1; f :=
+// func() int { return x }` read the package's x, silently, where Go reads the local.
+func (f *File) reportCaptures(lit *Scope, body Node) {
+	for _, nm := range lit.captures {
+		pos := f.tok(body.Pos()).Position()
+		var walk func(n Node) bool
+		walk = func(n Node) bool {
+			for c := range it(n.ast) {
+				if c.sym == Selector {
+					continue
+				}
+				if c.sym != 0 {
+					if walk(c) {
+						return true
+					}
+					continue
+				}
+				if tok := f.tok(c.tok); Symbol(tok.Ch) == IDENT && tok.Src() == nm {
+					pos = tok.Position()
+					return true
+				}
 			}
-			tok := f.tok(c.tok)
-			if Symbol(tok.Ch) != IDENT {
-				continue
-			}
-			nm := tok.Src()
-			if nm == "_" || seen[nm] || lit.find(nm) != nil {
-				continue
-			}
-			d, isVar := f.findLocal(outer, nm).(*VarDeclaration)
-			if !isVar || d == nil {
-				continue
-			}
-			seen[nm] = true
-			f.err(tok.Position(), "a function literal may not capture %s from the surrounding function: there is no heap to hold it", nm)
+			return false
 		}
+		walk(body)
+		f.err(pos, "a function literal may not capture %s from the surrounding function: there is no heap to hold it", nm)
 	}
-	walk(body)
-}
-
-// findLocal resolves a name in the block scopes of the enclosing function only,
-// stopping before the file and package scopes. What it finds is what a literal
-// would have had to capture; what it does not find is either global or undefined,
-// and neither is this rule's business.
-func (f *File) findLocal(s *Scope, nm string) Declaration {
-	for ; s != nil; s = s.Parent {
-		switch s.Kind {
-		case FileScope, PackageScope, UniverseScope:
-			return nil
-		}
-		if d := s.Declarations[nm]; d != nil {
-			return d
-		}
-	}
-	return nil
 }
 
 // exprFieldRead returns the base and field of an expression that is exactly one
@@ -6929,7 +6915,10 @@ func (f *File) checkElementCall(s *Scope, id Token, suffix Node) {
 // deeper selector operates on its result, which is not modelled.
 func (f *File) checkSelectors(s *Scope, head, postfix Node) {
 	id, ok := f.assignHeadIdent(head)
-	if !ok {
+	// Without a step after the head there is nothing here to check -- and asked of
+	// `x := v`, the lookups below were of a name not declared yet, which inside a
+	// literal is a capture of the x around it (Scope.find2).
+	if !ok || !hasSteps(postfix) {
 		return
 	}
 	if f.isImportQualifier(s, id.Src()) {
@@ -6950,6 +6939,17 @@ func (f *File) checkSelectors(s *Scope, head, postfix Node) {
 	// A call statement through an element, `nums[i](x)`, which none of the walks
 	// above see.
 	f.checkElementCall(s, id, postfix)
+}
+
+// hasSteps reports whether a Postfix selects, indexes or calls anything.
+func hasSteps(postfix Node) bool {
+	for c := range it(postfix.ast) {
+		switch c.sym {
+		case Selector, Index, CallSuffix:
+			return true
+		}
+	}
+	return false
 }
 
 // callSuffixArgs returns the argument expressions of the call a suffix makes, and

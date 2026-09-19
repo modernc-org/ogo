@@ -1,0 +1,76 @@
+// A function literal's names are its own. A local it declares, a parameter or a
+// result it names, a field it selects and a key it writes are not captures, whatever
+// the function around it calls its variables. Only a name it READS of that function
+// is one -- and it is one even where a package variable of the name is there to
+// find, which is what the literal used to read in silence where Go reads the local.
+
+type P struct{ x, y int }
+
+func (p *P) bump() { p.x++ }
+
+var x = 10
+
+var arr = [3]int{1, 2, 3}
+
+func own() {
+	x := 1
+	i, v := 100, 200
+	p := P{1, 2}
+	f := func(q P) int {
+		x := q.x
+		var y int = 3
+		for i := 0; i < 2; i++ {
+			y += i
+		}
+		for i, v := range arr {
+			y += i * v
+		}
+		if x := y; x > 0 {
+			y++
+		}
+		switch x := y + 1; x {
+		case 3:
+			y--
+		}
+		p := P{x: x, y: y}
+		p.bump()
+		return p.x
+	}
+	g := func(x int) (y int) {
+		y = x
+		return
+	}
+	println(f(p), g(1), x, i, v, p.x)
+}
+
+func captures() {
+	x := 1
+	// ERROR a function literal may not capture x from the surrounding function
+	f := func() int { return x }
+	// ERROR a function literal may not capture x from the surrounding function
+	g := func() { x = 3 }
+	h := func() int {
+		// ERROR a function literal may not capture x from the surrounding function
+		y := x
+		x := 2
+		return x + y
+	}
+	println(f(), h())
+	g()
+}
+
+func nested() {
+	x := 1
+	f := func() int {
+		// ERROR a function literal may not capture x from the surrounding function
+		g := func() int { return x }
+		return g()
+	}
+	println(f(), x)
+}
+
+func main() {
+	own()
+	captures()
+	nested()
+}
