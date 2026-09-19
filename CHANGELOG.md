@@ -187,6 +187,13 @@ shipped section tells a reader on that version that they have behaviour they do 
 
 ### Fixed
 
+- **An interface value is widened from anything that has one.** A value of one
+  interface type where another is wanted -- an element, a field, a call's result,
+  not only a variable -- was refused ("an interface holds a pointer") in a
+  declaration, an assignment and a conversion, and reached the C compiler
+  unconverted as an argument, in a list, a literal and a return. And a pointer or
+  an interface handed to an interface parameter of a call whose other arguments do
+  something, or of a deferred call, was passed raw, which neither compiler took.
 - **A value sent, selected or appended is evaluated once.** `ch <- len(name())`
   called name twice on a P2-EDGE, and so did a select send and an appended
   element of the same shape: a question about the element's type rendered the

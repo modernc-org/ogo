@@ -28036,6 +28036,111 @@ func main() {
 		want: "3 1\n4 1\n3 1 1\n",
 	},
 	{
+		// A value of one interface type where another is wanted, from anything that
+		// has one -- an element, a field, a call's result, not only a variable -- in
+		// every position a value stands: a declaration, an assignment, an argument
+		// (among others that do something), a return, a conversion, a literal, a
+		// list, a variadic pack, a defer and a go statement. calls records the order.
+		//
+		// Every line of this prints what real Go prints for the same program.
+		name: "an interface value where another interface is wanted, in every position",
+		src: `type Shape interface {
+	Area() int
+	Name() string
+}
+
+type Named interface {
+	Name() string
+}
+
+type Sq struct {
+	S int
+}
+
+func (q *Sq) Area() int { return q.S * q.S }
+
+func (q *Sq) Name() string { return "sq" }
+
+type NH struct {
+	n Named
+	k int
+}
+
+var gq = Sq{2}
+
+var calls int
+
+var done chan int
+
+func get() Shape {
+	calls = calls*10 + 1
+	return &gq
+}
+
+func k() int {
+	calls = calls*10 + 2
+	return 10
+}
+
+func nameOf(n Named) string { return n.Name() }
+
+func two(n Named, x int) int { return len(n.Name()) + x }
+
+func ret() Named { return get() }
+
+func names(ns ...Named) int {
+	t := 0
+	for _, n := range ns {
+		t += len(n.Name())
+	}
+	return t
+}
+
+func show(n Named) {
+	if n == nil {
+		println("show nil")
+		return
+	}
+	println("show", n.Name())
+}
+
+func work(n Named) { done <- len(n.Name()) }
+
+// A value of Shape where a Named is wanted -- an element, a field, a call's result,
+// not only a variable -- in a declaration, an assignment, an argument, a return, a
+// literal, a list, a variadic pack, a defer and a go statement.
+func run() {
+	var s0 Shape = &gq
+	var shapes [2]Shape
+	shapes[1] = s0
+	h := NH{n: get(), k: 1}
+	var n Named = shapes[1]
+	var m Named
+	m = h.n
+	println(n.Name(), m.Name(), Named(get()).Name(), calls)
+	calls = 0
+	println(nameOf(get()), two(get(), k()), two(&gq, k()), ret().Name(), calls)
+	calls = 0
+	ns := [2]Named{shapes[1], get()}
+	var a, b Named
+	a, b = s0, get()
+	println(ns[1].Name(), a.Name(), b.Name(), names(s0, get(), shapes[1]), calls)
+	calls = 0
+	defer show(get())
+	defer show(&gq)
+	defer show(nil)
+	go work(get())
+	println(<-done, calls)
+}
+
+func main() {
+	run()
+	println("end", calls)
+}
+`,
+		want: "sq sq sq 11\nsq 12 12 sq 11221\nsq sq sq 6 111\n2 11\nshow nil\nshow sq\nshow sq\nend 11\n",
+	},
+	{
 		// A function literal called where it stands, as a statement of its own, which
 		// the grammar had no production for: a statement could not begin with "func".
 		// It is lifted as a literal is anywhere and called by name; arguments are how a

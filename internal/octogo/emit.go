@@ -364,7 +364,7 @@ func (e *emitter) emitMathArgs(cname string, callSuffix []int32) {
 	// Left to right, as emitCallArgs orders arguments that do something.
 	var names []string
 	if len(args) > 1 && slices.ContainsFunc(args, func(a Node) bool { return e.exprHasEffect(a.ast) }) {
-		names, _ = e.hoistArgs(cname, args)
+		names, _ = e.hoistArgs(cname, params, args)
 	}
 	for i, a := range args {
 		if i != 0 {
@@ -6439,10 +6439,8 @@ func (e *emitter) ifaceStoreC(target, iface string, rhs []int32) string {
 	// is a subset of the source's -- widening; narrowing is what an assertion is
 	// for. What is stored is the same data word beside a different table, which is
 	// the rebind a type switch's binding and an assertion both make.
-	if src, ok := e.exprIdent(rhs); ok {
-		if from, ok := e.varType(src); ok && e.isIfaceCType(from) && from != iface {
-			return e.ifaceWidenC(target, iface, src, from)
-		}
+	if from, ok := e.inferCType(rhs); ok && e.isIfaceCType(from) && from != iface {
+		return e.ifaceWidenFrom(target, iface, rhs, from)
 	}
 	concrete, data, temp, ok := e.ifaceOperand(rhs)
 	if !ok {
@@ -6507,6 +6505,50 @@ func (e *emitter) ifaceWidenC(target, iface, src, from string) string {
 		return ""
 	}
 	return text
+}
+
+// ifaceWidenFrom is ifaceWidenC for any expression of the other interface type -- an
+// element, a field, a call's result -- which is bound first, once, where it stands,
+// and widened from the binding, carrying what the expression reaches. Only a
+// variable used to be widened; `var n Named = shapes[1]` was refused as a value
+// written where a pointer goes, and as an argument the element went unconverted to
+// the C compiler, which refused a Shape where a Named was wanted.
+func (e *emitter) ifaceWidenFrom(target, iface string, rhs []int32, from string) string {
+	if src, ok := e.exprIdent(rhs); ok {
+		if _, isVar := e.varType(src); isVar {
+			return e.ifaceWidenC(target, iface, src, from)
+		}
+	}
+	if e.pkgScope {
+		// A package variable's initializer has no frame to bind the value in.
+		e.fail("a package variable of interface type needs a variable to widen: declare one and use it")
+		return ""
+	}
+	src := e.hoist(from, func() { e.emitExpr(rhs) })
+	e.locals[src] = from
+	if r, ok := e.frameRefOf(rhs); ok {
+		e.frameHolder[src] = r.origin
+	}
+	return e.ifaceWidenC(target, iface, src, from)
+}
+
+// ifaceWidenValue is ifaceWidenFrom where a VALUE is wanted -- an argument, a
+// return, a conversion, a literal's element: the widened interface is built in a
+// temporary declared ahead of the statement, whose name stands there.
+func (e *emitter) ifaceWidenValue(iface string, rhs []int32, from string) (string, bool) {
+	if e.pkgScope {
+		e.fail("a package variable of interface type needs a variable to widen: declare one and use it")
+		return "", false
+	}
+	name := e.newTmp()
+	e.prologue = append(e.prologue, iface+" "+name+" = {0};\n")
+	text := e.ifaceWidenFrom(name, iface, rhs, from)
+	if text == "" {
+		return "", false
+	}
+	e.prologue = append(e.prologue, text)
+	e.locals[name] = iface
+	return name, true
 }
 
 // hasIfaceMethod reports whether an interface declares a method by that name.
@@ -6716,17 +6758,8 @@ func (e *emitter) ifaceValueC(iface string, rhs []int32) (string, bool) {
 	// A value of ANOTHER interface, widened. Building one is statements rather than
 	// an expression -- the table is chosen per concrete type -- so it goes to a
 	// temporary declared before the statement, which is what stands here.
-	if src, isName := e.exprIdent(rhs); isName {
-		if from, ok := e.varType(src); ok && e.isIfaceCType(from) && from != iface {
-			name := e.newTmp()
-			e.prologue = append(e.prologue, iface+" "+name+" = {0};\n")
-			text := e.ifaceWidenC(name, iface, src, from)
-			if text == "" {
-				return "", false
-			}
-			e.prologue = append(e.prologue, text)
-			return name, true
-		}
+	if from, ok := e.inferCType(rhs); ok && e.isIfaceCType(from) && from != iface {
+		return e.ifaceWidenValue(iface, rhs, from)
 	}
 	concrete, data, _, ok := e.ifaceOperand(rhs)
 	if !ok || !e.needVTable(iface, concrete) {
@@ -6768,6 +6801,15 @@ func (e *emitter) ifaceBraceC(iface string, rhs []int32) (string, bool) {
 			text = e.hoist(iface, func() { e.emit(text) })
 		}
 		return "{(" + text + ").data, (" + text + ").vt}", true
+	}
+	// A value of ANOTHER interface type, widened into a temporary ahead of the
+	// statement and braced from it.
+	if from, ok := e.inferCType(rhs); ok && e.isIfaceCType(from) && from != iface {
+		name, ok := e.ifaceWidenValue(iface, rhs, from)
+		if !ok {
+			return "", false
+		}
+		return "{" + name + ".data, " + name + ".vt}", true
 	}
 	concrete, data, _, ok := e.ifaceOperand(rhs)
 	if !ok || !e.needVTable(iface, concrete) {
@@ -23109,6 +23151,13 @@ func (e *emitter) emitDefer(nodes []Node) {
 			d.args = append(d.args, deferArg{arr: dim, expr: a.ast})
 			continue
 		}
+		// An INTERFACE parameter's argument is captured as the interface value
+		// (see emitDeferCaptures), which is what the replay passes -- whatever the
+		// argument is: a pointer, another interface's value, nil.
+		if i < len(paramTypes) && e.isIfaceCType(paramTypes[i]) {
+			d.args = append(d.args, deferArg{ctype: paramTypes[i], expr: a.ast})
+			continue
+		}
 		ct, ok := e.inferCType(a.ast)
 		if !ok {
 			e.fail("cannot infer the type of a deferred call argument")
@@ -23217,6 +23266,34 @@ func (e *emitter) emitDeferCaptures(d *deferredCall) {
 			continue
 		}
 		name := deferArgName(d.slot, i)
+		// A capture of an INTERFACE type is the interface value, built here from a
+		// pointer or from another interface's value: the replay passes the two
+		// words its parameter takes. Captured as written, `defer show(&q)` replayed
+		// a Sq* into a Shape parameter, which neither compiler took.
+		if e.isIfaceCType(a.ctype) {
+			if e.isNilExpr(a.expr) {
+				e.ind()
+				e.emit(name + ".data = 0; " + name + ".vt = 0;\n")
+				continue
+			}
+			var text string
+			ok := false
+			_, pro := e.capturePrologue(func() { text, ok = e.ifaceValueC(a.ctype, a.expr) })
+			if !ok {
+				if e.err == nil {
+					e.fail("cannot use this value as %s in a deferred call: an interface holds a pointer here, "+
+						"so write the address of a variable", e.goTypeName(a.ctype))
+				}
+				return
+			}
+			for _, line := range pro {
+				e.ind()
+				e.emit(line)
+			}
+			e.ind()
+			e.emit(name + " = " + text + ";\n")
+			continue
+		}
 		e.ind()
 		if a.arr.bound != "" {
 			e.includes["string.h"] = true
@@ -30209,6 +30286,30 @@ func (e *emitter) emitValueList(targets []assignTarget, declare []bool, rhs []No
 		if typedTarget {
 			ct = e.constTmpCType(ct, tt, r.ast)
 		}
+		// An INTERFACE target takes the two words: a pointer, or a value of another
+		// interface type, is bound AS the interface value. Bound as itself it was
+		// stored raw -- `a, b = s0, get()` for Named targets and Shape values, or
+		// `a, b = &q, &r` -- which neither compiler took.
+		if typedTarget && e.isIfaceCType(tt) && ct != tt && !e.isNilExpr(r.ast) {
+			var text string
+			okv := false
+			_, pro := e.capturePrologue(func() { text, okv = e.ifaceValueC(tt, r.ast) })
+			if !okv {
+				if e.err == nil {
+					e.fail("cannot use this value as %s in a multiple assignment: an interface holds a pointer here, "+
+						"so write the address of a variable", e.goTypeName(tt))
+				}
+				return
+			}
+			for _, line := range pro {
+				e.ind()
+				e.emit(line)
+			}
+			types[i], tmps[i] = tt, e.newTmp()
+			e.ind()
+			e.emit(tt + " " + tmps[i] + " = " + text + ";\n")
+			continue
+		}
 		types[i] = ct
 		// A value bound ahead of the statement for its order IS its temporary.
 		if b, bound := e.boundOperands[&r.ast[0]]; bound {
@@ -31294,7 +31395,7 @@ func (e *emitter) emitCallArgs(cname string, callSuffix []int32) {
 			}
 		}
 		if effect {
-			if names, ok := e.hoistArgs(cname, args); ok {
+			if names, ok := e.hoistArgs(cname, params, args); ok {
 				e.emit(strings.Join(names, ", "))
 				return
 			}
@@ -31312,6 +31413,18 @@ func (e *emitter) emitCallArgs(cname string, callSuffix []int32) {
 		if name, ok := e.hoistArrayCallArg(arg); ok {
 			e.emit(name)
 			continue
+		}
+		// A value of ANOTHER interface type where an interface is wanted, a call's
+		// result among them, `nameOf(get())`: widened. Asked before the struct-call
+		// binding below, which took the interface value for a struct and passed it
+		// as it stood.
+		if i < len(params) && e.isIfaceCType(params[i]) && e.deferReplay < 0 {
+			if from, ok := e.inferCType(arg.ast); ok && e.isIfaceCType(from) && from != params[i] {
+				if name, ok := e.ifaceWidenValue(params[i], arg.ast, from); ok {
+					e.emit(name)
+				}
+				continue
+			}
 		}
 		// A struct-returning CALL as an argument, `take(mk(3))`. Bound first: the
 		// target drops a member narrower than a machine word when such a call is
@@ -35613,7 +35726,7 @@ func (e *emitter) emitArrayCompareTriple(l, r Node, op string, a arrDim) {
 // and returns the temporaries' names. It reports false when any argument's type
 // cannot be named in C -- an array, say -- in which case the caller emits the
 // arguments in place and the order stays whatever the C compiler chooses.
-func (e *emitter) hoistArgs(cname string, args []Node) ([]string, bool) {
+func (e *emitter) hoistArgs(cname string, params []string, args []Node) ([]string, bool) {
 	sliceParams := e.funcSliceParams[cname]
 	names := make([]string, 0, len(args))
 	// Every hoist appends a declaration to the statement's prologue, so giving up
@@ -35631,6 +35744,19 @@ func (e *emitter) hoistArgs(cname string, args []Node) ([]string, bool) {
 		if i < len(sliceParams) && sliceParams[i] != "" && e.isNilExpr(a.ast) {
 			ct := sliceParams[i]
 			names = append(names, e.hoist(ct, func() { e.emit("(" + ct + "){0}") }))
+			continue
+		}
+		// An INTERFACE parameter takes the two words, not the argument as it stands:
+		// a pointer, or a value of another interface type, becomes the interface
+		// value here, where it is bound. Bound as itself it reached the call raw --
+		// `use(&q, k())` handed a Sq* to a Shape parameter, and both compilers
+		// refused it, whenever another argument did something.
+		if i < len(params) && e.isIfaceCType(params[i]) {
+			text, ok := e.ifaceValueC(params[i], a.ast)
+			if !ok {
+				return fail()
+			}
+			names = append(names, e.hoist(params[i], func() { e.emit(text) }))
 			continue
 		}
 		ct, ok := e.inferCType(a.ast)
