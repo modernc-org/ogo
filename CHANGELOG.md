@@ -187,6 +187,13 @@ shipped section tells a reader on that version that they have behaviour they do 
 
 ### Fixed
 
+- **A method called on a parenthesized value is checked, and compiles in every
+  statement.** `(&v).Nope()` reached the C compiler, and `(&v).Set(1, 2)` for a
+  Set of one parameter compiled for the target without a word, handing it two
+  arguments where gcc refused. The method must be in the value's method set and
+  the arguments must suit it, as for a variable. And `(v).m()` as a statement was
+  "unsupported call target", while `go (&v).M(args)` and `go (*p).M(args)` were
+  refused: all are the call on v or p now.
 - **An interface is satisfied, or not, however its pointer is written.** `var _
   Shape = &T{}`, the compile-time assertion that T implements Shape, was asked by
   nothing: a blank package variable is emitted nowhere, so a T missing a method

@@ -1455,6 +1455,14 @@ func (e *emitter) emitGo(nodes []Node) {
 		}
 	}
 	base := e.soleIdent(head.ast)
+	// `go (&v).M(args)`, `go (v).M(args)` and `go (*p).M(args)` are the call on v
+	// or p (see parenRecvHead).
+	me, isME := e.headMethodExpr(head, suffix)
+	if base == "" && lit.sym != FuncLiteral && !isME {
+		if name, ok := e.parenRecvHead(head, suffix); ok {
+			base = name
+		}
+	}
 	crossed := func(what, advice string, at Node) {
 		e.fail("%v: cannot pass %s to a goroutine: its storage does not outlive the function, and the "+
 			"goroutine may; %s",
@@ -1466,7 +1474,6 @@ func (e *emitter) emitGo(nodes []Node) {
 	var site goSite
 	var callSuffix Node
 	var recvText, recvCType string
-	me, isME := e.headMethodExpr(head, suffix)
 	switch {
 	case isME:
 		// `go (*Worker).Run(&w, 7)`: a method expression started on a cog is the
@@ -23207,7 +23214,7 @@ func (e *emitter) checkDeferLeaks(d *deferredCall, head Node, suffix []Node, arg
 	base := e.soleIdent(head.ast)
 	if base == "" {
 		var isAddr bool
-		if base, isAddr = e.addrHead(head); !isAddr {
+		if base, isAddr = e.parenRecvHead(head, suffix); !isAddr {
 			return
 		}
 	}
@@ -23337,7 +23344,7 @@ func (e *emitter) deferReceiver(d *deferredCall, head Node, suffix []Node) (stri
 		// holds then rather than now. `(&v).m()` is `v.m()`, so the base is v and
 		// everything downstream is the shorthand's.
 		var isAddr bool
-		if base, isAddr = e.addrHead(head); !isAddr {
+		if base, isAddr = e.parenRecvHead(head, suffix); !isAddr {
 			return "", true
 		}
 	}
@@ -24050,8 +24057,8 @@ func (e *emitter) emitCall(head Node, postfix []Node) {
 			return
 		}
 		// `(&v).m()` as a statement, which is what `v.m()` means whichever way the
-		// receiver is declared -- the mirror of the dereference above.
-		if name, ok := e.addrHead(head); ok {
+		// receiver is declared -- the mirror of the dereference above -- and `(v).m()`.
+		if name, ok := e.parenRecvHead(head, postfix); ok {
 			e.ind()
 			e.emitCallStmtExpr(name, postfix)
 			e.emit(";\n")
@@ -28074,6 +28081,25 @@ func (e *emitter) derefHead(head Node) (string, bool) {
 		return "", false
 	}
 	return e.derefOperand(kids[1].ast)
+}
+
+// parenRecvHead answers the variable a parenthesized statement head names as a
+// receiver: `(&v).m()`, `(v).m()` and, with a method after it, `(*p).m()` are
+// `v.m()` and `p.m()`, in a call, a go and a defer statement. Only `(&v)` was
+// taken; `(v).m()` was "unsupported call target", and a go statement took none.
+func (e *emitter) parenRecvHead(head Node, suffix []Node) (string, bool) {
+	if name, ok := e.addrHead(head); ok {
+		return name, true
+	}
+	if name, ok := e.derefHead(head); ok {
+		return name, len(suffix) >= 2 && suffix[0].sym == Selector // not `(*p)(x)`
+	}
+	kids := slices.Collect(it(head.ast))
+	if len(kids) != 3 || kids[0].sym != 0 || e.f.ch(kids[0].tok) != LPAREN ||
+		kids[2].sym != 0 || e.f.ch(kids[2].tok) != RPAREN || kids[1].sym != Expression {
+		return "", false
+	}
+	return e.exprIdent(e.unparenExpr(kids[1].ast))
 }
 
 // addrHead is derefHead for a parenthesised ADDRESS, `(&v).m()` as a statement. The

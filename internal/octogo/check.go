@@ -2151,6 +2151,11 @@ func (f *File) checkCallStmt(s *Scope, head, stmt Node, kw string, kwTok Token, 
 			f.checkMethodExpr(s, me, rest)
 			return
 		}
+		if _, named := f.assignHeadIdent(head); !named {
+			if inner, ok := f.parenInner(head); ok {
+				f.checkParenChain(s, inner, steps)
+			}
+		}
 	}
 	f.checkSelectors(s, head, stmt)
 	f.checkIndexExprs(s, stmt) // the "i" in a "go a[i].m()" callee
@@ -4930,6 +4935,11 @@ func (f *File) checkAssignment(s *Scope, head, postfix Node) {
 		if me, rest, ok := f.methodExprOfHead(s, head, steps); ok {
 			f.checkMethodExpr(s, me, rest)
 			return
+		}
+		if _, named := f.assignHeadIdent(head); !named {
+			if inner, ok := f.parenInner(head); ok {
+				f.checkParenChain(s, inner, steps)
+			}
 		}
 	}
 	f.checkSelectors(s, head, postfix)
@@ -8265,11 +8275,11 @@ func (f *File) selectorDepth(s *Scope, typeName Token, name string) (count int) 
 // reportAmbiguousSelector reports a name reachable two ways at the same embedding
 // depth, which is Go's "ambiguous selector". It answers true when it reported, so
 // the caller stops rather than adding a second, wronger message.
-func (f *File) reportAmbiguousSelector(s *Scope, base Token, typeName Token, member Token) bool {
+func (f *File) reportAmbiguousSelector(s *Scope, base string, typeName Token, member Token) bool {
 	if f.selectorDepth(s, typeName, member.Src()) < 2 {
 		return false
 	}
-	f.err(member.Position(), "ambiguous selector %s.%s", base.Src(), member.Src())
+	f.err(member.Position(), "ambiguous selector %s.%s", base, member.Src())
 	return true
 }
 
@@ -9353,6 +9363,12 @@ func (f *File) checkFieldAccess(s *Scope, head, field Token, suffix Node) {
 		}
 		return
 	}
+	f.checkFieldAccessOn(s, d, head, head.Src(), field)
+}
+
+// checkFieldAccessOn is checkFieldAccess for a value of the type d describes, spelt
+// base: a variable, head, or a value with no name, head then being no token at all.
+func (f *File) checkFieldAccessOn(s *Scope, d *VarDeclaration, head Token, base string, field Token) {
 	if d.hasKind {
 		f.err(field.Position(), "type %s has no field %s", d.typeName.Src(), field.Src())
 		return
@@ -9363,7 +9379,7 @@ func (f *File) checkFieldAccess(s *Scope, head, field Token, suffix Node) {
 		f.checkCrossPkgField(d.typeQual, d.typeName, field)
 		return
 	}
-	if f.reportAmbiguousSelector(s, head, d.typeName, field) {
+	if f.reportAmbiguousSelector(s, base, d.typeName, field) {
 		return
 	}
 	// An interface has methods and no fields at all: what it carries is reached by
@@ -9376,7 +9392,11 @@ func (f *File) checkFieldAccess(s *Scope, head, field Token, suffix Node) {
 	if fields, ok := f.structFields(s, d.typeName); ok && !fields[field.Src()] {
 		// A METHOD name here is a method value, not a missing field. Whether this
 		// one can be given a meaning is reportUnsupportedFuncValue's question.
-		if _, _, _, isMV := f.methodValueParts(s, head, field); isMV {
+		if head.IsValid() {
+			if _, _, _, isMV := f.methodValueParts(s, head, field); isMV {
+				return
+			}
+		} else if _, isMethod := f.methodOwnerNamed(s, d.typeName.Src(), field.Src()); isMethod {
 			return
 		}
 		f.err(field.Position(), "type %s has no field %s", d.typeName.Src(), field.Src())
@@ -9749,6 +9769,18 @@ func (f *File) checkMethodCall(s *Scope, head, member Token, argList, suffix Nod
 		}
 		d = &VarDeclaration{typeName: nm, typeQual: namedTypeQual(tn)}
 	}
+	if !d.builderVar && !d.typeName.IsValid() {
+		if f.shadowedImportMember(d, head) {
+			f.err(member.Position(), "type %s has no method %s", kindName(d.kind), member.Src())
+		}
+		return
+	}
+	f.checkMethodCallOn(s, d, head.Src(), member, argList)
+}
+
+// checkMethodCallOn is checkMethodCall for a value of the type d describes, spelt
+// base: a variable, or a value with no name (see checkStepsOn).
+func (f *File) checkMethodCallOn(s *Scope, d *VarDeclaration, base string, member Token, argList Node) {
 	// The predeclared Builder, whose method set the compiler knows rather than
 	// reads from a declaration: it resolves to no TypeDeclaration, so the branches
 	// below cannot answer for it. Until this ran, a Builder held in a variable of
@@ -9758,12 +9790,6 @@ func (f *File) checkMethodCall(s *Scope, head, member Token, argList, suffix Nod
 	if d.builderVar || d.typeName.Src() == "Builder" {
 		if !builderMethods[member.Src()] {
 			f.err(member.Position(), "type Builder has no method %s", member.Src())
-		}
-		return
-	}
-	if !d.typeName.IsValid() {
-		if f.shadowedImportMember(d, head) {
-			f.err(member.Position(), "type %s has no method %s", kindName(d.kind), member.Src())
 		}
 		return
 	}
@@ -9783,7 +9809,7 @@ func (f *File) checkMethodCall(s *Scope, head, member Token, argList, suffix Nod
 		}
 		return
 	}
-	if f.reportAmbiguousSelector(s, head, d.typeName, member) {
+	if f.reportAmbiguousSelector(s, base, d.typeName, member) {
 		return
 	}
 	fd := td.methods[member.Src()]
@@ -12850,6 +12876,46 @@ func (f *File) checkMethodExpr(s *Scope, me methodExpr, rest []Node) {
 	}
 }
 
+// checkStepsOn checks the first step taken on a value of the type d describes -- a
+// method called, `.m(x)`, or a field read, `.f` -- as the same step on a variable
+// of the type is checked. It is how a value with no name of its own is checked: a
+// parenthesized one, `(&v).m(x)`, and a conversion's, `(*T)(p).m(x)`. Without it
+// such a call reached C unchecked, and the target compiled `(&v).Set(1, 2)` for a
+// Set of one parameter, silently, where gcc refused it.
+func (f *File) checkStepsOn(s *Scope, d *VarDeclaration, base string, steps []Node) {
+	if len(steps) == 0 || steps[0].sym != Selector {
+		return
+	}
+	member, ok := f.selectorMember(steps[0])
+	if !ok {
+		return // an assertion, `.(T)`
+	}
+	if len(steps) >= 2 && steps[1].sym == CallSuffix {
+		f.checkMethodCallOn(s, d, base, member, f.callArgList(steps[1]))
+		return
+	}
+	f.checkFieldAccessOn(s, d, Token{}, base, member)
+}
+
+// checkParenChain checks the steps taken on a parenthesized value whose type has a
+// name -- `(&v).m(x)`, `(*p).f`, `(mk()).m()` -- through checkStepsOn. A bare name
+// in the parentheses is checked as the name itself is, elsewhere.
+func (f *File) checkParenChain(s *Scope, inner Node, steps []Node) {
+	if name, qual, _, ok := f.exprNamedType(s, inner); ok {
+		f.checkStepsOn(s, &VarDeclaration{typeName: name, typeQual: qual}, "("+f.exprSource(inner)+")", steps)
+	}
+}
+
+// parenInner is the expression a parenthesized head or factor holds, `&v` in `(&v)`.
+func (f *File) parenInner(n Node) (Node, bool) {
+	kids := slices.Collect(it(n.ast))
+	if len(kids) < 3 || kids[0].sym != 0 || f.ch(kids[0].tok) != LPAREN || kids[1].sym != Expression ||
+		kids[2].sym != 0 || f.ch(kids[2].tok) != RPAREN {
+		return Node{}, false
+	}
+	return kids[1], true
+}
+
 // checkFactorNames resolves a Factor's identifier. A parenthesized expression is
 // recursed into, and the identifier -- whether bare or the base of an index,
 // selector or method-call read ("x[i]", "x.f", "x.m()") -- is resolved and
@@ -12916,6 +12982,8 @@ func (f *File) checkFactorNames(s *Scope, n Node) {
 	if !hasID && hasSuffix {
 		if tok, ok := f.parenSoleIdent(n); ok {
 			id, hasID = tok, true
+		} else if inner, ok := f.parenInner(n); ok {
+			f.checkParenChain(s, inner, slices.Collect(it(suffix.ast)))
 		}
 	}
 	if hasLit && anon.sym != 0 {

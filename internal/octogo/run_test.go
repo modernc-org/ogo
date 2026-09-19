@@ -28184,6 +28184,48 @@ func main() {
 		want: "true 1\ntrue 0 5\ntrue 2\ntrue 3\nt true\n",
 	},
 	{
+		name: "a method called on a parenthesized receiver",
+		src: `type Counter struct {
+	n int
+}
+
+func (c *Counter) Inc(k int) { c.n += k }
+
+func (c *Counter) Run(k int, done chan bool) {
+	c.n += k
+	done <- true
+}
+
+func (c Counter) Get() int { return c.n }
+
+var gc Counter
+
+var done chan bool
+
+func deferred() {
+	defer (&gc).Inc(100)
+	println("before", (&gc).Get())
+}
+
+// A parenthesized receiver is the receiver it holds, (&v).m() being v.m(): in a
+// call, a defer and a go statement, the last of which was refused.
+func main() {
+	p := &gc
+	(&gc).Inc(1)
+	(gc).Inc(2)
+	(*p).Inc(3)
+	println((&gc).Get(), (gc).Get(), (*p).Get(), (gc).n)
+	go (&gc).Run(10, done)
+	<-done
+	go (*p).Run(20, done)
+	<-done
+	deferred()
+	println(gc.n)
+}
+`,
+		want: "6 6 6 6\nbefore 36\n136\n",
+	},
+	{
 		// A function literal called where it stands, as a statement of its own, which
 		// the grammar had no production for: a statement could not begin with "func".
 		// It is lifted as a literal is anywhere and called by name; arguments are how a

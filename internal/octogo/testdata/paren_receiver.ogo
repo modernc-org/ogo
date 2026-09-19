@@ -1,0 +1,41 @@
+// A method called on a parenthesized value is checked as one called on a variable
+// is: it must be in the value's method set, and the arguments must suit it. Nothing
+// asked, and the target's compiler took `(&v).Set(1, 2)` for a Set of one
+// parameter without a word.
+
+type Sq struct {
+	S int
+}
+
+func (q *Sq) Set(n int) { q.S = n }
+
+func (q Sq) Val() int { return q.S }
+
+var gq Sq
+
+func main() {
+	p := &gq
+	(&gq).Set(1)
+	(gq).Set(2)
+	(*p).Set(3)
+	defer (&gq).Set(4)
+	println((&gq).Val(), (gq).S, (&gq).S, (*p).Val())
+	// ERROR type Sq has no method Nope
+	(&gq).Nope()
+	// ERROR too many arguments in call to Set
+	(&gq).Set(1, 2)
+	// ERROR type Sq has no method Nope
+	(gq).Nope()
+	// ERROR type Sq has no method Nope
+	(*p).Nope()
+	// ERROR type Sq has no method Nope
+	println((&gq).Nope())
+	// ERROR type Sq has no field Nope
+	println((&gq).Nope)
+	// ERROR too many arguments in call to Val
+	println((&gq).Val(3))
+	// ERROR cannot use "a" of type string as type int in argument to Set
+	defer (&gq).Set("a")
+	// ERROR too many arguments in call to Set
+	go (&gq).Set(1, 2)
+}

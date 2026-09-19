@@ -10353,6 +10353,11 @@ func main() {
 		// one, the goroutine is handed that pointer and not the address of w.
 		{"w := Wrap{&lc}\n\tgo w.Bump()", "cannot pass local w, which holds a pointer into local lc to a goroutine"},
 		{"w := Wrap{&lc}\n\tgo w.Counter.Bump()", "cannot pass local w, which holds a pointer into local lc to a goroutine"},
+		// Through parentheses: the receiver is the storage the operand names.
+		{"(&lc).Save()", "cannot call Save on lc"},
+		{"(lc).Save()", "cannot call Save on lc"},
+		{"defer (lc).Save()", "cannot call Save on lc"},
+		{"go (&lc).Bump()", "cannot pass the address of local variable lc to a goroutine"},
 		// Controls: package storage, and a method that keeps nothing.
 		{"gc.Save()", ""},
 		{"p := &gc\n\tp.Save()", ""},
@@ -10376,6 +10381,9 @@ func main() {
 		{"w := Wrap{&gc}\n\tg = w.Self()", ""},
 		{"w := Wrap{&gc}\n\tgo w.Bump()", ""},
 		{"w := Wrap{&gc}\n\tgo w.Counter.Bump()", ""},
+		{"(&gc).Save()", ""},
+		{"(gc).Save()", ""},
+		{"go (&gc).Bump()", ""},
 	} {
 		t.Run(test.stmt, func(t *testing.T) {
 			src := head + "\t" + test.stmt + "\n" + tail
