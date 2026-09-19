@@ -10289,6 +10289,11 @@ func (c *Counter) Self() *Counter { return c }
 
 func (c *Counter) Bump() { c.n++ }
 
+func (c *Counter) Copied() {
+	w := c
+	g = w
+}
+
 func byParam(p *Counter) { p.Save() }
 
 type Wrap struct {
@@ -10353,6 +10358,8 @@ func main() {
 		// one, the goroutine is handed that pointer and not the address of w.
 		{"w := Wrap{&lc}\n\tgo w.Bump()", "cannot pass local w, which holds a pointer into local lc to a goroutine"},
 		{"w := Wrap{&lc}\n\tgo w.Counter.Bump()", "cannot pass local w, which holds a pointer into local lc to a goroutine"},
+		// Kept through a local copy of the receiver.
+		{"lc.Copied()", "cannot call Copied on lc: its receiver is stored where it outlives every frame"},
 		// Through parentheses: the receiver is the storage the operand names.
 		{"(&lc).Save()", "cannot call Save on lc"},
 		{"(lc).Save()", "cannot call Save on lc"},
@@ -10387,6 +10394,7 @@ func main() {
 		{"w := Wrap{&gc}\n\tg = w.Self()", ""},
 		{"w := Wrap{&gc}\n\tgo w.Bump()", ""},
 		{"w := Wrap{&gc}\n\tgo w.Counter.Bump()", ""},
+		{"gc.Copied()", ""},
 		{"(&gc).Save()", ""},
 		{"(gc).Save()", ""},
 		{"go (&gc).Bump()", ""},
@@ -10721,6 +10729,111 @@ func main() {
 				t.Errorf("got %v, want %q", err, test.want)
 			}
 		})
+	}
+}
+
+// TestEmitCSummaryThroughLocals: a callee's summary follows a parameter through the
+// callee's own locals and through every shape a value is written in. It followed
+// the parameter where it was NAMED alone, so a local copy laundered it -- `w := v;
+// gs = w` -- and so did a reslice, a struct literal, a list assignment, an append, a
+// field of a local struct, a for clause and a send of any of them: each kept a view
+// of the caller's frame in a package variable, in silence, until 2026-09-19. Every
+// callee is called with a slice of a local array, which must be refused, and with a
+// package one, which must not; a callee keeping only an int read out of the slice
+// keeps nothing of the frame.
+func TestEmitCSummaryThroughLocals(t *testing.T) {
+	const head = `type B struct {
+	xs []int
+}
+
+type C struct {
+	d []int
+}
+
+var gs []int
+
+var gn int
+
+var gb B
+
+var gbs [1]B
+
+var gc C
+
+var ch chan []int
+
+var back [4]int
+
+`
+	for _, test := range []struct {
+		callee string
+		kept   bool // false: the callee keeps nothing of the frame
+	}{
+		{"func keep(v []int) { gs = v }", true},
+		{"func keep(v []int) { w := v; gs = w }", true},
+		{"func keep(v []int) { var w []int; w = v; gs = w }", true},
+		{"func keep(v []int) { w := v[1:]; gs = w }", true},
+		{"func keep(v []int) { w := v; x := w; gs = x }", true},
+		{"func keep(v []int) { b := B{v}; gb = b }", true},
+		{"func keep(v []int) { var b B; b.xs = v; gb = b }", true},
+		{"func keep(v []int) { for i := 0; i < 1; i++ { w := v; gs = w } }", true},
+		{"func keep(v []int) { for w := v; len(w) > 0; w = w[1:] { gs = w } }", true},
+		{"func keep(v []int) { gs = v[1:] }", true},
+		{"func keep(v []int) { gs, gn = v, 1 }", true},
+		{"func keep(v []int) { w, n := v, 1; gs = w; gn = n }", true},
+		{"func keep(v []int) { gs = append(v, 1) }", true},
+		{"func keep(v []int) { gb = B{v} }", true},
+		{"func keep(v []int) { gbs[0] = B{xs: v} }", true},
+		{"func keep(v []int) { ch <- v[1:] }", true},
+		{"func keep(v []int) { w := v; ch <- w }", true},
+		{"func keep(v []int) { w := v; go work(w) }", true},
+		{"func keep(v []int) { w := v; gc.set(w) }", true},
+		{"func keep(v []int) { w := &gc; w.d = v }", true},
+		{"func keep(v []int) { gs = pass(v) }", true},
+		{"func keep(v []int) { w := v; gs = pass(w) }", true},
+		// Only an int leaves the callee.
+		{"func keep(v []int) { n := len(v); gn = n }", false},
+		{"func keep(v []int) { x := v[0]; gn = x }", false},
+		{"func keep(v []int) { w := v; gn = w[0] }", false},
+		{"func keep(v []int) { b := B{xs: v}; gn = len(b.xs) }", false},
+		{"func keep(v []int) { w := v; w[0] = 1 }", false},
+	} {
+		for _, arg := range []string{"a[:]", "back[:]"} {
+			src := head + test.callee + `
+
+func work(v []int) { ch <- v }
+
+func pass(v []int) []int { return v }
+
+func (c *C) set(v []int) { c.d = v }
+
+func run() {
+	var a [4]int
+	_ = a
+	keep(` + arg + `)
+}
+
+func main() {
+	run()
+}
+`
+			t.Run(test.callee+"/"+arg, func(t *testing.T) {
+				fsys := fstest.MapFS{"main.ogo": &fstest.MapFile{Data: []byte(src)}}
+				pkg, err := Build(-1, []string{"main.ogo"}, fsys)
+				if err == nil {
+					err = EmitC(pkg, io.Discard, Checked())
+				}
+				refuse := test.kept && arg == "a[:]"
+				switch {
+				case refuse && err == nil:
+					t.Errorf("a reference to this frame left it:\n%s", src)
+				case refuse && !strings.Contains(err.Error(), "cannot pass a slice backed by local a to keep"):
+					t.Errorf("refused, but not for its lifetime: %v", err)
+				case !refuse && err != nil:
+					t.Errorf("refused: %v\n%s", err, src)
+				}
+			})
+		}
 	}
 }
 

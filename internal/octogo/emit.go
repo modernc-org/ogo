@@ -5524,7 +5524,7 @@ type emitter struct {
 	recvLeaks          map[string]leak         // a pointer method's RECEIVER kept where it outlives the call: leakGlobal, leakCog (see recvEdge)
 	recvEdges          []recvEdge              // how a receiver's keeping travels to callers (see recvEdge)
 	retRecv            map[string]bool         // a pointer method returns its receiver, so its result is what it was called on
-	crossInto          map[string][]uint32     // per function, which PARAMETERS each parameter is stored through, as a bitmask of their indices. leakRecv answers this for a method's receiver; a plain function has no receiver and needed the general form (see storedInPointerParam)
+	crossInto          map[string][]uint32     // per function, which PARAMETERS each parameter is stored through, as a bitmask of their indices. leakRecv answers this for a method's receiver; a plain function has no receiver and needed the general form (see pointerParamsThrough)
 	ifaceSummaries     map[string]ifaceSummary // "<iface>.<method>" -> the union of the summaries of every implementation, since which one a call reaches is the vtable's answer (see ifaceCallSummary)
 	retParams          map[string][]bool       // per function, which parameters a RESULT derives from, so a reference handed back out is followed to the storage it came from (see frameRefOf)
 	funcValueOf        map[string]string       // variable holding a function -> that function's C name, when it is known, so a call through the variable is judged by the callee's summaries (see bindFuncValue)
@@ -9255,28 +9255,73 @@ func (e *emitter) collectFuncCross(fi funcInfo) {
 	// A POINTER receiver is the address of whatever the method is called on; what
 	// the method keeps of it is summarised as a parameter's is (recvLeaks).
 	recvPtr := recvName != "" && e.isPointer(fi.recvCType)
-	isRecv := func(root string) bool { return recvPtr && root == recvName }
-	// A type switch BINDS a new name to the value it switched on, so a store of
-	// that name is a store of whatever the operand was. Without following it, a
-	// parameter reached a package variable through `switch x := p.(type)` with
-	// no summary recorded -- and interface widening then made that the way to
-	// launder a reference into a global.
+	// A local holds what it was given (summaryHolds): a store of the local is a
+	// store of every parameter it may hold. And a type switch BINDS a new name to
+	// the value it switched on, so a store of that name is a store of whatever the
+	// operand was. Without following it, a parameter reached a package variable
+	// through `switch x := p.(type)` with no summary recorded -- and interface
+	// widening then made that the way to launder a reference into a global.
 	//
 	// Collected for the whole body rather than per clause: the name is scoped to
 	// its switch anyway, and merging two switches' bindings can only refuse more.
-	alias := e.typeSwitchAliases(body)
+	holds := e.summaryHolds(body)
+	for name, operand := range e.typeSwitchAliases(body) {
+		holds[name] = append(holds[name], operand)
+	}
+	// reach calls fn for every name a value of name may reach through the holds,
+	// name itself included.
+	reach := func(name string, fn func(string)) {
+		seen := map[string]bool{}
+		var walk func(n string)
+		walk = func(n string) {
+			if n == "" || seen[n] || len(seen) > 256 {
+				return
+			}
+			seen[n] = true
+			fn(n)
+			for _, h := range holds[n] {
+				walk(h)
+			}
+		}
+		walk(name)
+	}
+	// ats is every parameter a name may hold, and at the first of them.
+	ats := func(name string) (out []int) {
+		reach(name, func(n string) {
+			if i := slices.Index(params, n); i >= 0 && !slices.Contains(out, i) {
+				out = append(out, i)
+			}
+		})
+		return out
+	}
 	at := func(name string) int {
-		for range 16 { // bounded; an alias chain cannot outlive the body
-			if i := slices.Index(params, name); i >= 0 {
-				return i
-			}
-			next, ok := alias[name]
-			if !ok {
-				return -1
-			}
-			name = next
+		if is := ats(name); len(is) != 0 {
+			return is[0]
 		}
 		return -1
+	}
+	isRecv := func(root string) (found bool) {
+		if recvPtr {
+			reach(root, func(n string) { found = found || n == recvName })
+		}
+		return found
+	}
+	holdsPackageVar := func(root string) (found bool) {
+		reach(root, func(n string) { found = found || e.isPackageVar(n) })
+		return found
+	}
+	// valueParams is every parameter a value may reach, and whether it may reach
+	// the receiver.
+	valueParams := func(v []int32) (out []int, recv bool) {
+		for _, r := range e.summaryRoots(v) {
+			for _, i := range ats(r) {
+				if !slices.Contains(out, i) {
+					out = append(out, i)
+				}
+			}
+			recv = recv || isRecv(r)
+		}
+		return out, recv
 	}
 	// owners says what this call passed at each position, in the terms the
 	// CALLER's summary is written in: its own parameters by index, or a package
@@ -9316,7 +9361,8 @@ func (e *emitter) collectFuncCross(fi funcInfo) {
 			return
 		}
 		for j, a := range args {
-			if i := at(e.crossRoot(a.ast)); i >= 0 {
+			is, _ := valueParams(a.ast)
+			for _, i := range is {
 				e.derivedEdges = append(e.derivedEdges, derivedEdge{caller: cname, from: i, callee: callee, to: j, sink: sink, slot: slot})
 			}
 		}
@@ -9325,31 +9371,40 @@ func (e *emitter) collectFuncCross(fi funcInfo) {
 		switch {
 		case len(nodes) != 0 && nodes[0].sym == 0 && e.f.ch(nodes[0].tok) == GO:
 			for _, a := range e.goStmtArgs(nodes) {
-				if i := at(e.crossRoot(a.ast)); i >= 0 {
+				is, recv := valueParams(a.ast)
+				for _, i := range is {
 					e.crossParams[cname][i] |= leakCog
 				}
-				if isRecv(e.crossRoot(a.ast)) {
+				if recv {
 					e.recvLeaks[cname] |= leakCog
 				}
 				derived(a.ast, leakCog, -1)
 			}
 		default:
 			if v, ok := e.sendValue(nodes); ok {
-				if i := at(e.crossRoot(v)); i >= 0 {
+				is, recv := valueParams(v)
+				for _, i := range is {
 					e.crossParams[cname][i] |= leakCog
 				}
-				if isRecv(e.crossRoot(v)) {
+				if recv {
 					e.recvLeaks[cname] |= leakCog
 				}
 				derived(v, leakCog, -1)
 			}
-			// A store into a package variable, `g = p` or `g.f = p`: whatever
-			// the caller chose the storage for, it now outlives every frame.
-			for _, v := range e.storedInPackageVar(nodes) {
-				if i := at(e.leakRoot(v)); i >= 0 {
+			// A store into a package variable, `g = p` or `g.f = p`, alone or in
+			// a list, or through a local holding one's storage, `w := &g; w.f =
+			// p`: whatever the caller chose the storage for, it now outlives every
+			// frame.
+			stores := append(e.storedInPackageVar(nodes), e.storedInPackageVars(nodes)...)
+			if base, _, _, _ := e.assignThrough(nodes); base != "" && !e.isPackageVar(base) {
+				stores = append(stores, e.storedThrough(nodes, holdsPackageVar)...)
+			}
+			for _, v := range stores {
+				is, recv := valueParams(v)
+				for _, i := range is {
 					e.crossParams[cname][i] |= leakGlobal
 				}
-				if isRecv(e.leakRoot(v)) {
+				if recv {
 					e.recvLeaks[cname] |= leakGlobal
 				}
 				derived(v, leakGlobal, -1)
@@ -9359,8 +9414,9 @@ func (e *emitter) collectFuncCross(fi funcInfo) {
 			// receiver belongs to whoever called, so the flag travels to the
 			// call site, which knows whether it picked storage that outlives
 			// its own frame.
-			for _, v := range e.storedInReceiver(recvName, nodes) {
-				if i := at(e.leakRoot(v)); i >= 0 {
+			for _, v := range e.storedThrough(nodes, isRecv) {
+				is, _ := valueParams(v)
+				for _, i := range is {
 					e.crossParams[cname][i] |= leakRecv
 				}
 				derived(v, leakRecv, -1)
@@ -9370,9 +9426,10 @@ func (e *emitter) collectFuncCross(fi funcInfo) {
 			// parameter it reaches is what has to be carried: the call site
 			// decides by the lifetime of the argument at that position, and
 			// `fill(&g, a[:])` and `fill(&local, a[:])` differ in nothing else.
-			if vs, slot := e.storedInPointerParam(fi, nodes); slot >= 0 {
-				for _, v := range vs {
-					if i := at(e.leakRoot(v)); i >= 0 {
+			for _, slot := range e.pointerParamsThrough(fi, nodes, ats) {
+				for _, v := range e.storedThrough(nodes, func(string) bool { return true }) {
+					is, _ := valueParams(v)
+					for _, i := range is {
 						e.crossInto[cname][i] |= 1 << slot
 					}
 					derived(v, 0, slot)
@@ -9383,10 +9440,11 @@ func (e *emitter) collectFuncCross(fi funcInfo) {
 		// from is what lets the caller follow it to the storage it chose.
 		if len(nodes) != 0 && nodes[0].sym == 0 && e.f.ch(nodes[0].tok) == RETURN {
 			for _, v := range e.returnedExprs(nodes) {
-				if i := at(e.leakRoot(v)); i >= 0 {
+				is, recv := valueParams(v)
+				for _, i := range is {
 					e.retParams[cname][i] = true
 				}
-				if isRecv(e.leakRoot(v)) {
+				if recv {
 					e.retRecv[cname] = true
 				}
 			}
@@ -9394,7 +9452,8 @@ func (e *emitter) collectFuncCross(fi funcInfo) {
 			// function hands back of the parameter it passed there.
 			for _, c := range e.stmtCalls(nodes) {
 				for j, a := range c.args {
-					if i := at(e.leakRoot(a.ast)); i >= 0 {
+					is, _ := valueParams(a.ast)
+					for _, i := range is {
 						e.retEdges = append(e.retEdges, crossEdge{caller: cname, from: i, callee: c.callee, to: j})
 					}
 				}
@@ -9406,11 +9465,12 @@ func (e *emitter) collectFuncCross(fi funcInfo) {
 		for _, c := range e.stmtCalls(nodes) {
 			owner := owners(c.args)
 			for j, a := range c.args {
-				if i := at(e.crossRoot(a.ast)); i >= 0 {
+				is, recv := valueParams(a.ast)
+				for _, i := range is {
 					e.crossEdges = append(e.crossEdges,
 						crossEdge{caller: cname, from: i, callee: c.callee, to: j, recvAt: argLocal, argOwner: owner})
 				}
-				if isRecv(e.crossRoot(a.ast)) {
+				if recv {
 					e.recvEdges = append(e.recvEdges, recvEdge{caller: cname, from: -1, callee: c.callee, to: j})
 				}
 			}
@@ -9421,11 +9481,12 @@ func (e *emitter) collectFuncCross(fi funcInfo) {
 		for _, c := range e.stmtMethodCalls(nodes, fi) {
 			owner := owners(c.args)
 			for j, a := range c.args {
-				if i := at(e.crossRoot(a.ast)); i >= 0 {
+				is, recv := valueParams(a.ast)
+				for _, i := range is {
 					e.crossEdges = append(e.crossEdges, crossEdge{caller: cname, from: i,
 						callee: c.callee, to: j, recv: c.recv, recvAt: c.recvAt, argOwner: owner})
 				}
-				if isRecv(e.crossRoot(a.ast)) {
+				if recv {
 					e.recvEdges = append(e.recvEdges, recvEdge{caller: cname, from: -1, callee: c.callee, to: j})
 				}
 			}
@@ -9831,44 +9892,42 @@ func (e *emitter) crossRoot(ast []int32) string {
 	return name
 }
 
-// storedInReceiver returns the values a statement stores into the METHOD's receiver,
-// `t.d = v` -- storedInPackageVar's counterpart for the storage a method is handed
-// rather than the storage it can see. A bare `t = v` is not one: that rebinds the
-// receiver variable itself, which dies with the call.
-func (e *emitter) storedInReceiver(recvName string, nodes []Node) [][]int32 {
+// storedThrough returns the values a statement stores THROUGH a name that through
+// accepts -- a selector, an index or a written-out dereference standing between
+// the name and the operator, `t.d = v`, `*p = v` -- which is a store into the
+// storage the name refers to rather than a rebinding of the name. For a method's
+// pointer receiver that is the store every setter makes, and how long the storage
+// lives is the call site's to know: a bare `t = v` rebinds the receiver variable,
+// which dies with the call, and is not one.
+func (e *emitter) storedThrough(nodes []Node, through func(string) bool) [][]int32 {
 	base, values, suffixed, deref := e.assignThrough(nodes)
-	// A selector, an index or a written-out dereference before the operator: a
-	// store THROUGH the receiver, not to it.
-	if recvName == "" || base != recvName || !(suffixed || deref) {
+	if base == "" || !(suffixed || deref) || !through(base) {
 		return nil
 	}
 	return values
 }
 
-// storedInPointerParam returns the values a statement stores through one of the
-// function's `*T` PARAMETERS, `h.d = v`, and which parameter that is.
-//
-// It is storedInReceiver's general form, and the one the summary was missing. A
-// receiver is only the parameter a method call writes to the left of the dot; the
-// same store through the same struct, in a plain function taking it as an argument,
-// escapes exactly as far -- and was accepted, because leakRecv had no way to say
-// "into parameter 2" and nothing else did either.
+// pointerParamsThrough names the pointer parameters a statement stores through,
+// `h.d = v` -- the setter every struct with a buffer has, written as a plain
+// function rather than a method -- by the parameter's own name or a local holding
+// it (ats), since `w := h; w.d = v` stores into the same caller's struct. WHICH
+// parameter it reaches is what has to be carried: the call site decides by the
+// lifetime of the argument at that position.
 //
 //	func fill(h *H, d []int) { h.d = d }   // d is stored through parameter 0
 //
-// Whether that outlives the caller's frame is the CALL SITE's question, as it is
-// for a receiver: `fill(&g, a[:])` leaks and `fill(&local, a[:])` does not.
-func (e *emitter) storedInPointerParam(fi funcInfo, nodes []Node) ([][]int32, int) {
-	base, values, suffixed, deref := e.assignThrough(nodes)
+// `fill(&g, a[:])` leaks and `fill(&local, a[:])` does not.
+func (e *emitter) pointerParamsThrough(fi funcInfo, nodes []Node, ats func(string) []int) (slots []int) {
+	base, _, suffixed, deref := e.assignThrough(nodes)
 	if base == "" || !(suffixed || deref) {
-		return nil, -1
+		return nil
 	}
-	for i, nm := range fi.params {
-		if nm == base && i < len(fi.ptrParam) && fi.ptrParam[i] && i < intoBits {
-			return values, i
+	for _, i := range ats(base) {
+		if i < len(fi.ptrParam) && fi.ptrParam[i] && i < intoBits {
+			slots = append(slots, i)
 		}
 	}
-	return nil, -1
+	return slots
 }
 
 // assignThrough reads a statement of the form `base<suffix> = v...` and answers
@@ -9913,19 +9972,240 @@ func (e *emitter) storedInPackageVar(nodes []Node) [][]int32 {
 	return values
 }
 
-// leakRoot names the variable a stored value came from: the expression itself when
-// it is a bare name, and otherwise whatever crossRoot finds behind an address-of or
-// a slice.
-//
-// The bare name is what the cog seeds do not need and this one does: `go f(p)`
-// passes a slice or an address, while `g = p` stores a pointer parameter as it
-// stands. Naming a parameter that holds no reference at all costs nothing -- the
-// call site only refuses an argument that IS a frame reference.
-func (e *emitter) leakRoot(ast []int32) string {
+// summaryRoots names every variable whose storage a value may reach, by SHAPE: the
+// summaries are collected before any body has declared a local, so there is no type
+// to ask. A name, parenthesized or not; the root of an address, `&x.f`; the base of
+// a slice step, `v[1:]`; each value of a composite literal, `B{v}`, `[]T{v}`,
+// `&B{xs: v}`, an elided element's too; the operand and the values of an append; the
+// operand of a conversion, `L(v)`. The summaries asked of the first three alone, so
+// `gs = v[1:]` -- which it could not resolve before the parameter was declared --
+// `gb = B{v}` and `gs = append(v, 1)` stored a parameter in a package variable with
+// nothing recorded. A field or an element READ is not among them: it carries the
+// CONTENTS of its root, which a shape cannot tell from an int.
+func (e *emitter) summaryRoots(ast []int32) (roots []string) {
+	ast = e.unparenExpr(ast)
+	if name, ok := e.exprIdent(ast); ok {
+		return []string{name}
+	}
+	if name, ok := e.addrOfRoot(ast); ok {
+		return []string{name}
+	}
+	if lit, isLit := e.summaryLit(ast); isLit {
+		return e.summaryLitRoots(lit)
+	}
+	if args, _, isAppend := e.appendCallArgs(ast); isAppend {
+		for _, a := range args {
+			roots = append(roots, e.summaryRoots(a.ast)...)
+		}
+		return roots
+	}
+	if recv, suffix, ok := e.directCall(ast); ok && len(suffix) != 0 && suffix[len(suffix)-1].sym == CallSuffix &&
+		(e.convToSliceType(recv, suffix) || e.convToIfaceType(recv, suffix)) {
+		if args := e.callArgExprs(suffix[len(suffix)-1].ast); len(args) == 1 {
+			return e.summaryRoots(args[0].ast)
+		}
+	}
+	if fac, ok := e.soleFactorNode(ast); ok {
+		if base, steps, isChain := e.factorAccessChain(e.unparenKids(slices.Collect(it(fac.ast)))); isChain && e.endsInSliceStep(steps) {
+			return []string{base}
+		}
+	}
+	return nil
+}
+
+// summaryLit finds the composite literal a value is, `T{...}`, `[]T{...}`,
+// `struct{...}{...}`, or whose address it is, `&T{...}`, by shape alone: asking
+// the emitter's own readers minted the literal's type early, when one was written
+// out, which renumbered every anonymous struct of the program.
+func (e *emitter) summaryLit(ast []int32) (Node, bool) {
+	fac, ok := e.soleFactorNode(ast)
+	if !ok {
+		if f, isAddr := e.addrOperandFactor(ast); isAddr {
+			fac, ok = f, true
+		}
+	}
+	if !ok || fac.sym != Factor {
+		return Node{}, false
+	}
+	kids := slices.Collect(it(fac.ast))
+	if len(kids) == 0 || kids[len(kids)-1].sym != CompositeLit {
+		return Node{}, false
+	}
+	return kids[len(kids)-1], true
+}
+
+// summaryLitRoots is summaryRoots over a composite literal's values.
+func (e *emitter) summaryLitRoots(lit Node) (roots []string) {
+	for _, el := range compositeLitElements(lit) {
+		if el.value.sym == CompositeLit {
+			roots = append(roots, e.summaryLitRoots(el.value)...)
+			continue
+		}
+		roots = append(roots, e.summaryRoots(el.value.ast)...)
+	}
+	return roots
+}
+
+// summaryHolds maps each name a body binds to the names whose storage its value may
+// reach (summaryRoots): `w := v`, `var w = B{v}`, `w = v[1:]`, a list of them, a
+// for clause's, and a store INTO a name's own storage, `b.xs = v`, `arr[0] = v`.
+// It is flow-insensitive -- a name holds what any statement gives it -- which can only
+// refuse more. The summaries followed a parameter only where it was named, so a
+// local copy laundered it: `w := v; gs = w` kept the caller's slice in a package
+// variable with nothing recorded.
+func (e *emitter) summaryHolds(body []int32) map[string][]string {
+	holds := map[string][]string{}
+	add := func(targets []string, values [][]int32) {
+		switch {
+		case len(targets) == len(values):
+			for i, t := range targets {
+				if t != "" && t != "_" {
+					holds[t] = append(holds[t], e.summaryRoots(values[i])...)
+				}
+			}
+		case len(values) == 1:
+			// Several targets from one value -- a multi-result call -- take its roots
+			// every one of them.
+			roots := e.summaryRoots(values[0])
+			for _, t := range targets {
+				if t != "" && t != "_" {
+					holds[t] = append(holds[t], roots...)
+				}
+			}
+		}
+	}
+	e.eachStmt(body, func(nodes []Node) {
+		add(e.summaryBinding(nodes))
+	})
+	var walk func(ast []int32)
+	walk = func(ast []int32) {
+		for n := range it(ast) {
+			if n.sym == 0 {
+				continue
+			}
+			if n.sym == ForHeader {
+				if h, ok := e.parseForHeader(n); ok && !h.isRange {
+					// The one-name forms fill the singles only; emitFor lists them.
+					if len(h.initLHSs) == 0 && h.initLHS != nil && h.initRHS != nil {
+						h.initLHSs, h.initRHSs = [][]int32{h.initLHS}, [][]int32{h.initRHS}
+					}
+					if len(h.postLHSs) == 0 && h.postLHS != nil && h.postRHS != nil {
+						h.postLHSs, h.postRHSs = [][]int32{h.postLHS}, [][]int32{h.postRHS}
+					}
+					add(e.forClauseBinding(h.initLHSs, h.initRHSs))
+					add(e.forClauseBinding(h.postLHSs, h.postRHSs))
+				}
+			}
+			walk(n.ast)
+		}
+	}
+	walk(body)
+	return holds
+}
+
+// forClauseBinding is summaryBinding for a for clause's targets and values.
+func (e *emitter) forClauseBinding(lhss, rhss [][]int32) ([]string, [][]int32) {
+	var targets []string
+	for _, l := range lhss {
+		targets = append(targets, e.bindingRoot(l))
+	}
+	return targets, rhss
+}
+
+// bindingRoot is the name a target is rooted at, `b` of `b.xs[0]`, by shape.
+func (e *emitter) bindingRoot(ast []int32) string {
 	if name, ok := e.exprIdent(ast); ok {
 		return name
 	}
-	return e.crossRoot(ast)
+	if fac, ok := e.soleFactorNode(ast); ok {
+		if base, _, isChain := e.factorAccessChain(e.unparenKids(slices.Collect(it(fac.ast)))); isChain {
+			return base
+		}
+	}
+	return ""
+}
+
+// summaryBinding reads a statement that binds values to names -- `w := v`, `a, b =
+// x, y`, `b.xs = v`, `var w, u = x, y` -- answering the names the targets are rooted
+// at and the values, by shape.
+func (e *emitter) summaryBinding(nodes []Node) (targets []string, values [][]int32) {
+	if len(nodes) == 1 && nodes[0].sym == VarDecl {
+		for spec := range it(nodes[0].ast) {
+			if spec.sym != VarSpec {
+				continue
+			}
+			var names []string
+			var vals [][]int32
+			for c := range it(spec.ast) {
+				switch c.sym {
+				case IdentifierList:
+					for id := range it(c.ast) {
+						if id.sym == 0 && e.f.ch(id.tok) == IDENT {
+							names = append(names, e.src(id.tok))
+						}
+					}
+				case ExpressionList:
+					for x := range it(c.ast) {
+						if x.sym == Expression {
+							vals = append(vals, x.ast)
+						}
+					}
+				}
+			}
+			targets, values = append(targets, names...), append(values, vals...)
+		}
+		return targets, values
+	}
+	if len(nodes) != 2 || nodes[0].sym != AssignHead || nodes[1].sym != Postfix {
+		return nil, nil
+	}
+	head := e.soleIdent(nodes[0].ast)
+	if head == "" {
+		return nil, nil
+	}
+	postfix := slices.Collect(it(nodes[1].ast))
+	if len(postfix) == 0 || postfix[len(postfix)-1].sym != PostfixOp {
+		return nil, nil
+	}
+	targets = []string{head}
+	assigns := false
+	for c := range it(postfix[len(postfix)-1].ast) {
+		switch {
+		case c.sym == LhsItem:
+			t, _ := e.lhsItemTarget(c.ast)
+			targets = append(targets, t.name)
+		case c.sym == 0 && (e.f.ch(c.tok) == ASSIGN || e.f.ch(c.tok) == DEFINE):
+			assigns = true
+		case c.sym == ExpressionList && assigns:
+			for x := range it(c.ast) {
+				if x.sym == Expression {
+					values = append(values, x.ast)
+				}
+			}
+		}
+	}
+	if !assigns {
+		return nil, nil
+	}
+	return targets, values
+}
+
+// storedInPackageVars returns the values a statement stores into package variables
+// by a LIST assignment, `gs, n = v, 1`, each paired with its target. The single form
+// is storedInPackageVar's, which read no list: a parameter stored in a package
+// variable beside another value was recorded as kept nowhere.
+func (e *emitter) storedInPackageVars(nodes []Node) [][]int32 {
+	targets, values := e.summaryBinding(nodes)
+	if len(targets) < 2 || len(targets) != len(values) {
+		return nil
+	}
+	var out [][]int32
+	for i, t := range targets {
+		if t != "" && e.isPackageVar(t) {
+			out = append(out, values[i])
+		}
+	}
+	return out
 }
 
 // typeSwitchAliases maps each name a type switch binds to the operand it switched

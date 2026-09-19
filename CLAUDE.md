@@ -608,6 +608,17 @@ refused for the backing where only package variables were pointed at.
 bind a slice is a new row there. Writing a reference INTO an element of storage the
 frame does not own is the same rule from the other side (`checkStoreThroughSlice`,
 `checkCopyElems`, `checkAppendBacking`; rows in `TestEmitCSliceStoreEscape`).
+The SUMMARIES follow a parameter through the callee's own locals and through every
+shape a value is written in (`summaryRoots`, `summaryHolds`, 2026-09-19): they read
+the parameter where it was named, so `w := v; gs = w`, `gs = v[1:]`, `gb = B{v}` and
+a list, an append, a for clause or a send of any of them kept a view of the caller's
+frame in silence. The analysis is by SHAPE -- no local has a type when summaries are
+collected -- so a field or an element READ is left out: it carries the CONTENTS of
+its root, and `gn = v[0]` would otherwise refuse every caller passing a local slice.
+What a callee does with those contents -- `gp = v[0]` for a `v []*int`, `gs = p.xs`
+through a pointer -- is still unsummarised: a SILENT gap, the next one to close. A
+new way for a callee to hold or write a value is a row in
+`TestEmitCSummaryThroughLocals`.
 
 ## Notes
 

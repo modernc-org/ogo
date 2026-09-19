@@ -699,6 +699,14 @@ shipped section tells a reader on that version that they have behaviour they do 
 Each of these is the compiler refusing a program it used to accept, and each such
 program handed out a reference to storage that was gone by the time it was read.
 
+- **A callee is followed through its own locals.** What a function does with a
+  parameter was summarised where the parameter was NAMED, so any step between the
+  two laundered it: a local copy, `w := v; gs = w`, a reslice, `gs = v[1:]`, a
+  struct literal, `gb = B{v}`, a list assignment, `gs, n = v, 1`, an append, a
+  field of a local struct later stored, a for clause, a send of any of them, and a
+  method keeping its receiver through a copy -- each kept a view of the caller's
+  frame in a package variable. The call handing such a function a local's storage
+  is refused now, as it was for the named form.
 - **A slice's elements are given what they reach, and keep it.** `s :=
   []*int{&x}` then `g = s[0]` stored x's address in a package variable, where the
   array `[1]*int{&x}` read out the same way was refused: a slice was never asked
