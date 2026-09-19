@@ -1,0 +1,18 @@
+// COMPILE
+
+// A function literal's signature may name another package's types. The literal is
+// checked in a scope hanging off the file's, where the import itself lives, and the
+// import was taken there for a name shadowing it: "p (package name) is not a type".
+
+import "p"
+
+func main() {
+	get := func(t p.T) int { return t.F }
+	_ = get(p.T{F: 1})
+	var mk func() p.T = func() p.T { return p.T{} }
+	_ = mk().F
+	var t p.T
+	func(q *p.T) { q.F++ }(&t)
+	// A parameter named like the package shadows it in the literal's body.
+	func(p int) { _ = p + 1 }(2)
+}

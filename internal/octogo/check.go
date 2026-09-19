@@ -6860,11 +6860,21 @@ func (f *File) callSuffixArgs(suffix Node) ([]Node, bool) {
 // resolution chain, so a name reachable via s is a shadowing local or package
 // declaration -- not an import qualifier.
 func (f *File) isImportQualifier(s *Scope, name string) bool {
-	if s.find(name) != nil {
+	imp, ok := f.Scope.Declarations[name].(*ImportDeclaration)
+	if !ok {
 		return false
 	}
-	_, ok := f.Scope.Declarations[name].(*ImportDeclaration)
-	return ok
+	// What the chain finds is a qualifier only when it IS the import. A body's
+	// chain does not reach the file scope, so anything found there shadows it --
+	// but a function literal's does, and found the import itself: every qualified
+	// type in a literal's signature was "lib (package name) is not a type".
+	switch d := s.find(name).(type) {
+	case nil:
+		return true
+	case *ImportDeclaration:
+		return d == imp
+	}
+	return false
 }
 
 // checkQualifiedRef validates a package-qualified reference "qual.member", where

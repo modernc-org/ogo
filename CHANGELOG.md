@@ -182,6 +182,10 @@ shipped section tells a reader on that version that they have behaviour they do 
 
 ### Fixed
 
+- **A function literal's signature may name another package's types.** `func(p
+  *lib.T) { ... }` was refused, "lib (package name) is not a type": a literal is
+  checked in a scope reaching the file's, where the import itself was taken for a
+  name shadowing it.
 - **Two function types C spells alike are two types.** `func() T` travels its
   result through an out parameter and is written `void (*)(T*)`, as `func(*T)` is:
   the two shared one typedef carrying the first one's results, and a call through a
