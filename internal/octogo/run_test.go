@@ -28362,6 +28362,55 @@ func main() {
 		want: "4\n4 3\n2 7\n7\n",
 	},
 	{
+		name: "an element of a slice of pointers is a pointer",
+		src: `type Sq struct {
+	S int
+}
+
+func (q *Sq) Area() int { return q.S * q.S }
+
+var gx, gy = 3, 4
+
+var gback = [2]*int{&gx, &gy}
+
+var garr [2]*int
+
+var gsq = Sq{5}
+
+var gsqs = []*Sq{&gsq}
+
+func sum(ps []*int) int {
+	t := 0
+	for _, p := range ps {
+		t += *p
+	}
+	return t
+}
+
+// An element of a slice or an array of pointers is a pointer, read by index or
+// ranged over: *p was "cannot indirect p".
+func main() {
+	garr = gback
+	ps := gback[:]
+	println(sum(ps))
+	p := ps[0]
+	*p = 7
+	for i, e := range garr {
+		println(i, *e)
+	}
+	q := gsqs[0]
+	q.S = 6
+	for _, e := range gsqs {
+		println(e.Area(), e.S)
+	}
+	e := garr[1]
+	*e += 1
+	println(gx, gy, *e)
+}
+`,
+		want: "7\n0 7\n1 4\n36 6\n7 5 5\n",
+	},
+	{
 		// A function literal called where it stands, as a statement of its own, which
 		// the grammar had no production for: a statement could not begin with "func".
 		// It is lifted as a literal is anywhere and called by name; arguments are how a

@@ -2759,14 +2759,14 @@ func (f *File) checkRange(s *Scope, kw string, fi forInfo) {
 	if isChan && f.exprChanDir(s, fi.rangeExpr) == sendDir {
 		f.err(f.tok(fi.rangeExpr.Pos()).Position(), "invalid operation: range %s: receive from send-only channel", f.exprSource(fi.rangeExpr))
 	}
-	elemName, elemQual, _ := f.rangeElemNamed(s, fi.rangeExpr)
+	elemName, elemQual, elemPtr, _ := f.rangeElemNamed(s, fi.rangeExpr)
 	declared := false
 	switch {
 	case fi.hasKey && fi.rangeDefine && isChan:
 		// A channel yields its ELEMENT, and only that: what a slice puts in the first
 		// variable is an index, and a channel has none. So the one variable a range
 		// over a channel may declare takes the element's type, not int.
-		declared = f.declareRangeVar(s, fi.keyVar, elem, hasElem, elemName, elemQual)
+		declared = f.declareRangeVar(s, fi.keyVar, elem, hasElem, elemName, elemQual, false)
 		if tn := f.recvChanType(s, fi.rangeExpr); declared && tn != nil {
 			if id, ok := f.exprSoleIdent(fi.keyVar); ok {
 				if vd, ok := s.find(id.Src()).(*VarDeclaration); ok {
@@ -2776,7 +2776,7 @@ func (f *File) checkRange(s *Scope, kw string, fi forInfo) {
 		}
 	case fi.hasKey && fi.rangeDefine:
 		// The key is an INDEX, so no element type travels with it.
-		declared = f.declareRangeVar(s, fi.keyVar, PredeclaredInt, true, Token{}, Token{})
+		declared = f.declareRangeVar(s, fi.keyVar, PredeclaredInt, true, Token{}, Token{}, false)
 	case fi.hasKey:
 		f.checkRangeTarget(s, fi.keyVar)
 	}
@@ -2790,7 +2790,7 @@ func (f *File) checkRange(s *Scope, kw string, fi forInfo) {
 		// Declare the value variable even in the rejected integer case, so a use of
 		// it in the body does not pile a second "undefined" error on the first.
 		if fi.rangeDefine {
-			declared = f.declareRangeVar(s, fi.valVar, elem, hasElem && !isInt && !isChan, elemName, elemQual) || declared
+			declared = f.declareRangeVar(s, fi.valVar, elem, hasElem && !isInt && !isChan, elemName, elemQual, elemPtr) || declared
 		} else {
 			f.checkRangeTarget(s, fi.valVar)
 		}
@@ -2864,7 +2864,7 @@ func (f *File) rangeElem(s *Scope, expr Node) (elem Kind, hasElem, isInt, isChan
 // check that keys on a type name -- an unknown field or method, and the export rule
 // -- was skipped for it: `for _, e := range pkg.Bank { e.unexported }` read another
 // package's field.
-func (f *File) declareRangeVar(s *Scope, v Node, kind Kind, hasKind bool, typeName, typeQual Token) bool {
+func (f *File) declareRangeVar(s *Scope, v Node, kind Kind, hasKind bool, typeName, typeQual Token, isPtr bool) bool {
 	id, ok := f.exprSoleIdent(v)
 	if !ok {
 		f.checkNames(s, v)
@@ -2873,34 +2873,36 @@ func (f *File) declareRangeVar(s *Scope, v Node, kind Kind, hasKind bool, typeNa
 	if id.Src() == "_" {
 		return false
 	}
-	f.declareLocal(s, &VarDeclaration{declaration: declaration{token: id}, kind: kind, hasKind: hasKind, typeName: typeName, typeQual: typeQual})
+	f.declareLocal(s, &VarDeclaration{declaration: declaration{token: id}, kind: kind, hasKind: hasKind, isPtr: isPtr, typeName: typeName, typeQual: typeQual})
 	return true
 }
 
-// rangeElemNamed names the element type of a range operand, and the package that
-// owns it: `range xs` for a variable of this package whose element type is named --
-// which may itself be another package's -- and `range pkg.Bank` for another
-// package's array or slice, whose element type is resolved there.
-func (f *File) rangeElemNamed(s *Scope, expr Node) (Token, Token, bool) {
+// rangeElemNamed names the element type of a range operand, the package that owns
+// it, and whether the element is a pointer to it: `range xs` for a variable of this
+// package whose element type is named -- which may itself be another package's --
+// and `range pkg.Bank` for another package's array or slice, whose element type is
+// resolved there. Without the pointer-ness, `for _, p := range ps` over a `ps []*int`
+// declared p an int, and `*p` was "cannot indirect p".
+func (f *File) rangeElemNamed(s *Scope, expr Node) (Token, Token, bool, bool) {
 	if id, ok := f.exprSoleIdent(expr); ok {
 		if d, isVar := s.find(id.Src()).(*VarDeclaration); isVar {
 			if d.isChan {
 				// Ranging a channel yields its element; a pointer element would
 				// need pointer-ness the answer cannot carry, so it is left alone.
 				if d.chanElemName.IsValid() && !d.chanElemPtr {
-					return d.chanElemName, d.chanElemQual, true
+					return d.chanElemName, d.chanElemQual, false, true
 				}
-				return Token{}, Token{}, false
+				return Token{}, Token{}, false, false
 			}
 			if d.elemTypeName.IsValid() {
-				return d.elemTypeName, namedTypeQual(d.elemTypeNode), true
+				return d.elemTypeName, namedTypeQual(d.elemTypeNode), f.elemIsPointer(s, d), true
 			}
 		}
-		return Token{}, Token{}, false
+		return Token{}, Token{}, false, false
 	}
 	ue, ok := f.soleUnaryExpr(expr)
 	if !ok {
-		return Token{}, Token{}, false
+		return Token{}, Token{}, false, false
 	}
 	for c := range it(ue.ast) {
 		if c.sym != Factor {
@@ -2908,29 +2910,36 @@ func (f *File) rangeElemNamed(s *Scope, expr Node) (Token, Token, bool) {
 		}
 		qual, member, isQual := f.factorQualifiedIdent(s, c)
 		if !isQual {
-			return Token{}, Token{}, false
+			return Token{}, Token{}, false, false
 		}
 		home, has := f.importedPkgScope(qual)
 		if !has {
-			return Token{}, Token{}, false
+			return Token{}, Token{}, false, false
 		}
 		d, isVar := home.Declarations[member.Src()].(*VarDeclaration)
 		if !isVar {
-			return Token{}, Token{}, false
+			return Token{}, Token{}, false, false
 		}
 		if d.isChan {
 			// `range pkg.Ch`: the element is named in the channel's own package.
 			if d.chanElemName.IsValid() && !d.chanElemQual.IsValid() && !d.chanElemPtr {
-				return d.chanElemName, qual, true
+				return d.chanElemName, qual, false, true
 			}
-			return Token{}, Token{}, false
+			return Token{}, Token{}, false, false
 		}
 		if !d.elemTypeName.IsValid() {
-			return Token{}, Token{}, false
+			return Token{}, Token{}, false, false
 		}
-		return d.elemTypeName, qual, true
+		return d.elemTypeName, qual, f.elemIsPointer(home, d), true
 	}
-	return Token{}, Token{}, false
+	return Token{}, Token{}, false, false
+}
+
+// elemIsPointer reports whether a slice or array variable's element is a pointer,
+// `*T` in `[]*T`, as the declaration wrote it.
+func (f *File) elemIsPointer(s *Scope, d *VarDeclaration) bool {
+	_, isPtr := d.elemTypeNode.(*TypeNodePointer)
+	return isPtr
 }
 
 // exprSoleIdent returns the single identifier an expression consists of, if that
@@ -11178,11 +11187,13 @@ func (f *File) localValueNamedType(s *Scope, id Token, fac Node) (Token, Token, 
 		}
 		steps := slices.Collect(it(c.ast))
 		if len(steps) == 1 && steps[0].sym == Index {
-			// `Arr[i]` / `&Arr[i]`: the element's type.
+			// `Arr[i]` / `&Arr[i]`: the element's type -- a pointer where the element
+			// is one. Read as the pointee, `p := ps[i]` for a `ps []*int` was an int
+			// and `*p` was "cannot indirect p".
 			if !d.elemTypeName.IsValid() {
 				return Token{}, Token{}, false, false
 			}
-			return d.elemTypeName, namedTypeQual(d.elemTypeNode), false, true
+			return d.elemTypeName, namedTypeQual(d.elemTypeNode), f.elemIsPointer(s, d), true
 		}
 		if len(steps) == 0 || steps[0].sym != Selector {
 			return Token{}, Token{}, false, false

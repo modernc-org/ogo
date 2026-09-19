@@ -1,0 +1,54 @@
+// An element of a slice or an array of pointers is a pointer: read by index or
+// ranged over, it is dereferenced, and its type's methods are called on it. It was
+// taken for the pointee, so `*p` was "cannot indirect p" -- of the most ordinary
+// loop a table of pointers is walked with.
+
+import "p"
+
+type Sq struct {
+	S int
+}
+
+func (q *Sq) Area() int { return q.S * q.S }
+
+var gx, gy = 3, 4
+
+var gback = [2]*int{&gx, &gy}
+
+var garr [2]*int
+
+var gsq = Sq{5}
+
+var gsqs = []*Sq{&gsq}
+
+var gts [1]*p.T
+
+func sum(ps []*int) int {
+	t := 0
+	for _, e := range ps {
+		t += *e
+	}
+	q := ps[0]
+	return t + *q
+}
+
+func main() {
+	garr = gback
+	for _, e := range garr {
+		*e = 1
+	}
+	e := garr[1]
+	for _, q := range gsqs {
+		q.S = q.Area()
+	}
+	q := gsqs[0]
+	for _, t := range gts {
+		_ = t.F
+	}
+	ints := []int{1}
+	for _, v := range ints {
+		// ERROR invalid operation: cannot indirect v
+		_ = *v
+	}
+	println(sum(gback[:]), *e, q.Area())
+}

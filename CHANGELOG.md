@@ -197,6 +197,10 @@ shipped section tells a reader on that version that they have behaviour they do 
 
 ### Fixed
 
+- **An element of a slice or an array of pointers is a pointer.** Read by index,
+  `p := ps[i]`, or ranged over, `for _, p := range ps`, it was taken for what it
+  points at, so `*p` was "cannot indirect p" -- in the loop a table of pointers is
+  walked with, over a parameter or a package variable alike.
 - **A slice's elements are not its backing array.** Ranging over a scratch slice
   of pointers to package variables, reading one out of a slice declared in a list,
   `s, u := []*int{&gx}, ...`, and spreading one into a package slice were refused
