@@ -943,8 +943,12 @@ program handed out a reference to storage that was gone by the time it was read.
   bound to a variable and called through it, each carrying its weight into the
   calls counter as a declared function does, so a call evaluated twice or not at
   all shows as a number. A literal is lifted to a function of its own, which is
-  where the emitter's per-function state has gone wrong before. Two hundred seeds
-  compile and check out on the host, and the literal-carrying ones on a P2-EDGE.
+  where the emitter's per-function state has gone wrong before. It writes METHOD
+  EXPRESSIONS too, `(*S).set` and `S.shadow` bound to a value and called through
+  it, with the field read back after the call: the receiver rule parts the two
+  forms there as it does at a method call, in a lowering that is newer. Two hundred
+  and fifty seeds compile and check out on the host, and the ones carrying each new
+  shape on a P2-EDGE.
 - Function semantics against Go on the host and a P2-EDGE: variadic calls with
   none, several and a spread slice the callee writes through, a two-result call
   forwarded as another's arguments, named results returned bare and swapped, a

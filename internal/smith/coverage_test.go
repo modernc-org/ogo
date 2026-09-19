@@ -187,6 +187,14 @@ var generatedConstructs = []struct {
 	// (the emitter's label pass) and the checker's jump rules had no fuzz coverage
 	// until this construct; the two entries keep the guard and the target each a
 	// tested property.
+	// A METHOD EXPRESSION, the method as a function whose first parameter is the
+	// receiver, bound to a value and called through it. The two receivers part
+	// company here as they do at a method call: the pointer form is handed this
+	// struct, the value form a copy of it, which the field read after the call
+	// tells apart.
+	{"method expression, value receiver", `= S_\d+\.shadow_\d+`},
+	{"method expression, pointer receiver", `= \(\*S_\d+\)\.set_\d+`},
+	{"call through a method expression", `\^ me_\d+\(`},
 	// A function LITERAL, which is lifted to a function of its own: called where it
 	// stands, and bound to a variable and called through it -- a function value
 	// holding a literal, which the emitter binds by the literal's place rather than

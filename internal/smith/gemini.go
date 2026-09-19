@@ -835,8 +835,10 @@ func (f *Fuzzer) genStatement(vm Machine, mem Memory) Node {
 		return f.genSizedStmt(vm, mem) // 4% chance for sized-integer arithmetic
 	case r < 0.34:
 		return f.genStringStmt(vm, mem) // 2% chance for string reads
+	case r < 0.365:
+		return f.genMethodCall(vm, mem) // 2.5% chance for a method call
 	case r < 0.37:
-		return f.genMethodCall(vm, mem) // 3% chance for a method call
+		return f.genMethodExprStmt(vm, mem) // 0.5% chance for a method expression
 	case r < 0.40:
 		return f.genFloatStmt(vm, mem) // 3% chance for float32 arithmetic
 	case r < 0.46:
@@ -2918,6 +2920,67 @@ func (f *Fuzzer) genMethodCall(vm Machine, mem Memory) Node {
 	})
 	newChecksum, _ = vm.Eval("^", mem.Load(f.ChecksumName), sv.Fields[f0])
 	mem.Store(f.ChecksumName, newChecksum)
+	return &BlockNode{Statements: stmts}
+}
+
+// genMethodExprStmt calls a method through a METHOD EXPRESSION, `S.get` or
+// `(*S).set`: the method as a function whose first parameter is the receiver,
+// lifted to a function of its own and called by that name. The receiver rule is
+// what it has to get right in a new place -- the pointer form is handed the
+// caller's struct and the value form a copy of it -- so the field is read back
+// after the call, as genMethodCall reads it.
+//
+// The expression is bound to a variable and called through it, which is what makes
+// it a function VALUE of the lifted function rather than a call of the method.
+func (f *Fuzzer) genMethodExprStmt(vm Machine, mem Memory) Node {
+	structs := f.CurrentEnv.GetStructSymbols()
+	if len(structs) == 0 {
+		return f.genChecksumMutation(vm, mem)
+	}
+	sym := structs[f.Rand.Intn(len(structs))]
+	sym.Used = true
+	sv := mem.Load(sym.Name).(*StructVal)
+	f0 := sv.Def.Fields[0]
+	name := f.newVarName("me")
+	argNode, argVal, _ := f.genExpression(BasicType{Kind: KindInt}, vm, mem, 0)
+	var decl Node
+	var call Node
+	var result Int32
+	if f.Rand.Intn(2) == 0 {
+		// `(*S).set`: a pointer receiver, so the call reaches this struct and the
+		// field changes.
+		decl = &VarDeclNode{Name: name, Type: "func(*" + sv.Def.Name + ", int) int",
+			Expr: &IdentNode{Name: "(*" + sv.Def.Name + ")." + sv.Def.Set}}
+		call = &CallNode{Fn: name, Args: []Node{&IdentNode{Name: "&" + sym.Name}, argNode}}
+		result = argVal.(Int32)
+		sv.Fields[f0] = result
+	} else {
+		// `S.shadow`: a value receiver, so the call is handed a COPY and the field
+		// does not change.
+		decl = &VarDeclNode{Name: name, Type: "func(" + sv.Def.Name + ", int) int",
+			Expr: &IdentNode{Name: sv.Def.Name + "." + sv.Def.Shadow}}
+		call = &CallNode{Fn: name, Args: []Node{&IdentNode{Name: sym.Name}, argNode}}
+		result = argVal.(Int32)
+	}
+	stmts := []Node{decl, &AssignStmtNode{
+		Lhs: f.ChecksumName,
+		Op:  "=",
+		Rhs: &BinaryExprNode{Left: &IdentNode{Name: f.ChecksumName}, Op: "^", Right: call},
+	}}
+	newSum, _ := vm.Eval("^", mem.Load(f.ChecksumName), result)
+	mem.Store(f.ChecksumName, newSum)
+	// The field, which is what tells the two receivers apart.
+	stmts = append(stmts, &AssignStmtNode{
+		Lhs: f.ChecksumName,
+		Op:  "=",
+		Rhs: &BinaryExprNode{
+			Left:  &IdentNode{Name: f.ChecksumName},
+			Op:    "^",
+			Right: &FieldNode{Name: sym.Name, Field: f0},
+		},
+	})
+	newSum, _ = vm.Eval("^", mem.Load(f.ChecksumName), sv.Fields[f0])
+	mem.Store(f.ChecksumName, newSum)
 	return &BlockNode{Statements: stmts}
 }
 
