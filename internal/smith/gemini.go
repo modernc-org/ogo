@@ -893,10 +893,11 @@ func (f *Fuzzer) genStatement(vm Machine, mem Memory) Node {
 		// label), and its codegen -- the emitter's label pass and the checker's
 		// jump rules -- had no fuzz coverage at all.
 		return f.genGotoStmt(vm, mem)
-	case r < 0.999:
-		// 0.15% for a labeled continue or break out of nested loops, from the same
+	case r < 0.9995:
+		// 0.2% for a labeled continue or break out of nested loops, from the same
 		// filler: it is several statements too, and the jump out of more than one
-		// loop is a lowering nothing else generates.
+		// loop is a lowering nothing else generates. It draws the two forms evenly,
+		// so the share has to be wide enough for a hundred seeds to show both.
 		return f.genLabeledLoopStmt(vm, mem)
 	}
 	return f.genChecksumMutation(vm, mem)
@@ -2899,6 +2900,12 @@ func (n *CallNode) Write(w io.Writer, indent int) {
 // per-type equality helper.
 func (f *Fuzzer) genStructType() *StructDef {
 	def := &StructDef{Name: f.newVarName("S")}
+	// Every third struct EMBEDS an earlier one, whose fields and methods it
+	// promotes: `v.f` and `v.get()` reach through the embedded struct, which the
+	// emitter resolves by a path it works out per member. Nothing generated one.
+	if len(f.Structs) != 0 && f.Rand.Intn(3) == 0 {
+		def.Embed = f.Structs[f.Rand.Intn(len(f.Structs))]
+	}
 	for i, n := 0, 1+f.Rand.Intn(3); i < n; i++ {
 		def.Fields = append(def.Fields, f.newVarName("f"))
 	}
@@ -2933,22 +2940,30 @@ func (f *Fuzzer) genMethodCall(vm Machine, mem Memory) Node {
 	sym := structs[f.Rand.Intn(len(structs))]
 	sym.Used = true
 	sv := mem.Load(sym.Name).(*StructVal)
-	f0 := sv.Def.Fields[0]
+	// A PROMOTED method, where the variable's struct embeds another: the method is
+	// the embedded struct's and the receiver is that part of this value, which the
+	// emitter reaches by a path of its own working out. Its own methods shadow the
+	// promoted ones of the same name, as in Go, so the two never collide.
+	def := sv.Def
+	if def.Embed != nil && f.Rand.Intn(2) == 0 {
+		def = def.Embed
+	}
+	f0 := def.Fields[0]
 
 	var call Node
 	var result Int32
 	switch f.Rand.Intn(3) {
 	case 0: // v.get()
-		call = &MethodCallNode{Recv: sym.Name, Method: sv.Def.Get}
+		call = &MethodCallNode{Recv: sym.Name, Method: def.Get}
 		result = sv.Fields[f0]
 	case 1: // v.set(e) -- through a pointer receiver, so the field really changes
 		argNode, argVal, _ := f.genExpression(BasicType{Kind: KindInt}, vm, mem, 0)
-		call = &MethodCallNode{Recv: sym.Name, Method: sv.Def.Set, Arg: argNode}
+		call = &MethodCallNode{Recv: sym.Name, Method: def.Set, Arg: argNode}
 		result = argVal.(Int32)
 		sv.Fields[f0] = result
 	default: // v.shadow(e) -- through a value receiver, so the field does NOT change
 		argNode, argVal, _ := f.genExpression(BasicType{Kind: KindInt}, vm, mem, 0)
-		call = &MethodCallNode{Recv: sym.Name, Method: sv.Def.Shadow, Arg: argNode}
+		call = &MethodCallNode{Recv: sym.Name, Method: def.Shadow, Arg: argNode}
 		result = argVal.(Int32)
 	}
 
@@ -3045,7 +3060,7 @@ func (f *Fuzzer) genStructDecl(vm Machine, mem Memory) Node {
 	def := f.Structs[f.Rand.Intn(len(f.Structs))]
 	name := f.newVarName("st")
 	sv := &StructVal{Def: def, Fields: map[string]Int32{}}
-	for _, fld := range def.Fields {
+	for _, fld := range def.allFields() {
 		sv.Fields[fld] = 0
 	}
 	mem.Store(name, sv)
@@ -3117,7 +3132,10 @@ func (f *Fuzzer) genFieldWrite(vm Machine, mem Memory) Node {
 	sym := structs[f.Rand.Intn(len(structs))]
 	sym.Used = true
 	sv := mem.Load(sym.Name).(*StructVal)
-	fld := sv.Def.Fields[f.Rand.Intn(len(sv.Def.Fields))]
+	// Any field the value has, an EMBEDDED struct's included: `v.f` reaches it
+	// through a path the emitter works out, where its own field is one step.
+	all := sv.Def.allFields()
+	fld := all[f.Rand.Intn(len(all))]
 	exprNode, exprVal, _ := f.genExpression(BasicType{Kind: KindInt}, vm, mem, 0)
 	sv.Fields[fld] = exprVal.(Int32)
 	return &AssignStmtNode{Lhs: sym.Name + "." + fld, Op: "=", Rhs: exprNode}
@@ -3145,6 +3163,10 @@ type StructTypeNode struct{ Def *StructDef }
 
 func (n *StructTypeNode) Write(w io.Writer, indent int) {
 	fmt.Fprintf(w, "type %s struct {\n", n.Def.Name)
+	if n.Def.Embed != nil {
+		writeIndent(w, indent+1)
+		fmt.Fprintf(w, "%s\n", n.Def.Embed.Name)
+	}
 	for _, f := range n.Def.Fields {
 		writeIndent(w, indent+1)
 		fmt.Fprintf(w, "%s int\n", f)

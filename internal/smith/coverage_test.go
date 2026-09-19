@@ -187,6 +187,11 @@ var generatedConstructs = []struct {
 	// (the emitter's label pass) and the checker's jump rules had no fuzz coverage
 	// until this construct; the two entries keep the guard and the target each a
 	// tested property.
+	// A struct EMBEDDING another, whose fields and methods it promotes. Which of
+	// the two a field write or a method call names cannot be told from the source
+	// by a pattern -- the names are unique either way -- so what is pinned here is
+	// that the shape is generated at all.
+	{"embedded struct", `\ntype S_\d+ struct \{\n\tS_\d+\n`},
 	// A labeled CONTINUE and BREAK out of nested loops, the jump that leaves more
 	// than one at once. Both loops carry their step in a post clause, which is what
 	// a labeled continue still runs.

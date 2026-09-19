@@ -958,7 +958,10 @@ program handed out a reference to storage that was gone by the time it was read.
   a copy anywhere between them would leave the variable unchanged. It writes a
   labeled CONTINUE and BREAK out of nested loops as well -- the jump that leaves
   more than one loop at once, whose target is placed where the outer loop's post
-  step either still runs or does not.
+  step either still runs or does not. And every third generated struct now EMBEDS
+  an earlier one, so its fields and methods are reached through a promotion path
+  the emitter works out per member, and a copy of the outer struct carries the
+  embedded one with it.
 - Function semantics against Go on the host and a P2-EDGE: variadic calls with
   none, several and a spread slice the callee writes through, a two-result call
   forwarded as another's arguments, named results returned bare and swapped, a

@@ -179,7 +179,13 @@ func (c ChanType) IsNumeric() bool { return false }
 // are kept in declaration order rather than a map so that generation stays
 // reproducible from a seed.
 type StructDef struct {
-	Name   string
+	Name string
+	// Embed is the struct this one EMBEDS, `type S struct { T; f int }`, or nil.
+	// Its fields and its methods are promoted: reached through this struct's own
+	// name, which is what the emitter has to resolve a path for. The VM keeps every
+	// field of both in one map, the names being unique, so a copy of the outer
+	// struct copies the embedded one with it, as Go's does.
+	Embed  *StructDef
 	Fields []string
 	// Methods are generated alongside the type, three per struct, one of each
 	// shape below. They are named rather than modelled: what each does to the
@@ -192,6 +198,15 @@ type StructDef struct {
 	// whose running is observable without reading its result, which is what lets a
 	// DEFERRED method call be checked (see genDeferProc)
 	Checksum string // the checksum variable's name, which Emit's body writes
+}
+
+// allFields is every field a value of this struct has: the embedded struct's
+// first, as they are written, and then its own.
+func (d *StructDef) allFields() []string {
+	if d.Embed == nil {
+		return d.Fields
+	}
+	return append(d.Embed.allFields(), d.Fields...)
 }
 
 // StructType names a generated struct. Only the name distinguishes it, so
