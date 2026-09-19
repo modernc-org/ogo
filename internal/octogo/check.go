@@ -399,6 +399,23 @@ func (f *File) declareTopLevel(n Node) {
 	}
 }
 
+// typeBodies resolves the body of every type a file declares at top level. Names
+// were bound in phase 1 (declareType); the bodies are resolved here, before any
+// other declaration of any file, so that a variable, a constant or a function
+// declared above a type -- or in another file -- finds it complete.
+func (f *File) typeBodies(s *Scope, n Node) {
+	for n := range it(n.ast) {
+		if n.sym != TopLevelDecl {
+			continue
+		}
+		for n := range it(n.ast) {
+			if n.sym == TypeDecl {
+				f.typeDecl(s, n)
+			}
+		}
+	}
+}
+
 func (f *File) topLevel(s *Scope, n Node) {
 	for n := range it(n.ast) {
 		switch n.sym {
@@ -410,9 +427,7 @@ func (f *File) topLevel(s *Scope, n Node) {
 			f.funcDecl(s, n)
 			f.registerMethod(s, n)
 		case TypeDecl:
-			// Names were bound in phase 1 (declareType); resolve the bodies now
-			// that every top-level type name is visible.
-			f.typeDecl(s, n)
+			// Resolved ahead of every other declaration of every file (typeBodies).
 		case 0:
 			switch f.ch(n.tok) {
 			default:

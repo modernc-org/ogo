@@ -28490,6 +28490,66 @@ func main() {
 		want: "2 4 4 4\n3 2 4 3 4\n30 2 2\n",
 	},
 	{
+		name: "declarations using types declared below them",
+		src: `var gp = &Pt{1, 2}
+
+var gr = Row{7, 8, 9}
+
+var gq = Q{Pt: Pt{3, 4}, tag: "q"}
+
+var gl = L{5, 6}
+
+var gz = A{9, 1}
+
+const K = len(Row{}) + N
+
+func (p *Pt) Sum() int { return p.x + p.y }
+
+var gs Shape = &gq.Pt
+
+// Declarations may use types declared below them, as Go's package block allows:
+// a variable's literal was "Pt is not a struct type", and a type over a later one
+// -- an alias of an alias, an array of an array -- was "unsupported type".
+func main() {
+	var g Grid
+	g[1][2] = 5
+	var c C1 = 4
+	println(gp.Sum(), gr[2], gq.tag, gq.Pt.Sum(), len(gl), K, gs.Sum(), gz.x)
+	println(g[1][2], c, len(g))
+}
+
+type Shape interface {
+	Sum() int
+}
+
+type Q struct {
+	Pt
+	tag string
+}
+
+type A = B
+
+type B = Pt
+
+type C1 T2
+
+type Grid [2]Row
+
+type L []int
+
+type Row [N]int
+
+type T2 int
+
+const N = 3
+
+type Pt struct {
+	x, y int
+}
+`,
+		want: "3 9 q 7 2 6 7 9\n5 4 2\n",
+	},
+	{
 		// A function literal called where it stands, as a statement of its own, which
 		// the grammar had no production for: a statement could not begin with "func".
 		// It is lifted as a literal is anywhere and called by name; arguments are how a
@@ -32908,7 +32968,7 @@ const multiPkgWant = "300\nLOUD\n50\n6\n5\n45\n6 1000\n200\n207\n3 100\n4 9\n" +
 	"17 gx-7 true 10 19\n" +
 	"2 7 56 9 3 8 false 2 1 2 6 3 true 7\n" +
 	"[2]greet.Row [2]greet.Reader greet.Row\n" +
-	"123 p2 9 3 2 3\n1 1 2 1 102 3\n2 1 4 3 4 4 5 134\n21 10 100 200 7 0\n1 5 1 2 4 1 3 21 1 2 12 12 123 123 11\n10 21 110 21 14 true 3 42\n10 3 4\n6 10 2\n6 11\n6 5 8 6\ntrue 110 6 106\ntrue true\n" +
+	"123 p2 9 3 2 3\n1 1 2 1 102 3\n2 1 4 3 4 4 5 134\n21 10 100 200 7 0\n1 5 1 2 4 1 3 21 1 2 12 12 123 123 11\n10 21 110 21 14 true 3 42\n10 3 4\n6 10 2\n6 11\n6 5 8 6\ntrue 110 6 106\n7 5\ntrue true\n" +
 	"1234567891 1 3 8 14 30 39\n"
 
 var multiPkgProgram = map[string]string{
@@ -33418,6 +33478,10 @@ func libShapes() {
 	println(ld.Val(), lib.DevAlias{Id: 5}.Val(), LD{Id: 8}.Val(), byID(&ld))
 	// A conversion to another package's pointer type, by its name and by aliases.
 	println((*lib.Dev)(nil) == nil, (*lib.Dev)(&lib.D2).Ptr(), (*LD)(&ld).Val(), (*lib.DevAlias)(&ld).Ptr())
+	// Types used above their declaration, in another file of their package.
+	var sp lib.Span
+	sp[1] = 5
+	println(lib.Early.A+lib.Early.B, sp[1])
 	lib.P = nil
 	println(lib.P == nil, lib.None() == nil)
 }
@@ -33868,6 +33932,11 @@ var Order = Calls
 func Get() *Dev { return &D2 }
 
 func None() *Dev { return nil }
+
+// A variable of a type another file of this package declares, and a type over one.
+var Early = Late{A: 3, B: 4}
+
+type Span [2]Width
 `,
 	"lib/more.ogo": `var Grid [3][5]int
 
@@ -33898,6 +33967,12 @@ func Two(n int) (int, int) {
 	Calls = Calls*10 + n
 	return n, n + 1
 }
+
+type Late struct {
+	A, B int
+}
+
+type Width int
 `,
 }
 

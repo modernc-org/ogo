@@ -4658,7 +4658,9 @@ func emitProgram(pkg *Package, w io.Writer, opts []EmitOption, rename map[string
 	e.collectConstValues(pkgs)
 	forEachFile(func() { e.collectStructForwards(e.f.AST) })
 	e.w = &scratch
-	forEachFile(func() { e.collectStructs(e.f.AST) })
+	var specs []pendingSpec
+	forEachFile(func() { specs = append(specs, e.typeSpecsOf(e.f.AST)...) })
+	e.collectTypeSpecs(specs)
 	// A defined type over a struct is that struct: `type Q P` indexes, is written as
 	// a literal, converts and carries methods exactly as P does. Every one of those
 	// asks e.structs for the fields, keyed by C type name, and Q was not in it --
@@ -5771,10 +5773,21 @@ func deferArgName(slot, arg int) string { return fmt.Sprintf("_ogo_defer%d_a%d",
 
 func deferRecvName(slot int) string { return fmt.Sprintf("_ogo_defer%d_r", slot) }
 
-// collectStructs records each package-level struct type's fields in the struct
-// environment and emits a C typedef -- `typedef struct { <t0> f0; ... } T;`.
-// Only structs with explicitly-typed, non-embedded fields are modelled.
-func (e *emitter) collectStructs(ast []int32) {
+// pendingSpec is a package-level type declaration waiting to be collected (see
+// collectTypeSpecs), with what it needs to be collected in its own package's and
+// file's terms.
+type pendingSpec struct {
+	f        *File
+	prefix   string
+	ord      int
+	node     Node
+	name     string   // the type's mangled C name
+	isStruct bool     // forward-declared, so ready for any other declaration to name
+	refs     []string // the mangled names its type mentions
+}
+
+// typeSpecsOf lists a file's package-level type declarations, in its own terms.
+func (e *emitter) typeSpecsOf(ast []int32) (out []pendingSpec) {
 	for n := range it(ast) {
 		if n.sym != SourceFile {
 			continue
@@ -5784,12 +5797,96 @@ func (e *emitter) collectStructs(ast []int32) {
 				continue
 			}
 			for d := range it(c.ast) {
-				if d.sym == TypeDecl {
-					e.collectTypeDecl(d.ast)
+				if d.sym != TypeDecl {
+					continue
+				}
+				for sp := range it(d.ast) {
+					if sp.sym != TypeSpec {
+						continue
+					}
+					ps := pendingSpec{f: e.f, prefix: e.curPkgPrefix, ord: e.pkgOrd, node: sp}
+					alias := false
+					for k := range it(sp.ast) {
+						switch k.sym {
+						case 0:
+							if e.f.ch(k.tok) == IDENT && ps.name == "" {
+								ps.name = e.typeMangle(e.curPkgPrefix, e.src(k.tok))
+							}
+							if e.f.ch(k.tok) == ASSIGN {
+								alias = true
+							}
+						case Type:
+							ps.isStruct = !alias && e.structTypeAST(k.ast) != nil
+							e.eachIdent(k.ast, func(name string) {
+								ps.refs = append(ps.refs, e.typeMangle(e.curPkgPrefix, name))
+							})
+						}
+					}
+					out = append(out, ps)
 				}
 			}
 		}
 	}
+	return out
+}
+
+// eachIdent calls fn with every identifier in ast.
+func (e *emitter) eachIdent(ast []int32, fn func(string)) {
+	for n := range it(ast) {
+		if n.sym == 0 {
+			if e.f.ch(n.tok) == IDENT {
+				fn(e.src(n.tok))
+			}
+			continue
+		}
+		e.eachIdent(n.ast, fn)
+	}
+}
+
+// collectTypeSpecs records every package-level type, each once the types of this
+// package it mentions are recorded -- a struct is forward-declared and ready from
+// the start (collectStructForwards). Collected in source order, a type over one
+// declared further down had nothing to name: `type Grid [2]Row` above `type Row
+// [3]int`, `type C T` above `type T int` and an alias of a later alias were
+// "unsupported type", where Go takes declarations in any order. What never becomes
+// ready -- a cycle, which the checker reports -- is collected as written.
+func (e *emitter) collectTypeSpecs(specs []pendingSpec) {
+	pending := map[string]bool{}
+	for _, sp := range specs {
+		if !sp.isStruct {
+			pending[sp.name] = true
+		}
+	}
+	collect := func(sp pendingSpec) {
+		e.f, e.curPkgPrefix, e.pkgOrd = sp.f, sp.prefix, sp.ord
+		e.collectTypeSpec(sp.node)
+		delete(pending, sp.name)
+	}
+	for len(specs) != 0 && e.err == nil {
+		var later []pendingSpec
+		for _, sp := range specs {
+			ready := true
+			for _, r := range sp.refs {
+				if r != sp.name && pending[r] {
+					ready = false
+					break
+				}
+			}
+			if ready {
+				collect(sp)
+			} else {
+				later = append(later, sp)
+			}
+		}
+		if len(later) == len(specs) {
+			for _, sp := range later {
+				collect(sp)
+			}
+			break
+		}
+		specs = later
+	}
+	e.curPkgPrefix = ""
 }
 
 // collectStructForwards emits a forward declaration `typedef struct T T;` for every
@@ -5985,128 +6082,123 @@ func (e *emitter) emitLocalTypeDecl(ast []int32) {
 // non-struct named type `type Name <underlying>` (e.g. `type Celsius int`) as
 // `typedef <underlying> Name;`. The named type may then back variables and carry
 // methods. An underlying type outside the modelled subset fails honestly.
-func (e *emitter) collectTypeDecl(ast []int32) {
-	for n := range it(ast) {
-		if n.sym != TypeSpec {
-			continue
-		}
-		var name string
-		var typeAST []int32
-		alias := false
-		for s := range it(n.ast) {
-			switch s.sym {
-			case 0:
-				if e.f.ch(s.tok) == IDENT && name == "" {
-					name = e.src(s.tok)
-				}
-				if e.f.ch(s.tok) == ASSIGN {
-					alias = true
-				}
-			case Type:
-				typeAST = s.ast
+func (e *emitter) collectTypeSpec(n Node) {
+	var name string
+	var typeAST []int32
+	alias := false
+	for s := range it(n.ast) {
+		switch s.sym {
+		case 0:
+			if e.f.ch(s.tok) == IDENT && name == "" {
+				name = e.src(s.tok)
 			}
-		}
-		if name == "" || typeAST == nil {
-			e.fail("malformed type declaration")
-			return
-		}
-		// The C type name is the source name mangled into this package's namespace,
-		// so it is a valid C identifier and cannot collide with another package's
-		// type. cType returns the same mangled name for a reference to it, so every
-		// use resolves to the same typedef and the same structs/namedTypes map key.
-		mn := e.typeMangle(e.curPkgPrefix, name)
-		if e.curPkgPrefix == "" && mn != mangle("", name) {
-			e.renamedTypes[mn] = name
-		}
-		// What this type is CALLED, for %T and for the diagnostics: a type of
-		// another package is written `lib.Temp` where its C name is `lib_Temp`, and
-		// printing the C name told the program about the compiler's own symbol.
-		// Recorded per declaration rather than derived from the name, which cannot
-		// tell a mangled name from a source one that looks like it.
-		if e.curPkgPrefix != "" {
-			e.typeDisplay[mn] = e.pkgNames[e.curPkgPrefix] + "." + name
-		}
-		e.userTypeNames[mn] = name
-		if alias {
-			// `type A = B`: another NAME for B, not a type -- the checker has
-			// already canonicalized every recorded use to B, so what remains is a
-			// C typedef for any spelling that still says A, and the registries
-			// answering for A what they answer for B.
-			target := e.cType(typeAST)
-			if target == "" {
-				return // cType has latched the failure
+			if e.f.ch(s.tok) == ASSIGN {
+				alias = true
 			}
-			e.aliasOf[mn] = target
-			e.addTypedef(mn, "typedef "+target+" "+mn+";\n", target)
-			if flds, ok := e.structs[target]; ok {
-				e.structs[mn] = flds
-			}
-			if e.namedTypes[target] {
-				e.namedTypes[mn] = true
-			}
-			if u, ok := e.namedUnderlying[target]; ok {
-				e.namedUnderlying[mn] = u
-			} else {
-				e.namedUnderlying[mn] = target
-			}
-			if a, ok := e.namedArrays[target]; ok {
-				e.namedArrays[mn] = a
-			}
-			if e.interfaceTypes[target] {
-				e.interfaceTypes[mn] = true
-				e.ifaceMethods[mn] = e.ifaceMethods[target]
-			}
-			continue
+		case Type:
+			typeAST = s.ast
 		}
-		if ifaceAST := e.interfaceTypeAST(typeAST); ifaceAST != nil {
-			e.collectInterfaceType(mn, ifaceAST)
-			continue
-		}
-		if structAST := e.structTypeAST(typeAST); structAST != nil {
-			// The name was registered and forward-declared by collectStructForwards,
-			// so a self-referential or forward/mutually-referential pointer field
-			// resolves. Emit only the body here, tagged (`struct N { ... N* next; };`)
-			// rather than as an anonymous `typedef struct { ... } N;`, because C cannot
-			// name a type inside its own anonymous typedef.
-			fields := e.structFieldsOf(structAST)
-			e.structs[mn] = fields
-			text, deps := e.structTypedefText(mn, fields)
-			e.addTypedef(mn, text, deps...)
-			continue
-		}
-		// A named array type: `type Row [3]int` -> `typedef int Row[3];` (the extent
-		// rides the declarator, C-style), the array counterpart of `type Celsius int`.
-		// Recording it is what does the work: arrayDim resolves the name to these
-		// dimensions wherever an array is expected -- a variable of the type, a field,
-		// a parameter -- so each such site renders the underlying `int[3]` declarator
-		// directly. The typedef documents the type in the output and keeps the name a
-		// valid C type should anything refer to it by name.
-		if a, ok := e.arrayDim(typeAST); ok {
-			// The name goes IN the shape, not only in the map key. arrayDim already
-			// puts it there when it resolves the name itself, so this is the map
-			// agreeing with it -- and it is what lets a reader of the map tell a
-			// DEFINED array from one the compiler minted a name for, which decides
-			// whether there are methods to look for.
-			a.name = mn
-			e.namedArrays[mn] = a
-			e.addTypedef(mn, "typedef "+a.elem+" "+mn+a.declSuffix()+";\n", a.elem)
-			continue
-		}
-		// A non-struct named type: `type Celsius int` -> `typedef int Celsius;`. The
-		// underlying must be a modelled scalar (or other cType-resolvable) type.
-		underlying := e.cType(typeAST)
-		if underlying == "" {
+	}
+	if name == "" || typeAST == nil {
+		e.fail("malformed type declaration")
+		return
+	}
+	// The C type name is the source name mangled into this package's namespace,
+	// so it is a valid C identifier and cannot collide with another package's
+	// type. cType returns the same mangled name for a reference to it, so every
+	// use resolves to the same typedef and the same structs/namedTypes map key.
+	mn := e.typeMangle(e.curPkgPrefix, name)
+	if e.curPkgPrefix == "" && mn != mangle("", name) {
+		e.renamedTypes[mn] = name
+	}
+	// What this type is CALLED, for %T and for the diagnostics: a type of
+	// another package is written `lib.Temp` where its C name is `lib_Temp`, and
+	// printing the C name told the program about the compiler's own symbol.
+	// Recorded per declaration rather than derived from the name, which cannot
+	// tell a mangled name from a source one that looks like it.
+	if e.curPkgPrefix != "" {
+		e.typeDisplay[mn] = e.pkgNames[e.curPkgPrefix] + "." + name
+	}
+	e.userTypeNames[mn] = name
+	if alias {
+		// `type A = B`: another NAME for B, not a type -- the checker has
+		// already canonicalized every recorded use to B, so what remains is a
+		// C typedef for any spelling that still says A, and the registries
+		// answering for A what they answer for B.
+		target := e.cType(typeAST)
+		if target == "" {
 			return // cType has latched the failure
 		}
-		e.namedTypes[mn] = true
-		e.namedUnderlying[mn] = underlying
-		// A defined type over a channel takes a typedef like any other defined type,
-		// which is what gives it a name to hang a method on. It could not until the
-		// channel's own typedef moved into this section (it used to be emitted with
-		// the helpers, after it, so a typedef naming it here named a type C had not
-		// seen); the dependency is what orders the two now.
-		e.addTypedef(mn, "typedef "+underlying+" "+mn+";\n", underlying)
+		e.aliasOf[mn] = target
+		e.addTypedef(mn, "typedef "+target+" "+mn+";\n", target)
+		if flds, ok := e.structs[target]; ok {
+			e.structs[mn] = flds
+		}
+		if e.namedTypes[target] {
+			e.namedTypes[mn] = true
+		}
+		if u, ok := e.namedUnderlying[target]; ok {
+			e.namedUnderlying[mn] = u
+		} else {
+			e.namedUnderlying[mn] = target
+		}
+		if a, ok := e.namedArrays[target]; ok {
+			e.namedArrays[mn] = a
+		}
+		if e.interfaceTypes[target] {
+			e.interfaceTypes[mn] = true
+			e.ifaceMethods[mn] = e.ifaceMethods[target]
+		}
+		return
 	}
+	if ifaceAST := e.interfaceTypeAST(typeAST); ifaceAST != nil {
+		e.collectInterfaceType(mn, ifaceAST)
+		return
+	}
+	if structAST := e.structTypeAST(typeAST); structAST != nil {
+		// The name was registered and forward-declared by collectStructForwards,
+		// so a self-referential or forward/mutually-referential pointer field
+		// resolves. Emit only the body here, tagged (`struct N { ... N* next; };`)
+		// rather than as an anonymous `typedef struct { ... } N;`, because C cannot
+		// name a type inside its own anonymous typedef.
+		fields := e.structFieldsOf(structAST)
+		e.structs[mn] = fields
+		text, deps := e.structTypedefText(mn, fields)
+		e.addTypedef(mn, text, deps...)
+		return
+	}
+	// A named array type: `type Row [3]int` -> `typedef int Row[3];` (the extent
+	// rides the declarator, C-style), the array counterpart of `type Celsius int`.
+	// Recording it is what does the work: arrayDim resolves the name to these
+	// dimensions wherever an array is expected -- a variable of the type, a field,
+	// a parameter -- so each such site renders the underlying `int[3]` declarator
+	// directly. The typedef documents the type in the output and keeps the name a
+	// valid C type should anything refer to it by name.
+	if a, ok := e.arrayDim(typeAST); ok {
+		// The name goes IN the shape, not only in the map key. arrayDim already
+		// puts it there when it resolves the name itself, so this is the map
+		// agreeing with it -- and it is what lets a reader of the map tell a
+		// DEFINED array from one the compiler minted a name for, which decides
+		// whether there are methods to look for.
+		a.name = mn
+		e.namedArrays[mn] = a
+		e.addTypedef(mn, "typedef "+a.elem+" "+mn+a.declSuffix()+";\n", a.elem)
+		return
+	}
+	// A non-struct named type: `type Celsius int` -> `typedef int Celsius;`. The
+	// underlying must be a modelled scalar (or other cType-resolvable) type.
+	underlying := e.cType(typeAST)
+	if underlying == "" {
+		return // cType has latched the failure
+	}
+	e.namedTypes[mn] = true
+	e.namedUnderlying[mn] = underlying
+	// A defined type over a channel takes a typedef like any other defined type,
+	// which is what gives it a name to hang a method on. It could not until the
+	// channel's own typedef moved into this section (it used to be emitted with
+	// the helpers, after it, so a typedef naming it here named a type C had not
+	// seen); the dependency is what orders the two now.
+	e.addTypedef(mn, "typedef "+underlying+" "+mn+";\n", underlying)
 }
 
 // ifaceMethod is one method of an interface, as the vtable slot it becomes: the

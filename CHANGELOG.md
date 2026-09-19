@@ -197,6 +197,12 @@ shipped section tells a reader on that version that they have behaviour they do 
 
 ### Fixed
 
+- **Declarations may use types declared below them.** A package variable's
+  literal of a type declared further down, `var g = Pt{1, 2}` above `type Pt
+  struct{...}`, was "Pt is not a struct type", and a type over one declared later
+  -- `type Grid [2]Row` above `type Row`, `type C T` above `type T int`, an alias
+  of a later alias -- was "unsupported type"; across the files of a package alike.
+  Go takes a package's declarations in any order.
 - **A package slice may be declared with its type from any slice value.** `var s
   []T = back[:2]`, from another package slice or from a call's result, was refused
   ("a package slice initializer must be make([]T, ...) or a []T literal") where the

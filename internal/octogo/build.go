@@ -1281,6 +1281,18 @@ func (c *BuildContext) NewPackage(importPath string, files []string, fsys fs.FS)
 	}
 
 	// Phase 3: Top-Level Type & Constant Evaluation (Serial)
+	//
+	// Every file's type BODIES first: a declaration may use a type declared below it
+	// or in another file, and one resolved in source order had none yet -- `var g =
+	// Sq{2}` above `type Sq struct{...}` was "Sq is not a struct type". A body that
+	// needs a constant evaluates it on demand, as it always could.
+	for _, v := range p.Files {
+		for n := range it(v.AST) {
+			if n.sym == SourceFile {
+				v.typeBodies(p.Scope, n)
+			}
+		}
+	}
 	for _, v := range p.Files {
 		for n := range it(v.AST) {
 			switch n.sym {

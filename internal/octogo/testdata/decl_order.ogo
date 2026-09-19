@@ -1,0 +1,69 @@
+// COMPILE
+
+// A declaration may use a type declared below it: a variable's literal, a
+// constant, a method, a defined type, an alias of an alias, an array or a slice
+// type, a struct field, an interface's and a function type's signatures. Type
+// bodies were resolved in source order, so `var g = Pt{1, 2}` above `type Pt` was
+// "Pt is not a struct type".
+
+var gp = &Pt{1, 2}
+
+var gr = Row{7, 8, 9}
+
+var gq = Q{Pt: Pt{3, 4}, tag: "q"}
+
+var gz A
+
+const K = len(Row{}) + N
+
+func (p *Pt) Sum() int { return p.x + p.y }
+
+var gs Shape = &gq.Pt
+
+type Shape interface {
+	Sum() int
+	Scale(c Celsius) Celsius
+}
+
+type Q struct {
+	Pt
+	tag string
+	g   Grid
+}
+
+type A = B
+
+type B = Pt
+
+type C1 T2
+
+type Grid [2]Row
+
+type L2 L1
+
+type F func(c Celsius) Celsius
+
+type Row [N]int
+
+type L1 []int
+
+type T2 int
+
+type Celsius int
+
+const N = 3
+
+type Pt struct {
+	x, y int
+}
+
+func (p *Pt) Scale(c Celsius) Celsius { return c * Celsius(p.x) }
+
+func double(c Celsius) Celsius { return 2 * c }
+
+func main() {
+	var c C1 = 4
+	var l L2 = L2{1}
+	var f F = double
+	println(gp.Sum(), gr[2], gq.tag, gz.x, K, c, len(l), f(2), gq.g[1][2])
+}
