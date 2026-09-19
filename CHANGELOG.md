@@ -187,6 +187,13 @@ shipped section tells a reader on that version that they have behaviour they do 
 
 ### Fixed
 
+- **A go statement through an embedded pointer hands the goroutine the pointer.**
+  `w := W{&g}; go w.Save()` for a W embedding *Counter, and `go w.Counter.Save()`,
+  were refused for handing the goroutine the address of the local w; it is handed
+  what the pointer holds, as Go hands it, and refused only when that is this
+  frame's. And `go pick()(x)`, starting the function a call returns, was "only `go
+  f(args)` ... is supported yet": the call runs at the go statement and its value
+  is started as a function variable's is.
 - **An element is assigned only a value of its type.** `arr[0] = A{}` for a `[2]B`
   passed the checker and the C compiler refused two struct types; the same store
   into a variable was refused as Go refuses it. An element of another package's

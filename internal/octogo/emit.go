@@ -1548,7 +1548,11 @@ func (e *emitter) emitGo(nodes []Node) {
 				cname = cn
 			}
 			wantPtr := e.methodPtr[cname]
-			if r, bad := e.receiverFrameRef(base, wantPtr); bad {
+			// A chain whose value is a POINTER, `go w.p.run()`, or one promoting
+			// through an embedded pointer, hands the goroutine that pointer, not the
+			// address of what holds it: only what it holds is asked about.
+			viaPtr := e.isPointer(rct) || promoted && e.pathThroughPointer(rct, path)
+			if r, bad := e.receiverFrameRef(base, wantPtr && !viaPtr); bad {
 				crossed(r.what, r.advice(), head)
 				return
 			}
@@ -1614,7 +1618,10 @@ func (e *emitter) emitGo(nodes []Node) {
 		// variable's own type, the launch called a Port_run nothing declares.
 		if cn, path, rt, okp := e.promotedMethod(rct, name); okp && len(path) != 0 {
 			wantPtr := e.methodPtr[cn]
-			if r, bad := e.receiverFrameRef(base, wantPtr); bad {
+			// Through an embedded POINTER the goroutine is handed the pointer, not
+			// the address of w: `w := W{&g}; go w.Save()` was refused for handing it
+			// a local w, and only what the pointer holds is asked about.
+			if r, bad := e.receiverFrameRef(base, wantPtr && !e.pathThroughPointer(rct, path)); bad {
 				crossed(r.what, r.advice(), head)
 				return
 			}
@@ -1706,6 +1713,37 @@ func (e *emitter) emitGo(nodes []Node) {
 		}
 		recvText = recv
 		site = goSite{callee: cn, args: []string{recvCType}, id: len(e.goSites)}
+	case base != "" && len(suffix) >= 2 && suffix[len(suffix)-1].sym == CallSuffix &&
+		suffix[len(suffix)-2].sym == CallSuffix:
+		// `go pick()(args)`: the function a CALL returns, evaluated here as Go
+		// evaluates it, bound, and started as a function value is. It was "only `go
+		// f(args)` ... is supported yet".
+		callSuffix = suffix[len(suffix)-1]
+		steps := suffix[:len(suffix)-1]
+		for _, st := range steps {
+			if st.sym == CallSuffix {
+				if x, r, bad := e.frameRefIn(e.callArgExprs(st.ast)); bad {
+					crossed(r.what, r.advice(), x)
+					return
+				}
+			}
+		}
+		var text, ct string
+		okc := false
+		_, pro := e.capturePrologue(func() { text, ct, _, okc = e.chainCText(base, steps) })
+		if !okc || !e.isFuncCType(ct) {
+			e.fail("only `go f(args)` on a package function or `go x.M(args)` on a method is supported yet")
+			return
+		}
+		for _, line := range pro {
+			e.ind()
+			e.emit(line)
+		}
+		fn := e.newTmp()
+		e.ind()
+		e.emit(ct + " " + fn + " = " + text + ";\n")
+		e.locals[fn] = ct
+		site = goSite{callee: fn, fnCType: e.underlyingCType(ct), id: len(e.goSites)}
 	default:
 		e.fail("only `go f(args)` on a package function or `go x.M(args)` on a method is supported yet")
 		return

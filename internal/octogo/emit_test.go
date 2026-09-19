@@ -10349,6 +10349,10 @@ func main() {
 		{"w := Wrap{&lc}\n\tw.Counter.Save()", "cannot call Save on lc"},
 		{"w := Wrap{&lc}\n\tdefer w.Save()", "cannot call Save on lc"},
 		{"w := Wrap{&lc}\n\tg = w.Self()", "cannot store w.Self(), which holds a pointer into local lc in package variable g"},
+		// Started on a cog: through an embedded pointer, or a chain whose value is
+		// one, the goroutine is handed that pointer and not the address of w.
+		{"w := Wrap{&lc}\n\tgo w.Bump()", "cannot pass local w, which holds a pointer into local lc to a goroutine"},
+		{"w := Wrap{&lc}\n\tgo w.Counter.Bump()", "cannot pass local w, which holds a pointer into local lc to a goroutine"},
 		// Controls: package storage, and a method that keeps nothing.
 		{"gc.Save()", ""},
 		{"p := &gc\n\tp.Save()", ""},
@@ -10370,6 +10374,8 @@ func main() {
 		{"w := Wrap{&gc}\n\tw.Counter.Save()", ""},
 		{"w := Wrap{&gc}\n\tdefer w.Save()", ""},
 		{"w := Wrap{&gc}\n\tg = w.Self()", ""},
+		{"w := Wrap{&gc}\n\tgo w.Bump()", ""},
+		{"w := Wrap{&gc}\n\tgo w.Counter.Bump()", ""},
 	} {
 		t.Run(test.stmt, func(t *testing.T) {
 			src := head + "\t" + test.stmt + "\n" + tail

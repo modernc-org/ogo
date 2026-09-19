@@ -27944,6 +27944,55 @@ func main() {
 		want: "1 41\n5263\n9 63\n-1 false 52\nbefore 4656 1\nafter 46563231 2\n",
 	},
 	{
+		// Two go statements: a method promoted through an embedded POINTER, which
+		// hands the goroutine that pointer -- it was refused for handing it the
+		// local w -- and a function a CALL returns, evaluated at the go statement as
+		// Go evaluates it, which was "only `go f(args)` ... is supported yet".
+		//
+		// Every line of this prints what real Go prints for the same program.
+		name: "go through an embedded pointer and through what a call returns",
+		src: `var done chan int
+
+type Holder struct {
+	n int
+}
+
+func (h *Holder) Run(k int) { done <- h.n * k }
+
+type PW struct {
+	*Holder
+	tag int
+}
+
+var gh = Holder{n: 3}
+
+var calls int
+
+func work(k int) { done <- k * 100 }
+
+func pick() func(int) {
+	calls++
+	return work
+}
+
+func pick2(base int) func(int) {
+	calls += base
+	return work
+}
+
+func main() {
+	w := PW{&gh, 1}
+	go w.Run(5)
+	println(<-done)
+	go pick()(7)
+	println(<-done, calls)
+	go pick2(10)(2)
+	println(<-done, calls)
+}
+`,
+		want: "15\n700 1\n200 11\n",
+	},
+	{
 		// A function literal called where it stands, as a statement of its own, which
 		// the grammar had no production for: a statement could not begin with "func".
 		// It is lifted as a literal is anywhere and called by name; arguments are how a
