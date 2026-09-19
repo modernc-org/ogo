@@ -1,0 +1,76 @@
+// A method expression is checked as Go checks it: the method must be in the
+// method set of what is written -- T carries its value methods, *T all of them --
+// another package's must be exported, and a call is checked against the function
+// the expression is, receiver first, in every position a call stands in.
+
+import "p"
+
+type Point struct {
+	X, Y int
+}
+
+func (pt Point) Sum() int { return pt.X + pt.Y }
+
+func (pt *Point) Scale(k int) {
+	pt.X *= k
+	pt.Y *= k
+}
+
+type Shape interface {
+	Area() int
+}
+
+var gp Point
+
+func main() {
+	var pt Point
+	// ERROR Point.Missing undefined \(type Point has no field or method Missing\)
+	_ = Point.Missing
+	// ERROR \(\*Point\).Missing undefined \(type \*Point has no field or method Missing\)
+	_ = (*Point).Missing
+	// ERROR invalid method expression Point.Scale \(needs pointer receiver \(\*Point\).Scale\)
+	_ = Point.Scale
+	// ERROR too many arguments in call to Point.Sum
+	_ = Point.Sum(pt, 1)
+	// ERROR not enough arguments in call to Point.Sum
+	_ = Point.Sum()
+	// ERROR cannot use &pt \(an address\) as Point value in argument to Point.Sum
+	_ = Point.Sum(&pt)
+	// ERROR cannot use Point.Sum \(value of type func\(Point\) int\) as func\(Point\) string value in variable declaration
+	var bad func(Point) string = Point.Sum
+
+	// The same, as statements: a call, a go and a defer.
+	// ERROR cannot use pt \(a value\) as \*Point value in argument to \(\*Point\).Scale
+	(*Point).Scale(pt, 2)
+	// ERROR cannot use "x" of type string as type int in argument to \(\*Point\).Scale
+	(*Point).Scale(&pt, "x")
+	// ERROR too many arguments in call to Point.Sum
+	Point.Sum(pt, 1)
+	// ERROR invalid method expression Point.Scale \(needs pointer receiver \(\*Point\).Scale\)
+	Point.Scale(pt, 1)
+	// ERROR not enough arguments in call to \(\*Point\).Scale
+	go (*Point).Scale(&gp)
+	// ERROR \(\*Point\).Missing undefined \(type \*Point has no field or method Missing\)
+	defer (*Point).Missing(&pt)
+	// ERROR Point.Sum evaluated but not used
+	Point.Sum
+
+	// Another package's type.
+	var q p.T
+	// ERROR p.T.hidden undefined \(cannot refer to unexported method hidden\)
+	_ = p.T.hidden
+	// ERROR p.T.Missing undefined \(type p.T has no field or method Missing\)
+	_ = p.T.Missing
+	// ERROR cannot use &q \(an address\) as p.T value in argument to p.T.Get
+	_ = p.T.Get(&q)
+	// ERROR cannot use q \(a value\) as \*p.T value in argument to \(\*p.T\).Get
+	_ = (*p.T).Get(q)
+	// ERROR too many arguments in call to p.T.Get
+	p.T.Get(q, 1)
+	// ERROR cannot use p.T.Get \(value of type func\(p.T\) int\) as func\(p.T\) string value in variable declaration
+	var g func(p.T) string = p.T.Get
+
+	// ERROR Shape.Area: a method expression of an interface type is not supported yet
+	_ = Shape.Area
+	_, _ = bad, g
+}

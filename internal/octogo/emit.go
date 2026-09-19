@@ -1466,7 +1466,21 @@ func (e *emitter) emitGo(nodes []Node) {
 	var site goSite
 	var callSuffix Node
 	var recvText, recvCType string
+	me, isME := e.headMethodExpr(head, suffix)
 	switch {
+	case isME:
+		// `go (*Worker).Run(&w, 7)`: a method expression started on a cog is the
+		// function it is lifted to, the receiver its first argument.
+		if len(me.rest) != 1 || me.rest[0].sym != CallSuffix {
+			e.fail("a method expression started with go is called where it stands")
+			return
+		}
+		name, ok := e.liftMethodExpr(me)
+		if !ok {
+			return
+		}
+		site = goSite{callee: name, id: len(e.goSites)}
+		callSuffix = me.rest[0]
 	case lit.sym == FuncLiteral:
 		// `go func(c chan int) { ... }(ch)`: a cog's entry point is generated per
 		// function, and a lifted literal IS one, its parameters registered as any
@@ -2960,24 +2974,29 @@ type funcValueType struct {
 func (e *emitter) funcSigCParts(sig []int32) funcValueType {
 	_, resTypes := e.cSig(sig)
 	paramTypes, _ := e.cParamTypes(sig)
+	return e.cFuncValueType(resTypes, paramTypes)
+}
+
+// cFuncValueType is funcSigCParts from the C result and parameter types themselves.
+//
+// SEVERAL results, and a single STRUCT one, are WRITTEN THROUGH an out parameter
+// that leads the list, and the pointer itself returns nothing -- the shape an array
+// result already takes, and the one an interface's slot takes for such a method. A
+// function POINTER whose result is a struct is what the target's C compiler cannot
+// match against the function assigned to it ("expected function of 1 args
+// returning ... but got ... unknown type"), and CALLING through one on a spawned cog
+// corrupts the program outright when the struct has padding -- which (int32, bool)
+// has, and so does a `struct { seq, val int; tag byte }`. See outResultOf and
+// doc/struct-return-through-pointer-on-cog.c. The function itself still returns the
+// struct: a DIRECT call of it is right, and a direct call is what the wrapper makes
+// (funcValueWrapper).
+func (e *emitter) cFuncValueType(resTypes, paramTypes []string) funcValueType {
 	params := strings.Join(paramTypes, ", ")
 	if params == "" {
 		params = "void"
 	}
 	ret := "void"
 	if out := e.outResultOf(resTypes); out != "" {
-		// SEVERAL results, and a single STRUCT one, are WRITTEN THROUGH an out
-		// parameter that leads the list, and the pointer itself returns nothing --
-		// the shape an array result already takes, and the one an interface's slot
-		// takes for such a method. A function POINTER whose result is a struct is
-		// what the target's C compiler cannot match against the function assigned
-		// to it ("expected function of 1 args returning ... but got ... unknown
-		// type"), and CALLING through one on a spawned cog corrupts the program
-		// outright when the struct has padding -- which (int32, bool) has, and so
-		// does a `struct { seq, val int; tag byte }`. See outResultOf and
-		// doc/struct-return-through-pointer-on-cog.c. The function itself still
-		// returns the struct: a DIRECT call of it is right, and a direct call is
-		// what the wrapper makes (funcValueWrapper).
 		out += "*"
 		if params == "void" {
 			params = out
@@ -4512,7 +4531,7 @@ func typeNameCollisions(src []byte, names map[string]bool) map[string]bool {
 // emitProgram is EmitC's one pass. rename lists the main-package types spelled
 // ogo_T_<name> in C (see typeMangle).
 func emitProgram(pkg *Package, w io.Writer, opts []EmitOption, rename map[string]bool) error {
-	e := &emitter{renameTypes: rename, renamedTypes: map[string]string{}, includes: map[string]bool{}, funcRet: map[string][]string{}, funcSliceParams: map[string][]string{}, funcVariadic: map[string]int{}, nilHelpers: map[string]bool{}, funcArrayRet: map[string]arrDim{}, funcArrayParams: map[string][]arrDim{}, anonStructNames: map[string]string{}, methodValueTypes: map[string]funcValueType{}, methodValueOf: map[string]string{}, funcParams: map[string][]string{}, methodPtr: map[string]bool{}, globals: map[string]string{}, structs: map[string][]structField{}, namedTypes: map[string]bool{}, typeNames: map[string]bool{}, interfaceTypes: map[string]bool{}, ifaceMethods: map[string][]ifaceMethod{}, anonIfaceNames: map[string]string{}, anonIfaceMinted: map[string]bool{}, ifaceASTs: map[string]ifaceAST{}, ifaceVTables: map[string]bool{}, namedUnderlying: map[string]string{}, namedArrays: map[string]arrDim{}, constInt: map[string]string{}, constVal: map[string]constant.Value{}, constWide: map[string]string{}, constStr: map[string]string{}, constUntyped: map[string]bool{}, constHuge: map[string]bool{}, arrays: map[string]arrDim{}, globalArrays: map[string]arrDim{}, sliceVars: map[string]string{}, globalSliceVars: map[string]string{}, chanElems: map[string]bool{}, chanInitElems: map[string]bool{}, chanSendElems: map[string]bool{}, chanRecvElems: map[string]bool{}, chanTryRecvElems: map[string]bool{}, chanTrySendElems: map[string]bool{}, chanGatedSendElems: map[string]bool{}, aliasOf: map[string]string{}, localTypes: map[string]string{}, gotoTargets: map[string]bool{}, chanCloseElems: map[string]bool{}, chanRecv2Elems: map[string]bool{}, mathWrappers: map[string]bool{}, chanElemByName: map[string]string{}, sliceElems: map[string]bool{}, sliceElemByName: map[string]string{}, appendElems: map[string]bool{}, tryappendElems: map[string]bool{}, appendSliceElems: map[string]bool{}, tryappendSliceEls: map[string]bool{}, appendokStructs: map[string]bool{}, copyElems: map[string]bool{}, resliceElems: map[string]bool{}, reslice3Elems: map[string]bool{}, clearElems: map[string]bool{}, minElems: map[string]bool{}, maxElems: map[string]bool{}, printSliceElems: map[string]bool{}, printStructs: map[string]string{}, printlnElems: map[string]bool{}, switchBreakUsed: map[string]bool{}, labelBreak: map[string]string{}, labelContinue: map[string]string{}, labelUsed: map[string]bool{}, eqStructs: map[string]bool{}, eqArrays: map[string]arrDim{}, frameBacked: map[string]bool{}, frameHolder: map[string]string{}, crossParams: map[string][]leak{}, recvLeaks: map[string]leak{}, retRecv: map[string]bool{}, crossInto: map[string][]uint32{}, ifaceSummaries: map[string]ifaceSummary{}, retParams: map[string][]bool{}, funcValueOf: map[string]string{}, crossNames: map[string]string{}, initNames: map[string]string{}, funcValueTypes: map[string]funcValueType{}, funcTypeNames: map[string]string{}, funcTypeRet: map[string][]string{}, funcTypeParams: map[string][]string{}, retStructs: map[string]string{}, retStructByKey: map[string]string{}, shiftHelpers: map[string][2]string{}, shiftCTypes: map[*int32]string{}, shiftWalked: map[shiftWalkKey]bool{}, shiftIn: map[*int32]bool{}, divHelpers: map[string][2]string{}, funcValueWrappers: map[string]string{}, deferReplay: -1, iota: -1}
+	e := &emitter{renameTypes: rename, renamedTypes: map[string]string{}, includes: map[string]bool{}, funcRet: map[string][]string{}, funcSliceParams: map[string][]string{}, funcVariadic: map[string]int{}, nilHelpers: map[string]bool{}, funcArrayRet: map[string]arrDim{}, funcArrayParams: map[string][]arrDim{}, anonStructNames: map[string]string{}, methodValueTypes: map[string]funcValueType{}, methodValueOf: map[string]string{}, methodExprNames: map[string]string{}, funcParams: map[string][]string{}, methodPtr: map[string]bool{}, globals: map[string]string{}, structs: map[string][]structField{}, namedTypes: map[string]bool{}, typeNames: map[string]bool{}, interfaceTypes: map[string]bool{}, ifaceMethods: map[string][]ifaceMethod{}, anonIfaceNames: map[string]string{}, anonIfaceMinted: map[string]bool{}, ifaceASTs: map[string]ifaceAST{}, ifaceVTables: map[string]bool{}, namedUnderlying: map[string]string{}, namedArrays: map[string]arrDim{}, constInt: map[string]string{}, constVal: map[string]constant.Value{}, constWide: map[string]string{}, constStr: map[string]string{}, constUntyped: map[string]bool{}, constHuge: map[string]bool{}, arrays: map[string]arrDim{}, globalArrays: map[string]arrDim{}, sliceVars: map[string]string{}, globalSliceVars: map[string]string{}, chanElems: map[string]bool{}, chanInitElems: map[string]bool{}, chanSendElems: map[string]bool{}, chanRecvElems: map[string]bool{}, chanTryRecvElems: map[string]bool{}, chanTrySendElems: map[string]bool{}, chanGatedSendElems: map[string]bool{}, aliasOf: map[string]string{}, localTypes: map[string]string{}, gotoTargets: map[string]bool{}, chanCloseElems: map[string]bool{}, chanRecv2Elems: map[string]bool{}, mathWrappers: map[string]bool{}, chanElemByName: map[string]string{}, sliceElems: map[string]bool{}, sliceElemByName: map[string]string{}, appendElems: map[string]bool{}, tryappendElems: map[string]bool{}, appendSliceElems: map[string]bool{}, tryappendSliceEls: map[string]bool{}, appendokStructs: map[string]bool{}, copyElems: map[string]bool{}, resliceElems: map[string]bool{}, reslice3Elems: map[string]bool{}, clearElems: map[string]bool{}, minElems: map[string]bool{}, maxElems: map[string]bool{}, printSliceElems: map[string]bool{}, printStructs: map[string]string{}, printlnElems: map[string]bool{}, switchBreakUsed: map[string]bool{}, labelBreak: map[string]string{}, labelContinue: map[string]string{}, labelUsed: map[string]bool{}, eqStructs: map[string]bool{}, eqArrays: map[string]arrDim{}, frameBacked: map[string]bool{}, frameHolder: map[string]string{}, crossParams: map[string][]leak{}, recvLeaks: map[string]leak{}, retRecv: map[string]bool{}, crossInto: map[string][]uint32{}, ifaceSummaries: map[string]ifaceSummary{}, retParams: map[string][]bool{}, funcValueOf: map[string]string{}, crossNames: map[string]string{}, initNames: map[string]string{}, funcValueTypes: map[string]funcValueType{}, funcTypeNames: map[string]string{}, funcTypeRet: map[string][]string{}, funcTypeParams: map[string][]string{}, retStructs: map[string]string{}, retStructByKey: map[string]string{}, shiftHelpers: map[string][2]string{}, shiftCTypes: map[*int32]string{}, shiftWalked: map[shiftWalkKey]bool{}, shiftIn: map[*int32]bool{}, divHelpers: map[string][2]string{}, funcValueWrappers: map[string]string{}, deferReplay: -1, iota: -1}
 	for _, opt := range opts {
 		opt(e)
 	}
@@ -5280,6 +5299,7 @@ type emitter struct {
 	// methodValueOf: "<global>.<method>" -> the function already lifted for it, so
 	// the same method value written twice mints one function.
 	methodValueOf     map[string]string
+	methodExprNames   map[string]string         // a method expression's key (see liftMethodExpr) -> the function it was lifted to
 	funcParams        map[string][]string       // same key -> its parameter C types, so a value handed to it is stored as the parameter's type
 	callParams        []string                  // the parameter C types of the next call emitted through a function VALUE or an interface slot, which names no callee to look up; emitCallArgs takes them (see wideConstArg)
 	localConsts       map[string]bool           // block-scope CONSTANTS in scope, by name: the locals a constant fold may still resolve (see shadowedByLocal)
@@ -9908,8 +9928,12 @@ func (e *emitter) stmtMethodCalls(nodes []Node, fi funcInfo) []methodCall {
 	// and carries no Factor at all, which is why the walk below -- which reads
 	// Factors -- sees nothing of it. stmtCalls makes the same distinction.
 	if len(nodes) == 2 && nodes[0].sym == AssignHead && nodes[1].sym == Postfix {
-		if recv := e.soleIdent(nodes[0].ast); recv != "" {
-			suffix := slices.Collect(it(nodes[1].ast))
+		suffix := slices.Collect(it(nodes[1].ast))
+		if me, isME := e.headMethodExpr(nodes[0], suffix); isME {
+			if c, isM := e.methodExprCallOf(me, fi); isM {
+				out = append(out, c)
+			}
+		} else if recv := e.soleIdent(nodes[0].ast); recv != "" {
 			if len(suffix) == 2 && suffix[0].sym == Selector && suffix[1].sym == CallSuffix {
 				if c, isM := e.methodCallOf(recv, suffix, fi); isM {
 					out = append(out, c)
@@ -9925,7 +9949,11 @@ func (e *emitter) stmtMethodCalls(nodes []Node, fi funcInfo) []methodCall {
 			}
 			if n.sym == Factor {
 				kids := slices.Collect(it(n.ast))
-				if recv, suffix, ok := e.factorCall(kids); ok && len(suffix) == 2 &&
+				if me, isME := e.methodExprAt(kids); isME {
+					if c, isM := e.methodExprCallOf(me, fi); isM {
+						out = append(out, c)
+					}
+				} else if recv, suffix, ok := e.factorCall(kids); ok && len(suffix) == 2 &&
 					suffix[0].sym == Selector && suffix[1].sym == CallSuffix {
 					if c, isM := e.methodCallOf(recv, suffix, fi); isM {
 						out = append(out, c)
@@ -9939,6 +9967,45 @@ func (e *emitter) stmtMethodCalls(nodes []Node, fi funcInfo) []methodCall {
 		walk(n.ast)
 	}
 	return out
+}
+
+// methodExprCallOf is methodCallOf for a method expression called, `(*T).M(p, x)`:
+// the method, with its first argument as the receiver -- classified as a receiver
+// named in a method call is, where that argument IS the receiver the method is
+// handed, a pointer to a pointer method, and taken for a local otherwise, a value
+// receiver being a copy.
+func (e *emitter) methodExprCallOf(me emMethodExpr, fi funcInfo) (methodCall, bool) {
+	if len(me.rest) == 0 || me.rest[0].sym != CallSuffix {
+		return methodCall{}, false
+	}
+	cname, _, _, found := e.promotedMethod(me.typeC, me.member)
+	args := e.callArgExprs(me.rest[0].ast)
+	if !found || len(args) == 0 {
+		return methodCall{}, false
+	}
+	c := methodCall{callee: cname, recv: recvLocal, recvAt: argLocal, args: args[1:]}
+	if !me.ptr || !e.methodPtr[cname] {
+		return c, true
+	}
+	if root, isAddr := e.addrOfRoot(args[0].ast); isAddr {
+		if e.isPackageVar(root) {
+			c.recv = recvOutlives
+		}
+		return c, true
+	}
+	name, isName := e.exprIdent(args[0].ast)
+	if !isName {
+		return c, true
+	}
+	switch i := slices.Index(fi.params, name); {
+	case name == fi.recvName && e.isPointer(fi.recvCType):
+		c.recv = recvOwn
+	case e.isPackageVar(name):
+		c.recv = recvOutlives
+	case i >= 0 && i < len(fi.ptrBase) && fi.ptrBase[i] != "" && i < intoBits:
+		c.recv, c.recvAt = recvParam, i
+	}
+	return c, true
 }
 
 // methodCallOf resolves one `recv.m(args)` against the enclosing declaration.
@@ -10839,6 +10906,315 @@ func (e *emitter) funcValueWrapper(cname string) (string, bool) {
 func (e *emitter) mustVarType(name string) string {
 	ct, _ := e.varType(name)
 	return ct
+}
+
+// emMethodExpr is a METHOD EXPRESSION as the emitter reads it, `T.M` or `(*T).M`:
+// the method member of the type whose C name is typeC, its receiver a *typeC with
+// ptr, and the steps written after the method's name.
+type emMethodExpr struct {
+	typeC, member string
+	ptr           bool
+	rest          []Node
+}
+
+// methodExprAt recognises a Factor's children as a method expression: a type's name
+// -- or `(*T)`, and either qualified by its package -- selected by a method of that
+// type. A name a value shadows is no type here, as the checker has it.
+func (e *emitter) methodExprAt(kids []Node) (me emMethodExpr, ok bool) {
+	switch {
+	case len(kids) == 2 && kids[0].sym == 0 && e.f.ch(kids[0].tok) == IDENT && kids[1].sym == FactorSuffix:
+		return e.methodExprOfName(e.src(kids[0].tok), slices.Collect(it(kids[1].ast)))
+	case len(kids) == 4 && kids[0].sym == 0 && e.f.ch(kids[0].tok) == LPAREN && kids[1].sym == Expression &&
+		kids[2].sym == 0 && e.f.ch(kids[2].tok) == RPAREN && kids[3].sym == FactorSuffix:
+		return e.methodExprOfType(e.starTypeCAt(kids[1]), true, slices.Collect(it(kids[3].ast)))
+	}
+	return emMethodExpr{}, false
+}
+
+// methodExprOfName is methodExprAt for a head already taken apart: the name written
+// first and the steps after it. The name is the type's, `T.M`, or its package's,
+// `lib.T.M`, the type's then being the first step.
+func (e *emitter) methodExprOfName(head string, steps []Node) (emMethodExpr, bool) {
+	if head == "" {
+		return emMethodExpr{}, false
+	}
+	if _, isVar := e.varType(head); isVar {
+		return emMethodExpr{}, false
+	}
+	if prefix, isImport := e.importQualifiers[head]; isImport {
+		if head == "p2" || len(steps) < 2 || steps[0].sym != Selector {
+			return emMethodExpr{}, false
+		}
+		name := e.soleIdent(steps[0].ast)
+		if name == "" {
+			return emMethodExpr{}, false
+		}
+		return e.methodExprOfType(e.unaliased(mangle(prefix, name)), false, steps[1:])
+	}
+	return e.methodExprOfType(e.unaliased(e.typeCName(head)), false, steps)
+}
+
+// methodExprOfType is methodExprAt with the type resolved: its C name, whether it
+// was written (*T), and the steps after it.
+func (e *emitter) methodExprOfType(typeC string, ptr bool, steps []Node) (emMethodExpr, bool) {
+	if typeC == "" || !e.typeNames[typeC] || len(steps) == 0 || steps[0].sym != Selector {
+		return emMethodExpr{}, false
+	}
+	member := e.soleIdent(steps[0].ast)
+	if member == "" {
+		return emMethodExpr{}, false
+	}
+	if _, _, _, found := e.promotedMethod(typeC, member); !found {
+		return emMethodExpr{}, false
+	}
+	return emMethodExpr{typeC: typeC, member: member, ptr: ptr, rest: steps[1:]}, true
+}
+
+// headMethodExpr is methodExprAt for a statement's AssignHead and the steps after
+// it: `T.M(...)` or `(*T).M(...)` standing as a go, a defer or a call statement.
+func (e *emitter) headMethodExpr(head Node, steps []Node) (emMethodExpr, bool) {
+	if head.sym != AssignHead {
+		return emMethodExpr{}, false
+	}
+	if name := e.soleIdent(head.ast); name != "" {
+		return e.methodExprOfName(name, steps)
+	}
+	kids := slices.Collect(it(head.ast))
+	if len(kids) == 3 && kids[0].sym == 0 && e.f.ch(kids[0].tok) == LPAREN && kids[1].sym == Expression {
+		return e.methodExprOfType(e.starTypeCAt(kids[1]), true, steps)
+	}
+	return emMethodExpr{}, false
+}
+
+// starTypeCAt answers the C name of T for an expression that is exactly `*T` or
+// `*lib.T`, the receiver written in `(*T).M`, and "" for anything else -- `*p` with
+// p a pointer is a dereference.
+func (e *emitter) starTypeCAt(x Node) string {
+	nodes := slices.Collect(it(x.ast))
+	for len(nodes) == 1 && (nodes[0].sym == Expression || nodes[0].sym == SimpleExpr || nodes[0].sym == Term) {
+		nodes = slices.Collect(it(nodes[0].ast))
+	}
+	if len(nodes) != 1 || nodes[0].sym != UnaryExpr {
+		return ""
+	}
+	kids := slices.Collect(it(nodes[0].ast))
+	if len(kids) != 2 || kids[0].sym != UnaryOp || kids[1].sym != Factor {
+		return ""
+	}
+	if tok, isOp := e.unaryOpTok(kids[0].ast); !isOp || e.f.ch(tok) != MUL {
+		return ""
+	}
+	fk := slices.Collect(it(kids[1].ast))
+	if len(fk) == 0 || fk[0].sym != 0 || e.f.ch(fk[0].tok) != IDENT {
+		return ""
+	}
+	name := e.src(fk[0].tok)
+	if _, isVar := e.varType(name); isVar {
+		return ""
+	}
+	prefix, isImport := e.importQualifiers[name]
+	switch {
+	case len(fk) == 1 && !isImport:
+		return e.unaliased(e.typeCName(name))
+	case len(fk) == 2 && fk[1].sym == FactorSuffix && isImport && name != "p2":
+		steps := slices.Collect(it(fk[1].ast))
+		if len(steps) != 1 || steps[0].sym != Selector {
+			return ""
+		}
+		if t := e.soleIdent(steps[0].ast); t != "" {
+			return e.unaliased(mangle(prefix, t))
+		}
+	}
+	return ""
+}
+
+// liftMethodExpr emits a method expression as a function of its own, the receiver
+// its first parameter -- `ogo_meN(T r, ...)`, or `(T* r, ...)` for `(*T).M` -- which
+// calls the method, promoted or not, as a call of it on r would. The function is
+// registered as any function is, so a call of the expression and its use as a
+// value go the ways a function's do, a struct result through funcValueWrapper.
+//
+// Its lifetime summary is the method's with the receiver made parameter 0: what the
+// method keeps of its receiver (recvLeaks) it keeps of that parameter, what it
+// stores INTO its receiver it stores through it (crossInto), and a returned receiver
+// is a returned parameter -- all only where the parameter IS the receiver, a pointer
+// handed to a pointer method. A value receiver is a copy, and what the method does
+// with it stays in the copy.
+func (e *emitter) liftMethodExpr(me emMethodExpr) (string, bool) {
+	key := fmt.Sprintf("%s.%s.%v", me.typeC, me.member, me.ptr)
+	if name, done := e.methodExprNames[key]; done {
+		return name, true
+	}
+	spelled := e.goTypeName(me.typeC) + "." + me.member
+	if me.ptr {
+		spelled = "(*" + e.goTypeName(me.typeC) + ")." + me.member
+	}
+	mcname, path, _, found := e.promotedMethod(me.typeC, me.member)
+	fv, typed := e.methodValueTypes[mcname]
+	if !found || !typed {
+		e.fail("cannot use %s as a value: the method's type is not known here", spelled)
+		return "", false
+	}
+	if _, arrRet := e.funcArrayRet[mcname]; arrRet || slices.ContainsFunc(e.funcArrayParams[mcname], func(a arrDim) bool { return a.bound != "" }) {
+		e.fail("cannot use %s as a value: an array parameter or result is not supported here yet", spelled)
+		return "", false
+	}
+	recvCT := me.typeC
+	if me.ptr {
+		recvCT += "*"
+	} else if e.hasArrayField(me.typeC) {
+		e.fail("cannot use %s as a value: %s holds an array, which the target's C compiler cannot pass by value; use (*%s).%s",
+			spelled, e.goTypeName(me.typeC), e.goTypeName(me.typeC), me.member)
+		return "", false
+	}
+	ptrRecv := e.methodPtr[mcname]
+	recvText, ok := e.promotedRecvC("r", recvCT, path, ptrRecv, true)
+	if !ok {
+		e.fail("cannot use %s as a value: its receiver cannot be reached", spelled)
+		return "", false
+	}
+	ret := "void"
+	switch len(fv.res) {
+	case 0:
+	case 1:
+		ret = fv.res[0]
+	default:
+		ret = e.retStructNameOf(fv.res)
+	}
+	name := mangle(e.curPkgPrefix, fmt.Sprintf("ogo_me%d", e.liftSeq))
+	e.liftSeq++
+	params, args := []string{recvCT + " r"}, []string{recvText}
+	for i, pt := range fv.params {
+		nm := fmt.Sprintf("p%d", i)
+		params = append(params, pt+" "+nm)
+		args = append(args, nm)
+	}
+	call := mcname + "(" + strings.Join(args, ", ") + ")"
+	body := "\t" + call + ";\n"
+	if ret != "void" {
+		// Bound, not returned where it stands: `return f();` of a result struct
+		// holding anything narrower than a word is miscompiled by the target's
+		// compiler (doc/return-nonword-struct.c), as forwarding a return is.
+		body = "\t" + ret + " res = " + call + ";\n\treturn res;\n"
+	}
+	proto := ret + " " + name + "(" + strings.Join(params, ", ") + ")"
+	e.liftedProtos = append(e.liftedProtos, proto)
+	e.liftedDefs = append(e.liftedDefs, proto+" {\n"+body+"}\n")
+
+	allParams := append([]string{recvCT}, fv.params...)
+	e.funcRet[name] = fv.res
+	e.funcParams[name] = allParams
+	e.funcSliceParams[name] = append([]string{""}, e.funcSliceParams[mcname]...)
+	if at, variadic := e.funcVariadic[mcname]; variadic {
+		e.funcVariadic[name] = at + 1
+	}
+	e.funcValueTypes[name] = e.cFuncValueType(fv.res, allParams)
+	// The summary, the receiver at parameter 0. The method is handed parameter 0
+	// itself where the expression takes a pointer, and a pointer the VALUE carries
+	// where the method is promoted through an embedded one -- `W.Save` for a W
+	// embedding *Point, which Go admits -- so either way what it keeps of its
+	// receiver, it keeps of what parameter 0 holds.
+	byRef := ptrRecv && (me.ptr || e.pathThroughPointer(me.typeC, path))
+	crosses, intos, rets := make([]leak, len(allParams)), make([]uint32, len(allParams)), make([]bool, len(allParams))
+	if byRef {
+		crosses[0], rets[0] = e.recvLeaks[mcname], e.retRecv[mcname]
+	}
+	for j, f := range e.crossParams[mcname] {
+		if j+1 >= len(crosses) {
+			break
+		}
+		if f&leakRecv != 0 {
+			f &^= leakRecv
+			if byRef {
+				intos[j+1] |= 1 // stored into the receiver: through parameter 0
+			}
+		}
+		crosses[j+1] = f
+	}
+	for j, m := range e.crossInto[mcname] {
+		if j+1 < len(intos) {
+			intos[j+1] |= m << 1
+		}
+	}
+	for j, r := range e.retParams[mcname] {
+		if j+1 < len(rets) {
+			rets[j+1] = r
+		}
+	}
+	e.crossParams[name], e.crossInto[name], e.retParams[name] = crosses, intos, rets
+	e.crossNames[name] = spelled
+	e.methodExprNames[key] = name
+	return name, true
+}
+
+// emitMethodExpr emits a method expression standing as an operand: the function it
+// is lifted to, as a value -- through the wrapper a struct result takes -- or called
+// where it stands, `T.M(x)`. A further step after the call is not taken yet.
+func (e *emitter) emitMethodExpr(me emMethodExpr) {
+	name, ok := e.liftMethodExpr(me)
+	if !ok {
+		return
+	}
+	switch {
+	case len(me.rest) == 0:
+		if w, wrapped := e.funcValueWrapper(name); wrapped {
+			e.emit(w)
+			return
+		}
+		e.emit(name)
+	case len(me.rest) == 1 && me.rest[0].sym == CallSuffix:
+		e.emit(name + "(")
+		e.emitCallArgs(name, me.rest[0].ast)
+		e.emit(")")
+	case me.rest[0].sym == CallSuffix && len(e.funcRet[name]) == 1:
+		// `T.M(x).f`: the call's one result, bound to a temporary of the frame, and
+		// the steps after it taken on that, as they are after any call.
+		rt := e.funcRet[name][0]
+		tmp := e.hoist(rt, func() {
+			e.emit(name + "(")
+			e.emitCallArgs(name, me.rest[0].ast)
+			e.emit(")")
+		})
+		e.locals[tmp] = rt
+		steps := me.rest[1:]
+		if slices.ContainsFunc(steps, func(st Node) bool { return st.sym == CallSuffix }) {
+			if !e.emitCallExpr(tmp, steps) {
+				e.fail("a method expression read through a step after its call is not supported here yet")
+			}
+			return
+		}
+		if _, ok := e.emitAccessChainAt(tmp, e.plainOrSlice(rt), steps, true); !ok {
+			e.fail("a method expression read through a step after its call is not supported here yet")
+		}
+	default:
+		e.fail("a method expression read through a step after its call is not supported yet")
+	}
+}
+
+// methodExprCType is the C type a method expression has as an operand: the function
+// type it is lifted to, or the one result of the call of it.
+func (e *emitter) methodExprCType(me emMethodExpr) (string, bool) {
+	name, ok := e.liftMethodExpr(me)
+	if !ok {
+		return "", false
+	}
+	switch {
+	case len(me.rest) == 0:
+		return e.funcValueCType(name)
+	case len(me.rest) == 1 && me.rest[0].sym == CallSuffix:
+		if res := e.funcRet[name]; len(res) == 1 {
+			return res[0], true
+		}
+	case me.rest[0].sym == CallSuffix && len(e.funcRet[name]) == 1:
+		steps := me.rest[1:]
+		if slices.ContainsFunc(steps, func(st Node) bool { return st.sym == CallSuffix }) {
+			return "", false
+		}
+		if cur, ok := e.accessChainTypeAt(e.plainOrSlice(e.funcRet[name][0]), steps, true); ok {
+			return e.chainValueCType(cur)
+		}
+	}
+	return "", false
 }
 
 // liftMethodValue emits a method value as a function of its own with the receiver
@@ -12365,6 +12741,11 @@ func (e *emitter) nodeHasEffect(n Node) bool {
 	case n.sym == 0:
 		return e.f.ch(n.tok) == ARROW // a channel receive
 	case n.sym == Factor:
+		// A method expression called, `T.M(x)` or `(*T).M(p)`: a call, which the
+		// shape of a conversion `T(x)` would otherwise pass for pure.
+		if me, isME := e.methodExprAt(slices.Collect(it(n.ast))); isME && len(me.rest) != 0 {
+			return true
+		}
 		if recv, _, isCall := e.factorCall(slices.Collect(it(n.ast))); isCall && !e.pureCall(recv) {
 			return true
 		}
@@ -22680,6 +23061,14 @@ func (e *emitter) checkDeferLeaks(d *deferredCall, head Node, suffix []Node, arg
 		e.checkIntoArgs(d.litName, args)
 		return
 	}
+	// `defer (*C).Save(&lc)`: the function the method expression is lifted to.
+	if me, isME := e.headMethodExpr(head, suffix); isME && len(me.rest) == 1 && me.rest[0].sym == CallSuffix {
+		if cname, ok := e.liftMethodExpr(me); ok {
+			e.checkCrossArgs(cname, args, e.spreadCall(me.rest[0].ast))
+			e.checkIntoArgs(cname, args)
+		}
+		return
+	}
 	base := e.soleIdent(head.ast)
 	if base == "" {
 		var isAddr bool
@@ -23437,6 +23826,15 @@ func (e *emitter) emitAssignHeadStmt(nodes []Node) {
 func (e *emitter) emitCall(head Node, postfix []Node) {
 	recv := e.soleIdent(head.ast)
 	if recv == "" {
+		// `(*T).M(p, x)`, a method expression called as a statement.
+		if kids := slices.Collect(it(head.ast)); len(kids) == 3 && kids[0].sym == 0 && e.f.ch(kids[0].tok) == LPAREN && kids[1].sym == Expression {
+			if me, isME := e.methodExprOfType(e.starTypeCAt(kids[1]), true, postfix); isME {
+				e.ind()
+				e.emitMethodExpr(me)
+				e.emit(";\n")
+				return
+			}
+		}
 		// `(*p).m()` as a statement. Go defines `p.m()` as the same call, so the
 		// receiver is the pointer and the shorthand is what is emitted -- the same
 		// equivalence the expression form uses (see derefCallSteps).
@@ -23503,6 +23901,12 @@ func (e *emitter) emitCall(head Node, postfix []Node) {
 func (e *emitter) emitCallExpr(recv string, suffix []Node) bool {
 	discard := e.discardCall // see emitCallStmtExpr
 	e.discardCall = false
+	// `T.M(x)` and `lib.T.M(x)`, a method expression called: the function it is
+	// lifted to.
+	if me, isME := e.methodExprOfName(recv, suffix); isME {
+		e.emitMethodExpr(me)
+		return true
+	}
 	// An UNQUALIFIED call to a math intrinsic, which happens only inside the math
 	// package's own source: Round and Trunc are written in OctoGo over Floor, Ceil
 	// and Abs. Without this they would emit calls to math_Floor, which is declared
@@ -23675,6 +24079,7 @@ func (e *emitter) emitCallExpr(recv string, suffix []Node) bool {
 		return true
 	case len(suffix) == 2 && suffix[0].sym == Selector && suffix[1].sym == CallSuffix:
 		method := e.soleIdent(suffix[0].ast)
+		// `T.M(x)`, a method expression called: the function it is lifted to.
 		// A call through an interface value: the table says which function, and the
 		// data pointer is the receiver the thunk unpacks.
 		if ct, ok := e.varType(recv); ok && e.isIfaceCType(ct) {
@@ -30025,6 +30430,28 @@ func (e *emitter) emitDestructure(targets []assignTarget, declare []bool, rhs []
 		}
 	}
 	if !ok {
+		// `a, b := (*T).M(p)`: a method expression called, which has no name for
+		// the paths below to take apart.
+		if me, isME := e.methodExprAt(e.factorKids(rhs)); isME && len(me.rest) == 1 && me.rest[0].sym == CallSuffix {
+			name, lifted := e.liftMethodExpr(me)
+			if !lifted {
+				return
+			}
+			res := e.funcRet[name]
+			if len(res) != len(targets) {
+				e.fail("multiple-assignment target/result count mismatch")
+				return
+			}
+			tmp := e.newTmp()
+			e.ind()
+			e.emit(e.retStructNameOf(res) + " " + tmp + " = ")
+			e.emitMethodExpr(me)
+			e.emit(";\n")
+			for i, tgt := range targets {
+				e.emitStore(tgt, declare[i], res[i], fmt.Sprintf("%s._%d", tmp, i))
+			}
+			return
+		}
 		e.fail("multiple assignment requires a single function call on the right-hand side")
 		return
 	}
@@ -30115,9 +30542,10 @@ func (e *emitter) emitDestructure(targets []assignTarget, declare []bool, rhs []
 			recv += ", " + args
 		}
 		e.emit(cn + "(" + recv + ")")
-	} else if len(suffix) > 2 {
+	} else if _, isME := e.methodExprOfName(callee, suffix); len(suffix) > 2 && !isME {
 		// A chain receiver: emitCallExpr knows the one- and two-step shapes and not
-		// this one, so the chain walk renders the whole call, receiver included.
+		// this one, so the chain walk renders the whole call, receiver included --
+		// but for `lib.T.M(x)`, a method expression, which is emitCallExpr's.
 		text, _, _, okc := e.chainCText(callee, suffix)
 		if !okc {
 			e.fail("unsupported call on the right-hand side of a multiple assignment")
@@ -30353,6 +30781,14 @@ func ifaceResultTypes(m ifaceMethod) []string {
 }
 
 func (e *emitter) callResultInfo(recv string, suffix []Node) (cname string, resTypes []string, ok bool) {
+	// `T.M(x)`, a method expression called: what the function it is lifted to
+	// returns, which is what the method does.
+	if me, isME := e.methodExprOfName(recv, suffix); isME && len(me.rest) == 1 && me.rest[0].sym == CallSuffix {
+		if name, lifted := e.liftMethodExpr(me); lifted {
+			return name, e.funcRet[name], true
+		}
+		return "", nil, false
+	}
 	// An INTERFACE method reached through a chain, `devs[i].Read()`,
 	// `bus.active.Read()`: the results are the slot's, as they are for a plain
 	// interface variable below, and there is no C name to key them by -- the
@@ -31246,6 +31682,28 @@ func (e *emitter) promotedMethod(ctype, method string) (cname string, path []str
 	return "", nil, "", false
 }
 
+// pathThroughPointer reports whether a promotion path from ctype -- the embedded
+// fields promotedMethod answers -- passes through a field embedded as a pointer.
+func (e *emitter) pathThroughPointer(ctype string, path []string) bool {
+	cur := methodBaseType(ctype)
+	for _, name := range path {
+		next := ""
+		for _, fld := range e.structs[cur] {
+			if fld.name == name {
+				if e.isPointer(fld.ctype) {
+					return true
+				}
+				next = methodBaseType(fld.ctype)
+			}
+		}
+		if next == "" {
+			return false
+		}
+		cur = next
+	}
+	return false
+}
+
 // promotedIfaceMethodPath finds a method promoted from an embedded INTERFACE: the
 // member path to the interface-typed field whose method set has it, at any depth
 // through embedded structs. The call it types dispatches through the field's held
@@ -31915,6 +32373,11 @@ func (e *emitter) inferNode(n Node) (string, bool) {
 		return e.inferNodes(slices.Collect(it(n.ast)))
 	case UnaryExpr, Factor:
 		kids := slices.Collect(it(n.ast))
+		if n.sym == Factor {
+			if me, isME := e.methodExprAt(kids); isME {
+				return e.methodExprCType(me)
+			}
+		}
 		if len(kids) == 3 && kids[0].sym == 0 && e.f.ch(kids[0].tok) == LPAREN {
 			return e.inferNode(kids[1])
 		}
@@ -33797,6 +34260,12 @@ func (e *emitter) emitExprNode(n Node) {
 		}
 	case UnaryExpr, Factor:
 		kids := slices.Collect(it(n.ast))
+		if n.sym == Factor {
+			if me, isME := e.methodExprAt(kids); isME {
+				e.emitMethodExpr(me)
+				return
+			}
+		}
 		if len(kids) == 3 && kids[0].sym == 0 && e.f.ch(kids[0].tok) == LPAREN {
 			e.emit("(")
 			e.emitExprNode(kids[1])
@@ -35393,6 +35862,23 @@ func (e *emitter) frameRefOf(ast []int32) (frameRef, bool) {
 	// provenance back out: `id(&x)` reaches x's storage exactly as `&x` does. Without
 	// this a single call launders a reference past every sink -- `return id(&x)`
 	// compiled, and so did storing or sending one.
+	// `(*C).Self(&lc)`, a method expression called: what the function it is lifted
+	// to hands back of its arguments -- the receiver among them.
+	if kids := e.factorKids(ast); kids != nil {
+		if me, isME := e.methodExprAt(kids); isME && len(me.rest) == 1 && me.rest[0].sym == CallSuffix {
+			if name, ok := e.liftMethodExpr(me); ok {
+				derives := e.retParams[name]
+				for i, a := range e.callArgExprs(me.rest[0].ast) {
+					if i < len(derives) && derives[i] {
+						if r, ok := e.frameRefOf(a.ast); ok {
+							return r, true
+						}
+					}
+				}
+			}
+			return frameRef{}, false
+		}
+	}
 	if recv, suffix, ok := e.directCall(ast); ok && len(suffix) != 0 && suffix[len(suffix)-1].sym == CallSuffix {
 		// A CONVERSION to a slice type is not a call: it renames the same header
 		// over the same storage, so whatever the operand referred to, the result
@@ -36304,6 +36790,14 @@ func (e *emitter) bindFuncValue(name string, initExpr []int32) {
 		if lit, suffix, isLit := e.factorFuncLit(kids); isLit && len(suffix) == 0 {
 			e.funcValueOf[name] = e.litKey(lit)
 			return
+		}
+		// `f := (*C).Save`: the function the method expression is lifted to,
+		// carrying the method's summary with the receiver as parameter 0.
+		if me, isME := e.methodExprAt(kids); isME && len(me.rest) == 0 {
+			if cn, ok := e.liftMethodExpr(me); ok {
+				e.funcValueOf[name] = cn
+				return
+			}
 		}
 		// `f := gb.set`: the lifted method value, which carries the method's
 		// summary (liftMethodValue). Lifting is memoised, so asking here lifts

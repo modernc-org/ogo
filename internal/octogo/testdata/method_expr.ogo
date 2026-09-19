@@ -1,0 +1,74 @@
+// COMPILE
+
+// A METHOD EXPRESSION, T.M or (*T).M, is the method as a function whose first
+// parameter is the receiver: a T for T.M, a *T for (*T).M. T carries the methods
+// declared with a value receiver and *T all of them, a promoted method included,
+// and another package's type is written qualified, p.T.Get.
+
+import "p"
+
+type Point struct {
+	X, Y int
+}
+
+func (pt Point) Sum() int { return pt.X + pt.Y }
+
+func (pt *Point) Scale(k int) {
+	pt.X *= k
+	pt.Y *= k
+}
+
+func (pt Point) Split() (int, int) { return pt.X, pt.Y }
+
+type Named struct {
+	Point
+	Name string
+}
+
+type Celsius int
+
+func (c Celsius) Fahrenheit() int { return int(c)*9/5 + 32 }
+
+type op struct {
+	f func(Point) int
+}
+
+var gp Point
+
+func apply(f func(Point) int, pt Point) int { return f(pt) }
+
+func scaler() func(*Point, int) { return (*Point).Scale }
+
+func main() {
+	pt := Point{1, 2}
+	var sum func(Point) int = Point.Sum
+	_ = sum(pt)
+	_ = Point.Sum(pt)
+	(*Point).Scale(&pt, 3)
+	_ = (*Point).Sum(&pt)
+	scale := (*Point).Scale
+	scale(&pt, 2)
+	x, y := Point.Split(pt)
+	_, _ = x, y
+	_ = apply(Point.Sum, pt)
+	scaler()(&pt, 2)
+	o := op{f: Point.Sum}
+	_ = o.f(pt)
+	fs := []func(Point) int{Point.Sum, sum}
+	_ = fs[1](pt)
+
+	n := Named{pt, "n"}
+	_ = Named.Sum(n)
+	(*Named).Scale(&n, 2)
+	_ = Celsius.Fahrenheit(100)
+
+	defer (*Point).Scale(&pt, 2)
+	go (*Point).Scale(&gp, 2)
+
+	var q p.T
+	_ = p.T.Get(q)
+	get := (*p.T).Get
+	_ = get(&q)
+	var g func(p.T) int = p.T.Get
+	_ = g(q)
+}

@@ -10176,6 +10176,10 @@ func (c *Counter) Bump() { c.n++ }
 
 func byParam(p *Counter) { p.Save() }
 
+type Wrap struct {
+	*Counter
+}
+
 func run() {
 	var lc Counter
 	var h Holder
@@ -10205,6 +10209,15 @@ func main() {
 		{"g = lc.Self()", "cannot store the address of local variable lc in package variable g"},
 		{"x := lc.Self()\n\tg = x", "cannot store local x, which holds a pointer into local lc"},
 		{"byParam(&lc)", "cannot pass the address of local variable lc to byParam"},
+		// A method expression: the receiver is its first argument.
+		{"(*Counter).Save(&lc)", "cannot pass the address of local variable lc to (*Counter).Save: its parameter 1 is stored where it outlives every frame"},
+		{"defer (*Counter).Save(&lc)", "cannot pass the address of local variable lc to (*Counter).Save"},
+		{"f := (*Counter).Save\n\tf(&lc)", "cannot pass the address of local variable lc to (*Counter).Save"},
+		{"(*Counter).Send(&lc)", "cannot pass the address of local variable lc to (*Counter).Send: its parameter 1 reaches another cog"},
+		{"g = (*Counter).Self(&lc)", "cannot store the address of local variable lc in package variable g"},
+		// Promoted through an embedded pointer: what the method keeps is what the
+		// value carries.
+		{"w := Wrap{&lc}\n\tWrap.Save(w)", "cannot pass local w, which holds a pointer into local lc to Wrap.Save"},
 		// Controls: package storage, and a method that keeps nothing.
 		{"gc.Save()", ""},
 		{"p := &gc\n\tp.Save()", ""},
@@ -10215,6 +10228,11 @@ func main() {
 		{"byParam(&gc)", ""},
 		{"lc.Bump()", ""},
 		{"h.c.Bump()", ""},
+		{"(*Counter).Save(&gc)", ""},
+		{"f := (*Counter).Save\n\tf(&gc)", ""},
+		{"g = (*Counter).Self(&gc)", ""},
+		{"(*Counter).Bump(&lc)", ""},
+		{"w := Wrap{&gc}\n\tWrap.Save(w)", ""},
 	} {
 		t.Run(test.stmt, func(t *testing.T) {
 			src := head + "\t" + test.stmt + "\n" + tail
@@ -10316,6 +10334,12 @@ func main() {
 		{"bus.fn(a[:])", "cannot pass a slice backed by local a to keep"},
 		{"defer bus.fn(a[:])", "cannot pass a slice backed by local a to keep"},
 		{"id := func(xs []int) []int { return xs }\n\tg = id(a[:])", "cannot store a slice backed by local a in package variable g"},
+		// A method expression, its receiver the first argument -- called, deferred
+		// and bound to a variable.
+		{"(*Box).set(&gb, a[:])", "cannot pass a slice backed by local a to (*Box).set: it is stored through gb, which outlives this function"},
+		{"defer (*Box).set(&gb, a[:])", "cannot pass a slice backed by local a to (*Box).set: it is stored through gb"},
+		{"f := (*Box).set\n\tf(&gb, a[:])", "cannot pass a slice backed by local a to (*Box).set: it is stored through gb"},
+		{"var lb Box\n\t(*Box).set(&lb, a[:])\n\tgb = lb", "cannot store local lb, which holds a pointer into local a"},
 		// A local the callee stores into, copied out afterwards.
 		{"var lb Box\n\tlb.set(a[:])\n\tgb = lb", "cannot store local lb, which holds a pointer into local a"},
 		{"var lb Box\n\tlb.set(a[:])\n\tkeepBox(lb)", "cannot pass local lb, which holds a pointer into local a to keepBox"},
@@ -10342,6 +10366,8 @@ func main() {
 		{"p := &gb\n\tgp = &p.d[0]\n\tq := *p\n\tgb = q", ""},
 		{"bus.dev.Keep(back[:])\n\tdefer bus.fn(back[1:])\n\tf := gb.set\n\tf(back[2:])", ""},
 		{"id := func(xs []int) []int { return xs }\n\tback[0] = len(id(a[:]))", ""},
+		{"var lb Box\n\t(*Box).set(&lb, a[:])\n\tback[0] = len(lb.d)", ""},
+		{"(*Box).set(&gb, back[:])\n\tf := (*Box).set\n\tf(&gb, back[1:])", ""},
 	} {
 		t.Run(test.stmt, func(t *testing.T) {
 			src := head + "\t" + test.stmt + "\n" + tail

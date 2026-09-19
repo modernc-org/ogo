@@ -1623,6 +1623,25 @@
 // call through a function value on this target, measured rather than guessed. See
 // doc/funcval-cost.c, which also records how to revisit it.
 //
+// A method EXPRESSION, "T.M" or "(*T).M", binds nothing: it is the method as a
+// function whose first parameter is the receiver, a T or a *T as written.
+//
+//	sum := Point.Sum          // func(Point) int
+//	scale := (*Point).Scale   // func(*Point, int)
+//	scale(&p, 2)              // p.Scale(2)
+//	n := geo.Vec.Len(v)       // another package's type, qualified
+//
+// T.M exists for the methods declared with a value receiver and (*T).M for all of
+// them, as Go's method sets have it; a method promoted through an embedded field is
+// taken as a declared one is, and one with a pointer receiver promoted through an
+// embedded POINTER is in T's set too. With no receiver to bind, every receiver is
+// admitted: the compiler lifts the expression to a function of its own that calls
+// the method on its first argument, and the expression is that function -- called,
+// passed on, stored and launched as any function is. What the method keeps of its
+// receiver it keeps of that argument, and the lifetime rules ask of it what they
+// ask of any argument. The method expression of an INTERFACE type, "Shape.Area", is
+// not supported yet.
+//
 // # Function Literals
 //
 // A function literal represents an anonymous function.

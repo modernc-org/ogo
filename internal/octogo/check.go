@@ -2130,6 +2130,12 @@ func (f *File) checkCallStmt(s *Scope, head, stmt Node, kw string, kwTok Token, 
 	if f.reportNotACall(s, head, stmt, kw) {
 		return
 	}
+	if steps, _ := callSteps(stmt); len(steps) != 0 {
+		if me, rest, ok := f.methodExprOfHead(s, head, steps); ok {
+			f.checkMethodExpr(s, me, rest)
+			return
+		}
+	}
 	f.checkSelectors(s, head, stmt)
 	f.checkIndexExprs(s, stmt) // the "i" in a "go a[i].m()" callee
 	argList, later, direct, isCall := f.callInfoAll(stmt)
@@ -4902,6 +4908,14 @@ func hasSelectorChild(n Node) bool {
 // new (Go short variable declaration semantics). Plain assignments, sends and
 // calls declare nothing.
 func (f *File) checkAssignment(s *Scope, head, postfix Node) {
+	// `T.M(x)` and `(*T).M(p, x)` as a statement: a method expression called. One
+	// not called is left to the report of a value evaluated and not used below.
+	if steps, pure := callSteps(postfix); pure && endsInCall(postfix) {
+		if me, rest, ok := f.methodExprOfHead(s, head, steps); ok {
+			f.checkMethodExpr(s, me, rest)
+			return
+		}
+	}
 	f.checkSelectors(s, head, postfix)
 	f.checkIndexExprs(s, postfix) // the "i" in a "a[i] = e" target (LhsItems below)
 
@@ -5419,6 +5433,12 @@ func (f *File) isNewBuilderCall(s *Scope, n Node) bool {
 // result is a function type. It is what lets ":=" infer a function-typed variable,
 // the same way addressOfInfo lets it infer a pointer.
 func (f *File) exprFuncSig(s *Scope, n Node) *SignatureNode {
+	// A method expression, `T.M`, is the method's function with the receiver first.
+	if fac, ok := f.soleFactorOf(n); ok {
+		if me, rest, isME := f.methodExprOf(s, fac); isME && len(rest) == 0 && me.fd != nil && (me.ptr || !me.ptrRecv || me.viaPtr) {
+			return f.methodExprSig(s, me)
+		}
+	}
 	if id, ok := f.exprIdent(n); ok {
 		switch d := s.find(id.Src()).(type) {
 		case *FuncDeclaration:
@@ -5570,14 +5590,36 @@ func (f *File) fileOfToken(tok Token) *File {
 func (f *File) typeIdentityOf(tn *TypeNodeIdent) string {
 	wf := f.fileOfToken(tn.Name)
 	written := tn.Name.Src()
+	td, ok := (*TypeDeclaration)(nil), false
 	if tn.Qualifier.IsValid() {
-		written = tn.Qualifier.Src() + "." + written
+		// A qualified name resolves where its QUALIFIER was written, through the
+		// import that file names it by, into that package's scope. The two tokens
+		// are one file's but in a type carried across a package boundary
+		// (requalifiedType): the name is the declaring package's token and the
+		// qualifier the importer's. Asked of the file scope, typeDeclNamed never
+		// answered for one at all -- that scope finds the import itself, which
+		// isImportQualifier takes for a name shadowing it -- so every comparison
+		// with another package's type in it was silently skipped.
+		wf = f.fileOfToken(tn.Qualifier)
+		imp, isImp := wf.Scope.Declarations[tn.Qualifier.Src()].(*ImportDeclaration)
+		if !isImp || imp.Import == nil || imp.Import.Pkg == nil || imp.Import.Pkg.Scope == nil || !token.IsExported(written) {
+			return ""
+		}
+		td, _, ok = wf.typeDeclNamed(imp.Import.Pkg.Scope, written)
+	} else {
+		td, _, ok = wf.typeDeclNamed(wf.Scope, written)
 	}
-	if td, _, ok := wf.typeDeclNamed(wf.Scope, written); ok {
+	if ok {
+		// An alias typeDeclNamed could not follow -- to another package's type, or
+		// to a type written out -- is that type, not a defined type of its own
+		// name, and nothing here renders it: no identity rather than a wrong one.
+		if td.TypeSpec != nil && td.TypeSpec.Alias {
+			return ""
+		}
 		home := f.fileOfToken(td.Token())
 		return home.Package.ImportPath + "." + td.Name()
 	}
-	if _, isPre := wf.Scope.find(written).(*PredeclaredType); isPre {
+	if _, isPre := wf.Scope.find(written).(*PredeclaredType); isPre && !tn.Qualifier.IsValid() {
 		return written
 	}
 	return ""
@@ -8056,6 +8098,7 @@ func embeddedTypeName(fld ParameterDeclNode) (string, bool) {
 type embRef struct {
 	name  string
 	scope *Scope
+	ptr   bool // embedded as a pointer, `*Leaf`, here or anywhere on the way to it
 }
 
 // embeddedFields names the types a struct embeds, in declaration order, each with
@@ -8072,7 +8115,7 @@ func (f *File) embeddedFields(s *Scope, typeName string) []embRef {
 	var out []embRef
 	for _, fld := range st.Fields {
 		if emb, isEmb := embeddedTypeName(fld); isEmb {
-			out = append(out, embRef{name: emb, scope: home})
+			out = append(out, embRef{name: emb, scope: home, ptr: fld.EmbeddedPtr})
 		}
 	}
 	return out
@@ -8151,6 +8194,15 @@ func (f *File) methodOwnerNamed(s *Scope, typeName, method string) (*TypeDeclara
 // caller's own for a same-package walk, another package's when the promotion
 // crossed an embedded `lib.T` -- which is what the export rule needs to know.
 func (f *File) methodOwnerScoped(s *Scope, typeName, method string) (*TypeDeclaration, *Scope, bool) {
+	td, home, _, ok := f.methodOwnerPath(s, typeName, method)
+	return td, home, ok
+}
+
+// methodOwnerPath is methodOwnerScoped reporting too whether the method was reached
+// through an embedded POINTER: a pointer method of `*Leaf` embedded that way is in
+// the method set of the embedding type's value, which Go's method expression reads
+// -- `W.Scale` for a W embedding *Point.
+func (f *File) methodOwnerPath(s *Scope, typeName, method string) (*TypeDeclaration, *Scope, bool, bool) {
 	level := []embRef{{name: typeName, scope: s}}
 	for depth := 0; depth < 16 && len(level) != 0; depth++ {
 		var next []embRef
@@ -8159,13 +8211,16 @@ func (f *File) methodOwnerScoped(s *Scope, typeName, method string) (*TypeDeclar
 			// from: an embedded `lib.Celsius` travels as the written name in the
 			// embedder's scope, and typeDeclNamed is what crosses the boundary.
 			if td, home, ok := f.typeDeclNamed(t.scope, t.name); ok && td.methods[method] != nil {
-				return td, home, true
+				return td, home, t.ptr, true
 			}
-			next = append(next, f.embeddedFields(t.scope, t.name)...)
+			for _, c := range f.embeddedFields(t.scope, t.name) {
+				c.ptr = c.ptr || t.ptr
+				next = append(next, c)
+			}
 		}
 		level = next
 	}
-	return nil, nil, false
+	return nil, nil, false, false
 }
 
 // checkPromotedExport reports the selection of a method promoted through another
@@ -12243,6 +12298,335 @@ func (f *File) checkSliceBounds(index Node) {
 	}
 }
 
+// methodExpr is a METHOD EXPRESSION, `T.M` or `(*T).M`: the method M of the type
+// T as a function whose first parameter is the receiver -- a T, or with ptr a *T.
+type methodExpr struct {
+	qual    Token         // the package of lib.T, when it is another's
+	typeTok Token         // T as written
+	member  Token         // M
+	ptr     bool          // written (*T).M
+	fd      *FuncDeclNode // M's declaration, nil when T has no such method
+	home    *Scope        // the scope that declaration lives in
+	ptrRecv bool          // M is declared with a pointer receiver
+	viaPtr  bool          // M is promoted through an embedded pointer
+	iface   bool          // T is an interface type
+}
+
+// soleFactorOf is the Factor an expression consists of, when it is nothing else:
+// no operator and no unary prefix around it.
+func (f *File) soleFactorOf(n Node) (Node, bool) {
+	for n.sym == Expression || n.sym == SimpleExpr || n.sym == Term || n.sym == UnaryExpr {
+		kids := slices.Collect(it(n.ast))
+		if len(kids) != 1 {
+			return Node{}, false
+		}
+		n = kids[0]
+	}
+	return n, n.sym == Factor
+}
+
+// methodExprOf recognises a Factor that is a method expression, `T.M` or `(*T).M`
+// with T a type of this package, and answers it with the steps written after the
+// method's name -- a call, when there is one.
+func (f *File) methodExprOf(s *Scope, fac Node) (me methodExpr, rest []Node, ok bool) {
+	if fac.sym != Factor {
+		return methodExpr{}, nil, false
+	}
+	kids := slices.Collect(it(fac.ast))
+	switch {
+	case len(kids) == 2 && kids[0].sym == 0 && f.ch(kids[0].tok) == IDENT && kids[1].sym == FactorSuffix:
+		return f.methodExprFrom(s, methodExpr{typeTok: f.tok(kids[0].tok)}, slices.Collect(it(kids[1].ast)))
+	case len(kids) == 4 && kids[0].sym == 0 && f.ch(kids[0].tok) == LPAREN && kids[1].sym == Expression &&
+		kids[2].sym == 0 && f.ch(kids[2].tok) == RPAREN && kids[3].sym == FactorSuffix:
+		qual, tok, isStar := f.starTypeName(s, kids[1])
+		if !isStar {
+			return methodExpr{}, nil, false
+		}
+		return f.methodExprFrom(s, methodExpr{qual: qual, typeTok: tok, ptr: true}, slices.Collect(it(kids[3].ast)))
+	}
+	return methodExpr{}, nil, false
+}
+
+// methodExprOfHead is methodExprOf for a statement: its AssignHead -- `T`, `lib` or
+// `(*T)` -- and the steps written after it, `T.M(x)` standing as a call, a go or a
+// defer statement.
+func (f *File) methodExprOfHead(s *Scope, head Node, steps []Node) (methodExpr, []Node, bool) {
+	if head.sym != AssignHead {
+		return methodExpr{}, nil, false
+	}
+	kids := slices.Collect(it(head.ast))
+	switch {
+	case len(kids) == 1 && kids[0].sym == 0 && f.ch(kids[0].tok) == IDENT:
+		return f.methodExprFrom(s, methodExpr{typeTok: f.tok(kids[0].tok)}, steps)
+	case len(kids) == 3 && kids[0].sym == 0 && f.ch(kids[0].tok) == LPAREN && kids[1].sym == Expression:
+		qual, tok, isStar := f.starTypeName(s, kids[1])
+		if !isStar {
+			return methodExpr{}, nil, false
+		}
+		return f.methodExprFrom(s, methodExpr{qual: qual, typeTok: tok, ptr: true}, steps)
+	}
+	return methodExpr{}, nil, false
+}
+
+// callSteps is the selectors, indexes and calls that are direct children of n --
+// the steps after a go or defer statement's head, or a Postfix's -- and whether
+// that is all n holds: a Postfix with an operator after its steps is an assignment
+// or a send, not a call statement.
+func callSteps(n Node) (steps []Node, pure bool) {
+	pure = true
+	for c := range it(n.ast) {
+		switch c.sym {
+		case Selector, Index, CallSuffix:
+			steps = append(steps, c)
+		case PostfixOp:
+			pure = false
+		}
+	}
+	return steps, pure
+}
+
+// methodExprFrom is methodExprOf with the head taken apart: T as written -- a name,
+// perhaps a package's, whose type is then the first step -- and the steps after it.
+func (f *File) methodExprFrom(s *Scope, me methodExpr, steps []Node) (methodExpr, []Node, bool) {
+	// `lib.T.M`: the head is a package and the type its member.
+	if !me.ptr && f.isImportQualifier(s, me.typeTok.Src()) && len(steps) >= 2 && steps[0].sym == Selector {
+		me.qual, me.typeTok = me.typeTok, selectorTok(f, steps[0])
+		steps = steps[1:]
+	}
+	if len(steps) == 0 || steps[0].sym != Selector {
+		return methodExpr{}, nil, false
+	}
+	member := selectorTok(f, steps[0])
+	if !member.IsValid() || Symbol(member.Ch) != IDENT {
+		return methodExpr{}, nil, false
+	}
+	td, home, isType := f.typeDeclNamed(s, me.typeName())
+	if !isType {
+		return methodExpr{}, nil, false
+	}
+	me.member = member
+	if td.TypeSpec != nil {
+		_, me.iface = td.TypeSpec.TypeNode.(*TypeNodeInterface)
+	}
+	if fd := td.methods[member.Src()]; fd != nil {
+		me.fd, me.home, me.ptrRecv = fd, home, td.ptrRecv[member.Src()]
+	} else if otd, ohome, viaPtr, promoted := f.methodOwnerPath(s, me.typeName(), member.Src()); promoted {
+		me.fd, me.home, me.ptrRecv, me.viaPtr = otd.methods[member.Src()], ohome, otd.ptrRecv[member.Src()], viaPtr
+	}
+	return me, steps[1:], true
+}
+
+// typeName is T as the scope it was written in resolves it: `lib.T` for another
+// package's.
+func (me methodExpr) typeName() string {
+	if me.qual.IsValid() {
+		return me.qual.Src() + "." + me.typeTok.Src()
+	}
+	return me.typeTok.Src()
+}
+
+// starTypeName reports whether an expression is exactly `*T` -- or `*lib.T` -- for
+// a type T, the receiver spelled in `(*T).M`, and answers T and its package.
+func (f *File) starTypeName(s *Scope, e Node) (qual, typ Token, ok bool) {
+	for e.sym == Expression || e.sym == SimpleExpr || e.sym == Term {
+		kids := slices.Collect(it(e.ast))
+		if len(kids) != 1 {
+			return Token{}, Token{}, false
+		}
+		e = kids[0]
+	}
+	if e.sym != UnaryExpr {
+		return Token{}, Token{}, false
+	}
+	kids := slices.Collect(it(e.ast))
+	if len(kids) != 2 || kids[0].sym != UnaryOp || kids[1].sym != Factor || f.unaryOp(s, kids[0]) != MUL {
+		return Token{}, Token{}, false
+	}
+	fk := slices.Collect(it(kids[1].ast))
+	if len(fk) == 0 || fk[0].sym != 0 || f.ch(fk[0].tok) != IDENT {
+		return Token{}, Token{}, false
+	}
+	typ = f.tok(fk[0].tok)
+	written := typ.Src()
+	switch {
+	case len(fk) == 1:
+	case len(fk) == 2 && fk[1].sym == FactorSuffix && f.isImportQualifier(s, typ.Src()):
+		steps := slices.Collect(it(fk[1].ast))
+		if len(steps) != 1 || steps[0].sym != Selector {
+			return Token{}, Token{}, false
+		}
+		qual, typ = typ, selectorTok(f, steps[0])
+		written = qual.Src() + "." + typ.Src()
+	default:
+		return Token{}, Token{}, false
+	}
+	if _, _, isType := f.typeDeclNamed(s, written); !isType {
+		return Token{}, Token{}, false
+	}
+	return qual, typ, true
+}
+
+// methodExprSig is a method expression's function type as the scope s it is
+// written in reads it: the method's signature with the receiver leading its
+// parameters, a T or a *T as written. A method of another package's type takes and
+// returns that package's types, `T` there being `lib.T` here; nil when one of them
+// cannot be carried across (see requalifiedType), which leaves the expression
+// unchecked rather than checked against the wrong types.
+func (f *File) methodExprSig(s *Scope, me methodExpr) *SignatureNode {
+	var recv TypeNode = &TypeNodeIdent{Qualifier: me.qual, Name: me.typeTok}
+	if me.ptr {
+		recv = &TypeNodePointer{TypeNode: recv}
+	}
+	params := []ParameterDeclNode{{TypeNode: recv}}
+	if me.fd == nil || me.fd.Type == nil || me.fd.Type.Signature == nil {
+		return &SignatureNode{Params: &ParameterListNode{List: params}}
+	}
+	sig := me.fd.Type.Signature
+	if !onScopeChain(s, me.home) {
+		if !me.qual.IsValid() || !f.importsScope(me.qual, me.home) {
+			return nil // promoted from a package this one names no type of here
+		}
+		var ok bool
+		if sig, ok = f.requalifiedSig(me.home, me.qual, sig); !ok {
+			return nil
+		}
+	}
+	if sig.Params != nil {
+		params = append(params, sig.Params.List...)
+	}
+	return &SignatureNode{Params: &ParameterListNode{List: params}, Results: sig.Results}
+}
+
+// onScopeChain reports whether scope is s or one of its parents: a declaration
+// there reads the same from s as where it was written.
+func onScopeChain(s, scope *Scope) bool {
+	for ; s != nil; s = s.Parent {
+		if s == scope {
+			return true
+		}
+	}
+	return false
+}
+
+// importsScope reports whether this file imports, under qual, the package whose
+// scope that is.
+func (f *File) importsScope(qual Token, scope *Scope) bool {
+	imp, ok := f.Scope.Declarations[qual.Src()].(*ImportDeclaration)
+	return ok && imp.Import != nil && imp.Import.Pkg != nil && imp.Import.Pkg.Scope == scope
+}
+
+// requalifiedSig is a signature declared in the package scope from as this file
+// writes it, every type from declares qualified by qual (see requalifiedType).
+func (f *File) requalifiedSig(from *Scope, qual Token, sig *SignatureNode) (*SignatureNode, bool) {
+	list := func(pl *ParameterListNode) (*ParameterListNode, bool) {
+		if pl == nil {
+			return nil, true
+		}
+		r := &ParameterListNode{List: make([]ParameterDeclNode, len(pl.List))}
+		for i, d := range pl.List {
+			tn, ok := f.requalifiedType(from, qual, d.TypeNode)
+			if !ok {
+				return nil, false
+			}
+			d.TypeNode = tn
+			r.List[i] = d
+		}
+		return r, true
+	}
+	params, okParams := list(sig.Params)
+	results, okResults := list(sig.Results)
+	if !okParams || !okResults {
+		return nil, false
+	}
+	return &SignatureNode{Params: params, Results: results}, true
+}
+
+// requalifiedType is a type written in the package scope from as this file writes
+// it: a name from declares gains the qualifier qual this file imports it under, `T`
+// of package lib becoming `lib.T`, through pointers, slices, channels and function
+// types; a predeclared name is its own. ok is false for what cannot be carried
+// across: a name qualified THERE -- a third package, named as that one imports it
+// -- an array, whose length is an expression of from, and a struct or an interface
+// written out in place.
+func (f *File) requalifiedType(from *Scope, qual Token, tn TypeNode) (TypeNode, bool) {
+	switch x := tn.(type) {
+	case *TypeNodeIdent:
+		if x.Qualifier.IsValid() {
+			return nil, false
+		}
+		if _, isType := from.Declarations[x.Name.Src()].(*TypeDeclaration); isType {
+			return &TypeNodeIdent{Qualifier: qual, Name: x.Name}, true
+		}
+		return x, true
+	case *TypeNodePointer:
+		if inner, ok := f.requalifiedType(from, qual, x.TypeNode); ok {
+			return &TypeNodePointer{TypeNode: inner}, true
+		}
+	case *TypeNodeSlice:
+		if inner, ok := f.requalifiedType(from, qual, x.TypeNode); ok {
+			return &TypeNodeSlice{TypeNode: inner}, true
+		}
+	case *TypeNodeChan:
+		if inner, ok := f.requalifiedType(from, qual, x.TypeNode); ok {
+			return &TypeNodeChan{TypeNode: inner, Dir: x.Dir}, true
+		}
+	case *FunctionType:
+		if x.Receiver == nil && x.Signature != nil {
+			if sig, ok := f.requalifiedSig(from, qual, x.Signature); ok {
+				return &FunctionType{Signature: sig}, true
+			}
+		}
+	}
+	return nil, false
+}
+
+// String spells the expression as Go does in a diagnostic.
+func (me methodExpr) String() string {
+	if me.ptr {
+		return "(*" + me.typeName() + ")." + me.member.Src()
+	}
+	return me.typeName() + "." + me.member.Src()
+}
+
+// checkMethodExpr checks a method expression and the call it may stand in: the
+// method must be in the method set of what is written -- T carries the value
+// receiver's methods and *T all of them -- and a call is checked against the
+// function the expression is, receiver first.
+func (f *File) checkMethodExpr(s *Scope, me methodExpr, rest []Node) {
+	switch recvT := me.typeName(); {
+	case me.fd != nil && !onScopeChain(s, me.home) && !token.IsExported(me.member.Src()):
+		// Declared in another package -- on its type, or on one it promotes from
+		// -- and unexported there, which stops at the boundary as any member does.
+		f.err(me.member.Position(), "%s undefined (cannot refer to unexported method %s)", me, me.member.Src())
+		return
+	case me.iface:
+		f.err(me.member.Position(), "%s: a method expression of an interface type is not supported yet", me)
+		return
+	case me.fd == nil:
+		if me.ptr {
+			recvT = "*" + recvT
+		}
+		f.err(me.member.Position(), "%s undefined (type %s has no field or method %s)", me, recvT, me.member.Src())
+		return
+	case !me.ptr && me.ptrRecv && !me.viaPtr:
+		f.err(me.member.Position(), "invalid method expression %s (needs pointer receiver (*%s).%s)", me, recvT, me.member.Src())
+		return
+	}
+	if len(rest) == 0 || rest[0].sym != CallSuffix {
+		return
+	}
+	var args []Node
+	for a := range it(f.callArgList(rest[0]).ast) {
+		if a.sym == Expression {
+			args = append(args, a)
+			f.checkNames(s, a)
+		}
+	}
+	if sig := f.methodExprSig(s, me); sig != nil {
+		f.checkCallArgs(s, s, me.member, me.String(), sig, args)
+	}
+}
+
 // checkFactorNames resolves a Factor's identifier. A parenthesized expression is
 // recursed into, and the identifier -- whether bare or the base of an index,
 // selector or method-call read ("x[i]", "x.f", "x.m()") -- is resolved and
@@ -12259,6 +12643,11 @@ func (f *File) checkFactorNames(s *Scope, n Node) {
 			f.checkFuncLiterals(s, n)
 			return
 		}
+	}
+	// `T.M` and `(*T).M`: a method as a function taking its receiver first.
+	if me, rest, ok := f.methodExprOf(s, n); ok {
+		f.checkMethodExpr(s, me, rest)
+		return
 	}
 	var id, lbrack Token
 	var suffix, lit, litSuffix, anon Node
@@ -12737,6 +13126,19 @@ func (f *File) callResults(s *Scope, callee, member Token) ([]retResult, bool) {
 			return nil, false
 		}
 		return f.flattenResults(s, fd.FuncDecl.Type.Signature), true
+	}
+	// `T.M(x)`, a method expression called: the method's results.
+	if td, home, isType := f.typeDeclNamed(s, callee.Src()); isType {
+		fd := td.methods[member.Src()]
+		if fd == nil {
+			if otd, ohome, promoted := f.methodOwnerScoped(s, callee.Src(), member.Src()); promoted {
+				fd, home = otd.methods[member.Src()], ohome
+			}
+		}
+		if fd == nil || fd.Type == nil {
+			return nil, false
+		}
+		return f.flattenResults(home, fd.Type.Signature), true
 	}
 	d, ok := s.find(callee.Src()).(*VarDeclaration)
 	if !ok || !d.typeName.IsValid() {
@@ -13585,6 +13987,13 @@ func (f *File) exprWholeCall(n Node) bool {
 // silently skip the check. The arguments are still the caller's, and are resolved
 // in s.
 func (f *File) checkArgsIn(s, paramScope *Scope, name Token, sig *SignatureNode, args []Node) {
+	f.checkCallArgs(s, paramScope, name, name.Src(), sig, args)
+}
+
+// checkCallArgs is checkArgsIn with the callee spelled apart from the token that
+// places a message: a method expression is called `Point.Sum`, as Go says it, and
+// reported at the method's name.
+func (f *File) checkCallArgs(s, paramScope *Scope, at Token, callee string, sig *SignatureNode, args []Node) {
 	params := f.flattenParams(paramScope, sig)
 	// `f(g())`: a call of several results as the whole argument list, Go's special
 	// case. The results stand in for the arguments -- counted against the
@@ -13605,13 +14014,13 @@ func (f *File) checkArgsIn(s, paramScope *Scope, name Token, sig *SignatureNode,
 			if f.isVariadicSig(sig) {
 				fixed := len(params) - 1
 				if len(results) < fixed {
-					f.err(name.Position(), "not enough arguments in call to %s", name.Src())
+					f.err(at.Position(), "not enough arguments in call to %s", callee)
 					return
 				}
 				for i := 0; i < fixed; i++ {
 					if p := params[i]; p.known && results[i].known && !assignableKind(p.kind, results[i].kind) {
 						f.err(f.tok(args[0].Pos()).Position(), "cannot use result %d of %s (type %s) as type %s in argument to %s",
-							i+1, f.exprSource(args[0]), results[i].name, p.name, name.Src())
+							i+1, f.exprSource(args[0]), results[i].name, p.name, callee)
 					}
 				}
 				last := sig.Params.List[len(sig.Params.List)-1]
@@ -13620,7 +14029,7 @@ func (f *File) checkArgsIn(s, paramScope *Scope, name Token, sig *SignatureNode,
 						for i := fixed; i < len(results); i++ {
 							if results[i].known && !assignableKind(elem.kind, results[i].kind) {
 								f.err(f.tok(args[0].Pos()).Position(), "cannot use result %d of %s (type %s) as type %s in argument to %s",
-									i+1, f.exprSource(args[0]), results[i].name, elem.name, name.Src())
+									i+1, f.exprSource(args[0]), results[i].name, elem.name, callee)
 							}
 						}
 					}
@@ -13629,14 +14038,14 @@ func (f *File) checkArgsIn(s, paramScope *Scope, name Token, sig *SignatureNode,
 			}
 			switch {
 			case len(results) < len(params):
-				f.err(name.Position(), "not enough arguments in call to %s", name.Src())
+				f.err(at.Position(), "not enough arguments in call to %s", callee)
 			case len(results) > len(params):
-				f.err(name.Position(), "too many arguments in call to %s", name.Src())
+				f.err(at.Position(), "too many arguments in call to %s", callee)
 			default:
 				for i, r := range results {
 					if p := params[i]; p.known && r.known && !assignableKind(p.kind, r.kind) {
 						f.err(f.tok(args[0].Pos()).Position(), "cannot use result %d of %s (type %s) as type %s in argument to %s",
-							i+1, f.exprSource(args[0]), r.name, p.name, name.Src())
+							i+1, f.exprSource(args[0]), r.name, p.name, callee)
 					}
 				}
 			}
@@ -13650,7 +14059,7 @@ func (f *File) checkArgsIn(s, paramScope *Scope, name Token, sig *SignatureNode,
 	if f.isVariadicSig(sig) {
 		fixed := len(params) - 1
 		if len(args) < fixed {
-			f.err(name.Position(), "not enough arguments in call to %s", name.Src())
+			f.err(at.Position(), "not enough arguments in call to %s", callee)
 			return
 		}
 		// Each of the rest has to be one element of the []T, so they are checked
@@ -13659,23 +14068,23 @@ func (f *File) checkArgsIn(s, paramScope *Scope, name Token, sig *SignatureNode,
 		if sl, isSlice := last.TypeNode.(*TypeNodeSlice); isSlice {
 			elem := f.resultType(paramScope, sl.TypeNode)
 			for _, arg := range args[fixed:] {
-				f.checkNilAssignable(s, elem, arg, "argument to "+name.Src())
+				f.checkNilAssignable(s, elem, arg, "argument to "+callee)
 				// The checks a Kind cannot express run here, ahead of the
 				// known-Kind guard, exactly as they do for a fixed parameter
 				// below: an element type with no Kind -- a struct, an interface,
 				// a pointer -- is most of what a variadic is called with, and
 				// skipping it left the whole class to the C compiler.
-				f.checkFuncAssign(s, f.funcSig(paramScope, sl.TypeNode), arg, "argument to "+name.Src())
-				f.checkChanAssign(s, paramScope, sl.TypeNode, arg, "argument to "+name.Src())
-				f.checkRefAssign(s, paramScope, sl.TypeNode, arg, "argument to "+name.Src())
-				f.checkPointerArg(s, paramScope, elem, arg, name)
+				f.checkFuncAssign(s, f.funcSig(paramScope, sl.TypeNode), arg, "argument to "+callee)
+				f.checkChanAssign(s, paramScope, sl.TypeNode, arg, "argument to "+callee)
+				f.checkRefAssign(s, paramScope, sl.TypeNode, arg, "argument to "+callee)
+				f.checkPointerArg(s, paramScope, elem, arg, callee)
 				if !elem.known {
 					continue
 				}
 				ak, aok := f.exprType(s, arg)
 				if aok && !assignableKind(elem.kind, ak) {
 					f.err(f.tok(arg.Pos()).Position(), "cannot use %s of type %s as type %s in argument to %s",
-						f.exprSource(arg), kindName(ak), elem.name, name.Src())
+						f.exprSource(arg), kindName(ak), elem.name, callee)
 					continue
 				}
 				// A constant packed must fit the element as one passed to a fixed
@@ -13687,25 +14096,25 @@ func (f *File) checkArgsIn(s, paramScope *Scope, name Token, sig *SignatureNode,
 	}
 	switch {
 	case len(args) < len(params):
-		f.err(name.Position(), "not enough arguments in call to %s", name.Src())
+		f.err(at.Position(), "not enough arguments in call to %s", callee)
 	case len(args) > len(params):
-		f.err(name.Position(), "too many arguments in call to %s", name.Src())
+		f.err(at.Position(), "too many arguments in call to %s", callee)
 	default:
 		for i, arg := range args {
 			p := params[i]
 			// A function-typed parameter has no predeclared Kind, so this stands
 			// ahead of the known-kind guard below.
-			f.checkFuncAssign(s, f.funcSig(paramScope, p.typeNode), arg, "argument to "+name.Src())
-			f.checkChanAssign(s, paramScope, p.typeNode, arg, "argument to "+name.Src())
-			f.checkRefAssign(s, paramScope, p.typeNode, arg, "argument to "+name.Src())
-			f.checkPointerArg(s, paramScope, p, arg, name)
+			f.checkFuncAssign(s, f.funcSig(paramScope, p.typeNode), arg, "argument to "+callee)
+			f.checkChanAssign(s, paramScope, p.typeNode, arg, "argument to "+callee)
+			f.checkRefAssign(s, paramScope, p.typeNode, arg, "argument to "+callee)
+			f.checkPointerArg(s, paramScope, p, arg, callee)
 			if !p.known {
 				continue
 			}
-			f.checkNilAssignable(s, p, arg, "argument to "+name.Src())
+			f.checkNilAssignable(s, p, arg, "argument to "+callee)
 			ak, aok := f.exprType(s, arg)
 			if aok && !assignableKind(p.kind, ak) {
-				f.err(f.tok(arg.Pos()).Position(), "cannot use %s of type %s as type %s in argument to %s", f.exprSource(arg), kindName(ak), p.name, name.Src())
+				f.err(f.tok(arg.Pos()).Position(), "cannot use %s of type %s as type %s in argument to %s", f.exprSource(arg), kindName(ak), p.name, callee)
 				continue
 			}
 			// Same type class: a constant argument may still overflow a sized
@@ -13724,7 +14133,7 @@ func (f *File) checkArgsIn(s, paramScope *Scope, name Token, sig *SignatureNode,
 // Both sides must be known before anything is said. An argument whose shape this
 // does not model -- a call, an index, a field -- reports nothing rather than a
 // guess, which is the same rule its neighbours follow.
-func (f *File) checkPointerArg(s, paramScope *Scope, p retResult, arg Node, name Token) {
+func (f *File) checkPointerArg(s, paramScope *Scope, p retResult, arg Node, callee string) {
 	// The PARAMETER's type is resolved in the callee's scope and rendered as this
 	// file would write it: a parameter of another package's function names that
 	// package's type, `Shape`, which is `lib.Shape` here. Rendered as written, every
@@ -13736,9 +14145,9 @@ func (f *File) checkPointerArg(s, paramScope *Scope, p retResult, arg Node, name
 	// it. The ARGUMENT keeps the caller's scope, which is where it is written.
 	want := f.isPointerType(paramScope, p.typeNode)
 	wantName := f.qualifiedTypeName(paramScope, f.typeNodeString(p.typeNode, false))
-	f.checkPointerValue(s, want, wantName, arg, "argument to "+name.Src())
-	f.checkImplements(s, wantName, arg, "argument to "+name.Src())
-	f.checkDefinedType(s, wantName, arg, "argument to "+name.Src())
+	f.checkPointerValue(s, want, wantName, arg, "argument to "+callee)
+	f.checkImplements(s, wantName, arg, "argument to "+callee)
+	f.checkDefinedType(s, wantName, arg, "argument to "+callee)
 }
 
 // qualifiedTypeName spells a type name resolved in another package's scope as this
@@ -14902,6 +15311,8 @@ type ParameterDeclNode struct {
 	// `lib.Leaf`; Names then holds the member alone, which is also the field's own
 	// name -- Go names an embedded field after the type, unqualified.
 	EmbeddedPkg Token
+	// EmbeddedPtr marks a field embedded as a pointer, `*Leaf`.
+	EmbeddedPtr bool
 }
 
 // ParameterListNode describes the ParameterList production. Results reuse it too,
@@ -15848,8 +16259,10 @@ func (f *File) fieldDecl(s *Scope, n Node) (r ParameterDeclNode) {
 				r.Names = append(r.Names, tok)
 			case PERIOD:
 				qualified = true
-			case COMMA, MUL:
-				// ok: multiple names, or an embedded pointer
+			case MUL:
+				r.EmbeddedPtr = true
+			case COMMA:
+				// ok: multiple names
 			default:
 				panic(todo("", f.tok(n.tok).Position(), f.ch(n.tok)))
 			}

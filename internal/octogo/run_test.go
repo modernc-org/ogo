@@ -6427,6 +6427,220 @@ func main() {
 		want: "2 5 5\n15\n16 100 16 100\n0\n",
 	},
 	{
+		// A METHOD EXPRESSION, T.M or (*T).M: the method as a function whose first
+		// parameter is the receiver. It is lifted to a C function of its own that
+		// calls the method, so a call of the expression and its use as a value go
+		// the ways a function's do. Called, bound to a variable, handed on, held in
+		// a slice and a struct field, launched with go and deferred -- a promoted
+		// method, a value method through the pointer form, results of every count.
+		//
+		// Every line of this prints what real Go prints for the same program.
+		name: "method expressions",
+		src: `type Counter struct {
+	n int
+}
+
+func (c Counter) Get() int { return c.n }
+
+func (c *Counter) Add(k int) int {
+	c.n += k
+	return c.n
+}
+
+type Celsius int
+
+func (c Celsius) Double() Celsius { return 2 * c }
+
+func apply(f func(Counter) int, c Counter) int { return f(c) }
+
+func main() {
+	c := Counter{3}
+	get := Counter.Get
+	add := (*Counter).Add
+	println(get(c), add(&c, 4), c.n)
+	println(Counter.Get(c), (*Counter).Add(&c, 1))
+	println(apply(Counter.Get, c))
+	pget := (*Counter).Get
+	println(pget(&c))
+	d := Celsius.Double
+	println(d(21))
+	ops := []func(Counter) int{Counter.Get}
+	println(ops[0](c))
+}
+`,
+		want: "3 7 7\n7 8\n8\n8\n42\n8\n",
+	},
+	{
+		name: "method expressions called, bound, launched and deferred",
+		src: `type Point struct {
+	x, y int
+}
+
+func (p Point) Scaled(k int) Point { return Point{p.x * k, p.y * k} }
+
+func (p Point) Parts() (int, int) { return p.x, p.y }
+
+func (p *Point) Move(dx int) { p.x += dx }
+
+type Inner struct {
+	v int
+}
+
+func (i Inner) Get() int { return i.v }
+
+func (i *Inner) Set(v int) { i.v = v }
+
+type Outer struct {
+	Inner
+	tag string
+}
+
+type Celsius int
+
+func (c Celsius) F() int { return int(c)*9/5 + 32 }
+
+type Op struct {
+	name string
+	fn   func(*Point, int)
+}
+
+var done chan int
+
+type Worker struct {
+	n int
+}
+
+func (w *Worker) Run(k int) { done <- w.n * k }
+
+var gw Worker
+
+func main() {
+	p := Point{1, 2}
+	(*Point).Move(&p, 5)
+	Point.Scaled(p, 3)
+	q := Point.Scaled(p, 2)
+	println(p.x, q.x, q.y)
+	a, b := Point.Parts(q)
+	parts := Point.Parts
+	c, d := parts(p)
+	println(a, b, c, d)
+	scale := Point.Scaled
+	r := scale(p, 10)
+	println(r.x, r.y)
+	o := Outer{Inner{7}, "t"}
+	println(Outer.Get(o))
+	(*Outer).Set(&o, 9)
+	get := (*Outer).Get
+	println(get(&o), o.v)
+	println(Celsius.F(100))
+	ops := []Op{{"move", (*Point).Move}}
+	ops[0].fn(&p, 1)
+	println(ops[0].name, p.x)
+	gw.n = 6
+	go (*Worker).Run(&gw, 7)
+	println(<-done)
+	defer println("deferred", Point.Scaled(p, 2).x)
+	defer (*Point).Move(&p, 100)
+}
+`,
+		want: "6 12 4\n12 4 6 2\n60 20\n7\n9 9\n212\nmove 7\n42\ndeferred 14\n",
+	},
+	{
+		// The receivers a method expression can have beyond a plain struct: an
+		// alias, a method promoted through an embedded POINTER -- whose pointer
+		// methods are in the value's method set, so W.Scale is legal -- a defined
+		// array type, a defined string type; and a variadic method, and one whose
+		// result is a struct, which reaches a function value through a wrapper.
+		// calls records the order of every call.
+		//
+		// Every line of this prints what real Go prints for the same program.
+		name: "method expressions of every kind of receiver",
+		src: `var calls int
+
+type Point struct {
+	X, Y int
+}
+
+func (pt Point) Sum() int {
+	calls = calls*10 + 1
+	return pt.X + pt.Y
+}
+
+func (pt *Point) Scale(k int) {
+	calls = calls*10 + 2
+	pt.X *= k
+	pt.Y *= k
+}
+
+func (pt Point) Add(xs ...int) int {
+	calls = calls*10 + 3
+	s := pt.X
+	for _, x := range xs {
+		s += x
+	}
+	return s
+}
+
+func (pt Point) Swap() Point {
+	calls = calls*10 + 4
+	return Point{pt.Y, pt.X}
+}
+
+type A = Point
+
+type W struct {
+	*Point
+	Tag int
+}
+
+type Row [3]int
+
+func (r *Row) Set(i, v int) {
+	calls = calls*10 + 5
+	r[i] = v
+}
+
+func (r *Row) Total() int {
+	calls = calls*10 + 6
+	return r[0] + r[1] + r[2]
+}
+
+type Name string
+
+func (n Name) Len() int {
+	calls = calls*10 + 7
+	return len(n)
+}
+
+func main() {
+	pt := Point{1, 2}
+	println(A.Sum(pt), calls)
+	(*A).Scale(&pt, 2)
+	println(pt.X, pt.Y, calls)
+	println(Point.Add(pt, 1, 2, 3), Point.Add(pt), calls)
+	add := Point.Add
+	println(add(pt, 10, 20), calls)
+	sw := Point.Swap(pt)
+	println(sw.X, sw.Y, Point.Swap(pt).X, calls)
+	swf := Point.Swap
+	println(swf(pt).Y, calls)
+	w := W{&pt, 7}
+	println(W.Sum(w), calls)
+	W.Scale(w, 3)
+	println(pt.X, pt.Y, calls)
+	var r Row
+	(*Row).Set(&r, 1, 5)
+	set := (*Row).Set
+	set(&r, 2, 6)
+	println((*Row).Total(&r), calls)
+	println(Name.Len("hello"), calls)
+	nl := Name.Len
+	println(nl(Name("ab")), calls)
+}
+`,
+		want: "3 1\n2 4 12\n8 2 1233\n32 12333\n4 2 4 1233344\n2 12333444\n6 123334441\n6 12 1233344412\n11 688798604\n5 -1701948545\n2 160383741\n",
+	},
+	{
 		// An anonymous struct type, written where a type is wanted rather than
 		// declared with a name of its own. Go gives two of them the same identity
 		// when their fields match, so the typedef is minted once per SHAPE -- which
@@ -31891,7 +32105,7 @@ const multiPkgWant = "300\nLOUD\n50\n6\n5\n45\n6 1000\n200\n207\n3 100\n4 9\n" +
 	"17 gx-7 true 10 19\n" +
 	"2 7 56 9 3 8 false 2 1 2 6 3 true 7\n" +
 	"[2]greet.Row [2]greet.Reader greet.Row\n" +
-	"123 p2 9 3 2 3\n1 1 2 1 102 3\n2 1 4 3 4 4 5 134\n21 10 100 200 7 0\n1 5 1 2 4 1 3 21 1 2 12 12 123 123 11\ntrue true\n" +
+	"123 p2 9 3 2 3\n1 1 2 1 102 3\n2 1 4 3 4 4 5 134\n21 10 100 200 7 0\n1 5 1 2 4 1 3 21 1 2 12 12 123 123 11\n10 21 110 21 14 true 3 42\ntrue true\n" +
 	"1234567891 1 3 8 14 30 39\n"
 
 var multiPkgProgram = map[string]string{
@@ -32368,6 +32582,13 @@ func libShapes() {
 	if lib.P != nil && lib.P.Id == 1 || lib.None() != nil && lib.None().Id == 2 {
 		println("no")
 	}
+	// Another package's methods as functions, the receiver first: a value method,
+	// a pointer one, a value one through the pointer form, one of several results,
+	// one bound to a variable of its function type, and one of a defined scalar.
+	val := lib.Dev.Val
+	gv, gok := (*greet.Gauge).Read(&greet.G1)
+	var sumf func(greet.Vec) int = greet.Vec.Sum
+	println(val(lib.D1), lib.Dev.Val(lib.D2), (*lib.Dev).Ptr(&lib.D1), (*lib.Dev).Val(lib.Get()), gv, gok, sumf(greet.Vec{A: 1, B: 2}), greet.Celsius.Double(21))
 	println(lib.P == nil, lib.None() == nil)
 }
 `,

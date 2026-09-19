@@ -20,6 +20,13 @@ shipped section tells a reader on that version that they have behaviour they do 
 
 ### Language
 
+- **Method expressions.** `T.M` and `(*T).M` are the method as a function whose
+  first parameter is the receiver -- `Point.Sum` is a `func(Point) int`,
+  `(*Point).Scale` a `func(*Point, int)` -- called where they stand, bound to a
+  variable, passed on, held in a table, launched with `go` and deferred. A method
+  promoted through an embedded field is taken as a declared one is, and another
+  package's type is written qualified, `geo.Vec.Len`. They were refused, "cannot
+  use type T as a value". An interface's method expression is not supported yet.
 - **An element of a `[]*T` literal may leave out `&T`.** `[]*P{{1, "a"}, {n: 2}}`
   is `[]*P{&P{1, "a"}, &P{n: 2}}`, as Go reads it -- the table of pointers a test
   or a driver registry is written as. Each element is what the written `&P{...}` is:
@@ -632,7 +639,6 @@ program handed out a reference to storage that was gone by the time it was read.
   forwarded as another's arguments, named results returned bare and swapped, a
   deferred call changing a named result through its address after the return set
   it, recursion and mutual recursion. One fault, above; the program is a run case.
-  Method expressions, `T.M` and `(*T).M`, are refused, and recorded as open.
 - Interface semantics against Go on the host and a P2-EDGE: interfaces embedding
   interfaces, assignment between interface types, comma-ok assertions to interface
   and concrete types, type switches with interface cases and nil, methods promoted
