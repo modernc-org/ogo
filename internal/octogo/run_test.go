@@ -27993,6 +27993,49 @@ func main() {
 		want: "15\n700 1\n200 11\n",
 	},
 	{
+		// A value that binds a call ahead of the statement, sent on a channel, sent
+		// in a select and appended: each was bound TWICE -- the call ran twice on a
+		// P2-EDGE, `ch <- len(name())` answering calls == 11 where Go says 1. The send
+		// asked whether its element was an interface only after rendering the value
+		// for that question, and threw the rendering away.
+		//
+		// Every line of this prints what real Go prints for the same program.
+		name: "a sent, selected or appended value is evaluated once",
+		src: `var calls int
+
+var ch chan int
+
+func name() string {
+	calls = calls*10 + 1
+	return "abc"
+}
+
+// Each value binds its call ahead of the statement, and was bound twice: the
+// send, the select send and the appended element each asked a question that
+// rendered the value, threw the text away and rendered it again.
+func main() {
+	go func() {
+		ch <- len(name())
+	}()
+	v := <-ch
+	println(v, calls)
+	calls = 0
+	go func() {
+		select {
+		case ch <- len(name()) + 1:
+		}
+	}()
+	v = <-ch
+	println(v, calls)
+	calls = 0
+	var xs []int = make([]int, 0, 2)
+	xs = append(xs, len(name()))
+	println(xs[0], len(xs), calls)
+}
+`,
+		want: "3 1\n4 1\n3 1 1\n",
+	},
+	{
 		// A function literal called where it stands, as a statement of its own, which
 		// the grammar had no production for: a statement could not begin with "func".
 		// It is lifted as a literal is anywhere and called by name; arguments are how a

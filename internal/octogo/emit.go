@@ -6693,6 +6693,15 @@ func (e *emitter) addrOfCompositeLit(ast []int32) (ctype string, lit Node, ok bo
 // that need one expression rather than two statements: an argument, and a return.
 // An operand that is already of the interface type is itself.
 func (e *emitter) ifaceValueC(iface string, rhs []int32) (string, bool) {
+	// Only an interface is built here. Asked of anything else, the operand was
+	// RENDERED -- the "already of this type" case below -- and three callers asked
+	// first and checked the type after, throwing the text away and rendering the
+	// value again: whatever the first rendering bound ahead of the statement ran
+	// too. `ch <- len(name())` called name twice on a P2-EDGE, and so did a select
+	// send and an appended element of the same shape.
+	if !e.isIfaceCType(iface) {
+		return "", false
+	}
 	if e.isNilExpr(rhs) {
 		// The ZERO interface, wherever a VALUE is wanted: a field assignment, an
 		// argument, a return. ifaceStoreC is the sibling for a TARGET being written

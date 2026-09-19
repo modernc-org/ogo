@@ -187,6 +187,11 @@ shipped section tells a reader on that version that they have behaviour they do 
 
 ### Fixed
 
+- **A value sent, selected or appended is evaluated once.** `ch <- len(name())`
+  called name twice on a P2-EDGE, and so did a select send and an appended
+  element of the same shape: a question about the element's type rendered the
+  value, whatever it bound ahead of the statement ran, and the value was then
+  rendered again. Silent -- only a call with an effect could tell.
 - **A go statement through an embedded pointer hands the goroutine the pointer.**
   `w := W{&g}; go w.Save()` for a W embedding *Counter, and `go w.Counter.Save()`,
   were refused for handing the goroutine the address of the local w; it is handed
