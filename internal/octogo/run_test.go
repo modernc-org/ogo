@@ -33308,6 +33308,41 @@ func main() {
 }
 `,
 		want: "warm 0\nbusy 0\npee 0\n{warm 7} 0\n8 warm 8\n[warm warm] 0\nbusy warm 0\n21\n",
+	}, {
+		// copy and clear of a DEFINED slice type, `type L []int`. Go asks only that
+		// the two element types be identical, so `copy(a, b)` of an []int and an L is
+		// a program -- and was "copy's arguments must both be slices", the check
+		// having been made against the C type where a defined one is its own name.
+		// clear had the same hole. Found by the fuzzer, which declares half its
+		// slices with a defined type and had just learnt to write these two.
+		name: "copy and clear of a defined slice type",
+		src: `type L []int
+
+type M []int
+
+var ga []int = make([]int, 4)
+
+func main() {
+	var a []int = make([]int, 4)
+	var b L = make(L, 3)
+	var c M = make(M, 3)
+	b[0] = 7
+	b[1] = 8
+	b[2] = 9
+	n := copy(a, b)
+	m := copy(b, c)
+	k := copy(c, a)
+	println(n, m, k, a[0], a[1], a[2], b[0], c[0], c[1])
+	println(copy(ga, b), ga[0], ga[2], len(b), cap(b))
+	clear(b)
+	clear(c)
+	v := b[1:2:3]
+	println(b[0], c[0], len(v), cap(v), v[0])
+	var bs []byte = make([]byte, 4)
+	println(copy(bs, "hi"), bs[0], bs[1], bs[2])
+}
+`,
+		want: "3 3 3 7 8 9 0 7 8\n3 0 0 3 3\n0 0 1 2 0\n2 104 105 0\n",
 	}}
 
 // TestEmitCRun compiles emitted C with a host compiler and runs it, checking what

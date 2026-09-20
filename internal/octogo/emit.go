@@ -28070,7 +28070,13 @@ func (e *emitter) emitCopy(callSuffix []int32) {
 	// bytes are copied into the byte slice, min(len(dst), len(src)) of them, with no
 	// allocation -- the destination is the caller's storage. This is what lets a
 	// user-backed buffer append a string (a WriteString) on this target.
-	if dok && sok && srcCT == cString && e.isSliceCType(dstCT) && sliceElemFromCName(dstCT) == "uint8_t" {
+	// Asked of the UNDERLYING types: `type L []int` is a slice to copy, to Go and
+	// in C, where it is a typedef of the same header. Go wants the two ELEMENT
+	// types identical and nothing more, so `copy(a, b)` of an []int and an L is a
+	// program -- and was "copy's arguments must both be slices" (found by the
+	// fuzzer, 2026-09-20).
+	dstU, srcU := e.underlyingCType(dstCT), e.underlyingCType(srcCT)
+	if dok && sok && srcU == cString && e.isSliceCType(dstU) && sliceElemFromCName(dstU) == "uint8_t" {
 		e.needSlice("uint8_t")
 		e.usesCopyStr = true
 		e.includes["string.h"] = true
@@ -28081,15 +28087,16 @@ func (e *emitter) emitCopy(callSuffix []int32) {
 		e.emit(")")
 		return
 	}
-	if !dok || !e.isSliceCType(dstCT) || !sok || !e.isSliceCType(srcCT) {
+	if !dok || !e.isSliceCType(dstU) || !sok || !e.isSliceCType(srcU) {
 		e.fail("copy's arguments must both be slices")
 		return
 	}
-	if dstCT != srcCT {
-		e.fail("copy's arguments must be slices of the same type, not %s and %s", dstCT, srcCT)
+	if dstU != srcU {
+		e.fail("copy's arguments must be slices of the same type, not %s and %s",
+			e.goTypeName(dstCT), e.goTypeName(srcCT))
 		return
 	}
-	elem := sliceElemFromCName(dstCT)
+	elem := sliceElemFromCName(dstU)
 	e.checkCopyElems(args[0], args[1])
 	e.needSlice(elem)
 	e.copyElems[elem] = true
@@ -28114,11 +28121,12 @@ func (e *emitter) emitClear(callSuffix []int32) {
 		return
 	}
 	ct, ok := e.replayOrInferCType(0, args[0])
-	if !ok || !e.isSliceCType(ct) {
+	u := e.underlyingCType(ct) // a defined slice type is a slice to clear
+	if !ok || !e.isSliceCType(u) {
 		e.fail("clear is only supported on a slice yet")
 		return
 	}
-	elem := sliceElemFromCName(ct)
+	elem := sliceElemFromCName(u)
 	e.needSlice(elem)
 	e.clearElems[elem] = true
 	e.includes["string.h"] = true

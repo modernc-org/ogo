@@ -20,6 +20,13 @@ shipped section tells a reader on that version that they have behaviour they do 
 
 ### Language
 
+- **`copy` and `clear` of a DEFINED slice type.** `type L []int` with `copy(a, b)`
+  of an `[]int` and an `L` was refused, "copy's arguments must both be slices":
+  the check was made against the C type, where a defined type is its own name.
+  Go asks only that the two ELEMENT types be identical, which is what is asked
+  now; `clear` had the same hole. Found by the fuzzer, which declares half its
+  slices with a defined type.
+
 - **A print whose formatting calls a method reads its arguments first.** fmt
   evaluates EVERY argument before it formats any, so the `Error()` or `String()` it
   calls while formatting one cannot be seen by a later argument. This compiler
