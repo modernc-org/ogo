@@ -543,9 +543,11 @@ INTERFACE type, `Shape.Area` (refused by name; a concrete type's works since
 2026-09-19); a method value on a local or a call's result (design: a method value binds its
 receiver at compile time); an unnamed struct type mixed with the SECOND of two
 declared structs of its fields (its typedef names the first, aliasAnonStructs), which
-Go admits and the target's compiler refuses; printf's `%v` of an
-interface value (fmt prints what it holds, `&{1 2}` for a struct pointer) and of a
-struct under a width; a PARENTHESISED HEAD the emitter cannot peel -- one holding a unary
+Go admits and the target's compiler refuses; printf's `%v` of a
+struct under a width, and of a struct holding an exported INTERFACE field (at depth
+fmt prints what the field holds by its String() or its address, where the top-level
+`%v` of an interface value prints `&{1 2}` for a struct pointer -- the depth-0 form
+works since 2026-09-20, ifaceHeldPrintC); a PARENTHESISED HEAD the emitter cannot peel -- one holding a unary
 operator or a suffix of its own -- read or written through a suffix: `(&p).x`,
 `(&arr)[1:]`, `(get()).x`, `(*get()).x`, `(arr[1:])[1:]`, `("hello")[1:]`, the targets
 `(p).x = 5` and `(&p).x = 3` and a conversion's, `(*T)(p).x = 5` and `*(*T)(p) = 5`,
@@ -568,12 +570,18 @@ name only, `case v, r.ok = <-ch:`, and a NAMED composite literal took no suffix,
 these; reading the grammar did not. **Check Factor and HeaderFactor
 against each other when either changes**; they are meant to differ by one production
 (HeaderFactor has no literal after a name, which is what keeps `if x == T {` a block).
-Two LATENT ones, measured and not faults today: a store through a chain, `r.m[a()][b()]
+Latent ones, measured and not faults today: a store through a chain, `r.m[a()][b()]
 = v()`, leaves its calls to C's operand order, which gcc 14 and flexcc both take left
 to right (only the bare `name[i] = v` path binds them); and a value's call does not
 run ahead of an index or nil panic in the target, `arr[bad()] = side()`, where Go
 runs `side()` and then panics -- the comment in emitIndexAssign says otherwise and
 describes one C compiler's choice. Only a program about to panic can tell.
+And (2026-09-20) a printf FORMATS as it goes, where Go evaluates every argument
+first and formats afterwards, so a String() with a side effect is seen by a LATER
+argument reading what it wrote -- `printf("%v|%d", stringer, calls)` prints the
+bumped count here and the old one in Go. Only a Stringer that writes, which is
+already outside what fmt promises to call once; a printf's own calls ARE hoisted in
+order (`printf("%v|%d", pick(), calls)` matches).
 
 **The lifetime rules are asked of SHAPES, and a shape nobody asked about is a hole**
 (2026-09-17, found while closing a grammar gap). `TestEmitCFrameRefForms` crosses

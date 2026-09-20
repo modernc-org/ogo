@@ -20,6 +20,20 @@ shipped section tells a reader on that version that they have behaviour they do 
 
 ### Language
 
+- **`%v` of an interface value prints what it holds.** `printf("%v", s)` of a
+  `Shape` was refused -- "%v of Shape is not supported yet; %T prints its type, and
+  println prints its address" -- since what to print is decided by the type inside,
+  not by the static one. It prints what fmt prints now: "&{3 4}" and "&{x:3 y:4}"
+  for a pointer to a struct, "&[7 8]" for one to a slice or an array, the dynamic
+  value's String() or Error() where it has one, the address for a pointer to
+  anything else, and "<nil>" for an interface holding nothing or holding a nil
+  pointer. The value's TABLE is what says which, so the print tests it against
+  every table the program makes for that interface -- a set complete only after the
+  last body is emitted, which is where the printer is minted. An interface that
+  DECLARES Error() or String() is unchanged: fmt calls that, and so did this. Still
+  refused: `%v` of an interface under a width, and a struct FIELD of interface type
+  inside a `%v` of the struct.
+
 - **A `switch` or `for` clause may declare an array.** `switch a := [2]int{1, 2};
   len(a) {` and `for b := [3]int{1, 2, 3}; b[0] < 3; b[0] += 2 {` were refused,
   "cannot infer the type of the switch guard variable" and "... of a for-loop init

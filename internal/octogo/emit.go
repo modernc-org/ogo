@@ -4588,7 +4588,7 @@ func typeNameCollisions(src []byte, names map[string]bool) map[string]bool {
 // emitProgram is EmitC's one pass. rename lists the main-package types spelled
 // ogo_T_<name> in C (see typeMangle).
 func emitProgram(pkg *Package, w io.Writer, opts []EmitOption, rename map[string]bool) error {
-	e := &emitter{renameTypes: rename, renamedTypes: map[string]string{}, includes: map[string]bool{}, funcRet: map[string][]string{}, funcSliceParams: map[string][]string{}, funcVariadic: map[string]int{}, nilHelpers: map[string]bool{}, funcArrayRet: map[string]arrDim{}, funcArrayParams: map[string][]arrDim{}, anonStructNames: map[string]string{}, methodValueTypes: map[string]funcValueType{}, methodValueOf: map[string]string{}, methodExprNames: map[string]string{}, funcParams: map[string][]string{}, methodPtr: map[string]bool{}, globals: map[string]string{}, structs: map[string][]structField{}, namedTypes: map[string]bool{}, typeNames: map[string]bool{}, interfaceTypes: map[string]bool{}, ifaceMethods: map[string][]ifaceMethod{}, anonIfaceNames: map[string]string{}, anonIfaceMinted: map[string]bool{}, ifaceASTs: map[string]ifaceAST{}, ifaceVTables: map[string]bool{}, namedUnderlying: map[string]string{}, namedArrays: map[string]arrDim{}, constInt: map[string]string{}, constVal: map[string]constant.Value{}, constWide: map[string]string{}, constStr: map[string]string{}, constUntyped: map[string]bool{}, constHuge: map[string]bool{}, arrays: map[string]arrDim{}, globalArrays: map[string]arrDim{}, sliceVars: map[string]string{}, globalSliceVars: map[string]string{}, chanElems: map[string]bool{}, chanInitElems: map[string]bool{}, chanSendElems: map[string]bool{}, chanRecvElems: map[string]bool{}, chanTryRecvElems: map[string]bool{}, chanTrySendElems: map[string]bool{}, chanGatedSendElems: map[string]bool{}, aliasOf: map[string]string{}, localTypes: map[string]string{}, gotoTargets: map[string]bool{}, chanCloseElems: map[string]bool{}, chanRecv2Elems: map[string]bool{}, mathWrappers: map[string]bool{}, chanElemByName: map[string]string{}, sliceElems: map[string]bool{}, sliceElemByName: map[string]string{}, appendElems: map[string]bool{}, tryappendElems: map[string]bool{}, appendSliceElems: map[string]bool{}, tryappendSliceEls: map[string]bool{}, appendokStructs: map[string]bool{}, copyElems: map[string]bool{}, resliceElems: map[string]bool{}, reslice3Elems: map[string]bool{}, clearElems: map[string]bool{}, minElems: map[string]bool{}, maxElems: map[string]bool{}, printSliceElems: map[string]bool{}, printStructs: map[string]string{}, printlnElems: map[string]bool{}, switchBreakUsed: map[string]bool{}, labelBreak: map[string]string{}, labelContinue: map[string]string{}, labelUsed: map[string]bool{}, eqStructs: map[string]bool{}, eqArrays: map[string]arrDim{}, frameBacked: map[string]bool{}, frameHolder: map[string]string{}, crossParams: map[string][]leak{}, crossContents: map[string][]leak{}, retContents: map[string][]bool{}, recvContents: map[string]leak{}, paramCalls: map[string][]paramCall{}, frameCalls: map[string][]frameCall{}, localConstSpecs: map[string]localConstSpec{}, inheritedTypes: map[string]bool{}, funcValueMembers: map[string][]string{}, methodExprMembers: map[string]emMethodExpr{}, memberShown: map[string]string{}, litLifted: map[string][]string{}, methodNames: map[string]bool{}, recvLeaks: map[string]leak{}, retRecv: map[string]bool{}, crossInto: map[string][]uint32{}, ifaceSummaries: map[string]ifaceSummary{}, retParams: map[string][]bool{}, funcValueOf: map[string]string{}, crossNames: map[string]string{}, initNames: map[string]string{}, funcValueTypes: map[string]funcValueType{}, funcTypeNames: map[string]string{}, funcTypeRet: map[string][]string{}, funcTypeParams: map[string][]string{}, retStructs: map[string]string{}, retStructByKey: map[string]string{}, shiftHelpers: map[string][2]string{}, shiftCTypes: map[*int32]string{}, shiftWalked: map[shiftWalkKey]bool{}, shiftIn: map[*int32]bool{}, divHelpers: map[string][2]string{}, funcValueWrappers: map[string]string{}, deferReplay: -1, iota: -1}
+	e := &emitter{renameTypes: rename, renamedTypes: map[string]string{}, includes: map[string]bool{}, funcRet: map[string][]string{}, funcSliceParams: map[string][]string{}, funcVariadic: map[string]int{}, nilHelpers: map[string]bool{}, funcArrayRet: map[string]arrDim{}, funcArrayParams: map[string][]arrDim{}, anonStructNames: map[string]string{}, methodValueTypes: map[string]funcValueType{}, methodValueOf: map[string]string{}, methodExprNames: map[string]string{}, funcParams: map[string][]string{}, methodPtr: map[string]bool{}, globals: map[string]string{}, structs: map[string][]structField{}, namedTypes: map[string]bool{}, typeNames: map[string]bool{}, interfaceTypes: map[string]bool{}, ifaceMethods: map[string][]ifaceMethod{}, anonIfaceNames: map[string]string{}, anonIfaceMinted: map[string]bool{}, ifaceASTs: map[string]ifaceAST{}, ifaceVTables: map[string]bool{}, namedUnderlying: map[string]string{}, namedArrays: map[string]arrDim{}, constInt: map[string]string{}, constVal: map[string]constant.Value{}, constWide: map[string]string{}, constStr: map[string]string{}, constUntyped: map[string]bool{}, constHuge: map[string]bool{}, arrays: map[string]arrDim{}, globalArrays: map[string]arrDim{}, sliceVars: map[string]string{}, globalSliceVars: map[string]string{}, chanElems: map[string]bool{}, chanInitElems: map[string]bool{}, chanSendElems: map[string]bool{}, chanRecvElems: map[string]bool{}, chanTryRecvElems: map[string]bool{}, chanTrySendElems: map[string]bool{}, chanGatedSendElems: map[string]bool{}, aliasOf: map[string]string{}, localTypes: map[string]string{}, gotoTargets: map[string]bool{}, chanCloseElems: map[string]bool{}, chanRecv2Elems: map[string]bool{}, mathWrappers: map[string]bool{}, chanElemByName: map[string]string{}, sliceElems: map[string]bool{}, sliceElemByName: map[string]string{}, appendElems: map[string]bool{}, tryappendElems: map[string]bool{}, appendSliceElems: map[string]bool{}, tryappendSliceEls: map[string]bool{}, appendokStructs: map[string]bool{}, copyElems: map[string]bool{}, resliceElems: map[string]bool{}, reslice3Elems: map[string]bool{}, clearElems: map[string]bool{}, minElems: map[string]bool{}, maxElems: map[string]bool{}, printSliceElems: map[string]bool{}, printStructs: map[string]string{}, printIfaces: map[string]string{}, printlnElems: map[string]bool{}, switchBreakUsed: map[string]bool{}, labelBreak: map[string]string{}, labelContinue: map[string]string{}, labelUsed: map[string]bool{}, eqStructs: map[string]bool{}, eqArrays: map[string]arrDim{}, frameBacked: map[string]bool{}, frameHolder: map[string]string{}, crossParams: map[string][]leak{}, crossContents: map[string][]leak{}, retContents: map[string][]bool{}, recvContents: map[string]leak{}, paramCalls: map[string][]paramCall{}, frameCalls: map[string][]frameCall{}, localConstSpecs: map[string]localConstSpec{}, inheritedTypes: map[string]bool{}, funcValueMembers: map[string][]string{}, methodExprMembers: map[string]emMethodExpr{}, memberShown: map[string]string{}, litLifted: map[string][]string{}, methodNames: map[string]bool{}, recvLeaks: map[string]leak{}, retRecv: map[string]bool{}, crossInto: map[string][]uint32{}, ifaceSummaries: map[string]ifaceSummary{}, retParams: map[string][]bool{}, funcValueOf: map[string]string{}, crossNames: map[string]string{}, initNames: map[string]string{}, funcValueTypes: map[string]funcValueType{}, funcTypeNames: map[string]string{}, funcTypeRet: map[string][]string{}, funcTypeParams: map[string][]string{}, retStructs: map[string]string{}, retStructByKey: map[string]string{}, shiftHelpers: map[string][2]string{}, shiftCTypes: map[*int32]string{}, shiftWalked: map[shiftWalkKey]bool{}, shiftIn: map[*int32]bool{}, divHelpers: map[string][2]string{}, funcValueWrappers: map[string]string{}, deferReplay: -1, iota: -1}
 	for _, opt := range opts {
 		opt(e)
 	}
@@ -4735,6 +4735,13 @@ func emitProgram(pkg *Package, w io.Writer, opts []EmitOption, rename map[string
 	// A function handed to a callee that calls it with the callee's own storage:
 	// known only once the callee's body has been emitted, which may follow the call.
 	if e.checkPendingCallbacks(); e.err != nil {
+		return e.err
+	}
+	// The %v printer of an interface tests the value's table against every table the
+	// program makes for that interface, and a store into it may be written anywhere
+	// -- after the print as easily as before. So the printers are minted here, once
+	// every body has been emitted and no pair can still arrive.
+	if e.mintIfacePrinters(); e.err != nil {
 		return e.err
 	}
 
@@ -5457,6 +5464,7 @@ type emitter struct {
 	maxElems           map[string]bool     // C types needing the ogo_max_<T> helper for the max builtin
 	printSliceElems    map[string]bool     // element C types printed without a newline, needing the ogo_print_slice_<T> helper
 	printStructs       map[string]string   // struct C types printed by %v -> the definition of their ogo_printv_<T> helper
+	printIfaces        map[string]string   // interface C types printed by %v -> where the first such print is written, for a refusal minting its helper earns
 	printlnElems       map[string]bool     // element C types printed with a newline, needing ogo_println_slice_<T> (which calls ogo_print_slice_<T>)
 	defers             []deferredCall      // the current function's top-level defers, in source order, replayed LIFO before each return
 	switchBreak        string              // goto target for a break in the current switch case (the if/else lowering has no C switch to break); "" means a plain C break -- a loop, or outside any switch
@@ -21902,6 +21910,15 @@ func (e *emitter) failAt(n []int32, format string, args ...any) {
 	e.fail(format, args...)
 }
 
+// posText is where a node is written, for a diagnostic reported later than the
+// walk that found it -- when e.f is no longer the file the node is in.
+func (e *emitter) posText(n []int32) string {
+	for c := range it(n) {
+		return e.f.tok(c.Pos()).Position().String()
+	}
+	return ""
+}
+
 // failAtPos is failAt from a token index, for a diagnostic that points at one
 // token of a node rather than at its first.
 func (e *emitter) failAtPos(pos int32, format string, args ...any) {
@@ -28940,6 +28957,129 @@ func (e *emitter) needStructPrint(ct string) (why string) {
 	return ""
 }
 
+// ifacePrintName names the helper printing an interface value of C type ct as fmt's
+// %v and %+v print one: what it HOLDS, which its table says.
+func ifacePrintName(ct string) string { return "ogo_printv_iface_" + sanitizeElem(ct) }
+
+// mintIfacePrinters mints the helper of every interface a %v asked for. It runs
+// after the last body: the helper tests the value's table against each one the
+// program makes for that interface, and the store that makes a table may be written
+// anywhere. Minting a helper can ask for a struct printer, and a struct printer for
+// another interface's, so this is a worklist rather than one pass.
+func (e *emitter) mintIfacePrinters() {
+	for done := map[string]bool{}; ; {
+		next := ""
+		for _, iface := range slices.Sorted(maps.Keys(e.printIfaces)) {
+			if !done[iface] {
+				next = iface
+				break
+			}
+		}
+		if next == "" {
+			return
+		}
+		done[next] = true
+		if e.mintIfacePrinter(next); e.err != nil {
+			return
+		}
+	}
+}
+
+// mintIfacePrinter writes one interface's %v helper into the vtable section, after
+// the tables it takes the address of and before every body that calls it.
+func (e *emitter) mintIfacePrinter(iface string) {
+	var b strings.Builder
+	for _, concrete := range e.ifaceConcretes(iface) {
+		code, why := e.ifaceHeldPrintC(concrete)
+		if why != "" {
+			e.fail("%s: printf: %%v of %s holding a %s is not supported yet: %s",
+				e.printIfaces[iface], e.goTypeName(iface), e.goTypeName(concrete+"*"), why)
+			return
+		}
+		fmt.Fprintf(&b, "\tif (v.vt == &%s) { %s return; }\n", ifaceVTVar(iface, concrete), code)
+	}
+	body := b.String()
+	var h strings.Builder
+	fmt.Fprintf(&h, "static void %s(%s v, int plus) {\n", ifacePrintName(iface), iface)
+	// Only a struct, a slice or an array reads the flag, and only a branch reads the
+	// value: an interface nothing is stored in, or one holding types that print as
+	// their String() or their address, would leave a parameter unread.
+	if body == "" {
+		h.WriteString("\t(void)v;\n")
+	}
+	if !strings.Contains(body, "plus") {
+		h.WriteString("\t(void)plus;\n")
+	}
+	h.WriteString(body)
+	// A value carrying no table holds nothing, which fmt prints as <nil>. The
+	// branches above are every table the program makes for this interface, so
+	// nothing else reaches this.
+	h.WriteString("\tprintf(\"<nil>\");\n}\n")
+	e.vtables.WriteString(h.String())
+}
+
+// ifaceConcretes lists, sorted, the concrete C types the program stores in an
+// interface -- the pairs a table was made for.
+func (e *emitter) ifaceConcretes(iface string) []string {
+	var r []string
+	for key := range e.ifaceVTables {
+		if i, concrete, ok := strings.Cut(key, "|"); ok && i == iface {
+			r = append(r, concrete)
+		}
+	}
+	slices.Sort(r)
+	return r
+}
+
+// ifaceHeldPrintC renders the C statements printing what an interface holds when its
+// table is the one of concrete: a POINTER to a value of that type, which is what an
+// interface holds here. fmt prints it as it prints any argument -- the dynamic
+// value's Error() or String() where it has one, "&" and the fields for a pointer to
+// a struct, a slice or an array, its address otherwise, and "<nil>" for a nil
+// pointer under all three. why names what cannot be printed yet, with no code.
+func (e *emitter) ifaceHeldPrintC(concrete string) (code, why string) {
+	data := "((" + concrete + "*)v.data)"
+	guard := func(code string) string {
+		// fmt prints a nil pointer as <nil> whatever it points at, and prints the
+		// panic a value method copying its receiver out of one raises the same way.
+		return "if (" + data + ") { " + code + " } else { printf(\"<nil>\"); }"
+	}
+	if text, _, ptrRecv, ok := e.stringerMethodC(concrete+"*", data); ok {
+		e.usesStringPrint = true
+		call := "ogo_print_str(" + text + ");"
+		if ptrRecv {
+			// A pointer method is called as Go calls it, nil or not.
+			return call, ""
+		}
+		return guard(call), ""
+	}
+	u := e.underlyingCType(concrete)
+	switch {
+	case e.isPrintStruct(u):
+		if why := e.needStructPrint(u); why != "" {
+			return "", why
+		}
+		return guard("printf(\"&\"); " + structPrintName(u) + "(" + data + ", plus);"), ""
+	case e.isSliceCType(u), e.isNamedArray(u):
+		// fmt writes the "&" of a pointer to a slice or an array as it does for a
+		// struct, and the elements after it.
+		inner, why := e.printValueC("(*"+data+")", concrete, true, "plus")
+		if why != "" {
+			return "", why
+		}
+		return guard("printf(\"&\"); " + inner), ""
+	}
+	// A pointer to anything else is its address, which is what fmt prints for it.
+	e.includes["stdint.h"] = true
+	return guard("printf(\"0x%x\", (unsigned)(uintptr_t)" + data + ");"), ""
+}
+
+// isNamedArray reports whether a C type name is one of the array typedefs.
+func (e *emitter) isNamedArray(ct string) bool {
+	_, ok := e.namedArrays[ct]
+	return ok
+}
+
 // printValueC renders the C statements printing expr, a value of C type ct, as fmt
 // prints one inside a struct, a slice or an array -- at depth, where a pointer is its
 // address, <nil> when it is nil. methods says the value may be asked for Error() or
@@ -29045,6 +29185,22 @@ func (e *emitter) emitStructPrintVerb(idx int, arg Node, plus bool, value func()
 	}
 	switch base := strings.TrimSuffix(ct, "*"); {
 	case ct == "":
+	case e.isIfaceCType(ct):
+		// fmt prints what the interface HOLDS: the dynamic value's String() where it
+		// has one, "&{3 4}" for a pointer to a struct, "<nil>" for a value holding
+		// nothing. Its table is what says which, so the print is a call to a helper
+		// testing it -- minted after the last body, since the store that makes a
+		// table may be written anywhere (mintIfacePrinters). An interface DECLARING
+		// Error() or String() never gets here: fmt calls that, and so does the
+		// stringer path above.
+		if _, asked := e.printIfaces[ct]; !asked {
+			e.printIfaces[ct] = e.posText(arg.ast)
+		}
+		e.ind()
+		e.emit(ifacePrintName(ct) + "(")
+		value()
+		e.emit(", " + p + ");\n")
+		return true, true
 	case e.isPrintStruct(ct):
 		u := e.underlyingCType(ct)
 		if why := e.needStructPrint(u); why != "" {

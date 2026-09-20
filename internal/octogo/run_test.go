@@ -33073,6 +33073,90 @@ func main() {
 }
 `,
 		want: "409 3 true 4 9 9 3\n4 9 4 121\n4 9 9 4 true\n",
+	}, {
+		// `%v` of an INTERFACE value prints what it holds, as fmt does: "&{3 4}" for a
+		// pointer to a struct, the dynamic value's String() where it has one, its
+		// address for a pointer to anything else, and "<nil>" for a value holding
+		// nothing or holding a nil pointer. Refused until now ("%T prints its type"),
+		// there being no per-type formatter to reach for. The value's TABLE says which
+		// type it holds, so the print is a chain testing it against every table the
+		// program makes for that interface -- which is known only after the last body
+		// is emitted, since the store that makes one may be written anywhere
+		// (mintIfacePrinters). An interface DECLARING Error() or String() is unchanged:
+		// fmt calls that, and so did this.
+		name: "%v of an interface value",
+		src: `type P struct{ x, y int }
+
+type Inner struct{ a, b int }
+
+type Outer struct {
+	tag string
+	in  Inner
+}
+
+type Named struct {
+	n string
+	k int
+}
+
+type Nums []int
+
+type Counter int
+
+type Shape interface{ Area() int }
+
+func (p *P) Area() int { return p.x * p.y }
+
+func (o *Outer) Area() int { return o.in.a }
+
+func (n *Named) Area() int { return len(n.n) }
+
+func (n *Named) String() string { return n.n }
+
+func (n *Nums) Area() int { return len(*n) }
+
+func (c *Counter) Area() int { return int(*c) }
+
+var gp = P{3, 4}
+
+var go1 = Outer{"t", Inner{1, 2}}
+
+var gn = Named{"hi", 9}
+
+var gnums = Nums{7, 8}
+
+var gc Counter = 5
+
+var nilp *P
+
+func pick(k int) Shape {
+	if k == 0 {
+		return &gp
+	}
+	return &go1
+}
+
+func main() {
+	var s Shape = &gp
+	printf("%v|%+v\n", s, s)
+	var t Shape = &go1
+	printf("%v|%+v\n", t, t)
+	var u Shape = &gn
+	printf("%v|%+v\n", u, u)
+	var v Shape = &gnums
+	printf("%v|%+v\n", v, v)
+	var w Shape
+	printf("%v|%+v\n", w, w)
+	printf("%v|%v\n", pick(0), pick(1))
+	var any interface{} = &gp
+	printf("%v|%+v\n", any, any)
+	var z Shape = nilp
+	printf("%v|%v\n", z, z == nil)
+	var y Shape = &gc
+	printf("%d|%d\n", y.Area(), gnums.Area())
+}
+`,
+		want: "&{3 4}|&{x:3 y:4}\n&{t {1 2}}|&{tag:t in:{a:1 b:2}}\nhi|hi\n&[7 8]|&[7 8]\n<nil>|<nil>\n&{3 4}|&{t {1 2}}\n&{3 4}|&{x:3 y:4}\n<nil>|false\n5|2\n",
 	}}
 
 // TestEmitCRun compiles emitted C with a host compiler and runs it, checking what

@@ -5811,17 +5811,45 @@ func main() {
 			want: "printf: %v of *int is not supported yet; %T prints its type",
 		},
 		{
-			name: "%v of an interface",
+			// %v of an interface prints what it holds since 2026-09-20, by a chain
+			// over the tables the program makes for it -- but a width it cannot pad,
+			// the text being written by that chain rather than by one printf.
+			name: "%v of an interface under a width",
 			src: `type Shape interface {
 	area() int
 }
 
 func main() {
 	var sh Shape
+	printf("%5v\n", sh)
+}
+`,
+			want: "printf: %5v does not take a width or precision yet",
+		},
+		{
+			// The chain prints each concrete type as fmt does, so a type it cannot
+			// print refuses the whole print -- at the print, naming the type inside.
+			name: "%v of an interface holding a struct that cannot be printed",
+			src: `type Shape interface {
+	Area() int
+}
+
+type Weird struct {
+	G Shape
+}
+
+func (w *Weird) Area() int {
+	return 1
+}
+
+var gw Weird
+
+func main() {
+	var sh Shape = &gw
 	printf("%v\n", sh)
 }
 `,
-			want: "printf: %v of Shape is not supported yet",
+			want: "printf: %v of Shape holding a *Weird is not supported yet: field G is an exported interface",
 		},
 	} {
 		t.Run(test.name, func(t *testing.T) {
