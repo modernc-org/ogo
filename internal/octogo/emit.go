@@ -6240,6 +6240,29 @@ func (e *emitter) collectTypeSpec(n Node) {
 	if underlying == "" {
 		return // cType has latched the failure
 	}
+	// Asked of ifaceMethods, which registerInterface keys by the C NAME:
+	// interfaceTypes is written by the forward pass under the name as the program
+	// SPELLS it, and the two part company under renameAllTypes -- where this branch
+	// was skipped and the case compiled as it did before.
+	if e.isIfaceCType(underlying) {
+		// A defined type over an INTERFACE, `type Sh Shape`. What it holds is the
+		// same two words, and every table and thunk a value of it uses is the
+		// target's, so it is another NAME for that interface in C -- aliased rather
+		// than given a type of its own, which would need a vtable struct and a table
+		// per concrete type, each the target's under a second spelling. Go keeps the
+		// two types apart by their method sets, which is the checker's to say; the
+		// representation has nothing to keep apart.
+		//
+		// Before this the C type was a typedef with no interface behind it, so a
+		// store into it was emitted as a plain assignment -- "incompatible types
+		// when assigning to type 'Sh' from type 'R *'" out of the C compiler, about
+		// a program the checker had already refused for its own reason.
+		e.aliasOf[mn] = underlying
+		e.interfaceTypes[mn] = true
+		e.ifaceMethods[mn] = e.ifaceMethods[underlying]
+		e.addTypedef(mn, "typedef "+underlying+" "+mn+";\n", underlying)
+		return
+	}
 	e.namedTypes[mn] = true
 	e.namedUnderlying[mn] = underlying
 	// A defined type over a channel takes a typedef like any other defined type,

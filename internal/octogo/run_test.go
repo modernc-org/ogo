@@ -33406,6 +33406,83 @@ func main() {
 }
 `,
 		want: "4 4 11 14 3\n4 2 5 11 2\n7 3 3 8 4\n65 2 2\n11 2 13 2 3 2\n",
+	}, {
+		// A DEFINED type over an INTERFACE, `type Sh Shape`, and over a POINTER,
+		// `type PI *int`. Both were refused where the name stood for the type it
+		// defines: `var g Sh = &r` was "cannot use &r (an address) as Sh value" --
+		// the check that exists to leave interfaces alone did not know this was one,
+		// asking the written type node rather than following the definition -- and
+		// `b := PI(&n)` gave b a type with no pointerness, so `*b` was "cannot
+		// indirect b" of a pointer. The written forms, `var b PI = &n` and a
+		// parameter, always knew.
+		//
+		// A defined interface is another NAME for the target in C: the two words are
+		// the same and every table a value of it uses is the target's, so a name of
+		// its own would need a vtable struct and a table per concrete type, each the
+		// target's under a second spelling.
+		name: "a defined type over an interface and over a pointer",
+		src: `type Shape interface{ Area() int }
+
+type Sh Shape
+
+type R struct{ w int }
+
+func (r *R) Area() int { return r.w }
+
+type T struct{ h int }
+
+func (t *T) Area() int { return t.h * 2 }
+
+var r = R{4}
+
+var t = T{5}
+
+var g Sh = &r
+
+func take(s Sh) int { return s.Area() }
+
+func give() Sh { return &t }
+
+func main() {
+	var a Sh = &r
+	var b Shape = a
+	var c Sh = b
+	println(g.Area(), a.Area(), b.Area(), c.Area(), take(&t), give().Area())
+	switch v := c.(type) {
+	case *R:
+		println("R", v.w)
+	case *T:
+		println("T", v.h)
+	}
+	if q, ok := g.(*R); ok {
+		println("assert", q.w)
+	}
+	var arr [2]Sh
+	arr[0] = &r
+	arr[1] = &t
+	println(arr[0].Area(), arr[1].Area())
+}
+`,
+		want: "4 4 4 4 10 10\nR 4\nassert 4\n4 10\n",
+	}, {
+		name: "a defined pointer type declared every way",
+		src: `type PI *int
+
+var n int
+
+var g PI
+
+var h PI = &n
+
+func main() {
+	n = 5
+	g = &n
+	var a PI = &n
+	b := PI(&n)
+	println(*g, *h, *a, *b, g == h)
+}
+`,
+		want: "5 5 5 5 true\n",
 	}}
 
 // TestEmitCRun compiles emitted C with a host compiler and runs it, checking what

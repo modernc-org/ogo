@@ -20,6 +20,17 @@ shipped section tells a reader on that version that they have behaviour they do 
 
 ### Language
 
+- **A defined type over an INTERFACE and over a POINTER.** `type Sh Shape` was
+  refused wherever a value went into it -- "cannot use &r (an address) as Sh
+  value", from the check that exists to leave interfaces alone, which asked the
+  written type node instead of following the definition. It is another NAME for
+  that interface now: the two words are the same and every table a value of it
+  uses is the target's, so a type of its own would need a vtable struct and a
+  table per concrete type, each the target's under a second spelling. `type PI
+  *int` had the mirror of it in the other direction: `b := PI(&n)` gave b a type
+  with no POINTERNESS, so `*b` was "cannot indirect b" of a pointer, where the
+  written `var b PI = &n` and a parameter of the type always knew.
+
 - **A DEFINED slice type is a slice everywhere one is declared.** `type L []int`
   worked as a local and was three different things at package scope: `var g L =
   make(L, 2, 5)` was refused ("make is only supported as a `var s []T = make(...)`

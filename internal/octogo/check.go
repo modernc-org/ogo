@@ -3461,6 +3461,31 @@ func (f *File) namedFuncSig(s *Scope, name, qual Token) *SignatureNode {
 	return f.funcSig(home, td.TypeSpec.TypeNode)
 }
 
+// namedIsPointer reports whether a DEFINED type is a pointer: `type PI *int` names
+// one, and a variable of it is dereferenced like any other pointer. The name alone
+// says nothing -- the "*" is in the type's own declaration -- so `b := PI(&n)` was
+// a variable with a type and no pointerness, and `*b` was "cannot indirect b" of a
+// pointer. The written spellings, `var b PI = &n` and a parameter of type PI, read
+// the declaration and always knew.
+func (f *File) namedIsPointer(s *Scope, name, qual Token) bool {
+	if !name.IsValid() {
+		return false
+	}
+	home := s
+	if qual.IsValid() {
+		h, ok := f.importedPkgScope(qual)
+		if !ok {
+			return false
+		}
+		home = h
+	}
+	td, _, ok := f.typeDeclNamed(home, name.Src())
+	if !ok || td.TypeSpec == nil {
+		return false
+	}
+	return f.isPointerType(home, td.TypeSpec.TypeNode)
+}
+
 // inferVarFrom records on vd the type its initializer gives it, for a variable
 // declared without a written one: "x := e", "var x = e" and the package-level
 // "var x = e" alike. All three mean the same thing in Go and now say so through one
@@ -3531,7 +3556,7 @@ func (f *File) inferVarFrom(s *Scope, vd *VarDeclaration, init Node) {
 			// carries P, so its fields and methods are checked as an explicitly
 			// typed variable's are. The name canonicalizes through `type A = B`.
 			nm, ql = f.canonicalType(s, nm, ql)
-			vd.typeName, vd.typeQual, vd.isPtr = nm, ql, ptr
+			vd.typeName, vd.typeQual, vd.isPtr = nm, ql, ptr || f.namedIsPointer(s, nm, ql)
 			if k, ok := f.inferredKind(s, init); ok {
 				vd.kind, vd.hasKind = k, true
 			}
@@ -8532,7 +8557,25 @@ func (f *File) interfaceMethodsNamed(s *Scope, name string) (map[string]*MethodS
 	if !ok || td.TypeSpec == nil {
 		return nil, false
 	}
-	it, ok := td.TypeSpec.TypeNode.(*TypeNodeInterface)
+	// Through a chain of DEFINITIONS, as isPointerType follows one: `type Sh Shape`
+	// over an interface IS that interface, with the same method set, so a pointer
+	// stored in a variable of it is a pointer stored in an interface. Asked of the
+	// written type node alone, the name answered "not an interface", and `var g Sh =
+	// &r` was refused -- "cannot use &r (an address) as Sh value" -- by the check
+	// that exists to leave interfaces alone.
+	tn := td.TypeSpec.TypeNode
+	for range 16 { // bounded; a type cycle is reported by its own pass
+		id, isIdent := tn.(*TypeNodeIdent)
+		if !isIdent {
+			break
+		}
+		sub, subHome, ok := f.typeDeclNamed(home, id.Name.Src())
+		if !ok || sub.TypeSpec == nil {
+			break
+		}
+		name, tn, home = id.Name.Src(), sub.TypeSpec.TypeNode, subHome
+	}
+	it, ok := tn.(*TypeNodeInterface)
 	if !ok {
 		return nil, false
 	}
