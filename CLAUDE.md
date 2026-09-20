@@ -525,6 +525,34 @@ accessors record ORDER, `calls = calls*10 + k`, not a count: a count matched Go 
 operands C leaves unsequenced. And a wide constant belongs in every sweep of a store:
 `a, b = 1<<40, 5` lost it on the board in silence, where the host's compiler refused.
 
+**A DEFINED TYPE OVER U IS A ROW** (2026-09-20). `type D U` for every underlying
+kind -- int, float, bool, string, slice, array, struct, pointer, func, chan,
+interface -- crossed with the ways one is declared (package and local, written and
+inferred, from a literal, a make, a conversion and a zero value) and used (a method
+on it, an index, len, a field, a call). Thirteen programs; six faults in two of the
+rows and one in a third. A defined SLICE type was three different things at package
+scope -- refused from make, "cannot infer a type" with no type written, and
+`var g L = L{1, 2, 3}` compiled to a HEADER of {1, 2, 3}, a slice pointing at
+address 1 -- a short declaration from make lost the type and with it the methods,
+and make in a package initializer crashed the compiler. A defined INTERFACE type
+refused every value going into it, and a defined POINTER type lost its pointerness
+through a short declaration. The local declared forms, which is what everything
+written until then used, were right in every case. A conversion sweep beside it
+(`T(x)` for each of those types, in a declaration, a call, a chain and under a
+suffix) found only the recorded grammar gap: a conversion to a type WRITTEN OUT,
+`[]int(x)`, `[]byte(x)` and `[3]int(x)`, is a syntax error, where a named type's
+converts.
+
+**A PROGRAM GO REJECTS IS A ROW** (2026-09-20). The sweeps above ask what a correct
+program does; this one asks what an incorrect one earns, which is the direction that
+fails SILENTLY -- an accepted mistake reaches the C compiler, which reports it about
+generated code, or does not report it at all. Twenty-four small wrong programs, each
+run through `go vet` and through this compiler, agreeing on twenty-three: an unused
+local and import, a missing return, a wrong argument count and type, a bad
+assignment, a duplicate case, a break outside a loop, an interface not implemented,
+and so on. The one that got through was `append(xs, "x")`. Keep the two-column
+shape -- what Go says, what this says -- and add a row whenever a check is written.
+
 **A TEMPORARY IS A COG REGISTER** (2026-09-20). flexcc gives every C local one
 (`local_N res 1` in COG_BSS) out of a pool the assembler checks with `fit 480`,
 shared across functions so the deepest call chain is what spends it -- and overflow
