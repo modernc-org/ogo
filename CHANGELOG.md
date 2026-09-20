@@ -20,6 +20,11 @@ shipped section tells a reader on that version that they have behaviour they do 
 
 ### Language
 
+- **A switch with no condition takes boolean cases.** `switch { case n: }` for an
+  int n became `if (n)` in C, which C takes and Go does not: a conditionless switch
+  is a switch on true, and every case is a boolean expression. The check was keyed
+  on the GUARD's Kind, and there is no guard.
+
 - **Four programs Go refuses are refused here too**: `make([]int, 5, 2)`, whose
   header claimed five elements of a backing of two -- valid C that read past the
   array, the only one of these the C compiler would not have caught -- and a

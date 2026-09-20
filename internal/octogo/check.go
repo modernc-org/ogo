@@ -3849,7 +3849,7 @@ func (f *File) checkSwitch(s *Scope, results []retResult, n Node) {
 	// name types, not values, and the name it binds has a different type in each
 	// clause. Nothing below applies to it, so it is checked on its own.
 	var ts typeSwitchGuard
-	isTypeSwitch := false
+	isTypeSwitch, sawGuard := false, false
 	seen := map[string]bool{}
 	// SwitchGuard precedes the CaseClauses, so the guard is processed first.
 	for c := range it(n.ast) {
@@ -3868,6 +3868,7 @@ func (f *File) checkSwitch(s *Scope, results []retResult, n Node) {
 				f.checkTypeSwitchOperand(s, ss, ts)
 				break
 			}
+			sawGuard = true
 			guardKind, guardOK = f.checkSwitchGuard(s, ss, c)
 		case CaseClause:
 			cs := ss.child()
@@ -3876,6 +3877,13 @@ func (f *File) checkSwitch(s *Scope, results []retResult, n Node) {
 				f.checkTypeCaseClause(cs, ts, c, seen)
 			case guardOK:
 				f.checkCaseExprs(ss, guardKind, c)
+			case !sawGuard:
+				// A switch with NO condition, `switch { case n > 0: }`, is a switch
+				// on true: every case is a boolean expression. Nothing asked, since
+				// the check below it is keyed on a guard's Kind and there is no
+				// guard -- so `case n:` for an int n became `if (n)` in C, which C
+				// takes and Go does not.
+				f.checkCaseExprs(ss, PredeclaredBool, c)
 			}
 			if !isTypeSwitch {
 				f.checkCaseQualified(ss, c)
