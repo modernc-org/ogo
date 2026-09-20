@@ -609,7 +609,8 @@ of STRUCTS, and `for range f` over a LOCAL func value. Re-run a batch after its
 fixes; a fix is for the program that was looked at. The second was the visible end
 of something larger: a variable bound to a function LITERAL had no type at all to
 the checker, so `f("x")`, `f(1, 2)` and `f = otherSignature` went through as well
-(fixed the same day, funcLitSig). **What `ogo build` does with such a program is the
+(both fixed the same day, funcLitSig and checkNilValue; the 212 stand at 204 agreeing,
+none taken, and 8 differing -- the 7 by design and `s = append(s)`). **What `ogo build` does with such a program is the
 measure**, not what gcc does: of twelve accepted mistakes built for the target that
 afternoon -- `gp = nil` for a struct, `return nil`, `take(nil)`, `if p {` for a
 pointer, `f + 1` and `f[0]` for a func value -- flexcc refused ONE and warned about

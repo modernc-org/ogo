@@ -1010,6 +1010,21 @@ shipped section tells a reader on that version that they have behaviour they do 
 Each of these is the compiler refusing a program it used to accept, and each such
 program handed out a reference to storage that was gone by the time it was read.
 
+The OTHER programs this release refuses where the last one took them are programs
+Go refuses, and they are listed under **Language** above, each with what it used to
+become: a condition that is no bool (`if p {` for a pointer, `!f` for a function);
+nil for a struct or an array (`return nil` from a function returning a struct); a
+call through a variable bound to a function literal with the wrong arguments; a
+struct that embeds itself and a local type that holds itself; a conditionless switch
+with a non-boolean case; `make([]int, 5, 2)`; a write into a string; a struct
+indexed; a channel compared with a number; a range over what has no elements; an
+elided literal with a value too many; `fallthrough` in a type switch; a send to a
+channel of an unnamed element type of the wrong value; a constant of a class its
+declared type cannot hold; a struct converted to a number; an integer-only operator
+on a float; the address of a call's result; and an append of the wrong element type.
+Every one reached the C compiler before, and the target's compiler built a binary
+for several of them without a word.
+
 - **A callee is followed through a literal it holds and through its parameters'
   fields.** `f := func(d *Dev, w []int) { d.onData(w) }` called as `f(&gdev, v)`
   was summarised as keeping nothing of v: a name holding a literal resolved to no
@@ -1182,8 +1197,12 @@ program handed out a reference to storage that was gone by the time it was read.
   stmtprobe.sh report as one too. Run again over the seven batches, 212 programs,
   against the compiler as it was before them: 186 agreeing, 17 taken where Go
   refuses them, 8 refused where Go takes them (7 by design, and `s = append(s)`),
-  one fault. The published count had 11 taken; it was judged by `go vet`. Against
-  the compiler as it is, two are still taken, each beside a shape that was fixed.
+  one fault. The published count had 11 taken; it was judged by `go vet`. Run
+  once more after those fixes, the script found two STILL taken, each beside a shape
+  that had been fixed -- a range over a LOCAL func value, nil appended to a slice of
+  structs -- which is where the three entries at the top of **Language** came from.
+  Against the compiler as released: 204 agreeing, none taken, no fault, and the 8
+  that differ are the 7 by design and the no-op append.
 
 - The oracle fuzzer writes FUNCTION LITERALS: one called where it stands and one
   bound to a variable and called through it, each carrying its weight into the
