@@ -20,6 +20,16 @@ shipped section tells a reader on that version that they have behaviour they do 
 
 ### Language
 
+- **The integer-only operators are refused on a float, and a call's result has no
+  address.** `%`, `&`, `|`, `^`, `&^`, `<<` and `>>` are defined on integers in Go
+  and were let through for a float here -- the gate ahead of them asks only whether
+  the operand is NUMERIC -- so `f % 2` was reported by the C compiler, about the
+  emitted line. A string and a bool were refused all along. And `p := &f()`
+  compiled to `&f()` in C, an lvalue the C compiler wanted and did not have; only
+  the LAST step of a chain is asked, since a call earlier in one may return a
+  pointer, and `&mk().x` is Go. Found by the second batch of the Go-rejects sweep:
+  of forty programs, these were the three this compiler took.
+
 - **What an `append` writes is checked against the slice's element type.** It was
   for a slice whose type is written out and was not for one declared from its
   initializer: `xs := make([]int, 0, 2)` records its element as a KIND and had no

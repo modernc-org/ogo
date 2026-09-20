@@ -10185,6 +10185,15 @@ func (f *File) checkAddressable(s *Scope, op Node, fac Node) {
 		}
 		return
 	}
+	// A CALL's result is a value with no storage, so it has no address: `p := &f()`
+	// compiled to `int* p = &f();`, which the C compiler reports as a "lvalue
+	// required as unary '&' operand" of a line nobody wrote. Only the LAST step is
+	// asked: a call EARLIER in the chain may return a pointer, and what follows it
+	// is then storage like any other -- `&f().x` for an f returning *P is Go.
+	if last, ok := f.lastSuffixStep(suffix); ok && last == CallSuffix {
+		what(f.exprSource(fac))
+		return
+	}
 	// `&pkg.K` and `&pkg.F`: the member is that package's, so it is looked up
 	// there. A field or an element of a package variable IS addressable, and is
 	// left alone by the same lookup.
@@ -10203,6 +10212,20 @@ func (f *File) checkAddressable(s *Scope, op Node, fac Node) {
 	case *ConstDeclaration, *FuncDeclaration:
 		what(id.Src() + "." + member.Src())
 	}
+}
+
+// lastSuffixStep is the kind of a factor suffix's final step -- a Selector, an
+// Index or a CallSuffix -- which is what says whether the whole factor names
+// storage or a value.
+func (f *File) lastSuffixStep(suffix Node) (Symbol, bool) {
+	last, ok := Symbol(0), false
+	for c := range it(suffix.ast) {
+		switch c.sym {
+		case Selector, Index, CallSuffix:
+			last, ok = c.sym, true
+		}
+	}
+	return last, ok
 }
 
 // checkComparison recurses into an Expression's operands and, for each
@@ -10483,6 +10506,18 @@ func (f *File) checkBinOp(s *Scope, opNode, lNode, rNode Node) {
 	case lc != rc:
 		f.err(pos, "invalid operation: operator %s not defined on %s and %s", sym, kindName(lk), kindName(rk))
 	case !binaryAllowed(op, lc):
+		f.err(pos, "invalid operation: operator %s not defined on %s", sym, kindName(lk))
+	case intOnlyOp(op) && !isIntegerKind(lk) && !isUntypedKind(lk):
+		// The operators Go defines on INTEGERS alone. A float is numeric, which is
+		// all the class above asks, so `f % 2`, `f << 2` and the four bitwise ones
+		// went through and were reported by the C compiler -- "invalid operands to
+		// binary %" -- about the emitted line rather than the written one.
+		//
+		// Asked of a TYPED operand only. An untyped constant whose value is an
+		// integer is legal here -- `1.0 << s` is a program, the constant taking the
+		// type the expression stands in -- and one whose value is not has a message
+		// of its own, in Go's words: "shifted operand 1.5 (untyped float constant)
+		// must be integer" (checkShiftedOperand).
 		f.err(pos, "invalid operation: operator %s not defined on %s", sym, kindName(lk))
 	case op != SHL && op != SHR && (!assignableKind(lk, rk) || f.definedTypeMismatch(s, lNode, rNode)):
 		// Both operands are numbers, or both strings, but of DIFFERENT types --
@@ -10796,6 +10831,26 @@ func (f *File) constZeroDivisor(s *Scope, lk Kind, rNode Node) bool {
 	}
 	cv, ok := f.constNumeric(s, rNode)
 	return ok && constant.Sign(cv) == 0
+}
+
+// intOnlyOp reports the operators Go defines on integer operands only: the
+// remainder, the four bitwise ones and the two shifts.
+func intOnlyOp(op Symbol) bool {
+	switch op {
+	case REM, AND, OR, XOR, ANDNOT, SHL, SHR:
+		return true
+	}
+	return false
+}
+
+// isIntegerKind reports whether a Kind is an integer type, the untyped integer
+// constant included -- what the operators above take.
+func isIntegerKind(k Kind) bool {
+	if k == UntypedInt || k == UntypedRune {
+		return true
+	}
+	_, _, isInt := intKindRange(k)
+	return isInt
 }
 
 // binaryAllowed reports whether a binary operator is defined on operand class c.

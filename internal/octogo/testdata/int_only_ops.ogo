@@ -1,0 +1,71 @@
+// The operators Go defines on INTEGERS alone -- the remainder, the four bitwise
+// ones and the two shifts -- refused on a float. The class gate ahead of them asks
+// only whether the operand is NUMERIC, which a float is, so all seven went through
+// and were reported by the C compiler, about the emitted line rather than the
+// written one ("invalid operands to binary %"). A string and a bool were refused
+// all along, by that same gate.
+//
+// And the address of a CALL's result, which is a value with no storage: `&f()`
+// compiled to `&f()` in C, an lvalue the C compiler wanted and did not have.
+
+type D float32
+
+func f() int { return 1 }
+
+func mk() *P { return &p }
+
+type P struct{ x int }
+
+var p P
+
+func ops() {
+	var a float32 = 1.5
+	var b float32 = 2
+	// ERROR "operator % not defined on float32"
+	println(a % b)
+	// ERROR "operator << not defined on float32"
+	println(a << 2)
+	// ERROR "operator >> not defined on float32"
+	println(a >> 2)
+	// ERROR "operator & not defined on float32"
+	println(a & b)
+	// ERROR "operator \| not defined on float32"
+	println(a | b)
+	// ERROR "operator \^ not defined on float32"
+	println(a ^ b)
+	// ERROR "operator &\^ not defined on float32"
+	println(a &^ b)
+	// The four that ARE defined on a float.
+	println(a+b, a-b, a*b, a/b)
+}
+
+// A DEFINED type over a float is a float here too.
+func defined() {
+	var a D = 1.5
+	// ERROR "operator % not defined on float32"
+	println(a % 2)
+	println(a * 2)
+}
+
+// An integer takes all eleven.
+func ints() {
+	var n int = 7
+	println(n%2, n<<1, n>>1, n&3, n|8, n^1, n&^2, n+1, n-1, n*2, n/2)
+}
+
+func addresses() {
+	// ERROR "cannot take address of f\(\)"
+	q := &f()
+	// A call returning a POINTER is storage from there on, so a field of it has an
+	// address like any other.
+	r := &mk().x
+	*r = 3
+	println(*q, p.x)
+}
+
+func main() {
+	ops()
+	defined()
+	ints()
+	addresses()
+}
