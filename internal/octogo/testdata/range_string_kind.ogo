@@ -1,0 +1,60 @@
+// Two things nothing said, each reaching the C compiler as a line nobody wrote.
+//
+// A string INDEXED is a byte, and a variable declared from one carried no type at
+// all: `b := s[0]` then `b = "c"` assigned a string header to a uint8_t. A string
+// SLICED is a string, which is the other half of the same walk.
+//
+// And what may be RANGED: Go ranges an array, a pointer to one, a slice, a string, a
+// map, a channel, an integer and an iterator function; this language has neither maps
+// nor those functions, so a func value, a bool and a float are all that is left, and
+// the emitter typed a range operand it could not resolve as a COUNT -- `for range f`
+// over a func value became `int t = f;`.
+
+var s = "hello"
+
+var fl float32 = 1.5
+
+var b bool
+
+func fn() {}
+
+var xs = []int{1, 2}
+
+func indexed() {
+	c := s[1]
+	// ERROR "cannot use "x" of type string as type uint8 in assignment"
+	c = "x"
+	// A slice of a string is a string, and takes one.
+	t := s[1:3]
+	t = "ok"
+	println(c, t, s[0], len(t))
+}
+
+func ranged() {
+	// ERROR "cannot range over fn \(value of type func\)"
+	for range fn {
+	}
+	// ERROR "cannot range over b \(variable of type bool\)"
+	for range b {
+	}
+	// ERROR "cannot range over fl \(variable of type float32\)"
+	for range fl {
+	}
+	// What may be ranged, each yielding what it should.
+	n := 0
+	for i, r := range s {
+		n += i + int(r)
+	}
+	for i, v := range xs {
+		n += i + v
+	}
+	for i := range 3 {
+		n += i
+	}
+	println(n)
+}
+
+func main() {
+	indexed()
+	ranged()
+}

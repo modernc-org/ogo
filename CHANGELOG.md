@@ -20,6 +20,15 @@ shipped section tells a reader on that version that they have behaviour they do 
 
 ### Language
 
+- **A string INDEXED is a byte, and what cannot be RANGED is refused.** `b := s[0]`
+  gave b no type at all, so `b = "c"` assigned a string header to a `uint8_t`; a
+  slice of a string, `s[1:3]`, is a string and was right all along. And Go ranges an
+  array, a pointer to one, a slice, a string, a map, a channel, an integer and an
+  iterator function -- this language has neither maps nor those functions, so a func
+  value, a bool and a float are what is left, and the emitter typed a range operand
+  it could not resolve as a COUNT: `for range f` over a func value became `int t =
+  f;`.
+
 - **A composite literal whose type is ELIDED is checked against the type its
   position implies.** `[2]P{{1, 2, 3}}` went through with a value too many, and a
   keyed element could name a field that is not there -- the walk stopped at the

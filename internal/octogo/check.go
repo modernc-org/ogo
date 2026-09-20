@@ -2817,6 +2817,7 @@ func (f *File) checkForHeader(s *Scope, results []retResult, kw string, n Node) 
 // channel and a value variable over an integer.
 func (f *File) checkRange(s *Scope, kw string, fi forInfo) {
 	f.checkNames(s, fi.rangeExpr)
+	f.checkRangeable(s, fi.rangeExpr)
 	elem, hasElem, isInt, isChan := f.rangeElem(s, fi.rangeExpr)
 	if isChan && f.exprChanDir(s, fi.rangeExpr) == sendDir {
 		f.err(f.tok(fi.rangeExpr.Pos()).Position(), "invalid operation: range %s: receive from send-only channel", f.exprSource(fi.rangeExpr))
@@ -2861,6 +2862,39 @@ func (f *File) checkRange(s *Scope, kw string, fi forInfo) {
 	// nothing. "for range x" writes none and is the way to say this.
 	if fi.rangeDefine && !declared && fi.hasKey {
 		f.errNoNewVars(f.tok(fi.keyVar.Pos()))
+	}
+}
+
+// checkRangeable refuses a range over a value that has no elements to yield. Go
+// ranges an array, a pointer to one, a slice, a string, a map, a channel, an integer
+// and an iterator FUNCTION; this language has neither maps nor those functions, so
+// what is left is everything else -- a func value, a bool, a float.
+//
+// Nothing said so, and the emitter types a range operand it cannot resolve as a
+// COUNT: `for range f` over a func value became `int t = f;`, a function pointer
+// assigned to an int, and the C compiler reported it about a line nobody wrote.
+func (f *File) checkRangeable(s *Scope, expr Node) {
+	id, ok := f.exprSoleIdent(expr)
+	if !ok {
+		return
+	}
+	what := ""
+	d, isVar := s.find(id.Src()).(*VarDeclaration)
+	if !isVar {
+		// A declared FUNCTION named where a range operand goes, `for range fn`.
+		if _, isFunc := s.find(id.Src()).(*FuncDeclaration); isFunc {
+			f.err(id.Position(), "cannot range over %s (value of type func)", id.Src())
+		}
+		return
+	}
+	switch {
+	case d.isFunc:
+		what = "func"
+	case d.hasKind && !d.isPtr && !d.isChan && (kindCategory(d.kind) == catBool || isFloatKind(d.kind)):
+		what = kindName(d.kind)
+	}
+	if what != "" {
+		f.err(id.Position(), "cannot range over %s (variable of type %s)", id.Src(), what)
 	}
 }
 
@@ -3590,10 +3624,59 @@ func (f *File) inferVarFrom(s *Scope, vd *VarDeclaration, init Node) {
 			vd.isFunc = true
 			return
 		}
+		if k, ok := f.indexedStringKind(s, init); ok {
+			// `b := s[0]`: a string's element is a byte, and nothing said so -- the
+			// declaration carried no type at all, so `b = "c"` went in and the C
+			// compiler got a string header assigned to a uint8_t.
+			vd.kind, vd.hasKind = k, true
+			return
+		}
 		if k, ok := f.inferredKind(s, init); ok {
 			vd.kind, vd.hasKind = k, true
 		}
 	}
+}
+
+// indexedStringKind answers the Kind of an expression that INDEXES a string, which
+// is the byte at that position. A slice expression is not one: `s[1:]` is a string,
+// and the walk below tells the two apart by the ":" the slice form carries.
+func (f *File) indexedStringKind(s *Scope, n Node) (Kind, bool) {
+	fac, ok := f.soleFactor(n)
+	if !ok {
+		return 0, false
+	}
+	root, suffixed, ok := f.factorRoot(fac)
+	if !ok || !suffixed {
+		return 0, false
+	}
+	if k, known := f.identKind(s, root); !known || k != PredeclaredString {
+		return 0, false
+	}
+	// Exactly one step, an index that is not a slice: anything longer is a chain
+	// this does not describe, and a slice of a string is a string.
+	steps := 0
+	isIndex := false
+	for c := range it(fac.ast) {
+		if c.sym != FactorSuffix {
+			continue
+		}
+		for st := range it(c.ast) {
+			steps++
+			if st.sym != Index {
+				return 0, false
+			}
+			isIndex = true
+			for x := range it(st.ast) {
+				if x.sym == 0 && f.ch(x.tok) == COLON {
+					return 0, false // `s[1:]` is a string
+				}
+			}
+		}
+	}
+	if steps != 1 || !isIndex {
+		return 0, false
+	}
+	return PredeclaredUint8, true
 }
 
 // inferChanFrom records a variable's channel-ness from its initializer, and reports
