@@ -217,6 +217,15 @@ var generatedConstructs = []struct {
 	{"inequality comparison", `if \(\w+_\d+ != eq_\d+\)`},
 	{"equality after a field write", `\n\s*eq_\d+\.f_\d+ = `},
 	{"equality after an element write", `\n\s*eq_\d+\[\d+\] = `},
+	// The slice builtins, each with a helper of its own in the emitter: copy with
+	// its count, clear, and the THREE-index reslice whose capacity the third bound
+	// sets. The reslice is only read from -- it shares a backing array the VM does
+	// not model -- so len, cap and an element of it are what the folds check.
+	{"copy of a slice", `\n\s*cn_\d+ := copy\(cp_\d+, `},
+	{"copy count folded", `\n\s*octosmith_checksum = \(octosmith_checksum \^ cn_\d+\)`},
+	{"three-index reslice", `\n\s*vw_\d+ := cp_\d+\[\d+:\d+:\d+\]`},
+	{"cap of a three-index reslice", `\^ cap\(vw_\d+\)`},
+	{"clear of a slice", `\n\s*clear\(cp_\d+\)`},
 	{"select arm on a worker's channel", `\n\s*case r_\d+ := <-ch_\d+:`},
 	{"select arm never ready", `\n\s*case r_\d+ := <-idle_\d+:`},
 	// A METHOD EXPRESSION, the method as a function whose first parameter is the

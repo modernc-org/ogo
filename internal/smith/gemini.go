@@ -871,8 +871,15 @@ func (f *Fuzzer) genStatement(vm Machine, mem Memory) Node {
 		return f.genDeferCall(vm, mem) // 1% chance for a call that defers
 	case r < 0.66:
 		return f.genSliceDecl(vm, mem) // 3% chance for a slice declaration
+	case r < 0.734:
+		return f.genSliceWrite(vm, mem) // 7.4% chance for a slice element write
 	case r < 0.74:
-		return f.genSliceWrite(vm, mem) // 8% chance for a slice element write
+		// 0.6% for copy, clear and the three-index reslice, each with a helper of
+		// its own in the emitter and none of them generated before. Taken from the
+		// slice element write above, this one's nearest relative, which keeps 7.4%:
+		// the checksum-mutation filler is down to 0.05% and cannot pay for a
+		// construct that emits a dozen statements.
+		return f.genSliceOpsStmt(vm, mem)
 	case r < 0.80:
 		return f.genAppend(vm, mem) // 6% chance for an append
 	case r < 0.85:
@@ -3224,6 +3231,103 @@ func (f *Fuzzer) genEqualityStmt(vm Machine, mem Memory) Node {
 	stmts = fold(stmts, "==", eq)
 	stmts = fold(stmts, "!=", !eq)
 	return &BlockNode{Statements: stmts}
+}
+
+// SliceOpNode writes one of the slice builtins the generator uses as a statement or
+// an operand: `copy(d, s)`, `clear(s)` and the three-index reslice `s[lo:hi:mx]`.
+type SliceOpNode struct {
+	Fn       string // "copy", "clear" or "" for the reslice
+	A, B     string
+	Lo, Hi   int
+	Mx       int
+	Reslice  bool
+	AsResult bool // the reslice is written as a DECLARATION's right-hand side
+}
+
+func (n *SliceOpNode) Write(w io.Writer, indent int) {
+	if n.Reslice {
+		fmt.Fprintf(w, "%s[%d:%d:%d]", n.A, n.Lo, n.Hi, n.Mx)
+		return
+	}
+	if n.B == "" {
+		fmt.Fprintf(w, "%s(%s)", n.Fn, n.A)
+		return
+	}
+	fmt.Fprintf(w, "%s(%s, %s)", n.Fn, n.A, n.B)
+}
+
+// genSliceOpsStmt exercises the slice builtins nothing else here reaches: copy,
+// clear, and the THREE-index reslice `s[lo:hi:mx]`, whose capacity the third bound
+// sets. Each has a helper of its own in the emitter (copyElems, clearElems,
+// reslice3Elems).
+//
+// It works on a FRESH slice of its own, and the reslice is only ever READ from: a
+// reslice shares the backing array with what it was cut from, and the VM models a
+// slice by its live elements rather than by a backing store, so a write through
+// either name afterwards would part the two. Nothing here is declared to the
+// environment for the same reason -- the block is what scopes it in the generated
+// program.
+func (f *Fuzzer) genSliceOpsStmt(vm Machine, mem Memory) Node {
+	srcs := f.CurrentEnv.GetSliceSymbols()
+	if len(srcs) == 0 {
+		return f.genChecksumMutation(vm, mem)
+	}
+	src := srcs[f.Rand.Intn(len(srcs))]
+	src.Used = true
+	sv := mem.Load(src.Name).(*SliceVal)
+	dst := f.newVarName("cp")
+	n := 1 + f.Rand.Intn(4)
+	c := n + f.Rand.Intn(3)
+	elems := make([]Int32, n)
+	var stmts []Node
+	fold := func(node Node, v Int32) {
+		stmts = append(stmts, &AssignStmtNode{
+			Lhs: f.ChecksumName,
+			Op:  "=",
+			Rhs: &BinaryExprNode{Left: &IdentNode{Name: f.ChecksumName}, Op: "^", Right: node},
+		})
+		newSum, _ := vm.Eval("^", mem.Load(f.ChecksumName), v)
+		mem.Store(f.ChecksumName, newSum)
+	}
+	stmts = append(stmts, &SliceDeclNode{Name: dst, Len: n, Cap: c})
+	// copy moves min(len(dst), len(src)) elements and answers how many.
+	moved := min(n, len(sv.Elems))
+	copy(elems, sv.Elems)
+	cnt := f.newVarName("cn")
+	stmts = append(stmts, &ShortDeclNode{Name: cnt,
+		Rhs: &SliceOpNode{Fn: "copy", A: dst, B: src.Name}})
+	fold(&IdentNode{Name: cnt}, Int32(moved))
+	for i := 0; i < n; i++ {
+		fold(&IndexNode{Name: dst, Index: i}, elems[i])
+	}
+	// `d[lo:hi:mx]`: length hi-lo, capacity mx-lo, elements from lo.
+	lo := f.Rand.Intn(n)
+	hi := lo + f.Rand.Intn(n-lo+1)
+	mx := hi + f.Rand.Intn(c-hi+1)
+	view := f.newVarName("vw")
+	stmts = append(stmts, &ShortDeclNode{Name: view,
+		Rhs: &SliceOpNode{Reslice: true, A: dst, Lo: lo, Hi: hi, Mx: mx}})
+	fold(&BuiltinCallNode{Fn: "len", Arg: view}, Int32(hi-lo))
+	fold(&BuiltinCallNode{Fn: "cap", Arg: view}, Int32(mx-lo))
+	for i := 0; i < hi-lo; i++ {
+		fold(&IndexNode{Name: view, Index: i}, elems[lo+i])
+	}
+	// clear zeroes the live elements, which the folds after it read as 0: a clear
+	// that did not happen folds whatever was left instead.
+	stmts = append(stmts, &ExprStmtNode{X: &SliceOpNode{Fn: "clear", A: dst}})
+	for i := 0; i < n; i++ {
+		fold(&IndexNode{Name: dst, Index: i}, 0)
+	}
+	return &BlockNode{Statements: stmts}
+}
+
+// ExprStmtNode is an expression written as a statement, for the builtins that are
+// one: `clear(s)`.
+type ExprStmtNode struct{ X Node }
+
+func (n *ExprStmtNode) Write(w io.Writer, indent int) {
+	writeIndent(w, indent)
+	n.X.Write(w, 0)
 }
 
 // genFieldWrite assigns an integer expression to one field, `v.f = e`.
