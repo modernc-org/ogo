@@ -6102,12 +6102,19 @@ func (e *emitter) emitLocalTypeDecl(ast []int32) {
 			// registers a top-level struct: `type node struct{ next *node }`
 			// resolves its own name through the forward.
 			e.structs[mn] = nil
+			// The tag's forward is a unit of its own, and the FIRST: a local type
+			// cannot add to the forwards section, which was written when the header
+			// was, and what the fields need declared is collected while they are
+			// lowered -- so a forward riding with the struct's body came after the
+			// slice header of `kids []node`, which is `node* ptr` and needs the
+			// forward: "unknown type name" from the C compiler, of a local tree node.
+			// A unit never moves earlier and this one depends on nothing, so where it
+			// is added is where it stays.
+			e.addTypedef("struct "+mn, "typedef struct "+mn+" "+mn+";"+"\n")
 			fields := e.structFieldsOf(structAST)
 			e.structs[mn] = fields
 			text, deps := e.structTypedefText(mn, fields)
-			// The tag's forward rides in the same unit: a local type cannot add to
-			// the forwards section, which was written when the header was.
-			e.addTypedef(mn, "typedef struct "+mn+" "+mn+";"+"\n"+text, deps...)
+			e.addTypedef(mn, text, deps...)
 			continue
 		}
 		if a, ok := e.arrayDim(typeAST); ok {

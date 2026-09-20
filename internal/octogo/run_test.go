@@ -33728,6 +33728,67 @@ func main() {
 }
 `,
 		want: "3 2 1\n1 2 3\n31 2 111222\n",
+	}, {
+		// LOCAL types holding their own kind every legal way. A local struct's
+		// forward declaration rode in one typedef unit with its body, a local type
+		// having no place in the header's forwards section -- so the slice header of
+		// `kids []Node`, which is `Node* ptr` and is collected while the fields are
+		// lowered, came out AHEAD of the forward it needs: "unknown type name" from
+		// the C compiler, of a tree node declared in a function. A pointer alone
+		// worked, which is why `next *Node` hid it.
+		name: "local types that hold their own kind",
+		src: `var calls int
+
+func walk() int {
+	type Node struct {
+		next *Node
+		kids []Node
+		v    int
+	}
+	var leaves [2]Node
+	var a, b Node
+	leaves[0].v, leaves[1].v = 10, 20
+	a.v, b.v = 1, 2
+	a.next = &b
+	a.kids = leaves[:]
+	s := a.v + a.next.v
+	for i := range a.kids {
+		s += a.kids[i].v
+	}
+	calls = calls*10 + 1
+	return s + len(a.kids) + len(b.kids)
+}
+
+func ring() int {
+	type Cell struct {
+		peers [2]*Cell
+		id    int
+	}
+	var x, y Cell
+	x.id, y.id = 5, 6
+	x.peers[0], x.peers[1] = &y, &x
+	y.peers[0] = &x
+	calls = calls*10 + 2
+	return x.peers[0].id*10 + x.peers[1].id + y.peers[0].peers[0].id
+}
+
+func visit() int {
+	type Item struct {
+		each func(*Item) int
+		n    int
+	}
+	var it Item
+	it.n = 7
+	it.each = func(p *Item) int { return p.n * 3 }
+	calls = calls*10 + 3
+	return it.each(&it)
+}
+
+func main() {
+	println(walk(), ring(), visit(), calls)
+}
+`,
+		want: "35 71 21 123\n",
 	}}
 
 // TestEmitCRun compiles emitted C with a host compiler and runs it, checking what

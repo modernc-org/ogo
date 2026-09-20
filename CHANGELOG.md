@@ -401,6 +401,15 @@ shipped section tells a reader on that version that they have behaviour they do 
 
 ### Fixed
 
+- **A LOCAL struct may hold a slice of itself.** `type Node struct{ next *Node;
+  kids []Node }` declared in a function did not compile: "unknown type name
+  'Node_l1'" from the C compiler. A local struct's forward declaration rode in one
+  typedef unit with its body -- a local type has no place in the header's forwards
+  section -- and the slice header of `kids`, which is `Node* ptr` and is collected
+  while the fields are lowered, came out ahead of it. The forward is a unit of its
+  own and the first. A pointer alone worked, which is what hid it; no program in
+  the corpus changed by a byte.
+
 - **A struct may embed a pointer to ITSELF.** `type Chain struct{ *Chain; n int }`
   is legal -- the pointer is a reference of fixed size -- and the first field read
   of one, `p.Chain`, was a stack overflow of the compiler: the walk collecting the
