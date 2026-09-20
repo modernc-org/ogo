@@ -21208,6 +21208,72 @@ func (e *emitter) parenMethodSteps(kids []Node) ([]Node, string, bool) {
 	return steps, ct, true
 }
 
+// emitParenChain emits a PARENTHESISED expression read through a chain of fields
+// and indexes -- `(&p).x`, `(get()).x` for a pointer-returning get, `(arr[1:])[1:]`,
+// `("hello")[1:]` -- and reports whether the Factor was that shape.
+//
+// The head has no NAME for the chain walk to start from, which is the whole reason
+// every one of these was "this form is not supported yet": the walk begins at a
+// variable. So the expression is bound to a temporary of its own type, declared
+// ahead of the statement, and the steps read that -- the same move a struct literal
+// and a string literal read through a suffix already make.
+//
+// A STRUCT value at the head is left alone: it is a copy, so what a step reaches is
+// the temporary's storage rather than the program's, which a slice of a field would
+// hand out. The peel the ordinary path makes, `(p).x`, takes those.
+func (e *emitter) emitParenChain(kids []Node) bool {
+	if len(kids) != 4 || kids[0].sym != 0 || e.f.ch(kids[0].tok) != LPAREN ||
+		kids[2].sym != 0 || e.f.ch(kids[2].tok) != RPAREN || kids[3].sym != FactorSuffix {
+		return false
+	}
+	steps := slices.Collect(it(kids[3].ast))
+	if len(steps) == 0 {
+		return false
+	}
+	for _, st := range steps {
+		if st.sym != Index && st.sym != Selector {
+			return false // a call: emitParenMethod's, above
+		}
+	}
+	ct, ok := e.inferNode(kids[1])
+	if !ok || ct == "" {
+		// A slice EXPRESSION, `(arr[1:])[1]`: inferNode types a node the walk
+		// recognises, and a slice of an array is not one of them; inferCType reads
+		// the expression instead.
+		ct, ok = e.inferCType(kids[1].ast)
+	}
+	if !ok || ct == "" {
+		return false
+	}
+	if e.isStruct(ct) {
+		// A struct head is a VALUE -- a call's result, a dereference -- and the
+		// temporary is a copy of it, which is what Go reads a field of one out of.
+		// What a copy cannot give is a view: Go refuses to slice an unaddressable
+		// value, and so does the literal form of this (emitStructLitChain).
+		for _, st := range steps {
+			if st.sym != Index {
+				continue
+			}
+			if _, _, _, isSlice := e.sliceParts(st.ast); isSlice {
+				e.fail("cannot slice unaddressable value %s", e.f.exprSource(kids[1]))
+				return true
+			}
+		}
+		if e.hasArrayField(ct) {
+			return false // the target's compiler copies no struct holding an array
+		}
+	}
+	tmp := e.hoist(ct, func() { e.emitExprNode(kids[1]) })
+	e.locals[tmp] = ct
+	if u := e.underlyingCType(ct); e.isSliceCType(u) {
+		e.sliceVars[tmp] = sliceElemFromCName(u)
+	}
+	// plainOrSlice, not a bare ctype: a slice's element and its slice flag are what
+	// an INDEX step reads, and without them `(sl)[0]` typed nothing.
+	_, ok = e.emitAccessChainAt(tmp, e.plainOrSlice(ct), steps, true)
+	return ok
+}
+
 // parenMethodResultType types `(expr).M(...)` as its last method's result, which
 // the emission alone knew: without it a `(&P{1, 2}).Sum()` took the type of the
 // ADDRESS it is called on, and an int result printed as a pointer.
@@ -37736,6 +37802,12 @@ func (e *emitter) emitExprNode(n Node) {
 			// `(*p).m()` are parenthesised too, and their own paths adjust the
 			// receiver in ways this one must not.
 			if e.emitParenMethod(slices.Collect(it(n.ast))) {
+				return
+			}
+			// A parenthesised expression read through FIELDS and INDEXES, `(&p).x`
+			// and `(arr[1:])[1:]`. After the method form, which has its own
+			// receiver rules.
+			if e.emitParenChain(slices.Collect(it(n.ast))) {
 				return
 			}
 			e.failSuffixChain(n, kids)

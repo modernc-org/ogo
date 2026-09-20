@@ -33483,6 +33483,49 @@ func main() {
 }
 `,
 		want: "5 5 5 5 true\n",
+	}, {
+		// A PARENTHESISED expression read through fields and indexes. The chain walk
+		// begins at a variable, so a head with no name -- an address, a call's
+		// result, a slice expression, a string literal -- was "this form is not
+		// supported yet" for every one of these. The head is bound to a temporary of
+		// its own type and the steps read that, which is the move the struct and
+		// string literal forms already made.
+		//
+		// A STRUCT head is a VALUE, and the temporary is the copy Go reads a field
+		// out of; what a copy cannot give is a view, so a slice step on one is
+		// refused in Go's words ("cannot slice unaddressable value").
+		name: "a parenthesised head read through a chain",
+		src: `type Q struct{ a, b int }
+
+type P struct {
+	x, y int
+	xs   [3]int
+}
+
+var q = Q{4, 5}
+
+var p = P{1, 2, [3]int{7, 8, 9}}
+
+var arr = [4]int{10, 20, 30, 40}
+
+var sl = arr[1:]
+
+func getq() Q { return q }
+
+func getqp() *Q { return &q }
+
+func get() *P { return &p }
+
+func main() {
+	println((&p).x, (&p).xs[1], (&p).y)
+	println((get()).x, (get()).xs[2])
+	println((*getqp()).a, (getq()).a, (getq()).b)
+	println((arr[1:])[1], (sl[1:])[0], (sl)[2])
+	println(("hello")[1:][0], ("hi")[0])
+	println((&arr)[1])
+}
+`,
+		want: "1 8 2\n1 9\n4 4 5\n30 30 40\n101 104\n20\n",
 	}}
 
 // TestEmitCRun compiles emitted C with a host compiler and runs it, checking what

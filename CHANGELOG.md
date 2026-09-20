@@ -20,6 +20,16 @@ shipped section tells a reader on that version that they have behaviour they do 
 
 ### Language
 
+- **A PARENTHESISED expression may be read through fields and indexes.** `(&p).x`,
+  `(get()).x`, `(getq()).a`, `(arr[1:])[1]`, `("hello")[1:]` and `(&arr)[1]` were
+  each "this form is not supported yet": the chain walk begins at a variable, and
+  none of these heads has a name. The head is bound to a temporary of its own type
+  and the steps read that -- the move a struct literal and a string literal read
+  through a suffix already made. A struct head is a VALUE there, so a slice step on
+  one is refused as Go refuses it ("cannot slice unaddressable value"). A
+  parenthesised TARGET, `(p).x = 5`, is still refused: a copy is not where a store
+  goes.
+
 - **`fallthrough` is refused in a type switch, and a channel's unnamed element type
   is checked on a send.** Go refuses the keyword in a type switch outright -- the
   clauses bind a name of a different type each, so there is nothing to fall into --

@@ -585,13 +585,18 @@ declared structs of its fields (its typedef names the first, aliasAnonStructs), 
 Go admits and the target's compiler refuses; printf's `%v` of a
 struct or an interface under a width (an interface value prints what it holds since
 2026-09-20 -- `&{1 2}` for a struct pointer as the argument, its address or its
-String() at depth, ifaceHeldPrintC -- but the chain writing it cannot pad); a PARENTHESISED HEAD the emitter cannot peel -- one holding a unary
-operator or a suffix of its own -- read or written through a suffix: `(&p).x`,
-`(&arr)[1:]`, `(get()).x`, `(*get()).x`, `(arr[1:])[1:]`, `("hello")[1:]`, the targets
-`(p).x = 5` and `(&p).x = 3` and a conversion's, `(*T)(p).x = 5` and `*(*T)(p) = 5`,
-and the send `(&bus.ports[1]).ch <- 5` (`(*p).x`, `(a)[i]`, `(v).m()`, `(&v).m()`,
-`(*T)(p).m()` and `(a - b).m()` work); a conversion to a pointer to a type written
-out, `(*[]byte)(p)` or `(*[4]byte)(s)` (refused by name; a named type's converts);
+String() at depth, ifaceHeldPrintC -- but the chain writing it cannot pad); a PARENTHESISED HEAD as a TARGET, which cannot be bound to a
+temporary the way a read is: `(p).x = 5`, `(&p).x = 3`, a conversion's `(*T)(p).x =
+5` and `*(*T)(p) = 5`, and the send `(&bus.ports[1]).ch <- 5`. READING through one
+works since 2026-09-20 (`emitParenChain` binds the head and walks the steps from
+it): `(&p).x`, `(get()).x`, `(*getp()).x`, `(getq()).a`, `(arr[1:])[1]`,
+`("hello")[1:]` and `(&arr)[1]`, beside the `(*p).x`, `(a)[i]`, `(v).m()`,
+`(&v).m()`, `(*T)(p).m()` and `(a - b).m()` that always did. A struct head is a
+VALUE there, so a slice step on one is refused as Go refuses it; a conversion to a type WRITTEN OUT -- `[]int(x)`, `[]byte(x)`,
+`[3]int(x)`, and the pointer forms `(*[]byte)(p)` and `(*[4]byte)(s)` -- which is a
+syntax error, the grammar giving a bracketed type a literal and no call (a named
+type's converts, and an assignment needs no conversion: `var d []int = b` for a `b
+L` is taken);
 an ELEMENT or another package's variable as a `range` clause's target, `for _,
 q[0] = range ptrs`, `for _, geo.P = range ptrs` ("a range target must be a variable
 or a struct field"); a chain after a NAMED
