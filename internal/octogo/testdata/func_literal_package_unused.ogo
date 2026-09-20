@@ -1,0 +1,32 @@
+// A function literal in a PACKAGE variable's initializer answers for its own locals.
+// A literal written in a function is reported with that function's; one written at
+// package level has no function around it, and until 2026-09-20 its unused locals
+// were reported by nobody.
+
+var f = func() int {
+	// ERROR "declared and not used: dead"
+	var dead int
+	return 1
+}
+
+// Written and never read is not used, as in a function.
+var g = func() int {
+	// ERROR "declared and not used: x"
+	x := 1
+	x = 2
+	return 3
+}
+
+// A literal inside one shares its bookkeeping, as one inside a function does.
+var h = func() int {
+	inner := func(n int) int {
+		// ERROR "declared and not used: gone"
+		var gone int
+		return n
+	}
+	return inner(1)
+}
+
+func main() {
+	println(f(), g(), h())
+}

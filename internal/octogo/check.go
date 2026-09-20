@@ -6220,11 +6220,31 @@ func (f *File) checkFuncLiterals(s *Scope, n Node) {
 		f.labels, f.labelDecls, f.labelUsed = nil, map[string]Token{}, map[string]bool{}
 		savedGotoLabels := f.gotoLabels
 		f.labelSites, f.gotos, f.gotoLabels = map[string]labelSite{}, nil, map[string]bool{}
+		// A literal written at PACKAGE level -- in a variable's initializer -- has no
+		// function around it to borrow the rest of a body's bookkeeping from: the
+		// locals to report unused, the targets a bare assignment writes, the
+		// fallthroughs a switch has accounted for. checkFuncBody makes those, and a
+		// package initializer is checked before any body is, so they were nil:
+		// `x = 2` in such a literal was "assignment to entry in nil map", a crash of
+		// the compiler on a program with nothing wrong in it, a fallthrough was the
+		// same crash, and an unused local was reported by nobody. Such a literal
+		// keeps its own, and answers for its own locals. One written in a function
+		// goes on sharing that function's, which reports the literal's locals with
+		// its own.
+		ownState := s.Kind != BlockScope
+		savedLocals, savedWrites, savedFall := f.localVars, f.writeTargets, f.clauseFallthrough
+		if ownState {
+			f.localVars, f.writeTargets, f.clauseFallthrough = nil, map[string]bool{}, map[string]bool{}
+		}
 		f.scanGotoLabels(body.ast)
 		f.checkBlock(ls.child(), f.flattenResults(ls, sig), body)
 		f.reportCaptures(ls, body)
 		f.checkGotos(ls)
 		f.reportUnusedLabels()
+		if ownState {
+			f.reportUnusedLocals(body)
+			f.localVars, f.writeTargets, f.clauseFallthrough = savedLocals, savedWrites, savedFall
+		}
 		f.labels, f.labelDecls, f.labelUsed = savedLabels, savedDecls, savedUsed
 		f.labelSites, f.gotos, f.gotoLabels = savedSites, savedGotos, savedGotoLabels
 	}

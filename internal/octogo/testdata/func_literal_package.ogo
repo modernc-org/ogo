@@ -1,0 +1,69 @@
+// COMPILE
+
+// A function literal in a PACKAGE variable's initializer is checked before any
+// function body is, and had none of what a body's check keeps per function: a bare
+// assignment, an append and a fallthrough in one each crashed the checker ("assignment
+// to entry in nil map") until 2026-09-20. No spec had a literal at package level.
+
+var bump = func(n int) int {
+	x := n
+	x = x*2 + 1
+	return x
+}
+
+var fill = func(n int) int {
+	s := make([]int, 0, 4)
+	for i := 0; i < n; i++ {
+		s = append(s, i)
+	}
+	return len(s)
+}
+
+var classify = func(n int) int {
+	r := 0
+	switch n {
+	case 1:
+		r += 1
+		fallthrough
+	case 2:
+		r += 2
+	}
+	return r
+}
+
+var count = func(n int) int {
+	i := 0
+loop:
+	if i < n {
+		i++
+		goto loop
+	}
+	return i
+}
+
+// A literal of its own inside one, and a table of them.
+var nested = func(n int) int {
+	twice := func(m int) int {
+		k := m
+		k = k * 2
+		return k
+	}
+	return twice(n)
+}
+
+var table = [2]func(int) int{
+	func(n int) int {
+		v := n
+		v = v + 1
+		return v
+	},
+	func(n int) int {
+		v := n
+		v = v - 1
+		return v
+	},
+}
+
+func main() {
+	println(bump(1), fill(2), classify(1), count(3), nested(4), table[0](1), table[1](1))
+}

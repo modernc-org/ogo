@@ -401,6 +401,17 @@ shipped section tells a reader on that version that they have behaviour they do 
 
 ### Fixed
 
+- **A function literal in a PACKAGE variable's initializer no longer crashes the
+  compiler.** `var f = func() int { x := 1; x = 2; return x }` was "panic:
+  assignment to entry in nil map": the checker keeps a body's bookkeeping per
+  function -- the targets a bare assignment writes, the fallthroughs a switch has
+  accounted for -- and makes it when it enters a function body, which a package
+  initializer is checked before. An assignment, an append and a fallthrough in
+  such a literal each crashed, on a program with nothing wrong in it, and an unused
+  local there was reported by nobody. Such a literal keeps its own bookkeeping and
+  answers for its own locals. No spec and no run case had a literal at package
+  level whose body assigned; found by the first probes run under the memory cap.
+
 - **A function keeps its own names after a literal in it.** Lifting a literal
   replaced the function's local types, the labels its gotos name and its block
   constants with the literal's, and never put them back: after `f := func() {...}`

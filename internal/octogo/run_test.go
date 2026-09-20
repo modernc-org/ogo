@@ -33585,6 +33585,94 @@ func main() {
 }
 `,
 		want: "49 99\n119 101 5\n51 true\n98 98\n",
+	}, {
+		// A function literal in a PACKAGE variable's initializer has no function
+		// around it, and the checker kept a body's bookkeeping -- the targets a bare
+		// assignment writes, the fallthroughs a switch has accounted for -- per
+		// FUNCTION, made by checkFuncBody. A package initializer is checked before
+		// any body is, so the maps were nil: `x = x*2 + 1` in such a literal was
+		// "assignment to entry in nil map", a crash of the compiler on a program with
+		// nothing wrong in it, and so were an append and a fallthrough. No spec and
+		// no run case had a literal at package level whose body assigned.
+		name: "function literals in package initializers assign, append, fall through and jump",
+		src: `var calls int
+
+var bump = func(n int) int {
+	calls = calls*10 + 1
+	x := n
+	x = x*2 + 1
+	return x
+}
+
+var fill = func(n int) int {
+	calls = calls*10 + 2
+	s := make([]int, 0, 4)
+	for i := 0; i < n; i++ {
+		s = append(s, i*i)
+	}
+	t := 0
+	for _, v := range s {
+		t += v
+	}
+	return t + len(s)
+}
+
+var classify = func(n int) int {
+	calls = calls*10 + 3
+	r := 0
+	switch n {
+	case 1:
+		r += 1
+		fallthrough
+	case 2:
+		r += 2
+	default:
+		r = 9
+	}
+	return r
+}
+
+var count = func(n int) int {
+	calls = calls*10 + 4
+	i := 0
+loop:
+	if i < n {
+		i++
+		goto loop
+	}
+	return i
+}
+
+var nested = func(n int) int {
+	calls = calls*10 + 5
+	twice := func(m int) int {
+		k := m
+		k = k * 2
+		return k
+	}
+	return twice(n) + twice(n+1)
+}
+
+var table = [2]func(int) int{
+	func(n int) int {
+		v := n
+		v = v + 100
+		return v
+	},
+	func(n int) int {
+		v := n
+		v = v - 100
+		return v
+	},
+}
+
+func main() {
+	println(bump(3), fill(4), classify(1), classify(2), classify(5))
+	println(count(3), nested(4), table[0](1), table[1](1))
+	println(calls)
+}
+`,
+		want: "7 18 3 2 9\n3 18 101 -99\n1233345\n",
 	}}
 
 // TestEmitCRun compiles emitted C with a host compiler and runs it, checking what
