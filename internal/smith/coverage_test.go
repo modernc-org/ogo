@@ -226,6 +226,14 @@ var generatedConstructs = []struct {
 	{"three-index reslice", `\n\s*vw_\d+ := cp_\d+\[\d+:\d+:\d+\]`},
 	{"cap of a three-index reslice", `\^ cap\(vw_\d+\)`},
 	{"clear of a slice", `\n\s*clear\(cp_\d+\)`},
+	// A TWO-dimensional array: the emitter has a shape of its own per dimension --
+	// an index that consumes one, a row that is still an array, a range whose
+	// variable is a row -- and every array generated before this was flat.
+	{"two-dimensional array", `\n\s*var g_\d+ \[\d+\]\[\d+\]int`},
+	{"two-index write", `\n\s*g_\d+\[\d+\]\[\d+\] = `},
+	{"len of a row", `\^ len\(g_\d+\[0\]\)`},
+	{"range over rows", `\n\s*for i_\d+ := range g_\d+ \{`},
+	{"range within a row", `\n\s*for j_\d+, v_\d+ := range g_\d+\[i_\d+\] \{`},
 	{"select arm on a worker's channel", `\n\s*case r_\d+ := <-ch_\d+:`},
 	{"select arm never ready", `\n\s*case r_\d+ := <-idle_\d+:`},
 	// A METHOD EXPRESSION, the method as a function whose first parameter is the

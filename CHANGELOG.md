@@ -1088,7 +1088,10 @@ program handed out a reference to storage that was gone by the time it was read.
   well -- a copy first, so the pair is equal for certain, then one member written,
   each pair compared both ways with the fold in whichever comparison is true --
   which is what reaches the per-type equality helpers the emitter mints, C having
-  no such operator. And it writes the slice builtins nothing generated before --
+  no such operator, and declares a TWO-dimensional array, whose element is reached
+  through two indexes, whose row is an array in its own right (len of it, a range
+  whose variable is a row), where every array it wrote before this was flat. And it
+  writes the slice builtins nothing generated before --
   `copy` with its count, `clear`, and the three-index reslice `s[lo:hi:mx]` whose
   capacity the third bound sets -- on a fresh slice of its own, the reslice being
   read from only, since it shares a backing array the generation-time VM does not

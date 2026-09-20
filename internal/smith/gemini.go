@@ -843,8 +843,14 @@ func (f *Fuzzer) genStatement(vm Machine, mem Memory) Node {
 		return f.genFloatStmt(vm, mem) // 3% chance for float32 arithmetic
 	case r < 0.46:
 		return f.genVarDecl(vm, mem) // 6% chance for var
+	case r < 0.515:
+		return f.genArrayDecl(vm, mem) // 5.5% chance for a fixed array declaration
 	case r < 0.52:
-		return f.genArrayDecl(vm, mem) // 6% chance for a fixed array declaration
+		// 0.5% for a TWO-dimensional array, from the one-dimensional declaration
+		// above, which keeps 5.5%: the emitter has a shape of its own per dimension
+		// -- an index that consumes one, a row that is still an array, a range whose
+		// variable is a row -- and every array generated before this was flat.
+		return f.genGrid2DStmt(vm, mem)
 	case r < 0.574:
 		return f.genArrayWrite(vm, mem) // 5.4% chance for an array element write
 	case r < 0.58:
@@ -1822,6 +1828,106 @@ func (f *Fuzzer) genArrayDecl(vm Machine, mem Memory) Node {
 	mem.Store(name, &ArrayVal{Elems: make([]Int32, n)})
 	f.CurrentEnv.Declare(name, ArrayType{Len: n, Elem: BasicType{Kind: KindInt}}, false)
 	return &ArrayDeclNode{Name: name, Len: n}
+}
+
+// Grid2DNode writes a two-dimensional array declaration, `var g [R][C]int`.
+type Grid2DNode struct {
+	Name string
+	R, C int
+}
+
+func (n *Grid2DNode) Write(w io.Writer, indent int) {
+	writeIndent(w, indent)
+	fmt.Fprintf(w, "var %s [%d][%d]int", n.Name, n.R, n.C)
+}
+
+// Index2DNode is an element of a two-dimensional array, `g[r][c]`.
+type Index2DNode struct {
+	Name string
+	R, C int
+}
+
+func (n *Index2DNode) Write(w io.Writer, indent int) {
+	fmt.Fprintf(w, "%s[%d][%d]", n.Name, n.R, n.C)
+}
+
+// genGrid2DStmt declares a TWO-dimensional array and exercises what only one has:
+// an element written and read through two indexes, a ROW read as a value, len of
+// the array and of a row, and a range over the rows with an inner range over each.
+// Every array the generator wrote before this was one-dimensional, where the
+// emitter has a shape of its own for each dimension -- an index that consumes one,
+// a row that is still an array, a range whose variable is a row.
+//
+// The array stays inside the block that declares it and is not declared to the
+// environment: the generators that write an array take it for a one-dimensional
+// one, and `g[i] = e` for a row is not a store this VM models.
+func (f *Fuzzer) genGrid2DStmt(vm Machine, mem Memory) Node {
+	name := f.newVarName("g")
+	rows, cols := 2+f.Rand.Intn(2), 2+f.Rand.Intn(2)
+	cells := make([][]Int32, rows)
+	for r := range cells {
+		cells[r] = make([]Int32, cols)
+	}
+	stmts := []Node{&Grid2DNode{Name: name, R: rows, C: cols}}
+	fold := func(n Node, v Int32) {
+		stmts = append(stmts, &AssignStmtNode{
+			Lhs: f.ChecksumName,
+			Op:  "=",
+			Rhs: &BinaryExprNode{Left: &IdentNode{Name: f.ChecksumName}, Op: "^", Right: n},
+		})
+		newSum, _ := vm.Eval("^", mem.Load(f.ChecksumName), v)
+		mem.Store(f.ChecksumName, newSum)
+	}
+	// A write through two indexes, then the same element read back.
+	for i := 0; i < 1+f.Rand.Intn(3); i++ {
+		r, c := f.Rand.Intn(rows), f.Rand.Intn(cols)
+		exprNode, exprVal, _ := f.genExpression(BasicType{Kind: KindInt}, vm, mem, 0)
+		stmts = append(stmts, &AssignStmtNode{Lhs: fmt.Sprintf("%s[%d][%d]", name, r, c), Op: "=", Rhs: exprNode})
+		cells[r][c] = exprVal.(Int32)
+		fold(&Index2DNode{Name: name, R: r, C: c}, cells[r][c])
+	}
+	// len of the array is its rows, len of a row its columns.
+	fold(&BuiltinCallNode{Fn: "len", Arg: name}, Int32(rows))
+	fold(&BuiltinCallNode{Fn: "len", Arg: fmt.Sprintf("%s[0]", name)}, Int32(cols))
+	// Every cell through a nested range, which is the shape a row being an array
+	// rather than a value decides.
+	i, j, v := f.newVarName("i"), f.newVarName("j"), f.newVarName("v")
+	inner := &BlockNode{Statements: []Node{&AssignStmtNode{
+		Lhs: f.ChecksumName,
+		Op:  "=",
+		Rhs: &BinaryExprNode{Left: &IdentNode{Name: f.ChecksumName}, Op: "^", Right: &IdentNode{Name: v}},
+	}}}
+	stmts = append(stmts, &Grid2DRangeNode{Name: name, I: i, J: j, V: v, Body: inner})
+	sum, _ := vm.Eval("^", mem.Load(f.ChecksumName), Int32(0))
+	for r := 0; r < rows; r++ {
+		for c := 0; c < cols; c++ {
+			sum, _ = vm.Eval("^", sum, cells[r][c])
+		}
+	}
+	mem.Store(f.ChecksumName, sum)
+	return &BlockNode{Statements: stmts}
+}
+
+// Grid2DRangeNode ranges over a two-dimensional array's rows and over each row's
+// elements, folding every cell.
+type Grid2DRangeNode struct {
+	Name    string
+	I, J, V string
+	Body    Node
+}
+
+func (n *Grid2DRangeNode) Write(w io.Writer, indent int) {
+	writeIndent(w, indent)
+	fmt.Fprintf(w, "for %s := range %s {\n", n.I, n.Name)
+	writeIndent(w, indent+1)
+	fmt.Fprintf(w, "for %s, %s := range %s[%s] {\n", n.J, n.V, n.Name, n.I)
+	writeIndent(w, indent+2)
+	fmt.Fprintf(w, "_ = %s\n", n.J)
+	n.Body.Write(w, indent+2)
+	writeIndent(w, indent+1)
+	fmt.Fprint(w, "}\n")
+	writeIndent(w, indent)
+	fmt.Fprint(w, "}")
 }
 
 // genArrayWrite assigns an integer expression to one element of an existing array,
