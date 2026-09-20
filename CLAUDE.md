@@ -560,12 +560,18 @@ the directory; before that the dimension could not be probed on the host at all.
 **A PROGRAM GO REJECTS IS A ROW** (2026-09-20). The sweeps above ask what a correct
 program does; this one asks what an incorrect one earns, which is the direction that
 fails SILENTLY -- an accepted mistake reaches the C compiler, which reports it about
-generated code, or does not report it at all. Twenty-four small wrong programs, each
-run through `go vet` and through this compiler, agreeing on twenty-three: an unused
-local and import, a missing return, a wrong argument count and type, a bad
-assignment, a duplicate case, a break outside a loop, an interface not implemented,
-and so on. The one that got through was `append(xs, "x")`. Keep the two-column
-shape -- what Go says, what this says -- and add a row whenever a check is written.
+generated code, or does not report it at all. Six batches of about thirty, each
+run through `go vet` and through this compiler: 180 programs, 167 agreeing, 3
+differing BY DESIGN (new, map, and len/cap of a channel are refused here, there
+being no heap and no buffer) and 10 taken where Go refuses them -- an append of the
+wrong element type, the integer-only operators on a float, the address of a call's
+result, a constant declared a type that cannot hold its class, a struct converted to
+a number, a fallthrough in a type switch, a send to an unnamed element type, a
+string written into, a struct indexed, a channel compared with a number, a make
+whose length exceeds its capacity, and a range over what has no elements. Every one
+of them reached the C compiler, as a diagnostic about generated code or -- the make
+-- as C that is valid and wrong. Keep the two-column shape (what Go says, what this
+says) and add a row whenever a check is written.
 
 **A TEMPORARY IS A COG REGISTER** (2026-09-20). flexcc gives every C local one
 (`local_N res 1` in COG_BSS) out of a pool the assembler checks with `fit 480`,

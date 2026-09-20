@@ -3563,6 +3563,16 @@ func (f *File) inferVarFrom(s *Scope, vd *VarDeclaration, init Node) {
 		// on it went unchecked to the C compiler.
 		vd.builderVar = true
 	default:
+		if k, ok := f.indexedStringKind(s, init); ok {
+			// `b := s[0]` is a byte and `t := s[1:]` is a string. Asked before the
+			// slice-of-a-variable case below, which claims the second -- a string
+			// has no ELEMENT recorded, so it recorded nothing and returned, and the
+			// declaration carried no type at all: `b = "c"` assigned a string header
+			// to a uint8_t, and `t[0] = 'c'` wrote into a string, which Go refuses
+			// outright.
+			vd.kind, vd.hasKind = k, true
+			return
+		}
 		if d, ok := f.sliceOfVarElem(s, init); ok {
 			// `xs := arr[:0]`: xs holds what arr holds. It is the idiom this
 			// language builds every slice with -- make allocates and is refused --
@@ -3624,22 +3634,19 @@ func (f *File) inferVarFrom(s *Scope, vd *VarDeclaration, init Node) {
 			vd.isFunc = true
 			return
 		}
-		if k, ok := f.indexedStringKind(s, init); ok {
-			// `b := s[0]`: a string's element is a byte, and nothing said so -- the
-			// declaration carried no type at all, so `b = "c"` went in and the C
-			// compiler got a string header assigned to a uint8_t.
-			vd.kind, vd.hasKind = k, true
-			return
-		}
 		if k, ok := f.inferredKind(s, init); ok {
 			vd.kind, vd.hasKind = k, true
 		}
 	}
 }
 
-// indexedStringKind answers the Kind of an expression that INDEXES a string, which
-// is the byte at that position. A slice expression is not one: `s[1:]` is a string,
-// and the walk below tells the two apart by the ":" the slice form carries.
+// indexedStringKind answers the Kind of an expression that INDEXES or SLICES a
+// string: the byte at that position, or a string. The walk tells the two apart by
+// the ":" the slice form carries.
+//
+// Both were untyped, and each let something through: `b := s[0]` then `b = "c"`
+// assigned a string header to a uint8_t, and `t := s[1:]` then `t[0] = 'c'` wrote
+// into a string, which Go refuses outright -- a string's bytes are not addressable.
 func (f *File) indexedStringKind(s *Scope, n Node) (Kind, bool) {
 	fac, ok := f.soleFactor(n)
 	if !ok {
@@ -3655,7 +3662,7 @@ func (f *File) indexedStringKind(s *Scope, n Node) (Kind, bool) {
 	// Exactly one step, an index that is not a slice: anything longer is a chain
 	// this does not describe, and a slice of a string is a string.
 	steps := 0
-	isIndex := false
+	isIndex, sliced := false, false
 	for c := range it(fac.ast) {
 		if c.sym != FactorSuffix {
 			continue
@@ -3668,13 +3675,16 @@ func (f *File) indexedStringKind(s *Scope, n Node) (Kind, bool) {
 			isIndex = true
 			for x := range it(st.ast) {
 				if x.sym == 0 && f.ch(x.tok) == COLON {
-					return 0, false // `s[1:]` is a string
+					sliced = true
 				}
 			}
 		}
 	}
 	if steps != 1 || !isIndex {
 		return 0, false
+	}
+	if sliced {
+		return PredeclaredString, true
 	}
 	return PredeclaredUint8, true
 }
@@ -9258,6 +9268,28 @@ func (f *File) chanOperandMismatch(s *Scope, a, b Node) (an, bn string, mismatch
 	btn, _ := f.exprChanTypeNode(s, b)
 	ac, aNamed := f.chanTypeUnder(s, atn)
 	bc, bNamed := f.chanTypeUnder(s, btn)
+	// One side a channel and the other a VALUE of a predeclared type: `ch == 5`
+	// compiled to a pointer compared with an int, which C does without a word. A
+	// channel compares with another channel and with nil, and with nothing else.
+	for _, p := range [2]struct {
+		c  *TypeNodeChan
+		tn TypeNode
+		o  Node
+	}{{ac, atn, b}, {bc, btn, a}} {
+		if p.c == nil {
+			continue
+		}
+		if k, known := f.exprType(s, p.o); known && kindCategory(k) != catUnknown {
+			cn := f.typeNodeString(p.tn, false)
+			if cn == "" {
+				continue
+			}
+			if p.c == ac {
+				return cn, kindName(k), true
+			}
+			return kindName(k), cn, true
+		}
+	}
 	if ac == nil || bc == nil {
 		return "", "", false
 	}
@@ -9652,6 +9684,23 @@ func (f *File) pointerOfType(s *Scope, id Token) string {
 		return " (variable of type *" + d.typeName.Src() + ")"
 	}
 	return ""
+}
+
+// indexedStructName reports whether a variable's type is a STRUCT, and names it.
+// Neither an array nor a slice of one answers: those carry an element and are
+// indexed, and it is the struct ITSELF that is not.
+func (f *File) indexedStructName(s *Scope, id Token) (string, bool) {
+	d, isVar := s.find(id.Src()).(*VarDeclaration)
+	if !isVar || d.isPtr || d.isChan || d.hasKind || d.hasElemKind || !d.typeName.IsValid() {
+		return "", false
+	}
+	if d.typeQual.IsValid() {
+		return "", false // another package's: resolved where it was declared
+	}
+	if _, isStruct := f.structTypeNamed(s, d.typeName.Src()); !isStruct {
+		return "", false
+	}
+	return d.typeName.Src(), true
 }
 
 // indexVerb is "index" or "slice", whichever the operation written is.
@@ -13859,6 +13908,7 @@ func (f *File) checkFactorNames(s *Scope, n Node) {
 			// make([]T, len[, cap]) builds a slice header over a statically-sized
 			// backing array -- no heap allocation -- so it is allowed. Every other
 			// make form and all of new remain rejected below.
+			f.checkMakeBounds(s, suffix)
 		case id.Src() == "make" || id.Src() == "new":
 			// The Go dynamic-allocation builtins have no place on a
 			// zero-allocation, no-GC target; reported even in call position,
@@ -13908,6 +13958,11 @@ func (f *File) checkFactorNames(s *Scope, n Node) {
 		verb := f.indexVerb(index)
 		if f.indexingPointer(s, id) {
 			f.err(id.Position(), "invalid operation: cannot %s %s%s", verb, id.Src(), f.pointerOfType(s, id))
+		} else if nm, isStruct := f.indexedStructName(s, id); isStruct {
+			// A STRUCT has no Kind, so the scalar gate below said nothing about it
+			// and `p[0]` reached the C compiler, which called it a subscripted value
+			// that is not an array. Named as Go names it.
+			f.err(id.Position(), "invalid operation: cannot %s %s (variable of type %s)", verb, id.Src(), nm)
 		} else if k, known := f.identKind(s, id); known {
 			switch kindCategory(k) {
 			case catNumeric, catBool:
@@ -14395,6 +14450,51 @@ func (f *File) callArgList(callSuffix Node) (r Node) {
 		}
 	}
 	return r
+}
+
+// checkMakeBounds refuses a make whose length is negative or larger than its
+// capacity, which Go refuses at compile time when both are constants. The emitter
+// wrote the pair into the header as they stood -- `make([]int, 5, 2)` became a
+// { backing, 5, 2 } over a backing of two -- and nothing said a word: the C is
+// valid, and the third element read past the array.
+func (f *File) checkMakeBounds(s *Scope, suffix Node) {
+	var args []Node
+	if argList, _, isCall := f.callInfo(suffix); isCall {
+		for a := range it(argList.ast) {
+			if a.sym == Expression {
+				args = append(args, a)
+			}
+		}
+	}
+	if len(args) < 2 {
+		return
+	}
+	val := func(n Node) (int64, bool) {
+		cv, ok := f.constNumeric(s, n)
+		if !ok {
+			return 0, false
+		}
+		iv := constant.ToInt(cv)
+		if iv.Kind() != constant.Int {
+			return 0, false
+		}
+		return constant.Int64Val(iv)
+	}
+	ln, lok := val(args[1])
+	if lok && ln < 0 {
+		f.err(f.tok(args[1].Pos()).Position(), "invalid argument: length %d must not be negative", ln)
+		return
+	}
+	if len(args) < 3 {
+		return
+	}
+	cp, cok := val(args[2])
+	switch {
+	case cok && cp < 0:
+		f.err(f.tok(args[2].Pos()).Position(), "invalid argument: capacity %d must not be negative", cp)
+	case lok && cok && ln > cp:
+		f.err(f.tok(args[1].Pos()).Position(), "invalid argument: length and capacity swapped")
+	}
 }
 
 // isSliceMake reports whether a call suffix is make([]T, ...): its first argument

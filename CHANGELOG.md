@@ -20,6 +20,14 @@ shipped section tells a reader on that version that they have behaviour they do 
 
 ### Language
 
+- **Four programs Go refuses are refused here too**: `make([]int, 5, 2)`, whose
+  header claimed five elements of a backing of two -- valid C that read past the
+  array, the only one of these the C compiler would not have caught -- and a
+  negative length or capacity with it; a write into a string, `t := s[1:]` then
+  `t[0] = 'c'`, whose bytes are not addressable; `p[0]` for a struct p, which has
+  no Kind for the scalar gate to refuse; and `ch == 5`, a channel compared with a
+  number, which C does without a word.
+
 - **A string INDEXED is a byte, and what cannot be RANGED is refused.** `b := s[0]`
   gave b no type at all, so `b = "c"` assigned a string header to a `uint8_t`; a
   slice of a string, `s[1:3]`, is a string and was right all along. And Go ranges an

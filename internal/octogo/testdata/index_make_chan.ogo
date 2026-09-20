@@ -1,0 +1,65 @@
+// Four programs Go refuses that this compiler took, each reaching the C compiler as
+// something nobody wrote -- or, in the first, as C that is valid and wrong.
+//
+//   - `make([]int, 5, 2)` became a { backing, 5, 2 } header over a backing of two,
+//     so the third element read past the array. Go refuses the pair at compile time
+//     when both are constants, and a negative length with them.
+//   - `t := s[1:]` then `t[0] = 'c'` wrote into a string, whose bytes are not
+//     addressable in Go. The declaration carried no type, so the rule that refuses
+//     it for a written `var t string` never saw t.
+//   - `p[0]` for a struct p: a struct has no Kind, so the scalar gate said nothing
+//     and C called it a subscripted value that is not an array.
+//   - `ch == 5`: a pointer compared with an int, which C does without a word. A
+//     channel compares with another channel and with nil, and with nothing else.
+
+type P struct{ x int }
+
+var p P
+
+var s = "hello"
+
+var ch chan int
+
+var ch2 chan int
+
+func makes() {
+	// ERROR "invalid argument: length and capacity swapped"
+	a := make([]int, 5, 2)
+	// ERROR "invalid argument: length -1 must not be negative"
+	b := make([]int, -1)
+	// ERROR "invalid argument: capacity -2 must not be negative"
+	c := make([]int, 0, -2)
+	// The pairs that are programs.
+	d := make([]int, 0, 4)
+	e := make([]int, 2, 2)
+	println(len(a), len(b), len(c), cap(d), len(e))
+}
+
+func strings() {
+	t := s[1:3]
+	// ERROR "invalid operation: cannot index t \(variable of type string\)"
+	t[0] = 'c'
+	// Reading one is a byte, and slicing one a string.
+	b := s[0]
+	println(t, b, s[1:], len(t))
+}
+
+func structs() {
+	// ERROR "invalid operation: cannot index p \(variable of type P\)"
+	println(p[0])
+	println(p.x)
+}
+
+func channels() {
+	// ERROR "mismatched types chan int and int"
+	println(ch == 5)
+	// A channel beside a channel, and beside nil.
+	println(ch == ch2, ch == nil)
+}
+
+func main() {
+	makes()
+	strings()
+	structs()
+	channels()
+}
