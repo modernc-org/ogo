@@ -207,6 +207,16 @@ var generatedConstructs = []struct {
 	// sends to and one on a channel nothing ever sends to, so which arm runs is
 	// decided by the senders and not by timing.
 	{"select receive", `\n\s*select \{`},
+	// Struct and array EQUALITY, `v == w`, which C has no operator for: the emitter
+	// mints a helper per type and this is what reaches it. The copy is what makes
+	// the first pair equal for certain, and the write is what makes the second pair
+	// differ -- each compared both ways, one of the two folding.
+	{"struct equality copy", `\n\s*eq_\d+ := st_\d+\n`},
+	{"array equality copy", `\n\s*eq_\d+ := a_\d+\n`},
+	{"equality comparison", `if \(\w+_\d+ == eq_\d+\)`},
+	{"inequality comparison", `if \(\w+_\d+ != eq_\d+\)`},
+	{"equality after a field write", `\n\s*eq_\d+\.f_\d+ = `},
+	{"equality after an element write", `\n\s*eq_\d+\[\d+\] = `},
 	{"select arm on a worker's channel", `\n\s*case r_\d+ := <-ch_\d+:`},
 	{"select arm never ready", `\n\s*case r_\d+ := <-idle_\d+:`},
 	// A METHOD EXPRESSION, the method as a function whose first parameter is the

@@ -845,8 +845,18 @@ func (f *Fuzzer) genStatement(vm Machine, mem Memory) Node {
 		return f.genVarDecl(vm, mem) // 6% chance for var
 	case r < 0.52:
 		return f.genArrayDecl(vm, mem) // 6% chance for a fixed array declaration
+	case r < 0.574:
+		return f.genArrayWrite(vm, mem) // 5.4% chance for an array element write
 	case r < 0.58:
-		return f.genArrayWrite(vm, mem) // 8% chance for an array element write
+		// 0.6% for a struct or an array compared with == and !=, whose per-type
+		// helpers (eqStructs, eqArrays) nothing else here reaches. Taken from the
+		// array write above rather than from the checksum-mutation filler, which is
+		// down to 0.05% and cannot pay for a construct emitting five statements: the
+		// write is this one's nearest relative -- it writes an element of the same
+		// arrays -- and keeps 5.4% of its own. Half the share goes unspent, on a
+		// draw made where no struct or array is in scope yet, which is what the
+		// width is set against: at 0.6% one seed in five carries one.
+		return f.genEqualityStmt(vm, mem)
 	case r < 0.60:
 		return f.genElementSwap(vm, mem) // 2% chance for an element swap
 	case r < 0.615:
@@ -3120,6 +3130,99 @@ func (f *Fuzzer) genStructPtrStmt(vm Machine, mem Memory) Node {
 	mem.Store(f.ChecksumName, newSum)
 	sv.Fields[sv.Def.Fields[0]] = argVal.(Int32)
 	fold(&FieldNode{Name: sym.Name, Field: sv.Def.Fields[0]}, sv.Fields[sv.Def.Fields[0]])
+	return &BlockNode{Statements: stmts}
+}
+
+// genEqualityStmt compares two STRUCTS, or two ARRAYS, with == and !=. Go compares
+// them field by field and element by element; C has no such operator, so the emitter
+// mints a helper per type (eqStructs, eqArrays) -- a whole family of generated code
+// that nothing else here reaches.
+//
+// A copy is taken first, so the two are equal for certain; then one field or element
+// is written, and the pair is compared again both ways. The fold goes in whichever
+// comparison the VM says is TRUE -- and the other is written too, with a fold the VM
+// does NOT apply, so a comparison that wrongly answers true is caught as surely as
+// one that wrongly answers false.
+//
+// The copy is kept in a block of its own and is NOT declared to the environment:
+// the block is what scopes it in the generated program, and a generator reading it
+// afterwards would name it out of scope. Its value lives here for as long as the
+// comparisons do.
+func (f *Fuzzer) genEqualityStmt(vm Machine, mem Memory) Node {
+	structs := f.CurrentEnv.GetStructSymbols()
+	arrays := f.CurrentEnv.GetArraySymbols()
+	useStruct := len(structs) != 0 && (len(arrays) == 0 || f.Rand.Intn(2) == 0)
+	if !useStruct && len(arrays) == 0 {
+		return f.genChecksumMutation(vm, mem)
+	}
+	var name, src, target string
+	var equalAfter func() bool
+	var write func(Int32)
+	if useStruct {
+		sym := structs[f.Rand.Intn(len(structs))]
+		sym.Used = true
+		sv := mem.Load(sym.Name).(*StructVal)
+		name, src = f.newVarName("eq"), sym.Name
+		cp := sv.Copy()
+		all := sv.Def.allFields()
+		fld := all[f.Rand.Intn(len(all))]
+		target = name + "." + fld
+		write = func(v Int32) { cp.Fields[fld] = v }
+		equalAfter = func() bool {
+			for _, k := range all {
+				if sv.Fields[k] != cp.Fields[k] {
+					return false
+				}
+			}
+			return true
+		}
+	} else {
+		sym := arrays[f.Rand.Intn(len(arrays))]
+		sym.Used = true
+		av := mem.Load(sym.Name).(*ArrayVal)
+		name, src = f.newVarName("eq"), sym.Name
+		cp := append([]Int32(nil), av.Elems...)
+		idx := f.Rand.Intn(len(cp))
+		target = fmt.Sprintf("%s[%d]", name, idx)
+		write = func(v Int32) { cp[idx] = v }
+		equalAfter = func() bool {
+			for i, v := range av.Elems {
+				if cp[i] != v {
+					return false
+				}
+			}
+			return true
+		}
+	}
+	fold := func(stmts []Node, op string, run bool) []Node {
+		k := Int32(1 + f.Rand.Int31n(1<<20))
+		body := &BlockNode{Statements: []Node{&AssignStmtNode{
+			Lhs: f.ChecksumName,
+			Op:  "=",
+			Rhs: &BinaryExprNode{Left: &IdentNode{Name: f.ChecksumName}, Op: "^",
+				Right: &IntLitNode{Value: fmt.Sprint(int32(k))}},
+		}}}
+		if run {
+			newSum, _ := vm.Eval("^", mem.Load(f.ChecksumName), k)
+			mem.Store(f.ChecksumName, newSum)
+		}
+		return append(stmts, &IfStmtNode{
+			Cond: &BinaryExprNode{Left: &IdentNode{Name: src}, Op: op, Right: &IdentNode{Name: name}},
+			Body: body,
+		})
+	}
+	stmts := []Node{&ShortDeclNode{Name: name, Rhs: &IdentNode{Name: src}}}
+	// The copy is equal to what it was copied from, and not unequal to it.
+	stmts = fold(stmts, "==", true)
+	stmts = fold(stmts, "!=", false)
+	exprNode, exprVal, _ := f.genExpression(BasicType{Kind: KindInt}, vm, mem, 0)
+	stmts = append(stmts, &AssignStmtNode{Lhs: target, Op: "=", Rhs: exprNode})
+	write(exprVal.(Int32))
+	// One member differs now -- unless the expression happened to write what was
+	// already there, which is why the VM is asked rather than told.
+	eq := equalAfter()
+	stmts = fold(stmts, "==", eq)
+	stmts = fold(stmts, "!=", !eq)
 	return &BlockNode{Statements: stmts}
 }
 

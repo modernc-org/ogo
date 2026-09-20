@@ -994,7 +994,11 @@ program handed out a reference to storage that was gone by the time it was read.
   step either still runs or does not. And every third generated struct now EMBEDS
   an earlier one, so its fields and methods are reached through a promotion path
   the emitter works out per member, and a copy of the outer struct carries the
-  embedded one with it.
+  embedded one with it. It compares a struct and an array with `==` and `!=` as
+  well -- a copy first, so the pair is equal for certain, then one member written,
+  each pair compared both ways with the fold in whichever comparison is true --
+  which is what reaches the per-type equality helpers the emitter mints, C having
+  no such operator.
 - Function semantics against Go on the host and a P2-EDGE: variadic calls with
   none, several and a spread slice the callee writes through, a two-result call
   forwarded as another's arguments, named results returned bare and swapped, a
