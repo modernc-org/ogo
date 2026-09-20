@@ -615,6 +615,31 @@ afternoon -- `gp = nil` for a struct, `return nil`, `take(nil)`, `if p {` for a
 pointer, `f + 1` and `f[0]` for a func value -- flexcc refused ONE and warned about
 one; ten built a binary in silence.
 
+**WHAT HAS NO KIND IS ASKED NOTHING** (2026-09-20). The checker's type model is a
+Kind -- a predeclared type -- and most of its rules are gated on one: `if k, ok :=
+f.exprType(s, e); ok && ...`. A pointer, a function, a channel, a slice, an array, a
+struct, an interface and nil have none, so the gate answers "unknown" and the rule
+says nothing, which is the right answer to "I cannot tell" and the wrong one to "this
+is a struct". Each Kind-less category got its checks one position at a time, as
+someone met it -- checkPointerRelOp, compositeOperandMismatch, chanOperandMismatch,
+checkFuncAssign, checkRangeable -- and a position nobody met is a hole. Sweeping a
+RULE across the categories, rather than a category across positions, found three rows
+in one afternoon, each taken in every cell: a CONDITION (`if p {`, `!f`, `ch && ok`:
+28 shapes, nonBoolOperand), NIL into a struct or an array (14 places, checkNilValue),
+and a function LITERAL, which had no type as a value (funcLitSig). So: **when a rule
+is written against a Kind, ask what it says of each category that has none**, and run
+the row through `scripts/rejects.sh`. Two traps met on the way. The helpers that name
+an expression's type carry ONE level of pointer, so `*npp` for a pointer to a pointer
+reads as the struct two steps away: a new refusal asks a bare variable's DECLARATION
+(varIsValueComposite), and believes an inferred type only where the initializer does
+not dereference. And the corpus guard -- `scripts/dumpcorpus.sh` before and after,
+through the checker -- shows a newly refused program as a MISSING file, not as an
+`.err`: compare the listings. Still open in the function-value column, all taken:
+arithmetic on one (`f + 1`, `f++`), indexing one (`f[0]`) and a non-function assigned
+to one (`f = 3`) -- each BUILT by the target, the last with a warning -- and the
+RESULT of a call through one, which is untyped (`var s string = f()`, the one of the
+twelve the target refuses); and `if *p {` of a struct pointee.
+
 **A TEMPORARY IS A COG REGISTER** (2026-09-20). flexcc gives every C local one
 (`local_N res 1` in COG_BSS) out of a pool the assembler checks with `fit 480`,
 shared across functions so the deepest call chain is what spends it -- and overflow
@@ -675,7 +700,12 @@ the package's, and is refused ("type A has no field n"): the checker's scopes an
 a name with whatever the block holds when it is ASKED, not with what it held where
 the name was written, so every later question about B's embedding finds the local A
 (it was a stack overflow of the compiler until 2026-09-20; the emitter, lowering in
-order, reads it right). No grammar gap is
+order, reads it right); a defined type that names ITSELF other than through a struct
+-- `type Tree []Tree`, `type Step func(int) (int, Step)`, which is the state-function
+idiom, `type Pipe chan Pipe`, `type P *P` -- "emit: unsupported type", with no
+position: C names a type inside itself through a struct's tag, and these have none
+(a struct holding its own kind every legal way works, locally too, and so do an
+interface whose method returns it and two structs through each other's pointers). No grammar gap is
 known: the ones recorded before all closed that day, and two nobody had recorded --
 HeaderFactor had dropped the suffix from three of Factor's alternatives, and a string
 literal took none at all, `"0123456789abcdef"[n&15]`. Two more surfaced the next day
