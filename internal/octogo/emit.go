@@ -37502,6 +37502,19 @@ func (e *emitter) emitExprNode(n Node) {
 				e.emitStrLitChain(n, v, steps)
 				return
 			}
+			// A named string CONSTANT read through more than one step,
+			// `hexdigits[1:][0]`. The folded value stands where the literal's does:
+			// a constant never becomes a variable, so there is nothing for the
+			// chain walk to start from, and the single-step shapes below take one
+			// step only -- `hexdigits is not a value with fields or elements` was
+			// what the second earned. The literal's own form has worked since the
+			// grammar gave it a suffix.
+			if base, steps, ok := e.factorAccessChain(kids); ok && len(steps) > 1 {
+				if v, isStr := e.foldedStr(base); isStr {
+					e.emitStrLitChain(n, v, steps)
+					return
+				}
+			}
 			// `[]int{1, 2, 3}[0]` -- a bracketed literal read through a suffix. The
 			// literal becomes a temporary and the steps apply to that, which is what
 			// gives an array literal something indexable to be.

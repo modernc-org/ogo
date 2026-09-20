@@ -20,6 +20,13 @@ shipped section tells a reader on that version that they have behaviour they do 
 
 ### Language
 
+- **A named string constant may be sliced and then read**, `hexdigits[1:][0]`. A
+  constant never becomes a variable, so there is nothing for the chain walk to
+  start from, and the single-step shapes take one step only: the second earned
+  "hexdigits is not a value with fields or elements", of a constant that has bytes.
+  The folded value stands where the literal's does, which is what the literal form
+  has done since the grammar gave it a suffix.
+
 - **A PARENTHESISED expression may be read through fields and indexes.** `(&p).x`,
   `(get()).x`, `(getq()).a`, `(arr[1:])[1]`, `("hello")[1:]` and `(&arr)[1]` were
   each "this form is not supported yet": the chain walk begins at a variable, and

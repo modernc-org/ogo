@@ -601,11 +601,12 @@ type's converts, and an assignment needs no conversion: `var d []int = b` for a 
 L` is taken);
 an ELEMENT or another package's variable as a `range` clause's target, `for _,
 q[0] = range ptrs`, `for _, geo.P = range ptrs` ("a range target must be a variable
-or a struct field"); a chain after a NAMED
-string constant's slice,
-`hexdigits[1:][0]` (the literal's works), and after a slice step of an array of
-arrays, `grid[1][1:][1]` ("this combination of indexes and fields is not supported
-yet"; the slice of slices' `rows[0][1:][1]` works). No grammar gap is
+or a struct field"); a chain after a slice step of an ARRAY OF ARRAYS,
+`grid[1][1:][1]` ("this combination of indexes and fields is not supported yet"):
+the walk would bind the row to a temporary, and C has no array value to bind (the
+slice of slices' `rows[0][1:][1]` works, and a NAMED string constant's
+`hexdigits[1:][0]` since 2026-09-20, which reads the folded value where the
+literal's form reads its own). No grammar gap is
 known: the ones recorded before all closed that day, and two nobody had recorded --
 HeaderFactor had dropped the suffix from three of Factor's alternatives, and a string
 literal took none at all, `"0123456789abcdef"[n&15]`. Two more surfaced the next day

@@ -33563,6 +33563,28 @@ func main() {
 }
 `,
 		want: "4 11 8 7 6\n",
+	}, {
+		// A named string CONSTANT read through more than one step,
+		// `hexdigits[1:][0]`. A constant never becomes a variable, so there is
+		// nothing for the chain walk to start from, and the single-step shapes take
+		// one step only -- the second earned "hexdigits is not a value with fields or
+		// elements", of a constant that has bytes. The folded value stands where the
+		// literal's does, which is what the literal form has done since the grammar
+		// gave it a suffix.
+		name: "a named string constant sliced and then read",
+		src: `const hexdigits = "0123456789abcdef"
+
+const greeting = "hello world"
+
+func main() {
+	println(hexdigits[1:][0], hexdigits[10:][2])
+	println(greeting[6:][0], greeting[:5][1], len(greeting[6:]))
+	println(hexdigits[3], hexdigits[1:3] == "12")
+	n := 11
+	println(hexdigits[n&15], hexdigits[n&15:][0])
+}
+`,
+		want: "49 99\n119 101 5\n51 true\n98 98\n",
 	}}
 
 // TestEmitCRun compiles emitted C with a host compiler and runs it, checking what
