@@ -24,6 +24,7 @@ import (
 	"os"
 	"strings"
 
+	"modernc.org/ogo/internal/build"
 	"modernc.org/ogo/internal/octogo"
 )
 
@@ -56,7 +57,16 @@ func dump(dir string) error {
 	if len(files) == 0 {
 		return fmt.Errorf("no .ogo source files in %s", dir)
 	}
-	pkg, err := octogo.Build(-1, files, os.DirFS(dir))
+	// An ogo.mod above the directory makes it part of a MODULE, and its imports
+	// then carry the module's path and are read against its root -- the same
+	// context `ogo build` establishes. Without this a probe of a multi-package
+	// program was "invalid import path \"example.com/proj/sensor\"", of an import
+	// the compiler itself takes.
+	fsys, rel, modulePath, err := build.ModuleContext(dir)
+	if err != nil {
+		return err
+	}
+	pkg, err := octogo.BuildModule(-1, modulePath, rel, files, fsys)
 	if err != nil {
 		return err
 	}

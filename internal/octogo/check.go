@@ -8235,7 +8235,47 @@ func (f *File) checkElemLit(s *Scope, t litType, elem TypeNode, lit Node) {
 		f.checkImplements(s, name, el.value, "array or slice literal")
 		f.checkDefinedType(s, name, el.value, "array or slice literal")
 		f.checkLitValue(s, t, elem, el.value, "array or slice literal")
+		// An ELEMENT whose own type is elided, `[2]P{{1, 2}}`: it is a literal of
+		// the element type and is checked as one. Nothing did -- the walk stopped at
+		// the element -- so `[2]P{{1, 2, 3}}` went through with a value too many, and
+		// `[2]lib.Point{{4, 5, "u"}}` filled another package's UNEXPORTED field,
+		// which Go refuses and the written form `lib.Point{4, 5, "u"}` was refused
+		// for here as well.
+		f.checkElidedStructLit(s, elem, el.value)
 	}
+}
+
+// checkElidedStructLit checks a composite literal whose type is ELIDED, against the
+// type its position implies: an element of an array or a slice literal, `[2]P{{1,
+// 2}}`. It answers to nothing for an element that is not one.
+func (f *File) checkElidedStructLit(s *Scope, elem TypeNode, value Node) {
+	if value.sym != CompositeLit {
+		return
+	}
+	id, ok := elem.(*TypeNodeIdent)
+	if !ok {
+		return
+	}
+	// The type the element names, qualified or not: `lib.Point` is checked in lib's
+	// scope, which is where its fields are spelled and what says they are exported.
+	t := litType{name: id.Name}
+	home := s
+	if id.Qualifier.IsValid() {
+		h, isImp := f.importedPkgScope(id.Qualifier)
+		if !isImp {
+			return
+		}
+		t, home = litType{name: id.Name, qual: id.Qualifier}, h
+	}
+	st, isStruct := f.structTypeNamed(home, id.Name.Src())
+	if !isStruct {
+		return
+	}
+	elements := compositeLitElements(value)
+	for _, el := range elements {
+		f.checkNames(s, el.value)
+	}
+	f.checkStructLit(s, t, st, f.tok(value.Pos()), elements)
 }
 
 // structTypeOf resolves a name to the struct type it declares. It reports false

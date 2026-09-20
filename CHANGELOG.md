@@ -20,6 +20,15 @@ shipped section tells a reader on that version that they have behaviour they do 
 
 ### Language
 
+- **A composite literal whose type is ELIDED is checked against the type its
+  position implies.** `[2]P{{1, 2, 3}}` went through with a value too many, and a
+  keyed element could name a field that is not there -- the walk stopped at the
+  element, where the written form `P{1, 2, 3}` was refused all along. Across
+  packages the same hole let a literal fill another package's UNEXPORTED field,
+  `[2]lib.Point{{4, 5, "u"}}`, which Go refuses and which the written
+  `lib.Point{4, 5, "u"}` was refused for here as well. Found by a two-package
+  probe, which the harness could not build until `dumpc` learnt to read `ogo.mod`.
+
 - **A named string constant may be sliced and then read**, `hexdigits[1:][0]`. A
   constant never becomes a variable, so there is nothing for the chain walk to
   start from, and the single-step shapes take one step only: the second earned

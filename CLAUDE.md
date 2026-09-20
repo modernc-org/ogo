@@ -488,7 +488,11 @@ user would write, compared against real Go, with every accessor bumping a packag
 counter that is printed beside the values so a double or a late evaluation shows as
 a number. The scripts are portable (paths from the repo root, tools built from the
 tree being probed) and read from the top of each file. The one Go tool they build is
-`scripts/dumpc` (DIR in, the checked C of TestEmitCRun out, a refusal on stderr). It
+`scripts/dumpc` (DIR in, the checked C of TestEmitCRun out, a refusal on stderr); it
+reads an `ogo.mod` above the directory as `ogo build` does, so a MULTI-PACKAGE
+program can be probed on the host -- without that the whole cross-package dimension
+had no sweep, and the first one written found an elided literal filling another
+package's unexported field (2026-09-20). It
 was first committed as `./build/dumpc`, and `/build/` is git-ignored, so the harness
 reached the second machine without it; it lives under `scripts/` for that reason:
 

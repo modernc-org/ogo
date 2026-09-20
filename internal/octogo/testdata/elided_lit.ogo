@@ -1,0 +1,36 @@
+// A composite literal whose type is ELIDED, `[2]P{{1, 2}}`, is a literal of the
+// type its position implies and is checked as one. Nothing checked it: the walk
+// stopped at the element, so a value too many went through where the written form
+// `P{1, 2, 3}` was refused, and a keyed element could name a field that is not
+// there. Found by a cross-package probe, where the same hole let a literal fill
+// ANOTHER package's unexported field -- which Go refuses and the written form was
+// refused for here as well.
+
+type Inner struct{ a, b int }
+
+type P struct {
+	x, y int
+	in   Inner
+}
+
+// Every one of these is a program.
+var ok1 = [2]P{{1, 2, Inner{3, 4}}, {x: 5}}
+
+var ok2 = []P{{8, 9, Inner{1, 1}}, {}}
+
+var ok3 = [2][2]int{{1, 2}, {3, 4}}
+
+func values() {
+	// ERROR "too many values in P{...}: 4 values but 3 fields"
+	a := [1]P{{1, 2, Inner{3, 4}, 5}}
+	// ERROR "not enough values in P{...}: 2 values but 3 fields"
+	b := []P{{1, 2}}
+	// ERROR "unknown field nope in struct literal of type P"
+	c := [1]P{{nope: 1}}
+	println(a[0].x, b[0].y, c[0].x)
+}
+
+func main() {
+	println(ok1[0].x, ok2[0].y, ok3[1][1])
+	values()
+}

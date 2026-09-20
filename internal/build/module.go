@@ -124,6 +124,16 @@ func validModulePath(s string) error {
 // the module path import paths carry. Without an ogo.mod the filesystem is the
 // package's own directory and 'rel' is ".", which is what every build did before
 // modules and what the tests, the fuzzer and a single-directory program still do.
+// ModuleContext is moduleContext for a reader outside this package: the probe
+// harness's dumpc builds one directory the way `ogo build` does, and a program in a
+// MODULE is not buildable without it -- the import paths carry the module's prefix,
+// which the compiler reads against the root this answers with. Without it the
+// harness could only ever probe single-directory programs, and the multi-package
+// dimension had no sweep at all.
+func ModuleContext(dir string) (fsys fs.FS, rel, modulePath string, err error) {
+	return moduleContext(dir)
+}
+
 func moduleContext(dir string) (fsys fs.FS, rel, modulePath string, err error) {
 	root, modulePath, err := findModule(dir)
 	if err != nil {
