@@ -544,10 +544,9 @@ INTERFACE type, `Shape.Area` (refused by name; a concrete type's works since
 receiver at compile time); an unnamed struct type mixed with the SECOND of two
 declared structs of its fields (its typedef names the first, aliasAnonStructs), which
 Go admits and the target's compiler refuses; printf's `%v` of a
-struct under a width, and of a struct holding an exported INTERFACE field (at depth
-fmt prints what the field holds by its String() or its address, where the top-level
-`%v` of an interface value prints `&{1 2}` for a struct pointer -- the depth-0 form
-works since 2026-09-20, ifaceHeldPrintC); a PARENTHESISED HEAD the emitter cannot peel -- one holding a unary
+struct or an interface under a width (an interface value prints what it holds since
+2026-09-20 -- `&{1 2}` for a struct pointer as the argument, its address or its
+String() at depth, ifaceHeldPrintC -- but the chain writing it cannot pad); a PARENTHESISED HEAD the emitter cannot peel -- one holding a unary
 operator or a suffix of its own -- read or written through a suffix: `(&p).x`,
 `(&arr)[1:]`, `(get()).x`, `(*get()).x`, `(arr[1:])[1:]`, `("hello")[1:]`, the targets
 `(p).x = 5` and `(&p).x = 3` and a conversion's, `(*T)(p).x = 5` and `*(*T)(p) = 5`,

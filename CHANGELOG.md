@@ -31,8 +31,17 @@ shipped section tells a reader on that version that they have behaviour they do 
   every table the program makes for that interface -- a set complete only after the
   last body is emitted, which is where the printer is minted. An interface that
   DECLARES Error() or String() is unchanged: fmt calls that, and so did this. Still
-  refused: `%v` of an interface under a width, and a struct FIELD of interface type
-  inside a `%v` of the struct.
+  refused: `%v` of an interface under a width.
+
+- **An interface AT DEPTH prints what it holds too.** A struct FIELD of interface
+  type, and an element of a slice or an array of them, under `%v`: fmt asks what
+  the value holds for Error() and String() and prints the text, and prints its
+  ADDRESS where it has neither -- at depth a pointer to a struct is its address,
+  where the argument form writes "&{3 4}". An exported field was refused outright
+  ("an exported interface declaring neither Error() nor String()"), and an element
+  of a slice or an array with it. An UNEXPORTED field printed the address, as fmt
+  does -- reflect hands out no value to ask -- but printed `0x0` for a table with
+  no data, where Go prints `<nil>` like the value holding nothing.
 
 - **A `switch` or `for` clause may declare an array.** `switch a := [2]int{1, 2};
   len(a) {` and `for b := [3]int{1, 2, 3}; b[0] < 3; b[0] += 2 {` were refused,

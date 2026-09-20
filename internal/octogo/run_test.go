@@ -33157,6 +33157,82 @@ func main() {
 }
 `,
 		want: "&{3 4}|&{x:3 y:4}\n&{t {1 2}}|&{tag:t in:{a:1 b:2}}\nhi|hi\n&[7 8]|&[7 8]\n<nil>|<nil>\n&{3 4}|&{t {1 2}}\n&{3 4}|&{x:3 y:4}\n<nil>|false\n5|2\n",
+	}, {
+		// An interface AT DEPTH -- a struct field, a slice or an array element -- under
+		// `%v`. fmt asks what it holds for Error() and String() and prints the text,
+		// and prints its ADDRESS where it has neither: at depth a pointer to a struct
+		// is its address, where the argument form writes "&{3 4}". An exported field
+		// was refused outright ("an exported interface declaring neither Error() nor
+		// String()"), an element of a slice or an array with it; an UNEXPORTED field
+		// printed the address, as fmt does, since reflect hands out no value to ask --
+		// but printed 0x0 for a table with no data, where Go prints <nil> like the
+		// value holding nothing. The addresses are left out of what is pinned here:
+		// only their shape can be, and the top-level form pins the rest.
+		name: "%v of an interface at depth",
+		src: `type Shape interface{ Area() int }
+
+type Named struct{ n string }
+
+func (n *Named) Area() int { return len(n.n) }
+
+func (n *Named) String() string { return n.n }
+
+type Tag struct{ t string }
+
+func (t *Tag) Area() int { return 1 }
+
+func (t *Tag) Error() string { return t.t }
+
+type P struct{ x, y int }
+
+func (p *P) Area() int { return p.x * p.y }
+
+type Box struct {
+	Sh   Shape
+	Next Shape
+	k    int
+}
+
+type Rim struct {
+	Sh  Shape
+	sub Box
+}
+
+var gn = Named{"hi"}
+
+var gt = Tag{"boom"}
+
+var nilp *P
+
+var gp = P{3, 4}
+
+func main() {
+	var b Box
+	b.Sh = &gn
+	b.k = 7
+	printf("%v|%+v\n", b, b)
+	b.Next = &gt
+	printf("%v|%+v\n", b, b)
+	var d Box
+	printf("%v|%+v\n", d, d)
+	var e Box
+	e.Sh = nilp
+	printf("%v|%+v\n", e, e)
+	var sl [3]Shape
+	sl[0] = &gn
+	sl[2] = &gt
+	printf("%v\n", sl)
+	var sp []Shape = sl[:2]
+	printf("%v\n", sp)
+	var r Rim
+	r.Sh = &gt
+	r.sub.Sh = nilp
+	printf("%v|%+v\n", r, r)
+	var s Shape = &gp
+	printf("%v|%v\n", s, s.Area())
+}
+`,
+		want: "{hi <nil> 7}|{Sh:hi Next:<nil> k:7}\n{hi boom 7}|{Sh:hi Next:boom k:7}\n{<nil> <nil> 0}|{Sh:<nil> Next:<nil> k:0}\n{<nil> <nil> 0}|{Sh:<nil> Next:<nil> k:0}\n[hi <nil> boom]\n[hi <nil>]\n{boom {<nil> <nil> 0}}|{Sh:boom sub:{Sh:<nil> Next:<nil> k:0}}\n&{3 4}|12\n",
 	}}
 
 // TestEmitCRun compiles emitted C with a host compiler and runs it, checking what

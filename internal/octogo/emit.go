@@ -5163,7 +5163,12 @@ func emitProgram(pkg *Package, w io.Writer, opts []EmitOption, rename map[string
 	// The %v printers of struct types, after the prototypes: a field's Error() or
 	// String() is a function of the program. Every printer is declared before any is
 	// defined, a struct's calling its fields'.
-	if len(e.printStructs) != 0 {
+	if len(e.printStructs) != 0 || len(e.printIfaces) != 0 {
+		// The interface printers are DEFINED with the tables they test, further
+		// down, and a struct printer calls one for a field of interface type.
+		for _, ct := range slices.Sorted(maps.Keys(e.printIfaces)) {
+			fmt.Fprintf(&out, "%s;\n", ifacePrintSig(ct))
+		}
 		for _, ct := range slices.Sorted(maps.Keys(e.printStructs)) {
 			fmt.Fprintf(&out, "static void %s(%s* v, int plus);\n", structPrintName(ct), ct)
 		}
@@ -5465,6 +5470,7 @@ type emitter struct {
 	printSliceElems    map[string]bool     // element C types printed without a newline, needing the ogo_print_slice_<T> helper
 	printStructs       map[string]string   // struct C types printed by %v -> the definition of their ogo_printv_<T> helper
 	printIfaces        map[string]string   // interface C types printed by %v -> where the first such print is written, for a refusal minting its helper earns
+	printPos           string              // where the %v being emitted is written, for a printer minted from it later
 	printlnElems       map[string]bool     // element C types printed with a newline, needing ogo_println_slice_<T> (which calls ogo_print_slice_<T>)
 	defers             []deferredCall      // the current function's top-level defers, in source order, replayed LIFO before each return
 	switchBreak        string              // goto target for a break in the current switch case (the if/else lowering has no C switch to break); "" means a plain C break -- a loop, or outside any switch
@@ -28961,6 +28967,14 @@ func (e *emitter) needStructPrint(ct string) (why string) {
 // %v and %+v print one: what it HOLDS, which its table says.
 func ifacePrintName(ct string) string { return "ogo_printv_iface_" + sanitizeElem(ct) }
 
+// ifacePrintSig is that helper's C signature. top says the value stands as the
+// printf ARGUMENT, where fmt writes a pointer to a struct as "&{1 2}"; at depth --
+// a field, an element -- it writes its address instead, which is the whole
+// difference between the two.
+func ifacePrintSig(ct string) string {
+	return "static void " + ifacePrintName(ct) + "(" + ct + " v, int plus, int top)"
+}
+
 // mintIfacePrinters mints the helper of every interface a %v asked for. It runs
 // after the last body: the helper tests the value's table against each one the
 // program makes for that interface, and the store that makes a table may be written
@@ -28988,8 +29002,12 @@ func (e *emitter) mintIfacePrinters() {
 // mintIfacePrinter writes one interface's %v helper into the vtable section, after
 // the tables it takes the address of and before every body that calls it.
 func (e *emitter) mintIfacePrinter(iface string) {
+	e.printPos = e.printIfaces[iface] // a printer this one asks for refuses at the same print
 	var b strings.Builder
 	for _, concrete := range e.ifaceConcretes(iface) {
+		// A concrete type the printer cannot write refuses the whole print. Every
+		// field kind is printable today, so this is a guard on what the struct
+		// printer may meet rather than a refusal a program can reach.
 		code, why := e.ifaceHeldPrintC(concrete)
 		if why != "" {
 			e.fail("%s: printf: %%v of %s holding a %s is not supported yet: %s",
@@ -29000,15 +29018,18 @@ func (e *emitter) mintIfacePrinter(iface string) {
 	}
 	body := b.String()
 	var h strings.Builder
-	fmt.Fprintf(&h, "static void %s(%s v, int plus) {\n", ifacePrintName(iface), iface)
-	// Only a struct, a slice or an array reads the flag, and only a branch reads the
-	// value: an interface nothing is stored in, or one holding types that print as
-	// their String() or their address, would leave a parameter unread.
+	fmt.Fprintf(&h, "%s {\n", ifacePrintSig(iface))
+	// Only a struct, a slice or an array reads the two flags, and only a branch
+	// reads the value: an interface nothing is stored in, or one holding types that
+	// print as their String() or their address, would leave a parameter unread.
 	if body == "" {
 		h.WriteString("\t(void)v;\n")
 	}
 	if !strings.Contains(body, "plus") {
 		h.WriteString("\t(void)plus;\n")
+	}
+	if !strings.Contains(body, "top") {
+		h.WriteString("\t(void)top;\n")
 	}
 	h.WriteString(body)
 	// A value carrying no table holds nothing, which fmt prints as <nil>. The
@@ -29053,25 +29074,30 @@ func (e *emitter) ifaceHeldPrintC(concrete string) (code, why string) {
 		}
 		return guard(call), ""
 	}
+	e.includes["stdint.h"] = true
+	// A pointer is its ADDRESS to fmt, which is what it prints for it at depth --
+	// inside a struct, a slice or an array -- and for a pointer to anything but a
+	// struct, a slice or an array wherever it stands.
+	addr := "printf(\"0x%x\", (unsigned)(uintptr_t)" + data + ");"
 	u := e.underlyingCType(concrete)
+	var deref string
 	switch {
 	case e.isPrintStruct(u):
 		if why := e.needStructPrint(u); why != "" {
 			return "", why
 		}
-		return guard("printf(\"&\"); " + structPrintName(u) + "(" + data + ", plus);"), ""
+		deref = structPrintName(u) + "(" + data + ", plus);"
 	case e.isSliceCType(u), e.isNamedArray(u):
 		// fmt writes the "&" of a pointer to a slice or an array as it does for a
 		// struct, and the elements after it.
-		inner, why := e.printValueC("(*"+data+")", concrete, true, "plus")
-		if why != "" {
+		var why string
+		if deref, why = e.printValueC("(*"+data+")", concrete, true, "plus"); why != "" {
 			return "", why
 		}
-		return guard("printf(\"&\"); " + inner), ""
+	default:
+		return guard(addr), ""
 	}
-	// A pointer to anything else is its address, which is what fmt prints for it.
-	e.includes["stdint.h"] = true
-	return guard("printf(\"0x%x\", (unsigned)(uintptr_t)" + data + ");"), ""
+	return guard("if (top) { printf(\"&\"); " + deref + " } else { " + addr + " }"), ""
 }
 
 // isNamedArray reports whether a C type name is one of the array typedefs.
@@ -29118,11 +29144,21 @@ func (e *emitter) printValueC(expr, ct string, methods bool, plus string) (code,
 	case e.isIfaceCType(u):
 		if methods {
 			// fmt asks the dynamic value for Error() and String() whether or not the
-			// interface declares them, which its table cannot answer.
-			return "", "an exported interface declaring neither Error() nor String()"
+			// interface declares them -- reflect hands the value out, and what it
+			// holds is what has the method. The TABLE is what says which type that
+			// is, so this is the same chain the printf argument takes, at depth:
+			// what holds no String() is its address here, where the argument form
+			// writes a struct out (ifaceHeldPrintC).
+			if _, asked := e.printIfaces[u]; !asked {
+				e.printIfaces[u] = e.printPos
+			}
+			return ifacePrintName(u) + "(" + expr + ", " + plus + ", 0);", ""
 		}
+		// An UNEXPORTED field, which reflect hands out no value of: fmt prints what
+		// it holds as a pointer and never asks it for anything. A table with no data
+		// is a nil pointer, which prints as <nil> like the value holding nothing.
 		e.includes["stdint.h"] = true
-		return "if ((" + expr + ").vt) { printf(\"0x%x\", (unsigned)(uintptr_t)(" + expr + ").data); } else { printf(\"<nil>\"); }", ""
+		return "if ((" + expr + ").vt && (" + expr + ").data) { printf(\"0x%x\", (unsigned)(uintptr_t)(" + expr + ").data); } else { printf(\"<nil>\"); }", ""
 	case e.isPrintStruct(u):
 		if why := e.needStructPrint(u); why != "" {
 			return "", why
@@ -29178,6 +29214,9 @@ func (e *emitter) isPrintStruct(ct string) bool {
 // argument that is none of these.
 func (e *emitter) emitStructPrintVerb(idx int, arg Node, plus bool, value func()) (handled, ok bool) {
 	ct, _ := e.printArgCType(idx, arg) // "" for an array, which is asked about below
+	// A printer this print asks for may be minted long after it, when e.f is another
+	// file: what it refuses is refused HERE, so the position travels with the ask.
+	e.printPos = e.posText(arg.ast)
 	p := strconv.Itoa(boolToInt(plus))
 	refuse := func(why string) (bool, bool) {
 		e.failAt(arg.ast, "printf: %%v of %s is not supported yet: %s", e.goTypeName(ct), why)
@@ -29194,12 +29233,12 @@ func (e *emitter) emitStructPrintVerb(idx int, arg Node, plus bool, value func()
 		// Error() or String() never gets here: fmt calls that, and so does the
 		// stringer path above.
 		if _, asked := e.printIfaces[ct]; !asked {
-			e.printIfaces[ct] = e.posText(arg.ast)
+			e.printIfaces[ct] = e.printPos
 		}
 		e.ind()
 		e.emit(ifacePrintName(ct) + "(")
 		value()
-		e.emit(", " + p + ");\n")
+		e.emit(", " + p + ", 1);\n")
 		return true, true
 	case e.isPrintStruct(ct):
 		u := e.underlyingCType(ct)
@@ -29242,7 +29281,8 @@ func (e *emitter) emitStructPrintVerb(idx int, arg Node, plus bool, value func()
 	} else if a, isArr := e.arrayShapeOf(arg.ast); isArr && len(a.inner) == 0 {
 		elem, bound = a.elem, a.bound
 	}
-	if elem == "" || !e.isPrintStruct(elem) && !e.isPrintStruct(strings.TrimSuffix(elem, "*")) {
+	if elem == "" || !e.isPrintStruct(elem) && !e.isPrintStruct(strings.TrimSuffix(elem, "*")) &&
+		!e.isIfaceCType(elem) {
 		return false, false
 	}
 	s, i := e.newTmp(), e.newTmp()

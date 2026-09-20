@@ -5767,29 +5767,6 @@ func main() {
 			want: "printf: %f wants a float, not int",
 		},
 		{
-			// A struct has no %v form here and no address form either -- Go refuses to
-			// print one at all -- so the message offers only %T.
-			// fmt asks the value behind an exported interface field for Error() and
-			// String() at run time, which a table of this interface's methods cannot
-			// answer, so such a struct is refused rather than printed as an address
-			// where Go might print text.
-			name: "%v of a struct holding an exported interface",
-			src: `type Shape interface {
-	Area() int
-}
-
-type P struct {
-	S Shape
-}
-
-func main() {
-	var p P
-	printf("%v\n", p)
-}
-`,
-			want: "printf: %v of P is not supported yet: field S is an exported interface declaring neither Error() nor String()",
-		},
-		{
 			name: "%v of a struct under a width",
 			src: `type P struct {
 	n int
@@ -5825,31 +5802,6 @@ func main() {
 }
 `,
 			want: "printf: %5v does not take a width or precision yet",
-		},
-		{
-			// The chain prints each concrete type as fmt does, so a type it cannot
-			// print refuses the whole print -- at the print, naming the type inside.
-			name: "%v of an interface holding a struct that cannot be printed",
-			src: `type Shape interface {
-	Area() int
-}
-
-type Weird struct {
-	G Shape
-}
-
-func (w *Weird) Area() int {
-	return 1
-}
-
-var gw Weird
-
-func main() {
-	var sh Shape = &gw
-	printf("%v\n", sh)
-}
-`,
-			want: "printf: %v of Shape holding a *Weird is not supported yet: field G is an exported interface",
 		},
 	} {
 		t.Run(test.name, func(t *testing.T) {
