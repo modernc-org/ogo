@@ -30,7 +30,27 @@ func values() {
 	println(a[0].x, b[0].y, c[0].x)
 }
 
+// A FIELD's value whose own type is elided is the same shape: the field's type is
+// what it is a literal of, and the walk stopped there too.
+type Outer struct {
+	tag string
+	in  Inner
+}
+
+var ok4 = Outer{"t", {1, 2}}
+
+var ok5 = Outer{tag: "u", in: {a: 3}}
+
+func fields() {
+	// ERROR "too many values in Inner{...}: 3 values but 2 fields"
+	a := Outer{"t", {1, 2, 3}}
+	// ERROR "unknown field nope in struct literal of type Inner"
+	b := Outer{tag: "u", in: {nope: 1}}
+	println(a.in.a, b.in.b)
+}
+
 func main() {
-	println(ok1[0].x, ok2[0].y, ok3[1][1])
+	println(ok1[0].x, ok2[0].y, ok3[1][1], ok4.in.b, ok5.in.a)
 	values()
+	fields()
 }

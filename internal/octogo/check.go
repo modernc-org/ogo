@@ -7995,6 +7995,10 @@ func (f *File) checkStructLit(s *Scope, t litType, st *TypeNodeStruct, at Token,
 			f.checkImplements(s, f.typeNodeString(types[i], false), el.value, "struct literal")
 			f.checkDefinedType(s, f.typeNodeString(types[i], false), el.value, "struct literal")
 			f.checkLitValue(s, t, types[i], el.value, "struct literal")
+			// A FIELD's value whose own type is elided, `Outer{"t", {1, 2}}`: the
+			// field's type is what it is a literal of, and the same walk that
+			// stopped at an array's element stopped here.
+			f.checkElidedStructLit(s, types[i], el.value)
 		}
 	}
 	// A positional literal fills every field in order, including any this package
@@ -8112,6 +8116,7 @@ func (f *File) checkKeyedLit(s *Scope, t litType, names []Token, types []TypeNod
 		f.checkImplements(s, f.typeNodeString(fieldType(name), false), el.value, "struct literal")
 		f.checkDefinedType(s, f.typeNodeString(fieldType(name), false), el.value, "struct literal")
 		f.checkLitValue(s, t, fieldType(name), el.value, "struct literal")
+		f.checkElidedStructLit(s, fieldType(name), el.value)
 	}
 }
 

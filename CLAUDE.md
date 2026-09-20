@@ -547,6 +547,16 @@ suffix) found only the recorded grammar gap: a conversion to a type WRITTEN OUT,
 `[]int(x)`, `[]byte(x)` and `[3]int(x)`, is a syntax error, where a named type's
 converts.
 
+**A PACKAGE BOUNDARY IS A ROW** (2026-09-20). Everything that can cross one, each
+declared in a library package and used from a program: an interface satisfied by a
+LOCAL type, an embedded struct and its promoted method, an error, a method value and
+a method expression, a channel, a constant as an array bound, a defined slice type,
+a struct as an array element, and printf's `%v` and `%T` of each. All match Go, on
+the host and on a P2-EDGE -- the one fault the sweep found was an ELIDED literal
+filling another package's unexported field, which is a hole in the literal check
+rather than in the boundary. The harness is `dumpc`, which reads an `ogo.mod` above
+the directory; before that the dimension could not be probed on the host at all.
+
 **A PROGRAM GO REJECTS IS A ROW** (2026-09-20). The sweeps above ask what a correct
 program does; this one asks what an incorrect one earns, which is the direction that
 fails SILENTLY -- an accepted mistake reaches the C compiler, which reports it about
