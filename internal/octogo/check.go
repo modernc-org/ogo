@@ -8257,6 +8257,18 @@ func (f *File) checkElidedStructLit(s *Scope, elem TypeNode, value Node) {
 	if value.sym != CompositeLit {
 		return
 	}
+	// An elided ARRAY or SLICE element, `[2][2]P{{{1, 2}}}`: the inner literal is
+	// one of the row type, and ITS elements are literals of the row's element type.
+	// Without the recursion the innermost was reached by nothing, which is where a
+	// value too many still went through.
+	switch t := elem.(type) {
+	case *TypeNodeArray:
+		f.checkElidedElems(s, t.TypeNode, value)
+		return
+	case *TypeNodeSlice:
+		f.checkElidedElems(s, t.TypeNode, value)
+		return
+	}
 	id, ok := elem.(*TypeNodeIdent)
 	if !ok {
 		return
@@ -8281,6 +8293,15 @@ func (f *File) checkElidedStructLit(s *Scope, elem TypeNode, value Node) {
 		f.checkNames(s, el.value)
 	}
 	f.checkStructLit(s, t, st, f.tok(value.Pos()), elements)
+}
+
+// checkElidedElems checks every element of an elided ARRAY or SLICE literal against
+// the element type, which is one step further in than the literal's own.
+func (f *File) checkElidedElems(s *Scope, elem TypeNode, value Node) {
+	for _, el := range compositeLitElements(value) {
+		f.checkNames(s, el.value)
+		f.checkElidedStructLit(s, elem, el.value)
+	}
 }
 
 // structTypeOf resolves a name to the struct type it declares. It reports false
