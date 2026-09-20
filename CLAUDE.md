@@ -511,6 +511,27 @@ reached the second machine without it; it lives under `scripts/` for that reason
 - `scripts/cboard.sh FILE.c` -- compile one C file with the in-process flexcc and run
   it on the board: how a reproducer in `doc/` is measured, and re-measured after a
   backend regeneration.
+- `scripts/rejects.sh [-v] PARENT...` -- the sweep of programs Go REJECTS (see "A
+  PROGRAM GO REJECTS IS A ROW" below): every PARENT/NAME/main.ogo through `go build`
+  and through the tree's compiler, a row wherever the two disagree, and the exit
+  status 1 when the compiler FAULTED on any. `DUMPC=` takes an older commit's dumpc,
+  which is how a sweep's finds are counted after its fixes are in.
+- `scripts/capped.sh [-t SECS] [-m KB] CMD...` -- a memory cap and a SIGKILL timeout
+  around one command. probe.sh, stmtprobe.sh and rejects.sh run the compiler through
+  it; an ad-hoc loop over probe programs must too.
+
+**A COMPILER RUN IN A SWEEP IS CAPPED, AND A CRASH IS NOT A REFUSAL** (2026-09-20).
+A probe program is written to find a fault, and a fault is not always a wrong
+answer: `type A struct{ A }` sent the emitter down an embedding at 4 GB a second, the
+sweep ran the compiler bare, and the machine froze for four hours -- a plain
+`timeout` does not help, the process being too deep in swap by then to die when
+told. `ulimit -v 4000000` does (1.5 GB is too little for a Go program to start its
+threads): the runaway dies in half a second with the looping stack on stderr, which
+is the diagnosis. And dumpc's exit status is the verdict -- 0 compiled, 1 REFUSED,
+anything else a COMPILER FAULT. The sweep had asked whether stderr was empty, so the
+compiler that crashed AGREED with Go about a program Go rejects, and the row that
+froze the machine was logged as one more agreement. The first probes written under
+the cap found three more crashes on LEGAL programs the same afternoon.
 
 Process rules learned the hard way (2026-09-16): gate a commit on the suite log's
 `exit=0` line and the absence of `FAIL`, never on `cat log &&`; make no edits to
@@ -560,10 +581,15 @@ the directory; before that the dimension could not be probed on the host at all.
 **A PROGRAM GO REJECTS IS A ROW** (2026-09-20). The sweeps above ask what a correct
 program does; this one asks what an incorrect one earns, which is the direction that
 fails SILENTLY -- an accepted mistake reaches the C compiler, which reports it about
-generated code, or does not report it at all. Seven batches of about thirty, each
-run through `go vet` and through this compiler: 208 programs, 193 agreeing, 4
-differing BY DESIGN (new, map, len/cap of a channel, and a VALUE stored in an
-interface, which holds a pointer here) and 11 taken where Go refuses them -- an append of the
+generated code, or does not report it at all. Seven batches of about thirty, 212
+programs, each through Go and through this compiler (`scripts/rejects.sh`). The
+count below is a RECOUNT against the compiler as it stood before the sweep
+(4906d4f): the first one judged by `go vet` and by whether stderr was empty, and
+was off in both directions. 186 agreeing; 8 refused where Go takes them -- 7 BY
+DESIGN (new, map, len and cap of a channel, a VALUE stored in an interface, which
+holds a pointer here, and unreachable code twice, an error here where `go vet`
+reports it, as specs.go says) and one a gap, the no-op `s = append(s)`; one compiler
+FAULT; and 17 programs of 13 shapes taken where Go refuses them -- an append of the
 wrong element type, the integer-only operators on a float, the address of a call's
 result, a constant declared a type that cannot hold its class, a struct converted to
 a number, a fallthrough in a type switch, a send to an unnamed element type, a
@@ -572,11 +598,15 @@ whose length exceeds its capacity, a range over what has no elements, and a
 conditionless switch whose case is not a boolean. Every one
 of them reached the C compiler, as a diagnostic about generated code or -- the make
 -- as C that is valid and wrong. Keep the two-column shape (what Go says, what this
-says) and add a row whenever a check is written. One more did NOT reach the C
+says) and add a row whenever a check is written. The fault did NOT reach the C
 compiler, and is the row to remember: `type A struct{ A }`, a struct EMBEDDING
 itself (and any LOCAL type holding itself), which the recursive-type walk did not
 follow and the emitter followed without end -- 4 GB a second until the machine that
-compiled it froze, for four hours. The sweep logged it as a refusal.
+compiled it froze, for four hours. The sweep logged it as a refusal. Run over the
+same 212 programs after the sweep's fixes, the script also found two of them STILL
+taken, each a neighbour of a shape that was fixed: `append(ps, nil)` into a slice
+of STRUCTS, and `for range f` over a LOCAL func value. Re-run a batch after its
+fixes; a fix is for the program that was looked at.
 
 **A TEMPORARY IS A COG REGISTER** (2026-09-20). flexcc gives every C local one
 (`local_N res 1` in COG_BSS) out of a pool the assembler checks with `fit 480`,

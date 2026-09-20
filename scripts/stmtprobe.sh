@@ -33,7 +33,15 @@ while IFS= read -r stmt; do
 	{ cat "$head"; printf '\t%s\n' "$stmt"; cat "$tail"; } > "$d/main.ogo"
 	{ echo package main; echo; cat "$d/main.ogo"; } > "$d/twin/main.go"
 	want=$(cd "$d/twin" > /dev/null && timeout 30 env GOARCH=386 go run main.go 2>&1 | tr '\n' ' ')
-	"$dumpc" "$d" > "$d/host.c" 2> "$d/dump.err"
+	# Through capped.sh, and a status that is neither "compiled" nor "refused" is a
+	# COMPILER FAULT -- a panic, a fatal error, a runaway the cap killed -- which a
+	# test of stderr alone reports as one more refusal.
+	"$root/scripts/capped.sh" "$dumpc" "$d" > "$d/host.c" 2> "$d/dump.err"
+	rc=$?
+	if [ $rc -gt 1 ]; then
+		echo "p$n $stmt => go=[$want] COMPILER FAULT ($rc): $(head -c 150 "$d/dump.err" | tr '\n' ' ')"
+		continue
+	fi
 	if [ -s "$d/dump.err" ]; then
 		echo "p$n $stmt => go=[$want] REFUSED: $(head -c 150 "$d/dump.err" | tr '\n' ' ')"
 		continue

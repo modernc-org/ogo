@@ -20,8 +20,9 @@
 #   a busy-wait that never ends) hangs rather than fails.
 #
 # Verdicts: MATCH, DIFFER (both outputs shown), REFUSED (the compiler's first
-# line), GCC FAIL (the first error: an unused variable under -Werror is usually
-# the fixture's; a real one is a bug). The host build uses exactly the flags of
+# line), COMPILER FAULT (the compiler crashed or ran away: always a bug, whatever
+# the program), GCC FAIL (the first error: an unused variable under -Werror is
+# usually the fixture's; a real one is a bug). The host build uses exactly the flags of
 # TestEmitCRun, so a program that passes here is a run case waiting to be pinned.
 #
 # What a good probe counts: the calls. Give every accessor a side effect on a
@@ -42,7 +43,23 @@ name=$(basename "$d")
 mkdir -p "$d/twin"
 { echo 'package main'; echo; cat "$d/main.ogo"; } | sed -e "${expr:-s/^\$/&/}" > "$d/twin/main.go"
 (cd "$d/twin" && timeout 30 env GOARCH=386 go run main.go > ../go.out 2>&1; echo "exit=$?" >> ../go.out)
-(cd "$root" && go run ./scripts/dumpc "$d" > "$d/host.c" 2> "$d/dump.err")
+# The compiler runs through capped.sh, and a status that is neither "compiled" nor
+# "refused" is a COMPILER FAULT -- a panic, a fatal error, a runaway the cap killed.
+# It was `go run` with a test of stderr, which printed a crash as one more REFUSED
+# and ran a runaway bare. DUMPC=/path/to/dumpc skips the build, for a sweep.
+dumpc=${DUMPC:-}
+if [ -z "$dumpc" ]; then
+	tmp=$(mktemp -d)
+	trap 'rm -rf "$tmp"' EXIT
+	dumpc=$tmp/dumpc
+	(cd "$root" && go build -o "$dumpc" ./scripts/dumpc) || exit 1
+fi
+"$root/scripts/capped.sh" "$dumpc" "$d" > "$d/host.c" 2> "$d/dump.err"
+rc=$?
+if [ $rc -gt 1 ]; then
+	echo "== $name: COMPILER FAULT ($rc): $(head -1 "$d/dump.err")"
+	exit 0
+fi
 if [ ! -s "$d/host.c" ] || [ -s "$d/dump.err" ]; then
 	echo "== $name: REFUSED: $(head -1 "$d/dump.err")"
 	exit 0

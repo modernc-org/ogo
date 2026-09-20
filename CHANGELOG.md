@@ -1112,6 +1112,19 @@ program handed out a reference to storage that was gone by the time it was read.
 
 ### Verified
 
+- The sweep of programs Go REJECTS is a script now, `scripts/rejects.sh`, and the
+  compiler runs CAPPED in every probe script (`scripts/capped.sh`: an address-space
+  limit and a SIGKILL timeout). The sweep had been a loop typed at a prompt that
+  took any output on stderr for a refusal, so a compiler that CRASHED agreed with Go
+  about a program Go rejects -- and the one that did, the self-embedding struct
+  fixed above, ran bare and froze the machine for four hours first. The exit status
+  is the verdict now: compiled, refused, or a compiler FAULT, which probe.sh and
+  stmtprobe.sh report as one too. Run again over the seven batches, 212 programs,
+  against the compiler as it was before them: 186 agreeing, 17 taken where Go
+  refuses them, 8 refused where Go takes them (7 by design, and `s = append(s)`),
+  one fault. The published count had 11 taken; it was judged by `go vet`. Against
+  the compiler as it is, two are still taken, each beside a shape that was fixed.
+
 - The oracle fuzzer writes FUNCTION LITERALS: one called where it stands and one
   bound to a variable and called through it, each carrying its weight into the
   calls counter as a declared function does, so a call evaluated twice or not at
