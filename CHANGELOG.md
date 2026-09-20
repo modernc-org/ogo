@@ -20,6 +20,17 @@ shipped section tells a reader on that version that they have behaviour they do 
 
 ### Language
 
+- **What an `append` writes is checked against the slice's element type.** It was
+  for a slice whose type is written out and was not for one declared from its
+  initializer: `xs := make([]int, 0, 2)` records its element as a KIND and had no
+  type node to read, so `append(xs, "x")` reached the C compiler, which reported a
+  string where the generated helper wanted an int. A slice of STRUCTS recorded no
+  element at all, so `append(ps, 5)` went in unremarked. Both are refused now,
+  where Go refuses them and in its words, and a value whose type is a NAME rather
+  than a predeclared kind -- a struct, a defined type over one -- is asked about
+  too. Found by a sweep of programs Go REJECTS: of twenty-four, this was the one
+  this compiler took.
+
 - **A defined type over an INTERFACE and over a POINTER.** `type Sh Shape` was
   refused wherever a value went into it -- "cannot use &r (an address) as Sh
   value", from the check that exists to leave interfaces alone, which asked the

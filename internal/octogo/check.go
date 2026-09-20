@@ -3545,10 +3545,13 @@ func (f *File) inferVarFrom(s *Scope, vd *VarDeclaration, init Node) {
 			vd.elemKind, vd.hasElemKind = ek, true
 			return
 		}
-		if ek, ok := f.exprMakeElemKind(s, init); ok {
+		if ek, hasEk, tn, ok := f.exprMakeElem(s, init); ok {
 			// `xs := make([]int, 3)`: the same, with the element type written as
-			// make's argument rather than in the literal's own brackets.
-			vd.elemKind, vd.hasElemKind = ek, true
+			// make's argument rather than in the literal's own brackets. The type
+			// NODE is kept beside the kind: an append into the slice is checked
+			// against the element's own type, which a kind spells as the predeclared
+			// one it is made of.
+			vd.elemKind, vd.hasElemKind, vd.elemTypeNode = ek, hasEk, tn
 			return
 		}
 		if nm, ql, ptr, ok := f.exprNamedType(s, init); ok {
@@ -14284,9 +14287,19 @@ func unwrapSingle(n Node) Node {
 // exprLitElemKind reads the element type off a composite literal's own brackets,
 // and make writes them in an argument instead.
 func (f *File) exprMakeElemKind(s *Scope, n Node) (Kind, bool) {
+	k, hasKind, _, ok := f.exprMakeElem(s, n)
+	return k, hasKind && ok
+}
+
+// exprMakeElem is exprMakeElemKind answering with the element's TYPE NODE as well,
+// and for an element of NO predeclared kind: the kind alone names a DEFINED element
+// -- `make([]D, n)` over `type D int` -- as the int it is made of, which is not the
+// type an append into it may carry, and says nothing at all about a struct one,
+// where the declaration then recorded no element type of any sort.
+func (f *File) exprMakeElem(s *Scope, n Node) (kind Kind, hasKind bool, tn TypeNode, ok bool) {
 	ue, ok := f.soleUnaryExpr(n)
 	if !ok {
-		return 0, false
+		return 0, false, nil, false
 	}
 	var fac Node
 	facSet := false
@@ -14295,17 +14308,17 @@ func (f *File) exprMakeElemKind(s *Scope, n Node) (Kind, bool) {
 		case Factor:
 			fac, facSet = c, true
 		case UnaryOp:
-			return 0, false // "&make(...)" is not a form the language takes
+			return 0, false, nil, false // "&make(...)" is not a form the language takes
 		}
 	}
 	if !facSet {
-		return 0, false
+		return 0, false, nil, false
 	}
 	// make is deliberately not registered in the universe, so resolving to nothing
 	// is what identifies the builtin -- a user function of the same name resolves,
 	// and its result is not a slice of anything this can read.
 	if root, suffixed, ok := f.factorRoot(fac); !ok || !suffixed || root.Src() != "make" || s.find("make") != nil {
-		return 0, false
+		return 0, false, nil, false
 	}
 	var suffix Node
 	for c := range it(fac.ast) {
@@ -14315,7 +14328,7 @@ func (f *File) exprMakeElemKind(s *Scope, n Node) (Kind, bool) {
 	}
 	argList, _, isCall := f.callInfo(suffix)
 	if !isCall || !f.isSliceMake(s, suffix) {
-		return 0, false
+		return 0, false, nil, false
 	}
 	for a := range it(argList.ast) {
 		if a.sym != Expression {
@@ -14324,12 +14337,14 @@ func (f *File) exprMakeElemKind(s *Scope, n Node) (Kind, bool) {
 		// "[" "]" Type: the type argument's own Factor carries the element type.
 		for c := range it(unwrapSingle(a).ast) {
 			if c.sym == Type {
-				return f.typeKind(s, f.typ(s, c))
+				tn := f.typ(s, c)
+				k, hasKind := f.typeKind(s, tn)
+				return k, hasKind, tn, tn != nil
 			}
 		}
-		return 0, false
+		return 0, false, nil, false
 	}
-	return 0, false
+	return 0, false, nil, false
 }
 
 // checkCall resolves the names in a call's arguments and, for a direct call
@@ -14689,10 +14704,23 @@ func (f *File) checkAppendValues(s *Scope, argList Node, args []Node) {
 		return
 	}
 	d, ok := s.find(id.Src()).(*VarDeclaration)
-	if !ok || d.elemTypeNode == nil {
+	if !ok {
 		return
 	}
-	p := f.resultType(s, d.elemTypeNode)
+	var p retResult
+	switch {
+	case d.elemTypeNode != nil:
+		p = f.resultType(s, d.elemTypeNode)
+	case d.hasElemKind:
+		// A slice declared by `:=` from a make or a literal records its element as
+		// a KIND and has no type node to read: `s := make([]int, 0, 2)` then
+		// `append(s, "x")` went unchecked all the way to the C compiler, which
+		// reported a string where the generated helper wanted an int. The written
+		// form, `var s []int = ...`, was checked all along.
+		p = retResult{name: kindName(d.elemKind), kind: d.elemKind, known: true}
+	default:
+		return
+	}
 	_, elemIsIface := f.interfaceMethodsNamed(s, p.name)
 	for _, v := range args[1:] {
 		// An INTERFACE element: the same question an assignment asks, which
@@ -14711,14 +14739,35 @@ func (f *File) checkAppendValues(s *Scope, argList Node, args []Node) {
 			}
 			continue
 		}
+		f.checkNilAssignable(s, p, v, "append")
 		if !p.known {
+			// A named element with no predeclared kind of its own -- a struct, an
+			// array, a defined type over either. A value that HAS a kind is none of
+			// those, which is the one thing that can be said without resolving the
+			// element's shape: `append(ps, 5)` for a []P went in unchecked.
+			if k, known := f.exprType(s, v); known && p.name != "" && k != UntypedNil {
+				f.err(f.tok(v.Pos()).Position(), "cannot use %s of type %s as type %s in append",
+					f.exprSource(v), kindName(k), p.name)
+			}
 			continue
 		}
-		f.checkNilAssignable(s, p, v, "append")
 		if k, known := f.exprType(s, v); known && !assignableKind(p.kind, k) {
 			f.err(f.tok(v.Pos()).Position(), "cannot use %s of type %s as type %s in append",
 				f.exprSource(v), kindName(k), p.name)
 			continue
+		}
+		// A value whose type is a NAME rather than a Kind -- a struct, a slice, a
+		// defined type over either -- which the Kind question above answers nothing
+		// about: `append(ints, P{1})` and `append(ints, someSlice)` reached the C
+		// compiler. Asked only of an unqualified name against a named element, and
+		// through `type A = B` on both sides, so the only thing reported is two
+		// names that are two types.
+		if nm, ql, ptr, ok := f.exprNamedType(s, v); ok && !ptr && !ql.IsValid() && p.name != "" {
+			have, _ := f.canonicalType(s, nm, ql)
+			if want := f.canonicalName(s, p.name); have.IsValid() && have.Src() != want {
+				f.err(f.tok(v.Pos()).Position(), "cannot use %s (variable of type %s) as %s value in append",
+					f.exprSource(v), have.Src(), p.name)
+			}
 		}
 		// A constant appended must fit the element; an untyped shift takes its type.
 		f.checkValueOverflow(s, p, v)

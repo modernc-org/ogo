@@ -1,0 +1,80 @@
+// What an append WRITES is checked against the element type of the slice it writes
+// into. It always was for a slice whose type is written out, `var xs []int`, and was
+// not for one declared from its initializer -- `xs := make([]int, 0, 2)` records the
+// element as a KIND and had no type node to read, so the check returned before
+// asking anything and `append(xs, "x")` reached the C compiler, which reported a
+// string where the generated helper wanted an int.
+//
+// A value whose type is a NAME rather than a predeclared kind -- a struct, a defined
+// type over one, a defined type over an int -- is asked about too: the kind question
+// answers nothing for those, so they went in unchecked whichever way the slice was
+// declared.
+
+type P struct{ x int }
+
+type D int
+
+var st P
+
+var n int = 3
+
+func inferred() {
+	xs := make([]int, 0, 4)
+	// ERROR "cannot use "x" of type string as type int in append"
+	xs = append(xs, "x")
+	// ERROR "cannot use true of type bool as type int in append"
+	xs = append(xs, true)
+	// ERROR "constant 1.5 truncated to int"
+	xs = append(xs, 1.5)
+	// ERROR "cannot use P\{1\} \(variable of type P\) as int value in append"
+	xs = append(xs, P{1})
+	// ERROR "cannot use st \(variable of type P\) as int value in append"
+	xs = append(xs, st)
+	// ERROR "cannot use D\(4\) \(variable of type D\) as int value in append"
+	xs = append(xs, D(4))
+	// What belongs in it goes in unremarked: a constant, a variable, an expression.
+	xs = append(xs, 7)
+	xs = append(xs, n)
+	xs = append(xs, n*2+1)
+	println(len(xs))
+}
+
+// The written form, which was checked all along, and stays so.
+func written() {
+	var xs []int = make([]int, 0, 2)
+	// ERROR "cannot use "x" of type string as type int in append"
+	xs = append(xs, "x")
+	xs = append(xs, 1)
+	println(len(xs))
+}
+
+// A slice of a DEFINED type takes values of that type, and the constants that
+// convert to it -- the element is D, not the int D is made of.
+func defined() {
+	ds := make([]D, 0, 4)
+	ds = append(ds, D(5))
+	ds = append(ds, 6)
+	// ERROR "cannot use n \(variable of type int\) as D value in append"
+	ds = append(ds, n)
+	println(len(ds))
+}
+
+// And a slice of structs takes structs, by literal, by variable and by call.
+func mk() P { return P{7} }
+
+func structs() {
+	ps := make([]P, 0, 4)
+	ps = append(ps, P{1})
+	ps = append(ps, st)
+	ps = append(ps, mk())
+	// ERROR "cannot use 5 of type int as type P in append"
+	ps = append(ps, 5)
+	println(len(ps))
+}
+
+func main() {
+	inferred()
+	written()
+	defined()
+	structs()
+}
