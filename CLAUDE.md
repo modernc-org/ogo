@@ -661,7 +661,14 @@ or a struct field"); a chain after a slice step of an ARRAY OF ARRAYS,
 the walk would bind the row to a temporary, and C has no array value to bind (the
 slice of slices' `rows[0][1:][1]` works, and a NAMED string constant's
 `hexdigits[1:][0]` since 2026-09-20, which reads the folded value where the
-literal's form reads its own). No grammar gap is
+literal's form reads its own); a LOCAL type that shadows a package type an EARLIER
+local type named -- `type A struct{ n int }` at package level, then in a function
+`type B struct{ A }` and after it `type A struct{ B }` -- which is legal, B's A being
+the package's, and is refused ("type A has no field n"): the checker's scopes answer
+a name with whatever the block holds when it is ASKED, not with what it held where
+the name was written, so every later question about B's embedding finds the local A
+(it was a stack overflow of the compiler until 2026-09-20; the emitter, lowering in
+order, reads it right). No grammar gap is
 known: the ones recorded before all closed that day, and two nobody had recorded --
 HeaderFactor had dropped the suffix from three of Factor's alternatives, and a string
 literal took none at all, `"0123456789abcdef"[n&15]`. Two more surfaced the next day

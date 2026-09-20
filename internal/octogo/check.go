@@ -8535,6 +8535,18 @@ func (f *File) structFields(s *Scope, typeName Token) (map[string]bool, bool) {
 // structFieldsNamed is structFields keyed by the name as written, which may be
 // another package's `lib.Leaf`.
 func (f *File) structFieldsNamed(s *Scope, name string) (map[string]bool, bool) {
+	return f.structFieldsSeen(s, name, map[*TypeDeclaration]bool{})
+}
+
+// structFieldsSeen is structFieldsNamed remembering the declarations it has been
+// through. An embedding may lead back to where it started and be legal: `type Chain
+// struct{ *Chain; n int }` embeds a POINTER to itself, a reference of fixed size, and
+// what Chain promotes through it is what Chain has. The walk followed it without
+// end -- a stack overflow of the compiler at the first field read of such a type.
+// The other walks over embeddings are breadth-first to a fixed depth and end by
+// themselves; this one is depth-first and needs to be told. By DECLARATION and not
+// by name: a name means different types in different scopes.
+func (f *File) structFieldsSeen(s *Scope, name string, seen map[*TypeDeclaration]bool) (map[string]bool, bool) {
 	td, home, ok := f.typeDeclNamed(s, name)
 	if !ok || td.TypeSpec == nil {
 		return nil, false
@@ -8543,6 +8555,10 @@ func (f *File) structFieldsNamed(s *Scope, name string) (map[string]bool, bool) 
 	if !ok {
 		return nil, false
 	}
+	if seen[td] {
+		return map[string]bool{}, true // been here: it adds no name that is not there already
+	}
+	seen[td] = true
 	fields := map[string]bool{}
 	for _, fld := range st.Fields {
 		for _, nm := range fld.Names {
@@ -8557,7 +8573,7 @@ func (f *File) structFieldsNamed(s *Scope, name string) (map[string]bool, bool) 
 		// imported type embeds is a name of its own package, which this one need not
 		// have and may have differently.
 		if emb, isEmb := embeddedTypeName(fld); isEmb {
-			inner, okInner := f.structFieldsNamed(home, emb)
+			inner, okInner := f.structFieldsSeen(home, emb, seen)
 			if !okInner {
 				continue
 			}

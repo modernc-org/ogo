@@ -33673,6 +33673,61 @@ func main() {
 }
 `,
 		want: "7 18 3 2 9\n3 18 101 -99\n1233345\n",
+	}, {
+		// A struct that embeds a POINTER to itself, which is legal -- a reference of
+		// fixed size -- and what it promotes through the pointer is what it has. The
+		// checker's walk collecting a struct's field names followed the embedding
+		// depth-first with nothing to stop it: the first field read of such a type,
+		// `p.Chain`, was a stack overflow of the compiler. Beside it a struct holding
+		// a SLICE of itself, the other legal way for a type to hold its own kind.
+		name: "a struct embedding a pointer to itself",
+		src: `var calls int
+
+type Chain struct {
+	*Chain
+	n int
+}
+
+func (c *Chain) Depth() int {
+	calls = calls*10 + 1
+	d := 0
+	for p := c; p != nil; p = p.Chain {
+		d++
+	}
+	return d
+}
+
+type Tree struct {
+	kids []Tree
+	v    int
+}
+
+func (t *Tree) Sum() int {
+	calls = calls*10 + 2
+	s := t.v
+	for i := range t.kids {
+		s += t.kids[i].Sum()
+	}
+	return s
+}
+
+var a, b, c Chain
+var leaves [2]Tree
+var root Tree
+
+func main() {
+	a.n, b.n, c.n = 1, 2, 3
+	a.Chain = &b
+	b.Chain = &c
+	println(a.Depth(), b.Depth(), c.Depth())
+	println(a.n, a.Chain.n, a.Chain.Chain.n)
+	leaves[0].v, leaves[1].v = 10, 20
+	root.v = 1
+	root.kids = leaves[:]
+	println(root.Sum(), len(root.kids), calls)
+}
+`,
+		want: "3 2 1\n1 2 3\n31 2 111222\n",
 	}}
 
 // TestEmitCRun compiles emitted C with a host compiler and runs it, checking what

@@ -401,6 +401,13 @@ shipped section tells a reader on that version that they have behaviour they do 
 
 ### Fixed
 
+- **A struct may embed a pointer to ITSELF.** `type Chain struct{ *Chain; n int }`
+  is legal -- the pointer is a reference of fixed size -- and the first field read
+  of one, `p.Chain`, was a stack overflow of the compiler: the walk collecting the
+  names a struct has and promotes followed the embedding depth-first with nothing
+  to stop it. It remembers the declarations it has been through. The other walks
+  over embeddings are breadth-first to a fixed depth and always ended.
+
 - **A function literal in a PACKAGE variable's initializer no longer crashes the
   compiler.** `var f = func() int { x := 1; x = 2; return x }` was "panic:
   assignment to entry in nil map": the checker keeps a body's bookkeeping per

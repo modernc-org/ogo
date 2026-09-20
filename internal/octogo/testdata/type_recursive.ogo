@@ -27,6 +27,16 @@ type Chain struct {
 	n int
 }
 
+// Reading a field of one walks what it promotes, which leads back to itself: the
+// walk has to end (it was a stack overflow of the checker until 2026-09-20).
+func depth(c *Chain) int {
+	d := 0
+	for p := c; p != nil; p = p.Chain {
+		d += p.n
+	}
+	return d
+}
+
 // Forward and mutual references: Edge names Vertex before it is declared, and
 // Vertex names Edge back.
 type Edge struct {
