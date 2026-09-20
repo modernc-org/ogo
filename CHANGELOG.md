@@ -27,9 +27,10 @@ shipped section tells a reader on that version that they have behaviour they do 
   packages the same hole let a literal fill another package's UNEXPORTED field,
   `[2]lib.Point{{4, 5, "u"}}`, which Go refuses and which the written
   `lib.Point{4, 5, "u"}` was refused for here as well. A struct FIELD's value is
-  the same shape, `Outer{"t", {1, 2, 3}}`, and was let through the same way. Found
-  by a two-package probe, which the harness could not build until `dumpc` learnt to
-  read `ogo.mod`.
+  the same shape, `Outer{"t", {1, 2, 3}}`, and was let through the same way, as was
+  a literal elided TWICE, `[2][2]P{{{1, 2, 3}}}`, whose own element type is an
+  array or a slice. Found by a two-package probe, which the harness could not build
+  until `dumpc` learnt to read `ogo.mod`.
 
 - **A named string constant may be sliced and then read**, `hexdigits[1:][0]`. A
   constant never becomes a variable, so there is nothing for the chain walk to
