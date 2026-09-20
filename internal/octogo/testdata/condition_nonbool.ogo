@@ -1,0 +1,112 @@
+// A condition is a bool, and so is an operand of !, && and ||. What has no Kind --
+// nil, a pointer, a function, a channel, a slice, an array, a struct, an interface --
+// was asked nothing until 2026-09-20, the question being put to a Kind. C has a truth
+// value for most of them, so `if p {` compiled and ran as C means it, and the target's
+// compiler builds a struct used as a condition without a word.
+
+type P struct{ x int }
+
+type W struct {
+	p  *P
+	f  func() int
+	v  P
+	ok bool
+}
+
+type I interface{ M() int }
+
+func (p *P) M() int { return p.x }
+
+func one() int { return 1 }
+
+func getp() *P { return &gp }
+
+func give() P { return gp }
+
+func getf() func() int { return one }
+
+var gp P
+var w W
+var arr [2]int
+var ptrs [2]*P
+var ch chan int
+var n int
+
+func main() {
+	p := &gp
+	q := &n
+	f := one
+	s := arr[:]
+	var i I = &gp
+	// ERROR "non-bool used as if condition: p is a pointer"
+	if p {
+	}
+	// ERROR "non-bool used as if condition: .p. is a pointer"
+	if (p) {
+	}
+	// ERROR "non-bool used as if condition: q is a pointer"
+	if q {
+	}
+	// ERROR "non-bool used as if condition: &gp is a pointer"
+	if &gp {
+	}
+	// ERROR "non-bool used as if condition: f is a function"
+	if f {
+	}
+	// ERROR "non-bool used as if condition: one is a function"
+	if one {
+	}
+	// ERROR "non-bool used as if condition: ch is a channel"
+	if ch {
+	}
+	// ERROR "non-bool used as if condition: s is an array or a slice"
+	if s {
+	}
+	// ERROR "non-bool used as if condition: arr is an array"
+	if arr {
+	}
+	// ERROR "non-bool used as if condition: gp is a struct"
+	if gp {
+	}
+	// ERROR "non-bool used as if condition: i is an interface"
+	if i {
+	}
+	// ERROR "non-bool used as if condition: nil is no bool"
+	if nil {
+	}
+	// ERROR "non-bool used as if condition: w.p is a pointer"
+	if w.p {
+	}
+	// ERROR "non-bool used as if condition: w.f is a function"
+	if w.f {
+	}
+	// ERROR "non-bool used as if condition: w.v is a struct"
+	if w.v {
+	}
+	// ERROR "non-bool used as if condition: ptrs.0. is a pointer"
+	if ptrs[0] {
+	}
+	// ERROR "non-bool used as if condition: getp.. is a pointer"
+	if getp() {
+	}
+	// ERROR "non-bool used as if condition: give.. is a struct"
+	if give() {
+	}
+	// ERROR "non-bool used as if condition: getf.. is a function"
+	if getf() {
+	}
+	// ERROR "non-bool used as for condition: p is a pointer"
+	for p {
+		break
+	}
+	// ERROR "operator ! not defined on p: it is a pointer"
+	println(!p)
+	// ERROR "operand of a logical operator must be bool, and p is a pointer"
+	println(p && true)
+	// ERROR "operand of a logical operator must be bool, and f is a function"
+	println(f || false)
+
+	// What Go writes instead, and a bool reached each of those ways.
+	if p != nil && q != nil && f != nil && ch == nil && i != nil && w.ok && getp() != nil && len(s) == 2 {
+	}
+}

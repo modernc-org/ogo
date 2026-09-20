@@ -3245,7 +3245,193 @@ func (f *File) checkCondition(s *Scope, kw string, n Node) {
 	f.checkNames(s, n)
 	if k, ok := f.exprType(s, n); ok && !isBoolKind(k) {
 		f.err(f.tok(n.Pos()).Position(), "non-bool used as %s condition", kw)
+		return
 	}
+	if what, known := f.nonBoolOperand(s, n); known {
+		f.err(f.tok(n.Pos()).Position(), "non-bool used as %s condition: %s is %s", kw, f.exprSource(n), what)
+	}
+}
+
+// nonBoolOperand names what an operand IS when it has no Kind to say so with and is
+// known all the same not to be a bool: nil, a pointer, a function, a channel, a
+// slice, an array, a struct, an interface.
+//
+// Every boolean context -- the condition of an if and of a for, an operand of !, &&
+// and || -- asked exprType, which answers with a Kind, and let pass what has none. C
+// has a truth value for most of them, so `if p {` for a pointer, `if f {` for a
+// function and `!ch` for a channel compiled and ran as C means them, which is a
+// language Go is not; and the target's compiler builds a struct used as a condition
+// without a word. Twenty-six shapes of it, every one taken.
+//
+// It answers only for what it knows: a name whose declaration says what it holds,
+// an address, a function literal, a field or a call's result whose type is written
+// -- and any of those in parentheses, which is how a C programmer writes it, `if (p)
+// {`. Silence is not "a bool": an operand nothing here can type is left alone.
+func (f *File) nonBoolOperand(s *Scope, n Node) (string, bool) {
+	for range 8 { // `((p))`
+		inner, ok := f.parenthesized(n)
+		if !ok {
+			break
+		}
+		n = inner
+	}
+	if f.isNilOperand(n) {
+		return "no bool", true
+	}
+	if isPtr, known := f.exprPointerness(s, n); known && isPtr {
+		return "a pointer", true
+	}
+	// A call of a call, `pick()()`, is what the SECOND call returns, and the helpers
+	// below read the first: say nothing about it.
+	if f.callSuffixes(n) > 1 {
+		return "", false
+	}
+	if f.exprFuncSig(s, n) != nil {
+		return "a function", true
+	}
+	if id, ok := f.exprSoleIdent(n); ok {
+		switch d := s.find(id.Src()).(type) {
+		case *FuncDeclaration:
+			return "a function", true
+		case *VarDeclaration:
+			switch {
+			case d.isFunc:
+				return "a function", true
+			case d.isChan:
+				return "a channel", true
+			case d.declType != nil:
+				return f.nonBoolType(d.declScope, d.declType)
+			case d.hasKind:
+				return "", false // exprType's to answer
+			case d.hasElemKind || d.elemTypeNode != nil || d.elemTypeName.IsValid():
+				return "an array or a slice", true
+			case d.typeName.IsValid():
+				return f.nonBoolNamed(s, d.declaredTypeName())
+			}
+		}
+		return "", false
+	}
+	if head, field, ok := f.exprFieldRead(n); ok {
+		return f.nonBoolType(s, f.fieldTypeNode(s, head, field))
+	}
+	if id, ok := f.exprIndexedIdent(n); ok {
+		// `ptrs[0]`: what the elements are, where that was recorded.
+		if d, ok := s.find(id.Src()).(*VarDeclaration); ok && d.elemTypeNode != nil {
+			in := d.declScope
+			if in == nil {
+				in = s
+			}
+			return f.nonBoolType(in, d.elemTypeNode)
+		}
+		return "", false
+	}
+	if callee, ok := f.exprCallee(n); ok {
+		var sig *SignatureNode
+		switch d := s.find(callee.Src()).(type) {
+		case *FuncDeclaration:
+			if d.FuncDecl != nil && d.FuncDecl.Type != nil && d.FuncDecl.Type.Receiver == nil {
+				sig = d.FuncDecl.Type.Signature
+			}
+		case *VarDeclaration:
+			sig = d.funcSig
+		}
+		if sig != nil && sig.Results != nil && len(sig.Results.List) == 1 && len(sig.Results.List[0].Names) <= 1 {
+			return f.nonBoolType(s, sig.Results.List[0].TypeNode)
+		}
+	}
+	return "", false
+}
+
+// callSuffixes counts the calls an operand makes along its own chain, `f()()` being
+// two; the arguments of a call are not looked into.
+func (f *File) callSuffixes(n Node) (count int) {
+	var walk func(ast []int32)
+	walk = func(ast []int32) {
+		for c := range it(ast) {
+			switch c.sym {
+			case Expression, SimpleExpr, Term, UnaryExpr, Factor, FactorSuffix:
+				walk(c.ast)
+			case CallSuffix:
+				count++
+			}
+		}
+	}
+	walk(n.ast)
+	return count
+}
+
+// parenthesized is the expression inside an operand that is one in parentheses and
+// nothing else, `(p)`.
+func (f *File) parenthesized(n Node) (Node, bool) {
+	fac, ok := f.soleFactorOf(n)
+	if !ok {
+		return Node{}, false
+	}
+	kids := slices.Collect(it(fac.ast))
+	if len(kids) == 3 && kids[0].sym == 0 && f.ch(kids[0].tok) == LPAREN && kids[1].sym == Expression &&
+		kids[2].sym == 0 && f.ch(kids[2].tok) == RPAREN {
+		return kids[1], true
+	}
+	return Node{}, false
+}
+
+// nonBoolType is nonBoolOperand's answer for a WRITTEN type: what it is, when it is
+// a type with no Kind. A type that has one -- a bool among them, and every defined
+// type over a scalar -- is exprType's to answer for.
+func (f *File) nonBoolType(s *Scope, tn TypeNode) (string, bool) {
+	if tn == nil || s == nil {
+		return "", false
+	}
+	if _, hasKind := f.typeKind(s, tn); hasKind {
+		return "", false
+	}
+	switch x := tn.(type) {
+	case *TypeNodePointer:
+		return "a pointer", true
+	case *TypeNodeSlice:
+		return "a slice", true
+	case *TypeNodeArray:
+		return "an array", true
+	case *TypeNodeStruct:
+		return "a struct", true
+	case *TypeNodeChan:
+		return "a channel", true
+	case *TypeNodeInterface:
+		return "an interface", true
+	case *FunctionType:
+		return "a function", true
+	case *TypeNodeIdent:
+		name := x.Name.Src()
+		if x.Qualifier.IsValid() {
+			name = x.Qualifier.Src() + "." + name
+		}
+		return f.nonBoolNamed(s, name)
+	}
+	return "", false
+}
+
+// nonBoolNamed is nonBoolType for a type known by its NAME, through whatever chain
+// of definitions.
+func (f *File) nonBoolNamed(s *Scope, name string) (string, bool) {
+	switch f.kindlessCategory(s, name) {
+	case "struct":
+		return "a struct", true
+	case "array":
+		return "an array", true
+	case "slice":
+		return "a slice", true
+	case "pointer":
+		return "a pointer", true
+	case "chan":
+		return "a channel", true
+	}
+	if _, isIface := f.interfaceMethodsNamed(s, name); isIface {
+		return "an interface", true
+	}
+	if td, _, ok := f.typeDeclNamed(s, name); ok && td.TypeSpec != nil && f.funcSig(s, td.TypeSpec.TypeNode) != nil {
+		return "a function", true
+	}
+	return "", false
 }
 
 // operandsType determines the Kind of a SimpleExpr or Term -- a flat run of
@@ -10591,6 +10777,8 @@ func (f *File) checkComparison(s *Scope, n Node) {
 			operand := operands[groupStart]
 			if k, ok := f.exprType(s, operand); ok && kindCategory(k) != catBool {
 				f.err(f.tok(operand.Pos()).Position(), "invalid operation: operand of a logical operator must be bool, got %s", kindName(k))
+			} else if what, known := f.nonBoolOperand(s, operand); !ok && known {
+				f.err(f.tok(operand.Pos()).Position(), "invalid operation: operand of a logical operator must be bool, and %s is %s", f.exprSource(operand), what)
 			}
 		}
 	}
@@ -11625,6 +11813,16 @@ func (f *File) checkUnaryExpr(s *Scope, n Node) {
 		return
 	}
 	k, ok := f.exprType(s, fac)
+	if !ok {
+		// No Kind, and known for what it is all the same: `!p` for a pointer and `-f`
+		// for a function are C, where both have a value.
+		if what, known := f.nonBoolOperand(s, fac); known {
+			inner := ops[len(ops)-1]
+			f.err(f.tok(inner.Pos()).Position(), "invalid operation: operator %s not defined on %s: it is %s",
+				f.tok(inner.Pos()).Src(), f.exprSource(fac), what)
+		}
+		return
+	}
 	for i := len(ops) - 1; i >= 0 && ok; i-- {
 		k, ok = f.checkUnaryOp(s, ops[i], k)
 	}

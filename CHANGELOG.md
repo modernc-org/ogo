@@ -20,6 +20,17 @@ shipped section tells a reader on that version that they have behaviour they do 
 
 ### Language
 
+- **A condition is a bool, whatever else it might have been.** `if p {` for a
+  pointer, `if f {` for a function, `for ch {`, `!p`, `p && ok` -- and a slice, an
+  array, a struct, an interface and nil in the same places -- were all taken: every
+  boolean context put its question to a Kind, and what has none was asked nothing.
+  C has a truth value for most of them, so the program compiled and ran as C means
+  it, which is a language Go is not; and the target's compiler builds a struct used
+  as a condition without a word. Refused now for a name, an address, a literal, a
+  field, an element and a call's result, in parentheses or not -- `if (p) {` being
+  how a C programmer writes it. Twenty-eight shapes against Go: twenty-seven agree,
+  and `if *p {` of a struct pointee is the one left.
+
 - **A function LITERAL is a function value, and the variable it is bound to has its
   type.** `f := func(n int) int { ... }` is how nearly every literal is used, and f
   had no type at all to the checker: `f("x")`, `f(1, 2)`, `f()`, a second literal of
