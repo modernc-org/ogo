@@ -33526,6 +33526,43 @@ func main() {
 }
 `,
 		want: "1 8 2\n1 9\n4 4 5\n30 30 40\n101 104\n20\n",
+	}, {
+		// A PARENTHESISED head as an assignment TARGET, the other half of the
+		// cluster: `(p).x = 5`, `(&p).x = 3` and the same through an index, an
+		// increment and a compound assignment. Each was "only assignment to a simple
+		// variable is supported yet" -- the target path looks for a bare name in the
+		// head, and the only identifier in these is inside the parentheses.
+		//
+		// A target cannot be bound to a temporary the way a READ is: a copy is not
+		// where a store goes. It is PEELED instead -- Go reads `(&X).f` as `X.f` --
+		// so the base is the variable and the steps apply to it as they do without
+		// the parentheses. A head with no step after it is left alone: `(&p) = q`
+		// has nothing addressable on its left.
+		name: "a parenthesised head as an assignment target",
+		src: `type P struct {
+	x  int
+	xs [3]int
+}
+
+var p P
+
+var arr [4]int
+
+var ps [2]P
+
+func main() {
+	(p).x = 5
+	(&p).x = 3
+	(&p).xs[1] = 9
+	(p).xs[2] = 8
+	(arr)[1] = 7
+	(ps)[1].x = 6
+	(&p).x++
+	(&p).xs[1] += 2
+	println(p.x, p.xs[1], p.xs[2], arr[1], ps[1].x)
+}
+`,
+		want: "4 11 8 7 6\n",
 	}}
 
 // TestEmitCRun compiles emitted C with a host compiler and runs it, checking what

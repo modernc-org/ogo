@@ -27,8 +27,12 @@ shipped section tells a reader on that version that they have behaviour they do 
   and the steps read that -- the move a struct literal and a string literal read
   through a suffix already made. A struct head is a VALUE there, so a slice step on
   one is refused as Go refuses it ("cannot slice unaddressable value"). A
-  parenthesised TARGET, `(p).x = 5`, is still refused: a copy is not where a store
-  goes.
+  parenthesised head is a TARGET too -- `(p).x = 5`, `(&p).x = 3`, through an index,
+  an increment and a compound assignment -- but PEELED rather than bound, a copy not
+  being where a store goes: Go reads `(&X).f` as `X.f`. A head with no step after it
+  is left alone, `(&p) = q` having nothing addressable on its left. Still refused:
+  a conversion as a target, `(*T)(p).x = 5`, and the send `(&bus.ports[1]).ch <- 5`,
+  whose head is a chain rather than a name.
 
 - **`fallthrough` is refused in a type switch, and a channel's unnamed element type
   is checked on a send.** Go refuses the keyword in a type switch outright -- the

@@ -30724,6 +30724,28 @@ func (e *emitter) parenRecvHead(head Node, suffix []Node) (string, bool) {
 	return e.exprIdent(e.unparenExpr(kids[1].ast))
 }
 
+// parenTargetBase answers the variable a parenthesised assignment HEAD names, for
+// the two forms a store may be written through: `(p).x = v` and `(&p).x = v`. A
+// step has to follow, which is what tells them from `(&p) = q`, whose left side is
+// an address and not a place.
+//
+// The dereference form, `(*p).x = v`, has its own path above (emitDerefAssign): the
+// name there is the POINTER, and the store goes through it rather than to it.
+func (e *emitter) parenTargetBase(head Node, postfix []Node) (string, bool) {
+	if len(postfix) < 2 || postfix[0].sym != Selector && postfix[0].sym != Index {
+		return "", false
+	}
+	if name, ok := e.addrHead(head); ok {
+		return name, true
+	}
+	kids := slices.Collect(it(head.ast))
+	if len(kids) != 3 || kids[0].sym != 0 || e.f.ch(kids[0].tok) != LPAREN ||
+		kids[2].sym != 0 || e.f.ch(kids[2].tok) != RPAREN || kids[1].sym != Expression {
+		return "", false
+	}
+	return e.exprIdent(e.unparenExpr(kids[1].ast))
+}
+
 // addrHead is derefHead for a parenthesised ADDRESS, `(&v).m()` as a statement. The
 // caller has already established that a call follows, which is the only suffix this
 // form is admitted with -- see factorAddrCall for why the general suffix is not.
@@ -30985,6 +31007,14 @@ func (e *emitter) emitAssignment(head Node, postfix []Node) {
 		return
 	}
 	base := e.soleIdent(head.ast)
+	if base == "" {
+		// A PARENTHESISED head naming a variable, with a step after it: `(p).x = 5`
+		// and `(&p).x = 3`. Go reads both as the variable's field -- `(&X).f` is
+		// `X.f` -- so the base is that name and the steps apply to it exactly as
+		// they do without the parentheses. A head with no step after it is not one
+		// of these: `(&p) = q` has nothing addressable on its left.
+		base, _ = e.parenTargetBase(head, postfix)
+	}
 	if base == "" {
 		e.fail("only assignment to a simple variable is supported yet")
 		return

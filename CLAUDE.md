@@ -585,9 +585,11 @@ declared structs of its fields (its typedef names the first, aliasAnonStructs), 
 Go admits and the target's compiler refuses; printf's `%v` of a
 struct or an interface under a width (an interface value prints what it holds since
 2026-09-20 -- `&{1 2}` for a struct pointer as the argument, its address or its
-String() at depth, ifaceHeldPrintC -- but the chain writing it cannot pad); a PARENTHESISED HEAD as a TARGET, which cannot be bound to a
-temporary the way a read is: `(p).x = 5`, `(&p).x = 3`, a conversion's `(*T)(p).x =
-5` and `*(*T)(p) = 5`, and the send `(&bus.ports[1]).ch <- 5`. READING through one
+String() at depth, ifaceHeldPrintC -- but the chain writing it cannot pad); a PARENTHESISED HEAD as a TARGET where peeling does not reach it:
+a conversion's `(*T)(p).x = 5` and `*(*T)(p) = 5`, and the send
+`(&bus.ports[1]).ch <- 5`, whose head is a CHAIN rather than a name (`(p).x = 5`,
+`(&p).x = 3` and the same through an index, an increment and a compound assignment
+work since 2026-09-20, parenTargetBase). READING through one
 works since 2026-09-20 (`emitParenChain` binds the head and walks the steps from
 it): `(&p).x`, `(get()).x`, `(*getp()).x`, `(getq()).a`, `(arr[1:])[1]`,
 `("hello")[1:]` and `(&arr)[1]`, beside the `(*p).x`, `(a)[i]`, `(v).m()`,
