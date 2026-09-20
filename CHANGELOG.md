@@ -1129,7 +1129,10 @@ program handed out a reference to storage that was gone by the time it was read.
   `copy` with its count, `clear`, and the three-index reslice `s[lo:hi:mx]` whose
   capacity the third bound sets -- on a fresh slice of its own, the reslice being
   read from only, since it shares a backing array the generation-time VM does not
-  model. The first corpus run of those found the `copy` refusal fixed above.
+  model. The first corpus run of those found the `copy` refusal fixed above. And
+  the SPREAD append, `d = append(d, s...)`, which is one memmove in the emitter
+  rather than a loop -- the self-append `append(s, s...)` included, the overlap the
+  memmove exists for.
 - Function semantics against Go on the host and a P2-EDGE: variadic calls with
   none, several and a spread slice the callee writes through, a two-result call
   forwarded as another's arguments, named results returned bare and swapped, a

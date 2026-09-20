@@ -226,6 +226,9 @@ var generatedConstructs = []struct {
 	{"three-index reslice", `\n\s*vw_\d+ := cp_\d+\[\d+:\d+:\d+\]`},
 	{"cap of a three-index reslice", `\^ cap\(vw_\d+\)`},
 	{"clear of a slice", `\n\s*clear\(cp_\d+\)`},
+	// The SPREAD append, one memmove in the emitter rather than a loop -- which is
+	// what makes `append(s, s...)` right where the two overlap.
+	{"append spread", `= append\(s_\d+, s_\d+\.\.\.\)`},
 	// A TWO-dimensional array: the emitter has a shape of its own per dimension --
 	// an index that consumes one, a row that is still an array, a range whose
 	// variable is a row -- and every array generated before this was flat.

@@ -886,8 +886,17 @@ func (f *Fuzzer) genStatement(vm Machine, mem Memory) Node {
 		// the checksum-mutation filler is down to 0.05% and cannot pay for a
 		// construct that emits a dozen statements.
 		return f.genSliceOpsStmt(vm, mem)
+	case r < 0.788:
+		return f.genAppend(vm, mem) // 4.8% chance for an append
 	case r < 0.80:
-		return f.genAppend(vm, mem) // 6% chance for an append
+		// 1.2% for the SPREAD form, `append(d, s...)`, from the single-value append
+		// beside it: it is one memmove rather than a loop in the emitter, which is
+		// what makes `append(s, s...)` right where the two overlap, and every append
+		// generated before this appended one value. Twice the share of the
+		// equality statement for a construct that appears half as often: it needs a
+		// destination with room AND a source that fits in it, and falls back where
+		// there is none.
+		return f.genAppendSpread(vm, mem)
 	case r < 0.85:
 		return f.genStructDecl(vm, mem) // 5% chance for a struct declaration
 	case r < 0.91:
@@ -2482,6 +2491,55 @@ func (f *Fuzzer) genAppend(vm Machine, mem Memory) Node {
 	sv := mem.Load(sl.Name).(*SliceVal)
 	sv.Elems = append(sv.Elems, exprVal.(Int32))
 	return &AssignStmtNode{Lhs: sl.Name, Op: "=", Rhs: &AppendNode{Slice: sl.Name, Value: exprNode}}
+}
+
+// AppendSpreadNode is `append(d, s...)`, the form that appends a whole slice.
+type AppendSpreadNode struct{ Dst, Src string }
+
+func (n *AppendSpreadNode) Write(w io.Writer, indent int) {
+	fmt.Fprintf(w, "append(%s, %s...)", n.Dst, n.Src)
+}
+
+// genAppendSpread appends a whole slice to another, `d = append(d, s...)`. It has a
+// helper of its own in the emitter -- one memmove rather than a loop, which is also
+// what makes `append(s, s...)` right where two slices overlap -- and nothing
+// generated it: every append the fuzzer wrote appended ONE value.
+//
+// The destination must have room for every element of the source, the target having
+// no heap: an append past the backing array panics.
+func (f *Fuzzer) genAppendSpread(vm Machine, mem Memory) Node {
+	var dsts, srcs []*Symbol
+	for _, s := range f.CurrentEnv.GetSliceSymbols() {
+		sv := mem.Load(s.Name).(*SliceVal)
+		if len(sv.Elems) < sv.Cap {
+			dsts = append(dsts, s)
+		}
+		if len(sv.Elems) != 0 {
+			srcs = append(srcs, s)
+		}
+	}
+	if len(dsts) == 0 || len(srcs) == 0 {
+		return f.genChecksumMutation(vm, mem)
+	}
+	dst := dsts[f.Rand.Intn(len(dsts))]
+	dv := mem.Load(dst.Name).(*SliceVal)
+	// A source that fits, the destination included: `append(s, s...)` is legal Go
+	// and copies a region onto one that may run into it, which is the case the
+	// helper's memmove exists for.
+	var fits []*Symbol
+	for _, s := range srcs {
+		if len(mem.Load(s.Name).(*SliceVal).Elems) <= dv.Cap-len(dv.Elems) {
+			fits = append(fits, s)
+		}
+	}
+	if len(fits) == 0 {
+		return f.genChecksumMutation(vm, mem)
+	}
+	src := fits[f.Rand.Intn(len(fits))]
+	dst.Used, src.Used = true, true
+	sv := mem.Load(src.Name).(*SliceVal)
+	dv.Elems = append(dv.Elems, append([]Int32(nil), sv.Elems...)...)
+	return &AssignStmtNode{Lhs: dst.Name, Op: "=", Rhs: &AppendSpreadNode{Dst: dst.Name, Src: src.Name}}
 }
 
 // genCompoundAssign mutates an existing integer variable in place with a compound
