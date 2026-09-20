@@ -1,0 +1,57 @@
+// A TYPE switch takes no fallthrough: its clauses bind a name of a different type
+// each, so there is nothing for control to fall into, and Go refuses the keyword
+// outright. Here it was accepted and then DROPPED -- the clause simply ended, and
+// the program ran a case Go would not have let it write.
+//
+// And a channel whose ELEMENT has no basic kind and no name -- a func type, a slice,
+// an array written out -- took a value that has one: `ch <- 5` on a chan func() was
+// emitted as a send of 5 into a function pointer. The named element types are asked
+// about where they always were (implements, defined type); this is the rest, where
+// nothing was asked at all.
+
+type I interface{ M() int }
+
+type R struct{ w int }
+
+func (r *R) M() int { return r.w }
+
+var r R
+
+var fns chan func()
+
+var xs chan []int
+
+var ok1 chan int
+
+func typeSwitch() {
+	var i I = &r
+	switch i.(type) {
+	case *R:
+		// ERROR "cannot fallthrough in type switch"
+		fallthrough
+	default:
+	}
+	// An ordinary switch takes one, in any clause but the last.
+	n := 1
+	switch n {
+	case 1:
+		fallthrough
+	case 2:
+		n = 3
+	}
+	println(n)
+}
+
+func sends() {
+	// ERROR "cannot use 5 \(untyped int constant\) as func\(\) value in send"
+	fns <- 5
+	// ERROR "cannot use 7 \(untyped int constant\) as \[\]int value in send"
+	xs <- 7
+	// What the element IS goes through.
+	ok1 <- 5
+}
+
+func main() {
+	typeSwitch()
+	sends()
+}

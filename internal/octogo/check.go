@@ -4123,9 +4123,17 @@ func (f *File) caseInterfaceName(s *Scope, ex Node) (name, qual Token, ok bool) 
 // here, so that the statement walk does not report the same keyword twice.
 func (f *File) markClauseFallthroughs(n Node) {
 	var clauses []Node
+	typeSwitch := false
 	for c := range it(n.ast) {
-		if c.sym == CaseClause {
+		switch c.sym {
+		case CaseClause:
 			clauses = append(clauses, c)
+		case SwitchGuard:
+			// A TYPE switch takes no fallthrough at all: its clauses bind a name of
+			// a different type each, so there is nothing for control to fall into.
+			// Go says so; here the keyword was accepted and then DROPPED, the clause
+			// simply ending.
+			_, typeSwitch = f.typeSwitchParts(c)
 		}
 	}
 	for i, clause := range clauses {
@@ -4138,7 +4146,10 @@ func (f *File) markClauseFallthroughs(n Node) {
 			continue
 		}
 		f.clauseFallthrough[tok.Position().String()] = true
-		if i == len(clauses)-1 {
+		switch {
+		case typeSwitch:
+			f.err(tok.Position(), "cannot fallthrough in type switch")
+		case i == len(clauses)-1:
 			f.err(tok.Position(), "cannot fallthrough final case in switch")
 		}
 	}
@@ -6642,7 +6653,7 @@ func (f *File) checkSend(s *Scope, chTok Token, fields []Token, indexed, tailInd
 			return
 		}
 		f.checkSentChan(s, tn, valNode)
-		f.checkSentValue(s, elem, hasElem, f.chanElemTypeName(s, tn), valNode)
+		f.checkSentValue(s, tn, elem, hasElem, f.chanElemTypeName(s, tn), valNode)
 		return
 	}
 	d, ok := s.find(chTok.Src()).(*VarDeclaration)
@@ -6687,7 +6698,7 @@ func (f *File) checkSend(s *Scope, chTok Token, fields []Token, indexed, tailInd
 			return
 		}
 		f.checkSentChan(s, tn, valNode)
-		f.checkSentValue(s, elem, hasElem, f.chanElemTypeName(s, tn), valNode)
+		f.checkSentValue(s, tn, elem, hasElem, f.chanElemTypeName(s, tn), valNode)
 		return
 	}
 	// The channel may be a FIELD of the target rather than the target: `ports.tx <-
@@ -6732,7 +6743,7 @@ func (f *File) checkSend(s *Scope, chTok Token, fields []Token, indexed, tailInd
 		return
 	}
 	f.checkSentChan(s, dirTN, valNode)
-	f.checkSentValue(s, elem, hasElem, elemName, valNode)
+	f.checkSentValue(s, dirTN, elem, hasElem, elemName, valNode)
 }
 
 // checkSentChan asks of a channel sent on a channel of channels, tn, what an
@@ -6852,7 +6863,7 @@ func (f *File) indexedTypeNode(s *Scope, tn TypeNode) TypeNode {
 // ANOTHER package gets: they resolve the element's name, and the name belongs to the
 // callee's scope rather than to this one, where it would mean a different type or
 // nothing at all.
-func (f *File) checkSentValue(s *Scope, elem Kind, hasElem bool, elemName Token, valNode Node) {
+func (f *File) checkSentValue(s *Scope, chanTN TypeNode, elem Kind, hasElem bool, elemName Token, valNode Node) {
 	f.checkEscapeCross(s, valNode, true)
 	// A channel of interface type asks implements, as every other position a value
 	// meets a named type does. The element's Kind cannot answer it -- a named
@@ -6869,12 +6880,36 @@ func (f *File) checkSentValue(s *Scope, elem Kind, hasElem bool, elemName Token,
 		f.checkValueOverflow(s, sizedTarget(elem, Token{}), valNode)
 	}
 	vk, vok := f.exprType(s, valNode)
-	if !hasElem || !vok {
+	if !hasElem {
+		// An element with no Kind of its own and no NAME either -- a func type, a
+		// slice, an array, written out -- takes no value that HAS one. The named
+		// ones are asked about above (implements, defined type); this is the rest,
+		// where nothing was asked at all and `ch <- 5` on a chan func() was emitted
+		// as a send of 5 into a function pointer.
+		if vok && !elemName.IsValid() && kindCategory(vk) != catUnknown {
+			if name := f.chanElemString(s, chanTN); name != "" {
+				f.err(f.tok(valNode.Pos()).Position(), "cannot use %s (%s) as %s value in send",
+					f.exprSource(valNode), f.convOperandDesc(s, valNode, vk), name)
+			}
+		}
+		return
+	}
+	if !vok {
 		return
 	}
 	if !assignableKind(elem, vk) {
 		f.err(f.tok(valNode.Pos()).Position(), "cannot use %s of type %s as type %s in send", f.exprSource(valNode), kindName(vk), kindName(elem))
 	}
+}
+
+// chanElemString renders a channel's ELEMENT type as the program writes it, for a
+// message about what may be sent. Empty when the channel type is not in hand.
+func (f *File) chanElemString(s *Scope, chanTN TypeNode) string {
+	c, _ := f.chanTypeUnder(s, chanTN)
+	if c == nil {
+		return ""
+	}
+	return f.typeNodeString(c.TypeNode, false)
 }
 
 // importedVarDecl resolves `pkg.Name` to the variable an imported package declares,
@@ -6912,7 +6947,7 @@ func (f *File) checkSendTo(s *Scope, d *VarDeclaration, at Token, valNode Node) 
 	}
 
 	f.checkSentChan(s, d.chanTypeNode(), valNode)
-	f.checkSentValue(s, elem, hasElem, Token{}, valNode)
+	f.checkSentValue(s, d.chanTypeNode(), elem, hasElem, Token{}, valNode)
 }
 
 // checkRecvAssign checks a receive assignment "target = <-ch": when the right-

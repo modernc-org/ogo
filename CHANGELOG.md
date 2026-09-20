@@ -20,6 +20,14 @@ shipped section tells a reader on that version that they have behaviour they do 
 
 ### Language
 
+- **`fallthrough` is refused in a type switch, and a channel's unnamed element type
+  is checked on a send.** Go refuses the keyword in a type switch outright -- the
+  clauses bind a name of a different type each, so there is nothing to fall into --
+  where this accepted it and then DROPPED it, the clause simply ending. And a
+  channel whose element has no basic kind and no name, `chan func()` or `chan
+  []int`, took a value that has one: `ch <- 5` was emitted as a send of 5 into a
+  function pointer. Named element types were asked about all along.
+
 - **A constant's declared type has to hold its value's CLASS, and a struct does not
   convert to a number.** `const K string = 5` typed an int constant as a string and
   the print helper then read the number as a string header -- only the RANGE of a
