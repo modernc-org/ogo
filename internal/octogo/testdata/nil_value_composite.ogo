@@ -1,0 +1,77 @@
+// nil is a value of a pointer, a slice, a channel, a function and an interface, and
+// of nothing else. For what has a Kind -- `var n int = nil` -- that was always said;
+// a STRUCT and an ARRAY have none, the question was put to a Kind, and until
+// 2026-09-20 nil went into one in every place a value can go. gcc refuses each of
+// these; the target's compiler builds them, storing a zero word over the first member.
+
+type P struct{ x int }
+
+type A [2]int
+
+type W struct {
+	v P
+	q *P
+}
+
+func take(p P) int { return p.x }
+
+func give() P {
+	var p P
+	return p
+}
+
+func bad() P {
+	// ERROR "cannot use nil as P value in return statement"
+	return nil
+}
+
+var gp P
+var ga A
+var ch chan P
+
+// ERROR "cannot use nil as P value in variable declaration"
+var pkg P = nil
+
+func main() {
+	// ERROR "cannot use nil as P value in variable declaration"
+	var p P = nil
+	// ERROR "cannot use nil as P value in assignment"
+	gp = nil
+	// ERROR "cannot use nil as A value in assignment"
+	ga = nil
+	r := give()
+	// ERROR "cannot use nil as P value in assignment"
+	r = nil
+	// ERROR "cannot use nil as P value in argument to take"
+	println(take(nil))
+	// ERROR "cannot use nil as P value in send"
+	ch <- nil
+	// ERROR "cannot use nil as P value in struct literal"
+	w := W{v: nil}
+	// ERROR "cannot use nil as P value in struct literal"
+	w2 := W{nil, nil}
+	// ERROR "cannot use nil as P value in assignment"
+	w.v = nil
+	var ps [2]P
+	// ERROR "cannot use nil as P value in assignment"
+	ps[0] = nil
+	s := make([]P, 0, 2)
+	// ERROR "cannot use nil as P value in append"
+	s = append(s, nil)
+	// ERROR "cannot use nil as P value in array or slice literal"
+	lit := []P{nil}
+	// ERROR "mismatched types P and untyped nil"
+	println(gp == nil)
+	// ERROR "mismatched types untyped nil and P"
+	println(nil != gp)
+
+	// What nil IS a value of, in the same places -- and a pointer to a pointer, whose
+	// pointee is a pointer however the struct's name is reached.
+	var np *P
+	npp := &np
+	w.q = nil
+	var sl []P = nil
+	sl = nil
+	println(np == nil, *npp == nil, npp != nil, w.q == nil, sl == nil, len(sl))
+	println(p.x, r.x, w2.v.x, ps[0].x, len(s), len(lit), bad().x, pkg.x)
+}

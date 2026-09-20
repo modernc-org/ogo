@@ -20,6 +20,17 @@ shipped section tells a reader on that version that they have behaviour they do 
 
 ### Language
 
+- **nil is no struct and no array.** `var p P = nil`, `gp = nil`, `return nil`,
+  `take(nil)`, `ch <- nil`, `W{v: nil}`, `w.v = nil`, `ps[0] = nil`, `append(ps,
+  nil)`, `[]P{nil}` and `gp == nil` for a struct P were all taken -- fourteen places
+  tried, every one. That nil is no int was always said; a struct and an array have
+  no Kind, and the question was put to a Kind. gcc refuses each; the target's
+  compiler BUILDS them, five of five tried, storing a zero word over the struct's
+  first member, which is how `return nil` from a function returning a struct -- a
+  newcomer's way to say "no result" -- would have run. Refused in Go's words, where
+  the type wanted is written or the variable's declaration is conclusive; what nil
+  IS a value of is untouched, a pointer reached through a pointer among it.
+
 - **A condition is a bool, whatever else it might have been.** `if p {` for a
   pointer, `if f {` for a function, `for ch {`, `!p`, `p && ok` -- and a slice, an
   array, a struct, an interface and nil in the same places -- were all taken: every

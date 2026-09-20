@@ -2433,6 +2433,7 @@ func (f *File) checkReturnValue(s *Scope, rt retResult, e Node) {
 	f.checkImplements(s, f.typeNodeString(rt.typeNode, false), e, "return statement")
 	f.checkDefinedType(s, f.typeNodeString(rt.typeNode, false), e, "return statement")
 	if !rt.known {
+		f.checkNilValue(s, s, rt.typeNode, e, "return statement")
 		return
 	}
 	// A constant operand must fit the result's width, as one must fit a variable
@@ -2551,6 +2552,79 @@ func (f *File) checkNilAssignable(s *Scope, dst retResult, e Node, context strin
 	if tok, ok := f.nilOperand(s, e); ok {
 		f.err(tok.Position(), "cannot use nil as %s value in %s", dst.name, context)
 	}
+}
+
+// checkNilValue refuses nil where a STRUCT or an ARRAY is wanted -- the two kinds of
+// type with no Kind that nil is no value of -- and reports whether it did.
+//
+// checkNilAssignable asks a Kind and returns where there is none. That is right for
+// a pointer, a slice, a channel, a function and an interface, and it let `var p P =
+// nil`, `gp = nil`, `return nil`, `take(nil)`, `ch <- nil`, `W{v: nil}`, `ps[0] =
+// nil` and `append(ps, nil)` through for a struct P: twelve places, every one. gcc
+// refuses each of them; the target's compiler BUILDS them, five of five tried,
+// storing a zero word over the struct's first member.
+//
+// tn is the type as written and in the scope to read it in.
+func (f *File) checkNilValue(s, in *Scope, tn TypeNode, e Node, context string) bool {
+	tok, ok := f.nilOperand(s, e)
+	if !ok || !f.isValueComposite(in, tn) {
+		return false
+	}
+	f.err(tok.Position(), "cannot use nil as %s value in %s", f.typeNodeString(tn, false), context)
+	return true
+}
+
+// varIsValueComposite reports a VARIABLE that holds a struct or an array by value,
+// with the name of its type. The written type answers where there is one. A type
+// taken from an initializer is known by its NAME alone, and is believed only where
+// the initializer does not DEREFERENCE: the inference carries one level of pointer,
+// so `p := *npp` for a pointer to a pointer records the struct's name for what is a
+// pointer, and `p = nil` is a program.
+func (f *File) varIsValueComposite(s *Scope, d *VarDeclaration) (string, bool) {
+	if d.isPtr || d.isChan || d.isFunc || d.hasKind {
+		return "", false
+	}
+	if d.declType != nil && d.declScope != nil {
+		if f.isValueComposite(d.declScope, d.declType) {
+			return f.typeNodeString(d.declType, false), true
+		}
+		return "", false
+	}
+	if !d.typeName.IsValid() || d.init.sym == 0 {
+		return "", false
+	}
+	wf := f.fileOfToken(d.Token())
+	if strings.HasPrefix(strings.TrimLeft(wf.exprSource(d.init), "( "), "*") {
+		return "", false
+	}
+	switch f.kindlessCategory(s, d.declaredTypeName()) {
+	case "struct", "array":
+		return d.declaredTypeName(), true
+	}
+	return "", false
+}
+
+// isValueComposite reports a type that is a struct or an array, written out or
+// through whatever chain of definitions: a value with no Kind, held by value, which
+// nil therefore cannot be.
+func (f *File) isValueComposite(in *Scope, tn TypeNode) bool {
+	if in == nil {
+		return false
+	}
+	switch x := tn.(type) {
+	case *TypeNodeStruct, *TypeNodeArray:
+		return true
+	case *TypeNodeIdent:
+		name := x.Name.Src()
+		if x.Qualifier.IsValid() {
+			name = x.Qualifier.Src() + "." + name
+		}
+		switch f.kindlessCategory(in, name) {
+		case "struct", "array":
+			return true
+		}
+	}
+	return false
 }
 
 // nilTarget describes an assignment target for checkNilAssignable: a variable's
@@ -5215,6 +5289,7 @@ func (f *File) declareLocalVar(s *Scope, n Node) {
 		for _, e := range initExprs {
 			f.checkNames(s, e)
 			f.checkNilAssignable(s, nilTarget(kind, hasKind, typeName), e, "variable declaration")
+			f.checkNilValue(s, s, declType, e, "variable declaration")
 			f.checkFuncAssign(s, funcSig, e, "variable declaration")
 			if len(names) == len(initExprs) {
 				f.checkChanAssign(s, s, declType, e, "variable declaration")
@@ -7221,6 +7296,14 @@ func (f *File) indexedTypeNode(s *Scope, tn TypeNode) TypeNode {
 // nothing at all.
 func (f *File) checkSentValue(s *Scope, chanTN TypeNode, elem Kind, hasElem bool, elemName Token, valNode Node) {
 	f.checkEscapeCross(s, valNode, true)
+	// nil is no struct and no array, which an element with no Kind may be. A NAMED
+	// element is asked about only where its name is this scope's to resolve (see
+	// elemName above); one written out needs no scope.
+	if ct, ok := chanTN.(*TypeNodeChan); ok {
+		if _, named := ct.TypeNode.(*TypeNodeIdent); !named || elemName.IsValid() {
+			f.checkNilValue(s, s, ct.TypeNode, valNode, "send")
+		}
+	}
 	// A channel of interface type asks implements, as every other position a value
 	// meets a named type does. The element's Kind cannot answer it -- a named
 	// interface has none -- so the element's NAME is what the declaration retains.
@@ -8397,6 +8480,9 @@ func (f *File) checkLitValue(s *Scope, t litType, tn TypeNode, value Node, what 
 	f.checkChanAssign(s, s, tn, value, what)
 	f.checkRefAssign(s, s, tn, value, what)
 	if t.qual.IsValid() {
+		return
+	}
+	if f.checkNilValue(s, s, tn, value, what) {
 		return
 	}
 	ft := f.resultType(s, tn)
@@ -10852,6 +10938,29 @@ func (f *File) checkRelOp(s *Scope, opNode, lNode, rNode Node) {
 		f.err(f.tok(opNode.Pos()).Position(), "mismatched types %s and %s", ln, rn)
 		return
 	}
+	// A struct or an array beside nil, `gp == nil`: nil is a value of neither (see
+	// checkNilValue), and the target's compiler compares the two without a word.
+	if lnil, rnil := f.isNilOperand(lNode), f.isNilOperand(rNode); lnil != rnil {
+		other := lNode
+		if lnil {
+			other = rNode
+		}
+		// Asked of a bare VARIABLE only, and of its declaration: the helpers that
+		// name an expression's type carry one level of pointer, so `*npp` for a
+		// pointer to a pointer reads as the struct it is two steps from.
+		if id, ok := f.exprSoleIdent(other); ok {
+			if d, isVar := s.find(id.Src()).(*VarDeclaration); isVar {
+				if name, isVal := f.varIsValueComposite(s, d); isVal {
+					if lnil {
+						f.err(f.tok(opNode.Pos()).Position(), "mismatched types untyped nil and %s", name)
+					} else {
+						f.err(f.tok(opNode.Pos()).Position(), "mismatched types %s and untyped nil", name)
+					}
+					return
+				}
+			}
+		}
+	}
 	// Two channels have no Kind either, and C compares any two pointers.
 	if ln, rn, mismatched := f.chanOperandMismatch(s, lNode, rNode); mismatched {
 		f.err(f.tok(opNode.Pos()).Position(), "mismatched types %s and %s", ln, rn)
@@ -11399,6 +11508,11 @@ func (f *File) checkAssignType(s *Scope, lhsTok Token, rhsNode Node, plainTarget
 			if t, ok := f.varTypeAt(d); ok {
 				f.checkRefAssign(s, t.s, t.tn, rhsNode, "assignment")
 			}
+			if tok, isNil := f.nilOperand(s, rhsNode); isNil {
+				if name, isVal := f.varIsValueComposite(s, d); isVal {
+					f.err(tok.Position(), "cannot use nil as %s value in assignment", name)
+				}
+			}
 		}
 		if plainTarget && d.typeName.IsValid() {
 			// The type as WRITTEN, qualifier included: an imported interface read as
@@ -11467,6 +11581,7 @@ func (f *File) checkDeclType(s *Scope, kind Kind, hasKind bool, typeName Token, 
 // rhs": the right-hand side's type category must match the struct field's. It is
 // the struct-field analogue of checkAssignType.
 func (f *File) checkFieldAssign(s *Scope, head, field Token, rhsNode Node) {
+	f.checkNilValue(s, s, f.fieldTypeNode(s, head, field), rhsNode, "assignment")
 	f.checkChanAssign(s, s, f.fieldTypeNode(s, head, field), rhsNode, "assignment")
 	f.checkRefAssign(s, s, f.fieldTypeNode(s, head, field), rhsNode, "assignment")
 	f.checkImplements(s, f.typeNodeString(f.fieldTypeNode(s, head, field), false), rhsNode, "assignment")
@@ -11652,6 +11767,13 @@ func (f *File) checkIndexAssign(s *Scope, base Token, rhsNode Node) {
 	}
 	if d.hasElemKind && !d.isPtr {
 		f.checkElemAssignType(s, d.elemKind, rhsNode)
+	}
+	if d.elemTypeNode != nil && !d.isPtr {
+		in := d.declScope
+		if in == nil {
+			in = s
+		}
+		f.checkNilValue(s, in, d.elemTypeNode, rhsNode, "assignment")
 	}
 	// An element of a DEFINED type -- a struct above all, which has no Kind to be
 	// asked about: `arr[0] = A{}` for a [2]B reached the C compiler, which refused
@@ -15386,6 +15508,13 @@ func (f *File) checkAppendValues(s *Scope, argList Node, args []Node) {
 			continue
 		}
 		f.checkNilAssignable(s, p, v, "append")
+		if d.elemTypeNode != nil {
+			in := d.declScope
+			if in == nil {
+				in = s
+			}
+			f.checkNilValue(s, in, d.elemTypeNode, v, "append")
+		}
 		if !p.known {
 			// A named element with no predeclared kind of its own -- a struct, an
 			// array, a defined type over either. A value that HAS a kind is none of
@@ -15645,6 +15774,7 @@ func (f *File) checkCallArgs(s, paramScope *Scope, at Token, callee string, sig 
 			f.checkRefAssign(s, paramScope, p.typeNode, arg, "argument to "+callee)
 			f.checkPointerArg(s, paramScope, p, arg, callee)
 			if !p.known {
+				f.checkNilValue(s, paramScope, p.typeNode, arg, "argument to "+callee)
 				continue
 			}
 			f.checkNilAssignable(s, p, arg, "argument to "+callee)
@@ -17504,6 +17634,7 @@ func (f *File) varSpec(s *Scope, n Node) {
 			for _, e := range exprs {
 				f.checkNames(s, e)
 				f.checkNilAssignable(s, nilTarget(kind, hasKind, typeName), e, "variable declaration")
+				f.checkNilValue(s, s, typ, e, "variable declaration")
 				if len(names) == len(exprs) {
 					f.checkChanAssign(s, s, typ, e, "variable declaration")
 					f.checkRefAssign(s, s, typ, e, "variable declaration")
