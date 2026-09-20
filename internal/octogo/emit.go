@@ -7958,6 +7958,27 @@ func (e *emitter) emitPackageVarDecl(ast []int32) {
 				e.emitPkgArrayVar(e.globalC(names[0]), names[0], a, initExpr)
 				continue
 			}
+			// `var g = make([]T, n)` and `var g = make(List, n, c)`: make has no C
+			// value type to infer -- the backing array is synthesised beside the
+			// header -- so the declaration was refused for want of one, where the
+			// same line with its type written was taken. The type is the one make
+			// NAMES, which is a defined slice type's own where it names one.
+			if elem, lenAST, capAST, isMake := e.makeSliceInit(initExpr); isMake {
+				if len(names) != 1 || names[0] == "_" {
+					e.fail("a make slice initializer needs a single named variable")
+					return
+				}
+				cname := e.makeSliceCName(initExpr)
+				if cname == "" {
+					cname = sliceCName(elem)
+				}
+				gn := e.globalC(names[0])
+				e.needSlice(elem)
+				e.globals[gn] = cname
+				e.globalSliceVars[gn] = elem
+				e.emitMakeSliceVar(gn, cname, elem, lenAST, capAST, true)
+				continue
+			}
 			ct, ok := e.inferCType(initExpr)
 			if !ok {
 				e.fail("cannot infer a type for the package variable %q", names[0])
@@ -8114,6 +8135,40 @@ func (e *emitter) emitPackageVarDecl(ast []int32) {
 			e.globals[gn] = ctype
 			if initExpr != nil {
 				e.bindFuncValue(nm, initExpr)
+			}
+			// A DEFINED slice type, `var g List = ...` over `type List []int`,
+			// arrives here rather than in the "[]T" branch above, its declared type
+			// being a name. The backing array and the header over it are built
+			// exactly as for the unnamed spelling -- which the LOCAL form already
+			// did, and which this one did not: `= make(List, 2)` was "make is only
+			// supported as a `var s []T = make(...)` initializer yet", and `=
+			// List{1, 2, 3}` became `static List g = {1, 2, 3}`, the literal's
+			// elements written into the header's three fields, with a pointer made
+			// from 1.
+			if u := e.underlyingCType(ctype); initExpr != nil && e.isSliceCType(u) {
+				elem := sliceElemFromCName(u)
+				if me, lenAST, capAST, isMake := e.makeSliceInit(initExpr); isMake {
+					if me != elem {
+						e.fail("make element type %q does not match the declared slice element type %q", me, elem)
+						return
+					}
+					e.needSlice(elem)
+					e.globalSliceVars[gn] = elem
+					e.emitMakeSliceVar(gn, ctype, elem, lenAST, capAST, true)
+					continue
+				}
+				if litType, lit, isLit := e.soleArrayLit(initExpr); isLit {
+					if me, isSlice := e.litSliceType(litType); !isSlice || me != elem {
+						e.fail("a %s literal cannot initialize a variable declared %s",
+							e.litTypeName(litType), e.goTypeName(ctype))
+						return
+					}
+					e.needSlice(elem)
+					e.globalSliceVars[gn] = elem
+					e.emitArrayLitVar(gn, litType, lit, true)
+					continue
+				}
+				e.globalSliceVars[gn] = elem
 			}
 			e.emit("static " + ctype + " " + gn)
 			switch {
@@ -17400,6 +17455,16 @@ func (e *emitter) litSliceType(typeAST []int32) (elem string, ok bool) {
 	if elem, ok := e.sliceType(typeAST); ok {
 		return elem, true
 	}
+	_, elem, ok = e.namedSliceType(typeAST)
+	return elem, ok
+}
+
+// namedSliceType resolves a DEFINED slice type written as a name -- `List` over
+// `type List []int`, or another package's `geo.List` -- to its own C name and its
+// element. The name is what a variable of it must be DECLARED with: resolving it to
+// the header's own would cost the variable its methods, which is what a method call
+// looks the name up by.
+func (e *emitter) namedSliceType(typeAST []int32) (cname, elem string, ok bool) {
 	var mn string
 	switch nodes := slices.Collect(it(typeAST)); {
 	case len(nodes) == 1 && nodes[0].sym == 0 && e.f.ch(nodes[0].tok) == IDENT:
@@ -17408,22 +17473,45 @@ func (e *emitter) litSliceType(typeAST []int32) (elem string, ok bool) {
 		// Another package's, `geo.List`, spelled as a Type spells it.
 		prefix, isImport := e.importQualifiers[e.src(nodes[0].tok)]
 		if !isImport {
-			return "", false
+			return "", "", false
 		}
 		mn = mangle(prefix, e.src(nodes[2].tok))
 	default:
-		return "", false
+		return "", "", false
 	}
 	// Through a chain of definitions: `type Alias List` over `type List []int` is
 	// still a slice literal's type.
 	u, ok := e.namedUnderlying[mn]
 	if !ok {
-		return "", false
+		return "", "", false
 	}
 	if u = e.underlyingCType(u); !e.isSliceCType(u) {
-		return "", false
+		return "", "", false
 	}
-	return sliceElemFromCName(u), true
+	return mn, sliceElemFromCName(u), true
+}
+
+// makeSliceCName is the C type a `make` names: a DEFINED slice type's own name,
+// `make(List, n)`, so the variable declared from it keeps the type its methods hang
+// off, and the header's name for the `[]T` spelling. It answers "" for anything
+// that is not a make of a slice.
+func (e *emitter) makeSliceCName(initExpr []int32) string {
+	recv, suffix, isCall := e.directCall(initExpr)
+	if !isCall || recv != "make" || len(suffix) != 1 || suffix[0].sym != CallSuffix {
+		return ""
+	}
+	args := e.callArgExprs(suffix[0].ast)
+	if len(args) == 0 {
+		return ""
+	}
+	typeAST := e.peelToFactorAST(args[0].ast)
+	if cname, _, ok := e.namedSliceType(typeAST); ok {
+		return cname
+	}
+	if elem, ok := e.sliceType(typeAST); ok {
+		return sliceCName(elem)
+	}
+	return ""
 }
 
 // isNamedLitType reports whether a factor's children are a bare type name followed
@@ -31489,7 +31577,14 @@ func (e *emitter) emitInferredLocal(name string, initExpr []int32) {
 		return
 	}
 	if elem, lenAST, capAST, ok := e.makeSliceInit(initExpr); ok {
-		cname := sliceCName(elem)
+		// The type make NAMES, so `b := make(List, 2)` declares a List and keeps its
+		// methods: as the header's own type it was a slice with none, and `b.sum()`
+		// resolved nothing -- reported as "unknown package b", the only other thing
+		// a name before a dot can be.
+		cname := e.makeSliceCName(initExpr)
+		if cname == "" {
+			cname = sliceCName(elem)
+		}
 		e.needSlice(elem)
 		e.shadow(name)
 		e.sliceVars[name] = elem

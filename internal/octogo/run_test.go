@@ -33343,6 +33343,69 @@ func main() {
 }
 `,
 		want: "3 3 3 7 8 9 0 7 8\n3 0 0 3 3\n0 0 1 2 0\n2 104 105 0\n",
+	}, {
+		// A DEFINED slice type, `type L []int`, everywhere one is declared. Three of
+		// these were refused or wrong: `var g L = make(L, 2, 5)` was "make is only
+		// supported as a `var s []T = make(...)` initializer yet"; `var g = make(...)`
+		// with no type written was "cannot infer a type for the package variable";
+		// and `var g L = L{1, 2, 3}` compiled to `static L g = {1, 2, 3}` -- the
+		// literal's elements written into the header's ptr, len and cap, a slice
+		// pointing at address 1. A short declaration kept the header's own type
+		// instead of the defined one, so `b := make(L, 2)` lost its methods and
+		// `b.sum()` was reported as "unknown package b".
+		name: "a defined slice type declared every way",
+		src: `type L []int
+
+type M []byte
+
+func (l L) sum() int {
+	n := 0
+	for _, v := range l {
+		n += v
+	}
+	return n
+}
+
+func (m M) first() int { return int(m[0]) }
+
+var back [4]int
+
+var gzero L
+
+var glit L = L{1, 2, 3}
+
+var gmk L = make(L, 2, 5)
+
+var gview L = back[:2]
+
+var ginf = make([]int, 3)
+
+var ginfL = make(L, 2, 4)
+
+var gbytes M = make(M, 2)
+
+func main() {
+	gzero = back[:]
+	gzero[0] = 5
+	back[1] = 6
+	glit[0] = 9
+	gmk[1] = 4
+	ginf[2] = 7
+	ginfL[0] = 8
+	gbytes[0] = 65
+	println(len(gzero), cap(gzero), gzero.sum(), glit.sum(), len(glit))
+	println(gmk.sum(), len(gmk), cap(gmk), gview.sum(), len(gview))
+	println(ginf[2], len(ginf), cap(ginf), ginfL.sum(), cap(ginfL))
+	println(gbytes.first(), len(gbytes), cap(gbytes))
+	b := make(L, 2)
+	b[0] = 11
+	var c L = make(L, 1, 3)
+	c[0] = 2
+	d := L{6, 7}
+	println(b.sum(), c.sum(), d.sum(), len(b), cap(c), len(d))
+}
+`,
+		want: "4 4 11 14 3\n4 2 5 11 2\n7 3 3 8 4\n65 2 2\n11 2 13 2 3 2\n",
 	}}
 
 // TestEmitCRun compiles emitted C with a host compiler and runs it, checking what

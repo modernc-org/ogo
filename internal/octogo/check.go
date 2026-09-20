@@ -14170,6 +14170,14 @@ func (f *File) namesSliceType(s *Scope, n Node) bool {
 // identifier, so the bare-type-name check leaves it alone: that argument is a TYPE,
 // and "cannot use type List as a value" is exactly wrong about it.
 func (f *File) markMakeTypeArg(argList Node) {
+	if f.makeTypeArgs == nil {
+		// Package scope: the map is minted per function body, and a package
+		// variable's initializer is checked outside every one of them. `var g =
+		// make(List, 2)` PANICKED here -- a write to a nil map -- where the same
+		// declaration inside a function compiled. Positions are unique across the
+		// file, so one map for everything outside a body is right.
+		f.makeTypeArgs = map[string]bool{}
+	}
 	for a := range it(argList.ast) {
 		if a.sym != Expression {
 			continue

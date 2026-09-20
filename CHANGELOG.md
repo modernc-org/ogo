@@ -20,6 +20,19 @@ shipped section tells a reader on that version that they have behaviour they do 
 
 ### Language
 
+- **A DEFINED slice type is a slice everywhere one is declared.** `type L []int`
+  worked as a local and was three different things at package scope: `var g L =
+  make(L, 2, 5)` was refused ("make is only supported as a `var s []T = make(...)`
+  initializer yet"), `var g = make([]int, 4)` with no type written was "cannot
+  infer a type for the package variable", and **`var g L = L{1, 2, 3}` compiled to
+  `static L g = {1, 2, 3}`** -- the literal's three elements written into the
+  header's pointer, length and capacity, a slice pointing at address 1. A short
+  declaration `b := make(L, 2)` kept the header's own type rather than the defined
+  one, so the variable lost its methods and `b.sum()` was reported as "unknown
+  package b". And `make` in a package variable's initializer CRASHED the compiler
+  (a nil map in the checker's make-argument pass, which is minted per function
+  body).
+
 - **`copy` and `clear` of a DEFINED slice type.** `type L []int` with `copy(a, b)`
   of an `[]int` and an `L` was refused, "copy's arguments must both be slices":
   the check was made against the C type, where a defined type is its own name.
