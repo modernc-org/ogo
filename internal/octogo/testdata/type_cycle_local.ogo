@@ -1,0 +1,62 @@
+// A LOCAL type is measured as a top-level one is. Phase 5 walks the top-level
+// declarations only, so until 2026-09-20 nothing asked a local type whether it
+// contains itself, and the emitter, which believes what the checker let through,
+// followed one that does without end.
+//
+// A local type is in scope from its own name onward, so two of them cannot name each
+// other: what a local cycle can be is a type holding ITSELF -- in a field, an
+// embedding, an array, an unnamed struct -- wherever the declaration stands.
+
+type T struct{ n int }
+
+func named() {
+	// ERROR "invalid recursive type A"
+	type A struct {
+		a A
+	}
+}
+
+func embedded() {
+	// ERROR "invalid recursive type A"
+	type A struct {
+		A
+	}
+}
+
+func viaArray() {
+	// ERROR "invalid recursive type A"
+	type A struct {
+		x [2]A
+	}
+}
+
+func viaUnnamed() {
+	// ERROR "invalid recursive type A"
+	type A struct {
+		in struct{ a A }
+	}
+}
+
+func defined() {
+	// ERROR "invalid recursive type A"
+	type A [2]A
+}
+
+func (t *T) inMethod() int {
+	// ERROR "invalid recursive type A"
+	type A struct {
+		A
+	}
+	return t.n
+}
+
+func inBlocks() {
+	for i := 0; i < 1; i++ {
+		if i == 0 {
+			// ERROR "invalid recursive type A"
+			type A struct {
+				a A
+			}
+		}
+	}
+}

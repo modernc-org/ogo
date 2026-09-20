@@ -1,0 +1,54 @@
+// An EMBEDDED field holds the type it names by value, exactly as a named field of
+// that type does, so an embedding closes a cycle the same way. The checker missed
+// every one of these until 2026-09-20 -- an embedded field is a name with no type
+// node to walk -- and the emitter then followed the embedding without end.
+//
+// What breaks the cycle is what breaks it for a named field: an embedded POINTER,
+// `*Chain`, is a reference (type_recursive.ogo).
+
+// ERROR "invalid recursive type Self"
+type Self struct {
+	Self
+}
+
+// Through another type: reported where the walk comes back to where it started.
+
+// ERROR "invalid recursive type Ping"
+type Ping struct {
+	Pong
+}
+
+type Pong struct {
+	Ping
+}
+
+// An embedding and a named field close one together.
+
+// ERROR "invalid recursive type Outer"
+type Outer struct {
+	Inner
+}
+
+type Inner struct {
+	back Outer
+}
+
+// Through an array of the embedding type.
+
+// ERROR "invalid recursive type Grid"
+type Grid struct {
+	Row
+}
+
+type Row struct {
+	cells [2]Grid
+}
+
+// Through an alias, which is another name for the type itself.
+
+// ERROR "invalid recursive type Twin"
+type Twin struct {
+	Same
+}
+
+type Same = Twin

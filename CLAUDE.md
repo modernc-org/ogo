@@ -572,7 +572,11 @@ whose length exceeds its capacity, a range over what has no elements, and a
 conditionless switch whose case is not a boolean. Every one
 of them reached the C compiler, as a diagnostic about generated code or -- the make
 -- as C that is valid and wrong. Keep the two-column shape (what Go says, what this
-says) and add a row whenever a check is written.
+says) and add a row whenever a check is written. One more did NOT reach the C
+compiler, and is the row to remember: `type A struct{ A }`, a struct EMBEDDING
+itself (and any LOCAL type holding itself), which the recursive-type walk did not
+follow and the emitter followed without end -- 4 GB a second until the machine that
+compiled it froze, for four hours. The sweep logged it as a refusal.
 
 **A TEMPORARY IS A COG REGISTER** (2026-09-20). flexcc gives every C local one
 (`local_N res 1` in COG_BSS) out of a pool the assembler checks with `fit 480`,

@@ -20,6 +20,22 @@ shipped section tells a reader on that version that they have behaviour they do 
 
 ### Language
 
+- **A type that holds itself through an EMBEDDING, and a LOCAL type that holds
+  itself at all, are invalid recursive types.** `type A struct{ A }` -- and `A{ B }`
+  with `B{ A }`, or through an array, an alias or an unnamed struct -- was a type
+  of finite size to the checker, an embedded field being a name with no type node
+  for the walk to follow; and phase 5 walks the top-level declarations only, so
+  `func main() { type A struct{ a A } }` was a type nobody measured. Neither was
+  refused, and the emitter, which believes what the checker let through, followed
+  the type without end at about 4 GB a second: the program took every byte of the
+  machine that compiled it, and froze it for four hours the first time. Both are
+  refused in Go's words now; what breaks a cycle is what always did, an embedded
+  POINTER `*A` among them. Found by the Go-rejects sweep -- which logged it as a
+  REFUSAL, any output on stderr being one to it, so a compiler that crashes agreed
+  with Go. A local declaration is also asked what a top-level one is about its
+  embedded names, so `type A struct{ B }` with no B says `undefined: B` where it
+  stands instead of a sentence from the emitter with no position.
+
 - **A switch with no condition takes boolean cases.** `switch { case n: }` for an
   int n became `if (n)` in C, which C takes and Go does not: a conditionless switch
   is a switch on true, and every case is a boolean expression. The check was keyed

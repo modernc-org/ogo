@@ -1933,9 +1933,11 @@ func (f *File) checkStatement(s *Scope, results []retResult, stmt Node) {
 		case TypeDecl:
 			// Declare the local type name, then resolve its body, mirroring the
 			// two top-level passes (declareType + typeDecl). A local type is
-			// visible from its declaration onward (Go block scoping).
+			// visible from its declaration onward (Go block scoping). Then what
+			// phase 5 asks of a top-level one: that it does not contain itself.
 			f.declareType(s, c)
 			f.typeDecl(s, c)
+			f.checkTypeDeclCycles(s, c)
 		case Block:
 			// A "for" loop's body is checked one loop level deeper, so a "defer"
 			// anywhere within it is rejected (the zero-allocation model cannot bound
@@ -16771,17 +16773,28 @@ func (f *File) checkTypeCycles(s *Scope, n Node) {
 			continue
 		}
 		for td := range it(tld.ast) {
-			if td.sym != TypeDecl {
-				continue
+			if td.sym == TypeDecl {
+				f.checkTypeDeclCycles(s, td)
 			}
-			for spec := range it(td.ast) {
-				if spec.sym != TypeSpec {
-					continue
-				}
-				if cd, ok := s.find(f.typeSpecName(spec).Src()).(*TypeDeclaration); ok {
-					f.checkTypeCycle(s, cd)
-				}
-			}
+		}
+	}
+}
+
+// checkTypeDeclCycles is checkTypeCycles for the specs of ONE type declaration. A
+// LOCAL declaration asks it as soon as its bodies are resolved: phase 5 walks the
+// top-level declarations only, so `func main() { type A struct{ a A } }` was a type
+// nobody measured, and the emitter, which believes what the checker let through,
+// followed it without end. Asked there it also resolves each name as the declaration
+// itself did -- a local type is in scope from its declaration onward, so a name the
+// block declares LATER is not what an earlier body meant, and the gate of a type
+// already walked keeps it from being walked again in the later one's light.
+func (f *File) checkTypeDeclCycles(s *Scope, td Node) {
+	for spec := range it(td.ast) {
+		if spec.sym != TypeSpec {
+			continue
+		}
+		if cd, ok := s.find(f.typeSpecName(spec).Src()).(*TypeDeclaration); ok {
+			f.checkTypeCycle(s, cd)
 		}
 	}
 }
@@ -16946,6 +16959,15 @@ func (f *File) checkIfaceEmbedCycle(s *Scope, ts *TypeSpecNode) {
 // named type's underlying type, a struct's fields, and an array's element. A
 // pointer, slice, channel or interface is a reference of fixed size and breaks
 // the chain, so those are not followed.
+//
+// An EMBEDDED field is such an edge and has no type node to follow: it is a name,
+// and the struct holds the type it names by value exactly as a named field of that
+// type would -- unless it is embedded as a pointer, `*A`, which is a reference. Left
+// out of the walk, `type A struct{ A }` was a type of finite size to the checker, and
+// the emitter followed the embedding without end: it took every byte of the machine
+// it ran on, and the sweep that wrote the program took the crash for a refusal. A
+// QUALIFIED name is not followed, being another package's type, which cannot hold
+// this one -- that package does not import this one back.
 func (f *File) walkTypeCycle(s *Scope, tn TypeNode) {
 	switch x := tn.(type) {
 	case *TypeNodeIdent:
@@ -16954,7 +16976,17 @@ func (f *File) walkTypeCycle(s *Scope, tn TypeNode) {
 		}
 	case *TypeNodeStruct:
 		for _, field := range x.Fields {
-			f.walkTypeCycle(s, field.TypeNode)
+			if field.TypeNode != nil {
+				f.walkTypeCycle(s, field.TypeNode)
+				continue
+			}
+			name, isEmb := embeddedFieldName(field)
+			if !isEmb || field.EmbeddedPtr || field.EmbeddedPkg.IsValid() {
+				continue
+			}
+			if cd, ok := s.find(name.Src()).(*TypeDeclaration); ok {
+				f.checkTypeCycle(s, cd)
+			}
 		}
 	case *TypeNodeArray:
 		f.walkTypeCycle(s, x.TypeNode)

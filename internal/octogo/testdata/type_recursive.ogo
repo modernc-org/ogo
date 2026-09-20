@@ -20,6 +20,13 @@ type List struct {
 	items []List
 }
 
+// An embedded POINTER is a reference like any other, so a type may embed a pointer
+// to itself; what it may not embed is itself (type_cycle_embedded.ogo).
+type Chain struct {
+	*Chain
+	n int
+}
+
 // Forward and mutual references: Edge names Vertex before it is declared, and
 // Vertex names Edge back.
 type Edge struct {
@@ -28,4 +35,18 @@ type Edge struct {
 
 type Vertex struct {
 	edges []Edge
+}
+
+// A LOCAL type refers to itself on the same terms (type_cycle_local.ogo has what it
+// may not do).
+func local() int {
+	type N struct {
+		next *N
+		kids []N
+		v    int
+	}
+	var a, b N
+	a.v, b.v = 1, 2
+	a.next = &b
+	return a.next.v + len(a.kids)
 }
