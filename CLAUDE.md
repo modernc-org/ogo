@@ -614,7 +614,14 @@ none taken, and 8 differing -- the 7 by design and `s = append(s)`). **What `ogo
 measure**, not what gcc does: of twelve accepted mistakes built for the target that
 afternoon -- `gp = nil` for a struct, `return nil`, `take(nil)`, `if p {` for a
 pointer, `f + 1` and `f[0]` for a func value -- flexcc refused ONE and warned about
-one; ten built a binary in silence.
+one; ten built a binary in silence. **And measure with a struct of MORE THAN ONE
+WORD, and RUN the binary**: those nil programs used `type P struct{ x int }`, which
+flexcc treats as the int it is made of, and what they "did" was inferred, never run
+-- and was published wrong, in the changelog, a comment and the release notes. With
+three fields flexcc REFUSES the stores ("Expected multiple values"), builds `return
+nil` in silence with the caller receiving garbage, and warns about `take(nil)`, the
+callee reading garbage. A claim about what a binary does is a claim to measure on the
+board before it is written down, however obvious it looks.
 
 **WHAT HAS NO KIND IS ASKED NOTHING** (2026-09-20). The checker's type model is a
 Kind -- a predeclared type -- and most of its rules are gated on one: `if k, ok :=

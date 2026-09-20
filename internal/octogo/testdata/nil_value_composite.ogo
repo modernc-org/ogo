@@ -2,7 +2,8 @@
 // of nothing else. For what has a Kind -- `var n int = nil` -- that was always said;
 // a STRUCT and an ARRAY have none, the question was put to a Kind, and until
 // 2026-09-20 nil went into one in every place a value can go. gcc refuses each of
-// these; the target's compiler builds them, storing a zero word over the first member.
+// these. The target's compiler refuses the stores for a struct of more than one word,
+// and builds `return nil` in silence: the caller receives garbage.
 
 type P struct{ x int }
 

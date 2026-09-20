@@ -16,6 +16,24 @@ same area is a new entry under **Unreleased**, not an edit to the old one. Amend
 shipped section tells a reader on that version that they have behaviour they do not.
 `git show vX.Y.Z:CHANGELOG.md` is the check.
 
+## Unreleased
+
+### Verified
+
+- **What nil for a struct did before v0.41.0, measured -- a correction.** That
+  release's entry "nil is no struct and no array" says the target's compiler built
+  every one of those programs and stored a zero word over the struct's first
+  member. It had been tried with a struct of ONE word, which the target's compiler
+  treats as the int it is made of, and the effect was inferred rather than run.
+  Measured on a P2-EDGE with v0.40.0's compiler and a struct of three fields: the
+  STORES -- an assignment, a declaration, a field, an element -- are refused by the
+  target's compiler, loudly ("Expected multiple values"); `return nil` builds in
+  silence and the caller receives GARBAGE, `{7, 8, 9}` overwritten with `0 0 2`;
+  `take(nil)` and `gp == nil` build with a warning about the argument count, and
+  the callee reads garbage, 1699042213 for a sum of three fields. So the refusal
+  matters most where that entry was vaguest. A one-word struct does what the entry
+  says in every one of those places, in silence.
+
 ## v0.41.0
 
 ### Language

@@ -2561,8 +2561,14 @@ func (f *File) checkNilAssignable(s *Scope, dst retResult, e Node, context strin
 // a pointer, a slice, a channel, a function and an interface, and it let `var p P =
 // nil`, `gp = nil`, `return nil`, `take(nil)`, `ch <- nil`, `W{v: nil}`, `ps[0] =
 // nil` and `append(ps, nil)` through for a struct P: twelve places, every one. gcc
-// refuses each of them; the target's compiler BUILDS them, five of five tried,
-// storing a zero word over the struct's first member.
+// refuses each of them. What the target's compiler does was measured on a P2-EDGE:
+// for a struct of more than one word it refuses the STORES ("Expected multiple
+// values"), builds `return nil` in silence -- the caller receives garbage, {7, 8, 9}
+// overwritten with 0 0 2 -- and builds `take(nil)` and `gp == nil` with a warning,
+// the callee reading garbage. A struct of ONE word is an int to it, and every one
+// of them builds in silence. (The first version of this comment said all of them
+// built and stored a zero word: it had been tried with a one-word struct and not
+// run.)
 //
 // tn is the type as written and in the scope to read it in.
 func (f *File) checkNilValue(s, in *Scope, tn TypeNode, e Node, context string) bool {
