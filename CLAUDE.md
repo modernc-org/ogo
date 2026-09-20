@@ -606,7 +606,14 @@ compiled it froze, for four hours. The sweep logged it as a refusal. Run over th
 same 212 programs after the sweep's fixes, the script also found two of them STILL
 taken, each a neighbour of a shape that was fixed: `append(ps, nil)` into a slice
 of STRUCTS, and `for range f` over a LOCAL func value. Re-run a batch after its
-fixes; a fix is for the program that was looked at.
+fixes; a fix is for the program that was looked at. The second was the visible end
+of something larger: a variable bound to a function LITERAL had no type at all to
+the checker, so `f("x")`, `f(1, 2)` and `f = otherSignature` went through as well
+(fixed the same day, funcLitSig). **What `ogo build` does with such a program is the
+measure**, not what gcc does: of twelve accepted mistakes built for the target that
+afternoon -- `gp = nil` for a struct, `return nil`, `take(nil)`, `if p {` for a
+pointer, `f + 1` and `f[0]` for a func value -- flexcc refused ONE and warned about
+one; ten built a binary in silence.
 
 **A TEMPORARY IS A COG REGISTER** (2026-09-20). flexcc gives every C local one
 (`local_N res 1` in COG_BSS) out of a pool the assembler checks with `fit 480`,

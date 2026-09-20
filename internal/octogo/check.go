@@ -2878,6 +2878,11 @@ func (f *File) checkRange(s *Scope, kw string, fi forInfo) {
 func (f *File) checkRangeable(s *Scope, expr Node) {
 	id, ok := f.exprSoleIdent(expr)
 	if !ok {
+		// Not a name, and a function value all the same: a literal where it stands,
+		// a field holding one, what a call returns.
+		if f.exprFuncSig(s, expr) != nil {
+			f.err(f.tok(expr.Pos()).Position(), "cannot range over %s (value of type func)", f.exprSource(expr))
+		}
 		return
 	}
 	what := ""
@@ -5751,6 +5756,11 @@ func (f *File) exprFuncSig(s *Scope, n Node) *SignatureNode {
 		if me, rest, isME := f.methodExprOf(s, fac); isME && len(rest) == 0 && me.fd != nil && (me.ptr || !me.ptrRecv || me.viaPtr) {
 			return f.methodExprSig(s, me)
 		}
+		// A function LITERAL is a function value like any other, and its type is
+		// written in it.
+		if sig := f.funcLitSig(s, fac); sig != nil {
+			return sig
+		}
 	}
 	if id, ok := f.exprIdent(n); ok {
 		switch d := s.find(id.Src()).(type) {
@@ -5810,6 +5820,43 @@ func (f *File) exprFuncSig(s *Scope, n Node) *SignatureNode {
 		return nil
 	}
 	return f.funcSig(s, sig.Results.List[0].TypeNode)
+}
+
+// funcLitSig is the signature of a Factor that is a function LITERAL and nothing
+// after it, `func(n int) int { ... }`; nil for anything else, a literal CALLED where
+// it stands among them, whose value is what the call returns.
+//
+// Nothing answered for it, so the variable a literal was bound to -- `f := func(n
+// int) int { ... }`, which is how nearly every literal is used -- had no type at all
+// to the checker: `f("x")`, `f(1, 2)`, `f()`, `f = 3`, `f + 1`, `f[0]`, `var s string
+// = f()` and a second literal of another signature assigned to it all went through,
+// for a local and for a package variable alike. The C compiler took the rest, and the
+// target's says "warning" about a missing argument and builds.
+//
+// The signature is read in a scope like the one the literal's body is checked in,
+// hanging off the file's. checkFuncLiterals reads it too, where the literal stands,
+// and what is wrong with it is reported there and once: whatever this reading says
+// is dropped.
+func (f *File) funcLitSig(s *Scope, fac Node) *SignatureNode {
+	if fac.sym != Factor {
+		return nil
+	}
+	kids := slices.Collect(it(fac.ast))
+	if len(kids) != 1 || kids[0].sym != FuncLiteral {
+		return nil
+	}
+	for d := range it(kids[0].ast) {
+		if d.sym != Signature {
+			continue
+		}
+		ls := f.Scope.child()
+		ls.litOf = s
+		n0 := len(f.errList)
+		sig := f.signature(ls, d)
+		f.errList = f.errList[:n0]
+		return sig
+	}
+	return nil
 }
 
 // qualifiedFuncSig is the function type of another package's function, or of its

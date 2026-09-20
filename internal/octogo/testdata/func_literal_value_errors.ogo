@@ -1,0 +1,36 @@
+// A function LITERAL is a function value, and its type is written in it. Until
+// 2026-09-20 nothing answered for it, so the variable a literal was bound to -- which
+// is how nearly every literal is used -- had no type at all to the checker: every call
+// below went through, for a local and for a package variable alike, and the target's
+// C compiler says "warning" about a missing argument and builds.
+
+var pf = func(n int) int { return n }
+
+func main() {
+	f := func(n int) int { return n + 1 }
+	// ERROR "cannot use .x. of type string as type int in argument to f"
+	println(f("x"))
+	// ERROR "too many arguments in call to f"
+	println(f(1, 2))
+	// ERROR "not enough arguments in call to f"
+	println(f())
+	// ERROR "cannot use .x. of type string as type int in argument to pf"
+	println(pf("x"))
+	// ERROR "too many arguments in call to pf"
+	println(pf(1, 2))
+	// ERROR "cannot use func"
+	f = func(s string) int { return len(s) }
+	g := func() {}
+	// ERROR "used as value"
+	x := g()
+	// ERROR "cannot range over f"
+	for range f {
+	}
+	// ERROR "cannot range over pf"
+	for range pf {
+	}
+	// ERROR "cannot range over func"
+	for range func() {} {
+	}
+	println(f(1), x)
+}

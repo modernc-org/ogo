@@ -20,6 +20,17 @@ shipped section tells a reader on that version that they have behaviour they do 
 
 ### Language
 
+- **A function LITERAL is a function value, and the variable it is bound to has its
+  type.** `f := func(n int) int { ... }` is how nearly every literal is used, and f
+  had no type at all to the checker: `f("x")`, `f(1, 2)`, `f()`, a second literal of
+  another signature assigned to it, `x := g()` of a literal returning nothing and
+  `for range f` all went through, for a local and for a package variable alike. The
+  C compiler took the rest, and the target's says "warning" about a missing argument
+  and builds. The literal's signature is read where the value is bound, as a
+  declared function's is, and the checks that were there for `g := dbl` apply. Of
+  the 212 programs of the Go-rejects sweep run again, this was one of the two still
+  taken; nothing in the specs, the run cases or the fuzzer's corpus was refused.
+
 - **A type that holds itself through an EMBEDDING, and a LOCAL type that holds
   itself at all, are invalid recursive types.** `type A struct{ A }` -- and `A{ B }`
   with `B{ A }`, or through an array, an alias or an unnamed struct -- was a type
