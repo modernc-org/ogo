@@ -20,6 +20,16 @@ shipped section tells a reader on that version that they have behaviour they do 
 
 ### Language
 
+- **A print whose formatting calls a method reads its arguments first.** fmt
+  evaluates EVERY argument before it formats any, so the `Error()` or `String()` it
+  calls while formatting one cannot be seen by a later argument. This compiler
+  formats as it goes and bound only the arguments whose own expression had an
+  effect, so `printf("%v %d", err, calls)` printed the count `Error()` had just
+  bumped where Go prints the one it read before -- silently, and in the natural
+  shape of a probe or a log counting its calls. A print whose formatting may call a
+  method now binds every argument first: the value itself, what an interface holds,
+  a field of a struct, an element of a slice or an array.
+
 - **`%v` of an interface value prints what it holds.** `printf("%v", s)` of a
   `Shape` was refused -- "%v of Shape is not supported yet; %T prints its type, and
   println prints its address" -- since what to print is decided by the type inside,

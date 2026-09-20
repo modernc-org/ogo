@@ -28359,6 +28359,7 @@ func (e *emitter) hoistPrintArgs(args []Node) bool {
 	if e.deferReplay >= 0 {
 		return false
 	}
+	bind := make([]bool, len(args))
 	effect := false
 	for _, a := range args {
 		if e.exprHasEffect(a.ast) {
@@ -28366,26 +28367,147 @@ func (e *emitter) hoistPrintArgs(args []Node) bool {
 			break
 		}
 	}
-	if !effect {
-		return false
-	}
-	cts := make([]string, len(args))
-	for i, a := range args {
-		ct, ok := e.inferCType(a.ast)
-		if !ok || ct == "" {
+	if effect {
+		// One argument's expression has an effect, so every one is bound: the
+		// effects run in source order, and before anything is written.
+		for i := range bind {
+			bind[i] = true
+		}
+	} else {
+		// fmt evaluates EVERY argument before it formats any, so a method it calls
+		// while formatting one -- an Error(), a String() -- cannot be seen by a later
+		// argument. This compiler formats as it goes, so `printf("%v %d", err,
+		// calls)` read calls after Error() had bumped it, where Go reads it before.
+		// The arguments AFTER such a one are bound first, which is what puts the two
+		// in the same order; the ones before it are left where they are, no argument
+		// here having an effect that could tell when they are read.
+		//
+		// Only the ones such a method can REACH are bound. A temporary is a cog
+		// register on this target, out of a pool of 480 the deepest call chain
+		// shares, so binding what cannot change is paid for in the one resource a
+		// program runs out of first.
+		calls := -1
+		for i, a := range args {
+			if ct, ok := e.inferCType(a.ast); ok && e.formatCallsMethod(ct, map[string]bool{}) {
+				calls = i
+				break
+			}
+		}
+		if calls < 0 {
 			return false
 		}
-		cts[i] = ct
+		for i := calls + 1; i < len(args); i++ {
+			bind[i] = !e.printArgUnreachable(args[i].ast)
+		}
+	}
+	if !slices.Contains(bind, true) {
+		return false
 	}
 	// Bound only after every type is known, so a print this cannot hoist wholly
 	// hoists nothing and no temporary is declared for a statement that will not use
 	// it.
 	hoisted := make([]printArg, len(args))
 	for i, a := range args {
-		hoisted[i] = printArg{name: e.hoist(cts[i], func() { e.emitExpr(a.ast) }), ctype: cts[i]}
+		if !bind[i] {
+			continue
+		}
+		ct, ok := e.inferCType(a.ast)
+		if !ok || ct == "" {
+			return false
+		}
+		hoisted[i].ctype = ct
+	}
+	for i, a := range args {
+		if !bind[i] {
+			continue
+		}
+		hoisted[i].name = e.hoist(hoisted[i].ctype, func() { e.emitExpr(a.ast) })
 	}
 	e.printArgs = hoisted
 	return true
+}
+
+// printArgUnreachable reports whether a print argument reads nothing a method called
+// while formatting an EARLIER argument could write: a local variable read by name,
+// or an expression naming nothing at all. Such a method takes no parameters, and the
+// lifetime rules keep a local's address out of the package block, so the only local
+// it can reach is one its own receiver points at -- the argument it is called on.
+//
+// Anything else is assumed reachable: a package variable, a field, an element, a
+// value read through a pointer.
+func (e *emitter) printArgUnreachable(ast []int32) bool {
+	if name, ok := e.exprIdent(ast); ok {
+		return e.isFrameVar(name)
+	}
+	return !e.exprNamesSomething(ast)
+}
+
+// exprNamesSomething reports whether an expression contains an identifier at all,
+// which is what tells a literal one -- `5`, `1<<3`, `"x"` -- from one that reads.
+func (e *emitter) exprNamesSomething(ast []int32) bool {
+	for n := range it(ast) {
+		if n.sym == 0 {
+			if e.f.ch(n.tok) == IDENT {
+				return true
+			}
+			continue
+		}
+		if e.exprNamesSomething(n.ast) {
+			return true
+		}
+	}
+	return false
+}
+
+// hoistedArg answers the temporary a print bound its argument idx to. An argument
+// the print did not bind -- one written before the first whose formatting may call a
+// method -- has none, and is emitted where the verb stands as it always was.
+func (e *emitter) hoistedArg(idx int) (printArg, bool) {
+	if idx < len(e.printArgs) && e.printArgs[idx].name != "" {
+		return e.printArgs[idx], true
+	}
+	return printArg{}, false
+}
+
+// formatCallsMethod reports whether FORMATTING a value of C type ct may call a
+// method of the program: an Error() or a String(), of the value itself, of what an
+// interface holds, or of a field or an element reached inside it. It is what says a
+// print has to bind its arguments before it writes any of them (hoistPrintArgs).
+//
+// seen stops a type that reaches itself -- a list node whose field points at its own
+// type -- from being walked twice.
+func (e *emitter) formatCallsMethod(ct string, seen map[string]bool) bool {
+	if ct == "" || seen[ct] {
+		return false
+	}
+	seen[ct] = true
+	if _, _, ok := e.stringerCallC(ct, "_"); ok {
+		return true
+	}
+	u := e.underlyingCType(ct)
+	switch {
+	case e.isIfaceCType(u):
+		// What it holds is asked for both at run time, whatever the interface
+		// declares (ifaceHeldPrintC).
+		return true
+	case e.isSliceCType(u):
+		return e.formatCallsMethod(sliceElemFromCName(u), seen)
+	}
+	if a, isArr := e.namedArrays[u]; isArr {
+		return e.formatCallsMethod(a.elem, seen)
+	}
+	for _, f := range e.structs[u] {
+		if f.dim.bound != "" {
+			if e.formatCallsMethod(f.dim.elem, seen) {
+				return true
+			}
+			continue
+		}
+		if e.formatCallsMethod(f.ctype, seen) {
+			return true
+		}
+	}
+	return false
 }
 
 // printArgCType is the C representation type a print argument's value has, which is
@@ -28399,8 +28521,8 @@ func (e *emitter) printArgCType(idx int, arg Node) (string, bool) {
 	if ct, ok := e.replayArgCType(idx); ok {
 		return e.underlyingCType(ct), true
 	}
-	if idx < len(e.printArgs) {
-		return e.underlyingCType(e.printArgs[idx].ctype), true
+	if a, ok := e.hoistedArg(idx); ok {
+		return e.underlyingCType(a.ctype), true
 	}
 	return e.exprReprCType(arg.ast)
 }
@@ -28434,8 +28556,8 @@ func (e *emitter) emitReplayArg(idx int, arg Node) {
 		}
 		return
 	}
-	if idx < len(e.printArgs) {
-		e.emit(e.printArgs[idx].name)
+	if a, ok := e.hoistedArg(idx); ok {
+		e.emit(a.name)
 		return
 	}
 	e.emitExpr(arg.ast)
@@ -28687,7 +28809,16 @@ func (e *emitter) evalTypeOnlyArg(idx int, arg Node) {
 		e.emit("(void)" + deferArgName(e.deferReplay, i) + ";\n")
 		return
 	}
-	if idx < len(e.printArgs) || e.deferReplay >= 0 || !e.exprHasEffect(arg.ast) {
+	if a, ok := e.hoistedArg(idx); ok {
+		// Bound by the hoist and read by nothing else: %T of it is a name known
+		// without the value. Marked read, or the C compiler warns about a variable
+		// the print itself declared -- and a warning from the target's compiler
+		// fails the build tests.
+		e.ind()
+		e.emit("(void)" + a.name + ";\n")
+		return
+	}
+	if e.deferReplay >= 0 || !e.exprHasEffect(arg.ast) {
 		return
 	}
 	// An array-returning call is a statement, bound to a temporary of its own.

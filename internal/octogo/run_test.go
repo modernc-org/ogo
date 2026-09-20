@@ -33233,6 +33233,81 @@ func main() {
 }
 `,
 		want: "{hi <nil> 7}|{Sh:hi Next:<nil> k:7}\n{hi boom 7}|{Sh:hi Next:boom k:7}\n{<nil> <nil> 0}|{Sh:<nil> Next:<nil> k:0}\n{<nil> <nil> 0}|{Sh:<nil> Next:<nil> k:0}\n[hi <nil> boom]\n[hi <nil>]\n{boom {<nil> <nil> 0}}|{Sh:boom sub:{Sh:<nil> Next:<nil> k:0}}\n&{3 4}|12\n",
+	}, {
+		// fmt evaluates EVERY argument before it formats any, so the Error() or
+		// String() it calls while formatting one cannot be seen by a later argument.
+		// This compiler formats as it goes, and the print bound only the arguments
+		// whose own expression had an effect -- so `printf("%v %d", err, calls)`
+		// printed the count Error() had just bumped, where Go prints the one it read
+		// before. Six of the seven lines here were wrong. A print whose formatting
+		// may call a method binds every argument first (formatCallsMethod): the value
+		// itself, what an interface holds, a field of a struct, an element of a slice
+		// or an array.
+		name: "a printf whose formatting calls a method reads its arguments first",
+		src: `var calls int
+
+type Temp int
+
+func (t Temp) String() string {
+	calls = calls*10 + 1
+	return "warm"
+}
+
+type ioError struct{ op string }
+
+func (e *ioError) Error() string {
+	calls = calls*10 + 2
+	return e.op
+}
+
+type Shape interface{ Area() int }
+
+type P struct{ x, y int }
+
+func (p *P) Area() int { return p.x * p.y }
+
+func (p *P) String() string {
+	calls = calls*10 + 3
+	return "pee"
+}
+
+type Rec struct {
+	T Temp
+	n int
+}
+
+var errBusy = ioError{"busy"}
+
+var gp = P{2, 3}
+
+func bump(k int) int {
+	calls = calls*10 + k
+	return k
+}
+
+func main() {
+	var t Temp = 20
+	printf("%v %d\n", t, calls)
+	calls = 0
+	var e error = &errBusy
+	printf("%v %d\n", e, calls)
+	calls = 0
+	var s Shape = &gp
+	printf("%v %d\n", s, calls)
+	calls = 0
+	r := Rec{5, 7}
+	printf("%v %d\n", r, calls)
+	calls = 0
+	printf("%d %v %d\n", bump(8), t, calls)
+	calls = 0
+	sl := []Temp{1, 2}
+	printf("%v %d\n", sl, calls)
+	calls = 0
+	printf("%s %v %d\n", e, t, calls)
+	println(calls)
+}
+`,
+		want: "warm 0\nbusy 0\npee 0\n{warm 7} 0\n8 warm 8\n[warm warm] 0\nbusy warm 0\n21\n",
 	}}
 
 // TestEmitCRun compiles emitted C with a host compiler and runs it, checking what

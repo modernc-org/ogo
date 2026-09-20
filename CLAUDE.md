@@ -524,6 +524,17 @@ after another, and a declared init name shadowing what its neighbour read. A swe
 accessors record ORDER, `calls = calls*10 + k`, not a count: a count matched Go for
 operands C leaves unsequenced. And a wide constant belongs in every sweep of a store:
 `a, b = 1<<40, 5` lost it on the board in silence, where the host's compiler refused.
+
+**A TEMPORARY IS A COG REGISTER** (2026-09-20). flexcc gives every C local one
+(`local_N res 1` in COG_BSS) out of a pool the assembler checks with `fit 480`,
+shared across functions so the deepest call chain is what spends it -- and overflow
+is a build ERROR, not a warning: `error: fit 480 failed: pc is 483`. Binding one
+more value per print, to get printf's argument order right, broke `TestTargetBuild`
+on a run case whose C was correct; the fix was to bind only the arguments a method
+called while formatting can REACH (`printArgUnreachable`). So an emitter change that
+binds values asks which of them it has to, and `grep -c '\tres\t1' prog.p2asm`
+measures what a program spends.
+
 A sweep of DECLARATIONS changes the KIND of the name it shadows -- a slice over an
 array, an array over a slice, a scalar over a struct, a variable over a constant, a
 local over a package variable, in a block, a clause and a parameter list -- and has
@@ -575,12 +586,14 @@ to right (only the bare `name[i] = v` path binds them); and a value's call does 
 run ahead of an index or nil panic in the target, `arr[bad()] = side()`, where Go
 runs `side()` and then panics -- the comment in emitIndexAssign says otherwise and
 describes one C compiler's choice. Only a program about to panic can tell.
-And (2026-09-20) a printf FORMATS as it goes, where Go evaluates every argument
-first and formats afterwards, so a String() with a side effect is seen by a LATER
-argument reading what it wrote -- `printf("%v|%d", stringer, calls)` prints the
-bumped count here and the old one in Go. Only a Stringer that writes, which is
-already outside what fmt promises to call once; a printf's own calls ARE hoisted in
-order (`printf("%v|%d", pick(), calls)` matches).
+A printf that FORMATTED as it goes was a third, and is fixed (2026-09-20): Go
+evaluates every argument first and formats afterwards, so a String() with a side
+effect was seen by a LATER argument reading what it wrote -- `printf("%v|%d",
+stringer, calls)` printed the bumped count. A print whose formatting may call a
+method binds every argument first now (`formatCallsMethod`), which is what the
+hoist already did for an argument whose own expression had an effect. Found by a
+domain probe over error values, not by the suite: the counter a probe bumps in
+String() is exactly what makes it visible.
 
 **The lifetime rules are asked of SHAPES, and a shape nobody asked about is a hole**
 (2026-09-17, found while closing a grammar gap). `TestEmitCFrameRefForms` crosses
