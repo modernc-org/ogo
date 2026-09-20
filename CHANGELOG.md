@@ -20,6 +20,15 @@ shipped section tells a reader on that version that they have behaviour they do 
 
 ### Language
 
+- **A constant's declared type has to hold its value's CLASS, and a struct does not
+  convert to a number.** `const K string = 5` typed an int constant as a string and
+  the print helper then read the number as a string header -- only the RANGE of a
+  typed constant was asked about, which says nothing about a number declared a
+  string. And `int(p)` for a struct p reached the C compiler as `(int)(p)`: the
+  conversion check asks a Kind question that a struct, an array or a slice operand
+  answers nothing about. Asked of the type's own declaration, so a local or a
+  parameter named after its type -- `func take(level level)` -- still converts.
+
 - **The integer-only operators are refused on a float, and a call's result has no
   address.** `%`, `&`, `|`, `^`, `&^`, `<<` and `>>` are defined on integers in Go
   and were let through for a float here -- the gate ahead of them asks only whether

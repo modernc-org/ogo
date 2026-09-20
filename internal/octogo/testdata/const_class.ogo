@@ -1,0 +1,67 @@
+// A constant's declared type has to be able to hold the CLASS of its value, not
+// only its range: `const K string = 5` typed an int constant as a string, and the
+// print helper then read the number as a string header. Only the range was asked
+// about (checkConstOverflow), which says nothing about a number declared a string.
+//
+// And a conversion whose OPERAND has no basic kind of its own -- a struct, an array,
+// a slice, by name -- where the target has one. Nothing converts between the two,
+// and the kind question the conversion check asks answers nothing about such an
+// operand, so `int(p)` for a struct p reached the C compiler as `(int)(p)`.
+
+type Celsius int
+
+type Name string
+
+type P struct{ x int }
+
+type L []int
+
+var p P
+
+var l L
+
+// ERROR "cannot use 5 \(untyped int constant\) as string value in constant declaration"
+const bad1 string = 5
+
+// ERROR "cannot use "x" \(untyped string constant\) as int value in constant declaration"
+const bad2 int = "x"
+
+// ERROR "cannot use true \(untyped bool constant\) as int value in constant declaration"
+const bad3 int = true
+
+// ERROR "cannot use 1 \(untyped int constant\) as bool value in constant declaration"
+const bad4 bool = 1
+
+// ERROR "cannot use 5 \(untyped int constant\) as Name value in constant declaration"
+const bad5 Name = 5
+
+// What a declared type CAN hold: its own class, at any width, and a defined type
+// over it.
+const (
+	ok1 int     = 5
+	ok2 float32 = 1.5
+	ok3 float32 = 2
+	ok4 string  = "x"
+	ok5 bool    = true
+	ok6 byte    = 'a'
+	ok7 Celsius = 20
+	ok8 Name    = "n"
+	ok9         = 7
+)
+
+func conversions() {
+	// ERROR "cannot convert p \(variable of type P\) to type int"
+	a := int(p)
+	// ERROR "cannot convert l \(variable of type L\) to type int"
+	b := int(l)
+	// A defined type over an int converts to one, and back.
+	var c Celsius = 20
+	d := int(c)
+	e := Celsius(d)
+	println(a, b, d, int(e))
+}
+
+func main() {
+	println(ok1, ok2, ok3, ok4, ok5, ok6, int(ok7), string(ok8), ok9)
+	conversions()
+}

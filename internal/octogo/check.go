@@ -14640,6 +14640,22 @@ func (f *File) checkConversion(s *Scope, callee Token, arg Node) bool {
 		f.err(pos, "cannot convert nil to type %s", callee.Src())
 		return false
 	}
+	// An operand whose type has no basic kind of ITS own -- a struct, an array, a
+	// slice, by name -- where the target has one. Nothing converts between the two,
+	// and the Kind question below answers nothing about such an operand, so `int(p)`
+	// for a struct p reached the C compiler as `(int)(p)`.
+	if nm, ql, ptr, named := f.exprNamedType(s, arg); named && !ptr && !ql.IsValid() && nm.IsValid() {
+		// Asked of the type's own DECLARATION, positively: a local or a parameter
+		// may be named after its type, `func take(level level)`, and the name then
+		// resolves to the variable here -- which says nothing about the type and
+		// must not be read as "no basic kind".
+		if td, isType := s.find(nm.Src()).(*TypeDeclaration); isType && td.TypeSpec != nil {
+			if _, hasKind := f.typeKind(s, td.TypeSpec.TypeNode); !hasKind {
+				f.err(pos, "cannot convert %s (variable of type %s) to type %s", src, nm.Src(), callee.Src())
+				return false
+			}
+		}
+	}
 	k, ok := f.exprType(s, arg)
 	if !ok || kindCategory(k) == catUnknown {
 		return true
@@ -17621,6 +17637,14 @@ func (f *File) resolveConst(s *Scope, cd *ConstDeclaration) {
 	// named one, as "int32(1) << 16" does.
 	if k, ok := f.typeKind(s, cs.TypeNode); ok {
 		if uc, isConst := cs.Value.(constVal); isConst {
+			// The declared type has to be able to hold the value's CLASS. Only its
+			// RANGE was asked about (checkConstOverflow), so `const K string = 5`
+			// typed an int constant as a string, and the print helper read the
+			// number as a string header.
+			if name, bad := f.constClassMismatch(s, cs, k); bad {
+				f.err(exprPos, "cannot use %s (untyped %s constant) as %s value in constant declaration",
+					f.exprSource(cs.exprNode), constClassName(uc.cv), name)
+			}
 			cs.Value = uc.typedAs(k)
 		}
 	}
@@ -17641,6 +17665,53 @@ func (f *File) constHome(s *Scope, cd *ConstDeclaration) (*File, *Scope) {
 		return wf, p.Scope
 	}
 	return wf, s
+}
+
+// constClassMismatch reports whether a constant's declared type cannot hold the
+// CLASS of its value -- a number declared a string, a string declared a bool -- and
+// the type's name as written, for the message.
+func (f *File) constClassMismatch(s *Scope, cs *ConstSpecNode, k Kind) (string, bool) {
+	uc, isConst := cs.Value.(constVal)
+	if !isConst || uc.cv == nil || !cs.hasExpr {
+		return "", false
+	}
+	want := kindCategory(k)
+	if want == catUnknown {
+		return "", false
+	}
+	var have int
+	switch uc.cv.Kind() {
+	case constant.Bool:
+		have = catBool
+	case constant.String:
+		have = catString
+	case constant.Int, constant.Float:
+		have = catNumeric
+	default:
+		return "", false
+	}
+	if have == want {
+		return "", false
+	}
+	name := kindName(k)
+	if t := f.typeNodeString(cs.TypeNode, false); t != "" {
+		name = t
+	}
+	return name, true
+}
+
+// constClassName names a constant value's class the way Go writes it in "untyped
+// <class> constant".
+func constClassName(cv constant.Value) string {
+	switch cv.Kind() {
+	case constant.Bool:
+		return "bool"
+	case constant.String:
+		return "string"
+	case constant.Float:
+		return "float"
+	}
+	return "int"
 }
 
 // checkConstOverflow reports a typed integer constant whose value does not fit in
