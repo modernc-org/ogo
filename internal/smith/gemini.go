@@ -877,8 +877,14 @@ func (f *Fuzzer) genStatement(vm Machine, mem Memory) Node {
 		return f.genDeferCall(vm, mem) // 1% chance for a call that defers
 	case r < 0.66:
 		return f.genSliceDecl(vm, mem) // 3% chance for a slice declaration
+	case r < 0.730:
+		return f.genSliceWrite(vm, mem) // 7% chance for a slice element write
 	case r < 0.734:
-		return f.genSliceWrite(vm, mem) // 7.4% chance for a slice element write
+		// 0.4% for a slice converted to types written out, `[]int(s)` and
+		// `[K]int(s)`, a spelling the grammar took on 2026-09-21. Taken from the
+		// slice element write above, its nearest relative: it writes an element of
+		// the same slices.
+		return f.genSliceConvStmt(vm, mem)
 	case r < 0.74:
 		// 0.6% for copy, clear and the three-index reslice, each with a helper of
 		// its own in the emitter and none of them generated before. Taken from the
@@ -3482,6 +3488,55 @@ func (f *Fuzzer) genSliceOpsStmt(vm Machine, mem Memory) Node {
 	for i := 0; i < n; i++ {
 		fold(&IndexNode{Name: dst, Index: i}, 0)
 	}
+	return &BlockNode{Statements: stmts}
+}
+
+// genSliceConvStmt converts a live integer slice to types written out: `[]int(s)`,
+// the same header under another type -- a defined slice type's too -- and
+// `[K]int(s)`, a COPY of the first K elements (Go 1.20), which a write through s
+// afterwards must not reach. The slice conversion is only ever read, and before the
+// write, for the reason genSliceOpsStmt gives: the VM models a slice by its live
+// elements, not by a backing array the two names would share.
+func (f *Fuzzer) genSliceConvStmt(vm Machine, mem Memory) Node {
+	var srcs []*Symbol
+	for _, s := range f.CurrentEnv.GetSliceSymbols() {
+		if len(mem.Load(s.Name).(*SliceVal).Elems) != 0 {
+			srcs = append(srcs, s)
+		}
+	}
+	if len(srcs) == 0 {
+		return f.genChecksumMutation(vm, mem)
+	}
+	src := srcs[f.Rand.Intn(len(srcs))]
+	src.Used = true
+	sv := mem.Load(src.Name).(*SliceVal)
+	var stmts []Node
+	fold := func(node Node, v Int32) {
+		stmts = append(stmts, &AssignStmtNode{
+			Lhs: f.ChecksumName,
+			Op:  "=",
+			Rhs: &BinaryExprNode{Left: &IdentNode{Name: f.ChecksumName}, Op: "^", Right: node},
+		})
+		newSum, _ := vm.Eval("^", mem.Load(f.ChecksumName), v)
+		mem.Store(f.ChecksumName, newSum)
+	}
+	cv := f.newVarName("cv")
+	stmts = append(stmts, &ShortDeclNode{Name: cv, Rhs: &ConvNode{Type: "[]int", X: &IdentNode{Name: src.Name}}})
+	fold(&BuiltinCallNode{Fn: "len", Arg: cv}, Int32(len(sv.Elems)))
+	for i, v := range sv.Elems {
+		fold(&IndexNode{Name: cv, Index: i}, v)
+	}
+	k := 1 + f.Rand.Intn(len(sv.Elems))
+	ar := f.newVarName("ar")
+	stmts = append(stmts, &ShortDeclNode{Name: ar, Rhs: &ConvNode{Type: fmt.Sprintf("[%d]int", k), X: &IdentNode{Name: src.Name}}})
+	kept := append([]Int32(nil), sv.Elems[:k]...)
+	x := Int32(f.Rand.Int31())
+	stmts = append(stmts, &AssignStmtNode{Lhs: src.Name + "[0]", Op: "=", Rhs: &IntLitNode{Value: x.Literal()}})
+	sv.Elems[0] = x
+	for i, v := range kept {
+		fold(&IndexNode{Name: ar, Index: i}, v)
+	}
+	fold(&IndexNode{Name: src.Name, Index: 0}, x)
 	return &BlockNode{Statements: stmts}
 }
 

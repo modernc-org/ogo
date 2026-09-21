@@ -74,6 +74,11 @@ var generatedConstructs = []struct {
 	// The one that pins the receiver rule: a value receiver writes to a COPY, so
 	// the caller's field must be unchanged after this call.
 	{"method call, value-receiver shadow", `\.shadow_\d+\(`},
+	// A slice converted to types written out (genSliceConvStmt): the header under
+	// another type, and an array COPY a later write through the slice must not
+	// reach.
+	{"slice conversion written out", `\n\s*cv_\d+ := \[\]int\(s_\d+\)`},
+	{"slice to array conversion written out", `\n\s*ar_\d+ := \[\d+\]int\(s_\d+\)`},
 	{"string variable", `\n\s*var t_\d+ string = `},
 	{"string len", `len\(t_\d+\)`},
 	{"string byte index", `int\(t_\d+\[\d+\]\)`},
