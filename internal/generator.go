@@ -13,6 +13,7 @@ import (
 	"context"
 	"fmt"
 	"io/fs"
+	"maps"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -20,6 +21,7 @@ import (
 	"runtime"
 	"slices"
 	"sort"
+	"strconv"
 	"strings"
 	"time"
 
@@ -94,15 +96,16 @@ const (
 	//
 	// The machines take their turns one at a time, each starting from the fold the
 	// previous one left: the fold spans all five targets, so two of them working
-	// from one base write conflicting ccgo.go and ccgo_g_* files. On each, `rm -rf
-	// flexprop flexprop_install` FIRST -- the generator reuses any clone it finds,
-	// and one an earlier run left on a builder is at the earlier pin, which is what
-	// the builders held on 2026-09-21. Then the regeneration is measured, not
-	// assumed: build scripts/flexcc for all five platforms, compile doc/ and a
+	// from one base write conflicting ccgo.go and ccgo_g_* files. A clone an
+	// earlier run left on a machine is used only at the pins with exactly the diffs
+	// applied (checkClone); one at an earlier pin -- what the builders held on
+	// 2026-09-21 -- is refused, with the `rm -rf flexprop flexprop_install` that
+	// clears it. Then the regeneration is measured, not assumed: build
+	// scripts/flexcc for all five platforms, compile doc/ and a
 	// scripts/dumpcorpus.sh dump with each through scripts/cccorpus.sh, and require
 	// the five lists to be identical to each other and to a native build's of
-	// spin2cppRef (-I its include/). A clone at the wrong pin shows there as the
-	// programs it builds differently, which a successful run does not.
+	// spin2cppRef (-I its include/). That shows a backend building anything
+	// differently from its pin, whatever the cause, which a successful run does not.
 	//
 	// The hostnames used when each target was first generated were `darwin-m1` (both
 	// darwin backends) and `rpi5` (linux/arm64), reachable over ssh from the first
@@ -140,7 +143,14 @@ var (
 	goarch = env("TARGET_GOARCH", env("GOARCH", runtime.GOARCH))
 	goos   = env("TARGET_GOOS", env("GOOS", runtime.GOOS))
 	gsed   = gnuTool("sed", "gsed")
-	target = fmt.Sprintf("%s/%s", goos, goarch)
+	// spin2cppDiffs are applied to spin2cpp after its checkout, in order.
+	// mcpp_main.c.diff adapts the sources to the transpile (it removes a setjmp). A
+	// fix carried ahead of upstream is listed here too, as optimize_ir.c.diff was
+	// from 2026-09-15 to 2026-09-21 (flexprop#109, #110, #111), and goes with the
+	// spin2cppRef that carries upstream's own fix -- once its reproducer prints
+	// gcc's values under a native build of that commit without the diff.
+	spin2cppDiffs = []string{"mcpp_main.c.diff"}
+	target        = fmt.Sprintf("%s/%s", goos, goarch)
 )
 
 // gnuTool returns gnu on a darwin host (where the base tool is the BSD variant) and
@@ -235,18 +245,17 @@ func main() {
 			}
 		}
 
-		// mcpp_main.c.diff adapts the sources to the transpile (it removes a
-		// setjmp). A fix carried ahead of upstream is applied here too, as
-		// optimize_ir.c.diff was from 2026-09-15 to 2026-09-21 (flexprop#109, #110,
-		// #111), and goes with the spin2cppRef that carries upstream's own fix --
-		// once its reproducer prints gcc's values under a native build of that
-		// commit without the diff.
-		for _, diff := range []string{"mcpp_main.c.diff"} {
+		for _, diff := range spin2cppDiffs {
 			if err := shell(filepath.Join(cloneDir, "spin2cpp"), "git", "apply", filepath.Join(wd, diff)); err != nil {
 				fail(1, "git apply %s: err=%v", diff, err)
 			}
 		}
 	}
+
+	// A clone found here is transpiled as it is, so it must be the one the pins and
+	// the diffs describe. A fresh one is checked too, so that the check runs every
+	// time and not only on the day it matters.
+	checkClone(wd)
 
 	flexccDir := filepath.Join(wd, "flexcc")
 	if err := os.MkdirAll(flexccDir, 0755); err != nil {
@@ -277,6 +286,116 @@ func main() {
 
 	gofmtFlexcc(flexccDir)
 	undupDedup(flexccDir)
+}
+
+// checkClone refuses a clone that is not at the pins with exactly spin2cppDiffs
+// applied. main transpiles whatever clone it finds, and one an earlier run left
+// is at the earlier pin: on 2026-09-21 both builders still held the 2026-09-15
+// clone, 3840014f with optimize_ir.c.diff applied, and a regeneration from it
+// would have succeeded -- its backend building 13 of 1632 corpus programs
+// differently from the pin's, which only a corpus comparison shows. Removing the
+// clone first was a step written down; this makes it one that cannot be missed.
+//
+// The builds leave tracked files alone -- the objects and what bison, xxd and
+// pandoc generate are all untracked -- so a clone an earlier run at the same pins
+// built, darwin/arm64's before darwin/amd64's, passes.
+func checkClone(wd string) {
+	stale := func(format string, args ...any) {
+		fail(1, "%s: %s\nremove it -- rm -rf %s %s -- and run the generator again", cloneDir, fmt.Sprintf(format, args...), cloneDir, installDir)
+	}
+	atPin := func(dir, ref string) {
+		want, err := gitOut(dir, "rev-parse", "--verify", ref+"^{commit}")
+		if err != nil {
+			stale("%s has no commit %s: %v", dir, ref, err)
+		}
+		have, err := gitOut(dir, "rev-parse", "HEAD")
+		if err != nil {
+			stale("%v", err)
+		}
+		if have != want {
+			stale("%s is at %s, not at %s", dir, have, ref)
+		}
+	}
+
+	atPin(cloneDir, flexpropRef)
+	spin2cppDir := filepath.Join(cloneDir, "spin2cpp")
+	ref := spin2cppRef
+	if ref == "" { // the commit flexpropRef records for its submodule
+		var err error
+		if ref, err = gitOut(cloneDir, "rev-parse", "HEAD:spin2cpp"); err != nil {
+			stale("%v", err)
+		}
+	}
+	atPin(spin2cppDir, ref)
+
+	// Each diff applied, and nothing else changed: the tracked files that differ
+	// from the pin are the ones the diffs touch, by as many lines.
+	want := map[string][2]int{}
+	for _, diff := range spin2cppDiffs {
+		path := filepath.Join(wd, diff)
+		if _, err := gitOut(spin2cppDir, "apply", "--check", "--reverse", path); err != nil {
+			stale("%s is not applied in %s: %v", diff, spin2cppDir, err)
+		}
+		s, err := gitOut(spin2cppDir, "apply", "--numstat", path)
+		if err == nil {
+			err = numstat(want, s)
+		}
+		if err != nil {
+			fail(1, "%s: %v", diff, err)
+		}
+	}
+	have := map[string][2]int{}
+	s, err := gitOut(spin2cppDir, "diff", "--numstat", "HEAD")
+	if err == nil {
+		err = numstat(have, s)
+	}
+	if err != nil {
+		stale("%v", err)
+	}
+	if !maps.Equal(have, want) {
+		stale("%s changes other than %s:\n%s", spin2cppDir, strings.Join(spin2cppDiffs, ", "), s)
+	}
+}
+
+// gitOut runs git in dir and returns its standard output, trimmed.
+func gitOut(dir string, args ...string) (string, error) {
+	var stderr bytes.Buffer
+	cmd := exec.Command("git", args...)
+	cmd.Dir = dir
+	cmd.Stderr = &stderr
+	out, err := cmd.Output()
+	if err != nil {
+		if s := strings.TrimSpace(stderr.String()); s != "" {
+			err = fmt.Errorf("%v: %s", err, s)
+		}
+		return "", fmt.Errorf("git %s: %v", strings.Join(args, " "), err)
+	}
+	return strings.TrimSpace(string(out)), nil
+}
+
+// numstat adds the lines added and deleted per path, as `git --numstat` prints
+// them, to m.
+func numstat(m map[string][2]int, s string) error {
+	for _, line := range strings.Split(s, "\n") {
+		if line == "" {
+			continue
+		}
+		f := strings.SplitN(line, "\t", 3)
+		if len(f) != 3 {
+			return fmt.Errorf("unexpected numstat line %q", line)
+		}
+		add, err := strconv.Atoi(f[0])
+		if err != nil {
+			return fmt.Errorf("unexpected numstat line %q", line)
+		}
+		del, err := strconv.Atoi(f[1])
+		if err != nil {
+			return fmt.Errorf("unexpected numstat line %q", line)
+		}
+		v := m[f[2]]
+		m[f[2]] = [2]int{v[0] + add, v[1] + del}
+	}
+	return nil
 }
 
 // undupBase / undupPattern identify the flexcc backend group undup folds: the

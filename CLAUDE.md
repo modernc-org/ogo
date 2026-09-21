@@ -190,8 +190,10 @@ inputs, and never hand-edit the outputs.
    go run generator.go` (windows, needs `x86_64-w64-mingw32-gcc` and the `ccgo` CLI
    on PATH); or `cd internal && go run generator.go` on a darwin host for
    darwin/arm64 and `arch -x86_64 <amd64-go> run generator.go` (with an amd64 `ccgo`
-   on PATH) for darwin/amd64 — heavy and network-dependent; to adopt a changed
-   `flexpropRef` you must `rm -rf internal/flexprop` first so the pin is re-cloned.
+   on PATH) for darwin/amd64 — heavy and network-dependent; to adopt a changed pin,
+   `rm -rf internal/flexprop internal/flexprop_install` first so it is re-cloned. A
+   clone the generator finds is used only at the pins with exactly its diffs applied
+   (`checkClone`); any other is refused with that command.
    Generating a second target after a first (without resetting between) accumulates
    both into the fold; e.g. run darwin/amd64 after darwin/arm64 on the mac.
    The generator handles the `undup` fold itself so the steps can't be run out of
@@ -231,7 +233,8 @@ inputs, and never hand-edit the outputs.
    > **All five platforms, the same day**: linux/amd64 and windows/amd64 on the
    > second dev machine, linux/arm64 on `rpi5` and both darwin backends on
    > `darwin-m1` from the first, the one that reaches the builders -- each builder's
-   > 2026-09-15 clone removed first, since the generator reuses any clone it finds.
+   > 2026-09-15 clone removed first, since the generator then reused any clone it
+   > found (it refuses one at another pin now, `checkClone`).
    > `scripts/flexcc` built for each platform compiles doc/ and a corpus dump, 1670
    > programs, to five identical `scripts/cccorpus.sh` lists, equal to a native
    > v7.7.3's (windows's under wine, its builder being off). Host suite and `make
