@@ -33932,6 +33932,75 @@ func main() {
 }
 `,
 		want: "900 900 40 40 3 900 40 900\n200 51 40 5 3 1011 40\nfalse true 0 true\nthree 11\n0 40\n1 5\n2 6\n8\ndeferred 900\n",
+	}, {
+		// A struct field of a DEFINED slice type, sliced: `h.xs[1:]` for a `type L
+		// []int` field was "cannot infer a type" in a declaration and "this
+		// combination of indexes and fields is not supported yet" where it was read,
+		// while an unnamed []int field and a variable of L sliced. Every place a value
+		// stands, through a pointer, a copy, a nested field and an element, with three
+		// bounds, ranged over and stored through -- the store showing in the backing
+		// array and in an earlier slice of it.
+		name: "a field of a defined slice type, sliced",
+		src: `type L []int
+
+func (l L) Sum() int {
+	n := 0
+	for _, v := range l {
+		n += v
+	}
+	return n
+}
+
+type H struct {
+	xs L
+	n  int
+}
+
+type O struct{ h H }
+
+var back = [6]int{1, 2, 3, 4, 5, 6}
+
+var h = H{back[:], 7}
+
+var hs = [2]H{H{back[:2], 1}, H{back[2:], 2}}
+
+var o = O{H{back[1:], 3}}
+
+var calls int
+
+func get() *H {
+	calls = calls*10 + 1
+	return &h
+}
+
+func take(l L) int { return len(l)*100 + l[0] }
+
+func mk() L { return h.xs[2:4] }
+
+func main() {
+	a := h.xs[1:]
+	var b L = h.xs[2:]
+	var c []int = h.xs[:3]
+	var d L
+	d = h.xs[1:3]
+	p := &h
+	e := p.xs[4:]
+	var hh H = h
+	f := hh.xs[1:2]
+	g := o.h.xs[1:]
+	k := hs[1].xs[1:]
+	m := h.xs[1:3:4]
+	println(len(a), a[0], b.Sum(), len(c), d[1], e[0], f[0], g[0], k[0], len(m), cap(m))
+	println(take(h.xs[3:]), len(mk()), mk()[1], len(h.xs[2:]), cap(h.xs[2:]))
+	println(get().xs[1:][0], calls)
+	for i, v := range h.xs[4:] {
+		println(i, v)
+	}
+	h.xs[1:][0] = 20
+	println(back[1], a[0])
+}
+`,
+		want: "5 2 18 3 3 5 2 3 4 2 3\n304 2 4 4 4\n2 1\n0 5\n1 6\n20 20\n",
 	}}
 
 // TestEmitCRun compiles emitted C with a host compiler and runs it, checking what

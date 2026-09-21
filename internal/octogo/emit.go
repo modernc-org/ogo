@@ -22299,13 +22299,19 @@ func (e *emitter) sliceableField(base string, fields []string) (sliceSource, boo
 		e.usesString = true
 		return sliceSource{cString, lv + ".str", lv + ".len", ""}, true
 	}
-	if !e.isSliceCType(ct) {
+	// A field of a DEFINED slice type, `type L []int`, is sliced through its
+	// underlying header, as a variable of L is. Asked of the name written, `h.xs[1:]`
+	// was "cannot infer a type" in a declaration and "this combination of indexes and
+	// fields is not supported yet" where it was read, while the same field of an
+	// unnamed []int, and a variable of L, sliced.
+	u := e.underlyingCType(ct)
+	if !e.isSliceCType(u) {
 		return sliceSource{}, false
 	}
-	if elem, ok := e.sliceElemByName[ct]; ok {
+	if elem, ok := e.sliceElemByName[u]; ok {
 		e.needSlice(elem)
 	}
-	return sliceSource{ct, lv + ".ptr", lv + ".len", lv + ".cap"}, true
+	return sliceSource{u, lv + ".ptr", lv + ".len", lv + ".cap"}, true
 }
 
 // sliceableChainRow recognises an access chain whose last step slices what the
