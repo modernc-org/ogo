@@ -32,7 +32,7 @@ func main() {
 	_ = one + one
 	// ERROR "operator \* not defined on ch: it is a channel"
 	_ = ch * 2
-	// ERROR "operator << not defined on xs: it is an array or a slice"
+	// ERROR "operator << not defined on xs: it is a slice"
 	_ = xs << 1
 	// ERROR "operator - not defined on a: it is an array"
 	_ = 1 - a
@@ -50,6 +50,6 @@ func main() {
 	_ = nil + 1
 	// ERROR "operator - not defined on nil"
 	_ = -nil
-	// ERROR "operator \+ not defined on xs: it is an array or a slice"
+	// ERROR "operator \+ not defined on xs: it is a slice"
 	_ = "x" + xs
 }

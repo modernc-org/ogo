@@ -65,7 +65,7 @@ func main() {
 	_ = call(3)
 	// ERROR "cannot use f as int value in assignment: it is a function"
 	n = f
-	// ERROR "cannot use xs as int value in assignment: it is an array or a slice"
+	// ERROR "cannot use xs as int value in assignment: it is a slice"
 	n = xs
 	// ERROR "cannot use gp as int value in assignment: it is a struct"
 	n = gp

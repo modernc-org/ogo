@@ -1,0 +1,35 @@
+// A variable with no written type is a slice or an array by the initializer it took
+// its type from, and the checker told the two apart only by the written type: from
+// a literal, a make or a slice expression it was "an array or a slice", which is no
+// one category, so the rules that compare categories said nothing. `xs == ys` of two
+// slices reached the emitter, and a switch on one the target's C compiler.
+
+func one() int { return 1 }
+
+var back = [4]int{1, 2, 3, 4}
+
+func main() {
+	xs := []int{1, 2}
+	ys := []int{3}
+	a := [3]int{1, 2, 3}
+	ms := make([]int, 2)
+	ss := back[1:]
+	ts := ss
+	f := one
+	// ERROR "invalid operation: xs == ys \(slice can only be compared to nil\)"
+	_ = xs == ys
+	// ERROR "invalid operation: ms == xs \(slice can only be compared to nil\)"
+	_ = ms == xs
+	// ERROR "invalid operation: ts == ss \(slice can only be compared to nil\)"
+	_ = ts == ss
+	// ERROR "invalid operation: a == xs \(mismatched types\): a is an array and xs is a slice"
+	_ = a == xs
+	switch xs {
+	// ERROR "invalid case ys in switch on xs \(slice can only be compared to nil\)"
+	case ys:
+	}
+	switch f {
+	// ERROR "invalid case xs in switch on f \(mismatched types\): xs is a slice and f is a function"
+	case xs:
+	}
+}

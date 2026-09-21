@@ -1,0 +1,25 @@
+// COMPILE
+
+// The controls of inferred_slice_compare.ogo: a slice compared with nil, an array
+// with an array, and a string sliced, which is a string and compares as one.
+
+var back = [4]int{1, 2, 3, 4}
+
+var str = "hello"
+
+func main() {
+	xs := []int{1, 2}
+	a := [3]int{1, 2, 3}
+	b := a
+	ms := make([]int, 2)
+	ss := back[1:]
+	ts := ss
+	s := str[1:]
+	println(xs == nil, ms != nil, ts == nil, a == b, s == "ello", s < str)
+	switch xs {
+	case nil:
+	}
+	switch a {
+	case b:
+	}
+}

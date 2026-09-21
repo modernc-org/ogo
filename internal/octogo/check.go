@@ -3457,6 +3457,12 @@ func (f *File) derefIdent(s *Scope, n Node) (Token, bool) {
 // nonBoolVar is nonBoolOperand for a variable, answered from its declaration. A
 // pointer is asked first, which nonBoolOperand does before it reaches a name.
 func (f *File) nonBoolVar(s *Scope, d *VarDeclaration) (string, bool) {
+	return f.nonBoolVarAt(s, d, 0)
+}
+
+// nonBoolVarAt is nonBoolVar asked from depth levels of variables copied from one
+// another, which sliceOrArrayOf follows and bounds.
+func (f *File) nonBoolVarAt(s *Scope, d *VarDeclaration, depth int) (string, bool) {
 	switch {
 	case d.isPtr:
 		return "a pointer", true
@@ -3469,9 +3475,74 @@ func (f *File) nonBoolVar(s *Scope, d *VarDeclaration) (string, bool) {
 	case d.hasKind:
 		return "", false // exprType's to answer
 	case d.hasElemKind || d.elemTypeNode != nil || d.elemTypeName.IsValid():
+		if what, ok := f.sliceOrArrayOf(d, depth); ok {
+			return what, true
+		}
 		return "an array or a slice", true
 	case d.typeName.IsValid():
 		return f.nonBoolNamed(s, d.declaredTypeName())
+	}
+	// A slice taken of an array or of another slice, `ss := back[1:]`, records no
+	// element to be asked of; its initializer is.
+	return f.sliceOrArrayOf(d, depth)
+}
+
+// sliceOrArrayOf tells apart what nonBoolVar can otherwise only call "an array or
+// a slice": a variable with no written type, by the initializer it took one from. A
+// literal of a bracketed type says which by its brackets, make and a slice
+// expression make slices, and another variable is asked in turn. Without it `xs ==
+// ys` for two slices from literals was not a slice compared with a slice to the
+// checker, which let the emitter refuse it, and a switch on one let the target's C
+// compiler do it.
+func (f *File) sliceOrArrayOf(d *VarDeclaration, depth int) (string, bool) {
+	if depth > 8 || d.init.sym == 0 || d.declScope == nil || d.declType != nil {
+		return "", false
+	}
+	fac, ok := f.soleFactor(d.init)
+	if !ok {
+		return "", false
+	}
+	kids := slices.Collect(it(fac.ast))
+	if len(kids) == 0 || kids[0].sym != 0 {
+		return "", false
+	}
+	switch f.ch(kids[0].tok) {
+	case LBRACK:
+		// `[]int{1}`, `[3]int{1}`, `[...]int{1}`: a length between the brackets is
+		// an array's.
+		if kids[len(kids)-1].sym != CompositeLit {
+			return "", false
+		}
+		for _, c := range kids[1:] {
+			switch {
+			case c.sym == Expression, c.sym == 0 && f.ch(c.tok) == ELLIPSIS:
+				return "an array", true
+			case c.sym == 0 && f.ch(c.tok) == RBRACK:
+				return "a slice", true
+			}
+		}
+	case IDENT:
+		name := f.tok(kids[0].tok).Src()
+		if len(kids) == 1 {
+			if vd, isVar := d.declScope.find(name).(*VarDeclaration); isVar && vd != d {
+				switch what, known := f.nonBoolVarAt(d.declScope, vd, depth+1); what {
+				case "a slice", "an array":
+					return what, known
+				}
+			}
+			return "", false
+		}
+		if len(kids) != 2 || kids[1].sym != FactorSuffix {
+			return "", false
+		}
+		steps := slices.Collect(it(kids[1].ast))
+		last := steps[len(steps)-1]
+		switch {
+		case last.sym == Index && f.isSliceExpr(last):
+			return "a slice", true // of an array or a slice; a string's has a Kind
+		case name == "make" && len(steps) == 1 && last.sym == CallSuffix && d.declScope.find("make") == nil:
+			return "a slice", true
+		}
 	}
 	return "", false
 }

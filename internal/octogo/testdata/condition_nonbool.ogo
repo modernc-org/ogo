@@ -59,7 +59,7 @@ func main() {
 	// ERROR "non-bool used as if condition: ch is a channel"
 	if ch {
 	}
-	// ERROR "non-bool used as if condition: s is an array or a slice"
+	// ERROR "non-bool used as if condition: s is a slice"
 	if s {
 	}
 	// ERROR "non-bool used as if condition: arr is an array"
