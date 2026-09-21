@@ -38,9 +38,11 @@ shipped section tells a reader on that version that they have behaviour they do 
   which the diff merged, costing 8 bytes, and all 13 pass on the board under both.
   spin2cpp's own `make test_offline` passes 588 of 588 under both. The regenerated
   backend compiles all of them to the same binaries as the native v7.7.3, and the
-  host and on-board suites pass on it. So far that is the linux/amd64 and
-  windows/amd64 backends; linux/arm64 and the two darwin ones are still v0.40.0's
-  -- correct, the diff fixing what v7.7.3 fixes -- and follow.
+  host and on-board suites pass on it. That is so on each of the five platforms
+  `ogo` builds on -- linux/amd64, linux/arm64, windows/amd64, darwin/arm64,
+  darwin/amd64 -- all five regenerated at v7.7.3: the doc/ reproducers, the run
+  cases and the fuzzer seeds, 1670 programs, build to the same binaries, byte for
+  byte, on every one of them.
 
 ### Verified
 

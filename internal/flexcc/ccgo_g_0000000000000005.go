@@ -1799,6 +1799,40 @@ func s__tdefl_compress_normal(tls *libc.TLS, cc *CC, d3 uintptr) (r _mz_bool) {
 	return libc.Int32FromInt32(m_MZ_TRUE)
 }
 
+// C documentation
+//
+//	/*
+//	 * utility functions to fetch previously calculated clock frequency
+//	 */
+func x__GetClkFreq(tls *libc.TLS, cc *CC, P uintptr, clkfreqptr uintptr, clkmodeptr uintptr) (r int32) {
+	var freqsym, modesym, v1 uintptr
+	_, _, _ = freqsym, modesym, v1
+	if P != 0 {
+		v1 = x__FindSymbolEx(tls, cc, P+144, __ccgo_ts+5732, 0)
+	} else {
+		v1 = libc.UintptrFromInt32(0)
+	}
+	freqsym = v1
+	if P != 0 {
+		v1 = x__FindSymbolEx(tls, cc, P+144, __ccgo_ts+9205, 0)
+	} else {
+		v1 = libc.UintptrFromInt32(0)
+	}
+	modesym = v1
+	if !(freqsym != 0) || !(modesym != 0) {
+		return 0
+	}
+	if (*_Symbol)(unsafe.Pointer(freqsym)).Fkind != int32(_SYM_CONSTANT) {
+		return 0
+	}
+	if (*_Symbol)(unsafe.Pointer(modesym)).Fkind != int32(_SYM_CONSTANT) {
+		return 0
+	}
+	**(**uint32)(__ccgo_up(clkfreqptr)) = libc.Uint32FromInt32(x__EvalConstSym(tls, cc, freqsym))
+	**(**uint32)(__ccgo_up(clkmodeptr)) = libc.Uint32FromInt32(x__EvalConstSym(tls, cc, modesym))
+	return int32(1)
+}
+
 func x__mz_zip_reader_is_file_a_directory(tls *libc.TLS, cc *CC, pZip2 uintptr, file_index1 _mz_uint) (r _mz_bool) {
 	var attribute_mapping_id, external_attr, filename_len, v2 _mz_uint
 	var p, v1, v3, v5 uintptr

@@ -228,16 +228,14 @@ inputs, and never hand-edit the outputs.
    > regenerated flexcc compiles the battery and all 1632 byte-identically to a
    > native v7.7.3.
    >
-   > **IN PROGRESS: only linux/amd64 and windows/amd64 are regenerated.**
-   > linux/arm64 and both darwin backends are still the 2026-09-15 transpiles
-   > (3840014f plus the diff: correct, and apart only in those 13 programs), because
-   > the second dev machine cannot reach the builders. `internal/generator.go` says
-   > how to finish -- above all, `rm -rf internal/flexprop internal/flexprop_install`
-   > on each builder FIRST, or the generator reuses the 09-15 clone -- and the check
-   > is `scripts/cccorpus.sh` over doc/ and a corpus dump with `scripts/flexcc` built
-   > for each platform: five identical lists. Host suite and `make board` (657 run
-   > cases) are green on linux/amd64; six `_examples` and the 13 changed programs
-   > build identically under windows (wine).
+   > **All five platforms, the same day**: linux/amd64 and windows/amd64 on the
+   > second dev machine, linux/arm64 on `rpi5` and both darwin backends on
+   > `darwin-m1` from the first, the one that reaches the builders -- each builder's
+   > 2026-09-15 clone removed first, since the generator reuses any clone it finds.
+   > `scripts/flexcc` built for each platform compiles doc/ and a corpus dump, 1670
+   > programs, to five identical `scripts/cccorpus.sh` lists, equal to a native
+   > v7.7.3's (windows's under wine, its builder being off). Host suite and `make
+   > board` (657 run cases) are green on linux/amd64.
    >
    > **Backend regenerated 2026-09-15 with two fixes of its own** — spin2cpp
    > `3840014f` (7.7.3-beta, its master of 2026-09-05) inside flexprop `v7.7.0`, plus

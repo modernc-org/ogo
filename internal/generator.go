@@ -37,28 +37,13 @@ const (
 	// sit on spin2cpp's master for longer than that -- which is what spin2cppRef,
 	// below, is for.
 	//
-	// The committed ccgo_linux_amd64.go and ccgo_windows_amd64.go were regenerated
-	// against this pair on 2026-09-21 with ccgo v4.34.6 (flexprop at v7.7.0,
-	// spin2cpp at spin2cppRef); mcpp_main.c.diff applied cleanly.
-	//
-	// NOT YET THE OTHER THREE. ccgo_linux_arm64.go, ccgo_darwin_arm64.go and
-	// ccgo_darwin_amd64.go are still the 2026-09-15 transpiles of 3840014f plus
-	// optimize_ir.c.diff: the machine that regenerated the first two cannot reach
-	// the builders that make them (see the hostnames below). They are correct --
-	// the diff fixed what v7.7.3 fixes -- and build what the new pin builds except
-	// where the diff merged two immediate adds that v7.7.3 keeps apart: 13 of 1632
-	// programs, 8 bytes each, all 13 passing on the board either way. To finish, on
-	// each builder in turn, starting from the fold the previous one left (the fold
-	// spans all five targets, so two builders working from one base write
-	// conflicting ccgo.go and ccgo_g_* files): `rm -rf internal/flexprop
-	// internal/flexprop_install` FIRST -- a clone left there by the 2026-09-15 run
-	// is at 3840014f with the diff applied, and the generator reuses any clone it
-	// finds -- then the table's command. Then build scripts/flexcc for all five
-	// platforms, compile doc/ and a scripts/dumpcorpus.sh dump with each through
-	// scripts/cccorpus.sh, and require the five lists to be identical, linux/amd64's
-	// being the reference, measured faithful to a native v7.7.3 build on all 1632
-	// programs. Then drop this paragraph, and the CLAUDE.md and CHANGELOG notes
-	// that say the same.
+	// All five committed backends were regenerated against this pair on 2026-09-21
+	// with ccgo v4.34.6 (flexprop at v7.7.0, spin2cpp at spin2cppRef);
+	// mcpp_main.c.diff applied cleanly. scripts/flexcc built for each of the five
+	// platforms compiles the doc/ reproducers and a scripts/dumpcorpus.sh dump of
+	// the run cases and fuzzer seeds 1-1000, 1670 programs, to one and the same
+	// scripts/cccorpus.sh list -- windows/amd64's taken under wine, the windows
+	// builder being off -- and that list is a native v7.7.3 build's.
 	//
 	// The first generation, 2026-07-20, had both at v7.7.0; the second, 2026-08-29,
 	// had spin2cpp at 2bd01c4c; the third, 2026-09-15, had it at 3840014f plus
@@ -106,6 +91,18 @@ const (
 	// Generating a second target without resetting accumulates both into the undup
 	// fold, which is intended: run darwin/amd64 after darwin/arm64 on the same mac.
 	// See transpileWindows and transpileDarwin for what each does beyond this.
+	//
+	// The machines take their turns one at a time, each starting from the fold the
+	// previous one left: the fold spans all five targets, so two of them working
+	// from one base write conflicting ccgo.go and ccgo_g_* files. On each, `rm -rf
+	// flexprop flexprop_install` FIRST -- the generator reuses any clone it finds,
+	// and one an earlier run left on a builder is at the earlier pin, which is what
+	// the builders held on 2026-09-21. Then the regeneration is measured, not
+	// assumed: build scripts/flexcc for all five platforms, compile doc/ and a
+	// scripts/dumpcorpus.sh dump with each through scripts/cccorpus.sh, and require
+	// the five lists to be identical to each other and to a native build's of
+	// spin2cppRef (-I its include/). A clone at the wrong pin shows there as the
+	// programs it builds differently, which a successful run does not.
 	//
 	// The hostnames used when each target was first generated were `darwin-m1` (both
 	// darwin backends) and `rpi5` (linux/arm64), reachable over ssh from the first

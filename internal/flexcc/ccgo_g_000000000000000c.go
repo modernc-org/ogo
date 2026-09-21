@@ -9959,6 +9959,141 @@ func s__OptimizeCompares(tls *libc.TLS, cc *CC, irl uintptr) (r int32) {
 	return **(**int32)(__ccgo_up(bp))
 }
 
+func s__OptimizeReadWrite(tls *libc.TLS, cc *CC, irl uintptr) (r int32) {
+	bp := tls.Alloc(16)
+	defer tls.Free(16)
+	var base, dst1, ir1, next_ir, nextread, prev_ir, tmp, v1 uintptr
+	var change, mask, mask1, nextsize, size, v8 int32
+	var write, v2 uint8
+	var v7 bool
+	var _ /* mval at bp+0 */ _int32_t
+	_, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _ = base, change, dst1, ir1, mask, mask1, next_ir, nextread, nextsize, prev_ir, size, tmp, write, v1, v2, v7, v8
+	change = 0
+	goto restart_check
+restart_check:
+	;
+	v1 = libc.UintptrFromInt32(0)
+	next_ir = v1
+	prev_ir = v1
+	ir1 = (*_IRList)(unsafe.Pointer(irl)).Fhead
+	for ir1 != 0 {
+		next_ir = (*_IR)(unsafe.Pointer(ir1)).Fnext
+		for next_ir != 0 && x__IsDummy(tls, cc, next_ir) != 0 {
+			next_ir = (*_IR)(unsafe.Pointer(next_ir)).Fnext
+		}
+		v2 = libc.BoolUint8(uint32(0) != libc.Uint32FromInt32((*_IR)(unsafe.Pointer(ir1)).Fflags)&uint32(_FLAG_KEEP_INSTR))
+		goto _3
+	_3:
+		if v2 != 0 {
+			goto get_next
+		}
+		if (*_IR)(unsafe.Pointer(ir1)).Fsrceffect != uint32(_OPEFFECT_NONE) || (*_IR)(unsafe.Pointer(ir1)).Fdsteffect != uint32(_OPEFFECT_NONE) {
+			goto get_next
+		}
+		if (*_IR)(unsafe.Pointer(ir1)).Fopc == int32(_OPC_RDLONG) || (*_IR)(unsafe.Pointer(ir1)).Fopc == int32(_OPC_WRLONG) || (*_IR)(unsafe.Pointer(ir1)).Fopc == int32(_OPC_RDWORD) || (*_IR)(unsafe.Pointer(ir1)).Fopc == int32(_OPC_WRWORD) || (*_IR)(unsafe.Pointer(ir1)).Fopc == int32(_OPC_RDBYTE) || (*_IR)(unsafe.Pointer(ir1)).Fopc == int32(_OPC_WRBYTE) {
+			// don't mess with it if prev instr was OPC_SETQ
+			if prev_ir != 0 && ((*_IR)(unsafe.Pointer(prev_ir)).Fopc == int32(_OPC_SETQ) || (*_IR)(unsafe.Pointer(prev_ir)).Fopc == int32(_OPC_SETQ2)) {
+				v1 = prev_ir + 48
+				*(*int32)(unsafe.Pointer(v1)) = int32(uint32(*(*int32)(unsafe.Pointer(v1))) | uint32(_FLAG_KEEP_INSTR))
+				goto get_next
+			}
+			dst1 = (*_IR)(unsafe.Pointer(ir1)).Fdst
+			base = (*_IR)(unsafe.Pointer(ir1)).Fsrc
+			size = s__MemoryOpSize(tls, cc, ir1)
+			write = s__IsWrite(tls, cc, ir1)
+			// don't mess with it if src==dst
+			if !(write != 0) && (*_IR)(unsafe.Pointer(ir1)).Fsrc == (*_IR)(unsafe.Pointer(ir1)).Fdst {
+				goto get_next
+			}
+			nextread = s__FindNextRead(tls, cc, ir1, dst1, base, libc.BoolUint8(libc.Uint32FromInt32((*_Function)(unsafe.Pointer(cc.x__curfunc)).Foptimize_flags)&uint32(m_OPT_EXPERIMENTAL3) != 0 && s__IsMemoryOrderSafe(tls, cc, (*_IR)(unsafe.Pointer(ir1)).Fsrc) != 0))
+			nextsize = s__MemoryOpSize(tls, cc, nextread)
+			if nextread != 0 && s__CondIsSubset(tls, cc, (*_IR)(unsafe.Pointer(ir1)).Fcond, (*_IR)(unsafe.Pointer(nextread)).Fcond) != 0 && !(s__FlagsChangeInRange(tls, cc, (*_IR)(unsafe.Pointer(ir1)).Fnext, (*_IR)(unsafe.Pointer(nextread)).Fprev, libc.Int32FromUint32(s__FlagsUsedByCond(tls, cc, (*_IR)(unsafe.Pointer(nextread)).Fcond))) != 0) {
+				// wrlong a, b ... rdlong c, b  -> mov c, a
+				// rdlong a, b ... rdlong c, b  -> mov c, a
+				if size == nextsize && (!(write != 0) || size == int32(4) || cc.x__gl_p2 != 0) && (cc.x__gl_p2 != 0 && size == int32(4) || !(x__InstrSetsFlags(tls, cc, nextread, uint32(_FLAG_WC)) != 0)) && (!(write != 0) || size == int32(4) || !(x__InstrSetsFlags(tls, cc, nextread, uint32(_FLAG_WZ)) != 0)) {
+					(*_IR)(unsafe.Pointer(nextread)).Fsrc = dst1
+					if !(write != 0) || size == int32(4) {
+						x__ReplaceOpcode(tls, cc, nextread, int32(_OPC_MOV))
+					} else {
+						if size == int32(2) {
+							x__ReplaceOpcode(tls, cc, nextread, int32(_OPC_GETWORD))
+							(*_IR)(unsafe.Pointer(nextread)).Fsrc2 = x__NewImmediate(tls, cc, 0)
+						} else {
+							if size == int32(1) {
+								x__ReplaceOpcode(tls, cc, nextread, int32(_OPC_GETBYTE))
+								(*_IR)(unsafe.Pointer(nextread)).Fsrc2 = x__NewImmediate(tls, cc, 0)
+							}
+						}
+					}
+					change = int32(1)
+					goto get_next
+				}
+			} else {
+				if v7 = s__IsRead(tls, cc, ir1) != 0 && next_ir != 0 && (*_IR)(unsafe.Pointer(next_ir)).Fopc == int32(_OPC_MOV); v7 {
+					v2 = libc.BoolUint8(uint32(0) != libc.Uint32FromInt32((*_IR)(unsafe.Pointer(next_ir)).Fflags)&uint32(_FLAG_KEEP_INSTR))
+					goto _6
+				_6:
+				}
+				if v7 && !(v2 != 0) && !(x__InstrSetsAnyFlags(tls, cc, next_ir) != 0) && x__SameRegister(tls, cc, (*_IR)(unsafe.Pointer(next_ir)).Fsrc, (*_IR)(unsafe.Pointer(ir1)).Fdst) != 0 && x__IsLocalOrArg(tls, cc, (*_IR)(unsafe.Pointer(next_ir)).Fsrc) != 0 && (*_IR)(unsafe.Pointer(ir1)).Fcond == (*_IR)(unsafe.Pointer(next_ir)).Fcond && x__IRIsDeadAfter(tls, cc, next_ir, (*_IR)(unsafe.Pointer(ir1)).Fdst) != 0 {
+					tmp = (*_IR)(unsafe.Pointer(ir1)).Fdst
+					(*_IR)(unsafe.Pointer(ir1)).Fdst = (*_IR)(unsafe.Pointer(next_ir)).Fdst
+					(*_IR)(unsafe.Pointer(next_ir)).Fdst = tmp
+					x__ReplaceOpcode(tls, cc, next_ir, int32(_OPC_MOV))
+					change = int32(1)
+					goto get_next
+				}
+			}
+		}
+		if (*_IR)(unsafe.Pointer(ir1)).Fopc == int32(_OPC_RDBYTE) || (*_IR)(unsafe.Pointer(ir1)).Fopc == int32(_OPC_RDWORD) {
+			dst1 = (*_IR)(unsafe.Pointer(ir1)).Fdst
+			if (*_IR)(unsafe.Pointer(ir1)).Fopc == int32(_OPC_RDBYTE) {
+				v8 = int32(0xFF)
+			} else {
+				v8 = int32(0xFFFF)
+			}
+			mask = v8
+			nextread = s__FindNextUse(tls, cc, ir1, dst1)
+			if nextread != 0 && (*_IR)(unsafe.Pointer(nextread)).Fcond == (*_IR)(unsafe.Pointer(ir1)).Fcond && !(s__FlagsChangeInRange(tls, cc, (*_IR)(unsafe.Pointer(ir1)).Fnext, (*_IR)(unsafe.Pointer(nextread)).Fprev, libc.Int32FromUint32(s__FlagsUsedByCond(tls, cc, (*_IR)(unsafe.Pointer(ir1)).Fcond))) != 0) && (*_IR)(unsafe.Pointer(nextread)).Fdst == dst1 && libc.Uint32FromInt32((*_IR)(unsafe.Pointer(nextread)).Fflags)&uint32(_FLAG_WZ) == libc.Uint32FromInt32((*_IR)(unsafe.Pointer(nextread)).Fflags) && s__isMaskingOp(tls, cc, nextread, bp) != 0 && **(**_int32_t)(__ccgo_up(bp)) == mask {
+				// don't need zero extend after rdbyte (change to MOV, gets eliminated next pass)
+				x__ReplaceOpcode(tls, cc, nextread, int32(_OPC_MOV))
+				(*_IR)(unsafe.Pointer(nextread)).Fsrc = (*_IR)(unsafe.Pointer(nextread)).Fdst
+				change = int32(1)
+			}
+		}
+		// cut unneccessary bits for immediate write values
+		if cc.x__gl_p2 != 0 && ((*_IR)(unsafe.Pointer(ir1)).Fopc == int32(_OPC_WRBYTE) || (*_IR)(unsafe.Pointer(ir1)).Fopc == int32(_OPC_WRWORD)) && (*_IR)(unsafe.Pointer(ir1)).Fdst != 0 && (*_Operand)(unsafe.Pointer((*_IR)(unsafe.Pointer(ir1)).Fdst)).Fkind == int32(_IMM_INT) {
+			if (*_IR)(unsafe.Pointer(ir1)).Fopc == int32(_OPC_WRBYTE) {
+				v8 = int32(0xFF)
+			} else {
+				v8 = int32(0xFFFF)
+			}
+			mask1 = v8
+			if (*_Operand)(unsafe.Pointer((*_IR)(unsafe.Pointer(ir1)).Fdst)).Fval&int64(mask1) != (*_Operand)(unsafe.Pointer((*_IR)(unsafe.Pointer(ir1)).Fdst)).Fval {
+				(*_IR)(unsafe.Pointer(ir1)).Fdst = x__NewImmediate(tls, cc, int32((*_Operand)(unsafe.Pointer((*_IR)(unsafe.Pointer(ir1)).Fdst)).Fval&int64(mask1)))
+				change = int32(1)
+			}
+		}
+		// try to avoid having two read/write ops in a row
+		if s__IsReadWrite(tls, cc, ir1) != 0 && s__IsReadWrite(tls, cc, next_ir) != 0 && s__IsNonReadWriteOpcode(tls, cc, prev_ir) != 0 {
+			if s__CanSwap(tls, cc, ir1, prev_ir) != 0 && !(s__IsCordicCommand(tls, cc, prev_ir) != 0) {
+				// want to swap prev_ir and ir here
+				x__DeleteIR(tls, cc, irl, prev_ir) // remove prev_ir from list
+				(*_IR)(unsafe.Pointer(prev_ir)).Fnext = libc.UintptrFromInt32(0)
+				x__InsertAfterIR(tls, cc, irl, ir1, prev_ir) // move it to later
+				ir1 = prev_ir
+				change = int32(1)
+				goto restart_check
+			}
+		}
+		goto get_next
+	get_next:
+		;
+		prev_ir = ir1
+		ir1 = next_ir
+	}
+	return change
+}
+
 // C documentation
 //
 //	// Get math op for AST operator token
@@ -16056,97 +16191,6 @@ func s__overflow(tls *libc.TLS, cc *CC, op_name uintptr, valpp uintptr, ll_overf
 	}
 }
 
-// C documentation
-//
-//	/*
-//	 * parse a BF expression; this can be one of:
-//	 * .: output current character
-//	 * ,: read a character and write to current location
-//	 * a sequence of N +'s: add N to current location
-//	 * a sequence of N -'s: subtract N from current location
-//	 * a sequence of N >'s: add N to current location pointer
-//	 * a sequence of N <'s: subtract N from current location pointer
-//	 * [: form a loop up until the next ]
-//	 * ]: terminate a loop
-//	 *
-//	 * Returns an AST for the expression, or NULL
-//	 * on EOF
-//	 */
-func s__parseBFstream(tls *libc.TLS, cc *CC, L uintptr) (r uintptr) {
-	var ast, loopbody, recvptr, sendptr uintptr
-	var c int32
-	_, _, _, _, _ = ast, c, loopbody, recvptr, sendptr
-	loopbody = libc.UintptrFromInt32(0)
-	for {
-		c = s__nextbfchar(tls, cc, L)
-		if c == int32('+') {
-			ast = s__incDecVar(tls, cc, L, c, int32('+'), s__CurPos(tls, cc), libc.UintptrFromInt32(0))
-		} else {
-			if c == int32('-') {
-				ast = s__incDecVar(tls, cc, L, c, int32('-'), s__CurPos(tls, cc), libc.UintptrFromInt32(0))
-			} else {
-				if c == int32('>') {
-					ast = s__incDecVar(tls, cc, L, c, int32('+'), cc.s__array_index, cc.s__array_mask)
-				} else {
-					if c == int32('<') {
-						ast = s__incDecVar(tls, cc, L, c, int32('-'), cc.s__array_index, cc.s__array_mask)
-					} else {
-						if c == int32('.') {
-							// print the byte at the current position
-							sendptr = x__AstIdentifier(tls, cc, __ccgo_ts+6155)
-							ast = x__NewAST(tls, cc, int32(_AST_FUNCCALL), sendptr, x__NewAST(tls, cc, int32(_AST_EXPRLIST), s__CurPos(tls, cc), libc.UintptrFromInt32(0)))
-						} else {
-							if c == int32(',') {
-								// read something into the current position
-								recvptr = x__AstIdentifier(tls, cc, __ccgo_ts+6140)
-								ast = x__AstAssign(tls, cc, s__CurPos(tls, cc), x__NewAST(tls, cc, int32(_AST_FUNCCALL), recvptr, libc.UintptrFromInt32(0)))
-							} else {
-								if c == int32('[') {
-									// open a loop
-									// this should emit
-									// if (*cur_pos_deref != 0) <left-brace>
-									//   do <left-brace>
-									//      <loopbody>
-									//   } while (*cur_pos_deref != 0);
-									ast = s__parseBFstream(tls, cc, L)
-									// create the do-while loop
-									ast = x__NewAST(tls, cc, int32(_AST_DOWHILE), x__AstOperator(tls, cc, int32(_K_NE), s__CurPos(tls, cc), x__AstInteger(tls, cc, 0)), ast)
-									// wrap it in the if
-									ast = x__NewAST(tls, cc, int32(_AST_IF), x__AstOperator(tls, cc, int32(_K_NE), s__CurPos(tls, cc), x__AstInteger(tls, cc, 0)), x__NewAST(tls, cc, int32(_AST_THENELSE), x__NewAST(tls, cc, int32(_AST_STMTLIST), ast, libc.UintptrFromInt32(0)), libc.UintptrFromInt32(0)))
-								} else {
-									if c == int32(']') {
-										ast = libc.UintptrFromInt32(0)
-										break
-									} else {
-										if c != -int32(1) {
-											x__ERROR(tls, cc, libc.UintptrFromInt32(0), __ccgo_ts+42612, 0)
-										}
-										break
-									}
-								}
-							}
-						}
-					}
-				}
-			}
-		}
-		loopbody = x__AddToList(tls, cc, loopbody, x__NewAST(tls, cc, int32(_AST_STMTLIST), ast, libc.UintptrFromInt32(0)))
-		goto _1
-	_1:
-	}
-	return loopbody
-}
-
-/*
- * initialize a BF parse
- * there will be only one function (the
- * main body) which will go in current->body
- * we need to create an array (8K for P1, 32K for P2)
- * Note that the parser is not re-entrant (none of
- * flexspin's parsers are) so we're using static variables
- * for everything
- */
-
 func s__parseBasicIdentifier(tls *libc.TLS, cc *CC, L uintptr, ast_ptr uintptr) (r int32) {
 	bp := tls.Alloc(48)
 	defer tls.Free(48)
@@ -18982,104 +19026,6 @@ func x__CompatibleTypes(tls *libc.TLS, cc *CC, A uintptr, B uintptr) (r int32) {
 	// both A and B are pointers (or perhaps arrays)
 	// they are compatible if they are both pointers to the same thing
 	return x__SameTypes(tls, cc, (*_AST)(unsafe.Pointer(A)).Fleft, (*_AST)(unsafe.Pointer(B)).Fleft)
-}
-
-func x__CompileBrkDebugger(tls *libc.TLS, cc *CC, appsize _size_t) (r _Flexbuf) {
-	bp := tls.Alloc(96)
-	defer tls.Free(96)
-	var D, T, buf uintptr
-	var clkfreq, clkmode, millisecond _uint32_t
-	var dataLen _size_t
-	var i, i1, pos, v1 uint32
-	var old_errors, rxpin, txpin int32
-	var _ /* f at bp+0 */ _Flexbuf
-	var _ /* tab at bp+32 */ _Flexbuf
-	_, _, _, _, _, _, _, _, _, _, _, _, _, _ = D, T, buf, clkfreq, clkmode, dataLen, i, i1, millisecond, old_errors, pos, rxpin, txpin, v1
-	x__flexbuf_init(tls, cc, bp, libc.Uint64FromInt32(libc.Int32FromInt32(16)*libc.Int32FromInt32(1024)))
-	if !(cc.x__gl_p2 != 0) {
-		x__ERROR(tls, cc, libc.UintptrFromInt32(0), __ccgo_ts+114294, 0)
-	}
-	// Get stuff
-	T = x__GetTopLevelModule(tls, cc)
-	clkfreq = libc.Uint32FromInt32(x__const_or_default(tls, cc, T, __ccgo_ts+5732, int32(10000000)))
-	clkmode = libc.Uint32FromInt32(x__const_or_default(tls, cc, T, __ccgo_ts+5709, 0))
-	x__DEBUG(tls, cc, libc.UintptrFromInt32(0), __ccgo_ts+114328, libc.VaList(bp+72, clkmode, clkfreq))
-	millisecond = clkfreq/uint32(1000) - uint32(6) // This is how PNut calculates it...
-	////uint32_t txmode = ((clkfreq/(const_or_default(T,"DEBUG_BAUD",2000000)>>6))<<(16-6))|(8-1); // Also from PNut
-	if !(cc.x__gl_default_baud != 0) {
-		cc.x__gl_default_baud = int32(2000000)
-	}
-	//uint32_t txmode = ((clkfreq/(const_or_default(T,"DEBUG_BAUD",gl_default_baud)>>6))<<(16-6))|(8-1); // Also from PNut
-	// Compile debugger blob
-	old_errors = cc.x__gl_errors
-	cc.x__gl_errors = 0 // Have to do this to not segfault when there've been errors
-	cc.x__gl_caseSensitive = m_false
-	D = x__NewModule(tls, cc, __ccgo_ts+114370, int32(m_LANG_SPIN_SPIN221))
-	cc.x__current = D
-	(*_Module)(unsafe.Pointer(D)).FLptr = calloc(tls, cc, uint64(776), uint64(1))
-	**(**uint32)(__ccgo_up((*_Module)(unsafe.Pointer(D)).FLptr + 496)) |= uint32(m_LEXSTREAM_FLAG_NOSRC5)
-	x__strToLex(tls, cc, (*_Module)(unsafe.Pointer(D)).FLptr, uintptr(unsafe.Pointer(&cc.x__sys_p2_brkdebug_spin)), uint64(cc.x__sys_p2_brkdebug_spin_len), __ccgo_ts+114370, int32(m_LANG_SPIN_SPIN221))
-	x__spinyyparse(tls, cc)
-	x__ProcessModule(tls, cc, D)
-	// We good now?
-	x__PrintDataBlock(tls, cc, bp, (*_Module)(unsafe.Pointer(D)).Fdatblock, libc.UintptrFromInt32(0), libc.UintptrFromInt32(0))
-	cc.x__gl_errors = old_errors
-	// Patch parameters (ugly hardcoded offsets!)
-	txpin = x__const_or_default(tls, cc, T, __ccgo_ts+114383, x__const_or_default(tls, cc, T, __ccgo_ts+114396, int32(62)))
-	rxpin = x__const_or_default(tls, cc, T, __ccgo_ts+114406, int32(63))
-	buf = x__flexbuf_peek(tls, cc, bp)
-	s__patch_long(tls, cc, buf+uintptr(0x0D4), libc.Int32FromUint32(clkfreq))
-	s__patch_long(tls, cc, buf+uintptr(0x0D8), libc.Int32FromUint32(clkmode&libc.Uint32FromInt32(^libc.Int32FromInt32(3))))                                  // Clock mode with RCFAST
-	s__patch_long(tls, cc, buf+uintptr(0x0DC), libc.Int32FromUint32(clkmode))                                                                                // Clock mode
-	s__patch_long(tls, cc, buf+uintptr(0x0E0), libc.Int32FromUint32(libc.Uint32FromInt32(x__const_or_default(tls, cc, T, __ccgo_ts+114419, 0))*millisecond)) // Debug delay
-	s__patch_long(tls, cc, buf+uintptr(0x0E4), libc.Int32FromUint64(appsize))                                                                                // Application size
-	s__patch_long(tls, cc, buf+uintptr(0x0E8), x__const_or_default(tls, cc, T, __ccgo_ts+114431, int32(0xFF))&int32(255)|int32(0x20030000))                  // Enabled cogs (and something idk)
-	s__patch_long(tls, cc, buf+uintptr(0x140), txpin)                                                                                                        // TX Pin
-	if x__FindSymbolEx(tls, cc, T+144, __ccgo_ts+114442, 0) != 0 {
-		v1 = libc.Uint32FromUint32(1) << libc.Int32FromInt32(31)
-	} else {
-		v1 = uint32(0)
-	}
-	s__patch_long(tls, cc, buf+uintptr(0x144), libc.Int32FromUint32(libc.Uint32FromInt32(rxpin)|v1)) // RX Pin and timestamp flag
-	s__patch_long(tls, cc, buf+uintptr(0x148), x__const_or_default(tls, cc, T, __ccgo_ts+114458, cc.x__gl_default_baud))
-	x__flexbuf_init(tls, cc, bp+32, libc.Uint64FromInt32(libc.Int32FromInt32(16)*libc.Int32FromInt32(1024)))
-	// Build offsets first
-	pos = cc.x__brkAssigned * uint32(2)
-	i = uint32(1)
-	for {
-		if !(i < cc.x__brkAssigned) {
-			break
-		}
-		x__flexbuf_addchar(tls, cc, bp+32, libc.Int32FromUint32(pos>>libc.Int32FromInt32(0)&libc.Uint32FromInt32(255)))
-		x__flexbuf_addchar(tls, cc, bp+32, libc.Int32FromUint32(pos>>libc.Int32FromInt32(8)&libc.Uint32FromInt32(255)))
-		pos = uint32(uint64(pos) + x__flexbuf_curlen(tls, cc, uintptr(unsafe.Pointer(&cc.s__brkExpr))+uintptr(i)*32))
-		goto _2
-	_2:
-		;
-		i = i + 1
-	}
-	// Now copy the bytecode
-	i1 = uint32(1)
-	for {
-		if !(i1 < cc.x__brkAssigned) {
-			break
-		}
-		x__flexbuf_concat(tls, cc, bp+32, uintptr(unsafe.Pointer(&cc.s__brkExpr))+uintptr(i1)*32)
-		goto _3
-	_3:
-		;
-		i1 = i1 + 1
-	}
-	// Append table
-	dataLen = x__flexbuf_curlen(tls, cc, bp+32) + uint64(2)
-	if dataLen+uint64(0xFC000) > uint64(0xFEC00) {
-		x__ERROR(tls, cc, libc.UintptrFromInt32(0), __ccgo_ts+114469, 0)
-	}
-	x__flexbuf_addchar(tls, cc, bp, libc.Int32FromUint64(dataLen>>libc.Int32FromInt32(0)&libc.Uint64FromInt32(255)))
-	x__flexbuf_addchar(tls, cc, bp, libc.Int32FromUint64(dataLen>>libc.Int32FromInt32(8)&libc.Uint64FromInt32(255)))
-	x__flexbuf_concat(tls, cc, bp, bp+32)
-	x__flexbuf_delete(tls, cc, bp+32)
-	return **(**_Flexbuf)(__ccgo_up(bp))
 }
 
 func x__CompileComparison(tls *libc.TLS, cc *CC, op int32, ast uintptr, lefttype uintptr, righttype uintptr) {

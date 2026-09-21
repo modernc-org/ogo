@@ -813,7 +813,7 @@ type CC struct {
 	x__unsdivfunc                            uintptr
 	x__unsmulfunc                            uintptr
 	x__varargs_ident                         uintptr
-	x__version_string                        [11]int8
+	x__version_string                        [6]int8
 	x__warn_level                            int32
 	x__work_buf                              [66560]int8
 	x__work_end                              uintptr
@@ -12801,70 +12801,6 @@ func s__OptimizeCompares(tls *libc.TLS, cc *CC, irl uintptr) (r int32) {
 	return **(**int32)(__ccgo_up(bp))
 }
 
-func s__OptimizeImmediates(tls *libc.TLS, cc *CC, irl uintptr) (r int32) {
-	var change, val int32
-	var ir1, src uintptr
-	var v2 uint8
-	_, _, _, _, _ = change, ir1, src, val, v2
-	change = 0
-	ir1 = (*_IRList)(unsafe.Pointer(irl)).Fhead
-	for {
-		if !(ir1 != 0) {
-			break
-		}
-		v2 = libc.BoolUint8(uint32(0) != libc.Uint32FromInt32((*_IR)(unsafe.Pointer(ir1)).Fflags)&uint32(_FLAG_KEEP_INSTR))
-		goto _3
-	_3:
-		if v2 != 0 {
-			goto _1
-		}
-		src = (*_IR)(unsafe.Pointer(ir1)).Fsrc
-		if !(src != 0 && (*_Operand)(unsafe.Pointer(src)).Fkind == int32(_IMM_INT)) {
-			goto _1
-		}
-		val = int32((*_Operand)(unsafe.Pointer(src)).Fval)
-		if val != val&int32(31) && x__IsSrcBitIndex(tls, cc, ir1) != 0 {
-			// always cut unused bits when immediate is a bit index
-			(*_IR)(unsafe.Pointer(ir1)).Fsrc = x__NewImmediate(tls, cc, val&int32(31))
-			change = change + 1
-		} else {
-			if !(cc.x__gl_p2 != 0) && ((*_Operand)(unsafe.Pointer(src)).Fname == libc.UintptrFromInt32(0) || int32(**(**int8)(__ccgo_up((*_Operand)(unsafe.Pointer(src)).Fname))) == 0) {
-				/* already a small immediate */
-				goto _1
-			} else {
-				if (*_IR)(unsafe.Pointer(ir1)).Fopc == int32(_OPC_MOV) && val < 0 && val >= -int32(511) {
-					x__ReplaceOpcode(tls, cc, ir1, int32(_OPC_NEG))
-					(*_IR)(unsafe.Pointer(ir1)).Fsrc = x__NewImmediate(tls, cc, -val)
-					change = change + 1
-				} else {
-					if (*_IR)(unsafe.Pointer(ir1)).Fopc == int32(_OPC_AND) && val < 0 && val >= -int32(512) {
-						x__ReplaceOpcode(tls, cc, ir1, int32(_OPC_ANDN))
-						(*_IR)(unsafe.Pointer(ir1)).Fsrc = x__NewImmediate(tls, cc, ^val) /* note that is a tilde! */
-						change = change + 1
-					} else {
-						if (*_IR)(unsafe.Pointer(ir1)).Fopc == int32(_OPC_ADD) && val < 0 && val >= -int32(511) && !(s__CarryOutUsed(tls, cc, ir1) != 0) {
-							x__ReplaceOpcode(tls, cc, ir1, int32(_OPC_SUB))
-							(*_IR)(unsafe.Pointer(ir1)).Fsrc = x__NewImmediate(tls, cc, -val)
-							change = change + 1
-						} else {
-							if (*_IR)(unsafe.Pointer(ir1)).Fopc == int32(_OPC_SUB) && val < 0 && val >= -int32(511) && !(s__CarryOutUsed(tls, cc, ir1) != 0) {
-								x__ReplaceOpcode(tls, cc, ir1, int32(_OPC_ADD))
-								(*_IR)(unsafe.Pointer(ir1)).Fsrc = x__NewImmediate(tls, cc, -val)
-								change = change + 1
-							}
-						}
-					}
-				}
-			}
-		}
-		goto _1
-	_1:
-		;
-		ir1 = (*_IR)(unsafe.Pointer(ir1)).Fnext
-	}
-	return change
-}
-
 func s__OptimizeReadWrite(tls *libc.TLS, cc *CC, irl uintptr) (r int32) {
 	bp := tls.Alloc(16)
 	defer tls.Free(16)
@@ -12913,12 +12849,7 @@ restart_check:
 			}
 			nextread = s__FindNextRead(tls, cc, ir1, dst1, base, libc.BoolUint8(libc.Uint32FromInt32((*_Function)(unsafe.Pointer(cc.x__curfunc)).Foptimize_flags)&uint32(m_OPT_EXPERIMENTAL) != 0 && s__IsMemoryOrderSafe(tls, cc, (*_IR)(unsafe.Pointer(ir1)).Fsrc) != 0))
 			nextsize = s__MemoryOpSize(tls, cc, nextread)
-			// CondIsSubset compares the two conditions as if both read the same
-			// flags, which holds only if nothing in between sets one of them:
-			// `if_ne wrlong a, b` then `cmp x, #0 wz` then `if_ne rdlong a, b` is
-			// two different NEs, and the read cannot become a copy of what the
-			// write may never have written.
-			if nextread != 0 && s__CondIsSubset(tls, cc, (*_IR)(unsafe.Pointer(ir1)).Fcond, (*_IR)(unsafe.Pointer(nextread)).Fcond) != 0 && !(s__FlagsChangeInRange(tls, cc, (*_IR)(unsafe.Pointer(ir1)).Fnext, (*_IR)(unsafe.Pointer(nextread)).Fprev, libc.Int32FromUint32(s__FlagsUsedByCond(tls, cc, (*_IR)(unsafe.Pointer(ir1)).Fcond)|s__FlagsUsedByCond(tls, cc, (*_IR)(unsafe.Pointer(nextread)).Fcond))) != 0) {
+			if nextread != 0 && s__CondIsSubset(tls, cc, (*_IR)(unsafe.Pointer(ir1)).Fcond, (*_IR)(unsafe.Pointer(nextread)).Fcond) != 0 && !(s__FlagsChangeInRange(tls, cc, (*_IR)(unsafe.Pointer(ir1)).Fnext, (*_IR)(unsafe.Pointer(nextread)).Fprev, libc.Int32FromUint32(s__FlagsUsedByCond(tls, cc, (*_IR)(unsafe.Pointer(nextread)).Fcond))) != 0) {
 				// wrlong a, b ... rdlong c, b  -> mov c, a
 				// rdlong a, b ... rdlong c, b  -> mov c, a
 				if size == nextsize && (!(write != 0) || size == int32(4) || cc.x__gl_p2 != 0) && (cc.x__gl_p2 != 0 && size == int32(4) || !(x__InstrSetsFlags(tls, cc, nextread, uint32(_FLAG_WC)) != 0)) && (!(write != 0) || size == int32(4) || !(x__InstrSetsFlags(tls, cc, nextread, uint32(_FLAG_WZ)) != 0)) {
