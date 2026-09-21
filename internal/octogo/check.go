@@ -11112,9 +11112,22 @@ func (f *File) checkBinary(s *Scope, n Node, operandSym, opSym Symbol) {
 // for: "+" wants two numeric or two string operands, the rest want numeric.
 // Pointer arithmetic ("ptr + 1") is never defined.
 func (f *File) checkBinOp(s *Scope, opNode, lNode, rNode Node) {
+	pos := f.tok(opNode.Pos()).Position()
+	sym := f.tok(opNode.Pos()).Src()
 	if f.exprIsPointer(s, lNode) || f.exprIsPointer(s, rNode) {
-		f.err(f.tok(opNode.Pos()).Position(), "invalid operation: operator %s not defined on pointer", f.tok(opNode.Pos()).Src())
+		f.err(pos, "invalid operation: operator %s not defined on pointer", sym)
 		return
+	}
+	// An operand with no Kind that is known all the same to be no number and no
+	// string. The rest of this function asks exprType, which answers only for a
+	// predeclared type, so a function, a channel, a slice, an array, a struct, an
+	// interface and nil all read as "unknown" and every operator went through for
+	// them: `f + 1`, `xs << 1`, `v * v` and `nil + 1` reached the C compiler, and the
+	// target's builds most of them. Only a pointer was refused, by the rule above.
+	for _, n := range [2]Node{lNode, rNode} {
+		if f.kindlessOperandErr(s, n, pos, sym) {
+			return
+		}
 	}
 	lk, lok := f.exprType(s, lNode)
 	rk, rok := f.exprType(s, rNode)
@@ -11129,8 +11142,6 @@ func (f *File) checkBinOp(s *Scope, opNode, lNode, rNode Node) {
 	case MulOp:
 		op = f.mulOp(s, opNode)
 	}
-	pos := f.tok(opNode.Pos()).Position()
-	sym := f.tok(opNode.Pos()).Src()
 	switch {
 	case lc != rc:
 		f.err(pos, "invalid operation: operator %s not defined on %s and %s", sym, kindName(lk), kindName(rk))
@@ -11173,6 +11184,23 @@ func (f *File) checkBinOp(s *Scope, opNode, lNode, rNode Node) {
 			f.err(pos, "invalid operation: division by zero")
 		}
 	}
+}
+
+// kindlessOperandErr reports operator sym, at pos, as not defined on operand n when
+// n has no Kind and is known all the same for what it is (nonBoolOperand): a
+// pointer, a function, a channel, a slice, an array, a struct, an interface or nil.
+// It says whether it reported. An operand nothing can type is left alone.
+func (f *File) kindlessOperandErr(s *Scope, n Node, pos token.Position, sym string) bool {
+	what, known := f.nonBoolOperand(s, n)
+	switch {
+	case !known:
+		return false
+	case f.isNilOperand(n):
+		f.err(pos, "invalid operation: operator %s not defined on nil", sym)
+	default:
+		f.err(pos, "invalid operation: operator %s not defined on %s: it is %s", sym, f.exprSource(n), what)
+	}
+	return true
 }
 
 // checkShiftCount reports a CONSTANT shift count that is not a non-negative
@@ -11944,11 +11972,8 @@ func (f *File) checkUnaryExpr(s *Scope, n Node) {
 	if !ok {
 		// No Kind, and known for what it is all the same: `!p` for a pointer and `-f`
 		// for a function are C, where both have a value.
-		if what, known := f.nonBoolOperand(s, fac); known {
-			inner := ops[len(ops)-1]
-			f.err(f.tok(inner.Pos()).Position(), "invalid operation: operator %s not defined on %s: it is %s",
-				f.tok(inner.Pos()).Src(), f.exprSource(fac), what)
-		}
+		inner := ops[len(ops)-1]
+		f.kindlessOperandErr(s, fac, f.tok(inner.Pos()).Position(), f.tok(inner.Pos()).Src())
 		return
 	}
 	for i := len(ops) - 1; i >= 0 && ok; i-- {

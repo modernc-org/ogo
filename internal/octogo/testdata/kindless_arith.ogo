@@ -1,0 +1,55 @@
+// An arithmetic operator is defined on numbers, and + on strings too -- on nothing
+// that has no Kind. The rule asked exprType, which answers only for a predeclared
+// type, so every operator went through for a function, a channel, a slice, an
+// array, a struct, an interface and nil until 2026-09-21; only a pointer was refused.
+
+type P struct{ x int }
+
+type I interface{ M() }
+
+type W struct {
+	p  *P
+	xs []int
+}
+
+func one() int { return 1 }
+
+func get() P { return gp }
+
+var gp P
+var gw W
+
+func main() {
+	f := one
+	var ch chan int
+	xs := []int{1, 2}
+	var a [3]int
+	var v P
+	var i I
+	// ERROR "operator \+ not defined on f: it is a function"
+	_ = f + 1
+	// ERROR "operator \+ not defined on one: it is a function"
+	_ = one + one
+	// ERROR "operator \* not defined on ch: it is a channel"
+	_ = ch * 2
+	// ERROR "operator << not defined on xs: it is an array or a slice"
+	_ = xs << 1
+	// ERROR "operator - not defined on a: it is an array"
+	_ = 1 - a
+	// ERROR "operator \+ not defined on v: it is a struct"
+	_ = v + v
+	// ERROR "operator & not defined on i: it is an interface"
+	_ = i & 1
+	// ERROR "operator \+ not defined on gw.p: it is a pointer"
+	_ = gw.p + 1
+	// ERROR "operator % not defined on gw.xs: it is a slice"
+	_ = gw.xs % 2
+	// ERROR "operator \+ not defined on get\(\): it is a struct"
+	_ = get() + 1
+	// ERROR "operator \+ not defined on nil"
+	_ = nil + 1
+	// ERROR "operator - not defined on nil"
+	_ = -nil
+	// ERROR "operator \+ not defined on xs: it is an array or a slice"
+	_ = "x" + xs
+}

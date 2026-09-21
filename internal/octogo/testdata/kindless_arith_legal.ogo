@@ -1,0 +1,31 @@
+// COMPILE
+
+// The controls of kindless_arith.ogo: every operand here reaches a number or a
+// string through the shapes that refuse a function, a slice, a pointer and a struct
+// there -- a call through a function value, an element, a field, a dereference.
+
+type P struct {
+	x int
+	s string
+}
+
+type T int
+
+func one() int { return 1 }
+
+func pick() func() int { return one }
+
+var gp P
+var ws [2]P
+
+func main() {
+	f := one
+	xs := []int{1, 2}
+	var a [3]int
+	p := &gp
+	n := 5
+	pn := &n
+	var t T = 3
+	s := "a"
+	println(f()+1, pick()()+1, xs[0]+1, a[1]<<1, p.x*2, *pn+1, gp.s+s, t+1, len(xs)+1, one()+one(), ws[0].x+1)
+}
