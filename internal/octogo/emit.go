@@ -10040,6 +10040,26 @@ func (e *emitter) collectFuncCross(fi funcInfo) {
 		slices.Sort(out)
 		return slices.Compact(out)
 	}
+	// cursOf is where a chain from base starts: base itself, a package variable,
+	// parameter or receiver; another package's variable, folded; or what a local
+	// holds, `d := &gdev; d.onData(v)`.
+	cursOf := func(base string, folded bool) (curs []accessCur) {
+		switch cur, ok := curOf(base); {
+		case folded:
+			if cur, ok := e.accessBase(base); ok {
+				curs = append(curs, cur)
+			}
+		case ok:
+			curs = append(curs, cur)
+		default:
+			resolve([]held{{base, heldAlias}}, func(n string, contents bool) {
+				if cur, ok := curOf(n); ok && !contents {
+					curs = append(curs, cur)
+				}
+			})
+		}
+		return curs
+	}
 	// chainUnions: the callee of a call through the value base's steps reach, a
 	// field, an element, another package's variable or a call's result.
 	chainUnions := func(base string, steps []Node) (out []string) {
@@ -10061,25 +10081,31 @@ func (e *emitter) collectFuncCross(fi funcInfo) {
 				}
 			}
 		case !slices.ContainsFunc(steps, func(n Node) bool { return n.sym == CallSuffix }):
-			var curs []accessCur
-			switch cur, ok := curOf(base); {
-			case folded:
-				if cur, ok := e.accessBase(base); ok {
-					curs = append(curs, cur)
-				}
-			case ok:
-				curs = append(curs, cur)
-			default:
-				// A local: the chain applies to what it holds, `d := &gdev; d.onData(v)`.
-				resolve([]held{{base, heldAlias}}, func(n string, contents bool) {
-					if cur, ok := curOf(n); ok && !contents {
-						curs = append(curs, cur)
-					}
-				})
-			}
-			for _, cur := range curs {
+			for _, cur := range cursOf(base, folded) {
 				if c, ok := e.accessChainTypeAt(cur, steps, true); ok {
 					out = append(out, unionOf(c.ctype))
+				}
+			}
+		case len(steps) >= 2 && steps[len(steps)-1].sym == CallSuffix && steps[len(steps)-2].sym == Selector &&
+			!slices.ContainsFunc(steps[:len(steps)-2], func(n Node) bool { return n.sym == CallSuffix }):
+			// A METHOD's result, `s.handler()(v)`: the union its sole result names, on
+			// the type the chain before the method reaches -- as `pick()(v)` is a
+			// function's. Nothing answered, so a callee calling its parameter through
+			// one was summarised as keeping nothing of it.
+			method, fields := e.soleIdent(steps[len(steps)-2].ast), steps[:len(steps)-2]
+			for _, cur := range cursOf(base, folded) {
+				ct := cur.ctype
+				if len(fields) != 0 {
+					c, ok := e.accessChainTypeAt(cur, fields, true)
+					if !ok {
+						continue
+					}
+					ct = c.ctype
+				}
+				if cname, _, _, ok := e.promotedMethod(ct, method); ok {
+					if rts := e.funcRet[cname]; len(rts) == 1 {
+						out = append(out, unionOf(rts[0]))
+					}
 				}
 			}
 		}

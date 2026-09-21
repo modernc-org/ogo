@@ -11207,6 +11207,21 @@ func each(f func([]int), v []int) { f(v) }
 
 var applyf = each
 
+func keepN(v []int) int {
+	gs = v
+	return len(v)
+}
+
+type Src struct {
+	n int
+}
+
+func (s *Src) handler() func([]int) int { return keepN }
+
+func (s Src) vhandler() func([]int) int { return keepN }
+
+var gsrc Src
+
 `
 	for _, test := range []struct {
 		callee    string
@@ -11244,6 +11259,14 @@ var applyf = each
 		{"func relay(v []int) {\n\tf := func(w []int) { println(len(w)) }\n\tf(v)\n}", "relay(a[:])", "relay(gback[:])", true},
 		{"func relay(v []int) { hn(v, 1) }", "relay(a[:])", "relay(gback[:])", true},
 		{"func relay(v []int) { func(w []int) { println(len(w)) }(v) }", "relay(a[:])", "relay(gback[:])", true},
+		// A METHOD's result called, `s.handler()(v)`: the union its sole result names,
+		// as a function's result is -- through a package variable, a value receiver, a
+		// pointer parameter, into a local and as an argument (2026-09-22).
+		{"func relay(v []int) int { return gsrc.handler()(v) }", "relay(a[:])", "relay(gback[:])", false},
+		{"func relay(v []int) int { return gsrc.vhandler()(v) }", "relay(a[:])", "relay(gback[:])", false},
+		{"func relay(s *Src, v []int) int { return s.handler()(v) }", "relay(&gsrc, a[:])", "relay(&gsrc, gback[:])", false},
+		{"func relay(v []int) int {\n\tn := gsrc.handler()(v)\n\treturn n\n}", "relay(a[:])", "relay(gback[:])", false},
+		{"func relay(v []int) int {\n\tprintln(gsrc.handler()(v))\n\treturn 0\n}", "relay(a[:])", "relay(gback[:])", false},
 	} {
 		for _, call := range []string{test.kept, test.ok} {
 			src := head + test.callee + `
