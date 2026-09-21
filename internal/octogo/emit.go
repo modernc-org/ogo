@@ -17136,9 +17136,9 @@ func (e *emitter) unwrapArrayConv(ast []int32) []int32 {
 	if operand, ok := e.arrayConvOperand(ast); ok {
 		return operand
 	}
-	// `([2]int)(r)` -- the same conversion to an UNNAMED array type, which the
-	// grammar can only spell parenthesised. Only with nothing after it: a suffix
-	// makes it a chain, which the chain walk reads for itself.
+	// `[2]int(r)` or `([2]int)(r)` -- the same conversion to an UNNAMED array
+	// type. Only with nothing after it: a suffix makes it a chain, which the chain
+	// walk reads for itself.
 	if fac, isFac := e.soleFactorNode(ast); isFac {
 		if typeAST, arg, steps, isConv := e.factorBracketConv(fac); isConv && len(steps) == 0 {
 			if dim, isArray := e.arrayDim(typeAST); isArray && e.arrayConvShapeOK(dim, e.goArrayTypeName(dim), arg) {
@@ -17727,6 +17727,34 @@ func (e *emitter) litSliceUnaddressable(typeAST []int32, steps []Node) bool {
 // whatever follows the call.
 func (e *emitter) factorBracketConv(fac Node) (typeAST []int32, arg []int32, steps []Node, ok bool) {
 	kids := slices.Collect(it(fac.ast))
+	// `[]int(l)`, `[4]byte(s)`: the same conversion written bare, as Go writes it,
+	// which the grammar took on 2026-09-21. The type is the factor up to the call,
+	// a prefix of its AST that reads as the bracketed type's own factor does.
+	if len(kids) >= 4 && kids[0].sym == 0 && e.f.ch(kids[0].tok) == LBRACK {
+		off := 0
+		for i, k := range kids {
+			if k.sym != CallSuffix {
+				if k.sym == 0 {
+					off++
+				} else {
+					off += 2 + len(k.ast)
+				}
+				continue
+			}
+			if kids[i-1].sym != Type || i+2 < len(kids) || i+1 < len(kids) && kids[i+1].sym != FactorSuffix {
+				return nil, nil, nil, false
+			}
+			args := e.callArgExprs(k.ast)
+			if len(args) != 1 {
+				return nil, nil, nil, false
+			}
+			if i+1 < len(kids) {
+				steps = slices.Collect(it(kids[i+1].ast))
+			}
+			return fac.ast[:off], args[0].ast, steps, true
+		}
+		return nil, nil, nil, false
+	}
 	if len(kids) != 4 || kids[0].sym != 0 || e.f.ch(kids[0].tok) != LPAREN ||
 		kids[2].sym != 0 || e.f.ch(kids[2].tok) != RPAREN || kids[3].sym != FactorSuffix {
 		return nil, nil, nil, false
@@ -17767,18 +17795,31 @@ func (e *emitter) factorBracketConv(fac Node) (typeAST []int32, arg []int32, ste
 // the representation -- `([]byte)(s)` from a string -- is not identity and is left
 // to the refusal below, which says what is actually wrong with it.
 func (e *emitter) bracketConvOperand(typeAST []int32, arg []int32) (string, bool) {
+	if elem, isSlice := e.litSliceType(typeAST); isSlice {
+		// A conversion between slice types changes nothing about the header, so any
+		// operand the emitter types as a slice of the same element is the value: a
+		// variable, and -- since the bare spelling made them easy to write -- a call,
+		// a field, a reslice, another conversion. And nil is the nil slice.
+		if name, isName := e.exprIdent(arg); isName {
+			if el, isVar := e.sliceElem(name); isVar && el == elem {
+				return e.varRef(name), true
+			}
+		}
+		if e.isNilExpr(arg) {
+			e.needSlice(elem)
+			return "(" + sliceCName(elem) + "){0}", true
+		}
+		if ct, ok := e.inferCType(arg); ok && e.sliceElemByName[e.underlyingCType(ct)] == elem {
+			return e.exprC(arg), true
+		}
+		return "", false
+	}
 	name, isName := e.exprIdent(arg)
 	if !isName {
 		return "", false
 	}
 	if a, isArray := e.arrayDim(typeAST); isArray {
 		if v, isVar := e.arrayVar(name); isVar && v.elem == a.elem && v.declSuffix() == a.declSuffix() {
-			return e.varRef(name), true
-		}
-		return "", false
-	}
-	if elem, isSlice := e.litSliceType(typeAST); isSlice {
-		if el, isVar := e.sliceElem(name); isVar && el == elem {
 			return e.varRef(name), true
 		}
 	}
@@ -18743,6 +18784,19 @@ func (e *emitter) definedTypeName(ct string) string {
 	return ct
 }
 
+// stringSliceConv reports a conversion of a STRING to a byte or rune slice written
+// out, `[]byte(s)` or `[]rune(s)`: Go copies the string into a new slice, which needs
+// allocation. Refused as its reverse is, `string(b)`, now that the grammar takes the
+// spelling at all -- it was a syntax error.
+func (e *emitter) stringSliceConv(typeAST, arg []int32) bool {
+	elem, isSlice := e.litSliceType(typeAST)
+	if !isSlice || elem != "uint8_t" && elem != "int32_t" {
+		return false
+	}
+	ct, ok := e.inferCType(arg)
+	return ok && e.underlyingCType(ct) == cString
+}
+
 // sliceArrayConv recognizes a conversion of a SLICE to an array type -- `A(s)` for a
 // defined array type A, `([3]int)(s)` for one written out -- which Go defines as a
 // COPY of the slice's first elements, panicking when the slice holds fewer. The
@@ -19503,9 +19557,9 @@ func fitsCInt(v int64) bool { return v >= math.MinInt32 && v <= math.MaxInt32 }
 // unparenKids reduces a Factor written `(x) suffix` to the kids of `x suffix`, so
 // every recogniser below sees the shape it already knows. `(a)[1]`, `(s).v` and
 // `(dbl)(21)` are ordinary Go and mean exactly what the unparenthesised forms mean,
-// and a parenthesised TYPE is how a conversion the LL(1) grammar cannot spell
-// directly is written -- `([]byte)(s)`, `([3]int)(q)`. See "Parentheses where the
-// parser needs them" in specs.go.
+// and a parenthesised TYPE is a conversion to it, `([]byte)(s)`, `([3]int)(q)` --
+// the one spelling the grammar took from 2026-08-04 until it took `[]byte(s)` too.
+// See "Parentheses where the parser needs them" in specs.go.
 //
 // Only a parenthesised expression with NO suffix of its own is unwrapped. Splicing
 // two suffix runs together -- `(a[0])[1]` -- would hand the recognisers a shape with
@@ -36009,6 +36063,10 @@ func (e *emitter) inferNode(n Node) (string, bool) {
 			// A bracketed conversion types as its TARGET, the operand having the
 			// same representation.
 			if typeAST, arg, steps, ok := e.factorBracketConv(n); ok {
+				if e.stringSliceConv(typeAST, arg) {
+					e.fail("a string conversion needs allocation, which the target does not have")
+					return "", false
+				}
 				if _, isID := e.bracketConvOperand(typeAST, arg); !isID || len(steps) != 0 {
 					return "", false
 				}
@@ -37941,9 +37999,13 @@ func (e *emitter) emitExprNode(n Node) {
 				e.fail("an array result cannot be read through this suffix")
 				return
 			}
-			// `([]int)(xs)` / `([3]int)(q)` -- a conversion to an unnamed composite
-			// type, written parenthesised because the grammar cannot spell it bare.
+			// `[]int(xs)` / `([3]int)(q)` -- a conversion to an unnamed composite
+			// type, bare or parenthesised.
 			if typeAST, arg, steps, ok := e.factorBracketConv(n); ok {
+				if e.stringSliceConv(typeAST, arg) {
+					e.fail("a string conversion needs allocation, which the target does not have")
+					return
+				}
 				if dim, isArray := e.arrayDim(typeAST); isArray && len(steps) == 0 && e.isSliceOperand(arg) {
 					if name, ok := e.hoistSliceArrayConv(dim, arg); ok {
 						e.emit(name)

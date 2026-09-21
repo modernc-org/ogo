@@ -862,10 +862,11 @@ func TestForHeaderRobustness(t *testing.T) {
 //
 // Every checker error such a file yields comes from a tree that is not what was
 // written, so it reports a consequence somewhere the reader has to work to connect
-// back to the cause. `a := [3]int(q)` -- a conversion the grammar does not accept
-// -- reported "undefined: Row" against a declaration three lines ABOVE the syntax
-// error, the broken parse having cost the whole file its type declarations. Go
-// stops after parsing for the same reason.
+// back to the cause. `a := [3]int(q)`, a conversion the grammar did not accept
+// until 2026-09-21, reported "undefined: Row" against a declaration three lines
+// ABOVE the syntax error, the broken parse having cost the whole file its type
+// declarations. Go stops after parsing for the same reason. The syntax error here
+// is a stray parenthesis after that conversion, which is one in Go too.
 //
 // The second file is what keeps the rule from being "one syntax error hides the
 // package": it parses, so its errors are about what it says, and they survive.
@@ -876,7 +877,7 @@ func TestParseErrorSilencesChecker(t *testing.T) {
 var q Row
 
 func main() {
-	a := [3]int(q)
+	a := [3]int(q))
 	println(a[0])
 }
 `)},
@@ -889,8 +890,8 @@ func main() {
 	}
 	got := err.Error()
 	// The cause, at the token the parser stopped on.
-	if !strings.Contains(got, "main.ogo:6:13") {
-		t.Errorf("expected the parse error at main.ogo:6:13, got:\n%s", got)
+	if !strings.Contains(got, "main.ogo:6:16") {
+		t.Errorf("expected the parse error at main.ogo:6:16, got:\n%s", got)
 	}
 	// Not the consequence: Row IS declared, on a line that parsed.
 	if strings.Contains(got, "undefined: Row") {

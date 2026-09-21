@@ -1,8 +1,8 @@
-// A conversion whose target is an UNNAMED composite type is written parenthesised:
-// `([]int)(xs)`, not `[]int(xs)`. Both are valid Go; only the parenthesised one is
-// describable in the LL(1) grammar this compiler's parser is generated from, and
-// specs.go's "Parentheses where the parser needs them" is the rule that permits
-// requiring it.
+// A conversion whose target is an UNNAMED composite type may be written
+// parenthesised, `([]int)(xs)`, as well as bare, `[]int(xs)`; both are valid Go.
+// From 2026-08-04 until 2026-09-21 only the parenthesised one parsed -- specs.go's
+// "Parentheses where the parser needs them" is the rule that permitted requiring
+// it -- and bracket_conv_legal.ogo covers the bare one.
 //
 // A conversion whose target is a NAME needs no parentheses and never did.
 

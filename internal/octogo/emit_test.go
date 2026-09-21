@@ -6676,40 +6676,49 @@ func main() {
 	}
 }
 
-// TestEmitCParenRestriction pins the two sides of the parenthesis restriction: the
-// bare conversion to an unnamed composite type is a SYNTAX error (the grammar cannot
-// describe it without making `func() []int` ambiguous), and the parenthesised form
-// is accepted only where it is the identity -- a conversion that would change the
-// representation allocates, which this target cannot do.
+// TestEmitCParenRestriction pins what the parenthesis restriction left behind. The
+// bare conversion to an unnamed composite type was a SYNTAX error from 2026-08-04
+// until 2026-09-21, the parenthesised form being required instead; both parse now,
+// and both mean one thing: the identity where nothing about the value changes, and a
+// refusal where the representation would -- a conversion that allocates, which this
+// target cannot do.
 //
 // See "Parentheses where the parser needs them" in specs.go for when a restriction
 // like this is allowed at all.
 func TestEmitCParenRestriction(t *testing.T) {
 	for _, test := range []struct{ name, src, want string }{
 		{
-			name: "bare conversion does not parse",
+			name: "bare conversion",
 			src:  "type Nums []int\n\nvar ns Nums\n\nfunc main() { println(len([]int(ns))) }\n",
-			want: "expected",
+		},
+		{
+			name: "parenthesised conversion",
+			src:  "type Nums []int\n\nvar ns Nums\n\nfunc main() { println(len(([]int)(ns))) }\n",
+		},
+		{
+			name: "bare, but not the identity",
+			src:  "func main() {\n\ts := \"hi\"\n\tprintln([]byte(s)[0])\n}\n",
+			want: "a string conversion needs allocation",
 		},
 		{
 			name: "parenthesised, but not the identity",
 			src:  "func main() {\n\ts := \"hi\"\n\tprintln(([]byte)(s)[0])\n}\n",
-			want: "only supported where it changes nothing about the value",
+			want: "a string conversion needs allocation",
 		},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			fsys := fstest.MapFS{"main.ogo": &fstest.MapFile{Data: []byte(test.src)}}
 			pkg, err := Build(-1, []string{"main.ogo"}, fsys)
-			if err != nil {
-				if !strings.Contains(err.Error(), test.want) {
-					t.Fatalf("expected %q, got %v", test.want, err)
-				}
-				return
+			if err == nil {
+				var out bytes.Buffer
+				err = EmitC(pkg, &out)
 			}
-			var out bytes.Buffer
-			if err = EmitC(pkg, &out); err == nil {
-				t.Fatalf("expected a refusal, got:\n%s", out.String())
-			} else if !strings.Contains(err.Error(), test.want) {
+			switch {
+			case test.want == "" && err != nil:
+				t.Fatalf("expected it to compile, got %v", err)
+			case test.want != "" && err == nil:
+				t.Fatalf("expected %q, got no error", test.want)
+			case test.want != "" && !strings.Contains(err.Error(), test.want):
 				t.Fatalf("expected %q, got %v", test.want, err)
 			}
 		})

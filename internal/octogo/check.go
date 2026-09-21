@@ -14275,6 +14275,164 @@ type ptrConvExpr struct {
 	rest      []Node // the steps after the conversion
 }
 
+// checkBracketConv checks a conversion to a slice or an array type written out,
+// `[]int(l)` or `[4]byte(s)`, which the grammar took on 2026-09-21. Go converts to
+// one a slice or an array of the same element -- an array only to its own type --
+// nil to a slice, and a string to a slice of bytes or of runes; the rest is refused
+// in Go's words. An operand whose type cannot be followed is the emitter's to judge,
+// which knows the element types it lowers.
+func (f *File) checkBracketConv(s *Scope, n, typ Node, lbrack Token, conv Node) {
+	target := f.sourceSpan(n.Pos(), typ.End())
+	var args []Node
+	for e := range it(f.callArgList(conv).ast) {
+		if e.sym == Expression {
+			args = append(args, e)
+		}
+	}
+	switch {
+	case len(args) == 0:
+		f.err(lbrack.Position(), "missing argument in conversion to %s", target)
+		return
+	case len(args) > 1:
+		f.err(f.tok(args[1].Pos()).Position(), "too many arguments in conversion to %s", target)
+		return
+	}
+	arg := args[0]
+	pos := f.tok(arg.Pos()).Position()
+	var bound Node // `[4]byte`: the length between the brackets
+	for c := range it(n.ast) {
+		if c.sym == Expression {
+			bound = c
+		}
+	}
+	elem := f.typ(s, typ)
+	if f.isNilOperand(arg) {
+		if bound.sym != 0 {
+			f.err(pos, "cannot convert nil to type %s", target)
+		}
+		return
+	}
+	if k, ok := f.exprType(s, arg); ok && kindCategory(k) != catUnknown {
+		if ek, eok := f.typeKind(s, elem); bound.sym == 0 && eok && kindCategory(k) == catString &&
+			(ek == PredeclaredUint8 || ek == PredeclaredInt32) {
+			return // `[]byte(s)`: Go's, and the emitter's to refuse for the allocation
+		}
+		f.err(pos, "cannot convert %s (%s) to type %s", f.exprSource(arg), f.convOperandDesc(s, arg, k), target)
+		return
+	}
+	what, known := f.nonBoolOperand(s, arg)
+	switch what {
+	case "a function", "a channel", "a struct", "an interface", "a pointer":
+		if known {
+			f.err(pos, "cannot convert %s to type %s: it is %s", f.exprSource(arg), target, what)
+		}
+		return
+	}
+	// Between slices and arrays the element type is kept, and an array converts to
+	// nothing but its own type: `[]string(xs)` of an []int and `[]int(a)` of an array
+	// reached the emitter, which could say only that it could not infer the type of
+	// the declaration they were the value of.
+	tn := TypeNode(&TypeNodeSlice{TypeNode: elem})
+	if bound.sym != 0 {
+		v, ok := f.constArgValue(s, bound)
+		if !ok {
+			return
+		}
+		length, exact := constant.Int64Val(v)
+		if !exact || length < 0 {
+			return
+		}
+		tn = &TypeNodeArray{Expression: constVal{cv: constant.MakeInt64(length)}, TypeNode: elem}
+	}
+	if op, ok := f.lenOperandType(s, arg); ok {
+		if convertible, known := f.bracketConvertible(typeAt{tn, s, f}, op); known && !convertible {
+			f.err(pos, "cannot convert %s%s to type %s", f.exprSource(arg), f.operandOfType(arg, op), target)
+		}
+		return
+	}
+	// A variable whose type came from a slice literal has no written type to follow,
+	// only the Kind of its element.
+	want, ok := underlyingKind(typeAt{elem, s, f})
+	if have, isVar := f.sliceOperandElem(s, arg); ok && isVar && have != want {
+		f.err(pos, "cannot convert %s to type %s", f.exprSource(arg), target)
+	}
+}
+
+// bracketConvertible reports whether a value of type op converts to tgt, a slice or
+// an array type, and whether that could be told: a slice goes to a slice or an array
+// of its own element, an array only to an array of its length and element.
+func (f *File) bracketConvertible(tgt, op typeAt) (ok, known bool) {
+	u, v := f.underlyingTypeAt(tgt), f.underlyingTypeAt(op)
+	var want TypeNode
+	var length int64
+	switch t := u.tn.(type) {
+	case *TypeNodeSlice:
+		want = t.TypeNode
+	case *TypeNodeArray:
+		if length, ok = f.arrayTypeLen(u, false); !ok {
+			return false, false
+		}
+		want = t.TypeNode
+	default:
+		return false, false
+	}
+	var have TypeNode
+	switch t := v.tn.(type) {
+	case *TypeNodeSlice:
+		have = t.TypeNode
+	case *TypeNodeArray:
+		if _, toArray := u.tn.(*TypeNodeArray); !toArray {
+			return false, true
+		}
+		n, ok := f.arrayTypeLen(v, false)
+		if !ok {
+			return false, false
+		}
+		if n != length {
+			return false, true
+		}
+		have = t.TypeNode
+	default:
+		return false, false
+	}
+	return identicalTypes(typeAt{want, u.s, u.f}, typeAt{have, v.s, v.f})
+}
+
+// identicalTypes reports whether two written types are one type, byte being uint8,
+// and whether that could be told.
+func identicalTypes(a, b typeAt) (same, known bool) {
+	if a.f == nil || b.f == nil {
+		return false, false
+	}
+	ka, preA := underlyingKind(a)
+	kb, preB := underlyingKind(b)
+	if preA && preB {
+		return ka == kb, true
+	}
+	ia, ib := a.f.typeNodeIdentity(a.tn), b.f.typeNodeIdentity(b.tn)
+	if ia == "" || ib == "" {
+		return false, false
+	}
+	return ia == ib, true
+}
+
+// operandOfType is Go's parenthetical for an operand of the type t, " (variable of
+// type L)", or nothing where only a description could name the type.
+func (f *File) operandOfType(arg Node, t typeAt) string {
+	if t.f == nil {
+		return ""
+	}
+	nm := t.f.typeNodeMessage(t.s, t.tn)
+	if nm == "" || strings.HasPrefix(nm, "a ") || strings.HasPrefix(nm, "an ") {
+		return ""
+	}
+	what := "value"
+	if _, isName := f.exprIdent(arg); isName {
+		what = "variable"
+	}
+	return " (" + what + " of type " + nm + ")"
+}
+
 // ptrConvOf recognises a Factor that is a conversion to a pointer type, `(*T)(x)`.
 // A starred VARIABLE, `(*p)(x)`, is the dereference it reads as -- a function p
 // points at, called -- and is not one.
@@ -14672,10 +14830,14 @@ func (f *File) checkFactorNames(s *Scope, n Node) {
 		return
 	}
 	var id, lbrack Token
-	var suffix, lit, litSuffix, anon Node
+	var suffix, lit, litSuffix, anon, conv, typ Node
 	hasID, hasSuffix, hasLit, hasLitSuffix, ellipsis := false, false, false, false, false
 	for c := range it(n.ast) {
 		switch c.sym {
+		case Type:
+			typ = c
+		case CallSuffix:
+			conv = c // `[]int(l)`: a conversion to the bracketed type, written bare
 		case StructType:
 			anon = c // `struct{ x int }{1}`: the literal's type, written out
 		case Expression:
@@ -14706,6 +14868,19 @@ func (f *File) checkFactorNames(s *Scope, n Node) {
 	// stand, and this narrows it, in Go's words.
 	if ellipsis && !hasLit {
 		f.err(lbrack.Position(), "invalid use of [...] array (outside a composite literal)")
+		return
+	}
+	// `[]int(l)`, `[4]byte(s)`: its argument's names, then what Go converts to the
+	// type -- which the chain after it, `[]int(l)[1]`, reads through.
+	if conv.sym != 0 && typ.sym != 0 {
+		f.resolveArgNames(s, []Node{f.callArgList(conv)})
+		if hasSuffix {
+			f.checkIndexExprs(s, suffix)
+			if argList, later, _, isCall := f.callInfoAll(suffix); isCall {
+				f.resolveArgNames(s, append([]Node{argList}, later...))
+			}
+		}
+		f.checkBracketConv(s, n, typ, lbrack, conv)
 		return
 	}
 	// `(s).y` is `s.y`: the parenthesised form means the same thing, so it is checked

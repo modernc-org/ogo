@@ -33862,6 +33862,76 @@ func main() {
 `,
 		want:   "before\npanic: cannot convert slice to array or pointer to array with length 3",
 		panics: true,
+	}, {
+		// A conversion to a slice or an array type WRITTEN OUT, `[]int(x)` and
+		// `[3]int(s)`, which was a syntax error: the grammar gave a bracketed type a
+		// literal and no call. To a slice it is the operand's header, sharing its
+		// backing -- a later store shows through -- and to an array a copy, in each
+		// place a value stands and read through by a chain after it.
+		name: "a conversion to a bracketed type written out",
+		src: `type L []int
+
+type S struct {
+	a [3]int
+	s []int
+}
+
+var back = [5]int{7, 8, 9, 10, 11}
+
+var gs = back[1:]
+
+var gl = L{4, 5, 6}
+
+var pa = [3]int(back[2:])
+
+var px = []int(gl)
+
+var calls int
+
+func sum(a [3]int) int {
+	calls++
+	return a[0]*100 + a[1]*10 + a[2]
+}
+
+func tot(s []int) int {
+	calls++
+	n := 0
+	for _, v := range s {
+		n += v
+	}
+	return n
+}
+
+func mk(s []int) [3]int { return [3]int(s) }
+
+func view() []int { return []int(gl) }
+
+func show(a [3]int) { println("deferred", sum(a)) }
+
+func main() {
+	defer show([3]int(gs))
+	a := [3]int(gs)
+	var b [3]int = [3]int(gs)
+	x := []int(gl)
+	var y []int = []int(gl)
+	v := S{a: [3]int(gs), s: []int(gl)}
+	var arr [2][3]int
+	arr[1] = [3]int(gs)
+	gs[0] = 1
+	gl[0] = 40
+	println(sum(a), sum(b), x[0], y[0], len(x), sum(v.a), v.s[0], sum(arr[1]))
+	println(sum(mk(gs)), tot([]int(gl)), view()[0], []int(gl)[1], len([]int(L([]int(gl)))), sum(pa), px[0])
+	println([3]int(gs) == a, [3]int(back[1:]) == [3]int(gs), len([]int(nil)), []int(nil) == nil)
+	if n := len([]int(gl)); n == 3 {
+		println("three", tot([]int(gl[1:])))
+	}
+	for i, e := range []int(gl) {
+		println(i, e)
+	}
+	println(calls)
+}
+`,
+		want: "900 900 40 40 3 900 40 900\n200 51 40 5 3 1011 40\nfalse true 0 true\nthree 11\n0 40\n1 5\n2 6\n8\ndeferred 900\n",
 	}}
 
 // TestEmitCRun compiles emitted C with a host compiler and runs it, checking what

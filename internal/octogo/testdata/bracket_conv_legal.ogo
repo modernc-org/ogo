@@ -1,0 +1,37 @@
+// COMPILE
+
+// The controls of bracket_conv.ogo: what Go converts to a slice or an array type
+// written out, and a chain read through the result. The string to bytes is Go, and
+// the emitter's to refuse as the allocation it needs -- not the checker's.
+
+type L []int
+
+type Row [3]int
+
+type B byte
+
+var gl = L{1, 2, 3}
+
+func get() L { return gl }
+
+func main() {
+	var r Row = Row{4, 5, 6}
+	var xs []int = r[:]
+	var bs []byte
+	var ns []B
+	var rs []rune
+	s := "abc"
+	a := []int(gl)
+	c := [3]int(r)
+	d := [3]int(xs)
+	e := [2]int(xs[1:])
+	g := []uint8(bs)
+	h := []B(ns)
+	k := []int32(rs)
+	m := []int(nil)
+	n := []byte(s)
+	println(len(a), c[0], d[2], e[1], len(g), len(h), len(k), len(m), len(n), []int(get())[1], len([]int(gl[1:])))
+	if []int(gl)[0] == 1 {
+		println(len([]int(xs)))
+	}
+}

@@ -1,0 +1,56 @@
+// A conversion to a slice or an array type written out, `[]int(x)`, `[3]int(s)`,
+// was a syntax error until 2026-09-21: the grammar gave a bracketed type a literal
+// and no call. Between slices and arrays the element type is kept, and an array
+// converts to nothing but its own type; of the basic values only a string converts,
+// to bytes or to runes.
+
+type L []int
+
+type B byte
+
+type P struct{ x int }
+
+func one() int { return 1 }
+
+var gl = L{1, 2, 3}
+
+func main() {
+	a := [3]int{1, 2, 3}
+	var b [4]int
+	var xs []int = a[:]
+	var bs []byte
+	f := one
+	var p P
+	flag := true
+	// ERROR "cannot convert gl \(variable of type L\) to type \[\]string"
+	_ = []string(gl)
+	// ERROR "cannot convert a \(variable of type \[3\]int\) to type \[\]int"
+	_ = []int(a)
+	// ERROR "cannot convert b \(variable of type \[4\]int\) to type \[3\]int"
+	_ = [3]int(b)
+	// ERROR "cannot convert xs \(variable of type \[\]int\) to type \[2\]int8"
+	_ = [2]int8(xs)
+	// ERROR "cannot convert bs \(variable of type \[\]byte\) to type \[\]B"
+	_ = []B(bs)
+	// ERROR "cannot convert nil to type \[3\]int"
+	_ = [3]int(nil)
+	// ERROR "cannot convert 5 \(untyped int constant\) to type \[\]int"
+	_ = []int(5)
+	// ERROR "cannot convert flag \(variable of type bool\) to type \[\]byte"
+	_ = []byte(flag)
+	// ERROR "cannot convert .hi. \(untyped string constant\) to type \[\]int"
+	_ = []int("hi")
+	// ERROR "cannot convert f to type \[\]int: it is a function"
+	_ = []int(f)
+	// ERROR "cannot convert p to type \[\]int: it is a struct"
+	_ = []int(p)
+	// ERROR "invalid use of \[\.\.\.\] array \(outside a composite literal\)"
+	_ = [...]int(xs)
+	// ERROR "too many arguments in conversion to \[\]int"
+	_ = []int(xs, xs)
+	// ERROR "missing argument in conversion to \[\]int"
+	_ = []int()
+	// ERROR "undefined: nosuch"
+	_ = []int(nosuch)
+	_, _, _, _, _, _, _ = a, b, xs, bs, f, p, flag
+}

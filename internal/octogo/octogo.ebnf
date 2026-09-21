@@ -83,7 +83,7 @@ Factor     = identifier [ FactorSuffix ] [ CompositeLit [ FactorSuffix ] ]
 	| string_lit [ FactorSuffix ]
 	| rune_lit
 	| "(" Expression ")" [ FactorSuffix ]
-	| "[" [ Expression | "..." ] "]" Type [ CompositeLit [ FactorSuffix ] ]
+	| "[" [ Expression | "..." ] "]" Type [ CompositeLit [ FactorSuffix ] | CallSuffix [ FactorSuffix ] ]
 	| "chan" Type
 	| StructType CompositeLit [ FactorSuffix ]
 	| FuncLiteral [ FactorSuffix ] .
@@ -101,7 +101,7 @@ HeaderFactor     = identifier [ FactorSuffix ]
 	| string_lit [ FactorSuffix ]
 	| rune_lit
 	| "(" Expression ")" [ FactorSuffix ]
-	| "[" [ Expression | "..." ] "]" Type [ CompositeLit [ FactorSuffix ] ]
+	| "[" [ Expression | "..." ] "]" Type [ CompositeLit [ FactorSuffix ] | CallSuffix [ FactorSuffix ] ]
 	| "chan" Type
 	| StructType CompositeLit [ FactorSuffix ]
 	| FuncLiteral [ FactorSuffix ] .

@@ -33,17 +33,11 @@
 // dead frame. Every other use of an array result works.
 // TODO 20260725 Complex numbers (see Types). They need no heap, so their absence
 // is work owed, unlike that of maps.
-// TODO 20260804 A conversion to an unnamed composite type must be PARENTHESISED:
-// `([]int)(xs)` and `([3]int)(q)` work, `[]int(xs)` does not parse. That is the
-// parenthesis restriction above, taken because the bare form is the one variant that
-// costs LL(1) conflicts -- it adds `Signature` on "(" and `Type` on "." to the
-// grammar's own eight, where the parenthesised form adds none. Both spellings are
-// valid Go, so obeying it costs nothing but the two characters. A conversion that
-// would change the REPRESENTATION -- `([]byte)(s)` from a string -- is refused after
-// parsing, as it allocates.
-// When measuring any grammar change, confirm make actually REGENERATED -- `touch
-// specs.go` can land in the same second as a preceding checkout and leave parser.go
-// "up to date", which reports zero warnings and has twice produced a false baseline.
+// When measuring any grammar change, compare the SETS of egg's First/Follow warnings
+// before and after, not their counts, and confirm make actually REGENERATED --
+// `touch specs.go` can land in the same second as a preceding checkout and leave
+// parser.go "up to date", which reports zero warnings and has twice produced a false
+// baseline.
 // TODO 20260808 Three diagnostics still read differently from Go's, in shape rather
 // than in content: an "invalid operation:" prefix on "cannot index"/"cannot slice",
 // which Go drops there and keeps on "cannot indirect"; "type int has no field f",
@@ -150,14 +144,16 @@
 // "for" or "switch" header where the "{" would be read as the block; C requires
 // parentheses around a type in a cast, and around far more besides.
 //
-// Where it applies, today, is one place: a conversion whose target is an UNNAMED
-// composite type must be written `([]int)(xs)` or `([3]int)(q)` rather than
-// `[]int(xs)`. Measured, the bare form is the only variant that costs the grammar
-// anything -- it makes `func() []int` and a conversion compete for one decision --
-// while the parenthesised one is free. A conversion whose target is a NAME,
-// `Row(r)`, needs no parentheses and never did.
+// It applies nowhere today. The one place it did, from 2026-08-04, was a conversion
+// whose target is an UNNAMED composite type, `([]int)(xs)` being required where Go
+// takes `[]int(xs)` as well. Measured then as a suffix after the type, the bare form
+// cost two decisions; as a call after the type, the suffix coming after the call, it
+// costs one -- `Signature` on "(", a function type with no result meeting the call
+// -- and the generated parser settles that one as Go does, reading "[]func()(x)" as
+// a type whose result is x. So both spellings parse since 2026-09-21. A conversion
+// whose target is a NAME, `Row(r)`, needs no parentheses and never did.
 //
-// The rule for adding another: it is allowed only when the parenthesised spelling
+// The rule for adding one: it is allowed only when the parenthesised spelling
 // means the same thing in Go, so that obeying the restriction never produces a
 // program Go reads differently.
 //
@@ -1335,7 +1331,7 @@
 //		| string_lit [ FactorSuffix ]
 //		| rune_lit
 //		| "(" Expression ")" [ FactorSuffix ]
-//		| "[" [ Expression | "..." ] "]" Type [ CompositeLit [ FactorSuffix ] ]
+//		| "[" [ Expression | "..." ] "]" Type [ CompositeLit [ FactorSuffix ] | CallSuffix [ FactorSuffix ] ]
 //		| "chan" Type
 //		| StructType CompositeLit [ FactorSuffix ]
 //		| FuncLiteral [ FactorSuffix ] .
@@ -1499,15 +1495,19 @@
 //		| string_lit [ FactorSuffix ]
 //		| rune_lit
 //		| "(" Expression ")" [ FactorSuffix ]
-//		| "[" [ Expression | "..." ] "]" Type [ CompositeLit [ FactorSuffix ] ]
+//		| "[" [ Expression | "..." ] "]" Type [ CompositeLit [ FactorSuffix ] | CallSuffix [ FactorSuffix ] ]
 //		| "chan" Type
 //		| StructType CompositeLit [ FactorSuffix ]
 //		| FuncLiteral [ FactorSuffix ] .
 //
 // A slice or array type may appear as a Factor so that the type argument such as
-// the "[]int" in "make([]int, 0, cap)" parses. A bare type used as a value is
-// rejected by the semantic checker, as is new; make is accepted only for a slice
-// with a constant capacity (see Slice types).
+// the "[]int" in "make([]int, 0, cap)" parses, and so that a conversion to one
+// written out, "[]int(l)", "[4]byte(s)", parses as Go writes it. As in Go, an
+// element type that is a function with no result takes the parentheses after it
+// for its result: "[]func()(x)" is a type, and the conversion is written
+// "([]func())(x)". A bare type used as a value is rejected by the semantic
+// checker, as is new; make is accepted only for a slice with a constant capacity
+// (see Slice types).
 //
 //	FactorSuffix = { Selector | Index | CallSuffix } .
 //	Selector     = "." ( identifier | "(" ( "type" | Type ) ")" ) .
