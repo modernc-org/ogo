@@ -222,11 +222,11 @@ inputs, and never hand-edit the outputs.
    > against v7.7.3 without it: on a P2-EDGE the three reproducers, and the two older
    > ones that are #109, print gcc's values; the 34 compiling `doc/` reproducers are
    > byte-identical and the four refusals refuse alike; of 1632 programs (the 632 run
-   > cases, fuzzer seeds 1-1000) 1619 are byte-identical, and 13 keep two immediate
-   > adds setting a carry nothing reads, which the diff merged (8 bytes) -- all 13
-   > pass on the board under both; test_offline 588/588 under both. Faithful: the
-   > regenerated flexcc compiles the battery and all 1632 byte-identically to a
-   > native v7.7.3.
+   > cases, fuzzer seeds 1-1000) 1619 come out alike, 35 of them a "fit 480" refusal
+   > under both, and 13 keep two immediate adds setting a carry nothing reads, which
+   > the diff merged (8 bytes) -- all 13 pass on the board under both; test_offline
+   > 588/588 under both. Faithful: the regenerated flexcc builds the battery and all
+   > 1632 exactly as a native v7.7.3 does, the refusals included.
    >
    > **All five platforms, the same day**: linux/amd64 and windows/amd64 on the
    > second dev machine, linux/arm64 on `rpi5` and both darwin backends on

@@ -32,17 +32,17 @@ shipped section tells a reader on that version that they have behaviour they do 
   were adopted, on native builds of the old pin with the diff and of v7.7.3
   without it. On a P2-EDGE the three reproducers, and the two older ones that
   turned out to be #109, print gcc's values. Every `doc/` reproducer that compiles
-  does so to the same binary under both, and the four refusals refuse alike. Of 1632 programs
-  -- the 632 run cases and fuzzer seeds 1-1000 -- 1619 compile to the same binary;
-  the other 13 each keep two immediate adds, which set a carry nothing reads and
-  which the diff merged, costing 8 bytes, and all 13 pass on the board under both.
-  spin2cpp's own `make test_offline` passes 588 of 588 under both. The regenerated
-  backend compiles all of them to the same binaries as the native v7.7.3, and the
-  host and on-board suites pass on it. That is so on each of the five platforms
-  `ogo` builds on -- linux/amd64, linux/arm64, windows/amd64, darwin/arm64,
-  darwin/amd64 -- all five regenerated at v7.7.3: the doc/ reproducers, the run
-  cases and the fuzzer seeds, 1670 programs, build to the same binaries, byte for
-  byte, on every one of them.
+  does so to the same binary under both, and the four refusals refuse alike. Of
+  1632 programs -- the 632 run cases and fuzzer seeds 1-1000 -- 1619 come out
+  alike, 35 of them refused by both, out of cog registers; the other 13 each keep
+  two immediate adds, which set a carry nothing reads and which the diff merged,
+  costing 8 bytes, and all 13 pass on the board under both. spin2cpp's own `make
+  test_offline` passes 588 of 588 under both. All five platforms `ogo` builds on
+  -- linux/amd64, linux/arm64, windows/amd64, darwin/arm64, darwin/amd64 -- are
+  regenerated at v7.7.3, and on each of them the backend builds the doc/
+  reproducers, the run cases and the fuzzer seeds, 1670 programs, exactly as a
+  native v7.7.3 does: the same binaries, byte for byte, and the same 39 refused.
+  The host and on-board suites pass on linux/amd64.
 
 ### Verified
 
