@@ -28,7 +28,10 @@ not support X") have been read since as design decisions when they were only
 status. Floats, the sized integer types, `&&`/`||`, three-clause and range `for`,
 labels, multi-package programs and directional channels were all once "not
 supported" and are now in the language (specs.go called the last "To maintain a
-strict LL(1) grammar" -- it took one extra production, 2026-09-18). **Before treating any such note as settled, check whether the
+strict LL(1) grammar" -- it took one extra production, 2026-09-18). So was the bare
+conversion `[]int(x)`, parenthesised by rule for the parser's sake until an
+alternative measured at one First/Follow decision, settled as Go settles it, took it
+(2026-09-21). **Before treating any such note as settled, check whether the
 feature actually works** -- and if a stale note is found, fix the note.
 
 The deliberate exceptions, all rooted in the Propeller 2 hardware:
@@ -606,8 +609,8 @@ through a short declaration. The local declared forms, which is what everything
 written until then used, were right in every case. A conversion sweep beside it
 (`T(x)` for each of those types, in a declaration, a call, a chain and under a
 suffix) found only the recorded grammar gap: a conversion to a type WRITTEN OUT,
-`[]int(x)`, `[]byte(x)` and `[3]int(x)`, is a syntax error, where a named type's
-converts.
+`[]int(x)`, `[]byte(x)` and `[3]int(x)`, was a syntax error, where a named type's
+converts (the bare form parses since 2026-09-21).
 
 **A PACKAGE BOUNDARY IS A ROW** (2026-09-20). Everything that can cross one, each
 declared in a library package and used from a program: an interface satisfied by a
@@ -755,11 +758,13 @@ works since 2026-09-20 (`emitParenChain` binds the head and walks the steps from
 it): `(&p).x`, `(get()).x`, `(*getp()).x`, `(getq()).a`, `(arr[1:])[1]`,
 `("hello")[1:]` and `(&arr)[1]`, beside the `(*p).x`, `(a)[i]`, `(v).m()`,
 `(&v).m()`, `(*T)(p).m()` and `(a - b).m()` that always did. A struct head is a
-VALUE there, so a slice step on one is refused as Go refuses it; a conversion to a type WRITTEN OUT -- `[]int(x)`, `[]byte(x)`,
-`[3]int(x)`, and the pointer forms `(*[]byte)(p)` and `(*[4]byte)(s)` -- which is a
-syntax error, the grammar giving a bracketed type a literal and no call (a named
-type's converts, and an assignment needs no conversion: `var d []int = b` for a `b
-L` is taken);
+VALUE there, so a slice step on one is refused as Go refuses it; a conversion to a
+POINTER to a type written out, `(*[]byte)(p)` and `(*[4]byte)(s)` ("not supported
+yet": the bare `[]int(x)` and `[3]int(s)` parse since 2026-09-21, and `[]byte(s)` is
+refused as the allocation it is); `len` or `cap` of a BRACKETED conversion and a
+reslice after one, `len([3]int(s))`, `len(([5]int)(a))`, `t := []int(s)[1:]`, and an
+index of or a range over a slice-to-array one, `[3]int(s)[2]`, `A(s)[1]` (a named
+type's `len(A(a))` works, and so does `[]int(s)[0]`);
 an ELEMENT or another package's variable as a `range` clause's target, `for _,
 q[0] = range ptrs`, `for _, geo.P = range ptrs` ("a range target must be a variable
 or a struct field"); a chain after a slice step of an ARRAY OF ARRAYS,

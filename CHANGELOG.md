@@ -18,6 +18,35 @@ shipped section tells a reader on that version that they have behaviour they do 
 
 ## Unreleased
 
+### Language
+
+- **A conversion to a slice or an array type written out is spelt as Go spells
+  it.** `[]int(xs)`, `[3]int(s)` and `[]int(get())[1]` were syntax errors -- the
+  grammar gave a bracketed type a composite literal and no call -- and the
+  parenthesised `([]int)(xs)` was required instead, the one place the parenthesis
+  restriction in specs.go applied. The grammar takes a call after the type now, and
+  a suffix after the call. That costs one LL(1) decision, which the generated parser
+  settles as Go does: `[]func()(x)` is a type whose result is x, so a conversion to
+  `[]func()` is written `([]func())(x)`, in both. What Go asks of such a conversion
+  is asked, in Go's words: between slices and arrays the element type is kept and an
+  array converts to nothing but its own type -- `[]string(xs)` for an []int and
+  `[]int(a)` for an array are refused -- and of the basic values only a string
+  converts, `[]byte(s)`, which is refused as the allocation it needs, bare or
+  parenthesised. `len` of a bracketed conversion and a reslice after one,
+  `len([3]int(s))` and `t := []int(s)[1:]`, are refused, as the parenthesised forms
+  were.
+
+### Fixed
+
+- **A slice converted to an array is a copy of it, and a short one panics.** Go
+  copies the slice's first elements (since 1.20); `a := A(s)` for a `type A [3]int`
+  declared a slice ALIASING s instead -- a later store into s showed through a,
+  `len(a)` was s's, and a shorter s read past its length in silence -- while `var a
+  A = A(s)` and `take(A(s))` produced C that did not compile. It is a copy now,
+  wherever a value stands, and a slice too short panics as in Go, "cannot convert
+  slice to array or pointer to array with length 3". Indexing the conversion,
+  `A(s)[1]`, and ranging over it are refused.
+
 ### Behaviour changes
 
 - **What has no Kind is asked what it is, by every operator and in every place a
