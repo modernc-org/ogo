@@ -57,6 +57,18 @@ shipped section tells a reader on that version that they have behaviour they do 
   `p++` for a pointer, `b &= false` and `x %= 2` -- 20 built with a warning from the
   target's compiler about the C it was given, and the target's compiler refused the
   other 87, about generated code.
+- **A method that keeps what its receiver holds, called on a copy, is followed.**
+  There is no heap, so a reference to a function's frame must not outlive the
+  frame, and the compiler follows every call a parameter is handed on through to
+  see whether it is kept. Calls on a COPY were not followed: a value parameter
+  (`func through(w W) { w.save() }` for a `save` storing `w.xs` in a package
+  variable), a local built from a parameter (`w := W{v}; w.save()`), a value
+  receiver passing its receiver on, a field, an element or a range value called a
+  method on, and a method started on a cog, `go w.send()`. Nor was a call through a
+  method's result, `return s.handler()(v)`. So `through(W{b[:]})` for a local array
+  b compiled, and left a package variable pointing into a frame that was gone.
+  Each is refused now, where the local is handed on. Measured with v0.42.0's
+  compiler: all 24 programs of the probe built a binary without a word.
 
 ## v0.42.0
 

@@ -895,8 +895,25 @@ variable -- and a local through what it holds, a literal it holds among them (it
 summary key resolves as a name would); a value only a call's result type
 names is held as `?<type>` (`summaryCallResult`). A deferred call and a literal called
 where it stands are calls here as well; neither was, so `defer keep(v)` and
-`func(w []int) { gs = w }(v)` laundered a parameter. Still open: a call through a
-method's result, `s.handler()(v)`, and a chain whose base is a literal's parameter.
+`func(w []int) { gs = w }(v)` laundered a parameter. A call through a METHOD's
+result, `s.handler()(v)`, is a call of the union its result names (`chainUnions`,
+2026-09-22), as `pick()(v)` always was; the other item once listed here, a chain
+whose base is a literal's parameter, no longer reproduced in any shape tried that day.
+Calling a method's result as a STATEMENT is still a call shape the emitter refuses.
+A method that keeps what its receiver HOLDS, called on a COPY, keeps what the
+original holds (`TestEmitCRecvContentsCopies`, 2026-09-22): none of the copies was
+followed -- a value parameter matched no receiver case at all (its method's arguments
+went unfollowed too), a local's edges named what was stored INTO it and never what it
+held (`w := W{v}; w.save()`), a value receiver handed nothing on, a field's, an
+element's and a range value's method was no method call, and a goroutine's receiver
+was not sunk. `copyRecvEdge` carries the callee's `recvContents` to whatever the
+copy's contents carry -- a parameter's VALUE where the copy holds it as a part, which
+no `recvEdge` flavour could say -- and a receiver reached past a pointer or into a
+slice's backing is `recvParam` one hop behind a parameter and `recvOutlives` beyond.
+A new way to reach a receiver's contents through a copy is a new row there. The
+summaries record ONE level of contents, so a field behind a pointer, `through(T2{&lw})`
+for a `t.p.save()`, is refused even when lw holds package storage -- as the direct
+`gs = t.p.xs` always was; a deeper model is how that price would come down.
 
 ## Notes
 
