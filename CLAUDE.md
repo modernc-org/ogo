@@ -719,10 +719,10 @@ a spread `sum(xs...)` checked as an element, and the literal element above. What
 built of the 167 programs it took (measured with `ogo build`, the struct probes of ONE
 word): 60 binaries without a word, 20 with a warning, 87 refused by the backend about
 generated C. Still loud rather than checked: a string from a []byte or []rune (legal
-Go, refused by design as the allocation it needs), an inferred `xs == ys` of two
-slices ("an array or a slice" is not one category to the checker; the emitter refuses
-it in Go's words) and the same pair as a switch's tag and case (the target's compiler
-refuses it), and a value stored into an interface (by design).
+Go, refused by design as the allocation it needs) and a value stored into an
+interface (by design). An inferred `xs == ys` of two slices was a third until
+2026-09-22: a variable with no written type was "an array or a slice", not one
+category, until its initializer was asked which (sliceOrArrayOf).
 
 **A CASE WAS A POSITION NOTHING WALKED** (2026-09-21). The rules above cross
 operations with categories; they say nothing of a position no rule is ever asked in.
