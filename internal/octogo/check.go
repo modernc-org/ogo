@@ -3374,20 +3374,7 @@ func (f *File) nonBoolOperand(s *Scope, n Node) (string, bool) {
 		case *FuncDeclaration:
 			return "a function", true
 		case *VarDeclaration:
-			switch {
-			case d.isFunc:
-				return "a function", true
-			case d.isChan:
-				return "a channel", true
-			case d.declType != nil:
-				return f.nonBoolType(d.declScope, d.declType)
-			case d.hasKind:
-				return "", false // exprType's to answer
-			case d.hasElemKind || d.elemTypeNode != nil || d.elemTypeName.IsValid():
-				return "an array or a slice", true
-			case d.typeName.IsValid():
-				return f.nonBoolNamed(s, d.declaredTypeName())
-			}
+			return f.nonBoolVar(s, d)
 		}
 		return "", false
 	}
@@ -3418,6 +3405,28 @@ func (f *File) nonBoolOperand(s *Scope, n Node) (string, bool) {
 		if sig != nil && sig.Results != nil && len(sig.Results.List) == 1 && len(sig.Results.List[0].Names) <= 1 {
 			return f.nonBoolType(s, sig.Results.List[0].TypeNode)
 		}
+	}
+	return "", false
+}
+
+// nonBoolVar is nonBoolOperand for a variable, answered from its declaration. A
+// pointer is asked first, which nonBoolOperand does before it reaches a name.
+func (f *File) nonBoolVar(s *Scope, d *VarDeclaration) (string, bool) {
+	switch {
+	case d.isPtr:
+		return "a pointer", true
+	case d.isFunc:
+		return "a function", true
+	case d.isChan:
+		return "a channel", true
+	case d.declType != nil:
+		return f.nonBoolType(d.declScope, d.declType)
+	case d.hasKind:
+		return "", false // exprType's to answer
+	case d.hasElemKind || d.elemTypeNode != nil || d.elemTypeName.IsValid():
+		return "an array or a slice", true
+	case d.typeName.IsValid():
+		return f.nonBoolNamed(s, d.declaredTypeName())
 	}
 	return "", false
 }
@@ -5613,6 +5622,8 @@ func (f *File) checkAssignment(s *Scope, head, postfix Node) {
 				}
 			}
 		}
+		// Asked of the head, not of the names above: a pointee, `*p++`, has none.
+		f.checkOperatorTarget(s, head, postfix, op, hasSelectorOrIndex(postfix), nil)
 		return
 	}
 
@@ -5655,10 +5666,11 @@ func (f *File) checkAssignment(s *Scope, head, postfix Node) {
 		for _, e := range rhs {
 			f.checkNames(s, e)
 		}
+		reported := f.checkOperatorTarget(s, head, postfix, op, hasSelectorOrIndex(postfix), rhs)
 		if isShiftAssign(op) && len(rhs) == 1 {
 			f.checkShiftCount(s, rhs[0]) // `x <<= -1` is the same error as `x << -1`
 		}
-		if !isShiftAssign(op) && len(lhs) == 1 && len(rhs) == 1 {
+		if !reported && !isShiftAssign(op) && len(lhs) == 1 && len(rhs) == 1 {
 			f.checkAssignType(s, lhs[0], rhs[0], !lhsSuffixed[0])
 			// checkAssignType reads the BASE's declaration, which is the target only
 			// when there is no suffix. A field, an element or a pointee is the target's
@@ -11517,6 +11529,173 @@ func binaryAllowed(op Symbol, c int) bool {
 		return c == catNumeric || c == catString
 	}
 	return c == catNumeric
+}
+
+// compoundBase is the binary operator a compound assignment applies: `+` of `+=`.
+func compoundBase(op Symbol) Symbol {
+	switch op {
+	case ADD_ASSIGN:
+		return ADD
+	case SUB_ASSIGN:
+		return SUB
+	case MUL_ASSIGN:
+		return MUL
+	case QUO_ASSIGN:
+		return QUO
+	case REM_ASSIGN:
+		return REM
+	case AND_ASSIGN:
+		return AND
+	case OR_ASSIGN:
+		return OR
+	case XOR_ASSIGN:
+		return XOR
+	case ANDNOT_ASSIGN:
+		return ANDNOT
+	case SHL_ASSIGN:
+		return SHL
+	case SHR_ASSIGN:
+		return SHR
+	}
+	return 0
+}
+
+// targetOperand is an assignment target read as an operand, which an increment and
+// a compound assignment make it: its Kind when it has one -- what then names a
+// defined type the target is declared with -- and otherwise what nonBoolOperand
+// would call it. The one-step shapes the "=" checks resolve answer
+// -- a name, a field, an element, a pointee, a field's pointee -- and a longer
+// chain from a written type; anything else is unknown.
+func (f *File) targetOperand(s *Scope, head, postfix Node, suffixed bool) (k Kind, hasKind bool, what string, known bool) {
+	if base, ok := f.derefAssignTarget(head, postfix); ok {
+		d, isVar := s.find(base.Src()).(*VarDeclaration)
+		switch {
+		case !isVar || !d.isPtr:
+			return 0, false, "", false
+		case d.hasElemKind:
+			return d.elemKind, true, "", false
+		}
+		if p, ok := d.declType.(*TypeNodePointer); ok {
+			what, known = f.nonBoolType(d.declScope, p.TypeNode)
+		} else if d.typeName.IsValid() {
+			what, known = f.nonBoolNamed(s, d.declaredTypeName())
+		}
+		return 0, false, what, known
+	}
+	if base, field, ok := f.derefFieldAssignTarget(head, postfix); ok {
+		p, isPtr := f.fieldTypeNode(s, base, field).(*TypeNodePointer)
+		if !isPtr {
+			return 0, false, "", false // checkDerefFieldAssign reports it
+		}
+		if k, ok := f.typeKind(s, p.TypeNode); ok {
+			return k, true, "", false
+		}
+		what, known = f.nonBoolType(s, p.TypeNode)
+		return 0, false, what, known
+	}
+	id, ok := f.assignHeadIdent(head)
+	if !ok {
+		return 0, false, "", false
+	}
+	d, isVar := s.find(id.Src()).(*VarDeclaration)
+	if !isVar {
+		return 0, false, "", false
+	}
+	if !suffixed {
+		if d.hasKind {
+			if d.typeName.IsValid() {
+				// A defined type is named as declared, `Name`, not by the Kind it is
+				// defined over.
+				return d.kind, true, d.declaredTypeName(), false
+			}
+			return d.kind, true, "", false
+		}
+		what, known = f.nonBoolVar(s, d)
+		return 0, false, what, known
+	}
+	if k, ok := f.suffixedTargetKind(s, head, postfix); ok {
+		return k, true, "", false
+	}
+	in, tn := s, f.sendTargetTypeNode(s, d, postfix)
+	if field, isField := f.fieldSelector(postfix); isField {
+		tn = f.fieldTypeNode(s, id, field)
+	} else if _, isIndex := f.indexAssignTarget(head, postfix); isIndex && d.elemTypeNode != nil {
+		tn = d.elemTypeNode
+		if d.declScope != nil {
+			in = d.declScope
+		}
+	}
+	if k, ok := f.typeKind(in, tn); tn != nil && ok {
+		return k, true, "", false
+	}
+	what, known = f.nonBoolType(in, tn)
+	return 0, false, what, known
+}
+
+// targetSpan is the source of an assignment target: the head and the steps of the
+// postfix before its operator.
+func (f *File) targetSpan(head, postfix Node) string {
+	end := head.End()
+	for c := range it(postfix.ast) {
+		if c.sym == PostfixOp {
+			break
+		}
+		end = c.End()
+	}
+	return f.sourceSpan(head.Pos(), end)
+}
+
+// checkOperatorTarget asks of an increment's or a compound assignment's target
+// what an arithmetic operator asks of its left operand: `x++` is `x += 1`, and `x
+// op= y` is `x = x op y`. Only the target's NAME was asked about -- that it is a
+// variable -- so `s++` for a string, `b &= false` for a bool, `x %= 2` for a float
+// and `f++` for a function all reached the C compiler, and a value of no Kind on
+// the right, `n += f`, went unasked too.
+func (f *File) checkOperatorTarget(s *Scope, head, postfix Node, op Symbol, suffixed bool, rhs []Node) (reported bool) {
+	pos := f.tok(head.Pos()).Position()
+	target := f.targetSpan(head, postfix)
+	k, hasKind, what, known := f.targetOperand(s, head, postfix, suffixed)
+	if op == INC || op == DEC {
+		sym := "++"
+		if op == DEC {
+			sym = "--"
+		}
+		switch {
+		case known:
+			f.err(pos, "invalid operation: operator %s not defined on %s: it is %s", sym, target, what)
+		case hasKind && kindCategory(k) != catNumeric:
+			f.err(pos, "invalid operation: %s%s (non-numeric type %s)", target, sym, orKindName(what, k))
+		default:
+			return false
+		}
+		return true
+	}
+	bop := compoundBase(op)
+	var sym string // the operator as written, `+` of `+=`
+	for c := range it(postfix.ast) {
+		if c.sym != PostfixOp {
+			continue
+		}
+		for a := range it(c.ast) {
+			if a.sym != AssignOp {
+				continue
+			}
+			for t := range it(a.ast) {
+				if t.sym == 0 {
+					sym = strings.TrimSuffix(f.tok(t.tok).Src(), "=")
+				}
+			}
+		}
+	}
+	switch {
+	case known:
+		f.err(pos, "invalid operation: operator %s not defined on %s: it is %s", sym, target, what)
+		return true
+	case hasKind && (!binaryAllowed(bop, kindCategory(k)) || intOnlyOp(bop) && !isIntegerKind(k)):
+		f.err(pos, "invalid operation: operator %s not defined on %s (variable of type %s)", sym, target, orKindName(what, k))
+		return true
+	}
+	return len(rhs) == 1 && !isShiftAssign(op) && f.kindlessOperandErr(s, rhs[0], pos, sym)
 }
 
 // headIsDeref reports whether an assignment's head is a dereference, "*p = v". The

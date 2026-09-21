@@ -3581,8 +3581,12 @@ func TestEmitCMultiDimArrayPartial(t *testing.T) {
 // It is pinned because the lowering that made the assignment work sits on the tail,
 // so the same targets now reach every OTHER tail as well. Left unsaid, `m[1]++` would
 // have emitted C that increments the row's decayed pointer and throws it away.
+//
+// An operator on an array is the checker's to refuse since 2026-09-21 (it asks what
+// an operand of no Kind is); those cases say so in check, the checker's words, and
+// the emitter is not reached.
 func TestEmitCArrayTargetRefusals(t *testing.T) {
-	for _, test := range []struct{ name, src, want string }{
+	for _, test := range []struct{ name, src, want, check string }{
 		{
 			// A deferred call's array argument is checked against the parameter
 			// where the defer stands: the replay runs after the argument's scope
@@ -3606,7 +3610,7 @@ func main() {
 	println(m[1][0])
 }
 `,
-			want: "cannot update [3]int in place",
+			check: "operator ++ not defined on m[1]: it is an array",
 		},
 		{
 			name: "add to a row",
@@ -3617,7 +3621,7 @@ func main() {
 	println(m[1][0])
 }
 `,
-			want: "cannot update [3]int in place",
+			check: "operator + not defined on m[1]: it is an array",
 		},
 		{
 			name: "increment an array field of an element",
@@ -3630,12 +3634,18 @@ func main() {
 	println(arr[1].f[0])
 }
 `,
-			want: "cannot update [2]int in place",
+			check: "operator ++ not defined on arr[1].f: it is an array",
 		},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			fsys := fstest.MapFS{"main.ogo": &fstest.MapFile{Data: []byte(test.src)}}
 			pkg, err := Build(-1, []string{"main.ogo"}, fsys)
+			if test.check != "" {
+				if err == nil || !strings.Contains(err.Error(), test.check) {
+					t.Fatalf("Build error %v does not mention %q", err, test.check)
+				}
+				return
+			}
 			if err != nil {
 				t.Fatalf("Build: %v", err)
 			}

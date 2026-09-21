@@ -1,0 +1,39 @@
+// COMPILE
+
+// The controls of kindless_incdec.ogo: numbers reached through every target shape
+// refused there, and the string concatenation `+=` alone of the compound operators
+// is defined for.
+
+type P struct {
+	x int
+	y float64
+}
+
+type Count int
+
+func main() {
+	n := 1
+	n++
+	n += 2
+	n <<= 1
+	x := 1.5
+	x++
+	x *= 2
+	var c Count
+	c++
+	c |= 4
+	var p P
+	p.x++
+	p.y -= 0.5
+	q := &p
+	q.x += 3
+	xs := []int{1, 2}
+	xs[0]++
+	xs[1] %= 2
+	pn := &n
+	*pn++
+	*pn += 1
+	s := "a"
+	s += "b"
+	println(n, x, c, p.x, p.y, xs[0], xs[1], s)
+}

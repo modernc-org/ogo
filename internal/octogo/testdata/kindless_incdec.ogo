@@ -1,0 +1,70 @@
+// `x++` is `x += 1`, and `x op= y` is `x = x op y`: the target is an operand of the
+// operator as much as a place to store into. Only its NAME was asked about -- that it
+// is a variable -- until 2026-09-21, so an increment of a string and a compound
+// assignment to a bool, a float's remainder and every target of no Kind went
+// through to the C compiler.
+
+type P struct{ x int }
+
+type I interface{ M() }
+
+type Name string
+
+type W struct {
+	s string
+	f func() int
+}
+
+func one() int { return 1 }
+
+var gp P
+var gw W
+var gi I
+var fs [2]func() int
+
+func main() {
+	var s string = "a"
+	b := true
+	x := 1.5
+	var n Name = "n"
+	f := one
+	v := gp
+	p := &gp
+	ss := []string{"a"}
+	n2 := 1
+	// ERROR "s\+\+ \(non-numeric type string\)"
+	s++
+	// ERROR "b-- \(non-numeric type bool\)"
+	b--
+	// ERROR "n\+\+ \(non-numeric type Name\)"
+	n++
+	// ERROR "gw.s\+\+ \(non-numeric type string\)"
+	gw.s++
+	// ERROR "ss\[0\]\+\+ \(non-numeric type string\)"
+	ss[0]++
+	// ERROR "operator \+\+ not defined on f: it is a function"
+	f++
+	// ERROR "operator \+\+ not defined on fs\[0\]: it is a function"
+	fs[0]++
+	// ERROR "operator -- not defined on gi: it is an interface"
+	gi--
+	// ERROR "operator \+\+ not defined on \*p: it is a struct"
+	*p++
+	// ERROR "operator \+ not defined on b \(variable of type bool\)"
+	b += true
+	// ERROR "operator & not defined on b \(variable of type bool\)"
+	b &= false
+	// ERROR "operator - not defined on s \(variable of type string\)"
+	s -= "a"
+	// ERROR "operator % not defined on x \(variable of type float64\)"
+	x %= 2
+	// ERROR "operator << not defined on x \(variable of type float64\)"
+	x <<= 1
+	// ERROR "operator \+ not defined on v: it is a struct"
+	v += gp
+	// ERROR "operator \+ not defined on gw.f: it is a function"
+	gw.f += 1
+	// ERROR "operator \+ not defined on f: it is a function"
+	n2 += f
+	_, _, _, _, _ = s, b, x, n, n2
+}
