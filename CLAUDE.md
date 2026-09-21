@@ -487,7 +487,7 @@ The method that finds most bugs is not the test suite but a PROBE: a program a
 user would write, compared against real Go, with every accessor bumping a package
 counter that is printed beside the values so a double or a late evaluation shows as
 a number. The scripts are portable (paths from the repo root, tools built from the
-tree being probed) and read from the top of each file. The one Go tool they build is
+tree being probed) and read from the top of each file. The Go tool the probes build is
 `scripts/dumpc` (DIR in, the checked C of TestEmitCRun out, a refusal on stderr); it
 reads an `ogo.mod` above the directory as `ogo build` does, so a MULTI-PACKAGE
 program can be probed on the host -- without that the whole cross-package dimension
@@ -519,6 +519,15 @@ reached the second machine without it; it lives under `scripts/` for that reason
 - `scripts/capped.sh [-t SECS] [-m KB] CMD...` -- a memory cap and a SIGKILL timeout
   around one command. probe.sh, stmtprobe.sh and rejects.sh run the compiler through
   it; an ad-hoc loop over probe programs must too.
+- `scripts/flexcc` + `scripts/cccorpus.sh [-I INC] [-k KEEP] FLEXCC OUT DIR...` --
+  the tree's in-process backend as a command, and every C file of some directories
+  compiled by ONE flexcc into sorted `NAME RC SHA` lines; `LC_ALL=C join` two lists
+  and the lines that disagree are the programs two backends build differently. How
+  a backend regeneration is measured (2026-09-21): FAITHFUL to a native build of its
+  spin2cpp commit (`-I` that checkout's include/), against the backend it replaces
+  (which programs to run on the board), and across the five platforms, with
+  scripts/flexcc built under GOOS/GOARCH -- over doc/ and a dumpcorpus.sh dump, about
+  1670 programs in four minutes.
 
 **A COMPILER RUN IN A SWEEP IS CAPPED, AND A CRASH IS NOT A REFUSAL** (2026-09-20).
 A probe program is written to find a fault, and a fault is not always a wrong
