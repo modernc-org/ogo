@@ -14373,6 +14373,40 @@ func (f *File) checkBracketConv(s *Scope, n, typ Node, lbrack Token, conv Node) 
 	}
 }
 
+// parenBracketConv recognises the parenthesised spelling of a conversion to a slice
+// or an array type written out, `([]int)(xs)`: the bracketed type alone between the
+// parentheses, and a call as the first step after them. It answers the type's own
+// factor and the call. `([...]int)(xs)` is not one; the length only a literal can
+// supply is refused where the type is walked.
+func (f *File) parenBracketConv(n Node) (fac, typ Node, lbrack Token, conv Node, ok bool) {
+	inner, isParen := f.parenInner(n)
+	if !isParen {
+		return fac, typ, lbrack, conv, false
+	}
+	kids := slices.Collect(it(n.ast))
+	if len(kids) != 4 || kids[3].sym != FactorSuffix {
+		return fac, typ, lbrack, conv, false
+	}
+	steps := slices.Collect(it(kids[3].ast))
+	if len(steps) == 0 || steps[0].sym != CallSuffix {
+		return fac, typ, lbrack, conv, false
+	}
+	fac, isFac := f.soleFactorOf(inner)
+	if !isFac {
+		return fac, typ, lbrack, conv, false
+	}
+	fk := slices.Collect(it(fac.ast))
+	if len(fk) < 3 || fk[0].sym != 0 || f.ch(fk[0].tok) != LBRACK || fk[len(fk)-1].sym != Type {
+		return fac, typ, lbrack, conv, false
+	}
+	for _, c := range fk {
+		if c.sym == 0 && f.ch(c.tok) == ELLIPSIS {
+			return fac, typ, lbrack, conv, false
+		}
+	}
+	return fac, fk[len(fk)-1], f.tok(fk[0].tok), steps[0], true
+}
+
 // bracketConvertible reports whether a value of type op converts to tgt, a slice or
 // an array type, and whether that could be told: a slice goes to a slice or an array
 // of its own element, an array only to an array of its length and element.
@@ -14897,6 +14931,12 @@ func (f *File) checkFactorNames(s *Scope, n Node) {
 		}
 		f.checkBracketConv(s, n, typ, lbrack, conv)
 		return
+	}
+	// `([]int)(xs)`: the parenthesised spelling of the conversion above, asked what
+	// the bare one is. The emitter refused what it could not represent, most of it
+	// as "cannot infer a type" for the declaration the conversion was the value of.
+	if fac, typ, lbrack, conv, ok := f.parenBracketConv(n); ok {
+		f.checkBracketConv(s, fac, typ, lbrack, conv)
 	}
 	// `(s).y` is `s.y`: the parenthesised form means the same thing, so it is checked
 	// the same way. Without this the checks below -- a field that exists, a method

@@ -52,5 +52,23 @@ func main() {
 	_ = []int()
 	// ERROR "undefined: nosuch"
 	_ = []int(nosuch)
+	// The parenthesised spelling is asked the same; the emitter refused most of it
+	// as "cannot infer a type".
+	// ERROR "cannot convert gl \(variable of type L\) to type \[\]string"
+	_ = ([]string)(gl)
+	// ERROR "cannot convert a \(variable of type \[3\]int\) to type \[\]int"
+	_ = ([]int)(a)
+	// ERROR "cannot convert b \(variable of type \[4\]int\) to type \[3\]int"
+	_ = ([3]int)(b)
+	// ERROR "cannot convert nil to type \[3\]int"
+	_ = ([3]int)(nil)
+	// ERROR "cannot convert flag \(variable of type bool\) to type \[\]byte"
+	_ = ([]byte)(flag)
+	// ERROR "cannot convert f to type \[\]int: it is a function"
+	_ = ([]int)(f)
+	// ERROR "too many arguments in conversion to \[\]int"
+	_ = ([]int)(xs, xs)
+	// ERROR "invalid use of \[\.\.\.\] array \(outside a composite literal\)"
+	_ = ([...]int)(xs)
 	_, _, _, _, _, _, _ = a, b, xs, bs, f, p, flag
 }

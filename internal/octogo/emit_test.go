@@ -6795,6 +6795,8 @@ var p *int
 // representation -- so one of another shape used to be let through with the
 // OPERAND's shape: `Row(a)` for a [4]int a was a Row whose len was 4. Each position
 // the conversion is seen through in is refused, and the same shape still converts.
+// The checker refuses the unnamed spelling itself, in the same words, which is as
+// good an answer.
 func TestEmitCArrayConvShape(t *testing.T) {
 	const header = `type Row [3]int
 
@@ -6863,11 +6865,10 @@ func take(r Row) int { return r[2] }
 		t.Run(test.name, func(t *testing.T) {
 			fsys := fstest.MapFS{"main.ogo": &fstest.MapFile{Data: []byte(header + test.src)}}
 			pkg, err := Build(-1, []string{"main.ogo"}, fsys)
-			if err != nil {
-				t.Fatalf("Build: %v", err)
-			}
 			var out bytes.Buffer
-			err = EmitC(pkg, &out)
+			if err == nil {
+				err = EmitC(pkg, &out)
+			}
 			switch {
 			case test.want == "" && err != nil:
 				t.Fatalf("expected the conversion to compile, got %v", err)
