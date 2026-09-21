@@ -17165,6 +17165,9 @@ func (e *emitter) arrayOperandAST(ast []int32) []int32 {
 // It answers false for anything else, and a caller must read that as "not known",
 // never as "not an array": a shape this cannot see is not a mismatch.
 func (e *emitter) arrayShapeOf(ast []int32) (arrDim, bool) {
+	if dim, _, ok := e.sliceArrayConv(ast); ok {
+		return dim, true
+	}
 	ast = e.arrayOperandAST(ast)
 	if name, ok := e.exprIdent(ast); ok {
 		return e.arrayVar(name)
@@ -17212,6 +17215,9 @@ func (e *emitter) checkArrayShape(dst arrDim, ast []int32, what string) bool {
 // temporary bound ahead of the statement. Anything else is not something this can
 // copy from and is left to the paths that report it.
 func (e *emitter) arraySourceC(ast []int32) (string, bool) {
+	if dim, operand, ok := e.sliceArrayConv(ast); ok {
+		return e.hoistSliceArrayConv(dim, operand)
+	}
 	ast = e.arrayOperandAST(ast)
 	if name, ok := e.exprIdent(ast); ok {
 		if _, isArray := e.arrayVar(name); isArray {
@@ -18737,6 +18743,77 @@ func (e *emitter) definedTypeName(ct string) string {
 	return ct
 }
 
+// sliceArrayConv recognizes a conversion of a SLICE to an array type -- `A(s)` for a
+// defined array type A, `([3]int)(s)` for one written out -- which Go defines as a
+// COPY of the slice's first elements, panicking when the slice holds fewer. The
+// array conversions around it read a conversion as its operand, which is right from
+// an array of one shape and was wrong from a slice: `a := A(s)` declared a slice
+// that aliased s, its length s's, and a short s panicked nowhere; `var a A = A(s)`
+// and `f(A(s))` did not compile, and `ga = A(s)` was refused.
+func (e *emitter) sliceArrayConv(ast []int32) (arrDim, []int32, bool) {
+	ast = e.unparenExpr(ast)
+	if recv, suffix, isCall := e.directCall(ast); isCall {
+		if ct, used, isConv := e.convChainHead(recv, suffix); isConv && used == len(suffix) {
+			if dim, isArray := e.namedArrays[ct]; isArray {
+				if args := e.callArgExprs(suffix[used-1].ast); len(args) == 1 && e.isSliceOperand(args[0].ast) {
+					dim.name = ct
+					return dim, args[0].ast, true
+				}
+			}
+		}
+	}
+	if fac, isFac := e.soleFactorNode(ast); isFac {
+		if typeAST, arg, steps, isConv := e.factorBracketConv(fac); isConv && len(steps) == 0 {
+			if dim, isArray := e.arrayDim(typeAST); isArray && e.isSliceOperand(arg) {
+				return dim, arg, true
+			}
+		}
+	}
+	return arrDim{}, nil, false
+}
+
+// isSliceOperand reports an expression the emitter types as a slice.
+func (e *emitter) isSliceOperand(ast []int32) bool {
+	ct, ok := e.inferCType(ast)
+	return ok && e.sliceElemByName[e.underlyingCType(ct)] != ""
+}
+
+// hoistSliceArrayConv materializes a slice-to-array conversion ahead of the
+// statement reading it: a temporary array, the slice bound once, its length checked
+// as Go checks it, and its first elements copied in. Whatever reads an array -- a
+// declaration, an assignment, an argument, a comparison -- then reads the temporary.
+func (e *emitter) hoistSliceArrayConv(dim arrDim, operand []int32) (string, bool) {
+	if e.declInit || e.deferReplay >= 0 {
+		return "", false
+	}
+	if len(dim.inner) != 0 {
+		e.failAt(operand, "a conversion of a slice to %s, an array of arrays, is not supported yet", e.goArrayTypeName(dim))
+		return "", false
+	}
+	sct, ok := e.inferCType(operand)
+	if !ok {
+		return "", false
+	}
+	if elem := e.sliceElemByName[e.underlyingCType(sct)]; elem != dim.elem {
+		e.failAt(operand, "cannot convert a slice of %s to %s", elem, e.goArrayTypeName(dim))
+		return "", false
+	}
+	slice := e.exprC(operand)
+	tmp, s := e.newTmp(), e.newTmp()
+	e.includes["string.h"] = true
+	e.prologue = append(e.prologue, dim.elem+" "+tmp+dim.declSuffix()+";\n", sct+" "+s+" = "+slice+";\n")
+	if e.checks {
+		e.needPanic()
+		msg := "cannot convert slice to array or pointer to array"
+		if _, err := strconv.Atoi(dim.bound); err == nil {
+			msg += " with length " + dim.bound
+		}
+		e.prologue = append(e.prologue, "if ((unsigned)"+s+".len < (unsigned)("+dim.bound+")) ogo_panic(\""+msg+"\");\n")
+	}
+	e.prologue = append(e.prologue, "memcpy("+tmp+", "+s+".ptr, sizeof("+tmp+"));\n")
+	return tmp, true
+}
+
 // arrayConvShapeOK refuses a conversion to an array type from an array of another
 // shape, which Go refuses: the two must be one type but for the name -- the same
 // extents and the same element. A defined array type and its underlying one share a
@@ -18745,6 +18822,12 @@ func (e *emitter) definedTypeName(ct string) string {
 // of type R3 that len said held four. An operand whose shape arrayShapeOf cannot
 // read is passed, as checkArrayShape passes one.
 func (e *emitter) arrayConvShapeOK(dst arrDim, dstName string, operand []int32) bool {
+	// A SLICE converted to an array is a copy, not the operand under a new name, and
+	// sliceArrayConv is what reads one; passed here as "a shape arrayShapeOf cannot
+	// read", it made `a := A(s)` a second name for s.
+	if e.isSliceOperand(operand) {
+		return false
+	}
 	src, ok := e.arrayShapeOf(operand)
 	if !ok || src.elem == dst.elem && src.declSuffix() == dst.declSuffix() {
 		return true
@@ -18842,6 +18925,17 @@ func (e *emitter) floatConvHelper(ct string) (string, bool) {
 // string(rune), string([]byte) -- which needs the allocation this target does not
 // have, and is refused.
 func (e *emitter) emitConversion(ct string, arg Node) {
+	// A SLICE to a defined array type is a copy made ahead of the statement, and
+	// the conversion is that temporary wherever it stands (hoistSliceArrayConv).
+	if dim, isArray := e.namedArrays[ct]; isArray && e.isSliceOperand(arg.ast) {
+		dim.name = ct
+		if name, ok := e.hoistSliceArrayConv(dim, arg.ast); ok {
+			e.emit(name)
+		} else if e.err == nil {
+			e.failAt(arg.ast, "a conversion of a slice to %s is not supported here yet", e.definedTypeName(ct))
+		}
+		return
+	}
 	e.typeUntypedShifts(arg.ast, ct) // the conversion's type is its untyped operand's
 	if isScalarCType(e.underlyingCType(ct)) {
 		// A constant no integer type holds converted to a float, `float32(huge)`,
@@ -37850,6 +37944,14 @@ func (e *emitter) emitExprNode(n Node) {
 			// `([]int)(xs)` / `([3]int)(q)` -- a conversion to an unnamed composite
 			// type, written parenthesised because the grammar cannot spell it bare.
 			if typeAST, arg, steps, ok := e.factorBracketConv(n); ok {
+				if dim, isArray := e.arrayDim(typeAST); isArray && len(steps) == 0 && e.isSliceOperand(arg) {
+					if name, ok := e.hoistSliceArrayConv(dim, arg); ok {
+						e.emit(name)
+					} else if e.err == nil {
+						e.failAt(arg, "a conversion of a slice to %s is not supported here yet", e.goArrayTypeName(dim))
+					}
+					return
+				}
 				text, isID := e.bracketConvOperand(typeAST, arg)
 				if !isID {
 					e.fail("a conversion to %s is only supported where it changes nothing about the value, "+

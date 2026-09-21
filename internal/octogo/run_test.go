@@ -33790,6 +33790,78 @@ func main() {
 }
 `,
 		want: "35 71 21 123\n",
+	},
+	{
+		// A SLICE converted to an array is a copy of its first elements (Go 1.20),
+		// in every place a value stands: declared inferred and typed, assigned, an
+		// argument, a result, a field, an element, through a pointer, a package
+		// variable, deferred, compared, written out parenthesised. The conversion was
+		// taken for the operand under a new name, as an array's is, so `a := A(s)`
+		// declared a slice that aliased s -- a later store into s showed through a --
+		// and the other places produced C that did not compile.
+		name: "a slice converted to an array is a copy of it",
+		src: `type A [3]int
+
+type S struct {
+	a A
+	n int
+}
+
+var back = [5]int{7, 8, 9, 10, 11}
+
+var gs = back[1:]
+
+var pa = A(back[2:])
+
+var calls int
+
+func sum(a A) int {
+	calls++
+	return a[0]*100 + a[1]*10 + a[2]
+}
+
+func mk(s []int) A { return A(s) }
+
+func show(a A) { println("deferred", sum(a)) }
+
+func main() {
+	defer show(A(gs))
+	a := A(gs)
+	var b A = A(gs)
+	var c A
+	c = A(gs)
+	d := mk(gs)
+	v := S{a: A(gs), n: 1}
+	var arr [2]A
+	arr[1] = A(gs)
+	var e A
+	p := &e
+	*p = A(gs)
+	f := ([3]int)(gs)
+	gs[0] = 1
+	println(sum(a), sum(b), sum(c), sum(d), sum(v.a), sum(arr[1]), sum(e), f[0])
+	println(sum(A(gs)), A(gs) == a, A(back[1:]) == A(gs), len(A(gs)), sum(pa), calls)
+}
+`,
+		want: "900 900 900 900 900 900 900 8\n200 false true 3 1011 9\ndeferred 900\n",
+	},
+	{
+		// A slice shorter than the array is a panic, as in Go; it read past the
+		// slice's length in silence.
+		name: "a slice too short for the array it is converted to panics",
+		src: `type A [3]int
+
+var back = [5]int{7, 8, 9, 10, 11}
+
+func main() {
+	s := back[3:]
+	println("before")
+	a := A(s)
+	println("after", a[0])
+}
+`,
+		want:   "before\npanic: cannot convert slice to array or pointer to array with length 3",
+		panics: true,
 	}}
 
 // TestEmitCRun compiles emitted C with a host compiler and runs it, checking what
