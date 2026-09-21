@@ -20888,10 +20888,11 @@ type accessCur struct {
 	elem  string   // a slice's or array's element type
 	dims  []string // an array's remaining extents, outermost first
 	slice bool
-	// name is the DEFINED name of an ARRAY the chain has reached, when it was
-	// declared as one. An array has no ctype -- C models no array value type -- so
-	// this is the only thing that says which type it is, and therefore which methods
-	// it has. Empty for an array written out and for every other shape.
+	// name is the DEFINED name of an ARRAY or a SLICE the chain has reached, when it
+	// was declared as one. Neither has a ctype -- C models no array value type, and a
+	// slice is carried by its element -- so this is the only thing that says which
+	// type it is, and therefore which methods it has. Empty for one written out and
+	// for every other shape.
 	name string
 	// elemName and elemDims are arrDim's, carried through the walk so that an INDEX
 	// can hand the name on: `pool[1]` over a `[2]Row` reaches a Row, and the walk is
@@ -20927,7 +20928,7 @@ func (e *emitter) accessBase(base string) (accessCur, bool) {
 		return accessCur{}, false
 	}
 	if el, ok := e.sliceElem(base); ok {
-		return accessCur{elem: el, slice: true}, true
+		return accessCur{elem: el, slice: true, name: e.definedSliceType(base, el)}, true
 	}
 	// A pointer to an array enters the chain AS the array: `p[i].f` is
 	// `(*p)[i].f`, and every step after the first is then the array's. The
@@ -20939,6 +20940,17 @@ func (e *emitter) accessBase(base string) (accessCur, bool) {
 		return accessCur{ctype: ct}, true
 	}
 	return accessCur{}, false
+}
+
+// definedSliceType is the DEFINED slice type a slice variable was declared with,
+// `L` for a `var l L` over a `type L []int`, or "" for one declared as the header
+// itself. It is what the variable's reslices are, and what their methods are
+// looked up by.
+func (e *emitter) definedSliceType(name, elem string) string {
+	if ct, ok := e.varType(name); ok && ct != sliceCName(elem) && e.underlyingCType(ct) == sliceCName(elem) {
+		return ct
+	}
+	return ""
 }
 
 // accessBaseText is the C text a chain starts from: a variable's name, or a
@@ -20982,7 +20994,12 @@ func (e *emitter) accessSelect(cur accessCur, field string) (accessCur, bool) {
 	// the table is keyed by the header's own C name, which `type List []int` does
 	// not share, and reading it by the written name alone refused `b.in[0]` with
 	// "cannot index b.in" for a field Go indexes happily.
-	if el, ok := e.sliceElemByName[e.underlyingCType(ct)]; ok {
+	if u := e.underlyingCType(ct); u != ct {
+		if el, ok := e.sliceElemByName[u]; ok {
+			return accessCur{elem: el, slice: true, name: ct}, true
+		}
+	}
+	if el, ok := e.sliceElemByName[ct]; ok {
 		return accessCur{elem: el, slice: true}, true
 	}
 	return accessCur{ctype: ct}, true
@@ -21045,7 +21062,8 @@ func (e *emitter) accessDeref(cur accessCur, prefix string) string {
 func (e *emitter) accessSlice(cur accessCur) (accessCur, bool) {
 	switch {
 	case cur.slice:
-		return accessCur{elem: cur.elem, slice: true}, true
+		// A slice of a DEFINED slice type is of that type, `l[1:]` an L.
+		return accessCur{elem: cur.elem, slice: true, name: cur.name}, true
 	case len(cur.dims) >= 1:
 		return accessCur{elem: e.accessSliceElem(cur), slice: true}, true
 	case cur.ctype == cString:
@@ -21131,7 +21149,7 @@ func (e *emitter) plainOrSlice(elem string) accessCur {
 	// look supported.
 	if u := e.underlyingCType(elem); u != elem {
 		if el, ok := e.sliceElemByName[u]; ok {
-			return accessCur{elem: el, slice: true}
+			return accessCur{elem: el, slice: true, name: elem}
 		}
 	}
 	// A named ARRAY type carries its extents, so a further index has something to
@@ -21368,6 +21386,8 @@ func (e *emitter) chainHoistPointAt(cur accessCur, steps []Node) (int, string, b
 // none -- C has no array value type -- which is what makes it unbindable.
 func (e *emitter) chainValueCType(cur accessCur) (string, bool) {
 	switch {
+	case cur.slice && cur.name != "":
+		return cur.name, true // a DEFINED slice type, which is the header by another name
 	case cur.slice:
 		return sliceCName(cur.elem), true
 	case len(cur.dims) != 0, cur.ctype == "":
@@ -26172,7 +26192,7 @@ func (e *emitter) deferReceiver(d *deferredCall, head Node, suffix []Node) (stri
 			ct = a.name
 		}
 		ctype, text = ct, e.varRef(base)
-	} else if containsSym(chain, CallSuffix) {
+	} else if containsSym(chain, CallSuffix) || e.hasSliceStep(chain) {
 		// A receiver reached through a CALL, `defer getRegs().Show()`, `defer
 		// bus.reg(i).Reset()`: Go evaluates it where the defer stands, and the
 		// capture is what makes that so. Skipped, the replay re-rendered the whole
@@ -26180,7 +26200,10 @@ func (e *emitter) deferReceiver(d *deferredCall, head Node, suffix []Node) (stri
 		// an effect, and one taking an argument stopped the compiler, the replay
 		// having no temporary for an argument of an inner call. Rendered by the
 		// call-chain walk, which binds what needs binding ahead of the statement;
-		// those lines are written here, where the capture is.
+		// those lines are written here, where the capture is. A SLICE step is the
+		// same case, `defer gl[4:].Show()` for a method of a defined slice type:
+		// the chain typer leaves a trailing one to shapes a defer does not reach,
+		// and the replay bound the reslice where the return could not see it.
 		var ct string
 		okc := false
 		_, pro := e.capturePrologue(func() { text, ct, addr, okc = e.chainCText(base, chain) })
@@ -27648,6 +27671,18 @@ func (e *emitter) derefGuardC(text, ctype string) string {
 	return e.nilCheckedC(text, ctype)
 }
 
+// hasSliceStep reports whether any step of a chain is a slice expression.
+func (e *emitter) hasSliceStep(steps []Node) bool {
+	for _, st := range steps {
+		if st.sym == Index {
+			if _, _, _, isSlice := e.sliceParts(st.ast); isSlice {
+				return true
+			}
+		}
+	}
+	return false
+}
+
 // stepsHaveEffect reports whether evaluating a chain's steps does something: a call,
 // or an index that does.
 func stepsHaveEffect(e *emitter, steps []Node) bool {
@@ -28123,7 +28158,7 @@ func (e *emitter) chainCText(base string, steps []Node) (text, ctype string, add
 	// was "cannot infer a type" while the same slice of a STRING was fine.
 	ct := cur.ctype
 	if ct == "" && cur.slice {
-		ct = sliceCName(cur.elem)
+		ct, _ = e.chainValueCType(cur) // a DEFINED slice type by its own name
 	}
 	return text, ct, addr, true
 }
@@ -36227,7 +36262,7 @@ func (e *emitter) inferNode(n Node) (string, bool) {
 					// an index -- is its header type; an array is still nameless, C
 					// having no array value type.
 					if cur.slice {
-						return sliceCName(cur.elem), true
+						return e.chainValueCType(cur)
 					}
 					return cur.ctype, true
 				}
@@ -36255,7 +36290,7 @@ func (e *emitter) inferNode(n Node) (string, bool) {
 				}
 				if cur, ok := e.accessChainTypeAt(cur, steps, true); ok && len(cur.dims) == 0 {
 					if cur.slice {
-						return sliceCName(cur.elem), true
+						return e.chainValueCType(cur)
 					}
 					return cur.ctype, true
 				}
@@ -36274,6 +36309,10 @@ func (e *emitter) inferNode(n Node) (string, bool) {
 					// Re-slicing a field yields a slice header: the field's own type
 					// for a slice field, one over the element type for an array field.
 					if src, ok := e.sliceableField(base, fields); ok {
+						// A field of a DEFINED slice type is sliced to that type.
+						if ct, ok := e.fieldType(base, fields); ok && ct != src.cname && e.underlyingCType(ct) == src.cname && e.isSliceCType(src.cname) {
+							return ct, true
+						}
 						return src.cname, true
 					}
 					return "", false
@@ -36300,6 +36339,11 @@ func (e *emitter) inferNode(n Node) (string, bool) {
 						return sliceCName(elem), true
 					}
 					if elem, ok := e.sliceElem(base); ok {
+						// A slice of a DEFINED slice type is of that type, and keeps
+						// its methods: `c := l[1:]` and then `c.Sum()`.
+						if dt := e.definedSliceType(base, elem); dt != "" {
+							return dt, true
+						}
 						return sliceCName(elem), true
 					}
 					return "", false

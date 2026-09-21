@@ -34001,6 +34001,75 @@ func main() {
 }
 `,
 		want: "5 2 18 3 3 5 2 3 4 2 3\n304 2 4 4 4\n2 1\n0 5\n1 6\n20 20\n",
+	}, {
+		// A slice of a DEFINED slice type is of that type, as Go types it, and keeps
+		// its methods: `c := l[1:]` then `c.Sum()`, `l[1:].Sum()` and `mk().Sum()`
+		// for an mk returning L were refused, and `%T` of a reslice printed "[]int"
+		// where Go prints "main.L". A method on a reslice or a call's result,
+		// deferred -- its receiver evaluated at the defer, as the reassignment after
+		// shows -- held in an interface, reached through a field, and a pointer
+		// method through a reslice writing into the shared backing.
+		name: "a slice of a defined slice type keeps the type",
+		src: `type L []int
+
+func (l L) Sum() int {
+	n := 0
+	for _, v := range l {
+		n += v
+	}
+	return n
+}
+
+func (l L) Show() { println("show", len(l), l.Sum()) }
+
+func (l *L) Push(v int) { *l = append(*l, v) }
+
+type Summer interface{ Sum() int }
+
+type P struct{ x int }
+
+type Ps []P
+
+func (ps Ps) Total() int {
+	n := 0
+	for _, p := range ps {
+		n += p.x
+	}
+	return n
+}
+
+type H struct{ xs L }
+
+var back = [8]int{1, 2, 3, 4, 5, 6}
+
+var gl L = back[:6]
+
+var gps = Ps{P{1}, P{2}, P{3}}
+
+var h = H{back[:4]}
+
+var calls int
+
+func mk() L {
+	calls = calls*10 + 1
+	return gl[1:5]
+}
+
+func main() {
+	defer gl[4:].Show()
+	defer mk().Show()
+	x := mk()[1:]
+	c := gl[2:4]
+	var s Summer = &c
+	d := h.xs[1:]
+	e := d[1:]
+	e.Push(9)
+	printf("%T %T %T %T\n", gl[1:], x, d, mk()[1:])
+	println(x.Sum(), s.Sum(), gps[1:].Total(), mk()[2:].Sum(), d.Sum(), e.Sum(), back[4], calls)
+	gl = gl[:5]
+}
+`,
+		want: "main.L main.L main.L main.L\n16 7 5 13 9 16 9 1111\nshow 4 18\nshow 2 15\n",
 	}}
 
 // TestEmitCRun compiles emitted C with a host compiler and runs it, checking what
