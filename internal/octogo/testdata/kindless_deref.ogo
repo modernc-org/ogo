@@ -1,0 +1,31 @@
+// `*p` is what p points at. The rules that ask what an operand of no Kind is could
+// not read a dereference, so until 2026-09-21 `if *p {` for a pointer to a struct
+// went through, and `*p + 1` and `*p == 3` with it. An element of an array whose
+// type its literal gave it, `var ps = [2]P{...}`, took nil the same way: the
+// declaration recorded no element type to ask.
+
+type P struct{ x int }
+
+var gp P
+var ps = [2]P{{1}, {2}}
+
+func main() {
+	var p *P = &gp
+	q := &gp
+	// ERROR "non-bool used as if condition: \*p is a struct"
+	if *p {
+	}
+	// ERROR "non-bool used as if condition: \*q is a struct"
+	if *q {
+	}
+	// ERROR "operator \+ not defined on \*q: it is a struct"
+	_ = *q + 1
+	// ERROR "\*p == 3 \(mismatched types\): \*p is a struct"
+	_ = *p == 3
+	// ERROR "cannot use nil as P value in assignment"
+	ps[0] = nil
+	qs := [2]P{{1}, {2}}
+	// ERROR "cannot use nil as P value in assignment"
+	qs[1] = nil
+	_ = qs
+}

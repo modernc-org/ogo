@@ -3363,6 +3363,24 @@ func (f *File) nonBoolOperand(s *Scope, n Node) (string, bool) {
 	if f.isNilOperand(n) {
 		return "no bool", true
 	}
+	// `*p`: what p points at, read off p's declaration -- the pointee's type as
+	// written, `var p *P`, or as recorded, `p := &gp`. A pointee of a Kind is
+	// exprType's to answer, and a deeper chain is left alone.
+	if id, ok := f.derefIdent(s, n); ok {
+		d, isVar := s.find(id.Src()).(*VarDeclaration)
+		switch {
+		case !isVar || !d.isPtr || d.hasElemKind:
+			return "", false
+		case d.declType != nil:
+			if p, isPtr := d.declType.(*TypeNodePointer); isPtr {
+				return f.nonBoolType(d.declScope, p.TypeNode)
+			}
+			return "", false
+		case d.typeName.IsValid():
+			return f.nonBoolNamed(s, d.declaredTypeName())
+		}
+		return "", false
+	}
 	if isPtr, known := f.exprPointerness(s, n); known && isPtr {
 		return "a pointer", true
 	}
@@ -3412,6 +3430,28 @@ func (f *File) nonBoolOperand(s *Scope, n Node) (string, bool) {
 		}
 	}
 	return "", false
+}
+
+// derefIdent reports an operand that is exactly one dereference of a name, `*p`.
+func (f *File) derefIdent(s *Scope, n Node) (Token, bool) {
+	ue, ok := f.soleUnaryExpr(n)
+	if !ok {
+		return Token{}, false
+	}
+	var fac Node
+	var ops []Node
+	for c := range it(ue.ast) {
+		switch c.sym {
+		case Factor:
+			fac = c
+		case UnaryOp:
+			ops = append(ops, c)
+		}
+	}
+	if len(ops) != 1 || f.unaryOp(s, ops[0]) != MUL || fac.sym != Factor {
+		return Token{}, false
+	}
+	return f.exprSoleIdent(fac)
 }
 
 // nonBoolVar is nonBoolOperand for a variable, answered from its declaration. A
@@ -12122,6 +12162,12 @@ func (f *File) checkIndexAssign(s *Scope, base Token, rhsNode Node) {
 			in = s
 		}
 		f.checkNilValue(s, in, d.elemTypeNode, rhsNode, "assignment")
+	} else if t, ok := f.varTypeAt(d); ok && !d.isPtr {
+		// A variable whose type its literal gave it, `var ps = [2]P{...}`, records
+		// no element type node; the literal writes one. `ps[0] = nil` went through.
+		if elem := f.indexedTypeNode(t.s, t.tn); elem != nil {
+			f.checkNilValue(s, t.s, elem, rhsNode, "assignment")
+		}
 	}
 	// An element of a DEFINED type -- a struct above all, which has no Kind to be
 	// asked about: `arr[0] = A{}` for a [2]B reached the C compiler, which refused

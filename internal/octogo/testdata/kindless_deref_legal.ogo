@@ -1,0 +1,29 @@
+// COMPILE
+
+// The controls of kindless_deref.ogo: dereferences of pointers to what has a Kind,
+// a field reached through one, and the elements of a literal-typed array stored as
+// values of their own type.
+
+type P struct{ x int }
+
+type T int
+
+var gp P
+var ps = [2]P{{1}, {2}}
+
+func main() {
+	n := 1
+	pn := &n
+	b := true
+	pb := &b
+	var t T = 3
+	var pt *T = &t
+	p := &gp
+	pp := &p
+	if *pb {
+		println(*pn+1, *pn == 1, *pt+1, (*p).x+1, (*pp).x)
+	}
+	ps[0] = P{3}
+	ps[1] = gp
+	println(ps[0].x, ps[1].x)
+}
