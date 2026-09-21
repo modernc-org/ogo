@@ -1,0 +1,21 @@
+// A conversion takes exactly one operand. Until 2026-09-21 `T(1, 2)` and `T()`
+// went through to the C compiler as a call of a function named after the type,
+// which the target's compiler refused as a call of something it could not find.
+
+type T int
+
+type P struct{ x int }
+
+func main() {
+	// ERROR "too many arguments in conversion to T"
+	_ = T(1, 2)
+	// ERROR "missing argument in conversion to T"
+	_ = T()
+	// ERROR "too many arguments in conversion to int"
+	_ = int(3, 4)
+	// ERROR "missing argument in conversion to float64"
+	_ = float64()
+	// ERROR "too many arguments in conversion to P"
+	_ = P(P{1}, P{2})
+	_, _, _ = T(1), int(2), P(P{3})
+}

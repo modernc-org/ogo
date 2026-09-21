@@ -34160,6 +34160,35 @@ type Row [2]int8
 	}
 }
 
+// TestCrossPkgConvArity pins that a conversion to another package's type takes one
+// operand, as a conversion to this package's does (conversion_arity.ogo):
+// `geo.Count(1, 2)` and `geo.Count()` went through to the C compiler as a call of a
+// function named after the type. A method expression's call, `geo.Count.Add(c, 2)`,
+// takes the receiver first and is not a conversion.
+func TestCrossPkgConvArity(t *testing.T) {
+	for _, test := range []struct{ name, src, want string }{
+		{"too many", "c := geo.Count(1, 2)\nprintln(c)", "main.ogo:4:19: too many arguments in conversion to geo.Count"},
+		{"missing", "c := geo.Count()\nprintln(c)", "main.ogo:4:6: missing argument in conversion to geo.Count"},
+		{"one, and a method expression", "c := geo.Count(1)\nprintln(c, geo.Count.Add(c, 2))", ""},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			fsys := fstest.MapFS{
+				"main.ogo":    &fstest.MapFile{Data: []byte("import \"geo\"\n\nfunc main() {\n" + test.src + "\n}\n")},
+				"geo/geo.ogo": &fstest.MapFile{Data: []byte("type Count int\n\nfunc (c Count) Add(n int) int { return int(c) + n }\n")},
+			}
+			_, err := Build(-1, []string{"main.ogo"}, fsys)
+			switch {
+			case test.want == "" && err != nil:
+				t.Fatalf("Build: %v", err)
+			case test.want != "" && err == nil:
+				t.Fatalf("Build accepted %q", test.src)
+			case test.want != "" && !strings.Contains(err.Error(), test.want):
+				t.Errorf("Build error %q does not contain %q", err, test.want)
+			}
+		})
+	}
+}
+
 // TestCrossPkgInterface pins what an IMPORTED interface reports. Until the
 // method-set questions were asked by the WRITTEN name, none of these was reached:
 // the checker did not recognise "geo.Shape" as an interface at all -- it resolved the

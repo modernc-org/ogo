@@ -7687,6 +7687,21 @@ func (f *File) checkQualifiedRef(s *Scope, qual Token, suffix Node) {
 			}
 			return
 		}
+		// `lib.T(x)`: a conversion to another package's type takes one operand, as
+		// any conversion does. Only the call right after the type is one; a method
+		// expression's, `lib.T.M(v)`, is not.
+		if _, isType := d.(*TypeDeclaration); isType {
+			if steps := slices.Collect(it(suffix.ast)); len(steps) >= 2 && steps[0].sym == Selector && steps[1].sym == CallSuffix {
+				var args []Node
+				for e := range it(f.callArgList(steps[1]).ast) {
+					if e.sym == Expression {
+						args = append(args, e)
+					}
+				}
+				f.checkConvArity(qual, qual.Src()+"."+m.Src(), args)
+			}
+			return
+		}
 		fd, isFunc := d.(*FuncDeclaration)
 		if !isFunc || fd.FuncDecl == nil || fd.FuncDecl.Type == nil {
 			return
@@ -15542,6 +15557,24 @@ func (f *File) resolveArgNames(s *Scope, lists []Node) {
 	}
 }
 
+// checkConvArity refuses a conversion of other than one operand, `T(1, 2)` and
+// `T()`, in Go's words: "missing argument" at the conversion, "too many arguments"
+// at the first one too many. Every check of a conversion asked about its operand
+// only when there was exactly one, so the others went through to the C compiler as
+// a call of a function named after the type, which it cannot find. ok is false when
+// it reported.
+func (f *File) checkConvArity(at Token, typ string, args []Node) bool {
+	switch {
+	case len(args) == 0:
+		f.err(at.Position(), "missing argument in conversion to %s", typ)
+		return false
+	case len(args) > 1:
+		f.err(f.tok(args[1].Pos()).Position(), "too many arguments in conversion to %s", typ)
+		return false
+	}
+	return true
+}
+
 // callArgList returns the ArgumentList of a CallSuffix, or a zero Node when the
 // call has no arguments.
 func (f *File) callArgList(callSuffix Node) (r Node) {
@@ -15859,6 +15892,9 @@ func (f *File) checkCall(s *Scope, callee Token, direct bool, argList Node) {
 		// the same bytes and costs nothing, and so is a conversion from a named type
 		// over string, whose type this checker does not carry at all. Those reach the
 		// emitter, which knows the representation and refuses what it must.
+		if !f.checkConvArity(callee, callee.Src(), args) {
+			break
+		}
 		if len(args) == 1 && !f.checkConversion(s, callee, args[0]) {
 			break // no conversion at all, which is what to say rather than what one would cost
 		}
@@ -15904,6 +15940,9 @@ func (f *File) checkCall(s *Scope, callee Token, direct bool, argList Node) {
 	case *TypeDeclaration:
 		// A conversion to a DEFINED type follows it to the basic type it is defined
 		// over, where there is one; the checks are the predeclared type's.
+		if !f.checkConvArity(callee, callee.Src(), args) {
+			break
+		}
 		if len(args) == 1 && f.checkConversion(s, callee, args[0]) {
 			if k, ok := f.nameKind(s, callee.Src()); ok {
 				if _, _, isInt := intKindRange(k); isInt || isFloatKind(k) {
