@@ -10434,8 +10434,10 @@ func main() {
 }
 
 // TestEmitCRecvContentsCopies: a method that keeps what its receiver HOLDS, called on
-// a COPY -- a value parameter, a local built from or copied out of a parameter, the
-// caller's own value receiver, a field of any of them. What the method keeps of the
+// a COPY -- a value parameter, a local built from or copied out of a parameter or an
+// element, a range value, the caller's own value receiver, a field of any of them --
+// or on storage reached through one, an element of a slice parameter or a field
+// behind a pointer; deferred, or started on a cog. What the method keeps of the
 // copy's contents is the original's contents kept, and until 2026-09-22 none of these
 // receivers was followed by the summaries: a value parameter matched no receiver case
 // at all (so the method's ARGUMENTS went unfollowed too), a local's receiver edges
@@ -10462,6 +10464,14 @@ func (w W) outer() { w.save() }
 
 func (t T) deep() { t.in.save() }
 
+type T2 struct{ p *W }
+
+var gch chan []int
+
+var gw = W{gb[:]}
+
+func (w W) send() { gch <- w.xs }
+
 `
 	for _, test := range []struct {
 		name, helper, call, want string // want "" means the program must be accepted
@@ -10483,6 +10493,16 @@ func (t T) deep() { t.in.save() }
 		{"a field of a value parameter", "func through(t T) { t.in.save() }", "through(T{W{b[:]}})",
 			"cannot pass a slice backed by local b to through: its parameter 1's contents are stored"},
 		{"a field of the own value receiver", "func through(t T) { t.deep() }", "through(T{W{b[:]}})",
+			"cannot pass a slice backed by local b to through: its parameter 1's contents are stored"},
+		{"a range value", "func through(ws []W) {\n\tfor _, w := range ws {\n\t\tw.save()\n\t}\n}", "through([]W{{b[:]}})",
+			"cannot pass []W{{b[:]}}, whose contents hold a pointer into local b to through"},
+		{"a local copied out of an element", "func through(ws []W) {\n\tw := ws[0]\n\tw.save()\n}", "through([]W{{b[:]}})",
+			"cannot pass []W{{b[:]}}, whose contents hold a pointer into local b to through"},
+		{"an element of a slice parameter", "func through(ws []W) { ws[0].save() }", "through([]W{{b[:]}})",
+			"cannot pass []W{{b[:]}}, whose contents hold a pointer into local b to through"},
+		{"a method started on a cog", "func through(w W) { go w.send() }", "through(W{b[:]})",
+			"cannot pass a slice backed by local b to through: its parameter 1 reaches another cog"},
+		{"a deferred method", "func through(w W) { defer w.save() }", "through(W{b[:]})",
 			"cannot pass a slice backed by local b to through: its parameter 1's contents are stored"},
 	} {
 		for _, frame := range []bool{true, false} {
@@ -10508,6 +10528,31 @@ func (t T) deep() { t.in.save() }
 				}
 			})
 		}
+	}
+	// Through a POINTER field: the receiver is storage the caller's value points at.
+	// The contents a parameter's summary records are one level, so the control holds
+	// package storage behind the pointer, where the direct `gs = t.p.xs` is judged
+	// alike: a local behind it is refused either way.
+	for _, test := range []struct{ call, want string }{
+		{"var b [4]int\n\tlw := W{b[:]}\n\tthrough(T2{&lw})", "cannot pass the address of local variable lw to through"},
+		{"through(T2{&gw})", ""},
+	} {
+		t.Run("a field reached through a pointer/"+test.call, func(t *testing.T) {
+			src := head + "func through(t T2) { t.p.save() }\n\nfunc use() {\n\t" + test.call + "\n}\n\nfunc main() {\n\tuse()\n\tprintln(len(gs))\n}\n"
+			fsys := fstest.MapFS{"main.ogo": &fstest.MapFile{Data: []byte(src)}}
+			pkg, err := Build(-1, []string{"main.ogo"}, fsys)
+			if err == nil {
+				err = EmitC(pkg, io.Discard, Checked())
+			}
+			switch {
+			case test.want == "" && err != nil:
+				t.Errorf("refused: %v\n%s", err, src)
+			case test.want != "" && err == nil:
+				t.Errorf("accepted, want %q\n%s", test.want, src)
+			case test.want != "" && !strings.Contains(err.Error(), test.want):
+				t.Errorf("got %v, want %q", err, test.want)
+			}
+		})
 	}
 }
 

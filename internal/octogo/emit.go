@@ -10213,8 +10213,8 @@ func (e *emitter) collectFuncCross(fi funcInfo) {
 	}
 	// sink records that a value goes where flag says: every parameter it may carry
 	// by value, every one whose contents it may carry, and the receiver likewise.
-	sink := func(v []int32, flag leak) {
-		r := reachOf(e.summaryReach(v))
+	sinkHeld := func(hs []held, flag leak) {
+		r := reachOf(hs)
 		for _, i := range r.vals {
 			e.crossParams[cname][i] |= flag
 		}
@@ -10228,6 +10228,7 @@ func (e *emitter) collectFuncCross(fi funcInfo) {
 			e.recvContents[cname] |= flag
 		}
 	}
+	sink := func(v []int32, flag leak) { sinkHeld(e.summaryReach(v), flag) }
 	// owners says what this call passed at each position, in the terms the
 	// CALLER's summary is written in: its own parameters by index, or a package
 	// variable, or something not to be followed. A callee's "stored through my
@@ -10295,6 +10296,27 @@ func (e *emitter) collectFuncCross(fi funcInfo) {
 			for _, a := range e.goStmtArgs(nodes) {
 				sink(a.ast, leakCog)
 				derived(a.ast, leakCog, -1)
+			}
+			// The RECEIVER of a method started on a cog, `go w.send()`, reaches the cog
+			// as the arguments do: a value method is handed a copy of what the receiver
+			// is -- a value's parts, or a pointer's pointee -- and a pointer method the
+			// pointer. goStmtArgs names the arguments alone, so a value parameter's
+			// contents went to another cog unrecorded. (A pointer method on a copy is
+			// handed the address of this frame's own storage, which the body refuses.)
+			if len(nodes) == 4 && nodes[1].sym == AssignHead {
+				if recv := e.soleIdent(nodes[1].ast); recv != "" {
+					if c, isM := e.methodCallOf(recv, nodes[2:], fi); isM && nodes[2].sym == Selector && nodes[3].sym == CallSuffix {
+						ptrName := c.recv == recvParam || c.recv == recvOwn && recvPtr
+						switch ptrMethod := e.methodPtr[c.callee]; {
+						case ptrName && ptrMethod:
+							sinkHeld([]held{{recv, heldAlias}}, leakCog)
+						case ptrName:
+							sinkHeld([]held{{recv, heldContents}}, leakCog)
+						case c.copyOf != "" && !ptrMethod:
+							sinkHeld([]held{{recv, heldAlias}}, leakCog)
+						}
+					}
+				}
 			}
 		default:
 			if v, ok := e.sendValue(nodes); ok {
@@ -11117,10 +11139,22 @@ func (e *emitter) noteLocalCopies(fi *funcInfo) {
 			return fi.ptrBase[i], true
 		case i >= 0 && i < len(fi.paramType) && fi.paramType[i] != "":
 			return fi.paramType[i], false
+		case i >= 0 && i < len(fi.paramCType) && fi.paramCType[i] != "":
+			// A parameter of a type written out, `ws []W`: its C type, which is what
+			// an element is read off.
+			return fi.paramCType[i], e.isPointer(fi.paramCType[i])
 		case i < 0 && fi.locals[name] != "":
 			return fi.locals[name], false
 		}
 		return "", false
+	}
+	// elemOf is a slice's element type, "" for anything else.
+	elemOf := func(ct string) string { return e.sliceElemByName[e.underlyingCType(ct)] }
+	defined := func(ct string) string {
+		if ct == "" || e.isPointer(ct) || !e.typeNames[ct] {
+			return ""
+		}
+		return ct
 	}
 	typeOf := func(ast []int32) string {
 		ast = e.unparenExpr(ast)
@@ -11146,32 +11180,32 @@ func (e *emitter) noteLocalCopies(fi *funcInfo) {
 		}
 		ct, _ := valueOf(base)
 		for _, st := range steps {
-			field := e.soleIdent(st.ast)
-			if st.sym != Selector || field == "" || ct == "" {
+			switch field := e.soleIdent(st.ast); {
+			case ct == "":
 				return ""
-			}
-			if ct, ok = e.structFieldType(ct, field); !ok {
+			case st.sym == Index:
+				// `w := ws[0]`: a copy of an element. A slicing step is no element.
+				if e.isSliceIndex(st) {
+					return ""
+				}
+				ct = elemOf(ct)
+			case st.sym == Selector && field != "":
+				if ct, ok = e.structFieldType(ct, field); !ok {
+					return ""
+				}
+			default:
 				return ""
 			}
 		}
-		if e.isPointer(ct) || !e.typeNames[ct] {
-			return ""
-		}
-		return ct
+		return defined(ct)
 	}
 	if fi.locals == nil {
 		fi.locals = map[string]string{}
 	}
-	e.eachStmt(fi.body, func(nodes []Node) {
-		if len(nodes) != 2 || nodes[0].sym != AssignHead || nodes[1].sym != Postfix {
+	note := func(name, ct string) {
+		if name == "" || slices.Contains(fi.params, name) {
 			return
 		}
-		name := e.soleIdent(nodes[0].ast)
-		vals := e.definedValues(nodes[1].ast)
-		if name == "" || len(vals) != 1 || slices.Contains(fi.params, name) {
-			return
-		}
-		ct := typeOf(vals[0])
 		switch prev, seen := fi.locals[name]; {
 		case ct == "":
 		case !seen:
@@ -11179,7 +11213,47 @@ func (e *emitter) noteLocalCopies(fi *funcInfo) {
 		case prev != ct:
 			delete(fi.locals, name) // two declarations disagree: name neither
 		}
+	}
+	e.eachStmt(fi.body, func(nodes []Node) {
+		if len(nodes) != 2 || nodes[0].sym != AssignHead || nodes[1].sym != Postfix {
+			return
+		}
+		if vals := e.definedValues(nodes[1].ast); len(vals) == 1 {
+			note(e.soleIdent(nodes[0].ast), typeOf(vals[0]))
+		}
 	})
+	// A range value is a copy of an element of what is ranged over, `for _, w := range
+	// ws` -- a name's elements, typed as the name is.
+	var walk func(ast []int32)
+	walk = func(ast []int32) {
+		for n := range it(ast) {
+			if n.sym == 0 {
+				continue
+			}
+			if n.sym == ForHeader {
+				if h, ok := e.parseForHeader(n); ok && h.isRange {
+					v, vok := e.exprIdent(h.valVar)
+					r, rok := e.exprIdent(e.unparenExpr(h.rangeExpr))
+					if vok && rok {
+						ct, _ := valueOf(r)
+						note(v, defined(elemOf(ct)))
+					}
+				}
+			}
+			walk(n.ast)
+		}
+	}
+	walk(fi.body)
+}
+
+// isSliceIndex reports an Index step that is a slicing, `[1:]`, by its colon.
+func (e *emitter) isSliceIndex(st Node) bool {
+	for c := range it(st.ast) {
+		if c.sym == 0 && e.f.ch(c.tok) == COLON {
+			return true
+		}
+	}
+	return false
 }
 
 // derefName is `*p` by shape: one star and a name, parentheses allowed around
@@ -11924,15 +11998,15 @@ func (e *emitter) stmtMethodCalls(nodes []Node, fi funcInfo) []methodCall {
 	return out
 }
 
-// fieldMethodSuffix reports `.f.m(args)`: one or more field selections, then a
-// method selected and called.
+// fieldMethodSuffix reports `.f.m(args)` and `[i].m(args)`: one or more field
+// selections or indexes, then a method selected and called.
 func fieldMethodSuffix(suffix []Node) bool {
 	n := len(suffix)
-	if n < 3 || suffix[n-1].sym != CallSuffix {
+	if n < 3 || suffix[n-1].sym != CallSuffix || suffix[n-2].sym != Selector {
 		return false
 	}
-	for _, st := range suffix[:n-1] {
-		if st.sym != Selector {
+	for _, st := range suffix[:n-2] {
+		if st.sym != Selector && st.sym != Index {
 			return false
 		}
 	}
@@ -12054,25 +12128,61 @@ func (e *emitter) methodCallOf(recv string, suffix []Node, fi funcInfo) (methodC
 		// package variable is, and with no edge at all nothing said so. Nor is what
 		// the local holds: `w := W{v}; w.save()` keeps v if save keeps w.xs.
 		ct, kind, copyOf = fi.locals[recv], recvLocal, recv
+	case len(fields) != 0 && i >= 0 && i < len(fi.paramCType) && i < intoBits &&
+		e.sliceElemByName[e.underlyingCType(fi.paramCType[i])] != "":
+		// A SLICE parameter, `ws[0].save()`: its elements are storage behind it,
+		// as a pointer parameter's pointee is -- reached by the chain below.
+		ct, kind, at = fi.paramCType[i], recvParam, i
 	}
 	if ct == "" || kind == recvNone {
 		return methodCall{}, false
 	}
 	if len(fields) != 0 {
-		if copyOf == "" {
-			return methodCall{}, false // not a value root: its fields are not copies
+		// A method called on a FIELD or an ELEMENT of the name, `t.in.save()`,
+		// `ws[0].save()`. The receiver is part of what the name is, so what the method
+		// keeps of its contents is part of the name's contents (copyOf). Where it IS
+		// depends on the hops: none past a copy is a copy (recvLocal); one past a
+		// pointer or slice parameter is storage behind that parameter, where the
+		// call site asks what it passed (recvParam, recvOwn); any other step through
+		// a pointer or into a slice's backing is storage this cannot name, and is
+		// taken to outlive the caller (recvOutlives).
+		hops := 0
+		if kind == recvParam && e.sliceElemByName[e.underlyingCType(ct)] == "" || kind == recvOwn && copyOf == "" {
+			hops = 1 // a pointer root: its first field is read through it
 		}
 		for _, st := range fields {
-			field := e.soleIdent(st.ast)
-			var ok bool
-			if st.sym != Selector || field == "" {
-				return methodCall{}, false
-			}
-			if ct, ok = e.structFieldType(ct, field); !ok || e.isPointer(ct) {
+			switch field := e.soleIdent(st.ast); {
+			case st.sym == Selector && field != "":
+				ft, ok := e.structFieldType(ct, field)
+				if !ok {
+					return methodCall{}, false
+				}
+				if e.isPointer(ft) {
+					hops, ft = hops+1, e.elemType(ft)
+				}
+				ct = ft
+			case st.sym == Index && !e.isSliceIndex(st):
+				el := e.sliceElemByName[e.underlyingCType(ct)]
+				if el == "" {
+					return methodCall{}, false // an array's element: not followed here
+				}
+				hops, ct = hops+1, el
+			default:
 				return methodCall{}, false
 			}
 		}
-		kind = recvLocal // the field of a copy is a copy
+		switch {
+		case kind == recvOutlives:
+		case copyOf != "" && hops == 0:
+			kind = recvLocal // the field of a copy is a copy
+		case copyOf == "" && hops == 1:
+			// storage behind the pointer or slice parameter, or the own receiver
+		default:
+			kind, at = recvOutlives, argLocal
+		}
+		if kind != recvOutlives || copyOf != "" || hops > 1 {
+			copyOf = recv
+		}
 	}
 	cname := methodCName(methodBaseType(ct), method)
 	if _, isMethod := e.funcRet[cname]; !isMethod {
