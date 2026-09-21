@@ -4176,7 +4176,13 @@ func (f *File) checkSwitch(s *Scope, results []retResult, n Node) {
 	// name types, not values, and the name it binds has a different type in each
 	// clause. Nothing below applies to it, so it is checked on its own.
 	var ts typeSwitchGuard
-	isTypeSwitch, sawGuard := false, false
+	isTypeSwitch := false
+	// A type switch on an expression, `switch v := xs[i].(type)`, which
+	// typeSwitchParts takes apart only for a bare name: its cases are types, and
+	// are asked nothing here, as before.
+	typeOnExpr := false
+	var tag Node // the expression switched on, when there is one
+	hasTag := false
 	seen := map[string]bool{}
 	// SwitchGuard precedes the CaseClauses, so the guard is processed first.
 	for c := range it(n.ast) {
@@ -4195,25 +4201,38 @@ func (f *File) checkSwitch(s *Scope, results []retResult, n Node) {
 				f.checkTypeSwitchOperand(s, ss, ts)
 				break
 			}
-			sawGuard = true
+			typeOnExpr = f.typeSwitchShaped(c)
 			guardKind, guardOK = f.checkSwitchGuard(s, ss, c)
+			if g, ok := f.switchGuardParts(c.ast); ok {
+				tag, hasTag = g.tag, g.hasTag
+			}
 		case CaseClause:
 			cs := ss.child()
+			// A case is a value, and is walked as one: before, it was folded to find
+			// duplicates and asked for a Kind, and nothing else -- `case get(1, 2):`,
+			// `case f[0]:` for a function f and `case T:` for a type went through.
+			// Its errors are its own, and a case that has one is compared no further.
+			walked := isTypeSwitch || typeOnExpr || f.checkCaseValues(ss, c)
 			switch {
 			case isTypeSwitch:
 				f.checkTypeCaseClause(cs, ts, c, seen)
+			case typeOnExpr, !walked:
 			case guardOK:
 				f.checkCaseExprs(ss, guardKind, c)
-			case !sawGuard:
-				// A switch with NO condition, `switch { case n > 0: }`, is a switch
-				// on true: every case is a boolean expression. Nothing asked, since
-				// the check below it is keyed on a guard's Kind and there is no
-				// guard -- so `case n:` for an int n became `if (n)` in C, which C
-				// takes and Go does not.
+				f.checkCasesAgainstTag(ss, c, tag, guardKind, true)
+			case !hasTag:
+				// A switch with NO condition, `switch { case n > 0: }`, or with an
+				// init statement and none, `switch v := f(); {`, is a switch on true:
+				// every case is a boolean expression. Nothing asked, since the check
+				// below it is keyed on a guard's Kind and there is no guard -- so
+				// `case n:` for an int n became `if (n)` in C, which C takes and Go
+				// does not.
 				f.checkCaseExprs(ss, PredeclaredBool, c)
+				f.checkCasesAgainstTag(ss, c, Node{}, PredeclaredBool, true)
+			default:
+				f.checkCasesAgainstTag(ss, c, tag, 0, false)
 			}
 			if !isTypeSwitch {
-				f.checkCaseQualified(ss, c)
 				f.typeCaseShifts(ss, guardKind, guardOK, c)
 			}
 			// A break inside a case names the switch, so the body is checked one
@@ -4286,6 +4305,41 @@ func (f *File) typeSwitchParts(guard Node) (ts typeSwitchGuard, ok bool) {
 		}
 	}
 	return ts, true
+}
+
+// typeSwitchShaped reports a switch guard whose value is a type assertion,
+// `x.(type)`, whatever x is -- `f().(type)`, `xs[i].(type)`, `(v).(type)` -- where
+// typeSwitchParts answers only for a bare name.
+func (f *File) typeSwitchShaped(guard Node) bool {
+	g, ok := f.switchGuardParts(guard.ast)
+	if !ok {
+		return false
+	}
+	value := g.tag
+	if g.hasName {
+		value = g.value
+	}
+	fac, isFac := f.soleFactor(value)
+	if !isFac {
+		return false
+	}
+	var last Node
+	for c := range it(fac.ast) {
+		if c.sym == FactorSuffix {
+			for st := range it(c.ast) {
+				last = st
+			}
+		}
+	}
+	if last.sym != Selector {
+		return false
+	}
+	for c := range it(last.ast) {
+		if c.sym == 0 && f.ch(c.tok) == TYPE {
+			return true
+		}
+	}
+	return false
 }
 
 // checkTypeSwitchOperand requires the operand to be an interface -- nothing else
@@ -4781,33 +4835,96 @@ func (f *File) typeCaseShifts(s *Scope, guardKind Kind, guardOK bool, n Node) {
 	}
 }
 
-// checkCaseQualified resolves the package-qualified references in a case clause's
-// expressions, `case lib.Max:`. The case's fold (caseConstValue) reports a plain
-// name that is undefined, and took a qualified one for a value that is "not a
-// constant" -- legal in a case, so nothing was said: `case lib.Nope:` reached the
-// emitter, which called lib "not a value with fields", and `case lib.Nope():` the
-// C compiler.
-func (f *File) checkCaseQualified(s *Scope, clause Node) {
-	var walk func(n Node)
-	walk = func(n Node) {
-		for c := range it(n.ast) {
-			if c.sym == 0 {
+// caseValues is every expression of a case clause's CaseHead.
+func (f *File) caseValues(clause Node) (r []Node) {
+	for head := range it(clause.ast) {
+		if head.sym != CaseHead {
+			continue
+		}
+		for list := range it(head.ast) {
+			if list.sym != ExpressionList {
 				continue
 			}
-			if c.sym == Factor {
-				kids := slices.Collect(it(c.ast))
-				if len(kids) >= 2 && kids[0].sym == 0 && f.ch(kids[0].tok) == IDENT && kids[1].sym == FactorSuffix {
-					if id := f.tok(kids[0].tok); f.isImportQualifier(s, id.Src()) {
-						f.checkQualifiedRef(s, id, kids[1])
-					}
+			for e := range it(list.ast) {
+				if e.sym == Expression {
+					r = append(r, e)
 				}
 			}
-			walk(c)
 		}
 	}
-	for head := range it(clause.ast) {
-		if head.sym == CaseHead {
-			walk(head)
+	return r
+}
+
+// checkCaseValues walks the expressions of an expression switch's case clause as
+// the values they are, and reports whether they said nothing. They were folded to
+// find a duplicate, which reports a plain name that is undefined, and asked for a
+// Kind -- and walked by nothing else. So a qualified name was not looked up
+// (`case lib.Nope:` reached the emitter, `case lib.Nope():` the C compiler, until a
+// walk of its own was written for them), and neither was anything else a value is
+// asked anywhere: `case get(1, 2):`, `case f[0]:` for a function f, `case one() +
+// "a":`, `case -gp:` for a struct and `case T:` for a type all went through. Of
+// thirteen such cases the checker took, `ogo build` built three without a word and
+// two with a warning; the emitter refused one and the target's compiler seven, about
+// the C.
+func (f *File) checkCaseValues(s *Scope, clause Node) bool {
+	n0 := len(f.errList)
+	for _, e := range f.caseValues(clause) {
+		f.checkNames(s, e)
+	}
+	return len(f.errList) == n0
+}
+
+// checkCasesAgainstTag asks of each case x what `tag == x` asks of a comparison of
+// operands one of which has no Kind (checkKindlessRelOp), in a switch's words: nil
+// or a case of no Kind against a tag of one, and a case against a tag of none. The
+// Kind question itself is checkCaseExpr's. With no tag the switch is on true, and
+// tagKind is bool.
+func (f *File) checkCasesAgainstTag(s *Scope, clause, tag Node, tagKind Kind, tagOK bool) {
+	on := ""
+	if tag.sym != 0 {
+		on = " on " + f.exprSource(tag)
+	}
+	for _, x := range f.caseValues(clause) {
+		pos, src := f.tok(x.Pos()).Position(), f.exprSource(x)
+		xnil := f.isNilOperand(x)
+		xw, xknown := f.nonBoolOperand(s, x)
+		xknown = xknown && !xnil
+		xk, xok := f.exprType(s, x)
+		xKind := xok && kindCategory(xk) != catUnknown && !xknown
+		if tagOK {
+			if kindCategory(tagKind) == catUnknown {
+				continue
+			}
+			switch {
+			case xnil:
+				want := kindName(tagKind)
+				if tag.sym != 0 {
+					want = f.operandTypeName(s, tag, tagKind)
+				}
+				f.err(pos, "cannot convert nil to type %s", want)
+			case xknown:
+				f.err(pos, "invalid case %s in switch%s (mismatched types): %s is %s", src, on, src, xw)
+			}
+			continue
+		}
+		if tag.sym == 0 || f.isNilOperand(tag) {
+			continue
+		}
+		tw, tknown := f.nonBoolOperand(s, tag)
+		if !tknown {
+			continue
+		}
+		switch {
+		case xnil:
+			if tw == "a struct" || tw == "an array" {
+				f.err(pos, "invalid case nil in switch%s (mismatched types): %s is %s", on, f.exprSource(tag), tw)
+			}
+		case xKind:
+			f.err(pos, "invalid case %s in switch%s (mismatched types): %s is %s", src, on, f.exprSource(tag), tw)
+		case xknown && xw == tw && (tw == "a function" || tw == "a slice"):
+			f.err(pos, "invalid case %s in switch%s (%s can only be compared to nil)", src, on, strings.TrimPrefix(tw, "a "))
+		case xknown && xw != tw && comparableCategory(xw) && comparableCategory(tw):
+			f.err(pos, "invalid case %s in switch%s (mismatched types): %s is %s and %s is %s", src, on, src, xw, f.exprSource(tag), tw)
 		}
 	}
 }

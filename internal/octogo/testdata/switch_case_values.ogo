@@ -1,0 +1,67 @@
+// A case of an expression switch is a value, and is asked what a value is asked
+// anywhere. Until 2026-09-21 it was folded to find a duplicate and asked for a
+// Kind, and walked by nothing else: of thirteen mistakes in a case that the checker
+// took, `ogo build` built three without a word -- `case f[0]:` for a function, and
+// `case nil:` and `case one:` against an int -- and two with a warning; the emitter
+// refused one and the target's compiler seven, about the C. Each case is compared
+// with the tag as `tag == x` would be, too, and with no tag the switch is on true.
+
+type P struct{ x int }
+
+type T int
+
+func get(a int) int { return a }
+
+func one() int { return 1 }
+
+var gp P
+
+var gx int
+
+func main() {
+	n := 1
+	f := one
+	p := &gx
+	var ch chan int
+	switch n {
+	// ERROR "too many arguments in call to get"
+	case get(1, 2):
+	// ERROR "cannot index f: it is a function"
+	case f[0]:
+	// ERROR "cannot use type T as a value"
+	case T:
+	// ERROR "cannot use type \[\]int as a value"
+	case []int:
+	// ERROR "invalid case one in switch on n \(mismatched types\): one is a function"
+	case one:
+	// ERROR "cannot convert nil to type int"
+	case nil:
+	// ERROR "invalid case gp in switch on n \(mismatched types\): gp is a struct"
+	case gp:
+	}
+	switch p {
+	// ERROR "invalid case 3 in switch on p \(mismatched types\): p is a pointer"
+	case 3:
+	}
+	switch f {
+	// ERROR "invalid case one in switch on f \(function can only be compared to nil\)"
+	case one:
+	}
+	switch ch {
+	// ERROR "invalid case 3 in switch on ch \(mismatched types\): ch is a channel"
+	case 3:
+	}
+	switch gp {
+	// ERROR "invalid case nil in switch on gp \(mismatched types\): gp is a struct"
+	case nil:
+	}
+	switch {
+	// ERROR "invalid case one in switch \(mismatched types\): one is a function"
+	case one:
+	}
+	switch v := get(1); {
+	// ERROR "cannot use 3 of type int as type bool in case"
+	case 3:
+		_ = v
+	}
+}

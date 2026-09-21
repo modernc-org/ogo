@@ -1,0 +1,60 @@
+// COMPILE
+
+// The controls of switch_case_values.ogo: cases Go takes, against a tag of a Kind,
+// against one of none, and with no tag at all.
+
+type P struct{ x int }
+
+type Shape interface{ Area() int }
+
+type Q struct{ w int }
+
+func (q *Q) Area() int { return q.w }
+
+func get(a int) int { return a }
+
+func one() int { return 1 }
+
+var gp, gq P
+
+var gx int
+
+var xs = []int{1}
+
+var ch chan int
+
+func main() {
+	n := 1
+	f := one
+	p := &gx
+	q := &Q{3}
+	var sh Shape = q
+	switch n {
+	case get(1), 2, one():
+	case xs[0], len(xs):
+	}
+	switch p {
+	case nil, &gx:
+	}
+	switch f {
+	case nil:
+	}
+	switch xs {
+	case nil:
+	}
+	switch ch {
+	case nil:
+	}
+	switch gp {
+	case gq:
+	}
+	switch sh {
+	case q:
+	}
+	switch {
+	case n > 0:
+	}
+	switch v := get(1); {
+	case v > 0:
+	}
+}
