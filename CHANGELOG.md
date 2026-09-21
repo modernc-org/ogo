@@ -16,6 +16,48 @@ same area is a new entry under **Unreleased**, not an edit to the old one. Amend
 shipped section tells a reader on that version that they have behaviour they do not.
 `git show vX.Y.Z:CHANGELOG.md` is the check.
 
+## Unreleased
+
+### Behaviour changes
+
+- **What has no Kind is asked what it is, by every operator and in every place a
+  value is stored.** The checker's type model is a Kind -- a predeclared type -- and
+  most of its rules asked for one and said nothing when an operand had none. A
+  function, a channel, a slice, an array, a struct, an interface, a pointer and nil
+  have none, and each had been given its checks one place at a time, as someone met
+  it. Crossing fifteen operations with those categories -- 217 programs, each declared
+  at package scope and in a function -- found 91 that Go rejects taken here, 22 more
+  refused only by the emitter, and more beside them. Refused now, in Go's words where
+  the checker has them:
+  - an arithmetic or shift operator on any of them: `f + 1`, `xs << 1`, `v * v`,
+    `nil + 1`;
+  - an increment or a compound assignment of anything but a number -- `s++` for a
+    string, `b &= false` for a bool, `x %= 2` and `x <<= 1` for a float -- and of any
+    of them, `f++`, `*p++`, `w.f += 1`;
+  - an index of a function, a channel, an interface or nil, read or stored into, and
+    a store into an element of a struct, `v[0] = 1`;
+  - a value of a Kind stored where a function, a channel, a struct or an array is
+    wanted, and one of none where a number, a string or a bool is, in a declaration,
+    an assignment, a field, an argument, a return and a literal: `f = 3`, `var v P =
+    one()`, `W{f: 3}`; `n = f`, `take(gp)`, `return xs` from a function returning an
+    int;
+  - the comparisons Go does not define: `gp == 3`, `nil == 3`, any ordering of a
+    function, a channel, a struct, an array or an interface, and `f == g` for two
+    functions, which Go compares with nil alone;
+  - a conversion of any of them to a basic type, `int(f)`, `bool(ch)`, `int(xs)`, and
+    `string(one)` and `string(xs)` for a []int, which were refused only as a string
+    conversion that needs allocation;
+  - the result of a call through a function value used as a type it is not, `var s
+    string = f()` for an f returning an int -- that result had no type at all;
+  - `if *p {` for a pointer to a struct, and `ps[0] = nil` into an array of structs
+    whose type its literal gave it.
+
+  Measured with v0.42.0's compiler: of the 167 such programs it took, 60 built a
+  binary without a word -- among them `f + 1`, `f[0]` and `int(f)` for a function,
+  `p++` for a pointer, `b &= false` and `x %= 2` -- 20 built with a warning from the
+  target's compiler about the C it was given, and the target's compiler refused the
+  other 87, about generated code.
+
 ## v0.42.0
 
 ### Toolchain

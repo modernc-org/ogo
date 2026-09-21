@@ -683,11 +683,36 @@ reads as the struct two steps away: a new refusal asks a bare variable's DECLARA
 (varIsValueComposite), and believes an inferred type only where the initializer does
 not dereference. And the corpus guard -- `scripts/dumpcorpus.sh` before and after,
 through the checker -- shows a newly refused program as a MISSING file, not as an
-`.err`: compare the listings. Still open in the function-value column, all taken:
-arithmetic on one (`f + 1`, `f++`), indexing one (`f[0]`) and a non-function assigned
-to one (`f = 3`) -- each BUILT by the target, the last with a warning -- and the
-RESULT of a call through one, which is untyped (`var s string = f()`, the one of the
-twelve the target refuses); and `if *p {` of a struct pointee.
+`.err`: compare the listings. The function-value column and `if *p {` of a struct
+pointee, left open that day, closed the next with the sweep below.
+
+**FIFTEEN RULES ACROSS THE CATEGORIES** (2026-09-21). The lesson above, taken whole:
+every operation crossed with every Kind-less category -- a pointer, a function, a
+channel, a slice, an array, a struct, an interface, each at package scope and in a
+function, and nil -- 217 programs, 91 of them taken and 22 more refused only by the
+emitter. Whole rows, not cells: `x++` for all seven categories, arithmetic and shifts
+for six, a value of a Kind stored into a function, a channel or a struct, an ordering
+of a function or a channel, `int(x)` of four. All refused now (90e872f..e47e705), and
+so are the neighbours the rows led to -- a string's `s++`, a bool's `b &= false`, a
+float's `x %= 2`, the other direction of every store (`n = f`, `take(gp)`, `return
+xs`), and the result of a call through a function value, typed at last. One helper
+answers "what is this operand" for every rule, `nonBoolOperand` (with `nonBoolVar`
+for a declaration), so a shape taught to it -- a dereference, `*p`, was the last --
+is taught to all of them at once; which also means a MISREADING there reaches every
+rule at once: `v := []int{4, 5, 6}[1]` recorded the literal's element on v, v was an
+"array or slice" to all of them, and only the run corpus showed it (exprLitElemKind).
+Three traps in writing such a sweep. DISCARD the result, `_ = x + 1`: a printed one
+was refused by the emitter ("cannot print a value of type P"), which made cells look
+refused that the checker took. A local only STORED to is "declared and not used" in
+both compilers, which agree for the wrong reason: add `_ = x`. And run the corpus
+guard after EVERY rule: it caught two false refusals the 212 and the sweep could not,
+a spread `sum(xs...)` checked as an element, and the literal element above. What v0.42.0
+built of the 167 programs it took (measured with `ogo build`, the struct probes of ONE
+word): 60 binaries without a word, 20 with a warning, 87 refused by the backend about
+generated C. Still loud rather than checked: a string from a []byte or []rune (legal
+Go, refused by design as the allocation it needs), an inferred `xs == ys` of two
+slices ("an array or a slice" is not one category to the checker; the emitter refuses
+it in Go's words), and a value stored into an interface (by design).
 
 **A TEMPORARY IS A COG REGISTER** (2026-09-20). flexcc gives every C local one
 (`local_N res 1` in COG_BSS) out of a pool the assembler checks with `fit 480`,
