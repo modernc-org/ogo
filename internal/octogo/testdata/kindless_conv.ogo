@@ -1,0 +1,25 @@
+// A conversion to a basic type takes a value of a basic type, and a string takes a
+// slice of bytes or of runes besides. A pointer, a struct, an interface and nil
+// were refused; until 2026-09-21 a function, a channel and a slice or an array
+// written out went through to the C compiler as a cast of an address or a header.
+
+func one() int { return 1 }
+
+func main() {
+	f := one
+	var ch chan int
+	var xs []int
+	var a [2]float64
+	// ERROR "cannot convert f to type int: it is a function"
+	_ = int(f)
+	// ERROR "cannot convert one to type string: it is a function"
+	_ = string(one)
+	// ERROR "cannot convert ch to type bool: it is a channel"
+	_ = bool(ch)
+	// ERROR "cannot convert xs to type int: it is a slice"
+	_ = int(xs)
+	// ERROR "cannot convert xs to type string: it is a slice"
+	_ = string(xs)
+	// ERROR "cannot convert a to type float64: it is an array"
+	_ = float64(a)
+}

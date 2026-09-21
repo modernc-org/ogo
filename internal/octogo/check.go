@@ -15793,6 +15793,20 @@ func (f *File) checkConversion(s *Scope, callee Token, arg Node) bool {
 			}
 		}
 	}
+	// Anything else of no Kind: a function, a channel, a slice or an array written
+	// out. `int(f)`, `int(ch)` and `int(xs)` reached the C compiler as casts of an
+	// address or a header. A string is made from a slice of bytes or of runes, which
+	// is Go and is refused by the emitter as the allocation it is; from any other
+	// slice it is not made at all.
+	if what, known := f.nonBoolOperand(s, arg); known {
+		if kindCategory(tk) == catString && (what == "a slice" || what == "an array or a slice") {
+			if ek, ok := f.sliceOperandElem(s, arg); !ok || ek == PredeclaredUint8 || ek == PredeclaredInt32 {
+				return true
+			}
+		}
+		f.err(pos, "cannot convert %s to type %s: it is %s", src, callee.Src(), what)
+		return false
+	}
 	k, ok := f.exprType(s, arg)
 	if !ok || kindCategory(k) == catUnknown {
 		return true
@@ -15807,6 +15821,22 @@ func (f *File) checkConversion(s *Scope, callee Token, arg Node) bool {
 		return false
 	}
 	return true
+}
+
+// sliceOperandElem is the element Kind of a slice operand, a variable or a slice of
+// one, where its declaration recorded it.
+func (f *File) sliceOperandElem(s *Scope, arg Node) (Kind, bool) {
+	id, ok := f.exprSoleIdent(arg)
+	if !ok {
+		id, ok = f.exprIndexedIdent(arg)
+	}
+	if !ok {
+		return 0, false
+	}
+	if d, isVar := s.find(id.Src()).(*VarDeclaration); isVar && d.hasElemKind && !d.isPtr {
+		return d.elemKind, true
+	}
+	return 0, false
 }
 
 // convOperandDesc is Go's parenthetical for an operand a conversion refuses: "untyped

@@ -1,0 +1,20 @@
+// COMPILE
+
+// The controls of kindless_conv.ogo: conversions of the numbers and strings read out
+// of what has no Kind, and the string of a byte or a rune slice, which is Go -- the
+// emitter refuses it as the allocation it needs, not the checker.
+
+type P struct{ x int }
+
+func one() int { return 1 }
+
+var gp P
+
+func main() {
+	f := one
+	xs := []int{1}
+	var bs []byte
+	var rs []rune
+	var a [2]float64
+	println(int64(f()), float64(xs[0]), int(a[1]), uint8(gp.x), len(string(bs)), len(string(rs)), int32(len(xs)))
+}
