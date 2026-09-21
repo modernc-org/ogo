@@ -33,19 +33,42 @@ const (
 	flexpropURL = "https://github.com/totalspectrum/flexprop.git"
 	// flexpropRef pins the flexprop source so backend regeneration is
 	// reproducible. v7.7.0 (released 2026-07-17) is the latest flexprop release as
-	// of 2026-09-15; upstream cuts releases roughly every 1-2 months, and a fix can
+	// of 2026-09-21; upstream cuts releases roughly every 1-2 months, and a fix can
 	// sit on spin2cpp's master for longer than that -- which is what spin2cppRef,
 	// below, is for.
 	//
-	// The committed ccgo_<goos>_<goarch>.go were regenerated against this pair on
-	// 2026-09-15 with ccgo v4.34.6 (flexprop at v7.7.0, spin2cpp at spin2cppRef);
-	// mcpp_main.c.diff and optimize_ir.c.diff applied cleanly. The first generation,
-	// 2026-07-20, had both at v7.7.0, and the second, 2026-08-29, had spin2cpp at
-	// 2bd01c4c. To adopt a new pin: bump it, `rm -rf flexprop flexprop_install`,
-	// rerun `go generate` (or the per-target command below), and re-run the doc/
-	// reproducers on a board, pinned against regenerated, before touching any
-	// workaround they guard. The flexcc --help golden in internal/flexcc/all_test.go
-	// normalizes its version line, so it needs no edit unless the help text changed.
+	// The committed ccgo_linux_amd64.go and ccgo_windows_amd64.go were regenerated
+	// against this pair on 2026-09-21 with ccgo v4.34.6 (flexprop at v7.7.0,
+	// spin2cpp at spin2cppRef); mcpp_main.c.diff applied cleanly.
+	//
+	// NOT YET THE OTHER THREE. ccgo_linux_arm64.go, ccgo_darwin_arm64.go and
+	// ccgo_darwin_amd64.go are still the 2026-09-15 transpiles of 3840014f plus
+	// optimize_ir.c.diff: the machine that regenerated the first two cannot reach
+	// the builders that make them (see the hostnames below). They are correct --
+	// the diff fixed what v7.7.3 fixes -- and build what the new pin builds except
+	// where the diff merged two immediate adds that v7.7.3 keeps apart: 13 of 1632
+	// programs, 8 bytes each, all 13 passing on the board either way. To finish, on
+	// each builder in turn, starting from the fold the previous one left (the fold
+	// spans all five targets, so two builders working from one base write
+	// conflicting ccgo.go and ccgo_g_* files): `rm -rf internal/flexprop
+	// internal/flexprop_install` FIRST -- a clone left there by the 2026-09-15 run
+	// is at 3840014f with the diff applied, and the generator reuses any clone it
+	// finds -- then the table's command. Then build scripts/flexcc for all five
+	// platforms, compile doc/ and a scripts/dumpcorpus.sh dump with each through
+	// scripts/cccorpus.sh, and require the five lists to be identical, linux/amd64's
+	// being the reference, measured faithful to a native v7.7.3 build on all 1632
+	// programs. Then drop this paragraph, and the CLAUDE.md and CHANGELOG notes
+	// that say the same.
+	//
+	// The first generation, 2026-07-20, had both at v7.7.0; the second, 2026-08-29,
+	// had spin2cpp at 2bd01c4c; the third, 2026-09-15, had it at 3840014f plus
+	// optimize_ir.c.diff, three optimizer fixes carried ahead of upstream until
+	// upstream's own landed. To adopt a new pin: bump it, `rm -rf flexprop
+	// flexprop_install`, rerun `go generate` (or the per-target command below), and
+	// re-run the doc/ reproducers on a board, pinned against regenerated, before
+	// touching any workaround they guard. The flexcc --help golden in
+	// internal/flexcc/all_test.go normalizes its version line, so it needs no edit
+	// unless the help text changed.
 	//
 	// Five backends are generated from this pin, BY HAND, each on a machine of its
 	// own; the transpiled Go is then committed. Nothing regenerates them
@@ -72,9 +95,9 @@ const (
 	//   - linux/*: nothing else. ccgo runs under `-exec make`, so the ccgo CLI is
 	//     not needed. An arm64 linux box may need tk8.6-dev for the flexprop build.
 	//   - windows/amd64: x86_64-w64-mingw32-gcc AND the ccgo CLI on PATH (this path
-	//     drives ccgo directly rather than through make). The emitted file is not
-	//     gofmt-clean, so follow with `gofmt -s -w flexcc/`; `go generate` does that
-	//     for linux, a bare `go run generator.go` does not.
+	//     drives ccgo directly rather than through make), the version go.mod pins.
+	//     The emitted file is not gofmt-clean; the generator gofmts the package
+	//     itself before the undup fold (gofmtFlexcc), whichever target it made.
 	//   - darwin/*: clang, and the homebrew gmake and gsed -- macOS ships BSD make
 	//     and sed, which the flexprop Makefile and the main2lib seds cannot use.
 	//     darwin/amd64 additionally needs an amd64 go toolchain and an amd64 ccgo,
@@ -85,26 +108,30 @@ const (
 	// See transpileWindows and transpileDarwin for what each does beyond this.
 	//
 	// The hostnames used when each target was first generated were `darwin-m1` (both
-	// darwin backends) and `rpi5` (linux/arm64), reachable over ssh from the dev box.
-	// They are recorded because the question "where was this made?" has already been
-	// asked once and could not be answered from the repository; correct them here if
-	// the machines change.
+	// darwin backends) and `rpi5` (linux/arm64), reachable over ssh from the first
+	// dev box -- and NOT from the second one (Devuan, since 2026-09-16): neither
+	// name resolves there and the builder fleet is out of its reach, so the arm64
+	// and darwin regenerations are run from a machine that reaches them. They are
+	// recorded because the question "where was this made?" has already been asked
+	// once and could not be answered from the repository; correct them here if the
+	// machines change.
 	flexpropRef = "v7.7.0"
 	// spin2cppRef pins the COMPILER inside that wrapper: flexprop is the GUI and the
 	// packaging around spin2cpp, which it carries as a submodule, and a fix lands in
-	// spin2cpp weeks before a flexprop release carries it. This commit is upstream's
-	// master of 2026-09-05 (7.7.3-beta), adopted 2026-09-15 to carry
-	// optimize_ir.c.diff -- the fixes for flexprop#109, #110 and #111, three silent
-	// optimizer faults (doc/add-immediate-carry.c, doc/conditional-load-dropped.c,
-	// doc/signed-compare-overflow.c) -- over the fixes for flexprop#107 and #108
-	// rather than behind them. The first pin past
-	// v7.7.0 was 2bd01c4c (2026-08-29), adopted for the two miscompiles a release had
-	// not shipped after nine days, flexprop#105 and the constant divide, plus the
-	// peephole fault that forced -Ono-peephole (doc/array-multiply-miscompile.c,
-	// doc/const-divide-miscompile.c, doc/optimizer-dangling-label.c). flexprop master
-	// differs from v7.7.0 only by its Changelog and this pointer, so the wrapper stays
-	// at its tag. Empty means the submodule commit flexpropRef itself pins.
-	spin2cppRef = "3840014f2db8bd2e1653ea47db1b288af0697864"
+	// spin2cpp weeks before a flexprop release carries it. This commit is spin2cpp's
+	// tag v7.7.3 (2026-09-20), the commit flexprop's master points at, adopted
+	// 2026-09-21 for upstream's own fixes of flexprop#109, #110 and #111, three
+	// silent optimizer faults (doc/add-immediate-carry.c,
+	// doc/conditional-load-dropped.c, doc/signed-compare-overflow.c) the pin before
+	// it, 3840014f of 2026-09-15, carried fixes for as optimize_ir.c.diff. The first
+	// pin past v7.7.0 was 2bd01c4c (2026-08-29), adopted for the two miscompiles a
+	// release had not shipped after nine days, flexprop#105 and the constant divide,
+	// plus the peephole fault that forced -Ono-peephole
+	// (doc/array-multiply-miscompile.c, doc/const-divide-miscompile.c,
+	// doc/optimizer-dangling-label.c). flexprop master differs from v7.7.0 only by
+	// its Changelog and this pointer, so the wrapper stays at its tag. Empty means
+	// the submodule commit flexpropRef itself pins.
+	spin2cppRef = "eb2639617bf6cc25f55a34d8285af39d233adf81"
 	installDir  = "flexprop_install"
 )
 
@@ -211,14 +238,13 @@ func main() {
 			}
 		}
 
-		// optimize_ir.c.diff is three fixes carried ahead of upstream, where
 		// mcpp_main.c.diff adapts the sources to the transpile (it removes a
-		// setjmp): drop each with the spin2cppRef that carries upstream's own fix
-		// for it -- flexprop#109, #110, #111 -- once its reproducer
-		// (doc/add-immediate-carry.c, doc/conditional-load-dropped.c,
-		// doc/signed-compare-overflow.c) prints gcc's values under a native build of
-		// that commit without the diff.
-		for _, diff := range []string{"mcpp_main.c.diff", "optimize_ir.c.diff"} {
+		// setjmp). A fix carried ahead of upstream is applied here too, as
+		// optimize_ir.c.diff was from 2026-09-15 to 2026-09-21 (flexprop#109, #110,
+		// #111), and goes with the spin2cppRef that carries upstream's own fix --
+		// once its reproducer prints gcc's values under a native build of that
+		// commit without the diff.
+		for _, diff := range []string{"mcpp_main.c.diff"} {
 			if err := shell(filepath.Join(cloneDir, "spin2cpp"), "git", "apply", filepath.Join(wd, diff)); err != nil {
 				fail(1, "git apply %s: err=%v", diff, err)
 			}

@@ -5227,15 +5227,6 @@ func s__CanonizeFlags(tls *libc.TLS, cc *CC, f uint32) (r uint32) {
 	return v1 | v2
 }
 
-// C documentation
-//
-//	// ADD and SUB set C to opposite senses -- a carry for one, a borrow for the
-//	// other -- so exchanging one for the other with a negated immediate computes the
-//	// same value and a different C. That is only safe when nothing reads the C it sets.
-func s__CarryOutUsed(tls *libc.TLS, cc *CC, ir uintptr) (r uint8) {
-	return libc.BoolUint8(x__InstrSetsFlags(tls, cc, ir, uint32(_FLAG_WC)) != 0 && s__FlagsUsedAt(tls, cc, (*_IR)(unsafe.Pointer(ir)).Fnext, uint32(_FLAG_WC)) != 0)
-}
-
 func s__CheckDependency(tls *libc.TLS, cc *CC, list uintptr, reg uintptr) (r uint8) {
 	var tmp uintptr
 	_ = tmp

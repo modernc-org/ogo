@@ -19865,10 +19865,11 @@ func main() {
 		// every line came out wrong, each wrong value off by 2^32 or twice that --
 		// `z + -1` was -4293967297, `z + y + 1000 + 2000` for -1 and 1 was
 		// 4294970296 -- from v0.34.0, when ogo build stopped passing the
-		// -Ono-inline-small that had hidden both. The backend carries the fix
-		// (internal/optimize_ir.c.diff, flexprop#109, doc/add-immediate-carry.c);
-		// this is what fails if a regeneration loses it. Found by the fuzzer's
-		// seed 111 on the board. Every line matches Go.
+		// -Ono-inline-small that had hidden both. The backend has the fix,
+		// upstream's since spin2cpp v7.7.3 and carried here as
+		// internal/optimize_ir.c.diff before that (flexprop#109,
+		// doc/add-immediate-carry.c); this is what fails if a regeneration loses
+		// it. Found by the fuzzer's seed 111 on the board. Every line matches Go.
 		name: "a 64-bit addition or subtraction of a constant keeps its carry",
 		src: `func id(v int64) int64 { return v }
 
@@ -19925,10 +19926,10 @@ func main() {
 		// equal", though a compare between them had re-set the flags. With the
 		// first condition false nothing had been written, and the update started
 		// from a stale register: on the board every line here was wrong, the
-		// first 811733765. Old -- v0.33.0 got it wrong too. The backend carries
-		// the fix (internal/optimize_ir.c.diff, flexprop#110,
-		// doc/conditional-load-dropped.c). Found by the fuzzer's board sweep,
-		// seeds 391, 525 and 793. Every line matches Go.
+		// first 811733765. Old -- v0.33.0 got it wrong too. The backend has the
+		// fix, upstream's since spin2cpp v7.7.3 and carried here before that
+		// (flexprop#110, doc/conditional-load-dropped.c). Found by the fuzzer's
+		// board sweep, seeds 391, 525 and 793. Every line matches Go.
 		name: "two conditional updates of a package variable in a row",
 		src: `type Acc struct {
 	sum, n int

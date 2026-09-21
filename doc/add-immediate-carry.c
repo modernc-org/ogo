@@ -73,6 +73,17 @@
 // build this with a native flexcc of the later spin2cpp, without the diff, and it
 // has to print gcc's values first.
 //
+// FIXED UPSTREAM 2026-09-19, in spin2cpp d32187db and 10997efd (tag v7.7.3; the
+// issue closed 2026-09-20), more broadly than suggested: OptimizeImmediates leaves
+// alone every ADD or SUB that sets C, and OptimizeAddSub merges no pair where
+// either one sets a flag, whether anything reads it or not. A native flexcc of
+// v7.7.3 without the diff prints gcc's value on every line, and on every line of
+// doc/negate64-then-add.c and doc/int64-min-spelling.c, measured on a P2-EDGE
+// 2026-09-21; the diff is gone and the backend is regenerated at v7.7.3. The
+// breadth costs little: of 1632 programs, the run corpus and fuzzer seeds 1-1000,
+// 13 compile differently, each keeping two immediate adds that set a carry nobody
+// reads where the diff merged them, 8 bytes, and all 13 pass on the board.
+//
 // To check, build for the P2 with -2 and compare each line with gcc's.
 
 #include <stdio.h>

@@ -52,6 +52,14 @@
 // day ahead of upstream: it is the second part of internal/optimize_ir.c.diff, and
 // the run case "two conditional updates of a package variable in a row" pins it.
 //
+// FIXED UPSTREAM 2026-09-20, in spin2cpp 4f1218bd (tag v7.7.3), with a narrower
+// condition than the suggested one, and an exact one: only the flags the READ's
+// condition uses must not change. If they have not, the read's condition held at
+// the write too, and CondIsSubset has already said that every state the read runs
+// in is one the write runs in. A native flexcc of v7.7.3 without the diff prints
+// 588851508, measured on a P2-EDGE 2026-09-21; the diff is gone and the backend is
+// regenerated at v7.7.3.
+//
 // To check, build for the P2 with -2 and read the second line: 588851508 is right.
 
 #include <stdio.h>

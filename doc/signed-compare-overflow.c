@@ -43,6 +43,12 @@
 // of upstream: it is the third part of internal/optimize_ir.c.diff, and the run case
 // "a signed comparison of two values far apart" pins it.
 //
+// FIXED UPSTREAM 2026-09-20, in spin2cpp 3911e536 (tag v7.7.3), as suggested: C
+// from the comparison, the wrapped difference kept for Z. The issue was still open
+// when that was adopted. A native flexcc of v7.7.3 without the diff prints 1 1 1,
+// measured on a P2-EDGE 2026-09-21; the diff is gone and the backend is
+// regenerated at v7.7.3.
+//
 // To check, build for the P2 with -2 and read the line: 1 1 1 is right.
 
 #include <stdio.h>

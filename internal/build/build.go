@@ -435,9 +435,10 @@ func isDir(path string) bool {
 // rewrites that disturb the carry of a 64-bit add or subtract of a constant
 // (doc/add-immediate-carry.c, flexprop#109), wrong on the board from v0.34.0 until
 // the backend was regenerated on 2026-09-15 carrying a fix,
-// internal/optimize_ir.c.diff. The widened on-board fuzzer sample is what found it.
-// The flag was not brought back for it: it cost 1.4x to 3.3x on the loops measured
-// then, and the fault was the backend's to fix.
+// internal/optimize_ir.c.diff, and on 2026-09-21 at spin2cpp v7.7.3, which has
+// upstream's own. The widened on-board fuzzer sample is what found it. The flag was
+// not brought back for it: it cost 1.4x to 3.3x on the loops measured then, and the
+// fault was the backend's to fix.
 //
 // If a pass has to go again, this is the shape: a reproducer in doc/ that names
 // the flag, the matrix measured on hardware rather than inferred, and the cost in

@@ -18,6 +18,30 @@ shipped section tells a reader on that version that they have behaviour they do 
 
 ## Unreleased
 
+### Toolchain
+
+- **The backend is regenerated at spin2cpp v7.7.3, and carries no fix of its own
+  any more.** Upstream fixed the three optimizer faults v0.40.0 carried fixes for:
+  flexprop#109, the carry of a 64-bit add or subtract of a constant; #110, the
+  second of two conditional updates of a global starting from a stale register;
+  and #111, a signed compare of two known values more than 2^31 apart. So
+  `internal/optimize_ir.c.diff` is gone. The wrapper is still flexprop v7.7.0;
+  spin2cpp is at its tag v7.7.3, the commit flexprop's master points at.
+  Upstream's fixes are its own rather than the suggested ones -- #109's broader,
+  #110's narrower and exact, #111's the same -- so they were measured before they
+  were adopted, on native builds of the old pin with the diff and of v7.7.3
+  without it. On a P2-EDGE the three reproducers, and the two older ones that
+  turned out to be #109, print gcc's values. Every `doc/` reproducer that compiles
+  does so to the same binary under both, and the four refusals refuse alike. Of 1632 programs
+  -- the 632 run cases and fuzzer seeds 1-1000 -- 1619 compile to the same binary;
+  the other 13 each keep two immediate adds, which set a carry nothing reads and
+  which the diff merged, costing 8 bytes, and all 13 pass on the board under both.
+  spin2cpp's own `make test_offline` passes 588 of 588 under both. The regenerated
+  backend compiles all of them to the same binaries as the native v7.7.3, and the
+  host and on-board suites pass on it. So far that is the linux/amd64 and
+  windows/amd64 backends; linux/arm64 and the two darwin ones are still v0.40.0's
+  -- correct, the diff fixing what v7.7.3 fixes -- and follow.
+
 ### Verified
 
 - **What nil for a struct did before v0.41.0, measured -- a correction.** That

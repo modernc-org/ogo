@@ -160,9 +160,10 @@ inputs, and never hand-edit the outputs.
    compiler itself — checked out at **`spin2cppRef`**, a commit past the tag since
    2026-08-29, because a fix lands in spin2cpp weeks before a flexprop release
    carries it), applies `internal/mcpp_main.c.diff` (an adaptation to the
-   transpile) and `internal/optimize_ir.c.diff` (fixes carried ahead of upstream,
-   flexprop#109, #110 and #111 -- drop each with the pin that carries upstream's own),
-   transpiles, and rewrites the emitted `main` package into a reusable `flexcc`
+   transpile; a fix carried ahead of upstream goes in the same list, as
+   `optimize_ir.c.diff` did from 2026-09-15 until upstream's own landed -- and goes
+   with the pin that carries upstream's), transpiles, and rewrites the emitted
+   `main` package into a reusable `flexcc`
    library (threading a `*CC` state struct through the C globals, via `main2lib`).
    The linux backend is transpiled natively (`ccgo -exec make`, `transpileLinux`);
    the windows backend is cross-compiled on a linux/amd64 host with MinGW
@@ -208,6 +209,36 @@ inputs, and never hand-edit the outputs.
    `freopen`, and the `ungetc`/`abort` todo-stub redirects — that libc lacks or
    stubs for both darwin arches).
 
+   > **Backend regenerated 2026-09-21 at spin2cpp `v7.7.3`, and the carried diff is
+   > gone** — `eb263961`, the tag flexprop's master points at, inside flexprop
+   > `v7.7.0`, ccgo v4.34.6. Upstream fixed all three faults `optimize_ir.c.diff`
+   > carried: #109 and #110 closed 2026-09-20, and #111 was fixed by spin2cpp
+   > `3911e536` while the issue was still open. The fixes are upstream's own, not the
+   > suggested ones: #109's leaves an instruction alone when it SETS C, or merges no
+   > pair where either sets a flag, read or not (broader); #110's asks only about the
+   > flags the READ's condition uses (narrower, and exact, since CondIsSubset has
+   > already said the read runs only where the write did); #111's is the same. So
+   > they were measured before adoption, native builds of the old pin with the diff
+   > against v7.7.3 without it: on a P2-EDGE the three reproducers, and the two older
+   > ones that are #109, print gcc's values; the 34 compiling `doc/` reproducers are
+   > byte-identical and the four refusals refuse alike; of 1632 programs (the 632 run
+   > cases, fuzzer seeds 1-1000) 1619 are byte-identical, and 13 keep two immediate
+   > adds setting a carry nothing reads, which the diff merged (8 bytes) -- all 13
+   > pass on the board under both; test_offline 588/588 under both. Faithful: the
+   > regenerated flexcc compiles the battery and all 1632 byte-identically to a
+   > native v7.7.3.
+   >
+   > **IN PROGRESS: only linux/amd64 and windows/amd64 are regenerated.**
+   > linux/arm64 and both darwin backends are still the 2026-09-15 transpiles
+   > (3840014f plus the diff: correct, and apart only in those 13 programs), because
+   > the second dev machine cannot reach the builders. `internal/generator.go` says
+   > how to finish -- above all, `rm -rf internal/flexprop internal/flexprop_install`
+   > on each builder FIRST, or the generator reuses the 09-15 clone -- and the check
+   > is `scripts/cccorpus.sh` over doc/ and a corpus dump with `scripts/flexcc` built
+   > for each platform: five identical lists. Host suite and `make board` (657 run
+   > cases) are green on linux/amd64; six `_examples` and the 13 changed programs
+   > build identically under windows (wine).
+   >
    > **Backend regenerated 2026-09-15 with two fixes of its own** — spin2cpp
    > `3840014f` (7.7.3-beta, its master of 2026-09-05) inside flexprop `v7.7.0`, plus
    > `internal/optimize_ir.c.diff`, ccgo v4.34.6. Adopted for two SILENT optimizer

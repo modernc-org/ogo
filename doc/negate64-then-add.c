@@ -35,6 +35,8 @@
 //
 // FIXED 2026-09-15 by that fix, carried as internal/optimize_ir.c.diff in the
 // regeneration of that day (spin2cpp 3840014f): every line prints gcc's value.
+// Upstream's own fix, in spin2cpp v7.7.3, prints them too (a native build without
+// the diff, on a P2-EDGE 2026-09-21), and the backend is regenerated at it.
 // The `(0 - x)` spelling below stays -- it is what a negation is, costs the same,
 // and is right under either backend.
 //

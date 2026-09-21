@@ -33,8 +33,10 @@
 // optimizer folds its `add lo, #1 wz` and the `- 1` into one `add lo, #0 wc`,
 // deleting the instruction whose Z decides the high word. FIXED by the diff that
 // file describes, carried in the regeneration of that day (spin2cpp 3840014f):
-// both lines print MIN. The compiler keeps the second spelling, right under
-// either backend.
+// both lines print MIN. Upstream's own fix, in spin2cpp v7.7.3, prints MIN too (a
+// native build without the diff, on a P2-EDGE 2026-09-21), and the backend is
+// regenerated at it. The compiler keeps the second spelling, right under either
+// backend.
 //
 // A measuring note, since it cost an hour: print a 64-bit value through a
 // VARIABLE, never as `(long long)(expr)` -- the cast of a 64-bit expression to a
