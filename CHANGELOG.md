@@ -36,8 +36,18 @@ shipped section tells a reader on that version that they have behaviour they do 
   its mistakes as "cannot infer a type". `len` of a bracketed conversion and a
   reslice after one, `len([3]int(s))` and `t := []int(s)[1:]`, are refused, as the
   parenthesised forms were.
+- **A slice of a defined type is of that type, and keeps its methods.** `c :=
+  l[1:]` then `c.Sum()` for a method of a `type L []int`, `l[1:].Sum()`, `mk().Sum()`
+  for an `mk` returning L, `defer l[1:].Show()`, `append(l, 4)`'s result, and `t :=
+  s[1:]` of a `type S string` were each refused, where Go types all of them L or S.
+  A field of a defined slice type could not be sliced at all, `h.xs[1:]`.
 
 ### Fixed
+
+- **`%T` of a slice of a defined type printed the type it is defined over.**
+  `printf("%T", l[1:])` for a `type L []int` printed `[]int`, of `append(l, 4)` the
+  same, and of `s[1:]` for a `type S string` printed `string`, where Go prints
+  `main.L` and `main.S`.
 
 - **A slice converted to an array is a copy of it, and a short one panics.** Go
   copies the slice's first elements (since 1.20); `a := A(s)` for a `type A [3]int`

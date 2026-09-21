@@ -610,7 +610,13 @@ written until then used, were right in every case. A conversion sweep beside it
 (`T(x)` for each of those types, in a declaration, a call, a chain and under a
 suffix) found only the recorded grammar gap: a conversion to a type WRITTEN OUT,
 `[]int(x)`, `[]byte(x)` and `[3]int(x)`, was a syntax error, where a named type's
-converts (the bare form parses since 2026-09-21).
+converts (the bare form parses since 2026-09-21). The row has a second column,
+OPERATIONS (2026-09-21): a value of a defined type kept it where the type was
+written and lost it through anything that produced one -- a reslice, append, a
+call's result -- being typed as the header or the string underneath. So its methods
+were gone (`c := l[1:]; c.Sum()` read as a package qualifier), and `%T` printed
+`[]int` for a main.L in silence. The chain walk carries a defined slice type in
+`accessCur.name`, the field a defined array already had for the same reason.
 
 **A PACKAGE BOUNDARY IS A ROW** (2026-09-20). Everything that can cross one, each
 declared in a library package and used from a program: an interface satisfied by a
@@ -778,7 +784,9 @@ yet": the bare `[]int(x)` and `[3]int(s)` parse since 2026-09-21, and `[]byte(s)
 refused as the allocation it is); `len` or `cap` of a BRACKETED conversion and a
 reslice after one, `len([3]int(s))`, `len(([5]int)(a))`, `t := []int(s)[1:]`, and an
 index of or a range over a slice-to-array one, `[3]int(s)[2]`, `A(s)[1]` (a named
-type's `len(A(a))` works, and so does `[]int(s)[0]`);
+type's `len(A(a))` works, and so does `[]int(s)[0]`); a method of a defined slice
+type called where the value stands on append's result, `append(l, 9).Sum()`, or
+started on a cog on a reslice, `go l[3:].Run(done)` (bound to a variable, both work);
 an ELEMENT or another package's variable as a `range` clause's target, `for _,
 q[0] = range ptrs`, `for _, geo.P = range ptrs` ("a range target must be a variable
 or a struct field"); a chain after a slice step of an ARRAY OF ARRAYS,
