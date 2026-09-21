@@ -735,7 +735,13 @@ apart only when its operand is a bare NAME, so `switch v := xs[i].(type)` had be
 read as an expression switch whose cases nobody looked at -- walked, its types were
 refused as values, and only the run corpus showed it (typeSwitchShaped). So: **when
 a rule is written, ask which positions its walk never reaches**, and find them by
-writing mistakes INTO each position, not by reading the walk.
+writing mistakes INTO each position, not by reading the walk. Done afterwards for one
+mistake the checker knows, too many arguments to a call, written into 57 positions a
+value stands in -- select clauses, composite literal keys and elements, range
+expressions, defer and go arguments, every for and if and switch clause, sends,
+index stores, compound assignments, closures, return lists, package initializers --
+it was the checker's in every one but a literal's KEY, which the emitter refuses as a
+non-constant index, as Go does too. The case had been the only hole.
 
 **A TEMPORARY IS A COG REGISTER** (2026-09-20). flexcc gives every C local one
 (`local_N res 1` in COG_BSS) out of a pool the assembler checks with `fit 480`,
