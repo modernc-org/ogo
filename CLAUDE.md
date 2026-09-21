@@ -485,7 +485,13 @@ still design-only.
   out-of-scope-loop-variable, bare-block and `panic` gaps that kept generated
   programs from compiling are fixed, and the generator now mints unique variable
   names (a counter, not a random suffix) so it never accidentally shadows. Widen
-  `oracleSeeds` to hunt for new bugs.
+  `oracleSeeds` to hunt for new bugs. What was swept is swept FOR A GENERATOR: a
+  change to it makes every seed that draws the changed choice a new program from
+  there on. On 2026-09-22, all clean: with cbcba6a's generator, seeds 1-2000 on the
+  host shim; with the one before it, 1001-3000 on the host and 1001-1500 on a P2-EDGE
+  (482 passing, 18 outgrowing a cog). A generated program writes self-comparisons and
+  `2 ^ 3` on purpose, so it is built with the oracle test's gcc flags, not probe.sh's
+  `-Wall -Werror`: under those, 273 of 2000 fail on the program's own warnings.
   **Calls are counted** (2026-09-19): every generated function adds its weight -- a
   4-bit field per function -- to `octosmith_calls`, and main asserts the sum before
   the checksum. The functions are pure otherwise, so a call evaluated twice or not
