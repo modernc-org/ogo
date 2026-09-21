@@ -11036,6 +11036,9 @@ func (f *File) checkRelOp(s *Scope, opNode, lNode, rNode Node) {
 		// and comparing the two is the comparison above.
 		return
 	}
+	if f.checkKindlessRelOp(s, opNode, lNode, rNode) {
+		return
+	}
 	lk, lok := f.exprType(s, lNode)
 	rk, rok := f.exprType(s, rNode)
 	lc, rc := kindCategory(lk), kindCategory(rk)
@@ -11060,6 +11063,82 @@ func (f *File) checkRelOp(s *Scope, opNode, lNode, rNode Node) {
 			f.err(pos, "invalid operation: operator %s not defined on %s", f.tok(opNode.Pos()).Src(), kindName(lk))
 		}
 	}
+}
+
+// checkKindlessRelOp checks a comparison whose operand has no Kind and is known all
+// the same for what it is (nonBoolOperand), and reports whether it said anything.
+// The rest of checkRelOp asks a Kind, and the rules above it were written one
+// category at a time, so what fell between them went through: `v == 3` for a
+// struct, `nil == 3`, and an ORDERING of a function or a channel, `f < g`. Go orders
+// only what has a Kind; it compares a function and a slice with nil alone; and a
+// value of a Kind is never equal to one of none.
+func (f *File) checkKindlessRelOp(s *Scope, opNode, lNode, rNode Node) bool {
+	pos := f.tok(opNode.Pos()).Position()
+	sym := f.tok(opNode.Pos()).Src()
+	expr := f.sourceSpan(lNode.Pos(), rNode.End())
+	lnil, rnil := f.isNilOperand(lNode), f.isNilOperand(rNode)
+	lw, lknown := f.nonBoolOperand(s, lNode)
+	rw, rknown := f.nonBoolOperand(s, rNode)
+	lknown, rknown = lknown && !lnil, rknown && !rnil
+	lk, lok := f.exprType(s, lNode)
+	rk, rok := f.exprType(s, rNode)
+	// What nonBoolOperand knows has no Kind has none, whatever exprType says: it
+	// answers for what an ADDRESS points at, so `&gx` would read as an int.
+	lKind := lok && kindCategory(lk) != catUnknown && !lknown
+	rKind := rok && kindCategory(rk) != catUnknown && !rknown
+	switch Symbol(f.tok(opNode.Pos()).Ch) {
+	case EQL, NEQ:
+	default:
+		switch {
+		case lnil || rnil:
+			f.err(pos, "invalid operation: %s (operator %s not defined on nil)", expr, sym)
+		case lknown:
+			f.err(pos, "invalid operation: operator %s not defined on %s: it is %s", sym, f.exprSource(lNode), lw)
+		case rknown:
+			f.err(pos, "invalid operation: operator %s not defined on %s: it is %s", sym, f.exprSource(rNode), rw)
+		default:
+			return false
+		}
+		return true
+	}
+	switch {
+	case lnil && rKind:
+		f.err(pos, "invalid operation: %s (mismatched types untyped nil and %s)", expr, untypedName(rk))
+	case rnil && lKind:
+		f.err(pos, "invalid operation: %s (mismatched types %s and untyped nil)", expr, untypedName(lk))
+	case lknown && rKind:
+		f.err(pos, "invalid operation: %s (mismatched types): %s is %s", expr, f.exprSource(lNode), lw)
+	case rknown && lKind:
+		f.err(pos, "invalid operation: %s (mismatched types): %s is %s", expr, f.exprSource(rNode), rw)
+	case lknown && rknown && lw == rw && (lw == "a function" || lw == "a slice"):
+		f.err(pos, "invalid operation: %s (%s can only be compared to nil)", expr, strings.TrimPrefix(lw, "a "))
+	case lknown && rknown && lw != rw && comparableCategory(lw) && comparableCategory(rw):
+		f.err(pos, "invalid operation: %s (mismatched types): %s is %s and %s is %s", expr, f.exprSource(lNode), lw, f.exprSource(rNode), rw)
+	default:
+		return false
+	}
+	return true
+}
+
+// untypedName is kindName with an untyped constant's kind called so, as Go calls it
+// beside nil: "untyped int".
+func untypedName(k Kind) string {
+	if isUntypedKind(k) {
+		return "untyped " + kindName(k)
+	}
+	return kindName(k)
+}
+
+// comparableCategory reports the categories of no Kind whose values meet only one
+// of their own in a comparison: a pointer and an interface are compared across
+// categories -- a pointer with the interface holding it -- and have rules of their
+// own, and "an array or a slice" is not one category.
+func comparableCategory(what string) bool {
+	switch what {
+	case "a function", "a channel", "a slice", "an array", "a struct":
+		return true
+	}
+	return false
 }
 
 // checkPointerRelOp checks a comparison one of whose operands is a POINTER, and
@@ -12709,6 +12788,15 @@ func (f *File) exprLitElemKind(s *Scope, n Node) (Kind, bool) {
 			elem, hasElem = c, true
 		case CompositeLit:
 			hasLit = true
+		case FactorSuffix:
+			// `[]int{4, 5, 6}[1]` is an element of the literal, not the literal:
+			// read as one, `v := []int{4, 5, 6}[1]` recorded an element type and v
+			// was taken for a slice by every rule that asks what has no Kind. A
+			// single SLICE step, `[]int{4, 5, 6}[1:]`, keeps the element.
+			steps := slices.Collect(it(c.ast))
+			if len(steps) != 1 || steps[0].sym != Index || !f.isSliceExpr(steps[0]) {
+				return 0, false
+			}
 		}
 	}
 	if !hasElem || !hasLit {

@@ -1,0 +1,52 @@
+// Go orders only what has a Kind; it compares a function and a slice with nil
+// alone; and a value of a Kind is never equal to one of none. The comparison rules
+// were written a category at a time -- a pointer, a channel, an interface, two
+// defined composites -- and until 2026-09-21 what fell between them went through:
+// a struct beside a number, nil beside one, and an ordering of a function or a
+// channel. The emitter refused the rest, some of it by the wrong name.
+
+type P struct{ x int }
+
+type I interface{ M() }
+
+func one() int { return 1 }
+
+func two() int { return 2 }
+
+var gp P
+var gi I
+
+func main() {
+	f := one
+	var ch chan int
+	var a [3]int
+	var b [3]int
+	var xs, ys []int
+	// ERROR "gp == 3 \(mismatched types\): gp is a struct"
+	_ = gp == 3
+	// ERROR "3 != a \(mismatched types\): a is an array"
+	_ = 3 != a
+	// ERROR "f == 1 \(mismatched types\): f is a function"
+	_ = f == 1
+	// ERROR "nil == 3 \(mismatched types untyped nil and untyped int\)"
+	_ = nil == 3
+	// ERROR "operator < not defined on f: it is a function"
+	_ = f < one
+	// ERROR "operator >= not defined on ch: it is a channel"
+	_ = ch >= ch
+	// ERROR "operator < not defined on a: it is an array"
+	_ = a < b
+	// ERROR "operator > not defined on gp: it is a struct"
+	_ = gp > gp
+	// ERROR "operator <= not defined on gi: it is an interface"
+	_ = gi <= gi
+	// ERROR "nil < nil \(operator < not defined on nil\)"
+	_ = nil < nil
+	// ERROR "f == one \(function can only be compared to nil\)"
+	_ = f == one
+	// ERROR "xs == ys \(slice can only be compared to nil\)"
+	_ = xs == ys
+	// ERROR "f == ch \(mismatched types\): f is a function and ch is a channel"
+	_ = f == ch
+	_ = two
+}

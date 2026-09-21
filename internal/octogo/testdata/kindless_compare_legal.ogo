@@ -1,0 +1,42 @@
+// COMPILE
+
+// The controls of kindless_compare.ogo: every comparison Go defines on what has no
+// Kind, and the numbers, strings and bools read out of it.
+
+type P struct{ x int }
+
+type I interface{ M() }
+
+func (p *P) M() {}
+
+type Count int
+
+func one() int { return 1 }
+
+func getp() *P { return &gp }
+
+var gp P
+var gi I
+
+func main() {
+	f := one
+	var ch chan int
+	var ch2 chan int
+	var a, b [3]int
+	xs := []int{1}
+	p := &gp
+	q := getp()
+	var v, w P
+	var c Count = 2
+	s := "a"
+	ok := true
+	println(v == w, a != b, ch == ch2, p == q, p == nil, f == nil, xs == nil, ch != nil, gi == nil)
+	println(gi == p, gi != q, p == &gp, getp() == nil, getp() == p)
+	println(v.x == 3, xs[0] < 2, len(xs) == 1, f() >= 1, a[0] <= b[1], c > 1, s < "b", ok == true, p.x != 0)
+	// An element of a literal is an element, not the literal: `e` is an int.
+	if e := []int{4, 5, 6}[1]; e == 5 {
+		println(e + 1)
+	}
+	ys := []int{4, 5, 6}[1:]
+	println(ys[0] == 5, ys != nil)
+}

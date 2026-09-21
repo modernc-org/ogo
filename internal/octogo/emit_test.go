@@ -15880,9 +15880,13 @@ type Defined A
 // source to tie it to -- so what is checked here is the wording as much as the
 // refusal. It is Go's, so what a reader knows from Go carries over.
 //
-// These live in the emitter rather than the checker because the C type is what
+// These lived in the emitter rather than the checker because the C type is what
 // answers the question -- whether a value is a slice, a struct, or an array of
-// either -- so this runs EmitC rather than Build.
+// either -- so this runs EmitC rather than Build. The plain categories are the
+// checker's since 2026-09-21, which asks what an operand of no Kind is: an ordering
+// of a struct, a slice or an array, and two slices compared, say so in check, and
+// the emitter is not reached. Whether a struct or an array's ELEMENT is comparable
+// is still the emitter's to answer.
 func TestEmitCompareRules(t *testing.T) {
 	const decls = `type point struct {
 	x, y int
@@ -15893,19 +15897,25 @@ type holder struct {
 }
 
 `
-	for _, test := range []struct{ name, src, want string }{
-		{"struct ordering", "var p, q point\n_ = p < q", "invalid operation: operator < not defined on struct"},
-		{"slice ordering", "var s, t []int\n_ = s < t", "invalid operation: operator < not defined on slice"},
-		{"slice equality", "var s, t []int\n_ = s == t", "invalid operation: slice can only be compared to nil"},
-		{"struct with a slice field", "var h, k holder\n_ = h == k", "invalid operation: struct containing []int cannot be compared"},
-		{"array ordering", "var a, b [2]int\n_ = a <= b", "invalid operation: operator <= not defined on [2]int"},
-		{"array of slices", "var a, b [2][]int\n_ = a == b", "invalid operation: [2][]int cannot be compared"},
-		{"array of uncomparable structs", "var a, b [2]holder\n_ = a == b", "invalid operation: [2]holder cannot be compared"},
+	for _, test := range []struct{ name, src, want, check string }{
+		{"struct ordering", "var p, q point\n_ = p < q", "", "operator < not defined on p: it is a struct"},
+		{"slice ordering", "var s, t []int\n_ = s < t", "", "operator < not defined on s: it is a slice"},
+		{"slice equality", "var s, t []int\n_ = s == t", "", "s == t (slice can only be compared to nil)"},
+		{"struct with a slice field", "var h, k holder\n_ = h == k", "invalid operation: struct containing []int cannot be compared", ""},
+		{"array ordering", "var a, b [2]int\n_ = a <= b", "", "operator <= not defined on a: it is an array"},
+		{"array of slices", "var a, b [2][]int\n_ = a == b", "invalid operation: [2][]int cannot be compared", ""},
+		{"array of uncomparable structs", "var a, b [2]holder\n_ = a == b", "invalid operation: [2]holder cannot be compared", ""},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			src := decls + "func main() {\n" + test.src + "\n}\n"
 			fsys := fstest.MapFS{"main.ogo": &fstest.MapFile{Data: []byte(src)}}
 			pkg, err := Build(-1, []string{"main.ogo"}, fsys)
+			if test.check != "" {
+				if err == nil || !strings.Contains(err.Error(), test.check) {
+					t.Fatalf("Build error %v does not mention %q", err, test.check)
+				}
+				return
+			}
 			if err != nil {
 				t.Fatalf("Build: %v", err)
 			}
