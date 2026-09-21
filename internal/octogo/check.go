@@ -14878,6 +14878,11 @@ func (f *File) checkFactorNames(s *Scope, n Node) {
 		f.checkPtrConv(s, pc)
 		return
 	}
+	// A parenthesised conversion's type is a type, `([]int)(xs)`, which the walk of
+	// the parentheses below must not take for a value.
+	if _, _, lb, _, ok := f.parenBracketConv(n); ok {
+		f.markTypeArg(lb)
+	}
 	var id, lbrack Token
 	var suffix, lit, litSuffix, anon, conv, typ Node
 	hasID, hasSuffix, hasLit, hasLitSuffix, ellipsis := false, false, false, false, false
@@ -14930,6 +14935,15 @@ func (f *File) checkFactorNames(s *Scope, n Node) {
 			}
 		}
 		f.checkBracketConv(s, n, typ, lbrack, conv)
+		return
+	}
+	// A bracketed TYPE standing as a value, `x := []int`, `take([3]int)`: a type is
+	// not an expression. The emitter refused one as whatever it met first -- "cannot
+	// infer a type", "unsupported operand '['" -- and `[]func()(x)`, a type whose
+	// result is x, as a declaration it could not type. make's first argument is a
+	// type, and so is a parenthesised conversion's; both are marked.
+	if lbrack.IsValid() && typ.sym != 0 && !hasLit && !f.makeTypeArgs[lbrack.Position().String()] {
+		f.err(lbrack.Position(), "cannot use type %s as a value", f.exprSource(n))
 		return
 	}
 	// `([]int)(xs)`: the parenthesised spelling of the conversion above, asked what
@@ -15741,11 +15755,34 @@ func (f *File) markMakeTypeArg(argList Node) {
 		if a.sym != Expression {
 			continue
 		}
-		if fac := unwrapSingle(a); fac.sym == 0 && f.ch(fac.tok) == IDENT {
+		switch fac := unwrapSingle(a); {
+		case fac.sym == 0 && f.ch(fac.tok) == IDENT:
 			f.makeTypeArgs[f.tok(fac.tok).Position().String()] = true
+		case fac.sym == Factor:
+			// `make([]int, n)`: a bracketed type, marked by its "[".
+			if k0, ok := firstKid(fac); ok && k0.sym == 0 && f.ch(k0.tok) == LBRACK {
+				f.makeTypeArgs[f.tok(k0.tok).Position().String()] = true
+			}
 		}
 		return // the FIRST argument only; the rest are lengths, which are values
 	}
+}
+
+// markTypeArg records a bracketed type that stands where a TYPE is wanted, by its
+// "[", so the check of a bracketed type used as a value passes it by.
+func (f *File) markTypeArg(lbrack Token) {
+	if f.makeTypeArgs == nil {
+		f.makeTypeArgs = map[string]bool{} // outside every body, as markMakeTypeArg says
+	}
+	f.makeTypeArgs[lbrack.Position().String()] = true
+}
+
+// firstKid is a node's first child.
+func firstKid(n Node) (Node, bool) {
+	for c := range it(n.ast) {
+		return c, true
+	}
+	return Node{}, false
 }
 
 // isSliceTypeFactor reports whether an argument expression is a slice type used as
