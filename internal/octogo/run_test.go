@@ -10092,9 +10092,9 @@ func main() {
 	w := [3]int{40, 50, 60}[2]
 	println(v, w)
 
-	// A conversion to an unnamed composite type, which the grammar can only spell
-	// parenthesised. Between a defined type and what it is defined over nothing
-	// about the value changes, so the operand is the answer.
+	// A conversion to an unnamed composite type, spelt parenthesised, which was the
+	// only spelling the grammar took until 2026-09-21. Between a defined type and what
+	// it is defined over nothing about the value changes, so the operand is the answer.
 	q[0] = 11
 	q[2] = 13
 	var b [3]int = ([3]int)(q)

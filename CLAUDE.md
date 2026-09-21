@@ -902,11 +902,11 @@ names is held as `?<type>` (`summaryCallResult`). A deferred call and a literal 
 where it stands are calls here as well; neither was, so `defer keep(v)` and
 `func(w []int) { gs = w }(v)` laundered a parameter. A call through a METHOD's
 result, `s.handler()(v)`, is a call of the union its result names (`chainUnions`,
-2026-09-22), as `pick()(v)` always was; the other item once listed here, a chain
+2026-09-21), as `pick()(v)` always was; the other item once listed here, a chain
 whose base is a literal's parameter, no longer reproduced in any shape tried that day.
 Calling a method's result as a STATEMENT is still a call shape the emitter refuses.
 A method that keeps what its receiver HOLDS, called on a COPY, keeps what the
-original holds (`TestEmitCRecvContentsCopies`, 2026-09-22): none of the copies was
+original holds (`TestEmitCRecvContentsCopies`, 2026-09-21): none of the copies was
 followed -- a value parameter matched no receiver case at all (its method's arguments
 went unfollowed too), a local's edges named what was stored INTO it and never what it
 held (`w := W{v}; w.save()`), a value receiver handed nothing on, a field's, an

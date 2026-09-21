@@ -1435,9 +1435,9 @@ func BuildModule(limit int, modulePath, dir string, files []string, fsys fs.FS) 
 		sort.Slice(errs, func(i, j int) bool { return errs[i].less(errs[j]) })
 		// A file the parser could not read is not checked: every checker error it
 		// yields is derived from a tree that is not what was written, and says so
-		// somewhere the reader has to work to connect to the cause. `a := [3]int(q)`
-		// -- a conversion the grammar does not accept -- reported "undefined: Row"
-		// against an unrelated declaration three lines above the syntax error, the
+		// somewhere the reader has to work to connect to the cause. `a := [3]int(q)`,
+		// a conversion the grammar did not accept until 2026-09-21, reported "undefined:
+		// Row" against an unrelated declaration three lines above the syntax error, the
 		// broken parse having cost the whole file its type declarations. Go stops
 		// after parsing for the same reason.
 		//

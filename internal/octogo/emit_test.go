@@ -10448,7 +10448,7 @@ func main() {
 // element, a range value, the caller's own value receiver, a field of any of them --
 // or on storage reached through one, an element of a slice parameter or a field
 // behind a pointer; deferred, or started on a cog. What the method keeps of the
-// copy's contents is the original's contents kept, and until 2026-09-22 none of these
+// copy's contents is the original's contents kept, and until 2026-09-21 none of these
 // receivers was followed by the summaries: a value parameter matched no receiver case
 // at all (so the method's ARGUMENTS went unfollowed too), a local's receiver edges
 // named what was stored INTO it and never what it held, a value receiver handed on
@@ -11316,7 +11316,7 @@ var gsrc Src
 		{"func relay(v []int) { func(w []int) { println(len(w)) }(v) }", "relay(a[:])", "relay(gback[:])", true},
 		// A METHOD's result called, `s.handler()(v)`: the union its sole result names,
 		// as a function's result is -- through a package variable, a value receiver, a
-		// pointer parameter, into a local and as an argument (2026-09-22).
+		// pointer parameter, into a local and as an argument (2026-09-21).
 		{"func relay(v []int) int { return gsrc.handler()(v) }", "relay(a[:])", "relay(gback[:])", false},
 		{"func relay(v []int) int { return gsrc.vhandler()(v) }", "relay(a[:])", "relay(gback[:])", false},
 		{"func relay(s *Src, v []int) int { return s.handler()(v) }", "relay(&gsrc, a[:])", "relay(&gsrc, gback[:])", false},
