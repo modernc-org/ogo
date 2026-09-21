@@ -10433,6 +10433,84 @@ func main() {
 	}
 }
 
+// TestEmitCRecvContentsCopies: a method that keeps what its receiver HOLDS, called on
+// a COPY -- a value parameter, a local built from or copied out of a parameter, the
+// caller's own value receiver, a field of any of them. What the method keeps of the
+// copy's contents is the original's contents kept, and until 2026-09-22 none of these
+// receivers was followed by the summaries: a value parameter matched no receiver case
+// at all (so the method's ARGUMENTS went unfollowed too), a local's receiver edges
+// named what was stored INTO it and never what it held, a value receiver handed on
+// nothing, and a field's method was no method call. `through(W{b[:]})` for a
+// `through(w W) { w.save() }` left gs pointing into a dead frame, in silence. Each
+// row beside a control over package storage.
+func TestEmitCRecvContentsCopies(t *testing.T) {
+	const head = `type W struct{ xs []int }
+
+type T struct{ in W }
+
+var gs []int
+
+var gb [4]int
+
+func (w W) save() { gs = w.xs }
+
+func (w *W) psave() { gs = w.xs }
+
+func (w W) store(v []int) { gs = v }
+
+func (w W) outer() { w.save() }
+
+func (t T) deep() { t.in.save() }
+
+`
+	for _, test := range []struct {
+		name, helper, call, want string // want "" means the program must be accepted
+	}{
+		{"a value parameter's value method", "func through(w W) { w.save() }", "through(W{b[:]})",
+			"cannot pass a slice backed by local b to through: its parameter 1's contents are stored"},
+		{"a value parameter's pointer method", "func through(w W) { w.psave() }", "through(W{b[:]})",
+			"cannot pass a slice backed by local b to through: its parameter 1's contents are stored"},
+		{"a method's argument, on a value parameter", "func through(w W, v []int) { w.store(v) }", "through(W{}, b[:])",
+			"cannot pass a slice backed by local b to through: its parameter 2 is stored"},
+		{"a local holding a parameter as a part", "func through(v []int) {\n\tw := W{v}\n\tw.save()\n}", "through(b[:])",
+			"cannot pass a slice backed by local b to through: its parameter 1 is stored"},
+		{"a local copied out of a pointer", "func through(p *W) {\n\tw := *p\n\tw.save()\n}", "lw := W{b[:]}\n\tthrough(&lw)",
+			"cannot pass &lw, whose contents hold a pointer into local b to through"},
+		{"the own value receiver", "", "w := W{b[:]}\n\tw.outer()",
+			"cannot call outer on w: what its receiver holds is stored"},
+		{"the own value receiver, through a parameter", "func through(w W) { w.outer() }", "through(W{b[:]})",
+			"cannot pass a slice backed by local b to through: its parameter 1's contents are stored"},
+		{"a field of a value parameter", "func through(t T) { t.in.save() }", "through(T{W{b[:]}})",
+			"cannot pass a slice backed by local b to through: its parameter 1's contents are stored"},
+		{"a field of the own value receiver", "func through(t T) { t.deep() }", "through(T{W{b[:]}})",
+			"cannot pass a slice backed by local b to through: its parameter 1's contents are stored"},
+	} {
+		for _, frame := range []bool{true, false} {
+			name, call, want := test.name, test.call, test.want
+			decl := "\tvar b [4]int\n"
+			if !frame {
+				name, call, want, decl = name+" (control)", strings.ReplaceAll(call, "b[:]", "gb[:]"), "", ""
+			}
+			t.Run(name, func(t *testing.T) {
+				src := head + test.helper + "\n\nfunc use() {\n" + decl + "\t" + call + "\n}\n\nfunc main() {\n\tuse()\n\tprintln(len(gs))\n}\n"
+				fsys := fstest.MapFS{"main.ogo": &fstest.MapFile{Data: []byte(src)}}
+				pkg, err := Build(-1, []string{"main.ogo"}, fsys)
+				if err == nil {
+					err = EmitC(pkg, io.Discard, Checked())
+				}
+				switch {
+				case want == "" && err != nil:
+					t.Errorf("refused: %v\n%s", err, src)
+				case want != "" && err == nil:
+					t.Errorf("accepted, want %q\n%s", want, src)
+				case want != "" && !strings.Contains(err.Error(), want):
+					t.Errorf("got %v, want %q", err, want)
+				}
+			})
+		}
+	}
+}
+
 // TestEmitCPtrConvEscape: a conversion to a pointer type, `(*T)(&x)`, is the
 // address it converts, written straight into every sink -- a store, a return, a
 // send, a goroutine's argument, a callee that keeps it, now or deferred -- and

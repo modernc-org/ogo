@@ -5576,6 +5576,7 @@ type emitter struct {
 	bindBody, bindSeq  int                     // ... the block of its body, where its parameters are written, and the last block numbered
 	recvLeaks          map[string]leak         // a pointer method's RECEIVER kept where it outlives the call: leakGlobal, leakCog (see recvEdge)
 	recvEdges          []recvEdge              // how a receiver's keeping travels to callers (see recvEdge)
+	copyRecvEdges      []copyRecvEdge          // how a copied receiver's contents travel to callers (see copyRecvEdge)
 	retRecv            map[string]bool         // a pointer method returns its receiver, so its result is what it was called on
 	crossInto          map[string][]uint32     // per function, which PARAMETERS each parameter is stored through, as a bitmask of their indices. leakRecv answers this for a method's receiver; a plain function has no receiver and needed the general form (see pointerParamsThrough)
 	ifaceSummaries     map[string]ifaceSummary // "<iface>.<method>" -> the union of the summaries of every implementation, since which one a call reaches is the vtable's answer (see ifaceCallSummary)
@@ -9857,6 +9858,7 @@ func (e *emitter) litParamNames(lit Node) (funcInfo, bool) {
 			fi.paramType = append(fi.paramType, e.paramTypeName(ta))
 		})
 	}
+	e.noteLocalCopies(&fi)
 	return fi, true
 }
 
@@ -10440,6 +10442,24 @@ func (e *emitter) collectFuncCross(fi funcInfo) {
 			case c.recv == recvParam:
 				e.recvEdges = append(e.recvEdges, recvEdge{caller: cname, from: c.recvAt, callee: c.callee, to: -1})
 			}
+			// The receiver is a COPY of a name, or its address: what the method keeps of
+			// its receiver's contents, this function keeps of what that name's contents
+			// may carry of its parameters and receiver (see resolve for the kinds).
+			if c.copyOf != "" {
+				r := reachOf([]held{{c.copyOf, heldContents}})
+				for _, i := range r.vals {
+					e.copyRecvEdges = append(e.copyRecvEdges, copyRecvEdge{caller: cname, callee: c.callee, from: i, asVal: true})
+				}
+				for _, i := range r.conts {
+					e.copyRecvEdges = append(e.copyRecvEdges, copyRecvEdge{caller: cname, callee: c.callee, from: i})
+				}
+				if r.recvVal {
+					e.copyRecvEdges = append(e.copyRecvEdges, copyRecvEdge{caller: cname, callee: c.callee, from: -1, asVal: true})
+				}
+				if r.recvCont {
+					e.copyRecvEdges = append(e.copyRecvEdges, copyRecvEdge{caller: cname, callee: c.callee, from: -1})
+				}
+			}
 			// An interface's method is handed what the interface value holds: what
 			// the callee keeps of its receiver, this function keeps of that.
 			if c.recvName != "" {
@@ -10543,6 +10563,23 @@ type recvEdge struct {
 	// contents: what is handed on is the CONTENTS of the caller's receiver or
 	// parameter, `keep(c.d)`, rather than the pointer itself.
 	contents bool
+}
+
+// copyRecvEdge records that a function calls a method on a COPY of something it
+// holds -- a local, a value parameter, its own value receiver -- or on its address,
+// whose contents may carry the function's parameter from (its receiver, from < 0):
+// as that parameter's value where asVal, as its contents otherwise. What the method
+// keeps of its receiver's CONTENTS, the function keeps of that.
+//
+// recvEdge could not say it: it hands on a POINTER the caller holds, and what the
+// callee keeps of the pointer itself is the caller's to keep. A copy's address dies
+// with the caller's frame, which the call site refuses where it is kept; what goes
+// on is only the contents, and they may be a parameter's own value -- `w := W{v};
+// w.save()` for a save keeping w.xs keeps v, which no recvEdge flavour carries.
+type copyRecvEdge struct {
+	caller, callee string
+	from           int
+	asVal          bool
 }
 
 // closeCrossParams propagates the crossing summary along the recorded call edges
@@ -10843,6 +10880,26 @@ func (e *emitter) closeCrossParams() {
 				changed = true
 			}
 		}
+		// A method called on a copy: what it keeps of its receiver's contents, the
+		// caller keeps of whatever those contents carry.
+		for _, g := range e.copyRecvEdges {
+			flags := e.recvContents[g.callee] & (leakGlobal | leakCog)
+			switch {
+			case flags == 0:
+			case !g.asVal:
+				orContents(g.caller, g.from, flags)
+			case g.from < 0:
+				if e.recvLeaks[g.caller]&flags != flags {
+					e.recvLeaks[g.caller] |= flags
+					changed = true
+				}
+			default:
+				if caller := e.crossParams[g.caller]; g.from < len(caller) && caller[g.from]&flags != flags {
+					caller[g.from] |= flags
+					changed = true
+				}
+			}
+		}
 	}
 }
 
@@ -10904,6 +10961,7 @@ func (e *emitter) funcParamNames(d []int32) (funcInfo, bool) {
 			fi.paramType = append(fi.paramType, e.paramTypeName(ta))
 		})
 	}
+	e.noteLocalCopies(&fi)
 	return fi, true
 }
 
@@ -11014,6 +11072,108 @@ func (e *emitter) localTypeNames(body []int32) map[string]string {
 		}
 	}
 	return out
+}
+
+// noteLocalCopies adds to fi.locals the locals a body declares as COPIES of what fi
+// can type: `w := *p` for a pointer parameter or receiver p, `w := v` for a value
+// parameter, the value receiver or a typed local, and `w := x.f` for a field of one.
+// localTypeNames reads a written type and a literal only, and a method called on
+// any other local named no callee to the summaries, so what it kept of the copy's
+// contents -- a parameter's contents -- was kept in silence. Only a VALUE is
+// recorded: a local holding a pointer aliases the caller's storage, and a method on
+// it stores through that, which is not what a local receiver means (recvLocal).
+func (e *emitter) noteLocalCopies(fi *funcInfo) {
+	valueOf := func(name string) (string, bool) { // name's type, and whether it is a pointer
+		switch i := slices.Index(fi.params, name); {
+		case name == fi.recvName && fi.recvCType != "":
+			return methodBaseType(fi.recvCType), e.isPointer(fi.recvCType)
+		case i >= 0 && i < len(fi.ptrBase) && fi.ptrBase[i] != "":
+			return fi.ptrBase[i], true
+		case i >= 0 && i < len(fi.paramType) && fi.paramType[i] != "":
+			return fi.paramType[i], false
+		case i < 0 && fi.locals[name] != "":
+			return fi.locals[name], false
+		}
+		return "", false
+	}
+	typeOf := func(ast []int32) string {
+		ast = e.unparenExpr(ast)
+		if name, ok := e.derefName(ast); ok {
+			if ct, ptr := valueOf(name); ptr {
+				return ct
+			}
+			return ""
+		}
+		if name, ok := e.exprIdent(ast); ok {
+			if ct, ptr := valueOf(name); !ptr {
+				return ct
+			}
+			return ""
+		}
+		fac, ok := e.soleFactorNode(ast)
+		if !ok {
+			return ""
+		}
+		base, steps, isChain := e.factorAccessChain(e.unparenKids(slices.Collect(it(fac.ast))))
+		if !isChain || len(steps) == 0 {
+			return ""
+		}
+		ct, _ := valueOf(base)
+		for _, st := range steps {
+			field := e.soleIdent(st.ast)
+			if st.sym != Selector || field == "" || ct == "" {
+				return ""
+			}
+			if ct, ok = e.structFieldType(ct, field); !ok {
+				return ""
+			}
+		}
+		if e.isPointer(ct) || !e.typeNames[ct] {
+			return ""
+		}
+		return ct
+	}
+	if fi.locals == nil {
+		fi.locals = map[string]string{}
+	}
+	e.eachStmt(fi.body, func(nodes []Node) {
+		if len(nodes) != 2 || nodes[0].sym != AssignHead || nodes[1].sym != Postfix {
+			return
+		}
+		name := e.soleIdent(nodes[0].ast)
+		vals := e.definedValues(nodes[1].ast)
+		if name == "" || len(vals) != 1 || slices.Contains(fi.params, name) {
+			return
+		}
+		ct := typeOf(vals[0])
+		switch prev, seen := fi.locals[name]; {
+		case ct == "":
+		case !seen:
+			fi.locals[name] = ct
+		case prev != ct:
+			delete(fi.locals, name) // two declarations disagree: name neither
+		}
+	})
+}
+
+// derefName is `*p` by shape: one star and a name, parentheses allowed around
+// either. derefOperand asks the name's type, which the summaries cannot.
+func (e *emitter) derefName(ast []int32) (string, bool) {
+	nodes := slices.Collect(it(ast))
+	for len(nodes) == 1 && (nodes[0].sym == Expression || nodes[0].sym == SimpleExpr || nodes[0].sym == Term) {
+		nodes = slices.Collect(it(nodes[0].ast))
+	}
+	if len(nodes) != 1 || nodes[0].sym != UnaryExpr {
+		return "", false
+	}
+	kids := slices.Collect(it(nodes[0].ast))
+	if len(kids) != 2 || kids[0].sym != UnaryOp {
+		return "", false
+	}
+	if tok, ok := e.unaryOpTok(kids[0].ast); !ok || e.f.ch(tok) != MUL {
+		return "", false
+	}
+	return e.exprIdent(e.unparenExpr(kids[1].ast))
 }
 
 // noteVarSpecTypes calls note for every `var name T` in a VarDecl whose type is a
@@ -11263,6 +11423,11 @@ func (e *emitter) summaryReach(ast []int32) (out []held) {
 		}
 	}
 	if name, ok := e.derefOperand(ast); ok {
+		return []held{{name, heldContents}}
+	}
+	// The same by shape alone: derefOperand asks the name's type, which this pass
+	// has for no local and no parameter, so `w := *p` recorded nothing held.
+	if name, ok := e.derefName(ast); ok {
 		return []held{{name, heldContents}}
 	}
 	if fac, ok := e.soleFactorNode(ast); ok {
@@ -11639,6 +11804,10 @@ type methodCall struct {
 	// recvName is the name an interface's method was called on, which may hold one
 	// of the caller's parameters (see ifaceMethodCallsOf).
 	recvName string
+	// copyOf names what the receiver is a COPY of, or the address of: a local, a
+	// value parameter, the caller's own value receiver. What the method keeps of its
+	// receiver's contents, the caller keeps of that name's contents (copyRecvEdge).
+	copyOf string
 }
 
 // stmtMethodCalls finds the METHOD calls a statement makes, which stmtCalls does not:
@@ -11688,6 +11857,10 @@ func (e *emitter) stmtMethodCalls(nodes []Node, fi funcInfo) []methodCall {
 				} else {
 					out = append(out, e.ifaceMethodCallsOf(recv, suffix, fi)...)
 				}
+			} else if fieldMethodSuffix(suffix) {
+				if c, isM := e.methodCallOf(recv, suffix, fi); isM {
+					out = append(out, c)
+				}
 			}
 		}
 	}
@@ -11710,6 +11883,10 @@ func (e *emitter) stmtMethodCalls(nodes []Node, fi funcInfo) []methodCall {
 					} else {
 						out = append(out, e.ifaceMethodCallsOf(recv, suffix, fi)...)
 					}
+				} else if ok && fieldMethodSuffix(suffix) {
+					if c, isM := e.methodCallOf(recv, suffix, fi); isM {
+						out = append(out, c)
+					}
 				}
 			}
 			walk(n.ast)
@@ -11719,6 +11896,21 @@ func (e *emitter) stmtMethodCalls(nodes []Node, fi funcInfo) []methodCall {
 		walk(n.ast)
 	}
 	return out
+}
+
+// fieldMethodSuffix reports `.f.m(args)`: one or more field selections, then a
+// method selected and called.
+func fieldMethodSuffix(suffix []Node) bool {
+	n := len(suffix)
+	if n < 3 || suffix[n-1].sym != CallSuffix {
+		return false
+	}
+	for _, st := range suffix[:n-1] {
+		if st.sym != Selector {
+			return false
+		}
+	}
+	return true
 }
 
 // ifaceMethodCallsOf is methodCallOf for a receiver of INTERFACE type -- a package
@@ -11795,16 +11987,27 @@ func (e *emitter) methodExprCallOf(me emMethodExpr, fi funcInfo) (methodCall, bo
 	return c, true
 }
 
-// methodCallOf resolves one `recv.m(args)` against the enclosing declaration.
+// methodCallOf resolves one `recv.m(args)` against the enclosing declaration, or
+// `recv.f.m(args)` -- a method called on a FIELD, which only a value root's fields
+// answer: one is a copy of a part of the root, and what the method keeps of it is
+// part of what the root holds (copyOf).
 func (e *emitter) methodCallOf(recv string, suffix []Node, fi funcInfo) (methodCall, bool) {
+	if len(suffix) < 2 {
+		return methodCall{}, false
+	}
+	fields := suffix[:len(suffix)-2]
+	suffix = suffix[len(suffix)-2:]
 	method := e.soleIdent(suffix[0].ast)
 	if method == "" {
 		return methodCall{}, false
 	}
-	ct, kind, at := "", recvNone, argLocal
+	ct, kind, at, copyOf := "", recvNone, argLocal, ""
 	switch i := slices.Index(fi.params, recv); {
 	case recv == fi.recvName && fi.recvCType != "":
 		ct, kind = fi.recvCType, recvOwn
+		if !e.isPointer(fi.recvCType) {
+			copyOf = recv // a value receiver is a copy of the caller's own
+		}
 	case e.isPackageVar(recv):
 		ct, kind = e.globals[e.globalC(recv)], recvOutlives
 	case i >= 0 && i < len(fi.ptrBase) && fi.ptrBase[i] != "" && i < intoBits:
@@ -11812,20 +12015,44 @@ func (e *emitter) methodCallOf(recv string, suffix []Node, fi funcInfo) (methodC
 		// costs nothing and risks nothing -- which is what used to leave this case
 		// out. The base is already mangled and starless, as methodBaseType wants.
 		ct, kind, at = fi.ptrBase[i], recvParam, i
+	case i >= 0 && i < len(fi.paramType) && fi.paramType[i] != "":
+		// A VALUE parameter, `w.save()` in a function taking a W. The method is
+		// handed a copy, so a store INTO it is no leak, as for a local; but what the
+		// method keeps of the copy's CONTENTS is the parameter's contents, kept. It
+		// matched no case, so the call was no call at all to the summaries -- neither
+		// its receiver nor its arguments were followed.
+		ct, kind, copyOf = fi.paramType[i], recvLocal, recv
 	case fi.locals[recv] != "":
 		// A LOCAL, whose declaration the body scan read. It dies with the frame, so
 		// a store INTO it is no leak -- but a store THROUGH the parameter into a
-		// package variable is, and with no edge at all nothing said so.
-		ct, kind = fi.locals[recv], recvLocal
+		// package variable is, and with no edge at all nothing said so. Nor is what
+		// the local holds: `w := W{v}; w.save()` keeps v if save keeps w.xs.
+		ct, kind, copyOf = fi.locals[recv], recvLocal, recv
 	}
 	if ct == "" || kind == recvNone {
 		return methodCall{}, false
+	}
+	if len(fields) != 0 {
+		if copyOf == "" {
+			return methodCall{}, false // not a value root: its fields are not copies
+		}
+		for _, st := range fields {
+			field := e.soleIdent(st.ast)
+			var ok bool
+			if st.sym != Selector || field == "" {
+				return methodCall{}, false
+			}
+			if ct, ok = e.structFieldType(ct, field); !ok || e.isPointer(ct) {
+				return methodCall{}, false
+			}
+		}
+		kind = recvLocal // the field of a copy is a copy
 	}
 	cname := methodCName(methodBaseType(ct), method)
 	if _, isMethod := e.funcRet[cname]; !isMethod {
 		return methodCall{}, false
 	}
-	return methodCall{callee: cname, recv: kind, recvAt: at, args: e.callArgExprs(suffix[1].ast)}, true
+	return methodCall{callee: cname, recv: kind, recvAt: at, args: e.callArgExprs(suffix[1].ast), copyOf: copyOf}, true
 }
 
 // stmtCalls finds the calls a statement makes, so that an argument which is one of
