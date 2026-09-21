@@ -10086,6 +10086,27 @@ func (f *File) indexedStructName(s *Scope, id Token) (string, bool) {
 	return d.typeName.Src(), true
 }
 
+// unindexableName names what a name is when that is known and has no elements: a
+// function, a channel, an interface, a struct, nil. A slice, an array and a pointer
+// -- which may point to an array -- answer false, as does a name of a Kind, which
+// identKind's gate answers for.
+func (f *File) unindexableName(s *Scope, id Token) (string, bool) {
+	switch d := s.find(id.Src()).(type) {
+	case *FuncDeclaration:
+		return "a function", true
+	case *VarDeclaration:
+		switch what, known := f.nonBoolVar(s, d); what {
+		case "a function", "a channel", "an interface", "a struct":
+			return what, known
+		}
+	default:
+		if id.Src() == "nil" && d == Universe.Declarations["nil"] {
+			return "nil", true
+		}
+	}
+	return "", false
+}
+
 // indexVerb is "index" or "slice", whichever the operation written is.
 func (f *File) indexVerb(index Node) string {
 	if f.isSliceExpr(index) {
@@ -11976,6 +11997,17 @@ func (f *File) checkIndexAssign(s *Scope, base Token, rhsNode Node) {
 			of = ofType(k, true)
 		}
 		f.err(base.Position(), "invalid operation: cannot index %s%s", base.Src(), of)
+		return
+	}
+	// What has no Kind and no elements either, as the read side asks it: a struct,
+	// a function, a channel, an interface. `v[0] = 1` for a struct went through here
+	// while `v[0]` read was refused.
+	if nm, isStruct := f.indexedStructName(s, base); isStruct {
+		f.err(base.Position(), "invalid operation: cannot index %s (variable of type %s)", base.Src(), nm)
+		return
+	}
+	if what, known := f.unindexableName(s, base); known {
+		f.err(base.Position(), "invalid operation: cannot index %s: it is %s", base.Src(), what)
 		return
 	}
 	if d.hasElemKind && !d.isPtr {
@@ -14586,6 +14618,15 @@ func (f *File) checkFactorNames(s *Scope, n Node) {
 			// and `p[0]` reached the C compiler, which called it a subscripted value
 			// that is not an array. Named as Go names it.
 			f.err(id.Position(), "invalid operation: cannot %s %s (variable of type %s)", verb, id.Src(), nm)
+		} else if what, known := f.unindexableName(s, id); known {
+			// A function, a channel, an interface and nil have no Kind either, and
+			// `f[0]` for a function went through to the C compiler, which indexed the
+			// function's address as the array it is not.
+			if what == "nil" {
+				f.err(id.Position(), "invalid operation: cannot %s nil", verb)
+			} else {
+				f.err(id.Position(), "invalid operation: cannot %s %s: it is %s", verb, id.Src(), what)
+			}
 		} else if k, known := f.identKind(s, id); known {
 			switch kindCategory(k) {
 			case catNumeric, catBool:

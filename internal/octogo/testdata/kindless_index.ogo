@@ -1,0 +1,38 @@
+// An index applies to a string, an array, a slice and a pointer to an array. A
+// pointer to anything else, a struct and a scalar were refused; a function, a
+// channel, an interface and nil have no Kind either, and until 2026-09-21 an index
+// of one, read or stored into, went through to the C compiler -- as did a store
+// into an element of a struct, which the read side refused.
+
+type P struct{ x int }
+
+type I interface{ M() }
+
+func one() int { return 1 }
+
+var gi I
+
+func main() {
+	f := one
+	var ch chan int
+	var v P
+	// ERROR "cannot index f: it is a function"
+	_ = f[0]
+	// ERROR "cannot index one: it is a function"
+	_ = one[1]
+	// ERROR "cannot slice ch: it is a channel"
+	_ = ch[:]
+	// ERROR "cannot index gi: it is an interface"
+	_ = gi[0]
+	// ERROR "cannot index nil"
+	_ = nil[0]
+	// ERROR "cannot index f: it is a function"
+	f[0] = 1
+	// ERROR "cannot index ch: it is a channel"
+	ch[0] = 1
+	// ERROR "cannot index gi: it is an interface"
+	gi[0] = 1
+	// ERROR "cannot index v \(variable of type P\)"
+	v[0] = 1
+	_, _, _ = f, ch, v
+}

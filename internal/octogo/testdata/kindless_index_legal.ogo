@@ -1,0 +1,25 @@
+// COMPILE
+
+// The controls of kindless_index.ogo: everything Go indexes, read and stored into,
+// through the names the refusals there are asked of.
+
+type Row [3]int
+
+func pick() []int { return gs }
+
+var gs = []int{1, 2, 3}
+
+func main() {
+	s := "abc"
+	a := [3]int{1, 2, 3}
+	xs := []int{4, 5}
+	var r Row
+	p := &r
+	var pa *[3]int = &a
+	a[0] = 7
+	xs[1] = 8
+	r[2] = 9
+	p[1] = 6
+	pa[2] = 5
+	println(s[1], a[0], xs[1], r[2], p[1], pa[2], pick()[0], s[1:], len(xs[:1]))
+}
