@@ -21066,8 +21066,9 @@ func (e *emitter) accessSlice(cur accessCur) (accessCur, bool) {
 		return accessCur{elem: cur.elem, slice: true, name: cur.name}, true
 	case len(cur.dims) >= 1:
 		return accessCur{elem: e.accessSliceElem(cur), slice: true}, true
-	case cur.ctype == cString:
-		return accessCur{ctype: cString}, true
+	case e.underlyingCType(cur.ctype) == cString:
+		// A string of a DEFINED type slices to that type, with its methods.
+		return accessCur{ctype: cur.ctype}, true
 	}
 	// A POINTER to an array is sliced as the array it points at, `p[1:]` being
 	// `(*p)[1:]` in Go too -- a call's result, `pick()[1:]`, or a field, `h.pa[:2]`.
@@ -21110,7 +21111,7 @@ func (e *emitter) accessSliceSource(cur accessCur, prefix string) (sliceSource, 
 		// element is a row, and decaying names it: an `int m[2][3]` decays to
 		// `int(*)[3]`, which is exactly the ogo_arr_3_int* the header holds.
 		return sliceSource{sliceCName(e.accessSliceElem(cur)), prefix, cur.dims[0], cur.dims[0]}, true
-	case cur.ctype == cString:
+	case e.underlyingCType(cur.ctype) == cString:
 		return sliceSource{cString, prefix + ".str", prefix + ".len", ""}, true
 	}
 	// A pointer to an array: the array it points at, which decays as a named one
@@ -36309,8 +36310,9 @@ func (e *emitter) inferNode(n Node) (string, bool) {
 					// Re-slicing a field yields a slice header: the field's own type
 					// for a slice field, one over the element type for an array field.
 					if src, ok := e.sliceableField(base, fields); ok {
-						// A field of a DEFINED slice type is sliced to that type.
-						if ct, ok := e.fieldType(base, fields); ok && ct != src.cname && e.underlyingCType(ct) == src.cname && e.isSliceCType(src.cname) {
+						// A field of a DEFINED slice or string type is sliced to that
+						// type.
+						if ct, ok := e.fieldType(base, fields); ok && ct != src.cname && e.underlyingCType(ct) == src.cname {
 							return ct, true
 						}
 						return src.cname, true
@@ -36324,9 +36326,13 @@ func (e *emitter) inferNode(n Node) (string, bool) {
 			}
 			if base, indexAST, ok := e.factorIndex(kids); ok {
 				if _, _, _, isSlice := e.sliceParts(indexAST); isSlice {
-					// Slicing a string yields a string; slicing an array or a slice
+					// Slicing a string yields a string -- of the DEFINED string type
+					// the variable has, if it has one; slicing an array or a slice
 					// yields the corresponding slice header type.
 					if e.isStringVarName(base) {
+						if ct, ok := e.varType(base); ok && ct != cString && e.underlyingCType(ct) == cString {
+							return ct, true
+						}
 						return cString, true
 					}
 					if _, a, ok := e.arrayBase(base); ok {
@@ -36477,11 +36483,15 @@ func (e *emitter) callResultCType(recv string, suffix []Node) (string, bool) {
 			return "", false
 		}
 		if recv == "append" {
-			// append returns a slice of its first argument's element type.
+			// append returns its first argument's type: a slice of its element, or
+			// the DEFINED slice type it is, with that type's methods.
 			args := e.callArgExprs(suffix[0].ast)
 			if len(args) >= 1 {
 				if base, ok := e.exprIdent(args[0].ast); ok {
 					if elem, ok := e.sliceElem(base); ok {
+						if dt := e.definedSliceType(base, elem); dt != "" {
+							return dt, true
+						}
 						return sliceCName(elem), true
 					}
 				}

@@ -34070,6 +34070,48 @@ func main() {
 }
 `,
 		want: "main.L main.L main.L main.L\n16 7 5 13 9 16 9 1111\nshow 4 18\nshow 2 15\n",
+	}, {
+		// append returns its first argument's type, and a slice of a string of a
+		// DEFINED type is of that type: `a := append(gl, 4)` then `a.Sum()`, and `t :=
+		// gs[1:]` then `t.Twice()`, were refused, and `%T` of either printed the
+		// underlying type. A string field of one too, and a method on the slice
+		// where it stands. The appends share the backing array, as Go's do.
+		name: "append and a slice of a defined string keep the type",
+		src: `type L []int
+
+func (l L) Sum() int {
+	n := 0
+	for _, v := range l {
+		n += v
+	}
+	return n
+}
+
+type S string
+
+func (s S) Twice() int { return len(s) * 2 }
+
+type R struct{ name S }
+
+var back = [8]int{1, 2, 3}
+
+var gl L = back[:3]
+
+var gs S = "hello"
+
+var r = R{"world"}
+
+func main() {
+	a := append(gl, 4)
+	b := append(gl[:1], 7)
+	t := gs[1:]
+	u := r.name[1:4]
+	printf("%T %T %T %T %T %T\n", a, b, append(gl, 5), t, gs[2:], u)
+	println(a.Sum(), b.Sum(), len(a), len(b), back[1])
+	println(t.Twice(), gs[3:].Twice(), u.Twice(), r.name[2:].Twice(), t, u)
+}
+`,
+		want: "main.L main.L main.L main.S main.S main.S\n16 8 4 2 7\n8 4 6 6 ello orl\n",
 	}}
 
 // TestEmitCRun compiles emitted C with a host compiler and runs it, checking what
