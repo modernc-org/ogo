@@ -1,0 +1,32 @@
+// A call through a function value returns what the value's type says, as a call of
+// a function does. Until 2026-09-21 only the named function's result had a type, so
+// the result of `f()` had none and every check a type is asked of passed it by.
+
+type Count int
+
+func one() int { return 1 }
+
+func mk() Count { return 3 }
+
+func apply(g func(int) int) string {
+	// ERROR "cannot use g\(1\) of type int as type string in variable declaration"
+	var s string = g(1)
+	return s
+}
+
+func main() {
+	f := one
+	s := "a"
+	// ERROR "cannot use f\(\) of type int as type string in assignment"
+	s = f()
+	// ERROR "cannot use f\(\) of type int as type string in variable declaration"
+	var t string = f()
+	lit := func(x string) string { return x }
+	// ERROR "of type string as type int in variable declaration"
+	var n int = lit("b")
+	var mk2 func() Count = mk
+	// ERROR "cannot use mk2\(\) of type Count as type int in variable declaration"
+	var m int = mk2()
+	_, _, _, _ = s, t, n, m
+	_ = apply(nil)
+}

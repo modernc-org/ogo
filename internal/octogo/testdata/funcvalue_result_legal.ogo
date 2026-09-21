@@ -1,0 +1,30 @@
+// COMPILE
+
+// The controls of funcvalue_result.ogo: results of calls through function values,
+// stored where their types go.
+
+type Count int
+
+type W struct{ f func(int) int }
+
+func apply(g func(int) int, n int) int { return g(n) + 1 }
+
+func dbl(n int) int { return 2 * n }
+
+func mk() Count { return 3 }
+
+var gw = W{f: dbl}
+
+func main() {
+	f := dbl
+	var n int = f(2)
+	m := f(3) + 1
+	var mk2 func() Count = mk
+	var c Count = mk2()
+	c = mk2() + 1
+	s := func(x string) string { return x }("a")
+	g := func(x string) string { return x }
+	var t string = g("b")
+	var u int = gw.f(5)
+	println(n, m, c, s, t, u, apply(dbl, 4))
+}

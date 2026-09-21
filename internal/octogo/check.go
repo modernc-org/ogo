@@ -12739,11 +12739,21 @@ func (f *File) exprNamedType(s *Scope, n Node) (name, qual Token, isPtr, ok bool
 	if _, isType := s.find(callee.Src()).(*TypeDeclaration); isType {
 		return callee, Token{}, isPtr, true
 	}
-	d, ok := s.find(callee.Src()).(*FuncDeclaration)
-	if !ok || d.FuncDecl == nil || d.FuncDecl.Type == nil || d.FuncDecl.Type.Signature == nil {
+	var sig *SignatureNode
+	switch d := s.find(callee.Src()).(type) {
+	case *FuncDeclaration:
+		if d.FuncDecl != nil && d.FuncDecl.Type != nil {
+			sig = d.FuncDecl.Type.Signature
+		}
+	case *VarDeclaration:
+		// A call through a function value names the type its signature does, as
+		// a call of a function does (see funcSingleResultKind).
+		sig = d.funcSig
+	}
+	if sig == nil {
 		return Token{}, Token{}, false, false
 	}
-	res := d.FuncDecl.Type.Signature.Results
+	res := sig.Results
 	if res == nil || len(res.List) != 1 || len(res.List[0].Names) > 1 {
 		return Token{}, Token{}, false, false
 	}
@@ -15070,11 +15080,28 @@ func (f *File) callResultKind(s *Scope, callee Token, hasCallee bool, suffix Nod
 // function, when it has exactly one and it is predeclared. A function returning a
 // composite or named (non-predeclared) type, or several results, yields not-known.
 func (f *File) funcSingleResultKind(s *Scope, callee Token) (Kind, bool) {
-	fd, ok := s.find(callee.Src()).(*FuncDeclaration)
-	if !ok || fd.FuncDecl == nil || fd.FuncDecl.Type == nil {
+	var sig *SignatureNode
+	in := s
+	switch d := s.find(callee.Src()).(type) {
+	case *FuncDeclaration:
+		if d.FuncDecl != nil && d.FuncDecl.Type != nil {
+			sig = d.FuncDecl.Type.Signature
+		}
+	case *VarDeclaration:
+		// A call through a function VALUE, `f()`, returns what the value's type
+		// says, as a call of a function does. Nothing answered for it, so its
+		// result had no type: `var s string = f()` for an f returning an int went
+		// through, and so did every use of the result a type is asked of. The
+		// signature is read where it was written.
+		sig = d.funcSig
+		if d.declScope != nil {
+			in = d.declScope
+		}
+	}
+	if sig == nil {
 		return 0, false
 	}
-	if results := f.flattenResults(s, fd.FuncDecl.Type.Signature); len(results) == 1 && results[0].known {
+	if results := f.flattenResults(in, sig); len(results) == 1 && results[0].known {
 		return results[0].kind, true
 	}
 	return 0, false
