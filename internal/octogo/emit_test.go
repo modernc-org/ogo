@@ -6576,8 +6576,11 @@ func main() {
 // no statement to copy in. Emitting the element anyway is what used to happen, and
 // what it emitted was `(ogo_arr_2_2_int){a, a}`, which is not C. A deferred copy
 // nobody emits would be worse still: a literal that silently loses an element.
+//
+// A value of a Kind where an array is wanted is the checker's to refuse since
+// 2026-09-21; that case says so in check, and the emitter is not reached.
 func TestEmitCLitElementRefusals(t *testing.T) {
-	for _, test := range []struct{ name, src, want string }{
+	for _, test := range []struct{ name, src, want, check string }{
 		{
 			name: "a shorter array",
 			src: `var a = [3]int{1, 2, 3}
@@ -6597,7 +6600,7 @@ func main() {
 	println(t[0][0])
 }
 `,
-			want: "must be a literal, an array value or a call returning one",
+			check: "cannot use n (variable of type int) as [2]int value in array or slice literal",
 		},
 		{
 			name: "in a channel send, which names no storage",
@@ -6619,6 +6622,12 @@ func main() {
 		t.Run(test.name, func(t *testing.T) {
 			fsys := fstest.MapFS{"main.ogo": &fstest.MapFile{Data: []byte(test.src)}}
 			pkg, err := Build(-1, []string{"main.ogo"}, fsys)
+			if test.check != "" {
+				if err == nil || !strings.Contains(err.Error(), test.check) {
+					t.Fatalf("Build error %v does not mention %q", err, test.check)
+				}
+				return
+			}
 			if err != nil {
 				t.Fatalf("Build: %v", err)
 			}

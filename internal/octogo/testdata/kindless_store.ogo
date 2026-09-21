@@ -1,0 +1,86 @@
+// A value goes where its type does. The checks that compare two types asked where
+// both were known -- as a Kind, or as a written type -- and until 2026-09-21 a Kind
+// on one side and none on the other fell between them in every position a value
+// is stored: a number into a function, a channel, a struct or an array, and a
+// function, a slice, a struct, a channel or a pointer into a number, a string or a
+// bool.
+
+type P struct{ x int }
+
+type W struct {
+	n int
+	f func() int
+}
+
+type Row [3]int
+
+func one() int { return 1 }
+
+func take(n int) int { return n }
+
+func call(g func() int) int { return g() }
+
+func sum(xs ...int) int { return len(xs) }
+
+func retf() int {
+	f := one
+	// ERROR "cannot use f as int value in return statement: it is a function"
+	return f
+}
+
+func rets() P {
+	// ERROR "cannot use 3 \(untyped int constant\) as P value in return statement"
+	return 3
+}
+
+var gp P
+var gw W
+var gr Row
+
+func main() {
+	f := one
+	var ch chan int
+	var a [3]byte
+	xs := []int{1}
+	n := 1
+	s := "a"
+	b := true
+	// ERROR "cannot use 3 \(untyped int constant\) as func\(\) int value in assignment"
+	f = 3
+	// ERROR "cannot use 3 \(untyped int constant\) as chan int value in assignment"
+	ch = 3
+	// ERROR "cannot use 3 \(untyped int constant\) as P value in assignment"
+	gp = 3
+	// ERROR "\(untyped string constant\) as \[3\]byte value in assignment"
+	a = "abc"
+	// ERROR "cannot use 3 \(untyped int constant\) as Row value in assignment"
+	gr = 3
+	// ERROR "cannot use 3 \(untyped int constant\) as func\(\) int value in assignment"
+	gw.f = 3
+	// ERROR "cannot use one\(\) \(value of type int\) as P value in variable declaration"
+	var v P = one()
+	// ERROR "cannot use 3 \(untyped int constant\) as func\(\) int value in struct literal"
+	w := W{f: 3}
+	// ERROR "cannot use 3 \(untyped int constant\) as func\(\) int value in argument to call"
+	_ = call(3)
+	// ERROR "cannot use f as int value in assignment: it is a function"
+	n = f
+	// ERROR "cannot use xs as int value in assignment: it is an array or a slice"
+	n = xs
+	// ERROR "cannot use gp as int value in assignment: it is a struct"
+	n = gp
+	// ERROR "cannot use ch as string value in assignment: it is a channel"
+	s = ch
+	// ERROR "cannot use &gp as bool value in assignment: it is a pointer"
+	b = &gp
+	// ERROR "cannot use f as int value in variable declaration: it is a function"
+	var m int = f
+	// ERROR "cannot use f as int value in assignment: it is a function"
+	gw.n = f
+	// ERROR "cannot use gp as int value in argument to take: it is a struct"
+	_ = take(gp)
+	// ERROR "cannot use f as int value in argument to sum: it is a function"
+	_ = sum(1, f)
+	_, _, _, _, _, _, _, _, _, _, _ = f, ch, a, xs, n, s, b, v, w, m, retf()
+	_ = rets()
+}

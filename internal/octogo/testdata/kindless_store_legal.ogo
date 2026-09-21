@@ -1,0 +1,51 @@
+// COMPILE
+
+// The controls of kindless_store.ogo: every store there, with a value of the
+// target's own type -- another function, a channel, a struct, an array, nil where it
+// is a value, and the numbers and strings that are read OUT of the shapes of no Kind.
+
+type P struct{ x int }
+
+type W struct {
+	n int
+	f func() int
+}
+
+func one() int { return 1 }
+
+func two() int { return 2 }
+
+func take(n int) int { return n }
+
+func call(g func() int) int { return g() }
+
+func give() P { return P{7} }
+
+func sum(xs ...int) int { return len(xs) }
+
+var gp P
+var gw W
+
+func main() {
+	f := one
+	f = two
+	f = nil
+	var ch chan int
+	ch = nil
+	var a [3]byte
+	a = [3]byte{1, 2, 3}
+	gp = give()
+	gw.f = two
+	w := W{f: one, n: 1}
+	xs := []int{1}
+	n := f()
+	n = xs[0]
+	n = gp.x
+	n = len(xs)
+	n = take(gp.x)
+	n = call(one)
+	gw.n = w.f()
+	n = sum(xs...)
+	n = sum(1, xs[0], gp.x)
+	println(n, a[0], gw.n, ch == nil)
+}

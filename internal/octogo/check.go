@@ -2463,7 +2463,12 @@ func (f *File) checkReturnValue(s *Scope, rt retResult, e Node) {
 		}
 		return
 	}
-	if k, ok := f.exprType(s, e); ok && !assignableKind(rt.kind, k) {
+	k, ok := f.exprType(s, e)
+	if !ok {
+		f.kindlessValueErr(s, e, rt.name, "return statement")
+		return
+	}
+	if !assignableKind(rt.kind, k) {
 		f.err(f.tok(e.Pos()).Position(), "cannot use %s of type %s as type %s in return statement", f.exprSource(e), kindName(k), rt.name)
 	}
 }
@@ -7352,6 +7357,7 @@ func (f *File) checkSentValue(s *Scope, chanTN TypeNode, elem Kind, hasElem bool
 		return
 	}
 	if !vok {
+		f.kindlessValueErr(s, valNode, orKindName(elemName.Src(), elem), "send")
 		return
 	}
 	if !assignableKind(elem, vk) {
@@ -8505,6 +8511,10 @@ func (f *File) checkLitValue(s *Scope, t litType, tn TypeNode, value Node, what 
 	}
 	ft := f.resultType(s, tn)
 	vk, ok := f.exprType(s, value)
+	if ft.known && !ok {
+		f.kindlessValueErr(s, value, ft.name, what)
+		return
+	}
 	if !ft.known || !ok {
 		return
 	}
@@ -11741,6 +11751,8 @@ func (f *File) checkAssignType(s *Scope, lhsTok Token, rhsNode Node, plainTarget
 			f.checkChanAssign(s, s, d.chanTypeNode(), rhsNode, "assignment")
 			if t, ok := f.varTypeAt(d); ok {
 				f.checkRefAssign(s, t.s, t.tn, rhsNode, "assignment")
+			} else {
+				f.kindIntoVar(s, d, rhsNode)
 			}
 			if tok, isNil := f.nilOperand(s, rhsNode); isNil {
 				if name, isVal := f.varIsValueComposite(s, d); isVal {
@@ -11765,16 +11777,20 @@ func (f *File) checkAssignType(s *Scope, lhsTok Token, rhsNode Node, plainTarget
 	}
 	lk, lok := f.identKind(s, lhsTok)
 	rk, rok := f.exprType(s, rhsNode)
+	// A defined type reads as itself, not as the type it is defined over, which is
+	// what its declaration's diagnostic says too.
+	name := kindName(lk)
+	if d, ok := s.find(lhsTok.Src()).(*VarDeclaration); ok && d.typeName.IsValid() {
+		name = d.typeName.Src()
+	}
+	if plainTarget && lok && !rok {
+		f.kindlessValueErr(s, rhsNode, name, "assignment")
+		return
+	}
 	if !lok || !rok {
 		return
 	}
 	if !assignableKind(lk, rk) {
-		// A defined type reads as itself, not as the type it is defined over, which
-		// is what its declaration's diagnostic says too.
-		name := kindName(lk)
-		if d, ok := s.find(lhsTok.Src()).(*VarDeclaration); ok && d.typeName.IsValid() {
-			name = d.typeName.Src()
-		}
 		f.err(f.tok(rhsNode.Pos()).Position(), "cannot use %s of type %s as type %s in assignment", f.exprSource(rhsNode), kindName(rk), name)
 		return
 	}
@@ -11800,13 +11816,17 @@ func (f *File) checkDeclType(s *Scope, kind Kind, hasKind bool, typeName Token, 
 	if !hasKind {
 		return
 	}
-	rk, rok := f.exprType(s, init)
-	if !rok || assignableKind(kind, rk) {
-		return
-	}
 	name := kindName(kind)
 	if typeName.IsValid() {
 		name = typeName.Src() // a named type reads as itself, not as its underlying
+	}
+	rk, rok := f.exprType(s, init)
+	if !rok {
+		f.kindlessValueErr(s, init, name, "variable declaration")
+		return
+	}
+	if assignableKind(kind, rk) {
+		return
 	}
 	f.err(f.tok(init.Pos()).Position(), "cannot use %s of type %s as type %s in variable declaration", f.exprSource(init), kindName(rk), name)
 }
@@ -11822,6 +11842,10 @@ func (f *File) checkFieldAssign(s *Scope, head, field Token, rhsNode Node) {
 	f.checkDefinedType(s, f.typeNodeString(f.fieldTypeNode(s, head, field), false), rhsNode, "assignment")
 	lk, lok := f.fieldKind(s, head, field)
 	rk, rok := f.exprType(s, rhsNode)
+	if lok && !rok {
+		f.kindlessValueErr(s, rhsNode, orKindName(f.fieldTypeName(s, head, field), lk), "assignment")
+		return
+	}
 	if !lok || !rok {
 		return
 	}
@@ -12108,6 +12132,7 @@ func (f *File) isArrayType(s *Scope, tn TypeNode) bool {
 func (f *File) checkElemAssignType(s *Scope, elem Kind, rhsNode Node) {
 	rk, rok := f.exprType(s, rhsNode)
 	if !rok {
+		f.kindlessValueErr(s, rhsNode, kindName(elem), "assignment")
 		return
 	}
 	if !assignableKind(elem, rk) {
@@ -13007,6 +13032,77 @@ func (f *File) checkChanAssign(s, wantScope *Scope, want TypeNode, value Node, w
 	f.err(f.tok(value.Pos()).Position(), "cannot use %s (%s of type %s) as %s value in %s", f.exprSource(value), mode, have, wantS, what)
 }
 
+// kindValueErr reports a value of a Kind -- a number, a string, a bool -- stored
+// where a function, a channel, a struct or an array is wanted; want names the
+// target's type and what the position. The checks that compare two types ask where
+// both are known, as a Kind or as a written type, and a Kind on one side and none on
+// the other fell between them: `f = 3` for a function, `var v P = one()` and
+// `W{f: 3}` went through to the C compiler.
+func (f *File) kindValueErr(s *Scope, value Node, want, what string) bool {
+	if want == "" {
+		return false
+	}
+	k, ok := f.exprType(s, value)
+	if !ok || kindCategory(k) == catUnknown {
+		return false
+	}
+	f.err(f.tok(value.Pos()).Position(), "cannot use %s (%s) as %s value in %s",
+		f.exprSource(value), f.convOperandDesc(s, value, k), want, what)
+	return true
+}
+
+// typeNodeMessage renders a type for a message: as typeNodeString does, and an array
+// by its folded length besides, which that leaves out for being an expression it
+// does not compare. What neither renders is named by what it is, "a struct".
+func (f *File) typeNodeMessage(s *Scope, tn TypeNode) string {
+	if str := f.typeNodeString(tn, false); str != "" {
+		return str
+	}
+	if a, ok := tn.(*TypeNodeArray); ok {
+		if n, ok := f.arrayTypeLen(typeAt{tn, s, f}, false); ok {
+			if elem := f.typeNodeMessage(s, a.TypeNode); !strings.HasPrefix(elem, "a ") && !strings.HasPrefix(elem, "an ") {
+				return fmt.Sprintf("[%d]%s", n, elem)
+			}
+		}
+	}
+	what, _ := f.nonBoolType(s, tn)
+	return what
+}
+
+// kindlessValueErr is the other half of that gap: a value of no Kind -- a function,
+// a channel, a slice, an array, a struct, an interface, a pointer -- stored where a
+// number, a string or a bool is wanted. `n = f`, `take(gp)` and `return xs` for an
+// int went through, the Kind comparison returning where the value had none. nil is
+// checkNilAssignable's.
+func (f *File) kindlessValueErr(s *Scope, value Node, want, what string) bool {
+	if f.isNilOperand(value) {
+		return false
+	}
+	w, known := f.nonBoolOperand(s, value)
+	if !known {
+		return false
+	}
+	f.err(f.tok(value.Pos()).Position(), "cannot use %s as %s value in %s: it is %s", f.exprSource(value), want, what, w)
+	return true
+}
+
+// kindIntoVar is kindValueErr for a variable whose type nothing wrote, `f := one`:
+// what it holds is read off its declaration.
+func (f *File) kindIntoVar(s *Scope, d *VarDeclaration, value Node) {
+	var want string
+	switch what, _ := f.nonBoolVar(s, d); what {
+	case "a function":
+		if d.funcSig != nil {
+			want = f.sigString(d.funcSig, false)
+		}
+	case "a channel":
+		want = f.typeNodeString(d.chanTypeNode(), false)
+	case "a struct":
+		want = d.declaredTypeName()
+	}
+	f.kindValueErr(s, value, want, "assignment")
+}
+
 // checkRefAssign reports a SLICE or a POINTER value used where one of another type
 // is wanted. Neither has a Kind, so none of the checks built on one ever asked, and
 // the C each became was left to decide: `var d []int = s` for a []string s, or
@@ -13026,6 +13122,11 @@ func (f *File) checkRefAssign(s, wantScope *Scope, want TypeNode, value Node, wh
 	wu, wantNamed := f.refTypeUnder(wantScope, want)
 	switch wu.(type) {
 	case *TypeNodeSlice, *TypeNodePointer:
+	case *FunctionType, *TypeNodeChan, *TypeNodeStruct, *TypeNodeArray:
+		if w := f.typeNodeMessage(wantScope, want); w != "" {
+			f.kindValueErr(s, value, f.qualifiedTypeName(wantScope, w), what)
+		}
+		return
 	default:
 		return
 	}
@@ -15906,6 +16007,16 @@ func (f *File) checkArgsIn(s, paramScope *Scope, name Token, sig *SignatureNode,
 	f.checkCallArgs(s, paramScope, name, name.Src(), sig, args)
 }
 
+// spreadArgs reports a call's arguments ending in a spread, `f(xs...)`: the last is
+// then the variadic parameter's slice itself rather than one of its elements.
+func (f *File) spreadArgs(args []Node) bool {
+	if len(args) == 0 {
+		return false
+	}
+	end := args[len(args)-1].End()
+	return end >= 0 && f.ch(end+1) == ELLIPSIS
+}
+
 // checkCallArgs is checkArgsIn with the callee spelled apart from the token that
 // places a message: a method expression is called `Point.Sum`, as Go says it, and
 // reported at the method's name.
@@ -15983,7 +16094,8 @@ func (f *File) checkCallArgs(s, paramScope *Scope, at Token, callee string, sig 
 		last := sig.Params.List[len(sig.Params.List)-1]
 		if sl, isSlice := last.TypeNode.(*TypeNodeSlice); isSlice {
 			elem := f.resultType(paramScope, sl.TypeNode)
-			for _, arg := range args[fixed:] {
+			spread := f.spreadArgs(args)
+			for i, arg := range args[fixed:] {
 				f.checkNilAssignable(s, elem, arg, "argument to "+callee)
 				// The checks a Kind cannot express run here, ahead of the
 				// known-Kind guard, exactly as they do for a fixed parameter
@@ -15998,6 +16110,9 @@ func (f *File) checkCallArgs(s, paramScope *Scope, at Token, callee string, sig 
 					continue
 				}
 				ak, aok := f.exprType(s, arg)
+				if !aok && !(spread && fixed+i == len(args)-1) && f.kindlessValueErr(s, arg, elem.name, "argument to "+callee) {
+					continue // a spread `xs...` is the slice itself, not an element
+				}
 				if aok && !assignableKind(elem.kind, ak) {
 					f.err(f.tok(arg.Pos()).Position(), "cannot use %s of type %s as type %s in argument to %s",
 						f.exprSource(arg), kindName(ak), elem.name, callee)
@@ -16030,6 +16145,9 @@ func (f *File) checkCallArgs(s, paramScope *Scope, at Token, callee string, sig 
 			}
 			f.checkNilAssignable(s, p, arg, "argument to "+callee)
 			ak, aok := f.exprType(s, arg)
+			if !aok && f.kindlessValueErr(s, arg, p.name, "argument to "+callee) {
+				continue
+			}
 			if aok && !assignableKind(p.kind, ak) {
 				f.err(f.tok(arg.Pos()).Position(), "cannot use %s of type %s as type %s in argument to %s", f.exprSource(arg), kindName(ak), p.name, callee)
 				continue
