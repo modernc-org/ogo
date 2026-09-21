@@ -31,10 +31,11 @@ shipped section tells a reader on that version that they have behaviour they do 
   is asked, in Go's words: between slices and arrays the element type is kept and an
   array converts to nothing but its own type -- `[]string(xs)` for an []int and
   `[]int(a)` for an array are refused -- and of the basic values only a string
-  converts, `[]byte(s)`, which is refused as the allocation it needs, bare or
-  parenthesised. `len` of a bracketed conversion and a reslice after one,
-  `len([3]int(s))` and `t := []int(s)[1:]`, are refused, as the parenthesised forms
-  were.
+  converts, `[]byte(s)`, which is refused as the allocation it needs. The
+  parenthesised spelling is asked all of it too; the emitter had refused most of
+  its mistakes as "cannot infer a type". `len` of a bracketed conversion and a
+  reslice after one, `len([3]int(s))` and `t := []int(s)[1:]`, are refused, as the
+  parenthesised forms were.
 
 ### Fixed
 
@@ -98,6 +99,24 @@ shipped section tells a reader on that version that they have behaviour they do 
   b compiled, and left a package variable pointing into a frame that was gone.
   Each is refused now, where the local is handed on. Measured with v0.42.0's
   compiler: all 24 programs of the probe built a binary without a word.
+- **A case of an expression switch is checked as the value it is.** A case was
+  folded to find a duplicate and asked for a Kind, and nothing else looked at it:
+  `case get(1, 2):`, `case f[0]:` for a function, `case one() + "a":`, `case T:` for
+  a type, and a case of no Kind against a tag of one -- `case one:` or `case nil:`
+  in a switch on an int -- all went through. Of thirteen such programs, `ogo build`
+  built three without a word, `case f[0]:`, `case nil:` and `case one:`, and two
+  with a warning. Each case gets every check a value gets anywhere, and is compared
+  with the tag as `tag == x` would be; a switch with an init statement and no tag,
+  `switch v := f(); {`, is on true, as a bare `switch {` is.
+- **A conversion takes one operand.** `T(1, 2)` and `T()`, `int(3, 4)` and
+  `float64()`, and `geo.T(1, 2)` for another package's type reached the C compiler
+  as a call of a function named after the type, which the target's compiler refused
+  about the generated C. Refused in Go's words, at Go's positions.
+- **A bracketed type is not a value.** `x := []int`, `take([3]int)`, `len([]int)`
+  and `return []int` reached the emitter, which refused each as whatever it met
+  first, "cannot infer a type" or "unsupported operand '['"; so did `[]func()(fs)`,
+  which Go reads as a type whose result is fs. Refused as a type name always was:
+  "cannot use type []int as a value".
 
 ## v0.42.0
 

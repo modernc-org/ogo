@@ -715,7 +715,21 @@ word): 60 binaries without a word, 20 with a warning, 87 refused by the backend 
 generated C. Still loud rather than checked: a string from a []byte or []rune (legal
 Go, refused by design as the allocation it needs), an inferred `xs == ys` of two
 slices ("an array or a slice" is not one category to the checker; the emitter refuses
-it in Go's words), and a value stored into an interface (by design).
+it in Go's words) and the same pair as a switch's tag and case (the target's compiler
+refuses it), and a value stored into an interface (by design).
+
+**A CASE WAS A POSITION NOTHING WALKED** (2026-09-21). The rules above cross
+operations with categories; they say nothing of a position no rule is ever asked in.
+A case of an expression switch was one: folded to find a duplicate, asked for a
+Kind, and walked by nothing else, so `case get(1, 2):`, `case f[0]:` and `case T:`
+went through, and `case one:` in a switch on an int built a binary in silence. A case
+is walked as a value now (checkCaseValues) and compared with its tag
+(checkCasesAgainstTag). The trap met on the way: the checker takes a type switch
+apart only when its operand is a bare NAME, so `switch v := xs[i].(type)` had been
+read as an expression switch whose cases nobody looked at -- walked, its types were
+refused as values, and only the run corpus showed it (typeSwitchShaped). So: **when
+a rule is written, ask which positions its walk never reaches**, and find them by
+writing mistakes INTO each position, not by reading the walk.
 
 **A TEMPORARY IS A COG REGISTER** (2026-09-20). flexcc gives every C local one
 (`local_N res 1` in COG_BSS) out of a pool the assembler checks with `fit 480`,
