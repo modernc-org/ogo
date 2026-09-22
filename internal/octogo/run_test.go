@@ -34694,6 +34694,74 @@ func main() {
 }
 `,
 		want: "2 3 6 4 4 8 24 9\n15 3 15 5\n85678\n",
+	}, {
+		// A parenthesised head read through fields and indexes -- `(&p).x`,
+		// `(get()).y`, `(arr[1:])[1]`, `(&arr)[k]` -- was read right where it stood
+		// and "cannot infer a type" as a declaration's value: the head's type was
+		// never asked. The calls run once each, in order.
+		name: "a declaration from a parenthesised head read through a chain",
+		src: `type P struct{ x, y int }
+
+var arr = [3]int{1, 2, 3}
+
+var p = P{1, 2}
+
+var ps = [2]P{{3, 4}, {5, 6}}
+
+var calls int
+
+func get() P {
+	calls++
+	return p
+}
+
+func getp() *P {
+	calls = calls*10 + 1
+	return &p
+}
+
+func main() {
+	k := 1
+	a := (&p).x
+	b := (get()).y
+	c := (arr[1:])[1]
+	d := (&arr)[k]
+	e := (&[3]int{4, 5, 6})[k]
+	f := (&ps)[k].y
+	g := (getp()).y
+	h := (*getp()).x
+	s := (arr[1:])[1:]
+	t := ("hello")[1:]
+	u := ("hello")[k]
+	println(a, b, c, d, e, f, g, h, len(s), s[0], t, u, calls)
+	(&p).x = 9
+	v := (&p).x
+	println(v)
+}
+`,
+		want: "1 2 3 2 5 6 2 1 1 3 ello 101 111\n9\n",
+	}, {
+		// The three lines TestEmitCUnclaimedSuffixNotTyped held until 2026-09-22:
+		// with no shape claiming `(&arr)[1:]`, its typing fell through to the
+		// operand it could find, `&arr`, and len answered the array's 4 from the
+		// type alone where Go says 3. parenChainType walks the slice step.
+		name: "len and cap of a slice of a parenthesised pointer to an array",
+		src: `type H struct {
+	a [4]int
+}
+
+var arr [4]int
+
+var h H
+
+func main() {
+	arr[0], h.a[0] = 1, 2
+	println(len((&arr)[1:]), cap((&arr)[1:3]), len((&h.a)[1:]), len((&arr)[1:3]), cap((&h.a)[2:]))
+	s := (&arr)[1:3]
+	println(len(s), cap(s), s[0])
+}
+`,
+		want: "3 3 3 2 2\n2 3 0\n",
 	}}
 
 // TestEmitCRun compiles emitted C with a host compiler and runs it, checking what

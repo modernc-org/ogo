@@ -21967,6 +21967,42 @@ func (e *emitter) emitParenChain(kids []Node) bool {
 	return ok
 }
 
+// parenChainType types what emitParenChain reads, a PARENTHESISED head read through
+// fields and indexes -- `(&p).x`, `(get()).x`, `(arr[1:])[1]`, `(&arr)[k]` -- the
+// way it walks it: the head's type, then the steps from there. Reading one worked;
+// a declaration from one had only the value's type to go by and was "cannot infer a
+// type".
+func (e *emitter) parenChainType(kids []Node) (string, bool) {
+	if len(kids) != 4 || kids[0].sym != 0 || e.f.ch(kids[0].tok) != LPAREN ||
+		kids[2].sym != 0 || e.f.ch(kids[2].tok) != RPAREN || kids[3].sym != FactorSuffix {
+		return "", false
+	}
+	steps := slices.Collect(it(kids[3].ast))
+	if len(steps) == 0 {
+		return "", false
+	}
+	for _, st := range steps {
+		if st.sym != Index && st.sym != Selector {
+			return "", false // a call: parenMethodResultType's
+		}
+	}
+	ct, ok := e.inferNode(kids[1])
+	if !ok || ct == "" {
+		ct, ok = e.inferCType(kids[1].ast) // a slice expression, as emitParenChain asks
+	}
+	if !ok || ct == "" {
+		return "", false
+	}
+	cur, ok := e.accessChainTypeAt(e.plainOrSlice(ct), steps, true)
+	if !ok || len(cur.dims) != 0 {
+		return "", false
+	}
+	if cur.slice {
+		return e.chainValueCType(cur)
+	}
+	return cur.ctype, cur.ctype != ""
+}
+
 // parenMethodResultType types `(expr).M(...)` as its last method's result, which
 // the emission alone knew: without it a `(&P{1, 2}).Sum()` took the type of the
 // ADDRESS it is called on, and an int result printed as a pointer.
@@ -36402,6 +36438,9 @@ func (e *emitter) inferNode(n Node) (string, bool) {
 			return ct, true
 		}
 		kids = e.unparenKids(kids)
+		if ct, ok := e.parenChainType(kids); ok {
+			return ct, true
+		}
 		if elem, _, ok := e.recvOperand(n, kids); ok {
 			return elem, true
 		}
