@@ -34654,6 +34654,46 @@ func main() {
 }
 `,
 		want: "105\n3 2 9 5 0 3 2\n42\n",
+	}, {
+		// The address of an array literal has the type of a pointer to the array it
+		// spells. An array literal has no C value type, so every position that had
+		// only the value to type it by -- a short declaration, `[...]` or a
+		// defined array type, a package variable written without a type, and a
+		// range over one -- was "cannot infer a type", or for the range "ranging an
+		// integer yields only the index".
+		name: "the address of an array literal is a pointer to its array",
+		src: `type P struct{ x, y int }
+
+type Row [3]int
+
+func (r *Row) Sum() int { return r[0] + r[1] + r[2] }
+
+func sum(p *[3]int) int { return p[0] + p[1] + p[2] }
+
+var gp = &[3]int{1, 2, 3}
+
+var gr = &Row{4, 5, 6}
+
+func main() {
+	k := 1
+	pa := &[3]int{1, 2, 3}
+	ps := &[2]P{{1, 2}, {3, 4}}
+	pe := &[...]int{5, 6, 7, 8}
+	pr := &Row{7, 8, 9}
+	println(pa[k], len(pa), sum(pa), ps[k].y, len(pe), pe[3], pr.Sum(), pr[2])
+	pa[0] = 10
+	println(sum(pa), gp[2], gr.Sum(), (&[3]int{4, 5, 6})[k])
+	s := 0
+	for i, v := range &[3]int{1, 2, 3} {
+		s += i * v
+	}
+	for _, v := range pe {
+		s = s*10 + v
+	}
+	println(s)
+}
+`,
+		want: "2 3 6 4 4 8 24 9\n15 3 15 5\n85678\n",
 	}}
 
 // TestEmitCRun compiles emitted C with a host compiler and runs it, checking what

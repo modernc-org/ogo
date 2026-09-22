@@ -12657,6 +12657,10 @@ var gx, gy int
 
 var gb, gb2 Box
 
+var garr, garr2 [2]int
+
+var gsl, gsl2 []int
+
 `
 	kinds := []struct {
 		name, typ    string
@@ -12680,6 +12684,10 @@ var gb, gb2 Box
 		{"converted address", "*int", "(*int)(&x)", "(*int)(&y)", "(*int)(&gx)", "(*int)(&gy)", false},
 		// What append hands back is its operand's backing while that has room.
 		{"append", "[]int", "append(a[:0], x)", "append(a2[:0], y)", "append(back[:0], x)", "append(back2[:0], y)", false},
+		// The address of an array or a slice literal, spelt with its bracketed type: a
+		// compound literal of the block, and a header beside a backing array.
+		{"array literal's address", "*[2]int", "&[2]int{x, x}", "&[2]int{y, y}", "&garr", "&garr2", false},
+		{"slice literal's address", "*[]int", "&[]int{x}", "&[]int{y}", "&gsl", "&gsl2", false},
 	}
 	forms := []struct {
 		name, body string

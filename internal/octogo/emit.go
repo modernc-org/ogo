@@ -36466,6 +36466,16 @@ func (e *emitter) inferNode(n Node) (string, bool) {
 					if a, isArr := e.arrayOperandOf(kids[len(kids)-1]); isArr {
 						return e.arrayTypedef(a) + "*", true
 					}
+					// `&[3]int{...}`, `&[...]T{...}` and `&Row{...}`: a pointer to the
+					// array the literal spells. An array literal has no C value type
+					// for the fallback below to add a level to, so `pa :=
+					// &[3]int{1, 2, 3}` was "cannot infer a type", as a package
+					// variable given one without a type written was.
+					if litType, _, isLit := e.factorArrayLit(kids[len(kids)-1]); isLit {
+						if ct, isArr := e.arrayElemTypedef(litType); isArr {
+							return ct + "*", true
+						}
+					}
 					if t, ok := e.inferNode(kids[len(kids)-1]); ok {
 						return t + "*", true
 					}
