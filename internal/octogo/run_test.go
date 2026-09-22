@@ -34989,6 +34989,46 @@ func main() {
 }
 `,
 		want: "10 8 3 11 5 6\n12 12\n15 6\n15 5 2 9\ndeferred 5\n",
+	}, {
+		// A nil SLICE member of a literal was emitted as `0`, which stands for the
+		// header's first member: the target's compiler refused the literal outright
+		// ("Expected multiple values"), so `H{1, nil}` for a `vs []int` did not
+		// build -- in a package variable, a local, an argument or an assignment --
+		// and gcc took it with a missing-braces warning, which the run tests fail
+		// on. It is the zero header now, `{0}`, as an interface member's nil was.
+		name: "a nil slice member of a literal",
+		src: `type L []int
+
+type H struct {
+	n  int
+	vs []int
+	ls L
+	ch chan int
+	p  *H
+}
+
+var gh = H{1, nil, nil, nil, nil}
+
+var rows = [][]int{nil, {1, 2}, nil}
+
+var hs = []H{{2, nil, nil, nil, nil}, {3, []int{9}, nil, nil, nil}}
+
+func take(h H) int { return h.n + len(h.vs) }
+
+func main() {
+	lh := H{4, nil, nil, nil, nil}
+	println(gh.n, len(gh.vs), len(gh.ls), gh.ch == nil, gh.p == nil)
+	println(lh.n, len(lh.vs), take(H{5, nil, nil, nil, nil}))
+	println(len(rows[0]), len(rows[1]), rows[1][1], len(rows[2]))
+	println(hs[0].n, len(hs[0].vs), hs[1].n, hs[1].vs[0])
+	var q H
+	q = H{7, nil, nil, nil, nil}
+	println(q.n, len(q.vs))
+	var arr [2][]int
+	println(len(arr[0]))
+}
+`,
+		want: "1 0 0 true true\n4 0 5\n0 2 2 0\n2 0 3 9\n7 0\n0\n",
 	}}
 
 // TestEmitCRun compiles emitted C with a host compiler and runs it, checking what

@@ -16480,6 +16480,18 @@ func (e *emitter) emitLitElement(v Node, expect structField, brace bool) {
 		e.emit(text)
 		return
 	}
+	// A nil SLICE member is the zero HEADER, which is a struct in C: `0` there
+	// stands for its first member, and the target's compiler refuses the literal
+	// outright -- "Expected multiple values" -- so `H{1, nil}` for a `vs []int`
+	// did not build at all, in a package variable, a local, an argument and an
+	// assignment alike. gcc took it with a missing-braces warning, which the run
+	// tests fail on, so no case could hold one either. An interface member's nil is
+	// braced by ifaceBraceC above; a pointer's, a channel's and a function's is a
+	// pointer, which `0` is.
+	if e.isNilExpr(v.ast) && e.isSliceCType(e.underlyingCType(expectType)) {
+		e.emit(e.zeroBraceC(expectType))
+		return
+	}
 	// An element of a struct type that holds an array is assigned by value into the
 	// literal's storage, which is the same copy the backend cannot make: it reported
 	// "incompatible types" rather than anything a reader could act on. A whole
