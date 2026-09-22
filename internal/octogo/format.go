@@ -275,11 +275,13 @@ func needsSpace(prevPrev, prev, curr Symbol, c formatterCtx) bool {
 	// "..." binds tight to the type it introduces in a parameter, "xs ...int", and
 	// tight to the slice it follows in a call, "sum(xs...)". gofmt writes both that
 	// way. Its one other place is an array literal's length, "[...]int{1, 2}", where
-	// it sits between brackets and is tight on both sides by the same two rules.
+	// it sits between brackets and is tight on both sides by the same two rules. An
+	// UNNAMED variadic parameter opening its list binds to the parenthesis too,
+	// "func(...int)": spaced off the name before it, not off a "(".
 	case prev == ELLIPSIS:
 		return false
 	case curr == ELLIPSIS:
-		return c.inParamDecl
+		return c.inParamDecl && prev != LPAREN
 	// A channel type's direction binds to its keyword, as gofmt writes it: "chan<-
 	// int" and "<-chan int". An arrow right after "chan" is the send-only marker,
 	// save after the "chan" of a "<-chan", whose element may be receive-only in
