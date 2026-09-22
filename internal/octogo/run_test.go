@@ -34568,6 +34568,54 @@ func main() {
 }
 `,
 		want: "4 8 18\n7\n8\n20\n",
+	}, {
+		// `(*ps)[i](x)` for a pointer to a SLICE was emitted as `ps[i](x)`, which
+		// Go allows only through a pointer to an array: the statement came out as
+		// `;`, the call gone, and the value as an empty operand. The slice ps
+		// points at is bound and the call made on it, a method on an element
+		// included, and the call is an effect that orders the print's arguments.
+		name: "a call through a dereferenced slice",
+		src: `func dbl(n int) int { return n * 2 }
+
+func show(n int) { println(n) }
+
+type P struct{ n int }
+
+func (p *P) Inc() int { p.n++; return p.n }
+
+var done chan int
+
+var gss = []func(int){show}
+
+func runit(p *[]func(int)) {
+	(*p)[0](9)
+	done <- 1
+}
+
+func main() {
+	k := 1
+	fs := []func(int) int{dbl, dbl}
+	ps := &fs
+	println((*ps)[k](5))
+	a := (*ps)[k](6)
+	println(a)
+	ss := []func(int){show}
+	pss := &ss
+	(*pss)[0](7)
+	xs := []int{1, 2}
+	px := &xs
+	b := (*px)[k]
+	println(b, (*px)[0])
+	pts := []P{{1}, {2}}
+	pp := &pts
+	println((*pp)[k].Inc(), pts[1].n)
+	(*pp)[0].Inc()
+	println(pts[0].n)
+	go runit(&gss)
+	<-done
+}
+`,
+		want: "10\n12\n7\n2 1\n3 3\n2\n9\n",
 	}}
 
 // TestEmitCRun compiles emitted C with a host compiler and runs it, checking what

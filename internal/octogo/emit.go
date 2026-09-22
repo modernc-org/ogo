@@ -15370,6 +15370,13 @@ func (e *emitter) nodeHasEffect(n Node) bool {
 		if _, _, isParenCall := e.parenMethodSteps(slices.Collect(it(n.ast))); isParenCall {
 			return true
 		}
+		// A call through a written-out DEREFERENCE, `(*ps)[i].Inc()` and `(*pf)(x)`,
+		// likewise: parenMethodSteps wants a method right after the parenthesis, and
+		// without this `println((*ps)[1].Inc(), xs[1].n)` read the field before the
+		// call on the host.
+		if _, steps, isDeref := e.factorDerefChain(slices.Collect(it(n.ast))); isDeref && derefCallSteps(steps) {
+			return true
+		}
 	}
 	return e.exprHasEffect(n.ast) // an argument or an operand may still have one
 }
@@ -22083,6 +22090,75 @@ func (e *emitter) bindDerefFunc(name, fct string) string {
 // shorthand rather than through the chain walkers, which model no call step.
 func derefCallSteps(steps []Node) bool { return containsSym(steps, CallSuffix) }
 
+// derefShorthand reports whether `(*p)` followed by steps means p followed by them,
+// which is what lets a call through a dereference be emitted as the shorthand. A
+// selector dereferences a pointer to a struct, and an index a pointer to an array,
+// as Go defines both. An index of what a pointer to a SLICE points at does not:
+// `(*ps)[i](x)` calls an element, and emitted as `ps[i](x)` it named nothing the
+// call paths could reach -- the statement came out as `;` and the value as an
+// empty operand, so the call was dropped in silence.
+func (e *emitter) derefShorthand(name string, steps []Node) bool {
+	if len(steps) != 0 && steps[0].sym == Selector {
+		return true
+	}
+	_, isArrPtr := e.arrayPtrVar(name)
+	return isArrPtr
+}
+
+// bindDeref binds what the pointer name points at -- nil-checked, as every
+// dereference is -- to a temporary registered as a local of its type, so that the
+// steps after a `(*p)` that is no shorthand (derefShorthand) apply to a name. What
+// it binds is a slice's header or a pointer, never an array or a struct, which are
+// shorthands: the copy shares what a step reaches, so a call or a store through an
+// element reaches the program's storage.
+func (e *emitter) bindDeref(name string) string {
+	ct, _ := e.varType(name)
+	pt := e.elemType(ct)
+	tmp := e.hoist(pt, func() { e.emit("(*" + e.nilCheckedC(e.varRef(name), ct) + ")") })
+	e.locals[tmp] = pt
+	if u := e.underlyingCType(pt); e.isSliceCType(u) {
+		e.sliceVars[tmp] = sliceElemFromCName(u)
+	}
+	return tmp
+}
+
+// derefCallResultCType types a call through a dereference that is no shorthand,
+// `(*ps)[i](x)`, as the same call on a name holding the pointee, without binding
+// one: the name is registered for the question and the entries it displaced are
+// put back.
+func (e *emitter) derefCallResultCType(name string, steps []Node) (string, bool) {
+	ct, _ := e.varType(name)
+	pt := e.elemType(ct)
+	const tmp = "_ogo_deref"
+	oldLocal, hadLocal := e.locals[tmp]
+	oldSlice, hadSlice := e.sliceVars[tmp]
+	defer func() {
+		delete(e.locals, tmp)
+		delete(e.sliceVars, tmp)
+		if hadLocal {
+			e.locals[tmp] = oldLocal
+		}
+		if hadSlice {
+			e.sliceVars[tmp] = oldSlice
+		}
+	}()
+	e.locals[tmp] = pt
+	if u := e.underlyingCType(pt); e.isSliceCType(u) {
+		e.sliceVars[tmp] = sliceElemFromCName(u)
+	}
+	return e.callResultCType(tmp, steps)
+}
+
+// callOrFail refuses a call the call paths declined, where nothing else will be
+// tried: a false from them may come with nothing emitted and nothing latched, and
+// the statement was then `;` and the value an empty operand -- a call dropped in
+// silence, as `(*ps)[i](x)` was.
+func (e *emitter) callOrFail(ok bool) {
+	if !ok {
+		e.fail("this form of call is not supported yet")
+	}
+}
+
 // derefBase resolves `(*p)` as the start of a chain: the C text naming what p
 // points at, and the value reached there.
 //
@@ -27060,12 +27136,15 @@ func (e *emitter) emitCall(head Node, postfix []Node) {
 			if fct, isCall := e.derefFuncCall(name, postfix); isCall {
 				fn := e.bindDerefFunc(name, fct)
 				e.ind()
-				e.emitCallStmtExpr(fn, postfix)
+				e.callOrFail(e.emitCallStmtExpr(fn, postfix))
 				e.emit(";\n")
 				return
 			}
+			if !e.derefShorthand(name, postfix) {
+				name = e.bindDeref(name) // `(*ps)[i](x)`
+			}
 			e.ind()
-			e.emitCallStmtExpr(name, postfix)
+			e.callOrFail(e.emitCallStmtExpr(name, postfix))
 			e.emit(";\n")
 			return
 		}
@@ -27073,7 +27152,7 @@ func (e *emitter) emitCall(head Node, postfix []Node) {
 		// receiver is declared -- the mirror of the dereference above -- and `(v).m()`.
 		if name, ok := e.parenRecvHead(head, postfix); ok {
 			e.ind()
-			e.emitCallStmtExpr(name, postfix)
+			e.callOrFail(e.emitCallStmtExpr(name, postfix))
 			e.emit(";\n")
 			return
 		}
@@ -27082,7 +27161,7 @@ func (e *emitter) emitCall(head Node, postfix []Node) {
 		if pc, ok := e.ptrConvHead(head, postfix); ok && len(pc.rest) != 0 {
 			tmp := e.bindPtrConv(pc)
 			e.ind()
-			e.emitCallStmtExpr(tmp, pc.rest)
+			e.callOrFail(e.emitCallStmtExpr(tmp, pc.rest))
 			e.emit(";\n")
 			return
 		}
@@ -27105,7 +27184,7 @@ func (e *emitter) emitCall(head Node, postfix []Node) {
 			return
 		}
 		e.ind()
-		e.emitCallStmtExpr(name, rest)
+		e.callOrFail(e.emitCallStmtExpr(name, rest))
 		e.emit(";\n")
 		return
 	}
@@ -36628,6 +36707,9 @@ func (e *emitter) inferNode(n Node) (string, bool) {
 					return "", false
 				}
 				if derefCallSteps(steps) {
+					if !e.derefShorthand(name, steps) {
+						return e.derefCallResultCType(name, steps)
+					}
 					return e.callResultCType(name, steps)
 				}
 				_, cur, ok := e.derefBase(name)
@@ -38385,7 +38467,7 @@ func (e *emitter) emitExprNode(n Node) {
 					return
 				}
 				if containsSym(rest, CallSuffix) {
-					e.emitCallExpr(name, rest)
+					e.callOrFail(e.emitCallExpr(name, rest))
 					return
 				}
 				if _, ok := e.emitAccessChain(name, rest); ok {
@@ -38618,7 +38700,7 @@ func (e *emitter) emitExprNode(n Node) {
 			// `(&v).m()` -- the written-out address form of a method call, which is
 			// what `v.m()` means either way its receiver is declared.
 			if name, steps, ok := e.factorAddrCall(kids); ok {
-				e.emitCallExpr(name, steps)
+				e.callOrFail(e.emitCallExpr(name, steps))
 				return
 			}
 			// `(*p).x` / `(*p)[i]` -- a written-out dereference carrying a suffix.
@@ -38629,11 +38711,14 @@ func (e *emitter) emitExprNode(n Node) {
 				// neither C compiler takes. The value is bound first and called as a
 				// variable of its type is, as a function-typed element is.
 				if fct, isCall := e.derefFuncCall(name, steps); isCall {
-					e.emitCallExpr(e.bindDerefFunc(name, fct), steps)
+					e.callOrFail(e.emitCallExpr(e.bindDerefFunc(name, fct), steps))
 					return
 				}
 				if derefCallSteps(steps) {
-					e.emitCallExpr(name, steps)
+					if !e.derefShorthand(name, steps) {
+						name = e.bindDeref(name) // `(*ps)[i](x)`
+					}
+					e.callOrFail(e.emitCallExpr(name, steps))
 					return
 				}
 				if text, cur, ok := e.derefBase(name); ok {
