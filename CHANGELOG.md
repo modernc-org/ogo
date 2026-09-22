@@ -41,8 +41,29 @@ shipped section tells a reader on that version that they have behaviour they do 
   for an `mk` returning L, `defer l[1:].Show()`, `append(l, 4)`'s result, and `t :=
   s[1:]` of a `type S string` were each refused, where Go types all of them L or S.
   A field of a defined slice type could not be sliced at all, `h.xs[1:]`.
+- **A call through a function value takes what a call of a declared function
+  takes.** A concrete value handed to an interface parameter, `f(&d)` for a `f
+  func(Reader)`; nil handed to a slice parameter; and a multi-result call forwarded
+  as the arguments, `f(two())`. Each was refused about the generated C wherever the
+  value was not one the compiler could bind to a declared function: a literal, a
+  function-typed parameter, a package variable, a table's slot, a field set on two
+  paths, a call's result.
 
 ### Fixed
+
+- **A variadic call through a function value read its arguments as the slice.**
+  `f(1, 2, 3)` for a `f := func(xs ...int) int { return len(xs) }` printed 2 on the
+  board, where Go prints 3: the three ints went where the slice header goes, which
+  is three words. With another count the call was refused.
+- **A function passed to a call through a function value arrived as garbage on the
+  board.** The target's C compiler hands the callee garbage for a function NAME
+  passed to a call made through a function pointer -- `apply(dbl)` for a literal
+  `apply` printed 3160 for 6, or never returned -- where gcc is right, so only the
+  board showed it. A callback taken by a literal, an interface's method or a value
+  in a field or a table was each affected, with a declared function, a literal or a
+  method value as the argument. The function is bound to a temporary first, which
+  the target passes right; `doc/funcptr-arg-to-indirect-call.c` reproduces it in
+  plain C.
 
 - **`%T` of a slice of a defined type printed the type it is defined over.**
   `printf("%T", l[1:])` for a `type L []int` printed `[]int`, of `append(l, 4)` the

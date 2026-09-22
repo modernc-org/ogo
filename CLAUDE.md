@@ -558,8 +558,13 @@ reached the second machine without it; it lives under `scripts/` for that reason
   status 1 when the compiler FAULTED on any. `DUMPC=` takes an older commit's dumpc,
   which is how a sweep's finds are counted after its fixes are in.
 - `scripts/capped.sh [-t SECS] [-m KB] CMD...` -- a memory cap and a SIGKILL timeout
-  around one command. probe.sh, stmtprobe.sh and rejects.sh run the compiler through
-  it; an ad-hoc loop over probe programs must too.
+  around one command. probe.sh, stmtprobe.sh, rejects.sh and dumpcorpus.sh run the
+  compiler through it; an ad-hoc loop over probe programs must too. dumpcorpus.sh did
+  not until 2026-09-22 -- sixteen uncapped compiles at a time, and a crashed one
+  deleted like a refused one -- and was the command running when the machine was
+  next exhausted; rerun capped afterwards it measured small (~20 MB a seed, 880 MB
+  for a fresh compile of the test binary) and found no fault, so the cause was never
+  shown to be it. A seed that FAULTS leaves smithNNNN.fault now.
 - `scripts/flexcc` + `scripts/cccorpus.sh [-I INC] [-k KEEP] FLEXCC OUT DIR...` --
   the tree's in-process backend as a command, and every C file of some directories
   compiled by ONE flexcc into sorted `NAME RC SHA` lines; `LC_ALL=C join` two lists
@@ -748,6 +753,22 @@ expressions, defer and go arguments, every for and if and switch clause, sends,
 index stores, compound assignments, closures, return lists, package initializers --
 it was the checker's in every one but a literal's KEY, which the emitter refuses as a
 non-constant index, as Go does too. The case had been the only hole.
+
+**A FUNCTION VALUE'S CALL IS A ROW** (2026-09-22). A call through a function value
+asked its parameters of a DECLARED callee's tables, which a value names only where
+the summaries bind it to one -- so an interface argument went unwrapped, nil to a
+slice unconverted, a forwarded multi-result call was miscounted, and a VARIADIC
+value's arguments went out unpacked: `f(1, 2, 3)` printed 2 on the board, three ints
+read as a slice header. Every call through a value now hands its type's parameters
+and its typedef to the arguments (`valueArgsCText`, `callFuncType`), and a variadic
+function type is a typedef of its own. The same sweep found a BACKEND fault: a
+function NAME passed to a call through a function pointer reaches the callee as
+garbage on the P2 (`doc/funcptr-arg-to-indirect-call.c`), worked around by binding
+it first (`indirectFuncArg`). Sweep a new call shape through every place a function
+value lives -- a variable bound once and twice, a literal, a parameter, a package
+variable, a table's slot, a field, a call's result, deferred and on a cog -- and RUN
+it on the board: the host was right about every one of these. Still refused: a
+deferred or goroutine call of a variadic function, declared or a value.
 
 **A TEMPORARY IS A COG REGISTER** (2026-09-20). flexcc gives every C local one
 (`local_N res 1` in COG_BSS) out of a pool the assembler checks with `fit 480`,
