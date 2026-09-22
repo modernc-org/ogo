@@ -34125,6 +34125,26 @@ func (e *emitter) variadicPack(cname string) (elem string, at int) {
 	return sliceElemFromCName(sliceParams[i]), i
 }
 
+// indirectFuncArg binds an argument of function type, handed to a call made
+// through a function value or an interface slot, to a temporary of the parameter's
+// type pt -- unless it already is a variable, or does something when evaluated,
+// which a hoist would move ahead of the callee. The target's compiler hands the
+// callee garbage for a function DESIGNATOR passed to an indirect call, where the
+// same function in a variable arrives right: `apply(sum)` returned another
+// literal's result, and `apply(dbl)` 3160 for 6, on a P2-EDGE. See
+// doc/funcptr-arg-to-indirect-call.c.
+func (e *emitter) indirectFuncArg(pt string, arg Node) (string, bool) {
+	if name, isName := e.exprIdent(arg.ast); isName {
+		if _, isVar := e.varType(name); isVar {
+			return "", false
+		}
+	}
+	if e.isNilExpr(arg.ast) || e.exprHasEffect(arg.ast) {
+		return "", false
+	}
+	return e.hoist(pt, func() { e.emitExpr(arg.ast) }), true
+}
+
 // spreadCall reports whether a call wrote "f(xs...)", handing an existing slice to
 // a variadic parameter rather than values to pack.
 func (e *emitter) spreadCall(callSuffix []int32) bool {
@@ -34611,6 +34631,8 @@ func (e *emitter) emitCallArgs(cname string, callSuffix []int32) {
 	// set for this call. Taken here so they do not reach a call nested inside an
 	// argument, which has parameters of its own.
 	params := e.funcParams[cname]
+	// A call through a function VALUE or an interface slot: what sets callParams.
+	indirect := e.callParams != nil
 	if e.callParams != nil {
 		params, e.callParams = e.callParams, nil
 	}
@@ -34753,6 +34775,14 @@ func (e *emitter) emitCallArgs(cname string, callSuffix []int32) {
 		if i < len(params) && e.isIfaceCType(params[i]) && e.deferReplay < 0 {
 			if text, ok := e.ifaceValueC(params[i], arg.ast); ok {
 				e.emit(text)
+				continue
+			}
+		}
+		// A FUNCTION named as the argument of an indirect call is bound to a
+		// temporary first (indirectFuncArg).
+		if indirect && i < len(params) && e.isFuncCType(params[i]) && e.deferReplay < 0 {
+			if name, ok := e.indirectFuncArg(params[i], arg); ok {
+				e.emit(name)
 				continue
 			}
 		}

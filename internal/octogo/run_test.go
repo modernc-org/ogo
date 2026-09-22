@@ -34188,6 +34188,41 @@ func main() {
 }
 `,
 		want: "12 true 20 5 2 4 1\n20 20 8 20 20 8\n4\ndeferred 6\n",
+	}, {
+		// A FUNCTION handed to a call made through a function value or an
+		// interface slot: a declared function, a literal and a method value, to a
+		// literal and to an interface's method, and deferred. The target's
+		// compiler handed the callee garbage for a function name passed to an
+		// indirect call -- this printed garbage on a P2-EDGE while the host was
+		// right -- so the emitter binds it to a temporary first. See
+		// doc/funcptr-arg-to-indirect-call.c.
+		name: "a function handed to an indirect call",
+		src: `type C struct{ k int }
+
+func (c *C) Mul(n int) int { return n * c.k }
+
+type Each interface{ Do(f func(int) int) int }
+
+type Runner struct{ base int }
+
+func (r *Runner) Do(f func(int) int) int { return f(r.base) }
+
+func dbl(n int) int { return n * 2 }
+
+var c = C{3}
+
+var rn = Runner{7}
+
+func main() {
+	apply := func(g func(int) int) int { return g(5) }
+	var e Each = &rn
+	show := func(g func(int) int) { println("deferred", g(1)) }
+	defer show(dbl)
+	println(apply(dbl), apply(func(n int) int { return n + 1 }), apply(c.Mul))
+	println(e.Do(dbl), e.Do(c.Mul), e.Do(func(n int) int { return -n }))
+}
+`,
+		want: "10 6 15\n14 21 -7\ndeferred 2\n",
 	}}
 
 // TestEmitCRun compiles emitted C with a host compiler and runs it, checking what
