@@ -7044,6 +7044,21 @@ func (e *emitter) addrOfCompositeLit(ast []int32) (ctype string, lit Node, ok bo
 	return e.factorCompositeLit(slices.Collect(it(fac.ast)))
 }
 
+// addrOfArrayLit reports whether an expression is the address of an array or a
+// slice literal written with its bracketed type, `&[3]int{...}`, `&[...]T{...}` or
+// `&[]T{...}` -- the spelling addrOfCompositeLit, which reads a type NAME, does not.
+func (e *emitter) addrOfArrayLit(ast []int32) bool {
+	kids, isUnary := e.unaryExprKids(ast)
+	if !isUnary || len(kids) != 2 || kids[0].sym != UnaryOp || kids[1].sym != Factor {
+		return false
+	}
+	if tok, ok := e.unaryOpTok(kids[0].ast); !ok || e.f.ch(tok) != AND {
+		return false
+	}
+	_, _, ok := e.factorArrayLit(kids[1])
+	return ok
+}
+
 // ifaceValueC renders a concrete value as an interface value, for the positions
 // that need one expression rather than two statements: an argument, and a return.
 // An operand that is already of the interface type is itself.
@@ -39930,6 +39945,14 @@ func (e *emitter) frameRefOf(ast []int32) (frameRef, bool) {
 	// `&T{...}`, the same by another spelling: a struct literal given a frame
 	// temporary to be the address of.
 	if _, _, isAddrLit := e.addrOfCompositeLit(ast); isAddrLit {
+		return addrLitRef(), true
+	}
+	// And `&[3]int{...}` and `&[]int{...}`, the bracketed spelling, which
+	// addrOfCompositeLit does not read: the array is a compound literal of the
+	// block, the slice's header a temporary beside its backing array. Unasked, `return
+	// &[3]int{7, 8, 9}` handed out the address of a dead frame, and so did a package
+	// variable given one, while the struct form was refused.
+	if e.addrOfArrayLit(ast) {
 		return addrLitRef(), true
 	}
 	// `string(r)` for a RUN-TIME rune: the emitter mints four bytes beside the

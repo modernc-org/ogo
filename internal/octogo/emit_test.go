@@ -15446,6 +15446,93 @@ func main() {
 `,
 		},
 		{
+			// The same by the BRACKETED spelling, `&[3]int{...}` and `&[]int{...}`, which
+			// the recognition read by a type NAME did not see: every one of these was a
+			// dangling pointer in silence -- the array a compound literal of the block,
+			// the slice's header a temporary beside its backing array.
+			name: "the address of an array literal, returned",
+			src: `func mk() *[3]int { return &[3]int{7, 8, 9} }
+
+func main() { println(mk()[1]) }
+`,
+			want: "cannot return the address of a composite literal",
+		},
+		{
+			name: "the address of a slice literal, returned",
+			src: `func mk() *[]int { return &[]int{7, 8} }
+
+func main() { println(len(*mk())) }
+`,
+			want: "cannot return the address of a composite literal",
+		},
+		{
+			name: "the address of an array literal, stored in a package variable",
+			src: `var ga *[3]int
+
+func set() { ga = &[3]int{5, 6, 7} }
+
+func main() {
+	set()
+	println(ga[1])
+}
+`,
+			want: "cannot store the address of a composite literal",
+		},
+		{
+			name: "the address of an array literal, stored past its block",
+			src: `func main() {
+	var a *[3]int
+	for i := 0; i < 2; i++ {
+		a = &[3]int{i, i, i}
+	}
+	println(a[2])
+}
+`,
+			want: "cannot store the address of a composite literal",
+		},
+		{
+			name: "the address of an array literal, sent",
+			src: `var ch chan *[3]int
+
+func main() {
+	ch <- &[3]int{1, 2, 3}
+}
+`,
+			want: "cannot send the address of a composite literal",
+		},
+		{
+			name: "the address of an array literal, to a storing function",
+			src: `var g *[3]int
+
+func keep(p *[3]int) { g = p }
+
+func main() {
+	keep(&[...]int{1, 2, 3})
+	println(g[0])
+}
+`,
+			want: "cannot pass the address of a composite literal",
+		},
+		{
+			name: "the address of an array and a slice literal, used in the frame",
+			src: `type H struct{ p *[2]int }
+
+func show(p *[2]int) { println(p[0], p[1]) }
+
+func slen(p *[]int) int { return len(*p) }
+
+func main() {
+	h := H{&[2]int{1, 2}}
+	show(h.p)
+	var q *[2]int
+	q = &[2]int{3, 4}
+	show(q)
+	show(&[2]int{5, 6})
+	println(slen(&[]int{7, 8, 9}))
+}
+`,
+		},
+		{
 			// And a local's address reaching an interface that stays in the frame, which is
 			// the ordinary use and must not be refused.
 			name: "a holder's pointer field used in the same frame",
