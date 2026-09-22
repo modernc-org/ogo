@@ -34892,6 +34892,55 @@ again:
 }
 `,
 		want: "244\n431\n123\n12 3\n224\n",
+	}, {
+		// A labeled select is a break target, as Go has it: `break sel` from a
+		// loop or a switch inside one of its clauses leaves the select. It was
+		// refused, "invalid break label sel: not a for or switch".
+		name: "a break out of a labeled select",
+		src: `var ch chan int
+
+var done chan int
+
+func feed(n int) {
+	for i := 1; i <= n; i++ {
+		ch <- i
+	}
+}
+
+func main() {
+	go feed(4)
+	s := 0
+	for round := 0; round < 4; round++ {
+	sel:
+		select {
+		case v := <-ch:
+			for k := 0; k < 10; k++ {
+				if k == v {
+					break sel
+				}
+				s += k
+			}
+			s += 1000
+		}
+		s += 100
+	}
+	println(s)
+	go feed(1)
+	t := 0
+wait:
+	select {
+	case v := <-ch:
+		switch v {
+		case 1:
+			t = 7
+			break wait
+		}
+		t = 9
+	}
+	println(t)
+}
+`,
+		want: "410\n7\n",
 	}}
 
 // TestEmitCRun compiles emitted C with a host compiler and runs it, checking what

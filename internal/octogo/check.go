@@ -1700,14 +1700,15 @@ func (f *File) checkBlock(s *Scope, results []retResult, n Node) {
 }
 
 // labelKind classifies what an enclosing labeled statement labels, which is what
-// a labeled break or continue may name: only a "for" (break and continue) or a
-// "switch" (break) is a valid target.
+// a labeled break or continue may name: only a "for" (break and continue), a
+// "switch" or a "select" (break) is a valid target.
 type labelKind int
 
 const (
 	labelOther  labelKind = iota // a label on anything else -- valid to write, but not a break/continue target
 	labelLoop                    // a label on a "for"
 	labelSwitch                  // a label on a "switch"
+	labelSelect                  // a label on a "select"
 )
 
 // labelFrame is one enclosing labeled statement, as seen from a break/continue
@@ -1761,6 +1762,8 @@ func (f *File) labelKindOf(inner Node) labelKind {
 			return labelLoop
 		case c.sym == SwitchStmt:
 			return labelSwitch
+		case c.sym == SelectStmt:
+			return labelSelect
 		}
 	}
 	return labelOther
@@ -1902,8 +1905,10 @@ func (f *File) checkBreak(breakTok Token, label Token, hasLabel bool) {
 	switch {
 	case !ok:
 		f.err(label.Position(), "break label not defined: %s", label.Src())
-	case fr.kind != labelLoop && fr.kind != labelSwitch:
-		f.err(label.Position(), "invalid break label %s: not a for or switch", label.Src())
+	case fr.kind != labelLoop && fr.kind != labelSwitch && fr.kind != labelSelect:
+		// A select is a break target as Go has it: `sel: select { case <-ch: for {
+		// break sel } }` leaves the select from inside the loop, and was refused.
+		f.err(label.Position(), "invalid break label %s", label.Src())
 	}
 }
 

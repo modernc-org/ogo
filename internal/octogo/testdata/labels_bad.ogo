@@ -1,5 +1,5 @@
 // A break or continue that names a label must resolve it to an enclosing statement
-// of the right kind: break to a for or switch, continue to a for.
+// of the right kind: break to a for, a switch or a select, continue to a for.
 
 func undefinedBreak() {
 	for i := 0; i < 3; i++ {
@@ -31,6 +31,27 @@ dup:
 	dup:
 		for {
 			break dup
+		}
+	}
+}
+
+func breakNamesIf() {
+blk:
+	if true {
+		// ERROR "invalid break label blk"
+		break blk
+	}
+}
+
+var sch chan int
+
+func continueNamesSelect() {
+	for {
+	sel:
+		select {
+		case <-sch:
+			// ERROR "invalid continue label sel: not a for"
+			continue sel
 		}
 	}
 }

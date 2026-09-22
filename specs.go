@@ -2145,13 +2145,13 @@
 // production above.
 //
 // Either statement may name an enclosing labeled statement, and then acts on that
-// one instead of the innermost: "break Label" leaves the labeled "for" or "switch",
-// and "continue Label" begins the next iteration of the labeled "for". A label is
-// an identifier prefixing a statement, "Label:", as in Go -- syntactically it is a
-// ":" continuation of the leading identifier, so the grammar stays LL(1). The
-// labeled statement a "break" names must be an enclosing "for" or "switch", and the
-// one a "continue" names must be an enclosing "for"; a label that names neither, or
-// one that is not in scope, is rejected.
+// one instead of the innermost: "break Label" leaves the labeled "for", "switch" or
+// "select", and "continue Label" begins the next iteration of the labeled "for". A
+// label is an identifier prefixing a statement, "Label:", as in Go -- syntactically
+// it is a ":" continuation of the leading identifier, so the grammar stays LL(1).
+// The labeled statement a "break" names must be an enclosing "for", "switch" or
+// "select", and the one a "continue" names must be an enclosing "for"; a label that
+// names neither, or one that is not in scope, is rejected.
 //
 // # Defer Statements
 //

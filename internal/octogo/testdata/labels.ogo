@@ -1,8 +1,8 @@
 // COMPILE
 
 // A label, "L:", prefixes a statement; a "break L" or "continue L" then names that
-// enclosing statement instead of the innermost. "break" may name a labeled "for" or
-// "switch"; "continue" may name only a labeled "for".
+// enclosing statement instead of the innermost. "break" may name a labeled "for",
+// "switch" or "select"; "continue" may name only a labeled "for".
 
 func run() {
 outer:
@@ -32,4 +32,28 @@ sw:
 	for i := 0; i < 2; i++ {
 		continue
 	}
+}
+
+// A label on a select makes it a break target, as a switch's does: the break
+// leaves the select from inside a loop or a switch of one of its clauses.
+var lsch chan int
+
+func breakSelect() int {
+	n := 0
+sel:
+	select {
+	case v := <-lsch:
+		for i := 0; i < v; i++ {
+			if i == 2 {
+				break sel
+			}
+			n += i
+		}
+		switch v {
+		case 1:
+			break sel
+		}
+		n += 100
+	}
+	return n
 }

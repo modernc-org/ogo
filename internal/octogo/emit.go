@@ -15265,9 +15265,9 @@ func (e *emitter) scanGotoTargets(ast []int32) {
 // emitLabeledStatement emits "L: Stmt". A labeled "for" gets a break-target label
 // after the loop and a continue-target label at the end of its body (a fall-through
 // there is exactly C's continue); "break L"/"continue L" become gotos to those. A
-// labeled "switch" binds L to the end label the switch already mints. A label on
-// anything else has no break/continue target (there is no goto), so its statement is
-// emitted plainly.
+// labeled "switch" binds L to the end label the switch already mints, and a labeled
+// "select" gets a break-target label after it. A label on anything else has no
+// break/continue target (there is no goto), so its statement is emitted plainly.
 func (e *emitter) emitLabeledStatement(label string, inner []int32) {
 	if e.gotoTargets[label] {
 		// A goto somewhere in this function names this label; the C label leads
@@ -15293,6 +15293,18 @@ func (e *emitter) emitLabeledStatement(label string, inner []int32) {
 	case SwitchStmt:
 		e.pendingSwitchLabel = label
 		e.emitStatement(inner) // emitSwitch binds and unbinds labelBreak[label]
+	case SelectStmt:
+		// A labeled select is a break target, as a switch is: `break L` from
+		// anywhere inside, a loop in a clause included, goes to the end of it.
+		e.labelSeq++
+		brk := fmt.Sprintf("ogo_lbreak_%d", e.labelSeq)
+		e.labelBreak[label] = brk
+		e.emitStatement(inner)
+		if e.labelUsed[brk] {
+			e.ind()
+			e.emit(brk + ":;\n")
+		}
+		delete(e.labelBreak, label)
 	default:
 		e.emitStatement(inner)
 	}
@@ -15307,6 +15319,8 @@ func (e *emitter) stmtKind(inner []int32) Symbol {
 			return FOR
 		case n.sym == SwitchStmt:
 			return SwitchStmt
+		case n.sym == SelectStmt:
+			return SelectStmt
 		}
 	}
 	return 0
