@@ -34616,6 +34616,44 @@ func main() {
 }
 `,
 		want: "10\n12\n7\n2 1\n3 3\n2\n9\n",
+	}, {
+		// A package variable is initialized in ogo_pkg_init, and the address of an
+		// ARRAY literal written there was a compound literal of that function's
+		// frame, gone when it returned: gcc called it a dangling pointer, the
+		// target's compiler built it in silence, and the board printed "9552 3928
+		// -83710123 ..." for the second line. It is the package's own static object
+		// now, as a struct literal's has been; clobber runs a frame over the dead one.
+		name: "a package variable given the address of an array literal",
+		src: `type P struct{ x, y int }
+
+type Row [3]int
+
+var gq *[2]P = &[2]P{{1, 2}, {3, 4}}
+
+var ga *Row = &Row{7, 8, 9}
+
+var gi *[4]int = &[4]int{2: 5}
+
+var gm *[2][2]int = &[2][2]int{{1, 2}, {3, 4}}
+
+var gs *[]int = &[]int{1, 2}
+
+func clobber(n int) int {
+	var junk [16]int
+	for i := range junk {
+		junk[i] = n + i
+	}
+	return junk[5]
+}
+
+func main() {
+	println(clobber(100))
+	println(gq[1].x, gq[0].y, ga[2], gi[2], gi[3], gm[1][0], len(*gs))
+	gq[0].x = 42
+	println(gq[0].x)
+}
+`,
+		want: "105\n3 2 9 5 0 3 2\n42\n",
 	}}
 
 // TestEmitCRun compiles emitted C with a host compiler and runs it, checking what

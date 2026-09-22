@@ -6987,10 +6987,19 @@ func (e *emitter) pkgLitObject(kids []Node) (obj, ctype string, ok bool) {
 		return "", "", false
 	}
 	name, lit, isLit := e.factorCompositeLit(slices.Collect(it(kids[1].ast)))
-	if !isLit || !e.isStruct(name) {
-		return "", "", false
+	if isLit && e.isStruct(name) {
+		return e.pkgLitObjectOf(name, lit), name, true
 	}
-	return e.pkgLitObjectOf(name, lit), name, true
+	// An ARRAY literal the same, by name or bracketed -- `&Row{...}`, `&[2]P{...}`
+	// -- whose compound literal in ogo_pkg_init was just as dead once it returned:
+	// `var gq *[2]P = &[2]P{{1, 2}, {3, 4}}` compiled to a pointer into that frame.
+	// emitCompositeLit reads an array's typedef as it reads a struct's.
+	if typeAST, alit, isLit := e.factorArrayLit(kids[1]); isLit {
+		if ct, isArr := e.arrayElemTypedef(typeAST); isArr {
+			return e.pkgLitObjectOf(ct, alit), ct, true
+		}
+	}
+	return "", "", false
 }
 
 // pkgLitObjectOf is pkgLitObject for the literal lit of struct C type name, which is
