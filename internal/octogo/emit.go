@@ -3015,13 +3015,21 @@ type funcValueType struct {
 	key    string
 	res    []string
 	params []string
+	// vararg is 1 + the position of a "...T" parameter, 0 for none. A variadic
+	// function type is a type of its own -- `func(...int)` is not `func([]int)` --
+	// though C writes the two alike, and a call through one packs its arguments.
+	vararg int
 }
 
 // funcSigCParts renders a Signature as the parts a function type is minted from.
 func (e *emitter) funcSigCParts(sig []int32) funcValueType {
 	_, resTypes := e.cSig(sig)
 	paramTypes, _ := e.cParamTypes(sig)
-	return e.cFuncValueType(resTypes, paramTypes)
+	fv := e.cFuncValueType(resTypes, paramTypes)
+	if _, at := e.variadicElem(sig); at >= 0 {
+		fv.vararg = at + 1
+	}
+	return fv
 }
 
 // cFuncValueType is funcSigCParts from the C result and parameter types themselves.
@@ -3065,7 +3073,13 @@ func (e *emitter) funcTypeOfSig(sig []int32) (string, bool) {
 
 // funcShapeID identifies a function type as funcTypeFor keys its typedef, without
 // minting one.
-func funcShapeID(fv funcValueType) string { return fv.key + " -> " + strings.Join(fv.res, ", ") }
+func funcShapeID(fv funcValueType) string {
+	id := fv.key + " -> " + strings.Join(fv.res, ", ")
+	if fv.vararg != 0 {
+		id += fmt.Sprintf(" variadic@%d", fv.vararg-1)
+	}
+	return id
+}
 
 // funcTypeFor returns the typedef standing for a C function-pointer signature,
 // minting it on first sight. Distinct written types rendering the same C signature
@@ -3084,6 +3098,9 @@ func (e *emitter) funcTypeFor(fv funcValueType) string {
 	e.funcTypeNames[id] = name
 	e.funcTypeRet[name] = fv.res
 	e.funcTypeParams[name] = fv.params
+	if fv.vararg != 0 {
+		e.funcTypeVariadic[name] = fv.vararg - 1
+	}
 	// "ret (*)(params)" -> "typedef ret (*name)(params);"
 	e.addTypedef(name, "typedef "+strings.Replace(fv.key, "(*)", "(*"+name+")", 1)+";\n",
 		append(slices.Clone(fv.res), fv.params...)...)
@@ -4588,7 +4605,7 @@ func typeNameCollisions(src []byte, names map[string]bool) map[string]bool {
 // emitProgram is EmitC's one pass. rename lists the main-package types spelled
 // ogo_T_<name> in C (see typeMangle).
 func emitProgram(pkg *Package, w io.Writer, opts []EmitOption, rename map[string]bool) error {
-	e := &emitter{renameTypes: rename, renamedTypes: map[string]string{}, includes: map[string]bool{}, funcRet: map[string][]string{}, funcSliceParams: map[string][]string{}, funcVariadic: map[string]int{}, nilHelpers: map[string]bool{}, funcArrayRet: map[string]arrDim{}, funcArrayParams: map[string][]arrDim{}, anonStructNames: map[string]string{}, methodValueTypes: map[string]funcValueType{}, methodValueOf: map[string]string{}, methodExprNames: map[string]string{}, funcParams: map[string][]string{}, methodPtr: map[string]bool{}, globals: map[string]string{}, structs: map[string][]structField{}, namedTypes: map[string]bool{}, typeNames: map[string]bool{}, interfaceTypes: map[string]bool{}, ifaceMethods: map[string][]ifaceMethod{}, anonIfaceNames: map[string]string{}, anonIfaceMinted: map[string]bool{}, ifaceASTs: map[string]ifaceAST{}, ifaceVTables: map[string]bool{}, namedUnderlying: map[string]string{}, namedArrays: map[string]arrDim{}, constInt: map[string]string{}, constVal: map[string]constant.Value{}, constWide: map[string]string{}, constStr: map[string]string{}, constUntyped: map[string]bool{}, constHuge: map[string]bool{}, arrays: map[string]arrDim{}, globalArrays: map[string]arrDim{}, sliceVars: map[string]string{}, globalSliceVars: map[string]string{}, chanElems: map[string]bool{}, chanInitElems: map[string]bool{}, chanSendElems: map[string]bool{}, chanRecvElems: map[string]bool{}, chanTryRecvElems: map[string]bool{}, chanTrySendElems: map[string]bool{}, chanGatedSendElems: map[string]bool{}, aliasOf: map[string]string{}, localTypes: map[string]string{}, gotoTargets: map[string]bool{}, chanCloseElems: map[string]bool{}, chanRecv2Elems: map[string]bool{}, mathWrappers: map[string]bool{}, chanElemByName: map[string]string{}, sliceElems: map[string]bool{}, sliceElemByName: map[string]string{}, appendElems: map[string]bool{}, tryappendElems: map[string]bool{}, appendSliceElems: map[string]bool{}, tryappendSliceEls: map[string]bool{}, appendokStructs: map[string]bool{}, copyElems: map[string]bool{}, resliceElems: map[string]bool{}, reslice3Elems: map[string]bool{}, clearElems: map[string]bool{}, minElems: map[string]bool{}, maxElems: map[string]bool{}, printSliceElems: map[string]bool{}, printStructs: map[string]string{}, printIfaces: map[string]string{}, printlnElems: map[string]bool{}, switchBreakUsed: map[string]bool{}, labelBreak: map[string]string{}, labelContinue: map[string]string{}, labelUsed: map[string]bool{}, eqStructs: map[string]bool{}, eqArrays: map[string]arrDim{}, frameBacked: map[string]bool{}, frameHolder: map[string]string{}, crossParams: map[string][]leak{}, crossContents: map[string][]leak{}, retContents: map[string][]bool{}, recvContents: map[string]leak{}, paramCalls: map[string][]paramCall{}, frameCalls: map[string][]frameCall{}, localConstSpecs: map[string]localConstSpec{}, inheritedTypes: map[string]bool{}, funcValueMembers: map[string][]string{}, methodExprMembers: map[string]emMethodExpr{}, memberShown: map[string]string{}, litLifted: map[string][]string{}, methodNames: map[string]bool{}, recvLeaks: map[string]leak{}, retRecv: map[string]bool{}, crossInto: map[string][]uint32{}, ifaceSummaries: map[string]ifaceSummary{}, retParams: map[string][]bool{}, funcValueOf: map[string]string{}, crossNames: map[string]string{}, initNames: map[string]string{}, funcValueTypes: map[string]funcValueType{}, funcTypeNames: map[string]string{}, funcTypeRet: map[string][]string{}, funcTypeParams: map[string][]string{}, retStructs: map[string]string{}, retStructByKey: map[string]string{}, shiftHelpers: map[string][2]string{}, shiftCTypes: map[*int32]string{}, shiftWalked: map[shiftWalkKey]bool{}, shiftIn: map[*int32]bool{}, divHelpers: map[string][2]string{}, funcValueWrappers: map[string]string{}, deferReplay: -1, iota: -1}
+	e := &emitter{renameTypes: rename, renamedTypes: map[string]string{}, includes: map[string]bool{}, funcRet: map[string][]string{}, funcSliceParams: map[string][]string{}, funcVariadic: map[string]int{}, nilHelpers: map[string]bool{}, funcArrayRet: map[string]arrDim{}, funcArrayParams: map[string][]arrDim{}, anonStructNames: map[string]string{}, methodValueTypes: map[string]funcValueType{}, methodValueOf: map[string]string{}, methodExprNames: map[string]string{}, funcParams: map[string][]string{}, methodPtr: map[string]bool{}, globals: map[string]string{}, structs: map[string][]structField{}, namedTypes: map[string]bool{}, typeNames: map[string]bool{}, interfaceTypes: map[string]bool{}, ifaceMethods: map[string][]ifaceMethod{}, anonIfaceNames: map[string]string{}, anonIfaceMinted: map[string]bool{}, ifaceASTs: map[string]ifaceAST{}, ifaceVTables: map[string]bool{}, namedUnderlying: map[string]string{}, namedArrays: map[string]arrDim{}, constInt: map[string]string{}, constVal: map[string]constant.Value{}, constWide: map[string]string{}, constStr: map[string]string{}, constUntyped: map[string]bool{}, constHuge: map[string]bool{}, arrays: map[string]arrDim{}, globalArrays: map[string]arrDim{}, sliceVars: map[string]string{}, globalSliceVars: map[string]string{}, chanElems: map[string]bool{}, chanInitElems: map[string]bool{}, chanSendElems: map[string]bool{}, chanRecvElems: map[string]bool{}, chanTryRecvElems: map[string]bool{}, chanTrySendElems: map[string]bool{}, chanGatedSendElems: map[string]bool{}, aliasOf: map[string]string{}, localTypes: map[string]string{}, gotoTargets: map[string]bool{}, chanCloseElems: map[string]bool{}, chanRecv2Elems: map[string]bool{}, mathWrappers: map[string]bool{}, chanElemByName: map[string]string{}, sliceElems: map[string]bool{}, sliceElemByName: map[string]string{}, appendElems: map[string]bool{}, tryappendElems: map[string]bool{}, appendSliceElems: map[string]bool{}, tryappendSliceEls: map[string]bool{}, appendokStructs: map[string]bool{}, copyElems: map[string]bool{}, resliceElems: map[string]bool{}, reslice3Elems: map[string]bool{}, clearElems: map[string]bool{}, minElems: map[string]bool{}, maxElems: map[string]bool{}, printSliceElems: map[string]bool{}, printStructs: map[string]string{}, printIfaces: map[string]string{}, printlnElems: map[string]bool{}, switchBreakUsed: map[string]bool{}, labelBreak: map[string]string{}, labelContinue: map[string]string{}, labelUsed: map[string]bool{}, eqStructs: map[string]bool{}, eqArrays: map[string]arrDim{}, frameBacked: map[string]bool{}, frameHolder: map[string]string{}, crossParams: map[string][]leak{}, crossContents: map[string][]leak{}, retContents: map[string][]bool{}, recvContents: map[string]leak{}, paramCalls: map[string][]paramCall{}, frameCalls: map[string][]frameCall{}, localConstSpecs: map[string]localConstSpec{}, inheritedTypes: map[string]bool{}, funcValueMembers: map[string][]string{}, methodExprMembers: map[string]emMethodExpr{}, memberShown: map[string]string{}, litLifted: map[string][]string{}, methodNames: map[string]bool{}, recvLeaks: map[string]leak{}, retRecv: map[string]bool{}, crossInto: map[string][]uint32{}, ifaceSummaries: map[string]ifaceSummary{}, retParams: map[string][]bool{}, funcValueOf: map[string]string{}, crossNames: map[string]string{}, initNames: map[string]string{}, funcValueTypes: map[string]funcValueType{}, funcTypeNames: map[string]string{}, funcTypeRet: map[string][]string{}, funcTypeParams: map[string][]string{}, funcTypeVariadic: map[string]int{}, retStructs: map[string]string{}, retStructByKey: map[string]string{}, shiftHelpers: map[string][2]string{}, shiftCTypes: map[*int32]string{}, shiftWalked: map[shiftWalkKey]bool{}, shiftIn: map[*int32]bool{}, divHelpers: map[string][2]string{}, funcValueWrappers: map[string]string{}, deferReplay: -1, iota: -1}
 	for _, opt := range opts {
 		opt(e)
 	}
@@ -5379,6 +5396,7 @@ type emitter struct {
 	methodExprNames   map[string]string         // a method expression's key (see liftMethodExpr) -> the function it was lifted to
 	funcParams        map[string][]string       // same key -> its parameter C types, so a value handed to it is stored as the parameter's type
 	callParams        []string                  // the parameter C types of the next call emitted through a function VALUE or an interface slot, which names no callee to look up; emitCallArgs takes them (see wideConstArg)
+	callFuncType      string                    // the function typedef of the next call emitted through a VALUE, taken beside callParams: which of them is variadic, which C's shape does not say
 	localConsts       map[string]bool           // block-scope CONSTANTS in scope, by name: the locals a constant fold may still resolve (see shadowedByLocal)
 	localConstSpecs   map[string]localConstSpec // ... and how each was declared, for a function literal to declare again what it reads (liftFuncLit)
 	localConstSeq     int                       // orders localConstSpecs as they were declared
@@ -5436,6 +5454,7 @@ type emitter struct {
 	funcTypeNames      map[string]string        // C function-pointer signature -> the typedef minted for it
 	funcTypeRet        map[string][]string      // that typedef -> the result C types a call through it yields
 	funcTypeParams     map[string][]string      // that typedef -> its parameter C types, for marshalling a `go` through a value
+	funcTypeVariadic   map[string]int           // that typedef -> the position of its "...T" parameter, for the pack a call through a value builds
 	retStructs         map[string]string        // result-struct typedef name -> the result types it stands for
 	retStructByKey     map[string]string        // those result types -> the typedef name, so one list answers alike every time
 	typedefUnits       []typedefUnit            // the typedef section, in the order collected; emitted in dependency order
@@ -27088,9 +27107,9 @@ func (e *emitter) emitCallExpr(recv string, suffix []Node) bool {
 			}
 			e.noteFrameCalls(recv, suffix[0].ast)
 			e.emit(e.varRef(recv) + "(")
-			e.callParams = e.funcTypeParams[e.underlyingCType(ct)]
+			e.callParams, e.callFuncType = e.funcTypeParams[e.underlyingCType(ct)], ct
 			e.emitCallArgs(e.valueCallee(recv, ct), suffix[0].ast)
-			e.callParams = nil
+			e.callParams, e.callFuncType = nil, ""
 			e.emit(")")
 			return true
 		}
@@ -27266,7 +27285,7 @@ func (e *emitter) emitCallExpr(recv string, suffix []Node) bool {
 				// of the type (indirectCallee), and the parameter types a constant
 				// argument is spelled by, as through any function value.
 				summary = e.indirectCallee("", ct)
-				e.callParams = e.funcTypeParams[e.underlyingCType(ct)]
+				e.callParams, e.callFuncType = e.funcTypeParams[e.underlyingCType(ct)], ct
 			}
 			e.emit(cname + "(")
 			e.emitCallArgs(summary, suffix[1].ast)
@@ -27332,9 +27351,9 @@ func (e *emitter) emitCallExpr(recv string, suffix []Node) bool {
 					return true
 				}
 				e.emit(bound + "(")
-				e.callParams = e.funcTypeParams[e.underlyingCType(ct)]
+				e.callParams, e.callFuncType = e.funcTypeParams[e.underlyingCType(ct)], ct
 				e.emitCallArgs(e.indirectCallee("", ct), callAst)
-				e.callParams = nil
+				e.callParams, e.callFuncType = nil, ""
 				e.emit(")")
 				return true
 			}
@@ -27641,16 +27660,16 @@ func (e *emitter) argsCText(cname string, callSuffix []int32) string {
 // and the target's compiler refused the call ("expected 2 found 1"). callee is what
 // the summaries judge the call by, as argsCText's.
 func (e *emitter) valueArgsCText(callee, ftype string, callSuffix []int32) string {
-	e.callParams = e.funcTypeParams[e.underlyingCType(ftype)]
-	defer func() { e.callParams = nil }()
+	e.callParams, e.callFuncType = e.funcTypeParams[e.underlyingCType(ftype)], ftype
+	defer func() { e.callParams, e.callFuncType = nil, "" }()
 	return e.argsCText(callee, callSuffix)
 }
 
 // emitValueCallArgs is valueArgsCText writing where the call stands.
 func (e *emitter) emitValueCallArgs(callee, ftype string, callSuffix []int32) {
-	e.callParams = e.funcTypeParams[e.underlyingCType(ftype)]
+	e.callParams, e.callFuncType = e.funcTypeParams[e.underlyingCType(ftype)], ftype
 	e.emitCallArgs(callee, callSuffix)
-	e.callParams = nil
+	e.callParams, e.callFuncType = nil, ""
 }
 
 // indexCText renders an index expression (with its bound check) to a string.
@@ -34145,6 +34164,25 @@ func (e *emitter) indirectFuncArg(pt string, arg Node) (string, bool) {
 	return e.hoist(pt, func() { e.emitExpr(arg.ast) }), true
 }
 
+// callVariadic is variadicPack for a call: the declared callee's variadic
+// parameter, or for a call through a function VALUE, its type's (ftype), whose
+// parameters are params. A value's was never asked: `f(1, 2, 3)` for a `f :=
+// func(xs ...int) int` passed three ints where the slice header goes, which the
+// target's compiler took as that header -- len 2 -- without a word.
+func (e *emitter) callVariadic(cname, ftype string, params []string) (string, int) {
+	if elem, at := e.variadicPack(cname); at >= 0 {
+		return elem, at
+	}
+	if ftype == "" {
+		return "", -1
+	}
+	at, ok := e.funcTypeVariadic[e.underlyingCType(ftype)]
+	if !ok || at >= len(params) {
+		return "", -1
+	}
+	return sliceElemFromCName(e.underlyingCType(params[at])), at
+}
+
 // spreadCall reports whether a call wrote "f(xs...)", handing an existing slice to
 // a variadic parameter rather than values to pack.
 func (e *emitter) spreadCall(callSuffix []int32) bool {
@@ -34636,10 +34674,13 @@ func (e *emitter) emitCallArgs(cname string, callSuffix []int32) {
 	if e.callParams != nil {
 		params, e.callParams = e.callParams, nil
 	}
+	ftype := e.callFuncType
+	e.callFuncType = ""
+	varElem, varAt := e.callVariadic(cname, ftype, params)
 	args := e.callArgExprs(callSuffix)
 	// An argument is converted to its parameter's type, or a packed one to the
 	// variadic element's: the context an untyped shift in it takes its type from.
-	if elem, at := e.variadicPack(cname); at >= 0 || len(params) != 0 {
+	if elem, at := varElem, varAt; at >= 0 || len(params) != 0 {
 		spread := e.spreadCall(callSuffix)
 		for i, arg := range args {
 			switch {
@@ -34654,7 +34695,7 @@ func (e *emitter) emitCallArgs(cname string, callSuffix []int32) {
 	// case. The inner call is bound to its result struct ahead of the statement,
 	// and its fields are the arguments.
 	if len(args) == 1 && e.deferReplay < 0 {
-		if names, ok := e.forwardedResults(cname, args[0]); ok {
+		if names, ok := e.forwardedResults(cname, params, varElem, varAt, args[0]); ok {
 			e.emit(strings.Join(names, ", "))
 			return
 		}
@@ -34666,7 +34707,7 @@ func (e *emitter) emitCallArgs(cname string, callSuffix []int32) {
 	// They are packed into an array of this frame, which is what Go allocates for
 	// and this target cannot -- so the lifetime rules see it as a slice literal's
 	// backing, and a callee that keeps it is refused by them.
-	if elem, at := e.variadicPack(cname); at >= 0 && !e.spreadCall(callSuffix) {
+	if elem, at := varElem, varAt; at >= 0 && !e.spreadCall(callSuffix) {
 		if len(args) < at {
 			e.fail("not enough arguments in call to %s", cname)
 			return
@@ -34762,6 +34803,12 @@ func (e *emitter) emitCallArgs(cname string, callSuffix []int32) {
 		// constant -- there is nothing to capture and re-read at the return.
 		if i < len(sliceParams) && sliceParams[i] != "" && e.isNilExpr(arg.ast) {
 			e.emit("(" + sliceParams[i] + "){0}")
+			continue
+		}
+		// The same for a call through a function VALUE, whose parameters are the
+		// value's type's (see valueArgsCText) and not in the declared callees' table.
+		if i < len(params) && i >= len(sliceParams) && e.isSliceCType(e.underlyingCType(params[i])) && e.isNilExpr(arg.ast) {
+			e.emit("(" + params[i] + "){0}")
 			continue
 		}
 		// A concrete value handed to an interface parameter is wrapped where it
@@ -34868,7 +34915,7 @@ func (e *emitter) wideConstArg(params []string, i int, arg Node) (string, bool) 
 // emits as it always did -- a single-result call included, which is an ordinary
 // argument. A variadic callee is refused: Go packs the results beyond the fixed
 // parameters into the slice, which nothing here builds yet.
-func (e *emitter) forwardedResults(cname string, arg Node) ([]string, bool) {
+func (e *emitter) forwardedResults(cname string, params []string, elem string, at int, arg Node) ([]string, bool) {
 	if e.declInit {
 		return nil, false
 	}
@@ -34883,7 +34930,6 @@ func (e *emitter) forwardedResults(cname string, arg Node) ([]string, bool) {
 	if !ok || len(resTypes) < 2 {
 		return nil, false
 	}
-	elem, at := e.variadicPack(cname)
 	if at >= 0 {
 		// Go packs the results past the fixed parameters into the variadic slice.
 		if len(resTypes) < at {
@@ -34896,7 +34942,7 @@ func (e *emitter) forwardedResults(cname string, arg Node) ([]string, bool) {
 	// a call through an interface reached by an index or a field is resolved here
 	// and nowhere else (see checkArgsIn), so saying nothing would leave the C
 	// compiler to report it about generated code.
-	if params := e.funcParams[cname]; len(params) != len(resTypes) {
+	if len(params) != len(resTypes) {
 		e.failAt(arg.ast, "wrong number of arguments in call to %s: %s returns %d, want %d",
 			cname, callee, len(resTypes), len(params))
 		return nil, true

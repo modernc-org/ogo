@@ -34223,6 +34223,74 @@ func main() {
 }
 `,
 		want: "10 6 15\n14 21 -7\ndeferred 2\n",
+	}, {
+		// A call through a function VALUE takes its type's parameters: a variadic
+		// one packs what the call wrote -- `f(1, 2, 3)` for a variadic literal passed
+		// the three ints where the slice header goes, and the target read them as
+		// one, printing 2 -- a multi-result call is forwarded to it, and nil to a
+		// slice parameter is that slice's nil. Through a literal, a package
+		// variable, a table's slot, a field set on two paths and a parameter.
+		name: "a call through a function value takes its type's parameters",
+		src: `type Reader interface{ Read() int }
+
+type Dev struct{ v int }
+
+func (d *Dev) Read() int { return d.v }
+
+var d1 = Dev{3}
+
+var d2 = Dev{5}
+
+func sum(xs ...int) int {
+	n := 0
+	for _, x := range xs {
+		n += x
+	}
+	return n
+}
+
+func two() (int, int) { return 3, 4 }
+
+func add(a, b int) int { return a + b }
+
+func lenOf(s []int) int { return len(s) }
+
+type T struct{ f func(...int) int }
+
+var gs = sum
+
+var ga = add
+
+var gln = lenOf
+
+var tab = [1]func(...int) int{sum}
+
+var xs = []int{5, 6}
+
+func main() {
+	f := func(xs ...int) int { return len(xs) }
+	k := func(k int, xs ...int) int { return k * len(xs) }
+	rd := func(rs ...Reader) int {
+		n := 0
+		for _, r := range rs {
+			n += r.Read()
+		}
+		return n
+	}
+	mul := func(a, b int) int { return a * b }
+	nl := func(s []int) int { return len(s) }
+	var t T
+	t.f = sum
+	if d1.v > 0 {
+		t.f = func(xs ...int) int { return -len(xs) }
+	}
+	apply := func(g func(...int) int) int { return g(1, 2) }
+	println(f(1, 2, 3), f(), f(xs...), gs(1, 2, 3), gs(), k(10, 1, 2, 3), k(10))
+	println(rd(&d1, &d2), rd(), tab[0](1, 2, 3), t.f(4, 5), apply(sum))
+	println(mul(two()), ga(two()), nl(nil), gln(nil), gln(xs))
+}
+`,
+		want: "3 0 2 6 0 30 0\n8 0 6 -2 3\n12 7 0 0 2\n",
 	}}
 
 // TestEmitCRun compiles emitted C with a host compiler and runs it, checking what
