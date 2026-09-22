@@ -27974,6 +27974,14 @@ func (e *emitter) chainCText(base string, steps []Node) (text, ctype string, add
 	case e.isChainVar(base):
 		cur, _ = e.accessBase(base)
 		text, addr = e.varRef(base), true
+		if _, isPtr := e.arrayPtrVar(base); isPtr {
+			// accessBase enters a pointer to an array AS the array, so the text is
+			// the array too, as accessBaseText writes it for the streaming walk:
+			// read as the pointer, a call of an element, `pa[k](3)`, indexed the
+			// POINTER -- `pa[k]` in C, storage past the array, where Go means
+			// `(*pa)[k]` -- and the target's compiler built it with a warning.
+			text = e.arrayPtrDeref(base)
+		}
 		// A chain hanging off a 64-bit CONSTANT, `Two.Add(One).Int()`: the
 		// constant has no C symbol (see emitConstSpecName), so the chain starts
 		// from its literal, which is no lvalue -- a pointer method on it is what

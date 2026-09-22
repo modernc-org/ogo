@@ -34540,6 +34540,34 @@ func main() {
 }
 `,
 		want: "6 -2995 -199993\n1.5 2.5 6 6 3.5 -3994\n4.5\ndeferred 5.5 3\n",
+	}, {
+		// A call of an element through a pointer to an array, `pa[k](3)`, indexed
+		// the POINTER: the chain walk entered the pointer as the array and kept its
+		// name, so the C read `pa[k]` -- past the array, which gcc refused and the
+		// target built with a warning. `(*pa)[k]`, as a read of the element was.
+		name: "a call of an element through a pointer to an array",
+		src: `func dbl(n int) int { return n * 2 }
+
+func inc(n int) int { return n + 1 }
+
+func show(n int) { println(n) }
+
+var ga = [2]func(int) int{dbl, inc}
+
+func main() {
+	k := 1
+	pa := &ga
+	x := pa[k](3)
+	println(x, (*pa)[0](4), pa[k](5)+pa[0](6))
+	sh := [1]func(int){show}
+	ps := &sh
+	ps[0](7)
+	(*ps)[0](8)
+	pa[k] = dbl
+	println(ga[1](10))
+}
+`,
+		want: "4 8 18\n7\n8\n20\n",
 	}}
 
 // TestEmitCRun compiles emitted C with a host compiler and runs it, checking what
