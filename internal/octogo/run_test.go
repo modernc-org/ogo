@@ -35464,6 +35464,45 @@ func main() {
 }
 `,
 		want: "101\n202\n32\n31\n2\n301\n",
+	}, {
+		// A variadic call that packs NOTHING hands over the nil slice, no storage
+		// of the frame, so a callee keeping its variadic parameter is no
+		// concern. Asked anyway, the refusal's position was read off an empty
+		// argument list: `keepFn()` panicked the COMPILER, "index out of range",
+		// and `go keepGo()` was refused for a pack the trampoline never builds.
+		name: "a variadic call packing nothing into a keeper",
+		src: `type Keeper interface {
+	Keep(xs ...int)
+}
+
+type K struct{}
+
+var kept []int
+
+var done chan int
+
+func (k *K) Keep(xs ...int) { kept = xs }
+
+func keepFn(xs ...int) { kept = xs }
+
+func keepGo(xs ...int) {
+	kept = xs
+	done <- len(xs)
+}
+
+var gk = K{}
+
+func main() {
+	var kp Keeper = &gk
+	keepFn()
+	kp.Keep()
+	defer keepFn()
+	defer kp.Keep()
+	go keepGo()
+	println(<-done, len(kept), kept == nil)
+}
+`,
+		want: "0 0 true\n",
 	}}
 
 // TestEmitCRun compiles emitted C with a host compiler and runs it, checking what

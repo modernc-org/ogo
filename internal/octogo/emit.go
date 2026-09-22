@@ -1875,7 +1875,9 @@ func (e *emitter) emitGo(nodes []Node) {
 				crosses, _, _ = e.ifaceCallSummary(site.ifaceCType, site.ifaceMethod)
 				summary = site.ifaceMethod + " (through " + e.goTypeName(site.ifaceCType) + ")"
 			}
-			if at < len(crosses) && crosses[at]&(leakCog|leakGlobal) != 0 {
+			// Nothing packed is the nil slice, no storage of the trampoline's: `go
+			// keep()` was refused for a pack it never builds.
+			if len(args) > at && at < len(crosses) && crosses[at]&(leakCog|leakGlobal) != 0 {
 				e.fail("cannot pass these values to a goroutine's %s: they are packed for the call, and its parameter %d outlives it; pack them into a package array and pass a slice of it",
 					e.funcSourceName(summary), at+1)
 				return
@@ -41733,7 +41735,7 @@ func (e *emitter) checkIfaceArgs(iface, method string, args []Node, spread bool)
 	// is (checkCrossArgs): an implementation that lets its variadic parameter
 	// outlive the call was handed a view of a dead frame, in silence, once a call
 	// through the slot began to pack at all.
-	if at := e.ifaceMethodVararg(iface, method) - 1; !spread && at >= 0 && at < len(crosses) &&
+	if at := e.ifaceMethodVararg(iface, method) - 1; !spread && at >= 0 && len(args) > at && at < len(crosses) &&
 		crosses[at]&(leakCog|leakGlobal) != 0 {
 		why := "is stored where it outlives every frame"
 		if crosses[at]&leakCog != 0 {
@@ -41871,7 +41873,10 @@ func (e *emitter) checkCrossArgs(cname string, args []Node, spread bool) {
 	// Letting it through here refused `h.set(a[:])` for a LOCAL h -- safe, the two
 	// dying together -- and said "stored where it outlives every frame" of a store
 	// into a struct that does not.
-	if _, at := e.variadicPack(cname); !spread && at >= 0 && at < len(crosses) &&
+	// A call that packs NOTHING, `keep()`, hands over the nil slice, which is no
+	// storage of this frame at all: asked anyway, the refusal's position was read off
+	// an empty argument list and the compiler panicked, "index out of range".
+	if _, at := e.variadicPack(cname); !spread && at >= 0 && len(args) > at && at < len(crosses) &&
 		crosses[at]&(leakCog|leakGlobal) != 0 {
 		why := "is stored where it outlives every frame"
 		if crosses[at]&leakCog != 0 {
