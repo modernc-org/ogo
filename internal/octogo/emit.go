@@ -17453,8 +17453,10 @@ func (e *emitter) addrOperand(ast []int32) (string, bool) {
 	}
 	// An array variable carries no C type here -- its extents live in e.arrays --
 	// so it has to be asked for separately or `(&rows).m()` would read `rows` as a
-	// package qualifier.
-	_, isArray := e.arrays[name]
+	// package qualifier. A PACKAGE array too (arrayVar asks both): only the
+	// function's own were, so `(&arr)[0] = 1` for a package arr was "only
+	// assignment to a simple variable is supported yet" where a local's worked.
+	_, isArray := e.arrayVar(name)
 	return name, isArray
 }
 

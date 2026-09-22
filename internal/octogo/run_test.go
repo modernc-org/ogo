@@ -34762,6 +34762,38 @@ func main() {
 }
 `,
 		want: "3 3 3 2 2\n2 3 0\n",
+	}, {
+		// A PACKAGE array through a parenthesised address, as a target and as a
+		// receiver: `(&arr)[0] = 10` was "only assignment to a simple variable is
+		// supported yet" and `(&row).Set(1, 7)` "unsupported call target", where a
+		// local array's worked -- addrOperand asked the function's arrays only.
+		name: "a package array through a parenthesised address",
+		src: `type Row [3]int
+
+func (r *Row) Set(i, v int) { r[i] = v }
+
+func (r Row) Sum() int { return r[0] + r[1] + r[2] }
+
+var arr = [3]int{1, 2, 3}
+
+var row Row
+
+var grid [2][2]int
+
+func main() {
+	k := 1
+	(&arr)[0] = 10
+	(&arr)[k] += 5
+	(&arr)[2]++
+	(&row).Set(1, 7)
+	(&grid)[1][0] = 4
+	println(arr[0], arr[1], arr[2], (&row).Sum(), row[1], grid[1][0], (&arr)[k])
+	la := [2]int{1, 2}
+	(&la)[1] = 9
+	println(la[1])
+}
+`,
+		want: "10 7 4 7 7 4 7\n9\n",
 	}}
 
 // TestEmitCRun compiles emitted C with a host compiler and runs it, checking what
