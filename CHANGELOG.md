@@ -69,6 +69,12 @@ shipped section tells a reader on that version that they have behaviour they do 
 - **A labeled select is a break target.** `sel: select { case <-ch: for { ... break
   sel } }` leaves the select, as in Go; it was refused as "invalid break label sel:
   not a for or switch".
+- **A parenthesised address of a CHAIN may be a target or a receiver.** `(&h.v).x =
+  9`, `(&h.a)[0] = 8`, `(&ga[k]).x = 6`, `(&h.v).m(3)` as a statement, deferred or
+  started on a cog: Go reads each as the chain with the steps written after it, and
+  only a bare name was peeled that way, so eleven such programs were refused ("only
+  assignment to a simple variable is supported yet", "unsupported call target")
+  while the same expressions read right.
 
 ### Fixed
 
@@ -124,6 +130,18 @@ shipped section tells a reader on that version that they have behaviour they do 
   function that initializes the package, and on the board a later call left `9552
   3928` where Go prints `3 2`; a store through it wrote into the stack. It is the
   package's own static object now, as a struct literal's has been.
+- **nil did not reach every place a slice is wanted.** A DEFINED slice type took
+  the null pointer instead of the zero header in a return, an assignment, a field
+  store and an argument -- `return nil` for an `L`, `l = nil`, `h.ls = nil`,
+  `takeL(nil)` -- and so did an element of a variadic of slices, `f(nil, nil)` for
+  an `xs ...[]int`. Both compilers refused the C; a `[]T` written out was already
+  right everywhere.
+- **A literal with a nil SLICE member did not build for the target.** `H{1, nil}`
+  for a `vs []int` emitted `0` where the header is a struct, which the target's
+  compiler refused outright ("Expected multiple values") -- in a package variable, a
+  local, an argument and an assignment alike -- and gcc took only with a
+  missing-braces warning. It is the zero header now, as an interface member's nil
+  already was.
 - **A labeled break out of a select, a switch or a nested loop was not seen to end
   its loop.** The statement after `loop: for { select { case v := <-ch: ... break
   loop } }` -- the usual way out of a select loop -- was refused as unreachable code;
@@ -155,6 +173,9 @@ shipped section tells a reader on that version that they have behaviour they do 
   increment, a call as a value, a statement, a defer or a go -- compiled as though
   the `&` were not there, and Go refuses each: "(&pp).x undefined (type **P has no
   field or method x)", "cannot index (&ps) (value of type *[]int)".
+  The same is asked of a CHAIN inside the parentheses, `(&h.p).x` for a pointer
+  field and `(&h.f)(2)` for a function one, which the peel above would otherwise
+  take; reading one said "this form is not supported yet" and says Go's words now.
 - **What has no Kind is asked what it is, by every operator and in every place a
   value is stored.** The checker's type model is a Kind -- a predeclared type -- and
   most of its rules asked for one and said nothing when an operand had none. A

@@ -806,10 +806,26 @@ new shape into both.
 A parenthesised ADDRESS is peeled by the paths that lower it, `(&v).f` as `v.f`, and
 the peel asked nothing of v: `(&pp).x = 3` for a pointer, `(&ps)[0] = 1` for a slice,
 `(&f)(1)` and 11 more shapes Go refuses compiled as though the & were not there
-(`addrStepRefused`, `TestEmitCAddrStepRefused`). The head that is a CHAIN, `(&h.v).x
-= 9`, `(&h.a)[0] = 8`, `(&h.v).m()` as a statement and `(**ppp).x = 5`, is still
-refused where Go takes it -- loudly, "only assignment to a simple variable is
-supported yet".
+(`addrStepRefused`, `TestEmitCAddrStepRefused`). A head that is a CHAIN, `(&h.v).x
+= 9`, `(&h.a)[0] = 8`, `(&ga[k]).x = 6` and `(&h.v).m()` as a statement, was refused
+outright and is peeled the same way since (`addrChainSteps`): the steps that reach
+the addressed value lead the ones written after it, and what the CHAIN reaches
+decides whether the next step is Go's (`addrChainStepRefused`). `(**ppp).x = 5` is
+the one left, refused as "only assignment to a simple variable is supported yet".
+
+**NIL IS A ROW** (2026-09-22). nil alone is the null pointer and a slice is a
+header struct, so every position has to say which nil it is -- and the positions
+were fixed one at a time. Writing nil into every place a value stands (a
+declaration, an assignment, a field store, a literal member, an argument, a
+variadic element, a return, a comparison), for every nil-able type (a slice, a
+DEFINED slice type, an interface, a function, a channel, a pointer), found four
+places that took the null pointer for a header: a defined slice type's return,
+assignment, field store and argument, plus a variadic element, and a literal member
+of any slice type. The target's compiler refused each ("Expected multiple values",
+"incompatible types in assignment"), so these were build failures rather than wrong
+answers -- but nothing in the tests held one, since gcc refuses them too and no run
+case can. A rule about a REPRESENTATION (a header, two words, a copied array) is a
+rule to sweep across the positions, since each position writes the value itself.
 
 **A TEMPORARY IS A COG REGISTER** (2026-09-20). flexcc gives every C local one
 (`local_N res 1` in COG_BSS) out of a pool the assembler checks with `fit 480`,
