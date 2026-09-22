@@ -35115,6 +35115,75 @@ func main() {
 }
 `,
 		want: "0 0 true true 0 0 true true true true 0\n0 0 true true 0\n0 0 true true\n0 0 true true\n2 2\n0 1 0\n0 true\ntrue true true true 0\ntrue true\n0 true\n",
+	}, {
+		// The two positions the sweep above did not reach, each the same fault: a
+		// SEND of nil on a channel of slices and an APPEND of nil to a slice of
+		// them handed the helper the null pointer where a header goes, which
+		// neither compiler takes.
+		name: "nil sent on a channel and appended to a slice of slices",
+		src: `type L []int
+
+type Shape interface{ Area() int }
+
+type P struct{ n int }
+
+func (p *P) Area() int { return p.n }
+
+var chs chan []int
+
+var chl chan L
+
+var chi chan Shape
+
+var chf chan func(int) int
+
+var done chan int
+
+var gxs = []int{1}
+
+var gl = L{1, 2}
+
+func sendAll() {
+	chs <- nil
+	chl <- nil
+	chi <- nil
+	chf <- nil
+	done <- 1
+}
+
+func pick(b bool) []int {
+	if b {
+		return nil
+	}
+	return gxs
+}
+
+func pickL(b bool) L {
+	if b {
+		return nil
+	}
+	return gl
+}
+
+func main() {
+	go sendAll()
+	a := <-chs
+	b := <-chl
+	c := <-chi
+	d := <-chf
+	<-done
+	println(len(a), len(b), c == nil, d == nil)
+	println(len(pick(true)), len(pick(false)), len(pickL(true)), len(pickL(false)))
+	var xs []int
+	var l L
+	xs, l = nil, nil
+	println(len(xs), len(l))
+	sl := make([][]int, 0, 2)
+	sl = append(sl, nil)
+	println(len(sl), len(sl[0]))
+}
+`,
+		want: "0 0 true true\n0 1 0 2\n0 0\n1 0\n",
 	}}
 
 // TestEmitCRun compiles emitted C with a host compiler and runs it, checking what

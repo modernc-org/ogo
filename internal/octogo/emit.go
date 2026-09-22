@@ -8709,6 +8709,10 @@ func (e *emitter) emitChanSend(ch, elem string, op []Node) {
 		e.emit(text)
 	} else if lit, ok := e.floatConstC(op[1].ast, elem); ok {
 		e.emit(lit) // the send helper's element parameter; see floatConstC
+	} else if e.isNilExpr(op[1].ast) && e.isSliceCType(e.underlyingCType(elem)) {
+		// `ch <- nil` on a channel of slices: the element is a header, and nil
+		// alone is the null pointer, which the helper does not take.
+		e.emit("(" + elem + "){0}")
 	} else {
 		e.emitExpr(op[1].ast)
 	}
@@ -29181,6 +29185,12 @@ func (e *emitter) emitAppend(callSuffix []int32) {
 		}
 		if lit, ok := e.floatConstC(v.ast, elem); ok {
 			e.emit(lit + ")") // the append helper's element parameter; see floatConstC
+			continue
+		}
+		// `append(rows, nil)` for a slice of SLICES: the element is a header, and
+		// nil alone is the null pointer the helper does not take.
+		if e.isNilExpr(v.ast) && e.isSliceCType(e.underlyingCType(elem)) {
+			e.emit("(" + elem + "){0})")
 			continue
 		}
 		e.emitExpr(v.ast)
