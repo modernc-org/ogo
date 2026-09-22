@@ -109,3 +109,30 @@ func afterCall() {
 func stop() {
 	panic("stop")
 }
+
+// A labeled break out of a select, a switch or a nested loop ends the labeled loop,
+// so what follows it is reached: the commonest way a Go program leaves a select
+// loop, which was refused here as unreachable code.
+var uch chan int
+
+func leavesSelectLoop() int {
+	got := 0
+loop:
+	for {
+		select {
+		case v := <-uch:
+			got = v
+			break loop
+		}
+	}
+	n := got
+again:
+	for {
+		switch {
+		case n > 2:
+			break again
+		}
+		n++
+	}
+	return n
+}

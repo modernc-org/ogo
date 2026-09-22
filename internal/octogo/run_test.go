@@ -34794,6 +34794,104 @@ func main() {
 }
 `,
 		want: "10 7 4 7 7 4 7\n9\n",
+	}, {
+		// A labeled break out of a select ends the labeled loop, so the statement
+		// after `loop: for { select { ... break loop } }` is reached -- and it was
+		// refused as unreachable code, the termination analysis counting only an
+		// unlabeled break at the loop's own level. Beside it the rest of the
+		// labeled control flow: continue and break of an outer loop from a switch,
+		// fallthrough, a break in a switch inside a loop, a goto loop.
+		name: "labeled control flow across switch, select and loops",
+		src: `var trace int
+
+func t(k int) bool {
+	trace = trace*10 + k
+	return true
+}
+
+var ch chan int
+
+func feed(n int) {
+	for i := 0; i < n; i++ {
+		ch <- i
+	}
+}
+
+func main() {
+	s := 0
+outer:
+	for i := 0; i < 4; i++ {
+		for j := 0; j < 4; j++ {
+			switch {
+			case j == 1:
+				continue
+			case i == 2 && j == 2:
+				continue outer
+			case i == 3:
+				break outer
+			case j == 3:
+				fallthrough
+			case j == 100:
+				s += 100
+			default:
+				s += i*10 + j
+			}
+		}
+	}
+	println(s)
+	n := 0
+	for k := 0; k < 5; k++ {
+		switch k % 3 {
+		case 0:
+			if k > 2 {
+				break
+			}
+			n += 1
+			fallthrough
+		case 1:
+			n += 10
+		case 2:
+			continue
+		}
+		n += 100
+	}
+	println(n)
+	go feed(3)
+	got := 0
+loop:
+	for {
+		select {
+		case v := <-ch:
+			got = got*10 + v + 1
+			if v == 2 {
+				break loop
+			}
+		}
+	}
+	println(got)
+	i := 0
+again:
+	if i < 3 && t(i) {
+		i++
+		goto again
+	}
+	println(trace, i)
+	m := 0
+	for x := range 3 {
+		for y := range 3 {
+			if y > x {
+				break
+			}
+			if (x+y)%2 == 1 {
+				continue
+			}
+			m = m*10 + x + y
+		}
+	}
+	println(m)
+}
+`,
+		want: "244\n431\n123\n12 3\n224\n",
 	}}
 
 // TestEmitCRun compiles emitted C with a host compiler and runs it, checking what

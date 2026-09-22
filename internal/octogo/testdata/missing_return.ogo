@@ -147,3 +147,69 @@ func breaksOutOfFor(x int) int {
 	}
 	// ERROR "missing return"
 }
+
+// A LABELED break refers to the statement its label names from any depth -- out of
+// a select, a switch or a nested loop -- so the labeled loop ends there and control
+// falls off the function. Only an unlabeled break at the loop's own level used to
+// count, and each of these compiled with no return on the path the break takes.
+var lch chan int
+
+func breaksLabeledFromSelect() int {
+loop:
+	for {
+		select {
+		case v := <-lch:
+			if v > 0 {
+				break loop
+			}
+			return v
+		}
+	}
+	// ERROR "missing return"
+}
+
+func breaksLabeledFromSwitch(n int) int {
+loop:
+	for {
+		switch n {
+		case 1:
+			break loop
+		default:
+			return n
+		}
+	}
+	// ERROR "missing return"
+}
+
+func breaksLabeledFromNestedFor(n int) int {
+outer:
+	for {
+		for i := 0; i < n; i++ {
+			if i == 3 {
+				break outer
+			}
+		}
+	}
+	// ERROR "missing return"
+}
+
+// A break naming ANOTHER statement, or an unlabeled one inside a nested for, switch
+// or select, leaves the loop running: these still terminate.
+func breaksInnerOnly(n int) int {
+outer:
+	for {
+		for {
+			break
+		}
+		switch n {
+		case 1:
+			continue outer
+		}
+		select {
+		case <-lch:
+			break
+		default:
+		}
+		return n
+	}
+}

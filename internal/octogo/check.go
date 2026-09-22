@@ -1179,7 +1179,11 @@ func isEmptyStatement(stmt Node) bool {
 // terminates; a select whose every clause terminates; or a bare block that
 // terminates. Any other statement can be followed by more code and so does not
 // terminate.
-func (f *File) stmtIsTerminating(stmt Node) bool {
+func (f *File) stmtIsTerminating(stmt Node) bool { return f.labeledIsTerminating(stmt, "") }
+
+// labeledIsTerminating is stmtIsTerminating for a statement carrying label, the
+// name a break inside it may leave it by ("" for none).
+func (f *File) labeledIsTerminating(stmt Node, label string) bool {
 	var blocks []Node
 	var switchStmt, selectStmt, ifStmt, head, postfix Node
 	var isReturn, isFor, hasIf, hasSwitch, hasSelect, hasHead, hasPostfix bool
@@ -1216,7 +1220,8 @@ func (f *File) stmtIsTerminating(stmt Node) bool {
 	// A labeled statement terminates exactly as the statement it labels does.
 	if hasHead && hasPostfix {
 		if inner, _, isLbl := f.postfixLabel(postfix); isLbl {
-			return f.stmtIsTerminating(inner)
+			name, _ := f.assignHeadIdent(head)
+			return f.labeledIsTerminating(inner, name.Src())
 		}
 	}
 	switch {
@@ -1227,13 +1232,13 @@ func (f *File) stmtIsTerminating(stmt Node) bool {
 		// conditional one falls through when its condition is false. The condition
 		// lives inside the ForHeader, so it is not counted among this statement's
 		// own expressions.
-		return !f.forHasCond(stmt) && !(len(blocks) == 1 && f.containsBreak(blocks[0]))
+		return !f.forHasCond(stmt) && !(len(blocks) == 1 && f.containsBreak(blocks[0], label))
 	case hasIf:
 		return f.ifStmtIsTerminating(ifStmt)
 	case hasSwitch:
-		return f.switchIsTerminating(switchStmt)
+		return f.switchIsTerminating(switchStmt, label)
 	case hasSelect:
-		return f.selectIsTerminating(selectStmt)
+		return f.selectIsTerminating(selectStmt, label)
 	case len(blocks) == 1 && !hasHead:
 		return f.blockIsTerminating(blocks[0]) // a bare block statement
 	case hasHead && hasPostfix:
@@ -1281,7 +1286,7 @@ func (f *File) ifStmtIsTerminating(n Node) bool {
 // condition is Go's and is not implied by the others: a break that is not itself
 // the last statement, as in "if c { break }; return v", leaves a body that ends in
 // a terminating statement yet can still exit the switch and fall out the bottom.
-func (f *File) switchIsTerminating(n Node) bool {
+func (f *File) switchIsTerminating(n Node, label string) bool {
 	hasDefault := false
 	for c := range it(n.ast) {
 		if c.sym != CaseClause {
@@ -1290,7 +1295,7 @@ func (f *File) switchIsTerminating(n Node) bool {
 		if f.caseIsDefault(c) {
 			hasDefault = true
 		}
-		if !f.clauseIsTerminating(c) || f.containsBreak(c) {
+		if !f.clauseIsTerminating(c) || f.containsBreak(c, label) {
 			return false
 		}
 	}
@@ -1321,9 +1326,9 @@ func (f *File) clauseIsTerminating(clause Node) bool {
 // vacuously. The break condition is the switch's (see switchIsTerminating): a
 // break that is not the last statement leaves a body that ends in a terminating
 // statement yet can still exit the select and fall past it.
-func (f *File) selectIsTerminating(n Node) bool {
+func (f *File) selectIsTerminating(n Node, label string) bool {
 	for c := range it(n.ast) {
-		if c.sym == CommClause && (!f.blockIsTerminating(c) || f.containsBreak(c)) {
+		if c.sym == CommClause && (!f.blockIsTerminating(c) || f.containsBreak(c, label)) {
 			return false
 		}
 	}
@@ -1567,24 +1572,51 @@ func (f *File) forHasCond(stmt Node) bool {
 	return false
 }
 
-// containsBreak reports whether a loop body or a switch case clause contains a
-// break that leaves *that* statement. It does not descend into a nested for,
-// switch or select: a break names the innermost enclosing one, so a break inside
-// those leaves them instead.
-func (f *File) containsBreak(n Node) bool {
+// containsBreak reports whether a loop body or a switch or select clause contains
+// a break that leaves *that* statement, whose label is label ("" for none). Go's
+// rule is that no break REFERS to it: an unlabeled break at its own level -- not
+// inside a nested for, switch or select, which it leaves instead -- or one naming
+// its label from any depth. Only the first was looked for, so `loop: for { select {
+// case v := <-ch: ... break loop } }` was a loop that never ends and the statement
+// after it was refused as unreachable code, the commonest way a Go program leaves a
+// select loop.
+func (f *File) containsBreak(n Node, label string) bool {
+	return f.breaksOut(n, label, true)
+}
+
+// breaksOut is containsBreak walking a subtree, own reporting whether an unlabeled
+// break there would still leave the statement.
+func (f *File) breaksOut(n Node, label string, own bool) bool {
+	isBreak, lbl := false, ""
+	for c := range it(n.ast) {
+		if c.sym != 0 {
+			continue
+		}
+		switch f.ch(c.tok) {
+		case BREAK:
+			isBreak = true
+		case IDENT:
+			if isBreak {
+				lbl = f.tok(c.tok).Src()
+			}
+		case FOR:
+			own = false // a nested loop: its unlabeled breaks are its own
+		}
+	}
+	if isBreak {
+		return lbl == "" && own || lbl != "" && lbl == label
+	}
 	for c := range it(n.ast) {
 		switch c.sym {
-		case SwitchStmt, SelectStmt:
-			continue
 		case 0:
-			switch f.ch(c.tok) {
-			case BREAK:
+			continue
+		case SwitchStmt, SelectStmt:
+			if label != "" && f.breaksOut(c, label, false) {
 				return true
-			case FOR:
-				return false // this statement is a nested loop; its breaks are its own
 			}
+			continue
 		}
-		if f.containsBreak(c) {
+		if f.breaksOut(c, label, own) {
 			return true
 		}
 	}
