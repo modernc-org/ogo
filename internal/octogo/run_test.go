@@ -34488,6 +34488,58 @@ func main() {
 }
 `,
 		want: "60525 6 6 25\n25 49\n9 6 9\n16 5\n36 7\n8 8 8\n9 64\n",
+	}, {
+		// An untyped constant is converted to a float parameter by C's prototype,
+		// and the target converts an argument only when the parameter is NAMED:
+		// through `double (*)(double)` the int's bits arrived, 3e-45 for 1.5, on
+		// every call through a function value or an interface slot below. The
+		// wide and narrow integer parameters beside them were right, and stay so
+		// (doc/unnamed-param-no-conversion.c).
+		name: "a float parameter of a function value is converted to",
+		src: `type Scaler interface {
+	Scale(f float64) float64
+	Wide(a int64, b int64) int64
+	Narrow(a int8, b uint16) int
+}
+
+type S struct{ k float64 }
+
+func (s *S) Scale(f float64) float64 { return s.k * f }
+
+func (s *S) Wide(a int64, b int64) int64 { return a*1000 + b }
+
+func (s *S) Narrow(a int8, b uint16) int { return int(a)*100000 + int(b) }
+
+func half(a float64) float64 { return a / 2 }
+
+func mulf(a, b float32) float32 { return a * b }
+
+func w64(a int64, b int64) int64 { return a*1000 + b }
+
+type H struct{ f func(float64) float64 }
+
+var gh = half
+
+var tab = []func(float32, float32) float32{mulf}
+
+var out chan float64
+
+func run(f func(float64) float64) { out <- f(9) }
+
+func main() {
+	var sc Scaler = &S{3}
+	h := half
+	g := mulf
+	w := w64
+	st := H{half}
+	println(sc.Scale(2), sc.Wide(-3, 5), sc.Narrow(-2, 7))
+	println(h(3), gh(5), g(1.5, 4), tab[0](2, 3), st.f(7), w(-4, 6))
+	defer println("deferred", h(11), sc.Scale(1))
+	go run(half)
+	println(<-out)
+}
+`,
+		want: "6 -2995 -199993\n1.5 2.5 6 6 3.5 -3994\n4.5\ndeferred 5.5 3\n",
 	}}
 
 // TestEmitCRun compiles emitted C with a host compiler and runs it, checking what

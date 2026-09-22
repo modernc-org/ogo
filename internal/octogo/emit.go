@@ -3168,10 +3168,41 @@ func (e *emitter) funcTypeFor(fv funcValueType) string {
 	if fv.vararg != 0 {
 		e.funcTypeVariadic[name] = fv.vararg - 1
 	}
-	// "ret (*)(params)" -> "typedef ret (*name)(params);"
-	e.addTypedef(name, "typedef "+strings.Replace(fv.key, "(*)", "(*"+name+")", 1)+";\n",
+	// "ret (*)(params)" -> "typedef ret (*name)(params);", its numbers named: see
+	// cFuncTypeParams.
+	at := strings.Index(fv.key, " (*)(")
+	ret, params := fv.key[:at], fv.key[at+len(" (*)("):len(fv.key)-1]
+	e.addTypedef(name, "typedef "+ret+" (*"+name+")("+e.cFuncTypeParams(strings.Split(params, ", "))+");\n",
 		append(slices.Clone(fv.res), fv.params...)...)
 	return name
+}
+
+// cFuncTypeParams writes the parameter list of a function type the emitter
+// declares -- a function-type typedef, an interface's slot -- with every NUMBER and
+// bool parameter named, `double ogo_p0`. C converts an argument to its parameter's
+// type whether or not the parameter has a name; the target's compiler converts it
+// only when it has one: through `double (*)(double)` an int argument arrived as its
+// bits, so `h(3)` for a float64 parameter was 3e-45 on the P2, through a function
+// value and an interface's method alike (doc/unnamed-param-no-conversion.c). Only
+// these are named. A STRUCT parameter named is passed by value where the function
+// pointed at takes it by reference, so the callee read garbage (measured), and the
+// rest keep the form every program was built with before. An empty list, or the
+// lone `void`, is `void`.
+func (e *emitter) cFuncTypeParams(types []string) string {
+	if len(types) == 0 || len(types) == 1 && (types[0] == "void" || types[0] == "") {
+		return "void"
+	}
+	var b strings.Builder
+	for i, t := range types {
+		if i != 0 {
+			b.WriteString(", ")
+		}
+		b.WriteString(t)
+		if u := e.underlyingCType(t); isIntCType(u) || isFloatCType(u) || u == cBool {
+			fmt.Fprintf(&b, " ogo_p%d", i)
+		}
+	}
+	return b.String()
 }
 
 // fieldDeclSuffix is the C declarator suffix a field needs: the extents of a fixed
@@ -6656,14 +6687,11 @@ func (e *emitter) registerInterface(mn string, methods []ifaceMethod, forward bo
 	// member, which C requires and which used to be a filler byte.
 	fmt.Fprintf(&b, "struct %s { const char* %s;", vt, vtTypeField)
 	for _, m := range methods {
-		fmt.Fprintf(&b, " %s (*%s)(void*", slotRet(m), vtMember(m.name))
-		for _, p := range m.params {
-			b.WriteString(", " + p)
-		}
+		params := append([]string{"void*"}, m.params...)
 		if m.out != "" {
-			b.WriteString(", " + m.out + "*") // several results; see ifaceMethod.out
+			params = append(params, m.out+"*") // several results; see ifaceMethod.out
 		}
-		b.WriteString(");")
+		fmt.Fprintf(&b, " %s (*%s)(%s);", slotRet(m), vtMember(m.name), e.cFuncTypeParams(params)) // see cFuncTypeParams
 	}
 	b.WriteString(" };\n")
 	var deps []string
