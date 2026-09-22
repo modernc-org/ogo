@@ -6376,6 +6376,81 @@ func TestEmitCIndexNonArrayPointer(t *testing.T) {
 	}
 }
 
+// TestEmitCAddrStepRefused pins Go's refusal of a step after a parenthesised
+// address that the address does not take. `(&v).f` is `v.f` because a selector
+// dereferences ONE pointer, and `(&v)[i]` is `v[i]` for an array v alone; the paths
+// that lower these peel the address and apply the steps to v, so each of these
+// compiled as though the & were not there -- a store, an increment, a method call
+// as a value, a statement, a defer and a go, and a call of a function value --
+// while Go refuses every one. The last row is the control: the shapes Go takes.
+func TestEmitCAddrStepRefused(t *testing.T) {
+	const decls = `type P struct{ x, y int }
+
+func (q *P) m() int { return q.x }
+
+type Shape interface{ Area() int }
+
+func (q *P) Area() int { return q.x }
+
+var p = P{1, 2}
+
+var arr = [3]int{1, 2, 3}
+
+func dbl(n int) int { return n * 2 }
+
+func main() {
+	pp := &p
+	ps := []int{1}
+	pa := &arr
+	var sh Shape = &p
+	f := dbl
+	s := "hi"
+	_, _, _, _, _, _ = pp, ps, pa, sh, f, s
+`
+	for _, test := range []struct{ body, want string }{
+		{"\tprintln((&pp).x)\n", "(&pp).x undefined (type **P has no field or method x)"},
+		{"\t(&pp).x = 3\n", "(&pp).x undefined (type **P has no field or method x)"},
+		{"\t(&pp).x++\n", "(&pp).x undefined (type **P has no field or method x)"},
+		{"\tx := (&pp).x\n\t_ = x\n", "(&pp).x undefined (type **P has no field or method x)"},
+		{"\tprintln((&pp).m())\n", "(&pp).m undefined (type **P has no field or method m)"},
+		{"\t(&pp).m()\n", "(&pp).m undefined (type **P has no field or method m)"},
+		{"\tdefer (&pp).m()\n", "(&pp).m undefined (type **P has no field or method m)"},
+		{"\tgo (&pp).m()\n", "(&pp).m undefined (type **P has no field or method m)"},
+		{"\tprintln((&pa)[0])\n", "cannot index (&pa) (value of type **[3]int)"},
+		{"\t(&pa)[0] = 5\n", "cannot index (&pa) (value of type **[3]int)"},
+		{"\t(&pa)[0]++\n", "cannot index (&pa) (value of type **[3]int)"},
+		{"\tprintln((&ps)[0])\n", "cannot index (&ps) (value of type *[]int)"},
+		{"\t(&ps)[0] = 1\n", "cannot index (&ps) (value of type *[]int)"},
+		{"\t(&ps)[0] += 2\n", "cannot index (&ps) (value of type *[]int)"},
+		{"\tprintln((&s)[0])\n", "cannot index (&s) (value of type *string)"},
+		{"\tprintln((&sh).Area())\n", "(&sh).Area undefined (type *Shape is pointer to interface, not interface)"},
+		{"\t(&sh).Area()\n", "(&sh).Area undefined (type *Shape is pointer to interface, not interface)"},
+		{"\tprintln((&f)(1))\n", "cannot call (&f) (value of type *func(int) int)"},
+		{"\t(&f)(1)\n", "cannot call (&f) (value of type *func(int) int)"},
+		{"\tprintln((&p).x, (&arr)[0], (&p).m())\n\t(&p).x = 3\n\t(&arr)[0] = 1\n\t(&p).m()\n\tx := (&p).y\n\t_ = x\n", ""},
+	} {
+		t.Run(strings.TrimSpace(test.body), func(t *testing.T) {
+			src := decls + test.body + "}\n"
+			fsys := fstest.MapFS{"main.ogo": &fstest.MapFile{Data: []byte(src)}}
+			pkg, err := Build(-1, []string{"main.ogo"}, fsys)
+			if err != nil {
+				t.Fatalf("Build: %v", err)
+			}
+			err = EmitC(pkg, io.Discard, Checked())
+			switch {
+			case test.want == "":
+				if err != nil {
+					t.Errorf("refused a program Go takes: %v", err)
+				}
+			case err == nil:
+				t.Errorf("accepted a program Go refuses; want %q\n%s", test.want, src)
+			case !strings.Contains(err.Error(), test.want):
+				t.Errorf("error %q does not say %q", err, test.want)
+			}
+		})
+	}
+}
+
 // TestEmitCPointerToArrayAlternatives pins the two forms that pass an array by
 // reference without a pointer to it: a slice of the array, and a struct holding it.
 // They predate the pointer and are what the refusal used to point at. The address

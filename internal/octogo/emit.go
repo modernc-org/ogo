@@ -17484,6 +17484,9 @@ func (e *emitter) factorAddrCall(kids []Node) (string, []Node, bool) {
 	if len(steps) == 0 || !derefCallSteps(steps) {
 		return "", nil, false
 	}
+	if e.addrStepRefused(name, steps) {
+		return "", nil, false
+	}
 	return name, steps, true
 }
 
@@ -21930,6 +21933,9 @@ func (e *emitter) emitParenChain(kids []Node) bool {
 			return false // a call: emitParenMethod's, above
 		}
 	}
+	if name, isAddr := e.addrOperand(kids[1].ast); isAddr && e.addrStepRefused(name, steps) {
+		return true // `(&pp).x`, `(&ps)[0]`: refused in Go's words
+	}
 	ct, ok := e.inferNode(kids[1])
 	if !ok || ct == "" {
 		// A slice EXPRESSION, `(arr[1:])[1]`: inferNode types a node the walk
@@ -21987,6 +21993,9 @@ func (e *emitter) parenChainType(kids []Node) (string, bool) {
 		if st.sym != Index && st.sym != Selector {
 			return "", false // a call: parenMethodResultType's
 		}
+	}
+	if name, isAddr := e.addrOperand(kids[1].ast); isAddr && e.addrStepRefused(name, steps) {
+		return "", false // said in Go's words, ahead of "cannot infer a type"
 	}
 	ct, ok := e.inferNode(kids[1])
 	if !ok || ct == "" {
@@ -31654,6 +31663,9 @@ func (e *emitter) derefHead(head Node) (string, bool) {
 // taken; `(v).m()` was "unsupported call target", and a go statement took none.
 func (e *emitter) parenRecvHead(head Node, suffix []Node) (string, bool) {
 	if name, ok := e.addrHead(head); ok {
+		if e.addrStepRefused(name, suffix) {
+			return "", false
+		}
 		return name, true
 	}
 	if name, ok := e.derefHead(head); ok {
@@ -31679,6 +31691,9 @@ func (e *emitter) parenTargetBase(head Node, postfix []Node) (string, bool) {
 		return "", false
 	}
 	if name, ok := e.addrHead(head); ok {
+		if e.addrStepRefused(name, postfix) {
+			return "", false
+		}
 		return name, true
 	}
 	kids := slices.Collect(it(head.ast))
@@ -31699,6 +31714,57 @@ func (e *emitter) addrHead(head Node) (string, bool) {
 		return "", false
 	}
 	return e.addrOperand(kids[1].ast)
+}
+
+// addrStepRefused refuses, in Go's words, the step after a parenthesised address
+// `(&v)` that the address does not take, and reports whether it did. `(&v).f` and
+// `(&v).m()` are `v.f` and `v.m()` -- a selector dereferences ONE pointer -- and
+// `(&v)[i]` is `v[i]` for an array v only. The paths that lower these peel the
+// address and apply the steps to v, which asked nothing of v: `(&pp).x = 3` for a
+// pointer pp, `(&pp).m()`, `(&pa)[0] = 5` for a pointer to an array, `(&ps)[0] = 1`
+// for a slice and `(&f)(1)` for a function compiled as though the & were not
+// there, where Go refuses each -- and read in value position they were refused as
+// forms "not supported yet".
+func (e *emitter) addrStepRefused(name string, steps []Node) bool {
+	if len(steps) == 0 {
+		return false
+	}
+	_, isArr := e.arrayVar(name)
+	ct, isVar := e.varType(name)
+	if !isArr && !isVar {
+		return false
+	}
+	pt := "*"
+	if isArr {
+		a, _ := e.arrayVar(name)
+		pt += e.goArrayTypeName(a)
+	} else {
+		pt += e.goTypeName(ct)
+	}
+	operand := "(&" + name + ")"
+	switch steps[0].sym {
+	case Selector:
+		if isArr || !e.isPointer(ct) && !e.isIfaceCType(ct) {
+			return false
+		}
+		sel := e.soleIdent(steps[0].ast)
+		if e.isIfaceCType(ct) {
+			e.fail("%s.%s undefined (type %s is pointer to interface, not interface)", operand, sel, pt)
+			return true
+		}
+		e.fail("%s.%s undefined (type %s has no field or method %s)", operand, sel, pt, sel)
+		return true
+	case Index:
+		if isArr {
+			return false
+		}
+		e.fail("cannot index %s (value of type %s)", operand, pt)
+		return true
+	case CallSuffix:
+		e.fail("invalid operation: cannot call %s (value of type %s): %s is not a function", operand, pt, pt)
+		return true
+	}
+	return false
 }
 
 // emitDerefAssign emits an assignment whose target is reached through a written-out
