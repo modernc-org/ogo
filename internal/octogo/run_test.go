@@ -34360,6 +34360,79 @@ func main() {
 }
 `,
 		want: "body 100\ncond 2 3\nlit 2 1\nreaders 2 35\nchanged 9 2\nm 3\nvalue 2 3\neval 2 3\nspread 2 9\nnone 0 0\ndecl 3 24\n",
+	}, {
+		// A GOROUTINE's call of a variadic function packs what the go statement
+		// wrote: the values cross in the argument block as the element type and the
+		// trampoline packs them on the goroutine's own stack, which lives as long as
+		// the call does. A declared function, an empty pack, a spread, a function
+		// value, a value and a pointer method, interfaces, a literal, and arguments
+		// taken before they change. Passed as they stood, the call had one argument
+		// per value where the callee takes one slice, and neither compiler built it.
+		name: "a goroutine's variadic call is packed on its own stack",
+		src: `type Reader interface{ Read() int }
+
+type Dev struct{ v int }
+
+func (d *Dev) Read() int { return d.v }
+
+type W struct{ base int }
+
+func (w W) Run(xs ...int) { done <- w.base + len(xs) }
+
+func (w *W) PRun(k int, xs ...int) { done <- w.base + k*len(xs) }
+
+func sumR(rs ...Reader) {
+	n := 0
+	for _, r := range rs {
+		n += r.Read()
+	}
+	done <- n
+}
+
+func sum(xs ...int) {
+	n := 0
+	for _, x := range xs {
+		n += x
+	}
+	done <- n*10 + len(xs)
+}
+
+var done chan int
+
+var d1 = Dev{3}
+
+var d2 = Dev{5}
+
+var gw = W{200}
+
+var xs = []int{4, 5}
+
+func main() {
+	k := 1
+	w := W{100}
+	g := sum
+	go sum(1, 2)
+	println(<-done)
+	go sum()
+	println(<-done)
+	go sum(xs...)
+	println(<-done)
+	go g(3, 4, 5)
+	println(<-done)
+	go w.Run(1, 2, 3)
+	println(<-done)
+	go gw.PRun(10, 1, 2)
+	println(<-done)
+	go sumR(&d1, &d2)
+	println(<-done)
+	go func(ys ...int) { done <- len(ys) * 7 }(1, 2)
+	println(<-done)
+	go sum(k, k+1)
+	k = 100
+	println(<-done, k)
+}
+`,
+		want: "32\n0\n92\n123\n103\n220\n8\n14\n32 100\n",
 	}}
 
 // TestEmitCRun compiles emitted C with a host compiler and runs it, checking what

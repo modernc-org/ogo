@@ -1292,6 +1292,13 @@ type goSite struct {
 	// point against, so the pointer travels in the argument block like an argument
 	// and the trampoline calls through it.
 	fnCType string
+	// pack says the callee is VARIADIC and the call wrote values rather than a
+	// spread: the slots from packFrom on hold them, each as packElem, and the
+	// trampoline packs them into an array of the goroutine's own stack, which lives
+	// as long as the call does.
+	pack     bool
+	packFrom int
+	packElem string
 }
 
 // goArgsCName and goTrampolineCName name a site's generated struct and trampoline.
@@ -1774,10 +1781,48 @@ func (e *emitter) emitGo(nodes []Node) {
 	if site.fnCType != "" {
 		params = e.funcTypeParams[site.fnCType]
 	}
+	// A VARIADIC callee packs what the call wrote. The values travel in the block
+	// as its element, and the trampoline packs them (see goDefs); passed as they
+	// stood, `go work(1, 2)` called work with two ints where it takes one slice,
+	// which neither compiler took, declared function or value alike.
+	packAt := -1
+	if !e.spreadCall(callSuffix.ast) {
+		cname := site.callee
+		if site.fnCType != "" {
+			cname = ""
+		}
+		if elem, at := e.callVariadic(cname, site.fnCType, params); at >= 0 {
+			if len(args) < at {
+				e.fail("not enough arguments in call to %s", e.funcSourceName(site.callee))
+				return
+			}
+			// The pack is the trampoline's, gone when the call returns, so a callee
+			// that keeps its variadic parameter is refused -- as a direct call's
+			// pack, an array of the caller's frame, is.
+			summary := site.callee
+			if site.fnCType != "" {
+				summary = e.indirectCallee("", site.fnCType)
+			}
+			if crosses := e.crossParams[summary]; at < len(crosses) && crosses[at]&(leakCog|leakGlobal) != 0 {
+				e.fail("cannot pass these values to a goroutine's %s: they are packed for the call, and its parameter %d outlives it; pack them into a package array and pass a slice of it",
+					e.funcSourceName(summary), at+1)
+				return
+			}
+			packAt = at
+			site.pack, site.packElem = true, elem
+			e.needSlice(elem)
+		}
+	}
 	for i, a := range args {
 		ct := ""
 		if i < len(params) {
 			ct = params[i]
+		}
+		if packAt >= 0 && i >= packAt {
+			if i == packAt {
+				site.packFrom = len(site.args)
+			}
+			ct = site.packElem
 		}
 		if ct == "" {
 			var ok bool
@@ -1793,6 +1838,9 @@ func (e *emitter) emitGo(nodes []Node) {
 			site.arrays[len(site.args)] = dims[i] // see goSite.arrays
 		}
 		site.args = append(site.args, ct)
+	}
+	if site.pack && packAt >= len(args) {
+		site.packFrom = len(site.args) // nothing written for the variadic parameter
 	}
 	e.goSites = append(e.goSites, site)
 	e.needPanic()
@@ -1956,13 +2004,32 @@ func (e *emitter) goDefs() string {
 		if s.fnCType != "" {
 			callee = "a->fn"
 		}
-		fmt.Fprintf(&tramps, "static void %s(void* p) {\n\t%s* a = p;\n\t%s(",
-			goTrampolineCName(s.id), goArgsCName(s.id), callee)
-		for i := range s.args {
+		fmt.Fprintf(&tramps, "static void %s(void* p) {\n\t%s* a = p;\n", goTrampolineCName(s.id), goArgsCName(s.id))
+		n := len(s.args)
+		pack := ""
+		if s.pack {
+			n = s.packFrom
+			pack = "(" + sliceCName(s.packElem) + "){0}"
+			if k := len(s.args) - s.packFrom; k != 0 {
+				fmt.Fprintf(&tramps, "\t%s pack[%d];\n", s.packElem, k)
+				for j := 0; j < k; j++ {
+					fmt.Fprintf(&tramps, "\tpack[%d] = a->a%d;\n", j, s.packFrom+j)
+				}
+				pack = fmt.Sprintf("(%s){pack, %d, %d}", sliceCName(s.packElem), k, k)
+			}
+		}
+		fmt.Fprintf(&tramps, "\t%s(", callee)
+		for i := 0; i < n; i++ {
 			if i != 0 {
 				tramps.WriteString(", ")
 			}
 			fmt.Fprintf(&tramps, "a->a%d", i)
+		}
+		if s.pack {
+			if n != 0 {
+				tramps.WriteString(", ")
+			}
+			tramps.WriteString(pack)
 		}
 		// Not ogo_cog_release: the goroutine is still on this slot's stack
 		// here, with the return through _cogstart's epilogue ahead of it. done
