@@ -35285,6 +35285,61 @@ func main() {
 }
 `,
 		want: "21 0\n2 -1 4 6\n102 1 2 104 100 4\n14 10 11 3 7\n22\ndeferred 10\n",
+	}, {
+		// A call through an INTERFACE method with a variadic parameter packs what
+		// it wrote there, as a call of the method itself does. Nothing said the
+		// slot's parameter was variadic -- no callee name, no function type -- so
+		// `lg.Log("a", 1, 2, 3)` handed the ints over where the slice header goes,
+		// and neither compiler took it, for any element type. A promoted method,
+		// a spread, a call in an expression and one on another cog alike.
+		name: "a variadic method called through an interface",
+		src: `type Logger interface {
+	Log(prefix string, xs ...int) int
+}
+
+type Base interface {
+	Logger
+	Name() string
+}
+
+type L struct{ n int }
+
+func (l *L) Log(prefix string, xs ...int) int {
+	t := l.n
+	for _, x := range xs {
+		t += x
+	}
+	println(prefix, t, len(xs))
+	return t
+}
+
+func (l *L) Name() string { return "L" }
+
+var gl = L{10}
+
+var done chan int
+
+
+func worker(lg Logger) {
+	lg.Log("cog", 7, 8)
+	done <- 1
+}
+
+func main() {
+	var lg Logger = &gl
+	var b Base = &gl
+	lg.Log("a", 1, 2, 3)
+	lg.Log("b")
+	b.Log("c", 4)
+	xs := []int{5, 6}
+	lg.Log("d", xs...)
+	go worker(lg)
+	<-done
+	n := b.Log("e", 1) + lg.Log("f", 2, 2)
+	println(n, b.Name())
+}
+`,
+		want: "a 16 3\nb 10 0\nc 14 1\nd 21 2\ncog 25 2\ne 11 1\nf 14 2\n25 L\n",
 	}}
 
 // TestEmitCRun compiles emitted C with a host compiler and runs it, checking what

@@ -15590,6 +15590,32 @@ func main() {
 			want: "cannot pass the address of a composite literal",
 		},
 		{
+			// A call through an interface packs its variadic arguments into an array
+			// of this frame, and an implementation that keeps the parameter is
+			// handed a view of it -- asked of the union over the implementations, as
+			// every other argument through an interface is.
+			name: "a variadic pack kept through an interface",
+			src: `type Keeper interface {
+	Keep(xs ...int)
+}
+
+type K struct{}
+
+var kept []int
+
+func (k *K) Keep(xs ...int) { kept = xs }
+
+var gk = K{}
+
+func main() {
+	var kp Keeper = &gk
+	kp.Keep(1, 2, 3)
+	println(len(kept))
+}
+`,
+			want: "cannot pass these values to Keep (through Keeper): they are packed into an array of this function",
+		},
+		{
 			name: "the address of an array and a slice literal, used in the frame",
 			src: `type H struct{ p *[2]int }
 

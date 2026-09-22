@@ -5510,6 +5510,7 @@ type emitter struct {
 	funcParams        map[string][]string       // same key -> its parameter C types, so a value handed to it is stored as the parameter's type
 	callParams        []string                  // the parameter C types of the next call emitted through a function VALUE or an interface slot, which names no callee to look up; emitCallArgs takes them (see wideConstArg)
 	callFuncType      string                    // the function typedef of the next call emitted through a VALUE, taken beside callParams: which of them is variadic, which C's shape does not say
+	callVararg        int                       // 1 + the variadic parameter's position for the next call emitted through an INTERFACE slot, taken beside callParams; 0 for none
 	localConsts       map[string]bool           // block-scope CONSTANTS in scope, by name: the locals a constant fold may still resolve (see shadowedByLocal)
 	localConstSpecs   map[string]localConstSpec // ... and how each was declared, for a function literal to declare again what it reads (liftFuncLit)
 	localConstSeq     int                       // orders localConstSpecs as they were declared
@@ -6443,6 +6444,10 @@ type ifaceMethod struct {
 	// the shape of what travels. See doc/struct-return-through-pointer-on-cog.c.
 	out    string
 	params []string
+	// vararg is 1 + the position of a "...T" parameter, 0 for none: a call through
+	// the slot packs what it wrote there into the []T, as a call of the method
+	// itself does.
+	vararg int
 }
 
 // vtTypeField names the vtable member holding the dynamic type's name, which "%T"
@@ -6576,7 +6581,8 @@ func (e *emitter) ifaceMethodsSeen(structAST []int32, seen map[string]bool) ([]i
 			res = resTypes[0]
 		}
 		params, _ := e.cParamTypes(n.ast)
-		add(ifaceMethod{name: name, res: res, resList: resTypes, out: out, params: params})
+		_, at := e.variadicElem(n.ast)
+		add(ifaceMethod{name: name, res: res, resList: resTypes, out: out, params: params, vararg: at + 1})
 	}
 	return methods, true
 }
@@ -7524,6 +7530,7 @@ func (e *emitter) ifaceCallC(ifaceCType, recvText, method string, callSuffix []i
 	// number of parameters in call to Mix". The method's parameter types are what
 	// spells the constant at width (wideConstArg); the call names no function.
 	e.callParams = e.ifaceMethodParams(ifaceCType, method)
+	e.callVararg = e.ifaceMethodVararg(ifaceCType, method)
 	if args := e.argsCText("", callSuffix); args != "" {
 		call += ", " + args
 	}
@@ -7531,6 +7538,17 @@ func (e *emitter) ifaceCallC(ifaceCType, recvText, method string, callSuffix []i
 		call += ", &" + out
 	}
 	return call + ")"
+}
+
+// ifaceMethodVararg is ifaceMethod.vararg of an interface's method: 1 + the position
+// of its variadic parameter, 0 for none or for a method the interface does not have.
+func (e *emitter) ifaceMethodVararg(ifaceCType, method string) int {
+	for _, m := range e.ifaceMethods[ifaceCType] {
+		if m.name == method {
+			return m.vararg
+		}
+	}
+	return 0
 }
 
 // ifaceMethodParams returns the parameter C types of an interface's method, the
@@ -26365,7 +26383,7 @@ func (e *emitter) checkDeferLeaks(d *deferredCall, head Node, suffix []Node, arg
 	// `defer iv.M(args)`, `defer bus.dev.M(args)`, `defer devs[i].M(args)`: the
 	// union over the implementations, as a call makes it.
 	if ct, m, isIface := e.ifaceChainMethod(base, suffix); isIface {
-		e.checkIfaceArgs(ct, m.name, args)
+		e.checkIfaceArgs(ct, m.name, args, spread)
 		return
 	}
 	if len(steps) == 1 && steps[0].sym == Selector {
@@ -26952,7 +26970,7 @@ func (e *emitter) forwardedCallInto(ex Node, out string) (text string, writes, o
 	// void call, which both compilers refuse -- the shape did not build at all.
 	if ct, recvText, method, _, isOut := e.ifaceOutMethod(callee, suffix); isOut {
 		call := suffix[len(suffix)-1].ast
-		e.checkIfaceArgs(ct, method, e.callArgExprs(call))
+		e.checkIfaceArgs(ct, method, e.callArgExprs(call), e.spreadCall(call))
 		return e.ifaceCallC(ct, recvText, method, call, out), true, true
 	}
 	t, okPlain := e.forwardedCallC(ex)
@@ -27575,7 +27593,7 @@ func (e *emitter) emitCallExpr(recv string, suffix []Node) bool {
 			// The escape rules a DIRECT method call obeys, asked of the union over
 			// the implementations -- the call names no function for them to be
 			// looked up by, and asking nothing made this the way around them.
-			e.checkIfaceArgs(ct, method, e.callArgExprs(suffix[1].ast))
+			e.checkIfaceArgs(ct, method, e.callArgExprs(suffix[1].ast), e.spreadCall(suffix[1].ast))
 			e.checkIfaceRecvKept(ct, method, recv)
 			if out, single := e.ifaceSingleOut(ct, method); single {
 				// One struct result, written through the out parameter; see
@@ -27642,7 +27660,7 @@ func (e *emitter) emitCallExpr(recv string, suffix []Node) bool {
 			// out would.
 			if ict, path, okp := e.promotedIfaceMethodPath(rct, method); okp {
 				recvText, _ := e.embeddedPathC(e.varRef(recv), rct, path)
-				e.checkIfaceArgs(ict, method, e.callArgExprs(suffix[1].ast))
+				e.checkIfaceArgs(ict, method, e.callArgExprs(suffix[1].ast), e.spreadCall(suffix[1].ast))
 				if out, single := e.ifaceSingleOut(ict, method); single {
 					e.emitOutValueCall(out, discard, func(tmp string) string {
 						return e.ifaceCallC(ict, recvText, method, suffix[1].ast, tmp)
@@ -28400,7 +28418,7 @@ func (e *emitter) chainCText(base string, steps []Node) (text, ctype string, add
 				// `bus.dev.Keep(a[:])`, `devs[i].Keep(a[:])` -- nothing asked, and
 				// the slice of a local array was stored where the implementation
 				// stores it.
-				e.checkIfaceArgs(cur.ctype, field, e.callArgExprs(steps[i+1].ast))
+				e.checkIfaceArgs(cur.ctype, field, e.callArgExprs(steps[i+1].ast), e.spreadCall(steps[i+1].ast))
 				call := text + ".vt->" + vtMember(field) + "(" + text + ".data"
 				if args := e.argsCText("", steps[i+1].ast); args != "" {
 					call += ", " + args
@@ -34693,7 +34711,7 @@ func (e *emitter) emitDestructure(targets []assignTarget, declare []bool, rhs []
 	// temporary is declared first and its address handed over.
 	if ct, recvText, method, out, isOut := e.ifaceOutMethod(callee, suffix); isOut {
 		call := suffix[len(suffix)-1].ast
-		e.checkIfaceArgs(ct, method, e.callArgExprs(call))
+		e.checkIfaceArgs(ct, method, e.callArgExprs(call), e.spreadCall(call))
 		e.ind()
 		e.emit(out + " " + tmp + ";\n")
 		e.ind()
@@ -35353,6 +35371,14 @@ func (e *emitter) emitCallArgs(cname string, callSuffix []int32) {
 	ftype := e.callFuncType
 	e.callFuncType = ""
 	varElem, varAt := e.callVariadic(cname, ftype, params)
+	// A call through an interface slot: the method's own variadic parameter, which
+	// neither a callee name nor a function type says. Unread, `sm.Sum(1, 2)` for a
+	// `Sum(xs ...int)` handed the ints over where the slice header goes, and neither
+	// compiler took it.
+	if at := e.callVararg - 1; at >= 0 && varAt < 0 && at < len(params) {
+		varElem, varAt = sliceElemFromCName(e.underlyingCType(params[at])), at
+	}
+	e.callVararg = 0
 	args := e.callArgExprs(callSuffix)
 	// An argument is converted to its parameter's type, or a packed one to the
 	// variadic element's: the context an untyped shift in it takes its type from.
@@ -35650,7 +35676,7 @@ func (e *emitter) forwardedResults(cname string, params []string, elem string, a
 	// it, so the temporary is declared first and its address handed over.
 	if ct, recvText, method, out, isOut := e.ifaceOutMethod(callee, suffix); isOut {
 		call := suffix[len(suffix)-1].ast
-		e.checkIfaceArgs(ct, method, e.callArgExprs(call))
+		e.checkIfaceArgs(ct, method, e.callArgExprs(call), e.spreadCall(call))
 		tmp := e.newTmp()
 		e.prologue = append(e.prologue, out+" "+tmp+";\n",
 			e.ifaceCallC(ct, recvText, method, call, tmp)+";\n")
@@ -41544,12 +41570,30 @@ func (e *emitter) checkIntoArgs(cname string, args []Node) {
 // owns it, and an interface value is a pointer to storage this cannot name -- the
 // question the call site answers for `h.set(a[:])` has no answer when the receiver
 // arrived inside an interface.
-func (e *emitter) checkIfaceArgs(iface, method string, args []Node) {
+func (e *emitter) checkIfaceArgs(iface, method string, args []Node, spread bool) {
 	crosses, intos, any := e.ifaceCallSummary(iface, method)
 	if !any {
 		return
 	}
 	who := method + " (through " + e.goTypeName(iface) + ")"
+	// The pack a variadic call builds is an array of this frame, as a direct call's
+	// is (checkCrossArgs): an implementation that lets its variadic parameter
+	// outlive the call was handed a view of a dead frame, in silence, once a call
+	// through the slot began to pack at all.
+	if at := e.ifaceMethodVararg(iface, method) - 1; !spread && at >= 0 && at < len(crosses) &&
+		crosses[at]&(leakCog|leakGlobal) != 0 {
+		why := "is stored where it outlives every frame"
+		if crosses[at]&leakCog != 0 {
+			why = "reaches another cog, which may outlive this function"
+		}
+		pos := e.f.tok(args[0].Pos()).Position()
+		if at < len(args) {
+			pos = e.f.tok(args[at].Pos()).Position()
+		}
+		e.fail("%v: cannot pass these values to %s: they are packed into an array of this function, and its parameter %d %s; pack them into a package array and pass a slice of it",
+			pos, who, at+1, why)
+		return
+	}
 	e.checkCrossArgsIn(crosses, who, args)
 	e.checkIntoArgsIn(intos, who, args)
 	e.checkContentArgsIn(e.ifaceSummaries[iface+"."+method].contents, who, args)
