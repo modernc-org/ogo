@@ -35029,6 +35029,92 @@ func main() {
 }
 `,
 		want: "1 0 0 true true\n4 0 5\n0 2 2 0\n2 0 3 9\n7 0\n0\n",
+	}, {
+		// nil in every position a value stands in, for every type that is nil-able:
+		// a slice, a DEFINED slice type, an interface, a function, a channel and a
+		// pointer. A slice is a header struct in C and nil alone is the null
+		// pointer, so each position has to say which nil it is -- and a defined
+		// slice type said nothing, in a return, an assignment, a field store and an
+		// argument, nor did an element of a variadic of slices. The target's
+		// compiler refused the program outright.
+		name: "nil in every position",
+		src: `type L []int
+
+type Shape interface{ Area() int }
+
+type P struct{ n int }
+
+func (p *P) Area() int { return p.n }
+
+type H struct {
+	vs []int
+	ls L
+	p  *P
+	sh Shape
+	f  func(int) int
+	ch chan int
+}
+
+var gvs []int
+
+var gls L
+
+var gsh Shape
+
+var gf func(int) int
+
+var ch chan []int
+
+func takeSlice(xs []int) int { return len(xs) }
+
+func takeL(l L) int { return len(l) }
+
+func takeIface(s Shape) bool { return s == nil }
+
+func takeFunc(f func(int) int) bool { return f == nil }
+
+func retSlice() []int { return nil }
+
+func retL() L { return nil }
+
+func retIface() Shape { return nil }
+
+func retFunc() func(int) int { return nil }
+
+func variadic(xs ...[]int) int { return len(xs) }
+
+func main() {
+	var lvs []int
+	var lls L
+	var lsh Shape
+	var lf func(int) int
+	h := H{nil, nil, nil, nil, nil, nil}
+	h2 := H{vs: nil, sh: nil}
+	println(len(lvs), len(lls), lsh == nil, lf == nil, len(h.vs), len(h.ls), h.p == nil, h.sh == nil, h.f == nil, h.ch == nil, len(h2.vs))
+	lvs = nil
+	lls = nil
+	lsh = nil
+	lf = nil
+	h.vs = nil
+	h.ls = nil
+	h.sh = nil
+	println(len(lvs), len(lls), lsh == nil, lf == nil, len(h.vs))
+	println(takeSlice(nil), takeL(nil), takeIface(nil), takeFunc(nil))
+	println(len(retSlice()), len(retL()), retIface() == nil, retFunc() == nil)
+	println(variadic(nil, nil), variadic([]int{1}, nil))
+	rows := [][]int{nil, {1}, nil}
+	arr := [2][]int{nil, nil}
+	println(len(rows[0]), len(rows[1]), len(arr[1]))
+	hs := []H{{nil, nil, nil, nil, nil, nil}}
+	println(len(hs[0].vs), hs[0].sh == nil)
+	println(gvs == nil, gls == nil, gsh == nil, gf == nil, len(gvs))
+	var s2 []int = nil
+	var i2 Shape = nil
+	println(s2 == nil, i2 == nil)
+	println(cap(retSlice()), retSlice() == nil)
+}
+`,
+		want: "0 0 true true 0 0 true true true true 0\n0 0 true true 0\n0 0 true true\n0 0 true true\n2 2\n0 1 0\n0 true\ntrue true true true 0\ntrue true\n0 true\n",
 	}}
 
 // TestEmitCRun compiles emitted C with a host compiler and runs it, checking what

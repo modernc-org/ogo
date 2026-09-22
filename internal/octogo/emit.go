@@ -12582,12 +12582,21 @@ func (e *emitter) paramSliceTypes(sig []int32) []string {
 				out = append(out, sliceCName(e.cType(ta)))
 				return
 			}
-			elem, ok := e.sliceType(ta)
-			if !ok {
-				out = append(out, "")
+			if elem, ok := e.sliceType(ta); ok {
+				out = append(out, sliceCName(elem))
 				return
 			}
-			out = append(out, sliceCName(elem))
+			// A DEFINED slice type names the same header, `type L []int`: a nil
+			// argument to an `l L` parameter emitted the null pointer, which is not
+			// a header, where one written `[]int` was given the zero header. Asked
+			// of the NAME rather than of cType, which reports a type it cannot name
+			// -- and every parameter comes through here, including the func and
+			// chan types it has no C name for.
+			if nm, ok := e.namedSliceLitType(ta); ok {
+				out = append(out, nm)
+				return
+			}
+			out = append(out, "")
 		})
 	}
 	return out
@@ -27193,7 +27202,7 @@ func (e *emitter) emitReturnValue(i int, ex Node) {
 		// A nil slice is the all-zero header. The interface case is not here: it
 		// belongs to ifaceValueC below, which every position wanting an interface
 		// VALUE goes through, so nil is answered once rather than per position.
-		if ct := e.curResultTypes[i]; e.isNilExpr(ex.ast) && e.isSliceCType(ct) {
+		if ct := e.curResultTypes[i]; e.isNilExpr(ex.ast) && e.isSliceCType(e.underlyingCType(ct)) {
 			e.emit("(" + ct + "){0}")
 			return
 		}
@@ -32716,7 +32725,7 @@ func (e *emitter) emitAssignment(head Node, postfix []Node) {
 				ct, ok = e.fieldType(base, fields)
 			}
 			switch {
-			case ok && e.isSliceCType(ct):
+			case ok && e.isSliceCType(e.underlyingCType(ct)):
 				e.ind()
 				e.emit(lhs + " = (" + ct + "){0};\n")
 				return
@@ -34831,6 +34840,12 @@ func (e *emitter) packVariadic(elem string, args []Node) string {
 		}
 		if lit, ok := e.floatConstC(a.ast, elem); ok && !wrapped {
 			val, wrapped = lit, true // see floatConstC
+		}
+		// A nil element of a variadic of SLICES is that slice's zero header, not the
+		// null pointer nil emits alone: `f(nil, nil)` for an `xs ...[]int` assigned
+		// 0 where a header goes, which neither compiler takes.
+		if !wrapped && e.isNilExpr(a.ast) && e.isSliceCType(e.underlyingCType(elem)) {
+			val, wrapped = "("+elem+"){0}", true
 		}
 		if !wrapped {
 			val = e.captureC(func() { e.emitExpr(a.ast) })
