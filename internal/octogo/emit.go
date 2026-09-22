@@ -1299,6 +1299,37 @@ type goSite struct {
 	pack     bool
 	packFrom int
 	packElem string
+	// ifaceMethod is the method a goroutine calls through an INTERFACE value, whose
+	// type is ifaceCType: the value travels as the receiver's slot, a0, and the
+	// trampoline calls through its table with a0's data pointer.
+	ifaceMethod string
+	ifaceCType  string
+}
+
+// goIfaceRecv answers a go statement's receiver when it is an INTERFACE value --
+// a variable, or one reached through fields and indexes -- with its type and the C
+// text reaching it, whatever the walk binds ahead of the statement written here.
+func (e *emitter) goIfaceRecv(base string, chain []Node) (ct, text string, ok bool) {
+	if len(chain) == 0 {
+		if vt, isVar := e.varType(base); isVar && e.isIfaceCType(vt) {
+			return vt, e.varRef(base), true
+		}
+		return "", "", false
+	}
+	cur, okc := e.accessChainType(base, chain)
+	if !okc {
+		return "", "", false
+	}
+	vt, okv := e.chainValueCType(cur)
+	if !okv || !e.isIfaceCType(vt) {
+		return "", "", false
+	}
+	text, pro := e.capturePrologue(func() { e.emitAccessChain(base, chain) })
+	for _, line := range pro {
+		e.ind()
+		e.emit(line)
+	}
+	return vt, text, true
 }
 
 // goArgsCName and goTrampolineCName name a site's generated struct and trampoline.
@@ -1536,6 +1567,27 @@ func (e *emitter) emitGo(nodes []Node) {
 		callSuffix = suffix[len(suffix)-1]
 		steps := suffix[:len(suffix)-1]
 		name := e.soleIdent(steps[len(steps)-1].ast)
+		// A method of an INTERFACE value, `go w.Run(ch)` for a `w Worker`: the value
+		// crosses in the receiver's slot, two words evaluated here as Go evaluates
+		// them, and the trampoline calls through its table. Taken for a method of the
+		// receiver's own type, the launch called a <Iface>_<m> nothing declares.
+		if ict, itext, isIface := e.goIfaceRecv(base, steps[:len(steps)-1]); isIface {
+			if _, has := e.ifaceMethodRec(ict, name); !has {
+				e.fail("%s has no method %s", e.goTypeName(ict), name)
+				return
+			}
+			if e.checks {
+				// A nil interface panics at the go statement, where Go evaluates
+				// the method, not on the cog.
+				e.usesIfaceNil = true
+				e.needPanic()
+				e.ind()
+				e.emit("ogo_iface_vt(" + itext + ".vt);\n")
+			}
+			recvText, recvCType = itext, ict
+			site = goSite{args: []string{ict}, ifaceMethod: name, ifaceCType: ict, id: len(e.goSites)}
+			break
+		}
 		// The receiver may be reached through fields and indexes -- `go ws[i].run(ch)`
 		// is a worker per cog, which is what this target is for. The chain is walked
 		// here and the value it reaches is what the trampoline carries; a plain
@@ -1783,6 +1835,11 @@ func (e *emitter) emitGo(nodes []Node) {
 	if site.fnCType != "" {
 		params = e.funcTypeParams[site.fnCType]
 	}
+	var ifaceM ifaceMethod
+	if site.ifaceMethod != "" {
+		ifaceM, _ = e.ifaceMethodRec(site.ifaceCType, site.ifaceMethod)
+		params = ifaceM.params
+	}
 	// A VARIADIC callee packs what the call wrote. The values travel in the block
 	// as its element, and the trampoline packs them (see goDefs); passed as they
 	// stood, `go work(1, 2)` called work with two ints where it takes one slice,
@@ -1793,7 +1850,14 @@ func (e *emitter) emitGo(nodes []Node) {
 		if site.fnCType != "" {
 			cname = ""
 		}
-		if elem, at := e.callVariadic(cname, site.fnCType, params); at >= 0 {
+		elem, at := e.callVariadic(cname, site.fnCType, params)
+		if site.ifaceMethod != "" {
+			elem, at = "", ifaceM.vararg-1
+			if at >= 0 && at < len(params) {
+				elem = sliceElemFromCName(e.underlyingCType(params[at]))
+			}
+		}
+		if at >= 0 {
 			if len(args) < at {
 				e.fail("not enough arguments in call to %s", e.funcSourceName(site.callee))
 				return
@@ -1805,7 +1869,13 @@ func (e *emitter) emitGo(nodes []Node) {
 			if site.fnCType != "" {
 				summary = e.indirectCallee("", site.fnCType)
 			}
-			if crosses := e.crossParams[summary]; at < len(crosses) && crosses[at]&(leakCog|leakGlobal) != 0 {
+			crosses := e.crossParams[summary]
+			if site.ifaceMethod != "" {
+				// Through an interface, the union over its implementations.
+				crosses, _, _ = e.ifaceCallSummary(site.ifaceCType, site.ifaceMethod)
+				summary = site.ifaceMethod + " (through " + e.goTypeName(site.ifaceCType) + ")"
+			}
+			if at < len(crosses) && crosses[at]&(leakCog|leakGlobal) != 0 {
 				e.fail("cannot pass these values to a goroutine's %s: they are packed for the call, and its parameter %d outlives it; pack them into a package array and pass a slice of it",
 					e.funcSourceName(summary), at+1)
 				return
@@ -2031,10 +2101,25 @@ func (e *emitter) goDefs() string {
 				pack = fmt.Sprintf("(%s){pack, %d, %d}", sliceCName(s.packElem), k, k)
 			}
 		}
+		out := ""
+		if s.ifaceMethod != "" {
+			// Through the value's table, with its data pointer in the receiver's
+			// place; a method of several results writes them through a trailing
+			// parameter, into a result struct nobody reads.
+			callee = "((const " + ifaceVTName(s.ifaceCType) + "*)a->a0.vt)->" + vtMember(s.ifaceMethod)
+			if m, ok := e.ifaceMethodRec(s.ifaceCType, s.ifaceMethod); ok && m.out != "" {
+				out = "res"
+				fmt.Fprintf(&tramps, "\t%s res;\n", m.out)
+			}
+		}
 		fmt.Fprintf(&tramps, "\t%s(", callee)
 		for i := 0; i < n; i++ {
 			if i != 0 {
 				tramps.WriteString(", ")
+			}
+			if i == 0 && s.ifaceMethod != "" {
+				tramps.WriteString("a->a0.data")
+				continue
 			}
 			fmt.Fprintf(&tramps, "a->a%d", i)
 		}
@@ -2043,6 +2128,9 @@ func (e *emitter) goDefs() string {
 				tramps.WriteString(", ")
 			}
 			tramps.WriteString(pack)
+		}
+		if out != "" {
+			tramps.WriteString(", &" + out)
 		}
 		// Not ogo_cog_release: the goroutine is still on this slot's stack
 		// here, with the return through _cogstart's epilogue ahead of it. done
@@ -5937,6 +6025,10 @@ type deferredCall struct {
 	// replay packs its captures there, as emitCallArgs does a named callee's.
 	packAt   int
 	packElem string
+	// ifaceMethod is the method a deferred call through an INTERFACE names: the
+	// interface value is what is captured (recvCType is its type), and the replay
+	// calls through its table.
+	ifaceMethod string
 }
 
 // deferArg is one argument of a deferred call. A literal needs no temporary --
@@ -7538,6 +7630,16 @@ func (e *emitter) ifaceCallC(ifaceCType, recvText, method string, callSuffix []i
 		call += ", &" + out
 	}
 	return call + ")"
+}
+
+// ifaceMethodRec is the record of an interface's method, by name.
+func (e *emitter) ifaceMethodRec(ifaceCType, method string) (ifaceMethod, bool) {
+	for _, m := range e.ifaceMethods[ifaceCType] {
+		if m.name == method {
+			return m, true
+		}
+	}
+	return ifaceMethod{}, false
 }
 
 // ifaceMethodVararg is ifaceMethod.vararg of an interface's method: 1 + the position
@@ -26230,6 +26332,15 @@ func (e *emitter) emitDefer(nodes []Node) {
 		} else {
 			e.emit(deferRecvName(d.slot) + " = " + recvText + ";\n")
 		}
+		// A deferred call through a NIL interface panics where the defer stands, Go
+		// evaluating the method there; the replay's own check would come at the
+		// return, after everything between.
+		if d.ifaceMethod != "" && e.checks {
+			e.usesIfaceNil = true
+			e.needPanic()
+			e.ind()
+			e.emit("ogo_iface_vt(" + deferRecvName(d.slot) + ".vt);\n")
+		}
 	}
 	// The callee's array parameters, when the callee is known here: a method's
 	// name is recorded by deferReceiver, a plain function's is its head. Against
@@ -26681,6 +26792,18 @@ func (e *emitter) deferReceiver(d *deferredCall, head Node, suffix []Node) (stri
 		d.callsValue = true
 		return e.fieldAccessC(base, []string{method}), true
 	}
+	// A method of an INTERFACE: what Go evaluates where the defer stands is the
+	// interface value, two words, and the call goes through its table at the
+	// return. Taken for a method of the receiver's own type, it named a function
+	// nothing declares, and a local's replay found no such name at all -- `defer
+	// s.Show(1)` was "unknown package s", and on a package variable "only
+	// <pkg>.<Func>(args) ... call statements are supported yet".
+	if _, has := e.ifaceMethodRec(ctype, method); has && e.isIfaceCType(ctype) {
+		d.cname = ""
+		d.recvCType = ctype
+		d.ifaceMethod = method
+		return text, true
+	}
 	cname := methodCName(methodBaseType(ctype), method)
 	if _, isMethod := e.funcRet[cname]; !isMethod {
 		// A PROMOTED method: the receiver is the embedded member the path reaches,
@@ -26803,6 +26926,36 @@ func (e *emitter) emitDeferred() {
 			continue
 		}
 		e.deferReplay, e.deferReplayArgs = d.slot, d.args
+		if d.ifaceMethod != "" {
+			// Through the captured interface value's table, its arguments replayed
+			// from their captures -- a variadic method's packed as the slot takes
+			// them -- and a method of several results handed a result struct its
+			// results are dropped into.
+			m, _ := e.ifaceMethodRec(d.recvCType, d.ifaceMethod)
+			out := ""
+			if m.out != "" {
+				out = e.newTmp()
+			}
+			var call string
+			_, pro := e.capturePrologue(func() {
+				call = e.ifaceCallC(d.recvCType, deferRecvName(d.slot), d.ifaceMethod, d.suffix[len(d.suffix)-1].ast, out)
+			})
+			for _, line := range pro {
+				e.ind()
+				e.emit(line)
+			}
+			e.ind()
+			if d.cond {
+				e.emit("if (" + deferFlagName(d.slot) + ") ")
+			}
+			if out != "" {
+				e.emit("{ " + m.out + " " + out + "; " + call + "; }\n")
+			} else {
+				e.emit(call + ";\n")
+			}
+			e.deferReplay, e.deferReplayArgs = -1, nil
+			continue
+		}
 		if d.recvCType != "" {
 			// The receiver is a temporary of this function, so the call is written
 			// here rather than through emitCall, which would resolve the receiver's

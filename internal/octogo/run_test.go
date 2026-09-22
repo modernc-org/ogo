@@ -35340,6 +35340,130 @@ func main() {
 }
 `,
 		want: "a 16 3\nb 10 0\nc 14 1\nd 21 2\ncog 25 2\ne 11 1\nf 14 2\n25 L\n",
+	}, {
+		// A DEFERRED call through an interface: the value is what Go evaluates
+		// where the defer stands, two words, and the call goes through its table
+		// at the return. Taken for a method of the receiver's own type, it named a
+		// function nothing declares -- `defer s.Show(1)` on a local was "unknown
+		// package s", on a package variable "only <pkg>.<Func>(args) ... call
+		// statements are supported yet" -- in every shape. The receiver and the
+		// index reaching it are captured, a variadic method packs at the replay, a
+		// method of several results drops them, and a conditional defer runs only
+		// on the path that registered it.
+		name: "a deferred call through an interface",
+		src: `type Shower interface {
+	Show(n int)
+	All(tag string, xs ...int)
+	Two(n int) (int, bool)
+}
+
+type T struct{ k int }
+
+func (t *T) Show(n int) { println("show", n, t.k) }
+
+func (t *T) All(tag string, xs ...int) { println("all", tag, len(xs), t.k) }
+
+func (t *T) Two(n int) (int, bool) {
+	println("two", n, t.k)
+	return n, true
+}
+
+var ga = T{1}
+
+var gb = T{2}
+
+var gs Shower = &ga
+
+type H struct{ s Shower }
+
+func run(cond bool) {
+	var s Shower = &ga
+	defer s.Show(1)
+	s = &gb
+	defer s.Show(2)
+	defer gs.All("pkg", 1, 2)
+	h := H{&gb}
+	defer h.s.Two(3)
+	arr := [2]Shower{&ga, &gb}
+	i := 1
+	defer arr[i].Show(4)
+	i = 0
+	if cond {
+		defer s.All("cond")
+	}
+	println("body", cond)
+}
+
+func main() {
+	run(true)
+	run(false)
+}
+`,
+		want: "body true\nall cond 0 2\nshow 4 2\ntwo 3 2\nall pkg 2 1\nshow 2 2\nshow 1 1\nbody false\nshow 4 2\ntwo 3 2\nall pkg 2 1\nshow 2 2\nshow 1 1\n",
+	}, {
+		// A goroutine started on an interface method: the value crosses in the
+		// receiver's slot and the trampoline calls through its table. The launch
+		// called a <Iface>_<m> nothing declares, for every receiver -- a local, a
+		// package variable, a field, a slice's and an array's element. What is
+		// evaluated at the go statement is the value, so a later assignment to the
+		// variable or the index does not reach the cog.
+		name: "a goroutine started on an interface method",
+		src: `type Worker interface {
+	Run(tag int)
+	Pair(n int) (int, bool)
+	Many(xs ...int)
+}
+
+type W struct{ k int }
+
+var done chan int
+
+func (w *W) Run(tag int) { done <- tag*100 + w.k }
+
+func (w *W) Pair(n int) (int, bool) {
+	done <- n + w.k
+	return n, true
+}
+
+func (w *W) Many(xs ...int) {
+	t := w.k
+	for _, x := range xs {
+		t += x
+	}
+	done <- t
+}
+
+var wa = W{1}
+
+var wb = W{2}
+
+var gw Worker = &wa
+
+type H struct{ w Worker }
+
+func main() {
+	var w Worker = &wa
+	go w.Run(1)
+	w = &wb
+	println(<-done)
+	ws := []Worker{&wa, &wb}
+	i := 1
+	go ws[i].Run(2)
+	i = 0
+	println(<-done)
+	h := H{&wb}
+	go h.w.Pair(30)
+	println(<-done)
+	go gw.Many(10, 20)
+	println(<-done)
+	go w.Many()
+	println(<-done)
+	arr := [2]Worker{&wb, &wa}
+	go arr[1].Run(3)
+	println(<-done)
+}
+`,
+		want: "101\n202\n32\n31\n2\n301\n",
 	}}
 
 // TestEmitCRun compiles emitted C with a host compiler and runs it, checking what
