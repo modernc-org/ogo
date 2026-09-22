@@ -71,6 +71,34 @@ shipped section tells a reader on that version that they have behaviour they do 
   method value as the argument. The function is bound to a temporary first, which
   the target passes right; `doc/funcptr-arg-to-indirect-call.c` reproduces it in
   plain C.
+- **Every element of a slice of functions was its first, on the board.**
+  `table[i](x)` for a `[]func(int) int`, a range over one, a variadic parameter of
+  funcs, a slice field, `pick(fs, i)`, a store `fs[i] = f` and an append of one each
+  read or wrote element 0: the target's C compiler drops the index of a subscript
+  through a pointer to function pointers, which is how a slice's element is
+  reached, so a range over a three-entry table printed 60810 for Go's 60525. gcc is
+  right, and an ARRAY of functions was not affected, so the host tests and the run
+  cases, which used arrays, passed. `doc/funcptr-subscript.c` reproduces it in plain
+  C and names the line in the backend.
+- **A constant passed to a float parameter through a function value arrived as
+  garbage on the board.** `h(3)` for an `h := half` taking a float64 printed 3e-45
+  where Go prints 1.5, and so did a call through an interface's method, a package
+  variable, a table's slot, a struct field, a defer statement's arguments and a
+  goroutine's callback: the target's C compiler converts an argument to its
+  parameter's type only when the function type names the parameter, and the ones
+  written for function values and interfaces named none. They name their number and
+  bool parameters now; `doc/unnamed-param-no-conversion.c` reproduces it in plain C.
+- **A call of an element through a pointer to an array read past the array.**
+  `pa[k](3)` and `(*pa)[k](3)` for a `pa := &table` of functions indexed the
+  pointer rather than the array it points at: C that gcc refused and the target's
+  compiler built with a warning. Reading the element into a variable first was
+  right.
+- **A call through a dereferenced slice was dropped.** `(*ps)[i](x)` as a statement
+  emitted nothing -- the call vanished without a word -- and as a value C with an
+  empty operand, which neither compiler takes; `x := (*ps)[i](x)` was refused as
+  "cannot infer a type", and `(*ps)[i].M()` for a slice of structs went the same
+  ways. Each is the call on the slice ps points at now, and a call the compiler
+  cannot lower is refused where it used to be left empty.
 
 - **`%T` of a slice of a defined type printed the type it is defined over.**
   `printf("%T", l[1:])` for a `type L []int` printed `[]int`, of `append(l, 4)` the

@@ -771,6 +771,24 @@ it on the board: the host was right about every one of these. A DEFERRED variadi
 call packs its captures at the replay, and a GOROUTINE's in its trampoline, on its
 own stack (2026-09-22); a replay writes what it binds ahead of itself
 (`emitReplayedCall`), which is where a pack's array had gone missing.
+A board sweep of where function values LIVE, the same day, found two more backend
+faults, each silent and each right on the host. A subscript through a POINTER to
+function pointers drops its index -- every slice of functions read and wrote
+element 0, `doc/funcptr-subscript.c`, whose cause is one line of spin2cpp's
+outasm.c with a fix measured natively -- so a function element of a slice is
+spelled `(*(s.ptr + (i)))` (`elemAtC`); arrays were fine, which is why the run
+cases never saw it. And an argument through a function pointer whose type leaves
+its parameters UNNAMED is not converted, so `h(3)` for a float64 parameter
+arrived as the int's bits (`doc/unnamed-param-no-conversion.c`); every function
+type the emitter writes names its number and bool parameters (`cFuncTypeParams`),
+and not its structs, which named are passed wrong the other way. Two emitter holes
+the same sweep led to, both in the HEAD of a call: an element called through a
+pointer to an array, `pa[k](3)`, indexed the pointer (chainCText named the head
+where accessBase had entered the array); and `(*p)` before steps was taken for `p`
+whatever followed, which Go allows only before a selector or an index through a
+pointer to an ARRAY (`derefShorthand`) -- `(*ps)[i](x)` for a slice came out as
+`;`, the call gone, because the call paths' false was ignored at nine sites. They
+refuse now (`callOrFail`): a false there is a shape nothing lowered.
 
 **A TEMPORARY IS A COG REGISTER** (2026-09-20). flexcc gives every C local one
 (`local_N res 1` in COG_BSS) out of a pool the assembler checks with `fit 480`,
@@ -796,9 +814,13 @@ now (`Scope.find2` records what leaves a literal's scope, `litOf`); a rule about
 a name MEANS belongs where names are resolved.
 
 Known open items, all loud refusals or design walls (2026-09-17): an
-array-returning call as a package literal element; the method expression of an
-INTERFACE type, `Shape.Area` (refused by name; a concrete type's works since
-2026-09-19); a method value on a local or a call's result (design: a method value binds its
+array-returning call as a package literal element; a deferred or started call
+through a dereference with an index, `defer (*ps)[0](x)` and `go (*pa)[0](x)`
+("unsupported call target", and go's "only `go f(args)` ..."), where the statement
+and the value work since 2026-09-22; the address of an ARRAY literal, `ps :=
+&[2]P{{1, 2}, {3, 4}}` ("cannot infer a type"; a struct literal's works); the
+method expression of an INTERFACE type, `Shape.Area` (refused by name; a concrete
+type's works since 2026-09-19); a method value on a local or a call's result (design: a method value binds its
 receiver at compile time); an unnamed struct type mixed with the SECOND of two
 declared structs of its fields (its typedef names the first, aliasAnonStructs), which
 Go admits and the target's compiler refuses; printf's `%v` of a
