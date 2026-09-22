@@ -55,6 +55,14 @@ shipped section tells a reader on that version that they have behaviour they do 
   there; a goroutine's are packed on its own stack for the length of the call, and
   a callee that keeps its variadic parameter beyond that is refused, as for any
   pack.
+- **The address of an array literal has a type.** `pa := &[3]int{1, 2, 3}`,
+  `&[...]int{...}`, `&Row{...}` for a defined array type and a package variable
+  given one without a type written were refused as "cannot infer a type", and a
+  range over one as "ranging an integer yields only the index". Each is a pointer to
+  the array the literal spells, as a written `*[3]int` is.
+- **A declaration may read through a parenthesised head.** `x := (&p).x`, `x :=
+  (get()).y`, `x := (arr[1:])[1]` and `x := (&arr)[k]` were "cannot infer a type",
+  while the same reads worked wherever else a value stands.
 
 ### Fixed
 
@@ -99,6 +107,17 @@ shipped section tells a reader on that version that they have behaviour they do 
   "cannot infer a type", and `(*ps)[i].M()` for a slice of structs went the same
   ways. Each is the call on the slice ps points at now, and a call the compiler
   cannot lower is refused where it used to be left empty.
+- **The address of an array or a slice literal outlived its storage.** `return
+  &[3]int{7, 8, 9}`, a package variable given one in a function, a store past the
+  block it was written in, a send, and a call that keeps its argument each compiled
+  to a pointer into a dead frame -- and `return &[]int{7, 8}` to one at a local
+  header -- where `&T{...}` of a struct was refused in every one of them. They are
+  refused now, in the same words.
+- **A package variable given the address of an array literal pointed into a dead
+  frame.** `var gq *[2]P = &[2]P{{1, 2}, {3, 4}}` was a compound literal of the
+  function that initializes the package, and on the board a later call left `9552
+  3928` where Go prints `3 2`; a store through it wrote into the stack. It is the
+  package's own static object now, as a struct literal's has been.
 
 - **`%T` of a slice of a defined type printed the type it is defined over.**
   `printf("%T", l[1:])` for a `type L []int` printed `[]int`, of `append(l, 4)` the

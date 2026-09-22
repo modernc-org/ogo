@@ -817,9 +817,7 @@ Known open items, all loud refusals or design walls (2026-09-17): an
 array-returning call as a package literal element; a deferred or started call
 through a dereference with an index, `defer (*ps)[0](x)` and `go (*pa)[0](x)`
 ("unsupported call target", and go's "only `go f(args)` ..."), where the statement
-and the value work since 2026-09-22; the address of an ARRAY literal, `ps :=
-&[2]P{{1, 2}, {3, 4}}` ("cannot infer a type"; a struct literal's works); the
-method expression of an INTERFACE type, `Shape.Area` (refused by name; a concrete
+and the value work since 2026-09-22; the method expression of an INTERFACE type, `Shape.Area` (refused by name; a concrete
 type's works since 2026-09-19); a method value on a local or a call's result (design: a method value binds its
 receiver at compile time); an unnamed struct type mixed with the SECOND of two
 declared structs of its fields (its typedef names the first, aliasAnonStructs), which
@@ -832,7 +830,7 @@ a conversion's `(*T)(p).x = 5` and `*(*T)(p) = 5`, and the send
 `(&p).x = 3` and the same through an index, an increment and a compound assignment
 work since 2026-09-20, parenTargetBase). READING through one
 works since 2026-09-20 (`emitParenChain` binds the head and walks the steps from
-it): `(&p).x`, `(get()).x`, `(*getp()).x`, `(getq()).a`, `(arr[1:])[1]`,
+it), and a declaration from one since 2026-09-22 (`parenChainType`): `(&p).x`, `(get()).x`, `(*getp()).x`, `(getq()).a`, `(arr[1:])[1]`,
 `("hello")[1:]` and `(&arr)[1]`, beside the `(*p).x`, `(a)[i]`, `(v).m()`,
 `(&v).m()`, `(*T)(p).m()` and `(a - b).m()` that always did. A struct head is a
 VALUE there, so a slice step on one is refused as Go refuses it; a conversion to a
@@ -895,7 +893,11 @@ beside a control over package storage; it found that parentheses hid a value fro
 every rule (`return (a[:])` compiled), that `var s []int = a[:]` recorded nothing,
 and that no list form, destructured call, swap or `for` clause asked the rules at
 all. **A new binding form, or a new way to write a value, is a new row or column
-there** -- the same discipline `generatedConstructs` gives the fuzzer. The SINKS
+there** -- the same discipline `generatedConstructs` gives the fuzzer. The address
+of an ARRAY or a SLICE literal, `&[3]int{...}` and `&[]int{...}`, was a value nobody
+had written into it (2026-09-22): the addressed literal was recognised by a type
+NAME, so every sink passed the bracketed spelling and `return &[3]int{7, 8, 9}`
+returned a dead frame; it is two kinds there now (`addrOfArrayLit`). The SINKS
 have the same property (`TestEmitCCalleeKeepsEscape`, 2026-09-18): a deferred call
 was checked at its replay, when the local was already forgotten; a function literal
 had no escape summary; a callee storing into a local receiver left the local
