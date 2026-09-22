@@ -134,8 +134,9 @@ shipped section tells a reader on that version that they have behaviour they do 
   the null pointer instead of the zero header in a return, an assignment, a field
   store and an argument -- `return nil` for an `L`, `l = nil`, `h.ls = nil`,
   `takeL(nil)` -- and so did an element of a variadic of slices, `f(nil, nil)` for
-  an `xs ...[]int`. Both compilers refused the C; a `[]T` written out was already
-  right everywhere.
+  an `xs ...[]int`, a `ch <- nil` on a channel of slices and an `append(rows, nil)`
+  onto a slice of them. Both compilers refused the C; a `[]T` written out was
+  already right in the positions it had been taught one at a time.
 - **A literal with a nil SLICE member did not build for the target.** `H{1, nil}`
   for a `vs []int` emitted `0` where the header is a struct, which the target's
   compiler refused outright ("Expected multiple values") -- in a package variable, a
