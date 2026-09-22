@@ -34433,6 +34433,61 @@ func main() {
 }
 `,
 		want: "32\n0\n92\n123\n103\n220\n8\n14\n32 100\n",
+	}, {
+		// A slice's element is reached through its header's pointer, and the
+		// target drops the index of a subscript through a pointer to function
+		// pointers: every read and write below was element 0 on the P2 while the
+		// host was right, a range over the table printing 60810 for 60525. A
+		// function element is spelled *(s.ptr + (i)) (doc/funcptr-subscript.c).
+		name: "a slice of functions is indexed through its backing pointer",
+		src: `func dbl(n int) int { return n * 2 }
+
+func inc(n int) int { return n + 1 }
+
+func sq(n int) int { return n * n }
+
+type H struct{ ops []func(int) int }
+
+var table = []func(int) int{dbl, inc, sq}
+
+func chain(x int, fs ...func(int) int) int {
+	for _, f := range fs {
+		x = f(x)
+	}
+	return x
+}
+
+func set(fs []func(int) int, i int, f func(int) int) { fs[i] = f }
+
+func pick(fs []func(int) int, i int) func(int) int { return fs[i] }
+
+func main() {
+	k, j := 1, 2
+	s := 0
+	for i, f := range table {
+		s = s*100 + f(i+3)
+	}
+	println(s, table[1](5), table[k](5), table[j](5))
+	println(chain(2, dbl, inc, sq), chain(3, table...))
+	set(table, 0, sq)
+	table[k] = dbl
+	println(table[0](3), pick(table, 1)(3), pick(table, j)(3))
+	h := H{[]func(int) int{inc, sq, dbl}}
+	p := &h
+	p.ops[j] = inc
+	println(h.ops[k](4), p.ops[2](4))
+	ps := &table
+	f := (*ps)[j]
+	(*ps)[j] = inc
+	println(f(6), table[2](6))
+	fs := append(table[:1], inc)
+	fp := &fs[1]
+	println(fs[1](7), table[1](7), (*fp)(7))
+	fs[0], fs[1] = fs[1], fs[0]
+	println(fs[0](8), fs[1](8))
+}
+`,
+		want: "60525 6 6 25\n25 49\n9 6 9\n16 5\n36 7\n8 8 8\n9 64\n",
 	}}
 
 // TestEmitCRun compiles emitted C with a host compiler and runs it, checking what

@@ -5045,7 +5045,8 @@ func emitProgram(pkg *Package, w io.Writer, opts []EmitOption, rename map[string
 		helperDefs.WriteString(e.chanRuntimeDefs(el))
 	}
 	for _, el := range sortedKeys(e.appendElems) {
-		param, store := el+" v", "s.ptr[s.len] = v;"
+		open, closing := e.elemAtC("s.ptr", el) // a function element's form; see elemAtC
+		param, store := el+" v", open+"s.len"+closing+" = v;"
 		if a, isArr := e.namedArrays[el]; isArr {
 			// NOT `%s v` for an array element: a parameter whose type is a TYPEDEF'D
 			// array corrupts unrelated code on this target, silently and non-locally
@@ -5175,7 +5176,8 @@ func emitProgram(pkg *Package, w io.Writer, opts []EmitOption, rename map[string
 		fmt.Fprintf(&helperDefs, "static %s %s(%s a, %s b) { return %s ? a : b; }\n", ct, maxCName(ct), ct, ct, minMaxCmp(ct, ">"))
 	}
 	for _, el := range sortedKeys(e.tryappendElems) {
-		param, store := el+" v", "s.ptr[s.len] = v;" // see the append helper above
+		open, closing := e.elemAtC("s.ptr", el)
+		param, store := el+" v", open+"s.len"+closing+" = v;" // see the append helper above
 		if a, isArr := e.namedArrays[el]; isArr {
 			e.includes["string.h"] = true
 			param, store = "const "+a.elem+"* v", "memcpy(s.ptr[s.len], v, sizeof(s.ptr[s.len]));"
@@ -21358,6 +21360,8 @@ func (e *emitter) emitAccessChainAt(prefix string, cur accessCur, steps []Node, 
 			}
 			open, pre, closing := "[", "", "]"
 			switch {
+			case cur.slice && e.isFuncCType(next.ctype):
+				pre, open, closing = "(*(", ".ptr + (", ")))" // see elemAtC
 			case cur.slice:
 				open = ".ptr["
 			case cur.ctype == cString:
@@ -24334,7 +24338,9 @@ func (e *emitter) emitRangeSlice(h *forHeader, body []int32, key, ct, hdr string
 	e.locals[key] = "int"
 	e.ind()
 	e.emit("for (int " + key + " = 0; " + key + " < " + hdr + ".len; " + key + "++) {\n")
-	e.emitLoopBody(body, e.rangeValueInject(h, key, e.sliceElemByName[ct], hdr+".ptr["+key+"]"))
+	elem := e.sliceElemByName[ct]
+	open, closing := e.elemAtC(hdr+".ptr", elem)
+	e.emitLoopBody(body, e.rangeValueInject(h, key, elem, open+key+closing))
 }
 
 // emitRangeArray emits the counting loop over an array named by base, bounded by
@@ -28323,6 +28329,8 @@ func (e *emitter) chainCText(base string, steps []Node) (text, ctype string, add
 			}
 			open, pre, closing := "[", "", "]"
 			switch {
+			case cur.slice && e.isFuncCType(next.ctype):
+				pre, open, closing = "(*(", ".ptr + (", ")))" // see elemAtC
 			case cur.slice:
 				open = ".ptr["
 			case cur.ctype == cString:
@@ -32806,10 +32814,28 @@ func (e *emitter) indexedContainer(base string, pre []string) (expr, elem, lenEx
 	return lv + ".ptr", el, lv + ".len", true
 }
 
+// elemAtC returns what opens and what closes the element of container at an index
+// written between the two: `container[` and `]`, except for an element of FUNCTION
+// type reached through a slice's backing pointer, which is `(*(s.ptr + (` and `)))`.
+// C reads both as the same element. The target does not: flexcc drops the index of
+// a subscript through a pointer to function pointers, so `s.ptr[i]` loaded and
+// stored element 0 on the P2 whatever i was, for every slice of functions -- a
+// dispatch table ranged over, a callback list, a variadic parameter of funcs
+// (doc/funcptr-subscript.c). An array's `a[i]` is read right and keeps its form.
+// A container ending in ".ptr" is a slice's: it is the only pointer the emitter
+// subscripts.
+func (e *emitter) elemAtC(container, elem string) (open, closing string) {
+	if strings.HasSuffix(container, ".ptr") && e.isFuncCType(elem) {
+		return "(*(" + container + " + (", ")))"
+	}
+	return container + "[", "]"
+}
+
 // emitIndexSelect emits `<container>[i].f...` -- an indexed element followed by a
 // field chain.
 func (e *emitter) emitIndexSelect(expr, lenExpr string, low []int32, elem string, post []string) {
-	text := expr + "[" + e.indexCText(low, lenExpr) + "]"
+	open, closing := e.elemAtC(expr, elem)
+	text := open + e.indexCText(low, lenExpr) + closing
 	ct := elem
 	for _, f := range post {
 		var ok bool
@@ -33437,9 +33463,10 @@ func (e *emitter) emitIndexAssign(base string, index, opNode Node) {
 			return
 		}
 		target := e.captureC(func() {
-			e.emit(lhs + "[")
+			open, closing := e.elemAtC(lhs, elem)
+			e.emit(open)
 			e.emitIndex(idx, lenExpr)
-			e.emit("]")
+			e.emit(closing)
 		})
 		e.emitChanSend(target, e.chanElemOfCType(elem), op)
 		return
@@ -33462,9 +33489,10 @@ func (e *emitter) emitIndexAssign(base string, index, opNode Node) {
 		defer e.bindEffectOperands([]Node{{sym: Expression, ast: idx}, {sym: Expression, ast: t.rhs}})()
 	}
 	e.emitAssignTailOrCopy(func() {
-		e.emit(lhs + "[")
+		open, closing := e.elemAtC(lhs, elem)
+		e.emit(open)
 		e.emitIndex(idx, lenExpr)
-		e.emit("]")
+		e.emit(closing)
 	}, t)
 }
 
@@ -38620,7 +38648,10 @@ func (e *emitter) emitExprNode(n Node) {
 				lenExpr, closing := "", "]"
 				switch {
 				case e.hasSliceVar(base):
-					e.emit(e.varRef(base) + ".ptr[")
+					el, _ := e.sliceElem(base)
+					var open string
+					open, closing = e.elemAtC(e.varRef(base)+".ptr", el)
+					e.emit(open)
 					lenExpr = e.varRef(base) + ".len"
 				case e.isStringConstName(base):
 					// See stringConstParts: the literal stands where the variable
