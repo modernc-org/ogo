@@ -26437,12 +26437,27 @@ func (e *emitter) emitDeferCaptures(d *deferredCall) {
 			e.emit(name + " = " + text + ";\n")
 			continue
 		}
-		e.ind()
 		if a.arr.bound != "" {
+			// Copied from the storage the argument names -- a literal bound to an
+			// array of its own first: the target's memcpy is a MACRO, which reads the
+			// commas inside a compound literal's braces as arguments of its own, so
+			// `defer show([3]int{1, 2, 3})` did not preprocess.
+			var src string
+			ok := false
+			_, pro := e.capturePrologue(func() { src, ok = e.arraySourceC(a.expr) })
+			if !ok {
+				src = e.captureC(func() { e.emitExpr(a.expr) })
+			}
+			for _, line := range pro {
+				e.ind()
+				e.emit(line)
+			}
 			e.includes["string.h"] = true
-			e.emit("memcpy(" + name + ", " + e.captureC(func() { e.emitExpr(a.expr) }) + ", sizeof(" + name + "));\n")
+			e.ind()
+			e.emit("memcpy(" + name + ", " + src + ", sizeof(" + name + "));\n")
 			continue
 		}
+		e.ind()
 		e.emit(name + " = ")
 		e.emitExpr(a.expr)
 		e.emit(";\n")

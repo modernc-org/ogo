@@ -35184,6 +35184,26 @@ func main() {
 }
 `,
 		want: "0 0 true true\n0 1 0 2\n0 0\n1 0\n",
+	}, {
+		// A deferred call's ARRAY argument is copied at the defer statement, and
+		// the copy of a literal was written `memcpy(slot, (ogo_arr_3_int){1, 2,
+		// 3}, ...)` -- which the target's memcpy, a MACRO, reads as five
+		// arguments: the program did not preprocess. gcc's memcpy is a function
+		// and took it. The literal is bound to an array of its own first.
+		name: "a deferred call with an array literal argument",
+		src: `func show(a [3]int) { println(a[0], a[1], a[2]) }
+
+type R [2]int
+
+func showR(r R) { println(r[0], r[1]) }
+
+func main() {
+	defer show([3]int{1, 2, 3})
+	defer showR(R{4, 5})
+	println("body")
+}
+`,
+		want: "body\n4 5\n1 2 3\n",
 	}}
 
 // TestEmitCRun compiles emitted C with a host compiler and runs it, checking what
