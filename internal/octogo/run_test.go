@@ -34941,6 +34941,54 @@ wait:
 }
 `,
 		want: "410\n7\n",
+	}, {
+		// A parenthesised ADDRESS whose operand is a CHAIN, `(&h.v).x = 9`,
+		// `(&ga[k]).x = 6`, `(&h.v).m(3)` as a statement and deferred: Go reads each
+		// as the chain with the steps after it, `h.v.x = 9`. Only a bare NAME was
+		// peeled that way, so all of these were refused -- "only assignment to a
+		// simple variable is supported yet", "unsupported call target" -- while the
+		// same expressions READ right.
+		name: "a parenthesised address of a chain as a target and a receiver",
+		src: `type P struct {
+	x, y int
+	a    [3]int
+}
+
+func (q *P) m(d int) int { q.x += d; return q.x }
+
+type H struct {
+	v  P
+	a  [3]int
+	vs []P
+}
+
+var gh = H{P{1, 2, [3]int{7, 8, 9}}, [3]int{4, 5, 6}, []P{{9, 9, [3]int{0, 0, 0}}}}
+
+var ga = [2]P{{1, 2, [3]int{0, 0, 0}}, {3, 4, [3]int{0, 0, 0}}}
+
+func main() {
+	h := H{P{1, 2, [3]int{7, 8, 9}}, [3]int{4, 5, 6}, []P{{5, 6, [3]int{0, 0, 0}}}}
+	ph := &h
+	k := 1
+	(&h.v).x = 9
+	(&h.a)[0] = 8
+	(&h.v.a)[1] = 3
+	(&h.v).y += 5
+	(&h.v).x++
+	(&gh.v).x = 5
+	(&ga[k]).x = 6
+	(&ph.v).y = 11
+	println(h.v.x, h.a[0], h.v.a[1], h.v.y, gh.v.x, ga[1].x)
+	println((&h.v).m(2), h.v.x)
+	(&h.v).m(3)
+	(&h.vs[0]).m(1)
+	println(h.v.x, h.vs[0].x)
+	println((&h.v).x, (&h.a)[k], (&ga[0]).y, (&h.v.a)[2])
+	defer (&h.v).m(100)
+	defer println("deferred", gh.v.x)
+}
+`,
+		want: "10 8 3 11 5 6\n12 12\n15 6\n15 5 2 9\ndeferred 5\n",
 	}}
 
 // TestEmitCRun compiles emitted C with a host compiler and runs it, checking what

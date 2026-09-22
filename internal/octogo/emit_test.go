@@ -6396,6 +6396,16 @@ var p = P{1, 2}
 
 var arr = [3]int{1, 2, 3}
 
+type H struct {
+	v  P
+	a  [3]int
+	p  *P
+	ps []int
+	sh Shape
+	f  func(int) int
+	s  string
+}
+
 func dbl(n int) int { return n * 2 }
 
 func main() {
@@ -6428,6 +6438,17 @@ func main() {
 		{"\tprintln((&f)(1))\n", "cannot call (&f) (value of type *func(int) int)"},
 		{"\t(&f)(1)\n", "cannot call (&f) (value of type *func(int) int)"},
 		{"\tprintln((&p).x, (&arr)[0], (&p).m())\n\t(&p).x = 3\n\t(&arr)[0] = 1\n\t(&p).m()\n\tx := (&p).y\n\t_ = x\n", ""},
+		// The same asked of a CHAIN inside the parentheses, which is peeled the same
+		// way: what the chain reaches decides, not the variable it starts from.
+		{"\th := H{}\n\t_ = h\n\t(&h.p).x = 3\n", "(&h.p).x undefined (type **P has no field or method x)"},
+		{"\th := H{}\n\t_ = h\n\tprintln((&h.p).x)\n", "(&h.p).x undefined (type **P has no field or method x)"},
+		{"\th := H{}\n\t_ = h\n\t(&h.p).m()\n", "(&h.p).m undefined (type **P has no field or method m)"},
+		{"\th := H{}\n\t_ = h\n\t(&h.ps)[0] = 1\n", "cannot index (&h.ps) (value of type *[]int)"},
+		{"\th := H{}\n\t_ = h\n\tprintln((&h.ps)[0])\n", "cannot index (&h.ps) (value of type *[]int)"},
+		{"\th := H{}\n\t_ = h\n\tprintln((&h.s)[0])\n", "cannot index (&h.s) (value of type *string)"},
+		{"\th := H{}\n\t_ = h\n\tprintln((&h.f)(2))\n", "cannot call (&h.f) (value of type *func(int) int)"},
+		{"\th := H{}\n\t_ = h\n\t(&h.sh).Area()\n", "(&h.sh).Area undefined (type *Shape is pointer to interface, not interface)"},
+		{"\th := H{}\n\t_ = h\n\t(&h.v).x = 9\n\t(&h.a)[0] = 8\n\t(&h.v).m()\n\tprintln((&h.v).x, (&h.a)[1])\n", ""},
 	} {
 		t.Run(strings.TrimSpace(test.body), func(t *testing.T) {
 			src := decls + test.body + "}\n"

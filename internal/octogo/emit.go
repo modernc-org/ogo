@@ -1468,6 +1468,8 @@ func (e *emitter) emitGo(nodes []Node) {
 	if base == "" && lit.sym != FuncLiteral && !isME {
 		if name, ok := e.parenRecvHead(head, suffix); ok {
 			base = name
+		} else if name, steps, ok := e.addrChainSteps(head, suffix); ok {
+			base, suffix = name, steps // `go (&h.v).M(args)`
 		} else if pc, ok := e.ptrConvHead(head, suffix); ok && len(pc.rest) >= 2 {
 			base, suffix = e.bindPtrConv(pc), pc.rest
 		}
@@ -21942,6 +21944,14 @@ func (e *emitter) emitParenChain(kids []Node) bool {
 	if len(steps) == 0 {
 		return false
 	}
+	// The address of a CHAIN read through a step the address does not take,
+	// `(&h.p).x` for a pointer field and `(&h.f)(2)` for a function one: refused in
+	// Go's words here, ahead of the call check below, which would leave the generic
+	// "this form is not supported yet" to the fallback.
+	if name, chain, isAddr := e.addrChainOperand(kids[1]); isAddr &&
+		e.addrChainStepRefused(kids[1], name, chain, steps) {
+		return true
+	}
 	for _, st := range steps {
 		if st.sym != Index && st.sym != Selector {
 			return false // a call: emitParenMethod's, above
@@ -26270,10 +26280,13 @@ func (e *emitter) checkDeferLeaks(d *deferredCall, head Node, suffix []Node, arg
 	if base == "" {
 		var isAddr bool
 		if base, isAddr = e.parenRecvHead(head, suffix); !isAddr {
-			if d.convRecv == "" {
+			if name, steps, ok := e.addrChainSteps(head, suffix); ok {
+				base, suffix = name, steps // `defer (&h.v).m(args)`
+			} else if d.convRecv == "" {
 				return
+			} else {
+				base, suffix = d.convRecv, d.convSteps // `defer (*T)(x).m(args)`
 			}
-			base, suffix = d.convRecv, d.convSteps // `defer (*T)(x).m(args)`
 		}
 	}
 	steps := suffix[:len(suffix)-1]
@@ -26443,6 +26456,12 @@ func (e *emitter) deferReceiver(d *deferredCall, head Node, suffix []Node) (stri
 		// everything downstream is the shorthand's.
 		var isAddr bool
 		base, isAddr = e.parenRecvHead(head, suffix)
+		if !isAddr {
+			// The address of a CHAIN, `defer (&h.v).m(args)`, which is `h.v.m(args)`.
+			if name, steps, ok := e.addrChainSteps(head, suffix); ok {
+				base, suffix, isAddr = name, steps, true
+			}
+		}
 		// `defer (*T)(x).m(args)`: the receiver is the converted pointer, bound here
 		// for the same reason. Left to the replay, the conversion was bound to a
 		// temporary declared where the replay could not see it.
@@ -27238,6 +27257,13 @@ func (e *emitter) emitCall(head Node, postfix []Node) {
 		if name, ok := e.parenRecvHead(head, postfix); ok {
 			e.ind()
 			e.callOrFail(e.emitCallStmtExpr(name, postfix))
+			e.emit(";\n")
+			return
+		}
+		// `(&h.v).m()` as a statement: the address of a CHAIN, which is `h.v.m()`.
+		if name, steps, ok := e.addrChainSteps(head, postfix); ok {
+			e.ind()
+			e.callOrFail(e.emitCallStmtExpr(name, steps))
 			e.emit(";\n")
 			return
 		}
@@ -31730,6 +31756,116 @@ func (e *emitter) addrHead(head Node) (string, bool) {
 	return e.addrOperand(kids[1].ast)
 }
 
+// addrChainHead matches a parenthesised address whose operand is a CHAIN rather
+// than a plain name -- `(&h.v)`, `(&ga[1])`, `(&ph.v.a)` -- answering with the
+// variable the chain starts from and the steps that reach the value addressed.
+// addrHead is the same for a bare name, which is all the shorthand paths took.
+func (e *emitter) addrChainHead(head Node) (string, []Node, bool) {
+	kids := slices.Collect(it(head.ast))
+	if len(kids) != 3 || kids[0].sym != 0 || e.f.ch(kids[0].tok) != LPAREN ||
+		kids[2].sym != 0 || e.f.ch(kids[2].tok) != RPAREN || kids[1].sym != Expression {
+		return "", nil, false
+	}
+	return e.addrChainOperand(kids[1])
+}
+
+// addrChainOperand is addrChainHead from the expression between the parentheses,
+// which is what the READING path has (emitParenChain).
+func (e *emitter) addrChainOperand(expr Node) (string, []Node, bool) {
+	inner, isUnary := e.unaryExprKids(expr.ast)
+	if !isUnary || len(inner) != 2 || inner[0].sym != UnaryOp || inner[1].sym != Factor {
+		return "", nil, false
+	}
+	if tok, ok := e.unaryOpTok(inner[0].ast); !ok || e.f.ch(tok) != AND {
+		return "", nil, false
+	}
+	fac := slices.Collect(it(inner[1].ast))
+	if len(fac) != 2 || fac[0].sym != 0 || e.f.ch(fac[0].tok) != IDENT || fac[1].sym != FactorSuffix {
+		return "", nil, false
+	}
+	name := e.src(fac[0].tok)
+	if _, isVar := e.varType(name); !isVar {
+		if _, isArr := e.arrayVar(name); !isArr {
+			return "", nil, false
+		}
+	}
+	steps := slices.Collect(it(fac[1].ast))
+	if len(steps) == 0 {
+		return "", nil, false
+	}
+	for _, st := range steps {
+		if st.sym != Selector && st.sym != Index {
+			return "", nil, false // a call in the chain: not a place to address
+		}
+	}
+	return name, steps, true
+}
+
+// addrChainSteps is addrChainHead with the steps written AFTER the address spliced
+// on, which is the shorthand Go reads `(&h.v).x = 9` as: `h.v.x = 9`. What the
+// chain reaches is asked first, since peeling an address asks nothing of it.
+func (e *emitter) addrChainSteps(head Node, after []Node) (string, []Node, bool) {
+	if len(after) == 0 || after[0].sym != Selector && after[0].sym != Index {
+		return "", nil, false // `(&h.v.x)++` addresses a value and increments it
+	}
+	name, steps, ok := e.addrChainHead(head)
+	if !ok {
+		return "", nil, false
+	}
+	kids := slices.Collect(it(head.ast))
+	if len(kids) != 3 || e.addrChainStepRefused(kids[1], name, steps, after) {
+		return "", nil, false
+	}
+	return name, append(slices.Clone(steps), after...), true
+}
+
+// addrChainStepRefused is addrStepRefused for an address of a CHAIN: the step
+// after `(&h.p)` is asked of what the chain reaches, so a pointer field's `.x`, a
+// slice field's `[0]` and a function field's call are refused as Go refuses them.
+func (e *emitter) addrChainStepRefused(expr Node, name string, steps, after []Node) bool {
+	if len(after) == 0 {
+		return false
+	}
+	cur, ok := e.accessChainType(name, steps)
+	if !ok || cur.ctype == "" && len(cur.dims) == 0 && !cur.slice {
+		return false // nothing typed it: the paths below report what they cannot do
+	}
+	isArr := len(cur.dims) != 0
+	operand := "(" + e.f.exprSource(expr) + ")"
+	pt := "*"
+	switch {
+	case isArr:
+		pt += e.goArrayTypeName(curArrDim(cur))
+	case cur.slice:
+		pt += "[]" + e.goTypeName(cur.elem)
+	default:
+		pt += e.goTypeName(cur.ctype)
+	}
+	switch after[0].sym {
+	case Selector:
+		if isArr || cur.slice || !e.isPointer(cur.ctype) && !e.isIfaceCType(cur.ctype) {
+			return false
+		}
+		sel := e.soleIdent(after[0].ast)
+		if e.isIfaceCType(cur.ctype) {
+			e.fail("%s.%s undefined (type %s is pointer to interface, not interface)", operand, sel, pt)
+			return true
+		}
+		e.fail("%s.%s undefined (type %s has no field or method %s)", operand, sel, pt, sel)
+		return true
+	case Index:
+		if isArr {
+			return false
+		}
+		e.fail("cannot index %s (value of type %s)", operand, pt)
+		return true
+	case CallSuffix:
+		e.fail("invalid operation: cannot call %s (value of type %s): %s is not a function", operand, pt, pt)
+		return true
+	}
+	return false
+}
+
 // addrStepRefused refuses, in Go's words, the step after a parenthesised address
 // `(&v)` that the address does not take, and reports whether it did. `(&v).f` and
 // `(&v).m()` are `v.f` and `v.m()` -- a selector dereferences ONE pointer -- and
@@ -32037,6 +32173,14 @@ func (e *emitter) emitAssignment(head Node, postfix []Node) {
 		// they do without the parentheses. A head with no step after it is not one
 		// of these: `(&p) = q` has nothing addressable on its left.
 		base, _ = e.parenTargetBase(head, postfix)
+	}
+	if base == "" {
+		// The same with a CHAIN inside the parentheses, `(&h.v).x = 9`, `(&ga[1]).y
+		// = 2`: the steps that reach the value addressed lead the ones written
+		// after it, which is the shorthand Go reads it as.
+		if name, steps, ok := e.addrChainSteps(head, postfix); ok {
+			base, postfix = name, steps
+		}
 	}
 	if base == "" {
 		e.fail("only assignment to a simple variable is supported yet")
