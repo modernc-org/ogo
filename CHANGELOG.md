@@ -48,6 +48,13 @@ shipped section tells a reader on that version that they have behaviour they do 
   value was not one the compiler could bind to a declared function: a literal, a
   function-typed parameter, a package variable, a table's slot, a field set on two
   paths, a call's result.
+- **A variadic call may be deferred or started on a cog.** `defer show("x", 1, 2)`
+  and `go work(1, 2)` did not build -- a declared function, a function value, a
+  method and a literal alike -- where only the spread form, `f(xs...)`, did. A
+  deferred one packs the values its defer statement captured, as Go evaluates them
+  there; a goroutine's are packed on its own stack for the length of the call, and
+  a callee that keeps its variadic parameter beyond that is refused, as for any
+  pack.
 
 ### Fixed
 

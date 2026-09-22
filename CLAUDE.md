@@ -767,8 +767,10 @@ garbage on the P2 (`doc/funcptr-arg-to-indirect-call.c`), worked around by bindi
 it first (`indirectFuncArg`). Sweep a new call shape through every place a function
 value lives -- a variable bound once and twice, a literal, a parameter, a package
 variable, a table's slot, a field, a call's result, deferred and on a cog -- and RUN
-it on the board: the host was right about every one of these. Still refused: a
-deferred or goroutine call of a variadic function, declared or a value.
+it on the board: the host was right about every one of these. A DEFERRED variadic
+call packs its captures at the replay, and a GOROUTINE's in its trampoline, on its
+own stack (2026-09-22); a replay writes what it binds ahead of itself
+(`emitReplayedCall`), which is where a pack's array had gone missing.
 
 **A TEMPORARY IS A COG REGISTER** (2026-09-20). flexcc gives every C local one
 (`local_N res 1` in COG_BSS) out of a pool the assembler checks with `fit 480`,
