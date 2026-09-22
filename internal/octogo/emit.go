@@ -5818,6 +5818,11 @@ type deferredCall struct {
 	// There is no head node naming it -- the source wrote no name -- so the replay
 	// calls it directly.
 	litName string
+	// packAt is 1 + the position where a deferred VARIADIC literal's packed
+	// arguments start, 0 for none, and packElem their element type: the literal's
+	// replay packs its captures there, as emitCallArgs does a named callee's.
+	packAt   int
+	packElem string
 }
 
 // deferArg is one argument of a deferred call. A literal needs no temporary --
@@ -25801,6 +25806,20 @@ func (e *emitter) emitDefer(nodes []Node) {
 		}
 		d := deferredCall{litName: cname, cond: e.deferBlockDepth > 0, slot: len(e.defers)}
 		args, params := e.callArgExprs(suffix[0].ast), e.funcParams[cname]
+		// A VARIADIC literal takes its packed arguments as its element's, each
+		// captured on its own and packed at the replay, as a named callee's are.
+		if elem, at := e.variadicPack(cname); at >= 0 && !e.spreadCall(suffix[0].ast) {
+			if len(args) < at {
+				e.fail("not enough arguments in call to the deferred function literal: have %d, want at least %d", len(args), at)
+				return
+			}
+			d.packAt, d.packElem = at+1, elem
+			packed := slices.Clone(params[:at])
+			for range args[at:] {
+				packed = append(packed, elem)
+			}
+			params = packed
+		}
 		if len(args) != len(params) {
 			e.fail("wrong number of arguments in call to the deferred function literal: have %d, want %d", len(args), len(params))
 			return
@@ -25889,6 +25908,27 @@ func (e *emitter) emitDefer(nodes []Node) {
 	// the parameter is.
 	if len(paramTypes) == 0 && d.callsValue && d.recvCType != "" {
 		paramTypes = e.funcTypeParams[e.underlyingCType(d.recvCType)]
+	}
+	// A VARIADIC callee's packed arguments are captured as its element: an
+	// interface element is wrapped here, a constant spelled as one. The replay packs
+	// the captures (see emitCallArgs).
+	if !e.spreadCall(call.ast) {
+		cname, ftype := d.cname, ""
+		if cname == "" && len(suffix) == 1 {
+			if base := e.soleIdent(head.ast); base != "" {
+				cname = e.funcCallC(base)
+			}
+		}
+		if d.callsValue {
+			ftype = d.recvCType
+		}
+		if elem, at := e.callVariadic(cname, ftype, paramTypes); at >= 0 {
+			packed := slices.Clone(paramTypes[:at])
+			for range e.callArgExprs(call.ast)[min(at, len(e.callArgExprs(call.ast))):] {
+				packed = append(packed, elem)
+			}
+			paramTypes = packed
+		}
 	}
 	// printf's format is a constant the replay reads from the source again, so a
 	// temporary captured for it would be set and never read.
@@ -26372,14 +26412,25 @@ func (e *emitter) emitDeferred() {
 		if d.litName != "" {
 			// A lifted function literal: no name in the source to resolve again,
 			// and its arguments are the temporaries captured at the defer, passed
-			// as they are -- each is already of its parameter's type.
-			e.ind()
-			if d.cond {
-				e.emit("if (" + deferFlagName(d.slot) + ") ")
-			}
+			// as they are -- each is already of its parameter's type -- save a
+			// variadic one's packed arguments, whose array is written first.
 			var args []string
 			for i := range d.args {
 				args = append(args, deferArgName(d.slot, i))
+			}
+			if d.packAt != 0 {
+				at := d.packAt - 1
+				var pack string
+				_, pro := e.capturePrologue(func() { pack = e.packVariadicNames(d.packElem, args[at:]) })
+				for _, line := range pro {
+					e.ind()
+					e.emit(line)
+				}
+				args = append(args[:at:at], pack)
+			}
+			e.ind()
+			if d.cond {
+				e.emit("if (" + deferFlagName(d.slot) + ") ")
 			}
 			e.emit(d.litName + "(" + strings.Join(args, ", ") + ");\n")
 			continue
@@ -26388,12 +26439,26 @@ func (e *emitter) emitDeferred() {
 		if d.recvCType != "" {
 			// The receiver is a temporary of this function, so the call is written
 			// here rather than through emitCall, which would resolve the receiver's
-			// name again -- in a scope that has already been left.
+			// name again -- in a scope that has already been left. A function VALUE's
+			// arguments are its type's (valueArgsCText), which is what packs a
+			// variadic one, and what the arguments bind -- that pack's array -- is
+			// written ahead of the call (see emitReplayedCall).
+			var args string
+			_, pro := e.capturePrologue(func() {
+				if d.callsValue {
+					args = e.valueArgsCText(d.cname, d.recvCType, d.suffix[len(d.suffix)-1].ast)
+				} else {
+					args = e.argsCText(d.cname, d.suffix[len(d.suffix)-1].ast)
+				}
+			})
+			for _, line := range pro {
+				e.ind()
+				e.emit(line)
+			}
 			e.ind()
 			if d.cond {
 				e.emit("if (" + deferFlagName(d.slot) + ") ")
 			}
-			args := e.argsCText(d.cname, d.suffix[len(d.suffix)-1].ast)
 			if d.callsValue {
 				// A value whose results travel through an out parameter (see
 				// funcSigCParts) is handed one, which the dropped results go to. It
@@ -26427,15 +26492,35 @@ func (e *emitter) emitDeferred() {
 			e.ind()
 			e.emit("if (" + deferFlagName(d.slot) + ") {\n")
 			e.indent++
-			e.emitCall(d.head, d.suffix)
+			e.emitReplayedCall(d)
 			e.indent--
 			e.ind()
 			e.emit("}\n")
 		} else {
-			e.emitCall(d.head, d.suffix)
+			e.emitReplayedCall(d)
 		}
 		e.deferReplay, e.deferReplayArgs = -1, nil
 	}
+}
+
+// emitReplayedCall writes a deferred call where it is replayed, with what it binds
+// ahead of it -- a variadic pack's array -- written first. A replay is emitted at a
+// return, after that statement's own prologue has gone out, so what the call put
+// there was written nowhere.
+func (e *emitter) emitReplayedCall(d deferredCall) {
+	// Buffered at the current indentation, which captureC would reset: the call is
+	// written after all, only behind its prologue.
+	saved, savedPro := e.w, e.prologue
+	var b bytes.Buffer
+	e.w, e.prologue = &b, nil
+	e.emitCall(d.head, d.suffix)
+	pro := e.prologue
+	e.w, e.prologue = saved, savedPro
+	for _, line := range pro {
+		e.ind()
+		e.emit(line)
+	}
+	e.emit(b.String())
 }
 
 // forwardedCallC renders `f()` in `return f()`, where the one call supplies every
@@ -34712,10 +34797,33 @@ func (e *emitter) emitCallArgs(cname string, callSuffix []int32) {
 			e.fail("not enough arguments in call to %s", cname)
 			return
 		}
-		pack := e.packVariadic(elem, args[at:])
+		// A deferred call is replayed from what its defer statement captured, the
+		// fixed arguments and the packed ones alike: Go evaluates them there. Packed
+		// from the expressions, the replay read what the variables held at the
+		// return, into an array declared nowhere the return could see.
+		replayed := func(i int) string {
+			if a := e.deferReplayArgs[i]; a.inline {
+				return e.captureC(func() { e.emitExpr(a.expr) })
+			}
+			return deferArgName(e.deferReplay, i)
+		}
+		var pack string
+		if e.deferReplay >= 0 {
+			var names []string
+			for i := at; i < len(args); i++ {
+				names = append(names, replayed(i))
+			}
+			pack = e.packVariadicNames(elem, names)
+		} else {
+			pack = e.packVariadic(elem, args[at:])
+		}
 		for i, arg := range args[:at] {
 			if i != 0 {
 				e.emit(", ")
+			}
+			if e.deferReplay >= 0 {
+				e.emit(replayed(i))
+				continue
 			}
 			if lit, ok := e.wideConstArg(params, i, arg); ok {
 				e.emit(lit)

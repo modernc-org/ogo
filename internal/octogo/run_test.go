@@ -34291,6 +34291,75 @@ func main() {
 }
 `,
 		want: "3 0 2 6 0 30 0\n8 0 6 -2 3\n12 7 0 0 2\n",
+	}, {
+		// A DEFERRED call of a variadic function packs the values its defer
+		// statement captured, when the call is replayed: a declared function, an
+		// empty pack, a spread, a function value, a value and a pointer method,
+		// interfaces, a literal called where it stands, and one in a branch. The
+		// replay packed the EXPRESSIONS instead -- what the variables held at the
+		// return -- into an array declared nowhere it could see, and a literal was
+		// refused for its argument count.
+		name: "a deferred variadic call packs what its defer captured",
+		src: `type Reader interface{ Read() int }
+
+type Dev struct{ v int }
+
+func (d *Dev) Read() int { return d.v }
+
+type L struct{ tag string }
+
+func (l L) Log(xs ...int) { println(l.tag, len(xs)) }
+
+func (l *L) PLog(k int, xs ...int) { println(l.tag, k, len(xs)) }
+
+func sumR(rs ...Reader) {
+	n := 0
+	for _, r := range rs {
+		n += r.Read()
+	}
+	println("readers", len(rs), n)
+}
+
+func show(tag string, xs ...int) {
+	n := 0
+	for _, x := range xs {
+		n += x
+	}
+	println(tag, len(xs), n)
+}
+
+var d1 = Dev{3}
+
+var d2 = Dev{5}
+
+var xs = []int{4, 5}
+
+func main() {
+	a := 1
+	l := L{"m"}
+	f := show
+	defer show("decl", 7, 8, 9)
+	defer show("none")
+	defer show("spread", xs...)
+	defer show("eval", a, a+1)
+	defer f("value", 1, 2)
+	defer l.Log(1, 2, 3)
+	defer l.PLog(9, 1, 2)
+	defer sumR(&d1, &d2)
+	defer func(tag string, ys ...int) { println(tag, len(ys), ys[0]) }("lit", a, 2)
+	if d1.v > 0 {
+		defer show("cond", 1, 2)
+	}
+	if d1.v < 0 {
+		defer show("never", 1)
+	}
+	a = 100
+	l.tag = "changed"
+	d1.v = 30
+	println("body", a)
+}
+`,
+		want: "body 100\ncond 2 3\nlit 2 1\nreaders 2 35\nchanged 9 2\nm 3\nvalue 2 3\neval 2 3\nspread 2 9\nnone 0 0\ndecl 3 24\n",
 	}}
 
 // TestEmitCRun compiles emitted C with a host compiler and runs it, checking what
