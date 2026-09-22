@@ -66,6 +66,16 @@ shipped section tells a reader on that version that they have behaviour they do 
 - **A package array may stand behind a parenthesised address.** `(&arr)[0] = 10`
   was "only assignment to a simple variable is supported yet" and `(&row).Set(1, 7)`
   "unsupported call target" for a package array, where a local array's worked.
+- **A variadic parameter may be of an array type.** `func f(xs ...[3]int)` was
+  refused as "unsupported type", with no position, and `func f(xs ...A)` for a
+  defined array type compiled to C neither compiler took. Both work in a direct
+  call, a spread, a method, a function value, a deferred call and a goroutine, each
+  element a copy as Go has it.
+- **A call through an interface may be deferred or started on a cog.** `defer
+  s.Show(1)` and `go w.Run(ch)` for an interface value never compiled -- "unknown
+  package s", "only <pkg>.<Func>(args) ... call statements are supported yet", or C
+  calling a function nothing declares -- in every receiver shape. The value is
+  evaluated where the statement stands, as in Go, and a nil one panics there.
 - **A labeled select is a break target.** `sel: select { case <-ch: for { ... break
   sel } }` leaves the select, as in Go; it was refused as "invalid break label sel:
   not a for or switch".
@@ -130,6 +140,18 @@ shipped section tells a reader on that version that they have behaviour they do 
   function that initializes the package, and on the board a later call left `9552
   3928` where Go prints `3 2`; a store through it wrote into the stack. It is the
   package's own static object now, as a struct literal's has been.
+- **A variadic method called through an interface did not pack its arguments.**
+  `lg.Log("a", 1, 2, 3)` for a `Log(prefix string, xs ...int)` handed the ints over
+  where the slice header goes, for every element type, and neither compiler took
+  it. An implementation that keeps its variadic parameter is refused through the
+  interface, as it is when called directly.
+- **A deferred call with an array literal argument did not build for the target.**
+  `defer show([3]int{1, 2, 3})` was copied with the target's `memcpy`, a macro,
+  which read the commas inside the literal's braces as arguments of its own.
+- **The compiler panicked on a variadic call that packs nothing.** `keep()` for a
+  `keep(xs ...int)` that stores its parameter read a refusal's position off an empty
+  argument list -- "index out of range" -- and `go keep()` was refused for a pack
+  never built. Nothing packed is the nil slice, which hands no storage over.
 - **nil did not reach every place a slice is wanted.** A DEFINED slice type took
   the null pointer instead of the zero header in a return, an assignment, a field
   store and an argument -- `return nil` for an `L`, `l = nil`, `h.ls = nil`,

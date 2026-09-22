@@ -827,6 +827,20 @@ answers -- but nothing in the tests held one, since gcc refuses them too and no 
 case can. A rule about a REPRESENTATION (a header, two words, a copied array) is a
 rule to sweep across the positions, since each position writes the value itself.
 
+**A VARIADIC CALL IS A ROW** (2026-09-23). The pack a variadic call builds is
+written by every place a call can be made -- a direct call, a function value, an
+interface slot, a deferred call's replay, a goroutine's trampoline -- and each
+wrote it on its own. Sweeping one REPRESENTATION, an array, through them found all
+five broken for `xs ...A` (the callee copied the parameter as though it were an A,
+and every pack assigned arrays; `packStoreC` copies them), and the written `...[3]int`
+refused outright (`variadicElemCType`). The interface slot never packed at all, for
+any element (`ifaceMethod.vararg`, `callVararg`), and a deferred or started call
+through an interface did not compile in any shape (`deferredCall.ifaceMethod`,
+`goSite.ifaceMethod`). The keeper check that makes a pack safe has to follow each
+new place a call is made -- it did not follow the interface slot until the pack
+existed -- and an EMPTY pack is the nil slice, which the check read a position off
+and crashed the compiler on (`keep()`).
+
 **A TEMPORARY IS A COG REGISTER** (2026-09-20). flexcc gives every C local one
 (`local_N res 1` in COG_BSS) out of a pool the assembler checks with `fit 480`,
 shared across functions so the deepest call chain is what spends it -- and overflow
