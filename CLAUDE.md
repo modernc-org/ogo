@@ -790,6 +790,27 @@ pointer to an ARRAY (`derefShorthand`) -- `(*ps)[i](x)` for a slice came out as
 `;`, the call gone, because the call paths' false was ignored at nine sites. They
 refuse now (`callOrFail`): a false there is a shape nothing lowered.
 
+**A LABELED BREAK REFERS FROM ANY DEPTH** (2026-09-22). Go's terminating-statement
+rule for a for, a switch and a select is that no break REFERS to it, and a labeled
+break refers to it from inside a nested select, switch or loop. The checker counted
+only an unlabeled break at the statement's own level (`containsBreak`), which was
+wrong in BOTH directions at once: the statement after `loop: for { select { ... break
+loop } }` -- the usual way out of a select loop -- was refused as unreachable, and a
+function ENDING in such a loop, which Go refuses as "missing return", compiled with no
+return on the break's path and returned 0 on the board in silence. Found by a board
+sweep of control flow, not by the rejects batches, which had no labeled break in a
+select. A select was no break target at all (`labelSelect` since). A termination rule
+is a rule a missing-return sweep and a reachability sweep BOTH exercise: write each
+new shape into both.
+
+A parenthesised ADDRESS is peeled by the paths that lower it, `(&v).f` as `v.f`, and
+the peel asked nothing of v: `(&pp).x = 3` for a pointer, `(&ps)[0] = 1` for a slice,
+`(&f)(1)` and 11 more shapes Go refuses compiled as though the & were not there
+(`addrStepRefused`, `TestEmitCAddrStepRefused`). The head that is a CHAIN, `(&h.v).x
+= 9`, `(&h.a)[0] = 8`, `(&h.v).m()` as a statement and `(**ppp).x = 5`, is still
+refused where Go takes it -- loudly, "only assignment to a simple variable is
+supported yet".
+
 **A TEMPORARY IS A COG REGISTER** (2026-09-20). flexcc gives every C local one
 (`local_N res 1` in COG_BSS) out of a pool the assembler checks with `fit 480`,
 shared across functions so the deepest call chain is what spends it -- and overflow

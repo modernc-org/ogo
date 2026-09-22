@@ -63,6 +63,12 @@ shipped section tells a reader on that version that they have behaviour they do 
 - **A declaration may read through a parenthesised head.** `x := (&p).x`, `x :=
   (get()).y`, `x := (arr[1:])[1]` and `x := (&arr)[k]` were "cannot infer a type",
   while the same reads worked wherever else a value stands.
+- **A package array may stand behind a parenthesised address.** `(&arr)[0] = 10`
+  was "only assignment to a simple variable is supported yet" and `(&row).Set(1, 7)`
+  "unsupported call target" for a package array, where a local array's worked.
+- **A labeled select is a break target.** `sel: select { case <-ch: for { ... break
+  sel } }` leaves the select, as in Go; it was refused as "invalid break label sel:
+  not a for or switch".
 
 ### Fixed
 
@@ -118,6 +124,12 @@ shipped section tells a reader on that version that they have behaviour they do 
   function that initializes the package, and on the board a later call left `9552
   3928` where Go prints `3 2`; a store through it wrote into the stack. It is the
   package's own static object now, as a struct literal's has been.
+- **A labeled break out of a select, a switch or a nested loop was not seen to end
+  its loop.** The statement after `loop: for { select { case v := <-ch: ... break
+  loop } }` -- the usual way out of a select loop -- was refused as unreachable code;
+  and a function ending in such a loop, which Go refuses as "missing return", was
+  accepted and compiled with no return on the path the break takes: on the board the
+  call returned 0 in silence. Both follow Go now.
 
 - **`%T` of a slice of a defined type printed the type it is defined over.**
   `printf("%T", l[1:])` for a `type L []int` printed `[]int`, of `append(l, 4)` the
@@ -135,6 +147,14 @@ shipped section tells a reader on that version that they have behaviour they do 
 
 ### Behaviour changes
 
+- **A step after `(&v)` that the address does not take is refused, in Go's words.**
+  `(&v).f` is `v.f` because a selector dereferences one pointer, and `(&v)[i]` is
+  `v[i]` for an array alone. `(&pp).x = 3` and `(&pp).x++` for a pointer,
+  `(&pp).m()`, `(&pa)[0] = 5` for a pointer to an array, `(&ps)[0] = 1` for a slice,
+  `(&sh).Area()` for an interface and `(&f)(1)` for a function value -- a store, an
+  increment, a call as a value, a statement, a defer or a go -- compiled as though
+  the `&` were not there, and Go refuses each: "(&pp).x undefined (type **P has no
+  field or method x)", "cannot index (&ps) (value of type *[]int)".
 - **What has no Kind is asked what it is, by every operator and in every place a
   value is stored.** The checker's type model is a Kind -- a predeclared type -- and
   most of its rules asked for one and said nothing when an operand had none. A
