@@ -35204,6 +35204,87 @@ func main() {
 }
 `,
 		want: "body\n4 5\n1 2 3\n",
+	}, {
+		// A variadic parameter of ARRAYS. `...[3]int` was refused as "unsupported
+		// type" with no position, the element's C type asked of cType, which has
+		// no answer for an array; `...A` for a defined array compiled to C neither
+		// compiler takes -- the callee copied the parameter in as though it were
+		// an A, and the pack assigned arrays, which C cannot. The element is the
+		// array's typedef, the parameter is the slice it means, and every pack --
+		// a call's, a deferred call's replay, a goroutine's slots and trampoline
+		// -- copies each array in. An element is a copy, as Go has it: bump
+		// writes the pack's, not a's, and the spread form's writes the backing.
+		name: "a variadic parameter of arrays",
+		src: `type A [2]int
+
+type T struct{ k int }
+
+var gt = T{10}
+
+var done chan int
+
+func sum(xs ...[3]int) int {
+	s := 0
+	for _, x := range xs {
+		s += x[0] + x[1] + x[2]
+	}
+	return s
+}
+
+func first(xs ...A) int {
+	if len(xs) == 0 {
+		return -1
+	}
+	return xs[0][1]
+}
+
+func bump(xs ...A) int {
+	xs[0][0] = 100
+	c := xs[0]
+	c[1] = 50
+	return xs[0][0] + xs[0][1]
+}
+
+func (t *T) total(xs ...A) int {
+	s := t.k
+	for _, x := range xs {
+		s += x[0] * x[1]
+	}
+	return s
+}
+
+func report(xs ...A) {
+	s := 0
+	for _, x := range xs {
+		s += x[0] + x[1]
+	}
+	println("deferred", s)
+}
+
+func work(xs ...A) {
+	done <- len(xs)*10 + xs[0][1]
+}
+
+func unused(xs ...A) int { return 7 }
+
+func main() {
+	a3 := [3]int{1, 2, 3}
+	println(sum(a3, [3]int{4, 5, 6}), sum())
+	a := A{1, 2}
+	as := []A{{3, 4}, {5, 6}}
+	println(first(a, A{7, 8}), first(), first(as...), first(as[1:]...))
+	println(bump(a), a[0], a[1], bump(as...), as[0][0], as[0][1])
+	t := &gt
+	f := gt.total
+	g := func(xs ...A) int { return len(xs) }
+	println(t.total(a, a), t.total(), f(A{1, 1}), g(a, a, a), unused(a))
+	defer report(a, A{3, 4})
+	a[0] = 99
+	go work(a, a)
+	println(<-done)
+}
+`,
+		want: "21 0\n2 -1 4 6\n102 1 2 104 100 4\n14 10 11 3 7\n22\ndeferred 10\n",
 	}}
 
 // TestEmitCRun compiles emitted C with a host compiler and runs it, checking what

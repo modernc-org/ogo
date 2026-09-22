@@ -1839,6 +1839,17 @@ func (e *emitter) emitGo(nodes []Node) {
 			}
 			site.arrays[len(site.args)] = dims[i] // see goSite.arrays
 		}
+		// An element of a variadic of ARRAYS crosses in a slot declared as the array
+		// itself, filled by a copy, as an array parameter's is: Go copies it at the go
+		// statement, and C assigns no array.
+		if packAt >= 0 && i >= packAt {
+			if ad, isArr := e.namedArrays[site.packElem]; isArr {
+				if site.arrays == nil {
+					site.arrays = map[int]arrDim{}
+				}
+				site.arrays[len(site.args)] = ad
+			}
+		}
 		site.args = append(site.args, ct)
 	}
 	if site.pack && packAt >= len(args) {
@@ -2015,7 +2026,7 @@ func (e *emitter) goDefs() string {
 			if k := len(s.args) - s.packFrom; k != 0 {
 				fmt.Fprintf(&tramps, "\t%s pack[%d];\n", s.packElem, k)
 				for j := 0; j < k; j++ {
-					fmt.Fprintf(&tramps, "\tpack[%d] = a->a%d;\n", j, s.packFrom+j)
+					tramps.WriteString("\t" + e.packStoreC(fmt.Sprintf("pack[%d]", j), fmt.Sprintf("a->a%d", s.packFrom+j), s.packElem))
 				}
 				pack = fmt.Sprintf("(%s){pack, %d, %d}", sliceCName(s.packElem), k, k)
 			}
@@ -12583,7 +12594,7 @@ func (e *emitter) paramSliceTypes(sig []int32) []string {
 		}
 		e.forEachParamV(n.ast, func(_ string, ta []int32, _, variadic bool) {
 			if variadic {
-				out = append(out, sliceCName(e.cType(ta)))
+				out = append(out, sliceCName(e.variadicElemCType(ta)))
 				return
 			}
 			if elem, ok := e.sliceType(ta); ok {
@@ -14422,7 +14433,7 @@ func (e *emitter) cParamList(ast []int32) []string {
 	e.forEachParamV(ast, func(name string, ta []int32, _, variadic bool) {
 		if variadic {
 			// "...T" is received as the []T it means; the caller builds the header.
-			elem := e.cType(ta)
+			elem := e.variadicElemCType(ta)
 			e.needSlice(elem)
 			out = append(out, sliceCName(elem)+" "+e.localIdent(name))
 			return
@@ -14451,7 +14462,7 @@ func (e *emitter) cParamTypes(sig []int32) ([]string, []arrDim) {
 		}
 		e.forEachParamV(n.ast, func(name string, ta []int32, _, variadic bool) {
 			if variadic {
-				elem := e.cType(ta)
+				elem := e.variadicElemCType(ta)
 				e.needSlice(elem)
 				out = append(out, sliceCName(elem))
 				dims = append(dims, arrDim{})
@@ -14704,6 +14715,17 @@ func (e *emitter) forEachParamV(ast []int32, fn func(name string, typeAST []int3
 	}
 }
 
+// variadicElemCType is the element C type of a variadic parameter `...T`: T's, or
+// for an ARRAY written out, `...[3]int`, the typedef its shape mints -- the one a
+// `[][3]int` element is given. cType has no answer for an array, so asking it
+// latched "unsupported type" with no position and refused the declaration.
+func (e *emitter) variadicElemCType(ta []int32) string {
+	if name, ok := e.arrayElemTypedef(ta); ok {
+		return name
+	}
+	return e.cType(ta)
+}
+
 // variadicElem names the element type of a signature's variadic parameter, and
 // which position it is at, or -1. The pack a call builds is a slice over that
 // element, so both are needed at the call site.
@@ -14716,7 +14738,7 @@ func (e *emitter) variadicElem(sig []int32) (elem string, at int) {
 		i := 0
 		e.forEachParamV(n.ast, func(_ string, ta []int32, _, variadic bool) {
 			if variadic {
-				elem, at = e.cType(ta), i
+				elem, at = e.variadicElemCType(ta), i
 			}
 			i++
 		})
@@ -14769,7 +14791,7 @@ func (e *emitter) bindParams(sig []int32) {
 					}
 					e.curParams[name] = true
 					if variadic {
-						elem := e.cType(ta)
+						elem := e.variadicElemCType(ta)
 						e.needSlice(elem)
 						e.sliceVars[name] = elem
 						e.locals[name] = sliceCName(elem)
@@ -14803,9 +14825,15 @@ func (e *emitter) emitParamCopies(sig []int32) {
 		switch n.sym {
 		case ParameterList:
 			if !seenRPar {
-				e.forEachParam(n.ast, func(name string, ta []int32, synthetic bool) {
+				e.forEachParamV(n.ast, func(name string, ta []int32, synthetic, variadic bool) {
 					if synthetic {
 						return // an unnamed array parameter has no in-body copy
+					}
+					// A variadic parameter is the SLICE it means, whatever its element:
+					// `xs ...A` for an array A was copied in as though it were an A,
+					// declaring a second xs over the header the callee had received.
+					if variadic {
+						return
 					}
 					if a, ok := e.arrayDim(ta); ok {
 						e.includes["string.h"] = true
@@ -14834,7 +14862,7 @@ func (e *emitter) emitParamVoids(sig, body []int32) {
 		switch n.sym {
 		case ParameterList:
 			if !seenRPar {
-				e.forEachParam(n.ast, func(name string, ta []int32, synthetic bool) {
+				e.forEachParamV(n.ast, func(name string, ta []int32, synthetic, variadic bool) {
 					// A parameter the body never uses, whether the source left it
 					// unnamed or named it and ignored it. Go allows both -- an unused
 					// parameter is not an unused variable -- and C warns about both.
@@ -14842,7 +14870,7 @@ func (e *emitter) emitParamVoids(sig, body []int32) {
 						return
 					}
 					cname := name
-					if _, ok := e.arrayDim(ta); ok {
+					if _, ok := e.arrayDim(ta); ok && !variadic {
 						cname = paramArgName(name) // an array parameter is received by pointer
 					}
 					e.ind()
@@ -34850,6 +34878,21 @@ func (e *emitter) packVariadic(elem string, args []Node) string {
 	tmp := e.newTmp()
 	n := strconv.Itoa(len(args))
 	e.prologue = append(e.prologue, elem+" "+tmp+"["+n+"];\n")
+	if a, isArr := e.namedArrays[elem]; isArr {
+		// An ARRAY element is copied in from the storage the argument names -- a
+		// variable, a field, an element, a literal bound first -- C having no array
+		// assignment or array value to hand over.
+		for i, arg := range args {
+			src, ok := e.arraySourceC(arg.ast)
+			if !ok {
+				e.fail("cannot pass %s as %s in a variadic call: it is not an array this can copy from",
+					e.f.exprSource(arg), e.goArrayTypeName(a))
+				return "(" + sliceCName(elem) + "){0}"
+			}
+			e.prologue = append(e.prologue, e.packStoreC(tmp+"["+strconv.Itoa(i)+"]", src, elem))
+		}
+		return "(" + sliceCName(elem) + "){" + tmp + ", " + n + ", " + n + "}"
+	}
 	for i, a := range args {
 		val, wrapped := "", false
 		// A concrete value handed to an INTERFACE element is wrapped where it
@@ -35652,9 +35695,20 @@ func (e *emitter) packVariadicNames(elem string, names []string) string {
 	n := strconv.Itoa(len(names))
 	e.prologue = append(e.prologue, elem+" "+tmp+"["+n+"];\n")
 	for i, nm := range names {
-		e.prologue = append(e.prologue, tmp+"["+strconv.Itoa(i)+"] = "+nm+";\n")
+		e.prologue = append(e.prologue, e.packStoreC(tmp+"["+strconv.Itoa(i)+"]", nm, elem))
 	}
 	return "(" + sliceCName(elem) + "){" + tmp + ", " + n + ", " + n + "}"
+}
+
+// packStoreC is the statement storing one value into an element of a variadic
+// pack: an assignment, or for an ARRAY element a copy, C having no array
+// assignment -- `pack[0] = a;` for an `xs ...A` is refused by both compilers.
+func (e *emitter) packStoreC(dst, src, elem string) string {
+	if _, isArr := e.namedArrays[elem]; isArr {
+		e.includes["string.h"] = true
+		return "memcpy(" + dst + ", " + src + ", sizeof(" + dst + "));\n"
+	}
+	return dst + " = " + src + ";\n"
 }
 
 // callArgExprs returns the argument Expression nodes of a CallSuffix.
