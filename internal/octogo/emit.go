@@ -25864,6 +25864,13 @@ func (e *emitter) emitDefer(nodes []Node) {
 			paramDims, paramTypes = e.funcArrayParams[e.funcCallC(base)], e.funcParams[e.funcCallC(base)]
 		}
 	}
+	// A call through a function VALUE takes the value's parameters, which no
+	// declared callee's name answers for: `defer f(&d)` for a literal taking an
+	// interface captured the pointer as it stood, and replayed one word into the two
+	// the parameter is.
+	if len(paramTypes) == 0 && d.callsValue && d.recvCType != "" {
+		paramTypes = e.funcTypeParams[e.underlyingCType(d.recvCType)]
+	}
 	// printf's format is a constant the replay reads from the source again, so a
 	// temporary captured for it would be set and never read.
 	isPrintf := len(suffix) == 1 && e.soleIdent(head.ast) == "printf"
@@ -26429,7 +26436,7 @@ func (e *emitter) valueOutCallC(callee string, suffix []Node, out string) (strin
 			return "", false
 		}
 		text := e.varRef(callee) + "(&" + out
-		if args := e.argsCText(e.valueCallee(callee, ct), suffix[0].ast); args != "" {
+		if args := e.valueArgsCText(e.valueCallee(callee, ct), ct, suffix[0].ast); args != "" {
 			text += ", " + args
 		}
 		return text + ")", true
@@ -26446,7 +26453,7 @@ func (e *emitter) valueOutCallC(callee string, suffix []Node, out string) (strin
 			return "", false
 		}
 		text := first + "(&" + out
-		if args := e.argsCText(e.indirectCallee("", ct), suffix[1].ast); args != "" {
+		if args := e.valueArgsCText(e.indirectCallee("", ct), ct, suffix[1].ast); args != "" {
 			text += ", " + args
 		}
 		return text + ")", true
@@ -26457,7 +26464,7 @@ func (e *emitter) valueOutCallC(callee string, suffix []Node, out string) (strin
 			return "", false
 		}
 		text := e.fieldAccessC(callee, []string{field}) + "(&" + out
-		if args := e.argsCText(e.fieldCallee(callee, field, ft), suffix[1].ast); args != "" {
+		if args := e.valueArgsCText(e.fieldCallee(callee, field, ft), ft, suffix[1].ast); args != "" {
 			text += ", " + args
 		}
 		return text + ")", true
@@ -27069,7 +27076,7 @@ func (e *emitter) emitCallExpr(recv string, suffix []Node) bool {
 				// hoisted ahead of the statement unless the statement throws it away
 				// (emitOutValueCall).
 				e.noteFrameCalls(recv, suffix[0].ast)
-				args := e.argsCText(e.valueCallee(recv, ct), suffix[0].ast)
+				args := e.valueArgsCText(e.valueCallee(recv, ct), ct, suffix[0].ast)
 				e.emitOutValueCall(e.outResultOf(rets), discard || len(rets) > 1, func(tmp string) string {
 					call := e.varRef(recv) + "(&" + tmp
 					if args != "" {
@@ -27130,7 +27137,7 @@ func (e *emitter) emitCallExpr(recv string, suffix []Node) bool {
 			// Several results are written through a leading out parameter, as for a
 			// value held in a variable (see funcSigCParts).
 			if rets := e.funcTypeRet[e.underlyingCType(ft)]; e.outResultOf(rets) != "" {
-				args := e.argsCText(e.fieldCallee(recv, method, ft), suffix[1].ast)
+				args := e.valueArgsCText(e.fieldCallee(recv, method, ft), ft, suffix[1].ast)
 				e.emitOutValueCall(e.outResultOf(rets), discard || len(rets) > 1, func(tmp string) string {
 					call := e.fieldAccessC(recv, []string{method}) + "(&" + tmp
 					if args != "" {
@@ -27145,7 +27152,7 @@ func (e *emitter) emitCallExpr(recv string, suffix []Node) bool {
 			// summaries -- the callee really is that function. An unbound field
 			// yields "", which consults nothing and accepts, as the rest of the
 			// analysis does with a callee it cannot name.
-			e.emitCallArgs(e.fieldCallee(recv, method, ft), suffix[1].ast)
+			e.emitValueCallArgs(e.fieldCallee(recv, method, ft), ft, suffix[1].ast)
 			e.emit(")")
 			return true
 		}
@@ -27314,7 +27321,7 @@ func (e *emitter) emitCallExpr(recv string, suffix []Node) bool {
 				if out := e.outResultOf(rts); out != "" {
 					// Several results travel through the out parameter; only a
 					// statement reaches here, so they are discarded.
-					args := e.argsCText(e.indirectCallee("", ct), callAst)
+					args := e.valueArgsCText(e.indirectCallee("", ct), ct, callAst)
 					e.emitOutValueCall(out, true, func(tmp string) string {
 						call := bound + "(&" + tmp
 						if args != "" {
@@ -27626,6 +27633,26 @@ func (e *emitter) argsCText(cname string, callSuffix []int32) string {
 	return buf.String()
 }
 
+// valueArgsCText renders the arguments of a call through a function VALUE of the C
+// type ftype -- a variable, a field, an element, a call's result -- converted to that
+// type's parameters. They are the function type's and no declared callee's: asked of
+// the callee the summaries name, which a value mostly is not, an interface
+// parameter took its argument as it stood, `&d` one word where the interface is two,
+// and the target's compiler refused the call ("expected 2 found 1"). callee is what
+// the summaries judge the call by, as argsCText's.
+func (e *emitter) valueArgsCText(callee, ftype string, callSuffix []int32) string {
+	e.callParams = e.funcTypeParams[e.underlyingCType(ftype)]
+	defer func() { e.callParams = nil }()
+	return e.argsCText(callee, callSuffix)
+}
+
+// emitValueCallArgs is valueArgsCText writing where the call stands.
+func (e *emitter) emitValueCallArgs(callee, ftype string, callSuffix []int32) {
+	e.callParams = e.funcTypeParams[e.underlyingCType(ftype)]
+	e.emitCallArgs(callee, callSuffix)
+	e.callParams = nil
+}
+
 // indexCText renders an index expression (with its bound check) to a string.
 func (e *emitter) indexCText(idxAST []int32, lenExpr string) string {
 	saved := e.w
@@ -27837,7 +27864,7 @@ func (e *emitter) chainCText(base string, steps []Node) (text, ctype string, add
 					// element is bound first for the reason given just below.
 					tmp := e.newTmp()
 					call := e.hoist(cur.ctype, func() { e.emit(text) }) + "(&" + tmp
-					if args := e.argsCText(e.indirectCallee("", cur.ctype), n.ast); args != "" {
+					if args := e.valueArgsCText(e.indirectCallee("", cur.ctype), cur.ctype, n.ast); args != "" {
 						call += ", " + args
 					}
 					e.prologue = append(e.prologue, out+" "+tmp+";\n", call+");\n")
@@ -27853,7 +27880,7 @@ func (e *emitter) chainCText(base string, steps []Node) (text, ctype string, add
 				// what is emitted. gcc compiles the direct form correctly, which is
 				// why this needed the board to find.
 				text = e.hoist(cur.ctype, func() { e.emit(text) }) +
-					"(" + e.argsCText(e.indirectCallee("", cur.ctype), n.ast) + ")"
+					"(" + e.valueArgsCText(e.indirectCallee("", cur.ctype), cur.ctype, n.ast) + ")"
 				cur, addr = e.plainOrSlice(rts[0]), false
 				resultTok = n.Pos()
 				continue
@@ -34028,7 +34055,7 @@ func (e *emitter) emitDestructure(targets []assignTarget, declare []bool, rhs []
 			text, ct, _, okc := e.chainCText(callee, suffix[:len(suffix)-1])
 			if okc && e.isFuncCType(ct) && e.outResultOf(e.funcTypeRet[e.underlyingCType(ct)]) != "" {
 				bound := e.hoist(ct, func() { e.emit(text) })
-				args := e.argsCText(e.indirectCallee("", ct), suffix[len(suffix)-1].ast)
+				args := e.valueArgsCText(e.indirectCallee("", ct), ct, suffix[len(suffix)-1].ast)
 				e.ind()
 				e.emit(e.retStructNameOf(resTypes) + " " + tmp + ";\n")
 				call := bound + "(&" + tmp
@@ -34719,8 +34746,11 @@ func (e *emitter) emitCallArgs(cname string, callSuffix []int32) {
 		// stands: the two words the parameter is, made of the value's address and
 		// the table for that pair. The same thing the assignment writes in two
 		// statements, as one value, because a parameter has no name here to write
-		// them into.
-		if params := e.funcParams[cname]; i < len(params) && e.isIfaceCType(params[i]) && e.deferReplay < 0 {
+		// them into. The parameters are this call's, a function VALUE's among them:
+		// asked of the declared callee alone, a call through a literal, a parameter,
+		// a package variable or a table's slot passed `&d` as one word where the
+		// interface is two -- the target's compiler refused it, "expected 2 found 1".
+		if i < len(params) && e.isIfaceCType(params[i]) && e.deferReplay < 0 {
 			if text, ok := e.ifaceValueC(params[i], arg.ast); ok {
 				e.emit(text)
 				continue

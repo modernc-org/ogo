@@ -34112,6 +34112,82 @@ func main() {
 }
 `,
 		want: "main.L main.L main.L main.S main.S main.S\n16 8 4 2 7\n8 4 6 6 ello orl\n",
+	}, {
+		// A concrete value handed to an INTERFACE parameter of a function VALUE --
+		// a literal, a field set on either of two paths, a table's slot at a
+		// constant and a variable index, an array field, a call's result, a
+		// parameter, a package variable, nil, a deferred literal and a goroutine --
+		// is wrapped as it is for a declared function. It was passed as it stood,
+		// one word where the interface is two, unless the value was one the
+		// summaries could name as a declared function.
+		name: "an interface argument to a function value",
+		src: `type Reader interface{ Read() int }
+
+type Dev struct{ v int }
+
+func (d *Dev) Read() int { return d.v }
+
+type P struct{ a, b int }
+
+var d = Dev{4}
+
+func use(r Reader) int { return r.Read() * 2 }
+
+func use2(r Reader) int { return r.Read() * 5 }
+
+func mkp(r Reader) P { return P{r.Read(), 1} }
+
+type T struct {
+	f func(Reader) int
+	g func(Reader) P
+}
+
+type H struct{ fs [2]func(Reader) int }
+
+var tab = [2]func(Reader) int{use, use2}
+
+var h = H{[2]func(Reader) int{use2, use}}
+
+var flip = 1
+
+var gf = use
+
+func pick() func(Reader) int { return tab[flip] }
+
+func apply(f func(Reader) int) int { return f(&d) }
+
+var done chan int
+
+func run(r Reader) { done <- r.Read() }
+
+var gr = run
+
+func main() {
+	lit := func(r Reader) int { return r.Read() * 3 }
+	isNil := func(r Reader) bool { return r == nil }
+	var t T
+	if flip == 1 {
+		t.f = use2
+	} else {
+		t.f = use
+	}
+	t.g = mkp
+	f := mkp
+	if flip == 1 {
+		f = func(r Reader) P { return P{r.Read() + 1, 2} }
+	}
+	p := f(&d)
+	q := t.g(&d)
+	show := func(r Reader) { println("deferred", r.Read()) }
+	defer show(&d)
+	println(lit(&d), isNil(nil), t.f(&d), p.a, p.b, q.a, q.b)
+	println(tab[1](&d), tab[flip](&d), h.fs[1](&d), pick()(&d), apply(use2), gf(&d))
+	go gr(&d)
+	println(<-done)
+	d.v = 6
+}
+`,
+		want: "12 true 20 5 2 4 1\n20 20 8 20 20 8\n4\ndeferred 6\n",
 	}}
 
 // TestEmitCRun compiles emitted C with a host compiler and runs it, checking what
