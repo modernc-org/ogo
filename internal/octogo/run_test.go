@@ -37854,6 +37854,53 @@ func main() {
 `,
 		want: "4 4\n1 50\n3 500\n14\n3 750\n",
 	}, {
+		// The ADDRESS of a literal whose field holds an array filled from a variable.
+		// The field is zeroed in the literal and copied in after the declaration,
+		// and the copy went through the POINTER as though it were the struct --
+		// `memcpy(&r.buf, ...)` -- which neither compiler builds: a declaration, an
+		// element of a slice of pointers, written and elided, and a nested literal.
+		// It goes into what the address points at now (litDerefMark).
+		name: "the address of a literal holding a struct with an array",
+		src: `type Buf struct {
+	n    int
+	data [3]int
+}
+
+type Rack struct {
+	k   int
+	buf Buf
+}
+
+type Shelf struct {
+	racks [2]Rack
+}
+
+var gb = Buf{7, [3]int{1, 2, 3}}
+
+var pr = &Rack{1, gb}
+
+var gs = []*Rack{{9, gb}}
+
+// The ADDRESS of a literal whose field holds an array, filled from a variable: the
+// field is zeroed in the literal and copied in afterwards, into what the address
+// points at -- in a declaration, a package variable, an element of a slice of
+// pointers, written and elided, and nested.
+func main() {
+	r := &Rack{2, gb}
+	println(r.buf.n, r.buf.data[2])
+	var q *Rack = &Rack{buf: gb}
+	println(q.k, q.buf.data[0])
+	ps := []*Rack{&Rack{4, gb}, {5, gb}, r}
+	println(ps[0].buf.n, ps[1].buf.data[1], ps[2].k)
+	sh := &Shelf{[2]Rack{{1, gb}, {2, gb}}}
+	println(sh.racks[1].buf.data[2])
+	println(pr.buf.data[2], gs[0].k, gs[0].buf.n)
+	gb.n = 100
+	println(r.buf.n, pr.buf.n)
+}
+`,
+		want: "7 3\n0 1\n7 2 2\n3\n3 9 7\n7 7\n",
+	}, {
 		// A method called on the interface RESULT of a call through a function
 		// value, a field holding one or another interface's slot -- `p(1).Area()`,
 		// `h.p(2).Area()`, `hd.Get().Area()` -- read the table and the data off

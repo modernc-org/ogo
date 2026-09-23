@@ -5926,6 +5926,7 @@ type emitter struct {
 	scopeNames         []map[string]bool       // per open block, the local names visible entering it, so blockDepthOf can say which block declares a name
 	curParams          map[string]bool         // the parameter names of the function being emitted. A parameter's own storage is this frame's, but what it POINTS AT is the caller's, which isFrameVar deliberately does not distinguish and the receiver-leak rule must (see checkRecvLeak).
 	litPath            string                  // the C path from the composite literal being rendered to the element now being rendered -- "[1]", ".xs", "[0].xs". Empty outside one.
+	litUnderAddr       bool                    // the composite literal about to be rendered is the operand of &: its elements' storage is what the address points at (see litDerefMark)
 	litFixups          []litFixup              // that literal's elements C cannot spell in an initializer, deferred to a copy after the declaration (see recordLitFixup)
 	litFixable         bool                    // the literal being rendered has an owner that will emit those copies -- one that gives it a NAME. False in the positions that have no storage to copy into.
 	frameBacked        map[string]bool         // local slice variables whose backing array is storage of this frame, so returning one would dangle (see checkReturnBacking)
@@ -16817,6 +16818,17 @@ func (e *emitter) soleFactorNode(ast []int32) (Node, bool) {
 // element that is itself a literal, which is C's own spelling for a nested
 // aggregate initializer anyway.
 func (e *emitter) emitCompositeLit(name string, lit Node, brace bool) {
+	// The literal is the operand of & -- `r := &Rack{2, gb}`, `[]*Rack{&Rack{...}}`
+	// -- so what its deferred copies go into (recordLitFixup) is what the address
+	// points AT: the step into it is a dereference, which litFixupCopies spells.
+	// Written without, a copy into the literal went through the POINTER as though it
+	// were the struct -- `memcpy(&r.buf, ...)` -- which neither compiler builds.
+	if e.litUnderAddr {
+		e.litUnderAddr = false
+		saved := e.litPath
+		e.litPath += litDerefMark
+		defer func() { e.litPath = saved }()
+	}
 	defer e.bindLitValues(lit)() // the values that do something, in the order written
 	// A literal of an ARRAY type -- a defined one, `Row{1, 2}`, or the typedef minted
 	// for an unnamed one -- is not a struct's braces however alike the two read: its
@@ -16952,13 +16964,33 @@ func (e *emitter) recordLitFixup(v Node, want arrDim) bool {
 	return true
 }
 
+// litDerefMark stands in a literal's path (litPath) for the step through a pointer
+// to the literal: the operand of &, whose elements are reached through the address
+// (see emitCompositeLit). litPathC spells it.
+const litDerefMark = "\x00"
+
+// litPathC is the C lvalue of the element a literal's path reaches from dst, the
+// dereferences it passes through spelt around what they apply to: `(*r).buf` for
+// dst r and path "\x00.buf", `(*b[0]).buf` for b and "[0]\x00.buf".
+func litPathC(dst, path string) string {
+	at := dst
+	for {
+		i := strings.Index(path, litDerefMark)
+		if i < 0 {
+			return at + path
+		}
+		at = "(*" + at + path[:i] + ")"
+		path = path[i+len(litDerefMark):]
+	}
+}
+
 // litFixupCopies renders the deferred copies as C statements, into the storage now
 // named by dst. Rendering the sources here rather than where they were found is
 // what puts them in the order the statements run in.
 func (e *emitter) litFixupCopies(dst string, fixups []litFixup) ([]string, bool) {
 	out := make([]string, 0, len(fixups))
 	for _, f := range fixups {
-		at := dst + f.path
+		at := litPathC(dst, f.path)
 		if f.ctype != "" {
 			// A struct that holds an array takes the memcpy every copy of one takes.
 			stmt := strings.TrimSuffix(e.captureC(func() { e.emitStructCopy(at, f.ctype, f.src) }), "\n")
@@ -17436,6 +17468,7 @@ func (e *emitter) emitPositionalValues(values []*Node, elemCType string) {
 				continue
 			}
 			e.emit("&")
+			e.litUnderAddr = true // what it deferred goes through the address; see emitCompositeLit
 			e.emitCompositeLit(base, *v, false)
 			continue
 		}
@@ -40801,6 +40834,16 @@ func (e *emitter) emitUnaryKids(kids []Node) {
 	for i, c := range kids {
 		if c.sym == UnaryOp && i+1 < len(kids) {
 			if tok, ok := e.unaryOpTok(c.ast); ok {
+				// The address of a composite literal: see emitCompositeLit.
+				if e.f.ch(tok) == AND && i+2 == len(kids) && kids[i+1].sym == Factor {
+					if _, _, isLit := e.factorCompositeLit(slices.Collect(it(kids[i+1].ast))); isLit {
+						e.emitExprNode(c)
+						e.litUnderAddr = true
+						e.emitExprNode(kids[i+1])
+						e.litUnderAddr = false
+						return
+					}
+				}
 				if ch := e.f.ch(tok); (ch == SUB || ch == ADD) && e.firstTokenCh(kids[i+1:]) == ch {
 					e.emitOperandToken(tok)
 					e.emit("(")
