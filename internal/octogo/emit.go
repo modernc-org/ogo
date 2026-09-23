@@ -13411,12 +13411,14 @@ func (e *emitter) emitFuncDecl(ast []int32) {
 		e.ind()
 		e.emit("(void)" + emptyRecvName + ";\n")
 	}
-	e.declareNamedResults(sig, body)
+	declared := e.declareNamedResults(sig, body)
 	// A bare "return" (legal only when every result is named) returns these. A
-	// blank result "_" has no C variable, so it contributes its zero value.
+	// blank result "_" has no C variable, so it contributes its zero value, and nor
+	// has a named one the body never names (declareNamedResults): a return with a
+	// defer stored its value into a variable C had never heard of.
 	e.curResultNames, e.curResultTypes = e.resultInfo(sig)
 	for i, nm := range e.curResultNames {
-		if nm == "" || nm == "_" {
+		if nm == "" || nm == "_" || !declared[nm] {
 			e.curResultNames[i] = "0"
 		}
 	}
@@ -13598,11 +13600,11 @@ func (e *emitter) liftFuncLit(lit Node) (string, bool) {
 		e.indent++
 		e.emitParamCopies(sig)
 		e.emitParamVoids(sig, body)
-		e.declareNamedResults(sig, body)
+		declared := e.declareNamedResults(sig, body)
 		e.curResultNames, e.curResultTypes = e.resultInfo(sig)
 		for i, nm := range e.curResultNames {
-			if nm == "" || nm == "_" {
-				e.curResultNames[i] = "0"
+			if nm == "" || nm == "_" || !declared[nm] {
+				e.curResultNames[i] = "0" // see the function's own
 			}
 		}
 		var bodyBuf bytes.Buffer
@@ -14428,7 +14430,7 @@ func (e *emitter) bodyEndsInReturn(body []int32) bool {
 // hands back is not emitted as a C local at all: it would only draw an
 // unused-variable warning ("(q, r int) { return a, b }" is idiomatic Go). Its
 // values are supplied directly by each explicit return.
-func (e *emitter) declareNamedResults(sig, body []int32) {
+func (e *emitter) declareNamedResults(sig, body []int32) (declared map[string]bool) {
 	// A single ARRAY result is written through the caller's storage, so resultInfo
 	// names nothing for it. A NAME the signature gives it is a variable of this
 	// frame all the same -- `func mk() (r [2]int) { r[0] = 1; return r }` -- and a
@@ -14437,21 +14439,22 @@ func (e *emitter) declareNamedResults(sig, body []int32) {
 	if a, isArr := e.arrayResultOf(sig); isArr {
 		nm, named := e.arrayResultName(sig)
 		if !named {
-			return
+			return nil
 		}
 		e.arrays[nm] = a
 		if !e.bodyHasNakedReturn(body) && !e.bodyMentions(body, nm) {
-			return
+			return nil
 		}
 		// Recorded only where it is declared: a return holds its value in it ahead
 		// of the defers, and one nothing names is not in the C at all.
 		e.curArrayResult = nm
 		e.ind()
 		e.emit(a.elem + " " + nm + a.declSuffix() + " = {0};\n")
-		return
+		return map[string]bool{nm: true}
 	}
 	names, types := e.resultInfo(sig)
 	naked := e.bodyHasNakedReturn(body)
+	declared = map[string]bool{}
 	for i, nm := range names {
 		if nm == "" || nm == "_" {
 			continue
@@ -14464,7 +14467,9 @@ func (e *emitter) declareNamedResults(sig, body []int32) {
 		// A struct, a string or a slice result zeroes with braces: C has no scalar
 		// zero for an aggregate, and "= 0" is an invalid initializer there.
 		e.emit(types[i] + " " + nm + " = " + e.zeroInitC(types[i]) + ";\n")
+		declared[nm] = true
 	}
+	return declared
 }
 
 // arrayResultName is the name a signature gives its single array result, `(r
@@ -28013,8 +28018,50 @@ func (e *emitter) emitReturn(nodes []Node) {
 	// that multiplies n by 10 gave 11 where Go gives 20. Binding first also gives a
 	// named result the one thing it is for: a defer may still change it, and that
 	// change is what the caller sees.
+	//
+	// SEVERAL values are each taken before the store of any result they could
+	// read. Stored one after another, a later value read a named result an earlier
+	// store had just overwritten -- `return b, a` for named (a, b) returned 2, 2
+	// where Go returns 2, 1, in every type. A value is taken ahead of the stores,
+	// through the prologue and in order, unless it stands at its own store: a
+	// literal, or a value that does nothing and reads only names, none of them a
+	// result stored before it (returnValueStands) -- `return a + 1, b` binds
+	// nothing, a temporary being a cog register. One taken through the prologue
+	// cannot run ahead of the values before it, either: an array result's storage,
+	// which binds itself ahead of the statement, did.
 	var bound []string
-	if len(e.defers) != 0 && len(exprs) != 0 && len(exprs) == len(e.curResultTypes) {
+	if len(e.defers) != 0 && len(exprs) > 1 && len(exprs) == len(e.curResultTypes) {
+		var stored []string
+		taken := make([]string, len(exprs))
+		for i, ex := range exprs {
+			name := e.curResultNames[i]
+			switch {
+			case e.exprIsLiteral(ex.ast):
+				// A literal reads no variable: no store and no defer can reach it.
+				taken[i] = e.captureC(func() { e.emitReturnValue(i, ex) })
+			case name != "0" && e.returnValueStands(ex.ast, stored):
+				// Written at its store, below.
+			default:
+				taken[i] = e.hoist(e.curResultTypes[i], func() { e.emitReturnValue(i, ex) })
+			}
+			if name != "0" {
+				stored = append(stored, name)
+			}
+		}
+		for i, ex := range exprs {
+			value := taken[i]
+			if value == "" {
+				value = e.captureC(func() { e.emitReturnValue(i, ex) })
+			}
+			if name := e.curResultNames[i]; name != "0" {
+				e.ind()
+				e.emit(name + " = " + value + ";\n")
+				value = name
+			}
+			bound = append(bound, value)
+		}
+	}
+	if len(e.defers) != 0 && len(exprs) == 1 && len(exprs) == len(e.curResultTypes) {
 		for i, ex := range exprs {
 			// A result nothing can change needs no binding: a literal expression
 			// reads no variable, so a defer cannot reach it.
@@ -28085,15 +28132,56 @@ func (e *emitter) emitReturn(nodes []Node) {
 		e.emitReturnValue(0, exprs[0])
 		e.emit(";\n")
 	default:
-		e.emit("return (" + e.retStructName(e.curFunc) + "){")
+		// Each value stands in the result struct where it is written -- unless one
+		// binds part of itself ahead of the statement, an array result's storage,
+		// after a value that does something: that part ran first, `return use(),
+		// mk()[0]` calling mk ahead of use. Then they are taken in order through the
+		// prologue instead, as a return with a defer takes them; binding them always
+		// would spend a cog register on each (see A TEMPORARY IS A COG REGISTER).
+		mark, memo := len(e.prologue), maps.Clone(e.hoistedArrayCalls)
+		texts := make([]string, len(exprs))
+		effect, early := false, false
 		for i, ex := range exprs {
-			if i != 0 {
-				e.emit(", ")
-			}
-			e.emitReturnValue(i, ex)
+			at := len(e.prologue)
+			texts[i] = e.captureC(func() { e.emitReturnValue(i, ex) })
+			early = early || effect && len(e.prologue) != at
+			effect = effect || e.exprHasEffect(ex.ast)
 		}
-		e.emit("};\n")
+		if early {
+			e.prologue, e.hoistedArrayCalls = e.prologue[:mark], memo
+			for i, ex := range exprs {
+				texts[i] = e.hoist(e.curResultTypes[i], func() { e.emitReturnValue(i, ex) })
+			}
+		}
+		e.emit("return (" + e.retStructName(e.curFunc) + "){" + strings.Join(texts, ", ") + "};\n")
 	}
+}
+
+// returnValueStands reports whether a return's value may be written at the store of
+// its named result, after the stores of the results before it: it does nothing and
+// reads nothing but bare names, none of them in stored. A field, an element, a
+// dereference, a receive and a call can each reach a result through storage -- a
+// pointer to it -- so each is taken ahead of the stores instead.
+func (e *emitter) returnValueStands(ast []int32, stored []string) bool {
+	for n := range it(ast) {
+		switch n.sym {
+		case FactorSuffix, FuncLiteral:
+			return false
+		case UnaryOp:
+			if op := e.opText(n.ast); op == "*" || op == "<-" {
+				return false
+			}
+		case 0:
+			if e.f.ch(n.tok) == IDENT && slices.Contains(stored, e.src(n.tok)) {
+				return false
+			}
+		default:
+			if !e.returnValueStands(n.ast, stored) {
+				return false
+			}
+		}
+	}
+	return true
 }
 
 // exprIsLiteral reports whether an expression is built entirely from literals and

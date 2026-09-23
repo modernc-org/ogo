@@ -37088,6 +37088,160 @@ func main() {
 `,
 		want: "2 6 18\n8\n5 36 6\n7\n48\n10\n111\n112 339\n1113\n11113\n",
 	}, {
+		// A return's values are all taken before any result is stored. With a
+		// defer, the named results were stored one after another, so a later value
+		// read one an earlier store had overwritten -- `return b, a` for named (a,
+		// b) returned 2, 2, in every type, in silence -- and a named result the
+		// body never names was stored into a variable C had never heard of. An
+		// array result's storage, bound ahead of the statement, ran ahead of the
+		// values before it, with a defer or without.
+		name: "a return's values are taken before any result is stored",
+		src: `type P struct{ x, y int }
+
+type Shape interface{ Area() int }
+
+type Q struct{ k int }
+
+func (q *Q) Area() int { return q.k }
+
+var n int
+
+var q1 = Q{1}
+
+var q2 = Q{2}
+
+var gs = []int{7, 8, 9}
+
+func mk() [3]int {
+	n++
+	return [3]int{n, n, n}
+}
+
+func use() int {
+	n += 10
+	return n
+}
+
+func noop() {}
+
+func twice(p *int) { *p *= 2 }
+
+func sw() (a, b int) {
+	a, b = 1, 2
+	defer noop()
+	return b, a
+}
+
+func sw3() (a, b, c int) {
+	a, b, c = 1, 2, 3
+	defer noop()
+	return c, a, b
+}
+
+func alias() (a, b int) {
+	a, b = 1, 2
+	p := &a
+	defer noop()
+	return b, *p
+}
+
+func aliasP() (a, b P) {
+	a, b = P{1, 2}, P{3, 4}
+	pa := &a
+	defer noop()
+	return b, P{pa.x, pa.y}
+}
+
+func pair() (int, int) { return use(), mk()[0] }
+
+func pairD() (int, int) {
+	defer noop()
+	return use(), mk()[0]
+}
+
+func named() (x, y int) {
+	defer noop()
+	return use(), mk()[0]
+}
+
+func strs() (a, b string) {
+	a, b = "a", "b"
+	defer noop()
+	return b, a
+}
+
+func slices2() (a, b []int) {
+	a, b = gs[:1], gs[1:]
+	defer noop()
+	return b, a
+}
+
+func structs() (a, b P) {
+	a, b = P{1, 2}, P{3, 4}
+	defer noop()
+	return b, a
+}
+
+func ifaces() (a, b Shape) {
+	a, b = &q1, &q2
+	defer noop()
+	return b, a
+}
+
+func withLit() (a, b int) {
+	a = 5
+	defer noop()
+	return 7, a
+}
+
+func one() (r int) {
+	r = 3
+	defer twice(&r)
+	return r + 1
+}
+
+func deferChanges() (a, b int) {
+	a, b = 1, 2
+	defer twice(&a)
+	return b, a
+}
+
+// A return's values are all taken, in order, before any result is stored: with a
+// defer, stored one after another, a later value read a named result an earlier
+// store had overwritten, and an array result's storage, bound ahead of the
+// statement, ran ahead of the values before it.
+func main() {
+	a, b := sw()
+	println(a, b)
+	p, q, r := sw3()
+	println(p, q, r)
+	j, k := alias()
+	println(j, k)
+	pp, pq := aliasP()
+	println(pp.x, pq.x)
+	c, d := pair()
+	println(c, d)
+	e, f := pairD()
+	println(e, f)
+	x, y := named()
+	println(x, y)
+	s1, s2 := strs()
+	println(s1, s2)
+	l1, l2 := slices2()
+	println(len(l1), l1[0], len(l2), l2[0])
+	p1, p2 := structs()
+	println(p1.x, p2.x)
+	i1, i2 := ifaces()
+	println(i1.Area(), i2.Area())
+	w1, w2 := withLit()
+	println(w1, w2)
+	println(one())
+	d1, d2 := deferChanges()
+	println(d1, d2)
+}
+`,
+		want: "2 1\n3 1 2\n2 1\n3 1\n10 11\n21 22\n32 33\nb a\n2 8 1 7\n3 1\n2 1\n7 5\n8\n4 1\n",
+	}, {
 		// A method called on the interface RESULT of a call through a function
 		// value, a field holding one or another interface's slot -- `p(1).Area()`,
 		// `h.p(2).Area()`, `hd.Get().Area()` -- read the table and the data off
