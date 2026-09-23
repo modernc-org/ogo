@@ -6888,7 +6888,7 @@ func (f *File) exprFuncSig(s *Scope, n Node) *SignatureNode {
 		// would make the variable look well typed and leave the refusal to the C
 		// compiler, which is what "Unknown symbol 'lc'" was.
 		if fd, ptrRecv, atPkg, isMV := f.methodValueParts(s, head, field); isMV {
-			if ptrRecv && atPkg && fd.Type != nil {
+			if ptrRecv && atPkg && fd.Type != nil && !f.methodValueSavesPtr(s, head, field) {
 				return fd.Type.Signature
 			}
 			return nil
@@ -7259,6 +7259,10 @@ func (f *File) methodValueParts(s *Scope, head, field Token) (fd *FuncDeclNode, 
 //     exists to prevent.
 //   - a receiver that is not a package-level variable: what the lifted function
 //     binds is an address, and a local's does not outlive the value.
+//   - a receiver that is a POINTER, the variable itself or an embedded field the
+//     method is promoted through (methodValueSavesPtr): Go saves the pointer's
+//     value when the method value is taken, and a binding made at compile time
+//     can only read it when the value is called.
 func (f *File) reportUnsupportedFuncValue(s *Scope, n Node) bool {
 	head, field, ok := f.exprFieldRead(n)
 	if !ok {
@@ -7275,10 +7279,33 @@ func (f *File) reportUnsupportedFuncValue(s *Scope, n Node) bool {
 	case !atPkg:
 		f.err(field.Position(), "cannot take %s.%s as a value: a method value binds the address of its receiver, so %s must be a package-level variable",
 			head.Src(), field.Src(), head.Src())
+	case f.methodValueSavesPtr(s, head, field):
+		f.err(field.Position(), "cannot take %s.%s as a value: its receiver is a pointer, whose value Go saves when the method value is taken and one bound at compile time cannot; a function literal calling %s.%s reads it at each call instead",
+			head.Src(), field.Src(), head.Src(), field.Src())
 	default:
 		return false // supported: lifted with the receiver bound
 	}
 	return true
+}
+
+// methodValueSavesPtr reports whether "x.M" taken as a value would have to SAVE a
+// pointer: x is one, or M is promoted to x's type through an embedded one. Go binds
+// the pointer's value when the method value is taken, while a binding made at
+// compile time names the variable and reads the pointer at each call -- which
+// answers differently once the pointer changes in between. For x a pointer it was
+// worse: the lifted function bound x's own address, which the target's C compiler
+// only warned about, and the method ran on the pointer as though it were the
+// struct, printing garbage on the board.
+func (f *File) methodValueSavesPtr(s *Scope, head, field Token) bool {
+	d, isVar := s.find(head.Src()).(*VarDeclaration)
+	if !isVar || !d.typeName.IsValid() {
+		return false
+	}
+	if d.isPtr {
+		return true
+	}
+	_, _, viaPtr, ok := f.methodOwnerPath(s, d.typeName.Src(), field.Src())
+	return ok && viaPtr
 }
 
 // litCallArgs returns the arguments a function literal is called with where it
@@ -8455,7 +8482,7 @@ func (f *File) checkQualifiedRef(s *Scope, qual Token, suffix Node) {
 					// binds is the address of a package-level variable, which is what
 					// the other package's is, so the only question left is the one the
 					// same-package form asks too.
-					f.checkCrossPkgMethodValue(qual, m, vd.typeName, member)
+					f.checkCrossPkgMethodValue(qual, m, vd.typeName, member, vd.isPtr)
 				default:
 					f.checkCrossPkgField(qual, vd.typeName, member)
 				}
@@ -9107,19 +9134,27 @@ func (f *File) crossPkgIsMethod(qual, typeName, member Token) bool {
 	return promoted
 }
 
-// checkCrossPkgMethodValue applies to `lib.V.M` the two rules the same-package form
-// obeys (see reportUnsupportedFuncValue), of which only one can fail here: a
+// checkCrossPkgMethodValue applies to `lib.V.M` the rules the same-package form
+// obeys (see reportUnsupportedFuncValue), of which two can fail here: a
 // VALUE-receiver method is refused because Go copies the receiver at the moment the
 // value is made and there is no heap to copy into, while binding the address instead
-// would alias the variable. The other rule -- that the receiver be a package-level
-// variable -- is what a package's exported variable already is.
+// would alias the variable; and a variable that is a POINTER, ptr, because Go saves
+// its value then. The rule that the receiver be a package-level variable is what a
+// package's exported variable already is.
 //
 // The export rules are checkCrossPkgMethod's, which a method value has to satisfy
 // exactly as a call does.
-func (f *File) checkCrossPkgMethodValue(qual, varName, typeName, member Token) {
+func (f *File) checkCrossPkgMethodValue(qual, varName, typeName, member Token, ptr bool) {
 	f.checkCrossPkgMethod(qual, typeName, member)
 	td, ok := f.importedMethodOwner(qual, typeName, member)
 	if !ok {
+		return
+	}
+	if ptr {
+		// A pointer variable's value is what a method value saves (see
+		// methodValueSavesPtr), another package's as much as this one's.
+		f.err(member.Position(), "cannot take %s.%s.%s as a value: its receiver is a pointer, whose value Go saves when the method value is taken and one bound at compile time cannot; a function literal calling %s.%s.%s reads it at each call instead",
+			qual.Src(), varName.Src(), member.Src(), qual.Src(), varName.Src(), member.Src())
 		return
 	}
 	if !td.ptrRecv[member.Src()] {

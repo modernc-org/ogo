@@ -6361,6 +6361,67 @@ func TestEmitCWrittenDerefRefusal(t *testing.T) {
 	}
 }
 
+// TestEmitCMethodValueSavesPtr pins the refusal of a method value whose receiver
+// is a POINTER -- the variable itself, or an embedded field the method is promoted
+// through -- in the positions the checker's declaration rule does not see: Go saves
+// the pointer's value when the method value is taken, and a binding made at compile
+// time cannot. Each of these built; a pointer variable's bound the pointer's own
+// address, which the target's C compiler only warned about, and the method read
+// garbage on the board.
+func TestEmitCMethodValueSavesPtr(t *testing.T) {
+	const head = `type P struct{ n int }
+
+func (p *P) Get() int { return p.n }
+
+type V struct{ *P }
+
+type H struct{ f func() int }
+
+var a = P{1}
+
+var gp = &a
+
+var gv = V{&a}
+
+var h H
+
+func take(f func() int) int { return f() }
+
+`
+	for _, test := range []struct{ name, src string }{
+		{"argument", "func main() { println(take(gp.Get)) }\n"},
+		{"typed declaration", "func main() {\n\tvar f func() int = gp.Get\n\tprintln(f())\n}\n"},
+		{"element", "func main() {\n\tfs := []func() int{gp.Get}\n\tprintln(fs[0]())\n}\n"},
+		{"return", "func ret() func() int { return gp.Get }\n\nfunc main() { println(ret()()) }\n"},
+		{"field", "func main() {\n\th.f = gp.Get\n\tprintln(h.f())\n}\n"},
+		{"embedded pointer", "func main() { println(take(gv.Get)) }\n"},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			fsys := fstest.MapFS{"main.ogo": &fstest.MapFile{Data: []byte(head + test.src)}}
+			pkg, err := Build(-1, []string{"main.ogo"}, fsys)
+			if err == nil {
+				err = EmitC(pkg, io.Discard, Checked())
+			}
+			if err == nil || !strings.Contains(err.Error(), "its receiver is a pointer, whose value Go saves") {
+				t.Fatalf("expected the method value refused, got %v", err)
+			}
+		})
+	}
+	t.Run("another package's", func(t *testing.T) {
+		fsys := fstest.MapFS{
+			"main.ogo":    &fstest.MapFile{Data: []byte("import \"lib\"\n\nfunc main() {\n\tmv := lib.PP.Get\n\tprintln(mv())\n}\n")},
+			"lib/lib.ogo": &fstest.MapFile{Data: []byte("type P struct{ N int }\n\nfunc (p *P) Get() int { return p.N }\n\nvar A = P{1}\n\nvar PP = &A\n")},
+		}
+		pkg, err := Build(-1, []string{"main.ogo"}, fsys)
+		if err == nil {
+			err = EmitC(pkg, io.Discard, Checked())
+		}
+		if err == nil || !strings.Contains(err.Error(), "cannot take lib.PP.Get as a value: its receiver is a pointer") {
+			t.Fatalf("expected the method value refused, got %v", err)
+		}
+	})
+}
+
 // TestEmitCIndexNonArrayPointer pins the emitter's half of the refusal that a
 // pointer is not indexable. The checker reports the pointers its type model can
 // prove are not arrays (index_pointer.ogo); a pointee it cannot resolve reaches

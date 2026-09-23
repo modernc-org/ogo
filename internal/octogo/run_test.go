@@ -21298,10 +21298,11 @@ func main() {
 		// Go refuses only a pointer to a pointer or to an interface. Every promoted
 		// position: field read and write, both receivers, through a pointer to the
 		// outer, two levels of pointer embeds, a method of the outer reading a
-		// promoted field, an interface satisfied by a promoted method, a method
-		// value, an element, an argument, a call's result, a mixed struct embedding
-		// one type by value and another by pointer, the pointer compared, replaced
-		// and copied, and a deferred call.
+		// promoted field, an interface satisfied by a promoted method, a function
+		// literal calling a promoted method (a method VALUE would save the pointer,
+		// which is refused: methodValueSavesPtr), an element, an argument, a call's
+		// result, a mixed struct embedding one type by value and another by
+		// pointer, the pointer compared, replaced and copied, and a deferred call.
 		name: "an embedded pointer promotes through the pointer",
 		src: `type Inner struct {
 	v int
@@ -21368,9 +21369,9 @@ func main() {
 	t.Set(15)
 	println(o.v, s.Val(), in.v, in2.v, outs[1].v, outs[0].Val(), take(o), give().v, give().Val())
 	outs[1].Set(16)
-	f := po.Set
+	f := func(k int) { po.Set(k) }
 	f(17)
-	g := po.Ptr
+	g := func() int { return po.Ptr() }
 	println(in2.v, outs[1].Ptr(), g())
 	m := Mixed{Inner{v: 20}, &d, 4}
 	println(m.Inner.v, m.Deep.v, m.n, m.m, m.tag, m.Deep.Val(), m.Deep.Sum())
@@ -26648,9 +26649,11 @@ func main() {
 		// deferred receiver fault: an interface satisfied through an embedded
 		// pointer, a table of handler function values, a labeled continue out of a
 		// range, a comparison chain in a switch, a deferred method on an accessor
-		// result beside a deferred println, a method value from a package variable,
-		// a copy and a slice of a promoted array through the accessor, and interface
-		// identity. Measured against Go with the calls counted in order.
+		// result beside a deferred println, a function literal calling a method
+		// promoted through the embedded pointer (a method value of it is refused,
+		// methodValueSavesPtr), a copy and a slice of a promoted array through the
+		// accessor, and interface identity. Measured against Go with the calls
+		// counted in order.
 		name: "a frame parser over an embedded reader",
 		src: `type Frame struct {
 	kind byte
@@ -26770,7 +26773,7 @@ outer:
 	defer println("deferred", port.count)
 	b, ok := getPort().Read()
 	println(b, ok, getPort().count, calls)
-	read := port.Read
+	read := func() (byte, bool) { return port.Read() }
 	c, ok2 := read()
 	println(c, ok2, calls)
 	x := getPort().rx

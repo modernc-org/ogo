@@ -1,0 +1,36 @@
+// A method value binds its receiver at compile time, to a package-level variable's
+// address -- see reportUnsupportedFuncValue. A receiver that is a POINTER is one Go
+// SAVES when the value is taken: the variable itself, or an embedded field the
+// method is promoted through. A binding made at compile time could only read it at
+// each call, which answers differently once the pointer changes, and for a pointer
+// variable it bound the pointer's own address.
+
+type P struct{ n int }
+
+func (p *P) Get() int { return p.n }
+
+type V struct{ *P }
+
+type W struct {
+	P
+	k int
+}
+
+var a = P{1}
+
+var gp = &a
+
+var gv = V{&a}
+
+var gw = W{P{2}, 3}
+
+func main() {
+	own := a.Get
+	prom := gw.Get
+	println(own(), prom())
+	// ERROR cannot take gp.Get as a value: its receiver is a pointer, whose value Go saves when the method value is taken and one bound at compile time cannot; a function literal calling g[pv].Get reads it at each call instead
+	bad := gp.Get
+	// ERROR cannot take gv.Get as a value: its receiver is a pointer, whose value Go saves when the method value is taken and one bound at compile time cannot; a function literal calling g[pv].Get reads it at each call instead
+	emb := gv.Get
+	println(bad(), emb())
+}

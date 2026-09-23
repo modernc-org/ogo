@@ -1618,7 +1618,7 @@
 // value pays. A method of several results is taken the same way, its lifted
 // function writing them through the caller's pointer as above.
 //
-// Two forms are refused, and neither is an omission:
+// Three forms are refused, and none is an omission:
 //
 //   - a VALUE-receiver method. Go copies the receiver at the moment the value is
 //     made, and there is no heap to copy into; binding the address instead would
@@ -1626,6 +1626,12 @@
 //     anything wrote to it.
 //   - a receiver that is not a package-level variable, whose address does not
 //     outlive the value.
+//   - a receiver that is a POINTER: a variable of a pointer type, or an embedded
+//     pointer the method is promoted through. Go saves the pointer's value when
+//     the value is made; a binding made at compile time could only read it at each
+//     call, and would answer differently once the pointer changed in between. A
+//     function literal calling the method, "func(k int) { gp.Set(k) }", reads the
+//     pointer at each call, as it is written to.
 //
 // Go carries the receiver IN the value instead, which handles any receiver. The
 // representation that would do that here -- a function value pointing at a struct

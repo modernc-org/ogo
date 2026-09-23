@@ -13784,6 +13784,42 @@ func (e *emitter) methodValueBinding(base, method string) (cname, recvArg string
 	return cn, recvArg, fv, ok
 }
 
+// methodValueSavesPtr is the checker's rule of that name for every position a
+// method value is lifted from, the checker asking it where one is declared: x.M is
+// bound to x's address at compile time, so a receiver that is a POINTER -- x itself,
+// or an embedded field M is promoted through -- would have to be saved when the
+// value is taken, which Go does and nothing here can. `take(gp.Get)` for a `gp *P`
+// bound &gp, the pointer's own address, and ran the method on it.
+func (e *emitter) methodValueSavesPtr(base, method string) bool {
+	rct, isVar := e.varType(base)
+	if !isVar {
+		return false
+	}
+	if e.isPointer(rct) {
+		return true
+	}
+	if _, isOwn := e.methodValueTypes[methodCName(methodBaseType(rct), method)]; isOwn {
+		return false
+	}
+	_, path, _, ok := e.promotedMethod(rct, method)
+	if !ok {
+		return false
+	}
+	cur := methodBaseType(rct)
+	for _, name := range path {
+		i := slices.IndexFunc(e.structs[cur], func(f structField) bool { return f.name == name })
+		if i < 0 {
+			return false
+		}
+		ct := e.structs[cur][i].ctype
+		if e.isPointer(ct) {
+			return true
+		}
+		cur = methodBaseType(ct)
+	}
+	return false
+}
+
 // funcValueWrapper names a void wrapper around a function of SEVERAL results, for
 // the value form: it takes the result struct's address ahead of the arguments,
 // calls the function DIRECTLY and writes what that returns. A function value of
@@ -14337,6 +14373,11 @@ func (e *emitter) methodExprCType(me emMethodExpr) (string, bool) {
 // (doc/funcval-cost.c). Binding the receiver at compile time instead needs no
 // representation at all, and the checker refuses what it cannot bind.
 func (e *emitter) liftMethodValue(base, method string) (string, bool) {
+	if e.methodValueSavesPtr(base, method) {
+		e.fail("cannot take %s.%s as a value: its receiver is a pointer, whose value Go saves when the method value is taken and one bound at compile time cannot; a function literal calling %s.%s reads it at each call instead",
+			e.displayName(base), method, e.displayName(base), method)
+		return "", false
+	}
 	// A PROMOTED method is bound to the embedded sub-object the source did not name
 	// and C requires: `V.Base2` binds `&V.Base`, exactly as the call form does.
 	mcname, recvArg, fv, _ := e.methodValueBinding(base, method)
