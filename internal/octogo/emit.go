@@ -40806,13 +40806,39 @@ func readHolderRef(read, origin string) frameRef {
 // is its own open question, and counting it here would refuse the ordinary string
 // field a great many structs have.
 func (e *emitter) carriesReference(ctype string) bool {
+	return e.carriesReferenceIn(ctype, map[string]bool{})
+}
+
+// carriesReferenceIn is carriesReference with the structs already asked about, so
+// a struct holding its own type -- through a pointer, which answers first -- ends.
+func (e *emitter) carriesReferenceIn(ctype string, seen map[string]bool) bool {
 	u := e.underlyingCType(ctype)
 	// An ARRAY carries what its elements do: `[1]*Box` holds pointers, and a range
 	// value or a field of that type was taken to hold nothing.
 	if a, isArr := e.namedArrays[u]; isArr {
-		return e.carriesReference(a.elem)
+		return e.carriesReferenceIn(a.elem, seen)
 	}
-	return e.isSliceCType(u) || e.isPointer(u) || e.isStruct(u)
+	// An INTERFACE holds a pointer, whatever it is asked through.
+	if e.isSliceCType(u) || e.isPointer(u) || e.isIfaceCType(u) {
+		return true
+	}
+	if !e.isStruct(u) {
+		return false
+	}
+	// A STRUCT carries what one of its fields does -- an interface's among them,
+	// which holds a pointer. Counted whole, `ge = p.err` for a `err struct{ pos
+	// int; msg string }` was refused because ANOTHER field of p pointed into the
+	// frame: what a holder hands on through a field is what that field can hold.
+	if seen[u] {
+		return false
+	}
+	seen[u] = true
+	for _, f := range e.structs[u] {
+		if e.isIfaceCType(e.underlyingCType(f.ctype)) || e.carriesReferenceIn(f.ctype, seen) {
+			return true
+		}
+	}
+	return false
 }
 
 // advice names the fix. A view has a backing array to move; anything else is the

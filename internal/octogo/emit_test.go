@@ -16333,3 +16333,82 @@ func main() {
 		t.Fatalf("EmitC: %v", err)
 	}
 }
+
+// TestEmitCHolderFieldCarries pins what a FIELD read out of a holder hands on. A
+// struct whose field points into the frame marks the whole variable, and a read of
+// one of its fields is refused when that field's type can carry the reference --
+// which every struct type used to count as, so `ge = p.err` for an err of ints and
+// strings was refused because p.lx pointed at a local. A struct type carries what
+// its fields do now; the pointer, the slice, the interface, the array of pointers
+// and the whole holder are refused as before.
+func TestEmitCHolderFieldCarries(t *testing.T) {
+	const decls = `type Shape interface{ Area() int }
+
+type Q struct{ w int }
+
+func (q *Q) Area() int { return q.w }
+
+type E struct {
+	pos int
+	msg string
+}
+
+type P struct {
+	lx  *int
+	err E
+	s   Shape
+	xs  []int
+	ps  [2]*int
+}
+
+type W struct{ inner P }
+
+type EE struct{ e E }
+
+var ge E
+
+var gee EE
+
+var gp *int
+
+var gP P
+
+var gs Shape
+
+var gxs []int
+
+var gps [2]*int
+
+func main() { f() }
+`
+	for _, test := range []struct{ name, body, want string }{
+		{"a struct field of no reference", "x := 3\n\tp := P{lx: &x, err: E{1, \"m\"}}\n\tge = p.err", ""},
+		{"the same two holders deep", "x := 3\n\tw := W{inner: P{lx: &x}}\n\tge = w.inner.err", ""},
+		{"the same, wrapped", "x := 3\n\tp := P{lx: &x}\n\tee := EE{e: p.err}\n\tgee = ee", ""},
+		{"the pointer field", "x := 3\n\tp := P{lx: &x}\n\tgp = p.lx", "cannot store p.lx, which holds a pointer into local x"},
+		{"the interface field", "var q Q\n\tp := P{s: &q}\n\tgs = p.s", "cannot store p.s, which holds a pointer into local q"},
+		{"the slice field", "var back [2]int\n\tp := P{xs: back[:]}\n\tgxs = p.xs", "back"},
+		{"the array of pointers", "x := 3\n\tvar p P\n\tp.ps[0] = &x\n\tgps = p.ps", "cannot store p.ps, which holds a pointer into local x"},
+		{"the holder whole", "x := 3\n\tp := P{lx: &x}\n\tgP = p", "cannot store local p, which holds a pointer into local x"},
+		{"a holder two deep, whole", "x := 3\n\tw := W{inner: P{lx: &x}}\n\tgP = w.inner", "cannot store w.inner, which holds a pointer into local x"},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			src := decls + "\nfunc f() {\n\t" + test.body + "\n}\n"
+			fsys := fstest.MapFS{"main.ogo": &fstest.MapFile{Data: []byte(src)}}
+			pkg, err := Build(-1, []string{"main.ogo"}, fsys)
+			if err != nil {
+				t.Fatalf("Build: %v", err)
+			}
+			var buf bytes.Buffer
+			err = EmitC(pkg, &buf)
+			switch {
+			case test.want == "" && err != nil:
+				t.Fatalf("EmitC refused a field that carries nothing: %v", err)
+			case test.want != "" && err == nil:
+				t.Fatalf("EmitC accepted a store that dangles:\n%s", buf.String())
+			case test.want != "" && !strings.Contains(err.Error(), test.want):
+				t.Errorf("EmitC error %q does not say %q", err, test.want)
+			}
+		})
+	}
+}

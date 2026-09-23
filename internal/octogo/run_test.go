@@ -36181,6 +36181,211 @@ func main() {
 `,
 		want: "7784321\n5\n6\n",
 	}, {
+		// A tokenizer and a recursive-descent evaluator, as a program would be
+		// written: an iota kind, a token table in the lexer, pointer-receiver
+		// methods, an error type behind the error interface and a type assertion
+		// on it. The parse error is copied out of the parser, whose OTHER field
+		// points at the local lexer -- which refused the copy, every struct
+		// having counted as able to carry the lexer's address.
+		name: "a tokenizer and expression evaluator",
+		src: `type Kind int
+
+const (
+	Num Kind = iota
+	Plus
+	Minus
+	Star
+	Slash
+	LParen
+	RParen
+	End
+	Bad
+)
+
+type Token struct {
+	kind Kind
+	val  int
+	pos  int
+}
+
+type ParseError struct {
+	pos int
+	msg string
+}
+
+func (e *ParseError) Error() string { return e.msg }
+
+type Lexer struct {
+	src  string
+	pos  int
+	toks [64]Token
+	n    int
+}
+
+func (l *Lexer) emit(k Kind, v int, at int) {
+	l.toks[l.n] = Token{kind: k, val: v, pos: at}
+	l.n++
+}
+
+func isDigit(c byte) bool { return c >= '0' && c <= '9' }
+
+func (l *Lexer) run() {
+	for l.pos < len(l.src) {
+		c := l.src[l.pos]
+		switch {
+		case c == ' ':
+			l.pos++
+		case isDigit(c):
+			start, v := l.pos, 0
+			for l.pos < len(l.src) && isDigit(l.src[l.pos]) {
+				v = v*10 + int(l.src[l.pos]-'0')
+				l.pos++
+			}
+			l.emit(Num, v, start)
+		default:
+			k := Bad
+			switch c {
+			case '+':
+				k = Plus
+			case '-':
+				k = Minus
+			case '*':
+				k = Star
+			case '/':
+				k = Slash
+			case '(':
+				k = LParen
+			case ')':
+				k = RParen
+			}
+			l.emit(k, 0, l.pos)
+			l.pos++
+		}
+	}
+	l.emit(End, 0, l.pos)
+}
+
+type Parser struct {
+	lx  *Lexer
+	i   int
+	err ParseError
+	bad bool
+}
+
+func (p *Parser) peek() Token { return p.lx.toks[p.i] }
+
+func (p *Parser) next() Token {
+	t := p.lx.toks[p.i]
+	if t.kind != End {
+		p.i++
+	}
+	return t
+}
+
+func (p *Parser) fail(at int, msg string) int {
+	if !p.bad {
+		p.err = ParseError{pos: at, msg: msg}
+		p.bad = true
+	}
+	return 0
+}
+
+func (p *Parser) primary() int {
+	t := p.next()
+	switch t.kind {
+	case Num:
+		return t.val
+	case Minus:
+		return -p.primary()
+	case LParen:
+		v := p.expr()
+		if p.next().kind != RParen {
+			return p.fail(t.pos, "unclosed paren")
+		}
+		return v
+	}
+	return p.fail(t.pos, "unexpected token")
+}
+
+func (p *Parser) term() int {
+	v := p.primary()
+	for {
+		switch p.peek().kind {
+		case Star:
+			p.next()
+			v *= p.primary()
+		case Slash:
+			t := p.next()
+			d := p.primary()
+			if d == 0 {
+				return p.fail(t.pos, "division by zero")
+			}
+			v /= d
+		default:
+			return v
+		}
+	}
+}
+
+func (p *Parser) expr() int {
+	v := p.term()
+	for {
+		switch p.peek().kind {
+		case Plus:
+			p.next()
+			v += p.term()
+		case Minus:
+			p.next()
+			v -= p.term()
+		default:
+			return v
+		}
+	}
+}
+
+func eval(s string) (int, error) {
+	lx := Lexer{src: s}
+	lx.run()
+	p := Parser{lx: &lx}
+	v := p.expr()
+	if !p.bad && p.peek().kind != End {
+		p.fail(p.peek().pos, "trailing input")
+	}
+	if p.bad {
+		lastErr = p.err
+		return 0, &lastErr
+	}
+	return v, nil
+}
+
+var lastErr ParseError
+
+var inputs = [...]string{
+	"1 + 2 * 3",
+	"(1 + 2) * 3",
+	"-4 + 10 / 3",
+	"2 * (3 + (4 - 1)) / 2",
+	"7 / (3 - 3)",
+	"(1 + 2",
+	"1 + * 2",
+	"12 34",
+	"100 - -5",
+}
+
+func main() {
+	for i, s := range inputs {
+		v, err := eval(s)
+		if err != nil {
+			pe := err.(*ParseError)
+			println(i, "error:", err.Error(), pe.pos)
+			continue
+		}
+		println(i, v)
+	}
+}
+`,
+		want: "0 7\n1 9\n2 -1\n3 6\n4 error: division by zero 2\n5 error: unclosed paren 0\n6 error: unexpected token 4\n7 error: trailing input 3\n8 105\n",
+	}, {
 		// A method called on the interface RESULT of a call through a function
 		// value, a field holding one or another interface's slot -- `p(1).Area()`,
 		// `h.p(2).Area()`, `hd.Get().Area()` -- read the table and the data off
