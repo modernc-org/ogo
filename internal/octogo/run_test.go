@@ -35873,6 +35873,68 @@ func main() {
 `,
 		want: "0 11\n1 20\n5\n8\n10\n",
 	}, {
+		// A function received from a channel and called, in every form a value is
+		// received in -- a short declaration and its comma-ok form, a var, a select
+		// case, a range, from a channel of a named and of an unnamed function type
+		// and from a channel field: what was received carried no type, and each
+		// call was "cannot call non-function".
+		name: "a function received from a channel and called",
+		src: `type Job func(k int) int
+
+type H struct{ ch chan Job }
+
+var work chan Job
+
+var raw chan func(k int) int
+
+var side chan Job
+
+var more chan Job
+
+var done chan bool
+
+var gh H
+
+func dbl(k int) int { return 2 * k }
+
+func inc(k int) int { return k + 1 }
+
+func feed() {
+	work <- dbl
+	work <- inc
+	raw <- dbl
+	gh.ch <- inc
+	side <- dbl
+	work <- inc
+	work <- dbl
+	close(work)
+	more <- inc
+	done <- true
+}
+
+func main() {
+	gh.ch = side
+	go feed()
+	a, ok := <-work
+	var b = <-work
+	c := <-raw
+	e := <-gh.ch
+	println(a(1), ok, b(2), c(3), e(5))
+	select {
+	case f := <-side:
+		println(f(6))
+	}
+	t := 0
+	for job := range work {
+		t += job(7)
+	}
+	m := <-more
+	println(t, m(8))
+	<-done
+}
+`,
+		want: "2 true 3 6 6\n12\n22 9\n",
+	}, {
 		// A method called on the interface RESULT of a call through a function
 		// value, a field holding one or another interface's slot -- `p(1).Area()`,
 		// `h.p(2).Area()`, `hd.Get().Area()` -- read the table and the data off

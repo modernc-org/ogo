@@ -1,0 +1,38 @@
+// A function received from a channel is called, and the call is checked against
+// the element's signature. What was received carried no type, so `job := <-work;
+// job(1)` was "cannot call non-function job", in every form a value is received in:
+// a short declaration, its comma-ok form, a select case and a range.
+
+type Job func(k int) int
+
+var work chan Job
+
+var raw chan func(k int) int
+
+func ok() {
+	a := <-work
+	b, more := <-work
+	var c = <-raw
+	select {
+	case d := <-work:
+		println(d(4))
+	}
+	for e := range work {
+		println(e(5))
+	}
+	println(a(1), b(2), more, c(3))
+}
+
+func bad() {
+	a := <-work
+	// ERROR too many arguments in call to a
+	println(a(1, 2))
+	b, _ := <-raw
+	// ERROR cannot use "x" of type string as type int in argument to b
+	println(b("x"))
+	select {
+	case d := <-work:
+		// ERROR not enough arguments in call to d
+		println(d())
+	}
+}

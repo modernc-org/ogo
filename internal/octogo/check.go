@@ -2965,6 +2965,13 @@ func (f *File) checkRange(s *Scope, kw string, fi forInfo) {
 				}
 			}
 		}
+		if sig := f.recvFuncSig(s, fi.rangeExpr); declared && sig != nil {
+			if id, ok := f.exprSoleIdent(fi.keyVar); ok {
+				if vd, ok := s.find(id.Src()).(*VarDeclaration); ok {
+					vd.funcSig, vd.isFunc = sig, true // `for job := range work`
+				}
+			}
+		}
 	case fi.hasKey && fi.rangeDefine:
 		// The key is an INDEX, so no element type travels with it.
 		declared = f.declareRangeVar(s, fi.keyVar, PredeclaredInt, true, Token{}, Token{}, false)
@@ -5302,6 +5309,9 @@ func (f *File) checkSelect(s *Scope, results []retResult, n Node) {
 					if tn := f.recvChanType(s, ce); tn != nil {
 						f.setChanOf(s, vd, tn)
 					}
+					if sig := f.recvFuncSig(s, ce); sig != nil {
+						vd.funcSig, vd.isFunc = sig, true // a function received, called
+					}
 				}
 				f.declareLocal(cs, vd)
 			}
@@ -6359,10 +6369,15 @@ func (f *File) checkAssignment(s *Scope, head, postfix Node) {
 	recvName, recvQual := Token{}, Token{}
 	recvPtr, recvKind, recvHasKind, recvOK := false, Kind(0), false, false
 	var recvChan TypeNode
+	var recvSig *SignatureNode
 	if len(rhs) == 1 && len(lhs) == 2 && !assertOK {
 		recvName, recvQual, recvPtr, recvKind, recvHasKind, recvOK = f.recvElemInfo(s, rhs[0])
 		if fac, isRecv := f.receiveFactor(s, rhs[0]); isRecv {
 			recvChan = f.recvChanType(s, fac)
+			// A function received is called, as `v := <-ch`'s is (inferRecvFrom).
+			if recvSig = f.recvFuncSig(s, fac); recvSig != nil {
+				recvOK = true
+			}
 		}
 	}
 	newCount := 0
@@ -6403,6 +6418,9 @@ func (f *File) checkAssignment(s *Scope, head, postfix Node) {
 				if recvChan != nil {
 					f.setChanOf(s, vd, recvChan)
 				}
+				if recvSig != nil {
+					vd.funcSig, vd.isFunc = recvSig, true
+				}
 			case 1:
 				vd.kind, vd.hasKind = PredeclaredBool, true
 			}
@@ -6442,21 +6460,43 @@ func (f *File) checkAssignment(s *Scope, head, postfix Node) {
 // inferVarFrom. A receive over a channel the walk cannot resolve answers false and
 // leaves the variable as it was.
 func (f *File) inferRecvFrom(s *Scope, vd *VarDeclaration, init Node) bool {
-	if fac, isRecv := f.receiveFactor(s, init); isRecv {
+	fac, isRecv := f.receiveFactor(s, init)
+	if isRecv {
 		if tn := f.recvChanType(s, fac); tn != nil {
 			f.setChanOf(s, vd, tn) // `r := <-reqs`: a channel received is a channel
 			return true
 		}
 	}
+	// A FUNCTION received, `job := <-work`, is called: it carries the element's
+	// signature, which nothing recorded, so the call was "cannot call non-function
+	// job" -- an unnamed element type recorded nothing else either.
+	var sig *SignatureNode
+	if isRecv {
+		sig = f.recvFuncSig(s, fac)
+	}
 	name, qual, isPtr, kind, hasKind, ok := f.recvElemInfo(s, init)
-	if !ok {
+	if !ok && sig == nil {
 		return false
 	}
 	vd.typeName, vd.typeQual, vd.isPtr = name, qual, isPtr
 	if hasKind {
 		vd.kind, vd.hasKind = kind, true
 	}
+	if sig != nil {
+		vd.funcSig, vd.isFunc = sig, true
+	}
 	return true
+}
+
+// recvFuncSig is the signature of what receiving from the channel ch yields, when
+// its element is a function type, written out or named; nil otherwise.
+func (f *File) recvFuncSig(s *Scope, ch Node) *SignatureNode {
+	tn, _ := f.exprChanTypeNode(s, ch)
+	c, _ := f.chanTypeUnder(s, tn)
+	if c == nil {
+		return nil
+	}
+	return f.funcSig(s, c.TypeNode)
 }
 
 // recvChanType is the type a receive from the channel expression ch yields when
