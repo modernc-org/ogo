@@ -22383,6 +22383,77 @@ func (e *emitter) parenMethodResultType(kids []Node) (string, bool) {
 	return ct, true
 }
 
+// parenFuncCall matches a function VALUE in parentheses called where it stands --
+// `(pick())(2)`, `(fs[0])(3)`, `(h.f)(4)`, `(<-fc)(5)` -- answering the value's C
+// type and the call's arguments. A bare name and its dereference, `(f)(1)` and
+// `(*pf)(1)`, are the plain call's, and are left to it. Only one call of one result
+// the function returns itself: a struct or several results come back through an
+// out parameter, and a step after the call is the chains' to take.
+func (e *emitter) parenFuncCall(kids []Node) (ct string, call Node, ok bool) {
+	if len(kids) != 4 || kids[0].sym != 0 || e.f.ch(kids[0].tok) != LPAREN ||
+		kids[2].sym != 0 || e.f.ch(kids[2].tok) != RPAREN || kids[3].sym != FactorSuffix {
+		return "", Node{}, false
+	}
+	steps := slices.Collect(it(kids[3].ast))
+	if len(steps) != 1 || steps[0].sym != CallSuffix {
+		return "", Node{}, false
+	}
+	if _, isName := e.exprIdent(kids[1].ast); isName {
+		return "", Node{}, false
+	}
+	if _, isDeref := e.derefOperand(kids[1].ast); isDeref {
+		return "", Node{}, false
+	}
+	ct, ok = e.inferNode(kids[1])
+	if !ok || !e.isFuncCType(ct) {
+		return "", Node{}, false
+	}
+	if rets := e.funcTypeRet[e.underlyingCType(ct)]; len(rets) != 1 || e.outResultOf(rets) != "" {
+		return "", Node{}, false
+	}
+	return ct, steps[0], true
+}
+
+// parenFuncCallStmt is parenFuncCall for a call STATEMENT, whose head is the
+// parenthesised value and whose postfix the call: a result is discarded, so none
+// or one may come back, but not one written through an out parameter.
+func (e *emitter) parenFuncCallStmt(head Node, postfix []Node) (ct string, call Node, ok bool) {
+	kids := slices.Collect(it(head.ast))
+	if len(kids) != 3 || kids[0].sym != 0 || e.f.ch(kids[0].tok) != LPAREN || kids[1].sym != Expression ||
+		len(postfix) != 1 || postfix[0].sym != CallSuffix {
+		return "", Node{}, false
+	}
+	if _, isName := e.exprIdent(kids[1].ast); isName {
+		return "", Node{}, false
+	}
+	if _, isDeref := e.derefOperand(kids[1].ast); isDeref {
+		return "", Node{}, false
+	}
+	ct, ok = e.inferNode(kids[1])
+	if !ok || !e.isFuncCType(ct) {
+		return "", Node{}, false
+	}
+	if rets := e.funcTypeRet[e.underlyingCType(ct)]; len(rets) > 1 || e.outResultOf(rets) != "" {
+		return "", Node{}, false
+	}
+	return ct, postfix[0], true
+}
+
+// emitParenFuncCall emits parenFuncCall's shape: the value bound first, as every
+// element and field is before a call through it -- the target's compiler calls
+// element 0 of a table called where it stands (doc/call-through-array-element.c)
+// -- and then called through its type, as any value is. It was "this form is not
+// supported yet"; only a bare name in parentheses could be called.
+func (e *emitter) emitParenFuncCall(kids []Node) bool {
+	ct, call, ok := e.parenFuncCall(kids)
+	if !ok {
+		return false
+	}
+	callee := e.hoist(ct, func() { e.emitExprNode(kids[1]) })
+	e.emit(e.recFuncCallee(ct, callee) + "(" + e.valueArgsCText(e.indirectCallee("", ct), ct, call.ast) + ")")
+	return true
+}
+
 // emitParenMethod emits a method called on a PARENTHESISED expression, `(a -
 // b).Scaled()` for a defined type with arithmetic, and reports whether the Factor
 // was that shape.
@@ -26795,6 +26866,21 @@ func (e *emitter) deferReceiver(d *deferredCall, head Node, suffix []Node) (stri
 			return "(*" + e.nilCheckedC(e.varRef(name), ct) + ")", true
 		}
 	}
+	// `defer (pick())(args)` and `defer (<-fc)(args)`: a function VALUE in
+	// parentheses, called (parenFuncCallStmt). Go evaluates the value where the defer
+	// stands, as it does a function variable's, so it is captured like one. Left to
+	// the replay it compiled as the statement form does -- and `pick()` ran at the
+	// return, calling whatever it returned then.
+	if ct, _, ok := e.parenFuncCallStmt(head, suffix); base == "" && ok {
+		text, pro := e.capturePrologue(func() { e.emitExprNode(slices.Collect(it(head.ast))[1]) })
+		for _, line := range pro {
+			e.ind()
+			e.emit(line)
+		}
+		d.recvCType = ct
+		d.callsValue = true
+		return text, true
+	}
 	if base == "" {
 		// `defer (&v).m(args)`. The head is parenthesised, so it carries no sole
 		// identifier and the capture below would be skipped silently -- and a skipped
@@ -27664,6 +27750,15 @@ func (e *emitter) emitCall(head Node, postfix []Node) {
 			e.ind()
 			e.callOrFail(e.emitCallStmtExpr(tmp, pc.rest))
 			e.emit(";\n")
+			return
+		}
+		// `(fs[0])(7)` and `(<-fc)(5)` as a statement: a function VALUE in
+		// parentheses, called, its result discarded -- the expression form's shape
+		// (emitParenFuncCall).
+		if ct, call, ok := e.parenFuncCallStmt(head, postfix); ok {
+			callee := e.hoist(ct, func() { e.emitExprNode(slices.Collect(it(head.ast))[1]) })
+			e.ind()
+			e.emit(e.recFuncCallee(ct, callee) + "(" + e.valueArgsCText(e.indirectCallee("", ct), ct, call.ast) + ");\n")
 			return
 		}
 		e.fail("unsupported call target")
@@ -37119,6 +37214,10 @@ func (e *emitter) inferNode(n Node) (string, bool) {
 		if ct, ok := e.parenMethodResultType(kids); ok {
 			return ct, true
 		}
+		// `(fs[0])(3)`: what the function value called returns.
+		if ct, _, ok := e.parenFuncCall(kids); ok {
+			return e.funcTypeRet[e.underlyingCType(ct)][0], true
+		}
 		kids = e.unparenKids(kids)
 		if ct, ok := e.parenChainType(kids); ok {
 			return ct, true
@@ -39627,6 +39726,10 @@ func (e *emitter) emitExprNode(n Node) {
 			// `(*p).m()` are parenthesised too, and their own paths adjust the
 			// receiver in ways this one must not.
 			if e.emitParenMethod(slices.Collect(it(n.ast))) {
+				return
+			}
+			// A function VALUE in parentheses, called: `(<-fc)(5)`, `(fs[0])(3)`.
+			if e.emitParenFuncCall(slices.Collect(it(n.ast))) {
 				return
 			}
 			// A parenthesised expression read through FIELDS and INDEXES, `(&p).x`

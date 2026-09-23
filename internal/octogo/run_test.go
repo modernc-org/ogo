@@ -35935,6 +35935,104 @@ func main() {
 `,
 		want: "2 true 3 6 6\n12\n22 9\n",
 	}, {
+		// A function VALUE in parentheses, called where it stands -- a call's
+		// result, a slice's and an array's element, a field, through a pointer, a
+		// receive -- as a value and as a statement: only a bare name could be,
+		// and the rest were "this form is not supported yet" or "unsupported call
+		// target". Each head is evaluated once, which the counts say.
+		name: "a parenthesised function value called",
+		src: `type H struct{ f func(k int) int }
+
+var fc chan func(k int) int
+
+var calls int
+
+var trace int
+
+func dbl(k int) int {
+	trace = trace*10 + k
+	return 2 * k
+}
+
+func pick() func(k int) int {
+	calls++
+	return dbl
+}
+
+func idx() int {
+	calls += 10
+	return 0
+}
+
+func main() {
+	fs := []func(k int) int{dbl}
+	var arr [1]func(k int) int
+	arr[0] = dbl
+	h := H{f: dbl}
+	ph := &h
+	go func() {
+		fc <- dbl
+		fc <- dbl
+	}()
+	println((pick())(1), (fs[idx()])(2), (arr[0])(3), (h.f)(4), (ph.f)(5), (<-fc)(6))
+	(pick())(7)
+	(fs[idx()])(8)
+	(<-fc)(9)
+	x := (h.f)(1)
+	println(x, calls, trace)
+}
+`,
+		want: "2 4 6 8 10 12\n2 22 1234567891\n",
+	}, {
+		// The same shapes deferred: Go evaluates the function value and the
+		// arguments where the defer stands, so a later store changes nothing.
+		// `defer (pick())(x)` compiled once the expression form did -- through
+		// the replay, which ran pick() at the RETURN and called what it returned
+		// then, 159 for 513.
+		name: "a parenthesised function value deferred",
+		src: `type H struct{ f func(k int) }
+
+var trace int
+
+var fc chan func(k int)
+
+func show(k int) { trace = trace*10 + k }
+
+func other(k int) { trace = trace*10 + 9 }
+
+var cur = show
+
+func pick() func(k int) {
+	trace = trace*10 + 5
+	return cur
+}
+
+func arg(k int) int {
+	trace = trace*10 + k
+	return k
+}
+
+func run() {
+	fs := []func(k int){show}
+	h := H{f: show}
+	go func() { fc <- show }()
+	defer (fs[0])(arg(1))
+	defer (h.f)(arg(2))
+	defer (<-fc)(arg(3))
+	defer (pick())(arg(4))
+	fs[0] = other
+	h.f = other
+	cur = other
+	trace = trace*10 + 8
+}
+
+func main() {
+	run()
+	println(trace)
+}
+`,
+		want: "1235484321\n",
+	}, {
 		// A method called on the interface RESULT of a call through a function
 		// value, a field holding one or another interface's slot -- `p(1).Area()`,
 		// `h.p(2).Area()`, `hd.Get().Area()` -- read the table and the data off
