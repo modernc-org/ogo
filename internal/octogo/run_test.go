@@ -36894,6 +36894,105 @@ func main() {
 `,
 		want: "1 1 1 1 1 100\n1 77 77 77\n1 1 100\n1\n",
 	}, {
+		// A call returning an ARRAY whose value nobody reads still writes it, into
+		// storage the caller supplies: a statement, a blank assignment or
+		// declaration, deferred, and started on a cog. The plain statement and the
+		// blank forms were refused; a receiver reached through a chain, `gh.in.mk(3)`,
+		// and a deferred or started call went out without the out parameter, which
+		// the target's compiler only warned about -- the 3 went where the pointer
+		// goes, and the board printed garbage for the method's k.
+		name: "an array result nobody reads",
+		src: `var calls int
+
+var done chan bool
+
+func mk(k int) [3]int {
+	calls = calls*10 + k
+	return [3]int{k, k, k}
+}
+
+type M struct{ k int }
+
+func (m *M) mk(k int) [2]int {
+	m.k += k
+	calls = calls*10 + k
+	return [2]int{m.k, k}
+}
+
+type Row [2]int
+
+func (r Row) doubled() [2]int {
+	calls = calls*10 + r[0]
+	return [2]int{r[0] * 2, r[1] * 2}
+}
+
+type H struct{ in M }
+
+var gh H
+
+var ms [3]M
+
+func deferred(m *M) {
+	defer mk(1)
+	defer m.mk(2)
+	defer gh.in.mk(3)
+	defer ms[1].mk(4)
+	calls = 0
+}
+
+var fin chan bool
+
+var gf int
+
+func sigf(k int) [3]int {
+	gf = k
+	fin <- true
+	return [3]int{k, k, k}
+}
+
+func (m *M) sig(k int) [2]int {
+	m.k += k
+	fin <- true
+	return [2]int{m.k, k}
+}
+
+var gw M
+
+func worker() {
+	go sigf(5)
+	go gw.sig(6)
+	done <- true
+}
+
+// A call returning an array whose value nobody reads: a statement, a blank
+// assignment or declaration, deferred, and started on a cog.
+func main() {
+	mk(1)
+	var m M
+	m.mk(2)
+	gh.in.mk(3)
+	ms[1].mk(4)
+	r := Row{5, 6}
+	r.doubled()
+	println(calls, m.k, gh.in.k, ms[1].k)
+	calls = 0
+	_ = mk(1)
+	_ = m.mk(2)
+	var _ = mk(3)
+	var _ [3]int = mk(4)
+	println(calls, m.k)
+	deferred(&m)
+	println(calls, m.k, gh.in.k, ms[1].k)
+	calls = 0
+	go worker()
+	<-done
+	<-fin
+	<-fin
+	println(gw.k, gf)
+}
+`,
+		want: "12345 2 3 4\n1234 4\n4321 6 6 8\n6 5\n",
+	}, {
 		// A method called on the interface RESULT of a call through a function
 		// value, a field holding one or another interface's slot -- `p(1).Area()`,
 		// `h.p(2).Area()`, `hd.Get().Area()` -- read the table and the data off

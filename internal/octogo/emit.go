@@ -1304,6 +1304,11 @@ type goSite struct {
 	// trampoline calls through its table with a0's data pointer.
 	ifaceMethod string
 	ifaceCType  string
+	// arrOut is the ARRAY a callee returns, which nobody reads: the trampoline hands
+	// it storage of the goroutine's own stack, at position arrOutAt of the arguments
+	// -- after a method's receiver, ahead of everything else. A zero arrOut: none.
+	arrOut   arrDim
+	arrOutAt int
 }
 
 // goIfaceRecv answers a go statement's receiver when it is an INTERFACE value --
@@ -1976,6 +1981,17 @@ func (e *emitter) emitGo(nodes []Node) {
 	if site.pack && packAt >= len(args) {
 		site.packFrom = len(site.args) // nothing written for the variadic parameter
 	}
+	// A callee returning an ARRAY writes it through an out parameter, which the
+	// trampoline supplies (see goSite.arrOut). It called `mk()` without one, and the
+	// target's compiler only warned.
+	if site.fnCType == "" && site.ifaceMethod == "" {
+		if a, isArr := e.funcArrayRet[site.callee]; isArr {
+			site.arrOut = a
+			if recvText != "" {
+				site.arrOutAt = 1
+			}
+		}
+	}
 	e.goSites = append(e.goSites, site)
 	e.needPanic()
 	e.includes["propeller2.h"] = true
@@ -2163,31 +2179,29 @@ func (e *emitter) goDefs() string {
 				fmt.Fprintf(&tramps, "\t%s res;\n", m.out)
 			}
 		}
-		fmt.Fprintf(&tramps, "\t%s(", callee)
+		var call []string
 		for i := 0; i < n; i++ {
-			if i != 0 {
-				tramps.WriteString(", ")
-			}
 			if i == 0 && s.ifaceMethod != "" {
-				tramps.WriteString("a->a0.data")
+				call = append(call, "a->a0.data")
 				continue
 			}
-			fmt.Fprintf(&tramps, "a->a%d", i)
+			call = append(call, fmt.Sprintf("a->a%d", i))
 		}
 		if s.pack {
-			if n != 0 {
-				tramps.WriteString(", ")
-			}
-			tramps.WriteString(pack)
+			call = append(call, pack)
 		}
 		if out != "" {
-			tramps.WriteString(", &" + out)
+			call = append(call, "&"+out)
+		}
+		if s.arrOut.bound != "" {
+			fmt.Fprintf(&tramps, "\t%s res%s;\n", s.arrOut.elem, s.arrOut.declSuffix())
+			call = slices.Insert(call, s.arrOutAt, "("+arrayResultCType(s.arrOut)+")res")
 		}
 		// Not ogo_cog_release: the goroutine is still on this slot's stack
 		// here, with the return through _cogstart's epilogue ahead of it. done
 		// only makes the slot a candidate; ogo_cog_sweep waits for _cogchk to
 		// confirm the cog stopped before the stack is handed to anyone else.
-		tramps.WriteString(");\n\togo_cog_done(a->ogo_slot);\n}\n")
+		fmt.Fprintf(&tramps, "\t%s(%s);\n\togo_cog_done(a->ogo_slot);\n}\n", callee, strings.Join(call, ", "))
 	}
 	// The argument structs come before the pool that embeds them, the trampolines
 	// after it: they call ogo_cog_done.
@@ -27591,7 +27605,16 @@ func (e *emitter) emitDeferred() {
 				if args != "" {
 					args = ", " + args
 				}
-				e.emit(d.cname + "(" + deferRecvName(d.slot) + args + ");\n")
+				// A method returning an ARRAY is handed storage for the value nobody
+				// reads, after its receiver. It was called without the out parameter,
+				// which the target's compiler only warned about.
+				if a, isArr := e.funcArrayRet[d.cname]; isArr {
+					tmp := e.newTmp()
+					e.emit("{ " + a.elem + " " + tmp + a.declSuffix() + "; " + d.cname + "(" + deferRecvName(d.slot) +
+						", (" + arrayResultCType(a) + ")" + tmp + args + "); }\n")
+				} else {
+					e.emit(d.cname + "(" + deferRecvName(d.slot) + args + ");\n")
+				}
 			}
 			e.deferReplay, e.deferReplayArgs = -1, nil
 			continue
@@ -28238,16 +28261,28 @@ func (e *emitter) emitCallExpr(recv string, suffix []Node) bool {
 	// A call whose result is an ARRAY is a statement, not a value: the caller owns
 	// the storage and the callee fills it, so there is no expression for the call to
 	// become. Bind it and use the variable.
+	//
+	// Where the value is thrown away -- a call statement, a deferred call's replay --
+	// the callee still writes it, into storage of this frame that nobody reads.
+	// `mk()` on its own, `r.doubled()` and `defer mk()` were refused, and a receiver
+	// reached through a chain, `h.in.mk(3)`, went out WITHOUT the out parameter: the
+	// 3 went where the pointer goes, the target's compiler only warned, and the
+	// board printed -242832376 for Go's 3 -- k read from nowhere, the result written
+	// through the 3.
 	if len(suffix) != 0 && suffix[len(suffix)-1].sym == CallSuffix {
-		cname := e.funcCallC(recv)
-		if len(suffix) == 2 && suffix[0].sym == Selector {
-			if rct, ok := e.methodRecvCType(recv); ok {
-				cname = methodCName(methodBaseType(rct), e.soleIdent(suffix[0].ast))
+		if cname, a, isArr := e.arrayResultCallOf(recv, suffix); isArr {
+			if !discard {
+				e.fail("a call returning an array must be bound to a variable first: `a := %s(...)`, then use a", e.funcSourceName(cname))
+				return false
 			}
-		}
-		if _, isArr := e.funcArrayRet[cname]; isArr {
-			e.fail("a call returning an array must be bound to a variable first: `a := %s(...)`, then use a", recv)
-			return false
+			tmp := e.newTmp()
+			e.prologue = append(e.prologue, a.elem+" "+tmp+a.declSuffix()+";\n")
+			saved := e.indent
+			e.indent = 0
+			text := e.captureC(func() { e.emitArrayResultCallOf(tmp, cname, recv, suffix) })
+			e.indent = saved
+			e.emit(strings.TrimSuffix(text, ";\n"))
+			return true
 		}
 	}
 	switch {
@@ -36096,6 +36131,15 @@ func (e *emitter) newTmp() string {
 // already parenthesizes binary operands, so no extra parentheses are needed for
 // the cast to bind correctly.
 func (e *emitter) emitDiscard(expr []int32) {
+	// A call returning an ARRAY writes it through an out parameter, and `(void)mk()`
+	// had none to pass: it is handed storage of this frame, as a call statement is.
+	if cname, a, isCall := e.arrayResultCall(expr); isCall {
+		tmp := e.newTmp()
+		e.ind()
+		e.emit(a.elem + " " + tmp + a.declSuffix() + ";\n")
+		e.emitArrayResultCall(tmp, cname, expr)
+		return
+	}
 	e.ind()
 	e.emit("(void)")
 	e.emitExpr(expr)
