@@ -36125,6 +36125,62 @@ func main() {
 `,
 		want: "1\n2\n3\n4 true 1 true\n",
 	}, {
+		// An ELEMENT of a table of functions deferred and started on a cog -- a
+		// slice's, an array's, a field's, one whose index has an effect: read at
+		// the statement, index and all, as a variable's value is. Neither shape
+		// had a path: "only <pkg>.<Func>(args) ..." and "only `go f(args)` ...".
+		name: "a function element deferred and started on a cog",
+		src: `type H struct{ tbl [2]func(k int) }
+
+var trace int
+
+var done chan int
+
+func show(k int) { trace = trace*10 + k }
+
+func other(k int) { trace = trace*10 + 9 }
+
+func send(k int) { done <- k }
+
+func nine(k int) { done <- 9 }
+
+func idx() int {
+	trace = trace*10 + 7
+	return 1
+}
+
+func run() {
+	fs := []func(k int){other, show}
+	var arr [2]func(k int)
+	arr[0], arr[1] = show, other
+	var h H
+	h.tbl[0], h.tbl[1] = other, show
+	defer fs[1](1)
+	defer arr[0](2)
+	defer h.tbl[idx()](3)
+	defer fs[idx()](4)
+	fs[1] = other
+	arr[0] = other
+	h.tbl[1] = other
+	trace = trace*10 + 8
+}
+
+func main() {
+	run()
+	println(trace)
+	gs := []func(k int){nine, send}
+	var ga [2]func(k int)
+	ga[1] = send
+	go gs[1](5)
+	gs[1] = nine
+	println(<-done)
+	go ga[1](6)
+	ga[1] = nine
+	println(<-done)
+}
+`,
+		want: "7784321\n5\n6\n",
+	}, {
 		// A method called on the interface RESULT of a call through a function
 		// value, a field holding one or another interface's slot -- `p(1).Area()`,
 		// `h.p(2).Area()`, `hd.Get().Area()` -- read the table and the data off

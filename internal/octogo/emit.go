@@ -1563,6 +1563,29 @@ func (e *emitter) emitGo(nodes []Node) {
 		site = goSite{callee: e.funcCallC(base), id: len(e.goSites)}
 		callSuffix = suffix[0]
 	case base != "" && len(suffix) >= 2 && suffix[len(suffix)-1].sym == CallSuffix &&
+		suffix[len(suffix)-2].sym == Index && isAccessChain(suffix[:len(suffix)-1]):
+		// `go fs[i](args)`, `go h.tbl[i](args)`: an ELEMENT holding a function, a
+		// worker per slot of a table. It is read here, its index with it, and travels
+		// in the argument block as a variable's value does; there was no case for
+		// it, and "only `go f(args)` ..." said so.
+		steps := suffix[:len(suffix)-1]
+		cur, ok := e.accessChainType(base, steps)
+		ct := ""
+		if ok {
+			ct, ok = e.chainValueCType(cur)
+		}
+		if !ok || !e.isFuncCType(ct) {
+			e.fail("only `go f(args)` on a package function or `go x.M(args)` on a method is supported yet")
+			return
+		}
+		text, pro := e.capturePrologue(func() { e.emitAccessChain(base, steps) })
+		for _, line := range pro {
+			e.ind()
+			e.emit(line)
+		}
+		site = goSite{callee: text, fnCType: e.underlyingCType(ct), id: len(e.goSites)}
+		callSuffix = suffix[len(suffix)-1]
+	case base != "" && len(suffix) >= 2 && suffix[len(suffix)-1].sym == CallSuffix &&
 		suffix[len(suffix)-2].sym == Selector && isAccessChain(suffix[:len(suffix)-1]):
 		callSuffix = suffix[len(suffix)-1]
 		steps := suffix[:len(suffix)-1]
@@ -26972,6 +26995,23 @@ func (e *emitter) deferReceiver(d *deferredCall, head Node, suffix []Node) (stri
 		d.recvCType = ct
 		d.callsValue = true
 		return text, true
+	}
+	// `defer fs[i](args)`, `defer h.tbl[i](args)`: an ELEMENT holding a function,
+	// read where the defer stands -- its index with it -- and captured as a
+	// variable's value is. Left to the replay it was "only <pkg>.<Func>(args) ...".
+	if steps[len(steps)-1].sym == Index && isAccessChain(steps) {
+		if cur, ok := e.accessChainType(base, steps); ok {
+			if ct, ok := e.chainValueCType(cur); ok && e.isFuncCType(ct) {
+				text, pro := e.capturePrologue(func() { e.emitAccessChain(base, steps) })
+				for _, line := range pro {
+					e.ind()
+					e.emit(line)
+				}
+				d.recvCType = ct
+				d.callsValue = true
+				return text, true
+			}
+		}
 	}
 	if steps[len(steps)-1].sym != Selector {
 		return "", true
