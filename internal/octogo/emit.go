@@ -1309,6 +1309,9 @@ type goSite struct {
 	// -- after a method's receiver, ahead of everything else. A zero arrOut: none.
 	arrOut   arrDim
 	arrOutAt int
+	// structOut is the same for a struct holding an array (funcStructRet): its
+	// storage, at arrOutAt too.
+	structOut string
 }
 
 // goIfaceRecv answers a go statement's receiver when it is an INTERFACE value --
@@ -1991,6 +1994,12 @@ func (e *emitter) emitGo(nodes []Node) {
 				site.arrOutAt = 1
 			}
 		}
+		if rt, isOut := e.funcStructRet[site.callee]; isOut {
+			site.structOut = rt // see goSite.structOut
+			if recvText != "" {
+				site.arrOutAt = 1
+			}
+		}
 	}
 	e.goSites = append(e.goSites, site)
 	e.needPanic()
@@ -2231,6 +2240,10 @@ func (e *emitter) goDefs() string {
 		if s.arrOut.bound != "" {
 			fmt.Fprintf(&tramps, "\t%s res%s;\n", s.arrOut.elem, s.arrOut.declSuffix())
 			call = slices.Insert(call, s.arrOutAt, "("+arrayResultCType(s.arrOut)+")res")
+		}
+		if s.structOut != "" {
+			fmt.Fprintf(&tramps, "\t%s res;\n", s.structOut)
+			call = slices.Insert(call, s.arrOutAt, "&res")
 		}
 		// Not ogo_cog_release: the goroutine is still on this slot's stack
 		// here, with the return through _cogstart's epilogue ahead of it. done
@@ -2898,31 +2911,6 @@ func (e *emitter) structAddrC(ctype string, src []int32) string {
 	return "&" + tmp
 }
 
-// checkStructCopySrc reports whether a struct-copy source can have its address
-// taken, which is what memcpy needs. Only a call cannot be, and a function that
-// returns such a struct is already refused where it is declared
-// (refuseArrayStructABI), so this is a backstop that keeps the lowering from
-// emitting "&f(...)" if that report is ever bypassed.
-func (e *emitter) checkStructCopySrc(ctype string, src []int32) bool {
-	kids, ok := e.soleFactor(src)
-	if !ok {
-		return true // not a bare factor: an operator chain, which is not a struct
-	}
-	recv, suffix, isCall := e.factorCall(kids)
-	if !isCall {
-		return true
-	}
-	// A CONVERSION is spelled like a call and is not one: `Arr2(x)` yields a
-	// temporary this frame owns, which has an address, so the copy below is the
-	// ordinary one. Without this it was reported as a copy "from a call" of an
-	// operand that is a variable, which named the wrong thing entirely.
-	if _, used, isConv := e.convChainHead(recv, suffix); isConv && used == len(suffix) {
-		return true
-	}
-	e.fail("cannot copy %s from a call: it holds an array, which the target's C compiler cannot return by value", ctype)
-	return false
-}
-
 // captureC renders whatever emit writes to C text instead of the output stream.
 // It is what lets a lowering that rewrites a statement -- memcpy needs its
 // destination as a string -- reuse the emitters that otherwise stream their output.
@@ -3004,7 +2992,18 @@ func (e *emitter) pkgInitAssign(target, srcName string, initExpr []int32) {
 		pos:     e.astPos(initExpr),
 		pkg:     2 * e.pkgOrd,
 	}
-	step.stmts = append(pro, target+" = "+text+";")
+	store := target + " = " + text + ";"
+	if typed && e.holdsArray(ct) {
+		// A struct holding an array is copied (holdsArray): `var g = mk()` for a
+		// function returning one was an assignment the target refuses at some sizes.
+		decl, addr := e.byRefSource(ct, text)
+		if decl != "" {
+			pro = append(pro, strings.TrimSuffix(decl, "\n"))
+		}
+		e.includes["string.h"] = true
+		store = "memcpy(&" + target + ", " + addr + ", sizeof(" + target + "));"
+	}
+	step.stmts = append(pro, store)
 	e.pkgInit = append(e.pkgInit, step)
 }
 
@@ -4952,7 +4951,7 @@ func typeNameCollisions(src []byte, names map[string]bool) map[string]bool {
 // emitProgram is EmitC's one pass. rename lists the main-package types spelled
 // ogo_T_<name> in C (see typeMangle).
 func emitProgram(pkg *Package, w io.Writer, opts []EmitOption, rename map[string]bool) error {
-	e := &emitter{renameTypes: rename, renamedTypes: map[string]string{}, includes: map[string]bool{}, funcRet: map[string][]string{}, funcSliceParams: map[string][]string{}, funcVariadic: map[string]int{}, nilHelpers: map[string]bool{}, funcArrayRet: map[string]arrDim{}, funcArrayParams: map[string][]arrDim{}, anonStructNames: map[string]string{}, methodValueTypes: map[string]funcValueType{}, methodValueOf: map[string]string{}, methodExprNames: map[string]string{}, funcParams: map[string][]string{}, methodPtr: map[string]bool{}, recvByRef: map[string]bool{}, globals: map[string]string{}, structs: map[string][]structField{}, namedTypes: map[string]bool{}, typeNames: map[string]bool{}, interfaceTypes: map[string]bool{}, ifaceMethods: map[string][]ifaceMethod{}, anonIfaceNames: map[string]string{}, anonIfaceMinted: map[string]bool{}, ifaceASTs: map[string]ifaceAST{}, ifaceVTables: map[string]bool{}, namedUnderlying: map[string]string{}, namedArrays: map[string]arrDim{}, constInt: map[string]string{}, constVal: map[string]constant.Value{}, constWide: map[string]string{}, constStr: map[string]string{}, constUntyped: map[string]bool{}, constHuge: map[string]bool{}, arrays: map[string]arrDim{}, globalArrays: map[string]arrDim{}, sliceVars: map[string]string{}, globalSliceVars: map[string]string{}, chanElems: map[string]bool{}, chanInitElems: map[string]bool{}, chanSendElems: map[string]bool{}, chanRecvElems: map[string]bool{}, chanTryRecvElems: map[string]bool{}, chanTrySendElems: map[string]bool{}, chanGatedSendElems: map[string]bool{}, aliasOf: map[string]string{}, localTypes: map[string]string{}, gotoTargets: map[string]bool{}, chanCloseElems: map[string]bool{}, chanRecv2Elems: map[string]bool{}, mathWrappers: map[string]bool{}, chanElemByName: map[string]string{}, sliceElems: map[string]bool{}, sliceElemByName: map[string]string{}, appendElems: map[string]bool{}, tryappendElems: map[string]bool{}, appendSliceElems: map[string]bool{}, tryappendSliceEls: map[string]bool{}, appendokStructs: map[string]bool{}, copyElems: map[string]bool{}, resliceElems: map[string]bool{}, reslice3Elems: map[string]bool{}, clearElems: map[string]bool{}, minElems: map[string]bool{}, maxElems: map[string]bool{}, printSliceElems: map[string]bool{}, printStructs: map[string]string{}, printIfaces: map[string]string{}, printlnElems: map[string]bool{}, switchBreakUsed: map[string]bool{}, labelBreak: map[string]string{}, labelContinue: map[string]string{}, labelUsed: map[string]bool{}, eqStructs: map[string]bool{}, eqArrays: map[string]arrDim{}, frameBacked: map[string]bool{}, frameHolder: map[string]string{}, crossParams: map[string][]leak{}, crossContents: map[string][]leak{}, retContents: map[string][]bool{}, recvContents: map[string]leak{}, paramCalls: map[string][]paramCall{}, frameCalls: map[string][]frameCall{}, localConstSpecs: map[string]localConstSpec{}, inheritedTypes: map[string]bool{}, funcValueMembers: map[string][]string{}, methodExprMembers: map[string]emMethodExpr{}, memberShown: map[string]string{}, litLifted: map[string][]string{}, methodNames: map[string]bool{}, recvLeaks: map[string]leak{}, retRecv: map[string]bool{}, crossInto: map[string][]uint32{}, ifaceSummaries: map[string]ifaceSummary{}, retParams: map[string][]bool{}, funcValueOf: map[string]string{}, crossNames: map[string]string{}, initNames: map[string]string{}, funcValueTypes: map[string]funcValueType{}, funcTypeNames: map[string]string{}, funcTypeRet: map[string][]string{}, funcTypeParams: map[string][]string{}, funcTypeVariadic: map[string]int{}, recFuncTypes: map[string]bool{}, recFuncShapes: map[string]string{}, retStructs: map[string]string{}, retStructByKey: map[string]string{}, shiftHelpers: map[string][2]string{}, shiftCTypes: map[*int32]string{}, shiftWalked: map[shiftWalkKey]bool{}, shiftIn: map[*int32]bool{}, divHelpers: map[string][2]string{}, funcValueWrappers: map[string]string{}, deferReplay: -1, iota: -1}
+	e := &emitter{renameTypes: rename, renamedTypes: map[string]string{}, includes: map[string]bool{}, funcRet: map[string][]string{}, funcSliceParams: map[string][]string{}, funcVariadic: map[string]int{}, nilHelpers: map[string]bool{}, funcArrayRet: map[string]arrDim{}, funcStructRet: map[string]string{}, funcArrayParams: map[string][]arrDim{}, anonStructNames: map[string]string{}, methodValueTypes: map[string]funcValueType{}, methodValueOf: map[string]string{}, methodExprNames: map[string]string{}, funcParams: map[string][]string{}, methodPtr: map[string]bool{}, recvByRef: map[string]bool{}, globals: map[string]string{}, structs: map[string][]structField{}, namedTypes: map[string]bool{}, typeNames: map[string]bool{}, interfaceTypes: map[string]bool{}, ifaceMethods: map[string][]ifaceMethod{}, anonIfaceNames: map[string]string{}, anonIfaceMinted: map[string]bool{}, ifaceASTs: map[string]ifaceAST{}, ifaceVTables: map[string]bool{}, namedUnderlying: map[string]string{}, namedArrays: map[string]arrDim{}, constInt: map[string]string{}, constVal: map[string]constant.Value{}, constWide: map[string]string{}, constStr: map[string]string{}, constUntyped: map[string]bool{}, constHuge: map[string]bool{}, arrays: map[string]arrDim{}, globalArrays: map[string]arrDim{}, sliceVars: map[string]string{}, globalSliceVars: map[string]string{}, chanElems: map[string]bool{}, chanInitElems: map[string]bool{}, chanSendElems: map[string]bool{}, chanRecvElems: map[string]bool{}, chanTryRecvElems: map[string]bool{}, chanTrySendElems: map[string]bool{}, chanGatedSendElems: map[string]bool{}, aliasOf: map[string]string{}, localTypes: map[string]string{}, gotoTargets: map[string]bool{}, chanCloseElems: map[string]bool{}, chanRecv2Elems: map[string]bool{}, mathWrappers: map[string]bool{}, chanElemByName: map[string]string{}, sliceElems: map[string]bool{}, sliceElemByName: map[string]string{}, appendElems: map[string]bool{}, tryappendElems: map[string]bool{}, appendSliceElems: map[string]bool{}, tryappendSliceEls: map[string]bool{}, appendokStructs: map[string]bool{}, copyElems: map[string]bool{}, resliceElems: map[string]bool{}, reslice3Elems: map[string]bool{}, clearElems: map[string]bool{}, minElems: map[string]bool{}, maxElems: map[string]bool{}, printSliceElems: map[string]bool{}, printStructs: map[string]string{}, printIfaces: map[string]string{}, printlnElems: map[string]bool{}, switchBreakUsed: map[string]bool{}, labelBreak: map[string]string{}, labelContinue: map[string]string{}, labelUsed: map[string]bool{}, eqStructs: map[string]bool{}, eqArrays: map[string]arrDim{}, frameBacked: map[string]bool{}, frameHolder: map[string]string{}, crossParams: map[string][]leak{}, crossContents: map[string][]leak{}, retContents: map[string][]bool{}, recvContents: map[string]leak{}, paramCalls: map[string][]paramCall{}, frameCalls: map[string][]frameCall{}, localConstSpecs: map[string]localConstSpec{}, inheritedTypes: map[string]bool{}, funcValueMembers: map[string][]string{}, methodExprMembers: map[string]emMethodExpr{}, memberShown: map[string]string{}, litLifted: map[string][]string{}, methodNames: map[string]bool{}, recvLeaks: map[string]leak{}, retRecv: map[string]bool{}, crossInto: map[string][]uint32{}, ifaceSummaries: map[string]ifaceSummary{}, retParams: map[string][]bool{}, funcValueOf: map[string]string{}, crossNames: map[string]string{}, initNames: map[string]string{}, funcValueTypes: map[string]funcValueType{}, funcTypeNames: map[string]string{}, funcTypeRet: map[string][]string{}, funcTypeParams: map[string][]string{}, funcTypeVariadic: map[string]int{}, recFuncTypes: map[string]bool{}, recFuncShapes: map[string]string{}, retStructs: map[string]string{}, retStructByKey: map[string]string{}, shiftHelpers: map[string][2]string{}, shiftCTypes: map[*int32]string{}, shiftWalked: map[shiftWalkKey]bool{}, shiftIn: map[*int32]bool{}, divHelpers: map[string][2]string{}, funcValueWrappers: map[string]string{}, deferReplay: -1, iota: -1}
 	for _, opt := range opts {
 		opt(e)
 	}
@@ -5737,6 +5736,7 @@ type emitter struct {
 	funcSliceParams map[string][]string // same key -> per parameter, its C slice type or "", so a bare nil argument knows it is a slice header
 	funcVariadic    map[string]int      // same key -> the position of a "...T" parameter, for the pack a call has to build
 	funcArrayRet    map[string]arrDim   // same key -> the extents of an ARRAY result, handed back through a leading out parameter
+	funcStructRet   map[string]string   // same key -> the type of a single result that is a struct holding an array, handed back through a leading out parameter as an array result is
 	funcArrayParams map[string][]arrDim // same key -> the extents of each ARRAY parameter, which its C type cannot carry: arrayParamCType is a pointer to the element, so a [3]int and a [2]int parameter are the same `int*`
 	// A function literal has no name, and C has no nested functions, so each one is
 	// LIFTED to a file-scope function of a minted name and the expression becomes
@@ -7901,6 +7901,13 @@ func (e *emitter) needVTable(iface, concrete string) bool {
 			}
 		}
 		lead := []string{recv}
+		if _, isOut := e.funcStructRet[cname]; isOut && m.out != "" {
+			// A result holding an array: the method takes the slot's out parameter
+			// where its own leads, after the receiver (funcStructRet).
+			call := cname + "(" + strings.Join(append(append(lead, "_ogo_out"), args...), ", ") + ")"
+			b.WriteString(") { " + call + "; }\n")
+			continue
+		}
 		if m.arr.bound != "" {
 			// The method's own out parameter leads its arguments, after the
 			// receiver; the slot's trails them.
@@ -9917,6 +9924,9 @@ func (e *emitter) collectResults(ast []int32) {
 		}
 		_, resTypes := e.resultInfo(sig)
 		e.funcRet[cname] = resTypes
+		if len(resTypes) == 1 && e.holdsArray(resTypes[0]) {
+			e.funcStructRet[cname] = resTypes[0] // see funcSignatureC
+		}
 		if a, arrRet := e.arrayResultOf(sig); arrRet {
 			// The extents are recorded HERE and not only where the C signature is
 			// rendered, which happens with the prototypes -- after the package
@@ -13788,6 +13798,11 @@ func (e *emitter) funcValueWrapper(cname string) (string, bool) {
 	if had, done := e.funcValueWrappers[cname]; done {
 		return had, true
 	}
+	// A result holding an array already travels through the leading out parameter
+	// the value's type has (funcStructRet): the function is its own wrapper.
+	if _, isOut := e.funcStructRet[cname]; isOut {
+		return cname, true
+	}
 	wrapper := cname + "_ogo_fv"
 	var params, args []string
 	for i, pt := range e.funcParams[cname] {
@@ -14158,6 +14173,15 @@ func (e *emitter) liftMethodExpr(me emMethodExpr) (string, bool) {
 		// compiler (doc/return-nonword-struct.c), as forwarding a return is.
 		body = "\t" + ret + " res = " + call + ";\n\treturn res;\n"
 	}
+	if rt, isOut := e.funcStructRet[mcname]; isOut {
+		// A result holding an array: the lifted function writes through an out
+		// parameter of its own, which it hands the method after the receiver.
+		e.funcStructRet[name] = rt
+		out := append([]string{args[0], arrayResultParam}, args[1:]...)
+		body = "\t" + mcname + "(" + strings.Join(out, ", ") + ");\n"
+		params = append([]string{rt + "* " + arrayResultParam}, params...)
+		ret = "void"
+	}
 	proto := ret + " " + name + "(" + strings.Join(params, ", ") + ")"
 	e.liftedProtos = append(e.liftedProtos, proto)
 	e.liftedDefs = append(e.liftedDefs, proto+" {\n"+body+"}\n")
@@ -14359,6 +14383,14 @@ func (e *emitter) liftMethodValue(base, method string) (string, bool) {
 	proto := ret + " " + cname + "(" + sigText + ")"
 	body := "\t" + call + ";\n"
 	switch {
+	case out != "" && e.funcStructRet[mcname] != "":
+		// A result holding an array: the method writes through the out parameter
+		// itself, after its receiver (funcStructRet).
+		call = mcname + "(" + recvArg + ", " + arrayResultParam
+		if len(args) != 0 {
+			call += ", " + strings.Join(args, ", ")
+		}
+		body = "\t" + call + ");\n"
 	case out != "":
 		body = "\t*" + arrayResultParam + " = " + call + ";\n"
 	case ret != "void":
@@ -14732,6 +14764,17 @@ func (e *emitter) emitMain(sig, body []int32) {
 // e.g. `int add(int a, int b)`, `void run(void)`, or -- for more than one result
 // -- `ogo_ret_divmod divmod(int a, int b)`.
 func (e *emitter) funcSignatureC(name string, sig []int32) string {
+	// A single result that is a struct holding an array is handed back through an
+	// out parameter as an array result is: the target's C compiler returns no such
+	// struct by value ("Unable to multiply assign this target").
+	if rt, ok := e.structResultOf(sig); ok {
+		e.funcStructRet[name] = rt
+		out := rt + "* " + arrayResultParam
+		if params, _ := e.cParams(sig); params != "" {
+			out += ", " + params
+		}
+		return "void " + name + "(" + out + ")"
+	}
 	// An ARRAY result is handed back through an out parameter, which leads the
 	// list: the function returns void and writes what the caller gave it. Asked
 	// before cSig, which refuses an array result -- rightly, for every shape but
@@ -14759,6 +14802,16 @@ func (e *emitter) cParams(sig []int32) (string, bool) {
 		if n.sym == ParameterList {
 			return strings.Join(e.cParamList(n.ast), ", "), true
 		}
+	}
+	return "", false
+}
+
+// structResultOf reports whether a signature's single result is a struct holding an
+// array (holdsArray), and its C type.
+func (e *emitter) structResultOf(sig []int32) (string, bool) {
+	_, resTypes := e.resultInfo(sig)
+	if len(resTypes) == 1 && e.holdsArray(resTypes[0]) {
+		return resTypes[0], true
 	}
 	return "", false
 }
@@ -14815,6 +14868,15 @@ func (e *emitter) methodSignatureC(cname, recvName, recvCType string, sig []int3
 	// past.
 	if a, isArr := e.namedArrays[recvCType]; isArr {
 		recvParam = e.arrayParamCType(a) + " " + paramArgName(recvName)
+	}
+	if rt, ok := e.structResultOf(sig); ok {
+		// A struct holding an array, as for a function (funcSignatureC).
+		e.funcStructRet[cname] = rt
+		out := recvParam + ", " + rt + "* " + arrayResultParam
+		if params, _ := e.cParams(sig); params != "" {
+			out += ", " + params
+		}
+		return "void " + cname + "(" + out + ")"
 	}
 	if a, ok := e.arrayResultOf(sig); ok {
 		// As for a function: the out parameter leads, after the receiver.
@@ -14878,7 +14940,24 @@ func (e *emitter) cSig(sig []int32) (params string, resTypes []string) {
 			e.fail("unsupported signature element %v", n.sym)
 		}
 	}
+	e.refuseResultTuple(resTypes)
 	return strings.Join(parts, ", "), resTypes
+}
+
+// refuseResultTuple refuses a struct holding an array BESIDE another result. One
+// alone is written through an out parameter (funcStructRet); several travel in a
+// result struct, which would then hold an array itself, and the target's C
+// compiler returns no such struct and copies none at some sizes.
+func (e *emitter) refuseResultTuple(types []string) {
+	if len(types) < 2 {
+		return
+	}
+	for _, ct := range types {
+		if e.holdsArray(ct) {
+			e.fail("result: %s holds an array, which the target's C compiler cannot return beside another result; return a pointer to it, or it alone", ct)
+			return
+		}
+	}
 }
 
 // resultInfo returns a function's result names and C types (one entry per result
@@ -14919,6 +14998,7 @@ func (e *emitter) resultInfo(sig []int32) (names, types []string) {
 			}
 		}
 	}
+	e.refuseResultTuple(types)
 	return names, types
 }
 
@@ -15117,9 +15197,7 @@ func (e *emitter) resultCType(ta []int32) string {
 		e.fail("cannot return an array beside another result; return a slice or a pointer to it")
 		return ""
 	}
-	ct := e.cType(ta)
-	e.refuseArrayStructABI(ct, "result")
-	return ct
+	return e.cType(ta) // a struct holding an array is written through an out parameter, alone (refuseResultTuple)
 }
 
 // arrayCountC renders an array's element count as a C factor chain, "*3" for a
@@ -15172,6 +15250,31 @@ const ifaceArrayCallee = "<interface>"
 // declaredArrayResultCall is arrayResultCallOf for a DECLARED callee: a function,
 // a method, another package's function.
 func (e *emitter) declaredArrayResultCall(recv string, suffix []Node) (string, arrDim, bool) {
+	cname, ok := e.declaredCalleeC(recv, suffix)
+	if !ok {
+		return "", arrDim{}, false
+	}
+	a, isArr := e.funcArrayRet[cname]
+	return cname, a, isArr
+}
+
+// structResultCallOf is declaredArrayResultCall for a callee whose result is a
+// struct holding an array (funcStructRet), answering its C type.
+func (e *emitter) structResultCallOf(recv string, suffix []Node) (cname, rt string, ok bool) {
+	if len(suffix) == 0 || suffix[len(suffix)-1].sym != CallSuffix {
+		return "", "", false
+	}
+	if cname, ok = e.declaredCalleeC(recv, suffix); !ok {
+		return "", "", false
+	}
+	rt, ok = e.funcStructRet[cname]
+	return cname, rt, ok
+}
+
+// declaredCalleeC is the C name of the DECLARED function or method a call names --
+// a function, a method on a variable or on a chain, another package's function --
+// for the lookups of how its result travels.
+func (e *emitter) declaredCalleeC(recv string, suffix []Node) (string, bool) {
 	cname := e.funcCallC(recv)
 	// A method on a receiver reached through a CHAIN -- `pool[1].triple()`,
 	// `rack.slot.triple()`. Its C name is the type the chain reaches, which the
@@ -15179,12 +15282,7 @@ func (e *emitter) declaredArrayResultCall(recv string, suffix []Node) (string, a
 	// a field: an array-returning method was a plain-variable-only feature, and
 	// every position that consumes one refused it.
 	if len(suffix) > 2 && suffix[len(suffix)-2].sym == Selector {
-		cn, okc := e.chainMethodCName(recv, suffix)
-		if !okc {
-			return "", arrDim{}, false
-		}
-		a, isArr := e.funcArrayRet[cn]
-		return cn, a, isArr
+		return e.chainMethodCName(recv, suffix)
 	}
 	if len(suffix) == 2 && suffix[0].sym == Selector {
 		// A method, `b.triple()`: its C name is the receiver type's, and the
@@ -15200,18 +15298,15 @@ func (e *emitter) declaredArrayResultCall(recv string, suffix []Node) (string, a
 			// on the qualifier. Only the method was looked for, so a declaration from an
 			// imported function returning an array could not infer a type.
 			if prefix, isPkg := e.importQualifiers[recv]; isPkg {
-				cn := mangle(prefix, e.soleIdent(suffix[0].ast))
-				a, isArr := e.funcArrayRet[cn]
-				return cn, a, isArr
+				return mangle(prefix, e.soleIdent(suffix[0].ast)), true
 			}
-			return "", arrDim{}, false
+			return "", false
 		}
 		cname = methodCName(methodBaseType(rct), e.soleIdent(suffix[0].ast))
 	} else if len(suffix) != 1 {
-		return "", arrDim{}, false
+		return "", false
 	}
-	a, isArr := e.funcArrayRet[cname]
-	return cname, a, isArr
+	return cname, true
 }
 
 // emitArrayResultCall emits the call itself, with dst as the out parameter it
@@ -15238,8 +15333,23 @@ func (e *emitter) emitArrayResultCallOf(dst, cname, recv string, suffix []Node) 
 		return
 	}
 	a := e.funcArrayRet[cname]
+	// The out parameter is a pointer to the ELEMENT, so a multi-dimensional
+	// destination is cast: `int (*)[3]` and `int*` name the same storage and C will
+	// not convert between them silently.
+	text, ok := e.outCallC("("+arrayResultCType(a)+")"+dst, cname, recv, suffix)
+	if !ok {
+		return
+	}
 	e.ind()
-	e.emit(cname + "(")
+	e.emit(text + ";\n")
+}
+
+// outCallC renders a call whose result travels through an out parameter -- an
+// ARRAY (funcArrayRet) or a struct holding one (funcStructRet) -- with outArg in
+// that parameter's place: after a method's receiver, ahead of the arguments.
+func (e *emitter) outCallC(outArg, cname, recv string, suffix []Node) (string, bool) {
+	var b strings.Builder
+	b.WriteString(cname + "(")
 	// A method's receiver leads, ahead of the out parameter.
 	switch {
 	case len(suffix) > 2 && suffix[len(suffix)-2].sym == Selector:
@@ -15249,7 +15359,7 @@ func (e *emitter) emitArrayResultCallOf(dst, cname, recv string, suffix []Node) 
 		text, ctype, addr, okc := e.chainCText(recv, suffix[:len(suffix)-2])
 		if !okc {
 			e.fail("cannot reach the receiver of %s", cname)
-			return
+			return "", false
 		}
 		r, ok := e.chainReceiver(text, ctype, addr, e.methodPtr[cname])
 		if e.recvByRef[cname] {
@@ -15257,9 +15367,9 @@ func (e *emitter) emitArrayResultCallOf(dst, cname, recv string, suffix []Node) 
 		}
 		if !ok {
 			e.fail("cannot take the address of %s for a pointer-receiver method", text)
-			return
+			return "", false
 		}
-		e.emit(r + ", ")
+		b.WriteString(r + ", ")
 	case len(suffix) == 2 && suffix[0].sym == Selector:
 		if _, isVar := e.methodRecvCType(recv); !isVar {
 			if _, isPkg := e.importQualifiers[recv]; isPkg {
@@ -15277,18 +15387,16 @@ func (e *emitter) emitArrayResultCallOf(dst, cname, recv string, suffix []Node) 
 		}
 		if !ok {
 			e.fail("cannot take the address of %s for a pointer-receiver method", recv)
-			return
+			return "", false
 		}
-		e.emit(r + ", ")
+		b.WriteString(r + ", ")
 	}
-	// The out parameter is a pointer to the ELEMENT, so a multi-dimensional
-	// destination is cast: `int (*)[3]` and `int*` name the same storage and C will
-	// not convert between them silently.
-	e.emit("(" + arrayResultCType(a) + ")" + dst)
+	b.WriteString(outArg)
 	if args := e.argsCText(cname, suffix[len(suffix)-1].ast); args != "" {
-		e.emit(", " + args)
+		b.WriteString(", " + args)
 	}
-	e.emit(");\n")
+	b.WriteString(")")
+	return b.String(), true
 }
 
 // arrayReturnOperand names an expression that IS an array -- today a variable --
@@ -17099,9 +17207,6 @@ func (e *emitter) recordStructLitFixup(v Node, ctype string) bool {
 	if !e.litFixable {
 		e.fail("a value of %s cannot be an element of a literal written here: it holds an array, "+
 			"which the target's C compiler cannot copy; bind the literal to a variable first", ctype)
-		return false
-	}
-	if !e.checkStructCopySrc(ctype, v.ast) {
 		return false
 	}
 	e.litFixups = append(e.litFixups, litFixup{path: e.litPath, src: v.ast, ctype: ctype})
@@ -28042,6 +28147,9 @@ func (e *emitter) emitDeferred() {
 					tmp := e.newTmp()
 					e.emit("{ " + a.elem + " " + tmp + a.declSuffix() + "; " + d.cname + "(" + recvArg +
 						", (" + arrayResultCType(a) + ")" + tmp + args + "); }\n")
+				} else if rt, isOut := e.funcStructRet[d.cname]; isOut {
+					tmp := e.newTmp() // a result holding an array, nobody reading it
+					e.emit("{ " + rt + " " + tmp + "; " + d.cname + "(" + recvArg + ", &" + tmp + args + "); }\n")
 				} else {
 					e.emit(d.cname + "(" + recvArg + args + ");\n")
 				}
@@ -28318,6 +28426,13 @@ func (e *emitter) emitReturn(nodes []Node) {
 		done()
 		return
 	}
+	// A result that is a struct holding an array is written through the out
+	// parameter too (funcStructRet), and as an array result's is: held, where there
+	// are defers, in the named result or a temporary until they have run.
+	if rt, ok := e.funcStructRet[e.curFunc]; ok {
+		e.emitStructOutReturn(rt, exprs)
+		return
+	}
 	// `return f()` -- one call supplying every result, which Go allows when the
 	// counts match. Both functions return the SAME C struct, result structs being
 	// keyed by the result types, so the call is the return value as it stands.
@@ -28523,6 +28638,77 @@ func (e *emitter) returnValueStands(ast []int32, stored []string) bool {
 		}
 	}
 	return true
+}
+
+// emitStructOutReturn writes a return of a function whose single result is a
+// struct holding an array (funcStructRet): the value copied through the out
+// parameter, or -- a call of another such function -- written there by the call.
+// Where there are defers the value is held first, in the named result or in a
+// temporary, and copied out after them, Go evaluating the operand before the defers
+// run and a defer being able to change a named result (see the array branch of
+// emitReturn, which this mirrors).
+func (e *emitter) emitStructOutReturn(rt string, exprs []Node) {
+	e.includes["string.h"] = true
+	size := "sizeof(" + rt + ")"
+	named := ""
+	if len(e.curResultNames) == 1 && e.curResultNames[0] != "0" {
+		named = e.curResultNames[0]
+	}
+	if len(exprs) == 0 {
+		// A bare return, which only a named result has.
+		if len(e.defers) != 0 {
+			e.emitDeferred()
+		}
+		e.ind()
+		e.emit("memcpy(" + arrayResultParam + ", &" + named + ", " + size + ");\n")
+		e.ind()
+		e.emit("return;\n")
+		return
+	}
+	if len(exprs) != 1 {
+		e.fail("a function with a single result returns exactly one value")
+		return
+	}
+	hold := ""
+	if len(e.defers) != 0 {
+		if hold = named; hold == "" {
+			hold = e.newTmp()
+			e.ind()
+			e.emit(rt + " " + hold + ";\n")
+		}
+	}
+	dst := arrayResultParam
+	if hold != "" {
+		dst = "&" + hold
+	}
+	recv, suffix, isCall := e.directCall(exprs[0].ast)
+	if !isCall {
+		recv, suffix, isCall = e.chainCallOf(exprs[0].ast)
+	}
+	if cname, _, isOut := e.structResultCallOf(recv, suffix); isCall && isOut {
+		text, ok := e.outCallC(dst, cname, recv, suffix)
+		if !ok {
+			return
+		}
+		e.ind()
+		e.emit(text + ";\n")
+	} else {
+		text := e.captureC(func() { e.emitReturnValue(0, exprs[0]) })
+		decl, addr := e.byRefSource(rt, text)
+		if decl != "" {
+			e.ind()
+			e.emit(decl)
+		}
+		e.ind()
+		e.emit("memcpy(" + dst + ", " + addr + ", " + size + ");\n")
+	}
+	if hold != "" {
+		e.emitDeferred()
+		e.ind()
+		e.emit("memcpy(" + arrayResultParam + ", &" + hold + ", " + size + ");\n")
+	}
+	e.ind()
+	e.emit("return;\n")
 }
 
 // exprIsLiteral reports whether an expression is built entirely from literals and
@@ -28782,6 +28968,19 @@ func (e *emitter) emitCallExpr(recv string, suffix []Node) bool {
 	// 3 went where the pointer goes, the target's compiler only warned, and the
 	// board printed -242832376 for Go's 3 -- k read from nowhere, the result written
 	// through the 3.
+	// A call whose result is a struct holding an array writes it through an out
+	// parameter (funcStructRet): made into a temporary of this frame ahead of the
+	// statement, which is the value -- or as the statement itself where the value is
+	// thrown away (emitOutValueCall).
+	if cname, rt, isOut := e.structResultCallOf(recv, suffix); isOut {
+		ok := true
+		e.emitOutValueCall(rt, discard, func(tmp string) string {
+			text, okc := e.outCallC("&"+tmp, cname, recv, suffix)
+			ok = ok && okc
+			return text
+		})
+		return ok
+	}
 	if len(suffix) != 0 && suffix[len(suffix)-1].sym == CallSuffix {
 		if cname, a, isArr := e.arrayResultCallOf(recv, suffix); isArr {
 			if !discard {
@@ -29724,6 +29923,20 @@ func (e *emitter) chainCText(base string, steps []Node) (text, ctype string, add
 				return "", "", false, false
 			}
 			cname := callee
+			if rt, isOut := e.funcStructRet[cname]; isOut {
+				// A result holding an array travels through an out parameter
+				// (funcStructRet): the call is a statement into a temporary, which the
+				// chain goes on from.
+				tmp := e.newTmp()
+				args := e.argsCText(cname, n.ast)
+				if args != "" {
+					args = ", " + args
+				}
+				e.prologue = append(e.prologue, rt+" "+tmp+";\n", cname+"(&"+tmp+args+");\n")
+				text, cur, addr, pendingFn = tmp, e.plainOrSlice(rt), true, false
+				resultTok = -1
+				continue
+			}
 			text = cname + "(" + e.argsCText(cname, n.ast) + ")"
 			cur, addr, pendingFn = e.plainOrSlice(rts[0]), false, false
 			resultTok = n.Pos()
@@ -29916,6 +30129,20 @@ func (e *emitter) chainCText(base string, steps []Node) (text, ctype string, add
 						bound := recv
 						recv = e.hoist(rct, func() { e.emit(bound) })
 					}
+				}
+				if rt, isOut := e.funcStructRet[cname]; isOut {
+					// A result holding an array, through an out parameter: see the
+					// leading call above.
+					tmp := e.newTmp()
+					call := cname + "(" + recv + ", &" + tmp
+					if args := e.argsCText(cname, steps[i+1].ast); args != "" {
+						call += ", " + args
+					}
+					e.prologue = append(e.prologue, rt+" "+tmp+";\n", call+");\n")
+					text, cur, addr = tmp, e.plainOrSlice(rt), true
+					resultTok = -1
+					i++ // consumed the CallSuffix
+					continue
 				}
 				if args := e.argsCText(cname, steps[i+1].ast); args != "" {
 					recv += ", " + args
@@ -34561,9 +34788,6 @@ func (e *emitter) emitVarDeclInit(ctype, name string, initExpr []int32) {
 		return
 	}
 	if _, _, isLit := e.soleCompositeLit(initExpr); !isLit && e.hasArrayField(ctype) {
-		if !e.checkStructCopySrc(ctype, initExpr) {
-			return
-		}
 		e.ind()
 		e.emit(ctype + " " + cn + ";\n")
 		e.emitStructCopy(cn, ctype, initExpr)
@@ -34923,9 +35147,6 @@ func (e *emitter) emitAssignTailOrCopy(target func(), t assignTail) {
 	}
 	if t.op == "=" {
 		if ct, ok := e.inferCType(t.rhs); ok && e.hasArrayField(ct) {
-			if !e.checkStructCopySrc(ct, t.rhs) {
-				return
-			}
 			e.emitStructCopy(e.captureC(target), ct, t.rhs)
 			return
 		}

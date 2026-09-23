@@ -38092,6 +38092,225 @@ func main() {
 `,
 		want: "13 102\n13 1\n13 13 13 2\n11\nbig small big [small big]   big|\none other\n13\n13 1000\n4\n",
 	}, {
+		// A struct holding an ARRAY as a function's RESULT, refused for what the
+		// target's C compiler does with one returned by value ("Unable to multiply
+		// assign"). It is written through an out parameter, as an array result is
+		// (funcStructRet): from a literal, a parameter, a package variable, a named
+		// result, another call's result, and taken before a deferred write; a
+		// method's, a value method's on its own copy, an interface slot's and a
+		// function value's; read where it stands, as an argument, a receiver, a
+		// field, an element, stored, discarded and on a cog.
+		name: "a struct holding an array as a result",
+		src: `type Buf struct {
+	n    int
+	data [3]int
+}
+
+type Rack struct {
+	k   int
+	buf Buf
+}
+
+var calls int
+
+var gb = Buf{7, [3]int{1, 2, 3}}
+
+var last int
+
+var done chan bool
+
+func mk(k int) Buf {
+	calls++
+	return Buf{k, [3]int{k, k * 2, k * 3}}
+}
+
+func copyOf(b Buf) Buf {
+	b.n += 100
+	return b
+}
+
+func fromGlobal() Buf { return gb }
+
+func named(k int) (b Buf) {
+	b.n = k
+	b.data[1] = k * 10
+	return
+}
+
+func viaCall(k int) Buf { return mk(k + 1) }
+
+func bump() { gb.data[0] = 99 }
+
+func deferred() Buf {
+	defer bump()
+	return gb
+}
+
+func (b Buf) Double() Buf {
+	b.n *= 2
+	return b
+}
+
+func (b *Buf) Self() Buf { return *b }
+
+func (b Buf) Sum() int { return b.n + b.data[0] + b.data[1] + b.data[2] }
+
+type Maker interface{ Make(k int) Buf }
+
+type M struct{ base int }
+
+func (m *M) Make(k int) Buf { return mk(m.base + k) }
+
+func report() {
+	last = mk(5).Sum()
+	done <- true
+}
+
+// A struct holding an ARRAY as a function's RESULT: a literal, a parameter, a
+// package variable, a named result, another call's result and a deferred write's
+// order; a method's, a value method's on its copy, an interface slot's and a
+// function value's; read where it stands, as an argument, a receiver, a field, an
+// element and a package variable's initializer.
+func main() {
+	b := mk(2)
+	println(b.n, b.data[2], calls)
+	println(copyOf(b).n, b.n, fromGlobal().data[1])
+	println(named(4).data[1], viaCall(1).data[0])
+	g := deferred()
+	println(g.data[0], gb.data[0])
+	gb.data[0] = 1
+	println(b.Double().n, b.Double().Double().n, gb.Self().data[2])
+	var mm Maker = &M{10}
+	println(mm.Make(1).n, mm.Make(2).Sum())
+	f := mk
+	println(f(3).data[1])
+	println(mk(1).Sum(), copyOf(mk(1)).n)
+	r := Rack{1, mk(6)}
+	arr := [2]Buf{mk(7), gb}
+	println(r.buf.data[2], arr[0].n)
+	var x Buf
+	x = mk(8)
+	r.buf = mk(9)
+	arr[1] = mk(10)
+	println(x.n, r.buf.n, arr[1].data[2])
+	mk(11)
+	_ = mk(12)
+	go report()
+	<-done
+	println(last, calls)
+}
+`,
+		want: "2 6 1\n102 2 2\n40 2\n1 99\n4 8 3\n11 84\n6\n7 101\n18 7\n8 9 30\n35 15\n",
+	}, {
+		// A struct holding an array as a RESULT, further: a package variable's
+		// initializer, a deferred and a started call and method, a method value and
+		// both method expressions, a function literal, recursion, a named result a
+		// defer writes through its address, a send, a comparison, a list, a slice
+		// literal, a switch tag and a range over an array literal.
+		name: "a struct holding an array as a result, further",
+		src: `type Buf struct {
+	n    int
+	data [3]int
+}
+
+var calls int
+
+var done chan bool
+
+var ch chan Buf
+
+func mk(k int) Buf {
+	calls = calls*10 + k
+	return Buf{k, [3]int{k, k * 2, k * 3}}
+}
+
+var gv = mk(3)
+
+var gp = &Buf{4, [3]int{4, 5, 6}}
+
+var gw = Buf{4, [3]int{4, 5, 6}}
+
+func (b *Buf) Clone() Buf { return *b }
+
+func (b Buf) Double() Buf {
+	b.n *= 2
+	calls = calls*10 + 9
+	return b
+}
+
+func fib(k int) Buf {
+	if k < 2 {
+		return Buf{k, [3]int{}}
+	}
+	a, b := fib(k-1), fib(k-2)
+	return Buf{a.n + b.n, [3]int{}}
+}
+
+func setN(b *Buf) { b.n = 77 }
+
+func named() (b Buf) {
+	defer setN(&b)
+	b = gv
+	return
+}
+
+func sender() {
+	ch <- mk(5)
+	done <- true
+}
+
+func deferred() {
+	defer mk(1)
+	defer gv.Double()
+	calls = 0
+}
+
+func mkSig(k int) Buf {
+	calls = calls*10 + k
+	done <- true
+	return Buf{k, [3]int{}}
+}
+
+// A struct holding an array as a RESULT, further: a package variable's
+// initializer, deferred and started calls and methods, a method value and method
+// expressions, a function literal, recursion, a named result a defer writes
+// through its address, a send, a comparison, a list, a slice literal, a switch
+// tag and a range over an array literal.
+func main() {
+	println(gv.n, gv.data[2], calls)
+	mv := gw.Clone
+	pe := (*Buf).Clone
+	ve := Buf.Double
+	println(mv().n, pe(gp).data[2], ve(gv).n)
+	lit := func(k int) Buf { return Buf{k * 100, [3]int{}} }
+	println(lit(2).n, fib(10).n)
+	println(named().n, gv.n)
+	go sender()
+	r := <-ch
+	<-done
+	println(r.data[1], mk(1) == mk(1), mk(1) == mk(2))
+	x, y := mk(6), mk(7)
+	bs := []Buf{mk(8), x}
+	println(x.n, y.data[0], bs[0].data[2], len(bs))
+	switch mk(2).n {
+	case 2:
+		println("two")
+	}
+	t := 0
+	for _, v := range [2]Buf{mk(1), mk(2)} {
+		t += v.n
+	}
+	println(t)
+	deferred()
+	println(calls)
+	calls = 0
+	go mkSig(2)
+	<-done
+	println(calls)
+}
+`,
+		want: "3 9 3\n4 6 6\n200 55\n77 3\n10 true false\n6 7 24 2\ntwo\n3\n91\n2\n",
+	}, {
 		// A method called on the interface RESULT of a call through a function
 		// value, a field holding one or another interface's slot -- `p(1).Area()`,
 		// `h.p(2).Area()`, `hd.Get().Area()` -- read the table and the data off
@@ -38601,7 +38820,7 @@ const multiPkgWant = "300\nLOUD\n50\n6\n5\n45\n6 1000\n200\n207\n3 100\n4 9\n" +
 	"4 5 2 3\n" +
 	"2 3 4 3\n" +
 	"81 2\n" +
-	"10 3 1 2\n10 40 5\n"
+	"10 3 1 2\n10 40 5\n5 10 21 7 2\n"
 
 var multiPkgProgram = map[string]string{
 	"main.ogo": `import "chain"
@@ -38771,13 +38990,19 @@ func libHooks() {
 
 // Another package's struct holding an ARRAY passed by value: to its function, its
 // method through its interface, its function variable, and a function of this
-// package taking the type -- each the callee's own copy.
+// package taking the type -- each the callee's own copy. And returned by one: its
+// function's result and its interface's method's.
 func libFrames() {
 	f := lib.Frame{ID: 1, Data: [3]int{2, 3, 4}}
 	var p lib.Port
 	var s lib.Sender = &p
 	println(lib.FrameSum(f), s.Send(f), p.N, f.Data[0])
 	println(lib.FrameHook(f), localFrame(f), lib.FrameSum(lib.Frame{5, [3]int{}}))
+	g := lib.NewFrame(3)
+	var c lib.Counter
+	var src lib.Source = &c
+	h := src.Next()
+	println(g.Data[2], h.ID, src.Next().Data[1], lib.NewFrame(7).ID, c.N)
 }
 
 func localFrame(f lib.Frame) int { return f.Data[2] * 10 }
@@ -39716,6 +39941,19 @@ func (p *Port) Send(f Frame) int {
 }
 
 var FrameHook func(Frame) int = FrameSum
+
+func NewFrame(id int) Frame { return Frame{id, [3]int{id, id + 1, id + 2}} }
+
+type Source interface {
+	Next() Frame
+}
+
+type Counter struct{ N int }
+
+func (c *Counter) Next() Frame {
+	c.N++
+	return NewFrame(c.N * 10)
+}
 `,
 	"lib/more.ogo": `var Grid [3][5]int
 
