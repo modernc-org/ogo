@@ -12327,7 +12327,7 @@ func (e *emitter) typeSwitchAliases(body []int32) map[string]string {
 // ask, the summaries being computed before any body has declared a local.
 func (e *emitter) typeSwitchNames(guardAST []int32) (name, operand string, ok bool) {
 	g, ok := e.f.switchGuardParts(guardAST)
-	if !ok || !g.hasName {
+	if !ok || !g.hasName || g.assign {
 		return "", "", false
 	}
 	// The BASE answers for an operand that is not a plain name: a reference into
@@ -25346,7 +25346,7 @@ type typeSwitch struct {
 // from the assertion ".(T)" the same production admits.
 func (e *emitter) typeSwitchGuard(guardAST []int32) (ts typeSwitch, ok bool) {
 	g, ok := e.f.switchGuardParts(guardAST)
-	if !ok {
+	if !ok || g.assign {
 		return ts, false
 	}
 	value := g.tag
@@ -25920,7 +25920,7 @@ func (e *emitter) guardNames(g switchGuard) ([]string, bool) {
 
 func (e *emitter) emitSwitchGuard(guardAST []int32) (guardVar string, block, ok bool) {
 	g, ok := e.f.switchGuardParts(guardAST)
-	if !ok || (g.semi && !g.hasName) {
+	if !ok || (g.semi && !g.hasName && !g.assign) {
 		e.fail("malformed switch guard")
 		return "", false, false
 	}
@@ -25932,7 +25932,14 @@ func (e *emitter) emitSwitchGuard(guardAST []int32) (guardVar string, block, ok 
 			block = true
 		}
 	}
-	if g.hasName && len(g.values) > 1 {
+	if g.assign {
+		// `switch err = f(); {`: the assignment, in the block the switch's tests
+		// run in, as the if form lowers it.
+		openBlock()
+		if !e.emitHeaderAssign(g.name, g.items, g.values) {
+			return "", false, false
+		}
+	} else if g.hasName && len(g.values) > 1 {
 		// `switch a, b := x, y; a + b`: a value for each name, the statement `a, b
 		// := x, y` inside the block that scopes the names to the switch.
 		names, ok := e.guardNames(g)
@@ -26236,6 +26243,21 @@ func (e *emitter) emitIf(ast []int32) {
 	// A name an "if" header declares belongs to the statement, not to the block
 	// around it (see enterScope).
 	defer e.enterScope()()
+	// `if err = f(); err != nil`: an assignment, which declares nothing, ahead of
+	// the test in the block the test's own statements run in (ifAfterInit).
+	if head, items, values, cond, isAssign := e.ifAssignParts(ast); isAssign {
+		e.ind()
+		e.emit("{\n")
+		e.indent++
+		if !e.emitHeaderAssign(head, items, values) {
+			return
+		}
+		e.emitIfBodyAt(ast, cond, ifAfterInit)
+		e.indent--
+		e.ind()
+		e.emit("}\n")
+		return
+	}
 	names, inits, cond, ok := e.ifInitParts(ast)
 	if !ok {
 		e.ind()
@@ -26335,6 +26357,118 @@ func (e *emitter) ifInitParts(ast []int32) (names []string, inits []Node, cond [
 		return nil, nil, nil, false
 	}
 	return names, inits, exprs[len(exprs)-1].ast, true
+}
+
+// ifAssignParts decomposes an `if` whose init statement is an ASSIGNMENT, `if err =
+// f(); err != nil`: the first target (the if's own expression), the further ones,
+// the values and the condition. ok is false for any other if.
+func (e *emitter) ifAssignParts(ast []int32) (head Node, items, values []Node, cond []int32, ok bool) {
+	var init []int32
+	for n := range it(ast) {
+		switch n.sym {
+		case Expression:
+			if head.sym == 0 {
+				head = n
+			}
+		case IfInit:
+			init = n.ast
+		}
+	}
+	if init == nil {
+		return Node{}, nil, nil, nil, false
+	}
+	var exprs []Node
+	assign := false
+	for n := range it(init) {
+		switch n.sym {
+		case Expression:
+			exprs = append(exprs, n)
+		case LhsItem:
+			items = append(items, n)
+		case 0:
+			assign = assign || e.f.ch(n.tok) == ASSIGN
+		}
+	}
+	if !assign || len(exprs) < 2 || head.sym == 0 {
+		return Node{}, nil, nil, nil, false
+	}
+	return head, items, exprs[:len(exprs)-1], exprs[len(exprs)-1].ast, true
+}
+
+// emitHeaderAssign lowers the assignment a header's init statement makes -- `if err
+// = f(); ...`, `switch a, b = x, y; ...` -- as the statement forms lower it: one
+// target through the clause lowering the for init takes (emitPostAssign), several
+// through the value list or one call's results, every value read before any target
+// is written. head is the first target, written as an expression; items the rest.
+func (e *emitter) emitHeaderAssign(head Node, items, values []Node) bool {
+	first, ok := e.exprAssignTarget(head.ast)
+	if !ok {
+		e.fail("unsupported target in an init statement")
+		return false
+	}
+	targets := []assignTarget{first}
+	for _, item := range items {
+		t, ok := e.lhsItemTarget(item.ast)
+		if !ok {
+			e.fail("unsupported target in an init statement")
+			return false
+		}
+		targets = append(targets, t)
+	}
+	switch {
+	case len(targets) == 1 && len(values) == 1 && first.name != "_":
+		text := e.captureC(func() { e.emitPostAssign(head.ast, e.exprC(head.ast), "=", values[0].ast, false) })
+		lines := strings.Split(text, "\n")
+		for i, line := range lines {
+			e.ind()
+			e.emit(line)
+			if i == len(lines)-1 {
+				e.emit(";")
+			}
+			e.emit("\n")
+		}
+	case len(values) == 1 && len(targets) > 1:
+		e.emitDestructure(targets, make([]bool, len(targets)), values[0].ast)
+	default:
+		e.emitValueList(targets, make([]bool, len(targets)), values)
+	}
+	return e.err == nil
+}
+
+// exprAssignTarget reads an assignment target a header writes as an EXPRESSION --
+// `err`, `h.n`, `xs[i]`, `*p` -- as the assignTarget a statement builds from an
+// AssignHead: the name, the stars before it and the steps after it.
+func (e *emitter) exprAssignTarget(ast []int32) (assignTarget, bool) {
+	kids, ok := e.unaryExprKids(ast)
+	if !ok {
+		return assignTarget{}, false
+	}
+	stars := ""
+	for len(kids) > 1 {
+		tok, isOp := e.unaryOpTok(kids[0].ast)
+		if kids[0].sym != UnaryOp || !isOp || e.f.ch(tok) != MUL {
+			return assignTarget{}, false
+		}
+		stars += "*"
+		kids = kids[1:]
+	}
+	if len(kids) != 1 || kids[0].sym != Factor {
+		return assignTarget{}, false
+	}
+	fk := slices.Collect(it(kids[0].ast))
+	if len(fk) == 0 || len(fk) > 2 || fk[0].sym != 0 || e.f.ch(fk[0].tok) != IDENT {
+		return assignTarget{}, false
+	}
+	var chain []Node
+	if len(fk) == 2 {
+		if fk[1].sym != FactorSuffix {
+			return assignTarget{}, false
+		}
+		if chain = slices.Collect(it(fk[1].ast)); !isAccessChain(chain) {
+			return assignTarget{}, false
+		}
+	}
+	return e.qualifiedTarget(assignTarget{name: e.src(fk[0].tok), stars: stars, chain: chain, tok: fk[0].tok}), true
 }
 
 // ifHasInit reports an if that carries an init statement.

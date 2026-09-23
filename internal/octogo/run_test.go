@@ -36386,6 +36386,119 @@ func main() {
 `,
 		want: "0 7\n1 9\n2 -1\n3 6\n4 error: division by zero 2\n5 error: unclosed paren 0\n6 error: unexpected token 4\n7 error: trailing input 3\n8 105\n",
 	}, {
+		// An assignment as an if's or a switch's init statement, `if err = f();
+		// err != nil` -- a syntax error until the headers took "=" beside ":=".
+		// Every target shape a statement's assignment takes -- a name, a field, an
+		// element whose index has an effect, a pointee, a blank -- destructuring a
+		// call, swapping, storing an interface, a float and a wide constant, in an
+		// else-if and three switches; each value read before its target is written,
+		// in Go's order, which the count says.
+		name: "an assignment as an if's or a switch's init statement",
+		src: `type E struct{ msg string }
+
+func (e *E) Error() string { return e.msg }
+
+type Shape interface{ Area() int }
+
+type Q struct{ w int }
+
+func (q *Q) Area() int { return q.w * q.w }
+
+type H struct{ n int }
+
+var fail = E{"boom"}
+
+var calls int
+
+func step(bad bool) error {
+	calls = calls*10 + 1
+	if bad {
+		return &fail
+	}
+	return nil
+}
+
+func two() (int, int) {
+	calls = calls*10 + 2
+	return 1, 2
+}
+
+func idx() int {
+	calls = calls*10 + 3
+	return 1
+}
+
+var gq = Q{3}
+
+func main() {
+	var err error
+	a, b := 0, 0
+	var h H
+	xs := []int{0, 0}
+	n := 9
+	p := &n
+	var sh Shape
+	var s string
+	var x float64
+	var w int64
+	if err = step(false); err != nil {
+		println("unexpected")
+	}
+	if err = step(true); err != nil {
+		println("failed:", err.Error())
+	}
+	if a, b = two(); a < b {
+		println(a, b)
+	}
+	if a, b = b, a; a > b {
+		println("swapped", a, b)
+	}
+	if h.n, a = 5, 6; a > h.n {
+		println(h.n, a)
+	}
+	if xs[idx()], a = 7, 8; xs[1] == 7 {
+		println(xs[1], a)
+	}
+	if *p = 11; n == 11 {
+		println(n)
+	}
+	if _, b = two(); b == 2 {
+		println("blank", b)
+	}
+	if a > 100 {
+		println("no")
+	} else if a = 3; a == 3 {
+		println("else-if", a)
+	}
+	if sh = &gq; sh.Area() == 9 {
+		println("area", sh.Area())
+	}
+	if s = "hi"; len(s) == 2 {
+		println(s)
+	}
+	if x = 3; x > 2.5 {
+		println(x > 2.9)
+	}
+	if w = 1 << 40; w > 0 {
+		println(w)
+	}
+	switch a = 7; a {
+	case 7:
+		println("seven")
+	}
+	switch a, b = two(); {
+	case a < b:
+		println("less", a, b)
+	}
+	switch err = step(false); err {
+	case nil:
+		println("nil error")
+	}
+	println(calls)
+}
+`,
+		want: "failed: boom\n1 2\nswapped 2 1\n5 6\n7 8\n11\nblank 2\nelse-if 3\narea 9\nhi\ntrue\n1099511627776\nseven\nless 1 2\nnil error\n1123221\n",
+	}, {
 		// A method called on the interface RESULT of a call through a function
 		// value, a field holding one or another interface's slot -- `p(1).Area()`,
 		// `h.p(2).Area()`, `hd.Get().Area()` -- read the table and the data off

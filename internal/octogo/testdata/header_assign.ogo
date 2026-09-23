@@ -1,0 +1,55 @@
+// An if or a switch may carry an assignment as its init statement, "if err = f();
+// err != nil", asked what an assignment statement is asked. A switch needs the ";"
+// after one, an assignment being no value to switch on, and a type switch takes
+// none yet. Only ":=" parsed there.
+
+type H struct{ n int }
+
+type Shape interface{ Area() int }
+
+func two() (int, int) { return 1, 2 }
+
+func two2() (int, string) { return 1, "x" }
+
+func ok() {
+	a, b := 0, 0
+	var h H
+	if a, b = two(); a < b {
+	}
+	if h.n, a = 1, 2; a > h.n {
+	}
+	if _, b = two(); b > 1 {
+	}
+	switch a = 7; a {
+	case 7:
+	}
+	switch a, b = b, a; {
+	case a < b:
+	}
+	println(a, b, h.n)
+}
+
+func bad() {
+	a, b := 0, 0
+	var h H
+	var sh Shape
+	// ERROR cannot use .s. of type string as type int in assignment
+	if a = "s"; a > 0 {
+	}
+	// ERROR cannot use result 2 of two2\(\) \(type string\) as type int in assignment
+	if a, b = two2(); a < b {
+	}
+	// ERROR assignment mismatch: 2 variables but 3 values
+	if a, b = 1, 2, 3; a < b {
+	}
+	// ERROR cannot use .u. of type string as type int in assignment
+	if h.n = "u"; h.n > 0 {
+	}
+	// ERROR an assignment cannot be switched on
+	switch a = 7 {
+	}
+	// ERROR a type switch with an init statement is not supported yet
+	switch a = 1; sh.(type) {
+	}
+	println(a, b, h.n, sh == nil)
+}

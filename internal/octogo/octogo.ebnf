@@ -161,9 +161,9 @@ ForPost    = HeaderExpression { "," HeaderExpression }
 	[ ( "=" | ":=" ) HeaderExpression { "," HeaderExpression } | "++" | "--"
 	| AssignOp HeaderExpression ] .
 IfStmt = "if" HeaderExpression [ IfInit ] Block [ "else" ( IfStmt | Block ) ] .
-IfInit = { "," LhsItem } ":=" HeaderExpression { "," HeaderExpression } ";" HeaderExpression .
+IfInit = { "," LhsItem } ( ":=" | "=" ) HeaderExpression { "," HeaderExpression } ";" HeaderExpression .
 SwitchStmt = "switch" [ SwitchGuard ] "{" { CaseClause } "}" .
-SwitchGuard = HeaderExpression [ { "," LhsItem } ":=" HeaderExpression { "," HeaderExpression } ] [ SwitchTag ] .
+SwitchGuard = HeaderExpression [ { "," LhsItem } ( ":=" | "=" ) HeaderExpression { "," HeaderExpression } ] [ SwitchTag ] .
 SwitchTag  = ";" [ HeaderExpression ] .
 CaseClause = CaseHead ":" { Statement ";" } [ Statement ] .
 CaseHead   = "case" ExpressionList | "default" .

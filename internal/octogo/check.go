@@ -2355,12 +2355,15 @@ func (f *File) checkIf(s *Scope, results []retResult, n Node) {
 	}
 	if hasInit {
 		var exprs, items []Node
+		assign := false
 		for c := range it(init.ast) {
 			switch c.sym {
 			case Expression:
 				exprs = append(exprs, c)
 			case LhsItem:
 				items = append(items, c)
+			case 0:
+				assign = assign || f.ch(c.tok) == ASSIGN
 			}
 		}
 		if len(exprs) < 2 {
@@ -2373,6 +2376,10 @@ func (f *File) checkIf(s *Scope, results []retResult, n Node) {
 		values := exprs[:len(exprs)-1]
 		s = s.child()
 		switch {
+		case assign:
+			// `if err = f(); err != nil`: an assignment, asked what the statement
+			// asks, and declaring nothing.
+			f.checkHeaderAssignList(s, lhs, items, values)
 		case len(values) > 1:
 			f.declareHeaderValues(s, s, lhs, items, values)
 		case len(items) != 0:
@@ -2977,10 +2984,62 @@ func (f *File) checkHeaderAssign(s *Scope, targets, values []Node) {
 	}
 }
 
+// checkHeaderAssignList is checkHeaderAssign for the init statement of an if or a
+// switch, `if err = f(); ...` and `switch a, b = x, y; ...`, whose first target is
+// written as an expression and the rest as LhsItems: the names resolved, the count
+// matched -- one call may yield every value -- and each value stored asked of.
+func (f *File) checkHeaderAssignList(s *Scope, head Node, items, values []Node) {
+	targets := append([]Node{head}, items...)
+	// The names each target reads -- not a blank one, which is written and is no
+	// value, `if _, ok = f(); ok`.
+	var bases []Token
+	var suffixed []bool
+	for _, t := range targets {
+		base, steps, stars, ok := f.exprTarget(t)
+		if ok && base.Src() == "_" && len(steps) == 0 && stars == 0 {
+			bases, suffixed = append(bases, base), append(suffixed, false)
+			continue
+		}
+		f.checkNames(s, t)
+		bases, suffixed = append(bases, base), append(suffixed, !ok || len(steps) != 0 || stars != 0)
+	}
+	for _, v := range values {
+		f.checkNames(s, v)
+	}
+	if v, ok := f.rhsValueCount(s, values); ok && v != len(targets) {
+		f.err(f.tok(head.Pos()).Position(), "assignment mismatch: %s but %s", countUnits(len(targets), "variable"), f.valueSource(s, values, v))
+		return
+	}
+	if len(values) == 1 && len(targets) > 1 {
+		// One call's several results, each asked of its target as the statement
+		// `a, b = f()` asks them.
+		f.checkResultsAssign(s, bases, suffixed, values[0])
+		return
+	}
+	f.checkHeaderAssign(s, targets, values)
+}
+
 // exprTarget reads an assignment target written as an EXPRESSION, as a header
 // writes one -- `x`, `h.n`, `xs[i]`, `*p` -- as its base variable, the steps written
 // after it and the stars before it; ok is false for any other shape.
 func (f *File) exprTarget(n Node) (base Token, steps []Node, stars int, ok bool) {
+	if n.sym == LhsItem {
+		// The further targets of a list, `a, h.n = ...`: an AssignHead and the
+		// steps after it.
+		for c := range it(n.ast) {
+			switch c.sym {
+			case AssignHead:
+				if base, stars, ok = f.targetHead(c); !ok {
+					return Token{}, nil, 0, false
+				}
+			case Selector, Index:
+				steps = append(steps, c)
+			default:
+				return Token{}, nil, 0, false
+			}
+		}
+		return base, steps, stars, base.IsValid()
+	}
 	ue, ok := f.soleUnaryExpr(n)
 	if !ok {
 		return Token{}, nil, 0, false
@@ -4717,7 +4776,9 @@ type typeSwitchGuard struct {
 // ".(T)" that the same production admits.
 func (f *File) typeSwitchParts(guard Node) (ts typeSwitchGuard, ok bool) {
 	g, ok := f.switchGuardParts(guard.ast)
-	if !ok {
+	if !ok || g.assign {
+		// An assignment init ahead of `v.(type)` is refused by checkSwitchGuard,
+		// which is only reached when this declines it.
 		return ts, false
 	}
 	value := g.tag
@@ -5116,11 +5177,24 @@ func (f *File) checkSwitchGuard(s, ss *Scope, n Node) (Kind, bool) {
 		f.err(f.tok(n.Pos()).Position(), "malformed switch header")
 		return 0, false
 	}
-	if g.semi && !g.hasName {
-		f.err(f.tok(n.Pos()).Position(), "a switch init statement must be a short variable declaration")
+	if g.assign && g.hasTag && f.typeSwitchShaped(Node{sym: SwitchGuard, ast: n.ast}) {
+		f.err(f.tok(n.Pos()).Position(), "a type switch with an init statement is not supported yet")
 		return 0, false
 	}
-	if g.hasName && len(g.values) > 1 {
+	if g.semi && !g.hasName && !g.assign {
+		f.err(f.tok(n.Pos()).Position(), "a switch init statement must be a short variable declaration or an assignment")
+		return 0, false
+	}
+	if g.assign {
+		// `switch err = f(); {` and `switch a, b = x, y; a {`: an assignment, asked
+		// what the statement asks. Without the ";" it would have to be the thing
+		// switched on, and an assignment is no value.
+		if !g.semi {
+			f.err(f.tok(n.Pos()).Position(), "an assignment cannot be switched on: write \";\" and the expression to switch on after it")
+			return 0, false
+		}
+		f.checkHeaderAssignList(s, g.name, g.items, g.values)
+	} else if g.hasName && len(g.values) > 1 {
 		// `switch a, b := x, y; a + b`: a value for each name. Without the ";" it
 		// would be OctoGo's guard form, which switches on THE name it declares, and
 		// there is no one name here to switch on.
@@ -5184,6 +5258,7 @@ type switchGuard struct {
 	hasName bool
 	hasTag  bool
 	semi    bool // a ";" was written, making this Go's init-statement form
+	assign  bool // the init is an assignment, "=", and name is its first target
 }
 
 // switchGuardParts decomposes a SwitchGuard node's children. ok is false for a
@@ -5207,8 +5282,11 @@ func (f *File) switchGuardParts(guard []int32) (g switchGuard, ok bool) {
 		case LhsItem:
 			g.items = append(g.items, c)
 		case 0:
-			if f.ch(c.tok) == DEFINE {
+			switch f.ch(c.tok) {
+			case DEFINE:
 				hasDefine = true
+			case ASSIGN:
+				g.assign = true
 			}
 		}
 	}
@@ -5219,6 +5297,11 @@ func (f *File) switchGuardParts(guard []int32) (g switchGuard, ok bool) {
 		if !g.semi {
 			g.tag, g.hasTag = exprs[0], true
 		}
+	case g.assign && len(exprs) >= 2:
+		// `switch err = f(); ...`: name is the first TARGET, and declares nothing,
+		// which is why hasName stays false; only a ";" gives it a tag.
+		g.name = exprs[0]
+		g.value, g.values = exprs[1], exprs[1:]
 	case !hasDefine && !g.semi && len(exprs) >= 1:
 		g.tag, g.hasTag = exprs[0], true
 	case !hasDefine && g.semi:
