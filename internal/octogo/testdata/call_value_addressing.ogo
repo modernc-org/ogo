@@ -1,0 +1,79 @@
+// A call's result is a VALUE, with no storage, and so is a field of it or an
+// element of an array in it -- until a step goes through a pointer or into a
+// slice's elements, which are storage wherever the pointer or the slice came
+// from. Go takes neither the address of one nor a slice of an array in one; both
+// compiled, the emitter binding the result to a temporary whose address it could
+// take.
+
+type Buf struct {
+	n    int
+	data [3]int
+}
+
+type P struct{ x int }
+
+type W struct {
+	b Buf
+	p *Buf
+}
+
+var gb Buf
+
+var back [4]int
+
+var bufs [2]Buf
+
+func mk(k int) Buf { return Buf{k, [3]int{}} }
+
+func mkp() P { return P{1} }
+
+func getp() *Buf { return &gb }
+
+func mksl() []int { return back[:] }
+
+func mkw(k int) W { return W{Buf{k, [3]int{}}, &gb} }
+
+func mkws() []Buf { return bufs[:] }
+
+func (b Buf) self() Buf { return b }
+
+func (b *Buf) ptr() *Buf { return b }
+
+func ok() {
+	_ = &getp().n
+	_ = getp().data[1:]
+	_ = mksl()[1:]
+	_ = &mksl()[0]
+	_ = &mksl()[1:][0]
+	_ = &mkw(1).p.n
+	_ = mkw(1).p.data[1:]
+	_ = &mkw(1).p.data[2]
+	_ = mkws()[0].data[1:]
+	_ = &mkws()[1]
+	_ = &gb.ptr().n
+	_ = mk(1).data[0]
+}
+
+func bad() {
+	// ERROR cannot slice unaddressable value mk\(1\).data\[1:\]
+	_ = mk(1).data[1:]
+	// ERROR cannot slice unaddressable value mkw\(1\).b.data\[1:\]
+	_ = mkw(1).b.data[1:]
+	// ERROR cannot slice unaddressable value gb.self\(\).data\[:\]
+	for range gb.self().data[:] {
+	}
+	// ERROR invalid operation: cannot take address of mk\(1\).data
+	_ = &mk(1).data
+	// ERROR invalid operation: cannot take address of mk\(1\).data\[0\]
+	_ = &mk(1).data[0]
+	// ERROR invalid operation: cannot take address of gb.self\(\).n
+	_ = &gb.self().n
+	// ERROR invalid operation: cannot take address of mkp\(\).x
+	q := &mkp().x
+	println(*q)
+}
+
+func main() {
+	ok()
+	bad()
+}

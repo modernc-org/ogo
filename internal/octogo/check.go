@@ -11738,6 +11738,12 @@ func (f *File) checkAddressable(s *Scope, op Node, fac Node) {
 		what(f.exprSource(fac))
 		return
 	}
+	// A field of a call's VALUE, or an element of an array in one, has no storage
+	// either: `&mkp().x` (callValueAddressing).
+	if _, addr, known := f.callValueAddressing(s, id, slices.Collect(it(suffix.ast))); known && !addr {
+		what(f.exprSource(fac))
+		return
+	}
 	// `&pkg.K` and `&pkg.F`: the member is that package's, so it is looked up
 	// there. A field or an element of a package variable IS addressable, and is
 	// left alone by the same lookup.
@@ -11756,6 +11762,113 @@ func (f *File) checkAddressable(s *Scope, op Node, fac Node) {
 	case *ConstDeclaration, *FuncDeclaration:
 		what(id.Src() + "." + member.Src())
 	}
+}
+
+// callValueAddressing walks the steps written after the last CALL of a factor,
+// `head(...).f[i]` or `head.m(...).f`, asking what Go asks of storage. A call's
+// result is a value with none, and so is a field of it or an element of an array
+// in it, until a step goes through a pointer or into a slice's elements, which are
+// storage wherever the pointer or the slice came from. It answers the index in
+// steps of a step that SLICES an array with no storage, -1 for none, and whether
+// what the steps reach is addressable; known is false where the walk meets what it
+// does not type -- another package's callee, a promoted field, a string -- which it
+// asks nothing of.
+//
+// The emitter binds a call's result to a temporary before it reads through it, and
+// a temporary has an address, so `&mkp().x` and `mk(1).data[1:]` compiled where Go
+// refuses both. The second became writable when a struct holding an array could be
+// a result (2026-09-23).
+func (f *File) callValueAddressing(s *Scope, head Token, steps []Node) (sliceAt int, addressable, known bool) {
+	k := -1
+	for i, st := range steps {
+		if st.sym == CallSuffix {
+			k = i
+		}
+	}
+	var results []retResult
+	ok := false
+	switch {
+	case k == 0:
+		results, ok = f.callResults(s, head, Token{})
+	case k == 1 && steps[0].sym == Selector:
+		// A method's results are this package's to resolve only where the
+		// receiver's type is: callResults looks another package's type up by its
+		// bare name here.
+		if d, isVar := s.find(head.Src()).(*VarDeclaration); isVar && d.typeQual.IsValid() {
+			return -1, false, false
+		}
+		if m, has := f.selectorMember(steps[0]); has {
+			results, ok = f.callResults(s, head, m)
+		}
+	}
+	if !ok || len(results) != 1 || results[0].typeNode == nil {
+		return -1, false, false
+	}
+	t := typeAt{results[0].typeNode, s, f}
+	var sliceElem *typeAt // the value is a slice of these, which a slice step made
+	addr := false
+	for i, st := range steps[k+1:] {
+		if sliceElem != nil {
+			switch {
+			case st.sym == Index && f.isSliceExpr(st):
+				continue // resliced: a slice value still
+			case st.sym == Index:
+				t, sliceElem, addr = *sliceElem, nil, true // an element of its backing array
+				continue
+			}
+			return -1, false, false
+		}
+		u := f.underlyingTypeAt(t)
+		if p, isPtr := u.tn.(*TypeNodePointer); isPtr {
+			addr = true // what a pointer reaches is storage
+			u = f.underlyingTypeAt(typeAt{p.TypeNode, u.s, u.f})
+		}
+		switch st.sym {
+		case Selector:
+			name, has := f.selectorMember(st)
+			sn, isStruct := u.tn.(*TypeNodeStruct)
+			if !has || !isStruct {
+				return -1, false, false
+			}
+			var ftn TypeNode
+			for _, fld := range sn.Fields {
+				for _, nm := range fld.Names {
+					if nm.Src() == name.Src() {
+						ftn = fld.TypeNode
+					}
+				}
+			}
+			if ftn == nil {
+				return -1, false, false // promoted, or a method value
+			}
+			t = typeAt{ftn, u.s, u.f}
+		case Index:
+			var elem TypeNode
+			isSlice := false
+			switch x := u.tn.(type) {
+			case *TypeNodeArray:
+				elem = x.TypeNode
+			case *TypeNodeSlice:
+				elem, isSlice = x.TypeNode, true
+			default:
+				return -1, false, false // a string, or what this does not type
+			}
+			if f.isSliceExpr(st) {
+				if !isSlice && !addr {
+					return k + 1 + i, false, true
+				}
+				sliceElem, addr = &typeAt{elem, u.s, u.f}, false
+				continue
+			}
+			t, addr = typeAt{elem, u.s, u.f}, addr || isSlice
+		default:
+			return -1, false, false
+		}
+	}
+	if sliceElem != nil {
+		return -1, false, true // the slice a slice step made is a value
+	}
+	return -1, addr, true
 }
 
 // lastSuffixStep is the kind of a factor suffix's final step -- a Selector, an
@@ -16050,6 +16163,13 @@ func (f *File) checkFactorNames(s *Scope, n Node) {
 	directCall, hasSelector := false, false
 	if hasSuffix {
 		f.checkIndexExprs(s, suffix) // the "i" in a read "a[i]"
+		// `mk(1).data[1:]`: an array reached from a call's value has no storage to
+		// slice (callValueAddressing).
+		if hasID {
+			if at, _, _ := f.callValueAddressing(s, id, slices.Collect(it(suffix.ast))); at >= 0 {
+				f.err(id.Position(), "cannot slice unaddressable value %s", f.exprSource(n))
+			}
+		}
 		hasSelector = hasSelectorChild(suffix)
 		if argList, later, direct, isCall := f.callInfoAll(suffix); isCall {
 			f.resolveArgNames(s, later)
