@@ -37242,6 +37242,90 @@ func main() {
 `,
 		want: "2 1\n3 1 2\n2 1\n3 1\n10 11\n21 22\n32 33\nb a\n2 8 1 7\n3 1\n2 1\n7 5\n8\n4 1\n",
 	}, {
+		// A list holding an ARRAY result after a value that does something: each
+		// taken in its turn. The array's storage is bound ahead of the statement,
+		// and was bound ahead of everything the statement evaluated before it --
+		// typing an argument bound it, and the in-place path bound an array
+		// argument after hoistArgs gave up on one -- so mk ran before use in a
+		// call's arguments (direct, method, interface slot, function value), a
+		// print's, a deferred call's and a started one's. Silent, on the board as
+		// on the host.
+		name: "an array result in a list is taken in its turn",
+		src: `type T struct{ k int }
+
+func (t *T) take(a int, b [3]int) int { return a*100 + b[0] }
+
+type Taker interface {
+	take(a int, b [3]int) int
+}
+
+type P2 struct{ a, b int }
+
+var n int
+
+var gt T
+
+var calls int
+
+var done chan bool
+
+func mk() [3]int {
+	n++
+	return [3]int{n, n, n}
+}
+
+func use() int {
+	n += 10
+	return n
+}
+
+func sum(a int, b [3]int) int { return a*100 + b[0] }
+
+func lit(a int, b [3]int) int { return a*100 + b[1] }
+
+func rec(a, b int) { calls = a*100 + b }
+
+func recGo(a, b int) {
+	calls = a*100 + b
+	done <- true
+}
+
+func deferred() {
+	defer rec(use(), mk()[1])
+	n = 500
+}
+
+// A list with an ARRAY result in it -- a call returning one, indexed or passed, or
+// a literal holding a call -- after a value that does something: each is taken in
+// its turn, left to right. The array's storage is bound ahead of the statement, and
+// it was bound ahead of everything else the statement evaluated.
+func main() {
+	println(use(), mk()[1])
+	println(sum(use(), mk()))
+	println(gt.take(use(), mk()))
+	var tk Taker = &gt
+	println(tk.take(use(), mk()))
+	fv := sum
+	println(fv(use(), mk()))
+	printf("%d %d\n", use(), mk()[1])
+	print(use(), " ", mk()[2], "\n")
+	println(lit(use(), [3]int{0, use(), 0}))
+	p := P2{use(), mk()[0]}
+	var a, b int
+	a, b = use(), mk()[1]
+	xs := make([]int, 0, 2)
+	xs = append(xs, use(), mk()[0])
+	println(p.a, p.b, a, b, xs[0], xs[1])
+	n = 0
+	deferred()
+	println(calls)
+	go recGo(use(), mk()[1])
+	<-done
+	println(calls)
+}
+`,
+		want: "10 11\n2122\n3233\n4344\n5455\n65 66\n76 77\n8797\n107 108 118 119 129 130\n1011\n51511\n",
+	}, {
 		// A method called on the interface RESULT of a call through a function
 		// value, a field holding one or another interface's slot -- `p(1).Area()`,
 		// `h.p(2).Area()`, `hd.Get().Area()` -- read the table and the data off

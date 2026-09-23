@@ -2062,7 +2062,7 @@ func (e *emitter) emitGo(nodes []Node) {
 		// array of its own first, C assigning no array.
 		if ad, isArr := site.arrays[i+first]; isArr {
 			e.includes["string.h"] = true
-			rhs := e.captureC(func() { e.emitExpr(a.ast) })
+			rhs := e.goArgC(a)
 			// A compound literal, `(ogo_arr_4_int){5, 6, -2, 101}`, is bound to a
 			// variable of its type: the target's memcpy is a MACRO, which reads
 			// the commas inside the braces as arguments of its own.
@@ -2086,7 +2086,7 @@ func (e *emitter) emitGo(nodes []Node) {
 		// initializers are evaluated at compile time and therefore must be
 		// constant", wherever the assignment stands -- while it takes the same
 		// braces in a declaration.
-		rhs := e.captureC(func() { e.emitExpr(a.ast) })
+		rhs := e.goArgC(a)
 		if strings.HasPrefix(rhs, "(") && strings.Contains(rhs, "){") {
 			tmp := e.newTmp()
 			e.ind()
@@ -2112,6 +2112,19 @@ func (e *emitter) emitGo(nodes []Node) {
 	e.indent--
 	e.ind()
 	e.emit("}\n")
+}
+
+// goArgC renders an argument of a go statement, writing what it binds ahead of
+// itself -- the storage of an array result, `mk()[1]` -- here, in its turn. Ahead
+// of the statement, where the prologue goes, it ran before the arguments stored
+// into the block before it: `go rec(use(), mk()[1])` called mk first.
+func (e *emitter) goArgC(a Node) string {
+	text, pro := e.capturePrologue(func() { e.emitExpr(a.ast) })
+	for _, line := range pro {
+		e.ind()
+		e.emit(line)
+	}
+	return text
 }
 
 // goDefs renders the argument struct and trampoline for every launched goroutine,
@@ -18525,49 +18538,29 @@ func (e *emitter) bracketConvOperand(typeAST []int32, arg []int32) (string, bool
 }
 
 // hoistArrayResultCallKids is hoistArrayResultCall for a factor's children already
-// in hand, which is what the expression and typing walks hold.
+// in hand, which is what the expression walk holds.
 func (e *emitter) hoistArrayResultCallKids(kids []Node) (string, []Node, bool) {
 	if e.declInit || e.deferReplay >= 0 {
 		return "", nil, false
 	}
-	if len(kids) != 2 || kids[0].sym != 0 || e.f.ch(kids[0].tok) != IDENT || kids[1].sym != FactorSuffix {
-		return "", nil, false
-	}
-	steps := slices.Collect(it(kids[1].ast))
-	// The call, then the steps that read what it returned. A function is `f()`, one
-	// step; a method on a variable is `recv.m()`, two; a receiver reached through a
-	// chain is longer -- `pool[1].triple()[2]`, `rack.slot.triple()[0]` -- so the
-	// call ends at the first CallSuffix whose remaining steps are a plain access
-	// chain. Counting one or two steps knew the fixed shapes only, and indexing a
-	// chain receiver's array result was "unsupported call in expression".
-	call := 0
-	for i, st := range steps {
-		if st.sym == CallSuffix && isAccessChain(steps[i+1:]) {
-			call = i + 1
-			break
-		}
-	}
-	if call == 0 || len(steps) <= call {
-		return "", nil, false
-	}
-	recv := e.src(kids[0].tok)
-	cname, a, isArr := e.arrayResultCallOf(recv, steps[:call])
-	if !isArr {
+	recv, cname, call, rest, a, ok := e.arrayResultCallSteps(kids)
+	if !ok {
 		return "", nil, false
 	}
 	// One occurrence, one call -- the same memo hoistArrayCallArg keeps, and the
 	// other half of why `println(d.triple()[0])` ran the method three times: the
-	// typing walk and the expression walk both reach this, and each minted a
-	// temporary and emitted the call into the prologue.
+	// typing walk and the expression walk both reached this, and each minted a
+	// temporary and emitted the call into the prologue. The typing walk asks
+	// arrayResultCallSteps alone now.
 	if name, done := e.hoistedArrayCalls[kids[0].tok]; done {
-		return name, steps[call:], true
+		return name, rest, true
 	}
 	name := e.newTmp()
 	saved := e.indent
 	e.indent = 0
 	text := e.captureC(func() {
 		e.emit(a.elem + " " + name + a.declSuffix() + ";\n")
-		e.emitArrayResultCallOf(name, cname, recv, steps[:call])
+		e.emitArrayResultCallOf(name, cname, recv, call)
 	})
 	e.indent = saved
 	if text == "" {
@@ -18578,7 +18571,41 @@ func (e *emitter) hoistArrayResultCallKids(kids []Node) (string, []Node, bool) {
 	}
 	e.arrays[name] = a
 	e.hoistedArrayCalls[kids[0].tok] = name
-	return name, steps[call:], true
+	return name, rest, true
+}
+
+// arrayResultCallSteps splits a factor's children at a call returning an ARRAY that
+// the steps after it read, `mk()[1]` and `pool[1].triple()[2]`: the head, the
+// callee, the call's steps, the steps after it and the array's shape. It binds
+// nothing, so the TYPING walk asks this rather than hoistArrayResultCallKids --
+// which bound the call as it typed it, ahead of whatever the statement evaluated
+// before: `defer rec(use(), mk()[1])` called mk first.
+func (e *emitter) arrayResultCallSteps(kids []Node) (recv, cname string, call, rest []Node, a arrDim, ok bool) {
+	if len(kids) != 2 || kids[0].sym != 0 || e.f.ch(kids[0].tok) != IDENT || kids[1].sym != FactorSuffix {
+		return "", "", nil, nil, arrDim{}, false
+	}
+	steps := slices.Collect(it(kids[1].ast))
+	// The call, then the steps that read what it returned. A function is `f()`, one
+	// step; a method on a variable is `recv.m()`, two; a receiver reached through a
+	// chain is longer -- `pool[1].triple()[2]`, `rack.slot.triple()[0]` -- so the
+	// call ends at the first CallSuffix whose remaining steps are a plain access
+	// chain. Counting one or two steps knew the fixed shapes only, and indexing a
+	// chain receiver's array result was "unsupported call in expression".
+	at := 0
+	for i, st := range steps {
+		if st.sym == CallSuffix && isAccessChain(steps[i+1:]) {
+			at = i + 1
+			break
+		}
+	}
+	if at == 0 || len(steps) <= at {
+		return "", "", nil, nil, arrDim{}, false
+	}
+	recv = e.src(kids[0].tok)
+	if cname, a, ok = e.arrayResultCallOf(recv, steps[:at]); !ok {
+		return "", "", nil, nil, arrDim{}, false
+	}
+	return recv, cname, steps[:at], steps[at:], a, true
 }
 
 // litSliceType is sliceType for the type of a composite LITERAL, where a defined
@@ -27247,10 +27274,17 @@ func (e *emitter) emitDeferCaptures(d *deferredCall) {
 			e.emit("memcpy(" + name + ", " + src + ", sizeof(" + name + "));\n")
 			continue
 		}
+		// What the value binds ahead of itself -- the storage of an array result,
+		// `mk()[1]` -- is written here, in its turn: ahead of the statement it ran
+		// before the arguments captured before it, `defer rec(use(), mk()[1])`
+		// calling mk first.
+		text, pro := e.capturePrologue(func() { e.emitExpr(a.expr) })
+		for _, line := range pro {
+			e.ind()
+			e.emit(line)
+		}
 		e.ind()
-		e.emit(name + " = ")
-		e.emitExpr(a.expr)
-		e.emit(";\n")
+		e.emit(name + " = " + text + ";\n")
 	}
 }
 
@@ -30679,9 +30713,13 @@ func (e *emitter) hoistPrintArgs(args []Node) bool {
 	if !slices.Contains(bind, true) {
 		return false
 	}
-	// Bound only after every type is known, so a print this cannot hoist wholly
-	// hoists nothing and no temporary is declared for a statement that will not use
-	// it.
+	// Typed and bound in ONE pass, in order. Typing an argument may bind part of it
+	// ahead of the statement -- `mk()[1]` binds the array mk returns, for the walk
+	// to index -- so typing them all first ran that ahead of every argument bound
+	// after: `println(use(), mk()[1])` called mk first. A print this cannot hoist
+	// wholly takes back what it bound, so no temporary is declared for a statement
+	// that will not use it.
+	mark, memo := len(e.prologue), maps.Clone(e.hoistedArrayCalls)
 	hoisted := make([]printArg, len(args))
 	for i, a := range args {
 		if !bind[i] {
@@ -30689,15 +30727,10 @@ func (e *emitter) hoistPrintArgs(args []Node) bool {
 		}
 		ct, ok := e.inferCType(a.ast)
 		if !ok || ct == "" {
+			e.prologue, e.hoistedArrayCalls = e.prologue[:mark], memo
 			return false
 		}
-		hoisted[i].ctype = ct
-	}
-	for i, a := range args {
-		if !bind[i] {
-			continue
-		}
-		hoisted[i].name = e.hoist(hoisted[i].ctype, func() { e.emitExpr(a.ast) })
+		hoisted[i] = printArg{ctype: ct, name: e.hoist(ct, func() { e.emitExpr(a.ast) })}
 	}
 	e.printArgs = hoisted
 	return true
@@ -38016,9 +38049,10 @@ func (e *emitter) inferNode(n Node) (string, bool) {
 				}
 				return "", false
 			}
-			// `x := mk()[1]` types as the chain reached from the bound result.
-			if name, steps, ok := e.hoistArrayResultCallKids(kids); ok {
-				cur, okc := e.accessChainType(name, steps)
+			// `x := mk()[1]` types as the chain reached from the array the call
+			// returns, read off its shape rather than bound (arrayResultCallSteps).
+			if _, _, _, steps, a, ok := e.arrayResultCallSteps(kids); ok && !e.declInit && e.deferReplay < 0 {
+				cur, okc := e.accessChainTypeAt(curArray(a), steps, false)
 				if !okc || len(cur.dims) != 0 {
 					return "", false
 				}
@@ -41048,12 +41082,24 @@ func (e *emitter) hoistArgs(cname string, params []string, args []Node) ([]strin
 	// part way has to take those back: the caller then emits the arguments in
 	// place, and a temporary left standing is at best a variable nothing reads and
 	// at worst a second evaluation of an argument that changes something.
-	mark := len(e.prologue)
+	mark, memo := len(e.prologue), maps.Clone(e.hoistedArrayCalls)
 	fail := func() ([]string, bool) {
-		e.prologue = e.prologue[:mark]
+		e.prologue, e.hoistedArrayCalls = e.prologue[:mark], memo
 		return nil, false
 	}
 	for i, a := range args {
+		// An ARRAY -- a call returning one, or a literal -- is storage, not a value,
+		// and bound here in its turn, as the in-place path binds it. Its type is not
+		// one to infer, so this gave up, and the in-place path then bound it ahead
+		// of every argument before it: `sum(use(), mk())` called mk first.
+		if name, ok := e.hoistArrayCallArg(a); ok {
+			names = append(names, name)
+			continue
+		}
+		if name, ok := e.hoistArrayLitExpr(a.ast); ok {
+			names = append(names, name)
+			continue
+		}
 		// A bare nil at a slice parameter has no type of its own; it takes the
 		// parameter's, exactly as it does when emitted in place.
 		if i < len(sliceParams) && sliceParams[i] != "" && e.isNilExpr(a.ast) {
