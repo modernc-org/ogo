@@ -37326,6 +37326,61 @@ func main() {
 `,
 		want: "10 11\n2122\n3233\n4344\n5455\n65 66\n76 77\n8797\n107 108 118 119 129 130\n1011\n51511\n",
 	}, {
+		// A call returning an ARRAY as the argument of a deferred call or of one
+		// started on a cog: it writes into the capture, or into the goroutine's
+		// slot, where the statement stands. Refused, as "cannot infer the type of a
+		// deferred call argument" and "must be bound to a variable first".
+		name: "an array result as a deferred or started call's argument",
+		src: `var n int
+
+var calls int
+
+var done chan bool
+
+func mk(k int) [3]int {
+	n += k
+	return [3]int{n, n * 2, n * 3}
+}
+
+func use() int {
+	n += 10
+	return n
+}
+
+func record(a int, b [3]int) {
+	calls = a*1000 + b[0]*10 + b[2]
+}
+
+func recordGo(a int, b [3]int) {
+	calls = a*1000 + b[0]*10 + b[2]
+	done <- true
+}
+
+type T struct{ k int }
+
+func (t *T) keep(b [3]int) { t.k = b[1] }
+
+var gt T
+
+func deferred() {
+	defer record(use(), mk(1))
+	defer gt.keep(mk(2))
+	n = 1000
+}
+
+// A call returning an ARRAY as the argument of a deferred call or of one started on
+// a cog: evaluated where the statement stands, in order with the others, as Go
+// evaluates them.
+func main() {
+	deferred()
+	println(calls, gt.k, n)
+	go recordGo(use(), mk(3))
+	<-done
+	println(calls, n)
+}
+`,
+		want: "10143 26 1000\n1023169 1013\n",
+	}, {
 		// A method called on the interface RESULT of a call through a function
 		// value, a field holding one or another interface's slot -- `p(1).Area()`,
 		// `h.p(2).Area()`, `hd.Get().Area()` -- read the table and the data off

@@ -2061,6 +2061,13 @@ func (e *emitter) emitGo(nodes []Node) {
 		// arr[0] = 100` reached the cog with the 100. A literal is built in an
 		// array of its own first, C assigning no array.
 		if ad, isArr := site.arrays[i+first]; isArr {
+			// A call returning the array writes into the slot itself: there is no
+			// value to copy, and emitted as one it was refused, "must be bound to a
+			// variable first".
+			if cname, _, isCall := e.arrayResultCall(a.ast); isCall {
+				e.emitArrayResultCall(fmt.Sprintf("%s->a%d", ap, i+first), cname, a.ast)
+				continue
+			}
 			e.includes["string.h"] = true
 			rhs := e.goArgC(a)
 			// A compound literal, `(ogo_arr_4_int){5, 6, -2, 101}`, is bound to a
@@ -27054,8 +27061,14 @@ func (e *emitter) emitDefer(nodes []Node) {
 		}
 		// An ARRAY argument is captured into an array temporary of its own shape
 		// (see deferArg.arr): `defer show(a)` shows what a held at the defer, as
-		// Go says, whatever is written into a afterwards.
-		if dim, ok := e.arrayShapeOf(a.ast); ok {
+		// Go says, whatever is written into a afterwards. A call returning one
+		// writes into the capture (emitDeferCaptures); it was "cannot infer the
+		// type of a deferred call argument".
+		dim, ok := e.arrayShapeOf(a.ast)
+		if !ok {
+			_, dim, ok = e.arrayResultCall(a.ast)
+		}
+		if ok {
 			if i < len(paramDims) && paramDims[i].bound != "" &&
 				(dim.elem != paramDims[i].elem || dim.declSuffix() != paramDims[i].declSuffix()) {
 				e.fail("cannot use %s as %s in argument to a deferred call",
@@ -27259,6 +27272,10 @@ func (e *emitter) emitDeferCaptures(d *deferredCall) {
 			// array of its own first: the target's memcpy is a MACRO, which reads the
 			// commas inside a compound literal's braces as arguments of its own, so
 			// `defer show([3]int{1, 2, 3})` did not preprocess.
+			if cname, _, isCall := e.arrayResultCall(a.expr); isCall {
+				e.emitArrayResultCall(name, cname, a.expr)
+				continue
+			}
 			var src string
 			ok := false
 			_, pro := e.capturePrologue(func() { src, ok = e.arraySourceC(a.expr) })
