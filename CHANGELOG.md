@@ -85,6 +85,21 @@ shipped section tells a reader on that version that they have behaviour they do 
   only a bare name was peeled that way, so eleven such programs were refused ("only
   assignment to a simple variable is supported yet", "unsupported call target")
   while the same expressions read right.
+- **A function type may name itself as its result: the state-function idiom.**
+  `type stateFn func(*lexer) stateFn`, the way Go writes a lexer or a protocol as a
+  state machine, was refused as `emit: unsupported type "stateFn"`, with no
+  position, locally too. It works wherever a function value does: a declared
+  function, a literal, a method value and a method expression as values of it, a
+  call through one returning the next, in a field, a table, a channel and a package
+  variable, on a cog, deferred and across packages, with parameters of any kind, a
+  variadic one included. The type among several results, `func(int) (int, Step)`,
+  or under a pointer or a slice, and a parameter of the type itself, `func(v V) V`,
+  are still refused.
+- **A value ranged out of a table of a named function type may be called.** `for _,
+  h := range handlers` over a `[2]Handler` or a `[]Handler` whose type was written
+  out gave h the element's type by name and no signature, so `h(x)` was "cannot call
+  non-function h". A call through it is checked against the signature, as a call
+  through any function value is.
 
 ### Fixed
 
@@ -196,6 +211,13 @@ shipped section tells a reader on that version that they have behaviour they do 
   wherever a value stands, and a slice too short panics as in Go, "cannot convert
   slice to array or pointer to array with length 3". Indexing the conversion,
   `A(s)[1]`, and ranging over it are refused.
+- **Another package's function of several results, taken as a value, printed
+  garbage on the board.** `var two func(int) (int, int) = lib.Two`, `mk :=
+  lib.Make` for a struct result, and the same as an argument, a literal's element,
+  a field or a send: the value named the function itself rather than the wrapper
+  one of this package's is taken through, so the call handed it an out parameter it
+  does not take. The target built it with a warning and printed `6881376 522240`
+  for `3 6`; the host's compiler refused it.
 
 ### Behaviour changes
 
@@ -277,6 +299,29 @@ shipped section tells a reader on that version that they have behaviour they do 
   first, "cannot infer a type" or "unsupported operand '['"; so did `[]func()(fs)`,
   which Go reads as a type whose result is fs. Refused as a type name always was:
   "cannot use type []int as a value".
+- **A function of the wrong signature is refused wherever it is stored.** It was
+  compared with the type it lands in by a variable declaration, an assignment to a
+  variable and an argument, and by nothing else: `return two` from a function
+  returning a `func(*M) int`, `S{f: two}`, `[]F{two}`, `ch <- two` (in a select
+  too), `h.f = two`, `fs[0] = two`, `append(fs, two)` and a package variable's
+  initializer each went through. Measured with v0.42.0's compiler: `ogo build` built
+  such a program with a warning about the generated C, and on the board the calls
+  through the values printed `-250407096` and `1862976`: a function of two ints,
+  called as one of a pointer, read a pointer and an argument nobody passed.
+- **A store through more than one step is asked what it stores.** A bare name, one
+  field and one element of a variable, and the pointee of a Kind were checked;
+  `h.s.n = "x"`, `ps[1].f = 5`, `h.fs[1] = two`, `grid[i][j] = "x"`, `h.ps.n = "x"`,
+  `*pf = 5` for a pointer to a function or a struct, and any target but a bare
+  name in a list, `h.s.n, k = "x", 1`, were not. Nor was a compound assignment's
+  category through any of them: `h.n += "x"` for an int field was refused only as
+  a string concatenation needing allocation, and `h.s.n *= 1.5` compiled -- with
+  v0.42.0's compiler it built without a word and printed 10 on the board for a 7,
+  where Go refuses the program. `h.s.f = 5` built with a warning, and the program
+  called address 5 and printed nothing.
+- **A range clause's `=` target is asked what it holds.** `for _, f = range ints`
+  for a function f, `for _, n = range names` for an int n, `for s = range ints` for
+  a string s and `for _, f = range wrong` for a function of another signature were
+  resolved by name and nothing else; each is refused in Go's words.
 
 ## v0.42.0
 

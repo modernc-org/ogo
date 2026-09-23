@@ -841,6 +841,27 @@ new place a call is made -- it did not follow the interface slot until the pack
 existed -- and an EMPTY pack is the nil slice, which the check read a position off
 and crashed the compiler on (`keep()`).
 
+**A TARGET IS A POSITION** (2026-09-23). A store is asked what it stores where the
+checker knows the target's type -- a bare name, one field, one element, the pointee
+of a Kind -- and a target reached through MORE steps was asked nothing at all: `h.s.n
+= "x"` put a string into an int as far as the C compiler, `h.s.f = 5` built for the
+target with a warning and called address 5, and `h.s.n *= 1.5` built without a word
+and multiplied. So were the second target of a list, a pointee of no Kind (`*pf =
+5`) and a range clause's `=` targets. A target is walked from its base variable's
+type now (`targetTypeNode`) and asked what a literal's field is asked
+(`checkStoreInto`); a range target by `checkRangeAssign`. A function's SIGNATURE was
+the same hole along the other axis: asked by a declaration, an assignment to a
+variable and an argument, and by no return, send, literal, field or element store,
+append or package initializer -- a return and a literal's field, built with a warning
+and run on the board, called a function of two ints as one of a pointer and printed
+garbage (`checkFuncAssign` is asked at every one since). A
+slice declared by `:=` from a literal of functions or structs recorded no element
+type, only a Kind -- it records the written type now, and that exposed the value
+ranged out of a table of a named function type as "cannot call non-function h",
+which a DECLARED table had always been (`rangeValueFunc`). So: **a new store rule is
+asked at every site its siblings are** -- `grep -n 'checkChanAssign(\|checkNilValue('
+check.go` lists them -- and a new target shape is a row in the target batch.
+
 **A TEMPORARY IS A COG REGISTER** (2026-09-20). flexcc gives every C local one
 (`local_N res 1` in COG_BSS) out of a pool the assembler checks with `fit 480`,
 shared across functions so the deepest call chain is what spends it -- and overflow
@@ -865,7 +886,14 @@ now (`Scope.find2` records what leaves a literal's scope, `litOf`); a rule about
 a name MEANS belongs where names are resolved.
 
 Known open items, all loud refusals or design walls (2026-09-17): an
-array-returning call as a package literal element; a deferred or started call
+array-returning call as a package literal element; a function returning an ARRAY
+taken as a value, `mb := mkb`, "cannot infer a type" and, with the type written,
+"cannot return an array beside another result" (a function value's type has no out
+parameter for it); a variable of ANOTHER package's function type, `var f lib.Fn =
+lib.Dbl; f(3)`, and a field of one, `b.F(4)`, "cannot call non-function" and "type
+lib.Box has no method F" (2026-09-23); a value received from a channel of functions,
+`r := <-ch`, "cannot call non-function r", where the written `var r fn = <-ch`
+works; a deferred or started call
 through a dereference with an index, `defer (*ps)[0](x)` and `go (*pa)[0](x)`
 ("unsupported call target", and go's "only `go f(args)` ..."), where the statement
 and the value work since 2026-09-22; the method expression of an INTERFACE type, `Shape.Area` (refused by name; a concrete
@@ -876,10 +904,10 @@ Go admits and the target's compiler refuses; printf's `%v` of a
 struct or an interface under a width (an interface value prints what it holds since
 2026-09-20 -- `&{1 2}` for a struct pointer as the argument, its address or its
 String() at depth, ifaceHeldPrintC -- but the chain writing it cannot pad); a PARENTHESISED HEAD as a TARGET where peeling does not reach it:
-a conversion's `(*T)(p).x = 5` and `*(*T)(p) = 5`, and the send
-`(&bus.ports[1]).ch <- 5`, whose head is a CHAIN rather than a name (`(p).x = 5`,
+a conversion's `(*T)(p).x = 5` and `*(*T)(p) = 5` (`(p).x = 5`,
 `(&p).x = 3` and the same through an index, an increment and a compound assignment
-work since 2026-09-20, parenTargetBase). READING through one
+work since 2026-09-20, parenTargetBase, and a head that is a CHAIN, the send
+`(&bus.ports[1]).ch <- 5` among them, since 2026-09-22, addrChainSteps). READING through one
 works since 2026-09-20 (`emitParenChain` binds the head and walks the steps from
 it), and a declaration from one since 2026-09-22 (`parenChainType`): `(&p).x`, `(get()).x`, `(*getp()).x`, `(getq()).a`, `(arr[1:])[1]`,
 `("hello")[1:]` and `(&arr)[1]`, beside the `(*p).x`, `(a)[i]`, `(v).m()`,
@@ -908,11 +936,19 @@ a name with whatever the block holds when it is ASKED, not with what it held whe
 the name was written, so every later question about B's embedding finds the local A
 (it was a stack overflow of the compiler until 2026-09-20; the emitter, lowering in
 order, reads it right); a defined type that names ITSELF other than through a struct
--- `type Tree []Tree`, `type Step func(int) (int, Step)`, which is the state-function
-idiom, `type Pipe chan Pipe`, `type P *P` -- "emit: unsupported type", with no
-position: C names a type inside itself through a struct's tag, and these have none
-(a struct holding its own kind every legal way works, locally too, and so do an
-interface whose method returns it and two structs through each other's pointers). No grammar gap is
+-- `type Tree []Tree`, `type Step func(int) (int, Step)`, `type F func() *F`, `type
+Pipe chan Pipe`, `type P *P` -- "emit: unsupported type", with no position: C names a
+type inside itself through a struct's tag, and these have none (a struct holding its
+own kind every legal way works, locally too, and so do an interface whose method
+returns it and two structs through each other's pointers). The one such FUNCTION type
+Go programs write, the state-function idiom `type stateFn func(*lexer) stateFn`, works
+since 2026-09-23 (collectRecFuncType): its typedef returns a generic function
+pointer, `ogo_anyfn`, a function named as a value is cast into it, and a call through
+a value is made through `<typedef>_call`, the type of the functions it holds, whose
+result is the type itself -- the callee cast, never the result, which is a cast of a
+call the target refuses when an argument is a struct literal
+(`doc/complit-arg-in-cast.c`). A PARAMETER of the type, `type V func(v V) V`, is
+refused by name. No grammar gap is
 known: the ones recorded before all closed that day, and two nobody had recorded --
 HeaderFactor had dropped the suffix from three of Factor's alternatives, and a string
 literal took none at all, `"0123456789abcdef"[n&15]`. Two more surfaced the next day
@@ -924,7 +960,10 @@ against each other when either changes**; they are meant to differ by one produc
 (HeaderFactor has no literal after a name, which is what keeps `if x == T {` a block).
 Latent ones, measured and not faults today: a store through a chain, `r.m[a()][b()]
 = v()`, leaves its calls to C's operand order, which gcc 14 and flexcc both take left
-to right (only the bare `name[i] = v` path binds them); and a value's call does not
+to right (only the bare `name[i] = v` path binds them); a method called on a
+CONVERSION as a print argument, `println(T(3).bump(), g)` for a bump writing g, is
+not bound first, so gcc reads g before the call and the HOST differs from Go, while
+flexcc takes printf's arguments left to right and the board agrees (2026-09-23); and a value's call does not
 run ahead of an index or nil panic in the target, `arr[bad()] = side()`, where Go
 runs `side()` and then panics -- the comment in emitIndexAssign says otherwise and
 describes one C compiler's choice. Only a program about to panic can tell.
