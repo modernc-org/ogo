@@ -1604,6 +1604,24 @@ func (e *emitter) emitGo(nodes []Node) {
 				// type it is, the same fallback the deferred receiver makes.
 				rct = cur.name
 			}
+			// A FIELD holding a function at the end of the chain, `go gh.in.f(4)` or
+			// `go hs[i].f(2)`: what runs is the value the field holds, read here as
+			// Go reads it, travelling in the argument block as a variable's does.
+			// Taken for a method, the launch called a <T>_<f> nothing declares.
+			if ft, okf := e.structFieldType(rct, name); okf && e.isFuncCType(ft) {
+				text, pro := e.capturePrologue(func() { e.emitAccessChain(base, chain) })
+				for _, line := range pro {
+					e.ind()
+					e.emit(line)
+				}
+				sel, oks := e.selectThroughC(text, rct, name, true)
+				if !oks {
+					e.fail("unsupported receiver in a go statement")
+					return
+				}
+				site = goSite{callee: sel, fnCType: e.underlyingCType(ft), id: len(e.goSites)}
+				break
+			}
 			if !e.isMethodBase(methodBaseType(rct)) {
 				e.fail("unsupported receiver in a go statement")
 				return

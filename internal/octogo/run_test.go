@@ -36085,6 +36085,46 @@ func main() {
 `,
 		want: "true 2 true\n7854321\n",
 	}, {
+		// The same fields started on a cog: the value the field holds is read at
+		// the go statement and travels in the argument block. Taken for a METHOD of
+		// the struct holding it, the launch called an In_f nothing declares -- no
+		// such program compiled.
+		name: "a goroutine started through a function field of a chain",
+		src: `type In struct{ f func(k int) }
+
+type H struct{ in In }
+
+var gh H
+
+var done chan int
+
+func show(k int) { done <- k }
+
+func other(k int) { done <- 9 }
+
+func main() {
+	var h H
+	h.in.f = show
+	hs := []In{{f: show}}
+	i := In{f: show}
+	ph := &i
+	gh.in.f = show
+	go h.in.f(1)
+	println(<-done)
+	go hs[0].f(2)
+	println(<-done)
+	go ph.f(3)
+	println(<-done)
+	go gh.in.f(4)
+	gh.in.f = other
+	h.in.f = other
+	hs[0].f = other
+	i.f = other
+	println(<-done, h.in.f != nil, len(hs), ph != nil)
+}
+`,
+		want: "1\n2\n3\n4 true 1 true\n",
+	}, {
 		// A method called on the interface RESULT of a call through a function
 		// value, a field holding one or another interface's slot -- `p(1).Area()`,
 		// `h.p(2).Area()`, `hd.Get().Area()` -- read the table and the data off
