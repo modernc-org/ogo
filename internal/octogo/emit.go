@@ -28586,7 +28586,18 @@ func (e *emitter) chainCText(base string, steps []Node) (text, ctype string, add
 					bound := text
 					text, addr = e.hoist(cur.ctype, func() { e.emit(bound) }), true
 				}
-				call := text + ".vt->" + vtMember(field) + "(" + text + ".data"
+				// A NIL interface panics, as a call on an interface variable does
+				// (ifaceCallC). Reached through an element, a field or a call's result
+				// it was read unchecked: the table came from address zero, which is
+				// ordinary Hub RAM here, and `arr[1].Area()` of a nil element printed
+				// -2063597568 and went on, where Go panics.
+				vtRead := text + ".vt"
+				if e.checks {
+					e.usesIfaceNil = true
+					e.needPanic()
+					vtRead = "((const " + ifaceVTName(cur.ctype) + "*)ogo_iface_vt(" + text + ".vt))"
+				}
+				call := vtRead + "->" + vtMember(field) + "(" + text + ".data"
 				if args := e.argsCText("", steps[i+1].ast); args != "" {
 					call += ", " + args
 				}

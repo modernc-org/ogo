@@ -16433,6 +16433,54 @@ func main() {
 		panics: true,
 	},
 	{
+		// The same through an ELEMENT, a FIELD and a call's RESULT, which the chain
+		// walk called without the guard: on the board each printed -2063597568 --
+		// the table read from address zero -- and ran on past the call.
+		name: "a call through a nil interface element panics",
+		src: `type Shape interface{ Area() int }
+
+func main() {
+	var arr [2]Shape
+	println("before")
+	println(arr[1].Area())
+	println("after")
+}
+`,
+		want:   "before\npanic: nil pointer dereference",
+		panics: true,
+	},
+	{
+		name: "a call through a nil interface field panics",
+		src: `type Shape interface{ Area() int }
+
+type H struct{ s Shape }
+
+func main() {
+	var h H
+	println("before")
+	println(h.s.Area())
+	println("after")
+}
+`,
+		want:   "before\npanic: nil pointer dereference",
+		panics: true,
+	},
+	{
+		name: "a call through a nil interface a call returns panics",
+		src: `type Shape interface{ Area() int }
+
+func none() Shape { return nil }
+
+func main() {
+	println("before")
+	println(none().Area())
+	println("after")
+}
+`,
+		want:   "before\npanic: nil pointer dereference",
+		panics: true,
+	},
+	{
 		// A type SATISFIES an interface through a method promoted from an embedded
 		// interface: the thunk loads the field and dispatches through its vtable,
 		// so whatever the field holds at call time answers -- the error-wrapping
