@@ -38808,6 +38808,54 @@ func main() {
 `,
 		want: "[[1 2] [3 4]] [9 10] [7 8] [1 2 3]\n[4 5 6] [1 2 3] [7 8] [1 2]\n",
 	}, {
+		// A struct holding an ARRAY is printed where it lies, and one that lies
+		// nowhere -- a call's result, a method's, a literal -- was refused, "bind it
+		// to one first". A call's result is a temporary already (funcStructRet) and a
+		// literal's braces initialize one (byRefSource), which is what prints.
+		name: "a struct holding an array prints from a call or a literal",
+		src: `type Buf struct {
+	n    int
+	data [3]int
+}
+
+type W struct {
+	b Buf
+	k int
+}
+
+var calls int
+
+func mk(k int) Buf {
+	calls = calls*10 + k
+	return Buf{k, [3]int{k, k + 1, k + 2}}
+}
+
+func (b Buf) Dbl() Buf {
+	b.n *= 2
+	return b
+}
+
+func show(b Buf) {
+	defer printf("%v %+v\n", b, b.data)
+	b.n = 99
+	b.data[0] = 99
+}
+
+// A struct holding an array printed whole under %v and %+v: a variable, a field, a
+// call's result, a method's, a literal, an element, deferred.
+func main() {
+	b := mk(1)
+	w := W{mk(2), 7}
+	printf("%v %+v %v\n", b, w, w.b)
+	printf("%v %v %d\n", mk(3), Buf{4, [3]int{5, 6, 7}}, calls)
+	printf("%+v %v\n", b.Dbl(), W{Buf{8, [3]int{}}, 9})
+	bs := []Buf{b, w.b}
+	printf("%v %v\n", bs[1], bs)
+	show(b)
+}
+`,
+		want: "{1 [1 2 3]} {b:{n:2 data:[2 3 4]} k:7} {2 [2 3 4]}\n{3 [3 4 5]} {4 [5 6 7]} 123\n{n:2 data:[1 2 3]} {{8 [0 0 0]} 9}\n{2 [2 3 4]} [{1 [1 2 3]} {2 [2 3 4]}]\n{1 [1 2 3]} [1 2 3]\n",
+	}, {
 		// A method called on the interface RESULT of a call through a function
 		// value, a field holding one or another interface's slot -- `p(1).Area()`,
 		// `h.p(2).Area()`, `hd.Get().Area()` -- read the table and the data off

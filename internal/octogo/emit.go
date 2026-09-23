@@ -32412,9 +32412,18 @@ func (e *emitter) emitStructPrintVerb(idx int, arg Node, plus bool, value func()
 		e.ind()
 		if e.hasArrayField(u) {
 			// Such a struct is copied by no initializer the target's compiler lowers,
-			// so it is printed where it lies.
+			// so it is printed where it lies -- and a value that lies nowhere, a
+			// call's result or a literal, where it is bound: a call's is a temporary
+			// already (funcStructRet), and a literal's braces initialize one
+			// (byRefSource). Both were refused, "bind it to one first".
 			if !e.printAddressable(arg) {
-				return refuse("a struct holding an array is printed from a variable; bind it to one first")
+				decl, addr := e.byRefSource(u, e.captureC(value))
+				if decl != "" {
+					e.emit("{ " + strings.TrimSuffix(decl, "\n") + " " + structPrintName(u) + "(" + addr + ", " + p + "); }\n")
+					return true, true
+				}
+				e.emit(structPrintName(u) + "(" + addr + ", " + p + ");\n")
+				return true, true
 			}
 			e.emit(structPrintName(u) + "(&(")
 			value()
