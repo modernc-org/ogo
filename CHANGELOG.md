@@ -140,6 +140,17 @@ shipped section tells a reader on that version that they have behaviour they do 
   function that initializes the package, and on the board a later call left `9552
   3928` where Go prints `3 2`; a store through it wrote into the stack. It is the
   package's own static object now, as a struct literal's has been.
+- **A method called on an interface returned through a function value ran the
+  call twice, and read garbage on the board.** `p(1).Area()` for a function value
+  p, `h.p(2).Area()` through a field holding one and `hd.Get().Area()` through
+  another interface read the table and the data off the call written out twice: the
+  call ran twice, and on the target the result came back as -2063597568 for 6. It
+  is read once now, as a direct call's always was.
+- **A call through a nil interface reached through an element, a field or a call's
+  result did not panic.** `arr[1].Area()` of a nil element, `h.s.Area()` of a nil
+  field and `none().Area()` read the method table from address zero and printed
+  garbage on the board, then carried on; they panic now, as a call on an interface
+  variable already did.
 - **A variadic method called through an interface did not pack its arguments.**
   `lg.Log("a", 1, 2, 3)` for a `Log(prefix string, xs ...int)` handed the ints over
   where the slice header goes, for every element type, and neither compiler took
