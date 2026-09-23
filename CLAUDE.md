@@ -862,6 +862,22 @@ which a DECLARED table had always been (`rangeValueFunc`). So: **a new store rul
 asked at every site its siblings are** -- `grep -n 'checkChanAssign(\|checkNilValue('
 check.go` lists them -- and a new target shape is a row in the target batch.
 
+**A DEFERRED OR STARTED CALL IS A ROW** (2026-09-23). Go evaluates a deferred
+call's function and arguments where the defer stands, and a goroutine's at the go
+statement; `deferReceiver` and `emitGo` capture what they RECOGNISE, and a callee
+they do not is left to the replay -- read at the return, or on the cog when it runs
+-- which is a wrong answer, not a refusal, whenever something between changes it.
+Three such callees were found by storing into the callee after the statement: a
+function field at the end of a CHAIN on a package variable (`defer gh.in.f(4)`, 89
+for 84 on the board), and another package's function VARIABLE under both statements
+(`defer lib.Hook(1)`, `go lib.Launch(2)`, 89 and 9 for 81 and 2), which were taken
+for function names. And a NEW expression shape becomes deferrable through the replay
+the moment it compiles: `(pick())(x)` did, and ran pick() at the return, until the
+defer learned to capture it the same day. So **a new callee shape is swept under
+plain, `defer` and `go`, with a store into the callee after the statement** -- a
+variable, a package variable, another package's, a field, a field of a chain, an
+element, a call's result, a parenthesised value, a received one.
+
 **A TEMPORARY IS A COG REGISTER** (2026-09-20). flexcc gives every C local one
 (`local_N res 1` in COG_BSS) out of a pool the assembler checks with `fit 480`,
 shared across functions so the deepest call chain is what spends it -- and overflow
@@ -889,14 +905,14 @@ Known open items, all loud refusals or design walls (2026-09-17): an
 array-returning call as a package literal element; a function returning an ARRAY
 taken as a value, `mb := mkb`, "cannot infer a type" and, with the type written,
 "cannot return an array beside another result" (a function value's type has no out
-parameter for it); a variable of ANOTHER package's function type, `var f lib.Fn =
-lib.Dbl; f(3)`, and a field of one, `b.F(4)`, "cannot call non-function" and "type
-lib.Box has no method F" (2026-09-23); a value received from a channel of functions,
-`r := <-ch`, "cannot call non-function r", where the written `var r fn = <-ch`
-works; a deferred or started call
-through a dereference with an index, `defer (*ps)[0](x)` and `go (*pa)[0](x)`
-("unsupported call target", and go's "only `go f(args)` ..."), where the statement
-and the value work since 2026-09-22; the method expression of an INTERFACE type, `Shape.Area` (refused by name; a concrete
+parameter for it); a deferred or started call through a function field of ANOTHER
+package's variable, `defer lib.B.F(1)` ("only <pkg>.<Func>(args) ...") and `go
+lib.C.F(2)` ("unsupported receiver in a go statement"), where the same through this
+package's works since 2026-09-23; a parenthesised function value started on a cog,
+`go (h.f)(2)`, which works as a value, a statement and deferred; a deferred or
+started call through a dereference with an index, `defer (*ps)[0](x)` and `go
+(*pa)[0](x)` ("unsupported call target", and go's "only `go f(args)` ..."), where
+the statement and the value work since 2026-09-22; the method expression of an INTERFACE type, `Shape.Area` (refused by name; a concrete
 type's works since 2026-09-19); a method value on a local or a call's result (design: a method value binds its
 receiver at compile time); an unnamed struct type mixed with the SECOND of two
 declared structs of its fields (its typedef names the first, aliasAnonStructs), which

@@ -100,6 +100,25 @@ shipped section tells a reader on that version that they have behaviour they do 
   out gave h the element's type by name and no signature, so `h(x)` was "cannot call
   non-function h". A call through it is checked against the signature, as a call
   through any function value is.
+- **Another package's function type may be called through a variable, a parameter
+  or a field.** `var f lib.Fn = lib.Dbl; f(3)`, a parameter of type `lib.Fn`, and
+  `b.F(4)` for a function field of a `lib.Box` were "cannot call non-function f" and
+  "type lib.Box has no method F": the type was looked up by its bare name in the
+  importing package. Where that package declared a type of the same name, the
+  program was refused against the wrong one -- `var f lib.Fn = lib.Dbl` as not the
+  main package's `func(string) string`.
+- **A function received from a channel may be called.** `job := <-work`, `job, ok
+  := <-work`, `case job := <-work:` and `for job := range work` gave job the
+  element's type by name and no signature, so `job(x)` was "cannot call
+  non-function job"; from a channel of an unnamed function type it carried nothing.
+- **A parenthesised function value may be called.** `(pick())(2)`, `(fs[0])(3)`,
+  `(h.f)(4)` and `(<-fc)(5)`, as a value, as a statement and deferred, were "this
+  form is not supported yet" or "unsupported call target": only a bare name in
+  parentheses could be called. Started on a cog, `go (h.f)(2)`, it is still refused.
+- **A function element may be deferred or started on a cog.** `defer fs[i](x)`,
+  `defer h.tbl[i](x)`, `go fs[i](x)` and `go arr[i](x)` -- a cleanup or a worker per
+  slot of a table -- were refused; the element and its index are read at the
+  statement, as Go reads them.
 
 ### Fixed
 
@@ -218,6 +237,20 @@ shipped section tells a reader on that version that they have behaviour they do 
   one of this package's is taken through, so the call handed it an out parameter it
   does not take. The target built it with a warning and printed `6881376 522240`
   for `3 6`; the host's compiler refused it.
+- **A deferred call through a function field of a chain read the field at the
+  return.** Go reads a deferred call's function where the defer stands; a field
+  holding one was captured only directly on a variable, `defer h.f(x)`. `defer
+  gh.in.f(4)` on a package variable, followed by a store into `gh.in.f`, called the
+  new function -- 89 for 84 on the board -- and the same through a local, `defer
+  h.in.f(1)` or `defer hs[0].f(2)`, did not compile.
+- **Another package's function variable, deferred or started on a cog, was read
+  late.** `defer lib.Hook(1)` and `go lib.Launch(2)` took the member for a function
+  of that package; a VARIABLE holding one was called through at the return, and on
+  the cog when it ran, so a store into it after the statement changed which
+  function ran -- 89 and 9 on the board where Go prints 81 and 2.
+- **A goroutine started through a function field of a chain did not compile.** `go
+  gh.in.f(4)`, `go hs[0].f(2)` and `go h.in.f(1)` took the field for a method of the
+  struct holding it and called an `In_f` nothing declares.
 
 ### Behaviour changes
 
@@ -322,6 +355,12 @@ shipped section tells a reader on that version that they have behaviour they do 
   for a function f, `for _, n = range names` for an int n, `for s = range ints` for
   a string s and `for _, f = range wrong` for a function of another signature were
   resolved by name and nothing else; each is refused in Go's words.
+- **A call through a function field is checked against the field's signature.**
+  `h.f("x")`, `h.f(1, 2)` and `ph.f()` for a struct's function field -- this
+  package's or another's -- were checked against nothing. Measured before this
+  change: `h.f(2.5)` for a `func(k int)` field built without a word and printed 4
+  on the board, the constant truncated where Go refuses it; `h.f(1, 2)` was refused
+  by the target's compiler, about generated C.
 
 ## v0.42.0
 
