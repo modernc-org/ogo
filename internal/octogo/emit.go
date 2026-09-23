@@ -28574,6 +28574,18 @@ func (e *emitter) chainCText(base string, steps []Node) (text, ctype string, add
 				// the slice of a local array was stored where the implementation
 				// stores it.
 				e.checkIfaceArgs(cur.ctype, field, e.callArgExprs(steps[i+1].ast), e.spreadCall(steps[i+1].ast))
+				// The table and the data are both read off the value, so a value the
+				// chain produced by a CALL -- `p(1).Area()` through a function value,
+				// `hd.Get().Area()` through another interface -- is bound once first.
+				// Written twice, the call ran twice, and on the target the two-word
+				// result read through a function pointer's call where it stood came
+				// back as garbage; the direct `pick(1).Area()` was bound already.
+				if !addr && !isCIdent(text) {
+					// A temporary a step before bound already names the value once, and
+					// another copy would only spend a cog register (see hoist).
+					bound := text
+					text, addr = e.hoist(cur.ctype, func() { e.emit(bound) }), true
+				}
 				call := text + ".vt->" + vtMember(field) + "(" + text + ".data"
 				if args := e.argsCText("", steps[i+1].ast); args != "" {
 					call += ", " + args

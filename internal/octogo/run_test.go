@@ -35503,6 +35503,166 @@ func main() {
 }
 `,
 		want: "0 0 true\n",
+	}, {
+		// A method called on the interface RESULT of a call through a function
+		// value, a field holding one or another interface's slot -- `p(1).Area()`,
+		// `h.p(2).Area()`, `hd.Get().Area()` -- read the table and the data off
+		// the call written twice. The call ran twice, and on the target the
+		// two-word result of a call through a function pointer, read where it
+		// stood, came back as garbage: -2063597568 for 6, where the host was
+		// right. The direct `pick(1).Area()` was bound first and always right.
+		name: "a method called on an interface returned through a function value",
+		src: `type Shape interface{ Area() int }
+
+type Q struct{ w, h int }
+
+func (q *Q) Area() int { return q.w * q.h }
+
+type Holder interface {
+	Put(s Shape) int
+	Get() Shape
+}
+
+type B struct{ last Shape }
+
+func (b *B) Put(s Shape) int {
+	b.last = s
+	return s.Area()
+}
+
+func (b *B) Get() Shape { return b.last }
+
+var q1 = Q{2, 3}
+
+var q2 = Q{4, 5}
+
+var gb = B{}
+
+var done chan int
+
+func area(s Shape) int { return s.Area() }
+
+func pick(k int) Shape {
+	if k == 1 {
+		return &q1
+	}
+	return &q2
+}
+
+func report(s Shape, tag int) { println("deferred", tag, s.Area()) }
+
+func work(s Shape) { done <- s.Area() }
+
+type F struct {
+	f func(Shape) int
+	p func(int) Shape
+}
+
+func main() {
+	println(area(&q1), area(pick(2)), pick(1).Area())
+	f := area
+	p := pick
+	println(f(&q2), p(1).Area(), f(p(2)))
+	h := F{area, pick}
+	println(h.f(&q1), h.p(2).Area())
+	var hd Holder = &gb
+	println(hd.Put(&q1), hd.Get().Area(), hd.Put(pick(2)), hd.Get().Area())
+	var s Shape = &q1
+	defer report(s, 1)
+	defer report(&q2, 2)
+	s = &q2
+	go work(s)
+	println(<-done)
+	go work(pick(1))
+	println(<-done)
+	fs := []func(Shape) int{area}
+	println(fs[0](&q1))
+	var sh Shape = hd.Get()
+	println(sh.Area())
+}
+`,
+		want: "6 20 6\n20 6 20\n6 20\n6 6 20 20\n20\n6\n6\n20\ndeferred 2 20\ndeferred 1 6\n",
+	}, {
+		// The same shapes with the calls counted, which is what makes the double
+		// evaluation visible where the values alone were right: the host ran each
+		// indirect call twice, 211122442 for 2112332.
+		name: "an interface returned through a function value is evaluated once",
+		src: `type Shape interface{ Area() int }
+
+type Q struct{ w, h int }
+
+func (q *Q) Area() int { return q.w * q.h }
+
+type Holder interface {
+	Put(s Shape) int
+	Get() Shape
+}
+
+type B struct{ last Shape }
+
+func (b *B) Put(s Shape) int {
+	b.last = s
+	return s.Area()
+}
+
+func (b *B) Get() Shape {
+	calls++
+	return b.last
+}
+
+var q1 = Q{2, 3}
+
+var q2 = Q{4, 5}
+
+var gb = B{}
+
+var done chan int
+
+var calls int
+
+func area(s Shape) int { return s.Area() }
+
+func pick(k int) Shape {
+	calls = calls*10 + k
+	if k == 1 {
+		return &q1
+	}
+	return &q2
+}
+
+func report(s Shape, tag int) { println("deferred", tag, s.Area()) }
+
+func work(s Shape) { done <- s.Area() }
+
+type F struct {
+	f func(Shape) int
+	p func(int) Shape
+}
+
+func main() {
+	println(area(&q1), area(pick(2)), pick(1).Area())
+	f := area
+	p := pick
+	println(f(&q2), p(1).Area(), f(p(2)))
+	h := F{area, pick}
+	println(h.f(&q1), h.p(2).Area())
+	var hd Holder = &gb
+	println(hd.Put(&q1), hd.Get().Area(), hd.Put(pick(2)), hd.Get().Area())
+	var s Shape = &q1
+	defer report(s, 1)
+	defer report(&q2, 2)
+	s = &q2
+	go work(s)
+	println(<-done)
+	go work(pick(1))
+	println(<-done)
+	fs := []func(Shape) int{area}
+	println(fs[0](&q1))
+	var sh Shape = hd.Get()
+	println(sh.Area(), calls)
+}
+`,
+		want: "6 20 6\n20 6 20\n6 20\n6 6 20 20\n20\n6\n6\n20 2112332\ndeferred 2 20\ndeferred 1 6\n",
 	}}
 
 // TestEmitCRun compiles emitted C with a host compiler and runs it, checking what
