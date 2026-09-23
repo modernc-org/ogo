@@ -1,0 +1,42 @@
+// A call through a FIELD of a function type is a call through what the field holds,
+// checked against the field's signature -- of this package's struct or another's --
+// as a call through any function value is. Nothing asked it, so `h.f("x")` and
+// `h.f(1, 2)` reached the C compiler.
+
+import "p"
+
+type Fn func(k int) int
+
+type H struct {
+	f Fn
+	g func(k int) int
+}
+
+func dbl(k int) int { return 2 * k }
+
+var gh = H{f: dbl, g: dbl}
+
+func ok() {
+	h := H{f: dbl, g: dbl}
+	ph := &h
+	c := p.Calls{F: p.Dbl, G: p.Dbl}
+	println(gh.f(1), gh.g(2), h.f(3), ph.f(4), c.F(5), c.G(6))
+}
+
+func bad() {
+	h := H{f: dbl}
+	ph := &h
+	c := p.Calls{F: p.Dbl}
+	// ERROR cannot use "x" of type string as type int in argument to f
+	println(gh.f("x"))
+	// ERROR too many arguments in call to f
+	println(gh.f(1, 2))
+	// ERROR cannot use "x" of type string as type int in argument to g
+	println(h.g("x"))
+	// ERROR not enough arguments in call to f
+	println(ph.f())
+	// ERROR cannot use "x" of type string as type int in argument to F
+	println(c.F("x"))
+	// ERROR too many arguments in call to G
+	println(c.G(1, 2))
+}

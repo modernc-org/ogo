@@ -8731,6 +8731,17 @@ func (f *File) importedFuncFieldSig(qual, typeName, member Token) *SignatureNode
 	return nil
 }
 
+// argNodes is the arguments of a call's argument list, in order.
+func argNodes(argList Node) []Node {
+	var args []Node
+	for a := range it(argList.ast) {
+		if a.sym == Expression {
+			args = append(args, a)
+		}
+	}
+	return args
+}
+
 // crossPkgIsMethod reports whether member names a method of the imported type
 // qual.typeName -- promoted ones included, resolved in the OWNING package's scope
 // for the reason checkCrossPkgMethod gives. It is what tells `lib.V.M` used as a
@@ -11161,6 +11172,11 @@ func (f *File) checkMethodCallOn(s *Scope, d *VarDeclaration, base string, membe
 		// A cross-package type: the method must be an exported method of the imported
 		// type (another package's unexported method is inaccessible).
 		f.checkCrossPkgMethod(d.typeQual, d.typeName, member)
+		// Or a FIELD of a function type, whose call is checked as any call through a
+		// function value is (see below).
+		if sig := f.importedFuncFieldSig(d.typeQual, d.typeName, member); sig != nil && token.IsExported(member.Src()) {
+			f.checkArgs(s, member, sig, argNodes(argList))
+		}
 		return
 	}
 	td, ok := s.find(d.typeName.Src()).(*TypeDeclaration)
@@ -11204,6 +11220,13 @@ func (f *File) checkMethodCallOn(s *Scope, d *VarDeclaration, base string, membe
 			return
 		}
 		if fields, isStruct := f.structFields(s, d.typeName); isStruct && fields[member.Src()] {
+			// A FIELD of a function type, called: a call through what the field
+			// holds, checked against its signature as a call through any function
+			// value is. Nothing asked it, so `h.f("x")` and `h.f(1, 2)` reached the
+			// C compiler.
+			if sig := f.funcSig(s, f.structFieldTypeNode(s, &TypeNodeIdent{Name: d.typeName}, member)); sig != nil {
+				f.checkArgs(s, member, sig, argNodes(argList))
+			}
 			return
 		}
 		// A variable of interface type dispatches to the interface's method set,
