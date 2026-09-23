@@ -33137,9 +33137,27 @@ func (e *emitter) emitPrintOne(newline bool, idx int, arg Node) {
 	}
 	// A bare array variable decays to a pointer, so it is printed by viewing it as a
 	// full-length slice header rather than as a (meaningless) %d of its address.
-	printArray := func(base string, a arrDim) {
+	// printArray prints the array text names, of shape a: a row of elements through
+	// their helper, over a header, and an array of ROWS row by row, "[[1 2] [3 4]]",
+	// as a struct's array field prints -- a header over one read the rows as its
+	// elements, which the target's C compiler only warned about.
+	printArray := func(text string, a arrDim) {
+		if len(a.inner) != 0 {
+			code, why := e.printArrayC(text, a, true, "0")
+			if why != "" {
+				e.failAt(arg.ast, "cannot print this array: %s", why)
+				return
+			}
+			e.ind()
+			e.emit("{ " + code + " }\n")
+			if newline {
+				e.ind()
+				e.emit("printf(\"\\n\");\n")
+			}
+			return
+		}
 		e.emitPrintSlice(newline, a.elem, func() {
-			e.emit("(" + sliceCName(a.elem) + "){" + e.varRef(base) + ", " + a.bound + ", " + a.bound + "}")
+			e.emit("(" + sliceCName(a.elem) + "){" + text + ", " + a.bound + ", " + a.bound + "}")
 		})
 	}
 	// An array the print copied before a method it calls could write it
@@ -33150,7 +33168,7 @@ func (e *emitter) emitPrintOne(newline bool, idx int, arg Node) {
 	}
 	if base, ok := e.exprIdent(arg.ast); ok {
 		if a, ok := e.arrayVar(base); ok {
-			printArray(base, a)
+			printArray(e.varRef(base), a)
 			return
 		}
 	}
@@ -33160,7 +33178,37 @@ func (e *emitter) emitPrintOne(newline bool, idx int, arg Node) {
 	// Go prints its elements.
 	if base, steps, ok := e.factorAccessChain(e.factorKids(arg.ast)); ok && len(steps) == 0 {
 		if a, isArr := e.arrayVar(base); isArr {
-			printArray(base, a)
+			printArray(e.varRef(base), a)
+			return
+		}
+	}
+	// Any other ARRAY -- a field, an element, a row, a field of a call's result, a
+	// literal -- fell to the %d default as well, and printed an address where Go
+	// prints the elements: `printf("%v", h.a)`, `rows[1]`, `[2]int{1, 2}`. Its
+	// storage is named as a copy of it names it (arraySourceC), a literal bound to a
+	// temporary; one with an EMPTY dimension prints its brackets, "[]" or "[[] []]",
+	// there being no C array of no elements to name.
+	if _, typed := e.inferCType(arg.ast); typed {
+		// Not an array, which has no C value type: see below.
+	} else if a, isArr := e.arrayShapeOf(arg.ast); isArr && e.deferReplay < 0 {
+		if text, empty, ok := emptyArrayText(a); empty {
+			if !ok {
+				e.failAt(arg.ast, "cannot print this array: a dimension of it is empty, and one before it is not a number")
+				return
+			}
+			if e.exprHasEffect(arg.ast) {
+				e.failAt(arg.ast, "cannot print this array: it has no elements, and computing it does something")
+				return
+			}
+			if newline {
+				text += "\\n"
+			}
+			e.ind()
+			e.emit("printf(\"" + text + "\");\n")
+			return
+		}
+		if text, ok := e.arraySourceC(arg.ast); ok {
+			printArray(text, a)
 			return
 		}
 	}
@@ -33208,6 +33256,36 @@ func (e *emitter) emitPrintOne(newline bool, idx int, arg Node) {
 	}
 	e.emitReplayArg(idx, arg)
 	e.emit(");\n")
+}
+
+// emptyArrayText is what an array with an EMPTY dimension prints as, which is all
+// brackets -- "[]" for [0]int, "[[] []]" for [2][0]int -- and whether it has one.
+// ok is false where a dimension before the empty one is not a plain number.
+func emptyArrayText(a arrDim) (text string, empty, ok bool) {
+	dims := append([]string{a.bound}, a.inner...)
+	if !slices.Contains(dims, "0") {
+		return "", false, false
+	}
+	var render func(dims []string) (string, bool)
+	render = func(dims []string) (string, bool) {
+		if len(dims) == 0 || dims[0] == "0" {
+			return "[]", true
+		}
+		n, err := strconv.Atoi(dims[0])
+		if err != nil {
+			return "", false
+		}
+		row, ok := render(dims[1:])
+		if !ok {
+			return "", false
+		}
+		if len(dims) == 1 {
+			return "", false // an element, not a row: no empty dimension below
+		}
+		return "[" + strings.TrimSuffix(strings.Repeat(row+" ", n), " ") + "]", true
+	}
+	text, ok = render(dims)
+	return text, true, ok
 }
 
 // emitPrintAddress prints a value Go prints as an address -- a pointer, a func

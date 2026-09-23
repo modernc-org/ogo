@@ -38673,6 +38673,99 @@ func main() {
 `,
 		want: "q [1 2 3]\nq [1 2 3] 1\nq [1 2 3] 2\nq [n n] [1 2 3]\nq abc [1 88 3]\nq [2 5]\n",
 	}, {
+		// An array LITERAL printed where it stands fell to the %d default and printed
+		// the address of the compound literal, `printf("%v", [2]int{1, 2})` among
+		// them, where Go prints [1 2]. It is bound to a temporary and printed from
+		// that; one of no elements prints its brackets.
+		name: "an array literal prints its elements",
+		src: `type Row [3]int
+
+type Temp int
+
+func (t Temp) String() string { return "t" }
+
+var calls int
+
+func tick() int {
+	calls++
+	return calls
+}
+
+// An array LITERAL printed where it stands: under %v, %d and %x, a defined array
+// type's, of no elements, of Stringers, beside another argument, and one holding a
+// call.
+func main() {
+	printf("%v\n", [2]int{1, 2})
+	printf("%v %d\n", Row{4, 5, 6}, 7)
+	printf("%d|%x\n", [2]int{8, 9}, [2]int{10, 11})
+	printf("%v|%v\n", [0]int{}, Row{})
+	printf("%v\n", [2]Temp{1, 2})
+	printf("%v %v\n", [2]int{tick(), tick()}, calls)
+	printf("%v\n", [2]string{"a", "b"})
+}
+`,
+		want: "[1 2]\n[4 5 6] 7\n[8 9]|[a b]\n[]|[0 0 0]\n[t t]\n[1 2] 2\n[a b]\n",
+	}, {
+		// An array reached through a field, an element, a row or a call's result
+		// fell to the %d default as a literal did, and printed an address:
+		// `printf("%v", h.a)` printed -919857696 for [4 5 6]. Only a variable and
+		// another package's array printed their elements. Its storage is named as
+		// a copy of it names it (arraySourceC).
+		name: "an array reached through a chain prints its elements",
+		src: `type H struct {
+	a [3]int
+	s []int
+}
+
+var gh = H{[3]int{1, 2, 3}, nil}
+
+var rows [2][3]int
+
+func geth() *H { return &gh }
+
+func main() {
+	h := H{[3]int{4, 5, 6}, nil}
+	printf("%v %v %v\n", h.a, gh.a, geth().a)
+	rows[1][2] = 7
+	printf("%v %v\n", rows[1], rows)
+	ps := []H{h}
+	printf("%v\n", ps[0].a)
+}
+`,
+		want: "[4 5 6] [1 2 3] [1 2 3]\n[0 0 7] [[0 0 0] [0 0 7]]\n[4 5 6]\n",
+	}, {
+		// A multi-dimensional array printed as a header over it, reading its rows
+		// as elements, which the target's C compiler only warned about. It prints
+		// row by row, as a struct's array field does (printArrayC), and one with an
+		// empty dimension as its brackets.
+		name: "a multi-dimensional array prints row by row",
+		src: `type Grid [2][3]int
+
+type T int
+
+func (t T) String() string { return "t" }
+
+type H struct{ g [2][2]int }
+
+var g2 = [2][2]int{{1, 2}, {3, 4}}
+
+var gg Grid
+
+// A multi-dimensional array prints row by row: named, a defined type's, a
+// literal, of Stringers, with no rows, a field's, and beside other arguments.
+func main() {
+	printf("%v\n", g2)
+	printf("%v\n", [2][2]int{{5, 6}, {7, 8}})
+	gg[1][2] = 9
+	printf("%v %d\n", gg, 1)
+	printf("%v\n", [2][1]T{{1}, {2}})
+	printf("%v|%v\n", [0][2]int{}, [2][0]int{})
+	h := H{[2][2]int{{1, 1}, {2, 2}}}
+	printf("%v %v\n", h.g, h)
+}
+`,
+		want: "[[1 2] [3 4]]\n[[5 6] [7 8]]\n[[0 0 0] [0 0 9]] 1\n[[t] [t]]\n[]|[[] []]\n[[1 1] [2 2]] {[[1 1] [2 2]]}\n",
+	}, {
 		// A method called on the interface RESULT of a call through a function
 		// value, a field holding one or another interface's slot -- `p(1).Area()`,
 		// `h.p(2).Area()`, `hd.Get().Area()` -- read the table and the data off
