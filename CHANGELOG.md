@@ -366,6 +366,28 @@ shipped section tells a reader on that version that they have behaviour they do 
   getp().data` and an array in a slice's element: 99, 99, 55 and 66 on a P2-EDGE for
   Go's 3, 3, 4 and 0, without a word. What a pointer, a slice or a call reaches is
   storage any name reaches, and is asked about as a dereference is.
+- **printf read a local that a String() had written through a pointer.** fmt
+  evaluates every argument before it formats any, and a print here binds the
+  arguments after one whose formatting calls a method -- but it took a local to be
+  out of the method's reach by its name, and a receiver may hold its address:
+  `printf("%v %d", s, n)` for `s := S{&n}` whose String() writes `*s.p` printed 77
+  on a P2-EDGE where Go prints the 1 it took first; a parameter, a struct value and
+  an array alike. An array argument could not be bound at all, and asking gave up
+  binding every other argument of the print; it is copied into a temporary now.
+- **An array printed where it stands printed an address.** `printf("%v", ...)`,
+  print and println of an array literal, a field, an element, a row of a grid or a
+  field of a call's result printed the address of its storage where Go prints the
+  elements -- 8248 for `[2]int{1, 2}`, 9300 for a field's [4 5 6] on a P2-EDGE --
+  without a word from either compiler; only a variable and another package's array
+  printed right. A multi-dimensional array printed its rows as elements, with a
+  warning from the target's C compiler. Each prints its elements now, row by row,
+  and one with an empty dimension its brackets, "[]" or "[[] []]".
+- **A deferred print of an array printed addresses, or the array at the return.**
+  `defer printf("%v %v", h.a, ga)` copied each array where the defer stands and
+  then printed the copies with %d and a package array by its name at the return:
+  8988 9000 9012 [11 2] on a P2-EDGE for [4 5 6] [1 2 3] [7 8] [1 2]. An
+  element-wise verb of a local one, `defer printf("%d", r)`, was refused as "cannot
+  tell the type of this argument". Both print what the defer took.
 - **The address of a literal holding a struct with an array did not build.** `r :=
   &Rack{2, gb}` for a gb holding an array, and such a literal among a slice of
   pointers, copied the value into the literal through the pointer as though it were

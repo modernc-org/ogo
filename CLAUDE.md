@@ -960,7 +960,25 @@ getp().data` and an array in a slice's element. Storage reached through a pointe
 slice or a call is any name's (`rangeThroughRef`). A rule that asks whether a name's
 storage is written has to ask what else names it; found by reading the rule while
 fixing its neighbour, not by a sweep, so the other rules asking a root are the place
-to look next.
+to look next. The next one looked at had it too, the same day: a printf binds the
+arguments after one whose String() may run, and took a LOCAL read by name to be out
+of the method's reach -- whose receiver held its address, 77 on the board for Go's 1
+(`printArgUnreachable` asks `aliasedLocals` since; its own comment had named the
+receiver as the way in). Tuple assignment, a return against its defers, and `&&`/`||`
+operands binding a call were probed the same way and held.
+
+**PRINTING A VALUE IS A ROW** (2026-09-23). `printf("%v", x)` of an ARRAY printed the
+address of its storage wherever x was not a bare name -- a literal, a field, an
+element, a row, a call's field, a deferred capture -- silently on the board, and
+only a variable and another package's array printed its elements, which is all the
+run cases printed. Found by a probe of something else: the fix for the binding above
+printed an array argument, and the array read wrong for a reason of its own. So a
+print is swept like a store, across every way a value is reached, for each kind of
+value; and for arrays the multi-dimensional ones too (%v prints them row by row since,
+the element-wise verbs still refuse one). A TYPING question asked of every printed
+argument must be cheap and pure: `arrayShapeOf` renders a call it passes, which lifted
+a function literal argument a second time -- the corpus guard showed it as one changed
+program -- so it is asked only of what `inferCType` cannot type.
 
 **A TEMPORARY IS A COG REGISTER** (2026-09-20). flexcc gives every C local one
 (`local_N res 1` in COG_BSS) out of a pool the assembler checks with `fit 480`,
@@ -997,7 +1015,12 @@ over a parenthesised dereference's array, `range (*p).data` ("ranging an integer
 yields only the index"; `range p.data` works); a store into a field of a call's
 VALUE, `mk(1).n = 5`, refused as Go refuses it but in the emitter's words ("only
 simple and field assignment targets are supported yet"), and a field a call's
-pointer result lacks, `getp().x`, as "unsupported call in expression"; `[]byte(s)`
+pointer result lacks, `getp().x`, as "unsupported call in expression"; the
+address of, or a slice of an array in, a call's value where the call is deeper in a
+chain, `hs[0].get().data[1:]`, which Go refuses and this takes (callValueAddressing
+types `f(...)` and `v.m(...)` heads only); an
+element-wise printf verb of a multi-dimensional array, `printf("%d", grid)` ("cannot
+tell the type of this argument"; %v prints one); `[]byte(s)`
 and `[]rune(s)` of a string VARIABLE (a copy of a length known at run time; a
 constant's converts since
 2026-09-23, constBytesConv); an if or a switch init that is a compound assignment, an
