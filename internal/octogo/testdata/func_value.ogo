@@ -51,6 +51,49 @@ func mismatch() {
 	println(run(sq, 1, 2))
 }
 
+// Nor wherever else a value is stored: a return, a send, a literal's element or
+// field, a store into a field or an element, an append and a package variable's
+// initializer. Only the three above were asked, and each of these reached the C
+// compiler, which the target's builds with a warning.
+type sqHolder struct{ fn func(int, int) int }
+
+var sends chan func(int, int) int
+
+// ERROR "cannot use sq \(value of type func\(n int\) int\) as func\(int, int\) int value in variable declaration"
+var pkgChosen func(int, int) int = sq
+
+// ERROR "cannot use sq \(value of type func\(n int\) int\) as func\(int, int\) int value in struct literal"
+var pkgHolder = sqHolder{fn: sq}
+
+func mismatchReturn() func(int, int) int {
+	// ERROR "cannot use sq \(value of type func\(n int\) int\) as func\(int, int\) int value in return statement"
+	return sq
+}
+
+func mismatchStores() {
+	// ERROR "cannot use sq \(value of type func\(n int\) int\) as func\(int, int\) int value in send"
+	sends <- sq
+	fs := []func(int, int) int{add, add}
+	// ERROR "cannot use sq \(value of type func\(n int\) int\) as func\(int, int\) int value in array or slice literal"
+	gs := []func(int, int) int{add, sq}
+	// ERROR "cannot use sq \(value of type func\(n int\) int\) as func\(int, int\) int value in struct literal"
+	h := sqHolder{sq}
+	// ERROR "cannot use sq \(value of type func\(n int\) int\) as func\(int, int\) int value in assignment"
+	h.fn = sq
+	// ERROR "cannot use sq \(value of type func\(n int\) int\) as func\(int, int\) int value in assignment"
+	fs[0] = sq
+	// ERROR "cannot use sq \(value of type func\(n int\) int\) as func\(int, int\) int value in argument to append"
+	fs = append(fs, sq)
+	// ERROR "cannot use sq \(value of type func\(n int\) int\) as func\(int, int\) int value in array or slice literal"
+	var arr = [1]func(int, int) int{sq}
+	println(h.fn(1, 2), arr[0](3, 4), len(fs), len(gs), pkgChosen(5, 6), pkgHolder.fn(7, 8))
+	select {
+	// ERROR "cannot use sq \(value of type func\(n int\) int\) as func\(int, int\) int value in send"
+	case sends <- sq:
+	default:
+	}
+}
+
 // A call through a function value is checked against the type's signature, exactly
 // as a call of a named function is checked against its declaration's.
 func arity() {

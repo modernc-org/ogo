@@ -2465,6 +2465,7 @@ func (f *File) checkReturnValue(s *Scope, rt retResult, e Node) {
 	// would return before ever asking.
 	wantPtr := f.isPointerType(s, rt.typeNode)
 	f.checkChanAssign(s, s, rt.typeNode, e, "return statement")
+	f.checkFuncAssign(s, f.funcSig(s, rt.typeNode), e, "return statement")
 	f.checkRefAssign(s, s, rt.typeNode, e, "return statement")
 	f.checkPointerValue(s, wantPtr, f.typeNodeString(rt.typeNode, false), e, "return statement")
 	f.checkImplements(s, f.typeNodeString(rt.typeNode, false), e, "return statement")
@@ -4056,6 +4057,22 @@ func (f *File) inferVarFrom(s *Scope, vd *VarDeclaration, init Node) {
 			// writing into an element is checked as an explicitly typed
 			// container's is.
 			vd.elemKind, vd.hasElemKind = ek, true
+			return
+		}
+		if elem, ok := f.exprLitElemType(init); ok {
+			// `fs := []func(int) int{...}` / `ps := []P{...}`: an element with no
+			// Kind -- a function, a struct, a pointer -- is recorded as the type
+			// written, as a declared `var fs []func(int) int` records it, so a store
+			// into an element and the values an append writes are asked what they
+			// are asked there. Nothing was recorded, and `fs[0] = sq` of the wrong
+			// signature went through. The literal's own check reports what is wrong
+			// with the type, so what resolving it again reports is trimmed.
+			n0 := len(f.errList)
+			if tn := f.typ(s, elem); tn != nil {
+				vd.elemTypeNode = tn
+				vd.elemTypeName = f.elemTypeName(s, &TypeNodeSlice{TypeNode: tn})
+			}
+			f.errList = f.errList[:n0]
 			return
 		}
 		if ek, hasEk, tn, ok := f.exprMakeElem(s, init); ok {
@@ -7500,10 +7517,12 @@ func (f *File) checkSend(s *Scope, chTok Token, fields []Token, indexed, tailInd
 }
 
 // checkSentChan asks of a channel sent on a channel of channels, tn, what an
-// assignment asks of it (see checkChanAssign): the element is the type it lands in.
+// assignment asks of it (see checkChanAssign), and of a function sent on a channel
+// of functions its signature (checkFuncAssign): the element is the type it lands in.
 func (f *File) checkSentChan(s *Scope, tn TypeNode, valNode Node) {
 	if ch, _ := f.chanTypeUnder(s, tn); ch != nil {
 		f.checkChanAssign(s, s, ch.TypeNode, valNode, "send")
+		f.checkFuncAssign(s, f.funcSig(s, ch.TypeNode), valNode, "send")
 	}
 }
 
@@ -8820,6 +8839,7 @@ func (f *File) checkLitValue(s *Scope, t litType, tn TypeNode, value Node, what 
 	if t.qual.IsValid() {
 		return
 	}
+	f.checkFuncAssign(s, f.funcSig(s, tn), value, what)
 	if f.checkNilValue(s, s, tn, value, what) {
 		return
 	}
@@ -12230,6 +12250,7 @@ func (f *File) checkDeclType(s *Scope, kind Kind, hasKind bool, typeName Token, 
 func (f *File) checkFieldAssign(s *Scope, head, field Token, rhsNode Node) {
 	f.checkNilValue(s, s, f.fieldTypeNode(s, head, field), rhsNode, "assignment")
 	f.checkChanAssign(s, s, f.fieldTypeNode(s, head, field), rhsNode, "assignment")
+	f.checkFuncAssign(s, f.funcSig(s, f.fieldTypeNode(s, head, field)), rhsNode, "assignment")
 	f.checkRefAssign(s, s, f.fieldTypeNode(s, head, field), rhsNode, "assignment")
 	f.checkImplements(s, f.typeNodeString(f.fieldTypeNode(s, head, field), false), rhsNode, "assignment")
 	f.checkDefinedType(s, f.typeNodeString(f.fieldTypeNode(s, head, field), false), rhsNode, "assignment")
@@ -12436,11 +12457,13 @@ func (f *File) checkIndexAssign(s *Scope, base Token, rhsNode Node) {
 			in = s
 		}
 		f.checkNilValue(s, in, d.elemTypeNode, rhsNode, "assignment")
+		f.checkFuncAssign(s, f.funcSig(in, d.elemTypeNode), rhsNode, "assignment")
 	} else if t, ok := f.varTypeAt(d); ok && !d.isPtr {
 		// A variable whose type its literal gave it, `var ps = [2]P{...}`, records
 		// no element type node; the literal writes one. `ps[0] = nil` went through.
 		if elem := f.indexedTypeNode(t.s, t.tn); elem != nil {
 			f.checkNilValue(s, t.s, elem, rhsNode, "assignment")
+			f.checkFuncAssign(s, f.funcSig(t.s, elem), rhsNode, "assignment")
 		}
 	}
 	// An element of a DEFINED type -- a struct above all, which has no Kind to be
@@ -13091,9 +13114,20 @@ func (f *File) exprNamedType(s *Scope, n Node) (name, qual Token, isPtr, ok bool
 // declaration from one then carries the element type, so writing the wrong type
 // into an element is reported here rather than by the C backend.
 func (f *File) exprLitElemKind(s *Scope, n Node) (Kind, bool) {
-	ue, ok := f.soleUnaryExpr(n)
+	elem, ok := f.exprLitElemType(n)
 	if !ok {
 		return 0, false
+	}
+	return f.typeKind(s, f.typ(s, elem))
+}
+
+// exprLitElemType is the element Type of an array or slice literal standing as an
+// initializer, as written: what exprLitElemKind asks the Kind of, and what a short
+// declaration from a literal records when the element has none.
+func (f *File) exprLitElemType(n Node) (Node, bool) {
+	ue, ok := f.soleUnaryExpr(n)
+	if !ok {
+		return Node{}, false
 	}
 	var fac Node
 	facSet := false
@@ -13102,11 +13136,11 @@ func (f *File) exprLitElemKind(s *Scope, n Node) (Kind, bool) {
 		case Factor:
 			fac, facSet = c, true
 		case UnaryOp:
-			return 0, false // "&[2]int{...}" is not a form the language takes
+			return Node{}, false // "&[2]int{...}" is not a form the language takes
 		}
 	}
 	if !facSet {
-		return 0, false
+		return Node{}, false
 	}
 	// Factor = "[" [ Expression ] "]" Type [ CompositeLit ]: the element type is the
 	// Type, and the CompositeLit is what makes it a value rather than a written type.
@@ -13125,14 +13159,14 @@ func (f *File) exprLitElemKind(s *Scope, n Node) (Kind, bool) {
 			// single SLICE step, `[]int{4, 5, 6}[1:]`, keeps the element.
 			steps := slices.Collect(it(c.ast))
 			if len(steps) != 1 || steps[0].sym != Index || !f.isSliceExpr(steps[0]) {
-				return 0, false
+				return Node{}, false
 			}
 		}
 	}
 	if !hasElem || !hasLit {
-		return 0, false
+		return Node{}, false
 	}
-	return f.typeKind(s, f.typ(s, elem))
+	return elem, true
 }
 
 // factorRoot returns a Factor's leading identifier (the base a suffix reads from)
@@ -16607,6 +16641,7 @@ func (f *File) checkAppendValues(s *Scope, argList Node, args []Node) {
 				in = s
 			}
 			f.checkNilValue(s, in, d.elemTypeNode, v, "append")
+			f.checkFuncAssign(s, f.funcSig(in, d.elemTypeNode), v, "argument to append")
 		}
 		if !p.known {
 			// A named element with no predeclared kind of its own -- a struct, an
@@ -18745,6 +18780,7 @@ func (f *File) varSpec(s *Scope, n Node) {
 				f.checkNames(s, e)
 				f.checkNilAssignable(s, nilTarget(kind, hasKind, typeName), e, "variable declaration")
 				f.checkNilValue(s, s, typ, e, "variable declaration")
+				f.checkFuncAssign(s, f.funcSig(s, typ), e, "variable declaration")
 				if len(names) == len(exprs) {
 					f.checkChanAssign(s, s, typ, e, "variable declaration")
 					f.checkRefAssign(s, s, typ, e, "variable declaration")
