@@ -924,6 +924,15 @@ return with a defer storing its named results one after another, `return b, a`
 returning 2, 2 for every type: a list of stores is a simultaneous assignment, which
 `emitSimultaneous` knew and the return did not (`returnValueStands`).
 
+**A STRUCT HOLDING AN ARRAY IS COPIED, NEVER ASSIGNED** (2026-09-23). The target's C
+compiler copy-initializes and assigns one only at some SIZES -- "Unable to multiply
+assign this target" at 12 and 16 bytes, where 3, 8 and 20 build -- so a test struct
+of the wrong size says nothing: a variadic of 8-byte ones built and one of 12 did
+not. A sweep of 26 positions at 12 bytes found five that assigned (a range value, a
+list's temporaries, a variadic pack, append's helper, a blank target's temporary),
+each copying with memcpy since (`holdsArray`), and passing and returning by value
+fail at every size (`byRefParam`). Measure a struct rule at 3, 8, 12, 16 and 20 bytes.
+
 **A TEMPORARY IS A COG REGISTER** (2026-09-20). flexcc gives every C local one
 (`local_N res 1` in COG_BSS) out of a pool the assembler checks with `fit 480`,
 shared across functions so the deepest call chain is what spends it -- and overflow
@@ -951,15 +960,16 @@ Known open items, all loud refusals or design walls (2026-09-17): an
 array-returning call as a package literal element; a function returning an ARRAY
 taken as a value, `mb := mkb`, "cannot infer a type" and, with the type written,
 "cannot return an array beside another result" (a function value's type has no out
-parameter for it); a struct holding an ARRAY passed or returned by value, or as a
-value receiver ("holds an array, which the target's C compiler cannot pass or return
-by value; use a pointer", refuseArrayStructABI -- flexcc drops the argument slot, and
-a lowering through a pointer and a copy, as a plain array parameter takes and a
-channel's element takes since 2026-09-23, chanStructByPtr, is how it would come
-down); `[]byte(s)` and `[]rune(s)` of a string VARIABLE (a copy of a length known at
-run time; a constant's converts since 2026-09-23, constBytesConv); an if or a switch
-init that is a compound assignment, an increment or a send, and a for init from one
-call's several results, `for a, b := two(); ...` ("assignment mismatch"); a deferred
+parameter for it); a struct holding an ARRAY returned by value, or as a value
+receiver ("holds an array, which the target's C compiler cannot pass or return by
+value; use a pointer", refuseArrayStructABI -- flexcc drops the argument slot; a
+PARAMETER is received by pointer and copied on entry since 2026-09-23, byRefParam,
+as a channel's element crosses by pointer, chanStructByPtr, and a result would take
+an out parameter as an array result does); `[]byte(s)` and `[]rune(s)` of a string
+VARIABLE (a copy of a length known at run time; a constant's converts since
+2026-09-23, constBytesConv); an if or a switch init that is a compound assignment, an
+increment or a send (a for init from one call's several results works since
+2026-09-23, emitForInitMulti); a deferred
 or started call through a function field of ANOTHER package's variable, `defer
 lib.B.F(1)` ("only <pkg>.<Func>(args) ...") and `go lib.C.F(2)` ("unsupported
 receiver in a go statement"), where the same through this package's works since

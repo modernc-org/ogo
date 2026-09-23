@@ -151,6 +151,18 @@ shipped section tells a reader on that version that they have behaviour they do 
   call argument", and `go record(use(), mk())` as "must be bound to a variable
   first". The call writes into the capture, or into the goroutine's slot, where the
   statement stands, in its turn among the arguments.
+- **A for loop's init may take one call's several results.** `for a, b := two(); a
+  < b; a++` and `for x, h.n = two(); ...` were refused as "assignment mismatch: 2
+  variables but 1 value". The call runs once, before the first test, and a name it
+  declares -- one shadowing an outer name of another type among them -- is what the
+  condition reads.
+- **A struct holding an array may be a parameter.** Every such parameter was
+  refused, "holds an array, which the target's C compiler cannot pass or return by
+  value; use a pointer". It is received by pointer and copied on entry, as an array
+  parameter is: through a direct call, a method, an interface slot, a function
+  value, a method value and a method expression, a literal, a variadic call, a
+  deferred and a started one, and across packages -- the callee's copy its own. A
+  result and a value receiver of one are still refused.
 
 ### Fixed
 
@@ -321,6 +333,17 @@ shipped section tells a reader on that version that they have behaviour they do 
   call, `return use(), mk()[0]`, and a deferred or started call's arguments each
   called mk before use, where Go calls them left to right. Built without a word;
   the board printed what the host did.
+- **A struct holding an array of 12 or 16 bytes did not build where it was copied
+  by assignment.** The target's C compiler copy-initializes and assigns such a
+  struct only at some sizes -- "Unable to multiply assign this target" at 12 and 16
+  bytes, where 3, 8 and 20 build -- so a range over a slice or an array of them, a
+  swap, `x, ok = y, true`, a variadic call's pack and append (whose helper also took
+  the value by value, refused at every size) failed to build for the target. Each
+  copies with memcpy now.
+- **A blank target of a multiple assignment bound its value to a temporary nothing
+  read.** `_, _ = a, b` did not build under -Werror, an unused variable to both
+  compilers, and spent a cog register. A blank target binds nothing now; its value
+  is evaluated only where it does something.
 
 ### Behaviour changes
 
