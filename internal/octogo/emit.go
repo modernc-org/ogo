@@ -7249,7 +7249,13 @@ func (e *emitter) ifaceOperand(rhs []int32) (concrete, data string, temp, ok boo
 	if ct, data, ok := e.ifaceAddrQualified(rhs); ok {
 		return ct, data, false, true
 	}
-	if root, isAddr := e.addrOfRoot(rhs); isAddr {
+	// `&x`: the variable's own type and address. Only a bare name -- the ROOT of
+	// `&x.f` or `&x[i]` is not what it addresses: taken for it, `&o.Base` became an
+	// interface holding the outer struct under ITS table, calling the outer type's
+	// method where Go calls the embedded one's, and `&h.a` for a field was refused
+	// as the outer type not implementing the interface. Those are the pointer
+	// expressions the last branch takes.
+	if root, isAddr := e.addrOperand(rhs); isAddr {
 		ct, ok := e.varType(root)
 		if !ok {
 			return "", "", false, false

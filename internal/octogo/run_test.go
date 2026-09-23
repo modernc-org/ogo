@@ -36670,6 +36670,118 @@ func main() {
 `,
 		want: "293512 223528 8 8 97 65\n121 2\n121 2\n9 57 5 233 0 false 389\n2 26085 26412\n6 195 169\n",
 	}, {
+		// `&o.Base` into an interface: the embedded value's address under ITS
+		// table. The ROOT of the address was taken for what it addresses, so the
+		// interface held the outer struct under the outer type's table and called
+		// Outer.Name where Go calls Base.Name -- "outer" for "base" on the board,
+		// in silence, since the outer type implements the interface too -- and
+		// %T named the outer type.
+		name: "the address of an embedded field in an interface",
+		src: `type Named interface {
+	Name() string
+}
+
+type Base struct{ id int }
+
+func (b Base) Name() string { return "base" }
+
+type Outer struct {
+	Base
+	n int
+}
+
+func (o *Outer) Name() string { return "outer" }
+
+func describe(n Named) string { return n.Name() }
+
+func main() {
+	var o Outer
+	println(describe(&o.Base), describe(&o))
+	var nm Named = &o.Base
+	println(nm.Name())
+	var no Named = &o
+	printf("%T %T %v\n", nm, no, nm)
+	p := &o.Base
+	println(describe(p))
+}
+`,
+		want: "base outer\nbase\n*main.Base *main.Outer &{0}\nbase\n",
+	}, {
+		// The address of a field -- a second one, whose address is not its
+		// struct's -- made an interface value everywhere one is built: a literal's
+		// field and element, a package initializer, a return, append, a variadic
+		// argument, a method's argument and a send. Each was refused as the outer
+		// struct not implementing the interface.
+		name: "the address of a field in every interface position",
+		src: `type Named interface {
+	Name() string
+}
+
+type Q struct{ w int }
+
+func (q *Q) Name() string {
+	if q.w == 6 {
+		return "six"
+	}
+	return "other"
+}
+
+type H struct {
+	n int
+	a Q
+	b Q
+}
+
+type Box struct{ s Named }
+
+type T struct{}
+
+func (t *T) take(n Named) string { return n.Name() }
+
+var gh = H{n: 1, a: Q{5}, b: Q{6}}
+
+var gbox = Box{s: &gh.b}
+
+var ga = [2]Named{&gh.a, &gh.b}
+
+var ch chan Named
+
+var done chan bool
+
+var buf [4]Named
+
+func pick() Named { return &gh.b }
+
+func all(ns ...Named) string {
+	s := ""
+	for _, n := range ns {
+		s = n.Name()
+	}
+	return s
+}
+
+func sender() {
+	ch <- &gh.b
+	done <- true
+}
+
+func main() {
+	b := Box{s: &gh.b}
+	arr := [2]Named{&gh.a, &gh.b}
+	sl := []Named{&gh.b}
+	println(b.s.Name(), arr[1].Name(), sl[0].Name(), gbox.s.Name(), ga[1].Name(), pick().Name())
+	ns := buf[:0]
+	ns = append(ns, &gh.b)
+	var t T
+	println(ns[0].Name(), all(&gh.a, &gh.b), t.take(&gh.b))
+	go sender()
+	r := <-ch
+	<-done
+	println(r.Name())
+}
+`,
+		want: "six six six six six six\nsix six six\nsix\n",
+	}, {
 		// A method called on the interface RESULT of a call through a function
 		// value, a field holding one or another interface's slot -- `p(1).Area()`,
 		// `h.p(2).Area()`, `hd.Get().Area()` -- read the table and the data off
