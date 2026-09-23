@@ -1695,8 +1695,16 @@ func (e *emitter) emitGo(nodes []Node) {
 				return
 			}
 			// The imported function is emitted in its own package's namespace, so the
-			// launch resolves to the same mangled name an ordinary call would.
-			site = goSite{callee: mangle(prefix, name), id: len(e.goSites)}
+			// launch resolves to the same mangled name an ordinary call would. A
+			// VARIABLE of that package holding a function is a value, read here and
+			// carried in the argument block as a local's is: named as a function, the
+			// cog called through the variable when it ran, whatever it held by then.
+			mn := mangle(prefix, name)
+			if ct, isVar := e.globals[mn]; isVar && e.isFuncCType(ct) {
+				site = goSite{callee: mn, fnCType: e.underlyingCType(ct), id: len(e.goSites)}
+				break
+			}
+			site = goSite{callee: mn, id: len(e.goSites)}
 			break
 		}
 		cname := methodCName(methodBaseType(rct), name)
@@ -26968,8 +26976,18 @@ func (e *emitter) deferReceiver(d *deferredCall, head Node, suffix []Node) (stri
 	if steps[len(steps)-1].sym != Selector {
 		return "", true
 	}
-	if _, isPkg := e.importQualifiers[base]; isPkg && len(steps) == 1 {
-		return "", true // `defer pkg.F(args)`
+	if prefix, isPkg := e.importQualifiers[base]; isPkg && len(steps) == 1 {
+		// `defer pkg.F(args)`, which names a function forever -- unless F is a
+		// VARIABLE holding one, whose value Go reads here as it reads a local's:
+		// left to the replay, `defer lib.H(1)` followed by a store into lib.H
+		// called the new function at the return.
+		mn := mangle(prefix, e.soleIdent(steps[0].ast))
+		if ct, isVar := e.globals[mn]; isVar && e.isFuncCType(ct) {
+			d.recvCType = ct
+			d.callsValue = true
+			return mn, true
+		}
+		return "", true
 	}
 	method := e.soleIdent(steps[len(steps)-1].ast)
 	chain := steps[:len(steps)-1]

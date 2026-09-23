@@ -36632,7 +36632,8 @@ const multiPkgWant = "300\nLOUD\n50\n6\n5\n45\n6 1000\n200\n207\n3 100\n4 9\n" +
 	"1234567891 1 3 8 14 30 39\n" +
 	"2 4 7 4\n" +
 	"4 5 2 3\n" +
-	"2 3 4 3\n"
+	"2 3 4 3\n" +
+	"81 2\n"
 
 var multiPkgProgram = map[string]string{
 	"main.ogo": `import "chain"
@@ -36785,6 +36786,24 @@ initTrace()
 libStates()
 libValues()
 libOps()
+libHooks()
+}
+
+// Another package's function VARIABLE, deferred and started on a cog with a store
+// into it after each: Go reads the value at the statement. Named as a function, the
+// call went through the variable at the return, and on the cog when it ran -- 89
+// and 9 on the board for 81 and 2.
+func libHooks() {
+	hookRun()
+	go lib.Launch(2)
+	lib.Launch = lib.Mute
+	println(lib.Seen, <-lib.Sent)
+}
+
+func hookRun() {
+	defer lib.Hook(1)
+	lib.Hook = lib.Remark
+	lib.Seen = lib.Seen*10 + 8
 }
 
 // Another package's function type, called through a variable, a parameter and a
@@ -37655,6 +37674,23 @@ type Ops struct {
 }
 
 func Inc(n int) int { return n + 1 }
+
+// Hook and Launch are function VARIABLES main defers and starts through.
+var Seen int
+
+var Sent chan int
+
+func Mark(k int) { Seen = Seen*10 + k }
+
+func Remark(k int) { Seen = Seen*10 + 9 }
+
+func Emit(k int) { Sent <- k }
+
+func Mute(k int) { Sent <- 9 }
+
+var Hook = Mark
+
+var Launch = Emit
 
 // State names itself as its result: a function of it returns the next one.
 type State func(d *Dev) State
