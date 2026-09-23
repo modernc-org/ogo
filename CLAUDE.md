@@ -878,6 +878,22 @@ plain, `defer` and `go`, with a store into the callee after the statement** -- a
 variable, a package variable, another package's, a field, a field of a chain, an
 element, a call's result, a parenthesised value, a received one.
 
+**A DOMAIN PROGRAM IS A PROBE** (2026-09-23). Three programs written as a user
+would write them -- a tokenizer with a recursive-descent evaluator, a sensor
+pipeline behind a filter interface, a worker pool of cogs selecting over jobs and a
+quit channel -- found what a day of sweeps had not: a false lifetime refusal, the
+error copied out of a parser whose OTHER field pointed at a local lexer (every
+struct type counted as able to carry a reference, carriesReference; a struct carries
+what its fields do now, an interface field included -- which the first version of
+the fix forgot, opening a hole the escape tests caught), and a grammar gap specs.go
+had recorded as "the form provided", `if s, keep = f.Apply(s); !keep` (an if or
+switch init takes "=" now). Following the gap found the for clause's assignments
+checked for nothing. The same afternoon's classic-semantics probes all matched Go on
+the board: a range over an array iterating its copy, tuple assignment order,
+overlapping copy and the append-removal idiom, struct equality over padding, a
+deferred call changing a named result. So: **write a program a user would write,
+and when it hits something, sweep the row it belongs to.**
+
 **A TEMPORARY IS A COG REGISTER** (2026-09-20). flexcc gives every C local one
 (`local_N res 1` in COG_BSS) out of a pool the assembler checks with `fit 480`,
 shared across functions so the deepest call chain is what spends it -- and overflow
@@ -905,7 +921,14 @@ Known open items, all loud refusals or design walls (2026-09-17): an
 array-returning call as a package literal element; a function returning an ARRAY
 taken as a value, `mb := mkb`, "cannot infer a type" and, with the type written,
 "cannot return an array beside another result" (a function value's type has no out
-parameter for it); a deferred or started call through a function field of ANOTHER
+parameter for it); a struct holding an ARRAY passed or returned by value, as a value
+receiver or as a channel's element ("holds an array, which the target's C compiler
+cannot pass or return by value; use a pointer", refuseArrayStructABI -- flexcc drops
+the argument slot, and a lowering through a pointer and a copy, as a plain array
+parameter takes, is how it would come down); an if or a switch init that is a
+compound assignment, an increment or a send, and a for init from one call's several
+results, `for a, b := two(); ...` ("assignment mismatch"); a deferred or started
+call through a function field of ANOTHER
 package's variable, `defer lib.B.F(1)` ("only <pkg>.<Func>(args) ...") and `go
 lib.C.F(2)` ("unsupported receiver in a go statement"), where the same through this
 package's works since 2026-09-23; a parenthesised function value started on a cog,
@@ -964,7 +987,9 @@ a value is made through `<typedef>_call`, the type of the functions it holds, wh
 result is the type itself -- the callee cast, never the result, which is a cast of a
 call the target refuses when an argument is a struct literal
 (`doc/complit-arg-in-cast.c`). A PARAMETER of the type, `type V func(v V) V`, is
-refused by name. No grammar gap is
+refused by name. The if and switch headers took only a ":=" init until 2026-09-23,
+a gap specs.go RECORDED as the form provided, until a domain program wrote `if s,
+keep = f.Apply(s); !keep`. No other grammar gap is
 known: the ones recorded before all closed that day, and two nobody had recorded --
 HeaderFactor had dropped the suffix from three of Factor's alternatives, and a string
 literal took none at all, `"0123456789abcdef"[n&15]`. Two more surfaced the next day

@@ -119,6 +119,12 @@ shipped section tells a reader on that version that they have behaviour they do 
   `defer h.tbl[i](x)`, `go fs[i](x)` and `go arr[i](x)` -- a cleanup or a worker per
   slot of a table -- were refused; the element and its index are read at the
   statement, as Go reads them.
+- **An if or a switch may carry an assignment as its init statement.** `if err =
+  f(); err != nil` -- the idiom a declared err invites -- `if a, b = f(); a < b`,
+  `if h.n, ok = x, y; ok` and `switch err = f(); { ... }` were syntax errors: the
+  headers took only `:=`. The assignment stores into any target a statement's does,
+  every value read before a target is written. A switch needs the `;` after one;
+  a compound assignment, an increment or a send is still not provided there.
 
 ### Fixed
 
@@ -251,6 +257,11 @@ shipped section tells a reader on that version that they have behaviour they do 
 - **A goroutine started through a function field of a chain did not compile.** `go
   gh.in.f(4)`, `go hs[0].f(2)` and `go h.in.f(1)` took the field for a method of the
   struct holding it and called an `In_f` nothing declares.
+- **A struct copied out of a variable holding a local's address was refused.**
+  `lastErr = p.err`, where `err` is a struct of an int and a string and ANOTHER field
+  of p points at a local, was refused as holding a pointer into that local -- every
+  struct type counted as able to carry one. A struct carries what its fields can:
+  a pointer, a slice, an interface, an array or a struct of those.
 
 ### Behaviour changes
 
@@ -361,6 +372,12 @@ shipped section tells a reader on that version that they have behaviour they do 
   change: `h.f(2.5)` for a `func(k int)` field built without a word and printed 4
   on the board, the constant truncated where Go refuses it; `h.f(1, 2)` was refused
   by the target's compiler, about generated C.
+- **A for clause's assignments are checked.** The `=` init, `for x = 0; ...`, and
+  the post statement resolved their names and nothing else: `for x = "s"; ...` for
+  an int, `...; i = "s"`, `...; h.n = "s"`, `...; i, x = i+1`, `...; s++` for a
+  string and `...; f %= 2` for a float went through. Measured before this change:
+  the first was refused by the target's compiler about generated C, and `f %= 2`
+  built without a word and ran.
 
 ## v0.42.0
 
