@@ -22741,6 +22741,17 @@ func (e *emitter) callReadBase(kids []Node) (name string, rest []Node, ok bool) 
 	if bound, done := e.hoistedArrayCalls[steps[k].Pos()]; done && bound != "" {
 		return bound, steps[k+1:], true
 	}
+	// A struct holding an array is a result written through an out parameter
+	// (funcStructRet): chainCText makes the call into a temporary of this frame,
+	// which is the base, bound once per occurrence as a pointer result is.
+	// `len(mk(1).data)`, `x := mk(1).data` and a range over it were refused.
+	if _, _, isOut := e.structResultCallOf(e.src(kids[0].tok), steps[:k+1]); isOut {
+		text, _, _, okc := e.chainCText(e.src(kids[0].tok), steps[:k+1])
+		if !okc {
+			return "", nil, false
+		}
+		return text, steps[k+1:], true
+	}
 	// Typed with the rendering thrown away: rendering the call emits what it needs
 	// ahead of the statement, and a result that is not a pointer -- a struct
 	// written through an out parameter -- would have been called for nothing.
@@ -22754,6 +22765,26 @@ func (e *emitter) callReadBase(kids []Node) (name string, rest []Node, ok bool) 
 	name = e.hoistResult(text, ct, steps[k].Pos())
 	e.locals[name] = ct
 	return name, steps[k+1:], true
+}
+
+// structOutCallC makes a call whose result is a struct holding an array
+// (funcStructRet) into a temporary of this frame, ahead of the statement, and
+// answers the temporary: call renders the call writing into the temporary it is
+// handed. It binds once per OCCURRENCE -- the memo is the statement's
+// (hoistedArrayCalls), keyed by the call's position -- because a chain is rendered
+// by every question asked about it, `len(mk(1).data)` evaluating its operand for
+// its effects after the extent was read off the same chain, and each rendering made
+// the call again: mk ran twice.
+func (e *emitter) structOutCallC(at int32, rt string, call func(tmp string) string) string {
+	if tmp, done := e.hoistedArrayCalls[at]; done && tmp != "" {
+		return tmp
+	}
+	tmp := e.newTmp()
+	text := call(tmp)
+	e.prologue = append(e.prologue, rt+" "+tmp+";\n", text+";\n")
+	e.hoistedArrayCalls[at] = tmp
+	e.locals[tmp] = rt
+	return tmp
 }
 
 // callReadFields is callReadBase for a chain of selectors only, the shape
@@ -29999,13 +30030,15 @@ func (e *emitter) chainCText(base string, steps []Node) (text, ctype string, add
 			if rt, isOut := e.funcStructRet[cname]; isOut {
 				// A result holding an array travels through an out parameter
 				// (funcStructRet): the call is a statement into a temporary, which the
-				// chain goes on from.
-				tmp := e.newTmp()
-				args := e.argsCText(cname, n.ast)
-				if args != "" {
-					args = ", " + args
-				}
-				e.prologue = append(e.prologue, rt+" "+tmp+";\n", cname+"(&"+tmp+args+");\n")
+				// chain goes on from -- once per occurrence (structOutCallC), however
+				// many questions about the chain render it.
+				tmp := e.structOutCallC(n.Pos(), rt, func(tmp string) string {
+					args := e.argsCText(cname, n.ast)
+					if args != "" {
+						args = ", " + args
+					}
+					return cname + "(&" + tmp + args + ")"
+				})
 				text, cur, addr, pendingFn = tmp, e.plainOrSlice(rt), true, false
 				resultTok = -1
 				continue
@@ -30206,12 +30239,13 @@ func (e *emitter) chainCText(base string, steps []Node) (text, ctype string, add
 				if rt, isOut := e.funcStructRet[cname]; isOut {
 					// A result holding an array, through an out parameter: see the
 					// leading call above.
-					tmp := e.newTmp()
-					call := cname + "(" + recv + ", &" + tmp
-					if args := e.argsCText(cname, steps[i+1].ast); args != "" {
-						call += ", " + args
-					}
-					e.prologue = append(e.prologue, rt+" "+tmp+";\n", call+");\n")
+					tmp := e.structOutCallC(steps[i+1].Pos(), rt, func(tmp string) string {
+						call := cname + "(" + recv + ", &" + tmp
+						if args := e.argsCText(cname, steps[i+1].ast); args != "" {
+							call += ", " + args
+						}
+						return call + ")"
+					})
 					text, cur, addr = tmp, e.plainOrSlice(rt), true
 					resultTok = -1
 					i++ // consumed the CallSuffix

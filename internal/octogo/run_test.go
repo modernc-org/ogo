@@ -38314,6 +38314,88 @@ func main() {
 `,
 		want: "3 9 3\n4 6 6\n200 55\n77 3\n10 true false\n6 7 24 2\ntwo\n3\n91\n2\n",
 	}, {
+		// An ARRAY field of a struct holding it, read off a call's result: the
+		// readers of an array through a chain -- a declaration, a store, len and
+		// cap, a range, a comparison, a literal's element, an argument, a send --
+		// take their base by name, which a call has none of, and were refused
+		// (callReadBase binds it, as it binds a pointer result). The call is made
+		// once per occurrence however many of them ask about the chain
+		// (structOutCallC): bound by the first, it ran again for the next, and
+		// `len(mk(4).data)` called mk twice.
+		name: "an array field of a struct result, read where it stands",
+		src: `type Buf struct {
+	n    int
+	data [3]int
+}
+
+type W struct {
+	b Buf
+	k int
+}
+
+var calls int
+
+var ch chan [3]int
+
+var done chan bool
+
+func mk(k int) Buf {
+	calls = calls*10 + k
+	return Buf{k, [3]int{k, k + 1, k + 2}}
+}
+
+func mkw(k int) W {
+	calls = calls*10 + k
+	return W{Buf{k, [3]int{k, k, k}}, k}
+}
+
+func sum3(a [3]int) int { return a[0] + a[1] + a[2] }
+
+func tick() int {
+	calls = calls*10 + 9
+	return 0
+}
+
+// An ARRAY field of a struct holding it, read off a call's RESULT: declared,
+// stored, measured, ranged over, compared, an element of a literal, an argument
+// and a send, with a counter recording the order the calls run in.
+func main() {
+	v := mk(1).data
+	println(v[2], calls)
+	calls = 0
+	var w [3]int = mk(2).data
+	w = mk(3).data
+	println(w[0], calls)
+	calls = 0
+	println(tick(), len(mk(4).data), cap(mkw(5).b.data), calls)
+	calls = 0
+	t := 0
+	for i, e := range mk(5).data {
+		t += i * e
+	}
+	println(t, calls)
+	calls = 0
+	println(tick(), mk(6).data == [3]int{6, 7, 8}, calls)
+	calls = 0
+	ws := [][3]int{mk(7).data, w}
+	println(ws[0][1], calls)
+	calls = 0
+	println(sum3(mk(8).data), tick(), calls)
+	calls = 0
+	go func() {
+		ch <- mk(2).data
+		done <- true
+	}()
+	r := <-ch
+	<-done
+	println(r[1], calls)
+	calls = 0
+	x := mkw(3).b.data
+	println(x[1], mkw(4).b.data[2], calls)
+}
+`,
+		want: "3 1\n3 23\n0 3 3 945\n20 5\n0 true 96\n8 7\n27 0 89\n3 2\n3 4 34\n",
+	}, {
 		// A literal of a struct holding an ARRAY as a MEMBER of another literal,
 		// where the outer one is a compound literal -- under &, as an argument, a
 		// receiver, an element of a slice of pointers -- was a compound literal of
