@@ -27029,6 +27029,19 @@ func (e *emitter) deferReceiver(d *deferredCall, head Node, suffix []Node) (stri
 		d.callsValue = true
 		return e.fieldAccessC(base, []string{method}), true
 	}
+	// The same field reached through a CHAIN, `defer gh.in.f(x)` or `defer
+	// hs[i].f(x)`: captured the same way. Skipped, the replay read the field at the
+	// RETURN and called what it held then -- `defer gh.in.f(4)` followed by a store
+	// into gh.in.f called the new function, 89 where Go prints 84 -- and on a local
+	// the replay could not name the chain at all.
+	if ft, ok := e.structFieldType(ctype, method); ok && e.isFuncCType(ft) && len(chain) != 0 {
+		if sel, ok := e.selectThroughC(text, ctype, method, true); ok {
+			d.cname = ""
+			d.recvCType = ft
+			d.callsValue = true
+			return sel, true
+		}
+	}
 	// A method of an INTERFACE: what Go evaluates where the defer stands is the
 	// interface value, two words, and the call goes through its table at the
 	// return. Taken for a method of the receiver's own type, it named a function

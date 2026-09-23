@@ -36033,6 +36033,58 @@ func main() {
 `,
 		want: "1235484321\n",
 	}, {
+		// A function FIELD at the end of a chain, deferred -- a field of a
+		// field, an element's, one through a pointer, a package variable's and one
+		// whose index has an effect: Go reads the field where the defer stands.
+		// Only a field directly on a variable was captured; a package variable's
+		// was read at the RETURN, calling what it held then (89 for 84), and a
+		// local's did not compile.
+		name: "a deferred call through a function field of a chain",
+		src: `type In struct{ f func(k int) }
+
+type H struct{ in In }
+
+var trace int
+
+var gh H
+
+func show(k int) { trace = trace*10 + k }
+
+func other(k int) { trace = trace*10 + 9 }
+
+func idx() int {
+	trace = trace*10 + 7
+	return 1
+}
+
+func run() {
+	var h H
+	h.in.f = show
+	hs := []In{{f: show}, {f: show}}
+	i := In{f: show}
+	ph := &i
+	gh.in.f = show
+	defer h.in.f(1)
+	defer hs[0].f(2)
+	defer ph.f(3)
+	defer gh.in.f(4)
+	defer hs[idx()].f(5)
+	h.in.f = other
+	hs[0].f = other
+	hs[1].f = other
+	i.f = other
+	gh.in.f = other
+	trace = trace*10 + 8
+	println(h.in.f != nil, len(hs), ph != nil)
+}
+
+func main() {
+	run()
+	println(trace)
+}
+`,
+		want: "true 2 true\n7854321\n",
+	}, {
 		// A method called on the interface RESULT of a call through a function
 		// value, a field holding one or another interface's slot -- `p(1).Area()`,
 		// `h.p(2).Area()`, `hd.Get().Area()` -- read the table and the data off
