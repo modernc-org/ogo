@@ -2175,8 +2175,11 @@ func (e *emitter) goDefs() string {
 			// parameter, into a result struct nobody reads.
 			callee = "((const " + ifaceVTName(s.ifaceCType) + "*)a->a0.vt)->" + vtMember(s.ifaceMethod)
 			if m, ok := e.ifaceMethodRec(s.ifaceCType, s.ifaceMethod); ok && m.out != "" {
-				out = "res"
+				out = "&res"
 				fmt.Fprintf(&tramps, "\t%s res;\n", m.out)
+			} else if ok && m.arr.bound != "" {
+				out = "(" + arrayResultCType(m.arr) + ")res" // an array result; see ifaceMethod.arr
+				fmt.Fprintf(&tramps, "\t%s res%s;\n", m.arr.elem, m.arr.declSuffix())
 			}
 		}
 		var call []string
@@ -2191,7 +2194,7 @@ func (e *emitter) goDefs() string {
 			call = append(call, pack)
 		}
 		if out != "" {
-			call = append(call, "&"+out)
+			call = append(call, out)
 		}
 		if s.arrOut.bound != "" {
 			fmt.Fprintf(&tramps, "\t%s res%s;\n", s.arrOut.elem, s.arrOut.declSuffix())
@@ -6790,7 +6793,11 @@ type ifaceMethod struct {
 	// the write went somewhere that took the program down with it. Writing through a
 	// parameter is the same trick an array result already takes, and it is immune to
 	// the shape of what travels. See doc/struct-return-through-pointer-on-cog.c.
-	out    string
+	out string
+	// arr is a single ARRAY result, written through a trailing parameter as well --
+	// a pointer to its element, as the method's own out parameter is -- where C
+	// returns no array. res is then "void". A zero arr: none.
+	arr    arrDim
 	params []string
 	// vararg is 1 + the position of a "...T" parameter, 0 for none: a call through
 	// the slot packs what it wrote there into the []T, as a call of the method
@@ -6917,6 +6924,16 @@ func (e *emitter) ifaceMethodsSeen(structAST []int32, seen map[string]bool) ([]i
 			for _, m := range ms {
 				add(m)
 			}
+			continue
+		}
+		// A single ARRAY result is written through a trailing parameter (see
+		// ifaceMethod.arr). Asked ahead of cSig, which refuses an array result --
+		// rightly, beside another one -- and said so of this one too: a method
+		// returning [3]int was "cannot return an array beside another result".
+		if a, isArr := e.arrayResultOf(n.ast); isArr {
+			params, _ := e.cParamTypes(n.ast)
+			_, at := e.variadicElem(n.ast)
+			add(ifaceMethod{name: name, res: "void", arr: a, params: params, vararg: at + 1})
 			continue
 		}
 		_, resTypes := e.cSig(n.ast)
@@ -7058,6 +7075,9 @@ func (e *emitter) registerInterface(mn string, methods []ifaceMethod, forward bo
 		if m.out != "" {
 			params = append(params, m.out+"*") // several results; see ifaceMethod.out
 		}
+		if m.arr.bound != "" {
+			params = append(params, arrayResultCType(m.arr)) // an array result; see ifaceMethod.arr
+		}
 		fmt.Fprintf(&b, " %s (*%s)(%s);", slotRet(m), vtMember(m.name), e.cFuncTypeParams(params)) // see cFuncTypeParams
 	}
 	b.WriteString(" };\n")
@@ -7066,6 +7086,9 @@ func (e *emitter) registerInterface(mn string, methods []ifaceMethod, forward bo
 		deps = append(deps, m.res)
 		if m.out != "" {
 			deps = append(deps, m.out)
+		}
+		if m.arr.bound != "" {
+			deps = append(deps, arrayResultCType(m.arr))
 		}
 		deps = append(deps, m.params...)
 	}
@@ -7790,6 +7813,9 @@ func (e *emitter) needVTable(iface, concrete string) bool {
 		if m.out != "" {
 			fmt.Fprintf(&b, ", %s* _ogo_out", m.out)
 		}
+		if m.arr.bound != "" {
+			fmt.Fprintf(&b, ", %s _ogo_out", arrayResultCType(m.arr))
+		}
 		if dispatched {
 			sub, _ := e.embeddedPathC("(*("+concrete+"*)_ogo_r)", concrete, ipath)
 			vtRead := sub + ".vt"
@@ -7799,7 +7825,7 @@ func (e *emitter) needVTable(iface, concrete string) bool {
 				vtRead = "((const " + ifaceVTName(ict) + "*)ogo_iface_vt(" + sub + ".vt))"
 			}
 			call := vtRead + "->" + vtMember(m.name) + "(" + strings.Join(append([]string{sub + ".data"}, args...), ", ")
-			if m.out != "" {
+			if m.out != "" || m.arr.bound != "" {
 				// The inner slot writes through the same out parameter; the
 				// signatures were matched by the checker, so the shapes agree.
 				call += ", _ogo_out"
@@ -7826,7 +7852,13 @@ func (e *emitter) needVTable(iface, concrete string) bool {
 			// field is named "A_".
 			recv, _ = e.promotedRecvC("(*("+concrete+"*)_ogo_r)", concrete, path, e.methodPtr[cname], true)
 		}
-		call := cname + "(" + strings.Join(append([]string{recv}, args...), ", ") + ")"
+		lead := []string{recv}
+		if m.arr.bound != "" {
+			// The method's own out parameter leads its arguments, after the
+			// receiver; the slot's trails them.
+			lead = append(lead, "_ogo_out")
+		}
+		call := cname + "(" + strings.Join(append(lead, args...), ", ") + ")"
 		switch {
 		case m.out != "":
 			// The results are WRITTEN THROUGH the parameter. The call itself returns
@@ -7868,6 +7900,16 @@ func (e *emitter) needVTable(iface, concrete string) bool {
 // trailing parameter rather than returning (see ifaceMethod.out); it is empty for
 // every other method, and ignored by them.
 func (e *emitter) ifaceCallC(ifaceCType, recvText, method string, callSuffix []int32, out string) string {
+	if out != "" {
+		out = "&" + out
+	}
+	return e.ifaceCallArgC(ifaceCType, recvText, method, callSuffix, out)
+}
+
+// ifaceCallArgC is ifaceCallC with the trailing out argument written out: `&res`
+// for a result struct, and for an ARRAY result the storage itself, as a pointer to
+// its element (see ifaceMethod.arr).
+func (e *emitter) ifaceCallArgC(ifaceCType, recvText, method string, callSuffix []int32, outArg string) string {
 	vtRead := recvText + ".vt"
 	if e.checks {
 		// A NIL interface has no table: address zero on this target is ordinary
@@ -7888,8 +7930,8 @@ func (e *emitter) ifaceCallC(ifaceCType, recvText, method string, callSuffix []i
 	if args := e.argsCText("", callSuffix); args != "" {
 		call += ", " + args
 	}
-	if out != "" {
-		call += ", &" + out
+	if outArg != "" {
+		call += ", " + outArg
 	}
 	return call + ")"
 }
@@ -14943,7 +14985,28 @@ func (e *emitter) arrayResultCall(ast []int32) (string, arrDim, bool) {
 
 // arrayResultCallOf is arrayResultCall for a callee and suffix already in hand,
 // which is what a caller that has stripped trailing steps off the factor has.
+//
+// A method called through an INTERFACE whose result is an array answers the
+// marker ifaceArrayCallee, which emitArrayResultCallOf calls through the table.
+// Asked after the declared callee, which a struct's own method is even where an
+// interface it embeds has one of the same name.
 func (e *emitter) arrayResultCallOf(recv string, suffix []Node) (string, arrDim, bool) {
+	if cname, a, ok := e.declaredArrayResultCall(recv, suffix); ok {
+		return cname, a, true
+	}
+	if _, m, ok := e.ifaceChainMethod(recv, suffix); ok && m.arr.bound != "" {
+		return ifaceArrayCallee, m.arr, true
+	}
+	return "", arrDim{}, false
+}
+
+// ifaceArrayCallee is what arrayResultCallOf answers for a call through an
+// interface's table, which has no C name of its own.
+const ifaceArrayCallee = "<interface>"
+
+// declaredArrayResultCall is arrayResultCallOf for a DECLARED callee: a function,
+// a method, another package's function.
+func (e *emitter) declaredArrayResultCall(recv string, suffix []Node) (string, arrDim, bool) {
 	cname := e.funcCallC(recv)
 	// A method on a receiver reached through a CHAIN -- `pool[1].triple()`,
 	// `rack.slot.triple()`. Its C name is the type the chain reaches, which the
@@ -14998,6 +15061,17 @@ func (e *emitter) emitArrayResultCall(dst, cname string, ast []int32) {
 
 // emitArrayResultCallOf is emitArrayResultCall for a callee and suffix in hand.
 func (e *emitter) emitArrayResultCallOf(dst, cname, recv string, suffix []Node) {
+	if cname == ifaceArrayCallee {
+		ct, m, _ := e.ifaceChainMethod(recv, suffix)
+		text, ok := e.ifaceRecvText(recv, suffix)
+		if !ok {
+			e.fail("cannot reach the receiver of %s", m.name)
+			return
+		}
+		e.ind()
+		e.emit(e.ifaceCallArgC(ct, text, m.name, suffix[len(suffix)-1].ast, "("+arrayResultCType(m.arr)+")"+dst) + ";\n")
+		return
+	}
 	a := e.funcArrayRet[cname]
 	e.ind()
 	e.emit(cname + "(")
@@ -27541,13 +27615,20 @@ func (e *emitter) emitDeferred() {
 			// them -- and a method of several results handed a result struct its
 			// results are dropped into.
 			m, _ := e.ifaceMethodRec(d.recvCType, d.ifaceMethod)
-			out := ""
-			if m.out != "" {
+			out, outArg := "", ""
+			switch {
+			case m.out != "":
 				out = e.newTmp()
+				outArg = "&" + out
+			case m.arr.bound != "":
+				// An ARRAY result, which nobody reads, is written into storage of
+				// the replay's own.
+				out = e.newTmp()
+				outArg = "(" + arrayResultCType(m.arr) + ")" + out
 			}
 			var call string
 			_, pro := e.capturePrologue(func() {
-				call = e.ifaceCallC(d.recvCType, deferRecvName(d.slot), d.ifaceMethod, d.suffix[len(d.suffix)-1].ast, out)
+				call = e.ifaceCallArgC(d.recvCType, deferRecvName(d.slot), d.ifaceMethod, d.suffix[len(d.suffix)-1].ast, outArg)
 			})
 			for _, line := range pro {
 				e.ind()
@@ -27557,9 +27638,12 @@ func (e *emitter) emitDeferred() {
 			if d.cond {
 				e.emit("if (" + deferFlagName(d.slot) + ") ")
 			}
-			if out != "" {
+			switch {
+			case m.arr.bound != "":
+				e.emit("{ " + m.arr.elem + " " + out + m.arr.declSuffix() + "; " + call + "; }\n")
+			case out != "":
 				e.emit("{ " + m.out + " " + out + "; " + call + "; }\n")
-			} else {
+			default:
 				e.emit(call + ";\n")
 			}
 			e.deferReplay, e.deferReplayArgs = -1, nil

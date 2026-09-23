@@ -36993,6 +36993,101 @@ func main() {
 `,
 		want: "12345 2 3 4\n1234 4\n4321 6 6 8\n6 5\n",
 	}, {
+		// A method returning an ARRAY called through an interface. Its slot writes
+		// the result through a trailing parameter, as the method's own out
+		// parameter is written, and every position an array result stands in
+		// reaches it: a declaration, an assignment, an argument, an index, a
+		// return, a range, a statement, a deferred call and a goroutine's, through
+		// an embedded interface and through a field. The interface was refused as
+		// "cannot return an array beside another result" -- of its one result.
+		name: "an array result through an interface",
+		src: `type Src interface {
+	Read(k int) [3]int
+	Sig(k int) [2]int
+}
+
+type S struct{ n int }
+
+func (s *S) Read(k int) [3]int {
+	s.n += k
+	return [3]int{s.n, s.n * 2, s.n * 3}
+}
+
+func (s *S) Sig(k int) [2]int {
+	s.n += k
+	fin <- true
+	return [2]int{s.n, k}
+}
+
+type Wrap struct{ Src }
+
+type Box struct{ src Src }
+
+var gs Src
+
+var gsrc = S{1}
+
+var done chan bool
+
+var fin chan bool
+
+func use(r Src) int {
+	a := r.Read(1)
+	return a[0] + a[1] + a[2]
+}
+
+func sum(a [3]int) int { return a[0] + a[1] + a[2] }
+
+func pass(r Src) [3]int { return r.Read(1) }
+
+func deferred(r Src) {
+	defer r.Read(100)
+	r.Read(1)
+}
+
+func worker(r Src) {
+	r.Read(1000)
+	done <- true
+}
+
+// A method returning an ARRAY called through an interface: declared from,
+// assigned, an argument, indexed, returned, ranged over, discarded, deferred,
+// started on a cog, through an embedded interface and a field.
+func main() {
+	s := &gsrc
+	var r Src = s
+	v := r.Read(1)
+	println(v[0], v[2], use(r))
+	println(r.Read(1)[1])
+	var w [3]int
+	w = r.Read(1)
+	println(w[0], sum(r.Read(1)), s.n)
+	p := pass(r)
+	println(p[0])
+	t := 0
+	for _, x := range r.Read(1) {
+		t += x
+	}
+	println(t)
+	r.Read(1)
+	_ = r.Read(1)
+	println(s.n)
+	deferred(r)
+	println(s.n)
+	wr := Wrap{r}
+	b := Box{r}
+	println(wr.Read(1)[0], b.src.Read(1)[2])
+	gs = r
+	go worker(gs)
+	<-done
+	println(s.n)
+	go gs.Sig(10000)
+	<-fin
+	println(s.n)
+}
+`,
+		want: "2 6 18\n8\n5 36 6\n7\n48\n10\n111\n112 339\n1113\n11113\n",
+	}, {
 		// A method called on the interface RESULT of a call through a function
 		// value, a field holding one or another interface's slot -- `p(1).Area()`,
 		// `h.p(2).Area()`, `hd.Get().Area()` -- read the table and the data off
