@@ -338,7 +338,7 @@ func (e *emitter) needMathWrapper(pkg, name string) {
 	var params, args []string
 	for i, pt := range e.funcParams[cname] {
 		nm := fmt.Sprintf("p%d", i)
-		params = append(params, pt+" "+nm)
+		params = append(params, e.abiParamCType(pt)+" "+nm) // a by-ref one is handed on as the pointer
 		args = append(args, nm)
 	}
 	e.liftedDefs = append(e.liftedDefs,
@@ -2101,6 +2101,11 @@ func (e *emitter) emitGo(nodes []Node) {
 			rhs = tmp
 		}
 		e.ind()
+		if e.holdsArray(site.args[i+first]) {
+			e.includes["string.h"] = true // a struct holding an array is copied (holdsArray)
+			e.emit(fmt.Sprintf("memcpy(&%s->a%d, &(%s), sizeof(%s->a%d));\n", ap, i+first, rhs, ap, i+first))
+			continue
+		}
 		e.emit(fmt.Sprintf("%s->a%d = %s;\n", ap, i+first, rhs))
 	}
 	e.ind()
@@ -2206,6 +2211,10 @@ func (e *emitter) goDefs() string {
 		for i := 0; i < n; i++ {
 			if i == 0 && s.ifaceMethod != "" {
 				call = append(call, "a->a0.data")
+				continue
+			}
+			if e.byRefParam(s.args[i]) {
+				call = append(call, fmt.Sprintf("&a->a%d", i)) // see byRefParam
 				continue
 			}
 			call = append(call, fmt.Sprintf("a->a%d", i))
@@ -3410,7 +3419,7 @@ func (e *emitter) cFuncTypeParams(types []string) string {
 		if i != 0 {
 			b.WriteString(", ")
 		}
-		b.WriteString(t)
+		b.WriteString(e.abiParamCType(t))
 		if u := e.underlyingCType(t); isIntCType(u) || isFloatCType(u) || u == cBool {
 			fmt.Fprintf(&b, " ogo_p%d", i)
 		}
@@ -7838,7 +7847,7 @@ func (e *emitter) needVTable(iface, concrete string) bool {
 		fmt.Fprintf(&b, "static %s %s(void* _ogo_r", slotRet(m), thunk)
 		var args []string
 		for i, p := range m.params {
-			fmt.Fprintf(&b, ", %s _ogo_a%d", p, i)
+			fmt.Fprintf(&b, ", %s _ogo_a%d", e.abiParamCType(p), i) // a by-ref one is handed on as the pointer
 			args = append(args, fmt.Sprintf("_ogo_a%d", i))
 		}
 		if m.out != "" {
@@ -13770,7 +13779,7 @@ func (e *emitter) funcValueWrapper(cname string) (string, bool) {
 	var params, args []string
 	for i, pt := range e.funcParams[cname] {
 		nm := fmt.Sprintf("p%d", i)
-		params = append(params, pt+" "+nm)
+		params = append(params, e.abiParamCType(pt)+" "+nm) // a by-ref one is handed on as the pointer
 		args = append(args, nm)
 	}
 	sigText := ret + "* " + arrayResultParam
@@ -14119,7 +14128,7 @@ func (e *emitter) liftMethodExpr(me emMethodExpr) (string, bool) {
 	params, args := []string{recvCT + " r"}, []string{recvText}
 	for i, pt := range fv.params {
 		nm := fmt.Sprintf("p%d", i)
-		params = append(params, pt+" "+nm)
+		params = append(params, e.abiParamCType(pt)+" "+nm) // a by-ref one is handed on as the pointer
 		args = append(args, nm)
 	}
 	call := mcname + "(" + strings.Join(args, ", ") + ")"
@@ -14316,7 +14325,7 @@ func (e *emitter) liftMethodValue(base, method string) (string, bool) {
 	}
 	for i, pt := range fv.params {
 		nm := fmt.Sprintf("p%d", i)
-		params = append(params, pt+" "+nm)
+		params = append(params, e.abiParamCType(pt)+" "+nm) // a by-ref one is handed on as the pointer
 		args = append(args, nm)
 	}
 	sigText := "void"
@@ -14914,7 +14923,12 @@ func (e *emitter) cParamList(ast []int32) []string {
 			return
 		}
 		ct := e.cType(ta)
-		e.refuseArrayStructABI(ct, "parameter "+name)
+		// A struct holding an array is received by POINTER and copied in the body
+		// (emitParamCopies), as an array parameter is: see byRefParam.
+		if e.byRefParam(ct) {
+			out = append(out, ct+"* "+paramArgName(name))
+			return
+		}
 		out = append(out, ct+" "+e.localIdent(name)) // a parameter name may be Unicode
 	})
 	return out
@@ -14948,9 +14962,9 @@ func (e *emitter) cParamTypes(sig []int32) ([]string, []arrDim) {
 				dims = append(dims, a)
 				return
 			}
-			ct := e.cType(ta)
-			e.refuseArrayStructABI(ct, "parameter "+name)
-			out = append(out, ct)
+			// The VALUE type, a by-ref one included: what a call's arguments are
+			// typed by. Every signature WRITES it as a pointer (abiParamCType).
+			out = append(out, e.cType(ta))
 			dims = append(dims, arrDim{})
 		})
 	}
@@ -14964,6 +14978,45 @@ func (e *emitter) cParamTypes(sig []int32) ([]string, []arrDim) {
 // memcpy in every position that copies it, and never with `=`.
 func (e *emitter) holdsArray(ct string) bool {
 	return ct != "" && !strings.HasSuffix(ct, "*") && e.hasArrayField(ct)
+}
+
+// byRefParam reports whether a parameter of the C type ct crosses a call as a
+// POINTER to storage the callee copies on entry, rather than as the value: a struct
+// holding an array (holdsArray), which the target's C compiler passes by value
+// wrongly -- it drops the argument slot, "Internal error, couldn't find object
+// variable with offset 4" -- where a pointer and a copy are what an array
+// parameter already takes. The recorded parameter types stay the VALUE's; only a
+// signature writes the pointer (abiParamCType), and a call hands the address
+// (byRefArg).
+func (e *emitter) byRefParam(ct string) bool { return e.holdsArray(ct) }
+
+// abiParamCType is how a signature writes a parameter of the value type ct: a
+// pointer to it where it is by-ref (byRefParam), the type itself otherwise.
+func (e *emitter) abiParamCType(ct string) string {
+	if e.byRefParam(ct) {
+		return ct + "*"
+	}
+	return ct
+}
+
+// byRefArg writes the argument of a by-ref parameter (byRefParam), the i-th: the
+// address of storage holding the value -- a deferred call's capture, the variable,
+// field, element or pointee the argument names, or the temporary a composite
+// literal is bound to (byRefSource). The callee copies it before anything else
+// runs, so what it points at is read once, as the value would have been.
+func (e *emitter) byRefArg(ct string, i int, arg Node) {
+	if e.deferReplay >= 0 {
+		if a := e.deferReplayArgs[i]; !a.inline {
+			e.emit("&" + deferArgName(e.deferReplay, i))
+			return
+		}
+	}
+	text := e.captureC(func() { e.emitExpr(arg.ast) })
+	decl, addr := e.byRefSource(ct, text)
+	if decl != "" {
+		e.prologue = append(e.prologue, decl)
+	}
+	e.emit(addr)
 }
 
 // byRefSource answers how to reach by address the storage holding a value of the
@@ -15378,6 +15431,17 @@ func (e *emitter) emitParamCopies(sig []int32) {
 						e.emit(a.elem + " " + name + a.declSuffix() + ";\n")
 						e.ind()
 						e.emit("memcpy(" + name + ", " + paramArgName(name) + ", sizeof(" + name + "));\n")
+						return
+					}
+					// A by-ref struct (byRefParam), received by pointer: the callee's
+					// own copy, as an array parameter's is.
+					if ct := e.cType(ta); e.byRefParam(ct) {
+						nm := e.localIdent(name)
+						e.includes["string.h"] = true
+						e.ind()
+						e.emit(ct + " " + nm + ";\n")
+						e.ind()
+						e.emit("memcpy(&" + nm + ", " + paramArgName(name) + ", sizeof(" + nm + "));\n")
 					}
 				})
 			}
@@ -15409,6 +15473,8 @@ func (e *emitter) emitParamVoids(sig, body []int32) {
 					cname := name
 					if _, ok := e.arrayDim(ta); ok && !variadic {
 						cname = paramArgName(name) // an array parameter is received by pointer
+					} else if !variadic && synthetic && e.byRefParam(e.cType(ta)) {
+						cname = paramArgName(name) // and so is a by-ref struct, copied only when named
 					}
 					e.ind()
 					e.emit("(void)" + cname + ";\n")
@@ -27400,6 +27466,18 @@ func (e *emitter) emitDeferCaptures(d *deferredCall) {
 			e.ind()
 			e.emit(line)
 		}
+		// A struct holding an array is copied into its capture (holdsArray).
+		if e.holdsArray(a.ctype) {
+			decl, addr := e.byRefSource(a.ctype, text)
+			if decl != "" {
+				e.ind()
+				e.emit(decl)
+			}
+			e.includes["string.h"] = true
+			e.ind()
+			e.emit("memcpy(&" + name + ", " + addr + ", sizeof(" + name + "));\n")
+			continue
+		}
 		e.ind()
 		e.emit(name + " = " + text + ";\n")
 	}
@@ -27742,10 +27820,15 @@ func (e *emitter) emitDeferred() {
 			// A lifted function literal: no name in the source to resolve again,
 			// and its arguments are the temporaries captured at the defer, passed
 			// as they are -- each is already of its parameter's type -- save a
-			// variadic one's packed arguments, whose array is written first.
+			// variadic one's packed arguments, whose array is written first, and a
+			// by-ref one (byRefParam), whose capture is handed over by address.
 			var args []string
-			for i := range d.args {
-				args = append(args, deferArgName(d.slot, i))
+			for i, a := range d.args {
+				name := deferArgName(d.slot, i)
+				if e.byRefParam(a.ctype) && (d.packAt == 0 || i < d.packAt-1) {
+					name = "&" + name
+				}
+				args = append(args, name)
 			}
 			if d.packAt != 0 {
 				at := d.packAt - 1
@@ -36710,6 +36793,10 @@ func (e *emitter) emitCallArgs(cname string, callSuffix []int32) {
 			if i != 0 {
 				e.emit(", ")
 			}
+			if i < len(params) && e.byRefParam(params[i]) {
+				e.byRefArg(params[i], i, arg)
+				continue
+			}
 			if e.deferReplay >= 0 {
 				e.emit(replayed(i))
 				continue
@@ -36756,6 +36843,12 @@ func (e *emitter) emitCallArgs(cname string, callSuffix []int32) {
 			e.emit(", ")
 		}
 		first = false
+		// A by-ref parameter (byRefParam) is handed the address of storage holding
+		// the value, which the callee copies.
+		if i < len(params) && e.byRefParam(params[i]) {
+			e.byRefArg(params[i], i, arg)
+			continue
+		}
 		// An ARRAY-returning call as an argument, `take(mk())`. The parameter is a
 		// pointer the callee memcpys from, so what the call site needs is storage:
 		// the result is bound to a temporary and that is passed.
@@ -41273,6 +41366,23 @@ func (e *emitter) hoistArgs(cname string, params []string, args []Node) ([]strin
 		return nil, false
 	}
 	for i, a := range args {
+		// A by-ref argument (byRefParam) is copied in its turn -- a later argument
+		// may write what it names -- and handed on as the copy's address; a literal
+		// is a copy already.
+		if i < len(params) && e.byRefParam(params[i]) {
+			text := e.captureC(func() { e.emitExpr(a.ast) })
+			decl, addr := e.byRefSource(params[i], text)
+			if decl != "" {
+				e.prologue = append(e.prologue, decl)
+				names = append(names, addr)
+				continue
+			}
+			tmp := e.newTmp()
+			e.includes["string.h"] = true
+			e.prologue = append(e.prologue, params[i]+" "+tmp+";\n", "memcpy(&"+tmp+", "+addr+", sizeof("+tmp+"));\n")
+			names = append(names, "&"+tmp)
+			continue
+		}
 		// An ARRAY -- a call returning one, or a literal -- is storage, not a value,
 		// and bound here in its turn, as the in-place path binds it. Its type is not
 		// one to infer, so this gave up, and the in-place path then bound it ahead

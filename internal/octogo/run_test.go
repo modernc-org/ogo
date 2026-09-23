@@ -37560,6 +37560,300 @@ func main() {
 `,
 		want: "142564\n4 1\n4 1\n9 true\n4 8 9\n939 5 0\n37\n4 45 1 5\n1 9 true\n3 4 true\n3 false\n",
 	}, {
+		// A struct holding an ARRAY as a parameter, which the target's C compiler
+		// passes by value wrongly -- it drops the argument slot, "couldn't find
+		// object variable" -- and every parameter of one was refused for it. It is
+		// received by POINTER now and copied on entry, as an array parameter is
+		// (byRefParam): from a variable, a literal, a package variable, an element,
+		// a dereference and a field, two at once, through a function value and an
+		// interface, variadic, deferred and started on a cog -- the callee's copy
+		// its own, what the caller wrote after the defer or the go statement unseen.
+		name: "a struct holding an array passed by value",
+		src: `type Packet struct {
+	id   int
+	data [4]byte
+}
+
+type Big struct {
+	tag  string
+	vals [3]int
+	pkt  Packet
+}
+
+var calls int
+
+var last int
+
+var done chan bool
+
+func sum(p Packet) int {
+	calls = calls*10 + 1
+	t := p.id
+	for _, b := range p.data {
+		t += int(b)
+	}
+	p.data[0] = 99
+	return t
+}
+
+func first(b Big) int { return b.vals[0] + b.pkt.id }
+
+func pair(p, q Packet) int { return p.id*10 + q.id }
+
+func all(ps ...Packet) int {
+	t := 0
+	for _, p := range ps {
+		t = t*10 + p.id
+	}
+	return t
+}
+
+func record(p Packet) { last = p.id*100 + int(p.data[3]) }
+
+func worker(p Packet) {
+	last = p.id*100 + int(p.data[2])
+	done <- true
+}
+
+type Sink interface{ Take(p Packet) int }
+
+type S struct{ n int }
+
+func (s *S) Take(p Packet) int {
+	s.n += p.id
+	return int(p.data[1])
+}
+
+var gp = Packet{7, [4]byte{1, 2, 3, 4}}
+
+func deferred(p Packet) {
+	defer record(p)
+	p.id = 50
+	p.data[3] = 77
+}
+
+// A struct holding an ARRAY passed by value: the callee's copy is its own, from a
+// variable, a literal, a package variable, an element, a dereference and a field,
+// two at once, through a function value and an interface, variadic, deferred and
+// started on a cog.
+func main() {
+	p := Packet{1, [4]byte{10, 20, 30, 40}}
+	println(sum(p), p.data[0])
+	println(sum(Packet{2, [4]byte{1, 1, 1, 1}}))
+	println(sum(gp))
+	arr := [2]Packet{p, gp}
+	println(sum(arr[1]))
+	pp := &p
+	println(sum(*pp))
+	b := Big{"x", [3]int{5, 6, 7}, p}
+	println(first(b), sum(b.pkt))
+	println(pair(p, gp))
+	fv := sum
+	println(fv(p))
+	var s S
+	var sk Sink = &s
+	println(sk.Take(p), s.n)
+	println(all(p, gp, Packet{3, [4]byte{}}))
+	deferred(p)
+	println(last)
+	go worker(p)
+	p.data[2] = 0
+	<-done
+	println(last, calls)
+}
+`,
+		want: "101 10\n6\n17\n17\n101\n6 101\n17\n101\n20 1\n173\n140\n130 1111111\n",
+	}, {
+		// The same parameter at the sizes the target copies wrongly, 12 and 16 bytes,
+		// through every kind of call: a method, an interface slot, a method value
+		// and a method expression, a function literal, a function value in a field
+		// and in a slice, unnamed and unused parameters, the callee's copy written
+		// and addressed, passed on, recursed, spread, deferred and started.
+		name: "a struct holding an array passed through every kind of call",
+		src: `type T12 struct{ a [3]int }
+
+type T16 struct {
+	n int
+	a [3]int
+}
+
+type D12 T12
+
+type S struct{ n int }
+
+var last int
+
+var gs S
+
+var done chan bool
+
+func (s *S) Take(t T12, k int) int {
+	s.n += t.a[0] * k
+	return t.a[1]
+}
+
+func (s *S) Run(t T16) {
+	last = t.n*100 + t.a[2]
+	done <- true
+}
+
+type Taker interface {
+	Take(t T12, k int) int
+}
+
+type Box struct {
+	f func(T12) int
+}
+
+func second(t T12) int { return t.a[1] }
+
+func unnamed(T12) int { return 42 }
+
+func blank(_ T12, k int) int { return k }
+
+func unused(t T12, k int) int { return k * 2 }
+
+func mutate(t T12) int {
+	t.a[0] = 100
+	q := &t
+	q.a[1] = 200
+	return t.a[0] + t.a[1]
+}
+
+func pass(t T12) int { return second(t) + mutate(t) }
+
+func depth(t T16, n int) int {
+	if n == 0 {
+		return t.n
+	}
+	t.n += n
+	return depth(t, n-1)
+}
+
+func all(ts ...T12) int {
+	s := 0
+	for _, t := range ts {
+		s = s*10 + t.a[0]
+	}
+	return s
+}
+
+func fromD(d D12) int { return d.a[2] }
+
+func record(t T12) { last = t.a[0]*10 + t.a[2] }
+
+func deferred(s *S, t T12) {
+	defer s.Take(t, 1000)
+	defer record(t)
+	t.a[0] = 9
+}
+
+// A struct holding an array of 12 and of 16 bytes passed by value, through every
+// kind of call: direct, a method, an interface slot, a method value and a method
+// expression, a function literal, a function value in a field and in a slice,
+// unnamed and unused parameters, the callee's copy written and addressed, passed
+// on, recursed, spread, deferred and started on a cog.
+func main() {
+	x := T12{[3]int{1, 2, 3}}
+	y := T16{4, [3]int{5, 6, 7}}
+	var s S
+	println(s.Take(x, 2), s.n)
+	var tk Taker = &s
+	println(tk.Take(x, 3), s.n)
+	mv := gs.Take
+	me := (*S).Take
+	println(mv(x, 1), me(&s, x, 1), s.n, gs.n)
+	lit := func(t T12) int { return t.a[2] * 10 }
+	println(lit(x), unnamed(x), blank(x, 7), unused(x, 4))
+	println(mutate(x), x.a[0], x.a[1], pass(x))
+	println(depth(y, 3), y.n)
+	ts := []T12{x, {[3]int{5, 0, 0}}}
+	println(all(ts...), all(x, ts[1]))
+	b := Box{f: second}
+	fs := []func(T12) int{second, lit}
+	println(b.f(x), fs[1](x))
+	println(fromD(D12(x)), fromD(D12{[3]int{0, 0, 8}}))
+	deferred(&s, x)
+	println(last, s.n)
+	go gs.Run(y)
+	y.a[2] = 0
+	<-done
+	println(last)
+}
+`,
+		want: "2 2\n2 5\n2 2 6 1\n30 42 7 8\n300 1 2 302\n10 4\n15 15\n2 30\n3 8\n13 1006\n407\n",
+	}, {
+		// A function TYPE whose parameter holds an array, used as a parameter's type;
+		// a function literal deferred and started with one -- the deferred literal's
+		// replay handed its capture over by value until the by-ref parameters -- a
+		// deferred and a started call through an interface slot, and a callee
+		// keeping its copy in a package variable.
+		name: "a struct holding an array as a function type's parameter",
+		src: `type T12 struct{ a [3]int }
+
+type Fn func(T12) int
+
+type S struct{ n int }
+
+var last int
+
+var kept T12
+
+var done chan bool
+
+func (s *S) Take(t T12, k int) int {
+	s.n += t.a[0] * k
+	last = t.a[2]
+	if k == 5 {
+		done <- true
+	}
+	return t.a[1]
+}
+
+type Taker interface {
+	Take(t T12, k int) int
+}
+
+func apply(f Fn, t T12) int { return f(t) + 1 }
+
+func keep(t T12) { kept = t }
+
+func triple(t T12) int { return t.a[0] * 3 }
+
+var gs S
+
+func deferred(tk Taker, t T12) {
+	defer tk.Take(t, 10)
+	defer func(u T12) { last = u.a[0] * 1000 }(t)
+	t.a[0] = 7
+}
+
+// A function type whose parameter is a struct holding an array, used as a
+// parameter's type; a function literal deferred and started with one; a deferred
+// and a started call through an interface slot; a callee keeping its copy.
+func main() {
+	x := T12{[3]int{1, 2, 3}}
+	println(apply(triple, x), apply(func(t T12) int { return t.a[2] }, x))
+	keep(x)
+	x.a[0] = 50
+	println(kept.a[0], x.a[0])
+	var tk Taker = &gs
+	deferred(tk, x)
+	println(last, gs.n)
+	go func(u T12) {
+		last = u.a[1] * 7
+		done <- true
+	}(x)
+	<-done
+	println(last)
+	go tk.Take(x, 5)
+	x.a[2] = 0
+	<-done
+	println(last, gs.n)
+}
+`,
+		want: "4 4\n1 50\n3 500\n14\n3 750\n",
+	}, {
 		// A method called on the interface RESULT of a call through a function
 		// value, a field holding one or another interface's slot -- `p(1).Area()`,
 		// `h.p(2).Area()`, `hd.Get().Area()` -- read the table and the data off
@@ -38068,7 +38362,8 @@ const multiPkgWant = "300\nLOUD\n50\n6\n5\n45\n6 1000\n200\n207\n3 100\n4 9\n" +
 	"2 4 7 4\n" +
 	"4 5 2 3\n" +
 	"2 3 4 3\n" +
-	"81 2\n"
+	"81 2\n" +
+	"10 3 1 2\n10 40 5\n"
 
 var multiPkgProgram = map[string]string{
 	"main.ogo": `import "chain"
@@ -38222,6 +38517,7 @@ libStates()
 libValues()
 libOps()
 libHooks()
+libFrames()
 }
 
 // Another package's function VARIABLE, deferred and started on a cog with a store
@@ -38234,6 +38530,19 @@ func libHooks() {
 	lib.Launch = lib.Mute
 	println(lib.Seen, <-lib.Sent)
 }
+
+// Another package's struct holding an ARRAY passed by value: to its function, its
+// method through its interface, its function variable, and a function of this
+// package taking the type -- each the callee's own copy.
+func libFrames() {
+	f := lib.Frame{ID: 1, Data: [3]int{2, 3, 4}}
+	var p lib.Port
+	var s lib.Sender = &p
+	println(lib.FrameSum(f), s.Send(f), p.N, f.Data[0])
+	println(lib.FrameHook(f), localFrame(f), lib.FrameSum(lib.Frame{5, [3]int{}}))
+}
+
+func localFrame(f lib.Frame) int { return f.Data[2] * 10 }
 
 func hookRun() {
 	defer lib.Hook(1)
@@ -39146,6 +39455,29 @@ func Run(d *Dev, s State) int {
 	}
 	return k
 }
+`,
+	"lib/frames.ogo": `type Frame struct {
+	ID   int
+	Data [3]int
+}
+
+type Sender interface {
+	Send(f Frame) int
+}
+
+func FrameSum(f Frame) int {
+	return f.ID + f.Data[0] + f.Data[1] + f.Data[2]
+}
+
+type Port struct{ N int }
+
+func (p *Port) Send(f Frame) int {
+	p.N += f.ID
+	f.Data[0] = 99
+	return f.Data[1]
+}
+
+var FrameHook func(Frame) int = FrameSum
 `,
 	"lib/more.ogo": `var Grid [3][5]int
 
