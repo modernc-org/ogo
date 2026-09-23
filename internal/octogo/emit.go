@@ -32714,6 +32714,25 @@ func (e *emitter) emitPrintfVerb(item printfItem, idx int, arg Node) bool {
 			}
 			return noSpec("%v of this type is printed without a width here")
 		}
+		// A POINTER to an array prints as fmt prints one at the top, "&[1 2 3]", or
+		// <nil>, and a value of an array TYPE -- `*pa` types as the array's typedef
+		// -- prints its elements. Both were "%v of ... is not supported yet".
+		if a, isArrPtr := e.arrayPtrCType(ct); known && isArrPtr {
+			tmp := e.newTmp()
+			code, why := e.printArrayC("(*"+tmp+")", a, true, "0")
+			if why != "" {
+				return noSpec("%v of this array is not supported yet: " + why)
+			}
+			e.ind()
+			e.emit("{ " + ct + " " + tmp + " = ")
+			value()
+			e.emit("; if (" + tmp + ") { printf(\"&\"); " + code + " } else { printf(\"<nil>\"); } }\n")
+			return true
+		}
+		if _, isArr := e.namedArrays[ct]; known && isArr {
+			e.emitPrintOne(false, idx, arg)
+			return true
+		}
 		// %v prints what println prints, by calling it -- "[1 2 3]" for a slice, the
 		// word for a bool, the shortest form for a float. Restating that would be two
 		// spellings free to drift apart.
@@ -33215,8 +33234,8 @@ func (e *emitter) emitPrintOne(newline bool, idx int, arg Node) {
 	// storage is named as a copy of it names it (arraySourceC), a literal bound to a
 	// temporary; one with an EMPTY dimension prints its brackets, "[]" or "[[] []]",
 	// there being no C array of no elements to name.
-	if _, typed := e.inferCType(arg.ast); typed {
-		// Not an array, which has no C value type: see below.
+	if ct, typed := e.inferCType(arg.ast); typed && e.namedArrays[ct].bound == "" {
+		// Not an array, which has no C value type but its typedef: see below.
 	} else if a, isArr := e.arrayShapeOf(arg.ast); isArr && e.deferReplay < 0 {
 		if text, empty, ok := emptyArrayText(a); empty {
 			if !ok {
@@ -33367,6 +33386,28 @@ func (e *emitter) emitPrintAddress(newline bool, ct string, idx int, arg Node) {
 // helpers actually called are defined -- a print without a matching println must
 // not leave an unused ogo_println_slice_<T> behind.
 func (e *emitter) emitPrintSlice(newline bool, elem string, emitArg func()) {
+	// A slice of ARRAYS, `[][2]int`, prints each row as an array prints, "[[1 2]
+	// [3 4]]" (printArrayC). It was "printing a slice or array of [2]int is not
+	// supported yet".
+	if a, isArr := e.namedArrays[elem]; isArr && !e.canPrintElem(elem) {
+		s, i := e.newTmp(), e.newTmp()
+		code, why := e.printArrayC(s+".ptr["+i+"]", a, true, "0")
+		if why != "" {
+			e.fail("printing a slice of %s is not supported yet: %s", e.goTypeName(elem), why)
+			return
+		}
+		e.needSlice(elem)
+		e.ind()
+		e.emit("{ " + sliceCName(elem) + " " + s + " = ")
+		emitArg()
+		e.emit("; printf(\"[\"); for (int " + i + " = 0; " + i + " < " + s + ".len; " + i + "++) { if (" + i +
+			") { printf(\" \"); } " + code + " } printf(\"]\"); }\n")
+		if newline {
+			e.ind()
+			e.emit("printf(\"\\n\");\n")
+		}
+		return
+	}
 	if !e.canPrintElem(elem) {
 		e.fail("printing a slice or array of %s is not supported yet", e.goTypeName(elem))
 		return

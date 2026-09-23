@@ -38856,6 +38856,34 @@ func main() {
 `,
 		want: "{1 [1 2 3]} {b:{n:2 data:[2 3 4]} k:7} {2 [2 3 4]}\n{3 [3 4 5]} {4 [5 6 7]} 123\n{n:2 data:[1 2 3]} {{8 [0 0 0]} 9}\n{2 [2 3 4]} [{1 [1 2 3]} {2 [2 3 4]}]\n{1 [1 2 3]} [1 2 3]\n",
 	}, {
+		// A pointer to an array, its dereference and a slice of arrays under %v were
+		// each refused, "%v of *[3]int is not supported yet", "printing a slice or
+		// array of [2]int is not supported yet". fmt prints the pointer as "&[1 2
+		// 3]" or <nil>, and the others by their elements, row by row (printArrayC).
+		name: "a pointer to an array and a slice of arrays print",
+		src: `type P struct{ x, y int }
+
+type Row [2]int
+
+var ga = [3]int{1, 2, 3}
+
+var rows = [][2]int{{1, 2}, {3, 4}}
+
+var named = []Row{{5, 6}}
+
+// What points at an array, and what holds arrays, printed under %v: a pointer to
+// one, nil, its dereference, a slice of them and of a defined array type.
+func main() {
+	pa := &ga
+	var pz *[3]int
+	printf("%v %v %v\n", pa, pz, *pa)
+	printf("%v %v %v\n", rows, rows[1], named)
+	pa[1] = 20
+	printf("%v %d\n", *pa, *pa)
+}
+`,
+		want: "&[1 2 3] <nil> [1 2 3]\n[[1 2] [3 4]] [3 4] [[5 6]]\n[1 20 3] [1 20 3]\n",
+	}, {
 		// A method called on the interface RESULT of a call through a function
 		// value, a field holding one or another interface's slot -- `p(1).Area()`,
 		// `h.p(2).Area()`, `hd.Get().Area()` -- read the table and the data off
