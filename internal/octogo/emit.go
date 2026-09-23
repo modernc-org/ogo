@@ -5315,6 +5315,13 @@ func emitProgram(pkg *Package, w io.Writer, opts []EmitOption, rename map[string
 	for _, el := range sortedKeys(e.appendElems) {
 		open, closing := e.elemAtC("s.ptr", el) // a function element's form; see elemAtC
 		param, store := el+" v", open+"s.len"+closing+" = v;"
+		if e.holdsArray(el) {
+			// A struct holding an array is handed over by pointer and copied: a
+			// parameter of its type is dropped by the target's C compiler ("couldn't
+			// find object variable"), and its assignment is refused at some sizes.
+			e.includes["string.h"] = true
+			param, store = "const "+el+"* v", "memcpy(&"+open+"s.len"+closing+", v, sizeof(s.ptr[0]));"
+		}
 		if a, isArr := e.namedArrays[el]; isArr {
 			// NOT `%s v` for an array element: a parameter whose type is a TYPEDEF'D
 			// array corrupts unrelated code on this target, silently and non-locally
@@ -5446,6 +5453,10 @@ func emitProgram(pkg *Package, w io.Writer, opts []EmitOption, rename map[string
 	for _, el := range sortedKeys(e.tryappendElems) {
 		open, closing := e.elemAtC("s.ptr", el)
 		param, store := el+" v", open+"s.len"+closing+" = v;" // see the append helper above
+		if e.holdsArray(el) {
+			e.includes["string.h"] = true
+			param, store = "const "+el+"* v", "memcpy(&"+open+"s.len"+closing+", v, sizeof(s.ptr[0]));"
+		}
 		if a, isArr := e.namedArrays[el]; isArr {
 			e.includes["string.h"] = true
 			param, store = "const "+a.elem+"* v", "memcpy(s.ptr[s.len], v, sizeof(s.ptr[s.len]));"
@@ -14944,6 +14955,40 @@ func (e *emitter) cParamTypes(sig []int32) ([]string, []arrDim) {
 		})
 	}
 	return out, dims
+}
+
+// holdsArray reports whether ct is a struct holding an array. The target's C
+// compiler cannot pass or return one by value, and copy-initializes or assigns one
+// only at some sizes -- "Unable to multiply assign this target" for 12 and 16 bytes,
+// where 3, 8 and 20 are taken (measured on v7.7.3) -- so such a value is copied with
+// memcpy in every position that copies it, and never with `=`.
+func (e *emitter) holdsArray(ct string) bool {
+	return ct != "" && !strings.HasSuffix(ct, "*") && e.hasArrayField(ct)
+}
+
+// byRefSource answers how to reach by address the storage holding a value of the
+// type ct (holdsArray) whose C text is text: its own address, or -- for a composite
+// literal -- a temporary's, declared by the line it also answers. A literal is
+// bound rather than addressed where it stands: the target's memcpy is a macro,
+// which reads the commas inside a literal's braces as its own arguments.
+func (e *emitter) byRefSource(ct, text string) (decl, addr string) {
+	if body, isLit := compoundLitBody(text); isLit {
+		tmp := e.newTmp()
+		return ct + " " + tmp + " = " + body + ";\n", "&" + tmp
+	}
+	return "", "&(" + text + ")"
+}
+
+// compoundLitBody answers the braces of a compound literal's C text, `{1, 2}` of
+// `(T){1, 2}` -- or of braces standing alone -- for a declaration to initialize from.
+func compoundLitBody(text string) (string, bool) {
+	if strings.HasPrefix(text, "{") && strings.HasSuffix(text, "}") {
+		return text, true
+	}
+	if i := strings.Index(text, "){"); strings.HasPrefix(text, "(") && i > 0 && strings.HasSuffix(text, "}") && !strings.ContainsAny(text[1:i], "()") {
+		return text[i+1:], true
+	}
+	return "", false
 }
 
 // refuseArrayStructABI rejects passing or returning a struct that holds an array.
@@ -25262,7 +25307,22 @@ func (e *emitter) rangeValueInject(h *forHeader, key, elem, access string) func(
 				if decl != "" {
 					name = e.localIdent(val) // the declaration; see localIdent
 				}
-				lines = append(lines, func() { e.ind(); e.emit(decl + name + " = " + access + ";\n") })
+				if e.holdsArray(elem) {
+					// A struct holding an array is copied (holdsArray): `T v = xs.ptr[i]`
+					// did not build for one of 12 or 16 bytes, so a range over a slice or
+					// an array of them was refused by the target's compiler.
+					lines = append(lines, func() {
+						e.includes["string.h"] = true
+						if decl != "" {
+							e.ind()
+							e.emit(decl + name + ";\n")
+						}
+						e.ind()
+						e.emit("memcpy(&" + name + ", &(" + access + "), sizeof(" + name + "));\n")
+					})
+				} else {
+					lines = append(lines, func() { e.ind(); e.emit(decl + name + " = " + access + ";\n") })
+				}
 			}
 		}
 	}
@@ -30352,6 +30412,15 @@ func (e *emitter) emitAppend(callSuffix []int32) {
 			e.emit("(" + elem + "){0})")
 			continue
 		}
+		// A struct holding an array goes by address (see the helper).
+		if e.holdsArray(elem) {
+			decl, addr := e.byRefSource(elem, e.captureC(func() { e.emitExpr(v.ast) }))
+			if decl != "" {
+				e.prologue = append(e.prologue, decl)
+			}
+			e.emit(addr + ")")
+			continue
+		}
 		e.emitExpr(v.ast)
 		e.emit(")")
 	}
@@ -30645,13 +30714,20 @@ func (e *emitter) emitTryAppend(targets []assignTarget, declare []bool, callSuff
 	default:
 		e.tryappendElems[elem] = true
 	}
+	slice := e.captureC(func() { e.emitExpr(args[0].ast) })
+	value := e.captureC(func() { e.emitExpr(args[1].ast) })
+	if e.holdsArray(elem) && !e.spreadCall(callSuffix) {
+		// By address, as the one-result append hands it (see its helper).
+		decl, addr := e.byRefSource(elem, value)
+		if decl != "" {
+			e.ind()
+			e.emit(decl)
+		}
+		value = addr
+	}
 	tmp := e.newTmp()
 	e.ind()
-	e.emit(appendokCName(elem) + " " + tmp + " = " + call + "(")
-	e.emitExpr(args[0].ast)
-	e.emit(", ")
-	e.emitExpr(args[1].ast)
-	e.emit(");\n")
+	e.emit(appendokCName(elem) + " " + tmp + " = " + call + "(" + slice + ", " + value + ");\n")
 	// The slice target, then the ok target (int).
 	if declare[0] && targets[0].plain() {
 		e.sliceVars[targets[0].name] = elem
@@ -35365,6 +35441,20 @@ func (e *emitter) emitValueList(targets []assignTarget, declare []bool, rhs []No
 	types := make([]string, len(rhs))
 	dims := make([]arrDim, len(rhs))
 	for i, r := range rhs {
+		// A BLANK target keeps nothing: its value is evaluated for what it does, in
+		// its turn, and bound to nothing. Bound, it was a temporary nothing read --
+		// an unused variable to both compilers, which a -Werror build refuses, a cog
+		// register, and for a struct holding an array a copy the target refuses.
+		if t := targets[i]; t.name == "_" && t.plain() {
+			if b, bound := e.boundOperands[&r.ast[0]]; bound {
+				b.used = true
+				e.ind()
+				e.emit("(void)" + b.name + ";\n")
+			} else if e.exprHasEffect(r.ast) {
+				e.emitDiscard(r.ast)
+			}
+			continue
+		}
 		// An ARRAY value is bound by COPY. It has no C value type to declare a
 		// temporary of, so inferCType answered no and the whole statement was
 		// "cannot infer the type of a value in a multiple assignment" -- which is
@@ -35437,6 +35527,25 @@ func (e *emitter) emitValueList(targets []assignTarget, declare []bool, rhs []No
 			tmps[i] = b.name
 			continue
 		}
+		// A struct holding an array is copied into its temporary, never initialized
+		// from (holdsArray): a swap of two of 12 bytes did not build for the target.
+		if e.holdsArray(ct) {
+			text := e.captureC(func() { e.emitExpr(r.ast) })
+			decl, addr := e.byRefSource(ct, text)
+			if decl != "" {
+				e.ind()
+				e.emit(decl) // a literal's temporary is a copy already
+				tmps[i] = strings.TrimPrefix(addr, "&")
+				continue
+			}
+			tmps[i] = e.newTmp()
+			e.includes["string.h"] = true
+			e.ind()
+			e.emit(ct + " " + tmps[i] + ";\n")
+			e.ind()
+			e.emit("memcpy(&" + tmps[i] + ", " + addr + ", sizeof(" + tmps[i] + "));\n")
+			continue
+		}
 		tmps[i] = e.newTmp()
 		e.ind()
 		e.emit(ct + " " + tmps[i] + " = ")
@@ -35444,6 +35553,9 @@ func (e *emitter) emitValueList(targets []assignTarget, declare []bool, rhs []No
 		e.emit(";\n")
 	}
 	for i, tgt := range targets {
+		if tgt.name == "_" && tgt.plain() {
+			continue // bound nothing; see above
+		}
 		e.storeCarries = carried[i]
 		if dims[i].bound != "" {
 			e.emitStoreArray(tgt, declare[i], dims[i], tmps[i])
@@ -36074,6 +36186,18 @@ func (e *emitter) packVariadic(elem string, args []Node) string {
 		}
 		if !wrapped {
 			val = e.captureC(func() { e.emitExpr(a.ast) })
+		}
+		// A struct holding an array is copied in (holdsArray): assigned, a
+		// variadic of 12-byte ones did not build for the target.
+		if e.holdsArray(elem) {
+			decl, addr := e.byRefSource(elem, val)
+			if decl != "" {
+				e.prologue = append(e.prologue, decl)
+			}
+			e.includes["string.h"] = true
+			dst := tmp + "[" + strconv.Itoa(i) + "]"
+			e.prologue = append(e.prologue, "memcpy(&"+dst+", "+addr+", sizeof("+dst+"));\n")
+			continue
 		}
 		e.prologue = append(e.prologue, tmp+"["+strconv.Itoa(i)+"] = "+val+";\n")
 	}
@@ -36881,6 +37005,10 @@ func (e *emitter) packStoreC(dst, src, elem string) string {
 	if _, isArr := e.namedArrays[elem]; isArr {
 		e.includes["string.h"] = true
 		return "memcpy(" + dst + ", " + src + ", sizeof(" + dst + "));\n"
+	}
+	if e.holdsArray(elem) {
+		e.includes["string.h"] = true
+		return "memcpy(&" + dst + ", &(" + src + "), sizeof(" + dst + "));\n"
 	}
 	return dst + " = " + src + ";\n"
 }

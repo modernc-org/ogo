@@ -37460,6 +37460,106 @@ outer:
 `,
 		want: "1 4\n2 4\n3 4\n2 x\n4 x\nabc 3\nbc 2\nc 1\n5\n12 13\n10\n1 4\n1 3\n1 2\n1 1\n4\n3\n1 4 0\n1 4 1\n2 4 0\n1234111\n",
 	}, {
+		// A struct holding an ARRAY copied, at the sizes the target's C compiler
+		// copies wrongly: `T v = x` and `v = x` of one of 12 or 16 bytes is "Unable
+		// to multiply assign this target", where 3, 8 and 20 bytes build. So a range
+		// over a slice or an array of them, a swap, a list with a comma-ok, a
+		// variadic call and append did not build for the target -- append handed one
+		// to its helper by value, which is refused outright -- and a blank target of
+		// a list bound a temporary nothing read, which both compilers flag. Each is a
+		// memcpy now (holdsArray), and a blank target binds nothing.
+		name: "a struct holding an array is copied, never assigned",
+		src: `type T12 struct{ a [3]int }
+
+type T16 struct {
+	n int
+	a [3]int
+}
+
+type Outer struct {
+	k int
+	t T12
+}
+
+var gt = T12{[3]int{7, 8, 9}}
+
+var calls int
+
+func f(k int) int {
+	calls = calls*10 + k
+	return k
+}
+
+func all(ts ...T12) int {
+	s := 0
+	for _, t := range ts {
+		s = s*10 + t.a[2]
+	}
+	return s
+}
+
+func sum16(ts ...T16) int {
+	s := 0
+	for _, t := range ts {
+		s = s*10 + t.n + t.a[1]
+	}
+	return s
+}
+
+// A struct holding an ARRAY copied, in every position that copies one, at the
+// sizes the target's C compiler assigns wrongly (12 and 16 bytes): ranged over,
+// swapped, stored through a list, appended (the two-result append too, which Go has
+// not), packed for a variadic call, dropped by a blank target -- each a memcpy,
+// never an assignment.
+func main() {
+	x := T12{[3]int{1, 2, 3}}
+	y := T12{[3]int{4, 5, 6}}
+	ts := make([]T12, 2, 4)
+	ts[0], ts[1] = x, y
+	arr := [2]T12{x, y}
+	s := 0
+	for _, t := range ts {
+		s = s*10 + t.a[0]
+	}
+	for _, t := range arr {
+		s = s*10 + t.a[1]
+	}
+	for i, t := range [2]T12{y, x} {
+		s = s*10 + t.a[2] + i
+	}
+	println(s)
+	x, y = y, x
+	println(x.a[0], y.a[0])
+	ts[0], ts[1] = ts[1], ts[0]
+	println(ts[0].a[0], ts[1].a[0])
+	var ok bool
+	x, ok = gt, true
+	println(x.a[2], ok)
+	ts = append(ts, gt, T12{[3]int{9, 9, 9}})
+	println(len(ts), ts[2].a[1], ts[3].a[0])
+	println(all(x, y, gt), all(T12{[3]int{1, 1, 5}}), all())
+	p := T16{1, [3]int{0, 2, 0}}
+	println(sum16(p, T16{3, [3]int{0, 4, 0}}))
+	h := Outer{1, x}
+	_, _ = x, h
+	_, _ = s, calls
+	_, calls2 := h, f(4)
+	var o Outer
+	o.t, o.k = y, f(5)
+	println(calls2, calls, o.t.a[0], o.k)
+	var back [3]T12
+	b := back[:0]
+	b, ok = append(b, x)
+	println(len(b), b[0].a[2], ok)
+	b, ok = append(b, T12{[3]int{4, 5, 6}})
+	b, ok = append(b, x)
+	println(len(b), b[1].a[0], ok)
+	b, ok = append(b, x)
+	println(len(b), ok)
+}
+`,
+		want: "142564\n4 1\n4 1\n9 true\n4 8 9\n939 5 0\n37\n4 45 1 5\n1 9 true\n3 4 true\n3 false\n",
+	}, {
 		// A method called on the interface RESULT of a call through a function
 		// value, a field holding one or another interface's slot -- `p(1).Area()`,
 		// `h.p(2).Area()`, `hd.Get().Area()` -- read the table and the data off
