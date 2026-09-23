@@ -11822,6 +11822,7 @@ func (f *File) callValueAddressing(s *Scope, head Token, steps []Node) (sliceAt 
 	}
 	var results []retResult
 	ok := false
+	rs := s // where the result's type is resolved
 	switch {
 	case k == 0:
 		results, ok = f.callResults(s, head, Token{})
@@ -11835,11 +11836,35 @@ func (f *File) callValueAddressing(s *Scope, head Token, steps []Node) (sliceAt 
 		if m, has := f.selectorMember(steps[0]); has {
 			results, ok = f.callResults(s, head, m)
 		}
+	case k >= 2 && steps[k-1].sym == Selector && !slices.ContainsFunc(steps[:k-1], func(n Node) bool { return n.sym == CallSuffix }):
+		// A method called on what a chain of fields and indexes reaches,
+		// `hs[0].get()`: the receiver's type walked from the variable's
+		// (targetTypeNode), and the method looked up on it. It was not typed, and
+		// `hs[0].get().data[1:]` was taken where Go refuses it.
+		m, has := f.selectorMember(steps[k-1])
+		if !has {
+			break
+		}
+		tn, in := f.targetTypeNode(s, head, steps[:k-1], 0)
+		if p, isPtr := tn.(*TypeNodePointer); isPtr {
+			tn = p.TypeNode
+		}
+		id, isID := tn.(*TypeNodeIdent)
+		if !isID || id.Qualifier.IsValid() {
+			break
+		}
+		td, home, isMethod := f.methodOwnerScoped(in, id.Name.Src(), m.Src())
+		if !isMethod {
+			break
+		}
+		if fd := td.methods[m.Src()]; fd != nil && fd.Type != nil {
+			results, ok, rs = f.flattenResults(home, fd.Type.Signature), true, home
+		}
 	}
 	if !ok || len(results) != 1 || results[0].typeNode == nil {
 		return -1, false, false
 	}
-	t := typeAt{results[0].typeNode, s, f}
+	t := typeAt{results[0].typeNode, rs, f}
 	var sliceElem *typeAt // the value is a slice of these, which a slice step made
 	addr := false
 	for i, st := range steps[k+1:] {

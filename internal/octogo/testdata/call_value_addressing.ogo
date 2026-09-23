@@ -37,6 +37,16 @@ func mkws() []Buf { return bufs[:] }
 
 func (b Buf) self() Buf { return b }
 
+type O struct{ in W }
+
+func (w *W) get() Buf { return w.b }
+
+func (w *W) getp() *Buf { return w.p }
+
+var o O
+
+var ws []W = []W{{}}
+
 func (b *Buf) ptr() *Buf { return b }
 
 func ok() {
@@ -52,6 +62,8 @@ func ok() {
 	_ = &mkws()[1]
 	_ = &gb.ptr().n
 	_ = mk(1).data[0]
+	_ = o.in.getp().data[1:]
+	_ = &ws[0].getp().n
 }
 
 func bad() {
@@ -68,6 +80,10 @@ func bad() {
 	_ = &mk(1).data[0]
 	// ERROR invalid operation: cannot take address of gb.self\(\).n
 	_ = &gb.self().n
+	// ERROR cannot slice unaddressable value o.in.get\(\).data\[1:\]
+	_ = o.in.get().data[1:]
+	// ERROR invalid operation: cannot take address of ws\[0\].get\(\).n
+	_ = &ws[0].get().n
 	// ERROR invalid operation: cannot take address of mkp\(\).x
 	q := &mkp().x
 	println(*q)
