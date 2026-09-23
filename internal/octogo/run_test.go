@@ -36347,7 +36347,8 @@ const multiPkgWant = "300\nLOUD\n50\n6\n5\n45\n6 1000\n200\n207\n3 100\n4 9\n" +
 	"[2]greet.Row [2]greet.Reader greet.Row\n" +
 	"123 p2 9 3 2 3\n1 1 2 1 102 3\n2 1 4 3 4 4 5 134\n21 10 100 200 7 0\n1 5 1 2 4 1 3 21 1 2 12 12 123 123 11\n10 21 110 21 14 true 3 42\n10 3 4\n6 10 2\n6 11\n6 5 8 6\ntrue 110 6 106\n7 5\ntrue true\n" +
 	"1234567891 1 3 8 14 30 39\n" +
-	"2 4 7 4\n"
+	"2 4 7 4\n" +
+	"4 5 2 3\n"
 
 var multiPkgProgram = map[string]string{
 	"main.ogo": `import "chain"
@@ -36498,6 +36499,19 @@ qualifiedArrays()
 libShapes()
 initTrace()
 libStates()
+libValues()
+}
+
+// Another package's function of several results, or of a struct one, taken as a
+// value: it is the void wrapper writing them, as one of this package's is. Named
+// itself, the value was called with an out parameter it does not take, and the
+// board printed garbage.
+func libValues() {
+	var two func(n int) (int, int) = lib.Two
+	ta, tb := two(4)
+	mk := lib.Make
+	cf := mk(2, 3)
+	println(ta, tb, cf.Rate, len(cf.Pins))
 }
 
 // Another package's self-naming function type, the state-function idiom: its

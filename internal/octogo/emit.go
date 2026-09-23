@@ -36257,6 +36257,14 @@ func (e *emitter) qualifiedGlobalRead(base string, fields []string) (text, ctype
 				// this way; without it the C named a math_Sqrt nothing defines, and
 				// the program got the linker's word for it.
 				e.needMathWrapper(base, fields[0])
+				// One of several results, or of a struct one, is taken through its
+				// void wrapper, as this package's is (funcValueWrapper): named
+				// itself, `var f func(int) (int, int) = lib.Pair` built for the
+				// target with a warning and printed garbage on the board, the call
+				// through f handing it an out parameter it does not take.
+				if w, wrapped := e.funcValueWrapper(gn); wrapped {
+					return w, ft, true
+				}
 				return e.recFuncValue(gn), ft, true
 			}
 		}
