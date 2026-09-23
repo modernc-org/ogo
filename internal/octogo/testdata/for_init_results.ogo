@@ -1,0 +1,40 @@
+// A for loop's init may take ONE call's several results, declared or assigned, as
+// the statements `a, b := two()` and `x, h.n = two()` do: both were "assignment
+// mismatch: 2 variables but 1 value". A name declared takes the type of the result
+// in its position.
+
+type H struct{ n int }
+
+func two() (int, int) { return 1, 4 }
+
+func pair() (int, string) { return 2, "s" }
+
+func ok() {
+	for a, b := two(); a < b; a++ {
+	}
+	var x int
+	var h H
+	for x, h.n = two(); x < h.n; x++ {
+	}
+	for _, s := pair(); len(s) > 0; s = s[1:] {
+	}
+	println(x, h.n)
+}
+
+func bad() {
+	// ERROR assignment mismatch: 3 variables but two returns 2 values
+	for a, b, c := two(); a < b; a++ {
+		println(c)
+	}
+	var x int
+	// ERROR assignment mismatch: 3 variables but two returns 2 values
+	for x, x, x = two(); x < 3; x++ {
+	}
+	// ERROR mismatched types string and int
+	for n, s := pair(); s < n; n++ {
+	}
+	// ERROR no new variables on left side of :=
+	for _, _ := two(); ; {
+		break
+	}
+}

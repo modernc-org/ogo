@@ -37381,6 +37381,85 @@ func main() {
 `,
 		want: "10143 26 1000\n1023169 1013\n",
 	}, {
+		// A for loop's init from ONE call's several results, `for a, b := two();
+		// ...` and `for h.n, x = two(); ...`, which both compilers' statement forms
+		// take and the header refused as "assignment mismatch: 2 variables but 1
+		// value". Written in a block around the loop ahead of the condition, which
+		// reads the names it declares -- one shadows an outer name of another type.
+		name: "a for init from one call's several results",
+		src: `type H struct{ n, m int }
+
+var calls int
+
+func two() (int, int) {
+	calls = calls*10 + 1
+	return 1, 4
+}
+
+func three() (int, string, bool) {
+	calls = calls*10 + 2
+	return 2, "x", true
+}
+
+func pair() (string, int) {
+	calls = calls*10 + 3
+	return "abc", 3
+}
+
+func from(a int) (int, int) {
+	calls = calls*10 + 4
+	return a + 1, a + 3
+}
+
+// A for loop's init from ONE call's several results, declared and assigned: the
+// call runs once, before the first test, and a name it declares shadows an outer
+// one of another type, which the condition reads.
+func main() {
+	for a, b := two(); a < b; a++ {
+		println(a, b)
+	}
+	for i, s, ok := three(); ok && i < 5; i += 2 {
+		println(i, s)
+	}
+	s := 5
+	for s, t := pair(); len(s) > 0 && t > 0; s, t = s[1:], t-1 {
+		println(s, t)
+	}
+	println(s)
+	a := 10
+	for a, b := from(a); a < b; a++ {
+		if a == 11 {
+			continue
+		}
+		println(a, b)
+	}
+	println(a)
+	var h H
+	var x int
+	for h.n, x = two(); x > h.n; x-- {
+		println(h.n, x)
+	}
+	println(h.n, x)
+	for _, b := two(); b > 2; b-- {
+		println(b)
+	}
+outer:
+	for i, j := two(); i < j; i++ {
+		for k := 0; k < 3; k++ {
+			if i+k > 2 {
+				continue outer
+			}
+			if i == 3 {
+				break outer
+			}
+			println(i, j, k)
+		}
+	}
+	println(calls)
+}
+`,
+		want: "1 4\n2 4\n3 4\n2 x\n4 x\nabc 3\nbc 2\nc 1\n5\n12 13\n10\n1 4\n1 3\n1 2\n1 1\n4\n3\n1 4 0\n1 4 1\n2 4 0\n1234111\n",
+	}, {
 		// A method called on the interface RESULT of a call through a function
 		// value, a field holding one or another interface's slot -- `p(1).Area()`,
 		// `h.p(2).Area()`, `hd.Get().Area()` -- read the table and the data off

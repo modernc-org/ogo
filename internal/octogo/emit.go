@@ -24226,7 +24226,8 @@ func (e *emitter) parseForRest(n Node, h *forHeader) bool {
 				}
 			}
 		}
-		if len(h.initLHSs) != len(h.initRHSs) || len(h.initLHSs) == 0 {
+		// One value for several names is ONE call's several results (emitForInitMulti).
+		if len(h.initLHSs) == 0 || len(h.initLHSs) != len(h.initRHSs) && len(h.initRHSs) != 1 {
 			e.fail("a for-loop init declares %d names from %d values", len(h.initLHSs), len(h.initRHSs))
 			return false
 		}
@@ -24329,6 +24330,36 @@ func (e *emitter) parseForPost(n Node, h *forHeader) bool {
 		return false
 	}
 	return true
+}
+
+// emitForInitMulti writes the init of `for a, b := two(); ...` and `for x, h.n =
+// two(); ...` -- ONE call's several results -- inside the block emitFor opens around
+// the loop, as the statements `a, b := two()` and `x, h.n = two()` write them
+// (emitDestructure): the call runs once, before the first test.
+func (e *emitter) emitForInitMulti(h forHeader) {
+	targets := make([]assignTarget, len(h.initLHSs))
+	for i, lhs := range h.initLHSs {
+		if h.initOp == DEFINE {
+			name, ok := e.exprIdent(lhs)
+			if !ok {
+				e.fail("a for-loop init declares names")
+				return
+			}
+			targets[i] = assignTarget{name: name, tok: -1}
+			continue
+		}
+		t, ok := e.exprAssignTarget(lhs)
+		if !ok {
+			e.fail("unsupported target in a for-loop init")
+			return
+		}
+		targets[i] = t
+	}
+	declare := make([]bool, len(targets))
+	if h.initOp == DEFINE {
+		declare = allTrue(len(targets))
+	}
+	e.emitDestructure(targets, declare, h.initRHSs[0])
 }
 
 // emitForInitDefine declares the names of `for i, j := 0, n-1; ...` inside the block
@@ -24552,7 +24583,16 @@ func (e *emitter) emitFor(nodes []Node) {
 	// was opened, so it is closed after the body.
 	blockInit := false
 	initName, initCType, initVal := "", "", ""
-	if h.hasClause && h.initLHS != nil && h.initOp == DEFINE {
+	if h.hasClause && len(h.initLHSs) > 1 && len(h.initRHSs) == 1 {
+		// ONE call's several results, `for a, b := two(); ...` and `for x, y =
+		// two(); ...` (emitForInitMulti): written in a block around the loop, as a
+		// multi-name init is, but here, ahead of the condition that names them.
+		e.ind()
+		e.emit("{\n")
+		e.indent++
+		e.emitForInitMulti(h)
+		h.initLHS, h.initLHSs, blockInit = nil, nil, true
+	} else if h.hasClause && h.initLHS != nil && h.initOp == DEFINE {
 		// The SOURCE name, which is what locals is keyed by everywhere else --
 		// exprC renders a name for EMISSION, and a name renamed there (a variable
 		// named after a type, see localIdent) would key the map by a name nothing

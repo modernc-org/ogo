@@ -2919,19 +2919,35 @@ func (f *File) checkForHeader(s *Scope, results []retResult, kw string, n Node) 
 		// naming an outer variable of the same name still means the outer one, as it
 		// does in Go.
 		if len(fi.initLHSs) > 1 {
-			if len(fi.initLHSs) != len(fi.initRHSs) {
+			switch {
+			case len(fi.initRHSs) == 1 && !fi.define:
+				// ONE call's several results, `for x, h.n = two(); ...` and `for a, b
+				// := two(); ...`, as the statement forms take them. Both were
+				// "assignment mismatch: 2 variables but 1 value".
+				f.checkHeaderAssignList(s, fi.initLHSs[0], fi.initLHSs[1:], fi.initRHSs)
+			case len(fi.initRHSs) == 1:
+				f.checkNames(s, fi.initRHSs[0])
+				if v, ok := f.rhsValueCount(s, fi.initRHSs); ok && v != len(fi.initLHSs) {
+					f.err(f.tok(fi.initLHSs[0].Pos()).Position(), "assignment mismatch: %s but %s",
+						countUnits(len(fi.initLHSs), "variable"), f.valueSource(s, fi.initRHSs, v))
+				}
+				// Declared where the count is wrong too, as Go declares them, untyped
+				// then: the count is one error, not one per use of a name.
+				f.declareHeaderResults(s, fi.initLHSs, fi.initRHSs[0])
+			case len(fi.initLHSs) != len(fi.initRHSs):
 				f.err(f.tok(fi.initLHSs[0].Pos()).Position(), "assignment mismatch: %s but %s",
 					countUnits(len(fi.initLHSs), "variable"), countUnits(len(fi.initRHSs), "value"))
 				return
-			}
-			for _, rhs := range fi.initRHSs {
-				f.checkNames(s, rhs)
-			}
-			for i, lhs := range fi.initLHSs {
-				f.declareForInitVar(s, lhs, fi.initRHSs[i], fi.define)
-			}
-			if !fi.define {
-				f.checkHeaderAssign(s, fi.initLHSs, fi.initRHSs)
+			default:
+				for _, rhs := range fi.initRHSs {
+					f.checkNames(s, rhs)
+				}
+				for i, lhs := range fi.initLHSs {
+					f.declareForInitVar(s, lhs, fi.initRHSs[i], fi.define)
+				}
+				if !fi.define {
+					f.checkHeaderAssign(s, fi.initLHSs, fi.initRHSs)
+				}
 			}
 		} else {
 			f.checkNames(s, fi.initRHS)
@@ -2946,6 +2962,62 @@ func (f *File) checkForHeader(s *Scope, results []retResult, kw string, n Node) 
 	}
 	if fi.hasPost {
 		f.checkForPost(s, fi.postNode)
+	}
+}
+
+// typeFromResult types a variable declared from one of a call's several results,
+// `v, n := f()`, by the result in its position. qual is the package the call was
+// made into: the result's type is written in the CALLEE's file, so a name of another
+// package arrives unqualified, and the call says which package it belongs to.
+func (f *File) typeFromResult(s *Scope, vd *VarDeclaration, res retResult, qual Token) {
+	if tn := res.typeNode; tn != nil {
+		if rnm, named := namedTypeToken(tn); named {
+			vd.typeName, vd.isPtr = rnm, f.isPointerType(s, tn)
+			if vd.typeQual = namedTypeQual(tn); !vd.typeQual.IsValid() {
+				vd.typeQual = qual
+			}
+		}
+	}
+	if res.known {
+		vd.kind, vd.hasKind = res.kind, true
+	}
+}
+
+// declareHeaderResults declares the names a for header writes before ":=" from ONE
+// call's several results, `for a, b := two(); ...`, each typed by the result in its
+// position (typeFromResult), as the statement `a, b := two()` types it.
+func (f *File) declareHeaderResults(s *Scope, lhs []Node, call Node) {
+	var multi []retResult
+	qual := Token{}
+	if res, q, ok := f.qualifiedCallResults(s, call); ok {
+		multi, qual = res, q
+	} else if res, ok := f.exprCallResults(s, call); ok {
+		multi = res
+	}
+	if len(multi) != len(lhs) {
+		multi = nil
+	}
+	var ids []Token
+	for i, l := range lhs {
+		id, ok := f.exprSoleIdent(l)
+		if !ok {
+			if tok := f.tok(l.Pos()); tok.IsValid() {
+				f.err(tok.Position(), "non-name target on the left side of := (a field, element or pointee target takes =)")
+			}
+			continue
+		}
+		ids = append(ids, id)
+		if id.Src() == "_" {
+			continue
+		}
+		vd := &VarDeclaration{declaration: declaration{token: id}}
+		if i < len(multi) {
+			f.typeFromResult(s, vd, multi[i], qual)
+		}
+		f.declareLocal(s, vd)
+	}
+	if len(ids) != 0 && !slices.ContainsFunc(ids, func(id Token) bool { return id.Src() != "_" }) {
+		f.errNoNewVars(ids[0])
 	}
 }
 
@@ -6672,20 +6744,7 @@ func (f *File) checkAssignment(s *Scope, head, postfix Node) {
 			}
 		}
 		if i < len(multi) {
-			if tn := multi[i].typeNode; tn != nil {
-				if rnm, named := namedTypeToken(tn); named {
-					vd.typeName, vd.isPtr = rnm, f.isPointerType(s, tn)
-					// The result's type is written in the CALLEE's file, so a name
-					// of another package arrives unqualified: the call says which
-					// package it belongs to.
-					if vd.typeQual = namedTypeQual(tn); !vd.typeQual.IsValid() {
-						vd.typeQual = multiQual
-					}
-				}
-			}
-			if multi[i].known {
-				vd.kind, vd.hasKind = multi[i].kind, true
-			}
+			f.typeFromResult(s, vd, multi[i], multiQual)
 		}
 		if inferKinds {
 			f.inferVarFrom(s, vd, rhs[i])
