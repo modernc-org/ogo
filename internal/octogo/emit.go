@@ -17769,6 +17769,9 @@ func (e *emitter) arrayFieldOperand(ast []int32) (string, arrDim, bool) {
 	kids := slices.Collect(it(fac.ast))
 	base, fields, isField := e.factorFieldAccess(kids)
 	if !isField {
+		base, fields, isField = e.derefFieldsAsName(kids)
+	}
+	if !isField {
 		if base, fields, isField = e.callReadFields(kids); !isField {
 			return "", arrDim{}, false
 		}
@@ -17791,6 +17794,9 @@ func (e *emitter) arrayChainOperand(ast []int32) (string, arrDim, bool) {
 	}
 	kids := slices.Collect(it(fac.ast))
 	base, steps, isChain := e.factorAccessChain(kids)
+	if !isChain {
+		base, steps, isChain = e.derefChainAsName(kids)
+	}
 	if !isChain {
 		if base, steps, isChain = e.callReadBase(kids); !isChain {
 			return "", arrDim{}, false
@@ -17821,6 +17827,9 @@ func (e *emitter) arrayOperandOf(n Node) (arrDim, bool) {
 	kids := slices.Collect(it(n.ast))
 	base, fields, isField := e.factorFieldAccess(kids)
 	if !isField {
+		base, fields, isField = e.derefFieldsAsName(kids)
+	}
+	if !isField {
 		base, fields, isField = e.callReadFields(kids)
 	}
 	if isField {
@@ -17829,6 +17838,9 @@ func (e *emitter) arrayOperandOf(n Node) (arrDim, bool) {
 		}
 	}
 	base, steps, isChain := e.factorAccessChain(kids)
+	if !isChain {
+		base, steps, isChain = e.derefChainAsName(kids)
+	}
 	if !isChain {
 		base, steps, isChain = e.callReadBase(kids)
 	}
@@ -23263,6 +23275,36 @@ func (e *emitter) factorDerefChain(kids []Node) (string, []Node, bool) {
 		return "", nil, false
 	}
 	return name, steps, true
+}
+
+// derefChainAsName reads `(*p).steps` as `p.steps` where the dereference is Go's
+// shorthand (derefShorthand) -- a selector through a pointer dereferencing it, as an
+// index through a pointer to an array does -- for the readers of an ARRAY that take
+// a chain from a name: `range (*p).data` was "ranging an integer yields only the
+// index", `len((*p).data)` refused, where `p.data` always worked.
+func (e *emitter) derefChainAsName(kids []Node) (string, []Node, bool) {
+	name, steps, ok := e.factorDerefChain(kids)
+	if !ok || !e.derefShorthand(name, steps) || slices.ContainsFunc(steps, func(n Node) bool { return n.sym == CallSuffix }) {
+		return "", nil, false
+	}
+	return name, steps, true
+}
+
+// derefFieldsAsName is derefChainAsName for a chain of selectors only, answering
+// the field names, as factorFieldAccess does.
+func (e *emitter) derefFieldsAsName(kids []Node) (string, []string, bool) {
+	name, steps, ok := e.derefChainAsName(kids)
+	if !ok {
+		return "", nil, false
+	}
+	var fields []string
+	for _, st := range steps {
+		if st.sym != Selector {
+			return "", nil, false
+		}
+		fields = append(fields, e.soleIdent(st.ast))
+	}
+	return name, fields, true
 }
 
 // derefFuncCall reports `(*p)(args)`: a chain through a dereference whose first
@@ -30522,6 +30564,9 @@ func (e *emitter) arrayChainBound(arg []int32) (string, bool) {
 		return cur.dims[0], true
 	}
 	base, steps, ok := e.factorAccessChain(kids)
+	if !ok {
+		base, steps, ok = e.derefChainAsName(kids)
+	}
 	if !ok {
 		if base, steps, ok = e.callReadBase(kids); !ok {
 			return "", false

@@ -38884,6 +38884,36 @@ func main() {
 `,
 		want: "&[1 2 3] <nil> [1 2 3]\n[[1 2] [3 4]] [3 4] [[5 6]]\n[1 20 3] [1 20 3]\n",
 	}, {
+		// An array reached through a parenthesised dereference, `(*p).data`, is
+		// `p.data`: the readers of an array take a chain from a name, and found
+		// none here -- "ranging an integer yields only the index", and len, the
+		// copies and the print refused alike (derefChainAsName).
+		name: "an array through a parenthesised dereference reads as through the pointer",
+		src: `type Buf struct {
+	n    int
+	data [4]int
+}
+
+var gb = Buf{1, [4]int{1, 2, 3, 4}}
+
+// An array reached through a parenthesised dereference, (*p).data: ranged over,
+// measured, copied, compared and printed as p.data is.
+func main() {
+	p := &gb
+	t := 0
+	for i, v := range (*p).data {
+		t += i * v
+		gb.data[3] = 40
+	}
+	println(t, len((*p).data), cap((*p).data))
+	d := (*p).data
+	var e [4]int
+	e = (*p).data
+	printf("%v %v %v %v\n", d, e, (*p).data, (*p).data == d)
+}
+`,
+		want: "20 4 4\n[1 2 3 40] [1 2 3 40] [1 2 3 40] true\n",
+	}, {
 		// A method called on the interface RESULT of a call through a function
 		// value, a field holding one or another interface's slot -- `p(1).Area()`,
 		// `h.p(2).Area()`, `hd.Get().Area()` -- read the table and the data off
