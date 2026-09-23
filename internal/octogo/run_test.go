@@ -36499,6 +36499,135 @@ func main() {
 `,
 		want: "failed: boom\n1 2\nswapped 2 1\n5 6\n7 8\n11\nblank 2\nelse-if 3\narea 9\nhi\ntrue\n1099511627776\nseven\nless 1 2\nnil error\n1123221\n",
 	}, {
+		// A struct holding an ARRAY as a channel's element -- a message with a
+		// payload between cogs -- sent as a literal and as a variable, received by a
+		// declaration, an assignment, the comma-ok form, a range and a select, and
+		// the closed channel's zero. The target's C compiler passes and returns no
+		// such struct by value -- an 8 or 16 byte one "couldn't find object
+		// variable" -- so it crosses the helpers by pointer, as an array element
+		// does, and it was refused as an element outright.
+		name: "a channel of structs holding an array",
+		src: `type Msg struct {
+	kind int
+	data [3]int
+}
+
+type Small struct{ v [2]int }
+
+var ch chan Msg
+
+var sc chan Small
+
+var back chan Small
+
+var done chan bool
+
+func producer() {
+	for i := 0; i < 3; i++ {
+		ch <- Msg{kind: i, data: [3]int{i, i * 2, i * 3}}
+	}
+	m := Msg{kind: 9}
+	m.data[2] = 99
+	ch <- m
+	ch <- m
+	close(ch)
+}
+
+func echo() {
+	s := <-sc
+	s.v[0] += 100
+	back <- s
+	<-sc
+	done <- true
+}
+
+func main() {
+	go producer()
+	first := <-ch
+	var second Msg
+	second = <-ch
+	third, ok := <-ch
+	println(first.kind, first.data[1], second.data[2], third.kind, third.data[2], ok)
+	for m := range ch {
+		println(m.kind, m.data[2])
+	}
+	z, ok2 := <-ch
+	println(z.kind, z.data[0], ok2)
+	go echo()
+	s := Small{v: [2]int{1, 2}}
+	select {
+	case sc <- s:
+	}
+	var got Small
+	select {
+	case got = <-back:
+	}
+	println(got.v[0], got.v[1], s.v[0])
+	sc <- Small{}
+	<-done
+}
+`,
+		want: "0 0 3 2 6 true\n9 99\n9 99\n0 0 false\n101 2 1\n",
+	}, {
+		// The same element read where a value stands, `(<-b).id` and
+		// `(<-a).in[0].v[0]`, forwarded, `b <- <-a`, through a channel a struct
+		// holds, a select's comma-ok receive and a gated send, and a list
+		// assignment of the struct, which is a memcpy (emitStructStore).
+		name: "a channel of structs holding an array, in every position",
+		src: `type Inner struct{ v [2]int }
+
+type Outer struct {
+	id int
+	in [2]Inner
+}
+
+type Hub struct{ q chan Outer }
+
+var a chan Outer
+
+var b chan Outer
+
+var done chan bool
+
+var gh Hub
+
+func relay() {
+	b <- <-a
+	done <- true
+}
+
+func main() {
+	gh.q = a
+	go relay()
+	gh.q <- Outer{id: 7}
+	println((<-b).id)
+	<-done
+	go func() {
+		o := Outer{id: 3}
+		o.in[0].v[0] = 33
+		a <- o
+		a <- o
+	}()
+	x := (<-a).in[0].v[0]
+	select {
+	case m, ok := <-a:
+		println(x, m.id, m.in[0].v[0], ok)
+	}
+	sent := false
+	select {
+	case b <- Outer{id: 1}:
+		sent = true
+	default:
+	}
+	println(sent)
+	p, n := Outer{id: 4}, 5
+	var q Outer
+	q, n = p, n+1
+	println(q.id, n)
+}
+`,
+		want: "7\n33 3 33 true\nfalse\n4 6\n",
+	}, {
 		// A method called on the interface RESULT of a call through a function
 		// value, a field holding one or another interface's slot -- `p(1).Area()`,
 		// `h.p(2).Area()`, `hd.Get().Area()` -- read the table and the data off

@@ -2305,6 +2305,12 @@ func (e *emitter) emitSelect(ast []int32) {
 			// An ARRAY is copied, not assigned: C has no array assignment, so
 			// `elem tmp = arr` was not C at all.
 			e.emitArrayCopy(valTmp, e.captureC(func() { e.emitExpr(c.val.ast) }), a)
+		case e.chanStructByPtr(c.elem):
+			// A STRUCT holding one is declared and copied in: the target's C
+			// compiler initializes no such struct from another.
+			e.ind()
+			e.emit(c.elem + " " + valTmp + ";\n")
+			e.emitStructCopy(valTmp, c.elem, c.val.ast)
 		default:
 			e.ind()
 			e.emit(c.elem + " " + valTmp + " = ")
@@ -2391,7 +2397,7 @@ func (e *emitter) emitSelect(ast []int32) {
 	if send != nil {
 		e.ind()
 		e.emit("if (!" + offered + ") { " + offered + " = " +
-			chanOfferCName(send.elem) + "(" + send.ch + ", " + valTmp + ", &" + mine + "); }\n")
+			chanOfferCName(send.elem) + "(" + send.ch + ", " + e.chanSendArg(send.elem, valTmp) + ", &" + mine + "); }\n")
 		if peek := peekReady(cases); peek != "" {
 			tryRecv = e.newTmp()
 			e.ind()
@@ -2416,7 +2422,7 @@ func (e *emitter) emitSelect(ast []int32) {
 			if gated {
 				// The GATED form: offer only when a receiver has announced itself, so
 				// a default can be answered and two sends can never both stand.
-				e.emit("if (ogo_chan_trysend_" + sanitizeElem(c.elem) + "(" + c.ch + ", " + sendVals[i] + ")) {\n")
+				e.emit("if (ogo_chan_trysend_" + sanitizeElem(c.elem) + "(" + c.ch + ", " + e.chanSendArg(c.elem, sendVals[i]) + ")) {\n")
 				e.indent++
 				if !hasDefault {
 					e.ind()
@@ -2829,6 +2835,18 @@ func (e *emitter) emitStructCopy(dst, ctype string, src []int32) {
 	// C leaves a sizeof operand unevaluated.
 	e.ind()
 	e.emit("memcpy(&" + dst + ", &" + from + ", sizeof(" + ctype + "));\n")
+}
+
+// structAddrC copies a value of a struct type holding an array into a temporary of
+// this frame and answers with the temporary's address, which is how such a value
+// crosses a helper that takes it by pointer (chanStructByPtr). The copy is
+// emitStructCopy's, so a literal is built in place and anything else memcpy'd.
+func (e *emitter) structAddrC(ctype string, src []int32) string {
+	tmp := e.newTmp()
+	e.ind()
+	e.emit(ctype + " " + tmp + ";\n")
+	e.emitStructCopy(tmp, ctype, src)
+	return "&" + tmp
 }
 
 // checkStructCopySrc reports whether a struct-copy source can have its address
@@ -3601,12 +3619,31 @@ func (e *emitter) isFuncCType(ctype string) bool {
 // needChan records that `chan elem` is used, so its typedef and helpers are
 // emitted.
 func (e *emitter) needChan(elem string) {
-	// The send and receive helpers take and return the element BY VALUE, so an
-	// element that cannot cross that boundary cannot be a channel's element either.
-	// Without this the backend was reached and reported an internal error.
-	e.refuseArrayStructABI(elem, "channel element")
 	e.chanElems[elem] = true
 	e.chanElemByName[chanCName(elem)] = elem
+}
+
+// chanStructByPtr reports a channel element that is a STRUCT holding an array. The
+// target's C compiler cannot pass one or return one by value -- a small one drops
+// its argument slot, "couldn't find object variable with offset 4" -- so it crosses
+// the helpers by POINTER, as an array element does, and is copied with memcpy on
+// either side (chanRuntimeDefs). It was refused as a channel's element outright,
+// which is the natural shape of a message with a payload between two cogs.
+func (e *emitter) chanStructByPtr(elem string) bool {
+	if _, isArr := e.namedArrays[elem]; isArr {
+		return false
+	}
+	return e.hasArrayField(elem)
+}
+
+// chanSendArg is what a send helper takes for a value held in the temporary or
+// variable val: the value, the array itself, which decays, or a struct holding an
+// array by its address (chanStructByPtr).
+func (e *emitter) chanSendArg(elem, val string) string {
+	if e.chanStructByPtr(elem) {
+		return "&" + val
+	}
+	return val
 }
 
 // chanElemOfCType names the element type of a channel C type, following a DEFINED
@@ -3683,21 +3720,26 @@ func (e *emitter) chanRuntimeDefs(elem string) string {
 	sendParam, sendStore := elem+" v", "ch->val = v;"
 	recvRet, recvSig, recvTake, recvOut := elem, "", elem+" v = ch->val;", "return v;"
 	tryOut, tryStore := elem+"* out", "*out = ch->val;"
-	if _, isArr := e.namedArrays[elem]; isArr {
+	if _, isArr := e.namedArrays[elem]; isArr || e.chanStructByPtr(elem) {
 		// The element crosses by POINTER in both directions: C has no array
 		// assignment, and a parameter of a typedef'd array type miscompiles on this
 		// target (doc/array-param-corrupts.c). The cell's payload is the array
-		// itself, so both copies are a memcpy of its own size.
+		// itself, so both copies are a memcpy of its own size. A STRUCT holding an
+		// array crosses the same way, its address standing where the array decays.
+		val := "ch->val"
+		if !isArr {
+			val = "&ch->val"
+		}
 		e.includes["string.h"] = true
 		// void*, not a pointer to the element: what the caller hands over is an
 		// array, and a MULTI-DIMENSIONAL one decays to a pointer to its ROW --
 		// `int (*)[3]`, not `int*` -- so naming the innermost element mismatches
 		// every rank above one. The copy is a memcpy either way, which needs no
 		// element type at all.
-		sendParam, sendStore = "const void* v", "memcpy((void*)ch->val, v, sizeof ch->val);"
+		sendParam, sendStore = "const void* v", "memcpy((void*)"+val+", v, sizeof ch->val);"
 		recvRet, recvSig = "void", ", void* out"
-		recvTake, recvOut = "memcpy(out, (const void*)ch->val, sizeof ch->val);", "return;"
-		tryOut, tryStore = "void* out", "memcpy(out, (const void*)ch->val, sizeof ch->val);"
+		recvTake, recvOut = "memcpy(out, (const void*)"+val+", sizeof ch->val);", "return;"
+		tryOut, tryStore = "void* out", "memcpy(out, (const void*)"+val+", sizeof ch->val);"
 	}
 	if e.chanSendElems[elem] {
 		fmt.Fprintf(&b, `static void %[3]s(%[1]s ch, %[8]s) {
@@ -3999,7 +4041,7 @@ static int ogo_chan_withdraw_%[7]s(%[1]s ch, int mine) {
 // chanZeroOut writes the element's zero through the out parameter of a comma-ok
 // receive, which is what a receive from a closed channel yields.
 func (e *emitter) chanZeroOut(elem string) string {
-	if _, isArr := e.namedArrays[elem]; isArr {
+	if _, isArr := e.namedArrays[elem]; isArr || e.chanStructByPtr(elem) {
 		e.includes["string.h"] = true
 		return "memset(out, 0, sizeof ch->val);"
 	}
@@ -4013,7 +4055,7 @@ func (e *emitter) chanZeroOut(elem string) string {
 // empty: it yields the element's zero, by return for an ordinary element and through
 // the out parameter for an array one.
 func (e *emitter) chanRecvClosed(elem, recvRet string) string {
-	if _, isArr := e.namedArrays[elem]; isArr {
+	if _, isArr := e.namedArrays[elem]; isArr || e.chanStructByPtr(elem) {
 		e.includes["string.h"] = true
 		return "memset(out, 0, sizeof ch->val);\n\t\t\treturn;"
 	}
@@ -9028,6 +9070,15 @@ func (e *emitter) emitChanSend(ch, elem string, op []Node) {
 	// returning call handed to it is the same shape hoistStructCallArg binds for an
 	// ordinary call -- and the send does not go through emitCallArgs, so it is bound
 	// here. See doc/return-nonword-struct.c.
+	if e.chanStructByPtr(elem) {
+		// The value crosses by pointer (chanStructByPtr), copied first as Go copies
+		// a value sent.
+		src := e.structAddrC(elem, op[1].ast)
+		e.chanSendElems[elem] = true
+		e.ind()
+		e.emit(chanSendCName(elem) + "(" + ch + ", " + src + ");\n")
+		return
+	}
 	sent, hoisted := e.hoistStructCallArg(op[1])
 	e.ind()
 	e.chanSendElems[elem] = true
@@ -22343,6 +22394,17 @@ func (e *emitter) emitParenChain(kids []Node) bool {
 	if !ok || ct == "" {
 		return false
 	}
+	// A receive of a struct holding an array is a temporary already, filled through
+	// the helper's out parameter (chanStructByPtr): the steps are walked from it.
+	// Bound again below, it would be copied, which the target's compiler cannot.
+	if elem, _, isRecv := e.recvChanOf(kids[1].ast); isRecv && e.chanStructByPtr(elem) {
+		tmp := e.captureC(func() { e.emitExprNode(kids[1]) })
+		if e.err != nil {
+			return true
+		}
+		_, ok = e.emitAccessChainAt(tmp, e.plainOrSlice(ct), steps, true)
+		return ok
+	}
 	if e.isStruct(ct) {
 		// A struct head is a VALUE -- a call's result, a dereference -- and the
 		// temporary is a copy of it, which is what Go reads a field of one out of.
@@ -24811,6 +24873,11 @@ func (e *emitter) emitRange(h *forHeader, body []int32) {
 			if elemIsArray {
 				e.includes["string.h"] = true
 				e.emit("memcpy(" + slot + ", " + into + ", sizeof " + into + ");\n")
+				return
+			}
+			if e.chanStructByPtr(elem) {
+				e.includes["string.h"] = true
+				e.emit("memcpy(&" + slot + ", &" + into + ", sizeof " + into + ");\n")
 				return
 			}
 			e.emit(slot + " = " + into + ";\n")
@@ -34679,6 +34746,10 @@ func (e *emitter) emitStore(t assignTarget, declare bool, ctype, val string) {
 	// a package variable, and `s, u := a[:], b[:]` declared two slices no sink knew
 	// to be this frame's. Every store of a list form comes through here.
 	defer e.carryInto(t, declare, ctype, e.storeCarries)()
+	if _, isArr := e.namedArrays[ctype]; !isArr && e.hasArrayField(ctype) {
+		e.emitStructStore(t, declare, ctype, val)
+		return
+	}
 	if t.plain() {
 		e.ind()
 		if declare {
@@ -34722,6 +34793,44 @@ func (e *emitter) emitStore(t assignTarget, declare bool, ctype, val string) {
 		e.emitAccessChain(t.name, t.chain)
 	}
 	e.emit(" = " + val + ";\n")
+}
+
+// emitStructStore is emitStore for a value of a struct type holding an array, held
+// in the temporary or variable val: copied with memcpy, as every other copy of one
+// is, the target's C compiler initializing and assigning no such struct from
+// another -- "Unable to multiply assign this target" for a small one. The list forms
+// and the receives that store through here assigned it.
+func (e *emitter) emitStructStore(t assignTarget, declare bool, ctype, val string) {
+	e.includes["string.h"] = true
+	var dst string
+	switch {
+	case t.plain() && declare:
+		e.shadow(t.name)
+		e.locals[t.name] = ctype
+		e.ind()
+		e.emit(ctype + " " + userIdent(t.name) + ";\n")
+		dst = "&" + userIdent(t.name)
+	case declare:
+		e.fail("non-name %s on the left side of :=", t.name)
+		return
+	case t.addr != "":
+		dst = t.addr
+	case t.stars != "" && len(t.chain) != 0:
+		e.fail("a dereferenced target with a field or index is not supported yet")
+		return
+	case len(t.chain) == 0 && t.stars == "*":
+		dst = e.nilCheckedPtrVar(t.name)
+	case len(t.chain) == 0:
+		dst = "&" + e.varRef(t.name)
+	default:
+		if _, ok := e.accessChainType(t.name, t.chain); !ok {
+			e.fail("unsupported target in a multiple assignment")
+			return
+		}
+		dst = "&" + e.captureC(func() { e.emitAccessChain(t.name, t.chain) })
+	}
+	e.ind()
+	e.emit("memcpy(" + dst + ", &" + val + ", sizeof(" + ctype + "));\n")
 }
 
 // lhsItemTarget reads one LhsItem (LhsItem = AssignHead { Selector | Index }) as a
@@ -39462,6 +39571,20 @@ func (e *emitter) emitExprNode(n Node) {
 				e.emit(name)
 				return
 			}
+			// A STRUCT holding an array comes back through the out parameter too
+			// (chanStructByPtr), into a temporary of this frame; what reads it copies
+			// it with memcpy, as any copy of one is.
+			if e.chanStructByPtr(elem) {
+				if e.declInit || e.deferReplay >= 0 {
+					e.fail("a receive of %s is only supported as a statement or an initializer", e.goTypeName(elem))
+					return
+				}
+				name := e.newTmp()
+				e.prologue = append(e.prologue, elem+" "+name+";\n", chanRecvCName(elem)+"("+base+", &"+name+");\n")
+				e.locals[name] = elem
+				e.emit(name)
+				return
+			}
 			e.emit(chanRecvCName(elem) + "(" + base + ")")
 			return
 		}
@@ -40389,6 +40512,13 @@ func (e *emitter) emitRecvStmt(nodes []Node) {
 			e.emit(a.elem + " " + tmp + a.declSuffix() + ";\n")
 			e.ind()
 			e.emit(chanRecvCName(elem) + "(" + base + ", " + tmp + ");\n")
+			return
+		}
+		if e.chanStructByPtr(elem) {
+			tmp := e.newTmp()
+			e.emit(elem + " " + tmp + ";\n")
+			e.ind()
+			e.emit(chanRecvCName(elem) + "(" + base + ", &" + tmp + ");\n")
 			return
 		}
 		e.emit("(void)" + chanRecvCName(elem) + "(" + base + ");\n")

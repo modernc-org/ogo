@@ -6538,7 +6538,7 @@ func main() {
 
 // TestEmitCArrayFieldABI pins every by-value boundary a struct holding an ARRAY is
 // refused at. The target's C compiler drops the argument slot or fails the copy, and
-// no lowering here can reach the calling convention itself, so each is reported where
+// no lowering here reaches the calling convention itself, so each is reported where
 // it is written with the same advice: use a pointer.
 //
 // Three of these used to reach the backend instead, which answered "Internal error,
@@ -6546,8 +6546,9 @@ func main() {
 // covered parameters and results but not a value receiver or a channel element.
 //
 // What is NOT here is anything the emitter can write a memcpy for: a copy between
-// variables, and -- since the composite-literal fixups -- a literal's element, which
-// is zeroed in place and copied in after the declaration. Only a boundary the calling
+// variables, a literal's element, which is zeroed in place and copied in after the
+// declaration, and -- since 2026-09-23 -- a channel's element, whose helpers take and
+// hand back the value by pointer (chanStructByPtr). Only a boundary the calling
 // convention itself owns belongs on this list.
 func TestEmitCArrayFieldABI(t *testing.T) {
 	const header = `type A struct {
@@ -6573,11 +6574,6 @@ var g A
 			name: "result",
 			src:  "func mk() A { return g }\n\nfunc main() { println(mk().n) }\n",
 			want: "result: A holds an array",
-		},
-		{
-			name: "channel element",
-			src:  "var ch chan A\n\nfunc send() { ch <- g }\n\nfunc main() {\n\tgo send()\n\tc := <-ch\n\tprintln(c.n)\n}\n",
-			want: "channel element: A holds an array",
 		},
 	} {
 		t.Run(test.name, func(t *testing.T) {
