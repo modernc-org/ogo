@@ -954,6 +954,9 @@ func (f *File) funcSig(s *Scope, tn TypeNode) *SignatureNode {
 		case *FunctionType:
 			return x.Signature
 		case *TypeNodeIdent:
+			if x.Qualifier.IsValid() {
+				return f.qualifiedTypeFuncSig(x)
+			}
 			td, ok := s.find(x.Name.Src()).(*TypeDeclaration)
 			if !ok || td.TypeSpec == nil {
 				return nil
@@ -4040,6 +4043,29 @@ func (f *File) inferredKind(s *Scope, n Node) (Kind, bool) {
 		return 0, false
 	}
 	return defaultKind(k), true
+}
+
+// qualifiedTypeFuncSig is funcSig of another package's type, `lib.Fn`: resolved in
+// that package, and its signature written as the file naming it writes it
+// (requalifiedSig). Looked up by its bare name, as funcSig looked up every name, it
+// was THIS package's Fn if there was one -- `var f lib.Fn = lib.Dbl` refused as not
+// the main package's `func(string) string` -- and nothing otherwise, so a variable
+// of it, a parameter or a field was "cannot call non-function".
+func (f *File) qualifiedTypeFuncSig(x *TypeNodeIdent) *SignatureNode {
+	wf := f.fileOfToken(x.Name)
+	td, home, ok := wf.typeDeclNamed(wf.Scope, x.Qualifier.Src()+"."+x.Name.Src())
+	if !ok || td.TypeSpec == nil {
+		return nil
+	}
+	sig := wf.funcSig(home, td.TypeSpec.TypeNode)
+	if sig == nil {
+		return nil
+	}
+	r, ok := wf.requalifiedSig(home, x.Qualifier, sig)
+	if !ok {
+		return nil
+	}
+	return r
 }
 
 // namedFuncSig returns the signature of a named FUNCTION type, resolved in the
@@ -8655,11 +8681,54 @@ func (f *File) checkCrossPkgMethod(qual, typeName, member Token) {
 		}
 	}
 	switch {
+	case td.methods[member.Src()] == nil && !promoted && f.importedFuncField(qual, typeName, member):
+		// A FIELD of a function type, called: `b.F(4)` is a call through what the
+		// field holds, written as a method call is. It was "type lib.Box has no
+		// method F", for every table of callbacks another package declared.
+		if !token.IsExported(member.Src()) {
+			f.err(member.Position(), "cannot refer to unexported field %s of type %s.%s", member.Src(), qual.Src(), typeName.Src())
+		}
 	case td.methods[member.Src()] == nil && !promoted:
 		f.err(member.Position(), "type %s.%s has no method %s", qual.Src(), typeName.Src(), member.Src())
 	case !token.IsExported(member.Src()):
 		f.err(member.Position(), "cannot refer to unexported method %s of type %s.%s", member.Src(), qual.Src(), typeName.Src())
 	}
+}
+
+// importedFuncField reports that another package's struct type, qual.typeName,
+// has a field named member of a function type -- one a call can be made through.
+func (f *File) importedFuncField(qual, typeName, member Token) bool {
+	return f.importedFuncFieldSig(qual, typeName, member) != nil
+}
+
+// importedFuncFieldSig is the signature of another package's struct field of a
+// function type, qual.typeName's member, as this file writes it; nil for anything
+// else.
+func (f *File) importedFuncFieldSig(qual, typeName, member Token) *SignatureNode {
+	_, st, ok := f.importedStruct(qual, typeName)
+	if !ok || st == nil {
+		return nil
+	}
+	home, ok := f.importedPkgScope(qual)
+	if !ok {
+		return nil
+	}
+	for _, fld := range st.Fields {
+		for _, nm := range fld.Names {
+			if nm.Src() != member.Src() {
+				continue
+			}
+			sig := f.funcSig(home, fld.TypeNode)
+			if sig == nil {
+				return nil
+			}
+			if r, ok := f.requalifiedSig(home, qual, sig); ok {
+				return r
+			}
+			return nil
+		}
+	}
+	return nil
 }
 
 // crossPkgIsMethod reports whether member names a method of the imported type

@@ -36379,7 +36379,8 @@ const multiPkgWant = "300\nLOUD\n50\n6\n5\n45\n6 1000\n200\n207\n3 100\n4 9\n" +
 	"123 p2 9 3 2 3\n1 1 2 1 102 3\n2 1 4 3 4 4 5 134\n21 10 100 200 7 0\n1 5 1 2 4 1 3 21 1 2 12 12 123 123 11\n10 21 110 21 14 true 3 42\n10 3 4\n6 10 2\n6 11\n6 5 8 6\ntrue 110 6 106\n7 5\ntrue true\n" +
 	"1234567891 1 3 8 14 30 39\n" +
 	"2 4 7 4\n" +
-	"4 5 2 3\n"
+	"4 5 2 3\n" +
+	"2 3 4 3\n"
 
 var multiPkgProgram = map[string]string{
 	"main.ogo": `import "chain"
@@ -36531,7 +36532,19 @@ libShapes()
 initTrace()
 libStates()
 libValues()
+libOps()
 }
+
+// Another package's function type, called through a variable, a parameter and a
+// field of its struct: "cannot call non-function op" and "type lib.Ops has no method
+// Inc" before -- the type was looked up by its bare name in this package.
+func libOps() {
+	var op lib.Op = lib.Inc
+	ops := lib.Ops{Inc: lib.Inc, Dec: func(n int) int { return n - 1 }}
+	println(op(1), applyOp(op, 2), ops.Inc(3), ops.Dec(4))
+}
+
+func applyOp(f lib.Op, n int) int { return f(n) }
 
 // Another package's function of several results, or of a struct one, taken as a
 // value: it is the void wrapper writing them, as one of this package's is. Named
@@ -37379,6 +37392,17 @@ func None() *Dev { return nil }
 var Early = Late{A: 3, B: 4}
 
 type Span [2]Width
+
+// Op and Ops are a function type and a struct of function fields main calls
+// through.
+type Op func(n int) int
+
+type Ops struct {
+	Inc Op
+	Dec func(n int) int
+}
+
+func Inc(n int) int { return n + 1 }
 
 // State names itself as its result: a function of it returns the next one.
 type State func(d *Dev) State

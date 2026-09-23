@@ -103,3 +103,19 @@ func Take(t T) int { return t.F }
 var Cur int
 
 const Max = 9
+
+// Fn, Calls and Dbl carry a FUNCTION type across the boundary, for
+// qualified_func_type.ogo: a variable, a parameter and a field of it are called from
+// the importer, where Fn names a different type.
+type Fn func(k int) int
+
+type Calls struct {
+	F Fn
+	G func(k int) int
+	f Fn
+	N int
+}
+
+func Dbl(k int) int { return 2 * k }
+
+func Apply(f Fn, k int) int { return f(k) }

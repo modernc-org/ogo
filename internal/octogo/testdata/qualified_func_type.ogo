@@ -1,0 +1,38 @@
+// Another package's function type is that package's: a variable, a parameter and a
+// field of it are called as any function value is, and checked against ITS
+// signature. It was looked up by its bare name here, so it was this file's own Fn
+// -- `var f p.Fn = p.Dbl` was refused as not a func(string) string -- or nothing,
+// and every call through one was "cannot call non-function". A field of a function
+// type of another package's struct was "type p.Calls has no method F".
+
+import "p"
+
+type Fn func(s string) string
+
+func use(f p.Fn) int { return f(1) }
+
+func ok() {
+	var f p.Fn = p.Dbl
+	c := p.Calls{F: p.Dbl, G: p.Dbl}
+	pc := &c
+	var g Fn = func(s string) string { return s }
+	println(f(1), use(f), p.Apply(f, 2), c.F(3), c.G(4), pc.F(5), g("x"))
+}
+
+func bad() {
+	var f p.Fn = p.Dbl
+	c := p.Calls{F: p.Dbl}
+	// ERROR too many arguments in call to f
+	println(f(1, 2))
+	// ERROR cannot use "x" of type string as type int in argument to f
+	println(f("x"))
+	// ERROR cannot use g \(value of type func\(s string\) string\) as func\(int\) int value in variable declaration
+	var h p.Fn = g
+	// ERROR cannot refer to unexported field f of type p.Calls
+	println(c.f(1))
+	// ERROR type p.Calls has no method N
+	println(c.N(1))
+	_ = h
+}
+
+func g(s string) string { return s }
