@@ -37901,6 +37901,197 @@ func main() {
 `,
 		want: "7 3\n0 1\n7 2 2\n3\n3 9 7\n7 7\n",
 	}, {
+		// A struct holding an ARRAY as a VALUE receiver, refused for the argument
+		// slot the target's C compiler drops as it drops such a parameter's. It is
+		// received by pointer and copied on entry, as the parameter is (recvByRef):
+		// the method's copy its own, on a variable, a package variable, a field, an
+		// element, a pointer, a literal, through an interface, a method promoted from
+		// an embedded struct, the method expression Buf.At, deferred -- the receiver
+		// taken where the defer stands -- and started on a cog.
+		name: "a struct holding an array as a value receiver",
+		src: `type Buf struct {
+	n    int
+	data [3]int
+}
+
+func (b Buf) Sum() int {
+	t := b.n
+	for _, v := range b.data {
+		t += v
+	}
+	b.data[0] = 99
+	return t
+}
+
+func (b Buf) At(i int) int { return b.data[i] }
+
+func (b *Buf) Put(i, v int) { b.data[i] = v }
+
+type Summer interface{ Sum() int }
+
+type Rack struct {
+	name string
+	buf  Buf
+}
+
+type Wrap struct{ Buf }
+
+var gb = Buf{1, [3]int{2, 3, 4}}
+
+var last int
+
+var done chan bool
+
+func (b Buf) Report() {
+	last = b.Sum()
+	done <- true
+}
+
+func record(b Buf) { last = b.At(2) }
+
+func deferred(b Buf) {
+	defer b.Report()
+	b.data[2] = 50
+}
+
+// A struct holding an ARRAY as a VALUE receiver: the method's copy its own, on a
+// variable, a package variable, a field, an element, a pointer, a literal, through
+// an interface, a promoted method of an embedded struct, a method expression,
+// deferred and started on a cog.
+func main() {
+	b := Buf{1, [3]int{10, 20, 30}}
+	println(b.Sum(), b.data[0], b.At(1))
+	println(gb.Sum())
+	r := Rack{"r", b}
+	println(r.buf.Sum(), r.buf.At(2))
+	arr := [2]Buf{b, gb}
+	println(arr[1].Sum())
+	p := &b
+	println(p.Sum(), p.At(0))
+	println(Buf{5, [3]int{1, 1, 1}}.Sum())
+	var s Summer = &b
+	println(s.Sum())
+	w := Wrap{b}
+	println(w.Sum(), w.At(2))
+	me := Buf.At
+	println(me(b, 1))
+	b.Put(0, 7)
+	println(b.Sum())
+	go deferred(b)
+	<-done
+	println(last)
+	record(b)
+	println(last)
+}
+`,
+		want: "61 10 20\n10\n61 30\n10\n61 10\n8\n61\n61 30\n20\n58\n58\n30\n",
+	}, {
+		// The same receiver reached every other way: an element of a slice and of an
+		// array through a pointer, a field through a pointer, a call's result and an
+		// embedded pointer (each nil-checked, as Go reads through them), a method
+		// calling another on its copy and taking one, String() and Error() through
+		// printf and an error -- printf's copy of the value was an initialization
+		// the target refuses at this size -- and deferred and started through a
+		// pointer and an element.
+		name: "a struct holding an array as a value receiver, reached every way",
+		src: `type Buf struct {
+	n    int
+	data [3]int
+}
+
+func (b Buf) Sum() int { return b.n + b.At(0) + b.At(1) + b.At(2) }
+
+func (b Buf) At(i int) int { return b.data[i] }
+
+func (b Buf) String() string {
+	if b.n > 5 {
+		return "big"
+	}
+	return "small"
+}
+
+func (b Buf) Mix(o Buf) int { return b.n*100 + o.data[1] }
+
+type Err struct {
+	code  int
+	trail [2]int
+}
+
+func (e Err) Error() string {
+	if e.code == 1 {
+		return "one"
+	}
+	return "other"
+}
+
+type Holder struct{ *Buf }
+
+type Rack struct{ buf Buf }
+
+var gb = Buf{7, [3]int{1, 2, 3}}
+
+var gh = Holder{&gb}
+
+var last int
+
+var done chan bool
+
+func get() *Buf { return &gb }
+
+func (b Buf) Report() {
+	last = b.Sum()
+	done <- true
+}
+
+var e1 = Err{1, [2]int{}}
+
+var e2 = Err{2, [2]int{}}
+
+func fail(k int) error {
+	if k == 1 {
+		return &e1
+	}
+	return &e2
+}
+
+func deferred(pb *Buf) {
+	defer pb.Report()
+	pb.n = 1000
+}
+
+// A struct holding an array as a VALUE receiver reached every other way: an
+// element, a pointer to an array's element, a field through a pointer, a call's
+// result, an embedded pointer, a method calling another on its copy and taking
+// one, String() and Error() through printf and an error, a method expression on
+// the pointer type, and deferred and started through a pointer and an element.
+func main() {
+	ts := []Buf{{1, [3]int{1, 1, 1}}, gb}
+	println(ts[1].Sum(), ts[0].Mix(gb))
+	arr := [2]Buf{gb, ts[0]}
+	pa := &arr
+	println(pa[0].Sum(), pa[1].At(2))
+	r := &Rack{gb}
+	println(r.buf.Sum(), get().Sum(), gh.Sum(), gh.At(1))
+	for _, b := range ts {
+		last = last*10 + b.At(0)
+	}
+	println(last)
+	printf("%v %s %v %v %5s|\n", gb, ts[0], &gb, ts, Buf{9, [3]int{}})
+	err := fail(1)
+	println(err.Error(), fail(2).Error())
+	pm := (*Buf).Sum
+	println(pm(&gb))
+	go deferred(&gb)
+	<-done
+	println(last, gb.n)
+	go arr[1].Report()
+	arr[1].n = 500
+	<-done
+	println(last)
+}
+`,
+		want: "13 102\n13 1\n13 13 13 2\n11\nbig small big [small big]   big|\none other\n13\n13 1000\n4\n",
+	}, {
 		// A method called on the interface RESULT of a call through a function
 		// value, a field holding one or another interface's slot -- `p(1).Area()`,
 		// `h.p(2).Area()`, `hd.Get().Area()` -- read the table and the data off

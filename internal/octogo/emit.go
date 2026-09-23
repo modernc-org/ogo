@@ -2024,6 +2024,9 @@ func (e *emitter) emitGo(nodes []Node) {
 		if _, isArr := e.namedArrays[site.args[0]]; isArr {
 			e.includes["string.h"] = true
 			e.emit("memcpy(" + ap + "->a0, " + recvText + ", sizeof(" + ap + "->a0));\n")
+		} else if e.holdsArray(site.args[0]) {
+			e.includes["string.h"] = true // copied (holdsArray); the trampoline hands its address on
+			e.emit("memcpy(&" + ap + "->a0, &(" + recvText + "), sizeof(" + ap + "->a0));\n")
 		} else {
 			e.emit(ap + "->a0 = " + recvText + ";\n")
 		}
@@ -4949,7 +4952,7 @@ func typeNameCollisions(src []byte, names map[string]bool) map[string]bool {
 // emitProgram is EmitC's one pass. rename lists the main-package types spelled
 // ogo_T_<name> in C (see typeMangle).
 func emitProgram(pkg *Package, w io.Writer, opts []EmitOption, rename map[string]bool) error {
-	e := &emitter{renameTypes: rename, renamedTypes: map[string]string{}, includes: map[string]bool{}, funcRet: map[string][]string{}, funcSliceParams: map[string][]string{}, funcVariadic: map[string]int{}, nilHelpers: map[string]bool{}, funcArrayRet: map[string]arrDim{}, funcArrayParams: map[string][]arrDim{}, anonStructNames: map[string]string{}, methodValueTypes: map[string]funcValueType{}, methodValueOf: map[string]string{}, methodExprNames: map[string]string{}, funcParams: map[string][]string{}, methodPtr: map[string]bool{}, globals: map[string]string{}, structs: map[string][]structField{}, namedTypes: map[string]bool{}, typeNames: map[string]bool{}, interfaceTypes: map[string]bool{}, ifaceMethods: map[string][]ifaceMethod{}, anonIfaceNames: map[string]string{}, anonIfaceMinted: map[string]bool{}, ifaceASTs: map[string]ifaceAST{}, ifaceVTables: map[string]bool{}, namedUnderlying: map[string]string{}, namedArrays: map[string]arrDim{}, constInt: map[string]string{}, constVal: map[string]constant.Value{}, constWide: map[string]string{}, constStr: map[string]string{}, constUntyped: map[string]bool{}, constHuge: map[string]bool{}, arrays: map[string]arrDim{}, globalArrays: map[string]arrDim{}, sliceVars: map[string]string{}, globalSliceVars: map[string]string{}, chanElems: map[string]bool{}, chanInitElems: map[string]bool{}, chanSendElems: map[string]bool{}, chanRecvElems: map[string]bool{}, chanTryRecvElems: map[string]bool{}, chanTrySendElems: map[string]bool{}, chanGatedSendElems: map[string]bool{}, aliasOf: map[string]string{}, localTypes: map[string]string{}, gotoTargets: map[string]bool{}, chanCloseElems: map[string]bool{}, chanRecv2Elems: map[string]bool{}, mathWrappers: map[string]bool{}, chanElemByName: map[string]string{}, sliceElems: map[string]bool{}, sliceElemByName: map[string]string{}, appendElems: map[string]bool{}, tryappendElems: map[string]bool{}, appendSliceElems: map[string]bool{}, tryappendSliceEls: map[string]bool{}, appendokStructs: map[string]bool{}, copyElems: map[string]bool{}, resliceElems: map[string]bool{}, reslice3Elems: map[string]bool{}, clearElems: map[string]bool{}, minElems: map[string]bool{}, maxElems: map[string]bool{}, printSliceElems: map[string]bool{}, printStructs: map[string]string{}, printIfaces: map[string]string{}, printlnElems: map[string]bool{}, switchBreakUsed: map[string]bool{}, labelBreak: map[string]string{}, labelContinue: map[string]string{}, labelUsed: map[string]bool{}, eqStructs: map[string]bool{}, eqArrays: map[string]arrDim{}, frameBacked: map[string]bool{}, frameHolder: map[string]string{}, crossParams: map[string][]leak{}, crossContents: map[string][]leak{}, retContents: map[string][]bool{}, recvContents: map[string]leak{}, paramCalls: map[string][]paramCall{}, frameCalls: map[string][]frameCall{}, localConstSpecs: map[string]localConstSpec{}, inheritedTypes: map[string]bool{}, funcValueMembers: map[string][]string{}, methodExprMembers: map[string]emMethodExpr{}, memberShown: map[string]string{}, litLifted: map[string][]string{}, methodNames: map[string]bool{}, recvLeaks: map[string]leak{}, retRecv: map[string]bool{}, crossInto: map[string][]uint32{}, ifaceSummaries: map[string]ifaceSummary{}, retParams: map[string][]bool{}, funcValueOf: map[string]string{}, crossNames: map[string]string{}, initNames: map[string]string{}, funcValueTypes: map[string]funcValueType{}, funcTypeNames: map[string]string{}, funcTypeRet: map[string][]string{}, funcTypeParams: map[string][]string{}, funcTypeVariadic: map[string]int{}, recFuncTypes: map[string]bool{}, recFuncShapes: map[string]string{}, retStructs: map[string]string{}, retStructByKey: map[string]string{}, shiftHelpers: map[string][2]string{}, shiftCTypes: map[*int32]string{}, shiftWalked: map[shiftWalkKey]bool{}, shiftIn: map[*int32]bool{}, divHelpers: map[string][2]string{}, funcValueWrappers: map[string]string{}, deferReplay: -1, iota: -1}
+	e := &emitter{renameTypes: rename, renamedTypes: map[string]string{}, includes: map[string]bool{}, funcRet: map[string][]string{}, funcSliceParams: map[string][]string{}, funcVariadic: map[string]int{}, nilHelpers: map[string]bool{}, funcArrayRet: map[string]arrDim{}, funcArrayParams: map[string][]arrDim{}, anonStructNames: map[string]string{}, methodValueTypes: map[string]funcValueType{}, methodValueOf: map[string]string{}, methodExprNames: map[string]string{}, funcParams: map[string][]string{}, methodPtr: map[string]bool{}, recvByRef: map[string]bool{}, globals: map[string]string{}, structs: map[string][]structField{}, namedTypes: map[string]bool{}, typeNames: map[string]bool{}, interfaceTypes: map[string]bool{}, ifaceMethods: map[string][]ifaceMethod{}, anonIfaceNames: map[string]string{}, anonIfaceMinted: map[string]bool{}, ifaceASTs: map[string]ifaceAST{}, ifaceVTables: map[string]bool{}, namedUnderlying: map[string]string{}, namedArrays: map[string]arrDim{}, constInt: map[string]string{}, constVal: map[string]constant.Value{}, constWide: map[string]string{}, constStr: map[string]string{}, constUntyped: map[string]bool{}, constHuge: map[string]bool{}, arrays: map[string]arrDim{}, globalArrays: map[string]arrDim{}, sliceVars: map[string]string{}, globalSliceVars: map[string]string{}, chanElems: map[string]bool{}, chanInitElems: map[string]bool{}, chanSendElems: map[string]bool{}, chanRecvElems: map[string]bool{}, chanTryRecvElems: map[string]bool{}, chanTrySendElems: map[string]bool{}, chanGatedSendElems: map[string]bool{}, aliasOf: map[string]string{}, localTypes: map[string]string{}, gotoTargets: map[string]bool{}, chanCloseElems: map[string]bool{}, chanRecv2Elems: map[string]bool{}, mathWrappers: map[string]bool{}, chanElemByName: map[string]string{}, sliceElems: map[string]bool{}, sliceElemByName: map[string]string{}, appendElems: map[string]bool{}, tryappendElems: map[string]bool{}, appendSliceElems: map[string]bool{}, tryappendSliceEls: map[string]bool{}, appendokStructs: map[string]bool{}, copyElems: map[string]bool{}, resliceElems: map[string]bool{}, reslice3Elems: map[string]bool{}, clearElems: map[string]bool{}, minElems: map[string]bool{}, maxElems: map[string]bool{}, printSliceElems: map[string]bool{}, printStructs: map[string]string{}, printIfaces: map[string]string{}, printlnElems: map[string]bool{}, switchBreakUsed: map[string]bool{}, labelBreak: map[string]string{}, labelContinue: map[string]string{}, labelUsed: map[string]bool{}, eqStructs: map[string]bool{}, eqArrays: map[string]arrDim{}, frameBacked: map[string]bool{}, frameHolder: map[string]string{}, crossParams: map[string][]leak{}, crossContents: map[string][]leak{}, retContents: map[string][]bool{}, recvContents: map[string]leak{}, paramCalls: map[string][]paramCall{}, frameCalls: map[string][]frameCall{}, localConstSpecs: map[string]localConstSpec{}, inheritedTypes: map[string]bool{}, funcValueMembers: map[string][]string{}, methodExprMembers: map[string]emMethodExpr{}, memberShown: map[string]string{}, litLifted: map[string][]string{}, methodNames: map[string]bool{}, recvLeaks: map[string]leak{}, retRecv: map[string]bool{}, crossInto: map[string][]uint32{}, ifaceSummaries: map[string]ifaceSummary{}, retParams: map[string][]bool{}, funcValueOf: map[string]string{}, crossNames: map[string]string{}, initNames: map[string]string{}, funcValueTypes: map[string]funcValueType{}, funcTypeNames: map[string]string{}, funcTypeRet: map[string][]string{}, funcTypeParams: map[string][]string{}, funcTypeVariadic: map[string]int{}, recFuncTypes: map[string]bool{}, recFuncShapes: map[string]string{}, retStructs: map[string]string{}, retStructByKey: map[string]string{}, shiftHelpers: map[string][2]string{}, shiftCTypes: map[*int32]string{}, shiftWalked: map[shiftWalkKey]bool{}, shiftIn: map[*int32]bool{}, divHelpers: map[string][2]string{}, funcValueWrappers: map[string]string{}, deferReplay: -1, iota: -1}
 	for _, opt := range opts {
 		opt(e)
 	}
@@ -5762,6 +5765,7 @@ type emitter struct {
 	boundOperands     map[*int32]*boundOperand  // the operands of the level being emitted bound to temporaries for their evaluation order, by their place in the AST (see bindEffectOperands)
 	hoistedArrayCalls map[int32]string          // source position of an ARRAY-returning call, or of the star of a dereferenced pointer-to-array expression -> the temporary it was bound to, so one occurrence is evaluated once (see hoistArrayCallArg, arrayPtrExprDeref); the statement's
 	methodPtr         map[string]bool           // mangled method name -> receiver is a pointer, for &/* adjustment at the call site
+	recvByRef         map[string]bool           // mangled method name -> a VALUE receiver of a struct holding an array, received by pointer and copied (see methodSignatureC)
 	globals           map[string]string         // package-level constant/variable name -> C type, for typing `x := g`
 	structs           map[string][]structField  // struct type name -> its fields, for typedefs, zero-init and field typing
 	namedTypes        map[string]bool           // non-struct named type (e.g. `type Celsius int`) -> emitted as a typedef; may carry methods
@@ -7881,8 +7885,8 @@ func (e *emitter) needVTable(iface, concrete string) bool {
 			continue
 		}
 		recv := "*(" + concrete + "*)_ogo_r"
-		if e.methodPtr[cname] {
-			recv = "(" + concrete + "*)_ogo_r"
+		if e.methodPtr[cname] || e.recvByRef[cname] {
+			recv = "(" + concrete + "*)_ogo_r" // a by-ref value receiver (recvByRef) takes the pointer too
 		}
 		if len(path) != 0 {
 			// A promoted method takes the EMBEDDED member as its receiver rather
@@ -7892,6 +7896,9 @@ func (e *emitter) needVTable(iface, concrete string) bool {
 			// spells it, and writing the path out by hand here got "->A" where the
 			// field is named "A_".
 			recv, _ = e.promotedRecvC("(*("+concrete+"*)_ogo_r)", concrete, path, e.methodPtr[cname], true)
+			if e.recvByRef[cname] {
+				recv, _ = e.promotedByRefRecvC("(*("+concrete+"*)_ogo_r)", concrete, path, true)
+			}
 		}
 		lead := []string{recv}
 		if m.arr.bound != "" {
@@ -9905,6 +9912,7 @@ func (e *emitter) collectResults(ast []int32) {
 			_, rct, _ := e.receiverInfo(recv)
 			cname = methodCName(methodBaseType(rct), name)
 			e.methodPtr[cname] = e.isPointer(rct)
+			e.recvByRef[cname] = !e.isPointer(rct) && e.byRefParam(rct)
 			e.methodNames[name] = true
 		}
 		_, resTypes := e.resultInfo(sig)
@@ -13445,7 +13453,11 @@ func (e *emitter) emitFuncDecl(ast []int32) {
 	e.bindParams(sig)
 	e.emit(proto + " {\n")
 	e.indent++
-	e.emitRecvCopy(recvName, recvCType)
+	if emptyRecvName != "" && e.recvByRef[e.curFunc] {
+		emptyRecvName = paramArgName(recvName) // nothing reads it: no copy, its pointer voided
+	} else {
+		e.emitRecvCopy(recvName, recvCType)
+	}
 	e.emitParamCopies(sig)
 	e.emitParamVoids(sig, body)
 	if emptyRecvName != "" {
@@ -14105,13 +14117,19 @@ func (e *emitter) liftMethodExpr(me emMethodExpr) (string, bool) {
 	recvCT := me.typeC
 	if me.ptr {
 		recvCT += "*"
-	} else if e.hasArrayField(me.typeC) {
-		e.fail("cannot use %s as a value: %s holds an array, which the target's C compiler cannot pass by value; use (*%s).%s",
-			spelled, e.goTypeName(me.typeC), e.goTypeName(me.typeC), me.member)
-		return "", false
+	}
+	// `T.M` for a T holding an array takes its receiver as a by-ref parameter
+	// (byRefParam), a pointer to the value, which is what the wrapper reads it
+	// through.
+	outer := "r"
+	if e.byRefParam(recvCT) {
+		outer = "(*r)"
 	}
 	ptrRecv := e.methodPtr[mcname]
-	recvText, ok := e.promotedRecvC("r", recvCT, path, ptrRecv, true)
+	recvText, ok := e.promotedRecvC(outer, recvCT, path, ptrRecv, true)
+	if e.recvByRef[mcname] {
+		recvText, ok = e.promotedByRefRecvC(outer, recvCT, path, true)
+	}
 	if !ok {
 		e.fail("cannot use %s as a value: its receiver cannot be reached", spelled)
 		return "", false
@@ -14126,7 +14144,7 @@ func (e *emitter) liftMethodExpr(me emMethodExpr) (string, bool) {
 	}
 	name := mangle(e.curPkgPrefix, fmt.Sprintf("ogo_me%d", e.liftSeq))
 	e.liftSeq++
-	params, args := []string{recvCT + " r"}, []string{recvText}
+	params, args := []string{e.abiParamCType(recvCT) + " r"}, []string{recvText}
 	for i, pt := range fv.params {
 		nm := fmt.Sprintf("p%d", i)
 		params = append(params, e.abiParamCType(pt)+" "+nm) // a by-ref one is handed on as the pointer
@@ -14782,13 +14800,14 @@ func (e *emitter) arrayResultOf(sig []int32) (arrDim, bool) {
 // methodSignatureC builds a method's C signature with the receiver as the leading
 // parameter, e.g. `int Point_Sum(Point p)` or `void Point_Scale(Point* p, int f)`.
 func (e *emitter) methodSignatureC(cname, recvName, recvCType string, sig []int32) string {
-	// A VALUE receiver is passed by value, so it meets the same ABI wall a parameter
-	// does. It reached the backend instead, which said "Internal error, couldn't
-	// find object variable with offset 4". A pointer receiver is unaffected.
-	if !strings.HasSuffix(recvCType, "*") {
-		e.refuseArrayStructABI(recvCType, "receiver "+recvName)
-	}
 	recvParam := recvCType + " " + e.localIdent(recvName)
+	// A VALUE receiver of a struct holding an array meets the wall such a
+	// parameter does -- "Internal error, couldn't find object variable with offset
+	// 4" -- and crosses it the same way: received by POINTER and copied in the body
+	// (emitRecvCopy), every call handing it an address (byRefRecvC).
+	if e.recvByRef[cname] {
+		recvParam = recvCType + "* " + paramArgName(recvName)
+	}
 	// An ARRAY value receiver is received as a POINTER and copied in the body,
 	// exactly as an array PARAMETER is: a parameter of array type corrupts unrelated
 	// code on this target (doc/array-param-corrupts.c), and `Row r` is one. It is
@@ -14990,6 +15009,28 @@ func (e *emitter) holdsArray(ct string) bool {
 // signature writes the pointer (abiParamCType), and a call hands the address
 // (byRefArg).
 func (e *emitter) byRefParam(ct string) bool { return e.holdsArray(ct) }
+
+// byRefRecvC is the receiver a method taking its VALUE receiver by pointer
+// (recvByRef) is handed, from the C text of what the call reaches: through a
+// pointer, that pointer, nil-checked since Go reads through it at the call; an
+// addressable value, its address; anything else -- no storage to point at -- is
+// refused, as a pointer method's receiver is.
+func (e *emitter) byRefRecvC(text, ctype string, addr bool) (string, bool) {
+	if e.isPointer(ctype) {
+		return e.nilCheckedC(text, ctype), true
+	}
+	if !addr {
+		return "", false
+	}
+	return "&(" + text + ")", true
+}
+
+// promotedByRefRecvC is byRefRecvC for a method PROMOTED from the member path of
+// outer, as promotedRecvC is for the others.
+func (e *emitter) promotedByRefRecvC(outer, ctype string, path []string, addr bool) (string, bool) {
+	text, mct := e.embeddedPathC(outer, ctype, path)
+	return e.byRefRecvC(text, mct, addr)
+}
 
 // abiParamCType is how a signature writes a parameter of the value type ct: a
 // pointer to it where it is by-ref (byRefParam), the type itself otherwise.
@@ -15211,6 +15252,9 @@ func (e *emitter) emitArrayResultCallOf(dst, cname, recv string, suffix []Node) 
 			return
 		}
 		r, ok := e.chainReceiver(text, ctype, addr, e.methodPtr[cname])
+		if e.recvByRef[cname] {
+			r, ok = e.byRefRecvC(text, ctype, addr)
+		}
 		if !ok {
 			e.fail("cannot take the address of %s for a pointer-receiver method", text)
 			return
@@ -15228,6 +15272,9 @@ func (e *emitter) emitArrayResultCallOf(dst, cname, recv string, suffix []Node) 
 			recvText, addr = lit, false // a constant receiver is its literal (see emitCallExpr)
 		}
 		r, ok := e.chainReceiver(recvText, rct, addr, e.methodPtr[cname])
+		if e.recvByRef[cname] {
+			r, ok = e.byRefRecvC(recvText, rct, addr)
+		}
 		if !ok {
 			e.fail("cannot take the address of %s for a pointer-receiver method", recv)
 			return
@@ -16012,8 +16059,23 @@ func (e *emitter) hoist(ctype string, emitValue func()) string {
 	e.w = &buf
 	emitValue()
 	e.w = savedW
-	e.prologue = append(e.prologue, ctype+" "+tmp+" = "+buf.String()+";\n")
+	e.prologue = append(e.prologue, e.bindC(ctype, tmp, buf.String())...)
 	return tmp
+}
+
+// bindC is the declaration of a variable tmp of the C type ctype holding the value
+// whose C text is text: initialized from it, or -- for a struct holding an array,
+// which the target's C compiler initializes from another only at some sizes
+// (holdsArray) -- copied into, or brace-initialized from a literal's braces.
+func (e *emitter) bindC(ctype, tmp, text string) []string {
+	if !e.holdsArray(ctype) {
+		return []string{ctype + " " + tmp + " = " + text + ";\n"}
+	}
+	if body, isLit := compoundLitBody(text); isLit {
+		return []string{ctype + " " + tmp + " = " + body + ";\n"}
+	}
+	e.includes["string.h"] = true
+	return []string{ctype + " " + tmp + ";\n", "memcpy(&" + tmp + ", &(" + text + "), sizeof(" + tmp + "));\n"}
 }
 
 // exprHasEffect reports whether an expression can change state when evaluated: it
@@ -22944,6 +23006,10 @@ func (e *emitter) emitParenMethod(kids []Node) bool {
 		}
 		recv := text
 		switch {
+		case e.recvByRef[cname] && isPtr:
+			recv = e.nilCheckedC(text, ct) // the pointer, which the method copies from (recvByRef)
+		case e.recvByRef[cname]:
+			recv = "&(" + text + ")"
 		case e.methodPtr[cname]:
 			if !isPtr {
 				// Go's rule, and its words: there is nothing to take the address
@@ -27195,6 +27261,10 @@ func (e *emitter) emitDefer(nodes []Node) {
 			e.includes["string.h"] = true
 			e.emit("memcpy(" + deferRecvName(d.slot) + ", " + recvText + ", sizeof(" +
 				deferRecvName(d.slot) + "));\n")
+		} else if e.holdsArray(d.recvCType) {
+			e.includes["string.h"] = true // a struct holding an array is copied (holdsArray)
+			e.emit("memcpy(&" + deferRecvName(d.slot) + ", &(" + recvText + "), sizeof(" +
+				deferRecvName(d.slot) + "));\n")
 		} else {
 			e.emit(deferRecvName(d.slot) + " = " + recvText + ";\n")
 		}
@@ -27964,12 +28034,16 @@ func (e *emitter) emitDeferred() {
 				// A method returning an ARRAY is handed storage for the value nobody
 				// reads, after its receiver. It was called without the out parameter,
 				// which the target's compiler only warned about.
+				recvArg := deferRecvName(d.slot)
+				if e.recvByRef[d.cname] {
+					recvArg = "&" + recvArg // the captured value, which the method copies (recvByRef)
+				}
 				if a, isArr := e.funcArrayRet[d.cname]; isArr {
 					tmp := e.newTmp()
-					e.emit("{ " + a.elem + " " + tmp + a.declSuffix() + "; " + d.cname + "(" + deferRecvName(d.slot) +
+					e.emit("{ " + a.elem + " " + tmp + a.declSuffix() + "; " + d.cname + "(" + recvArg +
 						", (" + arrayResultCType(a) + ")" + tmp + args + "); }\n")
 				} else {
-					e.emit(d.cname + "(" + deferRecvName(d.slot) + args + ");\n")
+					e.emit(d.cname + "(" + recvArg + args + ");\n")
 				}
 			}
 			e.deferReplay, e.deferReplayArgs = -1, nil
@@ -28906,6 +28980,9 @@ func (e *emitter) emitCallExpr(recv string, suffix []Node) bool {
 					return false
 				}
 				recvArg, _ := e.promotedRecvC(e.varRef(recv), rct, path, e.methodPtr[cn], true)
+				if e.recvByRef[cn] {
+					recvArg, _ = e.promotedByRefRecvC(e.varRef(recv), rct, path, true)
+				}
 				e.emit(cn + "(" + recvArg)
 				if args := e.argsCText(cn, suffix[1].ast); args != "" {
 					e.emit(", " + args)
@@ -28949,7 +29026,12 @@ func (e *emitter) emitCallExpr(recv string, suffix []Node) bool {
 				// method called on one -- `G.Sum()`, `G.Bump()` -- named a symbol
 				// that does not exist in every other package. The promoted-method
 				// branch above already asked varRef; this one did not.
-				e.emitMethodReceiver(e.varRef(recv), rct, e.methodPtr[cname])
+				if e.recvByRef[cname] {
+					r, _ := e.byRefRecvC(e.varRef(recv), rct, true)
+					e.emit(r)
+				} else {
+					e.emitMethodReceiver(e.varRef(recv), rct, e.methodPtr[cname])
+				}
 			}
 			// A variadic parameter is passed even when the call wrote no arguments
 			// for it: the callee takes a []T either way, and an empty one is the
@@ -29279,6 +29361,15 @@ func (e *emitter) guardedMulOp(ctype string, op, rhs Node) bool {
 // crosses, not what it means, so a method that writes to its receiver writes to the
 // copy and the caller's array is untouched.
 func (e *emitter) emitRecvCopy(recvName, recvCType string) {
+	if e.recvByRef[e.curFunc] {
+		nm := e.localIdent(recvName)
+		e.includes["string.h"] = true
+		e.ind()
+		e.emit(recvCType + " " + nm + ";\n")
+		e.ind()
+		e.emit("memcpy(&" + nm + ", " + paramArgName(recvName) + ", sizeof(" + nm + "));\n")
+		return
+	}
 	a, isArr := e.namedArrays[recvCType]
 	if !isArr || recvName == "" {
 		return
@@ -29800,6 +29891,9 @@ func (e *emitter) chainCText(base string, steps []Node) (text, ctype string, add
 					return "", "", false, false
 				}
 				recv, okr := e.chainReceiver(text, cur.ctype, addr, e.methodPtr[cname])
+				if e.recvByRef[cname] {
+					recv, okr = e.byRefRecvC(text, cur.ctype, addr)
+				}
 				if !okr {
 					return "", "", false, false
 				}
@@ -29812,7 +29906,7 @@ func (e *emitter) chainCText(base string, steps []Node) (text, ctype string, add
 				// for the same reason anyway.
 				if e.exprHasEffect(steps[i+1].ast) && stepsHaveEffect(e, steps[:i]) {
 					rct := cur.ctype
-					switch wantPtr, havePtr := e.methodPtr[cname], e.isPointer(cur.ctype); {
+					switch wantPtr, havePtr := e.methodPtr[cname] || e.recvByRef[cname], e.isPointer(cur.ctype); {
 					case wantPtr && !havePtr:
 						rct = cur.ctype + "*"
 					case !wantPtr && havePtr:
@@ -31520,6 +31614,9 @@ func (e *emitter) stringerMethodC(ct, tmp string) (text string, isIface, ptrRecv
 			continue
 		}
 		recv, okr := e.promotedRecvC(tmp, ct, path, ptrRecv, true)
+		if e.recvByRef[cname] {
+			recv, okr = e.promotedByRefRecvC(tmp, ct, path, true)
+		}
 		if !okr {
 			continue
 		}
@@ -31578,7 +31675,7 @@ func (e *emitter) emitStringerElems(idx int, arg Node, verb byte, value func()) 
 		value()
 	}
 	e.emit("; printf(\"[\"); for (int " + i + " = 0; " + i + " < " + s + ".len; " + i + "++) { " +
-		elem + " " + el + " = " + s + ".ptr[" + i + "]; if (" + i + ") { printf(\" \"); } ")
+		strings.ReplaceAll(strings.Join(e.bindC(elem, el, s+".ptr["+i+"]"), " "), "\n", "") + " if (" + i + ") { printf(\" \"); } ")
 	print := "ogo_print_str(" + text + ");"
 	switch verb {
 	case 'x', 'X', 'q':
@@ -32172,8 +32269,8 @@ func (e *emitter) emitPrintfVerb(item printfItem, idx int, arg Node) bool {
 				print = fmt.Sprintf("ogo_print_str_pad(%s, %d, %d, %d, %d)", text, w, pr, boolToInt(item.leftAlign()), boolToInt(item.hasFlag('0')))
 			}
 			e.ind()
-			e.emit("{ " + dct + " " + tmp + " = ")
-			value()
+			bind := strings.TrimSuffix(strings.Join(e.bindC(dct, tmp, e.captureC(value)), ""), ";\n")
+			e.emit("{ " + strings.ReplaceAll(bind, "\n", " "))
 			if isIface {
 				// An interface carrying no table carries no dynamic type, which fmt
 				// prints as <nil> for %v and as its complaint for the other verbs.
@@ -36141,6 +36238,9 @@ func (e *emitter) emitDestructure(targets []assignTarget, declare []bool, rhs []
 		lv := e.fieldAccessC(callee, fields)
 		ct, _ := e.fieldType(callee, fields)
 		recv, ok := e.chainReceiver(lv, ct, true, wantPtr)
+		if e.recvByRef[cn] {
+			recv, ok = e.byRefRecvC(lv, ct, true)
+		}
 		if !ok {
 			e.fail("cannot take the address of %s for a pointer-receiver method", lv)
 			return

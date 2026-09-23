@@ -6533,9 +6533,10 @@ func main() {
 // What is NOT here is anything the emitter can write a memcpy for: a copy between
 // variables, a literal's element, which is zeroed in place and copied in after the
 // declaration, and -- since 2026-09-23 -- a channel's element, whose helpers take and
-// hand back the value by pointer (chanStructByPtr), and a PARAMETER, received by
-// pointer and copied on entry (byRefParam; TestEmitCArrayFieldABIAllows pins its
-// shape). Only a boundary the calling convention itself owns belongs on this list.
+// hand back the value by pointer (chanStructByPtr), and a PARAMETER and a VALUE
+// RECEIVER, received by pointer and copied on entry (byRefParam, recvByRef;
+// TestEmitCArrayFieldABIAllows pins their shape). Only a boundary the calling
+// convention itself owns belongs on this list.
 func TestEmitCArrayFieldABI(t *testing.T) {
 	const header = `type A struct {
 	v [3]int
@@ -6546,11 +6547,6 @@ var g A
 
 `
 	for _, test := range []struct{ name, src, want string }{
-		{
-			name: "value receiver",
-			src:  "func (a A) top() int { return a.v[2] }\n\nfunc main() { println(g.top()) }\n",
-			want: "receiver a: A holds an array",
-		},
 		{
 			name: "result",
 			src:  "func mk() A { return g }\n\nfunc main() { println(mk().n) }\n",
@@ -6749,8 +6745,9 @@ func main() {
 // nothing, a copy between variables is a memcpy the emitter writes, a literal written
 // in place IS the storage rather than a copy into it, and a literal's element that is
 // such a struct is a memcpy after the declaration -- which used to be refused here and
-// is why this test also names the shape it grew to allow. A PARAMETER is the newest
-// (2026-09-23): received by pointer, copied on entry, handed the argument's address.
+// is why this test also names the shape it grew to allow. A PARAMETER and a VALUE
+// RECEIVER are the newest (2026-09-23): received by pointer, copied on entry, handed
+// the argument's address.
 func TestEmitCArrayFieldABIAllows(t *testing.T) {
 	src := `type A struct {
 	v [3]int
@@ -6763,6 +6760,8 @@ func (a *A) bottom() int { return a.v[0] }
 
 func take(x A) int { return x.n }
 
+func (a A) top() int { return a.v[2] }
+
 func main() {
 	x := g
 	println(x.n, g.bottom())
@@ -6770,7 +6769,7 @@ func main() {
 	println(ys[0].n)
 	zs := []A{g}
 	println(zs[0].n)
-	println(take(g))
+	println(take(g), g.top())
 }
 `
 	fsys := fstest.MapFS{"main.ogo": &fstest.MapFile{Data: []byte(src)}}
@@ -6782,7 +6781,8 @@ func main() {
 	if err := EmitC(pkg, &out); err != nil {
 		t.Fatalf("EmitC: %v", err)
 	}
-	for _, want := range []string{"int take(A* _ogo_x) {", "memcpy(&x, _ogo_x, sizeof(x));", "take(&(g))"} {
+	for _, want := range []string{"int take(A* _ogo_x) {", "memcpy(&x, _ogo_x, sizeof(x));", "take(&(g))",
+		"int A_top(A* _ogo_a) {", "memcpy(&a, _ogo_a, sizeof(a));", "A_top(&(g))"} {
 		if !strings.Contains(out.String(), want) {
 			t.Errorf("the by-pointer parameter's shape %q is not in:\n%s", want, out.String())
 		}
