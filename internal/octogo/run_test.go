@@ -35842,6 +35842,37 @@ func main() {
 `,
 		want: "12121\n121212 true\n21 true true\ntrue 342 true\n777\n3450606 70 true\n5 12121\ntrue 1\n212121\ndrove 212121\n",
 	}, {
+		// A value ranged out of a slice or an array of a named function type,
+		// the table-of-handlers idiom: the variable took the element's type by
+		// NAME, which said nothing of a call through it, so `h(10)` was "cannot
+		// call non-function h" wherever the table's type was written out.
+		name: "a table of a named function type ranged over",
+		src: `type Handler func(n int) int
+
+func inc(n int) int { return n + 1 }
+
+func dbl(n int) int { return 2 * n }
+
+var handlers [2]Handler = [2]Handler{inc, dbl}
+
+func main() {
+	for i, h := range handlers {
+		println(i, h(10))
+	}
+	var fs []Handler = handlers[:]
+	for _, h := range fs {
+		g := h
+		println(g(4))
+	}
+	total := 0
+	for _, h := range handlers[1:] {
+		total += h(5)
+	}
+	println(total)
+}
+`,
+		want: "0 11\n1 20\n5\n8\n10\n",
+	}, {
 		// A method called on the interface RESULT of a call through a function
 		// value, a field holding one or another interface's slot -- `p(1).Area()`,
 		// `h.p(2).Area()`, `hd.Get().Area()` -- read the table and the data off

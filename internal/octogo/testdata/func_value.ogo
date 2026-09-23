@@ -119,3 +119,18 @@ func methodValues() {
 	h := lp.bump
 	println(h(1))
 }
+
+// A value ranged out of a table of a named function type is a function, called and
+// checked like any: the variable took the element's type by name, which said nothing
+// of a call through it -- "cannot call non-function h", the table-of-handlers idiom.
+type handler func(n int) int
+
+var handlers [2]handler = [2]handler{sq, sq}
+
+func rangeHandlers() {
+	for i, h := range handlers {
+		println(i, h(i))
+		// ERROR "too many arguments in call to h"
+		println(h(i, 2))
+	}
+}

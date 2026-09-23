@@ -2977,7 +2977,10 @@ func (f *File) checkRange(s *Scope, kw string, fi forInfo) {
 		// Declare the value variable even in the rejected integer case, so a use of
 		// it in the body does not pile a second "undefined" error on the first.
 		if fi.rangeDefine {
-			declared = f.declareRangeVar(s, fi.valVar, elem, hasElem && !isInt && !isChan, elemName, elemQual, elemPtr) || declared
+			if f.declareRangeVar(s, fi.valVar, elem, hasElem && !isInt && !isChan, elemName, elemQual, elemPtr) {
+				declared = true
+				f.rangeValueFunc(s, fi.valVar, fi.rangeExpr)
+			}
 		} else {
 			f.checkRangeTarget(s, fi.valVar)
 		}
@@ -3158,6 +3161,37 @@ func (f *File) rangeElemNamed(s *Scope, expr Node) (Token, Token, bool, bool) {
 		return d.elemTypeName, qual, f.elemIsPointer(home, d), true
 	}
 	return Token{}, Token{}, false, false
+}
+
+// rangeValueFunc gives the value variable v of ranging expr the signature of what it
+// yields, when that is a function: `for _, h := range handlers` over a [2]Handler.
+// declareRangeVar types it by the element's NAME, which says nothing of a call
+// through it, so `h(x)` was "cannot call non-function h" -- for every slice or
+// array of a named function type, the table-of-handlers idiom.
+func (f *File) rangeValueFunc(s *Scope, v, expr Node) {
+	vid, ok := f.exprSoleIdent(v)
+	if !ok {
+		return
+	}
+	vd, ok := s.find(vid.Src()).(*VarDeclaration)
+	if !ok {
+		return
+	}
+	id, ok := f.exprSoleIdent(expr)
+	if !ok {
+		return
+	}
+	d, ok := s.find(id.Src()).(*VarDeclaration)
+	if !ok || d.isChan || d.elemTypeNode == nil {
+		return
+	}
+	in := d.declScope
+	if in == nil {
+		in = s
+	}
+	if sig := f.funcSig(in, d.elemTypeNode); sig != nil {
+		vd.funcSig, vd.isFunc = sig, true
+	}
 }
 
 // elemIsPointer reports whether a slice or array variable's element is a pointer,
