@@ -32023,7 +32023,7 @@ func (e *emitter) emitStringerElems(idx int, arg Node, verb byte, value func()) 
 	elem, bound := "", ""
 	if ct, ok := e.printfArgType(idx, arg); ok && e.isSliceCType(ct) {
 		elem = sliceElemFromCName(ct)
-	} else if a, isArr := e.arrayShapeOf(arg.ast); isArr && len(a.inner) == 0 {
+	} else if a, isArr := e.printArrayShape(idx, arg); isArr && len(a.inner) == 0 {
 		elem, bound = a.elem, a.bound
 	} else {
 		return false
@@ -32442,7 +32442,7 @@ func (e *emitter) emitStructPrintVerb(idx int, arg Node, plus bool, value func()
 	elem, bound := "", ""
 	if e.isSliceCType(ct) {
 		elem = sliceElemFromCName(ct)
-	} else if a, isArr := e.arrayShapeOf(arg.ast); isArr && len(a.inner) == 0 {
+	} else if a, isArr := e.printArrayShape(idx, arg); isArr && len(a.inner) == 0 {
 		elem, bound = a.elem, a.bound
 	}
 	if elem == "" || !e.isPrintStruct(elem) && !e.isPrintStruct(strings.TrimSuffix(elem, "*")) &&
@@ -32752,7 +32752,7 @@ func (e *emitter) defaultVerb(idx int, arg Node, ct string, known bool) (byte, b
 	case known && e.isSliceCType(e.underlyingCType(ct)):
 		elem = sliceElemFromCName(e.underlyingCType(ct))
 	case !known:
-		a, isArr := e.arrayShapeOf(arg.ast)
+		a, isArr := e.printArrayShape(idx, arg)
 		if !isArr || len(a.inner) != 0 {
 			return 0, false
 		}
@@ -32783,7 +32783,7 @@ func (e *emitter) intsToPrint(idx int, arg Node, ct string) bool {
 	if pct, ok := e.printfArgType(idx, arg); ok && e.isSliceCType(e.underlyingCType(pct)) {
 		return isIntCType(e.underlyingCType(sliceElemFromCName(e.underlyingCType(pct))))
 	}
-	if a, isArr := e.arrayShapeOf(arg.ast); isArr && len(a.inner) == 0 {
+	if a, isArr := e.printArrayShape(idx, arg); isArr && len(a.inner) == 0 {
 		return isIntCType(e.underlyingCType(a.elem))
 	}
 	return false
@@ -32802,7 +32802,7 @@ func (e *emitter) emitElementwiseVerb(item printfItem, idx int, arg Node, value 
 	elem, bound := "", ""
 	if ct, known := e.printfArgType(idx, arg); known && e.isSliceCType(e.underlyingCType(ct)) {
 		elem = sliceElemFromCName(e.underlyingCType(ct))
-	} else if a, isArr := e.arrayShapeOf(arg.ast); isArr && len(a.inner) == 0 {
+	} else if a, isArr := e.printArrayShape(idx, arg); isArr && len(a.inner) == 0 {
 		elem, bound = a.elem, a.bound
 	} else {
 		return false, false
@@ -33160,6 +33160,24 @@ func (e *emitter) emitPrintOne(newline bool, idx int, arg Node) {
 			e.emit("(" + sliceCName(a.elem) + "){" + text + ", " + a.bound + ", " + a.bound + "}")
 		})
 	}
+	// A deferred print's ARRAY was copied where the defer stands, into the capture
+	// its replay reads (deferArg.arr), and prints from that. The replay printed the
+	// capture with %d -- its address -- and a package array by its name, as it
+	// stood at the return, where Go prints what the defer took.
+	if i := idx + e.deferReplayOff; e.deferReplay >= 0 && i < len(e.deferReplayArgs) {
+		if d := e.deferReplayArgs[i]; !d.inline && d.arr.bound != "" {
+			if text, empty, ok := emptyArrayText(d.arr); empty && ok {
+				if newline {
+					text += "\\n"
+				}
+				e.ind()
+				e.emit("printf(\"" + text + "\");\n")
+				return
+			}
+			printArray(deferArgName(e.deferReplay, i), d.arr)
+			return
+		}
+	}
 	// An array the print copied before a method it calls could write it
 	// (hoistPrintArgs) prints the copy.
 	if h, ok := e.hoistedArg(idx); ok && h.array {
@@ -33256,6 +33274,20 @@ func (e *emitter) emitPrintOne(newline bool, idx int, arg Node) {
 	}
 	e.emitReplayArg(idx, arg)
 	e.emit(");\n")
+}
+
+// printArrayShape is the shape of a print argument that is an ARRAY: during a defer
+// replay the capture's, which the defer statement copied it into (deferArg.arr) --
+// the expression was written in a scope the replay has left, so a local's shape
+// does not resolve there, and `defer printf("%d", r)` was "cannot tell the type of
+// this argument" -- and the expression's everywhere else.
+func (e *emitter) printArrayShape(idx int, arg Node) (arrDim, bool) {
+	if i := idx + e.deferReplayOff; e.deferReplay >= 0 && i < len(e.deferReplayArgs) {
+		if d := e.deferReplayArgs[i]; !d.inline && d.arr.bound != "" {
+			return d.arr, true
+		}
+	}
+	return e.arrayShapeOf(arg.ast)
 }
 
 // emptyArrayText is what an array with an EMPTY dimension prints as, which is all

@@ -38766,6 +38766,48 @@ func main() {
 `,
 		want: "[[1 2] [3 4]]\n[[5 6] [7 8]]\n[[0 0 0] [0 0 9]] 1\n[[t] [t]]\n[]|[[] []]\n[[1 1] [2 2]] {[[1 1] [2 2]]}\n",
 	}, {
+		// A deferred print's ARRAY is copied where the defer stands, and the replay
+		// printed the copy with %d -- its address -- and a package array by its
+		// name, as it stood at the return: 8988 9000 9012 [11 2] on the board for
+		// [4 5 6] [1 2 3] [7 8] [1 2]. An element-wise verb of a local one was
+		// "cannot tell the type of this argument", its name out of scope at the
+		// replay. Both read the capture's shape now (deferArg.arr).
+		name: "a deferred print of an array prints what the defer took",
+		src: `type H struct{ a [3]int }
+
+type Row [2]int
+
+var gh = H{[3]int{1, 2, 3}}
+
+var ga = [2]int{1, 2}
+
+var grid = [2][2]int{{1, 2}, {3, 4}}
+
+func geth() *H { return &gh }
+
+// A deferred print of an ARRAY prints what the defer took, where it stands: a
+// field, a package variable, a local, a row, a defined array type's, one reached
+// through a call, under %v and element by element.
+func show() {
+	h := H{[3]int{4, 5, 6}}
+	a := [2]int{7, 8}
+	r := Row{9, 10}
+	defer printf("%v %v %v %v\n", h.a, gh.a, a, ga)
+	defer printf("%v %d %x %v\n", grid, r, a, geth().a)
+	h.a[0] = 40
+	gh.a[0] = 10
+	a[0] = 70
+	ga[0] = 11
+	grid[1][1] = 44
+	r[0] = 90
+}
+
+func main() {
+	show()
+}
+`,
+		want: "[[1 2] [3 4]] [9 10] [7 8] [1 2 3]\n[4 5 6] [1 2 3] [7 8] [1 2]\n",
+	}, {
 		// A method called on the interface RESULT of a call through a function
 		// value, a field holding one or another interface's slot -- `p(1).Area()`,
 		// `h.p(2).Area()`, `hd.Get().Area()` -- read the table and the data off
