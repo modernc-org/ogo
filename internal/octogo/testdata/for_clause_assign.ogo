@@ -1,0 +1,48 @@
+// A for clause's "=" init and its post statement are assignments, and are asked
+// what the assignment statements are asked: a value of the target's type, as many
+// values as targets, an operator the target's type has. Only their names were
+// resolved, so `for x = "s"; ...` and `...; i += "s"` reached the C compiler.
+
+type H struct{ n int }
+
+func ok() {
+	var x, y int
+	var h H
+	for x = 1; x < 3; x++ {
+	}
+	for h.n = 2; h.n < 4; h.n++ {
+	}
+	for x, y = 1, 2; x < y; x, y = x+1, y-1 {
+	}
+	for i := 1; i < 8; i <<= 1 {
+		i++
+	}
+	println(x, y, h.n)
+}
+
+func bad() {
+	var x int
+	var h H
+	// ERROR cannot use .s. of type string as type int in assignment
+	for x = "s"; x < 3; x++ {
+	}
+	// ERROR cannot use .u. of type string as type int in assignment
+	for h.n = "u"; h.n < 4; h.n++ {
+	}
+	// ERROR cannot use .s. of type string as type int in assignment
+	for i := 0; i < 3; i = "s" {
+	}
+	// ERROR cannot use .s. of type string as type int in assignment
+	for i := 0; i < 3; i += "s" {
+	}
+	// ERROR assignment mismatch: 2 variables but 1 value
+	for i := 0; i < 3; i, x = i+1 {
+	}
+	// ERROR invalid operation: operator % not defined on f \(variable of type float64\)
+	for f := 0.5; f < 3; f %= 2 {
+	}
+	// ERROR invalid operation: s\+\+ \(non-numeric type string\)
+	for s := "a"; len(s) < 3; s++ {
+	}
+	println(x, h.n)
+}

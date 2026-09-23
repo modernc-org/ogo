@@ -2923,9 +2923,15 @@ func (f *File) checkForHeader(s *Scope, results []retResult, kw string, n Node) 
 			for i, lhs := range fi.initLHSs {
 				f.declareForInitVar(s, lhs, fi.initRHSs[i], fi.define)
 			}
+			if !fi.define {
+				f.checkHeaderAssign(s, fi.initLHSs, fi.initRHSs)
+			}
 		} else {
 			f.checkNames(s, fi.initRHS)
 			f.declareForInitVar(s, fi.initLHS, fi.initRHS, fi.define)
+			if !fi.define {
+				f.checkHeaderAssign(s, []Node{fi.initLHS}, []Node{fi.initRHS})
+			}
 		}
 	}
 	if fi.hasCond {
@@ -2934,6 +2940,84 @@ func (f *File) checkForHeader(s *Scope, results []retResult, kw string, n Node) 
 	if fi.hasPost {
 		f.checkForPost(s, fi.postNode)
 	}
+}
+
+// checkHeaderAssign asks of an assignment written in a statement HEADER -- the "="
+// init of a for, `for x = 0; ...`, `for h.n, k = 2, 5; ...` -- what an assignment
+// statement asks of its targets: that each is something a value can be stored in,
+// and that the value is of its type. The header resolved the names and nothing
+// else, so `for x = "s"; ...` for an int x reached the C compiler. A bare name is
+// asked as the statement asks one (checkAssignType), a target reached through steps
+// through them (targetTypeNode, checkStoreInto). values pairs with targets; the
+// caller has reported a count that does not.
+func (f *File) checkHeaderAssign(s *Scope, targets, values []Node) {
+	if len(targets) != len(values) {
+		return
+	}
+	for i, t := range targets {
+		base, steps, stars, ok := f.exprTarget(t)
+		if !ok {
+			continue
+		}
+		bare := len(steps) == 0 && stars == 0
+		switch s.find(base.Src()).(type) {
+		case *ConstDeclaration, *FuncDeclaration, *TypeDeclaration, *PredeclaredFunc:
+			if bare {
+				f.err(base.Position(), "cannot assign to %s", base.Src())
+			}
+			continue
+		}
+		if bare {
+			f.checkAssignType(s, base, values[i], true)
+			continue
+		}
+		if tn, in := f.targetTypeNode(s, base, steps, stars); tn != nil {
+			f.checkStoreInto(s, in, tn, values[i], "assignment")
+		}
+	}
+}
+
+// exprTarget reads an assignment target written as an EXPRESSION, as a header
+// writes one -- `x`, `h.n`, `xs[i]`, `*p` -- as its base variable, the steps written
+// after it and the stars before it; ok is false for any other shape.
+func (f *File) exprTarget(n Node) (base Token, steps []Node, stars int, ok bool) {
+	ue, ok := f.soleUnaryExpr(n)
+	if !ok {
+		return Token{}, nil, 0, false
+	}
+	var fac Node
+	for c := range it(ue.ast) {
+		switch c.sym {
+		case UnaryOp:
+			for o := range it(c.ast) {
+				if o.sym != 0 || f.ch(o.tok) != MUL {
+					return Token{}, nil, 0, false
+				}
+				stars++
+			}
+		case Factor:
+			fac = c
+		}
+	}
+	if fac.sym == 0 {
+		return Token{}, nil, 0, false
+	}
+	kids := slices.Collect(it(fac.ast))
+	if len(kids) == 0 || len(kids) > 2 || kids[0].sym != 0 || f.ch(kids[0].tok) != IDENT {
+		return Token{}, nil, 0, false
+	}
+	if len(kids) == 2 {
+		if kids[1].sym != FactorSuffix {
+			return Token{}, nil, 0, false
+		}
+		for st := range it(kids[1].ast) {
+			if st.sym != Selector && st.sym != Index {
+				return Token{}, nil, 0, false
+			}
+			steps = append(steps, st)
+		}
+	}
+	return f.tok(kids[0].tok), steps, stars, true
 }
 
 // checkRange checks a range header: the ranged operand is an integer, a slice or
@@ -3495,11 +3579,90 @@ func (f *File) declareLocal(s *Scope, vd *VarDeclaration) {
 
 // checkForPost checks a post statement's names.
 func (f *File) checkForPost(s *Scope, n Node) {
+	var lhs, rhs []Node
+	var op Symbol
+	var opSrc string
 	for c := range it(n.ast) {
-		if c.sym == Expression {
+		switch c.sym {
+		case Expression:
 			f.checkNames(s, c)
+			if op == 0 {
+				lhs = append(lhs, c)
+			} else {
+				rhs = append(rhs, c)
+			}
+		case AssignOp:
+			for t := range it(c.ast) {
+				if t.sym == 0 {
+					op, opSrc = f.ch(t.tok), f.tok(t.tok).Src()
+				}
+			}
+		case 0:
+			switch k := f.ch(c.tok); k {
+			case ASSIGN, INC, DEC:
+				op = k
+			}
 		}
 	}
+	// What the statement forms ask of the same assignment, which the post was not:
+	// only its names were resolved, so `i = "s"`, `h.n = "s"` and `i += "s"` for an
+	// int went through, the last as far as the emitter's word about concatenation.
+	switch {
+	case op == ASSIGN:
+		if v, ok := f.rhsValueCount(s, rhs); ok && v != len(lhs) {
+			f.err(f.tok(lhs[0].Pos()).Position(), "assignment mismatch: %s but %s", countUnits(len(lhs), "variable"), f.valueSource(s, rhs, v))
+			return
+		}
+		f.checkHeaderAssign(s, lhs, rhs)
+	case len(lhs) != 1:
+	case op == INC || op == DEC:
+		if k, ok := f.exprTargetKind(s, lhs[0]); ok && kindCategory(k) != catNumeric {
+			sym := "++"
+			if op == DEC {
+				sym = "--"
+			}
+			f.err(f.tok(lhs[0].Pos()).Position(), "invalid operation: %s%s (non-numeric type %s)", f.exprSource(lhs[0]), sym, kindName(k))
+		}
+	case isCompoundAssign(op) && len(rhs) == 1:
+		k, ok := f.exprTargetKind(s, lhs[0])
+		if !ok {
+			return
+		}
+		bop := compoundBase(op)
+		if !binaryAllowed(bop, kindCategory(k)) || intOnlyOp(bop) && !isIntegerKind(k) {
+			f.err(f.tok(lhs[0].Pos()).Position(), "invalid operation: operator %s not defined on %s (variable of type %s)",
+				strings.TrimSuffix(opSrc, "="), f.exprSource(lhs[0]), kindName(k))
+			return
+		}
+		if isShiftAssign(op) {
+			return
+		}
+		if vk, known := f.exprType(s, rhs[0]); known && !assignableKind(k, vk) {
+			f.err(f.tok(rhs[0].Pos()).Position(), "cannot use %s of type %s as type %s in assignment", f.exprSource(rhs[0]), kindName(vk), kindName(k))
+			return
+		}
+		f.checkValueOverflow(s, sizedTarget(k, Token{}), rhs[0])
+	}
+}
+
+// exprTargetKind is the Kind of an assignment target written as an expression
+// (exprTarget): a bare name's, or what a walk of its steps reaches.
+func (f *File) exprTargetKind(s *Scope, t Node) (Kind, bool) {
+	base, steps, stars, ok := f.exprTarget(t)
+	if !ok {
+		return 0, false
+	}
+	if len(steps) == 0 && stars == 0 {
+		return f.identKind(s, base)
+	}
+	tn, in := f.targetTypeNode(s, base, steps, stars)
+	if tn == nil {
+		return 0, false
+	}
+	if rt := f.resultType(in, tn); rt.known {
+		return rt.kind, true
+	}
+	return 0, false
 }
 
 // checkCondition resolves the names and operator operands of an "if"/"for"
