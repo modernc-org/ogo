@@ -3264,6 +3264,12 @@ func (e *emitter) funcTypeFor(fv funcValueType) string {
 	if name, ok := e.funcTypeNames[id]; ok {
 		return name
 	}
+	// A function whose signature is a self-naming type's, `func lexWord(*lexer)
+	// stateFn`: its value is a value of that type, whose typedef returns ogo_anyfn
+	// where the signature says stateFn -- C cannot spell the type inside itself.
+	if name, ok := e.recFuncShapes[id]; ok {
+		return name
+	}
 	name := fmt.Sprintf("%s%d", funcTypePrefix, len(e.funcTypeNames))
 	e.funcTypeNames[id] = name
 	e.funcTypeRet[name] = fv.res
@@ -4806,7 +4812,7 @@ func typeNameCollisions(src []byte, names map[string]bool) map[string]bool {
 // emitProgram is EmitC's one pass. rename lists the main-package types spelled
 // ogo_T_<name> in C (see typeMangle).
 func emitProgram(pkg *Package, w io.Writer, opts []EmitOption, rename map[string]bool) error {
-	e := &emitter{renameTypes: rename, renamedTypes: map[string]string{}, includes: map[string]bool{}, funcRet: map[string][]string{}, funcSliceParams: map[string][]string{}, funcVariadic: map[string]int{}, nilHelpers: map[string]bool{}, funcArrayRet: map[string]arrDim{}, funcArrayParams: map[string][]arrDim{}, anonStructNames: map[string]string{}, methodValueTypes: map[string]funcValueType{}, methodValueOf: map[string]string{}, methodExprNames: map[string]string{}, funcParams: map[string][]string{}, methodPtr: map[string]bool{}, globals: map[string]string{}, structs: map[string][]structField{}, namedTypes: map[string]bool{}, typeNames: map[string]bool{}, interfaceTypes: map[string]bool{}, ifaceMethods: map[string][]ifaceMethod{}, anonIfaceNames: map[string]string{}, anonIfaceMinted: map[string]bool{}, ifaceASTs: map[string]ifaceAST{}, ifaceVTables: map[string]bool{}, namedUnderlying: map[string]string{}, namedArrays: map[string]arrDim{}, constInt: map[string]string{}, constVal: map[string]constant.Value{}, constWide: map[string]string{}, constStr: map[string]string{}, constUntyped: map[string]bool{}, constHuge: map[string]bool{}, arrays: map[string]arrDim{}, globalArrays: map[string]arrDim{}, sliceVars: map[string]string{}, globalSliceVars: map[string]string{}, chanElems: map[string]bool{}, chanInitElems: map[string]bool{}, chanSendElems: map[string]bool{}, chanRecvElems: map[string]bool{}, chanTryRecvElems: map[string]bool{}, chanTrySendElems: map[string]bool{}, chanGatedSendElems: map[string]bool{}, aliasOf: map[string]string{}, localTypes: map[string]string{}, gotoTargets: map[string]bool{}, chanCloseElems: map[string]bool{}, chanRecv2Elems: map[string]bool{}, mathWrappers: map[string]bool{}, chanElemByName: map[string]string{}, sliceElems: map[string]bool{}, sliceElemByName: map[string]string{}, appendElems: map[string]bool{}, tryappendElems: map[string]bool{}, appendSliceElems: map[string]bool{}, tryappendSliceEls: map[string]bool{}, appendokStructs: map[string]bool{}, copyElems: map[string]bool{}, resliceElems: map[string]bool{}, reslice3Elems: map[string]bool{}, clearElems: map[string]bool{}, minElems: map[string]bool{}, maxElems: map[string]bool{}, printSliceElems: map[string]bool{}, printStructs: map[string]string{}, printIfaces: map[string]string{}, printlnElems: map[string]bool{}, switchBreakUsed: map[string]bool{}, labelBreak: map[string]string{}, labelContinue: map[string]string{}, labelUsed: map[string]bool{}, eqStructs: map[string]bool{}, eqArrays: map[string]arrDim{}, frameBacked: map[string]bool{}, frameHolder: map[string]string{}, crossParams: map[string][]leak{}, crossContents: map[string][]leak{}, retContents: map[string][]bool{}, recvContents: map[string]leak{}, paramCalls: map[string][]paramCall{}, frameCalls: map[string][]frameCall{}, localConstSpecs: map[string]localConstSpec{}, inheritedTypes: map[string]bool{}, funcValueMembers: map[string][]string{}, methodExprMembers: map[string]emMethodExpr{}, memberShown: map[string]string{}, litLifted: map[string][]string{}, methodNames: map[string]bool{}, recvLeaks: map[string]leak{}, retRecv: map[string]bool{}, crossInto: map[string][]uint32{}, ifaceSummaries: map[string]ifaceSummary{}, retParams: map[string][]bool{}, funcValueOf: map[string]string{}, crossNames: map[string]string{}, initNames: map[string]string{}, funcValueTypes: map[string]funcValueType{}, funcTypeNames: map[string]string{}, funcTypeRet: map[string][]string{}, funcTypeParams: map[string][]string{}, funcTypeVariadic: map[string]int{}, retStructs: map[string]string{}, retStructByKey: map[string]string{}, shiftHelpers: map[string][2]string{}, shiftCTypes: map[*int32]string{}, shiftWalked: map[shiftWalkKey]bool{}, shiftIn: map[*int32]bool{}, divHelpers: map[string][2]string{}, funcValueWrappers: map[string]string{}, deferReplay: -1, iota: -1}
+	e := &emitter{renameTypes: rename, renamedTypes: map[string]string{}, includes: map[string]bool{}, funcRet: map[string][]string{}, funcSliceParams: map[string][]string{}, funcVariadic: map[string]int{}, nilHelpers: map[string]bool{}, funcArrayRet: map[string]arrDim{}, funcArrayParams: map[string][]arrDim{}, anonStructNames: map[string]string{}, methodValueTypes: map[string]funcValueType{}, methodValueOf: map[string]string{}, methodExprNames: map[string]string{}, funcParams: map[string][]string{}, methodPtr: map[string]bool{}, globals: map[string]string{}, structs: map[string][]structField{}, namedTypes: map[string]bool{}, typeNames: map[string]bool{}, interfaceTypes: map[string]bool{}, ifaceMethods: map[string][]ifaceMethod{}, anonIfaceNames: map[string]string{}, anonIfaceMinted: map[string]bool{}, ifaceASTs: map[string]ifaceAST{}, ifaceVTables: map[string]bool{}, namedUnderlying: map[string]string{}, namedArrays: map[string]arrDim{}, constInt: map[string]string{}, constVal: map[string]constant.Value{}, constWide: map[string]string{}, constStr: map[string]string{}, constUntyped: map[string]bool{}, constHuge: map[string]bool{}, arrays: map[string]arrDim{}, globalArrays: map[string]arrDim{}, sliceVars: map[string]string{}, globalSliceVars: map[string]string{}, chanElems: map[string]bool{}, chanInitElems: map[string]bool{}, chanSendElems: map[string]bool{}, chanRecvElems: map[string]bool{}, chanTryRecvElems: map[string]bool{}, chanTrySendElems: map[string]bool{}, chanGatedSendElems: map[string]bool{}, aliasOf: map[string]string{}, localTypes: map[string]string{}, gotoTargets: map[string]bool{}, chanCloseElems: map[string]bool{}, chanRecv2Elems: map[string]bool{}, mathWrappers: map[string]bool{}, chanElemByName: map[string]string{}, sliceElems: map[string]bool{}, sliceElemByName: map[string]string{}, appendElems: map[string]bool{}, tryappendElems: map[string]bool{}, appendSliceElems: map[string]bool{}, tryappendSliceEls: map[string]bool{}, appendokStructs: map[string]bool{}, copyElems: map[string]bool{}, resliceElems: map[string]bool{}, reslice3Elems: map[string]bool{}, clearElems: map[string]bool{}, minElems: map[string]bool{}, maxElems: map[string]bool{}, printSliceElems: map[string]bool{}, printStructs: map[string]string{}, printIfaces: map[string]string{}, printlnElems: map[string]bool{}, switchBreakUsed: map[string]bool{}, labelBreak: map[string]string{}, labelContinue: map[string]string{}, labelUsed: map[string]bool{}, eqStructs: map[string]bool{}, eqArrays: map[string]arrDim{}, frameBacked: map[string]bool{}, frameHolder: map[string]string{}, crossParams: map[string][]leak{}, crossContents: map[string][]leak{}, retContents: map[string][]bool{}, recvContents: map[string]leak{}, paramCalls: map[string][]paramCall{}, frameCalls: map[string][]frameCall{}, localConstSpecs: map[string]localConstSpec{}, inheritedTypes: map[string]bool{}, funcValueMembers: map[string][]string{}, methodExprMembers: map[string]emMethodExpr{}, memberShown: map[string]string{}, litLifted: map[string][]string{}, methodNames: map[string]bool{}, recvLeaks: map[string]leak{}, retRecv: map[string]bool{}, crossInto: map[string][]uint32{}, ifaceSummaries: map[string]ifaceSummary{}, retParams: map[string][]bool{}, funcValueOf: map[string]string{}, crossNames: map[string]string{}, initNames: map[string]string{}, funcValueTypes: map[string]funcValueType{}, funcTypeNames: map[string]string{}, funcTypeRet: map[string][]string{}, funcTypeParams: map[string][]string{}, funcTypeVariadic: map[string]int{}, recFuncTypes: map[string]bool{}, recFuncShapes: map[string]string{}, retStructs: map[string]string{}, retStructByKey: map[string]string{}, shiftHelpers: map[string][2]string{}, shiftCTypes: map[*int32]string{}, shiftWalked: map[shiftWalkKey]bool{}, shiftIn: map[*int32]bool{}, divHelpers: map[string][2]string{}, funcValueWrappers: map[string]string{}, deferReplay: -1, iota: -1}
 	for _, opt := range opts {
 		opt(e)
 	}
@@ -5659,6 +5665,8 @@ type emitter struct {
 	funcTypeRet        map[string][]string      // that typedef -> the result C types a call through it yields
 	funcTypeParams     map[string][]string      // that typedef -> its parameter C types, for marshalling a `go` through a value
 	funcTypeVariadic   map[string]int           // that typedef -> the position of its "...T" parameter, for the pack a call through a value builds
+	recFuncTypes       map[string]bool          // the function typedefs of a type that names ITSELF as its result, `type stateFn func(*lexer) stateFn`: a call through one is made through the function's own type (see recFuncCallee)
+	recFuncShapes      map[string]string        // funcShapeID of such a type's signature spelled with its own name as the result -> its typedef, so a function of that signature is a value of it
 	retStructs         map[string]string        // result-struct typedef name -> the result types it stands for
 	retStructByKey     map[string]string        // those result types -> the typedef name, so one list answers alike every time
 	typedefUnits       []typedefUnit            // the typedef section, in the order collected; emitted in dependency order
@@ -6356,6 +6364,10 @@ func (e *emitter) emitLocalTypeDecl(ast []int32) {
 			e.addTypedef(mn, "typedef "+a.elem+" "+mn+a.declSuffix()+";"+"\n", a.elem)
 			continue
 		}
+		if sig, ok := e.selfResultFuncSig(typeAST, name); ok {
+			e.collectRecFuncType(mn, name, sig) // see collectTypeSpec
+			continue
+		}
 		underlying := e.cType(typeAST)
 		if underlying == "" {
 			return
@@ -6474,6 +6486,17 @@ func (e *emitter) collectTypeSpec(n Node) {
 		e.addTypedef(mn, "typedef "+a.elem+" "+mn+a.declSuffix()+";\n", a.elem)
 		return
 	}
+	// A function type naming ITSELF as its result, the state-function idiom: `type
+	// stateFn func(*lexer) stateFn`. C cannot spell that type inside itself, so its
+	// typedef returns a generic function pointer, ogo_anyfn, a function of that
+	// signature named as a value is cast into it (recFuncValue), and a call through
+	// a value of it is made through the function's own type (recFuncCallee). A
+	// declared function keeps returning the type by its name, so a direct call
+	// needs neither.
+	if sig, ok := e.selfResultFuncSig(typeAST, name); ok {
+		e.collectRecFuncType(mn, name, sig)
+		return
+	}
 	// A non-struct named type: `type Celsius int` -> `typedef int Celsius;`. The
 	// underlying must be a modelled scalar (or other cType-resolvable) type.
 	underlying := e.cType(typeAST)
@@ -6511,6 +6534,132 @@ func (e *emitter) collectTypeSpec(n Node) {
 	// the helpers, after it, so a typedef naming it here named a type C had not
 	// seen); the dependency is what orders the two now.
 	e.addTypedef(mn, "typedef "+underlying+" "+mn+";\n", underlying)
+}
+
+// selfResultFuncSig recognises `func Signature` whose one result is the type being
+// declared, `name`, answering the Signature. A result list naming it among others,
+// or a parameter naming it, is not this shape.
+func (e *emitter) selfResultFuncSig(typeAST []int32, name string) ([]int32, bool) {
+	nodes := slices.Collect(it(typeAST))
+	if len(nodes) != 2 || nodes[0].sym != 0 || e.f.ch(nodes[0].tok) != FUNC || nodes[1].sym != Signature {
+		return nil, false
+	}
+	names := func(ast []int32) bool {
+		toks := slices.Collect(it(ast))
+		return len(toks) == 1 && toks[0].sym == 0 && e.f.ch(toks[0].tok) == IDENT && e.src(toks[0].tok) == name
+	}
+	for n := range it(nodes[1].ast) {
+		switch n.sym {
+		case Type:
+			if names(n.ast) {
+				return nodes[1].ast, true
+			}
+		case ResultList:
+			if ds := e.f.paramDecls(n.ast); len(ds) == 1 && len(ds[0].Names) <= 1 && names(ds[0].TypeAST.ast) {
+				return nodes[1].ast, true
+			}
+		}
+	}
+	return nil, false
+}
+
+// collectRecFuncType declares a self-naming function type, mn, over the
+// signature sig: a typedef whose result is ogo_anyfn, the type as another name
+// for it, and the type of the functions it holds, which return mn -- what a call
+// through a value of it is made through (recFuncCallee), typed as mn by
+// funcTypeRet.
+func (e *emitter) collectRecFuncType(mn, name string, sig []int32) {
+	for n := range it(sig) {
+		if n.sym != ParameterList {
+			continue
+		}
+		for _, d := range e.f.paramDecls(n.ast) {
+			if e.typeMentions(d.TypeAST.ast, name) {
+				e.fail("type %s names itself as a parameter of its own function type, which is not supported yet", name)
+				return
+			}
+		}
+	}
+	if !e.typeNames["ogo_anyfn"] {
+		e.typeNames["ogo_anyfn"] = true
+		e.addTypedef("ogo_anyfn", "typedef void (*ogo_anyfn)(void);\n")
+	}
+	params, _ := e.cParamTypes(sig)
+	if e.err != nil {
+		return
+	}
+	fv := e.cFuncValueType([]string{"ogo_anyfn"}, params)
+	if _, at := e.variadicElem(sig); at >= 0 {
+		fv.vararg = at + 1
+	}
+	// A typedef of its OWN, not the one funcTypeFor would share with every other
+	// function type of that C shape: a second self-naming type of the same
+	// parameters, `type other func(*M) other`, would answer a call through either
+	// with the last one's name, since the typedef is what types the call.
+	ft := fmt.Sprintf("%s%d", funcTypePrefix, len(e.funcTypeNames))
+	e.funcTypeNames["self:"+mn] = ft
+	e.funcTypeRet[ft] = []string{mn} // what a call yields, in the program's terms
+	e.funcTypeParams[ft] = params
+	if fv.vararg != 0 {
+		e.funcTypeVariadic[ft] = fv.vararg - 1
+	}
+	// Its parameters named as funcTypeFor names them (cFuncTypeParams): the target's
+	// compiler converts an argument, and counts a call's, by the parameter list.
+	at := strings.Index(fv.key, " (*)(")
+	plist := fv.key[at+len(" (*)(") : len(fv.key)-1]
+	plist = e.cFuncTypeParams(strings.Split(plist, ", "))
+	e.addTypedef(ft, "typedef ogo_anyfn (*"+ft+")("+plist+");\n", append([]string{"ogo_anyfn"}, params...)...)
+	e.recFuncTypes[ft] = true
+	self := e.cFuncValueType([]string{mn}, params)
+	self.vararg = fv.vararg
+	e.recFuncShapes[funcShapeID(self)] = ft
+	e.namedTypes[mn] = true
+	e.namedUnderlying[mn] = ft
+	e.addTypedef(mn, "typedef "+ft+" "+mn+";\n", ft)
+	e.addTypedef(ft+"_call", "typedef "+mn+" (*"+ft+"_call)("+plist+");\n", append([]string{mn}, params...)...)
+}
+
+// typeMentions reports whether a type's tokens name `name` anywhere.
+func (e *emitter) typeMentions(ast []int32, name string) bool {
+	for n := range it(ast) {
+		if n.sym == 0 {
+			if e.f.ch(n.tok) == IDENT && e.src(n.tok) == name {
+				return true
+			}
+			continue
+		}
+		if e.typeMentions(n.ast, name) {
+			return true
+		}
+	}
+	return false
+}
+
+// recFuncValue names the function cname as a VALUE: itself, or cast into a
+// self-naming type's typedef when its signature is that type's. Its C type returns
+// the type by name, the typedef returns ogo_anyfn, and the cast is what makes the
+// one a value of the other -- for a declared function, a literal, a method value
+// and a method expression alike.
+func (e *emitter) recFuncValue(cname string) string {
+	if ft, isFn := e.funcValueCType(cname); isFn && e.recFuncTypes[ft] {
+		return "((" + ft + ")" + cname + ")"
+	}
+	return cname
+}
+
+// recFuncCallee is the callee of a call through a value of C function type ct:
+// the value's text, or, when ct is a self-naming type's typedef, that text cast
+// back to the type of the functions it holds, whose result is the type itself --
+// the one type the call is made through that is theirs, and what the program's
+// value is. Not the call's RESULT cast from ogo_anyfn, the spelling tried first:
+// the target's compiler refuses a cast of a call whose argument is a struct
+// literal (doc/complit-arg-in-cast.c), and a variadic argument's pack is one --
+// `st(k, 1)` did not build for the target where the host was right.
+func (e *emitter) recFuncCallee(ct, callee string) string {
+	if ft := e.underlyingCType(ct); e.recFuncTypes[ft] {
+		return "((" + ft + "_call)" + callee + ")"
+	}
+	return callee
 }
 
 // ifaceMethod is one method of an interface, as the vtable slot it becomes: the
@@ -13874,7 +14023,7 @@ func (e *emitter) emitMethodExpr(me emMethodExpr) {
 			e.emit(w)
 			return
 		}
-		e.emit(name)
+		e.emit(e.recFuncValue(name))
 	case len(me.rest) == 1 && me.rest[0].sym == CallSuffix:
 		e.emit(name + "(")
 		e.emitCallArgs(name, me.rest[0].ast)
@@ -27723,11 +27872,8 @@ func (e *emitter) emitCallExpr(recv string, suffix []Node) bool {
 				return true
 			}
 			e.noteFrameCalls(recv, suffix[0].ast)
-			e.emit(e.varRef(recv) + "(")
-			e.callParams, e.callFuncType = e.funcTypeParams[e.underlyingCType(ct)], ct
-			e.emitCallArgs(e.valueCallee(recv, ct), suffix[0].ast)
-			e.callParams, e.callFuncType = nil, ""
-			e.emit(")")
+			args := e.valueArgsCText(e.valueCallee(recv, ct), ct, suffix[0].ast)
+			e.emit(e.recFuncCallee(ct, e.varRef(recv)) + "(" + args + ")")
 			return true
 		}
 		cname := e.funcCallC(recv)
@@ -27783,13 +27929,12 @@ func (e *emitter) emitCallExpr(recv string, suffix []Node) bool {
 				})
 				return true
 			}
-			e.emit(e.fieldAccessC(recv, []string{method}) + "(")
 			// The BOUND function's own C name, so the call is judged by its
 			// summaries -- the callee really is that function. An unbound field
 			// yields "", which consults nothing and accepts, as the rest of the
 			// analysis does with a callee it cannot name.
-			e.emitValueCallArgs(e.fieldCallee(recv, method, ft), ft, suffix[1].ast)
-			e.emit(")")
+			args := e.valueArgsCText(e.fieldCallee(recv, method, ft), ft, suffix[1].ast)
+			e.emit(e.recFuncCallee(ft, e.fieldAccessC(recv, []string{method})) + "(" + args + ")")
 			return true
 		}
 		if rct, ok := e.methodRecvCType(recv); ok {
@@ -28282,13 +28427,6 @@ func (e *emitter) valueArgsCText(callee, ftype string, callSuffix []int32) strin
 	return e.argsCText(callee, callSuffix)
 }
 
-// emitValueCallArgs is valueArgsCText writing where the call stands.
-func (e *emitter) emitValueCallArgs(callee, ftype string, callSuffix []int32) {
-	e.callParams, e.callFuncType = e.funcTypeParams[e.underlyingCType(ftype)], ftype
-	e.emitCallArgs(callee, callSuffix)
-	e.callParams, e.callFuncType = nil, ""
-}
-
 // indexCText renders an index expression (with its bound check) to a string.
 func (e *emitter) indexCText(idxAST []int32, lenExpr string) string {
 	saved := e.w
@@ -28523,8 +28661,8 @@ func (e *emitter) chainCText(base string, steps []Node) (text, ctype string, add
 				// Binding the element to a temporary first is correct, so that is
 				// what is emitted. gcc compiles the direct form correctly, which is
 				// why this needed the board to find.
-				text = e.hoist(cur.ctype, func() { e.emit(text) }) +
-					"(" + e.valueArgsCText(e.indirectCallee("", cur.ctype), cur.ctype, n.ast) + ")"
+				callee := e.hoist(cur.ctype, func() { e.emit(text) })
+				text = e.recFuncCallee(cur.ctype, callee) + "(" + e.valueArgsCText(e.indirectCallee("", cur.ctype), cur.ctype, n.ast) + ")"
 				cur, addr = e.plainOrSlice(rts[0]), false
 				resultTok = n.Pos()
 				continue
@@ -36119,7 +36257,7 @@ func (e *emitter) qualifiedGlobalRead(base string, fields []string) (text, ctype
 				// this way; without it the C named a math_Sqrt nothing defines, and
 				// the program got the linker's word for it.
 				e.needMathWrapper(base, fields[0])
-				return gn, ft, true
+				return e.recFuncValue(gn), ft, true
 			}
 		}
 		return "", "", false
@@ -39004,7 +39142,7 @@ func (e *emitter) emitExprNode(n Node) {
 			// as any function used as a value is.
 			if base, method, ok := e.factorMethodValue(kids); ok {
 				if cname, ok := e.liftMethodValue(base, method); ok {
-					e.emit(cname)
+					e.emit(e.recFuncValue(cname))
 				}
 				return
 			}
@@ -39035,7 +39173,7 @@ func (e *emitter) emitExprNode(n Node) {
 					e.emit(w)
 					return
 				}
-				e.emit(cname)
+				e.emit(e.recFuncValue(cname)) // see recFuncValue
 				return
 			}
 			// "x.(T)" standing as one value panics when it does not hold, as Go's
@@ -39701,6 +39839,10 @@ func (e *emitter) emitOperandToken(tok int32) {
 				if _, isLocal := e.locals[s]; !isLocal {
 					if w, isWrapped := e.funcValueWrapper(cname); isWrapped {
 						e.emit(w)
+						return
+					}
+					if v := e.recFuncValue(cname); v != cname {
+						e.emit(v)
 						return
 					}
 				}

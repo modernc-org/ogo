@@ -6011,6 +6011,37 @@ func main() {
 	}
 }
 
+// TestEmitCSelfNamingTypeRefused pins the function types naming themselves that
+// are still refused, loudly, beside the one form that is not: a type whose one
+// result is itself, `type stateFn func(*lexer) stateFn`, whose typedef returns a
+// generic function pointer (collectRecFuncType). A parameter of the type, or the
+// type among several results or under a pointer or a slice, needs the type spelled
+// inside itself somewhere that generic pointer does not stand in for.
+func TestEmitCSelfNamingTypeRefused(t *testing.T) {
+	for _, test := range []struct{ name, decl, want string }{
+		{"a parameter of its own type", "type T func(v T) T", "names itself as a parameter"},
+		{"a parameter of its own type, not the result", "type T func(v T) int", `unsupported type "T"`},
+		{"one of several results", "type T func(int) (int, T)", `unsupported type "T"`},
+		{"a pointer to itself as the result", "type T func() *T", `unsupported type "T"`},
+		{"a slice of itself as the result", "type T func() []T", `unsupported type "T"`},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			src := test.decl + "\n\nfunc main() {\n\tvar x T\n\tprintln(x == nil)\n}\n"
+			fsys := fstest.MapFS{"main.ogo": &fstest.MapFile{Data: []byte(src)}}
+			pkg, err := Build(-1, []string{"main.ogo"}, fsys)
+			if err != nil {
+				t.Fatalf("Build: %v", err)
+			}
+			var buf bytes.Buffer
+			if err := EmitC(pkg, &buf); err == nil {
+				t.Fatalf("EmitC accepted %s:\n%s", test.decl, buf.String())
+			} else if !strings.Contains(err.Error(), test.want) {
+				t.Errorf("EmitC error %q does not say %q", err, test.want)
+			}
+		})
+	}
+}
+
 // TestEmitCGoValueShapes pins what `go` accepts as a callee now that it takes a
 // value: a variable holding a function, a struct field holding one, and the named
 // forms it always took. Nothing function-valued is refused any more -- this test

@@ -35552,6 +35552,296 @@ func main() {
 `,
 		want: "0 0 true\n",
 	}, {
+		// The state-function idiom: a function type naming ITSELF as its result,
+		// `type stateFn func(*lexer) stateFn`, which C cannot spell -- a function
+		// pointer type returning its own type. "emit: unsupported type", until the
+		// typedef learned to return a generic function pointer: a function named as
+		// a value is cast into the type, and a call through a value is made
+		// through the type of the functions it holds, whose result is the type
+		// itself. A method on the type, a literal of it and a LOCAL one too.
+		name: "the state-function idiom",
+		src: `type lexer struct {
+	input string
+	pos   int
+	words int
+	trace int
+}
+
+type stateFn func(*lexer) stateFn
+
+type count func(k int) count
+
+var n int
+
+func (f stateFn) run(l *lexer) int {
+	k := 0
+	for f != nil {
+		f = f(l)
+		k++
+	}
+	return k
+}
+
+func lexSpace(l *lexer) stateFn {
+	l.trace = l.trace*10 + 1
+	for l.pos < len(l.input) && l.input[l.pos] == ' ' {
+		l.pos++
+	}
+	if l.pos >= len(l.input) {
+		return nil
+	}
+	return lexWord
+}
+
+func lexWord(l *lexer) stateFn {
+	l.trace = l.trace*10 + 2
+	l.words++
+	for l.pos < len(l.input) && l.input[l.pos] != ' ' {
+		l.pos++
+	}
+	return lexSpace
+}
+
+var start stateFn = lexSpace
+
+var again count
+
+func main() {
+	l := &lexer{input: "the quick  brown fox"}
+	for state := start; state != nil; {
+		state = state(l)
+	}
+	println(l.words, l.trace)
+	l2 := &lexer{input: " ab c "}
+	k := stateFn(lexSpace).run(l2)
+	println(k, l2.words)
+	again = func(k int) count {
+		n += k
+		if n > 5 {
+			return nil
+		}
+		return again
+	}
+	for c, k := again, 1; c != nil; k++ {
+		c = c(k)
+	}
+	println(n)
+	type local func() local
+	var f local = func() local {
+		n++
+		return nil
+	}
+	f = f()
+	println(f == nil, n)
+}
+`,
+		want: "4 121212121\n5 2\n6\ntrue 7\n",
+	}, {
+		// The same type through every place a function value lives -- a package
+		// variable, a field, a slice and an array element, append, a call's
+		// result, a method expression and a method value, an interface method's
+		// argument, a channel through a select, a cog and a deferred call -- and
+		// with a variadic, a float and a struct parameter. The variadic one
+		// failed to BUILD for the target where the host was right, when the call's
+		// result was what was cast: the target's compiler refuses a cast of a call
+		// whose argument is a struct literal, as a variadic pack is.
+		name: "a self-naming function type in every place",
+		src: `type M struct {
+	n     int
+	trace int
+}
+
+type state func(m *M) state
+
+type step func(k int, xs ...int) step
+
+type fstep func(x float64, k int) fstep
+
+type P struct{ a, b, c int }
+
+type pstep func(p P) pstep
+
+type thunk func() thunk
+
+type holder struct {
+	s  state
+	ss []state
+}
+
+type Runner interface {
+	run(m *M, s state) int
+}
+
+type R struct{ k int }
+
+var gm M
+
+var acc float64
+
+var tbl [3]state
+
+var cur state = a
+
+var ch chan state
+
+var done chan int
+
+func (r *R) run(m *M, s state) int {
+	for s != nil {
+		s = s(m)
+		r.k++
+	}
+	return r.k
+}
+
+func (m *M) tick() thunk {
+	m.trace = m.trace*10 + 7
+	m.n++
+	if m.n > 2 {
+		return nil
+	}
+	return gm.tick
+}
+
+func (m *M) idle() state {
+	m.trace = m.trace*10 + 3
+	return (*M).busy
+}
+
+func (m *M) busy() state {
+	m.trace = m.trace*10 + 4
+	return nil
+}
+
+func a(m *M) state {
+	m.trace = m.trace*10 + 1
+	m.n++
+	if m.n > 2 {
+		return nil
+	}
+	return b
+}
+
+func b(m *M) state {
+	m.trace = m.trace*10 + 2
+	return a
+}
+
+func counting(k int, xs ...int) step {
+	gm.trace = gm.trace*10 + k + len(xs)
+	if k > 2 {
+		return nil
+	}
+	return counting
+}
+
+func fl(x float64, k int) fstep {
+	acc += x * float64(k)
+	if k > 2 {
+		return nil
+	}
+	return fl
+}
+
+func pf(p P) pstep {
+	gm.trace = gm.trace*100 + p.a + p.b + p.c
+	if p.a > 1 {
+		return nil
+	}
+	return pf
+}
+
+func pick(k int) state {
+	if k == 0 {
+		return b
+	}
+	return nil
+}
+
+func sender() {
+	select {
+	case ch <- a:
+	}
+}
+
+func cogRun(s state) {
+	for s != nil {
+		s = s(&gm)
+	}
+	done <- gm.trace
+}
+
+func drive(m *M, s state) {
+	for s != nil {
+		s = s(m)
+	}
+	println("drove", m.trace)
+}
+
+func main() {
+	m := &gm
+	for cur != nil {
+		cur = cur(m)
+	}
+	println(m.trace)
+	gm = M{}
+	h := holder{a, []state{b, nil}}
+	for h.s != nil {
+		h.s = h.s(m)
+	}
+	h.ss[1] = h.ss[0](m)
+	println(m.trace, h.ss[1] != nil)
+	gm = M{}
+	tbl[0], tbl[2] = b, a
+	for i := range tbl {
+		if tbl[i] != nil {
+			tbl[i] = tbl[i](m)
+		}
+	}
+	println(m.trace, tbl[0] != nil, tbl[1] == nil)
+	gm = M{}
+	sl := make([]state, 0, 2)
+	sl = append(sl, (*M).idle, nil)
+	x := sl[0](m)(m)
+	y := pick(0)(m)
+	println(x == nil, m.trace, y != nil)
+	gm = M{}
+	var th thunk = gm.tick
+	for th != nil {
+		th = th()
+	}
+	println(gm.trace)
+	gm = M{}
+	var st step = counting
+	for k := 1; st != nil; k++ {
+		st = st(k, 1, 2)
+	}
+	var g fstep = fl
+	for k := 1; g != nil; k++ {
+		g = g(float64(k)/2, k)
+	}
+	var ps pstep = pf
+	ps = ps(P{1, 2, 3})
+	ps = ps(P{a: 2, c: 4})
+	println(gm.trace, int(acc*10), ps == nil)
+	gm = M{}
+	var rn Runner = &R{}
+	k := rn.run(m, a)
+	println(k, m.trace)
+	gm = M{}
+	go sender()
+	var r state = <-ch
+	r = r(m)
+	println(r != nil, m.trace)
+	gm = M{}
+	go cogRun(b)
+	println(<-done)
+	gm = M{}
+	defer drive(m, b)
+}
+`,
+		want: "12121\n121212 true\n21 true true\ntrue 342 true\n777\n3450606 70 true\n5 12121\ntrue 1\n212121\ndrove 212121\n",
+	}, {
 		// A method called on the interface RESULT of a call through a function
 		// value, a field holding one or another interface's slot -- `p(1).Area()`,
 		// `h.p(2).Area()`, `hd.Get().Area()` -- read the table and the data off
@@ -36056,7 +36346,8 @@ const multiPkgWant = "300\nLOUD\n50\n6\n5\n45\n6 1000\n200\n207\n3 100\n4 9\n" +
 	"2 7 56 9 3 8 false 2 1 2 6 3 true 7\n" +
 	"[2]greet.Row [2]greet.Reader greet.Row\n" +
 	"123 p2 9 3 2 3\n1 1 2 1 102 3\n2 1 4 3 4 4 5 134\n21 10 100 200 7 0\n1 5 1 2 4 1 3 21 1 2 12 12 123 123 11\n10 21 110 21 14 true 3 42\n10 3 4\n6 10 2\n6 11\n6 5 8 6\ntrue 110 6 106\n7 5\ntrue true\n" +
-	"1234567891 1 3 8 14 30 39\n"
+	"1234567891 1 3 8 14 30 39\n" +
+	"2 4 7 4\n"
 
 var multiPkgProgram = map[string]string{
 	"main.ogo": `import "chain"
@@ -36206,6 +36497,25 @@ crossFileConsts()
 qualifiedArrays()
 libShapes()
 initTrace()
+libStates()
+}
+
+// Another package's self-naming function type, the state-function idiom: its
+// functions named as values of it from here, and one of this package's handed to
+// it, handing back one of that package's.
+func libStates() {
+	up, dn := lib.Dev{Id: 2}, lib.Dev{Id: 3}
+	nu := lib.Run(&up, lib.Up)
+	nd := lib.Run(&dn, down)
+	println(nu, up.Id, nd, dn.Id)
+}
+
+func down(d *lib.Dev) lib.State {
+	d.Id -= 2
+	if d.Id < 0 {
+		return lib.Up
+	}
+	return down
 }
 
 // The whole initialization order, traced (measured against Go 2026-09-18): in
@@ -37024,6 +37334,26 @@ func None() *Dev { return nil }
 var Early = Late{A: 3, B: 4}
 
 type Span [2]Width
+
+// State names itself as its result: a function of it returns the next one.
+type State func(d *Dev) State
+
+func Up(d *Dev) State {
+	d.Id++
+	if d.Id > 3 {
+		return nil
+	}
+	return Up
+}
+
+func Run(d *Dev, s State) int {
+	k := 0
+	for s != nil {
+		s = s(d)
+		k++
+	}
+	return k
+}
 `,
 	"lib/more.ogo": `var Grid [3][5]int
 
