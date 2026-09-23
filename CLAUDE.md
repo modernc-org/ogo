@@ -904,6 +904,26 @@ caller -- where the type is what the address ADDRESSES (`addrOperand`, a bare
 name's; anything longer is a pointer expression). So: **write a program a user
 would write, and when it hits something, sweep the row it belongs to.**
 
+**AN ARRAY RESULT IS A ROW** (2026-09-23). A call returning an array is a STATEMENT in
+C -- the caller hands the callee storage to write -- so every position one stands in
+has to supply that storage, and one probe after another the same afternoon found
+positions that did not: a return copied its operand after the defers had run
+(silent: `return ga` returned what a deferred write left); a call whose value nobody
+reads was refused, or -- through a chain, deferred, on a cog -- sent without the out
+parameter, which the target only warned about while writing the result through the
+next argument; an interface's slot refused one outright; a deferred or started
+call's argument refused one. And the deepest, the ORDER: the storage is bound ahead
+of the statement, so the call ran ahead of every value the statement evaluated
+before it -- in a call's arguments, a print's, a return list, a deferred call's and a
+goroutine's -- because the TYPING walk bound it as it typed it, and the lists that
+bind their values in order (hoistArgs, a defer's captures, a go statement's slots)
+left it to a path that bound it first. **A walk that answers a question must not
+change the program**: `arrayResultCallSteps` types without binding, and binding
+happens once, where the value is emitted. The same sweep found a
+return with a defer storing its named results one after another, `return b, a`
+returning 2, 2 for every type: a list of stores is a simultaneous assignment, which
+`emitSimultaneous` knew and the return did not (`returnValueStands`).
+
 **A TEMPORARY IS A COG REGISTER** (2026-09-20). flexcc gives every C local one
 (`local_N res 1` in COG_BSS) out of a pool the assembler checks with `fit 480`,
 shared across functions so the deepest call chain is what spends it -- and overflow

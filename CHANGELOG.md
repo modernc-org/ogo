@@ -140,6 +140,17 @@ shipped section tells a reader on that version that they have behaviour they do 
   package variable, and the lifetime rules hold it to the block as they hold a
   literal's. `[]byte(s)` of a variable is still refused, being a copy of a length
   known only at run time.
+- **A method returning an array may be called through an interface.** An
+  interface declaring `Read(k int) [3]int` was refused as "cannot return an array
+  beside another result" -- of its one result. The call works in every position an
+  array result does: a declaration, an assignment, an argument, an index, a return,
+  a range, a statement, a deferred call and a goroutine's, through an embedded
+  interface and through a field.
+- **A call returning an array may be a deferred or started call's argument.**
+  `defer record(use(), mk())` was refused as "cannot infer the type of a deferred
+  call argument", and `go record(use(), mk())` as "must be bound to a variable
+  first". The call writes into the capture, or into the goroutine's slot, where the
+  statement stands, in its turn among the arguments.
 
 ### Fixed
 
@@ -285,6 +296,31 @@ shipped section tells a reader on that version that they have behaviour they do 
   type does not implement it, `&h.a` and `&h.qs[1]` were refused as "H does not
   implement Named", and `&arr[1]` of an array variable as "an interface holds a
   pointer", or at package scope as needing "a variable to point at".
+- **An array result took its value after the deferred calls ran.** `return ga`, in a
+  function returning `[3]int` with a deferred call writing `ga[0] = 100`, returned
+  100 where Go returns 1 -- from a variable, a field, a dereference, another call's
+  result and a method alike -- and a deferred write to a NAMED array result, `defer
+  setr(&r)`, was lost under the operand. Built without a word; the board printed
+  what the host did.
+- **A call returning an array whose value nobody reads.** `mk()` as a statement,
+  `r.doubled()` for an array receiver, `_ = mk()`, `var _ = mk()` and `defer mk()`
+  were refused as "must be bound to a variable first". A receiver reached through a
+  chain, `h.in.mk(3)`, a deferred method and a call started on a cog, `go mk()`,
+  went out without the out parameter the result is written through: the target's
+  compiler warned "Bad number of parameters" and built a binary, and on the board
+  `gh.in.mk(3)` printed -242832376 where Go prints 3.
+- **A return with a defer stored its named results one after another.** `return b,
+  a` for named results `(a, b)` returned 2, 2 where Go returns 2, 1 -- for ints,
+  strings, slices, structs and interfaces alike, built without a word and measured
+  on the board -- because the second value read `a` after the first store had
+  overwritten it. A named result the body never names, with a defer, was stored
+  into a variable the C never declared, which both compilers refused.
+- **An array result bound ahead of a list ran ahead of the values before it.**
+  `println(use(), mk()[1])`, `sum(use(), mk())` -- a direct call, a method, an
+  interface slot, a function value -- `printf`, `print`, an array literal holding a
+  call, `return use(), mk()[0]`, and a deferred or started call's arguments each
+  called mk before use, where Go calls them left to right. Built without a word;
+  the board printed what the host did.
 
 ### Behaviour changes
 
