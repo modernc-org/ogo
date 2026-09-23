@@ -16408,3 +16408,39 @@ func main() { f() }
 		})
 	}
 }
+
+// TestEmitCConstBytesConv pins `[]byte("...")` and `[]rune("...")` of a CONSTANT
+// string, which is a slice literal by another spelling -- its length is known, so
+// its storage is the frame's, or a static object at package scope -- where only a
+// RUN-TIME string's copy needs the allocation the target does not have. Like a
+// literal's, the frame's backing is refused a way out of the frame.
+func TestEmitCConstBytesConv(t *testing.T) {
+	for _, test := range []struct{ name, src, want string }{
+		{"a package variable", "var p = []byte(\"xyz\")\n\nfunc main() { println(len(p)) }\n", ""},
+		{"runes of a named constant", "const k = \"héllo\"\n\nfunc main() {\n\tr := []rune(k)\n\tprintln(len(r))\n}\n", ""},
+		{"stored in a package variable", "var g []byte\n\nfunc f() { g = []byte(\"x\") }\n\nfunc main() { f() }\n",
+			"cannot store a conversion of a constant string to a slice"},
+		{"returned", "func f() []byte { return []byte(\"xy\") }\n\nfunc main() { println(len(f())) }\n",
+			"cannot return a conversion of a constant string to a slice"},
+		{"a run-time string", "func main() {\n\ts := \"hi\"\n\tb := []byte(s)\n\tprintln(len(b))\n}\n",
+			"a string conversion needs allocation"},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			fsys := fstest.MapFS{"main.ogo": &fstest.MapFile{Data: []byte(test.src)}}
+			pkg, err := Build(-1, []string{"main.ogo"}, fsys)
+			if err != nil {
+				t.Fatalf("Build: %v", err)
+			}
+			var buf bytes.Buffer
+			err = EmitC(pkg, &buf)
+			switch {
+			case test.want == "" && err != nil:
+				t.Fatalf("EmitC: %v", err)
+			case test.want != "" && err == nil:
+				t.Fatalf("EmitC accepted it:\n%s", buf.String())
+			case test.want != "" && !strings.Contains(err.Error(), test.want):
+				t.Errorf("EmitC error %q does not say %q", err, test.want)
+			}
+		})
+	}
+}

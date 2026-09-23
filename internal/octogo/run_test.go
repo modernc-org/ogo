@@ -36628,6 +36628,48 @@ func main() {
 `,
 		want: "7\n33 3 33 true\nfalse\n4 6\n",
 	}, {
+		// `[]byte("...")` and `[]rune("...")` of a CONSTANT string -- how a command
+		// buffer is written, `[]byte("AT+RST\r\n")` -- refused as a string
+		// conversion needing allocation. Its length is known, so it is a slice
+		// literal's storage: a fresh copy of the frame's each time it is evaluated
+		// (the loop's writes do not carry over), a static one at package scope, the
+		// runes of a multi-byte string, and the empty string's non-nil slice.
+		name: "a conversion of a constant string to a byte or rune slice",
+		src: `const greeting = "héllo"
+
+var msg = []byte("123456789")
+
+var runes = []rune(greeting)
+
+var empty = []byte("")
+
+func sum(b []byte) int {
+	t := 0
+	for _, c := range b {
+		t = t*3 + int(c)
+	}
+	return t
+}
+
+func main() {
+	b := []byte("AT+RST\r\n")
+	b[0] = 'a'
+	c := []byte("AT+RST\r\n")
+	println(sum(b), sum(c), len(b), cap(b), b[0], c[0])
+	for i := 0; i < 2; i++ {
+		d := []byte("xy")
+		d[0]++
+		println(d[0], len(d))
+	}
+	println(len(msg), msg[8], len(runes), runes[1], len(empty), empty == nil, sum([]byte("ab")))
+	r := []rune("日本")
+	println(len(r), r[0], r[1])
+	var e []byte = []byte(greeting)
+	println(len(e), e[1], e[2])
+}
+`,
+		want: "293512 223528 8 8 97 65\n121 2\n121 2\n9 57 5 233 0 false 389\n2 26085 26412\n6 195 169\n",
+	}, {
 		// A method called on the interface RESULT of a call through a function
 		// value, a field holding one or another interface's slot -- `p(1).Area()`,
 		// `h.p(2).Area()`, `hd.Get().Area()` -- read the table and the data off

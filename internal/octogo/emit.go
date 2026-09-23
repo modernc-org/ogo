@@ -19394,6 +19394,66 @@ func (e *emitter) stringSliceConv(typeAST, arg []int32) bool {
 	return ok && e.underlyingCType(ct) == cString
 }
 
+// constBytesConv recognises `[]byte("...")` and `[]rune("...")` of a CONSTANT
+// string, answering with the slice's element C type and its elements as C
+// literals: the bytes, or the runes a range over the string yields. Go copies the
+// string into a new slice, and with the length known that is a slice literal's
+// storage, which needs no heap -- only a run-time string's copy does, which stays
+// refused.
+func (e *emitter) constBytesConv(typeAST, arg []int32) (elem string, vals []string, ok bool) {
+	if !e.stringSliceConv(typeAST, arg) {
+		return "", nil, false
+	}
+	str, ok := e.foldConstString(arg)
+	if !ok {
+		return "", nil, false
+	}
+	elem, _ = e.litSliceType(typeAST)
+	if elem == "uint8_t" {
+		for i := 0; i < len(str); i++ {
+			vals = append(vals, strconv.Itoa(int(str[i])))
+		}
+		return elem, vals, true
+	}
+	for _, r := range str {
+		vals = append(vals, strconv.Itoa(int(r)))
+	}
+	return elem, vals, true
+}
+
+// constBytesConvOf is constBytesConv for an expression that is exactly such a
+// conversion, with nothing after it.
+func (e *emitter) constBytesConvOf(ast []int32) (elem string, vals []string, ok bool) {
+	fac, ok := e.soleFactorNode(e.unparenExpr(ast))
+	if !ok {
+		return "", nil, false
+	}
+	typeAST, arg, steps, ok := e.factorBracketConv(fac)
+	if !ok || len(steps) != 0 {
+		return "", nil, false
+	}
+	return e.constBytesConv(typeAST, arg)
+}
+
+// emitConstBytesConv emits constBytesConv's slice: a backing array beside the
+// statement, this frame's as a slice literal's is -- or a static object in a
+// package initializer -- and the header over it.
+func (e *emitter) emitConstBytesConv(elem string, vals []string) {
+	e.needSlice(elem)
+	n := strconv.Itoa(len(vals))
+	backing := e.newBacking()
+	size, init := n, "{"+strings.Join(vals, ", ")+"}"
+	if len(vals) == 0 {
+		size, init = "1", "{0}" // C has no array of none; the header says none
+	}
+	if e.pkgScope {
+		e.pkgLitObjects = append(e.pkgLitObjects, "static "+elem+" "+backing+"["+size+"] = "+init+";")
+	} else {
+		e.prologue = append(e.prologue, elem+" "+backing+"["+size+"] = "+init+";\n")
+	}
+	e.emit("(" + sliceCName(elem) + "){" + backing + ", " + n + ", " + n + "}")
+}
+
 // sliceArrayConv recognizes a conversion of a SLICE to an array type -- `A(s)` for a
 // defined array type A, `([3]int)(s)` for one written out -- which Go defines as a
 // COPY of the slice's first elements, panicking when the slice holds fewer. The
@@ -37715,6 +37775,10 @@ func (e *emitter) inferNode(n Node) (string, bool) {
 			// A bracketed conversion types as its TARGET, the operand having the
 			// same representation.
 			if typeAST, arg, steps, ok := e.factorBracketConv(n); ok {
+				if elem, _, isConst := e.constBytesConv(typeAST, arg); isConst && len(steps) == 0 {
+					e.needSlice(elem)
+					return sliceCName(elem), true
+				}
 				if e.stringSliceConv(typeAST, arg) {
 					e.fail("a string conversion needs allocation, which the target does not have")
 					return "", false
@@ -39689,6 +39753,10 @@ func (e *emitter) emitExprNode(n Node) {
 			// `[]int(xs)` / `([3]int)(q)` -- a conversion to an unnamed composite
 			// type, bare or parenthesised.
 			if typeAST, arg, steps, ok := e.factorBracketConv(n); ok {
+				if elem, vals, isConst := e.constBytesConv(typeAST, arg); isConst && len(steps) == 0 {
+					e.emitConstBytesConv(elem, vals)
+					return
+				}
 				if e.stringSliceConv(typeAST, arg) {
 					e.fail("a string conversion needs allocation, which the target does not have")
 					return
@@ -40917,6 +40985,16 @@ func litRef() frameRef {
 	}
 }
 
+// constBytesRef is the reference `[]byte("...")` of a constant holds in a function
+// (constBytesConv): a backing array of the frame, as a slice literal's is.
+func constBytesRef() frameRef {
+	return frameRef{
+		origin: "the backing array a conversion of a constant string makes",
+		what:   "a conversion of a constant string to a slice, whose backing array is this function's",
+		view:   true,
+	}
+}
+
 // makeRef is the reference a slice make allocates in a function holds: a backing
 // array of the frame, as a literal's is.
 func makeRef() frameRef {
@@ -41160,6 +41238,11 @@ func (e *emitter) frameRefOf(ast []int32) (frameRef, bool) {
 	// frame's storage by construction -- there is no variable to have marked.
 	if elem, _, ok := e.soleSliceLit(ast); ok && elem != "" {
 		return litRef(), true
+	}
+	// `[]byte("...")` of a constant is the same slice literal by another spelling
+	// (constBytesConv), backed by an array of this frame.
+	if _, _, ok := e.constBytesConvOf(ast); ok && !e.pkgScope {
+		return constBytesRef(), true
 	}
 	// And so is what make allocates in a function: a backing array of the frame.
 	// Only a declaration from make recorded it (emitMakeSliceVar), so `s = make([]int,
