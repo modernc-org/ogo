@@ -4937,8 +4937,8 @@ func (f *File) switchGuardParts(guard []int32) (g switchGuard, ok bool) {
 
 // suffixedTargetKind is the kind of an assignment target that is not a bare name:
 // a field `v.f`, an element `a[i]`, a pointee `*p` or a field through one `*p.f`
-// -- the one-step shapes the "=" checks already resolve. A longer chain answers
-// false.
+// -- the one-step shapes the "=" checks already resolve -- and a longer chain,
+// walked from its base (targetTypeNode).
 func (f *File) suffixedTargetKind(s *Scope, head, postfix Node) (Kind, bool) {
 	if base, ok := f.derefAssignTarget(head, postfix); ok {
 		if d, isVar := s.find(base.Src()).(*VarDeclaration); isVar && d.isPtr && d.hasElemKind {
@@ -4963,6 +4963,25 @@ func (f *File) suffixedTargetKind(s *Scope, head, postfix Node) (Kind, bool) {
 		if d, isVar := s.find(base.Src()).(*VarDeclaration); isVar && d.hasElemKind && !d.isPtr {
 			return d.elemKind, true
 		}
+		return 0, false
+	}
+	// A longer chain, `h.s.n` or `ps[1].n`, walked from the base (targetTypeNode).
+	base, stars, ok := f.targetHead(head)
+	if !ok {
+		return 0, false
+	}
+	var steps []Node
+	for c := range it(postfix.ast) {
+		if c.sym == Selector || c.sym == Index {
+			steps = append(steps, c)
+		}
+	}
+	tn, in := f.targetTypeNode(s, base, steps, stars)
+	if tn == nil {
+		return 0, false
+	}
+	if rt := f.resultType(in, tn); rt.known {
+		return rt.kind, true
 	}
 	return 0, false
 }
@@ -5998,7 +6017,15 @@ func (f *File) checkAssignment(s *Scope, head, postfix Node) {
 			// own type -- `p.mask |= 1 << bit` shifts a 1 of the field's type.
 			if lhsSuffixed[0] {
 				if k, ok := f.suffixedTargetKind(s, head, postfix); ok {
-					f.checkValueOverflow(s, sizedTarget(k, Token{}), rhs[0])
+					// And its category, which checkAssignType asks of a bare name
+					// alone: `h.n += "x"` for an int field was left to the emitter,
+					// which refused it as a string concatenation, and `h.s.n *= 1.5`
+					// multiplied by 1.5 and truncated.
+					if vk, known := f.exprType(s, rhs[0]); known && !assignableKind(k, vk) {
+						f.err(f.tok(rhs[0].Pos()).Position(), "cannot use %s of type %s as type %s in assignment", f.exprSource(rhs[0]), kindName(vk), kindName(k))
+					} else {
+						f.checkValueOverflow(s, sizedTarget(k, Token{}), rhs[0])
+					}
 				}
 			}
 		}
@@ -6140,6 +6167,7 @@ func (f *File) checkAssignment(s *Scope, head, postfix Node) {
 				f.checkIndexAssign(s, base, rhs[0])
 			}
 		}
+		f.checkWalkedTargets(s, head, postfix, rhs, lhsItems)
 		for i, e := range rhs {
 			if i < len(lhs) {
 				f.checkRecvAssign(s, lhs[i], e)
@@ -12271,6 +12299,194 @@ func (f *File) checkFieldAssign(s *Scope, head, field Token, rhsNode Node) {
 	// field records no type token at the assignment site, so its canonical name
 	// is used, as for a ":="-inferred variable.
 	f.checkValueOverflow(s, sizedTarget(lk, Token{}), rhsNode)
+}
+
+// checkWalkedTargets asks what is stored into each target of an assignment whose
+// type only a walk of its steps finds: a chain deeper than one field or one element
+// -- `h.s.f = v`, `ps[1].f = v`, `h.fs[1] = v`, `grid[i][j] = v` -- a pointee of
+// no Kind, `*pf = v`, and any target but a bare name in a list, `h.s.n, k = v, 1`.
+// The shapes the checks above take, one field or one element of a variable and the
+// pointee of a Kind, are theirs, and a bare name is checkAssignType's. Nothing asked
+// the others anything: `h.s.n = "x"` put a string into an int, and `h.s.f = 5` an
+// int into a function, as far as the C compiler.
+func (f *File) checkWalkedTargets(s *Scope, head, postfix Node, rhs []Node, lhsItems int) {
+	if len(rhs) != 1+lhsItems {
+		return // one call's several results, which checkResultsAssign takes
+	}
+	var steps []Node
+	for c := range it(postfix.ast) {
+		if c.sym == Selector || c.sym == Index {
+			steps = append(steps, c)
+		}
+	}
+	f.checkWalkedTarget(s, head, steps, rhs[0], lhsItems == 0)
+	i := 1
+	for n := range it(postfix.ast) {
+		if n.sym != PostfixOp {
+			continue
+		}
+		for item := range it(n.ast) {
+			if item.sym != LhsItem {
+				continue
+			}
+			var ah Node
+			var isteps []Node
+			for c := range it(item.ast) {
+				switch c.sym {
+				case AssignHead:
+					ah = c
+				case Selector, Index:
+					isteps = append(isteps, c)
+				}
+			}
+			if ah.sym != 0 && i < len(rhs) {
+				f.checkWalkedTarget(s, ah, isteps, rhs[i], false)
+			}
+			i++
+		}
+	}
+}
+
+// checkWalkedTarget is checkWalkedTargets for one target: the AssignHead ah, the
+// steps written after it and the value stored. sole says the target is the only
+// one, which is when the one-step shapes are the other checks' to judge.
+func (f *File) checkWalkedTarget(s *Scope, ah Node, steps []Node, value Node, sole bool) {
+	base, stars, ok := f.targetHead(ah)
+	if !ok || len(steps) == 0 && stars == 0 {
+		return
+	}
+	if sole && stars == 0 && len(steps) == 1 {
+		return // checkFieldAssign's or checkIndexAssign's
+	}
+	tn, in := f.targetTypeNode(s, base, steps, stars)
+	if tn == nil {
+		return
+	}
+	if sole && stars == 1 && len(steps) <= 1 && f.resultType(in, tn).known {
+		return // checkDerefAssign's or checkDerefFieldAssign's: a pointee of a Kind
+	}
+	f.checkStoreInto(s, in, tn, value, "assignment")
+}
+
+// targetHead reads an AssignHead as a base variable and the stars before it, `**p`;
+// a parenthesised head, `(p).x`, and the blank identifier answer false.
+func (f *File) targetHead(ah Node) (base Token, stars int, ok bool) {
+	for c := range it(ah.ast) {
+		if c.sym != 0 {
+			return Token{}, 0, false
+		}
+		switch tok := f.tok(c.tok); Symbol(tok.Ch) {
+		case MUL:
+			stars++
+		case IDENT:
+			base = tok
+		default:
+			return Token{}, 0, false
+		}
+	}
+	return base, stars, base.IsValid() && base.Src() != "_"
+}
+
+// targetTypeNode walks an assignment target from its base variable's type -- the
+// one written, or the one its literal writes (varTypeAt) -- through the steps
+// written after it, a field or an element each, through a pointer as Go's own
+// steps go, and then through its leading stars: `*p.f` is the pointee of p.f. It
+// answers nil for what it cannot follow -- a call, a slice step, a promoted field,
+// a type another package declares, a variable whose type its initializer does not
+// write -- and the scope the answer's names are resolved in.
+func (f *File) targetTypeNode(s *Scope, base Token, steps []Node, stars int) (TypeNode, *Scope) {
+	d, ok := s.find(base.Src()).(*VarDeclaration)
+	if !ok {
+		return nil, nil
+	}
+	t, ok := f.varTypeAt(d)
+	if !ok {
+		// `p := &x` writes no type, and is recorded as a pointer to x's type by NAME
+		// (inferVarFrom), which is where the walk starts from.
+		if !d.isPtr || !d.typeName.IsValid() || d.typeQual.IsValid() || d.declScope == nil {
+			return nil, nil
+		}
+		t = typeAt{tn: &TypeNodePointer{TypeNode: &TypeNodeIdent{Name: d.typeName}}, s: d.declScope}
+	}
+	tn, in := t.tn, t.s
+	for _, c := range steps {
+		if tn == nil {
+			return nil, nil
+		}
+		if p, isPtr := tn.(*TypeNodePointer); isPtr {
+			tn = p.TypeNode
+		}
+		switch c.sym {
+		case Selector:
+			var field Token
+			for k := range it(c.ast) {
+				if k.sym == 0 && f.ch(k.tok) == IDENT {
+					field = f.tok(k.tok)
+				}
+			}
+			if !field.IsValid() {
+				return nil, nil
+			}
+			if st, isStruct := tn.(*TypeNodeStruct); isStruct {
+				tn = nil
+				for _, fld := range st.Fields {
+					for _, nm := range fld.Names {
+						if nm.Src() == field.Src() {
+							tn = fld.TypeNode
+						}
+					}
+				}
+				continue
+			}
+			tn = f.structFieldTypeNode(in, tn, field)
+		case Index:
+			if f.isSliceExpr(c) {
+				return nil, nil
+			}
+			tn = f.indexedTypeNode(in, tn)
+		default:
+			return nil, nil
+		}
+	}
+	for range stars {
+		p, isPtr := tn.(*TypeNodePointer)
+		if !isPtr {
+			return nil, nil
+		}
+		tn = p.TypeNode
+	}
+	return tn, in
+}
+
+// checkStoreInto asks of a value stored into a target of the written type tn,
+// resolved in scope in, everything a store is asked where the type is in hand: a
+// function's signature, a channel's, a reference's and a composite's type, nil, an
+// interface and a defined type, and a Kind's category and range. It is checkLitValue
+// for a target, which is where it came from.
+func (f *File) checkStoreInto(s, in *Scope, tn TypeNode, value Node, what string) {
+	f.checkChanAssign(s, in, tn, value, what)
+	f.checkFuncAssign(s, f.funcSig(in, tn), value, what)
+	f.checkRefAssign(s, in, tn, value, what)
+	if f.checkNilValue(s, in, tn, value, what) {
+		return
+	}
+	name := f.typeNodeString(tn, false)
+	f.checkImplements(s, name, value, what)
+	f.checkDefinedType(s, name, value, what)
+	rt := f.resultType(in, tn)
+	if !rt.known {
+		return
+	}
+	vk, ok := f.exprType(s, value)
+	if !ok {
+		f.kindlessValueErr(s, value, rt.name, what)
+		return
+	}
+	if !assignableKind(rt.kind, vk) {
+		f.err(f.tok(value.Pos()).Position(), "cannot use %s of type %s as type %s in %s", f.exprSource(value), kindName(vk), rt.name, what)
+		return
+	}
+	f.checkValueOverflow(s, rt, value)
 }
 
 // derefAssignTarget reports the base identifier of a dereference assignment target

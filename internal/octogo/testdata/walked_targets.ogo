@@ -1,0 +1,89 @@
+// A target reached through more than one step -- a field of a field, an element's
+// field, a field's element, an element of an element -- through a pointer to a
+// value of no Kind, or standing in a list, is asked what is stored into it, as a
+// variable, one field and one element always were. Nothing asked it anything: a
+// string went into an int and an int into a function as far as the C compiler.
+
+type M struct{ n int }
+
+type F func(m *M) int
+
+type S struct {
+	f F
+	n int
+	m M
+}
+
+type H struct {
+	s  S
+	ss [2]S
+	fs [2]F
+	ns [2]int
+	ps *S
+}
+
+var gh H
+
+var gs [2]S
+
+var grid [2][3]int
+
+var gf F
+
+var gms M
+
+func two(a, b int) int { return a + b }
+
+func good(m *M) int { return m.n }
+
+func ok() {
+	gh.s.f = good
+	gh.s.n = 3
+	gs[1].f = good
+	gh.ss[1].n = 4
+	gh.fs[1] = good
+	grid[1][2] = 5
+	gh.ps = &gs[0]
+	gh.ps.n = 6
+	pf := &gf
+	*pf = good
+	pm := &gms
+	*pm = M{7}
+	var k int
+	gh.s.n, k = 8, 1
+	gh.s.n += k
+	gh.ss[0].n *= 2
+}
+
+func bad() {
+	// ERROR cannot use .x. of type string as type int in assignment
+	gh.s.n = "x"
+	// ERROR "cannot use 5 \(untyped int constant\) as F value in assignment"
+	gh.s.f = 5
+	// ERROR "cannot use two \(value of type func\(a int, b int\) int\) as func\(\*M\) int value in assignment"
+	gs[1].f = two
+	// ERROR "cannot use nil as M value in assignment"
+	gh.s.m = nil
+	// ERROR cannot use .x. of type string as type int in assignment
+	gh.ss[1].n = "x"
+	// ERROR "cannot use 5 \(untyped int constant\) as F value in assignment"
+	gh.fs[1] = 5
+	// ERROR cannot use .x. of type string as type int in assignment
+	grid[1][2] = "x"
+	// ERROR cannot use .x. of type string as type int in assignment
+	gh.ps.n = "x"
+	pf := &gf
+	// ERROR "cannot use 5 \(untyped int constant\) as F value in assignment"
+	*pf = 5
+	pm := &gms
+	// ERROR "cannot use 5 \(untyped int constant\) as M value in assignment"
+	*pm = 5
+	var k int
+	// ERROR cannot use .x. of type string as type int in assignment
+	gh.s.n, k = "x", 1
+	// ERROR cannot use .x. of type string as type int in assignment
+	gh.s.n += "x"
+	// ERROR "constant 1.5 truncated to int"
+	gh.ss[0].n *= 1.5
+	_ = k
+}
