@@ -891,8 +891,18 @@ switch init takes "=" now). Following the gap found the for clause's assignments
 checked for nothing. The same afternoon's classic-semantics probes all matched Go on
 the board: a range over an array iterating its copy, tuple assignment order,
 overlapping copy and the append-removal idiom, struct equality over padding, a
-deferred call changing a named result. So: **write a program a user would write,
-and when it hits something, sweep the row it belongs to.**
+deferred call changing a named result. The worker pool's first version sent a job
+with a payload, `struct{ id int; data [4]int }`, refused as a channel's element
+(works since), and a second round the same day -- CRC tables, vector math, an event
+queue, a config parser, an embedding hierarchy -- found the CRC check string
+`[]byte("123456789")` refused as an allocation (a constant's converts since), and one
+SILENT fault: `&o.Base` into an interface held `&o` under the OUTER type's table,
+calling the outer type's method where both implement it.
+ifaceOperand had typed the address by `addrOfRoot`, which answers which variable's
+STORAGE an address reaches -- the lifetime question, and right for every other
+caller -- where the type is what the address ADDRESSES (`addrOperand`, a bare
+name's; anything longer is a pointer expression). So: **write a program a user
+would write, and when it hits something, sweep the row it belongs to.**
 
 **A TEMPORARY IS A COG REGISTER** (2026-09-20). flexcc gives every C local one
 (`local_N res 1` in COG_BSS) out of a pool the assembler checks with `fit 480`,
@@ -921,17 +931,19 @@ Known open items, all loud refusals or design walls (2026-09-17): an
 array-returning call as a package literal element; a function returning an ARRAY
 taken as a value, `mb := mkb`, "cannot infer a type" and, with the type written,
 "cannot return an array beside another result" (a function value's type has no out
-parameter for it); a struct holding an ARRAY passed or returned by value, as a value
-receiver or as a channel's element ("holds an array, which the target's C compiler
-cannot pass or return by value; use a pointer", refuseArrayStructABI -- flexcc drops
-the argument slot, and a lowering through a pointer and a copy, as a plain array
-parameter takes, is how it would come down); an if or a switch init that is a
-compound assignment, an increment or a send, and a for init from one call's several
-results, `for a, b := two(); ...` ("assignment mismatch"); a deferred or started
-call through a function field of ANOTHER
-package's variable, `defer lib.B.F(1)` ("only <pkg>.<Func>(args) ...") and `go
-lib.C.F(2)` ("unsupported receiver in a go statement"), where the same through this
-package's works since 2026-09-23; a parenthesised function value started on a cog,
+parameter for it); a struct holding an ARRAY passed or returned by value, or as a
+value receiver ("holds an array, which the target's C compiler cannot pass or return
+by value; use a pointer", refuseArrayStructABI -- flexcc drops the argument slot, and
+a lowering through a pointer and a copy, as a plain array parameter takes and a
+channel's element takes since 2026-09-23, chanStructByPtr, is how it would come
+down); `[]byte(s)` and `[]rune(s)` of a string VARIABLE (a copy of a length known at
+run time; a constant's converts since 2026-09-23, constBytesConv); an if or a switch
+init that is a compound assignment, an increment or a send, and a for init from one
+call's several results, `for a, b := two(); ...` ("assignment mismatch"); a deferred
+or started call through a function field of ANOTHER package's variable, `defer
+lib.B.F(1)` ("only <pkg>.<Func>(args) ...") and `go lib.C.F(2)` ("unsupported
+receiver in a go statement"), where the same through this package's works since
+2026-09-23; a parenthesised function value started on a cog,
 `go (h.f)(2)`, which works as a value, a statement and deferred; a deferred or
 started call through a dereference with an index, `defer (*ps)[0](x)` and `go
 (*pa)[0](x)` ("unsupported call target", and go's "only `go f(args)` ..."), where

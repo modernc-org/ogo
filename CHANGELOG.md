@@ -31,11 +31,11 @@ shipped section tells a reader on that version that they have behaviour they do 
   is asked, in Go's words: between slices and arrays the element type is kept and an
   array converts to nothing but its own type -- `[]string(xs)` for an []int and
   `[]int(a)` for an array are refused -- and of the basic values only a string
-  converts, `[]byte(s)`, which is refused as the allocation it needs. The
-  parenthesised spelling is asked all of it too; the emitter had refused most of
-  its mistakes as "cannot infer a type". `len` of a bracketed conversion and a
-  reslice after one, `len([3]int(s))` and `t := []int(s)[1:]`, are refused, as the
-  parenthesised forms were.
+  converts, `[]byte(s)`, which is refused as the allocation it needs unless s is a
+  constant (below). The parenthesised spelling is asked all of it too; the emitter
+  had refused most of its mistakes as "cannot infer a type". `len` of a bracketed
+  conversion and a reslice after one, `len([3]int(s))` and `t := []int(s)[1:]`, are
+  refused, as the parenthesised forms were.
 - **A slice of a defined type is of that type, and keeps its methods.** `c :=
   l[1:]` then `c.Sum()` for a method of a `type L []int`, `l[1:].Sum()`, `mk().Sum()`
   for an `mk` returning L, `defer l[1:].Show()`, `append(l, 4)`'s result, and `t :=
@@ -125,6 +125,21 @@ shipped section tells a reader on that version that they have behaviour they do 
   headers took only `:=`. The assignment stores into any target a statement's does,
   every value read before a target is written. A switch needs the `;` after one;
   a compound assignment, an increment or a send is still not provided there.
+- **A channel's element may be a struct holding an array.** A message with a
+  payload, `chan Msg` for a `type Msg struct{ kind int; data [3]int }`, was refused
+  as holding an array the target's C compiler cannot pass or return by value. It is
+  sent, received -- by a declaration, an assignment, the comma-ok form, where a
+  value stands, `(<-ch).data[1]`, a range and a select -- and a closed channel
+  yields its zero, each a copy as Go has it. A parameter, a result or a value
+  receiver of such a struct is still refused.
+- **A constant string converts to a byte or a rune slice.** `[]byte("AT+RST\r\n")`
+  -- how a command buffer is written -- `[]rune("héllo")` and `[]byte(k)` of a named
+  constant were refused as a conversion needing allocation. A constant's length is
+  known, so the slice is a slice literal's by another spelling: a backing array of
+  the block, fresh each time the conversion is evaluated, or a static one for a
+  package variable, and the lifetime rules hold it to the block as they hold a
+  literal's. `[]byte(s)` of a variable is still refused, being a copy of a length
+  known only at run time.
 
 ### Fixed
 
@@ -262,6 +277,14 @@ shipped section tells a reader on that version that they have behaviour they do 
   of p points at a local, was refused as holding a pointer into that local -- every
   struct type counted as able to carry one. A struct carries what its fields can:
   a pointer, a slice, an interface, an array or a struct of those.
+- **The address of a field or an element stored into an interface was its
+  variable's.** `var n Named = &o.Base` for an embedded `Base` held the outer struct
+  under the outer type's method table, so where `*Outer` implements the interface
+  too, `n.Name()` called Outer's method where Go calls Base's, and `%T` printed
+  `*main.Outer` -- built without a word, and measured on the board. Where the outer
+  type does not implement it, `&h.a` and `&h.qs[1]` were refused as "H does not
+  implement Named", and `&arr[1]` of an array variable as "an interface holds a
+  pointer", or at package scope as needing "a variable to point at".
 
 ### Behaviour changes
 

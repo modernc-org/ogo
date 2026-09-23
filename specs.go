@@ -545,6 +545,16 @@
 // free and is allowed: string(s) of a string, and one to or from a defined type over
 // string, are the same bytes.
 //
+// The other direction is the same rule: []byte(s) and []rune(s) copy a string into
+// a new slice, as long as s is, so for a variable s they are rejected. Of a CONSTANT
+// string the length is known, and the conversion is allowed -- its slice is a slice
+// literal's by another spelling, a backing array of the block it is written in
+// (fresh each time it is evaluated) or a static one in a package variable's
+// initializer, and the lifetime rules govern it as they govern a literal's:
+//
+//	var reset = []byte("AT+RST\r\n")    // fine: package storage
+//	buf := []rune("héllo")              // fine: five runes of the frame
+//
 // A conversion from a RUNE is bounded -- four bytes at most -- so it is allowed, and
 // its bytes are a temporary of the block it is written in:
 //
