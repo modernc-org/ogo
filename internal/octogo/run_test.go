@@ -38311,6 +38311,106 @@ func main() {
 `,
 		want: "3 9 3\n4 6 6\n200 55\n77 3\n10 true false\n6 7 24 2\ntwo\n3\n91\n2\n",
 	}, {
+		// A literal of a struct holding an ARRAY as a MEMBER of another literal,
+		// where the outer one is a compound literal -- under &, as an argument, a
+		// receiver, an element of a slice of pointers -- was a compound literal of
+		// its own, a copy into the member that the target's C compiler refuses at
+		// 12 and 16 bytes ("Unable to multiply assign this target"): `&W{Buf{...},
+		// k}` did not build. It is braced wherever it stands. Beside it the
+		// positions that braced it already: a declaration, a store, a send, a
+		// result, a package variable, deeper, and an array-typed member.
+		name: "a literal holding a struct with an array, nested in another",
+		src: `type Buf struct {
+	n    int
+	data [3]int
+}
+
+type W struct {
+	b Buf
+	k int
+}
+
+type Deep struct {
+	w W
+	z int
+}
+
+type Row [2]Buf
+
+type Holder struct {
+	r Row
+	q int
+}
+
+var ch chan W
+
+var done chan bool
+
+var gw = W{Buf{1, [3]int{2, 3, 4}}, 5}
+
+var gws = []W{{Buf{1, [3]int{2, 3, 4}}, 5}}
+
+var gp = &W{Buf{6, [3]int{7, 8, 9}}, 10}
+
+var gd W
+
+func (w *W) sum() int { return w.b.n + w.b.data[0] + w.b.data[1] + w.b.data[2] + w.k }
+
+func take(w W) int { return w.b.data[2] + w.k }
+
+func takeP(w *W) int { return w.b.data[1] * w.k }
+
+func mkw(k int) W { return W{Buf{k, [3]int{k, k, k + 1}}, k} }
+
+func mkd(k int) Deep { return Deep{W{Buf{k, [3]int{k, k, k}}, k}, k * 2} }
+
+// A literal of a struct holding an array, nested as a MEMBER of another literal:
+// under &, as an argument, a result, a receiver, a send, an element of a slice,
+// an array and a pointer slice, a package variable, a store, deeper still, and in
+// an array-typed member.
+func main() {
+	k := 3
+	println(W{Buf{k, [3]int{k, k, k}}, k}.b.n)
+	ws := []W{{Buf{k, [3]int{1, 2, 3}}, k}, {Buf{4, [3]int{5, 6, 7}}, 8}}
+	println(ws[1].b.data[2])
+	p := &W{Buf{k, [3]int{k, k, 9}}, k}
+	println(p.b.data[2])
+	arr := [2]W{{Buf{1, [3]int{}}, 2}}
+	println(arr[0].k)
+	go func() {
+		ch <- W{Buf{5, [3]int{5, 5, 5}}, 6}
+		done <- true
+	}()
+	r := <-ch
+	<-done
+	println(r.k)
+	var w W
+	w = W{Buf{k, [3]int{k, k, k}}, k}
+	println(w.b.n)
+	ps := []*W{&W{Buf{k, [3]int{k, k, k}}, k}}
+	println(ps[0].b.n)
+	x := struct {
+		w W
+		z int
+	}{W{Buf{1, [3]int{2, 3, 4}}, 5}, 6}
+	println(x.w.b.data[0], x.z)
+	if (W{Buf{k, [3]int{}}, k}).k == 3 {
+		println("ok")
+	}
+	println((&W{Buf{k, [3]int{1, 1, 1}}, k}).sum(), gw.b.data[1], gws[0].k, gp.b.data[2])
+	println(take(W{Buf{k, [3]int{k, k, 11}}, k}), takeP(&W{Buf{k, [3]int{k, 12, k}}, 2}))
+	println(mkw(4).b.data[2], mkd(5).w.b.n, mkd(6).z, mkd(7).w.b.data[2])
+	gd = W{Buf{k, [3]int{k, k, 13}}, k}
+	d := Deep{W{Buf{1, [3]int{2, 3, 14}}, 5}, 6}
+	pd := &Deep{W{Buf{1, [3]int{2, 3, 15}}, 5}, 6}
+	println(gd.b.data[2], d.w.b.data[2], pd.w.b.data[2])
+	h := Holder{Row{Buf{1, [3]int{2, 3, 16}}, Buf{4, [3]int{5, 6, 17}}}, 7}
+	ph := &Holder{Row{Buf{1, [3]int{2, 3, 18}}, Buf{4, [3]int{5, 6, 19}}}, 7}
+	println(h.r[1].data[2], ph.r[0].data[2], ph.r[1].data[2])
+}
+`,
+		want: "3\n7\n9\n2\n6\n3\n3\n2 6\nok\n9 3 5 9\n14 24\n5 5 12 7\n13 14 15\n17 18 19\n",
+	}, {
 		// A method called on the interface RESULT of a call through a function
 		// value, a field holding one or another interface's slot -- `p(1).Area()`,
 		// `h.p(2).Area()`, `hd.Get().Area()` -- read the table and the data off

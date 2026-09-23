@@ -17388,7 +17388,13 @@ func (e *emitter) emitLitElement(v Node, expect structField, brace bool) {
 	// A []int element already went that way, its literal not being a named one; a
 	// `type List []int` element did not, and was brace-filled -- "Box b = {{1, 2,
 	// 3}}" set the header's own pointer, length and capacity to 1, 2 and 3.
-	if nm, sub, ok := e.soleCompositeLit(v.ast); brace && ok && !e.isSliceCType(e.underlyingCType(nm)) {
+	//
+	// A struct holding an ARRAY is braced inside a compound literal as well: a
+	// compound literal of its own there is a copy into the member, which the
+	// target's C compiler refuses at some sizes ("Unable to multiply assign this
+	// target"), so `&W{Buf{...}, k}` did not build. Braces nest in a compound
+	// literal as they do in a declaration.
+	if nm, sub, ok := e.soleCompositeLit(v.ast); ok && (brace || e.holdsArray(nm)) && !e.isSliceCType(e.underlyingCType(nm)) {
 		if len(compositeLitElements(sub)) == 0 {
 			e.emit(e.zeroBraceC(nm)) // "{0}" does not nest; see zeroBraceC
 			return
