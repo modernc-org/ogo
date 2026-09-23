@@ -38411,6 +38411,73 @@ func main() {
 `,
 		want: "3\n7\n9\n2\n6\n3\n3\n2 6\nok\n9 3 5 9\n14 24\n5 5 12 7\n13 14 15\n17 18 19\n",
 	}, {
+		// A range over an ARRAY reached through a pointer, a call or a slice's
+		// element, `range p.data` for `p := &gb`, read the array live when the body
+		// wrote it through ANOTHER name -- `gb.data[2] = 99` -- and handed out the
+		// write where Go hands out the copy it took when the loop began: 99, 99, 55
+		// and 66 for 3, 3, 4 and 0 on the board. Only a write through the operand's
+		// root was noticed, and a pointer's storage is any name's
+		// (rangeThroughRef).
+		name: "a range over an array through a pointer iterates a copy",
+		src: `type Buf struct {
+	n    int
+	data [4]int
+}
+
+var gb = Buf{1, [4]int{1, 2, 3, 4}}
+
+var gb2 = Buf{1, [4]int{1, 2, 3, 4}}
+
+var gb3 = Buf{1, [4]int{1, 2, 3, 4}}
+
+var gb4 = Buf{1, [4]int{1, 2, 3, 4}}
+
+var bufs = [2]Buf{{1, [4]int{1, 2, 3, 4}}, {1, [4]int{1, 2, 3, 4}}}
+
+var back [2]Buf
+
+func getp() *Buf { return &gb }
+
+func (b *Buf) self() *Buf { return b }
+
+func poke(b *Buf) { b.data[2] = 77 }
+
+// A range over an ARRAY reached through a pointer, a call or a slice iterates a
+// copy of it, taken when the loop begins: what the body writes into the array
+// through another name is not what the loop hands out.
+func main() {
+	for i, v := range getp().data {
+		gb.data[2] = 99
+		println(i, v)
+	}
+	p := &gb2
+	for i, v := range p.data {
+		gb2.data[2] = 99
+		println(i, v)
+	}
+	for i, v := range gb3.self().data {
+		poke(&gb3)
+		println(i, v)
+	}
+	q := &bufs[1]
+	for i, v := range q.data {
+		bufs[1].data[3] = 55
+		println(i, v)
+	}
+	rows := back[:]
+	for i, v := range rows[1].data {
+		back[1].data[3] = 66
+		println(i, v)
+	}
+	pp := &gb4
+	for i, v := range pp.data {
+		pp.data[3] = 44
+		println(i, v)
+	}
+}
+`,
+		want: "0 1\n1 2\n2 3\n3 4\n0 1\n1 2\n2 3\n3 4\n0 1\n1 2\n2 3\n3 4\n0 1\n1 2\n2 3\n3 4\n0 0\n1 0\n2 0\n3 0\n0 1\n1 2\n2 3\n3 4\n",
+	}, {
 		// A method called on the interface RESULT of a call through a function
 		// value, a field holding one or another interface's slot -- `p(1).Area()`,
 		// `h.p(2).Area()`, `hd.Get().Area()` -- read the table and the data off

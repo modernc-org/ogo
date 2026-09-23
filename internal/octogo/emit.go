@@ -15863,6 +15863,26 @@ func (e *emitter) rangeBodyMayWrite(body []int32, root string, exposed, unknown 
 	return may
 }
 
+// rangeThroughRef reports whether a range operand reaches its array through a
+// pointer, a slice or a call's result -- `p.data`, `getp().data`, `rows[i].buf` for
+// a slice of rows -- so that another name reaches the same storage and a write
+// through it changes what the loop reads. A variable's own chain does not; anything
+// this does not recognise is taken to.
+func (e *emitter) rangeThroughRef(expr []int32) bool {
+	kids := e.factorKids(expr)
+	if len(kids) == 1 && kids[0].sym == 0 && e.f.ch(kids[0].tok) == IDENT {
+		return false // the variable itself
+	}
+	if len(kids) != 2 || kids[0].sym != 0 || e.f.ch(kids[0].tok) != IDENT || kids[1].sym != FactorSuffix {
+		return true
+	}
+	steps := slices.Collect(it(kids[1].ast))
+	if slices.ContainsFunc(steps, func(n Node) bool { return n.sym == CallSuffix }) {
+		return true
+	}
+	return e.chainThroughRef(e.src(kids[0].tok), steps)
+}
+
 // storeTarget is one target a statement writes: the variable at its root, and
 // whether the write goes THROUGH a pointer or a slice on its way, which is where a
 // name other than the root's storage can be reached.
@@ -25342,11 +25362,17 @@ func (e *emitter) emitRange(h *forHeader, body []int32) {
 		// copy is made where the body can write the array (rangeBodyMayWrite): the
 		// loop that reads a table into a local was right without one and keeps its
 		// cost. A pointer operand is read live, as Go reads it.
+		//
+		// An array reached THROUGH a pointer, a slice or a call is storage other
+		// names reach as well, whatever the root is (rangeThroughRef): `for i, v :=
+		// range p.data { gb.data[2] = 99 }` for `p := &gb` read 99 where Go reads
+		// the copy, the write going through a name that was not the root.
 		if byValue && h.valVar != nil && e.exprC(h.valVar) != "_" {
 			root := e.firstIdent(h.rangeExpr)
-			_, isDeref := e.derefOperand(h.rangeExpr)
-			exposed := isDeref || e.isPackageVar(root) || e.curParams[root] || e.aliasedLocals[root]
-			if e.rangeBodyMayWrite(body, root, exposed, isDeref) {
+			_, unknown := e.derefOperand(h.rangeExpr)
+			unknown = unknown || e.rangeThroughRef(h.rangeExpr)
+			exposed := unknown || e.isPackageVar(root) || e.curParams[root] || e.aliasedLocals[root]
+			if e.rangeBodyMayWrite(body, root, exposed, unknown) {
 				tmp := e.newTmp()
 				e.includes["string.h"] = true
 				e.ind()
