@@ -36782,6 +36782,118 @@ func main() {
 `,
 		want: "six six six six six six\nsix six six\nsix\n",
 	}, {
+		// A return's operand is copied into an ARRAY result before the defers run,
+		// as Go evaluates it, and a defer may still change a NAMED result through
+		// its address. The defers ran first: `return ga` returned what a deferred
+		// `ga[0] = 100` had left, from a variable, a field, a dereference, a call
+		// and a method alike, and a deferred write to the named result was lost
+		// under the operand -- in silence, where scalar and struct results were
+		// right. The caller's storage waits too: in `ga = plain()` it is the
+		// variable the defer writes.
+		name: "an array result is taken before the defers run",
+		src: `type H struct{ arr [3]int }
+
+var ga = [3]int{1, 2, 3}
+
+var gh = H{[3]int{1, 2, 3}}
+
+var pa = &ga
+
+func bump() {
+	ga[0] = 100
+	gh.arr[0] = 100
+}
+
+func reset() {
+	ga = [3]int{1, 2, 3}
+	gh.arr = [3]int{1, 2, 3}
+}
+
+func plain() [3]int {
+	defer bump()
+	return ga
+}
+
+func field() [3]int {
+	defer bump()
+	return gh.arr
+}
+
+func deref() [3]int {
+	defer bump()
+	return *pa
+}
+
+func lit() [3]int {
+	defer bump()
+	return [3]int{ga[0], 5, 6}
+}
+
+func inner() [3]int { return ga }
+
+func call() [3]int {
+	defer bump()
+	return inner()
+}
+
+func setr(r *[3]int) { r[1] = 77 }
+
+func named() (r [3]int) {
+	defer setr(&r)
+	return ga
+}
+
+func namedCall() (r [3]int) {
+	defer setr(&r)
+	return inner()
+}
+
+func naked() (r [3]int) {
+	defer setr(&r)
+	r = ga
+	return
+}
+
+func unused() (r [3]int) {
+	defer bump()
+	return ga
+}
+
+func (h *H) get() [3]int {
+	defer bump()
+	return h.arr
+}
+
+// A return's operand is copied into the result before the defers run, as Go
+// evaluates it; a defer may still change a NAMED result through its address.
+func main() {
+	a := plain()
+	reset()
+	b := field()
+	reset()
+	c := deref()
+	reset()
+	d := lit()
+	reset()
+	e := call()
+	println(a[0], b[0], c[0], d[0], e[0], ga[0])
+	reset()
+	f := named()
+	g := namedCall()
+	h := naked()
+	println(f[0], f[1], g[1], h[1])
+	reset()
+	i := unused()
+	reset()
+	j := gh.get()
+	println(i[0], j[0], gh.arr[0])
+	reset()
+	ga = plain()
+	println(ga[0])
+}
+`,
+		want: "1 1 1 1 1 100\n1 77 77 77\n1 1 100\n1\n",
+	}, {
 		// A method called on the interface RESULT of a call through a function
 		// value, a field holding one or another interface's slot -- `p(1).Area()`,
 		// `h.p(2).Area()`, `hd.Get().Area()` -- read the table and the data off

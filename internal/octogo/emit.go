@@ -14384,10 +14384,12 @@ func (e *emitter) declareNamedResults(sig, body []int32) {
 			return
 		}
 		e.arrays[nm] = a
-		e.curArrayResult = nm
 		if !e.bodyHasNakedReturn(body) && !e.bodyMentions(body, nm) {
 			return
 		}
+		// Recorded only where it is declared: a return holds its value in it ahead
+		// of the defers, and one nothing names is not in the C at all.
+		e.curArrayResult = nm
 		e.ind()
 		e.emit(a.elem + " " + nm + a.declSuffix() + " = {0};\n")
 		return
@@ -27777,6 +27779,7 @@ func (e *emitter) emitReturn(nodes []Node) {
 	// returned: C cannot return an array. The copy is by size, so a
 	// multi-dimensional result travels as one block.
 	if a, ok := e.funcArrayRet[e.curFunc]; ok {
+		size := "sizeof(" + a.elem + ")" + arrayCountC(a)
 		if len(exprs) == 0 && e.curArrayResult != "" {
 			// A bare `return` in a function with a NAMED array result: what the
 			// caller gets is that variable, copied into its storage as `return r`
@@ -27786,7 +27789,7 @@ func (e *emitter) emitReturn(nodes []Node) {
 				e.emitDeferred()
 			}
 			e.ind()
-			e.emit("memcpy(" + arrayResultParam + ", " + e.curArrayResult + ", sizeof(" + a.elem + ")" + arrayCountC(a) + ");\n")
+			e.emit("memcpy(" + arrayResultParam + ", " + e.curArrayResult + ", " + size + ");\n")
 			e.ind()
 			e.emit("return;\n")
 			return
@@ -27795,19 +27798,47 @@ func (e *emitter) emitReturn(nodes []Node) {
 			e.fail("a function with an array result returns exactly one value")
 			return
 		}
-		// `return mk(k)`: the caller's storage is this function's out parameter, so
-		// the inner call writes into it and there is nothing left to copy.
+		// Go evaluates the operand into the result and only then runs the defers,
+		// which may still change a NAMED result through its address -- and what they
+		// leave there is what the caller gets. So where there are defers the value is
+		// held in the named result, or in a temporary of this frame, ahead of them,
+		// and copied out after. The defers used to run first: a deferred write to
+		// the variable being returned changed the result, `return ga` returned 100
+		// for a `ga[0] = 100` deferred where Go returns 1, and one to the named
+		// result was overwritten by the operand. The caller's storage waits for the
+		// end as well -- it may be the variable a defer writes, `ga = plain()`.
+		hold := ""
+		if len(e.defers) != 0 {
+			e.includes["string.h"] = true
+			if hold = e.curArrayResult; hold == "" {
+				hold = e.newTmp()
+				e.ind()
+				e.emit(a.elem + " " + hold + a.declSuffix() + ";\n")
+			}
+		}
+		done := func() {
+			if hold != "" {
+				e.emitDeferred()
+				e.ind()
+				e.emit("memcpy(" + arrayResultParam + ", " + hold + ", " + size + ");\n")
+			}
+			e.ind()
+			e.emit("return;\n")
+		}
+		// `return mk(k)`: the inner call writes where the value is held -- the
+		// caller's storage itself, this function's out parameter, when no defer
+		// runs after it.
 		if cname, ca, isCall := e.arrayResultCall(exprs[0].ast); isCall {
 			if ca.elem != a.elem || ca.declSuffix() != a.declSuffix() {
 				e.fail("cannot return %s as %s", e.goArrayTypeName(ca), e.goArrayTypeName(a))
 				return
 			}
-			if len(e.defers) != 0 {
-				e.emitDeferred()
+			dst := arrayResultParam
+			if hold != "" {
+				dst = hold
 			}
-			e.emitArrayResultCall(arrayResultParam, cname, exprs[0].ast)
-			e.ind()
-			e.emit("return;\n")
+			e.emitArrayResultCall(dst, cname, exprs[0].ast)
+			done()
 			return
 		}
 		src, srcDim, okSrc := e.arrayReturnOperand(exprs[0].ast)
@@ -27823,13 +27854,15 @@ func (e *emitter) emitReturn(nodes []Node) {
 			return
 		}
 		e.includes["string.h"] = true
-		if len(e.defers) != 0 {
-			e.emitDeferred()
+		switch {
+		case hold == "":
+			e.ind()
+			e.emit("memcpy(" + arrayResultParam + ", " + src + ", " + size + ");\n")
+		case src != hold:
+			e.ind()
+			e.emit("memcpy(" + hold + ", " + src + ", " + size + ");\n")
 		}
-		e.ind()
-		e.emit("memcpy(" + arrayResultParam + ", " + src + ", sizeof(" + a.elem + ")" + arrayCountC(a) + ");\n")
-		e.ind()
-		e.emit("return;\n")
+		done()
 		return
 	}
 	// `return f()` -- one call supplying every result, which Go allows when the
