@@ -2967,6 +2967,16 @@ func (f *File) checkRange(s *Scope, kw string, fi forInfo) {
 		declared = f.declareRangeVar(s, fi.keyVar, PredeclaredInt, true, Token{}, Token{}, false)
 	case fi.hasKey:
 		f.checkRangeTarget(s, fi.keyVar)
+		switch {
+		case isChan:
+			f.checkRangeAssign(s, fi.keyVar, elem, hasElem, nil, nil) // a channel's key is its element
+		case isInt:
+			if k, ok := f.exprType(s, fi.rangeExpr); ok {
+				f.checkRangeAssign(s, fi.keyVar, k, true, nil, nil)
+			}
+		case hasElem:
+			f.checkRangeAssign(s, fi.keyVar, PredeclaredInt, true, nil, nil) // an index
+		}
 	}
 	if fi.hasVal {
 		if isInt {
@@ -2984,6 +2994,10 @@ func (f *File) checkRange(s *Scope, kw string, fi forInfo) {
 			}
 		} else {
 			f.checkRangeTarget(s, fi.valVar)
+			if !isInt && !isChan {
+				elemTN, elemIn := f.rangeElemTypeNode(s, fi.rangeExpr)
+				f.checkRangeAssign(s, fi.valVar, elem, hasElem, elemTN, elemIn)
+			}
 		}
 	}
 	// "for _ := range x" and "for _, _ := range x" write a ":=" that introduces
@@ -3162,6 +3176,90 @@ func (f *File) rangeElemNamed(s *Scope, expr Node) (Token, Token, bool, bool) {
 		return d.elemTypeName, qual, f.elemIsPointer(home, d), true
 	}
 	return Token{}, Token{}, false, false
+}
+
+// checkRangeAssign asks of a range clause's `=` target what an assignment asks of a
+// variable: the clause writes a value of the type it yields -- an index, an element,
+// a channel's element -- given as a Kind, a written type or both, and the variable
+// must hold it. checkRangeTarget resolved the name and nothing else, so `for _, n =
+// range names` for an int n and `for _, f = range ints` for a function f went
+// through. It compares what cannot be wrong to compare: a Kind with a Kind, a Kind
+// with a type that has none, and two signatures -- not a named type with an unnamed
+// one, which is assignable when the two are alike underneath.
+func (f *File) checkRangeAssign(s *Scope, target Node, haveKind Kind, hasKind bool, haveTN TypeNode, haveIn *Scope) {
+	id, ok := f.exprSoleIdent(target)
+	if !ok || id.Src() == "_" {
+		return
+	}
+	d, ok := s.find(id.Src()).(*VarDeclaration)
+	if !ok {
+		return
+	}
+	var wantTN TypeNode
+	var wantIn *Scope
+	if t, ok := f.varTypeAt(d); ok {
+		wantTN, wantIn = t.tn, t.s
+	}
+	bad := false
+	switch {
+	case d.hasKind && hasKind:
+		bad = !assignableKind(d.kind, haveKind)
+	case hasKind && wantTN != nil:
+		bad = f.kindless(wantIn, wantTN) // `for _, f = range ints`
+	case d.hasKind && haveTN != nil:
+		bad = f.kindless(haveIn, haveTN) // `for _, n = range fs`
+	case wantTN != nil && haveTN != nil:
+		ws, hs := f.funcSig(wantIn, wantTN), f.funcSig(haveIn, haveTN)
+		if ws != nil && hs != nil {
+			wi, hi := f.sigIdentity(ws), f.sigIdentity(hs)
+			bad = wi != "" && hi != "" && wi != hi
+		}
+	}
+	if !bad {
+		return
+	}
+	have, want := kindName(haveKind), kindName(d.kind)
+	if haveTN != nil {
+		have = f.typeNodeString(haveTN, false)
+	}
+	if wantTN != nil {
+		want = f.typeNodeString(wantTN, false)
+	}
+	f.err(id.Position(), "cannot use %s (value of type %s) as %s value in assignment", id.Src(), have, want)
+}
+
+// kindless reports that tn, resolved in s, is a type with no Kind -- a function, a
+// channel, a struct, an array, a slice or a pointer -- which no Kind is assignable
+// to and which is assignable to no Kind.
+func (f *File) kindless(s *Scope, tn TypeNode) bool {
+	if f.resultType(s, tn).known {
+		return false
+	}
+	u, _ := f.refTypeUnder(s, tn)
+	switch u.(type) {
+	case *FunctionType, *TypeNodeChan, *TypeNodeStruct, *TypeNodeArray, *TypeNodeSlice, *TypeNodePointer:
+		return true
+	}
+	return false
+}
+
+// rangeElemTypeNode is the written element type of a variable a range clause walks,
+// `range fs` for a `var fs [2]F`, and the scope it is resolved in; nil for anything
+// else, a channel and a pointer included.
+func (f *File) rangeElemTypeNode(s *Scope, expr Node) (TypeNode, *Scope) {
+	id, ok := f.exprSoleIdent(expr)
+	if !ok {
+		return nil, nil
+	}
+	d, ok := s.find(id.Src()).(*VarDeclaration)
+	if !ok || d.isChan || d.isPtr || d.elemTypeNode == nil {
+		return nil, nil
+	}
+	in := d.declScope
+	if in == nil {
+		in = s
+	}
+	return d.elemTypeNode, in
 }
 
 // rangeValueFunc gives the value variable v of ranging expr the signature of what it

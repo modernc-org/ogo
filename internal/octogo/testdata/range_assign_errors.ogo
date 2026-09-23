@@ -1,0 +1,57 @@
+// A range clause's "=" target holds what the clause writes -- an index, an element,
+// a channel's element -- and is asked so, as an assignment's target is. Only its
+// name was resolved: an int ranged into a function and a string into an int both
+// reached the C compiler.
+
+type M struct{ n int }
+
+type F func(m *M) int
+
+var ints = [2]int{1, 2}
+
+var names = [2]string{"a", "b"}
+
+var fs [2]F
+
+var wrong [2]func(a, b int) int
+
+var ch chan string
+
+func ok() {
+	var n int
+	for _, n = range ints {
+	}
+	var f F
+	for _, f = range fs {
+	}
+	var k int
+	for k = range names {
+	}
+	var s string
+	for s = range ch {
+	}
+	println(n, f != nil, k, s)
+}
+
+func bad() {
+	var f F
+	// ERROR "cannot use f \(value of type int\) as F value in assignment"
+	for _, f = range ints {
+	}
+	var n int
+	// ERROR "cannot use n \(value of type string\) as int value in assignment"
+	for _, n = range names {
+	}
+	var s string
+	// ERROR "cannot use s \(value of type int\) as string value in assignment"
+	for s = range ints {
+	}
+	// ERROR "cannot use f \(value of type func\(int, int\) int\) as F value in assignment"
+	for _, f = range wrong {
+	}
+	var k int
+	// ERROR "cannot use k \(value of type string\) as int value in assignment"
+	for k = range ch {
+	}
+	println(f != nil, n, s, k)
+}
