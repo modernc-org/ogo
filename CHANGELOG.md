@@ -161,8 +161,23 @@ shipped section tells a reader on that version that they have behaviour they do 
   value; use a pointer". It is received by pointer and copied on entry, as an array
   parameter is: through a direct call, a method, an interface slot, a function
   value, a method value and a method expression, a literal, a variadic call, a
-  deferred and a started one, and across packages -- the callee's copy its own. A
-  result and a value receiver of one are still refused.
+  deferred and a started one, and across packages -- the callee's copy its own.
+- **A struct holding an array may be a value receiver.** `func (b Buf) Sum() int`
+  was refused for the parameter's reason. The receiver is received by pointer and
+  copied on entry as the parameter is: called on a variable, a package variable, a
+  field, an element, a pointer and a literal, through an interface, promoted from an
+  embedded struct, as the method expression `Buf.Sum`, deferred -- the receiver taken
+  where the defer stands -- and started on a cog.
+- **A struct holding an array may be a result.** A function or a method returning
+  one was refused where it was declared. It is written through an out parameter, as
+  an array result is: returned from a literal, a variable, a named result -- held
+  until the defers have run, which may write it -- or another such call; called
+  directly, as a method, through an interface, a function value, a method value and a
+  method expression, deferred, on a cog and across packages; read where it stands,
+  as an argument, a receiver, a field and an element, stored and thrown away. An
+  array field of one is read where it stands too: `x := mk(1).data`, `len(mk(1).data)`,
+  a range over it and a comparison, the call made once. One beside another result is
+  still refused, the result struct having to hold the array itself.
 
 ### Fixed
 
@@ -344,9 +359,45 @@ shipped section tells a reader on that version that they have behaviour they do 
   read.** `_, _ = a, b` did not build under -Werror, an unused variable to both
   compilers, and spent a cog register. A blank target binds nothing now; its value
   is evaluated only where it does something.
+- **A range over an array reached through a pointer read the array live.** Go ranges
+  over a copy of an array, taken when the loop begins, and the copy was made only
+  where the body could write the operand's ROOT -- so `for i, v := range p.data {
+  gb.data[2] = 99 }` for `p := &gb` handed out the write, and so did `range
+  getp().data` and an array in a slice's element: 99, 99, 55 and 66 on a P2-EDGE for
+  Go's 3, 3, 4 and 0, without a word. What a pointer, a slice or a call reaches is
+  storage any name reaches, and is asked about as a dereference is.
+- **The address of a literal holding a struct with an array did not build.** `r :=
+  &Rack{2, gb}` for a gb holding an array, and such a literal among a slice of
+  pointers, copied the value into the literal through the pointer as though it were
+  the struct -- `memcpy(&r.buf, ...)`, which neither compiler builds. The copy goes
+  through the address.
+- **A literal of a struct holding an array, nested in a compound literal, did not
+  build for the target.** `p := &W{Buf{...}, k}`, the same as an argument, a receiver
+  and an element of a slice of pointers, wrote the inner literal as a compound
+  literal of its own -- a copy into the member, which the target refuses at 12 and 16
+  bytes. It is braced wherever it stands, as a declaration always braced it.
 
 ### Behaviour changes
 
+- **A method value whose receiver is a pointer is refused.** Go saves the receiver
+  when a method value is taken, and where it is a pointer -- a variable of a pointer
+  type, or an embedded pointer the method is promoted through -- that is the
+  pointer's value then, which a method value bound at compile time cannot hold. For a
+  pointer variable, `mv := gp.Get`, the lifted function bound the pointer's own
+  address, which the target's C compiler only warned about, and the method read
+  garbage: 7600 on a P2-EDGE for Go's 1. Through an embedded pointer it read the
+  pointer at each call, answering for the one put there since. A function literal
+  calling the method, `func() int { return gp.Get() }`, reads the pointer at each
+  call as written, and is what the message suggests; another package's pointer
+  variable is refused too.
+- **The address of a field of a call's value, and a slice of an array in one, are
+  refused in Go's words.** A call's result has no storage, and nor has a field of it
+  or an element of an array in it, until a step goes through a pointer or into a
+  slice. `&mkp().x`, `&mk(1).data[0]` and `mk(1).data[1:]` compiled -- the result
+  bound to a temporary whose address could be taken -- where Go refuses each:
+  "invalid operation: cannot take address of mkp().x", "cannot slice unaddressable
+  value". The slice became writable with the struct results above; the address of a
+  plain struct result's field never was refused.
 - **A step after `(&v)` that the address does not take is refused, in Go's words.**
   `(&v).f` is `v.f` because a selector dereferences one pointer, and `(&v)[i]` is
   `v[i]` for an array alone. `(&pp).x = 3` and `(&pp).x++` for a pointer,

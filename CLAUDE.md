@@ -420,7 +420,13 @@ still design-only.
   nothing that other function values pay. Go's representation (a value pointing at a
   struct whose first word is the code pointer) was measured on hardware and declined:
   `doc/funcval-cost.c` has the numbers, the attribution and how to revisit it. Do not
-  re-open that without re-reading it.
+  re-open that without re-reading it. The binding is an ADDRESS, so a receiver Go
+  would SAVE is refused: a value receiver (Go copies it), a local (its address dies),
+  and since 2026-09-23 a POINTER -- a pointer variable or an embedded pointer the
+  method is promoted through (`methodValueSavesPtr`, checker and emitter): a pointer
+  variable's bound the pointer's own address and printed garbage on the board, and an
+  embedded one was read at each call rather than when the value was taken. A function
+  literal calling the method is the spelling that reads the pointer at each call.
 - Composite literals cover positional and keyed structs (`P{1, 2}`, `P{x: 1}`),
   positional array/slice literals (`[3]int{1, 2, 3}`, `[]int{1, 2, 3}`), and
   indexed array/slice literals (`[]int{2: 5}`, `[5]int{0: 1, 4: 9}`, mixed
@@ -932,6 +938,29 @@ not. A sweep of 26 positions at 12 bytes found five that assigned (a range value
 list's temporaries, a variadic pack, append's helper, a blank target's temporary),
 each copying with memcpy since (`holdsArray`), and passing and returning by value
 fail at every size (`byRefParam`). Measure a struct rule at 3, 8, 12, 16 and 20 bytes.
+The boundaries came down the same day, each the way an array's does: a parameter and
+a value receiver received by pointer and copied on entry (`byRefParam`,
+`recvByRef`), a result written through an out parameter (`funcStructRet`), a
+channel's element crossing by pointer (`chanStructByPtr`) -- and a literal of one
+NESTED in a compound literal is braced, since a compound literal of its own is a copy
+into the member (`&W{Buf{...}, k}` did not build). One beside another result is the
+one left (`refuseResultTuple`). Two lessons from the result. A lowering makes new
+shapes WRITABLE, and each is a row for the rejects sweep: `mk(1).data[1:]` and
+`&mk(1).data` compiled where Go refuses both, and their neighbour `&mkp().x`, a plain
+struct result's field, always had (`callValueAddressing`). And a chain is RENDERED by
+every question asked about it -- `len(mk(1).data)` reads the extent and then
+evaluates the operand -- so a call bound out of a chain is bound once per occurrence
+(`structOutCallC`, the statement's memo), or it runs once per question.
+
+**A RULE ASKED OF A ROOT MISSES WHAT A POINTER REACHES** (2026-09-23). A range over an
+array iterates a copy, made where the body may write the array -- and "may write" was
+asked of the operand's ROOT name: `for i, v := range p.data { gb.data[2] = 99 }` for
+`p := &gb` read the write live, 99 on the board for Go's 3, and so did `range
+getp().data` and an array in a slice's element. Storage reached through a pointer, a
+slice or a call is any name's (`rangeThroughRef`). A rule that asks whether a name's
+storage is written has to ask what else names it; found by reading the rule while
+fixing its neighbour, not by a sweep, so the other rules asking a root are the place
+to look next.
 
 **A TEMPORARY IS A COG REGISTER** (2026-09-20). flexcc gives every C local one
 (`local_N res 1` in COG_BSS) out of a pool the assembler checks with `fit 480`,
@@ -960,13 +989,17 @@ Known open items, all loud refusals or design walls (2026-09-17): an
 array-returning call as a package literal element; a function returning an ARRAY
 taken as a value, `mb := mkb`, "cannot infer a type" and, with the type written,
 "cannot return an array beside another result" (a function value's type has no out
-parameter for it); a struct holding an ARRAY returned by value, or as a value
-receiver ("holds an array, which the target's C compiler cannot pass or return by
-value; use a pointer", refuseArrayStructABI -- flexcc drops the argument slot; a
-PARAMETER is received by pointer and copied on entry since 2026-09-23, byRefParam,
-as a channel's element crosses by pointer, chanStructByPtr, and a result would take
-an out parameter as an array result does); `[]byte(s)` and `[]rune(s)` of a string
-VARIABLE (a copy of a length known at run time; a constant's converts since
+parameter for it); a struct holding an ARRAY beside another RESULT ("holds an array,
+which the target's C compiler cannot return beside another result",
+refuseResultTuple -- the result struct would hold the array; one alone goes through
+an out parameter since 2026-09-23, funcStructRet); a range
+over a parenthesised dereference's array, `range (*p).data` ("ranging an integer
+yields only the index"; `range p.data` works); a store into a field of a call's
+VALUE, `mk(1).n = 5`, refused as Go refuses it but in the emitter's words ("only
+simple and field assignment targets are supported yet"), and a field a call's
+pointer result lacks, `getp().x`, as "unsupported call in expression"; `[]byte(s)`
+and `[]rune(s)` of a string VARIABLE (a copy of a length known at run time; a
+constant's converts since
 2026-09-23, constBytesConv); an if or a switch init that is a compound assignment, an
 increment or a send (a for init from one call's several results works since
 2026-09-23, emitForInitMulti); a deferred
