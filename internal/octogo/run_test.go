@@ -38563,6 +38563,116 @@ func main() {
 `,
 		want: "0 1\n1 2\n2 3\n3 4\n0 1\n1 2\n2 3\n3 4\n0 1\n1 2\n2 3\n3 4\n0 1\n1 2\n2 3\n3 4\n0 0\n1 0\n2 0\n3 0\n0 1\n1 2\n2 3\n3 4\n",
 	}, {
+		// printf evaluates every argument before it formats any, and a String()
+		// writing a LOCAL through a pointer its receiver holds was seen by a later
+		// argument reading the local: `printf("%v %d", s, n)` for `s := S{&n}`
+		// printed 77 where Go prints the 1 it took first, a parameter's and a
+		// struct's alike. A local was taken to be out of the method's reach by its
+		// NAME; one whose address is taken is not (printArgUnreachable).
+		name: "printf takes a local before a String() writes it",
+		src: `type S struct{ p *int }
+
+type Q struct{ arr *[3]int }
+
+type R struct{ n int }
+
+type B struct{ r *R }
+
+func (s S) String() string {
+	*s.p = 77
+	return "s"
+}
+
+func (q Q) String() string {
+	q.arr[1] = 88
+	return "q"
+}
+
+func (b B) String() string {
+	b.r.n = 66
+	return "b"
+}
+
+func show(k int) {
+	s := S{&k}
+	printf("%v %d\n", s, k)
+}
+
+// printf evaluates every argument before it formats any, so a String() that
+// writes a LOCAL through a pointer its receiver holds is not seen by a later
+// argument reading that local: its value was taken first.
+func main() {
+	n := 1
+	s := S{&n}
+	printf("%v %d\n", s, n)
+	a := [3]int{1, 2, 3}
+	q := Q{&a}
+	printf("%v %d %d\n", q, a[1], a[2])
+	a[1] = 2
+	printf("%v %v\n", q, a)
+	r := R{1}
+	b := B{&r}
+	printf("%v %d %v\n", b, r.n, r)
+	show(5)
+	m := 5
+	pm := &m
+	printf("%v %d %d\n", S{pm}, m, *pm)
+	u := 3
+	printf("%v %d %d\n", s, u, n)
+}
+`,
+		want: "s 1\nq 2 3\nq [1 2 3]\nb 1 {1}\ns 5\ns 5 5\ns 3 77\n",
+	}, {
+		// The same for an ARRAY argument, which could not be bound at all: it has
+		// no C value type, and asking for one gave up binding every argument of the
+		// print. It is copied into a temporary array, printed from under %v, the
+		// element-wise verbs and beside an argument with an effect.
+		name: "printf takes an array before a String() writes it",
+		src: `type Q struct{ arr *[3]int }
+
+func (q Q) String() string {
+	q.arr[1] = 88
+	return "q"
+}
+
+type N struct{ v int }
+
+func (n N) String() string { return "n" }
+
+var ga = [3]int{1, 2, 3}
+
+var gq = Q{&ga}
+
+var calls int
+
+func tick() int {
+	calls++
+	return calls
+}
+
+// An ARRAY argument of a printf is taken when the arguments are, before any is
+// formatted: a String() writing it through a pointer is not seen, under %v and
+// the verbs that format it element by element, beside an argument with an effect
+// too, when every argument is bound.
+func main() {
+	printf("%v %d\n", gq, ga)
+	ga[1] = 2
+	printf("%v %v %d\n", gq, ga, tick())
+	ga[1] = 2
+	a := [3]int{1, 2, 3}
+	q := Q{&a}
+	printf("%v %x %v\n", q, a, a[1])
+	a[1] = 2
+	ns := [2]N{{1}, {2}}
+	printf("%v %v %v\n", q, ns, a)
+	b := [3]byte{'a', 'b', 'c'}
+	printf("%v %s %d\n", q, b[:], a)
+	a[1] = 2
+	printf("%v %v\n", q, [2]int{a[1], 5})
+}
+`,
+		want: "q [1 2 3]\nq [1 2 3] 1\nq [1 2 3] 2\nq [n n] [1 2 3]\nq abc [1 88 3]\nq [2 5]\n",
+	}, {
 		// A method called on the interface RESULT of a call through a function
 		// value, a field holding one or another interface's slot -- `p(1).Area()`,
 		// `h.p(2).Area()`, `hd.Get().Area()` -- read the table and the data off

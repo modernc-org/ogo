@@ -31320,6 +31320,7 @@ func (e *emitter) arrayVar(name string) (arrDim, bool) {
 type printArg struct {
 	name  string
 	ctype string
+	array bool // an ARRAY copied into a temporary of its shape; ctype says nothing
 }
 
 // hoistPrintArgs binds every argument of a print to a temporary, in source order,
@@ -31403,27 +31404,70 @@ func (e *emitter) hoistPrintArgs(args []Node) bool {
 			continue
 		}
 		ct, ok := e.inferCType(a.ast)
-		if !ok || ct == "" {
-			e.prologue, e.hoistedArrayCalls = e.prologue[:mark], memo
-			return false
+		if ok && ct != "" {
+			hoisted[i] = printArg{ctype: ct, name: e.hoist(ct, func() { e.emitExpr(a.ast) })}
+			continue
 		}
-		hoisted[i] = printArg{ctype: ct, name: e.hoist(ct, func() { e.emitExpr(a.ast) })}
+		// An ARRAY has no C value type to bind by assignment, and asking for one
+		// gave the whole binding up -- every other argument's with it. It is copied
+		// into a temporary array of its shape, which is the copy fmt formats; a
+		// literal's own temporary is that copy already, and an array of no elements
+		// has nothing to take. Asked only of what has no C type: the question
+		// renders a call it passes, which lifts a function literal among its
+		// arguments a second time.
+		if dim, isArr := e.arrayShapeOf(a.ast); isArr && len(dim.inner) == 0 {
+			if dim.bound == "0" {
+				continue
+			}
+			if src, ok := e.arraySourceC(a.ast); ok {
+				tmp := src
+				if fac, isFac := e.soleFactorNode(a.ast); !isFac || !e.isArrayLitFactor(fac) {
+					tmp = e.newTmp()
+					e.includes["string.h"] = true
+					e.prologue = append(e.prologue, dim.elem+" "+tmp+dim.declSuffix()+";\n",
+						"memcpy("+tmp+", "+src+", sizeof("+tmp+"));\n")
+					e.arrays[tmp] = dim
+				}
+				hoisted[i] = printArg{name: tmp, array: true}
+				continue
+			}
+		}
+		if !effect {
+			continue // no effect to keep in order: read where it stands
+		}
+		e.prologue, e.hoistedArrayCalls = e.prologue[:mark], memo
+		return false
 	}
 	e.printArgs = hoisted
 	return true
 }
 
+// isArrayLitFactor reports whether a factor is an ARRAY literal, `[3]int{...}` or
+// `Row{...}`, whose value arraySourceC binds to a temporary of its own.
+func (e *emitter) isArrayLitFactor(fac Node) bool {
+	typeAST, _, ok := e.factorArrayLit(fac)
+	if !ok {
+		return false
+	}
+	_, isArray := e.arrayDim(typeAST)
+	return isArray
+}
+
 // printArgUnreachable reports whether a print argument reads nothing a method called
-// while formatting an EARLIER argument could write: a local variable read by name,
-// or an expression naming nothing at all. Such a method takes no parameters, and the
-// lifetime rules keep a local's address out of the package block, so the only local
-// it can reach is one its own receiver points at -- the argument it is called on.
+// while formatting an EARLIER argument could write: a local variable read by name
+// whose storage nothing else reaches, or an expression naming nothing at all. Such a
+// method takes no parameters, and the lifetime rules keep a local's address out of
+// the package block, so it reaches a local only through its receiver -- which may
+// hold the address of ANOTHER argument's local. `printf("%v %d", s, n)` for an `s :=
+// S{&n}` whose String() writes *s.p printed what it wrote, 77 on the board where Go
+// formats the 1 it read first. So a local whose address is taken, which is sliced or
+// which a method is called on (aliasedLocals) is reachable too.
 //
 // Anything else is assumed reachable: a package variable, a field, an element, a
 // value read through a pointer.
 func (e *emitter) printArgUnreachable(ast []int32) bool {
 	if name, ok := e.exprIdent(ast); ok {
-		return e.isFrameVar(name)
+		return e.isFrameVar(name) && !e.aliasedLocals[name]
 	}
 	return !e.exprNamesSomething(ast)
 }
@@ -31507,7 +31551,7 @@ func (e *emitter) printArgCType(idx int, arg Node) (string, bool) {
 	if ct, ok := e.replayArgCType(idx); ok {
 		return e.underlyingCType(ct), true
 	}
-	if a, ok := e.hoistedArg(idx); ok {
+	if a, ok := e.hoistedArg(idx); ok && !a.array {
 		return e.underlyingCType(a.ctype), true
 	}
 	return e.exprReprCType(arg.ast)
@@ -33097,6 +33141,12 @@ func (e *emitter) emitPrintOne(newline bool, idx int, arg Node) {
 		e.emitPrintSlice(newline, a.elem, func() {
 			e.emit("(" + sliceCName(a.elem) + "){" + e.varRef(base) + ", " + a.bound + ", " + a.bound + "}")
 		})
+	}
+	// An array the print copied before a method it calls could write it
+	// (hoistPrintArgs) prints the copy.
+	if h, ok := e.hoistedArg(idx); ok && h.array {
+		printArray(h.name, e.arrays[h.name])
+		return
 	}
 	if base, ok := e.exprIdent(arg.ast); ok {
 		if a, ok := e.arrayVar(base); ok {
