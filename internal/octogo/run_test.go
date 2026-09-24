@@ -29137,6 +29137,47 @@ func main() {
 `,
 		want: "30 787878\n30 121212 2\n33 33\n",
 	}, {
+		// A for clause's target through a call, `getp().x, i = ...`, was
+		// "unsupported target in a for clause's assignment": bound where it is
+		// stored now, the init once and the post each iteration.
+		name: "a for clause's target through a call",
+		src: `type P struct{ x, y int }
+
+var gp P
+
+var calls int
+
+func getp() *P { return &gp }
+
+func bump(k int) *P {
+	calls = calls*10 + k
+	return &gp
+}
+
+func val(k int) int {
+	calls = calls*10 + k
+	return k
+}
+
+// A for clause's target through a call, in the init and in the post, bound where
+// it is stored: each iteration, ahead of the values.
+func main() {
+	a := 0
+	for getp().x, a = 5, 1; a < 3; a++ {
+	}
+	println(gp.x, a)
+	for i := 0; i < 2; getp().x, i = getp().x+1, i+1 {
+		a++
+	}
+	println(gp.x, a)
+	for i := 0; i < 3; i, bump(1).y = i+1, val(2) {
+		a++
+	}
+	println(gp.y, a, calls)
+}
+`,
+		want: "5 3\n7 5\n2 8 121212\n",
+	}, {
 		// A name declared in the header of an if, a for or a switch was typed by its
 		// value's KIND alone, and the kind of `&x` is x's: `if p := &gx; *p > 4` was
 		// "cannot indirect p (variable of type int)", and the loop that walks a list by

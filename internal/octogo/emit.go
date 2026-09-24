@@ -25079,6 +25079,9 @@ func (e *emitter) emitSimultaneous(lhss, rhss [][]int32) {
 	targets := make([]assignTarget, len(lhss))
 	for i, lhs := range lhss {
 		t, ok := e.clauseTarget(lhs)
+		if ok {
+			t, ok = e.bindCallTarget(t)
+		}
 		if !ok {
 			e.fail("unsupported target in a for clause's assignment")
 			return
@@ -25113,6 +25116,13 @@ func (e *emitter) clauseTarget(ast []int32) (assignTarget, bool) {
 	kids, ok := e.soleFactor(ast)
 	if !ok {
 		return assignTarget{}, false
+	}
+	// A target through a CALL, `getp().x`: read as written, bound where it is
+	// stored (bindCallTarget), as a statement's is.
+	if len(kids) == 2 && kids[0].sym == 0 && e.f.ch(kids[0].tok) == IDENT && kids[1].sym == FactorSuffix {
+		if steps := slices.Collect(it(kids[1].ast)); containsSym(steps, CallSuffix) {
+			return assignTarget{name: e.src(kids[0].tok), chain: steps, tok: -1}, true
+		}
 	}
 	base, steps, isChain := e.factorAccessChain(kids)
 	if !isChain {
