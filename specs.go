@@ -6,10 +6,9 @@
 // including the changes that reject a program an earlier one accepted, is in
 // CHANGELOG.md; this list is only what is still owed.
 //
-// TODO 20260317 goto. Labels and labeled break/continue are supported (see Break
-// and Continue Statements); "goto" jumps to a label of the same function under
-// Go's rules -- never into a block, and never forward over a declaration that
-// is in scope at the label.
+// (goto's historical TODO is DONE: labels, labeled break and continue, and "goto"
+// to a label of the same function under Go's rules -- never into a block, and never
+// forward over a declaration that is in scope at the label.)
 // (Select's historical TODO is DONE 2026-09-04: a send clause beside a default
 // and several send clauses both work, gated on the cell's parked-receiver count;
 // smart-pin clauses were decided out the same day -- the default-arm polling
@@ -27,10 +26,9 @@
 // recursion above -- dies before the check is ever reached, so it could not be shown
 // to catch anything. What would work is a depth check at function entry, or a stack
 // whose size the "go" statement can choose, which is what this TODO is really for.
-// TODO 20260806 Arrays: a fixed-array result may not stand BESIDE another result,
-// `func f() ([3]int, int)`. That would need a struct holding an array, which this
-// backend cannot assign, and handing back a pointer instead would name the callee's
-// dead frame. Every other use of an array result works.
+// (The array TODO of 20260806 is DONE 2026-09-24: an array result may stand beside
+// another, `func f() ([3]int, int)`, held in the result struct and written through
+// an out parameter, which is copied with memcpy.)
 // TODO 20260725 Complex numbers (see Types). They need no heap, so their absence
 // is work owed, unlike that of maps.
 // When measuring any grammar change, compare the SETS of egg's First/Follow warnings
