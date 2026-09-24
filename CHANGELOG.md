@@ -481,7 +481,10 @@ shipped section tells a reader on that version that they have behaviour they do 
   in gb, the pointer's mark still saying lb. A pointer is known to point at a local
   where it is written once with its address; one reached through a field, as a
   method promoted through an embedded pointer is, `pb := PBox{&lb}; pb.set(a[:])`,
-  is not, and such a call is refused.
+  is not, and such a call is refused. The same holds for every store rule above: a
+  pointer moved along a list, `cur.next = &nodes[i]; cur = cur.next`, is refused
+  where `nodes[i-1].next = &nodes[i]` is not, and a pointer written once is not
+  known either where the function declares another variable of its name.
 - **A reference to the frame stored into a slice's element is refused unless the
   slice is known to view the frame.** `s := loc[:]; s = gs; s[0] = &x` -- a slice
   first bound to a view of a local array, then to package storage -- stored x's

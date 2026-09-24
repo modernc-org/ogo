@@ -1017,7 +1017,13 @@ receiver rules were the third place the same mark permitted (`storageBehind`,
 `checkRecvAt`, `checkIntoArgs`): they now carry `sure` beside `local`, the store INTO
 a receiver or through an argument relying on sure, the question whether the receiver
 is KEPT still on local. `grep -n 'frameHolder\[\|frameBacked\['` lists the readers
-of the marks; each is a refusal or asks onceBound first.
+of the marks; each is a refusal or asks onceBound first. The price, measured on local
+linked lists: `nodes[i-1].next = &nodes[i]` and `n := &nodes[i-1]; n.next =
+&nodes[i]` pass, a CURSOR, `cur.next = &nodes[i]; cur = cur.next`, is refused -- and
+so is `p := &nodes[2]; p.next = &nodes[3]` in a function that declares another `p`
+anywhere, `bindWrites` counting by NAME across the function (the scan has no scopes
+the emitter's can be matched to); renaming is the way round it. The run corpus and
+400 fuzzer seeds had none of either.
 
 **PRINTING A VALUE IS A ROW** (2026-09-23). `printf("%v", x)` of an ARRAY printed the
 address of its storage wherever x was not a bare name -- a literal, a field, an
