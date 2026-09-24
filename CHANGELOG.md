@@ -239,6 +239,10 @@ shipped section tells a reader on that version that they have behaviour they do 
 
 ### Fixed
 
+- **A method called on a conversion is a call where a print orders its arguments.**
+  `println(T(3).bump(), g)` for a bump writing g printed 3 0 on the host, the
+  conversion counting as pure and the arguments left to C's order; it prints 3 1, as
+  Go does. The target's compiler had taken them left to right already.
 - **A print argument whose type is an array's typedef is copied, not assigned.** A
   print binds its arguments ahead of itself where one of them does something, and a
   conversion to a defined array type, `Buf(a)`, or a dereferenced pointer to one,

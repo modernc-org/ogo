@@ -1167,13 +1167,15 @@ against each other when either changes**; they are meant to differ by one produc
 cases are gofmt's layout already, so TestFormatMatchesGofmt does not see it.
 Latent ones, measured and not faults today: a store through a chain, `r.m[a()][b()]
 = v()`, leaves its calls to C's operand order, which gcc 14 and flexcc both take left
-to right (only the bare `name[i] = v` path binds them); a method called on a
-CONVERSION as a print argument, `println(T(3).bump(), g)` for a bump writing g, is
-not bound first, so gcc reads g before the call and the HOST differs from Go, while
-flexcc takes printf's arguments left to right and the board agrees (2026-09-23); and a value's call does not
+to right (only the bare `name[i] = v` path binds them); and a value's call does not
 run ahead of an index or nil panic in the target, `arr[bad()] = side()`, where Go
 runs `side()` and then panics -- the comment in emitIndexAssign says otherwise and
-describes one C compiler's choice. Only a program about to panic can tell.
+describes one C compiler's choice. Only a program about to panic can tell. A method
+called on a CONVERSION as a print argument, `println(T(3).bump(), g)`, was a fourth
+until 2026-09-24: `pureCall` answered for the conversion and not for the call after
+it, so the print was not bound and the host read g first (nodeHasEffect). A
+variable read beside a call, `println(g, f(), g)`, is read in lexical order here,
+1 4 2, where gc reads it after the call, 2 4 2: Go leaves that order unspecified.
 A printf that FORMATTED as it goes was a third, and is fixed (2026-09-20): Go
 evaluates every argument first and formats afterwards, so a String() with a side
 effect was seen by a LATER argument reading what it wrote -- `printf("%v|%d",
