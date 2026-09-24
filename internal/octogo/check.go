@@ -3081,6 +3081,13 @@ func (f *File) checkHeaderAssignList(s *Scope, head Node, items, values []Node) 
 	for _, v := range values {
 		f.checkNames(s, v)
 	}
+	// A target through a CALL's value, `if a, mkp().x = 1, 2; ...`, is asked what
+	// the statement's is (checkCallValueTargets).
+	for _, t := range targets {
+		if id, steps, ok := f.headerCallTarget(t); ok {
+			f.checkCallValueTarget(s, id, t.Pos(), steps)
+		}
+	}
 	if v, ok := f.rhsValueCount(s, values); ok && v != len(targets) {
 		f.err(f.tok(head.Pos()).Position(), "assignment mismatch: %s but %s", countUnits(len(targets), "variable"), f.valueSource(s, values, v))
 		return
@@ -13177,16 +13184,8 @@ func (f *File) checkWalkedTargets(s *Scope, head, postfix Node, rhs []Node, lhsI
 // yet". Every target of the statement is asked, the head's and each LhsItem's.
 func (f *File) checkCallValueTargets(s *Scope, head, postfix Node) {
 	check := func(ah Node, steps []Node) {
-		if !slices.ContainsFunc(steps, func(n Node) bool { return n.sym == CallSuffix }) {
-			return
-		}
-		id, ok := f.assignHeadIdent(ah)
-		if !ok {
-			return
-		}
-		if w := f.callChainWalk(s, id, steps); w.known && !w.addr {
-			f.err(id.Position(), "cannot assign to %s (neither addressable nor a map index expression)",
-				f.sourceSpan(ah.Pos(), steps[len(steps)-1].End()))
+		if id, ok := f.assignHeadIdent(ah); ok {
+			f.checkCallValueTarget(s, id, ah.Pos(), steps)
 		}
 	}
 	var steps []Node
@@ -13217,6 +13216,60 @@ func (f *File) checkCallValueTargets(s *Scope, head, postfix Node) {
 			}
 		}
 	}
+}
+
+// checkCallValueTarget is checkCallValueTargets for one target: its base id, the
+// position it starts at and the steps after it.
+func (f *File) checkCallValueTarget(s *Scope, id Token, at int32, steps []Node) {
+	if !slices.ContainsFunc(steps, func(n Node) bool { return n.sym == CallSuffix }) {
+		return
+	}
+	if w := f.callChainWalk(s, id, steps); w.known && !w.addr {
+		f.err(id.Position(), "cannot assign to %s (neither addressable nor a map index expression)",
+			f.sourceSpan(at, steps[len(steps)-1].End()))
+	}
+}
+
+// headerCallTarget reads a target an if or a switch header writes -- the first one
+// as an expression, a later one as an LhsItem -- as its base and its steps, when a
+// CALL is among them.
+func (f *File) headerCallTarget(t Node) (id Token, steps []Node, ok bool) {
+	var ah Node
+	if t.sym == LhsItem {
+		for c := range it(t.ast) {
+			switch c.sym {
+			case AssignHead:
+				ah = c
+			case Selector, Index, CallSuffix:
+				steps = append(steps, c)
+			}
+		}
+		if ah.sym == 0 {
+			return Token{}, nil, false
+		}
+		if id, ok = f.assignHeadIdent(ah); !ok {
+			return Token{}, nil, false
+		}
+	} else {
+		fac, isFac := f.soleFactor(t)
+		if !isFac {
+			return Token{}, nil, false
+		}
+		var suffix Node
+		for c := range it(fac.ast) {
+			switch {
+			case c.sym == 0 && Symbol(f.tok(c.tok).Ch) == IDENT && !id.IsValid():
+				id = f.tok(c.tok)
+			case c.sym == FactorSuffix:
+				suffix = c
+			}
+		}
+		if !id.IsValid() || suffix.sym == 0 {
+			return Token{}, nil, false
+		}
+		steps = slices.Collect(it(suffix.ast))
+	}
+	return id, steps, slices.ContainsFunc(steps, func(n Node) bool { return n.sym == CallSuffix })
 }
 
 // checkWalkedTarget is checkWalkedTargets for one target: the AssignHead ah, the

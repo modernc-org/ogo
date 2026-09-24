@@ -40,7 +40,10 @@ func ok() {
 	getp().x, gp.y = 5, 6
 	gp.y, getp().x = 7, 8
 	gp.x, mkw().s[2] = 9, 10
-	println(gp.x, gp.y, back[1])
+	var a int
+	if a, getp().x = 11, 12; a > 0 {
+	}
+	println(gp.x, gp.y, back[1], a)
 }
 
 func bad() {
@@ -65,6 +68,12 @@ func bad() {
 	a, one() = 3, 4
 	// ERROR cannot assign to one\(\) \(neither addressable nor a map index expression\)
 	one() = 5
+	// ERROR cannot assign to mkp\(\).x \(neither addressable nor a map index expression\)
+	if a, mkp().x = 1, 2; a > 0 {
+	}
+	// ERROR cannot assign to mkp\(\).y \(neither addressable nor a map index expression\)
+	switch mkp().y, a = 3, 4; a {
+	}
 	println(a)
 }
 
