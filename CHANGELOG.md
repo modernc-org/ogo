@@ -20,6 +20,11 @@ shipped section tells a reader on that version that they have behaviour they do 
 
 ### Language
 
+- **A defined byte slice type converts from a constant string.** `Frame("PING")`
+  for `type Frame []byte`, or a defined type over []rune, was refused in every
+  position, "cannot convert to Frame", where `[]byte("PING")` worked. It is the
+  same slice literal under the type's name, and the lifetime rules govern where
+  its backing may go as they govern the unnamed one's.
 - **printf's hex dump takes flags, a width and a precision.** `% x` of a byte
   slice or a string -- the usual way to print a frame -- was refused, "does not
   take a width or precision yet", the space being neither, and so were `%#x`,
