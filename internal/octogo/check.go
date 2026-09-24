@@ -13375,25 +13375,39 @@ func (f *File) checkIndexAssign(s *Scope, base Token, rhsNode Node) {
 	if d.hasElemKind && !d.isPtr {
 		f.checkElemAssignType(s, d.elemKind, rhsNode)
 	}
-	if d.elemTypeNode != nil && !d.isPtr {
-		in := d.declScope
-		if in == nil {
+	var elemTN TypeNode
+	var in *Scope
+	switch {
+	case d.elemTypeNode != nil && !d.isPtr:
+		if elemTN, in = d.elemTypeNode, d.declScope; in == nil {
 			in = s
 		}
-		f.checkNilValue(s, in, d.elemTypeNode, rhsNode, "assignment")
-		f.checkFuncAssign(s, f.funcSig(in, d.elemTypeNode), rhsNode, "assignment")
-	} else if t, ok := f.varTypeAt(d); ok && !d.isPtr {
+	case !d.isPtr:
 		// A variable whose type its literal gave it, `var ps = [2]P{...}`, records
 		// no element type node; the literal writes one. `ps[0] = nil` went through.
-		if elem := f.indexedTypeNode(t.s, t.tn); elem != nil {
-			f.checkNilValue(s, t.s, elem, rhsNode, "assignment")
-			f.checkFuncAssign(s, f.funcSig(t.s, elem), rhsNode, "assignment")
+		if t, ok := f.varTypeAt(d); ok {
+			elemTN, in = f.indexedTypeNode(t.s, t.tn), t.s
 		}
+	}
+	asked := false
+	switch {
+	case elemTN == nil:
+	case d.hasElemKind:
+		// A Kind's element is checkElemAssignType's, above; what a store asks
+		// besides is nil and a function's signature.
+		f.checkNilValue(s, in, elemTN, rhsNode, "assignment")
+		f.checkFuncAssign(s, f.funcSig(in, elemTN), rhsNode, "assignment")
+	default:
+		// An element of NO Kind is asked all a store asks (checkStoreInto): a
+		// number stored into a function's or a channel's, a struct into a
+		// pointer's, went through, as they did not into a variable.
+		f.checkStoreInto(s, in, elemTN, rhsNode, "assignment")
+		asked = true
 	}
 	// An element of a DEFINED type -- a struct above all, which has no Kind to be
 	// asked about: `arr[0] = A{}` for a [2]B reached the C compiler, which refused
 	// two struct types, where the same store into a variable was refused here.
-	if d.elemTypeName.IsValid() && !d.isPtr {
+	if d.elemTypeName.IsValid() && !d.isPtr && !asked {
 		want := d.elemTypeName.Src()
 		if q := namedTypeQual(d.elemTypeNode); q.IsValid() {
 			want = q.Src() + "." + want
@@ -14550,6 +14564,28 @@ func (f *File) checkRefAssign(s, wantScope *Scope, want TypeNode, value Node, wh
 	}
 	_, hSlice := hu.(*TypeNodeSlice)
 	_, hPtr := hu.(*TypeNodePointer)
+	// A value that is no pointer where a POINTER is wanted -- a struct, an array, a
+	// slice, a function, a channel: `hp = P{}`. Neither side has a Kind, so the
+	// checks built on one said nothing, and a struct went to C stored into a
+	// pointer, in every position a value is stored.
+	if _, wPtr := wu.(*TypeNodePointer); wPtr && !hPtr {
+		switch hu.(type) {
+		case *TypeNodeStruct, *TypeNodeArray, *TypeNodeSlice, *FunctionType, *TypeNodeChan:
+			haveS, wantS := have.f.typeNodeString(have.tn, false), f.typeNodeString(want, false)
+			if haveS == "" || wantS == "" {
+				return
+			}
+			if wantScope != s {
+				wantS = f.qualifiedTypeName(wantScope, wantS)
+			}
+			mode := "value"
+			if variable {
+				mode = "variable"
+			}
+			f.err(f.tok(value.Pos()).Position(), "cannot use %s (%s of type %s) as %s value in %s", f.exprSource(value), mode, haveS, wantS, what)
+			return
+		}
+	}
 	if wSlice != hSlice || !hSlice && !hPtr {
 		return
 	}

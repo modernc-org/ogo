@@ -1,0 +1,78 @@
+// A value that is no pointer, where a POINTER is wanted: a struct, an array, a
+// slice, a function, a channel. Neither side has a Kind, so the checks built on one
+// said nothing, and `hp = P{}` reached the C compiler as a struct stored into a
+// pointer -- in a variable, a field, an element, a chain, an argument, a return
+// and a literal alike (checkRefAssign). And an ELEMENT store of no Kind is asked
+// what every other store is (checkStoreInto): a number into a function's element
+// or a channel's went through. A variable declared from a SLICE literal has its
+// type for all of it (sliceLitType).
+
+type P struct{ x, y int }
+
+type H struct {
+	n int
+	p *P
+}
+
+type W struct{ in H }
+
+func f() {}
+
+func take(p *P) int { return p.x }
+
+func give() *P {
+	// ERROR cannot use P{} \(value of type P\) as \*P value in return statement
+	return P{}
+}
+
+var gp P
+
+func ok() {
+	var hp *P = &gp
+	hp = &P{1, 2}
+	var h H
+	h.p = hp
+	hs := []H{{}}
+	hs[0].p = &gp
+	fs := []func(){f}
+	fs[0] = f
+	var cs [1]chan int
+	cs[0] = nil
+	println(take(&gp), hp.x, h.p.y, hs[0].n, give() == nil)
+}
+
+func bad() {
+	var hp *P
+	// ERROR cannot use P{} \(value of type P\) as \*P value in assignment
+	hp = P{}
+	var h H
+	// ERROR cannot use P{} \(value of type P\) as \*P value in assignment
+	h.p = P{}
+	var hs [1]H
+	// ERROR cannot use P{} \(value of type P\) as \*P value in assignment
+	hs[0].p = P{}
+	var w W
+	// ERROR cannot use P{} \(value of type P\) as \*P value in assignment
+	w.in.p = P{}
+	var a [2]int
+	var pa *P
+	// ERROR cannot use a \(.*\) as \*P value in assignment
+	pa = a
+	// ERROR cannot use P{} \(value of type P\) as \*P value in argument to take
+	take(P{})
+	var fs = []func(){f}
+	// ERROR cannot use 3 \(untyped int constant\) as func\(\) value in assignment
+	fs[0] = 3
+	var cs [1]chan int
+	// ERROR cannot use 5 \(untyped int constant\) as chan int value in assignment
+	cs[0] = 5
+	ls := []H{{}}
+	// ERROR cannot use P{} \(value of type P\) as \*P value in assignment
+	ls[0].p = P{}
+	println(hp, h.n, hs[0].n, w.in.n, pa, fs, cs, ls)
+}
+
+func main() {
+	ok()
+	bad()
+}
