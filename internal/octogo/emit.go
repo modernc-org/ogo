@@ -24788,8 +24788,9 @@ func (e *emitter) parseForPost(n Node, h *forHeader) bool {
 	if len(h.postRHSs) != 0 {
 		h.postRHS = h.postRHSs[0]
 	}
-	// A multiple assignment needs one value per target, as it does anywhere else.
-	if len(h.postLHSs) > 1 && len(h.postLHSs) != len(h.postRHSs) {
+	// A multiple assignment needs one value per target, as it does anywhere else --
+	// or ONE call's several results, `f, ok = next()`, as the init may take them.
+	if len(h.postLHSs) > 1 && len(h.postLHSs) != len(h.postRHSs) && len(h.postRHSs) != 1 {
 		e.fail("a for-loop post statement assigns %d values to %d targets", len(h.postRHSs), len(h.postLHSs))
 		return false
 	}
@@ -24939,6 +24940,14 @@ func (e *emitter) emitSimultaneous(lhss, rhss [][]int32) {
 			return
 		}
 		targets[i] = t
+	}
+	// One call's several results, `f, ok = next()`: distributed as the statement
+	// distributes them (emitDestructure). A post clause of that form was "assigns 1
+	// values to 2 targets", the idiom `for f, ok := next(); ok; f, ok = next()`
+	// among them.
+	if len(rhss) == 1 && len(lhss) > 1 {
+		e.emitDestructure(targets, make([]bool, len(targets)), rhss[0])
+		return
 	}
 	rhs := make([]Node, len(rhss))
 	for i, r := range rhss {

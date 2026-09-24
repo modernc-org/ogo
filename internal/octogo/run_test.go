@@ -37463,6 +37463,46 @@ outer:
 `,
 		want: "1 4\n2 4\n3 4\n2 x\n4 x\nabc 3\nbc 2\nc 1\n5\n12 13\n10\n1 4\n1 3\n1 2\n1 1\n4\n3\n1 4 0\n1 4 1\n2 4 0\n1234111\n",
 	}, {
+		// A for loop's POST taking one call's several results, the iterator idiom
+		// `for v, ok := next(); ok; v, ok = next()`: "a for-loop post statement
+		// assigns 1 values to 2 targets". It is distributed as the statement is
+		// (emitDestructure), at the end of the body, where a continue reaches it.
+		name: "a for post from one call's several results",
+		src: `var i int
+
+func next() (int, bool) {
+	i++
+	return i * i, i <= 3
+}
+
+type T struct{ n int }
+
+func (t *T) next() (int, bool) {
+	t.n++
+	return t.n, t.n < 3
+}
+
+// A for loop's post taking one call's several results, the iterator idiom, from a
+// function and a method, and after a continue.
+func main() {
+	s := 0
+	for v, ok := next(); ok; v, ok = next() {
+		s += v
+	}
+	println(s)
+	var t T
+	c := 0
+	for v, ok := t.next(); ok; v, ok = t.next() {
+		if v == 1 {
+			continue
+		}
+		c += v
+	}
+	println(c, t.n)
+}
+`,
+		want: "14\n2 3\n",
+	}, {
 		// A struct holding an ARRAY copied, at the sizes the target's C compiler
 		// copies wrongly: `T v = x` and `v = x` of one of 12 or 16 bytes is "Unable
 		// to multiply assign this target", where 3, 8 and 20 bytes build. So a range
