@@ -931,6 +931,22 @@ STORAGE an address reaches -- the lifetime question, and right for every other
 caller -- where the type is what the address ADDRESSES (`addrOperand`, a bare
 name's; anything longer is a pointer expression). So: **write a program a user
 would write, and when it hits something, sweep the row it belongs to.**
+A third round (2026-09-25) -- a serial console, an event scheduler, checksums, a
+SLIP decoder -- matched Go but for one line: the decoder's `% x`, Go's hex dump of
+a frame, refused with every flag, width and precision. Its row (the byte forms
+under each flag) found the pad helper under `%-8s` counting runes by their LEAD
+bytes, where the decoder a range uses counts as Go does -- two answers to "what is
+a rune" in one program, and a stray byte padded wrong in silence. **One question,
+one helper**: where the emitter answers something twice, the two answers are a row.
+The row taken whole the same day, a PRINTF SWEEP: every verb, flag, width and
+precision over each kind of value, 29,480 statements, compiled in-process to drop
+the 1,183 shapes refused (loud) -- a tool of a few lines around `octogo.Build` and
+`EmitC` checks 7,744 shapes in three seconds, where a process each takes an hour --
+and the other 22,388 run in batches of 400 against Go. Two faults, both old: `%q` of
+a negative integer, '\xffffffff' for Go's '�', silent on the board as well; and a
+padded bool in a program with no string, whose helper came without the typedef it
+takes. And the sweep's run cases did not build for the target: see the cost of a
+bound temporary below.
 
 **AN ARRAY RESULT IS A ROW** (2026-09-23). A call returning an array is a STATEMENT in
 C -- the caller hands the callee storage to write -- so every position one stands in
@@ -1064,7 +1080,15 @@ more value per print, to get printf's argument order right, broke `TestTargetBui
 on a run case whose C was correct; the fix was to bind only the arguments a method
 called while formatting can REACH (`printArgUnreachable`). So an emitter change that
 binds values asks which of them it has to, and `grep -c '\tres\t1' prog.p2asm`
-measures what a program spends.
+measures what a program spends. Blocks do not share them, so a temporary bound in a
+block per call site is paid at every site: forty-five hex dumps in one function,
+each bound for the helper, spent 173 and failed (2026-09-25). And flexcc INLINES a
+small static function with its locals, so a thin wrapper that builds a struct for a
+helper puts the struct at every call. Measured on those 45 dumps: a converter call
+127, a compound literal of pointer and length 61, a string passed whole to a helper
+it is not inlined into about two a call, and a pointer and a length read twice from
+a variable 19 in all -- so the byte helpers' bodies take the pointer and the length
+(`_pl`) and the string forms are the wrappers (`emitBytesVerb`).
 
 A sweep of DECLARATIONS changes the KIND of the name it shadows -- a slice over an
 array, an array over a slice, a scalar over a struct, a variable over a constant, a

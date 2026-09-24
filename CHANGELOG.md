@@ -20,6 +20,13 @@ shipped section tells a reader on that version that they have behaviour they do 
 
 ### Language
 
+- **printf's hex dump takes flags, a width and a precision.** `% x` of a byte
+  slice or a string -- the usual way to print a frame -- was refused, "does not
+  take a width or precision yet", the space being neither, and so were `%#x`,
+  `%-12x` and `%.4x`. They print as fmt prints them: a space between the bytes, 0x
+  ahead of the dump or of each byte, a precision counting bytes, the width padding
+  the whole. A String() method's text dumps under the same rules, and `%-8s` of a
+  byte slice, refused the same way, pads as a string does.
 - **Complex numbers are specified, planned for release 1.1.** specs.go's new
   "Complex types (planned)" says what they are to be: Go's complex64 and
   complex128, a value two floats at this target's float precision, with Go's
@@ -249,6 +256,26 @@ shipped section tells a reader on that version that they have behaviour they do 
 
 ### Fixed
 
+- **Many hex dumps in one function build.** printf handed every string and byte
+  slice under %x, %X and %q, and a byte slice under %s, to its helper through a
+  temporary, and each temporary is a cog register on the target for good:
+  forty-five plain `%x` dumps in one function failed the build, "fit 480 failed".
+  A variable's or a field's bytes are handed over as a pointer and a length now,
+  which costs the call nothing -- those forty-five spend 19 registers where they
+  spent 173.
+- **A padded bool builds in a program with no string of its own.**
+  `printf("%8t", ok)` pads the word through a helper that takes a string, and
+  without a string elsewhere in the program the helper came without the type it
+  names: `ogo build` failed with a syntax error in the generated C.
+- **%q of an integer that is no rune prints '�', as Go does.** A negative value
+  was taken for a control character and written as its unsigned bits, `%q` of -1
+  being '\xffffffff' -- in silence, on the board as on the host.
+- **A width or a precision counts an invalid byte as one rune.** `%-4s` of "\xad"
+  padded by four where Go pads by three, and `%.1s` of "\xad\xbeZ" printed all
+  three bytes where Go prints one: a rune was recognised by its lead byte, so a
+  stray continuation byte counted as nothing and a sequence cut short as one
+  rune. Silent, on the board as on the host; the bytes a device sends are what a
+  protocol log prints.
 - **A struct field whose type does not resolve is reported at the type.** `type T
   struct{ c foo }` said "undefined: c", the field taken for an EMBEDDED one, whose
   type is missing too; the error at `foo` came second on the line and was never
