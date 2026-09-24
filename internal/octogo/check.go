@@ -5057,6 +5057,9 @@ func (f *File) checkTypeCaseClause(cs *Scope, ts typeSwitchGuard, clause Node, s
 		nm, ql, isNil, ok := f.caseTypeName(cs, ex)
 		switch {
 		case !ok:
+			if id, isID := f.exprIdent(ex); isID && !f.caseNameResolved(cs, id) {
+				continue
+			}
 			f.err(f.tok(ex.Pos()).Position(), "a type switch case names a pointer type, an interface type, or nil")
 			continue
 		case isNil:
@@ -5064,6 +5067,8 @@ func (f *File) checkTypeCaseClause(cs *Scope, ts typeSwitchGuard, clause Node, s
 				f.err(f.tok(ex.Pos()).Position(), "duplicate case nil in type switch")
 			}
 			seen["nil"], single = true, false
+			continue
+		case !ql.IsValid() && !f.caseNameResolved(cs, nm):
 			continue
 		}
 		written := caseName(nm, ql)
@@ -5114,6 +5119,24 @@ func (f *File) checkTypeCaseClause(cs *Scope, ts typeSwitchGuard, clause Node, s
 	if err := cs.add(vd); err != nil {
 		f.err(ts.name.Position(), "%v", err)
 	}
+}
+
+// caseNameResolved reports a type switch case's type name that names no type --
+// nothing at all, or something other than a type -- and says whether it names one.
+// The rules of checkTypeCaseClause ask what the TYPE is, and asked of a name that is
+// none they answered about something else: `case foo:` for a foo nothing declared
+// was "a type switch case names a pointer type, an interface type, or nil", and
+// `case *foo:` was "*foo does not implement I".
+func (f *File) caseNameResolved(s *Scope, nm Token) bool {
+	switch sc, d := s.find2(nm.Src()); d.(type) {
+	case *TypeDeclaration, *PredeclaredType:
+		return true
+	case nil:
+		f.errUndefined(nm.Position(), nm.Src())
+	default:
+		f.err(nm.Position(), "%s (%s) is not a type", nm.Src(), declKind(sc, d))
+	}
+	return false
 }
 
 // clauseCaseExprs returns a case clause's expressions, and whether it is the

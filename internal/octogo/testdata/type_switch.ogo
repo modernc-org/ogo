@@ -113,3 +113,26 @@ func bare() {
 		println("rect")
 	}
 }
+
+// A case naming NO type is reported as that, before any rule asks what the type
+// is. Asked of a name nothing declared, the rules answered about something else:
+// `case nope:` was "a type switch case names a pointer type, an interface type, or
+// nil", and `case *nope:` "*nope does not implement Shape".
+func unresolved() {
+	var s Shape = &gq
+
+	switch s.(type) {
+	// ERROR undefined: nope
+	case nope:
+		println(1)
+	// ERROR undefined: nope
+	case *nope:
+		println(2)
+	// ERROR gq \(package-level variable\) is not a type
+	case *gq:
+		println(3)
+	// ERROR complex64: complex numbers are not supported yet
+	case *complex64:
+		println(4)
+	}
+}
