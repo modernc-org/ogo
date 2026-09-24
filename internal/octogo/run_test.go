@@ -38731,6 +38731,271 @@ func main() {
 `,
 		want: "3 6\n4 4\n52 1\n5 true\n5 true\n5 true\n6 6\n6 7\ngot 5\n7\n",
 	}, {
+		// A VARIADIC function returning an ARRAY did not pack its call's values:
+		// the result's early return in collectResults came before the variadic
+		// position was recorded, so `frame(1, 7, 8)` passed 7 and 8 where the slice
+		// goes and the target refused the call. The row it belongs to, each result
+		// that travels through an out parameter crossed with the ways a variadic
+		// call is made.
+		name: "a variadic function whose result travels through an out parameter",
+		src: `type Buf struct {
+	n   int
+	arr [2]int
+}
+
+type T struct{ k int }
+
+type Tupler interface {
+	Tup(xs ...int) (Buf, bool)
+}
+
+var calls int
+
+var gt = T{10}
+
+var done chan bool
+
+func total(xs []int) int {
+	s := 0
+	for _, x := range xs {
+		s += x
+	}
+	return s
+}
+
+func arr(k int, xs ...int) [3]int {
+	calls = calls*10 + 1
+	return [3]int{k, len(xs), total(xs)}
+}
+
+func (t *T) Arr(xs ...int) [3]int {
+	calls = calls*10 + 2
+	return [3]int{t.k, len(xs), total(xs)}
+}
+
+func buf(xs ...int) Buf {
+	calls = calls*10 + 3
+	return Buf{len(xs), [2]int{total(xs), 7}}
+}
+
+func (t T) Buf(xs ...int) Buf {
+	calls = calls*10 + 4
+	return Buf{t.k + len(xs), [2]int{total(xs), 8}}
+}
+
+func tup(xs ...int) (Buf, int) {
+	calls = calls*10 + 5
+	return Buf{len(xs), [2]int{total(xs), 9}}, total(xs) * 2
+}
+
+func (t *T) Tup(xs ...int) (Buf, bool) {
+	calls = calls*10 + 6
+	return Buf{t.k, [2]int{total(xs), len(xs)}}, len(xs) > 1
+}
+
+func starter(t *T) {
+	t.Arr(1, 2)
+	done <- true
+}
+
+// A VARIADIC function or method whose result travels through an out parameter --
+// an array, a struct holding one, and such a struct beside another result -- called
+// with values, spread, with none, through a function value and an interface,
+// deferred and started.
+func main() {
+	xs := []int{4, 5, 6}
+	a := arr(1, 2, 3)
+	b := arr(2, xs...)
+	c := arr(3)
+	println(a[1], a[2], b[1], b[2], c[1], calls)
+	t := &gt
+	d := t.Arr(1, 1)
+	println(d[0], d[2])
+	e, f := buf(1, 2), T{20}.Buf(xs...)
+	println(e.n, e.arr[0], f.n, f.arr[0])
+	g, n := tup(3, 4)
+	h, ok := t.Tup(xs...)
+	println(g.arr[0], n, h.arr[1], ok)
+	fv := buf
+	println(fv(9, 9).arr[0])
+	var ti Tupler = t
+	i, ok2 := ti.Tup(1)
+	println(i.arr[0], ok2)
+	defer arr(0, 1, 2)
+	go starter(t)
+	<-done
+	println(calls > 0)
+}
+`,
+		want: "2 5 3 15 0 111\n10 2\n2 3 23 15\n7 14 3 true\n18\n1 false\nfalse\n",
+	}, {
+		// A domain program, the one that found the fault above: a byte stream from a
+		// producer cog assembled into packets by a state machine, a packet returned
+		// beside a flag and an error, errors kept in a fixed array, a payload
+		// printed under %x and %v, frames built by a variadic function returning
+		// an array.
+		name: "a packet assembler over a byte stream",
+		src: `type Packet struct {
+	kind    byte
+	n       int
+	payload [8]byte
+}
+
+type ParseError struct {
+	at   int
+	what string
+}
+
+func (e *ParseError) Error() string { return e.what }
+
+type state int
+
+const (
+	waitSync state = iota
+	readKind
+	readLen
+	readBody
+	readSum
+)
+
+type Assembler struct {
+	st   state
+	cur  Packet
+	sum  byte
+	seen int
+	errs [2]ParseError
+	ne   int
+}
+
+var bytesIn chan byte
+
+var done chan bool
+
+const sync = 0x7E
+
+var stream [48]byte
+
+func producer(stream []byte) {
+	for _, b := range stream {
+		bytesIn <- b
+	}
+	done <- true
+}
+
+func (a *Assembler) fail(at int, what string) error {
+	e := &a.errs[a.ne%len(a.errs)]
+	a.ne++
+	e.at, e.what = at, what
+	a.st = waitSync
+	return e
+}
+
+// Feed takes one byte and answers a packet when one is complete, or an error.
+func (a *Assembler) Feed(b byte, at int) (Packet, bool, error) {
+	switch a.st {
+	case waitSync:
+		if b == sync {
+			a.st = readKind
+			a.cur = Packet{}
+			a.sum = 0
+		}
+	case readKind:
+		a.cur.kind = b
+		a.sum ^= b
+		a.st = readLen
+	case readLen:
+		if int(b) > len(a.cur.payload) {
+			return Packet{}, false, a.fail(at, "too long")
+		}
+		a.cur.n = int(b)
+		a.sum ^= b
+		a.seen = 0
+		a.st = readBody
+		if a.cur.n == 0 {
+			a.st = readSum
+		}
+	case readBody:
+		a.cur.payload[a.seen] = b
+		a.seen++
+		a.sum ^= b
+		if a.seen == a.cur.n {
+			a.st = readSum
+		}
+	case readSum:
+		a.st = waitSync
+		if b != a.sum {
+			return Packet{}, false, a.fail(at, "bad sum")
+		}
+		return a.cur, true, nil
+	}
+	return Packet{}, false, nil
+}
+
+func (p *Packet) Body() []byte { return p.payload[:p.n] }
+
+func frame(kind byte, body ...byte) [12]byte {
+	var f [12]byte
+	f[0], f[1], f[2] = sync, kind, byte(len(body))
+	s := kind ^ byte(len(body))
+	for i, b := range body {
+		f[3+i] = b
+		s ^= b
+	}
+	f[3+len(body)] = s
+	return f
+}
+
+// A byte stream from a producer cog assembled into packets by a state machine:
+// a struct holding an array returned beside a flag and an error, errors kept in a
+// fixed array, a payload printed under %x and %v, a method on a packet's copy.
+func main() {
+	k := 0
+	f1 := frame(1, 0xDE, 0xAD)
+	for _, b := range f1[:6] {
+		stream[k] = b
+		k++
+	}
+	stream[k] = 0x55
+	k++
+	f2 := frame(2)
+	for _, b := range f2[:4] {
+		stream[k] = b
+		k++
+	}
+	f3 := frame(3, 1, 2, 3)
+	f3[6] ^= 0xFF
+	for _, b := range f3[:7] {
+		stream[k] = b
+		k++
+	}
+	f4 := frame(4, 9, 8, 7, 6, 5)
+	for _, b := range f4[:9] {
+		stream[k] = b
+		k++
+	}
+	go producer(stream[:k])
+	var a Assembler
+	var got [4]Packet
+	np := 0
+	for i := 0; i < k; i++ {
+		b := <-bytesIn
+		p, ok, err := a.Feed(b, i)
+		if err != nil {
+			printf("err at %d: %v\n", i, err)
+			continue
+		}
+		if ok {
+			got[np] = p
+			np++
+			printf("packet %d len %d body %x\n", p.kind, p.n, p.Body())
+		}
+	}
+	<-done
+	printf("%d packets, %d errors, last %v\n", np, a.ne, got[np-1].payload)
+}
+`,
+		want: "packet 1 len 2 body dead\npacket 2 len 0 body \nerr at 17: bad sum\npacket 4 len 5 body 0908070605\n3 packets, 1 errors, last [9 8 7 6 5 0 0 0]\n",
+	}, {
 		// A literal of a struct holding an ARRAY as a MEMBER of another literal,
 		// where the outer one is a compound literal -- under &, as an argument, a
 		// receiver, an element of a slice of pointers -- was a compound literal of

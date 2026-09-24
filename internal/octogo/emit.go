@@ -9950,6 +9950,12 @@ func (e *emitter) collectResults(ast []int32) {
 			e.funcRet[cname] = nil
 			e.funcSliceParams[cname] = e.paramSliceTypes(sig)
 			e.funcParams[cname], e.funcArrayParams[cname] = e.cParamTypes(sig)
+			// A VARIADIC one packs its call's values as any does: returning here
+			// before the position was recorded, `frame(1, 7, 8)` passed 7 and 8 where
+			// the slice goes, and the target refused the call.
+			if _, at := e.variadicElem(sig); at >= 0 {
+				e.funcVariadic[cname] = at
+			}
 			return
 		}
 		if recv == nil {
