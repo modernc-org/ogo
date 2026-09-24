@@ -10983,6 +10983,98 @@ func main() {
 	}
 }
 
+// TestEmitCStoreThroughRefEscape: a store of a reference to the frame into storage
+// the target reaches through a POINTER or a CALL's result (checkStoreThroughRef).
+// The store rules asked the target's ROOT, and a local root dies with the frame --
+// so `p := &gq; p.p = &x` and `getq().p = &x` stored a local's address in a package
+// variable in silence, and the board read garbage through it after the function
+// returned. A pointer known to point at a local of this frame writes that local,
+// and is asked the block rule of it; the controls store what outlives the frame.
+func TestEmitCStoreThroughRefEscape(t *testing.T) {
+	const head = `type Q struct {
+	p  *int
+	xs []int
+	q  *Q
+}
+
+var gq Q
+
+var gn int
+
+func getq() *Q { return &gq }
+
+type W struct{ q *Q }
+
+func mkw() W { return W{&gq} }
+
+func run() {
+	var loc [2]int
+	x := 5
+	var n Q
+	var a int
+	_, _, _, _ = loc, x, n, a
+`
+	const tail = `}
+
+func main() {
+	run()
+}
+`
+	for _, test := range []struct {
+		stmt string
+		want string // "" means the program must be accepted
+	}{
+		{"p := &gq\n\tp.p = &x", "cannot store the address of local variable x through p.p"},
+		{"p := getq()\n\tp.p = &x", "cannot store the address of local variable x through p.p"},
+		{"p := &gq\n\tp.xs = loc[:]", "cannot store a slice backed by local loc through p.xs"},
+		{"getq().p = &x", "cannot store the address of local variable x through getq().p"},
+		{"getq().xs = loc[:]", "cannot store a slice backed by local loc through getq().xs"},
+		{"w := mkw()\n\tw.q.p = &x", "through w.q.p"},
+		{"p := &gq\n\tp.q = &n", "cannot store the address of local variable n through p.q"},
+		{"pp := &gq.p\n\t*pp = &x", "through *pp"},
+		{"p := &gq\n\ta, p.p = 1, &x", "through p.p"},
+		{"p := &gq\n\tp.p, a = &x, 1", "through p.p"},
+		{"{\n\t\ty := 1\n\t\tp := &n\n\t\tp.p = &y\n\t}", "cannot store the address of local variable y in n"},
+		// KNOWN is must, not may: a pointer assigned again, a range value over a
+		// slice whose elements the mark unions, and a pointer behind a pointer are
+		// not known to point where the first value did.
+		{"p := &n\n\tp = &gq\n\tp.p = &x", "cannot store the address of local variable x through p.p"},
+		{"p := &n\n\tfor i := 0; i < 2; i++ {\n\t\tp.p = &x\n\t\tp = &gq\n\t}", "through p.p"},
+		{"ps := []*Q{&n, &gq}\n\tfor _, e := range ps {\n\t\te.p = &x\n\t}", "through e.p"},
+		{"p := &n\n\tp.q = &gq\n\tp.q.p = &x", "through p.q.p"},
+		{"q := &n\n\tp := q\n\tp = &gq\n\tp.p = &x", "through p.p"},
+		// Controls.
+		{"p := &n\n\tp.p = &x", ""},
+		{"p := &n\n\tp.xs = loc[:]", ""},
+		{"p := &n\n\tp.q = &n", ""},
+		{"p := &gq\n\tp.p = &gn", ""},
+		{"getq().p = &gn", ""},
+		{"pp := &gq.p\n\t*pp = &gn", ""},
+		{"p := &gq\n\t*p = n", ""},
+		{"var p *Q\n\tp = &n\n\tp.p = &x", ""},
+		{"p := &n\n\tfor i := 0; i < 2; i++ {\n\t\tp.p = &x\n\t}", ""},
+		{"p := &n.q\n\t*p = &n", ""},
+		{"p := &n\n\ta, p.p = 1, &x", ""},
+	} {
+		t.Run(test.stmt, func(t *testing.T) {
+			src := head + "\t" + test.stmt + "\n" + tail
+			fsys := fstest.MapFS{"main.ogo": &fstest.MapFile{Data: []byte(src)}}
+			pkg, err := Build(-1, []string{"main.ogo"}, fsys)
+			if err == nil {
+				err = EmitC(pkg, io.Discard, Checked())
+			}
+			switch {
+			case test.want == "" && err != nil:
+				t.Errorf("refused: %v\n%s", err, src)
+			case test.want != "" && err == nil:
+				t.Errorf("accepted, want %q\n%s", test.want, src)
+			case test.want != "" && !strings.Contains(err.Error(), test.want):
+				t.Errorf("got %v, want %q", err, test.want)
+			}
+		})
+	}
+}
+
 // TestEmitCSummaryThroughLocals: a callee's summary follows a parameter through the
 // callee's own locals and through every shape a value is written in. It followed
 // the parameter where it was NAMED alone, so a local copy laundered it -- `w := v;

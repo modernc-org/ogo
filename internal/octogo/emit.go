@@ -5964,6 +5964,7 @@ type emitter struct {
 	bindBlock          map[string]int          // ... the block all those writes are in, or -1 for more than one
 	bindOpaque         map[string]bool         // ... a write the binding does not follow: a range, a receive, several results
 	bindLits           map[string]int          // ... a name declared with a value, which may set its fields, and the block it is in
+	bindValue          map[string][]int32      // ... the value a name is given by a plain `x := v` or `x = v`, the last one seen (see targetThroughRef, which believes it where bindWrites is 1)
 	bindAliased        map[string]bool         // ... a name something else may write through: its address is taken, or a method is called on it
 	bindGotos          bool                    // ... it has a goto, which may run a block's writes again after a later one
 	bindBody, bindSeq  int                     // ... the block of its body, where its parameters are written, and the last block numbered
@@ -13596,6 +13597,7 @@ func (e *emitter) liftFuncLit(lit Node) (string, bool) {
 		funcValueOf, funcParamAlias map[string]string
 		bindWrites, bindBlock       map[string]int
 		bindLits                    map[string]int
+		bindValue                   map[string][]int32
 		bindOpaque, bindAliased     map[string]bool
 		bindGotos                   bool
 		bindBody                    int
@@ -13624,7 +13626,7 @@ func (e *emitter) liftFuncLit(lit Node) (string, bool) {
 		hoistedArrayCalls: e.hoistedArrayCalls, pkgScope: e.pkgScope,
 		aliasedLocals: e.aliasedLocals,
 		funcValueOf:   maps.Clone(e.funcValueOf), funcParamAlias: e.funcParamAlias,
-		bindWrites: e.bindWrites, bindBlock: e.bindBlock, bindLits: e.bindLits,
+		bindWrites: e.bindWrites, bindBlock: e.bindBlock, bindLits: e.bindLits, bindValue: e.bindValue,
 		bindOpaque: e.bindOpaque, bindAliased: e.bindAliased, bindGotos: e.bindGotos, bindBody: e.bindBody,
 		curParams: e.curParams, curParamOrder: e.curParamOrder,
 		localTypes: e.localTypes, gotoTargets: e.gotoTargets, localConsts: e.localConsts,
@@ -13723,6 +13725,7 @@ func (e *emitter) liftFuncLit(lit Node) (string, bool) {
 	e.hoistedArrayCalls, e.pkgScope = saved.hoistedArrayCalls, saved.pkgScope
 	e.funcValueOf, e.funcParamAlias = saved.funcValueOf, saved.funcParamAlias
 	e.bindWrites, e.bindBlock, e.bindLits = saved.bindWrites, saved.bindBlock, saved.bindLits
+	e.bindValue = saved.bindValue
 	e.bindOpaque, e.bindAliased, e.bindGotos, e.bindBody = saved.bindOpaque, saved.bindAliased, saved.bindGotos, saved.bindBody
 	e.curParams, e.curParamOrder = saved.curParams, saved.curParamOrder
 	if proto == "" {
@@ -34752,6 +34755,7 @@ func (e *emitter) emitAssignment(head Node, postfix []Node) {
 	e.checkStoreBacking(storedIn, op)
 	e.checkBlockOutlives(storedIn, op)
 	e.checkStoreThroughSlice(storedIn, postfix[:len(postfix)-1], op)
+	e.checkStoreThroughRef(storedIn, len(stars), postfix[:len(postfix)-1], op)
 	e.noteFrameHolder(storedIn, op)
 	// A written-out dereference applies to the WHOLE target and not to its head:
 	// `*h.p = v` is `*(h.p) = v` and `*a[i] = v` is `*(a[i]) = v`, C's precedence and
@@ -43870,6 +43874,108 @@ func (e *emitter) checkStoreThroughSlice(base string, steps []Node, op []Node) {
 	}
 }
 
+// checkStoreThroughRef refuses storing a reference to this frame where the target
+// is reached through a POINTER or a CALL's result: what is written is then not the
+// root variable's storage but what the pointer points at, or what the call returned
+// -- `p.p = &x` for a `p := &gq`, `getq().p = &x`, `h.q.p = &x` through a pointer
+// field -- none of which is known to be this function's, and all of which may
+// outlive it. The rules above ask the target's ROOT, and a local root dies with the
+// frame, which says nothing of what it points at: a local pointer at a package
+// variable, and a call's pointer result, took the address of a local in silence, and
+// the package variable held it after the function returned -- garbage on the board.
+// A pointer known to point at a local of this frame, `p := &n` (frameHolder),
+// writes that local, and is asked the block rule of it instead. It is
+// checkStoreThroughSlice's rule for a pointer.
+func (e *emitter) checkStoreThroughRef(base string, stars int, steps []Node, op []Node) {
+	if len(op) != 2 || op[0].sym != 0 || e.f.ch(op[0].tok) != ASSIGN {
+		return // only a plain "=" stores such a value
+	}
+	for _, v := range e.rhsExprs(op[1]) {
+		if r, ok := e.frameRefOf(v.ast); ok && e.refuseStoreThroughRef(base, stars, steps, v, r) {
+			return
+		}
+	}
+}
+
+// refuseStoreThroughRef is checkStoreThroughRef for a reference already found, and
+// says whether it refused.
+func (e *emitter) refuseStoreThroughRef(base string, stars int, steps []Node, v Node, r frameRef) bool {
+	through, frame, pointee := e.targetThroughRef(base, stars, steps)
+	switch {
+	case !through:
+		return false
+	case frame && pointee != "":
+		return e.refuseBlockOutlives(pointee, v, r)
+	case frame:
+		return false // a temporary of this frame
+	}
+	e.fail("%v: cannot store %s through %s: what it reaches is not known to be this function's "+
+		"storage, and may outlive it; %s", e.f.tok(v.Pos()).Position(), r.what,
+		strings.Repeat("*", stars)+e.chainSource(base, steps), r.advice())
+	return true
+}
+
+// targetThroughRef reports whether a target -- the stars written before base and the
+// steps after it -- writes storage reached through a POINTER or a CALL's result
+// rather than base's own, whether that storage is known to be this frame's, and,
+// where it is a local of it, which. A package variable's pointer is left to
+// checkStoreBacking, which refuses any such store into it already.
+//
+// KNOWN means must, not may: a holder mark says what a variable MAY reach, and a
+// pointer assigned again keeps the mark of its first value -- `p := &n; p = &gq;
+// p.p = &x` would pass on it. So only a bare local pointer written ONCE, its address
+// never taken and no method called on it (bindWrites, bindAliased), is known to point
+// where its one value did. A pointer reached through a step -- an element, a field,
+// a range value -- is not, whatever its holder is marked with: a slice's mark is its
+// elements' union.
+func (e *emitter) targetThroughRef(base string, stars int, steps []Node) (through, frame bool, pointee string) {
+	if e.isPackageVar(base) {
+		return false, false, ""
+	}
+	holder := func(bare bool) (bool, bool, string) {
+		if !bare || e.bindWrites[base] != 1 || e.bindAliased[base] || slices.Contains(e.curParamOrder, base) {
+			return true, false, ""
+		}
+		// The one value, written as the address of a local of this frame: `p := &n`,
+		// `p := &n.inner`, `p := &arr[i]`. A range value, a list's target and a
+		// value computed any other way record none.
+		if name, ok := e.addrOfRoot(e.bindValue[base]); ok && e.isFrameVar(name) {
+			return true, true, name
+		}
+		return true, false, ""
+	}
+	if containsSym(steps, CallSuffix) {
+		return true, false, "" // what a call returned is not this frame's
+	}
+	// What is written is what the LAST pointer of the chain points at: `p.q.p` writes
+	// through p.q, which p being known says nothing of. A star applies to the whole
+	// chain, `*p.f` being `*(p.f)`.
+	if stars > 0 {
+		return holder(stars == 1 && len(steps) == 0)
+	}
+	last := -1
+	for i, st := range steps {
+		if st.sym != Selector && st.sym != Index {
+			continue
+		}
+		var ptr bool
+		if i == 0 {
+			ct, ok := e.varType(base)
+			_, isArrPtr := e.arrayPtrVar(base)
+			ptr = ok && e.isPointer(ct) || isArrPtr
+		} else if cur, ok := e.accessChainType(base, steps[:i]); ok {
+			ptr = e.isPointer(cur.ctype)
+		}
+		if ptr {
+			last = i
+		}
+	}
+	if last < 0 {
+		return false, false, ""
+	}
+	return holder(last == 0)
+}
+
 // chainSource spells base followed by steps as the source writes them.
 func (e *emitter) chainSource(base string, steps []Node) string {
 	var b strings.Builder
@@ -44048,6 +44154,9 @@ func (e *emitter) carryInto(t assignTarget, declare bool, ctype string, c *carri
 	if !declare {
 		e.refuseStoreBacking(base, c.at, c.r)
 		e.refuseBlockOutlives(base, c.at, c.r)
+		if base == t.name && t.addr == "" {
+			e.refuseStoreThroughRef(t.name, len(t.stars), t.chain, c.at, c.r)
+		}
 	}
 	// A whole slice is given, besides its backing, what its elements reach.
 	origin, elemRefs := "", false
@@ -44722,6 +44831,7 @@ func (e *emitter) bindFollows(writes, block int, opaque bool) bool {
 // names are declared with a value, and which something else may write through.
 func (e *emitter) scanBindings(body []int32) {
 	e.bindWrites, e.bindBlock, e.bindLits = map[string]int{}, map[string]int{}, map[string]int{}
+	e.bindValue = map[string][]int32{}
 	e.bindOpaque, e.bindAliased, e.bindGotos = map[string]bool{}, map[string]bool{}, false
 	e.bindSeq++
 	e.bindBody = e.bindSeq
@@ -44830,6 +44940,17 @@ func (e *emitter) scanBindingsIn(ast []int32, block int) {
 					e.noteBindTarget(nm, nil, block, values != len(names), true)
 				}
 			}
+			if len(names) == 1 && values == 1 {
+				for _, c := range kids {
+					if c.sym == ExpressionList {
+						for x := range it(c.ast) {
+							if x.sym == Expression {
+								e.bindValue[names[0]] = x.ast
+							}
+						}
+					}
+				}
+			}
 		case Statement:
 			switch {
 			case len(kids) == 2 && kids[0].sym == AssignHead && kids[1].sym == Postfix:
@@ -44874,6 +44995,17 @@ func (e *emitter) scanBindingsIn(ast []int32, block int) {
 				opaque := !plain || values != targets
 				if e.derefStars(kids[0].ast) == "" {
 					e.noteBindTarget(root, post[:len(post)-1], block, opaque, decl)
+				}
+				if plain && targets == 1 && values == 1 && len(post) == 1 && root != "" && e.derefStars(kids[0].ast) == "" {
+					for _, o := range op {
+						if o.sym == ExpressionList {
+							for x := range it(o.ast) {
+								if x.sym == Expression {
+									e.bindValue[root] = x.ast
+								}
+							}
+						}
+					}
 				}
 				for _, o := range op {
 					if o.sym != LhsItem {
