@@ -5966,7 +5966,8 @@ type emitter struct {
 	bindLits           map[string]int          // ... a name declared with a value, which may set its fields, and the block it is in
 	bindValue          map[string][]int32      // ... the value a name is given by a plain `x := v` or `x = v`, the last one seen (see targetThroughRef, which believes it where bindWrites is 1)
 	bindAliased        map[string]bool         // ... a name something else may write through: its address is taken, or a method is called on it
-	bindSelfAddr       map[string]bool         // ... a name whose OWN value something else may write: `&x` of x itself, or a method called on x itself -- not on an element or a field of it, which bindAliased counts too
+	bindSelfAddr       map[string]bool         // ... a name whose OWN value something else may write: `&x` of x itself -- not of an element or a field of it, which bindAliased counts too
+	bindSelfCall       map[string]bool         // ... a name a method is called on itself, `x.m()`, whose address a pointer receiver takes unless x is a pointer (see onceBound)
 	bindGotos          bool                    // ... it has a goto, which may run a block's writes again after a later one
 	bindBody, bindSeq  int                     // ... the block of its body, where its parameters are written, and the last block numbered
 	recvLeaks          map[string]leak         // a pointer method's RECEIVER kept where it outlives the call: leakGlobal, leakCog (see recvEdge)
@@ -13600,7 +13601,7 @@ func (e *emitter) liftFuncLit(lit Node) (string, bool) {
 		bindLits                    map[string]int
 		bindValue                   map[string][]int32
 		bindOpaque, bindAliased     map[string]bool
-		bindSelfAddr                map[string]bool
+		bindSelfAddr, bindSelfCall  map[string]bool
 		bindGotos                   bool
 		bindBody                    int
 		curParams                   map[string]bool
@@ -13630,7 +13631,7 @@ func (e *emitter) liftFuncLit(lit Node) (string, bool) {
 		funcValueOf:   maps.Clone(e.funcValueOf), funcParamAlias: e.funcParamAlias,
 		bindWrites: e.bindWrites, bindBlock: e.bindBlock, bindLits: e.bindLits, bindValue: e.bindValue,
 		bindOpaque: e.bindOpaque, bindAliased: e.bindAliased, bindGotos: e.bindGotos, bindBody: e.bindBody,
-		bindSelfAddr: e.bindSelfAddr,
+		bindSelfAddr: e.bindSelfAddr, bindSelfCall: e.bindSelfCall,
 		curParams: e.curParams, curParamOrder: e.curParamOrder,
 		localTypes: e.localTypes, gotoTargets: e.gotoTargets, localConsts: e.localConsts,
 		localConstSpecs: e.localConstSpecs, inheritedTypes: e.inheritedTypes,
@@ -13730,7 +13731,7 @@ func (e *emitter) liftFuncLit(lit Node) (string, bool) {
 	e.bindWrites, e.bindBlock, e.bindLits = saved.bindWrites, saved.bindBlock, saved.bindLits
 	e.bindValue = saved.bindValue
 	e.bindOpaque, e.bindAliased, e.bindGotos, e.bindBody = saved.bindOpaque, saved.bindAliased, saved.bindGotos, saved.bindBody
-	e.bindSelfAddr = saved.bindSelfAddr
+	e.bindSelfAddr, e.bindSelfCall = saved.bindSelfAddr, saved.bindSelfCall
 	e.curParams, e.curParamOrder = saved.curParams, saved.curParamOrder
 	if proto == "" {
 		return "", false
@@ -43928,8 +43929,7 @@ func (e *emitter) checkStoreThroughSlice(base string, steps []Node, op []Node) {
 	// slice written ONCE, directly as a view of this frame, is known to view it
 	// (frameViewValue); one reached through a step is not, its holder's mark being
 	// the union of what its elements or fields view.
-	frame := last == 0 && e.frameBacked[base] && e.bindWrites[base] == 1 && !e.bindSelfAddr[base] &&
-		!slices.Contains(e.curParamOrder, base) && e.frameViewValue(e.bindValue[base])
+	frame := last == 0 && e.frameBacked[base] && e.onceBound(base) && e.frameViewValue(e.bindValue[base])
 	if frame {
 		return
 	}
@@ -44037,7 +44037,7 @@ func (e *emitter) targetThroughRef(base string, stars int, steps []Node) (throug
 		return false, false, ""
 	}
 	holder := func(bare bool) (bool, bool, string) {
-		if !bare || e.bindWrites[base] != 1 || e.bindSelfAddr[base] || slices.Contains(e.curParamOrder, base) {
+		if !bare || !e.onceBound(base) {
 			return true, false, ""
 		}
 		// The one value, written as the address of a local of this frame: `p := &n`,
@@ -44328,6 +44328,7 @@ type recvRef struct {
 	root    string // the variable the receiver is reached from, for a message
 	storage string // the storage named: the root's own, or a local it points at
 	local   bool   // storage is this frame's
+	sure    bool   // ... on every path, not only on one: a store INTO it may rely on it (see storageBehind)
 	viaPtr  bool   // a pointer was followed after the root: storage is what it holds
 	opaque  bool   // a step the rules cannot see through, a call's result
 }
@@ -44353,7 +44354,7 @@ func (e *emitter) recvStorage(base string, steps []Node, path []string) recvRef 
 			return r
 		}
 	}
-	r.storage, r.local = e.chainStorage(base, steps)
+	r.storage, r.local, r.sure = e.chainStorage(base, steps)
 	vt := ""
 	if len(steps) == 0 {
 		vt, _ = e.varType(base) // its own pointer, if any, storageBehind followed
@@ -44368,10 +44369,10 @@ func (e *emitter) recvStorage(base string, steps []Node, path []string) recvRef 
 		return r
 	}
 	if x, isLocal := strings.CutPrefix(e.frameHolder[r.storage], "local "); isLocal && e.isFrameVar(x) {
-		r.storage = x
+		r.storage, r.sure = x, false // a pointer the chain reached: what its mark MAY hold
 		return r
 	}
-	r.local = false
+	r.local, r.sure = false, false
 	return r
 }
 
@@ -44432,7 +44433,7 @@ func (e *emitter) checkRecvAt(cname string, r recvRef, args []Node) bool {
 		// -- but not the BLOCK question: a receiver declared outside the block the
 		// reference points into still outlives it.
 		outlives := "this function"
-		if r.local {
+		if r.local && r.sure {
 			if e.blockDepthOf(fr.name) <= e.blockDepthOf(r.storage) {
 				// The two die together -- but the receiver now HOLDS the reference,
 				// and a copy of it carried it out: `var lb Box; lb.set(a[:]); gb = lb`
@@ -44443,7 +44444,7 @@ func (e *emitter) checkRecvAt(cname string, r recvRef, args []Node) bool {
 				continue
 			}
 			outlives = "the block " + fr.origin + " is declared in"
-		} else if r.storage != r.root || r.viaPtr {
+		} else if r.local || r.storage != r.root || r.viaPtr {
 			outlives = "this function, or may"
 		}
 		e.fail("%v: cannot pass %s to %s: it is stored in the receiver %s, which outlives %s; %s",
@@ -44469,33 +44470,36 @@ func (e *emitter) failRecvKept(cname, storage string) {
 // local value, a local pointer to one, or a slice over a local array, and no step
 // went on through a pointer or a slice to storage somewhere else, which is left
 // unknown and so not local.
-func (e *emitter) chainStorage(base string, steps []Node) (storage string, local bool) {
-	storage, local = e.storageBehind(base)
+func (e *emitter) chainStorage(base string, steps []Node) (storage string, local, sure bool) {
+	storage, local, sure = e.storageBehind(base)
 	if !local {
-		return storage, false
+		return storage, false, false
 	}
 	for k, st := range steps {
 		if st.sym != Selector && st.sym != Index {
-			return storage, false
+			return storage, false, false
 		}
 		cur, ok := e.accessChainType(base, steps[:k])
 		if !ok {
-			return storage, false
+			return storage, false, false
 		}
 		switch {
 		case cur.slice:
 			if k != 0 || !e.frameBacked[base] {
-				return storage, false
+				return storage, false, false
 			}
+			// What the slice MAY view is its mark; what it views on every path is
+			// what it was written with, once (see checkStoreThroughSlice).
+			sure = sure && e.onceBound(base) && e.frameViewValue(e.bindValue[base])
 		case e.isPointer(cur.ctype):
 			// The root's own pointer was followed by storageBehind; any other
 			// leads to storage this cannot see.
 			if k != 0 {
-				return storage, false
+				return storage, false, false
 			}
 		}
 	}
-	return storage, true
+	return storage, true, sure
 }
 
 // checkIfaceRecvKept is checkRecvKept for a call through an interface: the value is
@@ -44524,17 +44528,36 @@ func (e *emitter) checkIfaceRecvKept(iface, method, recv string) {
 // pointer itself was read as the storage until 2026-09-18, so `p := &gb;
 // p.set(a[:])` stored a slice of a local array in a package variable, and `p :=
 // &lb; p.set(a[:]); gb = lb` marked p and carried lb out.
-func (e *emitter) storageBehind(name string) (storage string, local bool) {
+//
+// sure says the answer holds on every path: a pointer's mark is what it MAY hold, and
+// one assigned again keeps the mark of its first value -- `p := &lb; p = &gb` --
+// so a callee storing a reference to this frame THROUGH it relies on sure, while one
+// keeping the pointer relies on local, which errs toward refusing.
+func (e *emitter) storageBehind(name string) (storage string, local, sure bool) {
 	if !e.isFrameVar(name) || e.curParams[name] {
-		return name, false
+		return name, false, false
 	}
 	if ct, ok := e.varType(name); !ok || !e.isPointer(ct) {
-		return name, true
+		return name, true, true
 	}
 	if pointee, isLocal := strings.CutPrefix(e.frameHolder[name], "local "); isLocal && e.isFrameVar(pointee) {
-		return pointee, true
+		root, isAddr := e.addrOfRoot(e.bindValue[name])
+		return pointee, true, e.onceBound(name) && isAddr && root == pointee
 	}
-	return name, false
+	return name, false, false
+}
+
+// onceBound reports whether a local is written exactly once in the function being
+// emitted, its own address never taken nor a method called on it, and is not a
+// parameter: what its one value is, it is on every path (bindValue).
+func (e *emitter) onceBound(name string) bool {
+	if e.bindWrites[name] != 1 || e.bindSelfAddr[name] || slices.Contains(e.curParamOrder, name) {
+		return false
+	}
+	// A method called on a pointer is handed the pointer's value, and cannot write
+	// the pointer; called on anything else, a pointer receiver is its address.
+	ct, ok := e.varType(name)
+	return !e.bindSelfCall[name] || ok && e.isPointer(ct)
 }
 
 // checkIntoArgs refuses an argument backed by this frame where the callee stores
@@ -44681,9 +44704,9 @@ func (e *emitter) checkIntoArgsIn(intos []uint32, who string, args []Node) {
 			// a pointer to an OUTER-block local keeps the reference past the block
 			// it belongs to without the function ever returning.
 			outlives := "this function"
-			storage, local := e.storageBehind(tgt)
+			storage, local, sure := e.storageBehind(tgt)
 			switch {
-			case e.isPackageVar(tgt) || !local:
+			case e.isPackageVar(tgt) || !local || !sure:
 			case e.blockDepthOf(r.name) > e.blockDepthOf(storage):
 				outlives = "the block " + r.origin + " is declared in"
 			default:
@@ -44940,7 +44963,7 @@ func (e *emitter) scanBindings(body []int32) {
 	e.bindWrites, e.bindBlock, e.bindLits = map[string]int{}, map[string]int{}, map[string]int{}
 	e.bindValue = map[string][]int32{}
 	e.bindOpaque, e.bindAliased, e.bindGotos = map[string]bool{}, map[string]bool{}, false
-	e.bindSelfAddr = map[string]bool{}
+	e.bindSelfAddr, e.bindSelfCall = map[string]bool{}, map[string]bool{}
 	e.bindSeq++
 	e.bindBody = e.bindSeq
 	e.scanBindingsIn(body, e.bindBody)
@@ -44995,7 +45018,7 @@ func (e *emitter) noteMethodCalls(root string, steps []Node) {
 		if steps[i].sym == Selector && steps[i+1].sym == CallSuffix && e.methodNames[e.soleIdent(steps[i].ast)] {
 			e.bindAliased[root] = true
 			if i == 0 {
-				e.bindSelfAddr[root] = true // on root itself, whose address a pointer receiver takes
+				e.bindSelfCall[root] = true // on root itself, whose address a pointer receiver may take
 			}
 		}
 	}

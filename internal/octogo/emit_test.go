@@ -12747,7 +12747,16 @@ func main() {
 		{"pb := PBox{&gb}\n\tpb.set(a[:])", "it is stored in the receiver pb, which outlives this function, or may"},
 		{"pb := PBox{&gb}\n\tpb.Box.set(a[:])", "it is stored in the receiver pb, which outlives this function, or may"},
 		{"var lob OuterBox\n\tlob.set(a[:])\n\tgob = lob", "cannot store local lob, which holds a pointer into local a"},
-		{"var lb Box\n\tpb := PBox{&lb}\n\tpb.set(a[:])\n\tgb = lb", "cannot store local lb, which holds a pointer into local a"},
+		// A pointer reached through a FIELD, the embedded one here, is known to hold
+		// only what its holder's mark MAY hold -- the field can be re-pointed, `pb.Box
+		// = &gb` -- so a store of a reference to this frame through it is refused, even
+		// where the one value the field ever had is a local (2026-09-24).
+		{"var lb Box\n\tpb := PBox{&lb}\n\tpb.set(a[:])\n\tgb = lb", "it is stored in the receiver pb, which outlives this function, or may"},
+		{"var lb Box\n\tpb := PBox{&lb}\n\tpb.set(a[:])\n\tback[0] = len(lb.d)", "it is stored in the receiver pb, which outlives this function, or may"},
+		{"var lb Box\n\tpb := PBox{&lb}\n\tpb.Box = &gb\n\tpb.set(a[:])", "it is stored in the receiver pb, which outlives this function, or may"},
+		// A pointer re-pointed, and a slice, keep the mark of their first value.
+		{"var lb Box\n\tp := &lb\n\tp = &gb\n\tp.set(a[:])", "it is stored in the receiver p, which outlives this function"},
+		{"var lb Box\n\tp := &lb\n\tp = &gb\n\tfill(p, a[:])", "it is stored through p, which outlives this function"},
 		// A local the callee stores into, copied out afterwards.
 		{"var lb Box\n\tlb.set(a[:])\n\tgb = lb", "cannot store local lb, which holds a pointer into local a"},
 		{"var lb Box\n\tlb.set(a[:])\n\tkeepBox(lb)", "cannot pass local lb, which holds a pointer into local a to keepBox"},
@@ -12779,7 +12788,8 @@ func main() {
 		{"var lb Box\n\t(*Box).set(&lb, a[:])\n\tback[0] = len(lb.d)", ""},
 		{"(*Box).set(&gb, back[:])\n\tf := (*Box).set\n\tf(&gb, back[1:])", ""},
 		{"var lob OuterBox\n\tlob.set(a[:])\n\tback[0] = len(lob.d)", ""},
-		{"var lb Box\n\tpb := PBox{&lb}\n\tpb.set(a[:])\n\tback[0] = len(lb.d)", ""},
+		{"var lb Box\n\tp := &lb\n\tp.set(a[:])\n\tback[0] = len(lb.d)", ""},
+		{"var lb Box\n\tp := &lb\n\tfill(p, a[:])\n\tback[0] = len(lb.d)", ""},
 		{"gob.set(back[:])\n\tgob.Box.set(back[1:])\n\tpb := PBox{&gb}\n\tpb.set(back[2:])", ""},
 	} {
 		t.Run(test.stmt, func(t *testing.T) {
