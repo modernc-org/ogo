@@ -576,13 +576,24 @@ out:
 				t = tok{ch: rune(id), sep: int32(sep), src: int32(off)}
 				s.off += length
 				switch Symbol(id) {
+				case int_lit, float_lit:
+					// An "i" right after a number makes Go's imaginary literal, which
+					// is planned (specs.go, "Complex types (planned)") and is said to
+					// be, rather than left to the parser to report the "i" as an
+					// identifier out of place. The number stands in for it, so what
+					// follows parses as it would have, with no errors of its own.
+					if s.off < len(s.buf) && s.buf[s.off] == 'i' {
+						s.AddErr(s.Position(off), "imaginary literal %si: complex numbers are not supported yet", s.buf[off:s.off])
+						s.off++
+					}
+				}
+				switch Symbol(id) {
 				case
 					INC, // "++"
 					DEC, // "--"
 					BREAK,
 					CONTINUE,
 					FALLTHROUGH,
-					//TODO? imag_lit,
 					RPAREN, // ')'
 					RBRACK, // ']'
 					RBRACE, // '}'

@@ -1,5 +1,5 @@
 func mathOps() {
-    // ERROR "undefined: complex128"
+    // ERROR "complex128: complex numbers are not supported yet"
     var c complex128
 
     a := 1

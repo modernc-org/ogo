@@ -1,0 +1,40 @@
+// Complex numbers are planned (specs.go, "Complex types (planned)"), and until they
+// land what would name one says so: the type names complex64 and complex128,
+// wherever a type or a value is written -- unless a declaration of the program
+// gives the name a meaning, which then resolves as any other. The built-ins
+// complex, real and imag are refused by name, as before.
+
+type complex64 int // the program's own: resolves, and is no complex number
+
+var c64 complex64 = 3
+
+// ERROR complex128: complex numbers are not supported yet
+var c128 complex128
+
+// ERROR complex128: complex numbers are not supported yet
+type C complex128
+
+type S struct {
+	// ERROR complex128: complex numbers are not supported yet
+	c complex128
+	n int
+}
+
+// ERROR complex128: complex numbers are not supported yet
+func f(x complex128) {}
+
+func main() {
+	// ERROR complex128: complex numbers are not supported yet
+	x := complex128(1)
+	// ERROR complex128: complex numbers are not supported yet
+	var a []complex128
+	// ERROR complex128: complex numbers are not supported yet
+	g := complex128
+	// ERROR the complex builtin is not supported yet
+	y := complex(1, 2)
+	// ERROR the real builtin is not supported yet
+	r := real(y)
+	// ERROR the imag builtin is not supported yet
+	i := imag(y)
+	println(c64, x, a, g, y, r, i)
+}

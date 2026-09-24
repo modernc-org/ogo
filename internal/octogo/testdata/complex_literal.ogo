@@ -1,0 +1,18 @@
+// An imaginary literal, a number directly followed by "i", is Go's complex
+// constant, which is planned (specs.go, "Complex types (planned)"). The scanner says
+// so where it is written, and the number stands in for it so the rest of the file
+// parses as it would have; a parser left to meet the "i" reported an identifier out
+// of place instead, and lost the rest of the statement.
+
+func main() {
+	// ERROR imaginary literal 1i: complex numbers are not supported yet
+	a := 1i
+	// ERROR imaginary literal 2.5i: complex numbers are not supported yet
+	b := 1.5 + 2.5i
+	// ERROR imaginary literal 0x1p-2i: complex numbers are not supported yet
+	c := 0x1p-2i
+	// ERROR imaginary literal 1_000i: complex numbers are not supported yet
+	println(a, b, c, 1_000i)
+	i := 2
+	println(3*i, i)
+}

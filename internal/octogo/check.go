@@ -275,6 +275,18 @@ func (f *File) err(pos token.Position, s string, args ...any) {
 	f.errList.AddErr(pos, s, args...)
 }
 
+// errUndefined reports the name nm, written at pos, as undefined -- but for the
+// names of the complex types, which no declaration gave a meaning: those are
+// planned (specs.go, "Complex types (planned)"), which is what is said of them.
+func (f *File) errUndefined(pos token.Position, nm string) {
+	switch nm {
+	case "complex64", "complex128":
+		f.err(pos, "%s: complex numbers are not supported yet", nm)
+	default:
+		f.err(pos, "undefined: %s", nm)
+	}
+}
+
 func (p *Package) newFile(fn string, fsys fs.FS) (f *File) {
 	//TODO- Scope := newScope(Universe, FileScope)
 	//TODO- r = &File{
@@ -5959,7 +5971,7 @@ func (f *File) commRecvAssignTarget(s *Scope, assignHead, postfixComm, chanExpr 
 	switch s.find(nm).(type) {
 	case nil:
 		if !f.isImportQualifier(s, nm) {
-			f.err(id.Position(), "undefined: %s", nm)
+			f.errUndefined(id.Position(), nm)
 		}
 	case *ConstDeclaration, *FuncDeclaration, *TypeDeclaration, *PredeclaredFunc:
 		if !suffixed {
@@ -5998,7 +6010,7 @@ func (f *File) commRecvOkTarget(s *Scope, okItem Node) {
 	switch s.find(nm).(type) {
 	case nil:
 		if !f.isImportQualifier(s, nm) {
-			f.err(id.Position(), "undefined: %s", nm)
+			f.errUndefined(id.Position(), nm)
 		}
 		return
 	case *ConstDeclaration, *FuncDeclaration, *TypeDeclaration, *PredeclaredFunc:
@@ -6450,7 +6462,7 @@ func (f *File) checkAssignment(s *Scope, head, postfix Node) {
 			switch s.find(nm).(type) {
 			case nil:
 				if !f.isImportQualifier(s, nm) {
-					f.err(tok.Position(), "undefined: %s", nm)
+					f.errUndefined(tok.Position(), nm)
 					break
 				}
 				if !lhsSuffixed[i] {
@@ -6491,7 +6503,7 @@ func (f *File) checkAssignment(s *Scope, head, postfix Node) {
 			switch s.find(nm).(type) {
 			case nil:
 				if !f.isImportQualifier(s, nm) {
-					f.err(tok.Position(), "undefined: %s", nm)
+					f.errUndefined(tok.Position(), nm)
 					break
 				}
 				if !lhsSuffixed[i] {
@@ -6628,7 +6640,7 @@ func (f *File) checkAssignment(s *Scope, head, postfix Node) {
 			switch s.find(nm).(type) {
 			case nil:
 				if !f.isImportQualifier(s, nm) {
-					f.err(tok.Position(), "undefined: %s", nm)
+					f.errUndefined(tok.Position(), nm)
 					break
 				}
 				if !lhsSuffixed[i] {
@@ -8026,7 +8038,7 @@ func (f *File) checkSend(s *Scope, chTok Token, fields []Token, indexed, tailInd
 		}
 
 		if s.find(chTok.Src()) == nil && !f.isImportQualifier(s, chTok.Src()) {
-			f.err(chTok.Position(), "undefined: %s", chTok.Src())
+			f.errUndefined(chTok.Position(), chTok.Src())
 		}
 		return // a defined non-variable is left to its own check, as in checkDerefAssign
 	}
@@ -11362,7 +11374,7 @@ func (f *File) checkReceiverType(s *Scope, recv Node) {
 	case *PredeclaredType:
 		f.err(name.Position(), "cannot define new methods on non-local type %s", name.Src())
 	case nil:
-		f.err(name.Position(), "undefined: %s", name.Src())
+		f.errUndefined(name.Position(), name.Src())
 	}
 }
 
@@ -11734,7 +11746,7 @@ func (f *File) checkCallBase(s *Scope, id Token, hasSelector bool) {
 		return
 	}
 	if s.find(id.Src()) == nil && !(hasSelector && f.isImportQualifier(s, id.Src())) {
-		f.err(id.Position(), "undefined: %s", id.Src())
+		f.errUndefined(id.Position(), id.Src())
 	}
 }
 
@@ -13583,7 +13595,7 @@ func (f *File) checkDerefAssign(s *Scope, base Token, rhsNode Node) {
 	d, ok := s.find(base.Src()).(*VarDeclaration)
 	if !ok {
 		if s.find(base.Src()) == nil && !f.isImportQualifier(s, base.Src()) {
-			f.err(base.Position(), "undefined: %s", base.Src())
+			f.errUndefined(base.Position(), base.Src())
 		}
 		return
 	}
@@ -16590,7 +16602,7 @@ func (f *File) checkFactorNames(s *Scope, n Node) {
 				// lines up was not there at all.
 				f.err(id.Position(), "use of package %s not in selector", id.Src())
 			default:
-				f.err(id.Position(), "undefined: %s", id.Src())
+				f.errUndefined(id.Position(), id.Src())
 			}
 		}
 	}
@@ -17566,7 +17578,7 @@ func (f *File) checkCall(s *Scope, callee Token, direct bool, argList Node) {
 		// legitimate builtin call as undefined.
 		switch {
 		case !isBuiltinFuncName(callee.Src()):
-			f.err(callee.Position(), "undefined: %s", callee.Src())
+			f.errUndefined(callee.Position(), callee.Src())
 		case unimplementedBuiltin(callee.Src()):
 			// A builtin the compiler does not implement, said HERE so that every
 			// position sees it. The emitter refuses these too, but only where a call
@@ -19626,7 +19638,7 @@ func (f *File) checkStructEmbedNames(s *Scope, ts *TypeSpecNode) {
 		}
 		td, _, resolved := f.typeDeclNamed(s, name)
 		if !resolved || td.TypeSpec == nil {
-			f.err(tok.Position(), "undefined: %s", name)
+			f.errUndefined(tok.Position(), name)
 			continue
 		}
 		switch td.TypeSpec.TypeNode.(type) {
@@ -19673,7 +19685,7 @@ func (f *File) checkIfaceEmbedNames(s *Scope, ts *TypeSpecNode) {
 		}
 		td, _, ok := f.typeDeclNamed(s, name)
 		if !ok || td.TypeSpec == nil {
-			f.err(m.Name.Position(), "undefined: %s", name)
+			f.errUndefined(m.Name.Position(), name)
 			continue
 		}
 		if _, ok := td.TypeSpec.TypeNode.(*TypeNodeInterface); !ok {
@@ -20266,7 +20278,7 @@ func (f *File) typ(s *Scope, n Node) (r TypeNode) {
 						ident.Index = n.tok
 						r = &ident
 					case nil:
-						f.err(tok.Position(), "undefined: %s", nm)
+						f.errUndefined(tok.Position(), nm)
 					default:
 						f.err(tok.Position(), "%s (%s) is not a type", nm, declKind(sc, d))
 					}
@@ -22390,7 +22402,7 @@ func (f *File) factor(s *Scope, n Node) (r ExpressionNode) {
 						r = constVal{cv: constant.MakeUnknown()}
 					}
 				case nil:
-					f.err(tok.Position(), "undefined: %s", nm)
+					f.errUndefined(tok.Position(), nm)
 					r = constVal{cv: constant.MakeUnknown()}
 				default:
 					// A non-constant name (var, func, type, ...) used where a
