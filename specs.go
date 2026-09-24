@@ -2221,7 +2221,7 @@
 //	AssignOp   = "+=" | "-=" | "*=" | "/=" | "%="
 //		| "&=" | "|=" | "^=" | "&^="
 //		| "<<=" | ">>=" .
-//	LhsItem    = AssignHead { Selector | Index } .
+//	LhsItem    = AssignHead { Selector | Index | CallSuffix } .
 //	ForHeader  = ";" [ HeaderExpression ] ";" [ ForPost ]
 //		| "range" HeaderExpression
 //		| HeaderExpression [ ForRest ] .

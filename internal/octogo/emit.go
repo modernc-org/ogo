@@ -22935,23 +22935,36 @@ func (e *emitter) callTargetBase(base string, steps []Node) (name string, rest [
 	if k < 0 || k == len(steps)-1 || !isAccessChain(steps[k+1:]) || e.declInit || e.deferReplay >= 0 {
 		return "", nil, false
 	}
-	text, ct, _, ok := e.chainCText(base, steps[:k+1])
-	if !ok {
-		return "", nil, false
+	// The base is the chain up to the first POINTER or SLICE after the call: the
+	// call's own result, `dev().ctrl`, or a field of its value holding one,
+	// `mkw().q.y = 2` and `mkw().s[1] = 3`, which Go makes addressable through it
+	// and which were "only simple and field assignment targets are supported yet".
+	// Typed with the rendering thrown away, as callReadBase types, so a prefix that
+	// is neither leaves no call behind.
+	for j := k + 1; j < len(steps); j++ {
+		var ct string
+		var okc bool
+		e.capturePrologue(func() { _, ct, _, okc = e.chainCText(base, steps[:j]) })
+		if !okc {
+			return "", nil, false
+		}
+		u := e.underlyingCType(ct)
+		isSlice := e.isSliceCType(u)
+		if !isSlice && (!e.isPointer(ct) || e.isIfaceCType(ct)) {
+			continue
+		}
+		text, _, _, _ := e.chainCText(base, steps[:j])
+		// Once per occurrence, shared with the readers (callReadBase): the target's
+		// shape is asked about before it is written, and each ask found the same
+		// call.
+		name = e.hoistResult(text, ct, steps[j-1].Pos())
+		e.locals[name] = ct
+		if isSlice {
+			e.sliceVars[name] = sliceElemFromCName(u)
+		}
+		return name, steps[j:], true
 	}
-	u := e.underlyingCType(ct)
-	isSlice := e.isSliceCType(u)
-	if !isSlice && (!e.isPointer(ct) || e.isIfaceCType(ct)) {
-		return "", nil, false
-	}
-	// Once per occurrence, shared with the readers (callReadBase): the target's
-	// shape is asked about before it is written, and each ask found the same call.
-	name = e.hoistResult(text, ct, steps[k].Pos())
-	e.locals[name] = ct
-	if isSlice {
-		e.sliceVars[name] = sliceElemFromCName(u)
-	}
-	return name, steps[k+1:], true
+	return "", nil, false
 }
 
 // factorAccessChain recognises an identifier followed by a run of selectors and
@@ -27302,6 +27315,9 @@ func (e *emitter) emitHeaderAssign(head Node, items, values []Node) bool {
 	targets := []assignTarget{first}
 	for _, item := range items {
 		t, ok := e.lhsItemTarget(item.ast)
+		if ok {
+			t, ok = e.bindCallTarget(t)
+		}
 		if !ok {
 			e.fail("unsupported target in an init statement")
 			return false
@@ -36440,6 +36456,11 @@ type assignTarget struct {
 	// addr is a pointer temporary holding the target's PLACE, fixed ahead of the
 	// stores of the statement (fixTargetAddrs); "" for a place computed at the store.
 	addr string
+	// srcName and srcChain are the target as written where a CALL in it was bound
+	// to a temporary (bindCallTarget), for the rules and the messages that have to
+	// say what the source said: `getq().p`, not the temporary.
+	srcName  string
+	srcChain []Node
 }
 
 // assignTargetCType is the C type a multiple assignment's target stores, where it
@@ -36611,14 +36632,20 @@ func (e *emitter) emitArrayStore(t assignTarget, declare bool, a arrDim, val str
 	e.emit("memcpy(" + dst + ", " + val + ", sizeof(" + a.elem + ")" + arrayCountC(a) + ");\n")
 }
 
-// lhsItemTarget reads one LhsItem (LhsItem = AssignHead { Selector | Index }) as a
-// target, the counterpart of the head target emitMultiAssign is handed.
+// lhsItemTarget reads one LhsItem (LhsItem = AssignHead { Selector | Index |
+// CallSuffix }) as a target, the counterpart of the head target emitMultiAssign is
+// handed. A chain holding a CALL, `gp.y, getp().x = 7, 8`, is read as written: the
+// summaries read targets too, before anything is emitted, so binding the call is
+// left to the statement that stores (bindCallTarget).
 func (e *emitter) lhsItemTarget(ast []int32) (assignTarget, bool) {
 	nodes := slices.Collect(it(ast))
 	if len(nodes) == 0 || nodes[0].sym != AssignHead {
 		return assignTarget{}, false
 	}
 	name := e.soleIdent(nodes[0].ast)
+	if name != "" && e.derefStars(nodes[0].ast) == "" && containsSym(nodes[1:], CallSuffix) {
+		return assignTarget{name: name, chain: nodes[1:], tok: -1}, true
+	}
 	if name == "" || (len(nodes) > 1 && !isAccessChain(nodes[1:])) {
 		return assignTarget{}, false
 	}
@@ -36629,6 +36656,21 @@ func (e *emitter) lhsItemTarget(ast []int32) (assignTarget, bool) {
 	return t, true
 }
 
+// bindCallTarget binds the CALL in a target's chain, `getp().x` and `mkw().q.y`, to
+// a temporary ahead of the statement -- where Go evaluates a target's operands,
+// before the values -- and answers the target as the rest of the chain from it
+// (callTargetBase). A target with no call is answered as it is.
+func (e *emitter) bindCallTarget(t assignTarget) (assignTarget, bool) {
+	if t.stars != "" || t.addr != "" || !containsSym(t.chain, CallSuffix) {
+		return t, true
+	}
+	name, rest, ok := e.callTargetBase(t.name, t.chain)
+	if !ok {
+		return t, false
+	}
+	return assignTarget{name: name, chain: rest, tok: -1, srcName: t.name, srcChain: t.chain}, true
+}
+
 // emitMultiAssign emits a destructuring assignment `a, b = f()` or `a, b := f()`
 // (any target may be the blank identifier). C has no multiple assignment, so the
 // multi-result call's struct is bound to a temporary and each target reads its
@@ -36637,13 +36679,25 @@ func (e *emitter) lhsItemTarget(ast []int32) (assignTarget, bool) {
 // what the head writes around it; op holds the PostfixOp children (the remaining
 // LhsItem targets, the operator, and the call).
 func (e *emitter) emitMultiAssign(head Node, first, stars string, headChain []Node, op []Node) {
-	if len(headChain) != 0 && !isAccessChain(headChain) {
+	// A target through a CALL's pointer or slice, `getp().x, gp.y = 5, 6`: the call
+	// is bound ahead of the statement, where Go evaluates a target's operands, and
+	// the target is the rest of the chain from it (bindCallTarget).
+	calls := stars == "" && containsSym(headChain, CallSuffix)
+	if len(headChain) != 0 && !isAccessChain(headChain) && !calls {
 		e.fail("unsupported target in a multiple assignment")
 		return
 	}
 	targets := []assignTarget{e.qualifiedTarget(assignTarget{name: first, stars: stars, chain: headChain, tok: -1})}
-	if tok, ok := e.soleToken(head.ast); ok {
+	if calls {
+		targets[0] = assignTarget{name: first, chain: headChain, tok: -1}
+	}
+	if tok, ok := e.soleToken(head.ast); ok && !calls {
 		targets[0].tok = tok
+	}
+	var ok bool
+	if targets[0], ok = e.bindCallTarget(targets[0]); !ok {
+		e.fail("unsupported target in a multiple assignment")
+		return
 	}
 	define := false
 	var rhs []Node
@@ -36651,6 +36705,9 @@ func (e *emitter) emitMultiAssign(head Node, first, stars string, headChain []No
 		switch n.sym {
 		case LhsItem:
 			t, ok := e.lhsItemTarget(n.ast)
+			if ok {
+				t, ok = e.bindCallTarget(t)
+			}
 			if !ok {
 				e.fail("unsupported target in a multiple assignment")
 				return
@@ -44154,7 +44211,10 @@ func (e *emitter) carryInto(t assignTarget, declare bool, ctype string, c *carri
 	if !declare {
 		e.refuseStoreBacking(base, c.at, c.r)
 		e.refuseBlockOutlives(base, c.at, c.r)
-		if base == t.name && t.addr == "" {
+		switch {
+		case t.srcName != "":
+			e.refuseStoreThroughRef(t.srcName, 0, t.srcChain, c.at, c.r)
+		case base == t.name && t.addr == "":
 			e.refuseStoreThroughRef(t.name, len(t.stars), t.chain, c.at, c.r)
 		}
 	}

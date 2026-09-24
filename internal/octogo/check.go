@@ -6324,7 +6324,7 @@ func (f *File) checkAssignment(s *Scope, head, postfix Node) {
 		lhs = append(lhs, id)
 		// A leading "*" makes the head a dereference, so the base is not the assigned
 		// value either -- the same thing a selector or index means.
-		suffixed := hasSelectorOrIndex(postfix) || f.headIsDeref(head)
+		suffixed := hasSelectorOrIndex(postfix) || f.headIsDeref(head) || containsSym(slices.Collect(it(postfix.ast)), CallSuffix)
 		lhsSuffixed = append(lhsSuffixed, suffixed)
 		if suffixed {
 			nonNames = append(nonNames, id)
@@ -6345,7 +6345,9 @@ func (f *File) checkAssignment(s *Scope, head, postfix Node) {
 			case LhsItem:
 				lhsItems++
 				f.checkIndexExprs(s, n) // the "k" in a "a, b[k] = ..." target
-				suffixed := hasSelectorOrIndex(n)
+				// A CALL is a step too, `a, f() = 1, 2`: the target is what f
+				// returns, which checkCallValueTargets asks, and not the function.
+				suffixed := hasSelectorOrIndex(n) || containsSym(slices.Collect(it(n.ast)), CallSuffix)
 				for c := range it(n.ast) {
 					if c.sym != AssignHead {
 						continue

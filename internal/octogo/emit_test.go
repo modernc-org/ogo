@@ -11055,6 +11055,15 @@ func main() {
 		{"p := &n\n\tfor i := 0; i < 2; i++ {\n\t\tp.p = &x\n\t}", ""},
 		{"p := &n.q\n\t*p = &n", ""},
 		{"p := &n\n\ta, p.p = 1, &x", ""},
+		// A target through a call's value, and a later target of a list through a
+		// call, which the grammar took from 2026-09-24.
+		{"mkw().q.p = &x", "cannot store the address of local variable x through mkw().q.p"},
+		{"mkw().q.xs = loc[:]", "cannot store a slice backed by local loc through mkw().q.xs"},
+		{"a, getq().p = 1, &x", "cannot store the address of local variable x through getq().p"},
+		{"getq().p, a = &x, 1", "cannot store the address of local variable x through getq().p"},
+		{"a, mkw().q.xs = 1, loc[:]", "through mkw().q.xs"},
+		{"a, getq().p = 1, &gn", ""},
+		{"mkw().q.p, a = &gn, 2", ""},
 	} {
 		t.Run(test.stmt, func(t *testing.T) {
 			src := head + "\t" + test.stmt + "\n" + tail

@@ -39342,6 +39342,75 @@ func main() {
 `,
 		want: "[0 7 0 0] 1\n[0 0 9 0] 2\n[0 0 0 0 0 0 0 0 0 0 0 5] 3 main.B12\n[0 0 0 -2] 4 [0 0 0 -2]\n[0 0 0 -2] 5 [0 0 9 0]\n",
 	}, {
+		// A target reached through a call: the pointer a call returns, and --
+		// refused until 2026-09-24, "only simple and field assignment targets are
+		// supported yet" -- a pointer or a slice a call's VALUE holds, `mkw().q.y =
+		// 2` and `mkw().s[1] = 3`; the head of a list, "unsupported target in a
+		// multiple assignment"; and a later target of one, which did not parse. The
+		// call is bound ahead of the statement, where Go evaluates a target's
+		// operands: `bump(1).x, bump(2).y = val(3), val(4)` runs 1 2 3 4.
+		name: "a target reached through a call",
+		src: `type P struct{ x, y int }
+
+type W struct {
+	q *P
+	s []int
+}
+
+var gp P
+
+var back [3]int
+
+var calls int
+
+func getp() *P { return &gp }
+
+func mkw() W { return W{q: &gp, s: back[:]} }
+
+func bump(k int) *P {
+	calls = calls*10 + k
+	return &gp
+}
+
+func val(k int) int {
+	calls = calls*10 + k
+	return k
+}
+
+func two() (int, int) { return 11, 12 }
+
+// Targets reached through a call: the pointer a call returns, a pointer or a
+// slice a call's value holds, as the head of a list and as a later target.
+func main() {
+	getp().x = 1
+	mkw().q.y = 2
+	mkw().s[1] = 3
+	mkw().q.x += 4
+	mkw().q.y++
+	println(gp.x, gp.y, back)
+	getp().x, gp.y = 5, 6
+	println(gp.x, gp.y)
+	gp.y, getp().x = 7, 8
+	println(gp.x, gp.y)
+	getp().x, mkw().q.y = two()
+	println(gp.x, gp.y)
+	var a int
+	a, mkw().s[2] = 1, 9
+	println(a, back)
+	mkw().s[0], mkw().s[1] = mkw().s[1], mkw().s[0]
+	println(back)
+	calls = 0
+	bump(1).x, bump(2).y = val(3), val(4)
+	println(gp.x, gp.y, calls)
+	if gp.y, getp().x = 21, 22; gp.y > gp.x {
+		println("no")
+	} else {
+		println(gp.x, gp.y)
+	}
+}
+`,
+		want: "5 3 [0 3 0]\n5 6\n8 7\n11 12\n1 [0 3 9]\n[3 0 9]\n3 4 1234\n22 21\n",
+	}, {
 		// A literal of a struct holding an ARRAY as a MEMBER of another literal,
 		// where the outer one is a compound literal -- under &, as an argument, a
 		// receiver, an element of a slice of pointers -- was a compound literal of

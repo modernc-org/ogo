@@ -3,7 +3,8 @@
 // elements. Go refuses a store into one, "cannot assign to mkp().x (neither
 // addressable nor a map index expression)"; the emitter refused most of them in its
 // own words, "only simple and field assignment targets are supported yet"
-// (checkCallValueTargets).
+// (checkCallValueTargets). The target of a list takes a call as the first one does
+// since the grammar let it (LhsItem), and is asked the same.
 
 type P struct{ x, y int }
 
@@ -28,12 +29,17 @@ func getp() *P { return &gp }
 
 func (p P) self() P { return p }
 
+func one() int { return 1 }
+
 func ok() {
 	getp().x = 1
 	mkw().q.x = 2
 	mkw().s[1] = 3
 	getp().y++
 	mkw().q.y += 4
+	getp().x, gp.y = 5, 6
+	gp.y, getp().x = 7, 8
+	gp.x, mkw().s[2] = 9, 10
 	println(gp.x, gp.y, back[1])
 }
 
@@ -52,6 +58,14 @@ func bad() {
 	mkp().x += 2
 	// ERROR cannot assign to gp.self\(\).x
 	gp.self().x = 1
+	var a int
+	// ERROR cannot assign to mkp\(\).y \(neither addressable nor a map index expression\)
+	a, mkp().y = 1, 2
+	// ERROR cannot assign to one\(\) \(neither addressable nor a map index expression\)
+	a, one() = 3, 4
+	// ERROR cannot assign to one\(\) \(neither addressable nor a map index expression\)
+	one() = 5
+	println(a)
 }
 
 func main() {
