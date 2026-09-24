@@ -1012,7 +1012,12 @@ own address never taken nor a method called on it (`bindSelfAddr` -- not
 one value (`bindValue`) is directly the frame's -- `&n`, `loc[:]`, a literal, a make.
 A rule that REFUSES on what it knows may believe a mark; one that permits may not.
 Finding the second version's false refusal found an old bug: `emitMain` never
-cleared `curParamOrder`, so main ran with the previous function's parameters.
+cleared `curParamOrder`, so main ran with the previous function's parameters. The
+receiver rules were the third place the same mark permitted (`storageBehind`,
+`checkRecvAt`, `checkIntoArgs`): they now carry `sure` beside `local`, the store INTO
+a receiver or through an argument relying on sure, the question whether the receiver
+is KEPT still on local. `grep -n 'frameHolder\[\|frameBacked\['` lists the readers
+of the marks; each is a refusal or asks onceBound first.
 
 **PRINTING A VALUE IS A ROW** (2026-09-23). `printf("%v", x)` of an ARRAY printed the
 address of its storage wherever x was not a bare name -- a literal, a field, an

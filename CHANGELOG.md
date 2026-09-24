@@ -475,6 +475,13 @@ shipped section tells a reader on that version that they have behaviour they do 
 
 ### Behaviour changes
 
+- **A reference to the frame handed to a callee that stores it through its receiver
+  or a pointer argument is refused unless that storage is known to be the frame's.**
+  `p := &lb; p = &gb; p.set(a[:])` and `fill(p, a[:])` stored a slice of a local array
+  in gb, the pointer's mark still saying lb. A pointer is known to point at a local
+  where it is written once with its address; one reached through a field, as a
+  method promoted through an embedded pointer is, `pb := PBox{&lb}; pb.set(a[:])`,
+  is not, and such a call is refused.
 - **A reference to the frame stored into a slice's element is refused unless the
   slice is known to view the frame.** `s := loc[:]; s = gs; s[0] = &x` -- a slice
   first bound to a view of a local array, then to package storage -- stored x's
