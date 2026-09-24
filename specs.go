@@ -591,10 +591,12 @@
 // string the length is known, and the conversion is allowed -- its slice is a slice
 // literal's by another spelling, a backing array of the block it is written in
 // (fresh each time it is evaluated) or a static one in a package variable's
-// initializer, and the lifetime rules govern it as they govern a literal's:
+// initializer, and the lifetime rules govern it as they govern a literal's. So is a
+// conversion to a defined type over []byte or []rune, B("..."), under that name:
 //
 //	var reset = []byte("AT+RST\r\n")    // fine: package storage
 //	buf := []rune("héllo")              // fine: five runes of the frame
+//	cmd := Frame("PING")                // fine: type Frame []byte, the frame's
 //
 // A conversion from a RUNE is bounded -- four bytes at most -- so it is allowed, and
 // its bytes are a temporary of the block it is written in:

@@ -40444,6 +40444,41 @@ func main() {
 }
 `,
 		want: "[  main.P] [main.P  ] [00main.P] [mai] [00000mai]\n[   <nil>] [<nil>   ] [000<nil>] [<nil>]\n[ *main.E] [00000*ma] [*main.E  ]\n[   <nil>] [<nil>   ] [000<nil>] [<nil>] [   <nil>] [   <nil>]\n[     err] [err     ] [e]\n",
+	},
+	{
+		// A defined type over []byte or []rune converted from a CONSTANT string,
+		// `B("...")`, is the slice literal `[]byte("...")` is, under the type's name:
+		// a static object at package scope, the frame's storage in a function. It
+		// was refused in every position, "cannot convert to B".
+		name: "a defined byte slice type from a constant string",
+		src: `type B []byte
+
+type R []rune
+
+type B2 B
+
+const k = "héllo"
+
+var gb = B("pkg")
+
+func sum(b B) int {
+	n := 0
+	for _, c := range b {
+		n += int(c)
+	}
+	return n
+}
+
+func main() {
+	b := B("ab" + "c")
+	r := R(k)
+	b2 := B2("xy")
+	var e B = B("")
+	printf("%s %d %d %d %d %x %v\n", gb, len(b), sum(b), sum(B("zz")), len(r), b2, e == nil)
+	printf("%q %d %s\n", r, r[1], b[1:])
+}
+`,
+		want: "pkg 3 294 244 5 7879 false\n['h' '\xc3\xa9' 'l' 'l' 'o'] 233 bc\n",
 	}}
 
 // TestEmitCRun compiles emitted C with a host compiler and runs it, checking what

@@ -20119,11 +20119,22 @@ func (e *emitter) constBytesConv(typeAST, arg []int32) (elem string, vals []stri
 	if !e.stringSliceConv(typeAST, arg) {
 		return "", nil, false
 	}
+	elem, _ = e.litSliceType(typeAST)
+	return e.constStringElems(elem, arg)
+}
+
+// constStringElems folds arg to a constant string and answers with its elements as
+// C literals for a slice of elem: the bytes for uint8_t, the runes a range over the
+// string yields for int32_t.
+func (e *emitter) constStringElems(elem string, arg []int32) (string, []string, bool) {
+	if elem != "uint8_t" && elem != "int32_t" {
+		return "", nil, false
+	}
 	str, ok := e.foldConstString(arg)
 	if !ok {
 		return "", nil, false
 	}
-	elem, _ = e.litSliceType(typeAST)
+	var vals []string
 	if elem == "uint8_t" {
 		for i := 0; i < len(str); i++ {
 			vals = append(vals, strconv.Itoa(int(str[i])))
@@ -20134,6 +20145,42 @@ func (e *emitter) constBytesConv(typeAST, arg []int32) (elem string, vals []stri
 		vals = append(vals, strconv.Itoa(int(r)))
 	}
 	return elem, vals, true
+}
+
+// byteSliceTypeElem answers the element of a defined type over []byte or []rune --
+// "uint8_t" or "int32_t" -- and whether ct is one.
+func (e *emitter) byteSliceTypeElem(ct string) (string, bool) {
+	ut := e.underlyingCType(ct)
+	if !e.isSliceCType(ut) {
+		return "", false
+	}
+	switch elem := sliceElemFromCName(ut); elem {
+	case "uint8_t", "int32_t":
+		return elem, true
+	}
+	return "", false
+}
+
+// constBytesConvNamed recognises `B("...")` of a CONSTANT string for a defined type
+// B over []byte or []rune: constBytesConv under the type's name, the same slice
+// literal by another spelling -- a static object at package scope and the frame's
+// storage in a function. It was refused, "cannot convert to B", where `[]byte("...")`
+// was not.
+func (e *emitter) constBytesConvNamed(ast []int32) (elem string, vals []string, ok bool) {
+	recv, suffix, isCall := e.directCall(e.unparenExpr(ast))
+	if !isCall {
+		return "", nil, false
+	}
+	ct, used, isConv := e.convChainHead(recv, suffix)
+	if !isConv || used != len(suffix) {
+		return "", nil, false
+	}
+	elem, isBytes := e.byteSliceTypeElem(ct)
+	args := e.callArgExprs(suffix[used-1].ast)
+	if !isBytes || len(args) != 1 {
+		return "", nil, false
+	}
+	return e.constStringElems(elem, args[0].ast)
 }
 
 // constBytesConvOf is constBytesConv for an expression that is exactly such a
@@ -20351,6 +20398,19 @@ func (e *emitter) floatConvHelper(ct string) (string, bool) {
 // string(rune), string([]byte) -- which needs the allocation this target does not
 // have, and is refused.
 func (e *emitter) emitConversion(ct string, arg Node) {
+	// A CONSTANT string to a defined type over []byte or []rune is the slice literal
+	// `[]byte("...")` is (constBytesConvNamed); a run-time string's copy needs the
+	// allocation `[]byte(s)` is refused for, and says so as that does.
+	if elem, isBytes := e.byteSliceTypeElem(ct); isBytes {
+		if _, vals, ok := e.constStringElems(elem, arg.ast); ok {
+			e.emitConstBytesConv(elem, vals)
+			return
+		}
+		if src, ok := e.inferCType(arg.ast); ok && e.underlyingCType(src) == cString {
+			e.failAt(arg.ast, "a string conversion needs allocation, which the target does not have")
+			return
+		}
+	}
 	// A SLICE to a defined array type is a copy made ahead of the statement, and
 	// the conversion is that temporary wherever it stands (hoistSliceArrayConv).
 	if dim, isArray := e.namedArrays[ct]; isArray && e.isSliceOperand(arg.ast) {
@@ -43459,6 +43519,9 @@ func (e *emitter) frameRefOf(ast []int32) (frameRef, bool) {
 	// `[]byte("...")` of a constant is the same slice literal by another spelling
 	// (constBytesConv), backed by an array of this frame.
 	if _, _, ok := e.constBytesConvOf(ast); ok && !e.pkgScope {
+		return constBytesRef(), true
+	}
+	if _, _, ok := e.constBytesConvNamed(ast); ok && !e.pkgScope {
 		return constBytesRef(), true
 	}
 	// And so is what make allocates in a function: a backing array of the frame.

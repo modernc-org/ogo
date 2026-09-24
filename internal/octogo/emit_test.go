@@ -16598,6 +16598,19 @@ func TestEmitCConstBytesConv(t *testing.T) {
 			"cannot return a conversion of a constant string to a slice"},
 		{"a run-time string", "func main() {\n\ts := \"hi\"\n\tb := []byte(s)\n\tprintln(len(b))\n}\n",
 			"a string conversion needs allocation"},
+		// The same under a defined type's name, `B("...")`, which was refused outright,
+		// "cannot convert to B" -- with the same rules for where its backing may go.
+		{"a defined type's package variable", "type B []byte\n\nvar p = B(\"xyz\")\n\nfunc main() { println(len(p)) }\n", ""},
+		{"a defined rune type of a named constant", "type R []rune\n\nconst k = \"héllo\"\n\nfunc main() {\n\tr := R(k)\n\tprintln(len(r))\n}\n", ""},
+		{"a defined type over a defined type", "type B []byte\n\ntype B2 B\n\nfunc main() {\n\tb := B2(\"xy\")\n\tprintln(len(b))\n}\n", ""},
+		{"a defined type stored in a package variable", "type B []byte\n\nvar g B\n\nfunc f() { g = B(\"x\") }\n\nfunc main() { f() }\n",
+			"cannot store a conversion of a constant string to a slice"},
+		{"a defined type returned", "type B []byte\n\nfunc f() B { return B(\"xy\") }\n\nfunc main() { println(len(f())) }\n",
+			"cannot return a conversion of a constant string to a slice"},
+		{"a defined type passed to a keeper", "type B []byte\n\nvar g B\n\nfunc keep(b B) { g = b }\n\nfunc main() { keep(B(\"hi\")) }\n",
+			"cannot pass a conversion of a constant string to a slice"},
+		{"a defined type of a run-time string", "type B []byte\n\nfunc main() {\n\ts := \"hi\"\n\tb := B(s)\n\tprintln(len(b))\n}\n",
+			"a string conversion needs allocation"},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			fsys := fstest.MapFS{"main.ogo": &fstest.MapFile{Data: []byte(test.src)}}
