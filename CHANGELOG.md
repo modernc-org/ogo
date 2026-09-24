@@ -20,6 +20,8 @@ shipped section tells a reader on that version that they have behaviour they do 
 
 ### Language
 
+- **A for clause's target may go through a call**, `getp().x, i = getp().x+1, i+1`
+  in the post and the same in the init, as a statement's may since this release.
 - **A select clause may be written on one line.** `select { case v = <-ch: a = 1 }`
   did not parse, "expected ;" at the closing brace: a select clause's statements
   each had to end in a semicolon, where a switch clause's and a block's last one
@@ -239,6 +241,12 @@ shipped section tells a reader on that version that they have behaviour they do 
 
 ### Fixed
 
+- **A for clause's post binds what it needs inside the loop.** A post of several
+  targets whose values needed binding -- an operand with an effect beside another,
+  an index with one, a call returning an array -- bound it ahead of the whole loop,
+  where it ran once: `for i, j := 0, 0; i < 3; i, j = i+1, f(7)+f(8)` called f(7)
+  once for three iterations, silently, and `i, j = f(i), j+1` did not build. A post
+  of one assignment was right.
 - **A method called on a conversion is a call where a print orders its arguments.**
   `println(T(3).bump(), g)` for a bump writing g printed 3 0 on the host, the
   conversion counting as pure and the arguments left to C's order; it prints 3 1, as

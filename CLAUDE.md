@@ -990,7 +990,12 @@ arguments after one whose String() may run, and took a LOCAL read by name to be 
 of the method's reach -- whose receiver held its address, 77 on the board for Go's 1
 (`printArgUnreachable` asks `aliasedLocals` since; its own comment had named the
 receiver as the way in). Tuple assignment, a return against its defers, and `&&`/`||`
-operands binding a call were probed the same way and held. The STORE rules had it
+operands binding a call were probed the same way and held. A for clause's POST is
+the one clause emitted inside another statement, and what it bound went into the
+FOR's prologue, ahead of the loop, running once (2026-09-24: `i, j = i+1,
+f(7)+f(8)`, an index with an effect and an array result beside another value, each
+silent; emitOwnPrologue) -- a new lowering that binds is asked where its bindings
+land. The STORE rules had it
 as well (2026-09-24), the one place it cost memory safety: a reference to the frame
 was refused in a package variable and judged by block in a local, both asked of the
 target's ROOT -- so `p := &gq; p.p = &x`, `getq().p = &x`, `w.q.p = &x` and `*pp =
@@ -1076,10 +1081,7 @@ type, and one returning an ARRAY called at all, `func() Set { ... }()`; a method
 a call's array result deferred or started on a cog, `defer mk(5).Count()` and `go
 mk(5).Count()`, or with the call parenthesised, `(mk(1)).Count()` (as a value and a
 statement it works since 2026-09-24); a field a call's pointer result lacks,
-`getp().x`, refused as "unsupported call in expression"; a target through a call in
-a for clause's post assignment, `for ...; getp().x, i = ...` ("unsupported target in
-a for clause's assignment"; as a statement, the head of a list and a later target
-it works since 2026-09-24); an
+`getp().x`, refused as "unsupported call in expression"; an
 element-wise printf verb of a multi-dimensional array, `printf("%d", grid)` ("cannot
 tell the type of this argument"; %v prints one); `[]byte(s)`
 and `[]rune(s)` of a string VARIABLE (a copy of a length known at run time; a
