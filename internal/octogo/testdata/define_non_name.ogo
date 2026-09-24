@@ -1,0 +1,47 @@
+// ":=" declares names, and a target that is not one -- a field, an element, a
+// pointee, a call's result -- is refused, in the statement, an if or a switch
+// header, a for clause and a select case. `for i, getp().x := 0, 1` compiled, the
+// target left undeclared and unwritten; `a, getp().x := 1, 2` declared getp and
+// reported it unused, and `if a, h.x := ...` did the same with h.
+
+type P struct {
+	x  int
+	ok bool
+}
+
+var gp P
+
+var ch chan int
+
+func getp() *P { return &gp }
+
+func main() {
+	var a, v int
+	var h P
+	// ERROR non-name target on the left side of :=
+	a, getp().x := 1, 2
+	// ERROR non-name target on the left side of :=
+	getp().x, a := 1, 2
+	// ERROR non-name target on the left side of :=
+	if a, getp().x := 1, 2; a > 0 {
+		v = 1
+	}
+	// ERROR non-name target on the left side of :=
+	for i, getp().x := 0, 1; i < 1; i++ {
+		v = 2
+	}
+	// ERROR non-name target on the left side of :=
+	switch a, h.x := 3, 4; a {
+	case 3:
+		v = 5
+	}
+	// ERROR non-name target on the left side of :=
+	b, h.x := 1, 2
+	select {
+	// ERROR non-name target on the left side of :=
+	case v, getp().ok := <-ch:
+		a = 1
+	default:
+	}
+	println(a, v, b, h.x)
+}

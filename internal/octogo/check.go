@@ -3564,6 +3564,12 @@ func (f *File) exprSoleIdent(n Node) (Token, bool) {
 func (f *File) declareForInitVar(s *Scope, lhs, rhs Node, define bool) {
 	id, ok := f.exprSoleIdent(lhs)
 	if !ok {
+		// `for i, getp().x := 0, 1`: ":=" declares names, and was taken here with
+		// the target that is not one left undeclared and unwritten.
+		if tok := f.tok(lhs.Pos()); define && tok.IsValid() {
+			f.err(tok.Position(), "non-name target on the left side of := (a field, element or pointee target takes =)")
+			return
+		}
 		f.checkNames(s, lhs)
 		return
 	}
@@ -3626,7 +3632,9 @@ func (f *File) declareHeaderVars(s *Scope, head Node, items []Node) {
 			if c.sym != AssignHead {
 				continue
 			}
-			if id, ok := f.assignHeadIdent(c); ok {
+			// The name before the steps is no target of ":=" -- `if a, h.n := ...` and
+			// `a, getp().x := ...` declared h and getp, and reported them unused.
+			if id, ok := f.assignHeadIdent(c); ok && f.lhsItemIsName(item) {
 				ids = append(ids, id)
 			} else if tok := f.tok(c.Pos()); tok.IsValid() {
 				f.err(tok.Position(), "non-name target on the left side of := (a field, element or pointee target takes =)")
@@ -3665,7 +3673,9 @@ func (f *File) declareHeaderValues(s, ds *Scope, head Node, items []Node, values
 			if c.sym != AssignHead {
 				continue
 			}
-			if id, ok := f.assignHeadIdent(c); ok {
+			// The name before the steps is no target of ":=" -- `if a, h.n := ...` and
+			// `a, getp().x := ...` declared h and getp, and reported them unused.
+			if id, ok := f.assignHeadIdent(c); ok && f.lhsItemIsName(item) {
 				ids = append(ids, id)
 			} else if tok := f.tok(c.Pos()); tok.IsValid() {
 				f.err(tok.Position(), "non-name target on the left side of := (a field, element or pointee target takes =)")
@@ -5995,7 +6005,7 @@ func (f *File) lhsItemIdent(item Node) (Token, bool) {
 func (f *File) lhsItemIsName(item Node) bool {
 	for c := range it(item.ast) {
 		switch c.sym {
-		case Selector, Index:
+		case Selector, Index, CallSuffix:
 			return false
 		case AssignHead:
 			if f.headIsDeref(c) {
@@ -6725,6 +6735,11 @@ func (f *File) checkAssignment(s *Scope, head, postfix Node) {
 		if nm == "_" {
 			continue
 		}
+		// A target that is no name, `getp().x`, declares nothing -- it was refused
+		// above -- and declared as its head it was "declared and not used: getp".
+		if i < len(lhsSuffixed) && lhsSuffixed[i] {
+			continue
+		}
 		if s.Declarations[nm] != nil {
 			// Already declared in this scope, so ":=" assigns to it rather than
 			// introducing anything -- Go's mixed short declaration, "a, b := f()"
@@ -6777,7 +6792,8 @@ func (f *File) checkAssignment(s *Scope, head, postfix Node) {
 		f.localVars = append(f.localVars, vd)
 		newCount++
 	}
-	if newCount == 0 {
+	// A non-name target is the error there, reported above, as Go reports it alone.
+	if newCount == 0 && len(nonNames) == 0 {
 		f.errNoNewVars(f.tok(head.Pos()))
 	}
 }
