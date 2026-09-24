@@ -20,6 +20,17 @@ shipped section tells a reader on that version that they have behaviour they do 
 
 ### Language
 
+- **A method may be called on a call's array result.** `mk(5).Count()`,
+  `p.Union(q).Union(r)` and `box.get().With(3).Count()` for a `type Set [4]uint32`,
+  through an interface's slot as well, were refused in every position a value
+  stands in -- a declaration, an assignment, an argument, a condition, a switch tag,
+  a range, an index, a comparison, a deferred call's argument -- and as a statement:
+  "unsupported call in expression", "cannot infer a type". C returns no array, so
+  the call is a statement writing a temporary, and the compiler knew that of a
+  call's array that is indexed and not of one that is a receiver. Each call runs
+  once, in Go's order. Deferring one or starting one on a cog, `defer
+  mk(5).Count()`, and a parenthesised receiver, `(mk(1)).Count()`, are still
+  refused.
 - **A conversion to a slice or an array type written out is spelt as Go spells
   it.** `[]int(xs)`, `[3]int(s)` and `[]int(get())[1]` were syntax errors -- the
   grammar gave a bracketed type a composite literal and no call -- and the
@@ -439,6 +450,17 @@ shipped section tells a reader on that version that they have behaviour they do 
 
 ### Behaviour changes
 
+- **A pointer method called on a value with no storage is refused, in Go's words.**
+  A method with a pointer receiver takes its receiver's address, and a call's
+  result has none -- nor has a field of one, an element of an array in one, or a
+  conversion. `mka()[0].Set(1)` for an array of structs and `mkw().p.Set(1)` for a
+  field of a call's value compiled, calling the method on a temporary the emitter
+  had bound the value to, a write nobody read; `mkp().Set(1)` and `C(3).Inc()` were
+  refused as "only <pkg>.<Func>(args) ... call statements are supported yet". Go
+  refuses each, "cannot call pointer method Set on P". A method reached through a
+  pointer, or through a slice's elements, is called on storage and is Go. And a call
+  on another call's result, `&gb.self().self().n`, is asked what one call is: only
+  the last call of a chain was typed.
 - **A value that is no pointer, stored where a pointer is wanted, is refused in Go's
   words.** `hp = P{}` -- a struct, an array, a slice, a function or a channel where a
   pointer goes -- was taken in a variable, a field, an element, a chain, an

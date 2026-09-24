@@ -936,6 +936,15 @@ happens once, where the value is emitted. The same sweep found a
 return with a defer storing its named results one after another, `return b, a`
 returning 2, 2 for every type: a list of stores is a simultaneous assignment, which
 `emitSimultaneous` knew and the return did not (`returnValueStands`).
+A RECEIVER is a position too (2026-09-24), found by two domain programs -- a bitset on
+`type Set [4]uint32` and 3x3 matrices on `type Mat [3][3]float64`: `mk(5).Count()`
+and `rot.Mul(rot).Mul(rot)` were refused in every position, the chain walks binding
+a call's array result where steps INDEX it and not where a method is called on it
+(`arrayOutCallC`, `chainResultCur`). Making that writable made `mkA().Put(1)`, a
+POINTER method on the call's value, compile -- and the rule was nowhere:
+`mka()[0].Set(1)` and `mkw().p.Set(1)` had compiled all along, calling the method on
+the emitter's temporary (`callChainWalk`, which types every call of a chain now,
+not only the last).
 
 **A STRUCT HOLDING AN ARRAY IS COPIED, NEVER ASSIGNED** (2026-09-23). The target's C
 compiler copy-initializes and assigns one only at some SIZES -- "Unable to multiply
@@ -1022,7 +1031,10 @@ parameter for it -- an array BESIDE another result is one since 2026-09-24, held
 the result struct as its typedef and written through an out parameter,
 resultCTypeIn); a function literal called and then read through, `func() P { ...
 }().x` ("a function literal may only be called where it stands"), for any result
-type; a store into a field of a call's
+type, and one returning an ARRAY called at all, `func() Set { ... }()`; a method of
+a call's array result deferred or started on a cog, `defer mk(5).Count()` and `go
+mk(5).Count()`, or with the call parenthesised, `(mk(1)).Count()` (as a value and a
+statement it works since 2026-09-24); a store into a field of a call's
 VALUE, `mk(1).n = 5`, refused as Go refuses it but in the emitter's words ("only
 simple and field assignment targets are supported yet"), and a field a call's
 pointer result lacks, `getp().x`, as "unsupported call in expression"; an
