@@ -487,6 +487,9 @@ shipped section tells a reader on that version that they have behaviour they do 
 
 ### Behaviour changes
 
+- **Two switch or select clauses on one line need a semicolon between them**, as in
+  Go: `switch a { case 1: v = 2 default: v = 3 }` compiled, the clause running into
+  the next; it is "syntax error: unexpected keyword default at end of statement".
 - **A target of ":=" that is no name is refused wherever it is written.** `for i,
   getp().x := 0, 1` compiled; `a, getp().x := 1, 2` and `if a, h.x := 1, 2` were
   refused as "declared and not used: getp" (or h). Each is "non-name target on the
