@@ -29063,6 +29063,37 @@ func main() {
 `,
 		want: "called\nadded 5\nloop 0\n18\n",
 	}, {
+		// A method called on a CONVERSION is a call: the conversion's purity said
+		// nothing of it, so a print holding one was not bound in order, and the
+		// host's compiler read g before `T(3).bump()` wrote it (nodeHasEffect).
+		name: "a method on a conversion, in a print's order",
+		src: `type T int
+
+var g int
+
+func (t T) bump() int {
+	g++
+	return int(t)
+}
+
+type S string
+
+func (s S) mark() int {
+	g += 10
+	return len(s)
+}
+
+// A method called on a conversion is a call, and a print binds the arguments
+// after one in order: the first println read g before the call on the host.
+func main() {
+	println(T(3).bump(), g)
+	x := T(5).bump() + g
+	println(x, S("ab").mark(), g)
+	printf("%d %d\n", T(6).bump(), g)
+}
+`,
+		want: "3 1\n7 2 12\n6 13\n",
+	}, {
 		// A name declared in the header of an if, a for or a switch was typed by its
 		// value's KIND alone, and the kind of `&x` is x's: `if p := &gx; *p > 4` was
 		// "cannot indirect p (variable of type int)", and the loop that walks a list by

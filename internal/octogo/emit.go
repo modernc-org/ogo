@@ -16341,7 +16341,11 @@ func (e *emitter) nodeHasEffect(n Node) bool {
 		if me, isME := e.methodExprAt(slices.Collect(it(n.ast))); isME && len(me.rest) != 0 {
 			return true
 		}
-		if recv, _, isCall := e.factorCall(slices.Collect(it(n.ast))); isCall && !e.pureCall(recv) {
+		// A pure head -- a conversion, len -- with a CALL after it, `T(3).bump()`, is
+		// a call: the conversion's purity said nothing of the method, and a print
+		// left `println(T(3).bump(), g)` to C's argument order, which read g first
+		// on the host.
+		if recv, suffix, isCall := e.factorCall(slices.Collect(it(n.ast))); isCall && (!e.pureCall(recv) || len(suffix) > 1 && containsSym(suffix[1:], CallSuffix)) {
 			return true
 		}
 		// A method called on a PARENTHESISED expression is a call like any
