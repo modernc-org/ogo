@@ -1131,9 +1131,16 @@ literal took none at all, `"0123456789abcdef"[n&15]`. Two more surfaced the next
 from semantic batteries, not from the grammar: a select's comma-ok flag took a bare
 name only, `case v, r.ok = <-ch:`, and a NAMED composite literal took no suffix, `P{1,
 2}.x` (the bracketed one had). A battery that writes what Go programs write finds
-these; reading the grammar did not. **Check Factor and HeaderFactor
+these; reading the grammar did not. Two more on 2026-09-24, the same way: a later
+target of a list took no call, `gp.y, getp().x = 7, 8` (LhsItem), and a select
+clause required a semicolon before its closing brace, `select { case v = <-ch: a = 1
+}`, which a switch clause and a block did not (CommClause) -- the three statement
+lists are meant to read alike, and one did not. **Check Factor and HeaderFactor
 against each other when either changes**; they are meant to differ by one production
 (HeaderFactor has no literal after a name, which is what keeps `if x == T {` a block).
+`ogo fmt` keeps a statement's body on the line it was written on -- `if c { v = 1 }`,
+`switch a { case 1: v = 2 }` -- where gofmt breaks it onto lines of its own; the run
+cases are gofmt's layout already, so TestFormatMatchesGofmt does not see it.
 Latent ones, measured and not faults today: a store through a chain, `r.m[a()][b()]
 = v()`, leaves its calls to C's operand order, which gcc 14 and flexcc both take left
 to right (only the bare `name[i] = v` path binds them); a method called on a

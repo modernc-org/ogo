@@ -20,6 +20,10 @@ shipped section tells a reader on that version that they have behaviour they do 
 
 ### Language
 
+- **A select clause may be written on one line.** `select { case v = <-ch: a = 1 }`
+  did not parse, "expected ;" at the closing brace: a select clause's statements
+  each had to end in a semicolon, where a switch clause's and a block's last one
+  need not, as in Go.
 - **A target may be reached through a call's value, and a list's later target may
   hold a call.** A store through a pointer or a slice a call's value holds,
   `mkw().q.y = 2` and `mkw().s[1] = 3`, was "only simple and field assignment
@@ -486,8 +490,9 @@ shipped section tells a reader on that version that they have behaviour they do 
   `mka()[0].x = 8`, `mkp().x++`, `mkp().x += 2` and `Row(r)[0] = 7`: "cannot assign
   to mkp().x (neither addressable nor a map index expression)", where the emitter
   said "only simple and field assignment targets are supported yet" or "cannot assign
-  to a conversion". A target reached through the pointer a call returns, `getp().x =
-  1`, is storage, and is taken.
+  to a conversion" -- and in an if or a switch init, `if a, mkp().x = 1, 2; a > 0`,
+  "unsupported target in an init statement". A target reached through the pointer a
+  call returns, `getp().x = 1`, is storage, and is taken.
 - **A pointer method called on a value with no storage is refused, in Go's words.**
   A method with a pointer receiver takes its receiver's address, and a call's
   result has none -- nor has a field of one, an element of an array in one, or a
