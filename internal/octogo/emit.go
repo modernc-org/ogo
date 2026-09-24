@@ -5966,6 +5966,7 @@ type emitter struct {
 	bindLits           map[string]int          // ... a name declared with a value, which may set its fields, and the block it is in
 	bindValue          map[string][]int32      // ... the value a name is given by a plain `x := v` or `x = v`, the last one seen (see targetThroughRef, which believes it where bindWrites is 1)
 	bindAliased        map[string]bool         // ... a name something else may write through: its address is taken, or a method is called on it
+	bindSelfAddr       map[string]bool         // ... a name whose OWN value something else may write: `&x` of x itself, or a method called on x itself -- not on an element or a field of it, which bindAliased counts too
 	bindGotos          bool                    // ... it has a goto, which may run a block's writes again after a later one
 	bindBody, bindSeq  int                     // ... the block of its body, where its parameters are written, and the last block numbered
 	recvLeaks          map[string]leak         // a pointer method's RECEIVER kept where it outlives the call: leakGlobal, leakCog (see recvEdge)
@@ -13599,6 +13600,7 @@ func (e *emitter) liftFuncLit(lit Node) (string, bool) {
 		bindLits                    map[string]int
 		bindValue                   map[string][]int32
 		bindOpaque, bindAliased     map[string]bool
+		bindSelfAddr                map[string]bool
 		bindGotos                   bool
 		bindBody                    int
 		curParams                   map[string]bool
@@ -13628,6 +13630,7 @@ func (e *emitter) liftFuncLit(lit Node) (string, bool) {
 		funcValueOf:   maps.Clone(e.funcValueOf), funcParamAlias: e.funcParamAlias,
 		bindWrites: e.bindWrites, bindBlock: e.bindBlock, bindLits: e.bindLits, bindValue: e.bindValue,
 		bindOpaque: e.bindOpaque, bindAliased: e.bindAliased, bindGotos: e.bindGotos, bindBody: e.bindBody,
+		bindSelfAddr: e.bindSelfAddr,
 		curParams: e.curParams, curParamOrder: e.curParamOrder,
 		localTypes: e.localTypes, gotoTargets: e.gotoTargets, localConsts: e.localConsts,
 		localConstSpecs: e.localConstSpecs, inheritedTypes: e.inheritedTypes,
@@ -13727,6 +13730,7 @@ func (e *emitter) liftFuncLit(lit Node) (string, bool) {
 	e.bindWrites, e.bindBlock, e.bindLits = saved.bindWrites, saved.bindBlock, saved.bindLits
 	e.bindValue = saved.bindValue
 	e.bindOpaque, e.bindAliased, e.bindGotos, e.bindBody = saved.bindOpaque, saved.bindAliased, saved.bindGotos, saved.bindBody
+	e.bindSelfAddr = saved.bindSelfAddr
 	e.curParams, e.curParamOrder = saved.curParams, saved.curParamOrder
 	if proto == "" {
 		return "", false
@@ -43918,10 +43922,14 @@ func (e *emitter) checkStoreThroughSlice(base string, steps []Node, op []Node) {
 	if last < 0 {
 		return
 	}
-	frame := e.frameBacked[base]
-	if last != 0 {
-		frame = e.frameHolder[base] != ""
-	}
+	// KNOWN means must, not may, as targetThroughRef's does: the marks say what a
+	// slice MAY view, and one assigned again keeps the mark of its first value --
+	// `s := loc[:]; s = gs; s[0] = &x` stored x's address in gs's array. So only a
+	// slice written ONCE, directly as a view of this frame, is known to view it
+	// (frameViewValue); one reached through a step is not, its holder's mark being
+	// the union of what its elements or fields view.
+	frame := last == 0 && e.frameBacked[base] && e.bindWrites[base] == 1 && !e.bindSelfAddr[base] &&
+		!slices.Contains(e.curParamOrder, base) && e.frameViewValue(e.bindValue[base])
 	if frame {
 		return
 	}
@@ -43933,6 +43941,41 @@ func (e *emitter) checkStoreThroughSlice(base string, steps []Node, op []Node) {
 			return
 		}
 	}
+}
+
+// frameViewValue reports whether a slice value is DIRECTLY a view of this frame's
+// storage -- a slice of a local array, `loc[:]`, a slice literal or a make -- which
+// is what a store through a slice written once with it may rely on. A call's result
+// is not, whatever a summary says it may view.
+func (e *emitter) frameViewValue(ast []int32) bool {
+	if ast == nil {
+		return false
+	}
+	if _, _, _, isMake := e.makeSliceInit(ast); isMake {
+		return true
+	}
+	fac, ok := e.soleFactorNode(ast)
+	if !ok {
+		return false
+	}
+	if typeAST, _, isLit := e.factorArrayLit(fac); isLit {
+		_, isSlice := e.litSliceType(typeAST)
+		return isSlice
+	}
+	kids := slices.Collect(it(fac.ast))
+	if len(kids) != 2 || kids[0].sym != 0 || e.f.ch(kids[0].tok) != IDENT || kids[1].sym != FactorSuffix {
+		return false
+	}
+	steps := slices.Collect(it(kids[1].ast))
+	if len(steps) != 1 || steps[0].sym != Index {
+		return false
+	}
+	if _, _, _, isSlice := e.sliceParts(steps[0].ast); !isSlice {
+		return false
+	}
+	name := e.src(kids[0].tok)
+	_, isArr := e.arrayVar(name)
+	return isArr && e.isFrameVar(name)
 }
 
 // checkStoreThroughRef refuses storing a reference to this frame where the target
@@ -43985,7 +44028,7 @@ func (e *emitter) refuseStoreThroughRef(base string, stars int, steps []Node, v 
 // KNOWN means must, not may: a holder mark says what a variable MAY reach, and a
 // pointer assigned again keeps the mark of its first value -- `p := &n; p = &gq;
 // p.p = &x` would pass on it. So only a bare local pointer written ONCE, its address
-// never taken and no method called on it (bindWrites, bindAliased), is known to point
+// never taken and no method called on it (bindWrites, bindSelfAddr), is known to point
 // where its one value did. A pointer reached through a step -- an element, a field,
 // a range value -- is not, whatever its holder is marked with: a slice's mark is its
 // elements' union.
@@ -43994,7 +44037,7 @@ func (e *emitter) targetThroughRef(base string, stars int, steps []Node) (throug
 		return false, false, ""
 	}
 	holder := func(bare bool) (bool, bool, string) {
-		if !bare || e.bindWrites[base] != 1 || e.bindAliased[base] || slices.Contains(e.curParamOrder, base) {
+		if !bare || e.bindWrites[base] != 1 || e.bindSelfAddr[base] || slices.Contains(e.curParamOrder, base) {
 			return true, false, ""
 		}
 		// The one value, written as the address of a local of this frame: `p := &n`,
@@ -44897,6 +44940,7 @@ func (e *emitter) scanBindings(body []int32) {
 	e.bindWrites, e.bindBlock, e.bindLits = map[string]int{}, map[string]int{}, map[string]int{}
 	e.bindValue = map[string][]int32{}
 	e.bindOpaque, e.bindAliased, e.bindGotos = map[string]bool{}, map[string]bool{}, false
+	e.bindSelfAddr = map[string]bool{}
 	e.bindSeq++
 	e.bindBody = e.bindSeq
 	e.scanBindingsIn(body, e.bindBody)
@@ -44950,6 +44994,9 @@ func (e *emitter) noteMethodCalls(root string, steps []Node) {
 	for i := 0; i+1 < len(steps); i++ {
 		if steps[i].sym == Selector && steps[i+1].sym == CallSuffix && e.methodNames[e.soleIdent(steps[i].ast)] {
 			e.bindAliased[root] = true
+			if i == 0 {
+				e.bindSelfAddr[root] = true // on root itself, whose address a pointer receiver takes
+			}
 		}
 	}
 }
@@ -45177,6 +45224,9 @@ func (e *emitter) scanBindingsIn(ast []int32, block int) {
 				if tok, ok := e.unaryOpTok(kids[0].ast); ok && e.f.ch(tok) == AND {
 					if name := e.firstIdent(kids[len(kids)-1].ast); name != "" {
 						e.bindAliased[name] = true
+					}
+					if name, whole := e.exprIdent(e.unparenExpr(kids[len(kids)-1].ast)); whole {
+						e.bindSelfAddr[name] = true
 					}
 				}
 			}

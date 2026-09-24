@@ -10954,9 +10954,21 @@ func main() {
 		{"ls := []*int{&x}\n\tgps = append(gps, ls...)", "cannot append the elements of ls"},
 		{"var arr [1]*int\n\tarr[0] = &x\n\ts := arr[:]\n\tgp = s[0]", "cannot store s[0], which holds a pointer into local x"},
 		{"var a [2]int\n\tvar rows [1][]int\n\trows[0] = a[:]\n\ts := rows[:]\n\tgs = s[0]", "cannot store s[0], which holds a pointer into local a"},
+		// KNOWN is must, not may: a slice assigned again keeps the mark of its first
+		// value, and a slice reached through a step is marked with what its holder's
+		// elements MAY view -- `ss := [][]*int{{nil}, gps}` viewing gps too. Each of
+		// these stored x's address in a package array (2026-09-24).
+		{"var loc [2]*int\n\ts := loc[:]\n\ts = gps\n\ts[0] = &x", "cannot store the address of local variable x in an element of s"},
+		{"var loc [2]*int\n\ts := loc[:]\n\tfor i := 0; i < 1; i++ {\n\t\ts[i] = &x\n\t\ts = gps\n\t}", "in an element of s"},
+		{"var loc [2]*int\n\tvar b struct{ ps []*int }\n\tb.ps = loc[:]\n\tb.ps = gps\n\tb.ps[0] = &x", "in an element of b.ps"},
+		{"ss := [][]*int{{nil}, gps}\n\tss[1][0] = &x", "in an element of ss[1]"},
+		{"ss := [][]*int{{nil}}\n\tss[0][0] = &x", "in an element of ss[0]"},
+		{"var loc [2]*int\n\ts := loc[:]\n\tt := &s\n\t*t = gps\n\ts[0] = &x", "in an element of s"},
 		// Controls.
 		{"s := make([]*int, 1)\n\ts[0] = &x", ""},
-		{"ss := [][]*int{{nil}}\n\tss[0][0] = &x", ""},
+		{"s := []*int{nil}\n\ts[0] = &x", ""},
+		{"var loc [2]*int\n\tvar s []*int = loc[:]\n\ts[1] = &x", ""},
+		{"var loc [2]*int\n\tvar s []*int\n\ts = loc[1:]\n\ts[0] = &x", ""},
 		{"copy(gps, []*int{&gx})", ""},
 		{"ls := []*int{&gx}\n\tgps = append(gps, ls...)", ""},
 		{"s := []*int{&gx}\n\tfor _, e := range s {\n\t\tgp = e\n\t}", ""},
