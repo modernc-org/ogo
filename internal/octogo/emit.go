@@ -14793,7 +14793,11 @@ func (e *emitter) emitMain(sig, body []int32) {
 	e.localConsts = map[string]bool{}
 	e.localConstSpecs = map[string]localConstSpec{}
 	e.hoistedArrayCalls = map[int32]string{}
-	e.curParams = map[string]bool{}
+	// main has no parameters, and what bindParams records of the function emitted
+	// before it must not stand for them: a local of main named like that function's
+	// parameter was taken for a parameter -- by boundFunc, and by the store rules
+	// that believe only a local (targetThroughRef, checkStoreThroughSlice).
+	e.curParams, e.curParamOrder, e.funcParamAlias = map[string]bool{}, nil, map[string]string{}
 	e.arrays = map[string]arrDim{}
 	e.sliceVars = map[string]string{}
 	e.frameBacked = map[string]bool{}

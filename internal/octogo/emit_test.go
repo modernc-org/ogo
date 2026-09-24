@@ -11084,6 +11084,37 @@ func main() {
 	}
 }
 
+// TestEmitCMainParamsNotInherited: main has no parameters, and emitMain did not
+// clear what bindParams recorded of the function emitted before it -- so a local of
+// main named like that function's parameter was taken for one, and a store of the
+// address of a local through a pointer local to main, which the frame owns, was
+// refused as though the pointer had come from a caller (2026-09-24).
+func TestEmitCMainParamsNotInherited(t *testing.T) {
+	const src = `type Q struct{ p *int }
+
+func helper(p *Q, s []*int) int { return len(s) }
+
+func main() {
+	var n Q
+	x := 1
+	var loc [2]*int
+	p := &n
+	p.p = &x
+	s := loc[:]
+	s[0] = &x
+	println(*n.p, *loc[0], helper(p, s))
+}
+`
+	fsys := fstest.MapFS{"main.ogo": &fstest.MapFile{Data: []byte(src)}}
+	pkg, err := Build(-1, []string{"main.ogo"}, fsys)
+	if err != nil {
+		t.Fatalf("Build: %v", err)
+	}
+	if err := EmitC(pkg, io.Discard, Checked()); err != nil {
+		t.Fatalf("refused: %v", err)
+	}
+}
+
 // TestEmitCSummaryThroughLocals: a callee's summary follows a parameter through the
 // callee's own locals and through every shape a value is written in. It followed
 // the parameter where it was NAMED alone, so a local copy laundered it -- `w := v;
