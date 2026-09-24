@@ -487,6 +487,10 @@ shipped section tells a reader on that version that they have behaviour they do 
 
 ### Behaviour changes
 
+- **A target of ":=" that is no name is refused wherever it is written.** `for i,
+  getp().x := 0, 1` compiled; `a, getp().x := 1, 2` and `if a, h.x := 1, 2` were
+  refused as "declared and not used: getp" (or h). Each is "non-name target on the
+  left side of :=" now, as Go's "non-name h.x on left side of :=".
 - **A reference to the frame handed to a callee that stores it through its receiver
   or a pointer argument is refused unless that storage is known to be the frame's.**
   `p := &lb; p = &gb; p.set(a[:])` and `fill(p, a[:])` stored a slice of a local array
