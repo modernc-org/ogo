@@ -32481,7 +32481,16 @@ func (e *emitter) evalTypeOnlyArg(idx int, arg Node) {
 		e.emit("(void)" + a.name + ";\n")
 		return
 	}
-	if e.deferReplay >= 0 || !e.exprHasEffect(arg.ast) {
+	if e.deferReplay >= 0 {
+		return
+	}
+	if !e.exprHasEffect(arg.ast) {
+		// A variable %T is the only reader of is a C variable nothing reads, which
+		// the host's compiler refuses where Go counts the %T as a use: `p := P{1};
+		// printf("%T", p)`. Marked read, which costs the target nothing.
+		if _, isName := e.f.exprIdent(arg); isName {
+			e.prologue = append(e.prologue, "(void)("+e.captureC(func() { e.emitExpr(arg.ast) })+");\n")
+		}
 		return
 	}
 	// An array-returning call is a statement, bound to a temporary of its own.

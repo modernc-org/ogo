@@ -40399,6 +40399,22 @@ func main() {
 }
 `,
 		want: "00 7e01|0029527ba4cd\n01 7e 01|00 29 52 7B A4 CD\n02 7E01|0x00 0x29 0x52 0x7b 0xa4 0xcd\n03 0x7e01|002952\n04 7e01|0029527ba4cd  \n05 7e01|0029527ba4cd\n06 7e01|0029527ba4cd\n07 7e 01|00 29 52 7B A4 CD\n08 7E01|0x00 0x29 0x52 0x7b 0xa4 0xcd\n09 0x7e01|002952\n10 7e01|0029527ba4cd  \n11 7e01|0029527ba4cd\n12 7e01|0029527ba4cd\n13 7e 01|00 29 52 7B A4 CD\n14 7E01|0x00 0x29 0x52 0x7b 0xa4 0xcd\n15 0x7e01|002952\n16 7e01|0029527ba4cd  \n17 7e01|0029527ba4cd\n18 7e01|0029527ba4cd\n19 7e 01|00 29 52 7B A4 CD\n20 7E01|0x00 0x29 0x52 0x7b 0xa4 0xcd\n21 0x7e01|002952\n22 7e01|0029527ba4cd  \n23 7e01|0029527ba4cd\n",
+	},
+	{
+		// %T is answered where the call is written, so a variable nothing else
+		// reads is a C variable nothing reads -- which the host's compiler
+		// refuses, where Go counts the %T as a use. It is marked read now; the
+		// target's compiler said nothing either way.
+		name: "a variable only %T reads",
+		src: `type P struct{ X int }
+
+func main() {
+	p := P{1}
+	var q []string
+	printf("%T %T\n", p, q)
+}
+`,
+		want: "main.P []string\n",
 	}}
 
 // TestEmitCRun compiles emitted C with a host compiler and runs it, checking what
