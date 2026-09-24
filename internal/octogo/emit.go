@@ -1056,15 +1056,22 @@ const stringHelpers = "static inline void ogo_print_str(ogo_string s) { for (int
 // It counts RUNES, not bytes, because that is what fmt's width and precision mean
 // for a string -- "%3s" of a two-rune six-byte string pads by one, and padding by
 // nothing would be the easy way to get it wrong. Precision truncates, and truncates
-// on a rune boundary. The pass over the bytes recognises a rune by its lead byte:
-// every continuation byte is 10xxxxxx, so anything else starts one.
+// on a rune boundary.
+//
+// The runes are counted as Go counts them, by the decoder a range over a string
+// steps with: a byte that starts no valid sequence is one rune, RuneError, as it is
+// to fmt's truncateString and utf8.RuneCountInString. Until 2026-09-25 a rune was
+// recognised by its lead byte, so a stray continuation byte counted as nothing and
+// a sequence cut short as one: `%-4s` of "\xad" padded by four where Go pads by
+// three, and `%.1s` of "\xad\xbeZ" printed all three bytes -- in silence, and the
+// bytes a device sends are what a protocol log prints.
 const stringPadHelper = "static inline void ogo_print_str_pad(ogo_string s, int w, int prec, int left, int zero) {\n" +
-	"\tint _b = s.len, _n = 0;\n" +
-	"\tfor (int _i = 0; _i < s.len; _i++) {\n" +
-	"\t\tif ((s.str[_i] & 0xC0) != 0x80) {\n" +
-	"\t\t\tif (prec >= 0 && _n == prec) { _b = _i; break; }\n" +
-	"\t\t\t_n++;\n" +
-	"\t\t}\n" +
+	"\tint _b = 0, _n = 0;\n" +
+	"\twhile (_b < s.len && (prec < 0 || _n < prec)) {\n" +
+	"\t\tint _w = 1;\n" +
+	"\t\togo_decode_rune(s, _b, &_w);\n" +
+	"\t\t_b += _w;\n" +
+	"\t\t_n++;\n" +
 	"\t}\n" +
 	"\tint _p = w > _n ? w - _n : 0;\n" +
 	"\tif (!left) for (int _i = 0; _i < _p; _i++) putchar(zero ? '0' : ' ');\n" +
@@ -5232,10 +5239,6 @@ func emitProgram(pkg *Package, w io.Writer, opts []EmitOption, rename map[string
 		out.WriteString(stringHelpers)
 		out.WriteByte('\n')
 	}
-	if e.usesStringPad {
-		out.WriteString(stringPadHelper)
-		out.WriteByte('\n')
-	}
 	if e.usesRunePrint {
 		out.WriteString(runePrintHelper)
 		out.WriteByte('\n')
@@ -5260,8 +5263,16 @@ func emitProgram(pkg *Package, w io.Writer, opts []EmitOption, rename map[string
 		out.WriteString(stringCmpHelper)
 		out.WriteByte('\n')
 	}
+	if e.usesStringPad {
+		e.usesRuneDecode = true // ogo_print_str_pad steps through the runes with it
+	}
 	if e.usesRuneDecode {
 		out.WriteString(runeDecodeHelper)
+		out.WriteByte('\n')
+	}
+	// After the decoder, which it calls.
+	if e.usesStringPad {
+		out.WriteString(stringPadHelper)
 		out.WriteByte('\n')
 	}
 	// After the decoder: ogo_print_qbytes calls it to tell a valid UTF-8 sequence

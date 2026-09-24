@@ -2068,7 +2068,8 @@
 //
 // A verb may carry fmt's flags, width and precision — "%6.2f", "%-8s", "%+05d",
 // "%.3s" — which mean what they mean in fmt. For a string that is a count of RUNES,
-// not of bytes: "%.1s" of "héllo" is "h" and never half of a character. The "%*d"
+// not of bytes: "%.1s" of "héllo" is "h" and never half of a character, and a byte
+// that begins no valid UTF-8 sequence is one rune, as Go counts it. The "%*d"
 // forms, which take the width from an argument of their own, are not accepted: the
 // verb count is what pairs each verb with an argument to check it against.
 //

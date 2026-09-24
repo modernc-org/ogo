@@ -40297,6 +40297,23 @@ func main() {
 }
 `,
 		want: "[de ad be ef] [adbeef      ] [] 3\n[h\xc3\xa9j   ] [    hi] [he] [0000ab]\n[74 61 67 21] [74616721] [74616721 ] [0x74616721] [     ]\n[01 02 03] [0x010203] [010203  ]\n",
+	},
+	{
+		// A width and a precision count RUNES, and a byte that starts no valid
+		// UTF-8 sequence is one, as Go's range over a string counts it. The helper
+		// recognised a rune by its lead byte, so a stray continuation byte counted
+		// as nothing and a sequence cut short as one rune: `%-4s` of "\xad" padded
+		// by four where Go pads by three, and `%.1s` of "\xad\xbeZ" printed all three
+		// bytes, in silence.
+		name: "string padding counts an invalid byte as a rune",
+		src: `func main() {
+	printf("[%-4s] [%4s] [%.1s|] [%-4s] [%3s]\n", "\xad", "\xad\xbe", "\xad\xbeZ", "\xe2\x82", "é\xff")
+	printf("[%-4s] [%.2s|] [%5s] [%.3s|]\n", "a\xe2\x82\xacb", "\xc3", "\xf0\x9f\x98", "\xed\xa0\x80x")
+	b := []byte{0xad, 'o', 'k'}
+	printf("[%-5s] [%.2s|] [%5v]\n", b, b, "\xc0\xaf")
+}
+`,
+		want: "[\xad   ] [  \xad\xbe] [\xad|] [\xe2\x82  ] [ \xc3\xa9\xff]\n[a\xe2\x82\xacb ] [\xc3|] [  \xf0\x9f\x98] [\xed\xa0\x80|]\n[\xadok  ] [\xado|] [   \xc0\xaf]\n",
 	}}
 
 // TestEmitCRun compiles emitted C with a host compiler and runs it, checking what
