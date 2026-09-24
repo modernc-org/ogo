@@ -1,0 +1,19 @@
+// COMPILE
+
+// A select clause's last statement may go without its semicolon before the closing
+// brace, as a switch clause's and a block's may: `select { case v = <-ch: a = 1 }`
+// did not parse, CommClause taking a list of statements each of which ended in one.
+
+var ch chan int
+
+func main() {
+	var a, v int
+	select { case v = <-ch: a = 1 }
+	select { case v = <-ch: a = 2; default: }
+	select {
+	case v = <-ch:
+		a = 3
+	default: a = 4 }
+	switch a { case 4: v = 5 }
+	println(a, v)
+}

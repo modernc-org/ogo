@@ -168,7 +168,7 @@ SwitchTag  = ";" [ HeaderExpression ] .
 CaseClause = CaseHead ":" { Statement ";" } [ Statement ] .
 CaseHead   = "case" ExpressionList | "default" .
 SelectStmt  = "select" "{" { CommClause } "}" .
-CommClause  = CommHead ":" { Statement ";" } .
+CommClause  = CommHead ":" { Statement ";" } [ Statement ] .
 CommHead    = "case" CommOp | "default" .
 CommOp      = "<-" Expression
 	| AssignHead PostfixComm .

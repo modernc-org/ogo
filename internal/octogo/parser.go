@@ -5977,7 +5977,7 @@ state9:
 
 // CommClause grammar:
 //
-//	CommClause  = CommHead ":" { Statement ";" } .
+//	CommClause  = CommHead ":" { Statement ";" } [ Statement ] .
 //
 //	State 0
 //		on  "case", "default"
@@ -5992,6 +5992,7 @@ state9:
 //		on  "<-", "break", "const", "continue", "defer", "fallthrough", "for", "func", "go", "goto", "if", "return", "select", "switch", "type", "var", '(', '*', '{', identifier
 //			call Statement and goto state 3
 //	State 3
+//		Accept
 //		on  ';'
 //			shift and goto state 2
 //
@@ -6027,7 +6028,7 @@ state2:
 	}
 	return p.stop(r, accept, errorSet)
 state3:
-	accept, errorSet = false, 108
+	accept, errorSet = true, 108
 	switch Symbol(p.tok.Ch) {
 	case TOK_003b:
 		r = append(r, p.shift())

@@ -2387,7 +2387,7 @@
 // operations will proceed.
 //
 //	SelectStmt  = "select" "{" { CommClause } "}" .
-//	CommClause  = CommHead ":" { Statement ";" } .
+//	CommClause  = CommHead ":" { Statement ";" } [ Statement ] .
 //	CommHead    = "case" CommOp | "default" .
 //	CommOp      = "<-" Expression
 //		| AssignHead PostfixComm .
