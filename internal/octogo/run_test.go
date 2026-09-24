@@ -38996,6 +38996,212 @@ func main() {
 `,
 		want: "packet 1 len 2 body dead\npacket 2 len 0 body \nerr at 17: bad sum\npacket 4 len 5 body 0908070605\n3 packets, 1 errors, last [9 8 7 6 5 0 0 0]\n",
 	}, {
+		// An ARRAY beside another result, `Read() ([4]byte, error)`, was refused,
+		// "cannot return an array beside another result". The result struct holds
+		// it as its typedef, which makes it a struct holding an array, written
+		// through an out parameter (resultCTypeIn, structOutOf), and the array is
+		// copied in and out with memcpy. Declared and assigned from a function, a
+		// method, an interface's slot and a function value; a defined array type,
+		// two arrays, named results and a defer writing one; forwarded as a return
+		// and as arguments; a package variable's initializer, a for header,
+		// discarded, deferred and started.
+		name: "an array beside another result",
+		src: `type Block [4]byte
+
+type ReadError struct{ at int }
+
+func (e *ReadError) Error() string { return "short read" }
+
+var errShort = &ReadError{3}
+
+type Dev struct {
+	regs [8]byte
+	pos  int
+}
+
+type Reader interface {
+	Read() ([4]byte, error)
+}
+
+var calls int
+
+var ga, gerr = readAt(1)
+
+var done chan bool
+
+func readAt(k int) ([4]byte, error) {
+	calls = calls*10 + k
+	if k > 5 {
+		return [4]byte{}, errShort
+	}
+	return [4]byte{byte(k), byte(k + 1), byte(k + 2), byte(k + 3)}, nil
+}
+
+func (d *Dev) Read() ([4]byte, error) {
+	var b [4]byte
+	if d.pos+4 > len(d.regs) {
+		return b, errShort
+	}
+	copy(b[:], d.regs[d.pos:])
+	d.pos += 4
+	return b, nil
+}
+
+func block(k int) (n int, b Block) {
+	b[0] = byte(k)
+	n = k * 2
+	return
+}
+
+func pair() ([2]int, [3]int) { return [2]int{1, 2}, [3]int{3, 4, 5} }
+
+func fwd(k int) ([4]byte, error) { return readAt(k + 1) }
+
+func bump(b *[4]byte) { b[0] = 99 }
+
+func deferred() (b [4]byte, err error) {
+	defer bump(&b)
+	return [4]byte{1, 2, 3, 4}, nil
+}
+
+func sum(b [4]byte, err error) int {
+	if err != nil {
+		return -1
+	}
+	return int(b[0]) + int(b[1]) + int(b[2]) + int(b[3])
+}
+
+func starter() {
+	readAt(9)
+	done <- true
+}
+
+// An ARRAY beside another result: declared and assigned from a function, a
+// method, an interface's slot and a function value; a defined array type, two
+// arrays, named results and a defer writing one; forwarded as a return and as
+// arguments; a package variable's initializer, a for header, discarded, deferred
+// and started.
+func main() {
+	b, err := readAt(2)
+	printf("%v %v %d\n", b, err == nil, calls)
+	d := &Dev{regs: [8]byte{1, 2, 3, 4, 5, 6, 7, 8}}
+	var r Reader = d
+	x, err1 := d.Read()
+	y, err2 := r.Read()
+	_, err3 := r.Read()
+	printf("%v %v %v %v %v\n", x, y, err1 == nil, err2 == nil, err3)
+	n, blk := block(7)
+	printf("%d %v\n", n, blk)
+	p, q := pair()
+	println(p[1], q[2], len(q))
+	f, e := fwd(1)
+	printf("%v %v\n", f, e)
+	g, _ := deferred()
+	println(g[0], g[3])
+	println(sum(readAt(3)), sum(readAt(8)))
+	fv := readAt
+	h, _ := fv(4)
+	println(h[3], ga[0], gerr == nil)
+	var z [4]byte
+	z, err = readAt(5)
+	println(z[2], err == nil)
+	d.pos = 0
+	t := 0
+	for v, er := d.Read(); er == nil; v, er = d.Read() {
+		t += int(v[0])
+	}
+	println(t)
+	readAt(1)
+	defer readAt(2)
+	go starter()
+	<-done
+	println(calls != 0)
+}
+`,
+		want: "[2 3 4 5] true 12\n[1 2 3 4] [5 6 7 8] true true short read\n14 [7 0 0 0]\n2 5 3\n[2 3 4 5] <nil>\n99 4\n18 -1\n7 1 true\n7 true\n6\ntrue\n",
+	}, {
+		// The same, further: of two dimensions, of structs and of structs holding
+		// arrays; stored into a field, a row, an element and through a pointer;
+		// forwarded from an interface's slot; a method value and a method
+		// expression; a function field; printed and ranged over.
+		name: "an array beside another result, further",
+		src: `type P struct{ x, y int }
+
+type Buf struct {
+	n   int
+	arr [2]int
+}
+
+type H struct {
+	arr  [3]int
+	grid [2][2]int
+	fn   func() ([3]int, bool)
+}
+
+type Src interface {
+	Get() ([2]int, bool)
+}
+
+type S struct{ k int }
+
+func (s *S) Get() ([2]int, bool) { return [2]int{s.k, s.k * 2}, s.k > 0 }
+
+var calls int
+
+var gs = S{5}
+
+func three(k int) ([3]int, bool) {
+	calls = calls*10 + k
+	return [3]int{k, k + 1, k + 2}, k%2 == 1
+}
+
+func grid() ([2][2]int, int) { return [2][2]int{{1, 2}, {3, 4}}, 4 }
+
+func points() ([2]P, int) { return [2]P{{1, 2}, {3, 4}}, 2 }
+
+func bufs() ([2]Buf, bool) { return [2]Buf{{1, [2]int{2, 3}}, {4, [2]int{5, 6}}}, true }
+
+func viaIface(s Src) ([2]int, bool) { return s.Get() }
+
+// An ARRAY beside another result, further: of two dimensions, of structs and of
+// structs holding arrays; stored into a field, a row, an element and through a
+// pointer; forwarded from an interface's slot; a method value and a method
+// expression; a function field; printed and ranged over.
+func main() {
+	var h H
+	var ok bool
+	h.arr, ok = three(1)
+	println(h.arr[2], ok)
+	g, n := grid()
+	println(g[1][0], n)
+	h.grid[1], ok = func() ([2]int, bool) { return [2]int{7, 8}, true }()
+	println(h.grid[1][1], ok)
+	p, m := points()
+	println(p[1].y, m)
+	b, okb := bufs()
+	println(b[1].arr[1], okb)
+	var pa *[3]int = &h.arr
+	*pa, ok = three(3)
+	println(h.arr[0], ok)
+	v, okv := viaIface(&gs)
+	println(v[1], okv)
+	mv := gs.Get
+	w, _ := mv()
+	me := (*S).Get
+	x, _ := me(&S{6})
+	println(w[0], x[1])
+	h.fn = func() ([3]int, bool) { return three(5) }
+	y, oky := h.fn()
+	printf("%v %v %d\n", y, oky, y)
+	t := 0
+	for _, e := range y {
+		t += e
+	}
+	println(t, calls)
+}
+`,
+		want: "3 true\n3 4\n8 true\n4 2\n6 true\n3 true\n10 true\n5 12\n[5 6 7] true [5 6 7]\n18 135\n",
+	}, {
 		// A literal of a struct holding an ARRAY as a MEMBER of another literal,
 		// where the outer one is a compound literal -- under &, as an argument, a
 		// receiver, an element of a slice of pointers -- was a compound literal of
@@ -40023,7 +40229,7 @@ const multiPkgWant = "300\nLOUD\n50\n6\n5\n45\n6 1000\n200\n207\n3 100\n4 9\n" +
 	"4 5 2 3\n" +
 	"2 3 4 3\n" +
 	"81 2\n" +
-	"10 3 1 2\n10 40 5\n5 10 21 7 2\n5 8 10 true 22 true 2\n"
+	"10 3 1 2\n10 40 5\n5 10 21 7 2\n5 8 10 true 22 true 2\n12 true 2\n"
 
 var multiPkgProgram = map[string]string{
 	"main.ogo": `import "chain"
@@ -40212,6 +40418,10 @@ func libFrames() {
 	var tk lib.Taker = &d
 	uf, ok2 := tk.Take()
 	println(sf.Data[1], sn, tf.ID, ok, uf.Data[2], ok2, d.N)
+	ch, okc := lib.Chunk(4)
+	cf := lib.Chunk
+	ch2, _ := cf(1)
+	println(ch[2], okc, ch2[1])
 }
 
 func localFrame(f lib.Frame) int { return f.Data[2] * 10 }
@@ -41174,6 +41384,8 @@ func (c *Counter) Take() (Frame, bool) {
 type Taker interface {
 	Take() (Frame, bool)
 }
+
+func Chunk(k int) ([3]int, bool) { return [3]int{k, k * 2, k * 3}, k > 0 }
 `,
 	"lib/more.ogo": `var Grid [3][5]int
 

@@ -6090,21 +6090,19 @@ func main() {
 	}
 }
 
-// TestEmitCArrayResultABI pins what a fixed-array result may NOT be used as, which
-// is now one thing: an array BESIDE another result. That would need a struct holding
-// an array, which this backend cannot assign ("Unable to multiply assign this
-// target"), and handing back a pointer instead would name the callee's dead frame.
+// TestEmitCArrayResultTuple pins an ARRAY beside another result (2026-09-24),
+// refused before as "cannot return an array beside another result": the result
+// struct holds it as its typedef (resultCTypeIn), which makes the struct one
+// holding an array, written through an out parameter (structOutOf) -- the function
+// returns nothing, copies the array into its field with memcpy, and a caller hands
+// the address of a temporary and copies the field out into an array of its own.
 //
-// The forms that used to be here -- as an argument, assigned to an existing variable
-// -- work: the result travels through an out parameter the caller supplies, so where
-// the target IS storage the call writes through it, and where it is not the result
-// binds to a temporary. See the run case "a call returning an array, read where it
-// stands".
-func TestEmitCArrayResultABI(t *testing.T) {
-	for _, test := range []struct{ name, src, want string }{
-		{
-			name: "beside another result",
-			src: `func f() ([3]int, int) {
+// The forms that used to be refused here too -- an array result as an argument,
+// assigned to an existing variable -- work: the result travels through an out
+// parameter the caller supplies. See the run case "a call returning an array, read
+// where it stands".
+func TestEmitCArrayResultTuple(t *testing.T) {
+	src := `func f() ([3]int, int) {
 	var a [3]int
 	return a, 1
 }
@@ -6113,23 +6111,27 @@ func main() {
 	a, n := f()
 	println(a[0], n)
 }
-`,
-			want: "cannot return an array beside another result",
-		},
+`
+	fsys := fstest.MapFS{"main.ogo": &fstest.MapFile{Data: []byte(src)}}
+	pkg, err := Build(-1, []string{"main.ogo"}, fsys)
+	if err != nil {
+		t.Fatalf("Build: %v", err)
+	}
+	var out bytes.Buffer
+	if err := EmitC(pkg, &out); err != nil {
+		t.Fatalf("EmitC: %v", err)
+	}
+	got := out.String()
+	for _, want := range []string{
+		"typedef struct { ogo_arr_3_int _0; int _1; }",
+		"void f(ogo_ret_ogo_arr_3_int_int* _ogo_ret) {",
+		"memcpy(_ogo_ret->_0, a, sizeof(int)*3);",
+		"int a[3];",
+		"sizeof(int)*3);",
 	} {
-		t.Run(test.name, func(t *testing.T) {
-			fsys := fstest.MapFS{"main.ogo": &fstest.MapFile{Data: []byte(test.src)}}
-			pkg, err := Build(-1, []string{"main.ogo"}, fsys)
-			if err != nil {
-				t.Fatalf("Build: %v", err)
-			}
-			var out bytes.Buffer
-			if err = EmitC(pkg, &out); err == nil {
-				t.Fatalf("expected a refusal, got:\n%s", out.String())
-			} else if !strings.Contains(err.Error(), test.want) {
-				t.Fatalf("expected %q, got %v", test.want, err)
-			}
-		})
+		if !strings.Contains(got, want) {
+			t.Errorf("missing %q in\n%s", want, got)
+		}
 	}
 }
 
@@ -12892,14 +12894,14 @@ var gsl, gsl2 []int
 }
 
 // frameRefFormsSkipped is the number of cells TestEmitCFrameRefForms cannot test
-// yet, each a form one kind does not take for a reason of its own. All thirty are
-// the three ARRAY kinds', the array, the elided row and the elided address, five
-// forms each in both variants: a typed var list ("a multi-name array var with an
-// initializer is not supported yet") and the three destructured forms ("cannot
-// return an array beside another result"). The switch and for init declarations
-// were here too until they learned to declare an array, and their cells are tested
-// from then on.
-const frameRefFormsSkipped = 30
+// yet, each a form one kind does not take for a reason of its own. All twelve are
+// the three ARRAY kinds', the array, the elided row and the elided address, in a
+// typed var list, first and second, in both variants ("a multi-name array var with
+// an initializer is not supported yet"). The switch and for init declarations were
+// here too until they learned to declare an array, and the three destructured
+// forms until an array could be returned beside another result (2026-09-24); their
+// cells are tested from then on.
+const frameRefFormsSkipped = 12
 
 func TestEmitCSliceEscapeRefused(t *testing.T) {
 	for _, test := range []struct {

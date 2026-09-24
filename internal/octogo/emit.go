@@ -2871,7 +2871,7 @@ func (e *emitter) hasArrayField(ctype string) bool {
 	// array where one of the results does (see structOutOf).
 	if key, isRet := e.retStructs[ctype]; isRet {
 		for _, ct := range strings.Split(key, ",") {
-			if e.hasArrayField(ct) {
+			if _, isArr := e.namedArrays[ct]; isArr || e.hasArrayField(ct) {
 				return true
 			}
 		}
@@ -14615,6 +14615,18 @@ func (e *emitter) declareNamedResults(sig, body []int32) (declared map[string]bo
 		if nm == "" || nm == "_" {
 			continue
 		}
+		// An ARRAY beside another result (resultCTypeIn) is a variable of this frame
+		// as a lone one is, declared as the array.
+		if a, isArr := e.isArrayResult(types[i]); isArr {
+			e.arrays[nm] = a
+			if !naked && !e.bodyMentions(body, nm) {
+				continue
+			}
+			e.ind()
+			e.emit(a.elem + " " + nm + a.declSuffix() + " = {0};\n")
+			declared[nm] = true
+			continue
+		}
 		e.locals[nm] = types[i]
 		if !naked && !e.bodyMentions(body, nm) {
 			continue
@@ -14886,7 +14898,10 @@ func (e *emitter) structOutOf(resTypes []string) (string, bool) {
 	switch {
 	case len(resTypes) == 1 && e.holdsArray(resTypes[0]):
 		return resTypes[0], true
-	case len(resTypes) > 1 && slices.ContainsFunc(resTypes, e.holdsArray):
+	case len(resTypes) > 1 && slices.ContainsFunc(resTypes, func(ct string) bool {
+		_, isArr := e.isArrayResult(ct)
+		return isArr || e.holdsArray(ct)
+	}):
 		return e.retStructNameOf(resTypes), true
 	}
 	return "", false
@@ -14997,8 +15012,9 @@ func (e *emitter) cSig(sig []int32) (params string, resTypes []string) {
 			// Parameters are the only ParameterList; results are ResultList/Type.
 			parts = e.cParamList(n.ast)
 		case ResultList:
+			several := e.resultCount(n) > 1
 			for _, d := range e.f.paramDecls(n.ast) {
-				ct := e.resultCType(d.TypeAST.ast)
+				ct := e.resultCTypeIn(d.TypeAST.ast, several)
 				k := len(d.Names)
 				if k == 0 {
 					k = 1 // an unnamed result is one value
@@ -15034,8 +15050,9 @@ func (e *emitter) resultInfo(sig []int32) (names, types []string) {
 	for n := range it(sig) {
 		switch n.sym {
 		case ResultList:
+			several := e.resultCount(n) > 1
 			for _, d := range e.f.paramDecls(n.ast) {
-				ct := e.resultCType(d.TypeAST.ast)
+				ct := e.resultCTypeIn(d.TypeAST.ast, several)
 				if len(d.Names) == 0 {
 					names = append(names, "")
 					types = append(types, ct)
@@ -15243,7 +15260,39 @@ func (e *emitter) resultCType(ta []int32) string {
 		e.fail("cannot return an array beside another result; return a slice or a pointer to it")
 		return ""
 	}
-	return e.cType(ta) // a struct holding an array is written through an out parameter, alone (refuseResultTuple)
+	return e.cType(ta) // a struct holding an array travels through an out parameter (funcStructRet)
+}
+
+// resultCTypeIn is resultCType for a result of a list of `several`: an ARRAY beside
+// another result is held in the result struct as its typedef (arrayTypedef), which
+// makes that struct one holding an array -- written through an out parameter
+// (structOutOf) and copied with memcpy, as a struct holding one is. It was refused,
+// "cannot return an array beside another result". A lone array result travels
+// through an out parameter of its own, and a function TYPE returning one is refused
+// still, a C function returning no array.
+func (e *emitter) resultCTypeIn(ta []int32, several bool) string {
+	if a, ok := e.arrayDim(ta); ok && several {
+		return e.arrayTypedef(a)
+	}
+	return e.resultCType(ta)
+}
+
+// resultCount is how many values a ResultList declares, a shared type counting once
+// for each name.
+func (e *emitter) resultCount(list Node) int {
+	n := 0
+	for _, d := range e.f.paramDecls(list.ast) {
+		n += max(1, len(d.Names))
+	}
+	return n
+}
+
+// isArrayResult reports a result C type that is an ARRAY's typedef, which a result
+// list holds beside another result (resultCTypeIn): what an array result of several
+// is stored, copied and declared as.
+func (e *emitter) isArrayResult(ct string) (arrDim, bool) {
+	a, ok := e.namedArrays[ct]
+	return a, ok
 }
 
 // arrayCountC renders an array's element count as a C factor chain, "*3" for a
@@ -19538,6 +19587,12 @@ func (e *emitter) emitPackageDestructure(names []string, rhs []int32) {
 			continue // a blank package variable declares nothing
 		}
 		gn := e.globalC(nm)
+		// An ARRAY beside another result (resultCTypeIn) is a package array.
+		if a, isArr := e.isArrayResult(resTypes[i]); isArr {
+			e.globalArrays[gn] = a
+			e.emit("static " + a.elem + " " + gn + a.declSuffix() + ";\n")
+			continue
+		}
 		e.globals[gn] = resTypes[i]
 		if e.isSliceCType(resTypes[i]) {
 			e.globalSliceVars[gn] = sliceElemFromCName(resTypes[i])
@@ -19563,10 +19618,19 @@ func (e *emitter) emitPackageDestructure(names []string, rhs []int32) {
 		// prefix is empty, so a destructure in any other package assigned to a C
 		// identifier that did not exist.
 		gn := e.globalC(nm)
+		store := fmt.Sprintf("%s = %s._%d;", gn, tmp, i)
+		switch a, isArr := e.isArrayResult(resTypes[i]); {
+		case isArr:
+			e.includes["string.h"] = true
+			store = fmt.Sprintf("memcpy(%s, %s._%d, sizeof(%s)%s);", gn, tmp, i, a.elem, arrayCountC(a))
+		case e.holdsArray(resTypes[i]):
+			e.includes["string.h"] = true
+			store = fmt.Sprintf("memcpy(&%s, &%s._%d, sizeof(%s));", gn, tmp, i, resTypes[i])
+		}
 		e.pkgInit = append(e.pkgInit, pkgInitStep{
 			target:  gn,
 			deps:    append([]string{tmp}, refs...),
-			stmts:   []string{fmt.Sprintf("%s = %s._%d;", gn, tmp, i)},
+			stmts:   []string{store},
 			srcName: nm,
 			pos:     pos,
 			pkg:     2 * e.pkgOrd,
@@ -28915,6 +28979,44 @@ func (e *emitter) outNamedCall(cname string, call []int32) string {
 	return tmp
 }
 
+// emitArrayInto fills the array dst, of shape a, with the array value ex: a call
+// returning one writes into it (emitArrayResultCall), anything else is copied with
+// memcpy from the storage arraySourceC names -- a variable, a dereference, a chain,
+// a literal bound to a temporary.
+func (e *emitter) emitArrayInto(dst string, a arrDim, ex []int32) bool {
+	if cname, ca, isCall := e.arrayResultCall(ex); isCall {
+		if ca.elem != a.elem || ca.declSuffix() != a.declSuffix() {
+			e.fail("cannot return %s as %s", e.goArrayTypeName(ca), e.goArrayTypeName(a))
+			return false
+		}
+		e.emitArrayResultCall(dst, cname, ex)
+		return true
+	}
+	if !e.checkArrayShape(a, ex, "return statement") {
+		return false
+	}
+	src, ok := e.arraySourceC(ex)
+	if !ok {
+		e.fail("an array result must be returned as a variable or an array literal")
+		return false
+	}
+	e.includes["string.h"] = true
+	e.ind()
+	e.emit("memcpy(" + dst + ", " + src + ", sizeof(" + a.elem + ")" + arrayCountC(a) + ");\n")
+	return true
+}
+
+// emitTextLines writes captured statement text, each line at the current indentation.
+func (e *emitter) emitTextLines(text string) {
+	for line := range strings.SplitAfterSeq(text, "\n") {
+		if strings.TrimSpace(line) == "" {
+			continue
+		}
+		e.ind()
+		e.emit(line)
+	}
+}
+
 // emitTupleOutReturn writes a return of a function of SEVERAL results one of which
 // is a struct holding an array (funcStructRet): the result struct, which holds the
 // array too, is the caller's, through the out parameter, and each value is stored
@@ -28930,6 +29032,13 @@ func (e *emitter) emitTupleOutReturn(rt string, exprs []Node) {
 	named := func(i int) bool { return i < len(names) && names[i] != "0" && names[i] != "" }
 	field := func(i int) string { return fmt.Sprintf("%s->_%d", arrayResultParam, i) }
 	store := func(ct, dst, text string) {
+		if a, isArr := e.isArrayResult(ct); isArr {
+			// An array, held by a variable or a temporary: copied by its size.
+			e.includes["string.h"] = true
+			e.ind()
+			e.emit("memcpy(" + dst + ", " + text + ", sizeof(" + a.elem + ")" + arrayCountC(a) + ");\n")
+			return
+		}
 		if e.holdsArray(ct) {
 			e.includes["string.h"] = true
 			decl, addr := e.byRefSource(ct, text)
@@ -28982,6 +29091,17 @@ func (e *emitter) emitTupleOutReturn(rt string, exprs []Node) {
 		return
 	case !defers:
 		for i, ex := range exprs {
+			// An ARRAY is written into its field where it is taken (emitArrayInto),
+			// what that binds ahead of itself before it, in its turn.
+			if a, isArr := e.isArrayResult(types[i]); isArr {
+				text, pro := e.capturePrologue(func() { e.emitArrayInto(field(i), a, ex.ast) })
+				for _, line := range pro {
+					e.ind()
+					e.emit(line)
+				}
+				e.emitTextLines(text)
+				continue
+			}
 			// A literal holding an array is built in place (emitStructCopy), as the
 			// single result's is.
 			if _, _, isLit := e.soleCompositeLit(ex.ast); isLit && e.holdsArray(types[i]) {
@@ -29000,7 +29120,17 @@ func (e *emitter) emitTupleOutReturn(rt string, exprs []Node) {
 		taken := make([]string, len(exprs))
 		for i, ex := range exprs {
 			_, _, isLit := e.soleCompositeLit(ex.ast)
+			a, isArr := e.isArrayResult(types[i])
 			switch {
+			case isArr:
+				// An ARRAY, into a temporary array of its own ahead of the stores.
+				tmp := e.newTmp()
+				e.arrays[tmp] = a
+				text, pro := e.capturePrologue(func() { e.emitArrayInto(tmp, a, ex.ast) })
+				e.prologue = append(e.prologue, a.elem+" "+tmp+a.declSuffix()+";\n")
+				e.prologue = append(e.prologue, pro...)
+				e.prologue = append(e.prologue, text)
+				taken[i] = tmp
 			case isLit && e.holdsArray(types[i]):
 				// Built in place into a temporary of its own, ahead of the stores
 				// (emitStructCopy).
@@ -36222,6 +36352,10 @@ func (e *emitter) emitStore(t assignTarget, declare bool, ctype, val string) {
 	// a package variable, and `s, u := a[:], b[:]` declared two slices no sink knew
 	// to be this frame's. Every store of a list form comes through here.
 	defer e.carryInto(t, declare, ctype, e.storeCarries)()
+	if a, isArr := e.isArrayResult(ctype); isArr {
+		e.emitArrayStore(t, declare, a, val)
+		return
+	}
 	if _, isArr := e.namedArrays[ctype]; !isArr && e.hasArrayField(ctype) {
 		e.emitStructStore(t, declare, ctype, val)
 		return
@@ -36307,6 +36441,42 @@ func (e *emitter) emitStructStore(t assignTarget, declare bool, ctype, val strin
 	}
 	e.ind()
 	e.emit("memcpy(" + dst + ", &" + val + ", sizeof(" + ctype + "));\n")
+}
+
+// emitArrayStore is emitStore for an ARRAY -- the typedef an array beside another
+// result is held as (resultCTypeIn), read out of the result struct: declared as the
+// array it is and registered as one, and copied with memcpy, C assigning no array.
+func (e *emitter) emitArrayStore(t assignTarget, declare bool, a arrDim, val string) {
+	e.includes["string.h"] = true
+	var dst string
+	switch {
+	case t.plain() && declare:
+		e.shadow(t.name)
+		e.arrays[t.name] = a
+		e.ind()
+		e.emit(a.elem + " " + userIdent(t.name) + a.declSuffix() + ";\n")
+		dst = userIdent(t.name)
+	case declare:
+		e.fail("non-name %s on the left side of :=", t.name)
+		return
+	case t.addr != "":
+		dst = t.addr
+	case t.stars != "" && len(t.chain) != 0:
+		e.fail("a dereferenced target with a field or index is not supported yet")
+		return
+	case len(t.chain) == 0 && t.stars == "*":
+		dst = e.nilCheckedPtrVar(t.name)
+	case len(t.chain) == 0:
+		dst = e.varRef(t.name)
+	default:
+		if _, ok := e.accessChainType(t.name, t.chain); !ok {
+			e.fail("unsupported target in a multiple assignment")
+			return
+		}
+		dst = e.captureC(func() { e.emitAccessChain(t.name, t.chain) })
+	}
+	e.ind()
+	e.emit("memcpy(" + dst + ", " + val + ", sizeof(" + a.elem + ")" + arrayCountC(a) + ");\n")
 }
 
 // lhsItemTarget reads one LhsItem (LhsItem = AssignHead { Selector | Index }) as a
