@@ -749,12 +749,13 @@ const runePrintHelper = "static void ogo_print_rune(int32_t r) {\n" +
 // '+', 4 ' ', 8 '0', 16 for a precision given at all, and 32 '#': "0x", "0X" and
 // "0b" in front of the digits, and for octal a leading zero unless one is there --
 // placed, as fmt places them, after the zeros a '0' flag pads the width with, so
-// `%#08x` of 255 is "0x000000ff", two wider than asked. v is the value as a long
-// long; sgn says it is of a signed type, when a negative v is a negative number and
-// not the upper half of a uint64. The magnitude is negated here, as a STATEMENT:
-// handed in as `v < 0 ? 0ULL - (unsigned long long)v : (unsigned long long)v` it
-// came out of the target's compiler with a garbage high word, and -7 printed as a
-// twenty-digit number (doc/conditional-64bit-arm.c).
+// `%#08x` of 255 is "0x000000ff", two wider than asked. 64 is %O's "0o", written
+// ahead of any leading zero '#' gave octal, as fmt writes `%#O` of 8, "0o010". v
+// is the value as a long long; sgn says it is of a signed type, when a negative v
+// is a negative number and not the upper half of a uint64. The magnitude is
+// negated here, as a STATEMENT: handed in as `v < 0 ? 0ULL - (unsigned long long)v
+// : (unsigned long long)v` it came out of the target's compiler with a garbage high
+// word, and -7 printed as a twenty-digit number (doc/conditional-64bit-arm.c).
 //
 // It replaced three helpers and the C library's printf for every integer carrying a
 // flag, a width or a precision (2026-09-18). fmt applies '+' and ' ' to EVERY
@@ -777,6 +778,7 @@ const intPrintHelper = "static void ogo_print_int(long long v, int sgn, int base
 	"\tint z = p > n ? p - n : 0;\n" +
 	"\tchar x0 = 0, x1 = 0;\n" +
 	"\tif (fl & 32) { if (base == 16) { x0 = '0'; x1 = upper ? 'X' : 'x'; } else if (base == 2) { x0 = '0'; x1 = 'b'; } else if (base == 8 && z == 0 && d[n - 1] != '0') x0 = '0'; }\n" +
+	"\tif (fl & 64) { if (x0) d[n++] = x0; x0 = '0'; x1 = 'o'; }\n" +
 	"\tint len = n + z + (sign ? 1 : 0) + (x0 ? 1 : 0) + (x1 ? 1 : 0), pad = wid > len ? wid - len : 0;\n" +
 	"\tif (!(fl & 1)) for (int i = 0; i < pad; i++) putchar(' ');\n" +
 	"\tif (sign) putchar(sign);\n" +
@@ -32411,12 +32413,9 @@ func parsePrintfFormat(format string) (items []printfItem, verbs int, badVerb st
 		}
 		spec := format[start:i]
 		switch c := format[i]; c {
-		// Deliberately no 'g': emitPrintfVerb can render it, and the %v path uses it,
-		// but C's %g defaults to six significant digits where Go's is the shortest
-		// form that reads back exactly, so 1234567.0 prints 1.23457e+06 there and
-		// 1.234567e+06 here. Accepting it would buy a rarely-used verb with a silent
-		// output difference.
-		case 'd', 'x', 'X', 'o', 'b', 'q', 'U', 's', 't', 'v', 'f', 'e', 'E', 'g', 'G', 'T', 'c':
+		// %F is fmt's %f by another name, and %O its octal with the "0o" prefix
+		// Go writes octal literals with; both were "unknown formatting verb".
+		case 'd', 'x', 'X', 'o', 'O', 'b', 'q', 'U', 's', 't', 'v', 'f', 'F', 'e', 'E', 'g', 'G', 'T', 'c':
 			if lit != "" {
 				items = append(items, printfItem{lit: lit})
 				lit = ""
@@ -33360,7 +33359,7 @@ func (e *emitter) emitPrintfVerb(item printfItem, idx int, arg Node) bool {
 	// prefix as fmt does, so there the flag is taken -- and so it is on the hex dump
 	// of a string or a byte slice, which ogo_print_hex_fmt lays out.
 	hexDump := (verb == 'x' || verb == 'X') && (ct == cString || e.isByteSliceCType(ct))
-	if item.hasFlag('#') && !hexDump && !(strings.IndexByte("dxXob", verb) >= 0 && e.intsToPrint(idx, arg, ct)) {
+	if item.hasFlag('#') && !hexDump && !(strings.IndexByte("dxXoOb", verb) >= 0 && e.intsToPrint(idx, arg, ct)) {
 		e.failAt(arg.ast, "printf: the '#' flag is not supported on %%%s%c yet; "+
 			"it is on the integer verbs %%x, %%X, %%o and %%b", spec, verb)
 		return false
@@ -33808,9 +33807,12 @@ func (e *emitter) emitScalarVerb(item printfItem, ct string, value func(), wrong
 		e.emit("printf(\"%s\", (")
 		value()
 		e.emit(") ? \"true\" : \"false\");\n")
-	case 'f', 'e', 'E', 'g', 'G':
+	case 'f', 'F', 'e', 'E', 'g', 'G':
 		if !isFloatCType(ct) {
 			return wrong("a float")
+		}
+		if verb == 'F' {
+			verb = 'f'
 		}
 		// Every float verb is laid out by the helper from the exact digits (see
 		// floatFmtHelper): Go's shortest form under %g, Go's rounding under a
@@ -33839,7 +33841,7 @@ func (e *emitter) emitScalarVerb(item printfItem, ct string, value func(), wrong
 		e.emit("ogo_print_rune((int32_t)(")
 		value()
 		e.emit("));\n")
-	case 'd', 'x', 'X', 'o', 'b':
+	case 'd', 'x', 'X', 'o', 'O', 'b':
 		// The HEX DUMP of a string or a byte slice, `%x` of either in Go: the bytes
 		// as hex digits, two per byte and nothing between them.
 		if (verb == 'x' || verb == 'X') && (ct == cString || e.isByteSliceCType(ct)) {
@@ -33908,14 +33910,14 @@ func hexDumpSpec(item printfItem, upper bool) string {
 func (e *emitter) emitIntVerb(item printfItem, ct string, value func()) bool {
 	verb, spec := item.verb, item.spec
 	signed := isSignedIntCType(ct)
-	if spec == "" && verb != 'b' && (verb == 'd' || !signed) {
+	if spec == "" && verb != 'b' && verb != 'O' && (verb == 'd' || !signed) {
 		e.ind()
 		e.emit("printf(\"" + intPrintfVerb(verb, ct, "") + "\", ")
 		value()
 		e.emit(");\n")
 		return true
 	}
-	base := map[byte]int{'d': 10, 'x': 16, 'X': 16, 'o': 8, 'b': 2}[verb]
+	base := map[byte]int{'d': 10, 'x': 16, 'X': 16, 'o': 8, 'O': 8, 'b': 2}[verb]
 	w, _ := item.width()
 	p, hasP := item.precision()
 	fl := 0
@@ -33926,6 +33928,9 @@ func (e *emitter) emitIntVerb(item printfItem, ct string, value func()) bool {
 	}
 	if hasP {
 		fl |= 16
+	}
+	if verb == 'O' {
+		fl |= 64
 	}
 	e.usesIntPrint = true
 	e.ind()

@@ -40479,6 +40479,25 @@ func main() {
 }
 `,
 		want: "pkg 3 294 244 5 7879 false\n['h' '\xc3\xa9' 'l' 'l' 'o'] 233 bc\n",
+	},
+	{
+		// %F is fmt's %f by another name, and %O its octal with the "0o" prefix
+		// Go writes octal literals with -- ahead of the zero '#' adds, `%#O` of 8
+		// being "0o010", and ahead of the zeros a '0' flag pads with. Both were
+		// "unknown formatting verb".
+		name: "%F and %O",
+		src: `func main() {
+	f := float32(3.14159)
+	g := -2.5
+	printf("[%F] [%8.2F] [%-9F] [%+F] [%F]\n", f, f, g, g, []float32{1.5, 2})
+	for _, n := range [...]int{0, 8, -8, 511, 1 << 20} {
+		printf("[%O] [%#O] [%8O] [%-8O|] [%08O] [%#08O] [%+O] [%.4O]\n", n, n, n, n, n, n, n, n)
+	}
+	u := uint8(200)
+	printf("[%O] [%O] [%#o] [%O]\n", u, uint64(1<<63), 8, []int{8, 9})
+}
+`,
+		want: "[3.141590] [    3.14] [-2.500000] [-2.500000] [[1.500000 2.000000]]\n[0o0] [0o0] [     0o0] [0o0     |] [0o00000000] [0o00000000] [+0o0] [0o0000]\n[0o10] [0o010] [    0o10] [0o10    |] [0o00000010] [0o00000010] [+0o10] [0o0010]\n[-0o10] [-0o010] [   -0o10] [-0o10   |] [-0o0000010] [-0o0000010] [-0o10] [-0o0010]\n[0o777] [0o0777] [   0o777] [0o777   |] [0o00000777] [0o00000777] [+0o777] [0o0777]\n[0o4000000] [0o04000000] [0o4000000] [0o4000000|] [0o04000000] [0o04000000] [+0o4000000] [0o4000000]\n[0o310] [0o1000000000000000000000] [010] [[0o10 0o11]]\n",
 	}}
 
 // TestEmitCRun compiles emitted C with a host compiler and runs it, checking what
