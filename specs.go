@@ -29,8 +29,9 @@
 // (The array TODO of 20260806 is DONE 2026-09-24: an array result may stand beside
 // another, `func f() ([3]int, int)`, held in the result struct and written through
 // an out parameter, which is copied with memcpy.)
-// TODO 20260725 Complex numbers (see Types). They need no heap, so their absence
-// is work owed, unlike that of maps.
+// TODO 20260725 Complex numbers: planned for release 1.1 and specified ahead of the
+// work under Complex types (planned). They need no heap, so their absence is work
+// owed, unlike that of maps.
 // When measuring any grammar change, compare the SETS of egg's First/Follow warnings
 // before and after, not their counts, and confirm make actually REGENERATED --
 // `touch specs.go` can land in the same second as a preceding checkout and leave
@@ -80,6 +81,11 @@
 // OctoGo "does not support X" records the state of the implementation when it was
 // written, and is retired as X lands -- it is not, by itself, evidence that X was
 // ruled out.
+//
+// Complex numbers are the one kind of Go type still owed -- maps being excluded
+// by the heap they need: they are planned for release 1.1, and what they are to be
+// is written down under Complex types (planned), so that nothing before them
+// forecloses it.
 //
 // Generics are the one part of Go held at arm's length: not supported, not
 // planned, and not ruled out either. They are a question for after v1, on three
@@ -513,7 +519,7 @@
 // float64. Float literals, arithmetic, comparison, and conversion to and from the
 // integer types are supported; unlike integer division, float division by zero is
 // not a runtime panic (it yields the IEEE infinity or NaN). Complex numeric types
-// are not implemented yet.
+// are planned, and not implemented yet: see Complex types (planned).
 //
 // (OctoGo Specific): the Propeller 2 has no double-precision hardware, and its C
 // toolchain implements C double as 32-bit. So on this target float64 has the same
@@ -522,6 +528,43 @@
 // distinct type name for Go source compatibility (Go's default float), but it does
 // not carry extra precision here. Programs needing more than ~7 digits must scale
 // to integers.
+//
+// # Complex types (planned)
+//
+// Complex numbers are planned for release 1.1 and not implemented yet. What follows
+// is what they are to be, written down ahead of the work so that nothing before them
+// forecloses any of it; it is Go's, but for the precision this target has. Until they
+// land, what would name one is refused where it is written: an imaginary literal,
+// and the type names complex64 and complex128 where no declaration of the program
+// gives them a meaning, report "complex numbers are not supported yet", and the
+// built-ins complex, real and imag are refused as Built-in functions says.
+//
+//   - The types complex64 and complex128, and untyped complex constants, whose
+//     default type is complex128. An imaginary literal is an integer or a
+//     floating-point literal directly followed by "i" -- `2i`, `1.5e3i`, `0x1p-2i`,
+//     Go's `imaginary_lit = (decimal_digits | int_lit | float_lit) "i"` -- and is an
+//     untyped complex constant whose real part is zero.
+//   - A value is a pair of floats, its real part and then its imaginary part, of
+//     float32 for complex64 and float64 for complex128 -- which is float32's
+//     precision on this target (see Numeric types), so complex128 has the same
+//     precision as complex64 here, as float64 has that of float32.
+//   - Constant arithmetic is exact, as for every numeric constant, and an untyped
+//     complex constant whose imaginary part is zero is taken by a float or an
+//     integer context where its real part is representable there, as in Go.
+//   - The operators are Go's: +, -, * and / on two operands of one complex type,
+//     unary + and -, and == and !=; complex values are not ordered. Division is
+//     Go's, including what it yields for an infinite or a NaN operand: dividing a
+//     value by zero does not panic, and a constant division by zero is refused.
+//   - complex(r, i) makes one from two floats of one type, and real(c) and imag(c)
+//     take its parts; for constant operands all three are constants, as in Go.
+//   - A complex type converts to the other complex type, and to no other type; a
+//     constant converts as Go converts it.
+//   - println writes one as Go's built-in does, "(2+3i)", and printf as fmt does:
+//     a verb it takes for a float formats each part, and flags, width and
+//     precision apply to both.
+//   - A complex value may be stored, passed, returned, sent on a channel, held in
+//     an array, a slice or a struct, pointed to, and compared, as any other
+//     numeric value may.
 //
 // # String types
 //
@@ -2079,9 +2122,10 @@
 //
 // Five Go built-ins are recognized and refused, wherever they are written and
 // whether the call stands as a statement or as a value: complex, delete, imag,
-// real and recover each report "the X builtin is not supported yet". The first four
-// want a type this target does not have -- a complex number, a map -- and recover
-// wants a panic to unwind out of, where a panic here halts the cog it ran on.
+// real and recover each report "the X builtin is not supported yet". complex, real
+// and imag come with complex numbers (see Complex types (planned)); delete wants a
+// map, which this target does not have; and recover wants a panic to unwind out of,
+// where a panic here halts the cog it ran on.
 //
 // new is the exception, and so is every make form other than the slice one above:
 // those are rejected as "dynamic allocation not supported", a heap having no place
