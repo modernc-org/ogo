@@ -946,7 +946,12 @@ and the other 22,388 run in batches of 400 against Go. Two faults, both old: `%q
 a negative integer, '\xffffffff' for Go's '�', silent on the board as well; and a
 padded bool in a program with no string, whose helper came without the typedef it
 takes. And the sweep's run cases did not build for the target: see the cost of a
-bound temporary below.
+bound temporary below. A second sweep over COMPOSITE values -- structs, slices,
+arrays, Stringers, errors, interfaces, each under every verb and a few specs, 1,817
+statements of which 739 compile -- found %T laid out by the C library's printf
+(`%08T` "  main.P" on the host and "main.P" on the board for Go's "00main.P") and a
+nil interface under `%8v` not padded. `scripts/`-style tools for both sweeps are
+throwaway; the method is the point: filter the refusals in-process, then batch.
 
 **AN ARRAY RESULT IS A ROW** (2026-09-23). A call returning an array is a STATEMENT in
 C -- the caller hands the callee storage to write -- so every position one stands in

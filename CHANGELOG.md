@@ -256,6 +256,10 @@ shipped section tells a reader on that version that they have behaviour they do 
 
 ### Fixed
 
+- **%T pads as fmt does, and so does a nil interface under %v.** `%08T` printed
+  "  main.P" on the host and "main.P" on the board for Go's "00main.P", `%.3T` of
+  an interface holding nothing cut "<nil>" to "<ni", and a nil error under `%8v`
+  or `%-8v` was not padded at all, which throws a log's columns out of line.
 - **Many hex dumps in one function build.** printf handed every string and byte
   slice under %x, %X and %q, and a byte slice under %s, to its helper through a
   temporary, and each temporary is a cog register on the target for good:
