@@ -5527,21 +5527,16 @@ func main() {
 	}
 }
 
-// TestEmitCArrayStructABI pins the struct-with-an-array case not lowered yet. A copy
-// becomes a memcpy (TestEmitCArrayStructCopy), a parameter -- the C calling
-// convention itself, which flexcc gets wrong -- is received by pointer and copied on
-// entry, and a result alone is written through an out parameter, both since
-// 2026-09-23 (byRefParam, funcStructRet). A result BESIDE another is still refused
-// where the signature is written, naming the declaration rather than every call.
-func TestEmitCArrayStructABI(t *testing.T) {
-	for _, test := range []struct {
-		name string
-		src  string
-		want string
-	}{
-		{
-			name: "result beside another",
-			src: `type B struct {
+// TestEmitCArrayStructTuple pins the last by-value boundary of a struct holding an
+// array to come down (2026-09-24): such a struct BESIDE another result. The result
+// struct holds the array too, so it is written through an out parameter as a lone
+// one is (funcStructRet, structOutOf) -- the function returns nothing, stores each
+// value into its field, the array-holding one with memcpy, and a caller hands the
+// address of a temporary it then reads the fields of. A copy becomes a memcpy
+// (TestEmitCArrayStructCopy) and a parameter is received by pointer, so no
+// boundary is refused any more.
+func TestEmitCArrayStructTuple(t *testing.T) {
+	src := `type B struct {
 	a [3]int
 }
 
@@ -5554,27 +5549,27 @@ func main() {
 	b, k := mk()
 	println(b.a[0], k)
 }
-`,
-			want: "result",
-		},
+`
+	fsys := fstest.MapFS{"main.ogo": &fstest.MapFile{Data: []byte(src)}}
+	pkg, err := Build(-1, []string{"main.ogo"}, fsys)
+	if err != nil {
+		t.Fatalf("Build: %v", err)
+	}
+	var buf bytes.Buffer
+	if err := EmitC(pkg, &buf); err != nil {
+		t.Fatalf("EmitC: %v", err)
+	}
+	got := buf.String()
+	for _, want := range []string{
+		"void mk(ogo_ret_B_int* _ogo_ret) {",
+		"memcpy(&_ogo_ret->_0, &(b), sizeof(B));",
+		"_ogo_ret->_1 = 1;",
+		"mk(&_ogo_t",
+		"memcpy(&b, &_ogo_t",
 	} {
-		t.Run(test.name, func(t *testing.T) {
-			fsys := fstest.MapFS{"main.ogo": &fstest.MapFile{Data: []byte(test.src)}}
-			pkg, err := Build(-1, []string{"main.ogo"}, fsys)
-			if err != nil {
-				t.Fatalf("Build: %v", err)
-			}
-			var buf bytes.Buffer
-			err = EmitC(pkg, &buf)
-			if err == nil {
-				t.Fatalf("EmitC accepted a struct holding an array by value:\n%s", buf.String())
-			}
-			for _, want := range []string{test.want, "holds an array", "a pointer"} {
-				if !strings.Contains(err.Error(), want) {
-					t.Errorf("EmitC error %q does not mention %q", err, want)
-				}
-			}
-		})
+		if !strings.Contains(got, want) {
+			t.Errorf("missing %q in\n%s", want, got)
+		}
 	}
 }
 
@@ -6583,55 +6578,6 @@ func main() {
 	}
 }
 
-// TestEmitCArrayFieldABI pins every by-value boundary a struct holding an ARRAY is
-// refused at. The target's C compiler drops the argument slot or fails the copy, and
-// no lowering here reaches the calling convention itself, so each is reported where
-// it is written with the same advice: use a pointer.
-//
-// Three of these used to reach the backend instead, which answered "Internal error,
-// couldn't find object variable with offset 4" and "incompatible types" -- the guard
-// covered parameters and results but not a value receiver or a channel element.
-//
-// What is NOT here is anything the emitter can write a memcpy for: a copy between
-// variables, a literal's element, which is zeroed in place and copied in after the
-// declaration, and -- since 2026-09-23 -- a channel's element, whose helpers take and
-// hand back the value by pointer (chanStructByPtr), a PARAMETER and a VALUE
-// RECEIVER, received by pointer and copied on entry (byRefParam, recvByRef), and a
-// RESULT alone, written through an out parameter (funcStructRet);
-// TestEmitCArrayFieldABIAllows pins their shape. What is left is a result BESIDE
-// another, whose result struct would hold the array itself.
-func TestEmitCArrayFieldABI(t *testing.T) {
-	const header = `type A struct {
-	v [3]int
-	n int
-}
-
-var g A
-
-`
-	for _, test := range []struct{ name, src, want string }{
-		{
-			name: "result beside another",
-			src:  "func mk() (A, int) { return g, 1 }\n\nfunc main() {\n\ta, k := mk()\n\tprintln(a.n, k)\n}\n",
-			want: "result: A holds an array",
-		},
-	} {
-		t.Run(test.name, func(t *testing.T) {
-			fsys := fstest.MapFS{"main.ogo": &fstest.MapFile{Data: []byte(header + test.src)}}
-			pkg, err := Build(-1, []string{"main.ogo"}, fsys)
-			if err != nil {
-				t.Fatalf("Build: %v", err)
-			}
-			var out bytes.Buffer
-			if err = EmitC(pkg, &out); err == nil {
-				t.Fatalf("expected a refusal, got:\n%s", out.String())
-			} else if !strings.Contains(err.Error(), test.want) {
-				t.Fatalf("expected %q, got %v", test.want, err)
-			}
-		})
-	}
-}
-
 // TestEmitCArrayArgShape pins the last position an array flows into that carried no
 // shape check: an ARGUMENT. Go rejects each of these, and an array parameter is a
 // pointer the callee memcpys the parameter's OWN size out of, so a shorter argument
@@ -6809,8 +6755,10 @@ func main() {
 // in place IS the storage rather than a copy into it, and a literal's element that is
 // such a struct is a memcpy after the declaration -- which used to be refused here and
 // is why this test also names the shape it grew to allow. A PARAMETER and a VALUE
-// RECEIVER are the newest (2026-09-23): received by pointer, copied on entry, handed
-// the argument's address.
+// RECEIVER came down on 2026-09-23 -- received by pointer, copied on entry, handed
+// the argument's address -- and a RESULT, alone and then beside another, written
+// through an out parameter. Nothing is refused at a by-value boundary any more, and
+// the test that listed what was, TestEmitCArrayFieldABI, went with the last of them.
 func TestEmitCArrayFieldABIAllows(t *testing.T) {
 	src := `type A struct {
 	v [3]int
@@ -6827,6 +6775,8 @@ func (a A) top() int { return a.v[2] }
 
 func mk() A { return g }
 
+func pair() (A, int) { return g, 1 }
+
 func main() {
 	x := g
 	println(x.n, g.bottom())
@@ -6835,6 +6785,8 @@ func main() {
 	zs := []A{g}
 	println(zs[0].n)
 	println(take(g), g.top(), mk().n)
+	p, k := pair()
+	println(p.n, k)
 }
 `
 	fsys := fstest.MapFS{"main.ogo": &fstest.MapFile{Data: []byte(src)}}
@@ -6848,7 +6800,8 @@ func main() {
 	}
 	for _, want := range []string{"int take(A* _ogo_x) {", "memcpy(&x, _ogo_x, sizeof(x));", "take(&(g))",
 		"int A_top(A* _ogo_a) {", "memcpy(&a, _ogo_a, sizeof(a));", "A_top(&(g))",
-		"void mk(A* _ogo_ret) {", "memcpy(_ogo_ret, &(g), sizeof(A));"} {
+		"void mk(A* _ogo_ret) {", "memcpy(_ogo_ret, &(g), sizeof(A));",
+		"void pair(ogo_ret_A_int* _ogo_ret) {", "memcpy(&_ogo_ret->_0, &(g), sizeof(A));"} {
 		if !strings.Contains(out.String(), want) {
 			t.Errorf("the by-pointer parameter's shape %q is not in:\n%s", want, out.String())
 		}

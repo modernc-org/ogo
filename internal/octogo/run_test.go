@@ -38481,6 +38481,256 @@ func main() {
 `,
 		want: "3 1\n3 23\n0 3 3 945\n20 5\n0 true 96\n8 7\n27 0 89\n3 2\n3 4 34\n",
 	}, {
+		// A struct holding an ARRAY beside another result, `Pop() (Frame, bool)`,
+		// was refused where it was declared: the result struct holds the array too,
+		// and the target returns no such struct by value. It is written through an
+		// out parameter as a lone one is (funcStructRet, structOutOf), each value
+		// stored into its field. Declared and assigned from a function, a method,
+		// an interface's slot, a function value, a method value and a method
+		// expression; forwarded as a return and as arguments; named results, a
+		// defer writing one, a package variable's initializer, an if and a for
+		// header, discarded, deferred and started.
+		name: "a struct holding an array beside another result",
+		src: `type Frame struct {
+	seq  int
+	data [2]int
+}
+
+type Ring struct {
+	buf  [3]Frame
+	head int
+	n    int
+}
+
+type Source interface {
+	Pop() (Frame, bool)
+}
+
+var calls int
+
+var gr Ring
+
+var done chan bool
+
+func mk(k int) Frame {
+	calls = calls*10 + k
+	return Frame{k, [2]int{k, k * 2}}
+}
+
+func (r *Ring) Push(f Frame) {
+	r.buf[(r.head+r.n)%len(r.buf)] = f
+	r.n++
+}
+
+func (r *Ring) Pop() (Frame, bool) {
+	if r.n == 0 {
+		return Frame{}, false
+	}
+	f := r.buf[r.head]
+	r.head = (r.head + 1) % len(r.buf)
+	r.n--
+	return f, true
+}
+
+func two(k int) (Frame, int) {
+	return mk(k), k * 10
+}
+
+func fwd(k int) (Frame, int) {
+	return two(k + 1)
+}
+
+func named(k int) (f Frame, n int) {
+	f = mk(k)
+	n = k
+	return
+}
+
+func bump(f *Frame) { f.seq += 100 }
+
+func deferred(k int) (f Frame, ok bool) {
+	defer bump(&f)
+	return mk(k), true
+}
+
+func use(f Frame, n int) int { return f.seq + f.data[1] + n }
+
+var ga, gn = two(5)
+
+func popAll(s Source) int {
+	t := 0
+	for f, ok := s.Pop(); ok; f, ok = s.Pop() {
+		t += f.seq
+	}
+	return t
+}
+
+func starter() {
+	two(4)
+	done <- true
+}
+
+// A struct holding an ARRAY beside another result: declared and assigned from a
+// function, a method, an interface slot, a function value, a method value and a
+// method expression; forwarded as a return and as arguments; named results, a
+// defer writing one, a package variable's initializer, an if and a for header,
+// discarded, deferred and started.
+func main() {
+	gr.Push(mk(1))
+	gr.Push(mk(2))
+	f, ok := gr.Pop()
+	println(f.seq, f.data[1], ok, calls)
+	a, n := two(3)
+	println(a.seq, a.data[1], n)
+	var b Frame
+	b, n = fwd(3)
+	println(b.seq, n)
+	c, m := named(6)
+	println(c.data[1], m)
+	d, ok2 := deferred(7)
+	println(d.seq, ok2, ga.data[0], gn)
+	println(use(two(8)))
+	g := two
+	e, k := g(9)
+	println(e.seq, k)
+	pv := gr.Pop
+	h, okh := pv()
+	println(h.seq, okh)
+	pe := (*Ring).Pop
+	_, okp := pe(&gr)
+	println(okp)
+	gr.Push(mk(1))
+	gr.Push(mk(2))
+	var s Source = &gr
+	println(popAll(s))
+	gr.Push(mk(3))
+	if q, okq := gr.Pop(); okq {
+		println(q.seq, q.data[0])
+	}
+	two(1)
+	defer two(2)
+	go starter()
+	<-done
+	println(calls > 0)
+}
+`,
+		want: "1 2 true 512\n3 6 30\n4 40\n12 6\n107 true 5 50\n104\n9 90\n2 true\nfalse\n3\n3 3\ntrue\n",
+	}, {
+		// The same, further: the struct in the second place, two of them, a named
+		// pair a defer writes and a return swaps, forwarded from an interface's
+		// slot and from a function value, a method expression and a literal called
+		// where they stand, a switch header, and a method discarded, deferred and
+		// started.
+		name: "a struct holding an array beside another result, further",
+		src: `type Frame struct {
+	seq  int
+	data [2]int
+}
+
+type Buf struct {
+	n   int
+	arr [3]int
+}
+
+type Ring struct {
+	buf  [2]Frame
+	n    int
+}
+
+type Source interface {
+	Pop() (Frame, bool)
+}
+
+var calls int
+
+var gr Ring
+
+var done chan bool
+
+func mk(k int) Frame {
+	calls = calls*10 + k
+	return Frame{k, [2]int{k, k * 2}}
+}
+
+func (r *Ring) Pop() (Frame, bool) {
+	if r.n == 0 {
+		return Frame{}, false
+	}
+	r.n--
+	return r.buf[r.n], true
+}
+
+func (b Buf) Dbl() Buf {
+	b.n *= 2
+	return b
+}
+
+func second(k int) (int, Frame) { return k, mk(k) }
+
+func pair(k int) (Frame, Buf) { return mk(k), Buf{k, [3]int{k, k, k}} }
+
+func swap() (a, b Frame) {
+	defer mark(&a)
+	a, b = mk(1), mk(2)
+	return b, a
+}
+
+func mark(f *Frame) { f.seq += 50 }
+
+func viaIface(s Source) (Frame, bool) { return s.Pop() }
+
+func viaValue(f func() (Frame, bool)) (Frame, bool) { return f() }
+
+func starter(k int) (Frame, bool) {
+	calls = calls*10 + k
+	done <- true
+	return Frame{}, true
+}
+
+// A struct holding an array beside another result, further: in the second place,
+// two of them, a named pair a defer writes and a return swaps, forwarded from an
+// interface's slot and from a function value, a method expression and a literal
+// called where they stand, a single such result from both, a switch header,
+// discarded as a method statement, deferred as a method and started.
+func main() {
+	n, f := second(3)
+	println(n, f.data[1])
+	a, b := pair(4)
+	println(a.seq, b.arr[2])
+	x, y := swap()
+	println(x.seq, y.seq)
+	gr.buf[0] = mk(5)
+	gr.n = 1
+	g, ok := viaIface(&gr)
+	println(g.seq, ok)
+	gr.n = 1
+	h, okh := viaValue(gr.Pop)
+	println(h.seq, okh)
+	gr.n = 1
+	p, okp := (*Ring).Pop(&gr)
+	println(p.data[0], okp)
+	q, m := func(k int) (Frame, int) { return mk(k), k }(6)
+	println(q.seq, m)
+	d := Buf.Dbl(Buf{3, [3]int{1, 2, 3}})
+	e := func() Buf { return Buf{7, [3]int{}} }()
+	println(d.n, e.n)
+	gr.n = 1
+	switch s, oks := gr.Pop(); {
+	case oks:
+		println("got", s.seq)
+	}
+	gr.n = 1
+	gr.Pop()
+	gr.n = 1
+	defer gr.Pop()
+	calls = 0
+	go starter(7)
+	<-done
+	println(calls)
+}
+`,
+		want: "3 6\n4 4\n52 1\n5 true\n5 true\n5 true\n6 6\n6 7\ngot 5\n7\n",
+	}, {
 		// A literal of a struct holding an ARRAY as a MEMBER of another literal,
 		// where the outer one is a compound literal -- under &, as an argument, a
 		// receiver, an element of a slice of pointers -- was a compound literal of
@@ -39508,7 +39758,7 @@ const multiPkgWant = "300\nLOUD\n50\n6\n5\n45\n6 1000\n200\n207\n3 100\n4 9\n" +
 	"4 5 2 3\n" +
 	"2 3 4 3\n" +
 	"81 2\n" +
-	"10 3 1 2\n10 40 5\n5 10 21 7 2\n"
+	"10 3 1 2\n10 40 5\n5 10 21 7 2\n5 8 10 true 22 true 2\n"
 
 var multiPkgProgram = map[string]string{
 	"main.ogo": `import "chain"
@@ -39679,7 +39929,7 @@ func libHooks() {
 // Another package's struct holding an ARRAY passed by value: to its function, its
 // method through its interface, its function variable, and a function of this
 // package taking the type -- each the callee's own copy. And returned by one: its
-// function's result and its interface's method's.
+// function's result and its interface's method's, alone and beside another result.
 func libFrames() {
 	f := lib.Frame{ID: 1, Data: [3]int{2, 3, 4}}
 	var p lib.Port
@@ -39691,6 +39941,12 @@ func libFrames() {
 	var src lib.Source = &c
 	h := src.Next()
 	println(g.Data[2], h.ID, src.Next().Data[1], lib.NewFrame(7).ID, c.N)
+	sf, sn := lib.Split(4)
+	var d lib.Counter
+	tf, ok := d.Take()
+	var tk lib.Taker = &d
+	uf, ok2 := tk.Take()
+	println(sf.Data[1], sn, tf.ID, ok, uf.Data[2], ok2, d.N)
 }
 
 func localFrame(f lib.Frame) int { return f.Data[2] * 10 }
@@ -40641,6 +40897,17 @@ type Counter struct{ N int }
 func (c *Counter) Next() Frame {
 	c.N++
 	return NewFrame(c.N * 10)
+}
+
+func Split(id int) (Frame, int) { return NewFrame(id), id * 2 }
+
+func (c *Counter) Take() (Frame, bool) {
+	c.N++
+	return NewFrame(c.N * 10), c.N < 3
+}
+
+type Taker interface {
+	Take() (Frame, bool)
 }
 `,
 	"lib/more.ogo": `var Grid [3][5]int

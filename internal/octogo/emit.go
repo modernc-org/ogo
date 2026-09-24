@@ -2867,6 +2867,15 @@ func (e *emitter) hasArrayField(ctype string) bool {
 			return true
 		}
 	}
+	// The result struct of several results is no declared struct, and holds an
+	// array where one of the results does (see structOutOf).
+	if key, isRet := e.retStructs[ctype]; isRet {
+		for _, ct := range strings.Split(key, ",") {
+			if e.hasArrayField(ct) {
+				return true
+			}
+		}
+	}
 	return false
 }
 
@@ -9924,8 +9933,8 @@ func (e *emitter) collectResults(ast []int32) {
 		}
 		_, resTypes := e.resultInfo(sig)
 		e.funcRet[cname] = resTypes
-		if len(resTypes) == 1 && e.holdsArray(resTypes[0]) {
-			e.funcStructRet[cname] = resTypes[0] // see funcSignatureC
+		if rt, isOut := e.structOutOf(resTypes); isOut {
+			e.funcStructRet[cname] = rt // see funcSignatureC
 		}
 		if a, arrRet := e.arrayResultOf(sig); arrRet {
 			// The extents are recorded HERE and not only where the C signature is
@@ -14860,8 +14869,19 @@ func (e *emitter) cParams(sig []int32) (string, bool) {
 // array (holdsArray), and its C type.
 func (e *emitter) structResultOf(sig []int32) (string, bool) {
 	_, resTypes := e.resultInfo(sig)
-	if len(resTypes) == 1 && e.holdsArray(resTypes[0]) {
+	return e.structOutOf(resTypes)
+}
+
+// structOutOf is the type written through the out parameter of a function whose
+// results are resTypes, when one is (funcStructRet): a single struct holding an
+// array, or the result struct of several results one of which holds one -- which
+// holds it then as well, and is returned by value no more than it is.
+func (e *emitter) structOutOf(resTypes []string) (string, bool) {
+	switch {
+	case len(resTypes) == 1 && e.holdsArray(resTypes[0]):
 		return resTypes[0], true
+	case len(resTypes) > 1 && slices.ContainsFunc(resTypes, e.holdsArray):
+		return e.retStructNameOf(resTypes), true
 	}
 	return "", false
 }
@@ -14990,24 +15010,7 @@ func (e *emitter) cSig(sig []int32) (params string, resTypes []string) {
 			e.fail("unsupported signature element %v", n.sym)
 		}
 	}
-	e.refuseResultTuple(resTypes)
 	return strings.Join(parts, ", "), resTypes
-}
-
-// refuseResultTuple refuses a struct holding an array BESIDE another result. One
-// alone is written through an out parameter (funcStructRet); several travel in a
-// result struct, which would then hold an array itself, and the target's C
-// compiler returns no such struct and copies none at some sizes.
-func (e *emitter) refuseResultTuple(types []string) {
-	if len(types) < 2 {
-		return
-	}
-	for _, ct := range types {
-		if e.holdsArray(ct) {
-			e.fail("result: %s holds an array, which the target's C compiler cannot return beside another result; return a pointer to it, or it alone", ct)
-			return
-		}
-	}
 }
 
 // resultInfo returns a function's result names and C types (one entry per result
@@ -15048,7 +15051,6 @@ func (e *emitter) resultInfo(sig []int32) (names, types []string) {
 			}
 		}
 	}
-	e.refuseResultTuple(types)
 	return names, types
 }
 
@@ -19525,8 +19527,16 @@ func (e *emitter) emitPackageDestructure(names []string, rhs []int32) {
 	pos := e.astPos(rhs)
 	// An all-blank `var _, _ = f()` keeps the call for its side effects but binds
 	// nothing, so no result temporary is emitted -- an unused one would warn.
+	// A result struct holding an array is written through the callee's out
+	// parameter (funcStructRet): the call is among the statements rendering it made,
+	// into the temporary it answered with, which is the struct the variables read.
+	_, _, outCall := e.structResultCallOf(callee, suffix)
 	if !slices.ContainsFunc(names, func(nm string) bool { return nm != "_" }) {
-		e.pkgInit = append(e.pkgInit, pkgInitStep{stmts: append(pro, call+";"), deps: refs, pkg: 2 * e.pkgOrd})
+		stmts := append(pro, call+";")
+		if outCall {
+			stmts = pro
+		}
+		e.pkgInit = append(e.pkgInit, pkgInitStep{stmts: stmts, deps: refs, pkg: 2 * e.pkgOrd})
 		return
 	}
 	for i, nm := range names {
@@ -19541,10 +19551,14 @@ func (e *emitter) emitPackageDestructure(names []string, rhs []int32) {
 		e.emit("static " + resTypes[i] + " " + gn + " = " + e.zeroInitC(resTypes[i]) + ";\n")
 	}
 	tmp := e.newTmp()
+	stmts := append(pro, e.retStructName(e.funcCallC(callee))+" "+tmp+" = "+call+";")
+	if outCall {
+		tmp, stmts = call, pro
+	}
 	e.pkgInit = append(e.pkgInit, pkgInitStep{
 		target: tmp,
 		deps:   refs,
-		stmts:  append(pro, e.retStructName(e.funcCallC(callee))+" "+tmp+" = "+call+";"),
+		stmts:  stmts,
 		pkg:    2 * e.pkgOrd,
 	})
 	for i, nm := range names {
@@ -28594,6 +28608,10 @@ func (e *emitter) emitReturn(nodes []Node) {
 	// parameter too (funcStructRet), and as an array result's is: held, where there
 	// are defers, in the named result or a temporary until they have run.
 	if rt, ok := e.funcStructRet[e.curFunc]; ok {
+		if len(e.curResultTypes) > 1 {
+			e.emitTupleOutReturn(rt, exprs)
+			return
+		}
 		e.emitStructOutReturn(rt, exprs)
 		return
 	}
@@ -28901,6 +28919,156 @@ func (e *emitter) outNamedCall(cname string, call []int32) string {
 	e.prologue = append(e.prologue, rt+" "+tmp+";\n", text+");\n")
 	e.locals[tmp] = rt
 	return tmp
+}
+
+// emitTupleOutReturn writes a return of a function of SEVERAL results one of which
+// is a struct holding an array (funcStructRet): the result struct, which holds the
+// array too, is the caller's, through the out parameter, and each value is stored
+// into its field -- copied with memcpy where it holds an array. Without defers each
+// value is stored as it is taken, in order: the caller's storage is nothing the
+// program can read before the return. Go evaluates the values, assigns them to the
+// results and only then runs the defers, which may change a NAMED result; so where
+// there are defers the values are taken first, as the plain return takes them,
+// stored into the named results -- or straight into the caller's fields, for the
+// others -- and the named results are copied out after the defers have run.
+func (e *emitter) emitTupleOutReturn(rt string, exprs []Node) {
+	types, names := e.curResultTypes, e.curResultNames
+	named := func(i int) bool { return i < len(names) && names[i] != "0" && names[i] != "" }
+	field := func(i int) string { return fmt.Sprintf("%s->_%d", arrayResultParam, i) }
+	store := func(ct, dst, text string) {
+		if e.holdsArray(ct) {
+			e.includes["string.h"] = true
+			decl, addr := e.byRefSource(ct, text)
+			if decl != "" {
+				e.ind()
+				e.emit(decl)
+			}
+			e.ind()
+			e.emit("memcpy(&" + dst + ", " + addr + ", sizeof(" + ct + "));\n")
+			return
+		}
+		e.ind()
+		e.emit(dst + " = " + text + ";\n")
+	}
+	defers := len(e.defers) != 0
+	switch {
+	case len(exprs) == 0:
+		// A bare return: the named results, as the defers leave them.
+		if defers {
+			e.emitDeferred()
+		}
+		for i, ct := range types {
+			store(ct, field(i), names[i])
+		}
+	case len(exprs) == 1:
+		// `return f()`: one call supplying every result, written where they are held
+		// -- the caller's storage itself when no defer runs after it.
+		hold := "(*" + arrayResultParam + ")"
+		if defers {
+			hold = e.newTmp()
+			e.ind()
+			e.emit(rt + " " + hold + ";\n")
+		}
+		text, ok := e.forwardedOutCallC(exprs[0], hold)
+		if !ok {
+			e.fail("a return supplying every result needs a call whose results are exactly %s",
+				strings.Join(types, ", "))
+			return
+		}
+		e.ind()
+		e.emit(text + ";\n")
+		if defers {
+			e.emitDeferred()
+			e.includes["string.h"] = true
+			e.ind()
+			e.emit("memcpy(" + arrayResultParam + ", &" + hold + ", sizeof(" + rt + "));\n")
+		}
+	case len(exprs) != len(types):
+		e.fail("wrong number of return values: %d for %d results", len(exprs), len(types))
+		return
+	case !defers:
+		for i, ex := range exprs {
+			// A literal holding an array is built in place (emitStructCopy), as the
+			// single result's is.
+			if _, _, isLit := e.soleCompositeLit(ex.ast); isLit && e.holdsArray(types[i]) {
+				e.emitStructCopy(field(i), types[i], ex.ast)
+				continue
+			}
+			text, pro := e.capturePrologue(func() { e.emitReturnValue(i, ex) })
+			for _, line := range pro {
+				e.ind()
+				e.emit(line)
+			}
+			store(types[i], field(i), text)
+		}
+	default:
+		var stored []string
+		taken := make([]string, len(exprs))
+		for i, ex := range exprs {
+			_, _, isLit := e.soleCompositeLit(ex.ast)
+			switch {
+			case isLit && e.holdsArray(types[i]):
+				// Built in place into a temporary of its own, ahead of the stores
+				// (emitStructCopy).
+				tmp := e.newTmp()
+				e.locals[tmp] = types[i]
+				e.prologue = append(e.prologue, types[i]+" "+tmp+";\n",
+					e.captureC(func() { e.emitStructCopy(tmp, types[i], ex.ast) }))
+				taken[i] = tmp
+			case e.exprIsLiteral(ex.ast):
+				taken[i] = e.captureC(func() { e.emitReturnValue(i, ex) })
+			case named(i) && e.returnValueStands(ex.ast, stored):
+				// Written at its store, below.
+			default:
+				taken[i] = e.hoist(types[i], func() { e.emitReturnValue(i, ex) })
+			}
+			if named(i) {
+				stored = append(stored, names[i])
+			}
+		}
+		for i, ex := range exprs {
+			value := taken[i]
+			if value == "" {
+				value = e.captureC(func() { e.emitReturnValue(i, ex) })
+			}
+			if named(i) {
+				store(types[i], names[i], value)
+				continue
+			}
+			store(types[i], field(i), value)
+		}
+		e.emitDeferred()
+		for i := range exprs {
+			if named(i) {
+				store(types[i], field(i), names[i])
+			}
+		}
+	}
+	e.ind()
+	e.emit("return;\n")
+}
+
+// forwardedOutCallC renders `return f()` for a function whose results travel
+// through its out parameter (emitTupleOutReturn): the call writes them into out, a
+// C lvalue of the result struct. The callee's results are the same types, so it
+// writes through an out parameter of its own -- a declared function or method
+// (funcStructRet), a function value, an interface's slot.
+func (e *emitter) forwardedOutCallC(ex Node, out string) (string, bool) {
+	callee, suffix, isCall := e.directCall(ex.ast)
+	if !isCall {
+		callee, suffix, isCall = e.chainCallOf(ex.ast)
+	}
+	if !isCall {
+		return "", false
+	}
+	if _, resTypes, okRes := e.callResultInfo(callee, suffix); !okRes || !slices.Equal(resTypes, e.curResultTypes) {
+		return "", false
+	}
+	if cname, _, isOut := e.structResultCallOf(callee, suffix); isOut {
+		return e.outCallC("&"+out, cname, callee, suffix)
+	}
+	text, writes, ok := e.forwardedCallInto(ex, out)
+	return text, ok && writes
 }
 
 // exprIsLiteral reports whether an expression is built entirely from literals and
@@ -36754,10 +36922,16 @@ func (e *emitter) emitDestructure(targets []assignTarget, declare []bool, rhs []
 				return
 			}
 			tmp := e.newTmp()
-			e.ind()
-			e.emit(e.retStructNameOf(res) + " " + tmp + " = ")
-			e.emitMethodExpr(me)
-			e.emit(";\n")
+			if _, isOut := e.funcStructRet[name]; isOut {
+				// Written through the lifted function's out parameter
+				// (outNamedCall): the temporary it fills is the struct.
+				tmp = e.captureC(func() { e.emitMethodExpr(me) })
+			} else {
+				e.ind()
+				e.emit(e.retStructNameOf(res) + " " + tmp + " = ")
+				e.emitMethodExpr(me)
+				e.emit(";\n")
+			}
 			for i, tgt := range targets {
 				e.emitStore(tgt, declare[i], res[i], fmt.Sprintf("%s._%d", tmp, i))
 			}
@@ -36776,10 +36950,14 @@ func (e *emitter) emitDestructure(targets []assignTarget, declare []bool, rhs []
 				return
 			}
 			tmp := e.newTmp()
-			e.ind()
-			e.emit(e.retStructNameOf(res) + " " + tmp + " = " + name + "(")
-			e.emitCallArgs(name, lsuffix[0].ast)
-			e.emit(");\n")
+			if _, isOut := e.funcStructRet[name]; isOut {
+				tmp = e.outNamedCall(name, lsuffix[0].ast)
+			} else {
+				e.ind()
+				e.emit(e.retStructNameOf(res) + " " + tmp + " = " + name + "(")
+				e.emitCallArgs(name, lsuffix[0].ast)
+				e.emit(");\n")
+			}
 			for i, tgt := range targets {
 				e.emitStore(tgt, declare[i], res[i], fmt.Sprintf("%s._%d", tmp, i))
 			}
@@ -36855,6 +37033,24 @@ func (e *emitter) emitDestructure(targets []assignTarget, declare []bool, rhs []
 				return
 			}
 		}
+	}
+	// A result struct holding an array is written through the callee's out
+	// parameter (funcStructRet) -- declared first and its address handed over, as
+	// for an interface's slot above -- the target's C compiler returning no such
+	// struct and copying none by assignment at some sizes.
+	if cname, rt, isOut := e.structResultCallOf(callee, suffix); isOut {
+		text, okc := e.outCallC("&"+tmp, cname, callee, suffix)
+		if !okc {
+			return
+		}
+		e.ind()
+		e.emit(rt + " " + tmp + ";\n")
+		e.ind()
+		e.emit(text + ";\n")
+		for i, tgt := range targets {
+			e.emitStore(tgt, declare[i], resTypes[i], fmt.Sprintf("%s._%d", tmp, i))
+		}
+		return
 	}
 	e.ind()
 	// Keyed by the result TYPES, not by the callee: a call through a function value
@@ -37515,6 +37711,15 @@ func (e *emitter) emitCallArgs(cname string, callSuffix []int32) {
 	// and its fields are the arguments.
 	if len(args) == 1 && e.deferReplay < 0 {
 		if names, ok := e.forwardedResults(cname, params, varElem, varAt, args[0]); ok {
+			// A parameter received by pointer (byRefParam) is handed the result's
+			// address, as any argument to one is; the packed tail of a variadic call is
+			// a slice already. `use(two())` passed a struct holding an array as the
+			// value.
+			for i := range names {
+				if i < len(params) && e.byRefParam(params[i]) && (varAt < 0 || i < varAt) {
+					names[i] = "&(" + names[i] + ")"
+				}
+			}
 			e.emit(strings.Join(names, ", "))
 			return
 		}
@@ -37807,6 +38012,21 @@ func (e *emitter) forwardedResults(cname string, params []string, elem string, a
 		tmp := e.newTmp()
 		e.prologue = append(e.prologue, out+" "+tmp+";\n",
 			e.ifaceCallC(ct, recvText, method, call, tmp)+";\n")
+		names := make([]string, len(resTypes))
+		for i := range names {
+			names[i] = fmt.Sprintf("%s._%d", tmp, i)
+		}
+		return e.packForwarded(names, elem, at), true
+	}
+	// A result struct holding an array is written through the callee's out
+	// parameter (funcStructRet), into the temporary whose fields are passed on.
+	if ocname, rt, isOut := e.structResultCallOf(callee, suffix); isOut {
+		tmp := e.newTmp()
+		text, okc := e.outCallC("&"+tmp, ocname, callee, suffix)
+		if !okc {
+			return nil, true
+		}
+		e.prologue = append(e.prologue, rt+" "+tmp+";\n", text+";\n")
 		names := make([]string, len(resTypes))
 		for i := range names {
 			names[i] = fmt.Sprintf("%s._%d", tmp, i)
