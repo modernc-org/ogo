@@ -33302,6 +33302,10 @@ func (e *emitter) emitPrintfVerb(item printfItem, idx int, arg Node) bool {
 		if name, static := e.staticTypeName(idx, arg); static {
 			e.evalTypeOnlyArg(idx, arg)
 			e.ind()
+			if spec != "" {
+				e.emit(e.typeNamePadC(item, cQuote(name), strconv.Itoa(len(name)), true) + ";\n")
+				return true
+			}
 			e.emit("printf(\"%" + spec + "s\", " + cQuote(name) + ");\n")
 			return true
 		}
@@ -33318,6 +33322,13 @@ func (e *emitter) emitPrintfVerb(item printfItem, idx int, arg Node) bool {
 		e.ind()
 		e.emit("{ " + ict + " " + tmp + " = ")
 		value()
+		if spec != "" {
+			name := tmp + ".vt->" + vtTypeField
+			e.includes["string.h"] = true
+			e.emit("; if (" + tmp + ".vt) { " + e.typeNamePadC(item, name, "strlen("+name+")", true) + "; } else { " +
+				e.typeNamePadC(item, `"<nil>"`, "5", false) + "; } }\n")
+			return true
+		}
 		e.emit("; printf(\"%" + spec + "s\", " + tmp + ".vt ? " + tmp + ".vt->" + vtTypeField +
 			" : \"<nil>\"); }\n")
 		return true
@@ -33378,7 +33389,13 @@ func (e *emitter) emitPrintfVerb(item printfItem, idx int, arg Node) bool {
 				if verb != 'v' {
 					none = "%!" + string(verb) + "(<nil>)"
 				}
-				e.emit("; if (" + tmp + ".vt) { " + print + "; } else { printf(\"" + strings.ReplaceAll(none, "%", "%%") + "\"); } }\n")
+				noneC := "printf(\"" + strings.ReplaceAll(none, "%", "%%") + "\")"
+				if verb == 'v' && spec != "" {
+					// Padded as fmt pads it, and never cut: `%-8v` of a nil error is
+					// "<nil>   ", which a log's column needs.
+					noneC = e.typeNamePadC(item, `"<nil>"`, "5", false)
+				}
+				e.emit("; if (" + tmp + ".vt) { " + print + "; } else { " + noneC + "; } }\n")
 				return true
 			}
 			if e.isPointer(dct) && !ptrRecv {
@@ -33773,6 +33790,22 @@ func (e *emitter) emitScalarVerb(item printfItem, ct string, value func(), wrong
 		return e.emitIntVerb(item, ct, value)
 	}
 	return true
+}
+
+// typeNamePadC prints text, a C string of length n, under item's width, its '-' and
+// '0' flags and -- where cut is true -- its precision, as fmt pads a string: a
+// type's name under %T, and the "<nil>" %T and %v print for an interface holding
+// nothing, which fmt pads and never cuts. They went to the C library's printf,
+// whose '0' pads a string with spaces where fmt pads with zeros, `%08T` being
+// "00main.P" in Go -- and a nil interface under %v was not padded at all.
+func (e *emitter) typeNamePadC(item printfItem, text, n string, cut bool) string {
+	w, _ := item.width()
+	p, hasP := item.precision()
+	if !hasP || !cut {
+		p = -1
+	}
+	e.usesStringPad = true
+	return fmt.Sprintf("ogo_print_str_pad_pl(%s, %s, %d, %d, %d, %d)", text, n, w, p, boolToInt(item.leftAlign()), boolToInt(item.hasFlag('0')))
 }
 
 // hexDumpSpec is the tail of an ogo_print_hex_fmt call: the case, the width, the

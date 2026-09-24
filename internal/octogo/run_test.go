@@ -40415,6 +40415,35 @@ func main() {
 }
 `,
 		want: "main.P []string\n",
+	},
+	{
+		// %T pads and cuts a type's name as fmt pads and cuts a string, zeros
+		// under '0' included, and an interface holding nothing prints "<nil>"
+		// under %T and %v padded and never cut. %T went to the C library's
+		// printf, whose '0' pads a string with SPACES -- `%08T` printed
+		// "  main.P" for Go's "00main.P" -- and a nil error under %v was not
+		// padded at all, which throws a log's columns out of line.
+		name: "%T and a nil interface under a width",
+		src: `type P struct{ X int }
+
+type E struct{ code int }
+
+func (e *E) Error() string { return "err" }
+
+var ge = E{7}
+
+func main() {
+	var nilerr error
+	var err error = &ge
+	p := P{1}
+	printf("[%8T] [%-8T] [%08T] [%.3T] [%08.3T]\n", p, p, p, p, p)
+	printf("[%8T] [%-8T] [%08T] [%.3T]\n", nilerr, nilerr, nilerr, nilerr)
+	printf("[%8T] [%08.3T] [%-9T]\n", err, err, err)
+	printf("[%8v] [%-8v] [%08v] [%.1v] [%8.1v] [%+8v]\n", nilerr, nilerr, nilerr, nilerr, nilerr, nilerr)
+	printf("[%8v] [%-8v] [%.1v]\n", err, err, err)
+}
+`,
+		want: "[  main.P] [main.P  ] [00main.P] [mai] [00000mai]\n[   <nil>] [<nil>   ] [000<nil>] [<nil>]\n[ *main.E] [00000*ma] [*main.E  ]\n[   <nil>] [<nil>   ] [000<nil>] [<nil>] [   <nil>] [   <nil>]\n[     err] [err     ] [e]\n",
 	}}
 
 // TestEmitCRun compiles emitted C with a host compiler and runs it, checking what
