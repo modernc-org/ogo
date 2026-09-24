@@ -998,7 +998,10 @@ value; and for arrays the multi-dimensional ones too (%v prints them row by row 
 the element-wise verbs still refuse one). A TYPING question asked of every printed
 argument must be cheap and pure: `arrayShapeOf` renders a call it passes, which lifted
 a function literal argument a second time -- the corpus guard showed it as one changed
-program -- so it is asked only of what `inferCType` cannot type.
+program -- so it is asked only of what `inferCType` cannot type. A CALL's array
+result was the cell nobody printed until 2026-09-24, `println(mk(1))` refused where a
+deferred print took it: the print binds it with its other arguments now
+(`hoistPrintArgs`, `arrayCallArg`).
 
 **A TEMPORARY IS A COG REGISTER** (2026-09-20). flexcc gives every C local one
 (`local_N res 1` in COG_BSS) out of a pool the assembler checks with `fit 480`,
@@ -1034,10 +1037,13 @@ resultCTypeIn); a function literal called and then read through, `func() P { ...
 type, and one returning an ARRAY called at all, `func() Set { ... }()`; a method of
 a call's array result deferred or started on a cog, `defer mk(5).Count()` and `go
 mk(5).Count()`, or with the call parenthesised, `(mk(1)).Count()` (as a value and a
-statement it works since 2026-09-24); a store into a field of a call's
-VALUE, `mk(1).n = 5`, refused as Go refuses it but in the emitter's words ("only
-simple and field assignment targets are supported yet"), and a field a call's
-pointer result lacks, `getp().x`, as "unsupported call in expression"; an
+statement it works since 2026-09-24); a field a call's pointer result lacks,
+`getp().x`, refused as "unsupported call in expression"; a store through a pointer
+or a slice a call's VALUE holds, `mkw().q.y = 2` and `mkw().s[1] = 3` ("only simple
+and field assignment targets are supported yet"; through the pointer a call returns,
+`getp().x = 1`, works), a call in the first target of a list, `getp().x, gp.y = 5,
+6` ("unsupported target in a multiple assignment"), and in a later one, `gp.y,
+getp().x = 7, 8`, a syntax error -- an LhsItem takes no call; an
 element-wise printf verb of a multi-dimensional array, `printf("%d", grid)` ("cannot
 tell the type of this argument"; %v prints one); `[]byte(s)`
 and `[]rune(s)` of a string VARIABLE (a copy of a length known at run time; a

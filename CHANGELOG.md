@@ -20,6 +20,12 @@ shipped section tells a reader on that version that they have behaviour they do 
 
 ### Language
 
+- **A call's array result may be printed.** `println(mk(1))`, `printf("%v",
+  p.Union(q))` and `printf("%d", three(2))` were "a call returning an array must be
+  bound to a variable first", where a deferred print of the same took it: C returns
+  no array, and only the defer had somewhere for the call to write. The print binds
+  it now, with its other arguments and in their order, and prints it as it prints an
+  array variable.
 - **A method may be called on a call's array result.** `mk(5).Count()`,
   `p.Union(q).Union(r)` and `box.get().With(3).Count()` for a `type Set [4]uint32`,
   through an interface's slot as well, were refused in every position a value
@@ -220,6 +226,12 @@ shipped section tells a reader on that version that they have behaviour they do 
 
 ### Fixed
 
+- **A print argument whose type is an array's typedef is copied, not assigned.** A
+  print binds its arguments ahead of itself where one of them does something, and a
+  conversion to a defined array type, `Buf(a)`, or a dereferenced pointer to one,
+  `*p`, was bound by assignment, `Buf t = a;` -- which is no C: `printf("%v %d",
+  Buf(a), tick())` was refused by the host's compiler, "invalid initializer", and
+  built by the target's in silence. It is copied as any array is.
 - **A variadic call through a function value read its arguments as the slice.**
   `f(1, 2, 3)` for a `f := func(xs ...int) int { return len(xs) }` printed 2 on the
   board, where Go prints 3: the three ints went where the slice header goes, which
@@ -450,6 +462,12 @@ shipped section tells a reader on that version that they have behaviour they do 
 
 ### Behaviour changes
 
+- **A store into a call's value is refused in Go's words.** `mkp().x = 5`,
+  `mka()[0].x = 8`, `mkp().x++`, `mkp().x += 2` and `Row(r)[0] = 7`: "cannot assign
+  to mkp().x (neither addressable nor a map index expression)", where the emitter
+  said "only simple and field assignment targets are supported yet" or "cannot assign
+  to a conversion". A target reached through the pointer a call returns, `getp().x =
+  1`, is storage, and is taken.
 - **A pointer method called on a value with no storage is refused, in Go's words.**
   A method with a pointer receiver takes its receiver's address, and a call's
   result has none -- nor has a field of one, an element of an array in one, or a
