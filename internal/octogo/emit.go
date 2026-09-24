@@ -790,6 +790,12 @@ const intPrintHelper = "static void ogo_print_int(long long v, int sgn, int base
 // hex dump %x and %X write of a string or a byte slice, and the quoted form %q
 // writes of either.
 //
+// Each takes the bytes as a pointer and a length, in its _pl form, and a string
+// through a thin wrapper: a call site handing over a variable's pointer and length
+// spends no cog register on it (see emitBytesVerb). The bodies are the _pl forms
+// because the target's compiler INLINES a small function, its locals with it --
+// wrappers building the string in the other direction put one at every call.
+//
 // ogo_print_hex_fmt is the hex dump under a flag, a width or a precision, laid out
 // as fmt's fmtSbx lays it out: ' ' puts a space between the bytes -- `% x`, the
 // usual way to print a frame -- '#' writes 0x once ahead of them, or ahead of each
@@ -806,16 +812,17 @@ const intPrintHelper = "static void ogo_print_int(long long v, int sgn, int base
 // NON-printable rune above ASCII differs, Go escaping it \uXXXX from a table of
 // Unicode printability this target has no room for. The limit is documented in
 // specs.go beside the verb.
-const bytesPrintHelpers = `static void ogo_print_hex_bytes(ogo_string s, int upper) {
+const bytesPrintHelpers = `static void ogo_print_hex_bytes_pl(const char* p, int n, int upper) {
 	const char* d = upper ? "0123456789ABCDEF" : "0123456789abcdef";
-	for (int i = 0; i < s.len; i++) {
-		unsigned char c = (unsigned char)s.str[i];
+	for (int i = 0; i < n; i++) {
+		unsigned char c = (unsigned char)p[i];
 		putchar(d[c >> 4]); putchar(d[c & 15]);
 	}
 }
-static void ogo_print_hex_fmt(ogo_string s, int upper, int wid, int prec, int fl) {
+static void ogo_print_hex_bytes(ogo_string s, int upper) { ogo_print_hex_bytes_pl(s.str, s.len, upper); }
+static void ogo_print_hex_fmt_pl(const char* p, int n, int upper, int wid, int prec, int fl) {
 	const char* d = upper ? "0123456789ABCDEF" : "0123456789abcdef";
-	int n = s.len, left = fl & 1, space = fl & 4, sharp = fl & 32, width = 0;
+	int left = fl & 1, space = fl & 4, sharp = fl & 32, width = 0;
 	char pad = (fl & 8) && !left ? '0' : ' ';
 	if (prec >= 0 && prec < n) n = prec;
 	if (n > 0) {
@@ -826,16 +833,19 @@ static void ogo_print_hex_fmt(ogo_string s, int upper, int wid, int prec, int fl
 	if (!left) for (int i = width; i < wid; i++) putchar(pad);
 	if (n > 0 && sharp) { putchar('0'); putchar(upper ? 'X' : 'x'); }
 	for (int i = 0; i < n; i++) {
-		unsigned char c = (unsigned char)s.str[i];
+		unsigned char c = (unsigned char)p[i];
 		if (i > 0 && space) { putchar(' '); if (sharp) { putchar('0'); putchar(upper ? 'X' : 'x'); } }
 		putchar(d[c >> 4]); putchar(d[c & 15]);
 	}
 	if (left) for (int i = width; i < wid; i++) putchar(' ');
 }
-static void ogo_print_bytes_as_str(ogo_string s) {
-	for (int i = 0; i < s.len; i++) { putchar(s.str[i]); }
+static void ogo_print_hex_fmt(ogo_string s, int upper, int wid, int prec, int fl) { ogo_print_hex_fmt_pl(s.str, s.len, upper, wid, prec, fl); }
+static void ogo_print_bytes_as_str_pl(const char* p, int n) {
+	for (int i = 0; i < n; i++) { putchar(p[i]); }
 }
-static void ogo_print_qbytes(ogo_string s) {
+static void ogo_print_bytes_as_str(ogo_string s) { ogo_print_bytes_as_str_pl(s.str, s.len); }
+static void ogo_print_qbytes_pl(const char* p, int n) {
+	ogo_string s = {p, n};
 	putchar('"');
 	for (int i = 0; i < s.len; ) {
 		unsigned char c = (unsigned char)s.str[i];
@@ -863,6 +873,7 @@ static void ogo_print_qbytes(ogo_string s) {
 	}
 	putchar('"');
 }
+static void ogo_print_qbytes(ogo_string s) { ogo_print_qbytes_pl(s.str, s.len); }
 `
 
 // runeQuoteHelper is %q of an integer: the character in single quotes, with the
@@ -1069,7 +1080,8 @@ const stringHelpers = "static inline void ogo_print_str(ogo_string s) { for (int
 // a sequence cut short as one: `%-4s` of "\xad" padded by four where Go pads by
 // three, and `%.1s` of "\xad\xbeZ" printed all three bytes -- in silence, and the
 // bytes a device sends are what a protocol log prints.
-const stringPadHelper = "static inline void ogo_print_str_pad(ogo_string s, int w, int prec, int left, int zero) {\n" +
+const stringPadHelper = "static void ogo_print_str_pad_pl(const char* p, int n, int w, int prec, int left, int zero) {\n" +
+	"\togo_string s = {p, n};\n" +
 	"\tint _b = 0, _n = 0;\n" +
 	"\twhile (_b < s.len && (prec < 0 || _n < prec)) {\n" +
 	"\t\tint _w = 1;\n" +
@@ -1081,7 +1093,8 @@ const stringPadHelper = "static inline void ogo_print_str_pad(ogo_string s, int 
 	"\tif (!left) for (int _i = 0; _i < _p; _i++) putchar(zero ? '0' : ' ');\n" +
 	"\tfor (int _i = 0; _i < _b; _i++) putchar(s.str[_i]);\n" +
 	"\tif (left) for (int _i = 0; _i < _p; _i++) putchar(' ');\n" +
-	"}\n"
+	"}\n" +
+	"static inline void ogo_print_str_pad(ogo_string s, int w, int prec, int left, int zero) { ogo_print_str_pad_pl(s.str, s.len, w, prec, left, zero); }\n"
 
 // runePadHelper prints a rune to a field width. A rune is one character however many
 // bytes it takes, so the padding is around a count of one.
@@ -33124,9 +33137,21 @@ func (e *emitter) isByteSliceCType(ct string) bool {
 	return e.isSliceCType(ct) && sliceElemFromCName(ct) == "uint8_t"
 }
 
-// emitBytesVerb calls one of the byte helpers on a string or a byte slice: the
-// value is bound to a temporary first, since the helper takes the pointer and the
-// length separately and the argument may be a call.
+// emitBytesVerb calls one of the byte helpers on a string or a byte slice.
+//
+// Every value a call site binds costs the target a cog register, out of a pool of
+// about 480 the whole call chain shares, and the target's compiler gives each C
+// local its own for good -- blocks do not share them. So the binding is the price
+// to keep down: 45 hex dumps in one function, a string and a byte slice each bound
+// to a temporary, spent 173 and failed the build, "fit 480 failed". What a variable
+// or a field holds is handed to the helper's _pl form as a pointer and a length,
+// read twice -- which costs the call site nothing, those 45 dumps spending 19 -- and
+// so is a slice of a whole array, as the array and its length. Passing a string
+// whole costs about two a call, the target copying a struct argument in the
+// caller's frame, and a compound literal of the pointer and the length as much; so
+// a string that is computed is passed whole, one argument evaluated once, and only
+// a byte slice that is computed, a call's result or a reslice, is bound first, so
+// that it is computed once.
 //
 // The value is bound in a block where the verb is printed, not hoisted ahead of the
 // statement: the prologue runs before the arguments printed ahead of this one, and
@@ -33136,17 +33161,70 @@ func (e *emitter) emitBytesVerb(ct, helper, extra string, value func()) {
 	e.usesBytesPrint = true
 	e.usesString = true
 	e.usesRuneDecode = true // ogo_print_qbytes decodes, and one helper text carries all three
-	tmp := e.newTmp()
-	arg := tmp
-	if ct != cString {
-		// A byte slice is handed over as the string its bytes are: same pointer,
-		// same length, and the helpers then read one shape.
-		arg = "(ogo_string){(const char*)" + tmp + ".ptr, " + tmp + ".len}"
+	text := e.captureC(value)
+	if ptr, n, ok := bytesOperandC(ct, text); ok {
+		e.ind()
+		e.emit(helper + "_pl((const char*)" + ptr + ", " + n + extra + ");\n")
+		return
 	}
+	if ct == cString {
+		e.ind()
+		e.emit(helper + "(" + text + extra + ");\n")
+		return
+	}
+	tmp := e.newTmp()
 	e.ind()
-	e.emit("{ " + ct + " " + tmp + " = ")
-	value()
-	e.emit("; " + helper + "(" + arg + extra + "); }\n")
+	e.emit("{ " + ct + " " + tmp + " = " + text + "; " + helper + "_pl((const char*)" + tmp + ".ptr, " + tmp + ".len" + extra + "); }\n")
+}
+
+// bytesOperandC splits the C text of a string or a byte slice, of C type ct, into
+// its pointer and its length where both can be read without computing anything: a
+// variable or a field path, read twice, and a slice of a whole array, `(T){a, 8,
+// 8}`, which is the array and its length. Anything else answers false.
+func bytesOperandC(ct, text string) (ptr, n string, ok bool) {
+	if cPath(text) {
+		if ct == cString {
+			return "(" + text + ").str", "(" + text + ").len", true
+		}
+		return "(" + text + ").ptr", "(" + text + ").len", true
+	}
+	if i := strings.Index(text, "){"); ct != cString && strings.HasPrefix(text, "(") && i > 0 && cIdentLike(text[1:i]) && strings.HasSuffix(text, "}") {
+		if parts := strings.Split(text[i+2:len(text)-1], ", "); len(parts) == 3 && cPath(parts[0]) && cDigits(parts[1]) && cDigits(parts[2]) {
+			return "(" + parts[0] + ")", parts[1], true
+		}
+	}
+	return "", "", false
+}
+
+// cPath reports whether text is a variable and any fields read through it, by
+// value or by pointer: `b`, `gf.b`, `p->hdr.data`.
+func cPath(text string) bool {
+	for _, part := range strings.Split(strings.ReplaceAll(text, "->", "."), ".") {
+		if !cIdentLike(part) {
+			return false
+		}
+	}
+	return true
+}
+
+// cIdentLike reports whether s is spelled as a C identifier.
+func cIdentLike(s string) bool {
+	for i, r := range s {
+		if r != '_' && !('a' <= r && r <= 'z') && !('A' <= r && r <= 'Z') && !(i > 0 && '0' <= r && r <= '9') {
+			return false
+		}
+	}
+	return s != ""
+}
+
+// cDigits reports whether s is a decimal number.
+func cDigits(s string) bool {
+	for _, r := range s {
+		if r < '0' || r > '9' {
+			return false
+		}
+	}
+	return s != ""
 }
 
 // emitFloatVerb prints a float through one of %e, %E, %f, %g or %G: the helper

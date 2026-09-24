@@ -40349,6 +40349,56 @@ func main() {
 }
 `,
 		want: "['\xef\xbf\xbd'] ['\xef\xbf\xbd'] ['\xef\xbf\xbd'] ['\xef\xbf\xbd']\n['x'] ['\xc3\xa9'] ['\xef\xbf\xbd'] ['\\''] 4\n[['\xef\xbf\xbd' 'a']] [\xef\xbf\xbd|] [U+00E9]\n",
+	},
+	{
+		// Forty-eight hex dumps in one function, as a protocol log writes them. Every
+		// value a call site binds is a cog register on the target, from a pool the
+		// whole call chain shares, and a string and a byte slice were each bound to
+		// a temporary for the helper: the target's compiler refused this program,
+		// "fit 480 failed", and forty-five plain `%x` dumps before any flag was taken.
+		// A variable's or a field's bytes go to the helper as a pointer and a length
+		// now, which costs the call nothing.
+		name: "many hex dumps in one function",
+		src: `type Frame struct {
+	hdr  string
+	body []byte
+}
+
+var raw [6]byte
+
+func main() {
+	f := Frame{"\x7e\x01", raw[:]}
+	for i := range raw {
+		raw[i] = byte(i * 41)
+	}
+	s, b := f.hdr, f.body
+	printf("00 %x|%x\n", s, f.body)
+	printf("01 % x|% X\n", f.hdr, b)
+	printf("02 %X|%# x\n", s, b)
+	printf("03 %#x|%.3x\n", f.hdr, f.body)
+	printf("04 %x|%-14x\n", s, b)
+	printf("05 %x|%x\n", f.hdr, b)
+	printf("06 %x|%x\n", s, f.body)
+	printf("07 % x|% X\n", f.hdr, b)
+	printf("08 %X|%# x\n", s, b)
+	printf("09 %#x|%.3x\n", f.hdr, f.body)
+	printf("10 %x|%-14x\n", s, b)
+	printf("11 %x|%x\n", f.hdr, b)
+	printf("12 %x|%x\n", s, f.body)
+	printf("13 % x|% X\n", f.hdr, b)
+	printf("14 %X|%# x\n", s, b)
+	printf("15 %#x|%.3x\n", f.hdr, f.body)
+	printf("16 %x|%-14x\n", s, b)
+	printf("17 %x|%x\n", f.hdr, b)
+	printf("18 %x|%x\n", s, f.body)
+	printf("19 % x|% X\n", f.hdr, b)
+	printf("20 %X|%# x\n", s, b)
+	printf("21 %#x|%.3x\n", f.hdr, f.body)
+	printf("22 %x|%-14x\n", s, b)
+	printf("23 %x|%x\n", f.hdr, b)
+}
+`,
+		want: "00 7e01|0029527ba4cd\n01 7e 01|00 29 52 7B A4 CD\n02 7E01|0x00 0x29 0x52 0x7b 0xa4 0xcd\n03 0x7e01|002952\n04 7e01|0029527ba4cd  \n05 7e01|0029527ba4cd\n06 7e01|0029527ba4cd\n07 7e 01|00 29 52 7B A4 CD\n08 7E01|0x00 0x29 0x52 0x7b 0xa4 0xcd\n09 0x7e01|002952\n10 7e01|0029527ba4cd  \n11 7e01|0029527ba4cd\n12 7e01|0029527ba4cd\n13 7e 01|00 29 52 7B A4 CD\n14 7E01|0x00 0x29 0x52 0x7b 0xa4 0xcd\n15 0x7e01|002952\n16 7e01|0029527ba4cd  \n17 7e01|0029527ba4cd\n18 7e01|0029527ba4cd\n19 7e 01|00 29 52 7B A4 CD\n20 7E01|0x00 0x29 0x52 0x7b 0xa4 0xcd\n21 0x7e01|002952\n22 7e01|0029527ba4cd  \n23 7e01|0029527ba4cd\n",
 	}}
 
 // TestEmitCRun compiles emitted C with a host compiler and runs it, checking what
