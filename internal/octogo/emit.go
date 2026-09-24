@@ -22880,6 +22880,28 @@ func (e *emitter) structOutCallC(at int32, rt string, call func(tmp string) stri
 	return tmp
 }
 
+// arrayOutCallC is structOutCallC for a call returning an ARRAY that a chain reads
+// further: the call writes a temporary of this frame through its out parameter,
+// ahead of the statement, and the temporary is what the chain goes on from. call
+// renders the call given the out parameter's argument, cast to the element pointer
+// the parameter is (see arrayResultCType). Once per occurrence, by the same memo.
+// A static initializer and a deferred call's replay have nowhere to put the call,
+// and refuse it.
+func (e *emitter) arrayOutCallC(at int32, a arrDim, call func(out string) string) (string, bool) {
+	if tmp, done := e.hoistedArrayCalls[at]; done && tmp != "" {
+		return tmp, true
+	}
+	if e.declInit || e.deferReplay >= 0 {
+		return "", false
+	}
+	tmp := e.newTmp()
+	text := call("(" + arrayResultCType(a) + ")" + tmp)
+	e.prologue = append(e.prologue, a.elem+" "+tmp+a.declSuffix()+";\n", text+";\n")
+	e.hoistedArrayCalls[at] = tmp
+	e.arrays[tmp] = a
+	return tmp, true
+}
+
 // callReadFields is callReadBase for a chain of selectors only, the shape
 // arrayFieldOperand reads: the field names after the call.
 func (e *emitter) callReadFields(kids []Node) (name string, fields []string, ok bool) {
@@ -30399,6 +30421,26 @@ func (e *emitter) chainCText(base string, steps []Node) (text, ctype string, add
 				resultTok = n.Pos()
 				continue
 			}
+			// A leading function returning an ARRAY that the chain reads further,
+			// `mk(5).Count()`: C returns no array, so the call is a statement writing
+			// a temporary of this frame, which the chain goes on from -- once per
+			// occurrence (arrayOutCallC).
+			if a, isArr := e.funcArrayRet[callee]; pendingFn && isArr {
+				cname := callee
+				tmp, okb := e.arrayOutCallC(n.Pos(), a, func(out string) string {
+					call := cname + "(" + out
+					if args := e.argsCText(cname, n.ast); args != "" {
+						call += ", " + args
+					}
+					return call + ")"
+				})
+				if !okb {
+					return "", "", false, false
+				}
+				text, cur, addr, pendingFn = tmp, curArray(a), true, false
+				resultTok = -1
+				continue
+			}
 			// Otherwise a call reaches here only on the pending leading function; a
 			// method call is recognised at its Selector and consumes the CallSuffix
 			// there.
@@ -30486,6 +30528,18 @@ func (e *emitter) chainCText(base string, steps []Node) (text, ctype string, add
 				call := vtRead + "->" + vtMember(field) + "(" + text + ".data"
 				if args := e.argsCText("", steps[i+1].ast); args != "" {
 					call += ", " + args
+				}
+				if a := ms[slot].arr; a.bound != "" {
+					// An ARRAY result, through the trailing parameter the slot writes
+					// it through, into a temporary the chain goes on from.
+					tmp, okb := e.arrayOutCallC(steps[i+1].Pos(), a, func(out string) string { return call + ", " + out + ")" })
+					if !okb {
+						return "", "", false, false
+					}
+					text, cur, addr = tmp, curArray(a), true
+					resultTok = -1
+					i++ // consumed the CallSuffix
+					continue
 				}
 				if out := ms[slot].out; out != "" {
 					if len(ms[slot].resList) > 1 {
@@ -30615,6 +30669,25 @@ func (e *emitter) chainCText(base string, steps []Node) (text, ctype string, add
 						bound := recv
 						recv = e.hoist(rct, func() { e.emit(bound) })
 					}
+				}
+				if a, isArr := e.funcArrayRet[cname]; isArr {
+					// An ARRAY result, `p.Union(q).Count()`: see the leading call
+					// above. The receiver leads, ahead of the out parameter.
+					r := recv
+					tmp, okb := e.arrayOutCallC(steps[i+1].Pos(), a, func(out string) string {
+						call := cname + "(" + r + ", " + out
+						if args := e.argsCText(cname, steps[i+1].ast); args != "" {
+							call += ", " + args
+						}
+						return call + ")"
+					})
+					if !okb {
+						return "", "", false, false
+					}
+					text, cur, addr = tmp, curArray(a), true
+					resultTok = -1
+					i++ // consumed the CallSuffix
+					continue
 				}
 				if rt, isOut := e.funcStructRet[cname]; isOut {
 					// A result holding an array, through an out parameter: see the
@@ -30768,6 +30841,17 @@ func (e *emitter) chainCText(base string, steps []Node) (text, ctype string, add
 // emitting -- and without the argument side effects emission has -- to report the
 // C type a call chain yields, for inferCType/callResultCType.
 func (e *emitter) chainResultType(base string, steps []Node) (string, bool) {
+	cur, ok := e.chainResultCur(base, steps)
+	if !ok || cur.ctype == "" {
+		return "", false // ended on an array or a slice, not a single value
+	}
+	return cur.ctype, true
+}
+
+// chainResultCur is chainResultType answering what the chain reached, an ARRAY
+// included: a call returning one is a value the chain goes on from, `mk(5).Count()`
+// and `p.Union(q).Union(r)`, which a receiver's type has to be read off.
+func (e *emitter) chainResultCur(base string, steps []Node) (accessCur, bool) {
 	var cur accessCur
 	pendingFn, pendingConv := false, false
 	switch {
@@ -30782,7 +30866,7 @@ func (e *emitter) chainResultType(base string, steps []Node) (string, bool) {
 		// type for s while println of the same call printed it.
 		ct, isConv := e.convType(base)
 		if !isConv || len(steps) == 0 || steps[0].sym != CallSuffix {
-			return "", false
+			return accessCur{}, false
 		}
 		cur, pendingConv = e.plainOrSlice(ct), true
 	}
@@ -30802,14 +30886,20 @@ func (e *emitter) chainResultType(base string, steps []Node) (string, bool) {
 				// path and printed it in halves.
 				rts := e.funcTypeRet[e.underlyingCType(cur.ctype)]
 				if len(rts) != 1 {
-					return "", false
+					return accessCur{}, false
 				}
 				cur = e.plainOrSlice(rts[0])
 				continue
 			}
+			// A function returning an ARRAY: the chain goes on from the array, which
+			// the rendering walk binds to a temporary (chainCText).
+			if a, isArr := e.funcArrayRet[e.funcCallC(base)]; pendingFn && isArr {
+				cur, pendingFn = curArray(a), false
+				continue
+			}
 			rts, okr := e.userFunc(base)
 			if !pendingFn || !okr || len(rts) != 1 {
-				return "", false
+				return accessCur{}, false
 			}
 			cur, pendingFn = e.plainOrSlice(rts[0]), false
 		case Selector:
@@ -30820,14 +30910,19 @@ func (e *emitter) chainResultType(base string, steps []Node) (string, bool) {
 			// callResultCType applies to a plain interface variable. Without this the
 			// chain went untyped and a string result printed as two integers.
 			if i+1 < len(steps) && steps[i+1].sym == CallSuffix && e.isIfaceCType(cur.ctype) {
-				slot := ""
+				slot, arr := "", arrDim{}
 				for _, m := range e.ifaceMethods[cur.ctype] {
 					if m.name == field {
-						slot = m.res
+						slot, arr = m.res, m.arr
 					}
 				}
+				if arr.bound != "" {
+					cur = curArray(arr) // an ARRAY result, which the chain goes on from
+					i++
+					continue
+				}
 				if slot == "" || slot == "void" {
-					return "", false // no such slot, or one yielding nothing
+					return accessCur{}, false // no such slot, or one yielding nothing
 				}
 				cur = e.plainOrSlice(slot)
 				i++
@@ -30841,9 +30936,14 @@ func (e *emitter) chainResultType(base string, steps []Node) (string, bool) {
 				bt = cur.name
 			}
 			if i+1 < len(steps) && steps[i+1].sym == CallSuffix && bt != "" && e.isMethodBase(bt) {
+				if a, isArr := e.funcArrayRet[methodCName(bt, field)]; isArr {
+					cur = curArray(a) // an ARRAY result, as of a function above
+					i++
+					continue
+				}
 				rts, okm := e.funcRet[methodCName(bt, field)]
 				if !okm || len(rts) > 1 {
-					return "", false
+					return accessCur{}, false
 				}
 				if len(rts) == 1 {
 					cur = e.plainOrSlice(rts[0])
@@ -30857,26 +30957,26 @@ func (e *emitter) chainResultType(base string, steps []Node) (string, bool) {
 			// the result to a temporary so it can be read at all.
 			var oks bool
 			if cur, oks = e.accessSelect(cur, field); !oks {
-				return "", false
+				return accessCur{}, false
 			}
 		case Index:
 			if _, _, _, isSlice := e.sliceParts(n.ast); isSlice {
-				return "", false
+				return accessCur{}, false
 			}
 			// A non-empty prefix stands in for the real one: only its emptiness
 			// gates the slice-length path in accessIndex, never used for typing.
 			var oki bool
 			if cur, _, oki = e.accessIndex(cur, base); !oki {
-				return "", false
+				return accessCur{}, false
 			}
 		default:
-			return "", false
+			return accessCur{}, false
 		}
 	}
-	if pendingFn || cur.ctype == "" {
-		return "", false // never called, or ended on an array/slice, not a single value
+	if pendingFn {
+		return accessCur{}, false // a bare function name, never called
 	}
-	return cur.ctype, true
+	return cur, true
 }
 
 // arrayChainBound returns the extent of an ARRAY reached through a chain of fields
@@ -37501,14 +37601,18 @@ func (e *emitter) chainMethodCName(base string, steps []Node) (string, bool) {
 	var cur accessCur
 	if containsSym(prefix, CallSuffix) {
 		// A receiver reached through a CALL, `bus.reg(2).pop()`: typed by the walk
-		// that knows a method's result as it knows a field's (chainResultType). It
-		// types and emits nothing; the rendering walk binds the call's result where
-		// the call is emitted.
-		ct, ok := e.chainResultType(base, prefix)
-		if !ok || ct == "" {
+		// that knows a method's result as it knows a field's (chainResultCur) -- an
+		// ARRAY among them, `p.Union(q).Count()`, whose methods its defined type's
+		// name carries. It types and emits nothing; the rendering walk binds the
+		// call's result where the call is emitted.
+		c, ok := e.chainResultCur(base, prefix)
+		if !ok || c.ctype == "" && (len(c.dims) == 0 || c.name == "") {
 			return "", false
 		}
-		cur = e.plainOrSlice(ct)
+		cur = c
+		if c.ctype != "" {
+			cur = e.plainOrSlice(c.ctype)
+		}
 	} else {
 		var ok bool
 		if cur, ok = e.accessChainType(base, prefix); !ok {

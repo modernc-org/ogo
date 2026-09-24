@@ -39202,6 +39202,107 @@ func main() {
 `,
 		want: "3 true\n3 4\n8 true\n4 2\n6 true\n3 true\n10 true\n5 12\n[5 6 7] true [5 6 7]\n18 135\n",
 	}, {
+		// A method called on a call's ARRAY result -- `mk(5).Count()`,
+		// `p.Union(q).Union(r)`, `box.get().With(3).Count()` -- was refused in every
+		// position, "unsupported call in expression" or "cannot infer a type": C
+		// returns no array, so the call is a statement writing a temporary, and the
+		// chain walks knew that of a call whose value is indexed and not of one whose
+		// value is a receiver. Each call runs once, in Go's order.
+		name: "a method of a call's array result",
+		src: `type Set [4]uint32
+
+func (s Set) Union(t Set) Set {
+	for i := range s {
+		s[i] |= t[i]
+	}
+	return s
+}
+
+func (s Set) Count() (n int) {
+	for _, w := range s {
+		for w != 0 {
+			w &= w - 1
+			n++
+		}
+	}
+	return
+}
+
+func (s *Set) Add(i int) { s[i/32] |= 1 << uint(i%32) }
+
+func (s Set) With(i int) Set {
+	s.Add(i)
+	return s
+}
+
+var calls int
+
+func mk(i int) (s Set) {
+	calls = calls*10 + i%10
+	s.Add(i)
+	return
+}
+
+type Box struct{ s Set }
+
+func (b Box) get() Set { return b.s }
+
+type Getter interface{ get() Set }
+
+type Grid [2][2]int
+
+func (g Grid) T() Grid {
+	g[0][1], g[1][0] = g[1][0], g[0][1]
+	return g
+}
+
+func (g Grid) Sum() int { return g[0][0] + g[0][1]*10 + g[1][0]*100 + g[1][1]*1000 }
+
+func take(s Set) int { return s.Count() }
+
+var gn = mk(5).With(6).Count()
+
+var box Box
+
+// A method called on a call's ARRAY result, in the positions a value stands in.
+func main() {
+	var p Set
+	p.Add(1)
+	box.s = mk(40)
+	println(gn, calls)
+	calls = 0
+	n := mk(5).Count()
+	u := p.Union(mk(3)).Union(mk(4))
+	println(n, u.Count(), calls)
+	calls = 0
+	println(mk(2).With(9).With(64).Count(), p.Union(mk(7)).Count(), calls)
+	if mk(6).Count() == 1 {
+		println("if")
+	}
+	switch mk(3).Union(mk(4)).Count() {
+	case 2:
+		println("switch")
+	}
+	for i := 0; i < mk(2).Count(); i++ {
+		println("for", i)
+	}
+	var g Getter = &box
+	println(box.get().With(3).Count(), g.get().With(1).Count(), take(mk(1).With(2)))
+	println(len(mk(5).With(100)), mk(5).With(33)[1], mk(1).With(2) == p.With(2))
+	s := 0
+	for _, w := range mk(5).With(33) {
+		s += int(w)
+	}
+	println(s)
+	grid := Grid{{1, 2}, {3, 4}}
+	println(grid.T().Sum(), grid.T().T() == grid)
+	calls = 0
+	mk(5).Count()
+	defer println("deferred", mk(8).Count(), calls)
+}
+`,
+		want: "2 50\n1 3 534\n3 2 27\nif\nswitch\nfor 0\n2 2 2\n4 2 true\n34\n4231 true\ndeferred 1 58\n",
+	}, {
 		// A literal of a struct holding an ARRAY as a MEMBER of another literal,
 		// where the outer one is a compound literal -- under &, as an argument, a
 		// receiver, an element of a slice of pointers -- was a compound literal of
