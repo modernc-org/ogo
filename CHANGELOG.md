@@ -185,6 +185,13 @@ shipped section tells a reader on that version that they have behaviour they do 
   declaration and an assignment, a return and arguments forwarding it (`return f()`,
   `use(f())`), a package variable's initializer, if, switch and for headers, function
   values, method values and expressions, interfaces, defer, go, and other packages.
+- **An array may be a result beside another.** `Read() ([4]byte, error)`, a fixed
+  buffer read with an error, was refused: "cannot return an array beside another
+  result". It travels through an out parameter the way a struct holding an array
+  does -- the result struct holds it -- and is copied in and out with memcpy; a named
+  array result is the array it names, and a package variable given one a package
+  array. A lone array result is as it was, and a function TYPE returning one is
+  still refused.
 - **A for loop's post may take one call's several results.** The iterator idiom `for
   v, ok := next(); ok; v, ok = next()` was refused, "a for-loop post statement
   assigns 1 values to 2 targets"; the init had taken one call's results since the day

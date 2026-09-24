@@ -1011,13 +1011,11 @@ Known open items, all loud refusals or design walls (2026-09-17): an
 array-returning call as a package literal element; a function returning an ARRAY
 taken as a value, `mb := mkb`, "cannot infer a type" and, with the type written,
 "cannot return an array beside another result" (a function value's type has no out
-parameter for it); an ARRAY beside another result, `func f() ([3]int, bool)`
-("cannot return an array beside another result"), whose result struct would hold the
-array -- as the result struct of a struct holding one does, which travels through an
-out parameter since 2026-09-24 (structOutOf), and that is how this one would come
-down; a function literal called and then read through, `func() P { ... }().x` ("a
-function literal may only be called where it stands"), for any result type; a store
-into a field of a call's
+parameter for it -- an array BESIDE another result is one since 2026-09-24, held in
+the result struct as its typedef and written through an out parameter,
+resultCTypeIn); a function literal called and then read through, `func() P { ...
+}().x` ("a function literal may only be called where it stands"), for any result
+type; a store into a field of a call's
 VALUE, `mk(1).n = 5`, refused as Go refuses it but in the emitter's words ("only
 simple and field assignment targets are supported yet"), and a field a call's
 pointer result lacks, `getp().x`, as "unsupported call in expression"; the
