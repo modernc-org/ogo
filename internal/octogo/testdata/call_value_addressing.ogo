@@ -3,7 +3,8 @@
 // slice's elements, which are storage wherever the pointer or the slice came
 // from. Go takes neither the address of one nor a slice of an array in one; both
 // compiled, the emitter binding the result to a temporary whose address it could
-// take.
+// take -- and a call on another call's result, `gb.self().self().n`, was asked
+// nothing until the walk typed every call in the chain.
 
 type Buf struct {
 	n    int
@@ -64,6 +65,8 @@ func ok() {
 	_ = mk(1).data[0]
 	_ = o.in.getp().data[1:]
 	_ = &ws[0].getp().n
+	_ = &mkw(1).p.ptr().n
+	_ = gb.self().self().data[0]
 }
 
 func bad() {
@@ -87,6 +90,10 @@ func bad() {
 	ls := []W{{}}
 	// ERROR cannot slice unaddressable value ls\[0\].get\(\).data\[1:\]
 	_ = ls[0].get().data[1:]
+	// ERROR invalid operation: cannot take address of gb.self\(\).self\(\).n
+	_ = &gb.self().self().n
+	// ERROR cannot slice unaddressable value mk\(1\).self\(\).data\[1:\]
+	_ = mk(1).self().data[1:]
 	// ERROR invalid operation: cannot take address of mkp\(\).x
 	q := &mkp().x
 	println(*q)

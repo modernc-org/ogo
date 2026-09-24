@@ -6868,7 +6868,9 @@ func TestEmitCParenRestriction(t *testing.T) {
 // one work at all. Unwrapping would just as happily give `&Row(a)[1]` the address of
 // the operand's element, a meaning for a program Go does not accept, so each of these
 // is refused deliberately rather than by not being implemented. Verified against
-// `go vet` on the same three programs.
+// `go vet` on the same three programs. The checker refuses the address and the slice
+// first since 2026-09-24, in Go's words (callChainWalk), so a refusal is taken from
+// either stage.
 func TestEmitCArrayConvNotAddressable(t *testing.T) {
 	const header = `type Row [3]int
 
@@ -6894,7 +6896,7 @@ var p *int
 	println(*p)
 }
 `,
-			want: "cannot take the address of a conversion",
+			want: "invalid operation: cannot take address of Row(r)[1]",
 		},
 		{
 			name: "sliced",
@@ -6903,19 +6905,19 @@ var p *int
 	println(len(s))
 }
 `,
-			want: "cannot slice a conversion",
+			want: "cannot slice unaddressable value Row(r)",
 		},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			fsys := fstest.MapFS{"main.ogo": &fstest.MapFile{Data: []byte(header + test.src)}}
 			pkg, err := Build(-1, []string{"main.ogo"}, fsys)
-			if err != nil {
-				t.Fatalf("Build: %v", err)
+			if err == nil {
+				var out bytes.Buffer
+				if err = EmitC(pkg, &out); err == nil {
+					t.Fatalf("expected a refusal, got:\n%s", out.String())
+				}
 			}
-			var out bytes.Buffer
-			if err = EmitC(pkg, &out); err == nil {
-				t.Fatalf("expected a refusal, got:\n%s", out.String())
-			} else if !strings.Contains(err.Error(), test.want) {
+			if !strings.Contains(err.Error(), test.want) {
 				t.Fatalf("expected %q, got %v", test.want, err)
 			}
 		})

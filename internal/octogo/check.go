@@ -2232,6 +2232,9 @@ func (f *File) checkCallStmt(s *Scope, head, stmt Node, kw string, kwTok Token, 
 	id, ok := f.assignHeadIdent(head)
 	f.checkCall(s, id, direct && ok, argList)
 	if !direct && ok {
+		if steps, _ := callSteps(stmt); len(steps) != 0 {
+			f.reportPtrMethodOnValue(steps, f.callChainWalk(s, id, steps))
+		}
 		f.checkCallBase(s, id, hasSelectorChild(stmt))
 		if m, has := f.methodCallMember(stmt); has {
 			f.checkMethodCall(s, id, m, argList, stmt)
@@ -6293,6 +6296,9 @@ func (f *File) checkAssignment(s *Scope, head, postfix Node) {
 		id, ok := f.assignHeadIdent(head)
 		f.checkCall(s, id, direct && ok, argList)
 		if !direct && ok {
+			if steps, pure := callSteps(postfix); pure {
+				f.reportPtrMethodOnValue(steps, f.callChainWalk(s, id, steps))
+			}
 			f.checkCallBase(s, id, hasSelectorChild(postfix))
 			if m, has := f.methodCallMember(postfix); has {
 				f.checkMethodCall(s, id, m, argList, postfix)
@@ -11799,75 +11805,122 @@ func (f *File) checkAddressable(s *Scope, op Node, fac Node) {
 	}
 }
 
-// callValueAddressing walks the steps written after the last CALL of a factor,
-// `head(...).f[i]` or `head.m(...).f`, asking what Go asks of storage. A call's
-// result is a value with none, and so is a field of it or an element of an array
-// in it, until a step goes through a pointer or into a slice's elements, which are
-// storage wherever the pointer or the slice came from. It answers the index in
-// steps of a step that SLICES an array with no storage, -1 for none, and whether
-// what the steps reach is addressable; known is false where the walk meets what it
-// does not type -- another package's callee, a promoted field, a string -- which it
-// asks nothing of.
+// callValueAddressing walks a factor's steps from its head, through its CALLS as
+// well as its fields and indexes -- a function's result, a method's of what the
+// chain has reached, `mk(1).With(2).data` -- asking at each step what Go asks of
+// storage. A call's result is a value with none, and so is a field of it or an
+// element of an array in it, until a step goes through a pointer or into a slice's
+// elements, which are storage wherever the pointer or the slice came from. It
+// answers the index in steps of a step that SLICES an array with no storage, -1 for
+// none, and whether what the steps reach is addressable; known is false where the
+// walk meets what it does not type -- another package's callee, a promoted field, a
+// string -- which it asks nothing of, and for steps with no call, which reach a
+// variable's storage.
 //
 // The emitter binds a call's result to a temporary before it reads through it, and
 // a temporary has an address, so `&mkp().x` and `mk(1).data[1:]` compiled where Go
 // refuses both. The second became writable when a struct holding an array could be
-// a result (2026-09-23).
+// a result (2026-09-23). Only three shapes of the call were typed, the last one in
+// the steps, so a call on another call's result -- `&mk(1).With(2)[0]` -- was asked
+// nothing, and was taken once an array result could be a receiver (2026-09-24).
 func (f *File) callValueAddressing(s *Scope, head Token, steps []Node) (sliceAt int, addressable, known bool) {
-	k := -1
-	for i, st := range steps {
-		if st.sym == CallSuffix {
-			k = i
-		}
+	w := f.callChainWalk(s, head, steps)
+	return w.sliceAt, w.addr, w.known
+}
+
+// callChain is what callChainWalk found in a factor's steps.
+type callChain struct {
+	sliceAt int    // the step slicing an array with no storage, -1 for none
+	ptrAt   int    // the Selector of a POINTER method called on a value with no storage, -1 for none
+	ptrType string // that value's type, as a message names it
+	addr    bool   // what the steps reach is storage
+	known   bool   // every step was typed
+}
+
+// callChainWalk is callValueAddressing's walk. It reports as well the first
+// POINTER-receiver method called on a value with no storage, which Go refuses --
+// `mk(1).Add(2)`, `mkw().p.Set(1)`, `mka()[0].Set(1)`, `C(3).Inc()` -- and which
+// the emitter, binding the value to a temporary, called on the temporary: the
+// method wrote where nobody reads. A method reached through an embedded POINTER is
+// called on what that pointer points at, which is storage.
+func (f *File) callChainWalk(s *Scope, head Token, steps []Node) (w callChain) {
+	w.sliceAt, w.ptrAt = -1, -1
+	if !slices.ContainsFunc(steps, func(n Node) bool { return n.sym == CallSuffix }) {
+		return w
 	}
-	var results []retResult
-	ok := false
-	rs := s // where the result's type is resolved
-	switch {
-	case k == 0:
-		results, ok = f.callResults(s, head, Token{})
-	case k == 1 && steps[0].sym == Selector:
+	var t typeAt
+	addr := false
+	// one takes a call's results as the value the chain goes on from: exactly one.
+	one := func(results []retResult, ok bool, in *Scope) bool {
+		if !ok || len(results) != 1 || results[0].typeNode == nil {
+			return false
+		}
+		t, addr = typeAt{results[0].typeNode, in, f}, false
+		return true
+	}
+	i := 0
+	switch d := s.find(head.Src()).(type) {
+	case *FuncDeclaration:
+		if steps[0].sym != CallSuffix || d.FuncDecl == nil || d.FuncDecl.Type == nil {
+			return w
+		}
+		// The result's type is resolved where the function is declared: a local
+		// type of the caller's may shadow its name.
+		wf := f.fileOfToken(d.Token())
+		if !one(wf.flattenResults(wf.Scope, d.FuncDecl.Type.Signature), true, wf.Scope) {
+			return w
+		}
+		t.f = wf
+		i = 1
+	case *TypeDeclaration:
+		switch {
+		case steps[0].sym == CallSuffix:
+			// A CONVERSION, `C(3)`: a value of the type named.
+			t, i = typeAt{&TypeNodeIdent{Name: head}, s, f}, 1
+		case len(steps) > 1 && steps[0].sym == Selector && steps[1].sym == CallSuffix:
+			// A method expression called, `T.M(x)`.
+			m, has := f.selectorMember(steps[0])
+			if !has {
+				return w
+			}
+			if results, ok := f.callResults(s, head, m); !one(results, ok, s) {
+				return w
+			}
+			i = 2
+		default:
+			return w
+		}
+	case *VarDeclaration:
 		// A method's results are this package's to resolve only where the
 		// receiver's type is: callResults looks another package's type up by its
 		// bare name here.
-		if d, isVar := s.find(head.Src()).(*VarDeclaration); isVar && d.typeQual.IsValid() {
-			return -1, false, false
+		if d.typeQual.IsValid() {
+			return w
 		}
-		if m, has := f.selectorMember(steps[0]); has {
-			results, ok = f.callResults(s, head, m)
+		if len(steps) > 1 && steps[0].sym == Selector && steps[1].sym == CallSuffix {
+			m, has := f.selectorMember(steps[0])
+			if !has {
+				return w
+			}
+			if results, ok := f.callResults(s, head, m); ok {
+				if !one(results, ok, s) {
+					return w
+				}
+				i = 2
+				break
+			}
 		}
-	case k >= 2 && steps[k-1].sym == Selector && !slices.ContainsFunc(steps[:k-1], func(n Node) bool { return n.sym == CallSuffix }):
-		// A method called on what a chain of fields and indexes reaches,
-		// `hs[0].get()`: the receiver's type walked from the variable's
-		// (targetTypeNode), and the method looked up on it. It was not typed, and
-		// `hs[0].get().data[1:]` was taken where Go refuses it.
-		m, has := f.selectorMember(steps[k-1])
-		if !has {
-			break
+		vt, ok := f.varTypeAt(d)
+		if !ok {
+			return w
 		}
-		tn, in := f.targetTypeNode(s, head, steps[:k-1], 0)
-		if p, isPtr := tn.(*TypeNodePointer); isPtr {
-			tn = p.TypeNode
-		}
-		id, isID := tn.(*TypeNodeIdent)
-		if !isID || id.Qualifier.IsValid() {
-			break
-		}
-		td, home, isMethod := f.methodOwnerScoped(in, id.Name.Src(), m.Src())
-		if !isMethod {
-			break
-		}
-		if fd := td.methods[m.Src()]; fd != nil && fd.Type != nil {
-			results, ok, rs = f.flattenResults(home, fd.Type.Signature), true, home
-		}
+		t, addr = vt, true
+	default:
+		return w
 	}
-	if !ok || len(results) != 1 || results[0].typeNode == nil {
-		return -1, false, false
-	}
-	t := typeAt{results[0].typeNode, rs, f}
 	var sliceElem *typeAt // the value is a slice of these, which a slice step made
-	addr := false
-	for i, st := range steps[k+1:] {
+	for ; i < len(steps); i++ {
+		st := steps[i]
 		if sliceElem != nil {
 			switch {
 			case st.sym == Index && f.isSliceExpr(st):
@@ -11876,7 +11929,41 @@ func (f *File) callValueAddressing(s *Scope, head Token, steps []Node) (sliceAt 
 				t, sliceElem, addr = *sliceElem, nil, true // an element of its backing array
 				continue
 			}
-			return -1, false, false
+			return w
+		}
+		// A METHOD of what the chain reached, the value so far its receiver.
+		if st.sym == Selector && i+1 < len(steps) && steps[i+1].sym == CallSuffix {
+			m, has := f.selectorMember(st)
+			if !has {
+				return w
+			}
+			tn, isPtr := t.tn, false
+			if p, ok := tn.(*TypeNodePointer); ok {
+				tn, isPtr = p.TypeNode, true
+			}
+			if id, isID := tn.(*TypeNodeIdent); isID && !id.Qualifier.IsValid() {
+				if set, isIface := f.interfaceMethodsNamed(t.s, id.Name.Src()); isIface {
+					spec, has := set[m.Src()]
+					if isPtr || !has || !one(f.flattenResults(t.s, methodSpecSig(spec)), true, t.s) {
+						return w
+					}
+					i++
+					continue
+				}
+				if td, home, viaPtr, isMethod := f.methodOwnerPath(t.s, id.Name.Src(), m.Src()); isMethod {
+					if !isPtr && !addr && !viaPtr && td.ptrRecv[m.Src()] && w.ptrAt < 0 {
+						w.ptrAt, w.ptrType = i, id.Name.Src()
+					}
+					fd := td.methods[m.Src()]
+					if fd == nil || fd.Type == nil || !one(f.flattenResults(home, fd.Type.Signature), true, home) {
+						return w
+					}
+					i++
+					continue
+				}
+			}
+			// No method of that name: a FIELD, holding a function the next step
+			// calls.
 		}
 		u := f.underlyingTypeAt(t)
 		if p, isPtr := u.tn.(*TypeNodePointer); isPtr {
@@ -11888,7 +11975,7 @@ func (f *File) callValueAddressing(s *Scope, head Token, steps []Node) (sliceAt 
 			name, has := f.selectorMember(st)
 			sn, isStruct := u.tn.(*TypeNodeStruct)
 			if !has || !isStruct {
-				return -1, false, false
+				return w
 			}
 			var ftn TypeNode
 			for _, fld := range sn.Fields {
@@ -11899,7 +11986,7 @@ func (f *File) callValueAddressing(s *Scope, head Token, steps []Node) (sliceAt 
 				}
 			}
 			if ftn == nil {
-				return -1, false, false // promoted, or a method value
+				return w // promoted, or a method value
 			}
 			t = typeAt{ftn, u.s, u.f}
 		case Index:
@@ -11911,24 +11998,42 @@ func (f *File) callValueAddressing(s *Scope, head Token, steps []Node) (sliceAt 
 			case *TypeNodeSlice:
 				elem, isSlice = x.TypeNode, true
 			default:
-				return -1, false, false // a string, or what this does not type
+				return w // a string, or what this does not type
 			}
 			if f.isSliceExpr(st) {
 				if !isSlice && !addr {
-					return k + 1 + i, false, true
+					w.sliceAt = i
+					w.known = true
+					return w
 				}
 				sliceElem, addr = &typeAt{elem, u.s, u.f}, false
 				continue
 			}
 			t, addr = typeAt{elem, u.s, u.f}, addr || isSlice
+		case CallSuffix:
+			// A function value the chain reached -- a field holding one -- called.
+			ft, isFunc := u.tn.(*FunctionType)
+			if !isFunc || ft.Signature == nil || !one(f.flattenResults(u.s, ft.Signature), true, u.s) {
+				return w
+			}
 		default:
-			return -1, false, false
+			return w
 		}
 	}
-	if sliceElem != nil {
-		return -1, false, true // the slice a slice step made is a value
+	w.known = true
+	w.addr = addr && sliceElem == nil // the slice a slice step made is a value
+	return w
+}
+
+// reportPtrMethodOnValue reports the POINTER-receiver method a walk found called on
+// a value with no storage (callChainWalk), in Go's words.
+func (f *File) reportPtrMethodOnValue(steps []Node, w callChain) {
+	if w.ptrAt < 0 {
+		return
 	}
-	return -1, addr, true
+	if m, has := f.selectorMember(steps[w.ptrAt]); has {
+		f.err(m.Position(), "cannot call pointer method %s on %s", m.Src(), w.ptrType)
+	}
 }
 
 // lastSuffixStep is the kind of a factor suffix's final step -- a Selector, an
@@ -16252,11 +16357,15 @@ func (f *File) checkFactorNames(s *Scope, n Node) {
 	if hasSuffix {
 		f.checkIndexExprs(s, suffix) // the "i" in a read "a[i]"
 		// `mk(1).data[1:]`: an array reached from a call's value has no storage to
-		// slice (callValueAddressing).
+		// slice (callValueAddressing); and `mk(1).Add(2)`, a pointer method, has
+		// none to take the address of (callChainWalk).
 		if hasID {
-			if at, _, _ := f.callValueAddressing(s, id, slices.Collect(it(suffix.ast))); at >= 0 {
+			steps := slices.Collect(it(suffix.ast))
+			w := f.callChainWalk(s, id, steps)
+			if w.sliceAt >= 0 {
 				f.err(id.Position(), "cannot slice unaddressable value %s", f.exprSource(n))
 			}
+			f.reportPtrMethodOnValue(steps, w)
 		}
 		hasSelector = hasSelectorChild(suffix)
 		if argList, later, direct, isCall := f.callInfoAll(suffix); isCall {

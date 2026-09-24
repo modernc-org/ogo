@@ -1,0 +1,93 @@
+// A POINTER-receiver method needs its receiver's address, and a call's result has
+// none -- nor has a field of one, an element of an array in one, or a conversion.
+// Go refuses the call. The emitter binds such a value to a temporary before it
+// reads through it, and a temporary has an address, so the method was called on
+// the temporary and wrote where nobody reads: `mka()[0].Set(1)` and
+// `mkw().p.Set(1)` compiled, and so did `mkA().Put(1)` once a method could be
+// called on an array result (callChainWalk). A method reached through a pointer,
+// or through a slice's elements, is called on storage and is Go.
+
+type P struct{ x, y int }
+
+func (p *P) Set(v int) int { p.x = v; return v }
+
+func (p P) Get() int { return p.x }
+
+type C int
+
+func (c *C) Inc() { *c++ }
+
+type A [3]int
+
+func (a *A) Put(v int) { a[0] = v }
+
+func (a A) Self() A { return a }
+
+type W struct{ p P }
+
+type E struct{ *P }
+
+type V struct{ P }
+
+var gp P
+
+var back [2]P
+
+func mkp() P { return P{1, 2} }
+
+func getp() *P { return &gp }
+
+func mks() []P { return back[:] }
+
+func mka() (a [2]P) { return }
+
+func mkA() (a A) { return }
+
+func mkw() W { return W{} }
+
+func mke() E { return E{&gp} }
+
+func mkv() V { return V{} }
+
+func ok() {
+	getp().Set(5)
+	mks()[0].Set(6)
+	_ = mkp().Get()
+	_ = mkA().Self().Self()
+	mke().Set(7)
+	var a A
+	a.Put(1)
+	a.Self().Self()
+	var w W
+	w.p.Set(2)
+	_ = mkv().Get()
+}
+
+func bad() {
+	// ERROR cannot call pointer method Set on P
+	mkp().Set(1)
+	// ERROR cannot call pointer method Inc on C
+	C(3).Inc()
+	// ERROR cannot call pointer method Set on P
+	mka()[0].Set(1)
+	// ERROR cannot call pointer method Set on P
+	mkw().p.Set(1)
+	// ERROR cannot call pointer method Put on A
+	mkA().Put(1)
+	// ERROR cannot call pointer method Put on A
+	mkA().Self().Put(1)
+	// ERROR cannot call pointer method Set on P
+	n := mkp().Set(2)
+	// ERROR cannot call pointer method Set on V
+	mkv().Set(3)
+	// ERROR cannot call pointer method Set on P
+	defer mkp().Set(4)
+	// ERROR cannot call pointer method Set on P
+	go mkp().Set(5)
+	println(n)
+}
+
+func main() {
+	ok()
+	bad()
+}
