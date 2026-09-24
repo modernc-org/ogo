@@ -496,7 +496,7 @@ still design-only.
   there on. On 2026-09-22, all clean: with cbcba6a's generator, seeds 1-2000 on the
   host shim; with the one before it, 1001-3000 on the host and 1001-1500 on a P2-EDGE
   (482 passing, 18 outgrowing a cog). On 2026-09-24, with cbcba6a's generator still,
-  seeds 25-500 on a P2-EDGE, all clean (457 passing, 19 outgrowing a cog; 1-24 are
+  seeds 25-1000 on a P2-EDGE, all clean (940 passing, 36 outgrowing a cog; 1-24 are
   `make board`'s), by a loop of `ogo smith`, `ogo build` and `ogo loadp2 -t` -- one
   compiler, and nothing else on the serial port meanwhile: a second loader on it
   talks over the first, and `Prop_Ver G` in a capture is that. A generated program
