@@ -943,9 +943,13 @@ a value receiver received by pointer and copied on entry (`byRefParam`,
 `recvByRef`), a result written through an out parameter (`funcStructRet`), a
 channel's element crossing by pointer (`chanStructByPtr`) -- and a literal of one
 NESTED in a compound literal is braced, since a compound literal of its own is a copy
-into the member (`&W{Buf{...}, k}` did not build). One beside another result is the
-one left (`refuseResultTuple`). Two lessons from the result. A lowering makes new
-shapes WRITABLE, and each is a row for the rejects sweep: `mk(1).data[1:]` and
+into the member (`&W{Buf{...}, k}` did not build) -- and one BESIDE another result
+came down the next day, the result struct holding the array too and taking the same
+out parameter (`structOutOf`, `emitTupleOutReturn`): no by-value boundary is refused
+now. A domain program's first draft, a ring buffer's `Pop() (Frame, bool)`, had hit
+that refusal before anything else, which is what ranked it. Two lessons from the
+result. A lowering makes new shapes WRITABLE, and each is a row for the rejects
+sweep: `mk(1).data[1:]` and
 `&mk(1).data` compiled where Go refuses both, and their neighbour `&mkp().x`, a plain
 struct result's field, always had (`callValueAddressing`). And a chain is RENDERED by
 every question asked about it -- `len(mk(1).data)` reads the extent and then
@@ -1007,18 +1011,21 @@ Known open items, all loud refusals or design walls (2026-09-17): an
 array-returning call as a package literal element; a function returning an ARRAY
 taken as a value, `mb := mkb`, "cannot infer a type" and, with the type written,
 "cannot return an array beside another result" (a function value's type has no out
-parameter for it); a struct holding an ARRAY beside another RESULT ("holds an array,
-which the target's C compiler cannot return beside another result",
-refuseResultTuple -- the result struct would hold the array; one alone goes through
-an out parameter since 2026-09-23, funcStructRet); a range
-over a parenthesised dereference's array, `range (*p).data` ("ranging an integer
-yields only the index"; `range p.data` works); a store into a field of a call's
+parameter for it); an ARRAY beside another result, `func f() ([3]int, bool)`
+("cannot return an array beside another result"), whose result struct would hold the
+array -- as the result struct of a struct holding one does, which travels through an
+out parameter since 2026-09-24 (structOutOf), and that is how this one would come
+down; a function literal called and then read through, `func() P { ... }().x` ("a
+function literal may only be called where it stands"), for any result type; a store
+into a field of a call's
 VALUE, `mk(1).n = 5`, refused as Go refuses it but in the emitter's words ("only
 simple and field assignment targets are supported yet"), and a field a call's
 pointer result lacks, `getp().x`, as "unsupported call in expression"; the
-address of, or a slice of an array in, a call's value where the call is deeper in a
-chain, `hs[0].get().data[1:]`, which Go refuses and this takes (callValueAddressing
-types `f(...)` and `v.m(...)` heads only); an
+address of, or a slice of an array in, a call's value where the receiver is a
+variable declared from a SLICE literal, `hs[0].get().data[1:]` for `var hs =
+[]H{...}`, which Go refuses and this takes (callValueAddressing walks the receiver
+from a written type, or an array literal's, and asks nothing of what it cannot
+type); an
 element-wise printf verb of a multi-dimensional array, `printf("%d", grid)` ("cannot
 tell the type of this argument"; %v prints one); `[]byte(s)`
 and `[]rune(s)` of a string VARIABLE (a copy of a length known at run time; a

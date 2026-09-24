@@ -176,8 +176,29 @@ shipped section tells a reader on that version that they have behaviour they do 
   method expression, deferred, on a cog and across packages; read where it stands,
   as an argument, a receiver, a field and an element, stored and thrown away. An
   array field of one is read where it stands too: `x := mk(1).data`, `len(mk(1).data)`,
-  a range over it and a comparison, the call made once. One beside another result is
-  still refused, the result struct having to hold the array itself.
+  a range over it and a comparison, the call made once.
+- **And beside another result.** `Pop() (Frame, bool)`, the shape a ring buffer
+  writes, was the last by-value boundary refused. The result struct, which holds the
+  array too, goes through the out parameter the same way, each value stored into its
+  field -- after the values are taken and, with defers, as they leave the named
+  results -- and every place a call of one is made hands it the storage: a
+  declaration and an assignment, a return and arguments forwarding it (`return f()`,
+  `use(f())`), a package variable's initializer, if, switch and for headers, function
+  values, method values and expressions, interfaces, defer, go, and other packages.
+- **A for loop's post may take one call's several results.** The iterator idiom `for
+  v, ok := next(); ok; v, ok = next()` was refused, "a for-loop post statement
+  assigns 1 values to 2 targets"; the init had taken one call's results since the day
+  before. The post runs where a `continue` reaches it, as a post of several targets
+  always has.
+- **Printing a pointer to an array, a slice of arrays, and a struct holding an array
+  that a call returns.** printf's `%v` of a pointer to an array prints "&[1 2 3]" or
+  `<nil>` as fmt does, and its dereference `*pa` the elements; a slice of arrays prints
+  row by row under `%v` and println. Each was refused as "not supported yet". A struct
+  holding an array returned by a call or written as a literal, `printf("%v",
+  mk(3))`, was refused as "printed from a variable; bind it to one first".
+- **`(*p).data` is `p.data` for an array.** A range over an array reached through a
+  parenthesised dereference was "ranging an integer yields only the index", and
+  `len`, the copies, the comparisons and the prints of one were refused alike.
 
 ### Fixed
 
@@ -388,6 +409,12 @@ shipped section tells a reader on that version that they have behaviour they do 
   8988 9000 9012 [11 2] on a P2-EDGE for [4 5 6] [1 2 3] [7 8] [1 2]. An
   element-wise verb of a local one, `defer printf("%d", r)`, was refused as "cannot
   tell the type of this argument". Both print what the defer took.
+- **A method expression or a literal returning a struct holding an array did not
+  build where it was called.** `Buf.Dbl(b)`, `(*Buf).Twice(&b)` and `func() Buf {
+  ... }()` called the lifted function as though it returned the struct, which travels
+  through its out parameter, and the target refused the C. And such a struct returned
+  as a literal holding an array value, `return Buf{b.n * 2, b.arr}`, was refused
+  outright: it is built in place, as a declaration builds it.
 - **The address of a literal holding a struct with an array did not build.** `r :=
   &Rack{2, gb}` for a gb holding an array, and such a literal among a slice of
   pointers, copied the value into the literal through the pointer as though it were
@@ -419,7 +446,8 @@ shipped section tells a reader on that version that they have behaviour they do 
   bound to a temporary whose address could be taken -- where Go refuses each:
   "invalid operation: cannot take address of mkp().x", "cannot slice unaddressable
   value". The slice became writable with the struct results above; the address of a
-  plain struct result's field never was refused.
+  plain struct result's field never was refused. A method's result deeper in a chain,
+  `o.in.get().data[1:]` and `&ws[0].get().n`, is asked the same.
 - **A step after `(&v)` that the address does not take is refused, in Go's words.**
   `(&v).f` is `v.f` because a selector dereferences one pointer, and `(&v)[i]` is
   `v[i]` for an array alone. `(&pp).x = 3` and `(&pp).x++` for a pointer,
