@@ -84,6 +84,9 @@ func bad() {
 	_ = o.in.get().data[1:]
 	// ERROR invalid operation: cannot take address of ws\[0\].get\(\).n
 	_ = &ws[0].get().n
+	ls := []W{{}}
+	// ERROR cannot slice unaddressable value ls\[0\].get\(\).data\[1:\]
+	_ = ls[0].get().data[1:]
 	// ERROR invalid operation: cannot take address of mkp\(\).x
 	q := &mkp().x
 	println(*q)

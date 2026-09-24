@@ -14688,16 +14688,8 @@ func (f *File) operandTypeAt(s *Scope, n Node) (t typeAt, variable, ok bool) {
 	if t, ok := f.litOrConvType(s, n); ok {
 		return t, false, true
 	}
-	// A slice literal, `[]string{"a"}`, whose type litOrConvType leaves alone, a
-	// slice's length being nothing it could fold.
-	if kids := slices.Collect(it(n.ast)); len(kids) == 4 && kids[0].sym == 0 && f.ch(kids[0].tok) == LBRACK &&
-		kids[1].sym == 0 && f.ch(kids[1].tok) == RBRACK && kids[2].sym == Type && kids[3].sym == CompositeLit {
-		// The literal's own check resolves the same Type and reports what is wrong
-		// with it, so what resolving it here reports is that report again.
-		n0 := len(f.errList)
-		elem := f.typ(s, kids[2])
-		f.errList = f.errList[:n0]
-		return typeAt{&TypeNodeSlice{TypeNode: elem}, s, f}, false, true
+	if t, ok := f.sliceLitType(s, n); ok {
+		return t, false, true
 	}
 	t, ok = f.lenOperandType(s, n)
 	return t, true, ok
@@ -21576,9 +21568,42 @@ func (f *File) varTypeAt(d *VarDeclaration) (typeAt, bool) {
 		return typeAt{d.declType, d.declScope, wf}, true
 	}
 	if d.init.sym != 0 && d.declScope != nil {
-		return wf.litOrConvType(d.declScope, d.init)
+		if t, ok := wf.litOrConvType(d.declScope, d.init); ok {
+			return t, true
+		}
+		// A SLICE literal too, `hs := []H{...}`: the rules walking a variable's type
+		// (targetTypeNode and those beside it) asked nothing of one, and
+		// `hs[0].get().data[1:]` went through where Go refuses it.
+		return wf.sliceLitType(d.declScope, d.init)
 	}
 	return typeAt{}, false
+}
+
+// sliceLitType is the type a SLICE literal writes, `[]string{"a"}`, which
+// litOrConvType leaves alone -- a slice's length being nothing it could fold --
+// through any single-operand levels around it.
+func (f *File) sliceLitType(s *Scope, n Node) (typeAt, bool) {
+	for n.sym == Expression || n.sym == SimpleExpr || n.sym == Term || n.sym == UnaryExpr {
+		kids := slices.Collect(it(n.ast))
+		if len(kids) != 1 {
+			return typeAt{}, false
+		}
+		n = kids[0]
+	}
+	if n.sym != Factor {
+		return typeAt{}, false
+	}
+	kids := slices.Collect(it(n.ast))
+	if len(kids) != 4 || kids[0].sym != 0 || f.ch(kids[0].tok) != LBRACK || kids[1].sym != 0 ||
+		f.ch(kids[1].tok) != RBRACK || kids[2].sym != Type || kids[3].sym != CompositeLit {
+		return typeAt{}, false
+	}
+	// The literal's own check resolves the same Type and reports what is wrong with
+	// it, so what resolving it here reports is that report again.
+	n0 := len(f.errList)
+	elem := f.typ(s, kids[2])
+	f.errList = f.errList[:n0]
+	return typeAt{&TypeNodeSlice{TypeNode: elem}, s, f}, true
 }
 
 // litOrConvType is the type a composite literal or a conversion writes where n
