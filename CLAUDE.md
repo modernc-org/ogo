@@ -739,7 +739,14 @@ generated C. Still loud rather than checked: a string from a []byte or []rune (l
 Go, refused by design as the allocation it needs) and a value stored into an
 interface (by design). An inferred `xs == ys` of two slices was a third until
 2026-09-22: a variable with no written type was "an array or a slice", not one
-category, until its initializer was asked which (sliceOrArrayOf).
+category, until its initializer was asked which (sliceOrArrayOf). The cell the sweep
+did not cross turned up on 2026-09-24: a Kind-less value into ANOTHER Kind-less
+category -- a struct into a pointer, `hp = P{}` -- was taken in every position,
+the rows having crossed a Kind into the categories and the categories into a Kind,
+never the categories into one another (checkRefAssign asks it since). With it, an
+element STORE asked only nil and a function's signature, where a variable asked all
+of checkStoreInto; and a variable declared from a SLICE literal had no type for any
+rule walking a variable's type (sliceLitType).
 
 **A CASE WAS A POSITION NOTHING WALKED** (2026-09-21). The rules above cross
 operations with categories; they say nothing of a position no rule is ever asked in.
@@ -1018,12 +1025,7 @@ resultCTypeIn); a function literal called and then read through, `func() P { ...
 type; a store into a field of a call's
 VALUE, `mk(1).n = 5`, refused as Go refuses it but in the emitter's words ("only
 simple and field assignment targets are supported yet"), and a field a call's
-pointer result lacks, `getp().x`, as "unsupported call in expression"; the
-address of, or a slice of an array in, a call's value where the receiver is a
-variable declared from a SLICE literal, `hs[0].get().data[1:]` for `var hs =
-[]H{...}`, which Go refuses and this takes (callValueAddressing walks the receiver
-from a written type, or an array literal's, and asks nothing of what it cannot
-type); an
+pointer result lacks, `getp().x`, as "unsupported call in expression"; an
 element-wise printf verb of a multi-dimensional array, `printf("%d", grid)` ("cannot
 tell the type of this argument"; %v prints one); `[]byte(s)`
 and `[]rune(s)` of a string VARIABLE (a copy of a length known at run time; a

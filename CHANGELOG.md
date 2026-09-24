@@ -439,6 +439,15 @@ shipped section tells a reader on that version that they have behaviour they do 
 
 ### Behaviour changes
 
+- **A value that is no pointer, stored where a pointer is wanted, is refused in Go's
+  words.** `hp = P{}` -- a struct, an array, a slice, a function or a channel where a
+  pointer goes -- was taken in a variable, a field, an element, a chain, an
+  argument, a return and a literal alike, and reached the C compiler as a struct
+  stored into a pointer: "cannot use P{} (value of type P) as *P value in
+  assignment". And a store into an ELEMENT of no predeclared type is asked what
+  every other store is: `fs[0] = 3` for a slice of functions, `cs[0] = 5` for an
+  array of channels, went through. A variable declared from a slice literal, `hs :=
+  []H{...}`, is checked as one with its type written.
 - **A method value whose receiver is a pointer is refused.** Go saves the receiver
   when a method value is taken, and where it is a pointer -- a variable of a pointer
   type, or an embedded pointer the method is promoted through -- that is the
