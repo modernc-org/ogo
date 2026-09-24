@@ -5718,12 +5718,12 @@ func main() {
 	printf("%5v\n", cs)
 }
 `,
-			want: "printf: %5v does not take a width or precision yet (%v of this type is printed without a width here)",
+			want: "printf: %5v does not take a flag, a width or a precision yet (%v of this type is printed without a width here)",
 		},
 		{
 			name: "a width on %q",
 			src:  "func main() {\n\tprintf(\"%8q\\n\", \"ab\")\n}\n",
-			want: "printf: %8q does not take a width or precision yet",
+			want: "printf: %8q does not take a flag, a width or a precision yet",
 		},
 		{
 			name: "%q of a float",
@@ -5768,7 +5768,7 @@ func main() {
 	printf("%5v\n", p)
 }
 `,
-			want: "printf: %5v does not take a width or precision yet",
+			want: "printf: %5v does not take a flag, a width or a precision yet",
 		},
 		{
 			// fmt prints "<nil>" for a nil pointer where the builtin println prints
@@ -5792,7 +5792,7 @@ func main() {
 	printf("%5v\n", sh)
 }
 `,
-			want: "printf: %5v does not take a width or precision yet",
+			want: "printf: %5v does not take a flag, a width or a precision yet",
 		},
 	} {
 		t.Run(test.name, func(t *testing.T) {

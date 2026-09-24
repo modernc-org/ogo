@@ -2017,7 +2017,8 @@
 //	%o %b       an integer, in octal or binary
 //	%s          a string, or the bytes of a []byte
 //	%x %X       the bytes of a string or a []byte, as hex digits -- the dump a
-//	            protocol log wants, two digits a byte and nothing between them
+//	            protocol log wants, two digits a byte and nothing between them,
+//	            or a space under the ' ' flag: `% x` is "de ad be ef"
 //	%q          a string or a []byte double-quoted with Go's escapes, or an
 //	            integer as the character in single quotes. A byte that is not
 //	            part of a valid UTF-8 sequence is written \xNN, as Go writes it;
@@ -2057,9 +2058,13 @@
 // exception fmt makes: %s, %x, %X and %q of a []byte or a byte array print its bytes
 // as one text, "hi", "6869", "\"hi\"" -- and %d of one is its numbers, "[104 105]".
 //
-// The byte forms of %s, %x, %X and %q, and %U, take no width or precision yet, and
-// say so where they are written: the helper that writes them measures the text as
-// it goes, so a field around it would have to be counted twice.
+// The hex dump takes fmt's flags, width and precision, as fmt lays them out: ' '
+// puts a space between the bytes, '#' writes 0x ahead of them -- ahead of each
+// under ' ', `%# x` being "0xde 0xad" -- a precision is the number of BYTES
+// written, and the width pads the whole dump. %s of a []byte pads and cuts as a
+// string does. %q and %U take no flag, width or precision yet, and say so where
+// they are written: the helper that writes them measures the text as it goes, so a
+// field around it would have to be counted twice.
 //
 // A verb may carry fmt's flags, width and precision — "%6.2f", "%-8s", "%+05d",
 // "%.3s" — which mean what they mean in fmt. For a string that is a count of RUNES,
@@ -2078,10 +2083,10 @@
 //
 // "#" writes fmt's prefix on the integer verbs, "0x", "0X", "0b" and the leading
 // zero of an octal number, after any zeros "0" pads with, as fmt places it:
-// "%#08x" of 255 is "0x000000ff". It is refused on the other verbs, whose
-// alternate forms are not written yet -- the backend's printf ignores the flag, and
-// a program that compiles here is meant to mean what it means in Go rather than
-// approximately that.
+// "%#08x" of 255 is "0x000000ff"; and on the hex dump, as above. It is refused on
+// the other verbs, whose alternate forms are not written yet -- the backend's
+// printf ignores the flag, and a program that compiles here is meant to mean what
+// it means in Go rather than approximately that.
 //
 // %v takes a flag, a width and a precision as fmt does, laid out as the type's
 // default verb -- %d, %g, %s or %t, element by element for a slice or an array --

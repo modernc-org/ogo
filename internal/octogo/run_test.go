@@ -40240,6 +40240,63 @@ func main() {
 }
 `,
 		want: "3 3 4 0 4 1\n",
+	},
+	{
+		// printf's hex dump of a string or a byte slice takes fmt's flags, width
+		// and precision, laid out as fmt's fmtSbx lays them out: ' ' between the
+		// bytes -- `% x`, the usual way to print a frame -- '#' once ahead or ahead
+		// of each under ' ', a precision counting BYTES, the width padding the whole
+		// and an empty dump padding all of it. Each was refused, "does not take a
+		// width or precision yet", the ' ' flag included, which is neither.
+		name: "a hex dump under flags, a width and a precision",
+		src: `func main() {
+	s := "ab\x01"
+	b := []byte{0xde, 0xad, 0xbe, 0xef}
+	var nb []byte
+	e := ""
+	printf("[% x] [%# x] [%#x] [%#X] [%# X]\n", s, s, s, s, s)
+	printf("[% x] [%# X] [%.1x] [% .2X] [%10.1x]\n", b, b, b, b, b)
+	printf("[%-10x] [%010x] [%-010x] [% 012x] [%+ x]\n", s, s, s, b, b)
+	printf("[%8.0x] [%#.0x] [% #-14x] [%3x] [%0-8x]\n", s, s, s, s, s)
+	printf("[%5x] [%-5x] [%05x] [% x] [%6x]\n", e, e, e, nb, nb)
+}
+`,
+		want: "[61 62 01] [0x61 0x62 0x01] [0x616201] [0X616201] [0X61 0X62 0X01]\n[de ad be ef] [0XDE 0XAD 0XBE 0XEF] [de] [DE AD] [        de]\n[616201    ] [0000616201] [616201    ] [0de ad be ef] [de ad be ef]\n[        ] [] [0x61 0x62 0x01] [616201] [616201  ]\n[     ] [     ] [00000] [] [      ]\n",
+	},
+	{
+		// The hex dump under a flag, a width or a precision of what is not a plain
+		// variable: a call's result, evaluated once for each argument; a String()
+		// method's text; and a byte array. %s of a byte slice pads and cuts as a
+		// string does, which was refused with the rest.
+		name: "a hex dump of a call, a Stringer and a byte array",
+		src: `type Tag int
+
+func (t Tag) String() string {
+	if t == 0 {
+		return ""
+	}
+	return "tag!"
+}
+
+var fb = [4]byte{0xde, 0xad, 0xbe, 0xef}
+
+var calls int
+
+func frame() []byte {
+	calls++
+	return fb[:]
+}
+
+func main() {
+	printf("[% x] [%-12x] [%#x] %d\n", frame(), frame()[1:], frame()[:0], calls)
+	printf("[%-6s] [%6s] [%.2s] [%06s]\n", []byte("héj"), []byte("hi"), []byte("hello"), []byte("ab"))
+	var t, u Tag = 1, 0
+	printf("[% x] [%8X] [%-9x] [%#x] [%5x]\n", t, t, t, t, u)
+	a := [3]byte{1, 2, 3}
+	printf("[% x] [%#x] [%-8x]\n", a, a, a)
+}
+`,
+		want: "[de ad be ef] [adbeef      ] [] 3\n[h\xc3\xa9j   ] [    hi] [he] [0000ab]\n[74 61 67 21] [74616721] [74616721 ] [0x74616721] [     ]\n[01 02 03] [0x010203] [010203  ]\n",
 	}}
 
 // TestEmitCRun compiles emitted C with a host compiler and runs it, checking what

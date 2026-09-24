@@ -790,6 +790,14 @@ const intPrintHelper = "static void ogo_print_int(long long v, int sgn, int base
 // hex dump %x and %X write of a string or a byte slice, and the quoted form %q
 // writes of either.
 //
+// ogo_print_hex_fmt is the hex dump under a flag, a width or a precision, laid out
+// as fmt's fmtSbx lays it out: ' ' puts a space between the bytes -- `% x`, the
+// usual way to print a frame -- '#' writes 0x once ahead of them, or ahead of each
+// under ' ', a precision says how many BYTES are written, and the width pads the
+// whole, with zeros on the left under '0' and with spaces after it under '-'. An
+// empty dump pads the whole width. fl holds the flags as ogo_print_int reads them
+// (1 '-', 4 ' ', 8 '0', 32 '#'); '+' means nothing here, as in fmt.
+//
 // The quoting is Go's: the escapes strconv writes for ASCII, \xNN for any other
 // byte below 0x20 or at 0x7f, and \xNN for a byte that is not part of a valid
 // UTF-8 sequence, which ogo_decode_rune is what decides -- so the bytes a device
@@ -804,6 +812,25 @@ const bytesPrintHelpers = `static void ogo_print_hex_bytes(ogo_string s, int upp
 		unsigned char c = (unsigned char)s.str[i];
 		putchar(d[c >> 4]); putchar(d[c & 15]);
 	}
+}
+static void ogo_print_hex_fmt(ogo_string s, int upper, int wid, int prec, int fl) {
+	const char* d = upper ? "0123456789ABCDEF" : "0123456789abcdef";
+	int n = s.len, left = fl & 1, space = fl & 4, sharp = fl & 32, width = 0;
+	char pad = (fl & 8) && !left ? '0' : ' ';
+	if (prec >= 0 && prec < n) n = prec;
+	if (n > 0) {
+		width = 2 * n;
+		if (space) { if (sharp) width *= 2; width += n - 1; }
+		else if (sharp) width += 2;
+	}
+	if (!left) for (int i = width; i < wid; i++) putchar(pad);
+	if (n > 0 && sharp) { putchar('0'); putchar(upper ? 'X' : 'x'); }
+	for (int i = 0; i < n; i++) {
+		unsigned char c = (unsigned char)s.str[i];
+		if (i > 0 && space) { putchar(' '); if (sharp) { putchar('0'); putchar(upper ? 'X' : 'x'); } }
+		putchar(d[c >> 4]); putchar(d[c & 15]);
+	}
+	if (left) for (int i = width; i < wid; i++) putchar(' ');
 }
 static void ogo_print_bytes_as_str(ogo_string s) {
 	for (int i = 0; i < s.len; i++) { putchar(s.str[i]); }
@@ -33140,7 +33167,7 @@ func (e *emitter) emitPrintfVerb(item printfItem, idx int, arg Node) bool {
 	// reach for instead: printing something narrower than asked for, silently, is the
 	// outcome worth avoiding.
 	noSpec := func(why string) bool {
-		e.failAt(arg.ast, "printf: %%%s%c does not take a width or precision yet (%s)",
+		e.failAt(arg.ast, "printf: %%%s%c does not take a flag, a width or a precision yet (%s)",
 			spec, verb, why)
 		return false
 	}
@@ -33150,8 +33177,10 @@ func (e *emitter) emitPrintfVerb(item printfItem, idx int, arg Node) bool {
 	// would quietly have printed something narrower. Measured on a P2-EDGE and
 	// reduced in doc/printf-flags-ignored.c. An INTEGER under %d, %x, %X, %o and %b
 	// is laid out by the emitter since 2026-09-18 (intPrintHelper), which writes the
-	// prefix as fmt does, so there the flag is taken.
-	if item.hasFlag('#') && !(strings.IndexByte("dxXob", verb) >= 0 && e.intsToPrint(idx, arg, ct)) {
+	// prefix as fmt does, so there the flag is taken -- and so it is on the hex dump
+	// of a string or a byte slice, which ogo_print_hex_fmt lays out.
+	hexDump := (verb == 'x' || verb == 'X') && (ct == cString || e.isByteSliceCType(ct))
+	if item.hasFlag('#') && !hexDump && !(strings.IndexByte("dxXob", verb) >= 0 && e.intsToPrint(idx, arg, ct)) {
 		e.failAt(arg.ast, "printf: the '#' flag is not supported on %%%s%c yet; "+
 			"it is on the integer verbs %%x, %%X, %%o and %%b", spec, verb)
 		return false
@@ -33203,20 +33232,24 @@ func (e *emitter) emitPrintfVerb(item printfItem, idx int, arg Node) bool {
 			// would not.
 			e.usesStringPrint = true
 			print := "ogo_print_str(" + text + ")"
+			hexDump := verb == 'x' || verb == 'X'
 			switch verb {
 			case 'x', 'X', 'q':
-				if spec != "" {
+				if spec != "" && !hexDump {
 					return noSpec("%" + string(verb) + " of a string is printed by a helper here")
 				}
 				e.usesBytesPrint = true
 				e.usesString = true
 				e.usesRuneDecode = true
 				print = "ogo_print_qbytes(" + text + ")"
-				if verb != 'q' {
+				switch {
+				case hexDump && spec != "":
+					print = "ogo_print_hex_fmt(" + text + hexDumpSpec(item, verb == 'X') + ")"
+				case hexDump:
 					print = "ogo_print_hex_bytes(" + text + ", " + strconv.Itoa(boolToInt(verb == 'X')) + ")"
 				}
 			}
-			if spec != "" {
+			if spec != "" && !hexDump {
 				w, _ := item.width()
 				pr, hasP := item.precision()
 				if !hasP {
@@ -33516,7 +33549,16 @@ func (e *emitter) emitScalarVerb(item printfItem, ct string, value func(), wrong
 		// A byte slice printed as the text it holds, `%s` of a []byte in Go.
 		if e.isByteSliceCType(ct) {
 			if spec != "" {
-				return noSpec("%s of a byte slice is printed by a helper here")
+				// The text the bytes are, padded and cut as a string is.
+				w, _ := item.width()
+				p, hasP := item.precision()
+				if !hasP {
+					p = -1
+				}
+				e.usesStringPrint = true
+				e.usesStringPad = true
+				e.emitBytesVerb(ct, "ogo_print_str_pad", fmt.Sprintf(", %d, %d, %d, %d", w, p, boolToInt(item.leftAlign()), boolToInt(item.hasFlag('0'))), value)
+				return true
 			}
 			e.emitBytesVerb(ct, "ogo_print_bytes_as_str", "", value)
 			return true
@@ -33605,7 +33647,8 @@ func (e *emitter) emitScalarVerb(item printfItem, ct string, value func(), wrong
 		// as hex digits, two per byte and nothing between them.
 		if (verb == 'x' || verb == 'X') && (ct == cString || e.isByteSliceCType(ct)) {
 			if spec != "" {
-				return noSpec("a hex dump is printed by a helper here")
+				e.emitBytesVerb(ct, "ogo_print_hex_fmt", hexDumpSpec(item, verb == 'X'), value)
+				return true
 			}
 			upper := "0"
 			if verb == 'X' {
@@ -33620,6 +33663,24 @@ func (e *emitter) emitScalarVerb(item printfItem, ct string, value func(), wrong
 		return e.emitIntVerb(item, ct, value)
 	}
 	return true
+}
+
+// hexDumpSpec is the tail of an ogo_print_hex_fmt call: the case, the width, the
+// precision (-1 for none) and the flags, for a hex dump written under a flag, a
+// width or a precision.
+func hexDumpSpec(item printfItem, upper bool) string {
+	w, _ := item.width()
+	p, hasP := item.precision()
+	if !hasP {
+		p = -1
+	}
+	fl := 0
+	for bit, f := range map[int]byte{1: '-', 4: ' ', 8: '0', 32: '#'} {
+		if item.hasFlag(f) {
+			fl |= bit
+		}
+	}
+	return fmt.Sprintf(", %d, %d, %d, %d", boolToInt(upper), w, p, fl)
 }
 
 // emitIntVerb emits an integer under %d, %x, %X, %o or %b once emitPrintfVerb has
