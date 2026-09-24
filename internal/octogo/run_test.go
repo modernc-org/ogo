@@ -40314,6 +40314,19 @@ func main() {
 }
 `,
 		want: "[\xad   ] [  \xad\xbe] [\xad|] [\xe2\x82  ] [ \xc3\xa9\xff]\n[a\xe2\x82\xacb ] [\xc3|] [  \xf0\x9f\x98] [\xed\xa0\x80|]\n[\xadok  ] [\xado|] [   \xc0\xaf]\n",
+	},
+	{
+		// A bool under a width is printed by padding the WORD, through the string
+		// pad helper -- which takes an ogo_string, and a program with no string of
+		// its own carried the helper without the typedef it names: no C compiler
+		// built it. Every helper taking a string brings the typedef now.
+		name: "a padded bool in a program with no string",
+		src: `func main() {
+	ok := true
+	printf("[%8t] [%-6t] [%06v] [%.1t]\n", ok, !ok, ok, ok)
+}
+`,
+		want: "[    true] [false ] [00true] [true]\n",
 	}}
 
 // TestEmitCRun compiles emitted C with a host compiler and runs it, checking what

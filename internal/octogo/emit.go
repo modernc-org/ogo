@@ -5218,6 +5218,14 @@ func emitProgram(pkg *Package, w io.Writer, opts []EmitOption, rename map[string
 	// field may be a string); scalar-element slice typedefs precede the struct
 	// typedefs (a struct field may hold one), struct-element slices and the append
 	// ok-form structs follow. The string print helpers follow the typedefs.
+	//
+	// A helper taking an ogo_string needs the typedef whether or not the program
+	// has a string of its own: `printf("%8t", ok)` pads the WORD through
+	// ogo_print_str_pad, and a program with no string anywhere else carried the
+	// helper without the type it takes, which no C compiler builds.
+	if e.usesStringPrint || e.usesStringPad || e.usesBytesPrint || e.usesRuneDecode || e.usesStringCmp || e.usesStringEq {
+		e.usesString = true
+	}
 	if e.usesString || forwards.Len() != 0 || typedefUnits.Len() != 0 {
 		if e.usesString {
 			out.WriteString(stringTypedef)
