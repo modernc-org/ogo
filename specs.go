@@ -1764,7 +1764,11 @@
 // frame's storage long after it is gone, and there is no heap to promote that
 // storage to. These are the slice counterparts of the same two refusals for a local
 // variable's address. A slice over a package-level array or slice, or one reached
-// through a parameter -- the caller's -- travels freely.
+// through a parameter -- the caller's -- travels freely. A store THROUGH a pointer
+// or a call's result, `p.xs = a[:]` or `get().xs = a[:]`, writes what the pointer
+// reaches, whatever the pointer itself is, and is refused unless the pointer is
+// known to point at a local of the frame (`p := &n`), whose block then decides as
+// below; the same holds for a local's address.
 //
 // Handing one to another Cog is refused too: a slice backed by a local may not be
 // an argument of a go statement, nor be sent on a channel. The first two refusals

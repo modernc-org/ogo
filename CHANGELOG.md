@@ -20,6 +20,15 @@ shipped section tells a reader on that version that they have behaviour they do 
 
 ### Language
 
+- **A target may be reached through a call's value, and a list's later target may
+  hold a call.** A store through a pointer or a slice a call's value holds,
+  `mkw().q.y = 2` and `mkw().s[1] = 3`, was "only simple and field assignment
+  targets are supported yet"; a list headed by one, `getp().x, gp.y = 5, 6`, was
+  "unsupported target in a multiple assignment"; and `gp.y, getp().x = 7, 8` did not
+  parse. The call is bound ahead of the statement, where Go evaluates a target's
+  operands: `bump(1).x, bump(2).y = val(3), val(4)` runs 1 2 3 4. A target that is
+  only a call, `a, f() = 1, 2` or `f() = 5`, is refused in Go's words. A target
+  through a call in a for clause's post is still refused.
 - **A call's array result may be printed.** `println(mk(1))`, `printf("%v",
   p.Union(q))` and `printf("%d", three(2))` were "a call returning an array must be
   bound to a variable first", where a deferred print of the same took it: C returns
@@ -462,6 +471,17 @@ shipped section tells a reader on that version that they have behaviour they do 
 
 ### Behaviour changes
 
+- **A reference to the frame stored through a pointer or a call's result is
+  refused.** `p := &gq; p.p = &x`, `getq().p = &x`, `w.q.p = &x` through a pointer
+  field, `*pp = &x` for a `pp := &gq.p`, and a slice of a local array stored the
+  same ways, compiled: the store rules asked the target's ROOT variable, and a local
+  root dies with the frame whatever it points at -- so the package variable held
+  the local's address after the function returned, and read through afterwards on a
+  P2-EDGE it was -179917308 where Go prints 42. A pointer known to point at a local
+  of the frame -- a local written once, with the address of that local, `p := &n` --
+  writes that local and is judged by its block; a pointer assigned again, in a
+  slice, in a field or in a range value is not known to, and a store of a frame
+  reference through it is refused, as the analysis cannot follow it.
 - **A store into a call's value is refused in Go's words.** `mkp().x = 5`,
   `mka()[0].x = 8`, `mkp().x++`, `mkp().x += 2` and `Row(r)[0] = 7`: "cannot assign
   to mkp().x (neither addressable nor a map index expression)", where the emitter

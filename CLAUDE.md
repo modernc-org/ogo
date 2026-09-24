@@ -495,9 +495,14 @@ still design-only.
   change to it makes every seed that draws the changed choice a new program from
   there on. On 2026-09-22, all clean: with cbcba6a's generator, seeds 1-2000 on the
   host shim; with the one before it, 1001-3000 on the host and 1001-1500 on a P2-EDGE
-  (482 passing, 18 outgrowing a cog). A generated program writes self-comparisons and
-  `2 ^ 3` on purpose, so it is built with the oracle test's gcc flags, not probe.sh's
-  `-Wall -Werror`: under those, 273 of 2000 fail on the program's own warnings.
+  (482 passing, 18 outgrowing a cog). On 2026-09-24, with cbcba6a's generator still,
+  seeds 25-500 on a P2-EDGE, all clean (457 passing, 19 outgrowing a cog; 1-24 are
+  `make board`'s), by a loop of `ogo smith`, `ogo build` and `ogo loadp2 -t` -- one
+  compiler, and nothing else on the serial port meanwhile: a second loader on it
+  talks over the first, and `Prop_Ver G` in a capture is that. A generated program
+  writes self-comparisons and `2 ^ 3` on purpose, so it is built with the oracle
+  test's gcc flags, not probe.sh's `-Wall -Werror`: under those, 273 of 2000 fail on
+  the program's own warnings.
   **Calls are counted** (2026-09-19): every generated function adds its weight -- a
   4-bit field per function -- to `octosmith_calls`, and main asserts the sum before
   the checksum. The functions are pure otherwise, so a call evaluated twice or not
@@ -985,7 +990,16 @@ arguments after one whose String() may run, and took a LOCAL read by name to be 
 of the method's reach -- whose receiver held its address, 77 on the board for Go's 1
 (`printArgUnreachable` asks `aliasedLocals` since; its own comment had named the
 receiver as the way in). Tuple assignment, a return against its defers, and `&&`/`||`
-operands binding a call were probed the same way and held.
+operands binding a call were probed the same way and held. The STORE rules had it
+as well (2026-09-24), the one place it cost memory safety: a reference to the frame
+was refused in a package variable and judged by block in a local, both asked of the
+target's ROOT -- so `p := &gq; p.p = &x`, `getq().p = &x`, `w.q.p = &x` and `*pp =
+&x` put a local's address into a package variable in silence, and read through
+after the function returned it was garbage. A store through a pointer or a call's
+result writes what that reaches, which is refused unless the pointer is known to
+point at a local of this frame, whose block then decides (`checkStoreThroughRef`,
+`targetThroughRef`). Found while making targets through calls writable, which would
+have widened it: the rule was asked on the way, not by a sweep.
 
 **PRINTING A VALUE IS A ROW** (2026-09-23). `printf("%v", x)` of an ARRAY printed the
 address of its storage wherever x was not a bare name -- a literal, a field, an
@@ -1038,12 +1052,10 @@ type, and one returning an ARRAY called at all, `func() Set { ... }()`; a method
 a call's array result deferred or started on a cog, `defer mk(5).Count()` and `go
 mk(5).Count()`, or with the call parenthesised, `(mk(1)).Count()` (as a value and a
 statement it works since 2026-09-24); a field a call's pointer result lacks,
-`getp().x`, refused as "unsupported call in expression"; a store through a pointer
-or a slice a call's VALUE holds, `mkw().q.y = 2` and `mkw().s[1] = 3` ("only simple
-and field assignment targets are supported yet"; through the pointer a call returns,
-`getp().x = 1`, works), a call in the first target of a list, `getp().x, gp.y = 5,
-6` ("unsupported target in a multiple assignment"), and in a later one, `gp.y,
-getp().x = 7, 8`, a syntax error -- an LhsItem takes no call; an
+`getp().x`, refused as "unsupported call in expression"; a target through a call in
+a for clause's post assignment, `for ...; getp().x, i = ...` ("unsupported target in
+a for clause's assignment"; as a statement, the head of a list and a later target
+it works since 2026-09-24); an
 element-wise printf verb of a multi-dimensional array, `printf("%d", grid)` ("cannot
 tell the type of this argument"; %v prints one); `[]byte(s)`
 and `[]rune(s)` of a string VARIABLE (a copy of a length known at run time; a
