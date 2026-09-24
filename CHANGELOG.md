@@ -475,6 +475,16 @@ shipped section tells a reader on that version that they have behaviour they do 
 
 ### Behaviour changes
 
+- **A reference to the frame stored into a slice's element is refused unless the
+  slice is known to view the frame.** `s := loc[:]; s = gs; s[0] = &x` -- a slice
+  first bound to a view of a local array, then to package storage -- stored x's
+  address in gs's array: the rule asked whether the slice had been MARKED as viewing
+  the frame, and a slice re-pointed keeps its first mark -- a reference into a frame
+  that is gone once the function returns. A slice is known to view the frame where
+  it is written once, directly as a view of it -- a slice of a local array, a slice
+  literal or a make -- and not through a step: a slice of slices, `ss[0][0] = &x`,
+  or a slice field, `h.s[0] = &x`, is refused, the analysis marking a holder with
+  what ANY of its elements views.
 - **A reference to the frame stored through a pointer or a call's result is
   refused.** `p := &gq; p.p = &x`, `getq().p = &x`, `w.q.p = &x` through a pointer
   field, `*pp = &x` for a `pp := &gq.p`, and a slice of a local array stored the

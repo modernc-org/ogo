@@ -1000,6 +1000,19 @@ result writes what that reaches, which is refused unless the pointer is known to
 point at a local of this frame, whose block then decides (`checkStoreThroughRef`,
 `targetThroughRef`). Found while making targets through calls writable, which would
 have widened it: the rule was asked on the way, not by a sweep.
+**KNOWN MEANS MUST** (2026-09-24). The first version of that rule believed the holder
+marks, `frameHolder` and `frameBacked` -- and a mark says what a variable MAY reach:
+a pointer or a slice assigned again keeps the mark of its first value, and a slice's
+mark is the union of its elements'. `p := &n; p = &gq; p.p = &x`, `s := loc[:]; s =
+gs; s[0] = &x` and a range value over `[]*Q{&n, &gq}` all passed, the last two in
+the SLICE rule, which had believed the marks all along. A rule that PERMITS on what
+it knows needs what is true on every path: a local written ONCE (`bindWrites`), its
+own address never taken nor a method called on it (`bindSelfAddr` -- not
+`bindAliased`, which counts an element's method too and refused a run case), whose
+one value (`bindValue`) is directly the frame's -- `&n`, `loc[:]`, a literal, a make.
+A rule that REFUSES on what it knows may believe a mark; one that permits may not.
+Finding the second version's false refusal found an old bug: `emitMain` never
+cleared `curParamOrder`, so main ran with the previous function's parameters.
 
 **PRINTING A VALUE IS A ROW** (2026-09-23). `printf("%v", x)` of an ARRAY printed the
 address of its storage wherever x was not a bare name -- a literal, a field, an
