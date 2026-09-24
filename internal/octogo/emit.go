@@ -16284,6 +16284,27 @@ func (e *emitter) emitStatement(ast []int32) {
 	e.w.Write(buf.Bytes())
 }
 
+// emitOwnPrologue emits what f writes as statements of their own: the lines any of
+// them asks to have placed ahead of it (the prologue) go right ahead of them, and not
+// ahead of the statement being emitted around them. A loop's post clause is the one
+// emitted inside another statement, the for, at the end of its body -- and a value
+// it bound went ahead of the whole loop, where it ran once: `for ...; i, j = i+1,
+// f(7)+f(8)` called f(7) before the first iteration and never again, and `i, j =
+// f(i), j+1` named i before it was declared.
+func (e *emitter) emitOwnPrologue(f func()) {
+	savedW, savedPro, savedHoists := e.w, e.prologue, e.hoistedArrayCalls
+	var buf bytes.Buffer
+	e.w, e.prologue, e.hoistedArrayCalls = &buf, nil, map[int32]string{}
+	f()
+	pro := e.prologue
+	e.w, e.prologue, e.hoistedArrayCalls = savedW, savedPro, savedHoists
+	for _, line := range pro {
+		e.ind()
+		e.emit(line)
+	}
+	e.w.Write(buf.Bytes())
+}
+
 // hoist requests a line before the statement being emitted and returns the name of
 // a fresh temporary it declares. It is how an expression gets a temporary when C
 // gives it nowhere to put one.
@@ -25512,7 +25533,7 @@ func (e *emitter) emitLoopBody(body []int32, inject func()) {
 			e.ind()
 			e.emit(postLabel + ":;\n")
 		}
-		post()
+		e.emitOwnPrologue(post)
 	}
 	e.switchBreak = savedBreak
 	e.deferBlockDepth--

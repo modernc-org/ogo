@@ -29094,6 +29094,49 @@ func main() {
 `,
 		want: "3 1\n7 2 12\n6 13\n",
 	}, {
+		// A for clause's post that binds a value went ahead of the whole loop, the
+		// post being emitted inside the for statement: f(7) ran once for three
+		// iterations, and an index or an array result beside it likewise
+		// (emitOwnPrologue).
+		name: "a for clause's post binds inside the loop",
+		src: `var calls int
+
+func f(k int) int {
+	calls = calls*10 + k
+	return k
+}
+
+func mk(k int) (a [2]int) {
+	calls = calls*10 + k
+	a[0] = k
+	return
+}
+
+var s [4]int
+
+// A for clause's post that binds a value -- an operand with an effect beside
+// another, an index with one, a call returning an array -- binds it inside the
+// loop, each iteration: it went ahead of the loop, and ran once.
+func main() {
+	n := 0
+	for i, j := 0, 0; i < 3; i, j = i+1, f(7)+f(8) {
+		n += j
+	}
+	println(n, calls)
+	calls = 0
+	for i, j := 0, 0; i < 3; i, s[f(1)] = i+1, f(2) {
+		n += j
+	}
+	println(n, calls, s[1])
+	calls = 0
+	for i, j := 0, 0; i < 2; i, j = i+1, mk(3)[0] {
+		n += j
+	}
+	println(n, calls)
+}
+`,
+		want: "30 787878\n30 121212 2\n33 33\n",
+	}, {
 		// A name declared in the header of an if, a for or a switch was typed by its
 		// value's KIND alone, and the kind of `&x` is x's: `if p := &gx; *p > 4` was
 		// "cannot indirect p (variable of type int)", and the loop that walks a list by
