@@ -40203,6 +40203,43 @@ func main() {
 }
 `,
 		want: "6 20 6\n20 6 20\n6 20\n6 6 20 20\n20\n6\n6\n20 2112332\ndeferred 2 20\ndeferred 1 6\n",
+	},
+	{
+		// Whether a function's body names a variable -- which decides whether an
+		// unread named result is declared at all, and whether an unused parameter
+		// gets the (void) that says so -- counted a SELECTOR's identifier as a
+		// mention: g's `return p.n, 0` declared its named result `n` and read it
+		// nowhere, which the host's compiler refuses as an unused variable, and f's
+		// parameter x, named like the field p.x, lost its (void). The target's
+		// compiler said nothing either way.
+		name: "a named result or a parameter named like a field",
+		src: `type P struct{ x, n int }
+
+var calls int
+
+func (p *P) get(n int) int { return p.x }
+
+func f(x int, p P) int { return p.x }
+
+func g() (n int, err int) {
+	var p P
+	p.n = 4
+	calls++
+	return p.n, 0
+}
+
+func h(p P) (x int) {
+	x = p.x + 1
+	return
+}
+
+func main() {
+	q := P{3, 4}
+	a, b := g()
+	println(f(1, q), q.get(9), a, b, h(q), calls)
+}
+`,
+		want: "3 3 4 0 4 1\n",
 	}}
 
 // TestEmitCRun compiles emitted C with a host compiler and runs it, checking what

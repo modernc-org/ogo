@@ -14696,12 +14696,21 @@ func (e *emitter) bodyHasNakedReturn(ast []int32) bool {
 
 // bodyMentions reports whether name appears as an identifier anywhere in ast,
 // used to decide whether a named result is actually read or written by the body.
+//
+// A SELECTOR's identifier is not a mention: it names a field or a method, and what
+// else a selector holds is a type. Counted, `return d.frames*100 + steps, err`
+// declared the named result `frames` it never read, which the host's compiler
+// refuses as an unused variable, and a parameter named like a field read through
+// another value lost the (void) that says it is unused.
 func (e *emitter) bodyMentions(ast []int32, name string) bool {
 	for n := range it(ast) {
 		if n.sym == 0 {
 			if e.f.ch(n.tok) == IDENT && e.src(n.tok) == name {
 				return true
 			}
+			continue
+		}
+		if n.sym == Selector {
 			continue
 		}
 		if e.bodyMentions(n.ast, name) {
