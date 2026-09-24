@@ -1,0 +1,18 @@
+// A clause's last statement may go without its semicolon only before the closing
+// brace: running into the next clause, `case 1: v = 2 default:`, is Go's syntax
+// error, and a switch took it, as a select has since a one-line select parses.
+
+var ch chan int
+
+func main() {
+	var a, v int
+	// ERROR syntax error: unexpected keyword default at end of statement
+	switch a { case 1: v = 2 default: v = 3 }
+	// ERROR syntax error: unexpected keyword case at end of statement
+	switch a { case 1: v = 2 case 2: v = 4 }
+	// ERROR syntax error: unexpected keyword default at end of statement
+	select { case v = <-ch: a = 1 default: a = 2 }
+	switch a { case 1: v = 2; default: v = 3 }
+	select { case v = <-ch: a = 1; default: a = 2 }
+	println(a, v)
+}

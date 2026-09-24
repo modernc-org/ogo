@@ -4770,8 +4770,32 @@ func (f *File) caseConstValue(s *Scope, e Node) (constant.Value, bool) {
 // introduces (visible in the clauses but not after the switch), checks each case
 // expression is comparable to the guard, and walks each clause body in a nested
 // scope.
+// reportUnterminatedClauses reports a clause whose last statement runs into the next
+// clause with no semicolon between them, `case 1: v = 2 default: v = 3` on one line,
+// which Go refuses: "syntax error: unexpected keyword default at end of statement".
+// The grammar lets a clause's last statement go without one, which only the LAST
+// clause's may, before the closing brace -- and a switch's clause took it anywhere,
+// as a select's has since a one-line select parses.
+func (f *File) reportUnterminatedClauses(n Node, clause Symbol) {
+	var clauses []Node
+	for c := range it(n.ast) {
+		if c.sym == clause {
+			clauses = append(clauses, c)
+		}
+	}
+	for i := 0; i+1 < len(clauses); i++ {
+		kids := slices.Collect(it(clauses[i].ast))
+		if len(kids) == 0 || kids[len(kids)-1].sym != Statement {
+			continue
+		}
+		kw := f.tok(clauses[i+1].Pos())
+		f.err(kw.Position(), "syntax error: unexpected keyword %s at end of statement", kw.Src())
+	}
+}
+
 func (f *File) checkSwitch(s *Scope, results []retResult, n Node) {
 	f.reportMultipleDefaults(n, CaseClause, "switch")
+	f.reportUnterminatedClauses(n, CaseClause)
 	f.markClauseFallthroughs(n)
 	ss := s.child()
 	var guardKind Kind
@@ -5614,6 +5638,7 @@ func (f *File) checkCaseExpr(s *Scope, guardKind Kind, e Node) {
 // or received value's type -- are not checked yet.
 func (f *File) checkSelect(s *Scope, results []retResult, n Node) {
 	f.reportMultipleDefaults(n, CommClause, "select")
+	f.reportUnterminatedClauses(n, CommClause)
 	for c := range it(n.ast) {
 		if c.sym != CommClause {
 			continue
