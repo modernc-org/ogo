@@ -40327,6 +40327,28 @@ func main() {
 }
 `,
 		want: "[    true] [false ] [00true] [true]\n",
+	},
+	{
+		// %q of an integer that is no rune -- negative, or past 0x10FFFF -- is
+		// U+FFFD quoted, as fmt takes it. A negative one was caught as a control
+		// character and written as its unsigned bits, '\xffffffff' for -1, in
+		// silence; the value past the range was right already, and so is %c of
+		// either.
+		name: "%q of a value that is no rune",
+		src: `var calls int
+
+func r(v rune) rune {
+	calls++
+	return v
+}
+
+func main() {
+	printf("[%q] [%q] [%q] [%q]\n", -1, r(-1), int(-2147483648), r(0x110000))
+	printf("[%q] [%q] [%q] [%q] %d\n", r('x'), 'é', r(0xD800), '\'', calls)
+	printf("[%q] [%c|] [%U]\n", []rune{-5, 'a'}, -1, 'é')
+}
+`,
+		want: "['\xef\xbf\xbd'] ['\xef\xbf\xbd'] ['\xef\xbf\xbd'] ['\xef\xbf\xbd']\n['x'] ['\xc3\xa9'] ['\xef\xbf\xbd'] ['\\''] 4\n[['\xef\xbf\xbd' 'a']] [\xef\xbf\xbd|] [U+00E9]\n",
 	}}
 
 // TestEmitCRun compiles emitted C with a host compiler and runs it, checking what

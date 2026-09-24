@@ -867,8 +867,12 @@ static void ogo_print_qbytes(ogo_string s) {
 
 // runeQuoteHelper is %q of an integer: the character in single quotes, with the
 // escapes ogo_print_qbytes writes and \' in place of \", as Go writes one. A rune
-// at or above 0x80 is written as its UTF-8, which ogo_print_rune encodes.
+// at or above 0x80 is written as its UTF-8, which ogo_print_rune encodes. A value
+// that is no rune at all, negative or past 0x10FFFF, is U+FFFD, as fmt takes it:
+// a negative one was caught as a control character and written as its unsigned
+// bits, '\xffffffff' for -1 where Go writes '�'.
 const runeQuoteHelper = `static void ogo_print_qrune(long long v) {
+	if (v < 0 || v > 0x10FFFF) v = 0xFFFD;
 	putchar('\'');
 	switch (v) {
 	case '\'': printf("\\'"); putchar('\''); return;
