@@ -39303,6 +39303,45 @@ func main() {
 `,
 		want: "2 50\n1 3 534\n3 2 27\nif\nswitch\nfor 0\n2 2 2\n4 2 true\n34\n4231 true\ndeferred 1 58\n",
 	}, {
+		// A print argument whose type is an ARRAY's typedef -- a conversion to a
+		// defined array type, `Buf(a)`, a pointer to one dereferenced, `*p` -- was
+		// bound ahead of the print by assignment, `Buf t = a;`, which is no C: the
+		// host's compiler refused it and the target's took it in silence. It is
+		// copied as any array is, at 4, 12 and 16 bytes.
+		name: "a print binds an array-typed argument by copying it",
+		src: `type Buf [4]uint8
+
+type B12 [12]uint8
+
+type B16 [4]int32
+
+var calls int
+
+func tick() int {
+	calls++
+	return calls
+}
+
+func main() {
+	var a [4]uint8
+	a[1] = 7
+	var x Buf
+	p := &x
+	p[2] = 9
+	printf("%v %d\n", Buf(a), tick())
+	printf("%v %d\n", *p, tick())
+	var c [12]uint8
+	c[11] = 5
+	var d [4]int32
+	d[3] = -2
+	q := &d
+	printf("%v %d %T\n", B12(c), tick(), B12(c))
+	printf("%v %d %v\n", B16(d), tick(), *q)
+	println(B16(d), tick(), *p)
+}
+`,
+		want: "[0 7 0 0] 1\n[0 0 9 0] 2\n[0 0 0 0 0 0 0 0 0 0 0 5] 3 main.B12\n[0 0 0 -2] 4 [0 0 0 -2]\n[0 0 0 -2] 5 [0 0 9 0]\n",
+	}, {
 		// A literal of a struct holding an ARRAY as a MEMBER of another literal,
 		// where the outer one is a compound literal -- under &, as an argument, a
 		// receiver, an element of a slice of pointers -- was a compound literal of

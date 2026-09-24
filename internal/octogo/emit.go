@@ -31886,8 +31886,12 @@ func (e *emitter) hoistPrintArgs(args []Node) bool {
 		if !bind[i] {
 			continue
 		}
+		// A type that is an ARRAY's typedef -- a conversion to a defined array type,
+		// `Buf(a)`, or a pointer to one dereferenced, `*p` -- has no C value to bind
+		// by assignment: `Buf t = a;` is no C, which the host's compiler refused and
+		// the target's took in silence. It is copied as an array is, below.
 		ct, ok := e.inferCType(a.ast)
-		if ok && ct != "" {
+		if ok && ct != "" && e.namedArrays[ct].bound == "" && e.namedArrays[e.underlyingCType(ct)].bound == "" {
 			hoisted[i] = printArg{ctype: ct, name: e.hoist(ct, func() { e.emitExpr(a.ast) })}
 			continue
 		}
