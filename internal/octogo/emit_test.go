@@ -6868,9 +6868,9 @@ func TestEmitCParenRestriction(t *testing.T) {
 // one work at all. Unwrapping would just as happily give `&Row(a)[1]` the address of
 // the operand's element, a meaning for a program Go does not accept, so each of these
 // is refused deliberately rather than by not being implemented. Verified against
-// `go vet` on the same three programs. The checker refuses the address and the slice
-// first since 2026-09-24, in Go's words (callChainWalk), so a refusal is taken from
-// either stage.
+// `go vet` on the same three programs. The checker refuses all three first since
+// 2026-09-24, in Go's words (callChainWalk, checkCallValueTargets), so a refusal is
+// taken from either stage.
 func TestEmitCArrayConvNotAddressable(t *testing.T) {
 	const header = `type Row [3]int
 
@@ -6887,7 +6887,7 @@ var p *int
 	println(r[0])
 }
 `,
-			want: "cannot assign to a conversion",
+			want: "cannot assign to Row(r)[0] (neither addressable nor a map index expression)",
 		},
 		{
 			name: "addressed",

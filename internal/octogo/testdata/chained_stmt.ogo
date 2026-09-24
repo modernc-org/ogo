@@ -9,6 +9,8 @@ type Point struct{ x int }
 
 func (p Point) self() Point { return p }
 
+func (p *Point) ptr() *Point { return p }
+
 func origin() Point { var p Point; return p }
 
 var grid [3]Point
@@ -21,8 +23,9 @@ func chainedStmts() {
 	origin().self()
 	grid[0].self().self()
 
-	// An assignment whose target is reached through a call result.
-	p.self().x = 1
+	// An assignment whose target is reached through a call result -- a pointer: a
+	// call's VALUE has no storage to assign into (store_into_call_value.ogo).
+	p.ptr().x = 1
 
 	// A "go" statement launching a chained call.
 	go p.self().self()

@@ -6386,6 +6386,12 @@ func (f *File) checkAssignment(s *Scope, head, postfix Node) {
 		}
 	}
 
+	// A target reached from a CALL's value, `mkp().x = 5`, has no storage: the
+	// emitter's temporary would take the store, where nobody reads it.
+	if op == ASSIGN || op == INC || op == DEC || isCompoundAssign(op) {
+		f.checkCallValueTargets(s, head, postfix)
+	}
+
 	// An increment "x++" or decrement "x--" statement: the operand must be an
 	// assignable variable (checked like a plain "=" target). It is both read and
 	// written, so -- unlike a "=" target -- it is not recorded as a write, and thus
@@ -13156,6 +13162,57 @@ func (f *File) checkWalkedTargets(s *Scope, head, postfix Node, rhs []Node, lhsI
 				f.checkWalkedTarget(s, ah, isteps, rhs[i], false)
 			}
 			i++
+		}
+	}
+}
+
+// checkCallValueTargets refuses a store into what a CALL's value holds -- a field of
+// a call's result, an element of an array in one, `mkp().x = 5`, `mka()[0].x = 8`,
+// `mkp().x++` -- which Go refuses, "cannot assign to mkp().x (neither addressable nor
+// a map index expression)": a call's result has no storage until a step goes through
+// a pointer or into a slice's elements (callChainWalk). The emitter refused most of
+// them in its own words, "only simple and field assignment targets are supported
+// yet". Every target of the statement is asked, the head's and each LhsItem's.
+func (f *File) checkCallValueTargets(s *Scope, head, postfix Node) {
+	check := func(ah Node, steps []Node) {
+		if !slices.ContainsFunc(steps, func(n Node) bool { return n.sym == CallSuffix }) {
+			return
+		}
+		id, ok := f.assignHeadIdent(ah)
+		if !ok {
+			return
+		}
+		if w := f.callChainWalk(s, id, steps); w.known && !w.addr {
+			f.err(id.Position(), "cannot assign to %s (neither addressable nor a map index expression)",
+				f.sourceSpan(ah.Pos(), steps[len(steps)-1].End()))
+		}
+	}
+	var steps []Node
+	for c := range it(postfix.ast) {
+		switch c.sym {
+		case Selector, Index, CallSuffix:
+			steps = append(steps, c)
+		case PostfixOp:
+			check(head, steps) // the head's steps end where the operator begins
+			steps = nil
+			for n := range it(c.ast) {
+				if n.sym != LhsItem {
+					continue
+				}
+				var ah Node
+				var isteps []Node
+				for c := range it(n.ast) {
+					switch c.sym {
+					case AssignHead:
+						ah = c
+					case Selector, Index, CallSuffix:
+						isteps = append(isteps, c)
+					}
+				}
+				if ah.sym != 0 {
+					check(ah, isteps)
+				}
+			}
 		}
 	}
 }

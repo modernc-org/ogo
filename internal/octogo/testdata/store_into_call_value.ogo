@@ -1,0 +1,60 @@
+// A CALL's result is a value with no storage, and so is a field of it or an
+// element of an array in it, until a step goes through a pointer or into a slice's
+// elements. Go refuses a store into one, "cannot assign to mkp().x (neither
+// addressable nor a map index expression)"; the emitter refused most of them in its
+// own words, "only simple and field assignment targets are supported yet"
+// (checkCallValueTargets).
+
+type P struct{ x, y int }
+
+type W struct {
+	p P
+	a [2]int
+	q *P
+	s []int
+}
+
+var gp P
+
+var back [3]int
+
+func mkp() P { return P{} }
+
+func mkw() W { return W{q: &gp, s: back[:]} }
+
+func mka() [2]P { return [2]P{} }
+
+func getp() *P { return &gp }
+
+func (p P) self() P { return p }
+
+func ok() {
+	getp().x = 1
+	mkw().q.x = 2
+	mkw().s[1] = 3
+	getp().y++
+	mkw().q.y += 4
+	println(gp.x, gp.y, back[1])
+}
+
+func bad() {
+	// ERROR cannot assign to mkp\(\).x \(neither addressable nor a map index expression\)
+	mkp().x = 5
+	// ERROR cannot assign to mkw\(\).p.y
+	mkw().p.y = 6
+	// ERROR cannot assign to mkw\(\).a\[1\]
+	mkw().a[1] = 7
+	// ERROR cannot assign to mka\(\)\[0\].x
+	mka()[0].x = 8
+	// ERROR cannot assign to mkp\(\).x
+	mkp().x++
+	// ERROR cannot assign to mkp\(\).x
+	mkp().x += 2
+	// ERROR cannot assign to gp.self\(\).x
+	gp.self().x = 1
+}
+
+func main() {
+	ok()
+	bad()
+}
