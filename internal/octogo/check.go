@@ -9921,7 +9921,7 @@ func (f *File) structFieldsSeen(s *Scope, name string, seen map[*TypeDeclaration
 // the member alone: Go names an embedded field after the type, unqualified, so the
 // field is `V.Leaf` whichever package declared the type.
 func embeddedFieldName(fld ParameterDeclNode) (Token, bool) {
-	if fld.TypeNode != nil || len(fld.Names) != 1 {
+	if fld.TypeNode != nil || fld.Unresolved || len(fld.Names) != 1 {
 		return Token{}, false
 	}
 	return fld.Names[0], true
@@ -19380,6 +19380,11 @@ type ParameterDeclNode struct {
 	EmbeddedPkg Token
 	// EmbeddedPtr marks a field embedded as a pointer, `*Leaf`.
 	EmbeddedPtr bool
+	// Unresolved marks a field that WROTE a type which did not resolve -- reported
+	// where the type is written. Its TypeNode is nil, as an embedded field's is, and
+	// it is not one: taken for one, `c foo` was reported as "undefined: c", ahead of
+	// the type on the line.
+	Unresolved bool
 }
 
 // ParameterListNode describes the ParameterList production. Results reuse it too,
@@ -20358,6 +20363,7 @@ func (f *File) fieldDecl(s *Scope, n Node) (r ParameterDeclNode) {
 		switch n.sym {
 		case Type:
 			r.TypeNode = f.typ(s, n)
+			r.Unresolved = r.TypeNode == nil
 		case 0:
 			switch tok := f.tok(n.tok); Symbol(tok.Ch) {
 			case IDENT:

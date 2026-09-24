@@ -1,0 +1,31 @@
+// A struct field whose type does not resolve is reported at the TYPE. Its type
+// node is nil, as an embedded field's is, and it was taken for one: `c foo` was
+// reported as "undefined: c", which came ahead of the type's own error on the line
+// and was the only one shown. So was a field whose type names something that is no
+// type.
+
+var g int
+
+type T struct {
+	// ERROR undefined: foo
+	c foo
+	// ERROR g \(package-level variable\) is not a type
+	d g
+	n int
+}
+
+func main() {
+	var l struct {
+		// ERROR undefined: bar
+		c bar
+	}
+	type U struct {
+		// ERROR undefined: baz
+		c baz
+	}
+	var t T
+	var u U
+	_ = t
+	_ = l
+	_ = u
+}
