@@ -31895,6 +31895,16 @@ func (e *emitter) hoistPrintArgs(args []Node) bool {
 			hoisted[i] = printArg{ctype: ct, name: e.hoist(ct, func() { e.emitExpr(a.ast) })}
 			continue
 		}
+		// A call returning an ARRAY writes a temporary of its shape, which is the
+		// copy fmt formats: `println(mk(1))`, `printf("%v", p.Union(q))` were "a call
+		// returning an array must be bound to a variable first", where a deferred
+		// print of the same took it.
+		if _, _, isCall := e.arrayResultCall(a.ast); isCall {
+			if name, ok := e.hoistArrayCallArg(a); ok {
+				hoisted[i] = printArg{name: name, array: true}
+				continue
+			}
+		}
 		// An ARRAY has no C value type to bind by assignment, and asking for one
 		// gave the whole binding up -- every other argument's with it. It is copied
 		// into a temporary array of its shape, which is the copy fmt formats; a
@@ -32085,8 +32095,9 @@ func (e *emitter) emitPrint(newline bool, callSuffix []int32) {
 	e.includes["stdio.h"] = true
 	// The arguments are evaluated BEFORE anything is written, as in Go. A single
 	// argument is already in that order -- there is nothing written before it -- so
-	// only the several-argument form asks.
-	if len(args) > 1 {
+	// only the several-argument form asks, and a call returning an ARRAY, which has
+	// no value to print until it is bound (arrayCallArg).
+	if len(args) > 1 || e.arrayCallArg(args) {
 		saved := e.printArgs
 		e.printArgs = nil
 		e.hoistPrintArgs(args)
@@ -32268,7 +32279,7 @@ func (e *emitter) emitPrintf(callSuffix []int32) {
 	// As in emitPrint: every argument is evaluated before anything is written. The
 	// format itself is a constant, so only the arguments after it are hoisted, and
 	// they are indexed from zero exactly as the verbs read them.
-	if len(rest) > 1 {
+	if len(rest) > 1 || e.arrayCallArg(rest) {
 		saved := e.printArgs
 		e.printArgs = nil
 		e.hoistPrintArgs(rest)
@@ -33802,7 +33813,20 @@ func (e *emitter) printArrayShape(idx int, arg Node) (arrDim, bool) {
 			return d.arr, true
 		}
 	}
+	// One the print bound ahead of itself, a call's array among them.
+	if h, ok := e.hoistedArg(idx); ok && h.array {
+		return e.arrays[h.name], true
+	}
 	return e.arrayShapeOf(arg.ast)
+}
+
+// arrayCallArg reports whether a print argument is a call returning an ARRAY,
+// which has no value to print until the print binds it (hoistPrintArgs).
+func (e *emitter) arrayCallArg(args []Node) bool {
+	return slices.ContainsFunc(args, func(a Node) bool {
+		_, _, ok := e.arrayResultCall(a.ast)
+		return ok
+	})
 }
 
 // emptyArrayText is what an array with an EMPTY dimension prints as, which is all
