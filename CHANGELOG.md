@@ -409,6 +409,10 @@ shipped section tells a reader on that version that they have behaviour they do 
   8988 9000 9012 [11 2] on a P2-EDGE for [4 5 6] [1 2 3] [7 8] [1 2]. An
   element-wise verb of a local one, `defer printf("%d", r)`, was refused as "cannot
   tell the type of this argument". Both print what the defer took.
+- **A variadic function returning an array did not build where it was called.**
+  `frame(1, 0xDE, 0xAD)` for a `frame(kind byte, body ...byte) [12]byte` passed the
+  values where the slice goes; the target refused the call. They are packed as any
+  variadic call's are.
 - **A method expression or a literal returning a struct holding an array did not
   build where it was called.** `Buf.Dbl(b)`, `(*Buf).Twice(&b)` and `func() Buf {
   ... }()` called the lifted function as though it returned the struct, which travels
