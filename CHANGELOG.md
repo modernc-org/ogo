@@ -20,6 +20,8 @@ shipped section tells a reader on that version that they have behaviour they do 
 
 ### Language
 
+- **printf takes %F and %O.** %F is %f by another name, and %O is octal with
+  the "0o" prefix, `%O` of 8 being "0o10"; both were "unknown formatting verb".
 - **A defined byte slice type converts from a constant string.** `Frame("PING")`
   for `type Frame []byte`, or a defined type over []rune, was refused in every
   position, "cannot convert to Frame", where `[]byte("PING")` worked. It is the
