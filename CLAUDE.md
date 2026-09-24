@@ -58,6 +58,16 @@ whether they earn their complexity on a microcontroller, and how they meet the
 whole-program specialization the compiler already intends. Do not build toward
 them, and do not design them out.
 
+**Complex numbers are PLANNED, for release 1.1** (the user's call, 2026-09-24: 1.0
+is not rushed, and correctness comes before completeness, so they land after it as
+a purely additive change with time to bake). They need no heap, so they are owed,
+not excluded. specs.go's "Complex types (planned)" specifies them ahead of the work
+-- Go's, a value two floats at the target's float precision, so complex128 is no
+more precise than complex64 -- and nothing before 1.1 should foreclose any of it.
+Until then an imaginary literal (the scanner) and complex64/complex128 where the
+program declares no such name (`errUndefined`) say "complex numbers are not
+supported yet"; flexcc has no `_Complex`, so the emitter will lower them itself.
+
 `specs.go`'s "Relationship to Go" section states the same policy for language
 users; keep the two in step.
 

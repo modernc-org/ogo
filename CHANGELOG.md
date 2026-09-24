@@ -20,6 +20,14 @@ shipped section tells a reader on that version that they have behaviour they do 
 
 ### Language
 
+- **Complex numbers are specified, planned for release 1.1.** specs.go's new
+  "Complex types (planned)" says what they are to be: Go's complex64 and
+  complex128, a value two floats at this target's float precision, with Go's
+  operators, built-ins, conversions and printing. Until they land, what names one
+  says so where it is written, "complex numbers are not supported yet": an
+  imaginary literal, `x := 2i`, was an identifier out of place ("expected ;"), and
+  complex64 and complex128 were "undefined". A program declaring a name of its own
+  called complex64 is unaffected.
 - **A for clause's target may go through a call**, `getp().x, i = getp().x+1, i+1`
   in the post and the same in the init, as a statement's may since this release.
 - **A select clause may be written on one line.** `select { case v = <-ch: a = 1 }`
@@ -241,6 +249,15 @@ shipped section tells a reader on that version that they have behaviour they do 
 
 ### Fixed
 
+- **A struct field whose type does not resolve is reported at the type.** `type T
+  struct{ c foo }` said "undefined: c", the field taken for an EMBEDDED one, whose
+  type is missing too; the error at `foo` came second on the line and was never
+  shown. It says "undefined: foo".
+- **A type switch case naming no type says so.** `case nope:` for a name nothing
+  declared was "a type switch case names a pointer type, an interface type, or
+  nil", `case *nope:` was "*nope does not implement I", and a variable in either
+  place the same; they are "undefined: nope" and "v (local variable) is not a
+  type".
 - **A for clause's post binds what it needs inside the loop.** A post of several
   targets whose values needed binding -- an operand with an effect beside another,
   an index with one, a call returning an array -- bound it ahead of the whole loop,
