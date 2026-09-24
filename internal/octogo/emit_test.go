@@ -5736,6 +5736,13 @@ func main() {
 			want: "printf: %U wants an integer, not string",
 		},
 		{
+			// An array has no C value type, and the refusal named nothing after
+			// "not" until its shape was asked.
+			name: "%d of an array of strings",
+			src:  "func main() {\n\tprintf(\"%d\\n\", [3]string{\"a\", \"\", \"x\"})\n}\n",
+			want: "printf: %d wants an integer, not [3]string",
+		},
+		{
 			// The '*' forms take the width from an argument of their own, which would
 			// break the verb-to-argument count the type checking rests on.
 			name: "a star width",

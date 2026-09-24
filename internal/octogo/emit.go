@@ -33269,7 +33269,17 @@ func (e *emitter) emitPrintfVerb(item printfItem, idx int, arg Node) bool {
 	ct, known := e.printArgCType(idx, arg)
 	value := func() { e.emitReplayArg(idx, arg) }
 	wrong := func(want string) bool {
-		e.failAt(arg.ast, "printf: %%%c wants %s, not %s", verb, want, e.goTypeName(ct))
+		got := e.goTypeName(ct)
+		if got == "" {
+			// An array has no C value type, so the refusal named nothing: "%d wants
+			// an integer, not " of a [3]string. Its shape names it.
+			got, _ = e.arrayTypeNameForT(arg.ast)
+		}
+		if got == "" {
+			e.failAt(arg.ast, "printf: %%%c wants %s", verb, want)
+			return false
+		}
+		e.failAt(arg.ast, "printf: %%%c wants %s, not %s", verb, want, got)
 		return false
 	}
 	// noSpec refuses a width on the verbs that cannot honour one yet. It is a
