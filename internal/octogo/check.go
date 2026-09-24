@@ -17055,21 +17055,15 @@ func unwrapSingle(n Node) Node {
 	}
 }
 
-// exprMakeElemKind returns the element kind of a "make([]T, n)" initializer, so a
-// variable declared from one carries T the way "var xs []T = make([]T, n)" does.
-// Without it a made slice was the one container whose elements went unchecked:
-// exprLitElemKind reads the element type off a composite literal's own brackets,
-// and make writes them in an argument instead.
-func (f *File) exprMakeElemKind(s *Scope, n Node) (Kind, bool) {
-	k, hasKind, _, ok := f.exprMakeElem(s, n)
-	return k, hasKind && ok
-}
-
-// exprMakeElem is exprMakeElemKind answering with the element's TYPE NODE as well,
-// and for an element of NO predeclared kind: the kind alone names a DEFINED element
-// -- `make([]D, n)` over `type D int` -- as the int it is made of, which is not the
-// type an append into it may carry, and says nothing at all about a struct one,
-// where the declaration then recorded no element type of any sort.
+// exprMakeElem returns the element of a "make([]T, n)" initializer, so a variable
+// declared from one carries T the way "var xs []T = make([]T, n)" does: its kind,
+// where it has a predeclared one, and its TYPE NODE, for an element of no
+// predeclared kind. Without it a made slice was the one container whose elements
+// went unchecked -- exprLitElemKind reads the element type off a composite
+// literal's own brackets, and make writes them in an argument instead -- and the
+// kind alone names a DEFINED element, `make([]D, n)` over `type D int`, as the int
+// it is made of, which is not the type an append into it may carry, and says
+// nothing at all about a struct one.
 func (f *File) exprMakeElem(s *Scope, n Node) (kind Kind, hasKind bool, tn TypeNode, ok bool) {
 	ue, ok := f.soleUnaryExpr(n)
 	if !ok {

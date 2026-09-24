@@ -15218,26 +15218,14 @@ func compoundLitBody(text string) (string, bool) {
 	return "", false
 }
 
-// refuseArrayStructABI rejects passing or returning a struct that holds an array.
-// A copy elsewhere is lowered to memcpy (see emitStructCopy), but a parameter or a
-// result is the C calling convention itself, and flexcc gets that wrong in a way
-// no lowering here can reach: it drops the argument slot ("Internal error,
-// couldn't find object variable with offset 4") or fails to assign the result.
-// Reported where the signature is written, so the message names the declaration
-// rather than every call of it. Passing a pointer is the way to write this.
-func (e *emitter) refuseArrayStructABI(ctype, what string) {
-	if e.hasArrayField(ctype) {
-		e.fail("%s: %s holds an array, which the target's C compiler cannot pass or return by value; use a pointer", what, ctype)
-	}
-}
-
 // resultCType maps a result Type to its C type, refusing a fixed-array result. C
 // cannot return an array by value, and a result -- unlike a parameter, which decays
 // to a pointer (cParamList) -- has nowhere to decay to, so it is refused with an
 // actionable message. cType would instead fail with an empty, nameless "unsupported
 // type", the array's element being a nested node it finds no identifier for. arrayDim
-// catches every rank, a multi-dimensional array included. A struct that merely holds
-// an array is refused by refuseArrayStructABI for the same ABI reason.
+// catches every rank, a multi-dimensional array included. A struct that holds an
+// array is a result like any other here: it travels through an out parameter,
+// alone or in the result struct of several (funcStructRet).
 func (e *emitter) resultCType(ta []int32) string {
 	if _, ok := e.arrayDim(ta); ok {
 		// A SINGLE array result is handed back through an out parameter, and
