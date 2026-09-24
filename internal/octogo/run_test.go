@@ -38314,6 +38314,51 @@ func main() {
 `,
 		want: "3 9 3\n4 6 6\n200 55\n77 3\n10 true false\n6 7 24 2\ntwo\n3\n91\n2\n",
 	}, {
+		// A method expression and a function literal returning a struct holding an
+		// array, called where they stand, called the lifted function as though it
+		// returned the struct -- which travels through its out parameter -- and the
+		// target refused the C ("Cannot take address of expression"). They are
+		// called into a temporary (outNamedCall). And a LITERAL returned as such a
+		// struct, holding an array value, was refused: it is built in place with the
+		// copy of that array (emitStructCopy), as a declaration builds it.
+		name: "a method expression or a literal returning a struct holding an array",
+		src: `type Buf struct {
+	n   int
+	arr [3]int
+}
+
+var calls int
+
+func (b Buf) Dbl() Buf {
+	calls = calls*10 + 1
+	b.n *= 2
+	return b
+}
+
+func (b *Buf) Twice() Buf {
+	calls = calls*10 + 2
+	return Buf{b.n * 2, b.arr}
+}
+
+func show(b Buf) int { return b.n + b.arr[2] }
+
+// A method expression and a function literal returning a struct holding an ARRAY,
+// called where they stand: declared from, read through, passed on, stored. The
+// call was written as though it returned the struct, which travels through an out
+// parameter (funcStructRet).
+func main() {
+	b := Buf{3, [3]int{1, 2, 3}}
+	d := Buf.Dbl(b)
+	p := (*Buf).Twice(&b)
+	println(d.n, p.n, Buf.Dbl(b).arr[2], show((*Buf).Twice(&b)), calls)
+	e := func() Buf { return Buf{7, [3]int{4, 5, 6}} }()
+	var f Buf
+	f = func(k int) Buf { return Buf{k, [3]int{k, k, k}} }(9)
+	println(e.n, e.arr[1], f.arr[2])
+}
+`,
+		want: "6 6 3 9 1212\n7 5 9\n",
+	}, {
 		// An ARRAY field of a struct holding it, read off a call's result: the
 		// readers of an array through a chain -- a declaration, a store, len and
 		// cap, a range, a comparison, a literal's element, an argument, a send --

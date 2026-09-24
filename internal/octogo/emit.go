@@ -14308,6 +14308,10 @@ func (e *emitter) emitMethodExpr(me emMethodExpr) {
 		}
 		e.emit(e.recFuncValue(name))
 	case len(me.rest) == 1 && me.rest[0].sym == CallSuffix:
+		if _, isOut := e.funcStructRet[name]; isOut {
+			e.emit(e.outNamedCall(name, me.rest[0].ast))
+			return
+		}
 		e.emit(name + "(")
 		e.emitCallArgs(name, me.rest[0].ast)
 		e.emit(")")
@@ -14315,11 +14319,16 @@ func (e *emitter) emitMethodExpr(me emMethodExpr) {
 		// `T.M(x).f`: the call's one result, bound to a temporary of the frame, and
 		// the steps after it taken on that, as they are after any call.
 		rt := e.funcRet[name][0]
-		tmp := e.hoist(rt, func() {
-			e.emit(name + "(")
-			e.emitCallArgs(name, me.rest[0].ast)
-			e.emit(")")
-		})
+		var tmp string
+		if _, isOut := e.funcStructRet[name]; isOut {
+			tmp = e.outNamedCall(name, me.rest[0].ast)
+		} else {
+			tmp = e.hoist(rt, func() {
+				e.emit(name + "(")
+				e.emitCallArgs(name, me.rest[0].ast)
+				e.emit(")")
+			})
+		}
 		e.locals[tmp] = rt
 		steps := me.rest[1:]
 		if slices.ContainsFunc(steps, func(st Node) bool { return st.sym == CallSuffix }) {
@@ -28838,6 +28847,15 @@ func (e *emitter) emitStructOutReturn(rt string, exprs []Node) {
 		}
 		e.ind()
 		e.emit(text + ";\n")
+	} else if _, _, isLit := e.soleCompositeLit(exprs[0].ast); isLit {
+		// A literal is built in place, with the copies of any array value it holds
+		// (emitStructCopy): rendered as a value it had nowhere to copy one in, and
+		// `return Buf{n, b.arr}` was refused.
+		lv := "(*" + arrayResultParam + ")"
+		if hold != "" {
+			lv = hold
+		}
+		e.emitStructCopy(lv, rt, exprs[0].ast)
 	} else {
 		text := e.captureC(func() { e.emitReturnValue(0, exprs[0]) })
 		decl, addr := e.byRefSource(rt, text)
@@ -28855,6 +28873,25 @@ func (e *emitter) emitStructOutReturn(rt string, exprs []Node) {
 	}
 	e.ind()
 	e.emit("return;\n")
+}
+
+// outNamedCall calls cname -- a function lifted from a literal or a method
+// expression, or a declared one -- whose result travels through its leading out
+// parameter (funcStructRet), with the arguments of call, into a temporary of this
+// frame ahead of the statement, and answers the temporary. Written as a value,
+// `Buf.Dbl(b)` and a literal called where it stands called the out-parameter
+// function as though it returned the struct.
+func (e *emitter) outNamedCall(cname string, call []int32) string {
+	rt := e.funcStructRet[cname]
+	args := e.captureC(func() { e.emitCallArgs(cname, call) })
+	tmp := e.newTmp()
+	text := cname + "(&" + tmp
+	if args != "" {
+		text += ", " + args
+	}
+	e.prologue = append(e.prologue, rt+" "+tmp+";\n", text+");\n")
+	e.locals[tmp] = rt
+	return tmp
 }
 
 // exprIsLiteral reports whether an expression is built entirely from literals and
@@ -40951,8 +40988,13 @@ func (e *emitter) emitExprNode(n Node) {
 				if !ok {
 					return
 				}
-				// A literal called where it stands: the lifted name, then the call.
+				// A literal called where it stands: the lifted name, then the call --
+				// into a temporary, for a result written through an out parameter.
 				if len(suffix) == 1 && suffix[0].sym == CallSuffix {
+					if _, isOut := e.funcStructRet[cname]; isOut {
+						e.emit(e.outNamedCall(cname, suffix[0].ast))
+						return
+					}
 					e.emit(cname + "(")
 					e.emitCallArgs(cname, suffix[0].ast)
 					e.emit(")")
