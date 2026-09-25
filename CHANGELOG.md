@@ -291,8 +291,9 @@ shipped section tells a reader on that version that they have behaviour they do 
   in the generated C under the name as written while every read of it was
   renamed, and so were an array parameter, every named result and a range value
   holding an array or a struct: the program did not build, or a struct range value
-  was "EOF has no field b". A scalar, a struct, a string or a pointer always
-  worked. Found by a COBS framing program's `var long [260]byte`.
+  was "EOF has no field b". So was a constant declared in a function, `const long
+  = 5`. A scalar, a struct, a string or a pointer always worked. Found by a COBS
+  framing program's `var long [260]byte`.
 - **A member a call's result lacks is reported where it is written.** A misspelt
   field on what a call returns, `getp().nosuch`, read, written or stepped through,
   reached the generated code, which said "unsupported call in expression" -- no
