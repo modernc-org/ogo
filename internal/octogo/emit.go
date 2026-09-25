@@ -10469,6 +10469,33 @@ type crossEdge struct {
 	// arguments of one call, which is what pairs a callback handed on with the
 	// value handed on to it (see paramCall).
 	site int
+	// via is the calls whose RESULT the argument was, `keep(pass(v))` and
+	// `keep(trim(pass(v)))`, each with the parameter of it the value went in at: the
+	// edge holds only where every one hands that parameter back (retParams), or its
+	// contents (retContents, the edge then carrying contents).
+	via []viaGate
+}
+
+// viaGate is one call an argument's value went through, and the parameter of it.
+type viaGate struct {
+	callee string
+	to     int
+}
+
+// viaHolds reports whether an edge through calls' results holds, and whether it
+// then carries contents: see crossEdge.via.
+func (e *emitter) viaHolds(g crossEdge) (holds, contents bool) {
+	contents = g.contents
+	for _, v := range g.via {
+		switch rp, rc := e.retParams[v.callee], e.retContents[v.callee]; {
+		case v.to < len(rp) && rp[v.to]:
+		case v.to < len(rc) && rc[v.to]:
+			contents = true
+		default:
+			return false, false
+		}
+	}
+	return true, contents
 }
 
 // collectFuncValues records every function the program uses as a VALUE, by its
@@ -11356,6 +11383,49 @@ func (e *emitter) collectFuncCross(fi funcInfo) {
 			derivedCall(c, flag, slot)
 		}
 	}
+	// viaEdges is an argument that is a CALL's result, `keep(pass(v))` or
+	// `x := pass(v); keep(x)`: the caller's parameter it passed there reaches the
+	// argument where the inner callee hands it back, which edge.via gates.
+	viaEdges := func(edge crossEdge, a []int32) (out []crossEdge) {
+		var walk func(a []int32, via []viaGate)
+		walk = func(a []int32, via []viaGate) {
+			if len(via) > 8 {
+				return // a nest of calls this deep is not written; a cycle through holds may be
+			}
+			inner := heldCalls(a)
+			if _, suffix, isCall := e.shapeCall(a); isCall && len(suffix) != 0 && suffix[len(suffix)-1].sym == CallSuffix {
+				inner = append(inner, a)
+			}
+			for _, c := range inner {
+				var callees []string
+				args := []Node(nil)
+				if callee, cargs, ok := e.valueCall(c); ok {
+					callees, args = []string{callee}, cargs
+				} else if cs, cargs, ok := valueCallees(c); ok {
+					callees, args = cs, cargs
+				}
+				for _, callee := range callees {
+					for jj, ia := range args {
+						gates := append(slices.Clone(via), viaGate{callee, jj})
+						r := reachOf(e.summaryReach(ia.ast))
+						for _, i := range r.vals {
+							g := edge
+							g.from, g.via = i, gates
+							out = append(out, g)
+						}
+						for _, i := range r.conts {
+							g := edge
+							g.from, g.via, g.contents = i, gates, true
+							out = append(out, g)
+						}
+						walk(ia.ast, gates) // `keep(trim(pass(v)))`
+					}
+				}
+			}
+		}
+		walk(a, nil)
+		return out
+	}
 	derivedCall = func(v []int32, flag leak, slot int) {
 		callee, args, isCall := e.valueCall(v)
 		callees := []string{callee}
@@ -11523,6 +11593,7 @@ func (e *emitter) collectFuncCross(fi funcInfo) {
 			rcalls = append(rcalls, chainCalls(nodes)...)
 			for _, c := range rcalls {
 				for j, a := range c.args {
+					e.retEdges = append(e.retEdges, viaEdges(crossEdge{caller: cname, callee: c.callee, to: j}, a.ast)...)
 					r := reachOf(e.summaryReach(a.ast))
 					for _, i := range r.vals {
 						e.retEdges = append(e.retEdges, crossEdge{caller: cname, from: i, callee: c.callee, to: j})
@@ -11560,6 +11631,7 @@ func (e *emitter) collectFuncCross(fi funcInfo) {
 			e.siteSeq++
 			funcArgs(site, c.callee, c.args)
 			for j, a := range c.args {
+				e.crossEdges = append(e.crossEdges, viaEdges(crossEdge{caller: cname, callee: c.callee, to: j, recvAt: argLocal, argOwner: owner, site: site}, a.ast)...)
 				r := reachOf(e.summaryReach(a.ast))
 				for _, i := range r.vals {
 					e.crossEdges = append(e.crossEdges,
@@ -11585,6 +11657,7 @@ func (e *emitter) collectFuncCross(fi funcInfo) {
 			site := e.siteSeq
 			e.siteSeq++
 			for j, a := range c.args {
+				e.crossEdges = append(e.crossEdges, viaEdges(crossEdge{caller: cname, callee: c.callee, to: j, recv: c.recv, recvAt: c.recvAt, argOwner: owner, site: site}, a.ast)...)
 				r := reachOf(e.summaryReach(a.ast))
 				for _, i := range r.vals {
 					e.crossEdges = append(e.crossEdges, crossEdge{caller: cname, from: i,
@@ -11889,6 +11962,11 @@ func (e *emitter) closeCrossParams() {
 			}
 		}
 		for _, g := range e.crossEdges {
+			holds, contents := e.viaHolds(g)
+			if !holds {
+				continue
+			}
+			g.contents = contents
 			calleeC := e.crossContents[g.callee]
 			calleeV := e.crossParams[g.callee]
 			var intos uint32
@@ -11962,6 +12040,11 @@ func (e *emitter) closeCrossParams() {
 			changed = true
 		}
 		for _, g := range e.retEdges {
+			holds, contents := e.viaHolds(g)
+			if !holds {
+				continue
+			}
+			g.contents = contents
 			// A result carrying the callee's parameter's contents carries the
 			// caller's parameter's contents; a result that IS the callee's parameter
 			// carries, for an argument that was contents, those contents.

@@ -11498,6 +11498,15 @@ var back [4]int
 		{"func keep(v []int) { p := &gc; w := pass(v); p.d = w }", true},
 		{"func keep(v []int) { w := pass(v); gn = len(w) }", false},
 		{"func keep(v []int) { w := pass(v); w[0] = 1 }", false},
+		// A call's result handed on as another call's ARGUMENT, directly, through a
+		// local, nested and through a function value (2026-09-25).
+		{"func keep(v []int) { gc.set(pass(v)) }", true},
+		{"func keep(v []int) { w := pass(v); gc.set(w) }", true},
+		{"func keep(v []int) { work(pass(v)) }", true},
+		{"func keep(v []int) { work(pass(pass(v))) }", true},
+		{"func keep(v []int) { f := pass; work(f(v)) }", true},
+		{"func keep(v []int) { gc.set(fresh(v)) }", false},
+		{"func keep(v []int) { gn = len(pass(v)) }", false},
 		// Only an int leaves the callee.
 		{"func keep(v []int) { n := len(v); gn = n }", false},
 		{"func keep(v []int) { x := v[0]; gn = x }", false},
@@ -11513,6 +11522,8 @@ func work(v []int) { ch <- v }
 func pass(v []int) []int { return v }
 
 func pair(v []int) ([]int, int) { return v, 1 }
+
+func fresh(v []int) []int { return back[:] }
 
 func (c *C) set(v []int) { c.d = v }
 
