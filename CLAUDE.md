@@ -1219,6 +1219,17 @@ result: `callExprsIn` finds the calls a value carries, `callsOfExpr` resolves ea
 its callees, and every sink, hold and gate asks both; only a whole value that was a
 function's call had been followed.
 
+**A STRUCT OF MORE THAN FOUR WORDS PASSED WHERE A CALL STANDS** (2026-09-25) arrives
+corrupted on the P2 -- shifted a word -- with only "incompatible pointer types in
+parameter passing" from the target's compiler (doc/struct-call-arg.c: a call's result,
+a nested call, a field of a call's result; a variable, a field, an element, a
+dereference and a compound literal are right). The emitter binds a function's struct
+result before passing it (hoistStructCallArg) and a method's before it becomes the
+next receiver (chainReceiver); the second was missing until a calendar program's
+`t.add(45).print()` panicked on the board and matched Go on the host. **A new place a
+struct-valued call is handed on binds it first** -- and a domain probe is not verified
+until it has run on the board.
+
 **A RECEIVE HAD NO TYPE** (2026-09-25). `exprType` answered "unknown" for `<-ch`, so
 every store rule said nothing of a received value but the one asked of a bare name
 (checkRecvAssign): `h.s = <-ci` put an int into a string as far as the C compiler, a

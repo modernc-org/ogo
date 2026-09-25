@@ -38,6 +38,12 @@ shipped section tells a reader on that version that they have behaviour they do 
 
 ### Fixed
 
+- **A method called on a method's struct result is handed the right value on the
+  board.** `s.bump(1).show()` and `w.get().total()`, for a struct of more than
+  four words, passed the first method's result straight into the second, and the
+  P2's C compiler corrupts a large struct passed so: 112345 for Go's 123457, with
+  a warning about C nobody wrote (doc/struct-call-arg.c). The result is bound to
+  a temporary first, as a function's already was. The host was right throughout.
 - **A method or an index on a parenthesised call's array result.** `(mk(5)).Len()`
   and `(mk(3))[1]`, for a function returning an array, were "this form is not
   supported yet"; they are `mk(5).Len()` and `mk(3)[1]`, as in Go.
