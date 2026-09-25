@@ -11259,6 +11259,11 @@ func main() {
 		{"p := &n\n\tp = &gq\n\t(*p).p = &x", "cannot store the address of local variable x through (*p).p: what it reaches is not known"},
 		{"p := getq()\n\t(*p).p = &x", "through (*p).p"},
 		{"s := &ls\n\t(*s)[0] = &x", "in an element of ls"}, // ls's address is taken: its backing is not known
+		// A dereference in a list, whichever target it is.
+		{"s := &gs\n\t(*s)[0], a = &x, 1", "cannot store the address of local variable x in package variable gs"},
+		{"p := &gq\n\ta, (*p).p = 1, &x", "in package variable gq"},
+		{"p := &n\n\tp = &gq\n\ta, (*p).p = 1, &x", "through (*p).p: what it reaches is not known"},
+		{"pp := &gp\n\t(*pp), a = &x, 1", "in package variable gp"},
 		// A range clause's value, and the block rule asked of a reference READ out
 		// of a holder, which names the local it points into.
 		{"xs := []*int{&x}\n\tp := &gq\n\tfor _, p.p = range xs {\n\t}", "cannot store xs's element, which holds a pointer into local x through p.p"},
@@ -11273,6 +11278,8 @@ func main() {
 		{"p := &n\n\t(*p).p = &x", ""},
 		{"p := &gq\n\t(*p).p = &gn", ""},
 		{"p := &n\n\tfor i := 0; i < 1; (*p).p = &x {\n\t\ti++\n\t}", ""},
+		{"p := &n\n\ta, (*p).p = 1, &x", ""},
+		{"s := &ls\n\t(*s)[0], a = &gn, 1", ""},
 		{"xs := []*int{&x}\n\tif a == 0 {\n\t\tn.p = xs[0]\n\t}", ""},
 		{"h := Q{p: &x}\n\tif a == 0 {\n\t\tn.p = h.p\n\t}", ""},
 		{"xs := []*int{&x}\n\tfor _, n.p = range xs {\n\t}", ""},
@@ -11331,6 +11338,8 @@ func main() {
 		{"p := &n\n\tfor i := 0; i < 1; p.p = &x {\n\t\ti++\n\t}\n\tgp = n.p", "cannot store n.p"},
 		{"p := &n\n\tfor i := 0; i < 1; (*p).p = &x {\n\t\ti++\n\t}\n\tgp = n.p", "cannot store n.p"},
 		{"xs := []*int{&x}\n\tp := &n\n\tfor _, p.p = range xs {\n\t}\n\tgp = n.p", "cannot store n.p"},
+		{"p := &n\n\ta, (*p).p = 1, &x\n\tgp = n.p", "cannot store n.p"},
+		{"p := &n\n\ta, (*p).p = 1, &x\n\tgp = p.p", "cannot store p.p, which holds a pointer into local x"},
 		// A pointer whose own address is taken is not known to point where its one
 		// value did: the store through it is refused, with the place it reaches.
 		{"q := &n\n\tpp := &q\n\t(*pp).p = &x", "cannot store the address of local variable x through q.p"},

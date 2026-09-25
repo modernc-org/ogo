@@ -25601,7 +25601,7 @@ func (e *emitter) emitSimultaneous(lhss, rhss [][]int32) {
 	for i, lhs := range lhss {
 		t, ok := e.clauseTarget(lhs)
 		if ok {
-			t, ok = e.bindCallTarget(t)
+			t, ok = e.bindTarget(t)
 		}
 		if !ok {
 			e.fail("unsupported target in a for clause's assignment")
@@ -25637,6 +25637,14 @@ func (e *emitter) clauseTarget(ast []int32) (assignTarget, bool) {
 	kids, ok := e.soleFactor(ast)
 	if !ok {
 		return assignTarget{}, false
+	}
+	if ptr, steps, isDeref := e.factorDerefChain(kids); isDeref {
+		return e.derefTarget(ptr, steps) // `(*s)[i]`, bound where it is stored
+	}
+	if len(kids) == 3 && kids[0].sym == 0 && e.f.ch(kids[0].tok) == LPAREN && kids[1].sym == Expression {
+		if ptr, isDeref := e.derefOperand(kids[1].ast); isDeref {
+			return e.derefTarget(ptr, nil) // `(*p)`
+		}
 	}
 	// A target through a CALL, `getp().x`: read as written, bound where it is
 	// stored (bindCallTarget), as a statement's is.
@@ -27966,11 +27974,20 @@ func (e *emitter) emitHeaderAssign(head Node, items, values []Node) bool {
 		e.fail("unsupported target in an init statement")
 		return false
 	}
+	// The targets of a list are bound ahead of it, left to right, as a statement's
+	// are (bindTarget): `if (*s)[0], n = f(), 1; ...` was refused, the head alone
+	// never bound. One target is assigned as the expression it is written as.
+	if len(items) != 0 {
+		if first, ok = e.bindTarget(first); !ok {
+			e.fail("unsupported target in an init statement")
+			return false
+		}
+	}
 	targets := []assignTarget{first}
 	for _, item := range items {
 		t, ok := e.lhsItemTarget(item.ast)
 		if ok {
-			t, ok = e.bindCallTarget(t)
+			t, ok = e.bindTarget(t)
 		}
 		if !ok {
 			e.fail("unsupported target in an init statement")
@@ -28019,6 +28036,16 @@ func (e *emitter) exprAssignTarget(ast []int32) (assignTarget, bool) {
 		return assignTarget{}, false
 	}
 	fk := slices.Collect(it(kids[0].ast))
+	if stars == "" {
+		if ptr, steps, isDeref := e.factorDerefChain(fk); isDeref {
+			return e.derefTarget(ptr, steps) // `(*s)[i]`, bound where it is stored
+		}
+		if len(fk) == 3 && fk[0].sym == 0 && e.f.ch(fk[0].tok) == LPAREN && fk[1].sym == Expression {
+			if ptr, isDeref := e.derefOperand(fk[1].ast); isDeref {
+				return e.derefTarget(ptr, nil) // `(*p)`
+			}
+		}
+	}
 	if len(fk) == 0 || len(fk) > 2 || fk[0].sym != 0 || e.f.ch(fk[0].tok) != IDENT {
 		return assignTarget{}, false
 	}
@@ -36005,6 +36032,10 @@ func (e *emitter) emitAssignment(head Node, postfix []Node) {
 	// inside the parentheses, and it names the POINTER rather than the target.
 	if name, ok := e.derefHead(head); ok {
 		target, op := lifeTarget{deref: name, steps: postfix[:len(postfix)-1]}, slices.Collect(it(postfix[len(postfix)-1].ast))
+		if containsSym(op, LhsItem) {
+			e.emitMultiAssign(head, name, "", postfix[:len(postfix)-1], op)
+			return
+		}
 		e.checkStore(target, op)
 		e.noteStoredThroughOp(target, op)
 		e.emitDerefAssign(name, postfix)
@@ -37759,6 +37790,12 @@ type assignTarget struct {
 	// say what the source said: `getq().p`, not the temporary.
 	srcName  string
 	srcChain []Node
+	// deref is the pointer a target is written through, `(*p).x`, `(*s)[i]` or
+	// `(*p)`, and srcChain then what follows the parentheses: what the rules and the
+	// marks ask of (lifeTarget). Read, such a target is already what stores it
+	// wherever Go has a shorthand for it -- `(*p)` is `*p`, `(*p).x` is `p.x` and
+	// `(*pa)[i]` is `pa[i]` -- and bindDerefTarget lowers the rest.
+	deref string
 }
 
 // assignTargetCType is the C type a multiple assignment's target stores, where it
@@ -37940,6 +37977,9 @@ func (e *emitter) lhsItemTarget(ast []int32) (assignTarget, bool) {
 	if len(nodes) == 0 || nodes[0].sym != AssignHead {
 		return assignTarget{}, false
 	}
+	if ptr, isDeref := e.derefHead(nodes[0]); isDeref {
+		return e.derefTarget(ptr, nodes[1:])
+	}
 	name := e.soleIdent(nodes[0].ast)
 	if name != "" && e.derefStars(nodes[0].ast) == "" && containsSym(nodes[1:], CallSuffix) {
 		return assignTarget{name: name, chain: nodes[1:], tok: -1}, true
@@ -37969,6 +38009,60 @@ func (e *emitter) bindCallTarget(t assignTarget) (assignTarget, bool) {
 	return assignTarget{name: name, chain: rest, tok: -1, srcName: t.name, srcChain: t.chain}, true
 }
 
+// bindTarget binds what a target needs bound ahead of the statement, where Go
+// evaluates a target's operands: a call in its chain (bindCallTarget), or what a
+// dereference it is written through reaches (bindDerefTarget).
+func (e *emitter) bindTarget(t assignTarget) (assignTarget, bool) {
+	if t.deref != "" {
+		return e.bindDerefTarget(t)
+	}
+	return e.bindCallTarget(t)
+}
+
+// derefTarget reads a target written through a dereference, `(*p)` followed by
+// steps, as one the stores can write wherever Go has a shorthand for it: `(*p)` is
+// `*p`, `(*p).x` is `p.x` for a pointer to a struct, `(*pa)[i]` is `pa[i]` for a
+// pointer to an array. What has none -- an index through a pointer to a SLICE, a
+// selector through a pointer to a pointer -- is read as written, and lowered where
+// it is stored (bindDerefTarget), as a call in a chain is.
+func (e *emitter) derefTarget(ptr string, steps []Node) (assignTarget, bool) {
+	if len(steps) != 0 && !isAccessChain(steps) {
+		return assignTarget{}, false
+	}
+	if ct, ok := e.varType(ptr); !ok || !e.isPointer(ct) {
+		return assignTarget{}, false
+	}
+	t := assignTarget{name: ptr, chain: steps, tok: -1, deref: ptr, srcChain: steps}
+	if len(steps) == 0 {
+		t.stars = "*"
+	}
+	return t, true
+}
+
+// bindDerefTarget lowers a target written through a dereference that is no Go
+// shorthand (derefTarget): what the pointer points at, a slice's header or a
+// pointer, is bound ahead of the statement -- Go evaluates the operand of an index or
+// of a pointer indirection on the left before any store -- and the target is the
+// same steps from the binding. A copied header shares its backing array, a copied
+// pointer its pointee, so the store reaches the program's storage; and a store to
+// the pointer's pointee before it in the list, `*s, (*s)[0] = ys, 9`, leaves it
+// writing where the old one pointed, as in Go.
+func (e *emitter) bindDerefTarget(t assignTarget) (assignTarget, bool) {
+	if len(t.chain) == 0 {
+		return t, true // `*p`
+	}
+	ct, _ := e.varType(t.deref)
+	pointee := e.elemType(ct)
+	if _, isArrPtr := e.arrayPtrVar(t.deref); isArrPtr || t.chain[0].sym == Selector && !e.isPointer(pointee) {
+		return t, true // the shorthand, `pa[i]` or `p.x`
+	}
+	if !e.isSliceCType(e.underlyingCType(pointee)) && !e.isPointer(pointee) {
+		return t, false
+	}
+	t.name = e.bindDeref(t.deref)
+	return t, true
+}
+
 // emitMultiAssign emits a destructuring assignment `a, b = f()` or `a, b := f()`
 // (any target may be the blank identifier). C has no multiple assignment, so the
 // multi-result call's struct is bound to a temporary and each target reads its
@@ -37992,8 +38086,19 @@ func (e *emitter) emitMultiAssign(head Node, first, stars string, headChain []No
 	if tok, ok := e.soleToken(head.ast); ok && !calls {
 		targets[0].tok = tok
 	}
+	// A head written through a dereference, `(*s)[i], (*s)[j] = (*s)[j], (*s)[i]` --
+	// the Swap of a sort.Interface on a defined slice type, whose methods take a
+	// pointer here -- was refused as an assignment form nothing lowered.
+	if ptr, isDeref := e.derefHead(head); isDeref {
+		t, ok := e.derefTarget(ptr, headChain)
+		if !ok {
+			e.fail("unsupported target in a multiple assignment")
+			return
+		}
+		targets[0] = t
+	}
 	var ok bool
-	if targets[0], ok = e.bindCallTarget(targets[0]); !ok {
+	if targets[0], ok = e.bindTarget(targets[0]); !ok {
 		e.fail("unsupported target in a multiple assignment")
 		return
 	}
@@ -38004,7 +38109,7 @@ func (e *emitter) emitMultiAssign(head Node, first, stars string, headChain []No
 		case LhsItem:
 			t, ok := e.lhsItemTarget(n.ast)
 			if ok {
-				t, ok = e.bindCallTarget(t)
+				t, ok = e.bindTarget(t)
 			}
 			if !ok {
 				e.fail("unsupported target in a multiple assignment")
@@ -45769,8 +45874,11 @@ func (e *emitter) carryInto(t assignTarget, declare bool, ctype string, c *carri
 	// (srcName), and a place fixed ahead of the stores (addr) as the chain that found
 	// it, which is what the pointer it went through is asked of.
 	st := lifeTarget{base: base, stars: len(t.stars), steps: t.chain}
-	if t.srcName != "" {
+	switch {
+	case t.srcName != "":
 		st = lifeTarget{base: t.srcName, steps: t.srcChain}
+	case t.deref != "":
+		st = lifeTarget{deref: t.deref, steps: t.srcChain}
 	}
 	if !declare {
 		e.refuseStore(st, c.at, c.r)

@@ -4155,6 +4155,142 @@ func main() {
 		want: "48\n",
 	},
 	{
+		// A target written through a dereference, in every list form: the Swap of a
+		// sort.Interface on a defined slice type, whose methods take a pointer here, and
+		// the pointee kinds around it -- a slice, a slice of structs, an array, a struct, a
+		// pointer, a whole pointee. Go fixes a target's operands before the first store,
+		// so a store to the pointer, or to what it points at, earlier in the same list
+		// leaves a later target writing where the old one pointed.
+		name: "a list assigns through a written dereference",
+		src: `type P struct{ x, y int }
+
+type IS []int
+
+type PS []P
+
+type Sorter interface {
+	Len() int
+	Less(i, j int) bool
+	Swap(i, j int)
+}
+
+func (s *PS) Len() int           { return len(*s) }
+func (s *PS) Less(i, j int) bool { return (*s)[i].x < (*s)[j].x }
+func (s *PS) Swap(i, j int)      { (*s)[i], (*s)[j] = (*s)[j], (*s)[i] }
+
+func sortIt(s Sorter) {
+	for i := 1; i < s.Len(); i++ {
+		for j := i; j > 0 && s.Less(j, j-1); j-- {
+			s.Swap(j, j-1)
+		}
+	}
+}
+
+var calls int
+
+func k(n int) int {
+	calls = calls*10 + n
+	return n
+}
+
+func two() (int, int) { return k(7), k(8) }
+
+type R struct{ ok bool }
+
+var ch chan int
+
+func send() { ch <- 4 }
+
+var gs = IS{1, 2, 3}
+
+func sorts() {
+	ps := PS{{3, 30}, {1, 10}, {2, 20}}
+	sortIt(&ps)
+	println(ps[0].x, ps[1].x, ps[2].x, ps[0].y, ps[1].y, ps[2].y)
+}
+
+func lists() {
+	sp := &gs
+	(*sp)[0], (*sp)[2] = (*sp)[2], (*sp)[0]
+	(*sp)[k(1)], gs[0] = k(5), k(6)
+	println(gs[0], gs[1], gs[2], calls)
+
+	calls = 0
+	(*sp)[0], (*sp)[1] = two()
+	println(gs[0], gs[1], gs[2], calls)
+}
+
+func kinds() {
+	a := [3]int{1, 2, 3}
+	pa := &a
+	(*pa)[0], (*pa)[2] = (*pa)[2], (*pa)[0]
+	v := P{1, 2}
+	pv := &v
+	(*pv).x, (*pv).y = (*pv).y, (*pv).x
+	pp := &pv
+	(*pp).x, (*pp).y = (*pp).y+10, (*pp).x+10
+	w, z := 1, 2
+	pw, pz := &w, &z
+	(*pw), (*pz) = (*pz), (*pw)
+	println(a[0], a[2], v.x, v.y, w, z)
+}
+
+func order() {
+	t := IS{4, 5, 6}
+	u := IS{7, 8, 9}
+	st := &t
+	*st, (*st)[0] = u, 40
+	println(t[0], u[0])
+	t2 := IS{4, 5, 6}
+	st2 := &t2
+	st2, (*st2)[1] = &u, 80
+	println(t2[1], u[1], (*st2)[1])
+	sp := &gs
+	i := 0
+	i, (*sp)[i] = 2, 90
+	println(gs[0], gs[2], i)
+}
+
+func clauses() {
+	sp := &gs
+	calls = 0
+	n := 0
+	for j := 0; j < 2; (*sp)[j], j = k(j+1), j+1 {
+		n++
+	}
+	m := n + 1
+	if (*sp)[2], n = k(3), m; n > 0 {
+		println(gs[0], gs[1], gs[2], n, calls)
+	}
+	switch n, (*sp)[0] = 5, 50; n {
+	case 5:
+		println(gs[0], n)
+	}
+}
+
+func comma() {
+	r := R{}
+	pr := &r
+	go send()
+	got := 0
+	select {
+	case got, (*pr).ok = <-ch:
+	}
+	println(got, r.ok)
+}
+
+func main() {
+	sorts()
+	lists()
+	kinds()
+	order()
+	clauses()
+	comma()
+}
+`,
+		want: "1 2 3 10 20 30\n6 5 1 156\n7 8 1 78\n3 1 11 12 2 1\n7 7\n80 8 8\n90 1 2\n1 2 3 3 123\n50 5\n4 true\n",
+	},
+	{
 		// A reference READ out of a holder -- an element, a field -- or ranged out of
 		// a slice points into the local the holder's mark names, and that local's
 		// block is what the block rule compares. It named none, so the rule took the
