@@ -11296,6 +11296,68 @@ func main() {
 	}
 }
 
+// TestEmitCStoreMarksPointee: a store through a pointer KNOWN to point at a local
+// writes that local, and marks it as holding what was stored (noteStoredThrough),
+// in every place a program stores. Only the root written from was marked, the
+// pointer, so the reference read back out of the local itself -- `g = n.p` after
+// `p := &n; p.p = &x` -- went into a package variable in silence.
+func TestEmitCStoreMarksPointee(t *testing.T) {
+	const head = `type Q struct{ p *int }
+
+var gp *int
+
+var gn int
+
+func run() {
+	x := 5
+	var n Q
+	a := 0
+	_, _, _ = x, n, a
+`
+	const tail = `}
+
+func main() {
+	run()
+}
+`
+	for _, test := range []struct {
+		stmt string
+		want string // "" means the program must be accepted
+	}{
+		{"p := &n\n\tp.p = &x\n\tgp = n.p", "cannot store n.p, which holds a pointer into local x in package variable gp"},
+		{"p := &n\n\t(*p).p = &x\n\tgp = n.p", "cannot store n.p"},
+		{"p := &n\n\t(*p).p = &x\n\tgp = p.p", "cannot store p.p, which holds a pointer into local x"},
+		{"p := &n\n\tp.p, a = &x, 1\n\tgp = n.p", "cannot store n.p"},
+		{"p := &n\n\tfor i := 0; i < 1; p.p = &x {\n\t\ti++\n\t}\n\tgp = n.p", "cannot store n.p"},
+		{"p := &n\n\tfor i := 0; i < 1; (*p).p = &x {\n\t\ti++\n\t}\n\tgp = n.p", "cannot store n.p"},
+		{"xs := []*int{&x}\n\tp := &n\n\tfor _, p.p = range xs {\n\t}\n\tgp = n.p", "cannot store n.p"},
+		// A pointer whose own address is taken is not known to point where its one
+		// value did: the store through it is refused, with the place it reaches.
+		{"q := &n\n\tpp := &q\n\t(*pp).p = &x", "cannot store the address of local variable x through q.p"},
+		// Controls.
+		{"p := &n\n\tp.p = &x\n\tm := n\n\t_ = *m.p", ""},
+		{"p := &n\n\tp.p = &gn\n\tgp = n.p", ""},
+		{"p := &n\n\t(*p).p = &gn\n\tgp = n.p", ""},
+	} {
+		t.Run(test.stmt, func(t *testing.T) {
+			src := head + "\t" + test.stmt + "\n" + tail
+			fsys := fstest.MapFS{"main.ogo": &fstest.MapFile{Data: []byte(src)}}
+			pkg, err := Build(-1, []string{"main.ogo"}, fsys)
+			if err == nil {
+				err = EmitC(pkg, io.Discard, Checked())
+			}
+			switch {
+			case test.want == "" && err != nil:
+				t.Errorf("refused: %v\n%s", err, src)
+			case test.want != "" && err == nil:
+				t.Errorf("accepted, want %q\n%s", test.want, src)
+			case test.want != "" && !strings.Contains(err.Error(), test.want):
+				t.Errorf("got %v, want %q", err, test.want)
+			}
+		})
+	}
+}
+
 // TestEmitCMainParamsNotInherited: main has no parameters, and emitMain did not
 // clear what bindParams recorded of the function emitted before it -- so a local of
 // main named like that function's parameter was taken for one, and a store of the

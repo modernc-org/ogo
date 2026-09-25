@@ -25573,6 +25573,9 @@ func (e *emitter) carryIntoClause(lhs, rhs []int32) {
 		}
 	}
 	if !isChain {
+		if t, ok := e.exprStoreTarget(lhs); ok {
+			e.noteStoredThrough(t, ref) // `(*p).p = &x`, `*pp = &x`
+		}
 		return
 	}
 	if mn, _, isQualified := e.qualifiedChainBase(base, steps); isQualified {
@@ -25581,6 +25584,9 @@ func (e *emitter) carryIntoClause(lhs, rhs []int32) {
 		base = mn
 	}
 	e.noteHolderRef(base, ref)
+	if t, ok := e.exprStoreTarget(lhs); ok {
+		e.noteStoredThrough(t, ref)
+	}
 }
 
 // emitSimultaneous emits `a, b = x, y` written in a loop's init or post clause as
@@ -35998,7 +36004,9 @@ func (e *emitter) emitAssignment(head Node, postfix []Node) {
 	// Asked before soleIdent, which finds no name in it: the only identifier is
 	// inside the parentheses, and it names the POINTER rather than the target.
 	if name, ok := e.derefHead(head); ok {
-		e.checkStore(lifeTarget{deref: name, steps: postfix[:len(postfix)-1]}, slices.Collect(it(postfix[len(postfix)-1].ast)))
+		target, op := lifeTarget{deref: name, steps: postfix[:len(postfix)-1]}, slices.Collect(it(postfix[len(postfix)-1].ast))
+		e.checkStore(target, op)
+		e.noteStoredThroughOp(target, op)
 		e.emitDerefAssign(name, postfix)
 		return
 	}
@@ -36053,8 +36061,10 @@ func (e *emitter) emitAssignment(head Node, postfix []Node) {
 	if mn, ok := e.qualifiedWholeTarget(base, postfix[:len(postfix)-1]); ok {
 		storedIn = mn
 	}
-	e.checkStore(lifeTarget{base: storedIn, stars: len(stars), steps: postfix[:len(postfix)-1]}, op)
+	target := lifeTarget{base: storedIn, stars: len(stars), steps: postfix[:len(postfix)-1]}
+	e.checkStore(target, op)
 	e.noteFrameHolder(storedIn, op)
+	e.noteStoredThroughOp(target, op)
 	// A written-out dereference applies to the WHOLE target and not to its head:
 	// `*h.p = v` is `*(h.p) = v` and `*a[i] = v` is `*(a[i]) = v`, C's precedence and
 	// Go's alike. Claimed here, ahead of every shape below, because each of those
@@ -44388,8 +44398,13 @@ func (e *emitter) noteRangeValue(h *forHeader, val, elem string) {
 	} else if base, fields, ok := e.factorFieldAccess(e.factorKids(h.valVar)); ok && len(fields) != 0 {
 		root, whole = base, false
 	}
-	if !h.rangeDef && e.refuseStoreInExpr(h.valVar, Node{sym: Expression, ast: h.rangeExpr}, r) {
-		return
+	if !h.rangeDef {
+		if e.refuseStoreInExpr(h.valVar, Node{sym: Expression, ast: h.rangeExpr}, r) {
+			return
+		}
+		if t, ok := e.exprStoreTarget(h.valVar); ok {
+			e.noteStoredThrough(t, r)
+		}
 	}
 	if whole && isSlice {
 		e.frameBacked[root] = true
@@ -45404,6 +45419,42 @@ func (e *emitter) refuseStoreInExpr(lhs []int32, v Node, r frameRef) bool {
 	return true
 }
 
+// noteStoredThrough marks, as holding r, the storage a store writes where that is
+// not the root it is written from: what a pointer KNOWN to point at a variable of
+// this frame points at -- `p.p = &x` for `p := &n` writes n -- and, for a target
+// written through a dereference, `(*p).p = &x`, the pointer as well, as the
+// shorthand's root is marked. Only the root was, so `g = n.p` read x's address out
+// of n unmarked and kept it in a package variable, in silence. A pointer not known
+// to point anywhere marks nothing: a reference to the frame stored through it has
+// been refused (refuseStore).
+func (e *emitter) noteStoredThrough(t lifeTarget, r frameRef) {
+	if t.deref != "" {
+		e.noteHolderRef(t.deref, r)
+		base, place, known := e.derefPlace(t.deref)
+		if !known {
+			return
+		}
+		e.noteHolderRef(base, r)
+		t = lifeTarget{base: base, steps: append(place, t.steps...)}
+	}
+	if through, frame, pointee := e.targetThroughRef(t.base, t.stars, t.steps); through && frame && pointee != "" {
+		e.noteHolderRef(pointee, r)
+	}
+}
+
+// noteStoredThroughOp is noteStoredThrough for the values of a plain "=".
+func (e *emitter) noteStoredThroughOp(t lifeTarget, op []Node) {
+	if len(op) != 2 || op[0].sym != 0 || e.f.ch(op[0].tok) != ASSIGN {
+		return
+	}
+	for _, v := range e.rhsExprs(op[1]) {
+		if r, ok := e.frameRefOf(v.ast); ok {
+			e.noteStoredThrough(t, r)
+			return
+		}
+	}
+}
+
 // refuseStoreThroughSlice refuses storing a value that reaches this frame into an
 // ELEMENT of a slice whose backing is not provably this frame's, and says whether it
 // refused: `t := gs; t[0] = &x` put a local's address into package storage through a
@@ -45714,14 +45765,14 @@ func (e *emitter) carryInto(t assignTarget, declare bool, ctype string, c *carri
 		return func() {}
 	}
 	base := e.storeRoot(t)
+	// A target is asked as it was WRITTEN: a call bound to a temporary as the call
+	// (srcName), and a place fixed ahead of the stores (addr) as the chain that found
+	// it, which is what the pointer it went through is asked of.
+	st := lifeTarget{base: base, stars: len(t.stars), steps: t.chain}
+	if t.srcName != "" {
+		st = lifeTarget{base: t.srcName, steps: t.srcChain}
+	}
 	if !declare {
-		// A target is asked as it was WRITTEN: a call bound to a temporary as the call
-		// (srcName), and a place fixed ahead of the stores (addr) as the chain that
-		// found it, which is what the pointer it went through is asked of.
-		st := lifeTarget{base: base, stars: len(t.stars), steps: t.chain}
-		if t.srcName != "" {
-			st = lifeTarget{base: t.srcName, steps: t.srcChain}
-		}
 		e.refuseStore(st, c.at, c.r)
 	}
 	// A whole slice is given, besides its backing, what its elements reach.
@@ -45731,6 +45782,7 @@ func (e *emitter) carryInto(t assignTarget, declare bool, ctype string, c *carri
 	}
 	return func() {
 		e.noteHolderRef(base, c.r)
+		e.noteStoredThrough(st, c.r)
 		if elemRefs && e.isSliceVar(base) && e.isFrameVar(base) {
 			e.frameHolder[base] = origin
 		}
