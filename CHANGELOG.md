@@ -38,6 +38,8 @@ shipped section tells a reader on that version that they have behaviour they do 
 
 ### Fixed
 
+- **A select clause sends to a channel in parentheses.** `case (ch) <- v:` was
+  refused as "a select clause needs a channel operand".
 - **A conversion to a type named in parentheses is a conversion.** `(int)(f)`,
   `(Celsius)(t)` and `(Ints)(v).Sum()` -- the spelling a C cast suggests -- were
   refused as "cannot use type int as a value"; they are `int(f)` and the rest,
@@ -74,6 +76,10 @@ shipped section tells a reader on that version that they have behaviour they do 
 
 ### Behaviour changes
 
+- **A send through a dereference or parentheses is asked what it sends.** `*pch
+  <- "x"`, `(ch) <- "x"`, `(*pb).ch <- "x"` and `case (ch) <- "x":` sent a string
+  into a chan int as far as the C compiler; they are refused as Go refuses them,
+  and so is a send to a receive-only channel written in parentheses.
 - **A target reached through a call's result, a pointer or parentheses is asked
   what it stores.** `geth().s = 5`, `gets()[1] = "x"`, `geth().s++`, `(*pa)[0] =
   5` and `pa[1] = 5` for `pa := &a`, and `(str)[0] = 'x'` were taken and reached
