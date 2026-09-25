@@ -444,7 +444,19 @@ func isDir(path string) bool {
 // the flag, the matrix measured on hardware rather than inferred, and the cost in
 // cycles on a loop of each shape, not just in bytes -- and a wide fuzzer sweep on
 // the board before and after, for the faults no reproducer names yet.
-func compileC(cFile, out string, stdout, stderr io.Writer) (int, error) {
+func compileC(cFile, out string, stdout, stderr io.Writer) (rc int, err error) {
+	// The backend is a C program transpiled to Go, and it can crash as one: having
+	// said "exceeded local register limit" about a function too big for it,
+	// spin2cpp goes on to rename a register it never allocated, which in the
+	// transpile is a nil dereference -- and flexcc.Main passes on every panic that is
+	// not an exit. That is the backend's fault, and a stack dump of the whole
+	// compiler is the wrong way to report it: it is an error naming the crash, after
+	// whatever the backend said first.
+	defer func() {
+		if r := recover(); r != nil {
+			rc, err = 1, fmt.Errorf("flexcc crashed: %v", r)
+		}
+	}()
 	if err := flexcc.Main(nil, stdout, stderr, []string{"-2", "-o", out, cFile}); err != nil {
 		return 1, fmt.Errorf("flexcc: %v", err)
 	}
