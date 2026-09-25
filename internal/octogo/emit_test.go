@@ -11457,6 +11457,17 @@ var back [4]int
 		{"func keep(v []int) { w := &gc; w.d = v }", true},
 		{"func keep(v []int) { w := &gc; (*w).d = v }", true},
 		{"func keep(v []int) { w := &gs; (*w) = v }", true},
+		// A store through a pointer in a LIST, or in a for clause, which the
+		// summaries read for a package variable's store alone, and not at all.
+		{"func keep(v []int) { w := &gb; n := 0; n, w.xs = 1, v; gn = n }", true},
+		{"func keep(v []int) { w := &gb; n := 0; w.xs, n = v, 1; gn = n }", true},
+		{"func keep(v []int) { w := &gb; n := 0; n, (*w).xs = 1, v; gn = n }", true},
+		{"func keep(v []int) { w := &gc; n := 0; n, w.d = 1, v; gn = n }", true},
+		{"func keep(v []int) { w := &gb; for i := 0; i < 1; w.xs = v { i++ } }", true},
+		{"func keep(v []int) { w := &gb; for w.xs = v; len(w.xs) < 0; { } }", true},
+		{"func keep(v []int) { for i := 0; i < 1; gb.xs = v { i++ } }", true},
+		{"func keep(v []int) { var l B; n := 0; n, l.xs = 1, v; gn = n + len(l.xs) }", false},
+		{"func keep(v []int) { var l B; for i := 0; i < 1; l.xs = v { i++ }; gn = len(l.xs) }", false},
 		{"func keep(v []int) { gs = pass(v) }", true},
 		{"func keep(v []int) { w := v; gs = pass(w) }", true},
 		// Only an int leaves the callee.
@@ -11542,6 +11553,8 @@ var gx int
 
 var gback [4]int
 
+var gbc B
+
 var ch chan *int
 
 var kk K = &T{}
@@ -11575,6 +11588,9 @@ func (c C) KeepValue() { gs = c.d }
 		{"func keep(b *B) { gp = b.p }", "lb := B{p: &x}\n\tkeep(&lb)", "lb := B{p: &gx}\n\tkeep(&lb)", false},
 		{"func keep(b *B) { gp = (*b).p }", "lb := B{p: &x}\n\tkeep(&lb)", "lb := B{p: &gx}\n\tkeep(&lb)", false},
 		{"func keep(b *B) { w := (*b).xs; gs = w }", "lb := B{xs: a[:]}\n\tkeep(&lb)", "lb := B{xs: gback[:]}\n\tkeep(&lb)", false},
+		// A range clause's assigned value is an element, stored where the target is.
+		{"func keep(v []*int) { for _, gp = range v {\n\t} }", "keep([]*int{&x})", "keep([]*int{&gx})", false},
+		{"func keep(v []*int) { w := &gbc; for _, w.p = range v {\n\t} }", "keep([]*int{&x})", "keep([]*int{&gx})", false},
 		{"func keep(b B) { gs = b.xs }", "lb := B{xs: a[:]}\n\tkeep(lb)", "lb := B{xs: gback[:]}\n\tkeep(lb)", false},
 		{"func keep(b *B) { gs = b.xs }", "lb := B{xs: a[:]}\n\tpb := &lb\n\tkeep(pb)", "lb := B{xs: gback[:]}\n\tpb := &lb\n\tkeep(pb)", false},
 		{"func keep(v []*int) { gn = len(v) }", "keep([]*int{&x})", "keep([]*int{&gx})", true},
@@ -12961,6 +12977,16 @@ func putDeref(pp *[]int, xs []int) { (*pp) = xs }
 
 func keepParen(p *int) { (gp) = p }
 
+func fillList(b *Box, xs []int) { n := 0; n, b.d = 1, xs; back[0] = n }
+
+func fillClause(b *Box, xs []int) {
+	for i := 0; i < 1; b.d = xs {
+		i++
+	}
+}
+
+func (b *Box) setList(xs []int) { n := 0; n, b.d = 1, xs; back[0] = n }
+
 func (b *Box) setDeref(xs []int) { (*b).d = xs }
 
 type OuterBox struct {
@@ -13060,6 +13086,12 @@ func main() {
 		// nobody's.
 		{"keepParen(&x)", "cannot pass the address of local variable x to keepParen"},
 		{"keepParen(&back[0])", ""},
+		// A callee storing through its parameter or its receiver in a list, or in a
+		// for clause.
+		{"fillList(&gb, a[:])", "cannot pass a slice backed by local a to fillList: it is stored through gb, which outlives this function"},
+		{"fillClause(&gb, a[:])", "cannot pass a slice backed by local a to fillClause: it is stored through gb, which outlives this function"},
+		{"gb.setList(a[:])", "it is stored in the receiver gb, which outlives this function"},
+		{"var lb Box\n\tfillList(&lb, a[:])\n\tback[0] = len(lb.d)", ""},
 		// What is read through a pointer to a marked local.
 		{"var lb Box\n\tlb.d = a[:]\n\tp := &lb\n\tgb = *p", "cannot store *p, which holds a pointer into local a"},
 		{"var lb Box\n\tlb.d = a[:]\n\tp := &lb\n\tkeepBox(*p)", "cannot pass *p, which holds a pointer into local a to keepBox"},

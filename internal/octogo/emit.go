@@ -6337,7 +6337,7 @@ type emitter struct {
 	recvEdges          []recvEdge              // how a receiver's keeping travels to callers (see recvEdge)
 	copyRecvEdges      []copyRecvEdge          // how a copied receiver's contents travel to callers (see copyRecvEdge)
 	retRecv            map[string]bool         // a pointer method returns its receiver, so its result is what it was called on
-	crossInto          map[string][]uint32     // per function, which PARAMETERS each parameter is stored through, as a bitmask of their indices. leakRecv answers this for a method's receiver; a plain function has no receiver and needed the general form (see pointerParamsThrough)
+	crossInto          map[string][]uint32     // per function, which PARAMETERS each parameter is stored through, as a bitmask of their indices. leakRecv answers this for a method's receiver; a plain function has no receiver and needed the general form (see pointerParamSlots)
 	ifaceSummaries     map[string]ifaceSummary // "<iface>.<method>" -> the union of the summaries of every implementation, since which one a call reaches is the vtable's answer (see ifaceCallSummary)
 	retParams          map[string][]bool       // per function, which parameters a RESULT derives from, so a reference handed back out is followed to the storage it came from (see frameRefOf)
 	funcValueOf        map[string]string       // variable holding a function -> that function's C name, when it is known, so a call through the variable is judged by the callee's summaries (see bindFuncValue)
@@ -11336,6 +11336,64 @@ func (e *emitter) collectFuncCross(fi funcInfo) {
 			}
 		}
 	}
+	// storesInto applies to what the function stores the sinks each store reaches:
+	// a value stored into a package variable, `g = p` or `g.f = p` (pkg), and one
+	// stored THROUGH a name (through) -- a local holding a package variable's
+	// storage, `w := &g; w.f = p`, whatever the caller chose it for now outliving
+	// every frame; the RECEIVER, `t.d = p`, the setter every struct with a buffer
+	// has, whose lifetime the call site knows and the flag travels to; and a POINTER
+	// PARAMETER, `h.d = p`, which slot the caller's argument at is what it decides
+	// by (pointerParamSlots). A statement's stores are read alone and in a list
+	// (throughStores), and a for clause's too: the list forms were read for a
+	// package variable alone, and the clauses not at all, so a callee storing its
+	// parameter through a pointer in either kept it unrecorded.
+	reachOfStore := func(st storeShape) []held {
+		if st.value == nil {
+			return st.held
+		}
+		return e.summaryReach(st.value)
+	}
+	storesInto := func(pkg, through []storeShape) {
+		for _, st := range through {
+			if !e.isPackageVar(st.base) && holdsPackageVar(st.base) {
+				pkg = append(pkg, st)
+			}
+		}
+		for _, st := range pkg {
+			sinkHeld(reachOfStore(st), leakGlobal)
+			if st.value != nil {
+				derived(st.value, leakGlobal, -1)
+			}
+		}
+		for _, st := range through {
+			if isRecv(st.base) {
+				r := reachOf(reachOfStore(st))
+				for _, i := range r.vals {
+					e.crossParams[cname][i] |= leakRecv
+				}
+				for _, i := range r.conts {
+					e.crossContents[cname][i] |= leakRecv
+				}
+				if st.value != nil {
+					derived(st.value, leakRecv, -1)
+				}
+			}
+			for _, slot := range e.pointerParamSlots(fi, st.base, ats) {
+				r := reachOf(reachOfStore(st))
+				for _, i := range r.vals {
+					e.crossInto[cname][i] |= 1 << slot
+				}
+				// Its contents land in storage the caller chose at that position,
+				// which this summary has no slot for: kept conservatively.
+				for _, i := range r.conts {
+					e.crossContents[cname][i] |= leakGlobal
+				}
+				if st.value != nil {
+					derived(st.value, 0, slot)
+				}
+			}
+		}
+	}
 	e.eachStmt(body, func(nodes []Node) {
 		switch {
 		case len(nodes) != 0 && nodes[0].sym == 0 && e.f.ch(nodes[0].tok) == GO:
@@ -11369,49 +11427,11 @@ func (e *emitter) collectFuncCross(fi funcInfo) {
 				sink(v, leakCog)
 				derived(v, leakCog, -1)
 			}
-			// A store into a package variable, `g = p` or `g.f = p`, alone or in
-			// a list, or through a local holding one's storage, `w := &g; w.f =
-			// p`: whatever the caller chose the storage for, it now outlives every
-			// frame.
-			stores := append(e.storedInPackageVar(nodes), e.storedInPackageVars(nodes)...)
-			if base, _, _, _ := e.assignThrough(nodes); base != "" && !e.isPackageVar(base) {
-				stores = append(stores, e.storedThrough(nodes, holdsPackageVar)...)
+			var pkg []storeShape
+			for _, v := range append(e.storedInPackageVar(nodes), e.storedInPackageVars(nodes)...) {
+				pkg = append(pkg, storeShape{value: v})
 			}
-			for _, v := range stores {
-				sink(v, leakGlobal)
-				derived(v, leakGlobal, -1)
-			}
-			// A store into the RECEIVER, `t.d = p` -- the setter every struct
-			// with a buffer has. How long that lives is not knowable here: the
-			// receiver belongs to whoever called, so the flag travels to the
-			// call site, which knows whether it picked storage that outlives
-			// its own frame.
-			for _, v := range e.storedThrough(nodes, isRecv) {
-				r := reachOf(e.summaryReach(v))
-				for _, i := range r.vals {
-					e.crossParams[cname][i] |= leakRecv
-				}
-				for _, i := range r.conts {
-					e.crossContents[cname][i] |= leakRecv
-				}
-				derived(v, leakRecv, -1)
-			}
-			// A store through a POINTER PARAMETER, `h.d = p` (see
-			// pointerParamsThrough).
-			for _, slot := range e.pointerParamsThrough(fi, nodes, ats) {
-				for _, v := range e.storedThrough(nodes, func(string) bool { return true }) {
-					r := reachOf(e.summaryReach(v))
-					for _, i := range r.vals {
-						e.crossInto[cname][i] |= 1 << slot
-					}
-					// Its contents land in storage the caller chose at that position,
-					// which this summary has no slot for: kept conservatively.
-					for _, i := range r.conts {
-						e.crossContents[cname][i] |= leakGlobal
-					}
-					derived(v, 0, slot)
-				}
-			}
+			storesInto(pkg, e.throughStores(nodes))
 		}
 		// A return hands the value back to the caller: which parameter it came
 		// from is what lets the caller follow it to the storage it chose.
@@ -11622,6 +11642,22 @@ func (e *emitter) collectFuncCross(fi funcInfo) {
 			}
 		}
 	})
+	// A for clause's assignments store as a statement's do, and are no statement.
+	var clauses func(ast []int32)
+	clauses = func(ast []int32) {
+		for n := range it(ast) {
+			if n.sym == 0 {
+				continue
+			}
+			if n.sym == ForHeader {
+				if h, ok := e.parseForHeader(n); ok {
+					storesInto(e.clauseStores(h))
+				}
+			}
+			clauses(n.ast)
+		}
+	}
+	clauses(body)
 }
 
 // derivedEdge records that a function stores, sends or launches the RESULT of a call
@@ -12465,36 +12501,106 @@ func (e *emitter) crossRoot(ast []int32) string {
 	return name
 }
 
-// storedThrough returns the values a statement stores THROUGH a name that through
-// accepts -- a selector, an index or a written-out dereference standing between
-// the name and the operator, `t.d = v`, `*p = v` -- which is a store into the
-// storage the name refers to rather than a rebinding of the name. For a method's
-// pointer receiver that is the store every setter makes, and how long the storage
-// lives is the call site's to know: a bare `t = v` rebinds the receiver variable,
-// which dies with the call, and is not one.
-func (e *emitter) storedThrough(nodes []Node, through func(string) bool) [][]int32 {
-	base, values, suffixed, deref := e.assignThrough(nodes)
-	if base == "" || !(suffixed || deref) || !through(base) {
-		return nil
-	}
-	return values
+// storeShape is one store a statement or a clause makes THROUGH a name, as the
+// summaries read it: the name, and the value stored into what it refers to.
+type storeShape struct {
+	base  string
+	value []int32 // the value stored, or nil where held says what it reaches
+	held  []held  // what the value reaches where it is no expression: a range clause's element
 }
 
-// pointerParamsThrough names the pointer parameters a statement stores through,
-// `h.d = v` -- the setter every struct with a buffer has, written as a plain
-// function rather than a method -- by the parameter's own name or a local holding
-// it (ats), since `w := h; w.d = v` stores into the same caller's struct. WHICH
-// parameter it reaches is what has to be carried: the call site decides by the
-// lifetime of the argument at that position.
+// throughStores lists the stores a statement makes THROUGH a name -- a selector, an
+// index or a written-out dereference standing between the name and the operator,
+// `t.d = v`, `*p = v`, `(*p).d = v` -- alone or as one target of a list, `n, t.d =
+// 1, v`, each with its value. That is a store into the storage the name refers to
+// rather than a rebinding of the name: for a method's pointer receiver the store
+// every setter makes, whose storage the call site knows the lifetime of; a bare `t =
+// v` rebinds the receiver variable, which dies with the call, and is not one.
+func (e *emitter) throughStores(nodes []Node) (out []storeShape) {
+	if base, values, suffixed, deref := e.assignThrough(nodes); base != "" {
+		if suffixed || deref {
+			for _, v := range values {
+				out = append(out, storeShape{base: base, value: v})
+			}
+		}
+		return out
+	}
+	targets, into, values := e.summaryBinding(nodes)
+	if len(targets) < 2 || len(targets) != len(values) {
+		return nil
+	}
+	for i, t := range targets {
+		if into[i] && t != "" && t != "_" {
+			out = append(out, storeShape{base: t, value: values[i]})
+		}
+	}
+	return out
+}
+
+// clauseStores reads the plain assignments of a for clause's init and post as the
+// stores they are, by shape: a value into a package variable, `g = v` or `g.f = v`
+// (pkg), and one THROUGH a name, `w.f = v`, `*p = v` (through) -- and a range
+// clause's assigned value target the same way.
+func (e *emitter) clauseStores(h forHeader) (pkg, through []storeShape) {
+	if h.isRange {
+		// `for _, w.xs = range vs`: the value target is given an ELEMENT of what is
+		// ranged over each iteration, which reaches what an element does.
+		if h.rangeDef || h.valVar == nil {
+			return nil, nil
+		}
+		base := e.bindingRoot(h.valVar)
+		if base == "" || base == "_" {
+			return nil, nil
+		}
+		st := storeShape{base: base, held: asElem(e.summaryReach(h.rangeExpr))}
+		if e.isPackageVar(base) {
+			return []storeShape{st}, nil
+		}
+		if _, whole := e.exprIdent(h.valVar); !whole {
+			return nil, []storeShape{st}
+		}
+		return nil, nil
+	}
+	add := func(op Symbol, lhss, rhss [][]int32, lhs, rhs []int32) {
+		if op != ASSIGN {
+			return
+		}
+		if len(lhss) == 0 && lhs != nil && rhs != nil {
+			lhss, rhss = [][]int32{lhs}, [][]int32{rhs}
+		}
+		if len(lhss) != len(rhss) {
+			return // one call's several results, whose values have no shape here
+		}
+		for i, l := range lhss {
+			base := e.bindingRoot(l)
+			if base == "" || base == "_" {
+				continue
+			}
+			if e.isPackageVar(base) {
+				pkg = append(pkg, storeShape{value: rhss[i]})
+				continue
+			}
+			if _, whole := e.exprIdent(l); !whole {
+				through = append(through, storeShape{base: base, value: rhss[i]})
+			}
+		}
+	}
+	add(h.initOp, h.initLHSs, h.initRHSs, h.initLHS, h.initRHS)
+	add(h.postOp, h.postLHSs, h.postRHSs, h.postLHS, h.postRHS)
+	return pkg, through
+}
+
+// pointerParamSlots names the pointer parameters a store through base writes
+// through, `h.d = v` -- the setter every struct with a buffer has, written as a
+// plain function rather than a method -- by the parameter's own name or a local
+// holding it (ats), since `w := h; w.d = v` stores into the same caller's struct.
+// WHICH parameter it reaches is what has to be carried: the call site decides by
+// the lifetime of the argument at that position.
 //
 //	func fill(h *H, d []int) { h.d = d }   // d is stored through parameter 0
 //
 // `fill(&g, a[:])` leaks and `fill(&local, a[:])` does not.
-func (e *emitter) pointerParamsThrough(fi funcInfo, nodes []Node, ats func(string) []int) (slots []int) {
-	base, _, suffixed, deref := e.assignThrough(nodes)
-	if base == "" || !(suffixed || deref) {
-		return nil
-	}
+func (e *emitter) pointerParamSlots(fi funcInfo, base string, ats func(string) []int) (slots []int) {
 	for _, i := range ats(base) {
 		if i < len(fi.ptrParam) && fi.ptrParam[i] && i < intoBits {
 			slots = append(slots, i)
