@@ -81,6 +81,14 @@ shipped section tells a reader on that version that they have behaviour they do 
   ...; gb.xs = v`, were summarised as keeping nothing, so a caller passing a slice
   of its own array left it in package storage in silence. They are refused as the
   statement `w.xs = v` is.
+- **A pointer written in parentheses, or in a switch's init, is not believed to
+  keep its first value.** `p := &n; (p) = &gq; p.p = &x` put a local's address
+  into gq in silence, and so did `a, (p) = 1, &gq`, a clause's `(p)`, an if init's
+  `a, (p) = ...`, a select's `case (p) = <-ch:` and a switch's `switch p = &gq; x
+  {`: the rule that believes a pointer written once to point at a local counted
+  none of these writes. They are refused as `p = &gq` is. The same count takes a
+  pointer written once in parentheses, `var p *Q; (p) = &n; p.p = &x`, which was
+  refused.
 - **A target in parentheses is asked what it stores**, and so is a later one behind
   a star. `(*px) = "b"`, `s, (*px) = "q", "c"` and `s, *px = "q", "c"` put a string
   into an int as far as the C compiler; `(&x) = 3` is refused in Go's words. So

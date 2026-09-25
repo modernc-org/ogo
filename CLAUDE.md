@@ -1174,6 +1174,18 @@ through a local, a parameter or the receiver, a for clause's store into a packag
 variable included (`throughStores`, `clauseStores`, `storesInto`). **A new way a
 callee stores is read by those two and sunk by that one.**
 
+**A PARENTHESISED HEAD IS A ROW OF EVERY SCAN** (2026-09-25). The emitter reads
+`(x)`, `(&x).f` and `(*p).x` as Go does, and the passes that read a body BEFORE it is
+emitted read a head by name alone, where a parenthesised one names nobody -- a pass
+that counts writes, calls or receivers takes such a one for none. The binding scan
+first (the rule believing a pointer written once, KNOWN MEANS MUST): `p := &n; (p) =
+&gq; p.p = &x` stored a local's address into gq in silence, as did the same write in
+a list, a clause, an if init and a select -- and a switch's `=` init was no write
+even unparenthesised, its case having asked for ":=". A scan reads a head by SHAPE
+through `scanHead` (no local has a type yet, so `derefHead` and `parenHeadName`,
+which ask one, answer nothing there). **A new scan reads heads through it, and a new
+shape the emitter reads through parentheses is a row in each scan.**
+
 **PRINTING A VALUE IS A ROW** (2026-09-23). `printf("%v", x)` of an ARRAY printed the
 address of its storage wherever x was not a bare name -- a literal, a field, an
 element, a row, a call's field, a deferred capture -- silently on the board, and
