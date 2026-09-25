@@ -1215,7 +1215,11 @@ resultCTypeIn); a function literal called and then read through, `func() P { ...
 type, and one returning an ARRAY called at all, `func() Set { ... }()`; a method of
 a call's array result deferred or started on a cog, `defer mk(5).Count()` and `go
 mk(5).Count()`, or with the call parenthesised, `(mk(1)).Count()` (as a value and a
-statement it works since 2026-09-24); a field a BRACKETED literal lacks, `[]P{gp}[0].in.nosuch`,
+statement it works since 2026-09-24); an index or a method called directly on a literal of a DEFINED slice type,
+`IS{4, 5}[1]` and `IS{6, 7}.Sum()`, "this form is not supported yet" (factorLitIndexed
+and factorStructLitChain take a bracketed type and a struct; the literal is typed as a
+value since 2026-09-25, when a print of one had read its header as an integer); a
+field a BRACKETED literal lacks, `[]P{gp}[0].in.nosuch`,
 "a []P literal cannot be read through this suffix" from the emitter, where the valid
 form works (a call's result, a parenthesised value and a named literal are checked at
 any depth since 2026-09-25, `getp().in.nosuch` and `(&gp).in.nosuch` being "type Q

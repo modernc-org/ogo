@@ -294,6 +294,12 @@ shipped section tells a reader on that version that they have behaviour they do 
 
 ### Fixed
 
+- **A literal of a defined slice type prints as one.** `printf("%v", IS{4, 5})`
+  for a `type IS []int` printed an address in silence, where Go prints `[4 5]` --
+  the literal had no type where it stood as a value, and a print takes what it
+  cannot type for an integer -- and `len(IS{1, 2, 3})` was refused. An index or a
+  method called on such a literal directly, `IS{4, 5}[1]` and `IS{6, 7}.Sum()`, is
+  refused still; through a variable both work.
 - **A variable may be named like a type the target's library defines.** A local
   called `FILE`, `DIR` or `div_t` built on the host, where C lets a local shadow a
   type name, and failed on the target, whose compiler cannot parse one: "syntax
