@@ -3308,7 +3308,7 @@ func (e *emitter) pkgInitAssign(target, srcName string, initExpr []int32) {
 // rendered on its own dropped, pointing s at an object never filled.
 func (e *emitter) pkgInitIfaceStore(target, srcName, iface string, initExpr []int32) (pkgInitStep, bool) {
 	stmt := ""
-	_, pro := e.pkgInitRender(func() { stmt = e.ifaceStoreC(target, iface, initExpr) })
+	_, pro := e.pkgInitRender(func() { stmt = e.ifaceStoreC(target, target, iface, initExpr) })
 	if stmt == "" {
 		return pkgInitStep{}, false
 	}
@@ -7495,7 +7495,7 @@ func (e *emitter) registerInterface(mn string, methods []ifaceMethod, forward bo
 // The value's storage is the caller's, which is what makes an interface a REFERENCE:
 // the variable it was made from must outlive it. That is recorded where the ordinary
 // provenance mark is, so every sink already asks about it.
-func (e *emitter) ifaceStoreC(target, iface string, rhs []int32) string {
+func (e *emitter) ifaceStoreC(target, key, iface string, rhs []int32) string {
 	if e.isNilExpr(rhs) {
 		// The ZERO interface: no table and no data. It is written as two stores
 		// rather than as a compound literal, which this target's C compiler refuses
@@ -7509,8 +7509,10 @@ func (e *emitter) ifaceStoreC(target, iface string, rhs []int32) string {
 		// provenance travels with them, since what the copy points at is what the
 		// original pointed at.
 		if name, isName := e.exprIdent(rhs); isName {
+			// key is the variable's name, which the marks are kept by; target is
+			// its C spelling, which differs for a keyword or a macro.
 			if origin := e.frameHolder[name]; origin != "" {
-				e.frameHolder[target] = origin
+				e.frameHolder[key] = origin
 			}
 		}
 		return target + " = " + e.captureC(func() { e.emitExpr(rhs) }) + ";\n"
@@ -16075,7 +16077,7 @@ func (e *emitter) emitParamVoids(sig, body []int32) {
 					if !synthetic && e.bodyMentions(body, name) {
 						return
 					}
-					cname := name
+					cname := e.localIdent(name) // as the signature spells it
 					if _, ok := e.arrayDim(ta); ok && !variadic {
 						cname = paramArgName(name) // an array parameter is received by pointer
 					} else if !variadic && synthetic && e.byRefParam(e.cType(ta)) {
@@ -35686,7 +35688,7 @@ func (e *emitter) emitAssignment(head Node, postfix []Node) {
 			// assigns the null POINTER constant -- "j = 0" for a two-word struct,
 			// which the host compiler refuses outright and this one miscounts.
 			if rhs := e.rhsExprs(op[1]); len(rhs) == 1 {
-				if text := e.ifaceStoreC(e.varRef(base), ct, rhs[0].ast); text != "" {
+				if text := e.ifaceStoreC(e.varRef(base), base, ct, rhs[0].ast); text != "" {
 					e.ind()
 					e.emit(text)
 				}
@@ -36133,7 +36135,7 @@ func (e *emitter) emitAssignment(head Node, postfix []Node) {
 				return
 			case ok && e.isIfaceCType(ct):
 				e.ind()
-				e.emit(e.ifaceStoreC(lhs, ct, rhsAst))
+				e.emit(e.ifaceStoreC(lhs, lhs, ct, rhsAst))
 				return
 			}
 		}
@@ -36476,9 +36478,10 @@ func (e *emitter) emitVarDeclInit(ctype, name string, initExpr []int32) {
 	}
 	if e.isIfaceCType(ctype) {
 		e.locals[name] = ctype
+		cn := e.localIdent(name) // declared as it is read: `Valuer static` was a C error
 		e.ind()
-		e.emit(ctype + " " + name + " = {0};\n")
-		if text := e.ifaceStoreC(name, ctype, initExpr); text != "" {
+		e.emit(ctype + " " + cn + " = {0};\n")
+		if text := e.ifaceStoreC(cn, name, ctype, initExpr); text != "" {
 			e.ind()
 			e.emit(text)
 		}
