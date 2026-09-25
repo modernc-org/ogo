@@ -40732,6 +40732,64 @@ func main() {
 }
 `,
 		want: "[1 -2 3]\n1 [4 5 6] 2 {7 8}\n[[  1   2] [  3   4]]\n3 9 2\n",
+	},
+	{
+		// An if's or a switch's init that steps a variable -- an increment, a
+		// decrement, every operator assignment, on a field and an element too --
+		// written ahead of the test in the block the tests run in, and run once: an
+		// else-if's only when the tests before it failed. Each was a syntax error.
+		name: "an if or a switch init that steps a variable",
+		src: `var calls int
+
+func get(k int) int {
+	calls = calls*10 + k
+	return k
+}
+
+type P struct{ n int }
+
+var gp P
+
+var xs [4]int
+
+func main() {
+	x := 1
+	if x++; x > 1 {
+		println("inc", x)
+	}
+	if x += get(5); x > 3 {
+		println("add", x)
+	} else if x--; x > 0 {
+		println("never")
+	}
+	switch x *= 3; x {
+	case 21:
+		println("switch", x)
+	default:
+		println("other", x)
+	}
+	switch x--; {
+	case x > 10:
+		println("tagless", x)
+	}
+	if gp.n += 2; gp.n == 2 {
+		println("field", gp.n)
+	}
+	i := 1
+	if xs[i] -= 7; xs[i] < 0 {
+		println("elem", xs[i])
+	}
+	if x <<= 2; x > 64 {
+		println("shift", x)
+	}
+	var u uint8 = 250
+	if u += 10; u < 10 {
+		println("wrap", u)
+	}
+	println(x, calls)
+}
+`,
+		want: "inc 2\nadd 7\nswitch 21\ntagless 20\nfield 2\nelem -7\nshift 80\nwrap 4\n80 5\n",
 	}}
 
 // TestEmitCRun compiles emitted C with a host compiler and runs it, checking what

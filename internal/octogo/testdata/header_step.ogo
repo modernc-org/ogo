@@ -1,0 +1,62 @@
+// An if's or a switch's init statement may STEP a variable -- an increment, a
+// decrement, an operator assignment -- as Go allows: `if n++; n > limit`, `switch
+// x *= 2; x`. Each was a syntax error. The step is asked what a for clause's post
+// is asked, a target of no Kind included (for_post_kindless.ogo).
+
+const k = 1
+
+var g int
+
+func main() {
+	x := 1
+	if x++; x > 1 {
+		println(x)
+	}
+	if x += 5; x > 3 {
+		println(x)
+	}
+	switch x *= 3; x {
+	case 21:
+		println(x)
+	}
+	switch g--; {
+	case g < 0:
+		println(g)
+	}
+	// ERROR x\+\+ is a statement and cannot be switched on
+	switch x++ {
+	}
+	// ERROR cannot assign to k
+	if k++; true {
+	}
+	// ERROR cannot use _ as value
+	if _++; true {
+	}
+	s := "a"
+	// ERROR invalid operation: s\+\+ \(non-numeric type string\)
+	if s++; s != "" {
+	}
+	var b bool
+	// ERROR operator \+ not defined on b
+	if b += true; b {
+	}
+	var f float32
+	// ERROR operator % not defined on f
+	if f %= 2; f > 0 {
+	}
+	var p *int
+	// ERROR operator \+\+ not defined on p: it is a pointer
+	if p++; p != nil {
+	}
+	var q []int
+	// ERROR operator \+ not defined on q: it is a slice
+	switch q += 1; {
+	}
+	var fn func()
+	// ERROR operator \+\+ not defined on fn: it is a function
+	if fn++; fn != nil {
+	}
+	// ERROR cannot use "s" of type string as type int in assignment
+	if x += "s"; x > 0 {
+	}
+}

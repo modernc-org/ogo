@@ -27154,7 +27154,7 @@ func (e *emitter) guardNames(g switchGuard) ([]string, bool) {
 
 func (e *emitter) emitSwitchGuard(guardAST []int32) (guardVar string, block, ok bool) {
 	g, ok := e.f.switchGuardParts(guardAST)
-	if !ok || (g.semi && !g.hasName && !g.assign) {
+	if !ok || (g.semi && !g.hasName && !g.assign && g.step == 0) {
 		e.fail("malformed switch guard")
 		return "", false, false
 	}
@@ -27171,6 +27171,12 @@ func (e *emitter) emitSwitchGuard(guardAST []int32) (guardVar string, block, ok 
 		// run in, as the if form lowers it.
 		openBlock()
 		if !e.emitHeaderAssign(g.name, g.items, g.values) {
+			return "", false, false
+		}
+	} else if g.step != 0 {
+		// `switch n++; n`: the step, in the same block.
+		openBlock()
+		if !e.emitHeaderStep(g.name, g.step, g.value, len(g.values) != 0) {
 			return "", false, false
 		}
 	} else if g.hasName && len(g.values) > 1 {
@@ -27492,6 +27498,21 @@ func (e *emitter) emitIf(ast []int32) {
 		e.emit("}\n")
 		return
 	}
+	// `if n++; n > limit`: a step of the if's own expression, ahead of the test in
+	// the block the test's statements run in, as an assignment is.
+	if head, op, value, hasValue, cond, isStep := e.ifStepParts(ast); isStep {
+		e.ind()
+		e.emit("{\n")
+		e.indent++
+		if !e.emitHeaderStep(head, op, value, hasValue) {
+			return
+		}
+		e.emitIfBodyAt(ast, cond, ifAfterInit)
+		e.indent--
+		e.ind()
+		e.emit("}\n")
+		return
+	}
 	names, inits, cond, ok := e.ifInitParts(ast)
 	if !ok {
 		e.ind()
@@ -27627,6 +27648,68 @@ func (e *emitter) ifAssignParts(ast []int32) (head Node, items, values []Node, c
 		return Node{}, nil, nil, nil, false
 	}
 	return head, items, exprs[:len(exprs)-1], exprs[len(exprs)-1].ast, true
+}
+
+// ifStepParts decomposes an `if` whose init statement STEPS its target, `if n++; n
+// > limit` or `if x *= 2; x > 9`: the target (the if's own expression), the
+// operator, an operator assignment's value and the condition. ok is false for any
+// other if.
+func (e *emitter) ifStepParts(ast []int32) (head Node, op Symbol, value Node, hasValue bool, cond []int32, ok bool) {
+	var init []int32
+	for n := range it(ast) {
+		switch n.sym {
+		case Expression:
+			if head.sym == 0 {
+				head = n
+			}
+		case IfInit:
+			init = n.ast
+		}
+	}
+	if init == nil || head.sym == 0 {
+		return Node{}, 0, Node{}, false, nil, false
+	}
+	op, _, value, hasValue, c, ok := e.f.stepInitParts(init)
+	if !ok {
+		return Node{}, 0, Node{}, false, nil, false
+	}
+	return head, op, value, hasValue, c.ast, true
+}
+
+// emitHeaderStep lowers the step a header's init statement makes -- `if n++; ...`,
+// `switch x *= 2; ...` -- as a for clause's post lowers the same (emitPostAssign),
+// written as a statement of the block the header's tests run in.
+func (e *emitter) emitHeaderStep(head Node, op Symbol, value Node, hasValue bool) bool {
+	if _, ok := e.exprAssignTarget(head.ast); !ok {
+		e.fail("unsupported target in an init statement")
+		return false
+	}
+	text := e.captureC(func() {
+		lhs := e.exprC(head.ast)
+		switch op {
+		case INC:
+			e.emit(lhs + "++")
+		case DEC:
+			e.emit(lhs + "--")
+		default:
+			c, ok := cAssignOps[op]
+			if !ok || !hasValue {
+				e.fail("unsupported init statement")
+				return
+			}
+			e.emitPostAssign(head.ast, lhs, c, value.ast, op == ANDNOT_ASSIGN)
+		}
+	})
+	lines := strings.Split(text, "\n")
+	for i, line := range lines {
+		e.ind()
+		e.emit(line)
+		if i == len(lines)-1 {
+			e.emit(";")
+		}
+		e.emit("\n")
+	}
+	return e.err == nil
 }
 
 // emitHeaderAssign lowers the assignment a header's init statement makes -- `if err

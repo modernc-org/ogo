@@ -2340,7 +2340,8 @@
 // "else if" chain, or by a block.
 //
 //	IfStmt = "if" HeaderExpression [ IfInit ] Block [ "else" ( IfStmt | Block ) ] .
-//	IfInit = { "," LhsItem } ( ":=" | "=" ) HeaderExpression { "," HeaderExpression } ";" HeaderExpression .
+//	IfInit = ( { "," LhsItem } ( ":=" | "=" ) HeaderExpression { "," HeaderExpression }
+//		| "++" | "--" | AssignOp HeaderExpression ) ";" HeaderExpression .
 //
 // An "if" may carry an init statement, "if v := f(); v > 0". The name it declares
 // is scoped to the whole statement -- the condition, the "then" block and every
@@ -2350,10 +2351,12 @@
 // every value is read before any name is declared, as the statement "a, b := x, y"
 // reads them. The init may instead be an assignment, "if err = f(); err != nil",
 // which declares nothing and stores into targets of any shape a statement's
-// assignment takes -- "if h.n, ok = f(); ok" -- by the same rules. Go also admits a
-// compound assignment, an increment or a send there; those are not provided. An
-// "else if" may carry an init of its own, which runs only when the tests before it
-// have failed and whose names reach the rest of the chain.
+// assignment takes -- "if h.n, ok = f(); ok" -- by the same rules; or a step of a
+// variable, an increment, a decrement or an operator assignment, "if n++; n >
+// limit", "if x *= 2; x > 9", which declares nothing either. Go also admits a send
+// or a call standing alone there; those are not provided. An "else if" may carry an
+// init of its own, which runs only when the tests before it have failed and whose
+// names reach the rest of the chain.
 //
 // The grammar reaches the form by left-factoring, as the "for" header does: what
 // follows "if" is parsed as an expression, and the next token decides what it was
@@ -2389,7 +2392,8 @@
 // to the "cases" inside the "switch" to determine which branch to execute.
 //
 //	SwitchStmt = "switch" [ SwitchGuard ] "{" { CaseClause } "}" .
-//	SwitchGuard = HeaderExpression [ { "," LhsItem } ( ":=" | "=" ) HeaderExpression { "," HeaderExpression } ] [ SwitchTag ] .
+//	SwitchGuard = HeaderExpression [ { "," LhsItem } ( ":=" | "=" ) HeaderExpression { "," HeaderExpression }
+//		| "++" | "--" | AssignOp HeaderExpression ] [ SwitchTag ] .
 //	SwitchTag  = ";" [ HeaderExpression ] .
 //	CaseClause = CaseHead ":" { Statement ";" } [ Statement ] .
 //	CaseHead   = "case" ExpressionList | "default" .
@@ -2399,7 +2403,8 @@
 // that equals the switch expression triggers execution of the statements of
 // the associated case.
 //
-// A switch may carry an init statement, "switch v := f(); v", as an "if" may.
+// A switch may carry an init statement, "switch v := f(); v", as an "if" may --
+// a step among them, "switch n++; n".
 // Either may declare SEVERAL names from one call, "if v, ok := m.get(k); ok" and
 // "switch q, r := split(n); q", which is how a two-result call is usually asked,
 // or from a value each, "switch a, b := x, y; a + b". That last takes the ";":
@@ -2411,8 +2416,8 @@
 // be left out, "switch v := f(); { case v > 3: }", which switches on true with v
 // in scope. The init may be an assignment instead, "switch err = f(); { ... }",
 // as an "if"'s may; being no value, it needs the ";", and a type switch takes
-// none (not implemented). Go also admits a compound assignment, an increment or a
-// send there; those are not provided.
+// none (not implemented) -- nor a step, which needs the ";" as well. Go also admits
+// a send or a call standing alone there; those are not provided.
 //
 // (OctoGo Specific): the ":=" guard without an init statement, "switch v := f()",
 // declares v and switches on it. Go rejects that text, so the portable spelling

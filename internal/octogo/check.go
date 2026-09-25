@@ -2368,7 +2368,13 @@ func (f *File) checkIf(s *Scope, results []retResult, n Node) {
 			elseIf, hasElseIf = c, true
 		}
 	}
-	if hasInit {
+	if op, opSrc, value, hasValue, c, isStep := f.stepInitParts(init.ast); hasInit && isStep {
+		// `if n++; n > limit`: a step of the if's own expression, a statement Go
+		// allows as the init as it allows an assignment.
+		s = s.child()
+		f.checkStepInit(s, lhs, op, opSrc, value, hasValue)
+		cond = c
+	} else if hasInit {
 		var exprs, items []Node
 		assign := false
 		for c := range it(init.ast) {
@@ -3824,6 +3830,75 @@ func (f *File) checkPostOp(s *Scope, lhs []Node, op Symbol, opSrc string, rhs []
 		}
 		f.checkValueOverflow(s, sizedTarget(k, Token{}), rhs[0])
 	}
+}
+
+// stepSpelling is how a step's operator is written after its target: "++", "--",
+// or an operator assignment's own spelling.
+func stepSpelling(op Symbol, opSrc string) string {
+	switch op {
+	case INC:
+		return "++"
+	case DEC:
+		return "--"
+	}
+	return " " + opSrc + " ..."
+}
+
+// checkStepInit checks an if's or a switch's init statement that STEPS a target
+// rather than declaring or assigning one -- `if n++; n > limit`, `switch x *= 2; x`
+// -- asking what the for clause's post is asked (checkPostOp), after the target is
+// asked to be one: a constant, a function or a type named bare is refused, as
+// checkHeaderAssign refuses one, and so is the blank identifier, which is read.
+func (f *File) checkStepInit(s *Scope, target Node, op Symbol, opSrc string, value Node, hasValue bool) {
+	f.checkNames(s, target)
+	var rhs []Node
+	if hasValue {
+		f.checkNames(s, value)
+		rhs = []Node{value}
+	}
+	if base, steps, stars, ok := f.exprTarget(target); ok && len(steps) == 0 && stars == 0 {
+		if base.Src() == "_" {
+			f.blankRead(base)
+			return
+		}
+		switch s.find(base.Src()).(type) {
+		case *ConstDeclaration, *FuncDeclaration, *TypeDeclaration, *PredeclaredFunc:
+			f.err(base.Position(), "cannot assign to %s", base.Src())
+			return
+		}
+	}
+	f.checkPostOp(s, []Node{target}, op, opSrc, rhs)
+}
+
+// stepInitParts reads an IfInit that steps its target, `++`, `--` or an operator
+// assignment, answering with the operator, the value an operator assignment takes
+// and the condition behind the ";". ok is false for any other init.
+func (f *File) stepInitParts(init []int32) (op Symbol, opSrc string, value Node, hasValue bool, cond Node, ok bool) {
+	var exprs []Node
+	for c := range it(init) {
+		switch c.sym {
+		case Expression:
+			exprs = append(exprs, c)
+		case AssignOp:
+			for t := range it(c.ast) {
+				if t.sym == 0 {
+					op, opSrc = f.ch(t.tok), f.tok(t.tok).Src()
+				}
+			}
+		case 0:
+			switch k := f.ch(c.tok); k {
+			case INC, DEC:
+				op = k
+			}
+		}
+	}
+	switch {
+	case (op == INC || op == DEC) && len(exprs) == 1:
+		return op, "", Node{}, false, exprs[0], true
+	case isCompoundAssign(op) && len(exprs) == 2:
+		return op, opSrc, exprs[0], true, exprs[1], true
+	}
+	return 0, "", Node{}, false, Node{}, false
 }
 
 // exprTargetKind is the Kind of an assignment target written as an expression
@@ -5346,12 +5421,22 @@ func (f *File) checkSwitchGuard(s, ss *Scope, n Node) (Kind, bool) {
 		f.err(f.tok(n.Pos()).Position(), "malformed switch header")
 		return 0, false
 	}
-	if g.assign && g.hasTag && f.typeSwitchShaped(Node{sym: SwitchGuard, ast: n.ast}) {
+	if (g.assign || g.step != 0) && g.hasTag && f.typeSwitchShaped(Node{sym: SwitchGuard, ast: n.ast}) {
 		f.err(f.tok(n.Pos()).Position(), "a type switch with an init statement is not supported yet")
 		return 0, false
 	}
-	if g.semi && !g.hasName && !g.assign {
-		f.err(f.tok(n.Pos()).Position(), "a switch init statement must be a short variable declaration or an assignment")
+	if g.step != 0 {
+		// `switch n++; n`: a step of the target, which Go allows as the init as it
+		// allows an assignment. Without the ";" it would have to be the thing
+		// switched on, and a step is no value.
+		if !g.semi {
+			f.err(f.tok(n.Pos()).Position(), "%s%s is a statement and cannot be switched on: write \";\" and the expression to switch on after it",
+				f.exprSource(g.name), stepSpelling(g.step, g.opSrc))
+			return 0, false
+		}
+		f.checkStepInit(s, g.name, g.step, g.opSrc, g.value, len(g.values) != 0)
+	} else if g.semi && !g.hasName && !g.assign {
+		f.err(f.tok(n.Pos()).Position(), "a switch init statement must be a short variable declaration, an assignment, an increment or a decrement")
 		return 0, false
 	}
 	if g.assign {
@@ -5428,6 +5513,12 @@ type switchGuard struct {
 	hasTag  bool
 	semi    bool // a ";" was written, making this Go's init-statement form
 	assign  bool // the init is an assignment, "=", and name is its first target
+
+	// step is the operator of an init that steps name rather than declaring or
+	// assigning it, `switch n++; n` or `switch x *= 2; x` (INC, DEC or an operator
+	// assignment), with opSrc its spelling; value is an operator assignment's.
+	step  Symbol
+	opSrc string
 }
 
 // switchGuardParts decomposes a SwitchGuard node's children. ok is false for a
@@ -5450,16 +5541,31 @@ func (f *File) switchGuardParts(guard []int32) (g switchGuard, ok bool) {
 			}
 		case LhsItem:
 			g.items = append(g.items, c)
+		case AssignOp:
+			for t := range it(c.ast) {
+				if t.sym == 0 {
+					g.step, g.opSrc = f.ch(t.tok), f.tok(t.tok).Src()
+				}
+			}
 		case 0:
-			switch f.ch(c.tok) {
+			switch k := f.ch(c.tok); k {
 			case DEFINE:
 				hasDefine = true
 			case ASSIGN:
 				g.assign = true
+			case INC, DEC:
+				g.step = k
 			}
 		}
 	}
 	switch {
+	case g.step != 0 && len(exprs) >= 1:
+		// `switch n++; n` and `switch x *= 2; x`: name is the target stepped, and
+		// declares nothing; only a ";" gives it a tag.
+		g.name = exprs[0]
+		if len(exprs) >= 2 {
+			g.value, g.values = exprs[1], exprs[1:]
+		}
 	case hasDefine && len(exprs) >= 2:
 		g.name, g.hasName = exprs[0], true
 		g.value, g.values = exprs[1], exprs[1:]
