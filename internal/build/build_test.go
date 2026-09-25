@@ -283,3 +283,22 @@ func TestBuildLibraryEmits(t *testing.T) {
 		t.Errorf("output %q is not the lifetime refusal", got)
 	}
 }
+
+// TestCompileCBackendCrash holds compileC to reporting a backend that CRASHES as an
+// error, not a panic of the whole compiler. doc/register-limit-crash.c is a
+// function the backend gives up on and then dereferences a register it never
+// allocated -- in the transpile a nil dereference, which flexcc.Main passes on.
+// Either answer is fine here, the crash reported or a clean refusal from a backend
+// that no longer crashes: what must not happen is the panic reaching the caller.
+func TestCompileCBackendCrash(t *testing.T) {
+	src := filepath.Join("..", "..", "doc", "register-limit-crash.c")
+	if _, err := os.Stat(src); err != nil {
+		t.Skip(err)
+	}
+	var stdout, stderr bytes.Buffer
+	rc, err := compileC(src, filepath.Join(t.TempDir(), "prog.binary"), &stdout, &stderr)
+	if err == nil || rc == 0 {
+		t.Fatalf("compileC = %d, %v: the program should not build\n%s%s", rc, err, stdout.Bytes(), stderr.Bytes())
+	}
+	t.Logf("%v", err)
+}
