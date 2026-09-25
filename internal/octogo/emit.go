@@ -24494,6 +24494,31 @@ func (e *emitter) emitParenMethod(kids []Node) bool {
 	return true
 }
 
+// spliceParenArrayCall reads a call returning an ARRAY, in parentheses and read on
+// through steps -- `(mk(5)).Len()`, `(mk(5))[1]` -- as the chain written without
+// them, `mk(5).Len()`: an array result has no value the parenthesised form could be
+// bound to, and was "this form is not supported yet", where the chain's own path
+// writes the result through its out parameter.
+func (e *emitter) spliceParenArrayCall(kids []Node) (Node, bool) {
+	if len(kids) != 4 || kids[0].sym != 0 || e.f.ch(kids[0].tok) != LPAREN || kids[1].sym != Expression ||
+		kids[2].sym != 0 || e.f.ch(kids[2].tok) != RPAREN || kids[3].sym != FactorSuffix {
+		return Node{}, false
+	}
+	inner := e.unparenExpr(kids[1].ast)
+	if _, _, isArr := e.arrayResultCall(inner); !isArr {
+		return Node{}, false
+	}
+	fk := e.factorKids(inner)
+	if len(fk) != 2 || fk[0].sym != 0 || e.f.ch(fk[0].tok) != IDENT || fk[1].sym != FactorSuffix {
+		return Node{}, false
+	}
+	var suffix []int32
+	for _, st := range append(slices.Collect(it(fk[1].ast)), slices.Collect(it(kids[3].ast))...) {
+		suffix = append(suffix, encodeNode(st.sym, st.ast)...)
+	}
+	return Node{sym: Factor, ast: append([]int32{fk[0].tok}, encodeNode(FactorSuffix, suffix)...)}, true
+}
+
 // factorDerefChain matches a parenthesised DEREFERENCE carrying a suffix, `(*p).x`
 // and `(*p)[i]`, returning the pointer's name and the steps that follow.
 //
@@ -41574,6 +41599,9 @@ func (e *emitter) inferNode(n Node) (string, bool) {
 	case UnaryExpr, Factor:
 		kids := slices.Collect(it(n.ast))
 		if n.sym == Factor {
+			if spliced, ok := e.spliceParenArrayCall(kids); ok {
+				return e.inferNode(spliced) // `(mk(5)).Len()` is `mk(5).Len()`
+			}
 			if me, isME := e.methodExprAt(kids); isME {
 				return e.methodExprCType(me)
 			}
@@ -44140,6 +44168,10 @@ func (e *emitter) emitExprNode(n Node) {
 		// naming an internal node in a program whose source contains no such thing.
 		// Say what could not be done to which operand instead.
 		if n.sym == Factor && containsSym(kids, FactorSuffix) {
+			if spliced, ok := e.spliceParenArrayCall(slices.Collect(it(n.ast))); ok {
+				e.emitExprNode(spliced) // `(mk(5)).Len()` is `mk(5).Len()`
+				return
+			}
 			// A METHOD called on a parenthesised expression, `(a - b).Scaled()`.
 			// Last, so it sees only what nothing above claimed: `(&v).m()` and
 			// `(*p).m()` are parenthesised too, and their own paths adjust the

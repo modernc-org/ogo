@@ -1304,8 +1304,8 @@ resultCTypeIn); a function literal called and then read through, `func() P { ...
 }().x` ("a function literal may only be called where it stands"), for any result
 type, and one returning an ARRAY called at all, `func() Set { ... }()`; a method of
 a call's array result deferred or started on a cog, `defer mk(5).Count()` and `go
-mk(5).Count()`, or with the call parenthesised, `(mk(1)).Count()` (as a value and a
-statement it works since 2026-09-24); an index or a method called directly on a literal of a DEFINED slice type,
+mk(5).Count()` (as a value and a statement it works since 2026-09-24, and with the call
+parenthesised, `(mk(1)).Len()`, since 2026-09-25, spliceParenArrayCall); an index or a method called directly on a literal of a DEFINED slice type,
 `IS{4, 5}[1]` and `IS{6, 7}.Sum()`, "this form is not supported yet" (factorLitIndexed
 and factorStructLitChain take a bracketed type and a struct; the literal is typed as a
 value since 2026-09-25, when a print of one had read its header as an integer); a

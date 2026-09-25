@@ -12396,6 +12396,37 @@ func main() {
 		want: "4\n",
 	},
 	{
+		// A call returning an ARRAY, in parentheses and read on through a method or
+		// an index -- `(mk(5)).Len()`, `(mk(3))[1]` -- was "this form is not supported
+		// yet": an array result has no value the parenthesised form could be bound
+		// to. It is the chain written without them (spliceParenArrayCall), whose own
+		// path writes the result through its out parameter, each call made once.
+		name: "a method and an index on a parenthesised call's array result",
+		src: `type Set [4]uint32
+
+var calls int
+
+func mk(n int) Set {
+	calls++
+	var s Set
+	s[0] = uint32(n)
+	s[1] = uint32(n * 2)
+	return s
+}
+
+func (s Set) Len() int { return int(s[0] + s[1]) }
+
+func main() {
+	n := (mk(5)).Len()
+	println(n, (mk(2)).Len(), (mk(3))[1], calls)
+	var t [4]uint32 = mk(1)
+	x := (mk(4))[0] + t[1]
+	println(x, calls)
+}
+`,
+		want: "15 6 6 3\n6 5\n",
+	},
+	{
 		// A compound literal inside a cast, which the target's C compiler cannot do.
 		// int(total(xs[:])) is the ordinary spelling: a slice expression handed to a
 		// call becomes a compound literal in C, and a conversion becomes a cast
