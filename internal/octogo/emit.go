@@ -14589,6 +14589,21 @@ func (e *emitter) liftFuncLit(lit Node) (string, bool) {
 // the base -- which is what varType and varRef read an imported global by, so
 // nothing below this line knows the difference.
 func (e *emitter) factorMethodValue(kids []Node) (base, method string, ok bool) {
+	// `(v).m` and `(&v).m` are `v.m`: the receiver in parentheses, its address or not
+	// -- the binding is an address either way -- was "cannot infer a type".
+	if len(kids) == 4 && kids[0].sym == 0 && e.f.ch(kids[0].tok) == LPAREN && kids[1].sym == Expression &&
+		kids[2].sym == 0 && e.f.ch(kids[2].tok) == RPAREN && kids[3].sym == FactorSuffix {
+		inner := e.unparenExpr(kids[1].ast)
+		_, isName := e.exprIdent(inner)
+		if !isName {
+			_, isName = e.addrOperand(inner)
+		}
+		tok, hasTok := e.firstIdentTok(inner)
+		if !isName || !hasTok {
+			return "", "", false
+		}
+		kids = []Node{{tok: tok}, kids[3]}
+	}
 	if len(kids) != 2 || kids[0].sym != 0 || e.f.ch(kids[0].tok) != IDENT || kids[1].sym != FactorSuffix {
 		return "", "", false
 	}
@@ -16766,6 +16781,22 @@ func (e *emitter) scanAliasedLocals(ast []int32) {
 		}
 		e.scanAliasedLocals(n.ast)
 	}
+}
+
+// firstIdentTok is firstIdent's token.
+func (e *emitter) firstIdentTok(ast []int32) (int32, bool) {
+	for n := range it(ast) {
+		if n.sym == 0 {
+			if e.f.ch(n.tok) == IDENT {
+				return n.tok, true
+			}
+			continue
+		}
+		if tok, ok := e.firstIdentTok(n.ast); ok {
+			return tok, true
+		}
+	}
+	return 0, false
 }
 
 // firstIdent names the first identifier in an expression, "" for none.
@@ -26568,6 +26599,16 @@ func (e *emitter) emitLoopBody(body []int32, inject func()) {
 // two-variable form copies the element into the value variable at the top of each
 // iteration.
 func (e *emitter) emitRange(h *forHeader, body []int32) {
+	// `range (arr)` is `range arr`: the parentheses change nothing about the value,
+	// and an array's paths read a name -- "it has no storage to name". Not around a
+	// literal, `range (IS{8, 9})`, which a header cannot write bare -- Go keeps
+	// those parentheses and so does this, the literal's own path taking the
+	// parenthesised form and not the bare one (its element went untyped).
+	if inner := e.unparenExpr(h.rangeExpr); len(inner) != len(h.rangeExpr) {
+		if _, _, isLit := e.soleCompositeLit(inner); !isLit {
+			h.rangeExpr = inner
+		}
+	}
 	// `range Row(a)` for `type Row [3]int`: a conversion to a defined array type
 	// changes nothing about the value -- the typedef stands for the same storage --
 	// so it is unwrapped and the operand is what is ranged. An array is the one
@@ -30565,6 +30606,13 @@ func (e *emitter) emitCall(head Node, postfix []Node) {
 			e.ind()
 			e.callOrFail(e.emitCallStmtExpr(tmp, pc.rest))
 			e.emit(";\n")
+			return
+		}
+		// `(pc()).inc()` and `(*pc()).inc()` as a statement: a call's result in
+		// parentheses, dereferenced or not, before a method -- `pc().inc()`, the chain
+		// written without them, which is what is emitted.
+		if tok, steps, ok := e.parenCallChain(head, postfix); ok {
+			e.emitCall(Node{sym: AssignHead, ast: []int32{tok}}, steps)
 			return
 		}
 		// `(fs[0])(7)` and `(<-fc)(5)` as a statement: a function VALUE in
@@ -36070,6 +36118,37 @@ func (e *emitter) parenHeadName(head Node) (name string, addr, ok bool) {
 		return name, true, true
 	}
 	return "", false, false
+}
+
+// parenCallChain reads a statement head in parentheses holding a CALL's chain, `(pc())`
+// or `(*pc())`, before a method selected and called: the chain's name and its steps
+// followed by the ones written after the parentheses. The star goes only before a
+// method, where Go reads `(*x).m()` as `x.m()`.
+func (e *emitter) parenCallChain(head Node, postfix []Node) (int32, []Node, bool) {
+	kids := slices.Collect(it(head.ast))
+	if len(kids) != 3 || kids[0].sym != 0 || e.f.ch(kids[0].tok) != LPAREN || kids[1].sym != Expression ||
+		kids[2].sym != 0 || e.f.ch(kids[2].tok) != RPAREN {
+		return 0, nil, false
+	}
+	if len(postfix) < 2 || postfix[0].sym != Selector || postfix[1].sym != CallSuffix {
+		return 0, nil, false
+	}
+	inner := e.unparenExpr(kids[1].ast)
+	fac := e.factorKids(inner)
+	if len(fac) == 2 && fac[0].sym == UnaryOp {
+		if tok, ok := e.unaryOpTok(fac[0].ast); !ok || e.f.ch(tok) != MUL {
+			return 0, nil, false
+		}
+		fac = e.factorKids(fac[1].ast) // `(*pc())`
+	}
+	if len(fac) != 2 || fac[0].sym != 0 || e.f.ch(fac[0].tok) != IDENT || fac[1].sym != FactorSuffix {
+		return 0, nil, false
+	}
+	steps := slices.Collect(it(fac[1].ast))
+	if !containsSym(steps, CallSuffix) {
+		return 0, nil, false // a variable's chain, `(h.v).m()`, is addrChainSteps' shape
+	}
+	return fac[0].tok, append(steps, postfix...), true
 }
 
 // parenRecvHead answers the variable a parenthesized statement head names as a

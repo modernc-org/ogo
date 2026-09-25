@@ -17058,3 +17058,39 @@ func TestEmitCConstBytesConv(t *testing.T) {
 		})
 	}
 }
+
+// TestEmitCParenRange: a range over an operand in parentheses, `range (arr)`, is the
+// range written without them, an array iterating the copy it takes when the loop
+// begins. An array's paths read a name, and this one was "cannot range over this
+// array: it has no storage to name". Not a run case: gofmt drops the parentheses.
+func TestEmitCParenRange(t *testing.T) {
+	const src = `var gs []int
+
+func main() {
+	arr := [3]int{1, 2, 3}
+	s := 0
+	for i, v := range (arr) {
+		if i == 0 {
+			arr[2] = 99
+		}
+		s += v
+	}
+	for i := range (gs) {
+		s += i
+	}
+	println(s, arr[2])
+}
+`
+	fsys := fstest.MapFS{"main.ogo": &fstest.MapFile{Data: []byte(src)}}
+	pkg, err := Build(-1, []string{"main.ogo"}, fsys)
+	if err != nil {
+		t.Fatalf("Build: %v", err)
+	}
+	var b strings.Builder
+	if err := EmitC(pkg, &b, Checked()); err != nil {
+		t.Fatalf("EmitC: %v", err)
+	}
+	if !strings.Contains(b.String(), "memcpy") {
+		t.Errorf("the range copies no array:\n%s", b.String())
+	}
+}

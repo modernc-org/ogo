@@ -1,0 +1,38 @@
+// A call's result in parentheses is the call's result: no storage, so a POINTER
+// method called on it is refused as it is on `mk(1).Count()`. The statement form
+// was taken once the emitter read `(mk(1)).Count()` as `mk(1).Count()`, the method
+// then writing the emitter's temporary.
+
+type Set [4]uint32
+
+func mk(n int) Set {
+	var s Set
+	s[0] = uint32(n)
+	return s
+}
+
+func (s *Set) Count() int { return int(s[0]) }
+
+func (s Set) Len() int { return int(s[0]) }
+
+type P struct{ n int }
+
+func (p *P) Inc() { p.n++ }
+
+func mkp() P { return P{1} }
+
+func ptr() *P { return &P{2} }
+
+func main() {
+	// ERROR "cannot call pointer method Count on Set"
+	(mk(1)).Count()
+	// ERROR "cannot call pointer method Count on Set"
+	n := (mk(2)).Count()
+	// ERROR "cannot call pointer method Inc on P"
+	(mkp()).Inc()
+	// A value method, and a pointer method through a pointer, are Go's.
+	(mk(3)).Len()
+	(ptr()).Inc()
+	(*ptr()).Inc()
+	_ = n
+}

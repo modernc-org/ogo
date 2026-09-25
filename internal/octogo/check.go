@@ -16930,6 +16930,15 @@ func (f *File) checkStepsOn(s *Scope, d *VarDeclaration, base string, steps []No
 // name -- `(&v).m(x)`, `(*p).f`, `(mk()).m()` -- through checkStepsOn. A bare name
 // in the parentheses is checked as the name itself is, elsewhere.
 func (f *File) checkParenChain(s *Scope, inner Node, steps []Node) {
+	// `(mk(1)).Count()`: a call's result in parentheses is the call's result, no
+	// storage, walked as `mk(1).Count()` is (callChainWalk) -- so a pointer method
+	// called on it is refused as there. It was taken, the method called on the
+	// emitter's temporary.
+	if id, innerSteps, ok := f.callChainOf(inner); ok {
+		all := append(slices.Clone(innerSteps), steps...)
+		f.reportCallChainWalk(all, f.callChainWalk(s, id, all))
+		return
+	}
 	if name, qual, _, ok := f.exprNamedType(s, inner); ok {
 		f.checkStepsOn(s, &VarDeclaration{typeName: name, typeQual: qual}, "("+f.exprSource(inner)+")", steps)
 		// Past the first step, which checkStepsOn answers for, a member the value
@@ -16939,6 +16948,27 @@ func (f *File) checkParenChain(s *Scope, inner Node, steps []Node) {
 			f.reportMissingMember(steps, f.walkSteps(typeAt{&TypeNodeIdent{Name: name}, s, f}, false, steps, 0, 1, newCallChain()))
 		}
 	}
+}
+
+// callChainOf matches an expression that is a name and steps holding a call, `mk(1)`
+// or `h.get().v`, answering the name and the steps.
+func (f *File) callChainOf(n Node) (Token, []Node, bool) {
+	nodes := slices.Collect(it(n.ast))
+	for len(nodes) == 1 && (nodes[0].sym == Expression || nodes[0].sym == SimpleExpr || nodes[0].sym == Term || nodes[0].sym == UnaryExpr) {
+		nodes = slices.Collect(it(nodes[0].ast))
+	}
+	if len(nodes) != 1 || nodes[0].sym != Factor {
+		return Token{}, nil, false
+	}
+	kids := slices.Collect(it(nodes[0].ast))
+	if len(kids) != 2 || kids[0].sym != 0 || f.ch(kids[0].tok) != IDENT || kids[1].sym != FactorSuffix {
+		return Token{}, nil, false
+	}
+	steps := slices.Collect(it(kids[1].ast))
+	if !slices.ContainsFunc(steps, func(n Node) bool { return n.sym == CallSuffix }) {
+		return Token{}, nil, false
+	}
+	return f.tok(kids[0].tok), steps, true
 }
 
 // newCallChain is a callChain that has found nothing yet.

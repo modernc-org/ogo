@@ -12368,6 +12368,34 @@ func main() {
 		want: "1\n2\n3\n4\n",
 	},
 	{
+		// Two more heads the emitter read by name and refused in parentheses, each
+		// legal Go: a method value's receiver, `(&c).inc` -- "cannot infer a type" --
+		// and a call's result before a method as a statement, `(pc()).inc()` and
+		// `(*pc()).inc()` -- "unsupported call target". Each is the form written
+		// without the parentheses. (A third, `range (arr)`, is TestEmitCParenRange's:
+		// gofmt drops those parentheses, and a run case is gofmt's layout.)
+		name: "a method value and a call's result in parentheses",
+		src: `type C struct{ n int }
+
+func (c *C) inc() { c.n++ }
+
+var gc C
+
+func pc() *C { return &gc }
+
+func main() {
+	f := (&gc).inc
+	f()
+	g := (gc).inc
+	g()
+	(pc()).inc()
+	(*pc()).inc()
+	println(gc.n)
+}
+`,
+		want: "4\n",
+	},
+	{
 		// A compound literal inside a cast, which the target's C compiler cannot do.
 		// int(total(xs[:])) is the ordinary spelling: a slice expression handed to a
 		// call becomes a compound literal in C, and a conversion becomes a cast
