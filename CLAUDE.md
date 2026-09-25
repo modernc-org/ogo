@@ -1343,10 +1343,11 @@ against each other when either changes**; they are meant to differ by one produc
 (HeaderFactor has no literal after a name, which is what keeps `if x == T {` a block).
 `ogo fmt` keeps a statement's body on the line it was written on -- `if c { v = 1 }`,
 `switch a { case 1: v = 2 }` -- where gofmt breaks it onto lines of its own; the run
-cases are gofmt's layout already, so TestFormatMatchesGofmt does not see it. And it
-spaces a binary expression in an if or a switch header's list of values, `if
-(*sp)[2], n = k(3), n + 1; ...`, where gofmt writes `n+1` (2026-09-25; a run case met
-it and was rewritten around it).
+cases are gofmt's layout already, so TestFormatMatchesGofmt does not see it. (A
+header's "=" list, `if a, n = k(3), n+1; ...`, was spaced as one value until
+2026-09-25: the depth rule, headerInitTightOps, predated "=" in headers. A run case
+met it first -- TestFormatMatchesGofmt runs the run cases through gofmt, which is how
+formatter gaps surface.)
 Latent ones, measured and not faults today: a store through a chain, `r.m[a()][b()]
 = v()`, leaves its calls to C's operand order, which gcc 14 and flexcc both take left
 to right (only the bare `name[i] = v` path binds them); and a value's call does not

@@ -36,6 +36,10 @@ shipped section tells a reader on that version that they have behaviour they do 
 
 ### Fixed
 
+- **`ogo fmt` spaces an if or a switch header's list of values as gofmt does.** `if
+  a, n = k(3), n+1; n > 0` and `switch a, n = n*2, n-1; n` came out as `n + 1` and
+  `n * 2, n - 1`: a header's "=" form was spaced as one value, where gofmt spaces a
+  list of several as it spaces a statement's. The ":=" form was right.
 - **A list with a target in parentheses, or behind a star, pairs each value with
   its own target.** After such a target every value went to the target before its
   own: `(*px), s = 5, "b"` and `*px, s = 5, "b"` were refused as "cannot use 5 of
