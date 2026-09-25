@@ -1,0 +1,97 @@
+// A received value is stored as any value is: into a field, an element, a pointee
+// and a target in parentheses, in a statement and in a select clause, and a comma-ok
+// receive's flag is a bool however its target is written. Only a bare name was
+// asked, and `h.s = <-ci`, `case (s) = <-ci:` and `n, h.s = <-ci` stored an int or
+// a bool into a string as far as the C compiler.
+
+type H struct {
+	n  int
+	s  string
+	ok bool
+}
+
+type R struct {
+	n  int
+	ok bool
+}
+
+var gr R
+
+func getr() *R { return &gr }
+
+func statements(ci chan int) {
+	var n int
+	var s string
+	var h H
+	var as [2]string
+	ss := []string{"a"}
+	ps := &s
+	// ERROR "cannot use <-ci of type int as type string"
+	h.s = <-ci
+	// ERROR "cannot use <-ci of type int as type string"
+	(h).s = <-ci
+	// ERROR "cannot use <-ci of type int as type string"
+	*ps = <-ci
+	// ERROR "cannot use <-ci of type int as type string"
+	(*ps) = <-ci
+	// ERROR "cannot use <-ci of type int as type string"
+	as[0] = <-ci
+	// ERROR "cannot use <-ci of type int as type string"
+	ss[0] = <-ci
+	// ERROR "cannot assign the bool of a comma-ok receive to s \(type string\)"
+	n, s = <-ci
+	// ERROR "cannot assign the bool of a comma-ok receive to h.s \(type string\)"
+	n, h.s = <-ci
+	// ERROR "cannot assign the bool of a comma-ok receive to \(s\) \(type string\)"
+	n, (s) = <-ci
+	// ERROR "cannot use <-ci of type int as type string"
+	h.s, h.ok = <-ci
+	// The same targets, given what they take.
+	h.n = <-ci
+	(h).n, h.ok = <-ci
+	n, (h).ok = <-ci
+	_, _, _, _, _ = n, s, h, as, ss
+}
+
+func clauses(ci chan int) {
+	var n int
+	var s string
+	var h H
+	var r R
+	var as [2]string
+	ps := &s
+	select {
+	// ERROR "cannot use <-ci of type int as type string"
+	case h.s = <-ci:
+	// ERROR "cannot assign value received from chan int to type string"
+	case (s) = <-ci:
+	// ERROR "cannot use <-ci of type int as type string"
+	case (h).s = <-ci:
+	// ERROR "cannot use <-ci of type int as type string"
+	case (&h).s = <-ci:
+	// ERROR "cannot use <-ci of type int as type string"
+	case (*ps) = <-ci:
+	// ERROR "cannot use <-ci of type int as type string"
+	case *ps = <-ci:
+	// ERROR "cannot use <-ci of type int as type string"
+	case (as)[0] = <-ci:
+	// ERROR "cannot assign the bool of a comma-ok receive to \(s\) \(type string\)"
+	case n, (s) = <-ci:
+	// ERROR "cannot assign the bool of a comma-ok receive to \(h\).s \(type string\)"
+	case n, (h).s = <-ci:
+	// ERROR "cannot assign to \(&r\)"
+	case n, (&r) = <-ci:
+	// The same targets, given what they take, and a flag through a call's result.
+	case (h).n, (&r).ok = <-ci:
+	case n, getr().ok = <-ci:
+	case (n), (r).ok = <-ci:
+	default:
+	}
+	_, _, _, _, _ = n, s, h, r, as
+}
+
+func main() {
+	var ci chan int
+	statements(ci)
+	clauses(ci)
+}

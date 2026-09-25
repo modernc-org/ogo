@@ -4391,8 +4391,8 @@ func (f *File) exprType(s *Scope, n Node) (Kind, bool) {
 	case SimpleExpr, Term:
 		return f.operandsType(s, n)
 	case UnaryExpr:
-		// "!" yields bool; "<-" (receive) has an element type we can't resolve
-		// here; the arithmetic unary operators keep the operand's kind.
+		// "!" yields bool; "<-" (receive) the channel's element, where it is a Kind;
+		// the arithmetic unary operators keep the operand's kind.
 		var fac Node
 		var ops []Node
 		facSet := false
@@ -4419,6 +4419,14 @@ func (f *File) exprType(s *Scope, n Node) (Kind, bool) {
 			case NOT:
 				return UntypedBool, true
 			case ARROW:
+				// `h.s = <-ci` stored an int into a string field as far as the C
+				// compiler: a receive had no type for any rule but the one asked of
+				// a plain name (checkRecvAssign).
+				if len(ops) == 1 && facSet {
+					if elem, hasElem, isChan := f.exprChan(s, fac); isChan && hasElem {
+						return elem, true
+					}
+				}
 				return 0, false
 			}
 		}
@@ -6130,6 +6138,14 @@ func (f *File) commOp(s *Scope, op Node) {
 			if hasOkItem {
 				f.commRecvOkTarget(s, okItem)
 			}
+			// What the clause receives is stored as an assignment's value is, into
+			// its target walked from its base variable, parentheses and all
+			// (checkWalkedTarget): only a bare name was asked, and `case h.s = <-ci:`
+			// or `case (s) = <-ci:` stored an int into a string as far as the C
+			// compiler.
+			if v, ok := f.commRecvValue(postfixComm, operand); ok {
+				f.checkRecvIntoTarget(s, assignHead, postfixComm, v)
+			}
 			break
 		}
 		// ":=" declares a name, here as much as in an ordinary short declaration, so
@@ -6149,6 +6165,60 @@ func (f *File) commOp(s *Scope, op Node) {
 	}
 }
 
+// checkRecvIntoTarget asks a receive clause's target what an assignment statement's
+// sole target is asked of its value (checkAssignment): one field, one element and a
+// pointee by their own checks, and a deeper or a parenthesised target by the walk.
+func (f *File) checkRecvIntoTarget(s *Scope, head, postfixComm, v Node) {
+	if field, ok := f.fieldSelector(postfixComm); ok {
+		if id, idok := f.assignHeadIdent(head); idok {
+			f.checkFieldAssign(s, id, field, v)
+		}
+	}
+	if base, ok := f.derefAssignTarget(head, postfixComm); ok {
+		f.checkDerefAssign(s, base, v)
+	} else if base, field, ok := f.derefFieldAssignTarget(head, postfixComm); ok {
+		f.checkDerefFieldAssign(s, base, field, v)
+	} else if base, ok := f.indexAssignTarget(head, postfixComm); ok {
+		f.checkIndexAssign(s, base, v)
+	}
+	var steps []Node
+	for c := range it(postfixComm.ast) {
+		if c.sym == Selector || c.sym == Index {
+			steps = append(steps, c)
+		}
+	}
+	f.checkWalkedTarget(s, head, steps, v, true)
+}
+
+// commRecvValue is the value a receive clause stores, `<-ch`, as the expression an
+// assignment would hand its target: the clause's grammar keeps the arrow and the
+// channel apart, and a UnaryExpr over the channel's operand -- `<-ch`, `<-*pch`,
+// `<-bus.ch` -- is what the store rules ask of a value. It is built of the clause's
+// own tokens, so a message about it quotes the source.
+func (f *File) commRecvValue(postfixComm, chanExpr Node) (Node, bool) {
+	var arrow int32 = -1
+	for c := range it(postfixComm.ast) {
+		if c.sym == 0 && f.ch(c.tok) == ARROW {
+			arrow = c.tok
+		}
+	}
+	nodes := slices.Collect(it(chanExpr.ast))
+	for len(nodes) == 1 && (nodes[0].sym == Expression || nodes[0].sym == SimpleExpr || nodes[0].sym == Term) {
+		nodes = slices.Collect(it(nodes[0].ast))
+	}
+	if arrow < 0 || len(nodes) != 1 || nodes[0].sym != UnaryExpr {
+		return Node{}, false
+	}
+	body := encodeNode(UnaryOp, []int32{arrow})
+	for c := range it(nodes[0].ast) {
+		if c.sym == 0 {
+			return Node{}, false
+		}
+		body = append(body, encodeNode(c.sym, c.ast)...)
+	}
+	return Node{sym: UnaryExpr, ast: body}, true
+}
+
 // commRecvAssignTarget resolves the target of a "case v = <-ch" receive
 // assignment, mirroring the "=" target checks of an ordinary assignment: an
 // undefined target is reported, a constant/function/type target is not
@@ -6158,10 +6228,16 @@ func (f *File) commOp(s *Scope, op Node) {
 // a whole blank target ("_ = <-ch") is a legal discard.
 func (f *File) commRecvAssignTarget(s *Scope, assignHead, postfixComm, chanExpr Node) {
 	id, ok := f.assignHeadIdent(assignHead)
-	if !ok {
-		return
-	}
 	suffixed := hasSelectorOrIndex(postfixComm)
+	if !ok {
+		// `case (x) = <-ch:` is `case x = <-ch:`; `(*p)` and `(&v).f` write through p
+		// and into v, which checkWalkedTarget asks of.
+		var op Symbol
+		if id, op, ok = f.parenTargetName(assignHead); !ok {
+			return
+		}
+		suffixed = suffixed || op != 0
+	}
 	nm := id.Src()
 	if nm == "_" {
 		if suffixed {
@@ -6195,15 +6271,21 @@ func (f *File) commRecvAssignTarget(s *Scope, assignHead, postfixComm, chanExpr 
 // assignment, the comma-ok flag: it must exist, be assignable, and take a bool.
 func (f *File) commRecvOkTarget(s *Scope, okItem Node) {
 	id, ok := f.lhsItemIdent(okItem)
+	whole := ok && f.lhsItemIsName(okItem) // the variable itself, not a place in it
 	if !ok {
-		return
+		// `case v, (ok) = <-ch:` names ok as `case v, ok = <-ch:` does; `(*p)` and
+		// `(&r).ok` write through p and into r.
+		var op Symbol
+		if id, op, ok = f.parenTargetName(f.lhsItemHead(okItem)); !ok {
+			return
+		}
+		whole = op == 0 && !hasSelectorOrIndex(okItem) && !containsSym(slices.Collect(it(okItem.ast)), CallSuffix)
 	}
 	nm := id.Src()
 	// A suffixed target, `case v, r.ok = <-ch`, reads its base, so a blank one is
 	// an illegal read and a whole blank target a legal discard.
-	suffixed := !f.lhsItemIsName(okItem)
 	if nm == "_" {
-		if suffixed {
+		if !whole {
 			f.err(id.Position(), "cannot use _ as value")
 		}
 		return
@@ -6214,16 +6296,78 @@ func (f *File) commRecvOkTarget(s *Scope, okItem Node) {
 			f.errUndefined(id.Position(), nm)
 		}
 		return
-	case *ConstDeclaration, *FuncDeclaration, *TypeDeclaration, *PredeclaredFunc:
+	case *FuncDeclaration:
+		if steps := f.lhsItemSteps(okItem); len(steps) != 0 && steps[0].sym == CallSuffix {
+			break // `case v, getr().ok = <-ch:`: what the call returns, not the function
+		}
+		f.err(id.Position(), "cannot assign to %s", nm)
+		return
+	case *ConstDeclaration, *TypeDeclaration, *PredeclaredFunc:
 		f.err(id.Position(), "cannot assign to %s", nm)
 		return
 	}
-	if suffixed {
+	if !whole {
 		f.checkIndexExprs(s, okItem)
-		return // what the chain reaches is typed by the emitter, as an assignment's is
 	}
-	if tk, tok := f.identKind(s, id); tok && !assignableKind(tk, PredeclaredBool) {
-		f.err(id.Position(), "cannot assign the bool of a comma-ok receive to %s (type %s)", nm, kindName(tk))
+	f.checkOkFlagTarget(s, okItem)
+}
+
+// lhsItemHead is an LhsItem's AssignHead.
+func (f *File) lhsItemHead(item Node) Node {
+	for c := range it(item.ast) {
+		if c.sym == AssignHead {
+			return c
+		}
+	}
+	return Node{}
+}
+
+// lhsItemSteps is the selectors, indexes and calls written after an LhsItem's head.
+func (f *File) lhsItemSteps(item Node) (steps []Node) {
+	for c := range it(item.ast) {
+		switch c.sym {
+		case Selector, Index, CallSuffix:
+			steps = append(steps, c)
+		}
+	}
+	return steps
+}
+
+// checkOkFlagTarget asks the target of a comma-ok receive's flag -- `v, ok = <-ch`,
+// in a statement and in a select clause -- whether it takes a bool: a name, a
+// pointee, a field, an element, parentheses and all, walked from its base variable
+// (targetTypeNode). Only a bare name was asked, and a string field or a pointee
+// took the flag as far as the C compiler.
+func (f *File) checkOkFlagTarget(s *Scope, item Node) {
+	ah, steps := f.lhsItemHead(item), f.lhsItemSteps(item)
+	base, stars, ok := f.targetHead(ah)
+	if !ok {
+		id, op, isParen := f.parenTargetName(ah)
+		if !isParen || id.Src() == "_" {
+			return
+		}
+		switch {
+		case op == AND && len(steps) == 0:
+			f.err(f.tok(ah.Pos()).Position(), "cannot assign to (&%s) (neither addressable nor a map index expression)", id.Src())
+			return
+		case op == MUL && len(steps) == 0:
+			stars = 1 // `(*p)` is `*p`; `(*p).ok` is p.ok, a step through the pointer
+		}
+		base = id
+	}
+	if containsSym(steps, CallSuffix) {
+		return // through a call's result, which the walk does not follow
+	}
+	var tk Kind
+	known := false
+	if len(steps) == 0 && stars == 0 {
+		tk, known = f.identKind(s, base)
+	} else if tn, in := f.targetTypeNode(s, base, steps, stars); tn != nil {
+		rt := f.resultType(in, tn)
+		tk, known = rt.kind, rt.known
+	}
+	if known && !assignableKind(tk, PredeclaredBool) {
+		f.err(f.tok(item.Pos()).Position(), "cannot assign the bool of a comma-ok receive to %s (type %s)", f.sourceSpan(item.Pos(), item.End()), kindName(tk))
 	}
 }
 
@@ -6925,6 +7069,22 @@ func (f *File) checkAssignment(s *Scope, head, postfix Node) {
 		}
 		if len(rhs) == 1 && lhsItems > 0 {
 			f.checkResultsAssign(s, lhs, lhsSuffixed, rhs[0])
+		}
+		// `v, ok = <-ch`: the flag takes a bool. It was asked nothing, and a string
+		// took it as far as the C compiler.
+		if len(rhs) == 1 && lhsItems == 1 {
+			if _, isRecv := f.receiveFactor(s, rhs[0]); isRecv {
+				for n := range it(postfix.ast) {
+					if n.sym != PostfixOp {
+						continue
+					}
+					for item := range it(n.ast) {
+						if item.sym == LhsItem {
+							f.checkOkFlagTarget(s, item)
+						}
+					}
+				}
+			}
 		}
 	}
 	// A send "ch <- v" checks that ch is a channel and v matches its element type.
@@ -13543,14 +13703,21 @@ func (f *File) checkFieldAssign(s *Scope, head, field Token, rhsNode Node) {
 // the others anything: `h.s.n = "x"` put a string into an int, and `h.s.f = 5` an
 // int into a function, as far as the C compiler.
 func (f *File) checkWalkedTargets(s *Scope, head, postfix Node, rhs []Node, lhsItems int) {
-	if len(rhs) != 1+lhsItems {
-		return // one call's several results, which checkResultsAssign takes
-	}
 	var steps []Node
 	for c := range it(postfix.ast) {
 		if c.sym == Selector || c.sym == Index {
 			steps = append(steps, c)
 		}
+	}
+	if len(rhs) == 1 && lhsItems == 1 {
+		// `h.s, ok = <-ch`: the first target stores what the channel carries, and the
+		// flag a bool (checkOkFlagTarget).
+		if _, isRecv := f.receiveFactor(s, rhs[0]); isRecv {
+			f.checkWalkedTarget(s, head, steps, rhs[0], false)
+		}
+	}
+	if len(rhs) != 1+lhsItems {
+		return // one call's several results, which checkResultsAssign takes
 	}
 	f.checkWalkedTarget(s, head, steps, rhs[0], lhsItems == 0)
 	i := 1

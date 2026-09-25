@@ -155,7 +155,7 @@ func inferredAssignments() {
 
 // A run-time value is not folded: another variable, a call and a channel receive
 // each pass without a range check whatever the target width.
-func runtimeValues(ch chan int) {
+func runtimeValues(ch chan uint8) {
 	var from int = 300
 	var a uint8 = giveU8()
 	var b uint8 = <-ch
@@ -172,7 +172,7 @@ type sizedField struct{ b uint8 }
 
 // The same range check applies to a struct field, a dereferenced pointer and an
 // array element; a run-time value assigned to any of them is still not folded.
-func indirectTargets(ch chan int) {
+func indirectTargets(ch chan uint8) {
 	var s sizedField
 	// ERROR "constant 300 overflows uint8"
 	s.b = 300
