@@ -12322,6 +12322,36 @@ func (e *emitter) derefName(ast []int32) (string, bool) {
 	return e.exprIdent(e.unparenExpr(kids[1].ast))
 }
 
+// derefHeadName is derefHead by shape: a statement's head written as a dereference,
+// `(*p)`, answering p. derefHead asks the pointer's type, which the summaries,
+// collected before any body has declared a local, cannot.
+func (e *emitter) derefHeadName(head Node) (string, bool) {
+	kids := slices.Collect(it(head.ast))
+	if len(kids) != 3 || kids[0].sym != 0 || e.f.ch(kids[0].tok) != LPAREN ||
+		kids[2].sym != 0 || e.f.ch(kids[2].tok) != RPAREN || kids[1].sym != Expression {
+		return "", false
+	}
+	return e.derefName(kids[1].ast)
+}
+
+// factorDerefName is factorDerefChain by shape: `(*p)` and the steps after it,
+// answering p and the steps.
+func (e *emitter) factorDerefName(kids []Node) (string, []Node, bool) {
+	if len(kids) != 4 || kids[0].sym != 0 || e.f.ch(kids[0].tok) != LPAREN ||
+		kids[2].sym != 0 || e.f.ch(kids[2].tok) != RPAREN || kids[3].sym != FactorSuffix {
+		return "", nil, false
+	}
+	name, ok := e.derefName(kids[1].ast)
+	if !ok {
+		return "", nil, false
+	}
+	steps := slices.Collect(it(kids[3].ast))
+	if len(steps) == 0 {
+		return "", nil, false
+	}
+	return name, steps, true
+}
+
 // noteVarSpecTypes calls note for every `var name T` in a VarDecl whose type is a
 // bare identifier.
 func (e *emitter) noteVarSpecTypes(ast []int32, note func(name, tname string)) {
@@ -12472,8 +12502,15 @@ func (e *emitter) assignThrough(nodes []Node) (base string, values [][]int32, su
 	if len(nodes) != 2 || nodes[0].sym != AssignHead || nodes[1].sym != Postfix {
 		return "", nil, false, false
 	}
-	if base = e.soleIdent(nodes[0].ast); base == "" {
+	// `(*q).p = v` and `(*pp) = v` store through q and pp, as `q.p = v` and `*pp =
+	// v` do: read by name alone, the head was nobody's, and a callee storing its
+	// parameter through another was summarised as storing nothing.
+	written, isDeref := e.derefHeadName(nodes[0])
+	if base = e.soleIdent(nodes[0].ast); base == "" && !isDeref {
 		return "", nil, false, false
+	}
+	if isDeref {
+		base = written
 	}
 	postfix := slices.Collect(it(nodes[1].ast))
 	if len(postfix) == 0 || postfix[len(postfix)-1].sym != PostfixOp {
@@ -12488,7 +12525,7 @@ func (e *emitter) assignThrough(nodes []Node) (base string, values [][]int32, su
 			values = append(values, n.ast)
 		}
 	}
-	return base, values, len(postfix) > 1, e.derefStars(nodes[0].ast) != ""
+	return base, values, len(postfix) > 1, isDeref || e.derefStars(nodes[0].ast) != ""
 }
 
 // storedInPackageVar returns the values a statement stores into a package variable,
@@ -12585,6 +12622,12 @@ func (e *emitter) summaryReach(ast []int32) (out []held) {
 			return []held{{base, heldContents}}
 		}
 		if name, steps, isDeref := e.factorDerefChain(kids); isDeref && len(steps) != 0 {
+			return []held{{name, heldContents}}
+		}
+		// The same by shape, as derefName is for `*p`: `g = (*q).p` read nothing
+		// held, and a callee keeping what its parameter's pointee held was
+		// summarised as keeping nothing.
+		if name, _, isDeref := e.factorDerefName(kids); isDeref {
 			return []held{{name, heldContents}}
 		}
 	}
@@ -12771,9 +12814,16 @@ func (e *emitter) bindingRoot(ast []int32) string {
 	if name, ok := e.exprIdent(ast); ok {
 		return name
 	}
+	if name, ok := e.derefName(ast); ok {
+		return name // `*p`
+	}
 	if fac, ok := e.soleFactorNode(ast); ok {
-		if base, _, isChain := e.factorAccessChain(e.unparenKids(slices.Collect(it(fac.ast)))); isChain {
+		kids := e.unparenKids(slices.Collect(it(fac.ast)))
+		if base, _, isChain := e.factorAccessChain(kids); isChain {
 			return base
+		}
+		if name, _, isDeref := e.factorDerefName(kids); isDeref {
+			return name // `(*p).x`
 		}
 	}
 	return ""
@@ -12816,19 +12866,29 @@ func (e *emitter) summaryBinding(nodes []Node) (targets []string, into []bool, v
 		return nil, nil, nil
 	}
 	head := e.soleIdent(nodes[0].ast)
+	derefHead := false
 	if head == "" {
-		return nil, nil, nil
+		// `(*p).x, n = v, 1` writes into what p points at, as `p.x` would.
+		if head, derefHead = e.derefHeadName(nodes[0]); !derefHead {
+			return nil, nil, nil
+		}
 	}
 	postfix := slices.Collect(it(nodes[1].ast))
 	if len(postfix) == 0 || postfix[len(postfix)-1].sym != PostfixOp {
 		return nil, nil, nil
 	}
 	targets = []string{head}
-	into = []bool{len(postfix) > 1 || e.derefStars(nodes[0].ast) != ""}
+	into = []bool{derefHead || len(postfix) > 1 || e.derefStars(nodes[0].ast) != ""}
 	assigns := false
 	for c := range it(postfix[len(postfix)-1].ast) {
 		switch {
 		case c.sym == LhsItem:
+			if item := slices.Collect(it(c.ast)); len(item) != 0 && item[0].sym == AssignHead {
+				if ptr, isDeref := e.derefHeadName(item[0]); isDeref {
+					targets, into = append(targets, ptr), append(into, true)
+					continue
+				}
+			}
 			t, _ := e.lhsItemTarget(c.ast)
 			targets, into = append(targets, t.name), append(into, len(t.chain) != 0 || t.stars != "")
 		case c.sym == 0 && (e.f.ch(c.tok) == ASSIGN || e.f.ch(c.tok) == DEFINE):

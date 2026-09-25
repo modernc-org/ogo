@@ -11455,6 +11455,8 @@ var back [4]int
 		{"func keep(v []int) { w := v; go work(w) }", true},
 		{"func keep(v []int) { w := v; gc.set(w) }", true},
 		{"func keep(v []int) { w := &gc; w.d = v }", true},
+		{"func keep(v []int) { w := &gc; (*w).d = v }", true},
+		{"func keep(v []int) { w := &gs; (*w) = v }", true},
 		{"func keep(v []int) { gs = pass(v) }", true},
 		{"func keep(v []int) { w := v; gs = pass(w) }", true},
 		// Only an int leaves the callee.
@@ -11571,6 +11573,8 @@ func (c C) KeepValue() { gs = c.d }
 		{"func keep(v []*int) { gp = first(v) }", "keep([]*int{&x})", "keep([]*int{&gx})", false},
 		{"func keep(b *B) { gs = b.xs }", "lb := B{xs: a[:]}\n\tkeep(&lb)", "lb := B{xs: gback[:]}\n\tkeep(&lb)", false},
 		{"func keep(b *B) { gp = b.p }", "lb := B{p: &x}\n\tkeep(&lb)", "lb := B{p: &gx}\n\tkeep(&lb)", false},
+		{"func keep(b *B) { gp = (*b).p }", "lb := B{p: &x}\n\tkeep(&lb)", "lb := B{p: &gx}\n\tkeep(&lb)", false},
+		{"func keep(b *B) { w := (*b).xs; gs = w }", "lb := B{xs: a[:]}\n\tkeep(&lb)", "lb := B{xs: gback[:]}\n\tkeep(&lb)", false},
 		{"func keep(b B) { gs = b.xs }", "lb := B{xs: a[:]}\n\tkeep(lb)", "lb := B{xs: gback[:]}\n\tkeep(lb)", false},
 		{"func keep(b *B) { gs = b.xs }", "lb := B{xs: a[:]}\n\tpb := &lb\n\tkeep(pb)", "lb := B{xs: gback[:]}\n\tpb := &lb\n\tkeep(pb)", false},
 		{"func keep(v []*int) { gn = len(v) }", "keep([]*int{&x})", "keep([]*int{&gx})", true},
@@ -12951,6 +12955,12 @@ func (b *Box) set(xs []int) { b.d = xs }
 
 func fill(b *Box, xs []int) { b.d = xs }
 
+func fillDeref(b *Box, xs []int) { (*b).d = xs }
+
+func putDeref(pp *[]int, xs []int) { (*pp) = xs }
+
+func (b *Box) setDeref(xs []int) { (*b).d = xs }
+
 type OuterBox struct {
 	Box
 }
@@ -13037,6 +13047,13 @@ func main() {
 		// A local pointer to a package variable is that variable.
 		{"p := &gb\n\tp.set(a[:])", "it is stored in the receiver p, which outlives this function"},
 		{"p := &gb\n\tfill(p, a[:])", "it is stored through p, which outlives this function"},
+		// A callee storing through a WRITTEN dereference of its parameter, which the
+		// summaries read by name alone and so did not see (2026-09-25).
+		{"fillDeref(&gb, a[:])", "cannot pass a slice backed by local a to fillDeref: it is stored through gb, which outlives this function"},
+		{"putDeref(&g, a[:])", "cannot pass a slice backed by local a to putDeref: it is stored through g, which outlives this function"},
+		{"gb.setDeref(a[:])", "it is stored in the receiver gb, which outlives this function"},
+		{"var lb Box\n\tfillDeref(&lb, a[:])\n\tback[0] = len(lb.d)", ""},
+		{"fillDeref(&gb, back[:])", ""},
 		// What is read through a pointer to a marked local.
 		{"var lb Box\n\tlb.d = a[:]\n\tp := &lb\n\tgb = *p", "cannot store *p, which holds a pointer into local a"},
 		{"var lb Box\n\tlb.d = a[:]\n\tp := &lb\n\tkeepBox(*p)", "cannot pass *p, which holds a pointer into local a to keepBox"},
