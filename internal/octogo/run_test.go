@@ -40281,6 +40281,94 @@ func main() {
 `,
 		want: "0 1\n1 2\n2 3\n3 4\n0 1\n1 2\n2 3\n3 4\n0 1\n1 2\n2 3\n3 4\n0 1\n1 2\n2 3\n3 4\n0 0\n1 0\n2 0\n3 0\n0 1\n1 2\n2 3\n3 4\n",
 	}, {
+		// A range over an array copies it where the body may write it, and the scans
+		// that decide "may" -- a slice of the array taken anywhere, a method called on
+		// it, a call that may write memory -- read a slice, a receiver and a callee
+		// written in PARENTHESES as none: `s := (a)[:]`, `(b).bump()`, `(&c).bump()`
+		// and `(bumpp)(pf)` wrote the array under the loop, which handed out 55, 99
+		// and 77 for Go's 3 (scanAliasedLocals, stmtMayWriteMemory).
+		name: "a range over an array copies it where a parenthesised call or slice writes it",
+		src: `type A [4]int
+
+func (a *A) bump() { a[2] = 99 }
+
+func (a *A) bumpn() int { a[2] = 88; return 1 }
+
+func bumpp(p *[4]int) { p[2] = 77 }
+
+func bumpv(p *[4]int) int { p[2] = 66; return 1 }
+
+// A range over an array iterates a copy of it where the body may write it: through
+// a slice of it or a method called on it -- written in parentheses too, which the
+// scans deciding "may write" read as no slice and no call.
+func main() {
+	var a [4]int
+	a[2] = 3
+	s := (a)[:]
+	sum := 0
+	for i, v := range a {
+		if i == 0 {
+			s[2] = 55
+		}
+		sum += v
+	}
+	println(sum, a[2])
+	var b A
+	b[2] = 3
+	sum = 0
+	for i, v := range b {
+		if i == 0 {
+			(b).bump()
+		}
+		sum += v
+	}
+	println(sum, b[2])
+	var c A
+	c[2] = 3
+	sum = 0
+	for i, v := range c {
+		if i == 0 {
+			(&c).bump()
+		}
+		sum += v
+	}
+	println(sum, c[2])
+	var d A
+	d[2] = 3
+	sum = 0
+	for i, v := range d {
+		if i == 0 {
+			sum += (d).bumpn()
+		}
+		sum += v
+	}
+	println(sum, d[2])
+	var f [4]int
+	f[2] = 3
+	pf := &f
+	sum = 0
+	for i, v := range f {
+		if i == 0 {
+			(bumpp)(pf)
+		}
+		sum += v
+	}
+	println(sum, f[2])
+	var g [4]int
+	g[2] = 3
+	pg := &g
+	sum = 0
+	for i, v := range g {
+		if i == 0 {
+			sum += (bumpv)(pg)
+		}
+		sum += v
+	}
+	println(sum, g[2])
+}
+`,
+		want: "3 55\n3 99\n3 99\n4 88\n3 77\n4 66\n",
+	}, {
 		// printf evaluates every argument before it formats any, and a String()
 		// writing a LOCAL through a pointer its receiver holds was seen by a later
 		// argument reading the local: `printf("%v %d", s, n)` for `s := S{&n}`

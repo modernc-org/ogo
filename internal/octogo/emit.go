@@ -16588,12 +16588,9 @@ func (e *emitter) scanAliasedLocals(ast []int32) {
 		if n.sym == Statement {
 			nodes := slices.Collect(it(n.ast))
 			if len(nodes) == 2 && nodes[0].sym == AssignHead && nodes[1].sym == Postfix {
-				if name := e.soleIdent(nodes[0].ast); name != "" {
-					for st := range it(nodes[1].ast) {
-						if st.sym == CallSuffix {
-							e.aliasedLocals[name] = true
-						}
-					}
+				// `(h).set(9)` and `(&h).set(9)` are h.set(9) (scanHead).
+				if name, _, chain := e.scanHead(nodes[0], slices.Collect(it(nodes[1].ast))); name != "" && containsSym(chain, CallSuffix) {
+					e.aliasedLocals[name] = true
 				}
 			}
 		}
@@ -16607,14 +16604,20 @@ func (e *emitter) scanAliasedLocals(ast []int32) {
 			}
 		}
 		if n.sym == Factor {
-			if kids := slices.Collect(it(n.ast)); len(kids) == 2 && kids[0].sym == 0 && e.f.ch(kids[0].tok) == IDENT && kids[1].sym == FactorSuffix {
-				for st := range it(kids[1].ast) {
-					if st.sym == CallSuffix {
-						e.aliasedLocals[e.src(kids[0].tok)] = true // a method's receiver, or an argument's owner
-					}
-					if _, _, _, isSlice := e.sliceParts(st.ast); st.sym == Index && isSlice {
-						e.aliasedLocals[e.src(kids[0].tok)] = true
-					}
+			kids := slices.Collect(it(n.ast))
+			name, steps := "", []Node(nil)
+			switch root, path, isParen := e.parenFactorShape(kids); {
+			case len(kids) == 2 && kids[0].sym == 0 && e.f.ch(kids[0].tok) == IDENT && kids[1].sym == FactorSuffix:
+				name, steps = e.src(kids[0].tok), slices.Collect(it(kids[1].ast))
+			case isParen:
+				name, steps = root, path // `(a)[:]` and `(h).set(9)` are a[:] and h.set(9)
+			}
+			for _, st := range steps {
+				if st.sym == CallSuffix {
+					e.aliasedLocals[name] = true // a method's receiver, or an argument's owner
+				}
+				if _, _, _, isSlice := e.sliceParts(st.ast); st.sym == Index && isSlice {
+					e.aliasedLocals[name] = true
 				}
 			}
 		}
@@ -16826,19 +16829,24 @@ func (e *emitter) stmtMayWriteMemory(nodes []Node) bool {
 	// A go statement's call and a statement-level call are the head and the suffix,
 	// siblings rather than a factor.
 	if len(nodes) != 0 && (nodes[0].sym == AssignHead || nodes[0].sym == 0 && e.f.ch(nodes[0].tok) == GO) {
-		if name := e.soleIdent(headOf(nodes).ast); name != "" {
-			var steps []Node
-			for _, n := range nodes {
-				if n.sym == CallSuffix || n.sym == Selector || n.sym == Index {
-					steps = append(steps, n)
-				}
-				if n.sym == Postfix {
-					steps = append(steps, slices.Collect(it(n.ast))...)
-				}
+		var steps []Node
+		for _, n := range nodes {
+			if n.sym == CallSuffix || n.sym == Selector || n.sym == Index {
+				steps = append(steps, n)
 			}
-			if containsSym(steps, CallSuffix) && e.calleeMayWrite(name, steps) {
+			if n.sym == Postfix {
+				steps = append(steps, slices.Collect(it(n.ast))...)
+			}
+		}
+		// `(f)(x)` and `(h).set(9)` are f(x) and h.set(9) (scanHead); a callee in
+		// parentheses nothing names, `(func() { ... })()`, may write anything.
+		switch name, _, chain := e.scanHead(headOf(nodes), steps); {
+		case name != "":
+			if containsSym(chain, CallSuffix) && e.calleeMayWrite(name, chain) {
 				may = true
 			}
+		case containsSym(steps, CallSuffix):
+			may = true
 		}
 	}
 	return may
@@ -16851,6 +16859,13 @@ func (e *emitter) factorCallMayWrite(kids []Node) bool {
 	}
 	if kids[0].sym == FuncLiteral {
 		return len(kids) > 1 // called where it stands
+	}
+	if root, steps, ok := e.parenFactorShape(kids); ok {
+		return containsSym(steps, CallSuffix) && e.calleeMayWrite(root, steps) // `(f)(x)` is f(x)
+	}
+	if len(kids) == 4 && kids[0].sym == 0 && e.f.ch(kids[0].tok) == LPAREN && kids[3].sym == FactorSuffix {
+		// A callee in parentheses nothing names, `(func() { ... })()`.
+		return containsSym(slices.Collect(it(kids[3].ast)), CallSuffix)
 	}
 	if len(kids) != 2 || kids[0].sym != 0 || e.f.ch(kids[0].tok) != IDENT || kids[1].sym != FactorSuffix {
 		return false
