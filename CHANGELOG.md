@@ -303,7 +303,7 @@ shipped section tells a reader on that version that they have behaviour they do 
   silence (`doc/float-literal-tie.c`). Such a constant is written in hex now, which
   that compiler reads exactly. Only large values have such a decimal: 1613 of 2.4
   million float32s sampled, all integers near 2e9 and 7e12. Found by the fuzzer's
-  board sweep, seed 479.
+  board sweep, seed 479; reported upstream as flexprop#112.
 - **A literal of a defined slice type prints as one.** `printf("%v", IS{4, 5})`
   for a `type IS []int` printed an address in silence, where Go prints `[4 5]` --
   the literal had no type where it stood as a value, and a print takes what it

@@ -43,6 +43,14 @@
 // of its magnitude of a float32 tie (nearFloat32Tie) is written in hex instead --
 // a folded constant's shortest spelling (floatSpelling) and a literal as the
 // program wrote it (cFloatLit) alike -- and every other one as before.
+//
+// REPORTED 2026-09-25 as flexprop issue 112, with a fix measured natively: keep the
+// literal's text as parseNumber reads it and convert it with strtof, which rounds
+// the decimal once. With it all ten lines print gcc's values on the board, `make
+// test_offline` passes 588 of 588 as without, and of 1194 other programs -- the rest
+// of doc/ and the run corpus with fuzzer seeds 1-400, as the emitter wrote them
+// before its workaround -- no binary differs. The workaround stays until a pin
+// carries a fix, and is harmless after: hex is read exactly either way.
 
 #include <stdio.h>
 #include <stdint.h>
