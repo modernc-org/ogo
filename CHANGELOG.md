@@ -103,12 +103,15 @@ shipped section tells a reader on that version that they have behaviour they do 
   started on a cog, stored through a pointer or returned -- so `f(a[:])` left a
   local array in package storage in silence, where `gs = pass(v)` was refused.
   They are refused as that is.
-- **A received value is stored as any value is.** `h.s = <-ci`, `*ps = <-ci`,
+- **A received value has its element's type.** `h.s = <-ci`, `*ps = <-ci`,
   `as[0] = <-ci` and `(h).s = <-ci` for a string target and an int channel were
   taken, and so were the same targets in a select clause, `case h.s = <-ci:` and
-  `case (s) = <-ci:`, and a comma-ok receive's flag stored into anything but a
-  bool, `n, s = <-ci` and `n, h.s = <-ci`: a received value had a type only where
-  it was stored into a bare name. They are refused as Go refuses them.
+  `case (s) = <-ci:`, a comma-ok receive's flag stored into anything but a bool,
+  `n, s = <-ci`, and a received value in every other position -- `take(<-ci)` for
+  a string parameter, `return <-c`, a literal's field, append, a send, `str ==
+  <-ci`, `a[<-cs]`, `if <-ci {` and `var s string = <-ci`: a received value had
+  a type only where it was stored into a bare name. They are refused as Go
+  refuses them.
 - **Every place a program stores asks every lifetime rule.** The rules a store
   asks -- into a package variable, past the block of what it reaches, into an
   element of a slice not provably this function's, through a pointer or a call's

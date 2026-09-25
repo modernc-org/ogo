@@ -90,8 +90,43 @@ func clauses(ci chan int) {
 	_, _, _, _, _ = n, s, h, r, as
 }
 
+func take(s string) {}
+
+// ERROR "cannot use <-c of type int as type string in return statement"
+func ret(c chan int) string { return <-c }
+
+// A received value in every other position a value stands in, each asked what a
+// value there is asked since a receive has its element's type.
+func positions(ci chan int, cs chan string) {
+	ss := []string{"a"}
+	var h H
+	var a [3]int
+	str := "s"
+	// ERROR "cannot use <-ci of type int as type string in argument to take"
+	take(<-ci)
+	// ERROR "cannot use <-ci of type int as type string in struct literal"
+	h = H{s: <-ci}
+	// ERROR "cannot use <-ci of type int as type string in append"
+	ss = append(ss, <-ci)
+	// ERROR "cannot use <-ci of type int as type string in send"
+	cs <- <-ci
+	// ERROR "mismatched types string and int"
+	_ = str == <-ci
+	// ERROR "must be integer"
+	_ = a[<-cs]
+	// ERROR "non-bool used as if condition"
+	if <-ci {
+	}
+	// ERROR "cannot use <-ci of type int as type string in variable declaration"
+	var s string = <-ci
+	_, _, _, _ = ss, h, a, s
+}
+
 func main() {
 	var ci chan int
+	var cs chan string
 	statements(ci)
 	clauses(ci)
+	positions(ci, cs)
+	_ = ret(ci)
 }
