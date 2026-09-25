@@ -560,7 +560,12 @@ still design-only.
   -- one time in six, each at most once a program, since the emitted C keeps a
   program's names and every generated name had been a counter's, `v_12`. Its first
   run found two positions no sweep had (an unused parameter's `(void)` marker, an
-  interface-typed local); every seed is a new program from that commit on.
+  interface-typed local); every seed is a new program from that commit on. Swept
+  with that generator the same day: seeds 1-2000 on the host shim, clean once a
+  local named like a C type the emitter writes (`uint8_t`) was renamed; and 1-200 on
+  a P2-EDGE, where FILE, DIR and div_t failed to BUILD -- the target's compiler
+  cannot parse a declarator named like a typedef, which gcc allows -- and then 192
+  passed and 8 outgrew a cog.
 - **Fixed miscompile (found by the oracle):** a shadowing local whose initializer
   references the shadowed name — `var x = x + 5` with an outer `x` in scope — used
   to miscompile, because the emitter names locals verbatim so the C initializer read
