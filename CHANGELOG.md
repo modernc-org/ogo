@@ -38,6 +38,10 @@ shipped section tells a reader on that version that they have behaviour they do 
 
 ### Fixed
 
+- **A conversion to a type named in parentheses is a conversion.** `(int)(f)`,
+  `(Celsius)(t)` and `(Ints)(v).Sum()` -- the spelling a C cast suggests -- were
+  refused as "cannot use type int as a value"; they are `int(f)` and the rest,
+  as in Go.
 - **A select clause's comma-ok flag may be stored through a call's result.** `case
   v, getr().ok = <-ch:` was refused as "cannot assign to getr".
 - **A select clause receives into a target in parentheses, through a pointer and
