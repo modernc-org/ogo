@@ -20,6 +20,9 @@ shipped section tells a reader on that version that they have behaviour they do 
 
 ### Language
 
+- **An if or a switch init may step a variable.** `if n++; n > limit`, `if x *= 2;
+  x > 9` and `switch g--; { ... }` -- an increment, a decrement or any operator
+  assignment -- were syntax errors; Go admits them, and so does this now.
 - **A received array prints where it stands.** `printf("%v", <-ch)` of a
   `chan [3]int16` was "cannot print a value of type [3]int16"; it is received in
   its turn among the arguments and printed, as fmt prints it.
@@ -283,6 +286,10 @@ shipped section tells a reader on that version that they have behaviour they do 
 
 ### Fixed
 
+- **A for clause's post that steps a pointer, a slice or a function is refused.**
+  `for i := 0; i < n; p++` for a pointer built pointer arithmetic in silence, the
+  post's check asking only for a type it could name; it is "operator ++ not defined
+  on p: it is a pointer", as the statement `p++` is.
 - **A function with many string constants in its calls builds.** Every constant
   string was built afresh at each call taking it, into cog registers the target's
   compiler never gives back: a command dispatcher of 25 `strings.HasPrefix(line,

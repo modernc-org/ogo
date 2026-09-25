@@ -1146,8 +1146,9 @@ statement it works since 2026-09-24); a field a call's pointer result lacks,
 `getp().x`, refused as "unsupported call in expression"; `[]byte(s)`
 and `[]rune(s)` of a string VARIABLE (a copy of a length known at run time; a
 constant's converts since
-2026-09-23, constBytesConv); an if or a switch init that is a compound assignment, an
-increment or a send (a for init from one call's several results works since
+2026-09-23, constBytesConv); an if or a switch init that is a send or a call
+standing alone (a step -- an increment, a decrement, an operator assignment -- works
+since 2026-09-25; a for init from one call's several results works since
 2026-09-23, emitForInitMulti); a deferred
 or started call through a function field of ANOTHER package's variable, `defer
 lib.B.F(1)` ("only <pkg>.<Func>(args) ...") and `go lib.C.F(2)` ("unsupported
