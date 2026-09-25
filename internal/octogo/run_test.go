@@ -7933,6 +7933,68 @@ func main() {
 		want: "2 4 103 12 7\n2\n12345 5 99 7 7\ntrue 5 8 10 64 3\n{EOF:true RAND_MAX:5} main.FILE main.DIR main.size\n8 9\n",
 	},
 	{
+		name: "a name the emitter joins from two is one a program may write",
+		src: `// C has no methods, packages or tables, and the emitter names them by joining two
+// names with an underscore: type led's method on is led_on, interface Shape's
+// table is Shape_vt and its thunk for (*Sq).Area Shape_Sq_Area, a concrete type's
+// table Shape_vt_Sq, a global channel's cell ch_cell, a local type T_l1. Each is
+// a name a program writing C's way may give something of its own, and the two
+// collided: a C error for most, and for Shape_vt the backend merged the program's
+// struct with the table in silence -- v.a+v.b printed 0 on the board. The
+// program's names keep theirs; the join moves. A LOCAL of a join's spelling is the
+// same collision where the join is used, the local shadowing it: led_on := 30
+// before l.on() called an int.
+type led int
+
+func (l led) on() int { return int(l) + 1 }
+
+func led_on() int { return 7 }
+
+type Shape interface{ Area() int }
+
+type Shape_vt struct{ a, b int }
+
+type Sq struct{ s int }
+
+func (q *Sq) Area() int { return q.s * q.s }
+
+var Shape_Sq_Area = 5
+
+var Shape_vt_Sq = 6
+
+var ch chan int
+
+var ch_cell = 41
+
+var T_l1 = 8
+
+func locals() {
+	var l led = 2
+	led_on := 30
+	Shape_vt := 40
+	q := Sq{4}
+	var sh Shape = &q
+	println(l.on(), led_on, sh.Area(), Shape_vt)
+}
+
+func main() {
+	var l led = 1
+	println(l.on(), led_on())
+	locals()
+	q := Sq{3}
+	var sh Shape = &q
+	v := Shape_vt{1, 2}
+	println(sh.Area(), v.a+v.b, Shape_Sq_Area, Shape_vt_Sq)
+	go func() { ch <- 5 }()
+	println(<-ch, ch_cell+1)
+	type T struct{ x int }
+	t := T{4}
+	println(t.x, T_l1)
+}
+`,
+		want: "2 7\n3 30 16 40\n9 3 5 6\n5 42\n4 8\n",
+	},
+	{
 		name: "an array parameter is a copy",
 		src: `func mutate(a [3]int) int {
 	a[0] = 99
@@ -41209,7 +41271,7 @@ const multiPkgWant = "300\nLOUD\n50\n6\n5\n45\n6 1000\n200\n207\n3 100\n4 9\n" +
 	"17 gx-7 true 10 19\n" +
 	"2 7 56 9 3 8 false 2 1 2 6 3 true 7\n" +
 	"[2]greet.Row [2]greet.Reader greet.Row\n" +
-	"123 p2 9 3 2 3\n1 1 2 1 102 3\n2 1 4 3 4 4 5 134\n21 10 100 200 7 0\n1 5 1 2 4 1 3 21 1 2 12 12 123 123 11\n10 21 110 21 14 true 3 42\n10 3 4\n6 10 2\n6 11\n6 5 8 6\ntrue 110 6 106\n7 5\ntrue true\n" +
+	"123 p2 9 3 2 3\n1 1 2 1 102 3\n2 1 4 3 4 4 5 134\n21 10 100 200 7 0\n1 5 1 2 4 1 3 21 1 2 12 12 123 123 11\n10 21 110 21 14 true 3 42\n10 3 4\n6 10 2\n6 11\n6 5 8 6\ntrue 110 6 106\n7 5\ntrue true\n40 9 200 3\n" +
 	"1234567891 1 3 8 14 30 39\n" +
 	"2 4 7 4\n" +
 	"4 5 2 3\n" +
@@ -41239,6 +41301,13 @@ func (p Point) sum() int { return p.x + p.y }
 
 // A package global with the same name as greet's, likewise namespaced.
 var base int = 5
+
+// Named as C spells greet's own scale and base, greet_scale and greet_base: the
+// join of a package's path and a name meets a name this package may write, and
+// the join is what moves.
+func greet_scale(n int) int { return n * 10 }
+
+var greet_base = 9
 
 // A package constant with the same name as greet's: per-package mangling keeps the
 // two from colliding in the single translation unit (both emit a distinct C name).
@@ -41822,6 +41891,8 @@ func libShapes() {
 	println(lib.Early.A+lib.Early.B, sp[1])
 	lib.P = nil
 	println(lib.P == nil, lib.None() == nil)
+	greet_Hello := 3
+	println(greet_scale(4), greet_base, greet.Hello(2), greet_Hello)
 }
 `,
 	"initord/itrace/itrace.ogo": `var Trace int

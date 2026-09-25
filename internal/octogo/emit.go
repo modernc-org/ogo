@@ -230,12 +230,12 @@ func (e *emitter) typeMangle(prefix, name string) string {
 	if prefix == "" && (e.renameAllTypes || e.renameTypes[userIdent(name)]) {
 		return "ogo_T_" + cIdent(name)
 	}
-	return mangle(prefix, name)
+	return e.mangle(prefix, name)
 }
 
 // mangle is a package's C symbol name for a top-level identifier: the (Unicode-safe)
 // name in the main package, or prefix_name in an imported one.
-func mangle(prefix, name string) string {
+func (e *emitter) mangle(prefix, name string) string {
 	if prefix == "" {
 		// A top-level name C has already spoken for moves out of its way. The main
 		// package's symbols keep their own names in the emitted C, which reads far
@@ -252,17 +252,91 @@ func mangle(prefix, name string) string {
 		}
 		return userIdent(name)
 	}
-	return reservedJoin(prefix + "_" + userIdent(name))
+	// Another package's name is a JOIN of its path and the name, and a join can
+	// meet a name the main package has: package sensor's read is sensor_read, which
+	// a program writing C's way may call a function of its own.
+	return joinSpelling(prefix+"_"+userIdent(name), e.mainSpellings, e.writtenIdents)
 }
 
-// reservedJoin is a C name joined from two, moved out of the way when the join is
-// itself a name C has spoken for: package time's t is time_t, and type div's method
-// t is div_t.
-func reservedJoin(name string) string {
-	if cReserved[name] || cUnusable[name] {
-		return "ogo_" + name
+// joinName spells a C name the emitter JOINS from two -- a type's and a method's,
+// an interface's and _vt, a global's and _cell -- and moves it out of the way,
+// ogo_j_<join>, where the join is a name something else has. C's: package time's t
+// is time_t, and type div's method t is div_t. Or the program's own, since a join
+// is spelled like a name a program may write: type led's method on is led_on,
+// which a program writing C's way calls a function of its own, and interface
+// Shape's table is Shape_vt, which it may call a type -- the backend merged that
+// one with the table in silence, and v.a+v.b read 0 on the board for 3.
+// A local of the join's spelling is one too: it shadows the join where the join is
+// called, and `led_on := 3` before `l.on()` called an int. The program's names keep
+// theirs (collectUserSpellings); the join moves, and ogo_ is the compiler's prefix.
+func (e *emitter) joinName(join string) string {
+	return joinSpelling(join, e.userSpellings, e.writtenIdents)
+}
+
+func joinSpelling(join string, taken, written map[string]bool) string {
+	if cReserved[join] || cUnusable[join] || taken[join] || written[join] {
+		return "ogo_j_" + join
 	}
-	return name
+	return join
+}
+
+// collectUserSpellings records the C spelling of every top-level symbol of the
+// program -- its types, functions, variables and constants, in every package --
+// for joinName, and every identifier the program writes, in any role: a local, a
+// parameter, a field. The main package's symbols are recorded first: another
+// package's spelling is a join itself, checked against them (mangle).
+func (e *emitter) collectUserSpellings(pkgs []*Package) {
+	e.mainSpellings = map[string]bool{}
+	e.userSpellings = map[string]bool{}
+	e.writtenIdents = map[string]bool{}
+	var walk func(ast []int32)
+	walk = func(ast []int32) {
+		for n := range it(ast) {
+			if n.sym != 0 {
+				walk(n.ast)
+				continue
+			}
+			if e.f.ch(n.tok) == IDENT {
+				nm := e.src(n.tok)
+				e.writtenIdents[nm] = true
+				e.writtenIdents[userIdent(nm)] = true
+			}
+		}
+	}
+	for _, p := range pkgs {
+		for _, f := range p.Files {
+			e.f = f
+			walk(f.AST)
+		}
+	}
+	e.f = nil
+	spell := func(p *Package, into map[string]bool) {
+		prefix := pkgPrefix(p.ImportPath)
+		for name, d := range p.Scope.Declarations {
+			if name == "_" || name == "init" {
+				continue
+			}
+			switch d.(type) {
+			case *TypeDeclaration:
+				into[e.typeMangle(prefix, name)] = true
+			case *FuncDeclaration, *VarDeclaration, *ConstDeclaration:
+				into[e.mangle(prefix, name)] = true
+			}
+		}
+	}
+	for _, p := range pkgs {
+		if p.Scope != nil && pkgPrefix(p.ImportPath) == "" {
+			spell(p, e.mainSpellings)
+		}
+	}
+	for n := range e.mainSpellings {
+		e.userSpellings[n] = true
+	}
+	for _, p := range pkgs {
+		if p.Scope != nil && pkgPrefix(p.ImportPath) != "" {
+			spell(p, e.userSpellings)
+		}
+	}
 }
 
 func cIntLit(src string) string {
@@ -358,7 +432,7 @@ func (e *emitter) needMathWrapper(pkg, name string) {
 		return
 	}
 	e.mathWrappers[name] = true
-	cname := mangle("math", name)
+	cname := e.mangle("math", name)
 	// The parameters come from the DECLARATION the package source carries, which is
 	// where the arity of each of these is already written down -- so a two-argument
 	// one needs no list here to be kept in step with.
@@ -1869,7 +1943,7 @@ func (e *emitter) emitGo(nodes []Node) {
 				e.fail("unsupported receiver in a go statement")
 				return
 			}
-			cname := methodCName(methodBaseType(rct), name)
+			cname := e.methodCName(methodBaseType(rct), name)
 			// A method PROMOTED from an embedded member is the owning type's, called
 			// on that member (promotedRecvC). Resolved by the reached type's own name,
 			// the launch called a <T>_<m> nothing declares.
@@ -1942,7 +2016,7 @@ func (e *emitter) emitGo(nodes []Node) {
 			// VARIABLE of that package holding a function is a value, read here and
 			// carried in the argument block as a local's is: named as a function, the
 			// cog called through the variable when it ran, whatever it held by then.
-			mn := mangle(prefix, name)
+			mn := e.mangle(prefix, name)
 			if ct, isVar := e.globals[mn]; isVar && e.isFuncCType(ct) {
 				site = goSite{callee: mn, fnCType: e.underlyingCType(ct), id: len(e.goSites)}
 				break
@@ -1950,7 +2024,7 @@ func (e *emitter) emitGo(nodes []Node) {
 			site = goSite{callee: mn, id: len(e.goSites)}
 			break
 		}
-		cname := methodCName(methodBaseType(rct), name)
+		cname := e.methodCName(methodBaseType(rct), name)
 		// A method PROMOTED from an embedded member, `go port.run(ch)` for the run of
 		// the *Regs that port embeds: the C name is the owning type's and the receiver
 		// is the member, as a direct call resolves it (promotedRecvC). Resolved by the
@@ -2422,7 +2496,7 @@ func (e *emitter) goDefs() string {
 			// Through the value's table, with its data pointer in the receiver's
 			// place; a method of several results writes them through a trailing
 			// parameter, into a result struct nobody reads.
-			callee = "((const " + ifaceVTName(s.ifaceCType) + "*)a->a0.vt)->" + vtMember(s.ifaceMethod)
+			callee = "((const " + e.ifaceVTName(s.ifaceCType) + "*)a->a0.vt)->" + vtMember(s.ifaceMethod)
 			if m, ok := e.ifaceMethodRec(s.ifaceCType, s.ifaceMethod); ok && m.out != "" {
 				out = "&res"
 				fmt.Fprintf(&tramps, "\t%s res;\n", m.out)
@@ -3674,7 +3748,7 @@ func (e *emitter) anonStructType(structAST []int32) string {
 	if name, ok := e.anonStructNames[key.String()]; ok {
 		return name
 	}
-	name := mangle(e.curPkgPrefix, fmt.Sprintf("ogo_anon%d", len(e.anonStructNames)))
+	name := e.mangle(e.curPkgPrefix, fmt.Sprintf("ogo_anon%d", len(e.anonStructNames)))
 	e.anonStructNames[key.String()] = name
 	e.structs[name] = fields
 	e.typeNames[name] = true
@@ -5187,6 +5261,7 @@ func emitProgram(pkg *Package, w io.Writer, opts []EmitOption, rename map[string
 	// that file's package, so top-level symbols are mangled into their package's
 	// namespace (see mangle) and cannot collide across packages.
 	pkgs := reachablePackages(pkg)
+	e.collectUserSpellings(pkgs)
 	forEachFile := func(fn func()) {
 		for pi, p := range pkgs {
 			e.curPkgPrefix = pkgPrefix(p.ImportPath)
@@ -5972,7 +6047,11 @@ type emitter struct {
 	// such a C name back to the type's own, for the diagnostics. See typeMangle.
 	renameTypes    map[string]bool
 	renameAllTypes bool
-	renamedTypes   map[string]string
+	// mainSpellings and userSpellings are the C spellings of the main package's
+	// top-level symbols and of every package's, and writtenIdents every identifier
+	// the program writes, which a joined name must not take (joinName).
+	mainSpellings, userSpellings, writtenIdents map[string]bool
+	renamedTypes                                map[string]string
 	// foldConv lets the integer fold see through a conversion, `int32(4)`. Off for
 	// the fold that RENDERS an expression, where a conversion's cast is part of the
 	// emitted type. See constIntValue.
@@ -6628,7 +6707,7 @@ func (e *emitter) collectStructForwards(ast []int32) {
 					// before a struct body is emitted.
 					mn := e.typeMangle(e.curPkgPrefix, name)
 					e.typeNames[mn] = true
-					if plain := mangle(e.curPkgPrefix, name); e.renameAllTypes && plain != mn {
+					if plain := e.mangle(e.curPkgPrefix, name); e.renameAllTypes && plain != mn {
 						// The probe renames a local or field named like the type as the
 						// real pass will, or it would read as the type's name in use.
 						e.typeNames[plain] = true
@@ -6647,9 +6726,9 @@ func (e *emitter) collectStructForwards(ast []int32) {
 						// names the table by pointer.
 						e.interfaceTypes[name] = true
 						e.emit("typedef struct " + mn + " " + mn + ";\n")
-						e.emit("typedef struct " + ifaceVTName(mn) + " " + ifaceVTName(mn) + ";\n")
+						e.emit("typedef struct " + e.ifaceVTName(mn) + " " + e.ifaceVTName(mn) + ";\n")
 						e.structs[mn] = nil
-						e.structs[ifaceVTName(mn)] = nil
+						e.structs[e.ifaceVTName(mn)] = nil
 					}
 					if e.structTypeAST(typeAST) == nil {
 						continue
@@ -6728,7 +6807,7 @@ func (e *emitter) emitLocalTypeDecl(ast []int32) {
 		}
 		delete(e.inheritedTypes, name) // a literal's own, shadowing its function's
 		e.localTypeSeq++
-		mn := mangle(e.curPkgPrefix, name) + "_l" + strconv.Itoa(e.localTypeSeq)
+		mn := e.joinName(e.mangle(e.curPkgPrefix, name) + "_l" + strconv.Itoa(e.localTypeSeq))
 		e.localTypes[name] = mn // before the body, so `type node struct{ next *node }` resolves
 		e.typeNames[mn] = true
 		e.userTypeNames[mn] = name
@@ -6816,7 +6895,7 @@ func (e *emitter) collectTypeSpec(n Node) {
 	// type. cType returns the same mangled name for a reference to it, so every
 	// use resolves to the same typedef and the same structs/namedTypes map key.
 	mn := e.typeMangle(e.curPkgPrefix, name)
-	if e.curPkgPrefix == "" && mn != mangle("", name) {
+	if e.curPkgPrefix == "" && mn != e.mangle("", name) {
 		e.renamedTypes[mn] = name
 	}
 	// What this type is CALLED, for %T and for the diagnostics: a type of
@@ -7119,16 +7198,18 @@ func vtMember(method string) string { return "ogo_m_" + userIdent(method) }
 
 // ifaceVTName names the vtable STRUCT of an interface -- the table's shape, one
 // function pointer per method.
-func ifaceVTName(iface string) string { return iface + "_vt" }
+func (e *emitter) ifaceVTName(iface string) string { return e.joinName(iface + "_vt") }
 
 // ifaceVTVar names the static vtable of a concrete type viewed as an interface, and
 // ifaceThunkName the function that adapts one of its methods to the slot's
 // signature. Both are keyed by the pair, since the same method may fill a slot in
 // more than one interface and each slot has its own position.
-func ifaceVTVar(iface, concrete string) string { return iface + "_vt_" + concrete }
+func (e *emitter) ifaceVTVar(iface, concrete string) string {
+	return e.joinName(iface + "_vt_" + concrete)
+}
 
-func ifaceThunkName(iface, concrete, method string) string {
-	return iface + "_" + concrete + "_" + userIdent(method)
+func (e *emitter) ifaceThunkName(iface, concrete, method string) string {
+	return e.joinName(iface + "_" + concrete + "_" + userIdent(method))
 }
 
 // ifaceAST is an interface's body together with what is needed to READ it: a flat
@@ -7330,7 +7411,7 @@ func (e *emitter) anonInterfaceOf(methods []ifaceMethod) string {
 	if name, ok := e.anonIfaceNames[key.String()]; ok {
 		return name
 	}
-	name := mangle(e.curPkgPrefix, fmt.Sprintf("ogo_anonface%d", len(e.anonIfaceNames)))
+	name := e.mangle(e.curPkgPrefix, fmt.Sprintf("ogo_anonface%d", len(e.anonIfaceNames)))
 	e.anonIfaceNames[key.String()] = name
 	e.anonIfaceMinted[name] = true
 	e.interfaceTypes[name] = true
@@ -7362,7 +7443,7 @@ func (e *emitter) collectInterfaceType(mn string, structAST []int32) {
 func (e *emitter) registerInterface(mn string, methods []ifaceMethod, forward bool) {
 	e.ifaceMethods[mn] = methods
 
-	vt := ifaceVTName(mn)
+	vt := e.ifaceVTName(mn)
 	var b strings.Builder
 	// The dynamic type's NAME leads every table. It is what "%T" reads: a value
 	// carries its table, and one table per (concrete type, interface) pair means the
@@ -7472,7 +7553,7 @@ func (e *emitter) ifaceStoreC(target, iface string, rhs []int32) string {
 			e.frameHolder[target] = origin
 		}
 	}
-	return target + ".data = " + data + "; " + target + ".vt = &" + ifaceVTVar(iface, concrete) + ";\n"
+	return target + ".data = " + data + "; " + target + ".vt = &" + e.ifaceVTVar(iface, concrete) + ";\n"
 }
 
 // ifaceWidenC stores an interface value in a variable of ANOTHER interface type.
@@ -7797,7 +7878,7 @@ func (e *emitter) ifaceValueC(iface string, rhs []int32) (string, bool) {
 	if !ok || !e.needVTable(iface, concrete) {
 		return "", false
 	}
-	return "(" + iface + "){" + data + ", &" + ifaceVTVar(iface, concrete) + "}", true
+	return "(" + iface + "){" + data + ", &" + e.ifaceVTVar(iface, concrete) + "}", true
 }
 
 // ifaceBraceC is ifaceValueC for a position INSIDE a brace initializer -- a struct
@@ -7847,7 +7928,7 @@ func (e *emitter) ifaceBraceC(iface string, rhs []int32) (string, bool) {
 	if !ok || !e.needVTable(iface, concrete) {
 		return "", false
 	}
-	return "{" + data + ", &" + ifaceVTVar(iface, concrete) + "}", true
+	return "{" + data + ", &" + e.ifaceVTVar(iface, concrete) + "}", true
 }
 
 // ifaceConvOperand recognises a conversion to the given interface type -- `Shape(&q)`,
@@ -8048,7 +8129,7 @@ func (e *emitter) bindAssertionOperand(ast []int32) (operand, iface, target stri
 // One table per pair is what makes a pointer comparison the whole of it -- there is
 // no type id to read and no name to compare.
 func (e *emitter) assertOKC(operand, iface, concrete string) string {
-	return e.varRef(operand) + ".vt == &" + ifaceVTVar(iface, concrete)
+	return e.varRef(operand) + ".vt == &" + e.ifaceVTVar(iface, concrete)
 }
 
 // assertValueC renders the asserted value: the data word, read back as the pointer
@@ -8102,7 +8183,7 @@ func (e *emitter) needVTable(iface, concrete string) bool {
 				return false
 			}
 		}
-		thunk := ifaceThunkName(iface, concrete, m.name)
+		thunk := e.ifaceThunkName(iface, concrete, m.name)
 		fmt.Fprintf(&b, "static %s %s(void* _ogo_r", slotRet(m), thunk)
 		var args []string
 		for i, p := range m.params {
@@ -8121,7 +8202,7 @@ func (e *emitter) needVTable(iface, concrete string) bool {
 			if e.checks {
 				e.usesIfaceNil = true
 				e.needPanic()
-				vtRead = "((const " + ifaceVTName(ict) + "*)ogo_iface_vt(" + sub + ".vt))"
+				vtRead = "((const " + e.ifaceVTName(ict) + "*)ogo_iface_vt(" + sub + ".vt))"
 			}
 			call := vtRead + "->" + vtMember(m.name) + "(" + strings.Join(append([]string{sub + ".data"}, args...), ", ")
 			if m.out != "" || m.arr.bound != "" {
@@ -8194,10 +8275,10 @@ func (e *emitter) needVTable(iface, concrete string) bool {
 			b.WriteString(") { return " + call + "; }\n")
 		}
 	}
-	fmt.Fprintf(&b, "static const %s %s = { %q", ifaceVTName(iface), ifaceVTVar(iface, concrete),
+	fmt.Fprintf(&b, "static const %s %s = { %q", e.ifaceVTName(iface), e.ifaceVTVar(iface, concrete),
 		"*"+e.typeNameForT(concrete)) // what goes in is a POINTER, so that is the dynamic type
 	for _, m := range methods {
-		b.WriteString(", " + ifaceThunkName(iface, concrete, m.name))
+		b.WriteString(", " + e.ifaceThunkName(iface, concrete, m.name))
 	}
 	b.WriteString(" };\n")
 	e.vtables.WriteString(b.String())
@@ -8227,7 +8308,7 @@ func (e *emitter) ifaceCallArgC(ifaceCType, recvText, method string, callSuffix 
 		// restores the table's own type.
 		e.usesIfaceNil = true
 		e.needPanic()
-		vtRead = "((const " + ifaceVTName(ifaceCType) + "*)ogo_iface_vt(" + recvText + ".vt))"
+		vtRead = "((const " + e.ifaceVTName(ifaceCType) + "*)ogo_iface_vt(" + recvText + ".vt))"
 	}
 	call := vtRead + "->" + vtMember(method) + "(" + recvText + ".data"
 	// The slot is a function pointer, and through one the target's C compiler
@@ -8501,7 +8582,7 @@ func (e *emitter) structFieldsOf(structAST []int32) []structField {
 		// imported struct already sits.
 		if ctype == "" && len(names) == 2 && !star {
 			if prefix, isImport := e.importQualifiers[names[0]]; isImport {
-				mn := mangle(prefix, names[1])
+				mn := e.mangle(prefix, names[1])
 				if _, isStruct := e.structs[mn]; isStruct {
 					out = append(out, structField{name: names[1], ctype: mn, embedded: true})
 					continue
@@ -9124,7 +9205,7 @@ func (e *emitter) emitPackageVarDecl(ast []int32) {
 				// The cell is a file-scope object like the variable pointing at it;
 				// acquiring its lock is a call, so it waits for package init.
 				elem := e.chanElemOfCType(ctype)
-				cell := gn + "_cell"
+				cell := e.joinName(gn + "_cell")
 				e.emit("static " + chanCellCName(elem) + " " + cell + ";\n")
 				e.deferPkgInit(gn + " = &" + cell + ";")
 				e.chanInitElems[elem] = true
@@ -9181,7 +9262,7 @@ func (e *emitter) emitChanFieldCells(gn, ctype string) {
 			if !ok {
 				return
 			}
-			cells := userIdent(strings.NewReplacer(".", "_").Replace(gn)) + "_" + e.fieldIdent(fld.name) + "_cells"
+			cells := e.joinName(userIdent(strings.NewReplacer(".", "_").Replace(gn)) + "_" + e.fieldIdent(fld.name) + "_cells")
 			e.emit("static " + chanCellCName(elem) + " " + cells + fld.dim.declSuffix() + ";\n")
 			e.chanInitElems[elem] = true
 			for _, sub := range subs {
@@ -9191,7 +9272,7 @@ func (e *emitter) emitChanFieldCells(gn, ctype string) {
 			}
 			continue
 		}
-		cell := userIdent(strings.NewReplacer(".", "_").Replace(gn)) + "_" + e.fieldIdent(fld.name) + "_cell"
+		cell := e.joinName(userIdent(strings.NewReplacer(".", "_").Replace(gn)) + "_" + e.fieldIdent(fld.name) + "_cell")
 		e.emit("static " + chanCellCName(elem) + " " + cell + ";\n")
 		e.deferPkgInit(gn + "." + e.fieldIdent(fld.name) + " = &" + cell + ";")
 		e.chanInitElems[elem] = true
@@ -9274,7 +9355,7 @@ func (e *emitter) emitChanElemCellsArray(gn string, a arrDim) {
 		return
 	}
 	elem := e.chanElemOfCType(a.elem)
-	cell := gn + "_cells"
+	cell := e.joinName(gn + "_cells")
 	e.emit("static " + chanCellCName(elem) + " " + cell + a.declSuffix() + ";\n")
 	e.chanInitElems[elem] = true
 	for _, sub := range subs {
@@ -9707,7 +9788,7 @@ func (e *emitter) emitConstSpecName(name, ownType string, hasType bool, initExpr
 		// the constInt/constStr fold maps. A block-scope constant keeps its own name.
 		cname := name
 		if pkg {
-			cname = mangle(e.curPkgPrefix, name)
+			cname = e.mangle(e.curPkgPrefix, name)
 		}
 		if !pkg && !e.constPreScan {
 			e.localConstSpecs[name] = localConstSpec{ownType, hasType, initExpr, curIota, e.localConstSeq}
@@ -10134,7 +10215,7 @@ func (e *emitter) foldedQualifiedIntKids(kids []Node) (string, bool) {
 		v, ok := p2Constants[fields[0]]
 		return v, ok
 	}
-	gn := mangle(prefix, fields[0])
+	gn := e.mangle(prefix, fields[0])
 	if e.foldWideConstsOnly && !e.wideConstName(gn) {
 		return "", false // see levelConstLit
 	}
@@ -10168,10 +10249,10 @@ func (e *emitter) collectResults(ast []int32) {
 		if !ok || name == "" {
 			return
 		}
-		cname := mangle(e.curPkgPrefix, name)
+		cname := e.mangle(e.curPkgPrefix, name)
 		if recv != nil {
 			_, rct, _ := e.receiverInfo(recv)
-			cname = methodCName(methodBaseType(rct), name)
+			cname = e.methodCName(methodBaseType(rct), name)
 			e.methodPtr[cname] = e.isPointer(rct)
 			e.recvByRef[cname] = !e.isPointer(rct) && e.byRefParam(rct)
 			e.methodNames[name] = true
@@ -10413,8 +10494,8 @@ func (e *emitter) noteFuncValue(kids []Node) {
 	case steps[0].sym == Selector && (len(steps) < 2 || steps[1].sym != CallSuffix):
 		if prefix, isImport := e.importQualifiers[name]; isImport {
 			fn := e.soleIdent(steps[0].ast)
-			if fv, ok := e.funcValueTypes[mangle(prefix, fn)]; ok {
-				add(fv, mangle(prefix, fn), name+"."+fn)
+			if fv, ok := e.funcValueTypes[e.mangle(prefix, fn)]; ok {
+				add(fv, e.mangle(prefix, fn), name+"."+fn)
 			}
 		}
 	}
@@ -10980,7 +11061,7 @@ func (e *emitter) collectFuncCross(fi funcInfo) {
 		// Another package's variable is its mangled global, `lib.Handler`.
 		folded := false
 		if prefix, isImport := e.importQualifiers[base]; isImport && len(steps) != 0 && steps[0].sym == Selector {
-			base, steps, folded = mangle(prefix, e.soleIdent(steps[0].ast)), steps[1:], true
+			base, steps, folded = e.mangle(prefix, e.soleIdent(steps[0].ast)), steps[1:], true
 		}
 		switch {
 		case len(steps) == 0:
@@ -11905,10 +11986,10 @@ func (e *emitter) funcParamNames(d []int32) (funcInfo, bool) {
 	if !ok || name == "" || body == nil {
 		return funcInfo{}, false
 	}
-	fi := funcInfo{cname: mangle(e.curPkgPrefix, name), srcName: name, body: body, locals: e.localTypeNames(body)}
+	fi := funcInfo{cname: e.mangle(e.curPkgPrefix, name), srcName: name, body: body, locals: e.localTypeNames(body)}
 	if recv != nil {
 		rn, rct, _ := e.receiverInfo(recv)
-		fi.cname = methodCName(methodBaseType(rct), name)
+		fi.cname = e.methodCName(methodBaseType(rct), name)
 		fi.recvName, fi.recvCType = rn, rct
 	}
 	fi.paramCType = e.funcParams[fi.cname]
@@ -12616,7 +12697,7 @@ func (e *emitter) summaryCallResult(v []int32) string {
 		}
 	case len(suffix) == 2 && suffix[0].sym == Selector && suffix[1].sym == CallSuffix:
 		if prefix, isImport := e.importQualifiers[recv]; isImport {
-			cname = mangle(prefix, e.soleIdent(suffix[0].ast))
+			cname = e.mangle(prefix, e.soleIdent(suffix[0].ast))
 		}
 	}
 	if rts := e.funcRet[cname]; cname != "" && len(rts) == 1 && e.isFuncCType(rts[0]) {
@@ -13098,7 +13179,7 @@ func (e *emitter) methodCallOf(recv string, suffix []Node, fi funcInfo) (methodC
 			copyOf = recv
 		}
 	}
-	cname := methodCName(methodBaseType(ct), method)
+	cname := e.methodCName(methodBaseType(ct), method)
 	if _, isMethod := e.funcRet[cname]; !isMethod {
 		return methodCall{}, false
 	}
@@ -13399,7 +13480,7 @@ func (e *emitter) eachFuncDeclAST(ast []int32, fn func(d []int32)) {
 // passes agree on which init is which.
 func (e *emitter) funcDefCName(name string, decl []int32) string {
 	if name != "init" {
-		return mangle(e.curPkgPrefix, name)
+		return e.mangle(e.curPkgPrefix, name)
 	}
 	key := e.declKey(decl)
 	if cname, ok := e.initNames[key]; ok {
@@ -13582,7 +13663,7 @@ func (e *emitter) emitPrototypes(ast []int32) {
 			proto = e.funcSignatureC(e.funcDefCName(name, d), sig)
 		} else {
 			rn, rct, _ := e.receiverInfo(recv)
-			proto = e.methodSignatureC(methodCName(methodBaseType(rct), name), rn, rct, sig)
+			proto = e.methodSignatureC(e.methodCName(methodBaseType(rct), name), rn, rct, sig)
 		}
 		if proto != "" {
 			e.emit(proto + ";\n")
@@ -13669,7 +13750,7 @@ func (e *emitter) emitFuncDecl(ast []int32) {
 	} else {
 		var recvNamed bool
 		recvName, recvCType, recvNamed = e.receiverInfo(recv)
-		cname := methodCName(methodBaseType(recvCType), name)
+		cname := e.methodCName(methodBaseType(recvCType), name)
 		proto = e.methodSignatureC(cname, recvName, recvCType, sig)
 		e.curFunc = cname
 		if a, isArr := e.namedArrays[recvCType]; isArr {
@@ -13789,7 +13870,7 @@ func (e *emitter) liftFuncLit(lit Node) (string, bool) {
 	// Named without a leading underscore, unlike the statement temporaries: the
 	// backend reserves that spelling for its own intrinsics at file scope, and a
 	// function taking it produced a binary the loader would not accept.
-	cname := mangle(e.curPkgPrefix, fmt.Sprintf("ogo_lit%d", e.liftSeq))
+	cname := e.mangle(e.curPkgPrefix, fmt.Sprintf("ogo_lit%d", e.liftSeq))
 	e.liftSeq++
 	// The escape summary collected under the literal's place (see collectCrossParams)
 	// is the lifted function's: a call by the C name, which is what a statement's
@@ -14032,7 +14113,7 @@ func (e *emitter) methodValueBinding(base, method string) (cname, recvArg string
 	if !isVar {
 		return "", "", funcValueType{}, false
 	}
-	cname = methodCName(methodBaseType(rct), method)
+	cname = e.methodCName(methodBaseType(rct), method)
 	if fv, ok = e.methodValueTypes[cname]; ok {
 		return cname, "&" + e.varRef(base), fv, true
 	}
@@ -14063,7 +14144,7 @@ func (e *emitter) methodValueSavesPtr(base, method string) bool {
 	if e.isPointer(rct) {
 		return true
 	}
-	if _, isOwn := e.methodValueTypes[methodCName(methodBaseType(rct), method)]; isOwn {
+	if _, isOwn := e.methodValueTypes[e.methodCName(methodBaseType(rct), method)]; isOwn {
 		return false
 	}
 	_, path, _, ok := e.promotedMethod(rct, method)
@@ -14171,7 +14252,7 @@ func (e *emitter) methodExprOfName(head string, steps []Node) (emMethodExpr, boo
 		if name == "" {
 			return emMethodExpr{}, false
 		}
-		return e.methodExprOfType(e.unaliased(mangle(prefix, name)), false, steps[1:])
+		return e.methodExprOfType(e.unaliased(e.mangle(prefix, name)), false, steps[1:])
 	}
 	return e.methodExprOfType(e.unaliased(e.typeCName(head)), false, steps)
 }
@@ -14244,7 +14325,7 @@ func (e *emitter) starTypeCAt(x Node) string {
 			return ""
 		}
 		if t := e.soleIdent(steps[0].ast); t != "" {
-			return e.unaliased(mangle(prefix, t))
+			return e.unaliased(e.mangle(prefix, t))
 		}
 	}
 	return ""
@@ -14458,7 +14539,7 @@ func (e *emitter) liftMethodExpr(me emMethodExpr) (string, bool) {
 	default:
 		ret = e.retStructNameOf(fv.res)
 	}
-	name := mangle(e.curPkgPrefix, fmt.Sprintf("ogo_me%d", e.liftSeq))
+	name := e.mangle(e.curPkgPrefix, fmt.Sprintf("ogo_me%d", e.liftSeq))
 	e.liftSeq++
 	params, args := []string{e.abiParamCType(recvCT) + " r"}, []string{recvText}
 	for i, pt := range fv.params {
@@ -14656,7 +14737,7 @@ func (e *emitter) liftMethodValue(base, method string) (string, bool) {
 	// and C requires: `V.Base2` binds `&V.Base`, exactly as the call form does.
 	mcname, recvArg, fv, _ := e.methodValueBinding(base, method)
 	if mcname == "" {
-		mcname = methodCName(methodBaseType(e.mustVarType(base)), method)
+		mcname = e.methodCName(methodBaseType(e.mustVarType(base)), method)
 		recvArg = "&" + e.varRef(base)
 	}
 	if !e.methodPtr[mcname] {
@@ -14674,7 +14755,7 @@ func (e *emitter) liftMethodValue(base, method string) (string, bool) {
 	if out == "" && len(fv.res) == 1 {
 		ret = fv.res[0]
 	}
-	cname := mangle(e.curPkgPrefix, fmt.Sprintf("ogo_mv%d", e.liftSeq))
+	cname := e.mangle(e.curPkgPrefix, fmt.Sprintf("ogo_mv%d", e.liftSeq))
 	e.liftSeq++
 
 	var params, args []string
@@ -15027,10 +15108,10 @@ func methodBaseType(recvCType string) string { return strings.TrimSuffix(recvCTy
 // methodCName mangles a method to its C name, baseType_method. baseType is already
 // the receiver type's mangled C name (package-namespaced), so a method is namespaced
 // by its type and cannot collide across packages; the method name is passed through
-// cIdent so a Unicode method name is a valid C identifier too, and a join C has
-// spoken for moves out of the way (reservedJoin).
-func methodCName(baseType, method string) string {
-	return reservedJoin(baseType + "_" + userIdent(method))
+// cIdent so a Unicode method name is a valid C identifier too, and a join that
+// meets a name C or the program has moves out of the way (joinName).
+func (e *emitter) methodCName(baseType, method string) string {
+	return e.joinName(baseType + "_" + userIdent(method))
 }
 
 // emitMain emits `func main()` as `int main(void)`; main takes no parameters or
@@ -15658,11 +15739,11 @@ func (e *emitter) declaredCalleeC(recv string, suffix []Node) (string, bool) {
 			// on the qualifier. Only the method was looked for, so a declaration from an
 			// imported function returning an array could not infer a type.
 			if prefix, isPkg := e.importQualifiers[recv]; isPkg {
-				return mangle(prefix, e.soleIdent(suffix[0].ast)), true
+				return e.mangle(prefix, e.soleIdent(suffix[0].ast)), true
 			}
 			return "", false
 		}
-		cname = methodCName(methodBaseType(rct), e.soleIdent(suffix[0].ast))
+		cname = e.methodCName(methodBaseType(rct), e.soleIdent(suffix[0].ast))
 	} else if len(suffix) != 1 {
 		return "", false
 	}
@@ -17279,7 +17360,7 @@ func (e *emitter) factorCompositeLit(kids []Node) (name string, lit Node, ok boo
 	}
 	// Through an alias of that package's, `lib.A{...}` for a `type A = T`, as a
 	// literal of this package's type is: the methods and fields are T's.
-	return e.unaliased(mangle(prefix, fields[0])), kids[2], true
+	return e.unaliased(e.mangle(prefix, fields[0])), kids[2], true
 }
 
 // factorStructLitChain recognises a STRUCT literal read through a suffix, `P{1,
@@ -17323,12 +17404,12 @@ func (e *emitter) emitStructLitChain(n Node, ctype string, lit Node, steps []Nod
 	if steps[0].sym == Selector {
 		member := e.soleIdent(steps[0].ast)
 		isField := slices.ContainsFunc(e.structs[ctype], func(f structField) bool { return f.name == member })
-		_, isMethod := e.funcRet[methodCName(ctype, member)]
+		_, isMethod := e.funcRet[e.methodCName(ctype, member)]
 		switch {
 		case !isField && !isMethod:
 			e.fail("%s undefined (type %s has no field or method %s)", e.f.exprSource(n), e.goTypeName(ctype), member)
 			return
-		case isMethod && e.methodPtr[methodCName(ctype, member)]:
+		case isMethod && e.methodPtr[e.methodCName(ctype, member)]:
 			e.fail("cannot call pointer method %s on %s", member, e.goTypeName(ctype))
 			return
 		}
@@ -19381,7 +19462,7 @@ func (e *emitter) namedSliceType(typeAST []int32) (cname, elem string, ok bool) 
 		if !isImport {
 			return "", "", false
 		}
-		mn = mangle(prefix, e.src(nodes[2].tok))
+		mn = e.mangle(prefix, e.src(nodes[2].tok))
 	default:
 		return "", "", false
 	}
@@ -20007,7 +20088,7 @@ func (e *emitter) cType(ast []int32) string {
 	// how collectTypeDecl named it while emitting that package's files.
 	if len(toks) == 3 && e.f.ch(toks[0]) == IDENT && e.f.ch(toks[1]) == PERIOD && e.f.ch(toks[2]) == IDENT {
 		if prefix, ok := e.importQualifiers[e.src(toks[0])]; ok {
-			mn := mangle(prefix, e.src(toks[2]))
+			mn := e.mangle(prefix, e.src(toks[2]))
 			if _, ok := e.structs[mn]; ok {
 				return mn
 			}
@@ -20201,7 +20282,7 @@ func (e *emitter) qualConvType(qualifier, name string) (string, bool) {
 	}
 	// Through an alias of that package's, `lib.C(0)` for a `type C = Celsius`: the
 	// conversion is to what it names, whose methods are the ones a step calls.
-	mn := e.unaliased(mangle(prefix, name))
+	mn := e.unaliased(e.mangle(prefix, name))
 	if _, isArr := e.namedArrays[mn]; isArr || e.namedTypes[mn] || e.isStruct(mn) {
 		return mn, true
 	}
@@ -20882,7 +20963,7 @@ func (e *emitter) arrayDim(typeAST []int32) (arrDim, bool) {
 	// a result or a field of another package's array type was "unsupported type".
 	if len(nodes) == 3 && nodes[0].sym == 0 && e.f.ch(nodes[0].tok) == IDENT && nodes[1].sym == 0 && e.f.ch(nodes[1].tok) == PERIOD && nodes[2].sym == 0 && e.f.ch(nodes[2].tok) == IDENT {
 		if prefix, isImport := e.importQualifiers[e.src(nodes[0].tok)]; isImport {
-			nm := e.unaliased(mangle(prefix, e.src(nodes[2].tok)))
+			nm := e.unaliased(e.mangle(prefix, e.src(nodes[2].tok)))
 			a, ok := e.namedArrays[nm]
 			if ok {
 				a.name = nm
@@ -21784,7 +21865,7 @@ func (e *emitter) qualifiedConstVal(kids []Node) (constant.Value, bool) {
 	if !isImport || base == "p2" {
 		return nil, false
 	}
-	v, ok := e.constVal[mangle(prefix, fields[0])]
+	v, ok := e.constVal[e.mangle(prefix, fields[0])]
 	return v, ok
 }
 
@@ -23344,7 +23425,7 @@ func (e *emitter) qualifiedChainBase(base string, steps []Node) (string, []Node,
 	if member == "" {
 		return "", nil, false
 	}
-	mn := mangle(prefix, member)
+	mn := e.mangle(prefix, member)
 	// An ARRAY or a SLICE is folded even with nothing after the selector, because
 	// the shapes that measure or walk one -- len, cap, a slice expression, a range,
 	// a copy, an address -- ask for a NAME and would find a package qualifier
@@ -23567,7 +23648,7 @@ func (e *emitter) parenMethodResultType(kids []Node) (string, bool) {
 		return "", false
 	}
 	for i := 0; i < len(steps); i += 2 {
-		rets, isMethod := e.funcRet[methodCName(methodBaseType(ct), e.soleIdent(steps[i].ast))]
+		rets, isMethod := e.funcRet[e.methodCName(methodBaseType(ct), e.soleIdent(steps[i].ast))]
 		if !isMethod || len(rets) != 1 {
 			return "", false
 		}
@@ -23680,7 +23761,7 @@ func (e *emitter) emitParenMethod(kids []Node) bool {
 		// a VALUE receiver, which the host compiler rejected -- and which had been
 		// a clean refusal before the parenthesised form was supported at all.
 		isPtr := e.isPointer(ct)
-		cname := methodCName(methodBaseType(ct), method)
+		cname := e.methodCName(methodBaseType(ct), method)
 		rets, isMethod := e.funcRet[cname]
 		if !isMethod {
 			return false
@@ -24076,7 +24157,7 @@ func (e *emitter) unaliased(ct string) string {
 // globalC is the C name of a package-level variable: its source name mangled into
 // the current package's namespace, so two packages' same-named globals do not
 // collide as file-scope statics in the one translation unit.
-func (e *emitter) globalC(name string) string { return mangle(e.curPkgPrefix, name) }
+func (e *emitter) globalC(name string) string { return e.mangle(e.curPkgPrefix, name) }
 
 // varRef is the C name a bare variable reference emits: a package global takes its
 // mangled name; a local or parameter (which shadows a global, and lives in locals)
@@ -26707,7 +26788,7 @@ func (e *emitter) caseIfaceC(ex Node) (string, bool) {
 	if !isImport {
 		return "", false
 	}
-	mn := mangle(prefix, member)
+	mn := e.mangle(prefix, member)
 	return mn, e.isIfaceCType(mn)
 }
 
@@ -26816,7 +26897,7 @@ func (e *emitter) caseTypeC(ex Node) (concrete string, isNil, ok bool) {
 	// is where its typedef was emitted.
 	if qual, member, isQual := e.qualifiedFactor(kids[1].ast); isQual {
 		if prefix, isImport := e.importQualifiers[qual]; isImport {
-			concrete = mangle(prefix, member)
+			concrete = e.mangle(prefix, member)
 			if !e.isStruct(concrete) && !e.isUserType(concrete) {
 				return "", false, false
 			}
@@ -27123,7 +27204,7 @@ func (e *emitter) ifaceRebindC(dst, dstIface, src, srcIface string, types []stri
 		if i != 0 {
 			b.WriteString("else ")
 		}
-		fmt.Fprintf(&b, "if (%s) %s.vt = &%s;\n", e.assertOKC(src, srcIface, ct), dst, ifaceVTVar(dstIface, ct))
+		fmt.Fprintf(&b, "if (%s) %s.vt = &%s;\n", e.assertOKC(src, srcIface, ct), dst, e.ifaceVTVar(dstIface, ct))
 	}
 	return b.String(), true
 }
@@ -28304,7 +28385,7 @@ func (e *emitter) calleeValueType(base string, steps []Node) (string, bool) {
 	var ct string
 	switch prefix, isImport := e.importQualifiers[base]; {
 	case isImport && len(steps) == 1 && steps[0].sym == Selector:
-		ct = e.globals[mangle(prefix, e.soleIdent(steps[0].ast))] // another package's variable
+		ct = e.globals[e.mangle(prefix, e.soleIdent(steps[0].ast))] // another package's variable
 	case len(steps) == 0:
 		ct, _ = e.varType(base)
 	case len(steps) == 1 && steps[0].sym == CallSuffix:
@@ -28537,7 +28618,7 @@ func (e *emitter) deferReceiver(d *deferredCall, head Node, suffix []Node) (stri
 		// VARIABLE holding one, whose value Go reads here as it reads a local's:
 		// left to the replay, `defer lib.H(1)` followed by a store into lib.H
 		// called the new function at the return.
-		mn := mangle(prefix, e.soleIdent(steps[0].ast))
+		mn := e.mangle(prefix, e.soleIdent(steps[0].ast))
 		if ct, isVar := e.globals[mn]; isVar && e.isFuncCType(ct) {
 			d.recvCType = ct
 			d.callsValue = true
@@ -28646,7 +28727,7 @@ func (e *emitter) deferReceiver(d *deferredCall, head Node, suffix []Node) (stri
 		d.ifaceMethod = method
 		return text, true
 	}
-	cname := methodCName(methodBaseType(ctype), method)
+	cname := e.methodCName(methodBaseType(ctype), method)
 	if _, isMethod := e.funcRet[cname]; !isMethod {
 		// A PROMOTED method: the receiver is the embedded member the path reaches,
 		// captured here as a declared method's receiver is (promotedRecvC). Without
@@ -29891,7 +29972,7 @@ func (e *emitter) emitCallExpr(recv string, suffix []Node) bool {
 	if len(suffix) == 1 && suffix[0].sym == CallSuffix {
 		if c, isIntr := e.mathIntrinsic("", recv); isIntr {
 			e.emit(c + "(")
-			e.emitMathArgs(mangle("math", recv), suffix[0].ast)
+			e.emitMathArgs(e.mangle("math", recv), suffix[0].ast)
 			e.emit(")")
 			return true
 		}
@@ -30134,7 +30215,7 @@ func (e *emitter) emitCallExpr(recv string, suffix []Node) bool {
 			return true
 		}
 		if rct, ok := e.methodRecvCType(recv); ok {
-			cname := methodCName(methodBaseType(rct), method)
+			cname := e.methodCName(methodBaseType(rct), method)
 			// A method PROMOTED from an embedded field is called on that field, which
 			// the source did not name and C requires: `d.Get()` is `base_Get(&d.base)`.
 			if cn, path, _, okp := e.promotedMethod(rct, method); okp && len(path) != 0 {
@@ -30237,14 +30318,14 @@ func (e *emitter) emitCallExpr(recv string, suffix []Node) bool {
 		// and Trunc are.
 		if c, isIntr := e.mathIntrinsic(recv, method); isIntr {
 			e.emit(c + "(")
-			e.emitMathArgs(mangle("math", method), suffix[1].ast)
+			e.emitMathArgs(e.mangle("math", method), suffix[1].ast)
 			e.emit(")")
 			return true
 		}
 		if prefix, ok := e.importQualifiers[recv]; ok {
 			// A call into an imported user package: the exported function is emitted
 			// in that package's namespace, so the call resolves to the mangled name.
-			cname := mangle(prefix, method)
+			cname := e.mangle(prefix, method)
 			summary := cname
 			if ct, isVar := e.globals[cname]; isVar && e.isFuncCType(ct) {
 				// Its VARIABLE holding a function, anybody's to set: every function
@@ -30609,11 +30690,11 @@ func (e *emitter) isChainFunc(base string) bool { _, ok := e.userFunc(base); ret
 // source name, mangling to the current package's namespace (see mangle). funcCallC
 // is the C name that same call emits, so a definition and its call always agree.
 func (e *emitter) userFunc(name string) ([]string, bool) {
-	rts, ok := e.funcRet[mangle(e.curPkgPrefix, name)]
+	rts, ok := e.funcRet[e.mangle(e.curPkgPrefix, name)]
 	return rts, ok
 }
 
-func (e *emitter) funcCallC(name string) string { return mangle(e.curPkgPrefix, name) }
+func (e *emitter) funcCallC(name string) string { return e.mangle(e.curPkgPrefix, name) }
 
 // argsCText renders a CallSuffix's arguments as C text -- the same output
 // emitCallArgs streams, captured to a string so a call reached mid-chain can be
@@ -30797,7 +30878,7 @@ func (e *emitter) chainCText(base string, steps []Node) (text, ctype string, add
 			if !isImport || len(steps) == 0 || steps[0].sym != Selector {
 				return "", "", false, false
 			}
-			mn := mangle(prefix, e.soleIdent(steps[0].ast))
+			mn := e.mangle(prefix, e.soleIdent(steps[0].ast))
 			a, isArr := e.globalArrays[mn]
 			switch gt, isGlobal := e.globals[mn]; {
 			case isArr:
@@ -30982,7 +31063,7 @@ func (e *emitter) chainCText(base string, steps []Node) (text, ctype string, add
 				if e.checks {
 					e.usesIfaceNil = true
 					e.needPanic()
-					vtRead = "((const " + ifaceVTName(cur.ctype) + "*)ogo_iface_vt(" + text + ".vt))"
+					vtRead = "((const " + e.ifaceVTName(cur.ctype) + "*)ogo_iface_vt(" + text + ".vt))"
 				}
 				call := vtRead + "->" + vtMember(field) + "(" + text + ".data"
 				if args := e.argsCText("", steps[i+1].ast); args != "" {
@@ -31033,7 +31114,7 @@ func (e *emitter) chainCText(base string, steps []Node) (text, ctype string, add
 				// name it was declared with is what carries its method set.
 				bt = cur.name
 			}
-			cname := methodCName(bt, field)
+			cname := e.methodCName(bt, field)
 			rts, okm := e.funcRet[cname]
 			var promoted []string // the embedded fields a promoted method is reached through
 			// A method PROMOTED from an embedded field is called on that field, which
@@ -31395,12 +31476,12 @@ func (e *emitter) chainResultCur(base string, steps []Node) (accessCur, bool) {
 				bt = cur.name
 			}
 			if i+1 < len(steps) && steps[i+1].sym == CallSuffix && bt != "" && e.isMethodBase(bt) {
-				if a, isArr := e.funcArrayRet[methodCName(bt, field)]; isArr {
+				if a, isArr := e.funcArrayRet[e.methodCName(bt, field)]; isArr {
 					cur = curArray(a) // an ARRAY result, as of a function above
 					i++
 					continue
 				}
-				rts, okm := e.funcRet[methodCName(bt, field)]
+				rts, okm := e.funcRet[e.methodCName(bt, field)]
 				if !okm || len(rts) > 1 {
 					return accessCur{}, false
 				}
@@ -33151,7 +33232,7 @@ func (e *emitter) mintIfacePrinter(iface string) {
 				e.printIfaces[iface], e.goTypeName(iface), e.goTypeName(concrete+"*"), why)
 			return
 		}
-		fmt.Fprintf(&b, "\tif (v.vt == &%s) { %s return; }\n", ifaceVTVar(iface, concrete), code)
+		fmt.Fprintf(&b, "\tif (v.vt == &%s) { %s return; }\n", e.ifaceVTVar(iface, concrete), code)
 	}
 	body := b.String()
 	var h strings.Builder
@@ -38380,7 +38461,7 @@ func (e *emitter) methodOnField(recv string, suffix []Node) (fields []string, cn
 		}
 		ct = a.name
 	}
-	cname = methodCName(methodBaseType(ct), e.soleIdent(sels[len(sels)-1].ast))
+	cname = e.methodCName(methodBaseType(ct), e.soleIdent(sels[len(sels)-1].ast))
 	return fields, cname, e.methodPtr[cname], true
 }
 
@@ -38467,7 +38548,7 @@ func (e *emitter) chainMethodCName(base string, steps []Node) (string, bool) {
 	if bt == "" || !e.isMethodBase(bt) {
 		return "", false
 	}
-	return methodCName(bt, method), true
+	return e.methodCName(bt, method), true
 }
 
 // ifaceResultTypes is what a call through an interface slot yields, in the source's
@@ -38572,7 +38653,7 @@ func (e *emitter) callResultInfo(recv string, suffix []Node) (cname string, resT
 		// not be typed -- while `var t int; t = g.sum()`, which asks nothing, was
 		// fine. It is the same lookup the call itself dispatches through.
 		if rct, isRecv := e.methodRecvCType(recv); isRecv {
-			cname = methodCName(methodBaseType(rct), member)
+			cname = e.methodCName(methodBaseType(rct), member)
 			// A method PROMOTED from an embedded field is the embedded type's: the
 			// outer type has no function of the name, and answering none left a
 			// promoted call's results unknown -- `return o.Two()` was refused and
@@ -38583,7 +38664,7 @@ func (e *emitter) callResultInfo(recv string, suffix []Node) (cname string, resT
 				}
 			}
 		} else if prefix, isPkg := e.importQualifiers[recv]; isPkg {
-			cname = mangle(prefix, member)
+			cname = e.mangle(prefix, member)
 		} else {
 			return "", nil, false
 		}
@@ -39326,7 +39407,7 @@ func (e *emitter) qualifiedStrConstVal(base string, fields []string) (string, bo
 	if !isQual || len(fields) != 1 {
 		return "", false
 	}
-	v, ok := e.constStr[mangle(prefix, fields[0])]
+	v, ok := e.constStr[e.mangle(prefix, fields[0])]
 	return v, ok
 }
 
@@ -39350,7 +39431,7 @@ func (e *emitter) qualifiedGlobalRead(base string, fields []string) (text, ctype
 	if !isQual || len(fields) == 0 {
 		return "", "", false
 	}
-	gn := mangle(prefix, fields[0])
+	gn := e.mangle(prefix, fields[0])
 	// A folded string constant has no addressable C symbol -- it is inlined at each
 	// use (see emitConstDecl) -- so a cross-package read of one is left to the
 	// caller's other shapes (reported there) rather than naming a symbol that does
@@ -39505,7 +39586,7 @@ func (e *emitter) promotedMethod(ctype, method string) (cname string, path []str
 		found := false
 		var next []step
 		for _, st := range level {
-			if cn := methodCName(st.ctype, method); e.funcRet[cn] != nil || e.funcHasName(cn) {
+			if cn := e.methodCName(st.ctype, method); e.funcRet[cn] != nil || e.funcHasName(cn) {
 				if found {
 					return "", nil, "", false // two at this depth: ambiguous, as in Go
 				}
@@ -40461,7 +40542,7 @@ func (e *emitter) inferNode(n Node) (string, bool) {
 				}
 				if steps[len(steps)-1].sym == CallSuffix {
 					if sels, okSel := e.selectorFields(steps[:len(steps)-1]); okSel && len(sels) == 1 {
-						if rts, has := e.funcRet[methodCName(ctype, sels[0])]; has && len(rts) == 1 {
+						if rts, has := e.funcRet[e.methodCName(ctype, sels[0])]; has && len(rts) == 1 {
 							return rts[0], true
 						}
 					}
@@ -40738,7 +40819,7 @@ func (e *emitter) inferNode(n Node) (string, bool) {
 			}
 			// A top-level function's name standing as a value has that function's
 			// own type, which is what lets `g := dbl` infer one.
-			return e.funcValueCType(mangle(e.curPkgPrefix, nm))
+			return e.funcValueCType(e.mangle(e.curPkgPrefix, nm))
 		}
 	}
 	// A call whose result the steps after it READ -- `str()[1:3]`, `mk().name[2:]`,
@@ -40909,7 +40990,7 @@ func (e *emitter) callResultCType(recv string, suffix []Node) (string, bool) {
 		if prefix, ok := e.importQualifiers[recv]; ok {
 			// A call into an imported user package: its function's recorded result type
 			// is keyed by its mangled name in that package's namespace.
-			if rts, ok := e.funcRet[mangle(prefix, e.soleIdent(suffix[0].ast))]; ok && len(rts) == 1 {
+			if rts, ok := e.funcRet[e.mangle(prefix, e.soleIdent(suffix[0].ast))]; ok && len(rts) == 1 {
 				return rts[0], true
 			}
 			return "", false
@@ -41262,7 +41343,7 @@ func (e *emitter) emitIfaceCompareC(op, lt, lct string, r Node) {
 			e.fail("cannot compare an interface with this value")
 			return
 		}
-		e.emit("(" + lt + ".vt " + eq + " &" + ifaceVTVar(lct, concrete) + join +
+		e.emit("(" + lt + ".vt " + eq + " &" + e.ifaceVTVar(lct, concrete) + join +
 			lt + ".data " + eq + " (void*)" + data + ")")
 		return
 	}
@@ -44257,7 +44338,7 @@ func (e *emitter) ptrConvCallFrameRef(ast []int32) (frameRef, bool, bool) {
 		return frameRef{}, false, false
 	}
 	base := strings.TrimSuffix(pc.ct, "*")
-	cname := methodCName(base, e.soleIdent(pc.rest[0].ast))
+	cname := e.methodCName(base, e.soleIdent(pc.rest[0].ast))
 	viaPtr := false
 	if _, declared := e.funcRet[cname]; !declared {
 		cn, path, _, found := e.promotedMethod(base, e.soleIdent(pc.rest[0].ast))
@@ -44299,7 +44380,7 @@ func (e *emitter) qualifiedWholeTarget(base string, steps []Node) (string, bool)
 	if member == "" {
 		return "", false
 	}
-	mn := mangle(prefix, member)
+	mn := e.mangle(prefix, member)
 	if _, isVar := e.globals[mn]; !isVar {
 		return "", false
 	}
@@ -45027,7 +45108,7 @@ func (e *emitter) storeRoot(t assignTarget) string {
 	if len(t.chain) != 0 && t.chain[0].sym == Selector {
 		if prefix, isImport := e.importQualifiers[t.name]; isImport && t.name != "p2" {
 			if member := e.soleIdent(t.chain[0].ast); member != "" {
-				return mangle(prefix, member)
+				return e.mangle(prefix, member)
 			}
 		}
 	}
@@ -45302,7 +45383,7 @@ func (e *emitter) checkIfaceRecvKept(iface, method, recv string) {
 		return
 	}
 	for _, ct := range e.ifaceImplementors(iface) {
-		cname := methodCName(methodBaseType(ct), method)
+		cname := e.methodCName(methodBaseType(ct), method)
 		if e.methodPtr[cname] && e.recvLeaks[cname]&(leakGlobal|leakCog) != 0 {
 			e.failRecvKept(cname, origin)
 			return
@@ -46152,7 +46233,7 @@ func (e *emitter) callbackSummaryName(ast []int32) (cname, shown string) {
 	if kids, isFac := e.soleFactor(ast); isFac {
 		if base, fields, ok := e.factorFieldAccess(kids); ok && len(fields) == 1 {
 			if prefix, isImport := e.importQualifiers[base]; isImport {
-				cn := mangle(prefix, fields[0])
+				cn := e.mangle(prefix, fields[0])
 				if e.funcValueTypes[cn].key != "" {
 					return cn, base + "." + fields[0] // another package's function
 				}
@@ -46459,7 +46540,7 @@ func (e *emitter) embeddedPointee(names []string) (mn, field string, ok bool) {
 		if !isImport {
 			return "", "", false
 		}
-		mn, field = mangle(prefix, names[1]), names[1]
+		mn, field = e.mangle(prefix, names[1]), names[1]
 	default:
 		return "", "", false
 	}

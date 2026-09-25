@@ -328,10 +328,10 @@ func (w *refWalker) typeBaseName(t Node) string {
 	walk(t.ast)
 	switch len(idents) {
 	case 1:
-		return mangle(w.e.curPkgPrefix, idents[0])
+		return w.e.mangle(w.e.curPkgPrefix, idents[0])
 	case 2:
 		if prefix, ok := w.quals[idents[0]]; ok {
-			return mangle(prefix, idents[1])
+			return w.e.mangle(prefix, idents[1])
 		}
 	}
 	return ""
@@ -615,7 +615,7 @@ func (w *refWalker) soleLitType(n Node) (string, bool) {
 		case Factor, HeaderFactor:
 			fk := slices.Collect(it(kids[0].ast))
 			if len(fk) == 2 && fk[0].sym == 0 && w.e.f.ch(fk[0].tok) == IDENT && fk[1].sym == CompositeLit {
-				return mangle(w.e.curPkgPrefix, w.e.src(fk[0].tok)), true
+				return w.e.mangle(w.e.curPkgPrefix, w.e.src(fk[0].tok)), true
 			}
 			return "", false
 		default:
@@ -806,7 +806,7 @@ func (e *emitter) methodBaseOfGlobal(gn string) (string, bool) {
 func (e *emitter) resolveMarker(d string) []string {
 	parts := strings.Split(d[1:], "\x01")
 	methodDep := func(base, m string) []string {
-		cn := methodCName(base, m)
+		cn := e.methodCName(base, m)
 		if _, ok := e.funcRefs[cn]; ok {
 			return []string{cn}
 		}
