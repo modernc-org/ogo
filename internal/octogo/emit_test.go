@@ -6,6 +6,8 @@ package octogo
 
 import (
 	"bytes"
+	"go/constant"
+	"go/token"
 	"io"
 	"strconv"
 	"strings"
@@ -2203,6 +2205,52 @@ func TestEmitCChecks(t *testing.T) {
 // Only an operand whose extent is a compile-time constant qualifies -- an array's.
 // A slice's length and capacity are run-time values, so a bound against them can
 // only be checked as the program runs, and Go says nothing about those either.
+// TestFloatSpellingTies: a float constant whose shortest decimal lies on a point
+// halfway between two float32s -- the target's float at either level -- is spelled
+// in hex, which the target's C compiler reads exactly, where it rounds such a
+// decimal to either neighbour (doc/float-literal-tie.c); every other constant keeps
+// its shortest decimal. The host's compiler reads both right, so no host run case
+// can see the difference, and this is its check off the board.
+func TestFloatSpellingTies(t *testing.T) {
+	for _, test := range []struct {
+		v, ut, want string
+	}{
+		{"2000872000", "float", "0x1.dd0b88p+30f"},
+		{"2.000024e9", "float", "0x1.dcd7c8p+30f"},
+		{"2000872000", "double", "0x1.dd0b89p+30"},
+		{"-2000872000", "float", "-0x1.dd0b88p+30f"},
+		{"0.1", "float", "0.1f"},
+		{"2.5e9", "float", "2.5e+09f"},
+		{"2000871936", "float", "0x1.dd0b88p+30f"}, // the float itself, whose shortest decimal is the tie
+		{"1.5", "double", "1.5"},
+		{"3", "double", "3.0"},
+	} {
+		lit, neg := strings.CutPrefix(test.v, "-")
+		v := constant.MakeFromLiteral(lit, token.FLOAT, 0)
+		if neg {
+			v = constant.UnaryOp(token.SUB, v, 0)
+		}
+		got, ok := floatSpelling(v, test.ut)
+		if !ok || got != test.want {
+			t.Errorf("floatSpelling(%s, %s) = %q, %v; want %q", test.v, test.ut, got, ok, test.want)
+		}
+	}
+	// A literal as written, whose C is a double literal: a tie is the double it
+	// names, in hex; anything else its text, digit separators dropped.
+	for _, test := range []struct{ src, want string }{
+		{"2.000872e+09", "0x1.dd0b89p+30"},
+		{"2_000_872_000.0", "0x1.dd0b89p+30"},
+		{"2.000024e9", "0x1.dcd7c7p+30"},
+		{"2.5e+09", "2.5e+09"},
+		{"1_000.5", "1000.5"},
+		{"0x1p-2", "0x1p-2"},
+	} {
+		if got := cFloatLit(test.src); got != test.want {
+			t.Errorf("cFloatLit(%s) = %q, want %q", test.src, got, test.want)
+		}
+	}
+}
+
 func TestEmitCConstSliceBounds(t *testing.T) {
 	for _, test := range []struct{ name, src, want string }{
 		{

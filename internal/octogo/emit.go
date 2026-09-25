@@ -12,6 +12,7 @@ import (
 	"io"
 	"maps"
 	"math"
+	"math/big"
 	"slices"
 	"strconv"
 	"strings"
@@ -364,7 +365,19 @@ func cIntLit(src string) string {
 // exponent forms -- so the text is valid C as written except for one thing: Go's
 // digit separators. C has none, and "1_0.5" is not a C float at all but an integer
 // with an invalid suffix, so they are stripped, exactly as normalizeIntLit does.
-func cFloatLit(src string) string { return strings.ReplaceAll(src, "_", "") }
+//
+// A decimal the target's C compiler may round to the wrong float -- one lying on a
+// point halfway between two (nearFloat32Tie) -- is written as the double it names in
+// hex instead, which that compiler reads exactly and every other reads as the same
+// double: `var g float32 = 2.000872e+09` held the float above the one Go names on
+// the board (doc/float-literal-tie.c).
+func cFloatLit(src string) string {
+	lit := strings.ReplaceAll(src, "_", "")
+	if f, err := strconv.ParseFloat(lit, 64); err == nil && !math.IsInf(f, 0) && nearFloat32Tie(lit) {
+		return strconv.FormatFloat(f, 'x', -1, 64)
+	}
+	return lit
+}
 
 // runeLitValue decodes a rune literal's source ('A', '\n', '\x41', 'é', 'é')
 // to its Unicode code point. strconv.Unquote handles every Go rune escape and, for
@@ -22006,6 +22019,17 @@ func roundConstTo(v constant.Value, ut string) constant.Value {
 // once, when the exact constant meets its type. The shortest spelling that reads
 // back to the same double is written, with a point or an exponent so C reads a
 // double and not an int. Infinity has no literal and is left unfolded.
+//
+// Unless the target would read it wrong: its C compiler reads a decimal literal in
+// double arithmetic -- the fraction's digits each scaled by an inexact power of ten,
+// the exponent applied by pow -- and rounds the result to its float, a 32-bit one at
+// either level, so a decimal lying on a point halfway between two floats goes to
+// whichever side the arithmetic's error falls. The shortest spelling of a float
+// with an even significand may be exactly such a point, round-half-even being what
+// makes it the shortest: `2.000872e+09f` names 2000871936 to Go and to gcc and was
+// 2000872064 on the board, and a comparison with it went the other way in silence
+// (fuzzer seed 479; doc/float-literal-tie.c). Such a value is spelled in hex, which
+// that compiler reads exactly, its digits and its exponent being powers of two.
 func floatSpelling(v constant.Value, ut string) (string, bool) {
 	if ut == "float" {
 		// A float32 value is spelled as a C float literal, "0.3f": what Go converts
@@ -22018,6 +22042,9 @@ func floatSpelling(v constant.Value, ut string) (string, bool) {
 			return "", false
 		}
 		s := strconv.FormatFloat(float64(f32), 'g', -1, 32)
+		if nearFloat32Tie(s) {
+			return strconv.FormatFloat(float64(f32), 'x', -1, 32) + "f", true
+		}
 		if !strings.ContainsAny(s, ".e") {
 			s += ".0"
 		}
@@ -22028,10 +22055,43 @@ func floatSpelling(v constant.Value, ut string) (string, bool) {
 		return "", false
 	}
 	s := strconv.FormatFloat(f, 'g', -1, 64)
+	if nearFloat32Tie(s) {
+		return strconv.FormatFloat(f, 'x', -1, 64), true
+	}
 	if !strings.ContainsAny(s, ".e") {
 		s += ".0"
 	}
 	return s, true
+}
+
+// nearFloat32Tie reports whether the decimal s lies within 2^-40 of its magnitude of
+// a point halfway between two float32 values, where the target's C compiler may
+// round it to the wrong one (see floatSpelling). Its arithmetic errs by about 2^-47
+// of the magnitude, a few roundings of a double, which 2^-40 leaves a margin of 128.
+func nearFloat32Tie(s string) bool {
+	d, ok := new(big.Rat).SetString(s)
+	if !ok || d.Sign() == 0 {
+		return false
+	}
+	f64, err := strconv.ParseFloat(s, 32)
+	if err != nil || math.IsInf(f64, 0) {
+		return false
+	}
+	f := float32(f64)
+	mag := new(big.Rat).Abs(d)
+	for _, dir := range []float64{math.Inf(1), math.Inf(-1)} {
+		n := math.Nextafter32(f, float32(dir))
+		if math.IsInf(float64(n), 0) {
+			continue
+		}
+		mid := new(big.Rat).Add(new(big.Rat).SetFloat64(float64(f)), new(big.Rat).SetFloat64(float64(n)))
+		mid.Quo(mid, big.NewRat(2, 1))
+		dist := new(big.Rat).Abs(new(big.Rat).Sub(d, mid))
+		if dist.Mul(dist, new(big.Rat).SetInt(new(big.Int).Lsh(big.NewInt(1), 40))).Cmp(mag) <= 0 {
+			return true
+		}
+	}
+	return false
 }
 
 // floatConstC spells an integral constant standing where a float is wanted -- an

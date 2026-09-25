@@ -594,6 +594,25 @@ func main() {
 		want: "recv 100.5 100\nworker -1.25\nappend 3 100.5 -2.5 2\nswitch: boil\ncase: neg\nunary -100.5 2.5 2.5\nlits 100.5 2 100.5 -2.5 201 -2.5 -2.5 2 0.75\ndeferred -2.5\nconv 100.5 -2.5 2 201 3 2 3.25\nuntyped 2 6 1024 3.5 3 3.5 3.5\nindex 3 3 4 2\ncmp true true true true true false\nmixed 21 21 1.75 2 1.5 1.5 true\norder 9.75 9.75 301.5 301.5\ntake 98 14.5\nrange 2\nfor 3\ncompound 48 48\nfield 200 2.5\nselect 50.25\nchain 100 50.25 50 1.25\n100.5 -2.5 0.75 3.25 100\n100 0.5 -3.25\n",
 	},
 	{
+		// A float constant whose shortest decimal is a point HALFWAY between two
+		// float32s names the even one, as C rounds a tie. The target's C compiler
+		// reads such a decimal in double arithmetic and breaks the tie by that
+		// arithmetic's error: `2.000872e+09f` was the float above the one Go names
+		// and `2.000024e+09f` the one below, and a comparison with the first went
+		// the other way in silence (fuzzer seed 479; doc/float-literal-tie.c). The
+		// host's compiler reads both right, so only the board sees this case fail.
+		name: "a float constant halfway between two floats names the even one",
+		src: `func main() {
+	var f float32 = 2000870912
+	f += 1000
+	var g float32 = 2.000872e+09
+	var h float32 = 2.000024e+09
+	println(f == 2.000872e+09, f == g, int64(g), int64(h))
+}
+`,
+		want: "true true 2000871936 2000024064\n",
+	},
+	{
 		// Untyped constant arithmetic as Go defines it. `7 / 2.0` is 3.5, the
 		// untyped FLOAT kind winning over the int one whichever side it is on; the
 		// first operand used to decide, so `7 / 2.0` was 3 and `2 * 3.5` a double
