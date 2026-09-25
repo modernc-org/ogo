@@ -1210,11 +1210,11 @@ resultCTypeIn); a function literal called and then read through, `func() P { ...
 type, and one returning an ARRAY called at all, `func() Set { ... }()`; a method of
 a call's array result deferred or started on a cog, `defer mk(5).Count()` and `go
 mk(5).Count()`, or with the call parenthesised, `(mk(1)).Count()` (as a value and a
-statement it works since 2026-09-24); a field a parenthesised or a literal head
-lacks past its first step, `(&gp).in.nosuch`, `P{}.in.nosuch`, `[]P{gp}[0].in.nosuch`,
-called "not supported yet" by the emitter, where the valid forms work (a call's
-result is checked at any depth since 2026-09-25, `getp().in.nosuch` being "type Inner
-has no field nosuch", callChainWalk's missingAt); `[]byte(s)`
+statement it works since 2026-09-24); a field a BRACKETED literal lacks, `[]P{gp}[0].in.nosuch`,
+"a []P literal cannot be read through this suffix" from the emitter, where the valid
+form works (a call's result, a parenthesised value and a named literal are checked at
+any depth since 2026-09-25, `getp().in.nosuch` and `(&gp).in.nosuch` being "type Q
+has no field nosuch": walkSteps' missingAt); `[]byte(s)`
 and `[]rune(s)` of a string VARIABLE (a copy of a length known at run time; a
 constant's converts since
 2026-09-23, constBytesConv); an if or a switch init that is a send or a call

@@ -304,6 +304,10 @@ shipped section tells a reader on that version that they have behaviour they do 
   = 5`, an interface-typed local and a parameter the body never reads. A scalar, a
   struct, a string or a pointer always worked. Found by a COBS framing program's
   `var long [260]byte`, and the fuzzer names things so now and then.
+- **A member a parenthesised value or a named literal lacks is reported.**
+  `(&gp).in.nosuch`, `P{}.in.nosuch` and `(&gp).m().nosuch` were "this form is not
+  supported yet" -- about a typo -- where the valid form of each works; each is
+  "type Q has no field nosuch" at the field now.
 - **A member a call's result lacks is reported where it is written.** A misspelt
   field on what a call returns, `getp().nosuch`, read, written or stepped through,
   reached the generated code, which said "unsupported call in expression" -- no
