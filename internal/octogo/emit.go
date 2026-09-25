@@ -151,6 +151,11 @@ func init() {
 	for _, name := range cLibMacros {
 		cUnusable[name] = true
 	}
+	// And every type the target's library names with a typedef, which its C
+	// compiler will not let a local shadow (cnames.go).
+	for _, name := range cLibTypes {
+		cUnusable[name] = true
+	}
 }
 
 // cReserved is the set of library names the emitted C has already spoken for at FILE

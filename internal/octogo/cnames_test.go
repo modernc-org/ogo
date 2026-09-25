@@ -64,14 +64,14 @@ func TestCNames(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	macros, names, err := targetCNames(gcc, tree, headers)
+	macros, names, types, err := targetCNames(gcc, tree, headers)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(macros) < 100 || len(names) < 500 {
+	if len(macros) < 100 || len(names) < 500 || len(types) < 30 {
 		// The scan found too little to be the library: a broken derivation must not
 		// pass as a library with nothing in it.
-		t.Fatalf("the target's library names %d macros and %d identifiers, too few", len(macros), len(names))
+		t.Fatalf("the target's library names %d macros, %d identifiers and %d types, too few", len(macros), len(names), len(types))
 	}
 
 	if *cnamesUpdate {
@@ -86,16 +86,21 @@ func TestCNames(t *testing.T) {
 			}
 		}
 		allMacros := union(cLibMacros, macros, hostMacros)
-		// A macro is renamed in every position already, so the second list does not
-		// repeat one.
-		allNames := slices.DeleteFunc(union(cLibNames, names, hostNames, sys), func(s string) bool {
+		allTypes := slices.DeleteFunc(union(cLibTypes, types), func(s string) bool {
 			_, ok := slices.BinarySearch(allMacros, s)
 			return ok
 		})
-		if err := os.WriteFile("cnames.go", cnamesSource(allMacros, allNames), 0o644); err != nil {
+		// A macro or a type is renamed in every position already, so the last list
+		// repeats neither.
+		allNames := slices.DeleteFunc(union(cLibNames, names, hostNames, sys), func(s string) bool {
+			_, isMacro := slices.BinarySearch(allMacros, s)
+			_, isType := slices.BinarySearch(allTypes, s)
+			return isMacro || isType
+		})
+		if err := os.WriteFile("cnames.go", cnamesSource(allMacros, allTypes, allNames), 0o644); err != nil {
 			t.Fatal(err)
 		}
-		t.Logf("cnames.go: %d macros, %d file-scope names", len(allMacros), len(allNames))
+		t.Logf("cnames.go: %d macros, %d types, %d file-scope names", len(allMacros), len(allTypes), len(allNames))
 		return
 	}
 
@@ -103,6 +108,11 @@ func TestCNames(t *testing.T) {
 	for _, m := range macros {
 		if !cUnusable[m] {
 			missing = append(missing, m+" (a macro)")
+		}
+	}
+	for _, m := range types {
+		if !cUnusable[m] {
+			missing = append(missing, m+" (a type)")
 		}
 	}
 	for _, n := range names {
@@ -149,6 +159,23 @@ func TestFileScopeNames(t *testing.T) {
 	}
 }
 
+// TestTypedefNames pins the typedef scan TestCNames derives cLibTypes with.
+func TestTypedefNames(t *testing.T) {
+	for _, test := range []struct{ src, want string }{
+		{"typedef unsigned long size_t;", "size_t"},
+		{"typedef struct _dir { int a; } DIR; typedef DIR vfs_dir_t;", "DIR vfs_dir_t"},
+		{"typedef struct s_vfs_file_t vfs_file_t; typedef vfs_file_t FILE;", "FILE vfs_file_t"},
+		{"typedef int (*putcfunc_t)(int c, void *f);", "putcfunc_t"},
+		{"typedef int a, *b, c[4];", "a b c"},
+		{"typedef struct { int quot, rem; } div_t; int div_t_user(void);", "div_t"},
+		{"int notatype; struct tm { int x; };", ""},
+	} {
+		if got, want := typedefNames(test.src), strings.Fields(test.want); !slices.Equal(got, want) {
+			t.Errorf("%s\ngot  %v\nwant %v", test.src, got, want)
+		}
+	}
+}
+
 // emittedHeaders is every header the emitted C may include: the ones the emitter
 // names (e.includes["stdio.h"] = true) and the ones an import maps to. Read from
 // the emitter's source, so a header it starts to include is scanned without anyone
@@ -190,19 +217,19 @@ var flexccDefines = []string{
 // its functions then share the program's name space, which is how a user function
 // named close collides with posixio.c's. Every source is scanned, not only the ones
 // a program is seen to pull in: a name renamed that did not need it costs nothing.
-func targetCNames(gcc, tree string, headers []string) (macros, names []string, err error) {
+func targetCNames(gcc, tree string, headers []string) (macros, names, types []string, err error) {
 	incs := filepath.Join(tree, "ogo_cnames.c")
 	var b strings.Builder
 	for _, h := range headers {
 		fmt.Fprintf(&b, "#include <%s>\n", h)
 	}
 	if err := os.WriteFile(incs, []byte(b.String()), 0o644); err != nil {
-		return nil, nil, err
+		return nil, nil, nil, err
 	}
 	base := append([]string{"-undef", "-nostdinc", "-I", tree}, flexccDefines...)
 	dm, err := runGcc(gcc, append(append([]string{"-E", "-dM"}, base...), incs)...)
 	if err != nil {
-		return nil, nil, err
+		return nil, nil, nil, err
 	}
 	macros = macroNames(dm)
 
@@ -214,15 +241,16 @@ func targetCNames(gcc, tree string, headers []string) (macros, names []string, e
 			}
 			return err
 		}); err != nil {
-			return nil, nil, err
+			return nil, nil, nil, err
 		}
 	}
 	var (
-		mu   sync.Mutex
-		all  []string
-		errs []error
-		wg   sync.WaitGroup
-		sem  = make(chan struct{}, runtime.GOMAXPROCS(0))
+		mu       sync.Mutex
+		all      []string
+		typedefs []string
+		errs     []error
+		wg       sync.WaitGroup
+		sem      = make(chan struct{}, runtime.GOMAXPROCS(0))
 	)
 	for _, f := range files {
 		wg.Add(1)
@@ -237,13 +265,14 @@ func targetCNames(gcc, tree string, headers []string) (macros, names []string, e
 				return
 			}
 			all = append(all, fileScopeNames(out)...)
+			typedefs = append(typedefs, typedefNames(out)...)
 		}()
 	}
 	wg.Wait()
 	if len(errs) != 0 {
-		return nil, nil, errs[0]
+		return nil, nil, nil, errs[0]
 	}
-	return macros, union(all), nil
+	return macros, union(all), union(typedefs), nil
 }
 
 // hostCNames is what the host's C library names for the same headers, the shim in
@@ -579,6 +608,50 @@ func fileScopeNames(src string) []string {
 	return union(r)
 }
 
+// typedefNames is the names a preprocessed C translation unit declares with a
+// typedef: each declarator's, the name in `(*name)` or else the last identifier
+// written outside every bracket -- `typedef struct _dir {...} DIR;` is DIR, and
+// `typedef vfs_file_t FILE;` FILE.
+func typedefNames(src string) []string {
+	var r []string
+	for _, d := range cExternalDecls(cTokens(src)) {
+		if len(d) == 0 || d[0].s != "typedef" {
+			continue
+		}
+		var part []cToken
+		flush := func() {
+			name, ptrName := "", ""
+			for k, t := range part {
+				if t.braces != 0 || !isCIdentTok(t.s) || cKeywordish[t.s] {
+					continue
+				}
+				switch {
+				case t.parens == 1 && k >= 2 && part[k-1].s == "*" && part[k-2].s == "(" && ptrName == "":
+					ptrName = t.s
+				case t.parens == 0:
+					name = t.s
+				}
+			}
+			if ptrName != "" {
+				name = ptrName
+			}
+			if name != "" {
+				r = append(r, name)
+			}
+			part = nil
+		}
+		for _, t := range d[1:] {
+			if t.braces == 0 && t.parens == 0 && t.s == "," {
+				flush()
+				continue
+			}
+			part = append(part, t)
+		}
+		flush()
+	}
+	return union(r)
+}
+
 // union is the sorted, duplicate-free union of some lists of names.
 func union(lists ...[]string) []string {
 	var r []string
@@ -589,7 +662,7 @@ func union(lists ...[]string) []string {
 	return slices.Compact(r)
 }
 
-func cnamesSource(macros, names []string) []byte {
+func cnamesSource(macros, types, names []string) []byte {
 	var b bytes.Buffer
 	b.WriteString(`// Code generated by TestCNames -cnames-update. DO NOT EDIT.
 
@@ -601,6 +674,16 @@ package octogo
 var cLibMacros = []string{
 `)
 	writeNames(&b, macros)
+	b.WriteString(`}
+
+// cLibTypes is every type the target's headers and library sources name with a
+// typedef. The target's C compiler cannot parse a declarator named like a typedef
+// in scope -- a local FILE is "syntax error, unexpected type name" -- where C lets
+// a local shadow one, so the emitter renames an identifier of one of these names in
+// every position (cUnusable).
+var cLibTypes = []string{
+`)
+	writeNames(&b, types)
 	b.WriteString(`}
 
 // cLibNames is every other identifier the target's C library speaks for at file scope
