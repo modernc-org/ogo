@@ -32,7 +32,9 @@ shipped section tells a reader on that version that they have behaviour they do 
   backing array, as in Go.
 - **A parenthesised name is a target.** `(x) = 5`, `(x), s = 5, "b"`, `s, (x) =
   "q", 7` and `(x)++` were refused, and so was a dereference in nested
-  parentheses, `((*px)), s = 9, "f"`.
+  parentheses, `((*px)), s = 9, "f"` -- and, as the first target of a for clause's
+  list or of an if or a switch init's list, `for ...; (x), i = x+1, i+1` and `if
+  (p).x, s = 3, "e"; ...`.
 
 ### Fixed
 
@@ -81,7 +83,9 @@ shipped section tells a reader on that version that they have behaviour they do 
   statement `w.xs = v` is.
 - **A target in parentheses is asked what it stores**, and so is a later one behind
   a star. `(*px) = "b"`, `s, (*px) = "q", "c"` and `s, *px = "q", "c"` put a string
-  into an int as far as the C compiler; `(&x) = 3` is refused in Go's words.
+  into an int as far as the C compiler; `(&x) = 3` is refused in Go's words. So
+  are such targets in a for clause and a statement header, `for ...; *px, i = "a",
+  i+1` and `if (*px), s = "a", "b"; ...`, which were taken there.
 
 ## v0.43.0
 
