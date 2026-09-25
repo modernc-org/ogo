@@ -21,6 +21,7 @@ var generatedConstructs = []struct {
 	name    string
 	pattern string
 }{
+	{"parenthesised target", `\n\s*\(fl_\d+\) = `},
 	{"for loop", `\n\s*for \w+ < \d+ \{`}, // written `for (i < n)`, which ogo fmt prints as gofmt does
 	{"if statement", `\n\s*if `},
 	{"switch statement", `\n\s*switch `},

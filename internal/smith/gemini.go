@@ -826,7 +826,8 @@ func (f *Fuzzer) genFloatStmt(vm Machine, mem Memory) Node {
 		if !ok(next) {
 			continue // a step that would leave the ordinary numbers is skipped
 		}
-		stmts = append(stmts, &AssignStmtNode{Lhs: name, Op: "=", Rhs: rhs})
+		f.assigns++
+		stmts = append(stmts, &AssignStmtNode{Lhs: name, Op: "=", Rhs: rhs, Paren: f.assigns%5 == 0})
 		cur = next
 	}
 	xor := func(k Int32) Node {
@@ -2754,14 +2755,19 @@ func (n *VarDeclNode) Write(w io.Writer, indent int) {
 }
 
 type AssignStmtNode struct {
-	Lhs string
-	Op  string // "=" or ":="
-	Rhs Node
+	Lhs   string
+	Op    string // "=" or ":="
+	Rhs   Node
+	Paren bool // the target written in parentheses, `(x) = v`; "=" only
 }
 
 func (n *AssignStmtNode) Write(w io.Writer, indent int) {
 	writeIndent(w, indent)
-	fmt.Fprintf(w, "%s %s ", n.Lhs, n.Op)
+	if n.Paren && n.Op == "=" {
+		fmt.Fprintf(w, "(%s) %s ", n.Lhs, n.Op)
+	} else {
+		fmt.Fprintf(w, "%s %s ", n.Lhs, n.Op)
+	}
 	n.Rhs.Write(w, 0)
 }
 

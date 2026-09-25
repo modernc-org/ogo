@@ -169,6 +169,11 @@ type Fuzzer struct {
 	// idleChan is the package channel a select's never-ready arm receives from
 	// (see idleChannel), written on first use.
 	idleChan string
+	// assigns counts the float reassignments written, every fifth of which puts its
+	// target in parentheses, `(f_3) = f_3 * 2` -- a counter and not a draw, so the
+	// random stream, and with it every seed's program, is what it was. The passes that
+	// read a target by name alone took a parenthesised one for nobody's.
+	assigns int
 }
 
 func NewFuzzer(seed int64, out io.Writer) *Fuzzer {
