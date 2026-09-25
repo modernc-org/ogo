@@ -9,6 +9,7 @@ import (
 	"io"
 	"regexp"
 	"strconv"
+	"strings"
 	"testing"
 )
 
@@ -250,7 +251,9 @@ var generatedConstructs = []struct {
 	// struct, the value form a copy of it, which the field read after the call
 	// tells apart.
 	{"method expression, value receiver", `= S_\d+\.shadow_\d+`},
-	{"method expression, pointer receiver", `= \(\*S_\d+\)\.set_\d+`},
+	// Any names: the type or the method may have drawn one of cNames. Only the
+	// method expression writes "(*T).m".
+	{"method expression, pointer receiver", `= \(\*\w+\)\.\w+`},
 	{"call through a method expression", `\^ me_\d+\(`},
 	// A function LITERAL, which is lifted to a function of its own: called where it
 	// stands, and bound to a variable and called through it -- a function value
@@ -262,6 +265,10 @@ var generatedConstructs = []struct {
 	{"function literal called where it stands", `\^ func\(p_\d+ int`},
 	{"forward goto", `\n\s*goto L_\d+\n`},
 	{"goto target label", `\n\s*L_\d+:\n`},
+	// A name C has spoken for, which newVarName draws now and then (cNames): the
+	// emitter renames each in every position, and a position it missed was a C
+	// error no generated program could show while every name was a counter's.
+	{"a name C has spoken for", `\b(` + strings.Join(cNames, "|") + `)\b`},
 }
 
 // TestGeneratorCoverage asserts that the generator still emits every construct it

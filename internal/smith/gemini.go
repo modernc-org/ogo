@@ -14,10 +14,57 @@ import (
 )
 
 // newVarName returns a unique variable name (see Fuzzer.VarSeq for why a counter
-// rather than a random suffix).
+// rather than a random suffix) -- now and then one C has spoken for (cNames).
 func (f *Fuzzer) newVarName(prefix string) string {
 	f.VarSeq++
+	if f.Rand.Intn(6) == 0 {
+		if n := f.cName(); n != "" {
+			return n
+		}
+	}
 	return fmt.Sprintf("%s_%d", prefix, f.VarSeq)
+}
+
+// cNames are names C has spoken for that are ordinary Go identifiers: C's keywords,
+// macros of the headers the emitted C includes, functions and types of the target's
+// library and of the backend's system module, and the one library function the
+// emitter calls inside a body. The emitted C keeps a program's names, so each is
+// one the emitter has to rename, in whatever position the generator puts it -- and
+// a local array named long was declared under the name as written while its reads
+// were renamed, a C error no generated program could show while every name was
+// v_12. None is a Go keyword or predeclared, nor a builtin of OctoGo's.
+var cNames = []string{
+	"auto", "char", "double", "enum", "extern", "float", "long", "register", "short",
+	"signed", "sizeof", "static", "typedef", "union", "unsigned", "void", "volatile",
+	"while", "do",
+	"EOF", "BUFSIZ", "RAND_MAX", "SEEK_SET", "EXIT_SUCCESS", "INT32_MAX", "M_PI", "NAN",
+	"linux", "unix", "stdin", "stdout", "errno", "NULL", "assert", "sqrt", "floor",
+	"isdigit", "putchar", "memset", "strlen", "abs",
+	"read", "write", "open", "sleep", "time", "clock", "exit", "free", "rand",
+	"puts", "getw", "access", "signal", "index", "div", "memcpy",
+	"FILE", "DIR", "size_t", "uint8_t", "div_t",
+	"_tx", "bytefill", "longmove", "waitcnt",
+}
+
+// cName draws a name of cNames the program has not used yet, "" when it has used
+// them all: a program's names are unique, which is what the generator's scoping
+// rests on.
+func (f *Fuzzer) cName() string {
+	if f.usedCNames == nil {
+		f.usedCNames = map[string]bool{}
+	}
+	var free []string
+	for _, n := range cNames {
+		if !f.usedCNames[n] {
+			free = append(free, n)
+		}
+	}
+	if len(free) == 0 {
+		return ""
+	}
+	n := free[f.Rand.Intn(len(free))]
+	f.usedCNames[n] = true
+	return n
 }
 
 // GenerateProgram builds the AST and computes the final expected state.
