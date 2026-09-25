@@ -38,6 +38,9 @@ shipped section tells a reader on that version that they have behaviour they do 
 
 ### Fixed
 
+- **`ogo fmt` drops the parentheses gofmt drops around a header's expression.**
+  `if (x > 0) {`, `for (i < n) {`, `switch (x) {` and `range (arr)` print as
+  `if x > 0 {` and the rest, as gofmt prints them, and `((x)) = 5` as `(x) = 5`.
 - **A range operand, a method value's receiver and a call's result may be written
   in parentheses.** `range (arr)` was "it has no storage to name", `f :=
   (&c).inc` "cannot infer a type", and `(pc()).inc()` as a statement
