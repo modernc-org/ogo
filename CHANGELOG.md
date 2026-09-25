@@ -74,6 +74,10 @@ shipped section tells a reader on that version that they have behaviour they do 
 
 ### Behaviour changes
 
+- **A target reached through a call's result, a pointer or parentheses is asked
+  what it stores.** `geth().s = 5`, `gets()[1] = "x"`, `geth().s++`, `(*pa)[0] =
+  5` and `pa[1] = 5` for `pa := &a`, and `(str)[0] = 'x'` were taken and reached
+  the C compiler; they are refused as Go refuses them.
 - **A callee handing a call's result to another call keeps what that call keeps
   of it.** `func f(v []int) { keep(pass(v)) }`, where pass returns its argument
   and keep stores its own, was summarised as keeping nothing, and so were `x :=
