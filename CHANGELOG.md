@@ -70,6 +70,12 @@ shipped section tells a reader on that version that they have behaviour they do 
 
 ### Behaviour changes
 
+- **A callee keeping a call's result through a local keeps what the call hands
+  back.** `func f(v []int) { x := pass(v); gs = x }`, where pass returns its
+  argument, was summarised as keeping nothing, and so was the same local sent,
+  started on a cog, stored through a pointer or returned -- so `f(a[:])` left a
+  local array in package storage in silence, where `gs = pass(v)` was refused.
+  They are refused as that is.
 - **A received value is stored as any value is.** `h.s = <-ci`, `*ps = <-ci`,
   `as[0] = <-ci` and `(h).s = <-ci` for a string target and an int channel were
   taken, and so were the same targets in a select clause, `case h.s = <-ci:` and

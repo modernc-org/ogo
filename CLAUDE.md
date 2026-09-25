@@ -1195,6 +1195,15 @@ through `shapeCall` (no local has a type yet, so `derefHead` and `parenHeadName`
 which ask one, answer nothing there). **A new scan reads heads through them, and a
 new shape the emitter reads through parentheses is a row in each scan.**
 
+**A CALL'S RESULT IN A LOCAL IS A ROW OF THE SUMMARIES** (2026-09-25). A callee's
+summary followed a call where a sink stood over it, `gs = pass(v)` (derived), and
+not once the result was in a local, `x := pass(v); gs = x`, which kept the caller's
+array in a package variable in silence -- through every sink. summaryHolds binds
+such a local to a "call@" name standing for the call, and each sink follows it
+there (heldCalls). OPEN, the next row: a call's result handed on as another call's
+ARGUMENT, `keep(pass(v))`, local between or not -- a composition of two edges, which
+the crossEdge fixed point does not do.
+
 **A RECEIVE HAD NO TYPE** (2026-09-25). `exprType` answered "unknown" for `<-ch`, so
 every store rule said nothing of a received value but the one asked of a bare name
 (checkRecvAssign): `h.s = <-ci` put an int into a string as far as the C compiler, a
