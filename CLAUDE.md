@@ -690,6 +690,27 @@ filling another package's unexported field, which is a hole in the literal check
 rather than in the boundary. The harness is `dumpc`, which reads an `ogo.mod` above
 the directory; before that the dimension could not be probed on the host at all.
 
+**A C NAME IS A ROW** (2026-09-25). The emitted C keeps a program's own names, so
+every name a program may write is a row across everything else that names things in
+that one translation unit: the target's headers (a function, a type, a MACRO, which
+breaks a local or a field too), the library sources a program pulls in and the
+backend's system modules (`_tx`, `bytefill`), the host's headers, and the names the
+EMITTER mints by joining two with an underscore -- `Type_method`, `Iface_vt`,
+`Iface_vt_Type`, the thunk `Iface_Type_method`, a global channel's `g_cell`, a local
+type's `T_l1`, another package's `pkg_name`. The emitter renamed a hand-picked list
+of library names and none of its own joins; a sweep of plausible names found `read`,
+`write`, `open` and `close` failing inside the library's posixio.c, `FILE`,
+`uint8_t` and a field `EOF` failing in generated C, `clock` and `gets` building with
+a warning -- and ONE silent: a type `Shape_vt` merged with interface Shape's table,
+`v.a+v.b` reading 0 on the board for Go's 3. The library's names come from
+`cnames.go` (see Code generation), and a join that meets a program's name -- a
+top-level symbol's, or any identifier it writes, since a local of the join's
+spelling shadows it where it is called -- moves to `ogo_j_<join>` (`joinName`,
+`collectUserSpellings`). Two corners are left, both contrived: a user name beginning
+with `ogo_`, the compiler's prefix, which nothing enforces, and two joins meeting
+each other, type `a_b`'s method `c` and type `a`'s `b_c`. A new place the emitter
+joins names goes through `joinName`.
+
 **A PROGRAM GO REJECTS IS A ROW** (2026-09-20). The sweeps above ask what a correct
 program does; this one asks what an incorrect one earns, which is the direction that
 fails SILENTLY -- an accepted mistake reaches the C compiler, which reports it about

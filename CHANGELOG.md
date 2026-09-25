@@ -286,6 +286,16 @@ shipped section tells a reader on that version that they have behaviour they do 
 
 ### Fixed
 
+- **A program may use a name the emitter joins from two.** C has no methods,
+  packages or interface tables, so the generated C names them by joining two names
+  with an underscore -- type `led`'s method `on` is `led_on`, interface `Shape`'s
+  table `Shape_vt`, package `sensor`'s `read` is `sensor_read` -- and a program
+  written C's way may give something of its own the same name. The two collided: a
+  function `led_on` beside that method, or a `sensor_read` of the main package's
+  beside that package's, failed to build in generated C, and a type `Shape_vt` was
+  merged with the table in silence, `v.a+v.b` reading 0 on the board for 3. A
+  local of such a name shadowed the join where it was used, `led_on := 3` before
+  `l.on()` calling an int. The program's names keep theirs; the joined one moves.
 - **A program may use any name the target's C library has taken.** A function
   called `read`, `write`, `open`, `close` or `creat`, a type called `FILE` or `DIR`,
   and a field, a local or a package variable called `EOF`, `BUFSIZ` or `SEEK_SET`
