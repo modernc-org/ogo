@@ -273,6 +273,13 @@ shipped section tells a reader on that version that they have behaviour they do 
 
 ### Fixed
 
+- **A function with many string constants in its calls builds.** Every constant
+  string was built afresh at each call taking it, into cog registers the target's
+  compiler never gives back: a command dispatcher of 25 `strings.HasPrefix(line,
+  "...")` cases and 25 prints failed to build, "fit 480 failed", and a function of
+  200 such calls took five minutes to be refused with "exceeded local register
+  limit". A constant string is one file-scope header now, named where it is used,
+  and those programs build in a second.
 - **%T pads as fmt does, and so does a nil interface under %v.** `%08T` printed
   "  main.P" on the host and "main.P" on the board for Go's "00main.P", `%.3T` of
   an interface holding nothing cut "<nil>" to "<ni", and a nil error under `%8v`

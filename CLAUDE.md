@@ -1092,15 +1092,31 @@ more value per print, to get printf's argument order right, broke `TestTargetBui
 on a run case whose C was correct; the fix was to bind only the arguments a method
 called while formatting can REACH (`printArgUnreachable`). So an emitter change that
 binds values asks which of them it has to, and `grep -c '\tres\t1' prog.p2asm`
-measures what a program spends. Blocks do not share them, so a temporary bound in a
-block per call site is paid at every site: forty-five hex dumps in one function,
-each bound for the helper, spent 173 and failed (2026-09-25). And flexcc INLINES a
-small static function with its locals, so a thin wrapper that builds a struct for a
-helper puts the struct at every call. Measured on those 45 dumps: a converter call
-127, a compound literal of pointer and length 61, a string passed whole to a helper
-it is not inlined into about two a call, and a pointer and a length read twice from
-a variable 19 in all -- so the byte helpers' bodies take the pointer and the length
-(`_pl`) and the string forms are the wrappers (`emitBytesVerb`).
+measures what a program spends. It gives back a SCALAR temporary -- a hundred
+blocks of `int t = f(k)` spend 21 -- and never a STRUCT-valued one or a compound
+literal, so those are paid at every site: forty-five hex dumps in one function,
+each binding a string header for the helper, spent 173 and failed (2026-09-25). And
+flexcc INLINES a small static function with its locals, so a thin wrapper that
+builds a struct for a helper puts the struct at every call. Measured on those 45
+dumps: a converter call 127, a compound literal of pointer and length 61, a string
+passed whole to a helper it is not inlined into about two a call, and a pointer and
+a length read twice from a variable 19 in all -- so the byte helpers' bodies take
+the pointer and the length (`_pl`) and the string forms are the wrappers
+(`emitBytesVerb`). The costliest shape was the commonest: every constant string was
+the compound literal `(ogo_string){"s", n}`, two registers at each call taking it,
+so a command dispatcher of 25 `strings.HasPrefix(line, "...")` cases and 25 prints
+spent 276 and failed, and a function of 200 such calls took FIVE MINUTES to be
+refused, "exceeded local register limit" -- flexcc's time grows about as the cube of
+such a function. A constant string is a file-scope header, named where it is used,
+since (`stringLitName`); the same programs build in a second, at 35 whatever their
+size. So a new lowering is asked what it hands a call BY VALUE. The rest of the row
+is OPEN, measured the same day at 60 calls in one function: a slice of an array,
+`sum(arr[:])`, 194 and failing; a struct literal, `area(P{k, 1})`, 250 and failing;
+an interface conversion, `show(&gq)`, 131; and even a struct VARIABLE, `area(q)`,
+133 -- in plain C that one is free, and the cost is flexcc INLINING the small callee
+at each site with its struct parameter as a new local. A constant one could be a
+static as the strings are; a general fix is the backend's allocator, which gives
+back scalars and not structs.
 
 A sweep of DECLARATIONS changes the KIND of the name it shadows -- a slice over an
 array, an array over a slice, a scalar over a struct, a variable over a constant, a
