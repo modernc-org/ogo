@@ -14934,9 +14934,9 @@ func (e *emitter) declareNamedResults(sig, body []int32) (declared map[string]bo
 		}
 		// Recorded only where it is declared: a return holds its value in it ahead
 		// of the defers, and one nothing names is not in the C at all.
-		e.curArrayResult = nm
+		e.curArrayResult = e.localIdent(nm) // C text, which a return copies from
 		e.ind()
-		e.emit(a.elem + " " + nm + a.declSuffix() + " = {0};\n")
+		e.emit(a.elem + " " + e.localIdent(nm) + a.declSuffix() + " = {0};\n")
 		return map[string]bool{nm: true}
 	}
 	names, types := e.resultInfo(sig)
@@ -14954,7 +14954,7 @@ func (e *emitter) declareNamedResults(sig, body []int32) (declared map[string]bo
 				continue
 			}
 			e.ind()
-			e.emit(a.elem + " " + nm + a.declSuffix() + " = {0};\n")
+			e.emit(a.elem + " " + e.localIdent(nm) + a.declSuffix() + " = {0};\n")
 			declared[nm] = true
 			continue
 		}
@@ -14965,7 +14965,7 @@ func (e *emitter) declareNamedResults(sig, body []int32) (declared map[string]bo
 		e.ind()
 		// A struct, a string or a slice result zeroes with braces: C has no scalar
 		// zero for an aggregate, and "= 0" is an invalid initializer there.
-		e.emit(types[i] + " " + nm + " = " + e.zeroInitC(types[i]) + ";\n")
+		e.emit(types[i] + " " + e.localIdent(nm) + " = " + e.zeroInitC(types[i]) + ";\n")
 		declared[nm] = true
 	}
 	return declared
@@ -16023,11 +16023,12 @@ func (e *emitter) emitParamCopies(sig []int32) {
 						return
 					}
 					if a, ok := e.arrayDim(ta); ok {
+						nm := e.localIdent(name) // as the struct copy below spells it
 						e.includes["string.h"] = true
 						e.ind()
-						e.emit(a.elem + " " + name + a.declSuffix() + ";\n")
+						e.emit(a.elem + " " + nm + a.declSuffix() + ";\n")
 						e.ind()
-						e.emit("memcpy(" + name + ", " + paramArgName(name) + ", sizeof(" + name + "));\n")
+						e.emit("memcpy(" + nm + ", " + paramArgName(name) + ", sizeof(" + nm + "));\n")
 						return
 					}
 					// A by-ref struct (byRefParam), received by pointer: the callee's
@@ -17072,6 +17073,9 @@ func (e *emitter) emitVarSpec(names []string, typeAST []int32, initExprs [][]int
 			if carries {
 				e.noteHolderRef(nm, ref)
 			}
+			// The name as C spells it: a keyword or a macro, `long` or `EOF`, is
+			// renamed where it is read, and was declared as written.
+			cnm := e.localIdent(nm)
 			if initExpr == nil {
 				e.ind()
 				// A zero-length array has nothing to zero, and "{0}" names an
@@ -17079,17 +17083,17 @@ func (e *emitter) emitVarSpec(names []string, typeAST []int32, initExprs [][]int
 				// which says nothing, and a warning from the host's. `[0]T` is a
 				// legal Go type, so it is declared without an initializer instead.
 				if a.bound == "0" {
-					e.emit(elem + " " + nm + a.declSuffix() + ";\n")
+					e.emit(elem + " " + cnm + a.declSuffix() + ";\n")
 					continue
 				}
-				e.emit(elem + " " + nm + a.declSuffix() + " = {0};\n")
+				e.emit(elem + " " + cnm + a.declSuffix() + " = {0};\n")
 				// An array whose ELEMENT is a channel owns a cell per element,
 				// on the rule a local channel already obeys: the declaration
 				// owns the cell, and the cell is static so it outlives every
 				// frame. Without this every element stayed a null pointer, and
 				// -- since the checker accepts `<-qs[0]` -- the program built
 				// and read rubbish off address zero rather than saying anything.
-				e.emitLocalChanElemCells(nm, a)
+				e.emitLocalChanElemCells(cnm, a)
 				continue
 			}
 			// A literal initializer is aggregate initialization, not a copy.
@@ -17108,8 +17112,8 @@ func (e *emitter) emitVarSpec(names []string, typeAST []int32, initExprs [][]int
 					return
 				}
 				e.ind()
-				e.emit(elem + " " + nm + a.declSuffix() + ";\n")
-				e.emitArrayResultCall(nm, cname, initExpr)
+				e.emit(elem + " " + cnm + a.declSuffix() + ";\n")
+				e.emitArrayResultCall(cnm, cname, initExpr)
 				continue
 			}
 			if !e.checkArrayShape(a, initExpr, "variable declaration") {
@@ -17128,17 +17132,17 @@ func (e *emitter) emitVarSpec(names []string, typeAST []int32, initExprs [][]int
 				e.emitExpr(initExpr)
 				e.emit(", sizeof(" + tmp + "));\n")
 				e.ind()
-				e.emit(elem + " " + nm + a.declSuffix() + ";\n")
+				e.emit(elem + " " + cnm + a.declSuffix() + ";\n")
 				e.ind()
-				e.emit("memcpy(" + nm + ", " + tmp + ", sizeof(" + nm + "));\n")
+				e.emit("memcpy(" + cnm + ", " + tmp + ", sizeof(" + cnm + "));\n")
 				continue
 			}
 			e.ind()
-			e.emit(elem + " " + nm + a.declSuffix() + ";\n")
+			e.emit(elem + " " + cnm + a.declSuffix() + ";\n")
 			e.ind()
-			e.emit("memcpy(" + nm + ", ")
+			e.emit("memcpy(" + cnm + ", ")
 			e.emitExpr(initExpr)
-			e.emit(", sizeof(" + nm + "));\n")
+			e.emit(", sizeof(" + cnm + "));\n")
 		}
 		return
 	}
@@ -17301,13 +17305,13 @@ func (e *emitter) emitVarSpec(names []string, typeAST []int32, initExprs [][]int
 		if initExpr == nil && e.isChanCType(ctype) {
 			// The declaration owns the cell; the variable is a reference to it.
 			e.ind()
-			e.emit(nm + " = &" + e.localChanCell(e.chanElemOfCType(ctype)) + ";\n")
+			e.emit(e.localIdent(nm) + " = &" + e.localChanCell(e.chanElemOfCType(ctype)) + ";\n")
 		}
 		// A local struct owns a cell per channel field, on the same rule as a
 		// local channel: the declaration owns it. Without this the field would be
 		// a null pointer that builds and then faults at the first send, which is
 		// the worst way for a feature to be missing.
-		e.emitLocalChanFieldCells(nm, ctype, e.declLitNode(initExpr))
+		e.emitLocalChanFieldCells(e.localIdent(nm), ctype, e.declLitNode(initExpr))
 	}
 }
 
@@ -18287,10 +18291,13 @@ func (e *emitter) emitArrayCopy(dst, src string, a arrDim) {
 		e.frameHolder[dst] = origin
 	}
 	e.includes["string.h"] = true
+	// dst is the variable's name, which the maps above know it by; C knows it by
+	// its spelling, which differs for a keyword or a macro (localIdent).
+	c := e.localIdent(dst)
 	e.ind()
-	e.emit(a.elem + " " + dst + a.declSuffix() + ";\n")
+	e.emit(a.elem + " " + c + a.declSuffix() + ";\n")
 	e.ind()
-	e.emit("memcpy(" + dst + ", " + src + ", sizeof(" + dst + "));\n")
+	e.emit("memcpy(" + c + ", " + src + ", sizeof(" + c + "));\n")
 }
 
 // emitArrayValues emits an array literal's values as a braced C initializer,
@@ -18388,6 +18395,12 @@ func (e *emitter) emitArrayLitVar(name string, typeAST []int32, lit Node, static
 		return
 	}
 	defer e.bindLitValues(lit)() // the values that do something, in the order written
+	// The declared name as C spells it: a global's is mangled already, and a
+	// local's is renamed where it is read when it is a keyword or a macro.
+	declName := name
+	if !static {
+		declName = e.localIdent(name)
+	}
 	// lead opens a declaration: "static " at file scope, the current indent inside
 	// a function.
 	lead := func() {
@@ -18428,7 +18441,7 @@ func (e *emitter) emitArrayLitVar(name string, typeAST []int32, lit Node, static
 		// empty `[...]int{}` is one, its length being what the literal supplies.
 		if a.bound == "0" {
 			lead()
-			e.emit(a.elem + " " + name + a.declSuffix() + ";\n")
+			e.emit(a.elem + " " + declName + a.declSuffix() + ";\n")
 			return
 		}
 		// An element that is an array VALUE cannot go in the initializer -- C copies
@@ -18437,7 +18450,7 @@ func (e *emitter) emitArrayLitVar(name string, typeAST []int32, lit Node, static
 		// initializer, ordered against the variables it reads like any other.
 		fixups := e.captureLitFixups(func() {
 			lead()
-			e.emit(a.elem + " " + name + a.declSuffix() + " = ")
+			e.emit(a.elem + " " + declName + a.declSuffix() + " = ")
 			e.emitArrayValues(values, a)
 			e.emit(";\n")
 		})
@@ -18446,7 +18459,7 @@ func (e *emitter) emitArrayLitVar(name string, typeAST []int32, lit Node, static
 		case static:
 			e.pkgInitLitFixups(name, fixups)
 		default:
-			e.flushLitFixups(name, fixups)
+			e.flushLitFixups(declName, fixups)
 		}
 		return
 	}
@@ -18483,6 +18496,11 @@ func (e *emitter) emitArrayLitVar(name string, typeAST []int32, lit Node, static
 // out for a literal whose type is not written where it stands -- a row `{1, 2}` of a
 // `[][]int` -- and which has only its element's type to go by (hoistElidedSliceLit).
 func (e *emitter) emitSliceLitVar(name, elem, cname string, lit Node, values []*Node, length int, static bool, lead func()) {
+	// The declared name as C spells it (see emitArrayLitVar).
+	declName := name
+	if !static {
+		declName = e.localIdent(name)
+	}
 	if static {
 		e.globalSliceVars[name] = elem
 		e.globals[name] = cname
@@ -18516,7 +18534,7 @@ func (e *emitter) emitSliceLitVar(name, elem, cname string, lit Node, values []*
 		}
 		e.emit(";\n")
 		lead()
-		e.emit(cname + " " + name + " = {" + backing + ", 0, 0};\n")
+		e.emit(cname + " " + declName + " = {" + backing + ", 0, 0};\n")
 		return
 	}
 	// A file-scope backing array whose elements are not all constant cannot be
@@ -18557,7 +18575,7 @@ func (e *emitter) emitSliceLitVar(name, elem, cname string, lit Node, values []*
 		}
 		e.pkgInit = append(e.pkgInit, fill)
 		lead()
-		e.emit(cname + " " + name + " = {" + backing + ", " + n + ", " + n + "};\n")
+		e.emit(cname + " " + declName + " = {" + backing + ", " + n + ", " + n + "};\n")
 		return
 	}
 	fixups := e.captureLitFixups(func() {
@@ -18576,7 +18594,7 @@ func (e *emitter) emitSliceLitVar(name, elem, cname string, lit Node, values []*
 		e.flushLitFixups(backing, fixups)
 	}
 	lead()
-	e.emit(cname + " " + name + " = {" + backing + ", " + n + ", " + n + "};\n")
+	e.emit(cname + " " + declName + " = {" + backing + ", " + n + ", " + n + "};\n")
 }
 
 // sameArrayType reports whether a literal's bracketed type is the array type
@@ -25080,7 +25098,11 @@ func (e *emitter) emitMakeSliceVar(name, cname, elem string, lenAST, capAST []in
 	} else {
 		e.ind()
 	}
-	e.emit(cname + " " + name + " = {" + backing + ", ")
+	declName := name // the declared name as C spells it (see emitArrayLitVar)
+	if !static {
+		declName = e.localIdent(name)
+	}
+	e.emit(cname + " " + declName + " = {" + backing + ", ")
 	if capAST != nil {
 		e.emitExpr(lenAST)
 	} else {
@@ -26253,6 +26275,12 @@ func (e *emitter) rangeValueInject(h *forHeader, key, elem, access string) func(
 	}
 	if h.valVar != nil {
 		if val := e.exprC(h.valVar); val != "_" { // "_" discards the value
+			// A declared value is known to the maps by its NAME, which exprC's C
+			// spelling is not for a keyword or a macro: `for _, long := range ps`
+			// kept `ogo_kw_long` there, and `long.b` found no value with fields.
+			if name, isName := e.exprIdent(h.valVar); isName && h.rangeDef {
+				val = name
+			}
 			if h.rangeDef {
 				e.shadow(val)
 			}
@@ -29311,7 +29339,7 @@ func (e *emitter) emitReturn(nodes []Node) {
 			if value == "" {
 				value = e.captureC(func() { e.emitReturnValue(i, ex) })
 			}
-			if name := e.curResultNames[i]; name != "0" {
+			if name := e.resultC(e.curResultNames[i]); name != "0" {
 				e.ind()
 				e.emit(name + " = " + value + ";\n")
 				value = name
@@ -29328,7 +29356,7 @@ func (e *emitter) emitReturn(nodes []Node) {
 				continue
 			}
 			value := e.captureC(func() { e.emitReturnValue(i, ex) })
-			if name := e.curResultNames[i]; name != "0" {
+			if name := e.resultC(e.curResultNames[i]); name != "0" {
 				e.ind()
 				e.emit(name + " = " + value + ";\n")
 				bound = append(bound, name)
@@ -29360,14 +29388,14 @@ func (e *emitter) emitReturn(nodes []Node) {
 		case len(e.curResultNames) == 0:
 			e.emit("return;\n")
 		case len(e.curResultNames) == 1:
-			e.emit("return " + e.curResultNames[0] + ";\n")
+			e.emit("return " + e.resultC(e.curResultNames[0]) + ";\n")
 		default:
 			e.emit("return (" + e.retStructName(e.curFunc) + "){")
 			for i, nm := range e.curResultNames {
 				if i != 0 {
 					e.emit(", ")
 				}
-				e.emit(nm)
+				e.emit(e.resultC(nm))
 			}
 			e.emit("};\n")
 		}
@@ -29442,6 +29470,17 @@ func (e *emitter) returnValueStands(ast []int32, stored []string) bool {
 	return true
 }
 
+// resultC is a result's C spelling: a named result's, renamed where it is a keyword
+// or a macro (localIdent), and "0", the zero standing in for a result with no
+// variable, as it is. curResultNames holds the names as written, which is what a
+// question about the source -- returnValueStands -- compares with.
+func (e *emitter) resultC(name string) string {
+	if name == "0" {
+		return name
+	}
+	return e.localIdent(name)
+}
+
 // emitStructOutReturn writes a return of a function whose single result is a
 // struct holding an array (funcStructRet): the value copied through the out
 // parameter, or -- a call of another such function -- written there by the call.
@@ -29454,7 +29493,7 @@ func (e *emitter) emitStructOutReturn(rt string, exprs []Node) {
 	size := "sizeof(" + rt + ")"
 	named := ""
 	if len(e.curResultNames) == 1 && e.curResultNames[0] != "0" {
-		named = e.curResultNames[0]
+		named = e.resultC(e.curResultNames[0])
 	}
 	if len(exprs) == 0 {
 		// A bare return, which only a named result has.
@@ -29623,7 +29662,7 @@ func (e *emitter) emitTupleOutReturn(rt string, exprs []Node) {
 			e.emitDeferred()
 		}
 		for i, ct := range types {
-			store(ct, field(i), names[i])
+			store(ct, field(i), e.resultC(names[i]))
 		}
 	case len(exprs) == 1:
 		// `return f()`: one call supplying every result, written where they are held
@@ -29718,7 +29757,7 @@ func (e *emitter) emitTupleOutReturn(rt string, exprs []Node) {
 				value = e.captureC(func() { e.emitReturnValue(i, ex) })
 			}
 			if named(i) {
-				store(types[i], names[i], value)
+				store(types[i], e.resultC(names[i]), value)
 				continue
 			}
 			store(types[i], field(i), value)
@@ -29726,7 +29765,7 @@ func (e *emitter) emitTupleOutReturn(rt string, exprs []Node) {
 		e.emitDeferred()
 		for i := range exprs {
 			if named(i) {
-				store(types[i], field(i), names[i])
+				store(types[i], field(i), e.resultC(names[i]))
 			}
 		}
 	}
@@ -36206,7 +36245,12 @@ func (e *emitter) emitInferredLocal(name string, initExpr []int32) {
 	// this must be handled before the general path below.)
 	if rhs, ok := e.exprIdent(initExpr); ok {
 		if a, isLocal := e.arrays[rhs]; isLocal {
-			e.emitArrayCopy(name, rhs, a)
+			// rhs is the NAME, which C spells otherwise for a keyword or a macro:
+			// the copy reads the spelling, and what a frame holder marks is the name.
+			e.emitArrayCopy(name, e.localIdent(rhs), a)
+			if origin := e.frameHolder[rhs]; origin != "" {
+				e.frameHolder[name] = origin
+			}
 			return
 		}
 		if a, isGlobal := e.globalArrays[e.globalC(rhs)]; isGlobal && !e.localName(rhs) {

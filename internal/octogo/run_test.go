@@ -7995,6 +7995,79 @@ func main() {
 		want: "2 7\n3 30 16 40\n9 3 5 6\n5 42\n4 8\n",
 	},
 	{
+		name: "a local named what C reserves, of every kind",
+		src: `// A local of any kind may be named what C reserves -- a keyword, long, or a macro,
+// EOF or unix -- and is renamed where it is declared and wherever it is read.
+// Scalars, structs, strings and pointers always were; an array, a slice or a
+// channel was declared under the name as written while its reads were renamed,
+// and so were an array parameter, every named result and a range value holding an
+// array or a struct: the C did not build.
+type P struct{ a, b int }
+
+func first(long [3]int) int { return long[0] }
+
+func pair() (EOF [2]int, double int) {
+	EOF[1] = 7
+	double = 8
+	return
+}
+
+var back [4]int
+
+func grow() (unix []int) {
+	unix = back[:2]
+	return
+}
+
+func send(c chan int) { c <- 11 }
+
+func inc(p *int) { *p++ }
+
+// A defer changes a named result after the return has set it.
+func bump() (long int) {
+	defer inc(&long)
+	return 1
+}
+
+func bump2() (EOF [2]int, double int) {
+	defer inc(&double)
+	EOF[0] = 3
+	return EOF, 4
+}
+
+func main() {
+	var long [3]int
+	long[1] = 5
+	double := [2]int{1, 2}
+	EOF := []int{3, 4}
+	unix := make([]int, 2)
+	unix[1] = 6
+	var short [2][2]int
+	short[1][0] = 9
+	var char [2]P
+	char[1].b = 10
+	signed := double
+	double[0] = 99
+	println(long[1], double[0], EOF[1], unix[1], short[1][0], char[1].b, signed[0])
+	println(first([3]int{4, 5, 6}))
+	x, y := pair()
+	println(x[1], y, len(grow()))
+	for _, long := range [][2]int{{1, 2}} {
+		println(long[1])
+	}
+	for _, EOF := range []P{{3, 4}} {
+		println(EOF.b)
+	}
+	var auto chan int
+	go send(auto)
+	println(<-auto)
+	z, w := bump2()
+	println(bump(), z[0], w)
+}
+`,
+		want: "5 99 4 6 9 10 1\n4\n7 8 2\n2\n4\n11\n2 3 5\n",
+	},
+	{
 		name: "an array parameter is a copy",
 		src: `func mutate(a [3]int) int {
 	a[0] = 99
