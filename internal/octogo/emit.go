@@ -12334,6 +12334,18 @@ func (e *emitter) derefHeadName(head Node) (string, bool) {
 	return e.derefName(kids[1].ast)
 }
 
+// parenNameShape is a statement's head written as a parenthesised name, `(g)`, by
+// shape: the name, or "" for anything else between the parentheses.
+func (e *emitter) parenNameShape(head Node) string {
+	kids := slices.Collect(it(head.ast))
+	if len(kids) != 3 || kids[0].sym != 0 || e.f.ch(kids[0].tok) != LPAREN ||
+		kids[2].sym != 0 || e.f.ch(kids[2].tok) != RPAREN || kids[1].sym != Expression {
+		return ""
+	}
+	name, _ := e.exprIdent(e.unparenExpr(kids[1].ast))
+	return name
+}
+
 // factorDerefName is factorDerefChain by shape: `(*p)` and the steps after it,
 // answering p and the steps.
 func (e *emitter) factorDerefName(kids []Node) (string, []Node, bool) {
@@ -12507,7 +12519,10 @@ func (e *emitter) assignThrough(nodes []Node) (base string, values [][]int32, su
 	// parameter through another was summarised as storing nothing.
 	written, isDeref := e.derefHeadName(nodes[0])
 	if base = e.soleIdent(nodes[0].ast); base == "" && !isDeref {
-		return "", nil, false, false
+		// `(g) = v` stores into g, as `g = v` does.
+		if base = e.parenNameShape(nodes[0]); base == "" {
+			return "", nil, false, false
+		}
 	}
 	if isDeref {
 		base = written
@@ -12868,9 +12883,12 @@ func (e *emitter) summaryBinding(nodes []Node) (targets []string, into []bool, v
 	head := e.soleIdent(nodes[0].ast)
 	derefHead := false
 	if head == "" {
-		// `(*p).x, n = v, 1` writes into what p points at, as `p.x` would.
+		// `(*p).x, n = v, 1` writes into what p points at, as `p.x` would, and
+		// `(g), n = v, 1` into g.
 		if head, derefHead = e.derefHeadName(nodes[0]); !derefHead {
-			return nil, nil, nil
+			if head = e.parenNameShape(nodes[0]); head == "" {
+				return nil, nil, nil
+			}
 		}
 	}
 	postfix := slices.Collect(it(nodes[1].ast))
@@ -35623,7 +35641,26 @@ func (e *emitter) derefHead(head Node) (string, bool) {
 		kids[2].sym != 0 || e.f.ch(kids[2].tok) != RPAREN || kids[1].sym != Expression {
 		return "", false
 	}
-	return e.derefOperand(kids[1].ast)
+	return e.derefOperand(e.unparenExpr(kids[1].ast)) // `((*p))` is `(*p)`
+}
+
+// parenHeadName reads a parenthesised assignment head naming a variable, `(x)`, or
+// its address, `(&x)`, nested parentheses peeled: the variable, and whether it was
+// its address. Go reads `(x)` as x wherever a target stands, and `(&x).f` as x.f.
+func (e *emitter) parenHeadName(head Node) (name string, addr, ok bool) {
+	kids := slices.Collect(it(head.ast))
+	if len(kids) != 3 || kids[0].sym != 0 || e.f.ch(kids[0].tok) != LPAREN ||
+		kids[2].sym != 0 || e.f.ch(kids[2].tok) != RPAREN || kids[1].sym != Expression {
+		return "", false, false
+	}
+	inner := e.unparenExpr(kids[1].ast)
+	if name, ok := e.exprIdent(inner); ok {
+		return name, false, true
+	}
+	if name, ok := e.addrOperand(inner); ok {
+		return name, true, true
+	}
+	return "", false, false
 }
 
 // parenRecvHead answers the variable a parenthesized statement head names as a
@@ -36109,6 +36146,13 @@ func (e *emitter) emitAssignment(head Node, postfix []Node) {
 		// they do without the parentheses. A head with no step after it is not one
 		// of these: `(&p) = q` has nothing addressable on its left.
 		base, _ = e.parenTargetBase(head, postfix)
+	}
+	if base == "" {
+		// `(x) = 5`, `(x), s = 5, "b"`, `(x)++`: a parenthesised NAME is the name,
+		// with or without a step after it. Only an address needs one.
+		if name, addr, ok := e.parenHeadName(head); ok && !addr {
+			base = name
+		}
 	}
 	if base == "" {
 		// The same with a CHAIN inside the parentheses, `(&h.v).x = 9`, `(&ga[1]).y
@@ -38039,6 +38083,16 @@ func (e *emitter) lhsItemTarget(ast []int32) (assignTarget, bool) {
 	}
 	if ptr, isDeref := e.derefHead(nodes[0]); isDeref {
 		return e.derefTarget(ptr, nodes[1:])
+	}
+	// `s, (x) = "q", 7` and `a, (p).x, (&v).y = ...`: a parenthesised name is the name,
+	// and its address before a step is it too, as a statement's head reads them
+	// (parenTargetBase) -- asked, as there, what the step takes (addrStepRefused).
+	if name, addr, ok := e.parenHeadName(nodes[0]); ok {
+		steps := nodes[1:]
+		if len(steps) != 0 && !isAccessChain(steps) || addr && (len(steps) == 0 || e.addrStepRefused(name, steps)) {
+			return assignTarget{}, false
+		}
+		return e.qualifiedTarget(assignTarget{name: name, chain: steps, tok: -1}), true
 	}
 	name := e.soleIdent(nodes[0].ast)
 	if name != "" && e.derefStars(nodes[0].ast) == "" && containsSym(nodes[1:], CallSuffix) {

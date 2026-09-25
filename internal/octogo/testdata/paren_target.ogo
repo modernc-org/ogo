@@ -1,0 +1,79 @@
+// A target written in parentheses -- `(x)`, `(*p)`, `(p).f`, `(&v).f` -- is the
+// target it names, and a list pairs each value with the target in its position,
+// one written with a star, `*p`, too.
+// A parenthesised target was left out of the checker's list of targets, so every
+// target after it took the value before its own: `(*px), s = 5, "b"` was refused as
+// "cannot use 5 of type int as type string", and `(*px), s = "b", 5` was taken. Nor
+// was one asked what it stores, alone or in a list: `(*px) = "b"` put a string into
+// an int as far as the C compiler.
+
+type B struct{ d []int }
+
+type P struct{ x int }
+
+func is() (int, string) { return 1, "a" }
+
+func si() (string, int) { return "a", 1 }
+
+func ok() {
+	x := 0
+	px := &x
+	s := ""
+	var b B
+	pb := &b
+	var p P
+	xs := []int{1}
+	n := 0
+	(*px), s = 5, "b"
+	(*pb).d, n = xs, 1
+	(p).x, s = 5, "b"
+	(x), s = 5, "b"
+	s, (x) = "q", 7
+	((*px)), s = 4, "t"
+	(*px), (p).x, s = 1, 2, "c"
+	(*px), s = is()
+	(p).x = 7
+	(&p).x = 8
+	(x)++
+	*px, s = 3, "h"
+	s, *px = "i", 4
+	_, _, _ = s, n, p
+}
+
+func bad() {
+	x := 0
+	px := &x
+	s := ""
+	var b B
+	pb := &b
+	var p P
+	n := 0
+	_, _, _, _ = pb, n, p, s
+	// ERROR "cannot use .b. of type string as type int in assignment"
+	(*px) = "b"
+	// ERROR "cannot use 2 of type int as type string in assignment"
+	(*px), s = 1, 2
+	// ERROR "cannot use .c. of type string as type int in assignment"
+	s, (*px) = "q", "c"
+	// ERROR "cannot use 1 \(value of type int\) as \[\]int value in assignment"
+	(*pb).d, n = 1, 2
+	// ERROR "cannot use .b. of type string as type int in assignment"
+	(p).x, s = "b", "c"
+	// ERROR "cannot use .b. of type string as type int in assignment"
+	(x), s = "b", "c"
+	// ERROR "cannot use result 2 of si\(\) \(type int\) as type string in assignment"
+	(*px), s = si()
+	// ERROR "cannot assign to \(&x\)"
+	(&x) = 3
+	// ERROR "cannot use 2 of type int as type string in assignment"
+	*px, s = 1, 2
+	// ERROR "cannot use .c. of type string as type int in assignment"
+	s, *px = "q", "c"
+	// ERROR "non-name target on the left side of :="
+	(x), n := 1, 2
+}
+
+func main() {
+	ok()
+	bad()
+}

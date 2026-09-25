@@ -4155,6 +4155,50 @@ func main() {
 		want: "48\n",
 	},
 	{
+		// A target written in parentheses is the target it names, alone and in a list:
+		// `(x)`, `(*p)`, `(p).x` and `(&v).x`, in the head and later. After a
+		// parenthesised target the checker paired each value with the target before it,
+		// and the emitter refused a parenthesised name as a target outright.
+		name: "a parenthesised target is the target it names, alone and in a list",
+		src: `type B struct{ d []int }
+
+type P struct{ x, y int }
+
+func is() (int, string) { return 1, "a" }
+
+func main() {
+	x := 0
+	px := &x
+	s := ""
+	var b B
+	pb := &b
+	var p P
+	xs := []int{1, 2}
+	n := 0
+	(*px), s = 5, "b"
+	println(x, s)
+	(*pb).d, n = xs, 1
+	println(len(b.d), n)
+	(p).x, s = 6, "c"
+	println(p.x, s)
+	(x), s = 7, "d"
+	println(x, s)
+	s, (x) = "e", 8
+	println(x, s)
+	(*px), (p).y, s = 10, 11, "g"
+	println(x, p.y, s)
+	(*px), s = is()
+	println(x, s)
+	(&p).x, (x) = 12, 13
+	println(p.x, x)
+	(x)++
+	(p).x += 2
+	println(x, p.x)
+}
+`,
+		want: "5 b\n2 1\n6 c\n7 d\n8 e\n10 11 g\n1 a\n12 13\n14 14\n",
+	},
+	{
 		// A target written through a dereference, in every list form: the Swap of a
 		// sort.Interface on a defined slice type, whose methods take a pointer here, and
 		// the pointee kinds around it -- a slice, a slice of structs, an array, a struct, a

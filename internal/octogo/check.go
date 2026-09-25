@@ -6526,18 +6526,37 @@ func (f *File) checkAssignment(s *Scope, head, postfix Node) {
 	// a "(" kept assignHeadIdent from reading a name off it, so the two are tracked
 	// apart.
 	var nonNames []Token
-	if id, ok := f.assignHeadIdent(head); ok {
-		lhs = append(lhs, id)
-		// A leading "*" makes the head a dereference, so the base is not the assigned
-		// value either -- the same thing a selector or index means.
-		suffixed := hasSelectorOrIndex(postfix) || f.headIsDeref(head) || containsSym(slices.Collect(it(postfix.ast)), CallSuffix)
-		lhsSuffixed = append(lhsSuffixed, suffixed)
-		if suffixed {
-			nonNames = append(nonNames, id)
+	// Every target keeps its POSITION in lhs, so a value pairs with the target it is
+	// written against. A parenthesised head -- `(*p), s = 5, "b"`, `(p).x, s = ...` --
+	// is read through the parentheses, `(x)` and `(*p)` and `(&v)` naming x, p and v
+	// (parenAt marks them: no name a ":=" declares), and a target no name can be read
+	// off holds an invalid token. Left out, it shifted every later target one place:
+	// s was paired with 5 and refused, and `(*px), s = "b", 5` was taken.
+	parenAt := map[int]bool{}
+	addTarget := func(ah Node, suffixed bool) {
+		if id, ok := f.assignHeadIdent(ah); ok {
+			lhs = append(lhs, id)
+			lhsSuffixed = append(lhsSuffixed, suffixed)
+			if suffixed {
+				nonNames = append(nonNames, id)
+			}
+			return
 		}
-	} else if tok := f.tok(head.Pos()); tok.IsValid() {
-		nonNames = append(nonNames, tok)
+		if tok := f.tok(ah.Pos()); tok.IsValid() {
+			nonNames = append(nonNames, tok)
+		}
+		if id, op, ok := f.parenTargetName(ah); ok {
+			parenAt[len(lhs)] = true
+			lhs = append(lhs, id)
+			lhsSuffixed = append(lhsSuffixed, suffixed || op != 0)
+			return
+		}
+		lhs = append(lhs, Token{})
+		lhsSuffixed = append(lhsSuffixed, true)
 	}
+	// A leading "*" makes the head a dereference, so the base is not the assigned
+	// value either -- the same thing a selector or index means.
+	addTarget(head, hasSelectorOrIndex(postfix) || f.headIsDeref(head) || containsSym(slices.Collect(it(postfix.ast)), CallSuffix))
 
 	var op Symbol
 	var rhs []Node
@@ -6555,17 +6574,8 @@ func (f *File) checkAssignment(s *Scope, head, postfix Node) {
 				// returns, which checkCallValueTargets asks, and not the function.
 				suffixed := hasSelectorOrIndex(n) || containsSym(slices.Collect(it(n.ast)), CallSuffix)
 				for c := range it(n.ast) {
-					if c.sym != AssignHead {
-						continue
-					}
-					if id, ok := f.assignHeadIdent(c); ok {
-						lhs = append(lhs, id)
-						lhsSuffixed = append(lhsSuffixed, suffixed)
-						if suffixed {
-							nonNames = append(nonNames, id)
-						}
-					} else if tok := f.tok(c.Pos()); tok.IsValid() {
-						nonNames = append(nonNames, tok)
+					if c.sym == AssignHead {
+						addTarget(c, suffixed || f.headIsDeref(c))
 					}
 				}
 			case ExpressionList:
@@ -6606,6 +6616,9 @@ func (f *File) checkAssignment(s *Scope, head, postfix Node) {
 	// counts as a use for the unused-variable report.
 	if op == INC || op == DEC {
 		for i, tok := range lhs {
+			if !tok.IsValid() {
+				continue // a target no name is read off, `*p++`; see addTarget
+			}
 			nm := tok.Src()
 			if nm == "_" {
 				f.blankRead(tok) // "_++" reads the blank identifier: illegal
@@ -6647,6 +6660,9 @@ func (f *File) checkAssignment(s *Scope, head, postfix Node) {
 	// there is exactly one target.
 	if isCompoundAssign(op) {
 		for i, tok := range lhs {
+			if !tok.IsValid() {
+				continue // a target no name is read off, `*p += 1`; see addTarget
+			}
 			nm := tok.Src()
 			if nm == "_" {
 				f.blankRead(tok) // "_ += 1" reads the blank identifier: illegal
@@ -6682,7 +6698,7 @@ func (f *File) checkAssignment(s *Scope, head, postfix Node) {
 		if isShiftAssign(op) && len(rhs) == 1 {
 			f.checkShiftCount(s, rhs[0]) // `x <<= -1` is the same error as `x << -1`
 		}
-		if !reported && !isShiftAssign(op) && len(lhs) == 1 && len(rhs) == 1 {
+		if !reported && !isShiftAssign(op) && len(lhs) == 1 && len(rhs) == 1 && lhs[0].IsValid() {
 			f.checkAssignType(s, lhs[0], rhs[0], !lhsSuffixed[0])
 			// checkAssignType reads the BASE's declaration, which is the target only
 			// when there is no suffix. A field, an element or a pointee is the target's
@@ -6725,7 +6741,7 @@ func (f *File) checkAssignment(s *Scope, head, postfix Node) {
 	// a variable as using it. A suffixed target reads its base, so it is left out.
 	if op == ASSIGN || op == DEFINE {
 		for i, tok := range lhs {
-			if !lhsSuffixed[i] {
+			if !lhsSuffixed[i] && tok.IsValid() {
 				f.writeTargets[tok.Position().String()] = true
 			}
 		}
@@ -6780,6 +6796,9 @@ func (f *File) checkAssignment(s *Scope, head, postfix Node) {
 		// The blank identifier is always assignable, and a package qualifier
 		// resolves through the file scope, not s, so both are exempt.
 		for i, tok := range lhs {
+			if !tok.IsValid() {
+				continue // a target no name is read off; see addTarget
+			}
 			nm := tok.Src()
 			if nm == "_" {
 				// A whole "_" target is a legal discard, but a suffixed base
@@ -6841,7 +6860,7 @@ func (f *File) checkAssignment(s *Scope, head, postfix Node) {
 		}
 		f.checkWalkedTargets(s, head, postfix, rhs, lhsItems)
 		for i, e := range rhs {
-			if i < len(lhs) {
+			if i < len(lhs) && lhs[i].IsValid() {
 				f.checkRecvAssign(s, lhs[i], e)
 				// Only a bare target is of its own declared type: with a selector,
 				// an index or a leading "*", lhs[i] is the target's BASE, and what is
@@ -6856,7 +6875,7 @@ func (f *File) checkAssignment(s *Scope, head, postfix Node) {
 	}
 	// A send "ch <- v" checks that ch is a channel and v matches its element type.
 	if op == ARROW {
-		if len(lhs) == 1 && len(rhs) == 1 {
+		if len(lhs) == 1 && len(rhs) == 1 && lhs[0].IsValid() && !parenAt[0] {
 			flds, headIdx, tailIdx := f.postfixFields([]Node{postfix})
 			f.checkSend(s, lhs[0], flds, headIdx, tailIdx, postfix, rhs[0])
 		}
@@ -6926,7 +6945,8 @@ func (f *File) checkAssignment(s *Scope, head, postfix Node) {
 		}
 		// A target that is no name, `getp().x`, declares nothing -- it was refused
 		// above -- and declared as its head it was "declared and not used: getp".
-		if i < len(lhsSuffixed) && lhsSuffixed[i] {
+		// Nor does a parenthesised one, `(x)`, which Go calls a non-name too.
+		if i < len(lhsSuffixed) && lhsSuffixed[i] || parenAt[i] || !id.IsValid() {
 			continue
 		}
 		if s.Declarations[nm] != nil {
@@ -13608,7 +13628,11 @@ func (f *File) headerCallTarget(t Node) (id Token, steps []Node, ok bool) {
 // one, which is when the one-step shapes are the other checks' to judge.
 func (f *File) checkWalkedTarget(s *Scope, ah Node, steps []Node, value Node, sole bool) {
 	base, stars, ok := f.targetHead(ah)
-	if !ok || len(steps) == 0 && stars == 0 {
+	if !ok {
+		f.checkParenTarget(s, ah, steps, value)
+		return
+	}
+	if len(steps) == 0 && stars == 0 {
 		return
 	}
 	if sole && stars == 0 && len(steps) == 1 {
@@ -13616,12 +13640,96 @@ func (f *File) checkWalkedTarget(s *Scope, ah Node, steps []Node, value Node, so
 	}
 	tn, in := f.targetTypeNode(s, base, steps, stars)
 	if tn == nil {
+		if !sole && stars == 1 && len(steps) == 0 {
+			// `s, *p = "q", "c"` for a `p := &x` whose type the walk cannot follow:
+			// asked as `*p = v` alone is (checkDerefAssign), which nothing did in a
+			// list.
+			f.checkDerefAssign(s, base, value)
+		}
 		return
 	}
 	if sole && stars == 1 && len(steps) <= 1 && f.resultType(in, tn).known {
 		return // checkDerefAssign's or checkDerefFieldAssign's: a pointee of a Kind
 	}
 	f.checkStoreInto(s, in, tn, value, "assignment")
+}
+
+// checkParenTarget is checkWalkedTarget for a head written in parentheses, which
+// nothing else asks anything: `(*px) = "b"` stored a string into an int, alone and
+// in a list, as far as the C compiler. The dereference and the address are walked as
+// Go's shorthand reads them -- `(*p).x` from p as `p.x` is, `(&v).x` as `v.x` -- and
+// a bare `(*p)` is p's pointee. A parenthesised name alone, `(x)`, is the name's
+// own, checkAssignType's through its place in lhs.
+func (f *File) checkParenTarget(s *Scope, ah Node, steps []Node, value Node) {
+	id, op, ok := f.parenTargetName(ah)
+	if !ok || id.Src() == "_" || op == 0 && len(steps) == 0 {
+		return
+	}
+	switch {
+	case op == AND && len(steps) == 0:
+		// `(&v) = w`: an address is a value, not a place.
+		f.err(f.tok(ah.Pos()).Position(), "cannot assign to (&%s) (neither addressable nor a map index expression)", id.Src())
+		return
+	case op == MUL && len(steps) == 0:
+		f.checkDerefAssign(s, id, value) // `(*p) = v` is `*p = v`
+		return
+	case len(steps) == 1 && steps[0].sym == Selector:
+		if field, ok := f.selectorMember(steps[0]); ok {
+			f.checkFieldAssign(s, id, field, value) // `(p).x`, `(*p).x`, `(&v).x`: `p.x`, `v.x`
+			return
+		}
+	}
+	if tn, in := f.targetTypeNode(s, id, steps, 0); tn != nil {
+		f.checkStoreInto(s, in, tn, value, "assignment")
+	}
+}
+
+// parenTargetName reads an AssignHead written in parentheses around a name, `(x)`,
+// a dereference of one, `(*p)`, or its address, `(&v)` -- the parentheses nested or
+// not -- answering the name and the operator before it: 0, MUL or AND. Anything else
+// between them, a call, a chain, answers false.
+func (f *File) parenTargetName(ah Node) (Token, Symbol, bool) {
+	kids := slices.Collect(it(ah.ast))
+	if len(kids) != 3 || kids[0].sym != 0 || f.ch(kids[0].tok) != LPAREN ||
+		kids[1].sym != Expression || kids[2].sym != 0 || f.ch(kids[2].tok) != RPAREN {
+		return Token{}, 0, false
+	}
+	return f.parenOperandName(kids[1])
+}
+
+// parenOperandName is parenTargetName for the expression between the parentheses.
+func (f *File) parenOperandName(e Node) (Token, Symbol, bool) {
+	nodes := slices.Collect(it(e.ast))
+	for len(nodes) == 1 && (nodes[0].sym == Expression || nodes[0].sym == SimpleExpr || nodes[0].sym == Term) {
+		nodes = slices.Collect(it(nodes[0].ast))
+	}
+	if len(nodes) != 1 || nodes[0].sym != UnaryExpr {
+		return Token{}, 0, false
+	}
+	kids := slices.Collect(it(nodes[0].ast))
+	var op Symbol
+	if len(kids) == 2 && kids[0].sym == UnaryOp {
+		for c := range it(kids[0].ast) {
+			if c.sym == 0 {
+				op = f.ch(c.tok)
+			}
+		}
+		if op != MUL && op != AND {
+			return Token{}, 0, false
+		}
+		kids = kids[1:]
+	}
+	if len(kids) != 1 || kids[0].sym != Factor {
+		return Token{}, 0, false
+	}
+	fk := slices.Collect(it(kids[0].ast))
+	switch {
+	case len(fk) == 1 && fk[0].sym == 0 && f.ch(fk[0].tok) == IDENT:
+		return f.tok(fk[0].tok), op, true
+	case op == 0 && len(fk) == 3 && fk[0].sym == 0 && f.ch(fk[0].tok) == LPAREN && fk[1].sym == Expression:
+		return f.parenOperandName(fk[1]) // `((x))`, `((*p))`
+	}
+	return Token{}, 0, false
 }
 
 // targetHead reads an AssignHead as a base variable and the stars before it, `**p`;

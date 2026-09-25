@@ -12959,6 +12959,8 @@ func fillDeref(b *Box, xs []int) { (*b).d = xs }
 
 func putDeref(pp *[]int, xs []int) { (*pp) = xs }
 
+func keepParen(p *int) { (gp) = p }
+
 func (b *Box) setDeref(xs []int) { (*b).d = xs }
 
 type OuterBox struct {
@@ -13054,6 +13056,10 @@ func main() {
 		{"gb.setDeref(a[:])", "it is stored in the receiver gb, which outlives this function"},
 		{"var lb Box\n\tfillDeref(&lb, a[:])\n\tback[0] = len(lb.d)", ""},
 		{"fillDeref(&gb, back[:])", ""},
+		// A callee storing into a PARENTHESISED name, which the summaries read as
+		// nobody's.
+		{"keepParen(&x)", "cannot pass the address of local variable x to keepParen"},
+		{"keepParen(&back[0])", ""},
 		// What is read through a pointer to a marked local.
 		{"var lb Box\n\tlb.d = a[:]\n\tp := &lb\n\tgb = *p", "cannot store *p, which holds a pointer into local a"},
 		{"var lb Box\n\tlb.d = a[:]\n\tp := &lb\n\tkeepBox(*p)", "cannot pass *p, which holds a pointer into local a to keepBox"},
