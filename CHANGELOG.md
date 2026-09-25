@@ -20,6 +20,9 @@ shipped section tells a reader on that version that they have behaviour they do 
 
 ### Language
 
+- **printf's float verbs take the '#' flag.** It keeps the decimal point, `%#.0f`
+  of 2 being "2.", and %g's trailing zeros, `%#g` of 1.5 being "1.50000", as fmt
+  writes them; it was refused.
 - **printf's %U takes a width and a precision, and '#' is taken where fmt gives it
   no meaning.** `%8U` and `%.6U` were refused, and so were `%#s`, `%#c` and `%#t`,
   which fmt prints as it prints the verb without the flag. `%#U`, which writes the
