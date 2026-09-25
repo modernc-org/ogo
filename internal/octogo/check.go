@@ -3071,8 +3071,12 @@ func (f *File) checkHeaderAssign(s *Scope, targets, values []Node) {
 			f.checkAssignType(s, base, values[i], true)
 			continue
 		}
-		if tn, in := f.targetTypeNode(s, base, steps, stars); tn != nil {
+		tn, in := f.targetTypeNode(s, base, steps, stars)
+		switch {
+		case tn != nil:
 			f.checkStoreInto(s, in, tn, values[i], "assignment")
+		case stars == 1 && len(steps) == 0:
+			f.checkDerefAssign(s, base, values[i]) // `*p` whose type the walk cannot follow
 		}
 	}
 }
@@ -3126,17 +3130,30 @@ func (f *File) exprTarget(n Node) (base Token, steps []Node, stars int, ok bool)
 	if n.sym == LhsItem {
 		// The further targets of a list, `a, h.n = ...`: an AssignHead and the
 		// steps after it.
+		var paren Node
 		for c := range it(n.ast) {
 			switch c.sym {
 			case AssignHead:
 				if base, stars, ok = f.targetHead(c); !ok {
-					return Token{}, nil, 0, false
+					paren = c
 				}
 			case Selector, Index:
 				steps = append(steps, c)
 			default:
 				return Token{}, nil, 0, false
 			}
+		}
+		if paren.sym != 0 {
+			// `(x)`, `(p).x`, `(*p).x` and `(&v).x` are Go's shorthand for x, p.x
+			// and v.x; `(*p)` is *p; `(&v)` alone is no place (parenTargetName).
+			id, op, isParen := f.parenTargetName(paren)
+			switch {
+			case !isParen, op == AND && len(steps) == 0:
+				return Token{}, nil, 0, false
+			case op == MUL && len(steps) == 0:
+				return id, nil, 1, true
+			}
+			return id, steps, 0, true
 		}
 		return base, steps, stars, base.IsValid()
 	}
@@ -3162,6 +3179,10 @@ func (f *File) exprTarget(n Node) (base Token, steps []Node, stars int, ok bool)
 		return Token{}, nil, 0, false
 	}
 	kids := slices.Collect(it(fac.ast))
+	if len(kids) >= 3 && kids[0].sym == 0 && f.ch(kids[0].tok) == LPAREN && kids[1].sym == Expression &&
+		kids[2].sym == 0 && f.ch(kids[2].tok) == RPAREN {
+		return f.parenExprTarget(kids, stars)
+	}
 	if len(kids) == 0 || len(kids) > 2 || kids[0].sym != 0 || f.ch(kids[0].tok) != IDENT {
 		return Token{}, nil, 0, false
 	}
@@ -3177,6 +3198,39 @@ func (f *File) exprTarget(n Node) (base Token, steps []Node, stars int, ok bool)
 		}
 	}
 	return f.tok(kids[0].tok), steps, stars, true
+}
+
+// parenExprTarget is exprTarget for a factor written in parentheses, kids, with the
+// stars written before it: what is between them is read as a target itself, and
+// the steps after them apply to it -- `(x)` is x, `(p.q).x` is p.q.x, and a
+// dereference followed by steps, `(*p).x`, is Go's shorthand p.x. A dereference
+// behind steps, `(*p.q).x`, is left unmodelled.
+func (f *File) parenExprTarget(kids []Node, stars int) (base Token, steps []Node, outStars int, ok bool) {
+	inBase, inSteps, inStars, ok := f.exprTarget(kids[1])
+	if !ok || len(kids) > 4 {
+		return Token{}, nil, 0, false
+	}
+	var after []Node
+	if len(kids) == 4 {
+		if kids[3].sym != FactorSuffix {
+			return Token{}, nil, 0, false
+		}
+		for st := range it(kids[3].ast) {
+			if st.sym != Selector && st.sym != Index {
+				return Token{}, nil, 0, false
+			}
+			after = append(after, st)
+		}
+	}
+	switch {
+	case len(after) == 0:
+		return inBase, inSteps, inStars + stars, true
+	case inStars == 0:
+		return inBase, append(slices.Clone(inSteps), after...), stars, true
+	case inStars == 1 && len(inSteps) == 0:
+		return inBase, after, stars, true
+	}
+	return Token{}, nil, 0, false
 }
 
 // checkRange checks a range header: the ranged operand is an integer, a slice or

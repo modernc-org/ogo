@@ -25812,7 +25812,8 @@ func (e *emitter) emitSimultaneous(lhss, rhss [][]int32) {
 // statement's lowering takes: a name, a dereferenced pointer, or a name and the
 // access chain after it.
 func (e *emitter) clauseTarget(ast []int32) (assignTarget, bool) {
-	if name, ok := e.exprIdent(ast); ok {
+	// `(x)` is x, as a statement's target is (parenHeadName).
+	if name, ok := e.exprIdent(e.unparenExpr(ast)); ok {
 		return assignTarget{name: name, tok: -1}, true
 	}
 	if name, ok := e.derefOperand(ast); ok {
@@ -25830,6 +25831,7 @@ func (e *emitter) clauseTarget(ast []int32) (assignTarget, bool) {
 			return e.derefTarget(ptr, nil) // `(*p)`
 		}
 	}
+	kids = e.unparenKids(kids) // `(p).x` is p.x
 	// A target through a CALL, `getp().x`: read as written, bound where it is
 	// stored (bindCallTarget), as a statement's is.
 	if len(kids) == 2 && kids[0].sym == 0 && e.f.ch(kids[0].tok) == IDENT && kids[1].sym == FactorSuffix {
@@ -28228,7 +28230,12 @@ func (e *emitter) exprAssignTarget(ast []int32) (assignTarget, bool) {
 			if ptr, isDeref := e.derefOperand(fk[1].ast); isDeref {
 				return e.derefTarget(ptr, nil) // `(*p)`
 			}
+			// `if (x), s = 3, "b"; ...`: a parenthesised name is the name.
+			if name, ok := e.exprIdent(e.unparenExpr(fk[1].ast)); ok {
+				return e.qualifiedTarget(assignTarget{name: name, tok: -1}), true
+			}
 		}
+		fk = e.unparenKids(fk) // `(p).x` is p.x
 	}
 	if len(fk) == 0 || len(fk) > 2 || fk[0].sym != 0 || e.f.ch(fk[0].tok) != IDENT {
 		return assignTarget{}, false

@@ -37,6 +37,14 @@ func ok() {
 	(x)++
 	*px, s = 3, "h"
 	s, *px = "i", 4
+	for i := 0; i < 2; (x), i = x+1, i+1 {
+	}
+	if (p).x, s = 3, "e"; p.x > 0 {
+	}
+	switch (x), s = 4, "c"; x {
+	}
+	for i := 0; i < 2; *px, i = x+3, i+1 {
+	}
 	_, _, _ = s, n, p
 }
 
@@ -71,6 +79,15 @@ func bad() {
 	s, *px = "q", "c"
 	// ERROR "non-name target on the left side of :="
 	(x), n := 1, 2
+	// ERROR "cannot use .a. of type string as type int in assignment"
+	for i := 0; i < 2; (x), i = "a", i+1 {
+	}
+	// ERROR "cannot use .q. of type string as type int in assignment"
+	if (p).x, s = "q", "e"; p.x > 0 {
+	}
+	// ERROR "cannot use .a. of type string as type int in assignment"
+	for i := 0; i < 2; *px, i = "a", i+1 {
+	}
 }
 
 func main() {

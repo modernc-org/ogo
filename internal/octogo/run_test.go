@@ -4199,6 +4199,48 @@ func main() {
 		want: "5 b\n2 1\n6 c\n7 d\n8 e\n10 11 g\n1 a\n12 13\n14 14\n",
 	},
 	{
+		// A target in parentheses in a for clause's list and in an if or a switch init's
+		// list is the target it names, as in a statement: each was refused as a target
+		// nothing lowered, and one reached through a step was asked nothing by the checker
+		// once it was.
+		name: "a parenthesised target in a for clause and a statement header",
+		src: `type P struct{ x int }
+
+func main() {
+	x, n := 0, 0
+	s := ""
+	var p P
+	px := &x
+	for i := 0; i < 2; (x), i = x+1, i+1 {
+		n++
+	}
+	println(x, n)
+	for (p).x, s = 5, "a"; p.x < 7; p.x++ {
+		n++
+	}
+	println(p.x, s, n)
+	if (x), s = 3, "b"; x > 0 {
+		n = x
+	}
+	println(x, s, n)
+	switch (p).x, s = 4, "c"; p.x {
+	case 4:
+		n = p.x
+	}
+	println(p.x, s, n)
+	for i := 0; i < 2; *px, i = x+3, i+1 {
+		n++
+	}
+	println(x, n)
+	if (*px), s = 7, "d"; x > 0 {
+		n = x
+	}
+	println(x, s, n)
+}
+`,
+		want: "2 2\n7 a 4\n3 b 3\n4 c 4\n9 6\n7 d 7\n",
+	},
+	{
 		// A target written through a dereference, in every list form: the Swap of a
 		// sort.Interface on a defined slice type, whose methods take a pointer here, and
 		// the pointee kinds around it -- a slice, a slice of structs, an array, a struct, a
