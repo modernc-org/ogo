@@ -709,7 +709,14 @@ spelling shadows it where it is called -- moves to `ogo_j_<join>` (`joinName`,
 `collectUserSpellings`). Two corners are left, both contrived: a user name beginning
 with `ogo_`, the compiler's prefix, which nothing enforces, and two joins meeting
 each other, type `a_b`'s method `c` and type `a`'s `b_c`. A new place the emitter
-joins names goes through `joinName`.
+joins names goes through `joinName`. A LOCAL is the same row by declaration: its C
+spelling is `localIdent(name)` wherever the name is written into C, and the maps key
+the name as written. An array, a slice, a channel, an array parameter, every named
+result (`resultC`; curResultNames stays in source spelling for `returnValueStands`)
+and a range value of an array or a struct had written the name raw, so a domain
+program's `var long [260]byte` was a C error. A new declaration path writes
+`localIdent`, and a sweep of one takes a keyword and a macro, `long` and `EOF`,
+through each kind and each position.
 
 **A PROGRAM GO REJECTS IS A ROW** (2026-09-20). The sweeps above ask what a correct
 program does; this one asks what an incorrect one earns, which is the direction that
