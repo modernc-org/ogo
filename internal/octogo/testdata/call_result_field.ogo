@@ -1,0 +1,57 @@
+// A FIELD of what a call returns, "x(...).f", is f of the result's type, read,
+// written or stepped through. Only a method called there was checked
+// (call_result_method.ogo); a misspelt field reached the emitter, which named no
+// position and no field -- "unsupported call in expression", or for a target
+// "cannot assign to this target through a call's result", a form that works.
+
+type Inner struct{ y int }
+
+type Base struct{ b int }
+
+type P struct {
+	Base
+	x  int
+	in Inner
+}
+
+func (p *P) n() int { return p.x }
+
+var gp = P{Base{1}, 2, Inner{3}}
+
+func getp() *P { return &gp }
+
+func getv() P { return gp }
+
+type Wrap struct{ *Base }
+
+func getw() Wrap { return Wrap{&gp.Base} }
+
+func main() {
+	mk := getp
+	// What the result has: its own fields, a promoted one, one through an
+	// embedded pointer, a field's field, a method's result.
+	getp().x = 5
+	getp().in.y++
+	println(getp().x, getv().b, getw().b, getp().in.y, mk().x, getp().n())
+
+	// ERROR type P has no field nosuch
+	a := getp().nosuch
+	// ERROR type P has no field nosuch
+	println(getv().nosuch)
+	// ERROR type P has no field nosuch
+	if getp().nosuch > 0 {
+		println(a)
+	}
+	// ERROR type P has no field nosuch
+	getp().nosuch = 3
+	// ERROR type P has no field nosuch
+	getp().nosuch++
+	// ERROR type P has no field nosuch
+	_ = mk().nosuch
+	// ERROR type Inner has no field nosuch
+	_ = getp().in.nosuch
+	// ERROR type int has no field nosuch
+	_ = getp().n().nosuch
+	// ERROR type Inner has no method nosuch
+	getp().in.nosuch()
+}

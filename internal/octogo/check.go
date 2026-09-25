@@ -2245,7 +2245,7 @@ func (f *File) checkCallStmt(s *Scope, head, stmt Node, kw string, kwTok Token, 
 	f.checkCall(s, id, direct && ok, argList)
 	if !direct && ok {
 		if steps, _ := callSteps(stmt); len(steps) != 0 {
-			f.reportPtrMethodOnValue(steps, f.callChainWalk(s, id, steps))
+			f.reportCallChainWalk(steps, f.callChainWalk(s, id, steps))
 		}
 		f.checkCallBase(s, id, hasSelectorChild(stmt))
 		if m, has := f.methodCallMember(stmt); has {
@@ -6498,7 +6498,12 @@ func (f *File) checkAssignment(s *Scope, head, postfix Node) {
 		f.checkCall(s, id, direct && ok, argList)
 		if !direct && ok {
 			if steps, pure := callSteps(postfix); pure {
-				f.reportPtrMethodOnValue(steps, f.callChainWalk(s, id, steps))
+				f.reportCallChainWalk(steps, f.callChainWalk(s, id, steps))
+			} else {
+				// A target reached through a call's value, `getp().x = 3` or
+				// `getp().n++`: its operator makes the chain no pure one, and a member
+				// it lacks reached the emitter, which called the form unsupported.
+				f.reportMissingMember(steps, f.callChainWalk(s, id, steps))
 			}
 			f.checkCallBase(s, id, hasSelectorChild(postfix))
 			if m, has := f.methodCallMember(postfix); has {
@@ -12048,8 +12053,12 @@ type callChain struct {
 	sliceAt int    // the step slicing an array with no storage, -1 for none
 	ptrAt   int    // the Selector of a POINTER method called on a value with no storage, -1 for none
 	ptrType string // that value's type, as a message names it
-	addr    bool   // what the steps reach is storage
-	known   bool   // every step was typed
+	// missingAt is the Selector of a member the value's type does not have, -1 for
+	// none, and missingType that type as a message names it.
+	missingAt   int
+	missingType string
+	addr        bool // what the steps reach is storage
+	known       bool // every step was typed
 }
 
 // callChainWalk is callValueAddressing's walk. It reports as well the first
@@ -12059,7 +12068,7 @@ type callChain struct {
 // method wrote where nobody reads. A method reached through an embedded POINTER is
 // called on what that pointer points at, which is storage.
 func (f *File) callChainWalk(s *Scope, head Token, steps []Node) (w callChain) {
-	w.sliceAt, w.ptrAt = -1, -1
+	w.sliceAt, w.ptrAt, w.missingAt = -1, -1, -1
 	if !slices.ContainsFunc(steps, func(n Node) bool { return n.sym == CallSuffix }) {
 		return w
 	}
@@ -12127,7 +12136,18 @@ func (f *File) callChainWalk(s *Scope, head Token, steps []Node) (w callChain) {
 		}
 		vt, ok := f.varTypeAt(d)
 		if !ok {
-			return w
+			// A variable bound to a function by inference, `mk := getp`, has no type
+			// written: it records the signature, and a call of it yields what that
+			// returns, resolved where the signature was written.
+			if d.funcSig == nil || steps[0].sym != CallSuffix || d.funcSig.Results == nil || len(d.funcSig.Results.List) == 0 {
+				return w
+			}
+			wf := f.typeNodeFile(d.funcSig.Results.List[0].TypeNode)
+			if !one(wf.flattenResults(wf.Scope, d.funcSig), true, wf.Scope) {
+				return w
+			}
+			t.f, i = wf, 1
+			break
 		}
 		t, addr = vt, true
 	default:
@@ -12188,20 +12208,30 @@ func (f *File) callChainWalk(s *Scope, head Token, steps []Node) (w callChain) {
 		switch st.sym {
 		case Selector:
 			name, has := f.selectorMember(st)
-			sn, isStruct := u.tn.(*TypeNodeStruct)
-			if !has || !isStruct {
+			if !has {
 				return w
 			}
 			var ftn TypeNode
-			for _, fld := range sn.Fields {
-				for _, nm := range fld.Names {
-					if nm.Src() == name.Src() {
-						ftn = fld.TypeNode
+			if sn, isStruct := u.tn.(*TypeNodeStruct); isStruct {
+				for _, fld := range sn.Fields {
+					for _, nm := range fld.Names {
+						if nm.Src() == name.Src() {
+							ftn = fld.TypeNode
+						}
 					}
 				}
 			}
 			if ftn == nil {
-				return w // promoted, or a method value
+				// Promoted, or a method value -- or neither, a member the type does
+				// not have. Past a call, which is what the walk alone reaches, the
+				// emitter refused one as "unsupported call in expression", naming
+				// no position and no member; before one, the member of a named value
+				// is checkMethodCall's and checkFieldAccess's to judge.
+				pastCall := slices.ContainsFunc(steps[:i], func(n Node) bool { return n.sym == CallSuffix })
+				if tname, named := unqualifiedTypeName(t.tn); pastCall && named && !f.typeHasMember(t.s, tname, name.Src()) {
+					w.missingAt, w.missingType = i, tname
+				}
+				return w
 			}
 			t = typeAt{ftn, u.s, u.f}
 		case Index:
@@ -12240,15 +12270,99 @@ func (f *File) callChainWalk(s *Scope, head Token, steps []Node) (w callChain) {
 	return w
 }
 
-// reportPtrMethodOnValue reports the POINTER-receiver method a walk found called on
-// a value with no storage (callChainWalk), in Go's words.
-func (f *File) reportPtrMethodOnValue(steps []Node, w callChain) {
+// reportCallChainWalk reports what a walk found (callChainWalk): the POINTER-receiver
+// method called on a value with no storage, in Go's words, and a member missing
+// from the type of what the chain reached (reportMissingMember).
+func (f *File) reportCallChainWalk(steps []Node, w callChain) {
+	f.reportMissingMember(steps, w)
 	if w.ptrAt < 0 {
 		return
 	}
 	if m, has := f.selectorMember(steps[w.ptrAt]); has {
 		f.err(m.Position(), "cannot call pointer method %s on %s", m.Src(), w.ptrType)
 	}
+}
+
+// reportMissingMember reports the member a walk found missing from the type of what
+// the chain reached past a call, `getp().nosuch` or `getp().in.nosuch` -- except in
+// `x(...).m(...)`, whose method checkCallResultMethod reports.
+func (f *File) reportMissingMember(steps []Node, w callChain) {
+	if w.missingAt < 0 {
+		return
+	}
+	if len(steps) == 3 && w.missingAt == 1 && steps[0].sym == CallSuffix && steps[2].sym == CallSuffix {
+		return
+	}
+	if m, has := f.selectorMember(steps[w.missingAt]); has {
+		what := "field"
+		if w.missingAt+1 < len(steps) && steps[w.missingAt+1].sym == CallSuffix {
+			what = "method"
+		}
+		f.err(m.Position(), "type %s has no %s %s", w.missingType, what, m.Src())
+	}
+}
+
+// typeNodeFile is the file a type node was written in, found through the name it
+// names (through one pointer); f for a type written out.
+func (f *File) typeNodeFile(tn TypeNode) *File {
+	if p, isPtr := tn.(*TypeNodePointer); isPtr {
+		tn = p.TypeNode
+	}
+	if id, isID := tn.(*TypeNodeIdent); isID {
+		return f.fileOfToken(id.Name)
+	}
+	return f
+}
+
+// unqualifiedTypeName is the name of the type a type node names, through one
+// pointer, when it is a name of this package: `P` and `*P` are P. Another package's
+// is not answered for.
+func unqualifiedTypeName(tn TypeNode) (string, bool) {
+	if p, isPtr := tn.(*TypeNodePointer); isPtr {
+		tn = p.TypeNode
+	}
+	if id, isID := tn.(*TypeNodeIdent); isID && !id.Qualifier.IsValid() {
+		return id.Name.Src(), true
+	}
+	return "", false
+}
+
+// typeHasMember reports whether a value of the named type has a member of that
+// name: a field, its own or promoted, a method, its own or promoted, or an
+// interface's method. What it cannot resolve is taken to have it; a predeclared
+// type has none.
+func (f *File) typeHasMember(s *Scope, typeName, member string) bool {
+	if _, _, ok := f.typeDeclNamed(s, typeName); !ok {
+		pre, isPre := s.find(typeName).(*PredeclaredType)
+		if isPre && pre.Kind() == PredeclaredBuilder {
+			return builderMethods[member]
+		}
+		return !isPre
+	}
+	if fields, isStruct := f.structFieldsNamed(s, typeName); isStruct && fields[member] {
+		return true
+	}
+	if _, _, _, isMethod := f.methodOwnerPath(s, typeName, member); isMethod {
+		return true
+	}
+	if _, _, isProm := f.promotedIfaceMethod(s, typeName, member); isProm {
+		return true
+	}
+	if set, isIface := f.interfaceMethodsNamed(s, typeName); isIface {
+		return set[member] != nil
+	}
+	if _, isStruct := f.structFieldsNamed(s, typeName); isStruct {
+		return false
+	}
+	// A defined type of a type literal -- a slice, a map, a function -- has only
+	// methods. One of another defined type, `type B A`, is left alone: what it
+	// promotes is A's to say.
+	td, _, _ := f.typeDeclNamed(s, typeName)
+	if td.TypeSpec == nil {
+		return true
+	}
+	_, isName := td.TypeSpec.TypeNode.(*TypeNodeIdent)
+	return isName
 }
 
 // lastSuffixStep is the kind of a factor suffix's final step -- a Selector, an
@@ -16677,7 +16791,7 @@ func (f *File) checkFactorNames(s *Scope, n Node) {
 			if w.sliceAt >= 0 {
 				f.err(id.Position(), "cannot slice unaddressable value %s", f.exprSource(n))
 			}
-			f.reportPtrMethodOnValue(steps, w)
+			f.reportCallChainWalk(steps, w)
 		}
 		hasSelector = hasSelectorChild(suffix)
 		if argList, later, direct, isCall := f.callInfoAll(suffix); isCall {
