@@ -13004,6 +13004,49 @@ func (b *Box) setList(xs []int) { n := 0; n, b.d = 1, xs; back[0] = n }
 
 func (b *Box) setDeref(xs []int) { (*b).d = xs }
 
+type Dev struct{ onData func([]int) }
+
+var gdev = Dev{onData: keep}
+
+var gbp *Box
+
+func id(xs []int) []int { return xs }
+
+func keepN(xs []int) int { g = xs; return 1 }
+
+func (b *Box) hold() { gbp = b }
+
+func (b *Box) holdN() int { gbp = b; return 1 }
+
+func (b *Box) holdGo() { gbp = b; done <- 1 }
+
+func callParen(xs []int) { (keep)(xs) }
+
+func callParenValue(xs []int) int { return (keepN)(xs) }
+
+func deferParen(xs []int) { defer (keep)(xs) }
+
+func chainParen(xs []int) { (gdev).onData(xs) }
+
+func addrChainParen(xs []int) { (&gdev).onData(xs) }
+
+func calleeParen(xs []int) { (gdev.onData)(xs) }
+
+func idParen(xs []int) { g = (id)(xs) }
+
+func holdParen(b *Box) { (b).hold() }
+
+func holdDerefParen(b *Box) { (*b).hold() }
+
+func holdDeferParen(b *Box) { defer (b).hold() }
+
+func holdValueParen(b *Box) int { return (b).holdN() }
+
+func holdGoParen(b *Box) {
+	go (b).holdGo()
+	<-done
+}
+
 type OuterBox struct {
 	Box
 }
@@ -13107,6 +13150,22 @@ func main() {
 		{"fillClause(&gb, a[:])", "cannot pass a slice backed by local a to fillClause: it is stored through gb, which outlives this function"},
 		{"gb.setList(a[:])", "it is stored in the receiver gb, which outlives this function"},
 		{"var lb Box\n\tfillList(&lb, a[:])\n\tback[0] = len(lb.d)", ""},
+		// A callee calling a function, a method or a function field through a
+		// PARENTHESISED callee or receiver, which the summaries read as no call
+		// (2026-09-25).
+		{"callParen(a[:])", "cannot pass a slice backed by local a to callParen"},
+		{"back[0] = callParenValue(a[:])", "cannot pass a slice backed by local a to callParenValue"},
+		{"deferParen(a[:])", "cannot pass a slice backed by local a to deferParen"},
+		{"chainParen(a[:])", "cannot pass a slice backed by local a to chainParen"},
+		{"addrChainParen(a[:])", "cannot pass a slice backed by local a to addrChainParen"},
+		{"calleeParen(a[:])", "cannot pass a slice backed by local a to calleeParen"},
+		{"idParen(a[:])", "cannot pass a slice backed by local a to idParen"},
+		{"var lb Box\n\tholdParen(&lb)", "cannot pass the address of local variable lb to holdParen"},
+		{"var lb Box\n\tholdDerefParen(&lb)", "cannot pass the address of local variable lb to holdDerefParen"},
+		{"var lb Box\n\tholdDeferParen(&lb)", "cannot pass the address of local variable lb to holdDeferParen"},
+		{"var lb Box\n\tback[0] = holdValueParen(&lb)", "cannot pass the address of local variable lb to holdValueParen"},
+		{"var lb Box\n\tholdGoParen(&lb)", "cannot pass the address of local variable lb to holdGoParen"},
+		{"callParen(back[:])\n\tchainParen(back[1:])\n\tidParen(back[2:])\n\tholdParen(&gb)", ""},
 		// What is read through a pointer to a marked local.
 		{"var lb Box\n\tlb.d = a[:]\n\tp := &lb\n\tgb = *p", "cannot store *p, which holds a pointer into local a"},
 		{"var lb Box\n\tlb.d = a[:]\n\tp := &lb\n\tkeepBox(*p)", "cannot pass *p, which holds a pointer into local a to keepBox"},

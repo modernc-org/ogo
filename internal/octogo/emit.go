@@ -11196,10 +11196,12 @@ func (e *emitter) collectFuncCross(fi funcInfo) {
 			if len(post) != 0 && post[len(post)-1].sym == PostfixOp {
 				post = post[:len(post)-1]
 			}
-			try(e.soleIdent(nodes[0].ast), post)
+			root, _, chain := e.scanHead(nodes[0], post) // `(gdev).onData(v)` is gdev.onData(v)
+			try(root, chain)
 		}
 		if len(nodes) >= 3 && nodes[0].sym == 0 && (e.f.ch(nodes[0].tok) == GO || e.f.ch(nodes[0].tok) == DEFER) && nodes[1].sym == AssignHead {
-			try(e.soleIdent(nodes[1].ast), nodes[2:])
+			root, _, chain := e.scanHead(nodes[1], nodes[2:])
+			try(root, chain)
 		}
 		var walk func(ast []int32)
 		walk = func(ast []int32) {
@@ -11214,6 +11216,10 @@ func (e *emitter) collectFuncCross(fi funcInfo) {
 						try(e.src(kids[0].tok), slices.Collect(it(kids[1].ast)))
 					case len(kids) == 2 && kids[0].sym == FuncLiteral && kids[1].sym == FactorSuffix:
 						lit(kids[0], slices.Collect(it(kids[1].ast)))
+					default:
+						if root, steps, ok := e.parenFactorShape(kids); ok {
+							try(root, steps)
+						}
 					}
 				}
 				walk(n.ast)
@@ -11232,7 +11238,7 @@ func (e *emitter) collectFuncCross(fi funcInfo) {
 				return []string{e.litKey(kids[0])}, e.callArgExprs(steps[0].ast), true
 			}
 		}
-		recv, suffix, ok := e.directCall(v)
+		recv, suffix, ok := e.shapeCall(v)
 		if !ok || len(suffix) == 0 || suffix[len(suffix)-1].sym != CallSuffix {
 			return nil, nil, false
 		}
@@ -11408,8 +11414,9 @@ func (e *emitter) collectFuncCross(fi funcInfo) {
 			// contents went to another cog unrecorded. (A pointer method on a copy is
 			// handed the address of this frame's own storage, which the body refuses.)
 			if len(nodes) == 4 && nodes[1].sym == AssignHead {
-				if recv := e.soleIdent(nodes[1].ast); recv != "" {
-					if c, isM := e.methodCallOf(recv, nodes[2:], fi); isM && nodes[2].sym == Selector && nodes[3].sym == CallSuffix {
+				// `go (w).send()`, `(&w).send()` and `(*w).send()` are `go w.send()`.
+				if recv, _, chain := e.scanHead(nodes[1], nodes[2:]); recv != "" && len(chain) == 2 {
+					if c, isM := e.methodCallOf(recv, chain, fi); isM && chain[0].sym == Selector && chain[1].sym == CallSuffix {
 						ptrName := c.recv == recvParam || c.recv == recvOwn && recvPtr
 						switch ptrMethod := e.methodPtr[c.callee]; {
 						case ptrName && ptrMethod:
@@ -12036,7 +12043,7 @@ func (e *emitter) closeCrossParams() {
 // valueCall recognises a value that is a call of a declared function, `id(v)`, and
 // answers with the callee's C name and the arguments.
 func (e *emitter) valueCall(v []int32) (string, []Node, bool) {
-	recv, suffix, ok := e.directCall(v)
+	recv, suffix, ok := e.shapeCall(v) // `(id)(v)` too
 	if !ok || len(suffix) != 1 || suffix[0].sym != CallSuffix {
 		return "", nil, false
 	}
@@ -12394,21 +12401,81 @@ func (e *emitter) scanHead(head Node, steps []Node) (root, stars string, chain [
 	if name := e.soleIdent(head.ast); name != "" {
 		return name, e.derefStars(head.ast), steps
 	}
-	if ptr, ok := e.derefHeadName(head); ok {
-		return ptr, "*", steps
-	}
-	if name := e.parenNameShape(head); name != "" {
-		return name, "", steps
-	}
 	kids := slices.Collect(it(head.ast))
 	if len(kids) != 3 || kids[0].sym != 0 || e.f.ch(kids[0].tok) != LPAREN ||
 		kids[2].sym != 0 || e.f.ch(kids[2].tok) != RPAREN || kids[1].sym != Expression {
 		return "", "", steps
 	}
-	if name, inner, ok := e.addrChainShape(e.unparenExpr(kids[1].ast)); ok {
-		return name, "", append(inner, steps...)
+	if root, stars, path, ok := e.parenInnerShape(kids[1].ast); ok {
+		return root, stars, append(path, steps...)
 	}
 	return "", "", steps
+}
+
+// parenInnerShape reads what parentheses hold by shape, as the head of the steps
+// written after them: a name, `(x)`; a dereference, `(*p)`, with stars "*"; an
+// address, `(&x)` or `(&h.v)`, as the variable and the steps to what it addresses;
+// and a chain, `(h.v)` or `(get())`, as the chain -- each what the same steps
+// written without the parentheses would start from.
+func (e *emitter) parenInnerShape(ast []int32) (root, stars string, path []Node, ok bool) {
+	inner := e.unparenExpr(ast)
+	if name, isName := e.exprIdent(inner); isName {
+		return name, "", nil, true
+	}
+	if name, isDeref := e.derefName(inner); isDeref {
+		return name, "*", nil, true
+	}
+	if name, steps, isAddr := e.addrChainShape(inner); isAddr {
+		return name, "", steps, true
+	}
+	if fk := e.factorKids(inner); len(fk) == 2 && fk[0].sym == 0 && e.f.ch(fk[0].tok) == IDENT && fk[1].sym == FactorSuffix {
+		return e.src(fk[0].tok), "", slices.Collect(it(fk[1].ast)), true
+	}
+	return "", "", nil, false
+}
+
+// parenFactorShape is scanHead for a Factor, `( Expression ) FactorSuffix`: `(f)(x)`
+// is f(x), `(c).m()`, `(&c).m()` and `(*c).m()` are c.m(), and `(&h.d).f(v)` and
+// `(h.d).f(v)` are h.d.f(v) -- the name and the steps from it. The scans reading a
+// call as a name and its suffix, `IDENT FactorSuffix`, took these for no call.
+func (e *emitter) parenFactorShape(kids []Node) (string, []Node, bool) {
+	root, _, path, ok := e.parenFactorHead(kids)
+	if !ok {
+		return "", nil, false
+	}
+	return root, append(path, slices.Collect(it(kids[3].ast))...), true
+}
+
+// parenFactorHead is parenInnerShape of a Factor's parentheses, when the Factor is
+// `( Expression ) FactorSuffix`.
+func (e *emitter) parenFactorHead(kids []Node) (root, stars string, path []Node, ok bool) {
+	if len(kids) != 4 || kids[0].sym != 0 || e.f.ch(kids[0].tok) != LPAREN || kids[1].sym != Expression ||
+		kids[2].sym != 0 || e.f.ch(kids[2].tok) != RPAREN || kids[3].sym != FactorSuffix {
+		return "", "", nil, false
+	}
+	return e.parenInnerShape(kids[1].ast)
+}
+
+// shapeCall is directCall read through a parenthesised head, for the summaries:
+// `(f)(x)`, `(c).m(x)` and `(*p).m(x)` are the calls written without the
+// parentheses, which directCall alone took for no call.
+func (e *emitter) shapeCall(v []int32) (string, []Node, bool) {
+	if recv, suffix, ok := e.directCall(v); ok {
+		return recv, suffix, true
+	}
+	kids, ok := e.soleFactor(v)
+	if !ok {
+		return "", nil, false
+	}
+	recv, steps, ok := e.parenFactorShape(kids)
+	n := len(steps)
+	switch {
+	case !ok || n == 0 || steps[n-1].sym != CallSuffix:
+		return "", nil, false
+	case n == 1, n == 2 && steps[0].sym == CallSuffix, isAccessChain(steps[:n-1]):
+		return recv, steps, true // directCall's shapes: f(x), f()(x), x.m(x), x.f.m(x)
+	}
+	return "", nil, false
 }
 
 // addrChainShape is an address by shape, `&x` or `&h.v[i]`: the variable and the
@@ -12775,7 +12842,7 @@ func (e *emitter) summaryReach(ast []int32) (out []held) {
 		}
 		return out
 	}
-	if recv, suffix, ok := e.directCall(ast); ok && len(suffix) != 0 && suffix[len(suffix)-1].sym == CallSuffix &&
+	if recv, suffix, ok := e.shapeCall(ast); ok && len(suffix) != 0 && suffix[len(suffix)-1].sym == CallSuffix &&
 		(e.convToSliceType(recv, suffix) || e.convToIfaceType(recv, suffix)) {
 		if args := e.callArgExprs(suffix[len(suffix)-1].ast); len(args) == 1 {
 			return e.summaryReach(args[0].ast)
@@ -12955,7 +13022,7 @@ func (e *emitter) summaryHolds(body []int32) map[string][]held {
 // declared function -- this package's or another's -- returning one, `pick()`, and ""
 // otherwise.
 func (e *emitter) summaryCallResult(v []int32) string {
-	recv, suffix, ok := e.directCall(v)
+	recv, suffix, ok := e.shapeCall(v)
 	if !ok {
 		return ""
 	}
@@ -13221,11 +13288,12 @@ func (e *emitter) stmtMethodCalls(nodes []Node, fi funcInfo) []methodCall {
 	// Factors -- sees nothing of it. stmtCalls makes the same distinction.
 	// A deferred method call is a call for everything handed to it, only later.
 	if len(nodes) >= 4 && nodes[0].sym == 0 && e.f.ch(nodes[0].tok) == DEFER && nodes[1].sym == AssignHead {
-		if recv := e.soleIdent(nodes[1].ast); recv != "" && len(nodes) == 4 && nodes[2].sym == Selector && nodes[3].sym == CallSuffix {
-			if c, isM := e.methodCallOf(recv, nodes[2:], fi); isM {
+		// `defer (c).m()`, `(&c).m()` and `(*c).m()` are `defer c.m()` (scanHead).
+		if recv, _, chain := e.scanHead(nodes[1], nodes[2:]); recv != "" && len(chain) == 2 && chain[0].sym == Selector && chain[1].sym == CallSuffix {
+			if c, isM := e.methodCallOf(recv, chain, fi); isM {
 				out = append(out, c)
 			} else {
-				out = append(out, e.ifaceMethodCallsOf(recv, nodes[2:], fi)...)
+				out = append(out, e.ifaceMethodCallsOf(recv, chain, fi)...)
 			}
 		}
 	}
@@ -13235,7 +13303,8 @@ func (e *emitter) stmtMethodCalls(nodes []Node, fi funcInfo) []methodCall {
 			if c, isM := e.methodExprCallOf(me, fi); isM {
 				out = append(out, c)
 			}
-		} else if recv := e.soleIdent(nodes[0].ast); recv != "" {
+		} else if recv, _, chain := e.scanHead(nodes[0], suffix); recv != "" {
+			suffix := chain // `(c).m()`, `(&c).m()` and `(*c).m()` are c.m() (scanHead)
 			if len(suffix) == 2 && suffix[0].sym == Selector && suffix[1].sym == CallSuffix {
 				if c, isM := e.methodCallOf(recv, suffix, fi); isM {
 					out = append(out, c)
@@ -13257,11 +13326,15 @@ func (e *emitter) stmtMethodCalls(nodes []Node, fi funcInfo) []methodCall {
 			}
 			if n.sym == Factor {
 				kids := slices.Collect(it(n.ast))
+				recv, suffix, ok := e.factorCall(kids)
+				if !ok {
+					recv, suffix, ok = e.parenFactorShape(kids) // `(c).m()` is c.m()
+				}
 				if me, isME := e.methodExprAt(kids); isME {
 					if c, isM := e.methodExprCallOf(me, fi); isM {
 						out = append(out, c)
 					}
-				} else if recv, suffix, ok := e.factorCall(kids); ok && len(suffix) == 2 &&
+				} else if ok && len(suffix) == 2 &&
 					suffix[0].sym == Selector && suffix[1].sym == CallSuffix {
 					if c, isM := e.methodCallOf(recv, suffix, fi); isM {
 						out = append(out, c)
@@ -13529,8 +13602,9 @@ func (e *emitter) eachNameCall(nodes []Node, add func(name string, suffix []int3
 		case head.sym == 0 && (e.f.ch(head.tok) == GO || e.f.ch(head.tok) == DEFER) && nodes[1].sym == AssignHead:
 			steps = nodes[2:]
 		}
-		if name := e.soleIdent(headOf(nodes).ast); name != "" && len(steps) != 0 && steps[0].sym == CallSuffix {
-			add(name, steps[0].ast)
+		// `(f)(x)` is f(x), and `(get())(x)` calls get with nothing (scanHead).
+		if name, stars, chain := e.scanHead(headOf(nodes), steps); name != "" && stars == "" && len(chain) != 0 && chain[0].sym == CallSuffix {
+			add(name, chain[0].ast)
 		}
 	}
 	// A call inside an expression: the callee is the identifier before the CallSuffix.
@@ -13541,11 +13615,20 @@ func (e *emitter) eachNameCall(nodes []Node, add func(name string, suffix []int3
 	var walk func(ast []int32, outer string)
 	walk = func(ast []int32, outer string) {
 		last := outer
+		// A callee in parentheses, `(f)(x)`, is the name before the suffix.
+		paren := ""
+		if root, stars, path, ok := e.parenFactorHead(slices.Collect(it(ast))); ok && stars == "" && len(path) == 0 {
+			paren = root
+		}
 		for n := range it(ast) {
 			switch {
 			case n.sym == 0:
 				if e.f.ch(n.tok) == IDENT {
 					last = e.src(n.tok)
+					continue
+				}
+				if paren != "" && e.f.ch(n.tok) == RPAREN {
+					last = paren
 					continue
 				}
 			case n.sym == CallSuffix:
