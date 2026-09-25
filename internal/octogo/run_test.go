@@ -12327,6 +12327,47 @@ func main() {
 		want: "1\n2\n3\n4\n5\n6\n7\n8\n9\n10 true\n11 true\n12 true\n1 10 100\n2 20 200\n3 30 300\n4 40 400\n",
 	},
 	{
+		// A select SEND clause to a channel in parentheses, `case (ch) <- v:`, was
+		// "a select clause needs a channel operand": the clause read the head by name
+		// when nothing followed it, and a parenthesised one names nobody.
+		name: "a select clause sending to a channel in parentheses",
+		src: `type Bus struct{ ch chan int }
+
+var gbus Bus
+
+var got chan int
+
+func take(ch chan int) { got <- <-ch }
+
+func main() {
+	var ch chan int
+	gbus.ch = ch
+	pch := &ch
+	go take(ch)
+	select {
+	case (ch) <- 1:
+	}
+	println(<-got)
+	go take(ch)
+	select {
+	case (&gbus).ch <- 2:
+	}
+	println(<-got)
+	go take(ch)
+	select {
+	case (*pch) <- 3:
+	}
+	println(<-got)
+	go take(ch)
+	select {
+	case (gbus).ch <- 4:
+	}
+	println(<-got)
+}
+`,
+		want: "1\n2\n3\n4\n",
+	},
+	{
 		// A compound literal inside a cast, which the target's C compiler cannot do.
 		// int(total(xs[:])) is the ordinary spelling: a slice expression handed to a
 		// call becomes a compound literal in C, and a conversion becomes a cast

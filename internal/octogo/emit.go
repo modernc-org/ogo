@@ -3054,7 +3054,9 @@ func (e *emitter) selectCommOp(n Node, c *selectCase) bool {
 		return e.selectChan(value, c)
 	}
 	c.send, c.val = true, value
-	if len(chain) != 0 || e.derefStars(head.ast) != "" {
+	// `(ch)` alone too: a head in parentheses is no name, and was "a select clause
+	// needs a channel operand".
+	if len(chain) != 0 || e.derefStars(head.ast) != "" || e.soleIdent(head.ast) == "" {
 		// `case ports.tx <- v:`, `case qs[i] <- v:`, `case bus.port(i).ch <- v:` --
 		// the channel is what the head and its chain SPELL, an expression the
 		// clause's own grammar keeps in two pieces. Put back together it is the
