@@ -286,6 +286,13 @@ shipped section tells a reader on that version that they have behaviour they do 
 
 ### Fixed
 
+- **A member a call's result lacks is reported where it is written.** A misspelt
+  field on what a call returns, `getp().nosuch`, read, written or stepped through,
+  reached the generated code, which said "unsupported call in expression" -- no
+  position, no field -- or, as a target, "cannot assign to this target through a
+  call's result", a form that works. It is "type P has no field nosuch" at the
+  field now, at any depth past the call: `getp().in.nosuch`, `gp.m().nosuch`, and
+  `mk().nosuch` through a function value.
 - **A program may use a name the emitter joins from two.** C has no methods,
   packages or interface tables, so the generated C names them by joining two names
   with an underscore -- type `led`'s method `on` is `led_on`, interface `Shape`'s
