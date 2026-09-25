@@ -38,6 +38,9 @@ shipped section tells a reader on that version that they have behaviour they do 
 
 ### Fixed
 
+- **A method or an index on a parenthesised call's array result.** `(mk(5)).Len()`
+  and `(mk(3))[1]`, for a function returning an array, were "this form is not
+  supported yet"; they are `mk(5).Len()` and `mk(3)[1]`, as in Go.
 - **`ogo fmt` drops the parentheses gofmt drops around a header's expression.**
   `if (x > 0) {`, `for (i < n) {`, `switch (x) {` and `range (arr)` print as
   `if x > 0 {` and the rest, as gofmt prints them, and `((x)) = 5` as `(x) = 5`.
