@@ -878,6 +878,100 @@ static void ogo_print_qbytes_pl(const char* p, int n) {
 static void ogo_print_qbytes(ogo_string s) { ogo_print_qbytes_pl(s.str, s.len); }
 `
 
+// quoteFmtHelpers are %q under a flag, a width or a precision, laid out as fmt's
+// fmtQ and fmtQc lay it out: a precision cuts the STRING to that many runes before
+// it is quoted, '#' backquotes a string strconv.CanBackquote would, '+' writes every
+// rune past ASCII as \u or \U (QuoteToASCII), and the width pads the quoted text,
+// counted in runes, with zeros on the left under '0'. A rune takes '+' and the
+// width; its '#' and precision mean nothing, as in fmt. The text is walked twice,
+// once to count and once to print, so nothing is built to measure it. fl holds the
+// flags as ogo_print_int reads them: 1 '-', 2 '+', 8 '0', 32 '#'.
+const quoteFmtHelpers = `static void ogo_q_hex(unsigned v, int digits) {
+	for (int i = digits - 1; i >= 0; i--) putchar("0123456789abcdef"[(v >> (4 * i)) & 15]);
+}
+static int ogo_q_ascii(int c, int quote, int print) {
+	const char* e = 0;
+	switch (c) {
+	case '\a': e = "\\a"; break;
+	case '\b': e = "\\b"; break;
+	case '\f': e = "\\f"; break;
+	case '\n': e = "\\n"; break;
+	case '\r': e = "\\r"; break;
+	case '\t': e = "\\t"; break;
+	case '\v': e = "\\v"; break;
+	case '\\': e = "\\\\"; break;
+	}
+	if (e) { if (print) { putchar(e[0]); putchar(e[1]); } return 2; }
+	if (c == quote) { if (print) { putchar('\\'); putchar(c); } return 2; }
+	if (c < 0x20 || c == 0x7f) { if (print) { putchar('\\'); putchar('x'); ogo_q_hex((unsigned)c, 2); } return 4; }
+	if (print) putchar(c);
+	return 1;
+}
+static int ogo_q_wide(int r, int plus, int print) {
+	if (!plus) { if (print) ogo_print_rune((int32_t)r); return 1; }
+	if (r < 0x10000) { if (print) { putchar('\\'); putchar('u'); ogo_q_hex((unsigned)r, 4); } return 6; }
+	if (print) { putchar('\\'); putchar('U'); ogo_q_hex((unsigned)r, 8); }
+	return 10;
+}
+static int ogo_q_walk(const char* p, int n, int plus, int print) {
+	ogo_string s = {p, n};
+	int cnt = 0;
+	for (int i = 0; i < n; ) {
+		unsigned char c = (unsigned char)p[i];
+		if (c < 0x80) { cnt += ogo_q_ascii(c, '"', print); i++; continue; }
+		int w = 1, r = ogo_decode_rune(s, i, &w);
+		if (r == 0xFFFD && w == 1) { if (print) { putchar('\\'); putchar('x'); ogo_q_hex(c, 2); } cnt += 4; i++; continue; }
+		cnt += ogo_q_wide(r, plus, print);
+		i += w;
+	}
+	return cnt;
+}
+static int ogo_q_backquotable(const char* p, int n) {
+	ogo_string s = {p, n};
+	for (int i = 0; i < n; ) {
+		int w = 1, r = ogo_decode_rune(s, i, &w);
+		i += w;
+		if (w > 1) { if (r == 0xFEFF) return 0; continue; }
+		if (r == 0xFFFD || (r < ' ' && r != '\t') || r == 0x60 || r == 0x7f) return 0;
+	}
+	return 1;
+}
+static void ogo_q_pad(int n, int wid, int fl) {
+	char c = (fl & 8) && !(fl & 1) ? '0' : ' ';
+	for (int i = n; i < wid; i++) putchar(c);
+}
+static void ogo_print_q_fmt_pl(const char* p, int n, int wid, int prec, int fl) {
+	ogo_string s = {p, n};
+	if (prec >= 0) {
+		int b = 0;
+		for (int k = 0; b < n && k < prec; k++) { int w = 1; ogo_decode_rune(s, b, &w); b += w; }
+		n = b;
+		s.len = n;
+	}
+	int back = (fl & 32) && ogo_q_backquotable(p, n), cnt = 2;
+	if (back) { for (int i = 0; i < n; ) { int w = 1; ogo_decode_rune(s, i, &w); i += w; cnt++; } }
+	else cnt += ogo_q_walk(p, n, fl & 2, 0);
+	if (!(fl & 1)) ogo_q_pad(cnt, wid, fl);
+	if (back) { putchar(0x60); for (int i = 0; i < n; i++) putchar(p[i]); putchar(0x60); }
+	else { putchar('"'); ogo_q_walk(p, n, fl & 2, 1); putchar('"'); }
+	if (fl & 1) ogo_q_pad(cnt, wid, fl);
+}
+static void ogo_print_q_fmt(ogo_string s, int wid, int prec, int fl) { ogo_print_q_fmt_pl(s.str, s.len, wid, prec, fl); }
+static int ogo_qrune_walk(long long v, int plus, int print) {
+	if (v < 0 || v > 0x10FFFF || (v >= 0xD800 && v <= 0xDFFF)) v = 0xFFFD;
+	if (print) putchar('\'');
+	int cnt = 2 + (v < 0x80 ? ogo_q_ascii((int)v, '\'', print) : ogo_q_wide((int)v, plus, print));
+	if (print) putchar('\'');
+	return cnt;
+}
+static void ogo_print_qrune_fmt(long long v, int wid, int fl) {
+	int cnt = ogo_qrune_walk(v, fl & 2, 0);
+	if (!(fl & 1)) ogo_q_pad(cnt, wid, fl);
+	ogo_qrune_walk(v, fl & 2, 1);
+	if (fl & 1) ogo_q_pad(cnt, wid, fl);
+}
+`
+
 // runeQuoteHelper is %q of an integer: the character in single quotes, with the
 // escapes ogo_print_qbytes writes and \' in place of \", as Go writes one. A rune
 // at or above 0x80 is written as its UTF-8, which ogo_print_rune encodes. A value
@@ -5307,6 +5401,10 @@ func emitProgram(pkg *Package, w io.Writer, opts []EmitOption, rename map[string
 	if e.usesBytesPrint {
 		out.WriteString(bytesPrintHelpers)
 	}
+	// After the decoder and the rune printer, which they call.
+	if e.usesQuoteFmt {
+		out.WriteString(quoteFmtHelpers)
+	}
 	if e.usesStringEq {
 		out.WriteString(stringEqHelper)
 		out.WriteByte('\n')
@@ -5955,6 +6053,7 @@ type emitter struct {
 	usesFloatFmt       bool                    // ogo_print_float is called: a float printed by print, println or any float verb (see floatFmtHelper)
 	usesBytesPrint     bool                    // ogo_print_hex_bytes / ogo_print_qbytes are called: %x, %X or %q over a string or a byte slice
 	usesRuneQuote      bool                    // ogo_print_qrune is called: %q of an integer
+	usesQuoteFmt       bool                    // %q under a flag, a width or a precision: emit quoteFmtHelpers
 	userTypeNames      map[string]string       // C name -> source name of every type the program DECLARES, in any package (see typeNameForT)
 	usesIfaceNil       bool                    // ogo_iface_vt (nil-interface call guard) is called
 	usesNonzero64      bool                    // ogo_nonzero64 (64-bit divisor guard) is called
@@ -33359,7 +33458,7 @@ func (e *emitter) emitPrintfVerb(item printfItem, idx int, arg Node) bool {
 	// prefix as fmt does, so there the flag is taken -- and so it is on the hex dump
 	// of a string or a byte slice, which ogo_print_hex_fmt lays out.
 	hexDump := (verb == 'x' || verb == 'X') && (ct == cString || e.isByteSliceCType(ct))
-	if item.hasFlag('#') && !hexDump && !(strings.IndexByte("dxXoOb", verb) >= 0 && e.intsToPrint(idx, arg, ct)) {
+	if item.hasFlag('#') && !hexDump && verb != 'q' && !(strings.IndexByte("dxXoOb", verb) >= 0 && e.intsToPrint(idx, arg, ct)) {
 		e.failAt(arg.ast, "printf: the '#' flag is not supported on %%%s%c yet; "+
 			"it is on the integer verbs %%x, %%X, %%o and %%b", spec, verb)
 		return false
@@ -33423,11 +33522,9 @@ func (e *emitter) emitPrintfVerb(item printfItem, idx int, arg Node) bool {
 			e.usesStringPrint = true
 			print := "ogo_print_str(" + text + ")"
 			hexDump := verb == 'x' || verb == 'X'
+			bytesVerb := hexDump || verb == 'q'
 			switch verb {
 			case 'x', 'X', 'q':
-				if spec != "" && !hexDump {
-					return noSpec("%" + string(verb) + " of a string is printed by a helper here")
-				}
 				e.usesBytesPrint = true
 				e.usesString = true
 				e.usesRuneDecode = true
@@ -33437,9 +33534,12 @@ func (e *emitter) emitPrintfVerb(item printfItem, idx int, arg Node) bool {
 					print = "ogo_print_hex_fmt(" + text + hexDumpSpec(item, verb == 'X') + ")"
 				case hexDump:
 					print = "ogo_print_hex_bytes(" + text + ", " + strconv.Itoa(boolToInt(verb == 'X')) + ")"
+				case spec != "":
+					e.useQuoteFmt()
+					print = "ogo_print_q_fmt(" + text + quoteSpec(item, true) + ")"
 				}
 			}
-			if spec != "" && !hexDump {
+			if spec != "" && !bytesVerb {
 				w, _ := item.width()
 				pr, hasP := item.precision()
 				if !hasP {
@@ -33710,10 +33810,23 @@ func (e *emitter) emitScalarVerb(item printfItem, ct string, value func(), wrong
 	case 'q':
 		// The quoted forms a protocol logger prints: a string or a byte slice in
 		// double quotes with Go's escapes, an integer as the character in single
-		// quotes (see bytesPrintHelpers). A width would have to be filled around
-		// text the helper measures as it writes, so there is none yet.
+		// quotes (see bytesPrintHelpers), and under a flag, a width or a precision
+		// laid out by quoteFmtHelpers.
 		if spec != "" {
-			return noSpec("%q is printed by a helper here")
+			switch {
+			case ct == cString || e.isByteSliceCType(ct):
+				e.useQuoteFmt()
+				e.emitBytesVerb(ct, "ogo_print_q_fmt", quoteSpec(item, true), value)
+			case isIntCType(ct):
+				e.useQuoteFmt()
+				e.ind()
+				e.emit("ogo_print_qrune_fmt((long long)(")
+				value()
+				e.emit(")" + quoteSpec(item, false) + ");\n")
+			default:
+				return wrong("a string, a byte slice or an integer, or a slice of either")
+			}
+			return true
 		}
 		switch {
 		case ct == cString || e.isByteSliceCType(ct):
@@ -33878,6 +33991,35 @@ func (e *emitter) typeNamePadC(item printfItem, text, n string, cut bool) string
 	}
 	e.usesStringPad = true
 	return fmt.Sprintf("ogo_print_str_pad_pl(%s, %s, %d, %d, %d, %d)", text, n, w, p, boolToInt(item.leftAlign()), boolToInt(item.hasFlag('0')))
+}
+
+// useQuoteFmt records that quoteFmtHelpers are called, and what they call.
+func (e *emitter) useQuoteFmt() {
+	e.usesQuoteFmt = true
+	e.usesRunePrint = true
+	e.usesRuneDecode = true
+	e.usesString = true
+}
+
+// quoteSpec is the tail of an ogo_print_q_fmt call -- the width, the precision (-1
+// for none) and the flags -- or, without str, of an ogo_print_qrune_fmt call, which
+// takes no precision: fmt ignores one on a rune.
+func quoteSpec(item printfItem, str bool) string {
+	w, _ := item.width()
+	fl := 0
+	for bit, f := range map[int]byte{1: '-', 2: '+', 8: '0', 32: '#'} {
+		if item.hasFlag(f) {
+			fl |= bit
+		}
+	}
+	if !str {
+		return fmt.Sprintf(", %d, %d", w, fl)
+	}
+	p, hasP := item.precision()
+	if !hasP {
+		p = -1
+	}
+	return fmt.Sprintf(", %d, %d, %d", w, p, fl)
 }
 
 // hexDumpSpec is the tail of an ogo_print_hex_fmt call: the case, the width, the

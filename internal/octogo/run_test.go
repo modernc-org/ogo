@@ -40498,6 +40498,28 @@ func main() {
 }
 `,
 		want: "[3.141590] [    3.14] [-2.500000] [-2.500000] [[1.500000 2.000000]]\n[0o0] [0o0] [     0o0] [0o0     |] [0o00000000] [0o00000000] [+0o0] [0o0000]\n[0o10] [0o010] [    0o10] [0o10    |] [0o00000010] [0o00000010] [+0o10] [0o0010]\n[-0o10] [-0o010] [   -0o10] [-0o10   |] [-0o0000010] [-0o0000010] [-0o10] [-0o0010]\n[0o777] [0o0777] [   0o777] [0o777   |] [0o00000777] [0o00000777] [+0o777] [0o0777]\n[0o4000000] [0o04000000] [0o4000000] [0o4000000|] [0o04000000] [0o04000000] [+0o4000000] [0o4000000]\n[0o310] [0o1000000000000000000000] [010] [[0o10 0o11]]\n",
+	},
+	{
+		// %q under a flag, a width or a precision, as fmt lays it out: a precision
+		// cuts the string to that many runes before it is quoted, '+' escapes every
+		// rune past ASCII, '#' backquotes a string that can be, and the width pads
+		// the quoted text, zeros under '0'; a rune takes '+' and the width. All of it
+		// was refused, "%q is printed by a helper here".
+		name: "%q under flags, a width and a precision",
+		src: `type T int
+
+func (t T) String() string { return "té" }
+
+func main() {
+	s, e, b := "héllo", "x\x60y", []byte("h\xffi")
+	var t T
+	printf("[%8q] [%-8q|] [%08q] [%.2q] [%+q] [%#q] [%#q] [%+.3q]\n", s, s, s, s, s, s, e, s)
+	printf("[%-8q] [%+q] [%#6q] [%10q] [%-#9q|]\n", b, b, b, t, "a\tb")
+	printf("[%6q] [%-6q|] [%06q] [%+q] [%+q] [%#q] [%+6q]\n", 'x', 'é', '\n', 'é', rune(0x1F600), 'x', rune(-1))
+	printf("[%8q] [%+q]\n", []string{"a", "é"}, []rune{'é', 'x'})
+}
+`,
+		want: "[ \"h\xc3\xa9llo\"] [\"h\xc3\xa9llo\" |] [0\"h\xc3\xa9llo\"] [\"h\xc3\xa9\"] [\"h\\u00e9llo\"] [`h\xc3\xa9llo`] [\"x`y\"] [\"h\\u00e9l\"]\n[\"h\\xffi\"] [\"h\\xffi\"] [\"h\\xffi\"] [      \"t\xc3\xa9\"] [`a\x09b`    |]\n[   'x'] ['\xc3\xa9'   |] [00'\\n'] ['\\u00e9'] ['\\U0001f600'] ['x'] ['\\ufffd']\n[[     \"a\"      \"\xc3\xa9\"]] [['\\u00e9' 'x']]\n",
 	}}
 
 // TestEmitCRun compiles emitted C with a host compiler and runs it, checking what

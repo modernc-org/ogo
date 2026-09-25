@@ -2064,9 +2064,11 @@
 // puts a space between the bytes, '#' writes 0x ahead of them -- ahead of each
 // under ' ', `%# x` being "0xde 0xad" -- a precision is the number of BYTES
 // written, and the width pads the whole dump. %s of a []byte pads and cuts as a
-// string does. %q and %U take no flag, width or precision yet, and say so where
-// they are written: the helper that writes them measures the text as it goes, so a
-// field around it would have to be counted twice.
+// string does. %q takes fmt's too: a precision cuts the string to that many runes
+// before it is quoted, '+' writes every rune past ASCII as \u or \U, '#' backquotes
+// a string strconv.CanBackquote would, and the width pads the quoted text; a rune
+// takes '+' and the width. %U takes no flag, width or precision yet, and says so
+// where it is written.
 //
 // A verb may carry fmt's flags, width and precision — "%6.2f", "%-8s", "%+05d",
 // "%.3s" — which mean what they mean in fmt. For a string that is a count of RUNES,
@@ -2086,10 +2088,10 @@
 //
 // "#" writes fmt's prefix on the integer verbs, "0x", "0X", "0b" and the leading
 // zero of an octal number, after any zeros "0" pads with, as fmt places it:
-// "%#08x" of 255 is "0x000000ff"; and on the hex dump, as above. It is refused on
-// the other verbs, whose alternate forms are not written yet -- the backend's
-// printf ignores the flag, and a program that compiles here is meant to mean what
-// it means in Go rather than approximately that.
+// "%#08x" of 255 is "0x000000ff"; and on the hex dump and %q, as above. It is
+// refused on the other verbs, whose alternate forms are not written yet -- the
+// backend's printf ignores the flag, and a program that compiles here is meant to
+// mean what it means in Go rather than approximately that.
 //
 // %v takes a flag, a width and a precision as fmt does, laid out as the type's
 // default verb -- %d, %g, %s or %t, element by element for a slice or an array --
