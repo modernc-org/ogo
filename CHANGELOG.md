@@ -286,6 +286,10 @@ shipped section tells a reader on that version that they have behaviour they do 
 
 ### Fixed
 
+- **A backend crash is reported as one.** Given a function too big for it, the
+  backend says "exceeded local register limit" and then crashes
+  (`doc/register-limit-crash.c`); `ogo build` printed a Go stack trace of the whole
+  compiler after that. It ends with "flexcc crashed: ..." now, and exit status 1.
 - **A local of any kind may be named what C reserves.** An array, a slice or a
   channel named like a C keyword or macro -- `long`, `EOF`, `unix` -- was declared
   in the generated C under the name as written while every read of it was
