@@ -1165,9 +1165,14 @@ fixing that opened a hole the range clause had been refused by accident, which i
 why the rules went in first. A PARENTHESISED target was the same row one level up:
 the checker keeps targets by name, and `(*px), s = ...` -- or `*px, s = ...` --
 shifted every value one target along, both ways (`addTarget`, `checkParenTarget`);
-a batch of 27 went from 18 disagreements with Go to none. Open, and older: the summaries read no LIST store
-through a pointer, `n, w.xs = 1, v`, nor a for clause's, `for ...; b.d = xs`, in a
-callee -- shorthand or not -- so such a callee's caller is asked nothing.
+a batch of 27 went from 18 disagreements with Go to none. The SUMMARIES had the row
+too, closed the same day: a callee's store through a pointer was read where it was
+a statement of one target, and in a list, `n, w.xs = 1, v`, a for clause, `for
+...; w.xs = v`, or a range clause's value, `for _, w.xs = range vs`, it kept its
+caller's local array in package storage in silence --
+through a local, a parameter or the receiver, a for clause's store into a package
+variable included (`throughStores`, `clauseStores`, `storesInto`). **A new way a
+callee stores is read by those two and sunk by that one.**
 
 **PRINTING A VALUE IS A ROW** (2026-09-23). `printf("%v", x)` of an ARRAY printed the
 address of its storage wherever x was not a bare name -- a literal, a field, an

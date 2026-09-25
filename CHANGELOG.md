@@ -68,6 +68,13 @@ shipped section tells a reader on that version that they have behaviour they do 
   *int) { (g) = p }`, and a read of `(*q).p`, were summarised as keeping nothing,
   so `put(&gq, &x)` left x's address in gq. They are refused as `q.p = v` and `g =
   p` are.
+- **A callee storing through a pointer in a list or a clause keeps what it
+  stores.** `n, w.xs = 1, v`, `for ...; w.xs = v` and `for _, w.xs = range vs` in a
+  callee -- through a local holding a package variable's storage, a pointer
+  parameter or the receiver -- and a clause's store into a package variable, `for
+  ...; gb.xs = v`, were summarised as keeping nothing, so a caller passing a slice
+  of its own array left it in package storage in silence. They are refused as the
+  statement `w.xs = v` is.
 - **A target in parentheses is asked what it stores**, and so is a later one behind
   a star. `(*px) = "b"`, `s, (*px) = "q", "c"` and `s, *px = "q", "c"` put a string
   into an int as far as the C compiler; `(&x) = 3` is refused in Go's words.
