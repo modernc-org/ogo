@@ -3767,9 +3767,15 @@ func (f *File) checkForPost(s *Scope, n Node) {
 			}
 		}
 	}
-	// What the statement forms ask of the same assignment, which the post was not:
-	// only its names were resolved, so `i = "s"`, `h.n = "s"` and `i += "s"` for an
-	// int went through, the last as far as the emitter's word about concatenation.
+	f.checkPostOp(s, lhs, op, opSrc, rhs)
+}
+
+// checkPostOp asks of `lhs op rhs` -- an assignment, an increment or a decrement,
+// a compound assignment, written in a header -- what the statement forms ask of
+// the same, which a for clause's post was not: only its names were resolved, so `i
+// = "s"`, `h.n = "s"` and `i += "s"` for an int went through, the last as far as the
+// emitter's word about concatenation.
+func (f *File) checkPostOp(s *Scope, lhs []Node, op Symbol, opSrc string, rhs []Node) {
 	switch {
 	case op == ASSIGN:
 		if v, ok := f.rhsValueCount(s, rhs); ok && v != len(lhs) {
@@ -3779,14 +3785,26 @@ func (f *File) checkForPost(s *Scope, n Node) {
 		f.checkHeaderAssign(s, lhs, rhs)
 	case len(lhs) != 1:
 	case op == INC || op == DEC:
+		sym := "++"
+		if op == DEC {
+			sym = "--"
+		}
+		// A target of no Kind -- a pointer, a slice, a function -- has no ++ either,
+		// and exprTargetKind answers nothing for one: `for ...; p++` and `if p++; ...`
+		// for a pointer reached the C compiler, which steps it as C steps a pointer.
+		if what, known := f.nonBoolOperand(s, lhs[0]); known {
+			f.err(f.tok(lhs[0].Pos()).Position(), "invalid operation: operator %s not defined on %s: it is %s", sym, f.exprSource(lhs[0]), what)
+			return
+		}
 		if k, ok := f.exprTargetKind(s, lhs[0]); ok && kindCategory(k) != catNumeric {
-			sym := "++"
-			if op == DEC {
-				sym = "--"
-			}
 			f.err(f.tok(lhs[0].Pos()).Position(), "invalid operation: %s%s (non-numeric type %s)", f.exprSource(lhs[0]), sym, kindName(k))
 		}
 	case isCompoundAssign(op) && len(rhs) == 1:
+		if what, known := f.nonBoolOperand(s, lhs[0]); known {
+			f.err(f.tok(lhs[0].Pos()).Position(), "invalid operation: operator %s not defined on %s: it is %s",
+				strings.TrimSuffix(opSrc, "="), f.exprSource(lhs[0]), what)
+			return
+		}
 		k, ok := f.exprTargetKind(s, lhs[0])
 		if !ok {
 			return
