@@ -366,6 +366,106 @@ func f(n int) int {
 	}
 }
 
+// TestFormatHeaderParens: gofmt drops the parentheses around a control clause's
+// expression -- an if's or a for's condition, a switch's tag, a range's operand --
+// however many there are (go/printer's stripParens), and one of a doubled pair
+// anywhere else; `if (x > 0) {` is the spelling a C programmer brings. It keeps
+// them around a named composite literal, which a header cannot write bare, and
+// everywhere else: an init, a post, a case, a type switch's guard, an operand.
+func TestFormatHeaderParens(t *testing.T) {
+	const src = `type P struct{ xs []int }
+
+func f(v any, ch chan int) {
+	x, y := 1, 2
+	arr := [3]int{}
+	if (x > 0) {
+	}
+	if ((a(x) + y > 2)) {
+	}
+	if z := (x); (z > 0) {
+	}
+	for (x < 10) {
+		x++
+	}
+	for i := (0); (i < 3); i = (i + 1) {
+	}
+	for i, e := range (arr) {
+		_, _ = i, e
+	}
+	for range (ch) {
+	}
+	for _, e := range ([]int{1}) {
+		_ = e
+	}
+	for _, e := range (P{}.xs) {
+		_ = e
+	}
+	switch (x + 1) {
+	case (1):
+	}
+	switch y++; (y) {
+	}
+	switch (v).(type) {
+	}
+	if (P{}.xs == nil) && (x > 0) {
+	}
+	((x)) = 5
+	((arr))[0] = 1
+}
+
+func a(n int) int { return n }
+`
+	const want = `type P struct{ xs []int }
+
+func f(v any, ch chan int) {
+	x, y := 1, 2
+	arr := [3]int{}
+	if x > 0 {
+	}
+	if a(x)+y > 2 {
+	}
+	if z := (x); z > 0 {
+	}
+	for x < 10 {
+		x++
+	}
+	for i := (0); i < 3; i = (i + 1) {
+	}
+	for i, e := range arr {
+		_, _ = i, e
+	}
+	for range ch {
+	}
+	for _, e := range []int{1} {
+		_ = e
+	}
+	for _, e := range (P{}.xs) {
+		_ = e
+	}
+	switch x + 1 {
+	case (1):
+	}
+	switch y++; y {
+	}
+	switch (v).(type) {
+	}
+	if (P{}.xs == nil) && (x > 0) {
+	}
+	(x) = 5
+	(arr)[0] = 1
+}
+
+func a(n int) int { return n }
+`
+	var b bytes.Buffer
+	if err := FormatFile("main.ogo", []byte(src), &b); err != nil {
+		t.Fatalf("FormatFile: %v", err)
+	}
+	if got := b.String(); got != want {
+		t.Errorf("got\n%s\nwant\n%s", got, want)
+	}
+}
+
 func TestFormat(t *testing.T) {
 	var out bytes.Buffer
 	if err := FormatFile("test.go", []byte(testInput), &out); err != nil {

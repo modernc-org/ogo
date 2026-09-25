@@ -21,8 +21,8 @@ var generatedConstructs = []struct {
 	name    string
 	pattern string
 }{
-	{"for loop", `\n\s*for \(`},
-	{"if statement", `\n\s*if \(`},
+	{"for loop", `\n\s*for \w+ < \d+ \{`}, // written `for (i < n)`, which ogo fmt prints as gofmt does
+	{"if statement", `\n\s*if `},
 	{"switch statement", `\n\s*switch `},
 	{"switch skipped case", `\n\s*case -?\d+:\n\s*case `},
 	{"switch multi-value case", `\n\s*case -?\d+, -?\d+:`},
@@ -124,8 +124,8 @@ var generatedConstructs = []struct {
 	{"float32 variable", `\n\s*var fl_\d+ float32 = `},
 	{"float32 arithmetic step", `\n\s*fl_\d+ = \(fl_\d+ ?[-+*/] ?`},
 	{"float32 negation", `\n\s*fl_\d+ = -\(fl_\d+\)`},
-	{"float32 assertion", `if \(fl_\d+ != `},
-	{"float32 comparison", `if \(fl_\d+ < `},
+	{"float32 assertion", `if fl_\d+ != `},
+	{"float32 comparison", `if fl_\d+ < `},
 	{"int from a float32", `int\(fl_\d+\)`},
 	{"float32 from an int", `float32\([a-z]+_\d+\)`},
 	{"fixed array", `\n\s*var a_\d+ \[\d+\]int`},
@@ -219,8 +219,8 @@ var generatedConstructs = []struct {
 	// differ -- each compared both ways, one of the two folding.
 	{"struct equality copy", `\n\s*eq_\d+ := st_\d+\n`},
 	{"array equality copy", `\n\s*eq_\d+ := a_\d+\n`},
-	{"equality comparison", `if \(\w+_\d+ == eq_\d+\)`},
-	{"inequality comparison", `if \(\w+_\d+ != eq_\d+\)`},
+	{"equality comparison", `if \w+_\d+ == eq_\d+ \{`},
+	{"inequality comparison", `if \w+_\d+ != eq_\d+ \{`},
 	{"equality after a field write", `\n\s*eq_\d+\.f_\d+ = `},
 	{"equality after an element write", `\n\s*eq_\d+\[\d+\] = `},
 	// The slice builtins, each with a helper of its own in the emitter: copy with

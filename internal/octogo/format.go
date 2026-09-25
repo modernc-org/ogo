@@ -1418,6 +1418,7 @@ func FormatFile(fn string, b []byte, w io.Writer) (err error) {
 	f.alignFuncBraces(f.ast)
 	f.skipTok = map[int32]bool{}
 	f.markRedundantParens(f.ast)
+	f.markHeaderParens(f.ast)
 	walk(f.ast, formatterCtx{undentRBraceIndex: -1, indentSepForIndex: -1})
 	// Flush leftover synthetic separators AND the EOF separator ---
 	if f.err == nil {
@@ -1654,7 +1655,7 @@ func (f *formatter) markSendArrows(ast []int32) {
 // redundant it is, exactly as gofmt keeps it.
 func (f *formatter) markRedundantParens(ast []int32) {
 	for c := range it(ast) {
-		if c.sym == Factor || c.sym == HeaderFactor {
+		if c.sym == Factor || c.sym == HeaderFactor || c.sym == AssignHead {
 			f.markFactorParens(c)
 		}
 		if c.sym != 0 {
@@ -1663,7 +1664,148 @@ func (f *formatter) markRedundantParens(ast []int32) {
 	}
 }
 
+// markHeaderParens records the parentheses around a control clause's expression --
+// an if's or a for's condition, a switch's tag, a range's operand -- which gofmt
+// drops however many there are (go/printer's stripParens): `if (x > 0) {` prints
+// as `if x > 0 {`, the spelling a C programmer brings. Not where the expression
+// holds a composite literal of a NAMED type outside inner parentheses, `if (x ==
+// T{}.a) {`, which a header cannot write bare.
+func (f *formatter) markHeaderParens(ast []int32) {
+	for c := range it(ast) {
+		if c.sym == 0 {
+			continue
+		}
+		kids := slices.Collect(it(c.ast))
+		switch c.sym {
+		case IfStmt:
+			var cond Node
+			for _, k := range kids {
+				switch {
+				case isHeaderExpr(k.sym) && cond.sym == 0:
+					cond = k // the condition, unless an init follows it
+				case k.sym == IfInit:
+					cond = Node{}
+					for _, ik := range slices.Collect(it(k.ast)) {
+						if isHeaderExpr(ik.sym) {
+							cond = ik // the last, after the init's ";"
+						}
+					}
+				}
+			}
+			f.stripHeaderParens(cond)
+		case SwitchGuard:
+			var tag Node
+			for _, k := range kids {
+				switch {
+				case isHeaderExpr(k.sym) && tag.sym == 0:
+					tag = k
+				case k.sym == SwitchTag:
+					tag = Node{}
+					for _, tk := range slices.Collect(it(k.ast)) {
+						if isHeaderExpr(tk.sym) {
+							tag = tk
+						}
+					}
+				case k.sym == AssignOp, k.sym == 0 && f.isInitOp(k.tok):
+					tag = Node{} // an init's target; the tag, if any, is SwitchTag's
+					for _, tk := range kids {
+						if tk.sym == SwitchTag {
+							for _, t2 := range slices.Collect(it(tk.ast)) {
+								if isHeaderExpr(t2.sym) {
+									tag = t2
+								}
+							}
+						}
+					}
+				}
+			}
+			f.stripHeaderParens(tag)
+		case ForHeader, ForRest, ForAssignRest:
+			for i, k := range kids {
+				if !isHeaderExpr(k.sym) {
+					continue
+				}
+				prev, next := Symbol(0), Symbol(0)
+				if i > 0 && kids[i-1].sym == 0 {
+					prev = Symbol(f.p.Token(kids[i-1].tok).Ch)
+				}
+				if i+1 < len(kids) && kids[i+1].sym == 0 {
+					next = Symbol(f.p.Token(kids[i+1].tok).Ch)
+				}
+				switch {
+				case prev == RANGE, prev == SEMICOLON && next == SEMICOLON:
+					f.stripHeaderParens(k) // a range's operand, a three-clause condition
+				case c.sym == ForHeader && len(kids) == 1:
+					f.stripHeaderParens(k) // `for cond {`
+				}
+			}
+		}
+		f.markHeaderParens(c.ast)
+	}
+}
+
+// isHeaderExpr reports a header's expression node, which the parser leaves as an
+// Expression or a HeaderExpression.
+func isHeaderExpr(sym Symbol) bool { return sym == HeaderExpression || sym == Expression }
+
+// isInitOp reports an init statement's operator in a switch guard.
+func (f *formatter) isInitOp(tok int32) bool {
+	switch Symbol(f.p.Token(tok).Ch) {
+	case DEFINE, ASSIGN, INC, DEC:
+		return true
+	}
+	return false
+}
+
+// stripHeaderParens marks every pair of parentheses directly around a header's
+// expression, outermost first, as long as what they hold names no composite
+// literal of a named type outside further parentheses.
+func (f *formatter) stripHeaderParens(expr Node) {
+	for expr.sym != 0 {
+		fac, ok := soleParenFactor(expr)
+		if !ok {
+			return
+		}
+		fk := slices.Collect(it(fac.ast))
+		if f.holdsNamedLit(fk[1].ast) {
+			return
+		}
+		f.skipTok[fk[0].tok] = true
+		f.skipTok[fk[2].tok] = true
+		expr = fk[1]
+	}
+}
+
+// holdsNamedLit reports a composite literal of a NAMED type -- `T{}`, `pkg.T{}` --
+// in an expression, outside any parentheses inside it, which protect one.
+func (f *formatter) holdsNamedLit(ast []int32) bool {
+	for c := range it(ast) {
+		if c.sym == 0 {
+			continue
+		}
+		if c.sym == Factor || c.sym == HeaderFactor {
+			kids := slices.Collect(it(c.ast))
+			if len(kids) != 0 && kids[0].sym == 0 {
+				switch Symbol(f.p.Token(kids[0].tok).Ch) {
+				case LPAREN:
+					continue // parenthesised: protected
+				case IDENT:
+					if slices.ContainsFunc(kids, func(k Node) bool { return k.sym == CompositeLit }) {
+						return true
+					}
+				}
+			}
+		}
+		if f.holdsNamedLit(c.ast) {
+			return true
+		}
+	}
+	return false
+}
+
 func (f *formatter) markFactorParens(fac Node) {
+	// An AssignHead in parentheses, `((x)) = 5`, is the same pair doubled: gofmt
+	// prints `(x) = 5`.
 	kids := slices.Collect(it(fac.ast))
 	if len(kids) < 3 || kids[0].sym != 0 || Symbol(f.p.Token(kids[0].tok).Ch) != LPAREN {
 		return
