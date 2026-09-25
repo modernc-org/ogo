@@ -286,6 +286,18 @@ shipped section tells a reader on that version that they have behaviour they do 
 
 ### Fixed
 
+- **A program may use any name the target's C library has taken.** A function
+  called `read`, `write`, `open`, `close` or `creat`, a type called `FILE` or `DIR`,
+  and a field, a local or a package variable called `EOF`, `BUFSIZ` or `SEEK_SET`
+  reached the generated C under its own name, where the library had declared it
+  first: `close` and `write` failed to build inside the library's own posixio.c,
+  a field `EOF` was `_Bool (-1);`, and a function `clock`, `access` or `gets` built
+  with a backend warning. The emitter renamed a hand-picked list of such names; it
+  renames every one now -- each name the target's headers declare, its library
+  sources define and its system modules provide, and each macro its headers and
+  the host's define -- listed from the backend's own include tree (`cnames.go`,
+  kept current by `TestCNames`). None of the programs that did build was seen to
+  run wrongly on the board.
 - **A for clause's post that steps a pointer, a slice or a function is refused.**
   `for i := 0; i < n; p++` for a pointer built pointer arithmetic in silence, the
   post's check asking only for a type it could name; it is "operator ++ not defined

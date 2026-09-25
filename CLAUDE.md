@@ -139,7 +139,7 @@ loadp2 and to a hand-written replica throughout -- do not start there.
 
 ## Code generation
 
-Three generated artifacts are checked in. Regenerate only when changing their
+Four generated artifacts are checked in. Regenerate only when changing their
 inputs, and never hand-edit the outputs.
 
 1. **Grammar → parser.** `internal/octogo/parser.go` (marked `DO NOT EDIT`) is
@@ -345,6 +345,33 @@ inputs, and never hand-edit the outputs.
    > them. The ccgo CLI version the cross passes use is the one `go.mod` pins for
    > the library (`go install modernc.org/ccgo/v4@v4.34.6` into a scratch GOBIN
    > first on PATH), so all five transpiles come from one ccgo.
+
+4. **C library names.** `internal/octogo/cnames.go` (marked `DO NOT EDIT`) lists
+   every macro and every file-scope name the target's C library speaks for, and the
+   host's, which the emitter renames when a program uses one (`cUnusable` for a
+   macro, in every position; `cReserved` for the rest, at top level). The main
+   package's symbols keep their source names in the C, so a program naming a
+   function `read`, `close`, `clock` or `sleep`, a type `FILE` or a field `EOF`
+   collided with the library: flexcc refuses some of these inside the library's own
+   source (`posixio.c: redefining function or subroutine close`), only warns about
+   others, takes the rest in silence, and a macro turns a field's declaration into
+   `_Bool (-1);`. The hand-written lists covered what a program seemed likely to
+   name until 2026-09-25. `TestCNames` derives the target's part from the embedded
+   `p2include.tar.gz` -- the headers the emitter includes, read from `emit.go`, and
+   every `libc/` and `libsys/` source, preprocessed with gcc under flexcc's
+   predefined macros -- and fails when the tree names something the lists lack, so a
+   backend regeneration that adds a library function fails the suite until this is
+   rerun **with the new pin's spin2cpp checkout**, whose system modules (`sys/*.spin`,
+   `_tx`, `bytefill`, ...) are compiled into every program and are in no include tree:
+   ```sh
+   go test ./internal/octogo -run TestCNames -args -cnames-update -cnames-spin2cpp <spin2cpp checkout>
+   ```
+   Names are only ever added, so an update on another host or without the checkout
+   keeps what an earlier one found. `TestFileScopeNames` pins the scanner: static
+   declarations are left out (a user function named like posixio.c's static
+   `_txputc` builds), and an old-style definition's parameter declarations name
+   nothing (`wcsncat(dst, src, n) wchar_t *dst; ...` put `dst` and `n` on the list
+   until it knew them).
 
 ## Architecture
 
