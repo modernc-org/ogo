@@ -32366,7 +32366,7 @@ func main() {
 	part4()
 }
 `,
-		want: "T1 [][][a][é]\nT2 [x][x​][!]\nT3 a béc true 1 2\nT4 3 3 1 -1\nT5 true true true 1\nT6 1 -1 -1 true\nT8 [a\xff][\xff][\xff][�][\xc3]\nT7 abc true abc true 0 false  0\n",
+		want: "T1 [][][a][é]\nT2 [x][x\u200b][!]\nT3 a béc true 1 2\nT4 3 3 1 -1\nT5 true true true 1\nT6 1 -1 -1 true\nT8 [a\xff][\xff][\xff][�][\xc3]\nT7 abc true abc true 0 false  0\n",
 	}, {
 		// fmt applies every verb to a slice or an array element by element, flags,
 		// width and precision included: `%d` of []int{1, 2} is "[1 2]", `%#x` of
