@@ -138,18 +138,25 @@ func init() {
 	} {
 		cUnusable[name] = true
 	}
+	// And every macro the headers define, on the target and on the host: cnames.go,
+	// derived from the headers themselves (TestCNames). The list above predates it
+	// and says why each kind of name is here; this one is what makes it complete.
+	for _, name := range cLibMacros {
+		cUnusable[name] = true
+	}
 }
 
 // cReserved is the set of library names the emitted C has already spoken for at FILE
-// SCOPE: the functions declared by the headers the output includes -- <stdio.h>,
-// <stdlib.h>, <string.h> and propeller2.h. A top-level user symbol of one of these
-// names is emitted with the ogo_ prefix instead; a local, parameter or field of the
-// same name shadows the declaration and is left alone (see cUnusable for the names
-// where that is not enough).
+// SCOPE: the functions, variables and types the target's library declares or
+// defines, and the host's. A top-level user symbol of one of these names is emitted
+// with the ogo_ prefix instead; a local, parameter or field of the same name shadows
+// the declaration and is left alone (see cUnusable for the names where that is not
+// enough).
 //
-// It does not need to be exhaustive to be worth having: it covers what a program is
-// plausibly going to name, and a name missing from it fails the way it does today,
-// as a C compile error naming the collision.
+// It is exhaustive, which it once did not try to be: the list below covered what a
+// program seemed likely to name, on the reasoning that a name it missed would fail
+// as a C compile error naming the collision. flexcc refuses only some -- see the
+// loop over cLibNames.
 var cReserved = map[string]bool{}
 
 func init() {
@@ -173,6 +180,16 @@ func init() {
 		"locktry", "lockrel", "pinh", "pinl", "pinnot", "pinf", "pinr", "pinw",
 		"rdpin", "akpin", "wrpin", "wxpin", "wypin", "rev", "rnd",
 	} {
+		cReserved[name] = true
+	}
+	// And every other name the target's library speaks for at file scope, with the
+	// host's: cnames.go, derived from the backend's include tree and system modules
+	// (TestCNames). The list above covered what a program was thought likely to
+	// name, on the reasoning that a name it missed would fail as a C compile error
+	// naming the collision -- and flexcc refuses only some: of a user function
+	// called clock or access it only warns, of one called sleep or time it says
+	// nothing, and a close collides inside the library's own posixio.c.
+	for _, name := range cLibNames {
 		cReserved[name] = true
 	}
 }
@@ -235,7 +252,17 @@ func mangle(prefix, name string) string {
 		}
 		return userIdent(name)
 	}
-	return prefix + "_" + userIdent(name)
+	return reservedJoin(prefix + "_" + userIdent(name))
+}
+
+// reservedJoin is a C name joined from two, moved out of the way when the join is
+// itself a name C has spoken for: package time's t is time_t, and type div's method
+// t is div_t.
+func reservedJoin(name string) string {
+	if cReserved[name] || cUnusable[name] {
+		return "ogo_" + name
+	}
+	return name
 }
 
 func cIntLit(src string) string {
@@ -14997,12 +15024,14 @@ func (e *emitter) receiverInfo(recv []int32) (name, ctype string, named bool) {
 // as the checker requires (a value/pointer method-name collision is an error).
 func methodBaseType(recvCType string) string { return strings.TrimSuffix(recvCType, "*") }
 
-// methodCName mangles a method to its C function name `<BaseType>_<method>`.
 // methodCName mangles a method to its C name, baseType_method. baseType is already
 // the receiver type's mangled C name (package-namespaced), so a method is namespaced
 // by its type and cannot collide across packages; the method name is passed through
-// cIdent so a Unicode method name is a valid C identifier too.
-func methodCName(baseType, method string) string { return baseType + "_" + userIdent(method) }
+// cIdent so a Unicode method name is a valid C identifier too, and a join C has
+// spoken for moves out of the way (reservedJoin).
+func methodCName(baseType, method string) string {
+	return reservedJoin(baseType + "_" + userIdent(method))
+}
 
 // emitMain emits `func main()` as `int main(void)`; main takes no parameters or
 // results.

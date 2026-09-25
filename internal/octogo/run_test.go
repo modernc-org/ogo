@@ -7858,6 +7858,81 @@ func main() {
 		want: "10 6\n10 30 4\n7\n2 9\n",
 	},
 	{
+		name: "a name the target's library speaks for, in every position",
+		src: `// Every identifier here is one the target's C library has taken: functions its
+// headers declare (read, write, open, close, clock, sleep, time), one only its
+// sources define (creat), types (FILE, DIR), macros (EOF, BUFSIZ, SEEK_SET,
+// RAND_MAX, X_OK, and the host's M_PI and linux), functions of the backend's system
+// module (bytefill, _tx), and a method whose C name, its type's joined to its own,
+// is a typedef (size's t is size_t). Each stands where a program may write it: a
+// function, a type, a method, a constant, a package variable, a field, a
+// parameter, a local. A close used to collide inside the library's own posixio.c,
+// a field named EOF was _Bool (-1); and a clock built with a warning.
+type FILE struct {
+	EOF      bool
+	RAND_MAX int
+}
+
+type DIR int
+
+func (d DIR) read() int { return int(d) * 2 }
+
+type size int
+
+func (s size) t() int { return int(s) + 1 }
+
+const BUFSIZ = 64
+
+var SEEK_SET = 3
+
+var calls int
+
+func read(fd int) int {
+	calls++
+	return fd + 1
+}
+
+func write(b int) int {
+	calls++
+	return b * 2
+}
+
+func open(M_PI int) int { return M_PI + 100 }
+
+func close(X_OK int) int {
+	creat := X_OK * 3
+	return creat
+}
+
+func creat() int { return 7 }
+
+func clock() uint32 { return 12345 }
+
+func sleep(ms int) int { return ms }
+
+func time() int { return 99 }
+
+func bytefill(n int) int { return n + 1 }
+
+func _tx(c int) int { return c }
+
+func main() {
+	f := FILE{true, 5}
+	var d DIR = 4
+	var z size = 9
+	println(read(1), write(2), open(3), close(4), creat())
+	println(calls)
+	println(clock(), sleep(5), time(), bytefill(6), _tx(7))
+	println(f.EOF, f.RAND_MAX, d.read(), z.t(), BUFSIZ, SEEK_SET)
+	printf("%+v %T %T %T\n", f, f, d, z)
+	EOF := 8
+	linux := 9
+	println(EOF, linux)
+}
+`,
+		want: "2 4 103 12 7\n2\n12345 5 99 7 7\ntrue 5 8 10 64 3\n{EOF:true RAND_MAX:5} main.FILE main.DIR main.size\n8 9\n",
+	},
+	{
 		name: "an array parameter is a copy",
 		src: `func mutate(a [3]int) int {
 	a[0] = 99
