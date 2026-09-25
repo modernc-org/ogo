@@ -286,6 +286,11 @@ shipped section tells a reader on that version that they have behaviour they do 
 
 ### Fixed
 
+- **A variable may be named like a type the target's library defines.** A local
+  called `FILE`, `DIR` or `div_t` built on the host, where C lets a local shadow a
+  type name, and failed on the target, whose compiler cannot parse one: "syntax
+  error, unexpected type name `FILE'". Every such name is renamed wherever it
+  stands now. Found by the fuzzer's board sweep once it named things so.
 - **A backend crash is reported as one.** Given a function too big for it, the
   backend says "exceeded local register limit" and then crashes
   (`doc/register-limit-crash.c`); `ogo build` printed a Go stack trace of the whole

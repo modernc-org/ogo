@@ -349,7 +349,10 @@ inputs, and never hand-edit the outputs.
 4. **C library names.** `internal/octogo/cnames.go` (marked `DO NOT EDIT`) lists
    every macro and every file-scope name the target's C library speaks for, and the
    host's, which the emitter renames when a program uses one (`cUnusable` for a
-   macro, in every position; `cReserved` for the rest, at top level). The main
+   macro and for a TYPE, in every position -- the target's compiler cannot parse a
+   declarator named like a typedef in scope, where gcc lets a local shadow one, so
+   a local `FILE` passed the host and failed the board; `cReserved` for the rest,
+   at top level). The main
    package's symbols keep their source names in the C, so a program naming a
    function `read`, `close`, `clock` or `sleep`, a type `FILE` or a field `EOF`
    collided with the library: flexcc refuses some of these inside the library's own
