@@ -8126,6 +8126,41 @@ func main() {
 		want: "[{    -3    2.5     ab {     7   true} [     1     22] [     4     55]    122}]\n[{-3    2.5   ab    {7     true } [1     22   ] [4     55   ] 122  }]\n[{-00003 0002.5 0000ab {000007 00true} [000001 000022] [000004 000055] 000122}]\n[{x:  -3 f: 2.5 s:  ab in:{a:   7 ok:true} arr:[   1   22] sl:[   4   55] r: 122}]\n[{-03 2.5 ab {07 true} [01 22] [04 55] 122}]\n[  <nil>] [&{-3   2.5  ab   {7    true} [1    22  ] [4    55  ] 122 }]\n[{   9    0   mk {   0 false} [   0    0] []    0}]\n[[{  1   0   a {  0 false} [  0   0] []   0} { 22   0  bb {  0 false} [  0   0] []   0}]] [[{0   false} {3   false}]]\n",
 	},
 	{
+		name: "a composite literal of a defined slice type is a value of that type",
+		src: `// A composite literal of a DEFINED slice type is a value of that type. It was
+// untyped where it stood as a value, and a print took the argument it could not
+// type for an integer: printf("%v", IS{4, 5}) printed the first word of the header,
+// an address, in silence, where Go prints [4 5]; and len(IS{1, 2, 3}) was refused.
+type P struct {
+	x int
+	s string
+}
+
+type PS []P
+
+type IS []int
+
+func (s IS) Sum() int {
+	t := 0
+	for _, v := range s {
+		t += v
+	}
+	return t
+}
+
+func main() {
+	printf("[%v] [%v] [%3v]\n", PS{{1, "a"}, {2, "b"}}, IS{4, 5}, IS{6})
+	println(len(IS{1, 2, 3}), cap(IS{3}))
+	for i, v := range (IS{8, 9}) {
+		println(i, v)
+	}
+	x := IS{1, 2}
+	println(x.Sum())
+}
+`,
+		want: "[[{1 a} {2 b}]] [[4 5]] [[  6]]\n3 1\n0 8\n1 9\n3\n",
+	},
+	{
 		name: "an array parameter is a copy",
 		src: `func mutate(a [3]int) int {
 	a[0] = 99

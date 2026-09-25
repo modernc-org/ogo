@@ -35005,6 +35005,13 @@ func (e *emitter) emitPrintOne(newline bool, idx int, arg Node) {
 		e.emitPrintAddress(newline, ct, idx, arg)
 		return
 	}
+	// A composite literal the print could not type is no integer, whatever it is,
+	// and the default below would print its first word: IS{4, 5} for a defined
+	// slice type printed an address that way, silently, until it was typed.
+	if _, typed := e.printArgCType(idx, arg); !typed && e.isWholeCompositeLit(arg) {
+		e.failAt(arg.ast, "cannot print this composite literal: its type is not known here")
+		return
+	}
 	// Default: an integer, or an integer-typed expression. The conversion is %u for
 	// an unsigned type so a large value prints unsigned, as in Go, rather than
 	// wrapping negative.
@@ -40748,6 +40755,13 @@ func (e *emitter) inferNode(n Node) (string, bool) {
 		// has no C value type, as an array never does, so it is left untyped here
 		// and reaches the places that know what to do with the extents themselves.
 		if litType, _, isLit := e.factorArrayLit(n); isLit {
+			// A literal of a DEFINED slice type is a value of that type, keeping its
+			// name and with it its methods. It was untyped here, and a print took an
+			// argument it could not type for an integer: printf("%v", IS{4, 5})
+			// printed the header's first word, silently, where Go prints [4 5].
+			if nm, ok := e.namedSliceLitType(litType); ok {
+				return nm, true
+			}
 			if elem, ok := e.sliceType(litType); ok {
 				e.needSlice(elem)
 				return sliceCName(elem), true
@@ -41862,6 +41876,14 @@ func (e *emitter) emitStructOperand(n Node) {
 		return
 	}
 	e.emitExprNode(n)
+}
+
+// isWholeCompositeLit reports whether an expression IS a composite literal, `T{...}`
+// or `[]T{...}` with nothing after it -- not `P{1, 2}.x`, which is its field's
+// value.
+func (e *emitter) isWholeCompositeLit(v Node) bool {
+	kids, ok := e.soleFactor(v.ast)
+	return ok && len(kids) != 0 && kids[len(kids)-1].sym == CompositeLit
 }
 
 // isCompositeLitExpr reports whether an expression is written as a composite
