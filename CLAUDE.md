@@ -1143,10 +1143,7 @@ type, and one returning an ARRAY called at all, `func() Set { ... }()`; a method
 a call's array result deferred or started on a cog, `defer mk(5).Count()` and `go
 mk(5).Count()`, or with the call parenthesised, `(mk(1)).Count()` (as a value and a
 statement it works since 2026-09-24); a field a call's pointer result lacks,
-`getp().x`, refused as "unsupported call in expression"; an
-array-valued RECEIVE printed where it stands, `printf("%v", <-ch)` for a `chan
-[3]int16` ("cannot print a value of type [3]int16"; received into a variable it
-prints); `[]byte(s)`
+`getp().x`, refused as "unsupported call in expression"; `[]byte(s)`
 and `[]rune(s)` of a string VARIABLE (a copy of a length known at run time; a
 constant's converts since
 2026-09-23, constBytesConv); an if or a switch init that is a compound assignment, an

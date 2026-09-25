@@ -20,6 +20,9 @@ shipped section tells a reader on that version that they have behaviour they do 
 
 ### Language
 
+- **A received array prints where it stands.** `printf("%v", <-ch)` of a
+  `chan [3]int16` was "cannot print a value of type [3]int16"; it is received in
+  its turn among the arguments and printed, as fmt prints it.
 - **printf's element-wise verbs print a multi-dimensional array.** `%d`, `%3d`,
   `%x` and the rest of a `[2][3]int` were "cannot tell the type of this argument",
   where `%v` printed it; they print it row by row as fmt does, and an array of
