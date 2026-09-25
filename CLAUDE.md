@@ -1181,10 +1181,14 @@ that counts writes, calls or receivers takes such a one for none. The binding sc
 first (the rule believing a pointer written once, KNOWN MEANS MUST): `p := &n; (p) =
 &gq; p.p = &x` stored a local's address into gq in silence, as did the same write in
 a list, a clause, an if init and a select -- and a switch's `=` init was no write
-even unparenthesised, its case having asked for ":=". A scan reads a head by SHAPE
-through `scanHead` (no local has a type yet, so `derefHead` and `parenHeadName`,
-which ask one, answer nothing there). **A new scan reads heads through it, and a new
-shape the emitter reads through parentheses is a row in each scan.**
+even unparenthesised, its case having asked for ":=". The summaries next: a callee
+calling `(keep)(v)`, `(dev).onData(v)` or `(c).m()` for a method keeping its
+receiver was summarised as calling nothing -- a direct call, a value, a defer and a
+go alike -- and `f(a[:])` left a local in package storage. A scan reads a head by
+SHAPE through `scanHead`, a Factor through `parenFactorShape` and a call value
+through `shapeCall` (no local has a type yet, so `derefHead` and `parenHeadName`,
+which ask one, answer nothing there). **A new scan reads heads through them, and a
+new shape the emitter reads through parentheses is a row in each scan.**
 
 **PRINTING A VALUE IS A ROW** (2026-09-23). `printf("%v", x)` of an ARRAY printed the
 address of its storage wherever x was not a bare name -- a literal, a field, an

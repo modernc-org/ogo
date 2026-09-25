@@ -89,6 +89,13 @@ shipped section tells a reader on that version that they have behaviour they do 
   none of these writes. They are refused as `p = &gq` is. The same count takes a
   pointer written once in parentheses, `var p *Q; (p) = &n; p.p = &x`, which was
   refused.
+- **A callee calling through a parenthesised function or receiver keeps what that
+  call keeps.** `func f(v []int) { (keep)(v) }` was summarised as keeping nothing,
+  and so were `(keepN)(v)` in a value, `defer (keep)(v)`, `(dev).onData(v)`,
+  `(dev.onData)(v)` and `g = (id)(v)`, and a method keeping its receiver called
+  as `(c).m()`, `(*c).m()`, `defer (c).m()` or `go (c).m()` -- so `f(a[:])` or
+  `f(&lc)` left a local in package storage in silence. They are refused as the
+  same calls without the parentheses are.
 - **A target in parentheses is asked what it stores**, and so is a later one behind
   a star. `(*px) = "b"`, `s, (*px) = "q", "c"` and `s, *px = "q", "c"` put a string
   into an int as far as the C compiler; `(&x) = 3` is refused in Go's words. So
