@@ -1237,10 +1237,13 @@ the statement and the value work since 2026-09-22; the method expression of an I
 type's works since 2026-09-19); a method value on a local or a call's result (design: a method value binds its
 receiver at compile time); an unnamed struct type mixed with the SECOND of two
 declared structs of its fields (its typedef names the first, aliasAnonStructs), which
-Go admits and the target's compiler refuses; printf's `%v` of a
-struct or an interface under a width (an interface value prints what it holds since
-2026-09-20 -- `&{1 2}` for a struct pointer as the argument, its address or its
-String() at depth, ifaceHeldPrintC -- but the chain writing it cannot pad); a PARENTHESISED HEAD as a TARGET where peeling does not reach it:
+Go admits and the target's compiler refuses; printf's `%v` of an
+interface under a width, and of a struct whose fields reach a pointer, an interface or
+an exported String() (an interface value prints what it holds since 2026-09-20,
+ifaceHeldPrintC, but the chain writing it cannot pad; a struct of numbers, strings,
+bools and structs, arrays and slices of them prints under a spec since 2026-09-25,
+a helper per type and spec, needStructSpecPrint -- written out at each print, a
+function of thirteen overflowed the cog register pool); a PARENTHESISED HEAD as a TARGET where peeling does not reach it:
 a conversion's `(*T)(p).x = 5` and `*(*T)(p) = 5` (`(p).x = 5`,
 `(&p).x = 3` and the same through an index, an increment and a compound assignment
 work since 2026-09-20, parenTargetBase, and a head that is a CHAIN, the send

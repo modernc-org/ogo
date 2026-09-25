@@ -20,6 +20,14 @@ shipped section tells a reader on that version that they have behaviour they do 
 
 ### Language
 
+- **printf's %v prints a struct under a flag, a width or a precision.** fmt
+  applies the spec to every field --
+  `%6v` of `P{1, -22, "ab"}` is `{     1    -22     ab}` --
+  through nested structs, arrays and slices, with the field names under `%+6v`,
+  a pointer at the top as `&{...}` or a padded `<nil>`, and a slice or an array
+  of structs each of them. It was refused. A
+  struct reaching a pointer, an interface or an exported field with a String()
+  method is refused under a spec still, and so is an interface.
 - **An if or a switch init may step a variable.** `if n++; n > limit`, `if x *= 2;
   x > 9` and `switch g--; { ... }` -- an increment, a decrement or any operator
   assignment -- were syntax errors; Go admits them, and so does this now.
