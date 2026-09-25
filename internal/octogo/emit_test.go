@@ -11259,6 +11259,11 @@ func main() {
 		{"p := &n\n\tp = &gq\n\t(*p).p = &x", "cannot store the address of local variable x through (*p).p: what it reaches is not known"},
 		{"p := getq()\n\t(*p).p = &x", "through (*p).p"},
 		{"s := &ls\n\t(*s)[0] = &x", "in an element of ls"}, // ls's address is taken: its backing is not known
+		// A range clause's value, and the block rule asked of a reference READ out
+		// of a holder, which names the local it points into.
+		{"xs := []*int{&x}\n\tp := &gq\n\tfor _, p.p = range xs {\n\t}", "cannot store xs's element, which holds a pointer into local x through p.p"},
+		{"{\n\t\ty := 1\n\t\tys := []*int{&y}\n\t\tn.p = ys[0]\n\t}", "cannot store ys[0], which holds a pointer into local y in n: local y does not outlive the block"},
+		{"{\n\t\ty := 1\n\t\tys := []*int{&y}\n\t\tfor _, n.p = range ys {\n\t\t}\n\t}", "local y does not outlive the block"},
 		// Controls.
 		{"ls[0], a = &x, 1", ""},
 		{"t := gs\n\tt[0], a = &gn, 1", ""},
@@ -11268,6 +11273,9 @@ func main() {
 		{"p := &n\n\t(*p).p = &x", ""},
 		{"p := &gq\n\t(*p).p = &gn", ""},
 		{"p := &n\n\tfor i := 0; i < 1; (*p).p = &x {\n\t\ti++\n\t}", ""},
+		{"xs := []*int{&x}\n\tif a == 0 {\n\t\tn.p = xs[0]\n\t}", ""},
+		{"h := Q{p: &x}\n\tif a == 0 {\n\t\tn.p = h.p\n\t}", ""},
+		{"xs := []*int{&x}\n\tfor _, n.p = range xs {\n\t}", ""},
 	} {
 		t.Run(test.stmt, func(t *testing.T) {
 			src := head + "\t" + test.stmt + "\n" + tail

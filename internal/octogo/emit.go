@@ -44344,10 +44344,21 @@ func addrLitRef() frameRef {
 }
 
 func holderRef(name, origin string) frameRef {
-	r := frameRef{origin: origin, what: "local " + name + ", which holds a pointer into " + origin}
-	// The referent is the variable the origin NAMES, not the holder: how long the
-	// holder itself lives says nothing about the storage it points at. A minted
-	// temporary (tempOrigin) names no variable and leaves this empty.
+	return originRef("local "+name+", which holds a pointer into "+origin, origin)
+}
+
+// originRef is the reference a value described by what holds into the storage origin
+// names. The referent is the variable the origin NAMES, not whatever holds it: how
+// long a holder lives says nothing about the storage it points at. Storage the
+// emitter minted -- a temporary, a literal's backing array -- names no variable and
+// leaves it empty, which the block rule takes for the block being emitted.
+//
+// Every reference built from a holder's mark is built here. A value READ out of one,
+// `xs[0]` or `h.p`, and a range value over one had no name, so the block rule took x
+// for a variable of the block being emitted: `q.p = xs[0]` inside an if, with q and x
+// declared together, was refused as x not outliving its block.
+func originRef(what, origin string) frameRef {
+	r := frameRef{origin: origin, what: what}
 	if v, isVar := strings.CutPrefix(origin, "local "); isVar {
 		r.name = v
 	}
@@ -44409,7 +44420,7 @@ func (e *emitter) rangeElemRef(rangeExpr []int32) (frameRef, bool) {
 			if !has {
 				return frameRef{}, false
 			}
-			return frameRef{origin: origin, what: e.f.exprSource(Node{sym: Expression, ast: ast}) + "'s element, which holds a pointer into " + origin}, true
+			return originRef(e.f.exprSource(Node{sym: Expression, ast: ast})+"'s element, which holds a pointer into "+origin, origin), true
 		}
 	}
 	return e.frameRefOf(rangeExpr)
@@ -44436,7 +44447,7 @@ func (e *emitter) initViewsFrame(initExpr []int32) bool {
 // `bs[1].d`. It says what the program WROTE rather than naming the variable, which
 // would send a reader looking at a line they did not write.
 func readHolderRef(read, origin string) frameRef {
-	return frameRef{origin: origin, what: read + ", which holds a pointer into " + origin}
+	return originRef(read+", which holds a pointer into "+origin, origin)
 }
 
 // carriesReference reports whether a value of this C type can hold a reference to

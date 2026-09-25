@@ -4155,6 +4155,50 @@ func main() {
 		want: "48\n",
 	},
 	{
+		// A reference READ out of a holder -- an element, a field -- or ranged out of
+		// a slice points into the local the holder's mark names, and that local's
+		// block is what the block rule compares. It named none, so the rule took the
+		// storage for the block being emitted, and each of these was refused as x not
+		// outliving its block, x and q declared together (2026-09-25).
+		name: "a reference read out of a holder outlives the block it is read in",
+		src: `type Q struct{ p *int }
+
+func readInner(c bool) int {
+	x := 5
+	var q Q
+	xs := []*int{&x}
+	if c {
+		q.p = xs[0]
+	}
+	return *q.p
+}
+
+func holderInner(c bool) int {
+	x := 6
+	var q, h Q
+	h.p = &x
+	if c {
+		q.p = h.p
+	}
+	return *q.p
+}
+
+func rangeInto() int {
+	x := 7
+	ls := []*int{&x}
+	var q Q
+	for _, q.p = range ls {
+	}
+	return *q.p
+}
+
+func main() {
+	println(readInner(true), holderInner(true), rangeInto())
+}
+`,
+		want: "5 6 7\n",
+	},
+	{
 		// The line an interface method call draws for the lifetime rules. Which
 		// function it reaches is the TABLE's answer at run time, so there is no
 		// callee to look an escape summary up by -- and nothing was asked, which
