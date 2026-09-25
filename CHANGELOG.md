@@ -83,6 +83,12 @@ shipped section tells a reader on that version that they have behaviour they do 
 
 ### Behaviour changes
 
+- **A callee keeps what a call's result carries wherever it stands.** `gb =
+  B{pass(v)}`, `gs = append(gs, pass(v)...)`, `gs = Ints(pass(v))`, `gs =
+  pass(v)[1:]` and a method's or an interface method's result, `gs =
+  gc.passM(v)`, for a pass returning its argument, were summarised as keeping
+  nothing -- so a caller's local array left in package storage in silence. They
+  are refused as `gs = pass(v)` is.
 - **A send through a dereference or parentheses is asked what it sends.** `*pch
   <- "x"`, `(ch) <- "x"`, `(*pb).ch <- "x"` and `case (ch) <- "x":` sent a string
   into a chan int as far as the C compiler; they are refused as Go refuses them,

@@ -1212,7 +1212,12 @@ there (heldCalls). And a call's result handed on as another call's ARGUMENT,
 from the caller's parameter to the outer callee's, gated by every call in between
 handing that parameter back (`crossEdge.via`, `viaHolds`) -- the gates are asked in
 the fixed point, since what a callee hands back is known only there. **A new way a
-value passes through a call is a gate there, not a new edge kind.**
+value passes through a call is a gate there, not a new edge kind.** And a call's
+result anywhere in a value's SHAPE -- a literal's element, an appended value, a
+conversion's operand, a sliced base -- and a METHOD's or an interface method's
+result: `callExprsIn` finds the calls a value carries, `callsOfExpr` resolves each to
+its callees, and every sink, hold and gate asks both; only a whole value that was a
+function's call had been followed.
 
 **A RECEIVE HAD NO TYPE** (2026-09-25). `exprType` answered "unknown" for `<-ch`, so
 every store rule said nothing of a received value but the one asked of a bare name
