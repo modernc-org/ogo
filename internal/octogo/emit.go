@@ -104,6 +104,13 @@ func init() {
 		// it here, and the run case "a name C has spoken for, in every position"
 		// is what would catch forgetting to.
 		"memcpy",
+		// And the TYPES it writes there: a conversion is `(uint8_t)(x)`, a 64-bit
+		// temporary an int64_t. A local of one of these names shadows the typedef
+		// in C, and the emitter's next `(uint8_t)` in its scope was "called object
+		// uint8_t is not a function" -- found by the fuzzer the day it began naming
+		// things what C has spoken for.
+		"int8_t", "uint8_t", "int16_t", "uint16_t", "int32_t", "uint32_t", "int64_t",
+		"uint64_t", "size_t", "uintptr_t",
 		// Every name the target's <math.h> defines as a MACRO, with the headers
 		// it pulls in -- the math functions (`#define sqrt(x) __builtin_sqrt(x)`;
 		// ceil is an object-like one as well), the ctype tests, strcpy and
