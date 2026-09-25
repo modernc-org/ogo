@@ -565,7 +565,13 @@ still design-only.
   local named like a C type the emitter writes (`uint8_t`) was renamed; and 1-200 on
   a P2-EDGE, where FILE, DIR and div_t failed to BUILD -- the target's compiler
   cannot parse a declarator named like a typedef, which gcc allows -- and then 192
-  passed and 8 outgrew a cog.
+  passed and 8 outgrew a cog. Seeds 201-600 on a P2-EDGE the same day (8ff6d08): 384 passing, 15
+  outgrowing a cog, and ONE failing, seed 479, the host passing it -- a float
+  constant whose shortest decimal is exactly halfway between two float32s, which
+  the target's C compiler reads in double arithmetic and so rounds either way
+  (`doc/float-literal-tie.c`); such a decimal is written in hex since
+  (`nearFloat32Tie`). **A float literal the emitter writes is one the target reads
+  exactly**: a hex one always, a decimal only away from a tie.
 - **Fixed miscompile (found by the oracle):** a shadowing local whose initializer
   references the shadowed name — `var x = x + 5` with an outer `x` in scope — used
   to miscompile, because the emitter names locals verbatim so the C initializer read
