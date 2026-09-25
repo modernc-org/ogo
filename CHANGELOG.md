@@ -38,6 +38,8 @@ shipped section tells a reader on that version that they have behaviour they do 
 
 ### Fixed
 
+- **A select clause's comma-ok flag may be stored through a call's result.** `case
+  v, getr().ok = <-ch:` was refused as "cannot assign to getr".
 - **A select clause receives into a target in parentheses, through a pointer and
   into an array's place.** `case (x) = <-ch:`, `case (*px) = <-ch:`, `case (h).v
   = <-ch:` and `case (*ph).v = <-ch:` built and left the target unwritten, in
@@ -68,6 +70,12 @@ shipped section tells a reader on that version that they have behaviour they do 
 
 ### Behaviour changes
 
+- **A received value is stored as any value is.** `h.s = <-ci`, `*ps = <-ci`,
+  `as[0] = <-ci` and `(h).s = <-ci` for a string target and an int channel were
+  taken, and so were the same targets in a select clause, `case h.s = <-ci:` and
+  `case (s) = <-ci:`, and a comma-ok receive's flag stored into anything but a
+  bool, `n, s = <-ci` and `n, h.s = <-ci`: a received value had a type only where
+  it was stored into a bare name. They are refused as Go refuses them.
 - **Every place a program stores asks every lifetime rule.** The rules a store
   asks -- into a package variable, past the block of what it reaches, into an
   element of a slice not provably this function's, through a pointer or a call's

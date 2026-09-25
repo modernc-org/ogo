@@ -1195,6 +1195,18 @@ through `shapeCall` (no local has a type yet, so `derefHead` and `parenHeadName`
 which ask one, answer nothing there). **A new scan reads heads through them, and a
 new shape the emitter reads through parentheses is a row in each scan.**
 
+**A RECEIVE HAD NO TYPE** (2026-09-25). `exprType` answered "unknown" for `<-ch`, so
+every store rule said nothing of a received value but the one asked of a bare name
+(checkRecvAssign): `h.s = <-ci` put an int into a string as far as the C compiler, a
+comma-ok's flag took any target at all, and a select clause asked its target only
+by name. Found sweeping select receive TARGETS -- the statement forms were the same
+row, and nobody had crossed a receive with them. A receive is typed by its channel's
+element where that is a Kind, and a clause's value is built as the `<-ch` its
+grammar keeps in two pieces (commRecvValue), so a clause's target is asked what a
+statement's sole target is (checkRecvIntoTarget). **A value with no type is a row
+across the targets**: before trusting a store rule, ask what it says of each kind of
+value, a receive, a conversion, a call's result, as well as of each kind of target.
+
 **PRINTING A VALUE IS A ROW** (2026-09-23). `printf("%v", x)` of an ARRAY printed the
 address of its storage wherever x was not a bare name -- a literal, a field, an
 element, a row, a call's field, a deferred capture -- silently on the board, and
