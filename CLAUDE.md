@@ -1200,9 +1200,12 @@ summary followed a call where a sink stood over it, `gs = pass(v)` (derived), an
 not once the result was in a local, `x := pass(v); gs = x`, which kept the caller's
 array in a package variable in silence -- through every sink. summaryHolds binds
 such a local to a "call@" name standing for the call, and each sink follows it
-there (heldCalls). OPEN, the next row: a call's result handed on as another call's
-ARGUMENT, `keep(pass(v))`, local between or not -- a composition of two edges, which
-the crossEdge fixed point does not do.
+there (heldCalls). And a call's result handed on as another call's ARGUMENT,
+`keep(pass(v))`, local between or not, nested or through a function value: an edge
+from the caller's parameter to the outer callee's, gated by every call in between
+handing that parameter back (`crossEdge.via`, `viaHolds`) -- the gates are asked in
+the fixed point, since what a callee hands back is known only there. **A new way a
+value passes through a call is a gate there, not a new edge kind.**
 
 **A RECEIVE HAD NO TYPE** (2026-09-25). `exprType` answered "unknown" for `<-ch`, so
 every store rule said nothing of a received value but the one asked of a bare name

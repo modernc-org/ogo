@@ -70,6 +70,12 @@ shipped section tells a reader on that version that they have behaviour they do 
 
 ### Behaviour changes
 
+- **A callee handing a call's result to another call keeps what that call keeps
+  of it.** `func f(v []int) { keep(pass(v)) }`, where pass returns its argument
+  and keep stores its own, was summarised as keeping nothing, and so were `x :=
+  pass(v); keep(x)`, a method's argument, `gc.set(pass(v))`, a nest of such
+  calls and a call through a function value -- so `f(a[:])` left a local array
+  in package storage in silence.
 - **A callee keeping a call's result through a local keeps what the call hands
   back.** `func f(v []int) { x := pass(v); gs = x }`, where pass returns its
   argument, was summarised as keeping nothing, and so was the same local sent,
