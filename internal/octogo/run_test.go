@@ -12427,6 +12427,46 @@ func main() {
 		want: "15 6 6 3\n6 5\n",
 	},
 	{
+		// A METHOD's struct result handed on as the next method's receiver,
+		// `s.bump(1).show()` and `w.get().total()`, was passed where the call stood:
+		// `S6_show(S6_bump(s, 1))`. The target's compiler corrupts a struct of more
+		// than four words passed so -- shifted a word, 112345 for Go's 123457 on a
+		// P2-EDGE, with a warning about C nobody wrote (doc/struct-call-arg.c). A
+		// function's result was bound already; a method's is now (chainReceiver).
+		name: "a method on a method's struct result of six words",
+		src: `type S6 struct{ a, b, c, d, e, f int }
+
+type W struct{ s S6 }
+
+var out int
+
+func sum(s S6) int { return s.a*100000 + s.b*10000 + s.c*1000 + s.d*100 + s.e*10 + s.f }
+
+func (s S6) bump(k int) S6 {
+	s.f += k
+	return s
+}
+
+func (s S6) total() int { return sum(s) }
+
+func (s S6) show() { out = sum(s) }
+
+func (w W) get() S6 { return w.s }
+
+func main() {
+	s := S6{1, 2, 3, 4, 5, 6}
+	s.bump(1).show()
+	println(out)
+	println(s.bump(2).total(), s.bump(1).bump(2).total())
+	x := s.bump(3).total()
+	w := W{s}
+	w.get().bump(4).show()
+	println(x, out, w.get().total())
+}
+`,
+		want: "123457\n123458 123459\n123459 123460 123456\n",
+	},
+	{
 		// A compound literal inside a cast, which the target's C compiler cannot do.
 		// int(total(xs[:])) is the ordinary spelling: a slice expression handed to a
 		// call becomes a compound literal in C, and a conversion becomes a cast

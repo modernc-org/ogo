@@ -31545,6 +31545,17 @@ func (e *emitter) chainReceiver(text, ctype string, addr, wantPtr bool) (string,
 		// A value receiver read through the pointer: Go panics on a nil one, and
 		// the read went unchecked -- `p.Val()` for a nil p read address zero.
 		return "*" + e.derefGuardC(text, ctype), true
+	case !addr && e.isStruct(ctype) && !e.declInit && e.deferReplay < 0 && !isCIdent(text):
+		// A value receiver handed a METHOD's struct result, `s.bump(1).show()`:
+		// bound to a temporary first, as a function's result is and as an argument
+		// is (hoistStructCallArg). The target's compiler corrupts a struct of more
+		// than four words passed where the call stands -- the argument shifted a
+		// word, 112345 for Go's 123457 on a P2-EDGE, with only a warning about
+		// "incompatible pointer types" in C nobody wrote (doc/struct-call-arg.c). A
+		// name -- a temporary already, a conversion's variable -- is no call.
+		tmp := e.newTmp()
+		e.prologue = append(e.prologue, ctype+" "+tmp+" = "+text+";\n")
+		return tmp, true
 	default:
 		return text, true
 	}
