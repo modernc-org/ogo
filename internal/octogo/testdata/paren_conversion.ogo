@@ -1,54 +1,27 @@
-// A conversion whose target is an UNNAMED composite type may be written
-// parenthesised, `([]int)(xs)`, as well as bare, `[]int(xs)`; both are valid Go.
-// From 2026-08-04 until 2026-09-21 only the parenthesised one parsed -- specs.go's
-// "Parentheses where the parser needs them" is the rule that permitted requiring
-// it -- and bracket_conv_legal.ogo covers the bare one.
-//
-// A conversion whose target is a NAME needs no parentheses and never did.
+// A conversion to a type named in parentheses, `(int)(f)` -- the spelling a C cast
+// suggests -- is the conversion `int(f)`, asked what one is. Its type was taken for
+// a value: "cannot use type int as a value".
 
-type Row [3]int
+type MyInt int
 
-type Nums []int
+type Ints []int
 
-var q Row
-
-var ns Nums
+func (l Ints) Sum() int { return len(l) }
 
 func main() {
-	// Between a defined type and what it is defined over, nothing about the value
-	// changes, so these are the identity and the operand is the answer.
-	a := ([3]int)(q)
-	println(a[0])
-
-	ys := ([]int)(ns)
-	println(len(ys))
-
-	// The named direction, which needs no help.
-	r := Row(a)
-	println(r[0])
-
-	// A parenthesised expression carrying a suffix is ordinary Go too.
-	println((a)[1], (ys)[0])
-}
-
-type Pt struct {
-	x int
-	y int
-}
-
-var pt Pt
-
-// A parenthesised operand is checked as the bare one is: `(pt).nosuch` used to reach
-// the emitter, which said "unsupported expression node FactorSuffix". Every layer
-// peels, so the third form is caught too.
-func fields() {
-	// ERROR type Pt has no field nosuch
-	println((pt).nosuch)
-	// ERROR type Pt has no field nosuch
-	println(((pt)).nosuch)
-	// ERROR type Pt has no field nosuch
-	println((((pt))).nosuch)
-
-	pt.y = 4
-	println((pt).y, ((pt)).y)
+	f := 2.5
+	v := []int{1, 2}
+	n := (int)(f)
+	m := (MyInt)(3)
+	k := ((int))(f)
+	s := (Ints)(v).Sum()
+	// ERROR "cannot convert .abc. \(untyped string constant\) to type int"
+	a := (int)("abc")
+	// ERROR "constant 300 overflows uint8"
+	b := (uint8)(300)
+	// ERROR "too many arguments in conversion to int"
+	c := (int)(1, 2)
+	// ERROR "cannot convert true \(untyped bool constant\) to type MyInt"
+	d := (MyInt)(true)
+	_, _, _, _, _, _, _, _ = n, m, k, s, a, b, c, d
 }

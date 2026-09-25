@@ -17014,6 +17014,19 @@ func (f *File) checkFactorNames(s *Scope, n Node) {
 	if _, _, lb, _, ok := f.parenBracketConv(n); ok {
 		f.markTypeArg(lb)
 	}
+	// `(int)(f)` and `(Celsius)(t)`: a conversion to a type NAMED in parentheses --
+	// the spelling a C cast suggests -- is `int(f)`. Its type was taken for a value,
+	// "cannot use type int as a value"; it is asked what the conversion is.
+	if id, argList, ok := f.parenNameConv(s, n); ok {
+		var args []Node
+		for a := range it(argList.ast) {
+			if a.sym == Expression {
+				args = append(args, a)
+			}
+		}
+		f.markTypeName(id)
+		f.checkCallee(s, id, argList, args)
+	}
 	var id, lbrack Token
 	var suffix, lit, litSuffix, anon, conv, typ Node
 	hasID, hasSuffix, hasLit, hasLitSuffix, ellipsis := false, false, false, false, false
@@ -17917,6 +17930,39 @@ func (f *File) markMakeTypeArg(argList Node) {
 	}
 }
 
+// markTypeName records a type's name that stands where a TYPE is wanted, the `int`
+// of `(int)(f)`, so the check of a bare type name used as a value passes it by.
+func (f *File) markTypeName(id Token) {
+	if f.makeTypeArgs == nil {
+		f.makeTypeArgs = map[string]bool{} // outside every body, as markMakeTypeArg says
+	}
+	f.makeTypeArgs[id.Position().String()] = true
+}
+
+// parenNameConv matches a conversion to a type named in parentheses, `(T)(x)` and
+// `((T))(x)`, answering the type's name and the argument list.
+func (f *File) parenNameConv(s *Scope, n Node) (Token, Node, bool) {
+	kids := slices.Collect(it(n.ast))
+	if len(kids) != 4 || kids[0].sym != 0 || f.ch(kids[0].tok) != LPAREN || kids[1].sym != Expression ||
+		kids[2].sym != 0 || f.ch(kids[2].tok) != RPAREN || kids[3].sym != FactorSuffix {
+		return Token{}, Node{}, false
+	}
+	id, op, ok := f.parenOperandName(kids[1])
+	if !ok || op != 0 {
+		return Token{}, Node{}, false
+	}
+	switch s.find(id.Src()).(type) {
+	case *TypeDeclaration, *PredeclaredType:
+	default:
+		return Token{}, Node{}, false
+	}
+	first, ok := firstKid(kids[3])
+	if !ok || first.sym != CallSuffix {
+		return Token{}, Node{}, false
+	}
+	return id, f.callArgList(first), true
+}
+
 // markTypeArg records a bracketed type that stands where a TYPE is wanted, by its
 // "[", so the check of a bracketed type used as a value passes it by.
 func (f *File) markTypeArg(lbrack Token) {
@@ -18057,6 +18103,13 @@ func (f *File) checkCall(s *Scope, callee Token, direct bool, argList Node) {
 	if !direct {
 		return
 	}
+	f.checkCallee(s, callee, argList, args)
+}
+
+// checkCallee is checkCall for a direct call's callee, whose arguments' names are
+// walked already: what the callee takes of them -- a function's signature, a
+// conversion's operand, a builtin's.
+func (f *File) checkCallee(s *Scope, callee Token, argList Node, args []Node) {
 	// A call or "go" statement whose callee is the blank identifier ("_()") reads
 	// "_" as a value; report that rather than "undefined: _". (An expression-form
 	// call is caught earlier, in checkFactorNames.)

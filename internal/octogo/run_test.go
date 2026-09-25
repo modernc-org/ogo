@@ -13180,6 +13180,36 @@ func main() {
 		want: "scalar 6 1\nstruct 7 3 4\nexpr 13\nnested 5\nvia var 8\nplain 9 7\n",
 	},
 	{
+		// A conversion to a type NAMED in parentheses, `(int)(f)` -- the spelling a C
+		// cast suggests -- is `int(f)`. The checker took the parenthesised type for a
+		// value, "cannot use type int as a value", which the emitter had lowered all
+		// along (unparenKids).
+		name: "a conversion to a type named in parentheses",
+		src: `type Celsius int
+
+type Ints []int
+
+func (l Ints) Sum() int {
+	s := 0
+	for _, x := range l {
+		s += x
+	}
+	return s
+}
+
+func main() {
+	f := 2.75
+	v := []int{1, 2, 3}
+	n := (int)(f)
+	c := (Celsius)(n * 10)
+	k := ((int64))(c) + 1
+	b := (uint8)(n + 254)
+	println(n, c, k, b, (Ints)(v).Sum(), (float64)(n)/2)
+}
+`,
+		want: "2 20 21 0 6 1\n",
+	},
+	{
 		// A defined type over a STRUCT, `type Named Point`, which was not modelled at
 		// all: field access, literals, conversions and methods failed together, the
 		// first of them as "unsupported expression node FactorSuffix".
