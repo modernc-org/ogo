@@ -5884,6 +5884,22 @@ func emitProgram(pkg *Package, w io.Writer, opts []EmitOption, rename map[string
 		}
 		out.WriteByte('\n')
 	}
+	// The printers of a struct under a spec (needStructSpecPrint), in the order they
+	// were minted, every one declared before any is defined.
+	if len(e.specPrinters) != 0 {
+		sps := slices.SortedFunc(maps.Values(e.specPrinters), func(a, b *specPrinter) int {
+			na, _ := strconv.Atoi(strings.TrimPrefix(a.name, "ogo_printvs_"))
+			nb, _ := strconv.Atoi(strings.TrimPrefix(b.name, "ogo_printvs_"))
+			return na - nb
+		})
+		for _, sp := range sps {
+			out.WriteString(sp.proto)
+		}
+		for _, sp := range sps {
+			out.WriteString(sp.def)
+		}
+		out.WriteByte('\n')
+	}
 	// The package-level integer constants a body names, ahead of the globals (a
 	// variable's initializer at file scope reads none of them by name, being
 	// spelled from the fold, but a function body may -- the package initializer
@@ -6161,45 +6177,46 @@ type emitter struct {
 	retStructByKey     map[string]string        // those result types -> the typedef name, so one list answers alike every time
 	typedefUnits       []typedefUnit            // the typedef section, in the order collected; emitted in dependency order
 	anonStructNames    map[string]string
-	anonIfaceNames     map[string]string   // method-set shape -> the minted name of an anonymous interface
-	anonIfaceMinted    map[string]bool     // the minted names, so a message says the SHAPE rather than the name
-	ifaceASTs          map[string]ifaceAST // interface name -> its body, for resolving an EMBEDDED name whatever the declaration order        // an anonymous struct's field shape -> its minted typedef, so identical ones are one type
-	sliceElems         map[string]bool     // element C types that need an ogo_slice_<T> typedef
-	sliceElemByName    map[string]string   // ogo_slice_<T> C type name -> its element C type; the forward direction mangles pointers, so the reverse is recorded, not derived
-	appendElems        map[string]bool     // element C types needing the trapping ogo_append_<T> helper
-	tryappendElems     map[string]bool     // element C types needing the ok-form ogo_tryappend_<T> helper + ogo_appendok_<T>
-	appendSliceElems   map[string]bool     // element C types needing the spread ogo_appendslice_<T> helper
-	tryappendSliceEls  map[string]bool     // element C types needing the spread ok-form ogo_tryappendslice_<T>
-	appendokStructs    map[string]bool     // element C types needing the { slice, ok } ogo_appendok_<T> struct
-	usesAppendStr      bool                // append(bs, s...) of a string: emit ogo_appendstr
-	usesTryAppendStr   bool                // the ok form of the same: emit ogo_tryappendstr
-	copyElems          map[string]bool     // element C types needing the ogo_copy_<T> helper for the copy builtin
-	resliceElems       map[string]bool     // element C types needing the ogo_reslice_<T> helper, a bounds-checked slice expression
-	reslice3Elems      map[string]bool     // element C types needing its three-bound twin, ogo_reslice3_<T>
-	usesResliceStr     bool                // a string is sliced through the helper: emit ogo_reslice_str
-	resliceCalled      bool                // a reslice helper call was just emitted, so a field read off it needs a temporary (see emitHeaderField)
-	usesCopyStr        bool                // copy(dst []byte, src string) is used: emit the ogo_copystr helper
-	usesRuneString     bool                // string(r) for a run-time rune is used: emit the ogo_rune_string helper
-	usesBuilder        bool                // the Builder type is used: emit its typedef and method helpers
-	importQualifiers   map[string]string   // import qualifier -> the imported package's C symbol prefix (resolved user packages, not p2)
-	pkgNames           map[string]string   // package C prefix -> the package name a program writes, for a type's Go spelling
-	typeDisplay        map[string]string   // a type's C name -> its Go spelling, "lib.Temp" for a type of another package
-	curPkgPrefix       string              // the C symbol prefix of the package whose file is currently being emitted ("" for main)
-	clearElems         map[string]bool     // element C types needing the ogo_clear_<T> helper for the clear builtin
-	minElems           map[string]bool     // C types needing the ogo_min_<T> helper for the min builtin
-	maxElems           map[string]bool     // C types needing the ogo_max_<T> helper for the max builtin
-	printSliceElems    map[string]bool     // element C types printed without a newline, needing the ogo_print_slice_<T> helper
-	printStructs       map[string]string   // struct C types printed by %v -> the definition of their ogo_printv_<T> helper
-	printIfaces        map[string]string   // interface C types printed by %v -> where the first such print is written, for a refusal minting its helper earns
-	printPos           string              // where the %v being emitted is written, for a printer minted from it later
-	printlnElems       map[string]bool     // element C types printed with a newline, needing ogo_println_slice_<T> (which calls ogo_print_slice_<T>)
-	defers             []deferredCall      // the current function's top-level defers, in source order, replayed LIFO before each return
-	switchBreak        string              // goto target for a break in the current switch case (the if/else lowering has no C switch to break); "" means a plain C break -- a loop, or outside any switch
-	switchBreakSeq     int                 // counter minting unique switch-end labels
-	switchBreakUsed    map[string]bool     // switch-end labels a break actually jumped to, so an unreferenced label is not emitted
-	labelBreak         map[string]string   // source label -> C break-target label, for "break L" (a labeled for or switch)
-	labelContinue      map[string]string   // source label -> C continue-target label, for "continue L" (a labeled for)
-	labelUsed          map[string]bool     // C labels a labeled break/continue jumped to, so an unreferenced one is not emitted
+	anonIfaceNames     map[string]string       // method-set shape -> the minted name of an anonymous interface
+	anonIfaceMinted    map[string]bool         // the minted names, so a message says the SHAPE rather than the name
+	ifaceASTs          map[string]ifaceAST     // interface name -> its body, for resolving an EMBEDDED name whatever the declaration order        // an anonymous struct's field shape -> its minted typedef, so identical ones are one type
+	sliceElems         map[string]bool         // element C types that need an ogo_slice_<T> typedef
+	sliceElemByName    map[string]string       // ogo_slice_<T> C type name -> its element C type; the forward direction mangles pointers, so the reverse is recorded, not derived
+	appendElems        map[string]bool         // element C types needing the trapping ogo_append_<T> helper
+	tryappendElems     map[string]bool         // element C types needing the ok-form ogo_tryappend_<T> helper + ogo_appendok_<T>
+	appendSliceElems   map[string]bool         // element C types needing the spread ogo_appendslice_<T> helper
+	tryappendSliceEls  map[string]bool         // element C types needing the spread ok-form ogo_tryappendslice_<T>
+	appendokStructs    map[string]bool         // element C types needing the { slice, ok } ogo_appendok_<T> struct
+	usesAppendStr      bool                    // append(bs, s...) of a string: emit ogo_appendstr
+	usesTryAppendStr   bool                    // the ok form of the same: emit ogo_tryappendstr
+	copyElems          map[string]bool         // element C types needing the ogo_copy_<T> helper for the copy builtin
+	resliceElems       map[string]bool         // element C types needing the ogo_reslice_<T> helper, a bounds-checked slice expression
+	reslice3Elems      map[string]bool         // element C types needing its three-bound twin, ogo_reslice3_<T>
+	usesResliceStr     bool                    // a string is sliced through the helper: emit ogo_reslice_str
+	resliceCalled      bool                    // a reslice helper call was just emitted, so a field read off it needs a temporary (see emitHeaderField)
+	usesCopyStr        bool                    // copy(dst []byte, src string) is used: emit the ogo_copystr helper
+	usesRuneString     bool                    // string(r) for a run-time rune is used: emit the ogo_rune_string helper
+	usesBuilder        bool                    // the Builder type is used: emit its typedef and method helpers
+	importQualifiers   map[string]string       // import qualifier -> the imported package's C symbol prefix (resolved user packages, not p2)
+	pkgNames           map[string]string       // package C prefix -> the package name a program writes, for a type's Go spelling
+	typeDisplay        map[string]string       // a type's C name -> its Go spelling, "lib.Temp" for a type of another package
+	curPkgPrefix       string                  // the C symbol prefix of the package whose file is currently being emitted ("" for main)
+	clearElems         map[string]bool         // element C types needing the ogo_clear_<T> helper for the clear builtin
+	minElems           map[string]bool         // C types needing the ogo_min_<T> helper for the min builtin
+	maxElems           map[string]bool         // C types needing the ogo_max_<T> helper for the max builtin
+	printSliceElems    map[string]bool         // element C types printed without a newline, needing the ogo_print_slice_<T> helper
+	printStructs       map[string]string       // struct C types printed by %v -> the definition of their ogo_printv_<T> helper
+	specPrinters       map[string]*specPrinter // a struct printed by %v under a spec, keyed by type, spec and '+': needStructSpecPrint
+	printIfaces        map[string]string       // interface C types printed by %v -> where the first such print is written, for a refusal minting its helper earns
+	printPos           string                  // where the %v being emitted is written, for a printer minted from it later
+	printlnElems       map[string]bool         // element C types printed with a newline, needing ogo_println_slice_<T> (which calls ogo_print_slice_<T>)
+	defers             []deferredCall          // the current function's top-level defers, in source order, replayed LIFO before each return
+	switchBreak        string                  // goto target for a break in the current switch case (the if/else lowering has no C switch to break); "" means a plain C break -- a loop, or outside any switch
+	switchBreakSeq     int                     // counter minting unique switch-end labels
+	switchBreakUsed    map[string]bool         // switch-end labels a break actually jumped to, so an unreferenced label is not emitted
+	labelBreak         map[string]string       // source label -> C break-target label, for "break L" (a labeled for or switch)
+	labelContinue      map[string]string       // source label -> C continue-target label, for "continue L" (a labeled for)
+	labelUsed          map[string]bool         // C labels a labeled break/continue jumped to, so an unreferenced one is not emitted
 	labelSeq           int
 	retSeq             int                     // disambiguates a result-struct name two different result lists spell alike                      // counter minting unique labeled-loop break/continue labels
 	pendingContLabel   string                  // the current labeled for's C continue target, for emitLoopBody to place at the body's end
@@ -33484,6 +33501,315 @@ func (e *emitter) isPrintStruct(ct string) bool {
 	return isStruct && !e.isIfaceCType(u)
 }
 
+// emitStructSpecVerb prints a struct, or a pointer to one, under %v with a flag, a
+// width or a precision, as fmt does: the spec applies to every field in turn, and
+// through a nested struct, an array or a slice to each of theirs -- `%6v` of P{1,
+// -22, "ab"} is "{     1    -22     ab}" -- each under its type's default verb,
+// '+' naming the fields rather than signing them. A pointer at the top prints "&"
+// and what it points at, or "<nil>" under the spec. It was refused, "%v of this
+// type is printed without a width here". What fmt prints otherwise at depth -- a
+// pointer's address, an interface's dynamic value, an exported field's String() --
+// is refused still, before anything is emitted.
+//
+// The fields are printed by a helper per struct type and spec (needStructSpecPrint)
+// rather than where the print stands: on the target every local is a cog register
+// out of one pool, and thirteen such prints of a nine-field struct written out in
+// one function did not fit it ("fit 480 failed").
+func (e *emitter) emitStructSpecVerb(item printfItem, arg Node, ct string, known bool, value func(), wrong, noSpec func(string) bool) (handled, ok bool) {
+	base := strings.TrimSuffix(ct, "*")
+	if !known || !e.isPrintStruct(base) {
+		return false, false
+	}
+	u := e.underlyingCType(base)
+	if why := e.structSpecRefusal(u); why != "" {
+		return true, noSpec(why)
+	}
+	flags := item.flags()
+	plus := strings.IndexByte(flags, '+') >= 0
+	fieldItem := item
+	fieldItem.spec = strings.ReplaceAll(flags, "+", "") + item.spec[len(flags):]
+	helper, ok := e.needStructSpecPrint(u, fieldItem, plus, wrong, noSpec)
+	if !ok {
+		return true, false
+	}
+	p := e.newTmp()
+	e.ind()
+	switch {
+	case base != ct:
+		e.emit("{ " + ct + " " + p + " = ")
+		value()
+		e.emit(";\n")
+	case e.printAddressable(arg) || e.hasArrayField(u):
+		// A struct holding an array is copied by no initializer the target's
+		// compiler lowers (see emitStructPrintVerb), so it is read where it lies.
+		e.emit("{ " + u + "* " + p + " = &(")
+		value()
+		e.emit(");\n")
+	default:
+		t := e.newTmp()
+		e.emit("{ " + u + " " + t + " = ")
+		value()
+		e.emit("; " + u + "* " + p + " = &" + t + ";\n")
+	}
+	e.indent++
+	if base != ct {
+		e.ind()
+		e.emit("if (" + p + " == 0) {\n")
+		e.indent++
+		// fmt pads "<nil>", zeros and all, and never cuts it.
+		nilItem := printfItem{verb: 's', spec: strings.ReplaceAll(item.flags(), "#", "")}
+		if w, hasW := item.width(); hasW {
+			nilItem.spec += strconv.Itoa(w)
+		}
+		ok = e.emitScalarVerb(nilItem, cString, func() { e.emit(e.stringLitName("<nil>")) }, wrong, noSpec)
+		e.indent--
+		e.ind()
+		e.emit("} else {\n")
+		e.indent++
+		e.ind()
+		e.emit("putchar('&');\n")
+		e.ind()
+		e.emit(helper + "(" + p + ");\n")
+		e.indent--
+		e.ind()
+		e.emit("}\n")
+	} else {
+		e.ind()
+		e.emit(helper + "(" + p + ");\n")
+	}
+	e.indent--
+	e.ind()
+	e.emit("}\n")
+	return true, ok
+}
+
+// emitStructsSpecVerb prints a slice or a one-dimensional array of structs under %v
+// with a spec, as fmt does -- "[", each struct as emitStructSpecVerb prints one,
+// separated by spaces, "]" -- through the struct's helper. An array is read where
+// it lies, so one that lies nowhere, a call's result, is left refused.
+func (e *emitter) emitStructsSpecVerb(item printfItem, idx int, arg Node, ct string, known bool, value func(), wrong, noSpec func(string) bool) (handled, ok bool) {
+	var elem, bound string
+	switch {
+	case known && e.isSliceCType(e.underlyingCType(ct)):
+		elem = sliceElemFromCName(e.underlyingCType(ct))
+	case !known:
+		a, isArr := e.printArrayShape(idx, arg)
+		if !isArr || len(a.inner) != 0 || !e.printAddressable(arg) {
+			return false, false
+		}
+		elem, bound = a.elem, a.bound
+	default:
+		return false, false
+	}
+	if !e.isPrintStruct(elem) {
+		return false, false
+	}
+	u := e.underlyingCType(elem)
+	if why := e.structSpecRefusal(u); why != "" {
+		return true, noSpec(why)
+	}
+	flags := item.flags()
+	plus := strings.IndexByte(flags, '+') >= 0
+	item.spec = strings.ReplaceAll(flags, "+", "") + item.spec[len(flags):]
+	helper, ok := e.needStructSpecPrint(u, item, plus, wrong, noSpec)
+	if !ok {
+		return true, false
+	}
+	p, i := e.newTmp(), e.newTmp()
+	e.ind()
+	if bound != "" {
+		e.emit("{ " + elem + "* " + p + " = ")
+		value()
+		e.emit(";\n")
+	} else {
+		e.needSlice(elem)
+		e.emit("{ " + e.underlyingCType(ct) + " " + p + "s = ")
+		value()
+		e.emit("; " + elem + "* " + p + " = " + p + "s.ptr; int " + p + "n = " + p + "s.len;\n")
+		bound = p + "n"
+	}
+	e.indent++
+	e.ind()
+	e.emit("putchar('[');\n")
+	e.ind()
+	e.emit("for (int " + i + " = 0; " + i + " < " + bound + "; " + i + "++) {\n")
+	e.indent++
+	e.ind()
+	e.emit("if (" + i + ") { putchar(' '); }\n")
+	e.ind()
+	e.emit(helper + "(&" + p + "[" + i + "]);\n")
+	e.indent--
+	e.ind()
+	e.emit("}\n")
+	e.ind()
+	e.emit("putchar(']');\n")
+	e.indent--
+	e.ind()
+	e.emit("}\n")
+	return true, ok
+}
+
+// specPrinter is a helper needStructSpecPrint minted: its name, and its prototype
+// and definition, which the output places beside the plain %v printers.
+type specPrinter struct {
+	name, proto, def string
+}
+
+// needStructSpecPrint answers the helper printing the fields of a struct of C type u
+// under item's spec, plus naming them, minting it on first ask: `static void
+// ogo_printvs_N(u* v)`.
+func (e *emitter) needStructSpecPrint(u string, item printfItem, plus bool, wrong, noSpec func(string) bool) (string, bool) {
+	key := u + "|" + item.spec + "|" + strconv.FormatBool(plus)
+	if e.specPrinters == nil {
+		e.specPrinters = map[string]*specPrinter{}
+	}
+	if sp, ok := e.specPrinters[key]; ok {
+		return sp.name, true
+	}
+	sp := &specPrinter{name: "ogo_printvs_" + strconv.Itoa(len(e.specPrinters))}
+	e.specPrinters[key] = sp
+	ok := true
+	body := e.captureC(func() {
+		e.indent = 1
+		ok = e.emitFieldsSpec(item, plus, u, "v", wrong, noSpec)
+	})
+	sp.proto = "static void " + sp.name + "(" + u + "* v);\n"
+	sp.def = "static void " + sp.name + "(" + u + "* v) {\n" + body + "}\n"
+	return sp.name, ok
+}
+
+// structSpecRefusal names the first field of struct C type u, or of what it holds,
+// that emitStructSpecVerb cannot print as fmt would under a spec, "" when there is
+// none: only numbers, strings, bools, and structs, arrays and slices of them are.
+func (e *emitter) structSpecRefusal(u string) string {
+	for _, fld := range e.structs[u] {
+		ct := fld.ctype
+		if fld.dim.bound != "" {
+			ct = fld.dim.elem
+		}
+		if why := e.specValueRefusal(ct, token.IsExported(fld.name)); why != "" {
+			return "field " + fld.name + " " + why
+		}
+	}
+	return ""
+}
+
+// specValueRefusal is structSpecRefusal for a value of C type ct; methods says fmt
+// would ask it for String() or Error(), which it does of an exported field.
+func (e *emitter) specValueRefusal(ct string, methods bool) string {
+	if methods {
+		if _, _, isStringer := e.stringerCallC(ct, "_"); isStringer {
+			return "has a String() method, whose text is padded here by nothing yet"
+		}
+	}
+	switch u := e.underlyingCType(ct); {
+	case isIntCType(u), isFloatCType(u), u == cString, u == cBool:
+		return ""
+	case e.isPrintStruct(u):
+		return e.structSpecRefusal(e.underlyingCType(u))
+	case e.isSliceCType(u):
+		return e.specValueRefusal(sliceElemFromCName(u), methods)
+	case e.namedArrays[u].bound != "":
+		return e.specValueRefusal(e.namedArrays[u].elem, methods)
+	}
+	return "is of a type printed without a width here"
+}
+
+// emitFieldsSpec prints the fields of the struct of C type u that the C pointer p
+// points at, each under item's verb spec, as emitStructSpecVerb does.
+func (e *emitter) emitFieldsSpec(item printfItem, plus bool, u, p string, wrong, noSpec func(string) bool) bool {
+	ok := true
+	e.ind()
+	e.emit("putchar('{');\n")
+	for i, fld := range e.structs[u] {
+		if i > 0 {
+			e.ind()
+			e.emit("putchar(' ');\n")
+		}
+		if plus {
+			e.ind()
+			e.emit("printf(" + cQuote(fld.name+":") + ");\n")
+		}
+		expr := p + "->" + e.fieldIdent(fld.name)
+		if fld.dim.bound != "" {
+			ok = e.emitArraySpec(item, plus, fld.dim, expr, wrong, noSpec) && ok
+			continue
+		}
+		ok = e.emitValueSpec(item, plus, fld.ctype, expr, wrong, noSpec) && ok
+	}
+	e.ind()
+	e.emit("putchar('}');\n")
+	return ok
+}
+
+// emitValueSpec prints the value the C expression expr holds, of C type ct, under
+// item's spec and its type's default verb, as a field of emitFieldsSpec. expr reads
+// a field through the helper's parameter, so it may be written more than once.
+func (e *emitter) emitValueSpec(item printfItem, plus bool, ct, expr string, wrong, noSpec func(string) bool) bool {
+	u := e.underlyingCType(ct)
+	switch {
+	case isIntCType(u):
+		item.verb = 'd'
+	case isFloatCType(u):
+		item.verb = 'g'
+	case u == cString:
+		item.verb = 's'
+	case u == cBool:
+		item.verb = 't'
+	case e.isPrintStruct(u):
+		helper, ok := e.needStructSpecPrint(e.underlyingCType(u), item, plus, wrong, noSpec)
+		e.ind()
+		e.emit(helper + "(&(" + expr + "));\n")
+		return ok
+	case e.isSliceCType(u):
+		i := e.newTmp()
+		e.ind()
+		e.emit("putchar('[');\n")
+		e.ind()
+		e.emit("for (int " + i + " = 0; " + i + " < (" + expr + ").len; " + i + "++) {\n")
+		e.indent++
+		e.ind()
+		e.emit("if (" + i + ") { putchar(' '); }\n")
+		ok := e.emitValueSpec(item, plus, sliceElemFromCName(u), "("+expr+").ptr["+i+"]", wrong, noSpec)
+		e.indent--
+		e.ind()
+		e.emit("}\n")
+		e.ind()
+		e.emit("putchar(']');\n")
+		return ok
+	case e.namedArrays[u].bound != "":
+		return e.emitArraySpec(item, plus, e.namedArrays[u], expr, wrong, noSpec)
+	default:
+		return noSpec("a value of this type is printed without a width here")
+	}
+	return e.emitScalarVerb(item, ct, func() { e.emit(expr) }, wrong, noSpec)
+}
+
+// emitArraySpec prints the array of extents a the C expression expr names, element
+// by element under item's spec, as a field of emitFieldsSpec.
+func (e *emitter) emitArraySpec(item printfItem, plus bool, a arrDim, expr string, wrong, noSpec func(string) bool) bool {
+	i := e.newTmp()
+	e.ind()
+	e.emit("putchar('[');\n")
+	e.ind()
+	e.emit("for (int " + i + " = 0; " + i + " < " + a.bound + "; " + i + "++) {\n")
+	e.indent++
+	e.ind()
+	e.emit("if (" + i + ") { putchar(' '); }\n")
+	var ok bool
+	if len(a.inner) != 0 {
+		ok = e.emitArraySpec(item, plus, arrDim{elem: a.elem, bound: a.inner[0], inner: a.inner[1:]}, expr+"["+i+"]", wrong, noSpec)
+	} else {
+		ok = e.emitValueSpec(item, plus, a.elem, expr+"["+i+"]", wrong, noSpec)
+	}
+	e.indent--
+	e.ind()
+	e.emit("}\n")
+	e.ind()
+	e.emit("putchar(']');\n")
+	return ok
+}
+
 // emitStructPrintVerb prints an argument of %v, or of %+v with plus, that is a
 // struct as fmt prints one -- "{1 x}", its fields' names before them under %+v --
 // a pointer to one as "&{1 x}" or <nil>, and a slice or a one-dimensional array of
@@ -33928,6 +34254,12 @@ func (e *emitter) emitPrintfVerb(item printfItem, idx int, arg Node) bool {
 				flags := item.flags()
 				item.verb, item.spec = dv, strings.ReplaceAll(flags, "+", "")+item.spec[len(flags):]
 				return e.emitPrintfVerb(item, idx, arg)
+			}
+			if handled, ok := e.emitStructsSpecVerb(item, idx, arg, ct, known, value, wrong, noSpec); handled {
+				return ok
+			}
+			if handled, ok := e.emitStructSpecVerb(item, arg, ct, known, value, wrong, noSpec); handled {
+				return ok
 			}
 			return noSpec("%v of this type is printed without a width here")
 		}

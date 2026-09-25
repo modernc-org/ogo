@@ -8083,6 +8083,49 @@ func main() {
 		want: "6 7 3 u 5\n",
 	},
 	{
+		name: "printf's %v of a struct under a flag, a width or a precision",
+		src: `// printf's %v of a struct under a flag, a width or a precision, as fmt lays it out:
+// the spec applied to every field in turn, through nested structs, arrays and
+// slices, each under its type's default verb, '+' naming the fields. A pointer at
+// the top prints "&" and its struct, or "<nil>" padded, and a slice or an array of
+// structs each of them. It was refused, "%v of this type is printed without a
+// width here".
+type In struct {
+	a  int8
+	ok bool
+}
+
+type P struct {
+	x   int
+	f   float64
+	s   string
+	in  In
+	arr [2]uint16
+	sl  []int
+	r   rune
+}
+
+func mk() P { return P{x: 9, s: "mk"} }
+
+func main() {
+	p := P{-3, 2.5, "ab", In{7, true}, [2]uint16{1, 22}, []int{4, 55}, 'z'}
+	printf("[%6v]\n", p)
+	printf("[%-5v]\n", p)
+	printf("[%06v]\n", p)
+	printf("[%+4v]\n", p)
+	printf("[%.2v]\n", p)
+	var np *P
+	printf("[%7v] [%-4v]\n", np, &p)
+	printf("[%4v]\n", mk())
+	ps := []P{{x: 1, s: "a"}, {x: 22, s: "bb"}}
+	var arr [2]In
+	arr[1].a = 3
+	printf("[%3v] [%-3v]\n", ps, arr)
+}
+`,
+		want: "[{    -3    2.5     ab {     7   true} [     1     22] [     4     55]    122}]\n[{-3    2.5   ab    {7     true } [1     22   ] [4     55   ] 122  }]\n[{-00003 0002.5 0000ab {000007 00true} [000001 000022] [000004 000055] 000122}]\n[{x:  -3 f: 2.5 s:  ab in:{a:   7 ok:true} arr:[   1   22] sl:[   4   55] r: 122}]\n[{-03 2.5 ab {07 true} [01 22] [04 55] 122}]\n[  <nil>] [&{-3   2.5  ab   {7    true} [1    22  ] [4    55  ] 122 }]\n[{   9    0   mk {   0 false} [   0    0] []    0}]\n[[{  1   0   a {  0 false} [  0   0] []   0} { 22   0  bb {  0 false} [  0   0] []   0}]] [[{0   false} {3   false}]]\n",
+	},
+	{
 		name: "an array parameter is a copy",
 		src: `func mutate(a [3]int) int {
 	a[0] = 99

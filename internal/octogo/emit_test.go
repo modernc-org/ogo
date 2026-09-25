@@ -5775,14 +5775,51 @@ func main() {
 			want: "printf: %f wants a float, not int",
 		},
 		{
-			name: "%v of a struct under a width",
+			// A struct under a width prints field by field since 2026-09-25; what fmt
+			// would print otherwise at depth is refused still -- a pointer's address,
+			// an exported field's String(), an interface's dynamic value.
+			name: "%v of a struct with a pointer field under a width",
 			src: `type P struct {
-	n int
+	n *int
 }
 
 func main() {
-	p := P{1}
+	p := P{}
 	printf("%5v\n", p)
+}
+`,
+			want: "printf: %5v does not take a flag, a width or a precision yet (field n is of a type printed without a width here)",
+		},
+		{
+			name: "%v of a struct with an exported Stringer field under a width",
+			src: `type C int
+
+func (c C) String() string { return "c" }
+
+type P struct {
+	Temp C
+}
+
+func main() {
+	p := P{}
+	printf("%5v\n", p)
+}
+`,
+			want: "printf: %5v does not take a flag, a width or a precision yet (field Temp has a String() method",
+		},
+		{
+			name: "%v of an interface under a width",
+			src: `type I interface{ M() }
+
+type T struct{ x int }
+
+func (t *T) M() {}
+
+var gt = T{1}
+
+func main() {
+	var i I = &gt
+	printf("%5v\n", i)
 }
 `,
 			want: "printf: %5v does not take a flag, a width or a precision yet",
