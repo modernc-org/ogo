@@ -552,6 +552,12 @@ still design-only.
   read, never in an `&&`/`||` operand the left one decides, and not in package
   initialization, main resetting the counter first. **A new call site in the
   generator calls `noteCall`**, once for each time the program runs the call.
+  **Names are drawn from what C has spoken for** (2026-09-25): `newVarName` gives one
+  of `cNames` -- a C keyword, a macro, a library or system-module function, a type
+  -- one time in six, each at most once a program, since the emitted C keeps a
+  program's names and every generated name had been a counter's, `v_12`. Its first
+  run found two positions no sweep had (an unused parameter's `(void)` marker, an
+  interface-typed local); every seed is a new program from that commit on.
 - **Fixed miscompile (found by the oracle):** a shadowing local whose initializer
   references the shadowed name — `var x = x + 5` with an outer `x` in scope — used
   to miscompile, because the emitter names locals verbatim so the C initializer read
@@ -716,7 +722,8 @@ result (`resultC`; curResultNames stays in source spelling for `returnValueStand
 and a range value of an array or a struct had written the name raw, so a domain
 program's `var long [260]byte` was a C error. A new declaration path writes
 `localIdent`, and a sweep of one takes a keyword and a macro, `long` and `EOF`,
-through each kind and each position.
+through each kind and each position. The fuzzer draws such names too (cNames in
+internal/smith), which is what keeps the row covered where no sweep reaches.
 
 **A PROGRAM GO REJECTS IS A ROW** (2026-09-20). The sweeps above ask what a correct
 program does; this one asks what an incorrect one earns, which is the direction that
