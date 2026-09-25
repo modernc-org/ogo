@@ -1076,7 +1076,7 @@ run cases printed. Found by a probe of something else: the fix for the binding a
 printed an array argument, and the array read wrong for a reason of its own. So a
 print is swept like a store, across every way a value is reached, for each kind of
 value; and for arrays the multi-dimensional ones too (%v prints them row by row since,
-the element-wise verbs still refuse one). A TYPING question asked of every printed
+and the element-wise verbs since 2026-09-25, emitElementwiseArrayND). A TYPING question asked of every printed
 argument must be cheap and pure: `arrayShapeOf` renders a call it passes, which lifted
 a function literal argument a second time -- the corpus guard showed it as one changed
 program -- so it is asked only of what `inferCType` cannot type. A CALL's array
@@ -1144,8 +1144,9 @@ a call's array result deferred or started on a cog, `defer mk(5).Count()` and `g
 mk(5).Count()`, or with the call parenthesised, `(mk(1)).Count()` (as a value and a
 statement it works since 2026-09-24); a field a call's pointer result lacks,
 `getp().x`, refused as "unsupported call in expression"; an
-element-wise printf verb of a multi-dimensional array, `printf("%d", grid)` ("cannot
-tell the type of this argument"; %v prints one); `[]byte(s)`
+array-valued RECEIVE printed where it stands, `printf("%v", <-ch)` for a `chan
+[3]int16` ("cannot print a value of type [3]int16"; received into a variable it
+prints); `[]byte(s)`
 and `[]rune(s)` of a string VARIABLE (a copy of a length known at run time; a
 constant's converts since
 2026-09-23, constBytesConv); an if or a switch init that is a compound assignment, an

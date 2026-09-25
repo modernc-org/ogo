@@ -20,6 +20,10 @@ shipped section tells a reader on that version that they have behaviour they do 
 
 ### Language
 
+- **printf's element-wise verbs print a multi-dimensional array.** `%d`, `%3d`,
+  `%x` and the rest of a `[2][3]int` were "cannot tell the type of this argument",
+  where `%v` printed it; they print it row by row as fmt does, and an array of
+  bytes under %s, %x, %X and %q as a text a row, "[6869 dead]".
 - **printf's float verbs take the '#' flag.** It keeps the decimal point, `%#.0f`
   of 2 being "2.", and %g's trailing zeros, `%#g` of 1.5 being "1.50000", as fmt
   writes them; it was refused.
