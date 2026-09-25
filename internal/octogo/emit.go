@@ -5754,6 +5754,9 @@ func emitProgram(pkg *Package, w io.Writer, opts []EmitOption, rename map[string
 	// among them, which is rendered here for that reason and written further
 	// down). See pkgConstDecl.
 	pd := e.pkgInitDefs()
+	// The constant strings' headers go here, ahead of everything that can name one,
+	// once the whole program says which it names (insertStringLits).
+	out.WriteString(stringLitsMarker)
 	if len(e.pkgConstDecls) != 0 {
 		named := bytes.Join([][]byte{helperDefs.Bytes(), globals.Bytes(), e.vtables.Bytes(), body.Bytes(), []byte(pd)}, []byte{'\n'})
 		wrote := false
@@ -5829,7 +5832,7 @@ func emitProgram(pkg *Package, w io.Writer, opts []EmitOption, rename map[string
 		return e.err
 	}
 	out.Write(body.Bytes())
-	_, err := w.Write(ensureStdint(out.Bytes()))
+	_, err := w.Write(ensureStdint(insertStringLits(out.Bytes(), e.stringLitDecls)))
 	return err
 }
 
@@ -6078,6 +6081,8 @@ type emitter struct {
 	usesRuneQuote      bool                    // ogo_print_qrune is called: %q of an integer
 	usesQuoteFmt       bool                    // %q under a flag, a width or a precision: emit quoteFmtHelpers
 	usesUnicodePrint   bool                    // %U under a width or a precision: emit unicodePrintHelper
+	stringLits         map[string]string       // a constant string's value -> the file-scope ogo_string holding its header (stringLitName)
+	stringLitDecls     []stringLitDecl         // the declarations of stringLits, in the order they were named
 	userTypeNames      map[string]string       // C name -> source name of every type the program DECLARES, in any package (see typeNameForT)
 	usesIfaceNil       bool                    // ogo_iface_vt (nil-interface call guard) is called
 	usesNonzero64      bool                    // ogo_nonzero64 (64-bit divisor guard) is called
@@ -38056,8 +38061,8 @@ func (e *emitter) packVariadic(elem string, args []Node) string {
 	// variable -- the earlier fix here reached the literal spelling only.
 	//
 	// An assignment also wants the ordinary spelling of a value rather than the
-	// static-initializer one, so declInit stays off: a string argument is the
-	// compound literal `(ogo_string){"a", 1}`, which is what an assignment takes.
+	// static-initializer one, so declInit stays off: a constant string argument is
+	// the name of its file-scope header, which is what an assignment takes.
 	tmp := e.newTmp()
 	n := strconv.Itoa(len(args))
 	e.prologue = append(e.prologue, elem+" "+tmp+"["+n+"];\n")
@@ -42828,9 +42833,9 @@ func (e *emitter) emitOperandToken(tok int32) {
 
 // emitStringLit emits a string literal as an ogo_string { pointer, length }
 // header. In a static initializer a brace `{"s", n}` is required (a compound
-// literal is not a constant expression there); elsewhere the compound literal
-// `(ogo_string){"s", n}` is used. n is the decoded byte length (escapes counted as
-// one byte).
+// literal is not a constant expression there); elsewhere it is the name of a
+// file-scope header holding it (emitFoldedString). n is the decoded byte length
+// (escapes counted as one byte).
 // constRuneStringFactor folds a Factor that is a `string(x)` conversion with a
 // CONSTANT operand, which is a constant string in Go and so may stand in a constant
 // concatenation. The operand may be an integer -- the rune conversion this exists
@@ -42935,14 +42940,68 @@ func (e *emitter) foldConstString(ast []int32) (string, bool) {
 // emitFoldedString emits a decoded string value as an ogo_string, re-quoting it as
 // a C string literal. Under declInit it is a brace, not a compound literal, since a
 // file-scope initializer is not a constant expression otherwise.
+//
+// Anywhere else it is the NAME of a file-scope ogo_string holding the header
+// (stringLitName), where it was the compound literal `(ogo_string){"s", n}` -- which
+// the target's compiler builds at every site a call takes it by value, into cog
+// registers it never gives back: a hundred calls of `strings.HasPrefix(line, "x")`
+// in one function spent 212 of the ~480 and failed the build, "fit 480 failed",
+// where a static costs nothing. A command parser is written that way.
 func (e *emitter) emitFoldedString(v string) {
 	e.usesString = true
-	body := cQuote(v) + ", " + strconv.Itoa(len(v))
 	if e.declInit {
-		e.emit("{" + body + "}")
-	} else {
-		e.emit("(" + cString + "){" + body + "}")
+		e.emit("{" + cQuote(v) + ", " + strconv.Itoa(len(v)) + "}")
+		return
 	}
+	e.emit(e.stringLitName(v))
+}
+
+// stringLitDecl is a file-scope ogo_string a constant string's header lives in.
+type stringLitDecl struct {
+	name, text string
+}
+
+// stringLitName answers the file-scope ogo_string holding the header of the
+// constant string v, one per distinct value. Only those the finished program names
+// are declared (insertStringLits): a name asked for by a rendering nothing kept
+// would be a static nothing reads, which the host's compiler refuses.
+func (e *emitter) stringLitName(v string) string {
+	if name, ok := e.stringLits[v]; ok {
+		return name
+	}
+	if e.stringLits == nil {
+		e.stringLits = map[string]string{}
+	}
+	name := "ogo_lit_" + strconv.Itoa(len(e.stringLitDecls))
+	e.stringLits[v] = name
+	e.stringLitDecls = append(e.stringLitDecls, stringLitDecl{name, "static " + cString + " " + name + " = {" + cQuote(v) + ", " + strconv.Itoa(len(v)) + "};\n"})
+	return name
+}
+
+// stringLitsMarker holds the place of the string headers in the assembled program
+// until the whole of it is known (insertStringLits).
+const stringLitsMarker = "/* ogo: string literals */\n"
+
+// insertStringLits replaces the marker with the declarations of the string headers
+// the program names, which only the finished text can say: a lifted function
+// literal, a goroutine trampoline and the package initializer are written after the
+// marker, and all of them may name one.
+func insertStringLits(src []byte, decls []stringLitDecl) []byte {
+	at := bytes.Index(src, []byte(stringLitsMarker))
+	if at < 0 {
+		return src
+	}
+	rest := src[at+len(stringLitsMarker):]
+	var b bytes.Buffer
+	for _, d := range decls {
+		if referencedIn(d.name, rest) {
+			b.WriteString(d.text)
+		}
+	}
+	if b.Len() != 0 {
+		b.WriteByte('\n')
+	}
+	return slices.Concat(src[:at:at], b.Bytes(), rest)
 }
 
 func (e *emitter) emitStringLit(tok int32) {

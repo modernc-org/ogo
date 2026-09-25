@@ -40538,6 +40538,103 @@ func main() {
 }
 `,
 		want: "[  U+0078] [U+0078  |] [  U+0078] [U+000078] [U+000078] [U+0078] [U+0078] [U+0078]\n[  U+00E9] [U+00E9  |] [  U+00E9] [U+0000E9] [U+0000E9] [U+00E9] [U+00E9] [U+00E9]\n[ U+1F600] [U+1F600 |] [ U+1F600] [U+01F600] [U+01F600] [U+1F600] [U+1F600] [U+1F600]\n[  U+007F] [U+007F  |] [  U+007F] [U+00007F] [U+00007F] [U+007F] [U+007F] [U+007F]\n[  U+0000] [U+0000  |] [  U+0000] [U+000000] [U+000000] [U+0000] [U+0000] [U+0000]\n[U+FFFFFFFFFFFFFFFF] [U+FFFFFFFFFFFFFFFF|] [U+FFFFFFFFFFFFFFFF] [U+FFFFFFFFFFFFFFFF] [U+FFFFFFFFFFFFFFFF] [U+FFFFFFFFFFFFFFFF] [U+FFFFFFFFFFFFFFFF] [U+FFFFFFFFFFFFFFFF]\n[U+110000] [U+110000|] [U+110000] [U+110000] [U+110000] [U+110000] [U+110000] [U+110000]\n[  U+000A] [U+000A  |] [  U+000A] [U+00000A] [U+00000A] [U+000A] [U+000A] [U+000A]\n[U+FFFFFFFFFFFFFFFF] [U+00C8   |] [U+FFFFFFFFFFFFFFFF]\n[ab] [\xc3\xa9] [true] [       x] [y   |] [0x5]\n",
+	},
+	{
+		// A command dispatcher: a string constant in every call, a hundred of them in
+		// two functions. A constant string was the compound literal (ogo_string){"s",
+		// n} wherever it stood, which the target's compiler builds at every call
+		// taking it by value into cog registers it never gives back -- this program
+		// spent 276 of the ~480 and failed the build, "fit 480 failed", and one of
+		// two hundred such calls took five minutes to be refused. A constant string
+		// is a file-scope header named where it is used now.
+		name: "many string constants in call arguments",
+		src: `import "strings"
+
+func dispatch(line string) int {
+	switch {
+	case strings.HasPrefix(line, "reset"):
+		return 0 + strings.Count(line, " ")
+	case strings.HasPrefix(line, "status"):
+		return 1 + strings.Count(line, " ")
+	case strings.HasPrefix(line, "led"):
+		return 2 + strings.Count(line, " ")
+	case strings.HasPrefix(line, "pwm"):
+		return 3 + strings.Count(line, " ")
+	case strings.HasPrefix(line, "adc"):
+		return 4 + strings.Count(line, " ")
+	case strings.HasPrefix(line, "dac"):
+		return 5 + strings.Count(line, " ")
+	case strings.HasPrefix(line, "baud"):
+		return 6 + strings.Count(line, " ")
+	case strings.HasPrefix(line, "ping"):
+		return 7 + strings.Count(line, " ")
+	case strings.HasPrefix(line, "echo"):
+		return 8 + strings.Count(line, " ")
+	case strings.HasPrefix(line, "stop"):
+		return 9 + strings.Count(line, " ")
+	case strings.HasPrefix(line, "start"):
+		return 10 + strings.Count(line, " ")
+	case strings.HasPrefix(line, "read"):
+		return 11 + strings.Count(line, " ")
+	case strings.HasPrefix(line, "write"):
+		return 12 + strings.Count(line, " ")
+	case strings.HasPrefix(line, "scan"):
+		return 13 + strings.Count(line, " ")
+	case strings.HasPrefix(line, "time"):
+		return 14 + strings.Count(line, " ")
+	case strings.HasPrefix(line, "date"):
+		return 15 + strings.Count(line, " ")
+	case strings.HasPrefix(line, "help"):
+		return 16 + strings.Count(line, " ")
+	case strings.HasPrefix(line, "info"):
+		return 17 + strings.Count(line, " ")
+	case strings.HasPrefix(line, "dump"):
+		return 18 + strings.Count(line, " ")
+	case strings.HasPrefix(line, "load"):
+		return 19 + strings.Count(line, " ")
+	case strings.HasPrefix(line, "save"):
+		return 20 + strings.Count(line, " ")
+	case strings.HasPrefix(line, "list"):
+		return 21 + strings.Count(line, " ")
+	case strings.HasPrefix(line, "exit"):
+		return 22 + strings.Count(line, " ")
+	case strings.HasPrefix(line, "mode"):
+		return 23 + strings.Count(line, " ")
+	case strings.HasPrefix(line, "gain"):
+		return 24 + strings.Count(line, " ")
+	}
+	return -1
+}
+
+func main() {
+	println(dispatch("reset 1 2"), strings.Index("reset", "e"), strings.Contains("reset", "a"))
+	println(dispatch("status 1 2"), strings.Index("status", "e"), strings.Contains("status", "a"))
+	println(dispatch("led 1 2"), strings.Index("led", "e"), strings.Contains("led", "a"))
+	println(dispatch("pwm 1 2"), strings.Index("pwm", "e"), strings.Contains("pwm", "a"))
+	println(dispatch("adc 1 2"), strings.Index("adc", "e"), strings.Contains("adc", "a"))
+	println(dispatch("dac 1 2"), strings.Index("dac", "e"), strings.Contains("dac", "a"))
+	println(dispatch("baud 1 2"), strings.Index("baud", "e"), strings.Contains("baud", "a"))
+	println(dispatch("ping 1 2"), strings.Index("ping", "e"), strings.Contains("ping", "a"))
+	println(dispatch("echo 1 2"), strings.Index("echo", "e"), strings.Contains("echo", "a"))
+	println(dispatch("stop 1 2"), strings.Index("stop", "e"), strings.Contains("stop", "a"))
+	println(dispatch("start 1 2"), strings.Index("start", "e"), strings.Contains("start", "a"))
+	println(dispatch("read 1 2"), strings.Index("read", "e"), strings.Contains("read", "a"))
+	println(dispatch("write 1 2"), strings.Index("write", "e"), strings.Contains("write", "a"))
+	println(dispatch("scan 1 2"), strings.Index("scan", "e"), strings.Contains("scan", "a"))
+	println(dispatch("time 1 2"), strings.Index("time", "e"), strings.Contains("time", "a"))
+	println(dispatch("date 1 2"), strings.Index("date", "e"), strings.Contains("date", "a"))
+	println(dispatch("help 1 2"), strings.Index("help", "e"), strings.Contains("help", "a"))
+	println(dispatch("info 1 2"), strings.Index("info", "e"), strings.Contains("info", "a"))
+	println(dispatch("dump 1 2"), strings.Index("dump", "e"), strings.Contains("dump", "a"))
+	println(dispatch("load 1 2"), strings.Index("load", "e"), strings.Contains("load", "a"))
+	println(dispatch("save 1 2"), strings.Index("save", "e"), strings.Contains("save", "a"))
+	println(dispatch("list 1 2"), strings.Index("list", "e"), strings.Contains("list", "a"))
+	println(dispatch("exit 1 2"), strings.Index("exit", "e"), strings.Contains("exit", "a"))
+	println(dispatch("mode 1 2"), strings.Index("mode", "e"), strings.Contains("mode", "a"))
+	println(dispatch("gain 1 2"), strings.Index("gain", "e"), strings.Contains("gain", "a"))
+}
+`,
+		want: "2 1 false\n3 -1 true\n4 1 false\n5 -1 false\n6 -1 true\n7 -1 true\n8 -1 true\n9 -1 false\n10 0 false\n11 -1 false\n12 -1 true\n13 1 true\n14 4 false\n15 -1 true\n16 3 false\n17 3 true\n18 1 false\n19 -1 false\n20 -1 false\n21 -1 true\n22 3 true\n23 -1 false\n24 0 false\n25 3 false\n26 -1 true\n",
 	}}
 
 // TestEmitCRun compiles emitted C with a host compiler and runs it, checking what
