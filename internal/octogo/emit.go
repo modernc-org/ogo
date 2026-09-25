@@ -2844,31 +2844,43 @@ func (e *emitter) emitSelect(ast []int32) {
 			e.ind()
 			e.emit(done + " = 1;\n") // set before the body, so a break in it is the user's
 		}
-		if c.target.name != "" {
-			if a, isArr := e.namedArrays[c.elem]; isArr {
+		// Go evaluates the targets' operands once the clause is chosen, and then
+		// stores: a call in a target's chain, `case getp().x = <-ch:`, and what a
+		// dereference reaches, `case (*s)[0] = <-ch:`, are bound here, ahead of both
+		// stores (bindTarget), as a list's are ahead of its.
+		target, okTgt := c.target, c.okTgt
+		if !c.declare {
+			bound, ok := true, true
+			if target.name != "" {
+				target, bound = e.bindTarget(target)
+			}
+			if c.hasOk {
+				okTgt, ok = e.bindTarget(okTgt)
+			}
+			if !bound || !ok {
+				e.fail("unsupported target in a receive clause")
+				return
+			}
+		}
+		if target.name != "" {
+			if a, isArr := e.namedArrays[c.elem]; isArr && c.declare {
 				// An ARRAY element is copied out of the clause's temporary: C cannot
 				// assign one, and the clause's variable is a value of its own, as it
 				// is for every other element type.
-				if c.declare {
-					e.emitArrayCopy(c.target.name, tmp, a)
-					e.locals[c.target.name] = c.elem // after the copy, which takes the name
-				} else {
-					e.includes["string.h"] = true
-					e.ind()
-					e.emit("memcpy(" + e.varRef(c.target.name) + ", " + tmp + ", sizeof(" +
-						e.varRef(c.target.name) + "));\n")
-				}
+				e.emitArrayCopy(target.name, tmp, a)
+				e.locals[target.name] = c.elem // after the copy, which takes the name
 			} else {
 				// The same store a multiple assignment writes, so a clause may receive
 				// into a field or an element -- `case b.v = <-ch:` -- as the plain
-				// assignment `b.v = <-ch` always could.
-				e.emitStore(c.target, c.declare, c.elem, tmp)
+				// assignment `b.v = <-ch` always could; an array is copied into it,
+				// through a pointer or into a field as into a name (emitArrayStore).
+				e.emitStore(target, c.declare, c.elem, tmp)
 			}
 		}
 		if c.hasOk {
 			// The comma-ok flag: true for a value, false for the zero of a closed
 			// channel, as the statement form's is (ogo_chan_recv2).
-			e.emitStore(c.okTgt, c.declare, cBool, "("+gots[i]+" == 1)")
+			e.emitStore(okTgt, c.declare, cBool, "("+gots[i]+" == 1)")
 		}
 		for _, st := range c.body {
 			e.emitStatement(st.ast)
@@ -3031,7 +3043,14 @@ func (e *emitter) selectCommOp(n Node, c *selectCase) bool {
 		return false
 	}
 	if assigns {
-		c.target = e.qualifiedTarget(assignTarget{name: e.soleIdent(head.ast), stars: e.derefStars(head.ast), chain: chain})
+		// Read as a list's target is, parentheses and all; bound where it is stored,
+		// in the clause's arm (emitSelect).
+		t, ok := e.headTarget(head, chain)
+		if !ok {
+			e.fail("unsupported target in a receive clause")
+			return false
+		}
+		c.target = t
 		return e.selectChan(value, c)
 	}
 	c.send, c.val = true, value
@@ -38347,28 +38366,36 @@ func (e *emitter) lhsItemTarget(ast []int32) (assignTarget, bool) {
 	if len(nodes) == 0 || nodes[0].sym != AssignHead {
 		return assignTarget{}, false
 	}
-	if ptr, isDeref := e.derefHead(nodes[0]); isDeref {
-		return e.derefTarget(ptr, nodes[1:])
+	return e.headTarget(nodes[0], nodes[1:])
+}
+
+// headTarget reads an AssignHead and the steps written after it as a target: an
+// LhsItem's, and a select clause's receive target, whose grammar keeps the two
+// apart. The clause read its head by name alone, so a parenthesised one named no
+// variable, and `case (x) = <-ch:`, `case (*p) = <-ch:` and `case (p).x = <-ch:`
+// received into nothing.
+func (e *emitter) headTarget(head Node, steps []Node) (assignTarget, bool) {
+	if ptr, isDeref := e.derefHead(head); isDeref {
+		return e.derefTarget(ptr, steps)
 	}
 	// `s, (x) = "q", 7` and `a, (p).x, (&v).y = ...`: a parenthesised name is the name,
 	// and its address before a step is it too, as a statement's head reads them
 	// (parenTargetBase) -- asked, as there, what the step takes (addrStepRefused).
-	if name, addr, ok := e.parenHeadName(nodes[0]); ok {
-		steps := nodes[1:]
+	if name, addr, ok := e.parenHeadName(head); ok {
 		if len(steps) != 0 && !isAccessChain(steps) || addr && (len(steps) == 0 || e.addrStepRefused(name, steps)) {
 			return assignTarget{}, false
 		}
 		return e.qualifiedTarget(assignTarget{name: name, chain: steps, tok: -1}), true
 	}
-	name := e.soleIdent(nodes[0].ast)
-	if name != "" && e.derefStars(nodes[0].ast) == "" && containsSym(nodes[1:], CallSuffix) {
-		return assignTarget{name: name, chain: nodes[1:], tok: -1}, true
+	name := e.soleIdent(head.ast)
+	if name != "" && e.derefStars(head.ast) == "" && containsSym(steps, CallSuffix) {
+		return assignTarget{name: name, chain: steps, tok: -1}, true
 	}
-	if name == "" || (len(nodes) > 1 && !isAccessChain(nodes[1:])) {
+	if name == "" || (len(steps) != 0 && !isAccessChain(steps)) {
 		return assignTarget{}, false
 	}
-	t := e.qualifiedTarget(assignTarget{name: name, stars: e.derefStars(nodes[0].ast), chain: nodes[1:], tok: -1})
-	if tok, ok := e.soleToken(nodes[0].ast); ok {
+	t := e.qualifiedTarget(assignTarget{name: name, stars: e.derefStars(head.ast), chain: steps, tok: -1})
+	if tok, ok := e.soleToken(head.ast); ok {
 		t.tok = tok
 	}
 	return t, true

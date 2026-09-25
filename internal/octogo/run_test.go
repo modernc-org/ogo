@@ -12200,6 +12200,133 @@ func main() {
 		want: "10\n0 20 0\n30\n40\n99\n10 50\n",
 	},
 	{
+		// A select clause read its target by name alone, so a parenthesised one named
+		// no variable and the received value went nowhere -- `case (x) = <-ch:`,
+		// `case (*px) = <-ch:`, `case (h).v = <-ch:` and `case (*ph).v = <-ch:` left
+		// their targets unwritten, in silence -- and an ARRAY was copied into the
+		// head's variable whatever the target said: `case *pb = <-cha:` copied a
+		// pointer's width into pb, `case rows[i] = <-cha:` both rows over one. The
+		// clause reads its target as a list's is read (headTarget) and binds what the
+		// target needs once the clause is chosen, where Go evaluates it; an array is
+		// stored as a list stores one (emitArrayStore).
+		name: "a select clause receiving into a target in parentheses, a call's and an array's",
+		src: `type H struct {
+	n int
+	v int
+	a [3]int
+}
+
+type R struct{ ok bool }
+
+var gh H
+
+func geth() *H { return &gh }
+
+var ch chan int
+
+var cha chan [3]int
+
+func feed(n int) {
+	for i := 1; i <= n; i++ {
+		ch <- i
+	}
+}
+
+func feedA(n int) {
+	for i := 1; i <= n; i++ {
+		cha <- [3]int{i, i * 10, i * 100}
+	}
+}
+
+// A select clause receives into its target as an assignment stores into it: a
+// target in parentheses, through a dereference or a call's result, beside a
+// comma-ok flag -- and an ARRAY through a pointer, into a field and an element.
+func main() {
+	var x int
+	px := &x
+	var h H
+	ph := &h
+	var a [2]int
+	pa := &a
+	s := []int{0, 0}
+	ps := &s
+	i := 1
+	var r R
+	ok := false
+	go feed(12)
+	select {
+	case (x) = <-ch:
+	}
+	println(x)
+	select {
+	case (*px) = <-ch:
+	}
+	println(x)
+	select {
+	case (h).v = <-ch:
+	}
+	println(h.v)
+	select {
+	case (&h).n = <-ch:
+	}
+	println(h.n)
+	select {
+	case (*ph).v = <-ch:
+	}
+	println(h.v)
+	select {
+	case (a)[i] = <-ch:
+	}
+	println(a[1])
+	select {
+	case (*pa)[0] = <-ch:
+	}
+	println(a[0])
+	select {
+	case (*ps)[i] = <-ch:
+	}
+	println(s[1])
+	select {
+	case geth().v = <-ch:
+	}
+	println(gh.v)
+	select {
+	case (x), ok = <-ch:
+	}
+	println(x, ok)
+	select {
+	case x, (r).ok = <-ch:
+	}
+	println(x, r.ok)
+	select {
+	case geth().n, ok = <-ch:
+	}
+	println(gh.n, ok)
+	var b [3]int
+	pb := &b
+	var rows [2][3]int
+	go feedA(4)
+	select {
+	case *pb = <-cha:
+	}
+	println(b[0], b[1], b[2])
+	select {
+	case h.a = <-cha:
+	}
+	println(h.a[0], h.a[1], h.a[2])
+	select {
+	case rows[i] = <-cha:
+	}
+	println(rows[1][0], rows[1][1], rows[1][2])
+	select {
+	case (ph).a = <-cha:
+	}
+	println(h.a[0], h.a[1], h.a[2])
+}
+`,
+		want: "1\n2\n3\n4\n5\n6\n7\n8\n9\n10 true\n11 true\n12 true\n1 10 100\n2 20 200\n3 30 300\n4 40 400\n",
+	},
+	{
 		// A compound literal inside a cast, which the target's C compiler cannot do.
 		// int(total(xs[:])) is the ordinary spelling: a slice expression handed to a
 		// call becomes a compound literal in C, and a conversion becomes a cast
