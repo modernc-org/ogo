@@ -1189,8 +1189,15 @@ go alike -- and `f(a[:])` left a local in package storage. And the range copy: `
 write where Go hands out its copy (scanAliasedLocals, stmtMayWriteMemory). The
 EMITTER had one such reader of its own, the select clause's receive target: `case (x)
 = <-ch:` received into nothing, and an array element into the head's variable
-whatever the target said (`headTarget` reads it as a list's target now). A scan
-reads a head by SHAPE through `scanHead`, a Factor through `parenFactorShape` and a call value
+whatever the target said (`headTarget` reads it as a list's target now); and so did
+a select SEND, `case (ch) <- v:`, a range operand, `range (arr)`, a method value,
+`(&c).inc`, and a statement on a call's result, `(pc()).inc()` -- each refused, each
+read now as the form without the parentheses. The CHECKER's sends asked nothing of a
+channel reached through `*pch` or `(ch)` (checkSendWalked walks it). And reading
+`(mk(1)).Count()` as `mk(1).Count()` in the emitter made it build where Go refuses a
+pointer method on a call's result: **a shape the emitter learns to read is a shape the
+checker must refuse the same way** -- a parenthesised call chain is walked as the
+chain it holds (callChainOf). A scan reads a head by SHAPE through `scanHead`, a Factor through `parenFactorShape` and a call value
 through `shapeCall` (no local has a type yet, so `derefHead` and `parenHeadName`,
 which ask one, answer nothing there). **A new scan reads heads through them, and a
 new shape the emitter reads through parentheses is a row in each scan.**
