@@ -33783,6 +33783,8 @@ func (e *emitter) emitElementwiseVerb(item printfItem, idx int, arg Node, value 
 		elem = sliceElemFromCName(e.underlyingCType(ct))
 	} else if a, isArr := e.printArrayShape(idx, arg); isArr && len(a.inner) == 0 {
 		elem, bound = a.elem, a.bound
+	} else if isArr {
+		return e.emitElementwiseArrayND(item, arg, a, value, wrong, noSpec)
 	} else {
 		return false, false
 	}
@@ -33846,6 +33848,74 @@ func (e *emitter) emitElementwiseVerb(item printfItem, idx int, arg Node, value 
 	e.emit("}\n")
 	e.ind()
 	e.emit("putchar(']');\n")
+	e.indent--
+	e.ind()
+	e.emit("}\n")
+	return true, ok
+}
+
+// emitElementwiseArrayND prints a MULTI-dimensional array under an element-wise
+// verb as fmt does, "[[1 2 3] [4 5 6]]", the verb applied to each element -- or, for
+// an array of bytes under %s, %x, %X and %q, to each innermost row as the text of
+// its bytes, "[0102 0304]". It walks the array through a pointer to its first row,
+// declared in a block where the verb is printed. %v printed one already (row by
+// row, printArrayC); these verbs were "cannot tell the type of this argument".
+func (e *emitter) emitElementwiseArrayND(item printfItem, arg Node, a arrDim, value func(), wrong func(string) bool, noSpec func(string) bool) (handled, ok bool) {
+	dims := append([]string{a.bound}, a.inner...)
+	if _, empty, _ := emptyArrayText(a); empty {
+		return false, false // an empty dimension has no element to print, nor a C array
+	}
+	u := e.underlyingCType(a.elem)
+	if stringerVerb(item.verb) {
+		if _, _, isStringer := e.stringerCallC(a.elem, "_"); isStringer {
+			return true, noSpec("an array of values with a String() method is printed element by element here")
+		}
+	}
+	byteRows := u == "uint8_t" && strings.IndexByte("sxXq", item.verb) >= 0
+	if byteRows && a.elem != "uint8_t" {
+		e.failAt(arg.ast, "printf: %%%s%c of an array of %s is not supported yet", item.spec, item.verb, e.goTypeName(a.elem))
+		return true, false
+	}
+	p := e.newTmp()
+	e.ind()
+	e.emit("{ " + a.elem + " (*" + p + ")")
+	for _, d := range dims[1:] {
+		e.emit("[" + d + "]")
+	}
+	e.emit(" = ")
+	value()
+	e.emit(";\n")
+	e.indent++
+	ok = true
+	var walk func(level int, at string)
+	walk = func(level int, at string) {
+		if byteRows && level == len(dims)-1 {
+			e.needSlice("uint8_t")
+			ok = e.emitScalarVerb(item, sliceCName("uint8_t"), func() {
+				e.emit("(" + sliceCName("uint8_t") + "){" + at + ", " + dims[level] + ", " + dims[level] + "}")
+			}, wrong, noSpec) && ok
+			return
+		}
+		if level == len(dims) {
+			ok = e.emitScalarVerb(item, u, func() { e.emit(at) }, wrong, noSpec) && ok
+			return
+		}
+		i := e.newTmp()
+		e.ind()
+		e.emit("putchar('[');\n")
+		e.ind()
+		e.emit("for (int " + i + " = 0; " + i + " < " + dims[level] + "; " + i + "++) {\n")
+		e.indent++
+		e.ind()
+		e.emit("if (" + i + ") { putchar(' '); }\n")
+		walk(level+1, at+"["+i+"]")
+		e.indent--
+		e.ind()
+		e.emit("}\n")
+		e.ind()
+		e.emit("putchar(']');\n")
+	}
+	walk(0, p)
 	e.indent--
 	e.ind()
 	e.emit("}\n")

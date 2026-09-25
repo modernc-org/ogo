@@ -2059,6 +2059,8 @@
 // [2]int{10, 255} is "[0xa 0xff]", `%5.1f` pads every float. The byte forms are the
 // exception fmt makes: %s, %x, %X and %q of a []byte or a byte array print its bytes
 // as one text, "hi", "6869", "\"hi\"" -- and %d of one is its numbers, "[104 105]".
+// A multi-dimensional array is printed so row by row, "[[1 2] [3 4]]", and one of
+// bytes as a text a row, `%x` of [2][2]byte{{1, 2}, {3, 4}} being "[0102 0304]".
 //
 // The hex dump takes fmt's flags, width and precision, as fmt lays them out: ' '
 // puts a space between the bytes, '#' writes 0x ahead of them -- ahead of each
