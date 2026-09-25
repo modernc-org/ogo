@@ -20,6 +20,11 @@ shipped section tells a reader on that version that they have behaviour they do 
 
 ### Language
 
+- **printf's %q takes flags, a width and a precision.** `%-12q`, `%+q`, `%#q` and
+  `%.3q` were refused, "%q is printed by a helper here". They are fmt's now: a
+  precision cuts the string to that many runes before it is quoted, '+' escapes
+  every rune past ASCII as \u or \U, '#' backquotes a string that can be, and the
+  width pads the quoted text; a rune takes '+' and the width.
 - **printf takes %F and %O.** %F is %f by another name, and %O is octal with
   the "0o" prefix, `%O` of 8 being "0o10"; both were "unknown formatting verb".
 - **A defined byte slice type converts from a constant string.** `Frame("PING")`

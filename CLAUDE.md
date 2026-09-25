@@ -952,6 +952,13 @@ statements of which 739 compile -- found %T laid out by the C library's printf
 (`%08T` "  main.P" on the host and "main.P" on the board for Go's "00main.P") and a
 nil interface under `%8v` not padded. `scripts/`-style tools for both sweeps are
 throwaway; the method is the point: filter the refusals in-process, then batch.
+Two BOARD sweeps the same day found nothing, which is worth knowing: integer edge
+semantics for all ten integer types (min, max and their neighbours under every
+binary operator, shifts at and past the width, every conversion, the compound
+assignments, `MinInt / -1`), and a float32 sweep of the target's SOFT-FLOAT library
+(subnormals, -0, NaN, the infinities, the rounding of 16777217, sqrt, floor, ceil,
+trunc, int to float) -- both byte-identical to Go on a P2-EDGE, as were a PID
+controller in Q16.16 over int64 and a config parser.
 
 **AN ARRAY RESULT IS A ROW** (2026-09-23). A call returning an array is a STATEMENT in
 C -- the caller hands the callee storage to write -- so every position one stands in
