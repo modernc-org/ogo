@@ -11121,6 +11121,8 @@ type W struct{ q *Q }
 
 func mkw() W { return W{&gq} }
 
+var qc chan *Q
+
 func run() {
 	var loc [2]int
 	x := 5
@@ -11157,8 +11159,21 @@ func main() {
 		{"ps := []*Q{&n, &gq}\n\tfor _, e := range ps {\n\t\te.p = &x\n\t}", "through e.p"},
 		{"p := &n\n\tp.q = &gq\n\tp.q.p = &x", "through p.q.p"},
 		{"q := &n\n\tp := q\n\tp = &gq\n\tp.p = &x", "through p.p"},
+		// A write the binding scan must count however it is written: parenthesised,
+		// in a list, a clause, a header and a select, and a switch's "=" init, which
+		// the scan took for no write at all.
+		{"p := &n\n\t(p) = &gq\n\tp.p = &x", "through p.p"},
+		{"p := &n\n\ta, (p) = 1, &gq\n\tp.p = &x", "through p.p"},
+		{"p := &n\n\tfor i := 0; i < 2; i, (p) = i+1, &gq {\n\t\tp.p = &x\n\t}", "through p.p"},
+		{"p := &n\n\tfor a, (p) = 0, &gq; a < 1; a++ {\n\t\tp.p = &x\n\t}", "through p.p"},
+		{"p := &n\n\tif a, (p) = 1, &gq; a > 0 {\n\t\tp.p = &x\n\t}", "through p.p"},
+		{"p := &n\n\tswitch p = &gq; a {\n\tcase 0:\n\t\tp.p = &x\n\t}", "through p.p"},
+		{"p := &n\n\tswitch a, (p) = 1, &gq; a {\n\tcase 1:\n\t\tp.p = &x\n\t}", "through p.p"},
+		{"p := &n\n\tselect {\n\tcase (p) = <-qc:\n\tdefault:\n\t}\n\tp.p = &x", "through p.p"},
+		{"ok := false\n\tp := &n\n\tselect {\n\tcase (p), ok = <-qc:\n\tdefault:\n\t}\n\t_ = ok\n\tp.p = &x", "through p.p"},
 		// Controls.
 		{"p := &n\n\tp.p = &x", ""},
+		{"var p *Q\n\t(p) = &n\n\tp.p = &x", ""},
 		{"p := &n\n\tp.xs = loc[:]", ""},
 		{"p := &n\n\tp.q = &n", ""},
 		{"p := &gq\n\tp.p = &gn", ""},

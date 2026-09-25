@@ -12382,6 +12382,61 @@ func (e *emitter) parenNameShape(head Node) string {
 	return name
 }
 
+// scanHead is an assignment's head and the steps after it read by SHAPE, for the
+// passes that scan a body before its locals have types: the variable written, the
+// steps from it, and stars for a head that writes THROUGH the variable, `*p` and
+// `(*p)`. It reads a head as the emitter does (emitAssignment, lhsItemTarget):
+// `(x)` is x, `(&x).f` is x.f and `(&h.v).x` is h.v.x. The scans read a head by
+// name alone, so a parenthesised one was nobody's -- `(p) = &gq` a write of p the
+// binding scan never counted, and the rule believing p's first value let a local's
+// address through p into package storage in silence (targetThroughRef).
+func (e *emitter) scanHead(head Node, steps []Node) (root, stars string, chain []Node) {
+	if name := e.soleIdent(head.ast); name != "" {
+		return name, e.derefStars(head.ast), steps
+	}
+	if ptr, ok := e.derefHeadName(head); ok {
+		return ptr, "*", steps
+	}
+	if name := e.parenNameShape(head); name != "" {
+		return name, "", steps
+	}
+	kids := slices.Collect(it(head.ast))
+	if len(kids) != 3 || kids[0].sym != 0 || e.f.ch(kids[0].tok) != LPAREN ||
+		kids[2].sym != 0 || e.f.ch(kids[2].tok) != RPAREN || kids[1].sym != Expression {
+		return "", "", steps
+	}
+	if name, inner, ok := e.addrChainShape(e.unparenExpr(kids[1].ast)); ok {
+		return name, "", append(inner, steps...)
+	}
+	return "", "", steps
+}
+
+// addrChainShape is an address by shape, `&x` or `&h.v[i]`: the variable and the
+// steps that reach the value addressed.
+func (e *emitter) addrChainShape(ast []int32) (string, []Node, bool) {
+	operand, ok := e.addrOperandFactor(ast)
+	if !ok || operand.sym != Factor {
+		return "", nil, false
+	}
+	fac := e.unparenKids(slices.Collect(it(operand.ast)))
+	if len(fac) == 0 || len(fac) > 2 || fac[0].sym != 0 || e.f.ch(fac[0].tok) != IDENT {
+		if len(fac) == 3 && fac[0].sym == 0 && e.f.ch(fac[0].tok) == LPAREN && fac[1].sym == Expression {
+			if name, isName := e.exprIdent(e.unparenExpr(fac[1].ast)); isName {
+				return name, nil, true // `&(x)`
+			}
+		}
+		return "", nil, false
+	}
+	var steps []Node
+	if len(fac) == 2 {
+		if fac[1].sym != FactorSuffix {
+			return "", nil, false
+		}
+		steps = slices.Collect(it(fac[1].ast))
+	}
+	return e.src(fac[0].tok), steps, true
+}
+
 // factorDerefName is factorDerefChain by shape: `(*p)` and the steps after it,
 // answering p and the steps.
 func (e *emitter) factorDerefName(kids []Node) (string, []Node, bool) {
@@ -46847,12 +46902,24 @@ func (e *emitter) noteBindTarget(root string, chain []Node, block int, opaque, v
 }
 
 // noteBindExpr is noteBindTarget for a target written as an expression, a clause's.
+// Parentheses are read through as scanHead reads them: `(x)` is x, `(p).x` is p.x
+// and `(&p).x` is p.x.
 func (e *emitter) noteBindExpr(ast []int32, block int, valued bool) {
-	if name, ok := e.exprIdent(ast); ok {
+	if name, ok := e.exprIdent(e.unparenExpr(ast)); ok {
 		e.noteBindTarget(name, nil, block, true, valued)
 		return
 	}
-	if kids, ok := e.soleFactor(ast); ok && len(kids) == 2 && kids[0].sym == 0 && e.f.ch(kids[0].tok) == IDENT && kids[1].sym == FactorSuffix {
+	kids, ok := e.soleFactor(ast)
+	if !ok {
+		return
+	}
+	if len(kids) == 4 && kids[0].sym == 0 && e.f.ch(kids[0].tok) == LPAREN && kids[1].sym == Expression && kids[3].sym == FactorSuffix {
+		if name, inner, isAddr := e.addrChainShape(e.unparenExpr(kids[1].ast)); isAddr {
+			e.noteBindTarget(name, append(inner, slices.Collect(it(kids[3].ast))...), block, true, valued)
+			return
+		}
+	}
+	if kids = e.unparenKids(kids); len(kids) == 2 && kids[0].sym == 0 && e.f.ch(kids[0].tok) == IDENT && kids[1].sym == FactorSuffix {
 		e.noteBindTarget(e.src(kids[0].tok), slices.Collect(it(kids[1].ast)), block, true, valued)
 	}
 }
@@ -46934,9 +47001,13 @@ func (e *emitter) scanBindingsIn(ast []int32, block int) {
 		case Statement:
 			switch {
 			case len(kids) == 2 && kids[0].sym == AssignHead && kids[1].sym == Postfix:
-				root := e.soleIdent(kids[0].ast)
 				post := slices.Collect(it(kids[1].ast))
-				e.noteMethodCalls(root, post)
+				steps := post
+				if len(post) != 0 && post[len(post)-1].sym == PostfixOp {
+					steps = post[:len(post)-1]
+				}
+				root, stars, chain := e.scanHead(kids[0], steps)
+				e.noteMethodCalls(root, chain)
 				if len(post) == 0 || post[len(post)-1].sym != PostfixOp {
 					break
 				}
@@ -46973,10 +47044,10 @@ func (e *emitter) scanBindingsIn(ast []int32, block int) {
 					break
 				}
 				opaque := !plain || values != targets
-				if e.derefStars(kids[0].ast) == "" {
-					e.noteBindTarget(root, post[:len(post)-1], block, opaque, decl)
+				if stars == "" {
+					e.noteBindTarget(root, chain, block, opaque, decl)
 				}
-				if plain && targets == 1 && values == 1 && len(post) == 1 && root != "" && e.derefStars(kids[0].ast) == "" {
+				if plain && targets == 1 && values == 1 && len(chain) == 0 && root != "" && stars == "" {
 					for _, o := range op {
 						if o.sym == ExpressionList {
 							for x := range it(o.ast) {
@@ -46992,12 +47063,15 @@ func (e *emitter) scanBindingsIn(ast []int32, block int) {
 						continue
 					}
 					items := slices.Collect(it(o.ast))
-					if len(items) != 0 && items[0].sym == AssignHead && e.derefStars(items[0].ast) == "" {
-						e.noteBindTarget(e.soleIdent(items[0].ast), items[1:], block, opaque, decl)
+					if len(items) != 0 && items[0].sym == AssignHead {
+						if root, stars, chain := e.scanHead(items[0], items[1:]); stars == "" {
+							e.noteBindTarget(root, chain, block, opaque, decl)
+						}
 					}
 				}
 			case len(kids) >= 2 && kids[0].sym == 0 && (e.f.ch(kids[0].tok) == GO || e.f.ch(kids[0].tok) == DEFER) && kids[1].sym == AssignHead:
-				e.noteMethodCalls(e.soleIdent(kids[1].ast), kids[2:])
+				root, _, chain := e.scanHead(kids[1], kids[2:])
+				e.noteMethodCalls(root, chain)
 			case inner != block:
 				for _, c := range kids {
 					if c.sym != ForHeader {
@@ -47030,37 +47104,57 @@ func (e *emitter) scanBindingsIn(ast []int32, block int) {
 				}
 			}
 		case IfStmt, SwitchGuard:
-			// `if f := pick(); ...` and `switch f := pick(); ...`: the names before
-			// the `:=` are declared with a value, in the statement's own scope.
-			define := slices.ContainsFunc(kids, func(c Node) bool {
-				return c.sym == IfInit || c.sym == 0 && e.f.ch(c.tok) == DEFINE
-			})
-			if !define {
+			// `if f := pick(); ...`, `switch f = pick(); ...` and `if n++; ...`: the
+			// targets ahead of the operator are written, and declared with a value by
+			// ":=", in the statement's own scope. A switch's init was counted only
+			// with ":=", so `switch p = &gq; x {` was a write of p nothing saw, and a
+			// rule believing p's first value let a local's address through p into
+			// package storage (targetThroughRef).
+			init := kids // a switch's init is its guard's own; an if's, its IfInit
+			if n.sym == IfStmt {
+				init = nil
+				for _, c := range kids {
+					if c.sym == IfInit {
+						init = slices.Collect(it(c.ast))
+					}
+				}
+			}
+			writes, define := false, false
+			for _, c := range init {
+				switch {
+				case c.sym == AssignOp:
+					writes = true
+				case c.sym == 0:
+					switch e.f.ch(c.tok) {
+					case DEFINE:
+						writes, define = true, true
+					case ASSIGN, INC, DEC:
+						writes = true
+					}
+				}
+			}
+			if !writes {
 				break
 			}
-			first := true
 			for _, c := range kids {
-				switch c.sym {
-				case HeaderExpression, Expression:
-					if first { // the first name; the rest are values
-						if name := e.firstIdent(c.ast); name != "" {
-							e.noteBindTarget(name, nil, inner, true, true)
-						}
+				if c.sym == HeaderExpression || c.sym == Expression {
+					// The first target; the rest are LhsItems, and what follows the
+					// operator values. Read at its root, `(*p) = v` and `h.f = g` as
+					// writes of p and h, which believes less than a precise reading.
+					if name := e.firstIdent(c.ast); name != "" {
+						e.noteBindTarget(name, nil, inner, true, define)
 					}
-					first = false
-				case IfInit, LhsItem:
-					items := []Node{c}
-					if c.sym == IfInit {
-						items = slices.Collect(it(c.ast))
-					}
-					for _, item := range items {
-						if item.sym != LhsItem {
-							continue
-						}
-						li := slices.Collect(it(item.ast))
-						if len(li) != 0 && li[0].sym == AssignHead {
-							e.noteBindTarget(e.soleIdent(li[0].ast), li[1:], inner, true, true)
-						}
+					break
+				}
+			}
+			for _, item := range init {
+				if item.sym != LhsItem {
+					continue
+				}
+				li := slices.Collect(it(item.ast))
+				if len(li) != 0 && li[0].sym == AssignHead {
+					if root, stars, chain := e.scanHead(li[0], li[1:]); stars == "" {
+						e.noteBindTarget(root, chain, inner, true, define)
 					}
 				}
 			}
@@ -47078,14 +47172,18 @@ func (e *emitter) scanBindingsIn(ast []int32, block int) {
 					case c.sym == LhsItem:
 						li := slices.Collect(it(c.ast))
 						if len(li) != 0 && li[0].sym == AssignHead {
-							e.noteBindTarget(e.soleIdent(li[0].ast), li[1:], block, true, false)
+							if root, stars, chain := e.scanHead(li[0], li[1:]); stars == "" {
+								e.noteBindTarget(root, chain, block, true, false)
+							}
 						}
 					case c.sym == 0 && (e.f.ch(c.tok) == ASSIGN || e.f.ch(c.tok) == DEFINE):
 						assigns, decl = true, e.f.ch(c.tok) == DEFINE
 					}
 				}
 				if assigns {
-					e.noteBindTarget(e.soleIdent(kids[0].ast), chain, block, true, decl)
+					if root, stars, steps := e.scanHead(kids[0], chain); stars == "" {
+						e.noteBindTarget(root, steps, block, true, decl)
+					}
 				}
 			}
 		case UnaryExpr:
@@ -47105,7 +47203,8 @@ func (e *emitter) scanBindingsIn(ast []int32, block int) {
 			}
 		case LhsItem:
 			if len(kids) != 0 && kids[0].sym == AssignHead {
-				e.noteMethodCalls(e.soleIdent(kids[0].ast), kids[1:])
+				root, _, chain := e.scanHead(kids[0], kids[1:])
+				e.noteMethodCalls(root, chain)
 			}
 		}
 		e.scanBindingsIn(n.ast, inner)
