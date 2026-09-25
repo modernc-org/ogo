@@ -40692,6 +40692,46 @@ func main() {
 }
 `,
 		want: "[[1 -2 3] [40 500 -6]]|[[  1  -2   3] [ 40 500  -6]]|[[1    -2   3   ] [40   500  -6  ]]|[[1 -2 3] [28 1f4 -6]]|[[1 -2 3] [28 1F4 -6]]\n[[[0 1] [10 11]] [[100 101] [110 111]]]|[[[0 1] [10 11]] [[100 101] [110 111]]]|[[[000 001] [010 011]] [[100 101] [110 111]]]\n[6869 dead]|[6869 DEAD]|[\"hi\" \"\xde\xad\"]|[68 69 de ad]|[abc xyz]\n[[0 0] [2.5 0]]|[[0.00 0.00] [2.50 0.00]]|[[  0.0   0.0] [  2.5   0.0]]\n[[true] [false]]\n[[\xc3\xa9 x]]|[[U+00E9 U+0078]]\n",
+	},
+	{
+		// A receive of an ARRAY element printed where it stands: received into a
+		// temporary of its shape in its turn among the arguments, the copy fmt
+		// formats. It was "cannot print a value of type [3]int16", and a print that
+		// was a channel's only receive went without the channel's receive helper.
+		name: "a received array printed where it stands",
+		src: `var car chan [3]int16
+
+var cgrid chan [2][2]int
+
+type P struct{ a, b int }
+
+var cp chan P
+
+var calls int
+
+func tick() int {
+	calls++
+	return calls
+}
+
+func producer() {
+	car <- [3]int16{1, -2, 3}
+	car <- [3]int16{4, 5, 6}
+	cp <- P{7, 8}
+	cgrid <- [2][2]int{{1, 2}, {3, 4}}
+	car <- [3]int16{9, 9, 9}
+}
+
+func main() {
+	go producer()
+	printf("%v\n", <-car)
+	printf("%d %v %d %v\n", tick(), <-car, tick(), <-cp)
+	printf("%3d\n", <-cgrid)
+	x := <-car
+	println(len(x), x[2], calls)
+}
+`,
+		want: "[1 -2 3]\n1 [4 5 6] 2 {7 8}\n[[  1   2] [  3   4]]\n3 9 2\n",
 	}}
 
 // TestEmitCRun compiles emitted C with a host compiler and runs it, checking what

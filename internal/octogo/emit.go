@@ -4351,11 +4351,14 @@ func (e *emitter) arrayRecvInit(ast []int32) (string, string, arrDim, bool) {
 }
 
 // hoistChanRecv binds a receive of an ARRAY element to a temporary of this frame,
-// declared before the statement, and answers with its name.
+// declared before the statement, and answers with its name. It asks for the
+// element's receive helper itself, which a print's receive, its only use in a
+// program, went without.
 func (e *emitter) hoistChanRecv(base, elem string, a arrDim) (string, bool) {
 	if e.declInit || e.deferReplay >= 0 {
 		return "", false
 	}
+	e.chanRecvElems[elem] = true
 	name := e.newTmp()
 	e.prologue = append(e.prologue,
 		a.elem+" "+name+a.declSuffix()+";\n",
@@ -32249,6 +32252,16 @@ func (e *emitter) hoistPrintArgs(args []Node) bool {
 				continue
 			}
 		}
+		// A RECEIVE of an array element is received into a temporary of its shape,
+		// in its turn among the arguments, which is the copy fmt formats:
+		// `printf("%v", <-ch)` of a chan [3]int16 was "cannot print a value of type
+		// [3]int16", where the same received into a variable printed.
+		if elem, base, dim, isArr := e.arrayRecvInit(a.ast); isArr {
+			if name, ok := e.hoistChanRecv(base, elem, dim); ok {
+				hoisted[i] = printArg{name: name, array: true}
+				continue
+			}
+		}
 		// An ARRAY has no C value type to bind by assignment, and asking for one
 		// gave the whole binding up -- every other argument's with it. It is copied
 		// into a temporary array of its shape, which is the copy fmt formats; a
@@ -34453,12 +34466,16 @@ func (e *emitter) printArrayShape(idx int, arg Node) (arrDim, bool) {
 	return e.arrayShapeOf(arg.ast)
 }
 
-// arrayCallArg reports whether a print argument is a call returning an ARRAY,
-// which has no value to print until the print binds it (hoistPrintArgs).
+// arrayCallArg reports whether a print argument is a call returning an ARRAY, or a
+// receive of one, which has no value to print until the print binds it
+// (hoistPrintArgs).
 func (e *emitter) arrayCallArg(args []Node) bool {
 	return slices.ContainsFunc(args, func(a Node) bool {
-		_, _, ok := e.arrayResultCall(a.ast)
-		return ok
+		if _, _, ok := e.arrayResultCall(a.ast); ok {
+			return true
+		}
+		_, _, _, isArr := e.arrayRecvInit(a.ast)
+		return isArr
 	})
 }
 
