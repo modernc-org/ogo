@@ -38,6 +38,14 @@ shipped section tells a reader on that version that they have behaviour they do 
 
 ### Fixed
 
+- **A select clause receives into a target in parentheses, through a pointer and
+  into an array's place.** `case (x) = <-ch:`, `case (*px) = <-ch:`, `case (h).v
+  = <-ch:` and `case (*ph).v = <-ch:` built and left the target unwritten, in
+  silence, and so did `case (*ps)[i] = <-ch:`. A received ARRAY was copied into
+  the target's variable whatever the target was -- `case *pb = <-cha:` into the
+  pointer pb, `case rows[i] = <-cha:` over the whole of rows. A clause stores
+  what it receives as an assignment does, and `case geth().v = <-ch:`, refused
+  before, calls geth once the clause is chosen, as Go does.
 - **A range over an array copies it where a parenthesised call or slice writes
   it.** `s := (a)[:]` before the loop, or `(b).bump()`, `(&c).bump()` or
   `(bump)(pa)` in its body, wrote the array under the loop, and the loop handed

@@ -1186,7 +1186,10 @@ calling `(keep)(v)`, `(dev).onData(v)` or `(c).m()` for a method keeping its
 receiver was summarised as calling nothing -- a direct call, a value, a defer and a
 go alike -- and `f(a[:])` left a local in package storage. And the range copy: `s :=
 (a)[:]` or `(b).bump()` wrote an array under a range over it, which handed out the
-write where Go hands out its copy (scanAliasedLocals, stmtMayWriteMemory). A scan
+write where Go hands out its copy (scanAliasedLocals, stmtMayWriteMemory). The
+EMITTER had one such reader of its own, the select clause's receive target: `case (x)
+= <-ch:` received into nothing, and an array element into the head's variable
+whatever the target said (`headTarget` reads it as a list's target now). A scan
 reads a head by SHAPE through `scanHead`, a Factor through `parenFactorShape` and a call value
 through `shapeCall` (no local has a type yet, so `derefHead` and `parenHeadName`,
 which ask one, answer nothing there). **A new scan reads heads through them, and a
