@@ -1,0 +1,38 @@
+// A send is asked what its channel takes however the channel is reached: through a
+// dereference and in parentheses, in a statement and in a select clause, as well as
+// by name. A string sent into a chan int was taken for `*pch <- "x"`, `(ch) <- "x"`
+// and `case (ch) <- "x":`.
+
+type Bus struct{ ch chan int }
+
+func main() {
+	var ch chan int
+	var b Bus
+	pch := &ch
+	pb := &b
+	var ro <-chan int
+	// ERROR "cannot use .x. of type string as type int in send"
+	*pch <- "x"
+	// ERROR "cannot use .x. of type string as type int in send"
+	(ch) <- "x"
+	// ERROR "cannot use .x. of type string as type int in send"
+	(*pch) <- "x"
+	// ERROR "cannot use .x. of type string as type int in send"
+	(*pb).ch <- "x"
+	// ERROR "cannot send to receive-only channel ro"
+	(ro) <- 1
+	select {
+	// ERROR "cannot use .x. of type string as type int in send"
+	case (ch) <- "x":
+	// ERROR "cannot use .x. of type string as type int in send"
+	case *pch <- "x":
+	// ERROR "cannot use .x. of type string as type int in send"
+	case (&b).ch <- "x":
+	case (ch) <- 1:
+	case (*pch) <- 2:
+	default:
+	}
+	*pch <- 3
+	(ch) <- 4
+	(pb).ch <- 5
+}

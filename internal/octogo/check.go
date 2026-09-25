@@ -6158,7 +6158,15 @@ func (f *File) commOp(s *Scope, op Node) {
 	default:
 		// "case ch <- v": the AssignHead is the channel, the Expression the value.
 		f.checkNames(s, operand)
-		if id, ok := f.assignHeadIdent(assignHead); ok {
+		if f.headIsDeref(assignHead) || f.tok(assignHead.Pos()).IsValid() && f.ch(assignHead.Pos()) == LPAREN {
+			var steps []Node
+			for c := range it(postfixComm.ast) {
+				if c.sym == Selector || c.sym == Index || c.sym == CallSuffix {
+					steps = append(steps, c)
+				}
+			}
+			f.checkSendWalked(s, assignHead, steps, operand)
+		} else if id, ok := f.assignHeadIdent(assignHead); ok {
 			flds, headIdx, tailIdx := f.postfixFields([]Node{postfixComm})
 			f.checkSend(s, id, flds, headIdx, tailIdx, postfixComm, operand)
 		}
@@ -7089,7 +7097,18 @@ func (f *File) checkAssignment(s *Scope, head, postfix Node) {
 	}
 	// A send "ch <- v" checks that ch is a channel and v matches its element type.
 	if op == ARROW {
-		if len(lhs) == 1 && len(rhs) == 1 && lhs[0].IsValid() && !parenAt[0] {
+		switch {
+		case len(lhs) != 1 || len(rhs) != 1:
+		case parenAt[0] || f.headIsDeref(head):
+			// `(ch) <- v`, `*pch <- v`: through the walk, which knows the channel.
+			var steps []Node
+			for c := range it(postfix.ast) {
+				if c.sym == Selector || c.sym == Index || c.sym == CallSuffix {
+					steps = append(steps, c)
+				}
+			}
+			f.checkSendWalked(s, head, steps, rhs[0])
+		case lhs[0].IsValid():
 			flds, headIdx, tailIdx := f.postfixFields([]Node{postfix})
 			f.checkSend(s, lhs[0], flds, headIdx, tailIdx, postfix, rhs[0])
 		}
@@ -8518,6 +8537,45 @@ func (f *File) sendToRecvOnly(s *Scope, tn TypeNode, at Token) bool {
 	}
 	f.err(at.Position(), "invalid operation: cannot send to receive-only channel %s", at.Src())
 	return true
+}
+
+// checkSendWalked checks a send whose channel is reached through a dereference or
+// written in parentheses -- `*pch <- v`, `(ch) <- v`, `(*pb).ch <- v`, `(&b).ch <- v`
+// -- which the checks by name, checkSend's, took no channel from: the channel's type
+// is walked from its base variable (targetTypeNode), and the value asked what a send
+// to it asks. A string sent into a chan int was taken.
+func (f *File) checkSendWalked(s *Scope, ah Node, steps []Node, valNode Node) {
+	base, stars, ok := f.targetHead(ah)
+	if !ok {
+		id, op, isParen := f.parenTargetName(ah)
+		if !isParen || id.Src() == "_" {
+			return
+		}
+		switch {
+		case op == AND && len(steps) == 0:
+			f.err(f.tok(ah.Pos()).Position(), "invalid operation: cannot send to non-channel (&%s)", id.Src())
+			return
+		case op == MUL && len(steps) == 0:
+			stars = 1 // `(*p)` is `*p`; `(*p).ch` is p.ch, a step through the pointer
+		}
+		base = id
+	}
+	tn, in := f.targetTypeNode(s, base, steps, stars)
+	if tn == nil {
+		return
+	}
+	if ch, _ := f.chanTypeUnder(in, tn); ch == nil {
+		if _, known := f.typeKind(in, tn); known {
+			f.err(f.tok(ah.Pos()).Position(), "invalid operation: cannot send to non-channel")
+		}
+		return
+	}
+	elem, hasElem, _ := f.chanElem(in, tn)
+	if f.sendToRecvOnly(in, tn, base) {
+		return
+	}
+	f.checkSentChan(in, tn, valNode)
+	f.checkSentValue(s, tn, elem, hasElem, f.chanElemTypeName(in, tn), valNode)
 }
 
 // sendNeedsWalk reports a send target whose chain postfixFields cannot flatten: an
