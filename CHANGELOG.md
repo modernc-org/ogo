@@ -20,6 +20,11 @@ shipped section tells a reader on that version that they have behaviour they do 
 
 ### Language
 
+- **printf's %U takes a width and a precision, and '#' is taken where fmt gives it
+  no meaning.** `%8U` and `%.6U` were refused, and so were `%#s`, `%#c` and `%#t`,
+  which fmt prints as it prints the verb without the flag. `%#U`, which writes the
+  character where Unicode calls it printable, is still refused: this target has no
+  room for the table that decides.
 - **printf's %q takes flags, a width and a precision.** `%-12q`, `%+q`, `%#q` and
   `%.3q` were refused, "%q is printed by a helper here". They are fmt's now: a
   precision cuts the string to that many runes before it is quoted, '+' escapes
