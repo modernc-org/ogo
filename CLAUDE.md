@@ -509,7 +509,10 @@ still design-only.
   seeds 25-1000 on a P2-EDGE, all clean (940 passing, 36 outgrowing a cog; 1-24 are
   `make board`'s), by a loop of `ogo smith`, `ogo build` and `ogo loadp2 -t` -- one
   compiler, and nothing else on the serial port meanwhile: a second loader on it
-  talks over the first, and `Prop_Ver G` in a capture is that. A generated program
+  talks over the first, and `Prop_Ver G` in a capture is that. On 2026-09-25,
+  with the same generator and the compiler that names every constant string's
+  header at file scope (78cb75a), seeds 25-400 on a P2-EDGE: 365 passing, 11
+  outgrowing a cog, none failing -- five that outgrew before fit now. A generated program
   writes self-comparisons and `2 ^ 3` on purpose, so it is built with the oracle
   test's gcc flags, not probe.sh's `-Wall -Werror`: under those, 273 of 2000 fail on
   the program's own warnings.
