@@ -11198,6 +11198,96 @@ func main() {
 	}
 }
 
+// TestEmitCStoreEverySite: the lifetime rules a store asks -- a package variable, a
+// block, an element of a slice not provably this frame's, a pointer or a call's
+// result -- are asked wherever a program stores (refuseStore). Each site asked a
+// subset of its own until 2026-09-25, and every rule a site missed was a way past
+// it, a local's address left in a package variable in silence: the list forms asked
+// nothing of a slice's element, a for clause nothing of a pointer or a slice, a
+// target whose place a list fixed ahead nothing of a pointer, and a dereference,
+// `(*s)[0] = &x`, nothing at all. The controls store what outlives the frame, or
+// into storage the frame is known to own.
+func TestEmitCStoreEverySite(t *testing.T) {
+	const head = `type Q struct {
+	p  *int
+	xs []*int
+}
+
+var gq Q
+
+var gs = []*int{nil}
+
+var gp *int
+
+var gn int
+
+func getq() *Q { return &gq }
+
+func run() {
+	x := 5
+	var n Q
+	ls := []*int{nil}
+	a := 0
+	_, _, _, _ = x, n, ls, a
+`
+	const tail = `}
+
+func main() {
+	run()
+}
+`
+	for _, test := range []struct {
+		stmt string
+		want string // "" means the program must be accepted
+	}{
+		// A list form, first and second target, and a place it fixes ahead.
+		{"t := gs\n\tt[0], a = &x, 1", "cannot store the address of local variable x in an element of t"},
+		{"t := gs\n\ta, t[0] = 1, &x", "in an element of t"},
+		{"n.xs = gs\n\tn.xs[0], a = &x, 1", "in an element of n.xs"},
+		{"p := &gq\n\tp, p.p = &n, &x", "cannot store the address of local variable x through p.p"},
+		// A for clause, init and post.
+		{"p := &gq\n\tfor p.p = &x; false; {\n\t}", "through p.p"},
+		{"p := &gq\n\tfor i := 0; i < 1; p.p = &x {\n\t\ti++\n\t}", "through p.p"},
+		{"t := gs\n\tfor i := 0; i < 1; t[0] = &x {\n\t\ti++\n\t}", "in an element of t"},
+		{"pp := &gp\n\tfor i := 0; i < 1; *pp = &x {\n\t\ti++\n\t}", "through *pp"},
+		{"for i := 0; i < 1; getq().p = &x {\n\t\ti++\n\t}", "through getq().p"},
+		{"p := &gq\n\tfor i := 0; i < 1; (*p).p = &x {\n\t\ti++\n\t}", "in package variable gq"},
+		// A dereference: the place a pointer written once holds, or none known.
+		{"p := &gq\n\t(*p).p = &x", "cannot store the address of local variable x in package variable gq"},
+		{"s := &gs\n\t(*s)[0] = &x", "in package variable gs"},
+		{"pp := &gp\n\t(*pp) = &x", "in package variable gp"},
+		{"p := &n\n\tp = &gq\n\t(*p).p = &x", "cannot store the address of local variable x through (*p).p: what it reaches is not known"},
+		{"p := getq()\n\t(*p).p = &x", "through (*p).p"},
+		{"s := &ls\n\t(*s)[0] = &x", "in an element of ls"}, // ls's address is taken: its backing is not known
+		// Controls.
+		{"ls[0], a = &x, 1", ""},
+		{"t := gs\n\tt[0], a = &gn, 1", ""},
+		{"p := &n\n\ta, p.p = 1, &x", ""},
+		{"p := &n\n\tfor i := 0; i < 1; p.p = &x {\n\t\ti++\n\t}", ""},
+		{"for n.p = &x; false; {\n\t}", ""},
+		{"p := &n\n\t(*p).p = &x", ""},
+		{"p := &gq\n\t(*p).p = &gn", ""},
+		{"p := &n\n\tfor i := 0; i < 1; (*p).p = &x {\n\t\ti++\n\t}", ""},
+	} {
+		t.Run(test.stmt, func(t *testing.T) {
+			src := head + "\t" + test.stmt + "\n" + tail
+			fsys := fstest.MapFS{"main.ogo": &fstest.MapFile{Data: []byte(src)}}
+			pkg, err := Build(-1, []string{"main.ogo"}, fsys)
+			if err == nil {
+				err = EmitC(pkg, io.Discard, Checked())
+			}
+			switch {
+			case test.want == "" && err != nil:
+				t.Errorf("refused: %v\n%s", err, src)
+			case test.want != "" && err == nil:
+				t.Errorf("accepted, want %q\n%s", test.want, src)
+			case test.want != "" && !strings.Contains(err.Error(), test.want):
+				t.Errorf("got %v, want %q", err, test.want)
+			}
+		})
+	}
+}
+
 // TestEmitCMainParamsNotInherited: main has no parameters, and emitMain did not
 // clear what bindParams recorded of the function emitted before it -- so a local of
 // main named like that function's parameter was taken for one, and a store of the

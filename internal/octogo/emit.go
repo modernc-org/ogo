@@ -15186,7 +15186,7 @@ func (e *emitter) emitMain(sig, body []int32) {
 	// main has no parameters, and what bindParams records of the function emitted
 	// before it must not stand for them: a local of main named like that function's
 	// parameter was taken for a parameter -- by boundFunc, and by the store rules
-	// that believe only a local (targetThroughRef, checkStoreThroughSlice).
+	// that believe only a local (targetThroughRef, refuseStoreThroughSlice).
 	e.curParams, e.curParamOrder, e.funcParamAlias = map[string]bool{}, nil, map[string]string{}
 	e.arrays = map[string]arrDim{}
 	e.sliceVars = map[string]string{}
@@ -25555,11 +25555,15 @@ func (e *emitter) emitForInitDefine(h forHeader) {
 
 // carryIntoClause applies the lifetime rules to `lhs = rhs` written in a loop's init
 // or post clause, which a statement's assignment applies before it writes
-// (checkStoreBacking, checkBlockOutlives, noteFrameHolder): `for g = a[:]; ...` for
-// a package g, and `for ...; ...; p = &x`.
+// (refuseStore, noteFrameHolder): `for g = a[:]; ...` for a package g, and `for ...;
+// ...; p = &x`.
 func (e *emitter) carryIntoClause(lhs, rhs []int32) {
 	ref, ok := e.frameRefOf(rhs)
 	if !ok {
+		return
+	}
+	at := Node{sym: Expression, ast: rhs}
+	if e.refuseStoreInExpr(lhs, at, ref) {
 		return
 	}
 	base, steps, isChain := e.factorAccessChain(e.factorKids(lhs))
@@ -25576,9 +25580,6 @@ func (e *emitter) carryIntoClause(lhs, rhs []int32) {
 	} else if mn, isWhole := e.qualifiedWholeTarget(base, steps); isWhole {
 		base = mn
 	}
-	at := Node{sym: Expression, ast: rhs}
-	e.refuseStoreBacking(base, at, ref)
-	e.refuseBlockOutlives(base, at, ref)
 	e.noteHolderRef(base, ref)
 }
 
@@ -35997,6 +35998,7 @@ func (e *emitter) emitAssignment(head Node, postfix []Node) {
 	// Asked before soleIdent, which finds no name in it: the only identifier is
 	// inside the parentheses, and it names the POINTER rather than the target.
 	if name, ok := e.derefHead(head); ok {
+		e.checkStore(lifeTarget{deref: name, steps: postfix[:len(postfix)-1]}, slices.Collect(it(postfix[len(postfix)-1].ast)))
 		e.emitDerefAssign(name, postfix)
 		return
 	}
@@ -36051,10 +36053,7 @@ func (e *emitter) emitAssignment(head Node, postfix []Node) {
 	if mn, ok := e.qualifiedWholeTarget(base, postfix[:len(postfix)-1]); ok {
 		storedIn = mn
 	}
-	e.checkStoreBacking(storedIn, op)
-	e.checkBlockOutlives(storedIn, op)
-	e.checkStoreThroughSlice(storedIn, postfix[:len(postfix)-1], op)
-	e.checkStoreThroughRef(storedIn, len(stars), postfix[:len(postfix)-1], op)
+	e.checkStore(lifeTarget{base: storedIn, stars: len(stars), steps: postfix[:len(postfix)-1]}, op)
 	e.noteFrameHolder(storedIn, op)
 	// A written-out dereference applies to the WHOLE target and not to its head:
 	// `*h.p = v` is `*(h.p) = v` and `*a[i] = v` is `*(a[i]) = v`, C's precedence and
@@ -44378,15 +44377,8 @@ func (e *emitter) noteRangeValue(h *forHeader, val, elem string) {
 	} else if base, fields, ok := e.factorFieldAccess(e.factorKids(h.valVar)); ok && len(fields) != 0 {
 		root, whole = base, false
 	}
-	if !h.rangeDef {
-		at := Node{sym: Expression, ast: h.rangeExpr}
-		if e.isPackageVar(root) {
-			e.refuseStoreBacking(root, at, r)
-			return
-		}
-		if e.refuseBlockOutlives(root, at, r) {
-			return
-		}
+	if !h.rangeDef && e.refuseStoreInExpr(h.valVar, Node{sym: Expression, ast: h.rangeExpr}, r) {
+		return
 	}
 	if whole && isSlice {
 		e.frameBacked[root] = true
@@ -45242,18 +45234,178 @@ func (e *emitter) appendCallArgs(ast []int32) ([]Node, bool, bool) {
 	return e.callArgExprs(suffix[0].ast), e.spreadCall(suffix[0].ast), true
 }
 
-// checkStoreThroughSlice refuses storing a value that reaches this frame into an
-// ELEMENT of a slice whose backing is not provably this frame's: `t := gs; t[0] =
-// &x` put a local's address into package storage through a local alias of it, where
-// the store into gs itself was refused -- the block rule, asked of t, found t and x
-// dying together. What is written is the backing of the LAST slice the target
-// indexes -- an array element or a field lives inline in whatever holds it -- and
-// that backing is the root's own when the root is that slice, and otherwise what the
-// root's holder mark records its elements or fields reach, the only per-variable
-// record there is. checkAppendBacking is the same rule for append.
-func (e *emitter) checkStoreThroughSlice(base string, steps []Node, op []Node) {
-	if !e.isFrameVar(base) || len(op) != 2 || op[0].sym != 0 || e.f.ch(op[0].tok) != ASSIGN {
-		return
+// lifeTarget is a store's target as the lifetime rules ask of it (refuseStore): the
+// variable it is rooted at, the stars written before it and the steps after it; or,
+// written through a dereference, `(*p).x`, the pointer, deref, and the steps after
+// the parentheses.
+type lifeTarget struct {
+	base  string
+	stars int
+	steps []Node
+	deref string
+}
+
+// checkStore applies the lifetime rules to the values of a plain "=" -- op holds a
+// PostfixOp's children -- stored in the target t.
+func (e *emitter) checkStore(t lifeTarget, op []Node) {
+	if len(op) != 2 || op[0].sym != 0 || e.f.ch(op[0].tok) != ASSIGN {
+		return // only a plain "=" stores such a value
+	}
+	for _, v := range e.rhsExprs(op[1]) {
+		if r, ok := e.frameRefOf(v.ast); ok && e.refuseStore(t, v, r) {
+			return
+		}
+	}
+}
+
+// refuseStore applies every lifetime rule a store asks to one value, v, carrying r
+// of this frame, written into the target t, and says whether it refused: into a
+// package variable (refuseStoreBacking), past the block of what it reaches
+// (refuseBlockOutlives), into an element of a slice whose backing is not provably
+// this frame's (refuseStoreThroughSlice), and through a pointer or a call's result
+// (refuseStoreThroughRef) -- or through a dereference, whose target is asked as the
+// place the pointer is known to hold (refuseStoreThroughDeref).
+//
+// Every place a program stores asks them here: a statement, each target of a list
+// form, a for clause and a range clause's value. Until 2026-09-25 each place asked a
+// subset of its own, and every rule a place missed was a way past it: the list forms
+// asked nothing of a slice's element, `t[0], n = &x, 1` for `t := gs`; a for clause
+// nothing of a pointer or a slice, `for ...; p.p = &x`; a range clause nothing of a
+// pointer, `for _, p.p = range ls`; a target whose place a list fixed ahead nothing
+// of a pointer, `p, p.p = &n, &x` for `p := &gq`; and a dereference nothing at all,
+// `(*s)[0] = &x`. Each left a local's address in a package variable, in silence.
+func (e *emitter) refuseStore(t lifeTarget, v Node, r frameRef) bool {
+	if t.deref != "" {
+		return e.refuseStoreThroughDeref(t.deref, t.steps, v, r)
+	}
+	if e.isPackageVar(t.base) {
+		e.refuseStoreBacking(t.base, v, r)
+		return true
+	}
+	return e.refuseBlockOutlives(t.base, v, r) || e.refuseStoreThroughSlice(t.base, t.steps, v, r) ||
+		e.refuseStoreThroughRef(t.base, t.stars, t.steps, v, r)
+}
+
+// refuseStoreThroughDeref is refuseStore for a target written through a dereference,
+// `(*p)steps`: what is written is what p points at, which the rules can ask only
+// where it is KNOWN -- p a local written once with the address of a place (derefPlace),
+// when the target is that place followed by steps, and is asked as that. Anything
+// else p may point at is not known to be this function's, and a reference to the
+// frame stored through it is refused, as it is through `p.x`.
+func (e *emitter) refuseStoreThroughDeref(ptr string, steps []Node, v Node, r frameRef) bool {
+	if base, place, known := e.derefPlace(ptr); known {
+		return e.refuseStore(lifeTarget{base: base, steps: append(place, steps...)}, v, r)
+	}
+	e.fail("%v: cannot store %s through %s: what it reaches is not known to be this function's "+
+		"storage, and may outlive it; %s", e.f.tok(v.Pos()).Position(), r.what,
+		e.chainSource("(*"+ptr+")", steps), r.advice())
+	return true
+}
+
+// derefPlace answers the place a pointer is KNOWN to point at: a local written once,
+// its address never taken nor a method called on it (onceBound), whose one value is
+// the address of a variable or of a place reached from one by fields and indexes --
+// `p := &n`, `p := &h.s`, `p := &arr[2]` -- answered as that variable and those
+// steps, which the caller may extend.
+func (e *emitter) derefPlace(ptr string) (string, []Node, bool) {
+	if !e.isFrameVar(ptr) || !e.onceBound(ptr) {
+		return "", nil, false
+	}
+	fac, ok := e.addrOperandFactor(e.bindValue[ptr])
+	if !ok {
+		return "", nil, false
+	}
+	kids := e.unparenKids(slices.Collect(it(fac.ast)))
+	if len(kids) == 1 && kids[0].sym == 0 && e.f.ch(kids[0].tok) == IDENT {
+		return e.src(kids[0].tok), nil, true
+	}
+	base, place, isChain := e.factorAccessChain(kids)
+	if !isChain {
+		return "", nil, false
+	}
+	return base, slices.Clone(place), true
+}
+
+// exprStoreTarget reads a store's target written as an EXPRESSION -- a for clause's
+// `lhs = rhs`, a range clause's value -- as the lifetime rules ask of it: a variable
+// with the stars before it and the steps after it, a call among them, or a
+// dereference, `(*p).x`, with the steps after the parentheses. A shape it cannot
+// read answers false.
+func (e *emitter) exprStoreTarget(lhs []int32) (lifeTarget, bool) {
+	var t lifeTarget
+	nodes := slices.Collect(it(lhs))
+	for len(nodes) == 1 && (nodes[0].sym == Expression || nodes[0].sym == SimpleExpr || nodes[0].sym == Term) {
+		nodes = slices.Collect(it(nodes[0].ast))
+	}
+	if len(nodes) != 1 || nodes[0].sym != UnaryExpr {
+		return t, false
+	}
+	kids := slices.Collect(it(nodes[0].ast))
+	for len(kids) > 1 && kids[0].sym == UnaryOp {
+		if tok, isOp := e.unaryOpTok(kids[0].ast); !isOp || e.f.ch(tok) != MUL {
+			return t, false
+		}
+		t.stars++
+		kids = kids[1:]
+	}
+	if len(kids) != 1 || kids[0].sym != Factor {
+		return t, false
+	}
+	fac := e.unparenKids(slices.Collect(it(kids[0].ast)))
+	if t.stars == 0 {
+		if name, after, isDeref := e.factorDerefChain(fac); isDeref {
+			return lifeTarget{deref: name, steps: after}, true
+		}
+		if len(fac) == 3 && fac[0].sym == 0 && e.f.ch(fac[0].tok) == LPAREN && fac[1].sym == Expression {
+			if name, isDeref := e.derefOperand(fac[1].ast); isDeref {
+				return lifeTarget{deref: name}, true // `(*p) = v`
+			}
+		}
+	}
+	if len(fac) == 0 || fac[0].sym != 0 || e.f.ch(fac[0].tok) != IDENT {
+		return t, false
+	}
+	t.base = e.src(fac[0].tok)
+	switch {
+	case len(fac) == 2 && fac[1].sym == FactorSuffix:
+		t.steps = slices.Collect(it(fac[1].ast))
+	case len(fac) != 1:
+		return t, false
+	}
+	if mn, rest, isQualified := e.qualifiedChainBase(t.base, t.steps); isQualified {
+		t.base, t.steps = mn, rest
+	} else if mn, isWhole := e.qualifiedWholeTarget(t.base, t.steps); isWhole {
+		t.base, t.steps = mn, nil
+	}
+	return t, true
+}
+
+// refuseStoreInExpr is refuseStore for a target written as an expression
+// (exprStoreTarget). One it cannot read is not known to be this function's storage,
+// and a reference to the frame stored in it is refused.
+func (e *emitter) refuseStoreInExpr(lhs []int32, v Node, r frameRef) bool {
+	if t, ok := e.exprStoreTarget(lhs); ok {
+		return e.refuseStore(t, v, r)
+	}
+	e.fail("%v: cannot store %s in %s: what it reaches is not known to be this function's storage, "+
+		"and may outlive it; %s", e.f.tok(v.Pos()).Position(), r.what,
+		e.f.exprSource(Node{sym: Expression, ast: lhs}), r.advice())
+	return true
+}
+
+// refuseStoreThroughSlice refuses storing a value that reaches this frame into an
+// ELEMENT of a slice whose backing is not provably this frame's, and says whether it
+// refused: `t := gs; t[0] = &x` put a local's address into package storage through a
+// local alias of it, where the store into gs itself was refused -- the block rule,
+// asked of t, found t and x dying together. What is written is the backing of the
+// LAST slice the target indexes -- an array element or a field lives inline in
+// whatever holds it -- and that backing is the root's own when the root is that
+// slice, and otherwise what the root's holder mark records its elements or fields
+// reach, the only per-variable record there is. checkAppendBacking is the same rule
+// for append.
+func (e *emitter) refuseStoreThroughSlice(base string, steps []Node, v Node, r frameRef) bool {
+	if !e.isFrameVar(base) {
+		return false
 	}
 	last := -1
 	for i, st := range steps {
@@ -45261,7 +45413,7 @@ func (e *emitter) checkStoreThroughSlice(base string, steps []Node, op []Node) {
 			continue
 		}
 		if _, _, _, sliced := e.sliceParts(st.ast); sliced {
-			return // a store into a slice step is no element store
+			return false // a store into a slice step is no element store
 		}
 		indexed := e.isSliceVar(base)
 		if i != 0 {
@@ -45273,7 +45425,7 @@ func (e *emitter) checkStoreThroughSlice(base string, steps []Node, op []Node) {
 		}
 	}
 	if last < 0 {
-		return
+		return false
 	}
 	// KNOWN means must, not may, as targetThroughRef's does: the marks say what a
 	// slice MAY view, and one assigned again keeps the mark of its first value --
@@ -45281,18 +45433,13 @@ func (e *emitter) checkStoreThroughSlice(base string, steps []Node, op []Node) {
 	// slice written ONCE, directly as a view of this frame, is known to view it
 	// (frameViewValue); one reached through a step is not, its holder's mark being
 	// the union of what its elements or fields view.
-	frame := last == 0 && e.frameBacked[base] && e.onceBound(base) && e.frameViewValue(e.bindValue[base])
-	if frame {
-		return
+	if last == 0 && e.frameBacked[base] && e.onceBound(base) && e.frameViewValue(e.bindValue[base]) {
+		return false
 	}
-	for _, v := range e.rhsExprs(op[1]) {
-		if r, ok := e.frameRefOf(v.ast); ok {
-			e.fail("%v: cannot store %s in an element of %s: its storage is not this function's, "+
-				"and may outlive it; %s", e.f.tok(v.Pos()).Position(), r.what,
-				e.chainSource(base, steps[:last]), r.advice())
-			return
-		}
-	}
+	e.fail("%v: cannot store %s in an element of %s: its storage is not this function's, "+
+		"and may outlive it; %s", e.f.tok(v.Pos()).Position(), r.what,
+		e.chainSource(base, steps[:last]), r.advice())
+	return true
 }
 
 // frameViewValue reports whether a slice value is DIRECTLY a view of this frame's
@@ -45330,31 +45477,18 @@ func (e *emitter) frameViewValue(ast []int32) bool {
 	return isArr && e.isFrameVar(name)
 }
 
-// checkStoreThroughRef refuses storing a reference to this frame where the target
-// is reached through a POINTER or a CALL's result: what is written is then not the
-// root variable's storage but what the pointer points at, or what the call returned
-// -- `p.p = &x` for a `p := &gq`, `getq().p = &x`, `h.q.p = &x` through a pointer
-// field -- none of which is known to be this function's, and all of which may
-// outlive it. The rules above ask the target's ROOT, and a local root dies with the
-// frame, which says nothing of what it points at: a local pointer at a package
-// variable, and a call's pointer result, took the address of a local in silence, and
-// the package variable held it after the function returned -- garbage on the board.
-// A pointer known to point at a local of this frame, `p := &n` (frameHolder),
-// writes that local, and is asked the block rule of it instead. It is
-// checkStoreThroughSlice's rule for a pointer.
-func (e *emitter) checkStoreThroughRef(base string, stars int, steps []Node, op []Node) {
-	if len(op) != 2 || op[0].sym != 0 || e.f.ch(op[0].tok) != ASSIGN {
-		return // only a plain "=" stores such a value
-	}
-	for _, v := range e.rhsExprs(op[1]) {
-		if r, ok := e.frameRefOf(v.ast); ok && e.refuseStoreThroughRef(base, stars, steps, v, r) {
-			return
-		}
-	}
-}
-
-// refuseStoreThroughRef is checkStoreThroughRef for a reference already found, and
-// says whether it refused.
+// refuseStoreThroughRef refuses storing a reference to this frame where the target
+// is reached through a POINTER or a CALL's result, and says whether it refused: what
+// is written is then not the root variable's storage but what the pointer points
+// at, or what the call returned -- `p.p = &x` for a `p := &gq`, `getq().p = &x`,
+// `h.q.p = &x` through a pointer field -- none of which is known to be this
+// function's, and all of which may outlive it. The rules above ask the target's
+// ROOT, and a local root dies with the frame, which says nothing of what it points
+// at: a local pointer at a package variable, and a call's pointer result, took the
+// address of a local in silence, and the package variable held it after the
+// function returned -- garbage on the board. A pointer known to point at a local of
+// this frame, `p := &n` (frameHolder), writes that local, and is asked the block
+// rule of it instead. It is refuseStoreThroughSlice's rule for a pointer.
 func (e *emitter) refuseStoreThroughRef(base string, stars int, steps []Node, v Node, r frameRef) bool {
 	through, frame, pointee := e.targetThroughRef(base, stars, steps)
 	switch {
@@ -45375,7 +45509,7 @@ func (e *emitter) refuseStoreThroughRef(base string, stars int, steps []Node, v 
 // steps after it -- writes storage reached through a POINTER or a CALL's result
 // rather than base's own, whether that storage is known to be this frame's, and,
 // where it is a local of it, which. A package variable's pointer is left to
-// checkStoreBacking, which refuses any such store into it already.
+// refuseStoreBacking, which refuses any such store into it already.
 //
 // KNOWN means must, not may: a holder mark says what a variable MAY reach, and a
 // pointer assigned again keeps the mark of its first value -- `p := &n; p = &gq;
@@ -45482,34 +45616,15 @@ func (e *emitter) checkReturnBacking(exprs []Node) {
 	}
 }
 
-// checkStoreBacking refuses storing a slice whose backing array is a local of this
-// frame into a package-level variable, or a field of one.
+// refuseStoreBacking refuses storing n, which carries r, in something rooted at a
+// package-level variable base: a slice whose backing array is a local of this frame,
+// the address of one, anything reaching it.
 //
 // A package variable outlives every call, so the header would still point at the
 // frame's storage long after it is gone -- the same error checkReturnBacking
 // catches at a return, through the other door. crossBackedByFrame is the third
 // door: a reference that does not provably outlive the frame, but leaves its
 // control.
-func (e *emitter) checkStoreBacking(base string, op []Node) {
-	if !e.isPackageVar(base) {
-		return // a local target dies with the frame, like the backing
-	}
-	if len(op) != 2 || op[0].sym != 0 || e.f.ch(op[0].tok) != ASSIGN {
-		return // only a plain "=" carries such a value here
-	}
-	var vals []Node
-	for n := range it(op[1].ast) {
-		if n.sym == Expression {
-			vals = append(vals, n)
-		}
-	}
-	if n, r, ok := e.frameRefIn(vals); ok {
-		e.refuseStoreBacking(base, n, r)
-	}
-}
-
-// refuseStoreBacking is checkStoreBacking for a reference already found: the value n,
-// which carries r, is being stored in something rooted at base.
 func (e *emitter) refuseStoreBacking(base string, n Node, r frameRef) {
 	if !e.isPackageVar(base) {
 		return // a local target dies with the frame, like the backing
@@ -45518,11 +45633,11 @@ func (e *emitter) refuseStoreBacking(base string, n Node, r frameRef) {
 		e.f.tok(n.Pos()).Position(), r.what, e.displayName(base))
 }
 
-// checkBlockOutlives refuses storing a reference to an inner-block variable where
-// the target outlives that block. It is checkStoreBacking's rule at BLOCK
-// granularity rather than frame: the storage a reference points at must not die
-// before the reference does, and a block is where that can happen without the
-// function returning.
+// refuseBlockOutlives refuses storing n, carrying r, where the target, rooted at
+// base, outlives the block of the variable r reaches, and says whether it refused.
+// It is refuseStoreBacking's rule at BLOCK granularity rather than frame: the
+// storage a reference points at must not die before the reference does, and a block
+// is where that can happen without the function returning.
 //
 // This is what makes the loop-variable semantics Go adopted in 1.22 honest here. A
 // per-iteration variable and a reused one differ only where a reference outlives the
@@ -45540,25 +45655,6 @@ func (e *emitter) refuseStoreBacking(base string, n Node, r frameRef) {
 // wrong. `x := i * 10` in a loop BODY is a fresh variable per iteration in every
 // version of Go, back to 1.0, and taking its address had the same defect. The rule
 // is written about blocks so both fall out of it.
-func (e *emitter) checkBlockOutlives(base string, op []Node) {
-	if !e.isFrameVar(base) {
-		return // a package target is checkStoreBacking's, and answers differently
-	}
-	if len(op) != 2 || op[0].sym != 0 || e.f.ch(op[0].tok) != ASSIGN {
-		return // only a plain "=" stores such a value
-	}
-	for n := range it(op[1].ast) {
-		if n.sym != Expression {
-			continue
-		}
-		if r, ok := e.frameRefOf(n.ast); ok && e.refuseBlockOutlives(base, n, r) {
-			return
-		}
-	}
-}
-
-// refuseBlockOutlives is checkBlockOutlives for a reference already found, and says
-// whether it refused.
 func (e *emitter) refuseBlockOutlives(base string, n Node, r frameRef) bool {
 	if !e.isFrameVar(base) || e.blockDepthOf(r.name) <= e.blockDepthOf(base) {
 		return false
@@ -45608,14 +45704,14 @@ func (e *emitter) carryInto(t assignTarget, declare bool, ctype string, c *carri
 	}
 	base := e.storeRoot(t)
 	if !declare {
-		e.refuseStoreBacking(base, c.at, c.r)
-		e.refuseBlockOutlives(base, c.at, c.r)
-		switch {
-		case t.srcName != "":
-			e.refuseStoreThroughRef(t.srcName, 0, t.srcChain, c.at, c.r)
-		case base == t.name && t.addr == "":
-			e.refuseStoreThroughRef(t.name, len(t.stars), t.chain, c.at, c.r)
+		// A target is asked as it was WRITTEN: a call bound to a temporary as the call
+		// (srcName), and a place fixed ahead of the stores (addr) as the chain that
+		// found it, which is what the pointer it went through is asked of.
+		st := lifeTarget{base: base, stars: len(t.stars), steps: t.chain}
+		if t.srcName != "" {
+			st = lifeTarget{base: t.srcName, steps: t.srcChain}
 		}
+		e.refuseStore(st, c.at, c.r)
 	}
 	// A whole slice is given, besides its backing, what its elements reach.
 	origin, elemRefs := "", false
@@ -45841,7 +45937,7 @@ func (e *emitter) chainStorage(base string, steps []Node) (storage string, local
 				return storage, false, false
 			}
 			// What the slice MAY view is its mark; what it views on every path is
-			// what it was written with, once (see checkStoreThroughSlice).
+			// what it was written with, once (see refuseStoreThroughSlice).
 			sure = sure && e.onceBound(base) && e.frameViewValue(e.bindValue[base])
 		case e.isPointer(cur.ctype):
 			// The root's own pointer was followed by storageBehind; any other
