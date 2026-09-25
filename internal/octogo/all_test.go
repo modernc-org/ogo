@@ -330,6 +330,42 @@ func main() {
 	}
 }
 
+// TestFormatHeaderAssignList: an if's init and a switch's guard that give several
+// names a value each with "=", as with ":=", raise the depth for those values, as
+// go/printer does: gofmt writes `if a, n = k(3), n+1; ...`, and this wrote `n + 1`,
+// the rule having been written for ":=" before headers took "=". The source is
+// gofmt's output, so FormatFile must leave it as it is; a single value, `n = n + 1`,
+// keeps its spaces in both.
+func TestFormatHeaderAssignList(t *testing.T) {
+	const src = `func k(n int) int { return n }
+
+func f(n int) int {
+	a := 0
+	if a, n = k(3), n+1; n > 0 {
+		a++
+	}
+	switch a, n = n*2, n-1; n {
+	case 1:
+		a++
+	}
+	if b, m := k(1), n+2; b > m {
+		return b
+	}
+	if n = n + 1; n > 9 {
+		return n
+	}
+	return a + n
+}
+`
+	var b bytes.Buffer
+	if err := FormatFile("main.ogo", []byte(src), &b); err != nil {
+		t.Fatalf("FormatFile: %v", err)
+	}
+	if got := b.String(); got != src {
+		t.Errorf("FormatFile is not idempotent on the gofmt-canonical form:\n got %q\nwant %q", got, src)
+	}
+}
+
 func TestFormat(t *testing.T) {
 	var out bytes.Buffer
 	if err := FormatFile("test.go", []byte(testInput), &out); err != nil {

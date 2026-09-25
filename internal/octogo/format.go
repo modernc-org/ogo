@@ -1992,11 +1992,13 @@ func multiAssign(ast []int32) bool {
 }
 
 // headerInitTightOps is computeTightOps for the init of an if and the guard of a
-// switch. When the ":=" gives several names a value EACH, `if a, b := x+1, y<<2; a <
-// b`, go/printer raises the depth for those values, as it does for the statement
-// and for a for header's init -- and for nothing else in the header: the condition
-// after the ";" and a switch's tag keep theirs. A call destructured into several
-// names, `if v, ok := f(a + 1); ok`, is one value and raises nothing.
+// switch. When the ":=" or the "=" gives several names a value EACH, `if a, b :=
+// x+1, y<<2; a < b`, `if a, n = f(), n+1; ...`, go/printer raises the depth for those
+// values, as it does for the statement and for a for header's init -- and for nothing
+// else in the header: the condition after the ";" and a switch's tag keep theirs. A
+// call destructured into several names, `if v, ok := f(a + 1); ok`, is one value and
+// raises nothing. The "=" form came to headers after this rule and was spaced as a
+// single value, `n + 1`, until 2026-09-25.
 //
 // An if's first name is the if's own expression and stands outside the IfInit; a
 // switch's is the guard's first child.
@@ -2012,7 +2014,7 @@ func (f *formatter) headerInitTightOps(n Node, depth int) {
 		switch {
 		case k.sym == LhsItem:
 			names++
-		case k.sym == 0 && ch(k) == DEFINE:
+		case k.sym == 0 && (ch(k) == DEFINE || ch(k) == ASSIGN):
 			defined = true
 		case k.sym == 0 && ch(k) == SEMICOLON:
 			ended = true
@@ -2026,7 +2028,7 @@ func (f *formatter) headerInitTightOps(n Node, depth int) {
 	defined, ended = false, false
 	for _, k := range kids {
 		switch {
-		case k.sym == 0 && ch(k) == DEFINE:
+		case k.sym == 0 && (ch(k) == DEFINE || ch(k) == ASSIGN):
 			defined = true
 		case k.sym == 0 && ch(k) == SEMICOLON:
 			ended = true
