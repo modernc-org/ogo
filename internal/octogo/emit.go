@@ -9936,7 +9936,14 @@ func (e *emitter) emitConstSpecName(name, ownType string, hasType bool, initExpr
 			e.iota = -1
 			return
 		}
-		e.emit(storage + ctype + " " + cname + " = ")
+		// A block-scope constant's C spelling: cname is also what the fold maps
+		// key it by, which is the name as written, and a keyword or a macro --
+		// `const long = 5` -- is renamed where it is read (localIdent).
+		declName := cname
+		if !pkg {
+			declName = e.localIdent(name)
+		}
+		e.emit(storage + ctype + " " + declName + " = ")
 		switch v, folded := e.constInt[cname]; {
 		case folded:
 			// A folded integer constant emits its literal value, so a constant that
@@ -9958,7 +9965,7 @@ func (e *emitter) emitConstSpecName(name, ownType string, hasType bool, initExpr
 			// host's compiler warns of, and a function literal's reading one is not
 			// its function's.
 			e.ind()
-			e.emit("(void)" + cname + ";\n")
+			e.emit("(void)" + declName + ";\n")
 		}
 		e.iota = -1
 	}

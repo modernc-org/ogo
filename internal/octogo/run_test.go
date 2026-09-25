@@ -8068,6 +8068,21 @@ func main() {
 		want: "5 99 4 6 9 10 1\n4\n7 8 2\n2\n4\n11\n2 3 5\n",
 	},
 	{
+		name: "a block-scope constant named what C reserves",
+		src: `// A block-scope constant named what C reserves is declared as it is read: const
+// long = 5 wrote "const int long = 5;" beside reads of the renamed ogo_kw_long.
+func main() {
+	const long = 5
+	const EOF int32 = 7
+	var buf [EOF]byte
+	const unix, double = "u", 2.5
+	buf[1] = 3
+	println(long+1, len(buf), buf[1], unix, double*2)
+}
+`,
+		want: "6 7 3 u 5\n",
+	},
+	{
 		name: "an array parameter is a copy",
 		src: `func mutate(a [3]int) int {
 	a[0] = 99
