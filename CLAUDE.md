@@ -1146,6 +1146,28 @@ so is `p := &nodes[2]; p.next = &nodes[3]` in a function that declares another `
 anywhere, `bindWrites` counting by NAME across the function (the scan has no scopes
 the emitter's can be matched to); renaming is the way round it. The run corpus and
 400 fuzzer seeds had none of either.
+**A STORE RULE IS ASKED AT EVERY STORE SITE** (2026-09-25). The four store rules --
+a package variable, a block, a slice's element, a pointer or a call's result -- were
+asked by each place a program stores on its own, and each asked a subset: a list
+form none of the slice's, a for clause and a range clause neither a pointer's nor a
+slice's, a place a list fixed ahead none of the pointer's, and a target written
+through a dereference, `(*p).p = &x`, nothing at all -- every gap a local's address
+in a package variable, in silence, found in one sitting by writing each rule into
+each site. They are one function now, `refuseStore` over a `lifeTarget` (a base,
+stars and steps, or the pointer of a dereference, `derefPlace` answering what it is
+KNOWN to hold), and the marks one beside it, `noteStoredThrough`, which also marks
+what a known pointer points at. **A new place that stores calls both**; a for
+clause's and a range clause's target are read by `exprStoreTarget`. Two traps met
+on the way: a reference READ out of a holder built by readHolderRef named no
+referent, so the block rule judged it by the block being emitted and refused `q.p =
+xs[0]` in an if -- every reference from a mark is built by `originRef` now -- and
+fixing that opened a hole the range clause had been refused by accident, which is
+why the rules went in first. A PARENTHESISED target was the same row one level up:
+the checker keeps targets by name, and `(*px), s = ...` -- or `*px, s = ...` --
+shifted every value one target along, both ways (`addTarget`, `checkParenTarget`);
+a batch of 27 went from 18 disagreements with Go to none. Open, and older: the summaries read no LIST store
+through a pointer, `n, w.xs = 1, v`, nor a for clause's, `for ...; b.d = xs`, in a
+callee -- shorthand or not -- so such a callee's caller is asked nothing.
 
 **PRINTING A VALUE IS A ROW** (2026-09-23). `printf("%v", x)` of an ARRAY printed the
 address of its storage wherever x was not a bare name -- a literal, a field, an
@@ -1316,7 +1338,10 @@ against each other when either changes**; they are meant to differ by one produc
 (HeaderFactor has no literal after a name, which is what keeps `if x == T {` a block).
 `ogo fmt` keeps a statement's body on the line it was written on -- `if c { v = 1 }`,
 `switch a { case 1: v = 2 }` -- where gofmt breaks it onto lines of its own; the run
-cases are gofmt's layout already, so TestFormatMatchesGofmt does not see it.
+cases are gofmt's layout already, so TestFormatMatchesGofmt does not see it. And it
+spaces a binary expression in an if or a switch header's list of values, `if
+(*sp)[2], n = k(3), n + 1; ...`, where gofmt writes `n+1` (2026-09-25; a run case met
+it and was rewritten around it).
 Latent ones, measured and not faults today: a store through a chain, `r.m[a()][b()]
 = v()`, leaves its calls to C's operand order, which gcc 14 and flexcc both take left
 to right (only the bare `name[i] = v` path binds them); and a value's call does not

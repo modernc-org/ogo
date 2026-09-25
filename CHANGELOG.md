@@ -16,6 +16,62 @@ same area is a new entry under **Unreleased**, not an edit to the old one. Amend
 shipped section tells a reader on that version that they have behaviour they do not.
 `git show vX.Y.Z:CHANGELOG.md` is the check.
 
+## Unreleased
+
+### Language
+
+- **A list assigns through a written dereference.** `(*s)[i], (*s)[j] = (*s)[j],
+  (*s)[i]` -- the Swap of a sort.Interface on a defined slice type, whose methods
+  take a pointer here -- was refused as a form nothing lowered, and so was every
+  list with a target written through a dereference, `(*p).x` or `(*p)`, first or
+  later: in a statement, a for clause's list, an if or a switch init's list and a
+  select's comma-ok flag. Each assigns as Go assigns: as Go's own shorthand where
+  there is one -- `(*p).x` is `p.x`, `(*pa)[i]` is `pa[i]`, `(*p)` is `*p` -- and
+  otherwise through what the pointer points at, read before the first store, as Go
+  evaluates an index's operand: `*st, (*st)[0] = u, 40` writes 40 into the OLD
+  backing array, as in Go.
+- **A parenthesised name is a target.** `(x) = 5`, `(x), s = 5, "b"`, `s, (x) =
+  "q", 7` and `(x)++` were refused, and so was a dereference in nested
+  parentheses, `((*px)), s = 9, "f"`.
+
+### Fixed
+
+- **A list with a target in parentheses, or behind a star, pairs each value with
+  its own target.** After such a target every value went to the target before its
+  own: `(*px), s = 5, "b"` and `*px, s = 5, "b"` were refused as "cannot use 5 of
+  type int as type string", and `(*px), s = "b", 5` was taken.
+- **A reference read out of a holder is judged by the local it points into.**
+  `q.p = xs[0]` in an if, `q.p = h.p` and `for _, q.p = range ls`, with q declared
+  beside the local x the reference points into, were refused as x not outliving
+  its block: the reference named no referent, which the block rule takes for
+  storage of the block being emitted.
+
+### Behaviour changes
+
+- **Every place a program stores asks every lifetime rule.** The rules a store
+  asks -- into a package variable, past the block of what it reaches, into an
+  element of a slice not provably this function's, through a pointer or a call's
+  result -- were asked by each place on its own, and each asked a subset. Each rule
+  a place missed left a local's address in a package variable, in silence: a
+  list's element, `t[0], n = &x, 1` for `t := gs`; a for clause's store through a
+  pointer or a slice, `for ...; p.p = &x`; a place a list fixes ahead, `p, p.p =
+  &n, &x` for `p := &gq`; a range clause's value through a pointer; and a target
+  written through a dereference, `(*p).p = &x`, `(*s)[0] = &x`, `(*pp) = &x`,
+  which asked nothing at all where the shorthands were refused. A dereference is
+  judged by the place its pointer is known to hold, `p := &n`, and refused when
+  there is none.
+- **A store through a pointer known to point at a local marks that local.** `p :=
+  &n; p.p = &x; g = n.p` is refused, as `n.p = &x; g = n.p` always was: the mark
+  went to p alone, and the reference was read out of n unmarked.
+- **A callee storing through a written dereference, or into a parenthesised name,
+  keeps what it stores.** `func put(q *Q, v *int) { (*q).p = v }` and `func keep(p
+  *int) { (g) = p }`, and a read of `(*q).p`, were summarised as keeping nothing,
+  so `put(&gq, &x)` left x's address in gq. They are refused as `q.p = v` and `g =
+  p` are.
+- **A target in parentheses is asked what it stores**, and so is a later one behind
+  a star. `(*px) = "b"`, `s, (*px) = "q", "c"` and `s, *px = "q", "c"` put a string
+  into an int as far as the C compiler; `(&x) = 3` is refused in Go's words.
+
 ## v0.43.0
 
 ### Language
