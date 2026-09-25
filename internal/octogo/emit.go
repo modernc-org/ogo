@@ -11378,11 +11378,45 @@ func (e *emitter) collectFuncCross(fi funcInfo) {
 		})
 		return out
 	}
-	var derivedCall func(v []int32, flag leak, slot int)
+	// callsOfExpr resolves one call to its callees and arguments: a declared
+	// function's, a function value's -- every function it may be -- a METHOD's, and
+	// every implementation of an INTERFACE's method. Only the first two were asked,
+	// so `gs = gc.pass(v)` kept what the method handed back in silence.
+	type valueCallT struct {
+		callees []string
+		args    []Node
+	}
+	callsOfExpr := func(c []int32) (out []valueCallT) {
+		if callee, args, ok := e.valueCall(c); ok {
+			return []valueCallT{{[]string{callee}, args}}
+		}
+		if cs, args, ok := valueCallees(c); ok {
+			return []valueCallT{{cs, args}}
+		}
+		recv, suffix, ok := e.shapeCall(c)
+		if !ok || len(suffix) < 2 || suffix[len(suffix)-1].sym != CallSuffix || suffix[len(suffix)-2].sym != Selector {
+			return nil
+		}
+		if m, isM := e.methodCallOf(recv, suffix, fi); isM {
+			return []valueCallT{{[]string{m.callee}, m.args}}
+		}
+		for _, m := range e.ifaceMethodCallsOf(recv, suffix, fi) {
+			out = append(out, valueCallT{[]string{m.callee}, m.args})
+		}
+		return out
+	}
+	// resultCalls is every call whose result a value may carry: in its own shape
+	// (callExprsIn) and by way of the names it reaches (heldCalls).
+	resultCalls := func(v []int32) (out []valueCallT) {
+		for _, c := range append(e.callExprsIn(v), heldCalls(v)...) {
+			out = append(out, callsOfExpr(c)...)
+		}
+		return out
+	}
+	var derivedCall func(callees []string, args []Node, flag leak, slot int)
 	derived := func(v []int32, flag leak, slot int) {
-		derivedCall(v, flag, slot)
-		for _, c := range heldCalls(v) {
-			derivedCall(c, flag, slot)
+		for _, c := range resultCalls(v) {
+			derivedCall(c.callees, c.args, flag, slot)
 		}
 	}
 	// viaEdges is an argument that is a CALL's result, `keep(pass(v))` or
@@ -11394,20 +11428,9 @@ func (e *emitter) collectFuncCross(fi funcInfo) {
 			if len(via) > 8 {
 				return // a nest of calls this deep is not written; a cycle through holds may be
 			}
-			inner := heldCalls(a)
-			if _, suffix, isCall := e.shapeCall(a); isCall && len(suffix) != 0 && suffix[len(suffix)-1].sym == CallSuffix {
-				inner = append(inner, a)
-			}
-			for _, c := range inner {
-				var callees []string
-				args := []Node(nil)
-				if callee, cargs, ok := e.valueCall(c); ok {
-					callees, args = []string{callee}, cargs
-				} else if cs, cargs, ok := valueCallees(c); ok {
-					callees, args = cs, cargs
-				}
-				for _, callee := range callees {
-					for jj, ia := range args {
+			for _, c := range resultCalls(a) {
+				for _, callee := range c.callees {
+					for jj, ia := range c.args {
 						gates := append(slices.Clone(via), viaGate{callee, jj})
 						r := reachOf(e.summaryReach(ia.ast))
 						for _, i := range r.vals {
@@ -11428,15 +11451,7 @@ func (e *emitter) collectFuncCross(fi funcInfo) {
 		walk(a, nil)
 		return out
 	}
-	derivedCall = func(v []int32, flag leak, slot int) {
-		callee, args, isCall := e.valueCall(v)
-		callees := []string{callee}
-		if !isCall {
-			// `g = f(v)` through a function value: each function it may be.
-			if callees, args, isCall = valueCallees(v); !isCall {
-				return
-			}
-		}
+	derivedCall = func(callees []string, args []Node, flag leak, slot int) {
 		for _, callee := range callees {
 			for j, a := range args {
 				r := reachOf(e.summaryReach(a.ast))
@@ -11564,13 +11579,9 @@ func (e *emitter) collectFuncCross(fi funcInfo) {
 				if r.recvVal {
 					e.retRecv[cname] = true
 				}
-				for _, c := range heldCalls(v) {
-					if callee, args, ok := e.valueCall(c); ok {
-						heldRets = append(heldRets, stmtCall{callee: callee, args: args})
-					} else if callees, args, ok := valueCallees(c); ok {
-						for _, callee := range callees {
-							heldRets = append(heldRets, stmtCall{callee: callee, args: args})
-						}
+				for _, c := range resultCalls(v) {
+					for _, callee := range c.callees {
+						heldRets = append(heldRets, stmtCall{callee: callee, args: c.args})
 					}
 				}
 			}
@@ -13070,6 +13081,61 @@ func (e *emitter) summaryLitReach(lit Node) (out []held) {
 	return out
 }
 
+// callExprsIn finds, by shape, the calls whose RESULT a value may carry: the value
+// itself where it is a call, and a call standing as a composite literal's element,
+// an appended value, a conversion's operand or a sliced base -- `B{pass(v)}`,
+// `append(xs, pass(v))`, `Ints(pass(v))`, `pass(v)[1:]`. The summaries followed a
+// call only where it was the whole value, so each of those kept what the call
+// handed back in silence. A call an operand only reads, `len(pass(v))` or
+// `back[:f(v)]`, carries nothing and is left out.
+func (e *emitter) callExprsIn(v []int32) (out [][]int32) {
+	v = e.unparenExpr(v)
+	if lit, isLit := e.summaryLit(v); isLit {
+		return e.litCallExprs(lit)
+	}
+	if args, _, isAppend := e.appendCallArgs(v); isAppend {
+		for _, a := range args {
+			out = append(out, e.callExprsIn(a.ast)...)
+		}
+		return out
+	}
+	if recv, suffix, ok := e.shapeCall(v); ok && len(suffix) != 0 && suffix[len(suffix)-1].sym == CallSuffix {
+		if e.convToSliceType(recv, suffix) || e.convToIfaceType(recv, suffix) {
+			if args := e.callArgExprs(suffix[len(suffix)-1].ast); len(args) == 1 {
+				return e.callExprsIn(args[0].ast)
+			}
+			return nil
+		}
+		return [][]int32{v}
+	}
+	// `pass(v)[1:]`: the base of a slice step is what the slice views.
+	if kids, ok := e.soleFactor(v); ok && len(kids) == 2 && kids[0].sym == 0 && e.f.ch(kids[0].tok) == IDENT && kids[1].sym == FactorSuffix {
+		steps := slices.Collect(it(kids[1].ast))
+		if n := len(steps); n >= 2 && steps[n-1].sym == Index && steps[n-2].sym == CallSuffix {
+			if _, _, _, isSlice := e.sliceParts(steps[n-1].ast); isSlice {
+				var suffix []int32
+				for _, st := range steps[:n-1] {
+					suffix = append(suffix, encodeNode(st.sym, st.ast)...)
+				}
+				return [][]int32{encodeNode(Factor, []int32{kids[0].tok}, encodeNode(FactorSuffix, suffix))}
+			}
+		}
+	}
+	return nil
+}
+
+// litCallExprs is callExprsIn over a composite literal's values, nested ones too.
+func (e *emitter) litCallExprs(lit Node) (out [][]int32) {
+	for _, el := range compositeLitElements(lit) {
+		if el.value.sym == CompositeLit {
+			out = append(out, e.litCallExprs(el.value)...)
+			continue
+		}
+		out = append(out, e.callExprsIn(el.value.ast)...)
+	}
+	return out
+}
+
 // summaryHolds maps each name a body binds to what its value may reach, and how
 // (summaryReach): `w := v`, `var w = B{v}`, `w = v[1:]`, a list of them, a for
 // clause's, a store INTO a name's own storage, `b.xs = v`, `arr[0] = v`, which makes
@@ -13102,9 +13168,9 @@ func (e *emitter) summaryHolds(body []int32) map[string][]held {
 			// a sink reading x follows to it (heldCalls). The summaries followed a
 			// call only where a sink stood over it, so `x := id(v); gs = x` kept
 			// the caller's slice in a package variable with nothing recorded.
-			if _, suffix, isCall := e.shapeCall(v); isCall && len(suffix) != 0 && suffix[len(suffix)-1].sym == CallSuffix {
+			for _, c := range e.callExprsIn(v) {
 				key := fmt.Sprintf("call@%d", len(e.heldCallValues))
-				e.heldCallValues[key] = v
+				e.heldCallValues[key] = c
 				hs = append(hs, held{key, heldAlias})
 			}
 			if i < len(into) && into[i] {

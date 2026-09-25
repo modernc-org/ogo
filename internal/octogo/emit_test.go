@@ -11427,6 +11427,10 @@ func TestEmitCSummaryThroughLocals(t *testing.T) {
 	xs []int
 }
 
+type Ints []int
+
+type Passer interface{ PassI(v []int) []int }
+
 type C struct {
 	d []int
 }
@@ -11507,6 +11511,23 @@ var back [4]int
 		{"func keep(v []int) { f := pass; work(f(v)) }", true},
 		{"func keep(v []int) { gc.set(fresh(v)) }", false},
 		{"func keep(v []int) { gn = len(pass(v)) }", false},
+		// A call's result carried in another value's shape -- a literal's element, an
+		// appended one, a conversion's operand, a sliced base -- and a METHOD's or an
+		// INTERFACE method's result, which the summaries followed only as a whole
+		// value of a function's call (2026-09-25).
+		{"func keep(v []int) { gb = B{pass(v)} }", true},
+		{"func keep(v []int) { b := B{pass(v)}; gb = b }", true},
+		{"func keep(v []int) { gbs[0] = B{xs: pass(v)} }", true},
+		{"func keep(v []int) { gs = append(gs, pass(v)...) }", true},
+		{"func keep(v []int) { gs = Ints(pass(v)) }", true},
+		{"func keep(v []int) { gs = pass(v)[1:] }", true},
+		{"func keep(v []int) { ch <- pass(v)[1:] }", true},
+		{"func keep(v []int) { gs = gc.passM(v) }", true},
+		{"func keep(v []int) { w := gc.passM(v); gs = w }", true},
+		{"func keep(v []int) { work(gc.passM(v)) }", true},
+		{"func keep(v []int) { var p Passer = &gc; gs = p.PassI(v) }", true},
+		{"func keep(v []int) { gn = len(gc.passM(v)) }", false},
+		{"func keep(v []int) { gs = back[:len(pass(v))] }", false},
 		// Only an int leaves the callee.
 		{"func keep(v []int) { n := len(v); gn = n }", false},
 		{"func keep(v []int) { x := v[0]; gn = x }", false},
@@ -11526,6 +11547,10 @@ func pair(v []int) ([]int, int) { return v, 1 }
 func fresh(v []int) []int { return back[:] }
 
 func (c *C) set(v []int) { c.d = v }
+
+func (c *C) passM(v []int) []int { return v }
+
+func (c *C) PassI(v []int) []int { return v }
 
 func run() {
 	var a [4]int
