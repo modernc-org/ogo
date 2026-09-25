@@ -38,6 +38,10 @@ shipped section tells a reader on that version that they have behaviour they do 
 
 ### Fixed
 
+- **A range operand, a method value's receiver and a call's result may be written
+  in parentheses.** `range (arr)` was "it has no storage to name", `f :=
+  (&c).inc` "cannot infer a type", and `(pc()).inc()` as a statement
+  "unsupported call target".
 - **A select clause sends to a channel in parentheses.** `case (ch) <- v:` was
   refused as "a select clause needs a channel operand".
 - **A conversion to a type named in parentheses is a conversion.** `(int)(f)`,
