@@ -5686,7 +5686,7 @@ func (f *File) suffixedTargetKind(s *Scope, head, postfix Node) (Kind, bool) {
 	}
 	var steps []Node
 	for c := range it(postfix.ast) {
-		if c.sym == Selector || c.sym == Index {
+		if c.sym == Selector || c.sym == Index || c.sym == CallSuffix {
 			steps = append(steps, c)
 		}
 	}
@@ -6183,7 +6183,7 @@ func (f *File) checkRecvIntoTarget(s *Scope, head, postfixComm, v Node) {
 	}
 	var steps []Node
 	for c := range it(postfixComm.ast) {
-		if c.sym == Selector || c.sym == Index {
+		if c.sym == Selector || c.sym == Index || c.sym == CallSuffix {
 			steps = append(steps, c)
 		}
 	}
@@ -13464,6 +13464,13 @@ func (f *File) targetOperand(s *Scope, head, postfix Node, suffixed bool) (k Kin
 	}
 	d, isVar := s.find(id.Src()).(*VarDeclaration)
 	if !isVar {
+		// `geth().s++`: a target through a call's result, walked from the result's
+		// type (targetTypeNode).
+		if suffixed {
+			if k, ok := f.suffixedTargetKind(s, head, postfix); ok {
+				return k, true, "", false
+			}
+		}
 		return 0, false, "", false
 	}
 	if !suffixed {
@@ -13705,7 +13712,7 @@ func (f *File) checkFieldAssign(s *Scope, head, field Token, rhsNode Node) {
 func (f *File) checkWalkedTargets(s *Scope, head, postfix Node, rhs []Node, lhsItems int) {
 	var steps []Node
 	for c := range it(postfix.ast) {
-		if c.sym == Selector || c.sym == Index {
+		if c.sym == Selector || c.sym == Index || c.sym == CallSuffix {
 			steps = append(steps, c)
 		}
 	}
@@ -13735,7 +13742,7 @@ func (f *File) checkWalkedTargets(s *Scope, head, postfix Node, rhs []Node, lhsI
 				switch c.sym {
 				case AssignHead:
 					ah = c
-				case Selector, Index:
+				case Selector, Index, CallSuffix:
 					isteps = append(isteps, c)
 				}
 			}
@@ -13899,6 +13906,11 @@ func (f *File) checkParenTarget(s *Scope, ah Node, steps []Node, value Node) {
 			f.checkFieldAssign(s, id, field, value) // `(p).x`, `(*p).x`, `(&v).x`: `p.x`, `v.x`
 			return
 		}
+	case op == 0 && len(steps) == 1 && steps[0].sym == Index:
+		// `(a)[i]` is `a[i]`, asked what an element is -- `(str)[0] = "x"` was
+		// taken, a string's byte being no place and the walk not knowing it.
+		f.checkIndexAssign(s, id, value)
+		return
 	}
 	if tn, in := f.targetTypeNode(s, id, steps, 0); tn != nil {
 		f.checkStoreInto(s, in, tn, value, "assignment")
@@ -13980,18 +13992,34 @@ func (f *File) targetHead(ah Node) (base Token, stars int, ok bool) {
 // a type another package declares, a variable whose type its initializer does not
 // write -- and the scope the answer's names are resolved in.
 func (f *File) targetTypeNode(s *Scope, base Token, steps []Node, stars int) (TypeNode, *Scope) {
-	d, ok := s.find(base.Src()).(*VarDeclaration)
-	if !ok {
-		return nil, nil
-	}
-	t, ok := f.varTypeAt(d)
-	if !ok {
-		// `p := &x` writes no type, and is recorded as a pointer to x's type by NAME
-		// (inferVarFrom), which is where the walk starts from.
-		if !d.isPtr || !d.typeName.IsValid() || d.typeQual.IsValid() || d.declScope == nil {
+	var t typeAt
+	switch d := s.find(base.Src()).(type) {
+	case *VarDeclaration:
+		var ok bool
+		if t, ok = f.varTypeAt(d); !ok {
+			// `p := &x` writes no type, and is recorded as a pointer to x's type by
+			// NAME (inferVarFrom), which is where the walk starts from.
+			if !d.isPtr || !d.typeName.IsValid() || d.typeQual.IsValid() || d.declScope == nil {
+				return nil, nil
+			}
+			t = typeAt{tn: &TypeNodePointer{TypeNode: &TypeNodeIdent{Name: d.typeName}}, s: d.declScope}
+		}
+	case *FuncDeclaration:
+		// `geth().s = v`: a target through a call's result starts from the result's
+		// type, resolved where the function is declared (callChainWalk). The walk
+		// took no call, and `geth().s = 5` put an int into a string field as far as
+		// the C compiler.
+		if len(steps) == 0 || steps[0].sym != CallSuffix || d.FuncDecl == nil || d.FuncDecl.Type == nil {
 			return nil, nil
 		}
-		t = typeAt{tn: &TypeNodePointer{TypeNode: &TypeNodeIdent{Name: d.typeName}}, s: d.declScope}
+		wf := f.fileOfToken(d.Token())
+		results := wf.flattenResults(wf.Scope, d.FuncDecl.Type.Signature)
+		if len(results) != 1 || results[0].typeNode == nil {
+			return nil, nil
+		}
+		t, steps = typeAt{tn: results[0].typeNode, s: wf.Scope}, steps[1:]
+	default:
+		return nil, nil
 	}
 	tn, in := t.tn, t.s
 	for _, c := range steps {
@@ -14249,7 +14277,20 @@ func (f *File) checkIndexAssign(s *Scope, base Token, rhsNode Node) {
 		f.err(base.Position(), "invalid operation: cannot index %s: it is %s", base.Src(), what)
 		return
 	}
-	if d.hasElemKind && !d.isPtr {
+	if d.isPtr {
+		// `pa[i] = v` for a pointer to an array abbreviates `(*pa)[i]`: the element
+		// of what pa points at, which nothing asked -- `pa[1] = 5` for a *[2]string
+		// went to the C compiler.
+		if t, ok := f.varTypeAt(d); ok {
+			if p, isPtr := t.tn.(*TypeNodePointer); isPtr {
+				if tn := f.indexedTypeNode(t.s, p.TypeNode); tn != nil {
+					f.checkStoreInto(s, t.s, tn, rhsNode, "assignment")
+				}
+			}
+		}
+		return
+	}
+	if d.hasElemKind {
 		f.checkElemAssignType(s, d.elemKind, rhsNode)
 	}
 	var elemTN TypeNode
@@ -22563,12 +22604,40 @@ func (f *File) varTypeAt(d *VarDeclaration) (typeAt, bool) {
 		if t, ok := wf.litOrConvType(d.declScope, d.init); ok {
 			return t, true
 		}
+		// `pa := &a`: a pointer to what a is, whatever a's type is written as -- the
+		// NAME inferVarFrom records is none for `var a [2]string`, and `(*pa)[0] =
+		// 5` was asked nothing.
+		if x, ok := wf.addrOfName(d.init); ok {
+			if xd, isVar := d.declScope.find(x.Src()).(*VarDeclaration); isVar && xd != d {
+				if t, ok := wf.varTypeAt(xd); ok {
+					return typeAt{&TypeNodePointer{TypeNode: t.tn}, t.s, t.f}, true
+				}
+			}
+		}
 		// A SLICE literal too, `hs := []H{...}`: the rules walking a variable's type
 		// (targetTypeNode and those beside it) asked nothing of one, and
 		// `hs[0].get().data[1:]` went through where Go refuses it.
 		return wf.sliceLitType(d.declScope, d.init)
 	}
 	return typeAt{}, false
+}
+
+// addrOfName matches `&x` for a bare name x, through any single-operand levels
+// and parentheses around either.
+func (f *File) addrOfName(n Node) (Token, bool) {
+	for n.sym == Expression || n.sym == SimpleExpr || n.sym == Term {
+		kids := slices.Collect(it(n.ast))
+		if len(kids) != 1 {
+			return Token{}, false
+		}
+		n = kids[0]
+	}
+	if n.sym != UnaryExpr {
+		return Token{}, false
+	}
+	e := Node{sym: Expression, ast: encodeNode(UnaryExpr, n.ast)}
+	id, op, ok := f.parenOperandName(e)
+	return id, ok && op == AND
 }
 
 // sliceLitType is the type a SLICE literal writes, `[]string{"a"}`, which

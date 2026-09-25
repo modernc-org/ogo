@@ -1,0 +1,66 @@
+// A target is asked what it stores however it is reached: through a call's
+// result, through a pointer taken of a variable -- `pa := &a`, which records no
+// type a name gives -- and written in parentheses. Each was asked nothing, and put
+// an int into a string as far as the C compiler.
+
+type In struct{ v int }
+
+type H struct {
+	n   int
+	s   string
+	arr [3]int
+	in  In
+}
+
+var gh H
+
+var garr [2]int
+
+var gsl = []int{1, 2}
+
+func geth() *H { return &gh }
+
+func getarr() *[2]int { return &garr }
+
+func gets() []int { return gsl }
+
+func main() {
+	var a [2]string
+	ss := []string{"a"}
+	str := "abc"
+	pa := &a
+	ps := &ss
+	// ERROR "cannot use 5 of type int as type string"
+	geth().s = 5
+	// ERROR "cannot use .x. of type string as type int"
+	geth().arr[1] = "x"
+	// ERROR "cannot use .x. of type string as type int"
+	geth().in.v = "x"
+	// ERROR "cannot use .x. of type string as type int"
+	getarr()[0] = "x"
+	// ERROR "cannot use .x. of type string as type int"
+	gets()[1] = "x"
+	// ERROR "non-numeric type string"
+	geth().s++
+	// ERROR "cannot use 2 of type int as type string"
+	geth().n, geth().s = 1, 2
+	// ERROR "cannot use 5 of type int as type string"
+	(*pa)[0] = 5
+	// ERROR "cannot use 5 of type int as type string"
+	pa[1] = 5
+	// ERROR "cannot use 5 of type int as type string"
+	(*ps)[0] = 5
+	// ERROR "cannot index str"
+	(str)[0] = 'x'
+	// The same targets, given what they take.
+	geth().s = "y"
+	geth().arr[1] = 3
+	geth().n++
+	getarr()[0] = 4
+	gets()[1] = 9
+	(*pa)[0] = "z"
+	pa[1] = "w"
+	(*ps)[0] = "v"
+	(a)[1] = "u"
+	_, _, _, _, _ = a, ss, str, pa, ps
+}
