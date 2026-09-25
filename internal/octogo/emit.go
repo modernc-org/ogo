@@ -788,6 +788,25 @@ const intPrintHelper = "static void ogo_print_int(long long v, int sgn, int base
 	"\twhile (n) putchar(d[--n]);\n" +
 	"\tif (fl & 1) for (int i = 0; i < pad; i++) putchar(' ');\n}\n"
 
+// unicodePrintHelper is %U under a width or a precision, as fmt's fmtUnicode lays it
+// out: "U+" and the code point in upper-case hex, at least four digits or as many as
+// a precision above four asks for, the whole padded with SPACES to the width on the
+// side '-' says -- fmt turns '0' off here, and '+' and ' ' mean nothing. v is the
+// value as a long long, reinterpreted as unsigned, so a negative one is what fmt
+// prints of it, U+FFFFFFFFFFFFFFFF for -1.
+const unicodePrintHelper = "static void ogo_print_unicode(long long v, int wid, int prec, int left) {\n" +
+	"\tunsigned long long u = (unsigned long long)v;\n" +
+	"\tchar d[16]; int n = 0;\n" +
+	"\tdo { d[n++] = \"0123456789ABCDEF\"[u & 15]; u >>= 4; } while (u);\n" +
+	"\tint z = (prec > 4 ? prec : 4) - n;\n" +
+	"\tif (z < 0) z = 0;\n" +
+	"\tint pad = wid - (2 + z + n);\n" +
+	"\tif (!left) for (int i = 0; i < pad; i++) putchar(' ');\n" +
+	"\tputchar('U'); putchar('+');\n" +
+	"\tfor (int i = 0; i < z; i++) putchar('0');\n" +
+	"\twhile (n) putchar(d[--n]);\n" +
+	"\tif (left) for (int i = 0; i < pad; i++) putchar(' ');\n}\n"
+
 // bytesPrintHelpers are the verbs a protocol logger reaches for over raw bytes: the
 // hex dump %x and %X write of a string or a byte slice, and the quoted form %q
 // writes of either.
@@ -5377,6 +5396,10 @@ func emitProgram(pkg *Package, w io.Writer, opts []EmitOption, rename map[string
 		out.WriteString(intPrintHelper)
 		out.WriteByte('\n')
 	}
+	if e.usesUnicodePrint {
+		out.WriteString(unicodePrintHelper)
+		out.WriteByte('\n')
+	}
 	if e.usesRuneQuote {
 		out.WriteString(runeQuoteHelper)
 	}
@@ -6054,6 +6077,7 @@ type emitter struct {
 	usesBytesPrint     bool                    // ogo_print_hex_bytes / ogo_print_qbytes are called: %x, %X or %q over a string or a byte slice
 	usesRuneQuote      bool                    // ogo_print_qrune is called: %q of an integer
 	usesQuoteFmt       bool                    // %q under a flag, a width or a precision: emit quoteFmtHelpers
+	usesUnicodePrint   bool                    // %U under a width or a precision: emit unicodePrintHelper
 	userTypeNames      map[string]string       // C name -> source name of every type the program DECLARES, in any package (see typeNameForT)
 	usesIfaceNil       bool                    // ogo_iface_vt (nil-interface call guard) is called
 	usesNonzero64      bool                    // ogo_nonzero64 (64-bit divisor guard) is called
@@ -33458,7 +33482,11 @@ func (e *emitter) emitPrintfVerb(item printfItem, idx int, arg Node) bool {
 	// prefix as fmt does, so there the flag is taken -- and so it is on the hex dump
 	// of a string or a byte slice, which ogo_print_hex_fmt lays out.
 	hexDump := (verb == 'x' || verb == 'X') && (ct == cString || e.isByteSliceCType(ct))
-	if item.hasFlag('#') && !hexDump && verb != 'q' && !(strings.IndexByte("dxXoOb", verb) >= 0 && e.intsToPrint(idx, arg, ct)) {
+	// fmt gives '#' no meaning under %s, %c and %t, so it is taken and changes
+	// nothing -- it was refused. %#U stays refused: it writes the character only
+	// where strconv.IsPrint says it is printable, a table this target has no room
+	// for (the limit %q documents).
+	if item.hasFlag('#') && !hexDump && verb != 'q' && strings.IndexByte("sct", verb) < 0 && !(strings.IndexByte("dxXoOb", verb) >= 0 && e.intsToPrint(idx, arg, ct)) {
 		e.failAt(arg.ast, "printf: the '#' flag is not supported on %%%s%c yet; "+
 			"it is on the integer verbs %%x, %%X, %%o and %%b", spec, verb)
 		return false
@@ -33847,7 +33875,25 @@ func (e *emitter) emitScalarVerb(item printfItem, ct string, value func(), wrong
 			return wrong("an integer")
 		}
 		if spec != "" {
-			return noSpec("%U writes its own form here")
+			w, _ := item.width()
+			p, hasP := item.precision()
+			if !hasP {
+				p = -1
+			}
+			e.usesUnicodePrint = true
+			e.ind()
+			// A 64-bit value is handed over as it is, the parameter's type
+			// converting it, as emitIntVerb hands one over.
+			if cIntWidths[e.underlyingCType(ct)] == 64 {
+				e.emit("ogo_print_unicode(")
+				value()
+			} else {
+				e.emit("ogo_print_unicode((long long)(")
+				value()
+				e.emit(")")
+			}
+			e.emit(fmt.Sprintf(", %d, %d, %d);\n", w, p, boolToInt(item.leftAlign())))
+			return true
 		}
 		e.ind()
 		e.emit("printf(\"U+%04llX\", (unsigned long long)(")

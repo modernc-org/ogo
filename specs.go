@@ -2067,8 +2067,8 @@
 // string does. %q takes fmt's too: a precision cuts the string to that many runes
 // before it is quoted, '+' writes every rune past ASCII as \u or \U, '#' backquotes
 // a string strconv.CanBackquote would, and the width pads the quoted text; a rune
-// takes '+' and the width. %U takes no flag, width or precision yet, and says so
-// where it is written.
+// takes '+' and the width. %U takes a width and a precision, the least number of
+// hex digits, and pads with spaces as fmt does whatever '0' says.
 //
 // A verb may carry fmt's flags, width and precision — "%6.2f", "%-8s", "%+05d",
 // "%.3s" — which mean what they mean in fmt. For a string that is a count of RUNES,
@@ -2088,10 +2088,12 @@
 //
 // "#" writes fmt's prefix on the integer verbs, "0x", "0X", "0b" and the leading
 // zero of an octal number, after any zeros "0" pads with, as fmt places it:
-// "%#08x" of 255 is "0x000000ff"; and on the hex dump and %q, as above. It is
-// refused on the other verbs, whose alternate forms are not written yet -- the
-// backend's printf ignores the flag, and a program that compiles here is meant to
-// mean what it means in Go rather than approximately that.
+// "%#08x" of 255 is "0x000000ff"; and on the hex dump and %q, as above. Under %s,
+// %c and %t it means nothing, as in fmt. It is refused on the other verbs, whose
+// alternate forms are not written yet -- the backend's printf ignores the flag, and
+// a program that compiles here is meant to mean what it means in Go rather than
+// approximately that. %#U is one: it writes the character only where
+// strconv.IsPrint says it is printable, a table this target has no room for.
 //
 // %v takes a flag, a width and a precision as fmt does, laid out as the type's
 // default verb -- %d, %g, %s or %t, element by element for a slice or an array --

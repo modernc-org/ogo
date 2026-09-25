@@ -5699,9 +5699,9 @@ func TestEmitCPrintfRefusals(t *testing.T) {
 			want: "printf: the '#' flag is not supported on %#g yet",
 		},
 		{
-			name: "the # flag on a string",
-			src:  "func main() {\n\tprintf(\"%#s\\n\", \"ab\")\n}\n",
-			want: "printf: the '#' flag is not supported on %#s yet",
+			name: "the # flag on %v of a string",
+			src:  "func main() {\n\tprintf(\"%#v\\n\", \"ab\")\n}\n",
+			want: "printf: the '#' flag is not supported on %#v yet",
 		},
 		{
 			// fmt pads each element's String() under a width; this does not yet, and
@@ -5721,9 +5721,11 @@ func main() {
 			want: "printf: %5v does not take a flag, a width or a precision yet (%v of this type is printed without a width here)",
 		},
 		{
-			name: "a width on %U",
-			src:  "func main() {\n\tprintf(\"%8U\\n\", 'x')\n}\n",
-			want: "printf: %8U does not take a flag, a width or a precision yet",
+			// %#U writes the character only where strconv.IsPrint says it is
+			// printable, a table this target has not got.
+			name: "the # flag on %U",
+			src:  "func main() {\n\tprintf(\"%#U\\n\", 'x')\n}\n",
+			want: "printf: the '#' flag is not supported on %#U yet",
 		},
 		{
 			name: "%q of a float",

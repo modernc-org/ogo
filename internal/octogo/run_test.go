@@ -40520,6 +40520,24 @@ func main() {
 }
 `,
 		want: "[ \"h\xc3\xa9llo\"] [\"h\xc3\xa9llo\" |] [0\"h\xc3\xa9llo\"] [\"h\xc3\xa9\"] [\"h\\u00e9llo\"] [`h\xc3\xa9llo`] [\"x`y\"] [\"h\\u00e9l\"]\n[\"h\\xffi\"] [\"h\\xffi\"] [\"h\\xffi\"] [      \"t\xc3\xa9\"] [`a\x09b`    |]\n[   'x'] ['\xc3\xa9'   |] [00'\\n'] ['\\u00e9'] ['\\U0001f600'] ['x'] ['\\ufffd']\n[[     \"a\"      \"\xc3\xa9\"]] [['\\u00e9' 'x']]\n",
+	},
+	{
+		// %U under a width and a precision, as fmt's fmtUnicode lays it out: a
+		// precision above four is the least number of digits, and the width pads
+		// with spaces whatever '0' says. And '#' under %s, %c and %t, where fmt
+		// gives it no meaning. All of it was refused.
+		name: "%U under a width and a precision, and # where it means nothing",
+		src: `var a, b int64 = 5, -6
+
+func main() {
+	for _, v := range [...]int64{'x', 'é', 0x1F600, 0x7f, 0, -1, 0x110000, '\n'} {
+		printf("[%8U] [%-8U|] [%08U] [%.6U] [%8.6U] [%+U] [% U] [%.0U]\n", v, v, v, v, v, v, v, v)
+	}
+	printf("[%10U] [%-9U|] [%.5U]\n", a+b, uint8(200), int8(-1))
+	printf("[%#s] [%#c] [%#t] [%#8s] [%#-4c|] [%#x]\n", "ab", 'é', true, "x", 'y', 5)
+}
+`,
+		want: "[  U+0078] [U+0078  |] [  U+0078] [U+000078] [U+000078] [U+0078] [U+0078] [U+0078]\n[  U+00E9] [U+00E9  |] [  U+00E9] [U+0000E9] [U+0000E9] [U+00E9] [U+00E9] [U+00E9]\n[ U+1F600] [U+1F600 |] [ U+1F600] [U+01F600] [U+01F600] [U+1F600] [U+1F600] [U+1F600]\n[  U+007F] [U+007F  |] [  U+007F] [U+00007F] [U+00007F] [U+007F] [U+007F] [U+007F]\n[  U+0000] [U+0000  |] [  U+0000] [U+000000] [U+000000] [U+0000] [U+0000] [U+0000]\n[U+FFFFFFFFFFFFFFFF] [U+FFFFFFFFFFFFFFFF|] [U+FFFFFFFFFFFFFFFF] [U+FFFFFFFFFFFFFFFF] [U+FFFFFFFFFFFFFFFF] [U+FFFFFFFFFFFFFFFF] [U+FFFFFFFFFFFFFFFF] [U+FFFFFFFFFFFFFFFF]\n[U+110000] [U+110000|] [U+110000] [U+110000] [U+110000] [U+110000] [U+110000] [U+110000]\n[  U+000A] [U+000A  |] [  U+000A] [U+00000A] [U+00000A] [U+000A] [U+000A] [U+000A]\n[U+FFFFFFFFFFFFFFFF] [U+00C8   |] [U+FFFFFFFFFFFFFFFF]\n[ab] [\xc3\xa9] [true] [       x] [y   |] [0x5]\n",
 	}}
 
 // TestEmitCRun compiles emitted C with a host compiler and runs it, checking what
