@@ -2088,12 +2088,15 @@
 //
 // "#" writes fmt's prefix on the integer verbs, "0x", "0X", "0b" and the leading
 // zero of an octal number, after any zeros "0" pads with, as fmt places it:
-// "%#08x" of 255 is "0x000000ff"; and on the hex dump and %q, as above. Under %s,
-// %c and %t it means nothing, as in fmt. It is refused on the other verbs, whose
-// alternate forms are not written yet -- the backend's printf ignores the flag, and
-// a program that compiles here is meant to mean what it means in Go rather than
-// approximately that. %#U is one: it writes the character only where
-// strconv.IsPrint says it is printable, a table this target has no room for.
+// "%#08x" of 255 is "0x000000ff"; and on the hex dump and %q, as above. On the
+// float verbs it keeps the decimal point, "%#.0f" of 2 being "2.", and %g's
+// trailing zeros, "%#g" of 1.5 being "1.50000". Under %s, %c and %t it means
+// nothing, as in fmt. It is refused on the other verbs, whose alternate forms are
+// not written yet -- the backend's printf ignores the flag, and a program that
+// compiles here is meant to mean what it means in Go rather than approximately
+// that. %#U is one: it writes the character only where strconv.IsPrint says it is
+// printable, a table this target has no room for; %#v, Go's syntax for a value,
+// is the other.
 //
 // %v takes a flag, a width and a precision as fmt does, laid out as the type's
 // default verb -- %d, %g, %s or %t, element by element for a slice or an array --

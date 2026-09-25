@@ -1037,6 +1037,11 @@ const runeQuoteHelper = `static void ogo_print_qrune(long long v) {
 // A float64 is a float32 on the target, so its digits are the float32's; the same
 // helper serves the host so that a program prints one text under both. Not a
 // number and the infinities print as NaN, +Inf and -Inf, padded with spaces.
+//
+// sharp is the '#' flag, ported from fmt's fmtFloat: the text keeps a decimal point
+// always, `%#.0f` of 2 being "2." -- and %g and %G keep their trailing zeros, to
+// the precision or six significant digits without one, `%#g` of 1.5 being
+// "1.50000". The infinities and NaN are left as they are.
 const floatFmtHelper = `typedef struct { char d[232]; int nd; int dp; } ogo_dec;
 static void ogo_dec_trim(ogo_dec* a) { while (a->nd > 0 && a->d[a->nd - 1] == '0') { a->nd--; } if (a->nd == 0) { a->dp = 0; } }
 static void ogo_dec_assign(ogo_dec* a, unsigned v) {
@@ -1159,10 +1164,24 @@ static void ogo_fmt_float(char* out, float f, char verb, int prec) {
 	}
 	*o = 0;
 }
-static void ogo_print_float(int width, int left, int plus, int space, int zero, char verb, int prec, double v) {
+static void ogo_print_float(int width, int left, int plus, int space, int zero, int sharp, char verb, int prec, double v) {
 	char b[256], t[258]; const char* s = b; int n, pad, i, special;
 	ogo_fmt_float(b, (float)v, verb, prec);
 	special = b[0] == 'N' || b[1] == 'I';
+	if (sharp && !special) {
+		int digits = (verb == 'g' || verb == 'G') ? (prec < 0 ? 6 : prec) : 0, i0 = b[0] == '-', len = (int)strlen(b), dp = 0, nz = 0, tl = 0;
+		char tail[8];
+		for (i = i0; i < len; i++) {
+			if (b[i] == '.') { dp = 1; continue; }
+			if (b[i] == 'e' || b[i] == 'E') { tl = len - i; memcpy(tail, b + i, tl); len = i; break; }
+			if (b[i] != '0') { nz = 1; }
+			if (nz) { digits--; }
+		}
+		if (!dp) { if (len - i0 == 1 && b[i0] == '0') { digits--; } b[len++] = '.'; }
+		for (; digits > 0; digits--) { b[len++] = '0'; }
+		memcpy(b + len, tail, tl);
+		b[len + tl] = 0;
+	}
 	if (b[0] == '+' && space && !plus) { b[0] = ' '; }
 	if (b[0] != '-' && b[0] != '+' && b[0] != ' ' && (plus || space)) { t[0] = plus ? '+' : ' '; strcpy(t + 1, b); s = t; }
 	n = (int)strlen(s); pad = width - n;
@@ -33133,7 +33152,7 @@ func (e *emitter) printValueC(expr, ct string, methods bool, plus string) (code,
 	case isFloatCType(u):
 		e.usesFloatFmt = true
 		e.includes["string.h"] = true
-		return "ogo_print_float(0, 0, 0, 0, 0, 'g', -1, " + expr + ");", ""
+		return "ogo_print_float(0, 0, 0, 0, 0, 0, 'g', -1, " + expr + ");", ""
 	case e.isIfaceCType(u):
 		if methods {
 			// fmt asks the dynamic value for Error() and String() whether or not the
@@ -33446,7 +33465,7 @@ func (e *emitter) emitFloatVerb(item printfItem, verb byte, value func()) {
 	e.includes["string.h"] = true
 	e.ind()
 	e.emit("ogo_print_float(" + strconv.Itoa(width) + ", " + flag('-') + ", " + flag('+') + ", " + flag(' ') + ", " +
-		flag('0') + ", '" + string(verb) + "', " + strconv.Itoa(prec) + ", ")
+		flag('0') + ", " + flag('#') + ", '" + string(verb) + "', " + strconv.Itoa(prec) + ", ")
 	value()
 	e.emit(");\n")
 }
@@ -33491,7 +33510,7 @@ func (e *emitter) emitPrintfVerb(item printfItem, idx int, arg Node) bool {
 	// nothing -- it was refused. %#U stays refused: it writes the character only
 	// where strconv.IsPrint says it is printable, a table this target has no room
 	// for (the limit %q documents).
-	if item.hasFlag('#') && !hexDump && verb != 'q' && strings.IndexByte("sct", verb) < 0 && !(strings.IndexByte("dxXoOb", verb) >= 0 && e.intsToPrint(idx, arg, ct)) {
+	if item.hasFlag('#') && !hexDump && verb != 'q' && strings.IndexByte("sct", verb) < 0 && !(strings.IndexByte("eEfFgG", verb) >= 0 && isFloatCType(ct)) && !(strings.IndexByte("dxXoOb", verb) >= 0 && e.intsToPrint(idx, arg, ct)) {
 		e.failAt(arg.ast, "printf: the '#' flag is not supported on %%%s%c yet; "+
 			"it is on the integer verbs %%x, %%X, %%o and %%b", spec, verb)
 		return false
@@ -34328,7 +34347,7 @@ func (e *emitter) emitPrintOne(newline bool, idx int, arg Node) {
 		// floatFmtHelper): C's %g would print six significant digits.
 		e.usesFloatFmt = true
 		e.includes["string.h"] = true
-		e.emit("ogo_print_float(0, 0, 0, 0, 0, 'g', -1, ")
+		e.emit("ogo_print_float(0, 0, 0, 0, 0, 0, 'g', -1, ")
 		e.emitReplayArg(idx, arg)
 		e.emit(");\n")
 		if newline {
@@ -34678,7 +34697,7 @@ func sliceElemPrintf(el string) string {
 	case "float", "double":
 		// In Go's shortest form, as println prints a float (see floatFmtHelper, which
 		// the output places ahead of these printers).
-		return `ogo_print_float(0, 0, 0, 0, 0, 'g', -1, s.ptr[_i]);`
+		return `ogo_print_float(0, 0, 0, 0, 0, 0, 'g', -1, s.ptr[_i]);`
 	}
 	return fmt.Sprintf(`printf("%s", s.ptr[_i]);`, scalarPrintVerb(el))
 }

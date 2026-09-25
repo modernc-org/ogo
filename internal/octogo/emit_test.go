@@ -5702,9 +5702,9 @@ func TestEmitCPrintfRefusals(t *testing.T) {
 			// layout of the emitter's own writes it: everywhere but the integer
 			// verbs, which intPrintHelper lays out. doc/printf-flags-ignored.c has
 			// the measurements.
-			name: "the # flag on a float",
-			src:  "func main() {\n\tprintf(\"%#g\\n\", float32(1))\n}\n",
-			want: "printf: the '#' flag is not supported on %#g yet",
+			name: "the # flag on %v of a float",
+			src:  "func main() {\n\tprintf(\"%#v\\n\", float32(1))\n}\n",
+			want: "printf: the '#' flag is not supported on %#v yet",
 		},
 		{
 			name: "the # flag on %v of a string",
