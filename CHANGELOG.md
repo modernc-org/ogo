@@ -38,6 +38,12 @@ shipped section tells a reader on that version that they have behaviour they do 
 
 ### Fixed
 
+- **A range over an array copies it where a parenthesised call or slice writes
+  it.** `s := (a)[:]` before the loop, or `(b).bump()`, `(&c).bump()` or
+  `(bump)(pa)` in its body, wrote the array under the loop, and the loop handed
+  out the write -- 55, 99 or 77 where Go hands out the 3 it copied when the loop
+  began: the scans that decide whether the body may write the array read a slice,
+  a receiver and a callee by name, and one in parentheses was none.
 - **`ogo fmt` spaces an if or a switch header's list of values as gofmt does.** `if
   a, n = k(3), n+1; n > 0` and `switch a, n = n*2, n-1; n` came out as `n + 1` and
   `n * 2, n - 1`: a header's "=" form was spaced as one value, where gofmt spaces a

@@ -1184,8 +1184,10 @@ a list, a clause, an if init and a select -- and a switch's `=` init was no writ
 even unparenthesised, its case having asked for ":=". The summaries next: a callee
 calling `(keep)(v)`, `(dev).onData(v)` or `(c).m()` for a method keeping its
 receiver was summarised as calling nothing -- a direct call, a value, a defer and a
-go alike -- and `f(a[:])` left a local in package storage. A scan reads a head by
-SHAPE through `scanHead`, a Factor through `parenFactorShape` and a call value
+go alike -- and `f(a[:])` left a local in package storage. And the range copy: `s :=
+(a)[:]` or `(b).bump()` wrote an array under a range over it, which handed out the
+write where Go hands out its copy (scanAliasedLocals, stmtMayWriteMemory). A scan
+reads a head by SHAPE through `scanHead`, a Factor through `parenFactorShape` and a call value
 through `shapeCall` (no local has a type yet, so `derefHead` and `parenHeadName`,
 which ask one, answer nothing there). **A new scan reads heads through them, and a
 new shape the emitter reads through parentheses is a row in each scan.**
