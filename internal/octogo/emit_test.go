@@ -11485,6 +11485,19 @@ var back [4]int
 		{"func keep(v []int) { var l B; for i := 0; i < 1; l.xs = v { i++ }; gn = len(l.xs) }", false},
 		{"func keep(v []int) { gs = pass(v) }", true},
 		{"func keep(v []int) { w := v; gs = pass(w) }", true},
+		// A local holding a CALL's result, which the summaries followed only where a
+		// sink stood over the call itself (2026-09-25).
+		{"func keep(v []int) { w := pass(v); gs = w }", true},
+		{"func keep(v []int) { var w = pass(v); gs = w }", true},
+		{"func keep(v []int) { var w []int; w = pass(v); gs = w }", true},
+		{"func keep(v []int) { w := pass(v); x := w; gs = x }", true},
+		{"func keep(v []int) { f := pass; w := f(v); gs = w }", true},
+		{"func keep(v []int) { w, n := pair(v); gs = w; gn = n }", true},
+		{"func keep(v []int) { w := pass(v); ch <- w }", true},
+		{"func keep(v []int) { w := pass(v); go work(w) }", true},
+		{"func keep(v []int) { p := &gc; w := pass(v); p.d = w }", true},
+		{"func keep(v []int) { w := pass(v); gn = len(w) }", false},
+		{"func keep(v []int) { w := pass(v); w[0] = 1 }", false},
 		// Only an int leaves the callee.
 		{"func keep(v []int) { n := len(v); gn = n }", false},
 		{"func keep(v []int) { x := v[0]; gn = x }", false},
@@ -11498,6 +11511,8 @@ var back [4]int
 func work(v []int) { ch <- v }
 
 func pass(v []int) []int { return v }
+
+func pair(v []int) ([]int, int) { return v, 1 }
 
 func (c *C) set(v []int) { c.d = v }
 
@@ -13047,6 +13062,11 @@ func holdGoParen(b *Box) {
 	<-done
 }
 
+func passLocal(xs []int) []int {
+	w := id(xs)
+	return w
+}
+
 type OuterBox struct {
 	Box
 }
@@ -13166,6 +13186,9 @@ func main() {
 		{"var lb Box\n\tback[0] = holdValueParen(&lb)", "cannot pass the address of local variable lb to holdValueParen"},
 		{"var lb Box\n\tholdGoParen(&lb)", "cannot pass the address of local variable lb to holdGoParen"},
 		{"callParen(back[:])\n\tchainParen(back[1:])\n\tidParen(back[2:])\n\tholdParen(&gb)", ""},
+		// A result returned from a local the callee bound to a call's result.
+		{"g = passLocal(a[:])", "cannot store a slice backed by local a in package variable g"},
+		{"back[0] = len(passLocal(a[:]))", ""},
 		// What is read through a pointer to a marked local.
 		{"var lb Box\n\tlb.d = a[:]\n\tp := &lb\n\tgb = *p", "cannot store *p, which holds a pointer into local a"},
 		{"var lb Box\n\tlb.d = a[:]\n\tp := &lb\n\tkeepBox(*p)", "cannot pass *p, which holds a pointer into local a to keepBox"},

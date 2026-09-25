@@ -6341,6 +6341,7 @@ type emitter struct {
 	memberShown        map[string]string       // how a diagnostic names each of those members
 	litLifted          map[string][]string     // a function literal's summary key -> the C names it was lifted to, whose frameCalls are its own
 	typeCallees        []string                // the "type:" callees the summaries have edges to, refreshed by the fixed point (unionSummary)
+	heldCallValues     map[string][]int32      // the call a "call@" name in a function's summary holds stands for (see summaryHolds)
 	methodNames        map[string]bool         // the name of every method of every type, which a selector calling one is known by (scanBindings)
 	bindWrites         map[string]int          // in the function being emitted, how often a name -- or one field of it, funcFieldKey -- is declared or assigned (see boundFunc)
 	bindBlock          map[string]int          // ... the block all those writes are in, or -1 for more than one
@@ -11338,7 +11339,24 @@ func (e *emitter) collectFuncCross(fi funcInfo) {
 	// derived records what a sink does with a CALL's result, for every parameter
 	// the call was passed, by value or by its contents (derivedEdge); the callee's
 	// return summary says later whether the result was that parameter.
+	// heldCalls is every call whose result a value may be by way of the names it
+	// reaches, `x` for `x := id(v)` -- by value, not as contents.
+	heldCalls := func(v []int32) (out [][]int32) {
+		resolve(e.summaryReach(v), func(n string, contents bool) {
+			if !contents && strings.HasPrefix(n, "call@") {
+				out = append(out, e.heldCallValues[n])
+			}
+		})
+		return out
+	}
+	var derivedCall func(v []int32, flag leak, slot int)
 	derived := func(v []int32, flag leak, slot int) {
+		derivedCall(v, flag, slot)
+		for _, c := range heldCalls(v) {
+			derivedCall(c, flag, slot)
+		}
+	}
+	derivedCall = func(v []int32, flag leak, slot int) {
 		callee, args, isCall := e.valueCall(v)
 		callees := []string{callee}
 		if !isCall {
@@ -11462,6 +11480,7 @@ func (e *emitter) collectFuncCross(fi funcInfo) {
 		// A return hands the value back to the caller: which parameter it came
 		// from is what lets the caller follow it to the storage it chose.
 		if len(nodes) != 0 && nodes[0].sym == 0 && e.f.ch(nodes[0].tok) == RETURN {
+			var heldRets []stmtCall // `x := id(p); return x` returns what id(p) does
 			for _, v := range e.returnedExprs(nodes) {
 				r := reachOf(e.summaryReach(v))
 				for _, i := range r.vals {
@@ -11473,11 +11492,20 @@ func (e *emitter) collectFuncCross(fi funcInfo) {
 				if r.recvVal {
 					e.retRecv[cname] = true
 				}
+				for _, c := range heldCalls(v) {
+					if callee, args, ok := e.valueCall(c); ok {
+						heldRets = append(heldRets, stmtCall{callee: callee, args: args})
+					} else if callees, args, ok := valueCallees(c); ok {
+						for _, callee := range callees {
+							heldRets = append(heldRets, stmtCall{callee: callee, args: args})
+						}
+					}
+				}
 			}
 			// `return g(p)`: whatever g hands back of its own parameter, this
 			// function hands back of the parameter it passed there -- and through a
 			// function value, whatever each function it may be hands back.
-			rcalls := e.stmtCalls(nodes)
+			rcalls := append(e.stmtCalls(nodes), heldRets...)
 			for _, c := range e.valueCalls(nodes) {
 				resolve([]held{{c.name, heldAlias}}, func(n string, contents bool) {
 					switch _, isFunc := e.userFunc(n); {
@@ -12967,6 +12995,7 @@ func (e *emitter) summaryLitReach(lit Node) (out []held) {
 // variable with nothing recorded.
 func (e *emitter) summaryHolds(body []int32) map[string][]held {
 	holds := map[string][]held{}
+	e.heldCallValues = map[string][]int32{}
 	put := func(target string, hs []held) {
 		if target != "" && target != "_" {
 			holds[target] = append(holds[target], hs...)
@@ -12982,6 +13011,16 @@ func (e *emitter) summaryHolds(body []int32) map[string][]held {
 				if ct := e.summaryCallResult(v); ct != "" {
 					hs = []held{{"?" + ct, heldAlias}}
 				}
+			}
+			// `x := id(v)`: x holds whatever the call hands back, which the callee's
+			// summary decides -- a name no variable has, standing for the call, that
+			// a sink reading x follows to it (heldCalls). The summaries followed a
+			// call only where a sink stood over it, so `x := id(v); gs = x` kept
+			// the caller's slice in a package variable with nothing recorded.
+			if _, suffix, isCall := e.shapeCall(v); isCall && len(suffix) != 0 && suffix[len(suffix)-1].sym == CallSuffix {
+				key := fmt.Sprintf("call@%d", len(e.heldCallValues))
+				e.heldCallValues[key] = v
+				hs = append(hs, held{key, heldAlias})
 			}
 			if i < len(into) && into[i] {
 				hs = asPart(hs) // `b.xs = v`: the value is a part of b
