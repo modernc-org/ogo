@@ -1,0 +1,32 @@
+// A member a parenthesised value or a named composite literal lacks, at any step:
+// the checker asked only the first step of a parenthesised value and no step of a
+// literal, and the emitter called what it met "not supported yet" -- where the
+// valid form of each works.
+
+type Q struct{ y int }
+
+type P struct {
+	x  int
+	in Q
+}
+
+func (p P) m() Q { return p.in }
+
+var gp = P{1, Q{2}}
+
+func main() {
+	println((&gp).in.y, P{3, Q{4}}.in.y, (&gp).m().y, P{}.m().y)
+
+	// ERROR type P has no field nosuch
+	_ = (&gp).nosuch
+	// ERROR type Q has no field nosuch
+	_ = (&gp).in.nosuch
+	// ERROR type P has no field nosuch
+	_ = P{}.nosuch
+	// ERROR type Q has no field nosuch
+	_ = P{}.in.nosuch
+	// ERROR type Q has no field nosuch
+	_ = (&gp).m().nosuch
+	// ERROR type Q has no field nosuch
+	_ = P{}.m().nosuch
+}

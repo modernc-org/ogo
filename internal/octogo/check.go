@@ -12068,7 +12068,7 @@ type callChain struct {
 // method wrote where nobody reads. A method reached through an embedded POINTER is
 // called on what that pointer points at, which is storage.
 func (f *File) callChainWalk(s *Scope, head Token, steps []Node) (w callChain) {
-	w.sliceAt, w.ptrAt, w.missingAt = -1, -1, -1
+	w = newCallChain()
 	if !slices.ContainsFunc(steps, func(n Node) bool { return n.sym == CallSuffix }) {
 		return w
 	}
@@ -12153,6 +12153,23 @@ func (f *File) callChainWalk(s *Scope, head Token, steps []Node) (w callChain) {
 	default:
 		return w
 	}
+	return f.walkSteps(t, addr, steps, i, len(steps), w)
+}
+
+// walkSteps is callChainWalk's walk from a value of type t, addr saying whether it
+// is storage, over steps[i:]. It records a member the value's type does not have
+// past a call, which only the walk reaches, and from step reportFrom on, which is
+// how a head nothing else checks past its first step -- a parenthesised value, a
+// composite literal -- is checked beyond it.
+func (f *File) walkSteps(t typeAt, addr bool, steps []Node, i, reportFrom int, w callChain) callChain {
+	// one takes a call's results as the value the chain goes on from: exactly one.
+	one := func(results []retResult, ok bool, in *Scope) bool {
+		if !ok || len(results) != 1 || results[0].typeNode == nil {
+			return false
+		}
+		t, addr = typeAt{results[0].typeNode, in, f}, false
+		return true
+	}
 	var sliceElem *typeAt // the value is a slice of these, which a slice step made
 	for ; i < len(steps); i++ {
 		st := steps[i]
@@ -12228,7 +12245,7 @@ func (f *File) callChainWalk(s *Scope, head Token, steps []Node) (w callChain) {
 				// no position and no member; before one, the member of a named value
 				// is checkMethodCall's and checkFieldAccess's to judge.
 				pastCall := slices.ContainsFunc(steps[:i], func(n Node) bool { return n.sym == CallSuffix })
-				if tname, named := unqualifiedTypeName(t.tn); pastCall && named && !f.typeHasMember(t.s, tname, name.Src()) {
+				if tname, named := unqualifiedTypeName(t.tn); (pastCall || i >= reportFrom) && named && !f.typeHasMember(t.s, tname, name.Src()) {
 					w.missingAt, w.missingType = i, tname
 				}
 				return w
@@ -16487,8 +16504,17 @@ func (f *File) checkStepsOn(s *Scope, d *VarDeclaration, base string, steps []No
 func (f *File) checkParenChain(s *Scope, inner Node, steps []Node) {
 	if name, qual, _, ok := f.exprNamedType(s, inner); ok {
 		f.checkStepsOn(s, &VarDeclaration{typeName: name, typeQual: qual}, "("+f.exprSource(inner)+")", steps)
+		// Past the first step, which checkStepsOn answers for, a member the value
+		// lacks -- `(&gp).in.nosuch` -- reached the emitter, which called the form
+		// unsupported where the valid one works.
+		if !qual.IsValid() {
+			f.reportMissingMember(steps, f.walkSteps(typeAt{&TypeNodeIdent{Name: name}, s, f}, false, steps, 0, 1, newCallChain()))
+		}
 	}
 }
+
+// newCallChain is a callChain that has found nothing yet.
+func newCallChain() callChain { return callChain{sliceAt: -1, ptrAt: -1, missingAt: -1} }
 
 // parenInner is the expression a parenthesized head or factor holds, `&v` in `(&v)`.
 func (f *File) parenInner(n Node) (Node, bool) {
@@ -16771,6 +16797,13 @@ func (f *File) checkFactorNames(s *Scope, n Node) {
 		f.checkIndexExprs(s, litSuffix)
 		if argList, later, _, isCall := f.callInfoAll(litSuffix); isCall {
 			f.resolveArgNames(s, append([]Node{argList}, later...))
+		}
+		// A member a NAMED literal's type lacks, `P{}.in.nosuch`, at any step: the
+		// emitter called the form unsupported, and the valid one works. The
+		// literal's type is its name; a bracketed literal's is left to the emitter.
+		if hasID && !hasSuffix {
+			steps := slices.Collect(it(litSuffix.ast))
+			f.reportMissingMember(steps, f.walkSteps(typeAt{&TypeNodeIdent{Name: id}, s, f}, false, steps, 0, 0, newCallChain()))
 		}
 	}
 	// Reading the blank identifier -- as an operand, argument, initializer,
