@@ -166,7 +166,8 @@ shipped section tells a reader on that version that they have behaviour they do 
   for a method of B. Each is refused with Go's message, `cannot use d of type A as
   type B in variable declaration`, `mismatched types A and B`, `type A has no method
   twice`. `var a A = 1` was refused all along; the conversion had no kind and the
-  operation no name, and the rule asks for both.
+  operation no name, and the rule asks for both. A store through a pointer to a
+  defined type asks it too: `*c = v` for a `c *Counter` and an int v is refused.
 - **A method called on a variable of an unnamed type is refused**, as Go refuses it:
   `n.foo()` for `n := 5`, `xs.foo()` for a `[]int`, `a.foo()` for a `[2]int`,
   `s.foo()` for a string, `pn.foo()` for a `*int` and `x.twice()` for `x := arr[:2]`

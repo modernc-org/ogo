@@ -1342,7 +1342,12 @@ positions the value goes into**; the positions had been swept before (FIFTEEN RU
 with WRITTEN variables, and the shapes never. And an `append` into a slice EXPRESSION,
 `append(back[:0], a)`, asked nothing of its element, where `bs := back[:0];
 append(bs, a)` was checked: **a builtin that reads a variable's declaration reads the
-sliced variable's too** (sliceOfVar).
+sliced variable's too** (sliceOfVar). The full suite then failed two EMITTER tests
+whose programs were invalid Go all along -- `return c + 0` of a Counter where an int
+was declared, and `*c = v` of an int through a `*Counter` -- written when the checker
+was lax and never checked since; the second was a gap of its own (checkDerefAssign
+asks the pointee's name now). **When a new refusal fails an old test, ask Go about
+the test's program before doubting the refusal.**
 
 **PRINTING A VALUE IS A ROW** (2026-09-23). `printf("%v", x)` of an ARRAY printed the
 address of its storage wherever x was not a bare name -- a literal, a field, an
