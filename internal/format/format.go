@@ -84,7 +84,13 @@ func SubCommand(args []string, stdin io.Reader, stdout, stderr io.Writer) (rc in
 	for _, p := range paths {
 		err := filepath.WalkDir(p, func(path string, d fs.DirEntry, err error) error {
 			if err != nil {
+				// A path that cannot be read is reported and the walk goes on to the
+				// rest, as gofmt's does -- and the command FAILS: a mistyped argument
+				// formatted nothing and exited 0, which a script cannot tell from
+				// success. rc is never reset, so a file formatted after it cannot
+				// hide it.
 				fmt.Fprintf(stderr, "error accessing path %q: %v\n", path, err)
+				rc = 1
 				return nil
 			}
 			if !d.IsDir() && strings.HasSuffix(path, ".ogo") && (exclude == nil || !exclude.MatchString(path)) {

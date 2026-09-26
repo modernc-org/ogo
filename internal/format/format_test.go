@@ -102,3 +102,35 @@ func TestNoFlagsWritesNothing(t *testing.T) {
 		t.Errorf("the file was rewritten without -w: %q", b)
 	}
 }
+
+// TestMissingPathFails pins the exit status: a path that cannot be read is reported
+// and the command fails, whether it is the only argument or stands beside a file
+// that is formatted. The walk's callback printed the error and returned nil without
+// touching rc, so `ogo fmt missing.ogo` said "error accessing path" and exited 0,
+// which a script cannot tell from success.
+func TestMissingPathFails(t *testing.T) {
+	dir := t.TempDir()
+	missing := filepath.Join(dir, "missing.ogo")
+	var out, errb bytes.Buffer
+	rc, err := SubCommand([]string{missing}, nil, &out, &errb)
+	if err != nil || rc == 0 {
+		t.Errorf("missing path alone: rc=%d err=%v stderr=%q", rc, err, errb.String())
+	}
+	if !strings.Contains(errb.String(), "error accessing path") {
+		t.Errorf("want the traversal error on stderr, got %q", errb.String())
+	}
+	// A valid file after the missing path is still formatted, and the failure stays.
+	path := filepath.Join(dir, "a.ogo")
+	if err := os.WriteFile(path, []byte("func  main( ) {\n}\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	out.Reset()
+	errb.Reset()
+	rc, err = SubCommand([]string{missing, path}, nil, &out, &errb)
+	if err != nil || rc == 0 {
+		t.Errorf("missing path beside a file: rc=%d err=%v stderr=%q", rc, err, errb.String())
+	}
+	if got := out.String(); !strings.Contains(got, "func main()") {
+		t.Errorf("want the valid file formatted on stdout, got %q", got)
+	}
+}
