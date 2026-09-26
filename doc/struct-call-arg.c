@@ -39,6 +39,25 @@
 // struct result was bound already, as an argument (hoistStructCallArg) and as a
 // receiver; a METHOD's result passed on as the next method's receiver,
 // `s.bump(1).show()`, was not until then (chainReceiver).
+//
+// The cause, found 2026-09-26 in spin2cpp's frontend and reported with a tested fix
+// as flexprop#113: a struct that TypeGoesOnStack -- more than 16 bytes, or any
+// member narrower than a word -- is returned as a pointer to a copy (its result type
+// becomes AST_COPYREFTYPE), and CoerceAssignTypes (frontends/types.c), duplicating
+// a by-value argument into temporary memory, sizes the copy by TypeSize of that
+// reference, 4 bytes: `mov arg03, #4` for a 24-byte struct, into a 4-byte temporary.
+// A 5-word struct keeps its first word and reads four neighbours; a 6-word one reads
+// the temporary beside it, which held the previous copy, hence the shift. The same
+// branch serves a return, `return mk6(k)` from a function returning S6, with a 4-byte
+// gc_alloc_managed -- doc/return-nonword-struct.c is that fault. With the one-line
+// fix built natively, every line above but "call field" prints 123456 on the board
+// and the warning is gone; test_offline passes 588 of 588 as before, and of 1169
+// programs (doc/ and a corpus dump) only the two reproducers compile differently.
+// The "call field" line, `sum6(mkh().in)`, is a DIFFERENT fault, not covered: the
+// member's address is taken off a temporary the call's result is never stored into
+// -- a register number used as a hub address, 0 on the board -- and with the member
+// at a non-zero offset the build fails to assemble ("Unknown symbol
+// 'main_tmp007__00'"). The workarounds stay until a regeneration carries the fix.
 
 #include <stdio.h>
 

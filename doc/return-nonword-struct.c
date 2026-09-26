@@ -60,6 +60,17 @@
 // measured and found cosmetic. ogo does NOT cast it quiet: a cast would suppress a
 // diagnostic that has now caught three real defects.
 //
+// The cause (2026-09-26, flexprop#113, the same fault as doc/struct-call-arg.c): a
+// struct that is not all machine words goes on the stack whatever its size, so it is
+// returned as a pointer to a copy, and CoerceAssignTypes (frontends/types.c) sizes
+// the duplicate a `return` of such a call makes by TypeSize of that reference -- a
+// 4-byte gc_alloc_managed and a 4-byte copy, so the int survives and the _Bool
+// beside it is whatever followed. Not a typedef the compiler cannot resolve: the
+// "unknown type" is TypeName having no name for the reference type. With the fix
+// built natively the direct form prints 6 1 on the board, silently. The rows above
+// that return or pass a call's result -- returned directly, passed by value, the
+// value receiver, the thunk -- are this fault; the comparison was not re-measured.
+//
 // To re-measure, compile with the target backend and read the two numbers.
 
 #include <stdio.h>

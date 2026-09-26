@@ -1229,6 +1229,18 @@ next receiver (chainReceiver); the second was missing until a calendar program's
 `t.add(45).print()` panicked on the board and matched Go on the host. **A new place a
 struct-valued call is handed on binds it first** -- and a domain probe is not verified
 until it has run on the board.
+The cause (2026-09-26, flexprop#113, a one-line fix tested natively: test_offline
+588/588, every reproducer line right on a P2-EDGE, 1169 corpus programs unchanged but
+the two reproducers): a struct that TypeGoesOnStack -- over 16 bytes, or any sub-word
+member -- is returned as a COPYREFTYPE pointer to a copy, and CoerceAssignTypes
+(frontends/types.c) sizes the by-value duplicate of such a CALL by TypeSize of the
+reference, 4 bytes; a `return` of such a call takes the same branch, which is
+doc/return-nonword-struct.c's fault, and the warning is the wrapped
+reference-to-a-reference failing CompatibleTypes. The workarounds stay until a
+regeneration carries the fix. A member selected off such a call, `f(g().in)`, is a
+DIFFERENT fault (the call's result dropped: 0 on the board, and a failed assembly at
+a non-zero offset), unfiled -- the emitter binds the call (hoistStructCallArg), so no
+program reaches it.
 
 **A RECEIVE HAD NO TYPE** (2026-09-25). `exprType` answered "unknown" for `<-ch`, so
 every store rule said nothing of a received value but the one asked of a bare name
