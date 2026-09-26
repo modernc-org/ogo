@@ -3437,10 +3437,15 @@ func (f *File) rangeElem(s *Scope, expr Node) (elem Kind, hasElem, isInt, isChan
 	}
 	// A conversion to a NAMED type, `range Count(3)`, which exprType leaves untyped:
 	// the type's own kind, resolved from its name. Left to the default below, the
-	// variable was an int that the emitter counted in a Count.
-	if name, qual, isPtr, ok := f.exprNamedType(s, expr); ok && !isPtr && name.IsValid() {
-		if r := f.resultType(s, &TypeNodeIdent{Name: name, Qualifier: qual}); r.known && kindCategory(r.kind) == catNumeric {
-			return r.kind, false, true, false
+	// variable was an int that the emitter counted in a Count. A CONVERSION only --
+	// the callee resolving to a type -- and not exprNamedType's answer, which names
+	// the ELEMENT of an indexed or sliced aggregate: `range bs[:n]` over a byte
+	// array was "an integer" by it, and refused for its value variable.
+	if callee, ok := f.exprCallee(expr); ok {
+		if _, isType := s.find(callee.Src()).(*TypeDeclaration); isType {
+			if r := f.resultType(s, &TypeNodeIdent{Name: callee}); r.known && kindCategory(r.kind) == catNumeric {
+				return r.kind, false, true, false
+			}
 		}
 	}
 	// An operand whose kind cannot be pinned down (a make() slice, a complex

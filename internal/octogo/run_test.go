@@ -24504,6 +24504,41 @@ func main() {
 		want: "104\n111\n108\n5\n",
 	},
 	{
+		// A range over a SLICE EXPRESSION of an array, a slice or a string, with a
+		// value variable. The range's named-conversion fallback asked exprNamedType,
+		// which names the ELEMENT of an indexed or sliced aggregate, so `range bs[:n]`
+		// over a byte array read as a range over an integer and its value variable
+		// was refused -- a regression of one day, found by a multi-package domain
+		// program (2026-09-26). No run case had ranged over a sliced array before.
+		name: "a range over a slice expression of an array, a slice and a string",
+		src: `func main() {
+	var arr [4]int
+	var bs [8]byte
+	xs := []int{1, 2, 3}
+	s := "héllo"
+	n := 3
+	t := 0
+	for i, v := range arr[:2] {
+		t += i + v
+	}
+	for _, v := range arr[1:3] {
+		t += v
+	}
+	for _, v := range xs[1:] {
+		t += v
+	}
+	for _, b := range bs[:n] {
+		t += int(b)
+	}
+	for _, r := range s[1:] {
+		t += int(r)
+	}
+	println(t)
+}
+`,
+		want: "566\n",
+	},
+	{
 		// %T spells a channel, a variadic parameter and the types a function type
 		// names as Go does: `chan int` was the C name `ogo_chan_int`, `...main.Count`
 		// the slice it travels as, and `func(Count) Count` went unqualified where a
