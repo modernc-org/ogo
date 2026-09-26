@@ -4557,6 +4557,18 @@ func (f *File) factorType(s *Scope, n Node) (Kind, bool) {
 				return k, true
 			}
 		}
+		// A conversion to a DEFINED type, `A(1)`: the type's kind, followed to the
+		// predeclared type underneath. It had none, so a variable inferred from one,
+		// `a := A(1)`, was unknown to every rule gated on a Kind -- among them the
+		// one that tells two defined types over one kind apart, which let `var b B
+		// = a` through in every position where `var a A = 1` was refused.
+		if hasLit && f.soleCallSuffix(suffix) {
+			if _, isType := s.find(lit.Src()).(*TypeDeclaration); isType {
+				if k, ok := f.nameKind(s, lit.Src()); ok {
+					return k, true
+				}
+			}
+		}
 		// A call to a named function or a method with a single predeclared result
 		// has that result's type; a field selection "v.field" has the field's type;
 		// and an index "a[i]" of an array or slice has the element type. A
@@ -11532,6 +11544,38 @@ func (f *File) indexIsSlice(index Node) bool {
 	return false
 }
 
+// sliceOfVar returns the variable a slice expression slices, `v[i:j]`, `v[:n]`,
+// `v[:]`, when the expression is exactly that: a name and one slice suffix.
+func (f *File) sliceOfVar(n Node) (Token, bool) {
+	fac, ok := f.soleFactor(n)
+	if !ok {
+		return Token{}, false
+	}
+	kids := slices.Collect(it(fac.ast))
+	if len(kids) != 2 || kids[0].sym != 0 || Symbol(f.tok(kids[0].tok).Ch) != IDENT || kids[1].sym != FactorSuffix {
+		return Token{}, false
+	}
+	steps := slices.Collect(it(kids[1].ast))
+	if len(steps) != 1 || steps[0].sym != Index || !f.indexIsSlice(steps[0]) {
+		return Token{}, false
+	}
+	return f.tok(kids[0].tok), true
+}
+
+// soleCallSuffix reports whether a factor suffix is exactly one call, "base(...)":
+// with a name that resolves to a type, a conversion.
+func (f *File) soleCallSuffix(n Node) bool {
+	calls, other := 0, false
+	for c := range it(n.ast) {
+		if c.sym == CallSuffix {
+			calls++
+		} else {
+			other = true
+		}
+	}
+	return calls == 1 && !other
+}
+
 // firstSuffixIndex returns the first operation of a factor suffix when it is an
 // index -- "base[i]...", so the index applies directly to base, as opposed to
 // "base.field[i]" (a selector first) or "base()[i]" (a call first), where it applies
@@ -15103,6 +15147,131 @@ func (f *File) importedMethodResultType(qual, typeName, member Token) (Token, To
 	return tn, qual, f.isPointerType(home, res[0].typeNode), true
 }
 
+// operationNamedType names the type of a value an OPERATION produces from operands
+// of a named type, as Go types it: an arithmetic level takes the named type its
+// typed operands share -- an untyped constant takes it too, so `a + 1` is an A -- a
+// shift its left operand's, a unary minus, plus or complement its operand's, and
+// parentheses what they hold. It answers nothing for a comparison, which is a bool,
+// for a level with an operand of no name or of an unknown one, and for a plain
+// operand, which exprNamedType names itself.
+func (f *File) operationNamedType(s *Scope, n Node) (name, qual Token, ok bool) {
+	kids := slices.Collect(it(n.ast))
+	switch n.sym {
+	case Expression:
+		var operands []Node
+		for _, c := range kids {
+			switch c.sym {
+			case RelOp:
+				return Token{}, Token{}, false
+			case SimpleExpr:
+				operands = append(operands, c)
+			}
+		}
+		if len(operands) == 1 {
+			return f.operationNamedType(s, operands[0])
+		}
+	case SimpleExpr, Term:
+		var operands []Node
+		shift := false
+		for _, c := range kids {
+			switch c.sym {
+			case Term, UnaryExpr:
+				operands = append(operands, c)
+			case MulOp:
+				for t := range it(c.ast) {
+					if t.sym == 0 && (f.ch(t.tok) == SHL || f.ch(t.tok) == SHR) {
+						shift = true
+					}
+				}
+			}
+		}
+		switch {
+		case len(operands) == 0:
+			return Token{}, Token{}, false
+		case len(operands) == 1:
+			return f.operationNamedType(s, operands[0])
+		case shift:
+			// The left operand's type; an untyped one takes the context's, which
+			// is not known here.
+			if k, isK := f.exprType(s, operands[0]); isK && isUntypedKind(k) {
+				return Token{}, Token{}, false
+			}
+			return f.operandNamedType(s, operands[0])
+		}
+		found := false
+		for _, o := range operands {
+			if k, isK := f.exprType(s, o); isK && isUntypedKind(k) {
+				continue // an untyped constant takes the other operand's type
+			}
+			nm, ql, isNamed := f.operandNamedType(s, o)
+			if !isNamed || (found && (nm.Src() != name.Src() || ql.Src() != qual.Src())) {
+				return Token{}, Token{}, false
+			}
+			name, qual, found = nm, ql, true
+		}
+		return name, qual, found
+	case UnaryExpr:
+		var fac Node
+		hasFac := false
+		for _, c := range kids {
+			switch c.sym {
+			case Factor:
+				fac, hasFac = c, true
+			case UnaryOp:
+				switch f.unaryOp(s, c) {
+				case SUB, ADD, XOR:
+				default:
+					return Token{}, Token{}, false // !x is a bool; &x, *p and <-ch are exprNamedType's own
+				}
+			}
+		}
+		switch {
+		case !hasFac:
+		case len(kids) == 1:
+			return f.parenNamedType(s, fac) // a plain operand is exprNamedType's own, unless parenthesised
+		default:
+			return f.operandNamedType(s, Node{sym: UnaryExpr, ast: encodeNode(Factor, fac.ast)})
+		}
+	}
+	return Token{}, Token{}, false
+}
+
+// operandNamedType is exprNamedType for one operand of an operation -- a Term or a
+// UnaryExpr, wrapped in the levels above it -- answering the name of a defined
+// type a value has, and nothing for a pointer or an unnamed or unknown type.
+func (f *File) operandNamedType(s *Scope, o Node) (Token, Token, bool) {
+	var e Node
+	switch o.sym {
+	case UnaryExpr:
+		e = Node{sym: Expression, ast: encodeNode(SimpleExpr, encodeNode(Term, encodeNode(UnaryExpr, o.ast)))}
+	case Term:
+		e = Node{sym: Expression, ast: encodeNode(SimpleExpr, encodeNode(Term, o.ast))}
+	case SimpleExpr:
+		e = Node{sym: Expression, ast: encodeNode(SimpleExpr, o.ast)}
+	default:
+		e = o
+	}
+	nm, ql, isPtr, ok := f.exprNamedType(s, e)
+	if !ok || isPtr || !nm.IsValid() {
+		return Token{}, Token{}, false
+	}
+	return nm, ql, true
+}
+
+// parenNamedType is exprNamedType for a parenthesised factor, `( Expression )` with
+// nothing after it: the name of what the parentheses hold.
+func (f *File) parenNamedType(s *Scope, fac Node) (Token, Token, bool) {
+	kids := slices.Collect(it(fac.ast))
+	if len(kids) != 3 || kids[0].sym != 0 || f.ch(kids[0].tok) != LPAREN || kids[1].sym != Expression {
+		return Token{}, Token{}, false
+	}
+	nm, ql, isPtr, ok := f.exprNamedType(s, kids[1])
+	if !ok || isPtr || !nm.IsValid() {
+		return Token{}, Token{}, false
+	}
+	return nm, ql, true
+}
+
 // exprNamedType returns the named type an initializer's value has, when the
 // initializer plainly names one: a composite literal "T{...}" or "pkg.T{...}", the
 // address of one, a variable already carrying a named type, or a call whose single
@@ -15114,6 +15283,13 @@ func (f *File) importedMethodResultType(qual, typeName, member Token) (Token, To
 // it while "var p P = P{1, 2}" was checked. Neither the emitter's C nor the target's
 // compiler was fooled; the errors simply surfaced there instead, as C diagnostics.
 func (f *File) exprNamedType(s *Scope, n Node) (name, qual Token, isPtr, ok bool) {
+	// A value produced from one of a named type by an operation has that type, as
+	// Go types it: `a + 1`, `-a`, `a << 2`, `(a)`. Without this a variable inferred
+	// from one, `d := a + 1`, carried no name and passed where another defined type
+	// over the same kind was wanted, in every position (rej_named, 2026-09-26).
+	if nm, ql, found := f.operationNamedType(s, n); found {
+		return nm, ql, false, true
+	}
 	// `(*T)(x)` is a *T, which is what `var _ Shape = (*Sq)(nil)` asks the
 	// interface rules about.
 	if fac, isFac := f.soleFactorOf(n); isFac {
@@ -18860,7 +19036,13 @@ func (f *File) checkAppendValues(s *Scope, argList Node, args []Node) {
 	}
 	id, ok := f.exprSoleIdent(args[0])
 	if !ok {
-		return
+		// `append(back[:0], v)`: a slice of a variable has the variable's element,
+		// so its declaration answers for it. Asked of a name alone, an append into
+		// a sliced array went unchecked, `append(back[:0], a)` for a `[4]B` and an
+		// A among them.
+		if id, ok = f.sliceOfVar(args[0]); !ok {
+			return
+		}
 	}
 	d, ok := s.find(id.Src()).(*VarDeclaration)
 	if !ok {

@@ -1,0 +1,112 @@
+// Two defined types over one kind are two types, and a value produced from one by an
+// operation -- arithmetic with a constant, a negation, a shift, parentheses -- has
+// that type, as does a variable inferred from a conversion to it. Both were lost:
+// the checker recorded a kind and no name for `d := a + 1`, and no kind at all for
+// `a := A(1)`, and the rule telling the two types apart is gated on a kind, so a
+// value of either passed where the other was wanted, in every position.
+
+type A int
+
+type B int
+
+func (b B) twice() B { return b * 2 }
+
+func takeB(b B) int { return int(b) }
+
+type S struct{ b B }
+
+type Celsius float32
+
+type Fahrenheit float32
+
+type Name string
+
+type Title string
+
+func takeT(t Title) int { return len(t) }
+
+var ch chan B
+
+func bad(a A) B {
+	// ERROR "cannot use a \+ 1 of type A as type B in return statement"
+	return a + 1
+}
+
+func direct() {
+	a := A(1)
+	b := B(1)
+	// ERROR "cannot use a of type A as type B in variable declaration"
+	var b1 B = a
+	// ERROR "cannot use a of type A as type B in argument to takeB"
+	takeB(a)
+	// ERROR "mismatched types A and B"
+	_ = a == b
+	var s S
+	// ERROR "cannot use a of type A as type B in assignment"
+	s.b = a
+	var arr [2]B
+	// ERROR "cannot use a of type A as type B in assignment"
+	arr[0] = a
+	select {
+	// ERROR "cannot use a of type A as type B in send"
+	case ch <- a:
+	default:
+	}
+	var back [4]B
+	// ERROR "cannot use a \(variable of type A\) as B value in append"
+	_ = append(back[:0], a)
+	// ERROR "type A has no method twice"
+	a.twice()
+	_, _, _ = b1, s, arr
+}
+
+func derived() {
+	a := A(1)
+	d := a + 1
+	n := -a
+	p := (A(3))
+	sh := a << 2
+	m := a * 2
+	// ERROR "cannot use d of type A as type B in variable declaration"
+	var b1 B = d
+	// ERROR "cannot use n of type A as type B in variable declaration"
+	var b2 B = n
+	// ERROR "cannot use p of type A as type B in variable declaration"
+	var b3 B = p
+	// ERROR "cannot use sh of type A as type B in variable declaration"
+	var b4 B = sh
+	// ERROR "cannot use m of type A as type B in argument to takeB"
+	takeB(m)
+	// ERROR "mismatched types A and B"
+	_ = d == B(1)
+	// ERROR "type A has no method twice"
+	d.twice()
+	c := Celsius(20)
+	dc := c * 2
+	// ERROR "cannot use dc of type Celsius as type Fahrenheit in variable declaration"
+	var f Fahrenheit = dc
+	nm := Name("x")
+	cat := nm + "y"
+	// ERROR "cannot use cat of type Name as type Title in argument to takeT"
+	takeT(cat)
+	_, _, _, _, _ = b1, b2, b3, b4, f
+}
+
+func ok() {
+	a := A(1)
+	d := a + 1
+	var e A = d
+	var g A = -a + (d << 1)
+	bs := append(make([]B, 0, 2), B(d), B(a)*2)
+	c := Celsius(20)
+	f := Fahrenheit(c*9/5 + 32)
+	nm := Name("x")
+	var k Name = nm + "y"
+	println(e, g, takeB(B(d)), bad(a), len(bs), f, k)
+}
+
+func main() {
+	direct()
+	derived()
+	ok()
+}
