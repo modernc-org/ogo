@@ -32782,6 +32782,12 @@ func (e *emitter) emitAppend(callSuffix []int32) {
 		} else {
 			e.appendSliceElems[elem] = true
 		}
+		// The two are the helper's arguments, whose order C leaves open, and the
+		// ordinary form below binds its operands for that reason; this one did not,
+		// so `append(dst(), src(mark(2), mark(3))...)` ran the marks, which the
+		// source's call hoists, ahead of dst() -- 2341 on the host and 2314 on the
+		// target for Go's 1234.
+		defer e.bindEffectOperands(args)()
 		e.emit(call + "(")
 		e.emitExpr(args[0].ast)
 		e.emit(", ")

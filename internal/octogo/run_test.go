@@ -24504,6 +24504,58 @@ func main() {
 		want: "104\n111\n108\n5\n",
 	},
 	{
+		// A spread append evaluates its destination before its source, as Go
+		// evaluates a call's arguments. Its two operands were the helper's arguments
+		// as written, and what the source's call hoisted -- its own arguments --
+		// stood in the prologue ahead of both: `append(dst(), src(mark(2),
+		// mark(3))...)` ran the marks, then dst() on the host and src() on the
+		// target, 2341 and 2314 for Go's 1234. The ordinary form had bound its
+		// operands all along. Found by a review (REVIEW.md, 2026-09-26).
+		name: "a spread append evaluates its destination before its source",
+		src: `var a [8]int
+var b [8]byte
+var trace int
+
+func mark(v int) int {
+	trace = trace*10 + v
+	return v
+}
+
+func dst() []int {
+	trace = trace*10 + 1
+	return a[:0]
+}
+
+func src(x, y int) []int {
+	trace = trace*10 + 4
+	return a[x:y]
+}
+
+func dstb() []byte {
+	trace = trace*10 + 1
+	return b[:0]
+}
+
+func srcs(x, y int) string {
+	trace = trace*10 + 4
+	return "abcdef"[x:y]
+}
+
+func main() {
+	a[2] = 7
+	s := append(dst(), src(mark(2), mark(3))...)
+	println(trace, s[0])
+	trace = 0
+	bs := append(dstb(), srcs(mark(2), mark(3))...)
+	println(trace, len(bs), bs[0])
+	trace = 0
+	t := append(dst(), src(5, 6)...)
+	println(trace, len(t))
+}
+`,
+		want: "1234 7\n1234 1 99\n14 1\n",
+	},
+	{
 		// A select evaluates every clause's channel, and a send's value, once and in
 		// source order. What rendering a later clause's operand hoisted -- the
 		// arguments of a call naming the channel, an operand of the sent value --
