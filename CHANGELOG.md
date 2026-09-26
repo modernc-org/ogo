@@ -52,6 +52,19 @@ shipped section tells a reader on that version that they have behaviour they do 
   later send's value, 213 for 123: what rendering an operand hoisted went ahead of the
   whole statement. It goes right before its own clause's binding now. Found by a code
   review.
+- **A string range's rune is a rune.** `for _, r := range s` gave r no type in the
+  checker and an int in the C, so `var q int = r` went through where Go refuses it
+  and `%T` said `int`; it is `int32`, as Go types it, and `var q int = r` and `for
+  _, n = range s` for an int n are refused as Go refuses them.
+- **`%T` of a channel, a function type and a variadic.** `chan int` printed as the C
+  name `ogo_chan_int`, a function type's named types went unqualified, `func(Count)
+  Count` for Go's `func(main.Count) main.Count`, and a variadic parameter printed as
+  the slice it travels as, `[]main.Count` for `...main.Count`. A value of a named type
+  alone was always `main.Count`.
+- **A program declaring an `error` and no string of its own compiles.** `var e
+  error; println(e == nil)` emitted the error's method table, which names the string
+  type, before the string typedef, which only a string's use brought in; both C
+  compilers refused the file.
 - **An else-if's init runs inside the else, after the earlier tests.** The
   arguments of `else if p := mk(mark(2), mark(3)); p.x > 0` ran ahead of the first
   test, and whether or not it passed: 231 for Go's 1. Every init form -- a

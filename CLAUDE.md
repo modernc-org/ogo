@@ -1287,7 +1287,17 @@ switch cases, loop conditions, `&&`/`||`, literal elements, nested arguments, bi
 operands, index stores, copy, min and max all hold. **Where a statement renders a
 part of itself that Go evaluates conditionally, later, or repeatedly, that part is
 rendered inside emitOwnPrologue**; `grep -n 'emitOwnPrologue(' emit.go` lists the
-places that do.
+places that do. The range lesson, swept the same way -- every statement that
+DECLARES a variable (the range's forms, the select's receive, the comma-ok forms, the
+type switch, the header inits, a multi-result declaration) crossed with sized and
+named types and the variable's `%T` printed against Go's -- found one more: a string
+range's rune was an int in the checker and in the C (int32 since, both), and beside
+it two faults of `%T` itself, a channel spelled by its C name and a function type's
+named types unqualified (typeNameForT spells a channel, an unnamed array and a
+function type around what they hold now), and a program declaring an `error` with no
+string of its own, which did not compile (the table names ogo_string; a string
+method brings the typedef in). **`%T` against Go is the cheap oracle for what type a
+declaration gives**: one printf per variable, and the twin says which are wrong.
 
 **PRINTING A VALUE IS A ROW** (2026-09-23). `printf("%v", x)` of an ARRAY printed the
 address of its storage wherever x was not a bare name -- a literal, a field, an
