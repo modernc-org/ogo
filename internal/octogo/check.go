@@ -4681,6 +4681,36 @@ func (f *File) namedIsPointer(s *Scope, name, qual Token) bool {
 	return f.isPointerType(home, td.TypeSpec.TypeNode)
 }
 
+// namedIsSlice reports whether a DEFINED type is a slice or a string type, `type L
+// []int` or `type Name string`, as namedIsPointer reports a pointer: a slice
+// expression of a variable of one has the variable's own type, and of anything else
+// an unnamed slice or the string.
+func (f *File) namedIsSlice(s *Scope, name, qual Token) bool {
+	if !name.IsValid() {
+		return false
+	}
+	home := s
+	if qual.IsValid() {
+		h, ok := f.importedPkgScope(qual)
+		if !ok {
+			return false
+		}
+		home = h
+	}
+	td, _, ok := f.typeDeclNamed(home, name.Src())
+	if !ok || td.TypeSpec == nil {
+		return false
+	}
+	under, _ := f.refTypeUnder(home, td.TypeSpec.TypeNode)
+	switch u := under.(type) {
+	case *TypeNodeSlice:
+		return true
+	case *TypeNodeIdent:
+		return !u.Qualifier.IsValid() && u.Name.Src() == "string" // `type Name string`: nm[1:] is a Name
+	}
+	return false
+}
+
 // inferVarFrom records on vd the type its initializer gives it, for a variable
 // declared without a written one: "x := e", "var x = e" and the package-level
 // "var x = e" alike. All three mean the same thing in Go and now say so through one
@@ -12124,10 +12154,122 @@ func (f *File) checkMethodCall(s *Scope, head, member Token, argList, suffix Nod
 	if !d.builderVar && !d.typeName.IsValid() {
 		if f.shadowedImportMember(d, head) {
 			f.err(member.Position(), "type %s has no method %s", kindName(d.kind), member.Src())
+			return
+		}
+		// A variable of an UNNAMED type has no methods: only a defined type carries
+		// any. Where the checker knows the type -- a predeclared kind, a pointer to
+		// one, a slice or an array of a known element, a channel -- the call is
+		// refused as Go refuses it; `n.foo()` for `n := 5` and `x.twice()` for
+		// `x := arr[:2]` reached the emitter, which said "unknown package n". What
+		// it cannot type -- an anonymous struct embedding a type with methods, an
+		// anonymous interface -- is left to the emitter, as before.
+		if what, known := f.unnamedTypeString(d, 0); known {
+			f.err(member.Position(), "%s.%s undefined (type %s has no field or method %s)", head.Src(), member.Src(), what, member.Src())
 		}
 		return
 	}
 	f.checkMethodCallOn(s, d, head.Src(), member, argList)
+}
+
+// unnamedTypeString spells the type of a variable that has no recorded named type
+// when that type is CERTAINLY unnamed, and only then: the checker records a kind and
+// loses the name for a value produced from one of a named type -- `d := a + b`, `t :=
+// append(t, x)`, a conversion in parentheses -- so a kind alone says nothing, and
+// the first version of this rule refused six run cases. Certain are a WRITTEN type
+// that is predeclared or one of the language's own composites, a literal's written
+// type, an untyped constant, whose variable takes its default type, a slice
+// expression of a variable of no defined slice or string type (localValueNamedType
+// records that type on the variable, which is then not here), and the address of
+// one of these.
+func (f *File) unnamedTypeString(d *VarDeclaration, depth int) (string, bool) {
+	if depth > 4 || d.declScope == nil {
+		return "", false
+	}
+	s := d.declScope
+	if t, ok := f.varTypeAt(d); ok && t.tn != nil {
+		// The written type, or a literal's or a conversion's (`xs := []int{1}`; a
+		// conversion's is a name, which is not spelled).
+		return f.unnamedTypeNodeString(t.s, t.tn)
+	}
+	if d.init.sym == 0 {
+		return "", false
+	}
+	if k, ok := f.exprType(s, d.init); ok && isUntypedKind(k) {
+		return kindName(defaultKind(k)), true // `n := 5`: the default type
+	}
+	if x, ok := f.addrOfName(d.init); ok {
+		if xd, isVar := s.find(x.Src()).(*VarDeclaration); isVar && xd != d && !xd.typeName.IsValid() {
+			if inner, ok := f.unnamedTypeString(xd, depth+1); ok {
+				return "*" + inner, true
+			}
+		}
+		return "", false // a pointer to a named type has that type's methods
+	}
+	fac, ok := f.soleFactor(d.init)
+	if !ok {
+		return "", false
+	}
+	kids := slices.Collect(it(fac.ast))
+	if len(kids) != 2 || kids[0].sym != 0 || Symbol(f.tok(kids[0].tok).Ch) != IDENT || kids[1].sym != FactorSuffix {
+		return "", false
+	}
+	steps := slices.Collect(it(kids[1].ast))
+	if len(steps) != 1 || steps[0].sym != Index || !f.indexIsSlice(steps[0]) {
+		return "", false
+	}
+	vd, isVar := s.find(f.tok(kids[0].tok).Src()).(*VarDeclaration)
+	switch {
+	case !isVar || vd.typeName.IsValid() || vd.isChan || vd.isPtr:
+		return "", false
+	case vd.hasKind && vd.kind == PredeclaredString:
+		return "string", true // `t := s[1:]`
+	case vd.elemTypeName.IsValid():
+		elem := vd.elemTypeName.Src()
+		if q := namedTypeQual(vd.elemTypeNode); q.IsValid() {
+			elem = q.Src() + "." + elem
+		}
+		return "[]" + elem, true // `x := arr[:2]` for a `[4]Count`
+	case vd.hasElemKind:
+		return "[]" + kindName(vd.elemKind), true
+	}
+	return "", false
+}
+
+// unnamedTypeNodeString spells a written type when it is certainly unnamed: a
+// predeclared type by its name, and a slice, an array, a channel and a function type
+// around what they hold, a pointer only around an unnamed type -- a pointer to a
+// named one has that type's methods. A named type, and a struct or an interface
+// written out, are not spelled: the first has methods and the others may.
+func (f *File) unnamedTypeNodeString(s *Scope, tn TypeNode) (string, bool) {
+	switch x := tn.(type) {
+	case *TypeNodeIdent:
+		if _, isPre := s.find(x.Name.Src()).(*PredeclaredType); isPre && !x.Qualifier.IsValid() {
+			return x.Name.Src(), true
+		}
+	case *TypeNodePointer:
+		if inner, ok := f.unnamedTypeNodeString(s, x.TypeNode); ok {
+			return "*" + inner, true
+		}
+	case *TypeNodeArray:
+		// typeNodeString renders no array, since it is compared by (its length is an
+		// expression); a diagnostic may spell the length it folded to.
+		inner := f.typeNodeString(x.TypeNode, false)
+		if inner == "" {
+			return "", false
+		}
+		n := "..."
+		if x.Expression != nil {
+			if cv, isConst := x.Expression.Value().(constVal); isConst && cv.cv != nil {
+				n = cv.cv.String()
+			}
+		}
+		return "[" + n + "]" + inner, true
+	case *TypeNodeSlice, *TypeNodeChan, *FunctionType:
+		if text := f.typeNodeString(tn, false); text != "" {
+			return text, true
+		}
+	}
+	return "", false
 }
 
 // checkMethodCallOn is checkMethodCall for a value of the type d describes, spelt
@@ -14731,6 +14873,17 @@ func (f *File) localValueNamedType(s *Scope, id Token, fac Node) (Token, Token, 
 		}
 		steps := slices.Collect(it(c.ast))
 		if len(steps) == 1 && steps[0].sym == Index {
+			if f.indexIsSlice(steps[0]) {
+				// `Arr[:n]`: a SLICE of the variable, of the variable's own type when
+				// that is a defined slice type (`l := gl[1:]` for a `type L []int`)
+				// and of no named type otherwise -- not the ELEMENT's, which `x :=
+				// arr[:2]` took for its own, so `x.twice()` passed the checker as a
+				// method of Count and reached the emitter.
+				if d.typeName.IsValid() && f.namedIsSlice(s, d.typeName, d.typeQual) {
+					return d.typeName, d.typeQual, false, true
+				}
+				return Token{}, Token{}, false, false
+			}
 			// `Arr[i]` / `&Arr[i]`: the element's type -- a pointer where the element
 			// is one. Read as the pointee, `p := ps[i]` for a `ps []*int` was an int
 			// and `*p` was "cannot indirect p".

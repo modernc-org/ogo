@@ -1,0 +1,67 @@
+// A variable of an unnamed type has no methods: only a defined type carries any.
+// Where the checker knows the type, a method call on one is refused as Go refuses
+// it. It was left to the emitter, which reported "unknown package n". And a SLICE
+// of a variable, `x := arr[:2]`, has no named type -- it had the ELEMENT's, Count,
+// so `x.twice()` passed as a method of Count -- while a slice of a variable of a
+// defined slice type keeps that type and its methods.
+
+type Count uint8
+
+func (c Count) twice() Count { return c * 2 }
+
+type L []int
+
+func (l L) Sum() int {
+	t := 0
+	for _, v := range l {
+		t += v
+	}
+	return t
+}
+
+var gl = L{1, 2, 3}
+
+type P struct{ n int }
+
+func (p *P) bump() { p.n++ }
+
+func ok() {
+	l := gl[1:]
+	m := gl[:]
+	_, _ = l.Sum(), m.Sum()
+	var p P
+	pp := &p
+	pp.bump()
+	var back [8]byte
+	sb := NewBuilder(back[:])
+	sb.WriteString("x")
+	_ = sb.Len()
+}
+
+func bad() {
+	n := 5
+	// ERROR "n.foo undefined \(type int has no field or method foo\)"
+	n.foo()
+	xs := []int{1}
+	// ERROR "xs.foo undefined \(type \[\]int has no field or method foo\)"
+	xs.foo()
+	var a [2]int
+	// ERROR "a.foo undefined \(type \[2\]int has no field or method foo\)"
+	a.foo()
+	s := "x"
+	// ERROR "s.foo undefined \(type string has no field or method foo\)"
+	s.foo()
+	var arr [4]Count
+	x := arr[:2]
+	// ERROR "x.twice undefined \(type \[\]Count has no field or method twice\)"
+	x.twice()
+	pn := &n
+	// ERROR "pn.foo undefined \(type \*int has no field or method foo\)"
+	pn.foo()
+	_, _, _, _ = xs, a, s, x
+}
+
+func main() {
+	ok()
+	bad()
+}
