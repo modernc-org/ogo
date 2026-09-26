@@ -24504,6 +24504,81 @@ func main() {
 		want: "104\n111\n108\n5\n",
 	},
 	{
+		// An integer range's variable and bound have the OPERAND's type, as Go
+		// gives them. Both were int: a uint32 bound above the signed maximum was
+		// negative and the loop ran zero times, an int64 or uint64 one was
+		// truncated, a uint8 operand's variable could not be handed to a function
+		// taking a uint8, and a method of a named type read as a package qualifier.
+		// A negative signed bound runs no iteration; a uint16 bound of 65535 counts
+		// in a uint16 without wrapping; an untyped constant's variable is int, a rune
+		// constant's a rune. Found by a review (REVIEW.md, 2026-09-26).
+		name: "a range over a sized or named integer counts in its type",
+		src: `type Count uint8
+
+func (c Count) twice() Count { return c * 2 }
+
+func use(v uint8) { println(v) }
+
+func main() {
+	n := uint32(2147483648)
+	count := 0
+	for i := range n {
+		println(i)
+		count++
+		break
+	}
+	println("count", count)
+	var w int64 = 4294967296
+	for i := range w {
+		println(i)
+		count++
+		break
+	}
+	var u uint64 = 1 << 40
+	for i := range u {
+		println(i)
+		count++
+		break
+	}
+	println("count", count)
+	for i := range uint8(3) {
+		use(i)
+	}
+	for i := range Count(3) {
+		println(i.twice())
+	}
+	n8 := int8(-3)
+	for i := range n8 {
+		println("never", i)
+	}
+	var m uint16 = 65535
+	last := uint16(0)
+	for i := range m {
+		last = i
+	}
+	println(last)
+	var j uint8
+	for j = range uint8(4) {
+	}
+	println(j)
+	var k int64
+	for k = range int64(2) {
+		println(k)
+	}
+	println(k)
+	for i := range 'c' {
+		if i == 98 {
+			println(i)
+		}
+	}
+	for i := range 5 {
+		println(i)
+	}
+}
+`,
+		want: "0\ncount 1\n0\n0\ncount 3\n0\n1\n2\n0\n2\n4\n65534\n3\n0\n1\n1\n98\n0\n1\n2\n3\n4\n",
+	},
+	{
 		name: "range over integer, slice and array",
 		src: `func main() {
 	sum := 0

@@ -26955,20 +26955,35 @@ func (e *emitter) emitRange(h *forHeader, body []int32) {
 			}
 		}
 		// An integer range. Hoist the bound so a side-effecting or costly operand is
-		// evaluated once, as Go does.
+		// evaluated once, as Go does. The bound and the counter are of the OPERAND's
+		// type, as Go types the iteration variable: in an int, a uint32 bound above
+		// the signed maximum was negative and the loop ran zero times, an int64 or
+		// uint64 one was truncated, and a uint8 operand's variable was an int, which
+		// the checker refused to hand to a function taking a uint8.
 		if h.valVar != nil {
 			e.fail("ranging an integer yields only the index")
 			return
 		}
+		ct := e.rangeIntCType(h.rangeExpr)
 		n := e.newTmp()
 		e.ind()
-		e.emit("int " + n + " = " + e.exprC(h.rangeExpr) + ";\n")
+		e.emit(ct + " " + n + " = " + e.exprC(h.rangeExpr) + ";\n")
 		e.shadow(key)
-		e.locals[key] = "int"
+		e.locals[key] = ct
 		e.ind()
-		e.emit("for (int " + key + " = 0; " + key + " < " + n + "; " + key + "++) {\n")
-		e.emitLoopBody(body, e.rangeValueInject(h, key, "int", ""))
+		e.emit("for (" + ct + " " + key + " = 0; " + key + " < " + n + "; " + key + "++) {\n")
+		e.emitLoopBody(body, e.rangeValueInject(h, key, ct, ""))
 	}
+}
+
+// rangeIntCType is the C type of an integer range's bound and counter: the operand's
+// own, a named type kept as its typedef so a method of the type can be called on the
+// counter, and int for an untyped constant, which is what Go gives `range 5`.
+func (e *emitter) rangeIntCType(expr []int32) string {
+	if ct, ok := e.inferCType(expr); ok && cIntWidths[e.underlyingCType(ct)] != 0 {
+		return ct
+	}
+	return "int"
 }
 
 // rangeValueInject returns the closure that opens each iteration of a range loop:

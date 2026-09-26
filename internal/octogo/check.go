@@ -3247,6 +3247,9 @@ func (f *File) checkRange(s *Scope, kw string, fi forInfo) {
 	if isChan && f.exprChanDir(s, fi.rangeExpr) == sendDir {
 		f.err(f.tok(fi.rangeExpr.Pos()).Position(), "invalid operation: range %s: receive from send-only channel", f.exprSource(fi.rangeExpr))
 	}
+	if isInt {
+		isInt = f.checkIntRangeOperand(s, fi.rangeExpr, elem)
+	}
 	elemName, elemQual, elemPtr, _ := f.rangeElemNamed(s, fi.rangeExpr)
 	declared := false
 	switch {
@@ -3269,6 +3272,27 @@ func (f *File) checkRange(s *Scope, kw string, fi forInfo) {
 				}
 			}
 		}
+	case fi.hasKey && fi.rangeDefine && isInt:
+		// An integer range's variable has the OPERAND's type, as Go gives it: a uint8
+		// bound counts in a uint8, which is what a function taking one expects of
+		// it, and a named type's in that type, so its methods can be called on it.
+		// An untyped constant's is the constant's default, int for `range 5` and
+		// rune for `range 'a'`. It was int whatever the bound, so `use(i)` for a
+		// uint8 parameter was refused, and a method on it read as a package.
+		name, qual, _, _ := f.exprNamedType(s, fi.rangeExpr)
+		if name.IsValid() {
+			name, qual = f.canonicalType(s, name, qual)
+		}
+		declared = f.declareRangeVar(s, fi.keyVar, defaultKind(elem), true, name, qual, false)
+		if id, ok := f.exprSoleIdent(fi.keyVar); ok && declared {
+			if vd, ok := s.find(id.Src()).(*VarDeclaration); ok {
+				// The operand is the variable's initializer as far as the rules
+				// reading one go (varTypeAt): `for i := range Count(3)` types i as
+				// `i := Count(3)` does, through the conversion, where the name and
+				// the kind alone left `useCount(i)` refused as an int.
+				vd.init, vd.declScope = fi.rangeExpr, s
+			}
+		}
 	case fi.hasKey && fi.rangeDefine:
 		// The key is an INDEX, so no element type travels with it.
 		declared = f.declareRangeVar(s, fi.keyVar, PredeclaredInt, true, Token{}, Token{}, false)
@@ -3278,9 +3302,7 @@ func (f *File) checkRange(s *Scope, kw string, fi forInfo) {
 		case isChan:
 			f.checkRangeAssign(s, fi.keyVar, elem, hasElem, nil, nil) // a channel's key is its element
 		case isInt:
-			if k, ok := f.exprType(s, fi.rangeExpr); ok {
-				f.checkRangeAssign(s, fi.keyVar, k, true, nil, nil)
-			}
+			f.checkRangeAssign(s, fi.keyVar, elem, true, nil, nil) // the operand's kind (rangeElem)
 		case hasElem:
 			f.checkRangeAssign(s, fi.keyVar, PredeclaredInt, true, nil, nil) // an index
 		}
@@ -3364,8 +3386,8 @@ func (f *File) checkRangeTarget(s *Scope, v Node) {
 }
 
 // rangeElem classifies a range operand: an aggregate (slice or array) yields its
-// element kind, an integer yields isInt, and a CHANNEL yields its element kind with
-// isChan -- ranging one receives until it is closed, which is what close was built
+// element kind, a NUMBER yields isInt with its own kind in elem, and a CHANNEL yields
+// its element kind with isChan -- ranging one receives until it is closed, which is what close was built
 // for (see checkRange for why the element lands in the first variable).
 func (f *File) rangeElem(s *Scope, expr Node) (elem Kind, hasElem, isInt, isChan bool) {
 	if id, ok := f.exprSoleIdent(expr); ok {
@@ -3399,11 +3421,54 @@ func (f *File) rangeElem(s *Scope, expr Node) (elem Kind, hasElem, isInt, isChan
 		}
 	}
 	if k, ok := f.exprType(s, expr); ok && kindCategory(k) == catNumeric {
-		return 0, false, true, false
+		// A numeric operand: its kind travels in elem, since the iteration variable
+		// of an integer range has the operand's type (checkRange), and a FLOAT is
+		// refused there by that kind.
+		return k, false, true, false
+	}
+	// A conversion to a NAMED type, `range Count(3)`, which exprType leaves untyped:
+	// the type's own kind, resolved from its name. Left to the default below, the
+	// variable was an int that the emitter counted in a Count.
+	if name, qual, isPtr, ok := f.exprNamedType(s, expr); ok && !isPtr && name.IsValid() {
+		if r := f.resultType(s, &TypeNodeIdent{Name: name, Qualifier: qual}); r.known && kindCategory(r.kind) == catNumeric {
+			return r.kind, false, true, false
+		}
 	}
 	// An operand whose kind cannot be pinned down (a make() slice, a complex
 	// expression) is left to the emitter, which infers its C type directly.
 	return 0, false, false, false
+}
+
+// checkIntRangeOperand asks what Go asks of an integer range's operand, whose kind
+// is k, and reports whether the range is a well-formed integer one. A float is no
+// integer: checkRangeable refuses a float VARIABLE by its name, and nothing had asked
+// about any other float, so `for i := range 1.5` compiled and ran once. And an
+// untyped constant must be representable in the int it becomes: `range 1 << 40` was
+// an int of 1099511627776 as far as the C compiler, which the host's refused and the
+// target's wrapped to 0 in silence.
+func (f *File) checkIntRangeOperand(s *Scope, expr Node, k Kind) bool {
+	pos := f.tok(expr.Pos()).Position()
+	switch {
+	case k == UntypedFloat:
+		f.err(pos, "cannot range over %s (untyped float constant)", f.exprSource(expr))
+		return false
+	case isFloatKind(k):
+		if _, isName := f.exprSoleIdent(expr); !isName { // a variable's is checkRangeable's report
+			f.err(pos, "cannot range over %s (value of type %s)", f.exprSource(expr), kindName(k))
+		}
+		return false
+	case k == UntypedInt || k == UntypedRune:
+		cv, ok := f.constNumeric(s, expr)
+		if !ok {
+			return true
+		}
+		dk := defaultKind(k)
+		if lo, hi, ok := intKindRange(dk); ok && (constant.Compare(cv, token.LSS, lo) || constant.Compare(cv, token.GTR, hi)) {
+			f.err(pos, "cannot use %s (untyped int constant %s) as %s value in range clause (overflows)", f.exprSource(expr), cv, kindName(dk))
+			return false
+		}
+	}
+	return true
 }
 
 // declareRangeVar introduces a range key or value variable. A `:=` range declares

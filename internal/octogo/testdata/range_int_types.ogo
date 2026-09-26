@@ -1,0 +1,77 @@
+// An integer range's iteration variable has the operand's type, as Go gives it; it
+// was int whatever the bound, so a uint8 counter could not be handed to a function
+// taking a uint8, and a named type's methods were not its. A float operand is no
+// integer, and an untyped constant must be representable in the int it becomes.
+
+type Count uint8
+
+func (c Count) twice() Count { return c * 2 }
+
+func use(v uint8) {}
+
+func useCount(c Count) {}
+
+func ok() {
+	for i := range uint8(3) {
+		use(i)
+	}
+	var c Count = 4
+	for i := range c {
+		useCount(i.twice())
+	}
+	for i := range Count(3) {
+		useCount(i)
+	}
+	var m uint16 = 65535
+	last := uint16(0)
+	for i := range m {
+		last = i
+	}
+	var j uint8
+	for j = range uint8(4) {
+	}
+	var r rune
+	for i := range 'c' {
+		r = i
+	}
+	var n int
+	for i := range 5 {
+		n = i
+	}
+	_, _, _, _ = last, j, r, n
+}
+
+func bad(f float64) {
+	// ERROR "cannot range over 1.5 \(untyped float constant\)"
+	for i := range 1.5 {
+		_ = i
+	}
+	// ERROR "cannot range over f \* 2 \(value of type float64\)"
+	for i := range f * 2 {
+		_ = i
+	}
+	// ERROR "cannot range over f \(variable of type float64\)"
+	for i := range f {
+		_ = i
+	}
+	// ERROR "cannot use 1 << 40 \(untyped int constant 1099511627776\) as int value in range clause \(overflows\)"
+	for i := range 1 << 40 {
+		_ = i
+	}
+	for i := range uint8(3) {
+		// ERROR "cannot use i of type uint8 as type int in argument to take"
+		take(i)
+	}
+	var j int
+	// ERROR "cannot use j \(value of type uint8\) as int value in assignment"
+	for j = range uint8(4) {
+	}
+	_ = j
+}
+
+func take(n int) {}
+
+func main() {
+	ok()
+	bad(1.5)
+}
