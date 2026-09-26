@@ -1347,7 +1347,20 @@ whose programs were invalid Go all along -- `return c + 0` of a Counter where an
 was declared, and `*c = v` of an int through a `*Counter` -- written when the checker
 was lax and never checked since; the second was a gap of its own (checkDerefAssign
 asks the pointee's name now). **When a new refusal fails an old test, ask Go about
-the test's program before doubting the refusal.**
+the test's program before doubting the refusal.** The shapes beyond the operators,
+swept next (rej_named3): a range value and an element of a slice or an array
+declared FROM A LITERAL had the element's kind and not its name (inferVarFrom
+recorded `elemKind` for `xs := []A{1, 2}` and `elemTypeName` only for the kindless
+elements), a typed CONSTANT named nothing (`const ca A = 5` is a ConstDeclaration,
+and exprNamedType read variables), a RECEIVE named nothing as a value (`v := <-ch`
+recorded the element's name on v; `var b B = <-ch` never asked), `min` and `max`
+had no kind and so no gate, and the range clause's `=` compared kinds where both
+names were in hand (checkRangeAssign, after its kind switch). Seven of fourteen were
+accepted; all refuse now. **The value-producing shapes of a type are a list to walk
+whole**: a literal, a variable, a conversion, each operator, parentheses, a call, a
+method, a field, an element, a range value, a receive, a typed constant, a
+dereference, a type assertion, min and max -- and each rule about a type is asked of
+every one of them.
 
 **PRINTING A VALUE IS A ROW** (2026-09-23). `printf("%v", x)` of an ARRAY printed the
 address of its storage wherever x was not a bare name -- a literal, a field, an

@@ -167,7 +167,12 @@ shipped section tells a reader on that version that they have behaviour they do 
   type B in variable declaration`, `mismatched types A and B`, `type A has no method
   twice`. `var a A = 1` was refused all along; the conversion had no kind and the
   operation no name, and the rule asks for both. A store through a pointer to a
-  defined type asks it too: `*c = v` for a `c *Counter` and an int v is refused.
+  defined type asks it too: `*c = v` for a `c *Counter` and an int v is refused. And
+  so does every other shape that produces a value of a defined type: a range value
+  and an element of a slice or an array declared from a literal (`xs := []A{1, 2}`
+  recorded the element's kind and not its name), a typed constant (`const ca A = 5`),
+  a receive from a `chan A`, `min` and `max` of values of A, and a range clause
+  assigning into a variable of another type, `for _, b = range as`.
 - **A method called on a variable of an unnamed type is refused**, as Go refuses it:
   `n.foo()` for `n := 5`, `xs.foo()` for a `[]int`, `a.foo()` for a `[2]int`,
   `s.foo()` for a string, `pn.foo()` for a `*int` and `x.twice()` for `x := arr[:2]`
