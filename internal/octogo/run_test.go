@@ -24504,6 +24504,102 @@ func main() {
 		want: "104\n111\n108\n5\n",
 	},
 	{
+		// An else-if's INIT runs where Go runs it: inside the else, after every test
+		// before it failed. What rendering the init hoisted ahead of itself -- the
+		// arguments of `mk(mark(2), mark(3))` -- went into the whole if statement's
+		// prologue, so the marks ran ahead of the first test, and whether or not it
+		// passed: 231 for Go's 1. The else-if's TEST had been placed inside the else
+		// already (ifElse); this is the init, in each of its forms: a declaration,
+		// an assignment, a compound step, a multi-result destructuring and an array
+		// result, deeper in a chain and in a loop. Found sweeping the review's
+		// select lesson across the other statements that render clauses inside
+		// themselves (REVIEW.md, 2026-09-26).
+		name: "an else-if's init runs inside the else, after the earlier tests",
+		src: `var trace int
+
+func mark(v int) int {
+	trace = trace*10 + v
+	return v
+}
+
+func first(b bool) bool {
+	trace = trace*10 + 1
+	return b
+}
+
+func next(a, b int) int {
+	trace = trace*10 + 4
+	return a + b
+}
+
+func two(a, b int) (int, int) {
+	trace = trace*10 + 5
+	return a, b
+}
+
+func mk3(a, b int) [3]int {
+	trace = trace*10 + 6
+	return [3]int{a, b, 9}
+}
+
+type P struct{ x, y int }
+
+func mk(a, b int) P {
+	trace = trace*10 + 7
+	return P{a, b}
+}
+
+func main() {
+	x := 0
+	if first(true) {
+	} else if x = next(mark(2), mark(3)); x > 4 {
+		println("a")
+	}
+	println(x, trace)
+	trace, x = 0, 0
+	if first(false) {
+	} else if x += next(mark(2), mark(3)); x > 4 {
+		println("b")
+	}
+	println(x, trace)
+	trace = 0
+	if first(true) {
+	} else if a, b := two(mark(2), mark(3)); a < b {
+		println("c")
+	}
+	println(trace)
+	trace = 0
+	if first(true) {
+	} else if arr := mk3(mark(2), mark(3)); arr[0] > 0 {
+		println("d")
+	}
+	println(trace)
+	trace = 0
+	if first(false) {
+	} else if arr := mk3(mark(2), mark(3)); arr[0] > 0 {
+		println("e", arr[1])
+	}
+	println(trace)
+	trace = 0
+	if first(false) {
+	} else if first(false) {
+	} else if p := mk(mark(2), mark(3)); p.x > 0 {
+		println("f", p.y)
+	}
+	println(trace)
+	trace = 0
+	for i := 0; i < 2; i++ {
+		if first(true) {
+		} else if p := mk(mark(2), mark(3)); p.x > 0 {
+			println("g")
+		}
+	}
+	println(trace)
+}
+`,
+		want: "0 1\nb\n5 1234\n1\n1\ne 3\n1236\nf 3\n11237\n11\n",
+	},
+	{
 		// A spread append evaluates its destination before its source, as Go
 		// evaluates a call's arguments. Its two operands were the helper's arguments
 		// as written, and what the source's call hoisted -- its own arguments --

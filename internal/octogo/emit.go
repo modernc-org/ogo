@@ -28812,7 +28812,13 @@ func (e *emitter) emitIfBodyAt(ast []int32, condOverride []int32, place ifPlace)
 		e.emit(" else {\n")
 		e.indent++
 		e.deferBlockDepth++
-		e.emitIf(elseIf)
+		// The nested if is a statement of its own, and what its INIT hoists ahead
+		// of itself -- the arguments of `else if p := mk(mark(2), mark(3)); p.x >
+		// 0` -- runs here, inside the else, where Go runs the init: in the outer
+		// statement's prologue it ran ahead of the first test, and whether or not
+		// that test passed (231 for Go's 1). The test's own statements were
+		// placed already (ifElse); the init's were not.
+		e.emitOwnPrologue(func() { e.emitIf(elseIf) })
 		e.deferBlockDepth--
 		e.indent--
 		e.ind()
