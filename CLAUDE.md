@@ -1275,7 +1275,19 @@ test`'s runner asked Skipped() before Failed(), so a test that failed and then
 skipped passed its package, and `ogo fmt` of a path it could not read exited 0. Each
 fix is a run case or a unit test, and the range one a spec test of the refusals Go
 makes as well: a float operand, and an untyped constant no int holds, which the
-target had wrapped to 0.
+target had wrapped to 0. The select lesson, swept the same day across every other
+place a statement evaluates a part of itself conditionally or late, found two more
+of the same fault and nothing else: an else-if's INIT (`else if p := mk(mark(2),
+mark(3)); p.x > 0` ran the marks ahead of the first test, and whether or not it
+passed -- the else-if's TEST had its place, ifElse, and the init did not; the nested
+if is emitted with emitOwnPrologue), and a receive clause's TARGET (`case
+arr[idx(mark(2), mark(3))] = <-ch:` ran the marks before the select chose, and with
+the default taken; the arm binds and stores with its own prologue). Else-if tests,
+switch cases, loop conditions, `&&`/`||`, literal elements, nested arguments, binary
+operands, index stores, copy, min and max all hold. **Where a statement renders a
+part of itself that Go evaluates conditionally, later, or repeatedly, that part is
+rendered inside emitOwnPrologue**; `grep -n 'emitOwnPrologue(' emit.go` lists the
+places that do.
 
 **PRINTING A VALUE IS A ROW** (2026-09-23). `printf("%v", x)` of an ARRAY printed the
 address of its storage wherever x was not a bare name -- a literal, a field, an

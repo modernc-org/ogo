@@ -52,6 +52,20 @@ shipped section tells a reader on that version that they have behaviour they do 
   later send's value, 213 for 123: what rendering an operand hoisted went ahead of the
   whole statement. It goes right before its own clause's binding now. Found by a code
   review.
+- **An else-if's init runs inside the else, after the earlier tests.** The
+  arguments of `else if p := mk(mark(2), mark(3)); p.x > 0` ran ahead of the first
+  test, and whether or not it passed: 231 for Go's 1. Every init form -- a
+  declaration, an assignment, a compound step, a multi-result destructuring, an
+  array result -- runs where Go runs it. Found sweeping the review's select lesson
+  across the other statements that evaluate parts of themselves conditionally.
+- **A receive clause's target is evaluated when the clause is chosen.** The
+  arguments of an index's call in `case arr[idx(mark(2), mark(3))] = <-ch:`, a
+  call in the target's chain and what a dereference reaches ran before the select
+  chose, and when the default was taken: 23 for Go's 0. They run in the clause's
+  arm, after the communication, as Go evaluates a receive's left-hand side. The same
+  sweep found literal elements, nested arguments, binary operands, index stores,
+  `copy`, `min` and `max`, switch cases, loop conditions and `&&`/`||` all in Go's
+  order.
 - **A spread append evaluates its destination before its source.** `append(dst(),
   src(mark(2), mark(3))...)` ran the marks, then dst() on the host and src() on the
   board, 2341 and 2314 for Go's 1234: the ordinary append bound its operands in order
