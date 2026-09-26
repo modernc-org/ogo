@@ -3050,7 +3050,7 @@ func TestEmitCNamedTypePointer(t *testing.T) {
 	src := `type Counter int
 
 func (c Counter) Get() int {
-	return c + 0
+	return int(c)
 }
 
 func (c *Counter) Reset() {
@@ -3082,7 +3082,7 @@ func main() {
 		"int Counter_Get(Counter c);\n" +
 		"void Counter_Reset(Counter* c);\n\n" +
 		"int Counter_Get(Counter c) {\n" +
-		"\treturn (c + 0);\n" +
+		"\treturn (int)(c);\n" +
 		"}\n\n" +
 		"void Counter_Reset(Counter* c) {\n" +
 		"\t(void)c;\n" +
@@ -3190,11 +3190,11 @@ func TestEmitCDerefAssign(t *testing.T) {
 	src := `type Counter int
 
 func (c *Counter) Set(v int) {
-	*c = v
+	*c = Counter(v)
 }
 
 func (c Counter) Get() int {
-	return c + 0
+	return int(c)
 }
 
 func main() {
@@ -3223,10 +3223,10 @@ func main() {
 		"void Counter_Set(Counter* c, int v);\n" +
 		"int Counter_Get(Counter c);\n\n" +
 		"void Counter_Set(Counter* c, int v) {\n" +
-		"\t(*c) = v;\n" +
+		"\t(*c) = (Counter)(v);\n" +
 		"}\n\n" +
 		"int Counter_Get(Counter c) {\n" +
-		"\treturn (c + 0);\n" +
+		"\treturn (int)(c);\n" +
 		"}\n\n" +
 		"int main(void) {\n" +
 		"\tCounter cnt = 0;\n" +

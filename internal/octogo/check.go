@@ -14566,6 +14566,12 @@ func (f *File) checkDerefAssign(s *Scope, base Token, rhsNode Node) {
 	if d.hasElemKind {
 		f.checkElemAssignType(s, d.elemKind, rhsNode)
 	}
+	if d.typeName.IsValid() {
+		// The pointee is a DEFINED type: `*c = v` for a `c *Counter` and an int v
+		// is refused as Go refuses it, where the kind alone let it through -- an
+		// emitter test had written exactly that and never known.
+		f.checkDefinedType(s, d.typeName.Src(), rhsNode, "assignment")
+	}
 }
 
 // checkIndexAssign checks an element assignment target "base[i] = rhs". A scalar

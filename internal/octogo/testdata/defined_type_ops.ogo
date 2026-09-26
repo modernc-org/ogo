@@ -32,6 +32,14 @@ func bad(a A) B {
 	return a + 1
 }
 
+func store(p *A, b B, n int) {
+	// ERROR "cannot use b of type B as type A in assignment"
+	*p = b
+	// ERROR "cannot use n of type int as type A in assignment"
+	*p = n
+	*p = A(n) + 1
+}
+
 func direct() {
 	a := A(1)
 	b := B(1)
