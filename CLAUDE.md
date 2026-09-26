@@ -1322,6 +1322,28 @@ MISSING from the AFTER listing, so compare the two COUNTS as well.** Fuzzer seed
 1301-1500 on a P2-EDGE with this compiler: 197 passing, 3 outgrowing a cog, none
 failing.
 
+**TWO DEFINED TYPES OVER ONE KIND ARE TWO TYPES** (2026-09-26). The name-losing
+shapes the rule above met were a row of their own: `type A int; type B int`, a value
+of A produced by a conversion (`a := A(1)`) or an operation (`a + 1`, `-a`, `a << 2`,
+`(a)`) into every position wanting a B -- a declaration, an argument, a return, a
+comparison, a field, an element, a send, an append, a method of B. Thirteen of
+fourteen programs Go refuses were accepted (`scripts/rejects.sh` over rej_named),
+where the WRITTEN `var a A = 1` was refused in each. Two causes, one rule:
+checkDefinedType asks for a KIND on both sides and the value's NAME of exprNamedType,
+and a conversion to a defined type had no kind (factorType typed a predeclared
+conversion and a function call, not a defined type's) while an operation had no name
+(exprNamedType named a literal, a variable, a call, a conversion, a field -- and
+nothing built by an operator). A conversion has its type's kind and an operation its
+operands' named type now (operationNamedType: the shared name of the typed operands,
+an untyped constant taking it; a shift its left operand's; a comparison none). So:
+**when a rule is gated on what the checker records, sweep the SHAPES that produce a
+value of the type -- a conversion, each operator, parentheses -- as well as the
+positions the value goes into**; the positions had been swept before (FIFTEEN RULES)
+with WRITTEN variables, and the shapes never. And an `append` into a slice EXPRESSION,
+`append(back[:0], a)`, asked nothing of its element, where `bs := back[:0];
+append(bs, a)` was checked: **a builtin that reads a variable's declaration reads the
+sliced variable's too** (sliceOfVar).
+
 **PRINTING A VALUE IS A ROW** (2026-09-23). `printf("%v", x)` of an ARRAY printed the
 address of its storage wherever x was not a bare name -- a literal, a field, an
 element, a row, a call's field, a deferred capture -- silently on the board, and
