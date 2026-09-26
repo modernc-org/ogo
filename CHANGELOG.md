@@ -38,6 +38,32 @@ shipped section tells a reader on that version that they have behaviour they do 
 
 ### Fixed
 
+- **An integer range counts in the operand's type.** `for i := range n` copied the
+  bound into an int and declared i an int whatever n was: a uint32 bound above the
+  signed maximum was negative and the loop ran zero times, an int64 or uint64 one
+  was truncated, `use(i)` for a uint8 bound was refused as an int handed to a uint8
+  parameter, and a method of a named integer type called on i read as a package. The
+  variable and the bound have the operand's type, as in Go -- a uint8 bound counts in
+  a uint8, `Count(3)`'s in a Count -- and an untyped constant's is int, a rune
+  constant's rune. Found by a code review.
+- **A select evaluates its clause operands in source order.** The arguments of a call
+  naming a later clause's channel, `case <-next(mark(2), mark(3))`, ran ahead of the
+  `first()` of the clause above it, 2314 for Go's 1234, and so did an operand of a
+  later send's value, 213 for 123: what rendering an operand hoisted went ahead of the
+  whole statement. It goes right before its own clause's binding now. Found by a code
+  review.
+- **A spread append evaluates its destination before its source.** `append(dst(),
+  src(mark(2), mark(3))...)` ran the marks, then dst() on the host and src() on the
+  board, 2341 and 2314 for Go's 1234: the ordinary append bound its operands in order
+  and the spread form did not. Found by a code review.
+- **`ogo test` reports a test that fails and then skips as failed.** The generated
+  runner asked Skipped() before Failed(); the two marks are independent, and Skip
+  stops nothing here, so such a test was reported skipped, counted in no failure, and
+  the package passed. Found by a code review.
+- **`ogo fmt` fails when a path cannot be read.** `ogo fmt missing.ogo` printed
+  "error accessing path" and exited 0, which a script cannot tell from success. A
+  traversal error sets the exit status to 1; the other paths are still formatted.
+  Found by a code review.
 - **A method called on a method's struct result is handed the right value on the
   board.** `s.bump(1).show()` and `w.get().total()`, for a struct of more than
   four words, passed the first method's result straight into the second, and the
@@ -96,6 +122,13 @@ shipped section tells a reader on that version that they have behaviour they do 
 
 ### Behaviour changes
 
+- **A range over a float, or over a constant no int can hold, is refused**, as Go
+  refuses both: `for i := range 1.5` is "cannot range over 1.5 (untyped float
+  constant)", `range f * 2` for a float64 f "cannot range over f * 2 (value of type
+  float64)" -- a float VARIABLE was refused already -- and `range 1 << 40` "cannot
+  use 1 << 40 (untyped int constant 1099511627776) as int value in range clause
+  (overflows)". The first compiled and ran once; the last was an int of 1 << 40 as
+  far as the C compiler, which wrapped it to 0 on the board in silence.
 - **A callee keeps what a call's result carries wherever it stands.** `gb =
   B{pass(v)}`, `gs = append(gs, pass(v)...)`, `gs = Ints(pass(v))`, `gs =
   pass(v)[1:]` and a method's or an interface method's result, `gs =

@@ -1254,6 +1254,29 @@ statement's sole target is (checkRecvIntoTarget). **A value with no type is a ro
 across the targets**: before trusting a store rule, ask what it says of each kind of
 value, a receive, a conversion, a call's result, as well as of each kind of target.
 
+**A REVIEW IS A PROBE FROM OUTSIDE THE SWEEPS** (2026-09-26). A code review of the
+tree (REVIEW.md, handed over by the user) found three silent compiler faults and two
+wrong verdicts in one pass, none in a row any sweep had drawn. An integer range's
+variable and bound were int whatever the operand: a uint32 bound above the signed
+maximum ran zero iterations and an int64 one was truncated, silent on the host and
+the board alike, and `use(i)` for a uint8 bound was refused -- the range sweeps had
+crossed the operand's SHAPES (a variable, a call, a constant) and never its TYPE, and
+**a rule that declares a variable is asked which type Go gives it** (the operand's;
+a conversion to a named type, `range Count(3)`, is untyped to exprType and is
+resolved from its name). A select's clause operands ran out of order: what rendering
+a later clause's channel or value hoisted went into the statement's prologue, ahead
+of the clauses before it -- the placement fault the for clause's POST had
+(emitOwnPrologue), in the other statement that renders clauses inside itself; **a
+statement that renders parts of itself asks where each part's hoisted statements
+land** (selectCase.pro). And a spread append left its two operands to C's argument
+order where the ordinary append bound its in order (bindEffectOperands): **a lowering
+with two branches asks the ordering discipline of both**. The two verdicts: `ogo
+test`'s runner asked Skipped() before Failed(), so a test that failed and then
+skipped passed its package, and `ogo fmt` of a path it could not read exited 0. Each
+fix is a run case or a unit test, and the range one a spec test of the refusals Go
+makes as well: a float operand, and an untyped constant no int holds, which the
+target had wrapped to 0.
+
 **PRINTING A VALUE IS A ROW** (2026-09-23). `printf("%v", x)` of an ARRAY printed the
 address of its storage wherever x was not a bare name -- a literal, a field, an
 element, a row, a call's field, a deferred capture -- silently on the board, and
