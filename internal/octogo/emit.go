@@ -7539,6 +7539,15 @@ func (e *emitter) collectInterfaceType(mn string, structAST []int32) {
 // forward and the definition that needs it cannot be ordered apart.
 func (e *emitter) registerInterface(mn string, methods []ifaceMethod, forward bool) {
 	e.ifaceMethods[mn] = methods
+	for _, m := range methods {
+		// A method taking or returning a STRING names ogo_string in the table, and
+		// the typedef leads the section only when something uses a string: a program
+		// declaring an `error` and no string of its own -- `var e error; println(e
+		// == nil)` -- did not compile at all.
+		if m.res == cString || slices.Contains(m.params, cString) {
+			e.usesString = true
+		}
+	}
 
 	vt := e.ifaceVTName(mn)
 	var b strings.Builder
@@ -33860,6 +33869,45 @@ func (e *emitter) typeNameForT(ct string) string {
 	}
 	if name, ok := e.userTypeNames[ct]; ok {
 		return "main." + name
+	}
+	// A channel, an unnamed array and a function type are spelled around what they
+	// hold, as a pointer and a slice are. Through goTypeName a channel was its C
+	// name, `ogo_chan_int`, a variadic parameter the slice it travels as, and the
+	// types a function type names went unqualified, `func(Count) Count`: goTypeName
+	// spells a type for a diagnostic, which says `Count` as Go's compiler does,
+	// where %T says `main.Count`.
+	if e.isChanCType(ct) {
+		return "chan " + e.typeNameForT(e.chanElemOfCType(ct))
+	}
+	if a, ok := e.namedArrays[ct]; ok {
+		s := ""
+		for _, b := range a.bounds() {
+			s += "[" + b + "]"
+		}
+		return s + e.typeNameForT(a.elem)
+	}
+	if params, isFunc := e.funcTypeParams[ct]; isFunc {
+		var ps []string
+		for i, t := range params {
+			if at, ok := e.funcTypeVariadic[ct]; ok && i == at && e.isSliceCType(t) {
+				ps = append(ps, "..."+e.typeNameForT(sliceElemFromCName(t)))
+				continue
+			}
+			ps = append(ps, e.typeNameForT(t))
+		}
+		text := "func(" + strings.Join(ps, ", ") + ")"
+		var rs []string
+		for _, t := range e.funcTypeRet[ct] {
+			rs = append(rs, e.typeNameForT(t))
+		}
+		switch len(rs) {
+		case 0:
+		case 1:
+			text += " " + rs[0]
+		default:
+			text += " (" + strings.Join(rs, ", ") + ")"
+		}
+		return text
 	}
 	return e.goTypeName(ct)
 }

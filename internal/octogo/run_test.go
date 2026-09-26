@@ -24504,6 +24504,56 @@ func main() {
 		want: "104\n111\n108\n5\n",
 	},
 	{
+		// %T spells a channel, a variadic parameter and the types a function type
+		// names as Go does: `chan int` was the C name `ogo_chan_int`, `...main.Count`
+		// the slice it travels as, and `func(Count) Count` went unqualified where a
+		// value of the type alone was `main.Count`. And a program declaring an
+		// `error` with no string of its own did not compile at all: the error's table
+		// names ogo_string, whose typedef only a string's use brought in. Found
+		// printing %T of every kind of declared variable against Go (2026-09-26).
+		name: "%T of channels, function types and variadics, and an error with no string",
+		src: `type Count uint8
+
+type P struct{ x int }
+
+type Shape interface{ Area() int }
+
+func (p *P) Area() int { return p.x }
+
+func (p *P) M(c Count) Count { return c }
+
+func sum(xs ...Count) int { return len(xs) }
+
+func mkp() P { return P{1} }
+
+func twice(c Count) Count { return c * 2 }
+
+func main() {
+	var e error
+	println(e == nil)
+	var c1 chan int
+	var c2 chan *P
+	var c3 []chan Count
+	var a1 [2]func() int
+	var f0 func()
+	var f1 func() P = mkp
+	var sh Shape = &P{2}
+	p := P{3}
+	var ss [][]Count
+	var ps *[]Count
+	var v func(...Count) int = sum
+	var pc chan Count
+	var g func(Count) Count = twice
+	m := (*P).M
+	var h func(int, *P) (Count, bool)
+	var k func([]Count) []P
+	printf("%T\n%T\n%T\n%T\n%T\n%T\n%T\n%T\n%T\n%T\n%T\n%T\n", c1, c2, c3, a1, f0, f1, sh, p, ss, ps, v, pc)
+	printf("%T\n%T\n%T\n%T\n", g, m, h, k)
+}
+`,
+		want: "true\nchan int\nchan *main.P\n[]chan main.Count\n[2]func() int\nfunc()\nfunc() main.P\n*main.P\nmain.P\n[][]main.Count\n*[]main.Count\nfunc(...main.Count) int\nchan main.Count\nfunc(main.Count) main.Count\nfunc(*main.P, main.Count) main.Count\nfunc(int, *main.P) (main.Count, bool)\nfunc([]main.Count) []main.P\n",
+	},
+	{
 		// A string range's rune is an int32, as Go types it, in the checker and in the
 		// C: it was an int in both, so `var q int = r` went through where Go refuses
 		// it, and `%T` named the int. A rune constant's variable, a rune's copy, a
