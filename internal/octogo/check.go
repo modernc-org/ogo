@@ -3418,6 +3418,21 @@ func (f *File) rangeElem(s *Scope, expr Node) (elem Kind, hasElem, isInt, isChan
 			}
 		}
 	}
+	// `range pkg.Readings`: another package's slice, array or channel, whose
+	// element is recorded on its declaration THERE. Nothing answered for it, so the
+	// value variable had a name (rangeElemNamed) and no kind, and the rule telling
+	// two defined types apart, gated on a kind, let `var l Local = r` through.
+	if head, member, ok := f.exprFieldRead(expr); ok && f.isImportQualifier(s, head.Src()) {
+		if d, isVar := f.importedVarDecl(s, head.Src(), member.Src()); isVar {
+			switch {
+			case d.isChan:
+				return d.chanElemKind, d.hasChanElemKind, false, true
+			case d.hasElemKind && !d.isPtr:
+				return d.elemKind, true, false, false
+			}
+		}
+		return 0, false, false, false
+	}
 	// `range work[i]` over a bank of channels: the element of the ARRAY is the
 	// channel, and the channel's element is what the loop yields. Without this the
 	// loop variable took the default int and `total += v` was "cannot use v of type
@@ -9485,8 +9500,8 @@ func (f *File) qualifiedKind(s *Scope, qual Token, suffix Node) (Kind, bool) {
 	if !f.isImportQualifier(s, qual.Src()) {
 		return 0, false
 	}
-	member, isCall, ok := Token{}, false, false
-	n := 0
+	member, ok := Token{}, false
+	n, calls, indexes, other := 0, 0, 0, 0
 	for c := range it(suffix.ast) {
 		switch c.sym {
 		case Selector:
@@ -9494,21 +9509,53 @@ func (f *File) qualifiedKind(s *Scope, qual Token, suffix Node) (Kind, bool) {
 			if n == 1 {
 				member, ok = f.selectorMember(c)
 			}
-		case CallSuffix, Index:
-			isCall = true
+		case CallSuffix:
+			calls++
+		case Index:
+			if f.indexIsSlice(c) {
+				other++
+			}
+			indexes++
+		default:
+			other++
 		}
 	}
-	if !ok || n != 1 || isCall {
+	if !ok || n != 1 || other != 0 || calls+indexes > 1 {
 		return 0, false
 	}
 	imp, isImp := f.Scope.Declarations[qual.Src()].(*ImportDeclaration)
 	if !isImp || imp.Import == nil || imp.Import.Pkg == nil || imp.Import.Pkg == noPkg {
 		return 0, false
 	}
-	switch d := imp.Import.Pkg.Scope.Declarations[member.Src()].(type) {
+	home := imp.Import.Pkg.Scope
+	switch d := home.Declarations[member.Src()].(type) {
 	case *VarDeclaration:
-		if d.hasKind {
+		switch {
+		case calls != 0:
+		case indexes == 1:
+			// `pkg.Arr[i]`: the element's kind. It had none, so a value read out of
+			// another package's slice met no rule keyed on a kind -- the one telling
+			// two defined types apart among them.
+			if d.hasElemKind && !d.isPtr {
+				return d.elemKind, true
+			}
+		case d.hasKind:
 			return d.kind, true
+		}
+	case *ConstDeclaration:
+		// `pkg.C`: the constant's kind, typed or the untyped one, as identKind
+		// answers for this package's.
+		if calls+indexes == 0 && d.ConstSpec != nil && d.ConstSpec.Value != nil {
+			if t := d.ConstSpec.Value.Type(); t != nil {
+				return t.Kind(), true
+			}
+		}
+	case *FuncDeclaration:
+		// `pkg.Fn(...)`: the sole result's kind, resolved where the function is
+		// declared -- a named result type of that package is followed to the kind
+		// underneath, as a local call's is.
+		if calls == 1 && indexes == 0 {
+			return f.funcSingleResultKind(home, member)
 		}
 	}
 	return 0, false
@@ -11168,6 +11215,15 @@ func (f *File) checkDefinedType(s *Scope, wantName string, value Node, what stri
 	wantCat := f.kindlessCategory(s, wantName)
 	if wantCat == "" {
 		wantKind, ok := f.nameKind(s, wantName)
+		if !ok && strings.Contains(wantName, ".") {
+			// Another package's type, `lib.Count` as a parameter of its function
+			// is spelled here: its kind is resolved where the type is declared. A
+			// plain lookup found nothing and the check returned, so a value of one
+			// of that package's types passed as another's in every argument.
+			if _, home, found := f.typeDeclNamed(s, wantName); found {
+				wantKind, ok = f.nameKind(home, wantName[strings.LastIndex(wantName, ".")+1:])
+			}
+		}
 		if !ok || kindCategory(wantKind) == catUnknown {
 			return
 		}
@@ -15103,6 +15159,15 @@ func (f *File) qualifiedValueNamedType(s *Scope, id Token, fac Node) (Token, Tok
 			return Token{}, Token{}, false, false
 		}
 		switch d := home.Declarations[name.Src()].(type) {
+		case *ConstDeclaration:
+			// `pkg.C` declared with a type, `const Boil Temp = 100`: a value of that
+			// type, as this package's typed constants are (exprNamedType).
+			if len(steps) == 1 && d.ConstSpec != nil && d.ConstSpec.TypeNode != nil {
+				if nm, named := namedTypeToken(d.ConstSpec.TypeNode); named && !namedTypeQual(d.ConstSpec.TypeNode).IsValid() {
+					return nm, id, false, true
+				}
+			}
+			return Token{}, Token{}, false, false
 		case *VarDeclaration:
 			switch {
 			case len(steps) == 1:

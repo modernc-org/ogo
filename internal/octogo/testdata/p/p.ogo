@@ -119,3 +119,18 @@ type Calls struct {
 func Dbl(k int) int { return 2 * k }
 
 func Apply(f Fn, k int) int { return f(k) }
+
+// Temp, Count, Boil, Readings, Twice and TakeCount exist for the defined-type rule
+// across the boundary (cross_pkg_defined.ogo): two of this package's types over one
+// kind, and values of Temp in every shape an importer can take one from.
+type Temp int16
+
+type Count int16
+
+const Boil Temp = 100
+
+var Readings = []Temp{20, 30}
+
+func Twice(t Temp) Temp { return t * 2 }
+
+func TakeCount(c Count) int { return int(c) }

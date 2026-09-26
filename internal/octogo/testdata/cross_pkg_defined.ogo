@@ -1,0 +1,37 @@
+// Two of another package's defined types over one kind are two types here as well,
+// and a value of one keeps its qualified type through every shape an importer takes
+// it from: a call's result, a typed constant, an element and a range value of its
+// slice, an operation on any of these, and a variable holding one. Every shape was
+// accepted where p.Count or a local type was wanted: the checker had no KIND for a
+// qualified call, element or constant, none for a range over another package's
+// slice, and it looked the parameter of another package's function up by its
+// qualified name, which a plain lookup does not find.
+
+import "p"
+
+type Local int16
+
+func main() {
+	// ERROR "cannot use p.Twice\(3\) of type p.Temp as type Local in variable declaration"
+	var l Local = p.Twice(3)
+	// ERROR "cannot use p.Boil of type p.Temp as type Local in variable declaration"
+	var l2 Local = p.Boil
+	for _, r := range p.Readings {
+		// ERROR "cannot use r of type p.Temp as type Local in variable declaration"
+		var l3 Local = r
+		_ = l3
+	}
+	// ERROR "cannot use p.Readings\[0\] of type p.Temp as type Local in variable declaration"
+	var l4 Local = p.Readings[0]
+	d := p.Readings[0] + 1
+	// ERROR "cannot use d of type p.Temp as type p.Count in argument to TakeCount"
+	p.TakeCount(d)
+	// ERROR "cannot use d \+ p.Boil of type p.Temp as type p.Count in argument to TakeCount"
+	p.TakeCount(d + p.Boil)
+	t := p.Twice(1)
+	// ERROR "cannot use t of type p.Temp as type Local in variable declaration"
+	var l5 Local = t
+	var ok1 p.Temp = d
+	var ok2 p.Count = p.Count(d) + 1
+	println(l, l2, l4, l5, ok1, p.TakeCount(ok2), p.Twice(ok1), p.TakeCount(p.Count(p.Boil)))
+}
