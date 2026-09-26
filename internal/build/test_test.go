@@ -283,7 +283,10 @@ func TestBroken(t *testing.T) { t.Nope() }
 }
 
 // TestRunnerSrc pins the shape of the generated runner: one testing.T per test, so
-// a failure in one does not mark the next, and Go's own result lines.
+// a failure in one does not mark the next, and Go's own result lines -- with the
+// failure asked about BEFORE the skip, as Go asks. The two marks are independent,
+// and Skip stops nothing here, so a test that fails and then skips has failed;
+// asked the other way round it was reported skipped and the package passed.
 func TestRunnerSrc(t *testing.T) {
 	got := testRunnerSrc([]string{"TestA", "TestB"})
 	for _, want := range []string{
@@ -301,6 +304,12 @@ func TestRunnerSrc(t *testing.T) {
 		if !strings.Contains(got, want) {
 			t.Errorf("missing %q in:\n%s", want, got)
 		}
+	}
+	if fail, skip := strings.Index(got, "t1.Failed()"), strings.Index(got, "t1.Skipped()"); fail < 0 || skip < 0 || skip < fail {
+		t.Errorf("the runner must ask Failed() before Skipped(), so a test that fails and then skips is a failure:\n%s", got)
+	}
+	if !strings.Contains(got, "println(\"--- FAIL: TestB\")\n\t\tfailed++") {
+		t.Errorf("a failure must be counted where it is reported:\n%s", got)
 	}
 }
 
