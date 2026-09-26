@@ -146,6 +146,45 @@ func shapes() {
 	_ = okA
 }
 
+// The kindless categories, which have an identity rule of their own: a struct, an
+// array and a slice defined twice are two types too, through every shape.
+type P struct{ x int }
+
+type Q struct{ x int }
+
+type Row [2]int
+
+type Col [2]int
+
+type L []int
+
+type M []int
+
+func takeM(m M) int { return len(m) }
+
+func kindless() {
+	p := P(Q{1})
+	ps := []P{{1}}
+	rs := []Row{{1, 2}}
+	l := L{1, 2, 3}
+	// ERROR "cannot use p of type P as type Q in variable declaration"
+	var q Q = p
+	// ERROR "cannot use ps\[0\] of type P as type Q in variable declaration"
+	var q2 Q = ps[0]
+	// ERROR "cannot use rs\[0\] of type Row as type Col in variable declaration"
+	var c Col = rs[0]
+	// ERROR "cannot use l\[1:\] of type L as type M in variable declaration"
+	var m M = l[1:]
+	// ERROR "cannot use append\(l, 1\) of type L as type M in argument to takeM"
+	takeM(append(l, 1))
+	var ok1 Q = Q(p)
+	var ok2 Col = Col(rs[0])
+	var ok3 M = M(l[1:])
+	var ok4 Row = [2]int{3, 4}
+	var ok5 L = []int{5}
+	_, _, _, _, _, _, _, _, _ = q, q2, c, m, ok1, ok2, ok3, ok4, ok5
+}
+
 func ok() {
 	a := A(1)
 	d := a + 1
@@ -163,5 +202,6 @@ func main() {
 	direct()
 	derived()
 	shapes()
+	kindless()
 	ok()
 }

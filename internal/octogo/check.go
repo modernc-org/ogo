@@ -15336,6 +15336,28 @@ func (f *File) minMaxNamedType(s *Scope, fac Node) (name, qual Token, isPtr, ok 
 	return name, qual, false, found
 }
 
+// appendNamedType is exprNamedType for an append call, whose factor is fac: the
+// named type of its first argument, which is the type of the result, as Go types it.
+func (f *File) appendNamedType(s *Scope, fac Node) (name, qual Token, isPtr, ok bool) {
+	for c := range it(fac.ast) {
+		if c.sym != FactorSuffix {
+			continue
+		}
+		for st := range it(c.ast) {
+			if st.sym != CallSuffix {
+				continue
+			}
+			for a := range it(f.callArgList(st).ast) {
+				if a.sym == Expression {
+					nm, ql, ptr, named := f.exprNamedType(s, a)
+					return nm, ql, ptr, named && !ptr && nm.IsValid()
+				}
+			}
+		}
+	}
+	return Token{}, Token{}, false, false
+}
+
 // parenNamedType is exprNamedType for a parenthesised factor, `( Expression )` with
 // nothing after it: the name of what the parentheses hold.
 func (f *File) parenNamedType(s *Scope, fac Node) (Token, Token, bool) {
@@ -15487,9 +15509,14 @@ func (f *File) exprNamedType(s *Scope, n Node) (name, qual Token, isPtr, ok bool
 		return Token{}, Token{}, false, false
 	}
 	// `min(a, 2)` and `max(a, b)` are values of their operands' type, as an
-	// arithmetic level is: the shared named type of the typed arguments.
-	if nm := callee.Src(); (nm == "min" || nm == "max") && !isPtr && !isDeref {
+	// arithmetic level is: the shared named type of the typed arguments. And
+	// `append(l, 1)` is a value of its first argument's type, `type L []int` kept:
+	// `takeM(append(l, 1))` for an M passed where l alone was refused.
+	if nm := callee.Src(); (nm == "min" || nm == "max" || nm == "append") && !isPtr && !isDeref {
 		if _, isBuiltin := s.find(nm).(*PredeclaredFunc); isBuiltin {
+			if nm == "append" {
+				return f.appendNamedType(s, fac)
+			}
 			return f.minMaxNamedType(s, fac)
 		}
 	}
