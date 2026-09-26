@@ -175,7 +175,12 @@ shipped section tells a reader on that version that they have behaviour they do 
   assigning into a variable of another type, `for _, b = range as`. A defined struct,
   array or slice type held through every shape already; the one gap was `append`,
   whose result is its first argument's type: `takeM(append(l, 1))` for a `type L
-  []int` l and an M passed where `takeM(l)` was refused.
+  []int` l and an M passed where `takeM(l)` was refused. Across a package boundary
+  the same shapes were all open: another package's call result, typed constant,
+  element and range value, and operations on them, passed as a second type of that
+  package or as a local one, `lib.TakeCount(lib.Readings[0] + 1)` for a `[]lib.Temp`
+  among them. Each is refused with its qualified type named, `cannot use d of type
+  lib.Temp as type lib.Count in argument to TakeCount`.
 - **A method called on a variable of an unnamed type is refused**, as Go refuses it:
   `n.foo()` for `n := 5`, `xs.foo()` for a `[]int`, `a.foo()` for a `[2]int`,
   `s.foo()` for a string, `pn.foo()` for a `*int` and `x.twice()` for `x := arr[:2]`

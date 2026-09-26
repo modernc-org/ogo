@@ -1363,7 +1363,21 @@ dereference, a type assertion, min and max, append -- and each rule about a type
 asked of every one of them. The KINDLESS categories, swept the same way (rej_named5:
 a struct, an array and a slice defined twice, through every shape and position), held
 in 16 of 17 -- kindlessCategory has decided them by name since 2026-09-20 -- and the
-one gap was `append`, whose result is its first argument's type.
+one gap was `append`, whose result is its first argument's type. Across a PACKAGE
+BOUNDARY the row was open again, whole: ten programs against a Go twin module (the
+scratchpad's `mktwin.sh`, since rejects.sh builds single-file twins), and another
+package's call result, typed constant, element and range value, and operations on
+them, all passed as a second type of that package or as a local one. The rule was
+the same and the names were in hand (qualifiedValueNamedType); what failed was the
+KIND gate in front of it, three ways: qualifiedKind answered for a variable only (a
+call, an element and a constant now), rangeElem asked local declarations only (an
+imported slice, array or channel now), and the parameter of another package's
+function is spelled `lib.Count` here, which nameKind's plain lookup does not find
+(resolved where the type is declared now). **Every row swept in one package is
+swept across the boundary too, with the qualified spelling in every position** -- the
+2026-09-20 boundary sweep asked what a correct program does, not what an incorrect
+one earns. The interface and member rules (rej_iface) and constants into defined
+types (rej_const) hold through every shape.
 
 **PRINTING A VALUE IS A ROW** (2026-09-23). `printf("%v", x)` of an ARRAY printed the
 address of its storage wherever x was not a bare name -- a literal, a field, an
