@@ -24504,6 +24504,99 @@ func main() {
 		want: "104\n111\n108\n5\n",
 	},
 	{
+		// A select evaluates every clause's channel, and a send's value, once and in
+		// source order. What rendering a later clause's operand hoisted -- the
+		// arguments of a call naming the channel, an operand of the sent value --
+		// went into the statement's prologue, ahead of every clause: `first()` ran
+		// after `mark(2)` and `mark(3)`, 2314 for Go's 1234, and the send's value
+		// ran ahead of the clause before it, 213 for 123. Found by a review
+		// (REVIEW.md, 2026-09-26). The channels are nil, so the default clause is
+		// taken and nothing here waits.
+		name: "a select's clause operands are evaluated in source order",
+		src: `var trace int
+var out chan int
+
+func mark(v int) int {
+	trace = trace*10 + v
+	return v
+}
+
+func first() chan int {
+	trace = trace*10 + 1
+	return nil
+}
+
+func next(a, b int) chan int {
+	trace = trace*10 + 4
+	return nil
+}
+
+func main() {
+	select {
+	case <-first():
+	case <-next(mark(2), mark(3)):
+	default:
+	}
+	println(trace)
+	trace = 0
+	select {
+	case <-first():
+	case out <- mark(2) + mark(3):
+	default:
+	}
+	println(trace)
+	trace = 0
+	select {
+	case <-first():
+	case out <- mark(2) + mark(3):
+	case <-next(mark(5), mark(6)):
+	default:
+	}
+	println(trace)
+}
+`,
+		want: "1234\n123\n123564\n",
+	},
+	{
+		// The same order in a BLOCKING select, whose second clause's channel is
+		// named by a call with arguments and is fed by a cog.
+		name: "a blocking select's clause operands are evaluated in source order",
+		src: `var trace int
+var out chan int
+
+func mark(v int) int {
+	trace = trace*10 + v
+	return v
+}
+
+func first() chan int {
+	trace = trace*10 + 1
+	return nil
+}
+
+func second(a, b int) chan int {
+	trace = trace*10 + 4
+	return out
+}
+
+func producer() {
+	out <- 7
+}
+
+func main() {
+	go producer()
+	select {
+	case <-first():
+		println("never")
+	case v := <-second(mark(2), mark(3)):
+		println(v)
+	}
+	println(trace)
+}
+`,
+		want: "7\n1234\n",
+	},
+	{
 		// An integer range's variable and bound have the OPERAND's type, as Go
 		// gives them. Both were int: a uint32 bound above the signed maximum was
 		// negative and the loop ran zero times, an int64 or uint64 one was

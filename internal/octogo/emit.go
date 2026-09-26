@@ -2574,6 +2574,7 @@ type selectCase struct {
 	def     bool
 	send    bool         // `case ch <- v:` rather than a receive
 	ch      string       // channel variable
+	pro     []string     // the statements rendering ch hoisted ahead of itself, emitted right before its binding (emitSelect)
 	elem    string       // its element C type
 	target  assignTarget // what receives the value; its name is empty for a bare `case <-ch:`
 	okTgt   assignTarget // what receives the comma-ok flag of `case v, ok := <-ch:`; hasOk says there is one
@@ -2663,6 +2664,12 @@ func (e *emitter) emitSelect(ast []int32) {
 			continue
 		}
 		ch := e.newTmp()
+		// What rendering the channel hoisted (selectChan) runs here, after the
+		// clauses before it and ahead of its own binding.
+		for _, line := range c.pro {
+			e.ind()
+			e.emit(line)
+		}
 		e.ind()
 		e.emit(chanCName(c.elem) + " " + ch + " = " + c.ch + ";\n")
 		c.ch = ch
@@ -2673,30 +2680,36 @@ func (e *emitter) emitSelect(ast []int32) {
 		e.typeUntypedShifts(c.val.ast, c.elem) // the element's type is the value's context
 		valTmp = e.newTmp()
 		sendVals[i] = valTmp
-		switch a, isArr := e.namedArrays[c.elem]; {
-		case isArr:
-			// An ARRAY is copied, not assigned: C has no array assignment, so
-			// `elem tmp = arr` was not C at all.
-			e.emitArrayCopy(valTmp, e.captureC(func() { e.emitExpr(c.val.ast) }), a)
-		case e.chanStructByPtr(c.elem):
-			// A STRUCT holding one is declared and copied in: the target's C
-			// compiler initializes no such struct from another.
-			e.ind()
-			e.emit(c.elem + " " + valTmp + ";\n")
-			e.emitStructCopy(valTmp, c.elem, c.val.ast)
-		default:
-			e.ind()
-			e.emit(c.elem + " " + valTmp + " = ")
-			// A concrete value sent on a channel of INTERFACE type is wrapped into
-			// the two words the element is, as the blocking send wraps it. Without
-			// this the raw pointer went where the pair goes.
-			if text, ok := e.ifaceValueC(c.elem, c.val.ast); ok && e.isIfaceCType(c.elem) {
-				e.emit(text)
-			} else {
-				e.emitExpr(c.val.ast)
+		// The value's own hoisted statements land here too, after its channel and
+		// the clauses before: in the statement's prologue, `case out <- mark(2) +
+		// mark(3)` after `case <-first()` ran mark(2) ahead of first(), 213 for
+		// Go's 123.
+		e.emitOwnPrologue(func() {
+			switch a, isArr := e.namedArrays[c.elem]; {
+			case isArr:
+				// An ARRAY is copied, not assigned: C has no array assignment, so
+				// `elem tmp = arr` was not C at all.
+				e.emitArrayCopy(valTmp, e.captureC(func() { e.emitExpr(c.val.ast) }), a)
+			case e.chanStructByPtr(c.elem):
+				// A STRUCT holding one is declared and copied in: the target's C
+				// compiler initializes no such struct from another.
+				e.ind()
+				e.emit(c.elem + " " + valTmp + ";\n")
+				e.emitStructCopy(valTmp, c.elem, c.val.ast)
+			default:
+				e.ind()
+				e.emit(c.elem + " " + valTmp + " = ")
+				// A concrete value sent on a channel of INTERFACE type is wrapped
+				// into the two words the element is, as the blocking send wraps it.
+				// Without this the raw pointer went where the pair goes.
+				if text, ok := e.ifaceValueC(c.elem, c.val.ast); ok && e.isIfaceCType(c.elem) {
+					e.emit(text)
+				} else {
+					e.emitExpr(c.val.ast)
+				}
+				e.emit(";\n")
 			}
-			e.emit(";\n")
-		}
+		})
 		if gated {
 			e.chanGatedSendElems[c.elem] = true
 			e.needPanic()
@@ -3109,7 +3122,15 @@ func (e *emitter) commChanExpr(head Node, chain []Node) Node {
 // selectChan resolves the channel a clause polls: a variable, or a field of one --
 // chanOperand answers for both, a channel being a pointer either way.
 func (e *emitter) selectChan(n Node, c *selectCase) bool {
+	// What rendering the operand hoists ahead of itself -- the arguments of a call
+	// naming the channel, `case <-next(mark(2), mark(3))` -- is kept with the
+	// clause and emitted right before its binding (emitSelect), where it runs after
+	// the clauses before it. Left in the statement's prologue it ran ahead of every
+	// clause's channel, `first()` included: 2314 for Go's 1234.
+	saved := e.prologue
+	e.prologue = nil
 	elem, text, ok := e.chanOperand(n)
+	c.pro, e.prologue = e.prologue, saved
 	if !ok {
 		e.fail("a select clause needs a channel operand: a variable or a field of one")
 		return false
