@@ -24504,6 +24504,92 @@ func main() {
 		want: "104\n111\n108\n5\n",
 	},
 	{
+		// A receive clause's TARGET is evaluated once the clause is chosen, after the
+		// communication, as Go evaluates it -- and not at all when another clause is.
+		// What binding or rendering the target hoisted -- the arguments of an
+		// index's call, a call in the target's chain -- went into the statement's
+		// prologue, where it ran before the select chose, and whether or not it
+		// chose this clause: 23 with the default taken, for Go's 0. Each target
+		// form: an element with a comma-ok flag, a call's field, an element through
+		// a dereference; and the clauses CHOSEN, fed by a cog, where the target's
+		// operands run after the value arrived. Found sweeping the review's select
+		// lesson (REVIEW.md, 2026-09-26) across the rest of the select.
+		name: "a receive clause's target is evaluated when the clause is chosen",
+		src: `var trace int
+var arr [4]int
+var ready chan int
+var never chan int
+
+func mark(v int) int {
+	trace = trace*10 + v
+	return v
+}
+
+func idx(a, b int) int {
+	trace = trace*10 + 4
+	return a
+}
+
+type P struct{ x int }
+
+var gp P
+
+func getp(a, b int) *P {
+	trace = trace*10 + 5
+	return &gp
+}
+
+func producer() {
+	ready <- 7
+}
+
+func main() {
+	var ok bool
+	select {
+	case arr[idx(mark(2), mark(3))], ok = <-never:
+		println("got")
+	default:
+		println("default")
+	}
+	println(trace, arr[2], ok)
+	trace = 0
+	select {
+	case getp(mark(2), mark(3)).x = <-never:
+		println("got")
+	default:
+		println("default")
+	}
+	println(trace, gp.x)
+	trace = 0
+	ps := &arr
+	select {
+	case (*ps)[idx(mark(2), mark(3))] = <-never:
+		println("got")
+	default:
+		println("default")
+	}
+	println(trace, arr[2])
+	trace = 0
+	go producer()
+	select {
+	case arr[idx(mark(2), mark(3))] = <-ready:
+		println("got")
+	case <-never:
+		println("never")
+	}
+	println(trace, arr[2])
+	trace = 0
+	go producer()
+	select {
+	case getp(mark(2), mark(3)).x = <-ready:
+		println("got")
+	}
+	println(trace, gp.x)
+}
+`,
+		want: "default\n0 0 false\ndefault\n0 0\ndefault\n0 0\ngot\n234 7\ngot\n235 7\n",
+	},
+	{
 		// An else-if's INIT runs where Go runs it: inside the else, after every test
 		// before it failed. What rendering the init hoisted ahead of itself -- the
 		// arguments of `mk(mark(2), mark(3))` -- went into the whole if statement's

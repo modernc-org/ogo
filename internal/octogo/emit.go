@@ -2860,40 +2860,52 @@ func (e *emitter) emitSelect(ast []int32) {
 		// Go evaluates the targets' operands once the clause is chosen, and then
 		// stores: a call in a target's chain, `case getp().x = <-ch:`, and what a
 		// dereference reaches, `case (*s)[0] = <-ch:`, are bound here, ahead of both
-		// stores (bindTarget), as a list's are ahead of its.
-		target, okTgt := c.target, c.okTgt
-		if !c.declare {
-			bound, ok := true, true
+		// stores (bindTarget), as a list's are ahead of its. HERE, in the arm: what
+		// binding or rendering a target hoists -- that call, or the arguments of an
+		// index's call, `case arr[idx(mark(2), mark(3))] = <-ch:` -- went into the
+		// statement's prologue, where it ran before the select chose, and whether
+		// or not it chose this clause: 23 with the default taken, for Go's 0.
+		failed := false
+		e.emitOwnPrologue(func() {
+			target, okTgt := c.target, c.okTgt
+			if !c.declare {
+				bound, ok := true, true
+				if target.name != "" {
+					target, bound = e.bindTarget(target)
+				}
+				if c.hasOk {
+					okTgt, ok = e.bindTarget(okTgt)
+				}
+				if !bound || !ok {
+					e.fail("unsupported target in a receive clause")
+					failed = true
+					return
+				}
+			}
 			if target.name != "" {
-				target, bound = e.bindTarget(target)
+				if a, isArr := e.namedArrays[c.elem]; isArr && c.declare {
+					// An ARRAY element is copied out of the clause's temporary: C
+					// cannot assign one, and the clause's variable is a value of its
+					// own, as it is for every other element type.
+					e.emitArrayCopy(target.name, tmp, a)
+					e.locals[target.name] = c.elem // after the copy, which takes the name
+				} else {
+					// The same store a multiple assignment writes, so a clause may
+					// receive into a field or an element -- `case b.v = <-ch:` -- as
+					// the plain assignment `b.v = <-ch` always could; an array is
+					// copied into it, through a pointer or into a field as into a
+					// name (emitArrayStore).
+					e.emitStore(target, c.declare, c.elem, tmp)
+				}
 			}
 			if c.hasOk {
-				okTgt, ok = e.bindTarget(okTgt)
+				// The comma-ok flag: true for a value, false for the zero of a closed
+				// channel, as the statement form's is (ogo_chan_recv2).
+				e.emitStore(okTgt, c.declare, cBool, "("+gots[i]+" == 1)")
 			}
-			if !bound || !ok {
-				e.fail("unsupported target in a receive clause")
-				return
-			}
-		}
-		if target.name != "" {
-			if a, isArr := e.namedArrays[c.elem]; isArr && c.declare {
-				// An ARRAY element is copied out of the clause's temporary: C cannot
-				// assign one, and the clause's variable is a value of its own, as it
-				// is for every other element type.
-				e.emitArrayCopy(target.name, tmp, a)
-				e.locals[target.name] = c.elem // after the copy, which takes the name
-			} else {
-				// The same store a multiple assignment writes, so a clause may receive
-				// into a field or an element -- `case b.v = <-ch:` -- as the plain
-				// assignment `b.v = <-ch` always could; an array is copied into it,
-				// through a pointer or into a field as into a name (emitArrayStore).
-				e.emitStore(target, c.declare, c.elem, tmp)
-			}
-		}
-		if c.hasOk {
-			// The comma-ok flag: true for a value, false for the zero of a closed
-			// channel, as the statement form's is (ogo_chan_recv2).
-			e.emitStore(okTgt, c.declare, cBool, "("+gots[i]+" == 1)")
+		})
+		if failed {
+			return
 		}
 		for _, st := range c.body {
 			e.emitStatement(st.ast)
