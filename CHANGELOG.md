@@ -52,6 +52,15 @@ shipped section tells a reader on that version that they have behaviour they do 
   later send's value, 213 for 123: what rendering an operand hoisted went ahead of the
   whole statement. It goes right before its own clause's binding now. Found by a code
   review.
+- **A range over a slice of an array compiles again.** `for _, b := range bs[:n]`
+  over a byte array was refused as "range over integer permits only one iteration
+  variable" for one day: the range's named-conversion fallback asked a helper that
+  names the ELEMENT of a sliced aggregate. It asks a conversion only now. Found by a
+  multi-package domain program before any release carried it.
+- **A slice of a variable has the variable's type only when that is a defined slice
+  or string type.** `x := arr[:2]` for a `[4]Count` carried Count, the element's
+  type, so `x.twice()` passed the checker as a method of Count and reached the
+  emitter; it is a `[]Count`, and `nm[1:]` for a `type Name string` is a Name.
 - **A string range's rune is a rune.** `for _, r := range s` gave r no type in the
   checker and an int in the C, so `var q int = r` went through where Go refuses it
   and `%T` said `int`; it is `int32`, as Go types it, and `var q int = r` and `for
@@ -149,6 +158,14 @@ shipped section tells a reader on that version that they have behaviour they do 
 
 ### Behaviour changes
 
+- **A method called on a variable of an unnamed type is refused**, as Go refuses it:
+  `n.foo()` for `n := 5`, `xs.foo()` for a `[]int`, `a.foo()` for a `[2]int`,
+  `s.foo()` for a string, `pn.foo()` for a `*int` and `x.twice()` for `x := arr[:2]`
+  say "n.foo undefined (type int has no field or method foo)". Each had reached the
+  C emitter, which said "unknown package n". Only where the type is certainly
+  unnamed: a variable the checker knows only by a kind is left alone, since a value
+  produced from one of a named type -- `d := a + b`, an append -- keeps the kind and
+  may have lost the name.
 - **A range over a float, or over a constant no int can hold, is refused**, as Go
   refuses both: `for i := range 1.5` is "cannot range over 1.5 (untyped float
   constant)", `range f * 2` for a float64 f "cannot range over f * 2 (value of type

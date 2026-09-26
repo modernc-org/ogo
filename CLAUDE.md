@@ -1298,6 +1298,29 @@ function type around what they hold now), and a program declaring an `error` wit
 string of its own, which did not compile (the table names ogo_string; a string
 method brings the typedef in). **`%T` against Go is the cheap oracle for what type a
 declaration gives**: one printf per variable, and the twin says which are wrong.
+The same day's domain round -- a command parser, a fixed-point PID, a varint
+protocol with a ring buffer, a cog scheduler, a stack machine, an embedding
+hierarchy, a sort library and a formatter, all matching Go on the host and the board
+-- and a THREE-PACKAGE program (sensor, proto, cmd/rig; the Go twin built by a
+script that prepends package clauses, `mktwin.sh` in the scratchpad) found a
+REGRESSION of one day: the range's named-conversion fallback had asked
+exprNamedType, which names the ELEMENT of an indexed or sliced aggregate, so `range
+bs[:n]` over a byte array was "an integer". No run case had ranged over a sliced
+array; one does now. Following it: a slice of a variable, `x := arr[:2]`, carried the
+element's type (a slice suffix is an Index node; indexIsSlice tells them apart, and a
+slice of a variable of a defined slice or string type keeps THAT type), and a method
+called on a variable of an UNNAMED type -- `n.foo()` for `n := 5` -- was asked
+nothing, the emitter answering "unknown package n". The rule that refuses it now
+(unnamedTypeString) was WRONG first: it took "a kind and no recorded name" for an
+unnamed type, and the checker records a kind while losing the name for a value
+produced from one of a named type (`d := a + b`, an append, a conversion in
+parentheses), so it refused six run cases. **A rule that refuses on what the checker
+knows must ask what the checker fails to record, not only what it records** -- and
+the corpus guard SHOWED it: 1166 files after, 1172 before. **`corpusdiff.sh` reports
+programs with no twin in the BEFORE listing only; a newly refused program is a file
+MISSING from the AFTER listing, so compare the two COUNTS as well.** Fuzzer seeds
+1301-1500 on a P2-EDGE with this compiler: 197 passing, 3 outgrowing a cog, none
+failing.
 
 **PRINTING A VALUE IS A ROW** (2026-09-23). `printf("%v", x)` of an ARRAY printed the
 address of its storage wherever x was not a bare name -- a literal, a field, an
