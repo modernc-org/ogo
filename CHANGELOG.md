@@ -172,7 +172,10 @@ shipped section tells a reader on that version that they have behaviour they do 
   and an element of a slice or an array declared from a literal (`xs := []A{1, 2}`
   recorded the element's kind and not its name), a typed constant (`const ca A = 5`),
   a receive from a `chan A`, `min` and `max` of values of A, and a range clause
-  assigning into a variable of another type, `for _, b = range as`.
+  assigning into a variable of another type, `for _, b = range as`. A defined struct,
+  array or slice type held through every shape already; the one gap was `append`,
+  whose result is its first argument's type: `takeM(append(l, 1))` for a `type L
+  []int` l and an M passed where `takeM(l)` was refused.
 - **A method called on a variable of an unnamed type is refused**, as Go refuses it:
   `n.foo()` for `n := 5`, `xs.foo()` for a `[]int`, `a.foo()` for a `[2]int`,
   `s.foo()` for a string, `pn.foo()` for a `*int` and `x.twice()` for `x := arr[:2]`

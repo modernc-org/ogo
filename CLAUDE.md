@@ -1359,8 +1359,11 @@ names were in hand (checkRangeAssign, after its kind switch). Seven of fourteen 
 accepted; all refuse now. **The value-producing shapes of a type are a list to walk
 whole**: a literal, a variable, a conversion, each operator, parentheses, a call, a
 method, a field, an element, a range value, a receive, a typed constant, a
-dereference, a type assertion, min and max -- and each rule about a type is asked of
-every one of them.
+dereference, a type assertion, min and max, append -- and each rule about a type is
+asked of every one of them. The KINDLESS categories, swept the same way (rej_named5:
+a struct, an array and a slice defined twice, through every shape and position), held
+in 16 of 17 -- kindlessCategory has decided them by name since 2026-09-20 -- and the
+one gap was `append`, whose result is its first argument's type.
 
 **PRINTING A VALUE IS A ROW** (2026-09-23). `printf("%v", x)` of an ARRAY printed the
 address of its storage wherever x was not a bare name -- a literal, a field, an
