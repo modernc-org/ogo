@@ -100,6 +100,52 @@ func derived() {
 	_, _, _, _, _ = b1, b2, b3, b4, f
 }
 
+var as = []A{1, 2}
+var arr = [2]A{3, 4}
+var cha chan A
+
+const ca A = 5
+
+func shapes() {
+	las := []A{1, 2}
+	for _, v := range as {
+		// ERROR "cannot use v of type A as type B in variable declaration"
+		var b B = v
+		_ = b
+	}
+	for _, v := range arr {
+		// ERROR "cannot use v of type A as type B in argument to takeB"
+		takeB(v)
+	}
+	for _, v := range las {
+		// ERROR "cannot use v of type A as type B in variable declaration"
+		var b B = v
+		_ = b
+	}
+	var b B
+	// ERROR "cannot use b \(value of type A\) as B value in assignment"
+	for _, b = range as {
+	}
+	// ERROR "cannot use as\[0\] of type A as type B in variable declaration"
+	var b1 B = as[0]
+	// ERROR "cannot use las\[1\] of type A as type B in variable declaration"
+	var b2 B = las[1]
+	// ERROR "cannot use <-cha of type A as type B in variable declaration"
+	var b3 B = <-cha
+	// ERROR "cannot use ca of type A as type B in variable declaration"
+	var b4 B = ca
+	a := A(1)
+	// ERROR "cannot use min\(a, 2\) of type A as type B in variable declaration"
+	var b5 B = min(a, 2)
+	// ERROR "cannot use max\(a, 3\) of type A as type B in argument to takeB"
+	takeB(max(a, 3))
+	_, _, _, _, _, _ = b, b1, b2, b3, b4, b5
+	var okA A = as[0] + arr[1] + ca + min(a, 2) + las[0]
+	for _, okA = range as {
+	}
+	_ = okA
+}
+
 func ok() {
 	a := A(1)
 	d := a + 1
@@ -116,5 +162,6 @@ func ok() {
 func main() {
 	direct()
 	derived()
+	shapes()
 	ok()
 }

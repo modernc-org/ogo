@@ -3601,6 +3601,17 @@ func (f *File) checkRangeAssign(s *Scope, target Node, haveKind Kind, hasKind bo
 			bad = wi != "" && hi != "" && wi != hi
 		}
 	}
+	// Two NAMED types: two defined types over one kind are two types, so `for _, b
+	// = range as` for a []A and a B is refused, as Go refuses it -- asked after the
+	// kinds, which the two share, and only where both names resolve, an alias by
+	// what it names.
+	if !bad && wantTN != nil && haveTN != nil {
+		if wi, wok := f.namedTypeIdentity(wantIn, wantTN); wok {
+			if hi, hok := f.namedTypeIdentity(haveIn, haveTN); hok && wi != hi {
+				bad = true
+			}
+		}
+	}
 	if !bad {
 		return
 	}
@@ -4788,8 +4799,19 @@ func (f *File) inferVarFrom(s *Scope, vd *VarDeclaration, init Node) {
 		if ek, ok := f.exprLitElemKind(s, init); ok {
 			// `xs := []int{1, 2}` / `a := [2]int{1, 2}`: xs carries int, so
 			// writing into an element is checked as an explicitly typed
-			// container's is.
+			// container's is. And the element's NAME, `xs := []A{1, 2}`: a value
+			// read out of xs -- an element, a range value -- is an A, which the
+			// kind alone let pass as any type over an int, where `var xs []A`
+			// recorded the name all along.
 			vd.elemKind, vd.hasElemKind = ek, true
+			if elem, ok := f.exprLitElemType(init); ok {
+				n0 := len(f.errList)
+				if tn := f.typ(s, elem); tn != nil {
+					vd.elemTypeNode = tn
+					vd.elemTypeName = f.elemTypeName(s, &TypeNodeSlice{TypeNode: tn})
+				}
+				f.errList = f.errList[:n0]
+			}
 			return
 		}
 		if elem, ok := f.exprLitElemType(init); ok {
@@ -11063,6 +11085,25 @@ func (f *File) typeIdentity(s *Scope, n Node) (string, bool) {
 	return "", false
 }
 
+// namedTypeIdentity is typeIdentity for a type WRITTEN as a name, resolved in s: the
+// defined type it names, through an alias, "" for a predeclared one, and not-ok for
+// anything else -- a composite, a qualified name that does not resolve.
+func (f *File) namedTypeIdentity(s *Scope, tn TypeNode) (string, bool) {
+	if s == nil {
+		return "", false
+	}
+	id, ok := tn.(*TypeNodeIdent)
+	if !ok {
+		return "", false
+	}
+	nm, ql := f.canonicalType(s, id.Name, id.Qualifier)
+	if ql.IsValid() {
+		name, ok := f.definedName(s, ql.Src()+"."+nm.Src())
+		return f.canonicalQualified(name), ok
+	}
+	return f.definedName(s, nm.Src())
+}
+
 // definedName classifies a written type name for type identity: the name itself
 // when it names a DEFINED type, "" when it names a predeclared one, and not-ok when
 // it names neither -- a composite, or nothing resolvable.
@@ -15264,6 +15305,37 @@ func (f *File) operandNamedType(s *Scope, o Node) (Token, Token, bool) {
 	return nm, ql, true
 }
 
+// minMaxNamedType is exprNamedType for a call of the builtins min and max, whose
+// factor is fac: the named type the typed arguments share, an untyped constant
+// taking it, and nothing where they share none or one has none or an unknown one.
+func (f *File) minMaxNamedType(s *Scope, fac Node) (name, qual Token, isPtr, ok bool) {
+	found := false
+	for c := range it(fac.ast) {
+		if c.sym != FactorSuffix {
+			continue
+		}
+		for st := range it(c.ast) {
+			if st.sym != CallSuffix {
+				continue
+			}
+			for a := range it(f.callArgList(st).ast) {
+				if a.sym != Expression {
+					continue
+				}
+				if k, isK := f.exprType(s, a); isK && isUntypedKind(k) {
+					continue
+				}
+				nm, ql, ptr, isNamed := f.exprNamedType(s, a)
+				if !isNamed || ptr || !nm.IsValid() || (found && (nm.Src() != name.Src() || ql.Src() != qual.Src())) {
+					return Token{}, Token{}, false, false
+				}
+				name, qual, found = nm, ql, true
+			}
+		}
+	}
+	return name, qual, false, found
+}
+
 // parenNamedType is exprNamedType for a parenthesised factor, `( Expression )` with
 // nothing after it: the name of what the parentheses hold.
 func (f *File) parenNamedType(s *Scope, fac Node) (Token, Token, bool) {
@@ -15340,6 +15412,12 @@ func (f *File) exprNamedType(s *Scope, n Node) (name, qual Token, isPtr, ok bool
 		// "v := *p": the POINTEE's type, and the value is not a pointer. Without
 		// this the variable carried no type at all.
 		isDeref = true
+	case len(ops) == 1 && f.unaryOp(s, ops[0]) == ARROW:
+		// "<-ch": the channel's element type, which `v := <-ch` recorded on v
+		// (inferRecvFrom) while the value itself had none: `var b B = <-ch` for a
+		// chan A went through.
+		nm, ql, ptr, _, _, ok := f.recvElemInfo(s, n)
+		return nm, ql, ptr, ok && nm.IsValid()
 	default:
 		return Token{}, Token{}, false, false
 	}
@@ -15380,6 +15458,13 @@ func (f *File) exprNamedType(s *Scope, n Node) (name, qual Token, isPtr, ok bool
 		if d, ok := s.find(id.Src()).(*VarDeclaration); ok && d.typeName.IsValid() {
 			return d.typeName, d.typeQual, (isPtr || d.isPtr) && !isDeref, true
 		}
+		// A CONSTANT declared with a type, `const ca A = 5`, is a value of that
+		// type; it had none here, so `var b B = ca` went through.
+		if c, ok := s.find(id.Src()).(*ConstDeclaration); ok && c.ConstSpec != nil && c.ConstSpec.TypeNode != nil && !isPtr && !isDeref {
+			if nm, named := namedTypeToken(c.ConstSpec.TypeNode); named {
+				return nm, namedTypeQual(c.ConstSpec.TypeNode), false, true
+			}
+		}
 		return Token{}, Token{}, false, false
 	}
 	// A value taken out of another package -- an element, a field, a function's or a
@@ -15400,6 +15485,13 @@ func (f *File) exprNamedType(s *Scope, n Node) (name, qual Token, isPtr, ok bool
 	callee, ok := f.exprCallee(n)
 	if !ok {
 		return Token{}, Token{}, false, false
+	}
+	// `min(a, 2)` and `max(a, b)` are values of their operands' type, as an
+	// arithmetic level is: the shared named type of the typed arguments.
+	if nm := callee.Src(); (nm == "min" || nm == "max") && !isPtr && !isDeref {
+		if _, isBuiltin := s.find(nm).(*PredeclaredFunc); isBuiltin {
+			return f.minMaxNamedType(s, fac)
+		}
 	}
 	// A CONVERSION, "v := X(0)": its value has the type converted TO. It is written
 	// like a call, and the callee resolving to a TYPE rather than a function is what
@@ -18065,10 +18157,43 @@ func (f *File) callResultKind(s *Scope, callee Token, hasCallee bool, suffix Nod
 		switch callee.Src() {
 		case "len", "cap", "copy":
 			return PredeclaredInt, true
+		case "min", "max":
+			return f.minMaxKind(s, suffix)
 		}
 		return 0, false
 	}
 	return f.funcSingleResultKind(s, callee)
+}
+
+// minMaxKind is the kind of a min or max call, whose suffix is the factor's: the
+// kind of its first typed argument -- the arguments are of one type, which
+// checkMinMaxArgs sees to -- and the first argument's own when all are untyped
+// constants, which the call then is too. It had none, so `var b B = min(a, 2)` for
+// an A was asked nothing.
+func (f *File) minMaxKind(s *Scope, suffix Node) (Kind, bool) {
+	var first Kind
+	hasFirst := false
+	for c := range it(suffix.ast) {
+		if c.sym != CallSuffix {
+			continue
+		}
+		for a := range it(f.callArgList(c).ast) {
+			if a.sym != Expression {
+				continue
+			}
+			k, ok := f.exprType(s, a)
+			if !ok {
+				return 0, false
+			}
+			if !isUntypedKind(k) {
+				return k, true
+			}
+			if !hasFirst {
+				first, hasFirst = k, true
+			}
+		}
+	}
+	return first, hasFirst
 }
 
 // funcSingleResultKind returns the predeclared Kind of the sole result of a named
