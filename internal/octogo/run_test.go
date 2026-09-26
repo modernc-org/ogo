@@ -24504,6 +24504,61 @@ func main() {
 		want: "104\n111\n108\n5\n",
 	},
 	{
+		// A string range's rune is an int32, as Go types it, in the checker and in the
+		// C: it was an int in both, so `var q int = r` went through where Go refuses
+		// it, and `%T` named the int. A rune constant's variable, a rune's copy, a
+		// byte, a named string type's runes and an assigning clause's rune are
+		// printed by their types beside the values. Found crossing the statements
+		// that declare a variable with the types Go gives them, after the review's
+		// range finding (REVIEW.md, 2026-09-26).
+		name: "a string range's rune and a rune constant are int32",
+		src: `type Name string
+
+func useRune(r rune) { println(r) }
+
+func main() {
+	x := 'a'
+	printf("%T\n", x)
+	var r rune = 'b'
+	r2 := r
+	printf("%T %T\n", r, r2)
+	b := byte(1)
+	printf("%T\n", b)
+	s := "héllo"
+	for i, c := range s {
+		if i == 1 {
+			var q rune = c
+			printf("%T %T %d %d\n", i, c, c, q)
+		}
+	}
+	var nm Name = "héllo"
+	for i, c := range nm {
+		if i == 1 {
+			printf("%T %d\n", c, c)
+		}
+	}
+	for _, c := range "ab" {
+		useRune(c)
+	}
+	var k rune
+	for _, k = range s {
+	}
+	printf("%T %d\n", k, k)
+	sum := 0
+	for _, c := range s {
+		sum += int(c)
+	}
+	println(sum)
+	var t rune
+	for _, c := range s {
+		t = c + 1
+	}
+	println(t)
+}
+`,
+		want: "int32\nint32 int32\nuint8\nint int32 233 233\nint32 233\n97\n98\nint32 111\n664\n112\n",
+	},
+	{
 		// A receive clause's TARGET is evaluated once the clause is chosen, after the
 		// communication, as Go evaluates it -- and not at all when another clause is.
 		// What binding or rendering the target hoisted -- the arguments of an

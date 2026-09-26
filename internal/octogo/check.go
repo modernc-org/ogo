@@ -3250,6 +3250,15 @@ func (f *File) checkRange(s *Scope, kw string, fi forInfo) {
 	if isInt {
 		isInt = f.checkIntRangeOperand(s, fi.rangeExpr, elem)
 	}
+	if !hasElem && !isInt && !isChan {
+		// A STRING yields its runes: the value variable is a rune, int32, as Go
+		// types it, and the key a byte index. It had no type at all, so `var q int =
+		// r` went through where Go refuses it, and the emitter counted the rune in
+		// an int, which `%T` named.
+		if k, ok := f.exprType(s, fi.rangeExpr); ok && kindCategory(k) == catString {
+			elem, hasElem = PredeclaredInt32, true
+		}
+	}
 	elemName, elemQual, elemPtr, _ := f.rangeElemNamed(s, fi.rangeExpr)
 	declared := false
 	switch {

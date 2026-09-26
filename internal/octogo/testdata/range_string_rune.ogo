@@ -1,0 +1,43 @@
+// A string range's value variable is a rune, int32, as Go types it. It had no type
+// at all, so a rune stored into an int went through where Go refuses it.
+
+type Name string
+
+func useRune(r rune) {}
+
+func ok(s string, nm Name) {
+	for i, r := range s {
+		useRune(r)
+		var q rune = r
+		n := i + 1
+		_, _ = q, n
+	}
+	for _, r := range nm {
+		useRune(r)
+	}
+	var k rune
+	for _, k = range s {
+	}
+	_ = k
+	for _, r := range "lit" {
+		useRune(r)
+	}
+}
+
+func bad(s string) {
+	for _, r := range s {
+		// ERROR "cannot use r of type int32 as type int in variable declaration"
+		var q int = r
+		_ = q
+	}
+	var n int
+	// ERROR "cannot use n \(value of type int32\) as int value in assignment"
+	for _, n = range s {
+	}
+	_ = n
+}
+
+func main() {
+	ok("ab", "cd")
+	bad("ef")
+}

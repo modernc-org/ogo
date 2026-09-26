@@ -26956,7 +26956,7 @@ func (e *emitter) emitRange(h *forHeader, body []int32) {
 		}
 		if h.rangeDef && val != "_" {
 			e.shadow(val)
-			e.locals[val] = "int" // a rune is int32, i.e. int on the P2
+			e.locals[val] = "int32_t" // a rune, as Go types it: `%T` named the int it was
 		}
 		inject := func() {
 			if h.keyStore != "" {
@@ -26972,7 +26972,7 @@ func (e *emitter) emitRange(h *forHeader, body []int32) {
 			}
 			decl := ""
 			if h.rangeDef {
-				decl = "int "
+				decl = "int32_t "
 			}
 			e.emit(decl + val + " = ogo_decode_rune(" + hdr + ", " + key + ", &" + width + ");\n")
 		}
