@@ -38,6 +38,23 @@ shipped section tells a reader on that version that they have behaviour they do 
 
 ### Fixed
 
+- **A call's results assigned to fields it reads build in a blink.** `l.rx,
+  l.request = control(l.rx, 64, l.request)` took 25 seconds to build, and two such
+  statements ran the compiler out of memory: each field holds the call's result, and
+  the summaries' walk over what a call's arguments hold came back to the call itself
+  at every level, branching per argument. A call already on the walk's path is not
+  entered again. Found by p2-11, the first program of any size; the compiler of
+  2026-09-23 was not affected.
+- **An array literal of any length builds.** The emitted C put a literal on one line,
+  about nine bytes an element, and the P2 compiler's preprocessor takes a line of
+  65536 bytes at most: a table of 8000 uint16 values did not build, and what the user
+  was told was `flexcc crashed: ... unsupported setjmp/longjmp usage`, the name of the
+  preprocessor's fatal-error path. A long line is wrapped at element boundaries now,
+  and a long string constant written as adjacent literal pieces, which C joins.
+- **`ogo fmt` agrees with gofmt in three more places.** The names of a const block
+  where only the first spec has a value are padded to the longest and their trailing
+  comments aligned, an empty `for` condition is written `for i := 0; ; i++`, and the
+  second line of a call's arguments stands one tab deeper than the call.
 - **An integer range counts in the operand's type.** `for i := range n` copied the
   bound into an int and declared i an int whatever n was: a uint32 bound above the
   signed maximum was negative and the loop ran zero times, an int64 or uint64 one
@@ -155,6 +172,20 @@ shipped section tells a reader on that version that they have behaviour they do 
   beside the local x the reference points into, were refused as x not outliving
   its block: the reference named no referent, which the block rule takes for
   storage of the block being emitted.
+
+### Toolchain
+
+- **The dependencies are upgraded: modernc.org/libc v1.77.1, ccgo v4.36.1, gc
+  v3.1.5, cc v4.29.7, memory v1.12.1, and the go directive is 1.26.** The
+  transpiled backend is untouched, and the upgrade was measured the way a
+  regeneration is: over doc/ and a corpus dump, 1218 programs, every binary the
+  in-process backend builds is byte-identical before and after, and the same 20
+  programs are refused. The libc brings a longjmp model in which a jump may target
+  any armed buffer; the backend arms none (mcpp's setjmp is removed by
+  `internal/mcpp_main.c.diff`), so a preprocessor fatal error is still the
+  `unsupported setjmp/longjmp usage` panic it was, and the next backend regeneration,
+  from ccgo v4.36.1 with this libc, is where keeping the setjmp can be tried. Building
+  the compiler requires Go 1.26.
 
 ### Behaviour changes
 

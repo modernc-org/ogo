@@ -343,8 +343,20 @@ inputs, and never hand-edit the outputs.
    > files. The generated file is **not** gofmt-clean out of ccgo; the generator
    > gofmt's the per-target files itself before the fold, whichever path produced
    > them. The ccgo CLI version the cross passes use is the one `go.mod` pins for
-   > the library (`go install modernc.org/ccgo/v4@v4.34.6` into a scratch GOBIN
-   > first on PATH), so all five transpiles come from one ccgo.
+   > the library (`go install modernc.org/ccgo/v4@<that version>` into a scratch
+   > GOBIN first on PATH), so all five transpiles come from one ccgo. Every transpile
+   > committed so far is ccgo v4.34.6's with libc v1.74.1; **go.mod pins ccgo v4.36.1
+   > and libc v1.77.1 since 2026-09-27** (the upgrade alone changed no binary: 1218
+   > programs byte-identical under `scripts/cccorpus.sh`, the host suite and `make
+   > board` green), so the NEXT regeneration is from that pair, all five platforms in
+   > one go. It is also where `mcpp_main.c.diff`'s removal of mcpp's setjmp can be
+   > retried: the transpile arms no jump buffer and calls `tls.Longjmp` at mcpp's six
+   > cfatal sites, so any preprocessor fatal error -- a line over NBUFF's 65,536 bytes
+   > was one, until the emitter wrapped its lines -- is libc's "unsupported
+   > setjmp/longjmp usage" panic instead of mcpp's message, under either libc.
+   > v1.77.1's model (a Longjmp may target any armed buffer, not only the last, and
+   > panics with a LongjmpRetval naming it) is what makes keeping the setjmp worth
+   > trying.
 
 4. **C library names.** `internal/octogo/cnames.go` (marked `DO NOT EDIT`) lists
    every macro and every file-scope name the target's C library speaks for, and the
@@ -1379,6 +1391,55 @@ swept across the boundary too, with the qualified spelling in every position** -
 one earns. The interface and member rules (rej_iface) and constants into defined
 types (rej_const) hold through every shape.
 
+**A PROGRAM OF SIZE ASKS WHAT NO SWEEP ASKS** (2026-09-27). p2-11, a PDP-11 emulator
+and the first OctoGo program of any size, handed over six findings
+(`../p2-11/OCTOGO.md`, measured on a P2-EC at 160 MHz), and not one was a wrong
+answer: the sweeps ask what a program computes, and a program of size asks what it
+COSTS -- build time and memory, the length of a line of C, clocks an operation. Three
+closed in one sitting. (1) `l.rx, l.request = control(l.rx, 64, l.request)`, a call's
+results assigned to the fields it reads, took 22.8 s to build, and two such statements
+ran the compiler out of memory in collectFuncCross: each target HOLDS the call's
+result, and the walk over what a call's arguments hold (viaEdges) came back to the call
+itself at every level, branching per argument -- exponential in their number, and
+correct C at the end of it, which no corpus guard or run case can see. **A walk over
+what names hold carries its path** (a call on the path is not entered again); the hold
+graph has a cycle the moment a value is stored into what its call reads. And **a
+build's TIME is a verdict**: the run case that holds the shape asserts the output, so
+read the time of a domain program's build. (5) An array literal of 8000 uint16 was one
+line of C of 72,000 bytes; mcpp's line buffer, NBUFF, is 65,536, and its fatal-error
+path is `longjmp(error_exit)`, whose setjmp `internal/mcpp_main.c.diff` removed -- so
+what the user saw was libc's "unsupported setjmp/longjmp usage" panic under `flexcc
+crashed:`, the NAME of that path, not the preprocessor's message. A line over 4000
+bytes is wrapped at `, ` outside literals and a string constant written as adjacent
+pieces of 1000 (wrapLongLines, cQuote; TestEmitCLongLines): **a line's length is a
+limit of the backend** like a cog register. Any other mcpp fatal error still ends in
+that panic, until a regeneration keeps the setjmp (the ccgo pin note under Code
+generation). (6) `ogo fmt` disagreed with gofmt in three places -- the comment column
+of a const block where only the first spec has a value, `for i := 0; ; i++`, the
+second line of a call's arguments -- on sources that ARE Go once given a package
+clause. TestFormatMatchesGofmt runs the RUN CASES through gofmt, and no run case had
+those shapes; **a domain program's source through both formatters is the formatter's
+probe** (TestFormatGofmtColumns holds these; gofmt's tabwriter rule is that a trailing
+comment is a CELL, so the cells before it align). The three OPEN are the backend's
+handling of the C, all in clocks. (2) A named constant is `static const int n =
+1000000;` and an expression of constants, `(trapOdd | trapTimeout)`, is written as
+written, so the backend reads the constant from hub RAM (`rdlong`) where it is used:
+71 clocks an iteration for a loop bound against 60.5 for the literal -- and the read
+decides INLINING, the backend inlining by size: `return m.traps&3 != 0` inlined at 24
+clocks a call, `return m.traps&aborts != 0` for `const aborts = 3` called at 111. The
+checker folds every constant; writing the folded value where the name is used is the
+change to measure on the board and to run through the corpus guard (a `%T` of a
+constant, a typed constant's C type, a constant string's header and a constant as an
+array bound are the positions to watch). (4) A runtime check is a call:
+`ogo_nil_machine_ptr(m)` at a receiver's use and the index check each call a helper
+with a branch in it, which by (3) is not inlined, and a function calling one grows
+past the inline threshold itself -- a method testing a field of its receiver 215
+clocks checked and 24 with `--unchecked`, `m.r[i&7] += uint16(i)` 79 against 36. (3)
+A call and its return cost about fifty instructions, a switch is a chain of compares
+in case order (one of sixteen cases 160 clocks on average), and only a body without a
+branch is inlined; that is the backend's, and stays as a fact programs are written
+against (the emulator, rewritten for it, runs 5.3x).
+
 **PRINTING A VALUE IS A ROW** (2026-09-23). `printf("%v", x)` of an ARRAY printed the
 address of its storage wherever x was not a bare name -- a literal, a field, an
 element, a row, a call's field, a deferred capture -- silently on the board, and
@@ -1698,7 +1759,9 @@ for a `t.p.save()`, is refused even when lw holds package storage -- as the dire
   GitHub Sponsors tiers had already superseded). (`gem.md`, the original Gemini
   design corpus, was deleted 2026-07-10; its unique, still-unreconciled bits are
   salvaged in the appendix below.)
-- Requires Go 1.25+ (uses iterators, `maps`/`slices`, range-over-func).
+- Requires Go 1.26+ (the go directive follows modernc.org/libc's, 1.26 since
+  2026-09-27; the code itself wants 1.23's iterators, `maps`/`slices` and
+  range-over-func).
 
 ## Appendix: salvaged design notes from gem.md (unreconciled — process later)
 
