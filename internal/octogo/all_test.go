@@ -2074,3 +2074,64 @@ func run(a T) {
 		t.Errorf("formatting is not idempotent:\n first %q\nsecond %q", e, g)
 	}
 }
+
+// TestFormatGofmtColumns pins three places where ogo fmt and gofmt disagreed, found
+// by a program of some size (p2-11's OCTOGO.md, 2026-09-27): the names of a const
+// block where only the first spec has a value were not padded and its comments were
+// ragged, an empty for condition was written `;;`, and the second line of a call's
+// arguments stood as deep as the call. want is gofmt's output of the same text.
+func TestFormatGofmtColumns(t *testing.T) {
+	const src = `const (
+	trapOdd = 1 << iota // a word at an odd address
+	trapTimeout // an address nothing answers at
+	trapReserved // an instruction this processor does not have
+)
+
+const (
+	frameEnd uint8 = 0xC0 // the flag
+	maxFrame = 16 // the size
+)
+
+func f(a, b, c int) int {
+	for i := 0; ; i++ {
+		if i > a {
+			break
+		}
+	}
+	return g("no vector or no stack for a trap",
+		a, b, c)
+}
+
+func g(s string, a, b, c int) int { return len(s) + a + b + c }
+`
+	const want = `const (
+	trapOdd      = 1 << iota // a word at an odd address
+	trapTimeout              // an address nothing answers at
+	trapReserved             // an instruction this processor does not have
+)
+
+const (
+	frameEnd uint8 = 0xC0 // the flag
+	maxFrame       = 16   // the size
+)
+
+func f(a, b, c int) int {
+	for i := 0; ; i++ {
+		if i > a {
+			break
+		}
+	}
+	return g("no vector or no stack for a trap",
+		a, b, c)
+}
+
+func g(s string, a, b, c int) int { return len(s) + a + b + c }
+`
+	var out bytes.Buffer
+	if err := FormatFile("main.ogo", []byte(src), &out); err != nil {
+		t.Fatal(err)
+	}
+	if got := out.String(); got != want {
+		t.Errorf("got:\n%s\nwant:\n%s", got, want)
+	}
+}

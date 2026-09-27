@@ -365,6 +365,11 @@ func needsSpace(prevPrev, prev, curr Symbol, c formatterCtx) bool {
 	// for the semicolon to bind to.
 	case prev == FOR && curr == SEMICOLON:
 		return true
+	// And an EMPTY condition keeps a space between its two semicolons: gofmt
+	// writes "for i := 0; ; i++", where this wrote "for i := 0;; i++" (p2-11's
+	// OCTOGO.md, 2026-09-27).
+	case prev == SEMICOLON && curr == SEMICOLON:
+		return true
 	case curr == COMMA || curr == SEMICOLON || curr == COLON:
 		return false
 	// "++" and "--" are postfix and bind to their operand: "i++", "b.arr[i]++".
@@ -679,6 +684,23 @@ func sliceColonNeedsBlanks(indexKids []int32) bool {
 	return len(bounds) > 1 && slices.ContainsFunc(bounds, isBinaryBound)
 }
 
+// anyElementBeginsLine reports whether any direct element of a list -- a child
+// node of the given list body -- begins a source line.
+func (f *formatter) anyElementBeginsLine(ast []int32) bool {
+	for len(ast) > 0 {
+		n := ast[0]
+		if n < 0 {
+			if f.beginsLine(firstIndex(ast[:2+ast[1]])) {
+				return true
+			}
+			ast = ast[2+ast[1]:]
+			continue
+		}
+		ast = ast[1:]
+	}
+	return false
+}
+
 // beginsLine reports whether the token at idx is the first on its source line.
 func (f *formatter) beginsLine(idx int32) bool {
 	return idx > 0 && f.p.Token(idx-1).Position().Line != f.p.Token(idx).Position().Line
@@ -747,10 +769,13 @@ type formatterCtx struct {
 // the names, the type, and the "= value". Either of the last two may be absent.
 type specMeasurement struct {
 	startTokIdx  int32
+	lastTokIdx   int32 // the spec's last token, which a trailing comment follows
 	namesWidth   int
 	typeWidth    int
+	valueWidth   int   // the "= value" cell, for the comment column after it
 	typeStartIdx int32 // -1 when the spec writes no type
 	eqIdx        int32 // -1 when the spec has no value
+	hasComment   bool  // a line comment trails the spec, so its last cell is not last
 }
 
 // alignSpecs lays out the specs of a grouped "const ( ... )" or "var ( ... )" in
@@ -816,27 +841,43 @@ func (f *formatter) alignSpecs(ast []int32, kind Symbol, c formatterCtx) {
 
 	baseCol := int(c.indentLevel) * 8
 	for _, b := range blocks {
-		maxNames, maxType := 0, 0
+		maxNames, maxType, maxValue := 0, 0, 0
 		for _, m := range b {
-			// Only a spec with something after its names widens the names column.
-			if (m.typeStartIdx != -1 || m.eqIdx != -1) && m.namesWidth > maxNames {
+			// Only a spec with something after its names widens the names column: a
+			// type, a value, or a trailing COMMENT, which is a cell of its own to
+			// gofmt's tabwriter. Without the last, an `iota` run whose specs carry
+			// comments -- `trapOdd = 1 << iota // ...` over `trapTimeout // ...` --
+			// left its names unpadded and its comments ragged, where gofmt pads the
+			// names to the longest and the empty value cells to the widest value
+			// (p2-11's OCTOGO.md, 2026-09-27).
+			if (m.typeStartIdx != -1 || m.eqIdx != -1 || m.hasComment) && m.namesWidth > maxNames {
 				maxNames = m.namesWidth
 			}
-			// Only a type with a value after it widens the type column.
-			if m.typeStartIdx != -1 && m.eqIdx != -1 && m.typeWidth > maxType {
+			// Only a type with something after it widens the type column.
+			if m.typeStartIdx != -1 && (m.eqIdx != -1 || m.hasComment) && m.typeWidth > maxType {
 				maxType = m.typeWidth
+			}
+			// And only a value with a comment after it widens the value column.
+			if m.eqIdx != -1 && m.hasComment && m.valueWidth > maxValue {
+				maxValue = m.valueWidth
 			}
 		}
 		for _, m := range b {
 			if m.typeStartIdx != -1 {
 				f.targetCol2[m.typeStartIdx] = baseCol + maxNames + 1
 			}
+			col := baseCol + maxNames + 1
+			if maxType > 0 {
+				col += maxType + 1
+			}
 			if m.eqIdx != -1 {
-				col := baseCol + maxNames + 1
-				if maxType > 0 {
-					col += maxType + 1
-				}
 				f.targetCol2[m.eqIdx] = col
+			}
+			if m.hasComment {
+				if maxValue > 0 {
+					col += maxValue + 1
+				}
+				f.targetComment[m.lastTokIdx] = col
 			}
 		}
 	}
@@ -844,7 +885,7 @@ func (f *formatter) alignSpecs(ast []int32, kind Symbol, c formatterCtx) {
 
 // measureSpec measures one ConstSpec or VarSpec into its three columns.
 func (f *formatter) measureSpec(ast []int32, c formatterCtx) specMeasurement {
-	m := specMeasurement{startTokIdx: -1, typeStartIdx: -1, eqIdx: -1}
+	m := specMeasurement{startTokIdx: -1, lastTokIdx: -1, typeStartIdx: -1, eqIdx: -1}
 	col := 0 // 0 names, 1 type, 2 value
 	first := true
 	var prevPrev, prev Symbol
@@ -871,7 +912,8 @@ func (f *formatter) measureSpec(ast []int32, c formatterCtx) specMeasurement {
 			if col == 1 && m.typeStartIdx == -1 {
 				m.typeStartIdx = n
 			}
-			if src := tok.SrcBytes(); len(src) > 0 && col < 2 {
+			if src := tok.SrcBytes(); len(src) > 0 {
+				m.lastTokIdx = n
 				space := 0
 				if !first && needsSpace(prevPrev, prev, curr, c) {
 					space = 1
@@ -879,6 +921,10 @@ func (f *formatter) measureSpec(ast []int32, c formatterCtx) specMeasurement {
 				switch {
 				case col == 0:
 					m.namesWidth += len(src) + space
+				case col == 2 && m.eqIdx == n: // the gap before the "=" is the column's
+					m.valueWidth += len(src)
+				case col == 2:
+					m.valueWidth += len(src) + space
 				case m.typeStartIdx == n: // the gap before the type is the column's
 					m.typeWidth += len(src)
 				default:
@@ -891,6 +937,7 @@ func (f *formatter) measureSpec(ast []int32, c formatterCtx) specMeasurement {
 		}
 	}
 	walk(ast)
+	m.hasComment = f.trailsLineComment(m.lastTokIdx)
 	return m
 }
 
@@ -1115,13 +1162,16 @@ func FormatFile(fn string, b []byte, w io.Writer) (err error) {
 						c.indentLevel++
 					}
 				case ResultList, ArgumentList:
-					// A list whose first element starts a line of its own indents what
-					// follows it. The parentheses are not part of these productions, so
-					// the closing one is emitted at the level outside them with nothing
-					// to undo. Asking about the first element rather than the list's span
-					// is what keeps a nested call from adding a level of its own: in
-					// "println(f(\n1,\n))" only the inner list starts a line.
-					if f.beginsLine(firstIndex(ast[:next])) {
+					// A list any of whose elements starts a line of its own indents
+					// what follows it -- the first, `f(\n1,\n)`, or a later one,
+					// `g("...",\n\ta, b, c)`, whose second line stood as deep as the call
+					// where gofmt steps it in (p2-11's OCTOGO.md, 2026-09-27). The
+					// parentheses are not part of these productions, so the closing one
+					// is emitted at the level outside them with nothing to undo. Asking
+					// about the ELEMENTS rather than the list's span is what keeps a
+					// nested call from adding a level of its own: in "println(f(\n1,\n))"
+					// only the inner list has an element starting a line.
+					if f.anyElementBeginsLine(ast[2:next]) {
 						c.indentLevel++
 					}
 				case Signature, MethodSpec:
