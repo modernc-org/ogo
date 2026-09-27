@@ -24504,6 +24504,98 @@ func main() {
 		want: "104\n111\n108\n5\n",
 	},
 	{
+		// A call's several results assigned to FIELDS of a package variable, with
+		// those fields among the call's arguments: `l.rx, l.rxRequest = control(l.rx,
+		// v, l.rxRequest)`. Each field then holds the call's result, and the
+		// summaries' walk over what a call's arguments hold (viaEdges) came back to
+		// the call itself at every level, branching per argument, to its depth cap of
+		// eight: one such statement took 25 seconds to build and two ran the
+		// compiler out of memory. A call already on the walk's path is not entered
+		// again. From p2-11's OCTOGO.md (2026-09-27); this is its larger program.
+		name: "a call's results assigned to fields it reads build in a blink",
+		src: `type device interface {
+	write(a, v, mask uint16)
+}
+
+type line struct {
+	rx, tx               uint16
+	rxRequest, txRequest bool
+}
+
+func control(csr, v uint16, request bool) (uint16, bool) {
+	if v&64 == 0 {
+		request = false
+	}
+	return csr&^64 | v&64, request
+}
+
+func (l *line) write(a, v, mask uint16) {
+	switch a & 6 {
+	case 0:
+		if mask&64 != 0 {
+			l.rx, l.rxRequest = control(l.rx, v, l.rxRequest)
+		}
+	case 4:
+		if mask&64 != 0 {
+			l.tx, l.txRequest = control(l.tx, v, l.txRequest)
+		}
+	}
+}
+
+type machine struct {
+	dev device
+	mem [16]uint16
+}
+
+func (m *machine) attach(d device) {
+	m.dev = d
+}
+
+func (m *machine) writeIO(a, size, v uint16) {
+	mask := uint16(0xffff)
+	if size == 1 {
+		mask = 0x00ff
+	}
+	m.dev.write(a&^1, v, mask)
+}
+
+func (m *machine) write(a, size, v uint16) {
+	if a >= 32 {
+		m.writeIO(a, size, v)
+		return
+	}
+	m.mem[a>>1] = v
+}
+
+func (m *machine) address(spec uint16) uint16 {
+	return m.mem[spec&7]
+}
+
+func (m *machine) double(ir uint16) {
+	a := m.address(ir & 7)
+	m.write(a, 2, m.mem[ir>>6&7])
+}
+
+func (m *machine) run(n int) {
+	for i := 0; i < n; i++ {
+		m.double(uint16(i))
+	}
+}
+
+var (
+	l line
+	m machine
+)
+
+func main() {
+	m.attach(&l)
+	m.run(3)
+	println(l.rx, l.rxRequest)
+}
+`,
+		want: "0 false\n",
+	},
+	{
 		// A range over a SLICE EXPRESSION of an array, a slice or a string, with a
 		// value variable. The range's named-conversion fallback asked exprNamedType,
 		// which names the ELEMENT of an indexed or sliced aggregate, so `range bs[:n]`

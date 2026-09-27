@@ -11465,32 +11465,44 @@ func (e *emitter) collectFuncCross(fi funcInfo) {
 	// `x := pass(v); keep(x)`: the caller's parameter it passed there reaches the
 	// argument where the inner callee hands it back, which edge.via gates.
 	viaEdges := func(edge crossEdge, a []int32) (out []crossEdge) {
-		var walk func(a []int32, via []viaGate)
-		walk = func(a []int32, via []viaGate) {
+		var walk func(a []int32, via []viaGate, path []*int32)
+		walk = func(a []int32, via []viaGate, path []*int32) {
 			if len(via) > 8 {
-				return // a nest of calls this deep is not written; a cycle through holds may be
+				return // a nest of calls this deep is not written
 			}
-			for _, c := range resultCalls(a) {
-				for _, callee := range c.callees {
-					for jj, ia := range c.args {
-						gates := append(slices.Clone(via), viaGate{callee, jj})
-						r := reachOf(e.summaryReach(ia.ast))
-						for _, i := range r.vals {
-							g := edge
-							g.from, g.via = i, gates
-							out = append(out, g)
+			for _, c := range append(e.callExprsIn(a), heldCalls(a)...) {
+				// A call already on this path is not entered again: a name assigned a
+				// call's result HOLDS that call, so following the call's own
+				// arguments through what they hold came back to the call itself,
+				// `l.rx, l.request = control(l.rx, 64, l.request)`, and with a branch
+				// per argument at each of the eight levels the walk took 25 seconds
+				// for that statement and ran out of memory on two of them.
+				if len(c) == 0 || slices.Contains(path, &c[0]) {
+					continue
+				}
+				inner := append(slices.Clone(path), &c[0])
+				for _, vc := range callsOfExpr(c) {
+					for _, callee := range vc.callees {
+						for jj, ia := range vc.args {
+							gates := append(slices.Clone(via), viaGate{callee, jj})
+							r := reachOf(e.summaryReach(ia.ast))
+							for _, i := range r.vals {
+								g := edge
+								g.from, g.via = i, gates
+								out = append(out, g)
+							}
+							for _, i := range r.conts {
+								g := edge
+								g.from, g.via, g.contents = i, gates, true
+								out = append(out, g)
+							}
+							walk(ia.ast, gates, inner) // `keep(trim(pass(v)))`
 						}
-						for _, i := range r.conts {
-							g := edge
-							g.from, g.via, g.contents = i, gates, true
-							out = append(out, g)
-						}
-						walk(ia.ast, gates) // `keep(trim(pass(v)))`
 					}
 				}
 			}
 		}
-		walk(a, nil)
+		walk(a, nil, nil)
 		return out
 	}
 	derivedCall = func(callees []string, args []Node, flag leak, slot int) {
