@@ -765,7 +765,16 @@ func runeString(v int64) string {
 func cQuote(s string) string {
 	var b strings.Builder
 	b.WriteByte('"')
+	piece := 0 // where the current literal piece began, for splitting a long one
 	for i := 0; i < len(s); i++ {
+		if b.Len()-piece >= longLinePiece {
+			// A long string is written as adjacent literals, which C joins: the
+			// target's preprocessor takes a line of 65536 bytes at most (see
+			// wrapLongLines), and a literal is the one element a line cannot be
+			// broken inside.
+			b.WriteString("\" \"")
+			piece = b.Len()
+		}
 		switch c := s[i]; {
 		case c == '"' || c == '\\':
 			b.WriteByte('\\')
@@ -6051,8 +6060,98 @@ func emitProgram(pkg *Package, w io.Writer, opts []EmitOption, rename map[string
 		return e.err
 	}
 	out.Write(body.Bytes())
-	_, err := w.Write(ensureStdint(insertStringLits(out.Bytes(), e.stringLitDecls)))
+	_, err := w.Write(wrapLongLines(ensureStdint(insertStringLits(out.Bytes(), e.stringLitDecls))))
 	return err
+}
+
+// The target's preprocessor reads a line into a buffer of 65536 bytes (mcpp's
+// NBUFF) and gives up on a longer one, and what the user was told named the C
+// library's "unsupported setjmp/longjmp usage": the preprocessor's fatal-error path
+// is a longjmp whose setjmp mcpp_main.c.diff removed. An array literal was written
+// on one line, about nine bytes an element, so a table of 8000 uint16 values --
+// 72,031 bytes -- did not build (p2-11's OCTOGO.md, 2026-09-27). A shorter line
+// means the same to C, so the assembled text is broken here, once, whatever wrote
+// it: a line longer than longLineMax is cut at element boundaries into pieces of
+// about longLinePiece bytes.
+const (
+	longLineMax   = 4000
+	longLinePiece = 1000
+)
+
+// wrapLongLines breaks every line of src longer than longLineMax at a ", " outside
+// a string or character literal, each continuation line indented by a tab.
+func wrapLongLines(src []byte) []byte {
+	long := false
+	for off := 0; off < len(src); {
+		end := bytes.IndexByte(src[off:], '\n')
+		if end < 0 {
+			end = len(src) - off
+		}
+		if end > longLineMax {
+			long = true
+			break
+		}
+		off += end + 1
+	}
+	if !long {
+		return src
+	}
+	var out bytes.Buffer
+	for off := 0; off < len(src); {
+		end := bytes.IndexByte(src[off:], '\n')
+		if end < 0 {
+			end = len(src) - off
+		} else {
+			end++ // the newline goes with its line
+		}
+		line := src[off : off+end]
+		off += end
+		if len(line) <= longLineMax {
+			out.Write(line)
+			continue
+		}
+		out.Write(wrapLine(line))
+	}
+	return out.Bytes()
+}
+
+// wrapLine is wrapLongLines for one line.
+func wrapLine(line []byte) []byte {
+	var out bytes.Buffer
+	inStr, inChar, esc := false, false, false
+	start := 0
+	for i := 0; i < len(line); i++ {
+		c := line[i]
+		switch {
+		case esc:
+			esc = false
+		case (inStr || inChar) && c == '\\':
+			esc = true
+		case inStr:
+			inStr = c != '"'
+			// Between the adjacent pieces of a long literal (cQuote), `" "`, a line
+			// may break as well: a 70,000-byte string would otherwise be one piece.
+			if !inStr && i+2 < len(line) && line[i+1] == ' ' && line[i+2] == '"' && i+1-start >= longLinePiece {
+				out.Write(line[start : i+1])
+				out.WriteString("\n\t")
+				start = i + 2
+				i++
+			}
+		case inChar:
+			inChar = c != '\''
+		case c == '"':
+			inStr = true
+		case c == '\'':
+			inChar = true
+		case c == ',' && i+1 < len(line) && line[i+1] == ' ' && i+1-start >= longLinePiece:
+			out.Write(line[start : i+1])
+			out.WriteString("\n\t")
+			start = i + 2 // past the space
+			i++
+		}
+	}
+	out.Write(line[start:])
+	return out.Bytes()
 }
 
 // ensureStdint adds <stdint.h> to an assembled translation unit that names a

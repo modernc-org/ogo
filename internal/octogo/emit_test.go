@@ -17119,3 +17119,46 @@ func main() {
 		t.Errorf("the range copies no array:\n%s", b.String())
 	}
 }
+
+// TestEmitCLongLines pins the wrapping of the assembled C (wrapLongLines): the
+// target's preprocessor takes a line of 65536 bytes at most, and an array literal
+// of 8000 values was one line of 72,031 bytes, refused with the C library's
+// "unsupported setjmp/longjmp usage" for a message (p2-11's OCTOGO.md, 2026-09-27).
+// A long string constant is written as adjacent literal pieces for the same reason.
+func TestEmitCLongLines(t *testing.T) {
+	var sb strings.Builder
+	sb.WriteString("var table = [...]uint16{")
+	for i := range 8000 {
+		if i > 0 {
+			sb.WriteString(", ")
+		}
+		sb.WriteString("7")
+	}
+	sb.WriteString("}\n\nconst text = \"" + strings.Repeat("abcdefghij", 700) + "\"\n\nfunc main() {\n\tprintln(len(table), table[7999], len(text))\n\tprintln(text)\n}\n")
+	fsys := fstest.MapFS{"main.ogo": &fstest.MapFile{Data: []byte(sb.String())}}
+	pkg, err := Build(-1, []string{"main.ogo"}, fsys)
+	if err != nil {
+		t.Fatalf("Build: %v", err)
+	}
+	var buf bytes.Buffer
+	if err := EmitC(pkg, &buf); err != nil {
+		t.Fatalf("EmitC: %v", err)
+	}
+	longest, commas, pieces := 0, 0, 0
+	for _, line := range strings.Split(buf.String(), "\n") {
+		longest = max(longest, len(line))
+		commas += strings.Count(line, ",")
+		if strings.HasPrefix(line, "\t\"") {
+			pieces++ // a continuation line holding the next piece of a split literal
+		}
+	}
+	if longest > longLineMax {
+		t.Errorf("a line of %d bytes; the preprocessor takes 65536 and the emitter wraps at %d", longest, longLineMax)
+	}
+	if commas < 7999 {
+		t.Errorf("the table lost elements: %d commas", commas)
+	}
+	if pieces < 6 {
+		t.Errorf("the 7000-byte string should be written as adjacent pieces on lines of their own, found %d", pieces)
+	}
+}
