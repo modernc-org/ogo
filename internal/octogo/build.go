@@ -318,6 +318,22 @@ func GetSec() uint32
 
 func GetUs() uint32
 
+// ClockFreq is how many clocks a second has: the frequency the program was built
+// for, 160 MHz where ` + "`ogo build --clock`" + ` did not ask for another. It is what turns
+// a time into what GetCt, WaitUntil and WaitCycles count, and into the period a
+// smart pin is given:
+//
+//	tick := p2.ClockFreq() / 60 // a sixtieth of a second, at any clock
+//	next := p2.GetCt() + tick
+//	for {
+//		p2.WaitUntil(next)
+//		next += tick
+//		...
+//	}
+//
+// It is read where it is called, so a loop asks once and keeps the answer.
+func ClockFreq() uint32
+
 // Rnd is the hardware random number generator. Rev reverses the bits of x.
 func Rnd() uint32
 

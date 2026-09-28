@@ -4094,6 +4094,45 @@ func main() {
 		want: "true\ntrue\ntrue true\ntrue\n",
 	},
 	{
+		// A program could not ask how fast its clock is: the frequency is chosen
+		// where it is built, with --clock, and what p2 counts in clocks -- GetCt,
+		// WaitUntil, WaitCycles, a smart pin's period -- was of use only to a
+		// program that had the number written into it, and was right at that
+		// frequency and at no other (p2-11's OCTOGO.md, 2026-09-28). ClockFreq is
+		// the backend's _clockfreq.
+		//
+		// Relations rather than numbers, the host shim's counter and the board's
+		// running at different rates; on a P2-EDGE the number is 160000000, and
+		// 200000000, 180000000 and 100000000 built with --clock, a tenth of a
+		// second by WaitMs being 16000042, 20000042, 18000042 and 10000042 clocks.
+		name: "the clock frequency is what the counter counts in a second",
+		src: `import "p2"
+
+func main() {
+	f := p2.ClockFreq()
+	println(f >= 20000000, f%1000000 == 0)
+
+	// A tenth of a second by the millisecond is a tenth of the clocks a second has.
+	t0 := p2.GetCt()
+	p2.WaitMs(100)
+	dt := p2.GetCt() - t0
+	println(dt >= f/10-f/100, dt < f)
+
+	// A period made of it keeps time at any clock.
+	tick := f / 50
+	u0 := p2.GetUs()
+	next := p2.GetCt() + tick
+	for i := 0; i < 5; i++ {
+		p2.WaitUntil(next)
+		next += tick
+	}
+	us := p2.GetUs() - u0
+	println(us >= 99000, us < 1000000)
+}
+`,
+		want: "true true\ntrue true\ntrue true\n",
+	},
+	{
 		// The accepting side of the block-lifetime rule, which exists because Go's
 		// loop variable is per ITERATION (since 1.22) and a body-scoped local has
 		// been per iteration since 1.0. Keeping a reference to either past the

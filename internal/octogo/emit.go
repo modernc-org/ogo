@@ -671,6 +671,7 @@ var p2Intrinsics = map[string]p2Intrinsic{
 	"GetMs":        {"_getms", "unsigned"},
 	"GetSec":       {"_getsec", "unsigned"},
 	"GetUs":        {"_getus", "unsigned"},
+	"ClockFreq":    {"_clockfreq", "unsigned"},
 	"Rnd":          {"_rnd", "unsigned"},
 	"Rev":          {"_rev", "unsigned"},
 	"SetBaud":      {"_setbaud", ""},

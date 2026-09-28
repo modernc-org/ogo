@@ -53,6 +53,8 @@ static inline uint64_t _ogo_host_nanos(void) {
 /* _cnt is the P2's 200 MHz system counter; the same rate here keeps a cycle count
    meaning roughly what it means there. */
 static inline uint32_t _cnt(void) { return (uint32_t)(_ogo_host_nanos() / 5); }
+/* _clockfreq is the rate _cnt counts at, which is what a program asks it for. */
+static inline uint32_t _clockfreq(void) { return 200000000; }
 static inline uint32_t _getms(void) { return (uint32_t)(_ogo_host_nanos() / 1000000); }
 static inline uint32_t _getsec(void) { return (uint32_t)(_ogo_host_nanos() / 1000000000); }
 static inline uint32_t _getus(void) { return (uint32_t)(_ogo_host_nanos() / 1000); }
