@@ -1420,17 +1420,14 @@ second line of a call's arguments -- on sources that ARE Go once given a package
 clause. TestFormatMatchesGofmt runs the RUN CASES through gofmt, and no run case had
 those shapes; **a domain program's source through both formatters is the formatter's
 probe** (TestFormatGofmtColumns holds these; gofmt's tabwriter rule is that a trailing
-comment is a CELL, so the cells before it align). The three OPEN are the backend's
-handling of the C, all in clocks. (2) A named constant is `static const int n =
-1000000;` and an expression of constants, `(trapOdd | trapTimeout)`, is written as
-written, so the backend reads the constant from hub RAM (`rdlong`) where it is used:
-71 clocks an iteration for a loop bound against 60.5 for the literal -- and the read
-decides INLINING, the backend inlining by size: `return m.traps&3 != 0` inlined at 24
-clocks a call, `return m.traps&aborts != 0` for `const aborts = 3` called at 111. The
-checker folds every constant; writing the folded value where the name is used is the
-change to measure on the board and to run through the corpus guard (a `%T` of a
-constant, a typed constant's C type, a constant string's header and a constant as an
-array bound are the positions to watch). (4) A runtime check is a call:
+comment is a CELL, so the cells before it align). The other three are the backend's
+handling of the C, all in clocks. (2) A named constant was `static const int n =
+1000000;`, so the backend read the constant from hub RAM (`rdlong`) where it was
+used: 71 clocks an iteration for a loop bound against 60.5 for the literal -- and the
+read decided INLINING, the backend inlining by size: `return m.traps&3 != 0` inlined,
+`return m.traps&aborts != 0` for `const aborts = 3` called. CLOSED the next day, with
+the finding below: a constant is its value where it is read, and the named program
+builds to the literal's binary. Still OPEN: (4) A runtime check is a call:
 `ogo_nil_machine_ptr(m)` at a receiver's use and the index check each call a helper
 with a branch in it, which by (3) is not inlined, and a function calling one grows
 past the inline threshold itself -- a method testing a field of its receiver 215
@@ -1439,6 +1436,71 @@ A call and its return cost about fifty instructions, a switch is a chain of comp
 in case order (one of sixteen cases 160 clocks on average), and only a body without a
 branch is inlined; that is the backend's, and stays as a fact programs are written
 against (the emulator, rewritten for it, runs 5.3x).
+
+**A CONSTANT IS A VALUE, OF THE TYPE IT MEETS** (2026-09-28). p2-11's next finding
+was a silent one: `b-a < patience`, for a `const patience = 10000` and a uint32
+difference past 2^31, was true on the board and false in Go and on the host. A named
+constant of 32 bits or fewer was a C OBJECT, a `static const int`, and an object has
+a type of its own where a Go constant takes the type of what it meets. flexcc
+compares an unsigned operand with a signed one as SIGNED numbers unless the signed
+one is a constant expression of no negative value (CompileComparison and
+IsUnsignedConst, frontends/types.c), saying "signed/unsigned comparison may not work
+properly"; and it types an operation of two operands of one size by its LEFT one
+(MatchIntegerTypes), so `c / u` was a signed division for a signed c -- on the host
+as well, where the divisor's zero check handed it back as an int
+(`doc/mixed-sign-operands.c`, measured on a P2-EDGE). A bare literal had
+been taught this long before (a `u` suffix in an unsigned level); the row is the
+SHAPES an untyped constant is written in -- a literal, a rune literal, a name,
+another package's name, an iota name, a parenthesised expression of them, a constant
+written as a float -- crossed with the operators whose answer depends on the sign
+(`< <= > >=`, `/`, `%`) on either side, for each unsigned type and a defined type
+over one. Swept with a generated program per type, every shape but the bare literal
+was wrong for uint32, uint and a defined type, and for uint64 the literal was too,
+whose guard handed the divisor back signed (ogoNonzero64u). **One question, one
+helper**: untypedOperandC spells an untyped constant operand for the integer type it
+meets, in a level and across a comparison, the type resolved past its definition
+(levelUnderlying). And the constant is no object any more: an integer constant is
+its VALUE where it is read (intConstRef), as the 64-bit ones, the floats and the
+strings were, which closed the clocks of a named constant with it: on a P2-EDGE a
+loop bounded by one ran 69.0 clocks a pass for the literal's 56.5, a loop calling a
+method of one line reading one 72 for 32, and both build to the literal's binary
+now. **Two programs that should cost the same are compared by their BINARIES**: the
+same sha256 is the same clocks, and needs no board.
+Every reader of the fold maps matters once a constant is read from them, and a
+sweep of SCOPES found them wrong three ways, each older than the change. The maps
+were asked for the bare name first, and the main package's constants ARE keyed by
+their bare names, so a library's `const Name` was main's inside the library's own
+code (constKey resolves a name as a name is resolved: a block's constant, then the
+CURRENT package's). A block constant's value, width and class outlived its block
+(enterScope restored constInt and not constVal, constWide or constHuge). And a
+declaration recorded over an older one of its name kept the older one's flags, the
+maps being set and never cleared. The checker had its part: a block's constant is in
+scope AFTER its spec, `const n = n + 1` reading the n outside it, so its expression
+is read before its name is declared (declareConst in check.go), and the emitter
+reads a spec whole before it records any of its names (evalConst, then declareConst:
+`const n, m = n + 2, n + 3`). **A map keyed by a source name is asked through the
+one function that knows what the name means here.**
+A constant written as a FLOAT is the same row from the other side: `var u uint32 =
+3e9` stored 2147483648 on the board, flexcc clamping a double converted to a 32-bit
+unsigned, `var t int64 = 1e9` did not build, and `u + big` for a `const big = 1e4`
+was 1333788678 for Go's 3000. There the type wanted is known to
+the checker alone, at the one funnel every constant meeting a type goes through
+(checkValueOverflow), which records it for the emitter by the expression's place in
+the AST, as shiftTypes is recorded (wholeConsts, wholeConstC). NOT at a conversion,
+whose operand is the conversion's to lower: recorded there, `int64(float64(x))`
+handed ogo_f2i64 a long long, which the host took and TestTargetBuild refused for
+the backend's warning. Traps met. A change that touches every program using a
+constant is past the corpus guard's reading, 140 of 1173 programs: it is read
+through a CLASSIFIER -- each constant's value written for its name in the BEFORE
+text, suffixes and temporaries normalised, then diffed -- which left 22 to read one
+by one, and the 81 fuzzer seeds among them were run on the board. A sweep program
+with a package variable nothing reads fails the host build on -Werror, which is the
+fixture's. And dumpcorpus.sh numbers its files by POSITION across the tables, so
+three cases added to the first table renumber the ones after: corpusdiff compares by
+content and is right, a tool pairing files by name is not. And the fuzzer declares NO
+constant, which is how the row lived through every sweep on the board: `ogo smith`
+writing `const` -- typed and untyped, a package's and a block's, read beside each
+integer type -- is the guard this row still lacks.
 
 **PRINTING A VALUE IS A ROW** (2026-09-23). `printf("%v", x)` of an ARRAY printed the
 address of its storage wherever x was not a bare name -- a literal, a field, an
@@ -1609,7 +1671,10 @@ against each other when either changes**; they are meant to differ by one produc
 (HeaderFactor has no literal after a name, which is what keeps `if x == T {` a block).
 `ogo fmt` keeps a statement's body on the line it was written on -- `if c { v = 1 }`,
 `switch a { case 1: v = 2 }` -- where gofmt breaks it onto lines of its own; the run
-cases are gofmt's layout already, so TestFormatMatchesGofmt does not see it. (A
+cases are gofmt's layout already, so TestFormatMatchesGofmt does not see it. An
+array a program only MEASURES, `var bound [n]int` read by `len(bound)` alone, is a C
+local nothing reads, the length being folded: the target builds it and the host
+harness's -Werror refuses it, so such a program cannot be a run case as it stands. (A
 header's "=" list, `if a, n = k(3), n+1; ...`, was spaced as one value until
 2026-09-25: the depth rule, headerInitTightOps, predated "=" in headers. A run case
 met it first -- TestFormatMatchesGofmt runs the run cases through gofmt, which is how

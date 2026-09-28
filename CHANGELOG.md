@@ -38,6 +38,51 @@ shipped section tells a reader on that version that they have behaviour they do 
 
 ### Fixed
 
+- **An untyped constant takes the type of the unsigned operand it meets.** `const
+  patience = 10000` and two uint32 a and b: `b-a < patience`, for a difference past
+  2^31, was true on the board where Go says false -- in a condition, a loop's and a
+  case alike, and silently but for a warning while it built, "signed/unsigned
+  comparison may not work properly". The constant was a C object with a type of its
+  own, a `static const int`, and the P2 compiler compares an unsigned operand with
+  a signed object as signed numbers; the host's compiler converts as C says, so
+  nothing off the board saw it. A rune constant, an iota one and an expression of
+  constants were the same. With the constant on the LEFT of a division or a
+  remainder the host was wrong as well: `patience / u` was 4294967295 for Go's 0.
+  Found by p2-11, whose tests waited on a time in milliseconds.
+- **A named constant costs what its value does.** An integer constant is its VALUE
+  where it is read, as a string, a float and a 64-bit one already were, and declares
+  nothing in the C. The P2 compiler reads a `static const` object from hub RAM at
+  each use, and inlines by size. Measured on a P2-EDGE at 160 MHz with the checks
+  off: a loop of a million passes bounded by a named constant ran 69.0 clocks a pass
+  where the literal's ran 56.5, and a loop calling a method of one line, `return
+  m.traps&aborts != 0`, ran 72 where `m.traps&3` ran 32, its method inlined. Both
+  programs now build to the binary the literal builds, byte for byte. Found by
+  p2-11.
+- **A uint64 divides a constant unsigned, and so does a defined type over an
+  unsigned one.** `10000 / w` for a uint64 w past 2^63 was 18446744073709551615 for
+  Go's 0, on the host and the board: the divisor's zero check handed it back as a
+  signed long long, and the constant beside it is an unsigned int. And `10000 / t`
+  for a `type Tick uint32` was divided signed, the constant's spelling having asked
+  the type's name and not what it is defined over.
+- **A constant written as a float is an integer where one is wanted.** `3e9`, or a
+  `const big = 1e4`, is an integer wherever Go converts it to one, and was written
+  into the C as the float it looks like. Stored into a uint32 -- `var u uint32 =
+  3e9`, `take(3e9)`, `return 3e9`, a literal's member, an assignment -- a value of
+  2^31 or more was 2147483648 on the board, silently; `var t int64 = 1e9` did not
+  build for the target, "Expected multiple values"; and in an expression `u + big`
+  was 1333788678 on the board for Go's 3000, while `big % u` was no C at all.
+- **A block constant ends with its block.** After `{ const f = 4.5 }` a package's
+  `const f = 1.5` read 4.5, silently, in the rest of the program; after a
+  function's `const n = 1 << 41` the package's `n = 7` was written as a long long
+  under `%d`; after a `const h = 1 << 100` the package's `h = 3` was refused as
+  overflowing every integer type; and a block's `const w = 5` under a package's
+  `const w = 1 << 40` was a 64-bit constant still. And a block's constant is in
+  scope after its spec, as Go has it: `const n = n + 1` in a function reads the n
+  outside it, and was refused as "constant definition cycle for n".
+- **A library's constants are its own, whatever main declares.** A library's `const
+  Name = "lib"` beside main's `const Name = "main"` read "main" in the library's own
+  code: the main package's constants are kept under their bare names, and every
+  reader of a constant asked for the bare name first.
 - **A call's results assigned to fields it reads build in a blink.** `l.rx,
   l.request = control(l.rx, 64, l.request)` took 25 seconds to build, and two such
   statements ran the compiler out of memory: each field holds the call's result, and
