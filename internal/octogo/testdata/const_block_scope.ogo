@@ -1,0 +1,29 @@
+// COMPILE
+
+// A block's constant is in scope AFTER its spec, so the expression of one named as
+// a constant outside it reads that one: each of these was "constant definition
+// cycle for n", the name having been declared before its expression was read.
+
+const n = 7
+
+func f() int {
+	const n = n + 1
+	{
+		const n = n * 2
+		return n
+	}
+}
+
+func g() int {
+	const (
+		a = n
+		b = a + n
+	)
+	const n, m = n + 2, n + 3
+	var bound [n]int
+	return a + b + n + m + len(bound)
+}
+
+func main() {
+	println(f(), g())
+}

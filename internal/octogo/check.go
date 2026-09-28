@@ -21979,6 +21979,7 @@ func (f *File) declareConst(s *Scope, n Node) {
 					cs.rawType = lastType
 				}
 			}
+			var decls []*ConstDeclaration
 			for _, cs := range specs {
 				// iota counts specs, not names, so every name on one line sees the
 				// same value -- which is what makes "a, b = iota, iota*2" mean what
@@ -21988,8 +21989,20 @@ func (f *File) declareConst(s *Scope, n Node) {
 				if s.Kind != PackageScope {
 					valid = n.End() + 1
 				}
-				if err := s.add(&ConstDeclaration{declaration: declaration{token: cs.Name, valid: valid}, ConstSpec: cs}); err != nil {
-					f.err(cs.Name.Position(), "%v", err)
+				decls = append(decls, &ConstDeclaration{declaration: declaration{token: cs.Name, valid: valid}, ConstSpec: cs})
+			}
+			// A BLOCK's constant is in scope after its spec, so its expression is read
+			// before the name is declared: `const n = n + 1` in a function reads the n
+			// outside it. Declared first and evaluated when first asked for, it read
+			// itself, and a legal program was "constant definition cycle for n".
+			if s.Kind != PackageScope {
+				for _, cd := range decls {
+					f.resolveConst(s, cd)
+				}
+			}
+			for _, cd := range decls {
+				if err := s.add(cd); err != nil {
+					f.err(cd.ConstSpec.Name.Position(), "%v", err)
 				}
 			}
 			iotaVal++
