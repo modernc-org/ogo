@@ -51,6 +51,15 @@ type formatter struct {
 	// right after "chan" in "chan<- int"; markSendArrows fills it before the walk.
 	sendArrows map[int32]bool
 
+	// nodeIndent holds, per node (keyed by its header's address in the tree), how
+	// many levels it stands in from what surrounds it because of where the source
+	// breaks its lines: the operand after an operator that ends a line, the
+	// elements of a list from the first one that begins a line, a selector on a
+	// line of its own. markIndents fills it before the walk. plainList holds the
+	// lists that take no indentation of their own, a return's.
+	nodeIndent map[*int32]int32
+	plainList  map[*int32]bool
+
 	// Elastic Tabstops maps
 	targetCol2          map[int32]int // token index -> absolute target column for Col2 (Types)
 	targetComment       map[int32]int // token index -> absolute target column for inline comments
@@ -163,6 +172,16 @@ func commentFollows(sep []any) bool {
 }
 
 func (f *formatter) formatSep(sep []any, indentLevel int32, currTok Symbol, c formatterCtx) {
+	// A comment that begins a line stands at the separator's level, or at its own
+	// where the walk gave each comment one (commentLevels).
+	comments := 0
+	level := func() int32 {
+		comments++
+		if comments <= len(c.commentLevels) {
+			return c.commentLevels[comments-1]
+		}
+		return indentLevel
+	}
 	for i, v := range sep {
 		switch x := v.(type) {
 		case whiteSpace:
@@ -188,6 +207,7 @@ func (f *formatter) formatSep(sep []any, indentLevel int32, currTok Symbol, c fo
 				f.b(nl2)
 			}
 		case lineComment:
+			lvl := level()
 			if !f.nl {
 				// Inline comment padding
 				if f.activeCommentTarget > 0 {
@@ -202,7 +222,7 @@ func (f *formatter) formatSep(sep []any, indentLevel int32, currTok Symbol, c fo
 					f.trailing = append(f.trailing, trailingComment{f.outLine, f.lineByte, f.col, f.lineCells})
 				}
 			} else {
-				f.tabs(true, indentLevel)
+				f.tabs(true, lvl)
 			}
 			b := []byte(x)
 			switch {
@@ -217,6 +237,7 @@ func (f *formatter) formatSep(sep []any, indentLevel int32, currTok Symbol, c fo
 			// whether it leads the line or sits inside it. A line whose comment ends
 			// it records nothing, so counting one there costs nothing.
 			f.lineCells++
+			lvl := level()
 			if !f.nl {
 				if f.activeCommentTarget > 0 {
 					for f.col < f.activeCommentTarget {
@@ -227,7 +248,7 @@ func (f *formatter) formatSep(sep []any, indentLevel int32, currTok Symbol, c fo
 					f.b(sp)
 				}
 			} else {
-				f.tabs(true, indentLevel)
+				f.tabs(true, lvl)
 			}
 			b := []byte(x)
 			a := bytes.Split(b, nl)
@@ -703,7 +724,298 @@ func (f *formatter) anyElementBeginsLine(ast []int32) bool {
 
 // beginsLine reports whether the token at idx is the first on its source line.
 func (f *formatter) beginsLine(idx int32) bool {
-	return idx > 0 && f.p.Token(idx-1).Position().Line != f.p.Token(idx).Position().Line
+	return idx > 0 && f.endLine(idx-1) != f.p.Token(idx).Position().Line
+}
+
+// endLine is the source line the token at idx ENDS on, which is not the one it
+// begins on for a raw string written across lines.
+func (f *formatter) endLine(idx int32) int {
+	tok := f.p.Token(idx)
+	return tok.Position().Line + bytes.Count(tok.SrcBytes(), nl)
+}
+
+// argumentBeginsLine reports whether a call, given as its CallSuffix's body, has
+// an argument that begins a line.
+func (f *formatter) argumentBeginsLine(body []int32) bool {
+	for _, k := range kidsOf(body) {
+		if k.sym == ArgumentList {
+			return f.anyElementBeginsLine(k.ast[2:])
+		}
+	}
+	return false
+}
+
+// closerLevels gives each comment of the separator ahead of a CLOSING token the
+// level it stands at. The token stands one level out from what it closes -- a
+// "case" from the statements of the clause before it, the ")" of a grouped
+// declaration from its specs, a call's from its arguments -- and a comment on a
+// line of its own ahead of it belongs to one or the other. gofmt reads that off
+// the source: a comment written in the token's own column is the token's, and so
+// is every one after it; any other is the last thing of what is being closed.
+//
+//	case 1:
+//		n++
+//		// what n++ was for
+//	// what case 2 is for
+//	case 2:
+//
+// (A closing BRACE is not asked: what stands ahead of one is never the brace's.)
+// col is the token's byte offset on its line; the result is nil when the
+// separator holds no comment that begins a line.
+func closerLevels(sep []byte, col int, outer, inner int32) (r []int32) {
+	level := inner
+	found := false
+	lineStart, blank := -1, false // no line begins inside the separator yet
+	for i := 0; i < len(sep); {
+		switch {
+		case bytes.HasPrefix(sep[i:], lineCommentPrefix), bytes.HasPrefix(sep[i:], generalCommentPrefix):
+			if blank && lineStart >= 0 {
+				found = true
+				if i-lineStart == col {
+					level = outer
+				}
+			}
+			r = append(r, level)
+			switch {
+			case sep[i+1] == '/':
+				x := bytes.IndexByte(sep[i:], '\n')
+				if x < 0 {
+					x = len(sep) - i
+				}
+				i += x
+			default:
+				x := bytes.Index(sep[i:], generalCommentSuffix)
+				if x < 0 {
+					x = len(sep) - i - len(generalCommentSuffix)
+				}
+				i += x + len(generalCommentSuffix)
+			}
+			blank = false
+		case sep[i] == '\n':
+			i++
+			lineStart, blank = i, true
+		default:
+			i++
+		}
+	}
+	if !found {
+		return nil
+	}
+	return r
+}
+
+// kid is one child of a production: a node, its header included, or a token.
+type kid struct {
+	ast []int32
+	sym Symbol // 0 for a token
+}
+
+// kidsOf lists the direct children of a production's body.
+func kidsOf(ast []int32) (r []kid) {
+	for len(ast) != 0 {
+		if ast[0] >= 0 {
+			r = append(r, kid{ast: ast[:1]})
+			ast = ast[1:]
+			continue
+		}
+		next := 2 + ast[1]
+		r = append(r, kid{ast[:next], baseSym(Symbol(-ast[0]))})
+		ast = ast[next:]
+	}
+	return r
+}
+
+// markIndents records the indentation a CONTINUATION LINE takes, which is
+// gofmt's: what stands on the lines after the first of something written across
+// lines is one level in. go/printer decides it while printing, with an indent it
+// emits at a line break and takes back after the operand, the list or the call
+// that followed; here it is decided ahead of the walk, per node, and the walk adds
+// what a node was given to the level of everything inside it.
+//
+//	return a < b &&
+//		b < c
+//
+// Four shapes take a level, each where go/printer has one:
+//
+//   - the right operand of a binary operator that ends its line (indentOperands);
+//   - the elements of a list from the first one that begins a line, and not the
+//     ones before it -- the difference shows where an earlier element spans lines
+//     itself, "[]P{{\n\tx: 1,\n}, {\n\tx: 2,\n}}" (indentElements);
+//   - a return's whole list, the first value included, where gofmt's heuristic
+//     says so (indentList);
+//   - a selector on a line of its own, together with the arguments of the call it
+//     names (indentSelectors).
+//
+// The levels ADD: an argument on its own line inside an operand on its own line is
+// two in. Before 2026-09-28 only a call's arguments and a literal's body took a
+// level, each as a whole, so every other continuation line came back at the level
+// of the statement it continued (p2-11's OCTOGO.md).
+func (f *formatter) markIndents(ast []int32) {
+	for _, k := range kidsOf(ast) {
+		if k.sym == 0 {
+			continue
+		}
+		body := k.ast[2:]
+		switch k.sym {
+		case Expression, SimpleExpr, Term:
+			f.indentOperands(body)
+		case ExpressionList, ArgumentList, ElementList:
+			if !f.plainList[&k.ast[0]] {
+				f.indentElements(body)
+			}
+		case Statement:
+			f.indentReturn(body)
+		case PostfixOp:
+			f.indentAssigned(body)
+		}
+		f.indentSelectors(body)
+		f.markIndents(body)
+	}
+}
+
+// indentOperands gives a level to the right operand of every binary operator the
+// source breaks the line after. The grammar's three levels are flat lists and its
+// first holds three of Go's precedences -- "||", "&&" and the comparisons -- so
+// the operands are put back into Go's tree first: in "p ||\nq &&\nr" the right
+// operand of "||" is "q && r", whose own right operand is one level further in.
+func (f *formatter) indentOperands(body []int32) {
+	var operands []kid
+	prec := []int{0} // prec[i] is the precedence of the operator before operands[i]
+	for _, k := range kidsOf(body) {
+		switch k.sym {
+		case RelOp:
+			switch opText(f.p, Node{ast: k.ast[2:], sym: RelOp}) {
+			case "||":
+				prec = append(prec, 1)
+			case "&&":
+				prec = append(prec, 2)
+			default:
+				prec = append(prec, 3)
+			}
+		case AddOp:
+			prec = append(prec, 4)
+		case MulOp:
+			prec = append(prec, 5)
+		case 0:
+			return // no production of these has a token of its own
+		default:
+			operands = append(operands, k)
+		}
+	}
+	if len(operands) != len(prec) {
+		return
+	}
+	f.indentBinary(operands, prec)
+}
+
+// indentBinary is indentOperands for the operands of one subtree of Go's.
+func (f *formatter) indentBinary(operands []kid, prec []int) {
+	if len(operands) < 2 {
+		return
+	}
+	// The root is the LAST operator of the lowest precedence: a binary operator
+	// associates to the left.
+	root := 1
+	for i := 2; i < len(operands); i++ {
+		if prec[i] <= prec[root] {
+			root = i
+		}
+	}
+	if f.beginsLine(firstIndex(operands[root].ast)) {
+		for _, o := range operands[root:] {
+			f.nodeIndent[&o.ast[0]]++
+		}
+	}
+	f.indentBinary(operands[:root], prec[:root])
+	f.indentBinary(operands[root:], prec[root:])
+}
+
+// indentElements gives a level to the elements of a list from the first one that
+// begins a line.
+func (f *formatter) indentElements(body []int32) {
+	in := false
+	for _, k := range kidsOf(body) {
+		if k.sym == 0 {
+			continue
+		}
+		if !in && f.beginsLine(firstIndex(k.ast)) {
+			in = true
+		}
+		if in {
+			f.nodeIndent[&k.ast[0]]++
+		}
+	}
+}
+
+// indentReturn gives a return's list a level as a whole where go/printer's
+// indentList does, and the list none of its own then.
+func (f *formatter) indentReturn(body []int32) {
+	kids := kidsOf(body)
+	if len(kids) != 2 || kids[0].sym != 0 || Symbol(f.p.Token(kids[0].ast[0]).Ch) != RETURN || kids[1].sym != ExpressionList {
+		return
+	}
+	list := kids[1]
+	if f.indentList(list.ast[2:]) {
+		f.nodeIndent[&list.ast[0]]++
+		f.plainList[&list.ast[0]] = true
+	}
+}
+
+// indentList is go/printer's heuristic of the same name: whether more than one
+// element of a list is written across lines, or any element does not begin on the
+// line the one before it ended on.
+func (f *formatter) indentList(body []int32) bool {
+	var list []kid
+	for _, k := range kidsOf(body) {
+		if k.sym != 0 {
+			list = append(list, k)
+		}
+	}
+	if len(list) < 2 {
+		return false
+	}
+	begin := func(k kid) int { return f.p.Token(firstIndex(k.ast)).Position().Line }
+	end := func(k kid) int { return f.endLine(lastIndex(k.ast)) }
+	line := begin(list[0])
+	if line >= end(list[len(list)-1]) {
+		return false
+	}
+	n := 0
+	for _, x := range list {
+		xb, xe := begin(x), end(x)
+		if line < xb {
+			return true
+		}
+		if xb < xe {
+			n++
+		}
+		line = xe
+	}
+	return n > 1
+}
+
+// indentAssigned gives a level to the value of an operator assignment that
+// begins a line, "a +=\n\tb"; a list's does through indentElements.
+func (f *formatter) indentAssigned(body []int32) {
+	kids := kidsOf(body)
+	if len(kids) == 2 && kids[0].sym == AssignOp && kids[1].sym == Expression && f.beginsLine(firstIndex(kids[1].ast)) {
+		f.nodeIndent[&kids[1].ast[0]]++
+	}
+}
+
+// indentSelectors gives a level to a selector whose name begins a line, and to
+// the arguments of the call that follows it: the method's.
+func (f *formatter) indentSelectors(body []int32) {
+	kids := kidsOf(body)
+	for i, k := range kids {
+		if k.sym != Selector || len(k.ast) < 4 || k.ast[2] < 0 || k.ast[3] < 0 || !f.beginsLine(k.ast[3]) {
+			continue
+		}
+		f.nodeIndent[&k.ast[0]]++
+		if i+1 < len(kids) && kids[i+1].sym == CallSuffix {
+			f.nodeIndent[&kids[i+1].ast[0]]++
+		}
+	}
 }
 
 type formatterCtx struct {
@@ -729,7 +1041,13 @@ type formatterCtx struct {
 	undentDeclOpen    int32
 	undentDeclClose   int32
 	indentSepForIndex int32
-	inParams          bool // True if we are inside a ParameterList or CallSuffix
+	// callClose is the ")" of a call whose arguments were written on lines of
+	// their own, which a comment ahead of it stands with; see closerLevels.
+	callClose int32
+	// commentLevels holds, for formatSep, the level of each comment of the
+	// separator in order, where they do not all stand at the separator's.
+	commentLevels []int32
+	inParams      bool // True if we are inside a ParameterList or CallSuffix
 	// inParamDecl is true inside one entry of a parameter or result list, which is
 	// what tells a variadic parameter's "..." from a call's spread: gofmt spaces
 	// the first off the name ("xs ...int") and binds the second to the slice
@@ -1128,6 +1446,7 @@ func FormatFile(fn string, b []byte, w io.Writer) (err error) {
 			case n < 0:
 				c := c
 				next = 2 + ast[1]
+				c.indentLevel += f.nodeIndent[&ast[0]]
 				switch Symbol(-n) {
 				case Block:
 					c.indentLevel++
@@ -1152,25 +1471,29 @@ func FormatFile(fn string, b []byte, w io.Writer) (err error) {
 					}
 				case CaseClause, CommClause:
 					c.indentLevel++
+				case CaseHead, CommHead:
+					// The head stands one level out from the statements of its
+					// clause, the lines it continues on included: they are one in
+					// from the "case", not from the clause's body.
+					c.indentLevel--
 				case SwitchStmt, SelectStmt:
 					// Flag the closing '}' for an extra separator indent
 					c.indentSepForIndex = lastIndex(ast[:next])
 					c.inLiteralBraces = false
 				case ParameterList, CallSuffix:
 					c.inParams = true
+					if Symbol(-n) == CallSuffix && f.argumentBeginsLine(ast[2:next]) {
+						c.callClose = lastIndex(ast[:next])
+					}
 					if Symbol(-n) == ParameterList && f.beginsLine(firstIndex(ast[:next])) {
 						c.indentLevel++
 					}
-				case ResultList, ArgumentList:
+				case ResultList:
 					// A list any of whose elements starts a line of its own indents
-					// what follows it -- the first, `f(\n1,\n)`, or a later one,
-					// `g("...",\n\ta, b, c)`, whose second line stood as deep as the call
-					// where gofmt steps it in (p2-11's OCTOGO.md, 2026-09-27). The
-					// parentheses are not part of these productions, so the closing one
-					// is emitted at the level outside them with nothing to undo. Asking
-					// about the ELEMENTS rather than the list's span is what keeps a
-					// nested call from adding a level of its own: in "println(f(\n1,\n))"
-					// only the inner list has an element starting a line.
+					// what follows it. The parentheses are not part of the production,
+					// so the closing one is emitted at the level outside it with
+					// nothing to undo. (A call's arguments, an expression list and a
+					// literal's elements take their level from markIndents.)
 					if f.anyElementBeginsLine(ast[2:next]) {
 						c.indentLevel++
 					}
@@ -1201,15 +1524,10 @@ func FormatFile(fn string, b []byte, w io.Writer) (err error) {
 						f.indexDepth[firstIndex(ast[:next])] <= 1
 				case CompositeLit:
 					c.inLiteralBraces = true
-					// A literal written across lines indents what stands between its
-					// braces, as gofmt does, the braces themselves staying at the level
-					// of what they belong to -- the same shape a block and a struct type
-					// take, and the same test for whether the body is multi-line.
-					if lb, rb := firstIndex(ast[:next]), lastIndex(ast[:next]); f.p.Token(lb).Position().Line != f.p.Token(rb).Position().Line {
-						c.indentLevel++
-						c.undentLBraceIndex = lb
-						c.undentRBraceIndex = rb
-					}
+					// The elements take their level from markIndents and the braces
+					// none; a comment on a line of its own ahead of the closing one
+					// stands with the elements.
+					c.indentSepForIndex = lastIndex(ast[:next])
 				case StructType, InterfaceType:
 					c.indentLevel++
 					c.undentLBraceIndex = firstIndex(ast[:next])
@@ -1384,8 +1702,6 @@ func FormatFile(fn string, b []byte, w io.Writer) (err error) {
 					if n == c.undentRBraceIndex {
 						indentDelta = -1
 					}
-				case CASE, DEFAULT:
-					indentDelta = -1
 				case IDENT:
 					// A label stands one level out from the statements it labels, as
 					// gofmt writes it and as "case" does here. It is an identifier
@@ -1418,6 +1734,12 @@ func FormatFile(fn string, b []byte, w io.Writer) (err error) {
 				// one level out from what surrounds them -- was indented with the body
 				// instead, which is not where gofmt puts it.
 				sepIndent := c.indentLevel + indentDelta
+				if Symbol(tok.Ch) == RBRACE && n == c.undentRBraceIndex {
+					// A comment ahead of a closing brace is the last thing of what
+					// the braces hold, and stands with it: gofmt takes the brace out
+					// one level and never the comment.
+					sepIndent = c.indentLevel
+				}
 				if isLabel {
 					// A LABEL is the exception: gofmt steps the label out and leaves a
 					// comment ahead of it with the statements, where a comment ahead of
@@ -1430,6 +1752,13 @@ func FormatFile(fn string, b []byte, w io.Writer) (err error) {
 				}
 
 				sepCtx := c
+				sepCtx.commentLevels = nil
+				switch {
+				case (Symbol(tok.Ch) == CASE || Symbol(tok.Ch) == DEFAULT) && f.prevTok != LBRACE:
+					sepCtx.commentLevels = closerLevels(sep, tok.Position().Column-1, sepIndent, sepIndent+1)
+				case n == c.undentDeclClose && f.prevTok != LPAREN, n == c.callClose:
+					sepCtx.commentLevels = closerLevels(sep, tok.Position().Column-1, sepIndent, sepIndent+1)
+				}
 				sepCtx.nextTok = f.tokAfter(tokIdx)
 				sepCtx.prevTokIdx, sepCtx.currTokIdx = f.prevTokIdx, tokIdx
 				sepCtx.tight, sepCtx.sendArrows = f.tightOps, f.sendArrows
@@ -1469,7 +1798,13 @@ func FormatFile(fn string, b []byte, w io.Writer) (err error) {
 	f.skipTok = map[int32]bool{}
 	f.markRedundantParens(f.ast)
 	f.markHeaderParens(f.ast)
-	walk(f.ast, formatterCtx{undentRBraceIndex: -1, indentSepForIndex: -1})
+	f.nodeIndent = map[*int32]int32{}
+	f.plainList = map[*int32]bool{}
+	f.markIndents(f.ast)
+	walk(f.ast, formatterCtx{
+		undentLBraceIndex: -1, undentRBraceIndex: -1, indentSepForIndex: -1,
+		undentDeclOpen: -1, undentDeclClose: -1, callClose: -1,
+	})
 	// Flush leftover synthetic separators AND the EOF separator ---
 	if f.err == nil {
 		var finalSep []byte
