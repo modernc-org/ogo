@@ -42397,6 +42397,31 @@ func main() {
 }
 `,
 		want: "inc 2\nadd 7\nswitch 21\ntagless 20\nfield 2\nelem -7\nshift 80\nwrap 4\n80 5\n",
+	},
+	{
+		// The zero check of a uint64 divisor handed it back as a signed long long,
+		// "the dividend's type decides" -- which it does where the dividend is a
+		// uint64 as well. A constant dividend is an unsigned int, and an unsigned int
+		// divided by a long long is a signed division of 64 bits, to C and to the
+		// target's compiler alike: `10000 / w` for a w past 2^63 was
+		// 18446744073709551615 on the host and on the board, and `10000 % w` was
+		// 3000, where Go says 0 and 10000.
+		name: "a uint64 divides a constant unsigned",
+		src: `type Wide uint64
+
+var w uint64 = 18446744073709544616
+
+var v uint64 = 70
+
+var d Wide = 18446744073709544616
+
+func main() {
+	println(10000/w, 10000%w, 10000/v, 10000%v, w/10000, w%10000)
+	println(w/v, w%v, v/w, v%w, 1/w, 18446744073709551615/w)
+	println(d/Wide(v), Wide(v)/d, d%Wide(v))
+}
+`,
+		want: "0 10000 142 60 1844674407370954 4616\n263524915338707780 16 0 70 0 1\n263524915338707780 0 16\n",
 	}}
 
 // TestEmitCRun compiles emitted C with a host compiler and runs it, checking what

@@ -4698,6 +4698,18 @@ const ogoNonzero64 = "static long long ogo_nonzero64(long long b) {\n" +
 	"\treturn b;\n" +
 	"}\n"
 
+// ogoNonzero64u is the guard of a uint64 divisor, which the signed one served until
+// 2026-09-28 on the strength of the comment above: "the dividend's type decides".
+// It does where the dividend is a uint64 too. A constant dividend is an unsigned
+// int, `10000u`, and an unsigned int divided by a long long is a SIGNED division of
+// 64 bits, to C and to the target's compiler alike: `10000 / u` for a u past 2^63
+// was 18446744073709551615 on the host and on the board, where Go says 0. A guard
+// hands back what it was given, in the type it was given in.
+const ogoNonzero64u = "static unsigned long long ogo_nonzero64u(unsigned long long b) {\n" +
+	"\tif (b == 0) ogo_panic(\"integer divide by zero\");\n" +
+	"\treturn b;\n" +
+	"}\n"
+
 // ogoF2u32, ogoF2i64 and ogoF2u64 convert a float to the integer types the target's
 // C compiler converts wrongly. Measured on a P2-EDGE against flexprop v7.7.0 at every
 // optimisation level (doc/float-to-int64.c): a cast of a double to a 64-bit integer
@@ -5688,6 +5700,9 @@ func emitProgram(pkg *Package, w io.Writer, opts []EmitOption, rename map[string
 	if e.usesNonzero64 {
 		helperDefs.WriteString(ogoNonzero64)
 	}
+	if e.usesNonzero64u {
+		helperDefs.WriteString(ogoNonzero64u)
+	}
 	if e.usesNonzero {
 		helperDefs.WriteString(ogoNonzero)
 	}
@@ -6409,6 +6424,7 @@ type emitter struct {
 	userTypeNames      map[string]string       // C name -> source name of every type the program DECLARES, in any package (see typeNameForT)
 	usesIfaceNil       bool                    // ogo_iface_vt (nil-interface call guard) is called
 	usesNonzero64      bool                    // ogo_nonzero64 (64-bit divisor guard) is called
+	usesNonzero64u     bool                    // ogo_nonzero64u (the uint64 divisor's guard) is called
 	litDepth           int                     // aggregate initializers being emitted: a constant inside one is spelled for an initializer (see constSpelling)
 	constWide          map[string]string       // 64-bit integer constants, by C name, to their underlying C type: inlined at each use, never declared (see emitConstSpecName)
 	pkgConstDecls      []pkgConstDecl          // package-level integer constants, declared only where a body names them (see emitConstSpecName)
@@ -43769,9 +43785,12 @@ func (e *emitter) emitExprNode(n Node) {
 					// truncate it (mis-detecting a large nonzero divisor as zero and
 					// dividing by a wrong value).
 					fn := "ogo_nonzero"
-					if ct == "int64_t" || ct == "uint64_t" {
+					switch ct {
+					case "uint64_t":
+						fn, e.usesNonzero64u = "ogo_nonzero64u", true // see ogoNonzero64u
+					case "int64_t":
 						fn, e.usesNonzero64 = "ogo_nonzero64", true
-					} else {
+					default:
 						e.usesNonzero = true
 					}
 					e.emit(fn + "(")
