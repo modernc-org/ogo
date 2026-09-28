@@ -9,6 +9,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"testing"
 )
@@ -437,21 +438,558 @@ func TestFormatContinuation(t *testing.T) {
 				}
 				formatCheck(t, strings.Join(bare, "\n"), tc.src)
 			}
-			gofmt, err := exec.LookPath("gofmt")
-			if err != nil {
-				return
-			}
-			goSrc := filepath.Join(t.TempDir(), "x.go")
-			if err := os.WriteFile(goSrc, []byte("package main\n\n"+tc.src), 0o644); err != nil {
-				t.Fatal(err)
-			}
-			out, err := exec.Command(gofmt, goSrc).Output()
-			if err != nil {
-				t.Fatalf("gofmt: %v", err)
-			}
-			if g := string(bytes.TrimPrefix(out, []byte("package main\n\n"))); g != tc.src {
-				t.Errorf("the expectation is not gofmt's layout:\n%s", firstDiff(tc.src, g))
-			}
+			gofmtCheck(t, tc.src)
 		})
+	}
+}
+
+// The programs below are in gofmt's layout too, and are about its COLUMNS: what
+// gofmt aligns is what go/printer ends with a tab, in runs of lines that
+// text/tabwriter makes columns of, and what it does not align is what go/printer
+// broke the line of with a form feed. TestFormatAlignment checks each against
+// gofmt where there is one.
+
+// alignDeclarations is the fields of a struct, the specs of a grouped
+// declaration, the keys of a literal and the comments of a list of values.
+const alignDeclarations = `type M struct {
+	R [8]uint16 // the registers
+
+	now     uint32 // how far
+	psw     uint16
+	sp      [4]uint16 // the stack pointers
+	traps   uint16    // the traps
+	waiting bool
+	halted  bool // a HALT
+
+	a int
+	// a comment line
+	bbbbbb string
+	cc, dd int             // two names
+	P                      // embedded
+	e      func(a int) int // a function
+}
+
+type P struct {
+	x, y int
+}
+
+type I interface {
+	Get() int // reads
+	Set(v int)
+	Length() int // measures
+	Cap() int    // too
+}
+
+const (
+	controlReset = iota
+	write
+	read
+	check // compares
+	seek
+	readCheck  // reads
+	driveReset // resets
+	lock       // the drive
+)
+
+const (
+	k1    = 1 // one
+	k22   = 22
+	k333  = 333  // three
+	k4444 = 4444 // four
+)
+
+const (
+	t1    uint8  = 1  // one
+	t22          = 22 // two
+	t333  uint16 = 333
+	t4444        = 4444 // four
+	t5           = 5
+)
+
+var (
+	v1     int // one
+	v22    string
+	v333       = 3 // three
+	v4444  int = 4 // four
+	v5, v6 int = 5, 6
+	v7         = []int{
+		1,
+	}
+	v8  = 8  // eight
+	v99 = 99 // ninety-nine
+)
+
+type (
+	A   int
+	BB  string // a string
+	CCC struct {
+		x int
+	}
+	D bool
+)
+
+type order struct {
+	function, control, pack, block, words int
+	memory                                uint32
+	here                                  bool
+	p                                     P
+}
+
+var once = [...]uint16{
+	0o012706, 0o001000, // 1000
+	0o012737, 0o001034, 0o000100, // 1004
+	0o012737, 0o000300, 0o000102, // 1012
+	0o005003,                     // 1020
+	0o012737, 0o000100, 0o177546, // 1022
+	0o000001,                               // 1030
+	0o000000,                               // 1032
+	0o005203, 0o005203, 0o005203, 0o005203, // 1034
+	0o000002, // 1036
+	1,        // short
+	0o000002 + 0o000002 + 0o000002 + 0o000002 + 0o000002 + 0o000002 + 0o000002, // long
+	2, // short again
+}
+
+func f(c, d int) order {
+	o := order{
+		function: c,
+		control:  d,
+		pack:     c + d,
+		block:    1,
+		words:    2,
+		memory:   uint32(c&3)<<12 | uint32(d),
+		here:     !(c > d),
+	}
+	o2 := order{
+		function: c, // what to do
+		control:  d,
+		pack:     c + d, // which pack
+		block:    1,     // which block
+		p: P{
+			x: 1,
+			y: 2,
+		},
+		words:  2,
+		memory: 3,
+	}
+	o3 := order{function: c, control: d,
+		pack:  1,
+		block: 2}
+	m := [...]int{
+		1:   10,
+		20:  200,
+		300: 3000,
+	}
+	o4 := order{
+		function: c,
+
+		control: d,
+		words:   1,
+	}
+	o5 := order{
+		function: c,
+		// the control
+		control: d,
+		words:   1,
+	}
+	o6 := order{
+		p:     P{x: 1, y: 2},
+		words: 1, here: true,
+		memory: 3,
+		block:  4,
+	}
+	return order{function: o.pack + o2.pack + o3.pack + m[1] + o4.words + o5.words + o6.words}
+}
+
+func main() {
+	println(f(1, 2).function, len(once), k1, k22, k333, k4444, t1, t22, t333, t4444, t5, v1, v22, v333, v4444, v5, v6, len(v7), v8, v99)
+	println(controlReset, write, read, check, seek, readCheck, driveReset, lock)
+}
+`
+
+// alignOthers is a field and a spec written across lines, which end a run; an
+// embedded field; aliases; and a comment that is not a line comment.
+const alignOthers = `type T struct {
+	a    int
+	bbbb struct {
+		x int
+	}
+	cc     int
+	dddddd int
+}
+
+type U struct {
+	a    int // one
+	bbbb func(
+		x int,
+	) int // two
+	cc     int // three
+	dddddd int // four
+}
+
+type V struct {
+	only int // alone
+}
+
+type W struct {
+	a, b int
+	*T
+	cc   int
+	U        // embedded
+	dddd int // named
+	V
+	e int
+}
+
+type (
+	A   = int
+	BB  = string // an alias
+	CCC int
+)
+
+const (
+	one = 1 // alone in its group
+)
+
+const (
+	x1   = 1 << 3         // shifted
+	x22  = 1<<3 + 2       // tight
+	x333 = []int{1, 2}[0] // indexed
+)
+
+var (
+	g1 = [2]int{
+		1, 2,
+	}
+	g22  int
+	g333 = 3
+)
+
+var (
+	h1        int
+	h22       = 2
+	h333      string
+	h4444, h5 = 4, 5
+)
+
+var (
+	m1   = 1
+	m22  = 22  /* general */
+	m333 = 333 // line
+)
+
+func f() (int, int) {
+	a := 1      // one
+	bb := 22    // two
+	if a < bb { // cond
+		a++ // inc
+	} // close
+	ccc := 333         // three
+	return a + ccc, bb /* both */
+}
+
+func main() {
+	println(f())
+}
+`
+
+// alignSections is where a run of trailing comments ends though the next line
+// has one: at a case, at what continues an expression, at a parameter, after a
+// statement of several lines -- and where it does not, between declarations.
+const alignSections = `var (
+	a = 1
+)                 // the group
+var bb = 2        // two
+var ccc = 33      // three
+func one() int    { return 1 } // a function
+func eleven() int { return 11 }
+
+var d = 4              // four
+func twelve(a int) int { return 12 } // twelve
+func thirteen() int {
+	return 13
+}         // closing
+var e = 5 // five
+
+type T struct{ n int }
+
+func (t T) get() T         { return t }
+func (t T) add(a, b int) T { return t } // adds
+
+func p(
+	a int, // first
+	bbb int, // second
+	cc int, // third
+) int {
+	return a
+}
+
+func g(n int, p, q, r bool) int {
+	switch n {
+	case 1: // one
+	case 22: // twenty-two
+	case 333: // three
+		n++ // inc
+	default: // the rest
+		n-- // dec
+	}
+	v := p && // first
+		q && // second
+		r // third
+	var t T
+	t2 := t.
+		get().     // one
+		add(1, 2). // two
+		get()      // three
+	w := one() + // one
+		eleven() // eleven
+	println( // opens
+		n, // first
+		v, // second
+		"a long string, longer than forty characters in all", // third
+		w,    // fourth
+		t2.n, // fifth
+	)
+	s := []int{ // opens
+		1,  // one
+		22, // two
+	} // closes
+	x := 1 // one
+	if p { // cond
+		x++
+	} else if q { // second
+		x--
+	} else { // last
+		x = 0
+	}
+	yy := 22                 // two
+	for i := 0; i < 3; i++ { // loop
+		x += i // adds
+	}
+	zzz := len(s) // three
+	return x + yy + zzz
+}
+
+func h() (int, int, int) {
+	return 1, // one
+		22, // two
+		333 // three
+}
+
+func main() {
+	println(g(1, true, false, true), a, bb, ccc, d, e, p(1, 2, 3))
+	println(h())
+	println(twelve(1), thirteen())
+}
+`
+
+// TestFormatAlignment pins the columns. Until 2026-09-28 a field's type, a spec's
+// value, a one-line function's brace and a trailing comment each had a mechanism
+// of its own and its own idea of a run, which agreed with gofmt on the run corpus
+// and not on p2-11's sources; a literal's keys were not aligned at all. Each
+// program is formatted as it stands, and with every run of blanks made one.
+func TestFormatAlignment(t *testing.T) {
+	blanks := regexp.MustCompile(` +`)
+	for _, tc := range []struct{ name, src string }{
+		{"declarations", alignDeclarations},
+		{"others", alignOthers},
+		{"sections", alignSections},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			formatCheck(t, tc.src, tc.src)
+			formatCheck(t, blanks.ReplaceAllString(tc.src, " "), tc.src)
+			gofmtCheck(t, tc.src)
+		})
+	}
+}
+
+// TestFormatBlankLines pins the blank lines gofmt puts in and takes out: one
+// between two top-level declarations of different kinds and ahead of a comment on
+// a line of its own, none after a declaration with a comment trailing it, and none
+// at the end of the file -- where a comment was written TWICE, the walk having
+// written what stands ahead of the end and the flush after it writing it again.
+func TestFormatBlankLines(t *testing.T) {
+	const in = `import "p2"
+var a = 1
+const b = 2
+var c = 3
+// before d, a line of its own
+var d = 4
+var e = 5 // trails e
+const f = 6
+var g = 7 // trails g
+// before h
+const h = 8
+func one() int { return 1 }
+func two() int { return 2 }
+var i = 9
+func three() int {
+	return 3
+}
+var j = 10
+type T int
+func (t T) m() int { return int(t) }
+/* a general comment */
+var k = 11
+var l = 12 /* trails l */
+const m = 13
+const (
+	n = 14
+)
+const o = 15
+var p = 16
+
+// after a blank line
+const q = 17
+// doc of r
+
+var r = 18
+func main() {
+	p2.WaitMs(1)
+	var s = 1
+	const t = 2
+	// inside
+	var u = 3
+	println(a, b, c, d, e, f, g, h, i, j, k, l, m, n, o, p, q, r, s, t, u, one(), two(), three(), T(1).m())
+}
+`
+	const want = `import "p2"
+
+var a = 1
+
+const b = 2
+
+var c = 3
+
+// before d, a line of its own
+var d = 4
+var e = 5 // trails e
+const f = 6
+
+var g = 7 // trails g
+// before h
+const h = 8
+
+func one() int { return 1 }
+func two() int { return 2 }
+
+var i = 9
+
+func three() int {
+	return 3
+}
+
+var j = 10
+
+type T int
+
+func (t T) m() int { return int(t) }
+
+/* a general comment */
+var k = 11
+var l = 12 /* trails l */
+const m = 13
+const (
+	n = 14
+)
+const o = 15
+
+var p = 16
+
+// after a blank line
+const q = 17
+
+// doc of r
+
+var r = 18
+
+func main() {
+	p2.WaitMs(1)
+	var s = 1
+	const t = 2
+	// inside
+	var u = 3
+	println(a, b, c, d, e, f, g, h, i, j, k, l, m, n, o, p, q, r, s, t, u, one(), two(), three(), T(1).m())
+}
+`
+	formatCheck(t, in, want)
+	gofmtCheck(t, want)
+	formatCheck(t, "var x = 1\n\n// the last line\n\n\n", "var x = 1\n\n// the last line\n")
+	formatCheck(t, "var x = 1\n// the last line", "var x = 1\n\n// the last line\n")
+}
+
+// TestFormatResultParens pins the parentheses gofmt drops: those around one
+// result with no name.
+func TestFormatResultParens(t *testing.T) {
+	const in = `type F func(a int) (int)
+
+type G func() (int, error)
+
+type H func() (n int)
+
+type I interface {
+	M() (int)
+	N(a int) (b int)
+}
+
+func f() (int) { return 1 }
+
+func g() (int, int) { return 1, 2 }
+
+func h() ([]int) { return nil }
+
+func k() (func() (int)) { return f }
+
+func main() {
+	var x func() (F)
+	println(f(), x == nil)
+}
+`
+	const want = `type F func(a int) int
+
+type G func() (int, error)
+
+type H func() (n int)
+
+type I interface {
+	M() int
+	N(a int) (b int)
+}
+
+func f() int { return 1 }
+
+func g() (int, int) { return 1, 2 }
+
+func h() []int { return nil }
+
+func k() func() int { return f }
+
+func main() {
+	var x func() F
+	println(f(), x == nil)
+}
+`
+	formatCheck(t, in, want)
+	gofmtCheck(t, want)
+}
+
+// gofmtCheck fails where src is not what gofmt makes of it. It checks nothing on
+// a machine with no gofmt.
+func gofmtCheck(t *testing.T, src string) {
+	t.Helper()
+	gofmt, err := exec.LookPath("gofmt")
+	if err != nil {
+		return
+	}
+	goSrc := filepath.Join(t.TempDir(), "x.go")
+	if err := os.WriteFile(goSrc, []byte("package main\n\n"+src), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	out, err := exec.Command(gofmt, goSrc).Output()
+	if err != nil {
+		t.Fatalf("gofmt: %v", err)
+	}
+	if g := string(bytes.TrimPrefix(out, []byte("package main\n\n"))); g != src {
+		t.Errorf("the expectation is not gofmt's layout:\n%s", firstDiff(src, g))
 	}
 }

@@ -30,6 +30,8 @@ type formatter struct {
 	prevTok     Symbol // Last emitted token.
 	prevPrevTok Symbol // The token before the last emitted token.
 	prevTokIdx  int32  // Index of the last emitted token, for tightOps.
+	prevDecl    Symbol // The kind of the last top-level declaration entered.
+	sawEOF      bool   // The walk wrote the EOF token, and what stands ahead of it.
 
 	// indexDepth records, per Index node (keyed by its first token), the
 	// expression depth the subscript stands at -- what gates the slice-colon
@@ -60,28 +62,27 @@ type formatter struct {
 	nodeIndent map[*int32]int32
 	plainList  map[*int32]bool
 
-	// Elastic Tabstops maps
-	targetCol2          map[int32]int // token index -> absolute target column for Col2 (Types)
-	targetComment       map[int32]int // token index -> absolute target column for inline comments
-	activeCommentTarget int           // Handed down to formatSep to align lineComment
+	// What aligns, decided ahead of the walk (see format_table.go): cellsBefore is
+	// how many cells end where a token begins, commentCells how many end where the
+	// comment trailing a token does (one, where nothing is recorded), and
+	// sectionBefore the tokens no column reaches back past when they begin a line.
+	// sizedList, lists and the three elem maps are the lists whose sections the
+	// sizes of their elements decide.
+	cellsBefore   map[int32]int
+	commentCells  map[int32]int
+	sectionBefore map[int32]bool
+	sizedList     map[*int32]bool
+	lists         []*elemList
+	elemFirst     map[int32][]*listElem
+	elemLast      map[int32][]*listElem
+	elemColon     map[int32][]*listElem
 
-	// Trailing line comments that no target column already governs, recorded as
-	// they are written so alignRuns can pad them afterwards. A statement's comment
-	// cannot be measured the way a field's is -- that measurement re-derives the
-	// renderer's spacing token by token, which no arbitrary statement affords -- so
-	// these are aligned from where they actually landed.
-	outLine   int // newlines written so far, i.e. the current output line
-	lineByte  int // bytes written on the current output line
-	lineCells int // mid-line general comments written on it, each of which is a cell
-	trailing  []trailingComment
-}
-
-// trailingComment is one "// ..." written after code on its line.
-type trailingComment struct {
-	line   int // output line index
-	offset int // byte offset within that line where the comment begins
-	col    int // column it begins at, tabs expanded
-	cells  int // mid-line general comments before it; see alignRuns
+	// What the walk records for alignCells: where the cells ended, and the output
+	// lines a section begins at.
+	outLine  int // newlines written so far, i.e. the current output line
+	lineByte int // bytes written on the current output line
+	marks    []cellMark
+	sections map[int]bool
 }
 
 func newFormatter(fn string, b []byte, out io.Writer) (r *formatter, err error) {
@@ -89,9 +90,15 @@ func newFormatter(fn string, b []byte, out io.Writer) (r *formatter, err error) 
 	r = &formatter{
 		p:             &p,
 		out:           out,
-		targetCol2:    make(map[int32]int),
-		targetComment: make(map[int32]int),
 		nl:            true,
+		cellsBefore:   map[int32]int{},
+		commentCells:  map[int32]int{},
+		sectionBefore: map[int32]bool{},
+		sizedList:     map[*int32]bool{},
+		elemFirst:     map[int32][]*listElem{},
+		elemLast:      map[int32][]*listElem{},
+		elemColon:     map[int32][]*listElem{},
+		sections:      map[int]bool{},
 	}
 	if r.ast, err = p.Parse(fn, b); err != nil {
 		return nil, err
@@ -133,7 +140,11 @@ outer:
 				b = b[x:]
 			}
 		case bytes.HasPrefix(b, generalCommentPrefix):
-			x := max(bytes.Index(b, generalCommentSuffix), len(b))
+			x := bytes.Index(b, generalCommentSuffix)
+			if x < 0 {
+				x = len(b) - len(generalCommentSuffix)
+			}
+			x += len(generalCommentSuffix)
 			r = append(r, generalComment(b[:x]))
 			b = b[x:]
 		default:
@@ -209,19 +220,10 @@ func (f *formatter) formatSep(sep []any, indentLevel int32, currTok Symbol, c fo
 		case lineComment:
 			lvl := level()
 			if !f.nl {
-				// Inline comment padding
-				if f.activeCommentTarget > 0 {
-					for f.col < f.activeCommentTarget {
-						f.b(sp)
-					}
-					f.activeCommentTarget = 0
-				} else {
-					f.b(sp) // Ensure at least one space before unaligned inline comments
-					// No column governs this one, so record where it landed and let
-					// alignRuns line it up with its neighbours afterwards.
-					f.trailing = append(f.trailing, trailingComment{f.outLine, f.lineByte, f.col, f.lineCells})
-				}
+				f.b(sp)
+				f.trailingComment(c)
 			} else {
+				f.sections[f.outLine] = true
 				f.tabs(true, lvl)
 			}
 			b := []byte(x)
@@ -233,21 +235,18 @@ func (f *formatter) formatSep(sep []any, indentLevel int32, currTok Symbol, c fo
 				f.b(bytes.TrimRight(b, " \t\r"))
 			}
 		case generalComment:
-			// A /* */ comment that shares its line with code is a cell of its own,
-			// whether it leads the line or sits inside it. A line whose comment ends
-			// it records nothing, so counting one there costs nothing.
-			f.lineCells++
 			lvl := level()
 			if !f.nl {
-				if f.activeCommentTarget > 0 {
-					for f.col < f.activeCommentTarget {
-						f.b(sp)
+				f.b(sp)
+				// One that ends its line trails it as a line comment does; one
+				// with more of the line after it is set off by blanks.
+				if i+1 < len(sep) {
+					if ws, ok := sep[i+1].(whiteSpace); ok && ws > 0 {
+						f.trailingComment(c)
 					}
-					f.activeCommentTarget = 0
-				} else {
-					f.b(sp)
 				}
 			} else {
+				f.sections[f.outLine] = true
 				f.tabs(true, lvl)
 			}
 			b := []byte(x)
@@ -261,6 +260,55 @@ func (f *formatter) formatSep(sep []any, indentLevel int32, currTok Symbol, c fo
 		default:
 			panic(todo("%T", x))
 		}
+	}
+}
+
+// endOfFile is the separator ahead of the end of the file without the blank
+// lines that end it: the file ends with its last line.
+func endOfFile(sep []any) []any {
+	if ws, ok := sep[len(sep)-1].(whiteSpace); ok && ws > 1 {
+		sep[len(sep)-1] = whiteSpace(1)
+	}
+	return sep
+}
+
+// declBlankLine sees to the blank line gofmt has between two top-level
+// declarations: ahead of one of another kind than the one before it, and ahead
+// of a comment on a line of its own. sep is what stands between the two.
+//
+// None is put in after a declaration with a comment TRAILING it. That is
+// go/printer's doing rather than its intent -- the comment, written late, takes
+// one line break and drops the other -- and it is what gofmt writes.
+func (f *formatter) declBlankLine(sep []any, changed bool) {
+	first, own := -1, false
+	for i, v := range sep {
+		switch x := v.(type) {
+		case whiteSpace:
+			if first < 0 && x > 0 {
+				first = i
+			}
+		default:
+			if first < 0 {
+				return // it trails the declaration before
+			}
+			own = true
+		}
+	}
+	if first >= 0 && (own || changed) && sep[first].(whiteSpace) < 2 {
+		sep[first] = whiteSpace(2)
+	}
+}
+
+// trailingComment records that the comment about to be written ends the cell
+// ahead of it, and the empty ones go/printer puts between a declaration and its
+// comment.
+func (f *formatter) trailingComment(c formatterCtx) {
+	n, ok := f.commentCells[c.prevTokIdx]
+	if !ok || n < 1 {
+		n = 1
+	}
+	for ; n > 0; n-- {
+		f.marks = append(f.marks, cellMark{f.outLine, f.lineByte})
 	}
 }
 
@@ -618,7 +666,6 @@ func (f *formatter) b(b []byte) {
 			f.nl = true
 			f.outLine++
 			f.lineByte = 0
-			f.lineCells = 0
 			continue
 		}
 		f.lineByte++
@@ -850,12 +897,13 @@ func kidsOf(ast []int32) (r []kid) {
 // two in. Before 2026-09-28 only a call's arguments and a literal's body took a
 // level, each as a whole, so every other continuation line came back at the level
 // of the statement it continued (p2-11's OCTOGO.md).
-func (f *formatter) markIndents(ast []int32) {
+func (f *formatter) markIndents(ast []int32, top bool) {
 	for _, k := range kidsOf(ast) {
 		if k.sym == 0 {
 			continue
 		}
 		body := k.ast[2:]
+		f.markCells(k, top)
 		switch k.sym {
 		case Expression, SimpleExpr, Term:
 			f.indentOperands(body)
@@ -869,7 +917,7 @@ func (f *formatter) markIndents(ast []int32) {
 			f.indentAssigned(body)
 		}
 		f.indentSelectors(body)
-		f.markIndents(body)
+		f.markIndents(body, k.sym == SourceFile)
 	}
 }
 
@@ -921,10 +969,11 @@ func (f *formatter) indentBinary(operands []kid, prec []int) {
 			root = i
 		}
 	}
-	if f.beginsLine(firstIndex(operands[root].ast)) {
+	if first := firstIndex(operands[root].ast); f.beginsLine(first) {
 		for _, o := range operands[root:] {
 			f.nodeIndent[&o.ast[0]]++
 		}
+		f.sectionBefore[first] = true // go/printer breaks this line with a form feed
 	}
 	f.indentBinary(operands[:root], prec[:root])
 	f.indentBinary(operands[root:], prec[root:])
@@ -1041,6 +1090,11 @@ type formatterCtx struct {
 	undentDeclOpen    int32
 	undentDeclClose   int32
 	indentSepForIndex int32
+	// declFirst is the first token of the top-level declaration being written,
+	// where it is not the file's first, and declChanged whether it is of another
+	// kind than the one before it; see the blank line they are for, in the walk.
+	declFirst   int32
+	declChanged bool
 	// callClose is the ")" of a call whose arguments were written on lines of
 	// their own, which a comment ahead of it stands with; see closerLevels.
 	callClose int32
@@ -1083,338 +1137,6 @@ type formatterCtx struct {
 	inImport bool
 }
 
-// specMeasurement holds the three columns of one spec of a grouped declaration:
-// the names, the type, and the "= value". Either of the last two may be absent.
-type specMeasurement struct {
-	startTokIdx  int32
-	lastTokIdx   int32 // the spec's last token, which a trailing comment follows
-	namesWidth   int
-	typeWidth    int
-	valueWidth   int   // the "= value" cell, for the comment column after it
-	typeStartIdx int32 // -1 when the spec writes no type
-	eqIdx        int32 // -1 when the spec has no value
-	hasComment   bool  // a line comment trails the spec, so its last cell is not last
-}
-
-// alignSpecs lays out the specs of a grouped "const ( ... )" or "var ( ... )" in
-// three columns, the way gofmt does:
-//
-//	frameEnd uint8 = 0xC0
-//	frameEsc uint8 = 0xDB
-//	maxFrame       = 16
-//
-// The widths follow the tabwriter rule the struct alignment follows (see
-// measureField): a cell that ENDS ITS LINE is not part of an aligned column. So a
-// spec with no value does not widen the names column past what the specs with one
-// need, and a type with nothing after it does not widen the type column -- which
-// is what leaves an `iota` run, whose specs are bare names, unaligned rather than
-// padded out to the longest of them.
-//
-// A blank line ends a block, as it does between struct fields.
-func (f *formatter) alignSpecs(ast []int32, kind Symbol, c formatterCtx) {
-	child := ConstSpec
-	if kind == VarDecl {
-		child = VarSpec
-	}
-	var blocks [][]specMeasurement
-	var current []specMeasurement
-	isFirst := true
-	for len(ast) > 0 {
-		n := ast[0]
-		if n >= 0 {
-			ast = ast[1:]
-			continue
-		}
-		size := ast[1]
-		next := 2 + size
-		if Symbol(-n) == child {
-			m := f.measureSpec(ast[2:next], c)
-			if m.startTokIdx != -1 {
-				blank := false
-				if !isFirst {
-					// One newline, not two, unlike the struct fields above: a spec
-					// ends at an inserted semicolon, which carries its line's own
-					// newline away with it, so what reaches the next spec is the
-					// BLANK line alone.
-					for _, sep := range f.parseSep(f.p.Token(m.startTokIdx).SepBytes(), nil) {
-						if ws, ok := sep.(whiteSpace); ok && ws >= 1 {
-							blank = true
-							break
-						}
-					}
-				}
-				isFirst = false
-				if blank && len(current) != 0 {
-					blocks = append(blocks, current)
-					current = nil
-				}
-				current = append(current, m)
-			}
-		}
-		ast = ast[next:]
-	}
-	if len(current) != 0 {
-		blocks = append(blocks, current)
-	}
-
-	baseCol := int(c.indentLevel) * 8
-	for _, b := range blocks {
-		maxNames, maxType, maxValue := 0, 0, 0
-		for _, m := range b {
-			// Only a spec with something after its names widens the names column: a
-			// type, a value, or a trailing COMMENT, which is a cell of its own to
-			// gofmt's tabwriter. Without the last, an `iota` run whose specs carry
-			// comments -- `trapOdd = 1 << iota // ...` over `trapTimeout // ...` --
-			// left its names unpadded and its comments ragged, where gofmt pads the
-			// names to the longest and the empty value cells to the widest value
-			// (p2-11's OCTOGO.md, 2026-09-27).
-			if (m.typeStartIdx != -1 || m.eqIdx != -1 || m.hasComment) && m.namesWidth > maxNames {
-				maxNames = m.namesWidth
-			}
-			// Only a type with something after it widens the type column.
-			if m.typeStartIdx != -1 && (m.eqIdx != -1 || m.hasComment) && m.typeWidth > maxType {
-				maxType = m.typeWidth
-			}
-			// And only a value with a comment after it widens the value column.
-			if m.eqIdx != -1 && m.hasComment && m.valueWidth > maxValue {
-				maxValue = m.valueWidth
-			}
-		}
-		for _, m := range b {
-			if m.typeStartIdx != -1 {
-				f.targetCol2[m.typeStartIdx] = baseCol + maxNames + 1
-			}
-			col := baseCol + maxNames + 1
-			if maxType > 0 {
-				col += maxType + 1
-			}
-			if m.eqIdx != -1 {
-				f.targetCol2[m.eqIdx] = col
-			}
-			if m.hasComment {
-				if maxValue > 0 {
-					col += maxValue + 1
-				}
-				f.targetComment[m.lastTokIdx] = col
-			}
-		}
-	}
-}
-
-// measureSpec measures one ConstSpec or VarSpec into its three columns.
-func (f *formatter) measureSpec(ast []int32, c formatterCtx) specMeasurement {
-	m := specMeasurement{startTokIdx: -1, lastTokIdx: -1, typeStartIdx: -1, eqIdx: -1}
-	col := 0 // 0 names, 1 type, 2 value
-	first := true
-	var prevPrev, prev Symbol
-	var walk func([]int32)
-	walk = func(a []int32) {
-		for len(a) > 0 {
-			n := a[0]
-			if n < 0 {
-				if Symbol(-n) == Type && col == 0 {
-					col = 1
-				}
-				walk(a[2 : 2+a[1]])
-				a = a[2+a[1]:]
-				continue
-			}
-			tok := f.p.Token(n)
-			curr := Symbol(tok.Ch)
-			if curr == ASSIGN && col < 2 {
-				col, m.eqIdx = 2, n
-			}
-			if m.startTokIdx == -1 {
-				m.startTokIdx = n
-			}
-			if col == 1 && m.typeStartIdx == -1 {
-				m.typeStartIdx = n
-			}
-			if src := tok.SrcBytes(); len(src) > 0 {
-				m.lastTokIdx = n
-				space := 0
-				if !first && needsSpace(prevPrev, prev, curr, c) {
-					space = 1
-				}
-				switch {
-				case col == 0:
-					m.namesWidth += len(src) + space
-				case col == 2 && m.eqIdx == n: // the gap before the "=" is the column's
-					m.valueWidth += len(src)
-				case col == 2:
-					m.valueWidth += len(src) + space
-				case m.typeStartIdx == n: // the gap before the type is the column's
-					m.typeWidth += len(src)
-				default:
-					m.typeWidth += len(src) + space
-				}
-			}
-			first = false
-			prevPrev, prev = prev, curr
-			a = a[1:]
-		}
-	}
-	walk(ast)
-	m.hasComment = f.trailsLineComment(m.lastTokIdx)
-	return m
-}
-
-// fieldMeasurement holds absolute column widths for a single FieldDecl or MethodSpec
-type fieldMeasurement struct {
-	startTokIdx  int32
-	col2StartIdx int32 // The token index where Col2 (Type) starts
-	col1Width    int
-	col2Width    int
-	lastTokIdx   int32 // Used to attach inline comment alignment
-	hasComment   bool  // a line comment trails this field, so its type cell is not last
-}
-
-// alignmentBlock represents a contiguous block of fields without blank lines
-type alignmentBlock struct {
-	fields  []fieldMeasurement
-	maxCol1 int
-	maxCol2 int
-}
-
-func (f *formatter) measureField(ast []int32, sym Symbol, c formatterCtx) fieldMeasurement {
-	m := fieldMeasurement{startTokIdx: -1, col2StartIdx: -1, lastTokIdx: -1}
-	inCol2 := false
-	first := true
-
-	var prevPrev Symbol
-	var prev Symbol
-
-	var walk func([]int32)
-	walk = func(a []int32) {
-		for len(a) > 0 {
-			n := a[0]
-			if n < 0 {
-				s := Symbol(-n)
-				if sym == FieldDecl && s == Type {
-					inCol2 = true
-				}
-				walk(a[2 : 2+a[1]])
-				a = a[2+a[1]:]
-			} else {
-				tokIdx := n
-				tok := f.p.Token(tokIdx)
-				curr := Symbol(tok.Ch)
-
-				if inCol2 && m.col2StartIdx == -1 {
-					m.col2StartIdx = tokIdx
-				}
-				if m.startTokIdx == -1 {
-					m.startTokIdx = tokIdx
-				}
-				m.lastTokIdx = tokIdx
-
-				src := tok.SrcBytes()
-				if len(src) > 0 {
-					w := len(src)
-					space := 0
-					if !first {
-						if needsSpace(prevPrev, prev, curr, c) {
-							space = 1
-						}
-					}
-					first = false
-
-					if inCol2 {
-						// The space before the FIRST token of Col2 belongs to the
-						// structural gap, NOT the token's width.
-						if m.col2StartIdx == tokIdx {
-							m.col2Width += w
-						} else {
-							m.col2Width += w + space
-						}
-					} else {
-						m.col1Width += w + space
-					}
-				}
-				prevPrev = prev
-				prev = curr
-				a = a[1:]
-			}
-		}
-	}
-	walk(ast)
-	m.hasComment = f.trailsLineComment(m.lastTokIdx)
-	return m
-}
-
-// trailsLineComment reports whether a line comment follows the token at idx on the
-// same source line -- the "// ..." of `n int // how many`.
-//
-// It reads the NEXT token's separator, which is where the bytes between the two
-// live: a comment appearing there before any newline is on this token's line.
-func (f *formatter) trailsLineComment(idx int32) bool {
-	if idx < 0 {
-		return false
-	}
-	next := f.p.Token(idx + 1)
-	for _, sep := range f.parseSep(next.SepBytes(), nil) {
-		switch x := sep.(type) {
-		case lineComment:
-			return true
-		case whiteSpace:
-			if x >= 1 {
-				return false // the line ended before any comment
-			}
-		}
-	}
-	return false
-}
-
-// FormatFile writes the formatted version of 'b' to 'w', assuming it comes
-// from file named 'fn' and returns an error, if any.
-// alignRuns lines up the trailing comments f recorded, in maximal runs of
-// CONSECUTIVE output lines that carry one -- which is how gofmt groups them: a line
-// without a comment ends a run, as does a blank line (which is a line without one).
-//
-// It works on the finished text rather than on a measurement of the source. A
-// field's comment can be placed by measuring its declaration, because a field is
-// two names and a type; a statement is anything at all, and re-deriving the
-// renderer's spacing for one is the renderer. Where the comment actually landed is
-// the same number, already computed.
-func alignRuns(out []byte, cs []trailingComment) []byte {
-	if len(cs) == 0 {
-		return out
-	}
-	lines := bytes.Split(out, nl)
-	indent := func(i int) int {
-		if i >= len(lines) {
-			return -1
-		}
-		return len(lines[i]) - len(bytes.TrimLeft(lines[i], "\t"))
-	}
-	for i := 0; i < len(cs); {
-		j, max := i, cs[i].col
-		// Adjacent lines at the SAME indent. A nested block is a table of its own to
-		// gofmt, so the statement opening one does not align with the statements
-		// inside it.
-		// Adjacent, same indent, and the same number of cells before the comment: a
-		// tabwriter column spans only rows built the same way, so a line carrying a
-		// mid-line /* comment */ -- an extra cell -- puts its trailing comment in a
-		// different column from a line without one.
-		for j+1 < len(cs) && cs[j+1].line == cs[j].line+1 &&
-			indent(cs[j+1].line) == indent(cs[j].line) && cs[j+1].cells == cs[j].cells {
-			j++
-			if cs[j].col > max {
-				max = cs[j].col
-			}
-		}
-		for _, c := range cs[i : j+1] {
-			if pad := max - c.col; pad > 0 && c.line < len(lines) {
-				l := lines[c.line]
-				lines[c.line] = append(append(append([]byte{}, l[:c.offset]...),
-					bytes.Repeat(sp, pad)...), l[c.offset:]...)
-			}
-		}
-		i = j + 1
-	}
-	return bytes.Join(lines, nl)
-}
-
 func FormatFile(fn string, b []byte, w io.Writer) (err error) {
 	// The output is buffered rather than streamed: aligning a run of trailing
 	// comments needs the whole run written before the width is known.
@@ -1431,7 +1153,7 @@ func FormatFile(fn string, b []byte, w io.Writer) (err error) {
 		if !f.nl {
 			buf.Write(nl)
 		}
-		_, err = w.Write(alignRuns(buf.Bytes(), f.trailing))
+		_, err = w.Write(f.alignCells(buf.Bytes()))
 	}()
 
 	var seps []any
@@ -1447,6 +1169,18 @@ func FormatFile(fn string, b []byte, w io.Writer) (err error) {
 				c := c
 				next = 2 + ast[1]
 				c.indentLevel += f.nodeIndent[&ast[0]]
+				switch Symbol(-n) {
+				case TopLevelDecl, ImportDecl:
+					kind := Symbol(-n)
+					if kind == TopLevelDecl && next > 2 && ast[2] < 0 {
+						kind = Symbol(-ast[2])
+					}
+					c.declFirst = -1
+					if f.prevDecl != 0 {
+						c.declFirst, c.declChanged = firstIndex(ast[:next]), kind != f.prevDecl
+					}
+					f.prevDecl = kind
+				}
 				switch Symbol(-n) {
 				case Block:
 					c.indentLevel++
@@ -1467,7 +1201,6 @@ func FormatFile(fn string, b []byte, w io.Writer) (err error) {
 					if _, rp, ok := f.declGroupParens(ast[2:next]); ok {
 						c.indentLevel++
 						c.undentDeclOpen, c.undentDeclClose = firstIndex(ast[:next]), rp
-						f.alignSpecs(ast[2:next], Symbol(-n), c)
 					}
 				case CaseClause, CommClause:
 					c.indentLevel++
@@ -1537,123 +1270,6 @@ func FormatFile(fn string, b []byte, w io.Writer) (err error) {
 					// different source lines exactly when the body is multi-line; gofmt
 					// spaces the opening brace off the keyword only then.
 					c.structBraceMultiline = f.p.Token(c.undentLBraceIndex).Position().Line != f.p.Token(c.undentRBraceIndex).Position().Line
-
-					childSym := FieldDecl
-					if Symbol(-n) == InterfaceType {
-						childSym = MethodSpec
-					}
-
-					var blocks []alignmentBlock
-					var current alignmentBlock
-					isFirst := true
-
-					// Only a body written across lines has columns to align. The
-					// targets below are absolute, measured from the indentation, which is
-					// where a multi-line body's fields begin; a one-line body's begin
-					// after whatever precedes the type on its line, and a line standing
-					// one level out -- `case struct{ x, y int }{0, 4}:` -- padded its
-					// field's type to a column meant for the lines below it.
-					childAst := ast[2:next]
-					if !c.structBraceMultiline {
-						childAst = nil
-					}
-					for len(childAst) > 0 {
-						cn := childAst[0]
-						if cn < 0 {
-							csym := Symbol(-cn)
-							csize := childAst[1]
-							cnext := 2 + csize
-
-							if csym == childSym {
-								m := f.measureField(childAst[2:cnext], csym, c)
-								// An EMBEDDED field has no type cell and a field whose
-								// type spans lines has no one-line cell either: gofmt's
-								// tabwriter breaks the column at such a row, so the
-								// blocks on either side align separately and the row
-								// itself stays unpadded.
-								if csym == FieldDecl && m.startTokIdx != -1 {
-									embedded := m.col2StartIdx == -1
-									multiline := f.p.Token(m.startTokIdx).Position().Line != f.p.Token(m.lastTokIdx).Position().Line
-									if embedded || multiline {
-										if len(current.fields) > 0 {
-											blocks = append(blocks, current)
-										}
-										current = alignmentBlock{}
-										isFirst = true
-										childAst = childAst[cnext:]
-										continue
-									}
-								}
-								if m.startTokIdx != -1 {
-									startTok := f.p.Token(m.startTokIdx)
-
-									// A blank line ends the block, as it does between
-									// the specs of a grouped declaration. ONE newline
-									// is what to look for, not two: a field ends at an
-									// inserted semicolon, which carries its own line's
-									// newline away, so what reaches the next field is
-									// the blank line alone. Looking for two never
-									// matched, and a struct with a blank line in it was
-									// aligned as though it had none.
-									hasBlankLine := false
-									if !isFirst {
-										seps := f.parseSep(startTok.SepBytes(), nil)
-										for _, sep := range seps {
-											if ws, ok := sep.(whiteSpace); ok && ws >= 1 {
-												hasBlankLine = true
-												break
-											}
-										}
-									}
-									isFirst = false
-
-									if hasBlankLine {
-										if len(current.fields) > 0 {
-											blocks = append(blocks, current)
-										}
-										current = alignmentBlock{}
-									}
-
-									if m.col1Width > current.maxCol1 {
-										current.maxCol1 = m.col1Width
-									}
-									// Only a row whose type is FOLLOWED by something --
-									// a trailing comment -- sets the type column's
-									// width. gofmt aligns through a tabwriter, where a
-									// cell that ends its line is not part of an aligned
-									// column, so a long type on a comment-less row does
-									// not push the comments of its neighbours right.
-									if m.hasComment && m.col2Width > current.maxCol2 {
-										current.maxCol2 = m.col2Width
-									}
-
-									current.fields = append(current.fields, m)
-								}
-							}
-							childAst = childAst[cnext:]
-						} else {
-							childAst = childAst[1:]
-						}
-					}
-					if len(current.fields) > 0 {
-						blocks = append(blocks, current)
-					}
-
-					// Map the measured blocks to Absolute Column Targets
-					baseCol := int(c.indentLevel) * 8
-					for _, b := range blocks {
-						for _, m := range b.fields {
-							if m.col2StartIdx != -1 {
-								f.targetCol2[m.col2StartIdx] = baseCol + b.maxCol1 + 1
-							}
-
-							commentTarget := baseCol + b.maxCol1 + 1
-							if b.maxCol2 > 0 {
-								commentTarget += b.maxCol2 + 1
-							}
-							f.targetComment[m.lastTokIdx] = commentTarget
-						}
-					}
 				}
 				walk(ast[2:next], c)
 			default:
@@ -1728,6 +1344,17 @@ func FormatFile(fn string, b []byte, w io.Writer) (err error) {
 					seps = append(seps, whiteSpace(0))
 				}
 
+				if n == c.declFirst {
+					f.declBlankLine(seps, c.declChanged)
+				}
+				if Symbol(tok.Ch) == EOF {
+					f.sawEOF = true
+					if f.prevDecl != 0 {
+						f.declBlankLine(seps, false)
+					}
+					seps = endOfFile(seps)
+				}
+
 				// A separator's comments stand with the token they precede, so they
 				// take its indent delta too. Without that, a comment before a "case"
 				// clause or a grouped declaration's keyword -- the tokens that stand
@@ -1763,24 +1390,29 @@ func FormatFile(fn string, b []byte, w io.Writer) (err error) {
 				sepCtx.prevTokIdx, sepCtx.currTokIdx = f.prevTokIdx, tokIdx
 				sepCtx.tight, sepCtx.sendArrows = f.tightOps, f.sendArrows
 				f.formatSep(seps, sepIndent, Symbol(tok.Ch), sepCtx)
-				f.tabs(f.nl, c.indentLevel+indentDelta)
-
-				// Inject Elastic Col2 Padding
-				if target, ok := f.targetCol2[tokIdx]; ok {
-					for f.col < target {
-						f.b(sp)
+				switch {
+				case f.nl:
+					if f.sectionBefore[tokIdx] {
+						f.sections[f.outLine] = true
 					}
+				default:
+					for n := f.cellsBefore[tokIdx]; n > 0; n-- {
+						f.marks = append(f.marks, cellMark{f.outLine, f.lineByte})
+					}
+				}
+				f.tabs(f.nl, c.indentLevel+indentDelta)
+				for _, e := range f.elemFirst[tokIdx] {
+					e.line, e.off = f.outLine, f.lineByte
+				}
+				for _, e := range f.elemColon[tokIdx] {
+					e.keyOff = f.lineByte
 				}
 
 				f.b(src)
 
-				// Save inline comment targets for the formatSep run of the next token
-				if target, ok := f.targetComment[tokIdx]; ok {
-					f.activeCommentTarget = target
-				} else if Symbol(tok.Ch) != SEMICOLON {
-					f.activeCommentTarget = 0
+				for _, e := range f.elemLast[tokIdx] {
+					e.endLine, e.endOff = f.outLine, f.lineByte
 				}
-
 				f.prevPrevTok = f.prevTok
 				f.prevTok = Symbol(tok.Ch)
 				f.prevTokIdx = tokIdx
@@ -1794,225 +1426,27 @@ func FormatFile(fn string, b []byte, w io.Writer) (err error) {
 	f.computeTightOps(f.ast, 1)
 	f.sendArrows = map[int32]bool{}
 	f.markSendArrows(f.ast)
-	f.alignFuncBraces(f.ast)
 	f.skipTok = map[int32]bool{}
 	f.markRedundantParens(f.ast)
 	f.markHeaderParens(f.ast)
 	f.nodeIndent = map[*int32]int32{}
 	f.plainList = map[*int32]bool{}
-	f.markIndents(f.ast)
+	f.markIndents(f.ast, true)
 	walk(f.ast, formatterCtx{
 		undentLBraceIndex: -1, undentRBraceIndex: -1, indentSepForIndex: -1,
-		undentDeclOpen: -1, undentDeclClose: -1, callClose: -1,
+		undentDeclOpen: -1, undentDeclClose: -1, callClose: -1, declFirst: -1,
 	})
-	// Flush leftover synthetic separators AND the EOF separator ---
-	if f.err == nil {
-		var finalSep []byte
-		if len(syntheticSep) != 0 {
-			finalSep = append(finalSep, syntheticSep...)
-		}
-		if eofSep := f.p.tok.SepBytes(); len(eofSep) > 0 {
-			finalSep = append(finalSep, eofSep...)
-		}
-
+	// What stands ahead of the end of the file was written with the EOF token,
+	// which is the tree's last. Where the tree has none, it is written here.
+	if f.err == nil && !f.sawEOF {
+		finalSep := append(append([]byte{}, syntheticSep...), f.p.tok.SepBytes()...)
 		if len(finalSep) > 0 {
-			seps = f.parseSep(finalSep, seps[:0])
+			seps = endOfFile(f.parseSep(finalSep, seps[:0]))
 			// Flush using a 0 indent and a dummy current token (0) since we are at EOF
 			f.formatSep(seps, 0, 0, formatterCtx{})
 		}
 	}
 	return err
-}
-
-// alignFuncBraces pads the opening brace of consecutive ONE-LINE function
-// declarations into a column, as gofmt's tabwriter does. A run is adjacent
-// FuncDecls whose whole declaration sits on one source line, with nothing between
-// them: a blank line, a comment line, a multi-line function or any other kind of
-// declaration ends the run. Lone one-liners keep their single space.
-//
-// The header widths are measured the way measureField measures a field: a token
-// walk that re-derives the renderer's own spacing, so the target column is exact.
-// The pad itself rides the targetCol2 mechanism the field aligner already uses.
-func (f *formatter) alignFuncBraces(ast []int32) {
-	var braces []int32
-	var widths []int
-	var prevLast int32 = -1
-	flush := func() {
-		if len(braces) > 1 {
-			max := 0
-			for _, w := range widths {
-				if w > max {
-					max = w
-				}
-			}
-			for _, b := range braces {
-				f.targetCol2[b] = max + 1
-			}
-		}
-		braces, widths = nil, nil
-	}
-	if len(ast) != 0 && ast[0] < 0 && Symbol(-ast[0]) == SourceFile {
-		ast = ast[2 : 2+ast[1]]
-	}
-	for c := range it(ast) {
-		if c.sym != TopLevelDecl {
-			continue
-		}
-		fd, lbrace, first, last, ok := f.oneLineFuncDecl(c)
-		if !ok {
-			flush()
-			if l := lastIndex(astOf(c)); l >= 0 {
-				prevLast = l
-			}
-			continue
-		}
-		if prevLast >= 0 && f.sepBreaksRun(prevLast, first) {
-			flush()
-		}
-		braces = append(braces, lbrace)
-		widths = append(widths, f.measureFuncHeader(fd))
-		prevLast = last
-	}
-	flush()
-}
-
-// astOf is the subtree slice of a non-terminal Node, header included, for the
-// index helpers that want the raw encoding.
-func astOf(n Node) []int32 {
-	return n.ast
-}
-
-// oneLineFuncDecl reports whether a TopLevelDecl is a FuncDecl written whole on
-// one source line, and hands back the pieces the aligner needs: the FuncDecl
-// node, its body's opening brace token, and the declaration's first and last
-// token indexes.
-func (f *formatter) oneLineFuncDecl(tld Node) (fd Node, lbrace, first, last int32, ok bool) {
-	for c := range it(tld.ast) {
-		if c.sym != FuncDecl {
-			return Node{}, -1, -1, -1, false
-		}
-		fd = c
-		break
-	}
-	if fd.sym != FuncDecl {
-		return Node{}, -1, -1, -1, false
-	}
-	first, last = firstIndex(fd.ast), lastIndex(fd.ast)
-	if first < 0 || last < 0 {
-		return Node{}, -1, -1, -1, false
-	}
-	var block Node
-	hasBlock := false
-	for c := range it(fd.ast) {
-		if c.sym == Block {
-			block, hasBlock = c, true
-		}
-	}
-	if !hasBlock {
-		return Node{}, -1, -1, -1, false // a bodyless declaration has no brace to align
-	}
-	lbrace = firstIndex(block.ast)
-	if lbrace < 0 {
-		return Node{}, -1, -1, -1, false
-	}
-	if f.p.Token(first).Position().Line != f.p.Token(last).Position().Line {
-		return Node{}, -1, -1, -1, false
-	}
-	return fd, lbrace, first, last, true
-}
-
-// sepBreaksRun reports whether the source between two declarations ends an
-// alignment run: a blank line, or any comment standing between them.
-func (f *formatter) sepBreaksRun(prevLast, first int32) bool {
-	var sep []byte
-	for i := prevLast + 1; i <= first; i++ {
-		sep = append(sep, f.p.Token(i).SepBytes()...)
-	}
-	sawLine := false
-	for _, v := range f.parseSep(sep, nil) {
-		switch x := v.(type) {
-		case whiteSpace:
-			if x >= 2 {
-				return true
-			}
-			if x >= 1 {
-				sawLine = true
-			}
-		case lineComment:
-			// A comment TRAILING the previous declaration's line stays inside the
-			// run -- gofmt aligns straight through it. One on a line of its own
-			// ends the run.
-			if sawLine {
-				return true
-			}
-			sawLine = true // the comment carries its line's newline
-		default:
-			return true // a generalComment between the two
-		}
-	}
-	return false
-}
-
-// measureFuncHeader is the rendered width of a one-line FuncDecl up to its body:
-// the same token walk measureField makes, with the context transitions the main
-// walk would apply, so the width is the renderer's own.
-func (f *formatter) measureFuncHeader(fd Node) int {
-	width := 0
-	first := true
-	var prevPrev, prev Symbol
-	var prevIdx int32
-	var walk func(a []int32, c formatterCtx)
-	walk = func(a []int32, c formatterCtx) {
-		for len(a) > 0 {
-			n := a[0]
-			if n < 0 {
-				cc := c
-				switch Symbol(-n) {
-				case Block:
-					a = a[2+a[1]:]
-					continue
-				case ParameterList, CallSuffix:
-					cc.inParams = true
-				case Signature, MethodSpec:
-					cc.inSignature = true
-				case Receiver:
-					cc.inReceiver = true
-				case ParamDecl:
-					cc.inParamDecl = true
-				case Type, FieldDecl:
-					cc.inType = true
-				case Index:
-					cc.inIndex = true
-					cc.sliceColonBlanks = sliceColonNeedsBlanks(a[2 : 2+a[1]])
-				case SimpleExpr, Expression:
-					cc.inType, cc.inParams, cc.inSignature = false, false, false
-				}
-				walk(a[2:2+a[1]], cc)
-				a = a[2+a[1]:]
-				continue
-			}
-			tokIdx := n
-			tok := f.p.Token(tokIdx)
-			curr := Symbol(tok.Ch)
-			src := tok.SrcBytes()
-			if len(src) > 0 {
-				if !first {
-					cc := c
-					cc.prevTokIdx, cc.currTokIdx = prevIdx, tokIdx
-					cc.tight, cc.sendArrows = f.tightOps, f.sendArrows
-					if needsSpace(prevPrev, prev, curr, cc) {
-						width++
-					}
-				}
-				first = false
-				width += len(normalizedNumber(curr, src))
-				prevPrev, prev, prevIdx = prev, curr, tokIdx
-			}
-			a = a[1:]
-		}
-	}
-	walk(fd.ast, formatterCtx{})
-	return width
 }
 
 // markSendArrows fills sendArrows: the "<-" of a Type that begins "chan <-" (a
