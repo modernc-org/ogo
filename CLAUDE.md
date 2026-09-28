@@ -1571,7 +1571,11 @@ comment on a line of its own. A run is lines of ONE indentation, which is not th
 tabwriter's rule and is safer than it: gofmt indents a selector chain after a line
 with a trailing comment two levels, an accident of an indentation cell sharing a
 column with text, left alone here with the blank line gofmt puts ahead of a comment
-written in the column of a group's closing parenthesis. Found on the way, each
+written in the column of a group's closing parenthesis. The line breaks came
+last (format_break.go): what begins a line decides what is indented and what is
+aligned, so it is decided first (markBreaks), and every test of "is this written
+across lines" asks the OUTPUT's lines (spansLines), not the source's. Found on the
+way, each
 older than the change: a comment at the end of a file was written TWICE, the EOF
 token being the tree's last and the flush after the walk writing its separator
 again; a comment ahead of any closing brace stood with the brace; gofmt's blank line
@@ -1747,10 +1751,12 @@ clause required a semicolon before its closing brace, `select { case v = <-ch: a
 lists are meant to read alike, and one did not. **Check Factor and HeaderFactor
 against each other when either changes**; they are meant to differ by one production
 (HeaderFactor has no literal after a name, which is what keeps `if x == T {` a block).
-`ogo fmt` keeps a statement's body on the line it was written on -- `if c { v = 1 }`,
-`switch a { case 1: v = 2 }` -- where gofmt breaks it onto lines of its own; the run
-cases are gofmt's layout already, so TestFormatMatchesGofmt does not see it, and 21
-of the first 150 fuzzer programs have it (`} }`), which `scripts/fmtcmp.sh` shows. An
+(`ogo fmt` kept a statement's body on the line it was written on, `if c { v = 1 }`,
+until 2026-09-28: gofmt decides every line break but an expression's, and
+format_break.go decides them with it -- a function's body stays on its line where
+go/printer's arithmetic says it is short, which is known once it is WRITTEN, so
+FormatFile runs a pass more for each body found too long. The run cases were
+gofmt's layout already; the fuzzer's programs were not, 21 of the first 150.) An
 array a program only MEASURES, `var bound [n]int` read by `len(bound)` alone, is a C
 local nothing reads, the length being folded: the target builds it and the host
 harness's -Werror refuses it, so such a program cannot be a run case as it stands. (A

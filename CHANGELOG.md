@@ -146,6 +146,13 @@ shipped section tells a reader on that version that they have behaviour they do 
   four columns out; and a run of comments went on past a case, a parameter and a
   statement of several lines. gofmt aligns through a tabwriter, and `ogo fmt` lays
   its text out by the same rule now. All thirty-six format as gofmt formats them.
+- **`ogo fmt` breaks the lines gofmt breaks.** `if c { v = 1 }` stayed on its line,
+  and so did a switch, a loop, a statement after a semicolon, a struct of several
+  fields and a grouped declaration written on one line. Each is on lines of its own
+  now, a label too, and the semicolons between them are gone. A function's body
+  stays on its line where gofmt leaves it there -- five statements at most, none
+  with a block of its own, a hundred columns -- and so does a struct or an interface
+  of one short field, and `select {}`.
 - **`ogo fmt` wrote a comment at the end of a file twice**, and a blank line for
   each one the file ended with. It writes the comment once and ends the file with
   its last line.
