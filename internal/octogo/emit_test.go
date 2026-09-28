@@ -7624,9 +7624,11 @@ func TestEmitCArrayLitRefused(t *testing.T) {
 			want: "cannot use a [2]int literal as [3]int",
 		},
 		{
+			// The checker's since 2026-09-28, in Go's words: an array is no slice
+			// in any position one is wanted in, a literal's or a variable's.
 			name: "slice from array literal",
 			src:  "func main() {\n\tvar a []int = [3]int{1, 2, 3}\n\tprintln(a[0])\n}\n",
-			want: "a [3]int literal cannot initialize a variable declared []int",
+			want: "cannot use [3]int{1, 2, 3} (value of type [3]int) as []int value in variable declaration",
 		},
 		{
 			name: "too many values",
@@ -7665,7 +7667,12 @@ func TestEmitCArrayLitRefused(t *testing.T) {
 			fsys := fstest.MapFS{"main.ogo": &fstest.MapFile{Data: []byte(test.src)}}
 			pkg, err := Build(-1, []string{"main.ogo"}, fsys)
 			if err != nil {
-				t.Fatalf("Build: %v", err)
+				// The checker's refusal is as good as the emitter's, where it is the
+				// one wanted.
+				if !strings.Contains(err.Error(), test.want) {
+					t.Fatalf("Build: %v", err)
+				}
+				return
 			}
 			var buf bytes.Buffer
 			err = EmitC(pkg, &buf)

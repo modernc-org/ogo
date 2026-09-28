@@ -1,0 +1,108 @@
+// What is no slice is refused where a slice is wanted, in every position a value is
+// stored in: an array above all, which Go slices where the program says so and
+// nowhere else. Each of these went to the C compiler, which refused an array, a
+// struct or a pointer stored in a slice header, about types the program never wrote.
+
+type P struct {
+	x, y int
+}
+
+type H struct {
+	s []int
+}
+
+type A [2]int
+
+var a [2]int
+
+var na A
+
+var st P
+
+var gi int
+
+var p = &gi
+
+var ch chan int
+
+var cs chan []int
+
+var ss [][]int
+
+var h H
+
+func fn(n int) int {
+	return n
+}
+
+func take(s []int) int {
+	return len(s)
+}
+
+func sum(xs ...int) int {
+	return len(xs)
+}
+
+func lastv(ps ...[]int) []int {
+	return ps[len(ps)-1]
+}
+
+func get() []int {
+	// ERROR cannot use a \(variable of type \[2\]int\) as \[\]int value in return statement
+	return a
+}
+
+func bad() {
+	// ERROR cannot use a \(variable of type \[2\]int\) as \[\]int value in variable declaration
+	var s []int = a
+	// ERROR cannot use na \(variable of type A\) as \[\]int value in assignment
+	s = na
+	// ERROR cannot use st \(variable of type P\) as \[\]int value in assignment
+	s = st
+	// ERROR cannot use p \(variable of type \*int\) as \[\]int value in assignment
+	s = p
+	// ERROR cannot use fn as \[\]int value in assignment: it is a function
+	s = fn
+	// ERROR cannot use ch \(variable of type chan int\) as \[\]int value in assignment
+	s = ch
+	// ERROR cannot use \[2\]int\{1, 2\} \(value of type \[2\]int\) as \[\]int value in assignment
+	s = [2]int{1, 2}
+	// ERROR cannot use a \(variable of type \[2\]int\) as \[\]int value in argument to take
+	gi = take(a)
+	// ERROR cannot use a \(variable of type \[2\]int\) as \[\]int value in assignment
+	h.s = a
+	// ERROR cannot use a \(variable of type \[2\]int\) as \[\]int value in assignment
+	ss[0] = a
+	// ERROR cannot use a \(variable of type \[2\]int\) as \[\]int value in send
+	cs <- a
+	// ERROR cannot use a \(variable of type \[2\]int\) as \[\]int value in argument to sum
+	gi = sum(a...)
+	// ERROR cannot use gi \(value of type int\) as \[\]int value in argument to sum
+	gi = sum(gi...)
+	// ERROR cannot use ss \(variable of type \[\]\[\]int\) as \[\]int value in argument to sum
+	gi = sum(ss...)
+	// ERROR too many arguments in call to sum
+	gi = sum(1, s...)
+	_ = s
+}
+
+func good() {
+	s := a[:]
+	s = na[:]
+	s = h.s
+	s = ss[0]
+	s = nil
+	s = get()
+	h.s = a[1:]
+	ss[0] = s
+	cs <- a[:]
+	gi = take(a[:]) + sum(s...) + sum(a[:]...) + sum() + sum(nil...) + len(lastv(ss...)) + len(lastv(ss[:1]...))
+	var l []int = []int{1, 2}
+	_, _ = s, l
+}
+
+func main() {
+	bad()
+	good()
+	_ = p
+}

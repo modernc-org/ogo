@@ -8845,6 +8845,10 @@ func (f *File) checkSentValue(s *Scope, chanTN TypeNode, elem Kind, hasElem bool
 	if ct, ok := chanTN.(*TypeNodeChan); ok {
 		if _, named := ct.TypeNode.(*TypeNodeIdent); !named || elemName.IsValid() {
 			f.checkNilValue(s, s, ct.TypeNode, valNode, "send")
+			// And a slice or a pointer element takes what a variable of its type
+			// does: a send was the one store that did not ask, and `cs <- a` for a
+			// chan []int and an array a went to the C compiler.
+			f.checkRefAssign(s, s, ct.TypeNode, valNode, "send")
 		}
 	}
 	// A channel of interface type asks implements, as every other position a value
@@ -16107,6 +16111,19 @@ func (f *File) checkRefAssign(s, wantScope *Scope, want TypeNode, value Node, wh
 					f.exprSource(value), kindName(k), f.qualifiedTypeName(wantScope, f.typeNodeString(want, false)), what)
 				return
 			}
+			// A FUNCTION named where a slice is wanted: a declaration, which has no
+			// type written as a variable's is. Only the bare name is asked: what
+			// names an operand's category answers for the ELEMENT of `back[:]`, and
+			// asked of any value this refused every slice of an array of structs.
+			if id, isName := f.exprIdent(value); isName {
+				if _, isFunc := s.find(id.Src()).(*FuncDeclaration); isFunc {
+					if wantS := f.typeNodeString(want, false); wantS != "" {
+						f.err(f.tok(value.Pos()).Position(), "cannot use %s as %s value in %s: it is a function",
+							f.exprSource(value), f.qualifiedTypeName(wantScope, wantS), what)
+						return
+					}
+				}
+			}
 		}
 		// `&x` for an x whose type its initializer gave it, `x := 2.5`: no type
 		// written anywhere to read, and a Kind to name it by.
@@ -16153,6 +16170,33 @@ func (f *File) checkRefAssign(s, wantScope *Scope, want TypeNode, value Node, wh
 			}
 			if wantScope != s {
 				wantS = f.qualifiedTypeName(wantScope, wantS)
+			}
+			mode := "value"
+			if variable {
+				mode = "variable"
+			}
+			f.err(f.tok(value.Pos()).Position(), "cannot use %s (%s of type %s) as %s value in %s", f.exprSource(value), mode, haveS, wantS, what)
+			return
+		}
+	}
+	// And one that is no slice where a SLICE is wanted, an array above all: `var s
+	// []int = a`, `take(a)`, `return a` and `sum(a...)` for an `a [2]int` each went
+	// to the C compiler, which refused an array stored in a slice header. Go slices
+	// an array where the program says so, `a[:]`.
+	if wSlice && !hSlice {
+		switch hu.(type) {
+		case *TypeNodeStruct, *TypeNodeArray, *TypeNodePointer, *FunctionType, *TypeNodeChan:
+			haveS, wantS := have.f.typeNodeMessage(have.s, have.tn), f.typeNodeString(want, false)
+			if haveS == "" || wantS == "" {
+				return
+			}
+			if wantScope != s {
+				wantS = f.qualifiedTypeName(wantScope, wantS)
+			}
+			if strings.HasPrefix(haveS, "a ") || strings.HasPrefix(haveS, "an ") {
+				// A type with no spelling of its own, a struct written out.
+				f.err(f.tok(value.Pos()).Position(), "cannot use %s as %s value in %s: it is %s", f.exprSource(value), wantS, what, haveS)
+				return
 			}
 			mode := "value"
 			if variable {
@@ -19536,6 +19580,12 @@ func (f *File) checkCallArgs(s, paramScope *Scope, at Token, callee string, sig 
 			f.err(at.Position(), "not enough arguments in call to %s", callee)
 			return
 		}
+		// A spread is the whole of what the variadic parameter takes: `sum(1, is...)`
+		// went to the C compiler as a call of two arguments.
+		if f.spreadArgs(args) && len(args) > fixed+1 {
+			f.err(at.Position(), "too many arguments in call to %s", callee)
+			return
+		}
 		// Each of the rest has to be one element of the []T, so they are checked
 		// against T rather than against the slice flattenParams reports.
 		last := sig.Params.List[len(sig.Params.List)-1]
@@ -19543,6 +19593,14 @@ func (f *File) checkCallArgs(s, paramScope *Scope, at Token, callee string, sig 
 			elem := f.resultType(paramScope, sl.TypeNode)
 			spread := f.spreadArgs(args)
 			for i, arg := range args[fixed:] {
+				if spread && fixed+i == len(args)-1 {
+					// A spread `xs...` is the slice itself, and what it has to be is
+					// the parameter's type, not an element of it. Held to the
+					// element's, a slice of slices spread into a `...[]byte` was
+					// "cannot use xs (variable of type [][]byte) as []byte value".
+					f.checkRefAssign(s, paramScope, last.TypeNode, arg, "argument to "+callee)
+					continue
+				}
 				f.checkNilAssignable(s, elem, arg, "argument to "+callee)
 				// The checks a Kind cannot express run here, ahead of the
 				// known-Kind guard, exactly as they do for a fixed parameter
@@ -19557,8 +19615,8 @@ func (f *File) checkCallArgs(s, paramScope *Scope, at Token, callee string, sig 
 					continue
 				}
 				ak, aok := f.exprType(s, arg)
-				if !aok && !(spread && fixed+i == len(args)-1) && f.kindlessValueErr(s, arg, elem.name, "argument to "+callee) {
-					continue // a spread `xs...` is the slice itself, not an element
+				if !aok && f.kindlessValueErr(s, arg, elem.name, "argument to "+callee) {
+					continue
 				}
 				if aok && !assignableKind(elem.kind, ak) {
 					f.err(f.tok(arg.Pos()).Position(), "cannot use %s of type %s as type %s in argument to %s",
