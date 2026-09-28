@@ -294,6 +294,15 @@ shipped section tells a reader on that version that they have behaviour they do 
 
 ### Behaviour changes
 
+- **What is no slice is refused where a slice is wanted** (under Fixed, above).
+  The backend refused these already, all but one: a struct literal given for a
+  slice member of a literal, `H{s: P{1, 2}}`, built under v0.43.0 with the
+  backend's warning, "mixing pointer and integer types in assignment". It is
+  refused.
+- **`ogo fmt -l` may list a source an earlier `ogo fmt` wrote.** The layout is
+  gofmt's in more places (under Fixed, above: what continues a line, the columns,
+  the line breaks, the blank lines), so a source in the earlier layout is
+  reformatted once.
 - **What a call hands back of its arguments is asked of every way a call is
   written.** A reference to the frame came out of three kinds of call the rules did
   not ask: a call through an INTERFACE handed back nothing, so `return
