@@ -132,9 +132,7 @@ func (f *formatter) resultParens(body []int32) {
 }
 
 // multiline reports whether the tokens first to last are written across lines.
-func (f *formatter) multiline(first, last int32) bool {
-	return first >= 0 && last >= 0 && f.p.Token(first).Position().Line != f.endLine(last)
-}
+func (f *formatter) multiline(first, last int32) bool { return f.spansLines(first, last) }
 
 // sectionAfterMultiline begins a section at every sym of body that follows one
 // written across lines: go/printer breaks the line after such a one with a form

@@ -77,6 +77,18 @@ type formatter struct {
 	elemLast      map[int32][]*listElem
 	elemColon     map[int32][]*listElem
 
+	// What begins a line whatever line the source has it on, and the semicolons
+	// that go with that (see format_break.go). broken is the function bodies an
+	// earlier pass wrote on one line and found too long.
+	breakBefore map[int32]bool
+	breakToks   []int32 // breakBefore's tokens, in order
+	dropSemi    map[int32]bool
+	keptBody    map[*int32]bool
+	broken      map[int32]bool
+	kept        []*keptLine
+	keptFirst   map[int32][]*keptLine
+	keptLast    map[int32][]*keptLine
+
 	// What the walk records for alignCells: where the cells ended, and the output
 	// lines a section begins at.
 	outLine  int // newlines written so far, i.e. the current output line
@@ -99,6 +111,11 @@ func newFormatter(fn string, b []byte, out io.Writer) (r *formatter, err error) 
 		elemLast:      map[int32][]*listElem{},
 		elemColon:     map[int32][]*listElem{},
 		sections:      map[int]bool{},
+		breakBefore:   map[int32]bool{},
+		dropSemi:      map[int32]bool{},
+		keptBody:      map[*int32]bool{},
+		keptFirst:     map[int32][]*keptLine{},
+		keptLast:      map[int32][]*keptLine{},
 	}
 	if r.ast, err = p.Parse(fn, b); err != nil {
 		return nil, err
@@ -261,6 +278,18 @@ func (f *formatter) formatSep(sep []any, indentLevel int32, currTok Symbol, c fo
 			panic(todo("%T", x))
 		}
 	}
+}
+
+// brokenLine is the separator ahead of a token that begins a line, with the
+// line break the source may not have.
+func brokenLine(sep []any) []any {
+	for _, v := range sep {
+		if ws, ok := v.(whiteSpace); ok && ws > 0 {
+			return sep
+		}
+	}
+	sep[len(sep)-1] = whiteSpace(1)
+	return sep
 }
 
 // endOfFile is the separator ahead of the end of the file without the blank
@@ -707,7 +736,7 @@ func (f *formatter) declGroupParens(ast []int32) (lp, rp int32, ok bool) {
 	if lp < 0 || rp < 0 {
 		return -1, -1, false
 	}
-	return lp, rp, f.p.Token(lp).Position().Line != f.p.Token(rp).Position().Line
+	return lp, rp, f.spansLines(lp, rp)
 }
 
 // isBinaryBound reports whether a slice bound is a top-level binary expression
@@ -769,9 +798,10 @@ func (f *formatter) anyElementBeginsLine(ast []int32) bool {
 	return false
 }
 
-// beginsLine reports whether the token at idx is the first on its source line.
+// beginsLine reports whether the token at idx begins a line: it is the first on
+// its source line, or a line is broken ahead of it (breakBefore).
 func (f *formatter) beginsLine(idx int32) bool {
-	return idx > 0 && f.endLine(idx-1) != f.p.Token(idx).Position().Line
+	return idx > 0 && (f.breakBefore[idx] || f.endLine(idx-1) != f.p.Token(idx).Position().Line)
 }
 
 // endLine is the source line the token at idx ENDS on, which is not the one it
@@ -1138,13 +1168,37 @@ type formatterCtx struct {
 }
 
 func FormatFile(fn string, b []byte, w io.Writer) (err error) {
+	// A function's body stays on its line where it is short, and so does a type
+	// of one field, which is known once it is written: what a pass finds too long
+	// the next one breaks.
+	broken := map[int32]bool{}
+	for {
+		out, long, err := formatFile(fn, b, broken)
+		if err != nil {
+			return err
+		}
+		n := len(broken)
+		for _, key := range long {
+			broken[key] = true
+		}
+		if len(broken) == n {
+			_, err = w.Write(out)
+			return err
+		}
+	}
+}
+
+// formatFile is one pass of FormatFile: the formatted text, and what it left on
+// one line that is too long for one.
+func formatFile(fn string, b []byte, broken map[int32]bool) (out []byte, long []int32, err error) {
 	// The output is buffered rather than streamed: aligning a run of trailing
 	// comments needs the whole run written before the width is known.
 	var buf bytes.Buffer
 	f, err := newFormatter(fn, b, &buf)
 	if err != nil {
-		return err
+		return nil, nil, err
 	}
+	f.broken = broken
 
 	defer func() {
 		if err != nil {
@@ -1153,7 +1207,7 @@ func FormatFile(fn string, b []byte, w io.Writer) (err error) {
 		if !f.nl {
 			buf.Write(nl)
 		}
-		_, err = w.Write(f.alignCells(buf.Bytes()))
+		out, long = f.alignCells(buf.Bytes()), f.tooLong()
 	}()
 
 	var seps []any
@@ -1269,7 +1323,7 @@ func FormatFile(fn string, b []byte, w io.Writer) (err error) {
 					// The keyword (first token) and the closing "}" (last token) sit on
 					// different source lines exactly when the body is multi-line; gofmt
 					// spaces the opening brace off the keyword only then.
-					c.structBraceMultiline = f.p.Token(c.undentLBraceIndex).Position().Line != f.p.Token(c.undentRBraceIndex).Position().Line
+					c.structBraceMultiline = f.spansLines(c.undentLBraceIndex, c.undentRBraceIndex)
 				}
 				walk(ast[2:next], c)
 			default:
@@ -1289,7 +1343,7 @@ func FormatFile(fn string, b []byte, w io.Writer) (err error) {
 				}
 				switch Symbol(tok.Ch) {
 				case SEMICOLON:
-					if len(src) == 0 {
+					if len(src) == 0 || f.dropSemi[tokIdx] {
 						syntheticSep = append(syntheticSep[:0], sep...)
 						// A synthetic semicolon is not emitted, but it still ends a
 						// statement: advance the token history as a real ";" would, so a
@@ -1344,6 +1398,9 @@ func FormatFile(fn string, b []byte, w io.Writer) (err error) {
 					seps = append(seps, whiteSpace(0))
 				}
 
+				if f.breakBefore[tokIdx] {
+					seps = brokenLine(seps)
+				}
 				if n == c.declFirst {
 					f.declBlankLine(seps, c.declChanged)
 				}
@@ -1404,6 +1461,9 @@ func FormatFile(fn string, b []byte, w io.Writer) (err error) {
 				for _, e := range f.elemFirst[tokIdx] {
 					e.line, e.off = f.outLine, f.lineByte
 				}
+				for _, r := range f.keptFirst[tokIdx] {
+					r.line, r.off = f.outLine, f.lineByte
+				}
 				for _, e := range f.elemColon[tokIdx] {
 					e.keyOff = f.lineByte
 				}
@@ -1412,6 +1472,9 @@ func FormatFile(fn string, b []byte, w io.Writer) (err error) {
 
 				for _, e := range f.elemLast[tokIdx] {
 					e.endLine, e.endOff = f.outLine, f.lineByte
+				}
+				for _, r := range f.keptLast[tokIdx] {
+					r.endLine, r.endOff = f.outLine, f.lineByte
 				}
 				f.prevPrevTok = f.prevTok
 				f.prevTok = Symbol(tok.Ch)
@@ -1429,6 +1492,11 @@ func FormatFile(fn string, b []byte, w io.Writer) (err error) {
 	f.skipTok = map[int32]bool{}
 	f.markRedundantParens(f.ast)
 	f.markHeaderParens(f.ast)
+	f.markBreaks(f.ast)
+	for t := range f.breakBefore {
+		f.breakToks = append(f.breakToks, t)
+	}
+	slices.Sort(f.breakToks)
 	f.nodeIndent = map[*int32]int32{}
 	f.plainList = map[*int32]bool{}
 	f.markIndents(f.ast, true)
@@ -1446,7 +1514,7 @@ func FormatFile(fn string, b []byte, w io.Writer) (err error) {
 			f.formatSep(seps, 0, 0, formatterCtx{})
 		}
 	}
-	return err
+	return nil, nil, f.err
 }
 
 // markSendArrows fills sendArrows: the "<-" of a Type that begins "chan <-" (a

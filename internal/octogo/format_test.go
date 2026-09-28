@@ -993,3 +993,455 @@ func gofmtCheck(t *testing.T, src string) {
 		t.Errorf("the expectation is not gofmt's layout:\n%s", firstDiff(src, g))
 	}
 }
+
+// TestFormatLineBreaks pins the lines gofmt makes of what is written on one: a
+// statement stands on a line of its own, and so does a declaration, a spec, a
+// field and a case, and a block's braces enclose lines. Until 2026-09-28 `ogo
+// fmt` kept a body on the line it was written on, "if c { v = 1 }", and a
+// statement after a semicolon beside the one before it.
+//
+// The one body gofmt leaves on its line is a function's where it is short, and
+// the one type a struct or an interface of a single short field; the second
+// program is go/printer's arithmetic for "short", a case either side of each
+// number: thirty columns for a field, its names counting for one and a method's
+// signature for four more than it has; a hundred for a function literal's header
+// and statements and ninety-nine for a declaration's.
+func TestFormatLineBreaks(t *testing.T) {
+	const in = `type P struct{ x, y int }
+
+type x int
+
+type Q struct{ id int; data [4]int }
+
+type R struct{ n int /* count */ }
+
+type S struct{ veryLongFieldNameHere [16][]func(a, b int) (int, error) }
+
+type S2 struct{ f [16][]func(a, b int) (int, bool) }
+
+type S3 struct{ f [16][]func(a, b int) (int, bool, x) }
+
+type I interface{ M() int }
+
+type J interface{ M() int; N() }
+
+type E struct{}
+
+const ( a = 1; b = 2 )
+
+var ( c = 3 )
+
+var d = 4; var e = 5
+
+func one() int { return 1 }
+
+func two(v int) int { v++; v--; return v }
+
+func six(v int) int { v++; v++; v++; v++; v++; return v }
+
+func blk(v int) int { if v > 0 { return 1 }; return 0 }
+
+func lit() func() int { return func() int { return 1 } }
+
+func lit2() func() int { return func() int { if a > 0 { return 1 }; return 0 } }
+
+func empty() {}
+
+func long(aaaaaaaaaaaaaaaaaaaaaaaa, bbbbbbbbbbbbbbbbbbbbbbbbbbbbb int) int { return aaaaaaaaaaaaaaaaaaaaaaaa + bbbbbbbbbbbbbbbbbbbbbbbbbbbbb*2 }
+
+func fits(aaaaaaaaaaaaaaaaaaaaaaaa, bbbbbbbbbbbbbbbbbbbbbbbbbbbb int) int { return aaaaaaaaaaaaaaaaaaaaaaaa + bbbbbbbbbbbbbbbbbbbbbbbbbbbb*2 }
+
+func g(v int, ch chan int) int {
+	if v > 0 { v = 1 }
+	if v > 1 { v = 2 } else { v = 3 }
+	if v > 1 { v = 2 } else if v > 0 { v = 4 } else { v = 3 }
+	for v < 10 { v++ }
+	for {}
+	for i := 0; i < 3; i++ { v += i; v-- }
+	switch v { case 1: v = 2; case 3, 4: v = 5; v++; default: }
+	switch { }
+	select { case x := <-ch: v = x; default: v = 0 }
+	{ v++ }
+	{}
+	a := 1; b := 2; v += a + b;
+	f := func() { v++ }
+	h := func() { if v > 0 { v++ } }
+	k := func() {}
+	f(); h(); k()
+outer: for { break outer }
+	go func() { v++ }()
+	defer func() { if v > 0 { v-- } }()
+	x := struct{ a int; b string }{1, "b"}
+	y := struct{ a int }{1}
+	return v + x.a + y.a
+}
+
+func main() { println(one(), two(1), six(1), blk(1), lit()(), lit2()(), a, b, c, d, e); empty(); println(g(1, nil), long(1, 2), fits(1, 2)) }
+`
+	const want = `type P struct{ x, y int }
+
+type x int
+
+type Q struct {
+	id   int
+	data [4]int
+}
+
+type R struct {
+	n int /* count */
+}
+
+type S struct {
+	veryLongFieldNameHere [16][]func(a, b int) (int, error)
+}
+
+type S2 struct {
+	f [16][]func(a, b int) (int, bool)
+}
+
+type S3 struct {
+	f [16][]func(a, b int) (int, bool, x)
+}
+
+type I interface{ M() int }
+
+type J interface {
+	M() int
+	N()
+}
+
+type E struct{}
+
+const (
+	a = 1
+	b = 2
+)
+
+var (
+	c = 3
+)
+
+var d = 4
+var e = 5
+
+func one() int { return 1 }
+
+func two(v int) int { v++; v--; return v }
+
+func six(v int) int {
+	v++
+	v++
+	v++
+	v++
+	v++
+	return v
+}
+
+func blk(v int) int {
+	if v > 0 {
+		return 1
+	}
+	return 0
+}
+
+func lit() func() int { return func() int { return 1 } }
+
+func lit2() func() int {
+	return func() int {
+		if a > 0 {
+			return 1
+		}
+		return 0
+	}
+}
+
+func empty() {}
+
+func long(aaaaaaaaaaaaaaaaaaaaaaaa, bbbbbbbbbbbbbbbbbbbbbbbbbbbbb int) int {
+	return aaaaaaaaaaaaaaaaaaaaaaaa + bbbbbbbbbbbbbbbbbbbbbbbbbbbbb*2
+}
+
+func fits(aaaaaaaaaaaaaaaaaaaaaaaa, bbbbbbbbbbbbbbbbbbbbbbbbbbbb int) int {
+	return aaaaaaaaaaaaaaaaaaaaaaaa + bbbbbbbbbbbbbbbbbbbbbbbbbbbb*2
+}
+
+func g(v int, ch chan int) int {
+	if v > 0 {
+		v = 1
+	}
+	if v > 1 {
+		v = 2
+	} else {
+		v = 3
+	}
+	if v > 1 {
+		v = 2
+	} else if v > 0 {
+		v = 4
+	} else {
+		v = 3
+	}
+	for v < 10 {
+		v++
+	}
+	for {
+	}
+	for i := 0; i < 3; i++ {
+		v += i
+		v--
+	}
+	switch v {
+	case 1:
+		v = 2
+	case 3, 4:
+		v = 5
+		v++
+	default:
+	}
+	switch {
+	}
+	select {
+	case x := <-ch:
+		v = x
+	default:
+		v = 0
+	}
+	{
+		v++
+	}
+	{
+	}
+	a := 1
+	b := 2
+	v += a + b
+	f := func() { v++ }
+	h := func() {
+		if v > 0 {
+			v++
+		}
+	}
+	k := func() {}
+	f()
+	h()
+	k()
+outer:
+	for {
+		break outer
+	}
+	go func() { v++ }()
+	defer func() {
+		if v > 0 {
+			v--
+		}
+	}()
+	x := struct {
+		a int
+		b string
+	}{1, "b"}
+	y := struct{ a int }{1}
+	return v + x.a + y.a
+}
+
+func main() {
+	println(one(), two(1), six(1), blk(1), lit()(), lit2()(), a, b, c, d, e)
+	empty()
+	println(g(1, nil), long(1, 2), fits(1, 2))
+}
+`
+	formatCheck(t, in, want)
+	gofmtCheck(t, want)
+
+	const limits = `type x int
+
+type tyyyyyyyyyyyyyyyyyyyyyyyy int
+
+type A28 struct{ f [4]tyyyyyyyyyyyyyyyyyyyyyyyy }
+
+type tyyyyyyyyyyyyyyyyyyyyyyyyy int
+
+type A29 struct{ f [4]tyyyyyyyyyyyyyyyyyyyyyyyyy }
+
+type tyyyyyyyyyyyyyyyyyyyyyyyyyy int
+
+type A30 struct{ f [4]tyyyyyyyyyyyyyyyyyyyyyyyyyy }
+
+type tyyyyyyyyyyyyyyyyyyyyyyyyyyy int
+
+type A31 struct{ f [4]tyyyyyyyyyyyyyyyyyyyyyyyyyyy }
+
+type emmmmmmmmmmmmmmmmmmmmmmmmmmmm int
+
+type E29 struct{ emmmmmmmmmmmmmmmmmmmmmmmmmmmm }
+
+type emmmmmmmmmmmmmmmmmmmmmmmmmmmmm int
+
+type E30 struct{ emmmmmmmmmmmmmmmmmmmmmmmmmmmmm }
+
+type emmmmmmmmmmmmmmmmmmmmmmmmmmmmmm int
+
+type E31 struct{ emmmmmmmmmmmmmmmmmmmmmmmmmmmmmm }
+
+type I28 interface{ M(pppppppppppppppppp int) int }
+
+type I29 interface{ M(ppppppppppppppppppp int) int }
+
+type I30 interface{ M(pppppppppppppppppppp int) int }
+
+type I31 interface{ M(ppppppppppppppppppppp int) int }
+
+func f99(qqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqq int) int { return 1 }
+
+func f100(qqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqq int) int { return 1 }
+
+func f101(qqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqq int) int { return 1 }
+
+func g99(qqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqq int) {}
+
+func g100(qqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqq int) {}
+
+func g101(qqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqq int) {}
+
+func h100(v, qqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqq int) int { v++; return v }
+
+func h101(v, qqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqq int) int { v++; return v }
+
+var l100 = func(qqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqq int) int { return 1 }
+
+var l101 = func(qqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqq int) int { return 1 }
+
+type K24 interface{ M(pppppppppppppp int) int }
+
+type L24 interface{ MuchLongerName(pppppppppppppp int) int }
+
+type K25 interface{ M(ppppppppppppppp int) int }
+
+type L25 interface{ MuchLongerName(ppppppppppppppp int) int }
+
+type K26 interface{ M(pppppppppppppppp int) int }
+
+type L26 interface{ MuchLongerName(pppppppppppppppp int) int }
+
+type K27 interface{ M(ppppppppppppppppp int) int }
+
+type L27 interface{ MuchLongerName(ppppppppppppppppp int) int }
+
+func main() {}
+`
+	const wantLimits = `type x int
+
+type tyyyyyyyyyyyyyyyyyyyyyyyy int
+
+type A28 struct{ f [4]tyyyyyyyyyyyyyyyyyyyyyyyy }
+
+type tyyyyyyyyyyyyyyyyyyyyyyyyy int
+
+type A29 struct{ f [4]tyyyyyyyyyyyyyyyyyyyyyyyyy }
+
+type tyyyyyyyyyyyyyyyyyyyyyyyyyy int
+
+type A30 struct {
+	f [4]tyyyyyyyyyyyyyyyyyyyyyyyyyy
+}
+
+type tyyyyyyyyyyyyyyyyyyyyyyyyyyy int
+
+type A31 struct {
+	f [4]tyyyyyyyyyyyyyyyyyyyyyyyyyyy
+}
+
+type emmmmmmmmmmmmmmmmmmmmmmmmmmmm int
+
+type E29 struct{ emmmmmmmmmmmmmmmmmmmmmmmmmmmm }
+
+type emmmmmmmmmmmmmmmmmmmmmmmmmmmmm int
+
+type E30 struct{ emmmmmmmmmmmmmmmmmmmmmmmmmmmmm }
+
+type emmmmmmmmmmmmmmmmmmmmmmmmmmmmmm int
+
+type E31 struct {
+	emmmmmmmmmmmmmmmmmmmmmmmmmmmmmm
+}
+
+type I28 interface {
+	M(pppppppppppppppppp int) int
+}
+
+type I29 interface {
+	M(ppppppppppppppppppp int) int
+}
+
+type I30 interface {
+	M(pppppppppppppppppppp int) int
+}
+
+type I31 interface {
+	M(ppppppppppppppppppppp int) int
+}
+
+func f99(qqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqq int) int { return 1 }
+
+func f100(qqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqq int) int {
+	return 1
+}
+
+func f101(qqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqq int) int {
+	return 1
+}
+
+func g99(qqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqq int) {}
+
+func g100(qqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqq int) {
+}
+
+func g101(qqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqq int) {
+}
+
+func h100(v, qqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqq int) int {
+	v++
+	return v
+}
+
+func h101(v, qqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqq int) int {
+	v++
+	return v
+}
+
+var l100 = func(qqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqq int) int { return 1 }
+
+var l101 = func(qqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqq int) int {
+	return 1
+}
+
+type K24 interface{ M(pppppppppppppp int) int }
+
+type L24 interface{ MuchLongerName(pppppppppppppp int) int }
+
+type K25 interface{ M(ppppppppppppppp int) int }
+
+type L25 interface{ MuchLongerName(ppppppppppppppp int) int }
+
+type K26 interface {
+	M(pppppppppppppppp int) int
+}
+
+type L26 interface {
+	MuchLongerName(pppppppppppppppp int) int
+}
+
+type K27 interface {
+	M(ppppppppppppppppp int) int
+}
+
+type L27 interface {
+	MuchLongerName(ppppppppppppppppp int) int
+}
+
+func main() {}
+`
+	formatCheck(t, limits, wantLimits)
+	gofmtCheck(t, wantLimits)
+
+	// An empty select is the one statement whose braces stay together.
+	formatCheck(t, "func main() {\n\tselect {}\n}\n", "func main() {\n\tselect {}\n}\n")
+}
