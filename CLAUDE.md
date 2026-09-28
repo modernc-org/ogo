@@ -119,7 +119,11 @@ whenever the program declares no `_clkfreq`/`_clkmode` pair, and it reads those 
 by name from the program's own constants (`GetClkFreq` in the transpiled sources).
 `--clock` computes the PLL divisors and emits that pair; `internal/octogo/clock.go`
 holds the arithmetic, and its test pins the 160 MHz word against the backend's own
-fallback so the encoding cannot drift from the compiler that consumes it.
+fallback so the encoding cannot drift from the compiler that consumes it. A program
+asks what it was built for with `p2.ClockFreq()` (2026-09-28), the backend's
+`_clockfreq` -- a FUNCTION and not a constant, the clock being an option of the
+emitter's that the checker folding constants has not seen; measured on a P2-EDGE at
+the default and at `--clock` 200, 180 and 100 MHz.
 
 **loadp2's `-f` does NOT set the program's clock**, whatever the name suggests: a
 flexcc program sets its own as it starts, and the same binary measures 160061416 Hz
@@ -412,7 +416,8 @@ subcommands to `internal/*` packages.
   are defined at the top of `scanner.go`. Key files: `scanner.go` (lexer with
   Go-style automatic semicolon insertion), `check.go` (semantic analysis, the
   largest file), `decl.go`/`type.go`/`value.go`/`const.go` (declarations, the type
-  and value model), `format.go` (the `.ogo` pretty-printer behind `ogo fmt`).
+  and value model), `format.go` (the `.ogo` pretty-printer behind `ogo fmt`) with
+  `format_table.go` (its alignment: gofmt's tabwriter, emulated).
 
 - **`internal/format`** — thin `ogo fmt` subcommand wrapper: walks paths, runs
   files through `octogo.FormatFile` concurrently, handles `-l`/`-w`/`-exclude`.
@@ -648,6 +653,10 @@ reached the second machine without it; it lives under `scripts/` for that reason
   next exhausted; rerun capped afterwards it measured small (~20 MB a seed, 880 MB
   for a fresh compile of the test binary) and found no fault, so the cause was never
   shown to be it. A seed that FAULTS leaves smithNNNN.fault now.
+- `scripts/fmtcmp.sh [-v N] FILE.ogo...` -- each source through gofmt (a package
+  clause prepended) and through the tree's `ogo fmt`, naming the files the two lay
+  out differently. NOT `ogo fmt -l`, which lists nothing for a program already in
+  `ogo fmt`'s layout however far that is from gofmt's.
 - `scripts/flexcc` + `scripts/cccorpus.sh [-I INC] [-k KEEP] FLEXCC OUT DIR...` --
   the tree's in-process backend as a command, and every C file of some directories
   compiled by ONE flexcc into sorted `NAME RC SHA` lines; `LC_ALL=C join` two lists
@@ -1506,6 +1515,71 @@ constant, which is how the row lived through every sweep on the board: `ogo smit
 writing `const` -- typed and untyped, a package's and a block's, read beside each
 integer type -- is the guard this row still lacks.
 
+**WHAT A CALL HANDS BACK IS ASKED ONCE** (2026-09-28). p2-11 could not return an
+error that came of a call given a local buffer, `if err := fill(buf[:]); err != nil
+{ return 0, err }`: a declaration marks its variable with what its initializer
+reaches of the frame, asking frameRefOf -- which asks the callee's summary -- and
+then WALKED INTO the initializer as into a composite literal, a call's arguments
+among its parts. So a result declared from a call held whatever the call was given,
+in the seven of eleven binding forms that declare. The walk stops at a call whose
+callee is summarised (summarisedCall); one nothing summarises is walked into still
+(NewBuilder(back[:])). **Two answers to one question are a false refusal or a hole,
+and the second answer hides what the first lacks**: the walk had stood in for what
+frameRefOf did not ask, and the row -- every form a result is bound by, against a
+callee handing its argument back or not, reached each way a callee is -- found 44 of
+184 programs handing a reference to the frame out ACCEPTED, none through the walk: a
+call through an INTERFACE handed back nothing (ifaceRetSummary); the values a
+variadic call packs are what its variadic parameter HOLDS and the pack is an array
+of the CALLER's frame, and they were asked as parameters of their own positions
+(packAt, packedRef); a literal called where it stands, a method expression and a
+method on a conversion were asked which parameters they hand back and not what those
+hold. All ask callArgsRef. **A new way to call is a row there, and a new kind of
+parameter -- packed, received, bound -- is asked what it HOLDS.** The checker's part
+was found on the way: an array, a struct, a pointer, a channel and a function's name
+were taken where a slice is wanted in every position, the mirror of a rule that was
+there (checkRefAssign's "pointer wanted"), and a spread was held to the ELEMENT's
+type. Its first version asked nonBoolOperand what the operand is, which names the
+ELEMENT of `back[:]`, and refused sixteen run cases; the corpus guard's count showed
+it. The destructured forms, `n, err := r.Read(buf[:])`, are the same row and held.
+Known and not a fault: `return buf[0], fill(buf[:])` reads buf[0] before the call
+here and after it in gc, an order Go leaves unspecified.
+
+**THE FORMATTER'S ORACLE IS GOFMT ON A PROGRAM'S OWN SOURCES** (2026-09-28). p2-11
+reported one shape, `b < c` on the line after `return a < b &&` coming back under
+the `return`. It was a row -- every continuation line but a call's arguments and a
+literal's body -- and go/printer's rule is per NODE of Go's tree: an indent at a
+line break, taken back after what followed, so the levels add and follow Go's
+precedences where the grammar has three flat levels (markIndents, indentBinary).
+Then p2-11's sources went through both formatters (`scripts/fmtcmp.sh`), and eleven
+of thirty-six differed where TestFormatMatchesGofmt agreed on all 777 run cases:
+the sources were in `ogo fmt`'s layout, so `ogo fmt -l` said nothing, and the run
+cases have no table of values with comments, no keyed literal of several lines, no
+field without a comment between two with one. Every difference was a COLUMN. gofmt
+aligns nothing itself: go/printer ends a cell with a tab, text/tabwriter makes a
+column of a run of consecutive lines with a cell there, and a form feed begins a
+new section. The formatter had four mechanisms, each measuring or remembering its
+own way with its own idea of a run; it has one now, the tabwriter's
+(format_table.go): cells and sections decided ahead of the walk (cellsBefore,
+commentCells, sectionBefore), marks recorded where tokens LANDED, the text laid out
+afterwards (alignCells, layoutTable). **A width is read off what was written, never
+measured from the tree**: the measured one was four columns out for `[]int{1,
+2}[0]`. **What begins a section is go/printer's and is copied, not derived**:
+exprList's arithmetic over element sizes (a line of several elements, a size out of
+proportion to the geometric mean of its neighbours'), a case, a parameter, the
+operand continuing an expression, the statement after one of several lines, a
+comment on a line of its own. A run is lines of ONE indentation, which is not the
+tabwriter's rule and is safer than it: gofmt indents a selector chain after a line
+with a trailing comment two levels, an accident of an indentation cell sharing a
+column with text, left alone here with the blank line gofmt puts ahead of a comment
+written in the column of a group's closing parenthesis. Found on the way, each
+older than the change: a comment at the end of a file was written TWICE, the EOF
+token being the tree's last and the flush after the walk writing its separator
+again; a comment ahead of any closing brace stood with the brace; gofmt's blank line
+between declarations of different kinds was never put in -- nor is it after a
+declaration with a trailing comment, which is go/printer's doing and what gofmt
+writes. **A formatter test holds its expectation against gofmt where there is one**
+(gofmtCheck): an expectation written by hand is the formatter's own opinion.
+
 **PRINTING A VALUE IS A ROW** (2026-09-23). `printf("%v", x)` of an ARRAY printed the
 address of its storage wherever x was not a bare name -- a literal, a field, an
 element, a row, a call's field, a deferred capture -- silently on the board, and
@@ -1675,7 +1749,8 @@ against each other when either changes**; they are meant to differ by one produc
 (HeaderFactor has no literal after a name, which is what keeps `if x == T {` a block).
 `ogo fmt` keeps a statement's body on the line it was written on -- `if c { v = 1 }`,
 `switch a { case 1: v = 2 }` -- where gofmt breaks it onto lines of its own; the run
-cases are gofmt's layout already, so TestFormatMatchesGofmt does not see it. An
+cases are gofmt's layout already, so TestFormatMatchesGofmt does not see it, and 21
+of the first 150 fuzzer programs have it (`} }`), which `scripts/fmtcmp.sh` shows. An
 array a program only MEASURES, `var bound [n]int` read by `len(bound)` alone, is a C
 local nothing reads, the length being folded: the target builds it and the host
 harness's -Werror refuses it, so such a program cannot be a run case as it stands. (A
@@ -1887,7 +1962,9 @@ via the `testdata/hostp2` shim which now stubs these):
 | `p2.PinStart(p,m,x,y)` | `_pinstart` | | |
 | `p2.WaitMs(ms)` | `_waitms` | `p2.GetMs()` | `_getms`→uint32 |
 | `p2.WaitUs(us)` | `_waitus` | `p2.GetSec()` | `_getsec`→uint32 |
-| `p2.WaitCycles(n)` | `_waitx` | `p2.Rnd()` | `_rnd`→uint32 |
+| `p2.WaitCycles(n)` | `_waitx` | `p2.GetUs()` | `_getus`→uint32 |
+| `p2.WaitUntil(t)` | `_waitcnt` | `p2.ClockFreq()` | `_clockfreq`→uint32 |
+| `p2.Rnd()` | `_rnd`→uint32 | | |
 | `p2.Rev(x)` | `_rev`→uint32 | `p2.Reboot()` | `_reboot` |
 | `p2.SetBaud(n)` | `_setbaud` | `p2.ReadByte(t)` | `_rxraw`→int |
 | `p2.WriteByte(b)` | `_txraw` | | |

@@ -30,6 +30,14 @@ shipped section tells a reader on that version that they have behaviour they do 
   otherwise through what the pointer points at, read before the first store, as Go
   evaluates an index's operand: `*st, (*st)[0] = u, 40` writes 40 into the OLD
   backing array, as in Go.
+- **`p2.ClockFreq()` is how many clocks a second has.** The frequency is chosen
+  where a program is built, with `--clock`, and the p2 package had no name for it:
+  what it counts in clocks -- `GetCt`, `WaitUntil`, `WaitCycles`, the period a smart
+  pin is given -- was of use only to a program with the number written into it,
+  `next += 160000000 / 60`, right at that frequency and at no other. It is the
+  backend's `_clockfreq`, read where it is called. Measured on a P2-EDGE: 160000000
+  as built, and 200000000, 180000000 and 100000000 built with `--clock`. Asked for
+  by p2-11.
 - **A parenthesised name is a target.** `(x) = 5`, `(x), s = 5, "b"`, `s, (x) =
   "q", 7` and `(x)++` were refused, and so was a dereference in nested
   parentheses, `((*px)), s = 9, "f"` -- and, as the first target of a for clause's
@@ -102,6 +110,49 @@ shipped section tells a reader on that version that they have behaviour they do 
   where only the first spec has a value are padded to the longest and their trailing
   comments aligned, an empty `for` condition is written `for i := 0; ; i++`, and the
   second line of a call's arguments stands one tab deeper than the call.
+- **An error comes back from a call given a local buffer.** `if err :=
+  fill(buf[:]); err != nil { return 0, err }` for a local `buf` was refused,
+  "cannot return local err, which holds a pointer into local buf", for a fill that
+  returns the address of a package variable or nil: the way a Go program reads into
+  a buffer of its own and passes on what went wrong. A result DECLARED from a call
+  was taken to hold whatever the call was given, whatever the callee does with it --
+  in seven of the eleven forms a result is bound by, the ones that declare. Found
+  by p2-11.
+- **What is no slice is refused where a slice is wanted, in Go's words.** An array
+  stored where a slice is wanted -- `var s []int = a`, `s = a`, `take(a)`, `return
+  a`, a field, an element, a send, `sum(a...)` -- went to the C compiler, which
+  refused it about types the program never wrote; so did a struct, a pointer, a
+  channel and a function's name. And a spread is the slice itself: a slice of slices
+  spread into a `...[]byte` was REFUSED where Go takes it, a slice of another
+  element type and a scalar were taken where Go refuses them, and `sum(1, is...)`
+  went to the C compiler as a call of two arguments.
+- **`ogo fmt` indents what continues a line.** `return a < b &&` with `b < c` on
+  the next line came back with `b < c` under the `return`, and so did every other
+  continuation but a call's arguments and a literal's body: an operand on a line of
+  its own, the second line of a condition, a return's values, a selector, a value
+  after its `=`. Each is one level in, as gofmt has it, by Go's tree -- in `p ||`,
+  `q &&`, `r` the `r` is two in. A literal and a call indented ALL their elements
+  where gofmt indents from the first that begins a line, so `[]P{{` ... `}, {` ...
+  `}}` stood a level too deep. And a comment ahead of a closing brace stands with
+  what the braces hold: the comment that is all of an empty function was in column
+  0. Found by p2-11.
+- **`ogo fmt`'s columns are gofmt's.** Run through both, eleven of p2-11's
+  thirty-six sources differed, all in what is aligned with what: a comment column
+  ran on across a field or a spec without a comment and a const block's across a
+  bare name; the comments of a table of values were one column though a line of
+  several elements ends the run; the keys of a literal written one to a line were
+  not aligned at all, nor the names of a grouped type declaration; a measured width
+  was not always the written one, `x333 = []int{1, 2}[0] // c` putting the comments
+  four columns out; and a run of comments went on past a case, a parameter and a
+  statement of several lines. gofmt aligns through a tabwriter, and `ogo fmt` lays
+  its text out by the same rule now. All thirty-six format as gofmt formats them.
+- **`ogo fmt` wrote a comment at the end of a file twice**, and a blank line for
+  each one the file ended with. It writes the comment once and ends the file with
+  its last line.
+- **`ogo fmt` puts in the blank lines gofmt does, and drops the parentheses it
+  drops.** One blank line between two top-level declarations of different kinds and
+  ahead of a comment on a line of its own, and none after a declaration with a
+  comment trailing it; `func() (int)` is `func() int`.
 - **An integer range counts in the operand's type.** `for i := range n` copied the
   bound into an int and declared i an int whatever n was: a uint32 bound above the
   signed maximum was negative and the loop ran zero times, an int64 or uint64 one
@@ -236,6 +287,18 @@ shipped section tells a reader on that version that they have behaviour they do 
 
 ### Behaviour changes
 
+- **What a call hands back of its arguments is asked of every way a call is
+  written.** A reference to the frame came out of three kinds of call the rules did
+  not ask: a call through an INTERFACE handed back nothing, so `return
+  p.id(buf[:])` returned a slice of the local buffer where the same method called
+  on its own type was refused; the values a variadic call packs were asked as
+  parameters of their own and not as what the variadic one holds, so `return
+  lastv(buf[:])` for a `func lastv(ps ...[]byte) []byte { return ps[0] }` returned
+  the buffer and a `keepv` storing `ps[0]` left it in a package variable; and a
+  literal called where it stands, a method expression and a method on a conversion
+  were asked which parameters they hand back and not what those hold. Each is
+  refused as the plain call was. 54 of 357 programs of the row are refused newly,
+  every one of them handing out a reference to a frame that ends.
 - **Two defined types over one kind are two types in every position.** `type A
   int; type B int`: a variable inferred from a conversion, `a := A(1)`, and a value
   produced from one by an operation -- `a + 1`, `-a`, `a << 2`, `(a)`, `c * 2` for a
