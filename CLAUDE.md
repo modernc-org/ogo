@@ -1448,7 +1448,11 @@ IsUnsignedConst, frontends/types.c), saying "signed/unsigned comparison may not 
 properly"; and it types an operation of two operands of one size by its LEFT one
 (MatchIntegerTypes), so `c / u` was a signed division for a signed c -- on the host
 as well, where the divisor's zero check handed it back as an int
-(`doc/mixed-sign-operands.c`, measured on a P2-EDGE). A bare literal had
+(`doc/mixed-sign-operands.c`, measured on a P2-EDGE; flexprop#114, reported the same
+day with a change giving C its own rules, tested natively: test_offline 588/588, and
+of 1222 programs 121 binaries differ, each printing on the board what it printed
+before). The emitter's spellings stay whatever upstream does, the C they write being
+right under either rule. A bare literal had
 been taught this long before (a `u` suffix in an unsigned level); the row is the
 SHAPES an untyped constant is written in -- a literal, a rune literal, a name,
 another package's name, an iota name, a parenthesised expression of them, a constant

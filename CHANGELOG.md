@@ -48,7 +48,9 @@ shipped section tells a reader on that version that they have behaviour they do 
   nothing off the board saw it. A rune constant, an iota one and an expression of
   constants were the same. With the constant on the LEFT of a division or a
   remainder the host was wrong as well: `patience / u` was 4294967295 for Go's 0.
-  Found by p2-11, whose tests waited on a time in milliseconds.
+  Found by p2-11, whose tests waited on a time in milliseconds. The backend's part
+  is `doc/mixed-sign-operands.c`, reported upstream as flexprop#114 with a change
+  tested on the board.
 - **A named constant costs what its value does.** An integer constant is its VALUE
   where it is read, as a string, a float and a 64-bit one already were, and declares
   nothing in the C. The P2 compiler reads a `static const` object from hub RAM at
