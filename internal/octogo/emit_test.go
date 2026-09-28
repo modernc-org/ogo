@@ -17163,7 +17163,8 @@ func TestEmitCLongLines(t *testing.T) {
 // TestEmitCUntypedConst pins how a constant is written where it is read: as its
 // VALUE, in the type of the operand it meets. A named constant was a C object, a
 // `static const int`, whose type was its own -- the target's C compiler compared an
-// unsigned operand with it as signed numbers, and read it from memory at each use.
+// unsigned operand with it as signed numbers, and read it from memory at each use
+// -- and a constant written as a float was a double wherever it stood.
 func TestEmitCUntypedConst(t *testing.T) {
 	src := `type Tick uint32
 
@@ -17172,6 +17173,8 @@ const patience = 10000
 const typed uint32 = 7
 
 const letter = 'a'
+
+const big = 1e4
 
 var u uint32 = 5
 
@@ -17184,6 +17187,9 @@ var i int = 5
 func main() {
 	println(u < patience, patience/u, letter%u, (patience+1)/u, u < typed, typed/u)
 	println(patience/k, 10000/k, patience/w, 10000/w, i < patience, patience/i)
+	var a uint32 = 3e9
+	var b int64 = big
+	println(a, b, u+big, i/big)
 }
 `
 	fsys := fstest.MapFS{"main.ogo": &fstest.MapFile{Data: []byte(src)}}
@@ -17206,6 +17212,10 @@ func main() {
 		"(10000u / ogo_nonzero(k))",    // a defined type over uint32, a name and a literal alike
 		"(10000u / ogo_nonzero64u(w))", // a uint64 divisor's guard hands back a uint64
 		"(i < 10000)",                  // a signed operand takes the constant as it is
+		"uint32_t a = 3000000000u;",    // a constant written as a float, stored
+		"int64_t b = 10000LL;",         //
+		"(u + 10000u)",                 // and in an expression
+		"(i / 10000)",                  //
 	} {
 		if !strings.Contains(got, want) {
 			t.Errorf("missing %q in\n%s", want, got)

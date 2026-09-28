@@ -31517,7 +31517,8 @@ func (e *emitter) shiftChainC(kids []Node) (string, bool) {
 	}
 	text := e.captureC(func() { e.emitExprNode(kids[0]) })
 	// An untyped constant is spelled for the type it meets here as in every level
-	// (untypedOperandC): this path wrote its operands as they stood.
+	// (untypedOperandC): this path wrote its operands as they stood, and `s / 2.0`
+	// handed the helper a double.
 	levelType := ""
 	if haveType {
 		levelType = e.underlyingCType(ctype)
@@ -36386,7 +36387,10 @@ func isUnsignedCType(ct string) bool {
 // an unsigned operand with a signed OBJECT as signed numbers -- it says
 // "signed/unsigned comparison may not work properly" and builds. `b-a < patience`
 // for a difference past 2^31 was true, in an if, a for and a case alike. Found by
-// p2-11, whose tests waited on a time in milliseconds.
+// p2-11, whose tests waited on a time in milliseconds. And a constant written as a
+// FLOAT, `2.0` or a `const big = 1e4`, is an integer where it meets one, in Go: it
+// was written into the C as the float it looks like, so `u + big` was computed in
+// float and was 1333788678 on the board for Go's 3000, and `big % u` was no C at all.
 //
 // A bare literal that already carries a suffix is left alone; cIntLit gives one to a
 // value too wide for a signed long long, which is unsigned already. In a comparison
@@ -36416,7 +36420,7 @@ func (e *emitter) untypedOperandC(n Node, ut string, compare bool) (string, bool
 			}
 		}
 	}
-	v, ok := e.untypedIntOperand(n)
+	v, isFloat, ok := e.untypedIntOperand(n)
 	if !ok {
 		return "", false
 	}
@@ -36431,6 +36435,8 @@ func (e *emitter) untypedOperandC(n Node, ut string, compare bool) (string, bool
 			return "", false // a wider one is spelled by the fold (levelConstLit)
 		}
 		return strconv.FormatInt(v, 10) + "u", true
+	case isFloat:
+		return e.parenNegative(e.constSpelling(v, ut)), true
 	}
 	return "", false
 }
@@ -36446,20 +36452,26 @@ func (e *emitter) levelUnderlying(kids []Node) string {
 	return e.underlyingCType(ct)
 }
 
-// untypedIntOperand answers the value of an operand that is an untyped INTEGER
-// constant, however it is written: a literal, a rune literal, the name of an untyped
-// constant of this package or of another, an expression of those in parentheses. Go
-// converts such an operand to the type of the operand it meets; C gives it a type of
-// its own, an int, and the places where that decides the answer ask this.
-func (e *emitter) untypedIntOperand(n Node) (int64, bool) {
+// untypedIntOperand answers the value of an operand that is an untyped constant of
+// an INTEGER value, however it is written: a literal, a rune literal, the name of an
+// untyped constant of this package or of another, an expression of those in
+// parentheses -- and a float constant whose value is integral, `2.0`, which isFloat
+// reports. Go converts such an operand to the type of the operand it meets; C gives
+// it a type of its own, and the places where that decides the answer ask this.
+func (e *emitter) untypedIntOperand(n Node) (v int64, isFloat, ok bool) {
 	if !e.operandUntyped(n) {
-		return 0, false
+		return 0, false, false
 	}
 	x, ok := e.foldValNode(n)
-	if !ok || x.Kind() != constant.Int {
-		return 0, false
+	if !ok {
+		return 0, false, false
 	}
-	return constant.Int64Val(x)
+	isFloat = x.Kind() == constant.Float
+	if x = constant.ToInt(x); x.Kind() != constant.Int {
+		return 0, false, false
+	}
+	v, exact := constant.Int64Val(x)
+	return v, isFloat, exact
 }
 
 // qualifiedUntypedConst reports whether an operand is another package's untyped
@@ -38663,6 +38675,12 @@ func (e *emitter) divNeedsGuard1(ctype string, rhs []int32) bool {
 	}
 	if v, ok := e.foldConstInt(rhs); ok && v != 0 && v != -1 {
 		return false
+	}
+	// An untyped constant written as a float is one too: `s / 2.0` divides by two.
+	if e.exprUntyped(rhs) {
+		if v, ok := e.foldIntegral(rhs); ok && v != 0 && v != -1 {
+			return false
+		}
 	}
 	return true
 }
@@ -42721,6 +42739,37 @@ func (e *emitter) callResultCType(recv string, suffix []Node) (string, bool) {
 	return e.chainResultType(recv, suffix)
 }
 
+// wholeConstC spells a constant written as a FLOAT that stands where the integer
+// type kind is wanted -- which the checker recorded of it -- as the integer Go makes
+// of it, or reports false for an expression that does not fold to a whole number
+// here. ast is the expression.
+//
+// `var u uint32 = 3e9`, `take(3e9)`, `return 3e9`, a literal's `{3e9}` and `u =
+// 3e9` all stored 2147483648 on the board, silently, where Go stores 3000000000:
+// the C said 3e9, a double, and the target's C compiler clamps a double converted
+// to a 32-bit unsigned at 2^31 (see ogoF2u32). `var t int64 = 1e9` was no program at
+// all there, "Expected multiple values". The host's compiler converts as C says,
+// so nothing off the target saw either. The checker knows the type wanted wherever
+// a constant meets one (checkValueOverflow), and says so.
+func (e *emitter) wholeConstC(ast []int32, kind Kind) (string, bool) {
+	ct, ok := cTypes[sizedKindName(kind)]
+	if !ok {
+		return "", false
+	}
+	ut := e.underlyingCType(ct)
+	if _, isInt := cIntWidths[ut]; !isInt {
+		return "", false
+	}
+	v, ok := e.foldIntegral(ast)
+	if !ok {
+		return "", false
+	}
+	if cIntWidths[ut] == 32 && isUnsignedCType(ut) && v >= 0 && v <= math.MaxUint32 && e.litDepth == 0 && !e.declInit {
+		return strconv.FormatInt(v, 10) + "u", true
+	}
+	return e.parenNegative(e.constSpelling(v, ut)), true
+}
+
 // emitExpr emits a value expression. Binary operators (Expression/SimpleExpr/
 // Term) are parenthesized so the OctoGo parse grouping is preserved even where C
 // operator precedence differs (notably Go binds << tighter than C does).
@@ -42733,6 +42782,12 @@ func (e *emitter) emitExpr(ast []int32) {
 			b.used = true
 			e.emit(b.name)
 			return
+		}
+		if kind, ok := e.f.wholeConsts[&ast[0]]; ok {
+			if lit, ok := e.wholeConstC(ast, kind); ok {
+				e.emit(lit)
+				return
+			}
 		}
 	}
 	e.typeUntypedShifts(ast, "") // operands beside an untyped shift type it
@@ -43782,6 +43837,12 @@ func (e *emitter) emitExprNode(n Node) {
 			e.emit(b.name)
 			return
 		}
+		if kind, ok := e.f.wholeConsts[&n.ast[0]]; ok {
+			if lit, ok := e.wholeConstC(n.ast, kind); ok {
+				e.emit(lit)
+				return
+			}
+		}
 	}
 	switch n.sym {
 	case Expression, SimpleExpr:
@@ -43950,7 +44011,7 @@ func (e *emitter) emitExprNode(n Node) {
 					// divide by zero", and it is 2^31 for 2^31, which the int read as
 					// its own most negative value and divided by. A zero constant is
 					// refused by the checker; the guard stays for what does not fold.
-					if v, ok := e.foldConstInt(c.ast); ok && v != 0 {
+					if v, ok := e.foldIntegral(c.ast); ok && v != 0 {
 						if lit, ok := e.untypedOperandC(c, termType, false); ok {
 							e.emit(lit)
 							return
@@ -44780,6 +44841,12 @@ func (e *emitter) opText(ast []int32) string {
 }
 
 func (e *emitter) emitOperandToken(tok int32) {
+	if kind, ok := e.f.wholeConstToks[tok]; ok {
+		if lit, ok := e.wholeConstC([]int32{tok}, kind); ok {
+			e.emit(lit) // a constant written as a float, where an integer is wanted
+			return
+		}
+	}
 	switch ch := e.f.ch(tok); ch {
 	case INT:
 		e.emit(cIntLit(e.src(tok)))

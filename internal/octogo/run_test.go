@@ -42548,6 +42548,74 @@ func main() {
 }
 `,
 		want: "2.5 5 2199023255552 local 4\n4.5 9 9\n1.5 1099511627776 7 pkg 3 3 1099511627777 8\n16\n8 8\n1.5 1099511627776 7 pkg 3 3 1099511627777 8\n",
+	},
+	{
+		// A constant written as a float, `3e9` or a `const big = 1e4`, is an integer
+		// where it meets an integer type, in Go. It was written into the C as the
+		// float it looks like: stored into a uint32 -- a declaration, an argument, a
+		// result, a literal's member, an assignment -- a value of 2^31 or more was
+		// 2147483648 on the board, silently, the target's C compiler clamping a double
+		// converted to a 32-bit unsigned; `var t int64 = 1e9` was no program there
+		// at all, "Expected multiple values"; and in an expression `u + big` was
+		// computed in float, 1333788678 on the board for Go's 3000, and `s * two`
+		// -967131136 for -14000, while `big % u` was no C.
+		name: "a constant written as a float is an integer where one is wanted",
+		src: `const two = 2.0
+
+const big = 1e4
+
+const huge = 3e9
+
+var hi uint32 = 4294960296
+
+var s32 int32 = -7000
+
+var s64 int64 = -7000
+
+var arr = [4]int{10, 20, 30, 40}
+
+type rec struct {
+	u uint32
+	i int
+	b uint8
+}
+
+func takeU(v uint32) uint32 {
+	return v + 1
+}
+
+func retU() uint32 {
+	return huge
+}
+
+func stores() {
+	var a uint32 = 2.0
+	var c uint32 = 3e9
+	var g int = big
+	var t int64 = 1e9
+	d := takeU(3e9) + takeU(two)
+	a += 2.0
+	g -= big
+	t -= big
+	r := rec{3e9, 1e4, 2e2}
+	xs := []uint32{huge, 2.0}
+	println(a, c, g, t, d, retU(), arr[two], r.u, r.i, r.b, xs[0], xs[1])
+	r.u = 3e9 + 1
+	c = 4e9
+	println(r.u, c, uint32(huge), hi == 4294960296.0)
+}
+
+func levels() {
+	println(hi/two, hi%big, big/hi, big%hi, hi+big, hi < big, big > hi, hi<<two)
+	println(s32/two, s32%3.0, two-s32, s32 < two, s32*two, s64/two, s64%3.0, s64+big, s64 < big)
+}
+
+func main() {
+	stores()
+	levels()
+}
+`,
+		want: "4 3000000000 0 999990000 3000000004 3000000000 30 3000000000 10000 200 3000000000 2\n3000000001 4000000000 3000000000 true\n2147480148 296 0 10000 3000 false false 4294939296\n-3500 -1 7002 true -14000 -3500 -1 3000 true\n",
 	}}
 
 // TestEmitCRun compiles emitted C with a host compiler and runs it, checking what

@@ -246,6 +246,8 @@ type File struct {
 	makeTypeArgs      map[string]bool      // positions of identifiers standing as make's first argument, which is a TYPE and not a value: "make(List, n)" over "type List []int" names one, and the bare-type-name check would otherwise report it as "cannot use type List as a value"
 	defineRedeclares  map[string]bool      // positions of ":=" targets already declared in the same scope, so the emitter assigns to them rather than declaring them again (see emitMultiAssign); file-scoped, read after checking
 	shiftTypes        map[*int32]Kind      // the shift operators whose left operand is an untyped constant, by their place in the AST, and the type the context gives it (see typeShiftOperands); read by the emitter
+	wholeConsts       map[*int32]Kind      // the constants written as FLOATS that stand where an integer type is wanted, `var u uint32 = 3e9`, by their place in the AST, and that type (see checkValueOverflow); read by the emitter
+	wholeConstToks    map[int32]Kind       // the same for a constant that is one token, by the token
 	lenConsts         map[*int32]int64     // the len and cap calls Go makes constants, by their parentheses' place in the AST, and their values (see constLenCap); read by the emitter
 	parser            Parser
 	tld               *Scope // tld.Nodes are later moved into (*Package).Scope. Kind: PackageScope, Parent: .Scope.
@@ -18967,7 +18969,7 @@ func (f *File) checkCallee(s *Scope, callee Token, argList Node, args []Node) {
 			// A float target too: its range is a float32's, and it is a context an
 			// untyped shift operand takes its type from, `float32(1 << s)`.
 			if _, _, isInt := intKindRange(d.Kind()); isInt || isFloatKind(d.Kind()) {
-				f.checkValueOverflow(s, sizedTarget(d.Kind(), callee), args[0])
+				f.checkConvOverflow(s, sizedTarget(d.Kind(), callee), args[0])
 			}
 		}
 	case *TypeDeclaration:
@@ -18979,7 +18981,7 @@ func (f *File) checkCallee(s *Scope, callee Token, argList Node, args []Node) {
 		if len(args) == 1 && f.checkConversion(s, callee, args[0]) {
 			if k, ok := f.nameKind(s, callee.Src()); ok {
 				if _, _, isInt := intKindRange(k); isInt || isFloatKind(k) {
-					f.checkValueOverflow(s, sizedTarget(k, callee), args[0])
+					f.checkConvOverflow(s, sizedTarget(k, callee), args[0])
 				}
 			}
 		}
@@ -22320,6 +22322,17 @@ func (f *File) checkConstOverflow(s *Scope, cs *ConstSpecNode, pos token.Positio
 // the fold serves only to read the value. A non-integer target, or a non-constant n,
 // is left alone; a float constant is checked for being whole first.
 func (f *File) checkValueOverflow(s *Scope, dst retResult, n Node) {
+	f.checkConstFits(s, dst, n, true)
+}
+
+// checkConvOverflow is checkValueOverflow for the operand of a CONVERSION, `T(x)`,
+// which is converted where it stands and is the emitter's to lower as written: it
+// is not a constant Go converts on its own, and nothing is recorded of it.
+func (f *File) checkConvOverflow(s *Scope, dst retResult, n Node) {
+	f.checkConstFits(s, dst, n, false)
+}
+
+func (f *File) checkConstFits(s *Scope, dst retResult, n Node, implicit bool) {
 	// The same positions are where an untyped shift operand takes its type, a float
 	// destination included, so they are visited for that first.
 	f.typeShiftOperands(s, n, shiftTargetOf(dst))
@@ -22334,11 +22347,48 @@ func (f *File) checkValueOverflow(s *Scope, dst retResult, n Node) {
 	if !ok {
 		return
 	}
+	wasFloat := cv.Kind() == constant.Float
 	cv, ok = f.wholeConst(f.tok(n.Pos()).Position(), cv, dst.kind, dst.name)
 	if !ok {
 		return
 	}
+	if wasFloat && implicit {
+		if k, ok := f.exprType(s, n); ok && k == UntypedFloat {
+			f.noteWholeConst(n, dst.kind)
+		}
+	}
 	f.reportOverflow(f.tok(n.Pos()).Position(), cv, dst.kind, dst.name)
+}
+
+// noteWholeConst records that the untyped constant n, written as a float, stands
+// where the integer type kind is wanted, for the emitter. Go converts it, 3e9 being
+// a uint32 of three thousand million there; the C written from the source is a
+// double, which the target's C compiler converts as it converts any -- clamped at
+// 2^31 for a uint32, and into a 64-bit integer not at all. It is recorded for every
+// level of the expression that holds nothing else, down to the token, since the
+// emitter may meet the constant at any of them.
+func (f *File) noteWholeConst(n Node, kind Kind) {
+	for {
+		if n.sym == 0 {
+			if f.wholeConstToks == nil {
+				f.wholeConstToks = map[int32]Kind{}
+			}
+			f.wholeConstToks[n.tok] = kind
+			return
+		}
+		if len(n.ast) == 0 {
+			return
+		}
+		if f.wholeConsts == nil {
+			f.wholeConsts = map[*int32]Kind{}
+		}
+		f.wholeConsts[&n.ast[0]] = kind
+		kids := slices.Collect(it(n.ast))
+		if len(kids) != 1 {
+			return
+		}
+		n = kids[0]
+	}
 }
 
 // checkFloat32Overflow reports a constant used where a float32 is required that
