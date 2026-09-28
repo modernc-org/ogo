@@ -17232,3 +17232,360 @@ func main() {
 		t.Errorf("a constant declares nothing:\n%s", got)
 	}
 }
+
+// TestEmitCCallResultForms crosses every form a CALL's result is bound by with what
+// the callee hands back of the argument it was given, a reference to this frame: a
+// callee handing it back -- whole, a part of it, through a local or another call,
+// held in a struct or behind an interface -- makes the bound name a reference to the
+// frame, which must not be returned or stored; a callee handing back nothing of it
+// makes the name nothing of the kind, and the program is Go's to write.
+//
+// The second half is the way a Go program reads into a buffer of its own and passes
+// on what went wrong, `if err := fill(buf[:]); err != nil { return err }`, and it was
+// refused in seven of the eleven forms until 2026-09-28: a declaration walked into
+// its initializer as into a literal, and took every argument of a call to come back
+// in its result. The first half is what that walk had been standing in for, and once
+// it was asked of each way a call is written, 44 of 184 programs were found ACCEPTED:
+// nothing had asked what a call through an interface hands back, and the values a
+// variadic call packs were asked as parameters of their own positions.
+func TestEmitCCallResultForms(t *testing.T) {
+	const decls = `type failure struct {
+	what string
+}
+
+func (f *failure) Error() string {
+	return f.what
+}
+
+type box struct {
+	p []byte
+	n int
+}
+
+type reader struct {
+	last int
+}
+
+func (r *reader) read(p []byte) error {
+	r.last = len(p)
+	p[0] = 1
+	return nil
+}
+
+func (r *reader) rest(p []byte) []byte {
+	r.last = len(p)
+	return p[2:]
+}
+
+type disk struct {
+	n int
+}
+
+func (d *disk) read(p []byte) error {
+	d.n = len(p)
+	p[0] = 1
+	return nil
+}
+
+func (d *disk) rest(p []byte) []byte {
+	d.n = len(p)
+	return p[1:]
+}
+
+func (d *disk) at(p []byte) *byte {
+	p[0] = 1
+	return &gb
+}
+
+type device interface {
+	read(p []byte) error
+	rest(p []byte) []byte
+	at(p []byte) *byte
+}
+
+type holder struct {
+	dev device
+}
+
+type casing struct {
+	*disk
+}
+
+var gdev disk
+
+var gh = holder{&gdev}
+
+var gcase = casing{&gdev}
+
+var errEmpty = failure{"nothing to fill"}
+
+var gback [4]byte
+
+var gb byte
+
+func id(p []byte) []byte { return p }
+
+func fresh(p []byte) []byte {
+	p[0] = 1
+	return gback[:]
+}
+
+func none(p []byte) []byte {
+	p[0] = 1
+	return nil
+}
+
+func part(p []byte) []byte { return p[1:] }
+
+func via(p []byte) []byte {
+	q := p
+	return q
+}
+
+func nest(p []byte) []byte { return id(p) }
+
+func cond(p []byte) []byte {
+	if len(p) > 99 {
+		return p
+	}
+	return gback[:]
+}
+
+func gat(p []byte) *byte {
+	p[0] = 1
+	return &gb
+}
+
+func at(p []byte) *byte { return &p[0] }
+
+func fill(p []byte) error {
+	if len(p) == 0 {
+		return &errEmpty
+	}
+	p[0] = 1
+	return nil
+}
+
+func asErr(f *failure) error { return f }
+
+func chk(f *failure) error {
+	f.what = "x"
+	return &errEmpty
+}
+
+func mk0(p []byte) box {
+	p[0] = 1
+	return box{gback[:], len(p)}
+}
+
+func mk(p []byte) box { return box{p, 1} }
+
+func pickv(ps ...[]byte) []byte {
+	ps[0][0] = 1
+	return gback[:]
+}
+
+func lastv(ps ...[]byte) []byte { return ps[0] }
+
+func packv(ps ...[]byte) [][]byte { return ps }
+
+func fillv(ps ...[]byte) error {
+	ps[0][0] = 1
+	return nil
+}
+
+`
+	callees := []struct {
+		name, typ, call, local string
+		keeps                  bool
+	}{
+		{"a slice of package storage", "[]byte", "fresh(buf[:])", "", false},
+		{"nil", "[]byte", "none(buf[:])", "", false},
+		{"the argument", "[]byte", "id(buf[:])", "", true},
+		{"a part of it", "[]byte", "part(buf[:])", "", true},
+		{"through a local", "[]byte", "via(buf[:])", "", true},
+		{"through a call", "[]byte", "nest(buf[:])", "", true},
+		{"on one path", "[]byte", "cond(buf[:])", "", true},
+		{"a pointer to package storage", "*byte", "gat(buf[:])", "", false},
+		{"a pointer into it", "*byte", "at(buf[:])", "", true},
+		{"an error", "error", "fill(buf[:])", "", false},
+		{"an interface holding it", "error", "asErr(&lf)", "\tvar lf failure\n", true},
+		{"an error, of a pointer", "error", "chk(&lf)", "\tvar lf failure\n", false},
+		{"a struct of package storage", "box", "mk0(buf[:])", "", false},
+		{"a struct holding it", "box", "mk(buf[:])", "", true},
+		{"a method, an error", "error", "rd.read(buf[:])", "\tvar rd reader\n", false},
+		{"a method, a part of it", "[]byte", "rd.rest(buf[:])", "\tvar rd reader\n", true},
+		{"variadic, package storage", "[]byte", "pickv(buf[:], buf[:])", "", false},
+		{"variadic, an error", "error", "fillv(buf[:], buf[1:])", "", false},
+		{"variadic, a value packed", "[]byte", "lastv(buf[:], gback[:])", "", true},
+		// The summary is of the PARAMETER, which the values packed are all held by:
+		// one of them reaching the frame is enough, whichever the callee picks.
+		{"variadic, a value packed beside it", "[]byte", "lastv(gback[:], buf[:])", "", true},
+		{"a function value, package storage", "[]byte", "fn(buf[:])", "\tfn := fresh\n", false},
+		{"a function value, the argument", "[]byte", "fn(buf[:])", "\tfn := id\n", true},
+		{"a literal, package storage", "[]byte", "func(p []byte) []byte { p[0] = 1; return gback[:] }(buf[:])", "", false},
+		{"a literal, the argument", "[]byte", "func(p []byte) []byte { return p }(buf[:])", "", true},
+		{"an interface, an error", "error", "dv.read(buf[:])", "\tvar dv device = &gdev\n", false},
+		{"an interface, a pointer to package storage", "*byte", "dv.at(buf[:])", "\tvar dv device = &gdev\n", false},
+		{"an interface, a part of it", "[]byte", "dv.rest(buf[:])", "\tvar dv device = &gdev\n", true},
+		{"a method expression, an error", "error", "(*disk).read(&gdev, buf[:])", "", false},
+		{"a method expression, a part of it", "[]byte", "(*disk).rest(&gdev, buf[:])", "", true},
+		{"a promoted method, an error", "error", "gcase.read(buf[:])", "", false},
+		{"a promoted method, a part of it", "[]byte", "gcase.rest(buf[:])", "", true},
+		{"an interface in a field, an error", "error", "gh.dev.read(buf[:])", "", false},
+		{"an interface in a field, a part of it", "[]byte", "gh.dev.rest(buf[:])", "", true},
+	}
+	zero := map[string]string{"[]byte": "nil", "*byte": "nil", "error": "nil", "box": "box{}"}
+	forms := []struct {
+		name, body string
+		header     bool
+	}{
+		{"short declaration", "\tx := {C}\n\treturn x\n", false},
+		{"var, typed", "\tvar x {T} = {C}\n\treturn x\n", false},
+		{"var, inferred", "\tvar x = {C}\n\treturn x\n", false},
+		{"if init", "\tif x := {C}; buf[1] == 0 {\n\t\treturn x\n\t}\n\treturn {Z}\n", true},
+		{"switch init", "\tswitch x := {C}; {\n\tcase buf[1] == 0:\n\t\treturn x\n\t}\n\treturn {Z}\n", true},
+		{"for init", "\tfor x := {C}; buf[1] == 0; {\n\t\treturn x\n\t}\n\treturn {Z}\n", true},
+		{"assignment", "\tvar x {T}\n\tx = {C}\n\treturn x\n", false},
+		{"short list", "\tx, y := {C}, 1\n\tbuf[2] = byte(y)\n\treturn x\n", false},
+		{"assignment list", "\tvar x {T}\n\ty := 0\n\tx, y = {C}, 2\n\tbuf[2] = byte(y)\n\treturn x\n", false},
+		{"a copy of it", "\tw := {C}\n\tx := w\n\treturn x\n", false},
+		{"stored", "\tx := {C}\n\tkeep = x\n\treturn {Z}\n", false},
+		{"returned where it stands", "\treturn {C}\n", false},
+		{"stored where it stands", "\tkeep = {C}\n\treturn {Z}\n", false},
+	}
+	kept, free := 0, 0
+	for _, c := range callees {
+		for _, f := range forms {
+			if f.header && strings.HasPrefix(c.call, "func(") {
+				continue // a literal in a header wants parentheses, which is not this table's question
+			}
+			r := strings.NewReplacer("{C}", c.call, "{T}", c.typ, "{Z}", zero[c.typ])
+			src := decls + "var keep " + c.typ + "\n\nfunc first() " + c.typ + " {\n\tvar buf [16]byte\n\tbuf[3] = 1\n" +
+				c.local + r.Replace(f.body) + "}\n\nfunc main() {\n\t_ = first()\n}\n"
+			t.Run(c.name+"/"+f.name, func(t *testing.T) {
+				fsys := fstest.MapFS{"main.ogo": &fstest.MapFile{Data: []byte(src)}}
+				pkg, err := Build(-1, []string{"main.ogo"}, fsys)
+				if err != nil {
+					t.Fatalf("Build: %v\n%s", err, src)
+				}
+				err = EmitC(pkg, io.Discard, Checked())
+				switch {
+				case c.keeps && err == nil:
+					t.Errorf("EmitC: accepted a reference to the frame handed back by a call\n%s", src)
+				case c.keeps && !strings.Contains(err.Error(), "cannot "):
+					t.Errorf("EmitC: refused for another reason: %v\n%s", err, src)
+				case !c.keeps && err != nil:
+					t.Errorf("EmitC: unexpected refusal: %v\n%s", err, src)
+				}
+			})
+			if c.keeps {
+				kept++
+			} else {
+				free++
+			}
+		}
+	}
+	if kept != 218 || free != 205 {
+		t.Errorf("the table ran %d programs that must be refused and %d that must not, want 218 and 205", kept, free)
+	}
+}
+
+// TestEmitCVariadicKept is the keeper's half of the variadic row: a callee that lets
+// what its variadic parameter HOLDS outlive the call is handed the values the call
+// packed, and until 2026-09-28 each was asked as a parameter of its own position --
+// which a callee has none of past the variadic one -- and the first as a slice whose
+// contents were the question. `keepv(buf[:])` for a keepv storing ps[0] left a local
+// buffer in a package variable, in silence, however the callee was reached.
+func TestEmitCVariadicKept(t *testing.T) {
+	const decls = `var gback [4]byte
+
+var g []byte
+
+var gi int
+
+var gp *int
+
+type reader struct {
+	last int
+}
+
+func (r *reader) keepv(ps ...[]byte) {
+	r.last = len(ps)
+	g = ps[0]
+}
+
+func (r *reader) countv(ps ...[]byte) int {
+	r.last = len(ps)
+	return len(ps[0])
+}
+
+type picker interface {
+	keepv(ps ...[]byte)
+	countv(ps ...[]byte) int
+}
+
+var grd reader
+
+func keepv(ps ...[]byte) { g = ps[0] }
+
+func keepp(ps ...*int) { gp = ps[1] }
+
+func keepAll(ps ...[]byte) { gs = ps }
+
+func countv(ps ...[]byte) int { return len(ps[0]) }
+
+var gs [][]byte
+
+var fk = keepv
+
+var fc = countv
+
+`
+	for _, test := range []struct {
+		name, body string
+		want       string // "" means the program must be accepted
+	}{
+		{"a function", "\tkeepv(buf[:], gback[:])\n", "cannot pass a slice backed by local buf to keepv"},
+		{"the second value", "\tkeepp(&gi, &x)\n", "cannot pass the address of local variable x to keepp"},
+		{"a method", "\tgrd.keepv(buf[:], gback[:])\n", "cannot pass a slice backed by local buf to keepv"},
+		{"an interface", "\tvar p picker = &grd\n\tp.keepv(buf[:], gback[:])\n", "cannot pass a slice backed by local buf to keepv (through picker)"},
+		{"a function value", "\tfn := keepv\n\tfn(buf[:], gback[:])\n", "cannot pass a slice backed by local buf to keepv"},
+		{"a package's function value", "\tfk(buf[:], gback[:])\n", "cannot pass a slice backed by local buf to"},
+		{"a literal", "\tfunc(ps ...[]byte) { g = ps[0] }(buf[:], gback[:])\n", "cannot pass a slice backed by local buf to"},
+		{"deferred", "\tdefer keepv(buf[:], gback[:])\n", "cannot pass a slice backed by local buf to keepv"},
+		{"a method, deferred", "\tdefer grd.keepv(buf[:])\n", "cannot pass a slice backed by local buf to keepv"},
+		{"a method expression", "\t(*reader).keepv(&grd, buf[:])\n", "cannot pass a slice backed by local buf to"},
+		{"the pack itself", "\tkeepAll(gback[:], gback[1:])\n", "cannot pass these values to keepAll"},
+		// Controls: package storage packed, and a callee that keeps nothing.
+		{"package storage", "\tkeepv(gback[:], gback[1:])\n\tkeepp(&gi, &gi)\n", ""},
+		{"a function keeping nothing", "\tx += countv(buf[:], gback[:])\n", ""},
+		{"a method keeping nothing", "\tx += grd.countv(buf[:], gback[:])\n", ""},
+		{"an interface keeping nothing", "\tvar p picker = &grd\n\tx += p.countv(buf[:], gback[:])\n", ""},
+		{"a function value keeping nothing", "\tx += fc(buf[:], gback[:])\n", ""},
+		// A spread hands over the slice itself, and is judged by what IT holds.
+		{"package storage spread", "\txs := [][]byte{gback[:], gback[1:]}\n\tkeepv(xs...)\n", ""},
+		{"a local buffer spread", "\txs := [][]byte{buf[:], gback[1:]}\n\tkeepv(xs...)\n", "cannot pass xs"},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			src := decls + "func first() int {\n\tvar buf [16]byte\n\tbuf[3] = 1\n\tx := 5\n\tx++\n" + test.body +
+				"\treturn x + int(buf[0])\n}\n\nfunc main() {\n\tprintln(first(), len(g), gp == nil, len(gs), fc(gback[:]))\n\tfk(gback[:])\n}\n"
+			fsys := fstest.MapFS{"main.ogo": &fstest.MapFile{Data: []byte(src)}}
+			pkg, err := Build(-1, []string{"main.ogo"}, fsys)
+			if err != nil {
+				t.Fatalf("Build: %v\n%s", err, src)
+			}
+			err = EmitC(pkg, io.Discard, Checked())
+			switch {
+			case test.want == "":
+				if err != nil {
+					t.Errorf("EmitC: unexpected refusal: %v\n%s", err, src)
+				}
+			case err == nil:
+				t.Errorf("EmitC: accepted; want %q\n%s", test.want, src)
+			case !strings.Contains(err.Error(), test.want):
+				t.Errorf("EmitC error %q does not mention %q", err, test.want)
+			}
+		})
+	}
+}

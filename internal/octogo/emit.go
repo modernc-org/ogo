@@ -38004,6 +38004,16 @@ func (e *emitter) noteDeclFrameHolder(ctype, name string, initExpr []int32) {
 	}
 	// A composite literal: each element is its own expression, and any one of them
 	// carrying a reference makes the whole value carry it.
+	//
+	// The arguments of a call whose callee is SUMMARISED are not such elements. What
+	// the call hands back of them is what the summary says, and frameRefOf has just
+	// asked it; walked into like a literal's, every argument was taken to come back
+	// in the result. `err := fill(buf[:])` marked err with the local buffer, for a
+	// fill that returns the address of a package variable or nil, and `return err`
+	// was refused -- the way a Go program reads into a buffer of its own and passes
+	// on what went wrong -- where `return fill(buf[:])` was taken. A call nothing
+	// summarises is walked into still: NewBuilder(back[:]) holds its argument, and
+	// nothing else says so.
 	for n := range it(initExpr) {
 		if n.sym == 0 {
 			continue
@@ -38012,11 +38022,72 @@ func (e *emitter) noteDeclFrameHolder(ctype, name string, initExpr []int32) {
 			e.frameHolder[name] = r.origin
 			return
 		}
+		if e.summarisedCall(n) {
+			continue
+		}
 		e.noteDeclFrameHolder(ctype, name, n.ast)
 		if e.frameHolder[name] != "" {
 			return
 		}
 	}
+}
+
+// summarisedCall reports whether n is a call -- or nothing but one, under the levels
+// of an expression -- of a callee whose summary says what it hands back of its
+// arguments, which is the question frameRefOf asks of a call. It resolves the callee
+// as frameRefOf does, each way a call is written: a literal called where it stands,
+// a method expression, a call through an interface, which is a call of every
+// implementation, and a function or a method by its name. A conversion is no call,
+// and a callee nothing summarised, a builtin or an interface nothing implements,
+// answers no: what is not known is not believed.
+func (e *emitter) summarisedCall(n Node) bool {
+	kids := slices.Collect(it(n.ast))
+	for n.sym != Factor && len(kids) == 1 && kids[0].sym != 0 {
+		n = kids[0]
+		kids = slices.Collect(it(n.ast))
+	}
+	if n.sym != Factor {
+		return false
+	}
+	kids = e.unparenKids(kids)
+	if lit, lsuffix, isLit := e.factorFuncLit(kids); isLit {
+		_, known := e.retParams[e.litKey(lit)]
+		return known && len(lsuffix) == 1 && lsuffix[0].sym == CallSuffix
+	}
+	if me, isME := e.methodExprAt(kids); isME {
+		if len(me.rest) != 1 || me.rest[0].sym != CallSuffix {
+			return false
+		}
+		name, ok := e.liftMethodExpr(me)
+		_, known := e.retParams[name]
+		return ok && known
+	}
+	recv, suffix, isCall := e.factorCall(kids)
+	if !isCall || len(suffix) == 0 || suffix[len(suffix)-1].sym != CallSuffix {
+		return false
+	}
+	if len(suffix) != 1 && !isAccessChain(suffix[:len(suffix)-1]) {
+		return false
+	}
+	if _, _, isConv := e.convChainHead(recv, suffix); isConv {
+		return false
+	}
+	if ict, m, isIface := e.ifaceChainMethod(recv, suffix); isIface {
+		_, _, any := e.ifaceCallSummary(ict, m.name)
+		return any
+	}
+	cname := e.calleeSummaryName(recv)
+	if len(suffix) != 1 {
+		cname = ""
+		if c, _, ok := e.callResultInfo(recv, suffix); ok {
+			cname = c
+		}
+	}
+	if cname == "" {
+		return false
+	}
+	_, known := e.retParams[cname]
+	return known
 }
 
 // emitVarDeclInit emits a local declaration of ctype with an initializer. A struct
@@ -46052,15 +46123,12 @@ func (e *emitter) frameRefOf(ast []int32) (frameRef, bool) {
 	// stored the address of a local where `id := func(...){...}; g = id(&x)` did not.
 	if kids := e.factorKids(ast); kids != nil {
 		if lit, lsuffix, isLit := e.factorFuncLit(kids); isLit && len(lsuffix) == 1 && lsuffix[0].sym == CallSuffix {
-			derives := e.retParams[e.litKey(lit)]
-			for i, a := range e.callArgExprs(lsuffix[0].ast) {
-				if i < len(derives) && derives[i] {
-					if r, ok := e.frameRefOf(a.ast); ok {
-						return r, true
-					}
-				}
+			key := e.litKey(lit)
+			at := -1
+			if !e.spreadCall(lsuffix[0].ast) {
+				at = e.litPackAt(lit)
 			}
-			return frameRef{}, false
+			return e.callArgsRef("the function literal", e.retParams[key], e.retContents[key], at, e.callArgExprs(lsuffix[0].ast))
 		}
 	}
 	// `(*C).Self(&lc)`, a method expression called: what the function it is lifted
@@ -46068,14 +46136,11 @@ func (e *emitter) frameRefOf(ast []int32) (frameRef, bool) {
 	if kids := e.factorKids(ast); kids != nil {
 		if me, isME := e.methodExprAt(kids); isME && len(me.rest) == 1 && me.rest[0].sym == CallSuffix {
 			if name, ok := e.liftMethodExpr(me); ok {
-				derives := e.retParams[name]
-				for i, a := range e.callArgExprs(me.rest[0].ast) {
-					if i < len(derives) && derives[i] {
-						if r, ok := e.frameRefOf(a.ast); ok {
-							return r, true
-						}
-					}
+				at := -1
+				if !e.spreadCall(me.rest[0].ast) {
+					at = e.packAt(name)
 				}
+				return e.callArgsRef(e.funcSourceName(name), e.retParams[name], e.retContents[name], at, e.callArgExprs(me.rest[0].ast))
 			}
 			return frameRef{}, false
 		}
@@ -46117,6 +46182,19 @@ func (e *emitter) frameRefOf(ast []int32) (frameRef, bool) {
 				return e.frameRefOf(args[0].ast)
 			}
 		}
+		call := suffix[len(suffix)-1].ast
+		// A call through an INTERFACE hands back what any implementation of the
+		// method does. Nothing asked: `return p.id(buf[:])` for a method handing its
+		// argument back returned a slice of the local buffer, where the same method
+		// called on its own type was refused.
+		if ict, m, isIface := e.ifaceChainMethod(recv, suffix); isIface {
+			rets, carries := e.ifaceRetSummary(ict, m.name)
+			at := -1
+			if !e.spreadCall(call) {
+				at = m.vararg - 1
+			}
+			return e.callArgsRef(m.name+" (through "+e.goTypeName(ict)+")", rets, carries, at, e.callArgExprs(call))
+		}
 		cname := e.calleeSummaryName(recv)
 		if len(suffix) != 1 {
 			// A method or an imported package's function: the same resolution the
@@ -46127,22 +46205,12 @@ func (e *emitter) frameRefOf(ast []int32) (frameRef, bool) {
 				cname = ""
 			}
 		}
-		derives := e.retParams[cname]
-		carries := e.retContents[cname]
-		args := e.callArgExprs(suffix[len(suffix)-1].ast)
-		for i, a := range args {
-			if i < len(derives) && derives[i] {
-				if r, ok := e.frameRefOf(a.ast); ok {
-					return r, true
-				}
-			}
-			// `first(s)` for a `func first(v []*int) *int { return v[0] }`: the
-			// result is what s's elements hold.
-			if i < len(carries) && carries[i] {
-				if r, ok := e.contentsRef(a.ast); ok {
-					return r, true
-				}
-			}
+		at := -1
+		if !e.spreadCall(call) {
+			at = e.packAt(cname)
+		}
+		if r, ok := e.callArgsRef(e.funcSourceName(cname), e.retParams[cname], e.retContents[cname], at, e.callArgExprs(call)); ok {
+			return r, true
 		}
 		// A method returning its RECEIVER hands back the address of what it was
 		// called on: `g = lc.Self()` reaches lc as `g = &lc` does -- or, promoted
@@ -46180,13 +46248,12 @@ func (e *emitter) ptrConvCallFrameRef(ast []int32) (frameRef, bool, bool) {
 		}
 		cname, viaPtr = cn, e.pathThroughPointer(base, path)
 	}
-	derives := e.retParams[cname]
-	for i, a := range e.callArgExprs(pc.rest[1].ast) {
-		if i < len(derives) && derives[i] {
-			if r, ok := e.frameRefOf(a.ast); ok {
-				return r, true, true
-			}
-		}
+	at := -1
+	if !e.spreadCall(pc.rest[1].ast) {
+		at = e.packAt(cname)
+	}
+	if r, ok := e.callArgsRef(e.funcSourceName(cname), e.retParams[cname], e.retContents[cname], at, e.callArgExprs(pc.rest[1].ast)); ok {
+		return r, true, true
 	}
 	if e.retRecv[cname] && e.methodPtr[cname] && !viaPtr {
 		r, ok := e.frameRefOf(pc.arg.ast)
@@ -47464,9 +47531,33 @@ func (e *emitter) checkIfaceArgs(iface, method string, args []Node, spread bool)
 			pos, who, at+1, why)
 		return
 	}
-	e.checkCrossArgsIn(crosses, who, args)
-	e.checkIntoArgsIn(intos, who, args)
-	e.checkContentArgsIn(e.ifaceSummaries[iface+"."+method].contents, who, args)
+	contents := e.ifaceSummaries[iface+"."+method].contents
+	fixed := args
+	if at := e.ifaceMethodVararg(iface, method) - 1; !spread && at >= 0 && at <= len(args) {
+		// The values packed are the pack's contents, as a direct call's are
+		// (checkCrossArgs).
+		fixed = args[:at]
+		if at < len(contents) && contents[at]&(leakCog|leakGlobal) != 0 {
+			why := "is stored where it outlives every frame"
+			if contents[at]&leakCog != 0 {
+				why = "reaches another cog, which may outlive this function"
+			}
+			for _, a := range args[at:] {
+				r, ok := e.frameRefOf(a.ast)
+				if !ok {
+					r, ok = e.contentsRef(a.ast)
+				}
+				if ok {
+					e.fail("%v: cannot pass %s to %s: what its parameter %d holds %s; %s",
+						e.f.tok(a.Pos()).Position(), r.what, who, at+1, why, r.advice())
+					return
+				}
+			}
+		}
+	}
+	e.checkCrossArgsIn(crosses, who, fixed)
+	e.checkIntoArgsIn(intos, who, fixed)
+	e.checkContentArgsIn(contents, who, fixed)
 }
 
 // ifaceCallSummary unions the crossing summaries of the method named, over every
@@ -47605,9 +47696,151 @@ func (e *emitter) checkCrossArgs(cname string, args []Node, spread bool) {
 			pos, e.funcSourceName(cname), at+1, why)
 		return
 	}
-	e.checkCrossArgsIn(crosses, e.funcSourceName(cname), args)
-	e.checkContentArgsIn(e.crossContents[cname], e.funcSourceName(cname), args)
+	fixed := args
+	if at := e.packAt(cname); !spread && at >= 0 && at <= len(args) {
+		// The values a call packs are the pack's CONTENTS, and what the callee lets
+		// the contents of its variadic parameter reach, it lets them reach. They were
+		// asked as parameters of their own positions, which a callee has none of past
+		// the variadic one, and the first as a slice whose contents were the
+		// question: `keepv(buf[:], gback[:])` for a `func keepv(ps ...[]byte) { g =
+		// ps[0] }` left a local buffer in a package variable, in silence.
+		fixed = args[:at]
+		if contents := e.crossContents[cname]; at < len(contents) && contents[at]&(leakCog|leakGlobal) != 0 {
+			why := "is stored where it outlives every frame"
+			if contents[at]&leakCog != 0 {
+				why = "reaches another cog, which may outlive this function"
+			}
+			for _, a := range args[at:] {
+				r, ok := e.frameRefOf(a.ast)
+				if !ok {
+					r, ok = e.contentsRef(a.ast)
+				}
+				if ok {
+					e.fail("%v: cannot pass %s to %s: what its parameter %d holds %s; %s",
+						e.f.tok(a.Pos()).Position(), r.what, e.funcSourceName(cname), at+1, why, r.advice())
+					return
+				}
+			}
+		}
+	}
+	e.checkCrossArgsIn(crosses, e.funcSourceName(cname), fixed)
+	e.checkContentArgsIn(e.crossContents[cname], e.funcSourceName(cname), fixed)
 	e.checkCallbackArgs(cname, e.funcSourceName(cname), args)
+}
+
+// packAt is the position of the variadic parameter of the callee a summary is kept
+// under -- a declared function's, a method's, or a function type's for a call
+// through a value nothing names -- or -1.
+func (e *emitter) packAt(cname string) int {
+	if _, at := e.variadicPack(cname); at >= 0 {
+		return at
+	}
+	if at, ok := e.funcVariadic[cname]; ok {
+		return at
+	}
+	if ft, isType := strings.CutPrefix(cname, "type:"); isType {
+		if at, ok := e.funcTypeVariadic[ft]; ok {
+			return at
+		}
+	}
+	return -1
+}
+
+// callArgsRef is what a call hands back of this frame through its arguments, for a
+// callee whose summary says which of its parameters it hands back (derives) and
+// which it hands back what they HOLD of (carries): `first(s)` for a `func first(v
+// []*int) *int { return v[0] }` is what s's elements hold. at is the position of the
+// variadic parameter where the call packs its values, and -1 where it has none or
+// spreads a slice.
+//
+// One question, asked in one place: each way a call is written had asked it on its
+// own, and a literal called where it stands, a method expression and a method on a
+// conversion had asked of the parameters alone, so `func(v []*int) *int { return
+// v[0] }(s)` returned what `first(s)` is refused for.
+func (e *emitter) callArgsRef(who string, derives, carries []bool, at int, args []Node) (frameRef, bool) {
+	if at >= 0 && at <= len(args) {
+		// The values a call packs are what its variadic parameter HOLDS, and the pack
+		// an array of this frame: `return lastv(buf[:], gback[:])` for a `func
+		// lastv(ps ...[]byte) []byte { return ps[0] }` returned a slice of the local
+		// buffer, each value having been asked as a parameter of its own position.
+		if r, ok := e.packedRef(who, args[at:], at < len(derives) && derives[at], at < len(carries) && carries[at]); ok {
+			return r, true
+		}
+		args = args[:at]
+	}
+	for i, a := range args {
+		if i < len(derives) && derives[i] {
+			if r, ok := e.frameRefOf(a.ast); ok {
+				return r, true
+			}
+		}
+		if i < len(carries) && carries[i] {
+			if r, ok := e.contentsRef(a.ast); ok {
+				return r, true
+			}
+		}
+	}
+	return frameRef{}, false
+}
+
+// litPackAt is packAt for a function literal, read off its signature: a literal
+// called where it stands is asked before it is lifted.
+func (e *emitter) litPackAt(lit Node) int {
+	for n := range it(lit.ast) {
+		if n.sym == Signature {
+			_, at := e.variadicElem(n.ast)
+			return at
+		}
+	}
+	return -1
+}
+
+// ifaceRetSummary unions what the method named hands back of its parameters, and
+// of what they hold, over every type implementing the interface.
+func (e *emitter) ifaceRetSummary(iface, method string) (rets, carries []bool) {
+	or := func(dst []bool, src []bool) []bool {
+		for i, b := range src {
+			for len(dst) <= i {
+				dst = append(dst, false)
+			}
+			dst[i] = dst[i] || b
+		}
+		return dst
+	}
+	for concrete := range e.typeNames {
+		if e.isIfaceCType(concrete) || !e.implementsIface(concrete, iface) {
+			continue
+		}
+		if cname, _, _, ok := e.promotedMethod(concrete, method); ok {
+			rets, carries = or(rets, e.retParams[cname]), or(carries, e.retContents[cname])
+		}
+	}
+	return rets, carries
+}
+
+// packedRef is what a call that packs its values hands back of this frame, for a
+// callee whose summary says what it hands back of its variadic parameter: the pack
+// itself (derives), which is an array of this function, or what the pack holds
+// (carries), which is the values written.
+func (e *emitter) packedRef(who string, packed []Node, derives, carries bool) (frameRef, bool) {
+	if carries {
+		for _, a := range packed {
+			if r, ok := e.frameRefOf(a.ast); ok {
+				return r, true
+			}
+			if r, ok := e.contentsRef(a.ast); ok {
+				return r, true
+			}
+		}
+	}
+	if derives && len(packed) != 0 {
+		return frameRef{
+			origin: tempOrigin,
+			what:   "the values passed to " + who + ", which are packed into an array of this function,",
+			view:   true,
+		}, true
+	}
+	return frameRef{}, false
 }
 
 // checkCallbackArgs asks, of every function a call hands a callee that calls it

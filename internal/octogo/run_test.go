@@ -42616,6 +42616,131 @@ func main() {
 }
 `,
 		want: "4 3000000000 0 999990000 3000000004 3000000000 30 3000000000 10000 200 3000000000 2\n3000000001 4000000000 3000000000 true\n2147480148 296 0 10000 3000 false false 4294939296\n-3500 -1 7002 true -14000 -3500 -1 3000 true\n",
+	},
+	{
+		// The way a Go program reads into a buffer of its own and passes on what
+		// went wrong: `if err := fill(buf[:]); err != nil { return 0, err }`. The
+		// error is the address of a package variable or nil, and nothing of the
+		// buffer; it was refused, "cannot return local err, which holds a pointer
+		// into local buf", in every form that DECLARES the name the result is bound
+		// to -- a declaration walked into its initializer as into a literal, and
+		// took each argument of a call to come back in its result. Found by p2-11,
+		// whose card reader kept its sixteen bytes in the card for it.
+		name: "an error passed on from a call given a local buffer",
+		src: `type failure struct {
+	what string
+}
+
+func (f *failure) Error() string {
+	return f.what
+}
+
+var errEmpty = failure{"nothing to fill"}
+
+var errShort = failure{"short read"}
+
+type card struct {
+	next byte
+}
+
+func (c *card) Read(p []byte) (int, error) {
+	if len(p) < 4 {
+		return 0, &errShort
+	}
+	for i := range p {
+		p[i] = c.next
+		c.next++
+	}
+	return len(p), nil
+}
+
+type reader interface {
+	Read(p []byte) (int, error)
+}
+
+func fill(p []byte) error {
+	if len(p) == 0 {
+		return &errEmpty
+	}
+	p[0] = 1
+	return nil
+}
+
+func fillAll(ps ...[]byte) error {
+	for _, p := range ps {
+		if err := fill(p); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func first() (byte, error) {
+	var buf [16]byte
+	if err := fill(buf[:]); err != nil {
+		return 0, err
+	}
+	return buf[0], nil
+}
+
+func none() (byte, error) {
+	var buf [16]byte
+	err := fill(buf[:0])
+	if err != nil {
+		return 0, err
+	}
+	return buf[0], nil
+}
+
+func size(r reader) (int, error) {
+	var buf [16]byte
+	n, err := r.Read(buf[:])
+	if err != nil {
+		return 0, err
+	}
+	return n + int(buf[15]), nil
+}
+
+func short(c *card) (int, error) {
+	var buf [2]byte
+	if n, err := c.Read(buf[:]); err != nil {
+		return n, err
+	}
+	return int(buf[0]), nil
+}
+
+func both() error {
+	var a, b [4]byte
+	var e error
+	e = fillAll(a[:], b[:], a[:0])
+	return e
+}
+
+func show(err error) {
+	if err == nil {
+		println("no error")
+		return
+	}
+	println(err.Error())
+}
+
+func main() {
+	var c card
+	b, err := first()
+	println(b)
+	show(err)
+	_, err = none()
+	show(err)
+	n, err := size(&c)
+	println(n)
+	show(err)
+	n, err = short(&c)
+	println(n)
+	show(err)
+	show(both())
+}
+`,
+		want: "1\nno error\nnothing to fill\n31\nno error\n0\nshort read\nnothing to fill\n",
 	}}
 
 // TestEmitCRun compiles emitted C with a host compiler and runs it, checking what
