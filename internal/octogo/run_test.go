@@ -881,10 +881,11 @@ func main() {
 	{
 		// A package constant named by NOTHING but the package initializer: a
 		// package variable's non-constant initializer, `K * y`, is assigned there.
-		// A package constant is declared only where a body names it (see
-		// pkgConstDecl), and the initializer's text is rendered after the bodies,
-		// so it had to be brought forward to be scanned -- without that, `K` was
-		// undeclared to the C compiler in the one function that used it.
+		// A package constant was a C object then, declared only where a body named
+		// it, and the initializer's text is rendered after the bodies, so it had to
+		// be brought forward to be scanned -- without that, `K` was undeclared to
+		// the C compiler in the one function that used it. A constant is its value
+		// where it is read since, and declares nothing.
 		name: "a package constant named only in the package initializer",
 		src: `const K = 3
 const L = 7
@@ -42422,6 +42423,131 @@ func main() {
 }
 `,
 		want: "0 10000 142 60 1844674407370954 4616\n263524915338707780 16 0 70 0 1\n263524915338707780 0 16\n",
+	},
+	{
+		// An untyped constant takes the type of the operand it meets, and a NAMED one
+		// was a C object with a type of its own, `static const int patience = 10000;`.
+		// The target's C compiler compares an unsigned operand with a signed object as
+		// signed numbers -- "signed/unsigned comparison may not work properly", it
+		// says, and builds -- so `b-a < patience` for a difference past 2^31 was true
+		// on the board, in a condition, a loop and a case alike, and right on the
+		// host. Found by p2-11, whose tests waited on a time in milliseconds. With the
+		// constant on the LEFT of a division or a remainder the host was wrong too,
+		// `patience / u` being 4294967295 for Go's 0, as it was for a rune constant,
+		// an iota one and an expression of constants; for a literal where the
+		// operand is a defined type over uint32; and for a literal over a uint64,
+		// whose divisor's guard handed it back signed.
+		name: "an untyped constant takes the type of the unsigned operand it meets",
+		src: `type Tick uint32
+
+const patience = 10000
+
+const (
+	first = iota + 9999
+	second
+)
+
+const letter = 'a'
+
+var a, b uint32 = 12000, 5000
+
+var t Tick = 4294960296
+
+var w uint64 = 18446744073709544616
+
+func compare() {
+	println(a-b < patience, b-a < patience, patience > b-a, b-a >= second, b-a < patience/2+patience/2, b-a < letter)
+	n := 0
+	for i := b - a; i < patience; i++ {
+		n++
+		if n > 2 {
+			break
+		}
+	}
+	if b-a < patience {
+		n += 10
+	}
+	switch {
+	case b-a < patience:
+		n += 100
+	}
+	println(n, t < patience, patience > t, first)
+}
+
+func divide() {
+	u := b - a
+	println(patience/u, patience%u, second/u, letter%u, (patience+1)/u, u/patience, u%patience)
+	println(patience/t, patience%t, 10000/t, t/patience)
+	println(patience/w, patience%w, 10000/w, 'a'%w, w/patience)
+}
+
+func main() {
+	compare()
+	divide()
+}
+`,
+		want: "true false false true false false\n0 false false 9999\n0 10000 0 97 0 429496 296\n0 10000 0 429496\n0 10000 0 97 1844674407370954\n",
+	},
+	{
+		// A block constant's value, its width and its being beyond every integer type
+		// end with its block, as its folded integer always did. The main package's
+		// constants are keyed by their bare names, as a block's are: after `{ const f
+		// = 4.5 }` the package's `const f = 1.5` read 4.5, silently; after a
+		// function's `const n = 1 << 41` the package's `n = 7` was written as a long
+		// long under %d; after a `const h = 1 << 100` the package's `h = 3` was
+		// refused as overflowing every integer type; and a block's `const w = 5`
+		// under a package's `const w = 1 << 40` was a 64-bit constant still. And a
+		// block constant is in scope AFTER its spec: `const n = n + 1` reads the n
+		// outside it, and was "constant definition cycle for n".
+		name: "a block constant ends with its block",
+		src: `const f = 1.5
+
+const w = 1 << 40
+
+const n = 7
+
+const s = "pkg"
+
+const h = 3
+
+func a() {
+	const f = 2.5
+	const w = 5
+	const n = 1 << 41
+	const s = "local"
+	const h = 1 << 100
+	println(f, w, int64(n), s, h>>98)
+}
+
+func b() {
+	x := 1.0
+	{
+		const f = 4.5
+		const n = 9
+		x = f * 2
+		println(f, n, x)
+	}
+	println(f, int64(w), n, s, h, f*2, int64(w)+1, n+1)
+}
+
+func c() {
+	const n = n + 1
+	{
+		const n = n * 2
+		println(n)
+	}
+	var f int = n
+	println(n, f)
+}
+
+func main() {
+	a()
+	b()
+	c()
+	println(f, int64(w), n, s, h, f*2, int64(w)+1, n+1)
+}
+`,
+		want: "2.5 5 2199023255552 local 4\n4.5 9 9\n1.5 1099511627776 7 pkg 3 3 1099511627777 8\n16\n8 8\n1.5 1099511627776 7 pkg 3 3 1099511627777 8\n",
 	}}
 
 // TestEmitCRun compiles emitted C with a host compiler and runs it, checking what
@@ -42767,6 +42893,7 @@ const multiPkgWant = "300\nLOUD\n50\n6\n5\n45\n6 1000\n200\n207\n3 100\n4 9\n" +
 	"2 7 56 9 3 8 false 2 1 2 6 3 true 7\n" +
 	"[2]greet.Row [2]greet.Reader greet.Row\n" +
 	"123 p2 9 3 2 3\n1 1 2 1 102 3\n2 1 4 3 4 4 5 134\n21 10 100 200 7 0\n1 5 1 2 4 1 3 21 1 2 12 12 123 123 11\n10 21 110 21 14 true 3 42\n10 3 4\n6 10 2\n6 11\n6 5 8 6\ntrue 110 6 106\n7 5\ntrue true\n40 9 200 3\n" +
+	"false true 0 142 4294960296 5 3 false 0 10000\n" +
 	"1234567891 1 3 8 14 30 39\n" +
 	"2 4 7 4\n" +
 	"4 5 2 3\n" +
@@ -42809,6 +42936,14 @@ var greet_base = 9
 const prefix = "AT+"
 
 const K = 3
+
+// Constants named as lib names a constant and a VARIABLE of its own. The main
+// package's constants are keyed by their bare names, and every reader of a
+// constant's value asked for the bare name first: lib's own code read Limit as 3,
+// and its variable Count as the constant 5.
+const Limit = 3
+
+const Count = 5
 
 func main() {
 println(greet.Hello(3))
@@ -43388,6 +43523,10 @@ func libShapes() {
 	println(lib.P == nil, lib.None() == nil)
 	greet_Hello := 3
 	println(greet_scale(4), greet_base, greet.Hello(2), greet_Hello)
+	// A library's names are its own, whatever main declares; and another package's
+	// untyped constant takes the type of the operand it meets, as this one's does.
+	var top uint32 = 4294960296
+	println(lib.Over(top), lib.Over(70), lib.Under(top), lib.Under(70), lib.Counted(), Count, Limit, top < lib.Limit, lib.Limit/top, lib.Limit%top)
 }
 `,
 	"initord/itrace/itrace.ogo": `var Trace int
@@ -43974,6 +44113,17 @@ type Late struct {
 }
 
 type Width int
+
+// Names main declares constants of, with values of its own.
+const Limit = 10000
+
+var Count uint32 = 4294960296
+
+func Over(v uint32) bool { return v < Limit }
+
+func Under(v uint32) uint32 { return Limit / v }
+
+func Counted() uint32 { return Count }
 `,
 }
 

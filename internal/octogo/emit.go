@@ -5991,28 +5991,12 @@ func emitProgram(pkg *Package, w io.Writer, opts []EmitOption, rename map[string
 		}
 		out.WriteByte('\n')
 	}
-	// The package-level integer constants a body names, ahead of the globals (a
-	// variable's initializer at file scope reads none of them by name, being
-	// spelled from the fold, but a function body may -- the package initializer
-	// among them, which is rendered here for that reason and written further
-	// down). See pkgConstDecl.
+	// The package initializer, rendered here and written further down: what it
+	// names is part of what the program names.
 	pd := e.pkgInitDefs()
 	// The constant strings' headers go here, ahead of everything that can name one,
 	// once the whole program says which it names (insertStringLits).
 	out.WriteString(stringLitsMarker)
-	if len(e.pkgConstDecls) != 0 {
-		named := bytes.Join([][]byte{helperDefs.Bytes(), globals.Bytes(), e.vtables.Bytes(), body.Bytes(), []byte(pd)}, []byte{'\n'})
-		wrote := false
-		for _, d := range e.pkgConstDecls {
-			if referencedIn(d.cname, named) {
-				out.WriteString(d.text)
-				wrote = true
-			}
-		}
-		if wrote {
-			out.WriteByte('\n')
-		}
-	}
 	if globals.Len() != 0 {
 		out.Write(globals.Bytes())
 		out.WriteByte('\n')
@@ -6293,7 +6277,7 @@ type emitter struct {
 	callParams        []string                  // the parameter C types of the next call emitted through a function VALUE or an interface slot, which names no callee to look up; emitCallArgs takes them (see wideConstArg)
 	callFuncType      string                    // the function typedef of the next call emitted through a VALUE, taken beside callParams: which of them is variadic, which C's shape does not say
 	callVararg        int                       // 1 + the variadic parameter's position for the next call emitted through an INTERFACE slot, taken beside callParams; 0 for none
-	localConsts       map[string]bool           // block-scope CONSTANTS in scope, by name: the locals a constant fold may still resolve (see shadowedByLocal)
+	localConsts       map[string]bool           // block-scope CONSTANTS in scope, by name: the locals a constant fold may still resolve (see constKey)
 	localConstSpecs   map[string]localConstSpec // ... and how each was declared, for a function literal to declare again what it reads (liftFuncLit)
 	localConstSeq     int                       // orders localConstSpecs as they were declared
 	inheritedTypes    map[string]bool           // the local types a function literal has of the function around it, which its own may shadow
@@ -6427,8 +6411,6 @@ type emitter struct {
 	usesNonzero64u     bool                    // ogo_nonzero64u (the uint64 divisor's guard) is called
 	litDepth           int                     // aggregate initializers being emitted: a constant inside one is spelled for an initializer (see constSpelling)
 	constWide          map[string]string       // 64-bit integer constants, by C name, to their underlying C type: inlined at each use, never declared (see emitConstSpecName)
-	pkgConstDecls      []pkgConstDecl          // package-level integer constants, declared only where a body names them (see emitConstSpecName)
-	foldWideConstsOnly bool                    // the fold reads no 32-bit named constant: a level folded to a literal must keep referencing those (see levelConstLit)
 	foldUnsigned       bool                    // the fold computes as a uint64: the level being folded is unsigned (see wideConstValue)
 	usesF2u32          bool                    // ogo_f2u32 is called: a float converts to a 32-bit unsigned integer
 	usesF2i64          bool                    // ogo_f2i64 is called: a float converts to an int64 (needs ogo_f2u32)
@@ -8849,9 +8831,9 @@ func (e *emitter) structFieldsOf(structAST []int32) []structField {
 	return out
 }
 
-// emitPackageConsts emits the program's package-level constant declarations as C
-// file-scope `static const` definitions and records each in the global type
-// environment, in the order forEachPkgConst gives them.
+// emitPackageConsts records the program's package-level constants in the global
+// type environment and the fold maps, in the order forEachPkgConst gives them, and
+// declares the C object of the few that have one (declareConst).
 func (e *emitter) emitPackageConsts(pkgs []*Package) {
 	e.forEachPkgConst(pkgs, func(cs constSpecName) { e.emitConstSpec(cs, true) })
 }
@@ -9808,15 +9790,30 @@ func (e *emitter) emitGlobalInit(ctype string, initExpr []int32) {
 	e.declInit = false
 }
 
-// emitConstDecl emits a constant declaration -- one ConstSpec or a parenthesized
-// group -- as C const definitions. A package-level constant becomes a file-scope
-// `static const`; a local one a block-scope `const`. An untyped constant's C type
-// is inferred from its initializer, defaulting to int. The name is recorded in the
-// global or local type environment so its later uses can be typed.
+// emitConstDecl emits a constant declaration, one ConstSpec or a parenthesized
+// group. A constant is its value where it is read and declares nothing in the C,
+// but for the few whose value does not fold (declareConst). An untyped constant's C
+// type is inferred from its initializer, defaulting to int. The name is recorded in
+// the global or local type environment so its later uses can be typed.
 func (e *emitter) emitConstDecl(ast []int32, pkg bool) {
 	specs, _ := e.constDeclSpecs(ast)
-	for _, cs := range specs {
-		e.emitConstSpec(cs, pkg)
+	// Spec by spec, the names of one sharing its iota: every expression of a spec is
+	// read before any of its names is declared (evalConst).
+	for i := 0; i < len(specs); {
+		j := i + 1
+		for j < len(specs) && specs[j].iota == specs[i].iota {
+			j++
+		}
+		var evs []constEval
+		for _, cs := range specs[i:j] {
+			if ev, ok := e.evalConst(cs.name, e.constOwnType(cs), cs.hasType, cs.initExpr, cs.iota, pkg); ok {
+				evs = append(evs, ev)
+			}
+		}
+		for _, ev := range evs {
+			e.declareConst(ev)
+		}
+		i = j
 	}
 }
 
@@ -9900,14 +9897,18 @@ func (e *emitter) constDeclSpecs(ast []int32) (r []constSpecName, ok bool) {
 
 // emitConstSpec emits one name of a const declaration.
 func (e *emitter) emitConstSpec(cs constSpecName, pkg bool) {
-	// The pre-scan runs before any type is collected, so a named type would fail to
-	// resolve. It records values, not types: hasType still says the constant is
-	// typed, the type itself is simply unused.
-	ownType := ""
+	e.emitConstSpecName(cs.name, e.constOwnType(cs), cs.hasType, cs.initExpr, cs.iota, pkg)
+}
+
+// constOwnType is the C type a const spec writes, or "" for one that writes none.
+// The pre-scan runs before any type is collected, so a named type would fail to
+// resolve. It records values, not types: hasType still says the constant is typed,
+// the type itself is simply unused.
+func (e *emitter) constOwnType(cs constSpecName) string {
 	if cs.hasType && !e.constPreScan {
-		ownType = e.cType(cs.typeAST)
+		return e.cType(cs.typeAST)
 	}
-	e.emitConstSpecName(cs.name, ownType, cs.hasType, cs.initExpr, cs.iota, pkg)
+	return ""
 }
 
 // forEachPkgConst runs fn over every package-level constant of the program, with e.f,
@@ -10000,218 +10001,225 @@ func (e *emitter) identNames(ast []int32) (r []string) {
 	return r
 }
 
+// constEval is what a constant's declaration says of it, read before any of it is
+// recorded (evalConst, declareConst).
+type constEval struct {
+	name, cname, ctype string
+	hasType, pkg       bool
+	initExpr           []int32
+	iota               int
+	val                constant.Value
+	hasVal, untyped    bool
+	intVal             int64
+	hasInt, isHuge     bool
+	strVal             string
+	hasStr             bool
+}
+
 // emitConstSpecName emits one name of a const spec. A spec binds a list, and every
 // name on it shares the spec's iota and its written type while taking the
 // expression standing in its own position.
 func (e *emitter) emitConstSpecName(name, ownType string, hasType bool, initExpr []int32, curIota int, pkg bool) {
-	{
-		// A package-level constant is namespaced by its package, exactly like a
-		// package variable (see globalC), so same-named constants in different
-		// packages neither collide in the single translation unit nor cross-pollute
-		// the constInt/constStr fold maps. A block-scope constant keeps its own name.
-		cname := name
-		if pkg {
-			cname = e.mangle(e.curPkgPrefix, name)
-		}
-		if !pkg && !e.constPreScan {
-			e.localConstSpecs[name] = localConstSpec{ownType, hasType, initExpr, curIota, e.localConstSeq}
-			e.localConstSeq++
-		}
-		if e.constPreScan {
-			// Values only: what an array bound needs, and all it can use.
-			e.iota = curIota
-			if v, ok := e.constIntValue(initExpr); ok {
-				e.constInt[cname] = intCLit(v)
-			}
-			if v, ok := e.foldConstVal(initExpr); ok {
-				e.constVal[cname] = v // rounded to its type below, once that is known
-			}
-			e.iota = -1
-			return
-		}
-		ctype := ownType
-		if !hasType {
-			e.iota = curIota // so inference sees iota as an int
-			ct, ok := e.inferCType(initExpr)
-			e.iota = -1
-			if !ok {
-				ct = "int" // an untyped constant defaults to int
-			}
-			// An untyped constant whose value does not fit an int takes the width it
-			// needs: Go's default type for it is int, which is 64-bit there, and
-			// "static const int" would store 1 << 40 as 0. One only a uint64 holds,
-			// `1<<64 - 1`, is a uint64: Go's default type would overflow, so it is
-			// used at that type or folded into a constant expression, and this is
-			// what spells it (wideConstRef).
-			e.iota = curIota
-			if ct == "int" {
-				switch v, ok := e.constIntValue(initExpr); {
-				case ok && !fitsCInt(v):
-					ct = "int64_t"
-					e.includes["stdint.h"] = true
-				case !ok:
-					if _, unsignedFits := e.constIntValueIn(initExpr, "uint64_t"); unsignedFits {
-						ct = "uint64_t"
-						e.includes["stdint.h"] = true
-					}
-				}
-			}
-			e.iota = -1
-			ctype = ct
-		}
-		if pkg {
-			e.globals[cname] = ctype
-		} else {
-			e.locals[cname] = ctype
-			e.localConsts[cname] = true // a local a fold may resolve; see shadowedByLocal
-		}
-		// The exact value of a numeric constant, for the fold of every expression
-		// that reads it (foldConstVal). A typed one is rounded to its type first, as
-		// Go rounds a typed constant: `const F float32 = 0.1` holds float32(0.1),
-		// and `F * 3` is computed from that. An untyped one stays exact.
-		e.iota = curIota
-		if v, ok := e.foldConstVal(initExpr); ok {
-			if hasType {
-				v = roundConstTo(v, e.underlyingCType(ctype))
-			}
-			e.constVal[cname] = v
-		} else {
-			delete(e.constVal, cname)
-		}
-		e.iota = -1
-		// A constant written with no type and built only from untyped constants is
-		// itself untyped: it has no type to contribute to an expression it appears
-		// in, and takes the type of whatever it meets. Recorded so inferNodes can
-		// look past it -- "fracBits * one" is an int32 because one is, whichever
-		// operand comes first.
-		if !hasType && e.exprUntyped(initExpr) {
-			e.constUntyped[cname] = true
-		}
-		// A constant that folds to an integer -- a literal, iota, or a constant
-		// expression like "2 + 1" or "W * H" -- can serve as an array bound (flexcc
-		// rejects a `static const` there); record its value. iota is visible to the
-		// fold as this spec's index for the duration.
-		e.iota = curIota
-		if v, ok := e.constIntValueIn(initExpr, ctype); ok {
-			e.constInt[cname] = intCLit(v)
-		}
-		e.iota = -1
-		// A 64-bit integer constant is inlined at each use, as a string constant is
-		// (below), and declares nothing. The target's C compiler mis-folds a 64-bit
-		// constant expression in a function body (see constSpelling), so every
-		// expression reading one is folded to a literal by levelConstLit -- which
-		// would leave a `static const` nothing names, and the host compiler's
-		// unused-variable warning for it fails the run harness. A narrower constant
-		// keeps its symbol: that compiler computes an expression over a `static
-		// const` object correctly, and the fold leaves those alone.
-		if ut := e.underlyingCType(ctype); cIntWidths[ut] == 64 {
-			if _, folded := e.constInt[cname]; folded {
-				e.constWide[cname] = ut
-				return
-			}
-		}
-		// An integer constant beyond 64 bits, `const huge = 1 << 100`, declares
-		// nothing either: no C type holds it. Every expression reading it folds
-		// exactly (constIntValue) to a value that fits, or is refused where it is
-		// read (emitOperandToken) -- until 2026-09-18 the declaration was emitted
-		// with its expression as the initializer, a run-time shift of an int64 by
-		// 100 in a `static const int`, which the host's compiler refused and the
-		// target's computed.
-		e.iota = curIota
-		if _, huge := e.hugeConstVal(initExpr); huge {
-			e.constHuge[cname] = true
-			e.iota = -1
-			return
-		}
-		e.iota = -1
-		// A float constant is inlined at each use as well (foldedFloat) and declares
-		// nothing: an expression reading one is folded exactly (emitFloatPrefixFold),
-		// which would leave a `static const` nothing names, and in a static
-		// initializer the target's C compiler does not take the name for a constant
-		// expression at all, nor a unary minus on one.
-		if ut := e.underlyingCType(ctype); ut == "double" || ut == "float" {
-			if _, folded := e.constVal[cname]; folded {
-				return
-			}
-		}
-		// A constant string -- a literal or a concatenation of constants -- is
-		// recorded decoded and emitted at each use as the folded literal, rather
-		// than as a C variable. A Go constant has no address, so inlining it is
-		// correct, and it avoids an unused-variable warning when the constant is
-		// only ever folded into a concatenation (which does not name it).
-		if v, ok := e.foldConstString(initExpr); ok {
-			e.constStr[cname] = v
-			return
-		}
-		e.iota = curIota // substitute iota with its value while emitting the expression
-		e.ind()
-		storage := "const "
-		if pkg {
-			storage = "static const "
-		}
-		if v, folded := e.constInt[cname]; folded && pkg {
-			// A package-level integer constant is declared only if a body names
-			// it: held back here, decided when the output is assembled (see
-			// pkgConstDecl). Its value is the folded literal, so a constant that
-			// references another ("const M = N + 1") does not become the C
-			// initializer "N + 1" -- not a constant expression at file scope.
-			e.pkgConstDecls = append(e.pkgConstDecls, pkgConstDecl{cname, storage + ctype + " " + cname + " = " + v + ";\n"})
-			e.iota = -1
-			return
-		}
-		// A block-scope constant's C spelling: cname is also what the fold maps
-		// key it by, which is the name as written, and a keyword or a macro --
-		// `const long = 5` -- is renamed where it is read (localIdent).
-		declName := cname
-		if !pkg {
-			declName = e.localIdent(name)
-		}
-		e.emit(storage + ctype + " " + declName + " = ")
-		switch v, folded := e.constInt[cname]; {
-		case folded:
-			// A folded integer constant emits its literal value, so a constant that
-			// references another ("const M = N + 1") does not become the C
-			// initializer "N + 1" -- not a constant expression at file scope.
-			e.emit(v)
-		case pkg:
-			// A file-scope constant has static storage, so a string initializer
-			// must be a brace, not a compound literal (see emitStringLit).
-			e.declInit = true
-			e.emitExpr(initExpr)
-			e.declInit = false
-		default:
-			e.emitExpr(initExpr)
-		}
-		e.emit(";\n")
-		if !pkg {
-			// Go takes a constant nothing reads; a C local nothing reads is what the
-			// host's compiler warns of, and a function literal's reading one is not
-			// its function's.
-			e.ind()
-			e.emit("(void)" + declName + ";\n")
-		}
-		e.iota = -1
+	if ev, ok := e.evalConst(name, ownType, hasType, initExpr, curIota, pkg); ok {
+		e.declareConst(ev)
 	}
 }
 
-// localConstSpec is how a block constant was declared: what emitConstSpecName was
-// handed, to declare it again in a function literal that reads it (liftFuncLit).
-type localConstSpec struct {
-	ownType  string
-	hasType  bool
-	initExpr []int32
-	iota     int
-	seq      int
+// evalConst reads what a constant's declaration says -- its type, its value, whether
+// it is untyped -- and records none of it, which is declareConst's. The two are
+// apart because a block's constant is in scope AFTER its spec: `const n = n + 1`
+// reads the n outside it, and `const n, m = n + 2, n + 3` reads that one twice. Read
+// and recorded name by name, m was computed from the n beside it. ok is false in the
+// pre-scan, which records the values an array bound needs and nothing else.
+func (e *emitter) evalConst(name, ownType string, hasType bool, initExpr []int32, curIota int, pkg bool) (ev constEval, ok bool) {
+	// A package-level constant is namespaced by its package, exactly like a
+	// package variable (see globalC), so same-named constants in different
+	// packages neither collide in the single translation unit nor cross-pollute
+	// the constInt/constStr fold maps. A block-scope constant keeps its own name.
+	cname := name
+	if pkg {
+		cname = e.mangle(e.curPkgPrefix, name)
+	}
+	e.iota = curIota // iota is this spec's index while its expression is read
+	defer func() { e.iota = -1 }()
+	if e.constPreScan {
+		// Values only: what an array bound needs, and all it can use.
+		if v, ok := e.constIntValue(initExpr); ok {
+			e.constInt[cname] = intCLit(v)
+		}
+		if v, ok := e.foldConstVal(initExpr); ok {
+			e.constVal[cname] = v // rounded to its type by declareConst, once that is known
+		}
+		return constEval{}, false
+	}
+	ctype := ownType
+	if !hasType {
+		ct, ok := e.inferCType(initExpr)
+		if !ok {
+			ct = "int" // an untyped constant defaults to int
+		}
+		// An untyped constant whose value does not fit an int takes the width it
+		// needs: Go's default type for it is int, which is 64-bit there, and a C int
+		// would hold 1 << 40 as 0. One only a uint64 holds, `1<<64 - 1`, is a uint64:
+		// Go's default type would overflow, so it is used at that type or folded into
+		// a constant expression, and this is what spells it (wideConstRef).
+		if ct == "int" {
+			switch v, ok := e.constIntValue(initExpr); {
+			case ok && !fitsCInt(v):
+				ct = "int64_t"
+				e.includes["stdint.h"] = true
+			case !ok:
+				if _, unsignedFits := e.constIntValueIn(initExpr, "uint64_t"); unsignedFits {
+					ct = "uint64_t"
+					e.includes["stdint.h"] = true
+				}
+			}
+		}
+		ctype = ct
+	}
+	ev = constEval{name: name, cname: cname, ctype: ctype, hasType: hasType, pkg: pkg, initExpr: initExpr, iota: curIota}
+	ev.val, ev.hasVal = e.foldConstVal(initExpr)
+	ev.untyped = !hasType && e.exprUntyped(initExpr)
+	ev.intVal, ev.hasInt = e.constIntValueIn(initExpr, ctype)
+	_, ev.isHuge = e.hugeConstVal(initExpr)
+	ev.strVal, ev.hasStr = e.foldConstString(initExpr)
+	return ev, true
 }
 
-// pkgConstDecl is a package-level integer constant's C declaration, held back until
-// the bodies are emitted and written only if something names it: a constant read
-// inside a static initializer, or one of 64 bits, is spelled as its value instead
-// (see emitOperandToken), and a `static const` nothing references draws an
-// unused-variable warning from the host compiler, which the run harness fails on.
-type pkgConstDecl struct {
-	cname string
-	text  string
+// declareConst records a constant evalConst has read, and declares the C object of
+// the few that have one.
+func (e *emitter) declareConst(ev constEval) {
+	cname, ctype := ev.cname, ev.ctype
+	if ev.pkg {
+		e.globals[cname] = ctype
+	} else {
+		e.localConstSpecs[ev.name] = localConstSpec{ev, e.localConstSeq}
+		e.localConstSeq++
+		e.locals[cname] = ctype
+		e.localConsts[cname] = true // a local a fold may resolve; see constKey
+	}
+	// Everything recorded under the name before is forgotten, which it was not until
+	// 2026-09-28: the main package's constants are keyed by their bare names, as a
+	// block's are, so a block's `const w = 5` under a package's `const w = 1 << 40`
+	// was still a 64-bit constant and was printed as one, `5LL` under %d, and one
+	// declared with a type after an untyped one of its name was untyped still.
+	delete(e.constVal, cname)
+	delete(e.constUntyped, cname)
+	delete(e.constInt, cname)
+	delete(e.constWide, cname)
+	delete(e.constHuge, cname)
+	delete(e.constStr, cname)
+	// The exact value of a numeric constant, for the fold of every expression that
+	// reads it (foldConstVal). A typed one is rounded to its type first, as Go rounds
+	// a typed constant: `const F float32 = 0.1` holds float32(0.1), and `F * 3` is
+	// computed from that. An untyped one stays exact.
+	if ev.hasVal {
+		val := ev.val
+		if ev.hasType {
+			val = roundConstTo(val, e.underlyingCType(ctype))
+		}
+		e.constVal[cname] = val
+	}
+	// A constant written with no type and built only from untyped constants is
+	// itself untyped: it has no type to contribute to an expression it appears in,
+	// and takes the type of whatever it meets. Recorded so inferNodes can look past
+	// it -- "fracBits * one" is an int32 because one is, whichever operand comes
+	// first.
+	if ev.untyped {
+		e.constUntyped[cname] = true
+	}
+	// A constant that folds to an integer -- a literal, iota, or a constant
+	// expression like "2 + 1" or "W * H" -- can serve as an array bound; record its
+	// value.
+	if ev.hasInt {
+		e.constInt[cname] = intCLit(ev.intVal)
+	}
+	// A constant is its VALUE where it is read, and declares nothing. A Go constant
+	// has no address and takes the type of what it meets; a C object has a type of
+	// its own, is no constant expression to the target's C compiler in a static
+	// initializer, and is read from hub RAM where it is used.
+	//
+	// A 64-bit integer constant was the first (wideConstRef): the target's C compiler
+	// mis-folds a 64-bit constant expression in a function body (see constSpelling),
+	// so every expression reading one is folded to a literal by levelConstLit.
+	if ut := e.underlyingCType(ctype); cIntWidths[ut] == 64 && ev.hasInt {
+		e.constWide[cname] = ut
+		return
+	}
+	// An integer constant beyond 64 bits, `const huge = 1 << 100`: no C type holds
+	// it. Every expression reading it folds exactly (constIntValue) to a value that
+	// fits, or is refused where it is read (emitOperandToken) -- until 2026-09-18
+	// the declaration was emitted with its expression as the initializer, a run-time
+	// shift of an int64 by 100 in a `static const int`, which the host's compiler
+	// refused and the target's computed.
+	if ev.isHuge {
+		e.constHuge[cname] = true
+		return
+	}
+	// A float constant (foldedFloat): an expression reading one is folded exactly
+	// (emitFloatPrefixFold).
+	if ut := e.underlyingCType(ctype); (ut == "double" || ut == "float") && ev.hasVal {
+		return
+	}
+	// A constant string -- a literal or a concatenation of constants -- is recorded
+	// decoded and emitted at each use as the folded literal.
+	if ev.hasStr {
+		e.constStr[cname] = ev.strVal
+		return
+	}
+	// And every other integer constant, since 2026-09-28 (intConstRef). One of 32
+	// bits or fewer was a C object until then, `static const int n = 1000000;`,
+	// which was wrong twice. The object's type was its own: an untyped constant
+	// compared with a uint32 was compared as a signed number by the target's C
+	// compiler, and `b-a < patience` for a difference past 2^31 was true on the
+	// board. And the read of it cost what a literal does not: a loop bounded by a
+	// named constant ran 69 clocks a pass for the literal's 56.5, and one calling a
+	// method of one line 72 for 32, the method called where the literal's was
+	// inlined. Both found by p2-11.
+	if ev.hasInt {
+		return
+	}
+	e.iota = ev.iota // substitute iota with its value while emitting the expression
+	defer func() { e.iota = -1 }()
+	e.ind()
+	storage := "const "
+	if ev.pkg {
+		storage = "static const "
+	}
+	// A block-scope constant's C spelling: cname is also what the fold maps key it
+	// by, which is the name as written, and a keyword or a macro -- `const long = 5`
+	// -- is renamed where it is read (localIdent).
+	declName := cname
+	if !ev.pkg {
+		declName = e.localIdent(ev.name)
+	}
+	e.emit(storage + ctype + " " + declName + " = ")
+	if ev.pkg {
+		// A file-scope constant has static storage, so a string initializer must be a
+		// brace, not a compound literal (see emitStringLit).
+		e.declInit = true
+		e.emitExpr(ev.initExpr)
+		e.declInit = false
+	} else {
+		e.emitExpr(ev.initExpr)
+	}
+	e.emit(";\n")
+	if !ev.pkg {
+		// Go takes a constant nothing reads; a C local nothing reads is what the
+		// host's compiler warns of, and a function literal's reading one is not its
+		// function's.
+		e.ind()
+		e.emit("(void)" + declName + ";\n")
+	}
+}
+
+// localConstSpec is a block constant as it was read where it was declared, to
+// declare it again in a function literal that reads it (inheritConsts). What it
+// said is kept, not its expression: read again where the literal stands, `const n =
+// n + 1` would read the n it declared.
+type localConstSpec struct {
+	ev  constEval
+	seq int
 }
 
 // referencedIn reports whether cname occurs as a whole identifier in text.
@@ -10256,14 +10264,39 @@ func parseCIntLit(lit string) (int64, bool) {
 // reports false for a name that is not one. Such a constant has no C symbol (see
 // emitConstSpecName), so the read is the literal.
 func (e *emitter) wideConstRef(name string) (string, bool) {
-	for _, cname := range []string{name, e.globalC(name)} {
-		if ut, ok := e.constWide[cname]; ok {
-			if v, ok := parseCIntLit(e.constInt[cname]); ok {
-				return e.constSpelling(v, ut), true
-			}
+	cname, ok := e.constKey(name)
+	if !ok {
+		return "", false
+	}
+	if ut, ok := e.constWide[cname]; ok {
+		if v, ok := parseCIntLit(e.constInt[cname]); ok {
+			return e.constSpelling(v, ut), true
 		}
 	}
 	return "", false
+}
+
+// constKey resolves a name to the key the fold maps would hold a constant of that
+// name under HERE: a block constant's is the name itself, and a package constant's
+// the name mangled into the CURRENT package. It reports false for a name a local
+// declaration has taken -- a variable, a parameter, an array or a slice -- which is
+// no constant whatever the maps hold.
+//
+// Every reader of the maps asked for the bare name first and the mangled one second
+// until 2026-09-28, and the main package's constants ARE keyed by their bare names,
+// its prefix being empty. So inside a library a name main also declares a constant
+// of was main's: a library's `const Limit = 10000` beside main's `const Limit = 3`
+// folded to 3 wherever the library's own code was folded, and once a constant was
+// its value wherever it is read, a library's VARIABLE `Count` read as main's
+// constant of that name. One question, one helper.
+func (e *emitter) constKey(name string) (string, bool) {
+	if e.localConsts[name] {
+		return name, true
+	}
+	if e.shadowedByLocal(name) || e.localName(name) {
+		return "", false
+	}
+	return e.globalC(name), true
 }
 
 // must is the value of a (value, ok) pair whose ok the caller has already checked.
@@ -10290,14 +10323,60 @@ func (e *emitter) inlinedConstRef(name string) (string, bool) {
 	if lit, ok := e.foldedFloat(name); ok {
 		return lit, true
 	}
+	if lit, ok := e.intConstRef(name); ok {
+		return lit, true
+	}
 	return "", false
 }
 
-// wideConstName reports whether a constant's C name is one of the 64-bit ones the
-// fold may read while foldWideConstsOnly is set.
-func (e *emitter) wideConstName(cname string) bool {
-	_, ok := e.constWide[cname]
-	return ok
+// intConstRef renders a read of an integer constant of 32 bits or fewer by its
+// source name, or reports false for a name that is not one here. Such a constant has
+// no C symbol (see emitConstSpecName), so the read is its value, spelled in the
+// constant's own type where it has one: a uint32's is unsigned, `10000u`, as the
+// object's was. An untyped one is spelled as the literal of its value is, and takes
+// its type where a literal does -- from the level or the comparison it stands in
+// (untypedOperandC).
+func (e *emitter) intConstRef(name string) (string, bool) {
+	cname, ok := e.intConstName(name)
+	if !ok {
+		return "", false
+	}
+	v, ok := parseCIntLit(e.constInt[cname])
+	if !ok {
+		return "", false
+	}
+	return e.intConstSpelling(v, cname), true
+}
+
+// intConstName resolves a name to the key the fold maps hold an integer constant of
+// 32 bits or fewer under (constKey), or reports false for one that is no such
+// constant of this block or this package.
+func (e *emitter) intConstName(name string) (string, bool) {
+	cname, ok := e.constKey(name)
+	if !ok {
+		return "", false
+	}
+	if _, folded := e.constInt[cname]; !folded {
+		return "", false
+	}
+	if _, wide := e.constWide[cname]; wide || e.constHuge[cname] {
+		return "", false
+	}
+	return cname, true
+}
+
+// intConstSpelling spells the value of the integer constant keyed cname where it is
+// read in an expression.
+func (e *emitter) intConstSpelling(v int64, cname string) string {
+	ct, isLocal := e.locals[cname]
+	if !isLocal || !e.localConsts[cname] {
+		ct = e.globals[cname]
+	}
+	ut := e.underlyingCType(ct)
+	if !e.constUntyped[cname] && cIntWidths[ut] == 32 && isUnsignedCType(ut) && v >= 0 {
+		return strconv.FormatInt(v, 10) + "u"
+	}
+	return e.parenNegative(e.constSpelling(v, ut))
 }
 
 // foldedInt returns a folded integer constant's C literal by its source name,
@@ -10306,32 +10385,26 @@ func (e *emitter) wideConstName(cname string) bool {
 // emitConstDecl) to keep same-named constants in different packages distinct, so a
 // same-package read resolves through globalC just as a package variable does.
 func (e *emitter) foldedInt(name string) (string, bool) {
-	if e.shadowedByLocal(name) {
+	cname, ok := e.constKey(name)
+	if !ok {
 		return "", false
 	}
-	if v, ok := e.constInt[name]; ok {
-		return v, true
-	}
-	v, ok := e.constInt[e.globalC(name)]
+	v, ok := e.constInt[cname]
 	return v, ok
 }
 
 // isHugeConstName reports whether name is an integer constant beyond 64 bits here
 // (see hugeConstVal), which has no C symbol to read.
 func (e *emitter) isHugeConstName(name string) bool {
-	if e.shadowedByLocal(name) {
-		return false
-	}
-	return e.constHuge[name] || e.constHuge[e.globalC(name)]
+	cname, ok := e.constKey(name)
+	return ok && e.constHuge[cname]
 }
 
 // isUntypedConstName reports whether name is an untyped constant here: a block
 // constant in scope or a package constant, and not a local that shadows one.
 func (e *emitter) isUntypedConstName(name string) bool {
-	if e.shadowedByLocal(name) {
-		return false
-	}
-	return e.constUntyped[name] || e.constUntyped[e.globalC(name)]
+	cname, ok := e.constKey(name)
+	return ok && e.constUntyped[cname]
 }
 
 // shadowedByLocal reports that a LOCAL declaration in scope -- a parameter or a
@@ -10446,22 +10519,17 @@ func (e *emitter) foldedQualifiedIntKids(kids []Node) (string, bool) {
 		return v, ok
 	}
 	gn := e.mangle(prefix, fields[0])
-	if e.foldWideConstsOnly && !e.wideConstName(gn) {
-		return "", false // see levelConstLit
-	}
 	v, ok := e.constInt[gn]
 	return v, ok
 }
 
 // foldedStr is foldedInt's string-constant counterpart.
 func (e *emitter) foldedStr(name string) (string, bool) {
-	if e.shadowedByLocal(name) {
+	cname, ok := e.constKey(name)
+	if !ok {
 		return "", false
 	}
-	if v, ok := e.constStr[name]; ok {
-		return v, true
-	}
-	v, ok := e.constStr[e.globalC(name)]
+	v, ok := e.constStr[cname]
 	return v, ok
 }
 
@@ -15615,7 +15683,7 @@ func (e *emitter) inheritConsts(outer map[string]localConstSpec, body []int32) b
 	e.emit("{\n")
 	e.indent++
 	for _, t := range take {
-		e.emitConstSpecName(t.name, t.spec.ownType, t.spec.hasType, t.spec.initExpr, t.spec.iota, false)
+		e.declareConst(t.spec.ev)
 	}
 	e.ind()
 	e.emit("{\n")
@@ -16872,6 +16940,14 @@ func (e *emitter) enterScope() func() {
 	frameBacked, frameHolder := maps.Clone(e.frameBacked), maps.Clone(e.frameHolder)
 	constInt, constStr := maps.Clone(e.constInt), maps.Clone(e.constStr)
 	constUntyped := maps.Clone(e.constUntyped)
+	// A block constant's exact value, its width and its being beyond every type end
+	// with the block as its folded integer and its string do. They did not until
+	// 2026-09-28, and the main package's constants are keyed by their bare names, as
+	// a block's are: after `{ const f = 4.5 }` a package `const f = 1.5` read 4.5,
+	// after a function's `const n = 1 << 41` the package's `n = 7` was printed as a
+	// long long under %d, and after a `const h = 1 << 100` the package's `h = 3` was
+	// refused as overflowing every integer type.
+	constVal, constWide, constHuge := maps.Clone(e.constVal), maps.Clone(e.constWide), maps.Clone(e.constHuge)
 	funcValueOf := maps.Clone(e.funcValueOf)
 	return func() {
 		// The frame marks are MERGED back rather than replaced. They are monotone --
@@ -16908,6 +16984,7 @@ func (e *emitter) enterScope() func() {
 		e.frameBacked, e.frameHolder = frameBacked, frameHolder
 		e.constInt, e.constStr = constInt, constStr
 		e.constUntyped = constUntyped
+		e.constVal, e.constWide, e.constHuge = constVal, constWide, constHuge
 		e.funcValueOf = funcValueOf
 	}
 }
@@ -22490,11 +22567,11 @@ func (e *emitter) constLevelWrapsInC(ast []int32, ut string) (int64, bool) {
 }
 
 // wideConstValue is constIntValue for a 64-bit level that is about to be rendered
-// as one literal: it sees through conversions, as that does, and reads 64-bit named
-// constants, which are inlined anyway -- but not a 32-bit named constant, whose
-// `static const` symbol the rendered literal would leave unreferenced. An
-// expression reading one is left as written, and the target's C compiler computes
-// it correctly, an object among its operands.
+// as one literal: it sees through conversions, as that does, and reads every named
+// constant. It read the 64-bit ones alone while a narrower one was a C object, whose
+// declaration the rendered literal would have left unreferenced; a constant is its
+// value since, and a level of them the target's C compiler would fold wrongly (see
+// constSpelling) is folded here.
 //
 // unsigned says the level is a uint64, whose division, remainder and right shift
 // fold differently from an int64's (see foldIntOp).
@@ -22612,17 +22689,12 @@ func (e *emitter) foldValToken(tok int32) (constant.Value, bool) {
 			}
 			return constant.MakeInt64(int64(e.iota)), true
 		}
-		var ok bool
-		if e.shadowedByLocal(s) {
+		cname, ok := e.constKey(s)
+		if !ok {
 			return nil, false
 		}
-		if e.foldWideConstsOnly && !e.wideConstName(s) && !e.wideConstName(e.globalC(s)) {
-			return nil, false // a 32-bit constant keeps its name; see levelConstLit
-		}
-		if v, ok = e.constVal[s]; !ok {
-			if v, ok = e.constVal[e.globalC(s)]; !ok {
-				return nil, false
-			}
+		if v, ok = e.constVal[cname]; !ok {
+			return nil, false
 		}
 	default:
 		return nil, false
@@ -22911,13 +22983,11 @@ func (e *emitter) foldIntegral(ast []int32) (int64, bool) {
 // static contexts where the name would denote a `static const` object the target's
 // C compiler does not take for a constant expression.
 func (e *emitter) foldedFloat(name string) (string, bool) {
-	if e.shadowedByLocal(name) {
+	cname, ok := e.constKey(name)
+	if !ok {
 		return "", false
 	}
-	if e.localConsts[name] {
-		return e.floatConstRef(name)
-	}
-	return e.floatConstRef(e.globalC(name))
+	return e.floatConstRef(cname)
 }
 
 // floatConstRef is foldedFloat for a constant's C name: a local's own, a package
@@ -23061,9 +23131,9 @@ func (e *emitter) float32CompareLitC(kids []Node, i int) (string, bool) {
 }
 
 func (e *emitter) wideConstValue(ast []int32, unsigned bool) (int64, bool) {
-	prevOnly, prevUnsigned := e.foldWideConstsOnly, e.foldUnsigned
-	e.foldWideConstsOnly, e.foldUnsigned = true, unsigned
-	defer func() { e.foldWideConstsOnly, e.foldUnsigned = prevOnly, prevUnsigned }()
+	prevUnsigned := e.foldUnsigned
+	e.foldUnsigned = unsigned
+	defer func() { e.foldUnsigned = prevUnsigned }()
 	return e.constIntValue(ast)
 }
 
@@ -23269,9 +23339,6 @@ func (e *emitter) foldIntToken(tok int32) (int64, bool) {
 			}
 			return 0, false
 		default:
-			if e.foldWideConstsOnly && !e.wideConstName(s) && !e.wideConstName(e.globalC(s)) {
-				return 0, false // a 32-bit constant keeps its name; see levelConstLit
-			}
 			if v, ok := e.foldedInt(s); ok {
 				return parseCIntLit(v)
 			}
@@ -31449,6 +31516,15 @@ func (e *emitter) shiftChainC(kids []Node) (string, bool) {
 		narrow = narrowOf(e.underlyingCType(ctype), ctype)
 	}
 	text := e.captureC(func() { e.emitExprNode(kids[0]) })
+	// An untyped constant is spelled for the type it meets here as in every level
+	// (untypedOperandC): this path wrote its operands as they stood.
+	levelType := ""
+	if haveType {
+		levelType = e.underlyingCType(ctype)
+	}
+	if lit, ok := e.untypedOperandC(kids[0], levelType, false); ok {
+		text = lit
+	}
 	// An untyped constant SHIFTED is spelled as the integer it is, at the width it is
 	// shifted in: `1.0 << s` must not reach the helper as a double, and the constant
 	// of `var a int64 = 1 << s` goes out as `1LL`, the one spelling of a 64-bit
@@ -31479,6 +31555,8 @@ func (e *emitter) shiftChainC(kids []Node) (string, bool) {
 			if v, ok := e.foldIntegral(rhs.ast); ok {
 				rhsText = intCLit(v)
 			}
+		} else if lit, ok := e.untypedOperandC(rhs, levelType, false); ok {
+			rhsText = lit
 		}
 		switch {
 		case haveType && e.isShiftOp(op) && e.shiftNeedsGuard1(ctype, rhs.ast):
@@ -31886,12 +31964,17 @@ func (e *emitter) chainCText(base string, steps []Node) (text, ctype string, add
 				// value has no elements, and `geo.Table[1]` was refused as "geo is
 				// not a value with fields or elements".
 				text, addr, cur = mn, true, curArray(a)
-			case e.wideConstName(mn):
+			case e.constWide[mn] != "":
 				v, _ := parseCIntLit(e.constInt[mn])
 				text, addr, cur = e.constSpelling(v, e.underlyingCType(gt)), false, e.plainOrSlice(gt)
 			case isGlobal:
 				_, isConst := e.constInt[mn]
 				text, addr, cur = mn, !isConst, e.plainOrSlice(gt)
+				if v, ok := parseCIntLit(e.constInt[mn]); isConst && ok {
+					// An integer constant of that package: its value, as at home
+					// (intConstRef).
+					text = e.intConstSpelling(v, mn)
+				}
 				if v, isStr := e.constStr[mn]; isStr {
 					// A string constant of that package: its literal, as at home.
 					text, addr = e.captureC(func() { e.emitFoldedString(v) }), false
@@ -36273,20 +36356,17 @@ func isUnsignedCType(ct string) bool {
 	return false
 }
 
-// unsignedLevel reports whether an arithmetic level computes in an UNSIGNED type,
-// which decides how a constant operand of it must be spelled -- see unsignedLitC.
-func (e *emitter) unsignedLevel(ast []int32) bool {
-	ct, ok := e.inferCType(ast)
-	return ok && isUnsignedCType(ct)
-}
-
-// unsignedLitC renders one operand of an unsigned arithmetic level as an UNSIGNED C
-// literal, and reports false for an operand that is not a bare integer literal.
+// untypedOperandC spells an operand that is an untyped CONSTANT as a value of the
+// integer type it meets, which is what Go makes of it: the type of the arithmetic
+// level it stands in, or of the operand across a comparison from it (compare). ut is
+// that type, resolved past a definition. It reports false for an operand that is no
+// such constant, for a type that is no integer's, and for a constant C reads as Go
+// does where it stands, which is left as written.
 //
-// It exists for a backend defect, measured on a P2-EDGE. flexcc types `4 * u` --
-// a signed constant on the LEFT of an unsigned operand -- as SIGNED, though the
-// product's value is right, and every signedness-sensitive operation downstream then
-// takes the signed branch:
+// It began as the spelling of a bare literal in an unsigned level, for a backend
+// defect measured on a P2-EDGE. flexcc types `4 * u` -- a signed constant on the
+// LEFT of an unsigned operand -- as SIGNED, though the product's value is right, and
+// every signedness-sensitive operation downstream then takes the signed branch:
 //
 //	4 * u / 3     3937053355, where Go and gcc say 1073741824
 //	4 * u >> 1    3758096384, where they say 1610612736
@@ -36297,18 +36377,111 @@ func (e *emitter) unsignedLevel(ast []int32) bool {
 // `u * 4` -- the unsigned operand first -- was right all along, which is why this
 // went unnoticed: the two spellings of one expression disagreed.
 //
-// A literal that already carries a suffix is left alone; cIntLit gives one to a
-// value too wide for a signed long long, which is unsigned already.
-func (e *emitter) unsignedLitC(n Node) (string, bool) {
-	tok, ok := e.soleToken(n.ast)
-	if !ok || e.f.ch(tok) != INT {
+// A constant is not only a literal, and until 2026-09-28 only a literal was asked.
+// A NAMED constant, a rune literal and a parenthesised expression of constants are
+// ints to C whatever they meet: `c / u` for a `const c = 10000` and a u past 2^31
+// was 4294967295 on the host and on the board, where Go says 0. Compared with an
+// unsigned operand of 32 bits, a named constant was worse off on the board alone:
+// it was an object there, a `static const int`, and the target's compiler compares
+// an unsigned operand with a signed OBJECT as signed numbers -- it says
+// "signed/unsigned comparison may not work properly" and builds. `b-a < patience`
+// for a difference past 2^31 was true, in an if, a for and a case alike. Found by
+// p2-11, whose tests waited on a time in milliseconds.
+//
+// A bare literal that already carries a suffix is left alone; cIntLit gives one to a
+// value too wide for a signed long long, which is unsigned already. In a comparison
+// a bare literal stands as written -- both C compilers take it for a constant and
+// compare as the other operand's sign says -- but for one of 64 bits, which is
+// wideCompareLitC's.
+func (e *emitter) untypedOperandC(n Node, ut string, compare bool) (string, bool) {
+	width, isInt := cIntWidths[ut]
+	if !isInt || e.litDepth > 0 || e.declInit {
+		return "", false // an initializer spells its constants itself (emitOperandToken)
+	}
+	unsigned := isUnsignedCType(ut)
+	if tok, ok := e.soleToken(n.ast); ok {
+		switch e.f.ch(tok) {
+		case INT:
+			if compare || !unsigned {
+				return "", false
+			}
+			lit := cIntLit(e.src(tok))
+			if len(lit) != 0 && !isCDigit(lit[len(lit)-1]) {
+				return lit, true // already suffixed, so already unsigned
+			}
+			return lit + "u", true
+		case CHAR:
+			if compare && width != 64 {
+				return "", false
+			}
+		}
+	}
+	v, ok := e.untypedIntOperand(n)
+	if !ok {
 		return "", false
 	}
-	lit := cIntLit(e.src(tok))
-	if len(lit) != 0 && !isCDigit(lit[len(lit)-1]) {
-		return lit, true // already suffixed, so already unsigned
+	switch {
+	case compare && width == 64:
+		// At the operand's own width: the target's compiler compares 64-bit values
+		// through a helper it does not widen a narrower argument for (see
+		// wideCompareLitC).
+		return e.constSpelling(v, ut), true
+	case unsigned && (!compare || width == 32):
+		if v < 0 || v > math.MaxUint32 {
+			return "", false // a wider one is spelled by the fold (levelConstLit)
+		}
+		return strconv.FormatInt(v, 10) + "u", true
 	}
-	return lit + "u", true
+	return "", false
+}
+
+// levelUnderlying is the type an arithmetic level computes in, resolved past its
+// definition: a level of a `type Tick uint32` answered "Tick" and was taken for no
+// unsigned one, so `10000 / t` for a Tick past 2^31 was divided signed.
+func (e *emitter) levelUnderlying(kids []Node) string {
+	ct, ok := e.inferNodes(kids)
+	if !ok {
+		return ""
+	}
+	return e.underlyingCType(ct)
+}
+
+// untypedIntOperand answers the value of an operand that is an untyped INTEGER
+// constant, however it is written: a literal, a rune literal, the name of an untyped
+// constant of this package or of another, an expression of those in parentheses. Go
+// converts such an operand to the type of the operand it meets; C gives it a type of
+// its own, an int, and the places where that decides the answer ask this.
+func (e *emitter) untypedIntOperand(n Node) (int64, bool) {
+	if !e.operandUntyped(n) {
+		return 0, false
+	}
+	x, ok := e.foldValNode(n)
+	if !ok || x.Kind() != constant.Int {
+		return 0, false
+	}
+	return constant.Int64Val(x)
+}
+
+// qualifiedUntypedConst reports whether an operand is another package's untyped
+// constant, `lib.Limit`: operandUntyped reads a name by itself, and the qualifier is
+// no constant.
+func (e *emitter) qualifiedUntypedConst(n Node) bool {
+	if n.sym == 0 {
+		return false
+	}
+	kids := slices.Collect(it(n.ast))
+	for len(kids) == 1 && kids[0].sym != 0 {
+		kids = slices.Collect(it(kids[0].ast))
+	}
+	base, fields, ok := e.factorFieldAccess(kids)
+	if !ok || len(fields) != 1 {
+		return false
+	}
+	prefix, isImport := e.importQualifiers[base]
+	if !isImport || base == "p2" {
+		return false
+	}
+	return e.constUntyped[e.mangle(prefix, fields[0])]
 }
 
 // isCDigit reports whether c ends a C integer literal's digits rather than its
@@ -40920,9 +41093,8 @@ func (e *emitter) factorFieldAccess(kids []Node) (base string, fields []string, 
 
 // qualifiedStrConstVal gives the VALUE of an imported package's string constant,
 // `geo.Name`. A string constant has no C symbol -- it is inlined at each use, a Go
-// constant having no address -- so unlike that package's integer constants, which
-// emit a `static const` the ordinary global path finds, there is nothing to name and
-// the read has to produce the literal itself.
+// constant having no address -- so there is nothing to name and the read has to
+// produce the literal itself.
 //
 // Without it a qualified string constant was refused wherever it stood: the read fell
 // through to the chain path, whose base is a variable, and reported "geo is not a
@@ -40958,12 +41130,8 @@ func (e *emitter) qualifiedGlobalRead(base string, fields []string) (text, ctype
 		return "", "", false
 	}
 	gn := e.mangle(prefix, fields[0])
-	// A folded string constant has no addressable C symbol -- it is inlined at each
-	// use (see emitConstDecl) -- so a cross-package read of one is left to the
-	// caller's other shapes (reported there) rather than naming a symbol that does
-	// not exist. An integer constant does emit a `static const` definition, so it
-	// resolves through the ordinary global path below (naming the symbol, matching a
-	// same-package read, so the definition is not left unreferenced).
+	// A constant has no C symbol: it is its value at each use, as at home (see
+	// emitConstSpecName).
 	if v, isStr := e.constStr[gn]; isStr {
 		// Its literal, with the type it was declared with -- `geo.Unit` of a
 		// `type Name string` is a Name, whose methods a read of it may call.
@@ -40986,6 +41154,12 @@ func (e *emitter) qualifiedGlobalRead(base string, fields []string) (text, ctype
 	// And a float constant, likewise.
 	if lit, ok := e.floatConstRef(gn); ok && len(fields) == 1 {
 		return lit, e.globals[gn], true
+	}
+	// And every other integer constant (intConstRef).
+	if _, isConst := e.constInt[gn]; isConst && len(fields) == 1 && !e.constHuge[gn] {
+		if v, ok := parseCIntLit(e.constInt[gn]); ok {
+			return e.intConstSpelling(v, gn), e.globals[gn], true
+		}
 	}
 	ct, ok := e.globals[gn]
 	if !ok {
@@ -41782,6 +41956,9 @@ func (e *emitter) operandUntyped(n Node) bool {
 	if n.sym == 0 {
 		return e.tokenUntyped(n.tok)
 	}
+	if e.qualifiedUntypedConst(n) {
+		return true
+	}
 	return e.exprUntyped(n.ast)
 }
 
@@ -41811,6 +41988,13 @@ func (e *emitter) exprUntyped(ast []int32) bool {
 			continue
 		}
 		if n.sym != 0 {
+			// Another package's untyped constant, `lib.Limit`, is one as this
+			// package's is. Read leaf by leaf it was typed, the qualifier being no
+			// constant, and `lib.Limit / u` was an int's level: divided signed, and
+			// printed as one.
+			if e.qualifiedUntypedConst(n) {
+				continue
+			}
 			if !e.exprUntyped(n.ast) {
 				return false
 			}
@@ -43157,12 +43341,11 @@ func (e *emitter) emitStringCompare(kids []Node) bool {
 func (e *emitter) emitKidsStringCompare(kids []Node) {
 	defer e.bindEffectOperands(kids)()
 	// Whether THIS level computes unsigned, which decides how a constant operand of
-	// it is spelled (see unsignedLitC). Read from the kid list rather than passed
+	// it is spelled (see untypedOperandC). Read from the kid list rather than passed
 	// in: a logical or relational chain infers bool and so answers no, and every
 	// arithmetic level answers for itself, which is what keeps a nested one from
 	// inheriting a verdict that is not about it.
-	ct, ctOK := e.inferNodes(kids)
-	unsignedLevel := ctOK && isUnsignedCType(ct)
+	levelType := e.levelUnderlying(kids)
 	// A chain of comparisons folds to the left, as in Go: `a < b == c` is `(a < b)
 	// == c`. C parses it the same way and its compiler warns about it all the same
 	// (-Wparentheses, an error for the host build), so the fold is written out: one
@@ -43228,7 +43411,9 @@ func (e *emitter) emitKidsStringCompare(kids []Node) {
 			e.emit(lit)
 		} else if lit, ok := e.wideCompareLitC(kids, i); ok {
 			e.emit(lit)
-		} else if lit, ok := e.unsignedLitC(kids[i]); unsignedLevel && ok {
+		} else if lit, ok := e.untypedCompareC(kids, i); ok {
+			e.emit(lit)
+		} else if lit, ok := e.untypedOperandC(kids[i], levelType, false); ok {
 			e.emit(lit)
 		} else {
 			e.emitExprNode(kids[i])
@@ -43356,6 +43541,16 @@ func (e *emitter) wideCompareLitC(kids []Node, i int) (string, bool) {
 		return lit + "ULL", true
 	}
 	return lit + "LL", true
+}
+
+// untypedCompareC spells an untyped constant standing across a comparison from an
+// integer operand as a value of that operand's type (see untypedOperandC).
+func (e *emitter) untypedCompareC(kids []Node, i int) (string, bool) {
+	ct, ok := e.compareOperandCType(kids, i)
+	if !ok {
+		return "", false
+	}
+	return e.untypedOperandC(kids[i], ct, true)
 }
 
 // compareOperandCType is the C type of the comparison the operand at i belongs to:
@@ -43646,13 +43841,12 @@ func (e *emitter) emitExprNode(n Node) {
 		}
 		// `a | b ^ c`, `a ^ b + c`: one Go level, three C strengths (cPrecMixed).
 		if n.sym == SimpleExpr && e.cPrecMixed(kids) {
-			ct, ctOK := e.inferNodes(kids)
-			unsignedLevel := ctOK && isUnsignedCType(ct)
+			levelType := e.levelUnderlying(kids)
 			var pieces []string
 			for _, c := range kids {
 				pieces = append(pieces, e.captureC(func() {
-					if lit, ok := e.unsignedLitC(c); unsignedLevel && ok {
-						e.emit(lit) // see unsignedLitC
+					if lit, ok := e.untypedOperandC(c, levelType, false); ok {
+						e.emit(lit)
 					} else {
 						e.emitExprNode(c)
 					}
@@ -43701,7 +43895,7 @@ func (e *emitter) emitExprNode(n Node) {
 				kids = []Node{narrowLevelPrefix(n, len(kids)-2), kids[len(kids)-2], kids[len(kids)-1]}
 			}
 		}
-		unsignedTerm := e.unsignedLevel(n.ast)
+		termType := e.levelUnderlying(slices.Collect(it(n.ast)))
 		guardNext, complementNext, shiftNext, zeroNext := false, false, false, false
 		// Each operand and operator is rendered to a piece, and the pieces are
 		// joined in a row, or left-nested where C would associate them otherwise
@@ -43757,6 +43951,12 @@ func (e *emitter) emitExprNode(n Node) {
 					// its own most negative value and divided by. A zero constant is
 					// refused by the checker; the guard stays for what does not fold.
 					if v, ok := e.foldConstInt(c.ast); ok && v != 0 {
+						if lit, ok := e.untypedOperandC(c, termType, false); ok {
+							e.emit(lit)
+							return
+						}
+					}
+					if v, ok := e.foldConstInt(c.ast); ok && v != 0 {
 						e.emitExprNode(c)
 						return
 					}
@@ -43808,8 +44008,8 @@ func (e *emitter) emitExprNode(n Node) {
 					}
 					e.emitExprNode(c)
 				default:
-					if lit, ok := e.unsignedLitC(c); unsignedTerm && ok {
-						e.emit(lit) // see unsignedLitC
+					if lit, ok := e.untypedOperandC(c, termType, false); ok {
+						e.emit(lit)
 					} else {
 						e.emitExprNode(c)
 					}
@@ -44205,8 +44405,8 @@ func (e *emitter) emitExprNode(n Node) {
 			// the diagnosis said "geo is not a value with fields or elements" -- of a
 			// package, about a constant that is there. Binding the value to a
 			// temporary hands the rest of the chain the string variable it expects.
-			// An INTEGER constant of another package needs none of this: it emits a
-			// `static const`, which is a name.
+			// An INTEGER constant of another package needs none of this: a chain
+			// takes nothing from a number.
 			if base, steps, ok := e.factorAccessChain(kids); ok && len(steps) > 1 && steps[0].sym == Selector {
 				if field := e.soleIdent(steps[0].ast); field != "" {
 					if v, isConst := e.qualifiedStrConstVal(base, []string{field}); isConst {
@@ -44640,16 +44840,22 @@ func (e *emitter) emitOperandToken(tok int32) {
 				return
 			}
 			// And so is any integer constant inside a static or aggregate
-			// initializer: there it names a `static const` object, which the
-			// target's C compiler does not take for a constant expression -- "Bad
-			// constant expression" for a bare K in a package slice's backing array,
-			// "Illegal operation on relocatable value" for K << 2. The bounds of an
-			// array are spelled from the fold for the same reason.
+			// initializer, which was the first place one was: there it named a
+			// `static const` object, which the target's C compiler does not take for
+			// a constant expression -- "Bad constant expression" for a bare K in a
+			// package slice's backing array, "Illegal operation on relocatable value"
+			// for K << 2. It is spelled as a declaration spells it, with no
+			// parentheses and no unary minus beyond the literal's own.
 			if e.litDepth > 0 || e.declInit {
 				if v, ok := e.foldedInt(s); ok {
 					e.emit(v)
 					return
 				}
+			}
+			// And everywhere else, since 2026-09-28 (see emitConstSpecName).
+			if lit, ok := e.intConstRef(s); ok {
+				e.emit(lit)
+				return
 			}
 			// A function of SEVERAL results taken as a VALUE stands for its void
 			// wrapper, never for itself: what a function value points at must not
