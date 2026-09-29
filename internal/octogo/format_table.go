@@ -94,6 +94,22 @@ func (f *formatter) markCells(k kid, top bool) {
 		f.funcCells(k)
 	case Signature, MethodSpec:
 		f.resultParens(body)
+	case IfStmt:
+		// `if ; ok {` is `if ok {`: gofmt drops the ";" of an init that is none.
+		for _, c := range kidsOf(body) {
+			if c.sym == 0 && Symbol(f.p.Token(c.ast[0]).Ch) == SEMICOLON {
+				f.skipTok[c.ast[0]] = true
+			}
+		}
+	case SwitchGuard:
+		// And `switch ; x {` is `switch x {`.
+		if kids := kidsOf(body); len(kids) == 1 && kids[0].sym == SwitchTag {
+			for _, c := range kidsOf(kids[0].ast[2:]) {
+				if c.sym == 0 && Symbol(f.p.Token(c.ast[0]).Ch) == SEMICOLON {
+					f.skipTok[c.ast[0]] = true
+				}
+			}
+		}
 	}
 }
 

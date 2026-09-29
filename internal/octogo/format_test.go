@@ -1445,3 +1445,98 @@ func main() {}
 	// An empty select is the one statement whose braces stay together.
 	formatCheck(t, "func main() {\n\tselect {}\n}\n", "func main() {\n\tselect {}\n}\n")
 }
+
+// TestFormatHeaderStatements pins the spacing of a statement standing alone in a
+// header -- a call, a receive, a send, a step -- which the grammar took none of in
+// an if until 2026-09-29, and that the ";" of an init that is none goes, as gofmt
+// drops it: `if ; ok {` is `if ok {`.
+func TestFormatHeaderStatements(t *testing.T) {
+	const in = `var ch chan int
+
+var n int
+
+func f() int { return 1 }
+
+func main() {
+	ok := true
+	p := &ch
+	if   f()  ;   ok {
+	}
+	if ch<-1;ok {
+	}
+	if *p   <-   f()+1  ; ok {
+	}
+	if <-ch ; ok {
+	}
+	if ;ok {
+	}
+	if (f()); ok {
+	}
+	switch f() ;n {
+	}
+	switch ch<-n; {
+	}
+	switch ;n {
+	}
+	switch   ; {
+	}
+	for f() ;n<3;f() {
+	}
+	for ch<-1;n<3;ch<-n+1 {
+	}
+	for n++;n<3;n-- {
+	}
+	for n*=2;n<3;<-ch {
+	}
+	for <-ch;; {
+	}
+	(f())
+	(<-ch)
+}
+`
+	const want = `var ch chan int
+
+var n int
+
+func f() int { return 1 }
+
+func main() {
+	ok := true
+	p := &ch
+	if f(); ok {
+	}
+	if ch <- 1; ok {
+	}
+	if *p <- f() + 1; ok {
+	}
+	if <-ch; ok {
+	}
+	if ok {
+	}
+	if (f()); ok {
+	}
+	switch f(); n {
+	}
+	switch ch <- n; {
+	}
+	switch n {
+	}
+	switch {
+	}
+	for f(); n < 3; f() {
+	}
+	for ch <- 1; n < 3; ch <- n + 1 {
+	}
+	for n++; n < 3; n-- {
+	}
+	for n *= 2; n < 3; <-ch {
+	}
+	for <-ch; ; {
+	}
+	(f())
+	(<-ch)
+}
+`
+	formatCheck(t, in, want)
+	gofmtCheck(t, want)
+}
