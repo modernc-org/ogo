@@ -14659,7 +14659,8 @@ func (e *emitter) emitFuncDecl(ast []int32) {
 	}
 	e.funcRefTasks = append(e.funcRefTasks, task)
 	e.bindParams(sig)
-	if e.inlineCandidate(name, proto, body) {
+	marked := e.inlineCandidate(name, proto, body)
+	if marked {
 		proto += " " + inlineMark
 		e.usesInline = true
 	}
@@ -14702,7 +14703,11 @@ func (e *emitter) emitFuncDecl(ast []int32) {
 	}
 	e.w = saved
 	e.emitDeferDecls()
-	e.w.Write(bodyBuf.Bytes())
+	if marked {
+		e.w.Write(singleExit(bodyBuf.Bytes(), protoResult(proto)))
+	} else {
+		e.w.Write(bodyBuf.Bytes())
+	}
 	e.indent--
 	e.emit("}\n")
 }
@@ -21907,10 +21912,11 @@ func (e *emitter) sameStructLayout(a, b string) bool {
 // function nothing calls by its name is not marked, there being no call to gain.
 //
 // What the backend does with the mark is its own to decide: a function of more
-// than a hundred instructions stays a call, and so does one that leaves through
-// more than one jump, which two early returns are. And `ogo build` falls back to
-// the program without the marks when it outgrows the registers with them, so that
-// no program fails to build for having been made faster.
+// than a hundred instructions stays a call, and so does a recursive one, and one
+// that leaves through more than one jump to its end, which two early returns are
+// (singleExit writes such a function with one). And `ogo build` falls back to the
+// program without the marks when it outgrows the registers with them, so that no
+// program fails to build for having been made faster.
 const (
 	inlineBudget = 6
 	inlineCopies = 96
@@ -21962,6 +21968,148 @@ func (e *emitter) inlineCandidate(name, proto string, body []int32) bool {
 	return plain && n <= inlineBudget && n*sites <= inlineCopies
 }
 
+// returnLine reads a line of C that is a return standing alone, which is how the
+// emitter writes every one: its indentation and the value returned, "" for none.
+func returnLine(line string) (indent, value string, ok bool) {
+	rest := strings.TrimLeft(line, "\t")
+	indent = line[:len(line)-len(rest)]
+	if indent == "" || !strings.HasSuffix(rest, ";") {
+		return "", "", false
+	}
+	switch rest = strings.TrimSuffix(rest, ";"); {
+	case rest == "return":
+		return indent, "", true
+	case strings.HasPrefix(rest, "return "):
+		return indent, strings.TrimPrefix(rest, "return "), true
+	}
+	return "", "", false
+}
+
+// returnWords counts the word return in a text of C, wherever it stands.
+func returnWords(s string) (n int) {
+	const word = "return"
+	isIdent := func(c byte) bool {
+		return c == '_' || c >= '0' && c <= '9' || c >= 'a' && c <= 'z' || c >= 'A' && c <= 'Z'
+	}
+	for i := 0; ; {
+		k := strings.Index(s[i:], word)
+		if k < 0 {
+			return n
+		}
+		i += k
+		if (i == 0 || !isIdent(s[i-1])) && (i+len(word) == len(s) || !isIdent(s[i+len(word)])) {
+			n++
+		}
+		i += len(word)
+	}
+}
+
+// singleExit is the C of a marked function's body, written to leave through ONE
+// return where it left through three or more, its result of the C type result,
+// "void" for none. The backend inlines a function by putting its body where the
+// call was, a return being a jump to the end of it, and takes the label at the end
+// away when ONE jump goes there: a function of one early return is inlined, and one
+// of two is called, whatever it is marked. p2-11's
+//
+//	func nz(v, sign uint16) uint16 {
+//		if v == 0 {
+//			return 4
+//		}
+//		if v&sign != 0 {
+//			return 8
+//		}
+//		return 0
+//	}
+//
+// took 83 clocks a call marked, on a P2-EDGE at 160 MHz, and takes 29 written as
+//
+//	uint16_t _ogo_rv = 0;
+//	if (v == 0) {
+//		{ _ogo_rv = 4; goto _ogo_exit1; }
+//	}
+//	if ((uint16_t)(v & sign) != 0) {
+//		{ _ogo_rv = 8; goto _ogo_exit2; }
+//	}
+//	_ogo_rv = 0;
+//	_ogo_exit1:
+//	_ogo_exit2:
+//	return _ogo_rv;
+//
+// a label for EACH return, which is what gives every label its one jump. A body
+// with a return anywhere but on a line of its own is left as it is, and so is one
+// of fewer than two early returns, which the backend inlines as it stands.
+func singleExit(body []byte, result string) []byte {
+	if result == "" {
+		return body
+	}
+	lines := strings.Split(strings.TrimSuffix(string(body), "\n"), "\n")
+	var returns []int
+	for i, line := range lines {
+		if _, _, ok := returnLine(line); ok {
+			returns = append(returns, i)
+		}
+	}
+	if returnWords(string(body)) != len(returns) {
+		return body
+	}
+	// The return the body ends in is no jump: it is where the others go.
+	last := len(returns) != 0 && returns[len(returns)-1] == len(lines)-1 && strings.HasPrefix(lines[len(lines)-1], "\treturn")
+	early := len(returns)
+	if last {
+		early--
+	}
+	if early < 2 {
+		return body
+	}
+	void := result == "void"
+	var b strings.Builder
+	if !void {
+		b.WriteString("\t" + result + " _ogo_rv = 0;\n")
+	}
+	exits := 0
+	for i, line := range lines {
+		indent, value, ok := returnLine(line)
+		switch {
+		case !ok:
+			b.WriteString(line + "\n")
+		case last && i == len(lines)-1:
+			if !void {
+				b.WriteString("\t_ogo_rv = " + value + ";\n")
+			}
+		case void:
+			exits++
+			fmt.Fprintf(&b, "%sgoto _ogo_exit%d;\n", indent, exits)
+		default:
+			exits++
+			fmt.Fprintf(&b, "%s{ _ogo_rv = %s; goto _ogo_exit%d; }\n", indent, value, exits)
+		}
+	}
+	for i := 1; i <= exits; i++ {
+		fmt.Fprintf(&b, "_ogo_exit%d:\n", i)
+	}
+	if void {
+		b.WriteString("\treturn;\n")
+	} else {
+		b.WriteString("\treturn _ogo_rv;\n")
+	}
+	return []byte(b.String())
+}
+
+// protoResult is the result type of a C prototype, "void" for none, and "" of a
+// prototype it cannot read.
+func protoResult(proto string) string {
+	i := strings.Index(proto, "(")
+	if i < 0 {
+		return ""
+	}
+	head := strings.TrimPrefix(strings.TrimSpace(proto[:i]), "static ")
+	k := strings.LastIndexAny(head, " *")
+	if k < 0 {
+		return ""
+	}
+	return strings.TrimSpace(head[:k+1])
+}
+
 // protoScalar reports whether a C prototype is of scalars and nothing else: its
 // result one or none, every parameter one, a pointer among them, and no parameter
 // the pointer an array, a struct holding one or a result is lowered to
@@ -21971,12 +22119,7 @@ func protoScalar(proto string) bool {
 	if i < 0 || j < i {
 		return false
 	}
-	head := strings.TrimPrefix(strings.TrimSpace(proto[:i]), "static ")
-	k := strings.LastIndexAny(head, " *")
-	if k < 0 {
-		return false
-	}
-	if result := strings.TrimSpace(head[:k+1]); result != "void" && !isScalarCType(result) {
+	if result := protoResult(proto); result != "void" && !isScalarCType(result) {
 		return false
 	}
 	params := strings.TrimSpace(proto[i+1 : j])

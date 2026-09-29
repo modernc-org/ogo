@@ -43322,6 +43322,197 @@ func main() {
 		want:   "2 false\npanic: nil pointer dereference",
 		panics: true,
 	},
+	{
+		// A marked function of three returns or more is written to leave through
+		// one (singleExit), the backend inlining no function that jumps to its end
+		// from two places. The rewriting is of the C and the same on the host,
+		// which is what holds its meaning here; that the copies are right where
+		// they land is the board's to say. Each shape a return stands in: a value
+		// of every kind of scalar, no value, in a loop, in a switch, a call with
+		// an effect, which runs once and only where its return is taken.
+		name: "a small function of several returns leaves through one",
+		src: `type machine struct {
+	psw uint16
+	r   [8]uint16
+}
+
+var (
+	m     machine
+	other machine
+	calls int
+)
+
+func note(k int) int {
+	calls = calls*10 + k
+	return k
+}
+
+func nz(v, sign uint16) uint16 {
+	if v == 0 {
+		return 4
+	}
+	if v&sign != 0 {
+		return 8
+	}
+	return 0
+}
+
+func clamp(v, lo, hi int) int {
+	if v < lo {
+		return lo
+	}
+	if v > hi {
+		return hi
+	}
+	return v
+}
+
+func (m *machine) load(r int) uint16 {
+	if r == 7 {
+		return m.r[7] + 2
+	}
+	if r == 6 {
+		return m.r[6] &^ 1
+	}
+	return m.r[r]
+}
+
+func (m *machine) flags(v uint16) {
+	if v == 0 {
+		m.psw |= 4
+		return
+	}
+	if v > 99 {
+		return
+	}
+	m.psw &^= 12
+}
+
+func pick(k int) *machine {
+	if k == 1 {
+		return &m
+	}
+	if k == 2 {
+		return &other
+	}
+	return nil
+}
+
+func find(v uint16) int {
+	for i := 0; i < 8; i++ {
+		if m.r[i] == v {
+			return i
+		}
+		if m.r[i] > 900 {
+			return -2
+		}
+	}
+	return -1
+}
+
+func kind(k int) int {
+	switch {
+	case k < 0:
+		return -1
+	case k == 0:
+		return 0
+	}
+	return 1
+}
+
+func named(k int) (r int) {
+	r = k * 2
+	if k < 0 {
+		return
+	}
+	if k > 9 {
+		return 9
+	}
+	r++
+	return
+}
+
+func first(a, b int) int {
+	if a > 0 {
+		return note(a)
+	}
+	if b > 0 {
+		return note(b) + note(9)
+	}
+	return note(0)
+}
+
+func ratio(a, b float32) float32 {
+	if b == 0 {
+		return 0
+	}
+	if a < 0 {
+		return -a / b
+	}
+	return a / b
+}
+
+func sure(k int) bool {
+	if k < 0 {
+		return false
+	}
+	if k > 100 {
+		return false
+	}
+	return k&1 == 0
+}
+
+func main() {
+	for i := 0; i < 8; i++ {
+		m.r[i] = uint16(i * 100)
+		other.r[i] = uint16(i)
+	}
+	println(nz(0, 0x80), nz(0x80, 0x80), nz(1, 0x80), nz(0xff, 0x80))
+	println(clamp(-5, 0, 9), clamp(5, 0, 9), clamp(50, 0, 9), clamp(clamp(50, 0, 20), 3, 15))
+	println(m.load(7), m.load(6), m.load(1), other.load(7), pick(2).load(6), pick(1).load(5))
+	m.flags(0)
+	println(m.psw)
+	m.flags(100)
+	println(m.psw)
+	m.flags(5)
+	println(m.psw)
+	println(pick(1) == &m, pick(2) == &other, pick(3) == nil)
+	println(find(300), find(7), find(950), find(0))
+	println(kind(-3), kind(0), kind(8))
+	println(named(-2), named(12), named(3))
+	println(first(1, 2), first(0, 2), first(0, 0), calls)
+	println(first(note(3), note(4))+first(0, note(5)), calls)
+	println(int(ratio(1, 0)), int(ratio(-8, 2)), int(ratio(9, 3)))
+	println(sure(-1), sure(200), sure(4), sure(5))
+
+	// An inlined function in a condition and in a loop's clauses.
+	n := 0
+	for i := clamp(-1, 0, 9); sure(i) || i < clamp(99, 0, 5); i += kind(i) + 1 {
+		if nz(uint16(i), 1) == 8 {
+			n += 10
+		}
+		n++
+	}
+	println(n)
+}
+`,
+		want: `4 8 0 8
+0 5 9 15
+702 600 100 9 6 500
+4
+4
+0
+true true true
+3 -1 -1 0
+-1 0 1
+-4 9 7
+1 11 0 1290
+17 1290343559
+0 4 3
+false false true false
+23
+`,
+	},
 }
 
 // TestEmitCRun compiles emitted C with a host compiler and runs it, checking what

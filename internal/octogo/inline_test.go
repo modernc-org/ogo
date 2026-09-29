@@ -324,3 +324,167 @@ func main() { println(readWord(2)) }
 		t.Errorf("the mark is used ahead of its definition")
 	}
 }
+
+// TestSingleExit holds the lowering of a marked function's returns (singleExit):
+// three returns or more become one, reached by a label for each, and everything
+// else is the body it was.
+func TestSingleExit(t *testing.T) {
+	for _, test := range []struct {
+		name, result, body, want string
+	}{
+		{"three returns", "int", `	if (v < lo) {
+		return lo;
+	}
+	if (v > hi) {
+		return hi;
+	}
+	return v;
+`, `	int _ogo_rv = 0;
+	if (v < lo) {
+		{ _ogo_rv = lo; goto _ogo_exit1; }
+	}
+	if (v > hi) {
+		{ _ogo_rv = hi; goto _ogo_exit2; }
+	}
+	_ogo_rv = v;
+_ogo_exit1:
+_ogo_exit2:
+	return _ogo_rv;
+`},
+		{"no result", "void", `	if (v == 0) {
+		g |= 4;
+		return;
+	}
+	if (v < 0) {
+		g |= 8;
+		return;
+	}
+	g = 0;
+`, `	if (v == 0) {
+		g |= 4;
+		goto _ogo_exit1;
+	}
+	if (v < 0) {
+		g |= 8;
+		goto _ogo_exit2;
+	}
+	g = 0;
+_ogo_exit1:
+_ogo_exit2:
+	return;
+`},
+		{"the body ends in no return", "machine*", `	if (k == 1) {
+		return &a;
+	}
+	if (k == 2) {
+		return &b;
+	}
+	for (;;) {
+	}
+`, `	machine* _ogo_rv = 0;
+	if (k == 1) {
+		{ _ogo_rv = &a; goto _ogo_exit1; }
+	}
+	if (k == 2) {
+		{ _ogo_rv = &b; goto _ogo_exit2; }
+	}
+	for (;;) {
+	}
+_ogo_exit1:
+_ogo_exit2:
+	return _ogo_rv;
+`},
+		{"a return in a block that ends the body", "int", `	if (a) {
+		return 1;
+	}
+	{
+		return 2;
+	}
+`, `	int _ogo_rv = 0;
+	if (a) {
+		{ _ogo_rv = 1; goto _ogo_exit1; }
+	}
+	{
+		{ _ogo_rv = 2; goto _ogo_exit2; }
+	}
+_ogo_exit1:
+_ogo_exit2:
+	return _ogo_rv;
+`},
+		// What the backend inlines as it stands is left as it stands.
+		{"one return", "int", "\treturn v + 1;\n", ""},
+		{"one early return", "int", "\tif (v < 0) {\n\t\treturn -v;\n\t}\n\treturn v;\n", ""},
+		{"one early return and no result", "void", "\tif (on) {\n\t\tg |= 1;\n\t\treturn;\n\t}\n\tg &= ~1;\n", ""},
+		{"no return", "void", "\tg = 1;\n", ""},
+		// A return the rewriting would not find where it stands leaves the body.
+		{"a return that is not a line", "int", "\tif (a) { return 1; }\n\tif (b) {\n\t\treturn 2;\n\t}\n\tif (c) {\n\t\treturn 3;\n\t}\n\treturn 4;\n", ""},
+		{"a prototype nothing read", "", "\tif (a) {\n\t\treturn 1;\n\t}\n\tif (b) {\n\t\treturn 2;\n\t}\n\treturn 3;\n", ""},
+		// The word in a name is no return.
+		{"names", "int", "\tif (a) {\n\t\treturn returned;\n\t}\n\tif (b) {\n\t\treturn no_return;\n\t}\n\treturn 3;\n",
+			"\tint _ogo_rv = 0;\n\tif (a) {\n\t\t{ _ogo_rv = returned; goto _ogo_exit1; }\n\t}\n\tif (b) {\n\t\t{ _ogo_rv = no_return; goto _ogo_exit2; }\n\t}\n" +
+				"\t_ogo_rv = 3;\n_ogo_exit1:\n_ogo_exit2:\n\treturn _ogo_rv;\n"},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			want := test.want
+			if want == "" {
+				want = test.body
+			}
+			if got := string(singleExit([]byte(test.body), test.result)); got != want {
+				t.Errorf("got\n%s\nwant\n%s", got, want)
+			}
+		})
+	}
+}
+
+// TestEmitCSingleExit holds the lowering to the functions that are marked: one
+// that is not is the C it was, and so is every function where none is asked for.
+func TestEmitCSingleExit(t *testing.T) {
+	const src = `var g int
+
+func nz(v, sign uint16) uint16 {
+	if v == 0 {
+		return 4
+	}
+	if v&sign != 0 {
+		return 8
+	}
+	return 0
+}
+
+func large(v int) int {
+	g++
+	g++
+	if v == 0 {
+		return 4
+	}
+	if v < 0 {
+		return 8
+	}
+	return 0
+}
+
+func main() { println(nz(1, 2), large(3)) }
+`
+	body := func(c, name string) string {
+		i := strings.Index(c, " "+name+"(")
+		for k := 0; k < 1; k++ { // past the prototype, to the definition
+			i += strings.Index(c[i+1:], " "+name+"(") + 1
+		}
+		j := strings.Index(c[i:], "\n}\n")
+		if i < 0 || j < 0 {
+			t.Fatalf("no function %s in\n%s", name, c)
+		}
+		return c[i : i+j]
+	}
+	_, c := markedFuncs(t, src, Inline())
+	if nz := body(c, "nz"); strings.Count(nz, "return") != 1 || strings.Count(nz, "goto _ogo_exit") != 2 {
+		t.Errorf("nz is marked and leaves through more than one return:\n%s", nz)
+	}
+	if large := body(c, "large"); strings.Count(large, "return") != 3 || strings.Contains(large, "goto") {
+		t.Errorf("large is not marked, and its returns are not its own:\n%s", large)
+	}
+	_, c = markedFuncs(t, src)
+	if nz := body(c, "nz"); strings.Count(nz, "return") != 3 || strings.Contains(nz, "goto") {
+		t.Errorf("not asked to inline: the returns of nz are not its own:\n%s", nz)
+	}
+}

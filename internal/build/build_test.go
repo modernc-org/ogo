@@ -346,8 +346,9 @@ func buildProgram(t *testing.T, src string, flags ...string) (binary, listing []
 // its receiver took 211 clocks a call checked and 36 unchecked, a setter of an
 // array's element 229 and 25, and two accessors of a word 395 and 52 (p2-11's
 // OCTOGO.md). With the small functions marked for the backend they take 51, 67 and
-// 102. No board is asked: a function that is inlined everywhere is one the listing
-// has no call of, and no body.
+// 102, and a helper of three returns 29 for 83, written to leave through one
+// (singleExit). No board is asked: a function that is inlined everywhere is one
+// the listing has no call of, and no body.
 func TestBuildInlines(t *testing.T) {
 	const src = `type machine struct {
 	traps uint16
@@ -364,6 +365,16 @@ func readWord(a uint32) uint16 { return ram[a>>1] }
 
 func writeWord(a uint32, v uint16) { ram[a>>1] = v }
 
+func nz(v, sign uint16) uint16 {
+	if v == 0 {
+		return 4
+	}
+	if v&sign != 0 {
+		return 8
+	}
+	return 0
+}
+
 var m machine
 
 func main() {
@@ -375,12 +386,13 @@ func main() {
 		if m.aborted() {
 			n++
 		}
+		n += int(nz(uint16(i), 0x80))
 	}
 	println(n, m.r[3], ram[5])
 }
 `
 	calls := func(listing []byte) (n int) {
-		for _, fn := range []string{"machine_aborted", "machine_set", "readWord", "writeWord"} {
+		for _, fn := range []string{"machine_aborted", "machine_set", "readWord", "writeWord", "nz"} {
 			n += len(regexp.MustCompile(`(?m)^\s+call\w*\s+#_`+fn+`\s*$`).FindAll(listing, -1))
 		}
 		return n
@@ -392,16 +404,17 @@ func main() {
 	// The premise: what the backend does by itself is to call all four, or the
 	// test above holds nothing.
 	unmarked, listing := buildProgram(t, src, "--no-inline")
-	if n := calls(listing); n != 4 {
-		t.Errorf("--no-inline: %d calls, want 4: the backend inlines by itself what this test is about", n)
+	if n := calls(listing); n != 5 {
+		t.Errorf("--no-inline: %d calls, want 5: the backend inlines by itself what this test is about", n)
 	}
 	if bytes.Equal(marked, unmarked) {
 		t.Errorf("--no-inline builds the same binary")
 	}
-	// And without the checks it never needed the mark: the unchecked program is
-	// the one the backend inlined all along.
-	if _, listing = buildProgram(t, src, "--unchecked", "--no-inline"); calls(listing) != 0 {
-		t.Errorf("--unchecked --no-inline: %d calls, want none", calls(listing))
+	// And without the checks the accessors never needed the mark: the unchecked
+	// program is the one the backend inlined all along, but for the function of
+	// three returns, which it calls checked or not.
+	if _, listing = buildProgram(t, src, "--unchecked", "--no-inline"); calls(listing) != 1 {
+		t.Errorf("--unchecked --no-inline: %d calls, want that of nz alone", calls(listing))
 	}
 }
 
