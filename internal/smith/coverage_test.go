@@ -25,6 +25,11 @@ var generatedConstructs = []struct {
 	{"for loop", `\n\s*for \w+ < \d+ \{`}, // written `for (i < n)`, which ogo fmt prints as gofmt does
 	{"if statement", `\n\s*if `},
 	{"switch statement", `\n\s*switch `},
+	// A statement standing alone in a header, a call whose results nothing reads:
+	// the call counter is what says it ran once, and where.
+	{"if with a call for its init", `\n\s*if fn_\d+\(.*\); `},
+	{"switch with a call for its init", `\n\s*switch fn_\d+\(.*\); `},
+	{"for with a call for its init and its post", `\n\s*for fn_\d+\(.*\); \w+ < \d+; fn_\d+\(.*\) \{`},
 	{"switch skipped case", `\n\s*case -?\d+:\n\s*case `},
 	{"switch multi-value case", `\n\s*case -?\d+, -?\d+:`},
 	{"switch default", `\n\s*default:`},

@@ -641,6 +641,31 @@ func (f *Fuzzer) funcs64() []*FuncDef {
 	return out
 }
 
+// genHeaderCall generates, one time in four, a call standing alone for a header --
+// an if's init, a switch's, a for's init or its post -- of a function of one result
+// or of two, whose results nothing reads. The statement is the simple statement Go
+// takes ahead of a header's ";" beside a declaration and an assignment; the call
+// counter is what says it ran, once, and where: an init ahead of the condition, a
+// post after the body. always is for the second of a pair, a for's post, which is
+// written where its init is.
+func (f *Fuzzer) genHeaderCall(vm Machine, mem Memory, always bool) Node {
+	if !always && f.Rand.Float32() >= 0.25 {
+		return nil
+	}
+	fns := append(f.funcsWithResults(1), f.funcsWithResults(2)...)
+	if len(fns) == 0 {
+		return nil
+	}
+	fn := fns[f.Rand.Intn(len(fns))]
+	var args []Node
+	for range fn.Params {
+		node, _, _ := f.genExpression(BasicType{Kind: KindInt}, vm, mem, 1)
+		args = append(args, node)
+	}
+	f.noteCall(fn) // after its arguments, as it runs
+	return &CallNode{Fn: fn.Name, Args: args}
+}
+
 // genCall generates a call to an already-declared function, its arguments being
 // ordinary generated integer expressions. The VM re-evaluates the callee's body
 // against those argument values, so the oracle predicts the result of the compiled
@@ -1013,6 +1038,10 @@ func (f *Fuzzer) genForStmt(vm Machine, mem Memory) Node {
 		Expr: &IntLitNode{Value: "0"},
 	}
 
+	// 1a. A call standing alone as the init, one time in four, which runs once
+	// ahead of the first test.
+	initCall := f.genHeaderCall(vm, mem, false)
+
 	// 2. The Condition: i < 1
 	condNode := &BinaryExprNode{
 		Left:  &IdentNode{Name: loopVar},
@@ -1050,9 +1079,16 @@ func (f *Fuzzer) genForStmt(vm Machine, mem Memory) Node {
 	}
 	stmts = append(stmts, incNode)
 
-	// Pop the body scope, then the block scope that wraps the loop variable.
+	// Pop the body scope: the post statement is the loop's, and reads what the
+	// loop's scope holds as the body left it. It runs once, the body having run
+	// once.
 	mem.PopScope()
 	f.CurrentEnv = f.CurrentEnv.Parent
+	var postCall Node
+	if initCall != nil {
+		postCall = f.genHeaderCall(vm, mem, true)
+	}
+	// Then the block scope that wraps the loop variable.
 	mem.PopScope()
 	f.CurrentEnv = f.CurrentEnv.Parent
 
@@ -1062,6 +1098,8 @@ func (f *Fuzzer) genForStmt(vm Machine, mem Memory) Node {
 		Statements: []Node{
 			initNode,
 			&ForStmtNode{
+				Init: initCall,
+				Post: postCall,
 				Cond: condNode,
 				Body: &BlockNode{Statements: stmts},
 			},
@@ -1128,6 +1166,7 @@ func (f *Fuzzer) genBoolVarDecl(vm Machine, mem Memory) Node {
 }
 
 func (f *Fuzzer) genIfStmt(vm Machine, mem Memory) Node {
+	initCall := f.genHeaderCall(vm, mem, false) // ahead of the condition, as it runs
 	condNode, isTrue := f.genBoolExpr(vm, mem, 0)
 
 	// The condition is forced to true so the body always runs and the VM's state
@@ -1151,6 +1190,7 @@ func (f *Fuzzer) genIfStmt(vm Machine, mem Memory) Node {
 	f.CurrentEnv = f.CurrentEnv.Parent
 
 	return &IfStmtNode{
+		Init: initCall,
 		Cond: condNode,
 		Body: &BlockNode{Statements: stmts},
 	}
@@ -1168,6 +1208,7 @@ func (f *Fuzzer) genIfStmt(vm Machine, mem Memory) Node {
 // default-taken and the default-skipped paths are covered, and the matching case is
 // sometimes written with two values.
 func (f *Fuzzer) genSwitchStmt(vm Machine, mem Memory) Node {
+	initCall := f.genHeaderCall(vm, mem, false) // ahead of the tag, as it runs
 	tagNode, tagVal, _ := f.genExpression(BasicType{Kind: KindInt}, vm, mem, 0)
 	match := tagVal.Value().(int32)
 
@@ -1186,7 +1227,7 @@ func (f *Fuzzer) genSwitchStmt(vm Machine, mem Memory) Node {
 	f.CurrentEnv = f.CurrentEnv.Parent
 	body := &BlockNode{Statements: stmts}
 
-	n := &SwitchStmtNode{Tag: tagNode}
+	n := &SwitchStmtNode{Init: initCall, Tag: tagNode}
 	n.Clauses = append(n.Clauses, SwitchClause{Values: []int32{miss1}})
 	switch {
 	case f.Rand.Float32() < 0.34: // the body is the default clause
@@ -2922,6 +2963,7 @@ func (n *BuiltinCallNode) Write(w io.Writer, indent int) {
 }
 
 type IfStmtNode struct {
+	Init Node // a statement standing alone ahead of the condition, `if fn(x); c`, or nil
 	Cond Node
 	Body Node // Expected to be a BlockNode
 }
@@ -2929,6 +2971,10 @@ type IfStmtNode struct {
 func (n *IfStmtNode) Write(w io.Writer, indent int) {
 	writeIndent(w, indent)
 	fmt.Fprint(w, "if ")
+	if n.Init != nil {
+		n.Init.Write(w, 0)
+		fmt.Fprint(w, "; ")
+	}
 	n.Cond.Write(w, 0)
 	fmt.Fprint(w, " ")
 	n.Body.Write(w, indent)
@@ -2945,6 +2991,7 @@ type SwitchClause struct {
 // non-matching clauses come first, so a guard compared wrongly lands somewhere that
 // does nothing and the checksum comes out wrong, rather than in the body by luck.
 type SwitchStmtNode struct {
+	Init    Node // a statement standing alone ahead of the tag, `switch fn(x); t`, or nil
 	Tag     Node
 	Clauses []SwitchClause
 }
@@ -2952,6 +2999,10 @@ type SwitchStmtNode struct {
 func (n *SwitchStmtNode) Write(w io.Writer, indent int) {
 	writeIndent(w, indent)
 	fmt.Fprint(w, "switch ")
+	if n.Init != nil {
+		n.Init.Write(w, 0)
+		fmt.Fprint(w, "; ")
+	}
 	n.Tag.Write(w, 0)
 	fmt.Fprint(w, " {\n")
 	for _, c := range n.Clauses {
@@ -3033,15 +3084,26 @@ func (n *BlockNode) Write(w io.Writer, indent int) {
 }
 
 type ForStmtNode struct {
-	Cond Node
-	Body Node // Expected to be a BlockNode
+	// Init and Post are statements standing alone in the three-clause form, `for
+	// fn(x); c; fn(y)`, both or neither.
+	Init, Post Node
+	Cond       Node
+	Body       Node // Expected to be a BlockNode
 }
 
 func (n *ForStmtNode) Write(w io.Writer, indent int) {
 	writeIndent(w, indent)
 	fmt.Fprint(w, "for ")
+	if n.Init != nil {
+		n.Init.Write(w, 0)
+		fmt.Fprint(w, "; ")
+	}
 	if n.Cond != nil {
 		n.Cond.Write(w, 0)
+	}
+	if n.Post != nil {
+		fmt.Fprint(w, "; ")
+		n.Post.Write(w, 0)
 	}
 	fmt.Fprint(w, " ")
 	n.Body.Write(w, indent)
