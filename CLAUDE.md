@@ -589,6 +589,12 @@ still design-only.
   (`doc/float-literal-tie.c`); such a decimal is written in hex since
   (`nearFloat32Tie`). **A float literal the emitter writes is one the target reads
   exactly**: a hex one always, a decimal only away from a tie.
+  **A call stands in a header** (2026-09-29): one time in four `genHeaderCall`
+  writes one as the init of an if, of a switch and of a for, and as the for's post,
+  its results unread, which the call counter accounts for; every seed is a new
+  program from that commit on. Swept with that generator the same day: seeds
+  1-2000 on the host shim, clean, 917 of them with such a call; and 25-200 on a
+  P2-EDGE, 168 passing, 8 outgrowing a cog and none failing, 75 of them with one.
 - **Fixed miscompile (found by the oracle):** a shadowing local whose initializer
   references the shadowed name — `var x = x + 5` with an outer `x` in scope — used
   to miscompile, because the emitter names locals verbatim so the C initializer read
@@ -1544,6 +1550,47 @@ it. The destructured forms, `n, err := r.Read(buf[:])`, are the same row and hel
 Known and not a fault: `return buf[0], fill(buf[:])` reads buf[0] before the call
 here and after it in gc, an order Go leaves unspecified.
 
+**A STATEMENT IN A HEADER IS THE STATEMENT** (2026-09-29). p2-11 wrote `if two();
+ok {` and met a syntax error, which specs.go had on record: "Go also admits a send
+or a call standing alone there; those are not provided". Status, not design. The
+row is Go's SIMPLE STATEMENT -- an expression standing alone (a call, a receive), a
+send, a step, nothing at all -- in every place a header takes one: an if's init and
+an else-if's, a switch's, a for's init and its post. Probed before a line was
+written, it held a SILENT fault older than the gap: the for TOOK a call for its
+init and lost the loop. Its second ";" was read as its first is, in the checker and
+in the emitter alike, which made an init of the condition it followed and a loop
+with none of the loop: `for one(); n < 2; n++` was C's `for (n < 2; ; n++)`, built
+for the target without a word, never calling one and never ending. The host's
+compiler refused it, a statement with no effect, so no run case could hold the shape
+and none had been tried on the board. **A form the host's compiler refuses is a form
+nothing tests, and is run on the board by hand.**
+The grammar reads a header as an expression first and decides by what follows, so
+a statement standing there is not in the tree as the statement it is. Rather than a
+rule for it in every pass, **the statement is put back once** (headerStmt,
+headerstmt.go): an AssignHead and its Postfix made of the header's own tokens, built
+once for a header and kept, since what the checker records of its parts by their
+place in the tree is what the emitter looks up there. The checker hands it to
+checkStatement and the emitter to emitStatement, in the block the header opens, and
+a for's post that is more than one expression goes to the end of the body behind the
+label a `continue` jumps to, as a post that needs a temporary does. So a call's
+several results are discarded, a send is asked what a send is asked, and `x + 1` is
+"evaluated but not used", with no rule written for any of it -- the for's post had
+asked nothing of an expression but its names, and `for ; n < 2; x + 1` built.
+The passes that read a body BEFORE it is emitted read shapes, and are the rows a new
+shape has to be swept across: the statement in each header position against what it
+does with a reference to the frame, direct and through a callee's summary
+(TestEmitCHeaderStmtEscape). One hole, where it was looked for: a call is found in
+the expression a header begins with, by every walker of expressions, and a SEND is
+not an expression -- a callee sending its parameter from an if's init was
+summarised as keeping nothing, and a local's slice went to another cog through it.
+`eachStmt`, the walker the summaries share, hands out a header's statements and a
+parenthesised one as the statements they are, and the binding scan reads them so.
+The range copy, the init order, termination and scopes held. A statement in
+PARENTHESES, `(f())` and `(<-ch)`, was the neighbour the rejects batch found:
+refused on a line of its own as in a header, where Go allows both (parenStmt). 212
+programs of the batch agree with Go. And the fuzzer writes a call in a header since,
+which is what keeps the row where no probe reaches (see the smith notes above).
+
 **THE FORMATTER'S ORACLE IS GOFMT ON A PROGRAM'S OWN SOURCES** (2026-09-28). p2-11
 reported one shape, `b < c` on the line after `return a < b &&` coming back under
 the `return`. It was a row -- every continuation line but a call's arguments and a
@@ -1669,10 +1716,9 @@ any depth since 2026-09-25, `getp().in.nosuch` and `(&gp).in.nosuch` being "type
 has no field nosuch": walkSteps' missingAt); `[]byte(s)`
 and `[]rune(s)` of a string VARIABLE (a copy of a length known at run time; a
 constant's converts since
-2026-09-23, constBytesConv); an if or a switch init that is a send or a call
-standing alone (a step -- an increment, a decrement, an operator assignment -- works
-since 2026-09-25; a for init from one call's several results works since
-2026-09-23, emitForInitMulti); a deferred
+2026-09-23, constBytesConv); a type switch behind an init statement, `switch
+f(); x := v.(type)` (every other header takes every simple statement since
+2026-09-29, see A STATEMENT IN A HEADER IS THE STATEMENT); a deferred
 or started call through a function field of ANOTHER package's variable, `defer
 lib.B.F(1)` ("only <pkg>.<Func>(args) ...") and `go lib.C.F(2)` ("unsupported
 receiver in a go statement"), where the same through this package's works since
@@ -1748,7 +1794,9 @@ these; reading the grammar did not. Two more on 2026-09-24, the same way: a late
 target of a list took no call, `gp.y, getp().x = 7, 8` (LhsItem), and a select
 clause required a semicolon before its closing brace, `select { case v = <-ch: a = 1
 }`, which a switch clause and a block did not (CommClause) -- the three statement
-lists are meant to read alike, and one did not. **Check Factor and HeaderFactor
+lists are meant to read alike, and one did not. And one on 2026-09-29, from a
+program of size: a header took no statement standing alone, `if two(); ok {`, which
+specs.go had recorded as "not provided". **Check Factor and HeaderFactor
 against each other when either changes**; they are meant to differ by one production
 (HeaderFactor has no literal after a name, which is what keeps `if x == T {` a block).
 (`ogo fmt` kept a statement's body on the line it was written on, `if c { v = 1 }`,

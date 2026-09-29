@@ -16,6 +16,49 @@ same area is a new entry under **Unreleased**, not an edit to the old one. Amend
 shipped section tells a reader on that version that they have behaviour they do not.
 `git show vX.Y.Z:CHANGELOG.md` is the check.
 
+## Unreleased
+
+### Language
+
+- **A statement may stand alone in a header.** Go takes any simple statement
+  ahead of a header's ";": beside the declaration and the assignment, an expression
+  standing alone -- a call or a receive --, a send and a step. `if two(); ok {` was
+  a syntax error, and so were a receive and a send there and in a `for`; `switch
+  two(); x {` was refused as "a switch init statement must be a short variable
+  declaration, an assignment, an increment or a decrement"; a step, `for n++; n <
+  9; n++`, was a syntax error as a `for`'s init; and a `for`'s post took no call of
+  several results and no send. Each is the statement it would be on a line of its
+  own: a call's results are discarded, an else-if's init runs only when the tests
+  before it failed, a post runs on every `continue`. An init may be left out with
+  its ";" standing, `if ; ok {` and `switch ; x {`, as Go allows. Found by p2-11.
+- **A call and a receive may be written in parentheses as statements**, `(f())`
+  and `(<-ch)`, as Go allows. Both were "evaluated but not used".
+
+### Fixed
+
+- **A `for` with a call for its init kept its condition.** `for one(); n < 2; n++`
+  read its second ";" as it reads its first, which made an init of the condition it
+  followed and a loop with none of the loop: built for the target without a word,
+  it never called `one` and never ended. The host's compiler refused the C, a
+  statement with no effect, which is how no test had seen it; and whatever followed
+  such a loop was refused as "unreachable code".
+- **`ogo fmt` drops the ";" of an init that is none**, `if ; ok {` being `if ok {`,
+  as gofmt does.
+
+### Toolchain
+
+- **`ogo smith` writes a call in a header**, one time in four: as the init of an
+  `if`, of a `switch` and of a `for`, and as the `for`'s post, of a function of one
+  result or of two. The call counter says that it ran once, and where. Every seed
+  is a new program from this release on; seeds 1-2000 pass on the host, and of
+  seeds 25-200 on a P2-EDGE 168 pass and 8 outgrow a cog.
+
+### Behaviour changes
+
+- **A `for`'s post that is a value nothing reads is refused**, `for ; n < 2; x + 1`,
+  as Go refuses it, "x + 1 evaluated but not used". v0.44.0 built it without a
+  word.
+
 ## v0.44.0
 
 ### Language
