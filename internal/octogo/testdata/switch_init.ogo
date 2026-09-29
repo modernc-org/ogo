@@ -62,9 +62,11 @@ func outOfScope() {
 	println(v)
 }
 
-func notAShortDeclaration() {
+// An init that is an expression standing alone is a statement, and a value
+// nothing reads is none: a call is one (header_statements.ogo).
+func notAStatement() {
 	x := 1
-	// ERROR "a switch init statement must be a short variable declaration"
+	// ERROR "x evaluated but not used"
 	switch x; f() {
 	case 2:
 		println(x)

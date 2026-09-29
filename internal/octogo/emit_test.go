@@ -17589,3 +17589,95 @@ var fc = countv
 		})
 	}
 }
+
+// TestEmitCHeaderStmtEscape crosses the places a statement stands in -- a line of
+// its own, parentheses, an if's init and an else-if's, a switch's, a for's init and
+// its post -- with what the statement does with a reference to the frame: a call
+// of a function keeping its parameter, a method keeping its receiver, a send. Each
+// is written where the reference is made (direct) and in a callee handed it, whose
+// summary has to say so (callee).
+//
+// A statement in a header is the statement it would be on a line of its own, and
+// every pass is handed that one (headerStmt), so the rows are alike by
+// construction -- but for the passes that read a body BEFORE it is emitted, by
+// shape. One of them read a header's statement as the expression it begins with,
+// in which a call is found and a send is not: a callee sending its parameter from
+// an if's init kept nothing, and a local's slice went to another cog through it.
+func TestEmitCHeaderStmtEscape(t *testing.T) {
+	const decls = `var gs []int
+
+var cs chan []int
+
+type C struct{ n int }
+
+var gc *C
+
+func (c *C) save() { gc = c }
+
+func (c *C) get() int { return c.n }
+
+func keep(v []int) { gs = v }
+
+func look(v []int) int { return len(v) }
+
+`
+	forms := []struct{ name, text string }{
+		{"a statement", "\t%s\n"},
+		{"parentheses", "\t(%s)\n"},
+		{"an if", "\tif %s; ok {\n\t}\n"},
+		{"an else-if", "\tif !ok {\n\t} else if %s; ok {\n\t}\n"},
+		{"a switch", "\tswitch %s; ok {\n\tcase true:\n\t}\n"},
+		{"a for's init", "\tfor %s; !ok; {\n\t}\n"},
+		{"a for's post", "\tfor n := 0; n < 1; %s {\n\t\tn++\n\t}\n"},
+	}
+	for _, test := range []struct {
+		name         string
+		direct       string // the statement where the reference is made
+		callee, call string // the statement in a callee, its parameter and the call
+		param        string
+		want         string // "" means the program must be accepted
+		wantCallee   string
+	}{
+		{"a keeper", "keep(a[:])", "keep(v)", "f(a[:])", "v []int",
+			"cannot pass a slice backed by local a to keep", "cannot pass a slice backed by local a to f"},
+		{"a send", "cs <- a[:]", "cs <- v", "f(a[:])", "v []int",
+			"local a", "cannot pass a slice backed by local a to f"},
+		{"a method keeping its receiver", "lc.save()", "c.save()", "f(&lc)", "c *C",
+			"lc", "to f"},
+		{"a reader", "look(a[:])", "look(v)", "f(a[:])", "v []int", "", ""},
+		{"a method reading its receiver", "lc.get()", "c.get()", "f(&lc)", "c *C", "", ""},
+	} {
+		for _, form := range forms {
+			if form.name == "parentheses" && strings.Contains(test.direct, "<-") {
+				continue // a send is no expression, and takes no parentheses
+			}
+			check := func(t *testing.T, src, want string) {
+				t.Helper()
+				fsys := fstest.MapFS{"main.ogo": &fstest.MapFile{Data: []byte(src)}}
+				pkg, err := Build(-1, []string{"main.ogo"}, fsys)
+				if err != nil {
+					t.Fatalf("Build: %v\n%s", err, src)
+				}
+				err = EmitC(pkg, io.Discard, Checked())
+				switch {
+				case want == "":
+					if err != nil {
+						t.Errorf("EmitC: unexpected refusal: %v\n%s", err, src)
+					}
+				case err == nil:
+					t.Errorf("EmitC: accepted; want %q\n%s", want, src)
+				case !strings.Contains(err.Error(), want):
+					t.Errorf("EmitC error %q does not mention %q", err, want)
+				}
+			}
+			t.Run(test.name+"/"+form.name+"/direct", func(t *testing.T) {
+				check(t, decls+"func main() {\n\tok := true\n\tvar a [4]int\n\tvar lc C\n\t_, _, _ = ok, a, lc\n"+
+					strings.Replace(form.text, "%s", test.direct, 1)+"}\n", test.want)
+			})
+			t.Run(test.name+"/"+form.name+"/callee", func(t *testing.T) {
+				check(t, decls+"func f("+test.param+") {\n\tok := true\n\t_ = ok\n"+strings.Replace(form.text, "%s", test.callee, 1)+
+					"}\n\nfunc main() {\n\tvar a [4]int\n\tvar lc C\n\t_, _ = a, lc\n\t"+test.call+"\n}\n", test.wantCallee)
+			})
+		}
+	}
+}

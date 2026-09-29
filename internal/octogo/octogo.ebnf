@@ -152,6 +152,8 @@ ForHeader  = ";" [ HeaderExpression ] ";" [ ForPost ]
 	| "range" HeaderExpression
 	| HeaderExpression [ ForRest ] .
 ForRest    = ";" [ HeaderExpression ] ";" [ ForPost ]
+	| ( "++" | "--" | AssignOp HeaderExpression | "<-" HeaderExpression )
+		";" [ HeaderExpression ] ";" [ ForPost ]
 	| ( "=" | ":=" ) ForAssignRest
 	| "," HeaderExpression { "," HeaderExpression } ( "=" | ":=" ) ( "range" HeaderExpression
 		| HeaderExpression { "," HeaderExpression } ";" [ HeaderExpression ] ";" [ ForPost ] ) .
@@ -159,13 +161,16 @@ ForAssignRest = "range" HeaderExpression
 	| HeaderExpression ";" [ HeaderExpression ] ";" [ ForPost ] .
 ForPost    = HeaderExpression { "," HeaderExpression }
 	[ ( "=" | ":=" ) HeaderExpression { "," HeaderExpression } | "++" | "--"
-	| AssignOp HeaderExpression ] .
-IfStmt = "if" HeaderExpression [ IfInit ] Block [ "else" ( IfStmt | Block ) ] .
-IfInit = ( { "," LhsItem } ( ":=" | "=" ) HeaderExpression { "," HeaderExpression }
-	| "++" | "--" | AssignOp HeaderExpression ) ";" HeaderExpression .
+	| AssignOp HeaderExpression | "<-" HeaderExpression ] .
+IfStmt = "if" ( ";" HeaderExpression | HeaderExpression [ IfInit ] )
+	Block [ "else" ( IfStmt | Block ) ] .
+IfInit = [ { "," LhsItem } ( ":=" | "=" ) HeaderExpression { "," HeaderExpression }
+	| "++" | "--" | AssignOp HeaderExpression | "<-" HeaderExpression ]
+	";" HeaderExpression .
 SwitchStmt = "switch" [ SwitchGuard ] "{" { CaseClause } "}" .
 SwitchGuard = HeaderExpression [ { "," LhsItem } ( ":=" | "=" ) HeaderExpression { "," HeaderExpression }
-	| "++" | "--" | AssignOp HeaderExpression ] [ SwitchTag ] .
+	| "++" | "--" | AssignOp HeaderExpression | "<-" HeaderExpression ] [ SwitchTag ]
+	| SwitchTag .
 SwitchTag  = ";" [ HeaderExpression ] .
 CaseClause = CaseHead ":" { Statement ";" } [ Statement ] .
 CaseHead   = "case" ExpressionList | "default" .

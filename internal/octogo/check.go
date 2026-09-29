@@ -249,6 +249,7 @@ type File struct {
 	wholeConsts       map[*int32]Kind      // the constants written as FLOATS that stand where an integer type is wanted, `var u uint32 = 3e9`, by their place in the AST, and that type (see checkValueOverflow); read by the emitter
 	wholeConstToks    map[int32]Kind       // the same for a constant that is one token, by the token
 	lenConsts         map[*int32]int64     // the len and cap calls Go makes constants, by their parentheses' place in the AST, and their values (see constLenCap); read by the emitter
+	headerStmts       map[*int32]Node      // the statements standing in headers, `if two(); ok`, as the statements they are, by the place of the header's expression in the AST (see headerStmt); read by the emitter
 	parser            Parser
 	tld               *Scope // tld.Nodes are later moved into (*Package).Scope. Kind: PackageScope, Parent: .Scope.
 }
@@ -1412,6 +1413,12 @@ type forInfo struct {
 	hasCond  bool
 	postNode Node
 	hasPost  bool
+
+	// An init that is a statement standing alone -- a call, a receive, a send, a
+	// step -- as the expression it begins with and what follows that (headerStmt).
+	stmtHead Node
+	stmtTail []Node
+	hasStmt  bool
 }
 
 // parseForInfo decomposes a ForHeader node, mirroring the emitter's parseForHeader.
@@ -1519,6 +1526,26 @@ func (f *File) parseForRestInfo(n Node, fi *forInfo) {
 				fi.valVar, fi.hasVal = c, true
 			case c.sym == Expression && seenRange:
 				fi.rangeExpr = c
+			}
+		}
+		return
+	}
+	if kind, tail := f.headerTail(kids); kind != headerNone && fi.hasCond {
+		// `for one(); cond; post`, `for ch <- v; ...` and `for n++; ...`: a statement
+		// standing alone as the init. The condition is what stands between the two
+		// semicolons, and the SECOND one was read as the first is: it made an init
+		// of the condition it followed, and a loop with no condition of the loop.
+		fi.stmtHead, fi.stmtTail, fi.hasStmt = fi.cond, tail, true
+		fi.cond, fi.hasCond = Node{}, false
+		semis := 0
+		for _, c := range kids[len(tail):] {
+			switch {
+			case c.sym == 0 && f.ch(c.tok) == SEMICOLON:
+				semis++
+			case c.sym == Expression && semis == 1:
+				fi.cond, fi.hasCond = c, true
+			case c.sym == ForPost:
+				fi.postNode, fi.hasPost = c, true
 			}
 		}
 		return
@@ -1954,6 +1981,10 @@ func (f *File) checkContinue(continueTok Token, label Token, hasLabel bool) {
 // statements (the launched call's callee and arguments), and nested blocks (if/for
 // bodies, in a child scope). Other forms are not yet checked.
 func (f *File) checkStatement(s *Scope, results []retResult, stmt Node) {
+	// `(two())` and `(<-ch)`: the statement in the parentheses.
+	if st, ok := f.parenStmt(stmt); ok {
+		stmt = st
+	}
 	var head Node
 	isReturn := false
 	isGo := false
@@ -2370,7 +2401,17 @@ func (f *File) checkIf(s *Scope, results []retResult, n Node) {
 			elseIf, hasElseIf = c, true
 		}
 	}
-	if op, opSrc, value, hasValue, c, isStep := f.stepInitParts(init.ast); hasInit && isStep {
+	if kind, tail := f.headerTail(slices.Collect(it(init.ast))); hasInit && (kind == headerExpr || kind == headerSend) {
+		// `if two(); ok` and `if ch <- v; ok`: a statement standing alone, which
+		// declares nothing, and the condition behind its ";".
+		s = s.child()
+		f.checkHeaderStmt(s, results, lhs, tail)
+		for c := range it(init.ast) {
+			if c.sym == Expression {
+				cond = c
+			}
+		}
+	} else if op, opSrc, value, hasValue, c, isStep := f.stepInitParts(init.ast); hasInit && isStep {
 		// `if n++; n > limit`: a step of the if's own expression, a statement Go
 		// allows as the init as it allows an assignment.
 		s = s.child()
@@ -2936,6 +2977,9 @@ func (f *File) checkForHeader(s *Scope, results []retResult, kw string, n Node) 
 		f.checkRange(s, kw, fi)
 		return
 	}
+	if fi.hasStmt {
+		f.checkHeaderStmt(s, results, fi.stmtHead, fi.stmtTail)
+	}
 	if fi.hasInit {
 		// A multi-name init declares every name from its own value, `for i, j := 0, 9`.
 		// The values are resolved BEFORE any name is declared, so an initializer
@@ -2984,8 +3028,21 @@ func (f *File) checkForHeader(s *Scope, results []retResult, kw string, n Node) 
 		f.checkCondition(s, kw, fi.cond)
 	}
 	if fi.hasPost {
-		f.checkForPost(s, fi.postNode)
+		f.checkForPost(s, results, fi.postNode)
 	}
+}
+
+// checkHeaderStmt checks the statement a header's expression and what follows it
+// are -- `two()`, `<-ch`, `ch <- v`, `n++` -- as the statement is checked on a line
+// of its own.
+func (f *File) checkHeaderStmt(s *Scope, results []retResult, head Node, tail []Node) {
+	stmt, ok := f.headerStmt(head, tail)
+	if !ok {
+		f.checkNames(s, head)
+		f.errHeaderStmt(head)
+		return
+	}
+	f.checkStatement(s, results, stmt)
 }
 
 // typeFromResult types a variable declared from one of a call's several results,
@@ -3908,7 +3965,19 @@ func (f *File) declareLocal(s *Scope, vd *VarDeclaration) {
 }
 
 // checkForPost checks a post statement's names.
-func (f *File) checkForPost(s *Scope, n Node) {
+func (f *File) checkForPost(s *Scope, results []retResult, n Node) {
+	// `for ...; ...; tick()` and `for ...; ...; ch <- v`: a statement standing alone,
+	// which nothing asked anything of but its names -- `x + 1` was a post.
+	if kids := slices.Collect(it(n.ast)); len(kids) != 0 && kids[0].sym == Expression {
+		switch kind, tail := f.headerTail(kids[1:]); {
+		case len(kids) == 1:
+			f.checkHeaderStmt(s, results, kids[0], nil)
+			return
+		case kind == headerSend:
+			f.checkHeaderStmt(s, results, kids[0], tail)
+			return
+		}
+	}
 	var lhs, rhs []Node
 	var op Symbol
 	var opSrc string
@@ -5157,7 +5226,7 @@ func (f *File) checkSwitch(s *Scope, results []retResult, n Node) {
 				break
 			}
 			typeOnExpr = f.typeSwitchShaped(c)
-			guardKind, guardOK = f.checkSwitchGuard(s, ss, c)
+			guardKind, guardOK = f.checkSwitchGuard(s, ss, results, c)
 			if g, ok := f.switchGuardParts(c.ast); ok {
 				tag, hasTag = g.tag, g.hasTag
 			}
@@ -5637,15 +5706,25 @@ func (f *File) fallthroughToken(stmt Node) (Token, bool) {
 // is not in scope until the init statement is over, so "switch v := v; v" reads
 // the outer v, as Go does. The expression switched on is read in ss, since naming
 // what the init just declared is the whole point of the form.
-func (f *File) checkSwitchGuard(s, ss *Scope, n Node) (Kind, bool) {
+func (f *File) checkSwitchGuard(s, ss *Scope, results []retResult, n Node) (Kind, bool) {
 	g, ok := f.switchGuardParts(n.ast)
 	if !ok {
 		f.err(f.tok(n.Pos()).Position(), "malformed switch header")
 		return 0, false
 	}
-	if (g.assign || g.step != 0) && g.hasTag && f.typeSwitchShaped(Node{sym: SwitchGuard, ast: n.ast}) {
+	if (g.assign || g.step != 0 || g.hasStmt) && g.hasTag && f.typeSwitchShaped(Node{sym: SwitchGuard, ast: n.ast}) {
 		f.err(f.tok(n.Pos()).Position(), "a type switch with an init statement is not supported yet")
 		return 0, false
+	}
+	if g.hasStmt {
+		// `switch two(); x` and `switch ch <- v; x`: a statement standing alone,
+		// which Go allows as the init as it allows an assignment. Without the ";" a
+		// send would have to be the thing switched on, and a send is no value.
+		if !g.semi {
+			f.err(f.tok(n.Pos()).Position(), "a send is a statement and cannot be switched on: write \";\" and the expression to switch on after it")
+			return 0, false
+		}
+		f.checkHeaderStmt(s, results, g.stmtHead, g.stmtTail)
 	}
 	if g.step != 0 {
 		// `switch n++; n`: a step of the target, which Go allows as the init as it
@@ -5657,9 +5736,6 @@ func (f *File) checkSwitchGuard(s, ss *Scope, n Node) (Kind, bool) {
 			return 0, false
 		}
 		f.checkStepInit(s, g.name, g.step, g.opSrc, g.value, len(g.values) != 0)
-	} else if g.semi && !g.hasName && !g.assign {
-		f.err(f.tok(n.Pos()).Position(), "a switch init statement must be a short variable declaration, an assignment, an increment or a decrement")
-		return 0, false
 	}
 	if g.assign {
 		// `switch err = f(); {` and `switch a, b = x, y; a {`: an assignment, asked
@@ -5741,6 +5817,13 @@ type switchGuard struct {
 	// assignment), with opSrc its spelling; value is an operator assignment's.
 	step  Symbol
 	opSrc string
+
+	// An init that is a statement standing alone, `switch two(); x` or `switch ch
+	// <- v; x`, as the expression it begins with and what follows that
+	// (headerStmt).
+	stmtHead Node
+	stmtTail []Node
+	hasStmt  bool
 }
 
 // switchGuardParts decomposes a SwitchGuard node's children. ok is false for a
@@ -5750,6 +5833,23 @@ type switchGuard struct {
 func (f *File) switchGuardParts(guard []int32) (g switchGuard, ok bool) {
 	var exprs []Node
 	hasDefine := false
+	if kids := slices.Collect(it(guard)); len(kids) >= 3 && kids[0].sym == Expression {
+		// `switch ch <- v; x`: a send, which only a ";" makes an init.
+		if kind, tail := f.headerTail(kids[1:]); kind == headerSend {
+			g.stmtHead, g.stmtTail, g.hasStmt = kids[0], tail, true
+			for _, c := range kids[3:] {
+				if c.sym == SwitchTag {
+					g.semi = true
+					for t := range it(c.ast) {
+						if t.sym == Expression {
+							g.tag, g.hasTag = t, true
+						}
+					}
+				}
+			}
+			return g, true
+		}
+	}
 	for c := range it(guard) {
 		switch c.sym {
 		case Expression:
@@ -5801,8 +5901,11 @@ func (f *File) switchGuardParts(guard []int32) (g switchGuard, ok bool) {
 		g.value, g.values = exprs[1], exprs[1:]
 	case !hasDefine && !g.semi && len(exprs) >= 1:
 		g.tag, g.hasTag = exprs[0], true
-	case !hasDefine && g.semi:
-		// An init statement that is not a short variable declaration.
+	case !hasDefine && g.semi && len(exprs) == 1:
+		// `switch two(); x`: an expression standing alone, a call or a receive.
+		g.stmtHead, g.hasStmt = exprs[0], true
+	case !hasDefine && g.semi && len(exprs) == 0:
+		// `switch ; x`: no init statement at all.
 	default:
 		return g, false
 	}

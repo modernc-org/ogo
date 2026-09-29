@@ -1,0 +1,134 @@
+// The init statement of an if, of a switch and of a for, and a for's post, are
+// simple statements: beside a declaration and an assignment, an expression standing
+// alone -- a call or a receive, which may be parenthesised --, a send and a step.
+// What stands there is asked what the statement on a line of its own is asked: a
+// value nothing reads is refused, and so is a send of the wrong type.
+
+type T struct{ x int }
+
+type D int
+
+var ch chan int
+
+var cs chan string
+
+var g T
+
+func f() int {
+	return 1
+}
+
+func two() (int, bool) {
+	return 1, true
+}
+
+func (t *T) m() int {
+	return t.x
+}
+
+func good(ok bool, n int) {
+	if f(); ok {
+	}
+	if two(); ok {
+	}
+	if g.m(); ok {
+	}
+	if (f()); ok {
+	}
+	if <-ch; ok {
+	}
+	if (<-ch); ok {
+	}
+	if cs <- "s"; ok {
+	}
+	if println(n); ok {
+	}
+	if func() {}(); ok {
+	}
+	if ; ok {
+	}
+	if !ok {
+	} else if f(); ok {
+	}
+	switch f(); n {
+	}
+	switch cs <- "s"; {
+	}
+	switch ; n {
+	}
+	for two(); n < 1; two() {
+		n++
+	}
+	for ch <- n; n < 1; ch <- n {
+		n++
+	}
+	for n++; n < 3; n-- {
+	}
+	for n *= 2; n < 3; <-ch {
+	}
+	(f())
+	(<-ch)
+}
+
+func bad(ok bool, n int) {
+	x := 1
+	p := &x
+	s := []int{1, 2}
+	// ERROR x \+ 1 evaluated but not used
+	if x + 1; ok {
+	}
+	// ERROR x evaluated but not used
+	if x; ok {
+	}
+	// ERROR 5 evaluated but not used
+	if 5; ok {
+	}
+	// ERROR len\(s\) \(value of type int\) is not used
+	if len(s); ok {
+	}
+	// ERROR f evaluated but not used
+	if f; ok {
+	}
+	// ERROR -x evaluated but not used
+	if -x; ok {
+	}
+	// ERROR \*p evaluated but not used
+	if *p; ok {
+	}
+	// ERROR D\(1\) \(value of type D\) is not used
+	if D(1); ok {
+	}
+	// ERROR g\.x evaluated but not used
+	if g.x; ok {
+	}
+	// ERROR s\[0\] evaluated but not used
+	if s[0]; ok {
+	}
+	// ERROR undefined: nosuch
+	if nosuch(); ok {
+	}
+	// ERROR cannot use "s" of type string as type int in send
+	if ch <- "s"; ok {
+	}
+	// ERROR cannot send to non-channel
+	if x <- 1; ok {
+	}
+	// ERROR too many arguments in call to f
+	if f(1); ok {
+	}
+	// ERROR x \+ 1 evaluated but not used
+	switch x + 1; n {
+	}
+	// ERROR a send is a statement and cannot be switched on
+	switch cs <- "s" {
+	}
+	// ERROR x \+ 1 evaluated but not used
+	for x + 1; n < 1; n++ {
+	}
+	// ERROR x \+ 1 evaluated but not used
+	for ; n < 1; x + 1 {
+		n++
+	}
+	// ERROR \(x\) evaluated but not used|x evaluated but not used
+	(x)
+}

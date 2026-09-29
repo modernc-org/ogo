@@ -12980,13 +12980,26 @@ type funcInfo struct {
 
 // eachStmt calls fn with the children of every Statement in ast, at any depth, so a
 // go statement or a send nested in a loop or a block is seen like a top-level one.
+//
+// A statement standing in a HEADER is one of them, `if cs <- v; ok` and `for
+// ...; ...; tick(v)`, as the statement it is (headerStmt), and so is one written in
+// parentheses, `(keep(v))`. The header's was read as the expression it begins
+// with, in which a call is found and a send is not: a callee sending its parameter
+// from an if's init was summarised as keeping nothing, and a local's slice went to
+// another cog through it.
 func (e *emitter) eachStmt(ast []int32, fn func(nodes []Node)) {
 	for n := range it(ast) {
 		if n.sym == 0 {
 			continue
 		}
 		if n.sym == Statement {
+			if st, ok := e.f.parenStmt(n); ok {
+				n = st
+			}
 			fn(slices.Collect(it(n.ast)))
+		}
+		for _, st := range e.f.headerStmtsIn(n) {
+			fn(slices.Collect(it(st.ast)))
 		}
 		e.eachStmt(n.ast, fn)
 	}
@@ -17466,6 +17479,10 @@ func (e *emitter) stmtKind(inner []int32) Symbol {
 }
 
 func (e *emitter) emitStatement(ast []int32) {
+	// `(two())` and `(<-ch)`: the statement in the parentheses.
+	if st, ok := e.f.parenStmt(Node{sym: Statement, ast: ast}); ok {
+		ast = st.ast
+	}
 	nodes := slices.Collect(it(ast))
 	if len(nodes) == 0 {
 		return // EmptyStatement
@@ -26062,6 +26079,12 @@ type forHeader struct {
 	postLHS []int32 // nil when there is no post statement
 	postOp  Symbol  // ASSIGN, DEFINE, INC, DEC, or a compound assignment operator's token
 	postRHS []int32
+	// An init and a post that are statements standing alone -- a call, a receive,
+	// a send, and for the init a step -- as the expression each begins with and
+	// what follows that (headerStmt). initLHS and postLHS are nil for them.
+	initStmt, postStmt       Node
+	initTail, postTail       []Node
+	hasInitStmt, hasPostStmt bool
 	// The list forms of the init and post, for the multiple-assignment shapes
 	// `for i, j := 0, 9; ...; i, j = i+1, j-1`. Each is filled for EVERY clause,
 	// one entry included, so a reader has one place to look; the singles above stay
@@ -26195,6 +26218,31 @@ func (e *emitter) parseForRest(n Node, h *forHeader) bool {
 		h.initLHS, h.initRHS = h.initLHSs[0], h.initRHSs[0]
 		return true
 	}
+	if kind, tail := e.f.headerTail(kids); kind != headerNone && h.cond != nil {
+		// `for one(); cond; post`, `for ch <- v; ...` and `for n++; ...`: a statement
+		// standing alone as the init. The condition is what stands between the two
+		// semicolons, and the SECOND was read as the first is: it made an init of
+		// the condition it followed and a loop with none of the loop, so `for one();
+		// n < 2; n++` never made the call and never ended, built for the target
+		// without a word.
+		h.hasClause = true
+		h.initStmt, h.initTail, h.hasInitStmt = Node{sym: Expression, ast: h.cond}, tail, true
+		h.cond = nil
+		semis := 0
+		for _, c := range kids[len(tail):] {
+			switch {
+			case c.sym == 0 && e.f.ch(c.tok) == SEMICOLON:
+				semis++
+			case c.sym == Expression && semis == 1:
+				h.cond = c.ast
+			case c.sym == ForPost:
+				if !e.parseForPost(c, h) {
+					return false
+				}
+			}
+		}
+		return true
+	}
 	// Otherwise a leading semicolon or an assignment operator, then ForAssignRest.
 	for _, c := range kids {
 		switch {
@@ -26258,6 +26306,18 @@ func (e *emitter) parseForAssignRest(n Node, h *forHeader) bool {
 
 // parseForPost reads a ForPost node: `i++`, `i--`, or an assignment.
 func (e *emitter) parseForPost(n Node, h *forHeader) bool {
+	// `for ...; ...; tick()` and `for ...; ...; ch <- v`: a statement standing
+	// alone.
+	if kids := slices.Collect(it(n.ast)); len(kids) != 0 && kids[0].sym == Expression {
+		switch kind, tail := e.f.headerTail(kids[1:]); {
+		case len(kids) == 1:
+			h.postStmt, h.hasPostStmt = kids[0], true
+			return true
+		case kind == headerSend:
+			h.postStmt, h.postTail, h.hasPostStmt = kids[0], tail, true
+			return true
+		}
+	}
 	seenOp := false
 	for c := range it(n.ast) {
 		switch {
@@ -26580,6 +26640,14 @@ func (e *emitter) emitFor(nodes []Node) {
 	// was opened, so it is closed after the body.
 	blockInit := false
 	initName, initCType, initVal := "", "", ""
+	if h.hasInitStmt {
+		// `for one(); ...`, `for ch <- v; ...` and `for n++; ...`: a statement
+		// standing alone, which runs once and declares nothing, ahead of the loop as
+		// the statement it is.
+		if !e.emitHeaderStmt(h.initStmt, h.initTail) {
+			return
+		}
+	}
 	if h.hasClause && len(h.initLHSs) > 1 && len(h.initRHSs) == 1 {
 		// ONE call's several results, `for a, b := two(); ...` and `for x, y =
 		// two(); ...` (emitForInitMulti): written in a block around the loop, as a
@@ -26751,6 +26819,29 @@ condition:
 				e.emit("}\n")
 			}
 			return
+		}
+		if h.hasPostStmt {
+			// `for ...; ...; tick()` and `for ...; ...; ch <- v`: a statement standing
+			// alone, lowered as the statement it is. One that is a single expression is
+			// C's third clause; any other goes to the end of the body, behind the label
+			// a `continue` jumps to, as a post that needs a temporary does.
+			text, ok := e.headerStmtC(h.postStmt, h.postTail)
+			if !ok {
+				return
+			}
+			if expr, isExpr := strings.CutSuffix(text, ";"); isExpr && !strings.ContainsAny(expr, ";\n{}") {
+				e.emit(expr)
+			} else {
+				e.labelSeq++
+				e.postContLabel = fmt.Sprintf("ogo_post_%d", e.labelSeq)
+				lines := strings.Split(text, "\n")
+				e.pendingPost = func() {
+					for _, line := range lines {
+						e.ind()
+						e.emit(line + "\n")
+					}
+				}
+			}
 		}
 		if h.postLHS != nil {
 			// The post statement runs after every iteration and on every continue, so
@@ -28271,7 +28362,7 @@ func (e *emitter) guardNames(g switchGuard) ([]string, bool) {
 
 func (e *emitter) emitSwitchGuard(guardAST []int32) (guardVar string, block, ok bool) {
 	g, ok := e.f.switchGuardParts(guardAST)
-	if !ok || (g.semi && !g.hasName && !g.assign && g.step == 0) {
+	if !ok {
 		e.fail("malformed switch guard")
 		return "", false, false
 	}
@@ -28283,7 +28374,14 @@ func (e *emitter) emitSwitchGuard(guardAST []int32) (guardVar string, block, ok 
 			block = true
 		}
 	}
-	if g.assign {
+	if g.hasStmt {
+		// `switch two(); x` and `switch ch <- v; x`: a statement standing alone,
+		// in the block the switch's tests run in.
+		openBlock()
+		if !e.emitHeaderStmt(g.stmtHead, g.stmtTail) {
+			return "", false, false
+		}
+	} else if g.assign {
 		// `switch err = f(); {`: the assignment, in the block the switch's tests
 		// run in, as the if form lowers it.
 		openBlock()
@@ -28600,6 +28698,22 @@ func (e *emitter) emitIf(ast []int32) {
 	// A name an "if" header declares belongs to the statement, not to the block
 	// around it (see enterScope).
 	defer e.enterScope()()
+	// `if two(); ok` and `if ch <- v; ok`: a statement standing alone, lowered as
+	// the statement it is, ahead of the test in the block the test's own statements
+	// run in.
+	if head, tail, cond, isStmt := e.ifStmtParts(ast); isStmt {
+		e.ind()
+		e.emit("{\n")
+		e.indent++
+		if !e.emitHeaderStmt(head, tail) {
+			return
+		}
+		e.emitIfBodyAt(ast, cond, ifAfterInit)
+		e.indent--
+		e.ind()
+		e.emit("}\n")
+		return
+	}
 	// `if err = f(); err != nil`: an assignment, which declares nothing, ahead of
 	// the test in the block the test's own statements run in (ifAfterInit).
 	if head, items, values, cond, isAssign := e.ifAssignParts(ast); isAssign {
@@ -28675,6 +28789,65 @@ const (
 	// mk()[0] == 1 { }` called mk with hit true. They run inside the else.
 	ifElse
 )
+
+// ifStmtParts decomposes an `if` whose init is a statement standing alone, a call,
+// a receive or a send: the expression it begins with (the if's own), what follows
+// that, and the condition. ok is false for any other if.
+func (e *emitter) ifStmtParts(ast []int32) (head Node, tail []Node, cond []int32, ok bool) {
+	var init []int32
+	for n := range it(ast) {
+		switch n.sym {
+		case Expression:
+			if head.sym == 0 {
+				head = n
+			}
+		case IfInit:
+			init = n.ast
+		}
+	}
+	if init == nil || head.sym == 0 {
+		return Node{}, nil, nil, false
+	}
+	kids := slices.Collect(it(init))
+	kind, tail := e.f.headerTail(kids)
+	if kind != headerExpr && kind != headerSend {
+		return Node{}, nil, nil, false
+	}
+	for _, k := range kids {
+		if k.sym == Expression {
+			cond = k.ast // the last: a send's value stands ahead of it
+		}
+	}
+	return head, tail, cond, cond != nil
+}
+
+// headerStmtC is the C of the statement a header's expression and what follows it
+// are, as emitHeaderStmt writes it, with no indentation and no newline to end it.
+func (e *emitter) headerStmtC(head Node, tail []Node) (text string, ok bool) {
+	stmt, ok := e.f.headerStmt(head, tail)
+	if !ok {
+		e.failAt(head.ast, "%s evaluated but not used", e.f.sourceSpan(head.Pos(), head.End()))
+		return "", false
+	}
+	saved := e.indent
+	e.indent = 0
+	text = e.captureC(func() { e.emitStatement(stmt.ast) })
+	e.indent = saved
+	return strings.TrimRight(text, "\n"), e.err == nil
+}
+
+// emitHeaderStmt lowers the statement a header's expression and what follows it
+// are, `two()`, `<-ch`, `ch <- v` or `n++`, as the statement on a line of its own
+// is lowered (headerStmt), at the cursor.
+func (e *emitter) emitHeaderStmt(head Node, tail []Node) bool {
+	stmt, ok := e.f.headerStmt(head, tail)
+	if !ok {
+		e.failAt(head.ast, "%s evaluated but not used", e.f.sourceSpan(head.Pos(), head.End()))
+		return false
+	}
+	e.emitStatement(stmt.ast)
+	return e.err == nil
+}
 
 // ifInitParts decomposes an `if` that carries an init statement, returning the
 // declared names, their initializers -- one, or one for each name -- and the
@@ -48388,6 +48561,11 @@ func (e *emitter) scanBindingsIn(ast []int32, block int) {
 				root, _, chain := e.scanHead(kids[0], kids[1:])
 				e.noteMethodCalls(root, chain)
 			}
+		}
+		// A statement standing in a header, `if (p).arm(); ok` and `for n++; ...`,
+		// is read as the statement it is (headerStmt).
+		for _, st := range e.f.headerStmtsIn(n) {
+			e.scanBindingsIn(rawOf(st), inner)
 		}
 		e.scanBindingsIn(n.ast, inner)
 	}

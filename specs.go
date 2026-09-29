@@ -2185,6 +2185,12 @@
 // The post statement is an assignment, a compound assignment ("i += 2"), or an
 // increment or decrement; it runs after each execution of the body.
 //
+// The init and the post may be any simple statement but a declaration in the
+// post: beside the forms above, an expression standing alone -- a call, "for
+// open(); more(); next()", or a receive -- and a send, "for ch <- 0; n < 3; ch <-
+// n". A call's results are discarded, as a statement's are, and a value nothing
+// reads is refused as one is: "for x + 1; ...".
+//
 // A variable introduced by the init statement is scoped to the whole "for" --
 // its condition, its post statement and its body -- and not to the block
 // containing it.
@@ -2289,6 +2295,8 @@
 //		| "range" HeaderExpression
 //		| HeaderExpression [ ForRest ] .
 //	ForRest    = ";" [ HeaderExpression ] ";" [ ForPost ]
+//		| ( "++" | "--" | AssignOp HeaderExpression | "<-" HeaderExpression )
+//			";" [ HeaderExpression ] ";" [ ForPost ]
 //		| ( "=" | ":=" ) ForAssignRest
 //		| "," HeaderExpression { "," HeaderExpression } ( "=" | ":=" ) ( "range" HeaderExpression
 //			| HeaderExpression { "," HeaderExpression } ";" [ HeaderExpression ] ";" [ ForPost ] ) .
@@ -2296,7 +2304,7 @@
 //		| HeaderExpression ";" [ HeaderExpression ] ";" [ ForPost ] .
 //	ForPost    = HeaderExpression { "," HeaderExpression }
 //		[ ( "=" | ":=" ) HeaderExpression { "," HeaderExpression } | "++" | "--"
-//		| AssignOp HeaderExpression ] .
+//		| AssignOp HeaderExpression | "<-" HeaderExpression ] .
 //
 // The "++" and "--" forms are the increment and decrement statements "x++" and
 // "x--"; they take no operand of their own (the target is the AssignHead) and,
@@ -2339,9 +2347,11 @@
 // executed. An "else" may be followed by another "if" statement, forming an
 // "else if" chain, or by a block.
 //
-//	IfStmt = "if" HeaderExpression [ IfInit ] Block [ "else" ( IfStmt | Block ) ] .
-//	IfInit = ( { "," LhsItem } ( ":=" | "=" ) HeaderExpression { "," HeaderExpression }
-//		| "++" | "--" | AssignOp HeaderExpression ) ";" HeaderExpression .
+//	IfStmt = "if" ( ";" HeaderExpression | HeaderExpression [ IfInit ] )
+//		Block [ "else" ( IfStmt | Block ) ] .
+//	IfInit = [ { "," LhsItem } ( ":=" | "=" ) HeaderExpression { "," HeaderExpression }
+//		| "++" | "--" | AssignOp HeaderExpression | "<-" HeaderExpression ]
+//		";" HeaderExpression .
 //
 // An "if" may carry an init statement, "if v := f(); v > 0". The name it declares
 // is scoped to the whole statement -- the condition, the "then" block and every
@@ -2353,14 +2363,18 @@
 // which declares nothing and stores into targets of any shape a statement's
 // assignment takes -- "if h.n, ok = f(); ok" -- by the same rules; or a step of a
 // variable, an increment, a decrement or an operator assignment, "if n++; n >
-// limit", "if x *= 2; x > 9", which declares nothing either. Go also admits a send
-// or a call standing alone there; those are not provided. An "else if" may carry an
-// init of its own, which runs only when the tests before it have failed and whose
-// names reach the rest of the chain.
+// limit", "if x *= 2; x > 9", which declares nothing either; or an expression
+// standing alone -- a call, "if flush(); ok", or a receive, "if <-ready; ok" -- or
+// a send, "if ch <- v; ok", each the statement it would be on a line of its own: a
+// call's results are discarded, and a value nothing reads, "if x + 1; ok", is
+// refused. The init may be left out with its ";" standing, "if ; ok", as Go
+// allows. An "else if" may carry an init of its own, which runs only when the
+// tests before it have failed and whose names reach the rest of the chain.
 //
 // The grammar reaches the form by left-factoring, as the "for" header does: what
 // follows "if" is parsed as an expression, and the next token decides what it was
-// -- "{" makes it the condition, ":=" makes it the target of an init statement.
+// -- "{" makes it the condition, ":=" makes it the target of an init statement,
+// and ";" makes it a statement of its own.
 //
 // # For Statements
 //
@@ -2393,7 +2407,8 @@
 //
 //	SwitchStmt = "switch" [ SwitchGuard ] "{" { CaseClause } "}" .
 //	SwitchGuard = HeaderExpression [ { "," LhsItem } ( ":=" | "=" ) HeaderExpression { "," HeaderExpression }
-//		| "++" | "--" | AssignOp HeaderExpression ] [ SwitchTag ] .
+//		| "++" | "--" | AssignOp HeaderExpression | "<-" HeaderExpression ] [ SwitchTag ]
+//		| SwitchTag .
 //	SwitchTag  = ";" [ HeaderExpression ] .
 //	CaseClause = CaseHead ":" { Statement ";" } [ Statement ] .
 //	CaseHead   = "case" ExpressionList | "default" .
@@ -2416,8 +2431,9 @@
 // be left out, "switch v := f(); { case v > 3: }", which switches on true with v
 // in scope. The init may be an assignment instead, "switch err = f(); { ... }",
 // as an "if"'s may; being no value, it needs the ";", and a type switch takes
-// none (not implemented) -- nor a step, which needs the ";" as well. Go also admits
-// a send or a call standing alone there; those are not provided.
+// none (not implemented) -- nor a step, which needs the ";" as well. And it may be
+// an expression standing alone or a send, "switch flush(); n" and "switch ch <- v;
+// n", as an "if"'s may, or be left out with its ";" standing, "switch ; n".
 //
 // (OctoGo Specific): the ":=" guard without an init statement, "switch v := f()",
 // declares v and switches on it. Go rejects that text, so the portable spelling

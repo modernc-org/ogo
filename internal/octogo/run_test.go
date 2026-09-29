@@ -4133,6 +4133,378 @@ func main() {
 		want: "true true\ntrue true\ntrue true\n",
 	},
 	{
+		// Go takes any SIMPLE STATEMENT ahead of a header's ";": beside the
+		// declaration and the assignment, an expression standing alone -- a call,
+		// a receive --, a send and a step. `if two(); ok {` was a syntax error
+		// (p2-11's OCTOGO.md, 2026-09-29) and `switch two(); x {` a refusal, "a
+		// switch init statement must be a short variable declaration, ...".
+		//
+		// The for took a call and LOST THE LOOP: its second ";" was read as its
+		// first is, which made an init of the condition it followed, so `for
+		// mark(1); n < 2; n++` was C's `for (n < 2; ; n++)` -- built for the target
+		// without a word, it never called mark and never ended, where the host's
+		// compiler refused a statement with no effect. A post that is a call of
+		// several results was refused, and a step as the init a syntax error.
+		//
+		// Each is the statement it would be on a line of its own, and is checked,
+		// scanned and lowered as that one (headerStmt). The accessors record ORDER:
+		// an else-if's call runs only when the tests before it failed, a post's on
+		// every continue.
+		name: "a call standing alone in a header",
+		src: `var calls int
+
+func mark(k int) int {
+	calls = calls*10 + k
+	return k
+}
+
+func two(k int) (int, bool) {
+	calls = calls*10 + k
+	return k, true
+}
+
+func none(k int) {
+	calls = calls*10 + k
+}
+
+type T struct{ n int }
+
+func (t *T) bump(k int) int {
+	t.n += k
+	calls = calls*10 + k
+	return t.n
+}
+
+var g T
+
+func get(k int) *T {
+	calls = calls*10 + k
+	return &g
+}
+
+func main() {
+	ok := true
+	if mark(1); ok {
+		println("if", calls)
+	}
+	if two(2); ok {
+		println("if two", calls)
+	}
+	if none(3); !ok {
+		println("no")
+	} else {
+		println("else", calls)
+	}
+	if !ok {
+	} else if mark(4); ok {
+		println("else if", calls)
+	}
+	if ok {
+		println("first", calls)
+	} else if mark(5); ok {
+		println("not reached")
+	}
+	var t T
+	if t.bump(6); t.n == 6 {
+		println("method", t.n, calls)
+	}
+	if get(7).bump(8); g.n == 8 {
+		println("chain", g.n, calls)
+	}
+	if println("side"); ok {
+		println("builtin")
+	}
+	if func() { calls = calls*10 + 9 }(); ok {
+		println("literal", calls)
+	}
+	if (mark)(1); ok {
+		println("paren", calls)
+	}
+	if ; ok {
+		println("empty")
+	}
+	calls = 0
+	switch mark(1); calls {
+	case 1:
+		println("switch", calls)
+	}
+	switch two(2); {
+	case calls == 12:
+		println("switch true", calls)
+	}
+	switch ; calls {
+	case 12:
+		println("switch empty")
+	}
+	switch ; {
+	case ok:
+		println("switch empty true")
+	}
+	calls = 0
+	n := 0
+	for mark(1); n < 2; n++ {
+		println("for", n, calls)
+	}
+	for two(2); n < 4; two(3) {
+		n++
+		println("for two", n, calls)
+	}
+	for ; n < 6; none(4) {
+		n++
+		if n == 5 {
+			continue
+		}
+		println("for post", n, calls)
+	}
+	for n++; n < 9; n++ {
+		println("for step", n)
+	}
+	for n *= 2; n < 40; n += 10 {
+		println("for opassign", n)
+	}
+	for get(5).bump(1); g.n < 12; get(6).bump(2) {
+		println("for chain", g.n)
+	}
+	println(calls, n)
+}
+`,
+		want: "if 1\nif two 12\nelse 123\nelse if 1234\nfirst 1234\nmethod 6 12346\nchain 8 1234678\nside\nbuiltin\nliteral 12346789\nparen 123467891\nempty\nswitch 1\nswitch true 12\nswitch empty\nswitch empty true\nfor 0 1\nfor 1 1\nfor two 3 12\nfor two 4 123\nfor post 6 12334\nfor step 7\nfor step 8\nfor opassign 18\nfor opassign 28\nfor opassign 38\nfor chain 9\nfor chain 11\n-1209535322 48\n",
+	},
+	{
+		// The other two simple statements, in every header: a receive whose value
+		// nothing reads and a send, through a name, a field, a dereference and
+		// parentheses. Both were syntax errors in an if and a for, and a send in a
+		// switch.
+		name: "a send and a receive standing alone in a header",
+		src: `var ch chan int
+
+var back chan int
+
+func feed() {
+	for i := 1; i <= 6; i++ {
+		ch <- i * 10
+	}
+}
+
+func drain() {
+	s := 0
+	for i := 0; i < 5; i++ {
+		s = s*10 + <-back
+	}
+	ch <- s
+}
+
+type H struct {
+	c chan int
+}
+
+func main() {
+	go feed()
+	ok := true
+	if <-ch; ok {
+		println("if recv", <-ch)
+	}
+	switch <-ch; {
+	case ok:
+		println("switch recv", <-ch)
+	}
+	n := 0
+	for <-ch; n < 1; <-ch {
+		n++
+	}
+	println("for recv", n)
+	go drain()
+	h := H{back}
+	p := &back
+	if back <- 1; ok {
+		println("if send")
+	}
+	switch h.c <- 2; n {
+	case 1:
+		println("switch send")
+	}
+	for *p <- 3; n < 3; (back) <- n {
+		n++
+	}
+	println("drained", <-ch)
+}
+`,
+		want: "if recv 20\nswitch recv 40\nfor recv 1\nif send\nswitch send\ndrained 12323\n",
+	},
+	{
+		// Go lets a call and a receive standing as statements be parenthesised.
+		// `(f())` was "(f()) evaluated but not used", on a line of its own and,
+		// once a header took a statement, in a header.
+		name: "a call and a receive in parentheses are statements",
+		src: `var ch chan int
+
+var calls int
+
+func f() int {
+	calls = calls*10 + 1
+	return 1
+}
+
+func two() (int, bool) {
+	calls = calls*10 + 2
+	return 1, true
+}
+
+type T struct{ n int }
+
+func (t *T) m() int {
+	calls = calls*10 + 3
+	return t.n
+}
+
+var g T
+
+func feed() {
+	ch <- 1
+	ch <- 2
+	ch <- 3
+}
+
+func main() {
+	go feed()
+	(f())
+	((f()))
+	(two())
+	(g.m())
+	(<-ch)
+	((<-ch))
+	(println("x"))
+	println(calls, <-ch)
+}
+`,
+		want: "x\n1123 3\n",
+	},
+	{
+		// A range over an array iterates a copy where the body may write the array,
+		// and a call may: one standing in a header of the body is one.
+		name: "a range copies its array where a header's call writes it",
+		src: `var ga [3]int
+
+type B struct{ data [3]int }
+
+func (b *B) bump() { b.data[2] += 100 }
+
+func poke() { ga[2] += 100 }
+
+func main() {
+	ok := true
+	ga = [3]int{1, 2, 3}
+	for i, v := range ga {
+		if poke(); ok {
+			println(i, v)
+		}
+	}
+	println(ga[2])
+	var b B
+	b.data = [3]int{1, 2, 3}
+	for i, v := range b.data {
+		switch b.bump(); ok {
+		case true:
+			println(i, v)
+		}
+	}
+	println(b.data[2])
+	var c B
+	c.data = [3]int{4, 5, 6}
+	for i, v := range c.data {
+		for (&c).bump(); false; {
+		}
+		for n := 0; n < 1; (c).bump() {
+			n++
+		}
+		println(i, v)
+	}
+	println(c.data[2])
+}
+`,
+		want: "0 1\n1 2\n2 3\n303\n0 1\n1 2\n2 3\n303\n0 4\n1 5\n2 6\n606\n",
+	},
+	{
+		// What ends a function -- a loop with no condition, an if with an else, a
+		// switch with a default -- ends it with a statement in its header too, and
+		// a loop WITH a condition does not: the for read its condition for an init
+		// and was a loop with none, so what followed it was "unreachable code".
+		name: "a function ends in a loop or a test with a statement in its header",
+		src: `var calls int
+
+func tick() { calls++ }
+
+func first(n int) int {
+	for tick(); ; tick() {
+		if calls > n {
+			return calls
+		}
+	}
+}
+
+func second(ok bool) int {
+	if tick(); ok {
+		return 1
+	} else {
+		return 2
+	}
+}
+
+func third(n int) int {
+	switch tick(); n {
+	case 1:
+		return 10
+	default:
+		return 20
+	}
+}
+
+func main() {
+	println(first(3), second(true), second(false), third(1), third(2), calls)
+}
+`,
+		want: "4 1 2 10 20 8\n",
+	},
+	{
+		// A package variable is initialized after what its initializer reads, through
+		// the functions it calls: a call standing in an if's, a switch's and a for's
+		// header is one of them.
+		name: "initialization order follows a call in a header",
+		src: `var seen int
+
+var a = f()
+
+var b = five()
+
+func five() int { return 5 }
+
+func f() int {
+	ok := true
+	if g(); ok {
+		return seen + 1
+	}
+	return 0
+}
+
+func g() {
+	switch h(); {
+	}
+}
+
+func h() {
+	for k(); false; {
+	}
+}
+
+func k() { seen = b }
+
+func main() {
+	println(a, b, seen)
+}
+`,
+		want: "6 5 5\n",
+	},
+	{
 		// The accepting side of the block-lifetime rule, which exists because Go's
 		// loop variable is per ITERATION (since 1.22) and a body-scoped local has
 		// been per iteration since 1.0. Keeping a reference to either past the
