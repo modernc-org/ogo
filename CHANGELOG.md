@@ -16,6 +16,38 @@ same area is a new entry under **Unreleased**, not an edit to the old one. Amend
 shipped section tells a reader on that version that they have behaviour they do not.
 `git show vX.Y.Z:CHANGELOG.md` is the check.
 
+## Unreleased
+
+### Toolchain
+
+- **A small function is inlined where it is called.** A call and its return cost
+  what forty or fifty instructions do on this target, and the C backend inlines by
+  itself only what is smaller than a method of one line with a runtime check in it:
+  the checked build, which is the default, called what `--unchecked` inlined, and
+  the call was most of what a check cost. Measured on a P2-EDGE at 160 MHz, a
+  method testing a field of its receiver takes 51 clocks a call for 211, a setter
+  of an array's element 67 for 229, two accessors of a word 102 for 395. Inlined is
+  a function of six statements at most whose parameters and result are numbers,
+  bools and pointers, and whose copies come to 96 statements at most, six in
+  sixteen places or one in ninety-six. One with a `defer`, a `go`, a `select`, a
+  label or a function literal in it is not, and the backend keeps the call of a
+  recursive function. Found by p2-11.
+- **A small function of several returns is inlined as well.** The backend inlines
+  no function that leaves from more than two places, so a helper of two tests and
+  three returns was called whatever it was told; the C of one is written to leave
+  through one return. `nz(v, sign)`, of p2-11, takes 29 clocks a call for 83, and
+  `clamp(v, lo, hi)` 27 for 68.
+- **`--no-inline`**, of `ogo build` and `ogo run`, leaves inlining to the C
+  backend, and builds the binary v0.45.0 built. A program that outgrows a cog's
+  registers with its functions inlined is built without, and nothing is said: of
+  the run cases none does, and of 400 programs of the fuzzer 11.
+
+### Behaviour changes
+
+- **What a call of a small function costs has changed**, for a program that counted
+  on it for its timing, and so has the size of a binary: of 1156 programs 285 are
+  smaller and 191 larger, by 0.35% in all. `--no-inline` is the program as it was.
+
 ## v0.45.0
 
 ### Language

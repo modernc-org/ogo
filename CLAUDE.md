@@ -110,6 +110,7 @@ CLI subcommands (`ogo <cmd>`): `build`, `run`, `test`, `fmt`, `loadp2`, `smith`,
 ogo fmt -l -w --exclude='\/testdata\/' .   # gofmt-style reformat of .ogo sources in place
 ogo smith -seed 12345                      # emit a random OctoGo program to stdout (compiler fuzzer)
 ogo build --clock 200MHz .                 # ask for a system clock; default is 160 MHz
+ogo build --no-inline .                    # leave inlining to the C backend, as before 2026-09-29
 ```
 
 **The clock is a BUILD-time choice and 160 MHz is the default**, which surprises
@@ -1442,15 +1443,85 @@ used: 71 clocks an iteration for a loop bound against 60.5 for the literal -- an
 read decided INLINING, the backend inlining by size: `return m.traps&3 != 0` inlined,
 `return m.traps&aborts != 0` for `const aborts = 3` called. CLOSED the next day, with
 the finding below: a constant is its value where it is read, and the named program
-builds to the literal's binary. Still OPEN: (4) A runtime check is a call:
+builds to the literal's binary. (4) A runtime check is a call:
 `ogo_nil_machine_ptr(m)` at a receiver's use and the index check each call a helper
 with a branch in it, which by (3) is not inlined, and a function calling one grows
 past the inline threshold itself -- a method testing a field of its receiver 215
-clocks checked and 24 with `--unchecked`, `m.r[i&7] += uint16(i)` 79 against 36. (3)
-A call and its return cost about fifty instructions, a switch is a chain of compares
-in case order (one of sixteen cases 160 clocks on average), and only a body without a
-branch is inlined; that is the backend's, and stays as a fact programs are written
-against (the emulator, rewritten for it, runs 5.3x).
+clocks checked and 24 with `--unchecked`, `m.r[i&7] += uint16(i)` 79 against 36.
+CLOSED 2026-09-29 for the small functions, which the backend is TOLD to inline (see
+"A CALL IS DEAR" below). (3) A call and its return cost about fifty instructions, a
+switch is a chain of compares in case order (one of sixteen cases 160 clocks on
+average), and only a body without a branch is inlined by the backend on its own;
+that is the backend's, and stays as a fact programs are written against (the
+emulator, rewritten for it, runs 5.3x).
+
+**A CALL IS DEAR, AND THE BACKEND INLINES WHAT IT IS TOLD TO** (2026-09-29). The
+check was the least of what a runtime check cost: the backend inlines by itself a
+function of about six IR instructions (`AnalyzeInlineEligibility`, spin2cpp's
+backends/asm/optimize_ir.c), which a one-line method is until it has a check in it,
+so the checked build CALLED what the unchecked one inlined, and a call and its return
+are pushregs and popregs in hub execution, 100 clocks and more. flexcc reads the
+keyword `inline` and ignores it; what it listens to is `__attribute__((inline))`,
+written after the declarator of a DEFINITION and nowhere else (before the type it
+breaks the type, on a prototype it does not parse), which raises the limit to a
+hundred instructions. The emitter writes it as `OGO_INLINE`, a macro that is nothing
+off `__FLEXC__`, on a function `inlineCandidate` takes: six statements at most at any
+depth, parameters AND result scalars of the C, called by name somewhere, statements
+times call sites 96 at most, and no defer, go, select, label, goto or function
+literal. On a P2-EDGE at 160 MHz, checked: a method testing a field 51 clocks a call
+for 211, a setter 67 for 229, two accessors 102 for 395.
+Every number in that policy is a COST measured, and the costs are the backend's
+registers and the program's size, not time: **every inlined copy brings the registers
+of its locals to where it lands**, and nothing gives them back between the arms of a
+switch. Marking every function failed four run cases and p2-11; a budget of eight
+statements failed p2-11 (`fit 480 failed: pc is 486`) where six builds; a helper of
+six statements called in four hundred places made 20 KB into 81; a result of two
+ints is a struct of the C, four registers a copy (84 for 36 in a switch of twelve
+cases); and an array or a struct holding one, lowered to a pointer and copied to a
+local, is a function the backend inlines under no mark, so the mark would say
+nothing. **A policy is measured by what it breaks**: the corpus dump read through a
+classifier (the marks stripped, 1185 programs the C they were), both dumps through
+`scripts/cccorpus.sh` (no run case and 11 of 400 fuzzer seeds outgrow the cog
+marked, all "fit 480 failed"; of 1156 built both ways 285 are smaller and 191
+larger, 0.35% in all), p2-11's build (38 marked, 371,924 bytes for 365,320,
+4.7 s for 3.3), and the backend's inliner itself on bodies larger than it takes on
+its own -- `make board` with every function of three statements marked, green --
+before the policy was written.
+And **no program fails to build for having been made faster**: `ogo build` and `ogo
+test` compile the marked C, and where the backend answers "fit 480 failed" or
+"exceeded local register limit" they emit again without the marks and compile that,
+saying nothing of the first attempt (`compileMarked`, `outgrewCog`) -- a program
+that fits neither way is told what the second said, which is what it was told
+before; any other failure is reported as it is. `--no-inline` asks for it outright and builds v0.45.0's
+binary, for the benchmark and for p2-11 alike, which is how a regression is told
+from the inlining. The fallback is whole -- a program near the limit loses every mark
+at once -- and a stepped one is where to go if a program shows the cliff.
+What the backend does with a mark is its own: a recursive function stays a call, and
+so does one that leaves through more than one jump, a label needing a unique jump to
+be removed -- ONE early return is inlined and two are not, so `nz(v, sign)` of two
+tests and three returns was marked and called, 83 clocks. A single exit reached by a
+label for EACH return is inlined (measured in C first, with the if-else chain, the
+nested ifs and a flag, which are inlined as well), and `singleExit` writes a marked
+function of three returns or more so: its value in `_ogo_rv`, `{ _ogo_rv = v; goto
+_ogo_exitN; }` for each return, the labels and one return at the end -- 29 clocks
+for nz, 27 for 68 for clamp. It rewrites the TEXT of the body, which emitFuncDecl
+holds in a buffer, and nothing it is not sure of: a body where the word return stands
+anywhere but on a line of its own is left alone. The rewriting is the same on the
+host, which is what verifies its meaning; the mark is nothing there, so **that the
+copies are right where they land is verified on the board and nowhere else**, and
+what holds the inlining off the board is the LISTING: `TestBuildInlines` asks that
+the checked program has no call of an accessor left, and that `--no-inline` has
+five. The fuzzer writes no small function of several returns, so the lowering is in
+7 run cases and no seed: a generator of such helpers is the guard it lacks. The
+marks it has: seeds 25-200 on a P2-EDGE with this compiler, 168 passing, 8
+outgrowing a cog as they did before and none failing, 167 of the 176 programs with
+a function marked.
+It is an OPTION of the emitter, `Inline()`, as `Checked()` is, and not its default:
+thirteen tests pin the C of a small program verbatim, and bare `EmitC` stays the
+plain C they pin. **Whatever emits what a build emits passes both** -- `ogo build`
+and `ogo test`, the run tests, the fuzzer's oracle, `scripts/dumpc`, dumpcorpus.sh's
+test -- and a new such place that passes only `Checked()` tests a program nobody
+builds.
 
 **A CONSTANT IS A VALUE, OF THE TYPE IT MEETS** (2026-09-28). p2-11's next finding
 was a silent one: `b-a < patience`, for a `const patience = 10000` and a uint32
