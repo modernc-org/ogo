@@ -54,7 +54,7 @@ func TestOracle(t *testing.T) {
 				t.Fatalf("Build (generator bug?): %v\n%s", err, prog.String())
 			}
 			var c bytes.Buffer
-			if err := octogo.EmitC(pkg, &c, octogo.Checked()); err != nil {
+			if err := octogo.EmitC(pkg, &c, octogo.Checked(), octogo.Inline()); err != nil {
 				t.Fatalf("EmitC (generator bug?): %v\n%s", err, prog.String())
 			}
 			dir := t.TempDir()

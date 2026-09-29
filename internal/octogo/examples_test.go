@@ -117,7 +117,7 @@ func TestExampleMatchesGo(t *testing.T) {
 				t.Fatalf("Build: %v", err)
 			}
 			var buf bytes.Buffer
-			if err := EmitC(pkg, &buf, Checked()); err != nil {
+			if err := EmitC(pkg, &buf, Checked(), Inline()); err != nil {
 				t.Fatalf("EmitC: %v", err)
 			}
 			csrc := filepath.Join(dir, "main.c")

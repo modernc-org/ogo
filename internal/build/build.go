@@ -111,9 +111,29 @@ func compile(args []string, stdout, stderr io.Writer) (binary string, code int, 
 	if flags.goStack != 0 {
 		emitOpts = append(emitOpts, octogo.GoStack(flags.goStack))
 	}
+	// The small functions are marked for the backend to inline, unless
+	// --no-inline asks for the program without.
+	markedOpts := emitOpts
+	if !flags.noInline {
+		markedOpts = append(emitOpts[:len(emitOpts):len(emitOpts)], octogo.Inline())
+	}
 	var cbuf bytes.Buffer
-	if err := octogo.EmitC(pkg, &cbuf, emitOpts...); err != nil {
+	if err := octogo.EmitC(pkg, &cbuf, markedOpts...); err != nil {
 		return "", 1, err
+	}
+	// The same program with no function marked, should this one outgrow the cog
+	// with them (compileMarked). The package is made again: what emitting it left
+	// in it is the first emission's.
+	unmarked := func() ([]byte, error) {
+		pkg, err := octogo.BuildModule(-1, modulePath, rel, files, fsys)
+		if err != nil {
+			return nil, err
+		}
+		var c bytes.Buffer
+		if err := octogo.EmitC(pkg, &c, emitOpts...); err != nil {
+			return nil, err
+		}
+		return c.Bytes(), nil
 	}
 
 	if library {
@@ -128,9 +148,6 @@ func compile(args []string, stdout, stderr io.Writer) (binary string, code int, 
 	}
 	defer os.RemoveAll(tmp)
 	cFile := filepath.Join(tmp, strings.TrimSuffix(filepath.Base(defaultOut), ".binary")+".c")
-	if err := os.WriteFile(cFile, cbuf.Bytes(), 0o644); err != nil {
-		return "", 1, err
-	}
 
 	if out == "" {
 		out = defaultOut
@@ -139,10 +156,48 @@ func compile(args []string, stdout, stderr io.Writer) (binary string, code int, 
 		return "", 1, err
 	}
 
-	if code, err := compileC(cFile, out, stdout, stderr); err != nil {
+	if code, err := compileMarked(cbuf.Bytes(), unmarked, cFile, out, stdout, stderr); err != nil {
 		return "", code, err
 	}
 	return out, 0, nil
+}
+
+// compileMarked writes the C of a program to cFile and compiles it into out. Where
+// the C marks functions for the backend to inline and the program outgrows the
+// cog's registers, it compiles what unmarked answers with instead, the same program
+// with none marked: every copy of an inlined function brings the registers of its
+// locals to where it lands, a cog has 480 for everything, and a program that fits
+// without the marks is not to fail for having been made faster. Nothing is said of
+// the first attempt then; a program that fits neither way is told what the second
+// said.
+func compileMarked(c []byte, unmarked func() ([]byte, error), cFile, out string, stdout, stderr io.Writer) (int, error) {
+	if err := os.WriteFile(cFile, c, 0o644); err != nil {
+		return 1, err
+	}
+	if !bytes.Contains(c, []byte(octogo.InlineMark)) {
+		return compileC(cFile, out, stdout, stderr)
+	}
+	var said, saidErr bytes.Buffer
+	code, err := compileC(cFile, out, &said, &saidErr)
+	if err == nil || !outgrewCog(saidErr.Bytes()) {
+		stdout.Write(said.Bytes())
+		stderr.Write(saidErr.Bytes())
+		return code, err
+	}
+	if c, err = unmarked(); err != nil {
+		return 1, err
+	}
+	if err := os.WriteFile(cFile, c, 0o644); err != nil {
+		return 1, err
+	}
+	return compileC(cFile, out, stdout, stderr)
+}
+
+// outgrewCog reports whether what the backend said is that the program needs more
+// registers than a cog has: the assembler's check of the register pool, or the
+// limit of one function's locals.
+func outgrewCog(said []byte) bool {
+	return bytes.Contains(said, []byte("fit 480 failed")) || bytes.Contains(said, []byte("exceeded local register limit"))
 }
 
 // buildFlags is what a build command line says, beyond the sources themselves.
@@ -150,6 +205,9 @@ type buildFlags struct {
 	out       string
 	release   bool
 	unchecked bool
+	// noInline leaves inlining to the backend's own idea of what is small, which
+	// trades the time of a call for the size of a copy at every call.
+	noInline bool
 	// clock is the system clock the program asks for, in Hz, and xtal the crystal
 	// it is made from. Zero clock leaves it to the backend, which falls back to
 	// 160 MHz -- a 20 MHz crystal times eight, and a round multiplier rather than
@@ -219,6 +277,8 @@ func parseArgs(args []string) (srcs []string, f buildFlags, err error) {
 			f.release = true
 		case a == "--unchecked" || a == "-unchecked":
 			f.unchecked = true
+		case a == "--no-inline" || a == "-no-inline":
+			f.noInline = true
 		case a == "--clock" || a == "-clock":
 			if f.clock, err = hz(a, &i); err != nil {
 				return nil, buildFlags{}, err

@@ -275,7 +275,7 @@ func testPackage(dir string, opts testOptions, stdout, stderr io.Writer) (int, e
 
 	var cbuf bytes.Buffer
 	emitOpts := append([]octogo.EmitOption{octogo.Checked(), octogo.TestEntry("ogoTestMain")}, clockOpts...)
-	if err := octogo.EmitC(pkg, &cbuf, emitOpts...); err != nil {
+	if err := octogo.EmitC(pkg, &cbuf, append(emitOpts[:len(emitOpts):len(emitOpts)], octogo.Inline())...); err != nil {
 		return 1, err
 	}
 
@@ -285,11 +285,19 @@ func testPackage(dir string, opts testOptions, stdout, stderr io.Writer) (int, e
 	}
 	defer os.RemoveAll(tmp)
 	cFile := filepath.Join(tmp, "ogo_test.c")
-	if err := os.WriteFile(cFile, cbuf.Bytes(), 0o644); err != nil {
-		return 1, err
-	}
 	binary := filepath.Join(tmp, dirPkgName(dir)+".test.binary")
-	if code, err := compileC(cFile, binary, stdout, stderr); err != nil {
+	unmarked := func() ([]byte, error) {
+		pkg, err := octogo.BuildModule(-1, modulePath, rel, all, overlay)
+		if err != nil {
+			return nil, err
+		}
+		var c bytes.Buffer
+		if err := octogo.EmitC(pkg, &c, emitOpts...); err != nil {
+			return nil, err
+		}
+		return c.Bytes(), nil
+	}
+	if code, err := compileMarked(cbuf.Bytes(), unmarked, cFile, binary, stdout, stderr); err != nil {
 		return code, err
 	}
 	if compileOnly {

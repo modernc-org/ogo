@@ -179,7 +179,7 @@ Use "%s help <command>" for more information about a command.
 
 // commandHelp is the per-command detail behind "ogo help <command>".
 var commandHelp = map[string]string{
-	"build": `usage: ogo build [-o output] [--release] [--unchecked] [--clock hz] [--gostack longs] [package | file.ogo ...]
+	"build": `usage: ogo build [-o output] [--release] [--unchecked] [--no-inline] [--clock hz] [--gostack longs] [package | file.ogo ...]
 
 Build compiles a package to a Propeller 2 binary.
 
@@ -213,8 +213,18 @@ it and a board running one percent fast reports nothing at all. --xtal states th
 crystal when it is not the usual 20 MHz; nothing can ask the board, so an unstated
 crystal is believed.
 
+A small function is inlined where it is called: one of six statements at most,
+whose parameters are numbers, bools and pointers, and whose copies come to 96
+statements at most -- six in sixteen places, one in ninety-six. A call costs what
+forty or fifty instructions do on this target, so a one-line method is several
+times faster for it, and the program a copy larger at each call. --no-inline
+leaves it to the C backend, which inlines what is smaller still and nothing with
+a runtime check in it. A program that outgrows a cog's registers with its
+functions inlined is built without, and nothing is said.
+
 	-o output     write the binary here
 	--unchecked   omit the runtime checks
+	--no-inline   inline no more than the C backend does by itself
 	--release     reboot the board on a panic instead of halting the cog
 	--clock hz    the system clock to ask for, e.g. 200MHz (default 160 MHz)
 	--gostack longs
@@ -224,7 +234,7 @@ crystal is believed.
 	              sit in hub RAM for the whole run.
 	--xtal hz     the board's crystal (default 20MHz)
 `,
-	"run": `usage: ogo run [--release] [--unchecked] [--clock hz] [--gostack longs] [package | file.ogo ...]
+	"run": `usage: ogo run [--release] [--unchecked] [--no-inline] [--clock hz] [--gostack longs] [package | file.ogo ...]
 
 Run builds a package exactly as ogo build does, loads the binary onto a connected
 Propeller 2 and opens a terminal on its serial output, reading at 230400 baud so

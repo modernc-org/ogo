@@ -273,6 +273,15 @@ func (f *File) ch(x int32) (r Symbol) {
 	return Symbol(f.parser.Token(x).Ch)
 }
 
+// tokAfter is the kind of the token following the one at x, or 0 at the end of
+// the file.
+func (f *File) tokAfter(x int32) Symbol {
+	if int(x)+1 >= f.parser.sc.Len() {
+		return 0
+	}
+	return Symbol(f.parser.Token(x + 1).Ch)
+}
+
 func (f *File) err(pos token.Position, s string, args ...any) {
 
 	f.errList.AddErr(pos, s, args...)

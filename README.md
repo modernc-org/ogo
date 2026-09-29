@@ -302,6 +302,9 @@ broken.
   `panic: <what>` and
   halts the offending cog; `--release` reboots the board instead, and `--unchecked`
   omits the checks.
+* Small functions are inlined where they are called, a call being dear on this
+  target: an accessor of one line costs the check it makes and not the call as
+  well. `--no-inline` leaves it to the C backend.
 * A package is a directory: `ogo build` compiles every `.ogo` file in it together,
   and a program may span several packages. A value of an imported package's struct
   type is written the way you would expect, `geo.Point{1, 2}`.

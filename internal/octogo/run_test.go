@@ -43152,7 +43152,177 @@ func main() {
 }
 `,
 		want: "1\nno error\nnothing to fill\n31\nno error\n0\nshort read\nnothing to fill\n",
-	}}
+	},
+	{
+		// A SMALL function is marked for the backend to inline (inlineCandidate),
+		// which is what a runtime check costs no call by: the accessors, the
+		// setters and the predicates of one line a program is made of. On the host
+		// the mark is nothing, so it is the BOARD this case is for: operands
+		// evaluated once and in order where the callee is a copy, one early return,
+		// a function inlined and a value all the same -- a function value, a
+		// method value, an interface's method -- and the two the backend leaves a
+		// call whatever it is told, the recursive one and the one of three exits.
+		name: "small functions are inlined",
+		src: `type machine struct {
+	traps uint16
+	r     [8]uint16
+	psw   uint16
+}
+
+type device interface {
+	status() uint16
+}
+
+var (
+	m     machine
+	ram   [64]uint16
+	calls int
+)
+
+func (m *machine) aborted() bool { return m.traps&3 != 0 }
+
+func (m *machine) set(r int, v uint16) { m.r[r] = v }
+
+func (m *machine) get(r int) uint16 { return m.r[r] }
+
+func (m *machine) status() uint16 { return m.psw }
+
+func (m *machine) flag(bit uint16, on bool) {
+	if on {
+		m.psw |= bit
+		return
+	}
+	m.psw &^= bit
+}
+
+func readWord(a uint32) uint16 { return ram[a>>1] }
+
+func writeWord(a uint32, v uint16) { ram[a>>1] = v }
+
+func note(k int) int {
+	calls = calls*10 + k
+	return k
+}
+
+func sum(a, b, c int) int { return a*100 + b*10 + c }
+
+func clamp(v, lo, hi int) int {
+	if v < lo {
+		return lo
+	}
+	if v > hi {
+		return hi
+	}
+	return v
+}
+
+func fact(n int) int {
+	if n < 2 {
+		return 1
+	}
+	return n * fact(n-1)
+}
+
+func abs(v int) int {
+	if v < 0 {
+		v = -v
+	}
+	return v
+}
+
+func swap(p, q *int) { *p, *q = *q, *p }
+
+func apply(f func(int) int, v int) int { return f(v) }
+
+func main() {
+	for i := 0; i < 32; i++ {
+		a := uint32(i) * 2
+		writeWord(a, readWord(a)+uint16(i))
+		writeWord(a, readWord(a)*3)
+		m.set(i&7, m.get(i&7)+uint16(i))
+	}
+	println(ram[0], ram[1], ram[31], m.r[0], m.r[7], m.aborted())
+	m.traps = 2
+	println(m.aborted(), m.get(3))
+	m.flag(4, true)
+	m.flag(1, true)
+	m.flag(4, false)
+	var d device = &m
+	println(m.status(), d.status())
+
+	// The operands of a call are evaluated once and in order, inlined or called.
+	println(sum(note(1), note(2), note(3)), calls)
+	println(sum(abs(note(4)-9), clamp(note(5), 0, 3), abs(-note(6))), calls)
+	println(clamp(-5, 0, 9), clamp(5, 0, 9), clamp(50, 0, 9), abs(-7), abs(7), fact(6))
+
+	// A function that is inlined is a value all the same.
+	f := abs
+	g := m.get
+	println(f(-3), apply(abs, -4), g(7), apply(f, 5))
+	x, y := 1, 2
+	swap(&x, &y)
+	println(x, y)
+	p := &m
+	p.set(2, 77)
+	println(p.get(2), (&m).get(2), m.r[2])
+}
+`,
+		want: `0 3 93 48 76 false
+true 60
+1 1
+123 123
+536 123456
+0 5 9 7 7 720
+3 4 76 5
+2 1
+77 77 77
+`,
+	},
+	{
+		// The check in a function that is inlined is the check all the same.
+		name: "an index out of range in an inlined accessor panics",
+		src: `var ram [16]uint16
+
+func readWord(a uint32) uint16 { return ram[a>>1] }
+
+func main() {
+	n := uint32(0)
+	for a := uint32(0); a < 64; a += 2 {
+		n += uint32(readWord(a)) + 1
+		println(a, n)
+	}
+}
+`,
+		want:   "30 16\npanic: index out of range\n",
+		panics: true,
+	},
+	{
+		name: "a nil receiver of an inlined method panics",
+		src: `type machine struct {
+	traps uint16
+}
+
+func (m *machine) aborted() bool { return m.traps&3 != 0 }
+
+var m machine
+
+func pick(k int) *machine {
+	if k < 3 {
+		return &m
+	}
+	return nil
+}
+
+func main() {
+	for k := 0; k < 5; k++ {
+		println(k, pick(k).aborted())
+	}
+}
+`,
+		want:   "2 false\npanic: nil pointer dereference",
+		panics: true,
+	},
+}
 
 // TestEmitCRun compiles emitted C with a host compiler and runs it, checking what
 // the program prints. The golden tests pin the shape of the output; this pins its
@@ -43173,11 +43343,14 @@ func main() {
 //
 // A panicking case is skipped: without the checks there is nothing to panic.
 func TestEmitCRunUnchecked(t *testing.T) {
-	runCorpus(t, nil, nil)
+	runCorpus(t, false, []EmitOption{Inline()}, nil)
 }
 
+// The options are `ogo build`'s: the checks, and the small functions marked for
+// the backend to inline, which is nothing to the host's compiler but for what the
+// emitter does to a function it marks.
 func TestEmitCRun(t *testing.T) {
-	runCorpus(t, []EmitOption{Checked()}, nil)
+	runCorpus(t, true, []EmitOption{Checked(), Inline()}, nil)
 }
 
 // TestEmitCRunRenamedTypes runs every corpus program that declares a type with EVERY
@@ -43187,12 +43360,12 @@ func TestEmitCRun(t *testing.T) {
 // typeMangle would be found by the one program that collides, as a C compile error or
 // a wrong answer; here it is found by the whole corpus.
 func TestEmitCRunRenamedTypes(t *testing.T) {
-	runCorpus(t, []EmitOption{Checked(), renameAllTypes()}, func(test emitRunCase) bool {
+	runCorpus(t, true, []EmitOption{Checked(), Inline(), renameAllTypes()}, func(test emitRunCase) bool {
 		return strings.HasPrefix(test.src, "type ") || strings.Contains(test.src, "\ntype ") || strings.Contains(test.src, "\ttype ")
 	})
 }
 
-func runCorpus(t *testing.T, opts []EmitOption, keep func(emitRunCase) bool) {
+func runCorpus(t *testing.T, checked bool, opts []EmitOption, keep func(emitRunCase) bool) {
 	cc := ""
 	for _, c := range []string{"cc", "gcc", "clang"} {
 		if p, err := exec.LookPath(c); err == nil {
@@ -43208,7 +43381,6 @@ func runCorpus(t *testing.T, opts []EmitOption, keep func(emitRunCase) bool) {
 		t.Fatal(err)
 	}
 
-	checked := len(opts) != 0
 	for _, test := range emitRunCases {
 		if test.panics && !checked {
 			continue // the panic is the check; with none, there is nothing to expect
@@ -45062,7 +45234,7 @@ func TestEmitCMultiPackage(t *testing.T) {
 		t.Fatalf("Build: %v", err)
 	}
 	var buf bytes.Buffer
-	if err := EmitC(pkg, &buf, Checked()); err != nil {
+	if err := EmitC(pkg, &buf, Checked(), Inline()); err != nil {
 		t.Fatalf("EmitC: %v", err)
 	}
 	dir := t.TempDir()
@@ -45201,7 +45373,7 @@ func TestCrossFileConsts(t *testing.T) {
 				t.Fatalf("Build: %v", err)
 			}
 			var buf bytes.Buffer
-			if err := EmitC(pkg, &buf, Checked()); err != nil {
+			if err := EmitC(pkg, &buf, Checked(), Inline()); err != nil {
 				t.Fatalf("EmitC: %v", err)
 			}
 			dir := t.TempDir()

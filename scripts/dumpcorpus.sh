@@ -61,7 +61,7 @@ func TestZZDumpCorpus(t *testing.T) {
 			continue
 		}
 		var buf bytes.Buffer
-		if err := EmitC(pkg, &buf, Checked()); err != nil {
+		if err := EmitC(pkg, &buf, Checked(), Inline()); err != nil {
 			os.WriteFile(filepath.Join(dir, fmt.Sprintf("case%03d.err", i)), []byte(err.Error()), 0o644)
 			continue
 		}

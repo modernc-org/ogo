@@ -3,8 +3,9 @@
 // license that can be found in the LICENSE file.
 
 // Command dumpc writes the C the tree's compiler emits for the OctoGo program in
-// one directory, with the run-time checks on -- what TestEmitCRun hands the host
-// C compiler. It is the compiler half of the probe scripts beside it, which build
+// one directory, with the run-time checks on and the small functions marked for
+// inlining, as `ogo build` emits it -- what TestEmitCRun hands the host C
+// compiler. It is the compiler half of the probe scripts beside it, which build
 // it from the tree being probed:
 //
 //	go run ./scripts/dumpc DIR > host.c
@@ -71,7 +72,7 @@ func dump(dir string) error {
 		return err
 	}
 	var buf bytes.Buffer
-	if err := octogo.EmitC(pkg, &buf, octogo.Checked()); err != nil {
+	if err := octogo.EmitC(pkg, &buf, octogo.Checked(), octogo.Inline()); err != nil {
 		return err
 	}
 	_, err = os.Stdout.Write(buf.Bytes())

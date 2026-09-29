@@ -302,6 +302,7 @@ func (e *emitter) collectUserSpellings(pkgs []*Package) {
 	e.mainSpellings = map[string]bool{}
 	e.userSpellings = map[string]bool{}
 	e.writtenIdents = map[string]bool{}
+	e.calledNames = map[string]int{}
 	var walk func(ast []int32)
 	walk = func(ast []int32) {
 		for n := range it(ast) {
@@ -313,6 +314,12 @@ func (e *emitter) collectUserSpellings(pkgs []*Package) {
 				nm := e.src(n.tok)
 				e.writtenIdents[nm] = true
 				e.writtenIdents[userIdent(nm)] = true
+				// A name with a "(" after it is called there, or declared, or is
+				// a type converting: what inlineCandidate counts a function's
+				// call sites by, which is too many rather than too few.
+				if e.f.tokAfter(n.tok) == LPAREN {
+					e.calledNames[nm]++
+				}
 			}
 		}
 	}
@@ -5059,6 +5066,17 @@ func Checked() EmitOption { return func(e *emitter) { e.checks = true } }
 // an unattended device self-heals. Diagnostics and checks are unaffected.
 func Release() EmitOption { return func(e *emitter) { e.release = true } }
 
+// InlineMark is what the C of a function marked for the backend to inline says
+// after its parameters; a build reads it to know that there was one.
+const InlineMark = "OGO_INLINE"
+
+// Inline marks the small functions of a program for the backend to inline (see
+// inlineCandidate), which left to its own idea of what is small inlines no
+// function with a runtime check in it. `ogo build` asks for it unless told
+// --no-inline, and falls back to the program without when the one with outgrows
+// the cog's registers.
+func Inline() EmitOption { return func(e *emitter) { e.inline = true } }
+
 // TestEntry makes the named function the program's entry point instead of main,
 // which is what a test binary is: the tests and the code under test, entered
 // through a generated runner. A "main" the package under test declares is not
@@ -5539,6 +5557,9 @@ func emitProgram(pkg *Package, w io.Writer, opts []EmitOption, rename map[string
 	if e.clock != nil {
 		fmt.Fprintf(&out, "enum { _clkfreq = %d, _clkmode = %#08x };\n\n",
 			e.clock.freq, e.clock.mode)
+	}
+	if e.usesInline {
+		out.WriteString(inlineMacro)
 	}
 	// One slice header typedef per distinct element type, and append's ok-form
 	// result struct { slice, ok } per element type. Both are units of the typedef
@@ -6426,6 +6447,9 @@ type emitter struct {
 	divHelpers         map[string][2]string    // guarded signed division helper name -> {operator, value C type}
 	clock              *clockSetting           // a clock the program asks for, instead of the backend's 160 MHz default
 	release            bool                    // release build: a panic reboots (_reboot) instead of halting the cog
+	inline             bool                    // mark the small functions for the backend to inline (set by Inline)
+	calledNames        map[string]int          // how many times each name is written with a "(" after it, in the whole program: its calls and its declarations (see inlineCandidate)
+	usesInline         bool                    // a function was marked, so the C defines the mark (inlineMacro)
 	checks             bool                    // emit runtime bounds / divide-by-zero checks (set by Checked; ogo build enables it by default)
 	locals             map[string]string       // current function's parameter/local name -> C type, for typing `x := y`
 	curFunc            string                  // name of the function whose body is being emitted (for its result-struct type)
@@ -14635,6 +14659,10 @@ func (e *emitter) emitFuncDecl(ast []int32) {
 	}
 	e.funcRefTasks = append(e.funcRefTasks, task)
 	e.bindParams(sig)
+	if e.inlineCandidate(name, proto, body) {
+		proto += " " + inlineMark
+		e.usesInline = true
+	}
 	e.emit(proto + " {\n")
 	e.indent++
 	if emptyRecvName != "" && e.recvByRef[e.curFunc] {
@@ -16803,7 +16831,10 @@ func (e *emitter) arrayParamCType(a arrDim) string { return e.sliceElemOfArray(a
 
 // paramArgName is the C name of a value-array parameter as it is received (a
 // pointer), distinct from the local copy the body sees under the source name.
-func paramArgName(name string) string { return "_ogo_" + userIdent(name) }
+func paramArgName(name string) string { return paramArgPrefix + userIdent(name) }
+
+// paramArgPrefix begins the C name of every parameter that is such a pointer.
+const paramArgPrefix = "_ogo_"
 
 // bindParams records the current function's parameters in the local type
 // environment, so a `x := p` short declaration can be typed from a parameter p. A
@@ -21827,6 +21858,138 @@ func (e *emitter) sameStructLayout(a, b string) bool {
 		case x.dim.bound != y.dim.bound, x.dim.name != y.dim.name:
 			return false
 		case !slices.Equal(x.dim.inner, y.dim.inner):
+			return false
+		}
+	}
+	return true
+}
+
+// A CALL IS DEAR on the target, and the backend inlines what it is told to.
+//
+// A call and its return cost what forty or fifty instructions do: the callee saves
+// and restores the registers it uses, and in hub execution every branch costs the
+// fetch of what follows it. flexcc inlines a function of about six instructions on
+// its own (INLINE_THRESHOLD_P2 and the parameters' share, optimize_ir.c), which a
+// one-line method is until it has a runtime check in it: `return m.traps&aborts !=
+// 0` is six, and nine with the receiver's nil check. So the checked build, which
+// is the default, called what the unchecked one inlined, and the call was the cost
+// of the check: measured on a P2-EDGE at 160 MHz, a method testing a field of its
+// receiver 211 clocks a call checked and 36 unchecked, a setter of an array
+// element 229 and 25, two accessors 395 and 52 (p2-11's OCTOGO.md). The C keyword
+// says nothing to flexcc, which reads it and ignores it; what it listens to is
+// `__attribute__((inline))`, which raises the limit to a hundred instructions.
+//
+// So a SMALL function is marked, and takes 51, 67 and 102 clocks checked. Small
+// is inlineBudget statements at any depth, which is a guess at what is worth a
+// copy at every call and measured for what it costs: every copy brings the
+// registers of its locals to the function it lands in, a cog has 480 of them for
+// everything, and a function of a program of size that calls a helper in three
+// hundred places is where they run out -- p2-11 builds with a budget of six and
+// not of eight. A parameter that is no scalar is a register or several at every
+// call whatever the body does (see "A TEMPORARY IS A COG REGISTER" in CLAUDE.md),
+// so a function with one is not marked: marking EVERY function failed four of the
+// run cases and p2-11 itself. Nor is one whose RESULT is none, two results being
+// a struct of the C: a switch of twelve cases calling a helper of two ints spent
+// 84 registers with it marked and 36 without, four a copy that nothing gives back.
+// And an array or a struct holding one, which is received and returned through a
+// pointer, is a local the function copies it to, which the backend keeps on the
+// stack, and it inlines no function that has one: the mark would say nothing.
+//
+// And what a function's copies come to is bounded, its statements times the
+// places it is called in: a copy at each is where the size goes -- a helper of six
+// statements called in four hundred places made a program of 20 KB one of 81 --
+// and where the registers go, the backend giving none back between the arms of a
+// switch: forty cases calling a helper twice each outgrew the limit of one
+// function's locals. inlineCopies is that bound, six statements in sixteen places
+// and one in ninety-six, an accessor being what is called everywhere and costs
+// least to copy. The places are counted by NAME, a method's with every other
+// method's of its name, which counts too many rather than too few; and a
+// function nothing calls by its name is not marked, there being no call to gain.
+//
+// What the backend does with the mark is its own to decide: a function of more
+// than a hundred instructions stays a call, and so does one that leaves through
+// more than one jump, which two early returns are. And `ogo build` falls back to
+// the program without the marks when it outgrows the registers with them, so that
+// no program fails to build for having been made faster.
+const (
+	inlineBudget = 6
+	inlineCopies = 96
+	inlineMark   = InlineMark
+	// inlineMacro defines the mark: the backend's attribute, and nothing to the
+	// host's compiler, which would warn of an attribute it does not know.
+	inlineMacro = "#ifdef __FLEXC__\n#define " + inlineMark + " __attribute__((inline))\n#else\n#define " + inlineMark + "\n#endif\n\n"
+)
+
+// inlineCandidate reports whether the function name, of the C prototype proto and
+// the body, is marked for the backend to inline: its parameters are scalars, it has
+// inlineBudget statements at most and inlineCopies in all the places it is called
+// in, and nothing in it is lowered to more than it looks -- a defer, a go, a
+// select, a label, a function literal.
+func (e *emitter) inlineCandidate(name, proto string, body []int32) bool {
+	if !e.inline || !protoScalar(proto) {
+		return false
+	}
+	// Its declaration is one of the places the name is written with a "(".
+	sites := e.calledNames[name] - 1
+	if sites < 1 {
+		return false
+	}
+	n, plain := 0, true
+	var walk func(ast []int32)
+	walk = func(ast []int32) {
+		for c := range it(ast) {
+			switch c.sym {
+			case 0:
+				switch e.f.ch(c.tok) {
+				case DEFER, GO, GOTO:
+					plain = false
+				}
+				continue
+			case SelectStmt, FuncLiteral:
+				plain = false
+			case Statement:
+				if firstIndex(c.ast) >= 0 {
+					n++
+				}
+				if _, _, isLabel := e.stmtLabelParts(slices.Collect(it(c.ast))); isLabel {
+					plain = false
+				}
+			}
+			walk(c.ast)
+		}
+	}
+	walk(body)
+	return plain && n <= inlineBudget && n*sites <= inlineCopies
+}
+
+// protoScalar reports whether a C prototype is of scalars and nothing else: its
+// result one or none, every parameter one, a pointer among them, and no parameter
+// the pointer an array, a struct holding one or a result is lowered to
+// (paramArgName), which the body copies to a local or writes through.
+func protoScalar(proto string) bool {
+	i, j := strings.Index(proto, "("), strings.LastIndex(proto, ")")
+	if i < 0 || j < i {
+		return false
+	}
+	head := strings.TrimPrefix(strings.TrimSpace(proto[:i]), "static ")
+	k := strings.LastIndexAny(head, " *")
+	if k < 0 {
+		return false
+	}
+	if result := strings.TrimSpace(head[:k+1]); result != "void" && !isScalarCType(result) {
+		return false
+	}
+	params := strings.TrimSpace(proto[i+1 : j])
+	if params == "" || params == "void" {
+		return true
+	}
+	if strings.ContainsAny(params, "()[]") {
+		return false // a function pointer, an array
+	}
+	for _, p := range strings.Split(params, ",") {
+		p = strings.TrimSpace(p)
+		k := strings.LastIndexAny(p, " *")
+		if k < 0 || !isScalarCType(strings.TrimSpace(p[:k+1])) || strings.HasPrefix(p[k+1:], paramArgPrefix) {
 			return false
 		}
 	}
