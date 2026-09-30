@@ -151,6 +151,10 @@ func (f *Fuzzer) GenerateProgram(vm Machine, mem Memory) error {
 	if len(f.funcs64()) == 0 {
 		f.genFunc64Decl()
 	}
+	// And one of several returns (see FuncDef.Guards), which the ordinary call
+	// sites draw on beside the others: drawn by chance with them, a program would
+	// seldom have one, and the lowering it exists for would go unfuzzed again.
+	f.genGuardedFuncDecl()
 
 	// 4.5. A procedure carrying a deferred call, for main to call. It has to be a
 	// procedure rather than one of the functions above: a defer runs at its
@@ -300,7 +304,49 @@ type FuncDef struct {
 	// Its type is neither `func(int) int` nor the widening one, so both
 	// funcsWithResults and wideFuncs leave it out and funcs64 is how it is found.
 	Params64 bool
+	// Guards makes this a function of several returns: tests over its parameters,
+	// each returning a result of its own, ahead of Body's return -- the helper
+	// p2-11 was written with, `nz(v, sign)`, which the emitter marks for the backend
+	// to inline and, with two early returns or more, writes to leave through one
+	// (singleExit, which no generated program reached before). A test compares,
+	// which is total, and a result is a pure expression, so the VM predicts a call
+	// as it predicts Body (see evalGuarded). Shape says how the tests are written.
+	Guards []Guard
+	Shape  guardShape
+	// Sites counts the places a call of this function is written by name, which is
+	// what the emitter's inlining budget counts; see guardSites.
+	Sites int
 }
+
+// guardSites is how many places a call of a function of several returns is written
+// in at most: the emitter marks a function only while its statements times those
+// places stay within 96 (inlineCopies), and such a function has six. Drawn by the
+// call sites like any other, it was called in 24 to 38 places a program and marked
+// in none; once it has its share, funcsWithResults no longer offers it. Twelve
+// leaves room below sixteen for the few calls written past it: a for's post, which
+// is written wherever its init is (see genHeaderCall).
+const guardSites = 12
+
+// Guard is one test of a function of several returns (see FuncDef.Guards): the
+// result it returns when Cond holds.
+type Guard struct {
+	Cond   Node // a comparison of pure expressions (see genPureCond)
+	Result Node // a pure expression (see genPureExpr)
+}
+
+// guardShape is how a function of several returns writes its tests. Each is a
+// different C for singleExit to rewrite line by line: returns at one depth, an else
+// chain the function ends in, the clauses of a switch, and a return inside a test
+// inside another.
+type guardShape int
+
+const (
+	shapeSeq    guardShape = iota // if c1 { return r1 }; if c2 { return r2 }; return body
+	shapeElse                     // if c1 { return r1 } else if c2 { return r2 } else { return body }
+	shapeSwitch                   // switch { case c1: return r1; case c2: return r2; default: return body }
+	shapeNested                   // if c1 { if c2 { return r2 }; return r1 }; return body
+	guardShapes
+)
 
 // noteCall is the VM's side of a call main makes: the callee adds its weight to the
 // counter as it runs (see FuncDef.Weight), so the VM does -- once per call, however
@@ -377,6 +423,46 @@ func (f *Fuzzer) genFunc64Decl() *FuncDef {
 	return f.declareFunc(fn)
 }
 
+// genGuardedFuncDecl declares a function of several returns (see FuncDef.Guards):
+// two tests, which with the call counter's update and the last return is the six
+// statements the emitter marks a function of at most -- or three, in the shapes
+// whose later tests are not statements of their own.
+func (f *Fuzzer) genGuardedFuncDecl() *FuncDef {
+	fn := &FuncDef{Name: f.newVarName("fn"), Shape: guardShape(f.Rand.Intn(int(guardShapes)))}
+	for i, n := 0, 1+f.Rand.Intn(3); i < n; i++ {
+		fn.Params = append(fn.Params, f.newVarName("p"))
+	}
+	n := 2
+	if (fn.Shape == shapeElse || fn.Shape == shapeSwitch) && f.Rand.Intn(2) == 0 {
+		n = 3
+	}
+	for range n {
+		fn.Guards = append(fn.Guards, Guard{Cond: f.genPureCond(fn.Params), Result: f.genPureExpr(fn.Params, 0)})
+	}
+	fn.Body = f.genPureExpr(fn.Params, 0)
+	return f.declareFunc(fn)
+}
+
+// cmpOps are the comparisons a test of a function of several returns makes: total
+// over int32, as pureOps are, so a test is defined for every argument.
+var cmpOps = []string{"==", "!=", "<", "<=", ">", ">="}
+
+// genPureCond builds a test for a function of several returns: a comparison of a
+// parameter, or of an expression over one, with a literal or with another pure
+// expression. The parameter keeps the test from being a constant, which a switch of
+// two equal ones would refuse as a duplicate case.
+func (f *Fuzzer) genPureCond(params []string) Node {
+	var left Node = &IdentNode{Name: params[f.Rand.Intn(len(params))]}
+	if f.Rand.Float32() < 0.5 {
+		left = &BinaryExprNode{Left: left, Op: pureOps[f.Rand.Intn(len(pureOps))], Right: f.genPureExpr(params, 2)}
+	}
+	var right Node = &IntLitNode{Value: fmt.Sprintf("%d", f.Rand.Intn(100))}
+	if f.Rand.Float32() < 0.3 {
+		right = f.genPureExpr(params, 1)
+	}
+	return &BinaryExprNode{Left: left, Op: cmpOps[f.Rand.Intn(len(cmpOps))], Right: right}
+}
+
 // declareFunc records a generated function and writes its declaration.
 func (f *Fuzzer) declareFunc(fn *FuncDef) *FuncDef {
 	// A field of four bits per function: a failing seed's count says which
@@ -385,7 +471,7 @@ func (f *Fuzzer) declareFunc(fn *FuncDef) *FuncDef {
 	fn.Weight = 1 << (4 * (len(f.Funcs) % 6))
 	f.Funcs = append(f.Funcs, fn)
 	(&FuncDeclNode{Name: fn.Name, Params: fn.Params, Body: fn.Body, Body2: fn.Body2, Wide: fn.Wide, Params64: fn.Params64,
-		Calls: f.CallsName, Weight: fn.Weight}).Write(f.Out, 0)
+		Guards: fn.Guards, Shape: fn.Shape, Calls: f.CallsName, Weight: fn.Weight}).Write(f.Out, 0)
 	fmt.Fprint(f.Out, "\n")
 	return fn
 }
@@ -542,6 +628,41 @@ func (f *Fuzzer) genPkgVarCluster(vm Machine, mem Memory) []pkgClusterVar {
 // property of the arguments but a broken invariant -- a body built from something
 // outside that set -- and panics rather than being papered over.
 func (f *Fuzzer) evalCall(fn *FuncDef, args map[string]Int32, vm Machine) Int32 {
+	if len(fn.Guards) != 0 {
+		return f.evalGuarded(fn, args, vm)
+	}
+	return f.evalBody(fn, fn.Body, args, vm)
+}
+
+// evalGuarded is evalCall for a function of several returns (see FuncDef.Guards):
+// the result of the first test that holds, and Body's where none does -- but for
+// shapeNested, whose second test is asked only where the first holds, and whose
+// first test's result is returned where the second does not.
+func (f *Fuzzer) evalGuarded(fn *FuncDef, args map[string]Int32, vm Machine) Int32 {
+	holds := func(g Guard) bool {
+		c := g.Cond.(*BinaryExprNode)
+		v, err := vm.Eval(c.Op, f.evalBody(fn, c.Left, args, vm), f.evalBody(fn, c.Right, args, vm))
+		if err != nil {
+			panic(todo("%s: test is not total: %v", fn.Name, err))
+		}
+		return bool(v.(Bool))
+	}
+	if fn.Shape == shapeNested {
+		outer, inner := fn.Guards[0], fn.Guards[1]
+		switch {
+		case !holds(outer):
+			return f.evalBody(fn, fn.Body, args, vm)
+		case holds(inner):
+			return f.evalBody(fn, inner.Result, args, vm)
+		default:
+			return f.evalBody(fn, outer.Result, args, vm)
+		}
+	}
+	for _, g := range fn.Guards {
+		if holds(g) {
+			return f.evalBody(fn, g.Result, args, vm)
+		}
+	}
 	return f.evalBody(fn, fn.Body, args, vm)
 }
 
@@ -607,11 +728,18 @@ func (f *Fuzzer) evalCall64(fn *FuncDef, args map[string]int64) int64 {
 
 // funcsWithResults returns the generated functions returning exactly n values. A
 // two-result function is not a value, so it may only be called where two names
-// receive it -- which is what keeps the two call sites apart.
+// receive it -- which is what keeps the two call sites apart. A function of several
+// returns is left out once it is called in guardSites places.
 func (f *Fuzzer) funcsWithResults(n int) []*FuncDef {
+	return f.funcsOf(n, true)
+}
+
+// funcsOf is funcsWithResults, leaving out a function of several returns that has
+// its guardSites only when capped is set.
+func (f *Fuzzer) funcsOf(n int, capped bool) []*FuncDef {
 	var out []*FuncDef
 	for _, fn := range f.Funcs {
-		if fn.results() == n && !fn.Wide && !fn.Params64 {
+		if fn.results() == n && !fn.Wide && !fn.Params64 && (!capped || len(fn.Guards) == 0 || fn.Sites < guardSites) {
 			out = append(out, fn)
 		}
 	}
@@ -653,10 +781,18 @@ func (f *Fuzzer) genHeaderCall(vm Machine, mem Memory, always bool) Node {
 		return nil
 	}
 	fns := append(f.funcsWithResults(1), f.funcsWithResults(2)...)
+	if len(fns) == 0 && always {
+		// A for's post, whose init drew the one function the loop's body then
+		// called its guardSites times: the post is written all the same, the two
+		// being both or neither, and it is past the cap by one for each loop
+		// around it at most.
+		fns = append(f.funcsOf(1, false), f.funcsOf(2, false)...)
+	}
 	if len(fns) == 0 {
 		return nil
 	}
 	fn := fns[f.Rand.Intn(len(fns))]
+	fn.Sites++ // before its arguments, which may call it too
 	var args []Node
 	for range fn.Params {
 		node, _, _ := f.genExpression(BasicType{Kind: KindInt}, vm, mem, 1)
@@ -674,6 +810,7 @@ func (f *Fuzzer) genHeaderCall(vm Machine, mem Memory, always bool) Node {
 func (f *Fuzzer) genCall(vm Machine, mem Memory, depth int) (Node, Value) {
 	one := f.funcsWithResults(1)
 	fn := one[f.Rand.Intn(len(one))]
+	fn.Sites++ // before its arguments, which may call it too
 	args := map[string]Int32{}
 	var argNodes []Node
 	for _, p := range fn.Params {
@@ -3110,7 +3247,8 @@ func (n *ForStmtNode) Write(w io.Writer, indent int) {
 }
 
 // FuncDeclNode writes a generated function: int parameters, one int result, and a
-// body that is a single return of an expression.
+// body that is a single return of an expression -- or, with Guards, tests returning
+// ahead of it (see FuncDef.Guards).
 type FuncDeclNode struct {
 	Name     string
 	Params   []string
@@ -3118,6 +3256,8 @@ type FuncDeclNode struct {
 	Body2    Node // non-nil for a two-result function
 	Wide     bool // the result is int64(Body); see FuncDef.Wide
 	Params64 bool // see FuncDef.Params64
+	Guards   []Guard
+	Shape    guardShape
 	// Calls and Weight write the call counter's update ahead of the return (see
 	// FuncDef.Weight); an empty Calls writes none.
 	Calls  string
@@ -3149,6 +3289,12 @@ func (n *FuncDeclNode) Write(w io.Writer, indent int) {
 		writeIndent(w, indent+1)
 		fmt.Fprintf(w, "%s = %s + %d\n", n.Calls, n.Calls, n.Weight)
 	}
+	if len(n.Guards) != 0 {
+		n.writeGuarded(w, indent+1)
+		writeIndent(w, indent)
+		fmt.Fprint(w, "}\n")
+		return
+	}
 	writeIndent(w, indent+1)
 	fmt.Fprint(w, "return ")
 	if n.Wide {
@@ -3165,6 +3311,76 @@ func (n *FuncDeclNode) Write(w io.Writer, indent int) {
 	fmt.Fprint(w, "\n")
 	writeIndent(w, indent)
 	fmt.Fprint(w, "}\n")
+}
+
+// writeGuarded writes the body of a function of several returns, after the call
+// counter's update, in its shape (see guardShape).
+func (n *FuncDeclNode) writeGuarded(w io.Writer, indent int) {
+	ret := func(v Node, indent int) {
+		writeIndent(w, indent)
+		fmt.Fprint(w, "return ")
+		v.Write(w, 0)
+		fmt.Fprint(w, "\n")
+	}
+	open := func(kw string, cond Node, indent int) {
+		writeIndent(w, indent)
+		fmt.Fprint(w, kw)
+		cond.Write(w, 0)
+		fmt.Fprint(w, " {\n")
+	}
+	shut := func(indent int) {
+		writeIndent(w, indent)
+		fmt.Fprint(w, "}\n")
+	}
+	switch n.Shape {
+	case shapeSeq:
+		for _, g := range n.Guards {
+			open("if ", g.Cond, indent)
+			ret(g.Result, indent+1)
+			shut(indent)
+		}
+		ret(n.Body, indent)
+	case shapeElse:
+		for i, g := range n.Guards {
+			if i == 0 {
+				open("if ", g.Cond, indent)
+			} else {
+				fmt.Fprint(w, " else ")
+				open("if ", g.Cond, 0)
+			}
+			ret(g.Result, indent+1)
+			writeIndent(w, indent)
+			fmt.Fprint(w, "}")
+		}
+		fmt.Fprint(w, " else {\n")
+		ret(n.Body, indent+1)
+		shut(indent)
+	case shapeSwitch:
+		writeIndent(w, indent)
+		fmt.Fprint(w, "switch {\n")
+		for _, g := range n.Guards {
+			writeIndent(w, indent)
+			fmt.Fprint(w, "case ")
+			g.Cond.Write(w, 0)
+			fmt.Fprint(w, ":\n")
+			ret(g.Result, indent+1)
+		}
+		writeIndent(w, indent)
+		fmt.Fprint(w, "default:\n")
+		ret(n.Body, indent+1)
+		shut(indent)
+	case shapeNested:
+		outer, inner := n.Guards[0], n.Guards[1]
+		open("if ", outer.Cond, indent)
+		open("if ", inner.Cond, indent+1)
+		ret(inner.Result, indent+2)
+		shut(indent + 1)
+		ret(outer.Result, indent+1)
+		shut(indent)
+		ret(n.Body, indent)
+	default:
+		panic(todo("%s: unknown guard shape %d", n.Name, n.Shape))
+	}
 }
 
 // DestructureNode is a two-result call bound to two new names, `a, b := fn(x)`.

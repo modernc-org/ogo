@@ -42,8 +42,23 @@ func TestOracle(t *testing.T) {
 		t.Fatal(err)
 	}
 
+	// singleExits counts the seeds whose C has a function written to leave through
+	// one return: the lowering a function of several returns exists to reach (see
+	// FuncDef.Guards), and one the generator stops reaching in silence if the
+	// emitter's inlining budget and its guardSites drift apart. It is asked only of
+	// a run of every seed, not of one picked with -run.
+	singleExits, ran := 0, 0
+	defer func() {
+		t.Logf("a function written to leave through one return in %d of %d seeds", singleExits, ran)
+		if !t.Failed() && ran == oracleSeeds && singleExits < oracleSeeds/2 {
+			t.Errorf("a function rewritten to leave through one return in %d of %d seeds: "+
+				"the functions of several returns are no longer marked for inlining "+
+				"(see guardSites)", singleExits, oracleSeeds)
+		}
+	}()
 	for seed := 1; seed <= oracleSeeds; seed++ {
 		t.Run(strconv.Itoa(seed), func(t *testing.T) {
+			ran++
 			var prog bytes.Buffer
 			if err := Main([]string{"-seed", strconv.Itoa(seed)}, &prog, io.Discard); err != nil {
 				t.Fatalf("generate: %v", err)
@@ -56,6 +71,9 @@ func TestOracle(t *testing.T) {
 			var c bytes.Buffer
 			if err := octogo.EmitC(pkg, &c, octogo.Checked(), octogo.Inline()); err != nil {
 				t.Fatalf("EmitC (generator bug?): %v\n%s", err, prog.String())
+			}
+			if bytes.Contains(c.Bytes(), []byte("goto _ogo_exit")) {
+				singleExits++
 			}
 			dir := t.TempDir()
 			csrc := filepath.Join(dir, "main.c")

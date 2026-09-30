@@ -30,6 +30,13 @@ var generatedConstructs = []struct {
 	{"if with a call for its init", `\n\s*if fn_\d+\(.*\); `},
 	{"switch with a call for its init", `\n\s*switch fn_\d+\(.*\); `},
 	{"for with a call for its init and its post", `\n\s*for fn_\d+\(.*\); \w+ < \d+; fn_\d+\(.*\) \{`},
+	// A function of several returns, in each of its shapes: the C the emitter
+	// rewrites to leave through one return (singleExit), each shape a different
+	// text to rewrite. Only such a function has a return below its top level.
+	{"several returns: tests in a row", `\n\tif [^\n]+ \{\n\t\treturn [^\n]+\n\t\}\n\tif [^\n]+ \{\n\t\treturn `},
+	{"several returns: an else chain", `\n\t\} else if [^\n]+ \{\n\t\treturn `},
+	{"several returns: a switch", `\n\tswitch \{\n\tcase [^\n]+:\n\t\treturn `},
+	{"several returns: nested tests", `\n\tif [^\n]+ \{\n\t\tif [^\n]+ \{\n\t\t\treturn `},
 	{"switch skipped case", `\n\s*case -?\d+:\n\s*case `},
 	{"switch multi-value case", `\n\s*case -?\d+, -?\d+:`},
 	{"switch default", `\n\s*default:`},
