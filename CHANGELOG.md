@@ -40,6 +40,13 @@ shipped section tells a reader on that version that they have behaviour they do 
 
 ### Fixed
 
+- **A byte of a string followed by a digit 0-7 was misread on the board**, where
+  the byte is not printable ASCII: ESC and '7', a VT100's DECSC, was one byte,
+  0337, and the string a byte short of its length, which read the terminating NUL
+  -- silently, and on the board only. The emitter writes such a byte as a
+  three-digit octal escape, which C ends after three digits and the target's C
+  compiler does not (`doc/octal-escape-past-three-digits.c`); the literal is closed
+  after one now, `"\033" "7"`, as a long one is split. Found by p2-11.
 - **A constant written as a float beside AND NOT.** `x &^ 6e3`, or `x &^ big` for
   a `const big = 1e4`, is an operation of x's type in Go, the constant converted to
   it. The complement the emitter writes for `&^` took its type from the constant

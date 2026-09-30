@@ -612,7 +612,10 @@ still design-only.
   the target's C compiler reads in double arithmetic and so rounds either way
   (`doc/float-literal-tie.c`); such a decimal is written in hex since
   (`nearFloat32Tie`). **A float literal the emitter writes is one the target reads
-  exactly**: a hex one always, a decimal only away from a tie.
+  exactly**: a hex one always, a decimal only away from a tie. So is a STRING
+  literal (2026-09-30, found by p2-11): the target's lexer reads an octal escape past
+  three digits, so `cQuote` closes the literal after one a digit 0-7 follows, `"\033"
+  "7"` (`doc/octal-escape-past-three-digits.c`).
   **A call stands in a header** (2026-09-29): one time in four `genHeaderCall`
   writes one as the init of an if, of a switch and of a for, and as the for's post,
   its results unread, which the call counter accounts for; every seed is a new
