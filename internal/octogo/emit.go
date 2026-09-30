@@ -44549,7 +44549,16 @@ func (e *emitter) emitExprNode(n Node) {
 					shiftNext = op == "<<" || op == ">>"
 				case complementNext:
 					complementNext = false
-					ct, _ := e.inferNode(c)
+					// The complement is of the OPERATION's type, which an untyped
+					// operand takes from the typed one beside it (inferNodes). Asked of
+					// the operand alone, a constant written as a float answered its
+					// class: `x &^ 6e3` was `(x & ((double)-1 ^ (6000)))`, which the
+					// host's compiler refused and the target's built without a word.
+					// Found by the fuzzer, the day it first declared constants.
+					ct, ok := e.inferNodes(kids)
+					if !ok {
+						ct, _ = e.inferNode(c)
+					}
 					e.emitComplement(c.ast, ct, func() { e.emitExprNode(c) })
 				case guardNext && !e.isIntLiteral(c):
 					guardNext = false

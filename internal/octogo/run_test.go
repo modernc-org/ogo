@@ -43029,6 +43029,41 @@ func main() {
 		want: "4 3000000000 0 999990000 3000000004 3000000000 30 3000000000 10000 200 3000000000 2\n3000000001 4000000000 3000000000 true\n2147480148 296 0 10000 3000 false false 4294939296\n-3500 -1 7002 true -14000 -3500 -1 3000 true\n",
 	},
 	{
+		// The same beside AND NOT: `x &^ 6e3` is an operation of x's type in Go, the
+		// constant converted to it. The complement the emitter writes for &^ took its
+		// type from the constant alone, which answered its class --
+		// `(x & ((double)-1 ^ (6000)))` -- so the host's compiler refused the file and
+		// the target's built it without a word, for every integer type. The compound
+		// `x &^= 6e3` took the target's type and was right. Found by the fuzzer the
+		// day it first declared constants.
+		name: "a constant written as a float beside and-not",
+		src: `const f6 = 4.3e9
+
+const f7 = f6 * 6
+
+const small = 6e3
+
+type Mask uint16
+
+func main() {
+	var a int64 = 123456789012
+	var b uint64 = 98765432109
+	var c int32 = 1234567
+	var d uint32 = 4000000000
+	var e int = 99999
+	var g uint8 = 200
+	var m Mask = 65535
+	println(a&^f7, b&^small, c&^small, d&^small, e&^small, g&^1.2e1, m&^small)
+	println(a&f7, b|small, c^small, d&small, m|1.2e1)
+	a = a &^ f7
+	b &^= small
+	m = m &^ 1.2e1
+	println(a, b, m)
+}
+`,
+		want: "106268006420 98765430797 1228935 4000000000 98447 192 59535\n17188782592 98765436797 1229303 0 65535\n106268006420 98765430797 65523\n",
+	},
+	{
 		// The way a Go program reads into a buffer of its own and passes on what
 		// went wrong: `if err := fill(buf[:]); err != nil { return 0, err }`. The
 		// error is the address of a package variable or nil, and nothing of the
