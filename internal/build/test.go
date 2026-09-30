@@ -14,6 +14,7 @@ import (
 	"path/filepath"
 	"regexp"
 	"slices"
+	"sort"
 	"strings"
 	"testing/fstest"
 	"time"
@@ -297,7 +298,11 @@ func testPackage(dir string, opts testOptions, stdout, stderr io.Writer) (int, e
 		}
 		return c.Bytes(), nil
 	}
-	if code, err := compileMarked(cbuf.Bytes(), unmarked, cFile, binary, stdout, stderr); err != nil {
+	root, err := buildRoot(dir)
+	if err != nil {
+		return 2, err
+	}
+	if code, err := compileMarked(cbuf.Bytes(), unmarked, cFile, binary, root, stdout, stderr); err != nil {
 		return code, err
 	}
 	if compileOnly {
@@ -396,6 +401,31 @@ func (o overlayFS) Open(name string) (fs.File, error) {
 		return f, nil
 	}
 	return o.FS.Open(name)
+}
+
+// ReadDir lists a directory of both file systems, extra's entry winning where both
+// have one. The overlay adds a file beside the package's own, so a directory it
+// has is the package's as well: listed through Open, it was extra's alone, the
+// runner and nothing else, and the package's .spin2 files were not there for its
+// functions declared without a body to be bound to.
+func (o overlayFS) ReadDir(name string) ([]fs.DirEntry, error) {
+	base, err := fs.ReadDir(o.FS, name)
+	extra, err2 := fs.ReadDir(o.extra, name)
+	if err != nil && err2 != nil {
+		return nil, err
+	}
+	seen := map[string]bool{}
+	out := append([]fs.DirEntry(nil), extra...)
+	for _, e := range extra {
+		seen[e.Name()] = true
+	}
+	for _, e := range base {
+		if !seen[e.Name()] {
+			out = append(out, e)
+		}
+	}
+	sort.Slice(out, func(i, j int) bool { return out[i].Name() < out[j].Name() })
+	return out, nil
 }
 
 func copyFile(src, dst string) error {

@@ -1610,6 +1610,42 @@
 // named before the steps after it can be written, and an array is the one value
 // with no C type to name it by. "m[0][:]" on its own is fine.
 //
+// # Functions implemented in Spin2
+//
+// (OctoGo Specific): A function declared without a body is implemented by a Spin2
+// object its package carries, as a Go function without one is by its package's
+// assembly: a .spin2 file in the package's directory, beside its .ogo files, whose
+// PUB method of the function's name is what a call runs. Spin2 does not tell case
+// apart, so Start is PUB start. It is the P2's own way of carrying code the
+// compiler does not read -- a driver whose PASM runs on a cog of its own, which
+// the method starts, or a method whose inline PASM runs in the cog calling it,
+// where every clock counts.
+//
+//	// drv.spin2 declares PUB start(params) : ok and PUB stop()
+//	func Start(params *[16]uint32) int
+//	func Stop()
+//
+// The method takes as many parameters as the function and returns a value where
+// the function declares one; a function returns one value at most, and takes no
+// variadic parameter. A Spin2 method takes and returns 32-bit longs, so a parameter
+// or a result is an integer of 32 bits or fewer, a bool or a pointer. Only a
+// function may be implemented so, not a method; and a function without a body in a
+// package carrying no .spin2 file, or none with such a PUB method, is refused.
+//
+// The compiler cannot see what the method does with a pointer it is handed, and a
+// driver keeps what it is given -- the screen its cog reads for as long as the
+// program runs -- so a function a Spin2 object implements is taken to keep every
+// pointer argument, on another cog. The address of a local handed to one is
+// refused, as it is by a function storing its parameter in a package variable; a
+// package variable's address is not.
+//
+// The object is compiled by the P2's C compiler, which imports it into the C of the
+// program, one instance for the whole program. `ogo build` has it read the object,
+// and whatever the object names in turn, from the directory the build reads its
+// files from: the module's root, or the package's own directory where there is no
+// ogo.mod. The host's C compiler has no such import, so a program calling a Spin2
+// method runs on the board only.
+//
 // # Function types and function values
 //
 // A function type "func" Signature denotes the set of functions with that

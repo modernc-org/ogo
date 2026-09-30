@@ -1,0 +1,10 @@
+// A function declared without a body is implemented by a Spin2 object its package
+// carries (see spin2.go). With no .spin2 file beside it, as here, it is refused, as
+// Go refuses a function without a body and no assembly to implement it.
+
+// ERROR "missing function body: extern is implemented by no .spin2 file of its package"
+func extern(int, int) int
+
+func main() {
+	println(1)
+}

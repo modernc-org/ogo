@@ -5503,6 +5503,7 @@ func emitProgram(pkg *Package, w io.Writer, opts []EmitOption, rename map[string
 	// independent of source order.
 	var protos bytes.Buffer
 	e.w = &protos
+	e.emitSpin2Objects(pkgs)
 	forEachFile(func() { e.emitPrototypes(e.f.AST) })
 
 	// Pass 2: the function definitions themselves.
@@ -11137,7 +11138,9 @@ func (e *emitter) collectCrossParams(ast []int32) {
 	e.eachFuncDeclAST(ast, func(d []int32) {
 		if fi, ok := e.funcParamNames(d); ok {
 			e.collectFuncCross(fi)
+			return
 		}
+		e.seedSpin2Cross(d)
 	})
 	// A function LITERAL is a function, and was summarised as nothing: called where
 	// it stands, through a variable or by a defer, `func(xs []int) { g = xs }(a[:])`
@@ -14549,7 +14552,11 @@ func (e *emitter) emitFuncDecl(ast []int32) {
 		// grammar provides for, and which the p2 package is entirely made of: each of
 		// its functions is one C intrinsic the call site substitutes. There is
 		// nothing to emit, and emitting a prototype would name a symbol that does not
-		// exist.
+		// exist. Or it is implemented by a Spin2 object of its package, and is a C
+		// function calling the object's method (emitSpin2Func).
+		if b := e.f.Package.spin2Funcs[name]; recv == nil && b != nil {
+			e.emitSpin2Func(ast, name, sig, b)
+		}
 		return
 	}
 

@@ -156,7 +156,11 @@ func compile(args []string, stdout, stderr io.Writer) (binary string, code int, 
 		return "", 1, err
 	}
 
-	if code, err := compileMarked(cbuf.Bytes(), unmarked, cFile, out, stdout, stderr); err != nil {
+	root, err := buildRoot(dir)
+	if err != nil {
+		return "", 2, err
+	}
+	if code, err := compileMarked(cbuf.Bytes(), unmarked, cFile, out, root, stdout, stderr); err != nil {
 		return "", code, err
 	}
 	return out, 0, nil
@@ -170,15 +174,15 @@ func compile(args []string, stdout, stderr io.Writer) (binary string, code int, 
 // without the marks is not to fail for having been made faster. Nothing is said of
 // the first attempt then; a program that fits neither way is told what the second
 // said.
-func compileMarked(c []byte, unmarked func() ([]byte, error), cFile, out string, stdout, stderr io.Writer) (int, error) {
+func compileMarked(c []byte, unmarked func() ([]byte, error), cFile, out, inc string, stdout, stderr io.Writer) (int, error) {
 	if err := os.WriteFile(cFile, c, 0o644); err != nil {
 		return 1, err
 	}
 	if !bytes.Contains(c, []byte(octogo.InlineMark)) {
-		return compileC(cFile, out, stdout, stderr)
+		return compileC(cFile, out, inc, stdout, stderr)
 	}
 	var said, saidErr bytes.Buffer
-	code, err := compileC(cFile, out, &said, &saidErr)
+	code, err := compileC(cFile, out, inc, &said, &saidErr)
 	if err == nil || !outgrewCog(saidErr.Bytes()) {
 		stdout.Write(said.Bytes())
 		stderr.Write(saidErr.Bytes())
@@ -190,7 +194,7 @@ func compileMarked(c []byte, unmarked func() ([]byte, error), cFile, out string,
 	if err := os.WriteFile(cFile, c, 0o644); err != nil {
 		return 1, err
 	}
-	return compileC(cFile, out, stdout, stderr)
+	return compileC(cFile, out, inc, stdout, stderr)
 }
 
 // outgrewCog reports whether what the backend said is that the program needs more
@@ -504,7 +508,12 @@ func isDir(path string) bool {
 // the flag, the matrix measured on hardware rather than inferred, and the cost in
 // cycles on a loop of each shape, not just in bytes -- and a wide fuzzer sweep on
 // the board before and after, for the faults no reproducer names yet.
-func compileC(cFile, out string, stdout, stderr io.Writer) (rc int, err error) {
+//
+// inc is the directory the program's Spin2 objects are imported from (buildRoot),
+// handed the backend as an include directory, or "" for none: the emitted C names
+// each by its path from there, `struct __using("vga/drv.spin2")`, so what the object
+// itself names is found beside it.
+func compileC(cFile, out, inc string, stdout, stderr io.Writer) (rc int, err error) {
 	// The backend is a C program transpiled to Go, and it can crash as one: having
 	// said "exceeded local register limit" about a function too big for it,
 	// spin2cpp goes on to rename a register it never allocated, which in the
@@ -517,7 +526,11 @@ func compileC(cFile, out string, stdout, stderr io.Writer) (rc int, err error) {
 			rc, err = 1, fmt.Errorf("flexcc crashed: %v", r)
 		}
 	}()
-	if err := flexcc.Main(nil, stdout, stderr, []string{"-2", "-o", out, cFile}); err != nil {
+	args := []string{"-2"}
+	if inc != "" {
+		args = append(args, "-I", inc)
+	}
+	if err := flexcc.Main(nil, stdout, stderr, append(args, "-o", out, cFile)); err != nil {
 		return 1, fmt.Errorf("flexcc: %v", err)
 	}
 	return 0, nil

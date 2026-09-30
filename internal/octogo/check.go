@@ -660,17 +660,21 @@ func (f *File) checkFuncBody(pkg *Scope, n Node) {
 	f.gotoLabels = map[string]bool{}
 	var results []retResult
 	var body Node
-	hasBody := false
+	var sig *SignatureNode
+	hasBody, isMethod, sigErrs := false, false, false
 	for n := range it(n.ast) {
 		switch n.sym {
 		case Receiver:
 			f.checkReceiverType(pkg, n)
 			f.declareReceiver(fs, n)
+			isMethod = true
 		case Signature:
-			sig := f.signature(fs, n)
+			errs := len(f.errList)
+			sig = f.signature(fs, n)
 			f.declareParamList(fs, sig.Params, roleParam)
 			f.declareParamList(fs, sig.Results, roleResult)
 			results = f.flattenResults(fs, sig)
+			sigErrs = len(f.errList) > errs
 		case Block:
 			f.scanGotoLabels(n.ast)
 			f.checkBlock(fs, results, n)
@@ -680,6 +684,11 @@ func (f *File) checkFuncBody(pkg *Scope, n Node) {
 	f.checkGotos(fs)
 	f.reportUnusedLabels()
 	if !hasBody {
+		// A signature the checker has refused is bound to nothing: what is wrong
+		// with the declaration is said once, where it is.
+		if !sigErrs {
+			f.bindSpin2(n, isMethod, sig)
+		}
 		return
 	}
 	// A function that declares one or more results must not be able to reach the

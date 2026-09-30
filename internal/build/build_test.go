@@ -306,7 +306,7 @@ func TestCompileCBackendCrash(t *testing.T) {
 		t.Skip(err)
 	}
 	var stdout, stderr bytes.Buffer
-	rc, err := compileC(src, filepath.Join(t.TempDir(), "prog.binary"), &stdout, &stderr)
+	rc, err := compileC(src, filepath.Join(t.TempDir(), "prog.binary"), "", &stdout, &stderr)
 	if err == nil || rc == 0 {
 		t.Fatalf("compileC = %d, %v: the program should not build\n%s%s", rc, err, stdout.Bytes(), stderr.Bytes())
 	}
@@ -466,7 +466,7 @@ func TestBuildInlineFallback(t *testing.T) {
 	}
 	cFile := filepath.Join(dir, "marked.c")
 	write(t, cFile, c.String())
-	if _, err := compileC(cFile, filepath.Join(dir, "marked.binary"), &said, &said); err == nil {
+	if _, err := compileC(cFile, filepath.Join(dir, "marked.binary"), "", &said, &said); err == nil {
 		t.Fatalf("the program builds with its helpers marked: the fallback is not what built it, and the test needs a larger one")
 	}
 	if !outgrewCog(said.Bytes()) {

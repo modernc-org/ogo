@@ -1547,6 +1547,12 @@ type Package struct {
 	ImportPath string
 	Scope      *Scope
 	ctx        *BuildContext
+	// spin2 are the Spin2 objects the package carries (spin2Objects), and
+	// spin2Funcs the functions declared without a body that their PUB methods
+	// implement, by name (bindSpin2).
+	spin2      []*spin2Object
+	spin2Funcs map[string]*spin2Binding
+	spin2Mu    sync.Mutex
 }
 
 // fileOf is the file parsed from src, or nil for a source no package of this
@@ -1565,6 +1571,12 @@ func (c *BuildContext) NewPackage(importPath string, files []string, fsys fs.FS)
 		ImportPath: importPath,
 		Scope:      newScope(Universe, PackageScope),
 		ctx:        c,
+	}
+	// The Spin2 objects beside the package's files, which its functions declared
+	// without a body are bound to. An embedded package's are the emitter's
+	// intrinsics instead, and it has no directory to carry one in.
+	if _, embedded := embeddedPkgs[importPath]; !embedded && len(files) != 0 {
+		p.spin2 = spin2Objects(fsys, path.Dir(files[0]))
 	}
 
 	// Phase 1: Local Scope Population (Parallel)

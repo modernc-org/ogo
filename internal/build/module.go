@@ -134,6 +134,20 @@ func ModuleContext(dir string) (fsys fs.FS, rel, modulePath string, err error) {
 	return moduleContext(dir)
 }
 
+// buildRoot is the directory a package's build reads its files from, absolute: the
+// module's root, or the package's own directory where there is no ogo.mod. The
+// emitted C imports a Spin2 object by its path from there (see compileC).
+func buildRoot(dir string) (string, error) {
+	root, _, err := findModule(dir)
+	if err != nil {
+		return "", err
+	}
+	if root != "" {
+		return root, nil
+	}
+	return filepath.Abs(dir)
+}
+
 func moduleContext(dir string) (fsys fs.FS, rel, modulePath string, err error) {
 	root, modulePath, err := findModule(dir)
 	if err != nil {
