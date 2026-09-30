@@ -37,6 +37,23 @@ var generatedConstructs = []struct {
 	{"several returns: an else chain", `\n\t\} else if [^\n]+ \{\n\t\treturn `},
 	{"several returns: a switch", `\n\tswitch \{\n\tcase [^\n]+:\n\t\treturn `},
 	{"several returns: nested tests", `\n\tif [^\n]+ \{\n\t\tif [^\n]+ \{\n\t\t\treturn `},
+	// Constants, written every way one is read, and read beside each integer type
+	// (see genConstDecls): the row a named constant beside an unsigned operand was
+	// compared wrongly in, on the board, while no generated program had a constant.
+	{"a constant group", `\nconst \(\n`},
+	{"an iota group", `\n\t\w+ += iota\*\d+ \+ \d+\n\t\w+\n`},
+	{"a rune constant", `\n\t\w+ += '[A-Za-z]'\n`},
+	{"a constant written as a float", `\n\t\w+ += \d\.\de\d\n`},
+	{"a hex constant", `\n\t\w+ += 0x[0-9a-f]+\n`},
+	{"a negative constant", `\n\t\w+ += -\d+\n`},
+	{"an expression of constants", `\n\t\w+ += \(\w+ [-+*] \w+\)\n`},
+	{"a typed constant", `\nconst \w+ \w+ = -?\d+\n`},
+	{"a typed constant as a conversion", `\nconst \w+ = \w+\(-?\d+\)\n`},
+	{"a block constant", `\n\t+const \w+ = -?\d+\n`},
+	{"a block constant read from the one it shadows", `\n\t+const \w+ = \w+ \+ \d+\n`},
+	{"a constant compared with a sized value", `\n\t+if [^\n]* [<>=!]=? k_\d+ \{|\n\t+if k_\d+ [<>=!]=? `},
+	{"a constant divided by a sized value", `= \(?k_\d+ [/%] \w+\)?\n`},
+	{"a sized variable declared from a constant", `\n\t+var \w+ \w+ = k_\d+\n`},
 	{"switch skipped case", `\n\s*case -?\d+:\n\s*case `},
 	{"switch multi-value case", `\n\s*case -?\d+, -?\d+:`},
 	{"switch default", `\n\s*default:`},

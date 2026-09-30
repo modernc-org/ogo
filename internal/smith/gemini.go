@@ -7,6 +7,7 @@ package octosmith
 import (
 	"fmt"
 	"io"
+	"maps"
 	"math"
 	"sort"
 	"strconv"
@@ -133,6 +134,9 @@ func (f *Fuzzer) GenerateProgram(vm Machine, mem Memory) error {
 	if len(f.SliceDefined) != 0 {
 		fmt.Fprint(f.Out, "\n")
 	}
+
+	// 3.8. The package's constants, after the defined types a typed one may be of.
+	f.genConstDecls()
 
 	// 4. Generate the functions main will call. They come first so that every call
 	// site in main has one to draw on, and they take no part in the environment:
@@ -1531,7 +1535,26 @@ func (f *Fuzzer) genSizedStmt(vm Machine, mem Memory) Node {
 	if d, ok := f.SizedDefined[k]; ok {
 		typeName = d
 	}
+	// The block's constant, if it draws one, is declared first, and before anything
+	// below generates an expression: one shadowing a package constant hides that
+	// name from every expression in the block (see genBlockConst).
+	savedBlock, savedHidden, savedType := f.blockConsts, f.hiddenConsts, f.sizedType
+	f.hiddenConsts = maps.Clone(savedHidden)
+	f.sizedType = typeName
+	defer func() { f.blockConsts, f.hiddenConsts, f.sizedType = savedBlock, savedHidden, savedType }()
+	var blockConst Node
+	if f.Rand.Intn(3) == 0 {
+		blockConst = f.genBlockConst(k)
+	}
 	var init Node = &IntLitNode{Value: sizedLitText(cur.v, k)}
+	// One declaration in four initializes the variable from a constant its type
+	// holds, `var z uint32 = k_5` -- a float spelling among them, and `var u uint32 =
+	// 3e9` stored 2147483648 on the board (v0.44.0).
+	if f.Rand.Intn(4) == 0 {
+		if c, v, ok := f.constFor(k, nil); ok {
+			init, cur = &IdentNode{Name: c.Name}, v
+		}
+	}
 	// An int64 is drawn from a WIDENING function three times in four when one
 	// exists: its `return int64(p)` is the shape the target got wrong (see
 	// FuncDef.Wide), and the value then flows into every step and fold below like
@@ -1556,6 +1579,9 @@ func (f *Fuzzer) genSizedStmt(vm Machine, mem Memory) Node {
 	}
 	bits, _, _ := sizedInfo(k)
 	var stmts []Node
+	if blockConst != nil {
+		stmts = append(stmts, blockConst)
+	}
 	// An untyped constant shifted by a count that is NOT constant, `3 << c`. Go
 	// gives the constant the type of where the shift stands -- the variable's, here
 	// -- and never the count's; until 2026-09-14 the emitter computed it in int, or
@@ -1589,6 +1615,11 @@ func (f *Fuzzer) genSizedStmt(vm Machine, mem Memory) Node {
 		node, next := shift.step(f, name, cur)
 		stmts = append(stmts, node)
 		cur = next
+	}
+	if f.Rand.Intn(2) == 0 {
+		if node := f.genSizedCompare(name, cur, vm, mem); node != nil {
+			stmts = append(stmts, node)
+		}
 	}
 
 	// The fold is over an expression, not over the variable, whenever one can be
@@ -1848,7 +1879,6 @@ func (f *Fuzzer) pickSized(k BasicKind) int64 {
 // unstored one can show a compiler computing in the wrong width.
 func (f *Fuzzer) genSizedFold(name string, cur Sized, bits int) (Node, Sized, bool) {
 	id := &IdentNode{Name: name}
-	lit := func(v int64) Node { return &IntLitNode{Value: sizedLitText(v, cur.k)} }
 	choice := f.Rand.Intn(8)
 	if bits == 64 && f.Rand.Float32() < 0.4 {
 		choice = 4 // the negation chain, more often where the target got it wrong
@@ -1888,21 +1918,22 @@ func (f *Fuzzer) genSizedFold(name string, cur Sized, bits int) (Node, Sized, bo
 		}
 		return &SizedChainNode{X: name, Op1: op1, Lit1: sizedLitText(v1, cur.k), Op2: op2, Lit2: sizedLitText(v2, cur.k)}, r.(Sized), true
 	case 2: // a shift, whose result leaves the type at the top end
-		n := int64(f.Rand.Intn(bits))
-		r, err := cur.binOp("<<", NewSized(n, cur.k))
+		opnd, n := f.sizedOperand(cur.k, func() int64 { return int64(f.Rand.Intn(bits)) },
+			func(s Sized) bool { return s.v >= 0 && s.v < int64(bits) })
+		r, err := cur.binOp("<<", n)
 		if err != nil {
 			return nil, cur, false
 		}
-		return &BinaryExprNode{Left: id, Op: "<<", Right: lit(n)}, r.(Sized), true
-	default: // z <op> <literal in range>, the arithmetic that overflows the width
-		v := f.pickSized(cur.k)
+		return &BinaryExprNode{Left: id, Op: "<<", Right: opnd}, r.(Sized), true
+	default: // z <op> <operand>, the arithmetic that overflows the width
+		opnd, v := f.sizedOperand(cur.k, func() int64 { return f.pickSized(cur.k) }, nil)
 		ops := []string{"+", "-", "*"}
 		op := ops[f.Rand.Intn(len(ops))]
-		r, err := cur.binOp(op, NewSized(v, cur.k))
+		r, err := cur.binOp(op, v)
 		if err != nil {
 			return nil, cur, false
 		}
-		return &BinaryExprNode{Left: id, Op: op, Right: lit(v)}, r.(Sized), true
+		return &BinaryExprNode{Left: id, Op: op, Right: opnd}, r.(Sized), true
 	}
 }
 
@@ -1917,46 +1948,63 @@ func (f *Fuzzer) genSizedStep(name string, cur Sized, bits int) (Node, Sized, bo
 		}
 		return &AssignStmtNode{Lhs: name, Op: "=", Rhs: rhs}, v.(Sized), true
 	}
-	lit := func(v int64) Node { return &IntLitNode{Value: sizedLitText(v, cur.k)} }
-	switch f.Rand.Intn(9) {
+	// The operand is a literal in range or, now and then, a named constant that may
+	// stand beside the variable (see sizedOperand).
+	pick := func() int64 { return f.pickSized(cur.k) }
+	switch f.Rand.Intn(10) {
 	case 0: // z = -z
 		return &AssignStmtNode{Lhs: name, Op: "=", Rhs: &UnaryExprNode{Op: "-", X: &IdentNode{Name: name}}}, cur.neg(), true
 	case 1: // z = ^z
 		return &AssignStmtNode{Lhs: name, Op: "=", Rhs: &UnaryExprNode{Op: "^", X: &IdentNode{Name: name}}}, cur.not(), true
-	case 2, 3: // z = z <op> <literal in range>
-		v := f.pickSized(cur.k)
+	case 2, 3: // z = z <op> <operand>
+		opnd, v := f.sizedOperand(cur.k, pick, nil)
 		ops := []string{"+", "-", "*", "&", "|", "^", "&^"}
 		op := ops[f.Rand.Intn(len(ops))]
-		r, err := cur.binOp(op, NewSized(v, cur.k))
-		return assign(&BinaryExprNode{Left: &IdentNode{Name: name}, Op: op, Right: lit(v)}, r, err)
-	case 4: // z = z / <nonzero literal>, z = z % <nonzero literal>
-		v := f.pickSized(cur.k)
-		if v == 0 {
-			v = 1
-		}
+		r, err := cur.binOp(op, v)
+		return assign(&BinaryExprNode{Left: &IdentNode{Name: name}, Op: op, Right: opnd}, r, err)
+	case 4: // z = z / <nonzero operand>, z = z % <nonzero operand>
+		opnd, v := f.sizedOperand(cur.k, func() int64 {
+			if v := pick(); v != 0 {
+				return v
+			}
+			return 1
+		}, func(s Sized) bool { return s.v != 0 })
 		op := "/"
 		if f.Rand.Float32() < 0.5 {
 			op = "%"
 		}
-		r, err := cur.binOp(op, NewSized(v, cur.k))
-		return assign(&BinaryExprNode{Left: &IdentNode{Name: name}, Op: op, Right: lit(v)}, r, err)
+		r, err := cur.binOp(op, v)
+		return assign(&BinaryExprNode{Left: &IdentNode{Name: name}, Op: op, Right: opnd}, r, err)
 	case 5, 6: // z = z << n, z = z >> n
-		n := int64(f.Rand.Intn(bits))
+		opnd, n := f.sizedOperand(cur.k, func() int64 { return int64(f.Rand.Intn(bits)) },
+			func(s Sized) bool { return s.v >= 0 && s.v < int64(bits) })
 		op := "<<"
 		if f.Rand.Float32() < 0.5 {
 			op = ">>"
 		}
-		r, err := cur.binOp(op, NewSized(n, cur.k))
-		return assign(&BinaryExprNode{Left: &IdentNode{Name: name}, Op: op, Right: lit(n)}, r, err)
+		r, err := cur.binOp(op, n)
+		return assign(&BinaryExprNode{Left: &IdentNode{Name: name}, Op: op, Right: opnd}, r, err)
+	case 9: // z = <constant> / z, z = <constant> % z: the constant on the LEFT, where an
+		// unsigned z was divided as a signed number (v0.44.0)
+		c, cv, ok := f.constFor(cur.k, nil)
+		if !ok || cur.v == 0 {
+			return nil, cur, false
+		}
+		op := "/"
+		if f.Rand.Intn(2) == 0 {
+			op = "%"
+		}
+		r, err := cv.binOp(op, cur)
+		return assign(&BinaryExprNode{Left: &IdentNode{Name: c.Name}, Op: op, Right: &IdentNode{Name: name}}, r, err)
 	default: // a compound assignment, the other spelling of the same operation
-		v := f.pickSized(cur.k)
+		opnd, v := f.sizedOperand(cur.k, pick, nil)
 		ops := []string{"+=", "-=", "*=", "&=", "|=", "^=", "&^="}
 		op := ops[f.Rand.Intn(len(ops))]
-		r, err := cur.binOp(op[:len(op)-1], NewSized(v, cur.k))
+		r, err := cur.binOp(op[:len(op)-1], v)
 		if err != nil {
 			return nil, cur, false
 		}
-		return &AssignStmtNode{Lhs: name, Op: op, Rhs: lit(v)}, r.(Sized), true
+		return &AssignStmtNode{Lhs: name, Op: op, Rhs: opnd}, r.(Sized), true
 	}
 }
 
@@ -2871,6 +2919,13 @@ func (f *Fuzzer) genExpression(targetType Type, vm Machine, mem Memory, depth in
 			return node, val, nil
 		}
 		if f.Rand.Float32() < 0.5 {
+			// A package constant one time in five, where an int is wanted (see
+			// constLeaf): read after a block that shadowed it too.
+			if bt, ok := targetType.(BasicType); ok && bt.Kind == KindInt && f.Rand.Intn(5) == 0 {
+				if node, v, ok := f.constLeaf(); ok {
+					return node, v, nil
+				}
+			}
 			// Generate int_lit
 			valStr := fmt.Sprintf("%d", f.Rand.Intn(100))
 			val, _ := vm.Eval("int_lit", valStr)

@@ -149,6 +149,20 @@ type Fuzzer struct {
 	// checks the resolution rather than a person having to think of the spelling.
 	SliceDefined []string
 
+	// Consts are the package's constants, in declaration order (see genConstDecls).
+	// A generated program declared none until 2026-09-30, and a named constant beside
+	// an unsigned operand was compared as a signed number on the board, silently,
+	// until p2-11 met it: every sweep had run, and none had a constant to meet.
+	Consts []*ConstDef
+	// blockConsts are the constants of the block being generated, and hiddenConsts
+	// the package constants one of them shadows there, which no expression may read
+	// by that name meanwhile (see genBlockConst).
+	blockConsts  []*ConstDef
+	hiddenConsts map[string]bool
+	// sizedType is how the sized block being generated writes its variable's type,
+	// which a typed constant must be of to meet it (see constFor).
+	sizedType string
+
 	// Hardware limits tracking
 	CogCount int // Max 8
 
@@ -188,5 +202,6 @@ func NewFuzzer(seed int64, out io.Writer) *Fuzzer {
 		CogCount:     1, // Main starts on the first Cog
 		ChecksumName: "octosmith_checksum",
 		CallsName:    "octosmith_calls",
+		hiddenConsts: map[string]bool{},
 	}
 }
