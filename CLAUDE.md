@@ -519,6 +519,29 @@ still design-only.
   "p2"` remains the one dotless, directory-less import, mapping to the hardware
   intrinsics; `testing`, `strings`, `bytes` and `math` are likewise bare, module or
   not. There is no standard library beyond those.
+- **Functions implemented in Spin2** (2026-09-30, `internal/octogo/spin2.go`) are
+  OctoGo's .s files, asked for by p2-11's VGA text console (Eric Smith's MIT
+  `vga_tile_driver.spin2`, used as it is). A package may carry `.spin2` files; a
+  function declared without a body binds to the PUB method of its name, whatever the
+  case, of one of them (`bindSpin2`, from `checkFuncBody`; `scanSpin2` reads the PUB
+  declarations past comments and strings), the parameter and result counts checked.
+  The emitter declares one instance per object, `struct __using("<path from the build
+  root>")` under `__FLEXC__` and an `#error` for the host (`emitSpin2Objects`), and a
+  bound function is a C function forwarding to the method (`emitSpin2Func`), its C
+  prototype asked what crosses (`spin2Crosses`: an integer of 32 bits or fewer, a
+  bool, a pointer). Lifetime: `seedSpin2Cross` seeds `crossParams`/`crossContents`
+  with `leakCog|leakGlobal` for every parameter before the fixed point -- the method
+  is out of sight and taken to keep what it is handed, which is what a driver does.
+  `ogo build` and `ogo test` pass the build's root (`buildRoot`) to the backend as
+  `-I`, so `__using` resolves and what the object names resolves beside it; ogo
+  test's `overlayFS` needed a merging `ReadDir`, listing through Open having shown
+  the runner alone. Tests: `TestScanSpin2`, `TestSpin2Binding`, `TestSpin2Emit`,
+  `TestSpin2Refusals` (host), `TestBuildSpin2` and `TestTestSpin2` (the backend, no
+  board), `TestOnBoardSpin2` (in `make board`). OPEN, found on the way, older than it
+  and true of every function keeping a parameter: a relay ACROSS packages, `func
+  relay(p *T) { lib.Keep(p) }`, records no summary edge, so `relay(&local)` is
+  accepted; and `&s[0]` of a slice of a local array handed to a keeping function is
+  accepted where `&xs[0]` is refused.
 - **Two test suites.** `TestEmitCRun` builds each program in the `emitRunCases`
   table with the host C compiler and runs it against a pthread shim
   (`testdata/hostp2`). `TestOnBoard` builds the *same* table with the real

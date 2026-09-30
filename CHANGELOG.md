@@ -18,6 +18,26 @@ shipped section tells a reader on that version that they have behaviour they do 
 
 ## Unreleased
 
+### Language
+
+- **A function may be implemented by a Spin2 object its package carries**, as a
+  Go function without a body is by its package's assembly. A function declared
+  without a body calls the PUB method of its name -- whatever the case, Spin2 not
+  telling case apart -- of a .spin2 file beside the package's .ogo files. That is
+  how the P2's drivers are written, PASM on a cog of its own which the method
+  starts, and how its tightest code is, inline PASM run in the calling cog; a VGA
+  text driver, to be used as it is, is what asked for it. The method takes as many
+  parameters as the function, each an integer of 32 bits or fewer, a bool or a
+  pointer, and returns one such value at most. The compiler cannot see what the
+  method does with a pointer, so it is taken to keep every one, on another cog: a
+  local's address handed to one, directly or through a function of its package
+  passing it on, is refused. `ogo build` and `ogo test` read the object from the
+  build's root, the module's or the package's directory, so what the object names
+  in turn is found beside it; a program calling one runs on the board only, the
+  host's C compiler having no import of Spin2. Measured on a P2-EDGE: a method
+  starting a cog of PASM that increments a package variable the program hands it,
+  and one counting bits with an inline `ONES`, alone and from a library package.
+
 ### Fixed
 
 - **A constant written as a float beside AND NOT.** `x &^ 6e3`, or `x &^ big` for
@@ -62,6 +82,15 @@ shipped section tells a reader on that version that they have behaviour they do 
   (v0.44.0). The first sweep found the AND NOT above. Every seed is a new program
   from this release on; seeds 1-2000 pass on the host, and of seeds 1-200 on a
   P2-EDGE 196 pass and 4 outgrow a cog.
+
+### Behaviour changes
+
+- **A function declared without a body needs a .spin2 file to implement it**
+  (under Language, above): with none it is refused where it is declared, "missing
+  function body", as Go refuses one with no assembly behind it. v0.46.0 refused
+  such a function only where it was called, and in the words of the P2's C compiler
+  about the C written for it, "unknown identifier ... used in function call"; one
+  nothing called was built without a word.
 
 ## v0.46.0
 
