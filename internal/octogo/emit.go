@@ -12462,13 +12462,79 @@ func (e *emitter) closeCrossParams() {
 // answers with the callee's C name and the arguments.
 func (e *emitter) valueCall(v []int32) (string, []Node, bool) {
 	recv, suffix, ok := e.shapeCall(v) // `(id)(v)` too
-	if !ok || len(suffix) != 1 || suffix[0].sym != CallSuffix {
+	if !ok {
+		return "", nil, false
+	}
+	if cname, args, isQual := e.qualifiedFuncCall(recv, suffix); isQual {
+		return cname, args, true
+	}
+	if len(suffix) != 1 || suffix[0].sym != CallSuffix {
 		return "", nil, false
 	}
 	if _, isFunc := e.userFunc(recv); !isFunc {
 		return "", nil, false
 	}
 	return e.funcCallC(recv), e.callArgExprs(suffix[0].ast), true
+}
+
+// qualifiedFuncCall resolves a call of ANOTHER package's function by shape,
+// `lib.F(args)`: the function's C name and the call's arguments. The summaries
+// named a callee by the name it is called by, and a qualified one is no name of
+// the package being read: a function relaying its parameter to another package's,
+// `func relay(p *T) { lib.Keep(p) }`, recorded no edge, and `relay(&local)` was
+// taken where the same relay inside lib was refused -- true of every function
+// keeping a parameter, and found writing the first package of Spin2 functions.
+func (e *emitter) qualifiedFuncCall(recv string, suffix []Node) (string, []Node, bool) {
+	prefix, isImport := e.importQualifiers[recv]
+	if !isImport || len(suffix) != 2 || suffix[0].sym != Selector || suffix[1].sym != CallSuffix {
+		return "", nil, false
+	}
+	cname := e.mangle(prefix, e.soleIdent(suffix[0].ast))
+	if _, isFunc := e.funcRet[cname]; !isFunc {
+		return "", nil, false
+	}
+	return cname, e.callArgExprs(suffix[1].ast), true
+}
+
+// eachQualifiedCall calls add for every call a statement makes of another
+// package's function (qualifiedFuncCall): the statement itself, deferred or
+// started on a cog, and a call inside any expression of it.
+func (e *emitter) eachQualifiedCall(nodes []Node, add func(cname string, args []Node)) {
+	if len(nodes) >= 2 {
+		var steps []Node
+		switch head := nodes[0]; {
+		case head.sym == AssignHead && nodes[1].sym == Postfix:
+			steps = slices.Collect(it(nodes[1].ast))
+		case head.sym == 0 && (e.f.ch(head.tok) == GO || e.f.ch(head.tok) == DEFER) && nodes[1].sym == AssignHead:
+			steps = nodes[2:]
+		}
+		if name, stars, chain := e.scanHead(headOf(nodes), steps); name != "" && stars == "" {
+			if cname, args, ok := e.qualifiedFuncCall(name, chain); ok {
+				add(cname, args)
+			}
+		}
+	}
+	var walk func(ast []int32)
+	walk = func(ast []int32) {
+		for n := range it(ast) {
+			if n.sym == 0 {
+				continue
+			}
+			if n.sym == Expression {
+				if recv, suffix, ok := e.shapeCall(n.ast); ok {
+					if cname, args, ok := e.qualifiedFuncCall(recv, suffix); ok {
+						add(cname, args)
+					}
+				}
+			}
+			walk(n.ast)
+		}
+	}
+	for _, n := range nodes {
+		if n.sym != 0 {
+			walk(n.ast)
+		}
+	}
 }
 
 // returnedExprs returns the operands of a return statement.
@@ -14060,6 +14126,9 @@ func (e *emitter) stmtCalls(nodes []Node) []stmtCall {
 		if _, ok := e.userFunc(name); ok {
 			out = append(out, stmtCall{callee: e.funcCallC(name), args: e.callArgExprs(suffix)})
 		}
+	})
+	e.eachQualifiedCall(nodes, func(cname string, args []Node) {
+		out = append(out, stmtCall{callee: cname, args: args})
 	})
 	return out
 }
