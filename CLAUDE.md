@@ -537,11 +537,19 @@ still design-only.
   test's `overlayFS` needed a merging `ReadDir`, listing through Open having shown
   the runner alone. Tests: `TestScanSpin2`, `TestSpin2Binding`, `TestSpin2Emit`,
   `TestSpin2Refusals` (host), `TestBuildSpin2` and `TestTestSpin2` (the backend, no
-  board), `TestOnBoardSpin2` (in `make board`). OPEN, found on the way, older than it
-  and true of every function keeping a parameter: a relay ACROSS packages, `func
-  relay(p *T) { lib.Keep(p) }`, records no summary edge, so `relay(&local)` is
-  accepted; and `&s[0]` of a slice of a local array handed to a keeping function is
-  accepted where `&xs[0]` is refused.
+  board), `TestOnBoardSpin2` (in `make board`). Found on the way and fixed the same
+  day, both older than it and true of every function keeping a parameter: a relay
+  ACROSS packages, `func relay(p *T) { lib.Keep(p) }`, recorded no summary edge,
+  the summaries naming a callee by the name it is called by, so `relay(&local)` was
+  accepted -- `qualifiedFuncCall` resolves `lib.F(args)` for `valueCall` and
+  `eachQualifiedCall` for `stmtCalls` (`TestEmitCRelayAcrossPackages`); and `&s[0]`
+  of a slice whose backing is the frame's, `s := xs[:]`, was no frame reference,
+  `addrOfRoot` stopping at a slice's index and `sliceBackingIsFrame` asking of a
+  slice's value only -- `addrOfSliceElem` answers `sliceElemRef` for it, and a
+  pointer so marked carries `elemOriginPrefix`, pointing INTO s's backing and not at
+  s, so `*p` is an element and not the slice (`TestEmitCSliceElemAddr`). A new way a
+  value reaches the frame is a row of the matrices below, and so is a new way to
+  name a callee.
 - **Two test suites.** `TestEmitCRun` builds each program in the `emitRunCases`
   table with the host C compiler and runs it against a pthread shim
   (`testdata/hostp2`). `TestOnBoard` builds the *same* table with the real

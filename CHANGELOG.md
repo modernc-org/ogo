@@ -98,6 +98,21 @@ shipped section tells a reader on that version that they have behaviour they do 
   such a function only where it was called, and in the words of the P2's C compiler
   about the C written for it, "unknown identifier ... used in function call"; one
   nothing called was built without a word.
+- **A function passing its parameter on to ANOTHER package's function keeps what
+  that function keeps of it.** `func relay(p *int) { lib.Keep(p) }`, with lib's
+  Keep storing p in a package variable, recorded nothing -- the callee was asked by
+  the name it is called by, and a qualified one is no name of the package being read
+  -- so `relay(&x)` left x's address in lib, silently, where the same relay inside
+  lib was refused. A call of another package's function is followed as a statement,
+  deferred, inside an expression and through its result (`g = lib.Pass(p)`,
+  `keep(lib.Pass(p))`), and so is a Spin2 function of another package.
+- **The address of an element of a slice viewing this frame's storage is a
+  reference to the frame.** `keep(&s[0])` for `s := xs[:]` -- or s from make or a
+  literal -- and `p := &s[0]; keep(p)`, `g = &s[0]` and `return &s[0]` were taken
+  where `&xs[0]` was refused, and left a pointer into a dead frame, silently: the
+  address walk stopped at the slice's index, and where the slice's backing came from
+  was asked of the slice's value only. Refused now as `&xs[0]` is, and `*p` of such
+  a pointer reaches what the slice's elements reach.
 
 ## v0.46.0
 
