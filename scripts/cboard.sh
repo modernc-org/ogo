@@ -40,7 +40,7 @@ func TestZZCBoard(t *testing.T) {
 	if c == "" {
 		t.Skip()
 	}
-	if _, err := compileC(c, out, os.Stdout, os.Stderr); err != nil {
+	if _, err := compileC(c, out, "", os.Stdout, os.Stderr); err != nil {
 		t.Fatal(err)
 	}
 }
