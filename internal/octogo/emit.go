@@ -14272,19 +14272,52 @@ func (e *emitter) addrOperandFactor(ast []int32) (Node, bool) {
 }
 
 func (e *emitter) addrOfRoot(ast []int32) (string, bool) {
+	name, suffixed, ok := e.addrRootParts(ast)
+	if !ok {
+		return "", false
+	}
+	// "&p.f" and "&p[i]" through a POINTER reach what the pointer points at, which
+	// is the caller's storage, not this frame's. Only "&p" itself takes this frame's
+	// -- the pointer variable's own cell. A slice root is not a frame reference
+	// either; where its backing came from is what decides that, which
+	// sliceBackingIsFrame asks of a slice and addrOfSliceElem of an address into one.
+	if suffixed {
+		if ct, ok := e.varType(name); ok && (e.isPointer(ct) || e.isSliceCType(ct)) {
+			return "", false
+		}
+	}
+	return name, true
+}
+
+// addrOfSliceElem reports whether an expression is the address of what a slice
+// VARIABLE views -- `&s[i]`, `&s[i].f`, `&s[1:][j]` -- and names the slice.
+func (e *emitter) addrOfSliceElem(ast []int32) (string, bool) {
+	name, suffixed, ok := e.addrRootParts(ast)
+	if !ok || !suffixed {
+		return "", false
+	}
+	if ct, ok := e.varType(name); ok && e.isSliceCType(ct) {
+		return name, true
+	}
+	return "", false
+}
+
+// addrRootParts reads an address, `&x` or `&x.f[i]`: the variable at its root, and
+// whether steps follow it.
+func (e *emitter) addrRootParts(ast []int32) (string, bool, bool) {
 	nodes := slices.Collect(it(ast))
 	for len(nodes) == 1 && (nodes[0].sym == Expression || nodes[0].sym == SimpleExpr || nodes[0].sym == Term) {
 		nodes = slices.Collect(it(nodes[0].ast))
 	}
 	if len(nodes) != 1 || nodes[0].sym != UnaryExpr {
-		return "", false
+		return "", false, false
 	}
 	kids := slices.Collect(it(nodes[0].ast))
 	if len(kids) < 2 || kids[0].sym != UnaryOp {
-		return "", false
+		return "", false, false
 	}
 	if tok, ok := e.unaryOpTok(kids[0].ast); !ok || e.f.ch(tok) != AND {
-		return "", false
+		return "", false, false
 	}
 	// The operand is a Factor: its base identifier is the variable whose storage the
 	// address reaches, whatever field or index suffix follows.
@@ -14300,21 +14333,10 @@ func (e *emitter) addrOfRoot(ast []int32) (string, bool) {
 	suffixed := containsSym(slices.Collect(it(fac.ast)), FactorSuffix)
 	for n := range it(fac.ast) {
 		if n.sym == 0 && e.f.ch(n.tok) == IDENT {
-			// "&p.f" and "&p[i]" through a POINTER reach what the pointer points at,
-			// which is the caller's storage, not this frame's. Only "&p" itself takes
-			// this frame's -- the pointer variable's own cell. A slice root is not a
-			// frame reference either; where its backing came from is what decides
-			// that, and sliceBackingIsFrame has already asked.
-			name := e.src(n.tok)
-			if suffixed {
-				if ct, ok := e.varType(name); ok && (e.isPointer(ct) || e.isSliceCType(ct)) {
-					return "", false
-				}
-			}
-			return name, true
+			return e.src(n.tok), suffixed, true
 		}
 	}
-	return "", false
+	return "", false, false
 }
 
 // addrThroughPointer is addrOfRoot for the address it declines: `&p.f` and `&p[i]`
@@ -46221,11 +46243,28 @@ type frameRef struct {
 	what   string // how to name the value
 	name   string // the referent VARIABLE, bare, for a block-lifetime comparison. Empty where the storage is a temporary the emitter minted, which belongs to the block being emitted (see blockDepthOf).
 	view   bool   // the value is itself a slice over that storage
+	// backing marks a pointer into a slice's backing array of this frame, `&s[i]`
+	// for `s := xs[:]` (sliceElemRef): the array has no name here to be moved, so
+	// the advice is a view's, and the value is no view.
+	backing bool
 }
 
 func sliceRef(name string) frameRef {
 	return frameRef{origin: "local " + name, what: "a slice backed by local " + name, name: name, view: true}
 }
+
+// sliceElemRef names the address of an element of a slice whose backing is this
+// frame's, `&s[i]` for `s := xs[:]`: a pointer into the array s views.
+func sliceElemRef(name string) frameRef {
+	return frameRef{origin: elemOriginPrefix + name, what: "the address of an element of " + name + ", which views local storage", name: name, backing: true}
+}
+
+// elemOriginPrefix begins the holder mark of a pointer into the elements of a slice
+// whose backing is this frame's, `p := &s[i]` (sliceElemRef). It points INTO the
+// array s views, and not at s: `*p` is an element, where the dereference rules read
+// a mark of "local s" as the variable the pointer points at -- which made `return
+// *p`, an int, a slice backed by the frame.
+const elemOriginPrefix = "elements of local "
 
 // runeStrRef names the string a run-time `string(r)` makes. Its bytes are a
 // temporary the emitter mints in the block being emitted, so it has no variable to
@@ -46352,6 +46391,8 @@ func originRef(what, origin string) frameRef {
 	r := frameRef{origin: origin, what: what}
 	if v, isVar := strings.CutPrefix(origin, "local "); isVar {
 		r.name = v
+	} else if v, isElem := strings.CutPrefix(origin, elemOriginPrefix); isElem {
+		r.name, r.backing = v, true
 	}
 	return r
 }
@@ -46495,7 +46536,7 @@ func (e *emitter) carriesReferenceIn(ctype string, seen map[string]bool) bool {
 // sends them looking for one.
 func (r frameRef) advice() string {
 	switch {
-	case r.view:
+	case r.view || r.backing:
 		return "declare the backing array at package scope"
 	case r.origin == tempOrigin:
 		return "assign the value to a package variable and use that"
@@ -46512,7 +46553,7 @@ func (r frameRef) advice() string {
 // send was told to move a backing array it does not have. advice() knew the
 // difference and only one sink of four asked it.
 func (r frameRef) returnAdvice() string {
-	if r.view {
+	if r.view || r.backing {
 		return "take the backing array from the caller or declare it at package scope"
 	}
 	return r.advice()
@@ -46586,6 +46627,15 @@ func (e *emitter) frameRefOf(ast []int32) (frameRef, bool) {
 	if name, ok := e.addrOfRoot(ast); ok && e.isFrameVar(name) {
 		return addrRef(name), true
 	}
+	// The address of an element of a slice whose BACKING is this frame's, `&s[i]`
+	// for `s := xs[:]`: the element is the array's, as `&xs[i]`'s is. addrOfRoot
+	// stops at a slice's index, where the backing decides, and the backing was asked
+	// of a slice's VALUE alone (sliceBackingIsFrame), never of an address into it:
+	// `keep(&s[0])` and `p := &s[0]; keep(p)` were taken where `keep(&xs[0])` was
+	// refused, and left a pointer into a dead frame in a package variable.
+	if name, ok := e.addrOfSliceElem(ast); ok && e.frameBacked[name] {
+		return sliceElemRef(name), true
+	}
 	if name, ok := e.exprIdent(ast); ok {
 		if origin := e.frameHolder[name]; origin != "" {
 			return holderRef(name, origin), true
@@ -46606,11 +46656,23 @@ func (e *emitter) frameRefOf(ast []int32) (frameRef, bool) {
 				return sliceRef(x), true
 			}
 		}
+		// A pointer into the ELEMENTS of a slice, `p := &s[i]`: `*p` is an element,
+		// which reaches what the slice's elements reach -- the slice's own holder
+		// mark -- and not the slice.
+		if x, isElem := strings.CutPrefix(e.frameHolder[ptr], elemOriginPrefix); isElem && e.isFrameVar(x) {
+			if origin := e.frameHolder[x]; origin != "" {
+				return readHolderRef(e.f.exprSource(Node{sym: Expression, ast: ast}), origin), true
+			}
+		}
 	}
 	if ptr, ok := e.addrThroughPointer(ast); ok {
 		if x, isLocal := strings.CutPrefix(e.frameHolder[ptr], "local "); isLocal && e.isFrameVar(x) {
 			return frameRef{origin: "local " + x, name: x,
 				what: e.f.exprSource(Node{sym: Expression, ast: ast}) + ", which points into local " + x}, true
+		}
+		if x, isElem := strings.CutPrefix(e.frameHolder[ptr], elemOriginPrefix); isElem && e.isFrameVar(x) {
+			return frameRef{origin: elemOriginPrefix + x, name: x, backing: true,
+				what: e.f.exprSource(Node{sym: Expression, ast: ast}) + ", which points into the elements of local " + x}, true
 		}
 	}
 	// A COMPOSITE LITERAL carries its elements into the value it makes: `Box{a[:]}`
@@ -49117,6 +49179,8 @@ func (e *emitter) contentsRef(ast []int32) (frameRef, bool) {
 		r := frameRef{origin: origin, what: src + ", whose contents hold a pointer into " + origin}
 		if v, isVar := strings.CutPrefix(origin, "local "); isVar {
 			r.name = v
+		} else if v, isElem := strings.CutPrefix(origin, elemOriginPrefix); isElem {
+			r.name, r.backing = v, true
 		} else {
 			r.view = true // a backing array the emitter minted, which has no name to move
 		}
