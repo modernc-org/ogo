@@ -27185,6 +27185,39 @@ func main() {
 		want: "3 97 255 98\n4 226 128 168 120\n3 65 66 55\ntab\there\nnl\n",
 	},
 	{
+		// C caps an octal escape at three digits, and the target's C compiler does
+		// not: its lexer reads digits for as long as they come. So a byte written as
+		// an octal escape and followed by a digit 0-7 -- ESC and '7', a VT100's DECSC
+		// -- was one byte there, 0337, and the string a byte short of the length
+		// written beside it, which read the terminating NUL: seven of these nine
+		// lines printed wrong on a P2-EDGE, and the host was right throughout. The
+		// literal is closed after such an escape now, `"\033" "7"`. Found by p2-11.
+		name: "an octal escape followed by an octal digit",
+		src: `const decsc = "\0337"
+
+func show(s string) {
+	print(len(s), ":")
+	for i := 0; i < len(s); i++ {
+		print(" ", s[i])
+	}
+	println()
+}
+
+func main() {
+	show("\0337")
+	show("\0010")
+	show("a\0337b")
+	show("\x1b7")
+	show("\xff0\x807")
+	show("\1770")
+	show("\0338")
+	show(decsc + "x")
+	show("\a3")
+}
+`,
+		want: "2: 27 55\n2: 1 48\n4: 97 27 55 98\n2: 27 55\n4: 255 48 128 55\n2: 127 48\n2: 27 56\n3: 27 55 120\n2: 7 51\n",
+	},
+	{
 		// A method PROMOTED from an embedded field satisfies an interface, as it does
 		// in Go. It always satisfied a direct call -- b.get() reached A's get -- and
 		// the interface check read the type's OWN methods only, so one method-set

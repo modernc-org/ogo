@@ -745,16 +745,6 @@ var cNamedEscape = map[byte]string{
 	'\a': `\a`, '\b': `\b`, '\t': `\t`, '\n': `\n`, '\v': `\v`, '\f': `\f`, '\r': `\r`,
 }
 
-// cQuote renders a string as a C literal, byte by byte. Every byte that is not
-// printable ASCII becomes a THREE-DIGIT OCTAL escape, which is where it differs
-// from Go's strconv.Quote and why it exists: C's hex escape has no length limit, so
-// the "a\xffb" that Go quotes as "a\xffb" reads in C as an 'a' followed by ONE
-// escape of value 0xffb -- a warning, and the wrong bytes. C caps an octal escape
-// at three digits, so it always ends where it is written.
-//
-// A non-ASCII byte goes the same way rather than through as itself: the emitted C
-// then holds no byte a compiler could read as anything but a string, whatever it
-// believes the source encoding to be.
 // runeString is Go's conversion of an integer constant to a string: the UTF-8
 // encoding of that code point, and "\uFFFD" for a value that is not one. Go's own
 // string(rune) answers the surrogate range that way already; what it cannot answer
@@ -770,6 +760,22 @@ func runeString(v int64) string {
 	return string(rune(v))
 }
 
+// cQuote renders a string as a C literal, byte by byte. Every byte that is not
+// printable ASCII becomes a THREE-DIGIT OCTAL escape, which is where it differs
+// from Go's strconv.Quote and why it exists: C's hex escape has no length limit, so
+// the "a\xffb" that Go quotes as "a\xffb" reads in C as an 'a' followed by ONE
+// escape of value 0xffb -- a warning, and the wrong bytes. C caps an octal escape
+// at three digits; the target's C compiler does NOT, reading digits for as long as
+// they come (getEscapedChar, spin2cpp's frontends/lexer.c). So "\0337", ESC and a
+// '7', was ONE byte there, 0337, and the string a byte short of the length written
+// beside it -- silently, and on the board only, the host's compiler reading C as C
+// does. A digit 0-7 after an octal escape begins a literal of its own, "\033" "7",
+// which C joins after reading the escapes, as it joins the pieces of a long one.
+// Found by p2-11: a VT100's DECSC is ESC 7.
+//
+// A non-ASCII byte goes the same way rather than through as itself: the emitted C
+// then holds no byte a compiler could read as anything but a string, whatever it
+// believes the source encoding to be.
 func cQuote(s string) string {
 	var b strings.Builder
 	b.WriteByte('"')
@@ -798,6 +804,10 @@ func cQuote(s string) string {
 				continue
 			}
 			fmt.Fprintf(&b, "\\%03o", c)
+			if i+1 < len(s) && s[i+1] >= '0' && s[i+1] <= '7' {
+				b.WriteString("\" \"")
+				piece = b.Len()
+			}
 		}
 	}
 	b.WriteByte('"')
