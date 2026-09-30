@@ -18,6 +18,19 @@ shipped section tells a reader on that version that they have behaviour they do 
 
 ## Unreleased
 
+### Fixed
+
+- **A constant written as a float beside AND NOT.** `x &^ 6e3`, or `x &^ big` for
+  a `const big = 1e4`, is an operation of x's type in Go, the constant converted to
+  it. The complement the emitter writes for `&^` took its type from the constant
+  alone, which answered its class -- `(x & ((double)-1 ^ (6000)))` -- so the host's
+  C compiler refused the program, for every integer type; the target's built it
+  without a word and, in the program measured on a P2-EDGE, computed Go's values.
+  `x &^= 6e3` was right. The complement is of the operation's type now, which also
+  folds a constant complemented beside a 64-bit or an unsigned operand in that type:
+  `z &^ 1` for an int64 z is `z & (-2LL)` where it was `z & ~(1)`, the same bits.
+  Found by the fuzzer the day it first declared constants.
+
 ### Toolchain
 
 - **`ogo smith` writes a function of several returns into every program.** Two
@@ -34,6 +47,21 @@ shipped section tells a reader on that version that they have behaviour they do 
   outgrow a cog, where the generator before had 9 of 200, a program making up to
   twelve calls more. In the four listings looked at, the backend inlined every
   call.
+- **`ogo smith` declares constants.** Every program has a group of untyped ones
+  written every way a constant is read -- small and middling decimals, one past
+  2^31 and one of 64 bits, a negative one, hex, a rune, a float spelling and an
+  expression of the ones before it -- an iota group, and one to three typed ones,
+  of a predeclared kind or of a defined type over one, written with the type or as
+  a conversion. They are read beside each integer type: as an operand of the
+  arithmetic, on the left of `/` and `%`, on either side of a comparison, as a
+  declaration's initializer, and in int expressions; and a block declares its own
+  now and then, one named like a package constant and read from it, `const k_3 =
+  k_3 + 5`, the package's read again after the block. Until now no generated
+  program had a constant, and a named constant beside an unsigned operand was
+  compared as a signed number on the board, silently, until p2-11 met it
+  (v0.44.0). The first sweep found the AND NOT above. Every seed is a new program
+  from this release on; seeds 1-2000 pass on the host, and of seeds 1-200 on a
+  P2-EDGE 196 pass and 4 outgrow a cog.
 
 ## v0.46.0
 

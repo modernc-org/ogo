@@ -615,6 +615,26 @@ still design-only.
   200 outgrow, a program making up to twelve calls more now. The listings say the
   backend took the marks: in four seeds no call of the function is left, where
   `--no-inline` leaves all twelve.
+  **Constants** (2026-09-30, `consts.go`): every program declares a group of untyped
+  ones in each spelling a constant is read in (small, middling, past 2^31, 64-bit,
+  negative, hex, rune, a float spelling, an expression of earlier ones), an iota
+  group, and one to three typed ones, of a predeclared kind or a defined type over
+  one, with the type or as a conversion (`genConstDecls`). They are read beside each
+  integer type: an operand of a sized step or fold (`sizedOperand`), the left of `/`
+  and `%`, either side of a comparison (`genSizedCompare`), a sized declaration's
+  initializer, and an int expression's leaf (`constLeaf` -- integer spellings only,
+  two constants in one expression being computed EXACTLY, and `2.5e3 / 3` is no
+  integer). A sized block declares one of its own one time in three, half of them
+  named like a package constant and read from it, `const k_3 = k_3 + 5` -- the
+  block's name is in scope after its spec only -- the package's hidden from the
+  block's expressions (`hiddenConsts`) and read again after it. An untyped constant
+  meets a kind that holds it (`fitsKind`), a typed one its very type as written
+  (`sizedType`). Its first sweep, seeds 1-2000 on the host, found two programs gcc
+  refused: `x &^ 6e3` complemented as `(double)-1 ^ (6000)`, emitComplement having
+  been typed by the operand alone (inferNode, by the level's inferNodes since), which
+  the target built and, measured, computed right. Swept with the generator and the
+  fix: seeds 1-2000 on the host shim, clean; and 1-200 on a P2-EDGE, 196 passing, 4
+  outgrowing a cog, none failing.
 - **Fixed miscompile (found by the oracle):** a shadowing local whose initializer
   references the shadowed name — `var x = x + 5` with an outer `x` in scope — used
   to miscompile, because the emitter names locals verbatim so the C initializer read
@@ -1607,10 +1627,10 @@ by one, and the 81 fuzzer seeds among them were run on the board. A sweep progra
 with a package variable nothing reads fails the host build on -Werror, which is the
 fixture's. And dumpcorpus.sh numbers its files by POSITION across the tables, so
 three cases added to the first table renumber the ones after: corpusdiff compares by
-content and is right, a tool pairing files by name is not. And the fuzzer declares NO
-constant, which is how the row lived through every sweep on the board: `ogo smith`
-writing `const` -- typed and untyped, a package's and a block's, read beside each
-integer type -- is the guard this row still lacks.
+content and is right, a tool pairing files by name is not. And the fuzzer declared NO
+constant, which is how the row lived through every sweep on the board, until
+2026-09-30 (see the smith notes): its first sweep found `x &^ 6e3` complemented as a
+double, the one operator of the row nobody had crossed with a float spelling.
 
 **WHAT A CALL HANDS BACK IS ASKED ONCE** (2026-09-28). p2-11 could not return an
 error that came of a call given a local buffer, `if err := fill(buf[:]); err != nil
