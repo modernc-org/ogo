@@ -596,6 +596,25 @@ still design-only.
   program from that commit on. Swept with that generator the same day: seeds
   1-2000 on the host shim, clean, 917 of them with such a call; and 25-200 on a
   P2-EDGE, 168 passing, 8 outgrowing a cog and none failing, 75 of them with one.
+  **A function of several returns** (2026-09-30): every program declares one
+  (`genGuardedFuncDecl`) -- two or three tests over its parameters, each returning,
+  ahead of a last return, in a row, as an else chain, as a tagless switch's cases or
+  nested (`guardShape`) -- which the emitter marks for the backend to inline and
+  writes to leave through one return (`singleExit`): the lowering of v0.46.0 no seed
+  had reached. The emitter marks a function only while its statements times its call
+  sites stay within 96, and such a one has six, so it is drawn at `guardSites`,
+  twelve, call sites at most: drawn like any other, it was called in 24 to 38 places
+  and marked in none. A for's post may draw it past the cap, the post being written
+  wherever its init is, both or neither -- which the cap broke first, four seeds of
+  100 writing a for with an init and no post. **A new call site by name counts
+  `fn.Sites`** beside `noteCall`. `TestOracle` fails when fewer than half its seeds
+  reach the rewrite; all 100 do. Every seed is a new program from that commit on.
+  Swept with that generator the same day: seeds 1-2000 on the host shim, clean, 1996
+  with the rewrite (the other four never call the function); and 1-200 on a P2-EDGE,
+  185 passing and 15 outgrowing a cog, none failing -- the generator before had 9 of
+  200 outgrow, a program making up to twelve calls more now. The listings say the
+  backend took the marks: in four seeds no call of the function is left, where
+  `--no-inline` leaves all twelve.
 - **Fixed miscompile (found by the oracle):** a shadowing local whose initializer
   references the shadowed name — `var x = x + 5` with an outer `x` in scope — used
   to miscompile, because the emitter names locals verbatim so the C initializer read
@@ -1511,11 +1530,12 @@ host, which is what verifies its meaning; the mark is nothing there, so **that t
 copies are right where they land is verified on the board and nowhere else**, and
 what holds the inlining off the board is the LISTING: `TestBuildInlines` asks that
 the checked program has no call of an accessor left, and that `--no-inline` has
-five. The fuzzer writes no small function of several returns, so the lowering is in
-7 run cases and no seed: a generator of such helpers is the guard it lacks. The
-marks it has: seeds 25-200 on a P2-EDGE with this compiler, 168 passing, 8
-outgrowing a cog as they did before and none failing, 167 of the 176 programs with
-a function marked.
+five. The fuzzer writes a small function of several returns into every program
+since 2026-09-30 (see the smith notes): the rewrite is in 1996 of seeds 1-2000, and
+seeds 1-200 on a P2-EDGE pass with it inlined, 15 outgrowing a cog and none failing
+-- until then the lowering was in 7 run cases and no seed. The marks before it:
+seeds 25-200 on a P2-EDGE with this compiler, 168 passing, 8 outgrowing a cog as
+they did before and none failing, 167 of the 176 programs with a function marked.
 It is an OPTION of the emitter, `Inline()`, as `Checked()` is, and not its default:
 thirteen tests pin the C of a small program verbatim, and bare `EmitC` stays the
 plain C they pin. **Whatever emits what a build emits passes both** -- `ogo build`

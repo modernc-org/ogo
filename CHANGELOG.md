@@ -16,6 +16,25 @@ same area is a new entry under **Unreleased**, not an edit to the old one. Amend
 shipped section tells a reader on that version that they have behaviour they do not.
 `git show vX.Y.Z:CHANGELOG.md` is the check.
 
+## Unreleased
+
+### Toolchain
+
+- **`ogo smith` writes a function of several returns into every program.** Two
+  or three tests over its parameters, each returning its own result, ahead of a
+  last return -- in a row, as an else chain, as the cases of a switch, or one test
+  inside another: the shapes v0.46.0 marks for the backend to inline and writes to
+  leave through one return, a lowering no generated program had reached and only
+  the board can check. It is called in twelve places at most, which keeps it within
+  what the emitter marks; drawn like any other function, it was called in 24 to 38
+  and marked in none. `TestOracle` fails when fewer than half of its seeds reach
+  the rewrite, and all 100 do. Every seed is a new program from this release on.
+  Of seeds 1-2000 on the host all pass, 1996 of them with the rewrite (the other
+  four never call the function); of seeds 1-200 on a P2-EDGE 185 pass and 15
+  outgrow a cog, where the generator before had 9 of 200, a program making up to
+  twelve calls more. In the four listings looked at, the backend inlined every
+  call.
+
 ## v0.46.0
 
 ### Toolchain
