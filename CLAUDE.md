@@ -853,7 +853,20 @@ the board. `bareGlobal` keeps main's names out of another package's bare lookups
 (`mainGlobals`, TestEmitCMainNamesInPackages); scalar constants had been safe only
 because they are folded before any variable is asked. **A new bare-name lookup into
 a package-level registry asks bareGlobal**, and a probe of the boundary declares in
-main what the library uses by the same name.
+main what the library uses by the same name. The CHECKER had the mirror of it, the
+next day: every helper following a chain of type definitions -- typeKind, chanElem,
+isPointerType, isArrayType, the element-name helpers, the cycle walk -- looked a
+QUALIFIED name, `lib.Count`, up bare in the package asking, so it was main's Count
+where main had one and no type otherwise. Valid programs were refused (a dereference
+of a `lib.P` variable always), and wrong values into such a type taken.
+`typeIdentDecl` resolves a written type name where it is declared, through the file
+that wrote the qualifier; a helper returning an element's NAME answers nothing for
+another package's type, whose names are that package's (TestCheckQualifiedTypes). A
+METHOD of such a type was the same row: callResults read the receiver's type by its
+bare name and its results in this scope (it resolves and requalifies them now,
+requalifiedSig), and importedMethodResultType named the result of a struct's method
+only, so a `type Count int`'s went unchecked.
+**A new helper following type definitions goes through typeIdentDecl.**
 
 **A C NAME IS A ROW** (2026-09-25). The emitted C keeps a program's own names, so
 every name a program may write is a row across everything else that names things in

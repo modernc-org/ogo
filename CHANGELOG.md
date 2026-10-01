@@ -16,6 +16,27 @@ same area is a new entry under **Unreleased**, not an edit to the old one. Amend
 shipped section tells a reader on that version that they have behaviour they do not.
 `git show vX.Y.Z:CHANGELOG.md` is the check.
 
+## Unreleased
+
+### Fixed
+
+- **Another package's defined type was read as the main package's type of the
+  same name, or as no type at all.** The checker followed `lib.Count` by its bare
+  name, in the package using it, so valid programs were refused: `var c lib.Count
+  = 5` beside a `type Count string` of main's, a parameter, a field and arithmetic
+  of it, a send on a `lib.Ch` checked against main's Ch, a field of type `lib.T`
+  in main's own `T` taken for a recursive type, and `int(c.Double())` for lib's
+  method answered with main's method of the name -- and a dereference of a
+  variable of a `lib.P` pointer type was refused whatever main declared.
+
+### Behaviour changes
+
+- **A value of the wrong kind for another package's defined type is refused**
+  (under Fixed, above): `var c lib.Count = "x"`, a string returned or passed as
+  one, an int into a `lib.Name` string type or its field, `if c {` for an int one,
+  `%` of a float one, a string sent on a `lib.Ch` of ints, and a lib method's
+  `lib.Count` result into an `int` were taken, and handed to the C compiler.
+
 ## v0.47.1
 
 ### Fixed
