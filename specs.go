@@ -836,6 +836,16 @@
 // it -- "b := *p" -- copies the array, as assigning one does. A defined array type
 // takes a pointer the same way, "*Row".
 //
+// A conversion to a pointer to an array is Go's, its type written out or named,
+// "(*[4]int)(x)" or "(*Row)(x)": from nil, from a pointer whose base type has the
+// array's underlying type, and from a slice of the array's element -- the pointer
+// then being the slice's backing, the slice's first elements, and the conversion
+// panicking where the slice holds fewer than the array:
+//
+//	s := buf[2:]
+//	hdr := (*[4]byte)(s)   // buf[2] through buf[5]
+//	hdr[0] = 1             // writes buf[2]
+//
 // No OTHER pointer is indexable, which C would not say for itself: it indexes any
 // pointer as the array it is not, so "p[1]" off a "*int" would read past the
 // pointee. What a pointer points at is reached by "*p", and a field of a pointed-to
@@ -898,8 +908,10 @@
 //	}
 //
 // A store through a converted pointer, "*(*uint32)(p) = v", works as it does through
-// a pointer variable. An alias, "type P = unsafe.Pointer", is the same type; a type
-// DEFINED over unsafe.Pointer is not supported yet.
+// a pointer variable, and a block is read as an array through a pointer to one,
+// "(*[16]uint32)(unsafe.Pointer(uintptr(params[1])))". An alias, "type P =
+// unsafe.Pointer", is the same type; a type DEFINED over unsafe.Pointer is not
+// supported yet.
 //
 // The lifetime rules follow a Pointer as they follow the pointer it was converted
 // from: "unsafe.Pointer(&x)" for a local x is refused where "&x" is -- returned,

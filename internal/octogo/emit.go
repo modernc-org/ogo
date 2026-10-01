@@ -5383,7 +5383,7 @@ func typeNameCollisions(src []byte, names map[string]bool) map[string]bool {
 // emitProgram is EmitC's one pass. rename lists the main-package types spelled
 // ogo_T_<name> in C (see typeMangle).
 func emitProgram(pkg *Package, w io.Writer, opts []EmitOption, rename map[string]bool) error {
-	e := &emitter{renameTypes: rename, renamedTypes: map[string]string{}, includes: map[string]bool{}, funcRet: map[string][]string{}, funcSliceParams: map[string][]string{}, funcVariadic: map[string]int{}, nilHelpers: map[string]bool{}, funcArrayRet: map[string]arrDim{}, funcStructRet: map[string]string{}, funcArrayParams: map[string][]arrDim{}, anonStructNames: map[string]string{}, methodValueTypes: map[string]funcValueType{}, methodValueOf: map[string]string{}, methodExprNames: map[string]string{}, funcParams: map[string][]string{}, methodPtr: map[string]bool{}, recvByRef: map[string]bool{}, globals: map[string]string{}, structs: map[string][]structField{}, namedTypes: map[string]bool{}, typeNames: map[string]bool{}, interfaceTypes: map[string]bool{}, ifaceMethods: map[string][]ifaceMethod{}, anonIfaceNames: map[string]string{}, anonIfaceMinted: map[string]bool{}, ifaceASTs: map[string]ifaceAST{}, ifaceVTables: map[string]bool{}, namedUnderlying: map[string]string{}, namedArrays: map[string]arrDim{}, constInt: map[string]string{}, constVal: map[string]constant.Value{}, constWide: map[string]string{}, constStr: map[string]string{}, constUntyped: map[string]bool{}, constHuge: map[string]bool{}, arrays: map[string]arrDim{}, globalArrays: map[string]arrDim{}, sliceVars: map[string]string{}, globalSliceVars: map[string]string{}, chanElems: map[string]bool{}, chanInitElems: map[string]bool{}, chanSendElems: map[string]bool{}, chanRecvElems: map[string]bool{}, chanTryRecvElems: map[string]bool{}, chanTrySendElems: map[string]bool{}, chanGatedSendElems: map[string]bool{}, aliasOf: map[string]string{}, localTypes: map[string]string{}, gotoTargets: map[string]bool{}, chanCloseElems: map[string]bool{}, chanRecv2Elems: map[string]bool{}, mathWrappers: map[string]bool{}, chanElemByName: map[string]string{}, sliceElems: map[string]bool{}, sliceElemByName: map[string]string{}, appendElems: map[string]bool{}, tryappendElems: map[string]bool{}, appendSliceElems: map[string]bool{}, tryappendSliceEls: map[string]bool{}, appendokStructs: map[string]bool{}, copyElems: map[string]bool{}, resliceElems: map[string]bool{}, reslice3Elems: map[string]bool{}, clearElems: map[string]bool{}, minElems: map[string]bool{}, maxElems: map[string]bool{}, printSliceElems: map[string]bool{}, printStructs: map[string]string{}, printIfaces: map[string]string{}, printlnElems: map[string]bool{}, switchBreakUsed: map[string]bool{}, labelBreak: map[string]string{}, labelContinue: map[string]string{}, labelUsed: map[string]bool{}, eqStructs: map[string]bool{}, eqArrays: map[string]arrDim{}, frameBacked: map[string]bool{}, frameHolder: map[string]string{}, crossParams: map[string][]leak{}, crossContents: map[string][]leak{}, retContents: map[string][]bool{}, recvContents: map[string]leak{}, paramCalls: map[string][]paramCall{}, frameCalls: map[string][]frameCall{}, localConstSpecs: map[string]localConstSpec{}, inheritedTypes: map[string]bool{}, funcValueMembers: map[string][]string{}, methodExprMembers: map[string]emMethodExpr{}, memberShown: map[string]string{}, litLifted: map[string][]string{}, methodNames: map[string]bool{}, recvLeaks: map[string]leak{}, retRecv: map[string]bool{}, crossInto: map[string][]uint32{}, ifaceSummaries: map[string]ifaceSummary{}, retParams: map[string][]bool{}, funcValueOf: map[string]string{}, crossNames: map[string]string{}, initNames: map[string]string{}, funcValueTypes: map[string]funcValueType{}, funcTypeNames: map[string]string{}, funcTypeRet: map[string][]string{}, funcTypeParams: map[string][]string{}, funcTypeVariadic: map[string]int{}, recFuncTypes: map[string]bool{}, recFuncShapes: map[string]string{}, retStructs: map[string]string{}, retStructByKey: map[string]string{}, shiftHelpers: map[string][2]string{}, shiftCTypes: map[*int32]string{}, shiftWalked: map[shiftWalkKey]bool{}, shiftIn: map[*int32]bool{}, divHelpers: map[string][2]string{}, funcValueWrappers: map[string]string{}, deferReplay: -1, iota: -1}
+	e := &emitter{renameTypes: rename, renamedTypes: map[string]string{}, includes: map[string]bool{}, funcRet: map[string][]string{}, funcSliceParams: map[string][]string{}, funcVariadic: map[string]int{}, nilHelpers: map[string]bool{}, arrPtrHelpers: map[string]arrDim{}, funcArrayRet: map[string]arrDim{}, funcStructRet: map[string]string{}, funcArrayParams: map[string][]arrDim{}, anonStructNames: map[string]string{}, methodValueTypes: map[string]funcValueType{}, methodValueOf: map[string]string{}, methodExprNames: map[string]string{}, funcParams: map[string][]string{}, methodPtr: map[string]bool{}, recvByRef: map[string]bool{}, globals: map[string]string{}, structs: map[string][]structField{}, namedTypes: map[string]bool{}, typeNames: map[string]bool{}, interfaceTypes: map[string]bool{}, ifaceMethods: map[string][]ifaceMethod{}, anonIfaceNames: map[string]string{}, anonIfaceMinted: map[string]bool{}, ifaceASTs: map[string]ifaceAST{}, ifaceVTables: map[string]bool{}, namedUnderlying: map[string]string{}, namedArrays: map[string]arrDim{}, constInt: map[string]string{}, constVal: map[string]constant.Value{}, constWide: map[string]string{}, constStr: map[string]string{}, constUntyped: map[string]bool{}, constHuge: map[string]bool{}, arrays: map[string]arrDim{}, globalArrays: map[string]arrDim{}, sliceVars: map[string]string{}, globalSliceVars: map[string]string{}, chanElems: map[string]bool{}, chanInitElems: map[string]bool{}, chanSendElems: map[string]bool{}, chanRecvElems: map[string]bool{}, chanTryRecvElems: map[string]bool{}, chanTrySendElems: map[string]bool{}, chanGatedSendElems: map[string]bool{}, aliasOf: map[string]string{}, localTypes: map[string]string{}, gotoTargets: map[string]bool{}, chanCloseElems: map[string]bool{}, chanRecv2Elems: map[string]bool{}, mathWrappers: map[string]bool{}, chanElemByName: map[string]string{}, sliceElems: map[string]bool{}, sliceElemByName: map[string]string{}, appendElems: map[string]bool{}, tryappendElems: map[string]bool{}, appendSliceElems: map[string]bool{}, tryappendSliceEls: map[string]bool{}, appendokStructs: map[string]bool{}, copyElems: map[string]bool{}, resliceElems: map[string]bool{}, reslice3Elems: map[string]bool{}, clearElems: map[string]bool{}, minElems: map[string]bool{}, maxElems: map[string]bool{}, printSliceElems: map[string]bool{}, printStructs: map[string]string{}, printIfaces: map[string]string{}, printlnElems: map[string]bool{}, switchBreakUsed: map[string]bool{}, labelBreak: map[string]string{}, labelContinue: map[string]string{}, labelUsed: map[string]bool{}, eqStructs: map[string]bool{}, eqArrays: map[string]arrDim{}, frameBacked: map[string]bool{}, frameHolder: map[string]string{}, crossParams: map[string][]leak{}, crossContents: map[string][]leak{}, retContents: map[string][]bool{}, recvContents: map[string]leak{}, paramCalls: map[string][]paramCall{}, frameCalls: map[string][]frameCall{}, localConstSpecs: map[string]localConstSpec{}, inheritedTypes: map[string]bool{}, funcValueMembers: map[string][]string{}, methodExprMembers: map[string]emMethodExpr{}, memberShown: map[string]string{}, litLifted: map[string][]string{}, methodNames: map[string]bool{}, recvLeaks: map[string]leak{}, retRecv: map[string]bool{}, crossInto: map[string][]uint32{}, ifaceSummaries: map[string]ifaceSummary{}, retParams: map[string][]bool{}, funcValueOf: map[string]string{}, crossNames: map[string]string{}, initNames: map[string]string{}, funcValueTypes: map[string]funcValueType{}, funcTypeNames: map[string]string{}, funcTypeRet: map[string][]string{}, funcTypeParams: map[string][]string{}, funcTypeVariadic: map[string]int{}, recFuncTypes: map[string]bool{}, recFuncShapes: map[string]string{}, retStructs: map[string]string{}, retStructByKey: map[string]string{}, shiftHelpers: map[string][2]string{}, shiftCTypes: map[*int32]string{}, shiftWalked: map[shiftWalkKey]bool{}, shiftIn: map[*int32]bool{}, divHelpers: map[string][2]string{}, funcValueWrappers: map[string]string{}, deferReplay: -1, iota: -1}
 	for _, opt := range opts {
 		opt(e)
 	}
@@ -5747,6 +5747,9 @@ func emitProgram(pkg *Package, w io.Writer, opts []EmitOption, rename map[string
 	}
 	for _, pt := range slices.Sorted(maps.Keys(e.nilHelpers)) {
 		helperDefs.WriteString(nilHelperDef(pt, nilHelperName(pt)))
+	}
+	for _, ct := range slices.Sorted(maps.Keys(e.arrPtrHelpers)) {
+		helperDefs.WriteString(arrPtrHelperDef(ct, e.arrPtrHelpers[ct], e.checks))
 	}
 	if e.usesIfaceNil {
 		helperDefs.WriteString(ogoIfaceNil)
@@ -6453,6 +6456,7 @@ type emitter struct {
 	testEntry          string                  // the entry point of a test binary, replacing main (see TestEntry)
 	usesBound          bool                    // ogo_bound is called: emit the index bounds-check helper
 	nilHelpers         map[string]bool         // pointer types whose nil-dereference guard is called
+	arrPtrHelpers      map[string]arrDim       // pointer-to-array types a slice is converted to: emit each one's helper
 	usesNonzero        bool                    // ogo_nonzero is called: emit the divide-by-zero-check helper
 	usesFloatFmt       bool                    // ogo_print_float is called: a float printed by print, println or any float verb (see floatFmtHelper)
 	usesBytesPrint     bool                    // ogo_print_hex_bytes / ogo_print_qbytes are called: %x, %X or %q over a string or a byte slice
@@ -15454,6 +15458,9 @@ func (e *emitter) ptrConvParts(typ Node, steps []Node) (emPtrConv, bool) {
 		base = e.starPredeclaredCAt(typ)
 	}
 	if base == "" {
+		base = e.starLitCAt(typ)
+	}
+	if base == "" {
 		return emPtrConv{}, false
 	}
 	if len(steps) == 0 || steps[0].sym != CallSuffix {
@@ -15483,7 +15490,8 @@ func (e *emitter) ptrConvOperand(ast []int32) ([]int32, bool) {
 
 // ptrConvShape is ptrConvAt by SHAPE alone, for the summaries, which read a body
 // before any local of it has a type and before a type declared in it has a name:
-// `(*T)(x)` and `(*pkg.T)(x)`, with the steps written after the conversion. The one
+// `(*T)(x)`, `(*pkg.T)(x)` and `(*[N]T)(x)`, with the steps written after the
+// conversion. The one
 // other thing of that shape, a call through a pointer to a function, `(*fp)(x)`, is
 // a call of what fp points at; read as a conversion as well it holds its argument,
 // which is the conservative reading of an unknown callee's result.
@@ -15507,7 +15515,19 @@ func (e *emitter) ptrConvShape(kids []Node) (arg Node, rest []Node, ok bool) {
 		return Node{}, nil, false
 	}
 	fk := slices.Collect(it(un[1].ast))
-	if len(fk) == 0 || fk[0].sym != 0 || e.f.ch(fk[0].tok) != IDENT {
+	if len(fk) == 0 || fk[0].sym != 0 {
+		return Node{}, nil, false
+	}
+	switch e.f.ch(fk[0].tok) {
+	case IDENT:
+	case LBRACK:
+		// `(*[4]byte)(x)` and `(*[]T)(x)`: a type written out, which has no literal
+		// after it and nothing else either.
+		if fk[len(fk)-1].sym != Type || slices.ContainsFunc(fk, func(n Node) bool { return n.sym == CompositeLit || n.sym == FactorSuffix }) {
+			return Node{}, nil, false
+		}
+		fk = fk[:1]
+	default:
 		return Node{}, nil, false
 	}
 	if len(fk) == 2 {
@@ -15597,6 +15617,40 @@ func (e *emitter) uintptrConvOperands(ast []int32) (out [][]int32) {
 	return out
 }
 
+// starLitCAt answers the C type of a type written out for an expression that is
+// exactly `*[N]T` or `*[]T`, `*[4]uint32` in `(*[4]uint32)(unsafe.Pointer(a))` --
+// the typedef every `[4]uint32` of the program shares, or the slice's header -- and
+// "" for anything else.
+func (e *emitter) starLitCAt(x Node) string {
+	nodes := slices.Collect(it(x.ast))
+	for len(nodes) == 1 && (nodes[0].sym == Expression || nodes[0].sym == SimpleExpr || nodes[0].sym == Term) {
+		nodes = slices.Collect(it(nodes[0].ast))
+	}
+	if len(nodes) != 1 || nodes[0].sym != UnaryExpr {
+		return ""
+	}
+	kids := slices.Collect(it(nodes[0].ast))
+	if len(kids) != 2 || kids[0].sym != UnaryOp || kids[1].sym != Factor {
+		return ""
+	}
+	if tok, isOp := e.unaryOpTok(kids[0].ast); !isOp || e.f.ch(tok) != MUL {
+		return ""
+	}
+	fk := slices.Collect(it(kids[1].ast))
+	if len(fk) == 0 || fk[0].sym != 0 || e.f.ch(fk[0].tok) != LBRACK || slices.ContainsFunc(fk, func(n Node) bool { return n.sym == CompositeLit }) {
+		return ""
+	}
+	if elem, ok := e.sliceType(kids[1].ast); ok {
+		e.needSlice(elem)
+		return sliceCName(elem)
+	}
+	name, ok := e.arrayElemTypedef(kids[1].ast)
+	if !ok {
+		return ""
+	}
+	return name
+}
+
 // starPredeclaredCAt answers the C type of a predeclared T for an expression that
 // is exactly `*T`, `*int` in `(*int)(nil)`, and "" for anything else.
 func (e *emitter) starPredeclaredCAt(x Node) string {
@@ -15630,8 +15684,57 @@ func (e *emitter) ptrConvC(pc emPtrConv) string {
 	if e.isNilExpr(pc.arg.ast) {
 		return "((" + pc.ct + ")0)"
 	}
+	if a, toArray := e.arrayPtrCType(pc.ct); toArray && e.isSliceOperand(pc.arg.ast) {
+		return e.sliceArrayPtrC(pc.ct, a, pc.arg.ast)
+	}
 	return "((" + pc.ct + ")(" + e.captureC(func() { e.emitExpr(pc.arg.ast) }) + "))"
 }
+
+// sliceArrayPtrC is a conversion of a SLICE to a pointer to an array, `(*[4]byte)(s)`:
+// the slice's backing, which Go hands out only where the slice holds the array's
+// length, panicking otherwise -- a nil slice is the nil pointer, to an array of none.
+// It is a call of a helper taking the slice whole, so the slice is evaluated once and
+// nothing is cast where the conversion stands: the target's C compiler refuses a
+// cast of a member of a compound literal, `(T*)(((ogo_slice_int){a + 1, 3,
+// 3}).ptr)` -- which is what `a[1:]` is -- and then crashes (viaField in
+// doc/complit-arg-in-cast.c).
+func (e *emitter) sliceArrayPtrC(ct string, a arrDim, operand []int32) string {
+	if len(a.inner) != 0 {
+		e.failAt(operand, "a conversion of a slice to *%s, a pointer to an array of arrays, is not supported yet", e.goArrayTypeName(a))
+		return "((" + ct + ")0)"
+	}
+	sct, _ := e.inferCType(operand)
+	if elem := e.sliceElemByName[e.underlyingCType(sct)]; elem != a.elem {
+		e.failAt(operand, "cannot convert a slice of %s to *%s", elem, e.goArrayTypeName(a))
+		return "((" + ct + ")0)"
+	}
+	e.needSlice(a.elem)
+	if e.checks && a.bound != "0" { // every slice holds an array of none
+		e.needPanic()
+	}
+	e.arrPtrHelpers[ct] = a
+	return arrPtrHelperName(ct) + "(" + e.exprC(operand) + ")"
+}
+
+// arrPtrHelperDef is a conversion of a slice to the pointer to an array ct points
+// at: it answers the slice's pointer as ct where the slice holds the array, and
+// panics otherwise when checked. One per array type, answering ct itself -- the nil
+// check is one per pointer type for the reason given there (nilHelperDef): the
+// target's C compiler loses a pointer to an array cast from a void* a helper returns.
+func arrPtrHelperDef(ct string, a arrDim, checks bool) string {
+	def := "static " + ct + " " + arrPtrHelperName(ct) + "(" + sliceCName(a.elem) + " s) {\n"
+	if checks && a.bound != "0" {
+		msg := "cannot convert slice to array or pointer to array"
+		if _, err := strconv.Atoi(a.bound); err == nil {
+			msg += " with length " + a.bound
+		}
+		def += "\tif ((unsigned)s.len < (unsigned)(" + a.bound + ")) ogo_panic(\"" + msg + "\");\n"
+	}
+	return def + "\treturn (" + ct + ")s.ptr;\n}\n"
+}
+
+// arrPtrHelperName is arrPtrHelperDef's C name for a pointer to an array type.
+func arrPtrHelperName(ct string) string { return "ogo_arrptr_" + sanitizeElem(ct) }
 
 // emitPtrConv emits a conversion to a pointer type standing as an operand, and the
 // steps written after it -- a field, a method -- taken on its value bound first.

@@ -27371,6 +27371,149 @@ func main() {
 		want: "5\n",
 	},
 	{
+		// A conversion to a pointer to an array type WRITTEN OUT, `(*[4]uint32)(x)`:
+		// from the address of an array of the type or of a defined type over it, from
+		// a pointer of either, from nil, and from an unsafe.Pointer -- a word's bytes,
+		// a struct's fields, an array's second half, a block a function hands out --
+		// read through by an index, a range, len, a slice, a dereference and a store,
+		// the conversion bound where steps follow it. Every line diffed against Go,
+		// and run on the board: the target's C compiler has lost a pointer to an array
+		// cast from a void* a helper returned (nilHelperDef), which is the cast an
+		// unsafe.Pointer's conversion is, so the call's result is one of the rows.
+		name: "a conversion to a pointer to an array type written out",
+		src: `import "unsafe"
+
+type Block [4]uint32
+
+type Regs struct {
+	a, b, c, d uint32
+}
+
+var g [8]uint32
+
+var blk Block
+
+var w uint32 = 0x04030201
+
+var r Regs
+
+var gs [2]string
+
+var k int
+
+func half(i int) *[4]uint32 {
+	k++
+	return (*[4]uint32)(unsafe.Pointer(&g[i*4]))
+}
+
+func sum(p *[4]uint32) uint32 {
+	var t uint32
+	for _, v := range p {
+		t += v
+	}
+	return t
+}
+
+func strs() unsafe.Pointer {
+	k++
+	return unsafe.Pointer(&gs)
+}
+
+func main() {
+	for i := range g {
+		g[i] = uint32(i)
+	}
+	println(sum(half(0)), sum(half(1)), sum((*[4]uint32)(unsafe.Pointer(&g[2]))))
+	println(k)
+	p := (*[4]uint32)(&blk)
+	p[0] = 5
+	q := (*Block)(p)
+	q[1] = 6
+	println(blk[0], blk[1], len(q), cap(p), (*[4]uint32)(q) == p, (*[2]int)(nil) == nil)
+	b := (*[4]byte)(unsafe.Pointer(&w))
+	println(b[0], b[1], b[2], b[3])
+	b[0] = 0xff
+	println(w)
+	f := (*[4]uint32)(unsafe.Pointer(&r))
+	for i := range f {
+		f[i] = uint32(i * 10)
+	}
+	println(r.a, r.b, r.c, r.d)
+	(*[4]uint32)(unsafe.Pointer(&g))[3] = 70
+	s := (*[8]uint32)(unsafe.Pointer(&g))[2:5]
+	s[0] = 20
+	println(g[2], g[3], len(s))
+	a := *(*[4]uint32)(&blk)
+	blk[0] = 9
+	*(*[4]uint32)(&blk) = [4]uint32{1, 2, 3, 4}
+	println(a[0], blk[0], blk[3])
+	m := (*[2][4]uint32)(unsafe.Pointer(&g))
+	m[1][2] = 66
+	println(g[6], len(m), len(m[0]))
+	po := (*[2]string)(strs())
+	po[0] = "hi"
+	(*[2]string)(strs())[1] = "there"
+	println(gs[0], gs[1], po[1], len(po[0]))
+	println(k)
+}
+`,
+		want: "6 22 14\n2\n5 6 4 4 true true\n1 2 3 4\n67306239\n0 10 20 30\n20 70 3\n5 1 4\n66 2 4\nhi there there 2\n4\n",
+	},
+	{
+		// A SLICE converted to a pointer to an array, Go 1.17's `(*[4]byte)(s)`: the
+		// pointer is the slice's backing, written through as the slice is, a slice
+		// with an effect bound once; a nil slice is the nil pointer. And a pointer to a
+		// SLICE type written out, `(*[]int)(&xs)`, a store of the header through it
+		// included. Diffed against Go; the panic of a slice too short is the last row.
+		name: "a slice converted to a pointer to an array",
+		src: `import "unsafe"
+
+var g [6]byte
+
+var k int
+
+var xs []int
+
+var back [4]int
+
+func tail(i int) []byte {
+	k++
+	return g[i:]
+}
+
+func local() int {
+	var a [4]int
+	p := (*[2]int)(a[1:])
+	p[1] = 7
+	return a[2]
+}
+
+func main() {
+	s := g[1:]
+	p := (*[3]byte)(s)
+	p[0] = 7
+	p[2] = 9
+	println(g[1], g[3], len(p))
+	var e []byte
+	println((*[0]byte)(e) == nil, local())
+	t := (*[2]byte)(tail(3))
+	t[1] = 4
+	println(g[4], k)
+	println((*[3]byte)(tail(2))[2], k)
+	xs = back[:0]
+	ps := (*[]int)(&xs)
+	*ps = append(*ps, 3)
+	qs := (*[]int)(unsafe.Pointer(&xs))
+	(*qs)[0] = 4
+	println(len(xs), xs[0], back[0], len(*ps))
+	q := (*[3]byte)(tail(4))
+	println(q[0])
+}
+`,
+		want:   "7 9 3\ntrue 7\n4 1\n4 2\n1 4 4 1\npanic: cannot convert slice to array or pointer to array with length 3",
+		panics: true,
+	},
+	{
 		// A method PROMOTED from an embedded field satisfies an interface, as it does
 		// in Go. It always satisfied a direct call -- b.get() reached A's get -- and
 		// the interface check read the type's OWN methods only, so one method-set

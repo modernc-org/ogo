@@ -18,6 +18,23 @@ shipped section tells a reader on that version that they have behaviour they do 
 
 ## Unreleased
 
+### Language
+
+- **A conversion to a pointer to a type written out**, `(*[4]uint32)(x)` and
+  `(*[]byte)(x)`, as Go has it: from nil, an `unsafe.Pointer`, the address of an
+  array of the type or of a defined type over it, and a pointer of either -- so a
+  block of Hub RAM is read as an array, `(*[16]uint32)(unsafe.Pointer(addr))`, and
+  a word as its bytes, `(*[4]byte)(unsafe.Pointer(&w))`. A SLICE converts to a
+  pointer to an array of its element, Go 1.17's `(*[4]byte)(s)`, the pointer being
+  the slice's backing and the conversion panicking where the slice is shorter than
+  the array. What the conversion makes is read through as any pointer to an array:
+  an index, a range, `len`, a slice, a dereference and a store. A pointer to
+  another type is refused in Go's words, `cannot convert &w (value of type *uint32)
+  to type *[4]byte`, and so are an array of another length or element, a value that
+  is no pointer and `[...]`; the lifetime rules read through the conversion as
+  through the pointer it converts, a callee's summary included. It was "not
+  supported yet". Measured on a P2-EDGE.
+
 ### Fixed
 
 - **Another package's defined type was read as the main package's type of the

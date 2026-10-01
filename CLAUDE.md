@@ -581,6 +581,26 @@ still design-only.
   one storing into ANOTHER package's variable, `lib.G = p` (outlivesByName). And two
   loud gaps, left: a type switch's `case *int:`, a pointer to a predeclared type,
   and a parenthesised qualified conversion, `(lib.T)(x)`.
+  A conversion to a POINTER to a type written out, `(*[16]uint32)(unsafe.Pointer(a))`
+  and `(*[]T)(x)`, came the same day: the checker reads the bracketed type with typ
+  (`ptrConvExpr.lit`, `litType`), asks the operand Go's rule (`checkLitPtrConvOperand`:
+  a pointer to an identical type, nil, an unsafe.Pointer, and a slice of the element
+  to a pointer to an array) and types the result for a variable through
+  litOrConvType; the emitter names the typedef every `[N]T` shares (`starLitCAt`), and
+  a slice's conversion is a per-type helper taking the slice whole and checking the
+  length (`sliceArrayPtrC`, `arrPtrHelperDef`) -- never a `void*` a helper returns
+  and the site casts, which the target's compiler loses for a pointer to an array
+  (nilHelperDef), and never a cast at the site, which it refuses and then CRASHES on
+  for a member of a compound literal, which `a[1:]` is (viaField of
+  doc/complit-arg-in-cast.c; found by the `--unchecked` target build, the checked one
+  having passed the member to a call uncast). The
+  summaries' `ptrConvShape` read `(*Name)(x)` only, so every callee keeping what it
+  converted to `*[N]T` was accepted until it read the bracketed form
+  (`TestEmitCArrayPtrConvLifetime`). Found beside it and OLDER: the checker asks
+  nothing of an element or a range value of ANY pointer-to-array variable, nor of
+  storing one into a pointer to an array of another length -- `var s string = p[0]`,
+  `var q *[3]int = p` for `p := &g` -- three rows of `rej_arrptr` taken where Go
+  refuses them.
 - **Two test suites.** `TestEmitCRun` builds each program in the `emitRunCases`
   table with the host C compiler and runs it against a pthread shim
   (`testdata/hostp2`). `TestOnBoard` builds the *same* table with the real
@@ -1947,10 +1967,9 @@ works since 2026-09-20 (`emitParenChain` binds the head and walks the steps from
 it), and a declaration from one since 2026-09-22 (`parenChainType`): `(&p).x`, `(get()).x`, `(*getp()).x`, `(getq()).a`, `(arr[1:])[1]`,
 `("hello")[1:]` and `(&arr)[1]`, beside the `(*p).x`, `(a)[i]`, `(v).m()`,
 `(&v).m()`, `(*T)(p).m()` and `(a - b).m()` that always did. A struct head is a
-VALUE there, so a slice step on one is refused as Go refuses it; a conversion to a
-POINTER to a type written out, `(*[]byte)(p)` and `(*[4]byte)(s)` ("not supported
-yet": the bare `[]int(x)` and `[3]int(s)` parse since 2026-09-21, and `[]byte(s)` is
-refused as the allocation it is); `len` or `cap` of a BRACKETED conversion and a
+VALUE there, so a slice step on one is refused as Go refuses it; a dereference of
+a conversion parenthesised as a TARGET, `(*(*[]int)(p))[0] = 4` ("only assignment to
+a simple variable"; bound to a variable first, it works); `len` or `cap` of a BRACKETED conversion and a
 reslice after one, `len([3]int(s))`, `len(([5]int)(a))`, `t := []int(s)[1:]`, and an
 index of or a range over a slice-to-array one, `[3]int(s)[2]`, `A(s)[1]` (a named
 type's `len(A(a))` works, and so does `[]int(s)[0]`); a method of a defined slice

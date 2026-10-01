@@ -1,0 +1,56 @@
+// What Go refuses of a conversion to a pointer to a type written out, refused in
+// Go's terms: a pointer to another type -- another length, another element, a
+// scalar, a struct, an element of the array, a slice -- a value that is no pointer,
+// a slice of another element, a slice to a pointer to a slice, `[...]` outside a
+// literal, and a conversion standing as a statement.
+
+type St struct{ a, b int }
+
+var g [4]int
+
+var g8 [8]int
+
+var w uint32
+
+var xs []int
+
+var st St
+
+var pi *int = &g[0]
+
+func fn() {}
+
+func main() {
+	// ERROR "cannot convert &g8 \(value of type \*\[8\]int\) to type \*\[4\]int"
+	_ = (*[4]int)(&g8)
+	// ERROR "cannot convert &g \(value of type \*\[4\]int\) to type \*\[4\]int32"
+	_ = (*[4]int32)(&g)
+	// ERROR "cannot convert &w \(value of type \*uint32\) to type \*\[4\]uint32"
+	_ = (*[4]uint32)(&w)
+	// ERROR "cannot convert &st \(value of type \*St\) to type \*\[2\]int"
+	_ = (*[2]int)(&st)
+	// ERROR "cannot convert &g\[0\] \(value of type \*int\) to type \*\[4\]int"
+	_ = (*[4]int)(&g[0])
+	// ERROR "cannot convert pi \(variable of type \*int\) to type \*\[4\]int"
+	_ = (*[4]int)(pi)
+	// ERROR "cannot convert &xs \(value of type \*\[\]int\) to type \*\[4\]int"
+	_ = (*[4]int)(&xs)
+	// ERROR "cannot convert &g \(value of type \*\[4\]int\) to type \*\[\]int"
+	_ = (*[]int)(&g)
+	// ERROR "cannot convert g \(variable of type \[4\]int\) to type \*\[4\]int"
+	_ = (*[4]int)(g)
+	// ERROR "cannot convert xs \(variable of type \[\]int\) to type \*\[4\]byte"
+	_ = (*[4]byte)(xs)
+	// ERROR "cannot convert xs \(variable of type \[\]int\) to type \*\[\]int"
+	_ = (*[]int)(xs)
+	// ERROR "cannot convert 5 \(untyped int constant\) to type \*\[4\]int"
+	_ = (*[4]int)(5)
+	// ERROR "cannot convert fn to type \*\[4\]int: it is a function"
+	_ = (*[4]int)(fn)
+	// ERROR "invalid use of \[\.\.\.\] array \(outside a composite literal\)"
+	_ = (*[...]int)(&g)
+	// ERROR "\(\*\[4\]int\)\(&g\) \(value of type \*\[4\]int\) is not used"
+	(*[4]int)(&g)
+	// ERROR "go requires function call, not conversion"
+	go (*[4]int)(&g)
+}

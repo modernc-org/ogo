@@ -1,0 +1,55 @@
+// COMPILE
+
+// A conversion to a pointer to a type written out, `(*[4]uint32)(x)`, as Go has
+// it: from nil, an unsafe.Pointer, the address of an array of the type or of a
+// defined type over it, a pointer of either, and -- to a pointer to an array -- a
+// slice of its element; and to a pointer to a slice type, `(*[]int)(&xs)`. What
+// it makes is read through as any pointer to an array is.
+
+import "unsafe"
+
+type Block [4]uint32
+
+const n = 4
+
+var g [8]uint32
+
+var blk Block
+
+var b4 [4]byte
+
+var bs []byte
+
+var xs []int
+
+var w uint32
+
+func view(s []byte) *[2]byte { return (*[2]byte)(s) }
+
+func main() {
+	p := (*[4]uint32)(&blk)
+	p[0] = 1
+	_ = len(p)
+	q := (*Block)(p)
+	_ = (*[n]uint32)(q)
+	_ = (*[4]uint32)(nil)
+	_ = (*[4]uint8)(&b4)
+	_ = (*[2]byte)(bs)
+	_ = view(bs[1:])
+	_ = (*[4]byte)(unsafe.Pointer(&w))
+	_ = (*[2][4]uint32)(unsafe.Pointer(&g))
+	h := (*[4]uint32)(unsafe.Pointer(&g[4]))
+	for i, v := range h {
+		g[i] += v
+	}
+	(*[4]uint32)(unsafe.Pointer(&g))[3] = 7
+	s := (*[8]uint32)(unsafe.Pointer(&g))[2:5]
+	_ = s
+	a := *(*[4]uint32)(&blk)
+	_ = a
+	*(*[4]uint32)(&blk) = [4]uint32{1, 2, 3, 4}
+	ps := (*[]int)(&xs)
+	*ps = append(*ps, 1)
+	var pp *[4]uint32 = (*[4]uint32)(&blk)
+	_ = pp == p
+}

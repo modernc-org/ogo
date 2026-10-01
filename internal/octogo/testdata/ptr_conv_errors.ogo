@@ -61,8 +61,7 @@ func main() {
 	p6 := (*p.T)(&gm)
 	// ERROR wrong argument count in conversion to \*int
 	p7 := (*int)(&x, &x)
-	// ERROR a conversion to \*\[\]byte, a pointer to a type written out, is not supported yet
-	p8 := (*[]byte)(&bs)
+	p8 := (*[]byte)(&bs) // Go's, as a pointer to a type written out is since 2026-10-01
 	// ERROR type Sq2 has no method Area
 	(*Sq2)(&gq).Area()
 	// ERROR \(\*int\)\(&x\) \(value of type \*int\) is not used

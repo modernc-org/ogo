@@ -2319,7 +2319,7 @@ func (f *File) checkCallStmt(s *Scope, head, stmt Node, kw string, kwTok Token, 
 			return
 		}
 		if pc, ok := f.ptrConvOfHead(s, head, steps); ok {
-			if len(pc.rest) == 0 && pc.unnamed == "" {
+			if len(pc.rest) == 0 && (pc.unnamed == "" || pc.lit.sym != 0) {
 				f.err(pc.at.Position(), "%s requires function call, not conversion %s", kw, f.sourceSpan(head.Pos(), stmt.End()))
 				return
 			}
@@ -7045,7 +7045,7 @@ func (f *File) checkAssignment(s *Scope, head, postfix Node) {
 		// `(*T)(x).m()`, a method called on a conversion to a pointer type; the
 		// conversion alone is a value nothing uses.
 		if pc, ok := f.ptrConvOfHead(s, head, steps); ok {
-			if len(pc.rest) == 0 && pc.unnamed == "" {
+			if len(pc.rest) == 0 && (pc.unnamed == "" || pc.lit.sym != 0) {
 				f.err(pc.at.Position(), "%s (value of type *%s) is not used", f.sourceSpan(head.Pos(), postfix.End()), pc.typeName())
 				return
 			}
@@ -17495,7 +17495,8 @@ func (f *File) checkMethodExpr(s *Scope, me methodExpr, rest []Node) {
 type ptrConvExpr struct {
 	qual, typ Token  // T, qualified when another package's; typ may name a predeclared type
 	predecl   bool   // T is a predeclared type, `(*int)(nil)`
-	unnamed   string // T is written out, `(*[]byte)(p)`: the target as written, refused
+	unnamed   string // T is written out, `(*[4]byte)(p)`: the target as written
+	lit       Node   // T written out, its bracketed factor -- none for `*[...]T`, refused
 	args      []Node // what is converted: one value, or a count mismatch to report
 	at        Token  // where the conversion is written, for a message
 	rest      []Node // the steps after the conversion
@@ -17731,8 +17732,11 @@ func (f *File) ptrConvParts(s *Scope, at Token, typ Node, steps []Node) (ptrConv
 	if pc.qual, pc.typ, ok = f.starTypeName(s, typ); !ok {
 		if pc.typ, ok = f.starPredeclaredName(s, typ); ok {
 			pc.predecl = true
-		} else if f.starTypeLiteral(s, typ) {
+		} else if lit, isLit := f.starTypeLiteral(s, typ); isLit {
 			pc.unnamed = f.exprSource(typ)
+			if !slices.ContainsFunc(slices.Collect(it(lit.ast)), func(c Node) bool { return c.sym == 0 && f.ch(c.tok) == ELLIPSIS }) {
+				pc.lit = lit
+			}
 		} else {
 			return ptrConvExpr{}, false
 		}
@@ -17777,36 +17781,61 @@ func (f *File) starPredeclaredName(s *Scope, e Node) (Token, bool) {
 }
 
 // starTypeLiteral reports whether e is a pointer to a type written out, `*[]byte`
-// or `*[4]byte` in `(*[]byte)(p)`: a bracketed type with no literal after it.
-func (f *File) starTypeLiteral(s *Scope, e Node) bool {
+// or `*[4]byte` in `(*[]byte)(p)`: a bracketed type with no literal after it. It
+// answers the type's factor, whose children are the type's own -- "[", the length,
+// "]" and the element -- which is what typ reads.
+func (f *File) starTypeLiteral(s *Scope, e Node) (Node, bool) {
 	for e.sym == Expression || e.sym == SimpleExpr || e.sym == Term {
 		kids := slices.Collect(it(e.ast))
 		if len(kids) != 1 {
-			return false
+			return Node{}, false
 		}
 		e = kids[0]
 	}
 	if e.sym != UnaryExpr {
-		return false
+		return Node{}, false
 	}
 	kids := slices.Collect(it(e.ast))
 	if len(kids) != 2 || kids[0].sym != UnaryOp || kids[1].sym != Factor || f.unaryOp(s, kids[0]) != MUL {
-		return false
+		return Node{}, false
 	}
 	fk := slices.Collect(it(kids[1].ast))
-	if len(fk) == 0 || fk[0].sym != 0 || f.ch(fk[0].tok) != LBRACK {
-		return false
+	if len(fk) == 0 || fk[0].sym != 0 || f.ch(fk[0].tok) != LBRACK || fk[len(fk)-1].sym != Type {
+		return Node{}, false
 	}
 	for _, k := range fk {
-		if k.sym == CompositeLit {
-			return false
+		if k.sym == CompositeLit || k.sym == FactorSuffix || k.sym == CallSuffix {
+			return Node{}, false
 		}
 	}
-	return true
+	return kids[1], true
+}
+
+// litType is the type a conversion to a pointer to a type written out points at,
+// `[4]uint32` in `(*[4]uint32)(p)`, with whatever resolving it reports trimmed when
+// quiet -- checkPtrConv reports it, once, and every other question is that question
+// again.
+func (f *File) litType(s *Scope, pc ptrConvExpr, quiet bool) (TypeNode, bool) {
+	if pc.lit.sym == 0 {
+		return nil, false
+	}
+	n0 := len(f.errList)
+	t := f.typ(s, pc.lit)
+	if quiet {
+		f.errList = f.errList[:n0]
+	}
+	switch t.(type) {
+	case *TypeNodeArray, *TypeNodeSlice:
+		return t, true
+	}
+	return nil, false
 }
 
 // typeName spells T as this file writes it.
 func (pc ptrConvExpr) typeName() string {
+	if pc.unnamed != "" {
+		return strings.TrimPrefix(pc.unnamed, "*")
+	}
 	if pc.qual.IsValid() {
 		return pc.qual.Src() + "." + pc.typ.Src()
 	}
@@ -17824,12 +17853,18 @@ func (f *File) checkPtrConv(s *Scope, pc ptrConvExpr) {
 		f.checkNames(s, a)
 	}
 	f.checkStepNames(s, pc.rest)
-	if pc.unnamed != "" {
-		f.err(pc.at.Position(), "a conversion to %s, a pointer to a type written out, is not supported yet", pc.unnamed)
+	if pc.unnamed != "" && pc.lit.sym == 0 {
+		f.err(pc.at.Position(), "invalid use of [...] array (outside a composite literal)")
 		return
 	}
 	if len(pc.args) != 1 {
 		f.err(pc.at.Position(), "wrong argument count in conversion to *%s", pc.typeName())
+		return
+	}
+	if pc.lit.sym != 0 {
+		if t, ok := f.litType(s, pc, false); ok {
+			f.checkLitPtrConvOperand(s, pc, typeAt{t, s, f})
+		}
 		return
 	}
 	f.checkPtrConvOperand(s, pc)
@@ -17893,6 +17928,159 @@ func (f *File) checkPtrConvOperand(s *Scope, pc ptrConvExpr) {
 	if k, known := f.exprType(s, arg); known && kindCategory(k) != catUnknown {
 		refuse(kindName(k))
 	}
+}
+
+// checkLitPtrConvOperand checks what a conversion to a pointer to a type written out
+// converts, `(*[4]uint32)(x)`: nil, an unsafe.Pointer, or a pointer whose base type
+// has the target's underlying type -- `&g` for a [4]uint32 g, or for a `type Block
+// [4]uint32` -- and, to a pointer to an array, a SLICE of its element, Go's checked
+// view of the slice's first elements. A pointer to another type is refused as Go
+// refuses it: C casts one pointer to another without a word, so `(*[4]byte)(&w)` for
+// a uint32 w would read the word's bytes, which is what unsafe.Pointer is written
+// for. An operand whose type cannot be followed is let pass.
+func (f *File) checkLitPtrConvOperand(s *Scope, pc ptrConvExpr, want typeAt) {
+	arg := pc.args[0]
+	if f.isNilOperand(arg) || f.unsafePointerValue(s, arg) {
+		return
+	}
+	wu := f.underlyingTypeAt(want)
+	_, toArray := wu.tn.(*TypeNodeArray)
+	refuse := func(have typeAt, ptr bool) {
+		nm := f.typeAtMessage(have)
+		if nm == "" || strings.HasPrefix(nm, "a ") || strings.HasPrefix(nm, "an ") {
+			f.err(f.tok(arg.Pos()).Position(), "cannot convert %s to type %s", f.exprSource(arg), pc.unnamed)
+			return
+		}
+		if ptr {
+			nm = "*" + nm
+		}
+		what := "value"
+		if _, isName := f.exprIdent(arg); isName {
+			what = "variable"
+		}
+		f.err(f.tok(arg.Pos()).Position(), "cannot convert %s (%s of type %s) to type %s", f.exprSource(arg), what, nm, pc.unnamed)
+	}
+	// identical answers whether a value of type have, the base of a pointer, is one
+	// the target points at: the same length and element for an array, the same
+	// element for a slice, and nothing else.
+	identical := func(have typeAt) (same, known bool) {
+		hu := f.underlyingTypeAt(have)
+		switch hu.tn.(type) {
+		case *TypeNodeArray:
+			if !toArray {
+				return false, true
+			}
+		case *TypeNodeSlice:
+			if toArray {
+				return false, true
+			}
+		case *TypeNodeIdent, *TypeNodeStruct, *TypeNodePointer, *TypeNodeChan, *FunctionType:
+			return false, true
+		default:
+			return false, false
+		}
+		return f.bracketConvertible(want, have)
+	}
+	if x, isAddr := f.addressOperand(s, arg); isAddr {
+		if have, ok := f.lenOperandType(s, x); ok {
+			if same, known := identical(have); known && !same {
+				refuse(have, true)
+			}
+			return
+		}
+		if root, suffixed, ok := f.addressOperandRoot(s, arg); ok && !suffixed {
+			if k, known := f.identKind(s, root); known && kindCategory(k) != catUnknown {
+				f.err(f.tok(arg.Pos()).Position(), "cannot convert %s (value of type *%s) to type %s", f.exprSource(arg), kindName(k), pc.unnamed)
+			}
+		}
+		return
+	}
+	if have, ok := f.lenOperandType(s, arg); ok {
+		hu := f.underlyingTypeAt(have)
+		switch t := hu.tn.(type) {
+		case *TypeNodePointer:
+			if same, known := identical(typeAt{t.TypeNode, hu.s, hu.f}); known && !same {
+				refuse(have, false)
+			}
+		case *TypeNodeSlice:
+			// `(*[4]byte)(s)`: Go 1.17's conversion of a slice to an array pointer,
+			// checked against the slice's length where it runs.
+			if !toArray {
+				refuse(have, false)
+				return
+			}
+			if same, known := f.bracketConvertible(want, have); known && !same {
+				refuse(have, false)
+			}
+		case *TypeNodeIdent, *TypeNodeArray, *TypeNodeStruct, *TypeNodeChan, *FunctionType:
+			refuse(have, false)
+		}
+		return
+	}
+	if k, known := f.exprType(s, arg); known && kindCategory(k) != catUnknown {
+		f.err(f.tok(arg.Pos()).Position(), "cannot convert %s (%s) to type %s", f.exprSource(arg), f.convOperandDesc(s, arg, k), pc.unnamed)
+		return
+	}
+	switch what, known := f.nonBoolOperand(s, arg); what {
+	case "a function", "a channel", "a struct", "an interface":
+		if known {
+			f.err(f.tok(arg.Pos()).Position(), "cannot convert %s to type %s: it is %s", f.exprSource(arg), pc.unnamed, what)
+		}
+	}
+}
+
+// typeAtMessage is typeNodeMessage for a type written where t says, which may be
+// another package: a name that package declares is spelt as this file imports it,
+// `a.T`, through arrays, slices and pointers -- `*[4]a.T` and not `*[4]T`.
+func (f *File) typeAtMessage(t typeAt) string {
+	if t.f == nil {
+		return ""
+	}
+	pkg := t.s
+	for pkg != nil && pkg.Kind != PackageScope {
+		pkg = pkg.Parent
+	}
+	var spell func(tn TypeNode) (string, bool)
+	spell = func(tn TypeNode) (string, bool) {
+		switch x := tn.(type) {
+		case *TypeNodeIdent:
+			if x.Qualifier.IsValid() || pkg == nil {
+				return "", false
+			}
+			return f.qualifiedTypeName(pkg, x.Name.Src()), true
+		case *TypeNodePointer:
+			inner, ok := spell(x.TypeNode)
+			return "*" + inner, ok
+		case *TypeNodeSlice:
+			inner, ok := spell(x.TypeNode)
+			return "[]" + inner, ok
+		case *TypeNodeArray:
+			n, ok := t.f.arrayTypeLen(typeAt{x, t.s, t.f}, false)
+			if !ok {
+				return "", false
+			}
+			inner, ok := spell(x.TypeNode)
+			return fmt.Sprintf("[%d]%s", n, inner), ok
+		}
+		return "", false
+	}
+	if str, ok := spell(t.tn); ok {
+		return str
+	}
+	return t.f.typeNodeMessage(t.s, t.tn)
+}
+
+// addressOperand is x of an operand that is exactly `&x`.
+func (f *File) addressOperand(s *Scope, n Node) (Node, bool) {
+	ue, ok := f.soleUnaryExpr(n)
+	if !ok {
+		return Node{}, false
+	}
+	kids := slices.Collect(it(ue.ast))
+	if len(kids) != 2 || kids[0].sym != UnaryOp || kids[1].sym != Factor || f.unaryOp(s, kids[0]) != AND {
+		return Node{}, false
+	}
+	return kids[1], true
 }
 
 // checkStepsOn checks the first step taken on a value of the type d describes -- a
@@ -23943,6 +24131,14 @@ func (f *File) litOrConvType(s *Scope, n Node) (typeAt, bool) {
 		n = kids[0]
 	}
 	if n.sym != Factor {
+		return typeAt{}, false
+	}
+	// `(*[4]uint32)(p)`: a pointer to the type written out, which an index, a range
+	// and len reach through.
+	if pc, ok := f.ptrConvOf(s, n); ok && len(pc.rest) == 0 {
+		if t, ok := f.litType(s, pc, true); ok {
+			return typeAt{&TypeNodePointer{TypeNode: t}, s, f}, true
+		}
 		return typeAt{}, false
 	}
 	kids := slices.Collect(it(n.ast))
