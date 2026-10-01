@@ -15389,6 +15389,25 @@ func (e *emitter) ptrConvHead(head Node, postfix []Node) (emPtrConv, bool) {
 	return e.ptrConvParts(kids[1], postfix)
 }
 
+// convTargetHead is ptrConvHead for an assignment's head, which may lead with stars:
+// `*(*T)(x) = v` is AssignHead's starred, parenthesised alternative holding `*T`,
+// and the conversion's call the first step of the postfix. It answers the stars
+// with the conversion.
+func (e *emitter) convTargetHead(head Node, postfix []Node) (emPtrConv, int, bool) {
+	kids := slices.Collect(it(head.ast))
+	stars := 0
+	for stars < len(kids) && kids[stars].sym == 0 && e.f.ch(kids[stars].tok) == MUL {
+		stars++
+	}
+	kids = kids[stars:]
+	if len(kids) != 3 || kids[0].sym != 0 || e.f.ch(kids[0].tok) != LPAREN || kids[1].sym != Expression ||
+		kids[2].sym != 0 || e.f.ch(kids[2].tok) != RPAREN {
+		return emPtrConv{}, 0, false
+	}
+	pc, ok := e.ptrConvParts(kids[1], postfix)
+	return pc, stars, ok
+}
+
 // ptrConvParts is a conversion to a pointer type made of the parenthesized `*T` and
 // the steps after it, the first of which is the call converting.
 func (e *emitter) ptrConvParts(typ Node, steps []Node) (emPtrConv, bool) {
@@ -37846,6 +37865,20 @@ func (e *emitter) emitAssignment(head Node, postfix []Node) {
 		// after it, which is the shorthand Go reads it as.
 		if name, steps, ok := e.addrChainSteps(head, postfix); ok {
 			base, postfix = name, steps
+		}
+	}
+	if base == "" {
+		// `*(*T)(x) = v` and `(*T)(x).f = v`: a target written through a conversion
+		// to a pointer type, which is how a program stores through an unsafe.Pointer.
+		// The converted pointer is bound first, as `p := (*T)(x)` binds it
+		// (bindPtrConv), and the target is written through that. A conversion
+		// itself, `(*T)(x) = v`, is not addressable.
+		if pc, stars, ok := e.convTargetHead(head, postfix); ok {
+			if stars == 0 && len(pc.rest) == 1 {
+				e.fail("cannot assign to a conversion: it is not addressable")
+				return
+			}
+			base, postfix = e.bindPtrConv(pc), pc.rest
 		}
 	}
 	if base == "" {

@@ -27218,6 +27218,37 @@ func main() {
 		want: "2: 27 55\n2: 1 48\n4: 97 27 55 98\n2: 27 55\n4: 255 48 128 55\n2: 127 48\n2: 27 56\n3: 27 55 120\n2: 7 51\n",
 	},
 	{
+		// A store through a conversion to a pointer type, `*(*T)(p) = v`, `(*T)(p).f
+		// = v` and `(*Row)(p)[i] = v`, with the compound forms: "only assignment to a
+		// simple variable is supported yet" until the converted pointer was bound
+		// first (convTargetHead). Diffed against Go.
+		name: "a store through a conversion to a pointer type",
+		src: `type Celsius int32
+
+type Pt struct{ x, y int32 }
+
+type Pt2 struct{ x, y int32 }
+
+type Row [3]int32
+
+var c Celsius
+
+var p Pt
+
+var r [3]int32
+
+func main() {
+	*(*int32)(&c) = 5
+	*(*int32)(&c) += 2
+	(*Pt2)(&p).y = 9
+	(*Pt2)(&p).x++
+	(*Row)(&r)[1] = 4
+	println(c, p.x, p.y, r[1])
+}
+`,
+		want: "7 1 9 4\n",
+	},
+	{
 		// A method PROMOTED from an embedded field satisfies an interface, as it does
 		// in Go. It always satisfied a direct call -- b.get() reached A's get -- and
 		// the interface check read the type's OWN methods only, so one method-set
