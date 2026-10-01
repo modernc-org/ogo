@@ -6417,15 +6417,17 @@ func mk() P { return P{} }
 		{"a struct result", "func main() {\n\t_ = *mk()\n\tprintln(9)\n}\n", "cannot indirect mk()"},
 	} {
 		t.Run(test.name, func(t *testing.T) {
+			// The checker or the emitter: the checker refuses the element itself since
+			// it types an element through the written types (stepsType), in Go's words.
 			fsys := fstest.MapFS{"main.ogo": &fstest.MapFile{Data: []byte(header + test.src)}}
 			pkg, err := Build(-1, []string{"main.ogo"}, fsys)
-			if err != nil {
-				t.Fatalf("Build: %v", err)
+			if err == nil {
+				var out bytes.Buffer
+				if err = EmitC(pkg, &out); err == nil {
+					t.Fatalf("expected a refusal, got:\n%s", out.String())
+				}
 			}
-			var out bytes.Buffer
-			if err = EmitC(pkg, &out); err == nil {
-				t.Fatalf("expected a refusal, got:\n%s", out.String())
-			} else if !strings.Contains(err.Error(), test.want) {
+			if !strings.Contains(err.Error(), test.want) {
 				t.Fatalf("expected %q, got %v", test.want, err)
 			}
 		})

@@ -46,8 +46,20 @@ shipped section tells a reader on that version that they have behaviour they do 
   method answered with main's method of the name -- and a dereference of a
   variable of a `lib.P` pointer type was refused whatever main declared.
 
+- **A pointer to an array was typed as nothing past the pointer itself.** Its
+  element, `p[i]`, and its range value had no type the checker knew, and a local
+  declared with a written `*[3]int` had no type at all, so a pointer to an array was
+  compared with nothing where another was wanted.
+
 ### Behaviour changes
 
+- **Mistakes with a pointer to an array are refused** (under Fixed, above): `var s
+  string = p[0]` for a `*[4]int` p -- through a field, two dimensions and `(*px)[0]`
+  of a pointer to a slice as well -- a range value used so, `p[0]++` for a
+  `*[4]string`, and a pointer to an array stored where a pointer to another is
+  wanted, another length, element or defined type: `var q *[3]int = &g` for a
+  `[4]int` g, `q = p`, an argument, a return and `append(ps, &g3)` into a
+  `[]*[4]int`. Each was taken and handed to the C compiler.
 - **A value of the wrong kind for another package's defined type is refused**
   (under Fixed, above): `var c lib.Count = "x"`, a string returned or passed as
   one, an int into a `lib.Name` string type or its field, `if c {` for an int one,

@@ -67,7 +67,7 @@ func structs() {
 	ps = append(ps, P{1})
 	ps = append(ps, st)
 	ps = append(ps, mk())
-	// ERROR "cannot use 5 of type int as type P in append"
+	// ERROR "cannot use 5 \(untyped int constant\) as P value in argument to append"
 	ps = append(ps, 5)
 	println(len(ps))
 }

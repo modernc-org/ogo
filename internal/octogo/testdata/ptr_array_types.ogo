@@ -1,0 +1,68 @@
+// COMPILE
+
+// A pointer to an array is typed through what it points at: its element by an
+// index and a range, through a field, a parenthesised dereference and two
+// dimensions, and the pointer itself stored where a pointer to that array is
+// wanted -- a declaration, an assignment, an argument, an append, a field, a send.
+
+type Row [4]int
+
+type H struct{ p *[4]int }
+
+var g [4]int
+
+var gs [4]string
+
+var m [2][3]int
+
+var r Row
+
+var xs []int
+
+var ps []*[4]int
+
+var ch chan *[4]int
+
+func f() *[4]int { return &g }
+
+func sum(p *[4]int) int {
+	n := 0
+	for _, v := range p {
+		n += v
+	}
+	return n
+}
+
+func main() {
+	p := &g
+	var n int = p[0]
+	p[1] = n + 1
+	p[2]++
+	for i, v := range p {
+		n += i + v
+	}
+	q := &gs
+	var s string = q[0]
+	q[1] = s
+	pr := &r
+	n += pr[0]
+	pm := &m
+	var row [3]int = pm[0]
+	n += pm[1][2] + row[1]
+	var pr3 *[3]int = &m[1]
+	ps = append(ps, &g, f())
+	h := H{p: &g}
+	var hp *[4]int = h.p
+	for _, v := range h.p {
+		n += v
+	}
+	px := &xs
+	if len(*px) > 0 {
+		n += (*px)[0]
+	}
+	var w *[4]int
+	w = p
+	n += sum(w) + f()[1]
+	_, _, _ = pr3, hp, n
+	go func() { ch <- f() }()
+}

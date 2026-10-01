@@ -1,0 +1,79 @@
+// What Go refuses of a pointer to an array, which the checker asked nothing of:
+// its element and its range value used as another type, and the pointer stored
+// where a pointer to another array is wanted -- another length, another element,
+// a defined type -- in a declaration, an assignment, an argument, a return and an
+// append.
+
+type Row [4]int
+
+type H struct{ p *[4]int }
+
+var g [4]int
+
+var g3 [3]int
+
+var gs [4]string
+
+var m [2][3]int
+
+var r Row
+
+var h = H{&g}
+
+var xs []int
+
+var ps []*[4]int
+
+func takes3(q *[3]int) {}
+
+func ret3() *[3]int {
+	p := &g
+	// ERROR "cannot use p \(variable of type \*\[4\]int\) as \*\[3\]int value in return statement"
+	return p
+}
+
+func elem(p *[4]int) string {
+	// ERROR "cannot use p\[0\] of type int as type string in return statement"
+	return p[0]
+}
+
+func main() {
+	p := &g
+	// ERROR "cannot use p\[0\] of type int as type string in variable declaration"
+	var s string = p[0]
+	// ERROR "cannot use h.p\[0\] of type int as type string in variable declaration"
+	var s2 string = h.p[0]
+	pm := &m
+	// ERROR "cannot use pm\[0\]\[1\] of type int as type string in variable declaration"
+	var s3 string = pm[0][1]
+	px := &xs
+	// ERROR "cannot use \(\*px\)\[0\] of type int as type string in variable declaration"
+	var s4 string = (*px)[0]
+	for _, v := range p {
+		// ERROR "cannot use v of type int as type string in variable declaration"
+		var s5 string = v
+		_ = s5
+	}
+	for _, v := range h.p {
+		// ERROR "cannot use v of type int as type string in variable declaration"
+		var s6 string = v
+		_ = s6
+	}
+	q := &gs
+	// ERROR "invalid operation: q\[0\]\+\+ \(non-numeric type string\)"
+	q[0]++
+	// ERROR "cannot use &g \(value of type \*\[4\]int\) as \*\[3\]int value in variable declaration"
+	var a *[3]int = &g
+	var b *[3]int
+	// ERROR "cannot use p \(variable of type \*\[4\]int\) as \*\[3\]int value in assignment"
+	b = p
+	// ERROR "cannot use q \(variable of type \*\[4\]string\) as \*\[4\]int value in variable declaration"
+	var c *[4]int = q
+	// ERROR "cannot use &r \(value of type \*Row\) as \*\[4\]int value in variable declaration"
+	var d *[4]int = &r
+	// ERROR "cannot use p \(variable of type \*\[4\]int\) as \*\[3\]int value in argument to takes3"
+	takes3(p)
+	// ERROR "cannot use &g3 \(value of type \*\[3\]int\) as \*\[4\]int value in argument to append"
+	ps = append(ps, &g3)
+	_, _, _, _, _, _, _, _ = s, s2, s3, s4, a, b, c, d
+}

@@ -3541,6 +3541,18 @@ func (f *File) rangeElem(s *Scope, expr Node) (elem Kind, hasElem, isInt, isChan
 				f.err(id.Position(), "cannot range over a pointer")
 				return 0, false, false, false
 			case d.isPtr:
+				// A pointer to an array ranges over the array: the element written
+				// for it, where the pointer's type can be followed.
+				if t, ok := f.varTypeAt(d); ok {
+					if p, ok := f.underlyingTypeAt(t).tn.(*TypeNodePointer); ok {
+						pu := f.underlyingTypeAt(typeAt{p.TypeNode, t.s, t.f})
+						if a, ok := pu.tn.(*TypeNodeArray); ok && pu.f != nil {
+							if k, ok := pu.f.typeKind(pu.s, a.TypeNode); ok {
+								return k, true, false, false
+							}
+						}
+					}
+				}
 				return 0, false, false, false // the pointee's element is the emitter's to infer
 			case d.hasElemKind:
 				return d.elemKind, true, false, false // slice or array
@@ -3570,6 +3582,30 @@ func (f *File) rangeElem(s *Scope, expr Node) (elem Kind, hasElem, isInt, isChan
 		if d, isVar := s.find(head.Src()).(*VarDeclaration); isVar {
 			if ek, hasEk, isCh, _ := f.chanElemOfElement(s, d); isCh {
 				return ek, hasEk, false, true
+			}
+		}
+	}
+	// A field or an element, `range h.p` of a pointer to an array, `range rows[1]`:
+	// the element written for its type. Unknown, the value variable was asked
+	// nothing, `var s string = v` among it.
+	if t, ok := f.lenOperandType(s, expr); ok && t.f != nil {
+		u := f.underlyingTypeAt(t)
+		if p, isPtr := u.tn.(*TypeNodePointer); isPtr {
+			u = f.underlyingTypeAt(typeAt{p.TypeNode, u.s, u.f})
+			if _, isArray := u.tn.(*TypeNodeArray); !isArray {
+				return 0, false, false, false
+			}
+		}
+		var elem TypeNode
+		switch x := u.tn.(type) {
+		case *TypeNodeArray:
+			elem = x.TypeNode
+		case *TypeNodeSlice:
+			elem = x.TypeNode
+		}
+		if elem != nil && u.f != nil {
+			if k, ok := u.f.typeKind(u.s, elem); ok {
+				return k, true, false, false
 			}
 		}
 	}
@@ -4752,6 +4788,17 @@ func (f *File) factorType(s *Scope, n Node) (Kind, bool) {
 		if hasLit && f.indexSuffix(suffix) {
 			if d, ok := s.find(lit.Src()).(*VarDeclaration); ok && d.hasElemKind && !d.isPtr {
 				return d.elemKind, true
+			}
+		}
+		// What the steps reach through the types written for them: `p[i]` of a
+		// pointer to an array, whose element nothing recorded on p -- a pointer's
+		// elemKind is its pointee's -- and `h.p[i]` through a field. Unknown, the
+		// element was asked nothing: `var s string = p[0]` went to the C compiler.
+		if hasLit {
+			if t, ok := f.lenOperandType(s, n); ok && t.f != nil {
+				if k, ok := t.f.typeKind(t.s, t.tn); ok {
+					return k, true
+				}
 			}
 		}
 		return 0, false
@@ -6044,10 +6091,15 @@ func (f *File) suffixedTargetKind(s *Scope, head, postfix Node) (Kind, bool) {
 		return f.fieldKind(s, id, field)
 	}
 	if base, ok := f.indexAssignTarget(head, postfix); ok {
-		if d, isVar := s.find(base.Src()).(*VarDeclaration); isVar && d.hasElemKind && !d.isPtr {
+		d, isVar := s.find(base.Src()).(*VarDeclaration)
+		if isVar && d.hasElemKind && !d.isPtr {
 			return d.elemKind, true
 		}
-		return 0, false
+		if !isVar || !d.isPtr {
+			return 0, false
+		}
+		// `p[i]` of a pointer to an array, whose element nothing recorded on p: walked
+		// from p's type below. `p[0]++` for a *[4]string went to the C compiler.
 	}
 	// A longer chain, `h.s.n` or `ps[1].n`, walked from the base (targetTypeNode).
 	base, stars, ok := f.targetHead(head)
@@ -6849,7 +6901,7 @@ func (f *File) declareLocalVar(s *Scope, n Node) {
 				// channel types (so a send/receive on the variable is checked),
 				// reporting undefined types. Slices are left unresolved for now:
 				// their element expressions are not yet checked.
-				if f.simpleNamedType(c) || f.structOrInterfaceType(c) || f.arrayType(c) || f.chanType(c) || f.funcType(c) || f.sliceType(c) {
+				if f.simpleNamedType(c) || f.structOrInterfaceType(c) || f.arrayType(c) || f.chanType(c) || f.funcType(c) || f.sliceType(c) || f.ptrLitType(c) {
 					if tn := f.typ(s, c); tn != nil {
 						declType = tn
 						kind, hasKind = f.typeKind(s, tn)
@@ -6929,6 +6981,18 @@ func (f *File) structOrInterfaceType(n Node) bool {
 // arrayType reports whether a Type node denotes an array "[Expression]T" -- it
 // carries a bracketed length expression -- as opposed to a slice "[]T". The
 // length is checked (constant, non-negative integer) when the type is resolved.
+// ptrLitType reports whether n is a pointer to an array or a slice type written out,
+// `*[3]int` or `*[]byte`. Left unresolved, a local declared one had no type at all,
+// and `var q *[3]int = &g` for a [4]int g and `q = p` for a *[4]int p went to the C
+// compiler.
+func (f *File) ptrLitType(n Node) bool {
+	kids := slices.Collect(it(n.ast))
+	if len(kids) != 2 || kids[0].sym != 0 || f.ch(kids[0].tok) != MUL || kids[1].sym != Type {
+		return false
+	}
+	return f.arrayType(kids[1]) || f.sliceType(kids[1])
+}
+
 func (f *File) arrayType(n Node) bool {
 	for c := range it(n.ast) {
 		if c.sym == Expression {
@@ -7861,12 +7925,33 @@ func (f *File) typeNodeString(tn TypeNode, withNames bool) string {
 		if inner := f.typeNodeString(x.TypeNode, withNames); inner != "" {
 			return "[]" + inner
 		}
+	case *TypeNodeArray:
+		// An array whose length was folded where its type was written; one whose
+		// length was not is not rendered.
+		if n, ok := arrayNodeLen(x); ok {
+			if inner := f.typeNodeString(x.TypeNode, withNames); inner != "" {
+				return fmt.Sprintf("[%d]%s", n, inner)
+			}
+		}
 	case *FunctionType:
 		return f.sigString(x.Signature, withNames)
 	}
-	// An array (its length is an expression), a struct or interface literal: not
+	// A struct or interface literal, or an array of a length not folded: not
 	// rendered, so no comparison is made rather than a wrong one.
 	return ""
+}
+
+// arrayNodeLen is the length of an array type as it was folded where the type was
+// written, `[4]int` or `[n]int` for a constant n.
+func arrayNodeLen(a *TypeNodeArray) (int64, bool) {
+	if a.Expression == nil {
+		return 0, false
+	}
+	cv, ok := a.Expression.Value().(constVal)
+	if !ok || cv.cv == nil || cv.cv.Kind() != constant.Int {
+		return 0, false
+	}
+	return constant.Int64Val(cv.cv)
 }
 
 // chanSpelling renders a channel type around its element's rendering, inner, with
@@ -7987,6 +8072,12 @@ func (f *File) typeNodeIdentity(tn TypeNode) string {
 	case *TypeNodeSlice:
 		if inner := f.typeNodeIdentity(x.TypeNode); inner != "" {
 			return "[]" + inner
+		}
+	case *TypeNodeArray:
+		if n, ok := arrayNodeLen(x); ok {
+			if inner := f.typeNodeIdentity(x.TypeNode); inner != "" {
+				return fmt.Sprintf("[%d]%s", n, inner)
+			}
 		}
 	case *FunctionType:
 		return f.sigIdentity(x.Signature)
@@ -19949,6 +20040,9 @@ func (f *File) checkAppendValues(s *Scope, argList Node, args []Node) {
 			}
 			f.checkNilValue(s, in, d.elemTypeNode, v, "append")
 			f.checkFuncAssign(s, f.funcSig(in, d.elemTypeNode), v, "argument to append")
+			// A slice or a pointer element, which has no Kind for the rules below:
+			// `append(ps, &g3)` for a []*[4]int went to the C compiler.
+			f.checkRefAssign(s, in, d.elemTypeNode, v, "argument to append")
 		}
 		if !p.known {
 			// A named element with no predeclared kind of its own -- a struct, an
@@ -23954,6 +24048,15 @@ func (f *File) lenOperandType(s *Scope, n Node) (typeAt, bool) {
 	if t, ok := f.litOrConvType(s, n); ok {
 		return t, true
 	}
+	// A parenthesised head and the steps after it, `(*p)[0]` of a pointer to a
+	// slice, where the parentheses are the only spelling.
+	if len(kids) == 4 && kids[0].sym == 0 && f.ch(kids[0].tok) == LPAREN && kids[1].sym == Expression && kids[3].sym == FactorSuffix {
+		t, ok := f.lenOperandType(s, kids[1])
+		if !ok {
+			return typeAt{}, false
+		}
+		return f.stepsType(t, slices.Collect(it(kids[3].ast)))
+	}
 	if kids[0].sym != 0 || f.ch(kids[0].tok) != IDENT {
 		return typeAt{}, false
 	}
@@ -23990,6 +24093,13 @@ func (f *File) lenOperandType(s *Scope, n Node) (typeAt, bool) {
 		}
 		steps = steps[1:]
 	}
+	return f.stepsType(t, steps)
+}
+
+// stepsType is lenOperandType's walk of the steps taken on a value of type t: an
+// index, through a pointer to an array as well, and a field, through a pointer to
+// a struct as well. A slice step and a call answer false.
+func (f *File) stepsType(t typeAt, steps []Node) (typeAt, bool) {
 	for _, step := range steps {
 		u := f.underlyingTypeAt(t)
 		switch step.sym {

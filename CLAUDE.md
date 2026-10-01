@@ -596,11 +596,17 @@ still design-only.
   having passed the member to a call uncast). The
   summaries' `ptrConvShape` read `(*Name)(x)` only, so every callee keeping what it
   converted to `*[N]T` was accepted until it read the bracketed form
-  (`TestEmitCArrayPtrConvLifetime`). Found beside it and OLDER: the checker asks
-  nothing of an element or a range value of ANY pointer-to-array variable, nor of
-  storing one into a pointer to an array of another length -- `var s string = p[0]`,
-  `var q *[3]int = p` for `p := &g` -- three rows of `rej_arrptr` taken where Go
-  refuses them.
+  (`TestEmitCArrayPtrConvLifetime`). Found beside it and OLDER, and closed the same
+  day: a pointer to an array had no type past the pointer. Its element and range
+  value were unknown (a pointer's elemKind is its POINTEE's, so every rule guarded
+  `!d.isPtr`; factorType, rangeElem and suffixedTargetKind now ask the written
+  types, lenOperandType's walk, `stepsType`, reaching a parenthesised head too), a
+  local declared `*[3]int` recorded no type (declareLocalVar resolved only listed
+  shapes; `ptrLitType`), an array had no identity, so checkRefAssign compared no
+  pointer to one (`arrayNodeLen` in typeNodeIdentity and typeNodeString), and append
+  asked checkRefAssign nothing. 23 of 32 programs of the row were taken where Go
+  refuses them; one is left, `f()[0]` of a call's result, which lenOperandType must
+  not type -- `len(f())` is no constant in Go, and the len fold asks it.
 - **Two test suites.** `TestEmitCRun` builds each program in the `emitRunCases`
   table with the host C compiler and runs it against a pthread shim
   (`testdata/hostp2`). `TestOnBoard` builds the *same* table with the real
