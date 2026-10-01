@@ -19433,13 +19433,13 @@ func (f *File) checkConversion(s *Scope, callee Token, arg Node) bool {
 	}
 	pos, src := f.tok(arg.Pos()).Position(), f.exprSource(arg)
 	if root, suffixed, isAddr := f.addressOperandRoot(s, arg); isAddr {
-		pointee := ""
+		desc := "an address" // of what this cannot name: an element, an array, a struct
 		if !suffixed {
 			if k, ok := f.identKind(s, root); ok {
-				pointee = f.operandTypeName(s, arg, k)
+				desc = "value of type *" + f.operandTypeName(s, arg, k)
 			}
 		}
-		f.err(pos, "cannot convert %s (value of type *%s) to type %s", src, pointee, callee.Src())
+		f.err(pos, "cannot convert %s (%s) to type %s", src, desc, callee.Src())
 		return false
 	}
 	if id, ok := f.exprIdent(arg); ok && f.exprIsPointer(s, arg) {

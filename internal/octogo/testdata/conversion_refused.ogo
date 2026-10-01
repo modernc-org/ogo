@@ -11,6 +11,8 @@
 
 type Flag bool
 
+var ga [4]int
+
 type Code int16
 
 type Temp float32
@@ -54,6 +56,8 @@ func main() {
 	l := uintptr(&x)
 	// ERROR cannot convert p \(variable of type \*int\) to type uintptr
 	m := uintptr(p)
+	// ERROR cannot convert &ga \(an address\) to type uintptr
+	v := uintptr(&ga)
 	// ERROR cannot convert 1 \(untyped int constant\) to type Flag
 	o := Flag(1)
 	// ERROR cannot convert t \(variable of type bool\) to type Code
@@ -66,5 +70,5 @@ func main() {
 	println(take(-1e39))
 	// ERROR constant 5e\+38 overflows Temp
 	w := Temp(5e38)
-	println(a, b, c, d, e, g, h, i, j, k, l, m, o, q, r, u, w, cold(), Hot)
+	println(a, b, c, d, e, g, h, i, j, k, l, m, o, q, r, u, v, w, cold(), Hot)
 }
