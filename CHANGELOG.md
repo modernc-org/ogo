@@ -20,6 +20,28 @@ shipped section tells a reader on that version that they have behaviour they do 
 
 ### Language
 
+- **`unsafe.Pointer`**, as Go has it: `import "unsafe"`, and a pointer of any type
+  converts to an `unsafe.Pointer` and back, and an `unsafe.Pointer` to and from
+  `uintptr` -- which is how a program writes an address as a number, into a
+  parameter block a driver reads, and reads Hub RAM at a fixed address,
+  `*(*uint32)(unsafe.Pointer(uintptr(0x14)))`. One is compared, assigned, passed,
+  returned, held in a field, an element, a channel and an empty interface, asserted
+  back out and switched on, and printed by `%v` and `%T`; it is neither dereferenced
+  nor computed with, and converts to and from nothing else, each refused in Go's
+  terms. An alias, `type P = unsafe.Pointer`, is the same type. The lifetime rules
+  follow one as they follow the pointer it was converted from, and a uintptr made
+  of the address of storage of a frame is refused wherever it is written -- a
+  number carries an address where no rule can follow it -- as is handing a local's
+  address to a function that makes one of its parameter. Measured on a P2-EDGE: an
+  address written into a block as a `uint32` and read through by a Spin2 method and
+  by the program, and the read at `0x14` equal to `p2.ClockFreq()`. A type defined
+  over `unsafe.Pointer`, and `Sizeof` and the other functions of Go's unsafe, are
+  not supported yet.
+- **A store through a conversion to a pointer type**: `*(*T)(p) = v`, `(*T)(p).f =
+  v`, `(*Block)(p)[i] = v` and the compound assignments, which are how a program
+  writes through an `unsafe.Pointer`, were "only assignment to a simple variable
+  is supported yet". The converted pointer is bound first, as `q := (*T)(p)` binds
+  it, and the store goes through that.
 - **A function may be implemented by a Spin2 object its package carries**, as a
   Go function without a body is by its package's assembly. A function declared
   without a body calls the PUB method of its name -- whatever the case, Spin2 not
@@ -113,6 +135,18 @@ shipped section tells a reader on that version that they have behaviour they do 
   address walk stopped at the slice's index, and where the slice's backing came from
   was asked of the slice's value only. Refused now as `&xs[0]` is, and `*p` of such
   a pointer reaches what the slice's elements reach.
+- **A function storing its parameter converted to a pointer type keeps it.** `func
+  keep(p *int) { gp = (*int)(p) }` recorded nothing -- the conversion was a shape
+  the summaries did not read -- so `keep(&x)` left x's address in a package
+  variable, silently, where `gp = p` was refused; so did `return (*int)(p)`, a field
+  read through the conversion and a call converted. Refused now as the plain
+  spelling is.
+- **A function storing its parameter into ANOTHER package's variable keeps it.**
+  `func keep(p *int) { lib.G = p }` recorded nothing, the target's root being the
+  qualifier, which is no variable of the package being read -- so `keep(&x)` left
+  x's address in lib, silently, where `lib.G = &x` was refused. So were a list, a
+  field and an element of lib's variable, a for clause's post, a pointer to one held
+  in a local, and its address handed to a callee storing through it.
 
 ## v0.46.0
 

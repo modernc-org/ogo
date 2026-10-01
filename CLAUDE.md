@@ -517,8 +517,8 @@ still design-only.
   imports, transitively -- is emitted into **one C translation unit** in dependency
   order, with top-level symbols mangled into their package's namespace. `import
   "p2"` remains the one dotless, directory-less import, mapping to the hardware
-  intrinsics; `testing`, `strings`, `bytes` and `math` are likewise bare, module or
-  not. There is no standard library beyond those.
+  intrinsics; `unsafe`, `testing`, `strings`, `bytes` and `math` are likewise bare,
+  module or not. There is no standard library beyond those.
 - **Functions implemented in Spin2** (2026-09-30, `internal/octogo/spin2.go`) are
   OctoGo's .s files, asked for by p2-11's VGA text console (Eric Smith's MIT
   `vga_tile_driver.spin2`, used as it is). A package may carry `.spin2` files; a
@@ -550,6 +550,37 @@ still design-only.
   s, so `*p` is an element and not the slice (`TestEmitCSliceElemAddr`). A new way a
   value reaches the frame is a row of the matrices below, and so is a new way to
   name a callee.
+- **`unsafe.Pointer`** (2026-10-01; asked for by p2-11, whose VGA driver reads
+  addresses out of a parameter block of longs). `unsafe` is an embedded, intrinsic
+  package (`unsafeSrc`) whose one name, `Pointer`, is the Kind
+  `PredeclaredUnsafePointer`, put into its scope by NewPackage (`unsafePointerDecl`)
+  as the universe's names are put into the universe: a Kind, as go/types makes it a
+  basic type, so every Kind-gated rule asks it, and `catUnsafePointer` keeps it from
+  mixing with anything but itself and nil. The checker reaches it through a
+  qualifier (`unsafeQualifier`, `isUnsafePointer`; `typeKind`, `nameKind` and
+  `canonicalType` each answer it, the last so no name `Pointer` is recorded beside
+  the Kind) and through an alias. Conversions: `checkUnsafeConversion` for
+  `unsafe.Pointer(x)` (a pointer, a uintptr, an unsafe.Pointer or nil), `uintptr(p)`
+  in checkConversion, `(*T)(p)` in checkPtrConvOperand. The emitter spells it
+  `void*` (`cUnsafePtr`), so nil, comparison and a field are a pointer's, and names
+  it back in `goTypeName`/`typeNameForT`; an interface holds it as its data word,
+  under the table of its pointee `void`. Lifetime: `unsafeConvOperand` is what
+  frameRefOf, summaryReach and callExprsIn read through, an alias's conversion
+  included, and `uintptr(x)` is a sink twice over -- refused in emitConversion where
+  x reaches the frame, and a summary keeping whatever x reaches
+  (`uintptrConvOperands`), since a number goes where no rule follows it. A STORE
+  through a conversion, `*(*T)(p) = v`, which every write through an unsafe.Pointer
+  is, binds the converted pointer first (`convTargetHead`, `bindPtrConv`). Not yet:
+  a type DEFINED over unsafe.Pointer (refused at the declaration; an alias is
+  taken), `Sizeof` and the rest of Go's unsafe ("not supported yet"), and printf
+  verbs but `%v` and `%T`. Tests: `unsafe_pointer*.ogo`, `TestEmitCUnsafeLifetime`,
+  three run cases, `TestOnBoardUnsafe` (a uint32 address read through by a Spin2
+  method, and Hub RAM at 0x14 equal to `p2.ClockFreq()`). Building it found two
+  lifetime holes older than it, both in the summaries: a callee storing `(*T)(p)`
+  (ptrConvShape; frameRefOf saw through the conversion, the summaries did not), and
+  one storing into ANOTHER package's variable, `lib.G = p` (outlivesByName). And two
+  loud gaps, left: a type switch's `case *int:`, a pointer to a predeclared type,
+  and a parenthesised qualified conversion, `(lib.T)(x)`.
 - **Two test suites.** `TestEmitCRun` builds each program in the `emitRunCases`
   table with the host C compiler and runs it against a pthread shim
   (`testdata/hostp2`). `TestOnBoard` builds the *same* table with the real
