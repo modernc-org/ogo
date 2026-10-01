@@ -16,6 +16,22 @@ same area is a new entry under **Unreleased**, not an edit to the old one. Amend
 shipped section tells a reader on that version that they have behaviour they do not.
 `git show vX.Y.Z:CHANGELOG.md` is the check.
 
+## Unreleased
+
+### Fixed
+
+- **A library's name was read as the main package's variable of the same name.**
+  Inside a package a, a name of a's own that is no variable of a -- a function, a
+  constant -- was answered by main's package variable of that name when main had
+  one: a's function `n`, called or deferred or taken as a value in a, went through
+  main's function value `n`, silently, `for i := range n` over a's constant 4
+  ranged over main's 16-element array `n`, silently, and `i < n` and `println(n)`
+  failed to build. Main's globals are named in C by their source names, and the
+  lookup meant for another package's global, which arrives already mangled, found
+  them by those names from any package. Found by p2-11, whose VGA package declared
+  `var params [16]uint32` beside its terminal package's `const params = 16`.
+  Measured on a P2-EDGE: each prints what Go prints.
+
 ## v0.47.0
 
 ### Language

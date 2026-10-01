@@ -842,6 +842,18 @@ the host and on a P2-EDGE -- the one fault the sweep found was an ELIDED literal
 filling another package's unexported field, which is a hole in the literal check
 rather than in the boundary. The harness is `dumpc`, which reads an `ogo.mod` above
 the directory; before that the dimension could not be probed on the host at all.
+A NAME crosses it the other way (2026-10-01, found by p2-11): main's globals are
+keyed by their source names, main's prefix being empty, and the registries'
+bare-name fallback -- meant for another package's global, which arrives already
+mangled (qualifiedChainBase) -- answered a library's own name that is no variable
+of the library with main's variable of that name: a's function f, called or
+deferred or taken as a value in a, went through main's function value f, and
+`range n` over a's constant ranged over main's array n, both silent on the host and
+the board. `bareGlobal` keeps main's names out of another package's bare lookups
+(`mainGlobals`, TestEmitCMainNamesInPackages); scalar constants had been safe only
+because they are folded before any variable is asked. **A new bare-name lookup into
+a package-level registry asks bareGlobal**, and a probe of the boundary declares in
+main what the library uses by the same name.
 
 **A C NAME IS A ROW** (2026-09-25). The emitted C keeps a program's own names, so
 every name a program may write is a row across everything else that names things in
