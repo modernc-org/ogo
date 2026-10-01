@@ -654,7 +654,8 @@ still design-only.
   exactly**: a hex one always, a decimal only away from a tie. So is a STRING
   literal (2026-09-30, found by p2-11): the target's lexer reads an octal escape past
   three digits, so `cQuote` closes the literal after one a digit 0-7 follows, `"\033"
-  "7"` (`doc/octal-escape-past-three-digits.c`).
+  "7"` (`doc/octal-escape-past-three-digits.c`; flexprop#115, filed 2026-10-01 with a
+  tested fix).
   **A call stands in a header** (2026-09-29): one time in four `genHeaderCall`
   writes one as the init of an if, of a switch and of a for, and as the for's post,
   its results unread, which the call counter accounts for; every seed is a new

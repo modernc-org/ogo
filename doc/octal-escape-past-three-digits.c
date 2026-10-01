@@ -19,6 +19,11 @@
 // escape and another opened, which C joins after the escapes are read. ogo writes
 // that wherever a digit 0-7 follows an octal escape (cQuote); it writes octal at
 // all because C's hex escape has no limit in C itself.
+//
+// Reported 2026-10-01 with a tested fix as flexprop#115: three digits at most in
+// getEscapedChar, whose two callers, parseCString and getCChar, are both C. Built
+// natively at v7.7.3, the reproducer prints gcc's values on every line on the
+// board, and upstream's make test_offline passes as it does without it.
 
 #include <stdio.h>
 
