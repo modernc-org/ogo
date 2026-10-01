@@ -900,6 +900,24 @@ func (f *File) resultType(s *Scope, tn TypeNode) (r retResult) {
 	return r
 }
 
+// typeIdentDecl resolves a written type NAME to its declaration and the scope its
+// definition is read in: this package's, or for a qualified name, `lib.T`, the
+// declaring package's, through the file that wrote the qualifier. Every helper
+// following a chain of definitions goes through it. Looked up by the bare name, as
+// they all were, another package's type was this package's type of the same name
+// where there was one, and nothing otherwise: `var p lib.P` could not be
+// dereferenced, a send on a `lib.Ch` was checked against main's Ch, and a field of
+// type `lib.T` in main's own T made T a recursive type.
+func (f *File) typeIdentDecl(s *Scope, id *TypeNodeIdent) (*TypeDeclaration, *Scope, bool) {
+	if id.Qualifier.IsValid() {
+		wf := f.fileOfToken(id.Qualifier)
+		td, home, ok := wf.typeDeclNamed(wf.Scope, id.Qualifier.Src()+"."+id.Name.Src())
+		return td, home, ok && td.TypeSpec != nil
+	}
+	td, ok := s.find(id.Name.Src()).(*TypeDeclaration)
+	return td, s, ok && td.TypeSpec != nil
+}
+
 // typeKind resolves a TypeNode to a predeclared Kind. It reports false for
 // composite and unresolved types.
 //
@@ -923,6 +941,20 @@ func (f *File) typeKind(s *Scope, tn TypeNode) (Kind, bool) {
 		}
 		if f.isUnsafePointer(id) {
 			return PredeclaredUnsafePointer, true
+		}
+		// Another package's type, `lib.Count`: resolved where it is declared, through
+		// the file that wrote the qualifier, and its chain followed THERE. Looked up
+		// by its bare name, it was the current package's Count if there was one --
+		// `var c lib.Count = 5` refused for a `type Count string` of main's, and
+		// `var c lib.Count = "x"` taken -- and of no Kind otherwise, so every
+		// Kind-gated rule said nothing of a variable, a parameter or a field of it.
+		if id.Qualifier.IsValid() {
+			td, home, ok := f.typeIdentDecl(s, id)
+			if !ok || td.TypeSpec.TypeNode == nil {
+				return 0, false
+			}
+			s, tn = home, td.TypeSpec.TypeNode
+			continue
 		}
 		switch d := s.find(id.Name.Src()).(type) {
 		case *PredeclaredType:
@@ -1022,11 +1054,11 @@ func (f *File) chanElem(s *Scope, tn TypeNode) (elem Kind, hasElem, isChan bool)
 			elem, hasElem = f.typeKind(s, x.TypeNode)
 			return elem, hasElem, true
 		case *TypeNodeIdent:
-			d, ok := s.find(x.Name.Src()).(*TypeDeclaration)
-			if !ok || d.TypeSpec == nil || d.TypeSpec.TypeNode == nil {
+			d, home, ok := f.typeIdentDecl(s, x)
+			if !ok || d.TypeSpec.TypeNode == nil {
 				return 0, false, false
 			}
-			tn = d.TypeSpec.TypeNode
+			s, tn = home, d.TypeSpec.TypeNode
 		default:
 			return 0, false, false
 		}
@@ -1048,6 +1080,9 @@ func (f *File) elemTypeName(s *Scope, tn TypeNode) (nm Token) {
 			nm, _ = namedTypeToken(x.TypeNode)
 			return nm
 		case *TypeNodeIdent:
+			if x.Qualifier.IsValid() {
+				return nm // another package's: its element is named there (typeIdentDecl)
+			}
 			d, ok := s.find(x.Name.Src()).(*TypeDeclaration)
 			if !ok || d.TypeSpec == nil || d.TypeSpec.TypeNode == nil {
 				return nm
@@ -1113,6 +1148,9 @@ func (f *File) chanElemTypeInfo(s *Scope, tn TypeNode) (qual Token, isPtr bool) 
 			_, isPtr = x.TypeNode.(*TypeNodePointer)
 			return namedTypeQual(x.TypeNode), isPtr
 		case *TypeNodeIdent:
+			if x.Qualifier.IsValid() {
+				return Token{}, false // another package's: its element is named there (typeIdentDecl)
+			}
 			d, ok := s.find(x.Name.Src()).(*TypeDeclaration)
 			if !ok || d.TypeSpec == nil || d.TypeSpec.TypeNode == nil {
 				return Token{}, false
@@ -1133,6 +1171,9 @@ func (f *File) chanElemTypeName(s *Scope, tn TypeNode) (nm Token) {
 			nm, _ = namedTypeToken(x.TypeNode)
 			return nm
 		case *TypeNodeIdent:
+			if x.Qualifier.IsValid() {
+				return nm // another package's: its element is named there (typeIdentDecl)
+			}
 			d, ok := s.find(x.Name.Src()).(*TypeDeclaration)
 			if !ok || d.TypeSpec == nil || d.TypeSpec.TypeNode == nil {
 				return nm
@@ -15125,11 +15166,11 @@ func (f *File) isArrayType(s *Scope, tn TypeNode) bool {
 		case *TypeNodeArray:
 			return true
 		case *TypeNodeIdent:
-			td, ok := s.find(x.Name.Src()).(*TypeDeclaration)
-			if !ok || td.TypeSpec == nil {
+			td, home, ok := f.typeIdentDecl(s, x)
+			if !ok {
 				return false
 			}
-			tn = td.TypeSpec.TypeNode
+			s, tn = home, td.TypeSpec.TypeNode
 		default:
 			return false
 		}
@@ -15546,8 +15587,11 @@ func (f *File) importedMethodResultType(qual, typeName, member Token) (Token, To
 		}
 		sig = methodSpecSig(spec)
 	default:
-		td, _, isStruct := f.importedStruct(qual, typeName)
-		if !isStruct {
+		// Any defined type's method, not a struct's alone: a method of a `type Count
+		// int` of that package named nothing, so `var w int = c.Double()` took a
+		// Count where an int is wanted.
+		td, _, _ := f.importedStruct(qual, typeName)
+		if td == nil {
 			return Token{}, Token{}, false, false
 		}
 		m := td.methods[member.Src()]
@@ -18714,20 +18758,42 @@ func (f *File) callResults(s *Scope, callee, member Token) ([]retResult, bool) {
 	if !ok || !d.typeName.IsValid() {
 		return nil, false
 	}
+	// The receiver's type as WRITTEN, qualifier included: another package's
+	// `lib.Count` has its methods there, and their results are spelled there, so
+	// they are carried into this file's spelling (requalifiedSig). By the bare name
+	// it was this package's Count where there was one, whose method answered:
+	// `int(c.Double())` was "cannot convert ... string" for a main `type Count
+	// string`.
+	flatten := func(home *Scope, sig *SignatureNode) ([]retResult, bool) {
+		if !d.typeQual.IsValid() {
+			return f.flattenResults(home, sig), true
+		}
+		r, ok := f.requalifiedSig(home, d.typeQual, sig)
+		if !ok {
+			return nil, false
+		}
+		return f.flattenResults(s, r), true
+	}
 	// An INTERFACE receiver: the results are the ones the method SPEC declares --
 	// the concrete type behind the value is not known here, and the interface's
 	// declaration is what a call is checked against anyway. Without this a call
 	// through an interface answered "unresolved", so `f(s.Read())` -- a call's
 	// results passed on as another call's arguments -- reported "not enough
 	// arguments" for a shape Go allows.
-	if set, isIface := f.interfaceMethodsNamed(s, d.typeName.Src()); isIface {
+	if set, isIface := f.interfaceMethodsNamed(s, d.declaredTypeName()); isIface {
 		m, has := set[member.Src()]
 		if !has {
 			return nil, false
 		}
-		return f.flattenResults(s, methodSpecSig(m)), true
+		home := s
+		if d.typeQual.IsValid() {
+			if h, ok := f.importedPkgScope(d.typeQual); ok {
+				home = h
+			}
+		}
+		return flatten(home, methodSpecSig(m))
 	}
-	td, ok := s.find(d.typeName.Src()).(*TypeDeclaration)
+	td, home, ok := f.typeDeclNamed(s, d.declaredTypeName())
 	if !ok {
 		return nil, false
 	}
@@ -18735,7 +18801,7 @@ func (f *File) callResults(s *Scope, callee, member Token) ([]retResult, bool) {
 	if fd == nil || fd.Type == nil {
 		return nil, false
 	}
-	return f.flattenResults(s, fd.Type.Signature), true
+	return flatten(home, fd.Type.Signature)
 }
 
 // chanOfResults reads a call's result list as a channel operand: tn is the channel
@@ -18761,6 +18827,20 @@ func (f *File) methodSingleResultName(s *Scope, head, member Token) string {
 	d, ok := s.find(head.Src()).(*VarDeclaration)
 	if !ok || !d.typeName.IsValid() {
 		return ""
+	}
+	// Another package's type: its method's result as this file spells it, through
+	// callResults, which resolves the method there -- `chain.Temp`, which
+	// namedTypeHasMember asks after. Unnamed, a result with a Kind read as the
+	// predeclared type, and `t.Half().Int()` was "type float64 has no method Int".
+	if d.typeQual.IsValid() {
+		results, ok := f.callResults(s, head, member)
+		if !ok || len(results) != 1 {
+			return ""
+		}
+		if id, isIdent := results[0].typeNode.(*TypeNodeIdent); isIdent && id.Qualifier.IsValid() {
+			return id.Qualifier.Src() + "." + id.Name.Src()
+		}
+		return results[0].name
 	}
 	td, ok := s.find(d.typeName.Src()).(*TypeDeclaration)
 	if !ok {
@@ -18797,6 +18877,20 @@ func (f *File) fieldTypeName(s *Scope, head, field Token) string {
 // "type T int" carries int's Kind and its OWN method set, and the checks that had
 // only the Kind reported a declared method missing.
 func (f *File) namedTypeHasMember(s *Scope, name, member string) bool {
+	// Another package's type, `lib.T`: its methods and fields there. A struct's
+	// promoted members may come of a third package's, which is not resolved here, so
+	// one is taken to have what its own declaration does not show.
+	if strings.Contains(name, ".") {
+		td, home, ok := f.typeDeclNamed(s, name)
+		if !ok {
+			return true
+		}
+		if td.methods[member] != nil {
+			return true
+		}
+		_, isStruct := f.structFields(home, td.Token())
+		return isStruct
+	}
 	td, ok := s.find(name).(*TypeDeclaration)
 	if !ok {
 		return false
@@ -20100,11 +20194,11 @@ func (f *File) isPointerType(s *Scope, tn TypeNode) bool {
 		case *TypeNodePointer:
 			return true
 		case *TypeNodeIdent:
-			td, ok := s.find(x.Name.Src()).(*TypeDeclaration)
-			if !ok || td.TypeSpec == nil {
+			td, home, ok := f.typeIdentDecl(s, x)
+			if !ok {
 				return false
 			}
-			tn = td.TypeSpec.TypeNode
+			s, tn = home, td.TypeSpec.TypeNode
 		default:
 			return false
 		}
@@ -21582,6 +21676,9 @@ func (f *File) checkIfaceEmbedCycle(s *Scope, ts *TypeSpecNode) {
 func (f *File) walkTypeCycle(s *Scope, tn TypeNode) {
 	switch x := tn.(type) {
 	case *TypeNodeIdent:
+		if x.Qualifier.IsValid() {
+			return // another package's, which cannot hold this one (see above)
+		}
 		if cd, ok := s.find(x.Name.Src()).(*TypeDeclaration); ok {
 			f.checkTypeCycle(s, cd)
 		}
