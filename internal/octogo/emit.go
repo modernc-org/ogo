@@ -13361,6 +13361,20 @@ func (e *emitter) summaryReach(ast []int32) (out []held) {
 			return e.summaryReach(args[0].ast)
 		}
 	}
+	// A conversion to a pointer type, `(*T)(p)`, is the address it converts, and a
+	// field or an element read through it, `(*T)(p).xs`, is p's contents. Unread,
+	// `gp = (*int)(p)` and `return (*int)(p)` kept the caller's address in silence
+	// where `gp = p` and `return p` were refused.
+	if kids, ok := e.soleFactor(ast); ok {
+		if arg, rest, isConv := e.ptrConvShape(kids); isConv {
+			switch {
+			case len(rest) == 0:
+				return e.summaryReach(arg.ast)
+			case !slices.ContainsFunc(rest, func(n Node) bool { return n.sym == CallSuffix }):
+				return asElem(e.summaryReach(arg.ast))
+			}
+		}
+	}
 	if name, ok := e.derefOperand(ast); ok {
 		return []held{{name, heldContents}}
 	}
@@ -13468,6 +13482,14 @@ func (e *emitter) callExprsIn(v []int32) (out [][]int32) {
 			out = append(out, e.callExprsIn(a.ast)...)
 		}
 		return out
+	}
+	// `(*T)(pass(v))`: the conversion's operand is what the value carries. The shape
+	// is also a call through a pointer to a function, `(*fp)(x)`, which is kept as
+	// the call it may be.
+	if kids, ok := e.soleFactor(v); ok {
+		if arg, rest, isConv := e.ptrConvShape(kids); isConv && len(rest) == 0 {
+			return append(e.callExprsIn(arg.ast), v)
+		}
 	}
 	if recv, suffix, ok := e.shapeCall(v); ok && len(suffix) != 0 && suffix[len(suffix)-1].sym == CallSuffix {
 		if e.convToSliceType(recv, suffix) || e.convToIfaceType(recv, suffix) {
@@ -15400,6 +15422,56 @@ func (e *emitter) ptrConvOperand(ast []int32) ([]int32, bool) {
 		return nil, false
 	}
 	return pc.arg.ast, true
+}
+
+// ptrConvShape is ptrConvAt by SHAPE alone, for the summaries, which read a body
+// before any local of it has a type and before a type declared in it has a name:
+// `(*T)(x)` and `(*pkg.T)(x)`, with the steps written after the conversion. The one
+// other thing of that shape, a call through a pointer to a function, `(*fp)(x)`, is
+// a call of what fp points at; read as a conversion as well it holds its argument,
+// which is the conservative reading of an unknown callee's result.
+func (e *emitter) ptrConvShape(kids []Node) (arg Node, rest []Node, ok bool) {
+	if len(kids) != 4 || kids[0].sym != 0 || e.f.ch(kids[0].tok) != LPAREN || kids[1].sym != Expression ||
+		kids[2].sym != 0 || e.f.ch(kids[2].tok) != RPAREN || kids[3].sym != FactorSuffix {
+		return Node{}, nil, false
+	}
+	nodes := slices.Collect(it(kids[1].ast))
+	for len(nodes) == 1 && (nodes[0].sym == Expression || nodes[0].sym == SimpleExpr || nodes[0].sym == Term) {
+		nodes = slices.Collect(it(nodes[0].ast))
+	}
+	if len(nodes) != 1 || nodes[0].sym != UnaryExpr {
+		return Node{}, nil, false
+	}
+	un := slices.Collect(it(nodes[0].ast))
+	if len(un) != 2 || un[0].sym != UnaryOp || un[1].sym != Factor {
+		return Node{}, nil, false
+	}
+	if tok, isOp := e.unaryOpTok(un[0].ast); !isOp || e.f.ch(tok) != MUL {
+		return Node{}, nil, false
+	}
+	fk := slices.Collect(it(un[1].ast))
+	if len(fk) == 0 || fk[0].sym != 0 || e.f.ch(fk[0].tok) != IDENT {
+		return Node{}, nil, false
+	}
+	if len(fk) == 2 {
+		if fk[1].sym != FactorSuffix {
+			return Node{}, nil, false
+		}
+		if sel := slices.Collect(it(fk[1].ast)); len(sel) != 1 || sel[0].sym != Selector {
+			return Node{}, nil, false
+		}
+	} else if len(fk) != 1 {
+		return Node{}, nil, false
+	}
+	steps := slices.Collect(it(kids[3].ast))
+	if len(steps) == 0 || steps[0].sym != CallSuffix {
+		return Node{}, nil, false
+	}
+	args := e.callArgExprs(steps[0].ast)
+	if len(args) != 1 {
+		return Node{}, nil, false
+	}
+	return args[0], steps[1:], true
 }
 
 // starPredeclaredCAt answers the C type of a predeclared T for an expression that
