@@ -11309,7 +11309,7 @@ func (e *emitter) collectFuncCross(fi funcInfo) {
 	}
 	isRecv := func(root string) bool { return reachOf([]held{{root, heldAlias}}).recvVal }
 	holdsPackageVar := func(root string) (found bool) {
-		resolve([]held{{root, heldAlias}}, func(n string, contents bool) { found = found || !contents && e.isPackageVar(n) })
+		resolve([]held{{root, heldAlias}}, func(n string, contents bool) { found = found || !contents && e.outlivesByName(n) })
 		return found
 	}
 	// A call through a function value nothing names -- a package variable, a field,
@@ -11604,7 +11604,7 @@ func (e *emitter) collectFuncCross(fi funcInfo) {
 			switch i := at(root); {
 			case i >= 0:
 				out[j] = i
-			case root != "" && e.isPackageVar(root):
+			case root != "" && e.outlivesByName(root):
 				out[j] = argOutlives
 			default:
 				out[j] = argLocal
@@ -11760,7 +11760,7 @@ func (e *emitter) collectFuncCross(fi funcInfo) {
 	}
 	storesInto := func(pkg, through []storeShape) {
 		for _, st := range through {
-			if !e.isPackageVar(st.base) && holdsPackageVar(st.base) {
+			if !e.outlivesByName(st.base) && holdsPackageVar(st.base) {
 				pkg = append(pkg, st)
 			}
 		}
@@ -13172,7 +13172,7 @@ func (e *emitter) clauseStores(h forHeader) (pkg, through []storeShape) {
 			return nil, nil
 		}
 		st := storeShape{base: base, held: asElem(e.summaryReach(h.rangeExpr))}
-		if e.isPackageVar(base) {
+		if e.outlivesByName(base) {
 			return []storeShape{st}, nil
 		}
 		if _, whole := e.exprIdent(h.valVar); !whole {
@@ -13195,7 +13195,7 @@ func (e *emitter) clauseStores(h forHeader) (pkg, through []storeShape) {
 			if base == "" || base == "_" {
 				continue
 			}
-			if e.isPackageVar(base) {
+			if e.outlivesByName(base) {
 				pkg = append(pkg, storeShape{value: rhss[i]})
 				continue
 			}
@@ -13274,10 +13274,26 @@ func (e *emitter) assignThrough(nodes []Node) (base string, values [][]int32, su
 // so unlike the two above, no selector need stand between them.
 func (e *emitter) storedInPackageVar(nodes []Node) [][]int32 {
 	base, values, _, _ := e.assignThrough(nodes)
-	if base == "" || !e.isPackageVar(base) {
+	if base == "" || !e.outlivesByName(base) {
 		return nil
 	}
 	return values
+}
+
+// outlivesByName reports whether a name the summaries reach is storage outliving
+// every frame: a package variable, or an import's qualifier, which is the root of
+// another package's variable, `lib.G` or `lib.H.p`, read by shape. Asked of
+// isPackageVar alone, `lib.G = p` in a callee stored nothing, and `relay(&x)` left
+// x's address in lib where `lib.G = &x` was refused.
+func (e *emitter) outlivesByName(name string) bool {
+	if e.isPackageVar(name) {
+		return true
+	}
+	if _, ok := e.locals[name]; ok {
+		return false
+	}
+	_, isImport := e.importQualifiers[name]
+	return isImport
 }
 
 // heldKind says how a value reaches a name it was given (summaryReach): as the name's
@@ -13727,7 +13743,7 @@ func (e *emitter) storedInPackageVars(nodes []Node) [][]int32 {
 	}
 	var out [][]int32
 	for i, t := range targets {
-		if t != "" && e.isPackageVar(t) {
+		if t != "" && e.outlivesByName(t) {
 			out = append(out, values[i])
 		}
 	}
