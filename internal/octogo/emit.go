@@ -5396,6 +5396,18 @@ func emitProgram(pkg *Package, w io.Writer, opts []EmitOption, rename map[string
 	// namespace (see mangle) and cannot collide across packages.
 	pkgs := reachablePackages(pkg)
 	e.collectUserSpellings(pkgs)
+	e.mainGlobals = map[string]bool{}
+	for _, p := range pkgs {
+		if pkgPrefix(p.ImportPath) != "" || p.Scope == nil {
+			continue
+		}
+		for name, d := range p.Scope.Declarations {
+			switch d.(type) {
+			case *VarDeclaration, *ConstDeclaration:
+				e.mainGlobals[e.mangle("", name)] = true
+			}
+		}
+	}
 	forEachFile := func(fn func()) {
 		for pi, p := range pkgs {
 			e.curPkgPrefix = pkgPrefix(p.ImportPath)
@@ -6406,6 +6418,7 @@ type emitter struct {
 	usesBuilder        bool                    // the Builder type is used: emit its typedef and method helpers
 	importQualifiers   map[string]string       // import qualifier -> the imported package's C symbol prefix (resolved user packages, not p2)
 	unsafeQualifiers   map[string]bool         // the qualifiers an import of unsafe is named by
+	mainGlobals        map[string]bool         // the C names of main's package-level names, which are their source names (bareGlobal)
 	pkgNames           map[string]string       // package C prefix -> the package name a program writes, for a type's Go spelling
 	typeDisplay        map[string]string       // a type's C name -> its Go spelling, "lib.Temp" for a type of another package
 	curPkgPrefix       string                  // the C symbol prefix of the package whose file is currently being emitted ("" for main)
@@ -25724,8 +25737,22 @@ func (e *emitter) varType(name string) (string, bool) {
 	// An imported package's global, whose name arrives already mangled -- there is
 	// no source name for it to be mangled FROM here (see qualifiedChainBase). Asked
 	// last, so a name of this package's own always answers first.
+	if !e.bareGlobal(name) {
+		return "", false
+	}
 	ct, ok := e.globals[name]
 	return e.unaliased(ct), ok
+}
+
+// bareGlobal reports whether the package-level registries may answer for a name
+// asked BARE, the fallback for another package's global, whose name arrives already
+// mangled (qualifiedChainBase). Not for one of main's own while another package is
+// emitted: main's prefix is empty, so its globals are keyed by their source names,
+// and a name of package a that is no variable of a was answered with main's
+// variable of that name -- a's function f, called in a, went through main's
+// function value f in silence, and a's constant n compared as main's array n.
+func (e *emitter) bareGlobal(name string) bool {
+	return e.curPkgPrefix == "" || !e.mainGlobals[name]
 }
 
 // typeCName maps a written TYPE name to its C key: a LOCAL type declaration's
@@ -25801,10 +25828,10 @@ func (e *emitter) varRef(name string) string {
 	if _, ok := e.globalArrays[e.globalC(name)]; ok {
 		return e.globalC(name)
 	}
-	if _, ok := e.globals[name]; ok {
+	if _, ok := e.globals[name]; ok && e.bareGlobal(name) {
 		return name // an imported package's global; see varType
 	}
-	if _, ok := e.globalArrays[name]; ok {
+	if _, ok := e.globalArrays[name]; ok && e.bareGlobal(name) {
 		return name // an imported package's array; see varType
 	}
 	// A FUNCTION of this package used as a value, `f := Double`. Its name is
@@ -34217,6 +34244,9 @@ func (e *emitter) arrayVar(name string) (arrDim, bool) {
 	if a, ok := e.globalArrays[e.globalC(name)]; ok {
 		return a, true
 	}
+	if !e.bareGlobal(name) {
+		return arrDim{}, false
+	}
 	a, ok := e.globalArrays[name] // an imported package's array; see varType
 	return a, ok
 }
@@ -41980,7 +42010,7 @@ func (e *emitter) sliceElem(name string) (string, bool) {
 		if el, ok := e.globalSliceVars[e.globalC(name)]; ok {
 			return el, true
 		}
-		if el, ok := e.globalSliceVars[name]; ok {
+		if el, ok := e.globalSliceVars[name]; ok && e.bareGlobal(name) {
 			return el, true // an imported package's slice; see varType
 		}
 	}
