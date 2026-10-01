@@ -24,13 +24,41 @@ var (
 // intrinsicImports are the compiler-known packages that have no .ogo source
 // directory: their symbols are provided by the emitter (p2's hardware intrinsics),
 // so an import of one resolving to noPkg is expected, not a missing-package error.
-var intrinsicImports = map[string]bool{"p2": true}
+var intrinsicImports = map[string]bool{"p2": true, "unsafe": true}
 
 // embeddedPkgs are packages whose source the compiler carries rather than reads
 // from a directory. They are ORDINARY OctoGo, compiled and mangled like any other
 // package -- nothing about them is intrinsic -- so the day one of them ships as
 // source on disk, the only change is where it is read from.
-var embeddedPkgs = map[string]string{"testing": testingSrc, "p2": p2Src, "strings": stringsSrc, "bytes": bytesSrc, "math": mathSrc}
+var embeddedPkgs = map[string]string{"testing": testingSrc, "p2": p2Src, "strings": stringsSrc, "bytes": bytesSrc, "math": mathSrc, "unsafe": unsafeSrc}
+
+// unsafeSrc is the unsafe package. Its one name, Pointer, is no declaration a source
+// can write -- a pointer of no type, which every pointer converts to and from, and
+// uintptr too -- so it is the Kind PredeclaredUnsafePointer, put into the package's
+// scope by NewPackage (unsafePointerDecl) as the universe's names are put into the
+// universe. Nothing of it is emitted: it is intrinsic, and the emitter spells the
+// type and its conversions itself.
+const unsafeSrc = `// Package unsafe holds Pointer, the pointer of no type through which a program
+// reads one type's storage as another's and writes an address as a number.
+//
+// A pointer of any type converts to a Pointer and back, and a Pointer converts to
+// and from uintptr. A Pointer is compared and assigned like any pointer, and is
+// neither dereferenced nor computed with: an address is computed as a uintptr and
+// converted back. The lifetime rules follow a Pointer as they follow the pointer it
+// was converted from, and a number carries nothing they can follow -- so the
+// address of storage of a frame is refused as a uintptr, and a function turning a
+// pointer parameter into one is taken to keep what it is handed.
+//
+// Sizeof, Alignof, Offsetof, Add, Slice, String, StringData and SliceData are not
+// provided yet.
+`
+
+// unsafePointerDecl is unsafe.Pointer's declaration, its token from a source of its
+// own as the universe's names' are from builtin.ogo.
+var unsafePointerDecl = &PredeclaredType{
+	declaration: declaration{token: scanNames("unsafe.ogo", "Pointer")["Pointer"]},
+	kinder:      kinder(PredeclaredUnsafePointer),
+}
 
 // mathSrc is the math package. Every function whose body is missing is one call of
 // the C backend's math library, substituted at the call site (mathIntrinsics in
@@ -1571,6 +1599,9 @@ func (c *BuildContext) NewPackage(importPath string, files []string, fsys fs.FS)
 		ImportPath: importPath,
 		Scope:      newScope(Universe, PackageScope),
 		ctx:        c,
+	}
+	if importPath == "unsafe" {
+		p.Scope.add(unsafePointerDecl)
 	}
 	// The Spin2 objects beside the package's files, which its functions declared
 	// without a body are bound to. An embedded package's are the emitter's

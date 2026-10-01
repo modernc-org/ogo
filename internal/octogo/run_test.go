@@ -27249,6 +27249,128 @@ func main() {
 		want: "7 1 9 4\n",
 	},
 	{
+		// unsafe.Pointer as Go uses it: an address compared and held, converted to
+		// a uintptr and computed with, converted back to a pointer of another type
+		// and written through -- `*(*T)(p) = v`, `(*Block)(p)[i] = v` and a compound
+		// assignment, which no target took until the conversion was bound first --
+		// a float read as its bits, and %v and %T. Every line diffed against Go.
+		name: "unsafe.Pointer converts between pointer types and uintptr",
+		src: `import "unsafe"
+
+type Block [4]uint32
+
+type Desc struct {
+	addr unsafe.Pointer
+	n    int
+}
+
+var g [4]uint32
+
+var gd Desc
+
+func elem(base unsafe.Pointer, i int) *uint32 {
+	return (*uint32)(unsafe.Pointer(uintptr(base) + uintptr(i)*4))
+}
+
+func bits(f float32) uint32 { return *(*uint32)(unsafe.Pointer(&f)) }
+
+func main() {
+	var up unsafe.Pointer
+	println(up == nil)
+	up = unsafe.Pointer(&g[0])
+	println(up != nil, up == unsafe.Pointer(&g[0]), up == unsafe.Pointer(&g[1]))
+	a := uintptr(unsafe.Pointer(&g[0]))
+	b := uintptr(unsafe.Pointer(&g[3]))
+	println(b - a)
+	*(*uint32)(unsafe.Pointer(a + 4)) = 7
+	*elem(up, 2) = 9
+	(*Block)(up)[3] = 11
+	*(*uint32)(up) += 5
+	println(g[0], g[1], g[2], g[3])
+	println(bits(1.5), bits(-2))
+	var x uint32 = 0x40490fdb
+	f := *(*float32)(unsafe.Pointer(&x))
+	println(f > 3.14 && f < 3.15)
+	gd = Desc{unsafe.Pointer(&g[1]), 4}
+	println(gd.n, *(*uint32)(gd.addr))
+	var i any = up
+	q, ok := i.(unsafe.Pointer)
+	printf("%T %v %v\n", i, ok, q == up)
+	var none unsafe.Pointer
+	printf("%v %T\n", none, none)
+}
+`,
+		want: "true\ntrue true false\n12\n5 7 9 11\n1069547520 3221225472\ntrue\n4 7\nunsafe.Pointer true true\n<nil> unsafe.Pointer\n",
+	},
+	{
+		// An interface holds an unsafe.Pointer as it holds any pointer, the data word
+		// being the pointer itself: asserted back, told apart in a type switch, and
+		// named by %T. Diffed against Go.
+		name: "an interface holds an unsafe.Pointer",
+		src: `import "unsafe"
+
+type P struct{ n int }
+
+var g int = 4
+
+var gp P
+
+func kind(i any) string {
+	switch v := i.(type) {
+	case unsafe.Pointer:
+		if *(*int)(v) == 4 {
+			return "four"
+		}
+		return "not four"
+	case *P:
+		return "*P"
+	}
+	return "other"
+}
+
+func main() {
+	var i any = unsafe.Pointer(&g)
+	printf("%T\n", i)
+	p, ok := i.(unsafe.Pointer)
+	println(ok, *(*int)(p))
+	_, ok = i.(*P)
+	println(ok)
+	println(kind(i), kind(&gp), kind(nil))
+	var j any = &gp
+	_, ok = j.(unsafe.Pointer)
+	println(ok)
+}
+`,
+		want: "unsafe.Pointer\ntrue 4\nfalse\nfour *P other\nfalse\n",
+	},
+	{
+		// A channel of unsafe.Pointer carries an address to another cog, which
+		// writes through it: package storage, which outlives every cog.
+		name: "a channel carries an unsafe.Pointer to a cog",
+		src: `import "unsafe"
+
+var g int
+
+var ch chan unsafe.Pointer
+
+var done chan bool
+
+func worker() {
+	p := <-ch
+	*(*int)(p) = 5
+	done <- true
+}
+
+func main() {
+	go worker()
+	ch <- unsafe.Pointer(&g)
+	<-done
+	println(g)
+}
+`,
+		want: "5\n",
+	},
+	{
 		// A method PROMOTED from an embedded field satisfies an interface, as it does
 		// in Go. It always satisfied a direct call -- b.get() reached A's get -- and
 		// the interface check read the type's OWN methods only, so one method-set

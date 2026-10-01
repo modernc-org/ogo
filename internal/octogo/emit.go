@@ -703,6 +703,11 @@ var importIncludes = map[string]string{
 	"p2": "propeller2.h",
 }
 
+// cUnsafePtr is unsafe.Pointer's C type: a pointer, so everything that asks whether
+// a value is one -- nil, a comparison, the lifetime rules, a field or an element of
+// one -- answers as it does for any, and one the checker never dereferences.
+const cUnsafePtr = "void*"
+
 // cTypes maps predeclared OctoGo type names to C types. int is a type of its own,
 // 32 bits wide on this target as the P2's C int is, so it maps to plain int --
 // int32 is a DIFFERENT type and maps to int32_t, which is how the two stay apart
@@ -5420,11 +5425,15 @@ func emitProgram(pkg *Package, w io.Writer, opts []EmitOption, rename map[string
 		}
 		e.pkgNames[pkgPrefix(p.ImportPath)] = name
 	}
+	e.unsafeQualifiers = map[string]bool{}
 	for _, p := range pkgs {
 		for _, f := range p.Files {
 			for _, spec := range f.ImportSpecs {
 				if spec.Pkg != nil && spec.Pkg != noPkg {
 					e.importQualifiers[spec.ImportQualifier] = pkgPrefix(spec.Pkg.ImportPath)
+					if spec.Pkg.ImportPath == "unsafe" {
+						e.unsafeQualifiers[spec.ImportQualifier] = true
+					}
 				}
 			}
 		}
@@ -6396,6 +6405,7 @@ type emitter struct {
 	usesRuneString     bool                    // string(r) for a run-time rune is used: emit the ogo_rune_string helper
 	usesBuilder        bool                    // the Builder type is used: emit its typedef and method helpers
 	importQualifiers   map[string]string       // import qualifier -> the imported package's C symbol prefix (resolved user packages, not p2)
+	unsafeQualifiers   map[string]bool         // the qualifiers an import of unsafe is named by
 	pkgNames           map[string]string       // package C prefix -> the package name a program writes, for a type's Go spelling
 	typeDisplay        map[string]string       // a type's C name -> its Go spelling, "lib.Temp" for a type of another package
 	curPkgPrefix       string                  // the C symbol prefix of the package whose file is currently being emitted ("" for main)
@@ -8516,8 +8526,11 @@ func (e *emitter) needVTable(iface, concrete string) bool {
 			b.WriteString(") { return " + call + "; }\n")
 		}
 	}
-	fmt.Fprintf(&b, "static const %s %s = { %q", e.ifaceVTName(iface), e.ifaceVTVar(iface, concrete),
-		"*"+e.typeNameForT(concrete)) // what goes in is a POINTER, so that is the dynamic type
+	dyn := "*" + e.typeNameForT(concrete) // what goes in is a POINTER, so that is the dynamic type
+	if concrete+"*" == cUnsafePtr {
+		dyn = e.typeNameForT(cUnsafePtr) // and an unsafe.Pointer is the pointer itself
+	}
+	fmt.Fprintf(&b, "static const %s %s = { %q", e.ifaceVTName(iface), e.ifaceVTVar(iface, concrete), dyn)
 	for _, m := range methods {
 		b.WriteString(", " + e.ifaceThunkName(iface, concrete, m.name))
 	}
@@ -11799,6 +11812,12 @@ func (e *emitter) collectFuncCross(fi funcInfo) {
 			}
 		}
 	}
+	// `uintptr(p)`: the address as a number, which may be kept anywhere, on any cog,
+	// and converted back -- a number carries nothing the lifetime rules follow.
+	for _, x := range e.uintptrConvOperands(body) {
+		sink(x, leakGlobal)
+		derived(x, leakGlobal, -1)
+	}
 	e.eachStmt(body, func(nodes []Node) {
 		switch {
 		case len(nodes) != 0 && nodes[0].sym == 0 && e.f.ch(nodes[0].tok) == GO:
@@ -13361,6 +13380,9 @@ func (e *emitter) summaryReach(ast []int32) (out []held) {
 			return e.summaryReach(args[0].ast)
 		}
 	}
+	if arg, ok := e.unsafeConvOperand(ast); ok {
+		return e.summaryReach(arg) // `unsafe.Pointer(p)` is p
+	}
 	// A conversion to a pointer type, `(*T)(p)`, is the address it converts, and a
 	// field or an element read through it, `(*T)(p).xs`, is p's contents. Unread,
 	// `gp = (*int)(p)` and `return (*int)(p)` kept the caller's address in silence
@@ -13482,6 +13504,9 @@ func (e *emitter) callExprsIn(v []int32) (out [][]int32) {
 			out = append(out, e.callExprsIn(a.ast)...)
 		}
 		return out
+	}
+	if arg, ok := e.unsafeConvOperand(v); ok {
+		return e.callExprsIn(arg) // `unsafe.Pointer(pass(v))`
 	}
 	// `(*T)(pass(v))`: the conversion's operand is what the value carries. The shape
 	// is also a call through a pointer to a function, `(*fp)(x)`, which is kept as
@@ -15491,6 +15516,72 @@ func (e *emitter) ptrConvShape(kids []Node) (arg Node, rest []Node, ok bool) {
 		return Node{}, nil, false
 	}
 	return args[0], steps[1:], true
+}
+
+// unsafeConvOperand is what an expression that is exactly `unsafe.Pointer(x)`
+// converts: the pointer it renames, which is what the lifetime rules ask about, as
+// they ask it of `(*T)(x)` (ptrConvOperand). Read by shape, so the summaries, which
+// run before any local has a type, read it too.
+//
+// Through an alias as well, `type P = unsafe.Pointer` and `P(x)`, or another
+// package's, `lib.P(x)`: the same conversion by another name, which reached every
+// sink unread until it was asked here.
+func (e *emitter) unsafeConvOperand(ast []int32) ([]int32, bool) {
+	recv, suffix, ok := e.directCall(e.unparenExpr(ast))
+	if !ok {
+		return nil, false
+	}
+	var call Node
+	switch {
+	case len(suffix) == 2 && suffix[0].sym == Selector && suffix[1].sym == CallSuffix:
+		member := e.soleIdent(suffix[0].ast)
+		if e.unsafeQualifiers[recv] && member == "Pointer" {
+			call = suffix[1]
+			break
+		}
+		if ct, isConv := e.qualConvType(recv, member); !isConv || ct != cUnsafePtr {
+			return nil, false
+		}
+		call = suffix[1]
+	case len(suffix) == 1 && suffix[0].sym == CallSuffix:
+		if _, isVar := e.varType(recv); isVar {
+			return nil, false
+		}
+		if ct := e.unaliased(e.typeCName(recv)); ct != cUnsafePtr {
+			return nil, false
+		}
+		call = suffix[0]
+	default:
+		return nil, false
+	}
+	args := e.callArgExprs(call.ast)
+	if len(args) != 1 {
+		return nil, false
+	}
+	return args[0].ast, true
+}
+
+// uintptrConvOperands finds every `uintptr(x)` in a body, by shape, and answers the
+// operands. A uintptr made of an address carries it where no lifetime rule can
+// follow -- into any variable, any cog, back to a pointer later -- so the summaries
+// take each such conversion to keep what its operand reaches. Only an
+// unsafe.Pointer and a number convert to a uintptr (checkConversion), and a number
+// reaches nothing.
+func (e *emitter) uintptrConvOperands(ast []int32) (out [][]int32) {
+	for n := range it(ast) {
+		if n.sym == 0 {
+			continue
+		}
+		if n.sym == Factor {
+			if recv, sfx, ok := e.factorCall(slices.Collect(it(n.ast))); ok && recv == "uintptr" && len(sfx) == 1 && sfx[0].sym == CallSuffix {
+				if args := e.callArgExprs(sfx[0].ast); len(args) == 1 {
+					out = append(out, args[0].ast)
+				}
+			}
+		}
+		out = append(out, e.uintptrConvOperands(n.ast)...)
+	}
+	return out
 }
 
 // starPredeclaredCAt answers the C type of a predeclared T for an expression that
@@ -21248,6 +21339,9 @@ func (e *emitter) cType(ast []int32) string {
 	// A qualified type "pkg.T" -> the imported package's mangled typedef, matching
 	// how collectTypeDecl named it while emitting that package's files.
 	if len(toks) == 3 && e.f.ch(toks[0]) == IDENT && e.f.ch(toks[1]) == PERIOD && e.f.ch(toks[2]) == IDENT {
+		if e.unsafeQualifiers[e.src(toks[0])] && e.src(toks[2]) == "Pointer" {
+			return cUnsafePtr
+		}
 		if prefix, ok := e.importQualifiers[e.src(toks[0])]; ok {
 			mn := e.mangle(prefix, e.src(toks[2]))
 			if _, ok := e.structs[mn]; ok {
@@ -21408,8 +21502,8 @@ func (e *emitter) convType(recv string) (string, bool) {
 		return e.errorIfaceCType(), true
 	}
 	mn := e.unaliased(e.typeCName(recv))
-	if e.namedTypes[mn] {
-		return mn, true // `type Celsius int` used as Celsius(x)
+	if e.namedTypes[mn] || mn == cUnsafePtr {
+		return mn, true // `type Celsius int` used as Celsius(x), and `type P = unsafe.Pointer` as P(x)
 	}
 	// A struct type names a conversion too: `Point(n)` for a Named defined over
 	// Point, which is how a value comes back from the defined type. Only the name
@@ -21437,6 +21531,9 @@ func (e *emitter) convType(recv string) (string, bool) {
 // The lookup is cType's qualified branch, which has answered this question for a type
 // POSITION all along; only the conversion position was never given it.
 func (e *emitter) qualConvType(qualifier, name string) (string, bool) {
+	if e.unsafeQualifiers[qualifier] && name == "Pointer" {
+		return cUnsafePtr, true
+	}
 	prefix, ok := e.importQualifiers[qualifier]
 	if !ok {
 		return "", false
@@ -21444,7 +21541,7 @@ func (e *emitter) qualConvType(qualifier, name string) (string, bool) {
 	// Through an alias of that package's, `lib.C(0)` for a `type C = Celsius`: the
 	// conversion is to what it names, whose methods are the ones a step calls.
 	mn := e.unaliased(e.mangle(prefix, name))
-	if _, isArr := e.namedArrays[mn]; isArr || e.namedTypes[mn] || e.isStruct(mn) {
+	if _, isArr := e.namedArrays[mn]; isArr || e.namedTypes[mn] || e.isStruct(mn) || mn == cUnsafePtr {
 		return mn, true
 	}
 	return "", false
@@ -21821,6 +21918,15 @@ func (e *emitter) floatConvHelper(ct string) (string, bool) {
 // string(rune), string([]byte) -- which needs the allocation this target does not
 // have, and is refused.
 func (e *emitter) emitConversion(ct string, arg Node) {
+	// `uintptr(p)` of a pointer reaching this frame: the number carries the address
+	// where no lifetime rule can follow it, so it is refused as storing the pointer
+	// in a package variable is.
+	if ct == cTypes["uintptr"] {
+		if r, ok := e.frameRefOf(arg.ast); ok {
+			e.failAt(arg.ast, "cannot make a uintptr of %s: a number carries the address where no lifetime rule can follow it; %s", r.what, r.advice())
+			return
+		}
+	}
 	// A CONSTANT string to a defined type over []byte or []rune is the slice literal
 	// `[]byte("...")` is (constBytesConvNamed); a run-time string's copy needs the
 	// allocation `[]byte(s)` is refused for, and says so as that does.
@@ -28494,6 +28600,13 @@ func (e *emitter) caseTypeC(ex Node) (concrete string, isNil, ok bool) {
 	if name, isIface := e.caseIfaceC(ex); isIface {
 		return name, false, true
 	}
+	// `case unsafe.Pointer:` -- held as it is, the pointer itself being the data
+	// word, so what it points at, void, is what its table is for, as a *T's is T's.
+	if fac, ok := e.soleFactorNode(ex.ast); ok {
+		if qual, member, isQual := e.qualifiedFactor(fac.ast); isQual && member == "Pointer" && e.unsafeQualifiers[qual] {
+			return strings.TrimSuffix(cUnsafePtr, "*"), false, true
+		}
+	}
 	nodes := slices.Collect(it(ex.ast))
 	for len(nodes) == 1 && (nodes[0].sym == Expression || nodes[0].sym == SimpleExpr || nodes[0].sym == Term) {
 		nodes = slices.Collect(it(nodes[0].ast))
@@ -34764,6 +34877,9 @@ func (e *emitter) arrayTypeNameForT(ast []int32) (string, bool) {
 // pointer and a slice are spelled around what they hold; a predeclared type is
 // its name.
 func (e *emitter) typeNameForT(ct string) string {
+	if ct == cUnsafePtr {
+		return "unsafe.Pointer"
+	}
 	if strings.HasSuffix(ct, "*") {
 		return "*" + e.typeNameForT(strings.TrimSuffix(ct, "*"))
 	}
@@ -36038,6 +36154,17 @@ func (e *emitter) emitPrintfVerb(item printfItem, idx int, arg Node) bool {
 		// second needs a formatter per struct type, which does not exist yet, so
 		// rather than print a third thing that is neither, %v declines them and says
 		// what does answer.
+		// An unsafe.Pointer prints as fmt prints one, its address in hex, or <nil>:
+		// it points at nothing %v could print instead.
+		if known && ct == cUnsafePtr {
+			e.includes["stdint.h"] = true
+			tmp := e.newTmp()
+			e.ind()
+			e.emit("{ void* " + tmp + " = ")
+			value()
+			e.emit("; if (" + tmp + ") { printf(\"0x%x\", (unsigned)(uintptr_t)" + tmp + "); } else { printf(\"<nil>\"); } }\n")
+			return true
+		}
 		if known && !e.printableCType(ct) {
 			also := ""
 			if e.addressPrintC(ct) != "" {
@@ -43623,6 +43750,9 @@ func (e *emitter) goTypeName(ct string) string {
 	if e.isSliceCType(ct) {
 		return "[]" + e.goTypeName(sliceElemFromCName(ct))
 	}
+	if ct == cUnsafePtr {
+		return "unsafe.Pointer"
+	}
 	if strings.HasSuffix(ct, "*") {
 		return "*" + e.goTypeName(strings.TrimSuffix(ct, "*"))
 	}
@@ -46696,7 +46826,10 @@ func (e *emitter) frameRefOf(ast []int32) (frameRef, bool) {
 	for {
 		arg, ok := e.ptrConvOperand(ast)
 		if !ok {
-			break
+			// `unsafe.Pointer(&x)` is the address it converts, too.
+			if arg, ok = e.unsafeConvOperand(ast); !ok {
+				break
+			}
 		}
 		ast = e.unparenExpr(arg)
 	}

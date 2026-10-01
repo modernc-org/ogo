@@ -870,6 +870,51 @@
 // Using it in the frame that made it, or passing it to a function that returns first,
 // is what the form is for and costs nothing.
 //
+// # Package unsafe
+//
+// The package "unsafe" provides Pointer, as Go's does: a pointer of no type, through
+// which a program reads one type's storage as another's and writes an address as a
+// number -- the address of a buffer a driver is handed in a parameter block, or a
+// value read at a fixed address of Hub RAM.
+//
+//	import "unsafe"
+//
+//	var params [16]uint32
+//	var screen [1920]uint32
+//
+//	params[1] = uint32(uintptr(unsafe.Pointer(&screen)))
+//	clock := *(*uint32)(unsafe.Pointer(uintptr(0x14)))  // what p2.ClockFreq reads
+//
+// The conversions are Go's: a pointer of any type converts to a Pointer and a Pointer
+// to a pointer of any type, and a Pointer converts to and from uintptr. Nothing else
+// converts to or from one -- not another integer type, not a constant. A Pointer is
+// compared with another or with nil, assigned, passed, returned, held in a field, an
+// element, a channel and an empty interface, and printed by "%v" and "%T"; it is
+// neither dereferenced nor indexed nor computed with, which is what the conversion
+// to uintptr is for:
+//
+//	func elem(base unsafe.Pointer, i int) *uint32 {
+//		return (*uint32)(unsafe.Pointer(uintptr(base) + uintptr(i)*4))
+//	}
+//
+// A store through a converted pointer, "*(*uint32)(p) = v", works as it does through
+// a pointer variable. An alias, "type P = unsafe.Pointer", is the same type; a type
+// DEFINED over unsafe.Pointer is not supported yet.
+//
+// The lifetime rules follow a Pointer as they follow the pointer it was converted
+// from: "unsafe.Pointer(&x)" for a local x is refused where "&x" is -- returned,
+// stored in a package variable, handed to a cog or to a function keeping it. A
+// uintptr is a number, and a number carries an address where no rule can follow it,
+// into any variable and back into a pointer later, so the address of storage of a
+// frame is refused as a uintptr, "uintptr(unsafe.Pointer(&x))", wherever it is
+// written; a function that makes a uintptr of a pointer parameter is taken to keep
+// what it is handed. What a program computes as a number and converts back is the
+// program's to answer for, as in Go: nothing here can know which storage an
+// arbitrary number addresses.
+//
+// Sizeof, Alignof, Offsetof, Add, Slice, String, StringData and SliceData are not
+// provided yet.
+//
 // # Interface types
 //
 // An interface type defines a type set.
@@ -2908,9 +2953,9 @@
 // package's own directory is chosen on the command line and named nowhere in the
 // program, so the program does not carry it anywhere.
 //
-// The intrinsic package p2 and the packages the compiler carries as source (testing,
-// strings, bytes, math) are imported by their bare names whether or not there is a
-// module, as Go imports its standard library.
+// The intrinsic packages p2 and unsafe and the packages the compiler carries as
+// source (testing, strings, bytes, math) are imported by their bare names whether or
+// not there is a module, as Go imports its standard library.
 //
 // strings and bytes are the allocation-free part of Go's packages of those names:
 // every function either answers a question about what it was given -- a bool, an

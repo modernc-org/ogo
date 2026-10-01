@@ -894,6 +894,9 @@ func (f *File) resultType(s *Scope, tn TypeNode) (r retResult) {
 	}
 	r.name = id.Name.Src()
 	r.kind, r.known = f.typeKind(s, tn)
+	if r.known && r.kind == PredeclaredUnsafePointer {
+		r.name = kindName(r.kind)
+	}
 	return r
 }
 
@@ -917,6 +920,9 @@ func (f *File) typeKind(s *Scope, tn TypeNode) (Kind, bool) {
 		id, ok := tn.(*TypeNodeIdent)
 		if !ok {
 			return 0, false
+		}
+		if f.isUnsafePointer(id) {
+			return PredeclaredUnsafePointer, true
 		}
 		switch d := s.find(id.Name.Src()).(type) {
 		case *PredeclaredType:
@@ -2681,8 +2687,8 @@ func (f *File) nilOperand(s *Scope, n Node) (Token, bool) {
 // silently emitted a zero, while the string forms reached the target's C compiler
 // and failed there, naming C the user never wrote.
 func (f *File) checkNilAssignable(s *Scope, dst retResult, e Node, context string) {
-	if !dst.known {
-		return
+	if !dst.known || dst.kind == PredeclaredUnsafePointer {
+		return // an unsafe.Pointer is the one Kind nil is a value of
 	}
 	if tok, ok := f.nilOperand(s, e); ok {
 		f.err(tok.Position(), "cannot use nil as %s value in %s", dst.name, context)
@@ -2936,6 +2942,7 @@ const (
 	catBool
 	catString
 	catNumeric
+	catUnsafePointer // unsafe.Pointer, which mixes with nothing but itself and nil
 )
 
 // kindCategory groups Kinds into broad comparability classes. It returns
@@ -2949,6 +2956,8 @@ func kindCategory(k Kind) int {
 		return catString
 	case isNumericKind(k) || isFloatKind(k) || k == UntypedInt || k == UntypedRune || k == UntypedFloat:
 		return catNumeric
+	case k == PredeclaredUnsafePointer:
+		return catUnsafePointer
 	}
 	return catUnknown
 }
@@ -2978,6 +2987,8 @@ func kindName(k Kind) string {
 		return "float32"
 	case PredeclaredFloat64:
 		return "float64"
+	case PredeclaredUnsafePointer:
+		return "unsafe.Pointer"
 	}
 	if n := sizedKindName(k); n != "?" {
 		return n
@@ -5434,6 +5445,7 @@ func (f *File) checkTypeCaseClause(cs *Scope, ts typeSwitchGuard, clause Node, s
 	exprs, isDefault := f.clauseCaseExprs(clause)
 	base, baseQual := Token{}, Token{}
 	single := len(exprs) == 1 && !isDefault
+	unsafeCase := false
 	// caseName renders a case's type as WRITTEN, "geo.Quad" and not the bare "Quad"
 	// the token holds: what follows asks the method-set questions BY NAME, and the
 	// bare one resolves in this package rather than where the type lives.
@@ -5454,6 +5466,18 @@ func (f *File) checkTypeCaseClause(cs *Scope, ts typeSwitchGuard, clause Node, s
 			}
 			seen[written] = true
 			base, baseQual = nm, ql
+			continue
+		}
+		// `case unsafe.Pointer:`, a pointer held as it is, with no methods.
+		if tok, isUP := f.caseUnsafePointer(ex); isUP {
+			if seen["unsafe.Pointer"] {
+				f.err(tok.Position(), "duplicate case unsafe.Pointer in type switch")
+			}
+			seen["unsafe.Pointer"], unsafeCase = true, true
+			if set, _ := f.interfaceMethodsNamed(cs, iface); len(set) != 0 {
+				f.err(tok.Position(), "impossible type switch case: %s.(type) case unsafe.Pointer: unsafe.Pointer does not implement %s",
+					ts.operand.Src(), iface)
+			}
 			continue
 		}
 		nm, ql, isNil, ok := f.caseTypeName(cs, ex)
@@ -5502,6 +5526,8 @@ func (f *File) checkTypeCaseClause(cs *Scope, ts typeSwitchGuard, clause Node, s
 	}
 	vd := &VarDeclaration{declaration: declaration{token: ts.name}}
 	switch {
+	case single && unsafeCase:
+		vd.kind, vd.hasKind = PredeclaredUnsafePointer, true
 	case single && base.IsValid():
 		// The qualifier travels with the name, or the bound variable carries a type
 		// this package cannot resolve and every field read off it goes unchecked.
@@ -5521,6 +5547,28 @@ func (f *File) checkTypeCaseClause(cs *Scope, ts typeSwitchGuard, clause Node, s
 	if err := cs.add(vd); err != nil {
 		f.err(ts.name.Position(), "%v", err)
 	}
+}
+
+// caseUnsafePointer reports a type switch case that is `unsafe.Pointer`, with the
+// token to report it at.
+func (f *File) caseUnsafePointer(ex Node) (Token, bool) {
+	fac, ok := f.soleFactor(ex)
+	if !ok {
+		return Token{}, false
+	}
+	kids := slices.Collect(it(fac.ast))
+	if len(kids) != 2 || kids[0].sym != 0 || f.ch(kids[0].tok) != IDENT || kids[1].sym != FactorSuffix {
+		return Token{}, false
+	}
+	steps := slices.Collect(it(kids[1].ast))
+	if len(steps) != 1 || steps[0].sym != Selector {
+		return Token{}, false
+	}
+	m, ok := f.selectorMember(steps[0])
+	if !ok || m.Src() != "Pointer" || !f.unsafeQualifier(f.tok(kids[0].tok)) {
+		return Token{}, false
+	}
+	return m, true
 }
 
 // caseNameResolved reports a type switch case's type name that names no type --
@@ -8544,6 +8592,14 @@ func (f *File) checkTypeAssertion(s *Scope, id Token, suffix Node) bool {
 		// satisfies it, and which types those are is the emitter's list.
 		return true
 	}
+	if f.isUnsafePointer(tn) {
+		// An unsafe.Pointer is a pointer, held as it is, and has no methods: only an
+		// interface asking for none can hold one.
+		if set, _ := f.interfaceMethodsNamed(s, iface); len(set) != 0 {
+			f.err(base.Position(), "impossible type assertion: unsafe.Pointer does not implement %s", iface)
+		}
+		return true
+	}
 	if !f.isPointerType(s, tn) {
 		f.err(base.Position(), "an interface holds a pointer here; assert *%s", baseName)
 		return true
@@ -9252,6 +9308,10 @@ func (f *File) checkQualifiedRef(s *Scope, qual Token, suffix Node) {
 		}
 		d := pkg.Scope.Declarations[m.Src()]
 		if d == nil {
+			if pkg.ImportPath == "unsafe" && unsafeFuncs[m.Src()] {
+				f.err(m.Position(), "unsafe.%s is not supported yet", m.Src())
+				return
+			}
 			f.err(m.Position(), "undefined: %s.%s", qual.Src(), m.Src())
 			return
 		}
@@ -9288,6 +9348,26 @@ func (f *File) checkQualifiedRef(s *Scope, qual Token, suffix Node) {
 					f.checkCrossPkgMethodValue(qual, m, vd.typeName, member, vd.isPtr)
 				default:
 					f.checkCrossPkgField(qual, vd.typeName, member)
+				}
+			}
+			return
+		}
+		// `unsafe.Pointer(x)`, the one conversion whose operand may be any pointer.
+		if pd, isPre := d.(*PredeclaredType); isPre && pd.Kind() == PredeclaredUnsafePointer {
+			steps := slices.Collect(it(suffix.ast))
+			if len(steps) < 2 || steps[0].sym != Selector || steps[1].sym != CallSuffix {
+				f.err(m.Position(), "unsafe.Pointer is a type and not a value; a conversion to it is written unsafe.Pointer(x)")
+				return
+			}
+			{
+				var args []Node
+				for e := range it(f.callArgList(steps[1]).ast) {
+					if e.sym == Expression {
+						args = append(args, e)
+					}
+				}
+				if f.checkConvArity(qual, "unsafe.Pointer", args) {
+					f.checkUnsafeConversion(s, args[0])
 				}
 			}
 			return
@@ -9366,9 +9446,77 @@ func (f *File) checkQualifiedType(qualifier, name Token) {
 		return
 	}
 	if pkg := imp.Import.Pkg; pkg != nil && pkg != noPkg {
+		if pkg.ImportPath == "unsafe" && name.Src() == "Pointer" {
+			return
+		}
 		if _, ok := pkg.Scope.Declarations[name.Src()].(*TypeDeclaration); !ok {
 			f.err(name.Position(), "undefined: %s.%s", qualifier.Src(), name.Src())
 		}
+	}
+}
+
+// unsafeFuncs are the functions Go's unsafe has beside Pointer, which this one does
+// not provide yet: named as missing rather than as undefined.
+var unsafeFuncs = map[string]bool{
+	"Sizeof": true, "Alignof": true, "Offsetof": true, "Add": true, "Slice": true,
+	"String": true, "StringData": true, "SliceData": true,
+}
+
+// unsafeQualifier reports whether a qualifier names the unsafe import of the file
+// that wrote it.
+func (f *File) unsafeQualifier(qualifier Token) bool {
+	if !qualifier.IsValid() {
+		return false
+	}
+	wf := f.fileOfToken(qualifier)
+	imp, ok := wf.Scope.Declarations[qualifier.Src()].(*ImportDeclaration)
+	return ok && imp.Import != nil && imp.Import.Pkg != nil && imp.Import.Pkg.ImportPath == "unsafe"
+}
+
+// isUnsafePointer reports whether a written type is unsafe.Pointer.
+func (f *File) isUnsafePointer(tn TypeNode) bool {
+	id, ok := tn.(*TypeNodeIdent)
+	return ok && id.Qualifier.IsValid() && id.Name.Src() == "Pointer" && f.unsafeQualifier(id.Qualifier)
+}
+
+// unsafePointerValue reports an operand that is a value of type unsafe.Pointer.
+// exprType answers for what an ADDRESS or a pointer points AT, so `&up` and a
+// pointer to an unsafe.Pointer read as one there; they are pointers, and are not.
+func (f *File) unsafePointerValue(s *Scope, n Node) bool {
+	if k, ok := f.exprType(s, n); !ok || k != PredeclaredUnsafePointer {
+		return false
+	}
+	isPtr, known := f.exprPointerness(s, n)
+	return !known || !isPtr
+}
+
+// checkUnsafeConversion checks the operand of `unsafe.Pointer(x)`: a pointer of
+// any type, a uintptr, an unsafe.Pointer or nil, and nothing else -- C casts a
+// number, a header or a struct's first word to an address without a word. What
+// this cannot tell is let pass, as checkPtrConv lets it.
+func (f *File) checkUnsafeConversion(s *Scope, arg Node) {
+	if f.isNilOperand(arg) || f.unsafePointerValue(s, arg) {
+		return
+	}
+	if isPtr, known := f.exprPointerness(s, arg); known && isPtr {
+		return
+	}
+	pos, src := f.tok(arg.Pos()).Position(), f.exprSource(arg)
+	if what, known := f.nonBoolOperand(s, arg); known && what != "a pointer" {
+		f.err(pos, "cannot convert %s to type unsafe.Pointer: it is %s", src, what)
+		return
+	}
+	// `g[:]`, a slice expression, which the helpers above name the element of.
+	if fac, ok := f.soleFactor(arg); ok {
+		if kids := slices.Collect(it(fac.ast)); len(kids) != 0 && kids[len(kids)-1].sym == FactorSuffix {
+			if steps := slices.Collect(it(kids[len(kids)-1].ast)); len(steps) != 0 && steps[len(steps)-1].sym == Index && f.indexIsSlice(steps[len(steps)-1]) {
+				f.err(pos, "cannot convert %s to type unsafe.Pointer: it is a slice", src)
+				return
+			}
+		}
+	}
+	if k, ok := f.exprType(s, arg); ok && kindCategory(k) != catUnknown && k != PredeclaredUintptr {
+		f.err(pos, "cannot convert %s (%s) to type unsafe.Pointer", src, f.convOperandDesc(s, arg, k))
 	}
 }
 
@@ -9656,6 +9804,11 @@ func (f *File) qualifiedKind(s *Scope, qual Token, suffix Node) (Kind, bool) {
 	}
 	home := imp.Import.Pkg.Scope
 	switch d := home.Declarations[member.Src()].(type) {
+	case *PredeclaredType:
+		// `unsafe.Pointer(x)`: a conversion is a value of the type it converts to.
+		if d.Kind() == PredeclaredUnsafePointer && calls == 1 && indexes == 0 {
+			return PredeclaredUnsafePointer, true
+		}
 	case *VarDeclaration:
 		switch {
 		case calls != 0:
@@ -10993,6 +11146,12 @@ func (f *File) canonicalName(s *Scope, name string) string {
 }
 
 func (f *File) canonicalType(s *Scope, name, qual Token) (Token, Token) {
+	// unsafe.Pointer is a Kind, and is named by it, as int is: a name recorded
+	// beside it would be read as a defined type's, and every message reading one
+	// would say "Pointer".
+	if qual.IsValid() && name.Src() == "Pointer" && f.unsafeQualifier(qual) {
+		return Token{}, Token{}
+	}
 	if !name.IsValid() || qual.IsValid() {
 		return name, qual
 	}
@@ -11001,6 +11160,9 @@ func (f *File) canonicalType(s *Scope, name, qual Token) (Token, Token) {
 		tn, isIdent := td.TypeSpec.TypeNode.(*TypeNodeIdent)
 		if !isIdent {
 			break
+		}
+		if f.isUnsafePointer(tn) {
+			return Token{}, Token{} // `type P = unsafe.Pointer`
 		}
 		if tn.Qualifier.IsValid() {
 			return tn.Name, tn.Qualifier // `type LT = lib.T` is lib.T
@@ -11614,7 +11776,22 @@ func (f *File) checkImplements(s *Scope, ifaceName string, value Node, what stri
 	if ifaceName == "" {
 		return
 	}
-	if _, isIface := f.interfaceMethodsNamed(s, ifaceName); !isIface {
+	set, isIface := f.interfaceMethodsNamed(s, ifaceName)
+	if !isIface {
+		return
+	}
+	// An unsafe.Pointer has no methods, so only an interface asking for none holds one.
+	if f.unsafePointerValue(s, value) {
+		missing := ""
+		for m := range set {
+			if missing == "" || m < missing {
+				missing = m
+			}
+		}
+		if missing != "" {
+			f.err(f.tok(value.Pos()).Position(), "cannot use %s (value of type unsafe.Pointer) as %s value in %s: unsafe.Pointer does not implement %s (missing method %s)",
+				f.exprSource(value), ifaceName, what, ifaceName, missing)
+		}
 		return
 	}
 	// `&x` names the same variable as `x` and a different method set: the pointer
@@ -12008,7 +12185,7 @@ func (f *File) checkFieldAccess(s *Scope, head, field Token, suffix Node) {
 		d = &VarDeclaration{typeName: nm, typeQual: namedTypeQual(tn)}
 	}
 	if !d.typeName.IsValid() {
-		if f.shadowedImportMember(d, head) {
+		if f.shadowedImportMember(d, head) || d.hasKind && d.kind == PredeclaredUnsafePointer {
 			f.err(field.Position(), "type %s has no field %s", kindName(d.kind), field.Src())
 		}
 		return
@@ -13361,7 +13538,7 @@ func (f *File) checkRelOp(s *Scope, opNode, lNode, rNode Node) {
 	case EQL, NEQ:
 		// equality is defined on every class
 	default:
-		if lc == catBool {
+		if lc == catBool || lc == catUnsafePointer {
 			f.err(pos, "invalid operation: operator %s not defined on %s", f.tok(opNode.Pos()).Src(), kindName(lk))
 		}
 	}
@@ -13388,6 +13565,10 @@ func (f *File) checkKindlessRelOp(s *Scope, opNode, lNode, rNode Node) bool {
 	// answers for what an ADDRESS points at, so `&gx` would read as an int.
 	lKind := lok && kindCategory(lk) != catUnknown && !lknown
 	rKind := rok && kindCategory(rk) != catUnknown && !rknown
+	// An unsafe.Pointer is the one Kind nil is a value of.
+	if lnil && rk == PredeclaredUnsafePointer || rnil && lk == PredeclaredUnsafePointer {
+		return false
+	}
 	switch Symbol(f.tok(opNode.Pos()).Ch) {
 	case EQL, NEQ:
 	default:
@@ -17617,8 +17798,8 @@ func (f *File) checkPtrConv(s *Scope, pc ptrConvExpr) {
 func (f *File) checkPtrConvOperand(s *Scope, pc ptrConvExpr) {
 	target := "*" + pc.typeName()
 	arg := pc.args[0]
-	if f.isNilOperand(arg) {
-		return
+	if f.isNilOperand(arg) || f.unsafePointerValue(s, arg) {
+		return // an unsafe.Pointer converts to a pointer of any type
 	}
 	refuse := func(have string) {
 		f.err(f.tok(arg.Pos()).Position(), "cannot convert %s (value of type %s) to type %s", f.exprSource(arg), have, target)
@@ -18174,7 +18355,7 @@ func (f *File) checkFactorNames(s *Scope, n Node) {
 			}
 		} else if k, known := f.identKind(s, id); known {
 			switch kindCategory(k) {
-			case catNumeric, catBool:
+			case catNumeric, catBool, catUnsafePointer:
 				f.err(id.Position(), "invalid operation: cannot %s %s%s", verb, id.Src(), ofType(k, true))
 			case catString:
 				// A third slice bound sets the result's capacity, and a string has
@@ -18635,7 +18816,7 @@ func (f *File) namedTypeHasMember(s *Scope, name, member string) bool {
 // program wrote and what carries its methods, so reporting the Kind named a type the
 // reader never mentioned.
 func orKindName(name string, k Kind) string {
-	if name != "" {
+	if name != "" && k != PredeclaredUnsafePointer {
 		return name
 	}
 	return kindName(k)
@@ -19245,6 +19426,11 @@ func (f *File) checkConversion(s *Scope, callee Token, arg Node) bool {
 	if !ok || kindCategory(tk) == catUnknown {
 		return true // no basic type underneath: a struct, an array, an interface
 	}
+	if tk == PredeclaredUnsafePointer {
+		n := len(f.errList)
+		f.checkUnsafeConversion(s, arg) // through an alias, `type P = unsafe.Pointer`
+		return len(f.errList) == n
+	}
 	pos, src := f.tok(arg.Pos()).Position(), f.exprSource(arg)
 	if root, suffixed, isAddr := f.addressOperandRoot(s, arg); isAddr {
 		pointee := ""
@@ -19302,6 +19488,9 @@ func (f *File) checkConversion(s *Scope, callee Token, arg Node) bool {
 	legal := tc == kc
 	if tc == catString && kc == catNumeric {
 		legal = !isFloatKind(k) && k != UntypedFloat // string(r): an integer is a rune
+	}
+	if tk == PredeclaredUintptr && k == PredeclaredUnsafePointer {
+		legal = f.unsafePointerValue(s, arg) // the address as a number
 	}
 	if !legal {
 		f.err(pos, "cannot convert %s (%s) to type %s", src, f.convOperandDesc(s, arg, k), callee.Src())
@@ -21092,6 +21281,14 @@ func (f *File) typeSpecBody(s *Scope, n Node, r *TypeSpecNode) {
 	}
 	if r.Alias {
 		f.checkAliasSpec(s, r)
+		return
+	}
+	// `type Addr unsafe.Pointer`: Go converts such a type as it converts
+	// unsafe.Pointer, and the rules here are written for unsafe.Pointer by name.
+	// Refused rather than half checked; an alias, `type P = unsafe.Pointer`, is
+	// the same type and is taken.
+	if f.isUnsafePointer(r.TypeNode) {
+		f.err(r.Name.Position(), "a type defined over unsafe.Pointer is not supported yet; an alias, type %s = unsafe.Pointer, is", r.Name.Src())
 	}
 }
 
@@ -21115,6 +21312,9 @@ func (f *File) checkAliasSpec(s *Scope, r *TypeSpecNode) {
 		if !token.IsExported(tn.Name.Src()) {
 			f.err(tn.Name.Position(), "cannot refer to unexported name %s.%s", tn.Qualifier.Src(), tn.Name.Src())
 			return
+		}
+		if f.isUnsafePointer(tn) {
+			return // `type P = unsafe.Pointer`, a Kind under another name
 		}
 		if _, _, ok := f.typeDeclNamed(s, tn.Qualifier.Src()+"."+tn.Name.Src()); !ok {
 			f.err(tn.Name.Position(), "undefined: %s.%s", tn.Qualifier.Src(), tn.Name.Src())
@@ -23812,6 +24012,9 @@ func (f *File) nameKind(s *Scope, name string) (Kind, bool) {
 			id, ok := d.TypeSpec.TypeNode.(*TypeNodeIdent)
 			if !ok {
 				return 0, false
+			}
+			if f.isUnsafePointer(id) {
+				return PredeclaredUnsafePointer, true
 			}
 			name = id.Name.Src()
 		default:

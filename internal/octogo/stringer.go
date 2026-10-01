@@ -24,18 +24,19 @@ func _() {
 	_ = x[PredeclaredUintptr-13]
 	_ = x[PredeclaredString-14]
 	_ = x[PredeclaredBuilder-15]
-	_ = x[UntypedBool-16]
-	_ = x[UntypedFloat-17]
-	_ = x[UntypedInt-18]
-	_ = x[UntypedRune-19]
-	_ = x[UntypedNil-20]
-	_ = x[UntypedString-21]
-	_ = x[Alias-22]
+	_ = x[PredeclaredUnsafePointer-16]
+	_ = x[UntypedBool-17]
+	_ = x[UntypedFloat-18]
+	_ = x[UntypedInt-19]
+	_ = x[UntypedRune-20]
+	_ = x[UntypedNil-21]
+	_ = x[UntypedString-22]
+	_ = x[Alias-23]
 }
 
-const _Kind_name = "PredeclaredBoolPredeclaredInt8PredeclaredUint8PredeclaredInt16PredeclaredUint16PredeclaredInt32PredeclaredUint32PredeclaredInt64PredeclaredUint64PredeclaredIntPredeclaredUintPredeclaredFloat32PredeclaredFloat64PredeclaredUintptrPredeclaredStringPredeclaredBuilderUntypedBoolUntypedFloatUntypedIntUntypedRuneUntypedNilUntypedStringAlias"
+const _Kind_name = "PredeclaredBoolPredeclaredInt8PredeclaredUint8PredeclaredInt16PredeclaredUint16PredeclaredInt32PredeclaredUint32PredeclaredInt64PredeclaredUint64PredeclaredIntPredeclaredUintPredeclaredFloat32PredeclaredFloat64PredeclaredUintptrPredeclaredStringPredeclaredBuilderPredeclaredUnsafePointerUntypedBoolUntypedFloatUntypedIntUntypedRuneUntypedNilUntypedStringAlias"
 
-var _Kind_index = [...]uint16{0, 15, 30, 46, 62, 79, 95, 112, 128, 145, 159, 174, 192, 210, 228, 245, 263, 274, 286, 296, 307, 317, 330, 335}
+var _Kind_index = [...]uint16{0, 15, 30, 46, 62, 79, 95, 112, 128, 145, 159, 174, 192, 210, 228, 245, 263, 287, 298, 310, 320, 331, 341, 354, 359}
 
 func (i Kind) String() string {
 	idx := int(i) - 0

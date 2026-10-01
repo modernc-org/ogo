@@ -41,6 +41,14 @@ const (
 	// registerBuilder). It has no scalar semantics; the kind exists only so the type
 	// name resolves in a signature, e.g. a "*Builder" parameter.
 	PredeclaredBuilder
+	// PredeclaredUnsafePointer is unsafe.Pointer, the pointer of no type that any
+	// pointer converts to and from, and uintptr too. It is a Kind, as go/types makes
+	// it a basic type, so a variable of it is checked as a typed value -- assigned
+	// only its own kind or nil, compared, never computed with -- by the rules every
+	// other Kind is, and the conversions are its own (checkUnsafeConversion). The
+	// name is declared in the unsafe package's scope alone (unsafePointerDecl), so a
+	// program reaches it only through the import.
+	PredeclaredUnsafePointer
 	UntypedBool
 	UntypedFloat
 	UntypedInt

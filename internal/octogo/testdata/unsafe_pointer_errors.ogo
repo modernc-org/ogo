@@ -1,0 +1,70 @@
+// What Go refuses of unsafe.Pointer, refused in the same terms: it is not assigned a
+// pointer or a number without a conversion, nor computed with, ordered, dereferenced,
+// indexed or selected from; it converts from a pointer, a uintptr, an unsafe.Pointer
+// or nil, and only to a pointer or a uintptr; and it has no methods.
+
+import "unsafe"
+
+type Shape interface{ Area() int }
+
+var g [4]uint32
+
+var up unsafe.Pointer
+
+func main() {
+	// ERROR "cannot use &g \(an address\) as unsafe.Pointer value in variable declaration"
+	var a unsafe.Pointer = &g
+	_ = a
+	// ERROR "cannot use up \(a value\) as \*uint32 value in variable declaration"
+	var b *uint32 = up
+	_ = b
+	// ERROR "cannot use up of type unsafe.Pointer as type uintptr in variable declaration"
+	var c uintptr = up
+	_ = c
+	// ERROR "operator \+ not defined on unsafe.Pointer"
+	_ = up + 1
+	// ERROR "operator < not defined on unsafe.Pointer"
+	_ = up < up
+	// ERROR "non-numeric type unsafe.Pointer"
+	up++
+	// ERROR "cannot indirect up"
+	_ = *up
+	// ERROR "cannot index up \(variable of type unsafe.Pointer\)"
+	_ = up[0]
+	// ERROR "type unsafe.Pointer has no field x"
+	_ = up.x
+	// ERROR "cannot convert up \(variable of type unsafe.Pointer\) to type int"
+	_ = int(up)
+	// ERROR "cannot convert up \(variable of type unsafe.Pointer\) to type uint32"
+	_ = uint32(up)
+	n := 5
+	// ERROR "cannot convert n \(variable of type int\) to type unsafe.Pointer"
+	_ = unsafe.Pointer(n)
+	// ERROR "cannot convert 5 \(untyped int constant\) to type unsafe.Pointer"
+	_ = unsafe.Pointer(5)
+	// ERROR "cannot convert g\[:\] to type unsafe.Pointer: it is a slice"
+	_ = unsafe.Pointer(g[:])
+	// ERROR "cannot convert g to type unsafe.Pointer: it is an array"
+	_ = unsafe.Pointer(g)
+	// ERROR "missing argument in conversion to unsafe.Pointer"
+	_ = unsafe.Pointer()
+	// ERROR "too many arguments in conversion to unsafe.Pointer"
+	_ = unsafe.Pointer(&g, &g)
+	// ERROR "mismatched types unsafe.Pointer and int"
+	_ = up == 0
+	// ERROR "operator \+ not defined on unsafe.Pointer"
+	_ = unsafe.Pointer(&g) + 1
+	// ERROR "unsafe.Pointer is a type and not a value"
+	_ = unsafe.Pointer
+	// ERROR "unsafe.Sizeof is not supported yet"
+	_ = unsafe.Sizeof(g)
+	// ERROR "undefined: unsafe.Foo"
+	_ = unsafe.Foo
+	// ERROR "unsafe.Pointer does not implement Shape \(missing method Area\)"
+	var s Shape = up
+	_ = s
+	var i any = up
+	// ERROR "impossible type assertion: unsafe.Pointer does not implement Shape"
+	_, _ = s.(unsafe.Pointer)
+	_ = i
+}

@@ -1,0 +1,69 @@
+// COMPILE
+
+// unsafe.Pointer as Go uses it: any pointer converts to one and back, and so does a
+// uintptr; one is compared and assigned like a pointer, nil included, and held in a
+// field, an element, a parameter, a result, a channel and an empty interface.
+
+import "unsafe"
+
+type Block [4]uint32
+
+type P = unsafe.Pointer
+
+type Desc struct {
+	addr unsafe.Pointer
+	n    int
+}
+
+var g [4]uint32
+
+var gp unsafe.Pointer
+
+var gd Desc
+
+var ps [2]unsafe.Pointer
+
+var ch chan unsafe.Pointer
+
+func id(p unsafe.Pointer) unsafe.Pointer { return p }
+
+func elem(base unsafe.Pointer, i int) *uint32 {
+	return (*uint32)(unsafe.Pointer(uintptr(base) + uintptr(i)*4))
+}
+
+func kind(i any) int {
+	switch v := i.(type) {
+	case unsafe.Pointer:
+		return int(*(*uint32)(v))
+	}
+	return -1
+}
+
+func main() {
+	var up unsafe.Pointer
+	up = nil
+	up = unsafe.Pointer(&g[0])
+	_ = up == nil
+	_ = up != unsafe.Pointer(&g[1])
+	_ = uintptr(up) + 4
+	_ = unsafe.Pointer(uintptr(up) + 4)
+	_ = (*uint32)(up)
+	_ = (*Block)(up)
+	*(*uint32)(up) = 1
+	*elem(up, 1) = 2
+	gp = id(up)
+	gd = Desc{up, 1}
+	ps[1] = gd.addr
+	var i any = up
+	p, ok := i.(unsafe.Pointer)
+	_, _ = p, ok
+	_ = kind(i)
+	var u uintptr = uintptr(unsafe.Pointer(&g))
+	_ = unsafe.Pointer(u)
+	_ = unsafe.Pointer(nil)
+	_ = unsafe.Pointer(unsafe.Pointer(&g))
+	_ = uint32(uintptr(up))
+	ch <- up
+	var pa P = P(&g)
+	_ = (*uint32)(pa) == (*uint32)(up)
+}
