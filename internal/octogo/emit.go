@@ -6660,6 +6660,10 @@ type emitter struct {
 	bindSelfAddr       map[string]bool         // ... a name whose OWN value something else may write: `&x` of x itself -- not of an element or a field of it, which bindAliased counts too
 	bindSelfCall       map[string]bool         // ... a name a method is called on itself, `x.m()`, whose address a pointer receiver takes unless x is a pointer (see onceBound)
 	bindGotos          bool                    // ... it has a goto, which may run a block's writes again after a later one
+	nilSafe            map[string]bool         // the C names of the pointer parameters an earlier statement of the function body's own list dereferenced, which need no nil check again (emitTopStatement)
+	nilEmitted         map[string]bool         // ... the C text of every pointer the statement being emitted nil-checked
+	nilBody            bool                    // the next emitBlockStmts is a function body, whose statements fill nilSafe
+	nilRecv            string                  // the pointer receiver of the method being emitted, a parameter as the others are
 	bindBody, bindSeq  int                     // ... the block of its body, where its parameters are written, and the last block numbered
 	recvLeaks          map[string]leak         // a pointer method's RECEIVER kept where it outlives the call: leakGlobal, leakCog (see recvEdge)
 	recvEdges          []recvEdge              // how a receiver's keeping travels to callers (see recvEdge)
@@ -15008,7 +15012,12 @@ func (e *emitter) emitFuncDecl(ast []int32) {
 	saved := e.w
 	var bodyBuf bytes.Buffer
 	e.w = &bodyBuf
+	e.nilSafe, e.nilBody, e.nilRecv = map[string]bool{}, true, ""
+	if recvName != "" && e.isPointer(recvCType) {
+		e.nilRecv = recvName
+	}
 	e.emitBlockStmts(body)
+	e.nilRecv = ""
 	// A body that falls off the end (no trailing return) runs its deferred calls
 	// here; one ending in a return already replayed them at that return.
 	if len(e.defers) != 0 && !e.bodyEndsInReturn(body) {
@@ -15033,6 +15042,12 @@ func (e *emitter) emitFuncDecl(ast []int32) {
 // Everything the body emitter keeps about the function being emitted is saved and
 // restored around it, since the literal is met in the middle of another body.
 func (e *emitter) liftFuncLit(lit Node) (string, bool) {
+	// A literal is a function of its own, lifted while a statement of another is
+	// being emitted: what that one's body has checked says nothing of the literal's
+	// names, and the literal's own body notes its own (emitTopStatement).
+	nilSafe, nilEmitted, nilBody, nilRecv := e.nilSafe, e.nilEmitted, e.nilBody, e.nilRecv
+	defer func() { e.nilSafe, e.nilEmitted, e.nilBody, e.nilRecv = nilSafe, nilEmitted, nilBody, nilRecv }()
+	e.nilSafe, e.nilEmitted, e.nilBody, e.nilRecv = nil, nil, false, ""
 	var sig, body []int32
 	for n := range it(lit.ast) {
 		switch n.sym {
@@ -15197,6 +15212,7 @@ func (e *emitter) liftFuncLit(lit Node) (string, bool) {
 		inner := e.w
 		e.w = &bodyBuf
 		wrapped := !saved.pkgScope && e.inheritConsts(saved.localConstSpecs, body)
+		e.nilSafe, e.nilBody = map[string]bool{}, true
 		e.emitBlockStmts(body)
 		if len(e.defers) != 0 && !e.bodyEndsInReturn(body) {
 			e.emitDeferred()
@@ -17587,17 +17603,240 @@ func (e *emitter) enterScope() func() {
 }
 
 func (e *emitter) emitBlockStmts(ast []int32) {
+	top := e.nilBody
+	e.nilBody = false
 	defer e.enterScope()()
 	for n := range it(ast) {
 		switch n.sym {
 		case 0:
 			// LBRACE / RBRACE / SEMICOLON.
 		case Statement:
+			if top {
+				e.emitTopStatement(n.ast)
+				break
+			}
 			e.emitStatement(n.ast)
 		default:
 			e.fail("unsupported block element %v", n.sym)
 		}
 	}
+	if top {
+		e.nilSafe = nil
+	}
+}
+
+// emitTopStatement emits a statement of a function body's own list, and notes the
+// pointer parameters it dereferenced on every path through it (nilDerefStmt) and
+// nil-checked doing so: no statement after it in the list checks them again, nor
+// anything nested in one, which runs only after it has. p2-11's machine is a
+// receiver `m` read a field of at a time, and each read called the check -- six
+// calls in a method of six statements, four instructions each, and the calls
+// kept the backend from inlining the method at all. A label clears what was
+// noted, a goto reaching it past the statements that checked; a parameter
+// qualifies only where the function never writes it nor takes its address
+// (nilQualifies), so what was checked is what is read.
+func (e *emitter) emitTopStatement(ast []int32) {
+	if _, _, labeled := e.stmtLabelParts(slices.Collect(it(ast))); labeled {
+		clear(e.nilSafe)
+	}
+	e.nilEmitted = map[string]bool{}
+	e.emitStatement(ast)
+	names := slices.Collect(maps.Keys(e.curParams))
+	if e.nilRecv != "" {
+		names = append(names, e.nilRecv)
+	}
+	for _, name := range names {
+		if ref := e.varRef(name); e.nilEmitted[ref] && e.nilQualifies(name) && e.nilDerefStmt(ast, name) {
+			e.nilSafe[ref] = true
+		}
+	}
+	e.nilEmitted = nil
+}
+
+// nilQualifies reports whether name is a pointer parameter or the pointer receiver
+// of the function being emitted that its body never writes, declares again or takes
+// the address of (bindWrites, bindSelfAddr): its value is the one it was called
+// with throughout.
+func (e *emitter) nilQualifies(name string) bool {
+	if !e.curParams[name] && name != e.nilRecv {
+		return false
+	}
+	ct, ok := e.varType(name)
+	return ok && e.isPointer(ct) && e.bindWrites[name] == 0 && !e.bindSelfAddr[name]
+}
+
+// nilDerefStmt reports whether a statement of a function body's own list
+// dereferences the pointer variable name on every path through it: a field read
+// or written through it, `name.f` and `name.f = v`, `*name`, and `name[i]` of a
+// pointer to an array. What runs conditionally or later is not looked in: the
+// operands after the first && or ||, an address taken, a block, a clause, a
+// function literal, a for's header and body, a defer's or a go's call, a select,
+// and an if's or a switch's branches -- whose header runs whatever follows.
+func (e *emitter) nilDerefStmt(stmt []int32, name string) bool {
+	if st, ok := e.f.parenStmt(Node{sym: Statement, ast: stmt}); ok {
+		stmt = st.ast
+	}
+	kids := slices.Collect(it(stmt))
+	if len(kids) == 0 {
+		return false
+	}
+	if k := kids[0]; k.sym == 0 {
+		switch e.f.ch(k.tok) {
+		case RETURN, ARROW:
+		default:
+			return false // for, go, defer, break, continue, goto, fallthrough
+		}
+	}
+	switch kids[0].sym {
+	case IfStmt, SwitchStmt:
+		// The header: what comes before the first branch.
+		for k := range it(kids[0].ast) {
+			if k.sym == Block || k.sym == CaseClause || k.sym == 0 && e.f.ch(k.tok) == LBRACE {
+				break
+			}
+			if e.nilDerefIn(k, name) {
+				return true
+			}
+		}
+		return false
+	case AssignHead:
+		if _, _, labeled := e.stmtLabelParts(kids); labeled {
+			return false
+		}
+	case 0, VarDecl:
+	default:
+		return false // a select, a block, a literal called where it stands, a declaration of a type or a constant
+	}
+	return e.nilDerefList(kids, name)
+}
+
+// nilDerefList is nilDerefIn for the children of one node: a target, `name.f` in
+// `name.f = v`, is an AssignHead and the steps after it; and of an operator level
+// only what precedes the first && or || runs whatever the operands are.
+func (e *emitter) nilDerefList(kids []Node, name string) bool {
+	for i, k := range kids {
+		if k.sym == RelOp {
+			if op := e.opText(k.ast); op == "&&" || op == "||" {
+				kids = kids[:i]
+				break
+			}
+		}
+	}
+	for i, k := range kids {
+		if k.sym == AssignHead && i+1 < len(kids) {
+			if e.nilDerefTarget(k, kids[i+1], name) {
+				return true
+			}
+			continue
+		}
+		if e.nilDerefIn(k, name) {
+			return true
+		}
+	}
+	return false
+}
+
+// nilDerefTarget reports whether a target, an AssignHead and what follows it -- a
+// Postfix of a statement or the first step of a LhsItem -- goes through name:
+// `name.f`, `name[i]`, `*name`. A parenthesised head is an expression like any
+// other.
+func (e *emitter) nilDerefTarget(head, next Node, name string) bool {
+	hk := slices.Collect(it(head.ast))
+	stars := 0
+	for _, k := range hk {
+		if k.sym == 0 && e.f.ch(k.tok) == MUL {
+			stars++
+		}
+	}
+	last := hk[len(hk)-1]
+	if last.sym != 0 || e.f.ch(last.tok) != IDENT {
+		return e.nilDerefList(hk, name)
+	}
+	if e.src(last.tok) != name {
+		return false
+	}
+	if stars == 1 {
+		return true
+	}
+	step := next
+	if next.sym == Postfix {
+		ps := slices.Collect(it(next.ast))
+		if len(ps) == 0 {
+			return false
+		}
+		step = ps[0]
+	}
+	return stars == 0 && e.nilDerefStep(name, step)
+}
+
+// nilDerefIn reports whether a node dereferences name where it is sure to run (see
+// nilDerefStmt).
+func (e *emitter) nilDerefIn(n Node, name string) bool {
+	switch n.sym {
+	case 0, Block, CaseClause, CommClause, FuncLiteral, CompositeLit:
+		return false
+	case UnaryExpr, HeaderUnaryExpr:
+		kids := slices.Collect(it(n.ast))
+		ops := 0
+		for _, k := range kids {
+			if k.sym != UnaryOp {
+				continue
+			}
+			ops++
+			if e.opText(k.ast) == "&" {
+				return false // an address taken, which nothing here says is checked
+			}
+		}
+		if ops == 1 && kids[0].sym == UnaryOp && e.opText(kids[0].ast) == "*" {
+			if id, ok := e.soleFactorIdent(kids[len(kids)-1]); ok && id == name {
+				return true
+			}
+		}
+	case Factor, HeaderFactor:
+		kids := slices.Collect(it(n.ast))
+		if len(kids) >= 2 && kids[0].sym == 0 && e.f.ch(kids[0].tok) == IDENT && e.src(kids[0].tok) == name && kids[1].sym == FactorSuffix {
+			if steps := slices.Collect(it(kids[1].ast)); len(steps) != 0 && e.nilDerefStep(name, steps[0]) {
+				return true
+			}
+		}
+	}
+	return e.nilDerefList(slices.Collect(it(n.ast)), name)
+}
+
+// nilDerefStep reports whether step, the first after the name of a pointer
+// variable, goes through the pointer: a field of the struct it points at, written
+// in it and not promoted, or an element of the array.
+func (e *emitter) nilDerefStep(name string, step Node) bool {
+	ct, ok := e.varType(name)
+	if !ok || !e.isPointer(ct) {
+		return false
+	}
+	switch step.sym {
+	case Selector:
+		fld := e.soleIdent(step.ast)
+		for _, f := range e.structs[methodBaseType(ct)] {
+			if f.name == fld && !f.embedded {
+				return true
+			}
+		}
+	case Index:
+		_, ok := e.arrayPtrVar(name)
+		return ok
+	}
+	return false
+}
+
+// soleFactorIdent is the identifier a Factor or a HeaderFactor consists of, and
+// nothing after it.
+func (e *emitter) soleFactorIdent(n Node) (string, bool) {
+	if n.sym != Factor && n.sym != HeaderFactor {
+		return "", false
+	}
+	kids := slices.Collect(it(n.ast))
+	if len(kids) != 1 || kids[0].sym != 0 || e.f.ch(kids[0].tok) != IDENT {
+		return "", false
+	}
+	return e.src(kids[0].tok), true
 }
 
 // stmtLabelParts reports whether the statement is a labeled one, "L: Stmt" -- an
@@ -26689,8 +26928,11 @@ func (e *emitter) needPanic() {
 // and none can be half-converted. With checks off it is the identity, as the bounds
 // check is.
 func (e *emitter) nilCheckedC(ptr, ctype string) string {
-	if !e.checks {
-		return ptr
+	if !e.checks || e.nilSafe[ptr] {
+		return ptr // nilSafe: a parameter an earlier statement of the body checked
+	}
+	if e.nilEmitted != nil {
+		e.nilEmitted[ptr] = true
 	}
 	// A pointer to an ARRAY takes the check like the rest, but never in place: the
 	// target's C compiler drops a struct-valued store made into an element of an
@@ -26739,7 +26981,7 @@ func (e *emitter) arrayPtrDerefC(prefix, ctype string) string {
 // a line the prologue already holds is not added again, which is what lets a
 // dereference be rendered as often as its callers ask without a check per ask.
 func (e *emitter) nilCheckLine(ptr, ctype string) {
-	if !e.checks {
+	if !e.checks || e.nilSafe[ptr] {
 		return
 	}
 	line := e.nilCheckedC(ptr, ctype) + ";\n"
@@ -26762,7 +27004,7 @@ func (e *emitter) nilCheckedPtrVar(name string) string {
 
 // emitIndex emits an index expression, wrapping it in a bounds check ogo_bound(i,
 // len) unless checks are disabled, the container's length is unknown (lenExpr ""),
-// or the index is a constant provably in range. lenExpr is the container's length:
+// or the index is provably in range (indexInRange). lenExpr is the container's length:
 // a slice's ".len", or an array's compile-time bound.
 func (e *emitter) emitIndex(idxAST []int32, lenExpr string) {
 	idx := func() { e.emitExpr(idxAST) }
@@ -26785,7 +27027,7 @@ func (e *emitter) emitIndex(idxAST []int32, lenExpr string) {
 			return
 		}
 	}
-	if !e.checks || lenExpr == "" || e.constIndexInRange(idxAST, lenExpr) {
+	if !e.checks || lenExpr == "" || e.indexInRange(idxAST, lenExpr) {
 		idx()
 		return
 	}
@@ -26796,17 +27038,96 @@ func (e *emitter) emitIndex(idxAST []int32, lenExpr string) {
 	e.emit(", " + lenExpr + ")")
 }
 
-// constIndexInRange reports whether idxAST is an integer literal provably within
-// [0, lenExpr) -- both decimal constants and the index in range -- so its bounds
-// check can be skipped. A runtime length (a slice's ".len") never parses as an int.
-func (e *emitter) constIndexInRange(idxAST []int32, lenExpr string) bool {
-	tok, ok := e.soleToken(idxAST)
-	if !ok || e.f.ch(tok) != INT {
+// indexInRange reports whether the index idxAST stays within [0, lenExpr) whatever
+// its operands hold, so its bounds check can go: a constant extent, and a bound the
+// index's shape proves below it (indexBound). A slice's length is its header's and
+// never parses as a number.
+func (e *emitter) indexInRange(idxAST []int32, lenExpr string) bool {
+	n, err := strconv.ParseInt(lenExpr, 10, 64)
+	if err != nil {
 		return false
 	}
-	i, err1 := strconv.Atoi(normalizeIntLit(e.src(tok)))
-	n, err2 := strconv.Atoi(lenExpr)
-	return err1 == nil && err2 == nil && i >= 0 && i < n
+	max, ok := e.indexBound(slices.Collect(it(idxAST)))
+	return ok && max < n
+}
+
+// indexBound is a bound on the value of an integer expression, one level's nodes,
+// that its shape proves -- every value it can take being in [0, max]: a constant
+// that is not negative; `x & k` where either side is bounded, the AND keeping no bit
+// the bounded side lacks, whatever the other holds, a negative x among it; `x % k`
+// and `x >> k` of an unsigned x and a constant k; and an operand of an unsigned
+// type, which C keeps in its range. p2-11's `m.R[ir>>6&7]` over eight registers was
+// checked at every instruction it ran, a call of the check each time, where Go's own
+// compiler proves the same and checks nothing.
+func (e *emitter) indexBound(nodes []Node) (int64, bool) {
+	for len(nodes) == 1 {
+		n := nodes[0]
+		if v, ok := e.foldConstInt(n.ast); ok {
+			return v, v >= 0
+		}
+		switch n.sym {
+		case Expression, SimpleExpr, Term:
+			nodes = slices.Collect(it(n.ast))
+			continue
+		case UnaryExpr:
+			kids := slices.Collect(it(n.ast))
+			if len(kids) != 1 {
+				return 0, false // -x, ^x, *p, <-ch
+			}
+			nodes = kids
+			continue
+		case Factor:
+			kids := slices.Collect(it(n.ast))
+			if len(kids) == 3 && kids[0].sym == 0 && e.f.ch(kids[0].tok) == LPAREN && kids[1].sym == Expression &&
+				kids[2].sym == 0 && e.f.ch(kids[2].tok) == RPAREN {
+				nodes = kids[1:2]
+				continue
+			}
+			ct, ok := e.inferNode(n)
+			if !ok {
+				return 0, false
+			}
+			return unsignedMax(e.underlyingCType(ct))
+		}
+		return 0, false
+	}
+	if len(nodes) < 3 || nodes[len(nodes)-2].sym != MulOp {
+		return 0, false
+	}
+	lhs, rhs := nodes[:len(nodes)-2], nodes[len(nodes)-1:]
+	k, kConst := e.foldConstInt(rhs[0].ast)
+	switch e.opText(nodes[len(nodes)-2].ast) {
+	case "&":
+		if b, ok := e.indexBound(rhs); ok {
+			return b, true
+		}
+		return e.indexBound(lhs)
+	case "%":
+		if ct, ok := e.inferNodes(lhs); ok && kConst && k > 0 && isUnsignedCType(e.underlyingCType(ct)) {
+			return k - 1, true
+		}
+	case ">>":
+		if !kConst || k < 0 || k > 63 {
+			return 0, false
+		}
+		if b, ok := e.indexBound(lhs); ok {
+			return b >> k, true
+		}
+		if ct, ok := e.inferNodes(lhs); ok {
+			if m, ok := unsignedMax(e.underlyingCType(ct)); ok {
+				return m >> k, true
+			}
+		}
+	}
+	return 0, false
+}
+
+// unsignedMax is the largest value of an unsigned C integer type of 32 bits or fewer.
+func unsignedMax(ct string) (int64, bool) {
+	if w, ok := cIntWidths[ct]; ok && isUnsignedCType(ct) && w <= 32 {
+		return 1<<w - 1, true
+	}
+	return 0, false
 }
 
 // isIntLiteral reports whether an operand is a bare integer literal (a non-zero

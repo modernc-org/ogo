@@ -425,7 +425,7 @@ func main() {
 // function, outgrows them with the helpers marked and fits without. It is built
 // without then, and nothing is said of the first attempt.
 func TestBuildInlineFallback(t *testing.T) {
-	const helpers = 24
+	const helpers = 32
 	var b strings.Builder
 	b.WriteString("import \"p2\"\n\ntype V struct {\n\ta, b int\n}\n\nvar v [8]V\n\n")
 	for i := range helpers {

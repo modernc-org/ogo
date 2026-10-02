@@ -27462,6 +27462,112 @@ func main() {
 		want: "r 2 1 -2 3 -4\nb4 9 1 4 b5 1 5\nh3 1 -2 3 b6t 6 7 8\nr16 2 1 -2\no 5 3 6 -9 4\nrs 2 6 10 sl 1 2 5\nok 7 1 4 ok2 7 3\n",
 	},
 	{
+		// The checks a shape proves needless are not written (indexBound,
+		// emitTopStatement): a masked index, a negative operand under the mask among
+		// it, a byte into 256 and an unsigned remainder and shift, and a receiver read
+		// a field at a time, checked by its first statement. Diffed against Go.
+		name: "an index a mask keeps in range and a receiver checked once",
+		src: `type M struct {
+	R   [8]uint16
+	PC  uint16
+	mem [64]uint16
+	n   int
+}
+
+func (m *M) step(ir uint16) uint16 {
+	r := m.R[ir>>6&7]
+	m.PC += 2
+	m.n++
+	v := m.mem[m.PC&63]
+	m.R[ir&7] = r + v
+	return m.R[ir&7]
+}
+
+func walk(m *M, k int) int {
+	if k > 2 {
+		m.n += 10
+	}
+	m.n++
+	for i := 0; i < k; i++ {
+		m.n += int(m.R[i&7])
+	}
+	return m.n
+}
+
+var gm M
+
+var tab [8]int
+
+var big [256]int
+
+func idx(x int) int { return tab[x&7] }
+
+func main() {
+	for i := range 8 {
+		tab[i] = i * 10
+		gm.R[i] = uint16(i)
+	}
+	for i := range 64 {
+		gm.mem[i] = uint16(i * 3)
+	}
+	println(idx(-3), idx(13), idx(7))
+	var b uint8 = 200
+	big[b] = 5
+	println(big[200], big[b])
+	println(gm.step(0x1c5), gm.step(0x07), gm.PC, gm.n)
+	println(walk(&gm, 5), walk(&gm, 1))
+	var u uint = 1234567
+	var h uint16 = 0xffff
+	println(tab[u%8], tab[h>>13])
+}
+`,
+		want: "50 50 70\n5 5\n13 12 4 2\n23 24\n70 70\n",
+	},
+	{
+		// The receiver's first statement keeps the check, so a nil one panics there,
+		// before the statements that read it unchecked.
+		name: "a nil receiver panics at its first statement",
+		src: `type T struct{ a, b int }
+
+func (m *T) f() int {
+	m.a = 1
+	m.b = 2
+	return m.a + m.b
+}
+
+func main() {
+	var p *T
+	println("before")
+	println(p.f())
+}
+`,
+		want:   "before\npanic: nil pointer dereference",
+		panics: true,
+	},
+	{
+		// A dereference in a branch not taken checked nothing, so the statement after
+		// it keeps its check and panics.
+		name: "a nil receiver dereferenced in a branch not taken first",
+		src: `type T struct{ a, b int }
+
+func (m *T) g(c bool) {
+	if c {
+		m.a = 1
+	}
+	println("between")
+	m.b = 2
+}
+
+func main() {
+	var p *T
+	p.g(false)
+	println("not reached")
+}
+`,
+		want:   "between\npanic: nil pointer dereference",
+		panics: true,
+	},
+	{
 		// Package variables named like the members of the goroutine runtime's
 		// argument blocks, `a0`, `a1`, `s0` and `fn`. The target's C compiler drops a
 		// member named like a global declared before its type

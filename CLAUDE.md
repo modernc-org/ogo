@@ -762,7 +762,9 @@ still design-only.
   fold's value is known without the VM modelling a struct. Of seeds 1-2000, 1315
   declare a table and 909 a type the backend lays out both ways, which the emitter
   fills at package initialization (`= {0};` and a memcpy in the C); all 2000 pass on
-  the host shim. Not yet swept on the board. The method expression went from 0.5% of
+  the host shim, and seeds 1-200 on a P2-EDGE, 91 of them with such a type, 192
+  passing and 8 outgrowing a cog, none failing (six loads that timed out passed on a
+  second try). The method expression went from 0.5% of
   statements to 2.5% with it: three seeds in a hundred had drawn one, and the shift
   of the draws left none in the coverage corpus.
 - **Fixed miscompile (found by the oracle):** a shadowing local whose initializer
@@ -1811,6 +1813,35 @@ plain C they pin. **Whatever emits what a build emits passes both** -- `ogo buil
 and `ogo test`, the run tests, the fuzzer's oracle, `scripts/dumpc`, dumpcorpus.sh's
 test -- and a new such place that passes only `Checked()` tests a program nobody
 builds.
+
+**A CHECK THE PROGRAM PROVES IS NOT WRITTEN** (2026-10-02). p2-11's profile (its
+OCTOGO.md, 3) put a checked build 14% behind an unchecked one, and two of the
+reasons were checks that could not fail. A receiver read a field at a time was
+nil-checked at every read: `ogo_nil_Machine_ptr(m)` six times in a method of six
+statements, each a branch, and enough of them that the backend would not inline
+the method. And `m.R[ir>>6&7]` over eight registers was bound-checked, the backend
+seeing no more through `ogo_bound` than that it is a compare. A pointer parameter or
+receiver the function never writes, declares again or takes the address of
+(nilQualifies: bindWrites, bindSelfAddr) is checked by the first statement of the
+body's own list that dereferences it on every path, and by none after it
+(emitTopStatement, nilDerefStmt): what that list has run is run on every path to the
+statements after it and to whatever is nested in them, a label clears it, a goto
+reaching it past them, and a lifted literal starts its own. "On every path" is read
+off the AST and confirmed by the check having been emitted; not counted: a
+branch, a loop, the operands after the first && or ||, an address taken, a deferred
+or a started call. The gate is in nilCheckedC, by the pointer's C text, since a dozen
+sites call it with their own. An index is unchecked where its shape keeps it below a
+constant extent (indexInRange, indexBound): a constant, `x & k`, unsigned `x % k`
+and `x >> k`, an operand of an unsigned type. Measured statically on a method of the
+emulator's shape: 131 instructions and 22 calls checked, 68 and 8 without the two,
+and inlined. Of the corpus, 353 of 1201 programs lost 663 nil and 32 bound checks
+and changed in nothing else but one lowering: a compound assignment through a
+checked pointer had bound the target's address (`_ogo_t = &guard(f)->x`), and
+through a plain one writes `f->x op= v` (scripts in the scratchpad: the classifier
+unwraps every check in both dumps and asks that the rest be equal). **A check the
+emitter writes is a cost the program pays at every run; one Go's own compiler
+proves away is one this one should**, and the board, not the host, says what it
+was worth.
 
 **A CONSTANT IS A VALUE, OF THE TYPE IT MEETS** (2026-09-28). p2-11's next finding
 was a silent one: `b-a < patience`, for a `const patience = 10000` and a uint32

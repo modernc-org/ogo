@@ -115,6 +115,21 @@ shipped section tells a reader on that version that they have behaviour they do 
 
 ### Toolchain
 
+- **A checked build leaves out the checks the program proves cannot fail.** A
+  pointer parameter or receiver the function never writes, declares again or takes
+  the address of is nil-checked by the first statement of the function's body that
+  dereferences it on every path, and not again by the statements after it -- a
+  method reading its receiver a field at a time had called the check at every read.
+  An index is no longer bounds-checked where it cannot leave a constant extent: `x &
+  7` into eight elements, unsigned `x % k` and `x >> k`, a `uint8` into 256, a named
+  constant. Nothing a program does changes but its speed and size: a nil receiver
+  panics where it did, at the first dereference, and the checks left out are ones
+  that could never fire. p2-11's emulator, checked at 160 MHz on a P2-EDGE, runs
+  124,898 instructions a second for 120,478, every shape of instruction 1.5% to
+  12% cheaper, and its binary is 364,340 bytes for 372,400; an `--unchecked` build is
+  byte-identical. Of 1201 programs of the test corpus 353 lost checks, 663 nil and
+  32 bound, and changed in nothing else.
+
 - **`ogo smith` declares package tables of a struct holding a small array.** Two
   programs in three declare a struct type of a one- or two-byte head field, an
   array of one- or two-byte elements and now and then a tail, and a package
@@ -123,7 +138,8 @@ shipped section tells a reader on that version that they have behaviour they do 
   element into its checksum. It is the shape the backend initialized in other bytes
   than it read (under Fixed, above), and no generated program had one. Of seeds
   1-2000, 1315 declare a table and 909 a type the backend lays out both ways; all
-  pass on the host. Every seed is a new program from this release on.
+  pass on the host, and of seeds 1-200 on a P2-EDGE, 91 of them with such a type,
+  192 pass and 8 outgrow a cog. Every seed is a new program from this release on.
 
 ### Behaviour changes
 
