@@ -1873,6 +1873,23 @@ unwraps every check in both dumps and asks that the rest be equal). **A check th
 emitter writes is a cost the program pays at every run; one Go's own compiler
 proves away is one this one should**, and the board, not the host, says what it
 was worth.
+The same day a reader of the Parallax forum thread pointed at the `getword`s in
+p2-11's listing, and the same reasoning took two more: a cast narrowCType asks for
+is not written where the level's value cannot leave its UNSIGNED narrow type
+(levelFits, operandFits: an AND where either side is in range, a right shift, a
+division, a remainder and an AND NOT where the left is, an OR and an XOR where both
+are; a longer level's prefix is its own level, cast or proved, so it is in range),
+and a switch on an integer narrower than int holds its tag in an `int` (the
+switch-guard path of emitSwitchGuard), which the backend compares without extending
+it again at every case. The backend zero-extends at each cast AND at each read of a
+narrow variable, so the second matters as much as the first. On the host gcc
+promotes every narrow operand to int, so a dropped cast changes no C type there; the
+target's compiler types mixed operations its own way (flexprop#114), so **a change
+to how narrow values are written is measured on the board**: 55 generated programs,
+1,400 expressions over uint8 and uint16 with every operator, edge operands and
+nesting, all equal to Go there. p2-11: +4.1% checked, +3.6% unchecked. Not done: a
+narrow LOCAL held in an int, which would end the read-side extensions too and has to
+narrow at every store.
 
 **A CONSTANT IS A VALUE, OF THE TYPE IT MEETS** (2026-09-28). p2-11's next finding
 was a silent one: `b-a < patience`, for a `const patience = 10000` and a uint32

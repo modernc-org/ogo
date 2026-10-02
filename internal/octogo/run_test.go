@@ -27596,6 +27596,118 @@ func main() {
 		want: "true\ntrue\ntrue false\n",
 	},
 	{
+		// A narrow unsigned level whose value cannot leave its type takes no
+		// cast (levelFits): a right shift, a division and a remainder of a value
+		// in range, an AND with one, an OR or an XOR of two. The operands here
+		// overflow 16 and 8 bits on purpose, through a sum, a product, a negation
+		// and a complement, which keep theirs. Diffed against Go.
+		name: "narrow unsigned operations a cast cannot change",
+		src: `type W uint16
+
+var a uint16 = 3
+
+var b uint16 = 65000
+
+var c uint8 = 200
+
+var w W = 40000
+
+func f() uint16 { return 60000 }
+
+func main() {
+	println((-a)>>2, (^a)>>4, (a+b)>>1, (a*b)/7, (b+b)%1000, (-a)&0xf0f0)
+	println((b<<1)>>1, (b+b)|1, (a-b)^7, -a&^0xff, (a+b)&^1)
+	println((c+c)>>1, (-c)/3, (c*c)%7, (^c)>>1, c>>3&3, (c<<1)&0x7f)
+	println((w+w)>>2, w>>3&7, (w*3)/5, f()>>4, f()&0xff, (f()+f())>>1)
+	op := b >> 6 & 0o77
+	d := b & 0o77
+	h := b >> 12
+	println(op, d, h, a|b, a^b, b/a, b%a)
+	var x uint16 = 1
+	for i := 0; i < 20; i++ {
+		x = (x*3 + 1) >> 1
+		x ^= x >> 3
+	}
+	println(x)
+}
+`,
+		want: "16383 4095 32501 9132 464 61680\n32232 64465 540 65280 65002\n72 18 1 27 1 16\n3616 0 10892 3750 96 27232\n55 40 15 65003 65003 21666 2\n7503\n",
+	},
+	{
+		// A switch on an integer narrower than int holds its tag in an int, compared
+		// at each case without a zero extension: a variable, an expression, a
+		// defined type, a signed tag with negative cases, a tag behind an init
+		// statement, and a fallthrough. Diffed against Go.
+		name: "a switch on a narrow integer",
+		src: `type Op uint8
+
+const (
+	opAdd Op = iota + 1
+	opSub
+	opHalt Op = 255
+)
+
+func kind8(v int8) int {
+	switch v {
+	case -128:
+		return 1
+	case -1:
+		return 2
+	case 0:
+		return 3
+	case 127:
+		return 4
+	}
+	return 0
+}
+
+func kind16(ir uint16) int {
+	switch ir >> 12 {
+	case 0o01, 0o02, 0o06, 0o16, 0o03, 0o04, 0o05:
+		return int(ir >> 6 & 0o77)
+	case 0o07:
+		return -1
+	}
+	return -2
+}
+
+func step(op Op, n int) int {
+	switch op {
+	case opAdd:
+		n++
+		fallthrough
+	case opSub:
+		n--
+	case opHalt:
+		n = -n
+	default:
+		n *= 2
+	}
+	return n
+}
+
+func main() {
+	for _, v := range []int8{-128, -1, 0, 127, 5} {
+		print(kind8(v), " ")
+	}
+	println()
+	for _, ir := range []uint16{0x1000, 0x2fc0, 0x7000, 0xe555, 0xffff, 0} {
+		print(kind16(ir), " ")
+	}
+	println()
+	println(step(opAdd, 10), step(opSub, 10), step(opHalt, 10), step(7, 10))
+	var i16 int16 = -32768
+	switch v := i16 + 1; v {
+	case -32767:
+		println("init", v)
+	default:
+		println("no")
+	}
+}
+`,
+		want: "1 2 3 4 0 \n0 63 -1 21 -2 -2 \n10 9 -10 20\ninit -32767\n",
+	},
+	{
 		// Package variables named like the members of the goroutine runtime's
 		// argument blocks, `a0`, `a1`, `s0` and `fn`. The target's C compiler drops a
 		// member named like a global declared before its type

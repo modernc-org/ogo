@@ -128,6 +128,19 @@ shipped section tells a reader on that version that they have behaviour they do 
   and libc `go.mod` names. The five platforms' backends compile the reproducers,
   the run cases and 700 fuzzer programs exactly as a native build of the same
   backend does.
+- **Arithmetic on `uint8` and `uint16` is written with fewer conversions.** An
+  operation whose value cannot leave its type -- a right shift, a division or a
+  remainder of a value in range, an AND with one, an OR or an XOR of two -- is no
+  longer cast back to its type, and a switch on an integer narrower than `int`
+  compares an `int` copy of its value. The P2's C compiler turns each such cast,
+  and each read of a narrow variable, into a zero extension: `op := ir >> 6 & 0o77`
+  paid for two that could change no bit, and a switch of seven cases on `ir >> 12`
+  for seven more. A sum, a difference, a product and a left shift keep the cast,
+  which is where Go's wrap-around lives. Pointed out on the Parallax forum.
+  p2-11's emulator at 160 MHz on a P2-EDGE: 130,044 instructions a second for
+  124,898 checked, 143,808 for 138,865 `--unchecked`, its binaries 1% smaller.
+  Checked against Go with 55 generated programs of narrow arithmetic, on the host
+  and the board.
 - **A checked build leaves out the checks the program proves cannot fail.** A
   pointer parameter or receiver the function never writes, declares again or takes
   the address of is nil-checked by the first statement of the function's body that

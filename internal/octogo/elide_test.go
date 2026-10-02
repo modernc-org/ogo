@@ -192,3 +192,53 @@ func checkedFuncBody(c string) string {
 	}
 	return strings.Join(defs, "")
 }
+
+// TestEmitCNarrowCasts pins where a narrow unsigned value is cast and where not
+// (levelFits), and the int a narrow switch tag is held in. The target's compiler
+// zero-extends at every cast and at every read of a narrow variable, so p2-11's
+// `op := ir >> 6 & 0o77` and `switch ir >> 12` paid for extensions that could
+// change no bit.
+func TestEmitCNarrowCasts(t *testing.T) {
+	const src = `var g uint16
+
+func f(ir, a, b uint16) int {
+	op := ir >> 6 & 0o77
+	sum := a + b
+	half := (a + b) >> 1
+	mix := a | b
+	g = op ^ sum ^ half ^ mix
+	switch ir >> 12 {
+	case 1, 2:
+		return 1
+	}
+	switch op {
+	case 3:
+		return 2
+	}
+	return 0
+}
+
+func main() { println(f(1, 2, 3)) }
+`
+	pkg, err := Build(-1, []string{"main.ogo"}, fstest.MapFS{"main.ogo": &fstest.MapFile{Data: []byte(src)}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var buf bytes.Buffer
+	if err := EmitC(pkg, &buf, Checked(), Inline()); err != nil {
+		t.Fatal(err)
+	}
+	c := buf.String()
+	for _, want := range []string{
+		"uint16_t op = ((ir >> 6) & 077u);",           // a shift and a mask: no cast
+		"uint16_t sum = (uint16_t)(a + b);",           // a sum wraps: cast
+		"uint16_t half = (((uint16_t)(a + b)) >> 1);", // the sum cast, the shift not
+		"uint16_t mix = (a | b);",                     // two in range: no cast
+		"int _ogo_t0 = (ir >> 12);",                   // an expression tag in an int
+		"int _ogo_t1 = op;",                           // a variable tag in an int
+	} {
+		if !strings.Contains(c, want) {
+			t.Errorf("missing %q in\n%s", want, c[strings.Index(c, "f(uint16_t ir"):])
+		}
+	}
+}

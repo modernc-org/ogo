@@ -5035,6 +5035,62 @@ func narrowOf(underlying, ct string) string {
 	return ct
 }
 
+// levelFits reports whether C computes a level of an UNSIGNED type narrower than
+// int, a uint8 or a uint16 of type nc, as a value that type holds already, so the
+// cast narrowCType asks for would change nothing: an AND where either side is in
+// range, a right shift, a division, a remainder and an AND NOT where the left one
+// is, and an OR or an XOR where both are. The left side of a longer level is the
+// level of its first operations (narrowLevelPrefix), cast itself where it needs to
+// be, so it is in range; a sum, a difference, a product, a left shift and every
+// signed type keep the cast, which is where Go's wrap lives. The backend turns
+// each cast into a zero extension, and p2-11's `op := ir >> 6 & 0o77` paid for two
+// that could change no bit.
+func (e *emitter) levelFits(kids []Node, nc string) bool {
+	ut := e.underlyingCType(nc)
+	if len(kids) < 3 || !isUnsignedCType(ut) {
+		return false
+	}
+	prefix := len(kids) > 3 || e.operandFits(kids[0], ut)
+	last := e.operandFits(kids[len(kids)-1], ut)
+	switch e.opText(kids[len(kids)-2].ast) {
+	case "&":
+		return prefix || last
+	case ">>", "/", "%", "&^":
+		return prefix
+	case "|", "^":
+		return prefix && last
+	}
+	return false
+}
+
+// operandFits reports whether an operand of a level of the unsigned narrow C type
+// ut is in its range as C holds it: a constant the type holds, or an operand with
+// no operator of its own whose type is an unsigned one no wider -- a variable, a
+// field, an element, a call's result, a conversion, each of which C keeps at its
+// width.
+func (e *emitter) operandFits(n Node, ut string) bool {
+	if v, ok := e.foldConstInt(n.ast); ok {
+		return v >= 0 && v <= 1<<cIntWidths[ut]-1
+	}
+	for n.sym == Expression || n.sym == SimpleExpr || n.sym == Term || n.sym == UnaryExpr {
+		kids := slices.Collect(it(n.ast))
+		if len(kids) != 1 {
+			return false // an operation of its own: -x, ^x, x + y
+		}
+		n = kids[0]
+	}
+	if n.sym != Factor {
+		return false
+	}
+	ct, ok := e.inferNode(n)
+	if !ok {
+		return false
+	}
+	u := e.underlyingCType(ct)
+	w, isInt := cIntWidths[u]
+	return isInt && isUnsignedCType(u) && w <= cIntWidths[ut]
+}
+
 // cUnsignedOf is the unsigned counterpart of a signed integer C type. A left shift
 // is done in it, C leaving a signed overflow undefined where Go defines it to wrap.
 var cUnsignedOf = map[string]string{
@@ -29713,6 +29769,30 @@ func (e *emitter) emitSwitchGuard(guardAST []int32) (guardVar string, block, ok 
 	if !g.hasTag { // `switch v := e; {` -- an expression switch with v in scope
 		return "", block, true
 	}
+	// A tag of an integer type narrower than int is held in an int: C keeps such a
+	// variable at its width, and the target's compiler reads it so, extending it
+	// again at every case's compare -- p2-11's `switch ir >> 12` of seven values
+	// paid a copy and a zero extension for each. The value is the narrow one, cast
+	// where it is computed, so nothing it is compared with sees a difference.
+	if ct, ok := e.inferCType(g.tag.ast); ok {
+		if w, isInt := cIntWidths[e.underlyingCType(ct)]; isInt && w < 32 {
+			tmp := e.newTmp()
+			declare := func() {
+				e.ind()
+				e.emit("int " + tmp + " = ")
+				e.emitExpr(g.tag.ast)
+				e.emit(";\n")
+				e.locals[tmp] = "int"
+			}
+			if block {
+				e.emitStatementsHere(declare)
+				return tmp, block, true
+			}
+			openBlock()
+			declare()
+			return tmp, block, true
+		}
+	}
 	if tok, single := e.soleToken(g.tag.ast); single && e.f.ch(tok) == IDENT {
 		// A variable switched on is compared by name. A 64-bit CONSTANT is not:
 		// it has no C symbol (see emitConstSpecName), and the name here is used as
@@ -45444,19 +45524,25 @@ func (e *emitter) emitExprNode(n Node) {
 		// C computed this in int if the operands are narrower than one; Go computes
 		// in their own type. See narrowCType.
 		if nc := e.narrowCType(n.ast); nc != "" {
+			fits := e.levelFits(kids, nc)
 			if len(kids) > 3 {
 				// EVERY operation wraps in Go, not only the last: `s + s - t` on an
 				// int16 wraps the sum before the difference is taken. One cast
 				// around the whole level wrapped only the total, so the intermediate
 				// kept C's extra bits (see narrowLevelPrefix).
-				e.emit("(" + nc + ")(")
+				if !fits {
+					e.emit("(" + nc + ")")
+				}
+				e.emit("(")
 				e.emitExprNode(narrowLevelPrefix(n, len(kids)-2))
 				e.emitExprNode(kids[len(kids)-2])
 				e.emitExprNode(kids[len(kids)-1])
 				e.emit(")")
 				return
 			}
-			e.emit("(" + nc + ")")
+			if !fits {
+				e.emit("(" + nc + ")")
+			}
 		}
 		// `a | b ^ c`, `a ^ b + c`: one Go level, three C strengths (cPrecMixed).
 		if n.sym == SimpleExpr && e.cPrecMixed(kids) {
@@ -45501,7 +45587,9 @@ func (e *emitter) emitExprNode(n Node) {
 			return
 		}
 		if narrow != "" {
-			e.emit("(" + narrow + ")")
+			if !e.levelFits(kids, narrow) {
+				e.emit("(" + narrow + ")")
+			}
 			if len(kids) > 3 {
 				// The level's first operations become a level of their own, cast
 				// like any other, and only the last operator and operand stay here:
