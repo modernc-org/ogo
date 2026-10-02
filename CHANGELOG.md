@@ -96,6 +96,23 @@ shipped section tells a reader on that version that they have behaviour they do 
   a type switch and a call's result, `lib.Get().N` -- or was typed as the field of
   main's own type of the name.
 
+- **What the steps past a call reach had no type.** An element of a call's slice,
+  array or pointer to an array -- `f()[0]`, `h.rows()[1][2]`, `fv()[0]`, another
+  package's `a.Fa()[0]`, of a defined type or not -- was asked nothing, and neither
+  was a field of a struct element, `fp()[0].s`, a range over a call's result, a
+  variable declared from one, `xs := f()` and `ys := f()[1:]`, or a range value
+  that is itself an array, `for _, r := range rows` over a `[][4]int`, over a
+  variable as well. Nor were the arguments of a call through a function value an
+  index or a call reaches, `handlers[0]("x")`, `pick()(1, 2)`, `a.Hs()[1]("x")`:
+  only a call through a name, a variable's field or a method was checked. Of 292
+  programs crossing seven result types with four ways of calling and eleven
+  positions, 202 that Go refuses were taken, and 13 of 15 calls through a function
+  value; each was handed to the C compiler. A type the walk reaches in another
+  package is that package's, `a.A` beside a main `type A string`. From another
+  package's call the walk asked nothing else either: `&a.Arr()[0]` and `&a.Mk().N`,
+  the address of what has no storage, and `a.Fp()[0].y`, a field that package does
+  not export, were taken.
+
 ### Toolchain
 
 - **`ogo smith` declares package tables of a struct holding a small array.** Two
@@ -126,6 +143,13 @@ shipped section tells a reader on that version that they have behaviour they do 
   fields, are refused** (under Fixed, above): a duplicate or impossible case, a
   fallthrough, the bound name unused or used as another type, a non-interface
   operand, and a field of another package's struct stored or read as another type.
+- **Mistakes with what a call's result reaches are refused** (under Fixed, above):
+  `var s string = f()[0]`, `if fp()[0] {` for a struct element, `var b B =
+  fas()[0]` for a `[]A`, a range value or a variable from such a call used as
+  another type, a field a struct element lacks, and a call through a function
+  value reached by an index or a call with arguments its type does not take, in
+  one package and across two; and past another package's call, the address of a
+  value with no storage and a member it does not export.
 - **A value of the wrong kind for another package's defined type is refused**
   (under Fixed, above): `var c lib.Count = "x"`, a string returned or passed as
   one, an int into a `lib.Name` string type or its field, `if c {` for an int one,

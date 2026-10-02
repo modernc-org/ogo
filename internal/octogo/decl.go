@@ -491,6 +491,16 @@ type VarDeclaration struct {
 	declType  TypeNode
 	init      Node
 	declScope *Scope
+
+	// inferredType is the type the declaration gives a variable no type is written
+	// for, where the flat fields above hold none of it: a CALL initializer's, `xs :=
+	// f()` and `r := h.rows()[1:]`, the result's as its signature writes it walked
+	// through the steps after the call (valueTypeAt); and a range's value, `for _, r
+	// := range rows` over a [][4]int, the element's. It is resolved where the
+	// variable is declared and kept, since a scope asked later may hold a name
+	// declared after the initializer -- `b := a.get()` then `a := b.get()` in one
+	// block would answer each with the other.
+	inferredType *typeAt
 }
 
 // chanTypeNode is the variable's channel type as some declaration wrote it: its own

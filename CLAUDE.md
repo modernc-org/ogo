@@ -607,8 +607,9 @@ still design-only.
   shapes; `ptrLitType`), an array had no identity, so checkRefAssign compared no
   pointer to one (`arrayNodeLen` in typeNodeIdentity and typeNodeString), and append
   asked checkRefAssign nothing. 23 of 32 programs of the row were taken where Go
-  refuses them; one is left, `f()[0]` of a call's result, which lenOperandType must
-  not type -- `len(f())` is no constant in Go, and the len fold asks it.
+  refuses them; the one left, `f()[0]` of a call's result, which lenOperandType must
+  not type -- `len(f())` is no constant in Go, and the len fold asks it -- was a
+  row of its own, closed the next day (A CALL'S RESULT HAD NO STEPS).
   A TYPE SWITCH CASE or an ASSERTION naming a pointer to a predeclared type, to a
   type written out or to a defined array type, `case *int:`, `case *[3]int:`,
   `case *[]byte:`, `case *Row:` (2026-10-02): the assertion `i.(*int)` worked and
@@ -1114,6 +1115,37 @@ never the categories into one another (checkRefAssign asks it since). With it, a
 element STORE asked only nil and a function's signature, where a variable asked all
 of checkStoreInto; and a variable declared from a SLICE literal had no type for any
 rule walking a variable's type (sliceLitType).
+
+**A CALL'S RESULT HAD NO STEPS** (2026-10-02). The checker typed a call's result
+where the call stands alone, `x := f()` for a result of a Kind, and nothing past it:
+an element of a slice, an array or a pointer to an array a call returns, `f()[0]`,
+named or not, through a function, a method, a function value and a call's own
+result -- 202 of 292 programs Go refuses were taken, every position, every head --
+and with it a range over one, a variable declared from one, a field of a struct
+element, and the arguments of a call through a function value an index or a call
+reaches, `handlers[0]("x")` and `pick()(1, 2)`, where only a name, a variable's
+field and a method had theirs checked (checkValueCalls). The walk was there:
+callChainWalk followed every step past a call to ask about storage and members, and
+handed back no type (`callChain.t`). `valueTypeAt` is lenOperandType with calls --
+one walk, `operandType`, the len fold keeping its own answer -- and factorType,
+rangeElem, operandTypeAt and the category and name rules ask it. Three traps. A
+variable's type from a call is resolved WHERE IT IS DECLARED and kept
+(`inferredType`): varTypeAt is asked later, when the block may hold a name declared
+after the initializer, and chasing the initializer then makes `b := a.get(); a :=
+b.get()` answer each with the other. A slice step keeps a DEFINED slice type, `l[1:]`
+of an L is an L -- the corpus guard caught the walk rebuilding it from the element,
+and the run case's method on it refused. And a type reached in ANOTHER package is
+spelled as that package spells it: right for a Kind and a category, wrong for a
+NAME, so a walk from `a.F()` carries the qualifier it began with (`callChain.home`,
+`qual`; chainNamed) and a name it ends on is requalified, or `var x a.A = a.Fa()[0]`
+would compare a.A with main's A. The walk asks more than a type -- storage, pointer
+methods, missing members -- and from another package's call it had asked none of
+it: `&a.Arr()[0]` was taken, and a member that package does not export is asked
+there now too (`unexpAt`). A range value that is itself an array, `for _, r := range
+gg` over a variable, had no type either, which nobody had asked (rangeValueType).
+**A walk that types a value hands its type back to every rule, and a rule asked of
+a value asks the walk** -- the call result was a position no Kind rule was ever
+asked in, as a case was (below).
 
 **A CASE WAS A POSITION NOTHING WALKED** (2026-09-21). The rules above cross
 operations with categories; they say nothing of a position no rule is ever asked in.

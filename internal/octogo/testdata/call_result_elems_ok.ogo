@@ -1,0 +1,101 @@
+// COMPILE
+
+// The valid neighbours of call_result_elems.ogo: the same values used as what they
+// are -- a defined slice type kept through a slice of a call's result, its methods
+// called, a function value reached by an index or a call called with what it takes,
+// variadic, spread and fed by a call of two results.
+
+type A int
+
+type L []A
+
+type P struct {
+	x int
+	s string
+}
+
+type Handler func(n int) int
+
+type Vf func(base int, xs ...int) int
+
+type H struct{ n int }
+
+func (l L) Sum() A {
+	var n A
+	for _, v := range l {
+		n += v
+	}
+	return n
+}
+
+func (a A) Twice() A { return a * 2 }
+
+func inc(n int) int { return n + 1 }
+
+func sum(base int, xs ...int) int {
+	for _, x := range xs {
+		base += x
+	}
+	return base
+}
+
+func two() (int, int) { return 3, 4 }
+
+func add(a, b int) int { return a + b }
+
+var g [4]int
+
+var ga = [3]A{1, 2, 3}
+
+var gp = [2]P{{1, "a"}, {2, "b"}}
+
+var gg = [2][3]int{{1, 2, 3}, {4, 5, 6}}
+
+var handlers = [2]Handler{inc, inc}
+
+var vfs = []Vf{sum}
+
+var adders = []func(int, int) int{add}
+
+var gh H
+
+func fs() []int { return g[:] }
+
+func fpa() *[4]int { return &g }
+
+func fl() L { return L(ga[:]) }
+
+func fp() []P { return gp[:] }
+
+func fg() [][3]int { return gg[:] }
+
+func pick() Handler { return inc }
+
+func hs() []Handler { return handlers[:] }
+
+func (h *H) rows() *[2][3]int { return &gg }
+
+func main() {
+	var n int = fs()[0] + fpa()[1] + gh.rows()[0][1] + fg()[1][2]
+	var a A = fl()[0] + fl()[1:].Sum() + fl()[0].Twice()
+	zs := fl()[1:]
+	var b A = zs.Sum()
+	var l L = zs
+	var s string = fp()[1].s
+	for _, p := range fp() {
+		n += p.x
+	}
+	for _, r := range fg() {
+		for _, v := range r {
+			n += v
+		}
+	}
+	for _, r := range gg {
+		n += r[0]
+	}
+	xs := []int{1, 2, 3}
+	n += handlers[0](1) + hs()[1](2) + pick()(3)
+	n += vfs[0](1) + vfs[0](1, 2, 3) + vfs[0](10, xs...)
+	n += adders[0](two()) + adders[0](8, 9)
+	println(n, a, b, len(l), s)
+}
