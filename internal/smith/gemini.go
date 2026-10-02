@@ -186,6 +186,10 @@ func (f *Fuzzer) GenerateProgram(vm Machine, mem Memory) error {
 	// in an order that is NOT initialization order (see genPkgVarCluster).
 	cluster := f.genPkgVarCluster(vm, mem)
 
+	// 4.8. Package tables of a struct holding a small-element array, statically
+	// initialized (see genStaticTables).
+	tables := f.genStaticTables()
+
 	// 5. Generate the main function
 	// FuncDecl = "func" identifier "(" ")" Block
 	fmt.Fprint(f.Out, "func main() {\n")
@@ -212,6 +216,16 @@ func (f *Fuzzer) GenerateProgram(vm Machine, mem Memory) error {
 		mem.Store(f.ChecksumName, nv)
 		writeIndent(f.Out, 1)
 		fmt.Fprintf(f.Out, "%s = %s ^ %s\n", f.ChecksumName, f.ChecksumName, g.name)
+	}
+	// And the tables, every field and element of each.
+	for _, t := range tables {
+		nv, err := vm.Eval("^", mem.Load(f.ChecksumName), t.want)
+		if err != nil {
+			panic(err)
+		}
+		mem.Store(f.ChecksumName, nv)
+		writeIndent(f.Out, 1)
+		fmt.Fprintf(f.Out, "%s = %s ^ (%s)\n", f.ChecksumName, f.ChecksumName, t.sum)
 	}
 
 	// Generate 20 sequential statements to mutate the checksum
@@ -1051,12 +1065,15 @@ func (f *Fuzzer) genStatement(vm Machine, mem Memory) Node {
 		return f.genStringStmt(vm, mem) // 2% chance for string reads
 	case r < 0.365:
 		return f.genMethodCall(vm, mem) // 2.5% chance for a method call
-	case r < 0.37:
-		return f.genMethodExprStmt(vm, mem) // 0.5% chance for a method expression
-	case r < 0.40:
-		return f.genFloatStmt(vm, mem) // 3% chance for float32 arithmetic
+	case r < 0.39:
+		// 2.5% chance for a method expression: at 0.5% it was three seeds in a
+		// hundred, and gone from the coverage corpus when another generator shifted
+		// the draws.
+		return f.genMethodExprStmt(vm, mem)
+	case r < 0.41:
+		return f.genFloatStmt(vm, mem) // 2% chance for float32 arithmetic
 	case r < 0.46:
-		return f.genVarDecl(vm, mem) // 6% chance for var
+		return f.genVarDecl(vm, mem) // 5% chance for var
 	case r < 0.515:
 		return f.genArrayDecl(vm, mem) // 5.5% chance for a fixed array declaration
 	case r < 0.52:

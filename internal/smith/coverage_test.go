@@ -92,6 +92,14 @@ var generatedConstructs = []struct {
 	// function is what routes a dependency through a function's BODY, and the
 	// two-name group through a multi-value call; the fold is what makes any
 	// mis-ordering fail the oracle rather than pass unobserved.
+	// A package table of a struct holding a small-element array (genStaticTables),
+	// which the target's compiler initialized statically in another layout than it
+	// reads (flexprop#116); an array of them and a slice of them.
+	{"static table struct", `\ntype ST_\d+ struct \{\n\th u?int(8|16)\n\ta \[\d\]u?int(8|16)\n`},
+	{"static table", `\nvar tb_\d+ = ST_\d+\{`},
+	{"static table array", `\nvar tbs_\d+ = \[\d\]ST_\d+\{\{`},
+	{"static table slice", `\nvar tsl_\d+ = \[\]ST_\d+\{\{`},
+	{"static table fold", `\n\s*\w+ = \w+ \^ \(int\(tb_\d+\.h\)`},
 	{"package var cluster", `\nvar gv_\d+ = `},
 	{"cluster arithmetic initializer", `\nvar gv_\d+ = \S+ (&\^?|\||\^) `},
 	{"cluster reader function", `\nfunc gr_\d+\(p_\d+ int\) int `},

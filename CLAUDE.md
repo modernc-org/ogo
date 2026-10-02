@@ -750,6 +750,20 @@ still design-only.
   the target built and, measured, computed right. Swept with the generator and the
   fix: seeds 1-2000 on the host shim, clean; and 1-200 on a P2-EDGE, 196 passing, 4
   outgrowing a cog, none failing.
+  **Static tables** (2026-10-02, `tables.go`): two programs in three declare a
+  package struct type of a one- or two-byte head, an ARRAY of one- or two-byte
+  elements and now and then a tail field, and a variable of it from a constant
+  literal -- half of them an array of two or three as well, a third a slice of one --
+  every field and element folded into the checksum at the top of main
+  (`genStaticTables`). It is the row flexprop#116 lives in, a static initializer laid
+  out by another rule than its type, and no generated program had a package variable
+  of a struct holding an array. The values are the generator's constants, so the
+  fold's value is known without the VM modelling a struct. Of seeds 1-2000, 1315
+  declare a table and 909 a type the backend lays out both ways, which the emitter
+  fills at package initialization (`= {0};` and a memcpy in the C); all 2000 pass on
+  the host shim. Not yet swept on the board. The method expression went from 0.5% of
+  statements to 2.5% with it: three seeds in a hundred had drawn one, and the shift
+  of the draws left none in the coverage corpus.
 - **Fixed miscompile (found by the oracle):** a shadowing local whose initializer
   references the shadowed name — `var x = x + 5` with an outer `x` in scope — used
   to miscompile, because the emitter names locals verbatim so the C initializer read

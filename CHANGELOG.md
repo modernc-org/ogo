@@ -96,6 +96,18 @@ shipped section tells a reader on that version that they have behaviour they do 
   a type switch and a call's result, `lib.Get().N` -- or was typed as the field of
   main's own type of the name.
 
+### Toolchain
+
+- **`ogo smith` declares package tables of a struct holding a small array.** Two
+  programs in three declare a struct type of a one- or two-byte head field, an
+  array of one- or two-byte elements and now and then a tail, and a package
+  variable of it from a constant literal -- half of them an array of two or three
+  such values as well, and a third a slice of one -- and main folds every field and
+  element into its checksum. It is the shape the backend initialized in other bytes
+  than it read (under Fixed, above), and no generated program had one. Of seeds
+  1-2000, 1315 declare a table and 909 a type the backend lays out both ways; all
+  pass on the host. Every seed is a new program from this release on.
+
 ### Behaviour changes
 
 - **Mistakes with a pointer to an array are refused** (under Fixed, above): `var s
