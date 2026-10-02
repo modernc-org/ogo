@@ -23,7 +23,11 @@
 // emitter writes after the program's globals is named with the compiler's prefix,
 // `ogo_a0`, `ogo_s0`, `ogo_fn`, which no program name meets. The program's own
 // struct types are written before its globals, so their fields are not reached.
-// Unreported upstream as of this writing.
+// Only a STATIC global does it, the lexer handing its name back as an
+// AST_LOCAL_IDENTIFIER that DeclareCMemberVariables does not unwrap. Reported
+// upstream as flexprop#117 (2026-10-02) with a fix tested natively: test_offline
+// 588/588 as without it, this file printing gcc's values on the board, and of 1248
+// other C programs no binary changed.
 //
 // To check, run it with scripts/cboard.sh: gcc prints 8 12 8.
 

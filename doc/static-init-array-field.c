@@ -27,9 +27,11 @@
 //
 // WORKED AROUND in internal/octogo/emit.go (flexccInitSkew): a package variable
 // whose type the two models disagree about -- or an array or a slice of one -- is
-// zeroed statically and filled where the package's initializer runs. Unreported
-// upstream as of this writing; the fix is to align a member in outputInitializer's
-// struct loop by PaddedTypeAlign and to pad it to its size, as the layout does.
+// zeroed statically and filled where the package's initializer runs. Reported
+// upstream as flexprop#116 (2026-10-02) with a fix tested natively: align a member
+// in outputInitializer's struct loop by PaddedTypeAlign and take its own size, as
+// the layout does -- test_offline 588/588 as without it, this file printing gcc's
+// values on the board, and of 1248 other C programs no binary changed.
 //
 // To check, run it with scripts/cboard.sh: gcc prints the values as written.
 

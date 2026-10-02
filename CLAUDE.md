@@ -964,7 +964,8 @@ through each kind and each position. The fuzzer draws such names too (cNames in
 internal/smith), which is what keeps the row covered where no sweep reaches.
 A MEMBER the emitter names is the same row from the backend's side (2026-10-02,
 found by a domain program): flexcc DROPS a struct or union member named like a
-global declared before the type (doc/member-named-like-global.c), and the goroutine
+STATIC global declared before the type (doc/member-named-like-global.c, flexprop#117),
+and the goroutine
 runtime's argument blocks, written after the program's globals, had members `aN`,
 `sN` and `fn` -- `var s0 = proto.Set{...}` made the union of blocks 0 bytes, a cog's
 arguments sat on its stack, and `go feeder(3)` read 3 as an address, in silence; a
@@ -983,7 +984,8 @@ Every struct is a multiple of four with alignment four, so only an ARRAY field o
 one- or two-byte elements of four bytes or more tells the two apart: `struct { uint8
 ch; int16 s[4] }` initialized statically read s[0] as s[1]'s value, and a field
 after a `uint8[6]` read 0, in silence; where the written total exceeds the type,
-flexcc says "Bad initialization size" (doc/static-init-array-field.c). Locals,
+flexcc says "Bad initialization size" (doc/static-init-array-field.c, flexprop#116,
+filed with a fix tested natively). Locals,
 compound literals and stores are right in every shape, measured with a 40-element
 local array. `flexccInitSkew` computes both models over a struct's fields,
 recursively through struct fields and array elements (flexccStructSkew,
