@@ -5343,7 +5343,7 @@ func (f *File) checkSwitch(s *Scope, results []retResult, n Node) {
 					// is what ignoring the tag did -- accepted a program Go has no
 					// meaning for.
 					f.err(f.tok(ts.tag.Pos()).Position(),
-						"a type switch guard takes no expression after it: write %q", "switch "+ts.name.Src()+" := "+ts.operand.Src()+".(type) {")
+						"a type switch guard takes no expression after it: write %q", "switch "+ts.name.Src()+" := "+ts.src+".(type) {")
 				}
 				f.checkTypeSwitchOperand(s, ss, ts)
 				break
@@ -5398,7 +5398,14 @@ func (f *File) checkSwitch(s *Scope, results []retResult, n Node) {
 // for the bare "switch x.(type)") and the operand whose dynamic type is switched on.
 type typeSwitchGuard struct {
 	name    Token
-	operand Token
+	operand Token // the operand's name, or an expression operand's first token
+	// isExpr marks an operand that is no bare name -- `h.sh.(type)`, `xs[i].(type)`,
+	// `f().(type)` -- held as the expression it is, with its source, and the guard's
+	// whole value, `x.(type)`, for the names in it to be resolved.
+	isExpr bool
+	expr   Node
+	src    string
+	value  Node
 	// tag marks a guard that also carried a ";" and something after it, `switch x
 	// := v.(type); x {`. That is not a type switch and not anything else: Go has no
 	// statement for it, so it is refused rather than read as one (see checkSwitch).
@@ -5431,15 +5438,15 @@ func (f *File) typeSwitchParts(guard Node) (ts typeSwitchGuard, ok bool) {
 		return ts, false
 	}
 	kids := slices.Collect(it(fac.ast))
-	if len(kids) != 2 || kids[0].sym != 0 || f.ch(kids[0].tok) != IDENT || kids[1].sym != FactorSuffix {
+	if len(kids) < 2 || kids[len(kids)-1].sym != FactorSuffix {
 		return ts, false
 	}
-	steps := slices.Collect(it(kids[1].ast))
-	if len(steps) != 1 || steps[0].sym != Selector {
+	steps := slices.Collect(it(kids[len(kids)-1].ast))
+	if len(steps) == 0 || steps[len(steps)-1].sym != Selector {
 		return ts, false
 	}
 	isType := false
-	for c := range it(steps[0].ast) {
+	for c := range it(steps[len(steps)-1].ast) {
 		if c.sym == 0 && f.ch(c.tok) == TYPE {
 			isType = true
 		}
@@ -5447,13 +5454,48 @@ func (f *File) typeSwitchParts(guard Node) (ts typeSwitchGuard, ok bool) {
 	if !isType {
 		return ts, false
 	}
-	ts.operand = f.tok(kids[0].tok)
+	ts.value = value
+	if len(kids) == 2 && kids[0].sym == 0 && f.ch(kids[0].tok) == IDENT && len(steps) == 1 {
+		ts.operand = f.tok(kids[0].tok)
+		ts.src = ts.operand.Src()
+	} else {
+		// An operand that is no bare name, `h.sh.(type)`, `f().(type)`, `(v).(type)`:
+		// the factor without its last step, rebuilt as an expression to be asked what
+		// type it has. Declined, such a switch had no case of it checked at all.
+		ts.isExpr = true
+		ts.operand = f.tok(fac.Pos())
+		ts.expr = factorWithoutLastStep(kids, steps)
+		ts.src = f.exprSource(ts.expr)
+	}
 	if g.hasName {
 		if ts.name, ok = f.exprIdent(g.name); !ok {
 			return ts, false
 		}
 	}
 	return ts, true
+}
+
+// factorWithoutLastStep is a Factor of the children kids, its suffix the steps less
+// the last, rebuilt as an Expression: `h.sh` of `h.sh.(type)`. It is made of the
+// factor's own tokens, so whatever reads it reads the source.
+func factorWithoutLastStep(kids, steps []Node) Node {
+	var body []int32
+	for _, k := range kids[:len(kids)-1] {
+		if k.sym == 0 {
+			body = append(body, k.tok)
+			continue
+		}
+		body = append(body, encodeNode(k.sym, k.ast)...)
+	}
+	if len(steps) > 1 {
+		var sfx []int32
+		for _, st := range steps[:len(steps)-1] {
+			sfx = append(sfx, encodeNode(st.sym, st.ast)...)
+		}
+		body = append(body, encodeNode(FactorSuffix, sfx)...)
+	}
+	unary := encodeNode(UnaryExpr, encodeNode(Factor, body))
+	return Node{sym: Expression, ast: encodeNode(SimpleExpr, encodeNode(Term, unary))}
 }
 
 // typeSwitchShaped reports a switch guard whose value is a type assertion,
@@ -5496,6 +5538,30 @@ func (f *File) typeSwitchShaped(guard Node) bool {
 // rule. Go's rule there is that the name is unused only when no clause uses it,
 // which is what registering it once, rather than per clause, asks.
 func (f *File) checkTypeSwitchOperand(s, ss *Scope, ts typeSwitchGuard) {
+	if ts.isExpr {
+		// The names an expression operand uses, `pick(0)`'s arguments among them,
+		// which checkSwitchGuard resolved while such a switch was read as a plain
+		// one. And it must be an interface, which a bare name is asked per clause.
+		f.checkNames(s, ts.value)
+		if _, _, _, ok := f.typeSwitchIfaceName(s, ts); !ok {
+			what := "variable"
+			if strings.Contains(ts.src, "(") {
+				what = "value" // a call's result, a conversion's
+			}
+			if nm, ql, isPtr, named := f.exprNamedType(s, ts.expr); named {
+				t := nm.Src()
+				if ql.IsValid() {
+					t = ql.Src() + "." + t
+				}
+				if isPtr {
+					t = "*" + t
+				}
+				f.err(ts.operand.Position(), "invalid operation: %s (%s of type %s) is not an interface", ts.src, what, t)
+			} else if k, known := f.exprType(s, ts.expr); known && kindCategory(k) != catUnknown {
+				f.err(ts.operand.Position(), "invalid operation: %s (%s of type %s) is not an interface", ts.src, what, kindName(k))
+			}
+		}
+	}
 	if !ts.name.IsValid() {
 		return
 	}
@@ -5509,6 +5575,10 @@ func (f *File) checkTypeSwitchOperand(s, ss *Scope, ts typeSwitchGuard) {
 // typeSwitchIface names the interface type a type switch's operand holds, reporting
 // an operand that is not one.
 func (f *File) typeSwitchIface(s *Scope, ts typeSwitchGuard) (string, bool) {
+	if ts.isExpr {
+		written, _, _, ok := f.typeSwitchIfaceName(s, ts)
+		return written, ok
+	}
 	d, isVar := s.find(ts.operand.Src()).(*VarDeclaration)
 	if !isVar || !d.typeName.IsValid() {
 		return "", false // an unresolved operand: its own check reports it
@@ -5518,6 +5588,24 @@ func (f *File) typeSwitchIface(s *Scope, ts typeSwitchGuard) (string, bool) {
 		return "", false
 	}
 	return iface, true
+}
+
+// typeSwitchIfaceName is the interface an expression operand of a type switch has,
+// as written and as its name and qualifier: a field's, an element's, a call's
+// result's, as exprNamedType types each.
+func (f *File) typeSwitchIfaceName(s *Scope, ts typeSwitchGuard) (written string, nm, ql Token, ok bool) {
+	nm, ql, isPtr, named := f.exprNamedType(s, ts.expr)
+	if !named || isPtr {
+		return "", Token{}, Token{}, false
+	}
+	written = nm.Src()
+	if ql.IsValid() {
+		written = ql.Src() + "." + written
+	}
+	if _, isIface := f.interfaceMethodsNamed(s, written); !isIface {
+		return "", Token{}, Token{}, false
+	}
+	return written, nm, ql, true
 }
 
 // checkTypeCaseClause checks one clause of a type switch and declares the bound
@@ -5531,6 +5619,9 @@ func (f *File) typeSwitchIface(s *Scope, ts typeSwitchGuard) (string, bool) {
 func (f *File) checkTypeCaseClause(cs *Scope, ts typeSwitchGuard, clause Node, seen map[string]bool) {
 	iface, hasIface := f.typeSwitchIface(cs, ts)
 	if !hasIface {
+		if ts.isExpr {
+			return // checkTypeSwitchOperand reports it, once
+		}
 		if d, isVar := cs.find(ts.operand.Src()).(*VarDeclaration); isVar && d.typeName.IsValid() {
 			f.err(ts.operand.Position(), "invalid operation: %s (variable of type %s) is not an interface", ts.operand.Src(), d.declaredTypeName())
 		}
@@ -5574,7 +5665,7 @@ func (f *File) checkTypeCaseClause(cs *Scope, ts typeSwitchGuard, clause Node, s
 			seen["unsafe.Pointer"], unsafeCase = true, true
 			if set, _ := f.interfaceMethodsNamed(cs, iface); len(set) != 0 {
 				f.err(tok.Position(), "impossible type switch case: %s.(type) case unsafe.Pointer: unsafe.Pointer does not implement %s",
-					ts.operand.Src(), iface)
+					ts.src, iface)
 			}
 			continue
 		}
@@ -5600,7 +5691,7 @@ func (f *File) checkTypeCaseClause(cs *Scope, ts typeSwitchGuard, clause Node, s
 			base, baseQual, bound = Token{}, Token{}, &TypeNodePointer{TypeNode: tn}
 			if set, _ := f.interfaceMethodsNamed(cs, iface); len(set) != 0 {
 				f.err(f.tok(ex.Pos()).Position(), "impossible type switch case: %s.(type) case *%s: *%s does not implement %s (missing method %s)",
-					ts.operand.Src(), written, written, iface, slices.Sorted(maps.Keys(set))[0])
+					ts.src, written, written, iface, slices.Sorted(maps.Keys(set))[0])
 			}
 			continue
 		}
@@ -5641,7 +5732,7 @@ func (f *File) checkTypeCaseClause(cs *Scope, ts typeSwitchGuard, clause Node, s
 			continue
 		}
 		head := fmt.Sprintf("impossible type switch case: %s.(type) case *%s: *%s does not implement %s",
-			ts.operand.Src(), written, written, iface)
+			ts.src, written, written, iface)
 		switch {
 		case missing != "":
 			f.err(nm.Position(), "%s (missing method %s)", head, missing)
@@ -5667,7 +5758,12 @@ func (f *File) checkTypeCaseClause(cs *Scope, ts typeSwitchGuard, clause Node, s
 		vd.isPtr = true
 	default:
 		vd.typeName = f.tok(0)
-		if d, isVar := cs.find(ts.operand.Src()).(*VarDeclaration); isVar {
+		if ts.isExpr {
+			// The interface the expression has, as typeSwitchIfaceName named it.
+			if _, nm, ql, ok := f.typeSwitchIfaceName(cs, ts); ok {
+				vd.typeName, vd.typeQual = nm, ql
+			}
+		} else if d, isVar := cs.find(ts.operand.Src()).(*VarDeclaration); isVar {
 			// Bound at the operand's own type, qualifier and all: several types named
 			// (or none) leaves it the interface, and an imported one is only an
 			// interface under the name that says which package it is from.
@@ -10045,6 +10141,9 @@ func (f *File) qualifiedKind(s *Scope, qual Token, suffix Node) (Kind, bool) {
 	if !f.isImportQualifier(s, qual.Src()) {
 		return 0, false
 	}
+	if k, ok := f.qualifiedCallChainKind(qual, suffix); ok {
+		return k, true
+	}
 	member, ok := Token{}, false
 	n, calls, indexes, other := 0, 0, 0, 0
 	for c := range it(suffix.ast) {
@@ -10109,6 +10208,42 @@ func (f *File) qualifiedKind(s *Scope, qual Token, suffix Node) (Kind, bool) {
 		}
 	}
 	return 0, false
+}
+
+// qualifiedCallChainKind is the kind of what steps after a call of another
+// package's function reach, `pkg.Get().S`, `pkg.GetP().In.N`: the sole result's type
+// where it is declared, walked through the fields and indexes after the call. It
+// answered for the call alone, so a field read off one was asked nothing.
+func (f *File) qualifiedCallChainKind(qual Token, suffix Node) (Kind, bool) {
+	steps := slices.Collect(it(suffix.ast))
+	if len(steps) < 3 || steps[0].sym != Selector || steps[1].sym != CallSuffix {
+		return 0, false
+	}
+	if slices.ContainsFunc(steps[2:], func(st Node) bool { return st.sym == CallSuffix }) {
+		return 0, false
+	}
+	member, ok := f.selectorMember(steps[0])
+	if !ok {
+		return 0, false
+	}
+	home, ok := f.importedPkgScope(qual)
+	if !ok {
+		return 0, false
+	}
+	d, isFunc := home.Declarations[member.Src()].(*FuncDeclaration)
+	if !isFunc || d.FuncDecl == nil || d.FuncDecl.Type == nil {
+		return 0, false
+	}
+	res := f.flattenResults(home, d.FuncDecl.Type.Signature)
+	if len(res) != 1 || res[0].typeNode == nil {
+		return 0, false
+	}
+	hf := f.fileOfToken(d.Token())
+	t, ok := f.stepsType(typeAt{res[0].typeNode, home, hf}, steps[2:])
+	if !ok || t.f == nil {
+		return 0, false
+	}
+	return t.f.typeKind(t.s, t.tn)
 }
 
 // namedTypeToken returns the name of a named type, following pointers ("*T" and
@@ -12540,18 +12675,43 @@ func (f *File) fieldTypeNodeOf(s *Scope, head, field Token, indexed bool) TypeNo
 	if !ok {
 		return nil
 	}
-	owner := d.typeName
+	owner, qual := d.typeName, d.typeQual
 	if indexed {
-		owner = d.elemTypeName
+		owner, qual = d.elemTypeName, Token{} // an element's name is never another package's
 	}
 	if !owner.IsValid() {
+		return nil
+	}
+	// Another package's struct, `var q lib.Sq`: its declaration is there, and the
+	// field's type is spelt as this file writes it, `lib.Count` for lib's Count.
+	// Looked up by its bare name, the owner was nothing here -- so `var s string =
+	// q.S` for an int field was taken, through a value, a pointer, an assertion and
+	// a type switch alike -- or this package's own type of the name.
+	if qual.IsValid() {
+		td, home, ok := f.typeDeclNamed(s, qual.Src()+"."+owner.Src())
+		if !ok || td.TypeSpec == nil {
+			return nil
+		}
+		tn := structFieldType(td.TypeSpec.TypeNode, field)
+		if tn == nil {
+			return nil
+		}
+		if rq, ok := f.requalifiedType(home, qual, tn); ok {
+			return rq
+		}
 		return nil
 	}
 	td, ok := s.find(owner.Src()).(*TypeDeclaration)
 	if !ok || td.TypeSpec == nil {
 		return nil
 	}
-	st, ok := td.TypeSpec.TypeNode.(*TypeNodeStruct)
+	return structFieldType(td.TypeSpec.TypeNode, field)
+}
+
+// structFieldType is the written type of the field named like field of the struct
+// type tn, or nil when tn is no struct or has no such field.
+func structFieldType(tn TypeNode, field Token) TypeNode {
+	st, ok := tn.(*TypeNodeStruct)
 	if !ok {
 		return nil
 	}
@@ -16081,8 +16241,11 @@ func (f *File) exprNamedType(s *Scope, n Node) (name, qual Token, isPtr, ok bool
 	// explicitly typed pointer's are. Without this v had no type and a field read
 	// off it reached the emitter as a puzzle.
 	if _, tn, isAssert := f.typeAssertion(s, n); isAssert {
+		// The qualifier with it, `x.(*lib.T)`: dropped, the variable was of a T this
+		// package resolves -- its own of the name, or none -- and every field read
+		// off it was asked of that.
 		if base, hasBase := namedTypeToken(tn); hasBase && f.isPointerType(s, tn) {
-			return base, Token{}, true, true
+			return base, namedTypeQual(tn), true, true
 		}
 		return Token{}, Token{}, false, false
 	}

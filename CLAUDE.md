@@ -627,8 +627,9 @@ still design-only.
   `uint8` for a byte (typeAtMessage). On the board: the binding casts the
   interface's void* to a pointer to an array typedef, the cast nilHelperDef says the
   target's compiler lost, and it reads and writes right, int, string and struct
-  elements alike. Left: a type switch whose operand is no bare NAME, `switch
-  f().(type)`, has no case of it checked at all (typeSwitchParts).
+  elements alike. A type switch whose operand is no bare NAME, `switch
+  f().(type)`, had no case of it checked at all -- closed the next day, see A CASE
+  WAS A POSITION NOTHING WALKED.
 - **Two test suites.** `TestEmitCRun` builds each program in the `emitRunCases`
   table with the host C compiler and runs it against a pthread shim
   (`testdata/hostp2`). `TestOnBoard` builds the *same* table with the real
@@ -915,6 +916,14 @@ bare name and its results in this scope (it resolves and requalifies them now,
 requalifiedSig), and importedMethodResultType named the result of a struct's method
 only, so a `type Count int`'s went unchecked.
 **A new helper following type definitions goes through typeIdentDecl.**
+A FIELD of such a struct was the same row (2026-10-02): fieldTypeNodeOf looked the
+owner up by its bare name, so `var s string = q.N` for an int N of a `q lib.T` was
+taken -- through a value, a pointer, an assertion, a type switch and a call's result,
+9 of 16 programs -- or read main's own T of the name. The owner is resolved where it
+is declared and the field's type requalified for this file; an assertion's variable
+keeps the qualifier, `x.(*lib.T)` (exprNamedType had dropped it); and a field of
+another package's CALL, `lib.Get().S`, is walked from the result
+(qualifiedCallChainKind, stepsType).
 And a name of the UNIVERSE read off another package's declaration took that
 package's qualifier (2026-10-02, found by the type-switch probes): a function,
 variable or method of package a typed `any`, `error` or `int` gave what was declared
@@ -1066,7 +1075,18 @@ is walked as a value now (checkCaseValues) and compared with its tag
 (checkCasesAgainstTag). The trap met on the way: the checker takes a type switch
 apart only when its operand is a bare NAME, so `switch v := xs[i].(type)` had been
 read as an expression switch whose cases nobody looked at -- walked, its types were
-refused as values, and only the run corpus showed it (typeSwitchShaped). So: **when
+refused as values, and only the run corpus showed it (typeSwitchShaped). It was
+taken apart whole on 2026-10-02: typeSwitchParts keeps an operand that is no name as
+the expression it is (`typeSwitchGuard.expr`, rebuilt by factorWithoutLastStep), its
+interface asked of exprNamedType (typeSwitchIfaceName) and its names walked, so a
+duplicate case, a bound name misused or unused, an impossible case, a fallthrough and
+a non-interface operand -- `h.n.(type)`, `f().(type)` -- are refused in Go's terms
+where 10 of 32 such programs were taken and the rest refused by the emitter in its
+own; the emitter took two valid shapes it had refused, a parenthesised operand with
+steps, `(h.sh).(type)`, and any other in parentheses, `(<-ch).(type)`
+(parenTypeSwitchOperand). Following the row across a package found a field of
+ANOTHER package's struct typed by nothing (fieldTypeNodeOf, A PACKAGE BOUNDARY IS A
+ROW). So: **when
 a rule is written, ask which positions its walk never reaches**, and find them by
 writing mistakes INTO each position, not by reading the walk. Done afterwards for one
 mistake the checker knows, too many arguments to a call, written into 57 positions a

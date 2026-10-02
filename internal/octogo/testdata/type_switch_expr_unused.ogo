@@ -1,0 +1,19 @@
+// The name a type switch on an expression binds is unused when no clause uses it,
+// as on a variable; it was declared unchecked, and nothing asked.
+
+type Shape interface{ Area() int }
+
+type Sq struct{ s int }
+
+func (q *Sq) Area() int { return q.s }
+
+type H struct{ sh Shape }
+
+var h = H{&Sq{1}}
+
+func main() {
+	// ERROR "declared and not used: v"
+	switch v := (h.sh).(type) {
+	case *Sq:
+	}
+}

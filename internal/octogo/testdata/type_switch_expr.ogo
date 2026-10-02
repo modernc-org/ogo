@@ -1,0 +1,71 @@
+// COMPILE
+
+// A type switch on an operand that is no bare name -- a field, an element, a call's
+// result, a method's, a conversion, a parenthesised one, a received value -- takes
+// its cases and binds its name as one on a variable does.
+
+type Shape interface{ Area() int }
+
+type Sq struct{ s int }
+
+func (q *Sq) Area() int { return q.s * q.s }
+
+type H struct{ sh Shape }
+
+func (h *H) get() Shape { return h.sh }
+
+type W struct{ in H }
+
+var gq = Sq{3}
+
+var h = H{&gq}
+
+var w = W{H{&gq}}
+
+var shapes = [2]Shape{&gq, &gq}
+
+var ch chan Shape
+
+func pick(i int) Shape { return shapes[i] }
+
+func main() {
+	switch v := h.sh.(type) {
+	case *Sq:
+		v.s = 4
+	case nil:
+	}
+	switch v := shapes[1].(type) {
+	case *Sq, nil:
+		_ = v
+	}
+	switch v := pick(0).(type) {
+	case Shape:
+		_ = v.Area()
+	}
+	switch v := h.get().(type) {
+	default:
+		_ = v.Area()
+	}
+	switch v := (h.sh).(type) {
+	case *Sq:
+		_ = v.s + 1
+	}
+	switch v := w.in.sh.(type) {
+	case *Sq:
+		var n int = v.s
+		_ = n
+	}
+	switch v := any(&gq).(type) {
+	case *Sq:
+		_ = v.Area()
+	case *int:
+		*v++
+	}
+	switch v := (<-ch).(type) {
+	case *Sq:
+		_ = v.s
+	}
+	switch pick(1).(type) {
+	case *Sq:
+	}
+}

@@ -1,0 +1,54 @@
+// What Go refuses of a type switch on an operand that is no bare name, refused in
+// its terms: none of its cases was checked, nor its bound name.
+
+type Shape interface{ Area() int }
+
+type Sq struct{ s int }
+
+func (q *Sq) Area() int { return q.s * q.s }
+
+type Other struct{ n int }
+
+type H struct {
+	sh Shape
+	n  int
+}
+
+var gq = Sq{3}
+
+var h = H{&gq, 1}
+
+var shapes = [2]Shape{&gq, &gq}
+
+func pick(i int) Shape { return shapes[i] }
+
+func f() int { return 1 }
+
+func main() {
+	switch h.sh.(type) {
+	// ERROR "impossible type switch case: h.sh.\(type\) case \*Other: \*Other does not implement Shape"
+	case *Other:
+	}
+	switch shapes[0].(type) {
+	// ERROR "duplicate case \*Sq in type switch"
+	case *Sq, *Sq:
+	}
+	switch v := pick(0).(type) {
+	case *Sq:
+		// ERROR "cannot use v.s of type int as type string in variable declaration"
+		var t string = v.s
+		_ = t
+	}
+	// ERROR "invalid operation: h.n \(variable of type int\) is not an interface"
+	switch h.n.(type) {
+	}
+	// ERROR "invalid operation: f\(\) \(value of type int\) is not an interface"
+	switch f().(type) {
+	}
+	switch pick(1).(type) {
+	case *Sq:
+		// ERROR "cannot fallthrough in type switch"
+		fallthrough
+	default:
+	}
+}

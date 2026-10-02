@@ -27371,6 +27371,101 @@ func main() {
 		want: "5\n",
 	},
 	{
+		// A type switch on an operand that is no bare name: a field, a field of a
+		// field, an element, a call's result -- evaluated once, the counter says --
+		// a method's, a conversion, a parenthesised field, which was refused until
+		// 2026-10-02, and a received value, refused as well. Diffed against Go.
+		name: "a type switch on a field, an element, a call and a received value",
+		src: `type Shape interface{ Area() int }
+
+type Sq struct{ s int }
+
+func (q *Sq) Area() int { return q.s * q.s }
+
+type Rect struct{ w, h int }
+
+func (r *Rect) Area() int { return r.w * r.h }
+
+type H struct{ sh Shape }
+
+func (x *H) get() Shape { return x.sh }
+
+type W struct{ in H }
+
+var gq = Sq{3}
+
+var gr = Rect{2, 5}
+
+var shapes = [2]Shape{&gq, &gr}
+
+var h = H{&gr}
+
+var w = W{H{&gq}}
+
+var calls int
+
+var ch chan Shape
+
+func pick(i int) Shape {
+	calls++
+	return shapes[i]
+}
+
+func kind(s Shape) string {
+	switch v := s.(type) {
+	case *Sq:
+		return "sq"
+	case *Rect:
+		_ = v
+		return "rect"
+	}
+	return "?"
+}
+
+func main() {
+	switch v := h.sh.(type) {
+	case *Rect:
+		v.w = 4
+		println("field", gr.w)
+	}
+	switch v := w.in.sh.(type) {
+	case *Sq:
+		println("nested", v.s)
+	}
+	for k := range shapes {
+		switch v := shapes[k].(type) {
+		case *Sq:
+			println("elem sq", v.s)
+		case *Rect:
+			println("elem rect", v.Area())
+		}
+	}
+	switch v := pick(1).(type) {
+	case *Sq, *Rect:
+		println("call", v.Area(), calls)
+	}
+	switch v := h.get().(type) {
+	case *Rect:
+		println("method", v.h)
+	}
+	switch v := any(&gq).(type) {
+	case *Sq:
+		println("conv", v.s)
+	}
+	switch v := (h.sh).(type) {
+	case *Rect:
+		println("paren", v.w, kind(v))
+	}
+	go func() { ch <- &gq }()
+	switch v := (<-ch).(type) {
+	case *Sq:
+		println("recv", v.Area())
+	}
+}
+`,
+		want: "field 4\nnested 3\nelem sq 3\nelem rect 20\ncall 20 1\nmethod 5\nconv 3\nparen 4 rect\nrecv 9\n",
+	},
+	{
 		// A type switch and an assertion on a pointer to a predeclared type or to a
 		// type written out -- `case *int:`, `case *[3]int:`, `case *[]int:`,
 		// `i.(*[2]P)` -- and a defined array type, `case *Row:`, each refused until

@@ -28560,7 +28560,24 @@ func (e *emitter) typeSwitchGuard(guardAST []int32) (ts typeSwitch, ok bool) {
 	}
 	base, prefix, isTypeSwitch := e.typeSwitchOperand(value.ast)
 	if !isTypeSwitch {
-		return ts, false
+		// `switch v := (<-ch).(type)`: any other operand in parentheses, a receive
+		// above all, bound by its own text and type as a chain's is below.
+		inner, isParen := e.parenTypeSwitchOperand(value.ast)
+		if !isParen {
+			return ts, false
+		}
+		ctype, typed := e.inferCType(inner)
+		if !typed || !e.isIfaceCType(ctype) {
+			return ts, false
+		}
+		if g.hasName {
+			if ts.name, ok = e.exprIdent(g.name.ast); !ok {
+				e.fail("a type switch binds a name")
+				return ts, false
+			}
+		}
+		ts.operand, ts.iface, ts.bindText = e.newTmp(), ctype, e.exprC(inner)
+		return ts, true
 	}
 	if g.hasName {
 		if ts.name, ok = e.exprIdent(g.name.ast); !ok {
@@ -28590,6 +28607,30 @@ func (e *emitter) typeSwitchGuard(guardAST []int32) (ts typeSwitch, ok bool) {
 	return ts, true
 }
 
+// parenTypeSwitchOperand recognises "(x).(type)", answering x: the parentheses and
+// nothing after them but the ".(type)".
+func (e *emitter) parenTypeSwitchOperand(ast []int32) ([]int32, bool) {
+	fac, isFac := e.soleFactorNode(ast)
+	if !isFac {
+		return nil, false
+	}
+	kids := slices.Collect(it(fac.ast))
+	if len(kids) != 4 || kids[0].sym != 0 || e.f.ch(kids[0].tok) != LPAREN || kids[1].sym != Expression ||
+		kids[2].sym != 0 || e.f.ch(kids[2].tok) != RPAREN || kids[3].sym != FactorSuffix {
+		return nil, false
+	}
+	steps := slices.Collect(it(kids[3].ast))
+	if len(steps) != 1 || steps[0].sym != Selector {
+		return nil, false
+	}
+	for c := range it(steps[0].ast) {
+		if c.sym == 0 && e.f.ch(c.tok) == TYPE {
+			return kids[1].ast, true
+		}
+	}
+	return nil, false
+}
+
 // typeSwitchOperand splits an "x.(type)" expression into the base identifier and
 // the suffix steps that reach the operand -- everything before the ".(type)"
 // selector, which is empty when the operand is the base itself. A guard that does
@@ -28605,6 +28646,17 @@ func (e *emitter) typeSwitchOperand(ast []int32) (base string, prefix []Node, ok
 	// `switch (v).(type)`: the parentheses name nothing, and with them the guard read
 	// as an ordinary switch on a field of v that does not exist.
 	kids := e.unparenKids(slices.Collect(it(nodes[0].ast)))
+	// `switch (h.sh).(type)`: parentheses around an operand with steps of its own,
+	// which unparenKids leaves -- it splices no two suffix runs. With nothing after
+	// them but the ".(type)", the operand is what they hold: its steps lead.
+	if len(kids) == 4 && kids[0].sym == 0 && e.f.ch(kids[0].tok) == LPAREN && kids[1].sym == Expression &&
+		kids[2].sym == 0 && e.f.ch(kids[2].tok) == RPAREN && kids[3].sym == FactorSuffix {
+		outer := slices.Collect(it(kids[3].ast))
+		inner := e.unparenKids(e.factorKids(kids[1].ast))
+		if len(outer) == 1 && len(inner) == 2 && inner[0].sym == 0 && e.f.ch(inner[0].tok) == IDENT && inner[1].sym == FactorSuffix {
+			kids = []Node{inner[0], {sym: FactorSuffix, ast: append(slices.Clone(inner[1].ast), encodeNode(outer[0].sym, outer[0].ast)...)}}
+		}
+	}
 	if len(kids) != 2 || kids[0].sym != 0 || e.f.ch(kids[0].tok) != IDENT || kids[1].sym != FactorSuffix {
 		return "", nil, false
 	}

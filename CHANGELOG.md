@@ -68,6 +68,18 @@ shipped section tells a reader on that version that they have behaviour they do 
   is not an interface", as was `var j any = i`, and `var l Local = a.Count()` for a
   `type Local int` of main's was taken.
 
+- **A type switch on an operand that is no bare name had none of its cases
+  checked**, `switch v := h.sh.(type)`, `xs[i].(type)`, `f().(type)`: a duplicate
+  case, the bound name used as another type or not at all, a fallthrough and an
+  operand that is no interface were taken or refused only in the C backend's terms.
+  And two such switches Go takes were refused: a parenthesised operand with steps of
+  its own, `switch v := (h.sh).(type)`, and a received value, `switch v :=
+  (<-ch).(type)`.
+- **A field of another package's struct had no type.** `var s string = q.N` for an
+  int field N of a `q lib.T` was taken -- through a value, a pointer, an assertion,
+  a type switch and a call's result, `lib.Get().N` -- or was typed as the field of
+  main's own type of the name.
+
 ### Behaviour changes
 
 - **Mistakes with a pointer to an array are refused** (under Fixed, above): `var s
@@ -82,6 +94,10 @@ shipped section tells a reader on that version that they have behaviour they do 
   result, directly or through a variable, and an `any` or `error` result used as a
   number or a string. Also refused now, beside the type switch above: `case *byte,
   *uint8:`, a case named twice in Go's terms, a byte being a uint8.
+- **Mistakes in a type switch on an expression, and with another package's struct
+  fields, are refused** (under Fixed, above): a duplicate or impossible case, a
+  fallthrough, the bound name unused or used as another type, a non-interface
+  operand, and a field of another package's struct stored or read as another type.
 - **A value of the wrong kind for another package's defined type is refused**
   (under Fixed, above): `var c lib.Count = "x"`, a string returned or passed as
   one, an int into a `lib.Name` string type or its field, `if c {` for an int one,

@@ -26,6 +26,11 @@ import (
 // other way (homeQual): `a.Box()` returning `any` gave its variable the type
 // "a.any", which nothing took for an interface, and `a.Num()` returning int one
 // of "a.int", which passed where main's own defined type over int was wanted.
+//
+// A FIELD of another package's struct was the same row (fieldTypeNodeOf): looked up
+// by the owner's bare name, it had no type -- `var s string = q.N` for an int N was
+// taken through a value, a pointer, an assertion, a type switch and a call -- or the
+// type of main's own field of the name.
 func TestCheckQualifiedTypes(t *testing.T) {
 	cc := ""
 	for _, c := range []string{"cc", "gcc", "clang"} {
@@ -325,6 +330,69 @@ func main() {
 	println(s)
 }
 `, "cannot use e as string value in variable declaration: it is an interface", true},
+		{"fields of another package's struct beside main's of the name", `import "a"
+
+type T struct{ N string }
+
+func main() {
+	var q a.T
+	q.N = 5
+	var m T
+	m.N = "m"
+	p := a.Qp()
+	var i any = a.Qp()
+	r := i.(*a.T)
+	var n int = q.N + p.N + r.N + a.Qp().N
+	switch v := a.Box().(type) {
+	case *int:
+		n += *v
+	}
+	println(n, m.N)
+}
+`, "14 m\n", false},
+		{"a field of another package's struct into a string", `import "a"
+
+func main() {
+	var q a.T
+	var s string = q.N
+	println(s)
+}
+`, "cannot use q.N of type int as type string in variable declaration", true},
+		{"a field through another package's pointer into a string", `import "a"
+
+func main() {
+	p := a.Qp()
+	var s string = p.N
+	println(s)
+}
+`, "cannot use p.N of type int as type string in variable declaration", true},
+		{"a field through an assertion to another package's type", `import "a"
+
+func main() {
+	var i any = a.Qp()
+	p := i.(*a.T)
+	var s string = p.N
+	println(s)
+}
+`, "cannot use p.N of type int as type string in variable declaration", true},
+		{"a field of another package's call result into a string", `import "a"
+
+func main() {
+	var s string = a.Qp().N
+	println(s)
+}
+`, "cannot use a.Qp().N of type int as type string in variable declaration", true},
+		{"a field through a type switch on another package's call", `import "a"
+
+func main() {
+	var i any = a.Qp()
+	switch v := i.(type) {
+	case *a.T:
+		var s string = v.N
+		println(s)
+	}
+}
+`, "cannot use v.N of type int as type string in variable declaration", true},
 		{"a string sent on an int channel type", `import "a"
 
 func send(c a.Ch) { c <- "x" }
