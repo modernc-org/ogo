@@ -1,0 +1,65 @@
+// COMPILE
+
+// A type switch and an assertion on a pointer to a predeclared type, to a type
+// written out and to a defined array type, which an interface holds as it holds any
+// pointer; the address of an array goes into one too. A clause naming one such type
+// binds its name at that pointer type, and an assertion's variable takes it whole.
+
+type Row [3]int
+
+func (r *Row) Sum() int { return r[0] }
+
+type Summer interface{ Sum() int }
+
+var x int
+
+var u byte
+
+var a [3]int
+
+var xs []int
+
+var r Row
+
+func show(i any) int {
+	switch v := i.(type) {
+	case *int:
+		*v++
+		return *v
+	case *uint8:
+		return int(*v)
+	case *[3]int:
+		v[2] = len(v)
+		for k, e := range v {
+			v[k] = e + 1
+		}
+		return v[0]
+	case *[]int:
+		*v = append(*v, 1)
+		return (*v)[0]
+	case *Row:
+		return v.Sum()
+	case *[2]string, *[4]byte:
+		_ = v
+	case nil:
+	}
+	return -1
+}
+
+func main() {
+	var i any = &a
+	_ = show(i)
+	_ = show(&x)
+	_ = show(&u)
+	_ = show(&xs)
+	_ = show(&r)
+	p, ok := i.(*[3]int)
+	var n int = p[0]
+	q := i.(*[3]int)
+	n += q[1]
+	b, ok2 := any(&u).(*byte)
+	var c uint8 = *b
+	var s Summer = &r
+	_, _, _, _ = n, ok, ok2, c
+	_ = s
+}

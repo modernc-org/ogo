@@ -11,6 +11,7 @@ import (
 	"go/token"
 	"io/fs"
 	"iter"
+	"maps"
 	"math"
 	"slices"
 	"strconv"
@@ -4949,6 +4950,11 @@ func (f *File) namedIsSlice(s *Scope, name, qual Token) bool {
 // one below it would answer wrongly or not at all.
 func (f *File) inferVarFrom(s *Scope, vd *VarDeclaration, init Node) {
 	vd.init, vd.declScope = init, s
+	// `p := x.(*[4]uint32)`, `p := x.(*int)`: the asserted pointer type, whole.
+	if tn, ok := f.assertedPtrLit(s, init); ok {
+		vd.takeType(f.typedVar(s, vd.token, tn))
+		return
+	}
 	switch ek, hasEk, tn, tq, isPtr := f.addressOfInfo(s, init); {
 	case isPtr:
 		// `p := &x`: p is a pointer to x's type, recorded like `var p *T` so
@@ -5534,6 +5540,10 @@ func (f *File) checkTypeCaseClause(cs *Scope, ts typeSwitchGuard, clause Node, s
 	base, baseQual := Token{}, Token{}
 	single := len(exprs) == 1 && !isDefault
 	unsafeCase := false
+	// bound is the type a single-type clause binds its name at where a name does
+	// not say it all: a pointer to a predeclared type, `case *int:`, and to a type
+	// written out, `case *[4]uint32:`. Bound by base alone, `*v` had no type.
+	var bound TypeNode
 	// caseName renders a case's type as WRITTEN, "geo.Quad" and not the bare "Quad"
 	// the token holds: what follows asks the method-set questions BY NAME, and the
 	// bare one resolves in this package rather than where the type lives.
@@ -5568,6 +5578,32 @@ func (f *File) checkTypeCaseClause(cs *Scope, ts typeSwitchGuard, clause Node, s
 			}
 			continue
 		}
+		// `case *[4]uint32:` and `case *[]byte:` -- a pointer to a type written out,
+		// which an interface holds as it holds any pointer. It has no methods.
+		if lit, isLit := f.starTypeLiteral(cs, ex); isLit {
+			if slices.ContainsFunc(slices.Collect(it(lit.ast)), func(c Node) bool { return c.sym == 0 && f.ch(c.tok) == ELLIPSIS }) {
+				f.err(f.tok(ex.Pos()).Position(), "invalid use of [...] array (outside a composite literal)")
+				continue
+			}
+			tn := f.typ(cs, lit)
+			if tn == nil {
+				continue // reported where the type was resolved
+			}
+			written := f.typeAtMessage(typeAt{tn, cs, f})
+			if written == "" || strings.HasPrefix(written, "a ") || strings.HasPrefix(written, "an ") {
+				continue // a shape with no spelling to compare
+			}
+			if seen["*"+written] {
+				f.err(f.tok(ex.Pos()).Position(), "duplicate case *%s in type switch", written)
+			}
+			seen["*"+written] = true
+			base, baseQual, bound = Token{}, Token{}, &TypeNodePointer{TypeNode: tn}
+			if set, _ := f.interfaceMethodsNamed(cs, iface); len(set) != 0 {
+				f.err(f.tok(ex.Pos()).Position(), "impossible type switch case: %s.(type) case *%s: *%s does not implement %s (missing method %s)",
+					ts.operand.Src(), written, written, iface, slices.Sorted(maps.Keys(set))[0])
+			}
+			continue
+		}
 		nm, ql, isNil, ok := f.caseTypeName(cs, ex)
 		switch {
 		case !ok:
@@ -5586,11 +5622,17 @@ func (f *File) checkTypeCaseClause(cs *Scope, ts typeSwitchGuard, clause Node, s
 			continue
 		}
 		written := caseName(nm, ql)
+		base, baseQual, bound = nm, ql, nil
+		if _, isPre := cs.find(nm.Src()).(*PredeclaredType); isPre && !ql.IsValid() {
+			bound = &TypeNodePointer{TypeNode: &TypeNodeIdent{Name: nm}}
+			// Spelled as Go spells it, `uint8` for a byte: one type has one key, and
+			// `case *byte, *uint8:` is a duplicate.
+			written = f.typeAtMessage(typeAt{&TypeNodeIdent{Name: nm}, cs, f})
+		}
 		if seen[written] {
 			f.err(nm.Position(), "duplicate case *%s in type switch", written)
 		}
 		seen[written] = true
-		base, baseQual = nm, ql
 		if _, isIface := f.interfaceMethodsNamed(cs, written); isIface {
 			continue // interface to interface, which the emitter reports for now
 		}
@@ -5616,6 +5658,8 @@ func (f *File) checkTypeCaseClause(cs *Scope, ts typeSwitchGuard, clause Node, s
 	switch {
 	case single && unsafeCase:
 		vd.kind, vd.hasKind = PredeclaredUnsafePointer, true
+	case single && bound != nil:
+		vd = f.typedVar(cs, ts.name, bound)
 	case single && base.IsValid():
 		// The qualifier travels with the name, or the bound variable carries a type
 		// this package cannot resolve and every field read off it goes unchecked.
@@ -5635,6 +5679,78 @@ func (f *File) checkTypeCaseClause(cs *Scope, ts typeSwitchGuard, clause Node, s
 	if err := cs.add(vd); err != nil {
 		f.err(ts.name.Position(), "%v", err)
 	}
+}
+
+// typedVar is a variable named tok of the written type tn, resolved in s, carrying
+// what every rule asks of a declaration's type, as a parameter's does.
+func (f *File) typedVar(s *Scope, tok Token, tn TypeNode) *VarDeclaration {
+	vd := &VarDeclaration{declaration: declaration{token: tok}, declType: tn, declScope: s}
+	vd.kind, vd.hasKind = f.typeKind(s, tn)
+	vd.isPtr = f.isPointerType(s, tn)
+	vd.typeName, _ = namedTypeToken(tn)
+	vd.typeQual = namedTypeQual(tn)
+	vd.typeName, vd.typeQual = f.canonicalType(s, vd.typeName, vd.typeQual)
+	vd.elemKind, vd.hasElemKind = f.elemTypeKind(s, tn)
+	vd.chanElemKind, vd.hasChanElemKind, vd.isChan = f.chanElem(s, tn)
+	vd.chanElemName = f.chanElemTypeName(s, tn)
+	vd.chanElemQual, vd.chanElemPtr = f.chanElemTypeInfo(s, tn)
+	vd.elemTypeName = f.elemTypeName(s, tn)
+	vd.elemTypeNode = f.arrayElemTypeNode(tn)
+	vd.funcSig = f.funcSig(s, tn)
+	vd.isFunc = vd.funcSig != nil
+	return vd
+}
+
+// takeType gives vd the type t carries, as typedVar resolved it, keeping vd's own
+// name, role and initializer.
+func (vd *VarDeclaration) takeType(t *VarDeclaration) {
+	vd.kind, vd.hasKind, vd.isPtr = t.kind, t.hasKind, t.isPtr
+	vd.typeName, vd.typeQual = t.typeName, t.typeQual
+	vd.elemKind, vd.hasElemKind = t.elemKind, t.hasElemKind
+	vd.chanElemKind, vd.hasChanElemKind, vd.isChan = t.chanElemKind, t.hasChanElemKind, t.isChan
+	vd.chanElemName, vd.chanElemQual, vd.chanElemPtr = t.chanElemName, t.chanElemQual, t.chanElemPtr
+	vd.elemTypeName, vd.elemTypeNode = t.elemTypeName, t.elemTypeNode
+	vd.funcSig, vd.isFunc = t.funcSig, t.isFunc
+	vd.declType, vd.declScope = t.declType, t.declScope
+}
+
+// assertedPtrLit is the type of an assertion to a pointer whose base type has no
+// name of the program's -- `x.(*int)`, `x.(*[4]uint32)`, `x.(*[]byte)` -- which a
+// variable declared from it takes whole: bound by the base's name alone, as a
+// `*T`'s is, `*p` and `p[i]` had no type, and `p` none at all for a type written out.
+func (f *File) assertedPtrLit(s *Scope, n Node) (TypeNode, bool) {
+	// Read by shape, so the operand may be anything -- `lib.B.(*int)`, `xs[i].(*int)`,
+	// `f().(*[4]byte)` -- and resolved quietly: the assertion's own check reports
+	// what is wrong with the type, and this is the same question asked again.
+	typ, isAssert := f.assertionTypeNode(n)
+	if !isAssert {
+		return nil, false
+	}
+	n0 := len(f.errList)
+	tn := f.typ(s, typ)
+	f.errList = f.errList[:n0]
+	if !f.ptrToUnnamed(s, tn) {
+		return nil, false
+	}
+	return tn, true
+}
+
+// ptrToUnnamed reports a pointer type whose base type has no name of a program's:
+// a predeclared type, `*int`, or one written out, `*[4]uint32` and `*[]byte`. Such
+// a pointer has no methods.
+func (f *File) ptrToUnnamed(s *Scope, tn TypeNode) bool {
+	p, isPtr := tn.(*TypeNodePointer)
+	if !isPtr {
+		return false
+	}
+	switch x := p.TypeNode.(type) {
+	case *TypeNodeArray, *TypeNodeSlice:
+		return true
+	case *TypeNodeIdent:
+		_, isPre := s.find(x.Name.Src()).(*PredeclaredType)
+		return isPre && !x.Qualifier.IsValid()
+	}
+	return false
 }
 
 // caseUnsafePointer reports a type switch case that is `unsafe.Pointer`, with the
@@ -7562,8 +7678,11 @@ func (f *File) checkAssignment(s *Scope, head, postfix Node) {
 	// "v, ok := x.(T)" is two names from one expression, which inferKinds does not
 	// cover: v carries the asserted type and ok is a bool.
 	assertBase, assertQual, assertOK := Token{}, Token{}, false
+	var assertLit TypeNode // `p, ok := x.(*[4]uint32)`: the type p takes whole (assertedPtrLit)
 	if len(rhs) == 1 && len(lhs) == 2 {
-		if _, tn, isAssert := f.typeAssertion(s, rhs[0]); isAssert {
+		if tn, isLit := f.assertedPtrLit(s, rhs[0]); isLit {
+			assertLit, assertOK = tn, true
+		} else if _, tn, isAssert := f.typeAssertion(s, rhs[0]); isAssert {
 			assertBase, assertOK = namedTypeToken(tn)
 			// The qualifier travels with the name: `q, ok := s.(*geo.Quad)` binds a q
 			// of geo's type, and without it q carries a bare "Quad" this package
@@ -7630,11 +7749,13 @@ func (f *File) checkAssignment(s *Scope, head, postfix Node) {
 		}
 		vd := &VarDeclaration{declaration: declaration{token: id}}
 		if assertOK {
-			switch i {
-			case 0:
+			switch {
+			case i == 0 && assertLit != nil:
+				vd.takeType(f.typedVar(s, id, assertLit))
+			case i == 0:
 				vd.typeName, vd.typeQual = f.canonicalType(s, assertBase, assertQual)
 				vd.isPtr = true
-			case 1:
+			case i == 1:
 				vd.kind, vd.hasKind = PredeclaredBool, true
 			}
 		}
@@ -8708,6 +8829,16 @@ func (f *File) checkTypeAssertion(s *Scope, id Token, suffix Node) bool {
 		f.err(id.Position(), "invalid operation: %s (variable of type %s) is not an interface", id.Src(), iface)
 		return true
 	}
+	// A pointer to a type written out, `x.(*[4]uint32)`, or to a predeclared one,
+	// `x.(*int)`: no methods, so only an interface asking for none can hold one.
+	if f.ptrToUnnamed(s, tn) {
+		if set, _ := f.interfaceMethodsNamed(s, iface); len(set) != 0 {
+			written := f.typeAtMessage(typeAt{tn, s, f})
+			f.err(id.Position(), "impossible type assertion: %s.(%s): %s does not implement %s (missing method %s)",
+				id.Src(), written, written, iface, slices.Sorted(maps.Keys(set))[0])
+		}
+		return true
+	}
 	base, hasBase := namedTypeToken(tn)
 	if !hasBase {
 		return true // an unnamed asserted type: nothing to check it against
@@ -8769,28 +8900,35 @@ func (f *File) checkTypeAssertion(s *Scope, id Token, suffix Node) bool {
 // the assertion's, and answering yes for it would admit a comma-ok form that means
 // nothing.
 func (f *File) isTypeAssertion(n Node) bool {
+	_, ok := f.assertionTypeNode(n)
+	return ok
+}
+
+// assertionTypeNode is the Type an expression ending in a type assertion asserts,
+// whatever the operand: isTypeAssertion's reading, with the node it found.
+func (f *File) assertionTypeNode(n Node) (Node, bool) {
 	fac, isFac := f.soleFactor(n)
 	if !isFac {
-		return false
+		return Node{}, false
 	}
 	// Whatever the operand is -- a name, `(v)`, a literal's element -- the assertion
 	// is the last step of the suffix that ends the factor. Only a name was looked
 	// under, so `p, ok := (v).(*P)` was "2 variables but 1 value".
 	kids := slices.Collect(it(fac.ast))
 	if len(kids) < 2 || kids[len(kids)-1].sym != FactorSuffix {
-		return false
+		return Node{}, false
 	}
 	steps := slices.Collect(it(kids[len(kids)-1].ast))
 	last := len(steps) - 1
 	if last < 0 || steps[last].sym != Selector {
-		return false
+		return Node{}, false
 	}
 	for c := range it(steps[last].ast) {
 		if c.sym == Type {
-			return true
+			return c, true
 		}
 	}
-	return false
+	return Node{}, false
 }
 
 func (f *File) soleFactor(n Node) (Node, bool) {
@@ -11967,6 +12105,23 @@ func (f *File) checkImplements(s *Scope, ifaceName string, value Node, what stri
 		return
 	}
 	d, ok := s.find(id.Src()).(*VarDeclaration)
+	if ok && !d.typeName.IsValid() && len(set) != 0 {
+		// A pointer to a type written out, `&a` of a [3]int a or a `p := &a`: no
+		// methods, so no interface asking for some holds it. Asked of nobody here,
+		// it reached the emitter, which said so in C's names.
+		if t, known := f.varTypeAt(d); known {
+			tn, shown, mode := t.tn, id.Src(), "variable"
+			if valueIsPtr {
+				tn, shown, mode = &TypeNodePointer{TypeNode: t.tn}, "&"+id.Src(), "value"
+			}
+			if f.ptrToUnnamed(t.s, tn) {
+				written := t.f.typeAtMessage(typeAt{tn, t.s, t.f})
+				f.err(f.tok(value.Pos()).Position(), "cannot use %s (%s of type %s) as %s value in %s: %s does not implement %s (missing method %s)",
+					shown, mode, written, ifaceName, what, written, ifaceName, slices.Sorted(maps.Keys(set))[0])
+			}
+		}
+		return
+	}
 	if !ok || !d.typeName.IsValid() {
 		return
 	}
@@ -15604,7 +15759,7 @@ func (f *File) qualifiedValueNamedType(s *Scope, id Token, fac Node) (Token, Tok
 			// type, as this package's typed constants are (exprNamedType).
 			if len(steps) == 1 && d.ConstSpec != nil && d.ConstSpec.TypeNode != nil {
 				if nm, named := namedTypeToken(d.ConstSpec.TypeNode); named && !namedTypeQual(d.ConstSpec.TypeNode).IsValid() {
-					return nm, id, false, true
+					return nm, homeQual(home, nm, id), false, true
 				}
 			}
 			return Token{}, Token{}, false, false
@@ -15615,13 +15770,13 @@ func (f *File) qualifiedValueNamedType(s *Scope, id Token, fac Node) (Token, Tok
 				if !d.typeName.IsValid() {
 					return Token{}, Token{}, false, false
 				}
-				return d.typeName, id, d.isPtr, true
+				return d.typeName, homeQual(home, d.typeName, id), d.isPtr, true
 			case len(steps) == 2 && steps[1].sym == Index:
 				// `pkg.Arr[i]`: the element's type.
 				if !d.elemTypeName.IsValid() {
 					return Token{}, Token{}, false, false
 				}
-				return d.elemTypeName, id, false, true
+				return d.elemTypeName, homeQual(home, d.elemTypeName, id), false, true
 			case len(steps) == 2 && steps[1].sym == Selector && d.typeName.IsValid():
 				// `pkg.V.F`: the field's type, read off the variable's struct.
 				member, hasMember := f.selectorMember(steps[1])
@@ -15632,7 +15787,7 @@ func (f *File) qualifiedValueNamedType(s *Scope, id Token, fac Node) (Token, Tok
 				if !named {
 					return Token{}, Token{}, false, false
 				}
-				return tn, id, false, true
+				return tn, homeQual(home, tn, id), false, true
 			case len(steps) == 3 && steps[1].sym == Selector && steps[2].sym == CallSuffix && d.typeName.IsValid():
 				// `pkg.V.M()`: the method's single result.
 				member, hasMember := f.selectorMember(steps[1])
@@ -15655,11 +15810,28 @@ func (f *File) qualifiedValueNamedType(s *Scope, id Token, fac Node) (Token, Tok
 			if !named {
 				return Token{}, Token{}, false, false
 			}
-			return tn, id, f.isPointerType(home, res[0].typeNode), true
+			return tn, homeQual(home, tn, id), f.isPointerType(home, res[0].typeNode), true
 		}
 		return Token{}, Token{}, false, false
 	}
 	return Token{}, Token{}, false, false
+}
+
+// homeQual is the qualifier a type name read off another package's declaration takes
+// here, home being that package's scope: the import's for a name the package
+// declares, and none for a predeclared one, `any`, `error` or `int`, which is the
+// universe's in both. Qualified anyway, a variable given another package's `any`
+// result was of a type "a.any", which no rule took for an interface: `i :=
+// lib.Box(); i.(*int)` was "not an interface", and `var j any = i` asked for &i.
+func homeQual(home *Scope, nm, qual Token) Token {
+	if home.Declarations[nm.Src()] != nil {
+		return qual
+	}
+	sc, _ := home.find2(nm.Src())
+	if sc != nil && sc.Kind == UniverseScope {
+		return Token{}
+	}
+	return qual
 }
 
 // importedMethodResultType names the single result of a method of the imported type
@@ -15699,7 +15871,7 @@ func (f *File) importedMethodResultType(qual, typeName, member Token) (Token, To
 	if !named {
 		return Token{}, Token{}, false, false
 	}
-	return tn, qual, f.isPointerType(home, res[0].typeNode), true
+	return tn, homeQual(home, tn, qual), f.isPointerType(home, res[0].typeNode), true
 }
 
 // operationNamedType names the type of a value an OPERATION produces from operands
@@ -18137,6 +18309,10 @@ func (f *File) typeAtMessage(t typeAt) string {
 		case *TypeNodeIdent:
 			if x.Qualifier.IsValid() || pkg == nil {
 				return "", false
+			}
+			// A predeclared type by the name Go prints it with, `uint8` for a byte.
+			if k, isPre := underlyingKind(typeAt{x, t.s, t.f}); isPre && kindCategory(k) != catUnknown {
+				return kindName(k), true
 			}
 			return f.qualifiedTypeName(pkg, x.Name.Src()), true
 		case *TypeNodePointer:

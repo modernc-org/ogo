@@ -579,8 +579,10 @@ still design-only.
   lifetime holes older than it, both in the summaries: a callee storing `(*T)(p)`
   (ptrConvShape; frameRefOf saw through the conversion, the summaries did not), and
   one storing into ANOTHER package's variable, `lib.G = p` (outlivesByName). And two
-  loud gaps, left: a type switch's `case *int:`, a pointer to a predeclared type,
-  and a parenthesised qualified conversion, `(lib.T)(x)`.
+  loud gaps: a type switch's `case *int:`, a pointer to a predeclared type -- closed
+  2026-10-02, see below -- and a parenthesised qualified conversion, `(lib.T)(x)`,
+  left: the emitter peels `(x)` only where x has no suffix of its own
+  (unparenKidsOnce), and the checker's parenNameConv reads a bare name.
   A conversion to a POINTER to a type written out, `(*[16]uint32)(unsafe.Pointer(a))`
   and `(*[]T)(x)`, came the same day: the checker reads the bracketed type with typ
   (`ptrConvExpr.lit`, `litType`), asks the operand Go's rule (`checkLitPtrConvOperand`:
@@ -607,6 +609,26 @@ still design-only.
   asked checkRefAssign nothing. 23 of 32 programs of the row were taken where Go
   refuses them; one is left, `f()[0]` of a call's result, which lenOperandType must
   not type -- `len(f())` is no constant in Go, and the len fold asks it.
+  A TYPE SWITCH CASE or an ASSERTION naming a pointer to a predeclared type, to a
+  type written out or to a defined array type, `case *int:`, `case *[3]int:`,
+  `case *[]byte:`, `case *Row:` (2026-10-02): the assertion `i.(*int)` worked and
+  the cases did not -- the emitter's caseTypeC read `*Name` of a struct or a
+  registered defined type only, and the checker's caseTypeName a name after the
+  star. caseTypeC names the concrete type as the interface's table does
+  (starPredeclaredCAt, starLitCAt, isMethodBase); the checker reads a written-out
+  case through starTypeLiteral and binds the clause's name at the whole pointer
+  type (`typedVar`), as a variable declared from such an assertion is
+  (`assertedPtrLit`, read by shape through assertionTypeNode, so `lib.B.(*int)` and
+  `xs[i].(*int)` too; `takeType`). An array's ADDRESS could not go into an interface
+  at all, varType knowing no array (ifaceOperand asks arrayVar). Such a pointer has
+  no methods (`ptrToUnnamed`): a case, an assertion and checkImplements refuse one
+  where a method is asked for, which reached the emitter before and was said in C's
+  names. Duplicate keys and messages spell a predeclared type as Go prints it,
+  `uint8` for a byte (typeAtMessage). On the board: the binding casts the
+  interface's void* to a pointer to an array typedef, the cast nilHelperDef says the
+  target's compiler lost, and it reads and writes right, int, string and struct
+  elements alike. Left: a type switch whose operand is no bare NAME, `switch
+  f().(type)`, has no case of it checked at all (typeSwitchParts).
 - **Two test suites.** `TestEmitCRun` builds each program in the `emitRunCases`
   table with the host C compiler and runs it against a pthread shim
   (`testdata/hostp2`). `TestOnBoard` builds the *same* table with the real
@@ -893,6 +915,15 @@ bare name and its results in this scope (it resolves and requalifies them now,
 requalifiedSig), and importedMethodResultType named the result of a struct's method
 only, so a `type Count int`'s went unchecked.
 **A new helper following type definitions goes through typeIdentDecl.**
+And a name of the UNIVERSE read off another package's declaration took that
+package's qualifier (2026-10-02, found by the type-switch probes): a function,
+variable or method of package a typed `any`, `error` or `int` gave what was declared
+from it the type `a.any`, `a.error`, `a.int`, which no rule took for an interface or
+for int -- `i := a.Box(); i.(*int)` was "not an interface", and `var l Local =
+a.Count()` passed for main's `type Local int`, the names differing and the kinds not
+asked. `homeQual` qualifies only a name the package declares, or one of no scope it
+can tell; 1 of 8 programs of the row agreed with Go before, all 8 after
+(TestCheckQualifiedTypes).
 
 **A C NAME IS A ROW** (2026-09-25). The emitted C keeps a program's own names, so
 every name a program may write is a row across everything else that names things in

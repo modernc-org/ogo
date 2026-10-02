@@ -27371,6 +27371,95 @@ func main() {
 		want: "5\n",
 	},
 	{
+		// A type switch and an assertion on a pointer to a predeclared type or to a
+		// type written out -- `case *int:`, `case *[3]int:`, `case *[]int:`,
+		// `i.(*[2]P)` -- and a defined array type, `case *Row:`, each refused until
+		// 2026-10-02 though an interface holds such a pointer as it holds any: an
+		// int's under int's table, and an array's address, which could not be put
+		// into one either. The clause binds the pointer with its type, written
+		// through and read through. Diffed against Go, and run on the board: the
+		// binding casts the interface's void* to a pointer to an array typedef, the
+		// cast nilHelperDef says the target's C compiler has lost.
+		name: "a type switch and an assertion on a pointer to a predeclared type or an array",
+		src: `type P struct {
+	x, y, z int
+}
+
+type Row [3]int
+
+func (r *Row) Sum() int { return r[0] + r[1] + r[2] }
+
+type Summer interface{ Sum() int }
+
+var a [3]int
+
+var ss [2]string
+
+var ps [2]P
+
+var r Row
+
+var x int = 5
+
+var u uint8 = 200
+
+var xs []int
+
+var back [4]int
+
+func show(i any) {
+	switch v := i.(type) {
+	case *int:
+		*v += 1
+		println("int", *v)
+	case *uint8:
+		println("uint8", *v)
+	case *[3]int:
+		v[1] = 4
+		println("arr", v[0], v[1], len(v))
+	case *[2]string:
+		v[1] = "there"
+		println("strs", v[0], v[1], len(v[1]))
+	case *[2]P:
+		v[1] = P{7, 8, 9}
+		v[0].y = 6
+		println("ps", v[0].y, v[1].x, v[1].z)
+	case *[]int:
+		*v = append(*v, 3)
+		println("slice", len(*v), (*v)[0])
+	case *Row:
+		println("row", v.Sum())
+	default:
+		println("other")
+	}
+}
+
+func main() {
+	show(&x)
+	show(&u)
+	show(&a)
+	ss[0] = "hi"
+	show(&ss)
+	show(&ps)
+	xs = back[:0]
+	show(&xs)
+	r = Row{1, 2, 3}
+	show(&r)
+	println(x, a[1], ss[1], ps[1].z, ps[0].y, len(xs), back[0])
+	var i any = &ps
+	q, ok := i.(*[2]P)
+	q[0] = P{1, 2, 3}
+	println(ok, ps[0].x, ps[0].z)
+	var s Summer = &r
+	println(s.Sum())
+	w, ok2 := i.(*[3]int)
+	println(w == nil, ok2)
+	printf("%T %T %T %T\n", i, any(&u), any(&r), any(&xs))
+}
+`,
+		want: "int 6\nuint8 200\narr 0 4 3\nstrs hi there 5\nps 6 7 9\nslice 1 3\nrow 6\n6 4 there 9 6 1 3\ntrue 1 3\n6\ntrue false\n*[2]main.P *uint8 *main.Row *[]int\n",
+	},
+	{
 		// A conversion to a pointer to an array type WRITTEN OUT, `(*[4]uint32)(x)`:
 		// from the address of an array of the type or of a defined type over it, from
 		// a pointer of either, from nil, and from an unsafe.Pointer -- a word's bytes,

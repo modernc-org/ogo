@@ -34,6 +34,16 @@ shipped section tells a reader on that version that they have behaviour they do 
   is no pointer and `[...]`; the lifetime rules read through the conversion as
   through the pointer it converts, a callee's summary included. It was "not
   supported yet". Measured on a P2-EDGE.
+- **A type switch and an assertion on a pointer to a predeclared type, an array or
+  a slice**: `case *int:`, `case *[4]uint32:`, `case *[]byte:`, and a defined array
+  type's, `case *Row:`, each refused until now -- `i.(*int)` alone worked -- though
+  an interface holds such a pointer as it holds any. The clause's name, and a
+  variable declared from such an assertion, `p := i.(*[3]int)` or `p, ok :=
+  i.(*[3]int)`, are that pointer, read and written through as one. The address of
+  an ARRAY goes into an interface too, `var i any = &a`, which was refused as no
+  address. Such a pointer has no methods, so a case, an assertion or a value of one
+  where an interface asking for a method is wanted is refused in Go's words, `*[3]int
+  does not implement I (missing method M)`. Measured on a P2-EDGE.
 
 ### Fixed
 
@@ -51,6 +61,13 @@ shipped section tells a reader on that version that they have behaviour they do 
   declared with a written `*[3]int` had no type at all, so a pointer to an array was
   compared with nothing where another was wanted.
 
+- **Another package's result of a predeclared type was of that package's type of
+  the name.** A function, a variable or a method of package a whose type is `any`,
+  `error` or `int` gave what was declared from it the type `a.any`, `a.error` or
+  `a.int`: `i := a.Box(); p := i.(*int)` was refused, "i (variable of type a.any)
+  is not an interface", as was `var j any = i`, and `var l Local = a.Count()` for a
+  `type Local int` of main's was taken.
+
 ### Behaviour changes
 
 - **Mistakes with a pointer to an array are refused** (under Fixed, above): `var s
@@ -60,6 +77,11 @@ shipped section tells a reader on that version that they have behaviour they do 
   wanted, another length, element or defined type: `var q *[3]int = &g` for a
   `[4]int` g, `q = p`, an argument, a return and `append(ps, &g3)` into a
   `[]*[4]int`. Each was taken and handed to the C compiler.
+- **Mistakes with another package's predeclared result are refused** (under Fixed,
+  above): `var l Local = a.Count()` for a `type Local int` of main's and an `int`
+  result, directly or through a variable, and an `any` or `error` result used as a
+  number or a string. Also refused now, beside the type switch above: `case *byte,
+  *uint8:`, a case named twice in Go's terms, a byte being a uint8.
 - **A value of the wrong kind for another package's defined type is refused**
   (under Fixed, above): `var c lib.Count = "x"`, a string returned or passed as
   one, an int into a `lib.Name` string type or its field, `if c {` for an int one,

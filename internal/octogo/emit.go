@@ -7943,6 +7943,12 @@ func (e *emitter) ifaceOperand(rhs []int32) (concrete, data string, temp, ok boo
 	if root, isAddr := e.addrOperand(rhs); isAddr {
 		ct, ok := e.varType(root)
 		if !ok {
+			// An ARRAY variable, `&a`, whose type is its typedef -- the one every
+			// [N]T shares, or its defined type's own name. Arrays are kept apart from
+			// varType's registry, and `var i any = &a` was refused as no address.
+			if a, isArr := e.arrayVar(root); isArr {
+				return e.arrayTypedef(a), "&" + e.varRef(root), false, true
+			}
 			return "", "", false, false
 		}
 		return ct, "&" + e.varRef(root), false, true
@@ -28759,19 +28765,31 @@ func (e *emitter) caseTypeC(ex Node) (concrete string, isNil, ok bool) {
 	// is where its typedef was emitted.
 	if qual, member, isQual := e.qualifiedFactor(kids[1].ast); isQual {
 		if prefix, isImport := e.importQualifiers[qual]; isImport {
-			concrete = e.mangle(prefix, member)
-			if !e.isStruct(concrete) && !e.isUserType(concrete) {
+			concrete = e.unaliased(e.mangle(prefix, member))
+			if !e.isMethodBase(concrete) {
 				return "", false, false
 			}
 			return concrete, false, true
 		}
 	}
+	// `case *int:` and `case *[4]uint32:` -- a pointer to a predeclared type or to a
+	// type written out, which an interface holds as it holds any pointer, under the
+	// table its pointee names: what `var i any = &x` stores for an int x is int's.
+	// A case names it as an assertion does, `i.(*int)`, which always worked.
+	if ct := e.starPredeclaredCAt(ex); ct != "" {
+		return ct, false, true
+	}
+	if ct := e.starLitCAt(ex); ct != "" {
+		return ct, false, true
+	}
 	name := e.soleIdent(kids[1].ast)
 	if name == "" {
 		return "", false, false
 	}
+	// A defined ARRAY type as well, `case *Row:`, whose typedef is its own and not in
+	// the registry the other defined types are in (isMethodBase).
 	concrete = e.unaliased(e.typeCName(name))
-	if !e.isStruct(concrete) && !e.isUserType(concrete) {
+	if !e.isMethodBase(concrete) {
 		return "", false, false
 	}
 	return concrete, false, true

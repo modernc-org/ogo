@@ -1,0 +1,52 @@
+// What Go refuses of a pointer to a predeclared type or to a type written out in a
+// type switch, an assertion and an interface, refused in its terms: a case or an
+// assertion no such pointer can satisfy, a duplicate case -- a byte being a uint8 --
+// `[...]` outside a literal, the bound name and an assertion's variable used as
+// another type, and the pointer into an interface asking for a method.
+
+type I interface{ M() }
+
+var x int
+
+var a [3]int
+
+func f(i I) {
+	switch i.(type) {
+	// ERROR "impossible type switch case: i.\(type\) case \*int: \*int does not implement I \(missing method M\)"
+	case *int:
+	// ERROR "impossible type switch case: i.\(type\) case \*\[3\]int: \*\[3\]int does not implement I \(missing method M\)"
+	case *[3]int:
+	}
+	// ERROR "impossible type assertion: i.\(\*\[3\]int\): \*\[3\]int does not implement I \(missing method M\)"
+	_ = i.(*[3]int)
+}
+
+func main() {
+	var i any = &a
+	switch v := i.(type) {
+	// ERROR "duplicate case \*uint8 in type switch"
+	case *byte, *uint8:
+	// ERROR "duplicate case \*\[2\]uint8 in type switch"
+	case *[2]byte, *[2]uint8:
+	// ERROR "invalid use of \[...\] array \(outside a composite literal\)"
+	case *[...]int:
+	case *[3]int:
+		// ERROR "cannot use v\[0\] of type int as type string in variable declaration"
+		var s string = v[0]
+		_ = s
+	case *int:
+		// ERROR "cannot use \*v of type int as type string in variable declaration"
+		var t string = *v
+		_ = t
+	}
+	p, ok := i.(*[3]int)
+	// ERROR "cannot use p\[0\] of type int as type string in variable declaration"
+	var s string = p[0]
+	q := i.(*int)
+	// ERROR "cannot use \*q of type int as type string in variable declaration"
+	var t string = *q
+	// ERROR "cannot use &a \(value of type \*\[3\]int\) as I value in variable declaration: \*\[3\]int does not implement I \(missing method M\)"
+	var j I = &a
+	_, _, _, _ = s, t, ok, j
+	f(nil)
+}

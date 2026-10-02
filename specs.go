@@ -1051,6 +1051,20 @@
 // a type that could not supply the method set is Go's "impossible type switch
 // case", reported here as one, as is a case named twice.
 //
+// The pointer may be to any type, as anything's address goes into an interface: a
+// predeclared one, "case *int:", an array, "case *[4]uint32:" or a defined one, and
+// a slice, "case *[]byte:". Such a pointer has no methods, so only an interface
+// asking for none holds one -- "any" above all:
+//
+//	func show(i any) {
+//		switch v := i.(type) {
+//		case *int:      // v is an *int
+//			*v++
+//		case *[4]byte:  // v is a *[4]byte, indexed as any pointer to an array is
+//			v[0] = 1
+//		}
+//	}
+//
 // A case may name an INTERFACE instead, written bare -- "case T:" where a concrete
 // case is "case *X:", the star being there because what an interface holds is a
 // pointer. It matches on the METHOD SET: any dynamic type implementing T takes the

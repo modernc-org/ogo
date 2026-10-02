@@ -21,6 +21,11 @@ import (
 // and of no Kind otherwise: valid programs were refused, a dereference of `a.P`
 // always, and programs Go refuses were taken. A program that builds runs on the host
 // and prints what Go prints; one Go refuses is refused, in the checker's words.
+//
+// A name of the UNIVERSE read off another package's declaration is the same row the
+// other way (homeQual): `a.Box()` returning `any` gave its variable the type
+// "a.any", which nothing took for an interface, and `a.Num()` returning int one
+// of "a.int", which passed where main's own defined type over int was wanted.
 func TestCheckQualifiedTypes(t *testing.T) {
 	cc := ""
 	for _, c := range []string{"cc", "gcc", "clang"} {
@@ -70,6 +75,12 @@ func Qp() *T { return &Q }
 func (t Temp) Half() Temp { return t / 2 }
 
 func (t Temp) Int() int { return int(t) }
+
+func Box() any { return &G }
+
+func Err() error { return nil }
+
+func Num() int { return 4 }
 `
 	for _, test := range []struct {
 		name, main string
@@ -272,6 +283,48 @@ func main() {
 	println(t % 2)
 }
 `, "operator % not defined on float32", true},
+		{"another package's any and error results", `import "a"
+
+func main() {
+	i := a.Box()
+	p, ok := i.(*int)
+	var j any = i
+	e := a.Err()
+	var f error = a.Err()
+	switch v := j.(type) {
+	case *int:
+		*v = 3
+	}
+	println(*p, ok, e == nil, f == e, a.G)
+}
+`, "3 true true true 3\n", false},
+		{"another package's int result into main's defined type", `import "a"
+
+type Local int
+
+func main() {
+	var l Local = a.Num()
+	println(l)
+}
+`, "cannot use a.Num() of type int as type Local in variable declaration", true},
+		{"another package's int result held, into main's defined type", `import "a"
+
+type Local int
+
+func main() {
+	n := a.Num()
+	var l Local = n
+	println(l)
+}
+`, "cannot use n of type int as type Local in variable declaration", true},
+		{"another package's error result into a string", `import "a"
+
+func main() {
+	e := a.Err()
+	var s string = e
+	println(s)
+}
+`, "cannot use e as string value in variable declaration: it is an interface", true},
 		{"a string sent on an int channel type", `import "a"
 
 func send(c a.Ch) { c <- "x" }
