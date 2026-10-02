@@ -47,6 +47,22 @@ shipped section tells a reader on that version that they have behaviour they do 
 
 ### Fixed
 
+- **Two silent faults of the P2 backend, met by a domain program, are worked
+  around.** Both were right on the host.
+  - A package variable of a struct with an array field of one- or two-byte
+    elements, four bytes or more -- `struct { Ch uint8; Steps [4]int16 }` -- was
+    read in other bytes than it was initialized in: `Steps[0]` read what `Steps[1]`
+    was given, and a field after a `[6]byte` read 0. The backend lays such a struct
+    out one way and writes its static initializer another
+    (`doc/static-init-array-field.c`). Such a variable, an array of them and a
+    slice's backing are filled at package initialization now; a type the two ways
+    agree about keeps its static initializer.
+  - A `go` statement's arguments were lost when the program had a package variable
+    named like a member of the runtime's argument blocks -- `s0`, `a0`, `fn`: the
+    backend drops a member named like a global declared before its type
+    (`doc/member-named-like-global.c`), and `go feeder(3)` read 3 as an address and
+    never ended. The runtime's members carry the compiler's prefix now.
+
 - **Another package's defined type was read as the main package's type of the
   same name, or as no type at all.** The checker followed `lib.Count` by its bare
   name, in the package using it, so valid programs were refused: `var c lib.Count

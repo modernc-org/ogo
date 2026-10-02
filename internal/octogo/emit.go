@@ -2365,7 +2365,7 @@ func (e *emitter) emitGo(nodes []Node) {
 		// Read once, here: the variable may be reassigned before the cog runs, and
 		// Go evaluates the callee at the `go` statement.
 		e.ind()
-		e.emit(ap + "->fn = " + site.callee + ";\n")
+		e.emit(ap + "->ogo_fn = " + site.callee + ";\n")
 	}
 	first := 0
 	if recvText != "" {
@@ -2375,12 +2375,12 @@ func (e *emitter) emitGo(nodes []Node) {
 		// receiver is.
 		if _, isArr := e.namedArrays[site.args[0]]; isArr {
 			e.includes["string.h"] = true
-			e.emit("memcpy(" + ap + "->a0, " + recvText + ", sizeof(" + ap + "->a0));\n")
+			e.emit("memcpy(" + ap + "->ogo_a0, " + recvText + ", sizeof(" + ap + "->ogo_a0));\n")
 		} else if e.holdsArray(site.args[0]) {
 			e.includes["string.h"] = true // copied (holdsArray); the trampoline hands its address on
-			e.emit("memcpy(&" + ap + "->a0, &(" + recvText + "), sizeof(" + ap + "->a0));\n")
+			e.emit("memcpy(&" + ap + "->ogo_a0, &(" + recvText + "), sizeof(" + ap + "->ogo_a0));\n")
 		} else {
-			e.emit(ap + "->a0 = " + recvText + ";\n")
+			e.emit(ap + "->ogo_a0 = " + recvText + ";\n")
 		}
 		first = 1
 	}
@@ -2406,7 +2406,7 @@ func (e *emitter) emitGo(nodes []Node) {
 					e.emit(line)
 				}
 				e.ind()
-				e.emit(fmt.Sprintf("%s->a%d = %s;\n", ap, i+first, text))
+				e.emit(fmt.Sprintf("%s->ogo_a%d = %s;\n", ap, i+first, text))
 				continue
 			}
 		}
@@ -2420,7 +2420,7 @@ func (e *emitter) emitGo(nodes []Node) {
 			// value to copy, and emitted as one it was refused, "must be bound to a
 			// variable first".
 			if cname, _, isCall := e.arrayResultCall(a.ast); isCall {
-				e.emitArrayResultCall(fmt.Sprintf("%s->a%d", ap, i+first), cname, a.ast)
+				e.emitArrayResultCall(fmt.Sprintf("%s->ogo_a%d", ap, i+first), cname, a.ast)
 				continue
 			}
 			e.includes["string.h"] = true
@@ -2440,7 +2440,7 @@ func (e *emitter) emitGo(nodes []Node) {
 				rhs = tmp
 			}
 			e.ind()
-			e.emit(fmt.Sprintf("memcpy(%s->a%d, %s, sizeof(%s->a%d));\n", ap, i+first, rhs, ap, i+first))
+			e.emit(fmt.Sprintf("memcpy(%s->ogo_a%d, %s, sizeof(%s->ogo_a%d));\n", ap, i+first, rhs, ap, i+first))
 			continue
 		}
 		// A composite literal is built in a variable of its own first. The target's
@@ -2458,10 +2458,10 @@ func (e *emitter) emitGo(nodes []Node) {
 		e.ind()
 		if e.holdsArray(site.args[i+first]) {
 			e.includes["string.h"] = true // a struct holding an array is copied (holdsArray)
-			e.emit(fmt.Sprintf("memcpy(&%s->a%d, &(%s), sizeof(%s->a%d));\n", ap, i+first, rhs, ap, i+first))
+			e.emit(fmt.Sprintf("memcpy(&%s->ogo_a%d, &(%s), sizeof(%s->ogo_a%d));\n", ap, i+first, rhs, ap, i+first))
 			continue
 		}
-		e.emit(fmt.Sprintf("%s->a%d = %s;\n", ap, i+first, rhs))
+		e.emit(fmt.Sprintf("%s->ogo_a%d = %s;\n", ap, i+first, rhs))
 	}
 	e.ind()
 	e.emit("ogo_cog_pool[" + slot + "].ogo_cog = _cogstart_C(" + goTrampolineCName(site.id) + ", " + ap +
@@ -2513,26 +2513,26 @@ func (e *emitter) goDefs() string {
 	for _, s := range e.goSites {
 		fmt.Fprintf(&b, "typedef struct { int ogo_slot;")
 		if s.fnCType != "" {
-			fmt.Fprintf(&b, " %s fn;", s.fnCType)
+			fmt.Fprintf(&b, " %s ogo_fn;", s.fnCType)
 		}
 		for i, a := range s.args {
 			if ad, isArr := s.arrays[i]; isArr {
-				fmt.Fprintf(&b, " %s a%d%s;", ad.elem, i, ad.declSuffix()) // the array itself; see goSite.arrays
+				fmt.Fprintf(&b, " %s ogo_a%d%s;", ad.elem, i, ad.declSuffix()) // the array itself; see goSite.arrays
 				continue
 			}
-			fmt.Fprintf(&b, " %s a%d;", a, i)
+			fmt.Fprintf(&b, " %s ogo_a%d;", a, i)
 		}
 		fmt.Fprintf(&b, " } %s;\n", goArgsCName(s.id))
 	}
 	b.WriteString("typedef union {")
 	for i, s := range e.goSites {
-		fmt.Fprintf(&b, " %s s%d;", goArgsCName(s.id), i)
+		fmt.Fprintf(&b, " %s ogo_s%d;", goArgsCName(s.id), i)
 	}
 	b.WriteString(" } ogo_go_args;\n")
 	for _, s := range e.goSites {
 		callee := s.callee
 		if s.fnCType != "" {
-			callee = "a->fn"
+			callee = "a->ogo_fn"
 		}
 		fmt.Fprintf(&tramps, "static void %s(void* p) {\n\t%s* a = p;\n", goTrampolineCName(s.id), goArgsCName(s.id))
 		n := len(s.args)
@@ -2543,7 +2543,7 @@ func (e *emitter) goDefs() string {
 			if k := len(s.args) - s.packFrom; k != 0 {
 				fmt.Fprintf(&tramps, "\t%s pack[%d];\n", s.packElem, k)
 				for j := 0; j < k; j++ {
-					tramps.WriteString("\t" + e.packStoreC(fmt.Sprintf("pack[%d]", j), fmt.Sprintf("a->a%d", s.packFrom+j), s.packElem))
+					tramps.WriteString("\t" + e.packStoreC(fmt.Sprintf("pack[%d]", j), fmt.Sprintf("a->ogo_a%d", s.packFrom+j), s.packElem))
 				}
 				pack = fmt.Sprintf("(%s){pack, %d, %d}", sliceCName(s.packElem), k, k)
 			}
@@ -2553,7 +2553,7 @@ func (e *emitter) goDefs() string {
 			// Through the value's table, with its data pointer in the receiver's
 			// place; a method of several results writes them through a trailing
 			// parameter, into a result struct nobody reads.
-			callee = "((const " + e.ifaceVTName(s.ifaceCType) + "*)a->a0.vt)->" + vtMember(s.ifaceMethod)
+			callee = "((const " + e.ifaceVTName(s.ifaceCType) + "*)a->ogo_a0.vt)->" + vtMember(s.ifaceMethod)
 			if m, ok := e.ifaceMethodRec(s.ifaceCType, s.ifaceMethod); ok && m.out != "" {
 				out = "&res"
 				fmt.Fprintf(&tramps, "\t%s res;\n", m.out)
@@ -2565,14 +2565,14 @@ func (e *emitter) goDefs() string {
 		var call []string
 		for i := 0; i < n; i++ {
 			if i == 0 && s.ifaceMethod != "" {
-				call = append(call, "a->a0.data")
+				call = append(call, "a->ogo_a0.data")
 				continue
 			}
 			if e.byRefParam(s.args[i]) {
-				call = append(call, fmt.Sprintf("&a->a%d", i)) // see byRefParam
+				call = append(call, fmt.Sprintf("&a->ogo_a%d", i)) // see byRefParam
 				continue
 			}
-			call = append(call, fmt.Sprintf("a->a%d", i))
+			call = append(call, fmt.Sprintf("a->ogo_a%d", i))
 		}
 		if s.pack {
 			call = append(call, pack)
@@ -3477,12 +3477,21 @@ func (e *emitter) astPos(ast []int32) string {
 // for a struct with an array field, broken: the deferred form is an assignment
 // from a compound literal, which flexcc cannot lower.
 func (e *emitter) staticInitOK(initExpr []int32) bool {
-	if _, lit, ok := e.soleCompositeLit(initExpr); ok {
+	if ct, lit, ok := e.soleCompositeLit(initExpr); ok {
+		if e.flexccInitSkew(ct) {
+			return false // see flexccInitSkew
+		}
 		return e.staticLitElementsOK(lit)
 	}
 	// An array or slice literal, which a struct literal may hold as an element and
 	// which is as constant as what is inside it.
 	if typeAST, lit, ok := e.soleArrayLit(initExpr); ok {
+		if elem, isSlice := e.litSliceType(typeAST); isSlice && e.flexccInitSkew(elem) {
+			return false
+		}
+		if a, isArr := e.arrayDim(typeAST); isArr && e.flexccInitSkew(a.elem) {
+			return false
+		}
 		return e.staticLitElementsOKLevels(lit, e.elemLitLevels(typeAST))
 	}
 	// Anything that folds to an integer constant is one -- a negative literal, a
@@ -3520,6 +3529,109 @@ func (e *emitter) staticInitOK(initExpr []int32) bool {
 		return s == "true" || s == "false"
 	}
 	return false
+}
+
+// flexccInitSkew reports a struct type -- or one holding one, as a field or an
+// array's element -- whose static initializer the target's C compiler lays out
+// otherwise than it lays out the type, so that a field read reads the bytes of
+// another: the initializer aligns an array field by its ELEMENT's alignment and
+// pads one of four bytes or more to a multiple of four, where the layout aligns it
+// to four and advances by its size (flexcc's TypeAlign against PaddedTypeAlign,
+// backends/dat/outdat.c and frontends/common.c). Only an array of one- or two-byte
+// elements of four bytes or more can tell the two apart: `struct { uint8 ch; int16
+// steps[4] }` initialized statically read steps[0] as what steps[1] was given, on
+// the board and in silence (doc/static-init-array-field.c). Such a value is
+// initialized where the package's initializer runs, by stores, which are right.
+func (e *emitter) flexccInitSkew(ct string) bool {
+	ct = e.underlyingCType(e.unaliased(ct))
+	if skew, done := e.initSkew[ct]; done {
+		return skew
+	}
+	e.initSkew[ct] = false // a type holding itself is reached through a pointer, which is no field here
+	skew := false
+	if a, isArr := e.namedArrays[ct]; isArr {
+		skew = e.flexccInitSkew(a.elem)
+	} else if fields, isStruct := e.structs[ct]; isStruct {
+		skew = e.flexccStructSkew(fields)
+	}
+	e.initSkew[ct] = skew
+	return skew
+}
+
+// flexccStructSkew computes both of flexcc's offsets for fields, the layout's and
+// the static initializer's (flexccInitSkew), and reports where they part.
+func (e *emitter) flexccStructSkew(fields []structField) bool {
+	round := func(n, a int) int { return (n + a - 1) / a * a }
+	layout, init := 0, 0
+	for _, f := range fields {
+		size, align := 0, 0
+		if f.dim.bound != "" {
+			if e.flexccInitSkew(f.dim.elem) {
+				return true
+			}
+			es, ea := e.flexccShape(f.dim.elem)
+			n := 1
+			for _, b := range f.dim.bounds() {
+				k, err := strconv.Atoi(b)
+				if err != nil {
+					return es < 4 // a length not read here: a risk only of small elements
+				}
+				n *= k
+			}
+			size, align = es*n, ea
+		} else {
+			if e.flexccInitSkew(f.ctype) {
+				return true
+			}
+			size, align = e.flexccShape(f.ctype)
+		}
+		padded := align // PaddedTypeAlign: four for anything of four bytes or more
+		if size >= 4 {
+			padded = 4
+		}
+		layout = round(layout, padded)
+		start := init
+		init = round(init, align)
+		if init != layout {
+			return true
+		}
+		layout += size
+		r := init - start + size
+		if size >= 4 && r < round(size, 4) {
+			r = round(size, 4)
+		}
+		init = start + r
+	}
+	return init > round(layout, 4) // more than the type holds: refused by flexcc
+}
+
+// flexccShape is the size and alignment the target's C compiler gives a C type, as
+// far as flexccStructSkew needs them: exact below four bytes, and four or a multiple
+// of it for every struct, pointer, string, slice and interface, which is all that
+// parity asks of them.
+func (e *emitter) flexccShape(ct string) (size, align int) {
+	ct = e.underlyingCType(e.unaliased(ct))
+	switch ct {
+	case "int8_t", "uint8_t", cBool, "char", "signed char", "unsigned char":
+		return 1, 1
+	case "int16_t", "uint16_t", "short", "unsigned short":
+		return 2, 2
+	case "int64_t", "uint64_t", "long long", "unsigned long long":
+		return 8, 4
+	}
+	if a, isArr := e.namedArrays[ct]; isArr {
+		es, ea := e.flexccShape(a.elem)
+		n := 1
+		for _, b := range a.bounds() {
+			k, err := strconv.Atoi(b)
+			if err != nil {
+				return 4, 4
+			}
+			n *= k
+		}
+		return es * n, ea
+	}
+	return 4, 4 // a struct is rounded up to four bytes; a pointer is four
 }
 
 // signedFloatLit recognises a float literal with an optional sign, `-1.5`, and
@@ -5383,7 +5495,7 @@ func typeNameCollisions(src []byte, names map[string]bool) map[string]bool {
 // emitProgram is EmitC's one pass. rename lists the main-package types spelled
 // ogo_T_<name> in C (see typeMangle).
 func emitProgram(pkg *Package, w io.Writer, opts []EmitOption, rename map[string]bool) error {
-	e := &emitter{renameTypes: rename, renamedTypes: map[string]string{}, includes: map[string]bool{}, funcRet: map[string][]string{}, funcSliceParams: map[string][]string{}, funcVariadic: map[string]int{}, nilHelpers: map[string]bool{}, arrPtrHelpers: map[string]arrDim{}, funcArrayRet: map[string]arrDim{}, funcStructRet: map[string]string{}, funcArrayParams: map[string][]arrDim{}, anonStructNames: map[string]string{}, methodValueTypes: map[string]funcValueType{}, methodValueOf: map[string]string{}, methodExprNames: map[string]string{}, funcParams: map[string][]string{}, methodPtr: map[string]bool{}, recvByRef: map[string]bool{}, globals: map[string]string{}, structs: map[string][]structField{}, namedTypes: map[string]bool{}, typeNames: map[string]bool{}, interfaceTypes: map[string]bool{}, ifaceMethods: map[string][]ifaceMethod{}, anonIfaceNames: map[string]string{}, anonIfaceMinted: map[string]bool{}, ifaceASTs: map[string]ifaceAST{}, ifaceVTables: map[string]bool{}, namedUnderlying: map[string]string{}, namedArrays: map[string]arrDim{}, constInt: map[string]string{}, constVal: map[string]constant.Value{}, constWide: map[string]string{}, constStr: map[string]string{}, constUntyped: map[string]bool{}, constHuge: map[string]bool{}, arrays: map[string]arrDim{}, globalArrays: map[string]arrDim{}, sliceVars: map[string]string{}, globalSliceVars: map[string]string{}, chanElems: map[string]bool{}, chanInitElems: map[string]bool{}, chanSendElems: map[string]bool{}, chanRecvElems: map[string]bool{}, chanTryRecvElems: map[string]bool{}, chanTrySendElems: map[string]bool{}, chanGatedSendElems: map[string]bool{}, aliasOf: map[string]string{}, localTypes: map[string]string{}, gotoTargets: map[string]bool{}, chanCloseElems: map[string]bool{}, chanRecv2Elems: map[string]bool{}, mathWrappers: map[string]bool{}, chanElemByName: map[string]string{}, sliceElems: map[string]bool{}, sliceElemByName: map[string]string{}, appendElems: map[string]bool{}, tryappendElems: map[string]bool{}, appendSliceElems: map[string]bool{}, tryappendSliceEls: map[string]bool{}, appendokStructs: map[string]bool{}, copyElems: map[string]bool{}, resliceElems: map[string]bool{}, reslice3Elems: map[string]bool{}, clearElems: map[string]bool{}, minElems: map[string]bool{}, maxElems: map[string]bool{}, printSliceElems: map[string]bool{}, printStructs: map[string]string{}, printIfaces: map[string]string{}, printlnElems: map[string]bool{}, switchBreakUsed: map[string]bool{}, labelBreak: map[string]string{}, labelContinue: map[string]string{}, labelUsed: map[string]bool{}, eqStructs: map[string]bool{}, eqArrays: map[string]arrDim{}, frameBacked: map[string]bool{}, frameHolder: map[string]string{}, crossParams: map[string][]leak{}, crossContents: map[string][]leak{}, retContents: map[string][]bool{}, recvContents: map[string]leak{}, paramCalls: map[string][]paramCall{}, frameCalls: map[string][]frameCall{}, localConstSpecs: map[string]localConstSpec{}, inheritedTypes: map[string]bool{}, funcValueMembers: map[string][]string{}, methodExprMembers: map[string]emMethodExpr{}, memberShown: map[string]string{}, litLifted: map[string][]string{}, methodNames: map[string]bool{}, recvLeaks: map[string]leak{}, retRecv: map[string]bool{}, crossInto: map[string][]uint32{}, ifaceSummaries: map[string]ifaceSummary{}, retParams: map[string][]bool{}, funcValueOf: map[string]string{}, crossNames: map[string]string{}, initNames: map[string]string{}, funcValueTypes: map[string]funcValueType{}, funcTypeNames: map[string]string{}, funcTypeRet: map[string][]string{}, funcTypeParams: map[string][]string{}, funcTypeVariadic: map[string]int{}, recFuncTypes: map[string]bool{}, recFuncShapes: map[string]string{}, retStructs: map[string]string{}, retStructByKey: map[string]string{}, shiftHelpers: map[string][2]string{}, shiftCTypes: map[*int32]string{}, shiftWalked: map[shiftWalkKey]bool{}, shiftIn: map[*int32]bool{}, divHelpers: map[string][2]string{}, funcValueWrappers: map[string]string{}, deferReplay: -1, iota: -1}
+	e := &emitter{renameTypes: rename, renamedTypes: map[string]string{}, includes: map[string]bool{}, funcRet: map[string][]string{}, funcSliceParams: map[string][]string{}, funcVariadic: map[string]int{}, nilHelpers: map[string]bool{}, initSkew: map[string]bool{}, arrPtrHelpers: map[string]arrDim{}, funcArrayRet: map[string]arrDim{}, funcStructRet: map[string]string{}, funcArrayParams: map[string][]arrDim{}, anonStructNames: map[string]string{}, methodValueTypes: map[string]funcValueType{}, methodValueOf: map[string]string{}, methodExprNames: map[string]string{}, funcParams: map[string][]string{}, methodPtr: map[string]bool{}, recvByRef: map[string]bool{}, globals: map[string]string{}, structs: map[string][]structField{}, namedTypes: map[string]bool{}, typeNames: map[string]bool{}, interfaceTypes: map[string]bool{}, ifaceMethods: map[string][]ifaceMethod{}, anonIfaceNames: map[string]string{}, anonIfaceMinted: map[string]bool{}, ifaceASTs: map[string]ifaceAST{}, ifaceVTables: map[string]bool{}, namedUnderlying: map[string]string{}, namedArrays: map[string]arrDim{}, constInt: map[string]string{}, constVal: map[string]constant.Value{}, constWide: map[string]string{}, constStr: map[string]string{}, constUntyped: map[string]bool{}, constHuge: map[string]bool{}, arrays: map[string]arrDim{}, globalArrays: map[string]arrDim{}, sliceVars: map[string]string{}, globalSliceVars: map[string]string{}, chanElems: map[string]bool{}, chanInitElems: map[string]bool{}, chanSendElems: map[string]bool{}, chanRecvElems: map[string]bool{}, chanTryRecvElems: map[string]bool{}, chanTrySendElems: map[string]bool{}, chanGatedSendElems: map[string]bool{}, aliasOf: map[string]string{}, localTypes: map[string]string{}, gotoTargets: map[string]bool{}, chanCloseElems: map[string]bool{}, chanRecv2Elems: map[string]bool{}, mathWrappers: map[string]bool{}, chanElemByName: map[string]string{}, sliceElems: map[string]bool{}, sliceElemByName: map[string]string{}, appendElems: map[string]bool{}, tryappendElems: map[string]bool{}, appendSliceElems: map[string]bool{}, tryappendSliceEls: map[string]bool{}, appendokStructs: map[string]bool{}, copyElems: map[string]bool{}, resliceElems: map[string]bool{}, reslice3Elems: map[string]bool{}, clearElems: map[string]bool{}, minElems: map[string]bool{}, maxElems: map[string]bool{}, printSliceElems: map[string]bool{}, printStructs: map[string]string{}, printIfaces: map[string]string{}, printlnElems: map[string]bool{}, switchBreakUsed: map[string]bool{}, labelBreak: map[string]string{}, labelContinue: map[string]string{}, labelUsed: map[string]bool{}, eqStructs: map[string]bool{}, eqArrays: map[string]arrDim{}, frameBacked: map[string]bool{}, frameHolder: map[string]string{}, crossParams: map[string][]leak{}, crossContents: map[string][]leak{}, retContents: map[string][]bool{}, recvContents: map[string]leak{}, paramCalls: map[string][]paramCall{}, frameCalls: map[string][]frameCall{}, localConstSpecs: map[string]localConstSpec{}, inheritedTypes: map[string]bool{}, funcValueMembers: map[string][]string{}, methodExprMembers: map[string]emMethodExpr{}, memberShown: map[string]string{}, litLifted: map[string][]string{}, methodNames: map[string]bool{}, recvLeaks: map[string]leak{}, retRecv: map[string]bool{}, crossInto: map[string][]uint32{}, ifaceSummaries: map[string]ifaceSummary{}, retParams: map[string][]bool{}, funcValueOf: map[string]string{}, crossNames: map[string]string{}, initNames: map[string]string{}, funcValueTypes: map[string]funcValueType{}, funcTypeNames: map[string]string{}, funcTypeRet: map[string][]string{}, funcTypeParams: map[string][]string{}, funcTypeVariadic: map[string]int{}, recFuncTypes: map[string]bool{}, recFuncShapes: map[string]string{}, retStructs: map[string]string{}, retStructByKey: map[string]string{}, shiftHelpers: map[string][2]string{}, shiftCTypes: map[*int32]string{}, shiftWalked: map[shiftWalkKey]bool{}, shiftIn: map[*int32]bool{}, divHelpers: map[string][2]string{}, funcValueWrappers: map[string]string{}, deferReplay: -1, iota: -1}
 	for _, opt := range opts {
 		opt(e)
 	}
@@ -6456,6 +6568,7 @@ type emitter struct {
 	testEntry          string                  // the entry point of a test binary, replacing main (see TestEntry)
 	usesBound          bool                    // ogo_bound is called: emit the index bounds-check helper
 	nilHelpers         map[string]bool         // pointer types whose nil-dereference guard is called
+	initSkew           map[string]bool         // flexccInitSkew's answers, by C type
 	arrPtrHelpers      map[string]arrDim       // pointer-to-array types a slice is converted to: emit each one's helper
 	usesNonzero        bool                    // ogo_nonzero is called: emit the divide-by-zero-check helper
 	usesFloatFmt       bool                    // ogo_print_float is called: a float printed by print, println or any float verb (see floatFmtHelper)
@@ -9220,7 +9333,13 @@ func (e *emitter) emitPackageVarDecl(ast []int32) {
 				// what the scalar and struct forms already did -- staticInitOK
 				// answered for an array literal all along and only this position
 				// never asked it.
-				if !e.staticLitElementsOKLevels(lit, e.elemLitLevels(litType)) {
+				// So is one whose elements' static initializer the target's compiler
+				// lays out wrong (flexccInitSkew).
+				skew := false
+				if a, isArr := e.arrayDim(litType); isArr {
+					skew = e.flexccInitSkew(a.elem)
+				}
+				if skew || !e.staticLitElementsOKLevels(lit, e.elemLitLevels(litType)) {
 					if a, isArr := e.pkgArrayInit(initExpr); isArr {
 						e.emitPkgArrayVar(e.globalC(names[0]), names[0], a, initExpr)
 						continue
@@ -19905,8 +20024,11 @@ func (e *emitter) emitSliceLitVar(name, elem, cname string, lit Node, values []*
 	// (a named array type, or a struct holding one) cannot go in even a local
 	// initializer, C copying no array there. That one is still refused with the
 	// shape that works.
-	if static && !e.staticLitElementsOKLevels(lit, []litLevel{e.elemLevel(elem)}) {
-		if _, isArrElem := e.namedArrays[elem]; isArrElem || e.hasArrayField(elem) {
+	constElems := e.staticLitElementsOKLevels(lit, []litLevel{e.elemLevel(elem)})
+	if static && (!constElems || e.flexccInitSkew(elem)) {
+		// Constant elements whose static initializer the target lays out wrong
+		// (flexccInitSkew) take this route too, as braces, which copy right.
+		if _, isArrElem := e.namedArrays[elem]; !constElems && (isArrElem || e.hasArrayField(elem)) {
 			e.fail("a package slice literal's elements must be constant: declare the values as an "+
 				"array and slice it, `var back = [%s]%s{...}` and `var %s = back[:]`", n, e.goTypeName(elem), name)
 			return
@@ -20453,7 +20575,8 @@ func (e *emitter) pkgSliceLitVar(elem, cname string, lit Node) (string, bool) {
 	}
 	name := fmt.Sprintf("ogo_plit_%d", e.makeN)
 	e.makeN++
-	if e.staticLitElementsOKLevels(lit, []litLevel{e.elemLevel(elem)}) {
+	constElems := e.staticLitElementsOKLevels(lit, []litLevel{e.elemLevel(elem)})
+	if constElems && !e.flexccInitSkew(elem) {
 		// Constant elements: the declarations are static initializers as they are.
 		values, length, ok := e.litPositions(lit)
 		if !ok {
@@ -20480,8 +20603,9 @@ func (e *emitter) pkgSliceLitVar(elem, cname string, lit Node) (string, bool) {
 		return "", false
 	}
 	// An element that is itself an array cannot go in a local initializer either, C
-	// copying no array there: left to the refusal, with the shape that works.
-	if _, isArrElem := e.namedArrays[elem]; isArrElem || e.hasArrayField(elem) {
+	// copying no array there: left to the refusal, with the shape that works. Braces
+	// of constants can, which is all a skewed element type (flexccInitSkew) sends.
+	if _, isArrElem := e.namedArrays[elem]; !constElems && (isArrElem || e.hasArrayField(elem)) {
 		return "", false
 	}
 	e.needSlice(elem)

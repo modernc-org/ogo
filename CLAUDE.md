@@ -962,6 +962,39 @@ program's `var long [260]byte` was a C error. A new declaration path writes
 `localIdent`, and a sweep of one takes a keyword and a macro, `long` and `EOF`,
 through each kind and each position. The fuzzer draws such names too (cNames in
 internal/smith), which is what keeps the row covered where no sweep reaches.
+A MEMBER the emitter names is the same row from the backend's side (2026-10-02,
+found by a domain program): flexcc DROPS a struct or union member named like a
+global declared before the type (doc/member-named-like-global.c), and the goroutine
+runtime's argument blocks, written after the program's globals, had members `aN`,
+`sN` and `fn` -- `var s0 = proto.Set{...}` made the union of blocks 0 bytes, a cog's
+arguments sat on its stack, and `go feeder(3)` read 3 as an address, in silence; a
+global `a0` was a build error, the trampoline naming that member. They are `ogo_aN`,
+`ogo_sN`, `ogo_fn` (goDefs). The program's own struct types are written before its
+globals and are not reached. **A type the emitter writes after the globals names its
+members with the `ogo_` prefix** -- `TestEmitCInitSkew` holds the go blocks.
+
+**A STATIC INITIALIZER IS LAID OUT BY ANOTHER RULE THAN ITS TYPE** (2026-10-02,
+found by the same domain program, `ok 3 -3` on the board for Go's `-2`). flexcc's
+layout aligns a member by PaddedTypeAlign -- four for anything of four bytes or more
+-- and advances by its size (frontends/common.c, fixupVarOffset); its static
+initializer aligns by TypeAlign, an array's ELEMENT alignment, and pads a member of
+four bytes or more to a multiple of four (backends/dat/outdat.c, outputInitializer).
+Every struct is a multiple of four with alignment four, so only an ARRAY field of
+one- or two-byte elements of four bytes or more tells the two apart: `struct { uint8
+ch; int16 s[4] }` initialized statically read s[0] as s[1]'s value, and a field
+after a `uint8[6]` read 0, in silence; where the written total exceeds the type,
+flexcc says "Bad initialization size" (doc/static-init-array-field.c). Locals,
+compound literals and stores are right in every shape, measured with a 40-element
+local array. `flexccInitSkew` computes both models over a struct's fields,
+recursively through struct fields and array elements (flexccStructSkew,
+flexccShape: exact below four bytes, parity above), and a package variable of a type
+they disagree about -- staticInitOK, the package array path, a slice literal's
+backing and an elided row's (pkgSliceLitVar) -- is zeroed statically and filled at
+package initialization from braces, which copy right. None of 1199 corpus programs
+had such a static, and p2-11's binaries are byte-identical; the run case "package
+variables of structs holding small arrays" holds it on the board. **A rule about the
+target's layout is measured on the board in C first** (scripts/cboard.sh), across
+member kinds, sizes and offsets, before the emitter is taught it.
 
 **A PROGRAM GO REJECTS IS A ROW** (2026-09-20). The sweeps above ask what a correct
 program does; this one asks what an incorrect one earns, which is the direction that

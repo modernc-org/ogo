@@ -27371,6 +27371,155 @@ func main() {
 		want: "5\n",
 	},
 	{
+		// Package variables the target's C compiler would initialize statically in a
+		// layout other than the one it reads them in: a struct with an array field of
+		// one- or two-byte elements of four bytes or more, at an offset or of a size
+		// the two disagree about, nested, and in an array and a slice. Statically
+		// initialized, every one read the bytes of another on the board, in silence
+		// (doc/static-init-array-field.c); they are filled at package initialization
+		// now (flexccInitSkew). The last two keep their static initializers, the two
+		// models agreeing about them. Diffed against Go.
+		name: "package variables of structs holding small arrays",
+		src: `type Ramp struct {
+	Ch    uint8
+	Steps [4]int16
+}
+
+type B4 struct {
+	ch uint8
+	s  [4]uint8
+}
+
+type B5 struct {
+	ch uint8
+	s  [5]uint8
+}
+
+type H3 struct {
+	ch uint8
+	s  [3]int16
+}
+
+type B6T struct {
+	b [6]uint8
+	t int16
+	u uint8
+}
+
+type R16 struct {
+	ch uint16
+	s  [2]int16
+}
+
+type Outer struct {
+	n int32
+	r Ramp
+	k uint8
+}
+
+type OK struct {
+	w int32
+	s [4]uint8
+}
+
+type OK2 struct {
+	ch uint8
+	s  [3]uint8
+}
+
+var r = Ramp{2, [4]int16{1, -2, 3, -4}}
+
+var b4 = B4{9, [4]uint8{1, 2, 3, 4}}
+
+var b5 = B5{9, [5]uint8{1, 2, 3, 4, 5}}
+
+var h3 = H3{9, [3]int16{1, -2, 3}}
+
+var b6t = B6T{[6]uint8{1, 2, 3, 4, 5, 6}, 7, 8}
+
+var r16 = R16{2, [2]int16{1, -2}}
+
+var o = Outer{5, Ramp{3, [4]int16{6, -7, 8, -9}}, 4}
+
+var rs = [2]Ramp{{1, [4]int16{2, 3, 4, 5}}, {6, [4]int16{7, 8, 9, 10}}}
+
+var sl = []B4{{1, [4]uint8{2, 3, 4, 5}}}
+
+var ok = OK{7, [4]uint8{1, 2, 3, 4}}
+
+var ok2 = OK2{7, [3]uint8{1, 2, 3}}
+
+func main() {
+	println("r", r.Ch, r.Steps[0], r.Steps[1], r.Steps[2], r.Steps[3])
+	println("b4", b4.ch, b4.s[0], b4.s[3], "b5", b5.s[0], b5.s[4])
+	println("h3", h3.s[0], h3.s[1], h3.s[2], "b6t", b6t.b[5], b6t.t, b6t.u)
+	println("r16", r16.ch, r16.s[0], r16.s[1])
+	println("o", o.n, o.r.Ch, o.r.Steps[0], o.r.Steps[3], o.k)
+	println("rs", rs[0].Steps[0], rs[1].Ch, rs[1].Steps[3], "sl", sl[0].ch, sl[0].s[0], sl[0].s[3])
+	println("ok", ok.w, ok.s[0], ok.s[3], "ok2", ok2.ch, ok2.s[2])
+}
+`,
+		want: "r 2 1 -2 3 -4\nb4 9 1 4 b5 1 5\nh3 1 -2 3 b6t 6 7 8\nr16 2 1 -2\no 5 3 6 -9 4\nrs 2 6 10 sl 1 2 5\nok 7 1 4 ok2 7 3\n",
+	},
+	{
+		// Package variables named like the members of the goroutine runtime's
+		// argument blocks, `a0`, `a1`, `s0` and `fn`. The target's C compiler drops a
+		// member named like a global declared before its type
+		// (doc/member-named-like-global.c), and the blocks were written after the
+		// globals with those names: the union of them went to size 0, a cog's
+		// arguments sat on its stack, and `go feeder(3)` read 3 as an address. The
+		// members carry the compiler's prefix now. Diffed against Go.
+		name: "a goroutine's arguments beside package variables named like the runtime's",
+		src: `type Set struct {
+	Ch  uint8
+	Val int32
+}
+
+var s0 = Set{1, -5}
+
+var s1 = Set{2, 7}
+
+var a0 = 11
+
+var a1 = 12
+
+var fn = 13
+
+var out chan int
+
+var done chan bool
+
+func feeder(n, k int) {
+	for i := 0; i < n; i++ {
+		out <- i * k
+	}
+	done <- true
+}
+
+func twice(n int) {
+	out <- 2 * n
+	done <- true
+}
+
+func main() {
+	h := twice
+	go feeder(3, 10)
+	for running := true; running; {
+		select {
+		case v := <-out:
+			println("fed", v)
+		case <-done:
+			running = false
+		}
+	}
+	go h(21)
+	println(<-out, <-done)
+	println(s0.Val, s1.Ch, a0, a1, fn)
+}
+`,
+		want: "fed 0\nfed 10\nfed 20\n42 true\n-5 2 11 12 13\n",
+	},
+	{
 		// A type switch on an operand that is no bare name: a field, a field of a
 		// field, an element, a call's result -- evaluated once, the counter says --
 		// a method's, a conversion, a parenthesised field, which was refused until
