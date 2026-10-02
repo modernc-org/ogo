@@ -425,8 +425,6 @@ const m_P2_CONFIG_BASE3 = 16
 
 const m_P2_CONFIG_BASE5 = 16
 
-const m_PASM_FLAG = 1
-
 const m_PASM_INLINE_ASM_VAR_BASE1 = 460
 
 const m_PASM_INLINE_ASM_VAR_BASE3 = 460
@@ -1303,9 +1301,9 @@ func s__BCCompileCoginit(tls *libc.TLS, cc *CC, irbuf uintptr, node uintptr, con
 		s__BCCompileInteger(tls, cc, irbuf, -int32(4))        // Magic number
 		*(*_ByteOpIR)(unsafe.Pointer(bp + 120)) = _ByteOpIR{} // Magic number
 		*(*_ByteOpKind)(unsafe.Pointer(bp + 136)) = int32(_BOK_MEM_WRITE)
-		*(*uint32)(unsafe.Pointer(bp + 144)) = uint32(m_MEMOP_BASE_POP)
-		*(*uint32)(unsafe.Pointer(bp + 144)) = uint32(m_MEMOP_SIZE_LONG)
-		*(*uint32)(unsafe.Pointer(bp + 144)) = uint32(m_true)
+		*(*uint16)(unsafe.Pointer(bp + 144)) = *(*uint16)(unsafe.Pointer(bp + 144))&^0x30 | uint16(m_MEMOP_BASE_POP)&0x3<<4
+		*(*uint16)(unsafe.Pointer(bp + 144)) = *(*uint16)(unsafe.Pointer(bp + 144))&^0xc0 | uint16(m_MEMOP_SIZE_LONG)&0x3<<6
+		*(*uint16)(unsafe.Pointer(bp + 144)) = *(*uint16)(unsafe.Pointer(bp + 144))&^0x1 | uint16(m_true)&0x1<<0
 		x__BIRB_PushCopy(tls, cc, irbuf, bp+120) // Write cogid????
 	} else {
 		// PASM coginit
@@ -16613,33 +16611,6 @@ func s__safe_isxdigit(tls *libc.TLS, cc *CC, x uint32) (r int32) {
 		v1 = 0
 	}
 	return v1
-}
-
-func s__search_dir(tls *libc.TLS, cc *CC, filename uintptr, searchlocal int32, next int32) (r int32) {
-	/*
-	 * Look in any directories specified by -I command line arguments,
-	 * specified by environment variable, then in the builtin search list.
-	 */
-	var incptr uintptr
-	_ = incptr /* -> inlcude directory */
-	incptr = cc.s__incdir
-	for {
-		if !(incptr < cc.s__incend) {
-			break
-		}
-		if libc.Xstrlen(tls, **(**uintptr)(__ccgo_up(incptr)))+libc.Xstrlen(tls, filename) >= uint64(m_PATH_MAX) {
-			x__cfatal(tls, cc, cc.s__toolong_fname, **(**uintptr)(__ccgo_up(incptr)), 0, filename)
-		} /* _F_  */
-		if s__open_file(tls, cc, incptr, libc.UintptrFromInt32(0), filename, m_FALSE, m_FALSE, m_FALSE) != 0 {
-			/* Now infile has been renewed  */
-			return int32(m_TRUE)
-		}
-		goto _1
-	_1:
-		;
-		incptr += 8
-	}
-	return m_FALSE
 }
 
 func s__set_a_dir(tls *libc.TLS, cc *CC, dirname uintptr) {

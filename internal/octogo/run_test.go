@@ -27568,6 +27568,34 @@ func main() {
 		panics: true,
 	},
 	{
+		// A comparison the backend decides, stored and then or-ed after another:
+		// the target's C compiler folded the conditional compare of the stored
+		// value as though it always ran, and made the jump after it unconditional
+		// -- false for each, silently, on the board alone
+		// (doc/conditional-compare-fold.c, internal/optimize_ir.c.diff; found by
+		// fuzzer seed 1284). Diffed against Go.
+		name: "a stored comparison the backend decides, or-ed after another",
+		src: `var g int
+
+var seed = 5
+
+func less(a, b int) bool { return a < b }
+
+func main() {
+	v := seed
+	w := v
+	f1 := v < w
+	println(12 != g || f1)
+	k := 2
+	f2 := k > 3
+	println(12 != g || f2)
+	f3 := less(seed, seed)
+	println(12 != g || f3, f3)
+}
+`,
+		want: "true\ntrue\ntrue false\n",
+	},
+	{
 		// Package variables named like the members of the goroutine runtime's
 		// argument blocks, `a0`, `a1`, `s0` and `fn`. The target's C compiler drops a
 		// member named like a global declared before its type

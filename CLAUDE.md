@@ -229,6 +229,37 @@ inputs, and never hand-edit the outputs.
    `freopen`, and the `ungetc`/`abort` todo-stub redirects — that libc lacks or
    stubs for both darwin arches).
 
+   > **Backend regenerated 2026-10-02 at the same pin with a fix of its own, and with
+   > go.mod's ccgo v4.36.1 and libc v1.77.1** -- spin2cpp `eb263961` (v7.7.3, still
+   > upstream's master), flexprop `v7.7.0`, `internal/optimize_ir.c.diff` carried
+   > again: TransformConstDst folded the flags of a CONDITIONAL instruction whose
+   > operands became constants as though it always ran, so `if_e cmp f, #0 wz` --
+   > run only where an earlier compare set Z -- made the jump after it
+   > unconditional, and `(12 != g) || f` was false for a stored `f = (v < v)`,
+   > silently (`doc/conditional-compare-fold.c`; found by fuzzer seed 1284, which
+   > failed its checksum on the board and passed on the host). Five lines: return
+   > where the instruction is conditional, as every other place applying known
+   > flags already asks. Measured natively before adoption: test_offline 588/588; of
+   > 1550 programs (the run cases and fuzzer seeds 1-400 dumped, the doc/ battery,
+   > seeds 1001-1300) six build differently, all six right on a P2-EDGE with the fix
+   > and seed 1284 wrong without; p2-11's binaries byte-identical. The first
+   > transpile from ccgo v4.36.1: each builder's turn changed its own target only
+   > (the undup fold expanded and hashed before and after each), and scripts/flexcc
+   > of all five builds the 1551 programs to one cccorpus list, a native build's of
+   > the same tree -- but for doc/register-limit-crash.c, which crashes both (139
+   > native, a Go panic in the transpile). REPORTED 2026-10-02 as flexprop#118, one
+   > issue bundling this fault with the suggested fix, the nine-deep hang below and
+   > a question about the cost of pushregs_/popregs_ in hub code (prototypes
+   > measured, not sent). The mcpp setjmp retry the ccgo note below names was not
+   > attempted this time.
+   >
+   > **Base flexspin hangs at nine nested calls through functions without a frame**
+   > (measured on a P2-EDGE 2026-10-02, a chain `int fN(int x) { return fN+1(x ^ N)
+   > + N; }`, eight deep right and nine silent): a non-leaf function with nothing to
+   > save gets no frame and keeps its return address on the 8-level hardware stack
+   > while it calls. Not worked around; no generated program is known to reach it.
+   > Reported in flexprop#118.
+   >
    > **Backend regenerated 2026-09-21 at spin2cpp `v7.7.3`, and the carried diff is
    > gone** — `eb263961`, the tag flexprop's master points at, inside flexprop
    > `v7.7.0`, ccgo v4.34.6. Upstream fixed all three faults `optimize_ir.c.diff`

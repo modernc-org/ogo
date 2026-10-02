@@ -339,6 +339,45 @@ cleanup:
 	return err
 }
 
+func s__deref_syml(tls *libc.TLS, cc *CC, slbuf1 uintptr, slbuf2 uintptr, chk_start uintptr) {
+	/* Dereference symbolic linked directory    */
+	var cp2, v1 uintptr
+	var len1, v2 int32
+	_, _, _, _ = cp2, len1, v1, v2 /* Should be int, not size_t    */
+	for {
+		v1 = libc.Xstrchr(tls, chk_start, int32('/'))
+		chk_start = v1
+		if !(v1 != libc.UintptrFromInt32(0)) {
+			break
+		}
+		**(**int8)(__ccgo_up(chk_start)) = int8('\000')
+		v2 = int32(libc.Xreadlink(tls, slbuf1, slbuf2, uint64(m_PATH_MAX)))
+		len1 = v2
+		if v2 > 0 {
+			/* Dereference symbolic linked directory    */
+			cp2 = libc.Xstrrchr(tls, slbuf1, int32('/')) /* Previous delimiter       */
+			**(**int8)(__ccgo_up(chk_start)) = int8('/')
+			libc.Xstrcpy(tls, slbuf2+uintptr(len1), chk_start)
+			if int32(**(**int8)(__ccgo_up(slbuf2))) == int32('/') { /* Absolute path    */
+				libc.Xstrcpy(tls, slbuf1, slbuf2)
+				chk_start = slbuf1 + uintptr(len1) + uintptr(1)
+			} else {
+				if cp2 != 0 {
+					chk_start = cp2 + uintptr(1)
+				} else {
+					chk_start = slbuf1
+				}
+				libc.Xstrcpy(tls, chk_start, slbuf2) /* Rewrite the path */
+				chk_start = chk_start + uintptr(len1)
+			}
+		} else {
+			v1 = chk_start
+			chk_start = chk_start + 1
+			**(**int8)(__ccgo_up(v1)) = int8('/')
+		}
+	}
+}
+
 func s__doerror(tls *libc.TLS, cc *CC, pp uintptr, msg uintptr, va uintptr) {
 	bp := tls.Alloc(1024)
 	defer tls.Free(1024)

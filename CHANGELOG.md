@@ -113,8 +113,21 @@ shipped section tells a reader on that version that they have behaviour they do 
   the address of what has no storage, and `a.Fp()[0].y`, a field that package does
   not export, were taken.
 
+- **A comparison the backend could decide, stored and then or-ed after another
+  value, was false on the board.** `f := v < w` for a `w := v`, then `12 != g || f`,
+  came out false whatever `g` held -- silently, on the board alone; the host was
+  right. The C backend's optimizer folded the conditional compare of the stored
+  value as though it always ran, and made the jump after it unconditional
+  (`doc/conditional-compare-fold.c`). Fixed in the backend this release carries
+  (under Toolchain). Found by the fuzzer, seed 1284.
+
 ### Toolchain
 
+- **The C backend is regenerated with a fix of its own**, carried ahead of upstream
+  for the miscompile under Fixed, and transpiled for the first time with the ccgo
+  and libc `go.mod` names. The five platforms' backends compile the reproducers,
+  the run cases and 700 fuzzer programs exactly as a native build of the same
+  backend does.
 - **A checked build leaves out the checks the program proves cannot fail.** A
   pointer parameter or receiver the function never writes, declares again or takes
   the address of is nil-checked by the first statement of the function's body that

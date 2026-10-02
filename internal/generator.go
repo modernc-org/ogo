@@ -39,13 +39,16 @@ const (
 	// sit on spin2cpp's master for longer than that -- which is what spin2cppRef,
 	// below, is for.
 	//
-	// All five committed backends were regenerated against this pair on 2026-09-21
-	// with ccgo v4.34.6 (flexprop at v7.7.0, spin2cpp at spin2cppRef);
-	// mcpp_main.c.diff applied cleanly. scripts/flexcc built for each of the five
-	// platforms compiles the doc/ reproducers and a scripts/dumpcorpus.sh dump of
-	// the run cases and fuzzer seeds 1-1000, 1670 programs, to one and the same
-	// scripts/cccorpus.sh list -- windows/amd64's taken under wine, the windows
-	// builder being off -- and that list is a native v7.7.3 build's.
+	// All five committed backends were regenerated against this pair on 2026-10-02
+	// with ccgo v4.36.1 and libc v1.77.1, go.mod's (flexprop at v7.7.0, spin2cpp at
+	// spin2cppRef, mcpp_main.c.diff and optimize_ir.c.diff applied).
+	// scripts/flexcc built for each of the five platforms compiles the doc/
+	// reproducers, a scripts/dumpcorpus.sh dump of the run cases and fuzzer seeds
+	// 1-400 and fuzzer seeds 1001-1300, 1551 programs, to one and the same
+	// scripts/cccorpus.sh list -- windows/amd64's taken under wine -- and that list
+	// is a native build's of the same tree, but for doc/register-limit-crash.c,
+	// which crashes both (status 139 native, a Go panic in the transpile). The
+	// regeneration before, 2026-09-21, was ccgo v4.34.6's, with no fix carried.
 	//
 	// The first generation, 2026-07-20, had both at v7.7.0; the second, 2026-08-29,
 	// had spin2cpp at 2bd01c4c; the third, 2026-09-15, had it at 3840014f plus
@@ -145,11 +148,16 @@ var (
 	gsed   = gnuTool("sed", "gsed")
 	// spin2cppDiffs are applied to spin2cpp after its checkout, in order.
 	// mcpp_main.c.diff adapts the sources to the transpile (it removes a setjmp). A
-	// fix carried ahead of upstream is listed here too, as optimize_ir.c.diff was
-	// from 2026-09-15 to 2026-09-21 (flexprop#109, #110, #111), and goes with the
+	// fix carried ahead of upstream is listed here too, and goes with the
 	// spin2cppRef that carries upstream's own fix -- once its reproducer prints
-	// gcc's values under a native build of that commit without the diff.
-	spin2cppDiffs = []string{"mcpp_main.c.diff"}
+	// gcc's values under a native build of that commit without the diff. A first
+	// optimize_ir.c.diff was carried from 2026-09-15 to 2026-09-21 (flexprop#109,
+	// #110, #111); the one carried since 2026-10-02 keeps the optimizer from
+	// folding the flags of a CONDITIONAL instruction whose operands became
+	// constants as though it always ran (TransformConstDst), which made a jump
+	// unconditional and `(12 != g) || f` false for a stored `f = (v < v)`
+	// (doc/conditional-compare-fold.c, flexprop#118; found by fuzzer seed 1284).
+	spin2cppDiffs = []string{"mcpp_main.c.diff", "optimize_ir.c.diff"}
 	target        = fmt.Sprintf("%s/%s", goos, goarch)
 )
 

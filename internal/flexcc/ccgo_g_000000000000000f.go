@@ -246,6 +246,8 @@ type _uid_t = uint32
 
 const m_BUFSIZ = 1024
 
+const m_PASM_FLAG = 1
+
 const m_S_IFDIR = 16384
 
 const m_UNX_IFBLK = 24576
@@ -2527,7 +2529,7 @@ func s__LZ4HC_compress_generic_internal(tls *libc.TLS, cc *CC, ctx uintptr, src 
 		v1 = int32(_favorCompressionRatio)
 	}
 	favor = v1
-	if cParam.Fstrat == 0 {
+	if cParam.Fstrat == int32(0) {
 		result = s__LZ4HC_compress_hashChain(tls, cc, ctx, src, dst, srcSizePtr, dstCapacity, cParam.FnbSearches, limit, dict)
 	} else {
 		result = s__LZ4HC_compress_optimal(tls, cc, ctx, src, dst, srcSizePtr, dstCapacity, cParam.FnbSearches, uint64(cParam.FtargetLength), limit, libc.BoolInt32(cLevel == int32(m_LZ4HC_CLEVEL_MAX)), dict, favor)
@@ -5329,6 +5331,11 @@ func s__TransformConstDst(tls *libc.TLS, cc *CC, irl uintptr, ir uintptr, imm ui
 	}
 	if x__InstrSetsAnyFlags(tls, cc, ir) != 0 {
 		**(**int32)(__ccgo_up(bp)) = 0
+		if (*_IR)(unsafe.Pointer(ir)).Fcond != int32(_COND_TRUE) {
+			// a conditional instruction sets the flags only where it runs,
+			// so what they are after it is not known
+			return 0
+		}
 		if !(x__ApplyConditionAfter(tls, cc, irl, ir, cval, val1, bp) != 0) {
 			return **(**int32)(__ccgo_up(bp)) // Couldn't apply condition :(
 		}
@@ -6874,6 +6881,33 @@ func s__resolveFuncSymbols(tls *libc.TLS, cc *CC, Q uintptr) (r int32) {
 		pf = (*_Function)(unsafe.Pointer(pf)).Fnext
 	}
 	return int32(1)
+}
+
+func s__search_dir(tls *libc.TLS, cc *CC, filename uintptr, searchlocal int32, next int32) (r int32) {
+	/*
+	 * Look in any directories specified by -I command line arguments,
+	 * specified by environment variable, then in the builtin search list.
+	 */
+	var incptr uintptr
+	_ = incptr /* -> inlcude directory */
+	incptr = cc.s__incdir
+	for {
+		if !(incptr < cc.s__incend) {
+			break
+		}
+		if libc.Xstrlen(tls, **(**uintptr)(__ccgo_up(incptr)))+libc.Xstrlen(tls, filename) >= uint64(m_PATH_MAX) {
+			x__cfatal(tls, cc, cc.s__toolong_fname, **(**uintptr)(__ccgo_up(incptr)), 0, filename)
+		} /* _F_  */
+		if s__open_file(tls, cc, incptr, libc.UintptrFromInt32(0), filename, m_FALSE, m_FALSE, m_FALSE) != 0 {
+			/* Now infile has been renewed  */
+			return int32(m_TRUE)
+		}
+		goto _1
+	_1:
+		;
+		incptr += 8
+	}
+	return m_FALSE
 }
 
 func s__tdefl_calculate_minimum_redundancy(tls *libc.TLS, cc *CC, A uintptr, n int32) {

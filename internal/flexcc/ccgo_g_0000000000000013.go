@@ -60,6 +60,8 @@ const m_INLINE_ASM_FLAG_CONST = 1
 
 const m_INLINE_ASM_FLAG_FCACHE = 2
 
+const m_INT32_MAX = 2147483647
+
 const m_IN_SRC = 26
 
 const m_LABEL_HAS_INSTR = 8

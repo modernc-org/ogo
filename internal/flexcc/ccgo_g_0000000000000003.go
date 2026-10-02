@@ -1809,44 +1809,6 @@ const m_C_XOR_ASSIGN = 282
 
 const m_EILSEQ = 92
 
-const m_FILENAME_MAX = 1024
-
-const m_PASM_FLAG = 1
-
-/* valloc is now declared in _malloc.h */
-
-/* Poison the following routines if -fshort-wchar is set */
-
-/*===---- limits.h - Standard header for integer sizes --------------------===* *
- * Part of the LLVM Project, under the Apache License v2.0 with LLVM Exceptions.
- * See https://llvm.org/LICENSE.txt for license information.
- * SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
- *
-\*===----------------------------------------------------------------------===*/
-
-/* The system's limits.h may, in turn, try to #include_next GCC's limits.h.
-   Avert this #include_next madness. */
-
-/* System headers include a number of constants from POSIX in <limits.h>.
-   Include it if we're hosted. */
-
-/* Many system headers try to "help us out" by defining these.  No really, we
-   know how big each datatype is. */
-
-/* C90/99 5.2.4.2.1 */
-
-/* C23 5.2.4.2.1 */
-
-/* C99 5.2.4.2.1: Added long long.
-   C++11 18.3.3.2: same contents as the Standard C Library header <limits.h>.
-*/
-
-/* LONG_LONG_MIN/LONG_LONG_MAX/ULONG_LONG_MAX are a GNU extension. Android's
-   bionic also defines them. It's too bad that we don't have something like
-   #pragma poison that could be used to deprecate a macro - the code should just
-   use LLONG_MAX and friends.
-*/
-
 const m_SP_ABORT = 328
 
 const m_SP_ABS = 409
@@ -3120,9 +3082,9 @@ func s__BCCompileCoginit(tls *libc.TLS, cc *CC, irbuf uintptr, node uintptr, con
 		s__BCCompileInteger(tls, cc, irbuf, -int32(4))        // Magic number
 		*(*_ByteOpIR)(unsafe.Pointer(bp + 120)) = _ByteOpIR{} // Magic number
 		*(*_ByteOpKind)(unsafe.Pointer(bp + 136)) = int32(_BOK_MEM_WRITE)
-		*(*uint32)(unsafe.Pointer(bp + 144)) = uint32(m_MEMOP_BASE_POP)
-		*(*uint32)(unsafe.Pointer(bp + 144)) = uint32(m_MEMOP_SIZE_LONG)
-		*(*uint32)(unsafe.Pointer(bp + 144)) = uint32(m_true)
+		*(*uint16)(unsafe.Pointer(bp + 144)) = *(*uint16)(unsafe.Pointer(bp + 144))&^0x30 | uint16(m_MEMOP_BASE_POP)&0x3<<4
+		*(*uint16)(unsafe.Pointer(bp + 144)) = *(*uint16)(unsafe.Pointer(bp + 144))&^0xc0 | uint16(m_MEMOP_SIZE_LONG)&0x3<<6
+		*(*uint16)(unsafe.Pointer(bp + 144)) = *(*uint16)(unsafe.Pointer(bp + 144))&^0x1 | uint16(m_true)&0x1<<0
 		x__BIRB_PushCopy(tls, cc, irbuf, bp+120) // Write cogid????
 	} else {
 		// PASM coginit
@@ -4418,7 +4380,7 @@ func s__CompileBasicBoolExpression(tls *libc.TLS, cc *CC, irl uintptr, expr uint
 		if isUnsigned != 0 {
 			v2 = uint32(4294967295)
 		} else {
-			v2 = uint32(2147483647)
+			v2 = uint32(m_INT32_MAX)
 		}
 	}
 	if v3 && libc.Uint32FromInt32(int32((*_Operand)(unsafe.Pointer(rhs)).Fval)) != v2 {
@@ -10961,9 +10923,9 @@ func s__MeaninglessMath(tls *libc.TLS, cc *CC, ir uintptr) (r uint8) {
 	case int32(_OPC_MAXU):
 		return libc.BoolUint8(libc.Uint32FromInt32(val) == libc.Uint32FromUint32(4294967295))
 	case int32(_OPC_MINS):
-		return libc.BoolUint8(val == -libc.Int32FromInt32(2147483647)-libc.Int32FromInt32(1))
+		return libc.BoolUint8(val == -libc.Int32FromInt32(m_INT32_MAX)-libc.Int32FromInt32(1))
 	case int32(_OPC_MAXS):
-		return libc.BoolUint8(val == libc.Int32FromInt32(2147483647))
+		return libc.BoolUint8(val == libc.Int32FromInt32(m_INT32_MAX))
 	default:
 		return libc.BoolUint8(m_false != 0)
 	}
@@ -12710,7 +12672,7 @@ func s__OptimizeCompares(tls *libc.TLS, cc *CC, irl uintptr) (r int32) {
 				**(**int32)(__ccgo_up(bp)) = **(**int32)(__ccgo_up(bp)) | int32(1)
 			}
 		} else {
-			if v3 = (*_IR)(unsafe.Pointer(ir1)).Fcond == int32(_COND_TRUE) && ((*_IR)(unsafe.Pointer(ir1)).Fopc == int32(_OPC_CMP) && s__IsImmediateVal(tls, cc, (*_IR)(unsafe.Pointer(ir1)).Fsrc, 0) != 0 || (*_IR)(unsafe.Pointer(ir1)).Fopc == int32(_OPC_CMPS) && s__IsImmediateVal(tls, cc, (*_IR)(unsafe.Pointer(ir1)).Fsrc, -libc.Int32FromInt32(2147483647)-libc.Int32FromInt32(1)) != 0) && uint32(_FLAG_WC) == libc.Uint32FromInt32((*_IR)(unsafe.Pointer(ir1)).Fflags)&(uint32(_FLAG_WZ)|uint32(_FLAG_WC)); v3 {
+			if v3 = (*_IR)(unsafe.Pointer(ir1)).Fcond == int32(_COND_TRUE) && ((*_IR)(unsafe.Pointer(ir1)).Fopc == int32(_OPC_CMP) && s__IsImmediateVal(tls, cc, (*_IR)(unsafe.Pointer(ir1)).Fsrc, 0) != 0 || (*_IR)(unsafe.Pointer(ir1)).Fopc == int32(_OPC_CMPS) && s__IsImmediateVal(tls, cc, (*_IR)(unsafe.Pointer(ir1)).Fsrc, -libc.Int32FromInt32(m_INT32_MAX)-libc.Int32FromInt32(1)) != 0) && uint32(_FLAG_WC) == libc.Uint32FromInt32((*_IR)(unsafe.Pointer(ir1)).Fflags)&(uint32(_FLAG_WZ)|uint32(_FLAG_WC)); v3 {
 				v1 = libc.BoolUint8(uint32(0) != libc.Uint32FromInt32((*_IR)(unsafe.Pointer(ir1)).Fflags)&uint32(_FLAG_KEEP_INSTR))
 				goto _8
 			_8:
@@ -16999,45 +16961,6 @@ func s__default_errfunc(tls *libc.TLS, cc *CC, dummy uintptr, filename uintptr, 
 	fprintf(tls, cc, libc.X__stderrp, __ccgo_ts+4265, 0)
 }
 
-func s__deref_syml(tls *libc.TLS, cc *CC, slbuf1 uintptr, slbuf2 uintptr, chk_start uintptr) {
-	/* Dereference symbolic linked directory    */
-	var cp2, v1 uintptr
-	var len1, v2 int32
-	_, _, _, _ = cp2, len1, v1, v2 /* Should be int, not size_t    */
-	for {
-		v1 = libc.Xstrchr(tls, chk_start, int32('/'))
-		chk_start = v1
-		if !(v1 != libc.UintptrFromInt32(0)) {
-			break
-		}
-		**(**int8)(__ccgo_up(chk_start)) = int8('\000')
-		v2 = int32(libc.Xreadlink(tls, slbuf1, slbuf2, uint64(m_FILENAME_MAX)))
-		len1 = v2
-		if v2 > 0 {
-			/* Dereference symbolic linked directory    */
-			cp2 = libc.Xstrrchr(tls, slbuf1, int32('/')) /* Previous delimiter       */
-			**(**int8)(__ccgo_up(chk_start)) = int8('/')
-			libc.Xstrcpy(tls, slbuf2+uintptr(len1), chk_start)
-			if int32(**(**int8)(__ccgo_up(slbuf2))) == int32('/') { /* Absolute path    */
-				libc.Xstrcpy(tls, slbuf1, slbuf2)
-				chk_start = slbuf1 + uintptr(len1) + uintptr(1)
-			} else {
-				if cp2 != 0 {
-					chk_start = cp2 + uintptr(1)
-				} else {
-					chk_start = slbuf1
-				}
-				libc.Xstrcpy(tls, chk_start, slbuf2) /* Rewrite the path */
-				chk_start = chk_start + uintptr(len1)
-			}
-		} else {
-			v1 = chk_start
-			chk_start = chk_start + 1
-			**(**int8)(__ccgo_up(v1)) = int8('/')
-		}
-	}
-}
-
 func s__devide_line(tls *libc.TLS, cc *CC, out uintptr) {
 	bp := tls.Alloc(16)
 	defer tls.Free(16)
@@ -20205,7 +20128,7 @@ func s__eval_eval(tls *libc.TLS, cc *CC, _valp uintptr, op int32) (r uintptr) {
 				x__cwarn(tls, cc, zero_div, libc.UintptrFromInt32(0), 0, cc.s__non_eval)
 			}
 			(*_VAL_SIGN)(unsafe.Pointer(**(**uintptr)(__ccgo_up(bp)))).Fsign = sign1
-			(*_VAL_SIGN)(unsafe.Pointer(**(**uintptr)(__ccgo_up(bp)))).Fval = libc.Int64FromUint64(18446744073709551615)
+			(*_VAL_SIGN)(unsafe.Pointer(**(**uintptr)(__ccgo_up(bp)))).Fval = libc.Int64FromUint64(libc.Uint64FromUint64(18446744073709551615))
 			return **(**uintptr)(__ccgo_up(bp))
 		}
 	}
@@ -23999,7 +23922,7 @@ func s__norm_path(tls *libc.TLS, cc *CC, dir uintptr, fname uintptr, inf int32, 
 			libc.Xstrcat(tls, bp, fname)
 			s__deref_syml(tls, cc, bp, bp+1025, bp+uintptr(len1))
 			/* Symbolic link check of directory */
-			v1 = int32(libc.Xreadlink(tls, bp, bp+1025, uint64(m_FILENAME_MAX)))
+			v1 = int32(libc.Xreadlink(tls, bp, bp+1025, uint64(m_PATH_MAX)))
 			len1 = v1
 			if v1 > 0 {
 				/* Dereference symbolic linked file (not directory) */
@@ -27830,33 +27753,6 @@ func s__scan_op(tls *libc.TLS, cc *CC, c int32, out uintptr) (r uintptr) {
 	return out
 }
 
-func s__search_dir(tls *libc.TLS, cc *CC, filename uintptr, searchlocal int32, next int32) (r int32) {
-	/*
-	 * Look in any directories specified by -I command line arguments,
-	 * specified by environment variable, then in the builtin search list.
-	 */
-	var incptr uintptr
-	_ = incptr /* -> inlcude directory */
-	incptr = cc.s__incdir
-	for {
-		if !(incptr < cc.s__incend) {
-			break
-		}
-		if libc.Xstrlen(tls, **(**uintptr)(__ccgo_up(incptr)))+libc.Xstrlen(tls, filename) >= uint64(m_FILENAME_MAX) {
-			x__cfatal(tls, cc, cc.s__toolong_fname, **(**uintptr)(__ccgo_up(incptr)), 0, filename)
-		} /* _F_  */
-		if s__open_file(tls, cc, incptr, libc.UintptrFromInt32(0), filename, m_FALSE, m_FALSE, m_FALSE) != 0 {
-			/* Now infile has been renewed  */
-			return int32(m_TRUE)
-		}
-		goto _1
-	_1:
-		;
-		incptr += 8
-	}
-	return m_FALSE
-}
-
 func s__set_a_dir(tls *libc.TLS, cc *CC, dirname uintptr) {
 	/*
 	 * Append an include directory.
@@ -29761,7 +29657,7 @@ func s__yysyntax_error(tls *libc.TLS, cc *CC, yyresult uintptr, yystate int32, s
 				break
 			}
 			if int32(cc.s__yycheck[yyx+yyn]) == yyx && yyx != int32(m_YYTERROR) {
-				if yycount == 5 {
+				if yycount == int32(5) {
 					yycount = int32(1)
 					yysize = yysize0
 					(**(**[60]int8)(__ccgo_up(bp)))[libc.Uint64FromInt64(28)-libc.Uint64FromInt32(1)] = int8('\000')
@@ -29878,7 +29774,7 @@ func s__yysyntax_error1(tls *libc.TLS, cc *CC, yyresult uintptr, yystate int32, 
 				break
 			}
 			if int32(cc.s__yycheck1[yyx+yyn]) == yyx && yyx != int32(m_YYTERROR) {
-				if yycount == 5 {
+				if yycount == int32(5) {
 					yycount = int32(1)
 					yysize = yysize0
 					(**(**[60]int8)(__ccgo_up(bp)))[libc.Uint64FromInt64(28)-libc.Uint64FromInt32(1)] = int8('\000')
@@ -29995,7 +29891,7 @@ func s__yysyntax_error2(tls *libc.TLS, cc *CC, yyresult uintptr, yystate int32, 
 				break
 			}
 			if int32(cc.s__yycheck2[yyx+yyn]) == yyx && yyx != int32(m_YYTERROR) {
-				if yycount == 5 {
+				if yycount == int32(5) {
 					yycount = int32(1)
 					yysize = yysize0
 					(**(**[60]int8)(__ccgo_up(bp)))[libc.Uint64FromInt64(28)-libc.Uint64FromInt32(1)] = int8('\000')
@@ -36133,7 +36029,7 @@ func x__ExprTypeRelative(tls *libc.TLS, cc *CC, table uintptr, expr uintptr, P u
 		}
 		/* go based on the size */
 		x = libc.Int64FromUint64(*(*_uint64_t)(unsafe.Pointer(expr + 8)))
-		if x >= int64(-libc.Int32FromInt32(2147483647)-libc.Int32FromInt32(1)) && x <= int64(2147483647) {
+		if x >= int64(-libc.Int32FromInt32(m_INT32_MAX)-libc.Int32FromInt32(1)) && x <= int64(m_INT32_MAX) {
 			return cc.x__ast_type_long
 		}
 		if x >= 0 && x <= libc.Int64FromUint32(4294967295) {
@@ -39096,7 +38992,7 @@ func x__NormalizePath(tls *libc.TLS, cc *CC, path uintptr) (r uintptr) {
 	if s__is_full_path(tls, cc, path) != 0 {
 		return libc.Xstrdup(tls, path)
 	}
-	if !(libc.Xgetcwd(tls, bp, uint64(m_FILENAME_MAX)) != 0) {
+	if !(libc.Xgetcwd(tls, bp, uint64(m_PATH_MAX)) != 0) {
 		x__cfatal(tls, cc, __ccgo_ts+108239, libc.Xstrerror(tls, **(**int32)(__ccgo_up(libc.X__error(tls)))), 0, libc.UintptrFromInt32(0))
 	}
 	return s__norm_path(tls, cc, bp, path, m_FALSE, m_FALSE)
@@ -40383,7 +40279,7 @@ try_addopt_again:
 					x__AstReportDone(tls, cc, bp)
 					return libc.BoolUint8(m_true != 0)
 				} else {
-					if negateOp != 0 && rightVal < 0 && rightVal != -libc.Int32FromInt32(2147483647)-libc.Int32FromInt32(1) {
+					if negateOp != 0 && rightVal < 0 && rightVal != -libc.Int32FromInt32(m_INT32_MAX)-libc.Int32FromInt32(1) {
 						x__AstReportAs(tls, cc, **(**uintptr)(__ccgo_up(right)), bp)
 						**(**int32)(__ccgo_up(optoken)) = negateOp
 						**(**uintptr)(__ccgo_up(right)) = x__AstInteger(tls, cc, int64(-rightVal))
@@ -45819,7 +45715,7 @@ func x__do_include(tls *libc.TLS, cc *CC, next int32) (r int32) {
 		c = delim
 		for x__get_unexpandable(tls, cc, c, m_FALSE) != m_NO_TOKEN {
 			/* Expand any macros in the line    */
-			if bp+uintptr(m_FILENAME_MAX) < hp+uintptr(int32(int64(cc.x__workp)-___predefined_ptrdiff_t(uintptr(unsafe.Pointer(&cc.x__work_buf))))) {
+			if bp+uintptr(m_PATH_MAX) < hp+uintptr(int32(int64(cc.x__workp)-___predefined_ptrdiff_t(uintptr(unsafe.Pointer(&cc.x__work_buf))))) {
 				x__cfatal(tls, cc, cc.s__toolong_fname, bp, 0, uintptr(unsafe.Pointer(&cc.x__work_buf)))
 			}
 			hp = _stpcpy(tls, hp, uintptr(unsafe.Pointer(&cc.x__work_buf)))
@@ -45846,12 +45742,12 @@ func x__do_include(tls *libc.TLS, cc *CC, next int32) (r int32) {
 		}
 	}
 	cc.x__workp = uintptr(unsafe.Pointer(&cc.x__work_buf))
-	token_type = x__scan_token(tls, cc, delim, uintptr(unsafe.Pointer(&cc.x__workp)), uintptr(unsafe.Pointer(&cc.x__work_buf))+uintptr(m_FILENAME_MAX))
+	token_type = x__scan_token(tls, cc, delim, uintptr(unsafe.Pointer(&cc.x__workp)), uintptr(unsafe.Pointer(&cc.x__work_buf))+uintptr(m_PATH_MAX))
 	if token_type == int32(m_STR) { /* String literal form  */
 		goto found_name
 	} else {
 		if token_type == int32(m_OPE) && cc.x__openum == int32(m_OP_LT) { /* '<'  */
-			cc.x__workp = x__scan_quote(tls, cc, delim, uintptr(unsafe.Pointer(&cc.x__work_buf)), uintptr(unsafe.Pointer(&cc.x__work_buf))+uintptr(m_FILENAME_MAX), int32(m_TRUE))
+			cc.x__workp = x__scan_quote(tls, cc, delim, uintptr(unsafe.Pointer(&cc.x__work_buf)), uintptr(unsafe.Pointer(&cc.x__work_buf))+uintptr(m_PATH_MAX), int32(m_TRUE))
 			sys_header = int32(1)
 		} else { /* Any other token in-  */
 			goto not_header
