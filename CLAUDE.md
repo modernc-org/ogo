@@ -2458,10 +2458,25 @@ via the `testdata/hostp2` shim which now stubs these):
 | `p2.WaitUntil(t)` | `_waitcnt` | `p2.ClockFreq()` | `_clockfreq`→uint32 |
 | `p2.Rnd()` | `_rnd`→uint32 | | |
 | `p2.Rev(x)` | `_rev`→uint32 | `p2.Reboot()` | `_reboot` |
+| `p2.ReadLUT(a)` | `ogo_rdlut`→uint32 | `p2.WriteLUT(a,v)` | `ogo_wrlut` |
 | `p2.SetBaud(n)` | `_setbaud` | `p2.ReadByte(t)` | `_rxraw`→int |
 | `p2.WriteByte(b)` | `_txraw` | | |
 | `p2.NewLock()` | `_locknew`→int | `p2.TryLock(l)` | `_locktry`→bool |
 | `p2.Unlock(l)` | `_lockrel` | `p2.FreeLock(l)` | `_lockret` |
+
+`ReadLUT`/`WriteLUT` (2026-10-03, asked for by p2-11, whose emulated registers live
+in Hub RAM) are the one pair that is no flexcc intrinsic: `lutHelperDef` emits
+`ogo_rdlut`/`ogo_wrlut` where a program calls one (`usesLUT`), each an `__asm const`
+RDLUT or WRLUT marked `__attribute__((inline))`, which the backend inlines to the
+bare instruction -- the listing shows no call -- and a `__thread` array of 256 on the
+host, a thread being a cog there. The address is 0 to 255: LUT $200-$2FF, which
+flexcc leaves to the program while no function is placed in LUT (nothing OctoGo
+emits is); $300 up is the backend's. A checked build compares and panics before the
+instruction, a constant address folds the compare away, and a constant past 255 is
+refused by the emitter (`lutAddrOK`). Measured on a P2-EDGE in hub execution, eight
+in a row at eight alignments: RDLUT 3 clocks and WRLUT 2, against RDLONG 15 and
+WRLONG 8 (15 for one alone); and a goroutine's cog sees its own LUT (the run case
+"the LUT RAM of each cog").
 
 The package also exports the pin-configuration CONSTANTS a smart pin is brought up
 with -- `p2.DAC990R3V`, `p2.DACDitherPWM`, `p2.OutputEnable` and the rest of the DAC

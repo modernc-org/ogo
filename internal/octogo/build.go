@@ -421,6 +421,24 @@ func WriteByte(b byte)
 // Reboot restarts the board.
 func Reboot()
 
+// ReadLUT reads the long at addr of the LUT RAM of the cog it runs on, and
+// WriteLUT writes v there. LUT RAM is memory of each cog's own, beside its
+// registers: a cog reads and writes its LUT in 3 and 2 clocks, where a long of
+// hub RAM takes about 15 to read and 8 to 15 to write, so a value a hot loop
+// reads and writes again and again -- an emulated machine's registers -- is
+// faster kept there. It is not a
+// variable: every cog has a LUT of its own, so a value one cog wrote is not what
+// another reads, and what a cog finds at an address it has not written is
+// whatever was there.
+//
+// addr is 0 to 255, the first half of the LUT, which the C backend leaves to the
+// program while nothing is placed in LUT RAM, and nothing OctoGo builds is; the
+// second half is the backend's. An address past 255 panics "LUT address out of
+// range" where the checks are on.
+func ReadLUT(addr uint32) uint32
+
+func WriteLUT(addr uint32, v uint32)
+
 // The sixteen hardware locks, the same pool the channel runtime draws from.
 // TryLock is the only way to take one -- the hardware offers no blocking acquire --
 // so a caller that must wait spins on it.

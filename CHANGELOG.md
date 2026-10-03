@@ -44,6 +44,15 @@ shipped section tells a reader on that version that they have behaviour they do 
   address. Such a pointer has no methods, so a case, an assertion or a value of one
   where an interface asking for a method is wanted is refused in Go's words, `*[3]int
   does not implement I (missing method M)`. Measured on a P2-EDGE.
+- **`p2.ReadLUT(addr)` and `p2.WriteLUT(addr, v)`**: a long of the LUT RAM of the
+  cog the code runs on, at addresses 0 to 255 -- the half the backend leaves to the
+  program. A cog reads its LUT in 3 clocks and writes it in 2, where a long of Hub
+  RAM takes about 15 to read and 8 to 15 to write, so a value a hot loop keeps
+  reading and writing, an emulated machine's registers, is faster kept there. Each is one instruction where
+  it is called, with a range check before it in a checked build (`panic: LUT
+  address out of range`); a constant address past 255 is refused where it is
+  written. Every cog has a LUT of its own, so what one cog wrote is not what
+  another reads. Measured on a P2-EDGE.
 
 ### Fixed
 

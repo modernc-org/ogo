@@ -27708,6 +27708,54 @@ func main() {
 		want: "1 2 3 4 0 \n0 63 -1 21 -2 -2 \n10 9 -10 20\ninit -32767\n",
 	},
 	{
+		// p2.ReadLUT and p2.WriteLUT: every address of the half of the LUT a
+		// program may use, written and read back, and a goroutine's cog writing an
+		// address of its own LUT, which the first cog's does not see. On the host
+		// a LUT is a thread's, as on the board it is a cog's.
+		name: "the LUT RAM of each cog",
+		src: `import "p2"
+
+var done chan uint32
+
+func other() {
+	p2.WriteLUT(3, 900)
+	done <- p2.ReadLUT(3)
+}
+
+func main() {
+	for a := uint32(0); a < 256; a++ {
+		p2.WriteLUT(a, a*1000+7)
+	}
+	sum := uint32(0)
+	for a := uint32(0); a < 256; a++ {
+		sum += p2.ReadLUT(a)
+	}
+	println(p2.ReadLUT(0), p2.ReadLUT(3), p2.ReadLUT(255), sum)
+	go other()
+	println(<-done, p2.ReadLUT(3))
+}
+`,
+		want: "7 3007 255007 32641792\n900 3007\n",
+	},
+	{
+		// An address past the half of the LUT the program may use, computed where
+		// the program runs, panics where the checks are on.
+		name: "a LUT address out of range",
+		src: `import "p2"
+
+func main() {
+	a := uint32(255)
+	p2.WriteLUT(a, 1)
+	println("ok", p2.ReadLUT(a))
+	a++
+	p2.WriteLUT(a, 2)
+	println("not reached")
+}
+`,
+		want:   "ok 1\npanic: LUT address out of range",
+		panics: true,
+	},
+	{
 		// Package variables named like the members of the goroutine runtime's
 		// argument blocks, `a0`, `a1`, `s0` and `fn`. The target's C compiler drops a
 		// member named like a global declared before its type

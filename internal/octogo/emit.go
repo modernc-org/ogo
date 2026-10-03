@@ -410,6 +410,61 @@ type p2Intrinsic struct {
 	ret string
 }
 
+// noteP2 records what a call of the p2 function name needs defined beside it: the
+// LUT helpers, which are the emitter's and no intrinsic of the C backend.
+func (e *emitter) noteP2(name string) {
+	if name == "ReadLUT" || name == "WriteLUT" {
+		e.usesLUT = true
+		if e.checks {
+			e.needPanic()
+		}
+	}
+}
+
+// lutAddrOK refuses a CONSTANT address past the half of the LUT p2.ReadLUT and
+// p2.WriteLUT may reach, which is known to be wrong where it is written -- as a
+// constant index past an array's extent is, checks on or off.
+func (e *emitter) lutAddrOK(name string, args []int32) bool {
+	if name != "ReadLUT" && name != "WriteLUT" {
+		return true
+	}
+	exprs := e.callArgExprs(args)
+	if len(exprs) == 0 {
+		return true
+	}
+	if v, ok := e.foldConstInt(exprs[0].ast); ok && (v < 0 || v > 255) {
+		e.failAt(exprs[0].ast, "invalid argument: LUT address %d out of range [0:256]", v)
+		return false
+	}
+	return true
+}
+
+// lutHelperDef defines ogo_rdlut and ogo_wrlut, what p2.ReadLUT and p2.WriteLUT
+// call. On the target each is the one instruction, RDLUT or WRLUT, in a function
+// marked for the backend to inline, which it does, leaving the instruction where
+// the call was -- measured, a read of 3 clocks and a write of 2. On the host, where
+// a goroutine is a thread as on the P2 it is a cog, a LUT is an array of each
+// thread's. A checked build refuses an address past the half of the LUT the
+// backend leaves to the program.
+func lutHelperDef(checks bool) string {
+	check := ""
+	if checks {
+		check = "\tif (a > 255) ogo_panic(\"LUT address out of range\");\n"
+	}
+	return "#ifdef __FLEXC__\n" +
+		"static unsigned ogo_rdlut(unsigned a) __attribute__((inline)) {\n" +
+		"\tunsigned v;\n" + check +
+		"\t__asm const {\n\t\trdlut v, a\n\t}\n" +
+		"\treturn v;\n}\n" +
+		"static void ogo_wrlut(unsigned a, unsigned v) __attribute__((inline)) {\n" + check +
+		"\t__asm const {\n\t\twrlut v, a\n\t}\n}\n" +
+		"#else\n" +
+		"static __thread unsigned ogo_lut[256];\n" +
+		"static unsigned ogo_rdlut(unsigned a) {\n" + check + "\treturn ogo_lut[a & 255];\n}\n" +
+		"static void ogo_wrlut(unsigned a, unsigned v) {\n" + check + "\togo_lut[a & 255] = v;\n}\n" +
+		"#endif\n"
+}
+
 // mathIntrinsics maps the math package's bodyless functions to the C library call
 // each one is. The package is ORDINARY embedded source -- its constants are emitted
 // and folded like any package's, and Round and Trunc have real OctoGo bodies -- so
@@ -685,6 +740,8 @@ var p2Intrinsics = map[string]p2Intrinsic{
 	"ReadByte":     {"_rxraw", "int"},
 	"WriteByte":    {"_txraw", ""},
 	"Reboot":       {"_reboot", ""},
+	"ReadLUT":      {"ogo_rdlut", "unsigned"},
+	"WriteLUT":     {"ogo_wrlut", ""},
 
 	// The hardware locks. The P2 has 16, shared with the channel runtime, which
 	// claims one per channel -- NewLock reports -1 when none is left, exactly as
@@ -5913,6 +5970,9 @@ func emitProgram(pkg *Package, w io.Writer, opts []EmitOption, rename map[string
 	if e.usesBound {
 		helperDefs.WriteString(ogoBound)
 	}
+	if e.usesLUT {
+		helperDefs.WriteString(lutHelperDef(e.checks))
+	}
 	for _, pt := range slices.Sorted(maps.Keys(e.nilHelpers)) {
 		helperDefs.WriteString(nilHelperDef(pt, nilHelperName(pt)))
 	}
@@ -6623,6 +6683,7 @@ type emitter struct {
 	usesPanic          bool                    // ogo_panic is called: emit its definition and pull in its includes
 	testEntry          string                  // the entry point of a test binary, replacing main (see TestEntry)
 	usesBound          bool                    // ogo_bound is called: emit the index bounds-check helper
+	usesLUT            bool                    // p2.ReadLUT or p2.WriteLUT is called: emit ogo_rdlut and ogo_wrlut (lutHelperDef)
 	nilHelpers         map[string]bool         // pointer types whose nil-dereference guard is called
 	initSkew           map[string]bool         // flexccInitSkew's answers, by C type
 	arrPtrHelpers      map[string]arrDim       // pointer-to-array types a slice is converted to: emit each one's helper
@@ -32884,6 +32945,10 @@ func (e *emitter) emitCallExpr(recv string, suffix []Node) bool {
 				e.fail("unsupported p2 function %q", method)
 				return false
 			}
+			e.noteP2(method)
+			if !e.lutAddrOK(method, suffix[1].ast) {
+				return false
+			}
 			e.emit(intr.c + "(")
 			e.emitCallArgs("", suffix[1].ast) // a p2 intrinsic takes no slice
 			e.emit(")")
@@ -32934,6 +32999,10 @@ func (e *emitter) emitCallExpr(recv string, suffix []Node) bool {
 		intr, ok := p2Intrinsics[method]
 		if !ok {
 			e.fail("unsupported p2 function %q", method)
+			return false
+		}
+		e.noteP2(method)
+		if !e.lutAddrOK(method, suffix[1].ast) {
 			return false
 		}
 		e.emit(intr.c + "(")
