@@ -13,7 +13,7 @@
 // x is that pair, and the build stops with the message above about the C written
 // for it. Found by OctoSmith, seed 359 of v0.48.0's generator, in the board sweep
 // of seeds 201-1000. Not worked around; `x & 0xFFFFFFFF` is the spelling that
-// builds.
+// builds. REPORTED 2026-10-03 as flexprop issue 122.
 //
 // To check, build for the P2 with -2: the build is refused.
 

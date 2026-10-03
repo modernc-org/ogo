@@ -19,7 +19,8 @@
 // A positive one is right, `38LL`, `0LL` and `2147483647LL`, and so is one past 32
 // bits, `5000000002LL`, truncated as gcc truncates it; so are a cast, `(int)-38LL`,
 // and a 64-bit variable. The count is NumExprItemsOnStack's (functions.c), by the
-// argument's own type, ahead of any conversion to the parameter's.
+// argument's own type, ahead of any conversion to the parameter's. REPORTED
+// 2026-10-03 as flexprop issue 121, with no suggested fix.
 //
 // In OctoGo: an untyped constant computed from 64-bit constants was typed 64-bit
 // whatever its value, so `zero = big - big` was spelled `0LL` and `zero - 38` was
