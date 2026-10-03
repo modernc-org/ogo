@@ -27756,6 +27756,30 @@ func main() {
 		panics: true,
 	},
 	{
+		// A goroutine started on a function of the p2 package, or on one of
+		// math's without a body, which the trampoline called by a name nothing
+		// declared. Four rounds of four are more than the cogs there are, so each
+		// goroutine has run and handed its cog back before the next round.
+		name: "p2 and math functions started on cogs",
+		src: `import (
+	"math"
+	"p2"
+)
+
+func main() {
+	for round := 0; round < 4; round++ {
+		go p2.WaitMs(1)
+		go p2.WriteLUT(3, 7)
+		go p2.Rnd()
+		go math.Floor(2.5)
+		p2.WaitMs(30)
+	}
+	println("done")
+}
+`,
+		want: "done\n",
+	},
+	{
 		// Package variables named like the members of the goroutine runtime's
 		// argument blocks, `a0`, `a1`, `s0` and `fn`. The target's C compiler drops a
 		// member named like a global declared before its type

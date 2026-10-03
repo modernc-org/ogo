@@ -1704,6 +1704,10 @@ type goSite struct {
 	// trampoline calls through its table with a0's data pointer.
 	ifaceMethod string
 	ifaceCType  string
+	// discard says the callee is the C of a p2 or math function that answers a
+	// value, which the trampoline casts away: gcc calls the call of a math
+	// function whose value nobody reads a statement with no effect.
+	discard bool
 	// arrOut is the ARRAY a callee returns, which nobody reads: the trampoline hands
 	// it storage of the goroutine's own stack, at position arrOutAt of the arguments
 	// -- after a method's receiver, ahead of everything else. A zero arrOut: none.
@@ -2124,6 +2128,27 @@ func (e *emitter) emitGo(nodes []Node) {
 			if !isImport {
 				e.fail("only `go f(args)` on a package function or `go x.M(args)` on a method is supported yet")
 				return
+			}
+			// A function of the p2 package, or one of math's without a body, is the C
+			// it stands for, at a call as here: nothing is declared under the
+			// package's namespace, and `go p2.PinToggle(56)` called a p2_PinToggle
+			// the backend did not know.
+			if base == "p2" {
+				intr, ok := p2Intrinsics[name]
+				if !ok {
+					e.fail("unsupported p2 function %q", name)
+					return
+				}
+				e.noteP2(name)
+				if !e.lutAddrOK(name, callSuffix.ast) {
+					return
+				}
+				site = goSite{callee: intr.c, discard: intr.ret != "", id: len(e.goSites)}
+				break
+			}
+			if c, ok := e.mathIntrinsic(base, name); ok {
+				site = goSite{callee: c, discard: true, id: len(e.goSites)}
+				break
 			}
 			// The imported function is emitted in its own package's namespace, so the
 			// launch resolves to the same mangled name an ordinary call would. A
@@ -2649,6 +2674,9 @@ func (e *emitter) goDefs() string {
 		// here, with the return through _cogstart's epilogue ahead of it. done
 		// only makes the slot a candidate; ogo_cog_sweep waits for _cogchk to
 		// confirm the cog stopped before the stack is handed to anyone else.
+		if s.discard {
+			callee = "(void)" + callee
+		}
 		fmt.Fprintf(&tramps, "\t%s(%s);\n\togo_cog_done(a->ogo_slot);\n}\n", callee, strings.Join(call, ", "))
 	}
 	// The argument structs come before the pool that embeds them, the trampolines

@@ -56,6 +56,11 @@ shipped section tells a reader on that version that they have behaviour they do 
 
 ### Fixed
 
+- **A goroutine started on a function of the `p2` package, or on one of `math`'s**,
+  `go p2.WriteByte(c)` or `go math.Floor(x)`, did not build: the cog was to call
+  `p2_WriteByte`, a name nothing declares, and the backend refused the program. It
+  calls what a call where it stands calls; on a P2-EDGE three cogs started on
+  `p2.WriteByte` wrote their bytes. `defer` of such a function always worked.
 - **Two silent faults of the P2 backend, met by a domain program, are worked
   around.** Both were right on the host.
   - A package variable of a struct with an array field of one- or two-byte

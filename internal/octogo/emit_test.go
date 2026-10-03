@@ -1921,6 +1921,65 @@ func main() {
 	}
 }
 
+// TestEmitCGoIntrinsic pins what a goroutine started on a function of the p2 package,
+// or on one of math's without a body, calls: the C the function stands for, as a
+// call where it stands does. The trampoline called p2_<Name> and math_<Name>, which
+// nothing declares, and the backend refused the program. On a P2-EDGE, `go
+// p2.WriteByte('A' + byte(i))` from three cogs wrote ABC.
+func TestEmitCGoIntrinsic(t *testing.T) {
+	src := `import (
+	"math"
+	"p2"
+)
+
+func main() {
+	go p2.WriteByte('A')
+	go p2.WriteLUT(3, 7)
+	go p2.Rnd()
+	go math.Floor(2.5)
+	p2.WaitMs(10)
+}
+`
+	pkg, err := Build(-1, []string{"main.ogo"}, fstest.MapFS{"main.ogo": &fstest.MapFile{Data: []byte(src)}})
+	if err != nil {
+		t.Fatalf("Build: %v", err)
+	}
+	var buf bytes.Buffer
+	if err := EmitC(pkg, &buf, Checked()); err != nil {
+		t.Fatalf("EmitC: %v", err)
+	}
+	c := buf.String()
+	for _, want := range []string{
+		"_txraw(a->ogo_a0);",
+		"ogo_wrlut(a->ogo_a0, a->ogo_a1);",
+		"(void)_rnd();",
+		"(void)floor(a->ogo_a0);",
+		`if (a > 255) ogo_panic("LUT address out of range");`,
+	} {
+		if !strings.Contains(c, want) {
+			t.Errorf("missing %q in\n%s", want, c)
+		}
+	}
+	for _, bad := range []string{"p2_", "math_Floor(a->"} {
+		if strings.Contains(c, bad) {
+			t.Errorf("%q in\n%s", bad, c)
+		}
+	}
+
+	pkg, err = Build(-1, []string{"main.ogo"}, fstest.MapFS{"main.ogo": &fstest.MapFile{Data: []byte(`import "p2"
+
+func main() {
+	go p2.WriteLUT(256, 7)
+}
+`)}})
+	if err != nil {
+		t.Fatalf("Build: %v", err)
+	}
+	if err := EmitC(pkg, &bytes.Buffer{}); err == nil || !strings.Contains(err.Error(), "out of range [0:256]") {
+		t.Errorf("go p2.WriteLUT(256, 7): got %v, want the address refused", err)
+	}
+}
+
 // TestEmitCPinDrive pins the pull-up and pull-down recipes, which are the reason the
 // drive constants exist: the P2 has no pull-up bit, so one is a weak HIGH drive with
 // a floating LOW drive, and getting either half wrong leaves a pin that reads
