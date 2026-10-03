@@ -1759,6 +1759,14 @@
 // ogo.mod. The host's C compiler has no such import, so a program calling a Spin2
 // method runs on the board only.
 //
+// Two rules of Spin2 itself meet whoever writes such an object, and the backend's
+// message names neither. A CON name, a method's name and a DAT label are one
+// namespace, whatever their case: a label "bind" beside PUB bind is "Redefining
+// symbol bind", and a label may not be a keyword ("reg" is one, met as a syntax
+// error). And a cog register is an address below $200: a DAT label past it, in
+// the LUT, is no register, and an instruction naming it as one fails where it is
+// used, "operand does not appear to be a register".
+//
 // # Function types and function values
 //
 // A function type "func" Signature denotes the set of functions with that
