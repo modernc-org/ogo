@@ -27756,6 +27756,37 @@ func main() {
 		panics: true,
 	},
 	{
+		// An untyped constant computed from 64-bit ones whose value fits an int is an
+		// int, Go's default type for it. Typed by its operands it was spelled 0LL,
+		// and the target's compiler passes a 64-bit constant to an int parameter as
+		// two words: f(1, zero-38, 3) gave f the constant's high word for its last
+		// argument, -1177923906 on the board for -277, with only a warning, which the
+		// target build of this case fails on. Found by OctoSmith seed 722.
+		name: "a constant computed from 64-bit constants, where an int is wanted",
+		src: `const (
+	big  = 440198072917
+	zero = big - big
+	five = big - big + 5
+)
+
+func f(a, b, c int) int { return a*100 + b*10 + c }
+
+func g(a uint32, b int) int { return int(a)*10 + b }
+
+func ret() int { return zero - 7 }
+
+func main() {
+	println(f(1, zero-38, 3), f(zero+5, 2, 3), f(1, 2, zero-3))
+	println(g(five, zero-1), ret())
+	var w int64 = five + 1<<40
+	var xs [8]int
+	xs[five] = zero - 9
+	println(w, xs[5], zero == 0, int64(five*big))
+}
+`,
+		want: "-277 523 117\n49 -7\n1099511627781 -9 true 2200990364585\n",
+	},
+	{
 		// A three-clause for whose first clause assigns a variable declared before
 		// it, with a bound the body lowers: the target's loop conversion matched
 		// the assignment and counted down from the bound read once, so each loop

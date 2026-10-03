@@ -798,6 +798,16 @@ still design-only.
   second try). The method expression went from 0.5% of
   statements to 2.5% with it: three seeds in a hundred had drawn one, and the shift
   of the draws left none in the coverage corpus.
+  Swept on 2026-10-03 with the released v0.48.0, seeds 201-1000 on a P2-EDGE (a
+  tool taking the board lock per seed, shared with the p2-11 session): 749 passing,
+  48 outgrowing a cog, two refused by the backend, `x << 32 >> 32` of a uint64
+  (doc/uint64-shift-32-pair.c, loud), and ONE built with a warning, "Bad number of
+  parameters", which was a silent fault: an untyped constant typed 64-bit by its
+  operands, passed to an int parameter as two words (A CONSTANT IS A VALUE, OF THE
+  TYPE IT MEETS). The board passed that seed's checksum anyway, where a run case
+  of the shape failed in every argument position, so **a sweep that runs only what
+  built silently misses a fault the backend warned about**; the tool keeps WARNED
+  apart.
 - **Fixed miscompile (found by the oracle):** a shadowing local whose initializer
   references the shadowed name — `var x = x + 5` with an outer `x` in scope — used
   to miscompile, because the emitter names locals verbatim so the C initializer read
@@ -1999,6 +2009,16 @@ content and is right, a tool pairing files by name is not. And the fuzzer declar
 constant, which is how the row lived through every sweep on the board, until
 2026-09-30 (see the smith notes): its first sweep found `x &^ 6e3` complemented as a
 double, the one operator of the row nobody had crossed with a float spelling.
+An untyped constant's OWN type was the row's last cell (2026-10-03, OctoSmith seed
+722 in a board sweep of v0.48.0): evalConst typed one by its operands, so `zero =
+big - big` for a `big` past 32 bits was a 64-bit constant of value 0, spelled `0LL`
+wherever it was read, and the target's compiler passes a 64-bit CONSTANT to a 32-bit
+parameter as two words -- every argument from it on read wrong, `f(1, zero-38, 3)`
+-1177923906 for -277, with only "Bad number of parameters" said, which `ogo build`
+passes on and does not fail. An untyped constant whose value fits an int is an int
+now, Go's default type for it; a 64-bit EXPRESSION argument is converted by the
+prototype and was right. **A warning the backend gives a user's build is a fault
+until shown harmless**: the sweep tool sets WARNED apart, and this was its one.
 
 **WHAT A CALL HANDS BACK IS ASKED ONCE** (2026-09-28). p2-11 could not return an
 error that came of a call given a local buffer, `if err := fill(buf[:]); err != nil

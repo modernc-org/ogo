@@ -18,6 +18,18 @@ shipped section tells a reader on that version that they have behaviour they do 
 
 ## Unreleased
 
+### Fixed
+
+- **A constant computed from 64-bit constants was passed as two words, silently.**
+  `const zero = big - big` for a `big` past 32 bits, then `f(1, zero-38, 3)` for an
+  `f(a, b, c int)`: f got -1177923906 for -277 on the board, and `f(1, 2, zero-3)`
+  and a `uint32` parameter were wrong too, with only a warning from the backend,
+  "Bad number of parameters". An untyped constant took a 64-bit type from the
+  constants it was computed from, whatever its value, and the backend passes a
+  64-bit constant to a 32-bit parameter as two words. Such a constant is an `int`
+  now where its value fits one, Go's default type for it. Found by OctoSmith
+  seed 722, in a board sweep of v0.48.0.
+
 ### Toolchain
 
 - **A program that outgrows a cog's registers is told which functions hold

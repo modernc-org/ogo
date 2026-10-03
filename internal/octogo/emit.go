@@ -10398,6 +10398,18 @@ func (e *emitter) evalConst(name, ownType string, hasType bool, initExpr []int32
 		if !ok {
 			ct = "int" // an untyped constant defaults to int
 		}
+		// An untyped constant built from 64-bit ones whose VALUE fits an int is an
+		// int, Go's default type for it, whatever its operands are: `zero = big - big`
+		// is 0. Typed by its operands it was a 64-bit constant, spelled `0LL` at every
+		// read, and the target's compiler passes a 64-bit constant to an int parameter
+		// as two words: `f(1, zero-38, 3)` gave f -38's high word for its last
+		// argument and -1177923906 on the board for Go's -277, with only a warning,
+		// "Bad number of parameters".
+		if cIntWidths[ct] == 64 && e.exprUntyped(initExpr) {
+			if v, ok := e.constIntValue(initExpr); ok && fitsCInt(v) {
+				ct = "int"
+			}
+		}
 		// An untyped constant whose value does not fit an int takes the width it
 		// needs: Go's default type for it is int, which is 64-bit there, and a C int
 		// would hold 1 << 40 as 0. One only a uint64 holds, `1<<64 - 1`, is a uint64:
