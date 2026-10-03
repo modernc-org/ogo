@@ -109,7 +109,10 @@
 //     argument on, and calling a pointer method that keeps its receiver on a local.
 //     A struct holding such a reference counts as one.
 //   - A goroutine is a physical cog, of which the P2 has eight. There is no
-//     scheduler and no preemption, so "go" starts a real core, not a task.
+//     scheduler and no preemption, so "go" starts a real core, not a task. What
+//     Go calls a data race, a variable one cog writes while another reads it, is
+//     defined here instead ("Memory shared between cogs"): a cog may spin on a
+//     flag another cog raises, and one writer and one reader need no lock.
 //   - A channel is a P2 hardware lock over statically allocated Hub RAM, giving a
 //     synchronous rendezvous with no scheduler behind it.
 //   - An interface value holds a POINTER, so a pointer is what goes into one: "&x",
@@ -424,6 +427,45 @@
 // with a constant capacity, "make([]T, len, cap)", which reserves a fixed,
 // compile-time-sized backing array rather than allocating on a heap. All memory
 // thus stays deterministically bounded at compile time.
+//
+// # Memory shared between cogs
+//
+// (OctoGo Specific)
+//
+// Cogs share Hub RAM, and a variable there -- a package variable, or what a
+// pointer or a slice reaches -- may be written by one cog and read by another with
+// no channel between them. Go calls that a data race and leaves what it does to
+// the compiler, which may keep the value in a register and never read it again.
+// OctoGo defines it:
+//
+//   - A loop makes its reads on every pass. No read of Hub RAM is moved out of a
+//     loop, kept from one pass to the next, or kept across a wait (p2.WaitMs and
+//     the rest).
+//   - A write is made where the program makes it, and a cog's writes reach Hub RAM
+//     in the order it makes them. So a cog that writes a value and then a flag --
+//     a ring buffer's element and then its index -- publishes the value with the
+//     flag: a cog that tests the flag, and reads the value only where the test
+//     found it set, reads what was written before the flag.
+//   - Where no write, branch, loop or wait stands between them, two reads of one
+//     variable may be made as one, reads of different variables may be made in
+//     either order, and two writes of one variable may be made as the last of
+//     them. That is why the reading cog above tests the flag before it reads the
+//     value: the test is what orders the two reads.
+//   - A value of 32 bits or fewer is read and written in one access, so another
+//     cog sees it whole. A wider one -- a 64-bit integer, a string, a slice, an
+//     interface value, a struct, an array -- takes several, and a cog that reads
+//     one while another writes it may see part of each.
+//
+// So a cog may wait for another by spinning on a variable the other sets,
+//
+//	for ready == 0 {
+//	}
+//
+// and one writer and one reader need no lock: a flag one cog raises and another
+// waits for, or a ring buffer whose producer moves only its head and whose
+// consumer moves only its tail. Where two cogs write one variable, an update such
+// as "n++" is a read and a write, and of two made at once one may be lost; that is
+// what a channel, or a hardware lock (p2.TryLock), is for.
 //
 // # Types
 //

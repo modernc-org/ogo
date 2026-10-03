@@ -27756,6 +27756,99 @@ func main() {
 		panics: true,
 	},
 	{
+		// A three-clause for whose first clause assigns a variable declared before
+		// it, with a bound the body lowers: the target's loop conversion matched
+		// the assignment and counted down from the bound read once, so each loop
+		// ran five times where Go runs three (doc/loop-bound-read-once.c). The
+		// bound is a local, a package variable, and a package variable a called
+		// function lowers.
+		name: "a for loop whose body lowers its bound",
+		src: `var gn, gm = 5, 5
+
+func lower() { gm = 3 }
+
+func main() {
+	n, c, d, e := 5, 0, 0, 0
+	var i int
+	for i = 0; i < n; i++ {
+		c++
+		if c == 2 {
+			n = 3
+		}
+	}
+	for i = 0; i < gn; i++ {
+		d++
+		if d == 2 {
+			gn = 3
+		}
+	}
+	for i = 0; i < gm; i++ {
+		e++
+		if e == 2 {
+			lower()
+		}
+	}
+	println(c, d, e, i)
+}
+`,
+		want: "3 3 3 3\n",
+	},
+	{
+		// Package variables two cogs share with no channel between them, as
+		// specs.go's "Memory shared between cogs" defines it: a ring buffer whose
+		// producer writes an element and then the index that publishes it, and
+		// whose consumer spins on the index through a method; a flag spun on; a
+		// bool spun on the other way. Each spin ends only if its read is made on
+		// every pass, and the sum is right only if an element is read after the
+		// index that published it.
+		name: "package variables two cogs share",
+		src: `type ring struct {
+	head, tail uint32
+	buf        [8]uint32
+}
+
+func (q *ring) empty() bool { return q.head == q.tail }
+
+var (
+	r     ring
+	flag  uint32
+	done  bool
+	total uint32
+)
+
+func produce() {
+	for v := uint32(1); v <= 100; v++ {
+		for r.head-r.tail == 8 {
+		}
+		r.buf[r.head%8] = v
+		r.head++
+	}
+	flag = 1
+	for !done {
+	}
+	total = 7
+}
+
+func main() {
+	go produce()
+	sum := uint32(0)
+	for n := 0; n < 100; n++ {
+		for r.empty() {
+		}
+		sum += r.buf[r.tail%8]
+		r.tail++
+	}
+	for flag == 0 {
+	}
+	done = true
+	for total == 0 {
+	}
+	println(sum, total)
+}
+`,
+		want: "5050 7\n",
+	},
+	{
 		// A goroutine started on a function of the p2 package, or on one of
 		// math's without a body, which the trampoline called by a name nothing
 		// declared. Four rounds of four are more than the cogs there are, so each

@@ -28126,24 +28126,26 @@ condition:
 			case ASSIGN:
 				// The statement's own lowering, as the post clause takes (see
 				// emitPostAssign): `for total = 1 << n; ...` for a uint64 shifted an
-				// int here too. The clause runs once, so a lowering that is more
-				// than an expression simply stands ahead of the loop.
+				// int here too. The clause runs once, so it stands ahead of the loop,
+				// `i = 0; for (; i < n; i++)`, whatever it is: in the first clause an
+				// assignment is what the target's loop conversion matches, which counts
+				// down from the bound read once, so a loop whose body lowered its
+				// bound, or a bound another cog lowered, ran as many times as the
+				// bound said when it began (doc/loop-bound-read-once.c).
 				initText = e.captureC(func() { e.emitPostAssign(h.initLHS, lhs, "=", h.initRHS, false) })
-				if strings.ContainsAny(initText, ";\n") {
-					lines := strings.Split(initText, "\n")
-					for i, line := range lines {
-						if i != 0 {
-							e.ind()
-						}
-						e.emit(line)
-						if i == len(lines)-1 {
-							e.emit(";")
-						}
-						e.emit("\n")
+				lines := strings.Split(initText, "\n")
+				for i, line := range lines {
+					if i != 0 {
+						e.ind()
 					}
-					e.ind()
-					initText = ""
+					e.emit(line)
+					if i == len(lines)-1 {
+						e.emit(";")
+					}
+					e.emit("\n")
 				}
+				e.ind()
+				initText = ""
 			default:
 				initText = lhs
 			}

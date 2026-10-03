@@ -498,3 +498,97 @@ func TestOutgrewCog(t *testing.T) {
 		}
 	}
 }
+
+// TestBuildSharedVariables holds specs.go's "Memory shared between cogs" to the
+// backend, which is where it could break: a read of hub RAM that a loop makes is
+// made on every pass. Each loop of the program -- the spins and the loops holding
+// them -- is a backward jump in the listing, and each must read hub RAM, or call
+// what does, between its label and its jump: a value the backend kept in a
+// register would leave a spin with neither, and it would spin for ever. Checked,
+// unchecked and without the inlining marks, which lay the loops out each its own
+// way. The run case "package variables two cogs share" holds what the program
+// does, on the host and on the board.
+func TestBuildSharedVariables(t *testing.T) {
+	const src = `type ring struct {
+	head, tail uint32
+	buf        [8]uint32
+}
+
+func (q *ring) empty() bool { return q.head == q.tail }
+
+var (
+	r     ring
+	flag  uint32
+	done  bool
+	total uint32
+)
+
+func produce() {
+	for v := uint32(1); v <= 100; v++ {
+		for r.head-r.tail == 8 {
+		}
+		r.buf[r.head%8] = v
+		r.head++
+	}
+	flag = 1
+	for !done {
+	}
+	total = 7
+}
+
+func main() {
+	go produce()
+	sum := uint32(0)
+	for n := 0; n < 100; n++ {
+		for r.empty() {
+		}
+		sum += r.buf[r.tail%8]
+		r.tail++
+	}
+	for flag == 0 {
+	}
+	done = true
+	for total == 0 {
+	}
+	println(sum, total)
+}
+`
+	label := regexp.MustCompile(`^(LR__\d+)$`)
+	jump := regexp.MustCompile(`#(LR__\d+)\s*$`)
+	reads := regexp.MustCompile(`^\s+(?:if_\w+\s+)?(?:rd(?:long|word|byte)|call)\s`)
+	for _, flags := range [][]string{nil, {"--unchecked"}, {"--no-inline"}} {
+		_, listing := buildProgram(t, src, flags...)
+		lines := strings.Split(string(listing), "\n")
+		loops := 0
+		for _, fn := range []string{"_main", "_produce"} {
+			from := slices.Index(lines, fn)
+			to := slices.Index(lines, fn+"_ret")
+			if from < 0 || to < from {
+				t.Fatalf("%v: no %s in the listing", flags, fn)
+			}
+			at := map[string]int{}
+			for i := from; i < to; i++ {
+				if m := label.FindStringSubmatch(lines[i]); m != nil {
+					at[m[1]] = i
+					continue
+				}
+				m := jump.FindStringSubmatch(lines[i])
+				if m == nil {
+					continue
+				}
+				start, back := at[m[1]]
+				if !back {
+					continue // forward
+				}
+				loops++
+				if !slices.ContainsFunc(lines[start:i], reads.MatchString) {
+					t.Errorf("%v: %s loops from %s to line %d with no hub read and no call:\n%s",
+						flags, fn, m[1], i+1, strings.Join(lines[start:i+1], "\n"))
+				}
+			}
+		}
+		if loops < 7 {
+			t.Errorf("%v: %d loops found in _main and _produce, want 7: the test reads the listing wrong", flags, loops)
+		}
+	}
+}

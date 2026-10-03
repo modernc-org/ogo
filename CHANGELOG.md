@@ -20,6 +20,14 @@ shipped section tells a reader on that version that they have behaviour they do 
 
 ### Language
 
+- **Memory shared between cogs is defined** (specs.go, "Memory shared between
+  cogs"), where Go calls it a data race. A loop makes its reads of Hub RAM on every
+  pass, and none is kept across a wait, so a cog may spin on a flag another cog
+  raises, `for ready == 0 {}`. A cog's writes reach Hub RAM in the order it makes
+  them, so a value written before its flag is what a cog reads after testing the
+  flag, and one writer and one reader need no lock. A value of 32 bits or fewer is
+  read and written whole. This is what the compiler already did; it is a rule now,
+  held by a test of the backend's listing and a run case on the board.
 - **A conversion to a pointer to a type written out**, `(*[4]uint32)(x)` and
   `(*[]byte)(x)`, as Go has it: from nil, an `unsafe.Pointer`, the address of an
   array of the type or of a defined type over it, and a pointer of either -- so a
@@ -56,6 +64,14 @@ shipped section tells a reader on that version that they have behaviour they do 
 
 ### Fixed
 
+- **A `for` that assigns its variable ran as many times as its bound said when it
+  began, silently.** In `var i int; for i = 0; i < n; i++ { ... }`, with `i` unused
+  in the body, a body that lowered `n` -- a local, a package variable, or a package
+  variable a called function lowered -- did not end the loop sooner: five passes
+  on the board where Go makes three. The P2 backend counts such a loop down from
+  the bound it reads once (`doc/loop-bound-read-once.c`). The assignment now
+  stands ahead of the loop, which the backend leaves alone. `for i := 0; ...`
+  was never affected.
 - **A goroutine started on a function of the `p2` package, or on one of `math`'s**,
   `go p2.WriteByte(c)` or `go math.Floor(x)`, did not build: the cog was to call
   `p2_WriteByte`, a name nothing declares, and the backend refused the program. It

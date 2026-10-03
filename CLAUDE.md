@@ -1891,6 +1891,40 @@ nesting, all equal to Go there. p2-11: +4.1% checked, +3.6% unchecked. Not done:
 narrow LOCAL held in an int, which would end the read-side extensions too and has to
 narrow at every store.
 
+**A READ IN A LOOP IS MADE ON EVERY PASS** (2026-10-03). p2-11's PASM core work asked
+whether the backend may keep a package variable in a register across a loop, which a
+cog spinning on a flag another cog writes, and its console's ring buffer, rely on not
+happening. Go calls such a program a data race and lets the compiler hoist; OctoGo has
+no `volatile` and no sync/atomic. The user chose to DEFINE it (specs.go, "Memory shared
+between cogs"): a loop makes its reads on every pass, none kept across a wait; a cog's
+writes reach Hub RAM in program order, so a value written before its flag is read
+after a test of the flag; with no write, branch, loop or wait between them, reads may
+be merged or reordered and two writes of one variable merged; a value of 32 bits or
+fewer is accessed whole. What makes it true is the backend at its DEFAULT -O1, which
+`ogo build` passes (no -O2): its read merging (FindNextRead, optimize_ir.c) stops at a
+label, a branch, a write and a wait, its CORDIC reordering moves reads past reads only,
+and -O1 has no CSE. **The rule is known at -O1 only**: -O2 adds CSE, which may reuse
+inside a loop a value computed before it (loopCSE, cse.c), and aggressive-mem, which
+lets FindNextRead cross conditional jumps -- one spin shape tried at -O2 kept its read,
+which says nothing of the rest -- so a change of flags is measured against
+TestBuildSharedVariables
+(internal/build), which reads the listing: every loop of a ring-buffer program reads hub
+RAM or calls what does, checked, unchecked and `--no-inline`. The run case "package
+variables two cogs share" holds what it does on the host and the board. Measured first
+on the board: five spin shapes (a global, fields through an inlined pointer method, a
+bool with work in the body, an element through an inlined call, a loop writing another
+global), checked and unchecked, each with its read inside the loop.
+Checking the rule found a SILENT backend fault older than it: flexcc's simple loop
+conversion (CheckSimpleIncrementLoop, loops.c, -O1) rewrites `for (i = 0; i < n; i++)`
+whose body does not use i as a count down from n read ONCE, asking nothing of n but
+that it is a constant or a name -- a local the body lowers, a global, a global a callee
+lowers all ran their first count (doc/loop-bound-read-once.c: 5 5 5 for gcc's 3 3 3).
+OctoGo reached it through a for whose first clause ASSIGNS a variable declared before
+it, `var i int; for i = 0; i < n; i++`; `for i := 0; ...` is a declaration, which the
+conversion does not match. The emitter writes an assigned first clause ahead of the
+loop since, `i = 0; for (; i < n; i++)` (one corpus program of 1210 changed); the run
+case "a for loop whose body lowers its bound" printed 5 5 5 on the board before it.
+
 **A CONSTANT IS A VALUE, OF THE TYPE IT MEETS** (2026-09-28). p2-11's next finding
 was a silent one: `b-a < patience`, for a `const patience = 10000` and a uint32
 difference past 2^31, was true on the board and false in Go and on the host. A named
@@ -2515,9 +2549,9 @@ contention, as in the channel rendezvous, and a hang where a program nests two
 locks it believes are independent, `_locktry` not being reentrant. There is no blocking
 acquire in the hardware, so waiting is a spin on `TryLock`, which is why it is the
 one intrinsic typed `bool`. They are what lets user code write a multi-producer
-structure; a single-producer/single-consumer ring buffer needs no lock and already
-works (verified on the board), though it leans on the backend not hoisting the
-shared index out of the poll -- there is no `volatile` in the language.
+structure; a single-producer/single-consumer ring buffer needs no lock and works
+(verified on the board), which specs.go's "Memory shared between cogs" makes a rule
+since 2026-10-03 -- see A READ IN A LOOP IS MADE ON EVERY PASS.
 
 ~~A `select` waiting on a Smart Pin~~ SETTLED 2026-09-04: no pin clause. The
 default-arm polling idiom (select over channels, `default:` polls `p2.PinIn` +
