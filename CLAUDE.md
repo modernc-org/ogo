@@ -1918,7 +1918,9 @@ Checking the rule found a SILENT backend fault older than it: flexcc's simple lo
 conversion (CheckSimpleIncrementLoop, loops.c, -O1) rewrites `for (i = 0; i < n; i++)`
 whose body does not use i as a count down from n read ONCE, asking nothing of n but
 that it is a constant or a name -- a local the body lowers, a global, a global a callee
-lowers all ran their first count (doc/loop-bound-read-once.c: 5 5 5 for gcc's 3 3 3).
+lowers all ran their first count (doc/loop-bound-read-once.c: 5 5 5 for gcc's 3 3 3; flexprop#119, reported the same
+day with a fix tested natively: test_offline unchanged, of 1261 programs only the
+reproducer built differently).
 OctoGo reached it through a for whose first clause ASSIGNS a variable declared before
 it, `var i int; for i = 0; i < n; i++`; `for i := 0; ...` is a declaration, which the
 conversion does not match. The emitter writes an assigned first clause ahead of the

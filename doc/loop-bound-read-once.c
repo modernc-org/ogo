@@ -31,7 +31,8 @@
 // file prints lbc 3 3 3 on the board; `make test_offline` reports what it reports
 // without the check; of 1261 programs -- doc/ and a corpus dump -- this file is the
 // only one built differently; and a loop over a local bound the body leaves alone
-// is still counted down, as a REP.
+// is still counted down, as a REP. REPORTED 2026-10-03 as flexprop issue 119 with
+// that check as the suggested fix.
 //
 // In OctoGo: `var i int; for i = 0; i < n; i++ { ...; n = 3 }`, with n a local or
 // a package variable, ran five times on the board where Go runs three; found
