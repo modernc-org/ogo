@@ -13,6 +13,7 @@ import (
 	"slices"
 	"strings"
 	"testing"
+	"time"
 
 	"modernc.org/ogo/internal/octogo"
 )
@@ -590,5 +591,103 @@ func main() {
 		if loops < 7 {
 			t.Errorf("%v: %d loops found in _main and _produce, want 7: the test reads the listing wrong", flags, loops)
 		}
+	}
+}
+
+// TestCogHint pins how a program that outgrew a cog is told which functions hold
+// the registers: from the listing, the program's own functions only -- those its C
+// defines without static -- by the number of distinct local registers each uses,
+// the most first. A listing older than the build, or none, names nothing.
+func TestCogHint(t *testing.T) {
+	const c = `static int32_t ogo_helper(int32_t x) {
+int32_t mix(int32_t a, int32_t b) OGO_INLINE {
+uint8_t crc8(ogo_slice_uint8_t p);
+uint8_t crc8(ogo_slice_uint8_t p) {
+void decoder_feed(decoder* d, uint8_t b) {
+int main(void) {
+`
+	own := programFuncs([]byte(c))
+	for _, name := range []string{"mix", "crc8", "decoder_feed", "main"} {
+		if !own[name] {
+			t.Errorf("programFuncs: %s is missing from %v", name, own)
+		}
+	}
+	if own["ogo_helper"] {
+		t.Errorf("programFuncs: a static helper is the program's")
+	}
+
+	const listing = `_main
+	mov	local01, #1
+	mov	local02, local01
+	add	local_03, local02
+	add	local_03, local01
+_main_ret
+	ret
+_crc8
+	mov	local01, #2
+_crc8_ret
+	ret
+_decoder_feed
+	mov	local01, #3
+	mov	local02, #4
+_decoder_feed_ret
+	ret
+_ogo_helper_0003
+	mov	local01, local02
+	mov	local03, local04
+	mov	local05, local06
+_ogo_helper_0003_ret
+	ret
+`
+	dir := t.TempDir()
+	path := filepath.Join(dir, "prog.p2asm")
+	write(t, path, listing)
+	const want = "the functions holding the most are main (3), decoder_feed (2), crc8 (1); split main into smaller ones"
+	if got := cogHint(path, time.Now(), own); !strings.Contains(got, want) {
+		t.Errorf("cogHint:\ngot  %s\nwant ...%s", got, want)
+	}
+	for _, got := range []string{
+		cogHint(path, time.Now().Add(time.Hour), own),              // the listing is older than the build
+		cogHint(filepath.Join(dir, "none.p2asm"), time.Now(), own), // there is none
+	} {
+		if strings.Contains(got, "holding the most") || !strings.Contains(got, "split the largest function") {
+			t.Errorf("cogHint named a function it cannot know: %s", got)
+		}
+	}
+}
+
+// TestBuildCogHint builds a program whose main keeps 160 values at once, which
+// outgrows a cog, and asks that the build says so in the program's terms: main is
+// named as what to split, after what the backend said.
+func TestBuildCogHint(t *testing.T) {
+	const n = 160
+	var b strings.Builder
+	fmt.Fprintf(&b, "var g [%d]int32\n\nfunc main() {\n", n)
+	for i := range n {
+		fmt.Fprintf(&b, "\ta%d := g[%[1]d]\n", i)
+	}
+	b.WriteString("\tfor i := 0; i < 3; i++ {\n")
+	for i := range n {
+		fmt.Fprintf(&b, "\t\ta%d += a%d\n", i, (i+1)%n)
+	}
+	b.WriteString("\t}\n")
+	for i := range n {
+		fmt.Fprintf(&b, "\tg[%d] = a%[1]d\n", i)
+	}
+	b.WriteString("\tprintln(g[0])\n}\n")
+
+	dir := t.TempDir()
+	write(t, filepath.Join(dir, "prog", "main.ogo"), b.String())
+	var said bytes.Buffer
+	code, err := Build([]string{"-o", filepath.Join(dir, "prog.binary"), filepath.Join(dir, "prog")}, nil, &said, &said)
+	if err == nil || code == 0 {
+		t.Fatalf("the program builds: the test needs a larger one\n%s", said.String())
+	}
+	if !outgrewCog(said.Bytes()) {
+		t.Fatalf("the program fails for something else:\n%s", said.String())
+	}
+	if !strings.Contains(said.String(), "the functions holding the most are main (") ||
+		!strings.Contains(said.String(), "split main into smaller ones") {
+		t.Errorf("the build does not name main:\n%s", said.String())
 	}
 }

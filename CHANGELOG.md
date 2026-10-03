@@ -16,6 +16,20 @@ same area is a new entry under **Unreleased**, not an edit to the old one. Amend
 shipped section tells a reader on that version that they have behaviour they do not.
 `git show vX.Y.Z:CHANGELOG.md` is the check.
 
+## Unreleased
+
+### Toolchain
+
+- **A program that outgrows a cog's registers is told which functions hold
+  them.** The backend says `fit 480 failed: pc is 494` or "exceeded local register
+  limit", which names assembly and no function. `ogo build` and `ogo test` now add
+  the program's functions holding the most local registers, the largest first, read
+  from the listing -- `main (140), handle (23), sineInit (14); split main into
+  smaller ones` -- a function's locals taking a register each. Where the backend
+  stopped before writing a listing, the advice is the general one. A function is named
+  as the C names it: as written for one of the main package, `Type_method` for a
+  method, `pkg_Function` for another package's.
+
 ## v0.48.0
 
 ### Language

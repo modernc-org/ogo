@@ -15,8 +15,11 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"regexp"
+	"slices"
 	"strconv"
 	"strings"
+	"time"
 
 	"modernc.org/ogo/internal/flexcc"
 	"modernc.org/ogo/internal/loadp2"
@@ -173,29 +176,124 @@ func compile(args []string, stdout, stderr io.Writer) (binary string, code int, 
 // locals to where it lands, a cog has 480 for everything, and a program that fits
 // without the marks is not to fail for having been made faster. Nothing is said of
 // the first attempt then; a program that fits neither way is told what the second
-// said.
+// said, and which of its functions hold the registers (cogHint).
 func compileMarked(c []byte, unmarked func() ([]byte, error), cFile, out, inc string, stdout, stderr io.Writer) (int, error) {
 	if err := os.WriteFile(cFile, c, 0o644); err != nil {
 		return 1, err
 	}
-	if !bytes.Contains(c, []byte(octogo.InlineMark)) {
-		return compileC(cFile, out, inc, stdout, stderr)
+	if bytes.Contains(c, []byte(octogo.InlineMark)) {
+		var said, saidErr bytes.Buffer
+		code, err := compileC(cFile, out, inc, &said, &saidErr)
+		if err == nil || !outgrewCog(saidErr.Bytes()) {
+			stdout.Write(said.Bytes())
+			stderr.Write(saidErr.Bytes())
+			return code, err
+		}
+		if c, err = unmarked(); err != nil {
+			return 1, err
+		}
+		if err := os.WriteFile(cFile, c, 0o644); err != nil {
+			return 1, err
+		}
 	}
-	var said, saidErr bytes.Buffer
-	code, err := compileC(cFile, out, inc, &said, &saidErr)
-	if err == nil || !outgrewCog(saidErr.Bytes()) {
-		stdout.Write(said.Bytes())
-		stderr.Write(saidErr.Bytes())
-		return code, err
+	listing := strings.TrimSuffix(out, filepath.Ext(out)) + ".p2asm"
+	start := time.Now()
+	var said bytes.Buffer
+	code, err := compileC(cFile, out, inc, io.MultiWriter(stdout, &said), io.MultiWriter(stderr, &said))
+	if err != nil && outgrewCog(said.Bytes()) {
+		fmt.Fprintln(stderr, cogHint(listing, start, programFuncs(c)))
 	}
-	if c, err = unmarked(); err != nil {
-		return 1, err
-	}
-	if err := os.WriteFile(cFile, c, 0o644); err != nil {
-		return 1, err
-	}
-	return compileC(cFile, out, inc, stdout, stderr)
+	return code, err
 }
+
+// cogHint says, of a program that outgrew a cog's registers, which of its
+// functions hold the most of them, read from the listing the backend wrote. The
+// backend says "fit 480 failed: pc is 494" or "exceeded local register limit" and
+// names no function, and a function's locals are what fill the cog: each value it
+// keeps is a register of its own. So the answer is to split the function that
+// holds the most, and this names it, by the name it has in the C, which is the
+// OctoGo name for a function of the main package, Type_method for a method and
+// pkg_Function for another package's. Only the program's own functions are named,
+// the ones its C defines without static (programFuncs): the library's and the
+// emitter's helpers are no program's to split. A listing older than the build, or
+// none, names nothing.
+func cogHint(listing string, since time.Time, own map[string]bool) string {
+	const advice = "ogo: the program needs more registers than a cog has: a function's locals take one each"
+	if fi, err := os.Stat(listing); err != nil || fi.ModTime().Before(since.Add(-time.Second)) {
+		return advice + "; split the largest function into smaller ones"
+	}
+	b, err := os.ReadFile(listing)
+	if err != nil {
+		return advice + "; split the largest function into smaller ones"
+	}
+	lines := strings.Split(string(b), "\n")
+	at := map[string]int{}
+	for i, line := range lines {
+		if listingLabel.MatchString(line) {
+			at[line] = i
+		}
+	}
+	type held struct {
+		name string
+		regs int
+	}
+	var fns []held
+	for label, from := range at {
+		to, ok := at[label+"_ret"]
+		if !ok || to < from || !strings.HasPrefix(label, "_") {
+			continue
+		}
+		name := label[1:]
+		if !own[name] {
+			continue // the library's or the emitter's
+		}
+		regs := map[string]bool{}
+		for _, line := range lines[from:to] {
+			for _, r := range listingLocal.FindAllString(line, -1) {
+				regs[r] = true
+			}
+		}
+		if len(regs) != 0 {
+			fns = append(fns, held{name, len(regs)})
+		}
+	}
+	if len(fns) == 0 {
+		return advice + "; split the largest function into smaller ones"
+	}
+	slices.SortFunc(fns, func(a, b held) int {
+		if a.regs != b.regs {
+			return b.regs - a.regs
+		}
+		return strings.Compare(a.name, b.name)
+	})
+	var names []string
+	for _, f := range fns[:min(3, len(fns))] {
+		names = append(names, fmt.Sprintf("%s (%d)", f.name, f.regs))
+	}
+	return fmt.Sprintf("%s, and the functions holding the most are %s; split %s into smaller ones",
+		advice, strings.Join(names, ", "), fns[0].name)
+}
+
+// programFuncs answers the names of the functions the C of a program defines at
+// file scope without static: the program's own, which the backend's listing
+// labels by the same name. Every helper the emitter writes is static.
+func programFuncs(c []byte) map[string]bool {
+	own := map[string]bool{}
+	for _, line := range strings.Split(string(c), "\n") {
+		if m := cFuncDef.FindStringSubmatch(line); m != nil && !strings.HasPrefix(line, "static ") {
+			own[m[1]] = true
+		}
+	}
+	return own
+}
+
+var (
+	listingLabel = regexp.MustCompile(`^[A-Za-z_][A-Za-z0-9_]*$`)
+	listingLocal = regexp.MustCompile(`\blocal_?[0-9]+\b`)
+	// cFuncDef is a function's definition as the emitter writes it: a type, the
+	// name and its parameters on one line, ending in the brace that opens the body.
+	cFuncDef = regexp.MustCompile(`^[A-Za-z_][A-Za-z0-9_ *]*[ *]([A-Za-z_][A-Za-z0-9_]*)\(.*\)[A-Za-z_ ]*\{$`)
+)
 
 // outgrewCog reports whether what the backend said is that the program needs more
 // registers than a cog has: the assembler's check of the register pool, or the

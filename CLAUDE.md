@@ -1813,7 +1813,11 @@ test` compile the marked C, and where the backend answers "fit 480 failed" or
 "exceeded local register limit" they emit again without the marks and compile that,
 saying nothing of the first attempt (`compileMarked`, `outgrewCog`) -- a program
 that fits neither way is told what the second said, which is what it was told
-before; any other failure is reported as it is. `--no-inline` asks for it outright and builds v0.45.0's
+before, and since 2026-10-03 which of its own functions hold the most local
+registers, read from the listing (`cogHint`; the backend names none); any other
+failure is reported as it is. A domain program's `main` of six sections, 140
+registers, built checked and outgrew the cog only `--unchecked`: the C is the same
+and the backend's allocation is not. `--no-inline` asks for it outright and builds v0.45.0's
 binary, for the benchmark and for p2-11 alike, which is how a regression is told
 from the inlining. The fallback is whole -- a program near the limit loses every mark
 at once -- and a stepped one is where to go if a program shows the cliff.

@@ -327,17 +327,18 @@ broken.
   `Inf`, `NaN`, `IsNaN`, `IsInf`, `Signbit`, Go's mathematical constants and the
   limits of the integer types and of `float32` — and what it leaves out is
   `MaxFloat64` and `SmallestNonzeroFloat64`, which name values a 32-bit float
-  cannot hold. `p2` wraps twenty-eight intrinsics
-  (pin control, smart pins including the ADC, timing, the serial line in both
-  directions, the hardware locks), and `testing` carries the state
+  cannot hold. `p2` wraps thirty-three intrinsics
+  (pin control, smart pins including the ADC, timing and the clock, the serial line
+  in both directions, the hardware locks, the cog's LUT RAM), and `testing` carries the state
   a test reports through. That is the whole of it. Your own packages do import and
   build; there is just little else to import yet.
 * **One function's locals live in cog RAM, and there are 480 longs of it** for all
   of them together. A function big enough to exhaust that fails to build with the
   backend's `fit 480 failed: pc is N` — the P2's own limit rather than the
-  compiler's, and it names assembly rather than your source, which is the unfriendly
-  part. Small functions are inlined into their callers, so a call's arguments and
-  locals count toward the frame of the function that makes it. Splitting the
+  compiler's — and `ogo build` names the functions holding the most registers, the
+  largest first. Small functions are inlined into their callers, so a call's
+  arguments and locals count toward the frame of the function that makes it, and an
+  `--unchecked` build can need more registers than a checked one. Splitting the
   function into several is the fix, and is what the code wanted anyway.
 * A **goroutine's stack is 256 longs by default** and cannot be sized per `go`
   statement, though `ogo build --gostack N` sets it for the whole program (64 to
