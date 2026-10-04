@@ -14473,17 +14473,19 @@ func (e *emitter) methodCallOf(recv string, suffix []Node, fi funcInfo) (methodC
 		if kind == recvParam && e.sliceElemByName[e.underlyingCType(ct)] == "" || kind == recvOwn && copyOf == "" {
 			hops = 1 // a pointer root: its first field is read through it
 		}
-		var fieldArr *arrDim // an ARRAY field the last step reached, which has no C type
+		// curArr is an ARRAY the walk stands at, which has no C type to carry: a field
+		// of one, `p.arr`, or a row of an array of arrays, `p[1]` of a `*[2][2]T`.
+		var curArr *arrDim
 		for _, st := range fields {
 			switch field := e.soleIdent(st.ast); {
-			case st.sym == Selector && field != "" && fieldArr == nil:
+			case st.sym == Selector && field != "" && curArr == nil:
 				ft, ok := e.structFieldType(ct, field)
 				if !ok {
 					a, isArr := e.structFieldArray(ct, field)
 					if !isArr {
 						return methodCall{}, false
 					}
-					fieldArr = &a // `p.arr[1]`: the index below takes the element
+					curArr = &a // `p.arr[1]`: the index below takes the element
 					continue
 				}
 				if e.isPointer(ft) {
@@ -14495,12 +14497,12 @@ func (e *emitter) methodCallOf(recv string, suffix []Node, fi funcInfo) (methodC
 				// hop; through a pointer to one, `p[1]`, the pointer is the root's hop,
 				// counted above. It was not followed at all, and a method keeping its
 				// receiver, called on `p[1]` or `p.arr[1]`, left the caller's local in a
-				// package variable with nothing asked. An array of arrays is still not
-				// followed here.
+				// package variable with nothing asked. Of an array of arrays the index
+				// reaches a row, the next one its element.
 				a, isArr := arrDim{}, false
 				switch {
-				case fieldArr != nil:
-					a, isArr, fieldArr = *fieldArr, true, nil
+				case curArr != nil:
+					a, isArr, curArr = *curArr, true, nil
 				default:
 					if a, isArr = e.arrayPtrCType(ct); !isArr {
 						a, isArr = e.namedArrays[e.underlyingCType(ct)]
@@ -14508,7 +14510,9 @@ func (e *emitter) methodCallOf(recv string, suffix []Node, fi funcInfo) (methodC
 				}
 				if isArr {
 					if len(a.inner) != 0 {
-						return methodCall{}, false
+						row := a.row()
+						curArr = &row
+						break
 					}
 					ct = a.elem
 					break
@@ -14522,12 +14526,13 @@ func (e *emitter) methodCallOf(recv string, suffix []Node, fi funcInfo) (methodC
 				return methodCall{}, false
 			}
 		}
-		if fieldArr != nil {
-			// The method is the array field's own, `p.arr.M()`: a DEFINED array type's.
-			if fieldArr.name == "" {
+		if curArr != nil {
+			// The method is the array's own, `p.arr.M()` or `p[1].M()` of a `*[2]Row`:
+			// a DEFINED array type's.
+			if curArr.name == "" {
 				return methodCall{}, false
 			}
-			ct = fieldArr.name
+			ct = curArr.name
 		}
 		switch {
 		case kind == recvOutlives:

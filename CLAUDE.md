@@ -2489,8 +2489,9 @@ parameter is a root as a slice parameter is (`TestEmitCSummaryArrayElems`). Besi
 three readers that took a narrower shape than their neighbours: summaryReach read no
 address through a parenthesised head, `&(*p)[1]`, and a deferred or started method
 was a call to the summaries only one step from its variable, `defer p.m()`. An array
-of arrays, `p[1][0].m()`, is still not followed. **A new way to reach a receiver is
-a row in methodCallOf, under a plain call, `defer` and `go`.**
+of arrays is followed a row at a time (`curArr`, arrDim.row), and a method ending on a
+row is its defined type's, `p[1].KeepFirst()` for a `*[2]Row`. **A new way to reach a
+receiver is a row in methodCallOf, under a plain call, `defer` and `go`.**
 
 ## Notes
 
