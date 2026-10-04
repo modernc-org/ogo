@@ -668,6 +668,9 @@ still design-only.
   backend and runs it on a real P2, gated on `OGO_BOARD_PORT` (`make board`).
   The second exists because flexcc and gcc have been observed to disagree on
   semantics, not just warnings -- a host-green emit feature is not verified.
+  `make board` builds checked; the table was first run on the board built
+  `--unchecked` on 2026-10-04 (a scratchpad tool taking the board lock per case):
+  all 754 cases that do not panic printed what they print checked.
 - **A backend diagnostic fails the target-build tests, even when `ogo build`
   succeeds.** flexcc warns where it should refuse: given a duplicate declaration in
   one block it says `Redefining x`, ignores the second and produces a working binary
@@ -1019,7 +1022,16 @@ which answers nothing for a qualified name this file may not WRITE, and a type w
 no declaration has no methods. The name came from the variable's declaration, not
 from this file's spelling (typeDeclNamedIn; TestCheckUnexportedImplements). **A name
 the checker reads off another package's declaration is resolved there whether or
-not it is exported; only a name this file wrote is held to the export rule.**
+not it is exported; only a name this file wrote is held to the export rule.** Its
+IDENTITY was the same row the same day -- `var n int = lib.Room` for a `var Room
+celsius`, the value into a type of this package of that shape, a struct of another
+type passed where lib's unexported one is wanted, all taken -- and definedName,
+kindlessCategory and checkDefinedType resolve such a name too. Not typeDeclNamed for
+everyone: tried, it stopped refusing `(*lib.point)(p)`, `lib.point.Sum` and an
+embedded `lib.point`, whose refusals came from FINDING NOTHING. **A rule that refuses
+by failing to resolve is found by widening the resolver and running the rejects
+again** -- 17 positions written with an unexported name, `scripts/rejects.sh`-style,
+showed the three, and a fourth older one, `case *lib.point:` (checked since).
 
 **A C NAME IS A ROW** (2026-09-25). The emitted C keeps a program's own names, so
 every name a program may write is a row across everything else that names things in
