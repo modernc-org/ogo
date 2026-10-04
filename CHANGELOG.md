@@ -20,6 +20,15 @@ shipped section tells a reader on that version that they have behaviour they do 
 
 ### Fixed
 
+- **A named untyped constant past 32 bits divided by a uint64 is divided
+  unsigned on the target**: `big / u` and `big % u`, for a `const big =
+  408166956050` and a `u` of 2^64-1, were written `408166956050LL / u`, and the
+  target's C compiler types such an operation by its left operand, so it divided
+  signed and printed 2^64 - big where Go prints 0, in silence and on the board
+  only. A literal was right; a name, another package's, an iota and a
+  parenthesised expression of them were not, nor a constant past the int64s, `1 <<
+  63`, in any spelling. Found by the fuzzer on the board (seed 3298); v0.48.1 has
+  it.
 - **`ogo test --gostack` is taken**, as `ogo help test` said it was: it was
   "unknown flag".
 - **A comparison or an `&&` chain discarded by a blank assignment builds**, `_ =

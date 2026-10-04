@@ -38207,6 +38207,15 @@ func (e *emitter) untypedOperandC(n Node, ut string, compare bool) (string, bool
 	}
 	v, isFloat, ok := e.untypedIntOperand(n)
 	if !ok {
+		// A constant past the int64s, 1<<63 up to 2^64-1, meets nothing but an
+		// unsigned 64-bit operand (Go refuses it beside anything else), and read as
+		// an int64 it is none: left to the fold, `huge / u` was `(-1 -
+		// 9223372036854775807LL) / u`, a signed division on the target.
+		if unsigned && width == 64 {
+			if u, ok := e.untypedUint64Operand(n); ok {
+				return strconv.FormatUint(u, 10) + "ULL", true
+			}
+		}
 		return "", false
 	}
 	switch {
@@ -38216,6 +38225,14 @@ func (e *emitter) untypedOperandC(n Node, ut string, compare bool) (string, bool
 		// wideCompareLitC).
 		return e.constSpelling(v, ut), true
 	case unsigned && (!compare || width == 32):
+		if v >= 0 && v > math.MaxUint32 && width == 64 && !compare {
+			// A NAMED constant past 32 bits beside a uint64, `big / u`: left to the
+			// fold it was `408166956050LL / u`, and the target's compiler types
+			// such an operation by its left operand (flexprop#114) -- a SIGNED
+			// division, 2^64 - big for a u of 2^64-1 where Go answers 0, on the
+			// board and not the host. Found by OctoSmith seed 3298.
+			return e.constSpelling(v, ut), true
+		}
 		if v < 0 || v > math.MaxUint32 {
 			return "", false // a wider one is spelled by the fold (levelConstLit)
 		}
@@ -38257,6 +38274,22 @@ func (e *emitter) untypedIntOperand(n Node) (v int64, isFloat, ok bool) {
 	}
 	v, exact := constant.Int64Val(x)
 	return v, isFloat, exact
+}
+
+// untypedUint64Operand is untypedIntOperand for a value past the int64s: an untyped
+// integer constant that a uint64 holds.
+func (e *emitter) untypedUint64Operand(n Node) (uint64, bool) {
+	if !e.operandUntyped(n) {
+		return 0, false
+	}
+	x, ok := e.foldValNode(n)
+	if !ok {
+		return 0, false
+	}
+	if x = constant.ToInt(x); x.Kind() != constant.Int {
+		return 0, false
+	}
+	return constant.Uint64Val(x)
 }
 
 // qualifiedUntypedConst reports whether an operand is another package's untyped

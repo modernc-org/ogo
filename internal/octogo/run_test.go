@@ -27958,6 +27958,39 @@ func main() {
 		want: "5050 7\n",
 	},
 	{
+		// A NAMED untyped constant past 32 bits beside a uint64, on the left of /
+		// and %: spelled `408166956050LL / u`, and the target's compiler types such
+		// an operation by its left operand (flexprop#114), so it divided signed --
+		// 2^64 - big for a u of 2^64-1, where Go and the host answer 0. A literal had
+		// been taught; the names, another package's, an iota and a parenthesised
+		// expression of them had not, and a constant past the int64s, 1 << 63, not
+		// in any spelling. Found by OctoSmith seed 3298 on the board.
+		name: "a wide untyped constant divided by a uint64",
+		src: `type D uint64
+
+const big = 408166956050
+
+const huge = 1 << 63
+
+const (
+	a = iota << 40
+	b
+	c
+)
+
+func main() {
+	var u uint64 = 18446744073709551615
+	var v uint64 = 9223372036854775808
+	var d D = 18446744073709551615
+	println(big/u, big%u, huge/u, huge%v, c/u, c%u)
+	println(big/d, big%d, (big+1)/d, (big*2)%d)
+	println(big < u, big <= v, huge >= v, huge == v, c < u)
+	println(u/big, u%big, v/huge, d/big, d%c)
+}
+`,
+		want: "0 408166956050 0 0 0 2199023255552\n0 408166956050 0 816333912100\ntrue true true true true\n45194114 130952861915 1 45194114 2199023255551\n",
+	},
+	{
 		// A slice of an array of structs, `sa[1:]`, as a slice: ranged over,
 		// converted to a defined slice type and to an array type, compared with nil.
 		// Each was refused for a while, the rules naming the slice expression's

@@ -2158,6 +2158,16 @@ passes on and does not fail. An untyped constant whose value fits an int is an i
 now, Go's default type for it; a 64-bit EXPRESSION argument is converted by the
 prototype and was right. **A warning the backend gives a user's build is a fault
 until shown harmless**: the sweep tool sets WARNED apart, and this was its one.
+And a NAMED constant past 32 bits on the LEFT of an unsigned 64-bit `/` or `%`
+(2026-10-04, OctoSmith seed 3298 in a board sweep of c81020d, 3001-3500: 469
+passing, 30 outgrowing, this one failing): `big / u` was `408166956050LL / u`,
+the row's literal having been taught and the name left to the fold, which spells
+it signed -- 2^64 - big on the board for Go's 0, the host right. A constant past
+the int64s, `1 << 63`, was the same in every spelling, untypedIntOperand reading
+it as no int64. untypedOperandC spells both `ULL` beside a uint64
+(untypedUint64Operand); only TestEmitCWideConstUnsigned holds it off the board.
+**The fuzzer's board sweep finds what the host oracle cannot: a spelling only the
+target's typing rule reads wrong.**
 
 **WHAT A CALL HANDS BACK IS ASKED ONCE** (2026-09-28). p2-11 could not return an
 error that came of a call given a local buffer, `if err := fill(buf[:]); err != nil
