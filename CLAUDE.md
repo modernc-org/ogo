@@ -1488,6 +1488,18 @@ ifaceWidens). And widening named the SOURCE's table for every type implementing
 the source interface, which exists only for types stored in it (ifaceRebindC asks
 needVTable of both). **A rule that dispatches on a table asks for the table it
 compares with, not only the one it stores.**
+The same day, every probe program a sweep had left behind -- 4,250 of them, the
+grids, the rejects batches, the domain rounds, old fuzzer seeds -- was built for the
+TARGET with `ogo build`, keeping the builds that succeeded with any output and the
+refusals that came from the backend: the programs the compiler took and the C
+compiler did not. Eleven warned and 168 were refused, and beyond the cog's register
+pool and doc/uint64-shift-32-pair.c it was all one statement, a blank assignment.
+`(void)gc == gc` cast the left operand only -- a void compared with a channel, a
+warning for pointers and a refused build for ints -- and a compound literal anywhere
+under the cast is refused by the target, `_ = gs == S{1, 2}` and `_ = &S{1, 2}`
+(doc/void-cast-compound-literal.c; emitDiscard binds such a value first). No C
+compiler had seen them: a grid asks the checker what it takes, and compiles nothing.
+**A probe's program is a target-build test too, and the warnings are read.**
 
 **AN ARRAY RESULT IS A ROW** (2026-09-23). A call returning an array is a STATEMENT in
 C -- the caller hands the callee storage to write -- so every position one stands in

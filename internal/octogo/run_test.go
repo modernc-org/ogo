@@ -27969,6 +27969,70 @@ func main() {
 		want: "5050 7\n",
 	},
 	{
+		// A comparison, an && chain or a sign discarded by a blank assignment,
+		// `_ = f() == g()`: the cast bound to the left operand alone, `(void)t ==
+		// g()`, which the target refused for integers and warned about for
+		// pointers. The calls still run, in order. And a value holding a compound
+		// literal discarded, `_ = gs == S{1, 2}`, `_ = &S{1, 2}`, `_ = A{...}`:
+		// the target refuses one under a cast to void
+		// (doc/void-cast-compound-literal.c).
+		name: "a comparison discarded by a blank assignment",
+		src: `var calls int
+
+func f() int {
+	calls = calls*10 + 1
+	return 1
+}
+
+func g() int {
+	calls = calls*10 + 2
+	return 2
+}
+
+var gp *int
+
+var n int
+
+func main() {
+	_ = f() == g()
+	println(calls)
+	calls = 0
+	_ = f() + g()
+	println(calls)
+	calls = 0
+	_ = f() < g() && g() > 0
+	println(calls)
+	calls = 0
+	_ = gp == &n
+	_ = -f()
+	_ = f() * g() - f()
+	println(calls)
+	calls = 0
+	_ = gs == S{f(), 2}
+	_ = &S{g(), 1}
+	_ = A{f(), 2, g()}
+	_ = L(nil)
+	_ = h(S{f(), 3})
+	_ = gs != S{1, g()}
+	println(calls, gs.a)
+}
+
+type S struct{ a, b int }
+
+type A [3]int
+
+type L []int
+
+var gs = S{1, 2}
+
+func h(s S) int {
+	calls = calls*10 + 3
+	return s.a
+}
+`,
+		want: "12\n12\n122\n1121\n1212132 1\n",
+	},
+	{
 		// Two interface values of DIFFERENT types compared, as Go compares them when
 		// one is assignable to the other: by dynamic type and value. Each (interface,
 		// type) pair has a table of its own, so comparing the tables answered false

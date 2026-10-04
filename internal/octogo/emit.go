@@ -42388,10 +42388,13 @@ func (e *emitter) newTmp() string {
 	return s
 }
 
-// emitDiscard emits `(void)<expr>;` — an expression evaluated for its side effects
-// with its value dropped, the C rendering of a blank-identifier discard. emitExpr
-// already parenthesizes binary operands, so no extra parentheses are needed for
-// the cast to bind correctly.
+// emitDiscard emits `(void)(<expr>);` — an expression evaluated for its side
+// effects with its value dropped, the C rendering of a blank-identifier discard.
+// The parentheses are the cast's: emitExpr parenthesises an arithmetic level and
+// not a comparison or an && chain, so `_ = gc == gc` was `(void)gc == gc`, a void
+// compared with a channel -- a warning on the target for pointers, and for ints
+// and `&&` a build that failed, "Expected integer type for parameter of
+// comparison".
 func (e *emitter) emitDiscard(expr []int32) {
 	// A call returning an ARRAY writes it through an out parameter, and `(void)mk()`
 	// had none to pass: it is handed storage of this frame, as a call statement is.
@@ -42402,10 +42405,78 @@ func (e *emitter) emitDiscard(expr []int32) {
 		e.emitArrayResultCall(tmp, cname, expr)
 		return
 	}
+	text := e.exprC(expr)
+	// A compound literal under the cast is what the target's compiler cannot
+	// take, `(void)(f((S){1, 2}))` as much as `(void)((S){1, 2})`: "Internal
+	// error, asm code cannot handle assignment" (doc/void-cast-compound-literal.c),
+	// where the call as a statement and a variable's initializer build. So
+	// `_ = gs == S{1, 2}` and `_ = &S{1, 2}` are bound to a temporary first, an
+	// array through the pointer it decays to.
+	if strings.Contains(text, "){") {
+		ct, ok := e.inferCType(expr)
+		if !ok || ct == "" {
+			// A literal of a defined array type is typed by nothing here; the
+			// literal names its type where it begins, `(A){...}`.
+			if name, rest, cut := strings.Cut(strings.TrimPrefix(text, "("), "){"); cut && rest != "" && isCIdent(name) {
+				ct, ok = name, true
+			}
+		}
+		if ok && ct != "" && ct != "void" {
+			if _, isArr := e.namedArrays[ct]; isArr {
+				ct = "const void*"
+			}
+			tmp := e.newTmp()
+			e.ind()
+			e.emit(ct + " " + tmp + " = " + text + ";\n")
+			e.ind()
+			e.emit("(void)" + tmp + ";\n")
+			return
+		}
+	}
 	e.ind()
-	e.emit("(void)")
-	e.emitExpr(expr)
-	e.emit(";\n")
+	if primaryC(text) {
+		e.emit("(void)" + text + ";\n")
+		return
+	}
+	e.emit("(void)(" + text + ");\n")
+}
+
+// primaryC reports whether C text is a primary expression a cast applies to whole:
+// a name or a number, a call `f(...)`, or anything parenthesised from its first
+// character to its last.
+func primaryC(text string) bool {
+	if text == "" {
+		return false
+	}
+	i := 0
+	for i < len(text) && isCIdentByte(text[i]) {
+		i++
+	}
+	if i == len(text) {
+		return true
+	}
+	if text[i] != '(' {
+		return false
+	}
+	// The parenthesis opening at i must close at the end, quotes skipped.
+	depth := 0
+	for j := i; j < len(text); j++ {
+		switch c := text[j]; c {
+		case '"', '\'':
+			for j++; j < len(text) && text[j] != c; j++ {
+				if text[j] == '\\' {
+					j++
+				}
+			}
+		case '(':
+			depth++
+		case ')':
+			if depth--; depth == 0 {
+				return j == len(text)-1
+			}
+		}
+	}
+	return false
 }
 
 // emitCallArgs emits a call's argument list. cname is the callee's C name, used

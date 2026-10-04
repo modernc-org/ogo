@@ -20,6 +20,14 @@ shipped section tells a reader on that version that they have behaviour they do 
 
 ### Fixed
 
+- **A comparison or an `&&` chain discarded by a blank assignment builds**, `_ =
+  f() == g()`: the cast bound to the left operand alone, so the target refused an
+  integer comparison ("Expected integer type for parameter of comparison") and
+  warned about a pointer one. So does a discarded value holding a composite
+  literal, `_ = gs == S{1, 2}`, `_ = &S{1, 2}`, `_ = A{1, 2, 3}`, `_ = L(nil)`:
+  the target refuses a compound literal under a cast to void, "Internal error, asm
+  code cannot handle assignment" (doc/void-cast-compound-literal.c), and such a
+  value is bound to a temporary first.
 - **Two interface values of different types compare as Go compares them**, by
   dynamic type and value: `s == p` for a `Sensor` and a `Probe` holding the same
   pointer was false, the two being compared by tables of their own -- on a P2-EDGE
