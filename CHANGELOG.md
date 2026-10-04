@@ -47,6 +47,13 @@ shipped section tells a reader on that version that they have behaviour they do 
 
 ### Behaviour changes
 
+- **A function that keeps an element of an array behind its parameter is refused
+  a local array**: `func f(p *[2]Counter) { p[1].Keep() }` called as `f(&cs)` for a
+  local cs and a `Keep` storing its receiver in a package variable -- through a
+  field, `p.arr[1]`, a defined array type, the function's own receiver, `&(*p)[1]`,
+  and a deferred or started method alike. Only an element of a SLICE was followed,
+  so the local's address was left in the package variable in silence: read after the
+  caller returned, it held 8796 on a P2-EDGE where Go prints 7.
 - **A deferred method that keeps its receiver is refused on an element or a field
   of a local**, as the same call is without `defer`: `defer arr[1].Save()` and
   `defer h.c.Save()` for a `Save` storing its receiver in a package variable. Only a

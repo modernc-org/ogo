@@ -2479,6 +2479,18 @@ A new way to reach a receiver's contents through a copy is a new row there. The
 summaries record ONE level of contents, so a field behind a pointer, `through(T2{&lw})`
 for a `t.p.save()`, is refused even when lw holds package storage -- as the direct
 `gs = t.p.xs` always was; a deeper model is how that price would come down.
+An ARRAY's element was no receiver to the summaries (2026-10-04, found probing the
+parenthesised chain): methodCallOf followed an index into a SLICE only, so a callee
+calling a method that keeps its receiver on `p[1]` for a `p *[2]T`, on `p.arr[1]`, on
+a defined array type's element or on its own receiver's, was summarised as keeping
+nothing, and the caller's local array was left in a package variable -- 8796 on the
+board for Go's 7. An array's element is its own storage, no hop; a pointer-to-array
+parameter is a root as a slice parameter is (`TestEmitCSummaryArrayElems`). Beside it,
+three readers that took a narrower shape than their neighbours: summaryReach read no
+address through a parenthesised head, `&(*p)[1]`, and a deferred or started method
+was a call to the summaries only one step from its variable, `defer p.m()`. An array
+of arrays, `p[1][0].m()`, is still not followed. **A new way to reach a receiver is
+a row in methodCallOf, under a plain call, `defer` and `go`.**
 
 ## Notes
 

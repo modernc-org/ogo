@@ -12143,10 +12143,13 @@ func (e *emitter) collectFuncCross(fi funcInfo) {
 			// pointer. goStmtArgs names the arguments alone, so a value parameter's
 			// contents went to another cog unrecorded. (A pointer method on a copy is
 			// handed the address of this frame's own storage, which the body refuses.)
-			if len(nodes) == 4 && nodes[1].sym == AssignHead {
-				// `go (w).send()`, `(&w).send()` and `(*w).send()` are `go w.send()`.
-				if recv, _, chain := e.scanHead(nodes[1], nodes[2:]); recv != "" && len(chain) == 2 {
-					if c, isM := e.methodCallOf(recv, chain, fi); isM && chain[0].sym == Selector && chain[1].sym == CallSuffix {
+			if len(nodes) >= 4 && nodes[1].sym == AssignHead {
+				// `go (w).send()`, `(&w).send()` and `(*w).send()` are `go w.send()`;
+				// and a method at the end of a chain, `go p[1].send()`, is called on what
+				// the chain reaches (methodCallOf), which only `go w.send()` was.
+				if recv, _, chain := e.scanHead(nodes[1], nodes[2:]); recv != "" &&
+					(len(chain) == 2 && chain[0].sym == Selector && chain[1].sym == CallSuffix || fieldMethodSuffix(chain)) {
+					if c, isM := e.methodCallOf(recv, chain, fi); isM {
 						ptrName := c.recv == recvParam || c.recv == recvOwn && recvPtr
 						switch ptrMethod := e.methodPtr[c.callee]; {
 						case ptrName && ptrMethod:
@@ -13673,6 +13676,15 @@ func (e *emitter) summaryReach(ast []int32) (out []held) {
 	if name, ok := e.addrOfRoot(ast); ok {
 		return []held{{name, heldAlias}}
 	}
+	// `&(*p)[1]`, `&(h.v).x`: an address through a parenthesised head, read by shape
+	// as the head written without the parentheses (parenFactorShape). Unread, a
+	// callee passing `&(*p)[1]` on to a keeper was summarised as passing nothing,
+	// where `&p[1]` was followed.
+	if operand, ok := e.addrOperandFactor(ast); ok && operand.sym == Factor {
+		if root, _, ok := e.parenFactorShape(slices.Collect(it(operand.ast))); ok {
+			return []held{{root, heldAlias}}
+		}
+	}
 	if lit, isLit := e.summaryLit(ast); isLit {
 		return e.summaryLitReach(lit)
 	}
@@ -14233,6 +14245,14 @@ func (e *emitter) stmtMethodCalls(nodes []Node, fi funcInfo) []methodCall {
 			} else {
 				out = append(out, e.ifaceMethodCallsOf(recv, chain, fi)...)
 			}
+		} else if recv != "" && fieldMethodSuffix(chain) {
+			// `defer p[1].m()`, `defer p.arr[1].m()`: a method at the end of a
+			// chain, as the statement form below reads it. Only `defer c.m()` was a
+			// call, so a callee keeping what it deferred a method on was summarised as
+			// keeping nothing of it.
+			if c, isM := e.methodCallOf(recv, chain, fi); isM {
+				out = append(out, c)
+			}
 		}
 	}
 	if len(nodes) == 2 && nodes[0].sym == AssignHead && nodes[1].sym == Postfix {
@@ -14429,6 +14449,13 @@ func (e *emitter) methodCallOf(recv string, suffix []Node, fi funcInfo) (methodC
 		// A SLICE parameter, `ws[0].save()`: its elements are storage behind it,
 		// as a pointer parameter's pointee is -- reached by the chain below.
 		ct, kind, at = fi.paramCType[i], recvParam, i
+	case len(fields) != 0 && fields[0].sym == Index && i >= 0 && i < len(fi.paramCType) && i < intoBits:
+		// A POINTER TO AN ARRAY parameter, `ps[1].save()` for a `ps *[2]T`: its
+		// elements are storage behind it, as a slice parameter's are. It is no named
+		// pointee, so ptrBase has none, and the call was no call to the summaries.
+		if _, isArrPtr := e.arrayPtrCType(fi.paramCType[i]); isArrPtr {
+			ct, kind, at = fi.paramCType[i], recvParam, i
+		}
 	}
 	if ct == "" || kind == recvNone {
 		return methodCall{}, false
@@ -14446,26 +14473,61 @@ func (e *emitter) methodCallOf(recv string, suffix []Node, fi funcInfo) (methodC
 		if kind == recvParam && e.sliceElemByName[e.underlyingCType(ct)] == "" || kind == recvOwn && copyOf == "" {
 			hops = 1 // a pointer root: its first field is read through it
 		}
+		var fieldArr *arrDim // an ARRAY field the last step reached, which has no C type
 		for _, st := range fields {
 			switch field := e.soleIdent(st.ast); {
-			case st.sym == Selector && field != "":
+			case st.sym == Selector && field != "" && fieldArr == nil:
 				ft, ok := e.structFieldType(ct, field)
 				if !ok {
-					return methodCall{}, false
+					a, isArr := e.structFieldArray(ct, field)
+					if !isArr {
+						return methodCall{}, false
+					}
+					fieldArr = &a // `p.arr[1]`: the index below takes the element
+					continue
 				}
 				if e.isPointer(ft) {
 					hops, ft = hops+1, e.elemType(ft)
 				}
 				ct = ft
 			case st.sym == Index && !e.isSliceIndex(st):
+				// An ARRAY's element is in the array's own storage, so the index is no
+				// hop; through a pointer to one, `p[1]`, the pointer is the root's hop,
+				// counted above. It was not followed at all, and a method keeping its
+				// receiver, called on `p[1]` or `p.arr[1]`, left the caller's local in a
+				// package variable with nothing asked. An array of arrays is still not
+				// followed here.
+				a, isArr := arrDim{}, false
+				switch {
+				case fieldArr != nil:
+					a, isArr, fieldArr = *fieldArr, true, nil
+				default:
+					if a, isArr = e.arrayPtrCType(ct); !isArr {
+						a, isArr = e.namedArrays[e.underlyingCType(ct)]
+					}
+				}
+				if isArr {
+					if len(a.inner) != 0 {
+						return methodCall{}, false
+					}
+					ct = a.elem
+					break
+				}
 				el := e.sliceElemByName[e.underlyingCType(ct)]
 				if el == "" {
-					return methodCall{}, false // an array's element: not followed here
+					return methodCall{}, false
 				}
 				hops, ct = hops+1, el
 			default:
 				return methodCall{}, false
 			}
+		}
+		if fieldArr != nil {
+			// The method is the array field's own, `p.arr.M()`: a DEFINED array type's.
+			if fieldArr.name == "" {
+				return methodCall{}, false
+			}
+			ct = fieldArr.name
 		}
 		switch {
 		case kind == recvOutlives:
