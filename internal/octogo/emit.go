@@ -31037,6 +31037,17 @@ func (e *emitter) checkDeferLeaks(d *deferredCall, head Node, suffix []Node, arg
 			e.checkRecvAt(d.cname, e.recvStorage(base, nil, e.promotionPath(base, nil, method)), args)
 		}
 	}
+	// `defer cs[1].Keep()`, `defer w.c.Keep()`: a receiver reached through a CHAIN,
+	// asked of the storage the chain reaches as a direct call's is. Only the receiver
+	// one step from its variable was asked, so a method keeping its receiver, deferred
+	// on an element or a field of a local, left the local's address in a package
+	// variable -- read after the function returned, it held 8756 on the board for
+	// Go's 7.
+	if len(steps) > 1 && steps[len(steps)-1].sym == Selector && d.cname != "" && isAccessChain(steps[:len(steps)-1]) {
+		chain := steps[:len(steps)-1]
+		method := e.soleIdent(steps[len(steps)-1].ast)
+		e.checkRecvAt(d.cname, e.recvStorage(base, chain, e.promotionPath(base, chain, method)), args)
+	}
 	cname := d.cname
 	if cname == "" {
 		// `defer pkg.F(args)`, `defer p.ws[i].M(args)`: the resolution a call makes.

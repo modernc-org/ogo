@@ -807,7 +807,8 @@ still design-only.
   TYPE IT MEETS). The board passed that seed's checksum anyway, where a run case
   of the shape failed in every argument position, so **a sweep that runs only what
   built silently misses a fault the backend warned about**; the tool keeps WARNED
-  apart.
+  apart. Seeds 1001-2000 with the released v0.48.1 on 2026-10-03/04, the same way:
+  922 passing, 78 outgrowing a cog, none failing, refused or warned about.
 - **Fixed miscompile (found by the oracle):** a shadowing local whose initializer
   references the shadowed name — `var x = x + 5` with an outer `x` in scope — used
   to miscompile, because the emitter names locals verbatim so the C initializer read
@@ -2379,7 +2380,10 @@ its parameters and never with its receiver, so `lc.Save()` on a local, where `Sa
 stores `c` in a package variable, left a dangling pointer in silence while `keep(&lc)`
 was refused. `recvLeaks`/`recvEdges`/`retRecv` summarise it now; a new way to REACH a
 receiver -- a field, an element, a slice, an interface, a pointer -- is a new row
-there.
+there, and is crossed with `defer` and `go`: a deferred call asked the rule only of a
+receiver one step from its variable (checkDeferLeaks), so `defer h.c.Save()` and
+`defer arr[1].Save()` kept a local's address in silence until 2026-10-04 -- 8756 on
+the board for Go's 7, read after the function returned.
 What `make` allocates in a function is a backing array of the frame wherever the
 slice is bound (`makeRef`, 2026-09-19; `TestEmitCMakeEscape`): only the declaration
 from make was modelled, so a package variable given one from a function -- `main`

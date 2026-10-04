@@ -42,6 +42,12 @@ shipped section tells a reader on that version that they have behaviour they do 
 
 ### Behaviour changes
 
+- **A deferred method that keeps its receiver is refused on an element or a field
+  of a local**, as the same call is without `defer`: `defer arr[1].Save()` and
+  `defer h.c.Save()` for a `Save` storing its receiver in a package variable. Only a
+  receiver one step from its variable was asked, `defer lc.Save()`, so these left
+  the address of the function's own storage in the package variable, in silence:
+  read after the function returned, it held 8756 on a P2-EDGE where Go prints 7.
 - **A method called with the wrong arguments is refused wherever it is called.**
   A method called on what a chain reaches -- an element, a field, an embedded field
   written out, a call's result -- had its arguments checked by nothing, in one

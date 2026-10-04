@@ -10621,6 +10621,14 @@ func main() {
 		{"h.c.Save()", "cannot call Save on h"},
 		{"arr[1].Save()", "cannot call Save on arr"},
 		{"s := arr[:]\n\ts[1].Save()", "cannot call Save on s"},
+		// Deferred on a chain: asked at the defer of the storage the chain reaches, as
+		// the call is. Only the receiver one step from its variable was, and the
+		// address of h.c or arr[1] outlived the frame in silence.
+		{"defer h.c.Save()", "cannot call Save on h"},
+		{"defer arr[1].Save()", "cannot call Save on arr"},
+		{"defer h.c.Chain()", "cannot call Chain on h"},
+		{"s := arr[:]\n\tdefer s[1].Save()", "cannot call Save on s"},
+		{"var o Outer\n\tdefer o.Counter.Save()", "cannot call Save on o"},
 		{"var sv Saver = &lc\n\tsv.Save()", "cannot call Save on lc"},
 		{"g = lc.Self()", "cannot store the address of local variable lc in package variable g"},
 		{"x := lc.Self()\n\tg = x", "cannot store local x, which holds a pointer into local lc"},
@@ -10669,6 +10677,10 @@ func main() {
 		{"p := &gc\n\tp.Save()", ""},
 		{"gh.c.Save()", ""},
 		{"ga[1].Save()", ""},
+		{"defer gh.c.Save()", ""},
+		{"defer ga[1].Save()", ""},
+		{"defer h.c.Bump()", ""},
+		{"defer arr[1].Bump()", ""},
 		{"var sv Saver = &gc\n\tsv.Save()", ""},
 		{"g = gc.Self()", ""},
 		{"byParam(&gc)", ""},
