@@ -58,7 +58,10 @@ shipped section tells a reader on that version that they have behaviour they do 
   or with an interface, a channel with an interface asking for methods, and `nil ==
   nil`, 25 shapes the backend refused about generated C or built with a warning.
   A slice still converts to an array and to a pointer to one, and a string to a
-  defined slice of bytes or runes.
+  defined slice of bytes or runes. Refused beside them: a composite literal called,
+  `S{1, 2}()`, which the backend refused about a temporary of the C, and a range over
+  a struct or an interface, `for range gs`, which was taken, and with a value
+  variable was "ranging an integer yields only the index".
 - **A value of one category stored where another is wanted is refused**, as Go
   refuses it: a struct, an array, a slice, a channel or an interface where a
   function, a channel or a struct is wanted, a function or a channel where an array

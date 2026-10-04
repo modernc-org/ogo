@@ -1211,7 +1211,12 @@ array or a pointer to one, a string into bytes or runes, nil into what holds a
 pointer, anything into an interface. nil to a defined slice, function or channel
 type, `L(nil)`, was the emitter's loud gap (zeroInitC writes it now); a conversion
 to `(chan int)`, to `[3]int` of an array literal, and to a function or struct type
-in parentheses, which does not parse, are still refused, loudly.
+in parentheses, which does not parse, are still refused, loudly. Grids of the
+builtins and assertions (110), the unary operators and steps (156) and the
+statements (110) over each category found three more: a literal called, `S{1, 2}()`,
+and a range over a struct or an interface without a value variable, taken, and with
+one refused in the emitter's words about an integer (checkRangeable asks
+nonBoolOperand now). `len` and `cap` of a channel differ by design.
 
 **A CALL'S RESULT HAD NO STEPS** (2026-10-02). The checker typed a call's result
 where the call stands alone, `x := f()` for a result of a Kind, and nothing past it:

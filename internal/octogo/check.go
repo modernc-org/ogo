@@ -3487,6 +3487,13 @@ func (f *File) checkRange(s *Scope, kw string, fi forInfo) {
 // COUNT: `for range f` over a func value became `int t = f;`, a function pointer
 // assigned to an int, and the C compiler reported it about a line nobody wrote.
 func (f *File) checkRangeable(s *Scope, expr Node) {
+	// A struct and an interface have no elements either: `for range gs` was taken,
+	// and with a value variable the emitter took the struct for a COUNT, "ranging an
+	// integer yields only the index".
+	if what, known := f.nonBoolOperand(s, expr); known && (what == "a struct" || what == "an interface") {
+		f.err(f.tok(expr.Pos()).Position(), "cannot range over %s: it is %s", f.exprSource(expr), what)
+		return
+	}
 	id, ok := f.exprSoleIdent(expr)
 	if !ok {
 		// Not a name, and a function value all the same: a literal where it stands,
@@ -19663,6 +19670,13 @@ func (f *File) checkFactorNames(s *Scope, n Node) {
 		f.checkIndexExprs(s, litSuffix)
 		if argList, later, _, isCall := f.callInfoAll(litSuffix); isCall {
 			f.resolveArgNames(s, append([]Node{argList}, later...))
+		}
+		// A literal CALLED, `S{1, 2}()`: a composite literal is a struct, an array or
+		// a slice, none of them a function. It reached the target's compiler, which
+		// refused a temporary of the emitter's, `_ogo_t0 is not a function`.
+		if steps := slices.Collect(it(litSuffix.ast)); len(steps) != 0 && steps[0].sym == CallSuffix {
+			f.err(f.tok(steps[0].Pos()).Position(), "invalid operation: cannot call non-function %s", f.sourceSpan(n.Pos(), lit.End()))
+			return
 		}
 		// A member a NAMED literal's type lacks, `P{}.in.nosuch`, at any step: the
 		// emitter called the form unsupported, and the valid one works. The

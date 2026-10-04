@@ -5,7 +5,10 @@
 // type, nil and an interface holding one. Each of these was taken: 24 conversions to
 // a defined array or pointer type and 6 to a pointer written out
 // (checkKindlessConversion, checkPtrConvOperand), and 25 comparisons
-// (checkKindlessRelOp, ifaceAgainstValue).
+// (checkKindlessRelOp, ifaceAgainstValue). The grids of the builtins, the unary
+// operators and steps, and the statements over each category found three more: a
+// composite literal called, `S{1, 2}()`, and a range over a struct or an
+// interface, `for range gs`, which the emitter took for a count.
 
 type S struct{ a, b int }
 
@@ -80,6 +83,18 @@ func run() {
 	// ERROR "gc is a channel, which has no methods"
 	_ = gc == gi
 
+	// ERROR "cannot call non-function S\{1, 2\}"
+	_ = S{1, 2}(1)
+
+	// ERROR "cannot range over gs: it is a struct"
+	for range gs {
+	}
+
+	// ERROR "cannot range over gi: it is an interface"
+	for i := range gi {
+		_ = i
+	}
+
 	// The valid forms beside them.
 	_ = A(gsl)
 	_ = A(ga)
@@ -91,6 +106,9 @@ func run() {
 	_ = gps == &gs
 	_ = gi == gps
 	_ = ga == [3]int{}
+	for i := range ga {
+		_ = i
+	}
 }
 
 func main() { run() }
