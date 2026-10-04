@@ -5849,6 +5849,11 @@ func (f *File) checkTypeCaseClause(cs *Scope, ts typeSwitchGuard, clause Node, s
 			continue
 		case !ql.IsValid() && !f.caseNameResolved(cs, nm):
 			continue
+		case ql.IsValid() && !token.IsExported(nm.Src()):
+			// `case *lib.point:` writes a name this file may not, as the assertion
+			// `x.(*lib.point)` does; asked nothing, it was taken.
+			f.checkQualifiedType(ql, nm)
+			continue
 		}
 		written := caseName(nm, ql)
 		base, baseQual, bound = nm, ql, nil
@@ -11533,7 +11538,9 @@ func (f *File) kindlessCategory(s *Scope, nm string) string {
 		// typeDeclNamed, not s.find: a name may be another package's, `lib.T`,
 		// which s.find answers nothing for -- so no struct of another package was
 		// ever compared, and a `T` of this one passed where a `lib.T` was wanted.
-		td, home, ok := f.typeDeclNamed(s, nm)
+		// An unexported one too: the name is a value's type or a parameter's, read
+		// off that package's declarations (typeDeclNamedIn).
+		td, home, ok := f.typeDeclNamedIn(s, nm, true)
 		if !ok || td.TypeSpec == nil {
 			return ""
 		}
@@ -12267,8 +12274,11 @@ func (f *File) definedName(s *Scope, name string) (string, bool) {
 	}
 	// A qualified name resolves in the package it names, where a defined type of
 	// that package is a defined type here too -- under the name this file writes.
+	// An unexported one as well: the name is a value's type, read off a declaration
+	// of that package (typeDeclNamedIn), and answered as unknown, `var n int =
+	// lib.Room` for a `var Room celsius` went unchecked.
 	if strings.Contains(name, ".") {
-		if _, _, ok := f.typeDeclNamed(s, name); ok {
+		if _, _, ok := f.typeDeclNamedIn(s, name, true); ok {
 			return name, true
 		}
 	}
@@ -12324,7 +12334,7 @@ func (f *File) checkDefinedType(s *Scope, wantName string, value Node, what stri
 			// is spelled here: its kind is resolved where the type is declared. A
 			// plain lookup found nothing and the check returned, so a value of one
 			// of that package's types passed as another's in every argument.
-			if _, home, found := f.typeDeclNamed(s, wantName); found {
+			if _, home, found := f.typeDeclNamedIn(s, wantName, true); found {
 				wantKind, ok = f.nameKind(home, wantName[strings.LastIndex(wantName, ".")+1:])
 			}
 		}
@@ -12356,7 +12366,7 @@ func (f *File) checkDefinedType(s *Scope, wantName string, value Node, what stri
 	} else if strings.Contains(wantName, ".") {
 		// The wanted type may be another package's too, `var x geo.Temp = ...`, and
 		// is then named the same way the value's is (see typeIdentity).
-		if _, _, ok := f.typeDeclNamed(s, wantName); ok {
+		if _, _, ok := f.typeDeclNamedIn(s, wantName, true); ok {
 			want = f.canonicalQualified(wantName)
 		}
 	}

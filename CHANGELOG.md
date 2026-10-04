@@ -71,6 +71,12 @@ shipped section tells a reader on that version that they have behaviour they do 
 
 ### Behaviour changes
 
+- **A value of another package's unexported type is checked like any other**:
+  `var n int = lib.Room` for a `var Room celsius`, the same into a type of this
+  package of that shape, and a struct of another type passed where the package's
+  unexported one is wanted are refused, as Go refuses them. A type switch's `case
+  *lib.point:` is refused as the assertion `x.(*lib.point)` was, "cannot refer to
+  unexported name lib.point".
 - **Two interface values compare only when one is assignable to the other**, as
   Go has it: `a == b` for an `A{M()}` and a `B{N()}`, and `case b` in a switch on
   `a`, are refused, "invalid operation: a == b (mismatched types A and B)".
