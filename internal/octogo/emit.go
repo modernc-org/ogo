@@ -29821,7 +29821,11 @@ func (e *emitter) ifaceRebindC(dst, dstIface, src, srcIface string, types []stri
 	ind()
 	fmt.Fprintf(&b, "%s.data = %s.data;\n", dst, e.varRef(src))
 	for i, ct := range types {
-		if !e.needVTable(dstIface, ct) {
+		// The test compares the SOURCE's table, which exists only where something
+		// put that type into the source's interface: widening a Probe to a Named
+		// listed every type implementing Probe, and a *Const no Probe ever held had
+		// no Probe table to compare with -- the C named one that was never written.
+		if !e.needVTable(dstIface, ct) || !e.needVTable(srcIface, ct) {
 			return "", false
 		}
 		ind()
@@ -45061,8 +45065,53 @@ func (e *emitter) emitIfaceCompareC(op, lt, lct string, r Node) {
 			lt + ".data " + eq + " (void*)" + data + ")")
 		return
 	}
+	// Two interfaces of DIFFERENT types, `s == p` for a Sensor and a Probe: Go
+	// compares them when one is assignable to the other, by dynamic type and value.
+	// Each (interface, type) pair has a table of its own, so the two tables of one
+	// *Thermo differ and comparing them answered false -- gcc refused the pointers'
+	// types, the target only warns. The operand assignable to the other's type is
+	// viewed through that type's tables first, the widening a store makes.
+	if rct, ok := e.inferCType(r.ast); ok && e.isIfaceCType(rct) && rct != lct {
+		switch {
+		case e.ifaceWidens(rct, lct):
+			name, ok := e.ifaceWidenValue(lct, r.ast, rct)
+			if !ok {
+				return
+			}
+			e.emit("(" + lt + ".vt " + eq + " " + name + ".vt" + join + lt + ".data " + eq + " " + name + ".data)")
+		case e.ifaceWidens(lct, rct):
+			if e.pkgScope {
+				e.fail("a package variable of interface type needs a variable to widen: declare one and use it")
+				return
+			}
+			src, dst := e.newTmp(), e.newTmp()
+			e.prologue = append(e.prologue, lct+" "+src+" = "+lt+";\n", rct+" "+dst+" = {0};\n")
+			e.locals[src], e.locals[dst] = lct, rct
+			text := e.ifaceWidenC(dst, rct, src, lct)
+			if text == "" {
+				return
+			}
+			e.prologue = append(e.prologue, text)
+			rt := e.captureC(func() { e.emitStructOperand(r) })
+			e.emit("(" + dst + ".vt " + eq + " " + rt + ".vt" + join + dst + ".data " + eq + " " + rt + ".data)")
+		default:
+			e.fail("cannot compare %s with %s", e.goTypeName(lct), e.goTypeName(rct))
+		}
+		return
+	}
 	rt := e.captureC(func() { e.emitStructOperand(r) })
 	e.emit("(" + lt + ".vt " + eq + " " + rt + ".vt" + join + lt + ".data " + eq + " " + rt + ".data)")
+}
+
+// ifaceWidens reports whether a value of interface from may be viewed as one of
+// interface to: every method to declares, from declares too.
+func (e *emitter) ifaceWidens(from, to string) bool {
+	for _, m := range e.ifaceMethods[to] {
+		if !e.hasIfaceMethod(from, m.name) {
+			return false
+		}
+	}
+	return true
 }
 
 // isNilExpr reports whether an expression is exactly the predeclared nil.

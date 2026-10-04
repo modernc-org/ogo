@@ -1475,6 +1475,19 @@ assignments, `MinInt / -1`), and a float32 sweep of the target's SOFT-FLOAT libr
 (subnormals, -0, NaN, the infinities, the rounding of 16777217, sqrt, floor, ceil,
 trunc, int to float) -- both byte-identical to Go on a P2-EDGE, as were a PID
 controller in Q16.16 over int64 and a config parser.
+A fourth round (2026-10-04) -- a temperature controller of four packages: a
+stateFn frame parser, a ring of events, sensors embedding a base behind an
+interface, hooks in another package's function variables, a cog producing events --
+found two faults of INTERFACE-TO-INTERFACE values, both older than it. Two values of
+DIFFERENT interface types compared, `s == p` for a Sensor and a Probe, compared
+their tables, one per (interface, type) pair, so the same *Thermo in both was
+unequal: false on a P2-EDGE with only "incompatible types in comparison", which
+`ogo build` passes on, and a gcc error on the host, so no run case had one. The
+operand assignable to the other's type is widened first (emitIfaceCompareC,
+ifaceWidens). And widening named the SOURCE's table for every type implementing
+the source interface, which exists only for types stored in it (ifaceRebindC asks
+needVTable of both). **A rule that dispatches on a table asks for the table it
+compares with, not only the one it stores.**
 
 **AN ARRAY RESULT IS A ROW** (2026-09-23). A call returning an array is a STATEMENT in
 C -- the caller hands the callee storage to write -- so every position one stands in

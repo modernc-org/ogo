@@ -20,11 +20,20 @@ shipped section tells a reader on that version that they have behaviour they do 
 
 ### Fixed
 
+- **Two interface values of different types compare as Go compares them**, by
+  dynamic type and value: `s == p` for a `Sensor` and a `Probe` holding the same
+  pointer was false, the two being compared by tables of their own -- on a P2-EDGE
+  with only a warning, "incompatible types in comparison", which `ogo build`
+  passes on -- and it did not build for the host. Both orders, a switch's tag and
+  its cases, the empty interface and `error`.
 - **Another package's exported variable of an unexported type goes into an
   interface**: `var ErrBusy = &errBusy{}`, the sentinel idiom, compared with an
   `error` or stored in one -- a declaration, an assignment, an argument, a return,
   a literal, a field, a send -- was refused, "lib.errBusy does not implement error
   (missing method Error)".
+- **An interface value is widened to another interface whatever else implements
+  the first**: `var n Named = p` for a `Probe` p did not build where some type
+  implementing `Probe` was never stored in one.
 - **nil converts to a defined slice, function or channel type**, `L(nil)`, as Go
   converts it: it was "cannot convert to L". Measured on a P2-EDGE.
 - **A deferred call through another package's variable is evaluated where the

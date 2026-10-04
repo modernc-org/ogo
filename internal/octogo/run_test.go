@@ -27969,6 +27969,106 @@ func main() {
 		want: "5050 7\n",
 	},
 	{
+		// Two interface values of DIFFERENT types compared, as Go compares them when
+		// one is assignable to the other: by dynamic type and value. Each (interface,
+		// type) pair has a table of its own, so comparing the tables answered false
+		// for one *T held by both -- on the board, with a warning only -- and gcc
+		// refused the pointers' types. Both orders, a switch's tag and case, calls
+		// in their order, the empty interface and error.
+		name: "interface values of two types compared",
+		src: `type Named interface{ Name() string }
+
+type Sensor interface {
+	Read() int
+	Name() string
+}
+
+type Coder interface {
+	Error() string
+	Code() int
+}
+
+type T struct{ v int }
+
+func (t *T) Read() int { return t.v }
+
+func (t *T) Name() string { return "t" }
+
+type E struct{ c int }
+
+func (e *E) Error() string { return "e" }
+
+func (e *E) Code() int { return e.c }
+
+var t1, t2 T
+
+var e1, e2 E
+
+var calls int
+
+func getS(i int) Sensor {
+	calls = calls*10 + 1
+	if i == 0 {
+		return &t1
+	}
+	return &t2
+}
+
+func getN(i int) Named {
+	calls = calls*10 + 2
+	if i == 0 {
+		return &t1
+	}
+	return &t2
+}
+
+func which(n Named) int {
+	s := getS(1)
+	switch n {
+	case s:
+		return 2
+	case getS(0):
+		return 1
+	}
+	return 0
+}
+
+func whichS(s Sensor, n Named) int {
+	switch s {
+	case n:
+		return 1
+	}
+	return 0
+}
+
+func main() {
+	println(getS(0) == getN(0), calls)
+	calls = 0
+	println(getN(1) != getS(0), calls)
+	calls = 0
+	println(which(&t1), which(&t2), whichS(&t1, &t1), whichS(&t2, &t1), calls)
+	var a any = &t1
+	var s Sensor = &t1
+	var n Named = &t2
+	println(a == s, s == a, a == n, n != a)
+	var err error = &e1
+	var c Coder = &e1
+	println(err == c, c == err, c != err)
+	c = &e2
+	println(err == c, c == err)
+	if s == a && n != s {
+		println("both")
+	}
+	ok := false
+	if n == nil || n == getS(1) {
+		ok = true
+	}
+	println(ok, calls)
+}
+`,
+		want: "true 12\ntrue 21\n1 2 1 0 111\ntrue true false true\ntrue true false\nfalse false\nboth\ntrue 1111\n",
+	},
+	{
 		// A goroutine started on a function of the p2 package, or on one of
 		// math's without a body, which the trampoline called by a name nothing
 		// declared. Four rounds of four are more than the cogs there are, so each
@@ -45097,7 +45197,8 @@ const multiPkgWant = "300\nLOUD\n50\n6\n5\n45\n6 1000\n200\n207\n3 100\n4 9\n" +
 	"42 5 42\n" +
 	"3 13\n" +
 	"654321\n" +
-	"10 3 1 2\n10 40 5\n5 10 21 7 2\n5 8 10 true 22 true 2\n12 true 2\n"
+	"10 3 1 2\n10 40 5\n5 10 21 7 2\n5 8 10 true 22 true 2\n12 true 2\n" +
+	"true false true true true\ntrue gone busy\ntick true true true false true\nfalse true true\n"
 
 var multiPkgProgram = map[string]string{
 	"main.ogo": `import "chain"
@@ -45268,6 +45369,35 @@ libOps()
 libHooks()
 libDefers()
 libFrames()
+libSentinels()
+}
+
+// Another package's sentinel errors of UNEXPORTED types, the idiom Go's own
+// packages write: every position storing or comparing one was refused, "lib.errBusy
+// does not implement error (missing method Error)" -- the type was looked up as
+// though this file had written its name. And two interface values of DIFFERENT
+// types compared, which compared their tables, one per (interface, type) pair:
+// false on the board where Go says true, with a warning only; and widening one to
+// another named the source's table for every type implementing it, which existed
+// only for the types stored in it.
+type kinded interface {
+	Kind() int
+	Name() string
+}
+
+func busy() error { return lib.ErrBusy }
+
+func libSentinels() {
+	var err error = lib.ErrBusy
+	println(err == lib.ErrBusy, lib.ErrGone == err, busy() == lib.ErrBusy, lib.Fail(2) == lib.ErrGone, lib.Fail(0) == nil)
+	errs := []error{lib.ErrGone, lib.ErrBusy}
+	println(errs[1] == lib.ErrBusy, errs[0].Error(), lib.ErrBusy.Error())
+	var p lib.Probe = &lib.Tk
+	var n lib.Named = p
+	var k kinded = &lib.Tk
+	println(n.Name(), k == p, p == k, n == p, p != n, n == k)
+	k = &lib.Tk2
+	println(k == p, n != k, lib.Same(p, &lib.Tk))
 }
 
 // Another package's function VARIABLE, deferred and started on a cog with a store
@@ -46358,6 +46488,48 @@ type Taker interface {
 }
 
 func Chunk(k int) ([3]int, bool) { return [3]int{k, k * 2, k * 3}, k > 0 }
+`,
+	"lib/sentinel.ogo": `type errBusy struct{ n int }
+
+func (*errBusy) Error() string { return "busy" }
+
+type errGone struct{ n int }
+
+func (e errGone) Error() string { return "gone" }
+
+var ErrBusy = &errBusy{1}
+
+var ErrGone = &errGone{2}
+
+func Fail(i int) error {
+	switch i {
+	case 1:
+		return ErrBusy
+	case 2:
+		return ErrGone
+	}
+	return nil
+}
+
+type Named interface{ Name() string }
+
+type Probe interface {
+	Named
+	Kind() int
+}
+
+type tick struct{ k int }
+
+func (t *tick) Name() string { return "tick" }
+
+func (t *tick) Kind() int { return t.k }
+
+var Tk = tick{3}
+
+var Tk2 = tick{4}
+
+// Same compares an interface value with a pointer of a type it may hold.
+func Same(p Probe, t *tick) bool { return p == t }
 `,
 	"lib/more.ogo": `var Grid [3][5]int
 
