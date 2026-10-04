@@ -45005,6 +45005,9 @@ const multiPkgWant = "300\nLOUD\n50\n6\n5\n45\n6 1000\n200\n207\n3 100\n4 9\n" +
 	"4 5 2 3\n" +
 	"2 3 4 3\n" +
 	"81 2\n" +
+	"42 5 42\n" +
+	"3 13\n" +
+	"654321\n" +
 	"10 3 1 2\n10 40 5\n5 10 21 7 2\n5 8 10 true 22 true 2\n12 true 2\n"
 
 var multiPkgProgram = map[string]string{
@@ -45174,6 +45177,7 @@ libStates()
 libValues()
 libOps()
 libHooks()
+libDefers()
 libFrames()
 }
 
@@ -45186,6 +45190,55 @@ func libHooks() {
 	go lib.Launch(2)
 	lib.Launch = lib.Mute
 	println(lib.Seen, <-lib.Sent)
+	// Another package's struct VARIABLE: its method, and the function its field
+	// holds, started on a cog -- the field read at the statement, as Go reads it.
+	// Both were "unsupported receiver in a go statement".
+	go lib.Pm.Push(2)
+	a := <-lib.Sent
+	lib.Pm.Fn = lib.Emit
+	go lib.Pm.Fn(5)
+	lib.Pm.Fn = lib.Mute
+	println(a, <-lib.Sent, lib.Pm.N)
+	// And an element of its array, holding a function and holding a struct whose
+	// value-receiver method is started, each read at the statement.
+	lib.Hooks[0] = lib.Emit
+	go lib.Hooks[0](3)
+	lib.Hooks[0] = lib.Mute
+	b := <-lib.Sent
+	lib.Pms[0].N = 13
+	go lib.Pms[0].Tell()
+	lib.Pms[0].N = 14
+	println(b, <-lib.Sent)
+}
+
+// Another package's VARIABLE reached by a deferred call -- a function its field
+// holds, with a result and without, one its array holds, and a value receiver's
+// method on it and on its element -- each evaluated where the defer stands, as Go
+// evaluates it. The replay read them at the return: 49, 67 and 63 where Go prints
+// 42, 65 and 62, in silence, and the rest were refused.
+func libDefers() {
+	lib.Seen = 0
+	deferRun()
+	println(lib.Seen)
+}
+
+func deferRun() {
+	lib.Pm.Fn = lib.Mark
+	defer lib.Pm.Fn(1)
+	lib.Pm.Fn = lib.Remark
+	lib.Pm.Fr = lib.MarkR
+	defer lib.Pm.Fr(2)
+	lib.Pm.Fr = lib.RemarkR
+	lib.Hooks[1] = lib.Mark
+	defer lib.Hooks[1](3)
+	lib.Hooks[1] = lib.Remark
+	lib.Pm.N = 4
+	defer lib.Pm.Show()
+	lib.Pm.N = 7
+	lib.Pms[1].N = 5
+	defer lib.Pms[1].Show()
+	lib.Pms[1].N = 8
+	lib.Seen = 6
 }
 
 // Another package's struct holding an ARRAY passed by value: to its function, its
@@ -46114,6 +46167,39 @@ func Mute(k int) { Sent <- 9 }
 var Hook = Mark
 
 var Launch = Emit
+
+// Pump is a struct main starts on a cog through a variable of it: its method, and
+// the function its field holds.
+type Pump struct {
+	N  int
+	Fn func(k int)
+	Fr func(k int) int
+}
+
+func (p *Pump) Push(k int) {
+	p.N += k
+	Sent <- p.N
+}
+
+func (p Pump) Show() { Seen = Seen*10 + p.N }
+
+func (p Pump) Tell() { Sent <- p.N }
+
+func MarkR(k int) int {
+	Seen = Seen*10 + k
+	return k
+}
+
+func RemarkR(k int) int {
+	Seen = Seen*10 + 9
+	return 9
+}
+
+var Pm = Pump{N: 40}
+
+var Pms [2]Pump
+
+var Hooks [2]func(k int)
 
 // State names itself as its result: a function of it returns the next one.
 type State func(d *Dev) State

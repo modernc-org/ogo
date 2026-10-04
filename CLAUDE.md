@@ -1361,6 +1361,16 @@ defer learned to capture it the same day. So **a new callee shape is swept under
 plain, `defer` and `go`, with a store into the callee after the statement** -- a
 variable, a package variable, another package's, a field, a field of a chain, an
 element, a call's result, a parenthesised value, a received one.
+The sweep had crossed "another package's" with a function variable only. Another
+package's variable with a STEP after it (2026-10-04, found following the call
+argument row) came to both functions with the qualifier as its head: deferReceiver
+captured nothing, so `defer lib.B.f(2)` for a field returning a result, `defer
+lib.B.Show()` and `defer lib.Bs[1].Show()` for a value receiver read the chain at the
+return -- 49, 67 and 63 for Go's 42, 65 and 62, in silence on the host and the
+board -- and a field
+without a result and an element were refused; emitGo refused every one of them. Both
+fold the variable's global into the head now (`qualifiedChainBase`), as the
+statement paths did; the run cases are in multiPkgProgram, so the board holds them.
 
 **A DOMAIN PROGRAM IS A PROBE** (2026-09-23). Three programs written as a user
 would write them -- a tokenizer with a recursive-descent evaluator, a sensor
@@ -2235,11 +2245,7 @@ and `[]rune(s)` of a string VARIABLE (a copy of a length known at run time; a
 constant's converts since
 2026-09-23, constBytesConv); a type switch behind an init statement, `switch
 f(); x := v.(type)` (every other header takes every simple statement since
-2026-09-29, see A STATEMENT IN A HEADER IS THE STATEMENT); a deferred
-or started call through a function field of ANOTHER package's variable, `defer
-lib.B.F(1)` ("only <pkg>.<Func>(args) ...") and `go lib.C.F(2)` ("unsupported
-receiver in a go statement"), where the same through this package's works since
-2026-09-23; a parenthesised function value started on a cog,
+2026-09-29, see A STATEMENT IN A HEADER IS THE STATEMENT); a parenthesised function value started on a cog,
 `go (h.f)(2)`, which works as a value, a statement and deferred; a deferred or
 started call through a dereference with an index, `defer (*ps)[0](x)` and `go
 (*pa)[0](x)` ("unsupported call target", and go's "only `go f(args)` ..."), where

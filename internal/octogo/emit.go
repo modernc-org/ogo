@@ -1917,6 +1917,13 @@ func (e *emitter) emitGo(nodes []Node) {
 			base, suffix = e.bindPtrConv(pc), pc.rest
 		}
 	}
+	// `go lib.C.Add(x)`: what follows another package's VARIABLE is a step on that
+	// variable, as on one of this package's, so its global stands for the head. Only
+	// a variable holding a function, `go lib.Launch(2)`, had been read, and the rest
+	// went to the chain walk with the qualifier as its head: "unsupported receiver".
+	if mn, rest, ok := e.qualifiedChainBase(base, suffix); ok && len(rest) >= 2 {
+		base, suffix = mn, rest
+	}
 	crossed := func(what, advice string, at Node) {
 		e.fail("%v: cannot pass %s to a goroutine: its storage does not outlive the function, and the "+
 			"goroutine may; %s",
@@ -31230,6 +31237,15 @@ func (e *emitter) deferReceiver(d *deferredCall, head Node, suffix []Node) (stri
 		if !isAddr {
 			return "", true
 		}
+	}
+	// `defer lib.B.f(args)`, `defer lib.C.M(args)`, `defer lib.Arr[i](args)`: what
+	// follows another package's VARIABLE is a step on that variable, as on one of
+	// this package's, so its global stands for the head and the capture below is
+	// made of it. With the qualifier as the head nothing was captured, and the replay
+	// read the chain at the return: `defer lib.B.f(1)` followed by a store into
+	// lib.B.f called the new function, 49 where Go prints 41, in silence.
+	if mn, rest, ok := e.qualifiedChainBase(base, suffix); ok && len(rest) >= 2 {
+		base, suffix = mn, rest
 	}
 	steps := suffix[:len(suffix)-1]
 	if len(steps) == 0 {

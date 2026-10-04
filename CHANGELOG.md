@@ -20,6 +20,20 @@ shipped section tells a reader on that version that they have behaviour they do 
 
 ### Fixed
 
+- **A deferred call through another package's variable is evaluated where the
+  `defer` stands**, as Go evaluates it. A function held by a field of the variable,
+  or a value-receiver method of the variable or of its element, was read at the
+  return instead, so a store between the two changed what ran, in silence: `defer
+  lib.B.Fr(2)`, for a field holding a function with a result, followed by
+  `lib.B.Fr = other` called `other`, and `defer lib.B.Show()` followed by `lib.B.N
+  = 7` showed 7. Measured on a P2-EDGE: 49 and 67 where Go prints 42 and 65. A
+  field holding a function with no result, `defer lib.B.F(1)`, and an element of
+  another package's array of functions, `defer lib.Arr[1](3)`, were refused, and
+  work now.
+- **A goroutine can be started on another package's variable**: its method, `go
+  lib.C.Add(x)`, a function its field holds, `go lib.B.F(1)`, and an element of it,
+  `go lib.Arr[0](3)` and `go lib.Bs[0].Tell()`, each read at the `go` statement.
+  They were "unsupported receiver in a go statement".
 - **A method value of a package variable of another package's type**, `inc :=
   mc.Add` for a `var mc lib.Counter`, is taken as the same form of a type of this
   package is: a pointer-receiver method of a package-level variable that is no
