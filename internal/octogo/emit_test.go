@@ -3710,7 +3710,9 @@ func main() {
 	defer show(b)
 }
 `,
-			want: "cannot use [2]int as [3]int in argument to a deferred call",
+			// The checker's since the array's identity is compared where an array
+			// is wanted (checkArrayIdentity), in Go's words; it was the emitter's.
+			check: "cannot use b (variable of type [2]int) as [3]int value in argument to show",
 		},
 		{
 			name: "increment a row",
@@ -3771,7 +3773,8 @@ func main() {
 }
 
 // TestEmitCArrayShapeMismatch pins that a copy between arrays of DIFFERENT shape is
-// refused, wherever the copy happens. Go rejects every one of these -- "cannot use s
+// refused, wherever the copy happens -- by the checker since 2026-10-04, in Go's
+// words, and by the emitter behind it. Go rejects every one of these -- "cannot use s
 // (variable of type [3]int) as [2]int value in assignment" -- and each was accepted,
 // silently: the copy is sized by the DESTINATION, so `var d [2]int; d = s` over a
 // [3]int printed the first two elements and said nothing at all.
@@ -3786,7 +3789,7 @@ func main() {
 // same shape are still accepted, where Go refuses them; that is the named-type
 // distinctness question, not this one.)
 func TestEmitCArrayShapeMismatch(t *testing.T) {
-	for _, test := range []struct{ name, src, want string }{
+	for _, test := range []struct{ name, src, want, check string }{
 		{
 			name: "assign a longer array",
 			src: `var s = [3]int{1, 2, 3}
@@ -3797,7 +3800,8 @@ func main() {
 	println(d[0])
 }
 `,
-			want: "cannot use [3]int as [2]int in assignment",
+			want:  "cannot use [3]int as [2]int in assignment",
+			check: "cannot use s (variable of type [3]int) as [2]int value in assignment",
 		},
 		{
 			name: "assign through a field",
@@ -3814,7 +3818,8 @@ func main() {
 	println(b.g[0])
 }
 `,
-			want: "cannot use [3]int as [2]int in assignment",
+			want:  "cannot use [3]int as [2]int in assignment",
+			check: "cannot use a.f (variable of type [3]int) as [2]int value in assignment",
 		},
 		{
 			name: "assign a row of the wrong width",
@@ -3825,7 +3830,8 @@ func main() {
 	println(pool[1][0])
 }
 `,
-			want: "cannot use [3]int as [2]int in assignment",
+			want:  "cannot use [3]int as [2]int in assignment",
+			check: "cannot use [3]int{1, 2, 3} (value of type [3]int) as [2]int value in assignment",
 		},
 		{
 			name: "assign a different element type",
@@ -3837,7 +3843,8 @@ func main() {
 	println(d[0])
 }
 `,
-			want: "cannot use [2]uint8 as [2]int in assignment",
+			want:  "cannot use [2]uint8 as [2]int in assignment",
+			check: "cannot use s (variable of type [2]uint8) as [2]int value in assignment",
 		},
 		{
 			name: "assign through a pointer",
@@ -3850,7 +3857,8 @@ func main() {
 	println(d[0])
 }
 `,
-			want: "cannot use [3]int as [2]int in assignment",
+			want:  "cannot use [3]int as [2]int in assignment",
+			check: "cannot use *p (variable of type [3]int) as [2]int value in assignment",
 		},
 		{
 			name: "declare from a longer array",
@@ -3861,7 +3869,8 @@ func main() {
 	println(d[0])
 }
 `,
-			want: "cannot use [3]int as [2]int in variable declaration",
+			want:  "cannot use [3]int as [2]int in variable declaration",
+			check: "cannot use s (variable of type [3]int) as [2]int value in variable declaration",
 		},
 		{
 			name: "declare from a field of the wrong width",
@@ -3874,14 +3883,21 @@ func main() {
 	println(d[0])
 }
 `,
-			want: "cannot use [3]int as [2]int in variable declaration",
+			want:  "cannot use [3]int as [2]int in variable declaration",
+			check: "cannot use h.f (variable of type [3]int) as [2]int value in variable declaration",
 		},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			fsys := fstest.MapFS{"main.ogo": &fstest.MapFile{Data: []byte(test.src)}}
 			pkg, err := Build(-1, []string{"main.ogo"}, fsys)
 			if err != nil {
-				t.Fatalf("Build: %v", err)
+				// The checker's, in Go's words, since it compares array identities
+				// where an array is wanted (checkArrayIdentity); the emitter's check
+				// stays behind it.
+				if !strings.Contains(err.Error(), test.check) {
+					t.Fatalf("Build: %v, want %q", err, test.check)
+				}
+				return
 			}
 			var buf bytes.Buffer
 			if err := EmitC(pkg, &buf, Checked()); err == nil {
@@ -6750,7 +6766,7 @@ func main() {
 // why this position was the one left. A method's parameter is on the list because its
 // signature is walked by the same code and nothing said so.
 func TestEmitCArrayArgShape(t *testing.T) {
-	for _, test := range []struct{ name, src, want string }{
+	for _, test := range []struct{ name, src, want, check string }{
 		{
 			name: "a longer array",
 			src: `func use(a [2]int) int { return a[0] }
@@ -6759,7 +6775,8 @@ var s = [3]int{1, 2, 3}
 
 func main() { println(use(s)) }
 `,
-			want: "cannot use [3]int as [2]int in argument to",
+			want:  "cannot use [3]int as [2]int in argument to",
+			check: "cannot use s (variable of type [3]int) as [2]int value in argument to use",
 		},
 		{
 			name: "a different element type",
@@ -6769,7 +6786,8 @@ var s = [2]uint8{1, 2}
 
 func main() { println(use(s)) }
 `,
-			want: "cannot use [2]uint8 as [2]int in argument to",
+			want:  "cannot use [2]uint8 as [2]int in argument to",
+			check: "cannot use s (variable of type [2]uint8) as [2]int value in argument to use",
 		},
 		{
 			name: "a method's parameter",
@@ -6783,14 +6801,20 @@ var t T
 
 func main() { println(t.take(s)) }
 `,
-			want: "cannot use [3]int as [2]int in argument to",
+			want:  "cannot use [3]int as [2]int in argument to",
+			check: "cannot use s (variable of type [3]int) as [2]int value in argument to take",
 		},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			fsys := fstest.MapFS{"main.ogo": &fstest.MapFile{Data: []byte(test.src)}}
 			pkg, err := Build(-1, []string{"main.ogo"}, fsys)
 			if err != nil {
-				t.Fatalf("Build: %v", err)
+				// The checker's since 2026-10-04, in Go's words (checkArrayIdentity);
+				// the emitter's check stays behind it.
+				if !strings.Contains(err.Error(), test.check) {
+					t.Fatalf("Build: %v, want %q", err, test.check)
+				}
+				return
 			}
 			var buf bytes.Buffer
 			if err := EmitC(pkg, &buf, Checked()); err == nil {
@@ -6861,7 +6885,7 @@ func main() {
 	println(t[0][0])
 }
 `,
-			want: "cannot use [3]int as [2]int in a literal",
+			check: "cannot use a (variable of type [3]int) as [2]int value in array or slice literal",
 		},
 		{
 			name: "not an array at all",
@@ -7680,9 +7704,10 @@ func TestEmitCArrayLitRefused(t *testing.T) {
 		want string
 	}{
 		{
+			// The checker's since 2026-10-04 (checkArrayIdentity), in Go's words.
 			name: "length mismatch",
 			src:  "func main() {\n\tvar a [3]int = [2]int{1, 2}\n\tprintln(a[0])\n}\n",
-			want: "cannot use a [2]int literal as [3]int",
+			want: "cannot use [2]int{1, 2} (value of type [2]int) as [3]int value in variable declaration",
 		},
 		{
 			// The checker's since 2026-09-28, in Go's words: an array is no slice
@@ -7721,7 +7746,7 @@ func TestEmitCArrayLitRefused(t *testing.T) {
 		{
 			name: "a rune element is not spelled in C",
 			src:  "func main() {\n\tvar a [2]rune = [2]int{1, 2}\n\tprintln(a[0])\n}\n",
-			want: "cannot use a [2]int literal as [2]int32",
+			want: "cannot use [2]int{1, 2} (value of type [2]int) as [2]rune value in variable declaration",
 		},
 	} {
 		t.Run(test.name, func(t *testing.T) {

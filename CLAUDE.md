@@ -1177,6 +1177,25 @@ never the categories into one another (checkRefAssign asks it since). With it, a
 element STORE asked only nil and a function's signature, where a variable asked all
 of checkStoreInto; and a variable declared from a SLICE literal had no type for any
 rule walking a variable's type (sliceLitType).
+That fix was for a POINTER wanted, and a slice already was; the grid of every
+category into every other, in a declaration and an assignment (2026-10-04, found by a
+rejects batch over a domain program's libraries), had 62 of 154 cells taken -- a
+struct, an array, a slice, a channel or an interface into a function, a channel or a
+struct, and a function or a channel into an array, of which v0.48.1 refused 42 about
+generated C, built 17 with a warning and 3 in silence (kindlessIntoOther, by
+nonBoolOperand's answer and the written type where it has none). Beside it, an array
+of another length (checkArrayIdentity; a deferred call's was the emitter's to refuse),
+nil into a field, an element or a literal of a Kind and a send of one, which only an
+argument and a return asked checkNilAssignable, and another package's struct literal,
+whose fields were asked nothing but a channel, a slice and a pointer (checkLitValue
+requalifies them). The rule's first version was a FALSE refusal twice, each the trap
+WHAT HAS NO KIND IS ASKED NOTHING names: `pp := &p` for a `p := &arr[1]` recorded a
+pointer to a P (addressOfInfo's literal fallback answered exprNamedType(&p); a pointer
+to a pointer is left unmodelled there now, and valueTypeAt types an address), and
+`put(&a)` for a `*uint16` read exprType of an address, its POINTEE's Kind -- p2-11's
+prof showed it, the corpus did not until a run case did. **A new rule refusing on a
+category asks it of each way the checker misreads one: a pointer to a pointer, an
+address, the element of a slice expression.**
 
 **A CALL'S RESULT HAD NO STEPS** (2026-10-02). The checker typed a call's result
 where the call stands alone, `x := f()` for a result of a Kind, and nothing past it:

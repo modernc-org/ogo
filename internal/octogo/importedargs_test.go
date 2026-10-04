@@ -31,6 +31,11 @@ import (
 // Of 30 such programs Go refuses, 28 were taken, each reaching the C compiler. The
 // valid forms of all of them run, and print what Go prints.
 //
+// A LITERAL of another package's struct type asked its fields for a channel, a slice
+// and a pointer and for nothing else, the field types being that package's spelling:
+// a function of another signature, a bool for an int and nil for an int went in,
+// keyed, positional or elided (checkLitValue, which writes them as this file does).
+//
 // A METHOD VALUE of a package variable of another package's type, `inc := mc.Add`
 // for a `var mc a.Counter` of main's, is the form the rules for a method value take
 // (reportUnsupportedFuncValue, methodValueParts): a pointer-receiver method of a
@@ -165,6 +170,27 @@ func main() {
 	h()
 }
 `, "cannot refer to unexported method hidden of type a.Counter", true},
+		{"a function of another signature in another package's literal", `import "a"
+
+func main() {
+	b := a.Box{F: func(n int) int { return n }}
+	_ = b
+}
+`, "cannot use func(n int) int { return n } (value of type func(n int) int) as func(a.T) int value in struct literal", true},
+		{"a bool in another package's literal", `import "a"
+
+func main() {
+	p := a.T{V: true}
+	_ = p
+}
+`, "cannot use true of type bool as type int in struct literal", true},
+		{"nil in another package's literal", `import "a"
+
+func main() {
+	p := a.T{V: nil}
+	_ = p
+}
+`, "cannot use nil as int value in struct literal", true},
 		{"a variable's method", `import "a"
 
 func main() {

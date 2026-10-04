@@ -47,6 +47,19 @@ shipped section tells a reader on that version that they have behaviour they do 
 
 ### Behaviour changes
 
+- **A value of one category stored where another is wanted is refused**, as Go
+  refuses it: a struct, an array, a slice, a channel or an interface where a
+  function, a channel or a struct is wanted, a function or a channel where an array
+  is -- `var f F = gs`, `x = ga` for a struct x -- in a declaration, an assignment,
+  an argument, a return, a field, an element, a literal, a send and an append. Only
+  a pointer or a slice wanted was asked. Of 62 such declarations and assignments, v0.48.1 built 17 with a warning and
+  3 in silence, a function or a channel initializing an array. Refused as well: an
+  array of another length or element where an array is wanted, `Frame{Vals: g3}` for
+  a `[3]int16` g3 and a `[4]int16` field; nil stored into a field, an element or a
+  literal field of a number, a string or a bool, or sent on a channel of one, `p.n =
+  nil` -- built in silence; and a value of the wrong type in a literal of ANOTHER
+  package's struct, whose fields were asked almost nothing: `seq.Step{Shape:
+  report.CRC16}`, `a.T{V: true}`.
 - **A function that keeps an element of an array behind its parameter is refused
   a local array**: `func f(p *[2]Counter) { p[1].Keep() }` called as `f(&cs)` for a
   local cs and a `Keep` storing its receiver in a package variable -- through a

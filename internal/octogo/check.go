@@ -4414,6 +4414,12 @@ func (f *File) nonBoolOperand(s *Scope, n Node) (string, bool) {
 			return "", false
 		case d.typeName.IsValid():
 			return f.nonBoolNamed(s, d.declaredTypeName())
+		case d.inferredType != nil:
+			// `pp := &p` for a pointer p: no name says what pp points at
+			// (addressOfInfo), and the type its initializer gave it does.
+			if p, isPtr := d.inferredType.tn.(*TypeNodePointer); isPtr && d.inferredType.f != nil {
+				return d.inferredType.f.nonBoolType(d.inferredType.s, p.TypeNode)
+			}
 		}
 		return "", false
 	}
@@ -5085,10 +5091,11 @@ func (f *File) inferVarFrom(s *Scope, vd *VarDeclaration, init Node) {
 		// `*p` reads and writes are admitted and checked.
 		tn, tq = f.canonicalType(s, tn, tq)
 		vd.isPtr, vd.elemKind, vd.hasElemKind, vd.typeName, vd.typeQual = true, ek, hasEk, tn, tq
-		if !tn.IsValid() {
+		if !tn.IsValid() && !f.addrOfPointerVar(s, init) {
 			// `p := &P{1, 2}`: the operand is a literal, not a variable, so
 			// there was no declaration to read the type off -- it is the
-			// literal's own.
+			// literal's own. Not `pp := &p` for a pointer p, whose pointee is no
+			// P (addressOfInfo).
 			if nm, ql, _, ok := f.exprNamedType(s, init); ok {
 				vd.typeName, vd.typeQual = nm, ql
 			}
@@ -9621,6 +9628,10 @@ func (f *File) checkSentValue(s *Scope, chanTN TypeNode, elem Kind, hasElem bool
 		return
 	}
 	if !vok {
+		if f.isNilOperand(valNode) { // `ch <- nil` on a chan int (see checkStoreInto)
+			f.checkNilAssignable(s, retResult{name: orKindName(elemName.Src(), elem), kind: elem, known: true}, valNode, "send")
+			return
+		}
 		f.kindlessValueErr(s, valNode, orKindName(elemName.Src(), elem), "send")
 		return
 	}
@@ -11154,15 +11165,31 @@ func (f *File) checkStructLit(s *Scope, t litType, st *TypeNodeStruct, at Token,
 // Conservative in the way its neighbours are. A field whose type the Kind model
 // does not carry (a struct, a slice, a pointer, an interface) and a value whose
 // type cannot be determined are both left alone rather than misreported. So is
-// every literal of a type from another package, whose field types are written in
-// the DECLARING package's scope and would resolve here to a different type of the
-// same name, or to nothing.
+// a literal of a type from another package whose field types cannot be written as
+// this file writes them (requalifiedType): an array's length is an expression of that
+// package, and a third package's type has no qualifier here.
+//
+// Such a field's type was asked for a channel and a slice or a pointer and nothing
+// else, being the declaring package's spelling: a function of another signature, a
+// bool for an int and a string for a struct all went into another package's struct,
+// keyed, positional or elided -- `seq.Step{Shape: report.CRC16}` built for the target.
+// It is written as this file writes it now, and asked what this package's is.
 func (f *File) checkLitValue(s *Scope, t litType, tn TypeNode, value Node, what string) {
+	if t.qual.IsValid() {
+		home, ok := f.importedPkgScope(t.qual)
+		if !ok {
+			return
+		}
+		rq, ok := f.requalifiedType(home, t.qual, tn)
+		if !ok {
+			f.checkChanAssign(s, s, tn, value, what)
+			f.checkRefAssign(s, s, tn, value, what)
+			return
+		}
+		tn = rq
+	}
 	f.checkChanAssign(s, s, tn, value, what)
 	f.checkRefAssign(s, s, tn, value, what)
-	if t.qual.IsValid() {
-		return
-	}
 	f.checkFuncAssign(s, f.funcSig(s, tn), value, what)
 	if f.checkNilValue(s, s, tn, value, what) {
 		return
@@ -11170,6 +11197,10 @@ func (f *File) checkLitValue(s *Scope, t litType, tn TypeNode, value Node, what 
 	ft := f.resultType(s, tn)
 	vk, ok := f.exprType(s, value)
 	if ft.known && !ok {
+		if f.isNilOperand(value) { // `P{n: nil}`, as checkStoreInto says
+			f.checkNilAssignable(s, ft, value, what)
+			return
+		}
 		f.kindlessValueErr(s, value, ft.name, what)
 		return
 	}
@@ -15373,6 +15404,10 @@ func (f *File) checkFieldAssign(s *Scope, head, field Token, rhsNode Node) {
 	lk, lok := f.fieldKind(s, head, field)
 	rk, rok := f.exprType(s, rhsNode)
 	if lok && !rok {
+		if f.isNilOperand(rhsNode) { // `p.n = nil` for an int32 n (see checkStoreInto)
+			f.checkNilAssignable(s, retResult{name: orKindName(f.fieldTypeName(s, head, field), lk), kind: lk, known: true}, rhsNode, "assignment")
+			return
+		}
 		f.kindlessValueErr(s, rhsNode, orKindName(f.fieldTypeName(s, head, field), lk), "assignment")
 		return
 	}
@@ -15780,6 +15815,13 @@ func (f *File) checkStoreInto(s, in *Scope, tn TypeNode, value Node, what string
 	}
 	vk, ok := f.exprType(s, value)
 	if !ok {
+		// nil into a field or an element of a Kind, `p.n = nil`: kindlessValueErr
+		// leaves nil to checkNilAssignable, which no store asked -- the argument and
+		// the return did -- and the target built `p.n = nil` in silence.
+		if f.isNilOperand(value) {
+			f.checkNilAssignable(s, rt, value, what)
+			return
+		}
 		f.kindlessValueErr(s, value, rt.name, what)
 		return
 	}
@@ -15930,6 +15972,16 @@ func (f *File) checkDerefAssign(s *Scope, base Token, rhsNode Node) {
 	}
 	if d.hasElemKind {
 		f.checkElemAssignType(s, d.elemKind, rhsNode)
+	}
+	if !d.hasElemKind && !d.typeName.IsValid() {
+		// No flag says what d points at -- `pp := &p` for a pointer p, a pointer to
+		// a pointer (addressOfInfo) -- and the type its declaration gives it does.
+		if t, ok := f.varTypeAt(d); ok && t.f != nil {
+			if p, isPtr := t.tn.(*TypeNodePointer); isPtr {
+				t.f.checkStoreInto(s, t.s, p.TypeNode, rhsNode, "assignment")
+			}
+		}
+		return
 	}
 	if d.typeName.IsValid() {
 		// The pointee is a DEFINED type: `*c = v` for a `c *Counter` and an int v
@@ -16104,6 +16156,10 @@ func (f *File) isArrayType(s *Scope, tn TypeNode) bool {
 func (f *File) checkElemAssignType(s *Scope, elem Kind, rhsNode Node) {
 	rk, rok := f.exprType(s, rhsNode)
 	if !rok {
+		if f.isNilOperand(rhsNode) { // `xs[0] = nil` for an []int32 (see checkStoreInto)
+			f.checkNilAssignable(s, retResult{name: kindName(elem), kind: elem, known: true}, rhsNode, "assignment")
+			return
+		}
 		f.kindlessValueErr(s, rhsNode, kindName(elem), "assignment")
 		return
 	}
@@ -16262,6 +16318,14 @@ func (f *File) addressOfInfo(s *Scope, n Node) (elemKind Kind, hasElem bool, typ
 	}
 	if id, ok := f.exprIdent(fac); ok {
 		if d, ok := s.find(id.Src()).(*VarDeclaration); ok {
+			if d.isPtr {
+				// `pp := &p` for a POINTER p: a pointer to a pointer, which the
+				// flags recorded here say as one pointer -- `*pp` read as the
+				// struct two steps away, so `*pp = &arr[2]` was refused for storing
+				// a pointer into a P. Its element is left unmodelled, as `&s.f`'s
+				// is; varTypeAt still types it where p's type is written.
+				return 0, false, Token{}, Token{}, true
+			}
 			// The QUALIFIER travels with the name: `p := &s` for an s of an imported
 			// type gives p that package's type, and the bare name is a type this
 			// package does not have. Dropped, `p` was "variable of type Sq" and
@@ -16271,6 +16335,16 @@ func (f *File) addressOfInfo(s *Scope, n Node) (elemKind Kind, hasElem bool, typ
 		}
 	}
 	return 0, false, Token{}, Token{}, true // &s.f / &a[i]: a pointer, element kind unmodelled
+}
+
+// addrOfPointerVar reports `&p` for a variable p that is itself a pointer.
+func (f *File) addrOfPointerVar(s *Scope, n Node) bool {
+	id, ok := f.addrOfName(n)
+	if !ok {
+		return false
+	}
+	d, isVar := s.find(id.Src()).(*VarDeclaration)
+	return isVar && d.isPtr
 }
 
 // localValueNamedType names the type of a value taken out of a variable in scope --
@@ -17352,6 +17426,89 @@ func (f *File) kindlessValueErr(s *Scope, value Node, want, what string) bool {
 	return true
 }
 
+// kindlessIntoOther is kindlessValueErr where the type wanted has no Kind either: a
+// value of one category of no Kind -- a struct, an array, a slice, a pointer, a
+// function, a channel, an interface -- where another is wanted, wu being what the
+// wanted type is defined over. Go refuses every such store but into an interface,
+// whose implementation is checkImplements' to judge; a struct, an array, a slice, a
+// channel or an interface stored into a function, a channel or a struct, and a
+// function or a channel into an array, went through in every position but the few
+// a check had been written for (a pointer wanted, a slice wanted), 62 of 154 such
+// declarations and assignments.
+func (f *File) kindlessIntoOther(s *Scope, wu TypeNode, value Node, want, what string) bool {
+	wc := kindlessCategoryOf(wu)
+	if wc == "" || wc == "an interface" || f.isNilOperand(value) {
+		return false
+	}
+	hc, known := f.nonBoolOperand(s, value)
+	if !known {
+		// What that does not type, a slice literal among them, by its written type.
+		if have, _, ok := f.operandTypeAt(s, value); ok && have.tn != nil && have.f != nil {
+			hu, _ := have.f.refTypeUnder(have.s, have.tn)
+			hc, known = kindlessCategoryOf(hu), true
+		}
+	}
+	switch {
+	case !known || hc == wc:
+		return false
+	case hc == "a struct", hc == "an array", hc == "a slice", hc == "a pointer", hc == "a function", hc == "a channel", hc == "an interface":
+		f.err(f.tok(value.Pos()).Position(), "cannot use %s as %s value in %s: it is %s", f.exprSource(value), want, what, hc)
+		return true
+	}
+	return false
+}
+
+// checkArrayIdentity refuses an array of another length or element where an array
+// is wanted, `Frame{Vals: [3]int16{}}` for a `[4]int16` field: both are arrays, so
+// kindlessIntoOther says nothing, and nothing compared them -- a store was refused by
+// the emitter, in its words, and a literal's field taken. Two defined types are
+// checkDefinedType's; an identity this cannot spell is not guessed at.
+func (f *File) checkArrayIdentity(s *Scope, wu TypeNode, wantNamed bool, value Node, want, what string) {
+	if _, isArr := wu.(*TypeNodeArray); !isArr {
+		return
+	}
+	have, variable, ok := f.operandTypeAt(s, value)
+	if !ok || have.tn == nil || have.f == nil {
+		return
+	}
+	hu, haveNamed := have.f.refTypeUnder(have.s, have.tn)
+	if _, isArr := hu.(*TypeNodeArray); !isArr || wantNamed && haveNamed {
+		return
+	}
+	wi, hi := f.typeNodeIdentity(wu), have.f.typeNodeIdentity(hu)
+	if wi == "" || hi == "" || wi == hi {
+		return
+	}
+	mode := "value"
+	if variable {
+		mode = "variable"
+	}
+	f.err(f.tok(value.Pos()).Position(), "cannot use %s (%s of type %s) as %s value in %s",
+		f.exprSource(value), mode, have.f.typeNodeMessage(have.s, have.tn), want, what)
+}
+
+// kindlessCategoryOf names the category of a type of no Kind as nonBoolOperand
+// does, "a struct"; "" for anything else.
+func kindlessCategoryOf(tn TypeNode) string {
+	switch tn.(type) {
+	case *TypeNodeStruct:
+		return "a struct"
+	case *TypeNodeArray:
+		return "an array"
+	case *TypeNodeSlice:
+		return "a slice"
+	case *TypeNodePointer:
+		return "a pointer"
+	case *FunctionType:
+		return "a function"
+	case *TypeNodeChan:
+		return "a channel"
+	case *TypeNodeInterface:
+		return "an interface"
+	}
+	return ""
+}
+
 // kindIntoVar is kindValueErr for a variable whose type nothing wrote, `f := one`:
 // what it holds is read off its declaration.
 func (f *File) kindIntoVar(s *Scope, d *VarDeclaration, value Node) {
@@ -17390,7 +17547,10 @@ func (f *File) checkRefAssign(s, wantScope *Scope, want TypeNode, value Node, wh
 	case *TypeNodeSlice, *TypeNodePointer:
 	case *FunctionType, *TypeNodeChan, *TypeNodeStruct, *TypeNodeArray:
 		if w := f.typeNodeMessage(wantScope, want); w != "" {
-			f.kindValueErr(s, value, f.qualifiedTypeName(wantScope, w), what)
+			w = f.qualifiedTypeName(wantScope, w)
+			if !f.kindValueErr(s, value, w, what) && !f.kindlessIntoOther(s, wu, value, w, what) {
+				f.checkArrayIdentity(s, wu, wantNamed, value, w, what)
+			}
 		}
 		return
 	default:
@@ -17424,6 +17584,19 @@ func (f *File) checkRefAssign(s, wantScope *Scope, want TypeNode, value Node, wh
 		// `&x` for an x whose type its initializer gave it, `x := 2.5`: no type
 		// written anywhere to read, and a Kind to name it by.
 		if _, isPtr := wu.(*TypeNodePointer); isPtr {
+			if wantS := f.typeNodeString(want, false); wantS != "" {
+				// A value of a Kind where a pointer is wanted, `*pp = 5` for a
+				// `pp **P`, as a slice wanted asks above; and one of no Kind.
+				// exprType answers an ADDRESS with its pointee's Kind, so it is asked only
+				// of what is known to be no pointer.
+				wantS = f.qualifiedTypeName(wantScope, wantS)
+				if isPtr, known := f.exprPointerness(s, value); known && !isPtr && f.kindValueErr(s, value, wantS, what) {
+					return
+				}
+				if f.kindlessIntoOther(s, wu, value, wantS, what) {
+					return
+				}
+			}
 			if hi, ok := f.inferredScalarAddr(s, value); ok {
 				if wi := f.typeNodeIdentity(wu); wi != "" && wi != hi {
 					f.err(f.tok(value.Pos()).Position(), "cannot use %s (value of type %s) as %s value in %s",
@@ -17481,7 +17654,7 @@ func (f *File) checkRefAssign(s, wantScope *Scope, want TypeNode, value Node, wh
 	// an array where the program says so, `a[:]`.
 	if wSlice && !hSlice {
 		switch hu.(type) {
-		case *TypeNodeStruct, *TypeNodeArray, *TypeNodePointer, *FunctionType, *TypeNodeChan:
+		case *TypeNodeStruct, *TypeNodeArray, *TypeNodePointer, *FunctionType, *TypeNodeChan, *TypeNodeInterface:
 			haveS, wantS := have.f.typeNodeMessage(have.s, have.tn), f.typeNodeString(want, false)
 			if haveS == "" || wantS == "" {
 				return
@@ -24913,6 +25086,18 @@ func (f *File) operandType(s *Scope, n Node, calls bool) (typeAt, bool) {
 	for n.sym == Expression || n.sym == SimpleExpr || n.sym == Term || n.sym == UnaryExpr {
 		kids := slices.Collect(it(n.ast))
 		if n.sym == UnaryExpr && len(kids) == 2 && kids[0].sym == UnaryOp && kids[1].sym == Factor {
+			if op := f.unaryOp(s, kids[0]); op == AND && calls {
+				// `&arr[1]`, `&h.v`: a pointer to what the operand is. Untyped, a
+				// variable declared from one had no type to read its address's off,
+				// `pp := &p` for a `p := &arr[1]`, which the flags then took for a
+				// pointer to a P (addressOfInfo). valueTypeAt's only: the len fold
+				// reads lenOperandType, and asks nothing of an address.
+				t, ok := f.operandType(s, kids[1], calls)
+				if !ok || t.tn == nil {
+					return typeAt{}, false
+				}
+				return typeAt{&TypeNodePointer{TypeNode: t.tn}, t.s, t.f}, true
+			}
 			if f.unaryOp(s, kids[0]) != MUL {
 				return typeAt{}, false
 			}

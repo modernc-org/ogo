@@ -1,0 +1,117 @@
+// A value of one category with no Kind -- a struct, an array, a slice, a pointer, a
+// function, a channel, an interface -- where another is wanted. Go refuses every such
+// store but into an interface, whose implementation is checked on its own. Only a
+// pointer and a slice wanted had been asked (checkRefAssign): a struct, an array, a
+// slice, a channel or an interface stored into a function, a channel or a struct, and
+// a function or a channel into an array, went through -- 62 of 154 declarations and
+// assignments, which the target's compiler refused about generated C, warned about,
+// or, for a function or a channel initializing an array, built in silence
+// (kindlessIntoOther). Beside them: an array of another length or element where an
+// array is wanted (checkArrayIdentity), nil where a number, a string or a bool is
+// wanted in a field, an element, a literal and a send, and a store through a pointer
+// to a pointer, which the flags recorded as one pointer.
+
+type S struct{ a, b int }
+
+type F func(int) int
+
+type I interface{ M() }
+
+type Frame struct {
+	Seq  uint16
+	Vals [4]int16
+}
+
+type P struct{ x, y int }
+
+func fn(x int) int { return x }
+
+var gs S
+
+var ga [3]int
+
+var gsl []int
+
+var gp *int
+
+var gf F = fn
+
+var gc chan int
+
+var gi I
+
+var g3 [3]int16
+
+var arr [3]P
+
+func run() {
+	// ERROR "cannot use gs as F value in variable declaration: it is a struct"
+	var f1 F = gs
+
+	// ERROR "cannot use ga as F value in assignment: it is an array"
+	f1 = ga
+
+	// ERROR "cannot use \[\]int\{1\} as chan int value in variable declaration: it is a slice"
+	var c1 chan int = []int{1}
+
+	// ERROR "cannot use gi as S value in variable declaration: it is an interface"
+	var s1 S = gi
+
+	// ERROR "cannot use gsl as S value in assignment: it is a slice"
+	s1 = gsl
+
+	// ERROR "cannot use fn as \[3\]int value in variable declaration: it is a function"
+	var a1 [3]int = fn
+
+	// ERROR "cannot use gc as \[3\]int value in variable declaration: it is a channel"
+	var a2 [3]int = gc
+
+	// ERROR "cannot use fn as \*int value in variable declaration: it is a function"
+	var p1 *int = fn
+
+	// ERROR "cannot use gi \(variable of type I\) as \[\]int value in variable declaration"
+	var sl1 []int = gi
+
+	// ERROR "cannot use g3 \(variable of type \[3\]int16\) as \[4\]int16 value in struct literal"
+	fr := Frame{Vals: g3}
+
+	// ERROR "cannot use \[3\]int16{} \(value of type \[3\]int16\) as \[4\]int16 value in assignment"
+	fr.Vals = [3]int16{}
+
+	// ERROR "cannot use nil as uint16 value in assignment"
+	fr.Seq = nil
+
+	// ERROR "cannot use nil as int value in struct literal"
+	q := P{x: nil}
+
+	var xs [2]int32
+
+	// ERROR "cannot use nil as int32 value in assignment"
+	xs[0] = nil
+
+	var ch chan int32
+
+	// ERROR "cannot use nil as int32 value in send"
+	ch <- nil
+
+	p := &arr[1]
+	pp := &p
+
+	// ERROR "cannot use 5 \(untyped int constant\) as \*P value in assignment"
+	*pp = 5
+
+	// The valid forms beside them.
+	var f2 F = fn
+	var f3 F = gf
+	var i1 I
+	var a3 [3]int = ga
+	var c2 chan int = gc
+	*pp = &arr[2]
+	var q2 *P = *pp
+	**pp = arr[0]
+	fr2 := Frame{Vals: [...]int16{1, 2, 3, 4}}
+	_, _, _, _, _, _, _, _, _, _, _ = f1, c1, s1, a1, a2, p1, sl1, fr, q, f2, f3
+	_, _, _, _, _ = i1, a3, c2, q2, fr2
+}
+
+func main() { run() }
