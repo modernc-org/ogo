@@ -808,7 +808,8 @@ still design-only.
   of the shape failed in every argument position, so **a sweep that runs only what
   built silently misses a fault the backend warned about**; the tool keeps WARNED
   apart. Seeds 1001-2000 with the released v0.48.1 on 2026-10-03/04, the same way:
-  922 passing, 78 outgrowing a cog, none failing, refused or warned about.
+  922 passing, 78 outgrowing a cog, none failing, refused or warned about; and seeds
+  2001-3000 with 98b1306 on 2026-10-04: 934 passing, 66 outgrowing, none failing.
 - **Fixed miscompile (found by the oracle):** a shadowing local whose initializer
   references the shadowed name — `var x = x + 5` with an outer `x` in scope — used
   to miscompile, because the emitter names locals verbatim so the C initializer read
