@@ -20,6 +20,11 @@ shipped section tells a reader on that version that they have behaviour they do 
 
 ### Fixed
 
+- **Another package's exported variable of an unexported type goes into an
+  interface**: `var ErrBusy = &errBusy{}`, the sentinel idiom, compared with an
+  `error` or stored in one -- a declaration, an assignment, an argument, a return,
+  a literal, a field, a send -- was refused, "lib.errBusy does not implement error
+  (missing method Error)".
 - **nil converts to a defined slice, function or channel type**, `L(nil)`, as Go
   converts it: it was "cannot convert to L". Measured on a P2-EDGE.
 - **A deferred call through another package's variable is evaluated where the

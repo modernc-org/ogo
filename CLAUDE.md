@@ -1011,6 +1011,15 @@ stopped at a type of another package, and at an embedded field written out,
 `w.Counter`, which it follows now. On the board such a program built with a warning,
 "Bad number of parameters", and read the missing argument from whatever its register
 held. **A walk that passes a call hands the call to the argument check.**
+An exported VARIABLE of an UNEXPORTED type, `var ErrBusy = &errBusy{}` -- the
+sentinel idiom, found by a domain program the same day -- was refused wherever it met
+an interface, "lib.errBusy does not implement error (missing method Error)", in all
+nine positions of the row: `implements` resolved the type through typeDeclNamed,
+which answers nothing for a qualified name this file may not WRITE, and a type with
+no declaration has no methods. The name came from the variable's declaration, not
+from this file's spelling (typeDeclNamedIn; TestCheckUnexportedImplements). **A name
+the checker reads off another package's declaration is resolved there whether or
+not it is exported; only a name this file wrote is held to the export rule.**
 
 **A C NAME IS A ROW** (2026-09-25). The emitted C keeps a program's own names, so
 every name a program may write is a row across everything else that names things in

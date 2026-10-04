@@ -11962,6 +11962,15 @@ func (f *File) canonicalType(s *Scope, name, qual Token) (Token, Token) {
 }
 
 func (f *File) typeDeclNamed(s *Scope, name string) (*TypeDeclaration, *Scope, bool) {
+	return f.typeDeclNamedIn(s, name, false)
+}
+
+// typeDeclNamedIn is typeDeclNamed, and with unexported set it also resolves
+// another package's UNEXPORTED type -- for a name this file did not write but read
+// off that package's own declaration: the type of `lib.ErrShort` for a `var
+// ErrShort = &errShort{}`. Such a type is not this file's to NAME, and its method set
+// is still the value's to have, which is what an interface asks of it.
+func (f *File) typeDeclNamedIn(s *Scope, name string, unexported bool) (*TypeDeclaration, *Scope, bool) {
 	qual, member, isQual := strings.Cut(name, ".")
 	if !isQual {
 		td, ok := s.find(name).(*TypeDeclaration)
@@ -11988,7 +11997,7 @@ func (f *File) typeDeclNamed(s *Scope, name string) (*TypeDeclaration, *Scope, b
 		}
 		return td, s, ok
 	}
-	if !f.isImportQualifier(s, qual) || !token.IsExported(member) {
+	if !f.isImportQualifier(s, qual) || !unexported && !token.IsExported(member) {
 		return nil, nil, false
 	}
 	imp, ok := f.Scope.Declarations[qual].(*ImportDeclaration)
@@ -12089,7 +12098,12 @@ func (f *File) implements(s *Scope, concrete string, valueIsPtr bool, iface stri
 		}
 		return "", "", "", "", "", true
 	}
-	td, home, isNamed := f.typeDeclNamed(s, concrete)
+	// The concrete type's name comes from a declaration, the value's or its
+	// package's, and not from this file's spelling: another package's unexported type
+	// is resolved too. Answered as no type at all, `var e error = lib.ErrShort` for a
+	// `var ErrShort = &errShort{}` was "lib.errShort does not implement error
+	// (missing method Error)" -- the sentinel idiom, refused across every package.
+	td, home, isNamed := f.typeDeclNamedIn(s, concrete, true)
 	if !isNamed {
 		// Not a named type: it carries no methods at all, so any non-empty
 		// interface is unsatisfied. An empty one is satisfied by everything.
