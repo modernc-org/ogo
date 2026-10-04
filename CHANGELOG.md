@@ -93,7 +93,15 @@ shipped section tells a reader on that version that they have behaviour they do 
   same in a list and in a for clause, and through a dereference of a call. Such a
   callee was taken to keep nothing, and `keep(&x)` for a local x left its address
   in package storage in silence; it is refused now, "its parameter 1 is stored
-  where it outlives every frame". v0.48.1 builds the shorter forms.
+  where it outlives every frame". v0.48.1 builds the shorter forms. So are the
+  rest of the ways a callee stores, each taken for none in v0.48.1: a star over a
+  call, `*pq() = v`; a method on a call's result keeping its argument,
+  `gethp().set(v)`; `copy` into a package slice, a call's slice or a slice
+  parameter; and an element of a slice parameter, `d[0] = v`, which the call site
+  decides by what it passed -- `put(gp, &x)` is refused and `put(loc[:], &x)` is
+  not. A copy of bytes keeps nothing. Pointers copied into a local buffer through a
+  callee, `copy(d, v)` of a `[]*int`, are refused conservatively, the summary
+  having no place to say whose buffer it was.
 - **An untyped constant shifted by a variable count must fit the type it takes**,
   as Go has it: `x := 408166956050 >> n` (an int), `var y uint8 = 300 >> n` and
   `var z uint8 = -1 << n` are refused, "300 (untyped int constant) overflows

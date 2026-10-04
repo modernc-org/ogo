@@ -2629,6 +2629,23 @@ pointer's end being out of sight; TestEmitCSummaryThroughUnnamed. **Making a sha
 WRITABLE asks the summaries what they read of it** -- the callee form is a store
 nothing had reached while it did not compile, and the shorter spelling beside it had
 been open all along.
+The row whole, the next day: a star over a call (`*pq() = v`, its call the last step),
+a method on a call's result keeping its argument (`gethp().set(v)`: methodCallOf had
+no case for a receiver that is a function's result, and fieldMethodSuffix took no
+call ahead of the method), `copy` -- read as no store at all (copyStores: the
+source's ELEMENTS into the destination, a package's or an unnamed one sunk, a name's
+through it) -- and an element of a slice PARAMETER (pointerParamSlots takes one
+whose elements can carry a reference, so the call site decides by what it passed).
+Five holes, all in v0.48.1. The summaries read SHAPES, so the first version of the
+slice slot refused an encoder, `dst[i] = p.payload[i]`, as keeping p's contents --
+the corpus guard's one new .err file -- and the element type decides since
+(carriesReference; copyMayCarry for a copy's destination, a package array's from
+arrayVar). The price left: pointers copied into a LOCAL buffer through a callee are
+refused, the summary having no slot for contents stored through a parameter. The
+net for false refusals was every probe program of the scratchpad, 4,250 of them,
+through HEAD's compiler and the tree's: identical verdicts, and p2-11's binary
+byte-identical. **A new summary rule is run over every program the probes left
+behind, not only the corpus.**
 
 ## Notes
 

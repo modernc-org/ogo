@@ -12175,6 +12175,9 @@ func (e *emitter) collectFuncCross(fi funcInfo) {
 			for _, v := range e.storedThroughUnnamed(nodes) {
 				pkg = append(pkg, storeShape{value: v})
 			}
+			cpkg, cthrough := e.copyStores(nodes, fi)
+			pkg = append(pkg, cpkg...)
+			storesInto(nil, cthrough)
 			storesInto(pkg, e.throughStores(nodes))
 		}
 		// A return hands the value back to the caller: which parameter it came
@@ -13563,7 +13566,21 @@ func (e *emitter) clauseStores(h forHeader) (pkg, through []storeShape) {
 // `fill(&g, a[:])` leaks and `fill(&local, a[:])` does not.
 func (e *emitter) pointerParamSlots(fi funcInfo, base string, ats func(string) []int) (slots []int) {
 	for _, i := range ats(base) {
-		if i < len(fi.ptrParam) && fi.ptrParam[i] && i < intoBits {
+		if i >= intoBits {
+			continue
+		}
+		// A SLICE parameter's elements are the caller's backing, as a pointer
+		// parameter's pointee is its storage: `d[0] = v`, `copy(d, v)`. Taken for no
+		// store, `keep(gp, []*int{&x})` left x's address in gp.
+		// Only one whose elements can carry a reference: a store into a []byte's
+		// element is a byte, and `dst[i] = p.payload[i]` in an encoder was taken
+		// for its source's contents kept, the summaries reading shapes and not types.
+		isSlice := false
+		if i < len(fi.paramCType) {
+			el := e.sliceElemByName[e.underlyingCType(fi.paramCType[i])]
+			isSlice = el != "" && e.carriesReference(el)
+		}
+		if i < len(fi.ptrParam) && fi.ptrParam[i] || isSlice {
 			slots = append(slots, i)
 		}
 	}
@@ -13666,8 +13683,11 @@ func (e *emitter) targetThroughUnnamed(head Node, steps []Node) bool {
 	if e.soleIdent(head.ast) == "" {
 		return false
 	}
+	// `*pq() = v` and `*f() = append(*f(), v)`: a star over a call stores through
+	// its result, which the call may be the last step of.
+	starred := e.derefStars(head.ast) != ""
 	for i, st := range steps {
-		if st.sym == CallSuffix && i < len(steps)-1 {
+		if st.sym == CallSuffix && (i < len(steps)-1 || starred) {
 			return true
 		}
 	}
@@ -13677,6 +13697,13 @@ func (e *emitter) targetThroughUnnamed(head Node, steps []Node) bool {
 // exprThroughUnnamed is targetThroughUnnamed for a target written as an
 // expression, as a for clause's are: `gethp().p` or `(*f())[0]`.
 func (e *emitter) exprThroughUnnamed(l []int32) bool {
+	// `*pq()`: a star over a call, whose result is stored through.
+	if x, isDeref := e.derefOperandNode(Node{sym: Expression, ast: l}); isDeref && x.sym == Factor {
+		if steps := slices.Collect(it(x.ast)); len(steps) != 0 && steps[len(steps)-1].sym == FactorSuffix &&
+			containsSym(slices.Collect(it(steps[len(steps)-1].ast)), CallSuffix) {
+			return true
+		}
+	}
 	kids, ok := e.soleFactor(l)
 	if !ok || len(kids) < 2 || kids[len(kids)-1].sym != FactorSuffix {
 		return false
@@ -13697,6 +13724,125 @@ func (e *emitter) exprThroughUnnamed(l []int32) bool {
 		}
 	}
 	return false
+}
+
+// copyStores reads each `copy(dst, src)` of a statement as the store it is: src's
+// ELEMENTS put into what dst refers to -- package storage where dst is a package
+// variable's or reached through a call's result (pkg), and storage behind dst's
+// root otherwise (through), as a for clause's targets are read (clauseStores). It
+// was no store to the summaries at all, so a callee copying its parameter's
+// elements into a package slice, `copy(gp, v)`, kept nothing of them, and
+// `keep([]*int{&x})` left x's address there.
+func (e *emitter) copyStores(nodes []Node, fi funcInfo) (pkg, through []storeShape) {
+	if _, shadowed := e.funcRet[e.funcCallC("copy")]; shadowed {
+		return nil, nil
+	}
+	var walk func(ast []int32)
+	walk = func(ast []int32) {
+		for n := range it(ast) {
+			if n.sym == 0 {
+				continue
+			}
+			if n.sym == Factor {
+				if recv, suffix, ok := e.factorCall(slices.Collect(it(n.ast))); ok && recv == "copy" && len(suffix) == 1 && suffix[0].sym == CallSuffix {
+					if args := e.callArgExprs(suffix[0].ast); len(args) == 2 && e.copyMayCarry(args[0].ast, fi) {
+						st := storeShape{held: asElem(e.summaryReach(args[1].ast))}
+						base := e.bindingRoot(args[0].ast)
+						switch {
+						case e.copyIntoUnnamed(args[0].ast) || base != "" && e.outlivesByName(base):
+							pkg = append(pkg, st)
+						case base != "" && base != "_":
+							st.base = base
+							through = append(through, st)
+						}
+					}
+				}
+			}
+			walk(n.ast)
+		}
+	}
+	for _, n := range nodes {
+		walk(n.ast)
+	}
+	if len(nodes) == 2 && nodes[0].sym == AssignHead && nodes[1].sym == Postfix && e.soleIdent(nodes[0].ast) == "copy" {
+		// The statement `copy(dst, src)` is an AssignHead beside its call, no Factor.
+		if suffix := slices.Collect(it(nodes[1].ast)); len(suffix) == 1 && suffix[0].sym == CallSuffix {
+			if args := e.callArgExprs(suffix[0].ast); len(args) == 2 && e.copyMayCarry(args[0].ast, fi) {
+				st := storeShape{held: asElem(e.summaryReach(args[1].ast))}
+				base := e.bindingRoot(args[0].ast)
+				switch {
+				case e.copyIntoUnnamed(args[0].ast) || base != "" && e.outlivesByName(base):
+					pkg = append(pkg, st)
+				case base != "" && base != "_":
+					st.base = base
+					through = append(through, st)
+				}
+			}
+		}
+	}
+	return pkg, through
+}
+
+// copyMayCarry reports whether what copy puts into dst can carry a reference: its
+// elements' type, where the summaries know dst's -- a package variable, a parameter,
+// a local the body scan typed, a call's result -- and true where they do not. A
+// copy of bytes keeps nothing, and the summaries read shapes, not types: `copy(buf,
+// p.payload)` would otherwise be p's contents kept.
+func (e *emitter) copyMayCarry(dst []int32, fi funcInfo) bool {
+	ct := ""
+	base := e.bindingRoot(dst)
+	switch i := slices.Index(fi.params, base); {
+	case base == "":
+	case e.isPackageVar(base):
+		ct = e.globals[e.globalC(base)]
+	case i >= 0 && i < len(fi.paramCType):
+		ct = fi.paramCType[i]
+	case fi.locals[base] != "":
+		ct = fi.locals[base]
+	}
+	if a, isArr := e.arrayVar(base); base != "" && ct == "" && isArr && len(a.inner) == 0 {
+		// A package or local ARRAY, sliced: `copy(gbuf[:], v)`. Arrays are kept apart
+		// from the globals' C types.
+		return e.carriesReference(a.elem)
+	}
+	if ct == "" {
+		return true
+	}
+	if _, whole := e.exprIdent(dst); !whole {
+		// A slice of the name, `gbuf[:]`, has its elements; a field, an element or
+		// a call's result is not typed here.
+		kids, ok := e.soleFactor(dst)
+		if !ok || len(kids) != 2 || kids[1].sym != FactorSuffix {
+			return true
+		}
+		steps := slices.Collect(it(kids[1].ast))
+		if len(steps) != 1 || !e.isSliceIndex(steps[0]) {
+			return true
+		}
+		if a, isArr := e.namedArrays[e.underlyingCType(ct)]; isArr && len(a.inner) == 0 {
+			return e.carriesReference(a.elem)
+		}
+		if a, isArr := e.arrayPtrCType(ct); isArr && len(a.inner) == 0 {
+			return e.carriesReference(a.elem)
+		}
+	}
+	el := e.sliceElemByName[e.underlyingCType(ct)]
+	return el == "" || e.carriesReference(el)
+}
+
+// copyIntoUnnamed reports whether copy's destination is storage no name holds: a
+// call's result, `copy(ps(), v)`, whose backing is wherever the callee put it, or a
+// target reached through one (exprThroughUnnamed).
+func (e *emitter) copyIntoUnnamed(dst []int32) bool {
+	if e.exprThroughUnnamed(dst) {
+		return true
+	}
+	kids, ok := e.soleFactor(dst)
+	if !ok || len(kids) < 2 || kids[len(kids)-1].sym != FactorSuffix {
+		return false
+	}
+	steps := slices.Collect(it(kids[len(kids)-1].ast))
+	return len(steps) != 0 && steps[len(steps)-1].sym == CallSuffix
 }
 
 // storedInPackageVar returns the values a statement stores into a package variable,
@@ -14412,14 +14558,17 @@ func (e *emitter) stmtMethodCalls(nodes []Node, fi funcInfo) []methodCall {
 }
 
 // fieldMethodSuffix reports `.f.m(args)` and `[i].m(args)`: one or more field
-// selections or indexes, then a method selected and called.
+// selections or indexes, then a method selected and called -- or a call's result's,
+// `().m(args)`.
 func fieldMethodSuffix(suffix []Node) bool {
 	n := len(suffix)
 	if n < 3 || suffix[n-1].sym != CallSuffix || suffix[n-2].sym != Selector {
 		return false
 	}
-	for _, st := range suffix[:n-2] {
-		if st.sym != Selector && st.sym != Index {
+	for i, st := range suffix[:n-2] {
+		// The first step may be a CALL, `f().m()` and `f().x.m()`: the receiver is
+		// then reached through its result (methodCallOf).
+		if st.sym != Selector && st.sym != Index && !(i == 0 && st.sym == CallSuffix) {
 			return false
 		}
 	}
@@ -14552,6 +14701,17 @@ func (e *emitter) methodCallOf(recv string, suffix []Node, fi funcInfo) (methodC
 		// pointee, so ptrBase has none, and the call was no call to the summaries.
 		if _, isArrPtr := e.arrayPtrCType(fi.paramCType[i]); isArrPtr {
 			ct, kind, at = fi.paramCType[i], recvParam, i
+		}
+	case len(fields) != 0 && fields[0].sym == CallSuffix && i < 0 && fi.locals[recv] == "":
+		// A CALL's result, `gethp().set(v)`: storage this cannot name, taken to
+		// outlive the caller, as a store through it is (storedThroughUnnamed). It
+		// matched no case, so the call was none to the summaries, and a method
+		// keeping its argument in its receiver kept the caller's local unrecorded.
+		if rts := e.funcRet[e.funcCallC(recv)]; len(rts) == 1 && rts[0] != "" {
+			ct, kind, fields = rts[0], recvOutlives, fields[1:]
+			if e.isPointer(ct) && len(fields) != 0 {
+				ct = e.elemType(ct) // its fields are read through it
+			}
 		}
 	}
 	if ct == "" || kind == recvNone {
