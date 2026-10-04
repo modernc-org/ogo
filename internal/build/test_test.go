@@ -354,3 +354,30 @@ func TestExamplesBuild(t *testing.T) {
 		})
 	}
 }
+
+// TestOgoTestFlags: what `ogo help test` names is taken. --gostack was in the usage
+// line and refused by the parser, "unknown flag"; --allow-backend-warnings is
+// ogo build's, for a test binary the C backend warns about.
+func TestOgoTestFlags(t *testing.T) {
+	dir := t.TempDir()
+	write(t, filepath.Join(dir, "ring.ogo"), testPkgSrc)
+	write(t, filepath.Join(dir, "ring_test.ogo"), testPkgTestSrc)
+	for _, test := range []struct {
+		args []string
+		want string // "" for a build that succeeds
+	}{
+		{[]string{"--gostack", "512"}, ""},
+		{[]string{"--allow-backend-warnings"}, ""},
+		{[]string{"--gostack", "5"}, "must be between"},
+		{[]string{"--gostack"}, "wants a number of longs"}, // the directory is taken for its value
+	} {
+		var out bytes.Buffer
+		code, err := Test(append(append([]string{"-c"}, test.args...), dir), nil, &out, &out)
+		switch {
+		case test.want == "" && (err != nil || code != 0):
+			t.Errorf("%v: code=%d err=%v\n%s", test.args, code, err, out.String())
+		case test.want != "" && (err == nil || !strings.Contains(err.Error(), test.want)):
+			t.Errorf("%v: err=%v, want one containing %q", test.args, err, test.want)
+		}
+	}
+}

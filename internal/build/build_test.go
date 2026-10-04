@@ -145,15 +145,15 @@ func TestResolvePackage(t *testing.T) {
 // TestParseArgs pins the flag handling, in particular that several positional
 // arguments are now collected rather than refused.
 func TestParseArgs(t *testing.T) {
-	srcs, f, err := parseArgs([]string{"a.ogo", "b.ogo", "-o", "x.binary", "--release", "--unchecked"})
+	srcs, f, err := parseArgs([]string{"a.ogo", "b.ogo", "-o", "x.binary", "--release", "--unchecked", "--allow-backend-warnings"})
 	if err != nil {
 		t.Fatalf("parseArgs: %v", err)
 	}
 	if want := []string{"a.ogo", "b.ogo"}; !slices.Equal(srcs, want) {
 		t.Errorf("srcs: got %v, want %v", srcs, want)
 	}
-	if f.out != "x.binary" || !f.release || !f.unchecked {
-		t.Errorf("got out=%q release=%v unchecked=%v", f.out, f.release, f.unchecked)
+	if f.out != "x.binary" || !f.release || !f.unchecked || !f.allowWarnings {
+		t.Errorf("got out=%q release=%v unchecked=%v allowWarnings=%v", f.out, f.release, f.unchecked, f.allowWarnings)
 	}
 	if f.clock != 0 {
 		t.Errorf("clock: got %d, want 0 -- an unasked-for clock is the backend's to pick", f.clock)
@@ -689,5 +689,71 @@ func TestBuildCogHint(t *testing.T) {
 	if !strings.Contains(said.String(), "the functions holding the most are main (") ||
 		!strings.Contains(said.String(), "split main into smaller ones") {
 		t.Errorf("the build does not name main:\n%s", said.String())
+	}
+}
+
+// TestBackendFault holds a build to the standard the target-build tests hold the
+// emitter to: the backend says nothing about the C ogo wrote, or the build fails.
+// Every kind of warning that reached a build was wrong code, built in silence, so
+// one is a fault of the compiler's, reported as such: no binary is left to be
+// loaded, the C is kept to be reported, and --allow-backend-warnings builds anyway.
+// A diagnostic examined and found harmless, harmlessWarnings, is passed over.
+func TestBackendFault(t *testing.T) {
+	const c = "int main(void) { return 0; }\n"
+	dir := t.TempDir()
+	out, keep := filepath.Join(dir, "p.binary"), filepath.Join(dir, "p.c")
+	for _, test := range []struct {
+		name, said string
+		fault      bool
+	}{
+		{"silent", "", false},
+		{"blank lines", "\n\n", false},
+		{"harmless", "_platform_:23: warning: Deleting apparently unused cordic instruction qsqrt\n", false},
+		{"the program's own Spin2", "/home/u/proj/drv/obj.spin2:2: warning: Applying @ to RES memory `buf' is not supported in standard Spin\n", false},
+		{"warning", "/tmp/ogo-build-1/p.c:76: warning: incompatible types in comparison\n", true},
+		{"warning beside a harmless one", "_platform_:23: warning: Deleting apparently unused cordic instruction qsqrt\n" +
+			"/tmp/ogo-build-1/p.c:9: warning: Bad number of parameters in call to f: expected 2 found 1\n", true},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			write(t, out, "binary")
+			os.Remove(keep)
+			code, err := backendFault([]byte(c), out, keep, []byte(test.said))
+			_, binErr := os.Stat(out)
+			kept, keepErr := os.ReadFile(keep)
+			switch {
+			case !test.fault && (code != 0 || err != nil):
+				t.Errorf("code=%d err=%v, want none", code, err)
+			case !test.fault && binErr != nil:
+				t.Errorf("the binary is gone: %v", binErr)
+			case test.fault && (code == 0 || err == nil):
+				t.Errorf("code=%d err=%v, want a fault", code, err)
+			case test.fault && binErr == nil:
+				t.Errorf("the binary is left to be loaded")
+			case test.fault && (keepErr != nil || string(kept) != c):
+				t.Errorf("the C is not kept: %v", keepErr)
+			case test.fault && !strings.Contains(err.Error(), keep) || test.fault && !strings.Contains(err.Error(), "--allow-backend-warnings"):
+				t.Errorf("the message names neither the C nor the way round it: %v", err)
+			}
+		})
+	}
+}
+
+// TestBuildHarmlessWarning builds the one program known to make the backend warn
+// about nothing that matters, a discarded square root started on a cog, and holds
+// it to building: the allowlist is what keeps the rule above from refusing it.
+func TestBuildHarmlessWarning(t *testing.T) {
+	dir := t.TempDir()
+	write(t, filepath.Join(dir, "prog", "main.ogo"), "import \"math\"\n\nfunc main() { go math.Sqrt(2) }\n")
+	out := filepath.Join(dir, "prog.binary")
+	var buf bytes.Buffer
+	code, err := Build([]string{"-o", out, filepath.Join(dir, "prog")}, nil, &buf, &buf)
+	if err != nil || code != 0 {
+		t.Fatalf("code=%d err=%v\n%s", code, err, buf.String())
+	}
+	if !strings.Contains(buf.String(), "unused cordic instruction") {
+		t.Logf("the backend no longer warns about it:\n%s", buf.String())
+	}
+	if _, err := os.Stat(out); err != nil {
+		t.Fatal(err)
 	}
 }

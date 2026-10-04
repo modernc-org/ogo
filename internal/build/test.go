@@ -15,6 +15,7 @@ import (
 	"regexp"
 	"slices"
 	"sort"
+	"strconv"
 	"strings"
 	"testing/fstest"
 	"time"
@@ -47,17 +48,19 @@ const testDoneLine = "ogo-test-done"
 // -c compiles the tests and does not run them, which is what CI without a board
 // can honestly do.
 func Test(args []string, stdin io.Reader, stdout, stderr io.Writer) (int, error) {
-	var compileOnly bool
+	var compileOnly, allowWarnings bool
 	var port, runPat string
 	var rest []string
 	// A test binary takes the same clock as the program it tests. Running the tests
 	// at a different speed than the thing ships at is how a timing bug hides.
-	clock, xtal := 0, octogo.DefaultXtal
+	clock, xtal, goStack := 0, octogo.DefaultXtal, 0
 	for i := 0; i < len(args); i++ {
 		var err error
 		switch a := args[i]; {
 		case a == "-c":
 			compileOnly = true
+		case a == "--allow-backend-warnings" || a == "-allow-backend-warnings":
+			allowWarnings = true
 		case a == "-p":
 			i++
 			if i >= len(args) {
@@ -82,6 +85,22 @@ func Test(args []string, stdin io.Reader, stdout, stderr io.Writer) (int, error)
 			if xtal, err = parseHz("test", a, args, &i); err != nil {
 				return 2, err
 			}
+		case a == "--gostack" || a == "-gostack":
+			// The goroutine stack the program ships with, as for the clock: the
+			// usage named the flag and the parser refused it.
+			i++
+			if i >= len(args) {
+				return 2, fmt.Errorf("test: %s requires a number of longs", a)
+			}
+			n, cerr := strconv.Atoi(strings.TrimSpace(args[i]))
+			if cerr != nil {
+				return 2, fmt.Errorf("test: %s wants a number of longs, got %q", a, args[i])
+			}
+			lo, hi, _ := octogo.GoStackRange()
+			if n < lo || n > hi {
+				return 2, fmt.Errorf("test: %s must be between %d and %d longs, got %d", a, lo, hi, n)
+			}
+			goStack = n
 		case strings.HasPrefix(a, "-"):
 			return 2, fmt.Errorf("test: unknown flag %q", a)
 		default:
@@ -92,8 +111,11 @@ func Test(args []string, stdin io.Reader, stdout, stderr io.Writer) (int, error)
 	if err != nil {
 		return 2, err
 	}
+	if goStack != 0 {
+		clockOpts = append(clockOpts, octogo.GoStack(goStack))
+	}
 
-	opts := testOptions{compileOnly: compileOnly, port: port, runPat: runPat, clockOpts: clockOpts}
+	opts := testOptions{compileOnly: compileOnly, allowWarnings: allowWarnings, port: port, runPat: runPat, clockOpts: clockOpts}
 	if runPat != "" {
 		if opts.run, err = regexp.Compile(runPat); err != nil {
 			return 2, fmt.Errorf("test: bad -run pattern %q: %v", runPat, err)
@@ -140,7 +162,9 @@ func Test(args []string, stdin io.Reader, stdout, stderr io.Writer) (int, error)
 // whether one package was named or a whole tree matched.
 type testOptions struct {
 	compileOnly bool
-	port        string
+	// allowWarnings builds tests the backend warned about (backendFault).
+	allowWarnings bool
+	port          string
 	// run selects which tests the runner calls, as `go test -run` does: an
 	// unanchored regular expression over the test's name, compiled HERE rather
 	// than on the board -- the selection is made where the runner is generated, so
@@ -302,7 +326,8 @@ func testPackage(dir string, opts testOptions, stdout, stderr io.Writer) (int, e
 	if err != nil {
 		return 2, err
 	}
-	if code, err := compileMarked(cbuf.Bytes(), unmarked, cFile, binary, root, stdout, stderr); err != nil {
+	keepC := filepath.Join(dir, dirPkgName(dir)+".test.c")
+	if code, err := compileMarked(cbuf.Bytes(), unmarked, cFile, binary, root, keepC, opts.allowWarnings, stdout, stderr); err != nil {
 		return code, err
 	}
 	if compileOnly {

@@ -448,6 +448,12 @@ func boardBuildTree(ogo, dir string, files map[string]string, out, allowWarning 
 // the same standard either way: a successful build must also be silent.
 func boardBuildPaths(ogo, out, allowWarning string, flags []string, src string) error {
 	args := append([]string{"build", "-o", out}, flags...)
+	if allowWarning != "" {
+		// `ogo build` fails on a backend diagnostic of its own accord since
+		// 2026-10-04; one a case records as examined is let through for the
+		// check below to match.
+		args = append(args, "--allow-backend-warnings")
+	}
 	b, err := exec.Command(ogo, append(args, src)...).CombinedOutput()
 	if err != nil {
 		return fmt.Errorf("ogo build: %v\n%s", err, b)

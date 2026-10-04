@@ -179,7 +179,7 @@ Use "%s help <command>" for more information about a command.
 
 // commandHelp is the per-command detail behind "ogo help <command>".
 var commandHelp = map[string]string{
-	"build": `usage: ogo build [-o output] [--release] [--unchecked] [--no-inline] [--clock hz] [--gostack longs] [package | file.ogo ...]
+	"build": `usage: ogo build [-o output] [--release] [--unchecked] [--no-inline] [--clock hz] [--gostack longs] [--allow-backend-warnings] [package | file.ogo ...]
 
 Build compiles a package to a Propeller 2 binary.
 
@@ -222,6 +222,12 @@ leaves it to the C backend, which inlines what is smaller still and nothing with
 a runtime check in it. A program that outgrows a cog's registers with its
 functions inlined is built without, and nothing is said.
 
+The C ogo writes is meant to build without a word from the C backend, so a
+warning about it is a fault of ogo's, and so far every kind that reached a build
+was wrong code: the build fails then, writes no binary, and keeps the C beside
+where the binary would be, to be reported with the program.
+--allow-backend-warnings builds it anyway.
+
 	-o output     write the binary here
 	--unchecked   omit the runtime checks
 	--no-inline   inline no more than the C backend does by itself
@@ -233,8 +239,10 @@ functions inlined is built without, and nothing is said.
 	              overflow"; this is how that limit moves. Seven slots of it
 	              sit in hub RAM for the whole run.
 	--xtal hz     the board's crystal (default 20MHz)
+	--allow-backend-warnings
+	              build a program the C backend warned about
 `,
-	"run": `usage: ogo run [--release] [--unchecked] [--no-inline] [--clock hz] [--gostack longs] [package | file.ogo ...]
+	"run": `usage: ogo run [--release] [--unchecked] [--no-inline] [--clock hz] [--gostack longs] [--allow-backend-warnings] [package | file.ogo ...]
 
 Run builds a package exactly as ogo build does, loads the binary onto a connected
 Propeller 2 and opens a terminal on its serial output, reading at 230400 baud so
@@ -301,7 +309,7 @@ the clock instead.
 
 	-seed n       seed the generator (0 uses the current time)
 `,
-	"test": `usage: ogo test [-c] [-p port] [-run pattern] [--clock hz] [--gostack longs] [package]
+	"test": `usage: ogo test [-c] [-p port] [-run pattern] [--clock hz] [--gostack longs] [--allow-backend-warnings] [package]
 
 Test builds the package together with its _test.ogo files and a generated runner,
 loads the result on a connected Propeller 2, and reports what the tests printed.
@@ -343,6 +351,11 @@ run is worse than a test that did not run.
 	            binary should take the clock the program it tests ships with:
 	            running them at a different speed is how a timing bug hides.
 	--xtal hz   the board's crystal (default 20MHz)
+	--gostack longs
+	            stack per goroutine, as for ogo build
+	--allow-backend-warnings
+	            build tests the C backend warned about, as for ogo build; the C
+	            of one it refuses is kept as <pkg>.test.c beside the package
 
 Exit status is 0 when every test passed and 1 when any failed.
 `,

@@ -20,6 +20,8 @@ shipped section tells a reader on that version that they have behaviour they do 
 
 ### Fixed
 
+- **`ogo test --gostack` is taken**, as `ogo help test` said it was: it was
+  "unknown flag".
 - **A comparison or an `&&` chain discarded by a blank assignment builds**, `_ =
   f() == g()`: the cast bound to the left operand alone, so the target refused an
   integer comparison ("Expected integer type for parameter of comparison") and
@@ -71,6 +73,16 @@ shipped section tells a reader on that version that they have behaviour they do 
 
 ### Behaviour changes
 
+- **`ogo build`, `ogo run` and `ogo test` fail when the C backend warns about the
+  C ogo wrote.** The C is meant to build without a word, and every kind of warning
+  that reached a build so far was wrong code built in silence: "Redefining x",
+  "Bad number of parameters", "incompatible pointer types in parameter passing",
+  "incompatible types in comparison". No binary is written then; the C is kept
+  beside where it would have been (`<pkg>.test.c` beside the package for `ogo
+  test`), to be reported with the program, and `--allow-backend-warnings` builds as
+  before. A warning about a package's own `.spin2` object is shown and passes, being
+  the program's, and so does one examined and found harmless, an unused CORDIC
+  operation deleted.
 - **A value of another package's unexported type is checked like any other**:
   `var n int = lib.Room` for a `var Room celsius`, the same into a type of this
   package of that shape, and a struct of another type passed where the package's

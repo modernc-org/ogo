@@ -5387,13 +5387,9 @@ func main() {
 		// stored in arrays/slices. C rejects a struct with no members, so the
 		// emitter gives it one hidden byte; that byte stays invisible to OctoGo.
 		name: "empty struct type",
-		// The C is valid and the host compiler accepts it: a `marker a[3]` decays to
-		// `marker*`, which is exactly the slice header's pointer field. The target's
-		// compiler does not follow the tagged forward declaration that a
-		// self-referential-capable struct is emitted with, and calls the type
-		// unknown. The program's output is checked on real hardware by TestOnBoard,
-		// so the warning is noise rather than a defect.
-		backendWarning: "incompatible pointer types in parameter passing",
+		// The target's compiler warned about this program once, "incompatible
+		// pointer types in parameter passing", and was found cosmetic; it builds in
+		// silence since (measured 2026-10-04), and a warning now fails a build.
 		src: `type marker struct{}
 
 func (m marker) tag() int { return 42 }
@@ -11338,14 +11334,11 @@ func main() {
 }
 `,
 		want: "true false\ntrue false\ntrue false\n6 false\n",
-		// The one position still warning is the slice literal, `[]S{mk(3), mk(-5)}`:
-		// "mixing pointer and integer types". Its values are checked right here on
-		// the board and are right. It is not bound like the others because a
-		// literal's elements are a DECLARATION initializer, which has no prologue to
-		// hoist into -- a real fix, not a one-liner. The equality and the value
-		// receiver beside it were the same warning family and were genuinely broken;
-		// see doc/return-nonword-struct.c for which positions were which.
-		backendWarning: "mixing pointer and integer types",
+		// The slice literal, `[]S{mk(3), mk(-5)}`, was the one position left
+		// warning, "mixing pointer and integer types", its values right on the
+		// board; it builds in silence since (measured 2026-10-04). The equality and
+		// the value receiver beside it were the same warning family and genuinely
+		// broken; see doc/return-nonword-struct.c for which positions were which.
 	},
 	{
 		name: "a struct with a sub-word field, in every position",
@@ -11397,12 +11390,11 @@ func main() {
 }
 `,
 		want: "6 true\n" + "true false\n" + "6 true\n" + "6 true\n" + "6 true\n",
-		// The one position left warning is `f := mk` -- a function VALUE whose
-		// result is a struct with a sub-word member. That is the diagnostic
-		// doc/funcptr-nonword-struct.c measured and found cosmetic, and the values
-		// it produces are checked right here on the board. The other three that used
-		// to warn were real, and are fixed rather than recorded.
-		backendWarning: "incompatible pointer types in assignment",
+		// `f := mk` -- a function VALUE whose result is a struct with a sub-word
+		// member -- was the one position left warning, the diagnostic
+		// doc/funcptr-nonword-struct.c measured and found cosmetic; it builds in
+		// silence since (measured 2026-10-04). The other three that used to warn
+		// were real, and are fixed rather than recorded.
 	},
 	{
 		name: "returning a call that returns a struct",
@@ -11939,14 +11931,11 @@ func main() {
 }
 `,
 		want: "3 2\n2 1\n6 true\n2 1\n5 3\n8 hi\n3 6\n",
-		// The types are identical -- both spelled by the same typedef -- and the
-		// values this returns are checked on real hardware right here, for a bool, a
-		// string and two narrow ints. The target's compiler unifies a result struct
-		// of machine words and calls anything else "unknown type", so a result list
-		// of plain ints is silent and a mixed one is not. It is the diagnostic that
-		// is wrong, not the code; doc/funcptr-nonword-struct.c has the measurements
-		// and the cast that would silence it, with why that was declined.
-		backendWarning: "incompatible pointer types in assignment",
+		// The target's compiler warned here once, "incompatible pointer types in
+		// assignment", about a result struct with members that are no machine words
+		// -- the diagnostic wrong and the code right (doc/funcptr-nonword-struct.c),
+		// for a bool, a string and two narrow ints checked on the board right here.
+		// It builds in silence since (measured 2026-10-04).
 	},
 	{
 		// A dispatch table: functions in an array, called through the index. It is

@@ -678,7 +678,15 @@ still design-only.
   from a *successful* build as a failure, which puts the check in `TestTargetBuild`
   -- no board needed, in the default `go test ./...`. A clean build is silent. A
   diagnostic examined and found harmless goes in the case's `backendWarning` field
-  together with the reason; there is exactly one, in `empty struct type`.
+  together with the reason; there are none since 2026-10-04, when the four recorded
+  were found gone. And `ogo build` holds a USER's build to the same rule since that
+  day (backendFault in internal/build): a backend warning about the emitted C fails
+  the build, the C kept for a report, `--allow-backend-warnings` the way round it;
+  a warning about the program's own `.spin2` object passes, and so does one in
+  `harmlessWarnings`, examined and found to say nothing -- an unused CORDIC
+  operation deleted, `go math.Sqrt(2)`'s. Each kind that had reached a build was a
+  silent fault: Redefining, Bad number of parameters, incompatible pointer types in
+  parameter passing, incompatible types in comparison.
 - `smith` is seed-reproducible and generates compilable, self-checking programs.
   `ogo smith -seed N` emits the same program every run (the last non-determinism,
   map-iteration order in `Scope.GetSymbolsOfType`, was sorted), and `TestOracle`

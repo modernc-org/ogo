@@ -11,6 +11,7 @@ package build
 
 import (
 	"bytes"
+	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -163,7 +164,8 @@ func compile(args []string, stdout, stderr io.Writer) (binary string, code int, 
 	if err != nil {
 		return "", 2, err
 	}
-	if code, err := compileMarked(cbuf.Bytes(), unmarked, cFile, out, root, stdout, stderr); err != nil {
+	keepC := strings.TrimSuffix(out, filepath.Ext(out)) + ".c"
+	if code, err := compileMarked(cbuf.Bytes(), unmarked, cFile, out, root, keepC, flags.allowWarnings, stdout, stderr); err != nil {
 		return "", code, err
 	}
 	return out, 0, nil
@@ -177,7 +179,7 @@ func compile(args []string, stdout, stderr io.Writer) (binary string, code int, 
 // without the marks is not to fail for having been made faster. Nothing is said of
 // the first attempt then; a program that fits neither way is told what the second
 // said, and which of its functions hold the registers (cogHint).
-func compileMarked(c []byte, unmarked func() ([]byte, error), cFile, out, inc string, stdout, stderr io.Writer) (int, error) {
+func compileMarked(c []byte, unmarked func() ([]byte, error), cFile, out, inc, keepC string, allowWarnings bool, stdout, stderr io.Writer) (int, error) {
 	if err := os.WriteFile(cFile, c, 0o644); err != nil {
 		return 1, err
 	}
@@ -187,6 +189,9 @@ func compileMarked(c []byte, unmarked func() ([]byte, error), cFile, out, inc st
 		if err == nil || !outgrewCog(saidErr.Bytes()) {
 			stdout.Write(said.Bytes())
 			stderr.Write(saidErr.Bytes())
+			if err == nil && !allowWarnings {
+				return backendFault(c, out, keepC, append(said.Bytes(), saidErr.Bytes()...))
+			}
 			return code, err
 		}
 		if c, err = unmarked(); err != nil {
@@ -203,7 +208,70 @@ func compileMarked(c []byte, unmarked func() ([]byte, error), cFile, out, inc st
 	if err != nil && outgrewCog(said.Bytes()) {
 		fmt.Fprintln(stderr, cogHint(listing, start, programFuncs(c)))
 	}
+	if err == nil && !allowWarnings {
+		return backendFault(c, out, keepC, said.Bytes())
+	}
 	return code, err
+}
+
+// backendFault fails a build the backend completed and said something about. The C
+// is the compiler's own, written to build without a word, so a warning about it is
+// a fault of the compiler's -- and every kind that reached a build so far was wrong
+// code, not noise: "Redefining x" kept the first of two declarations, "Bad number of
+// parameters" passed a 64-bit constant as two words to an int, "incompatible
+// pointer types in parameter passing" shifted a struct argument a word, and
+// "incompatible types in comparison" compared two interfaces by their tables, each
+// built and run in silence. The binary is removed, so `ogo run` and a later load
+// cannot pick it up, and the C is kept at keepC to be reported with the program.
+// --allow-backend-warnings builds as before. A line holding one of
+// harmlessWarnings is passed over.
+func backendFault(c []byte, out, keepC string, said []byte) (int, error) {
+	var left []string
+	for _, line := range strings.Split(string(said), "\n") {
+		// A line about a .spin2 file is about the program's own code, an object a
+		// package carries, which the backend compiles beside the C: shown, as
+		// it was, and the program's to answer.
+		if line = strings.TrimSpace(line); line == "" || harmlessWarning(line) || spin2Diag.MatchString(line) {
+			continue
+		}
+		left = append(left, line)
+	}
+	if len(left) == 0 {
+		return 0, nil
+	}
+	os.Remove(out)
+	kept := keepC
+	if err := os.WriteFile(kept, c, 0o644); err != nil {
+		kept = ""
+	}
+	msg := "ogo: the C compiler warned about the C ogo wrote for this program, and a warning there has meant wrong code before, so no binary was written. " +
+		"It is a fault of ogo's, not of the program: please report it, with the program"
+	if kept != "" {
+		msg += " and " + kept + ", the C the warning is about"
+	}
+	msg += ". --allow-backend-warnings builds it anyway."
+	return 1, errors.New(msg)
+}
+
+// harmlessWarnings are backend diagnostics examined and found to say nothing about
+// a program's meaning.
+var harmlessWarnings = []string{
+	// A CORDIC operation whose result nothing reads -- `go math.Sqrt(2)`, the
+	// result of a function started on a cog being discarded -- is deleted. Nothing
+	// read it, so nothing changes.
+	"Deleting apparently unused cordic instruction",
+}
+
+// spin2Diag is a backend diagnostic about a Spin2 source, "path/obj.spin2:12: ...".
+var spin2Diag = regexp.MustCompile(`\.spin2:[0-9]+:`)
+
+func harmlessWarning(line string) bool {
+	for _, h := range harmlessWarnings {
+		if strings.Contains(line, h) {
+			return true
+		}
+	}
+	return false
 }
 
 // cogHint says, of a program that outgrew a cog's registers, which of its
@@ -310,6 +378,8 @@ type buildFlags struct {
 	// noInline leaves inlining to the backend's own idea of what is small, which
 	// trades the time of a call for the size of a copy at every call.
 	noInline bool
+	// allowWarnings builds a program the backend warned about (backendFault).
+	allowWarnings bool
 	// clock is the system clock the program asks for, in Hz, and xtal the crystal
 	// it is made from. Zero clock leaves it to the backend, which falls back to
 	// 160 MHz -- a 20 MHz crystal times eight, and a round multiplier rather than
@@ -381,6 +451,8 @@ func parseArgs(args []string) (srcs []string, f buildFlags, err error) {
 			f.unchecked = true
 		case a == "--no-inline" || a == "-no-inline":
 			f.noInline = true
+		case a == "--allow-backend-warnings" || a == "-allow-backend-warnings":
+			f.allowWarnings = true
 		case a == "--clock" || a == "-clock":
 			if f.clock, err = hz(a, &i); err != nil {
 				return nil, buildFlags{}, err
