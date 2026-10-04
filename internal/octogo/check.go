@@ -4453,6 +4453,18 @@ func (f *File) nonBoolOperand(s *Scope, n Node) (string, bool) {
 	if head, field, ok := f.exprFieldRead(n); ok {
 		return f.nonBoolType(s, f.fieldTypeNode(s, head, field))
 	}
+	if id, ok := f.sliceOfVar(n); ok {
+		// `xs[1:]` of an array or a slice is a slice, whatever its elements are.
+		// Read as an index below, it was its element: `SS(sa[:])` for an array of
+		// structs was "cannot convert sa[:] to type SS: it is a struct".
+		if d, ok := s.find(id.Src()).(*VarDeclaration); ok {
+			switch what, known := f.nonBoolVar(s, d); {
+			case known && (what == "a slice" || what == "an array" || what == "an array or a slice"):
+				return "a slice", true
+			}
+		}
+		return "", false
+	}
 	if id, ok := f.exprIndexedIdent(n); ok {
 		// `ptrs[0]`: what the elements are, where that was recorded.
 		if d, ok := s.find(id.Src()).(*VarDeclaration); ok && d.elemTypeNode != nil {
@@ -15683,6 +15695,14 @@ func (f *File) checkCallValueTargets(s *Scope, head, postfix Node) {
 // checkCallValueTarget is checkCallValueTargets for one target: its base id, the
 // position it starts at and the steps after it.
 func (f *File) checkCallValueTarget(s *Scope, id Token, at int32, steps []Node) {
+	// A slice expression is a value, `xs[1:]`, and no target either: the walks
+	// typing a target read its slice step as an index, so `xs[1:] += 1` and
+	// `arr[1:]++` were taken as stores into an element.
+	if n := len(steps); n != 0 && steps[n-1].sym == Index && f.indexIsSlice(steps[n-1]) {
+		f.err(id.Position(), "cannot assign to %s (neither addressable nor a map index expression)",
+			f.sourceSpan(at, steps[n-1].End()))
+		return
+	}
 	if !slices.ContainsFunc(steps, func(n Node) bool { return n.sym == CallSuffix }) {
 		return
 	}

@@ -1225,7 +1225,16 @@ to a pointer is left unmodelled there now, and valueTypeAt types an address), an
 `put(&a)` for a `*uint16` read exprType of an address, its POINTEE's Kind -- p2-11's
 prof showed it, the corpus did not until a run case did. **A new rule refusing on a
 category asks it of each way the checker misreads one: a pointer to a pointer, an
-address, the element of a slice expression.**
+address, the element of a slice expression.** The third was met
+again the same day, by a domain program sorting through an interface: `SS(sa[:])`,
+`for _, v := range sa[1:]` and `sa[:] != nil` for an array of structs were refused as
+structs -- nonBoolOperand read `sa[:]` as the index `sa[1]` -- in the conversion,
+range and comparison rules just written, never released. It answers "a slice" for a
+slice expression since (sliceOfVar first), which every rule asking it hears at once;
+the 21 rejects grids and batches of the scratchpad gave the same verdicts after, and
+a batch of slice expressions went from 8 of 15 agreeing with Go to all of them. With
+it, a slice expression as an assignment TARGET, `xs[1:] += 1`, `arr[1:]++`, taken as
+a store into an element since long before, is refused (checkCallValueTarget).
 The same grid over the two operations it did not cross, the same day: a CONVERSION
 `T(v)` of each category to each, 120 to defined types and 72 to types written out,
 had 30 taken -- a target of no Kind returned from checkConversion at once, and only

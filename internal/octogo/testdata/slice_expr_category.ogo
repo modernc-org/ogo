@@ -1,0 +1,54 @@
+// A slice expression, `sa[1:]`, is a slice whatever its elements are. The rule
+// naming an operand's category named its ELEMENT -- read as the index `sa[1]` --
+// so a slice of an array of structs was a struct to every rule asking: `for _, v :=
+// range sa[1:]` was "cannot range over sa[1:]: it is a struct", `SS(sa[:])` could
+// not convert, and `sa[:] != nil` was "nil is no value of struct". And a slice
+// expression is no assignment target, which `xs[1:] += 1` and `arr[1:]++` were
+// taken as, a store into an element.
+
+type S struct{ a int }
+
+type SS []S
+
+type A3 [3]S
+
+type IS []int
+
+var sa [4]S
+
+var xs = []int{1, 2, 3}
+
+var arr [4]int
+
+func main() {
+	c := SS(sa[:])
+	a := A3(sa[1:])
+	p := &arr
+	b := IS(p[1:])
+	if sa[:] != nil {
+	}
+	for _, v := range sa[1:] {
+		_ = v
+	}
+	_ = append(sa[:0], S{1})
+	_, _, _ = c, a, b
+
+	// ERROR "invalid operation: operator \+ not defined on xs\[1:\]: it is a slice"
+	_ = xs[1:] + 1
+
+	// ERROR "non-bool used as if condition: sa\[1:\] is a slice"
+	if sa[1:] {
+	}
+
+	// ERROR "slice can only be compared to nil"
+	_ = sa[:] == sa[:]
+
+	// ERROR "cannot convert sa\[:\] to type S: it is a slice"
+	_ = S(sa[:])
+
+	// ERROR "cannot assign to xs\[1:\] \(neither addressable nor a map index expression\)"
+	xs[1:] += 1
+
+	// ERROR "cannot assign to arr\[1:\] \(neither addressable nor a map index expression\)"
+	arr[1:]++
+}

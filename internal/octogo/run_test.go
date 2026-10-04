@@ -27958,6 +27958,33 @@ func main() {
 		want: "5050 7\n",
 	},
 	{
+		// A slice of an array of structs, `sa[1:]`, as a slice: ranged over,
+		// converted to a defined slice type and to an array type, compared with nil.
+		// Each was refused for a while, the rules naming the slice expression's
+		// category by its element, a struct (slice_expr_category.ogo).
+		name: "a slice of an array of structs as a slice",
+		src: `type S struct{ a int }
+
+type SS []S
+
+type A3 [3]S
+
+var sa = [4]S{{1}, {2}, {3}, {4}}
+
+func main() {
+	c := SS(sa[:])
+	a := A3(sa[1:])
+	t := 0
+	for _, v := range sa[1:] {
+		t += v.a
+	}
+	c[0].a = 10
+	println(len(c), a[0].a, a[2].a, t, sa[:] != nil, sa[0].a)
+}
+`,
+		want: "4 2 4 9 true 10\n",
+	},
+	{
 		// A comparison, an && chain or a sign discarded by a blank assignment,
 		// `_ = f() == g()`: the cast bound to the left operand alone, `(void)t ==
 		// g()`, which the target refused for integers and warned about for

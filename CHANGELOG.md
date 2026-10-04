@@ -73,6 +73,9 @@ shipped section tells a reader on that version that they have behaviour they do 
 
 ### Behaviour changes
 
+- **A slice expression is no assignment target**, as Go has it: `xs[1:] += 1` and
+  `arr[1:]++` are refused, "cannot assign to xs[1:] (neither addressable nor a map
+  index expression)". They were taken as stores into an element.
 - **`ogo build`, `ogo run` and `ogo test` fail when the C backend warns about the
   C ogo wrote.** The C is meant to build without a word, and every kind of warning
   that reached a build so far was wrong code built in silence: "Redefining x",
