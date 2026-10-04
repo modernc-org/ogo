@@ -821,6 +821,12 @@ still design-only.
   apart. Seeds 1001-2000 with the released v0.48.1 on 2026-10-03/04, the same way:
   922 passing, 78 outgrowing a cog, none failing, refused or warned about; and seeds
   2001-3000 with 98b1306 on 2026-10-04: 934 passing, 66 outgrowing, none failing.
+  Seeds 3001-3500 with c81020d the same day: 469 passing, 30 outgrowing, and seed
+  3298 failing its checksum on the board alone -- a named wide constant divided by a
+  uint64, spelled signed (d43ac82; A CONSTANT IS A VALUE). Seeds 3501-4000 with
+  d43ac82: 475 passing, 25 outgrowing, none failing. A seed that outgrows can take
+  ten minutes to say so, the backend's allocator on one function of 200 lines, twice
+  over when its functions were marked (seed 3146: 333 s and 244 s).
 - **Fixed miscompile (found by the oracle):** a shadowing local whose initializer
   references the shadowed name — `var x = x + 5` with an outer `x` in scope — used
   to miscompile, because the emitter names locals verbatim so the C initializer read
