@@ -34,6 +34,11 @@ shipped section tells a reader on that version that they have behaviour they do 
   lib.C.Add(x)`, a function its field holds, `go lib.B.F(1)`, and an element of it,
   `go lib.Arr[0](3)` and `go lib.Bs[0].Tell()`, each read at the `go` statement.
   They were "unsupported receiver in a go statement".
+- **A pointer method on a parenthesised element or field**, `(xs[0]).Inc(1)` and
+  `(h.c).Inc(1)`, is called as Go calls it, on the element or the field: it was
+  "cannot call pointer method", and as a statement, deferred or started on a cog,
+  "unsupported call target". A method keeping its receiver is refused there as on
+  the chain written without the parentheses.
 - **A method value of a package variable of another package's type**, `inc :=
   mc.Add` for a `var mc lib.Counter`, is taken as the same form of a type of this
   package is: a pointer-receiver method of a package-level variable that is no

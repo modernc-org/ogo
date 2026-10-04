@@ -1589,6 +1589,13 @@ chain it holds (callChainOf). A scan reads a head by SHAPE through `scanHead`, a
 through `shapeCall` (no local has a type yet, so `derefHead` and `parenHeadName`,
 which ask one, answer nothing there). **A new scan reads heads through them, and a
 new shape the emitter reads through parentheses is a row in each scan.**
+A CHAIN in parentheses as a receiver, `(xs[0]).Inc(1)` and `(h.c).Inc(1)`, was the
+next such shape (2026-10-04): refused as a value with no address, "cannot call
+pointer method", and as a statement, deferred or started, "unsupported call target",
+where Go reads it as the chain. The emitter reads it so now (parenChainSteps,
+spliceParenChain) in each of those paths and in checkDeferLeaks; and frameRefOf,
+which every sink asks, reads through it -- a row the receiver matrix caught missing,
+`g = (arr[0]).Self()` having been refused only by accident until then.
 
 **A CALL'S RESULT IN A LOCAL IS A ROW OF THE SUMMARIES** (2026-09-25). A callee's
 summary followed a call where a sink stood over it, `gs = pass(v)` (derived), and

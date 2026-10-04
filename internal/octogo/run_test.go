@@ -3167,6 +3167,62 @@ func main() {
 		want: "2\n12\n24\n6\n5 9 3\n2\n7 7 7\n3 11 6\n3 2 4\n",
 	},
 	{
+		// A POINTER method on a parenthesised element or field, `(xs[0]).Inc(1)`,
+		// which Go reads as `xs[0].Inc(1)`: parentheses change neither what a chain
+		// reaches nor whether it may be addressed. Read as a value, it was "cannot
+		// call pointer method", and as a statement, deferred or started on a cog,
+		// "unsupported call target" (parenChainSteps, spliceParenChain).
+		name: "a pointer method on a parenthesised element or field",
+		src: `type Counter struct{ N int }
+
+func (c *Counter) Inc(n int) int {
+	c.N += n
+	return c.N
+}
+
+func (c Counter) Get() int { return c.N }
+
+func (c *Counter) Bump() { c.N++ }
+
+func (c *Counter) Run() {
+	c.N += 100
+	done <- c.N
+}
+
+type W struct{ c Counter }
+
+var gw W
+
+var gxs [3]Counter
+
+var done chan int
+
+func run(xs []Counter) {
+	defer (xs[0]).Bump()
+	defer (gw.c).Bump()
+	xs[0].N = 10
+}
+
+func main() {
+	xs := []Counter{{N: 1}, {N: 2}}
+	var cs [2]Counter
+	var w W
+	println((xs[0]).Inc(1), (cs[1]).Inc(2), (w.c).Inc(3), (gw.c).Inc(4), (gxs[1]).Inc(5), ((xs[1])).Inc(7))
+	println((xs[0]).Get(), (gw.c).Get())
+	(xs[0]).Bump()
+	(gw.c).Bump()
+	_ = (cs[1]).Inc(8)
+	run(xs)
+	go (gxs[1]).Run()
+	a := <-done
+	go (gw.c).Run()
+	println(a, <-done)
+	println(xs[0].N, xs[1].N, cs[1].N, w.c.N, gw.c.N, gxs[1].N)
+}
+`,
+		want: "2 2 3 4 5 9\n2 4\n105 106\n11 9 10 3 106 105\n",
+	},
+	{
 		// `string(r)` for a rune the program COMPUTES, which is what
 		// `for _, r := range s { print(string(r)) }` needs -- about as ordinary as
 		// Go gets, and refused outright until now.

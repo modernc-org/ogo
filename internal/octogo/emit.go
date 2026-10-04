@@ -1913,6 +1913,8 @@ func (e *emitter) emitGo(nodes []Node) {
 			base = name
 		} else if name, steps, ok := e.addrChainSteps(head, suffix); ok {
 			base, suffix = name, steps // `go (&h.v).M(args)`
+		} else if name, steps, ok := e.parenChainSteps(head, suffix); ok {
+			base, suffix = name, steps // `go (h.v).M(args)`
 		} else if pc, ok := e.ptrConvHead(head, suffix); ok && len(pc.rest) >= 2 {
 			base, suffix = e.bindPtrConv(pc), pc.rest
 		}
@@ -30988,6 +30990,8 @@ func (e *emitter) checkDeferLeaks(d *deferredCall, head Node, suffix []Node, arg
 		if base, isAddr = e.parenRecvHead(head, suffix); !isAddr {
 			if name, steps, ok := e.addrChainSteps(head, suffix); ok {
 				base, suffix = name, steps // `defer (&h.v).m(args)`
+			} else if name, steps, ok := e.parenChainSteps(head, suffix); ok {
+				base, suffix = name, steps // `defer (h.v).m(args)`
 			} else if d.convRecv == "" {
 				return
 			} else {
@@ -31227,8 +31231,11 @@ func (e *emitter) deferReceiver(d *deferredCall, head Node, suffix []Node) (stri
 		var isAddr bool
 		base, isAddr = e.parenRecvHead(head, suffix)
 		if !isAddr {
-			// The address of a CHAIN, `defer (&h.v).m(args)`, which is `h.v.m(args)`.
+			// The address of a CHAIN, `defer (&h.v).m(args)`, which is `h.v.m(args)`,
+			// and the chain itself, `defer (h.v).m(args)`.
 			if name, steps, ok := e.addrChainSteps(head, suffix); ok {
+				base, suffix, isAddr = name, steps, true
+			} else if name, steps, ok := e.parenChainSteps(head, suffix); ok {
 				base, suffix, isAddr = name, steps, true
 			}
 		}
@@ -32605,6 +32612,13 @@ func (e *emitter) emitCall(head Node, postfix []Node) {
 		}
 		// `(&h.v).m()` as a statement: the address of a CHAIN, which is `h.v.m()`.
 		if name, steps, ok := e.addrChainSteps(head, postfix); ok {
+			e.ind()
+			e.callOrFail(e.emitCallStmtExpr(name, steps))
+			e.emit(";\n")
+			return
+		}
+		// `(xs[0]).m()` as a statement: a CHAIN in parentheses, which is `xs[0].m()`.
+		if name, steps, ok := e.parenChainSteps(head, postfix); ok {
 			e.ind()
 			e.callOrFail(e.emitCallStmtExpr(name, steps))
 			e.emit(";\n")
@@ -38483,6 +38497,73 @@ func (e *emitter) addrChainSteps(head Node, after []Node) (string, []Node, bool)
 	return name, append(slices.Clone(steps), after...), true
 }
 
+// parenChainSteps reads a parenthesised CHAIN on a variable, `(xs[0])` or `(h.v)`,
+// with the steps written after it spliced on: `(xs[0]).Inc(1)` is `xs[0].Inc(1)`,
+// parentheses changing neither what the chain reaches nor whether it may be
+// addressed. Read as a value, a pointer method called on one was "cannot call
+// pointer method", and as a statement, deferred or started on a cog, "unsupported
+// call target". A call or a slice step in the chain makes a value, and a qualifier at
+// its head names another package; neither is answered for.
+func (e *emitter) parenChainSteps(head Node, after []Node) (string, []Node, bool) {
+	kids := slices.Collect(it(head.ast))
+	if len(kids) != 3 || kids[0].sym != 0 || e.f.ch(kids[0].tok) != LPAREN ||
+		kids[2].sym != 0 || e.f.ch(kids[2].tok) != RPAREN || kids[1].sym != Expression {
+		return "", nil, false
+	}
+	_, name, steps, ok := e.parenChainParts(kids[1].ast, after)
+	return name, steps, ok
+}
+
+// parenChainParts is parenChainSteps from the expression between the parentheses,
+// answering with the head's identifier as well.
+func (e *emitter) parenChainParts(expr []int32, after []Node) (Node, string, []Node, bool) {
+	if len(after) == 0 || after[0].sym != Selector && after[0].sym != Index {
+		return Node{}, "", nil, false
+	}
+	fac := e.factorKids(e.unparenExpr(expr))
+	if len(fac) != 2 || fac[0].sym != 0 || e.f.ch(fac[0].tok) != IDENT || fac[1].sym != FactorSuffix {
+		return Node{}, "", nil, false
+	}
+	name := e.src(fac[0].tok)
+	if _, isVar := e.varType(name); !isVar {
+		if _, isArr := e.arrayVar(name); !isArr {
+			return Node{}, "", nil, false
+		}
+	}
+	steps := slices.Collect(it(fac[1].ast))
+	if len(steps) == 0 || e.hasSliceStep(steps) {
+		return Node{}, "", nil, false
+	}
+	for _, st := range steps {
+		if st.sym != Selector && st.sym != Index {
+			return Node{}, "", nil, false
+		}
+	}
+	return fac[0], name, append(slices.Clone(steps), after...), true
+}
+
+// spliceParenChain is parenChainSteps for a Factor calling a method: `(xs[0]).Inc(1)`
+// is the Factor `xs[0].Inc(1)`, as spliceParenArrayCall makes `(mk(5)).Len()` one.
+func (e *emitter) spliceParenChain(kids []Node) (Node, bool) {
+	if len(kids) != 4 || kids[0].sym != 0 || e.f.ch(kids[0].tok) != LPAREN || kids[1].sym != Expression ||
+		kids[2].sym != 0 || e.f.ch(kids[2].tok) != RPAREN || kids[3].sym != FactorSuffix {
+		return Node{}, false
+	}
+	after := slices.Collect(it(kids[3].ast))
+	if len(after) < 2 || after[0].sym != Selector || after[1].sym != CallSuffix {
+		return Node{}, false
+	}
+	id, _, steps, ok := e.parenChainParts(kids[1].ast, after)
+	if !ok {
+		return Node{}, false
+	}
+	var suffix []int32
+	for _, st := range steps {
+		suffix = append(suffix, encodeNode(st.sym, st.ast)...)
+	}
+	return Node{sym: Factor, ast: append([]int32{id.tok}, encodeNode(FactorSuffix, suffix)...)}, true
+}
+
 // addrChainStepRefused is addrStepRefused for an address of a CHAIN: the step
 // after `(&h.p)` is asked of what the chain reaches, so a pointer field's `.x`, a
 // slice field's `[0]` and a function field's call are refused as Go refuses them.
@@ -43823,6 +43904,9 @@ func (e *emitter) inferNode(n Node) (string, bool) {
 			if spliced, ok := e.spliceParenArrayCall(kids); ok {
 				return e.inferNode(spliced) // `(mk(5)).Len()` is `mk(5).Len()`
 			}
+			if spliced, ok := e.spliceParenChain(kids); ok {
+				return e.inferNode(spliced) // `(xs[0]).Inc(1)` is `xs[0].Inc(1)`
+			}
 			if me, isME := e.methodExprAt(kids); isME {
 				return e.methodExprCType(me)
 			}
@@ -46475,6 +46559,10 @@ func (e *emitter) emitExprNode(n Node) {
 				e.emitExprNode(spliced) // `(mk(5)).Len()` is `mk(5).Len()`
 				return
 			}
+			if spliced, ok := e.spliceParenChain(slices.Collect(it(n.ast))); ok {
+				e.emitExprNode(spliced) // `(xs[0]).Inc(1)` is `xs[0].Inc(1)`
+				return
+			}
 			// A METHOD called on a parenthesised expression, `(a - b).Scaled()`.
 			// Last, so it sees only what nothing above claimed: `(&v).m()` and
 			// `(*p).m()` are parenthesised too, and their own paths adjust the
@@ -47706,6 +47794,13 @@ func (e *emitter) frameRefOf(ast []int32) (frameRef, bool) {
 			}
 		}
 		ast = e.unparenExpr(arg)
+	}
+	// And `(arr[0]).Self()` is `arr[0].Self()` (spliceParenChain): it reaches what
+	// the chain written without the parentheses does.
+	if kids, ok := e.soleFactor(ast); ok {
+		if spliced, ok := e.spliceParenChain(kids); ok {
+			ast = encodeNode(Factor, spliced.ast)
+		}
 	}
 	if name, frame := e.sliceBackingIsFrame(ast); frame {
 		return sliceRef(name), true

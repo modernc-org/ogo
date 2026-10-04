@@ -10665,6 +10665,13 @@ func main() {
 		{"(&lc).Save()", "cannot call Save on lc"},
 		{"(lc).Save()", "cannot call Save on lc"},
 		{"defer (lc).Save()", "cannot call Save on lc"},
+		// A CHAIN in parentheses is the chain (parenChainSteps): asked of the storage
+		// it reaches, where it was "unsupported call target" before any rule was.
+		{"(h.c).Save()", "cannot call Save on h"},
+		{"(arr[1]).Save()", "cannot call Save on arr"},
+		{"defer (arr[1]).Save()", "cannot call Save on arr"},
+		{"_ = (h.c).Self()\n\tg = (arr[0]).Self()", "arr"},
+		{"go (arr[1]).Bump()", "cannot pass the address of local variable arr to a goroutine"},
 		{"go (&lc).Bump()", "cannot pass the address of local variable lc to a goroutine"},
 		// And through a conversion to a pointer type, which is the address it converts.
 		{"(*Counter)(&lc).Save()", "cannot call Save on lc"},
@@ -10678,6 +10685,11 @@ func main() {
 		{"gh.c.Save()", ""},
 		{"ga[1].Save()", ""},
 		{"defer gh.c.Save()", ""},
+		{"(gh.c).Save()", ""},
+		{"(ga[1]).Save()", ""},
+		{"defer (ga[1]).Save()", ""},
+		{"go (ga[1]).Bump()", ""},
+		{"(arr[1]).Bump()", ""},
 		{"defer ga[1].Save()", ""},
 		{"defer h.c.Bump()", ""},
 		{"defer arr[1].Bump()", ""},
