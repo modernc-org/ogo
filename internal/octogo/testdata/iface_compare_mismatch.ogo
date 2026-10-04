@@ -1,0 +1,58 @@
+// Two interface values compare when one is assignable to the other, its method set
+// holding the other's: Go refuses `a == b` for an A{M()} and a B{N()}, and a case b
+// in a switch on a. They reached the emitter, which compares two interfaces by
+// widening one to the other's type, and said so in its own words.
+
+type A interface{ M() }
+
+type B interface{ N() }
+
+type C interface {
+	M()
+	N()
+}
+
+type D interface{ M() int }
+
+type T struct{ v int }
+
+func (t *T) M() {}
+
+func (t *T) N() {}
+
+var gt T
+
+func main() {
+	var a A = &gt
+	var b B = &gt
+	var c C = &gt
+	var d D
+	var x any = &gt
+	var e error
+
+	// ERROR "invalid operation: a == b \(mismatched types A and B\)"
+	_ = a == b
+
+	// ERROR "invalid operation: b != a \(mismatched types B and A\)"
+	_ = b != a
+
+	// ERROR "invalid operation: a == d \(mismatched types A and D\)"
+	_ = a == d
+
+	// ERROR "invalid operation: a == e \(mismatched types A and error\)"
+	_ = a == e
+
+	switch a {
+	// ERROR "invalid case b in switch on a \(mismatched types B and A\)"
+	case b:
+	}
+
+	// The valid forms beside them.
+	_ = a == c
+	_ = c != b
+	_ = x == a
+	_ = e == x
+	switch c {
+	case a, b:
+	}
+}

@@ -71,6 +71,10 @@ shipped section tells a reader on that version that they have behaviour they do 
 
 ### Behaviour changes
 
+- **Two interface values compare only when one is assignable to the other**, as
+  Go has it: `a == b` for an `A{M()}` and a `B{N()}`, and `case b` in a switch on
+  `a`, are refused, "invalid operation: a == b (mismatched types A and B)".
+  v0.48.1 built it with a warning from the target.
 - **A conversion or a comparison between categories is refused**, as Go refuses
   it: a struct, an array, a slice, a function, a channel or a number converted to a
   defined array type or a defined pointer type -- `A(gs)`, `P(ga)` for a `type P

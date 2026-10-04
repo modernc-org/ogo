@@ -6589,6 +6589,19 @@ func (f *File) checkCasesAgainstTag(s *Scope, clause, tag Node, tagKind Kind, ta
 			f.err(pos, "invalid case %s in switch%s (%s can only be compared to nil)", src, on, strings.TrimPrefix(tw, "a "))
 		case xknown && xw != tw && comparableCategory(xw) && comparableCategory(tw):
 			f.err(pos, "invalid case %s in switch%s (mismatched types): %s is %s and %s is %s", src, on, src, xw, f.exprSource(tag), tw)
+		case xknown && xw == "an interface" && tw == "an interface":
+			// As checkKindlessRelOp asks of `a == b`: one interface's method set
+			// holds the other's, or the two are not compared.
+			xt, _, xok := f.operandTypeAt(s, x)
+			tt, _, tok := f.operandTypeAt(s, tag)
+			if !xok || !tok || xt.tn == nil || tt.tn == nil || xt.f == nil || tt.f == nil {
+				continue
+			}
+			xm, xok := xt.f.ifaceSetAt(xt)
+			tm, tok := tt.f.ifaceSetAt(tt)
+			if xok && tok && !f.ifaceSetHolds(xm, tm) && !f.ifaceSetHolds(tm, xm) {
+				f.err(pos, "invalid case %s in switch%s (mismatched types %s and %s)", src, on, xt.f.typeNodeMessage(xt.s, xt.tn), tt.f.typeNodeMessage(tt.s, tt.tn))
+			}
 		}
 	}
 }
@@ -14658,6 +14671,22 @@ func (f *File) checkKindlessRelOp(s *Scope, opNode, lNode, rNode Node) bool {
 			what = lw
 		}
 		f.err(pos, "invalid operation: %s (mismatched types): nil is no value of %s", expr, strings.TrimPrefix(strings.TrimPrefix(what, "an "), "a "))
+	case lknown && rknown && lw == "an interface" && rw == "an interface":
+		// Two interfaces compare when one is assignable to the other: its method set
+		// holds the other's. `a == b` for an A{M()} and a B{N()} reached the
+		// emitter, which compares them by widening one to the other's type and has
+		// neither to widen.
+		lt, _, lok := f.operandTypeAt(s, lNode)
+		rt, _, rok := f.operandTypeAt(s, rNode)
+		if !lok || !rok || lt.tn == nil || rt.tn == nil || lt.f == nil || rt.f == nil {
+			return false
+		}
+		lm, lok := lt.f.ifaceSetAt(lt)
+		rm, rok := rt.f.ifaceSetAt(rt)
+		if !lok || !rok || f.ifaceSetHolds(lm, rm) || f.ifaceSetHolds(rm, lm) {
+			return false
+		}
+		f.err(pos, "invalid operation: %s (mismatched types %s and %s)", expr, lt.f.typeNodeMessage(lt.s, lt.tn), rt.f.typeNodeMessage(rt.s, rt.tn))
 	case lknown && rknown && lw == "a pointer" && rw == "a pointer":
 		// Two pointers of different types, `gp == gps` for an *int and an *S: C
 		// compares any two addresses. One assignable to the other -- a defined
@@ -14677,6 +14706,40 @@ func (f *File) checkKindlessRelOp(s *Scope, opNode, lNode, rNode Node) bool {
 		f.err(pos, "invalid operation: %s (mismatched types %s and %s)", expr, lt.f.typeNodeMessage(lt.s, lt.tn), rt.f.typeNodeMessage(rt.s, rt.tn))
 	default:
 		return false
+	}
+	return true
+}
+
+// ifaceSetAt is the method set of the interface a type node names or writes out,
+// read where the node was written.
+func (f *File) ifaceSetAt(t typeAt) (map[string]*MethodSpecNode, bool) {
+	switch x := t.tn.(type) {
+	case *TypeNodeIdent:
+		name := x.Name.Src()
+		if x.Qualifier.IsValid() {
+			name = x.Qualifier.Src() + "." + name
+		}
+		return f.interfaceMethodsNamed(t.s, name)
+	case *TypeNodeInterface:
+		set := map[string]*MethodSpecNode{}
+		f.collectIfaceMethods(t.s, x, set, map[string]bool{})
+		return set, true
+	}
+	return nil, false
+}
+
+// ifaceSetHolds reports whether method set big holds every method of small, by
+// name and, where both render, by signature.
+func (f *File) ifaceSetHolds(big, small map[string]*MethodSpecNode) bool {
+	for name, m := range small {
+		b, ok := big[name]
+		if !ok {
+			return false
+		}
+		w, h := f.sigIdentity(methodSpecSig(m)), f.sigIdentity(methodSpecSig(b))
+		if w != "" && h != "" && w != h {
+			return false
+		}
 	}
 	return true
 }
