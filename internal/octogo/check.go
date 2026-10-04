@@ -15163,6 +15163,22 @@ func (f *File) typeShiftOperands(s *Scope, n Node, t shiftTarget) {
 					f.shiftTypes = map[*int32]Kind{}
 				}
 				f.shiftTypes[&c.ast[0]] = level.kind
+				// The shifted constant is converted to that type first, and must fit
+				// it: `x := 408166956050 >> n` is an int, which 408166956050 is not.
+				// Taken, the emitter computed it in whatever width it was spelled in.
+				if lo, hi, isInt := intKindRange(level.kind); isInt {
+					left := narrowLevelPrefix(n, i)
+					if cv, ok := f.constNumeric(s, left); ok && cv.Kind() == constant.Int &&
+						(constant.Compare(cv, token.LSS, lo) || constant.Compare(cv, token.GTR, hi)) {
+						src := f.sourceSpan(kids[0].Pos(), kids[i-1].End())
+						what := "untyped int constant"
+						if src != cv.ExactString() {
+							what += " " + cv.ExactString()
+						}
+						f.err(f.tok(kids[0].Pos()).Position(), "%s (%s) overflows %s", src, what, level.name)
+						return
+					}
+				}
 			case isFloatKind(level.kind):
 				// Once, at the first shift: what it shifts is the run of the level
 				// before it, and that is what Go names. A constant that is no whole

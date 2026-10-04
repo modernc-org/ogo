@@ -1,0 +1,36 @@
+// An untyped constant shifted by a count that is no constant takes the type it would
+// have alone, and must fit it: `x := 408166956050 >> n` is an int, which the
+// constant is not. Each was taken and built in silence -- `x := 408166956050 >> n`
+// printed 18132866 on a P2-EDGE and `var y uint8 = 300 >> n` 5, the constant cut to
+// the type's width before the shift.
+
+const c = 408166956050
+
+func main() {
+	var n uint = 3
+
+	// ERROR "408166956050 \(untyped int constant\) overflows int"
+	x := 408166956050 >> n
+
+	// ERROR "c \(untyped int constant 408166956050\) overflows int"
+	println(c >> n)
+
+	// ERROR "300 \(untyped int constant\) overflows uint8"
+	var y uint8 = 300 >> n
+
+	// ERROR "-1 \(untyped int constant\) overflows uint8"
+	var z uint8 = -1 << n
+
+	var u uint8 = 7
+	// ERROR "300 \(untyped int constant\) overflows uint8"
+	println(u == 300>>n)
+
+	// ERROR "3000000000 \(untyped int constant\) overflows int32"
+	var w int32 = 3000000000 << n
+
+	// The forms that fit.
+	var a uint64 = 408166956050 >> n
+	var b int64 = c << n
+	var d uint8 = 255 >> n
+	println(1000>>n, a, b, d, x, y, z, w)
+}

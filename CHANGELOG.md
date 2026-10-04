@@ -82,6 +82,11 @@ shipped section tells a reader on that version that they have behaviour they do 
 
 ### Behaviour changes
 
+- **An untyped constant shifted by a variable count must fit the type it takes**,
+  as Go has it: `x := 408166956050 >> n` (an int), `var y uint8 = 300 >> n` and
+  `var z uint8 = -1 << n` are refused, "300 (untyped int constant) overflows
+  uint8". v0.48.1 built them in silence: on a P2-EDGE the first printed 18132866
+  and the second 5, the constant cut to the type's width before the shift.
 - **A slice expression is no assignment target**, as Go has it: `xs[1:] += 1` and
   `arr[1:]++` are refused, "cannot assign to xs[1:] (neither addressable nor a map
   index expression)". They were taken as stores into an element.

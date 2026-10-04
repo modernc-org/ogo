@@ -2167,7 +2167,15 @@ the int64s, `1 << 63`, was the same in every spelling, untypedIntOperand reading
 it as no int64. untypedOperandC spells both `ULL` beside a uint64
 (untypedUint64Operand); only TestEmitCWideConstUnsigned holds it off the board.
 **The fuzzer's board sweep finds what the host oracle cannot: a spelling only the
-target's typing rule reads wrong.**
+target's typing rule reads wrong.** The row was then generated whole, each unsigned
+type and int64 and int32, plain and defined, with a constant as a literal, a name,
+another package's, an iota, in parentheses, typed and as a float, on either side of
+/, %, <, <=, > and >=, against a variable at its edges: some two thousand
+expressions, all equal to Go on the board, four lines of the uint64 one wrong
+before the fix. Its first draft found the neighbour Go REFUSES: an untyped
+constant shifted by a variable count takes the type it would have alone and must
+fit it, and `x := 408166956050 >> n`, `var y uint8 = 300 >> n` were taken --
+18132866 and 5 on the board (typeShiftOperands asks intKindRange since).
 
 **WHAT A CALL HANDS BACK IS ASKED ONCE** (2026-09-28). p2-11 could not return an
 error that came of a call given a local buffer, `if err := fill(buf[:]); err != nil
