@@ -991,6 +991,24 @@ a.Count()` passed for main's `type Local int`, the names differing and the kinds
 asked. `homeQual` qualifies only a name the package declares, or one of no scope it
 can tell; 1 of 8 programs of the row agreed with Go before, all 8 after
 (TestCheckQualifiedTypes).
+A CALL'S ARGUMENTS were the row from both sides (2026-10-04, found by a
+four-package domain program): a method of another package's type was asked whether
+it exists and is exported and its arguments not at all, wherever it was called --
+28 of 30 programs Go refuses were taken, `c.Add(5)`, `lib.C.Plus(1)`, `xs[0].Add(5)`,
+an interface's, a promoted one (checkImportedMethodArgs) -- and a type defined over
+a Kind, `lib.Count`, was asked nothing, importedStruct answering for structs only
+(importedTypeDecl). Two causes under it, each wider than the boundary. A signature
+carried across, `lib.T` with the qualifier this file's token and the NAME the
+library's, was resolved in the file of its name, where lib imports nothing: every
+rule said nothing of a call through `add := c.Add` or `f := lib.Use` (identFile;
+**a file is found from a qualified name's QUALIFIER**). And a method called on what a
+chain REACHES -- `xs[0].Inc()`, `w.c.Inc("x")`, `mk().c.Inc()`, in one package too --
+was checked by nothing: callChainWalk typed every step and handed no method it passed
+to the argument check (`callChain.calls`, checked in reportCallChainWalk), and it
+stopped at a type of another package, and at an embedded field written out,
+`w.Counter`, which it follows now. On the board such a program built with a warning,
+"Bad number of parameters", and read the missing argument from whatever its register
+held. **A walk that passes a call hands the call to the argument check.**
 
 **A C NAME IS A ROW** (2026-09-25). The emitted C keeps a program's own names, so
 every name a program may write is a row across everything else that names things in

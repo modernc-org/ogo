@@ -1,0 +1,98 @@
+// A method called on what a chain REACHES -- an element, a field, a field of an
+// element, an embedded field written out, a call's result -- is called with the
+// arguments its declaration asks for, as one called on a name is
+// (method_args.ogo). Only the method of a NAME was asked: the walk that follows a
+// chain (callChainWalk) typed every step to find a missing member or a pointer
+// method on a value, and handed no method it passed to the argument check, so each
+// call below reached the C compiler -- which refused a struct for an int, and took
+// a missing int argument, reading it from wherever it was not.
+
+type T struct{ V int }
+
+type Counter struct{ N int }
+
+func (c *Counter) Add(t T) int { c.N += t.V; return c.N }
+
+func (c *Counter) Inc(n int) int { c.N += n; return c.N }
+
+func (c Counter) Sum(xs ...int) int {
+	for _, x := range xs {
+		c.N += x
+	}
+	return c.N
+}
+
+func (c *Counter) Self() *Counter { return c }
+
+type Adder interface{ Inc(n int) int }
+
+type W struct {
+	c  Counter
+	p  *Counter
+	in struct{ c Counter }
+	a  Adder
+	Counter
+}
+
+var gw W
+
+var gxs [3]Counter
+
+func mk() *W { return &gw }
+
+func run() {
+	xs := []Counter{{}}
+	var cs [2]Counter
+	var w W
+	ps := []*Counter{&gw.c}
+	is := []Adder{&gw.c}
+
+	// The valid forms of every shape below.
+	_ = xs[0].Add(T{V: 1}) + xs[0].Inc(2) + cs[1].Inc(3) + gxs[1].Inc(4)
+	_ = w.c.Inc(5) + w.in.c.Inc(6) + w.Counter.Inc(7) + w.c.Self().Inc(8)
+	_ = ps[0].Inc(9) + is[0].Inc(10) + mk().c.Inc(11) + xs[0].Sum(1, 2)
+
+	// ERROR "cannot use 5 \(untyped int constant\) as T value in argument to Add"
+	_ = xs[0].Add(5)
+
+	// ERROR "not enough arguments in call to Inc"
+	_ = xs[0].Inc()
+
+	// ERROR "too many arguments in call to Inc"
+	_ = cs[1].Inc(1, 2)
+
+	// ERROR "cannot use .x. of type string as type int in argument to Inc"
+	_ = gxs[1].Inc("x")
+
+	// ERROR "cannot use .x. of type string as type int in argument to Inc"
+	_ = w.c.Inc("x")
+
+	// ERROR "not enough arguments in call to Inc"
+	_ = w.in.c.Inc()
+
+	// ERROR "cannot use .x. of type string as type int in argument to Inc"
+	_ = w.Counter.Inc("x")
+
+	// ERROR "cannot use .x. of type string as type int in argument to Inc"
+	_ = w.c.Self().Inc("x")
+
+	// ERROR "cannot use .x. of type string as type int in argument to Inc"
+	_ = ps[0].Inc("x")
+
+	// ERROR "not enough arguments in call to Inc"
+	_ = is[0].Inc()
+
+	// ERROR "cannot use .x. of type string as type int in argument to Inc"
+	_ = mk().c.Inc("x")
+
+	// ERROR "cannot use .x. of type string as type int in argument to Sum"
+	_ = xs[0].Sum(1, "x")
+
+	// ERROR "cannot use .x. of type string as type int in argument to Inc"
+	xs[0].Inc("x")
+
+	// ERROR "cannot use .x. of type string as type int in argument to Inc"
+	defer xs[0].Inc("x")
+}
+
+func main() { run() }

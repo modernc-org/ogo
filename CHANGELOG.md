@@ -16,6 +16,33 @@ same area is a new entry under **Unreleased**, not an edit to the old one. Amend
 shipped section tells a reader on that version that they have behaviour they do not.
 `git show vX.Y.Z:CHANGELOG.md` is the check.
 
+## Unreleased
+
+### Fixed
+
+- **A method value of a package variable of another package's type**, `inc :=
+  mc.Add` for a `var mc lib.Counter`, is taken as the same form of a type of this
+  package is: a pointer-receiver method of a package-level variable that is no
+  pointer, its receiver bound at compile time. It was refused, "type lib.Counter
+  has no field Add".
+
+### Behaviour changes
+
+- **A method called with the wrong arguments is refused wherever it is called.**
+  A method called on what a chain reaches -- an element, a field, an embedded field
+  written out, a call's result -- had its arguments checked by nothing, in one
+  package as across two: `xs[0].Inc()` for an `Inc(n int)`, `w.c.Inc("x")`. Every
+  method of another package's type had none checked either, wherever it was called
+  -- `c.Add(5)` for an `Add(t lib.T)`, `lib.C.Plus(1)` for a `Plus(n int, s
+  string)`, an interface's, a promoted one -- and neither had a call through a
+  function value bound to another package's method or function, `add := lib.C.Add`
+  or `f := lib.Use`. A struct where a number was wanted stopped in the backend with
+  a message about the generated C. A missing number built with only the backend's
+  warning, "Bad number of parameters", and ran with whatever the missing argument's
+  register held: on a P2-EDGE `xs[0].Inc()` added 1, and `c.Plus(1)` returned
+  -137448951. Refused as well now: a method another package's type defined over a
+  number does not have or does not export, `k.Nosuch()` for a `lib.Count`.
+
 ## v0.48.1
 
 ### Fixed

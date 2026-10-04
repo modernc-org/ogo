@@ -2344,7 +2344,7 @@ func (f *File) checkCallStmt(s *Scope, head, stmt Node, kw string, kwTok Token, 
 	f.checkCall(s, id, direct && ok, argList)
 	if !direct && ok {
 		if steps, _ := callSteps(stmt); len(steps) != 0 {
-			f.reportCallChainWalk(steps, f.callChainWalk(s, id, steps))
+			f.reportCallChainWalk(s, steps, f.callChainWalk(s, id, steps))
 		}
 		f.checkCallBase(s, id, hasSelectorChild(stmt))
 		if m, has := f.methodCallMember(stmt); has {
@@ -4964,7 +4964,7 @@ func (f *File) inferredKind(s *Scope, n Node) (Kind, bool) {
 // the main package's `func(string) string` -- and nothing otherwise, so a variable
 // of it, a parameter or a field was "cannot call non-function".
 func (f *File) qualifiedTypeFuncSig(x *TypeNodeIdent) *SignatureNode {
-	wf := f.fileOfToken(x.Name)
+	wf := f.identFile(x)
 	td, home, ok := wf.typeDeclNamed(wf.Scope, x.Qualifier.Src()+"."+x.Name.Src())
 	if !ok || td.TypeSpec == nil {
 		return nil
@@ -7474,7 +7474,7 @@ func (f *File) checkAssignment(s *Scope, head, postfix Node) {
 		f.checkCall(s, id, direct && ok, argList)
 		if !direct && ok {
 			if steps, pure := callSteps(postfix); pure {
-				f.reportCallChainWalk(steps, f.callChainWalk(s, id, steps))
+				f.reportCallChainWalk(s, steps, f.callChainWalk(s, id, steps))
 			} else {
 				// A target reached through a call's value, `getp().x = 3` or
 				// `getp().n++`: its operator makes the chain no pure one, and a member
@@ -8143,11 +8143,34 @@ func (f *File) exprFuncSig(s *Scope, n Node) *SignatureNode {
 		// compiler, which is what "Unknown symbol 'lc'" was.
 		if fd, ptrRecv, atPkg, isMV := f.methodValueParts(s, head, field); isMV {
 			if ptrRecv && atPkg && fd.Type != nil && !f.methodValueSavesPtr(s, head, field) {
+				// Another package's method is spelled in that package's names, which
+				// are this file's only through the qualifier.
+				if d, ok := s.find(head.Src()).(*VarDeclaration); ok && d.typeQual.IsValid() {
+					return f.importedMethodSig(d.typeQual, d.typeName, field)
+				}
 				return fd.Type.Signature
 			}
 			return nil
 		}
 		return f.funcSig(s, f.fieldTypeNode(s, head, field))
+	}
+	// Another package's variable's method as a value, `add := lib.C.Add`: a
+	// pointer-receiver method of a variable that is no pointer, the one form
+	// checkCrossPkgMethodValue takes. It had no signature, so a call through the
+	// variable took any arguments at all.
+	if ids, ok := f.exprSelectorChain(n); ok && len(ids) == 3 && f.isImportQualifier(s, ids[0].Src()) {
+		home, ok := f.importedPkgScope(ids[0])
+		if !ok || !token.IsExported(ids[1].Src()) {
+			return nil
+		}
+		vd, isVar := home.Declarations[ids[1].Src()].(*VarDeclaration)
+		if !isVar || vd.isPtr || !vd.typeName.IsValid() || vd.typeQual.IsValid() {
+			return nil
+		}
+		if td, ok := f.importedMethodOwner(ids[0], vd.typeName, ids[2]); !ok || !td.ptrRecv[ids[2].Src()] {
+			return nil
+		}
+		return f.importedMethodSig(ids[0], vd.typeName, ids[2])
 	}
 	callee, ok := f.exprCallee(n)
 	if !ok {
@@ -8351,6 +8374,21 @@ func (f *File) fileOfToken(tok Token) *File {
 	return f
 }
 
+// identFile is the file a type NAME was written in: its qualifier's, `lib.T` being
+// resolved through the import that file names lib by, and its name's otherwise. The
+// two are one file's but in a type carried across a package boundary
+// (requalifiedType), whose name is the declaring package's token and whose
+// qualifier the importer's: asked of the name's file, `lib.T` is looked up where
+// lib imports nothing by that name, and every rule resolving the type said nothing
+// -- a call through another package's method, function value or field took any
+// argument at all.
+func (f *File) identFile(id *TypeNodeIdent) *File {
+	if id.Qualifier.IsValid() {
+		return f.fileOfToken(id.Qualifier)
+	}
+	return f.fileOfToken(id.Name)
+}
+
 // typeIdentityOf renders a written type name as the identity it has across
 // packages: "<package>.<Name>" for a defined type, wherever and however it was
 // written, the bare name of a predeclared type, and "" for what resolves to no type
@@ -8508,6 +8546,22 @@ func (f *File) methodValueParts(s *Scope, head, field Token) (fd *FuncDeclNode, 
 	if !isVar || !d.typeName.IsValid() {
 		return nil, false, false, false
 	}
+	if d.typeQual.IsValid() {
+		// A variable of ANOTHER package's type, `c.Inc` for a `c lib.Counter`: the
+		// method is that package's, found where it is declared (importedMethodOwner),
+		// and the rules a method value obeys are the same. It was "type lib.Counter
+		// has no field Inc", the selector having been taken for a field.
+		td, ok := f.importedMethodOwner(d.typeQual, d.typeName, field)
+		if !ok || !token.IsExported(field.Src()) {
+			return nil, false, false, false
+		}
+		m := td.methods[field.Src()]
+		if m == nil {
+			return nil, false, false, false
+		}
+		sc, _ := s.find2(head.Src())
+		return m, td.ptrRecv[field.Src()], sc != nil && sc.Kind == PackageScope, true
+	}
 	// The type that DECLARES the method, which is the variable's own or one it
 	// embeds: a promoted method is in the method set exactly as a declared one is,
 	// and asking the variable's type alone made `V.Base2` a missing FIELD.
@@ -8585,7 +8639,16 @@ func (f *File) methodValueSavesPtr(s *Scope, head, field Token) bool {
 	if d.isPtr {
 		return true
 	}
-	_, _, viaPtr, ok := f.methodOwnerPath(s, d.typeName.Src(), field.Src())
+	scope := s
+	if d.typeQual.IsValid() {
+		// Another package's type embeds that package's types, by its names.
+		home, ok := f.importedPkgScope(d.typeQual)
+		if !ok {
+			return false
+		}
+		scope = home
+	}
+	_, _, viaPtr, ok := f.methodOwnerPath(scope, d.typeName.Src(), field.Src())
 	return ok && viaPtr
 }
 
@@ -8740,6 +8803,16 @@ func (f *File) reportCaptures(lit *Scope, body Node) {
 // exprFieldRead returns the base and field of an expression that is exactly one
 // field read, "o.fn" and nothing more.
 func (f *File) exprFieldRead(n Node) (head, field Token, ok bool) {
+	ids, ok := f.exprSelectorChain(n)
+	if !ok || len(ids) != 2 {
+		return Token{}, Token{}, false
+	}
+	return ids[0], ids[1], true
+}
+
+// exprSelectorChain is the names of an expression that is exactly a chain of
+// selectors, `a.b` or `lib.V.M`, head first.
+func (f *File) exprSelectorChain(n Node) ([]Token, bool) {
 	var ids []Token
 	sawSelector, extra := false, false
 	var walk func(ast []int32)
@@ -8766,10 +8839,10 @@ func (f *File) exprFieldRead(n Node) (head, field Token, ok bool) {
 		}
 	}
 	walk(n.ast)
-	if extra || !sawSelector || len(ids) != 2 {
-		return Token{}, Token{}, false
+	if extra || !sawSelector {
+		return nil, false
 	}
-	return ids[0], ids[1], true
+	return ids, true
 }
 
 // exprCallee returns the bare name an expression calls, when the expression is
@@ -9838,7 +9911,7 @@ func (f *File) checkQualifiedRef(s *Scope, qual Token, suffix Node) {
 		// the field at all -- another package's unexported one could be read, and
 		// written.
 		if tn, member, isCall, ok := f.crossPkgReachedField(pkg, suffix); ok {
-			f.checkCrossPkgReached(qual, tn, member, isCall)
+			f.checkCrossPkgReached(s, qual, tn, member, isCall, suffix)
 			return
 		}
 
@@ -9853,10 +9926,16 @@ func (f *File) checkQualifiedRef(s *Scope, qual Token, suffix Node) {
 		// `lib.V.hidden` read another package's unexported field, and
 		// `lib.V.hidden()` called its unexported method, both silently.
 		if vd, isVar := d.(*VarDeclaration); isVar {
-			if member, isCall, ok := f.qualifiedMember(suffix); ok && vd.typeName.IsValid() {
+			if member, call, isCall, ok := f.qualifiedMember(suffix); ok && vd.typeName.IsValid() {
 				switch {
 				case isCall:
 					f.checkCrossPkgMethod(qual, vd.typeName, member)
+					if !f.checkImportedMethodArgs(s, qual, vd.typeName, member, argNodes(f.callArgList(call))) && token.IsExported(member.Src()) {
+						// A field of a function type, called.
+						if sig := f.importedFuncFieldSig(qual, vd.typeName, member); sig != nil {
+							f.checkArgs(s, member, sig, argNodes(f.callArgList(call)))
+						}
+					}
 				case f.crossPkgIsMethod(qual, vd.typeName, member):
 					// Not a field but a METHOD, uncalled: a method value. What it
 					// binds is the address of a package-level variable, which is what
@@ -10178,9 +10257,12 @@ func (f *File) crossPkgReachedField(pkg *Package, suffix Node) (Token, Token, bo
 
 // checkCrossPkgReached applies the export rule to a member REACHED on another
 // package's value: a field is checked as a field, a called one as a method.
-func (f *File) checkCrossPkgReached(qual, typeName, member Token, isCall bool) {
+func (f *File) checkCrossPkgReached(s *Scope, qual, typeName, member Token, isCall bool, suffix Node) {
 	if isCall {
 		f.checkCrossPkgMethod(qual, typeName, member)
+		if call, ok := lastCallSuffix(suffix); ok {
+			f.checkImportedMethodArgs(s, qual, typeName, member, argNodes(f.callArgList(call)))
+		}
 		return
 	}
 	f.checkCrossPkgField(qual, typeName, member)
@@ -10190,7 +10272,7 @@ func (f *File) checkCrossPkgReached(qual, typeName, member Token, isCall bool) {
 // `pkg.V.member` -- and reports whether a call follows it, which is what tells a
 // method from a field. A chain with only the package member, or a longer one this
 // does not model, answers no.
-func (f *File) qualifiedMember(suffix Node) (member Token, isCall, ok bool) {
+func (f *File) qualifiedMember(suffix Node) (member Token, call Node, isCall, ok bool) {
 	sels := 0
 	for c := range it(suffix.ast) {
 		switch c.sym {
@@ -10198,18 +10280,18 @@ func (f *File) qualifiedMember(suffix Node) (member Token, isCall, ok bool) {
 			sels++
 			if sels == 2 {
 				if member, ok = f.selectorMember(c); !ok {
-					return Token{}, false, false
+					return Token{}, Node{}, false, false
 				}
 			}
 		case CallSuffix:
 			if sels == 2 {
-				return member, true, true
+				return member, c, true, true
 			}
 		case Index:
-			return Token{}, false, false // an index reaches an element, not this member
+			return Token{}, Node{}, false, false // an index reaches an element, not this member
 		}
 	}
-	return member, false, sels == 2
+	return member, Node{}, false, sels == 2
 }
 
 // checkQualifiedAssign reports an assignment to something an import qualifier
@@ -10228,7 +10310,7 @@ func (f *File) checkQualifiedAssign(s *Scope, qual Token, postfix Node) {
 	// The export rule holds for a target as it does for a value: `pkg.Bank[i].f = x`
 	// writes the field that `pkg.Bank[i].f` reads.
 	if tn, member, isCall, ok := f.crossPkgReachedField(imp.Import.Pkg, postfix); ok {
-		f.checkCrossPkgReached(qual, tn, member, isCall)
+		f.checkCrossPkgReached(s, qual, tn, member, isCall, postfix)
 		return
 	}
 	switch imp.Import.Pkg.Scope.Declarations[member.Src()].(type) {
@@ -10450,13 +10532,24 @@ func namedTypeQual(tn TypeNode) Token {
 // the imported package, or ok=false when the qualifier is not a resolved user import
 // or name is not a struct type there. It backs the cross-package member checks.
 func (f *File) importedStruct(qual, name Token) (*TypeDeclaration, *TypeNodeStruct, bool) {
+	td, ok := f.importedTypeDecl(qual, name)
+	if !ok {
+		return nil, nil, false
+	}
+	st, ok := td.TypeSpec.TypeNode.(*TypeNodeStruct)
+	return td, st, ok
+}
+
+// importedTypeDecl is another package's type declaration, qual.name, of whatever
+// type it defines, with the aliases of that package followed.
+func (f *File) importedTypeDecl(qual, name Token) (*TypeDeclaration, bool) {
 	imp, ok := f.Scope.Declarations[qual.Src()].(*ImportDeclaration)
 	if !ok || imp.Import == nil || imp.Import.Pkg == nil || imp.Import.Pkg == noPkg {
-		return nil, nil, false
+		return nil, false
 	}
 	ps := imp.Import.Pkg.Scope
 	td, ok := ps.Declarations[name.Src()].(*TypeDeclaration)
-	// An alias there, `lib.A` for a `type A = T`, is T's struct.
+	// An alias there, `lib.A` for a `type A = T`, is T.
 	for i := 0; ok && i < 16 && td.TypeSpec != nil && td.TypeSpec.Alias; i++ {
 		tn, isIdent := td.TypeSpec.TypeNode.(*TypeNodeIdent)
 		if !isIdent || tn.Qualifier.IsValid() {
@@ -10464,11 +10557,7 @@ func (f *File) importedStruct(qual, name Token) (*TypeDeclaration, *TypeNodeStru
 		}
 		td, ok = ps.Declarations[tn.Name.Src()].(*TypeDeclaration)
 	}
-	if !ok || td.TypeSpec == nil {
-		return nil, nil, false
-	}
-	st, ok := td.TypeSpec.TypeNode.(*TypeNodeStruct)
-	return td, st, ok
+	return td, ok && td.TypeSpec != nil
 }
 
 // importedFieldTypeName names the TYPE of a field of the imported struct
@@ -10580,10 +10669,26 @@ func (f *File) checkCrossPkgField(qual, typeName, field Token) {
 // qual.typeName: m must be an exported method of the imported type. An unexported
 // method, or a name that is not a method there, is rejected.
 func (f *File) checkCrossPkgMethod(qual, typeName, member Token) {
-	td, _, ok := f.importedStruct(qual, typeName)
+	td, ok := f.importedTypeDecl(qual, typeName)
 	if !ok {
 		return
 	}
+	if home, ok := f.importedPkgScope(qual); ok {
+		if ms, isIface := f.interfaceMethodsNamed(home, typeName.Src()); isIface {
+			// An interface's method set is its specs', and only a method can be
+			// called through one.
+			switch {
+			case ms[member.Src()] == nil:
+				f.err(member.Position(), "type %s.%s has no method %s", qual.Src(), typeName.Src(), member.Src())
+			case !token.IsExported(member.Src()):
+				f.err(member.Position(), "cannot refer to unexported method %s of type %s.%s", member.Src(), qual.Src(), typeName.Src())
+			}
+			return
+		}
+	}
+	// A struct, or a type defined over anything else -- `type Count int` has
+	// methods as a struct does, and had neither their existence nor the export
+	// rule asked.
 	promoted := false
 	if td.methods[member.Src()] == nil {
 		// A method PROMOTED from an embedded field is in the type's method set here
@@ -10647,6 +10752,19 @@ func (f *File) importedFuncFieldSig(qual, typeName, member Token) *SignatureNode
 	return nil
 }
 
+// lastCallSuffix is the call a suffix ends in, past the operator an assignment's
+// target carries as a step of its own.
+func lastCallSuffix(suffix Node) (Node, bool) {
+	steps := slices.Collect(it(suffix.ast))
+	for len(steps) != 0 && steps[len(steps)-1].sym == PostfixOp {
+		steps = steps[:len(steps)-1]
+	}
+	if len(steps) == 0 || steps[len(steps)-1].sym != CallSuffix {
+		return Node{}, false
+	}
+	return steps[len(steps)-1], true
+}
+
 // argNodes is the arguments of a call's argument list, in order.
 func argNodes(argList Node) []Node {
 	var args []Node
@@ -10663,7 +10781,7 @@ func argNodes(argList Node) []Node {
 // for the reason checkCrossPkgMethod gives. It is what tells `lib.V.M` used as a
 // value from an ordinary field read of `lib.V`, which is otherwise the same shape.
 func (f *File) crossPkgIsMethod(qual, typeName, member Token) bool {
-	td, _, ok := f.importedStruct(qual, typeName)
+	td, ok := f.importedTypeDecl(qual, typeName)
 	if !ok {
 		return false
 	}
@@ -10714,7 +10832,7 @@ func (f *File) checkCrossPkgMethodValue(qual, varName, typeName, member Token, p
 // named one, or the one it embeds that a promoted method comes from. Resolved in
 // the owning package's scope, since the embedded type's name is that package's.
 func (f *File) importedMethodOwner(qual, typeName, member Token) (*TypeDeclaration, bool) {
-	td, _, ok := f.importedStruct(qual, typeName)
+	td, ok := f.importedTypeDecl(qual, typeName)
 	if !ok {
 		return nil, false
 	}
@@ -10730,6 +10848,82 @@ func (f *File) importedMethodOwner(qual, typeName, member Token) (*TypeDeclarati
 		return nil, false
 	}
 	return od, true
+}
+
+// checkImportedMethodArgs checks a call's arguments, args, against the method
+// member of another package's type qual.typeName: its own, one it promotes, or an
+// interface's. A method was checked for its existence and its export and its
+// arguments not at all -- `c.Add(5)` for an Add taking a struct and `c.Plus(1)` for
+// one of two parameters reached the C compiler, which refused the first and took
+// the second -- through a variable, a package variable, a call's result and an
+// element alike. It reports whether member is such a method.
+func (f *File) checkImportedMethodArgs(s *Scope, qual, typeName, member Token, args []Node) bool {
+	if !token.IsExported(member.Src()) {
+		return false
+	}
+	home, ok := f.importedPkgScope(qual)
+	if !ok {
+		return false
+	}
+	if ms, isIface := f.interfaceMethodsNamed(home, typeName.Src()); isIface {
+		spec := ms[member.Src()]
+		if spec == nil {
+			return false
+		}
+		f.checkArgsDeclaredIn(s, qual, spec.Name, member, methodSpecSig(spec), args)
+		return true
+	}
+	od, ok := f.importedMethodOwner(qual, typeName, member)
+	if !ok {
+		return false
+	}
+	if fd := od.methods[member.Src()]; fd != nil && fd.Type != nil {
+		f.checkArgsDeclaredIn(s, qual, fd.Name, member, fd.Type.Signature, args)
+	}
+	return true
+}
+
+// importedMethodSig is the signature of the exported method member of another
+// package's type qual.typeName, its own or promoted, as this file writes it
+// (requalifiedSig); nil where it cannot be written so -- a method promoted from a
+// third package, whose names this file has no qualifier for.
+func (f *File) importedMethodSig(qual, typeName, member Token) *SignatureNode {
+	home, ok := f.importedPkgScope(qual)
+	if !ok || !token.IsExported(member.Src()) {
+		return nil
+	}
+	od, ok := f.importedMethodOwner(qual, typeName, member)
+	if !ok {
+		return nil
+	}
+	fd := od.methods[member.Src()]
+	if fd == nil || fd.Type == nil {
+		return nil
+	}
+	if wf := f.fileOfToken(fd.Name); wf.Package == nil || wf.Package.Scope != home {
+		return nil
+	}
+	sig, ok := f.requalifiedSig(home, qual, fd.Type.Signature)
+	if !ok {
+		return nil
+	}
+	return sig
+}
+
+// checkArgsDeclaredIn checks a call's arguments against a signature declared in
+// another package, at the token decl: written as this file writes it where it can
+// be (requalifiedSig), so a message names `lib.T` as Go's does, and with its
+// parameter types resolved in the file that declared it otherwise -- a method
+// promoted from a third package, or a parameter of an array type.
+func (f *File) checkArgsDeclaredIn(s *Scope, qual, decl, at Token, sig *SignatureNode, args []Node) {
+	wf := f.fileOfToken(decl)
+	if home, ok := f.importedPkgScope(qual); ok && wf.Package != nil && wf.Package.Scope == home {
+		if r, ok := f.requalifiedSig(home, qual, sig); ok {
+			f.checkArgs(s, at, r, args)
+			return
+		}
+	}
+	f.checkArgsIn(s, wf.Scope, at, sig, args)
 }
 
 // importedPkgScope is the package scope behind an import qualifier, which is where
@@ -12774,6 +12968,13 @@ func (f *File) checkFieldAccessOn(s *Scope, d *VarDeclaration, head Token, base 
 		return
 	}
 	if d.typeQual.IsValid() {
+		// A METHOD name is a method value, as for a type of this package; whether it
+		// can be given a meaning is reportUnsupportedFuncValue's question, and the
+		// export rule checkCrossPkgMethod's.
+		if _, isMethod := f.importedMethodOwner(d.typeQual, d.typeName, field); isMethod {
+			f.checkCrossPkgMethod(d.typeQual, d.typeName, field)
+			return
+		}
 		// A cross-package type: resolve the field in the imported struct and enforce
 		// the export rule (another package's unexported field is inaccessible).
 		f.checkCrossPkgField(d.typeQual, d.typeName, field)
@@ -13099,7 +13300,7 @@ func (f *File) checkCallResultMethod(s *Scope, head, member Token) {
 	if !isIdent {
 		return
 	}
-	wf := f.fileOfToken(ident.Name)
+	wf := f.identFile(ident)
 	written := ident.Name.Src()
 	if ident.Qualifier.IsValid() {
 		written = ident.Qualifier.Src() + "." + written
@@ -13334,9 +13535,12 @@ func (f *File) checkMethodCallOn(s *Scope, d *VarDeclaration, base string, membe
 		// A cross-package type: the method must be an exported method of the imported
 		// type (another package's unexported method is inaccessible).
 		f.checkCrossPkgMethod(d.typeQual, d.typeName, member)
+		if !token.IsExported(member.Src()) || f.checkImportedMethodArgs(s, d.typeQual, d.typeName, member, argNodes(argList)) {
+			return
+		}
 		// Or a FIELD of a function type, whose call is checked as any call through a
 		// function value is (see below).
-		if sig := f.importedFuncFieldSig(d.typeQual, d.typeName, member); sig != nil && token.IsExported(member.Src()) {
+		if sig := f.importedFuncFieldSig(d.typeQual, d.typeName, member); sig != nil {
 			f.checkArgs(s, member, sig, argNodes(argList))
 		}
 		return
@@ -13627,6 +13831,21 @@ type callChain struct {
 	unexpAt   int
 	unexpWhat string
 	unexpType string
+	// calls are the methods the walk called, whose arguments the report checks.
+	calls []chainCall
+}
+
+// chainCall is a method a chain calls: the Selector naming it, at, its signature as
+// declared at decl, in the scope that resolves it, and the walk's home and qual
+// when it was called -- a method of that package's type, its signature spelled as
+// that package spells it.
+type chainCall struct {
+	at   int
+	sig  *SignatureNode
+	in   *Scope
+	decl Token
+	home *Scope
+	qual Token
 }
 
 // homeType is the type name a qualified walk reached, as this file writes it, when
@@ -13818,16 +14037,34 @@ func (f *File) walkSteps(t typeAt, addr bool, steps []Node, i, reportFrom int, w
 			if p, ok := tn.(*TypeNodePointer); ok {
 				tn, isPtr = p.TypeNode, true
 			}
-			if id, isID := tn.(*TypeNodeIdent); isID && !id.Qualifier.IsValid() {
-				if set, isIface := f.interfaceMethodsNamed(t.s, id.Name.Src()); isIface {
+			id, isID := tn.(*TypeNodeIdent)
+			ts := t.s // the scope declaring the type
+			if isID && id.Qualifier.IsValid() {
+				// Another package's type reached from this package's value, an
+				// element or a field of a `lib.Counter`: the walk goes on in that
+				// package, as one beginning at `lib.F()` does, and names what it
+				// reaches as this file names that package. A third package's, named
+				// as the package the walk is in imports it, is not followed.
+				_, home, ok := f.typeIdentDecl(t.s, id)
+				if w.home != nil || !ok {
+					return w
+				}
+				w.home, w.qual, ts = home, id.Qualifier, home
+			}
+			if isID {
+				if set, isIface := f.interfaceMethodsNamed(ts, id.Name.Src()); isIface {
 					spec, has := set[m.Src()]
-					if isPtr || !has || !one(f.flattenResults(t.s, methodSpecSig(spec)), true, t.s) {
+					if isPtr || !has {
+						return w
+					}
+					w.calls = append(w.calls, chainCall{i, methodSpecSig(spec), ts, spec.Name, w.home, w.qual})
+					if !one(f.flattenResults(ts, methodSpecSig(spec)), true, ts) {
 						return w
 					}
 					i++
 					continue
 				}
-				if td, home, viaPtr, isMethod := f.methodOwnerPath(t.s, id.Name.Src(), m.Src()); isMethod {
+				if td, home, viaPtr, isMethod := f.methodOwnerPath(ts, id.Name.Src(), m.Src()); isMethod {
 					if !isPtr && !addr && !viaPtr && td.ptrRecv[m.Src()] && w.ptrAt < 0 {
 						w.ptrAt, w.ptrType = i, id.Name.Src()
 						if q, ok := w.homeType(id.Name.Src()); ok {
@@ -13838,7 +14075,11 @@ func (f *File) walkSteps(t typeAt, addr bool, steps []Node, i, reportFrom int, w
 						w.unexpAt, w.unexpWhat, w.unexpType = i, "method", q
 					}
 					fd := td.methods[m.Src()]
-					if fd == nil || fd.Type == nil || !one(f.flattenResults(home, fd.Type.Signature), true, home) {
+					if fd == nil || fd.Type == nil {
+						return w
+					}
+					w.calls = append(w.calls, chainCall{i, fd.Type.Signature, home, fd.Name, w.home, w.qual})
+					if !one(f.flattenResults(home, fd.Type.Signature), true, home) {
 						return w
 					}
 					i++
@@ -13863,8 +14104,17 @@ func (f *File) walkSteps(t typeAt, addr bool, steps []Node, i, reportFrom int, w
 			if sn, isStruct := u.tn.(*TypeNodeStruct); isStruct {
 				for _, fld := range sn.Fields {
 					for _, nm := range fld.Names {
-						if nm.Src() == name.Src() {
-							ftn = fld.TypeNode
+						if nm.Src() != name.Src() {
+							continue
+						}
+						ftn = fld.TypeNode
+						if _, embedded := embeddedFieldName(fld); embedded {
+							// An embedded field, named after its type, which is
+							// all it writes: `w.Counter` is a Counter.
+							ftn = &TypeNodeIdent{Qualifier: fld.EmbeddedPkg, Name: nm}
+							if fld.EmbeddedPtr {
+								ftn = &TypeNodePointer{TypeNode: ftn}
+							}
 						}
 					}
 				}
@@ -13936,8 +14186,25 @@ func (f *File) walkSteps(t typeAt, addr bool, steps []Node, i, reportFrom int, w
 // reportCallChainWalk reports what a walk found (callChainWalk): the POINTER-receiver
 // method called on a value with no storage, in Go's words, and a member missing
 // from the type of what the chain reached (reportMissingMember).
-func (f *File) reportCallChainWalk(steps []Node, w callChain) {
+func (f *File) reportCallChainWalk(s *Scope, steps []Node, w callChain) {
 	f.reportMissingMember(steps, w)
+	// A method called on what the chain reached -- an element, a field, a call's
+	// result -- with the arguments its declaration asks for. Only a method called
+	// on a NAME was asked, so `xs[0].Add(5)` and `w.c.Add(1, 2)` reached the C
+	// compiler: refused there for a struct parameter, and for a missing int one
+	// taken, the argument read from wherever it was not.
+	for _, c := range w.calls {
+		m, has := f.selectorMember(steps[c.at])
+		if !has || c.at+1 >= len(steps) || steps[c.at+1].sym != CallSuffix {
+			continue
+		}
+		args := argNodes(f.callArgList(steps[c.at+1]))
+		if c.home != nil {
+			f.checkArgsDeclaredIn(s, c.qual, c.decl, m, c.sig, args)
+			continue
+		}
+		f.checkArgsIn(s, c.in, m, c.sig, args)
+	}
 	if w.unexpAt >= 0 {
 		if m, has := f.selectorMember(steps[w.unexpAt]); has {
 			f.err(m.Position(), "cannot refer to unexported %s %s of type %s", w.unexpWhat, m.Src(), w.unexpType)
@@ -13977,7 +14244,7 @@ func (f *File) typeNodeFile(tn TypeNode) *File {
 		tn = p.TypeNode
 	}
 	if id, isID := tn.(*TypeNodeIdent); isID {
-		return f.fileOfToken(id.Name)
+		return f.identFile(id)
 	}
 	return f
 }
@@ -16937,7 +17204,7 @@ func (f *File) chanTypeUnder(s *Scope, tn TypeNode) (ch *TypeNodeChan, named str
 			if x.Qualifier.IsValid() {
 				written = x.Qualifier.Src() + "." + written
 			}
-			wf, ws := f.fileOfToken(x.Name), s
+			wf, ws := f.identFile(x), s
 			if wf != f {
 				ws = wf.Scope
 			}
@@ -17308,7 +17575,7 @@ func (f *File) refTypeUnder(s *Scope, tn TypeNode) (under TypeNode, named bool) 
 		if x.Qualifier.IsValid() {
 			written = x.Qualifier.Src() + "." + written
 		}
-		wf, ws := f.fileOfToken(x.Name), s
+		wf, ws := f.identFile(x), s
 		if wf != f {
 			ws = wf.Scope
 		}
@@ -17395,6 +17662,9 @@ func tokOfTypeNode(tn TypeNode) Token {
 	for range 16 {
 		switch x := tn.(type) {
 		case *TypeNodeIdent:
+			if x.Qualifier.IsValid() {
+				return x.Qualifier // see identFile
+			}
 			return x.Name
 		case *TypeNodePointer:
 			tn = x.TypeNode
@@ -18810,7 +19080,7 @@ func (f *File) checkParenChain(s *Scope, inner Node, steps []Node) {
 	// emitter's temporary.
 	if id, innerSteps, ok := f.callChainOf(inner); ok {
 		all := append(slices.Clone(innerSteps), steps...)
-		f.reportCallChainWalk(all, f.callChainWalk(s, id, all))
+		f.reportCallChainWalk(s, all, f.callChainWalk(s, id, all))
 		return
 	}
 	if name, qual, _, ok := f.exprNamedType(s, inner); ok {
@@ -19169,7 +19439,7 @@ func (f *File) checkFactorNames(s *Scope, n Node) {
 			if w.sliceAt >= 0 {
 				f.err(id.Position(), "cannot slice unaddressable value %s", f.exprSource(n))
 			}
-			f.reportCallChainWalk(steps, w)
+			f.reportCallChainWalk(s, steps, w)
 		}
 		hasSelector = hasSelectorChild(suffix)
 		if argList, later, direct, isCall := f.callInfoAll(suffix); isCall {
@@ -19199,7 +19469,7 @@ func (f *File) checkFactorNames(s *Scope, n Node) {
 				// the `v.f` that fieldSelector does answer for.
 				if d, isVar := s.find(id.Src()).(*VarDeclaration); isVar && d.typeQual.IsValid() {
 					if tn, member, isCall, has := f.crossPkgMethodResultField(d.typeQual, d.typeName, suffix); has {
-						f.checkCrossPkgReached(d.typeQual, tn, member, isCall)
+						f.checkCrossPkgReached(s, d.typeQual, tn, member, isCall, suffix)
 					}
 				}
 			}
