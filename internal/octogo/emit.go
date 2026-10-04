@@ -22833,6 +22833,18 @@ func (e *emitter) emitConversion(ct string, arg Node) {
 			e.emitStructConv(ct, src, arg)
 			return
 		}
+		// nil converted to a defined slice, function or channel type, `L(nil)`: the
+		// type's nil, its zero, as the declaration of one is zeroed. Go converts it;
+		// it was "cannot convert to L". (The checker refuses nil to a struct or an
+		// array.)
+		if e.isNilExpr(arg.ast) {
+			if e.zeroInitC(ct) == "{0}" {
+				e.emit("(" + ct + "){0}")
+			} else {
+				e.emit("((" + ct + ")0)")
+			}
+			return
+		}
 		e.fail("cannot convert to %s", ct)
 		return
 	}

@@ -1197,6 +1197,21 @@ to a pointer is left unmodelled there now, and valueTypeAt types an address), an
 prof showed it, the corpus did not until a run case did. **A new rule refusing on a
 category asks it of each way the checker misreads one: a pointer to a pointer, an
 address, the element of a slice expression.**
+The same grid over the two operations it did not cross, the same day: a CONVERSION
+`T(v)` of each category to each, 120 to defined types and 72 to types written out,
+had 30 taken -- a target of no Kind returned from checkConversion at once, and only
+the emitter refused a defined struct's, slice's, function's or channel's; a defined
+array's and pointer's it built, 19 of them in silence as C casts
+(checkKindlessConversion, checkPtrConvOperand) -- and a COMPARISON of each pair,
+196 programs, had 25 (a pointer against a struct, a channel or another pointer type,
+a literal against nil or an interface, `nil == nil`: checkKindlessRelOp,
+ifaceAgainstValue). Its first version refused `B("pkg")` for a `type B []byte`, a
+run case's: **Go's exceptions are part of a category rule** -- a slice into an
+array or a pointer to one, a string into bytes or runes, nil into what holds a
+pointer, anything into an interface. nil to a defined slice, function or channel
+type, `L(nil)`, was the emitter's loud gap (zeroInitC writes it now); a conversion
+to `(chan int)`, to `[3]int` of an array literal, and to a function or struct type
+in parentheses, which does not parse, are still refused, loudly.
 
 **A CALL'S RESULT HAD NO STEPS** (2026-10-02). The checker typed a call's result
 where the call stands alone, `x := f()` for a result of a Kind, and nothing past it:

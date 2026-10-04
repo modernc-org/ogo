@@ -14500,7 +14500,11 @@ func (f *File) checkRelOp(s *Scope, opNode, lNode, rNode Node) {
 			f.err(f.tok(opNode.Pos()).Position(), "mismatched types %s and %s", iface, kindName(k))
 			return
 		}
+		n0 := len(f.errList)
 		f.checkImplements(s, iface, other, "comparison")
+		if len(f.errList) == n0 {
+			f.ifaceAgainstValue(s, opNode, iface, other)
+		}
 	} else if f.checkPointerRelOp(s, opNode, lNode, rNode) {
 		// Not where one side is an interface: a pointer is what an interface HOLDS,
 		// and comparing the two is the comparison above.
@@ -14532,6 +14536,35 @@ func (f *File) checkRelOp(s *Scope, opNode, lNode, rNode Node) {
 		if lc == catBool || lc == catUnsafePointer {
 			f.err(pos, "invalid operation: operator %s not defined on %s", f.tok(opNode.Pos()).Src(), kindName(lk))
 		}
+	}
+}
+
+// ifaceAgainstValue is checkImplements for what it does not read, an operand of no
+// Kind compared with an interface: a struct or an array VALUE of a named type
+// written as no variable, `S{1, 2} == gi`, which goes into an interface here only
+// by its address; and a value of a type with no methods -- a channel, a function,
+// a slice, an array or a struct written out -- against an interface that asks for
+// some, `gc == gi`, which Go refuses as types that do not match. Both were taken.
+func (f *File) ifaceAgainstValue(s *Scope, opNode Node, iface string, other Node) {
+	what, known := f.nonBoolOperand(s, other)
+	if !known {
+		return
+	}
+	switch what {
+	case "a channel", "a function", "a slice", "an array", "a struct":
+	default:
+		return
+	}
+	src := f.exprSource(other)
+	if name, qual, isPtr, named := f.exprNamedType(s, other); named {
+		if !isPtr && !qual.IsValid() && (what == "a struct" || what == "an array") {
+			f.err(f.tok(other.Pos()).Position(), "cannot use %s (value of type %s) as %s value in comparison: an interface holds a pointer here; write &%s",
+				src, name.Src(), iface, src)
+		}
+		return // a type of its own may have methods: checkImplements' question
+	}
+	if set, isIface := f.interfaceMethodsNamed(s, iface); isIface && len(set) != 0 {
+		f.err(f.tok(opNode.Pos()).Position(), "invalid operation: mismatched types: %s is %s, which has no methods, and %s is an interface with some", src, what, iface)
 	}
 }
 
@@ -14588,6 +14621,39 @@ func (f *File) checkKindlessRelOp(s *Scope, opNode, lNode, rNode Node) bool {
 		f.err(pos, "invalid operation: %s (%s can only be compared to nil)", expr, strings.TrimPrefix(lw, "a "))
 	case lknown && rknown && lw != rw && comparableCategory(lw) && comparableCategory(rw):
 		f.err(pos, "invalid operation: %s (mismatched types): %s is %s and %s is %s", expr, f.exprSource(lNode), lw, f.exprSource(rNode), rw)
+	case lknown && rknown && lw != rw && (lw == "a pointer" && comparableCategory(rw) || rw == "a pointer" && comparableCategory(lw)):
+		// A pointer against a struct, an array, a channel, a function or a slice:
+		// a pointer meets only a pointer, nil and an interface holding one. `gp ==
+		// gs` compiled, C comparing an address with a struct's first word.
+		f.err(pos, "invalid operation: %s (mismatched types): %s is %s and %s is %s", expr, f.exprSource(lNode), lw, f.exprSource(rNode), rw)
+	case lnil && rnil:
+		// `nil == nil`: Go has no type to compare it in.
+		f.err(pos, "invalid operation: %s (operator %s not defined on nil)", expr, sym)
+	case lnil && (rw == "a struct" || rw == "an array") || rnil && (lw == "a struct" || lw == "an array"):
+		// nil beside a struct or an array that is no bare variable, `S{1, 2} ==
+		// nil`, which the variable's rule in checkRelOp does not read.
+		what := rw
+		if rnil {
+			what = lw
+		}
+		f.err(pos, "invalid operation: %s (mismatched types): nil is no value of %s", expr, strings.TrimPrefix(strings.TrimPrefix(what, "an "), "a "))
+	case lknown && rknown && lw == "a pointer" && rw == "a pointer":
+		// Two pointers of different types, `gp == gps` for an *int and an *S: C
+		// compares any two addresses. One assignable to the other -- a defined
+		// pointer type over the other's -- compares in Go, so the types are taken
+		// to what they are defined over.
+		lt, _, lok := f.operandTypeAt(s, lNode)
+		rt, _, rok := f.operandTypeAt(s, rNode)
+		if !lok || !rok || lt.tn == nil || rt.tn == nil || lt.f == nil || rt.f == nil {
+			return false
+		}
+		lu, _ := lt.f.refTypeUnder(lt.s, lt.tn)
+		ru, _ := rt.f.refTypeUnder(rt.s, rt.tn)
+		li, ri := lt.f.typeNodeIdentity(lu), rt.f.typeNodeIdentity(ru)
+		if li == "" || ri == "" || li == ri {
+			return false
+		}
+		f.err(pos, "invalid operation: %s (mismatched types %s and %s)", expr, lt.f.typeNodeMessage(lt.s, lt.tn), rt.f.typeNodeMessage(rt.s, rt.tn))
 	default:
 		return false
 	}
@@ -19059,9 +19125,21 @@ func (f *File) checkPtrConvOperand(s *Scope, pc ptrConvExpr) {
 		}
 		return
 	}
-	// Anything else that is plainly no pointer.
+	// Anything else that is plainly no pointer: a value of a Kind, or of another
+	// category of none -- an array, a slice, a function, a channel, which went to C
+	// as a cast. A slice converts to a pointer to an ARRAY of its element (Go 1.17).
 	if k, known := f.exprType(s, arg); known && kindCategory(k) != catUnknown {
 		refuse(kindName(k))
+		return
+	}
+	switch what, known := f.nonBoolOperand(s, arg); {
+	case !known:
+	case what == "a slice":
+		if _, isArr := f.underlyingTypeAt(want).tn.(*TypeNodeArray); !isArr {
+			f.err(f.tok(arg.Pos()).Position(), "cannot convert %s to type %s: it is a slice", f.exprSource(arg), target)
+		}
+	case what == "an array", what == "a function", what == "a channel", what == "a struct", what == "an interface":
+		f.err(f.tok(arg.Pos()).Position(), "cannot convert %s to type %s: it is %s", f.exprSource(arg), target, what)
 	}
 }
 
@@ -20848,7 +20926,8 @@ func (f *File) checkConversion(s *Scope, callee Token, arg Node) bool {
 	}
 	tk, ok := f.nameKind(s, callee.Src())
 	if !ok || kindCategory(tk) == catUnknown {
-		return true // no basic type underneath: a struct, an array, an interface
+		// No basic type underneath: a struct, an array, a pointer, an interface.
+		return f.checkKindlessConversion(s, callee, arg)
 	}
 	if tk == PredeclaredUnsafePointer {
 		n := len(f.errList)
@@ -20918,6 +20997,72 @@ func (f *File) checkConversion(s *Scope, callee Token, arg Node) bool {
 	}
 	if !legal {
 		f.err(pos, "cannot convert %s (%s) to type %s", src, f.convOperandDesc(s, arg, k), callee.Src())
+		return false
+	}
+	return true
+}
+
+// checkKindlessConversion is checkConversion for a target with no basic type under
+// it: a value of another category converts to none -- a struct, an array, a
+// slice, a function, a channel or a number to a defined array type `A`, or to a
+// defined pointer type `P` -- but to an interface, which implementation decides,
+// and from a slice to an array or a pointer to one (Go 1.20 and 1.17). Nothing
+// asked, and the emitter refused a struct's, a slice's, a function's and a
+// channel's in its own words and took an array's and a pointer's: `A(gs)` built.
+// nil converts to a pointer, a slice, a function and a channel. ok is false when
+// it reported.
+func (f *File) checkKindlessConversion(s *Scope, callee Token, arg Node) bool {
+	wu, _ := f.refTypeUnder(s, &TypeNodeIdent{Name: callee})
+	wc := kindlessCategoryOf(wu)
+	if wc == "" || wc == "an interface" {
+		return true
+	}
+	pos, src := f.tok(arg.Pos()).Position(), f.exprSource(arg)
+	if f.isNilOperand(arg) {
+		if wc == "a struct" || wc == "an array" {
+			f.err(pos, "cannot convert nil to type %s", callee.Src())
+			return false
+		}
+		return true
+	}
+	hc, known := "", false
+	if isPtr, pk := f.exprPointerness(s, arg); pk && isPtr {
+		// exprType answers an address with its pointee's Kind (see refuse below).
+		hc, known = "a pointer", true
+	} else if k, ok := f.exprType(s, arg); ok && kindCategory(k) != catUnknown {
+		if k == PredeclaredUnsafePointer && wc == "a pointer" {
+			return true // an unsafe.Pointer converts to any pointer
+		}
+		if sl, isSlice := wu.(*TypeNodeSlice); isSlice && kindCategory(k) == catString {
+			// `B("pkg")` for a `type B []byte`: a string is made a slice of its
+			// bytes or of its runes, the emitter deciding what that costs.
+			if ek, ok := f.typeKind(s, sl.TypeNode); ok && (ek == PredeclaredUint8 || ek == PredeclaredInt32) {
+				return true
+			}
+		}
+		f.err(pos, "cannot convert %s (%s) to type %s", src, f.convOperandDesc(s, arg, k), callee.Src())
+		return false
+	} else if hc, known = f.nonBoolOperand(s, arg); !known {
+		if have, _, ok := f.operandTypeAt(s, arg); ok && have.tn != nil && have.f != nil {
+			hu, _ := have.f.refTypeUnder(have.s, have.tn)
+			hc, known = kindlessCategoryOf(hu), true
+		}
+	}
+	switch {
+	case !known || hc == "" || hc == wc:
+		return true
+	case hc == "a slice" && wc == "an array":
+		return true // `A(xs)`: Go 1.20's, the length checked as it runs
+	case hc == "a slice" && wc == "a pointer":
+		if p, isPtr := wu.(*TypeNodePointer); isPtr {
+			if _, isArr := f.underlyingTypeAt(typeAt{p.TypeNode, s, f}).tn.(*TypeNodeArray); isArr {
+				return true // `P(xs)` for a pointer to an array: Go 1.17's
+			}
+		}
+	}
+	switch hc {
+	case "a struct", "an array", "a slice", "a pointer", "a function", "a channel", "an interface":
+		f.err(pos, "cannot convert %s to type %s: it is %s", src, callee.Src(), hc)
 		return false
 	}
 	return true

@@ -3223,6 +3223,39 @@ func main() {
 		want: "2 2 3 4 5 9\n2 4\n105 106\n11 9 10 3 106 105\n",
 	},
 	{
+		// nil converted to a DEFINED slice, function, channel or pointer type,
+		// `L(nil)`, is that type's nil, which Go converts; the emitter said "cannot
+		// convert to L" for the first three. The checker refuses nil to a struct
+		// or an array (checkKindlessConversion).
+		name: "nil converted to a defined slice, function, channel and pointer type",
+		src: `type L []int
+
+type F func(int) int
+
+type C chan int
+
+type P *int
+
+func two(x int) int { return x * 2 }
+
+func main() {
+	l := L(nil)
+	f := F(nil)
+	c := C(nil)
+	p := P(nil)
+	println(l == nil, len(l), f == nil, c == nil, p == nil)
+	var back [2]int
+	l = L(back[:1])
+	l[0] = 3
+	f = two
+	println(len(l), l[0], f(4), f != nil)
+	var g F = F(nil)
+	println(g == nil)
+}
+`,
+		want: "true 0 true true true\n1 3 8 true\ntrue\n",
+	},
+	{
 		// `string(r)` for a rune the program COMPUTES, which is what
 		// `for _, r := range s { print(string(r)) }` needs -- about as ordinary as
 		// Go gets, and refused outright until now.

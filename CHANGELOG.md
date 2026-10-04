@@ -20,6 +20,8 @@ shipped section tells a reader on that version that they have behaviour they do 
 
 ### Fixed
 
+- **nil converts to a defined slice, function or channel type**, `L(nil)`, as Go
+  converts it: it was "cannot convert to L". Measured on a P2-EDGE.
 - **A deferred call through another package's variable is evaluated where the
   `defer` stands**, as Go evaluates it. A function held by a field of the variable,
   or a value-receiver method of the variable or of its element, was read at the
@@ -47,6 +49,16 @@ shipped section tells a reader on that version that they have behaviour they do 
 
 ### Behaviour changes
 
+- **A conversion or a comparison between categories is refused**, as Go refuses
+  it: a struct, an array, a slice, a function, a channel or a number converted to a
+  defined array type or a defined pointer type -- `A(gs)`, `P(ga)` for a `type P
+  *int` -- or to a pointer type written out, `(*int)(ch)`, of which v0.48.1 built
+  19 of 30 in silence, as C casts; and a pointer compared with a struct, a channel
+  or a pointer of another type, `gp == gs`, `gp == gps`, a struct literal with nil
+  or with an interface, a channel with an interface asking for methods, and `nil ==
+  nil`, 25 shapes the backend refused about generated C or built with a warning.
+  A slice still converts to an array and to a pointer to one, and a string to a
+  defined slice of bytes or runes.
 - **A value of one category stored where another is wanted is refused**, as Go
   refuses it: a struct, an array, a slice, a channel or an interface where a
   function, a channel or a struct is wanted, a function or a channel where an array

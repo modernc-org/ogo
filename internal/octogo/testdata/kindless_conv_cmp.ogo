@@ -1,0 +1,96 @@
+// A conversion and a comparison between categories with no Kind, the two operations
+// the grid of kindless_categories.ogo did not cross. Go converts a value to a
+// defined array or pointer type only from its own category -- a slice to an array or
+// to a pointer to one excepted -- and compares a pointer only with a pointer of its
+// type, nil and an interface holding one. Each of these was taken: 24 conversions to
+// a defined array or pointer type and 6 to a pointer written out
+// (checkKindlessConversion, checkPtrConvOperand), and 25 comparisons
+// (checkKindlessRelOp, ifaceAgainstValue).
+
+type S struct{ a, b int }
+
+type A [3]int
+
+type P *int
+
+type L []int
+
+type I interface{ M() }
+
+func (s *S) M() {}
+
+func fn(x int) int { return x }
+
+var gs S
+
+var ga [3]int
+
+var gsl []int
+
+var gp *int
+
+var gps *S
+
+var gc chan int
+
+var gi I
+
+var gn int
+
+func run() {
+	// ERROR "cannot convert gs to type A: it is a struct"
+	_ = A(gs)
+
+	// ERROR "cannot convert gn \(variable of type int\) to type A"
+	_ = A(gn)
+
+	// ERROR "cannot convert nil to type A"
+	_ = A(nil)
+
+	// ERROR "cannot convert ga to type P: it is an array"
+	_ = P(ga)
+
+	// ERROR "cannot convert gsl to type P: it is a slice"
+	_ = P(gsl)
+
+	// ERROR "cannot convert gc to type \*int: it is a channel"
+	_ = (*int)(gc)
+
+	// ERROR "cannot convert ga to type \*int: it is an array"
+	_ = (*int)(ga)
+
+	// ERROR "mismatched types"
+	_ = gp == gs
+
+	// ERROR "mismatched types \*int and \*S"
+	_ = gp == gps
+
+	// ERROR "mismatched types"
+	_ = gc == gp
+
+	// ERROR "operator == not defined on nil"
+	_ = nil == nil
+
+	// ERROR "nil is no value of struct"
+	_ = S{1, 2} == nil
+
+	// ERROR "an interface holds a pointer here; write &S{1, 2}"
+	_ = S{1, 2} == gi
+
+	// ERROR "gc is a channel, which has no methods"
+	_ = gc == gi
+
+	// The valid forms beside them.
+	_ = A(gsl)
+	_ = A(ga)
+	_ = P(gp)
+	_ = P(nil)
+	_ = L(nil)
+	_ = L(gsl)
+	_ = gp == nil
+	_ = gps == &gs
+	_ = gi == gps
+	_ = ga == [3]int{}
+}
+
+func main() { run() }
