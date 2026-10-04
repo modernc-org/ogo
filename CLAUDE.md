@@ -2619,6 +2619,16 @@ was a call to the summaries only one step from its variable, `defer p.m()`. An a
 of arrays is followed a row at a time (`curArr`, arrDim.row), and a method ending on a
 row is its defined type's, `p[1].KeepFirst()` for a `*[2]Row`. **A new way to reach a
 receiver is a row in methodCallOf, under a plain call, `defer` and `go`.**
+A store through a pointer no NAME holds was the summaries' next row (2026-10-04,
+found making `(*f())[i] = v` writable, which the emitter had refused): a callee
+storing its parameter through a call's result, `gethp().p = v`, `fa()[0] = v`, in a
+list or a for clause, was summarised as storing nothing, and `keep(&x)` left a
+local's address in package storage -- v0.48.1 builds it. Such a store is taken to
+outlive every frame (storedThroughUnnamed, exprThroughUnnamed for a clause), the
+pointer's end being out of sight; TestEmitCSummaryThroughUnnamed. **Making a shape
+WRITABLE asks the summaries what they read of it** -- the callee form is a store
+nothing had reached while it did not compile, and the shorter spelling beside it had
+been open all along.
 
 ## Notes
 

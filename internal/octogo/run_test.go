@@ -27958,6 +27958,72 @@ func main() {
 		want: "5050 7\n",
 	},
 	{
+		// A store through a call's pointer written out, `(*f())[i] = v` -- the one
+		// spelling for a pointer to a SLICE, whose index Go does not dereference --
+		// and `+=`, `++`, `--` the same, through a method's result too; and a
+		// pointer method on such a dereference as a value, `(*get()).items()`,
+		// which is `get().items()`. Each was refused, "only assignment to a simple
+		// variable" and "cannot call pointer method". The call runs first, then the
+		// index, then the value, as Go evaluates them.
+		name: "a store through a call's pointer written out",
+		src: `var g = []int{1, 2, 3}
+
+var ga [3]int
+
+var calls int
+
+type H struct {
+	xs []int
+	n  int
+}
+
+var gh = H{xs: []int{5, 6}, n: 3}
+
+func f() *[]int {
+	calls = calls*10 + 1
+	return &g
+}
+
+func fa() *[3]int { return &ga }
+
+func idx() int {
+	calls = calls*10 + 2
+	return 1
+}
+
+func val() int {
+	calls = calls*10 + 3
+	return 40
+}
+
+func (h *H) self() *H { return h }
+
+func (h *H) items() *[]int { return &h.xs }
+
+func (h H) val() int { return h.n }
+
+func get() *H { return &gh }
+
+func main() {
+	(*f())[idx()] = val()
+	println(calls, g[1])
+	calls = 0
+	(*f())[idx()] += val()
+	println(calls, g[1])
+	(*f())[0]++
+	(*fa())[2] = 9
+	(*fa())[2]--
+	(*gh.self()).n++
+	(*gh.items())[0] *= 3
+	println(g[0], ga[2], gh.n, gh.xs[0])
+	p := (*get()).items()
+	(*p)[1] = 60
+	println(len(*p), (*get()).val(), gh.xs[1], (*gh.self()).items() == p)
+}
+`,
+		want: "123 40\n123 80\n2 8 4 15\n2 4 60 true\n",
+	},
+	{
 		// A NAMED untyped constant past 32 bits beside a uint64, on the left of /
 		// and %: spelled `408166956050LL / u`, and the target's compiler types such
 		// an operation by its left operand (flexprop#114), so it divided signed --

@@ -20,6 +20,12 @@ shipped section tells a reader on that version that they have behaviour they do 
 
 ### Fixed
 
+- **A store through a call's pointer written out builds**: `(*f())[i] = v`, the
+  one spelling for a pointer to a slice, and `+=`, `++` and `--` the same, through
+  a method's result too, `(*h.items())[0] *= 3`. They were "only assignment to a
+  simple variable is supported yet". So does a pointer method on such a
+  dereference as a value, `(*get()).items()`, which is `get().items()`: it was
+  "cannot call pointer method".
 - **A named untyped constant past 32 bits divided by a uint64 is divided
   unsigned on the target**: `big / u` and `big % u`, for a `const big =
   408166956050` and a `u` of 2^64-1, were written `408166956050LL / u`, and the
@@ -82,6 +88,12 @@ shipped section tells a reader on that version that they have behaviour they do 
 
 ### Behaviour changes
 
+- **A function storing its parameter through a call's result keeps it**, as far as
+  its callers are told: `func keep(v *int) { gethp().p = v }`, `fa()[0] = v`, the
+  same in a list and in a for clause, and through a dereference of a call. Such a
+  callee was taken to keep nothing, and `keep(&x)` for a local x left its address
+  in package storage in silence; it is refused now, "its parameter 1 is stored
+  where it outlives every frame". v0.48.1 builds the shorter forms.
 - **An untyped constant shifted by a variable count must fit the type it takes**,
   as Go has it: `x := 408166956050 >> n` (an int), `var y uint8 = 300 >> n` and
   `var z uint8 = -1 << n` are refused, "300 (untyped int constant) overflows

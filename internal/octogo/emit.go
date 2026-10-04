@@ -6814,6 +6814,7 @@ type emitter struct {
 	bindSelfAddr       map[string]bool         // ... a name whose OWN value something else may write: `&x` of x itself -- not of an element or a field of it, which bindAliased counts too
 	bindSelfCall       map[string]bool         // ... a name a method is called on itself, `x.m()`, whose address a pointer receiver takes unless x is a pointer (see onceBound)
 	bindGotos          bool                    // ... it has a goto, which may run a block's writes again after a later one
+	derefShown         map[string]string       // a temporary bound for a store through `(*f())`, and the source it stands for, for a message (emitAssignment)
 	nilSafe            map[string]bool         // the C names of the pointer parameters an earlier statement of the function body's own list dereferenced, which need no nil check again (emitTopStatement)
 	nilEmitted         map[string]bool         // ... the C text of every pointer the statement being emitted nil-checked
 	nilBody            bool                    // the next emitBlockStmts is a function body, whose statements fill nilSafe
@@ -12171,6 +12172,9 @@ func (e *emitter) collectFuncCross(fi funcInfo) {
 			for _, v := range append(e.storedInPackageVar(nodes), e.storedInPackageVars(nodes)...) {
 				pkg = append(pkg, storeShape{value: v})
 			}
+			for _, v := range e.storedThroughUnnamed(nodes) {
+				pkg = append(pkg, storeShape{value: v})
+			}
 			storesInto(pkg, e.throughStores(nodes))
 		}
 		// A return hands the value back to the caller: which parameter it came
@@ -13525,6 +13529,10 @@ func (e *emitter) clauseStores(h forHeader) (pkg, through []storeShape) {
 			return // one call's several results, whose values have no shape here
 		}
 		for i, l := range lhss {
+			if e.exprThroughUnnamed(l) {
+				pkg = append(pkg, storeShape{value: rhss[i]}) // storedThroughUnnamed's, for a clause
+				continue
+			}
 			base := e.bindingRoot(l)
 			if base == "" || base == "_" {
 				continue
@@ -13600,6 +13608,95 @@ func (e *emitter) assignThrough(nodes []Node) (base string, values [][]int32, su
 		}
 	}
 	return base, values, len(postfix) > 1, isDeref || e.derefStars(nodes[0].ast) != ""
+}
+
+// storedThroughUnnamed returns the values a statement stores through a pointer no
+// name holds: a call's result, `gethp().p = v` and `fa()[0] = v`, or a dereference
+// of anything but a name, `(*f())[0] = v` and `(*h.q).p = v`. What it reaches cannot
+// be named here, and is taken to outlive every frame, as a package variable's
+// storage: a callee storing its parameter so was summarised as keeping nothing, and
+// `keep(&x)` left a local's address in package storage in silence.
+func (e *emitter) storedThroughUnnamed(nodes []Node) (values [][]int32) {
+	if len(nodes) != 2 || nodes[0].sym != AssignHead || nodes[1].sym != Postfix {
+		return nil
+	}
+	postfix := slices.Collect(it(nodes[1].ast))
+	if len(postfix) == 0 || postfix[len(postfix)-1].sym != PostfixOp {
+		return nil
+	}
+	// The targets in order, each through an unnamed pointer or not: the head and
+	// its steps, then each item of a list, `n, gethp().p = 1, v`.
+	flags := []bool{e.targetThroughUnnamed(nodes[0], postfix[:len(postfix)-1])}
+	assigns := false
+	var vals [][]int32
+	for c := range it(postfix[len(postfix)-1].ast) {
+		switch {
+		case c.sym == LhsItem:
+			item := slices.Collect(it(c.ast))
+			flags = append(flags, len(item) != 0 && item[0].sym == AssignHead && e.targetThroughUnnamed(item[0], item[1:]))
+		case c.sym == 0 && e.f.ch(c.tok) == ASSIGN:
+			assigns = true
+		case c.sym == Expression && assigns:
+			vals = append(vals, c.ast)
+		case c.sym == ExpressionList && assigns:
+			for x := range it(c.ast) {
+				if x.sym == Expression {
+					vals = append(vals, x.ast)
+				}
+			}
+		}
+	}
+	if !assigns || len(vals) != len(flags) {
+		return nil // one call's several results, whose values have no shape here
+	}
+	for i, through := range flags {
+		if through {
+			values = append(values, vals[i])
+		}
+	}
+	return values
+}
+
+// targetThroughUnnamed reports whether a target -- a head and its steps -- is
+// reached through a pointer no name holds (storedThroughUnnamed).
+func (e *emitter) targetThroughUnnamed(head Node, steps []Node) bool {
+	if _, ok := e.derefExprHead(head); ok {
+		return true
+	}
+	if e.soleIdent(head.ast) == "" {
+		return false
+	}
+	for i, st := range steps {
+		if st.sym == CallSuffix && i < len(steps)-1 {
+			return true
+		}
+	}
+	return false
+}
+
+// exprThroughUnnamed is targetThroughUnnamed for a target written as an
+// expression, as a for clause's are: `gethp().p` or `(*f())[0]`.
+func (e *emitter) exprThroughUnnamed(l []int32) bool {
+	kids, ok := e.soleFactor(l)
+	if !ok || len(kids) < 2 || kids[len(kids)-1].sym != FactorSuffix {
+		return false
+	}
+	steps := slices.Collect(it(kids[len(kids)-1].ast))
+	if kids[0].sym == 0 && e.f.ch(kids[0].tok) == IDENT && len(kids) == 2 {
+		for i, st := range steps {
+			if st.sym == CallSuffix && i < len(steps)-1 {
+				return true
+			}
+		}
+		return false
+	}
+	if len(kids) == 4 && kids[0].sym == 0 && e.f.ch(kids[0].tok) == LPAREN && kids[1].sym == Expression {
+		if x, isDeref := e.derefOperandNode(kids[1]); isDeref {
+			_, isName := e.exprIdent(e.unparenExpr(encodeNode(x.sym, x.ast)))
+			return !isName
+		}
+	}
+	return false
 }
 
 // storedInPackageVar returns the values a statement stores into a package variable,
@@ -26078,6 +26175,22 @@ func (e *emitter) emitParenMethod(kids []Node) bool {
 			recv = "&(" + text + ")"
 		case e.methodPtr[cname]:
 			if !isPtr {
+				// A DEREFERENCE is addressable, its address the pointer: `(*get()).m()`
+				// is `get().m()`, `&(*p)` in the C. It was refused as no address at
+				// all, where the statement form had always been taken.
+				if x, isDeref := e.derefOperandNode(kids[1]); i == 0 && isDeref {
+					// The method is handed the pointer, and is asked what it keeps of
+					// it as for any receiver: `(*(&l)).keep()` keeps the local l.
+					r := recvRef{root: e.f.exprSource(kids[1]), storage: e.f.exprSource(kids[1])}
+					if fr, ok := e.frameRefOf(encodeNode(x.sym, x.ast)); ok {
+						r.storage, r.local = fr.origin, true
+					}
+					if !e.checkRecvAt(cname, r, e.callArgExprs(steps[i+1].ast)) {
+						return true
+					}
+					recv = "&(" + text + ")"
+					break
+				}
 				// Go's rule, and its words: there is nothing to take the address
 				// of. `(&P{...})` is not this case -- it IS the address.
 				e.fail("cannot call pointer method %s on %s", method, e.goTypeName(ct))
@@ -38441,6 +38554,54 @@ func (e *emitter) derefHead(head Node) (string, bool) {
 	return e.derefOperand(e.unparenExpr(kids[1].ast)) // `((*p))` is `(*p)`
 }
 
+// derefOperandNode answers the operand of an expression that is a dereference,
+// `*x`, parentheses peeled.
+func (e *emitter) derefOperandNode(n Node) (Node, bool) {
+	nodes := []Node{n}
+	for len(nodes) == 1 && (nodes[0].sym == Expression || nodes[0].sym == SimpleExpr || nodes[0].sym == Term) {
+		nodes = slices.Collect(it(e.unparenExpr(nodes[0].ast)))
+	}
+	if len(nodes) != 1 || nodes[0].sym != UnaryExpr {
+		return Node{}, false
+	}
+	un := slices.Collect(it(nodes[0].ast))
+	if len(un) != 2 || un[0].sym != UnaryOp {
+		return Node{}, false
+	}
+	if tok, ok := e.unaryOpTok(un[0].ast); !ok || e.f.ch(tok) != MUL {
+		return Node{}, false
+	}
+	return un[1], true
+}
+
+// derefExprHead is derefHead for a dereference of anything but a name, `(*f())` and
+// `(*h.get())`: the operand dereferenced.
+func (e *emitter) derefExprHead(head Node) (Node, bool) {
+	kids := slices.Collect(it(head.ast))
+	if len(kids) != 3 || kids[0].sym != 0 || e.f.ch(kids[0].tok) != LPAREN ||
+		kids[2].sym != 0 || e.f.ch(kids[2].tok) != RPAREN || kids[1].sym != Expression {
+		return Node{}, false
+	}
+	nodes := slices.Collect(it(e.unparenExpr(kids[1].ast)))
+	for len(nodes) == 1 && (nodes[0].sym == Expression || nodes[0].sym == SimpleExpr || nodes[0].sym == Term) {
+		nodes = slices.Collect(it(nodes[0].ast))
+	}
+	if len(nodes) != 1 || nodes[0].sym != UnaryExpr {
+		return Node{}, false
+	}
+	un := slices.Collect(it(nodes[0].ast))
+	if len(un) != 2 || un[0].sym != UnaryOp {
+		return Node{}, false
+	}
+	if tok, ok := e.unaryOpTok(un[0].ast); !ok || e.f.ch(tok) != MUL {
+		return Node{}, false
+	}
+	if _, isName := e.exprIdent(e.unparenExpr(un[1].ast)); isName {
+		return Node{}, false // derefHead's, or no pointer at all
+	}
+	return un[1], true
+}
+
 // parenHeadName reads a parenthesised assignment head naming a variable, `(x)`, or
 // its address, `(&x)`, nested parentheses peeled: the variable, and whether it was
 // its address. Go reads `(x)` as x wherever a target stands, and `(&x).f` as x.f.
@@ -39032,6 +39193,31 @@ func (e *emitter) emitAssignment(head Node, postfix []Node) {
 		e.noteStoredThroughOp(target, op)
 		e.emitDerefAssign(name, postfix)
 		return
+	}
+	// `(*f())[0] = v`, `(*h.get()).n++`: the same through a pointer no variable
+	// holds. It is bound first, as Go evaluates a target's operands ahead of the
+	// values stored, and the store goes through the binding as through `(*p)`. It
+	// was "only assignment to a simple variable", the one spelling of a store
+	// through a call's pointer to a SLICE, whose index Go does not dereference.
+	if x, ok := e.derefExprHead(head); ok && !e.pkgScope {
+		op := slices.Collect(it(postfix[len(postfix)-1].ast))
+		if ct, typed := e.inferNode(x); typed && e.isPointer(ct) && !containsSym(op, LhsItem) {
+			// What the pointer reaches is not known here, so no holder mark: the
+			// store rules then refuse a reference to the frame stored through it,
+			// as through any pointer they cannot see the end of.
+			tmp := e.hoist(ct, func() { e.emitExprNode(x) })
+			e.locals[tmp] = ct
+			if e.derefShown == nil {
+				e.derefShown = map[string]string{}
+			}
+			e.derefShown[tmp] = e.f.exprSource(x)
+			target := lifeTarget{deref: tmp, steps: postfix[:len(postfix)-1]}
+			e.checkStore(target, op)
+			e.noteStoredThroughOp(target, op)
+			e.emitDerefAssign(tmp, postfix)
+			delete(e.derefShown, tmp)
+			return
+		}
 	}
 	base := e.soleIdent(head.ast)
 	if base == "" {
@@ -48816,9 +49002,13 @@ func (e *emitter) refuseStoreThroughDeref(ptr string, steps []Node, v Node, r fr
 	if base, place, known := e.derefPlace(ptr); known {
 		return e.refuseStore(lifeTarget{base: base, steps: append(place, steps...)}, v, r)
 	}
+	shown := ptr
+	if src, ok := e.derefShown[ptr]; ok {
+		shown = src
+	}
 	e.fail("%v: cannot store %s through %s: what it reaches is not known to be this function's "+
 		"storage, and may outlive it; %s", e.f.tok(v.Pos()).Position(), r.what,
-		e.chainSource("(*"+ptr+")", steps), r.advice())
+		e.chainSource("(*"+shown+")", steps), r.advice())
 	return true
 }
 
