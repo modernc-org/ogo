@@ -22763,7 +22763,10 @@ func (e *emitter) cType(ast []int32) string {
 		e.fail("unsupported type %q", name)
 		return ""
 	}
-	if ct, ok := cTypes[name]; ok {
+	// A predeclared type's name the program has declared a type of, `type uintptr
+	// int16`, is the program's type (universeType): it was written uintptr_t, and
+	// the arithmetic was another type's, in silence.
+	if ct, ok := cTypes[name]; ok && e.universeType(name) {
 		if strings.HasSuffix(ct, "_t") {
 			e.includes["stdint.h"] = true
 		}
@@ -34389,6 +34392,15 @@ func (e *emitter) universe(name string) bool {
 	if _, isVar := e.globals[e.globalC(name)]; isVar {
 		return false
 	}
+	return e.universeType(name)
+}
+
+// universeType is universe for a TYPE position, where only a type of the
+// program's takes a predeclared type's name: a variable or a function of the name
+// makes the position no type at all, which the checker refuses -- but for the
+// signature declaring it, `func f(int int) int`, whose types are read outside the
+// parameters' scope.
+func (e *emitter) universeType(name string) bool {
 	if _, isType := e.localTypes[name]; isType {
 		return false
 	}

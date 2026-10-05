@@ -1472,6 +1472,14 @@ func (f *File) isPanicCall(head, postfix Node) bool {
 	return ok && id.Src() == "panic" && !f.ownCallees[id.index]
 }
 
+// isPredeclaredBuilder reports whether name, in scope s, is the predeclared Builder
+// and not a type of the program's of that name -- a frame builder's, say -- whose
+// methods were checked against the predeclared one's and refused.
+func isPredeclaredBuilder(s *Scope, name string) bool {
+	pt, ok := s.find(name).(*PredeclaredType)
+	return ok && pt.Kind() == PredeclaredBuilder
+}
+
 // isUniverseFunc reports whether name, written in scope s, is the predeclared
 // function of that name: one the universe declares, or one it leaves undeclared
 // (make, new, panic: isBuiltinFuncName), and not a function, variable, parameter or
@@ -13693,7 +13701,7 @@ func (f *File) checkMethodCallOn(s *Scope, d *VarDeclaration, base string, membe
 	// written type had EVERY method rejected, and one inferred from NewBuilder had
 	// none checked at all -- a misspelling reached the C compiler as a call to a
 	// function nothing declares.
-	if d.builderVar || d.typeName.Src() == "Builder" {
+	if d.builderVar || d.typeName.Src() == "Builder" && !d.typeQual.IsValid() && isPredeclaredBuilder(s, "Builder") {
 		if !builderMethods[member.Src()] {
 			f.err(member.Position(), "type Builder has no method %s", member.Src())
 		}
@@ -20364,7 +20372,7 @@ func (f *File) checkFieldSuffix(s *Scope, id Token, start int32, suffix Node) {
 			// no for every method it really has. checkMethodCall knew that and this
 			// did not, so a Builder held in a struct FIELD had `p.sb.Len()`
 			// rejected while the same call on a variable was fine.
-			if tname == "Builder" {
+			if tname == "Builder" && isPredeclaredBuilder(s, tname) {
 				if !builderMethods[m.Src()] {
 					f.err(m.Position(), "type Builder has no method %s", m.Src())
 				}

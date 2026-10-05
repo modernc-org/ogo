@@ -103,7 +103,7 @@ type Fuzzer struct {
 	// checker rejects and the emitter miscompiles respectively; a monotonic counter
 	// guarantees every generated variable has a distinct name.
 	VarSeq int
-	// usedCNames are the names of cNames newVarName has given out.
+	// usedCNames are the names of cNames and universeNames newVarName has given out.
 	usedCNames map[string]bool
 
 	// Trace, set from the OGO_SMITH_TRACE env var, emits a running-checksum print

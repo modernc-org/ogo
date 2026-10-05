@@ -60,6 +60,11 @@ shipped section tells a reader on that version that they have behaviour they do 
   `true`, and a parameter or a variable named `true` or `false` was the constant,
   `f(14)` 3 for 42 -- in silence on a P2-EDGE. A function named `string`, `any` or
   `error` did not build.
+- **A type the program names like a predeclared one is the program's**: `type
+  Builder struct {...}` -- a frame builder's, say -- had every method refused,
+  "type Builder has no method Put", in its own package and as `lib.Builder` from
+  another; and `type uintptr int16` was written as C's `uintptr_t`, so `z <<= 3`
+  was 131064 for Go's -8, in silence on a P2-EDGE.
 - **NewBuilder works in a library package**: `sb := NewBuilder(buf[:])` anywhere
   but the main package was "cannot infer a type for the declaration of sb".
 - **A failed type assertion panics in Go's words**: `interface conversion:

@@ -307,6 +307,9 @@ var generatedConstructs = []struct {
 	// emitter renames each in every position, and a position it missed was a C
 	// error no generated program could show while every name was a counter's.
 	{"a name C has spoken for", `\b(` + strings.Join(cNames, "|") + `)\b`},
+	// And one Go's universe has, drawn the same way (universeNames): the program's
+	// own where it is declared, which the emitter read by its spelling alone.
+	{"a name the universe has", `\b(` + strings.Join(universeNames, "|") + `)\b`},
 }
 
 // TestGeneratorCoverage asserts that the generator still emits every construct it

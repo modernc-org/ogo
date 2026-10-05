@@ -47,15 +47,28 @@ var cNames = []string{
 	"_tx", "bytefill", "longmove", "waitcnt",
 }
 
-// cName draws a name of cNames the program has not used yet, "" when it has used
-// them all: a program's names are unique, which is what the generator's scoping
-// rests on.
+// universeNames are names Go's universe has spoken for that the generator never
+// writes as the universe's: builtins it calls nowhere and types it declares
+// nothing of. A program may declare its own of each -- a function new, a type
+// print, a parameter uintptr -- and the name is then the program's where its
+// declaration is in scope, which the emitter read by spelling alone until
+// 2026-10-05 (a program's own len folded as the builtin's). The ones the
+// generator writes itself -- len, min, copy, the sized types, true, iota -- are
+// not drawn, a name being drawn for the whole program.
+var universeNames = []string{
+	"new", "print", "close", "real", "imag", "complex", "delete", "recover", "NewBuilder", "Builder",
+	"uintptr", "complex64", "complex128",
+}
+
+// cName draws a name of cNames or universeNames the program has not used yet, ""
+// when it has used them all: a program's names are unique, which is what the
+// generator's scoping rests on.
 func (f *Fuzzer) cName() string {
 	if f.usedCNames == nil {
 		f.usedCNames = map[string]bool{}
 	}
 	var free []string
-	for _, n := range cNames {
+	for _, n := range append(cNames[:len(cNames):len(cNames)], universeNames...) {
 		if !f.usedCNames[n] {
 			free = append(free, n)
 		}

@@ -140,6 +140,55 @@ func main() {
 		want: "300 302 302 42 8\n8 44\nthree\n",
 	},
 	{
+		// A program's own Builder and uintptr TYPES, which a type position and a
+		// method call read as the predeclared ones: a variable of its Builder had
+		// every method refused, "type Builder has no method Put", and a variable
+		// of its uintptr was C's uintptr_t, the arithmetic another type's.
+		name: "a program's own Builder and uintptr types",
+		src: `type uintptr int16
+
+type Builder struct {
+	buf [8]byte
+	n   int
+}
+
+func (b *Builder) Put(c byte) *Builder {
+	b.buf[b.n] = c
+	b.n++
+	return b
+}
+
+func (b *Builder) Len() int { return b.n }
+
+func (b Builder) Sum() int {
+	s := 0
+	for i := 0; i < b.n; i++ {
+		s += int(b.buf[i])
+	}
+	return s
+}
+
+func NewBuilder() *Builder { return &frame }
+
+var frame Builder
+
+type port struct{ out Builder }
+
+func main() {
+	b := NewBuilder()
+	b.Put(1).Put(2).Put(40)
+	var c Builder
+	c.Put(7)
+	var p port
+	p.out.Put(5).Put(6)
+	var z uintptr = 16383
+	z <<= 3
+	println(b.Len(), b.Sum(), c.Len(), c.Sum(), frame.n, p.out.Len(), z)
+}
+`,
+		want: "3 43 1 7 3 2 -8\n",
+	},
+	{
 		// A program's own printf, deferred: its first argument is captured where
 		// the defer stands, as any function's is. It was the builtin to the
 		// emitter, "printf's format must be a constant string"; and the builtin's

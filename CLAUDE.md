@@ -1627,7 +1627,15 @@ variable): `int8()` of a program's own int8 was a conversion of the call, a
 parameter `true` was C's 1 (convType and every reader of true, false and iota ask
 `universe` now). `nil` as a program's name is still refused by the checker, loudly,
 where Go takes it. **A dispatch on a name asks what the name means where it is
-written**; the universe is the last scope, not the only one.
+written**; the universe is the last scope, not the only one. The fuzzer draws the
+universe's names it never writes as the universe's since (universeNames in
+internal/smith: new, print, close, Builder, uintptr, ...), in 249 of 300 seeds, as a
+function, a type, a constant, a variable or a parameter; its first host sweep found
+four seeds failing, every one a program's own `type uintptr` -- a struct, a slice,
+a uint32 -- which a TYPE position read as C's uintptr_t (cType asks universeType,
+the types alone: `func f(int int) int` reads its types outside the parameters'
+scope). Following it, a program's own `type Builder` had every method refused by
+the checker (isPredeclaredBuilder).
 
 **AN ARRAY RESULT IS A ROW** (2026-09-23). A call returning an array is a STATEMENT in
 C -- the caller hands the callee storage to write -- so every position one stands in
