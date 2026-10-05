@@ -40,7 +40,7 @@ func main() {
 	select {
 	// ERROR non-name target on the left side of :=
 	case v, getp().ok := <-ch:
-		a = 1
+		a = v
 	default:
 	}
 	println(a, v, b, h.x)

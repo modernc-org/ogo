@@ -8,6 +8,7 @@ func shadowTest() {
 		// Valid: shadows the function-level globalVar
 		var globalVar int = 30
 		globalVar = 31
+		_ = globalVar
 	}
 
 	// globalVar should be 20 here

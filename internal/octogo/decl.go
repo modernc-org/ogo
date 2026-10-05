@@ -317,6 +317,25 @@ func (s *Scope) find2(nm string) (resolvedIn *Scope, d Declaration) {
 	return nil, nil
 }
 
+// findQuiet is find without find2's bookkeeping: a lookup leaving a literal's scope
+// records no capture. It answers what a name read in s means for a report that is
+// not itself a read -- the unused rule's (noteRef), asked of a ":=" target's name
+// before the statement declares it.
+func (s *Scope) findQuiet(nm string) Declaration {
+	for s != nil {
+		if d := s.Declarations[nm]; d != nil {
+			return d
+		}
+		if s.litOf != nil {
+			if _, d := enclosingLocal(s.litOf, nm); d != nil {
+				return d
+			}
+		}
+		s = s.Parent
+	}
+	return nil
+}
+
 // enclosingLocal resolves nm among the locals of the functions -- and literals --
 // enclosing s, stopping before the file and package scopes: what a literal written
 // in s would have to capture to read nm, and the scope declaring it.
@@ -444,6 +463,7 @@ const (
 type VarDeclaration struct {
 	declaration
 	VarSpec     *VarSpecNode
+	clauseOf    *VarDeclaration // a type switch clause's binding: the guard's name it stands for
 	role        varRole
 	kind        Kind  // the variable's type, when it resolves to a predeclared type
 	hasKind     bool  // kind is meaningful

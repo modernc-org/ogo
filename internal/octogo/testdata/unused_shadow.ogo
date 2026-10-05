@@ -1,0 +1,84 @@
+// A variable declared and not used is refused whatever its name means elsewhere: a
+// read counts for the variable it resolves to, so `calls := calls*10 + k` -- an `=`
+// mistyped, the new calls shadowing the one it meant to write -- leaves the new one
+// unused, as Go reports it. A read the checker does not resolve still counts for
+// every variable of its name.
+
+var calls int
+
+var g int
+
+type P struct{ x int }
+
+func bump(k int) {
+	// ERROR "declared and not used: calls"
+	calls := calls*10 + k
+}
+
+func sum(rows []string) int {
+	n := 0
+	for _, r := range rows {
+		// ERROR "declared and not used: n"
+		n := n*10 + len(r)
+	}
+	return n
+}
+
+func blocks() {
+	{
+		// ERROR "declared and not used: x"
+		x := 1
+	}
+	{
+		x := 2
+		println(x)
+	}
+}
+
+func later() {
+	if g > 0 {
+		// ERROR "declared and not used: g"
+		g := g ^ 5
+	}
+	g++
+	g *= 3
+}
+
+func uses() {
+	a := 0
+	a++
+	b := 0
+	b += 1
+	var c P
+	c.x = 1
+	var d [2]int
+	d[0] = 1
+	e := []int{1}
+	e[0] = 2
+	p := &P{}
+	p.x = 3
+	q := &g
+	*q = 4
+	switch v := any(&c).(type) {
+	case *P:
+		println(v.x)
+	}
+	// ERROR "declared and not used: w"
+	w := 0
+	w = 1
+}
+
+var lit = func(n int) int {
+	// ERROR "declared and not used: calls"
+	calls := calls + 1
+	return n
+}
+
+func main() {
+	bump(1)
+	_ = sum(nil)
+	blocks()
+	later()
+	uses()
+	_ = lit
+}

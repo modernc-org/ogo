@@ -952,12 +952,25 @@ built in silence (fieldTypeVia, Go's shallowest-depth rule, across a package too
 and an array LITERAL's bound, evaluated where a type is declared and nowhere else,
 `[true]int{1}` built in silence. **Go's verdict on a mutant is the cheapest oracle
 there is: a program one token from a valid one is what a user writes by mistake.**
-Of the 50 still taken, 22 are Go's "declared and not used" -- `=` mistyped as `:=`,
-the shadowing mistake Go's rule exists for, which this compiler does not have and
-whose binaries are silent -- and the rest are loud at the backend or rarer: a
-builtin indexed, a non-function called, `&iota`, a type named as a value, no
-`main`. The tools are throwaway (gen.py, verdict.sh, tbuild.sh in the scratchpad);
-tbuild.sh builds each taken mutant for the TARGET, which ranks them -- SILENT first.
+Of the 50 then still taken, 22 were Go's "declared and not used" -- `=` mistyped as
+`:=`, the shadowing mistake Go's rule exists for, which built in silence. The rule
+counted uses BY NAME ("at the cost of not distinguishing ... shadowing", its comment
+said), so a read of the outer variable counted for the new one. A read counts for
+the variable it RESOLVES to now (noteRef, from checkFactorNames and every
+assignment head, noteHeadRefs, recorded in the scope the checker reads it in -- a
+value is read before its own statement's names are declared); a name nothing
+resolved -- a field, a key -- still counts by name, so the rule errs toward taking
+a program. Two traps met: a type switch's clauses bind their own declaration of the
+guard's name, which a read resolves to (clauseOf links it to the guard's, the one
+recorded), and a lookup leaving a function literal records a CAPTURE, so resolving a
+`:=` target's name there before the statement declares it refused six run cases as
+captures (findQuiet looks up without the bookkeeping). The net was every probe
+program of the scratchpad -- 356 flipped on the first version, all type switches,
+and none on the last. Of the 89, 30 are taken now: the rest are loud at the backend
+or rarer -- a builtin indexed, a non-function called, `&iota`, a type named as a
+value, no `main`, a struct passed for a `*Builder`. The tools are throwaway
+(gen.py, verdict.sh, tbuild.sh in the scratchpad); tbuild.sh builds each taken
+mutant for the TARGET, which ranks them -- SILENT first.
 
 **A COMPILER RUN IN A SWEEP IS CAPPED, AND A CRASH IS NOT A REFUSAL** (2026-09-20).
 A probe program is written to find a fault, and a fault is not always a wrong

@@ -248,6 +248,15 @@ shipped section tells a reader on that version that they have behaviour they do 
 
 ### Behaviour changes
 
+- **A variable declared and not used is refused whatever another variable of its
+  name does**, as Go refuses it: `calls := calls*10 + k` -- an `=` mistyped as
+  `:=`, the new variable shadowing the one meant to be written -- `n := n*10 +
+  len(r)` in a loop, an `x` of one block when a sibling block reads its own `x`,
+  and a local of a function literal bound to a package variable. Usage was decided
+  by name, so a read of any variable of the name counted for all of them, and the
+  shadowing mistake Go's rule exists to catch built in silence. A read now counts
+  for the variable it resolves to; `x++`, `x += 1`, `x.f = v` and `x[i] = v` count
+  as uses, and a bare `x = v` does not, as in Go.
 - **A store into a field reached through an embedded struct is checked**, a
   promoted one or one named by its type, in one package and across one:
   `o.n = true`, `o.Holder.n = true`, `o.q.v = true`, `pg.m = 1.5`, `w.N = true`

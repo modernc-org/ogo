@@ -229,33 +229,34 @@ type File struct {
 	Scope             *Scope // Kind: FileScope, Parent: Universe
 	errList           ErrList
 	hasInvalidImports bool
-	inArrayBound      bool                       // evaluating an array length: suppress "is not a constant"
-	inCaseExpr        bool                       // evaluating a switch case expression, where a non-constant operand is legal: suppress "is not a constant"
-	namingConsts      map[*ConstDeclaration]bool // constants whose initializer exprNamedType is reading, against a cycle
-	varSpecsDone      map[int32]bool             // package var specs resolved, by position: in source order, or first where an initializer above names them
-	iota              int                        // the current iota value while evaluating a const spec, or -1 outside a const declaration
-	loopDepth         int                        // number of enclosing "for" loops of the statement being checked, so "defer" inside a loop is rejected and "continue" outside one is
-	switchDepth       int                        // number of enclosing "switch" statements, so a "break" in one is recognised as placed
-	selectDepth       int                        // number of enclosing "select" statements, which a "break" may also leave (but a "continue" may not)
-	labels            []labelFrame               // enclosing labeled "for"/"switch" statements, innermost last, for labeled break/continue resolution
-	labelDecls        map[string]Token           // every label DECLARED in the function being checked: Go scopes a label to the whole function, not to a block, so two sibling ones collide and an unreferenced one is an error
-	labelSites        map[string]labelSite       // where each label stands (scope + offset), for goto's two safety rules
-	gotos             []gotoRef                  // every goto of the function being checked, resolved after the walk (a goto may name a label declared later)
-	gotoLabels        map[string]bool            // labels any goto of the function names, scanned ahead: a targeted label is reachable however the flow above it ended
-	labelUsed         map[string]bool            // the labels a break or continue named, for the unused report
-	localVars         []*VarDeclaration          // local variables of the function body being checked, for the unused-variable report
-	ifaceInits        []ifaceInit                // package variables' initializers of an interface type, checked once every method is known
-	writeTargets      map[string]bool            // positions of bare "="/":=" assignment-target identifiers in the body: writes, which do not count as uses
-	clauseFallthrough map[string]bool            // positions of "fallthrough" keywords checkSwitch has accounted for, so the statement walk reports only the misplaced ones
-	makeTypeArgs      map[string]bool            // positions of identifiers standing as make's first argument, which is a TYPE and not a value: "make(List, n)" over "type List []int" names one, and the bare-type-name check would otherwise report it as "cannot use type List as a value"
-	defineRedeclares  map[string]bool            // positions of ":=" targets already declared in the same scope, so the emitter assigns to them rather than declaring them again (see emitMultiAssign); file-scoped, read after checking
-	shiftTypes        map[*int32]Kind            // the shift operators whose left operand is an untyped constant, by their place in the AST, and the type the context gives it (see typeShiftOperands); read by the emitter
-	wholeConsts       map[*int32]Kind            // the constants written as FLOATS that stand where an integer type is wanted, `var u uint32 = 3e9`, by their place in the AST, and that type (see checkValueOverflow); read by the emitter
-	wholeConstToks    map[int32]Kind             // the same for a constant that is one token, by the token
-	lenConsts         map[*int32]int64           // the len and cap calls Go makes constants, by their parentheses' place in the AST, and their values (see constLenCap); read by the emitter
-	headerBindings    map[*int32]Node            // the statements headers declare or assign by, `if p := r; ...`, for the passes reading a body's statements by shape (headerBindingsIn)
-	ownCallees        map[int32]bool             // the token indexes of callees named like a builtin and resolving to the program's own declaration (checkCallee)
-	headerStmts       map[*int32]Node            // the statements standing in headers, `if two(); ok`, as the statements they are, by the place of the header's expression in the AST (see headerStmt); read by the emitter
+	inArrayBound      bool                        // evaluating an array length: suppress "is not a constant"
+	inCaseExpr        bool                        // evaluating a switch case expression, where a non-constant operand is legal: suppress "is not a constant"
+	namingConsts      map[*ConstDeclaration]bool  // constants whose initializer exprNamedType is reading, against a cycle
+	varSpecsDone      map[int32]bool              // package var specs resolved, by position: in source order, or first where an initializer above names them
+	refs              map[int32][]*VarDeclaration // the variables a name read at a token index resolved to, in the function being checked (noteRef)
+	iota              int                         // the current iota value while evaluating a const spec, or -1 outside a const declaration
+	loopDepth         int                         // number of enclosing "for" loops of the statement being checked, so "defer" inside a loop is rejected and "continue" outside one is
+	switchDepth       int                         // number of enclosing "switch" statements, so a "break" in one is recognised as placed
+	selectDepth       int                         // number of enclosing "select" statements, which a "break" may also leave (but a "continue" may not)
+	labels            []labelFrame                // enclosing labeled "for"/"switch" statements, innermost last, for labeled break/continue resolution
+	labelDecls        map[string]Token            // every label DECLARED in the function being checked: Go scopes a label to the whole function, not to a block, so two sibling ones collide and an unreferenced one is an error
+	labelSites        map[string]labelSite        // where each label stands (scope + offset), for goto's two safety rules
+	gotos             []gotoRef                   // every goto of the function being checked, resolved after the walk (a goto may name a label declared later)
+	gotoLabels        map[string]bool             // labels any goto of the function names, scanned ahead: a targeted label is reachable however the flow above it ended
+	labelUsed         map[string]bool             // the labels a break or continue named, for the unused report
+	localVars         []*VarDeclaration           // local variables of the function body being checked, for the unused-variable report
+	ifaceInits        []ifaceInit                 // package variables' initializers of an interface type, checked once every method is known
+	writeTargets      map[string]bool             // positions of bare "="/":=" assignment-target identifiers in the body: writes, which do not count as uses
+	clauseFallthrough map[string]bool             // positions of "fallthrough" keywords checkSwitch has accounted for, so the statement walk reports only the misplaced ones
+	makeTypeArgs      map[string]bool             // positions of identifiers standing as make's first argument, which is a TYPE and not a value: "make(List, n)" over "type List []int" names one, and the bare-type-name check would otherwise report it as "cannot use type List as a value"
+	defineRedeclares  map[string]bool             // positions of ":=" targets already declared in the same scope, so the emitter assigns to them rather than declaring them again (see emitMultiAssign); file-scoped, read after checking
+	shiftTypes        map[*int32]Kind             // the shift operators whose left operand is an untyped constant, by their place in the AST, and the type the context gives it (see typeShiftOperands); read by the emitter
+	wholeConsts       map[*int32]Kind             // the constants written as FLOATS that stand where an integer type is wanted, `var u uint32 = 3e9`, by their place in the AST, and that type (see checkValueOverflow); read by the emitter
+	wholeConstToks    map[int32]Kind              // the same for a constant that is one token, by the token
+	lenConsts         map[*int32]int64            // the len and cap calls Go makes constants, by their parentheses' place in the AST, and their values (see constLenCap); read by the emitter
+	headerBindings    map[*int32]Node             // the statements headers declare or assign by, `if p := r; ...`, for the passes reading a body's statements by shape (headerBindingsIn)
+	ownCallees        map[int32]bool              // the token indexes of callees named like a builtin and resolving to the program's own declaration (checkCallee)
+	headerStmts       map[*int32]Node             // the statements standing in headers, `if two(); ok`, as the statements they are, by the place of the header's expression in the AST (see headerStmt); read by the emitter
 	parser            Parser
 	tld               *Scope // tld.Nodes are later moved into (*Package).Scope. Kind: PackageScope, Parent: .Scope.
 }
@@ -681,6 +682,7 @@ func (f *File) checkBodies(pkg *Scope, n Node) {
 func (f *File) checkFuncBody(pkg *Scope, n Node) {
 	fs := newScope(pkg, BlockScope)
 	f.localVars = nil
+	f.refs = map[int32][]*VarDeclaration{}
 	f.writeTargets = map[string]bool{}
 	f.clauseFallthrough = map[string]bool{}
 	f.makeTypeArgs = map[string]bool{}
@@ -732,14 +734,66 @@ func (f *File) checkFuncBody(pkg *Scope, n Node) {
 	f.reportUnusedLocals(body)
 }
 
+// noteRef records the local variable a name read at tok resolves to in s, for
+// reportUnusedLocals. It is called where an operand's name is resolved, in the
+// scope the checker reads it in -- a value is read before the names its own
+// statement declares -- so `calls := calls*10 + k` records the right side's calls
+// as the package variable it is.
+func (f *File) noteRef(s *Scope, tok Token) {
+	vd, ok := s.findQuiet(tok.Src()).(*VarDeclaration)
+	if !ok || f.refs == nil {
+		return
+	}
+	if vd.clauseOf != nil {
+		vd = vd.clauseOf
+	}
+	if !slices.Contains(f.refs[tok.index], vd) {
+		f.refs[tok.index] = append(f.refs[tok.index], vd)
+	}
+}
+
+// noteHeadRefs records the variable each target's head names, as noteRef does an
+// operand's: `x++`, `x += 1`, `x.f = v`, `x[i] = v` and `*x = v` use x, as Go counts
+// a use; a bare `x = v`, whose position the unused rule excludes, does not.
+func (f *File) noteHeadRefs(s *Scope, head, postfix Node) {
+	note := func(ah Node) {
+		for c := range it(ah.ast) {
+			switch {
+			case c.sym == 0 && f.ch(c.tok) == IDENT:
+				f.noteRef(s, f.tok(c.tok))
+				return
+			case c.sym != 0:
+				return
+			}
+		}
+	}
+	note(head)
+	for n := range it(postfix.ast) {
+		if n.sym != PostfixOp {
+			continue
+		}
+		for item := range it(n.ast) {
+			if item.sym != LhsItem {
+				continue
+			}
+			for c := range it(item.ast) {
+				if c.sym == AssignHead {
+					note(c)
+				}
+			}
+		}
+	}
+}
+
 // reportUnusedLocals reports each local variable of the function body that is
-// never used. Usage is decided syntactically: a variable is used when its name
-// appears as an identifier in a read position -- anywhere other than at its own
-// declaration or as a bare assignment target ("x = e", which writes x; "x.f = e",
-// "x[i] = e" and "*x = e" read x and so count). A variable only ever assigned,
-// never read, is thus reported. The rule remains name-based, so a used variable is
-// never falsely reported, at the cost of not distinguishing an unused variable from
-// a used one of the same name in a different scope (shadowing).
+// never used. A variable is used when a name is read as it -- anywhere other than at
+// its own declaration or as a bare assignment target ("x = e", which writes x; "x.f
+// = e", "x[i] = e" and "*x = e" read x and so count). A read the checker resolved
+// (noteRef) counts for the variable it resolved to and for no other of its name, so
+// `x := x + 1` -- an `=` mistyped, the new x shadowing the one it meant to write --
+// is reported as Go reports it; and a name no resolution recorded, a field's, a
+// key's, a target's head, counts for every variable of its name, as the rule always
+// had it, so a used variable is never reported.
 func (f *File) reportUnusedLocals(body Node) {
 	if len(f.localVars) == 0 {
 		return
@@ -754,24 +808,32 @@ func (f *File) reportUnusedLocals(body Node) {
 		excluded[pos] = true
 	}
 	used := map[string]bool{}
-	f.collectIdentUses(body, excluded, used)
+	usedVar := map[*VarDeclaration]bool{}
+	f.collectIdentUses(body, excluded, used, usedVar)
 	for _, vd := range f.localVars {
-		if nm := vd.token.Src(); nm != "_" && !used[nm] {
+		if nm := vd.token.Src(); nm != "_" && !used[nm] && !usedVar[vd] {
 			f.err(vd.token.Position(), "declared and not used: %s", nm)
 		}
 	}
 }
 
-// collectIdentUses records, in used, the source text of every identifier token in
-// n's subtree whose position is not a variable declaration (per declared) -- i.e.
-// every referencing occurrence of a name.
-func (f *File) collectIdentUses(n Node, declared, used map[string]bool) {
+// collectIdentUses records every referencing occurrence of a name in n's subtree --
+// an identifier token whose position is not a variable's declaration (per declared)
+// -- in usedVar where noteRef resolved it, and by its text in used where nothing
+// did, or where usedVar is nil: an import's qualifier is asked by name alone.
+func (f *File) collectIdentUses(n Node, declared, used map[string]bool, usedVar map[*VarDeclaration]bool) {
 	for c := range it(n.ast) {
 		if c.sym != 0 {
-			f.collectIdentUses(c, declared, used)
+			f.collectIdentUses(c, declared, used, usedVar)
 			continue
 		}
 		if tok := f.tok(c.tok); Symbol(tok.Ch) == IDENT && !declared[tok.Position().String()] {
+			if vds, ok := f.refs[tok.index]; ok && usedVar != nil {
+				for _, vd := range vds {
+					usedVar[vd] = true
+				}
+				continue
+			}
 			used[tok.Src()] = true
 		}
 	}
@@ -821,7 +883,7 @@ func (f *File) reportUnusedImports() {
 		}
 		for c := range it(n.ast) {
 			if c.sym == TopLevelDecl {
-				f.collectIdentUses(c, declared, used)
+				f.collectIdentUses(c, declared, used, nil)
 			}
 		}
 	}
@@ -6090,7 +6152,12 @@ func (f *File) checkTypeCaseClause(cs *Scope, ts typeSwitchGuard, clause Node, s
 		}
 	}
 	// The clause scope is fresh, so this shadows the statement-scope declaration
-	// that the unused rule is keyed on rather than clashing with it.
+	// that the unused rule is keyed on rather than clashing with it -- and a read of
+	// it is a read of that one (noteRef), Go's guard name being used where any
+	// clause uses it.
+	if g, ok := cs.Parent.find(ts.name.Src()).(*VarDeclaration); ok && g.token == ts.name {
+		vd.clauseOf = g
+	}
 	if err := cs.add(vd); err != nil {
 		f.err(ts.name.Position(), "%v", err)
 	}
@@ -7658,6 +7725,7 @@ func hasSelectorChild(n Node) bool {
 // new (Go short variable declaration semantics). Plain assignments, sends and
 // calls declare nothing.
 func (f *File) checkAssignment(s *Scope, head, postfix Node) {
+	f.noteHeadRefs(s, head, postfix)
 	// `T.M(x)` and `(*T).M(p, x)` as a statement: a method expression called. One
 	// not called is left to the report of a value evaluated and not used below.
 	if steps, pure := callSteps(postfix); pure && endsInCall(postfix) {
@@ -8985,9 +9053,10 @@ func (f *File) checkFuncLiterals(s *Scope, n Node) {
 		// goes on sharing that function's, which reports the literal's locals with
 		// its own.
 		ownState := s.Kind != BlockScope
-		savedLocals, savedWrites, savedFall := f.localVars, f.writeTargets, f.clauseFallthrough
+		savedLocals, savedWrites, savedFall, savedRefs := f.localVars, f.writeTargets, f.clauseFallthrough, f.refs
 		if ownState {
 			f.localVars, f.writeTargets, f.clauseFallthrough = nil, map[string]bool{}, map[string]bool{}
+			f.refs = map[int32][]*VarDeclaration{}
 		}
 		f.scanGotoLabels(body.ast)
 		f.checkBlock(ls.child(), f.flattenResults(ls, sig), body)
@@ -8996,7 +9065,7 @@ func (f *File) checkFuncLiterals(s *Scope, n Node) {
 		f.reportUnusedLabels()
 		if ownState {
 			f.reportUnusedLocals(body)
-			f.localVars, f.writeTargets, f.clauseFallthrough = savedLocals, savedWrites, savedFall
+			f.localVars, f.writeTargets, f.clauseFallthrough, f.refs = savedLocals, savedWrites, savedFall, savedRefs
 		}
 		f.labels, f.labelDecls, f.labelUsed = savedLabels, savedDecls, savedUsed
 		f.labelSites, f.gotos, f.gotoLabels = savedSites, savedGotos, savedGotoLabels
@@ -20431,6 +20500,9 @@ func (f *File) checkFactorNames(s *Scope, n Node) {
 				ellipsis = true
 			}
 		}
+	}
+	if hasID {
+		f.noteRef(s, id)
 	}
 	// `[...]T` is a length only a literal can supply, so it stands for a type in a
 	// literal and nowhere else -- the grammar takes it wherever a bracketed type may
