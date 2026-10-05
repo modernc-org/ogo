@@ -1,0 +1,179 @@
+// A sixth sweep of mutated run cases, with Go as the oracle: a struct field's type
+// changed, a type wrapped where a variable is declared, an element added to an
+// array literal, a name dropped from a ":=", a control keyword swapped, an argument
+// replaced by nil or a literal of another kind.
+
+type Shape interface{ Area() int }
+
+type Sq struct{}
+
+func (s *Sq) Area() int { return 1 }
+
+type failure struct{ code int }
+
+func (f *failure) Error() string { return "fail" }
+
+type T struct{}
+
+func (t T) get(n int) (int, bool) { return n, true }
+
+type Q int
+
+func (q Q) Int() int { return int(q) }
+
+const One Q = 1
+
+type P struct {
+	n    int
+	name byte
+	a    [2]byte
+	q    Q
+	w    int64
+}
+
+type state int
+
+type Grid struct{ x, y int }
+
+type H struct{}
+
+func (h *H) inner(d []int) {}
+
+type worker struct {
+	cmd  chan int
+	done chan bool
+}
+
+var ws [2]worker
+
+var cha chan [3]int
+
+var iv any
+
+var ni [2]*int
+
+func num(n int) int { return n }
+
+func area(s Shape) int { return 1 }
+
+func show(err error) {}
+
+func anon(p struct {
+	x    int
+	name string
+}) int {
+	return p.x
+}
+
+// ERROR "invalid receiver type \[\]T"
+func (t []T) bad() {}
+
+// ERROR "invalid receiver type chan T"
+func (t chan T) bad2() {}
+
+// ERROR "invalid receiver type \*\*T"
+func (t **T) bad3() {}
+
+const (
+	// ERROR "invalid constant type \*state"
+	waitSync *state = iota
+)
+
+// ERROR "cannot use .c. of type string as type byte in struct literal"
+var gps = []*P{{n: 3, name: "c"}}
+
+func literals() {
+	// ERROR "cannot use \[\]int\{1\} as int value in argument to num: it is a slice"
+	_ = num([]int{1})
+	// ERROR "cannot convert \[\]int\{1\} to type int: it is a slice"
+	_ = int([]int{1})
+	// ERROR "it is a slice, which does not implement Shape"
+	_ = area([]int{1})
+	xs := []int{1}
+	// ERROR "\[\]int does not implement Shape \(missing method Area\)"
+	_ = area(xs)
+	// ERROR "it is a function, which does not implement Shape"
+	_ = area(func() {})
+	// ERROR "failure does not implement error \(method Error has pointer receiver\)"
+	show(failure{})
+	// ERROR "cannot use \(\*Sq\)\(nil\) as chan Shape value in variable declaration: it is a pointer"
+	var c chan Shape = (*Sq)(nil)
+	// ERROR "cannot use Grid\{\} \(value of type Grid\) as a struct value in argument to anon"
+	_ = anon(Grid{})
+	var h H
+	// ERROR "cannot use func\(\) \{\} as \[\]int value in argument to inner: it is a function"
+	h.inner(func() {})
+	// ERROR "cannot use .s. of type string as type int in append"
+	_ = append([]int{1}, "s")
+	_ = c
+}
+
+func headers(t T) {
+	// ERROR "assignment mismatch: 1 variable but 2 values"
+	if ok := t.get(3); ok {
+	}
+	// ERROR "assignment mismatch: 1 variable but 2 values"
+	switch ok := t.get(3); ok {
+	}
+	if v, ok := iv.(*P); ok {
+		// ERROR "cannot use v.a\[0\] of type uint8 as type string in variable declaration"
+		var s string = v.a[0]
+		_ = s
+	}
+	v, ok := (iv).(*P)
+	// ERROR "cannot use v.a\[0\] of type uint8 as type string in variable declaration"
+	var s string = v.a[0]
+	_, _ = ok, s
+}
+
+func targets() {
+	var p P
+	xs := []int{1, 2}
+	// ERROR "cannot use p.a \(value of type int\) as \[2\]byte value in assignment"
+	for p.n, p.a = range xs {
+	}
+	table := [3][2]int{}
+	var row [2]int
+	var at chan int
+	// ERROR "cannot use at \(value of type int\) as chan int value in assignment"
+	for at, row = range table {
+	}
+	var h struct{ a [3]float32 }
+	select {
+	// ERROR "cannot use <-cha \(value of type \[3\]int\) as \[3\]float32 value in assignment"
+	case h.a = <-cha:
+	default:
+	}
+	// ERROR "cannot use One.Int\(\) of type int as type int64 in struct literal"
+	_ = P{q: One, w: One.Int()}
+	v := <-ws[0].cmd
+	// ERROR "cannot use v \* 10 of type int as type bool in send"
+	ws[0].done <- v * 10
+	ws[1].done <- true
+	// ERROR "cannot indirect ni: it is an array"
+	println(*ni)
+	_, _, _ = p, at, row
+}
+
+func loops() {
+	for i := 0; i < 2; i++ {
+		func(k int) {
+			if k == 1 {
+				// ERROR "continue is not in a loop"
+				continue
+			}
+		}(i)
+	}
+	// ERROR "declared and not used: k"
+	var k int
+	for k = range 3 {
+	}
+}
+
+func main() {
+	literals()
+	headers(T{})
+	targets()
+	loops()
+	_ = gps
+}

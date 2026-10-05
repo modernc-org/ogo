@@ -77,10 +77,10 @@ func run() {
 	// ERROR "nil is no value of struct"
 	_ = S{1, 2} == nil
 
-	// ERROR "an interface holds a pointer here; write &S{1, 2}"
+	// ERROR "S does not implement I \(method M has pointer receiver\)"
 	_ = S{1, 2} == gi
 
-	// ERROR "gc is a channel, which has no methods"
+	// ERROR "chan int does not implement I \(missing method M\)"
 	_ = gc == gi
 
 	// ERROR "cannot call non-function S\{1, 2\}"

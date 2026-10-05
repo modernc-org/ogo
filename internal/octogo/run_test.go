@@ -46079,6 +46079,28 @@ func main() {
 `,
 		want: "46 6 6\n1 1\n",
 	},
+	{
+		// A channel prints as Go prints it: println its address, 0x0 for nil, and
+		// %v fmt's, <nil> for nil, as a function value does. Both were refused,
+		// "cannot print a value of type ogo_chan_int", where a channel FIELD of a
+		// struct printed already.
+		name: "printing a channel",
+		src: `type Ch chan int
+
+func pick(c chan int) chan int { return c }
+
+func main() {
+	var f func(int) int
+	var ch chan int = nil
+	dc := Ch(nil)
+	println(ch, 1, dc)
+	print(pick(nil), 2, "\n")
+	printf("%v %v %v|\n", ch, f, dc)
+	println(ch == nil, f == nil, dc == nil)
+}
+`,
+		want: "0x0 1 0x0\n0x02\n<nil> <nil> <nil>|\ntrue true true\n",
+	},
 }
 
 // TestEmitCRun compiles emitted C with a host compiler and runs it, checking what

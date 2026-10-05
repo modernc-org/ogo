@@ -20,6 +20,9 @@ shipped section tells a reader on that version that they have behaviour they do 
 
 ### Language
 
+- **A channel prints**: `println(ch)` writes its address, `0x0` for nil, and `%v`
+  writes it or `<nil>`, as for a function value. Both were refused, "cannot print
+  a value of type ogo_chan_int", where a channel field of a struct printed already.
 - **A type assertion may stand in the middle of a chain on any operand**:
   `h.i.(*T).s`, `xs[i].(*T).n += 3`, `pick().(*T).bump()`, `&h.i.(*T).n`, and as
   a store's target or a deferred call's argument. Only an assertion on a name could
@@ -43,6 +46,10 @@ shipped section tells a reader on that version that they have behaviour they do 
 
 ### Fixed
 
+- **A send to a channel field of an element of a slice from `make` builds**: `ws :=
+  make([]W, 1); ws[0].done <- true` was refused, "cannot send to non-channel".
+- **A method called on a typed constant's method result builds**:
+  `Two.Add(One).Int()` for a `const Two Q` was "type int64 has no method Int".
 - **`print` and `println` of several arguments print each as it prints alone.**
   Packed into one `printf`, every argument that was no string and no slice or
   array VARIABLE went out under `%d`: a nil pointer or function printed `0` for
@@ -268,6 +275,28 @@ shipped section tells a reader on that version that they have behaviour they do 
 
 ### Behaviour changes
 
+- **A sixth sweep of mutated run cases refuses what Go refuses**: a literal of no
+  Kind where one is wanted, `num([]int{1})`, `int([]int{1})`, `var s string =
+  []int{1}`; a slice, an array or a function literal where an interface asking
+  for methods is wanted, and a struct literal whose methods are on its pointer,
+  `show(failure{})` for an `error`; a pointer conversion where a channel, a slice
+  or a number is wanted, `var c chan Shape = (*Sq)(nil)`; a struct of other fields
+  where an unnamed struct type is wanted; a function literal where a slice is; an
+  element of the wrong type appended to a literal, `append([]int{1}, "s")`; a
+  receiver of a slice, a channel or a pointer to a pointer, `func (t []T) m()`; a
+  constant of a type that is no boolean, number or string, `const c *state =
+  iota`; a dereference of an array, a slice or a struct, `*ni` for a `[2]*int`; one
+  name for a call of two results in an `if` or `switch` header, `if ok :=
+  t.get(3); ok`; a range clause storing into a field of another type, `for p.n,
+  p.a = range xs`, and its index into a channel; a received array of another type,
+  `case h.a = <-cha:`; nil and values of no Kind as the Builder's arguments; a
+  typed constant's method result into a field of another type, `w: One.Int()`; a
+  value received from a channel field of an element, `v := <-ws[0].cmd`, used as
+  another type; a `continue` in a function literal called in a loop; and a
+  variable only stored by a range clause, now "declared and not used". The names
+  an `if` or `switch` header declares from one call, receive or assertion, `if v,
+  ok := iv.(*P); ok`, and a field of a variable of an unnamed struct type are typed
+  for every rule.
 - **The fifth sweep's positional rows are refused, as Go refuses them**: the
   comma-ok flag of a receive stored into a struct, `r.val, r = <-ch`, in a
   statement and a select clause; a select clause receiving into a whole struct,

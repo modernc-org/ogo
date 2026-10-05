@@ -1078,6 +1078,29 @@ localName). 75 programs of the row agree with Go; of the 10,347 mutants both ref
 across the batches one was taken again, an older regression the list kept: a range
 over a variable of a defined array type had no element. **A batch's REJ/REJ list is a
 net too**: re-run it, and a mutant taken since is a row lost.
+A sixth batch (gen6.py in the scratchpad: a struct field's type changed, a type
+wrapped where a variable is declared, `T` to `[]T`, `*T`, `[2]T` or `chan T`, an
+element added to a sized array literal, a name dropped from a several-name `:=`, a
+control keyword swapped, an argument for nil or a literal of another kind) had 140
+taken of 3,000, 54 of them `println` of a slice, the extension. The rest were twenty
+rows, and the largest was the commonest literal there is: a SLICE literal had no
+category for any rule -- nonBoolOperand typed an array literal through valueTypeAt
+and a slice literal not at all -- so `num([]int{1})`, `int([]int{1})` and `var s
+string = []int{1}` were taken (bracketLitCategory reads the brackets, as
+sliceOrArrayOf reads a variable's initializer). Beside it, a function literal and a
+pointer conversion `(*Sq)(nil)` had none either; a literal of a type written out, a
+variable of one and a named struct literal were asked nothing where an interface is
+wanted (`show(failure{})` was emitted as a struct passed for the interface, C no
+compiler takes); a receiver was read by its NAME, so `func (t []T) m()` declared a
+method of T; and an `if` or `switch` header declaring several names from one value
+typed none of them, where the `for` header typed a call's (headerValueTypes). Two
+false refusals came out of the nets and were older: `ws := make([]W, 1); ws[0].done
+<- v` was "not a channel", the send rule refusing what it could not resolve, and
+answering for a typed constant's method made `Two.Add(One).Int()` "type int64 has no
+method Int" -- methodSingleResultName asked a variable's declaration only, which the
+run corpus showed (accdiff). **A rule that refuses on failing to resolve is a false
+refusal waiting for a shape it does not know**; the send keeps the refusal only
+where the walk fails too.
 
 **A COMPILER RUN IN A SWEEP IS CAPPED, AND A CRASH IS NOT A REFUSAL** (2026-09-20).
 A probe program is written to find a fault, and a fault is not always a wrong

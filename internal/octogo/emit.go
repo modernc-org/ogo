@@ -38398,11 +38398,13 @@ func (e *emitter) emitPrintfVerb(item printfItem, idx int, arg Node) bool {
 		// what does answer.
 		// An unsafe.Pointer prints as fmt prints one, its address in hex, or <nil>:
 		// it points at nothing %v could print instead.
-		if known && ct == cUnsafePtr {
+		// A channel and a function value too, which fmt prints the same way: it has
+		// nothing else to print of one.
+		if known && (ct == cUnsafePtr || e.isChanCType(ct) || e.isFuncCType(e.underlyingCType(ct))) {
 			e.includes["stdint.h"] = true
 			tmp := e.newTmp()
 			e.ind()
-			e.emit("{ void* " + tmp + " = ")
+			e.emit("{ " + ct + " " + tmp + " = ")
 			value()
 			e.emit("; if (" + tmp + ") { printf(\"0x%x\", (unsigned)(uintptr_t)" + tmp + "); } else { printf(\"<nil>\"); } }\n")
 			return true
@@ -39703,7 +39705,7 @@ func (e *emitter) printableCType(ct string) bool {
 // under the host shim, where an address means nothing to compare anyway.
 func (e *emitter) addressPrintC(ct string) string {
 	switch {
-	case strings.HasSuffix(ct, "*"), strings.HasPrefix(ct, funcTypePrefix):
+	case strings.HasSuffix(ct, "*"), strings.HasPrefix(ct, funcTypePrefix), e.isChanCType(ct):
 		return "0x%x"
 	case e.isIfaceCType(ct):
 		return "(0x%x,0x%x)"
