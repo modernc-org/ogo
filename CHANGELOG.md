@@ -65,6 +65,21 @@ shipped section tells a reader on that version that they have behaviour they do 
   "type Builder has no method Put", in its own package and as `lib.Builder` from
   another; and `type uintptr int16` was written as C's `uintptr_t`, so `z <<= 3`
   was 131064 for Go's -8, in silence on a P2-EDGE.
+- **A package struct literal may take an array from a variable, a row or a
+  call**: `var cfg = Cfg{id: 2, pins: defPins}`, `Cfg{pins: grid[1]}`,
+  `Cfg{pins: mk()}` -- how a board's table is put together -- were refused, "a
+  [3]int value cannot be an element of a literal written here"; and a package
+  slice literal of such structs or of arrays computed at run time, `[]Cfg{{pins:
+  defPins}, src}`, `[][3]int{late, grid[1]}`, was refused as "not constant".
+- **A package array typed by a call's result may be declared below its users**:
+  `var late = mk(4)` was no array to `var cfg = Cfg{pins: late}`, `var n =
+  len(late)` or `var s = late[1:]` above it, each refused, where Go takes package
+  declarations in any order.
+- **A package struct holding an array, initialized at run time, builds for the
+  target**: `var g = mkGrid(4)` for a struct with a `[2][3]int` field was written
+  `static Grid g = {0};`, which the target's compiler refused, "Internal compiler
+  error, expected initializer list"; such a variable is declared bare now, C
+  zeroing it.
 - **Several results from another package are the types it declares**: `n, err :=
   lib.Two()` gave `err` the type "lib.error", which no rule took for an
   interface -- passing it to a function taking an `error` was refused, "write

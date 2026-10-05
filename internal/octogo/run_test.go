@@ -279,6 +279,91 @@ func main() {
 		want: "true true 0 0\n",
 	},
 	{
+		// Package tables built from arrays: a struct literal whose array field is a
+		// variable, a row or a call, a slice literal of such structs, a slice of
+		// rows, and an array declared BELOW its users from a call. The literal had
+		// no name for its array elements to be copied into ("cannot be an element of
+		// a literal written here"), the slice's were refused as not constant, and an
+		// array typed by a call's result was no array to a declaration above it.
+		// The initialization order is Go's, by dependency: late first.
+		name: "package tables built from arrays declared anywhere",
+		src: `type Cfg struct {
+	id   int
+	pins [3]int
+}
+
+type Two struct {
+	a Cfg
+	b [2][3]int
+}
+
+var calls int
+
+func mk(k int) [3]int {
+	calls = calls*10 + k
+	return [3]int{k, k + 1, k + 2}
+}
+
+var cfg = Cfg{id: 2, pins: late}
+
+var cfgs = []Cfg{{pins: late}, src, mkc(5)}
+
+var rows = [][3]int{late, grid[1]}
+
+var t = Two{a: Cfg{pins: grid[0]}, b: grid}
+
+var n = len(late)
+
+var late = mk(4)
+
+var grid = [2][3]int{{1, 2, 3}, {7, 8, 9}}
+
+var src = Cfg{id: 9, pins: [3]int{6, 6, 6}}
+
+func mkc(k int) Cfg { return Cfg{id: k, pins: mk(k)} }
+
+func main() {
+	println(cfg.id, cfg.pins[2], cfgs[0].pins[0], cfgs[1].pins[1], cfgs[2].id, cfgs[2].pins[2], len(cfgs))
+	println(rows[0][1], rows[1][2], t.a.pins[1], t.b[1][0], n, calls)
+}
+`,
+		want: "2 6 4 6 5 7 3\n5 9 2 7 3 45\n",
+	},
+	{
+		// A package struct holding an array, initialized at run time: declared with
+		// no initializer, which C zeroes (staticZeroC). Written `= {0}`, the target's
+		// static initializer refused a two-dimensional array field, "Internal
+		// compiler error, expected initializer list" -- gcc takes it, so only the
+		// target build (TestTargetBuild) holds this.
+		name: "package structs holding arrays, initialized at run time",
+		src: `type Cfg struct {
+	id   int
+	pins [3]int
+}
+
+type Two struct {
+	a Cfg
+	n int
+}
+
+type Grid struct {
+	b [2][3]int
+	n int
+}
+
+func mkTwo(k int) Two { return Two{a: Cfg{id: k, pins: [3]int{k, k, k}}, n: k + 1} }
+
+func mkGrid(k int) Grid { return Grid{n: k} }
+
+var t = mkTwo(3)
+
+var g = mkGrid(4)
+
+func main() { println(t.a.id, t.a.pins[2], t.n, g.n) }
+`,
+		want: "3 3 4 4\n",
+	},
+	{
 		// A program's own printf, deferred: its first argument is captured where
 		// the defer stands, as any function's is. It was the builtin to the
 		// emitter, "printf's format must be a constant string"; and the builtin's

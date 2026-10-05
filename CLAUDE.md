@@ -805,7 +805,7 @@ still design-only.
   of a struct holding an array. The values are the generator's constants, so the
   fold's value is known without the VM modelling a struct. Of seeds 1-2000, 1315
   declare a table and 909 a type the backend lays out both ways, which the emitter
-  fills at package initialization (`= {0};` and a memcpy in the C); all 2000 pass on
+  fills at package initialization (declared bare and memcpy'd in the C); all 2000 pass on
   the host shim, and seeds 1-200 on a P2-EDGE, 91 of them with such a type, 192
   passing and 8 outgrowing a cog, none failing (six loads that timed out passed on a
   second try). The method expression went from 0.5% of
@@ -1678,6 +1678,25 @@ where Go refuses them; of nine received cells built for the target, six built in
 silence. **A
 value of no name is asked what it is in every shape it comes in -- a receive is one
 of them** (A RECEIVE HAD NO TYPE gave it a Kind; the categories had none).
+A PACKAGE TABLE BUILT FROM ARRAYS (2026-10-05, from the open loud items): a package
+struct literal's array field from a variable, a row or a call was refused, the
+fixup that zeroes such an element and copies it in afterwards (litFixup) needing a
+NAME for the storage and a package initializer's assignment giving it none --
+pkgInitAssign gives it the variable where the initializer IS the literal, and the
+slice literal's package path renders its temporary with the fixups too. Sweeping
+the row's ORDER found an older hole: a package array typed by a CALL's result,
+`var late = mk(4)`, was registered only where it was emitted, so every declaration
+ABOVE it read the name as no array (resolvePkgVarTypes asks pkgArrayInitShape,
+inferCType having no answer for an array). And its first board run found a third,
+older still and in the target alone: `static T x = {0};` for a struct holding a
+two-dimensional array, or a struct holding one that holds an array, is refused or
+mislaid by the target's static initializer (measured in C: "expected initializer
+list", "Bad initialization size: expected 56 got 96"), so `var g = mkGrid(4)` never
+built; a package variable of a type holding an array is declared bare, C zeroing
+it (staticZeroC). gcc took `{0}` in every shape, which is why no run case had met
+it. **The host's compiler is no witness for an initializer's layout** -- the
+target's static initializer has its own rules (A STATIC INITIALIZER IS LAID OUT BY
+ANOTHER RULE THAN ITS TYPE).
 
 **AN ARRAY RESULT IS A ROW** (2026-09-23). A call returning an array is a STATEMENT in
 C -- the caller hands the callee storage to write -- so every position one stands in

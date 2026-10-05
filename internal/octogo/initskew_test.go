@@ -111,13 +111,13 @@ func main() {
 	}
 	c := buf.String()
 	for _, want := range []string{
-		"static Ramp r = {0};\n",
-		"static B4 b4 = {0};\n",
-		"static B5 b5 = {0};\n",
-		"static H3 h3 = {0};\n",
-		"static B6T b6t = {0};\n",
-		"static R16 r16 = {0};\n",
-		"static Outer o = {0};\n",
+		"static Ramp r;\n",
+		"static B4 b4;\n",
+		"static B5 b5;\n",
+		"static H3 h3;\n",
+		"static B6T b6t;\n",
+		"static R16 r16;\n",
+		"static Outer o;\n",
 		"static Ramp rs[2];\n",
 		"static OK ok = {7, {1, 2, 3, 4}};\n",
 		"static OK2 ok2 = {7, {1, 2, 3}};\n",

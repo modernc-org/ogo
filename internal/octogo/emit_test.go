@@ -8410,8 +8410,10 @@ func main() { println(a[0]) }
 `,
 		},
 		{
-			// The one shape that still cannot: an element that is itself an array,
-			// which C copies into no initializer, local or static.
+			// An element that is itself an array, which C copies into no
+			// initializer: the temporary filling the backing takes it as zeros and
+			// a copy afterwards (litFixup). It was refused, "a package slice
+			// literal's elements must be constant".
 			name: "a package slice of arrays with a computed element",
 			src: `type Row [2]int
 
@@ -8419,7 +8421,6 @@ var a = []Row{{f(), 1}, {2, 3}}
 
 func main() { println(a[0][0]) }
 `,
-			want: "a package slice literal's elements must be constant",
 		},
 		// The array forms are filled at package initialization, and everything
 		// constant is still a static table.

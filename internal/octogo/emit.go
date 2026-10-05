@@ -3478,9 +3478,22 @@ func (e *emitter) pkgInitAssign(target, srcName string, initExpr []int32) {
 	if typed {
 		e.typeUntypedShifts(initExpr, ct) // the variable's type is the value's context
 	}
+	// Where the initializer IS a struct literal, the variable is the storage it
+	// fills, so an element C cannot put in the literal -- an array from a variable,
+	// a row, a call -- is zeroed there and copied into the variable after the store
+	// (litFixup), as a local declaration does. Refused before, "cannot be an
+	// element of a literal written here": `var cfg = Cfg{pins: defPins}`, the way a
+	// board's table is put together. Only the whole initializer: a literal standing
+	// in a call's argument is not the variable's storage.
+	_, _, wholeLit := e.soleCompositeLit(initExpr)
+	var fixups []litFixup
 	text, pro := e.pkgInitRender(func() {
 		if lit, ok := e.hugeFloatConstC(initExpr, ct); ok && typed {
 			e.emit(lit)
+			return
+		}
+		if wholeLit {
+			fixups = e.captureLitFixups(func() { e.emitExpr(initExpr) })
 			return
 		}
 		e.emitExpr(initExpr)
@@ -3504,6 +3517,15 @@ func (e *emitter) pkgInitAssign(target, srcName string, initExpr []int32) {
 		store = "memcpy(&" + target + ", " + addr + ", sizeof(" + target + "));"
 	}
 	step.stmts = append(pro, store)
+	if len(fixups) != 0 {
+		var copies []string
+		okCopies := false
+		_, cpro := e.pkgInitRender(func() { copies, okCopies = e.litFixupCopies(target, fixups) })
+		if !okCopies {
+			return
+		}
+		step.stmts = append(append(step.stmts, cpro...), copies...)
+	}
 	e.pkgInit = append(e.pkgInit, step)
 }
 
@@ -9381,6 +9403,20 @@ func (e *emitter) collectVarDeclTypes(ast []int32) {
 	}
 }
 
+// pkgArrayInitShape is the array an inferred package variable's initializer yields,
+// asked without rendering it: a call with an array result, or another package
+// array of this package by name.
+func (e *emitter) pkgArrayInitShape(initExpr []int32) (arrDim, bool) {
+	if _, a, isCall := e.arrayResultCall(initExpr); isCall {
+		return a, true
+	}
+	if id, ok := e.exprIdent(initExpr); ok {
+		a, isArr := e.globalArrays[e.globalC(id)]
+		return a, isArr
+	}
+	return arrDim{}, false
+}
+
 // isArrayLitInit reports whether an initializer is an array literal, the one shape
 // whose type is read off the literal rather than inferred from the value.
 func (e *emitter) isArrayLitInit(initExpr []int32) bool {
@@ -9418,6 +9454,15 @@ func (e *emitter) resolvePkgVarTypes() {
 			e.f, e.curPkgPrefix, e.prologue, e.hoistedArrayCalls = p.file, p.prefix, nil, map[int32]string{}
 			ct, ok := e.inferCType(p.init)
 			if !ok {
+				// An ARRAY has no C value type for inferCType to answer with: one a
+				// call returns, `var late = mk(4)`, or a copy of another, `var a =
+				// late`, is registered by its shape. A declaration above it read the
+				// name as no array: `var cfg = Cfg{pins: late}`, `var n = len(late)`
+				// and `var s = late[1:]` were refused, where Go takes any order.
+				if a, isArr := e.pkgArrayInitShape(p.init); isArr {
+					e.globalArrays[e.globalC(p.name)] = a
+					continue
+				}
 				next = append(next, p)
 				continue
 			}
@@ -9605,7 +9650,7 @@ func (e *emitter) emitPackageVarDecl(ast []int32) {
 				e.emit(";\n")
 				continue
 			}
-			e.emit("static " + ct + " " + gn + " = " + e.zeroInitC(ct) + ";\n")
+			e.emit("static " + ct + " " + gn + e.staticZeroC(ct) + ";\n")
 			e.pkgInitAssign(gn, names[0], initExpr)
 			continue
 		}
@@ -9710,7 +9755,7 @@ func (e *emitter) emitPackageVarDecl(ast []int32) {
 						e.emit(";\n")
 						continue
 					}
-					e.emit("static " + cname + " " + gn + " = " + e.zeroInitC(cname) + ";\n")
+					e.emit("static " + cname + " " + gn + e.staticZeroC(cname) + ";\n")
 					e.pkgInitAssign(gn, names[0], initExpr)
 					continue
 				}
@@ -9800,7 +9845,7 @@ func (e *emitter) emitPackageVarDecl(ast []int32) {
 				// written at package initialization. What it points at has to be a
 				// package variable too: a frame temporary would be a local of
 				// ogo_pkg_init, which is not storage a package variable may keep.
-				e.emit(" = " + e.zeroInitC(ctype))
+				e.emit(e.staticZeroC(ctype))
 				if step, ok := e.pkgInitIfaceStore(gn, nm, ctype, initExpr); ok {
 					defer func() { e.pkgInit = append(e.pkgInit, step) }()
 				}
@@ -9815,7 +9860,7 @@ func (e *emitter) emitPackageVarDecl(ast []int32) {
 				// keep the initializer and the backend refused the program: "global
 				// initializers are evaluated at compile time and therefore must be
 				// constant", about C the reader never wrote.
-				e.emit(" = " + e.zeroInitC(ctype))
+				e.emit(e.staticZeroC(ctype))
 				defer e.pkgInitAssign(gn, nm, initExpr)
 			}
 			e.emit(";\n")
@@ -17890,6 +17935,19 @@ func (e *emitter) cParamTypes(sig []int32) ([]string, []arrDim) {
 // only at some sizes -- "Unable to multiply assign this target" for 12 and 16 bytes,
 // where 3, 8 and 20 are taken (measured on v7.7.3) -- so such a value is copied with
 // memcpy in every position that copies it, and never with `=`.
+// staticZeroC is what follows the declarator of a package variable initialized at
+// run time: " = " and the type's zero, or nothing for a type holding an array. C
+// zeroes static storage itself, and the target's static initializer mislays `{0}`
+// for a struct holding a struct that holds an array ("Bad initialization size") or
+// a two-dimensional array ("Internal compiler error, expected initializer list"):
+// `var g = mkGrid(4)` for a `struct{ b [2][3]int; n int }` did not build.
+func (e *emitter) staticZeroC(ct string) string {
+	if e.holdsArray(ct) {
+		return ""
+	}
+	return " = " + e.zeroInitC(ct)
+}
+
 func (e *emitter) holdsArray(ct string) bool {
 	return ct != "" && !strings.HasSuffix(ct, "*") && e.hasArrayField(ct)
 }
@@ -20523,7 +20581,9 @@ func (e *emitter) emitLitElement(v Node, expect structField, brace bool) {
 		if !e.recordLitFixup(v, expect.dim) {
 			return
 		}
-		e.emit("{0}")
+		// Braced for each dimension: `{0}` for a [2][3]int is C, and the brace
+		// gcc misses.
+		e.emit(e.zeroFieldC(structField{ctype: expect.dim.elem, dim: expect.dim}))
 		return
 	}
 	if v.sym == CompositeLit {
@@ -21004,7 +21064,7 @@ func (e *emitter) emitArrayValues(values []*Node, a arrDim) {
 			if !e.recordLitFixup(*v, row) {
 				return
 			}
-			e.emit("{0}")
+			e.emit(e.zeroFieldC(structField{ctype: row.elem, dim: row}))
 			continue
 		}
 		rowValues, ok := e.rowValues(*v, row)
@@ -21211,31 +21271,37 @@ func (e *emitter) emitSliceLitVar(name, elem, cname string, lit Node, values []*
 	// into the static backing. The fill is one initialization step, ordered
 	// against the package variables the values read.
 	//
-	// One element shape cannot take this route: an element that is itself an array
-	// (a named array type, or a struct holding one) cannot go in even a local
-	// initializer, C copying no array there. That one is still refused with the
-	// shape that works.
+	// An element that is itself an array, or a struct holding one, given as a VALUE
+	// -- `[]Cfg{{pins: defPins}}`, `[][3]int{row}` -- cannot go in even a local
+	// initializer, C copying no array there: it is zeroed in the temporary and
+	// copied into it afterwards (litFixup), as a local's literal and a package
+	// array's are. It was refused with the array spelling as the way round it.
 	constElems := e.staticLitElementsOKLevels(lit, []litLevel{e.elemLevel(elem)})
 	if static && (!constElems || e.flexccInitSkew(elem)) {
 		// Constant elements whose static initializer the target lays out wrong
 		// (flexccInitSkew) take this route too, as braces, which copy right.
-		if _, isArrElem := e.namedArrays[elem]; !constElems && (isArrElem || e.hasArrayField(elem)) {
-			e.fail("a package slice literal's elements must be constant: declare the values as an "+
-				"array and slice it, `var back = [%s]%s{...}` and `var %s = back[:]`", n, e.goTypeName(elem), name)
-			return
-		}
 		lead()
 		e.emit(decl + " " + backing + "[" + n + "]" + suffix + ";\n")
-		valsText, pro := e.pkgInitRender(func() { e.emitPositionalValues(values, elem) })
+		var fixups []litFixup
+		valsText, pro := e.pkgInitRender(func() {
+			fixups = e.captureLitFixups(func() { e.emitPositionalValues(values, elem) })
+		})
 		tmp := e.newTmp()
 		e.includes["string.h"] = true
+		stmts := append(pro, decl+" "+tmp+"["+n+"]"+suffix+" = "+valsText+";")
+		if len(fixups) != 0 {
+			var copies []string
+			okCopies := false
+			_, cpro := e.pkgInitRender(func() { copies, okCopies = e.litFixupCopies(tmp, fixups) })
+			if !okCopies {
+				return
+			}
+			stmts = append(append(stmts, cpro...), copies...)
+		}
 		fill := pkgInitStep{
 			target: backing,
-			stmts: append(pro,
-				decl+" "+tmp+"["+n+"]"+suffix+" = "+valsText+";",
-				"memcpy("+backing+", "+tmp+", sizeof("+backing+"));",
-			),
-			pkg: 2 * e.pkgOrd,
+			stmts:  append(stmts, "memcpy("+backing+", "+tmp+", sizeof("+backing+"));"),
+			pkg:    2 * e.pkgOrd,
 		}
 		for _, v := range values {
 			if v != nil {
@@ -22599,7 +22665,7 @@ func (e *emitter) emitPackageVarList(names []string, typeAST []int32, inits [][]
 		// cannot be a file-scope initializer. What it points at has to be a package
 		// variable too, this function's temporaries being locals of ogo_pkg_init.
 		if e.isIfaceCType(ctype) && inits[i] != nil {
-			e.emit("static " + ctype + " " + gn + " = " + e.zeroInitC(ctype) + ";\n")
+			e.emit("static " + ctype + " " + gn + e.staticZeroC(ctype) + ";\n")
 			if step, ok := e.pkgInitIfaceStore(gn, nm, ctype, inits[i]); ok {
 				e.pkgInit = append(e.pkgInit, step)
 			}
@@ -22611,7 +22677,7 @@ func (e *emitter) emitPackageVarList(names []string, typeAST []int32, inits [][]
 			e.emit(";\n")
 			continue
 		}
-		e.emit("static " + ctype + " " + gn + " = " + e.zeroInitC(ctype) + ";\n")
+		e.emit("static " + ctype + " " + gn + e.staticZeroC(ctype) + ";\n")
 		e.pkgInitAssign(gn, nm, inits[i])
 	}
 }
@@ -22674,7 +22740,7 @@ func (e *emitter) emitPackageDestructure(names []string, rhs []int32) {
 		if e.isSliceCType(resTypes[i]) {
 			e.globalSliceVars[gn] = sliceElemFromCName(resTypes[i])
 		}
-		e.emit("static " + resTypes[i] + " " + gn + " = " + e.zeroInitC(resTypes[i]) + ";\n")
+		e.emit("static " + resTypes[i] + " " + gn + e.staticZeroC(resTypes[i]) + ";\n")
 	}
 	tmp := e.newTmp()
 	stmts := append(pro, e.retStructName(e.funcCallC(callee))+" "+tmp+" = "+call+";")
