@@ -3162,7 +3162,14 @@ func (f *File) typeFromResult(s *Scope, vd *VarDeclaration, res retResult, qual 
 		if rnm, named := namedTypeToken(tn); named {
 			vd.typeName, vd.isPtr = rnm, f.isPointerType(s, tn)
 			if vd.typeQual = namedTypeQual(tn); !vd.typeQual.IsValid() {
+				// Another package's result is spelled as that package spells it, and
+				// a name of the universe there is the universe's here: `n, err :=
+				// lib.Two()` gave err the type "lib.error", which no rule took for
+				// an interface (homeQual, as the single result had it).
 				vd.typeQual = qual
+				if home, ok := f.importedPkgScope(qual); ok && qual.IsValid() {
+					vd.typeQual = homeQual(home, rnm, qual)
+				}
 			}
 		}
 	}

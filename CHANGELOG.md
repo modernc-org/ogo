@@ -65,6 +65,21 @@ shipped section tells a reader on that version that they have behaviour they do 
   "type Builder has no method Put", in its own package and as `lib.Builder` from
   another; and `type uintptr int16` was written as C's `uintptr_t`, so `z <<= 3`
   was 131064 for Go's -8, in silence on a P2-EDGE.
+- **Several results from another package are the types it declares**: `n, err :=
+  lib.Two()` gave `err` the type "lib.error", which no rule took for an
+  interface -- passing it to a function taking an `error` was refused, "write
+  &err". A single result had it right.
+- **A call of several results through another package's variable builds**: `n,
+  err := lib.Fn()` for a function variable, `lib.V.Get()` for a method of one,
+  `lib.Fns[1]()` and `lib.V.F()`, in a multiple assignment, a header, a return
+  forwarding them and an argument list they are, were refused, "target/result
+  count mismatch", or rejected by the C compiler.
+- **A function element's several results are forwarded**: `return tab[i]()` and
+  `take(tab[i]())` for a slice, an array, a field or a pointer to an array of
+  functions of several results did not build; only `a, b := tab[i]()` did.
+- **A message about a value of type `error` says `error`**, and one about an
+  interface written out spells its methods' signatures: it said `interface{
+  Error() }`.
 - **A literal of another package's defined slice type is of that type**:
   `xs := lib.Ints{5, 2, 9}` was a plain `[]int`, so `xs.Len()` was "unknown
   package xs", `&xs` went into no interface, and `%T` printed `[]int`; with the

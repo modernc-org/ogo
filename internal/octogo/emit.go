@@ -7723,6 +7723,36 @@ type ifaceMethod struct {
 	vararg int
 }
 
+// goMethodSig spells an interface method's parameters and results as Go writes
+// them in an interface type, `(int, ...byte) (int, error)`.
+func (e *emitter) goMethodSig(m ifaceMethod) string {
+	var ps []string
+	for i, p := range m.params {
+		t := e.goTypeName(p)
+		if m.vararg == i+1 {
+			t = "..." + strings.TrimPrefix(t, "[]")
+		}
+		ps = append(ps, t)
+	}
+	text := "(" + strings.Join(ps, ", ") + ")"
+	var rs []string
+	if m.arr.bound != "" {
+		rs = []string{e.goArrayTypeName(m.arr)}
+	} else {
+		for _, r := range ifaceResultTypes(m) {
+			rs = append(rs, e.goTypeName(r))
+		}
+	}
+	switch len(rs) {
+	case 0:
+	case 1:
+		text += " " + rs[0]
+	default:
+		text += " (" + strings.Join(rs, ", ") + ")"
+	}
+	return text
+}
+
 // vtTypeField names the vtable member holding the dynamic type's name, which "%T"
 // reads. It leads the table so its offset does not depend on the method set.
 const vtTypeField = "_ogo_type"
@@ -32681,7 +32711,51 @@ func (e *emitter) valueOutCallC(callee string, suffix []Node, out string) (strin
 		}
 		return text + ")", true
 	}
+	// A function-typed ELEMENT reached by a chain, `tab[i]()`, `h.tab[1]()`: the
+	// element is bound to a temporary first, as every element call is
+	// (doc/call-through-array-element.c). Only a multiple assignment had this case,
+	// so `return tab[i]()` and `take(tab[i]())` rendered a call returning the
+	// results, which writes them through its out parameter: no C compiler took it.
+	if len(suffix) >= 2 && suffix[len(suffix)-1].sym == CallSuffix {
+		// Type-first for the reason emitCallExpr gives: a chainCText walk that
+		// declines leaves its hoisted temporaries behind.
+		cur, okt := e.accessChainType(callee, suffix[:len(suffix)-1])
+		if !okt || !e.isFuncCType(cur.ctype) || e.outResultOf(e.funcTypeRet[e.underlyingCType(cur.ctype)]) == "" {
+			return "", false
+		}
+		text, ct, _, okc := e.chainCText(callee, suffix[:len(suffix)-1])
+		if !okc || !e.isFuncCType(ct) || e.outResultOf(e.funcTypeRet[e.underlyingCType(ct)]) == "" {
+			return "", false
+		}
+		bound := e.hoist(ct, func() { e.emit(text) })
+		call := bound + "(&" + out
+		if args := e.valueArgsCText(e.indirectCallee("", ct), ct, suffix[len(suffix)-1].ast); args != "" {
+			call += ", " + args
+		}
+		return call + ")", true
+	}
 	return "", false
+}
+
+// resultCallOf takes apart a call whose several results a statement uses -- a
+// return forwarding them, an argument list they are, a multiple assignment: a
+// call by name or through a chain (directCall, chainCallOf), with another
+// package's variable at its head folded into that variable's global, as every
+// other chain on one is (qualifiedChainBase). Read with the qualifier as the head,
+// `lib.Fn()` for a function variable was looked up as a FUNCTION, and the
+// receiver of `lib.V.Get()` not at all.
+func (e *emitter) resultCallOf(ast []int32) (callee string, suffix []Node, ok bool) {
+	if callee, suffix, ok = e.directCall(ast); !ok {
+		// A receiver reached through an INDEX, `return devs[0].Read()`: directCall
+		// knows the one- and two-step shapes.
+		callee, suffix, ok = e.chainCallOf(ast)
+	}
+	if ok {
+		if mn, rest, isQual := e.qualifiedChainBase(callee, suffix); isQual {
+			callee, suffix = mn, rest
+		}
+	}
+	return callee, suffix, ok
 }
 
 // forwardedCallInto is forwardedCallC for a call that WRITES its results rather
@@ -32689,13 +32763,7 @@ func (e *emitter) valueOutCallC(callee string, suffix []Node, out string) (strin
 // reports which of the two it rendered: a written call is a statement of its own,
 // where a returned one is the initializer of the temporary.
 func (e *emitter) forwardedCallInto(ex Node, out string) (text string, writes, ok bool) {
-	callee, suffix, isCall := e.directCall(ex.ast)
-	if !isCall {
-		// A receiver reached through an INDEX, `return devs[0].Read()`: directCall
-		// knows the one- and two-step shapes, and a multiple assignment already
-		// took the same fallback for the same reason.
-		callee, suffix, isCall = e.chainCallOf(ex.ast)
-	}
+	callee, suffix, isCall := e.resultCallOf(ex.ast)
 	if !isCall {
 		return "", false, false
 	}
@@ -32719,10 +32787,7 @@ func (e *emitter) forwardedCallInto(ex Node, out string) (text string, writes, o
 }
 
 func (e *emitter) forwardedCallC(ex Node) (string, bool) {
-	callee, suffix, ok := e.directCall(ex.ast)
-	if !ok {
-		callee, suffix, ok = e.chainCallOf(ex.ast)
-	}
+	callee, suffix, ok := e.resultCallOf(ex.ast)
 	if !ok {
 		return "", false
 	}
@@ -43022,6 +43087,14 @@ func (e *emitter) emitDestructure(targets []assignTarget, declare []bool, rhs []
 		e.fail("multiple assignment requires a single function call on the right-hand side")
 		return
 	}
+	// Another package's variable at the head, `lib.Fn()` for a function variable,
+	// `lib.V.Get()` for a method of one: the chain from its global, as every other
+	// chain on one is written (qualifiedChainBase). Read with the qualifier as the
+	// head, lib_Fn was looked up as a FUNCTION and the method's receiver not at all,
+	// "target/result count mismatch".
+	if mn, rest, isQual := e.qualifiedChainBase(callee, suffix); isQual {
+		callee, suffix = mn, rest
+	}
 	if callee == "append" && len(suffix) == 1 && suffix[0].sym == CallSuffix && e.universe(callee) {
 		// Two-result append: s, ok = append(s, x) -- the ok form, no trap.
 		e.emitTryAppend(targets, declare, suffix[0].ast)
@@ -43061,34 +43134,6 @@ func (e *emitter) emitDestructure(targets []assignTarget, declare []bool, rhs []
 			e.emitStore(tgt, declare[i], resTypes[i], fmt.Sprintf("%s._%d", tmp, i))
 		}
 		return
-	}
-	// A multi-result call through a function-typed ELEMENT, `a, b := tab[i]()`:
-	// results travel through the leading out parameter, as through any function
-	// value, and the element is bound to a temporary first as every element call
-	// is (doc/call-through-array-element.c).
-	if len(suffix) >= 2 && suffix[len(suffix)-1].sym == CallSuffix {
-		cur, okt := e.accessChainType(callee, suffix[:len(suffix)-1])
-		if okt && e.isFuncCType(cur.ctype) && e.outResultOf(e.funcTypeRet[e.underlyingCType(cur.ctype)]) != "" {
-			// Type-first for the reason emitCallExpr gives: a chainCText walk that
-			// declines leaves its hoisted temporaries behind.
-			text, ct, _, okc := e.chainCText(callee, suffix[:len(suffix)-1])
-			if okc && e.isFuncCType(ct) && e.outResultOf(e.funcTypeRet[e.underlyingCType(ct)]) != "" {
-				bound := e.hoist(ct, func() { e.emit(text) })
-				args := e.valueArgsCText(e.indirectCallee("", ct), ct, suffix[len(suffix)-1].ast)
-				e.ind()
-				e.emit(e.retStructNameOf(resTypes) + " " + tmp + ";\n")
-				call := bound + "(&" + tmp
-				if args != "" {
-					call += ", " + args
-				}
-				e.ind()
-				e.emit(call + ");\n")
-				for i, tgt := range targets {
-					e.emitStore(tgt, declare[i], resTypes[i], fmt.Sprintf("%s._%d", tmp, i))
-				}
-				return
-			}
-		}
 	}
 	// A result struct holding an array is written through the callee's out
 	// parameter (funcStructRet) -- declared first and its address handed over, as
@@ -44107,10 +44152,7 @@ func (e *emitter) forwardedResults(cname string, params []string, elem string, a
 	if e.declInit {
 		return nil, false
 	}
-	callee, suffix, ok := e.directCall(arg.ast)
-	if !ok {
-		callee, suffix, ok = e.chainCallOf(arg.ast) // `sum(devs[i].Read())`
-	}
+	callee, suffix, ok := e.resultCallOf(arg.ast) // `sum(devs[i].Read())`, `sum(lib.Fn())`
 	if !ok {
 		return nil, false
 	}
@@ -44158,6 +44200,19 @@ func (e *emitter) forwardedResults(cname string, params []string, elem string, a
 			return nil, true
 		}
 		e.prologue = append(e.prologue, rt+" "+tmp+";\n", text+";\n")
+		names := make([]string, len(resTypes))
+		for i := range names {
+			names[i] = fmt.Sprintf("%s._%d", tmp, i)
+		}
+		return e.packForwarded(names, elem, at), true
+	}
+	// Through a function VALUE the call writes them through the value's out
+	// parameter (valueOutCallC): rendered as a call returning them, `take(f())`
+	// went out without it, and gcc refused too few arguments.
+	const outMark = "\x00ogo_out\x00"
+	if text, isOut := e.valueOutCallC(callee, suffix, outMark); isOut {
+		tmp := e.newTmp()
+		e.prologue = append(e.prologue, e.retStructNameOf(resTypes)+" "+tmp+";\n", strings.Replace(text, outMark, tmp, 1)+";\n")
 		names := make([]string, len(resTypes))
 		for i := range names {
 			names[i] = fmt.Sprintf("%s._%d", tmp, i)
@@ -46170,13 +46225,18 @@ func (e *emitter) goTypeName(ct string) string {
 		if len(ms) == 0 {
 			return "interface{}"
 		}
+		// The predeclared error is one such interface (errorIfaceCType), and a
+		// message about a value of it said `interface{ Error() }`.
+		if e.isErrorIface(ct) {
+			return "error"
+		}
 		var b strings.Builder
 		b.WriteString("interface{ ")
 		for i, m := range ms {
 			if i != 0 {
 				b.WriteString("; ")
 			}
-			b.WriteString(m.name + "()")
+			b.WriteString(m.name + e.goMethodSig(m))
 		}
 		b.WriteString(" }")
 		return b.String()

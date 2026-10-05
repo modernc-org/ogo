@@ -1651,6 +1651,19 @@ spelling** -- A PACKAGE BOUNDARY IS A ROW said it of the checker; the emitter's
 matchers of a literal's type are the same row. Left, loud: `var b Builder =
 NewBuilder(...)` for a program's own Builder is taken by the checker, the two types
 having one name, and refused by the target's compiler.
+A ninth round -- COBS framing with a CRC-16, typed errors examined by a type switch,
+a fixed-point moving average over an embedded struct, two packages -- met the
+qualified row again on its first line, `n, err := frame.Encode(...)`: a destructured
+call's result type took the library's qualifier even for a name of the universe,
+`lib.error` (typeFromResult asks homeQual, which a single result had asked since
+2026-10-02). Its neighbours, swept as 8 heads by 8 binding forms: another package's
+VARIABLE at a several-result call's head was the qualifier to the emitter
+(resultCallOf folds it, qualifiedChainBase, for a multiple assignment, a return and
+an argument list), and a function ELEMENT's several results were written through
+its out parameter by the multiple assignment alone -- `return tab[i]()` and
+`take(tab[i]())` failed in one package too (valueOutCallC has the case now).
+**One question, one helper**: the three places taking a call of several results
+apart had each its own list of shapes, and each list lacked some.
 
 **AN ARRAY RESULT IS A ROW** (2026-09-23). A call returning an array is a STATEMENT in
 C -- the caller hands the callee storage to write -- so every position one stands in

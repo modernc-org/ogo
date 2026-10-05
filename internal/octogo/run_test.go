@@ -211,6 +211,54 @@ func main() {
 		want: "4 6 5\n",
 	},
 	{
+		// A function ELEMENT of several results forwarded, as a return and as an
+		// argument list: only a multiple assignment wrote the call through the
+		// element's out parameter (valueOutCallC), and the others rendered a call
+		// returning its results, which no C compiler took.
+		name: "several results of a function element, forwarded",
+		src: `type E struct{ n int }
+
+func (e *E) Error() string { return "E" }
+
+var theE E
+
+func two(k int) (int, error) {
+	if k > 0 {
+		return k, nil
+	}
+	return 0, &theE
+}
+
+var fs = []func(int) (int, error){two, two}
+
+var arr = [2]func(int) (int, error){two, two}
+
+type H struct{ tab [2]func(int) (int, error) }
+
+var h H
+
+func take(n int, err error) int {
+	if err != nil {
+		return -n - 100
+	}
+	return n * 10
+}
+
+func fwd(i int) (int, error) { return fs[i](i) }
+
+func fwd2(p *[2]func(int) (int, error)) (int, error) { return p[1](7) }
+
+func main() {
+	h.tab = arr
+	a, e1 := fwd(1)
+	b, e2 := fwd(0)
+	c, e3 := fwd2(&arr)
+	println(a, e1 == nil, b, e2 != nil, c, e3 == nil, take(h.tab[0](4)), take(arr[1](-2)))
+}
+`,
+		want: "1 true 0 true 7 true 40 -100\n",
+	},
+	{
 		// A program's own printf, deferred: its first argument is captured where
 		// the defer stands, as any function's is. It was the builtin to the
 		// emitter, "printf's format must be a constant string"; and the builtin's
@@ -46070,6 +46118,7 @@ const multiPkgWant = "300\nLOUD\n50\n6\n5\n45\n6 1000\n200\n207\n3 100\n4 9\n" +
 	"n=7 34 4\n" +
 	"greet.L 9 4 3 [5 6]\n" +
 	"3 4\n" +
+	"8 true 0 true 10 busy\n" +
 	"1234567891 1 3 8 14 30 39\n" +
 	"2 4 7 4\n" +
 	"4 5 2 3\n" +
@@ -46124,6 +46173,24 @@ const K = 3
 const Limit = 3
 
 const Count = 5
+
+func isNil(err error) bool { return err == nil }
+
+func sumPair(n int, err error) int {
+	if err != nil {
+		return -1
+	}
+	return n
+}
+
+func fwdPair(n int) (int, error) { return lib.PairFn(n) }
+
+func errText(n int, err error) string {
+	if err == nil {
+		return "nil"
+	}
+	return err.Error()
+}
 
 func main() {
 println(greet.Hello(3))
@@ -46794,6 +46861,9 @@ func libShapes() {
 	gm := make(greet.L, 2, 4)
 	gm[1] = 3
 	println(gm.Total(), cap(gm))
+	pn, perr := lib.Pair(4)
+	qn, qerr := lib.PairFn(-1)
+	println(pn, isNil(perr), qn, qerr == lib.ErrBusy, sumPair(lib.PairTab[1](5)), errText(fwdPair(-2)))
 }
 `,
 	"initord/itrace/itrace.ogo": `var Trace int
@@ -47411,6 +47481,20 @@ func Fail(i int) error {
 	}
 	return nil
 }
+
+// Pair, PairFn and PairTab hand out several results, an error among them, for
+// main to destructure and forward: its err was of a type "lib.error", and the
+// variable and the element were no callee to a multiple assignment or a return.
+func Pair(n int) (int, error) {
+	if n < 0 {
+		return 0, ErrBusy
+	}
+	return n * 2, nil
+}
+
+var PairFn = Pair
+
+var PairTab = [2]func(int) (int, error){Pair, Pair}
 
 type Named interface{ Name() string }
 
