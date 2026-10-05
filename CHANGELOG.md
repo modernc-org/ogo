@@ -71,6 +71,9 @@ shipped section tells a reader on that version that they have behaviour they do 
   type written, `var xs lib.Ints = lib.Ints{1, 2}`, the literal's elements were
   written into the slice header. An argument, a field, an assignment, a range, a
   `len` and a `%v` of one were refused. The one-package spelling was right.
+- **`make` of another package's defined slice type builds**: `make(lib.Ints, n)`
+  was refused, "dynamic allocation not supported", where `make(Ints, n)` and
+  `make([]int, n)` were taken.
 - **A keyed literal of a defined slice type builds with its type written**: `var l
   L = L{3: 1}` was "a composite literal key must be a field name".
 - **NewBuilder works in a library package**: `sb := NewBuilder(buf[:])` anywhere

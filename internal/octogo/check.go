@@ -20859,23 +20859,30 @@ func (f *File) namesSliceType(s *Scope, n Node) bool {
 	// unwrapSingle descends while a node has exactly one child, so a bare name
 	// arrives as the TOKEN itself rather than as a Factor holding one: it keeps
 	// going until the count is not one, and a terminal's is zero.
+	//
+	// Another package's, `make(lib.Ints, n)`, is the qualified Factor: read by the
+	// bare name alone, it was "dynamic allocation not supported".
 	fac := unwrapSingle(n)
-	if fac.sym != 0 || f.ch(fac.tok) != IDENT {
+	var id *TypeNodeIdent
+	if fac.sym == 0 && f.ch(fac.tok) == IDENT {
+		id = &TypeNodeIdent{Name: f.tok(fac.tok)}
+	} else if qual, member, ok := f.factorQualifiedIdent(s, fac); ok {
+		id = &TypeNodeIdent{Qualifier: qual, Name: member}
+	} else {
 		return false
 	}
-	name := f.tok(fac.tok).Src()
 	// Bounded rather than cycle-tracked, as typeKind is: a type cycle is reported by
 	// its own pass, and the bound costs nothing here.
 	for range 16 {
-		d, ok := s.find(name).(*TypeDeclaration)
-		if !ok || d.TypeSpec == nil || d.TypeSpec.TypeNode == nil {
+		d, home, ok := f.typeIdentDecl(s, id)
+		if !ok || d.TypeSpec.TypeNode == nil {
 			return false
 		}
 		switch t := d.TypeSpec.TypeNode.(type) {
 		case *TypeNodeSlice:
 			return true
 		case *TypeNodeIdent:
-			name = t.Name.Src()
+			id, s = t, home
 		default:
 			return false
 		}

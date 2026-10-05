@@ -46069,6 +46069,7 @@ const multiPkgWant = "300\nLOUD\n50\n6\n5\n45\n6 1000\n200\n207\n3 100\n4 9\n" +
 	"false true 0 142 4294960296 5 3 false 0 10000\n" +
 	"n=7 34 4\n" +
 	"greet.L 9 4 3 [5 6]\n" +
+	"3 4\n" +
 	"1234567891 1 3 8 14 30 39\n" +
 	"2 4 7 4\n" +
 	"4 5 2 3\n" +
@@ -46790,6 +46791,9 @@ func libShapes() {
 	var lt greet.L = greet.L{3: 1}
 	var sh greet.Shape = &ll
 	printf("%T %d %d %d %v\n", ll, ll.Total(), len(lt), sh.Area(), greet.L{5, 6})
+	gm := make(greet.L, 2, 4)
+	gm[1] = 3
+	println(gm.Total(), cap(gm))
 }
 `,
 	"initord/itrace/itrace.ogo": `var Trace int

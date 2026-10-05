@@ -1635,7 +1635,9 @@ four seeds failing, every one a program's own `type uintptr` -- a struct, a slic
 a uint32 -- which a TYPE position read as C's uintptr_t (cType asks universeType,
 the types alone: `func f(int int) int` reads its types outside the parameters'
 scope). Following it, a program's own `type Builder` had every method refused by
-the checker (isPredeclaredBuilder).
+the checker (isPredeclaredBuilder). Swept with that generator (651a7f5): seeds
+1-2000 on the host shim, clean, and 1-200 on a P2-EDGE, 192 passing, 8 outgrowing a
+cog, none failing (four loads that timed out passed on a second try).
 An eighth round the same day -- a sort library over an interface, a heap of timers
 holding function values, three packages -- matched Go on the host once a literal of
 ANOTHER package's defined slice type was one: `order.Ints{5, 2, 9}` was a plain
@@ -1643,7 +1645,8 @@ slice to the emitter in 11 of 13 positions (namedSliceLitType read a bare name, 
 the expression path's isNamedLitType too, so `lib.Ints{...}` went the struct
 literal's way, its elements into the header). A keyed one with its type written,
 `var l L = L{3: 1}`, was asked for struct fields in one package too (bindLitFuncFields,
-emitLocalChanFieldCells). **A row swept in one package is swept with the qualified
+emitLocalChanFieldCells), and `make(lib.Ints, n)` was "dynamic allocation" to the
+checker (namesSliceType) and no make to the emitter (makeTypeAST). **A row swept in one package is swept with the qualified
 spelling** -- A PACKAGE BOUNDARY IS A ROW said it of the checker; the emitter's
 matchers of a literal's type are the same row. Left, loud: `var b Builder =
 NewBuilder(...)` for a program's own Builder is taken by the checker, the two types

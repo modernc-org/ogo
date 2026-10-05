@@ -22138,7 +22138,7 @@ func (e *emitter) makeSliceCName(initExpr []int32) string {
 	if len(args) == 0 {
 		return ""
 	}
-	typeAST := e.peelToFactorAST(args[0].ast)
+	typeAST := e.makeTypeAST(args[0])
 	if cname, _, ok := e.namedSliceType(typeAST); ok {
 		return cname
 	}
@@ -22146,6 +22146,20 @@ func (e *emitter) makeSliceCName(initExpr []int32) string {
 		return sliceCName(elem)
 	}
 	return ""
+}
+
+// makeTypeAST is make's first argument as the type it names: the Factor's own
+// nodes, or for another package's type, `make(geo.List, n)`, the three tokens a
+// Type spells it with, which namedSliceType reads -- the Factor's were read as no
+// type, and such a make was refused as a make anywhere but a declaration.
+func (e *emitter) makeTypeAST(arg Node) []int32 {
+	typeAST := e.peelToFactorAST(arg.ast)
+	if kids := slices.Collect(it(typeAST)); len(kids) == 2 && kids[1].sym == FactorSuffix {
+		if toks, ok := e.qualifiedTypeTokens(kids[0], kids[1]); ok {
+			return toks
+		}
+	}
+	return typeAST
 }
 
 // isNamedLitType reports whether a factor's children are a type name followed by a
@@ -28162,7 +28176,7 @@ func (e *emitter) makeSliceInit(initExpr []int32) (elem string, lenAST, capAST [
 	// sliceType, which also answers for a VARIABLE and must not resolve a name (see
 	// its comment: a variable of a defined slice type keeps its own name, which is
 	// what its methods hang off).
-	if elem, ok = e.litSliceType(e.peelToFactorAST(args[0].ast)); !ok {
+	if elem, ok = e.litSliceType(e.makeTypeAST(args[0])); !ok {
 		return "", nil, nil, false
 	}
 	lenAST = args[1].ast
