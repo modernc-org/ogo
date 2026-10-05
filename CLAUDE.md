@@ -1719,7 +1719,8 @@ cog, none failing (four loads that timed out passed on a second try); 201-500 wi
 host and passed on a second try). Seeds 501-1000 with 835694b: 469 passing, 30
 outgrowing, seed 852 refused by the backend the same way, none failing. Seeds
 1001-1500 with 508e289: 463 passing, 37 outgrowing, none failing or refused (thirteen
-loads with no output passed on a second).
+loads with no output passed on a second); 1501-2000 with 7c883cd: 459 passing, 41
+outgrowing, none failing (twelve passed on a second load).
 An eighth round the same day -- a sort library over an interface, a heap of timers
 holding function values, three packages -- matched Go on the host once a literal of
 ANOTHER package's defined slice type was one: `order.Ints{5, 2, 9}` was a plain
