@@ -3289,6 +3289,14 @@ func (f *File) checkHeaderStmt(s *Scope, results []retResult, head Node, tail []
 // made into: the result's type is written in the CALLEE's file, so a name of another
 // package arrives unqualified, and the call says which package it belongs to.
 func (f *File) typeFromResult(s *Scope, vd *VarDeclaration, res retResult, qual Token) {
+	// The type itself, for the walks a chain is typed by (varTypeAt): `q, ok :=
+	// decode()` then `m := q.h.String(b)` typed m by nothing, where a q of a written
+	// type typed it.
+	if tn := res.typeNode; tn != nil && vd.inferredType == nil && !qual.IsValid() {
+		if wf := f.fileOfToken(tokOfTypeNode(tn)); wf != nil {
+			vd.inferredType = &typeAt{tn, wf.Scope, wf}
+		}
+	}
 	if tn := res.typeNode; tn != nil {
 		if rnm, named := namedTypeToken(tn); named {
 			vd.typeName, vd.isPtr = rnm, f.isPointerType(s, tn)
@@ -3610,6 +3618,11 @@ func (f *File) checkRange(s *Scope, kw string, fi forInfo) {
 	case fi.hasKey && fi.rangeDefine:
 		// The key is an INDEX, so no element type travels with it.
 		declared = f.declareRangeVar(s, fi.keyVar, PredeclaredInt, true, Token{}, Token{}, false)
+		if id, ok := f.exprSoleIdent(fi.keyVar); ok && declared {
+			if vd, ok := s.find(id.Src()).(*VarDeclaration); ok {
+				vd.rangeIndex = true // an int, whatever is ranged (typeIdentity)
+			}
+		}
 	case fi.hasKey:
 		f.checkRangeTarget(s, fi.keyVar)
 		switch {
@@ -3760,6 +3773,17 @@ func (f *File) rangeElem(s *Scope, expr Node) (elem Kind, hasElem, isInt, isChan
 				return 0, false, false, false // the pointee's element is the emitter's to infer
 			case d.hasElemKind:
 				return d.elemKind, true, false, false // slice or array
+			case d.elemTypeNode != nil || d.elemTypeName.IsValid():
+				// A slice or an array of a DEFINED element, `s := back[:]` of a [3]C,
+				// records the element's name and no Kind: an aggregate, whose key is
+				// an index -- read as an integer range by the numeric case below, it
+				// gave the key the element's type, and `total += v` of a C was taken.
+				if d.elemTypeNode != nil {
+					if k, ok := f.typeKind(s, d.elemTypeNode); ok {
+						return k, true, false, false
+					}
+				}
+				return 0, false, false, false
 			}
 		}
 	}
@@ -5529,6 +5553,15 @@ func (f *File) inferVarFrom(s *Scope, vd *VarDeclaration, init Node) {
 			// to a uint8_t, and `t[0] = 'c'` wrote into a string, which Go refuses
 			// outright.
 			vd.kind, vd.hasKind = k, true
+			// A slice of a DEFINED string type is of that type, `t := gs[1:]` an S:
+			// its methods are asked of it, and `t.name()` was taken.
+			if k == PredeclaredString {
+				if id, ok := f.sliceOfVar(init); ok {
+					if d, isVar := s.find(id.Src()).(*VarDeclaration); isVar && d.typeName.IsValid() && !d.isPtr {
+						vd.typeName, vd.typeQual = d.typeName, d.typeQual
+					}
+				}
+			}
 			return
 		}
 		if d, ok := f.sliceOfVarElem(s, init); ok {
@@ -11692,8 +11725,19 @@ func (f *File) checkStructLit(s *Scope, t litType, st *TypeNodeStruct, at Token,
 	var types []TypeNode
 	for _, fld := range st.Fields {
 		names = append(names, fld.Names...)
+		tn := fld.TypeNode
+		// An EMBEDDED field is of the type it names, `*H` or `D`: it wrote no type
+		// node, and a value for it, positional or keyed, was asked nothing -- `PW{gh,
+		// 1}` put an H where a *H is.
+		if emb, ok := embeddedFieldName(fld); ok {
+			var et TypeNode = &TypeNodeIdent{Qualifier: fld.EmbeddedPkg, Name: emb}
+			if fld.EmbeddedPtr {
+				et = &TypeNodePointer{TypeNode: et}
+			}
+			tn = et
+		}
 		for range fld.Names {
-			types = append(types, fld.TypeNode)
+			types = append(types, tn)
 		}
 	}
 	if !f.checkLitUniform(elements) {
@@ -12854,6 +12898,24 @@ func (f *File) typeIdentity(s *Scope, n Node) (string, bool) {
 	if head, field, ok := f.exprFieldRead(n); ok {
 		if tn, isIdent := f.fieldTypeNode(s, head, field).(*TypeNodeIdent); isIdent && !tn.Qualifier.IsValid() {
 			return f.definedName(s, tn.Name.Src())
+		}
+	}
+	// A variable whose type can be no defined one: declared from a constant, `n :=
+	// 1`, or from len or cap, or a range's index -- an int in each case, where the
+	// silence below let `var c C = n` through.
+	if id, ok := f.exprSoleIdent(n); ok {
+		if d, isVar := s.find(id.Src()).(*VarDeclaration); isVar && d.hasKind && !d.typeName.IsValid() && d.declType == nil {
+			if d.rangeIndex {
+				return "", true
+			}
+			if d.init.sym != 0 && d.declScope != nil {
+				if _, isConst := f.constValue(d.declScope, d.init); isConst {
+					return "", true
+				}
+				if callee, ok := f.exprCallee(d.init); ok && (callee.Src() == "len" || callee.Src() == "cap") && f.isUniverseFunc(d.declScope, callee.Src()) {
+					return "", true
+				}
+			}
 		}
 	}
 	// A Kind with no type token is NOT evidence of a predeclared type. A range
@@ -16519,6 +16581,11 @@ func (f *File) checkAssignType(s *Scope, lhsTok Token, rhsNode Node, plainTarget
 			// Qualified too: `var u lib.T` is a lib.T, and the bare "T" names this
 			// package's T, if it has one.
 			f.checkDefinedType(s, d.declaredTypeName(), rhsNode, "assignment")
+		}
+		// A pointer to a Kind with no type written, `px := &x` for an int x: no name
+		// to ask by, and `px = "a"` was taken.
+		if plainTarget && d.isPtr && !d.typeName.IsValid() && d.hasElemKind {
+			f.checkPointerValue(s, true, "*"+kindName(d.elemKind), rhsNode, "assignment")
 		}
 	}
 	lk, lok := f.identKind(s, lhsTok)

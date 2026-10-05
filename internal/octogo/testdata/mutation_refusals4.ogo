@@ -123,7 +123,61 @@ func values(r any) {
 	_, _ = nm, h
 }
 
+type C int
+
+type E struct{ v int }
+
+type M struct {
+	E
+	*Holder
+	k int
+}
+
+type S string
+
+func (s S) Twice() int { return len(s) * 2 }
+
+var gs2 S = "hello"
+
+type hdr struct{ op int }
+
+func (h hdr) String(b []byte) int { return 1 }
+
+type pkt struct{ h hdr }
+
+func decode() (pkt, bool) { return pkt{}, true }
+
+func declared() {
+	e := E{3}
+	var hd Holder
+	// ERROR "cannot use &e as E value in struct literal: it is a pointer"
+	_ = M{&e, &hd, 4}
+	// ERROR "cannot use hd \(variable of type Holder\) as \*Holder value in struct literal"
+	_ = M{e, hd, 4}
+	n := 1
+	// ERROR "cannot use n of type int as type C in variable declaration"
+	var c C = n
+	for i, _ := range []C{1} {
+		// ERROR "cannot use i of type int as type C in assignment"
+		c += i
+	}
+	x := 1
+	px := &x
+	// ERROR "cannot use .a. \(a value\) as \*int value in assignment"
+	n, px = 5, "a"
+	t := gs2[1:]
+	// ERROR "type S has no method name"
+	_ = t.name()
+	var buf [4]byte
+	q, ok := decode()
+	m := q.h.String(buf[:])
+	// ERROR "cannot index m \(variable of type int\)"
+	println(ok, m[0] == 1)
+	_, _ = c, px
+}
+
 func main() {
+	declared()
 	indexes()
 	addresses(1, 2)
 	targets(R{})

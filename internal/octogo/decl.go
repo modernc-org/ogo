@@ -464,6 +464,7 @@ type VarDeclaration struct {
 	declaration
 	VarSpec     *VarSpecNode
 	clauseOf    *VarDeclaration // a type switch clause's binding: the guard's name it stands for
+	rangeIndex  bool            // a range clause's index, an int whatever is ranged
 	role        varRole
 	kind        Kind  // the variable's type, when it resolves to a predeclared type
 	hasKind     bool  // kind is meaningful

@@ -1021,12 +1021,20 @@ to an interface (only a pointer's was typed), a `make` stored into a field.
 missing may be the variable's type.** And a constant's operation over two classes,
 `const x = 1 + "s"`, was folded by go/constant to an unknown value without a word,
 so the constant was taken even where it was used, and a blank constant was never
-evaluated at all (blankConsts). 14 of the 56 are left: most are the same
-declaration row in shapes not yet probed -- each line is refused alone and taken in
-its program -- and a few are rows of their own, an unnamed struct type's field order,
-`&iota`, `**np` of an `*int`, `printf(...)` used as a value. A call of a call whose
-result is a slice, `var s string = mk()(1)`, has no type yet now that exprCallee no
-longer misreads it.
+evaluated at all (blankConsts). Of the 14 then left, six were the declaration row
+again, and each opened one: an EMBEDDED field had no TypeNode, so a literal's value
+for it was asked nothing (checkStructLit gives it the type it names); a variable
+whose type is an int by its origin -- an untyped constant's `n := 1`, `len` or `cap`,
+a range's index -- had no identity, and typeIdentity's silence let it into any
+defined type over int (it answers for those three now, and for nothing else: a range
+VALUE over a []Word is a Word, which is why the silence was there); a pointer from
+`&x` of a Kind asked nothing of what was stored in it; a slice of a defined string
+type lost the type, the string branch returning before the name was asked; and a
+variable from a several-result call had a name and no type for varTypeAt
+(typeFromResult records it). 8 are left, each loud or Go's own cascade -- an unnamed
+struct type's field order, `&iota`, `**np` of an `*int`, `printf(...)` as a value. A
+call of a call whose result is a slice, `var s string = mk()(1)`, has no type yet now
+that exprCallee no longer misreads it.
 
 **A COMPILER RUN IN A SWEEP IS CAPPED, AND A CRASH IS NOT A REFUSAL** (2026-09-20).
 A probe program is written to find a fault, and a fault is not always a wrong

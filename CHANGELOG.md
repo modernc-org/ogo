@@ -252,6 +252,16 @@ shipped section tells a reader on that version that they have behaviour they do 
 
 ### Behaviour changes
 
+- **A variable's type is asked wherever it can be known**, and what is done with
+  the variable is checked: a variable from an untyped constant, from `len` or
+  `cap`, or a range's index is an int, so `n := 1` then `var c C = n` for a `type C
+  int` is refused as Go refuses it (a defined type was taken for anything of its
+  Kind); a pointer from `&x` for an `x` of a Kind takes only a pointer, `px = "a"`
+  was taken; a slice of a defined string type keeps the type, `t := gs[1:]`; and
+  a variable from one call of several results is typed for the walks a chain is
+  typed by, so `q, ok := decode()` then `q.h.String(b)` is the method's result. An
+  embedded field filled in a literal, positionally or by name, is asked what its
+  value is: `M{&e, ...}` for an embedded `E` was taken.
 - **What the mutation sweeps left taken is refused, as Go refuses it** -- each was a
   C error about generated code: a builtin, a type or a function indexed (`len[0]`,
   `H[0]`, `main[0] = 255`); the address of a literal, `&1`, and an operator over an
