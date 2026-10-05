@@ -24274,6 +24274,15 @@ func (e *emitter) arrayBoundC(sizeAST []int32) (string, bool) {
 // the result matches the C the emitter emits for the same expression. It reports
 // ok=false for a non-constant operand, a comparison or logical operator (not an
 // integer), or an operator it does not fold, leaving the caller its prior behavior.
+// foldIndexConst is a constant index or bound as the integer it is, an integral
+// float spelling included, `pa[1e3:3]`, which foldConstInt does not read.
+func (e *emitter) foldIndexConst(ast []int32) (int64, bool) {
+	if v, ok := e.foldConstInt(ast); ok {
+		return v, true
+	}
+	return e.foldIntegral(ast)
+}
+
 func (e *emitter) foldConstInt(ast []int32) (int64, bool) {
 	return e.foldIntSeq(slices.Collect(it(ast)))
 }
@@ -27696,7 +27705,7 @@ func (e *emitter) reportConstSliceBounds(low, high, max []int32, lenExpr, capExp
 	}
 	lo, okLo := int64(0), true
 	if low != nil {
-		lo, okLo = e.foldConstInt(low)
+		lo, okLo = e.foldIndexConst(low)
 	}
 	hi, okHi := e.foldBoundOrLiteral(high, lenExpr)
 	mx, okMx := e.foldBoundOrLiteral(max, capExpr)
@@ -27912,7 +27921,7 @@ func (e *emitter) constSliceInRange(low, high, max []int32, lenExpr, capExpr str
 // in for an omitted one.
 func (e *emitter) foldBoundOrLiteral(bound []int32, omitted string) (int64, bool) {
 	if bound != nil {
-		return e.foldConstInt(bound)
+		return e.foldIndexConst(bound)
 	}
 	v, err := strconv.ParseInt(omitted, 10, 64)
 	return v, err == nil
@@ -28104,9 +28113,11 @@ func (e *emitter) emitIndex(idxAST []int32, lenExpr string) {
 	idx := func() { e.emitExpr(idxAST) }
 	// An integral float constant, `x[Two]`, as the integer it is (foldIntegral):
 	// written out it is a double, which C does not index by.
-	if _, isInt := e.foldConstInt(idxAST); !isInt {
+	cv, isConst := e.foldConstInt(idxAST)
+	if !isConst {
 		if v, ok := e.foldIntegral(idxAST); ok {
 			idx = func() { e.emit(intCLit(v)) }
+			cv, isConst = v, true
 		}
 	}
 	// A CONSTANT index past a constant extent is a compile error in Go, wherever
@@ -28114,10 +28125,11 @@ func (e *emitter) emitIndex(idxAST []int32, lenExpr string) {
 	// build and READ OUT OF BOUNDS in an --unchecked one, for a program Go refuses
 	// where it is written. Only an extent the compiler knows is bounded here -- a
 	// slice's length is its header's and says nothing at compile time, which is why
-	// Go admits `xs[9]` on one and this does too.
+	// Go admits `xs[9]` on one and this does too. A float spelling, `arr[1e3]`, is
+	// the integer it is here too.
 	if n, err := strconv.Atoi(lenExpr); err == nil {
-		if v, isConst := e.foldConstInt(idxAST); isConst && v >= int64(n) {
-			e.failAt(idxAST, "invalid argument: index %d out of bounds [0:%d]", v, n)
+		if isConst && cv >= int64(n) {
+			e.failAt(idxAST, "invalid argument: index %d out of bounds [0:%d]", cv, n)
 			return
 		}
 	}

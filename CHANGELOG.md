@@ -252,6 +252,19 @@ shipped section tells a reader on that version that they have behaviour they do 
 
 ### Behaviour changes
 
+- **A constant too big for where it stands is refused, as Go refuses it** (a third
+  sweep of mutated run cases): a constant shift past Go's bound, `1 << 2000` and
+  `1 << 0x80000000`, which the compiler computed exactly and ran out of memory on;
+  a literal's index key no int holds, `[5]int{1 << 40: 1}`, which it laid out
+  position by position, out of memory too; a key past an array's length,
+  `[5]int{5: 1}`, `[5]int{4: 1, 2}`, a negative one, and one past what the target's
+  512 KB of Hub RAM holds; an array length no int holds, `[1 << 40]byte`; a
+  constant index no int holds, `s[0x80000000]`, and an integral float one past an
+  array's length, `a[1e3]`; constant slice bounds out of order on a slice,
+  `s[3:2]`, as on an array; a `make` length or capacity no int holds; a shift count
+  no uint holds, `x >> 4294967296`; a constant switch tag no int holds; and a
+  conversion as a `for` post's target, `int64(i)++`. And `-*p` and `^*p` have the
+  pointee's Kind, so `var s string = -*xp` is refused.
 - **A second sweep of run cases mutated by one token refuses what Go refuses**
   (a `*` added or dropped, a type name for another, a field for another): a
   star over a call standing as a statement, `*pf()` and `*println("x")`, and as

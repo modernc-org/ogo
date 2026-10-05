@@ -2362,7 +2362,13 @@ func TestEmitCConstSliceBounds(t *testing.T) {
 			fsys := fstest.MapFS{"main.ogo": &fstest.MapFile{Data: []byte(src)}}
 			pkg, err := Build(-1, []string{"main.ogo"}, fsys)
 			if err != nil {
-				t.Fatalf("Build: %v", err)
+				// Bounds out of order are the checker's since they are on a slice
+				// too (checkConstSliceOrder); its refusal, said as Go says it, is
+				// the one wanted.
+				if !strings.Contains(err.Error(), test.want) {
+					t.Fatalf("Build: %v", err)
+				}
+				return
 			}
 			var buf bytes.Buffer
 			if err := EmitC(pkg, &buf, Checked()); err == nil {
@@ -7719,7 +7725,7 @@ func TestEmitCArrayLitRefused(t *testing.T) {
 		{
 			name: "too many values",
 			src:  "func main() {\n\ta := [3]int{1, 2, 3, 4}\n\tprintln(a[0])\n}\n",
-			want: "too many values in [3]int literal: 4 values but the length is 3",
+			want: "index 3 out of bounds [0:3]",
 		},
 		{
 			// A constant index is supported (see the emitRunCases); a non-constant
@@ -7741,7 +7747,7 @@ func TestEmitCArrayLitRefused(t *testing.T) {
 			// would say "[2]byte", tracking which one was written; this does not.
 			name: "a byte element is not spelled in C",
 			src:  "func main() {\n\ta := [2]byte{1, 2, 3}\n\tprintln(a[0])\n}\n",
-			want: "too many values in [2]uint8 literal: 3 values but the length is 2",
+			want: "index 2 out of bounds [0:2]",
 		},
 		{
 			name: "a rune element is not spelled in C",

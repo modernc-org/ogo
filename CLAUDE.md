@@ -990,6 +990,23 @@ the method's own file). 37 are taken now, all loud at the backend but three:
 `println` of an array or a struct field of one, which this compiler prints by
 design, and a variable named `string` (a type name, which no read resolves, keeps
 it "used").
+A third batch -- two arguments swapped, a literal for a big one (300, 70000, 2^32,
+`1 << 40`, `-129`, `1e3`, `0x80000000`), a value converted to another type, a result
+dropped -- had 85 taken and FOUR COMPILER CRASHES, each out of memory: a constant
+shift computed exactly at any count (`1 << 0x80000000`; go/types bounds it at 1074,
+and so does the folder now, checkConstShiftBound asking it where a declaration's
+folding drops the folder's report) and a literal laid out position by position up
+to a key of `1 << 40` (litPositions; checkLitKeys bounds a key by int, by an
+array's length and by the 512 KB of Hub RAM). **A constant's SIZE is a row**: the
+sweeps had crossed a constant's spellings and types, never its magnitude, and every
+position a constant sizes something -- a key, a length, a capacity, a shift, an
+index -- took one past what the compiler or the target holds. Beside them: a
+float-spelled index or bound, `a[1e3]`, which the emitter's bound check did not
+read (foldIndexConst), constant slice bounds out of order on a slice, a switch tag,
+a shift count past a uint, `int64(i)++` as a for post, and `-*p`, which had no
+Kind. 15 of the 85 are taken now, eight of them the `println` extension. Over the
+three batches, every one of the 1,838 mutants Go accepts and this compiler did is
+accepted still.
 
 **A COMPILER RUN IN A SWEEP IS CAPPED, AND A CRASH IS NOT A REFUSAL** (2026-09-20).
 A probe program is written to find a fault, and a fault is not always a wrong

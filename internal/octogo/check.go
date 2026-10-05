@@ -4415,7 +4415,32 @@ func (f *File) checkForPost(s *Scope, results []retResult, n Node) {
 			}
 		}
 	}
+	for _, l := range lhs {
+		if f.conversionTarget(s, l) {
+			return
+		}
+	}
 	f.checkPostOp(s, lhs, op, opSrc, rhs)
+}
+
+// conversionTarget refuses a target that is a conversion's value, `int64(i)++`
+// and `uint(n) = 5`, as Go does: a value, not a place. A for's post took one in
+// silence, the C incrementing a cast.
+func (f *File) conversionTarget(s *Scope, e Node) bool {
+	fac, ok := f.soleFactorOf(e)
+	if !ok {
+		return false
+	}
+	kids := slices.Collect(it(fac.ast))
+	if len(kids) != 2 || kids[0].sym != 0 || f.ch(kids[0].tok) != IDENT || kids[1].sym != FactorSuffix || !f.soleCallSuffix(kids[1]) {
+		return false
+	}
+	switch s.find(f.tok(kids[0].tok).Src()).(type) {
+	case *TypeDeclaration, *PredeclaredType:
+		f.err(f.tok(fac.Pos()).Position(), "cannot assign to %s (neither addressable nor a map index expression)", f.exprSource(e))
+		return true
+	}
+	return false
 }
 
 // checkPostOp asks of `lhs op rhs` -- an assignment, an increment or a decrement,
@@ -5089,6 +5114,23 @@ func (f *File) exprType(s *Scope, n Node) (Kind, bool) {
 		// handling below, unchanged.
 		if facSet && len(ops) == 1 && f.unaryOp(s, ops[0]) == MUL {
 			if id, ok := f.exprIdent(fac); ok {
+				if d, ok := s.find(id.Src()).(*VarDeclaration); ok && d.isPtr && d.hasElemKind {
+					return d.elemKind, true
+				}
+			}
+		}
+		// And behind the operators that keep a Kind, `-*p` and `^*p`: untyped, so
+		// `-*xp * 0x80000000` multiplied an int by a constant no int holds.
+		if facSet && len(ops) > 1 && f.unaryOp(s, ops[len(ops)-1]) == MUL {
+			keeps := true
+			for _, op := range ops[:len(ops)-1] {
+				switch f.unaryOp(s, op) {
+				case SUB, ADD, XOR:
+				default:
+					keeps = false
+				}
+			}
+			if id, ok := f.exprIdent(fac); ok && keeps {
 				if d, ok := s.find(id.Src()).(*VarDeclaration); ok && d.isPtr && d.hasElemKind {
 					return d.elemKind, true
 				}
@@ -6628,6 +6670,16 @@ func (f *File) checkSwitchGuard(s, ss *Scope, results []retResult, n Node) (Kind
 		// No type to compare the cases with: `switch nil {` was taken.
 		f.err(f.tok(g.tag.Pos()).Position(), "use of untyped nil in switch expression")
 		return 0, false
+	}
+	// A constant tag is of its default type, and an integer one no int holds is
+	// refused there: `switch hz * 0x80000000 / 1000000 {` was taken.
+	if k, ok := f.exprType(ss, g.tag); ok && k == UntypedInt {
+		if cv, ok := f.constNumeric(ss, g.tag); ok && cv.Kind() == constant.Int {
+			if v, exact := constant.Int64Val(cv); !exact || v > math.MaxInt32 || v < math.MinInt32 {
+				f.err(f.tok(g.tag.Pos()).Position(), "cannot use %s (untyped int constant %s) as int value in switch expression (overflows)", f.exprSource(g.tag), cv)
+				return 0, false
+			}
+		}
 	}
 	return f.exprType(ss, g.tag)
 }
@@ -11458,6 +11510,13 @@ func (f *File) checkCompositeLit(s *Scope, t litType, hasID bool, fac, lit Node)
 		// against it exactly as a defined array type's are.
 		if elem, ok := f.bracketLitElem(s, fac); ok {
 			f.checkElemLit(s, t, elem, lit)
+			length := int64(-1)
+			if at, ok := f.litOrConvType(s, fac); ok {
+				if n, ok := f.arrayTypeLen(at, false); ok {
+					length = n
+				}
+			}
+			f.checkLitKeys(s, lit, length)
 		}
 		return
 	}
@@ -11480,6 +11539,11 @@ func (f *File) checkCompositeLit(s *Scope, t litType, hasID bool, fac, lit Node)
 			t.qual = Token{}
 		}
 		f.checkElemLit(s, t, elem, lit)
+		length := int64(-1)
+		if n, ok := f.arrayTypeLen(typeAt{&TypeNodeIdent{Qualifier: t.qual, Name: t.name}, s, f}, false); ok {
+			length = n
+		}
+		f.checkLitKeys(s, lit, length)
 		return
 	}
 	// The type is checked even for "T{}", which supplies no values: naming a
@@ -11839,6 +11903,53 @@ func (f *File) checkElemLit(s *Scope, t litType, elem TypeNode, lit Node) {
 	}
 }
 
+// litIndexLimit is the largest index a slice literal may name: as many elements of
+// one byte as the target's 512 KB of Hub RAM holds. A literal is laid out position
+// by position up to its largest index, and `[]int{1 << 40: 1}` ran the compiler out
+// of memory doing it.
+const litIndexLimit = 512 << 10
+
+// checkLitKeys checks the indexes of an array or a slice literal, as Go does: a
+// key is a non-negative integer constant that an int holds, and every index,
+// keyed or counted on from one, is below an array's length. And below what the
+// target can hold.
+func (f *File) checkLitKeys(s *Scope, lit Node, length int64) {
+	cur := int64(0)
+	for _, el := range compositeLitElements(lit) {
+		idx := cur
+		if el.keyed {
+			cv, ok := f.constNumeric(s, el.key)
+			if !ok || cv.Kind() != constant.Int {
+				return // the emitter's: a key that is no integer constant
+			}
+			pos := f.tok(el.key.Pos()).Position()
+			if constant.Sign(cv) < 0 {
+				f.err(pos, "invalid argument: index %s (constant of type int) must not be negative", f.exprSource(el.key))
+				return
+			}
+			n, exact := constant.Int64Val(cv)
+			if !exact || n > math.MaxInt32 {
+				f.err(pos, "%s (untyped int constant %s) overflows int", f.exprSource(el.key), cv)
+				return
+			}
+			idx = n
+		}
+		pos := f.tok(el.value.Pos()).Position()
+		if el.keyed {
+			pos = f.tok(el.key.Pos()).Position()
+		}
+		switch {
+		case length >= 0 && idx >= length:
+			f.err(pos, "invalid argument: index %d out of bounds [0:%d]", idx, length)
+			return
+		case idx >= litIndexLimit:
+			f.err(pos, "invalid argument: index %d is past what the target's 512 KB of Hub RAM holds", idx)
+			return
+		}
+		cur = idx + 1
+	}
+}
+
 // checkElidedStructLit checks a composite literal whose type is ELIDED, against the
 // type its position implies: an element of an array or a slice literal, `[2]P{{1,
 // 2}}`. It answers to nothing for an element that is not one.
@@ -11853,9 +11964,15 @@ func (f *File) checkElidedStructLit(s *Scope, outer litType, elem TypeNode, valu
 	switch t := elem.(type) {
 	case *TypeNodeArray:
 		f.checkElidedElems(s, outer, t.TypeNode, value)
+		length := int64(-1)
+		if n, ok := f.arrayTypeLen(typeAt{t, s, f}, false); ok {
+			length = n
+		}
+		f.checkLitKeys(s, value, length)
 		return
 	case *TypeNodeSlice:
 		f.checkElidedElems(s, outer, t.TypeNode, value)
+		f.checkLitKeys(s, value, -1)
 		return
 	}
 	id, ok := elem.(*TypeNodeIdent)
@@ -15591,6 +15708,7 @@ func (f *File) checkBinOp(s *Scope, opNode, lNode, rNode Node) {
 		// itself is checked, though: see checkShiftCount.
 		f.checkShiftCount(s, rNode)
 		f.checkShiftedConstant(s, lNode, lk, rNode)
+		f.checkConstShiftBound(s, lNode, rNode)
 	default:
 		f.checkConstOperands(s, lNode, lk, rNode, rk)
 		if (op == QUO || op == REM) && f.constZeroDivisor(s, lk, rNode) {
@@ -15641,6 +15759,17 @@ func (f *File) checkShiftCount(s *Scope, n Node) {
 		}
 	}
 	if constant.Sign(cv) >= 0 {
+		// A count no uint holds, `x >> 4294967296`: Go's error, uint being 32 bits
+		// here; the C shifted by its low word.
+		if iv := constant.ToInt(cv); iv.Kind() == constant.Int {
+			if v, exact := constant.Uint64Val(iv); !exact || v > math.MaxUint32 {
+				if src == iv.String() {
+					f.err(pos, "%s (untyped int constant) overflows uint", src)
+				} else {
+					f.err(pos, "%s (untyped int constant %s) overflows uint", src, iv)
+				}
+			}
+		}
 		return
 	}
 	// Go names the constant and, where the two differ, what it stands for: a
@@ -15651,6 +15780,24 @@ func (f *File) checkShiftCount(s *Scope, n Node) {
 		return
 	}
 	f.err(pos, "invalid operation: negative shift count %s (untyped int constant %s)", src, cv)
+}
+
+// checkConstShiftBound refuses a constant shifted by a constant count past Go's
+// bound, `1 << 2000`: the folder that would compute it refuses it too, in a pass
+// whose reports a declaration drops, and the shift was then emitted as one made at
+// run time, 0 for Go's error. A variable shifted that far is Go's, and zero.
+func (f *File) checkConstShiftBound(s *Scope, lNode, rNode Node) {
+	if _, ok := f.constNumeric(s, lNode); !ok {
+		return
+	}
+	cv, ok := f.constNumeric(s, rNode)
+	if !ok || cv.Kind() != constant.Int || constant.Sign(cv) < 0 {
+		return
+	}
+	if n, exact := constant.Uint64Val(cv); exact && n <= 1023-1+52 {
+		return
+	}
+	f.err(f.tok(rNode.Pos()).Position(), "invalid operation: invalid shift count %s", f.exprSource(rNode))
 }
 
 // checkShiftedConstant refuses an untyped float constant that is not a whole number
@@ -19315,6 +19462,43 @@ func (f *File) checkIndexExprs(s *Scope, n Node) {
 				f.checkIndexValue(s, e)
 			}
 		}
+		f.checkConstSliceOrder(s, c)
+	}
+}
+
+// checkConstSliceOrder refuses constant slice bounds out of order, `s[3:2]`, as Go
+// does whatever is sliced: the emitter asked it of an array, whose extent it knows,
+// and a slice's, `ps[300:2]`, reached the run-time check -- or, unchecked, made a
+// header of negative length.
+func (f *File) checkConstSliceOrder(s *Scope, index Node) {
+	colons := 0
+	var bound [3]int64
+	var known [3]bool
+	var at [3]Node
+	for c := range it(index.ast) {
+		switch {
+		case c.sym == Expression && colons < len(bound):
+			if cv, ok := f.constNumeric(s, c); ok {
+				if iv := constant.ToInt(cv); iv.Kind() == constant.Int {
+					if v, exact := constant.Int64Val(iv); exact {
+						bound[colons], known[colons], at[colons] = v, true, c
+					}
+				}
+			}
+		case c.sym == 0 && f.ch(c.tok) == COLON:
+			colons++
+		}
+	}
+	if colons == 0 {
+		return
+	}
+	for i := 0; i < len(bound); i++ {
+		for j := i + 1; j < len(bound); j++ {
+			if known[i] && known[j] && bound[j] < bound[i] {
+				f.err(f.tok(at[j].Pos()).Position(), "invalid slice indices: %d < %d", bound[j], bound[i])
+				return
+			}
+		}
 	}
 }
 
@@ -19336,6 +19520,21 @@ func (f *File) checkIndexValue(s *Scope, e Node) {
 	if f.isNilOperand(e) {
 		f.err(pos, "cannot convert nil to type int")
 		return
+	}
+	// A constant index no int holds, `s[0x80000000]`, `s[1 << 40]`: Go's error,
+	// where the C wrapped it to a negative index, which the bounds check caught at
+	// run time and an unchecked build read through.
+	if cv, ok := f.constNumeric(s, e); ok {
+		if iv := constant.ToInt(cv); iv.Kind() == constant.Int {
+			if v, exact := constant.Int64Val(iv); !exact || v > math.MaxInt32 {
+				if src := f.exprSource(e); src == iv.String() {
+					f.err(pos, "%s (untyped int constant) overflows int", src)
+				} else {
+					f.err(pos, "%s (untyped int constant %s) overflows int", src, iv)
+				}
+				return
+			}
+		}
 	}
 	// `a[&i]`: exprType answers an address with its pointee's Kind, an int here.
 	if isPtr, known := f.exprPointerness(s, e); known && isPtr {
@@ -21563,6 +21762,7 @@ func (f *File) checkMakeBounds(s *Scope, suffix Node) {
 	if len(args) < 2 {
 		return
 	}
+	over := false
 	val := func(n Node) (int64, bool) {
 		cv, ok := f.constNumeric(s, n)
 		if !ok {
@@ -21572,6 +21772,19 @@ func (f *File) checkMakeBounds(s *Scope, suffix Node) {
 		if iv.Kind() != constant.Int {
 			return 0, false
 		}
+		// One no int holds, `make([]int, 2, 4294967296)`: the backing array it
+		// sizes was written to C as it stands, and the target built it.
+		if v, exact := constant.Int64Val(iv); !exact || v > math.MaxInt32 {
+			if !over {
+				if src := f.exprSource(n); src == iv.String() {
+					f.err(f.tok(n.Pos()).Position(), "%s (untyped int constant) overflows int", src)
+				} else {
+					f.err(f.tok(n.Pos()).Position(), "%s (untyped int constant %s) overflows int", src, iv)
+				}
+			}
+			over = true
+			return 0, false
+		}
 		return constant.Int64Val(iv)
 	}
 	ln, lok := val(args[1])
@@ -21579,7 +21792,7 @@ func (f *File) checkMakeBounds(s *Scope, suffix Node) {
 		f.err(f.tok(args[1].Pos()).Position(), "invalid argument: length %d must not be negative", ln)
 		return
 	}
-	if len(args) < 3 {
+	if len(args) < 3 || over {
 		return
 	}
 	cp, cok := val(args[2])
@@ -24823,6 +25036,12 @@ func (f *File) arrayBound(s *Scope, n Node) ExpressionNode {
 		f.err(pos, "invalid array bound")
 	case constant.Sign(cv.cv) < 0:
 		f.err(pos, "array bound must be non-negative")
+	default:
+		// No int holds it, and no index could reach past what one does: `[1 <<
+		// 40]byte` was written to C as it stands.
+		if v, exact := constant.Int64Val(cv.cv); !exact || v > math.MaxInt32 {
+			f.err(pos, "invalid array length %s (untyped int constant %s)", f.exprSource(n), cv.cv)
+		}
 	}
 	return e
 }
@@ -25980,9 +26199,13 @@ func (f *File) foldConstBinaryOp(opTok Token, lhs constant.Value, op Symbol, rhs
 			return constant.MakeUnknown(), true
 		}
 		if rhs.Kind() != constant.Int {
-			// A non-integer shift count (e.g. a float): leave the result
-			// unmodelled rather than fold.
-			return constant.MakeUnknown(), true
+			// An integral float count, `1 << 1e3`, is the integer it is, as Go has
+			// it; any other non-integer count is left unmodelled.
+			if iv := constant.ToInt(rhs); iv.Kind() == constant.Int {
+				rhs = iv
+			} else {
+				return constant.MakeUnknown(), true
+			}
 		}
 		if constant.Sign(rhs) < 0 {
 			f.err(opTok.Position(), "invalid operation: negative shift count %s", rhs)
@@ -25991,6 +26214,13 @@ func (f *File) foldConstBinaryOp(opTok Token, lhs constant.Value, op Symbol, rhs
 		n, exact := constant.Uint64Val(rhs)
 		if !exact {
 			f.err(opTok.Position(), "invalid operation: shift count too large")
+			return constant.MakeUnknown(), true
+		}
+		// Go's bound on a constant shift, go/types' shiftBound: past it the value is
+		// computed exactly and without end, `1 << 0x80000000` running the compiler
+		// out of memory.
+		if n > 1023-1+52 {
+			f.err(opTok.Position(), "invalid operation: invalid shift count %s", rhs)
 			return constant.MakeUnknown(), true
 		}
 		return constant.Shift(lhs, binaryOpTok(op), uint(n)), true

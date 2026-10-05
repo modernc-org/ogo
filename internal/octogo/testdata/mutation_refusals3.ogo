@@ -1,0 +1,76 @@
+// A third sweep of mutated run cases, with Go as the oracle: a constant too big
+// for where it stands, two arguments swapped, a value converted to another type, a
+// result dropped. Four of the mutants crashed the compiler, out of memory: a
+// constant shift computed exactly at any count, and a literal laid out up to an
+// index of 1 << 40.
+
+var n int
+
+var xp = &n
+
+var s []int
+
+var ps []int
+
+func shifts() {
+	// ERROR "invalid shift count 0x80000000"
+	a := 1 << 0x80000000
+	// ERROR "invalid shift count 2000"
+	b := 1 << 2000
+	// ERROR "invalid shift count 1100"
+	const c = 1 << 1100
+	// ERROR "4294967296 \(untyped int constant\) overflows uint"
+	d := n >> 4294967296
+	_, _, _ = a, b, d
+}
+
+func literals() {
+	// ERROR "1 << 40 \(untyped int constant 1099511627776\) overflows int"
+	a := [5]int{1 << 40: 1}
+	// ERROR "index 5 out of bounds \[0:5\]"
+	b := [5]int{5: 1}
+	// ERROR "index 5 out of bounds \[0:5\]"
+	c := [5]int{4: 1, 2}
+	// ERROR "index -1 \(constant of type int\) must not be negative"
+	d := []int{-1: 1}
+	// ERROR "index 600000 is past what the target's 512 KB of Hub RAM holds"
+	e := []byte{600000: 1}
+	// ERROR "index 2 out of bounds \[0:2\]"
+	f := [2][2]int{{2: 1}}
+	// ERROR "invalid array length 1 << 40"
+	var g [1 << 40]byte
+	_, _, _, _, _, _, _ = a, b, c, d, e, f, g
+}
+
+func indexes() {
+	// ERROR "0x80000000 \(untyped int constant 2147483648\) overflows int"
+	_ = s[0x80000000]
+	// ERROR "4294967296 \(untyped int constant\) overflows int"
+	_ = s[4294967296:]
+	// ERROR "invalid slice indices: 2 < 3"
+	_ = ps[3:2]
+	// ERROR "invalid slice indices: 3 < 1000"
+	_ = ps[1e3:3]
+	// ERROR "4294967296 \(untyped int constant\) overflows int"
+	x := make([]int, 2, 4294967296)
+	_ = x
+}
+
+func others() {
+	// ERROR "cannot assign to int64\(i\)"
+	for i := 0; i < 5; int64(i)++ {
+	}
+	// ERROR "as int value in switch expression \(overflows\)"
+	switch 1 << 40 {
+	}
+	// ERROR "cannot use -\*xp of type int as type string in variable declaration"
+	var t string = -*xp
+	_ = t
+}
+
+func main() {
+	shifts()
+	literals()
+	indexes()
+	others()
+}
