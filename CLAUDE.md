@@ -1941,6 +1941,10 @@ string comparison, which no C compiler takes there. **A rule refused by accident
 is a rule nobody wrote**: widening what is a constant showed four rejections that
 had come from "not a constant", and the verdicts of 5,348 probe programs, HEAD's
 against the tree's, showed nothing else moved.
+The emitter had the operators' half SILENT: `x := p && q` of two Flags was typed a
+plain bool (inferNodes answered every RelOp with bool), so `%v` printed `false` for
+Go's String() of the Flag -- the value-producing shapes of a type are a list to walk
+whole, and the logical operators were not on it (logicalNamedBool).
 
 **A PROGRAM OF SIZE ASKS WHAT NO SWEEP ASKS** (2026-09-27). p2-11, a PDP-11 emulator
 and the first OctoGo program of any size, handed over six findings

@@ -37,6 +37,10 @@ shipped section tells a reader on that version that they have behaviour they do 
 
 ### Fixed
 
+- **`&&` and `||` of a defined bool type are of that type.** `x := p && q` for two
+  `Flag`s was a plain bool: under `%v` it printed `false` where the Flag's
+  `String()` is Go's answer, in silence, `%T` said `bool`, and `x.String()` was
+  "unknown package x".
 - **A boolean constant is written as its value.** `const d = "x" == "x"` was C's
   `ogo_string_eq(...)` in a static initializer, which no C compiler takes, and
   `const e = !d` at package level read another object there, which the target

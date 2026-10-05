@@ -44436,7 +44436,14 @@ func (e *emitter) inferCType(ast []int32) (string, bool) {
 func (e *emitter) inferNodes(nodes []Node) (string, bool) {
 	for _, n := range nodes {
 		if n.sym == RelOp {
-			return cBool, true // a comparison yields bool
+			// A comparison yields bool, and so do && and || -- of a DEFINED bool
+			// type when their operands are of one: `p && q` of two Flags is a Flag.
+			// It was a bool, so `x := p && q` printed `false` under %v where the
+			// Flag's String() was Go's answer, and `x.String()` was refused.
+			if ct, ok := e.logicalNamedBool(nodes); ok {
+				return ct, true
+			}
+			return cBool, true
 		}
 	}
 	// The operands of an arithmetic operator are of one type, so the type of the
@@ -44833,6 +44840,57 @@ func (e *emitter) tokenUntyped(tok int32) bool {
 // inferNode types a single expression node: a wrapper level recurses, a
 // parenthesised expression unwraps, a call takes its result type, an identifier
 // its declared type, and an integer literal is int.
+// logicalNamedBool is the type of an expression whose operators include && or ||,
+// at the level they join: the defined bool type its typed operands share. The
+// comparisons bind tighter, so an operand group holding one is an untyped bool and
+// says nothing, and so does a plain bool operand, which beside a defined one the
+// checker has already found to be untyped.
+func (e *emitter) logicalNamedBool(nodes []Node) (string, bool) {
+	logical := false
+	for _, n := range nodes {
+		if n.sym == RelOp {
+			if op := e.opText(n.ast); op == "&&" || op == "||" {
+				logical = true
+			}
+		}
+	}
+	if !logical {
+		return "", false
+	}
+	named := ""
+	var group []Node
+	flush := func() bool {
+		defer func() { group = group[:0] }()
+		if len(group) != 1 {
+			return true // a comparison: an untyped bool
+		}
+		ct, ok := e.inferNode(group[0])
+		if !ok || ct == cBool || e.underlyingCType(ct) != cBool {
+			return true
+		}
+		if named != "" && named != ct {
+			return false
+		}
+		named = ct
+		return true
+	}
+	for _, n := range nodes {
+		if n.sym == RelOp {
+			if op := e.opText(n.ast); op == "&&" || op == "||" {
+				if !flush() {
+					return "", false
+				}
+				continue
+			}
+		}
+		group = append(group, n)
+	}
+	if !flush() || named == "" {
+		return "", false
+	}
+	return named, true
+}
+
 func (e *emitter) inferNode(n Node) (string, bool) {
 	switch n.sym {
 	case Expression, SimpleExpr, Term:

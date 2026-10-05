@@ -38,6 +38,39 @@ type emitRunCase struct {
 
 var emitRunCases = []emitRunCase{
 	{
+		// && and || of a defined bool type are of that type, as - and ^ of a
+		// defined integer are. They were a bool to the emitter: `x := p && q`
+		// printed false under %v where the Flag's String() is Go's, %T said bool,
+		// and x.String() was "unknown package x".
+		name: "logical operators keep a defined bool type",
+		src: `type Flag bool
+
+func (f Flag) String() string {
+	if f {
+		return "on"
+	}
+	return "off"
+}
+
+func show(f Flag) { printf("%v|", f) }
+
+const k = Flag(true) && Flag(false)
+
+func main() {
+	var p, q Flag = true, false
+	x := p && q
+	y := p || q
+	z := !p
+	printf("%v %v %v %v %v %v\n", x, y, z, p && q, !q, k)
+	printf("%T %T %T %T %T\n", x, y, p || q, k, (p && q))
+	show(p && q)
+	println(x.String(), (p || q).String(), y.String(), k.String())
+	printf("%s %s\n", p && q, k)
+}
+`,
+		want: "off on off off on off\nmain.Flag main.Flag main.Flag main.Flag main.Flag\noff|off on on off\noff off\n",
+	},
+	{
 		// A boolean constant is its value: && and || are folded with Go's
 		// precedences, a string comparison too. Written out, `static const _Bool
 		// e = !d;` read another object, which the target refuses in a static
