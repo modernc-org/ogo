@@ -1636,6 +1636,18 @@ a uint32 -- which a TYPE position read as C's uintptr_t (cType asks universeType
 the types alone: `func f(int int) int` reads its types outside the parameters'
 scope). Following it, a program's own `type Builder` had every method refused by
 the checker (isPredeclaredBuilder).
+An eighth round the same day -- a sort library over an interface, a heap of timers
+holding function values, three packages -- matched Go on the host once a literal of
+ANOTHER package's defined slice type was one: `order.Ints{5, 2, 9}` was a plain
+slice to the emitter in 11 of 13 positions (namedSliceLitType read a bare name, and
+the expression path's isNamedLitType too, so `lib.Ints{...}` went the struct
+literal's way, its elements into the header). A keyed one with its type written,
+`var l L = L{3: 1}`, was asked for struct fields in one package too (bindLitFuncFields,
+emitLocalChanFieldCells). **A row swept in one package is swept with the qualified
+spelling** -- A PACKAGE BOUNDARY IS A ROW said it of the checker; the emitter's
+matchers of a literal's type are the same row. Left, loud: `var b Builder =
+NewBuilder(...)` for a program's own Builder is taken by the checker, the two types
+having one name, and refused by the target's compiler.
 
 **AN ARRAY RESULT IS A ROW** (2026-09-23). A call returning an array is a STATEMENT in
 C -- the caller hands the callee storage to write -- so every position one stands in

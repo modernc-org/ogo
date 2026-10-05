@@ -189,6 +189,28 @@ func main() {
 		want: "3 43 1 7 3 2 -8\n",
 	},
 	{
+		// A keyed literal of a defined slice type with the type written, `var l L
+		// = L{3: 1}`: the declaration asked the literal for struct fields, and its
+		// indexes were "a composite literal key must be a field name".
+		name: "a keyed literal of a defined slice type, its type written",
+		src: `type L []int
+
+func (l L) sum() int {
+	t := 0
+	for _, v := range l {
+		t += v
+	}
+	return t
+}
+
+func main() {
+	var l L = L{3: 1, 1: 5}
+	println(len(l), l.sum(), l[1])
+}
+`,
+		want: "4 6 5\n",
+	},
+	{
 		// A program's own printf, deferred: its first argument is captured where
 		// the defer stands, as any function's is. It was the builtin to the
 		// emitter, "printf's format must be a constant string"; and the builtin's
@@ -46046,6 +46068,7 @@ const multiPkgWant = "300\nLOUD\n50\n6\n5\n45\n6 1000\n200\n207\n3 100\n4 9\n" +
 	"123 p2 9 3 2 3\n1 1 2 1 102 3\n2 1 4 3 4 4 5 134\n21 10 100 200 7 0\n1 5 1 2 4 1 3 21 1 2 12 12 123 123 11\n10 21 110 21 14 true 3 42\n10 3 4\n6 10 2\n6 11\n6 5 8 6\ntrue 110 6 106\n7 5\ntrue true\n40 9 200 3\n" +
 	"false true 0 142 4294960296 5 3 false 0 10000\n" +
 	"n=7 34 4\n" +
+	"greet.L 9 4 3 [5 6]\n" +
 	"1234567891 1 3 8 14 30 39\n" +
 	"2 4 7 4\n" +
 	"4 5 2 3\n" +
@@ -46763,6 +46786,10 @@ func libShapes() {
 	var top uint32 = 4294960296
 	println(lib.Over(top), lib.Over(70), lib.Under(top), lib.Under(70), lib.Counted(), Count, Limit, top < lib.Limit, lib.Limit/top, lib.Limit%top)
 	println(lib.Label(7), lib.Maxed(), max(3, 4))
+	ll := greet.L{2, 3, 4}
+	var lt greet.L = greet.L{3: 1}
+	var sh greet.Shape = &ll
+	printf("%T %d %d %d %v\n", ll, ll.Total(), len(lt), sh.Area(), greet.L{5, 6})
 }
 `,
 	"initord/itrace/itrace.ogo": `var Trace int
@@ -47079,6 +47106,18 @@ func (r *Row) Sum() int { return r[0] + r[1] }
 func Fill(v int) Row { return Row{v, v + 1} }
 
 type L []int
+
+// Total and Area give L methods, for main to call on a variable declared from
+// L's literal, which lost the type: "unknown package", and %T "[]int".
+func (l L) Total() int {
+	t := 0
+	for _, v := range l {
+		t += v
+	}
+	return t
+}
+
+func (l L) Area() int { return len(l) }
 
 type Shape interface {
 Area() int

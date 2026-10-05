@@ -65,6 +65,14 @@ shipped section tells a reader on that version that they have behaviour they do 
   "type Builder has no method Put", in its own package and as `lib.Builder` from
   another; and `type uintptr int16` was written as C's `uintptr_t`, so `z <<= 3`
   was 131064 for Go's -8, in silence on a P2-EDGE.
+- **A literal of another package's defined slice type is of that type**:
+  `xs := lib.Ints{5, 2, 9}` was a plain `[]int`, so `xs.Len()` was "unknown
+  package xs", `&xs` went into no interface, and `%T` printed `[]int`; with the
+  type written, `var xs lib.Ints = lib.Ints{1, 2}`, the literal's elements were
+  written into the slice header. An argument, a field, an assignment, a range, a
+  `len` and a `%v` of one were refused. The one-package spelling was right.
+- **A keyed literal of a defined slice type builds with its type written**: `var l
+  L = L{3: 1}` was "a composite literal key must be a field name".
 - **NewBuilder works in a library package**: `sb := NewBuilder(buf[:])` anywhere
   but the main package was "cannot infer a type for the declaration of sb".
 - **A failed type assertion panics in Go's words**: `interface conversion:

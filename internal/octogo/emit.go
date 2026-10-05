@@ -10004,6 +10004,9 @@ func (e *emitter) hasChanField(ctype string) bool {
 // One filled by anything else is not walked at all: the value copied in brings
 // whatever channels it has.
 func (e *emitter) emitLocalChanFieldCells(nm, ctype string, lit *Node) {
+	if _, isStruct := e.structs[ctype]; !isStruct {
+		return // no fields, and a keyed literal's keys are indexes (bindLitFuncFields)
+	}
 	var values []*Node
 	var fields []structField
 	if lit != nil {
@@ -22145,9 +22148,15 @@ func (e *emitter) makeSliceCName(initExpr []int32) string {
 	return ""
 }
 
-// isNamedLitType reports whether a factor's children are a bare type name followed
-// by a composite literal -- `Row{1, 2, 3}` rather than `[3]int{1, 2, 3}`.
+// isNamedLitType reports whether a factor's children are a type name followed by a
+// composite literal -- `Row{1, 2, 3}` or another package's `geo.Row{1, 2, 3}`,
+// rather than `[3]int{1, 2, 3}`. The qualified spelling went the struct literal's
+// way, which for a slice wrote its first element where its backing pointer goes.
 func (e *emitter) isNamedLitType(kids []Node) bool {
+	if len(kids) == 3 && kids[1].sym == FactorSuffix && kids[2].sym == CompositeLit {
+		_, ok := e.qualifiedTypeTokens(kids[0], kids[1])
+		return ok
+	}
 	return len(kids) == 2 && kids[0].sym == 0 && e.f.ch(kids[0].tok) == IDENT && kids[1].sym == CompositeLit
 }
 
@@ -22177,19 +22186,16 @@ func (e *emitter) soleArrayLit(initExpr []int32) (typeAST []int32, lit Node, ok 
 }
 
 // namedSliceLitType reports the C name of a literal's type when that type is a
-// DEFINED slice type written by name, "List{1, 2, 3}" over "type List []int".
-// litSliceType answers such a literal with its ELEMENT, which is what the backing
-// array and the indexing need; this is the other half, the name a method hangs off.
+// DEFINED slice type written by name, "List{1, 2, 3}" over "type List []int", or
+// another package's, "geo.List{1, 2}". litSliceType answers such a literal with its
+// ELEMENT, which is what the backing array and the indexing need; this is the
+// other half, the name a method hangs off. It read the bare name alone, so a
+// variable declared from another package's literal was a plain slice: its methods
+// were "unknown package xs", it went into no interface, and with the type written,
+// `var xs geo.List = geo.List{1, 2}`, the literal's elements were the header's.
 func (e *emitter) namedSliceLitType(typeAST []int32) (string, bool) {
-	nodes := slices.Collect(it(typeAST))
-	if len(nodes) != 1 || nodes[0].sym != 0 || e.f.ch(nodes[0].tok) != IDENT {
-		return "", false
-	}
-	nm := e.typeCName(e.src(nodes[0].tok))
-	if !e.isSliceCType(e.underlyingCType(nm)) {
-		return "", false
-	}
-	return nm, true
+	cname, _, ok := e.namedSliceType(typeAST)
+	return cname, ok
 }
 
 // arrayLitElement matches a composite-literal element that fills an array-typed
@@ -51994,6 +52000,12 @@ func funcFieldKey(base, field string) string { return base + "." + field }
 func (e *emitter) bindLitFuncFields(varName string, initExpr []int32) {
 	nm, lit, isLit := e.soleCompositeLit(initExpr)
 	if !isLit {
+		return
+	}
+	// Fields are a struct's: a keyed literal of a defined slice or array type,
+	// `var l L = L{3: 1}`, has indexes for keys, which litFieldValues refused as
+	// field names it could not find.
+	if _, isStruct := e.structs[nm]; !isStruct {
 		return
 	}
 	values, fields, ok := e.litFieldValues(nm, lit)
