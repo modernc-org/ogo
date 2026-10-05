@@ -14215,6 +14215,16 @@ func (e *emitter) summaryReach(ast []int32) (out []held) {
 			if e.endsInSliceStep(steps) && len(steps) == 1 {
 				return []held{{base, heldAlias}}
 			}
+			// A field no struct of the program gives a reference, `p.pos` of an
+			// int, holds nothing: read as p's contents, it was the parameter a
+			// local p held as a part, `p := parser{doc: doc}`, and a callee keeping
+			// the int, `fail(p.pos, msg)`, refused every caller passing doc a
+			// local's address.
+			if _, isImport := e.importQualifiers[base]; !isImport {
+				if last := steps[len(steps)-1]; last.sym == Selector && !e.fieldNameMayCarry(e.soleIdent(last.ast)) {
+					return nil
+				}
+			}
 			return []held{{base, heldContents}}
 		}
 		if name, steps, isDeref := e.factorDerefChain(kids); isDeref && len(steps) != 0 {
@@ -14228,6 +14238,32 @@ func (e *emitter) summaryReach(ast []int32) (out []held) {
 		}
 	}
 	return nil
+}
+
+// fieldNameMayCarry reports whether a field of this name may hold a reference: a
+// struct of the program declares one of a type that can (carriesReference), or none
+// declares one at all, which is not knowing. The summaries read shapes, with no
+// type for the value a field is selected from, and the name is what they have.
+func (e *emitter) fieldNameMayCarry(name string) bool {
+	if name == "" {
+		return true
+	}
+	declared := false
+	for _, fields := range e.structs {
+		for _, f := range fields {
+			if f.name != name {
+				continue
+			}
+			declared = true
+			// A function or a channel counts too: the summaries follow a function
+			// value read out of a field to the functions it may be, and a channel
+			// to its sends.
+			if u := e.underlyingCType(f.ctype); e.carriesReference(f.ctype) || e.isFuncCType(u) || e.isChanCType(u) { // an array field's ctype is its element's
+				return true
+			}
+		}
+	}
+	return !declared
 }
 
 // asPart is what a value reaching hs is as a part of something larger: the names it

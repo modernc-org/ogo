@@ -1559,6 +1559,21 @@ under the cast is refused by the target, `_ = gs == S{1, 2}` and `_ = &S{1, 2}`
 (doc/void-cast-compound-literal.c; emitDiscard binds such a value first). No C
 compiler had seen them: a grid asks the checker what it takes, and compiles nothing.
 **A probe's program is a target-build test too, and the warnings are read.**
+A sixth round (2026-10-05) -- a JSON subset parsed into a fixed arena of nodes
+linked by index, recursive descent, errors carrying an offset, path queries --
+matched Go on the host and the board once two FALSE refusals were gone, both in
+v0.48.1. A receiver's type was recorded without its scope (declareReceiver), so
+varTypeAt and every walk over it said nothing of `p.src[i:j]`, and a variable
+declared from it was "a slice"; the slice of a string had no case in the walk
+either (stepsType, indexedStringKind). And the summaries read every field of a
+local holding a parameter as the parameter: `p := parser{doc: doc}; fail(p.pos,
+msg)` refused `Parse(src, &d)` for a fail keeping its int (fieldNameMayCarry: by
+the field's name, the one thing a shape has, and by every struct declaring it).
+Typing the receiver showed a third, older, a misreading it had hidden: soleUnaryExpr
+walked into the parentheses of `(*p)(x)` and dropped the call, so `!(*p)(x)` was
+"it is a function". **A value nothing typed hides every misreading of it**: giving
+the receiver its type put each rule asking about one back to work, and the spec
+tests and the matrices showed the one that answered wrong.
 A fifth round (2026-10-05) -- a string-keyed hash table of open addressing with
 tombstones under an LRU over a fixed node pool, three packages, what a program here
 writes for want of a map -- matched Go on the host and the board once its first line

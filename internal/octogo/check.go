@@ -847,7 +847,11 @@ func (f *File) declareReceiver(s *Scope, n Node) {
 		// "cannot call non-function o" until 2026-09-19.
 		vd.funcSig = f.funcSig(s, tn)
 		vd.isFunc = vd.funcSig != nil
-		vd.declType = tn
+		// And the scope it is written in, which every walk over a variable's type
+		// asks beside it (varTypeAt): without it a receiver had no type to walk, so
+		// `s := p.src[i:j]` for a string field was taken for a slice and refused
+		// where a string is returned.
+		vd.declType, vd.declScope = tn, s
 	}
 	if err := s.add(vd); err != nil {
 		f.err(tok.Position(), "%v", err)
@@ -5266,6 +5270,15 @@ func (f *File) indexedStringKind(s *Scope, n Node) (Kind, bool) {
 		return 0, false
 	}
 	if k, known := f.identKind(s, root); !known || k != PredeclaredString {
+		// A string reached through a field or a call, `p.src[1:n]`, sliced: the
+		// walk types it. It was nothing, and a variable declared from one was
+		// called a slice -- `s := p.src[i:j]; return s` refused for a string
+		// result.
+		if t, ok := f.valueTypeAt(s, n); ok && f.lastStepIsSlice(fac) {
+			if k, ok := t.f.typeKind(t.s, t.tn); ok && k == PredeclaredString {
+				return PredeclaredString, true
+			}
+		}
 		return 0, false
 	}
 	// Exactly one step, an index that is not a slice: anything longer is a chain
@@ -5296,6 +5309,19 @@ func (f *File) indexedStringKind(s *Scope, n Node) (Kind, bool) {
 		return PredeclaredString, true
 	}
 	return PredeclaredUint8, true
+}
+
+// lastStepIsSlice reports whether a Factor's last step is a slice expression.
+func (f *File) lastStepIsSlice(fac Node) bool {
+	var last Node
+	for c := range it(fac.ast) {
+		if c.sym == FactorSuffix {
+			for st := range it(c.ast) {
+				last = st
+			}
+		}
+	}
+	return last.sym == Index && f.indexIsSlice(last)
 }
 
 // inferChanFrom records a variable's channel-ness from its initializer, and reports
@@ -16488,6 +16514,15 @@ func (f *File) exprIsPointer(s *Scope, n Node) bool {
 // expression.
 func (f *File) soleUnaryExpr(n Node) (Node, bool) {
 	for n.sym != UnaryExpr {
+		// A Factor is one only as parentheses and nothing after them: the
+		// Expression inside `(*p)(x)` is no reading of the call of it, which was
+		// taken for the dereference `*p` alone.
+		if n.sym == Factor {
+			in := slices.Collect(it(n.ast))
+			if len(in) != 3 || in[0].sym != 0 || f.ch(in[0].tok) != LPAREN || in[1].sym != Expression {
+				return Node{}, false
+			}
+		}
 		var next Node
 		count := 0
 		for c := range it(n.ast) {
@@ -25659,7 +25694,12 @@ func (f *File) stepsType(t typeAt, steps []Node) (typeAt, bool) {
 					}
 					t = typeAt{&TypeNodeSlice{TypeNode: a.TypeNode}, pu.s, pu.f}
 				default:
-					return typeAt{}, false // a string, or what this does not type
+					// A string's slice is of the string's own type, a defined one's
+					// too, as a slice of a defined slice type is.
+					if k, ok := u.f.typeKind(u.s, u.tn); ok && k == PredeclaredString {
+						continue
+					}
+					return typeAt{}, false // what this does not type
 				}
 				continue
 			}

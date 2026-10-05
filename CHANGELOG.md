@@ -37,6 +37,16 @@ shipped section tells a reader on that version that they have behaviour they do 
 
 ### Fixed
 
+- **A string sliced out of a method receiver's field is a string**: `s :=
+  p.src[i:j]; return s` was refused, "cannot use s as string value in return
+  statement: it is a slice" -- a receiver's type was recorded without the scope to
+  read it in, so no walk could type what it reached. With it, `!(*p)(x)` for a
+  receiver of a defined function type had been read as `*p` without the call.
+- **An int field read out of a struct holding a pointer argument no longer counts
+  as keeping it**: `p := parser{doc: doc}` and then `fail(p.pos, msg)`, for a `fail`
+  storing its int in a package variable, refused every caller passing `doc` a
+  local's address -- a parser's error path. A field read holds a reference only
+  where a field of that name can hold one.
 - **`&&` and `||` of a defined bool type are of that type.** `x := p && q` for two
   `Flag`s was a plain bool: under `%v` it printed `false` where the Flag's
   `String()` is Go's answer, in silence, `%T` said `bool`, and `x.String()` was

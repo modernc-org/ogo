@@ -38,6 +38,101 @@ type emitRunCase struct {
 
 var emitRunCases = []emitRunCase{
 	{
+		// A string sliced out of a receiver's field, declared and returned: the
+		// receiver had no scope recorded for its type, so no walk could type the
+		// slice, and the variable was "a slice" -- refused where a string is
+		// returned. A JSON tokenizer's first function.
+		name: "a string sliced out of a receiver's field",
+		src: `type parser struct {
+	src string
+	pos int
+}
+
+func (p *parser) word() string {
+	start := p.pos
+	for p.pos < len(p.src) && p.src[p.pos] != ' ' {
+		p.pos++
+	}
+	s := p.src[start:p.pos]
+	p.pos++
+	return s
+}
+
+func (p parser) rest() string {
+	s := p.src[p.pos:]
+	return s
+}
+
+func main() {
+	p := parser{src: "alpha beta gamma"}
+	a := p.word()
+	b := p.word()
+	println(a, b, p.rest(), len(a)+len(b))
+}
+`,
+		want: "alpha beta gamma 9\n",
+	},
+	{
+		// A field that holds no reference, read out of a local holding a parameter
+		// as a part, `p := parser{doc: doc}` and then `fail(p.pos, msg)` for a
+		// fail keeping its int: the summaries read p.pos as p's contents, which is
+		// doc itself, and refused every caller passing a local's address.
+		name: "an int field of a holder handed to a keeper",
+		src: `type Doc struct {
+	N    int
+	Vals [4]int
+}
+
+type parser struct {
+	pos int
+	doc *Doc
+}
+
+type perr struct {
+	off int
+	msg string
+}
+
+func (e *perr) Error() string { return e.msg }
+
+var lastErr perr
+
+func fail(off int, msg string) error {
+	lastErr = perr{off, msg}
+	return &lastErr
+}
+
+func (p *parser) put(v int) error {
+	if p.pos >= len(p.doc.Vals) {
+		return fail(p.pos, "full")
+	}
+	p.doc.Vals[p.pos] = v
+	p.pos++
+	p.doc.N = p.pos
+	return nil
+}
+
+func fill(doc *Doc, n int) error {
+	p := parser{doc: doc}
+	for i := 0; i < n; i++ {
+		if err := p.put(i * 10); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func main() {
+	var d Doc
+	err := fill(&d, 3)
+	println(err == nil, d.N, d.Vals[2])
+	err = fill(&d, 6)
+	println(err.Error(), lastErr.off, d.N)
+}
+`,
+		want: "true 3 20\nfull 4 4\n",
+	},
+	{
 		// && and || of a defined bool type are of that type, as - and ^ of a
 		// defined integer are. They were a bool to the emitter: `x := p && q`
 		// printed false under %v where the Flag's String() is Go's, %T said bool,
