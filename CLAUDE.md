@@ -1918,6 +1918,29 @@ swept across the boundary too, with the qualified spelling in every position** -
 2026-09-20 boundary sweep asked what a correct program does, not what an incorrect
 one earns. The interface and member rules (rej_iface) and constants into defined
 types (rej_const) hold through every shape.
+A CONSTANT DECLARATION was the row's last position (2026-10-05, found by a domain
+program's `panic(err)` sweep reaching `const c = S("q")`): a conversion of a constant
+to a string or a bool type was no constant at all to the checker, "S is not a
+constant" (constConversion folded numbers only; the emitter's string fold took
+`string(x)` and no defined type, constRuneStringFactor), and with it open, what had
+been refused by that accident came through -- and its integer twins had been taken
+all along: a constant declaration's initializer was folded and walked by no rule
+(resolveConst keeps the walk's "mismatched types" and asks checkDefinedType), a
+constant declared without a type named nothing (exprNamedType reads its initializer,
+where it is declared, once), a conversion to a PREDECLARED type named nothing where a
+variable of it did (`int(a) + b`), and `&&`, `||` and `!` over a defined bool type
+were no operation of it (operationNamedType, sharedNamedType). 8 of 8 int and float
+programs of the row, 5 of 6 variable ones and all 4 of a third row were taken. That
+third: `&&` and `||` were not FOLDED, "no constant meaning", so `const d = true &&
+false` had no value and no type and `var x int = d` built; they fold with Go's
+precedences now, comparisons first, then && and ||, which the grammar's one flat
+level does not carry -- left to right, `true || false == false` is false. The
+emitter folds a bool constant the same way (foldConstBool) and writes its value: it
+had written the expression into a static initializer, `ogo_string_eq(...)` for a
+string comparison, which no C compiler takes there. **A rule refused by accident
+is a rule nobody wrote**: widening what is a constant showed four rejections that
+had come from "not a constant", and the verdicts of 5,348 probe programs, HEAD's
+against the tree's, showed nothing else moved.
 
 **A PROGRAM OF SIZE ASKS WHAT NO SWEEP ASKS** (2026-09-27). p2-11, a PDP-11 emulator
 and the first OctoGo program of any size, handed over six findings

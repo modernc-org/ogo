@@ -1,0 +1,47 @@
+// A constant of a defined type is of that type wherever it is made -- a
+// conversion, an operation, a constant declared from one -- and two defined types
+// over one kind are two types, as for a variable. A constant declaration's
+// initializer was folded and asked nothing of either, so each of these was taken.
+
+type A int
+
+type B int
+
+type F float64
+
+type G float64
+
+type Flag bool
+
+const ka A = 1
+
+func main() {
+	// ERROR cannot use A\(1\) of type A as type B in constant declaration
+	const c1 B = A(1)
+	// ERROR mismatched types A and B
+	const c2 = ka + B(2)
+	const c3 = A(1) + 1
+	// ERROR cannot use c3 of type A as type int in variable declaration
+	var x3 int = c3
+	// ERROR mismatched types F and G
+	const c4 = F(1) + G(2)
+	const c5 = ka
+	// ERROR cannot use c5 of type A as type B in variable declaration
+	var x5 B = c5
+	var a A = 1
+	var b B = 2
+	// ERROR mismatched types int and B
+	println(int(a) + b)
+	y := int(a)
+	// ERROR mismatched types int and B
+	println(y + b)
+	var fl Flag = true
+	// ERROR cannot use fl && true of type Flag as type bool in variable declaration
+	var b1 bool = fl && true
+	// ERROR cannot use !fl of type Flag as type bool in variable declaration
+	var b2 bool = !fl
+	const d = true && false
+	// ERROR cannot use d of type bool as type int in variable declaration
+	var x6 int = d
+	println(c1, c2, x3, c4, x5, b1, b2, x6)
+}

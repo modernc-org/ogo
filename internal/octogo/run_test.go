@@ -38,6 +38,84 @@ type emitRunCase struct {
 
 var emitRunCases = []emitRunCase{
 	{
+		// A boolean constant is its value: && and || are folded with Go's
+		// precedences, a string comparison too. Written out, `static const _Bool
+		// e = !d;` read another object, which the target refuses in a static
+		// initializer, and `"x" == "x"` was a call no C compiler takes there.
+		name: "boolean constants folded",
+		src: `type Flag bool
+
+const (
+	a = "x" == "x"
+	b = 1 < 2 && "a" < "b"
+	c = true || false == false
+	d = false && true || true
+	e = !(a && b) || c
+	f = Flag(true)
+	g = !f
+)
+
+func main() {
+	const l = "p" != "q"
+	const m = l && !g
+	var x Flag = f || false
+	println(a, b, c, d, e, f, g, l, m, x)
+	if m && "z" > "y" {
+		println("folded")
+	}
+}
+`,
+		want: "true true true true true true false true true true\nfolded\n",
+	},
+	{
+		// A conversion of a constant to a string or a bool type, defined or not,
+		// is a constant: in a constant declaration, an array bound, a
+		// concatenation and a case. Each was "Name is not a constant", and
+		// `Name("q") + "r"` a run-time concatenation refused as an allocation.
+		name: "constant conversions to string and bool types",
+		src: `type Name string
+
+type Flag bool
+
+const (
+	a = Name("ab")
+	b = a + "c"
+	c = string(Name("x"))
+	d = Flag(true)
+	e = !d
+	f = len(Name("abcd"))
+	g = string('é')
+	h = Name('A')
+	k = bool(1 < 2)
+)
+
+var arr [len(Name("xyz"))]int
+
+func (n Name) Len() int { return len(n) }
+
+func show(n Name) { println(n, n.Len()) }
+
+func main() {
+	arr[1] = 7
+	println(a, b, c, d, e, f, g, h, k, len(arr), arr[1])
+	x := Name("q") + "r"
+	y := string(Name("s")) + "t"
+	var z Flag = Flag(false) || d
+	show(Name("lit"))
+	show(b)
+	println(x, y, z, a.Len(), Name("m").Len())
+	printf("%T %T %T %v\n", a, d, x, b)
+	switch b {
+	case Name("abc"):
+		println("abc")
+	}
+	const loc = Name("local") + "!"
+	println(loc, len(loc))
+}
+`,
+		want: "ab abc x true false 4 é A true 3 7\nlit 3\nabc 3\nqr st true 2 1\nmain.Name main.Flag main.Name abc\nabc\nlocal! 6\n",
+	},
+	{
 		// A float constant negated to zero is zero: Go's constants are exact and
 		// have no negative zero. Written out, `-0.0` was C's negative zero, whose
 		// sign division, Signbit and Copysign read -- `1/x` -Inf for Go's +Inf --

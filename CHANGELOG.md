@@ -29,9 +29,18 @@ shipped section tells a reader on that version that they have behaviour they do 
   The value is evaluated before anything is written. Each was refused, "panic is
   supported only with a string argument yet" -- `panic(err)` above all. A struct,
   an array and a slice, of which Go writes only the address of a copy, are refused.
+- **A conversion of a constant to a string or a bool type is a constant**:
+  `const a = Name("ab")`, `string('é')`, `Flag(true)`, `len(Name("abc"))` as an
+  array bound, and `Name("q") + "r"` folded. Each was "Name is not a constant", or
+  refused as a run-time concatenation. And `&&` and `||` of boolean constants are
+  constants too, folded with Go's precedences.
 
 ### Fixed
 
+- **A boolean constant is written as its value.** `const d = "x" == "x"` was C's
+  `ogo_string_eq(...)` in a static initializer, which no C compiler takes, and
+  `const e = !d` at package level read another object there, which the target
+  refuses.
 - **A float constant negated to zero is zero, not C's negative zero.** Go's
   constants are exact and have no negative zero, so `x := -0.0` and `-zero` for a
   `const zero = 0.0` hold 0; written out they were IEEE -0, which division,
@@ -119,6 +128,12 @@ shipped section tells a reader on that version that they have behaviour they do 
 
 ### Behaviour changes
 
+- **A constant of a defined type is that type, and two defined types are two types
+  in a constant expression as in any other**: `const c B = A(1)`, `const c2 = ka +
+  B(2)`, `const c = A(1)` then `var x int = c`, and a predeclared conversion beside
+  a defined type, `int(a) + b`, are refused as Go refuses them; so are `f && true`
+  and `!f` of a defined bool type where a `bool` is wanted, and a constant `true &&
+  false` stored into an int. Each was taken.
 - **A function storing its parameter through a call's result keeps it**, as far as
   its callers are told: `func keep(v *int) { gethp().p = v }`, `fa()[0] = v`, the
   same in a list and in a for clause, and through a dereference of a call. Such a

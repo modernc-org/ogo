@@ -16,6 +16,7 @@ import (
 	"slices"
 	"strconv"
 	"strings"
+	"unicode"
 )
 
 var (
@@ -228,29 +229,30 @@ type File struct {
 	Scope             *Scope // Kind: FileScope, Parent: Universe
 	errList           ErrList
 	hasInvalidImports bool
-	inArrayBound      bool                 // evaluating an array length: suppress "is not a constant"
-	inCaseExpr        bool                 // evaluating a switch case expression, where a non-constant operand is legal: suppress "is not a constant"
-	iota              int                  // the current iota value while evaluating a const spec, or -1 outside a const declaration
-	loopDepth         int                  // number of enclosing "for" loops of the statement being checked, so "defer" inside a loop is rejected and "continue" outside one is
-	switchDepth       int                  // number of enclosing "switch" statements, so a "break" in one is recognised as placed
-	selectDepth       int                  // number of enclosing "select" statements, which a "break" may also leave (but a "continue" may not)
-	labels            []labelFrame         // enclosing labeled "for"/"switch" statements, innermost last, for labeled break/continue resolution
-	labelDecls        map[string]Token     // every label DECLARED in the function being checked: Go scopes a label to the whole function, not to a block, so two sibling ones collide and an unreferenced one is an error
-	labelSites        map[string]labelSite // where each label stands (scope + offset), for goto's two safety rules
-	gotos             []gotoRef            // every goto of the function being checked, resolved after the walk (a goto may name a label declared later)
-	gotoLabels        map[string]bool      // labels any goto of the function names, scanned ahead: a targeted label is reachable however the flow above it ended
-	labelUsed         map[string]bool      // the labels a break or continue named, for the unused report
-	localVars         []*VarDeclaration    // local variables of the function body being checked, for the unused-variable report
-	ifaceInits        []ifaceInit          // package variables' initializers of an interface type, checked once every method is known
-	writeTargets      map[string]bool      // positions of bare "="/":=" assignment-target identifiers in the body: writes, which do not count as uses
-	clauseFallthrough map[string]bool      // positions of "fallthrough" keywords checkSwitch has accounted for, so the statement walk reports only the misplaced ones
-	makeTypeArgs      map[string]bool      // positions of identifiers standing as make's first argument, which is a TYPE and not a value: "make(List, n)" over "type List []int" names one, and the bare-type-name check would otherwise report it as "cannot use type List as a value"
-	defineRedeclares  map[string]bool      // positions of ":=" targets already declared in the same scope, so the emitter assigns to them rather than declaring them again (see emitMultiAssign); file-scoped, read after checking
-	shiftTypes        map[*int32]Kind      // the shift operators whose left operand is an untyped constant, by their place in the AST, and the type the context gives it (see typeShiftOperands); read by the emitter
-	wholeConsts       map[*int32]Kind      // the constants written as FLOATS that stand where an integer type is wanted, `var u uint32 = 3e9`, by their place in the AST, and that type (see checkValueOverflow); read by the emitter
-	wholeConstToks    map[int32]Kind       // the same for a constant that is one token, by the token
-	lenConsts         map[*int32]int64     // the len and cap calls Go makes constants, by their parentheses' place in the AST, and their values (see constLenCap); read by the emitter
-	headerStmts       map[*int32]Node      // the statements standing in headers, `if two(); ok`, as the statements they are, by the place of the header's expression in the AST (see headerStmt); read by the emitter
+	inArrayBound      bool                       // evaluating an array length: suppress "is not a constant"
+	inCaseExpr        bool                       // evaluating a switch case expression, where a non-constant operand is legal: suppress "is not a constant"
+	namingConsts      map[*ConstDeclaration]bool // constants whose initializer exprNamedType is reading, against a cycle
+	iota              int                        // the current iota value while evaluating a const spec, or -1 outside a const declaration
+	loopDepth         int                        // number of enclosing "for" loops of the statement being checked, so "defer" inside a loop is rejected and "continue" outside one is
+	switchDepth       int                        // number of enclosing "switch" statements, so a "break" in one is recognised as placed
+	selectDepth       int                        // number of enclosing "select" statements, which a "break" may also leave (but a "continue" may not)
+	labels            []labelFrame               // enclosing labeled "for"/"switch" statements, innermost last, for labeled break/continue resolution
+	labelDecls        map[string]Token           // every label DECLARED in the function being checked: Go scopes a label to the whole function, not to a block, so two sibling ones collide and an unreferenced one is an error
+	labelSites        map[string]labelSite       // where each label stands (scope + offset), for goto's two safety rules
+	gotos             []gotoRef                  // every goto of the function being checked, resolved after the walk (a goto may name a label declared later)
+	gotoLabels        map[string]bool            // labels any goto of the function names, scanned ahead: a targeted label is reachable however the flow above it ended
+	labelUsed         map[string]bool            // the labels a break or continue named, for the unused report
+	localVars         []*VarDeclaration          // local variables of the function body being checked, for the unused-variable report
+	ifaceInits        []ifaceInit                // package variables' initializers of an interface type, checked once every method is known
+	writeTargets      map[string]bool            // positions of bare "="/":=" assignment-target identifiers in the body: writes, which do not count as uses
+	clauseFallthrough map[string]bool            // positions of "fallthrough" keywords checkSwitch has accounted for, so the statement walk reports only the misplaced ones
+	makeTypeArgs      map[string]bool            // positions of identifiers standing as make's first argument, which is a TYPE and not a value: "make(List, n)" over "type List []int" names one, and the bare-type-name check would otherwise report it as "cannot use type List as a value"
+	defineRedeclares  map[string]bool            // positions of ":=" targets already declared in the same scope, so the emitter assigns to them rather than declaring them again (see emitMultiAssign); file-scoped, read after checking
+	shiftTypes        map[*int32]Kind            // the shift operators whose left operand is an untyped constant, by their place in the AST, and the type the context gives it (see typeShiftOperands); read by the emitter
+	wholeConsts       map[*int32]Kind            // the constants written as FLOATS that stand where an integer type is wanted, `var u uint32 = 3e9`, by their place in the AST, and that type (see checkValueOverflow); read by the emitter
+	wholeConstToks    map[int32]Kind             // the same for a constant that is one token, by the token
+	lenConsts         map[*int32]int64           // the len and cap calls Go makes constants, by their parentheses' place in the AST, and their values (see constLenCap); read by the emitter
+	headerStmts       map[*int32]Node            // the statements standing in headers, `if two(); ok`, as the statements they are, by the place of the header's expression in the AST (see headerStmt); read by the emitter
 	parser            Parser
 	tld               *Scope // tld.Nodes are later moved into (*Package).Scope. Kind: PackageScope, Parent: .Scope.
 }
@@ -12360,8 +12362,17 @@ func (f *File) checkDefinedType(s *Scope, wantName string, value Node, what stri
 		if !ok || kindCategory(wantKind) == catUnknown {
 			return
 		}
-		if haveKind, ok = f.exprType(s, value); !ok || kindCategory(haveKind) == catUnknown || isUntypedKind(haveKind) {
+		if haveKind, ok = f.exprType(s, value); !ok || kindCategory(haveKind) == catUnknown {
 			return
+		}
+		if isUntypedKind(haveKind) {
+			// A logical operation or a negation over a defined bool type is of that
+			// type, `f && true`, `!f`, and so is a constant declared from one,
+			// though each is typed as an untyped bool here: asked its name, it has
+			// one.
+			if nm, _, isPtr, named := f.exprNamedType(s, value); !named || isPtr || !nm.IsValid() || kindCategory(haveKind) != catBool {
+				return
+			}
 		}
 	}
 	have, ok := f.typeIdentity(s, value)
@@ -16846,17 +16857,28 @@ func (f *File) operationNamedType(s *Scope, n Node) (name, qual Token, ok bool) 
 	switch n.sym {
 	case Expression:
 		var operands []Node
+		logical := true
 		for _, c := range kids {
 			switch c.sym {
 			case RelOp:
-				return Token{}, Token{}, false
+				if o := Symbol(f.tok(c.Pos()).Ch); o != LAND && o != LOR {
+					logical = false
+				}
 			case SimpleExpr:
 				operands = append(operands, c)
 			}
 		}
-		if len(operands) == 1 {
+		switch {
+		case len(operands) == 1:
 			return f.operationNamedType(s, operands[0])
+		case logical && len(operands) > 1:
+			// `f && g`, `f || true` of a defined bool type: the type the typed
+			// operands share, an untyped one taking it, as an arithmetic level's.
+			// A comparison among them is left alone, its groups being bools of no
+			// name until it is asked which.
+			return f.sharedNamedType(s, operands)
 		}
+		return Token{}, Token{}, false
 	case SimpleExpr, Term:
 		var operands []Node
 		shift := false
@@ -16885,18 +16907,7 @@ func (f *File) operationNamedType(s *Scope, n Node) (name, qual Token, ok bool) 
 			}
 			return f.operandNamedType(s, operands[0])
 		}
-		found := false
-		for _, o := range operands {
-			if k, isK := f.exprType(s, o); isK && isUntypedKind(k) {
-				continue // an untyped constant takes the other operand's type
-			}
-			nm, ql, isNamed := f.operandNamedType(s, o)
-			if !isNamed || (found && (nm.Src() != name.Src() || ql.Src() != qual.Src())) {
-				return Token{}, Token{}, false
-			}
-			name, qual, found = nm, ql, true
-		}
-		return name, qual, found
+		return f.sharedNamedType(s, operands)
 	case UnaryExpr:
 		var fac Node
 		hasFac := false
@@ -16906,9 +16917,11 @@ func (f *File) operationNamedType(s *Scope, n Node) (name, qual Token, ok bool) 
 				fac, hasFac = c, true
 			case UnaryOp:
 				switch f.unaryOp(s, c) {
-				case SUB, ADD, XOR:
+				case SUB, ADD, XOR, NOT:
+					// `!f` of a defined bool type is one, as `-a` of a defined
+					// integer is.
 				default:
-					return Token{}, Token{}, false // !x is a bool; &x, *p and <-ch are exprNamedType's own
+					return Token{}, Token{}, false // &x, *p and <-ch are exprNamedType's own
 				}
 			}
 		}
@@ -16921,6 +16934,24 @@ func (f *File) operationNamedType(s *Scope, n Node) (name, qual Token, ok bool) 
 		}
 	}
 	return Token{}, Token{}, false
+}
+
+// sharedNamedType is the named type the typed operands of one level share, an
+// untyped constant taking it, and nothing where they share none, or one has none or
+// an unknown one.
+func (f *File) sharedNamedType(s *Scope, operands []Node) (name, qual Token, ok bool) {
+	found := false
+	for _, o := range operands {
+		if k, isK := f.exprType(s, o); isK && isUntypedKind(k) {
+			continue // an untyped constant takes the other operand's type
+		}
+		nm, ql, isNamed := f.operandNamedType(s, o)
+		if !isNamed || (found && (nm.Src() != name.Src() || ql.Src() != qual.Src())) {
+			return Token{}, Token{}, false
+		}
+		name, qual, found = nm, ql, true
+	}
+	return name, qual, found
 }
 
 // operandNamedType is exprNamedType for one operand of an operation -- a Term or a
@@ -17130,6 +17161,24 @@ func (f *File) exprNamedType(s *Scope, n Node) (name, qual Token, isPtr, ok bool
 				return nm, namedTypeQual(c.ConstSpec.TypeNode), false, true
 			}
 		}
+		// And one declared WITHOUT a type takes its initializer's, `const c =
+		// A(1)` or `const d = ka + 1`: it named nothing, so `var x int = c` went
+		// through. Asked where the constant is declared, its initializer being
+		// that file's tokens, and once: `const a = b; const b = a` is a cycle the
+		// value's resolution reports.
+		if c, ok := s.find(id.Src()).(*ConstDeclaration); ok && c.ConstSpec != nil && c.ConstSpec.TypeNode == nil && c.ConstSpec.hasExpr && !isPtr && !isDeref {
+			if f.namingConsts == nil {
+				f.namingConsts = map[*ConstDeclaration]bool{}
+			}
+			if !f.namingConsts[c] {
+				f.namingConsts[c] = true
+				defer delete(f.namingConsts, c)
+				wf, ws := f.constHome(s, c)
+				if nm, ql, _, named := wf.exprNamedType(ws, c.ConstSpec.exprNode); named {
+					return nm, ql, false, true
+				}
+			}
+		}
 		return Token{}, Token{}, false, false
 	}
 	// A value taken out of another package -- an element, a field, a function's or a
@@ -17181,6 +17230,12 @@ func (f *File) exprNamedType(s *Scope, n Node) (name, qual Token, isPtr, ok bool
 	// check that keys on a named type was skipped for it, so a method called on one
 	// went unchecked to the C compiler.
 	if _, isType := s.find(callee.Src()).(*TypeDeclaration); isType {
+		return callee, Token{}, isPtr, true
+	}
+	// And so does one to a PREDECLARED type, `int(a)`, as a variable declared
+	// `int` is named: it named nothing, so `int(a) + b` for a defined b, and a
+	// variable declared from it, went through where Go refuses mismatched types.
+	if _, isType := s.find(callee.Src()).(*PredeclaredType); isType {
 		return callee, Token{}, isPtr, true
 	}
 	var sig *SignatureNode
@@ -24301,6 +24356,24 @@ func (f *File) resolveConst(s *Scope, cd *ConstDeclaration) {
 		exprPos = f.tok(cs.exprNode.Pos()).Position()
 		cs.Expression = f.expression(s, cs.exprNode)
 		cs.Value = f.evalConstExpr(cs.Expression)
+		// Its operands are asked what a variable's initializer's are about their
+		// types: `ka + B(2)` for two defined types was folded and taken, which Go
+		// refuses as mismatched types. Only that is kept of the walk: the value's
+		// own evaluation has said everything else in its words, and the walk
+		// knows no iota. And a written type is asked the value's identity, `const
+		// c B = A(1)`.
+		n0 := len(f.errList)
+		f.checkNames(s, cs.exprNode)
+		kept := f.errList[:n0]
+		for _, e := range f.errList[n0:] {
+			if strings.Contains(e.Err.Error(), "mismatched types") {
+				kept = append(kept, e)
+			}
+		}
+		f.errList = kept
+		if cs.TypeNode != nil {
+			f.checkDefinedType(s, f.typeNodeString(cs.TypeNode, false), cs.exprNode, "constant declaration")
+		}
 	} else if cs.node.sym != 0 {
 		// A source const spec with no expression (and none to inherit). The
 		// predeclared true/false/nil carry no source node and already have a value,
@@ -24699,6 +24772,14 @@ func (f *File) levelExpr(s *Scope, n Node) ExpressionNode {
 }
 
 func (f *File) expression(s *Scope, n Node) (r ExpressionNode) {
+	// Folded with Go's precedences, which the grammar's one flat level does not
+	// carry: a comparison binds tighter than &&, and && tighter than ||. So the
+	// comparisons of each group between two logical operators are folded first, left
+	// to right, then the groups joined by && and those by ||. && and || were not
+	// folded at all, so `const d = true && false` had no value and no type, and
+	// `var x int = d` went through as the C compiler's 0.
+	var groups []ExpressionNode
+	var logical []Symbol
 	var op Symbol
 	for n := range it(n.ast) {
 		switch n.sym {
@@ -24710,12 +24791,43 @@ func (f *File) expression(s *Scope, n Node) (r ExpressionNode) {
 				r = f.foldCompare(r, op, e)
 			}
 		case RelOp:
-			op = f.relOp(s, n)
+			switch op = f.relOp(s, n); op {
+			case LAND, LOR:
+				groups, logical, r = append(groups, r), append(logical, op), nil
+			}
 		default:
 			panic(todo("", f.tok(n.Pos()).Position(), n.sym))
 		}
 	}
-	return r
+	if len(groups) == 0 || r == nil {
+		return r
+	}
+	groups = append(groups, r)
+	var ors []ExpressionNode
+	cur := groups[0]
+	for i, op := range logical {
+		if op == LAND {
+			cur = foldLogical(cur, token.LAND, groups[i+1])
+			continue
+		}
+		ors, cur = append(ors, cur), groups[i+1]
+	}
+	for _, e := range ors {
+		cur = foldLogical(e, token.LOR, cur)
+	}
+	return cur
+}
+
+// foldLogical folds "lhs op rhs" for && and || of two boolean constants, the result
+// of the type a typed operand has; anything else is an unknown constant, as
+// foldCompare answers.
+func foldLogical(lhs ExpressionNode, op token.Token, rhs ExpressionNode) ExpressionNode {
+	lc, lok := lhs.Value().(constVal)
+	rc, rok := rhs.Value().(constVal)
+	if !lok || !rok || lc.cv == nil || rc.cv == nil || lc.cv.Kind() != constant.Bool || rc.cv.Kind() != constant.Bool {
+		return constVal{cv: constant.MakeUnknown()}
+	}
+	return constVal{cv: constant.BinaryOp(lc.cv, op, rc.cv)}.sameTypeAs(lc, rc)
 }
 
 // relOp returns the operator symbol of a RelOp node.
@@ -25174,6 +25286,26 @@ func (f *File) constConversion(s *Scope, n Node) (ExpressionNode, bool) {
 	}
 	cv := uc.cv
 	switch {
+	case k == PredeclaredString:
+		// `Name("ab")`, `string(Name("x"))` and `string('é')`: a string constant,
+		// and a rune's UTF-8, U+FFFD for an integer that is no rune, as Go has it.
+		// They were "Name is not a constant" in a constant declaration, and so was
+		// `len(Name("abc"))`.
+		switch cv.Kind() {
+		case constant.String:
+		case constant.Int:
+			r, exact := constant.Int64Val(cv)
+			if !exact || r < 0 || r > unicode.MaxRune {
+				r = unicode.ReplacementChar
+			}
+			cv = constant.MakeString(string(rune(r)))
+		default:
+			return nil, false
+		}
+	case isBoolKind(k):
+		if cv.Kind() != constant.Bool {
+			return nil, false
+		}
 	case isFloatKind(k):
 		cv = constant.ToFloat(cv)
 		if cv.Kind() == constant.Unknown {

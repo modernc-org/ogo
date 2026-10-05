@@ -5645,7 +5645,7 @@ func typeNameCollisions(src []byte, names map[string]bool) map[string]bool {
 // emitProgram is EmitC's one pass. rename lists the main-package types spelled
 // ogo_T_<name> in C (see typeMangle).
 func emitProgram(pkg *Package, w io.Writer, opts []EmitOption, rename map[string]bool) error {
-	e := &emitter{renameTypes: rename, renamedTypes: map[string]string{}, includes: map[string]bool{}, funcRet: map[string][]string{}, funcSliceParams: map[string][]string{}, funcVariadic: map[string]int{}, nilHelpers: map[string]bool{}, initSkew: map[string]bool{}, arrPtrHelpers: map[string]arrDim{}, funcArrayRet: map[string]arrDim{}, funcStructRet: map[string]string{}, funcArrayParams: map[string][]arrDim{}, anonStructNames: map[string]string{}, methodValueTypes: map[string]funcValueType{}, methodValueOf: map[string]string{}, methodExprNames: map[string]string{}, funcParams: map[string][]string{}, methodPtr: map[string]bool{}, recvByRef: map[string]bool{}, globals: map[string]string{}, structs: map[string][]structField{}, namedTypes: map[string]bool{}, typeNames: map[string]bool{}, interfaceTypes: map[string]bool{}, ifaceMethods: map[string][]ifaceMethod{}, anonIfaceNames: map[string]string{}, anonIfaceMinted: map[string]bool{}, ifaceASTs: map[string]ifaceAST{}, ifaceVTables: map[string]bool{}, namedUnderlying: map[string]string{}, namedArrays: map[string]arrDim{}, constInt: map[string]string{}, constVal: map[string]constant.Value{}, constWide: map[string]string{}, constStr: map[string]string{}, constUntyped: map[string]bool{}, constHuge: map[string]bool{}, arrays: map[string]arrDim{}, globalArrays: map[string]arrDim{}, sliceVars: map[string]string{}, globalSliceVars: map[string]string{}, chanElems: map[string]bool{}, chanInitElems: map[string]bool{}, chanSendElems: map[string]bool{}, chanRecvElems: map[string]bool{}, chanTryRecvElems: map[string]bool{}, chanTrySendElems: map[string]bool{}, chanGatedSendElems: map[string]bool{}, aliasOf: map[string]string{}, localTypes: map[string]string{}, gotoTargets: map[string]bool{}, chanCloseElems: map[string]bool{}, chanRecv2Elems: map[string]bool{}, mathWrappers: map[string]bool{}, chanElemByName: map[string]string{}, sliceElems: map[string]bool{}, sliceElemByName: map[string]string{}, appendElems: map[string]bool{}, tryappendElems: map[string]bool{}, appendSliceElems: map[string]bool{}, tryappendSliceEls: map[string]bool{}, appendokStructs: map[string]bool{}, copyElems: map[string]bool{}, resliceElems: map[string]bool{}, reslice3Elems: map[string]bool{}, clearElems: map[string]bool{}, minElems: map[string]bool{}, maxElems: map[string]bool{}, printSliceElems: map[string]bool{}, printStructs: map[string]string{}, printIfaces: map[string]string{}, printlnElems: map[string]bool{}, switchBreakUsed: map[string]bool{}, labelBreak: map[string]string{}, labelContinue: map[string]string{}, labelUsed: map[string]bool{}, eqStructs: map[string]bool{}, eqArrays: map[string]arrDim{}, frameBacked: map[string]bool{}, frameHolder: map[string]string{}, crossParams: map[string][]leak{}, crossContents: map[string][]leak{}, retContents: map[string][]bool{}, recvContents: map[string]leak{}, paramCalls: map[string][]paramCall{}, frameCalls: map[string][]frameCall{}, localConstSpecs: map[string]localConstSpec{}, inheritedTypes: map[string]bool{}, funcValueMembers: map[string][]string{}, methodExprMembers: map[string]emMethodExpr{}, memberShown: map[string]string{}, litLifted: map[string][]string{}, methodNames: map[string]bool{}, recvLeaks: map[string]leak{}, retRecv: map[string]bool{}, crossInto: map[string][]uint32{}, ifaceSummaries: map[string]ifaceSummary{}, retParams: map[string][]bool{}, funcValueOf: map[string]string{}, crossNames: map[string]string{}, initNames: map[string]string{}, funcValueTypes: map[string]funcValueType{}, funcTypeNames: map[string]string{}, funcTypeRet: map[string][]string{}, funcTypeParams: map[string][]string{}, funcTypeVariadic: map[string]int{}, recFuncTypes: map[string]bool{}, recFuncShapes: map[string]string{}, retStructs: map[string]string{}, retStructByKey: map[string]string{}, shiftHelpers: map[string][2]string{}, shiftCTypes: map[*int32]string{}, shiftWalked: map[shiftWalkKey]bool{}, shiftIn: map[*int32]bool{}, divHelpers: map[string][2]string{}, funcValueWrappers: map[string]string{}, deferReplay: -1, iota: -1}
+	e := &emitter{renameTypes: rename, renamedTypes: map[string]string{}, includes: map[string]bool{}, funcRet: map[string][]string{}, funcSliceParams: map[string][]string{}, funcVariadic: map[string]int{}, nilHelpers: map[string]bool{}, initSkew: map[string]bool{}, arrPtrHelpers: map[string]arrDim{}, funcArrayRet: map[string]arrDim{}, funcStructRet: map[string]string{}, funcArrayParams: map[string][]arrDim{}, anonStructNames: map[string]string{}, methodValueTypes: map[string]funcValueType{}, methodValueOf: map[string]string{}, methodExprNames: map[string]string{}, funcParams: map[string][]string{}, methodPtr: map[string]bool{}, recvByRef: map[string]bool{}, globals: map[string]string{}, structs: map[string][]structField{}, namedTypes: map[string]bool{}, typeNames: map[string]bool{}, interfaceTypes: map[string]bool{}, ifaceMethods: map[string][]ifaceMethod{}, anonIfaceNames: map[string]string{}, anonIfaceMinted: map[string]bool{}, ifaceASTs: map[string]ifaceAST{}, ifaceVTables: map[string]bool{}, namedUnderlying: map[string]string{}, namedArrays: map[string]arrDim{}, constInt: map[string]string{}, constVal: map[string]constant.Value{}, constBool: map[string]bool{}, constWide: map[string]string{}, constStr: map[string]string{}, constUntyped: map[string]bool{}, constHuge: map[string]bool{}, arrays: map[string]arrDim{}, globalArrays: map[string]arrDim{}, sliceVars: map[string]string{}, globalSliceVars: map[string]string{}, chanElems: map[string]bool{}, chanInitElems: map[string]bool{}, chanSendElems: map[string]bool{}, chanRecvElems: map[string]bool{}, chanTryRecvElems: map[string]bool{}, chanTrySendElems: map[string]bool{}, chanGatedSendElems: map[string]bool{}, aliasOf: map[string]string{}, localTypes: map[string]string{}, gotoTargets: map[string]bool{}, chanCloseElems: map[string]bool{}, chanRecv2Elems: map[string]bool{}, mathWrappers: map[string]bool{}, chanElemByName: map[string]string{}, sliceElems: map[string]bool{}, sliceElemByName: map[string]string{}, appendElems: map[string]bool{}, tryappendElems: map[string]bool{}, appendSliceElems: map[string]bool{}, tryappendSliceEls: map[string]bool{}, appendokStructs: map[string]bool{}, copyElems: map[string]bool{}, resliceElems: map[string]bool{}, reslice3Elems: map[string]bool{}, clearElems: map[string]bool{}, minElems: map[string]bool{}, maxElems: map[string]bool{}, printSliceElems: map[string]bool{}, printStructs: map[string]string{}, printIfaces: map[string]string{}, printlnElems: map[string]bool{}, switchBreakUsed: map[string]bool{}, labelBreak: map[string]string{}, labelContinue: map[string]string{}, labelUsed: map[string]bool{}, eqStructs: map[string]bool{}, eqArrays: map[string]arrDim{}, frameBacked: map[string]bool{}, frameHolder: map[string]string{}, crossParams: map[string][]leak{}, crossContents: map[string][]leak{}, retContents: map[string][]bool{}, recvContents: map[string]leak{}, paramCalls: map[string][]paramCall{}, frameCalls: map[string][]frameCall{}, localConstSpecs: map[string]localConstSpec{}, inheritedTypes: map[string]bool{}, funcValueMembers: map[string][]string{}, methodExprMembers: map[string]emMethodExpr{}, memberShown: map[string]string{}, litLifted: map[string][]string{}, methodNames: map[string]bool{}, recvLeaks: map[string]leak{}, retRecv: map[string]bool{}, crossInto: map[string][]uint32{}, ifaceSummaries: map[string]ifaceSummary{}, retParams: map[string][]bool{}, funcValueOf: map[string]string{}, crossNames: map[string]string{}, initNames: map[string]string{}, funcValueTypes: map[string]funcValueType{}, funcTypeNames: map[string]string{}, funcTypeRet: map[string][]string{}, funcTypeParams: map[string][]string{}, funcTypeVariadic: map[string]int{}, recFuncTypes: map[string]bool{}, recFuncShapes: map[string]string{}, retStructs: map[string]string{}, retStructByKey: map[string]string{}, shiftHelpers: map[string][2]string{}, shiftCTypes: map[*int32]string{}, shiftWalked: map[shiftWalkKey]bool{}, shiftIn: map[*int32]bool{}, divHelpers: map[string][2]string{}, funcValueWrappers: map[string]string{}, deferReplay: -1, iota: -1}
 	for _, opt := range opts {
 		opt(e)
 	}
@@ -6624,6 +6624,7 @@ type emitter struct {
 	namedArrays       map[string]arrDim         // named array type (e.g. `type Row [3]int`) -> its dimensions, resolved wherever an array type is expected (see arrayDim)
 	constInt          map[string]string         // integer-constant name -> its C literal value, for array bounds
 	constVal          map[string]constant.Value // exact value of a numeric constant, for foldConstVal; a typed one rounded to its type
+	constBool         map[string]bool           // value of a boolean constant, for foldConstBool
 	constStr          map[string]string         // string-constant name -> its decoded value, for folding string concatenation
 	constUntyped      map[string]bool           // constant name -> it is UNTYPED, so it contributes no type to an expression it appears in (see exprUntyped)
 	constHuge         map[string]bool           // constant name -> an integer beyond 64 bits, with no C symbol (see hugeConstVal)
@@ -10381,6 +10382,7 @@ type constEval struct {
 	hasInt, isHuge     bool
 	strVal             string
 	hasStr             bool
+	boolVal, hasBool   bool
 }
 
 // emitConstSpecName emits one name of a const spec. A spec binds a list, and every
@@ -10462,7 +10464,210 @@ func (e *emitter) evalConst(name, ownType string, hasType bool, initExpr []int32
 	ev.intVal, ev.hasInt = e.constIntValueIn(initExpr, ctype)
 	_, ev.isHuge = e.hugeConstVal(initExpr)
 	ev.strVal, ev.hasStr = e.foldConstString(initExpr)
+	if e.underlyingCType(ctype) == cBool {
+		ev.boolVal, ev.hasBool = e.foldConstBool(initExpr)
+	}
 	return ev, true
+}
+
+// foldConstBool folds a boolean constant expression to its value: true and false,
+// a boolean constant, `!`, parentheses, a conversion to a bool type, a comparison of
+// two constants -- numbers, strings, booleans -- and && and ||, with Go's
+// precedences, which the grammar's one flat level does not carry (see the checker's
+// expression). It reports false for anything else, which is then written out.
+func (e *emitter) foldConstBool(ast []int32) (bool, bool) {
+	v, ok := e.foldConstScalarSeq(slices.Collect(it(ast)))
+	if !ok || v.Kind() != constant.Bool {
+		return false, false
+	}
+	return constant.BoolVal(v), true
+}
+
+// foldConstScalarSeq folds an Expression's children -- operands and the operators
+// between them -- to a constant: comparisons first, left to right, then the groups
+// they make joined by && and those by ||.
+func (e *emitter) foldConstScalarSeq(kids []Node) (constant.Value, bool) {
+	var groups []constant.Value
+	var logical []token.Token
+	var cur constant.Value
+	var op string
+	for _, k := range kids {
+		switch k.sym {
+		case RelOp:
+			switch op = e.opText(k.ast); op {
+			case "&&", "||":
+				if cur == nil {
+					return nil, false
+				}
+				t := token.LAND
+				if op == "||" {
+					t = token.LOR
+				}
+				groups, logical, cur = append(groups, cur), append(logical, t), nil
+			}
+		default:
+			v, ok := e.foldConstScalar(k)
+			if !ok {
+				return nil, false
+			}
+			if cur == nil {
+				cur = v
+				continue
+			}
+			var t token.Token
+			switch op {
+			case "==":
+				t = token.EQL
+			case "!=":
+				t = token.NEQ
+			case "<":
+				t = token.LSS
+			case "<=":
+				t = token.LEQ
+			case ">":
+				t = token.GTR
+			case ">=":
+				t = token.GEQ
+			default:
+				return nil, false
+			}
+			if !comparableConsts(cur, v, t) {
+				return nil, false
+			}
+			cur = constant.MakeBool(constant.Compare(cur, t, v))
+		}
+	}
+	if cur == nil {
+		return nil, false
+	}
+	if len(groups) == 0 {
+		return cur, true
+	}
+	groups = append(groups, cur)
+	var ors []constant.Value
+	acc := groups[0]
+	for i, t := range logical {
+		if t == token.LAND {
+			if acc = logicalConst(acc, t, groups[i+1]); acc == nil {
+				return nil, false
+			}
+			continue
+		}
+		ors, acc = append(ors, acc), groups[i+1]
+	}
+	for _, v := range ors {
+		if acc = logicalConst(v, token.LOR, acc); acc == nil {
+			return nil, false
+		}
+	}
+	return acc, true
+}
+
+// comparableConsts reports whether go/constant compares x and y under t: numbers
+// with numbers, strings with strings, and booleans for equality only.
+func comparableConsts(x, y constant.Value, t token.Token) bool {
+	num := func(v constant.Value) bool { return v.Kind() == constant.Int || v.Kind() == constant.Float }
+	switch {
+	case num(x) && num(y), x.Kind() == constant.String && y.Kind() == constant.String:
+		return true
+	case x.Kind() == constant.Bool && y.Kind() == constant.Bool:
+		return t == token.EQL || t == token.NEQ
+	}
+	return false
+}
+
+// logicalConst is x && y or x || y of two boolean constants, nil for any other.
+func logicalConst(x constant.Value, t token.Token, y constant.Value) constant.Value {
+	if x.Kind() != constant.Bool || y.Kind() != constant.Bool {
+		return nil
+	}
+	return constant.BinaryOp(x, t, y)
+}
+
+// foldConstScalar folds one operand of foldConstScalarSeq: a boolean (true, false,
+// a boolean constant, `!`, parentheses, a conversion to a bool type), a constant
+// string, or a number.
+func (e *emitter) foldConstScalar(n Node) (constant.Value, bool) {
+	if v, ok := e.foldConstBoolNode(n); ok {
+		return constant.MakeBool(v), true
+	}
+	if v, ok := e.foldConstString(n.ast); ok {
+		return constant.MakeString(v), true
+	}
+	if v, ok := e.foldValNode(n); ok && (v.Kind() == constant.Int || v.Kind() == constant.Float) {
+		return v, true
+	}
+	return nil, false
+}
+
+// foldConstBoolNode folds a node that is a boolean constant by its own shape.
+func (e *emitter) foldConstBoolNode(n Node) (bool, bool) {
+	kids := slices.Collect(it(n.ast))
+	switch n.sym {
+	case Expression:
+		v, ok := e.foldConstScalarSeq(kids)
+		if !ok || v.Kind() != constant.Bool {
+			return false, false
+		}
+		return constant.BoolVal(v), true
+	case SimpleExpr, Term:
+		if len(kids) == 1 {
+			return e.foldConstBoolNode(kids[0])
+		}
+	case UnaryExpr:
+		// `!x`, the prefixes arriving as a flat list ahead of the operand.
+		not := false
+		for i, k := range kids {
+			if k.sym == UnaryOp {
+				tok, ok := e.unaryOpTok(k.ast)
+				if !ok || e.f.ch(tok) != NOT {
+					return false, false
+				}
+				not = !not
+				continue
+			}
+			if i != len(kids)-1 {
+				return false, false
+			}
+			v, ok := e.foldConstBoolNode(k)
+			return v != not, ok
+		}
+	case Factor:
+		if len(kids) == 3 && kids[0].sym == 0 && e.f.ch(kids[0].tok) == LPAREN {
+			return e.foldConstBoolNode(kids[1])
+		}
+		if len(kids) == 1 && kids[0].sym == 0 && e.f.ch(kids[0].tok) == IDENT {
+			switch name := e.src(kids[0].tok); name {
+			case "true", "false":
+				return name == "true", true // as emitOperandToken reads them
+			default:
+				if cname, ok := e.constKey(name); ok {
+					v, isBool := e.constBool[cname]
+					return v, isBool
+				}
+			}
+			return false, false
+		}
+		// A conversion to a bool type, `bool(x)` or `Flag(x)`.
+		if name, suffix, ok := e.factorCall(kids); ok {
+			if name != "bool" {
+				ct, used, isConv := e.convChainHead(name, suffix)
+				if !isConv || used != len(suffix) || e.underlyingCType(ct) != cBool {
+					return false, false
+				}
+			}
+			var args []Node
+			for _, sn := range suffix {
+				if sn.sym == CallSuffix {
+					args = e.callArgExprs(sn.ast)
+				}
+			}
+			if len(args) == 1 {
+				return e.foldConstBoolNode(args[0])
+			}
+		}
+	}
+	return false, false
 }
 
 // declareConst records a constant evalConst has read, and declares the C object of
@@ -10488,6 +10693,10 @@ func (e *emitter) declareConst(ev constEval) {
 	delete(e.constWide, cname)
 	delete(e.constHuge, cname)
 	delete(e.constStr, cname)
+	delete(e.constBool, cname)
+	if ev.hasBool {
+		e.constBool[cname] = ev.boolVal
+	}
 	// The exact value of a numeric constant, for the fold of every expression that
 	// reads it (foldConstVal). A typed one is rounded to its type first, as Go rounds
 	// a typed constant: `const F float32 = 0.1` holds float32(0.1), and `F * 3` is
@@ -10573,7 +10782,18 @@ func (e *emitter) declareConst(ev constEval) {
 		declName = e.localIdent(ev.name)
 	}
 	e.emit(storage + ctype + " " + declName + " = ")
-	if ev.pkg {
+	if ev.hasBool {
+		// A boolean constant is spelled as its value: written out, it read the
+		// objects of the constants it was built from, `static const _Bool e = !d;`,
+		// which the target's C compiler refuses in a static initializer, and a
+		// string comparison was a call, `ogo_string_eq(...)`, which no C compiler
+		// takes there.
+		v := "0"
+		if ev.boolVal {
+			v = "1"
+		}
+		e.emit(v)
+	} else if ev.pkg {
 		// A file-scope constant has static storage, so a string initializer must be a
 		// brace, not a compound literal (see emitStringLit).
 		e.declInit = true
@@ -15642,6 +15862,7 @@ func (e *emitter) liftFuncLit(lit Node) (string, bool) {
 		localConstSpecs                        map[string]localConstSpec
 		constInt                               map[string]string
 		constVal                               map[string]constant.Value
+		constBool                              map[string]bool
 	}
 	saved := state{
 		locals: e.locals, arrays: e.arrays, sliceVars: e.sliceVars,
@@ -15660,6 +15881,7 @@ func (e *emitter) liftFuncLit(lit Node) (string, bool) {
 		localTypes: e.localTypes, gotoTargets: e.gotoTargets, localConsts: e.localConsts,
 		localConstSpecs: e.localConstSpecs, inheritedTypes: e.inheritedTypes,
 		constInt: maps.Clone(e.constInt), constStr: maps.Clone(e.constStr), constVal: maps.Clone(e.constVal),
+		constBool:    maps.Clone(e.constBool),
 		constUntyped: maps.Clone(e.constUntyped), constWide: maps.Clone(e.constWide), constHuge: maps.Clone(e.constHuge),
 	}
 	// A literal lifted out of a package variable's initializer is a function with a
@@ -15742,6 +15964,7 @@ func (e *emitter) liftFuncLit(lit Node) (string, bool) {
 	e.localTypes, e.gotoTargets, e.localConsts = saved.localTypes, saved.gotoTargets, saved.localConsts
 	e.localConstSpecs, e.inheritedTypes = saved.localConstSpecs, saved.inheritedTypes
 	e.constInt, e.constStr, e.constVal = saved.constInt, saved.constStr, saved.constVal
+	e.constBool = saved.constBool
 	e.constUntyped, e.constWide, e.constHuge = saved.constUntyped, saved.constWide, saved.constHuge
 
 	e.locals, e.arrays, e.sliceVars = saved.locals, saved.arrays, saved.sliceVars
@@ -18059,7 +18282,7 @@ func (e *emitter) enterScope() func() {
 	localConsts, localConstSpecs := maps.Clone(e.localConsts), maps.Clone(e.localConstSpecs)
 	frameBacked, frameHolder := maps.Clone(e.frameBacked), maps.Clone(e.frameHolder)
 	constInt, constStr := maps.Clone(e.constInt), maps.Clone(e.constStr)
-	constUntyped := maps.Clone(e.constUntyped)
+	constUntyped, constBool := maps.Clone(e.constUntyped), maps.Clone(e.constBool)
 	// A block constant's exact value, its width and its being beyond every type end
 	// with the block as its folded integer and its string do. They did not until
 	// 2026-09-28, and the main package's constants are keyed by their bare names, as
@@ -18103,7 +18326,7 @@ func (e *emitter) enterScope() func() {
 		e.localConsts, e.localConstSpecs = localConsts, localConstSpecs
 		e.frameBacked, e.frameHolder = frameBacked, frameHolder
 		e.constInt, e.constStr = constInt, constStr
-		e.constUntyped = constUntyped
+		e.constUntyped, e.constBool = constUntyped, constBool
 		e.constVal, e.constWide, e.constHuge = constVal, constWide, constHuge
 		e.funcValueOf = funcValueOf
 	}
@@ -47631,11 +47854,19 @@ func (e *emitter) emitOperandToken(tok int32) {
 // CONSTANT operand, which is a constant string in Go and so may stand in a constant
 // concatenation. The operand may be an integer -- the rune conversion this exists
 // for -- or itself a constant string, `string("a")`, which converts to its own
-// bytes.
+// bytes. A conversion to a DEFINED string type, `Name("ab")` or another package's
+// `lib.Name("ab")`, folds the same way: it was a run-time concatenation, refused as
+// an allocation, in `Name("q") + "r"`.
 func (e *emitter) constRuneStringFactor(kids []Node) (string, bool) {
 	name, suffix, ok := e.factorCall(kids)
-	if !ok || name != "string" {
+	if !ok {
 		return "", false
+	}
+	if name != "string" {
+		ct, used, isConv := e.convChainHead(name, suffix)
+		if !isConv || used != len(suffix) || e.underlyingCType(ct) != cString {
+			return "", false
+		}
 	}
 	var args []Node
 	for _, n := range suffix {

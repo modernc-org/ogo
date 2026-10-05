@@ -1,0 +1,33 @@
+// COMPILE
+// A conversion of a constant to a string or a bool type, defined or not, is a
+// constant expression too -- `Name("ab")`, `string('é')`, `Flag(true)` -- and so are
+// && and || of boolean constants, folded with Go's precedences. Each was "Name is
+// not a constant" in a constant declaration, or had no value at all.
+
+type Name string
+
+type Flag bool
+
+const (
+	a = Name("ab")
+	b = a + "c"
+	c = string(Name("x"))
+	d = Flag(true)
+	e = !d
+	f = len(Name("abcd"))
+	g = string('é')
+	h = Name('A')
+	k = bool(1 < 2)
+	m = true || false == false
+	n = 1 < 2 && 3 > 4 || 5 == 5
+	p = d && !Flag(false)
+)
+
+var arr [len(b)]int
+
+func main() {
+	arr[0] = 1
+	var x Flag = p || false
+	var y Name = b
+	println(a, b, c, d, e, f, g, h, k, m, n, x, y, len(arr), arr[0])
+}
