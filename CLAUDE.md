@@ -2710,6 +2710,23 @@ was a call to the summaries only one step from its variable, `defer p.m()`. An a
 of arrays is followed a row at a time (`curArr`, arrDim.row), and a method ending on a
 row is its defined type's, `p[1].KeepFirst()` for a `*[2]Row`. **A new way to reach a
 receiver is a row in methodCallOf, under a plain call, `defer` and `go`.**
+A TYPE ASSERTION and a HEADER'S DECLARATION were rows nobody had written into
+the lifetime matrices (2026-10-05, found by a domain program's decoder, which hands
+out pointers into a caller's local pool, and the escapes written beside it). An
+assertion hands back the pointer its operand holds, and no reader looked through
+it: `keepT = r.(*T)`, the comma-ok and the type switch's variable kept a local's
+address in a package variable in silence, -60641451 on the board for Go's 7
+(assertionOperand, read by frameRefOf, summaryReach and callExprsIn as
+unsafeConvOperand is; typeSwitchNameMark gives each clause's name the operand's
+mark, a bound operand's from its expression). And the summaries read no binding a
+header makes: eachStmt handed out a header's expression and send statements
+(headerStmtsIn), never `if p := r;` or `switch p, n := r, 1;`, so a callee keeping
+its parameter through one was summarised as keeping nothing -- 8664 for 7, in
+v0.48.1 too. headerBindingsIn builds the statement such a header binds by, the
+values rewrapped in the ExpressionList a statement writes, for the six passes that
+read statements by shape. **A new place a pointer can stand -- an operand, a
+header, a clause's name -- is a row in TestEmitCAssertLifetime's matrix, and a
+statement form a header can hold is a row of eachStmt.**
 A store through a pointer no NAME holds was the summaries' next row (2026-10-04,
 found making `(*f())[i] = v` writable, which the emitter had refused): a callee
 storing its parameter through a call's result, `gethp().p = v`, `fa()[0] = v`, in a

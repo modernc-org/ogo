@@ -237,6 +237,89 @@ func (f *File) parenStmt(stmt Node) (Node, bool) {
 	return f.headerStmt(hk[1], nil)
 }
 
+// headerBindingsIn answers with the statement a header DECLARES or ASSIGNS by,
+// `if p := r; ...`, `if p, n = r, 1; ...`, `switch v := f(); ...`, as the statement
+// the same words are on a line of their own, for the passes that read a body's
+// statements by shape -- the summaries above all. Those read no header's binding,
+// so `func keep(r *T) { if p := r; p != nil { g = p } }` was summarised as keeping
+// nothing, and `keep(&t)` left a local's address in a package variable in silence.
+// The checker and the emitter lower a header's declaration by a rule of their own,
+// and are not handed these.
+func (f *File) headerBindingsIn(n Node) []Node {
+	var head Node
+	var init []Node
+	switch n.sym {
+	case IfStmt:
+		for k := range it(n.ast) {
+			switch {
+			case k.sym == Expression && head.sym == 0:
+				head = k
+			case k.sym == IfInit && head.sym != 0:
+				init = slices.Collect(it(k.ast))
+			}
+		}
+	case SwitchGuard:
+		kids := slices.Collect(it(n.ast))
+		if len(kids) < 2 || kids[0].sym != Expression {
+			return nil
+		}
+		head, init = kids[0], kids[1:]
+	default:
+		return nil
+	}
+	if head.sym == 0 || len(init) == 0 {
+		return nil
+	}
+	key := &head.ast[0]
+	if st, found := f.headerBindings[key]; found {
+		if st.sym == 0 {
+			return nil
+		}
+		return []Node{st}
+	}
+	if f.headerBindings == nil {
+		f.headerBindings = map[*int32]Node{}
+	}
+	var st Node
+	if tail, ok := f.bindingTail(init); ok {
+		if ast, built := f.buildHeaderStmt(head, tail); built {
+			st = Node{sym: Statement, ast: ast}
+		}
+	}
+	f.headerBindings[key] = st
+	if st.sym == 0 {
+		return nil
+	}
+	return []Node{st}
+}
+
+// bindingTail is the tail of a statement's PostfixOp for a header's declaration or
+// assignment -- the further targets, the operator and the values -- read off the
+// header's init up to its ";" or its tag, with the values in the ExpressionList a
+// statement writes them in. ok is false for any other init.
+func (f *File) bindingTail(init []Node) (tail []Node, ok bool) {
+	var values []int32
+	op := -1
+	for i, k := range init {
+		if k.sym == SwitchTag || k.sym == 0 && f.ch(k.tok) == SEMICOLON {
+			break
+		}
+		switch {
+		case op < 0 && k.sym == 0 && (f.ch(k.tok) == DEFINE || f.ch(k.tok) == ASSIGN):
+			op = i
+			tail = append(tail, k)
+		case op < 0:
+			tail = append(tail, k) // "," and the further LhsItems
+		default:
+			values = append(values, rawOf(k)...) // the values and the "," between them
+		}
+	}
+	if op < 0 || len(values) == 0 {
+		return nil, false
+	}
+	return append(tail, Node{sym: ExpressionList, ast: values}), true
+}
+
 // headerStmtsIn answers with the statements standing alone in the header n is
 // the production of -- an IfStmt, a SwitchGuard, a ForHeader or a ForPost -- for
 // a pass that reads statements: an if's init, a switch's, a for's init and its

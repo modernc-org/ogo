@@ -142,6 +142,14 @@ shipped section tells a reader on that version that they have behaviour they do 
 
 ### Behaviour changes
 
+- **A pointer handed back by a type assertion, or held by a variable an `if` or a
+  `switch` header declares, is a pointer to what it points at**: `keepT =
+  r.(*T)` for an `r` holding a local's address, a comma-ok's and a type switch's
+  variable the same, and a callee keeping its parameter through `p := r.(*T)`,
+  through `if p := r; ...` or through `switch p, n := r, 1; ...`, are refused as
+  storing the local's address where it outlives the frame. Each was taken in
+  silence, and read through after the function returned the pointer was garbage
+  on the board -- 8664 for Go's 7.
 - **A variable declared from a type assertion is of the asserted type whatever the
   operand is**: `v := pick().(*T)`, `v, ok := h.i.(*T)`, `xs[0].(*T)`,
   `h.get().(*T)`, `(i).(*T)`, and a field read straight off one, `i.(*T).s`. Only a

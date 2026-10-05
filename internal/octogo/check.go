@@ -252,6 +252,7 @@ type File struct {
 	wholeConsts       map[*int32]Kind            // the constants written as FLOATS that stand where an integer type is wanted, `var u uint32 = 3e9`, by their place in the AST, and that type (see checkValueOverflow); read by the emitter
 	wholeConstToks    map[int32]Kind             // the same for a constant that is one token, by the token
 	lenConsts         map[*int32]int64           // the len and cap calls Go makes constants, by their parentheses' place in the AST, and their values (see constLenCap); read by the emitter
+	headerBindings    map[*int32]Node            // the statements headers declare or assign by, `if p := r; ...`, for the passes reading a body's statements by shape (headerBindingsIn)
 	headerStmts       map[*int32]Node            // the statements standing in headers, `if two(); ok`, as the statements they are, by the place of the header's expression in the AST (see headerStmt); read by the emitter
 	parser            Parser
 	tld               *Scope // tld.Nodes are later moved into (*Package).Scope. Kind: PackageScope, Parent: .Scope.

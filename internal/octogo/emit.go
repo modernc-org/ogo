@@ -13682,6 +13682,10 @@ func (e *emitter) eachStmt(ast []int32, fn func(nodes []Node)) {
 		for _, st := range e.f.headerStmtsIn(n) {
 			fn(slices.Collect(it(st.ast)))
 		}
+		// And the statement a header declares or assigns by, `if p := r; ...`.
+		for _, st := range e.f.headerBindingsIn(n) {
+			fn(slices.Collect(it(st.ast)))
+		}
 		e.eachStmt(n.ast, fn)
 	}
 }
@@ -14187,6 +14191,9 @@ func (e *emitter) summaryReach(ast []int32) (out []held) {
 	if arg, ok := e.unsafeConvOperand(ast); ok {
 		return e.summaryReach(arg) // `unsafe.Pointer(p)` is p
 	}
+	if arg, ok := e.assertionOperand(ast); ok {
+		return e.summaryReach(arg) // `r.(*T)` is the pointer r holds
+	}
 	// A conversion to a pointer type, `(*T)(p)`, is the address it converts, and a
 	// field or an element read through it, `(*T)(p).xs`, is p's contents. Unread,
 	// `gp = (*int)(p)` and `return (*int)(p)` kept the caller's address in silence
@@ -14347,6 +14354,9 @@ func (e *emitter) callExprsIn(v []int32) (out [][]int32) {
 	}
 	if arg, ok := e.unsafeConvOperand(v); ok {
 		return e.callExprsIn(arg) // `unsafe.Pointer(pass(v))`
+	}
+	if arg, ok := e.assertionOperand(v); ok {
+		return e.callExprsIn(arg) // `pass(v).(*T)`
 	}
 	// `(*T)(pass(v))`: the conversion's operand is what the value carries. The shape
 	// is also a call through a pointer to a function, `(*fp)(x)`, which is kept as
@@ -16456,6 +16466,73 @@ func (e *emitter) ptrConvShape(kids []Node) (arg Node, rest []Node, ok bool) {
 		return Node{}, nil, false
 	}
 	return args[0], steps[1:], true
+}
+
+// assertionOperand is the operand of an expression ending in a type assertion,
+// `r.(*T)`, `h.r.(*T)`, `(r).(*T)`, `pick().(*T)`: what the assertion hands back
+// is the pointer the operand holds -- an interface holds one and nothing else -- so
+// every lifetime rule asks its question of the operand. Read through by none of
+// them, `keepT = r.(*T)` for an r holding a local's address, and a comma-ok's and a
+// callee's, kept that address in a package variable in silence: a dangling pointer
+// read as garbage on the board. Read by shape, so the summaries read it too.
+func (e *emitter) assertionOperand(ast []int32) ([]int32, bool) {
+	fac, ok := e.soleFactorNode(e.unparenExpr(ast))
+	if !ok {
+		return nil, false
+	}
+	kids := slices.Collect(it(fac.ast))
+	if len(kids) < 2 || kids[len(kids)-1].sym != FactorSuffix {
+		return nil, false
+	}
+	steps := slices.Collect(it(kids[len(kids)-1].ast))
+	last := len(steps) - 1
+	if last < 0 || steps[last].sym != Selector {
+		return nil, false
+	}
+	isAssert := false
+	for c := range it(steps[last].ast) {
+		if c.sym == Type {
+			isAssert = true
+		}
+	}
+	if !isAssert {
+		return nil, false
+	}
+	return e.factorWithoutLastStep(ast)
+}
+
+// factorWithoutLastStep is an expression that is one Factor, written without the
+// last step of its suffix, as an Expression: the operand that step applies to.
+func (e *emitter) factorWithoutLastStep(ast []int32) ([]int32, bool) {
+	fac, ok := e.soleFactorNode(e.unparenExpr(ast))
+	if !ok {
+		return nil, false
+	}
+	kids := slices.Collect(it(fac.ast))
+	if len(kids) < 2 || kids[len(kids)-1].sym != FactorSuffix {
+		return nil, false
+	}
+	steps := slices.Collect(it(kids[len(kids)-1].ast))
+	last := len(steps) - 1
+	if last < 0 {
+		return nil, false
+	}
+	var b []int32
+	for _, k := range kids[:len(kids)-1] {
+		if k.sym == 0 {
+			b = append(b, k.tok)
+			continue
+		}
+		b = append(b, encodeNode(k.sym, k.ast)...)
+	}
+	if last > 0 {
+		var suffix []int32
+		for _, st := range steps[:last] {
+			suffix = append(suffix, encodeNode(st.sym, st.ast)...)
+		}
+		b = append(b, encodeNode(FactorSuffix, suffix)...)
+	}
+	return encodeNode(Expression, encodeNode(SimpleExpr, encodeNode(Term, encodeNode(UnaryExpr, encodeNode(Factor, b))))), true
 }
 
 // unsafeConvOperand is what an expression that is exactly `unsafe.Pointer(x)`
@@ -29649,6 +29726,9 @@ func (e *emitter) emitSwitch(ast []int32) {
 				e.ind()
 				e.emit(ts.iface + " " + ts.operand + " = " + ts.bindText + ";\n")
 				e.locals[ts.operand] = ts.iface
+				if r, ok := e.frameRefOf(ts.bindAST); ok && ts.bindAST != nil {
+					e.frameHolder[ts.operand] = r.origin
+				}
 				e.emitTypeSwitch(ts, cases)
 				e.indent--
 				e.ind()
@@ -29785,6 +29865,9 @@ type typeSwitch struct {
 	// `b.r`, `mk()` -- which the statement binds to a temporary and switches on
 	// that. Empty when the operand names a variable, which needs no binding.
 	bindText string
+	// bindAST is that operand's expression, which the temporary's lifetime mark is
+	// read from (frameRefOf): what it holds, the name each clause binds holds too.
+	bindAST []int32
 }
 
 // typeSwitchGuard recognises a type switch's guard. The Selector that spells
@@ -29817,7 +29900,7 @@ func (e *emitter) typeSwitchGuard(guardAST []int32) (ts typeSwitch, ok bool) {
 				return ts, false
 			}
 		}
-		ts.operand, ts.iface, ts.bindText = e.newTmp(), ctype, e.exprC(inner)
+		ts.operand, ts.iface, ts.bindText, ts.bindAST = e.newTmp(), ctype, e.exprC(inner), inner
 		return ts, true
 	}
 	if g.hasName {
@@ -29838,6 +29921,7 @@ func (e *emitter) typeSwitchGuard(guardAST []int32) (ts typeSwitch, ok bool) {
 			return ts, false
 		}
 		ts.operand, ts.iface, ts.bindText = e.newTmp(), ctype, text
+		ts.bindAST, _ = e.factorWithoutLastStep(value.ast)
 		return ts, true
 	}
 	ts.operand = base
@@ -30235,6 +30319,16 @@ func (e *emitter) emitTypeSwitch(ts typeSwitch, cases []Node) {
 	}
 }
 
+// typeSwitchNameMark gives the name a clause binds the operand's lifetime mark: it
+// holds the pointer the operand holds. Unmarked, `switch v := r.(type) { case *T:
+// keepT = v }` for an r holding a local's address kept it in a package variable in
+// silence, where `keep = r` was refused.
+func (e *emitter) typeSwitchNameMark(ts typeSwitch) {
+	if origin := e.frameHolder[ts.operand]; origin != "" {
+		e.frameHolder[ts.name] = origin
+	}
+}
+
 // bindTypeSwitchName declares the name a type switch binds, inside the clause that
 // proved its type. A clause naming one type gets that pointer; every other clause
 // gets the interface value itself, as in Go.
@@ -30259,6 +30353,7 @@ func (e *emitter) bindTypeSwitchIface(ts typeSwitch, caseIface string, types []s
 		return
 	}
 	e.emit(text)
+	e.typeSwitchNameMark(ts)
 	e.ind()
 	e.emit("(void)" + e.varRef(ts.name) + ";\n")
 }
@@ -30398,6 +30493,7 @@ func (e *emitter) bindTypeSwitchName(ts typeSwitch, concrete string, single bool
 	e.locals[ts.name] = ct
 	e.ind()
 	e.emit(ct + " " + e.varRef(ts.name) + " = " + init + ";\n")
+	e.typeSwitchNameMark(ts)
 	// Go's rule is that the name is unused only when it is unused in EVERY clause,
 	// which the checker asks; the C compiler would warn per clause, so each
 	// declaration is used here.
@@ -48902,7 +48998,10 @@ func (e *emitter) frameRefOf(ast []int32) (frameRef, bool) {
 		if !ok {
 			// `unsafe.Pointer(&x)` is the address it converts, too.
 			if arg, ok = e.unsafeConvOperand(ast); !ok {
-				break
+				// And `r.(*T)` the pointer r holds (assertionOperand).
+				if arg, ok = e.assertionOperand(ast); !ok {
+					break
+				}
 			}
 		}
 		ast = e.unparenExpr(arg)
