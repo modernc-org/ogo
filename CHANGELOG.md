@@ -43,6 +43,22 @@ shipped section tells a reader on that version that they have behaviour they do 
 
 ### Fixed
 
+- **`print` and `println` of several arguments print each as it prints alone.**
+  Packed into one `printf`, every argument that was no string and no slice or
+  array VARIABLE went out under `%d`: a nil pointer or function printed `0` for
+  Go's `0x0`, an interface a word of itself for `(0x0,0x0)`, and an array FIELD,
+  element, literal or a call's field its address -- `println(1, h.a, 2)` printed
+  `1 26412 2` on a P2-EDGE for `1 [0 7] 2` -- in silence, deferred too. A struct
+  among them, which Go refuses, printed a word of itself; it is refused, as it was
+  alone.
+- **A variable named like its type is the variable, and its type the type**, as Go
+  has it: `func (level level) up() level`, `func take(reading reading, cb cb)`,
+  `var buf buf`. The type was looked up by its name where the variable is used,
+  which is the variable: the result type named like the receiver was "level is not
+  a type", `level.up()` "type level has no method up", the call `cb(2)` a
+  conversion to the type, and every rule asked of such a variable's struct or
+  array type answered nothing -- `reading + 1`, `reading.v = "s"` and `var x int =
+  reading` were taken.
 - **`(*uint32)(blk.Addr(0))` builds**, where `Addr` is a method of another
   package's type returning `unsafe.Pointer`: the result was read as a type of the
   method's package, `hub.Pointer`, and the conversion refused. And `var n int =
@@ -252,6 +268,19 @@ shipped section tells a reader on that version that they have behaviour they do 
 
 ### Behaviour changes
 
+- **The fifth sweep's positional rows are refused, as Go refuses them**: the
+  comma-ok flag of a receive stored into a struct, `r.val, r = <-ch`, in a
+  statement and a select clause; a select clause receiving into a whole struct,
+  `case s = <-ch:`; a number into a pointer from `&*p` or `&(*p)`; a method with no
+  result used as a value at the end of a chain, `h.rows[1].Show()`; one variable for
+  a PROMOTED method of two results, `x := o.Two()`; an element of the wrong type
+  appended to a variable of a defined slice type, `append(xs, "a")` for a `type L
+  []int`, sliced or not; a slice, an array, a function or a channel appended to a
+  slice of an interface; the struct a range over a sliced literal yields used as a
+  number, `range []P{...}[1:]`; the element of a variable of a defined array or
+  slice type, `range b` for a `type A [4]uint16`, into an int; and a method a
+  defined string or slice type lacks, called on a slice of a field of it, `u :=
+  r.name[1:4]; u.Total()`.
 - **A fifth sweep of mutated run cases refuses what Go refuses**: a method of a
   typed constant, `One.Add(Two, Two)`, `One.Nosuch()`; the arguments of a call
   whose method is chained, `pick(1, 1).Show()`, as a statement, deferred and

@@ -23000,6 +23000,11 @@ func (e *emitter) isMethodBase(ctype string) bool {
 // arithmetic source and a string conversion would need a copy -- so they are left
 // to the generic call path, which fails honestly.
 func (e *emitter) convType(recv string) (string, bool) {
+	// A local or a parameter named like a type is that, and no conversion: `cb(2)`
+	// for a `func take(cb cb)` calls the parameter.
+	if e.localName(recv) {
+		return "", false
+	}
 	// A predeclared type's name the program has declared something of -- a
 	// function `bool`, a variable `string` -- is that, and no conversion.
 	predeclared := e.universe(recv)
@@ -39634,10 +39639,16 @@ func (e *emitter) scalarPrintVerbOf(idx int, arg Node) string {
 }
 
 // isScalarPrint reports whether arg prints via printf %d (an integer or integer-
-// typed expression) -- i.e. it is neither a string, a slice nor an array.
+// typed expression): a number or a bool, or what has no type here. Anything else of
+// a known type is emitPrintOne's, which prints an address as Go does and refuses a
+// struct -- packed into one printf, `println(1, p)` printed a struct, a pointer, an
+// interface and a function under %d, in silence.
 func (e *emitter) isScalarPrint(idx int, arg Node) bool {
 	if ct, ok := e.printArgCType(idx, arg); ok {
 		if ct == cString || e.isSliceCType(ct) {
+			return false
+		}
+		if u := e.underlyingCType(ct); u != cBool && !isIntCType(u) && !isFloatCType(u) {
 			return false
 		}
 	}
@@ -39645,6 +39656,28 @@ func (e *emitter) isScalarPrint(idx int, arg Node) bool {
 		if _, ok := e.arrayVar(base); ok {
 			return false
 		}
+	}
+	// Every other array emitPrintOne prints as one, asked as it asks: a deferred
+	// print's capture, a hoisted copy, another package's, a field, an element, a
+	// literal. `println(1, h.a)` printed the field's address under %d.
+	if i := idx + e.deferReplayOff; e.deferReplay >= 0 && i < len(e.deferReplayArgs) {
+		if d := e.deferReplayArgs[i]; !d.inline && d.arr.bound != "" {
+			return false
+		}
+	}
+	if h, ok := e.hoistedArg(idx); ok && h.array {
+		return false
+	}
+	if base, steps, ok := e.factorAccessChain(e.factorKids(arg.ast)); ok && len(steps) == 0 {
+		if _, isArr := e.arrayVar(base); isArr {
+			return false
+		}
+	}
+	if ct, typed := e.inferCType(arg.ast); typed && e.namedArrays[ct].bound == "" {
+		return true
+	}
+	if _, isArr := e.arrayShapeOf(arg.ast); isArr && e.deferReplay < 0 {
+		return false
 	}
 	return true
 }

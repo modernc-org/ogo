@@ -700,14 +700,20 @@ func (f *File) checkFuncBody(pkg *Scope, n Node) {
 		switch n.sym {
 		case Receiver:
 			f.checkReceiverType(pkg, n)
-			f.declareReceiver(fs, n)
+			f.declareReceiver(pkg, fs, n)
 			isMethod = true
 		case Signature:
+			// The types a signature writes are the package's: the receiver, the
+			// parameters and the results are in scope in the body only, so `func
+			// (level level) up() level` returns the type, and `func take(reading
+			// reading)` has a parameter of it. Resolved where they are declared, the
+			// result was "not a type" and every rule asked of such a parameter's
+			// type answered nothing.
 			errs := len(f.errList)
-			sig = f.signature(fs, n)
-			f.declareParamList(fs, sig.Params, roleParam)
-			f.declareParamList(fs, sig.Results, roleResult)
-			results = f.flattenResults(fs, sig)
+			sig = f.signature(pkg, n)
+			f.declareParamList(pkg, fs, sig.Params, roleParam)
+			f.declareParamList(pkg, fs, sig.Results, roleResult)
+			results = f.flattenResults(pkg, sig)
 			sigErrs = len(f.errList) > errs
 		case Block:
 			f.scanGotoLabels(n.ast)
@@ -939,7 +945,7 @@ func (f *File) reportUnusedImports() {
 // the body may reference it. Receiver = "(" ParamDecl ")", so a named receiver
 // "(p Point)" carries a name to bind while an unnamed "(Point)" or blank "(_ Point)"
 // binds nothing -- its body cannot refer to the receiver.
-func (f *File) declareReceiver(s *Scope, n Node) {
+func (f *File) declareReceiver(ts, s *Scope, n Node) {
 	decls := f.paramDecls(n.ast)
 	if len(decls) == 0 || len(decls[0].Names) == 0 {
 		return
@@ -953,29 +959,31 @@ func (f *File) declareReceiver(s *Scope, n Node) {
 	// the escape check, which asks whether the root of "&p.nodes[i]" is an inline
 	// value, read a POINTER receiver as one and refused a perfectly safe return.
 	vd := &VarDeclaration{declaration: declaration{token: tok}}
-	if tn := f.receiverTypeNode(s, decls[0].TypeAST); tn != nil {
-		vd.kind, vd.hasKind = f.typeKind(s, tn)
-		vd.isPtr = f.isPointerType(s, tn)
+	// Its type is resolved in ts, where the method is declared: s holds the
+	// receiver itself, which may be named like its type, `func (n *n) m()`.
+	if tn := f.receiverTypeNode(ts, decls[0].TypeAST); tn != nil {
+		vd.kind, vd.hasKind = f.typeKind(ts, tn)
+		vd.isPtr = f.isPointerType(ts, tn)
 		vd.typeName, _ = namedTypeToken(tn)
 		vd.typeQual = namedTypeQual(tn)
-		vd.typeName, vd.typeQual = f.canonicalType(s, vd.typeName, vd.typeQual)
-		vd.elemKind, vd.hasElemKind = f.elemTypeKind(s, tn)
-		vd.chanElemKind, vd.hasChanElemKind, vd.isChan = f.chanElem(s, tn)
-		vd.chanElemName = f.chanElemTypeName(s, tn)
-		vd.chanElemQual, vd.chanElemPtr = f.chanElemTypeInfo(s, tn)
-		vd.elemTypeName = f.elemTypeName(s, tn)
+		vd.typeName, vd.typeQual = f.canonicalType(ts, vd.typeName, vd.typeQual)
+		vd.elemKind, vd.hasElemKind = f.elemTypeKind(ts, tn)
+		vd.chanElemKind, vd.hasChanElemKind, vd.isChan = f.chanElem(ts, tn)
+		vd.chanElemName = f.chanElemTypeName(ts, tn)
+		vd.chanElemQual, vd.chanElemPtr = f.chanElemTypeInfo(ts, tn)
+		vd.elemTypeName = f.elemTypeName(ts, tn)
 		vd.elemTypeNode = f.arrayElemTypeNode(tn)
 		// A receiver of a defined FUNCTION type is a function, called in the body as
 		// any parameter of that type is: `func (o Op) Twice(x int) int { return
 		// o(o(x)) }`, the http.HandlerFunc pattern. Recorded with no signature it was
 		// "cannot call non-function o" until 2026-09-19.
-		vd.funcSig = f.funcSig(s, tn)
+		vd.funcSig = f.funcSig(ts, tn)
 		vd.isFunc = vd.funcSig != nil
 		// And the scope it is written in, which every walk over a variable's type
 		// asks beside it (varTypeAt): without it a receiver had no type to walk, so
 		// `s := p.src[i:j]` for a string field was taken for a slice and refused
 		// where a string is returned.
-		vd.declType, vd.declScope = tn, s
+		vd.declType, vd.declScope = tn, ts
 	}
 	if err := s.add(vd); err != nil {
 		f.err(tok.Position(), "%v", err)
@@ -1329,28 +1337,30 @@ func (f *File) chanElemTypeName(s *Scope, tn TypeNode) (nm Token) {
 // be referenced and assigned in the body; an unnamed entry (an unnamed result)
 // declares nothing, and a name shared by a parameter and a result is a
 // redeclaration.
-func (f *File) declareParamList(s *Scope, list *ParameterListNode, role varRole) {
+func (f *File) declareParamList(ts, s *Scope, list *ParameterListNode, role varRole) {
 	if list == nil {
 		return
 	}
+	// The types are resolved in ts, the names declared in s: a parameter may be
+	// named like a type another parameter is written with.
 	for _, p := range list.List {
 		// Record each name's type so its uses are checked like a local variable's:
 		// a predeclared Kind, whether it is a pointer, and its named (possibly
 		// pointed-to) type for field access.
-		kind, hasKind := f.typeKind(s, p.TypeNode)
-		isPtr := f.isPointerType(s, p.TypeNode)
+		kind, hasKind := f.typeKind(ts, p.TypeNode)
+		isPtr := f.isPointerType(ts, p.TypeNode)
 		typeName, _ := namedTypeToken(p.TypeNode)
 		typeQual := namedTypeQual(p.TypeNode)
-		typeName, typeQual = f.canonicalType(s, typeName, typeQual)
-		elemKind, hasElemKind := f.elemTypeKind(s, p.TypeNode)
-		chanElemKind, hasChanElemKind, isChan := f.chanElem(s, p.TypeNode)
-		chanElemName := f.chanElemTypeName(s, p.TypeNode)
-		chanElemQual, chanElemPtr := f.chanElemTypeInfo(s, p.TypeNode)
-		elemName := f.elemTypeName(s, p.TypeNode)
+		typeName, typeQual = f.canonicalType(ts, typeName, typeQual)
+		elemKind, hasElemKind := f.elemTypeKind(ts, p.TypeNode)
+		chanElemKind, hasChanElemKind, isChan := f.chanElem(ts, p.TypeNode)
+		chanElemName := f.chanElemTypeName(ts, p.TypeNode)
+		chanElemQual, chanElemPtr := f.chanElemTypeInfo(ts, p.TypeNode)
+		elemName := f.elemTypeName(ts, p.TypeNode)
 		elemTypeNode := f.arrayElemTypeNode(p.TypeNode)
-		funcSig := f.funcSig(s, p.TypeNode)
+		funcSig := f.funcSig(ts, p.TypeNode)
 		for _, nm := range p.Names {
-			if err := s.add(&VarDeclaration{declaration: declaration{token: nm}, role: role, kind: kind, hasKind: hasKind, isPtr: isPtr, typeName: typeName, typeQual: typeQual, elemKind: elemKind, hasElemKind: hasElemKind, isChan: isChan, chanElemKind: chanElemKind, hasChanElemKind: hasChanElemKind, chanElemName: chanElemName, chanElemQual: chanElemQual, chanElemPtr: chanElemPtr, elemTypeName: elemName, elemTypeNode: elemTypeNode, funcSig: funcSig, isFunc: funcSig != nil, declType: p.TypeNode, declScope: s}); err != nil {
+			if err := s.add(&VarDeclaration{declaration: declaration{token: nm}, role: role, kind: kind, hasKind: hasKind, isPtr: isPtr, typeName: typeName, typeQual: typeQual, elemKind: elemKind, hasElemKind: hasElemKind, isChan: isChan, chanElemKind: chanElemKind, hasChanElemKind: hasChanElemKind, chanElemName: chanElemName, chanElemQual: chanElemQual, chanElemPtr: chanElemPtr, elemTypeName: elemName, elemTypeNode: elemTypeNode, funcSig: funcSig, isFunc: funcSig != nil, declType: p.TypeNode, declScope: ts}); err != nil {
 				f.err(nm.Position(), "%v", err)
 			}
 		}
@@ -3788,8 +3798,33 @@ func (f *File) rangeElem(s *Scope, expr Node) (elem Kind, hasElem, isInt, isChan
 					if k, ok := f.typeKind(s, d.elemTypeNode); ok {
 						return k, true, false, false
 					}
+					return 0, false, false, false
 				}
-				return 0, false, false, false
+				fallthrough
+			case !d.hasKind:
+				// A variable of a DEFINED array or slice type, `var b A` for a `type A
+				// [4]uint16`, records its element's name and no Kind: its type's
+				// definition has it. The value had no type, and `sum += v` into an int
+				// was taken.
+				if t, ok := f.varTypeAt(d); ok && t.f != nil {
+					u := f.underlyingTypeAt(t)
+					var el TypeNode
+					switch x := u.tn.(type) {
+					case *TypeNodeArray:
+						el = x.TypeNode
+					case *TypeNodeSlice:
+						el = x.TypeNode
+					}
+					if el != nil && u.f != nil {
+						if k, ok := u.f.typeKind(u.s, el); ok {
+							return k, true, false, false
+						}
+						return 0, false, false, false
+					}
+				}
+				if d.elemTypeName.IsValid() {
+					return 0, false, false, false // an aggregate, whatever its element
+				}
 			}
 		}
 	}
@@ -4145,10 +4180,17 @@ func (f *File) rangeElemTypeNode(s *Scope, expr Node) (TypeNode, *Scope) {
 func (f *File) rangeElemTypeAt(s *Scope, expr Node) (typeAt, bool) {
 	t, ok := f.valueTypeAt(s, expr)
 	if !ok {
-		// A literal ranged over where it is written, `range [][2]int{{1, 2}}`.
+		// A literal ranged over where it is written, `range [][2]int{{1, 2}}`, and
+		// one sliced, `range []P{...}[1:]`.
 		if t, ok = f.litOrConvType(s, expr); !ok {
 			if t, ok = f.sliceLitType(s, expr); !ok {
-				return typeAt{}, false
+				fac, isFac := f.soleFactorOf(expr)
+				if !isFac {
+					return typeAt{}, false
+				}
+				if t, ok = f.bracketLitStepsType(s, fac); !ok {
+					return typeAt{}, false
+				}
 			}
 		}
 	}
@@ -5243,6 +5285,32 @@ func (f *File) exprType(s *Scope, n Node) (Kind, bool) {
 	return 0, false
 }
 
+// bracketLitStepsType is the type of what steps past a bracketed literal reach,
+// `[]P{...}[1:]`, `[]int32{1, 2}[1]`: the literal's written type walked through them.
+// No call is walked.
+func (f *File) bracketLitStepsType(s *Scope, fac Node) (typeAt, bool) {
+	if fac.sym != Factor {
+		return typeAt{}, false
+	}
+	kids := slices.Collect(it(fac.ast))
+	if len(kids) < 2 || kids[len(kids)-1].sym != FactorSuffix || kids[len(kids)-2].sym != CompositeLit {
+		return typeAt{}, false
+	}
+	steps := slices.Collect(it(kids[len(kids)-1].ast))
+	if len(steps) == 0 || slices.ContainsFunc(steps, func(st Node) bool { return st.sym == CallSuffix }) {
+		return typeAt{}, false
+	}
+	lit := factorWithoutLastStep(kids, steps[:1])
+	t, ok := f.litOrConvType(s, lit)
+	if !ok {
+		t, ok = f.sliceLitType(s, lit)
+	}
+	if !ok {
+		return typeAt{}, false
+	}
+	return f.stepsTypeIn(s, t, steps)
+}
+
 // factorType determines the Kind of a Factor: a literal, a parenthesized
 // expression, or a bare identifier bound to a typed variable or constant. A
 // call/index/selector suffix makes the result type unknown.
@@ -5283,20 +5351,9 @@ func (f *File) factorType(s *Scope, n Node) (Kind, bool) {
 		// `[]int32{1, 2}[1]`, has the Kind its written type gives it: no rule
 		// knew it, and `[]int32{1}[0] + []int{2}[0]` was taken.
 		if hasSuffix {
-			kids := slices.Collect(it(n.ast))
-			steps := slices.Collect(it(suffix.ast))
-			if len(kids) != 0 && kids[len(kids)-1].sym == FactorSuffix && kids[len(kids)-2].sym == CompositeLit && !slices.ContainsFunc(steps, func(st Node) bool { return st.sym == CallSuffix }) {
-				lit := factorWithoutLastStep(kids, steps[:1])
-				t, ok := f.litOrConvType(s, lit)
-				if !ok {
-					t, ok = f.sliceLitType(s, lit)
-				}
-				if ok {
-					if t, ok = f.stepsTypeIn(s, t, steps); ok {
-						if rt := f.resultType(t.s, t.tn); rt.known {
-							return rt.kind, true
-						}
-					}
+			if t, ok := f.bracketLitStepsType(s, n); ok {
+				if rt := f.resultType(t.s, t.tn); rt.known {
+					return rt.kind, true
 				}
 			}
 		}
@@ -5507,12 +5564,26 @@ func (f *File) namedIsSlice(s *Scope, name, qual Token) bool {
 // The order of the cases is the order they must be asked in, each being a shape the
 // one below it would answer wrongly or not at all.
 func (f *File) inferVarFrom(s *Scope, vd *VarDeclaration, init Node) {
-	vd.init, vd.declScope = init, s
+	vd.init, vd.declScope = init, declaredAt(s, []Token{vd.token})
 	// The type the initializer's written types give it, a call's result and another
 	// variable's included -- read now, while the scope holds only the names declared
 	// before the variable (see inferredType).
 	if t, ok := f.valueTypeAt(s, init); ok {
 		vd.inferredType = &t
+		// A slice of what has a DEFINED slice or string type, `d := h.xs[1:]`, `u :=
+		// r.name[1:4]`, is of that type: named here for the rules asking a name --
+		// methods above all -- whatever the branches below record.
+		if fac, ok := f.soleFactorOf(init); ok && f.lastStepIsSlice(fac) && t.f != nil && t.f.Package == f.Package {
+			if id, isID := t.tn.(*TypeNodeIdent); isID && !id.Qualifier.IsValid() {
+				if _, isType := t.s.find(id.Name.Src()).(*TypeDeclaration); isType {
+					defer func() {
+						if !vd.typeName.IsValid() || vd.typeName.Src() != id.Name.Src() {
+							vd.typeName, vd.typeQual, vd.isPtr = id.Name, Token{}, false
+						}
+					}()
+				}
+			}
+		}
 	}
 	// `p := x.(*[4]uint32)`, `p := x.(*int)`: the asserted pointer type, whole.
 	if tn, ok := f.assertedPtrLit(s, init); ok {
@@ -7467,6 +7538,21 @@ func (f *File) commOp(s *Scope, op Node) {
 // sole target is asked of its value (checkAssignment): one field, one element and a
 // pointee by their own checks, and a deeper or a parenthesised target by the walk.
 func (f *File) checkRecvIntoTarget(s *Scope, head, postfixComm, v Node) {
+	if !hasSelectorOrIndex(postfixComm) {
+		// A whole variable, `case s = <-ch:` and `case (s) = <-ch:`, asked what the
+		// statement's sole target is: only its Kind was, and a struct took an int.
+		id, ok := f.assignHeadIdent(head)
+		if !ok {
+			var op Symbol
+			if id, op, ok = f.parenTargetName(head); op != 0 {
+				ok = false
+			}
+		}
+		if _, hasKind := f.identKind(s, id); ok && !hasKind && id.Src() != "_" {
+			// A target of a Kind is commRecvAssignTarget's.
+			f.checkAssignType(s, id, v, true)
+		}
+	}
 	if field, ok := f.fieldSelector(postfixComm); ok {
 		if id, idok := f.assignHeadIdent(head); idok {
 			f.checkFieldAssign(s, id, field, v)
@@ -7667,6 +7753,22 @@ func (f *File) checkOkFlagTarget(s *Scope, item Node) {
 	if known && !assignableKind(tk, PredeclaredBool) {
 		f.err(f.tok(item.Pos()).Position(), "cannot assign the bool of a comma-ok receive to %s (type %s)", f.sourceSpan(item.Pos(), item.End()), kindName(tk))
 	}
+	if known {
+		return
+	}
+	// A target of no Kind takes no bool either, an interface aside: `r.val, r = <-ch`
+	// for a struct r was taken.
+	what, kindless := "", false
+	if len(steps) == 0 && stars == 0 {
+		if d, isVar := s.find(base.Src()).(*VarDeclaration); isVar {
+			what, kindless = f.nonBoolVar(s, d)
+		}
+	} else if tn, in := f.targetTypeNode(s, base, steps, stars); tn != nil {
+		what, kindless = f.nonBoolType(in, tn)
+	}
+	if kindless && what != "an interface" {
+		f.err(f.tok(item.Pos()).Position(), "cannot assign the bool of a comma-ok receive to %s: it is %s", f.sourceSpan(item.Pos(), item.End()), what)
+	}
 }
 
 // lhsItemIdent is assignHeadIdent for an LhsItem (LhsItem = AssignHead { Selector
@@ -7816,8 +7918,9 @@ func (f *File) declareLocalVar(s *Scope, n Node) {
 			// which still bounds a constant value.
 			f.checkInferredOverflow(s, e)
 		}
+		ts := declaredAt(s, names)
 		for i, nm := range names {
-			vd := &VarDeclaration{declaration: declaration{token: nm}, kind: kind, hasKind: hasKind, isPtr: isPtr, typeName: typeName, typeQual: typeQual, elemKind: elemKind, hasElemKind: hasElemKind, isChan: isChan, chanElemKind: chanElemKind, hasChanElemKind: hasChanElemKind, chanElemName: chanElemName, chanElemQual: chanElemQual, chanElemPtr: chanElemPtr, elemTypeName: elemName, elemTypeNode: elemTypeNode, funcSig: funcSig, isFunc: funcSig != nil, declType: declType, declScope: s}
+			vd := &VarDeclaration{declaration: declaration{token: nm}, kind: kind, hasKind: hasKind, isPtr: isPtr, typeName: typeName, typeQual: typeQual, elemKind: elemKind, hasElemKind: hasElemKind, isChan: isChan, chanElemKind: chanElemKind, hasChanElemKind: hasChanElemKind, chanElemName: chanElemName, chanElemQual: chanElemQual, chanElemPtr: chanElemPtr, elemTypeName: elemName, elemTypeNode: elemTypeNode, funcSig: funcSig, isFunc: funcSig != nil, declType: declType, declScope: ts}
 			if declType == nil && len(names) == len(initExprs) {
 				// No type written: the variable takes the one its own initializer
 				// gives it, exactly as ":=" does. A multi-result call feeding
@@ -9334,8 +9437,8 @@ func (f *File) checkFuncLiterals(s *Scope, n Node) {
 		ls := f.Scope.child()
 		ls.litOf = s
 		sig := f.signature(ls, sigNode)
-		f.declareParamList(ls, sig.Params, roleParam)
-		f.declareParamList(ls, sig.Results, roleResult)
+		f.declareParamList(ls, ls, sig.Params, roleParam)
+		f.declareParamList(ls, ls, sig.Results, roleResult)
 		// A literal CALLED where it stands -- `func(n int) { ... }(5)` as a statement,
 		// behind a go or a defer, or in an expression -- is a call like any other, and
 		// its arguments were checked by nothing: a string for an int reached the C
@@ -12706,7 +12809,16 @@ func (f *File) typeDeclNamed(s *Scope, name string) (*TypeDeclaration, *Scope, b
 func (f *File) typeDeclNamedIn(s *Scope, name string, unexported bool) (*TypeDeclaration, *Scope, bool) {
 	qual, member, isQual := strings.Cut(name, ".")
 	if !isQual {
-		td, ok := s.find(name).(*TypeDeclaration)
+		in, d := s.find2(name)
+		td, ok := d.(*TypeDeclaration)
+		// A variable named like its type, `func take(reading reading)`, `var buf
+		// buf`, `func (n *n) m()`: its type is resolved where it is declared, outside
+		// it, and the name asked for its type's sake is that type's -- read here as the
+		// variable, every rule asked of such a variable's type was answered nothing,
+		// and `reading + 1` for the struct was taken.
+		if vd, isVar := d.(*VarDeclaration); isVar && in != nil && in.Parent != nil && vd.typeName.IsValid() && !vd.typeQual.IsValid() && vd.typeName.Src() == name {
+			td, ok = in.Parent.find(name).(*TypeDeclaration)
+		}
 		// `type A = B`: A is another name for B, so every question about A -- its
 		// methods, its fields, what it embeds -- is answered by B's declaration.
 		// Bounded: an alias cycle is reported at the declaration.
@@ -12753,6 +12865,34 @@ func (f *File) typeDeclNamedIn(s *Scope, name string, unexported bool) (*TypeDec
 		td = next
 	}
 	return td, ps, ok
+}
+
+// declaredAt is the scope a variable's type and initializer are read in, recorded
+// as its declScope: s as it stands where the variable is declared. That is s
+// itself, unless a name declared there hides a type of its name, `var reading
+// reading` or `buf := buf{1}`: read in s afterwards, the type is the variable, and
+// every walk over the variable's type answered nothing. Then it is s as it was.
+func declaredAt(s *Scope, names []Token) *Scope {
+	for _, nm := range names {
+		// findQuiet: a lookup leaving a literal's scope is no capture here.
+		switch s.findQuiet(nm.Src()).(type) {
+		case *TypeDeclaration, *PredeclaredType:
+			return &Scope{Kind: s.Kind, Declarations: maps.Clone(s.Declarations), Parent: s.Parent, litOf: s.litOf}
+		}
+	}
+	return s
+}
+
+// varTypeDecl is the declaration of a variable's type, by the name it recorded,
+// where the variable is read: as s finds it, or, where a variable named like its
+// type hides it there -- `level.up()` and `reading.v = 1` in a `func take(reading
+// reading, level level)` -- as typeDeclNamed resolves it past the variable.
+func (f *File) varTypeDecl(s *Scope, name string) (*TypeDeclaration, bool) {
+	if td, ok := s.find(name).(*TypeDeclaration); ok {
+		return td, true
+	}
+	td, _, ok := f.typeDeclNamed(s, name)
+	return td, ok
 }
 
 // collectIfaceMethods adds an interface's methods to set, expanding every EMBEDDED
@@ -13913,7 +14053,7 @@ func (f *File) fieldTypeNodeOf(s *Scope, head, field Token, indexed bool) TypeNo
 		}
 		return nil
 	}
-	td, ok := s.find(owner.Src()).(*TypeDeclaration)
+	td, ok := f.varTypeDecl(s, owner.Src())
 	if !ok || td.TypeSpec == nil {
 		return nil
 	}
@@ -14606,7 +14746,7 @@ func (f *File) checkMethodCallOn(s *Scope, d *VarDeclaration, base string, membe
 		}
 		return
 	}
-	td, ok := s.find(d.typeName.Src()).(*TypeDeclaration)
+	td, ok := f.varTypeDecl(s, d.typeName.Src())
 	if !ok {
 		// The base is not a named type. A predeclared scalar (int, bool, string, ...)
 		// has no methods, so any method call on it is invalid; a pointer, array or
@@ -17842,6 +17982,14 @@ func (f *File) addressOfInfo(s *Scope, n Node) (elemKind Kind, hasElem bool, typ
 			ops = append(ops, c)
 		}
 	}
+	if facSet && len(ops) == 2 && f.unaryOp(s, ops[0]) == AND && f.unaryOp(s, ops[1]) == MUL {
+		// `q := &*p` is `q := p`: q was given no type at all, and `q = 8` was taken.
+		if id, ok := f.exprIdent(fac); ok {
+			if d, ok := s.find(id.Src()).(*VarDeclaration); ok && d.isPtr {
+				return d.elemKind, d.hasElemKind, d.typeName, d.typeQual, true
+			}
+		}
+	}
 	if !facSet || len(ops) != 1 || f.unaryOp(s, ops[0]) != AND {
 		return 0, false, Token{}, Token{}, false
 	}
@@ -19146,6 +19294,13 @@ func (f *File) kindIntoVar(s *Scope, d *VarDeclaration, value Node) {
 		want = f.typeNodeString(d.chanTypeNode(), false)
 	case "a struct":
 		want = d.declaredTypeName()
+	case "a pointer":
+		// One whose pointee nothing recorded, `u := &(*p)`, `pp := &p`: no constant
+		// goes into a pointer. Asked of a constant alone, exprType answering an
+		// address, `&x`, with its pointee's Kind.
+		if k, ok := f.exprType(s, value); ok && isUntypedKind(k) && k != UntypedNil {
+			want = "a pointer"
+		}
 	}
 	f.kindValueErr(s, value, want, "assignment")
 }
@@ -20163,6 +20318,12 @@ func (f *File) methodExprFrom(s *Scope, me methodExpr, steps []Node) (methodExpr
 	}
 	member := selectorTok(f, steps[0])
 	if !member.IsValid() || Symbol(member.Ch) != IDENT {
+		return methodExpr{}, nil, false
+	}
+	if _, isVar := s.find(me.typeTok.Src()).(*VarDeclaration); isVar && !me.qual.IsValid() {
+		// A variable named like its type, `reading.v` in a `func take(reading
+		// reading)`: the head as written is the variable, whatever typeDeclNamed
+		// answers for its type's sake.
 		return methodExpr{}, nil, false
 	}
 	td, home, isType := f.typeDeclNamed(s, me.typeName())
@@ -21698,6 +21859,13 @@ func (f *File) zeroResultCall(s *Scope, id Token, suffix Node) bool {
 			return false
 		}
 		return len(f.flattenResults(s, fd.Type.Signature)) == 0
+	case len(ops) > 2 && ops[len(ops)-1].sym == CallSuffix && ops[len(ops)-2].sym == Selector:
+		// A method at the end of a chain, `h.rows[1].Show()`: the walk names it.
+		for _, c := range f.callChainWalk(s, id, ops).calls {
+			if c.at == len(ops)-2 && c.sig != nil {
+				return len(f.flattenResults(c.in, c.sig)) == 0
+			}
+		}
 	}
 	return false
 }
@@ -21955,6 +22123,17 @@ func (f *File) callResults(s *Scope, callee, member Token) ([]retResult, bool) {
 		return nil, false
 	}
 	fd := td.methods[member.Src()]
+	if fd == nil {
+		// A method promoted through an embedded field, `x := o.Two()` for a Two of
+		// two results: uncounted, the := took one. Its results are spelled where
+		// it is declared, which is answered for this package and the receiver
+		// type's own.
+		otd, ohome, promoted := f.methodOwnerScoped(s, d.declaredTypeName(), member.Src())
+		if !promoted || ohome != home {
+			return nil, false
+		}
+		fd = otd.methods[member.Src()]
+	}
 	if fd == nil || fd.Type == nil {
 		return nil, false
 	}
@@ -23032,9 +23211,24 @@ func (f *File) checkAppendValues(s *Scope, argList Node, args []Node) {
 		return
 	}
 	var p retResult
+	elemTN, elemIn := d.elemTypeNode, d.declScope
+	if elemIn == nil {
+		elemIn = s
+	}
+	if elemTN == nil && !d.hasElemKind {
+		// A variable of a DEFINED slice type, `xs := L{1, 2}` or `var xs L`, records
+		// no element: its type's definition has it. `append(xs, "a")` was taken.
+		if t, ok := f.varTypeAt(d); ok {
+			if u := f.underlyingTypeAt(t); u.f != nil && u.f.Package == f.Package {
+				if sl, isSlice := u.tn.(*TypeNodeSlice); isSlice {
+					elemTN, elemIn = sl.TypeNode, u.s
+				}
+			}
+		}
+	}
 	switch {
-	case d.elemTypeNode != nil:
-		p = f.resultType(s, d.elemTypeNode)
+	case elemTN != nil:
+		p = f.resultType(elemIn, elemTN)
 	case d.hasElemKind:
 		// A slice declared by `:=` from a make or a literal records its element as
 		// a KIND and has no type node to read: `s := make([]int, 0, 2)` then
@@ -23051,6 +23245,17 @@ func (f *File) checkAppendValues(s *Scope, argList Node, args []Node) {
 		// answers for a value needing its address as readily as for one that does
 		// not implement it at all.
 		if elemIsIface {
+			// A value of a category with no methods, `append(ns, ns)` for a
+			// []Named: a slice implements no interface that asks for a method.
+			if set, _ := f.interfaceMethodsNamed(s, p.name); len(set) != 0 {
+				if what, isKindless := f.nonBoolOperand(s, v); isKindless {
+					switch what {
+					case "a slice", "an array", "a function", "a channel":
+						f.err(f.tok(v.Pos()).Position(), "cannot use %s as %s value in argument to append: it is %s, which does not implement %s", f.exprSource(v), p.name, what, p.name)
+						continue
+					}
+				}
+			}
 			f.checkImplements(s, p.name, v, "append")
 			// A value of a BASIC type is no element of an interface slice: only a
 			// pointer goes in here, and a constant has no address to take, so
@@ -23064,16 +23269,12 @@ func (f *File) checkAppendValues(s *Scope, argList Node, args []Node) {
 			continue
 		}
 		f.checkNilAssignable(s, p, v, "append")
-		if d.elemTypeNode != nil {
-			in := d.declScope
-			if in == nil {
-				in = s
-			}
-			f.checkNilValue(s, in, d.elemTypeNode, v, "append")
-			f.checkFuncAssign(s, f.funcSig(in, d.elemTypeNode), v, "argument to append")
+		if elemTN != nil {
+			f.checkNilValue(s, elemIn, elemTN, v, "append")
+			f.checkFuncAssign(s, f.funcSig(elemIn, elemTN), v, "argument to append")
 			// A slice or a pointer element, which has no Kind for the rules below:
 			// `append(ps, &g3)` for a []*[4]int went to the C compiler.
-			f.checkRefAssign(s, in, d.elemTypeNode, v, "argument to append")
+			f.checkRefAssign(s, elemIn, elemTN, v, "argument to append")
 		}
 		if !p.known {
 			// A named element with no predeclared kind of its own -- a struct, an

@@ -45939,6 +45939,146 @@ false false true false
 23
 `,
 	},
+	{
+		// print and println of several arguments, each of every kind. Packed into one
+		// printf, every argument that was no string, slice or array VARIABLE went out
+		// under %d: a nil pointer, function or interface printed 0 for Go's 0x0 and
+		// (0x0,0x0), an array FIELD, element, literal or call's field its address,
+		// and a struct -- which Go refuses -- a word of itself. Alone, each printed
+		// right or was refused.
+		name: "print and println of several arguments of every kind",
+		src: `type P struct{ x, y int }
+
+type Named interface{ Name() string }
+
+type H struct {
+	a [2]int
+	b [2]bool
+}
+
+var calls int
+
+func mkh() H {
+	calls++
+	return H{[2]int{5, 6}, [2]bool{true, false}}
+}
+
+func show() {
+	var h H
+	h.a[1] = 7
+	aa := [2][2]int{{1, 2}, {3, 4}}
+	a := [3]uint8{9, 8, 7}
+	println(1, h.a, 2)
+	print(h.a, 1, "\n")
+	println(1, aa[1], aa)
+	println(1, [2]int{3, 4})
+	println(1, mkh().a, calls)
+	println(1, mkh().b)
+	println(1, a, 2.5, true)
+	defer println(1, h.a, a)
+	h.a[0] = 99
+	a[0] = 99
+}
+
+func main() {
+	var p *P
+	var f func(int) int
+	var n Named
+	var e error
+	println(1, p, 2)
+	println(f, 3, n)
+	print(e, 4, "\n")
+	println(p == nil, f == nil, n == nil, e)
+	show()
+}
+`,
+		want: `1 0x0 2
+0x0 3 (0x0,0x0)
+(0x0,0x0)4
+true true true (0x0,0x0)
+1 [0 7] 2
+[0 7]1
+1 [3 4] [[1 2] [3 4]]
+1 [3 4]
+1 [5 6] 1
+1 [true false]
+1 [9 8 7] 2.5 true
+1 [0 7] [9 8 7]
+`,
+	},
+	{
+		// A variable named like its type -- a parameter, a receiver, a local -- which
+		// Go resolves where the variable is declared, outside it. The checker read the
+		// type's name where the variable was used, and found the variable: a result
+		// type named like the receiver was "not a type", a method of a Kind type was
+		// missing, and every rule asked of such a variable's struct type answered
+		// nothing. The emitter took a call through a parameter of a function type for
+		// a conversion to it.
+		name: "variables named like their types",
+		src: `type reading struct {
+	v  int
+	xs [2]int
+}
+
+func (reading *reading) bump() { reading.v++ }
+
+func (reading reading) get() int { return reading.v }
+
+type buf []byte
+
+func (buf buf) n() int { return len(buf) }
+
+type node struct {
+	next *node
+	v    int
+}
+
+type level int
+
+func (level level) up() level { return level + 1 }
+
+type cb func(int) int
+
+func take(reading reading, buf buf, level level, cb cb) int {
+	reading.bump()
+	reading.xs[1] = reading.get()
+	p := &reading
+	q := reading
+	same := q == reading
+	_ = same
+	n := len(buf) + buf.n() + int(level.up()) + cb(2)
+	for i, b := range buf {
+		n += i + int(b)
+	}
+	buf = buf[:1]
+	buf[0] = 7
+	return reading.v + p.v + q.get() + n + len(reading.xs) + int(buf[0])
+}
+
+func walk(node *node) int {
+	n := 0
+	for node != nil {
+		n += node.v
+		node = node.next
+	}
+	return n
+}
+
+func main() {
+	var reading reading
+	reading.v = 5
+	reading.bump()
+	var node node
+	node.v = 3
+	other := node
+	node.next = &other
+	println(take(reading, buf{1, 2}, 3, func(x int) int { return x * 2 }), walk(&node), reading.get())
+	var buf buf = buf{4}
+	println(buf.n(), len(buf))
+}
+`,
+		want: "46 6 6\n1 1\n",
+	},
 }
 
 // TestEmitCRun compiles emitted C with a host compiler and runs it, checking what

@@ -1051,6 +1051,33 @@ reached it through a field (callChain.builderCalls) and had no result types
 A spec file marked `// COMPILE` carried an `// ERROR` annotation nothing met until
 `l.sb.Flush()` was checked (builder.ogo): **an ERROR line in a COMPILE file is an
 expectation nobody checks** -- the marker was dropped.
+The 17 closed in the next sitting (mutation_refusals6.ogo), each a value or a target
+some rule had never been asked about: a comma-ok flag and a select clause's whole
+target of no Kind (checkOkFlagTarget, checkRecvIntoTarget), `&*p` (addressOfInfo), a
+method with no result at the end of a chain (zeroResultCall asks callChainWalk), a
+PROMOTED method's results (callResults), a variable of a defined slice type appended
+to (checkAppendValues reads the definition), a range over a sliced literal
+(bracketLitStepsType) and over a variable of a defined array type (rangeElem). And the
+66 `println` of a struct were NOT the extension this file had called them: specs.go
+refuses a struct, and alone one was refused. Among other arguments one printf took
+them all, and every argument but a string, a slice and a bare array VARIABLE went
+under `%d` (isScalarPrint) -- a nil pointer `0`, an interface a word, an array
+field's address, `1 26412 2` on the board for `1 [0 7] 2`. **A note calling a row
+"by design" is checked against specs.go before it is believed.** The one left was a
+parameter named like its type, `func take(reading reading)`, and it was a row: the
+checker resolved a variable's recorded type NAME where the variable is used, which
+the variable hides -- a result type named like the receiver was "not a type", a
+method of a Kind type missing, and every rule asked of a struct type answered nothing.
+A function's receiver and parameters are typed in the package scope now (Go's scope
+for them is the body), a local hiding a type keeps the scope it was declared in
+(declaredAt), and a lookup by a variable's type name passes a variable named like it
+(typeDeclNamedIn, varTypeDecl) -- which a written head asking "is this a type" must
+not, so the method-expression reader asks for the variable first. The emitter had
+the same row: `cb(2)` for a parameter `cb cb` was a conversion (convType asks
+localName). 75 programs of the row agree with Go; of the 10,347 mutants both refused
+across the batches one was taken again, an older regression the list kept: a range
+over a variable of a defined array type had no element. **A batch's REJ/REJ list is a
+net too**: re-run it, and a mutant taken since is a row lost.
 
 **A COMPILER RUN IN A SWEEP IS CAPPED, AND A CRASH IS NOT A REFUSAL** (2026-09-20).
 A probe program is written to find a fault, and a fault is not always a wrong

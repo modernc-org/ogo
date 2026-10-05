@@ -1,0 +1,120 @@
+// The positional rows of the fifth mutation sweep: each mutant Go refuses, taken
+// because the variable or the value involved had a type nothing recorded or a
+// position nothing asked.
+
+type S string
+
+func (s S) Sum() int { return len(s) }
+
+type L []int
+
+func (l L) Total() int { return len(l) }
+
+type rec struct {
+	name S
+	xs   L
+}
+
+type Named interface{ Name() string }
+
+type T struct{ n int }
+
+func (t *T) Name() string { return "t" }
+
+var gt T
+
+type P struct{ x, y int }
+
+func (p P) Show() {}
+
+func (p P) Two() (int, int) { return 1, 2 }
+
+type O struct{ P }
+
+type H struct {
+	rows [2]P
+	p    P
+}
+
+var ch chan int
+
+var cp chan P
+
+func named(r rec) {
+	u := r.name[1:4]
+	// ERROR "type S has no method Total"
+	_ = u.Total() + u.Sum()
+	d := r.xs[1:]
+	// ERROR "type L has no method Sum"
+	_ = d.Sum() + d.Total()
+}
+
+func appends(ns []Named) {
+	// ERROR "cannot use ns as Named value in argument to append: it is a slice"
+	ns = append(ns, ns, &gt)
+	xs := L{1, 2, 3}
+	var p P
+	// ERROR "cannot use p \(variable of type P\) as int value in append"
+	xs = append(xs[:2], p)
+	// ERROR "cannot use .a. of type string as type int in append"
+	xs = append(xs, "a")
+	_, _ = ns, xs
+}
+
+func ranges() int {
+	n := 0
+	for _, q := range []P{{1, 2}, {3, 4}}[1:] {
+		// ERROR "operator \+ not defined on q: it is a struct"
+		n += q
+	}
+	return n
+}
+
+func receives() {
+	var s P
+	var r struct{ val int }
+	var w struct{ r struct{ val int } }
+	// ERROR "cannot assign the bool of a comma-ok receive to r: it is a struct"
+	r.val, r = <-ch
+	// ERROR "cannot assign the bool of a comma-ok receive to w.r: it is a struct"
+	r.val, w.r = <-ch
+	select {
+	// ERROR "cannot use <-ch \(value of type int\) as P value in assignment"
+	case s = <-ch:
+	// ERROR "cannot use <-ch \(value of type int\) as P value in assignment"
+	case (s) = <-ch:
+	// ERROR "cannot assign the bool of a comma-ok receive to r: it is a struct"
+	case r.val, r = <-ch:
+	case s = <-cp:
+	}
+	_, _, _ = s, r, w
+}
+
+func pointers(p *int) {
+	q := &*p
+	// ERROR "cannot use 8 \(a value\) as \*int value in assignment"
+	q = 8
+	u := &(*p)
+	// ERROR "cannot use 9 \(untyped int constant\) as \*int value in assignment"
+	u = 9
+	_, _ = q, u
+}
+
+func calls(h H, o O) {
+	// ERROR "h.rows\[1\].Show\(\) \(no value\) used as value"
+	x := h.rows[1].Show()
+	// ERROR "h.p.Show\(\) \(no value\) used as value"
+	println(h.p.Show())
+	// ERROR "assignment mismatch: 1 variable but 2 values"
+	y := o.Two()
+	_, _ = x, y
+}
+
+func main() {
+	named(rec{})
+	appends(nil)
+	_ = ranges()
+	receives()
+	pointers(nil)
+	calls(H{}, O{})
+}
