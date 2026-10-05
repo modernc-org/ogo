@@ -252,6 +252,23 @@ shipped section tells a reader on that version that they have behaviour they do 
 
 ### Behaviour changes
 
+- **What the mutation sweeps left taken is refused, as Go refuses it** -- each was a
+  C error about generated code: a builtin, a type or a function indexed (`len[0]`,
+  `H[0]`, `main[0] = 255`); the address of a literal, `&1`, and an operator over an
+  address, `-&a16`; `*nil`; a type or nil as a target (`int = 5`, `nil.x = 4`); a
+  field of no function type called, `r.state()`; a constant as a `for` post's
+  target, `"s"++`; a range over the address of what is no array, `range &gs`; the
+  Builder by value where a `*Builder` is wanted, its methods' arguments
+  (`sb.WriteByte("Hi")`) and an operator on it; a `[]rune` conversion where a
+  `[]byte` is wanted; a `**T` into an interface asking for methods; a method's
+  arguments on a literal receiver, `P{1, 2}.Scaled("s")`; a constant operation
+  over two classes, `const x = 1 + "s"`, which was taken even where x was used; a
+  blank package constant, `const _ = ...`, never evaluated; and `bool(1)`. And
+  variables that had no type now have one, so what is done with them is asked: both
+  variables of a comma-ok assertion to an interface (`ok == nil` was taken),
+  package variables from one call of several results, a variable from a call of a
+  call's result (`a := pick()(4)` was taken for a function), and a slice from
+  `make` stored into a field.
 - **A constant too big for where it stands is refused, as Go refuses it** (a third
   sweep of mutated run cases): a constant shift past Go's bound, `1 << 2000` and
   `1 << 0x80000000`, which the compiler computed exactly and ran out of memory on;

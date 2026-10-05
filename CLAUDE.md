@@ -1007,6 +1007,26 @@ a shift count past a uint, `int64(i)++` as a for post, and `-*p`, which had no
 Kind. 15 of the 85 are taken now, eight of them the `println` extension. Over the
 three batches, every one of the 1,838 mutants Go accepts and this compiler did is
 accepted still.
+What all four batches still left taken, 56 mutants once `println` of an array (the
+extension) and a missing `main` (`ogo build`'s to refuse) are set apart, were loud
+-- a C error about generated code each -- and two things about them are worth
+keeping. Probed alone, a third of them were REFUSED: the mutant's line was taken
+because of how a variable in it was DECLARED, not because of the rule -- a package
+variable from one call of several results (varSpec typed only one value per name),
+a variable from a call of a call's result, `a := pick()(4)`, recorded as a FUNCTION
+(exprCallee answered for any number of calls and every caller read the callee's
+results; exprCalleeCalls follows them now), both variables of a comma-ok assertion
+to an interface (only a pointer's was typed), a `make` stored into a field.
+**When a mutant is taken, probe its line alone before writing a rule: what is
+missing may be the variable's type.** And a constant's operation over two classes,
+`const x = 1 + "s"`, was folded by go/constant to an unknown value without a word,
+so the constant was taken even where it was used, and a blank constant was never
+evaluated at all (blankConsts). 14 of the 56 are left: most are the same
+declaration row in shapes not yet probed -- each line is refused alone and taken in
+its program -- and a few are rows of their own, an unnamed struct type's field order,
+`&iota`, `**np` of an `*int`, `printf(...)` used as a value. A call of a call whose
+result is a slice, `var s string = mk()(1)`, has no type yet now that exprCallee no
+longer misreads it.
 
 **A COMPILER RUN IN A SWEEP IS CAPPED, AND A CRASH IS NOT A REFUSAL** (2026-09-20).
 A probe program is written to find a fault, and a fault is not always a wrong

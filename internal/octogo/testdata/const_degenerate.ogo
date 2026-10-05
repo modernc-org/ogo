@@ -15,13 +15,13 @@ const negShift = 1 << -1
 // ERROR "operator - not defined"
 const strSub = "a" - "b"
 
-// ERROR "operator & not defined"
+// ERROR "mismatched types untyped string and untyped int"
 const strBitAnd = "a" & 1
 
 // ERROR "operator & not defined"
 const floatBitAnd = 1.5 & 1
 
-// ERROR "operator / not defined"
+// ERROR "mismatched types untyped string and untyped int"
 const strDiv = "a" / 2
 
 // ERROR "operator << not defined"

@@ -34,7 +34,7 @@ func suffixes() {
 	// ERROR "type string has no field f"
 	_ = q.s.f
 
-	// ERROR "cannot call non-function q.n"
+	// ERROR "cannot call q.n \(variable of type int\): int is not a function"
 	_ = q.n()
 
 	// A STRING field is byte-indexable, as a string is anywhere else, and a slice

@@ -233,6 +233,7 @@ type File struct {
 	inCaseExpr        bool                        // evaluating a switch case expression, where a non-constant operand is legal: suppress "is not a constant"
 	namingConsts      map[*ConstDeclaration]bool  // constants whose initializer exprNamedType is reading, against a cycle
 	varSpecsDone      map[int32]bool              // package var specs resolved, by position: in source order, or first where an initializer above names them
+	blankConsts       []*ConstDeclaration         // the package\'s `const _ = ...`, which no name asks for (constSpec)
 	refs              map[int32][]*VarDeclaration // the variables a name read at a token index resolved to, in the function being checked (noteRef)
 	iota              int                         // the current iota value while evaluating a const spec, or -1 outside a const declaration
 	loopDepth         int                         // number of enclosing "for" loops of the statement being checked, so "defer" inside a loop is rejected and "continue" outside one is
@@ -3365,7 +3366,7 @@ func (f *File) checkHeaderAssign(s *Scope, targets, values []Node) {
 		}
 		bare := len(steps) == 0 && stars == 0
 		switch s.find(base.Src()).(type) {
-		case *ConstDeclaration, *FuncDeclaration, *TypeDeclaration, *PredeclaredFunc:
+		case *ConstDeclaration, *FuncDeclaration, *TypeDeclaration, *PredeclaredFunc, *PredeclaredType:
 			if bare {
 				f.err(base.Position(), "cannot assign to %s", base.Src())
 			}
@@ -3717,6 +3718,20 @@ func (f *File) checkRangeTarget(s *Scope, v Node) {
 // its element kind with isChan -- ranging one receives until it is closed, which is what close was built
 // for (see checkRange for why the element lands in the first variable).
 func (f *File) rangeElem(s *Scope, expr Node) (elem Kind, hasElem, isInt, isChan bool) {
+	// The address of what is no array, `range &gs` for a string: a pointer, which
+	// only an array's ranges.
+	if x, ok := f.addrOfName(expr); ok {
+		if d, ok := s.find(x.Src()).(*VarDeclaration); ok {
+			isArr := false
+			if t, ok := f.varTypeAt(d); ok && t.f != nil {
+				_, isArr = f.underlyingTypeAt(t).tn.(*TypeNodeArray)
+			}
+			if !isArr && (d.hasKind || d.isPtr || d.isChan) {
+				f.err(x.Position(), "cannot range over &%s: it is a pointer", x.Src())
+				return 0, false, false, false
+			}
+		}
+	}
 	if id, ok := f.exprSoleIdent(expr); ok {
 		if d, ok := s.find(id.Src()).(*VarDeclaration); ok {
 			switch {
@@ -4436,6 +4451,11 @@ func (f *File) checkForPost(s *Scope, results []retResult, n Node) {
 		if f.conversionTarget(s, l) {
 			return
 		}
+		// A constant, `"s"++` and `5 += 1`: no place. The C incremented a literal.
+		if _, isConst := f.constValue(s, l); isConst {
+			f.err(f.tok(l.Pos()).Position(), "cannot assign to %s (neither addressable nor a map index expression)", f.exprSource(l))
+			return
+		}
 		// A post's targets as a statement's: a bare `j = v` is a write and no
 		// use, the head of any other -- `j++`, `s[i] = v` -- a use. Neither was
 		// recorded, and every variable named j counted as used.
@@ -4559,7 +4579,7 @@ func (f *File) checkStepInit(s *Scope, target Node, op Symbol, opSrc string, val
 			return
 		}
 		switch s.find(base.Src()).(type) {
-		case *ConstDeclaration, *FuncDeclaration, *TypeDeclaration, *PredeclaredFunc:
+		case *ConstDeclaration, *FuncDeclaration, *TypeDeclaration, *PredeclaredFunc, *PredeclaredType:
 			f.err(base.Position(), "cannot assign to %s", base.Src())
 			return
 		}
@@ -4852,6 +4872,8 @@ func (f *File) nonBoolVarAt(s *Scope, d *VarDeclaration, depth int) (string, boo
 		return "a function", true
 	case d.isChan:
 		return "a channel", true
+	case d.builderVar:
+		return "a struct", true // the predeclared Builder: `+sb`, `if sb {` took one
 	case d.declType != nil:
 		return f.nonBoolType(d.declScope, d.declType)
 	case d.hasKind:
@@ -7475,7 +7497,7 @@ func (f *File) commRecvAssignTarget(s *Scope, assignHead, postfixComm, chanExpr 
 		if !f.isImportQualifier(s, nm) {
 			f.errUndefined(id.Position(), nm)
 		}
-	case *ConstDeclaration, *FuncDeclaration, *TypeDeclaration, *PredeclaredFunc:
+	case *ConstDeclaration, *FuncDeclaration, *TypeDeclaration, *PredeclaredFunc, *PredeclaredType:
 		if !suffixed {
 			f.err(id.Position(), "cannot assign to %s", nm)
 		}
@@ -8094,7 +8116,7 @@ func (f *File) checkAssignment(s *Scope, head, postfix Node) {
 				// variable, so the case below never saw one and every such assignment
 				// was accepted.
 				f.checkQualifiedAssign(s, tok, postfix)
-			case *ConstDeclaration, *FuncDeclaration, *TypeDeclaration, *PredeclaredFunc:
+			case *ConstDeclaration, *FuncDeclaration, *TypeDeclaration, *PredeclaredFunc, *PredeclaredType:
 				if !lhsSuffixed[i] {
 					f.err(tok.Position(), "cannot assign to %s", nm)
 				}
@@ -8138,7 +8160,7 @@ func (f *File) checkAssignment(s *Scope, head, postfix Node) {
 				// variable, so the case below never saw one and every such assignment
 				// was accepted.
 				f.checkQualifiedAssign(s, tok, postfix)
-			case *ConstDeclaration, *FuncDeclaration, *TypeDeclaration, *PredeclaredFunc:
+			case *ConstDeclaration, *FuncDeclaration, *TypeDeclaration, *PredeclaredFunc, *PredeclaredType:
 				if !lhsSuffixed[i] {
 					f.err(tok.Position(), "cannot assign to %s", nm)
 				}
@@ -8290,7 +8312,7 @@ func (f *File) checkAssignment(s *Scope, head, postfix Node) {
 				// variable, so the case below never saw one and every such assignment
 				// was accepted.
 				f.checkQualifiedAssign(s, tok, postfix)
-			case *ConstDeclaration, *FuncDeclaration, *TypeDeclaration, *PredeclaredFunc:
+			case *ConstDeclaration, *FuncDeclaration, *TypeDeclaration, *PredeclaredFunc, *PredeclaredType:
 				if !lhsSuffixed[i] {
 					f.err(tok.Position(), "cannot assign to %s", nm)
 				}
@@ -8388,10 +8410,15 @@ func (f *File) checkAssignment(s *Scope, head, postfix Node) {
 	// cover: v carries the asserted type and ok is a bool.
 	assertBase, assertQual, assertOK := Token{}, Token{}, false
 	var assertLit TypeNode // `p, ok := x.(*[4]uint32)`: the type p takes whole (assertedPtrLit)
+	// An assertion to an INTERFACE, `n, ok := r.(Namer)`: n is a Namer and ok a
+	// bool. Only an assertion to a pointer was typed, so `ok == nil` and
+	// `n.Name(1)` were asked nothing.
+	assertFlag, assertIface := false, false
 	if len(rhs) == 1 && len(lhs) == 2 {
 		if tn, isLit := f.assertedPtrLit(s, rhs[0]); isLit {
 			assertLit, assertOK = tn, true
 		} else if typN, isAssert := f.assertionTypeNode(rhs[0]); isAssert {
+			assertFlag = true
 			// Whatever the operand is, `v, ok := h.i.(*T)` as `v, ok := x.(*T)`
 			// (exprNamedType). The assertion's own check reports the type.
 			n0 := len(f.errList)
@@ -8402,6 +8429,9 @@ func (f *File) checkAssignment(s *Scope, head, postfix Node) {
 			// of geo's type, and without it q carries a bare "Quad" this package
 			// cannot resolve, so every field and method read off q goes unchecked.
 			assertQual = namedTypeQual(tn)
+			if assertOK && !f.isPointerType(s, tn) && !assertQual.IsValid() {
+				_, assertIface = f.interfaceMethodsNamed(s, assertBase.Src())
+			}
 			assertOK = assertOK && f.isPointerType(s, tn)
 		}
 	}
@@ -8469,6 +8499,13 @@ func (f *File) checkAssignment(s *Scope, head, postfix Node) {
 			case i == 0:
 				vd.typeName, vd.typeQual = f.canonicalType(s, assertBase, assertQual)
 				vd.isPtr = true
+			case i == 1:
+				vd.kind, vd.hasKind = PredeclaredBool, true
+			}
+		} else if assertFlag {
+			switch {
+			case i == 0 && assertIface:
+				vd.typeName = assertBase
 			case i == 1:
 				vd.kind, vd.hasKind = PredeclaredBool, true
 			}
@@ -8666,7 +8703,7 @@ func (f *File) exprFuncSig(s *Scope, n Node) *SignatureNode {
 		}
 		return f.importedMethodSig(ids[0], vd.typeName, ids[2])
 	}
-	callee, ok := f.exprCallee(n)
+	callee, calls, ok := f.exprCalleeCalls(n)
 	if !ok {
 		return nil
 	}
@@ -8684,10 +8721,16 @@ func (f *File) exprFuncSig(s *Scope, n Node) *SignatureNode {
 	case *VarDeclaration:
 		sig = d.funcSig
 	}
-	if sig == nil || sig.Results == nil || len(sig.Results.List) != 1 {
-		return nil
+	// Each call made in turn: `pick()(4)` is what the function pick returns
+	// yields, an int, and read as pick's result it made a variable of it a
+	// function, so `a(5)` was taken.
+	for range calls {
+		if sig == nil || sig.Results == nil || len(sig.Results.List) != 1 {
+			return nil
+		}
+		sig = f.funcSig(s, sig.Results.List[0].TypeNode)
 	}
-	return f.funcSig(s, sig.Results.List[0].TypeNode)
+	return sig
 }
 
 // funcLitSig is the signature of a Factor that is a function LITERAL and nothing
@@ -8921,6 +8964,14 @@ func (f *File) typeIdentityOf(tn *TypeNodeIdent) string {
 		return home.Package.ImportPath + "." + td.Name()
 	}
 	if _, isPre := wf.Scope.find(written).(*PredeclaredType); isPre && !tn.Qualifier.IsValid() {
+		// byte and rune are aliases, one type with uint8 and int32: `[]uint8("x")`
+		// for a []byte parameter was refused once a conversion had a type.
+		switch written {
+		case "byte":
+			return "uint8"
+		case "rune":
+			return "int32"
+		}
 		return written
 	}
 	return ""
@@ -9343,8 +9394,17 @@ func (f *File) exprSelectorChain(n Node) ([]Token, bool) {
 // exprCallee returns the bare name an expression calls, when the expression is
 // exactly one such call -- "f()" and nothing more.
 func (f *File) exprCallee(n Node) (Token, bool) {
+	id, calls, ok := f.exprCalleeCalls(n)
+	// One call: `pick()(4)` is a call of what pick returns, and its value is no
+	// result of pick's -- every caller here reads the callee's results.
+	return id, ok && calls == 1
+}
+
+// exprCalleeCalls is exprCallee for a name followed by any number of calls,
+// `pick()(4)`, with the number.
+func (f *File) exprCalleeCalls(n Node) (Token, int, bool) {
 	var id Token
-	found, sawCall, extra := false, false, false
+	found, calls, extra := false, 0, false
 	var walk func(ast []int32)
 	walk = func(ast []int32) {
 		for c := range it(ast) {
@@ -9352,7 +9412,7 @@ func (f *File) exprCallee(n Node) (Token, bool) {
 			case Expression, SimpleExpr, Term, UnaryExpr, Factor, FactorSuffix:
 				walk(c.ast)
 			case CallSuffix:
-				sawCall = true
+				calls++
 			case 0:
 				if f.ch(c.tok) == IDENT && !found {
 					id, found = f.tok(c.tok), true
@@ -9365,10 +9425,10 @@ func (f *File) exprCallee(n Node) (Token, bool) {
 		}
 	}
 	walk(n.ast)
-	if !found || !sawCall || extra {
-		return Token{}, false
+	if !found || calls == 0 || extra {
+		return Token{}, 0, false
 	}
-	return id, true
+	return id, calls, true
 }
 
 // exprMethodCall returns the receiver and the method an expression calls, when the
@@ -13202,7 +13262,24 @@ func (f *File) checkImplements(s *Scope, ifaceName string, value Node, what stri
 		// `&x` for a VARIABLE x. The root of `&T{...}` is the literal's type name,
 		// which is no variable and is asked about below instead.
 		if root, suffixed, isAddr := f.addressOperandRoot(s, value); isAddr && !suffixed {
-			if _, isVar := s.find(root.Src()).(*VarDeclaration); isVar {
+			if d, isVar := s.find(root.Src()).(*VarDeclaration); isVar {
+				// The address of a POINTER, `&pp` for a `pp *T`, is a **T, which has
+				// no methods: read as the *T it points at, it implemented the
+				// interface.
+				if d.isPtr && d.typeName.IsValid() && len(set) != 0 {
+					t := d.typeName.Src()
+					if d.typeQual.IsValid() {
+						t = d.typeQual.Src() + "." + t
+					}
+					missing := ""
+					for m := range set {
+						if missing == "" || m < missing {
+							missing = m
+						}
+					}
+					f.err(f.tok(value.Pos()).Position(), "cannot use %s (value of type **%s) as %s value in %s: **%s does not implement %s (missing method %s)", f.exprSource(value), t, ifaceName, what, t, ifaceName, missing)
+					return
+				}
 				id, valueIsPtr, ok = root, true, true
 			}
 		}
@@ -13513,6 +13590,10 @@ func (f *File) unindexableName(s *Scope, id Token) (string, bool) {
 	switch d := s.find(id.Src()).(type) {
 	case *FuncDeclaration:
 		return "a function", true
+	case *PredeclaredFunc:
+		return "a built-in", true // `len[0]`
+	case *TypeDeclaration, *PredeclaredType:
+		return "a type", true // `H[0]`, no generic type here
 	case *VarDeclaration:
 		switch what, known := f.nonBoolVar(s, d); what {
 		case "a function", "a channel", "an interface", "a struct":
@@ -13524,6 +13605,21 @@ func (f *File) unindexableName(s *Scope, id Token) (string, bool) {
 		}
 	}
 	return "", false
+}
+
+// reportUnindexable reports id indexed or sliced (verb) where it is what, as
+// unindexableName names it, in Go's words for a builtin, a type and nil.
+func (f *File) reportUnindexable(id Token, verb, what string) {
+	switch what {
+	case "nil":
+		f.err(id.Position(), "invalid operation: cannot %s nil", verb)
+	case "a built-in":
+		f.err(id.Position(), "invalid operation: cannot %s %s (built-in)", verb, id.Src())
+	case "a type":
+		f.err(id.Position(), "invalid operation: %s[...] (%s is not a generic type)", id.Src(), id.Src())
+	default:
+		f.err(id.Position(), "invalid operation: cannot %s %s: it is %s", verb, id.Src(), what)
+	}
 }
 
 // indexVerb is "index" or "slice", whichever the operation written is.
@@ -13590,6 +13686,7 @@ func (f *File) shadowedImportMember(d *VarDeclaration, head Token) bool {
 func (f *File) checkFieldAccess(s *Scope, head, field Token, suffix Node) {
 	d, ok := s.find(head.Src()).(*VarDeclaration)
 	if !ok {
+		f.checkNilSelector(s, head, field)
 		return
 	}
 	// `e.(*P).n` -- the field is one of what the ASSERTION yielded. See
@@ -14173,6 +14270,49 @@ var builderMethods = map[string]bool{
 	"Reset":       true,
 }
 
+// builderParams are the Builder's methods' parameters, as specs.go declares them:
+// a Kind each, and no Kind (-1) for Write's []byte, whose count alone is asked.
+var builderParams = map[string][]Kind{
+	"Write":       {-1},
+	"WriteByte":   {PredeclaredUint8},
+	"WriteRune":   {PredeclaredInt32},
+	"WriteString": {PredeclaredString},
+	"String":      nil,
+	"Len":         nil,
+	"Reset":       nil,
+}
+
+// checkBuilderArgs checks a call of one of the Builder's methods against its
+// parameters: their number and the Kind of each. Only the name was asked, so
+// `sb.WriteByte("Hi, ")` reached the C compiler.
+func (f *File) checkBuilderArgs(s *Scope, base string, member Token, args []Node) {
+	params := builderParams[member.Src()]
+	callee := base + "." + member.Src()
+	switch {
+	case len(args) < len(params):
+		f.err(member.Position(), "not enough arguments in call to %s", callee)
+		return
+	case len(args) > len(params):
+		f.err(member.Position(), "too many arguments in call to %s", callee)
+		return
+	}
+	for i, k := range params {
+		if k < 0 {
+			continue
+		}
+		a := args[i]
+		ak, ok := f.exprType(s, a)
+		if !ok {
+			continue
+		}
+		if !assignableKind(k, ak) {
+			f.err(f.tok(a.Pos()).Position(), "cannot use %s of type %s as type %s in argument to %s", f.exprSource(a), kindName(ak), kindName(k), callee)
+			continue
+		}
+		f.checkValueOverflow(s, sizedTarget(k, Token{}), a)
+	}
+}
+
 // checkMethodCall checks a call "head.member(...)" when head is a variable of a
 // named type. It reports a member that is no method of the type (and, for a
 // struct, no field either -- a field of function type is not modelled, so it is
@@ -14327,7 +14467,9 @@ func (f *File) checkMethodCallOn(s *Scope, d *VarDeclaration, base string, membe
 	if d.builderVar || d.typeName.Src() == "Builder" && !d.typeQual.IsValid() && isPredeclaredBuilder(s, "Builder") {
 		if !builderMethods[member.Src()] {
 			f.err(member.Position(), "type Builder has no method %s", member.Src())
+			return
 		}
+		f.checkBuilderArgs(s, base, member, argNodes(argList))
 		return
 	}
 	if d.typeQual.IsValid() {
@@ -14389,8 +14531,21 @@ func (f *File) checkMethodCallOn(s *Scope, d *VarDeclaration, base string, membe
 			// holds, checked against its signature as a call through any function
 			// value is. Nothing asked it, so `h.f("x")` and `h.f(1, 2)` reached the
 			// C compiler.
-			if sig := f.funcSig(s, f.structFieldTypeNode(s, &TypeNodeIdent{Name: d.typeName}, member)); sig != nil {
+			ft := f.structFieldTypeNode(s, &TypeNodeIdent{Name: d.typeName}, member)
+			if sig := f.funcSig(s, ft); sig != nil {
 				f.checkArgs(s, member, sig, argNodes(argList))
+			} else if ft != nil {
+				// A field of no function type, called: `r.state()` for an int state
+				// reached the C compiler, which called an int.
+				notFn := f.resultType(s, ft).known // a field of a Kind
+				if u, _ := f.refTypeUnder(s, ft); u != nil {
+					_, isFn := u.(*FunctionType)
+					notFn = notFn || !isFn
+				}
+				if notFn {
+					ts := f.typeNodeString(ft, false)
+					f.err(member.Position(), "invalid operation: cannot call %s.%s (variable of type %s): %s is not a function", base, member.Src(), ts, ts)
+				}
 			}
 			return
 		}
@@ -14562,6 +14717,23 @@ func (f *File) checkAddressable(s *Scope, op Node, fac Node) {
 			if tok := f.tok(c.tok); Symbol(tok.Ch) == IDENT && !hasID {
 				id, hasID = tok, true
 			}
+		}
+	}
+	// `&1`, `&2.5`, `&"s"`: a literal has no storage, as a constant has none. The
+	// C compiler was left to say so, about generated code.
+	if !hasLit && !hasID && len(kids) == 1 && kids[0].sym == 0 {
+		switch tok := f.tok(kids[0].tok); Symbol(tok.Ch) {
+		case INT, FLOAT, CHAR, STRING:
+			kind := map[Symbol]string{INT: "int", FLOAT: "float", CHAR: "rune", STRING: "string"}[Symbol(tok.Ch)]
+			f.err(f.tok(op.Pos()).Position(), "invalid operation: cannot take address of %s (untyped %s constant)", tok.Src(), kind)
+			return
+		}
+	}
+	// `&(1)`, a constant in parentheses, has no storage either.
+	if !hasLit && !hasID {
+		if cv, ok := f.constNumeric(s, fac); ok {
+			f.err(f.tok(op.Pos()).Position(), "invalid operation: cannot take address of %s (untyped %s constant)", f.exprSource(fac), constClassName(cv))
+			return
 		}
 	}
 	if hasLit || !hasID {
@@ -16408,7 +16580,20 @@ func (f *File) checkDeclType(s *Scope, kind Kind, hasKind bool, typeName Token, 
 // checkFieldAssign reports a type mismatch in a field assignment "head.field =
 // rhs": the right-hand side's type category must match the struct field's. It is
 // the struct-field analogue of checkAssignType.
+// checkNilSelector refuses a selector on nil, `nil.x`, as Go does: the emitter
+// refused a read of one in its own words and took a store, `nil.x = 4`.
+func (f *File) checkNilSelector(s *Scope, head, field Token) bool {
+	if head.Src() != "nil" || s.find("nil") != Universe.Declarations["nil"] {
+		return false
+	}
+	f.err(head.Position(), "nil.%s undefined (type untyped nil has no field or method %s)", field.Src(), field.Src())
+	return true
+}
+
 func (f *File) checkFieldAssign(s *Scope, head, field Token, rhsNode Node) {
+	if f.checkNilSelector(s, head, field) {
+		return
+	}
 	f.checkNilValue(s, s, f.fieldTypeNode(s, head, field), rhsNode, "assignment")
 	f.checkChanAssign(s, s, f.fieldTypeNode(s, head, field), rhsNode, "assignment")
 	f.checkFuncAssign(s, f.funcSig(s, f.fieldTypeNode(s, head, field)), rhsNode, "assignment")
@@ -17074,8 +17259,8 @@ func (f *File) indexAssignTarget(head, postfix Node) (base Token, ok bool) {
 		switch c.sym {
 		case Index:
 			indexes++
-		case Selector:
-			disqualify = true
+		case Selector, CallSuffix:
+			disqualify = true // `pick()[2] = 9` indexes what pick returns
 		case PostfixOp:
 			for pc := range it(c.ast) {
 				if pc.sym == CallSuffix {
@@ -17148,6 +17333,11 @@ func (f *File) checkDerefAssign(s *Scope, base Token, rhsNode Node) {
 func (f *File) checkIndexAssign(s *Scope, base Token, rhsNode Node) {
 	d, ok := s.find(base.Src()).(*VarDeclaration)
 	if !ok {
+		// A function, a builtin, a type or nil indexed as a target, `main[0] = 255`:
+		// the read side's refusal, which no target asked.
+		if what, known := f.unindexableName(s, base); known {
+			f.reportUnindexable(base, "index", what)
+		}
 		return
 	}
 	// Neither a scalar variable nor a pointer can be indexed. The two are exclusive
@@ -17350,8 +17540,20 @@ func (f *File) checkUnaryExpr(s *Scope, n Node) {
 	switch inner := ops[len(ops)-1]; f.unaryOp(s, inner) {
 	case AND:
 		f.checkAddressable(s, inner, fac)
+		// An address under an operator that takes a number or a bool, `-&a16`,
+		// `!&n`: the C negated a pointer.
+		if len(ops) > 1 {
+			switch outer := ops[len(ops)-2]; f.unaryOp(s, outer) {
+			case SUB, ADD, XOR, NOT:
+				f.err(f.tok(outer.Pos()).Position(), "invalid operation: operator %s not defined on &%s: it is a pointer", f.tok(outer.Pos()).Src(), f.exprSource(fac))
+			}
+		}
 		return
 	case MUL:
+		if f.isNilOperand(fac) { // `*nil`: no type to point at
+			f.err(f.tok(inner.Pos()).Position(), "invalid operation: cannot indirect nil")
+			return
+		}
 		// Asked of the operand's POINTERNESS rather than of its Kind. A Kind answers
 		// only for a predeclared type, so a slice, an array or a struct operand read
 		// as "type unknown" and slipped through -- `*q.xs` reached the C backend,
@@ -18819,6 +19021,19 @@ func (f *File) checkRefAssign(s, wantScope *Scope, want TypeNode, value Node, wh
 	default:
 		return
 	}
+	// The predeclared Builder by VALUE where a *Builder is wanted, `greet(sb)`: it
+	// has no declaration for the rules below to compare, and the C passed the
+	// struct for the pointer.
+	if p, isPtr := wu.(*TypeNodePointer); isPtr {
+		if id, ok := p.TypeNode.(*TypeNodeIdent); ok && !id.Qualifier.IsValid() && id.Name.Src() == "Builder" && isPredeclaredBuilder(wantScope, "Builder") {
+			if x, isName := f.exprIdent(value); isName {
+				if d, isVar := s.find(x.Src()).(*VarDeclaration); isVar && !d.isPtr && (d.builderVar || d.typeName.Src() == "Builder" && isPredeclaredBuilder(s, "Builder")) {
+					f.err(f.tok(value.Pos()).Position(), "cannot use %s (variable of struct type Builder) as *Builder value in %s", x.Src(), what)
+					return
+				}
+			}
+		}
+	}
 	have, variable, ok := f.operandTypeAt(s, value)
 	if !ok || have.tn == nil || have.f == nil {
 		// A SCALAR where a slice is wanted, `s = 1`, `f(x)` for an int x: no type
@@ -19062,6 +19277,7 @@ func (f *File) refTypeUnder(s *Scope, tn TypeNode) (under TypeNode, named bool) 
 // conversion -- and the address of any of those, and a call's single result.
 // variable says the operand is storage, which is what Go's words call a variable.
 func (f *File) operandTypeAt(s *Scope, n Node) (t typeAt, variable, ok bool) {
+	orig := n
 	for n.sym == Expression || n.sym == SimpleExpr || n.sym == Term {
 		kids := slices.Collect(it(n.ast))
 		if len(kids) != 1 {
@@ -19107,6 +19323,11 @@ func (f *File) operandTypeAt(s *Scope, n Node) (t typeAt, variable, ok bool) {
 		return t, false, true
 	}
 	if t, ok := f.sliceLitType(s, n); ok {
+		return t, false, true
+	}
+	// A slice made, `make([]uint32, 4, 8)`: stored into a []int field it was
+	// asked nothing.
+	if t, ok := f.madeSliceType(s, orig); ok {
 		return t, false, true
 	}
 	if t, ok = f.lenOperandType(s, n); ok {
@@ -20998,8 +21219,10 @@ func (f *File) checkFactorNames(s *Scope, n Node) {
 		// emitter called the form unsupported, and the valid one works. The
 		// literal's type is its name; a bracketed literal's is left to the emitter.
 		if hasID && !hasSuffix {
+			// And the arguments of a method it calls, `P{1, 2}.Scaled("s")`, which
+			// were asked nothing (reportCallChainWalk checks the calls it passed).
 			steps := slices.Collect(it(litSuffix.ast))
-			f.reportMissingMember(steps, f.walkSteps(typeAt{&TypeNodeIdent{Name: id}, s, f}, false, steps, 0, 0, newCallChain()))
+			f.reportCallChainWalk(s, steps, f.walkSteps(typeAt{&TypeNodeIdent{Name: id}, s, f}, false, steps, 0, 0, newCallChain()))
 		}
 	}
 	// Reading the blank identifier -- as an operand, argument, initializer,
@@ -21135,11 +21358,7 @@ func (f *File) checkFactorNames(s *Scope, n Node) {
 			// A function, a channel, an interface and nil have no Kind either, and
 			// `f[0]` for a function went through to the C compiler, which indexed the
 			// function's address as the array it is not.
-			if what == "nil" {
-				f.err(id.Position(), "invalid operation: cannot %s nil", verb)
-			} else {
-				f.err(id.Position(), "invalid operation: cannot %s %s: it is %s", verb, id.Src(), what)
-			}
+			f.reportUnindexable(id, verb, what)
 		} else if k, known := f.identKind(s, id); known {
 			switch kindCategory(k) {
 			case catNumeric, catBool, catUnsafePointer:
@@ -22247,6 +22466,12 @@ func (f *File) checkCallee(s *Scope, callee Token, argList Node, args []Node) {
 		// would assert a type nobody determined. The emitter, which types more,
 		// has the last word on those.
 		if d.hasKind || d.isPtr || d.isChan || d.hasElemKind || d.typeName.IsValid() {
+			f.err(callee.Position(), "cannot call non-function %s", callee.Src())
+			return
+		}
+		// A type only the declaration's initializer gave it, `a := pick()(4)`, of a
+		// Kind: no function either.
+		if t, ok := f.varTypeAt(d); ok && t.f != nil && t.f.resultType(t.s, t.tn).known {
 			f.err(callee.Position(), "cannot call non-function %s", callee.Src())
 		}
 	case *ConstDeclaration:
@@ -24784,6 +25009,16 @@ func (f *File) varSpec(s *Scope, n Node) {
 				// rather than fighting them.
 				f.inferVarFrom(s, vd, initExprs[i])
 			}
+			// One call of several results, `var sum, diff = sums(10, 3)`: each
+			// name takes the result in its position, as `s, d := sums(10, 3)`
+			// does. They had no type, and `sum(diff)` called an int.
+			if typ == nil && len(initExprs) == 1 && len(varDecls) > 1 {
+				if res, qual, ok := f.qualifiedCallResults(s, initExprs[0]); ok && len(res) == len(varDecls) {
+					f.typeFromResult(s, vd, res[i], qual)
+				} else if res, ok := f.exprCallResults(s, initExprs[0]); ok && len(res) == len(varDecls) {
+					f.typeFromResult(s, vd, res[i], Token{})
+				}
+			}
 			switch vs := vd.VarSpec; vs.gate {
 			case resolving:
 				vs.TypeNode = typ
@@ -25416,6 +25651,12 @@ func (f *File) declareConst(s *Scope, n Node) {
 				if err := s.add(cd); err != nil {
 					f.err(cd.ConstSpec.Name.Position(), "%v", err)
 				}
+				// A blank constant binds no name, so nothing asks for it: kept for
+				// constSpec, which evaluates it as Go does -- `const _ = 1 + "s"`
+				// was taken.
+				if cd.ConstSpec.Name.Src() == "_" && s.Kind == PackageScope {
+					f.blankConsts = append(f.blankConsts, cd)
+				}
 			}
 			iotaVal++
 		case 0:
@@ -25523,6 +25764,14 @@ func (f *File) declareConstSpec(s *Scope, n Node) (r []*ConstSpecNode) {
 // already reported.
 func (f *File) constSpec(s *Scope, n Node) {
 	for _, nm := range f.constSpecNames(n) {
+		if nm.Src() == "_" {
+			for _, cd := range f.blankConsts {
+				if cd.ConstSpec.Name == nm {
+					f.resolveConst(s, cd)
+				}
+			}
+			continue
+		}
 		if cd, ok := s.find(nm.Src()).(*ConstDeclaration); ok {
 			f.resolveConst(s, cd)
 		}
@@ -25892,6 +26141,21 @@ func (f *File) constNumeric(s *Scope, n Node) (constant.Value, bool) {
 	return nil, false
 }
 
+// constValue is constNumeric for a constant of any class: a string and a bool too.
+func (f *File) constValue(s *Scope, n Node) (constant.Value, bool) {
+	n0 := len(f.errList)
+	e := f.levelExpr(s, n)
+	f.errList = f.errList[:n0]
+	if e == nil {
+		return nil, false
+	}
+	uc, ok := e.Value().(constVal)
+	if !ok || uc.cv == nil || uc.cv.Kind() == constant.Unknown {
+		return nil, false
+	}
+	return uc.cv, true
+}
+
 // checkInferredOverflow reports a constant initializer that does not fit the type
 // the variable it initializes infers from it, for a declaration that writes no
 // type: "var x = 1 << 40" and "x := 1 << 40".
@@ -26259,6 +26523,12 @@ func (f *File) foldConstBinaryOp(opTok Token, lhs constant.Value, op Symbol, rhs
 	if t == token.ILLEGAL {
 		return nil, false
 	}
+	// Two classes of constant, `1 + "s"`: go/constant folds the pair to an unknown
+	// without a word, and `const x = 1 + "s"` was taken, used or not.
+	if lc, rc := constClassOf(lhs), constClassOf(rhs); lc != "" && rc != "" && lc != rc {
+		f.err(opTok.Position(), "invalid operation: mismatched types untyped %s and untyped %s", constClassName(lhs), constClassName(rhs))
+		return constant.MakeUnknown(), true
+	}
 	// Division of two integer constants is integer division, as in Go: 7 / 2 is 3,
 	// not 3.5. go/constant's token.QUO is float division whatever the operands are
 	// -- QUO_ASSIGN is its integer form -- so an integer pair takes that instead.
@@ -26268,6 +26538,20 @@ func (f *File) foldConstBinaryOp(opTok Token, lhs constant.Value, op Symbol, rhs
 		t = token.QUO_ASSIGN
 	}
 	return f.constBinaryOp(opTok, lhs, rhs, t), true
+}
+
+// constClassOf is a constant's class as an operation pairs it: a number (an int,
+// a rune, a float), a string or a bool; "" for an unknown value.
+func constClassOf(v constant.Value) string {
+	switch v.Kind() {
+	case constant.Int, constant.Float, constant.Complex:
+		return "number"
+	case constant.String:
+		return "string"
+	case constant.Bool:
+		return "bool"
+	}
+	return ""
 }
 
 // constBinaryOp evaluates a non-shift constant binary operation. go/constant
@@ -26574,7 +26858,10 @@ func (f *File) constConversion(s *Scope, n Node) (ExpressionNode, bool) {
 		}
 	case isBoolKind(k):
 		if cv.Kind() != constant.Bool {
-			return nil, false
+			// `bool(1)`, `bool(iota)`: no conversion, said as Go says it rather
+			// than as "bool is not a constant".
+			f.err(f.tok(arg.Pos()).Position(), "cannot convert %s (untyped %s constant) to type %s", f.exprSource(arg), constClassName(cv), nameTok.Src())
+			return constVal{cv: constant.MakeUnknown()}, true
 		}
 	case isFloatKind(k):
 		cv = constant.ToFloat(cv)
@@ -27071,7 +27358,12 @@ func (f *File) sliceLitType(s *Scope, n Node) (typeAt, bool) {
 	}
 	kids := slices.Collect(it(n.ast))
 	if len(kids) != 4 || kids[0].sym != 0 || f.ch(kids[0].tok) != LBRACK || kids[1].sym != 0 ||
-		f.ch(kids[1].tok) != RBRACK || kids[2].sym != Type || kids[3].sym != CompositeLit {
+		f.ch(kids[1].tok) != RBRACK || kids[2].sym != Type {
+		return typeAt{}, false
+	}
+	// A literal, `[]T{...}`, or a conversion, `[]rune("ab")`: the latter had no type
+	// for a store to compare, and went into a []byte parameter.
+	if kids[3].sym != CompositeLit && kids[3].sym != CallSuffix {
 		return typeAt{}, false
 	}
 	// The literal's own check resolves the same Type and reports what is wrong with

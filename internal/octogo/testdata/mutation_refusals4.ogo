@@ -1,0 +1,133 @@
+// What the mutation sweeps left taken where Go refuses it, each a C error about
+// generated code until the checker said it: a builtin, a type or a function
+// indexed; the address of a literal and an operator over an address; a type or
+// nil as a target; a field of no function type called; a constant as a for
+// post's target; a range over a pointer to no array; the Builder's arguments and
+// its value where a pointer is wanted; a []rune where a []byte is; a **T into an
+// interface asking for methods; a method's arguments on a literal receiver; the
+// variables of a comma-ok assertion to an interface and of one call of several
+// results at package level; a call of a call's result; make of another element;
+// a constant operation over two classes; a blank constant; a conversion of a
+// number to bool.
+
+type P struct{ x, y int }
+
+func (p P) Scaled(k int) P { return P{p.x * k, p.y * k} }
+
+type R struct {
+	state int
+	r     [8]uint16
+}
+
+type H [3]int
+
+type T struct{ n int }
+
+type Named interface{ Name() string }
+
+func (t *T) Name() string { return "t" }
+
+type Holder struct{ data []int }
+
+var gs = "abc"
+
+var gt T
+
+func greet(b *Builder, s string) {}
+
+func sum(xs []byte) int { return len(xs) }
+
+func id(n int) int { return n }
+
+func pick() func(int) int { return id }
+
+func sums(a, b int) (int, int) { return a + b, a - b }
+
+var total, diff = sums(10, 3)
+
+// ERROR "mismatched types untyped int and untyped string"
+const bad = 1 + "s"
+
+// ERROR "mismatched types untyped int and untyped string"
+const _ = 2 + "t"
+
+// ERROR "cannot convert 1 \(untyped int constant\) to type bool"
+const _ = bool(1)
+
+func indexes() {
+	// ERROR "cannot index len \(built-in\)"
+	_ = len[0]
+	// ERROR "H\[...\] \(H is not a generic type\)"
+	_ = H[0]
+	// ERROR "cannot index main: it is a function"
+	main[0] = 255
+}
+
+func addresses(a16 int16, n int) {
+	// ERROR "cannot take address of 1 \(untyped int constant\)"
+	println(&1)
+	// ERROR "cannot take address of 2.5 \(untyped float constant\)"
+	_ = &2.5
+	// ERROR "operator - not defined on &a16"
+	println(-&a16)
+	// ERROR "cannot indirect nil"
+	n = *nil
+}
+
+func targets(r R) {
+	// ERROR "cannot assign to int"
+	int = 5
+	// ERROR "nil.x undefined"
+	nil.x = 4
+	// ERROR "cannot call r.state \(variable of type int\): int is not a function"
+	r.state()
+	// ERROR "cannot assign to .s."
+	for i := 0; i < 3; "s"++ {
+	}
+	// ERROR "cannot range over &gs: it is a pointer"
+	for i := range &gs {
+		_ = i
+	}
+}
+
+func builders() {
+	var buf [8]byte
+	sb := NewBuilder(buf[:])
+	// ERROR "cannot use sb \(variable of struct type Builder\) as \*Builder value"
+	greet(sb, "x")
+	// ERROR "cannot use .Hi. of type string as type uint8 in argument to sb.WriteByte"
+	sb.WriteByte("Hi")
+	// ERROR "operator \+ not defined on sb: it is a struct"
+	greet(+sb, "x")
+	// ERROR "cannot use \[\]rune\(.ab.\) \(value of type \[\]rune\) as \[\]byte value"
+	_ = sum([]rune("ab"))
+}
+
+func values(r any) {
+	pp := &gt
+	// ERROR "\*\*T does not implement Named \(missing method Name\)"
+	var nm Named = &pp
+	// ERROR "cannot use .s. of type string as type int in argument to Scaled"
+	_ = P{1, 2}.Scaled("s")
+	n, isNamer := r.(Named)
+	// ERROR "isNamer == nil \(mismatched types bool and untyped nil\)"
+	println(n, isNamer == nil)
+	// ERROR "cannot call non-function total"
+	total(diff)
+	a := pick()(4)
+	// ERROR "cannot call non-function a"
+	a(5)
+	var h Holder
+	// ERROR "cannot use make\(\[\]uint32, 4, 8\) \(value of type \[\]uint32\) as \[\]int value"
+	h.data = make([]uint32, 4, 8)
+	_, _ = nm, h
+}
+
+func main() {
+	indexes()
+	addresses(1, 2)
+	targets(R{})
+	builders()
+	values(nil)
+	_ = bad
+}
