@@ -1698,6 +1698,17 @@ func (c *BuildContext) NewPackage(importPath string, files []string, fsys fs.FS)
 			}
 		}
 	}
+	// Then every METHOD is attached to its type, for the same reason: a package
+	// variable declared above a method, `var f = (*B).get` or a table of method
+	// expressions, found the type with no such method -- "(*B).get undefined" --
+	// where a function body, checked after all of this, always found it.
+	for _, v := range p.Files {
+		for n := range it(v.AST) {
+			if n.sym == SourceFile {
+				v.methodDecls(p.Scope, n)
+			}
+		}
+	}
 	for _, v := range p.Files {
 		for n := range it(v.AST) {
 			switch n.sym {

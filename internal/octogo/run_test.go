@@ -364,6 +364,51 @@ func main() { println(t.a.id, t.a.pins[2], t.n, g.n) }
 		want: "3 3 4 4\n",
 	},
 	{
+		// Package variables naming methods declared BELOW them: a table of method
+		// expressions, a method value, a promoted one, a method's result and an
+		// interface the methods satisfy. Methods were attached to their types in
+		// source order, with the initializers, so each was "(*B).get undefined" or
+		// "type B has no method square" (methodDecls attaches them first now).
+		name: "package variables naming methods declared below them",
+		src: `type Shape interface{ Area() int }
+
+type B struct{ n int }
+
+type Outer struct {
+	B
+	k int
+}
+
+type h func(b *B) int
+
+var tab = [2]h{(*B).get, (*B).twice}
+
+var gb = B{6}
+
+var o = Outer{B{4}, 1}
+
+var mv = o.get
+
+var sq = gb.square()
+
+var all = [1]Shape{&gb}
+
+func (b *B) get() int { return b.n + 1 }
+
+func (b *B) twice() int { return b.n * 2 }
+
+func (b B) square() int { return b.n * b.n }
+
+func (b *B) Area() int { return b.n * 10 }
+
+func main() {
+	b := B{4}
+	println(tab[0](&b), tab[1](&b), mv(), sq, all[0].Area())
+}
+`,
+		want: "5 8 5 36 60\n",
+	},
+	{
 		// A program's own printf, deferred: its first argument is captured where
 		// the defer stands, as any function's is. It was the builtin to the
 		// emitter, "printf's format must be a constant string"; and the builtin's

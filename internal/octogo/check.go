@@ -452,6 +452,21 @@ func (f *File) typeBodies(s *Scope, n Node) {
 	}
 }
 
+// methodDecls attaches every method a file declares to its receiver's type, after
+// the type bodies and before any other declaration of any file (see Build).
+func (f *File) methodDecls(s *Scope, n Node) {
+	for n := range it(n.ast) {
+		if n.sym != TopLevelDecl {
+			continue
+		}
+		for n := range it(n.ast) {
+			if n.sym == FuncDecl {
+				f.registerMethod(s, n)
+			}
+		}
+	}
+}
+
 func (f *File) topLevel(s *Scope, n Node) {
 	for n := range it(n.ast) {
 		switch n.sym {
@@ -460,8 +475,7 @@ func (f *File) topLevel(s *Scope, n Node) {
 		case VarDecl:
 			f.varDecl(s, n)
 		case FuncDecl:
-			f.funcDecl(s, n)
-			f.registerMethod(s, n)
+			f.funcDecl(s, n) // its method is attached already (methodDecls)
 		case TypeDecl:
 			// Resolved ahead of every other declaration of every file (typeBodies).
 		case 0:

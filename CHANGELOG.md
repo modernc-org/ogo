@@ -65,6 +65,12 @@ shipped section tells a reader on that version that they have behaviour they do 
   "type Builder has no method Put", in its own package and as `lib.Builder` from
   another; and `type uintptr int16` was written as C's `uintptr_t`, so `z <<= 3`
   was 131064 for Go's -8, in silence on a P2-EDGE.
+- **A package variable may name a method declared below it**: `var f =
+  (*B).get`, a table of method expressions `[2]h{(*B).get, (*B).twice}`, a
+  method value `o.get`, a method's result `gb.square()`, and an interface value
+  whose methods come later were refused -- "(*B).get undefined", "type B has no
+  method square" -- methods having been attached to their types in source order,
+  with the initializers. Go takes declarations in any order.
 - **A function literal capturing a variable is refused once, as it should be**:
   a later use of the captured name was reported "undefined", and an enclosing
   literal's own capture of it said "undefined: k" instead of what it is.

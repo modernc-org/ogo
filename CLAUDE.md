@@ -1697,6 +1697,16 @@ it (staticZeroC). gcc took `{0}` in every shape, which is why no run case had me
 it. **The host's compiler is no witness for an initializer's layout** -- the
 target's static initializer has its own rules (A STATIC INITIALIZER IS LAID OUT BY
 ANOTHER RULE THAN ITS TYPE).
+The same day a Modbus RTU slave -- a register bank of arrays, function codes
+dispatched through a package table of METHOD EXPRESSIONS, exceptions as a typed
+error -- met the order row in the checker: methods were attached to their types
+(registerMethod) in the same source-order walk that checks package initializers, so
+an initializer above a method found the type without it -- a method expression, a
+method value, a promoted one, a method's result, an interface the methods satisfy;
+8 of 10 shapes refused in v0.48.1. Methods get a pass of their own after the type
+bodies (methodDecls), as the bodies did on 2026-09-19 (typeBodies). **Package
+declarations are in no order, and every pass that resolves them in source order is
+a row of it.**
 
 **AN ARRAY RESULT IS A ROW** (2026-09-23). A call returning an array is a STATEMENT in
 C -- the caller hands the callee storage to write -- so every position one stands in
