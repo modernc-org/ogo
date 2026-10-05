@@ -18,8 +18,26 @@ shipped section tells a reader on that version that they have behaviour they do 
 
 ## Unreleased
 
+### Language
+
+- **panic takes any value Go's runtime can write**, not only a string: `panic(err)`
+  writes the error's `Error()`, and a Stringer its `String()`, asked of what an
+  interface holds; a number or a bool is written as `print` writes it, inside its
+  type's name for a defined type (`panic: main.Code(8)`, `main.Name("x")`); a
+  pointer, a channel or a function as its type and address, `(*main.P) 0x1f8`; and
+  an interface holding nothing as `runtime error: panic called with nil argument`.
+  The value is evaluated before anything is written. Each was refused, "panic is
+  supported only with a string argument yet" -- `panic(err)` above all. A struct,
+  an array and a slice, of which Go writes only the address of a copy, are refused.
+
 ### Fixed
 
+- **A float constant negated to zero is zero, not C's negative zero.** Go's
+  constants are exact and have no negative zero, so `x := -0.0` and `-zero` for a
+  `const zero = 0.0` hold 0; written out they were IEEE -0, which division,
+  `math.Signbit` and `math.Copysign` read: `1/x` was `-Inf` for Go's `+Inf`, in
+  silence, on the host and the board -- in a declaration, an argument, a return, an
+  operand (`x * -0.0`), an element, a field and a package variable alike.
 - **A package variable initialized from a field of a call's result builds**:
   `var n = dev().n`, `var y [4]byte = dev().rx`, an element, a slice and an
   address of one through a pointer the call returns. Every one crashed the

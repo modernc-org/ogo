@@ -38,6 +38,49 @@ type emitRunCase struct {
 
 var emitRunCases = []emitRunCase{
 	{
+		// A float constant negated to zero is zero: Go's constants are exact and
+		// have no negative zero. Written out, `-0.0` was C's negative zero, whose
+		// sign division, Signbit and Copysign read -- `1/x` -Inf for Go's +Inf --
+		// in a declaration, an argument, a return, an operand, an element, a field
+		// and a package variable alike.
+		name: "a float constant negated to zero",
+		src: `import "math"
+
+const zero = 0.0
+
+var g = -0.0
+
+var gs = []float64{-0.0, -zero}
+
+type P struct{ v float32 }
+
+func id(f float64) float64 { return f }
+
+func ret() float64 { return -0.0 }
+
+func bit(f float64) int {
+	if math.Signbit(f) {
+		return 1
+	}
+	return 0
+}
+
+func main() {
+	x := -0.0
+	var y float32 = -zero
+	one := 1.0
+	p := P{-0.0}
+	a := [2]float64{-0.0, -(0.0)}
+	println(1/x, 1/y, 1/(one * -0.0), 1/id(-0.0), 1/ret(), math.Copysign(1, -0.0))
+	println(bit(g), bit(gs[0]), bit(gs[1]), bit(float64(p.v)), bit(a[0]), bit(a[1]), bit(-0.0*one))
+	n := 0.0
+	n = -n
+	println(1/n, bit(n))
+}
+`,
+		want: "+Inf +Inf +Inf +Inf +Inf 1\n0 0 0 0 0 0 0\n-Inf 1\n",
+	},
+	{
 		// A unary sign beside a binary operator, in every spelling gofmt writes
 		// tight -- `v%-1`, `v*-2`, `v&^-5`, `a[v*-1+7]` -- and the two it does not:
 		// `- -v` and `v - -4`, where the pair would run into `--`. This case is in
@@ -1073,6 +1116,90 @@ func main() {
 }
 `,
 		want:   "before\npanic: nil pointer dereference",
+		panics: true,
+	},
+	{
+		// panic of a value that is no plain string, written as Go's runtime writes
+		// it (printpanicval): an error's Error(), evaluated before "panic: " is.
+		// Every one was refused, "panic is supported only with a string argument
+		// yet" -- panic(err) above all.
+		name: "a panic of an error a call returns",
+		src: `type full struct{ n int }
+
+func (*full) Error() string { return "table full" }
+
+var errFull full
+
+func put(n int) error {
+	println("put", n)
+	if n > 2 {
+		return &errFull
+	}
+	return nil
+}
+
+func main() {
+	for i := 0; ; i++ {
+		if err := put(i); err != nil {
+			panic(err)
+		}
+	}
+}
+`,
+		want:   "put 0\nput 1\nput 2\nput 3\npanic: table full",
+		panics: true,
+	},
+	{
+		name: "a panic of a value of a defined integer type",
+		src: `type Code uint8
+
+func main() {
+	c := Code(7)
+	println("code", c)
+	panic(c + 1)
+}
+`,
+		want:   "code 7\npanic: main.Code(8)",
+		panics: true,
+	},
+	{
+		name: "a panic of a value of a defined string type",
+		src: `type Name string
+
+func main() {
+	panic(Name("x y"))
+}
+`,
+		want:   `panic: main.Name("x y")`,
+		panics: true,
+	},
+	{
+		// What an interface holds decides: a Stringer's String() through an any.
+		name: "a panic of an interface holding a Stringer",
+		src: `type State struct{ n int }
+
+func (s *State) String() string { return "state " + "busy" }
+
+var st State
+
+func main() {
+	var v any = &st
+	panic(v)
+}
+`,
+		want:   "panic: state busy",
+		panics: true,
+	},
+	{
+		name: "a panic of a nil interface",
+		src: `func check() error { return nil }
+
+func main() {
+	err := check()
+	panic(err)
+}
+`,
+		want:   "panic: runtime error: panic called with nil argument",
 		panics: true,
 	},
 	{

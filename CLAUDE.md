@@ -1557,6 +1557,20 @@ under the cast is refused by the target, `_ = gs == S{1, 2}` and `_ = &S{1, 2}`
 (doc/void-cast-compound-literal.c; emitDiscard binds such a value first). No C
 compiler had seen them: a grid asks the checker what it takes, and compiles nothing.
 **A probe's program is a target-build test too, and the warnings are read.**
+A fifth round (2026-10-05) -- a string-keyed hash table of open addressing with
+tombstones under an LRU over a fixed node pool, three packages, what a program here
+writes for want of a map -- matched Go on the host and the board once its first line
+of error handling built: `panic(err)`, refused, "panic is supported only with a
+string argument yet". specs.go had it as "panic(s) abort with a string message",
+STATUS and not design: printing a value needs no heap. A panic of any value is
+written as Go's printpanicval writes it now (emitPanicValue; an interface through a
+helper minted after the last body, as the %v printers are, mintPanicIfaces), Go's
+first line the oracle for 32 kinds of value. And that sweep found a SILENT fault
+older than it: `panic(-0.0)` printed `-0` for Go's `0`, Go's constants having no
+negative zero -- `x := -0.0; 1/x` was -Inf on the board for Go's +Inf, through a
+declaration, an argument, a return, an operand, an element, a field and a package
+initializer (negatedFloatZero). **A constant's value is exact, and a C spelling of it
+that is not -- a sign on a zero -- is the C compiler's arithmetic, not Go's.**
 
 **AN ARRAY RESULT IS A ROW** (2026-09-23). A call returning an array is a STATEMENT in
 C -- the caller hands the callee storage to write -- so every position one stands in

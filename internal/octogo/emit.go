@@ -5819,6 +5819,8 @@ func emitProgram(pkg *Package, w io.Writer, opts []EmitOption, rename map[string
 	if e.mintIfacePrinters(); e.err != nil {
 		return e.err
 	}
+	// So is the helper writing what an interface given to panic holds.
+	e.mintPanicIfaces()
 
 	// A channel's helpers call ogo_panic and the P2 lock/wait intrinsics, so both
 	// must be requested before the include list is taken.
@@ -6003,6 +6005,9 @@ func emitProgram(pkg *Package, w io.Writer, opts []EmitOption, rename map[string
 	var helperDefs bytes.Buffer
 	if e.usesPanic {
 		helperDefs.WriteString(ogoPanicDef(e.release))
+	}
+	if e.usesPanicEnd {
+		helperDefs.WriteString(ogoPanicEndDef(e.release))
 	}
 	if e.usesBound {
 		helperDefs.WriteString(ogoBound)
@@ -6697,6 +6702,8 @@ type emitter struct {
 	printStructs       map[string]string       // struct C types printed by %v -> the definition of their ogo_printv_<T> helper
 	specPrinters       map[string]*specPrinter // a struct printed by %v under a spec, keyed by type, spec and '+': needStructSpecPrint
 	printIfaces        map[string]string       // interface C types printed by %v -> where the first such print is written, for a refusal minting its helper earns
+	panicIfaces        map[string]bool         // interface C types a panic is given, each needing its ogo_panicv_<T> helper (mintPanicIfaces)
+	usesPanicEnd       bool                    // a panic of a value that is no plain string ends in ogo_panic_end
 	printPos           string                  // where the %v being emitted is written, for a printer minted from it later
 	printlnElems       map[string]bool         // element C types printed with a newline, needing ogo_println_slice_<T> (which calls ogo_print_slice_<T>)
 	defers             []deferredCall          // the current function's top-level defers, in source order, replayed LIFO before each return
@@ -33022,6 +33029,11 @@ func (e *emitter) emitCall(head Node, postfix []Node) {
 		e.emitPrint(recv == "println", postfix[0].ast)
 		return
 	}
+	if len(postfix) == 1 && postfix[0].sym == CallSuffix && recv == "panic" {
+		if _, isUser := e.userFunc(recv); !isUser && e.emitPanicValue(postfix[0].ast) {
+			return
+		}
+	}
 	if len(postfix) == 1 && postfix[0].sym == CallSuffix && recv == "printf" {
 		e.emitPrintf(postfix[0].ast)
 		return
@@ -34870,10 +34882,10 @@ func (e *emitter) lenConstKids(kids []Node) (int64, bool) {
 	return e.lenConstOf(steps[0].ast)
 }
 
-// emitPanic emits the builtin panic. Only a string argument is supported so far
-// -- what smith's oracle assertion and the hardware error paths use -- mapping to
-// the runtime ogo_panic(const char* msg) with the ogo_string's char* field. A
-// general panic(any) needs value formatting and is left for later.
+// emitPanic emits the builtin panic of a plain string, mapping to the runtime
+// ogo_panic(const char* msg) with the ogo_string's char* field. Any other value is
+// written by emitPanicValue, as a statement; what reaches here otherwise is a panic
+// in a position that is no statement of its own.
 func (e *emitter) emitPanic(callSuffix []int32) {
 	args := e.callArgExprs(callSuffix)
 	if len(args) != 1 {
@@ -34888,6 +34900,167 @@ func (e *emitter) emitPanic(callSuffix []int32) {
 	e.emit("ogo_panic((")
 	e.emitExpr(args[0].ast)
 	e.emit(").str)")
+}
+
+// emitPanicValue emits, as a statement, a panic of a value that is no plain
+// string, and answers false, emitting nothing, for a plain string, which emitPanic
+// keeps. Go's runtime writes the value as printpanicval does: an error's Error() and
+// a Stringer's String(), checked in that order of the dynamic type; a number or a
+// bool as print writes it; a defined type over one of those around it,
+// `main.T(5)`, a string's quoted, `main.S("x")`; and anything else as its type and
+// address, `(*main.P) 0x1f8`. An interface holding nothing is Go's
+// "panic called with nil argument". It was refused for every one of them --
+// `panic(err)` above all, Go's way of giving up on an error that cannot happen.
+//
+// The value is evaluated before "panic: " is written (hoistPrintArgs binds it where
+// it has an effect), as Go evaluates it before the panic begins. A struct, an array
+// and a slice, of which Go writes the address of a copy, are refused.
+func (e *emitter) emitPanicValue(callSuffix []int32) bool {
+	args := e.callArgExprs(callSuffix)
+	if len(args) != 1 {
+		return false
+	}
+	arg := args[0]
+	if e.isNilExpr(arg.ast) {
+		e.needPanicEnd()
+		e.ind()
+		e.emit("printf(\"panic: runtime error: panic called with nil argument\");\n")
+		e.ind()
+		e.emit("ogo_panic_end();\n")
+		return true
+	}
+	ct, ok := e.printfArgType(0, arg)
+	if !ok {
+		if name, isArr := e.arrayTypeNameForT(arg.ast); isArr {
+			e.failAt(arg.ast, "panic of a value of type %s is not supported: Go writes the address of a copy of it; panic with an error or a string", name)
+			return true
+		}
+		return false
+	}
+	u := e.underlyingCType(ct)
+	if ct == cString {
+		return false
+	}
+	if e.deferReplay < 0 {
+		saved := e.printArgs
+		e.printArgs = nil
+		e.hoistPrintArgs(args)
+		defer func() { e.printArgs = saved }()
+	}
+	value := func() string { return e.captureC(func() { e.emitReplayArg(0, arg) }) }
+	if e.isIfaceCType(ct) {
+		// What the value holds decides, which only its table says: the helper tests
+		// it against each table the program makes for the interface.
+		e.needPanicEnd()
+		if e.panicIfaces == nil {
+			e.panicIfaces = map[string]bool{}
+		}
+		e.panicIfaces[ct] = true
+		e.ind()
+		e.emit("printf(\"panic: \"); " + panicIfaceName(ct) + "(" + value() + ");\n")
+		e.ind()
+		e.emit("ogo_panic_end();\n")
+		return true
+	}
+	tmp := e.newTmp()
+	if text, _, ptrRecv, ok := e.stringerMethodC(ct, tmp); ok {
+		e.needPanicEnd()
+		e.usesStringPrint = true
+		print := "ogo_print_str(" + text + ");"
+		if e.isPointer(ct) && !ptrRecv {
+			// A value method through a nil pointer cannot copy its receiver out.
+			print = "if (" + tmp + ") { " + print + " } else { printf(\"<nil>\"); }"
+		}
+		bind := strings.TrimSuffix(strings.Join(e.bindC(ct, tmp, value()), ""), ";\n")
+		e.ind()
+		e.emit("{ " + strings.ReplaceAll(bind, "\n", " ") + "; printf(\"panic: \"); " + print + " }\n")
+		e.ind()
+		e.emit("ogo_panic_end();\n")
+		return true
+	}
+	var head, tail string
+	switch {
+	case u == cString || u == cBool || isIntCType(u) || isFloatCType(u) || u == "long long" || u == "unsigned long long":
+		if u != ct {
+			head, tail = e.typeNameForT(ct)+"(", ")"
+			if u == cString {
+				head, tail = head+`"`, `"`+tail
+			}
+		}
+	case e.isPointer(ct), e.isChanCType(ct), e.isFuncCType(ct):
+		head = "(" + e.typeNameForT(ct) + ") "
+	default:
+		e.failAt(arg.ast, "panic of a value of type %s is not supported: Go writes the address of a copy of it; panic with an error or a string",
+			e.typeNameForT(ct))
+		return true
+	}
+	e.needPanicEnd()
+	e.ind()
+	e.emit("printf(" + cQuote("panic: "+head) + ");\n")
+	e.emitPrintOne(false, 0, arg)
+	if tail != "" {
+		e.ind()
+		e.emit("printf(" + cQuote(tail) + ");\n")
+	}
+	e.ind()
+	e.emit("ogo_panic_end();\n")
+	return true
+}
+
+// needPanicEnd asks for ogo_panic_end, the halt a panic of a value ends in, and its
+// includes.
+func (e *emitter) needPanicEnd() {
+	e.usesPanicEnd = true
+	e.includes["stdio.h"] = true
+	e.includes["stdlib.h"] = true
+	e.includes["propeller2.h"] = true
+}
+
+// ogoPanicEndDef is the end of a panic whose message was written by the statements
+// before it: ogo_panic's newline, drain and halt.
+func ogoPanicEndDef(release bool) string {
+	tail := "\tabort(); // -> _Exit -> _cogstop: halt the offending cog\n"
+	if release {
+		tail = "\t_reboot(); // restart the board (release: self-heal)\n"
+	}
+	return "static void ogo_panic_end(void) {\n" +
+		"\tprintf(\"\\n\");\n" +
+		"\tfflush(stdout); // abort discards a buffered message; a pipe buffers\n" +
+		"\t_waitms(10); // let the message flush over the serial line first\n" +
+		tail +
+		"}\n"
+}
+
+// panicIfaceName names the helper writing what a value of interface type ct holds as
+// Go's runtime writes a panic's value.
+func panicIfaceName(ct string) string { return "ogo_panicv_" + sanitizeElem(ct) }
+
+// mintPanicIfaces writes, into the vtable section, the helper of every interface a
+// panic is given: Error() or String() for a table whose type has one, the type and
+// the address for the rest, and Go's words for nothing held. Minted after the last
+// body, as the %v printers are, every table being known by then.
+func (e *emitter) mintPanicIfaces() {
+	for _, iface := range slices.Sorted(maps.Keys(e.panicIfaces)) {
+		var b strings.Builder
+		fmt.Fprintf(&b, "static void %s(%s v) {\n", panicIfaceName(iface), iface)
+		for _, concrete := range e.ifaceConcretes(iface) {
+			data := "((" + concrete + "*)v.data)"
+			text, _, ptrRecv, ok := e.stringerMethodC(concrete+"*", data)
+			if !ok {
+				continue
+			}
+			e.usesStringPrint = true
+			call := "ogo_print_str(" + text + ");"
+			if !ptrRecv {
+				call = "if (" + data + ") { " + call + " } else { printf(\"<nil>\"); }"
+			}
+			fmt.Fprintf(&b, "\tif (v.vt == &%s) { %s return; }\n", e.ifaceVTVar(iface, concrete), call)
+		}
+		e.includes["stdint.h"] = true
+		b.WriteString("\tif (v.vt) { printf(\"(%s) 0x%x\", v.vt->" + vtTypeField + ", (unsigned)(uintptr_t)v.data); return; }\n")
+		b.WriteString("\tprintf(\"runtime error: panic called with nil argument\");\n}\n")
+		e.vtables.WriteString(b.String())
+	}
 }
 
 // emitHeaderField emits a read of a string's or a slice's header field off arg.
@@ -46586,6 +46759,15 @@ func (e *emitter) emitExprNode(n Node) {
 			e.emit(e.constSpelling(v, ut))
 			return
 		}
+		// A float CONSTANT negated to zero, `-0.0` or `-zero`: Go's constants are
+		// exact and have no negative zero, so its value is 0. Written out it was C's
+		// -0.0, whose sign 1/x, math.Signbit and math.Copysign read: `x := -0.0;
+		// 1/x` was -Inf for Go's +Inf, in silence, and an initializer spelled it as
+		// the one literal "-0.0".
+		if e.negatedFloatZero(n, kids) {
+			e.emit("0.0")
+			return
+		}
 		// A signed float literal in a static or aggregate initializer is spelled
 		// as one literal, "-1.5", rather than as a minus applied to one: the
 		// target's C compiler refuses a unary minus in any aggregate initializer,
@@ -47222,6 +47404,23 @@ func (e *emitter) emitExprNode(n Node) {
 	default:
 		e.fail("unsupported expression node %v", n.sym)
 	}
+}
+
+// negatedFloatZero reports a unary expression beginning with a minus whose value is
+// a float constant of zero, in a float position.
+func (e *emitter) negatedFloatZero(n Node, kids []Node) bool {
+	if n.sym != UnaryExpr || len(kids) < 2 {
+		return false
+	}
+	if tok, ok := e.prefixOpTok(kids[0]); !ok || e.f.ch(tok) != SUB {
+		return false
+	}
+	v, ok := e.foldValNode(n)
+	if !ok || v.Kind() != constant.Float || constant.Sign(v) != 0 {
+		return false
+	}
+	ct, ok := e.inferNode(n)
+	return ok && isFloatCType(e.underlyingCType(ct))
 }
 
 // unaryOpTok returns the operator token of a UnaryOp node.

@@ -2130,7 +2130,7 @@
 //	min(x, y, …)        the smallest of its ordered arguments
 //	max(x, y, …)        the largest of its ordered arguments (ordered: an
 //	                    integer, a float or a string)
-//	panic(s)            abort with a string message
+//	panic(v)            abort, writing v as Go's runtime writes a panic's value
 //	print(args…)        write the arguments to the serial console
 //	println(args…)      like print, but space-separated and newline-terminated
 //	printf(f, args…)    write the arguments under the control of a format
@@ -2155,8 +2155,15 @@
 // appended. copy copies
 // min(len(dst), len(src)) elements between two slices of the same element type —
 // which may overlap — and yields that count. clear zeroes a slice's elements in
-// place. panic takes a string, writes "panic: " and that message to the serial
-// console and halts the cog; with --release it reboots the board instead.
+// place. panic writes "panic: " and its argument to the serial console and halts
+// the cog; with --release it reboots the board instead. The argument is written as
+// Go's runtime writes one: a string as it is; an error's Error() or a Stringer's
+// String(), asked of the dynamic type of an interface; a number or a bool as print
+// writes it, inside its type's name for a defined type, "main.Code(8)", a string's
+// quoted, `main.Name("x")`; a pointer, a channel or a function as its type and
+// address, "(*main.P) 0x1f8"; and an interface holding nothing as "runtime error:
+// panic called with nil argument". A struct, an array and a slice, of which Go
+// writes only the address of a copy, are refused.
 //
 // print, println and printf are the only I/O built-ins; they write to the board's
 // serial output. print and println each take any number of arguments, either
