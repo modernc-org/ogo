@@ -1,0 +1,86 @@
+// A second sweep of mutated run cases, with Go as the oracle: a `*` added or
+// dropped, a type name for another, a field for another. Each line below was taken
+// and is refused as Go refuses it.
+
+type Celsius float64
+
+type K float64
+
+type Row [3]int
+
+var c Celsius
+
+var r Row
+
+var n int
+
+var g = &n
+
+var f = 2.75
+
+func one() {}
+
+func pf() *int { return &n }
+
+func stars() {
+	// ERROR "evaluated but not used"
+	*pf()
+	// ERROR "evaluated but not used"
+	*println("x")
+	// ERROR "expression in go must be function call"
+	go *pf()
+	// ERROR "expression in defer must be function call"
+	defer *pf()
+	// ERROR "cannot indirect n \(variable of type int\)"
+	*n++
+	// ERROR "cannot indirect n \(variable of type int\)"
+	*n += 10
+	*g++
+	*g += 10
+}
+
+func conversions() {
+	(*Row)(&r)[1] = 4
+	// ERROR "cannot convert &c \(value of type \*Celsius\) to type \*Row"
+	(*Row)(&c)[1] = 4
+	// ERROR "cannot convert &c \(value of type \*Celsius\) to type \*Row"
+	(*Row)(&c)[1]++
+	// ERROR "cannot convert &c \(value of type \*Celsius\) to type \*Row"
+	(*Row)(&c)[2] += 2
+	m := (int)(f)
+	// ERROR "cannot use m of type int as type string in variable declaration"
+	var s string = m
+	// ERROR "cannot use \(Celsius\)\(f\) of type Celsius as type K in variable declaration"
+	var k K = (Celsius)(f)
+	_, _ = s, k
+}
+
+func ranges() {
+	var long [3]int
+	// ERROR "cannot use long \(value of type \[2\]int\) as \[3\]int value in assignment"
+	for _, long = range [][2]int{{1, 2}} {
+	}
+	var str string
+	// ERROR "cannot use str \(value of type int\) as string value in assignment"
+	for _, str = range []int{1} {
+	}
+	_, _ = long, str
+}
+
+func literals() {
+	// ERROR "mismatched types int32 and int"
+	x := []int32{1, 2, 3}[1] + []int{4, 5}[1]
+	// ERROR "cannot use \[\]int32\{1\}\[0\] of type int32 as type string in variable declaration"
+	var s string = []int32{1}[0]
+	var a [3]int
+	// ERROR "index &n \(a pointer\) must be integer"
+	_ = a[&n]
+	_, _ = x, s
+}
+
+func main() {
+	stars()
+	conversions()
+	ranges()
+	literals()
+}

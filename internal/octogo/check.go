@@ -752,6 +752,29 @@ func (f *File) noteRef(s *Scope, tok Token) {
 	}
 }
 
+// stepOrCompound reports a statement that is an increment, a decrement or a
+// compound assignment, `x++`, `x += v`.
+func stepOrCompound(f *File, postfix Node) bool {
+	for c := range it(postfix.ast) {
+		if c.sym != PostfixOp {
+			continue
+		}
+		for pc := range it(c.ast) {
+			switch {
+			case pc.sym == AssignOp:
+				for t := range it(pc.ast) {
+					if t.sym == 0 && f.ch(t.tok) != ASSIGN && f.ch(t.tok) != DEFINE {
+						return true
+					}
+				}
+			case pc.sym == 0 && (f.ch(pc.tok) == INC || f.ch(pc.tok) == DEC):
+				return true
+			}
+		}
+	}
+	return false
+}
+
 // noteHeadRefs records the variable each target's head names, as noteRef does an
 // operand's: `x++`, `x += 1`, `x.f = v`, `x[i] = v` and `*x = v` use x, as Go counts
 // a use; a bare `x = v`, whose position the unused rule excludes, does not.
@@ -2427,6 +2450,12 @@ func (f *File) checkCallStmt(s *Scope, head, stmt Node, kw string, kwTok Token, 
 		f.err(pos, "%s statement must be a function call", kw)
 		return
 	}
+	// `go *f()`: what is started is the value a call returns, dereferenced -- no
+	// call. Go's grammar has no such statement; this one took it and started f.
+	if f.headIsDeref(head) {
+		f.err(f.tok(head.Pos()).Position(), "expression in %s must be function call", kw)
+		return
+	}
 	if f.reportNotACall(s, head, stmt, kw) {
 		return
 	}
@@ -3949,6 +3978,13 @@ func (f *File) checkRangeAssign(s *Scope, target Node, haveKind Kind, hasKind bo
 	if t, ok := f.varTypeAt(d); ok {
 		wantTN, wantIn = t.tn, t.s
 	}
+	// An element known by its written type alone, `range []int{1}`, has the Kind
+	// that type has.
+	if !hasKind && haveTN != nil {
+		if rt := f.resultType(haveIn, haveTN); rt.known {
+			haveKind, hasKind = rt.kind, true
+		}
+	}
 	bad := false
 	switch {
 	case d.hasKind && hasKind:
@@ -3973,6 +4009,21 @@ func (f *File) checkRangeAssign(s *Scope, target Node, haveKind Kind, hasKind bo
 			if hi, hok := f.namedTypeIdentity(haveIn, haveTN); hok && wi != hi {
 				bad = true
 			}
+		}
+	}
+	// Two categories of no Kind, or two arrays of different lengths or elements:
+	// `for _, long = range rs` for a [3]int long over [][2]int was taken, and the
+	// target stored two elements of three.
+	if !bad && wantTN != nil && haveTN != nil {
+		wu, _ := f.refTypeUnder(wantIn, wantTN)
+		hu, _ := f.refTypeUnder(haveIn, haveTN)
+		wc, hc := kindlessCategoryOf(wu), kindlessCategoryOf(hu)
+		switch {
+		case wc != "" && hc != "" && wc != hc:
+			bad = true
+		case wc == "an array" && hc == "an array":
+			wi, hi := f.typeNodeIdentity(wu), f.typeNodeIdentity(hu)
+			bad = wi != "" && hi != "" && wi != hi
 		}
 	}
 	if !bad {
@@ -4032,7 +4083,12 @@ func (f *File) rangeElemTypeNode(s *Scope, expr Node) (TypeNode, *Scope) {
 func (f *File) rangeElemTypeAt(s *Scope, expr Node) (typeAt, bool) {
 	t, ok := f.valueTypeAt(s, expr)
 	if !ok {
-		return typeAt{}, false
+		// A literal ranged over where it is written, `range [][2]int{{1, 2}}`.
+		if t, ok = f.litOrConvType(s, expr); !ok {
+			if t, ok = f.sliceLitType(s, expr); !ok {
+				return typeAt{}, false
+			}
+		}
 	}
 	return f.elemTypeOf(t)
 }
@@ -5088,7 +5144,38 @@ func (f *File) factorType(s *Scope, n Node) (Kind, bool) {
 	// as an int and then refused "a[0]" as indexing a scalar. A Factor with a Type
 	// child is one of these; its own type is an array or slice, which this scalar
 	// Kind cannot express, so it is left unknown.
+	// `(int)(f)` and `(Celsius)(t)`: a conversion to a type named in parentheses is
+	// that type's, as `int(f)` is. It had none, so `n := (int)(f)` was a variable no
+	// rule asked anything of, and `n * "s"` was taken.
+	if hasParen && hasSuffix && f.soleCallSuffix(suffix) {
+		if id, _, ok := f.parenNameConv(s, n); ok {
+			if k, ok := f.nameKind(s, id.Src()); ok {
+				return k, true
+			}
+		}
+	}
 	if hasType {
+		// An element or a field read off a bracketed literal where it is written,
+		// `[]int32{1, 2}[1]`, has the Kind its written type gives it: no rule
+		// knew it, and `[]int32{1}[0] + []int{2}[0]` was taken.
+		if hasSuffix {
+			kids := slices.Collect(it(n.ast))
+			steps := slices.Collect(it(suffix.ast))
+			if len(kids) != 0 && kids[len(kids)-1].sym == FactorSuffix && kids[len(kids)-2].sym == CompositeLit && !slices.ContainsFunc(steps, func(st Node) bool { return st.sym == CallSuffix }) {
+				lit := factorWithoutLastStep(kids, steps[:1])
+				t, ok := f.litOrConvType(s, lit)
+				if !ok {
+					t, ok = f.sliceLitType(s, lit)
+				}
+				if ok {
+					if t, ok = f.stepsTypeIn(s, t, steps); ok {
+						if rt := f.resultType(t.s, t.tn); rt.known {
+							return rt.kind, true
+						}
+					}
+				}
+			}
+		}
 		return 0, false
 	}
 	switch {
@@ -7726,6 +7813,18 @@ func hasSelectorChild(n Node) bool {
 // calls declare nothing.
 func (f *File) checkAssignment(s *Scope, head, postfix Node) {
 	f.noteHeadRefs(s, head, postfix)
+	// `(*Row)(&c)[1]++` and `+= 2`: what a conversion heading a stepped target
+	// converts is asked as it is of a value and of an `=` target (convPlaceType).
+	if steps, _ := callSteps(postfix); stepOrCompound(f, postfix) {
+		if pc, ok := f.ptrConvOfHead(s, head, steps); ok && (pc.unnamed == "" || pc.lit.sym != 0) {
+			f.checkPtrConvArgs(s, pc)
+		}
+		// `*n++` and `*n += 1` for an int n: the `=` form's question, which these
+		// never asked.
+		if base, stars, ok := f.targetHead(head); ok && stars == 1 && len(steps) == 0 {
+			f.derefBase(s, base)
+		}
+	}
 	// `T.M(x)` and `(*T).M(p, x)` as a statement: a method expression called. One
 	// not called is left to the report of a value evaluated and not used below.
 	if steps, pure := callSteps(postfix); pure && endsInCall(postfix) {
@@ -8004,6 +8103,13 @@ func (f *File) checkAssignment(s *Scope, head, postfix Node) {
 	// call ("p.m()", "a[i].m()", "p.m().n()") is a legal call statement. (A bare
 	// name "x" carries no Postfix node and is handled in checkStatement; a bare
 	// receive "<-ch" is a distinct statement form.)
+	// `*pf()` and `*println("x")`: a call's result dereferenced is a value, as `*p`
+	// is, and one with no result has nothing to dereference. The call ran and the
+	// star was dropped, in silence.
+	if op == 0 && endsInCall(postfix) && f.headIsDeref(head) {
+		f.err(f.tok(head.Pos()).Position(), "%s evaluated but not used", f.sourceSpan(head.Pos(), postfix.End()))
+		return
+	}
 	if op == 0 && !endsInCall(postfix) {
 		last := postfix.End()
 		if last < head.Pos() {
@@ -14232,9 +14338,38 @@ func (f *File) methodSingleResultKind(s *Scope, head, member Token) (Kind, bool)
 	// `f(s.Name())` with a wrong parameter type reached the C compiler.
 	results, ok := f.callResults(s, head, member)
 	if !ok || len(results) != 1 || !results[0].known {
-		return 0, false
+		return f.importedMethodKind(s, head, member)
 	}
 	return results[0].kind, true
+}
+
+// importedMethodKind is the Kind of the sole result of a method of another
+// package's type, read in the file declaring the method: a result that file spells
+// with a qualifier of its own, `unsafe.Pointer`, has no spelling here, and
+// callResults, carrying the signature into this file, answered nothing for it --
+// `var n int = blk.Addr(0)` was taken where `hub.Addr(0)` was refused.
+func (f *File) importedMethodKind(s *Scope, head, member Token) (Kind, bool) {
+	d, ok := s.find(head.Src()).(*VarDeclaration)
+	if !ok || !d.typeQual.IsValid() {
+		return 0, false
+	}
+	td, home, ok := f.typeDeclNamed(s, d.declaredTypeName())
+	if !ok {
+		return 0, false
+	}
+	fd := td.methods[member.Src()]
+	if fd == nil || fd.Type == nil || fd.Type.Signature == nil {
+		return 0, false
+	}
+	wf := f.fileOfToken(fd.Name)
+	if wf == nil {
+		return 0, false
+	}
+	res := wf.flattenResults(home, fd.Type.Signature)
+	if len(res) != 1 || !res[0].known {
+		return 0, false
+	}
+	return res[0].kind, true
 }
 
 // checkNames walks an expression and reports every bare identifier that does not
@@ -16372,6 +16507,11 @@ func (f *File) convPlaceType(s *Scope, open Token, inner Node, steps []Node) (t 
 		return typeAt{}
 	}
 	if pc, ok := f.ptrConvParts(s, open, inner, steps); ok {
+		// What is converted, as the conversion standing as a value is asked:
+		// `(*Row)(&c)[1] = 4` for a *Celsius was taken.
+		if pc.unnamed == "" || pc.lit.sym != 0 {
+			f.checkPtrConvArgs(s, pc)
+		}
 		var pointee TypeNode
 		switch {
 		case pc.lit.sym != 0:
@@ -16770,6 +16910,25 @@ func (f *File) indexAssignTarget(head, postfix Node) (base Token, ok bool) {
 	return id, indexes == 1 && !disqualify
 }
 
+// derefBase is the variable a dereference target `*base` reads, reporting a base
+// that is undefined or a known scalar, which is no pointer.
+func (f *File) derefBase(s *Scope, base Token) (*VarDeclaration, bool) {
+	d, ok := s.find(base.Src()).(*VarDeclaration)
+	if !ok {
+		if s.find(base.Src()) == nil && !f.isImportQualifier(s, base.Src()) {
+			f.errUndefined(base.Position(), base.Src())
+		}
+		return nil, false
+	}
+	if !d.isPtr {
+		if k, known := f.identKind(s, base); known { // a known scalar is not a pointer
+			f.err(base.Position(), "invalid operation: cannot indirect %s%s", base.Src(), ofType(k, true))
+		}
+		return nil, false
+	}
+	return d, true
+}
+
 // checkDerefAssign checks a dereference assignment target "*base = rhs". The base
 // must be a pointer variable; a known scalar cannot be dereferenced ("cannot
 // indirect"). When it is a pointer to a predeclared type, the right-hand side must
@@ -16779,17 +16938,8 @@ func (f *File) checkDerefAssign(s *Scope, base Token, rhsNode Node) {
 	if f.blankRead(base) { // "*_ = e" reads "_" as the dereferenced pointer
 		return
 	}
-	d, ok := s.find(base.Src()).(*VarDeclaration)
+	d, ok := f.derefBase(s, base)
 	if !ok {
-		if s.find(base.Src()) == nil && !f.isImportQualifier(s, base.Src()) {
-			f.errUndefined(base.Position(), base.Src())
-		}
-		return
-	}
-	if !d.isPtr {
-		if k, known := f.identKind(s, base); known { // a known scalar is not a pointer
-			f.err(base.Position(), "invalid operation: cannot indirect %s%s", base.Src(), ofType(k, true))
-		}
 		return
 	}
 	if d.hasElemKind {
@@ -17456,7 +17606,10 @@ func (f *File) importedMethodResultType(qual, typeName, member Token) (Token, To
 		return Token{}, Token{}, false, false
 	}
 	tn, named := namedTypeToken(res[0].typeNode)
-	if !named {
+	if !named || namedTypeQual(res[0].typeNode).IsValid() {
+		// A result spelled with a qualifier of the declaring file's, `unsafe.Pointer`
+		// or `other.T`, names no type of the receiver's package: read as one it was
+		// `hub.Pointer`, and `(*uint32)(blk.Addr(0))` was refused.
 		return Token{}, Token{}, false, false
 	}
 	return tn, homeQual(home, tn, qual), f.isPointerType(home, res[0].typeNode), true
@@ -17683,6 +17836,14 @@ func (f *File) exprNamedType(s *Scope, n Node) (name, qual Token, isPtr, ok bool
 	if fac, isFac := f.soleFactorOf(n); isFac {
 		if pc, isConv := f.ptrConvOf(s, fac); isConv && len(pc.rest) == 0 && !pc.predecl && pc.unnamed == "" {
 			return pc.typ, pc.qual, true, true
+		}
+		// `(Celsius)(t)` is a Celsius, as `Celsius(t)` is.
+		if kids := slices.Collect(it(fac.ast)); len(kids) == 4 && kids[3].sym == FactorSuffix && f.soleCallSuffix(kids[3]) {
+			if id, _, ok := f.parenNameConv(s, fac); ok {
+				if _, isType := s.find(id.Src()).(*TypeDeclaration); isType {
+					return id, Token{}, false, true
+				}
+			}
 		}
 	}
 	// "v := x.(*T)" carries *T, so v's fields and methods are checked as an
@@ -19176,6 +19337,11 @@ func (f *File) checkIndexValue(s *Scope, e Node) {
 		f.err(pos, "cannot convert nil to type int")
 		return
 	}
+	// `a[&i]`: exprType answers an address with its pointee's Kind, an int here.
+	if isPtr, known := f.exprPointerness(s, e); known && isPtr {
+		f.err(pos, "invalid argument: index %s (a pointer) must be integer", f.exprSource(e))
+		return
+	}
 	k, known := f.exprType(s, e)
 	if !known {
 		if what, isKindless := f.nonBoolOperand(s, e); isKindless {
@@ -19974,19 +20140,28 @@ func (f *File) checkPtrConv(s *Scope, pc ptrConvExpr) {
 		f.err(pc.at.Position(), "invalid use of [...] array (outside a composite literal)")
 		return
 	}
+	if !f.checkPtrConvArgs(s, pc) || pc.lit.sym != 0 {
+		return
+	}
+	d := &VarDeclaration{typeName: pc.typ, typeQual: pc.qual, hasKind: pc.predecl}
+	f.checkStepsOn(s, d, "(*"+pc.typeName()+")("+f.exprSource(pc.args[0])+")", pc.rest)
+}
+
+// checkPtrConvArgs is checkPtrConv's question of what is converted: one operand, of
+// a type the pointer type converts from. It reports whether there is one operand.
+func (f *File) checkPtrConvArgs(s *Scope, pc ptrConvExpr) bool {
 	if len(pc.args) != 1 {
 		f.err(pc.at.Position(), "wrong argument count in conversion to *%s", pc.typeName())
-		return
+		return false
 	}
 	if pc.lit.sym != 0 {
 		if t, ok := f.litType(s, pc, false); ok {
 			f.checkLitPtrConvOperand(s, pc, typeAt{t, s, f})
 		}
-		return
+		return true
 	}
 	f.checkPtrConvOperand(s, pc)
-	d := &VarDeclaration{typeName: pc.typ, typeQual: pc.qual, hasKind: pc.predecl}
-	f.checkStepsOn(s, d, "(*"+pc.typeName()+")("+f.exprSource(pc.args[0])+")", pc.rest)
+	return true
 }
 
 // checkPtrConvOperand checks what a conversion to a pointer type converts (see

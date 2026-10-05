@@ -43,6 +43,10 @@ shipped section tells a reader on that version that they have behaviour they do 
 
 ### Fixed
 
+- **`(*uint32)(blk.Addr(0))` builds**, where `Addr` is a method of another
+  package's type returning `unsafe.Pointer`: the result was read as a type of the
+  method's package, `hub.Pointer`, and the conversion refused. And `var n int =
+  blk.Addr(0)` is refused, as the function form `hub.Addr(0)` was.
 - **A function, a variable, a parameter or a type the program names like a
   builtin is the program's**, as Go has it: `func len(s string) int`, a parameter
   `max func(int, int) int`, `var min = func(a, b int) int {...}`, a local `make :=
@@ -248,6 +252,17 @@ shipped section tells a reader on that version that they have behaviour they do 
 
 ### Behaviour changes
 
+- **A second sweep of run cases mutated by one token refuses what Go refuses**
+  (a `*` added or dropped, a type name for another, a field for another): a
+  star over a call standing as a statement, `*pf()` and `*println("x")`, and as
+  a `go` or `defer` operand, `go *pf()`; `*n++` and `*n += 1` for an int n; a
+  pointer conversion heading a store, `(*Row)(&c)[1] = 4` for a `*Celsius`, as
+  `=`, `++` and `+=`; a range clause's `=` storing an array of another length or
+  an element of another Kind, `for _, long = range [][2]int{...}` into a `[3]int`;
+  an element of a literal in an operation, `[]int32{1, 2}[1] + []int{3}[0]`; a
+  conversion written in parentheses, `n := (int)(f)` and `(Celsius)(t)`, which had
+  no type, so what was declared from one was asked nothing; and an address as an
+  index, `a[&i]`. All but the last built in silence.
 - **A variable declared and not used is refused whatever another variable of its
   name does**, as Go refuses it: `calls := calls*10 + k` -- an `=` mistyped as
   `:=`, the new variable shadowing the one meant to be written -- `n := n*10 +

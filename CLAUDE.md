@@ -971,6 +971,25 @@ or rarer -- a builtin indexed, a non-function called, `&iota`, a type named as a
 value, no `main`, a struct passed for a `*Builder`. The tools are throwaway
 (gen.py, verdict.sh, tbuild.sh in the scratchpad); tbuild.sh builds each taken
 mutant for the TARGET, which ranks them -- SILENT first.
+A second batch, 3,000 more with three more edits -- a type name for another, a `*`
+added or dropped, a field for another -- had 73 taken, 30 of them silent: a star
+over a call as a statement (`*println(x)`, `*pf()`) and as `go`/`defer`'s operand,
+the call run and the star dropped; `*n++` for an int n, the `=` form's question
+never asked by `++` and `+=`; a pointer conversion heading a store, asked of its
+operand as a value and not as a target; a range `=` of arrays of another length,
+and of a literal's elements (rangeElemTypeAt typed no literal); an element of a
+bracketed literal in an operation, which had no Kind (factorType); and a
+conversion in PARENTHESES, `(int)(f)`, which had no Kind and no name, so a variable
+declared from one was asked nothing. Following one false refusal the net showed
+(the probe's own `unsafe/mp`, older than the batch): a method of another package's
+type whose result that package spells qualified, `unsafe.Pointer`, was named as
+the RECEIVER's package's, `hub.Pointer` (importedMethodResultType dropped the
+result's qualifier and homeQual put the receiver's on it), and its Kind was read
+nowhere, requalifiedSig failing on a qualified name (importedMethodKind reads it in
+the method's own file). 37 are taken now, all loud at the backend but three:
+`println` of an array or a struct field of one, which this compiler prints by
+design, and a variable named `string` (a type name, which no read resolves, keeps
+it "used").
 
 **A COMPILER RUN IN A SWEEP IS CAPPED, AND A CRASH IS NOT A REFUSAL** (2026-09-20).
 A probe program is written to find a fault, and a fault is not always a wrong
