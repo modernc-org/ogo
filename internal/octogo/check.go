@@ -14082,8 +14082,11 @@ func (f *File) callChainWalk(s *Scope, head Token, steps []Node) (w callChain) {
 	case *VarDeclaration:
 		// A method's results are this package's to resolve only where the
 		// receiver's type is: callResults looks another package's type up by its
-		// bare name here.
-		if d.typeQual.IsValid() {
+		// bare name here. A method called on the variable itself is
+		// checkImportedMethodArgs's; a FIELD first, `f.ID.Node(1)` for an `f
+		// *lib.Frame`, is walked -- it was walked by nothing, and its call's
+		// arguments and results asked nothing.
+		if d.typeQual.IsValid() && (len(steps) < 2 || steps[0].sym != Selector || steps[1].sym == CallSuffix) {
 			return w
 		}
 		if len(steps) > 1 && steps[0].sym == Selector && steps[1].sym == CallSuffix {
@@ -14311,6 +14314,20 @@ func (f *File) walkSteps(t typeAt, addr bool, steps []Node, i, reportFrom int, w
 					}
 				}
 				return w
+			}
+			// A field of ANOTHER package's struct, `f.ID` for an `f *lib.Frame`: the
+			// walk goes on in that package, as the method step's does, naming what
+			// it reaches as this file names that package.
+			if w.home == nil {
+				qtn := t.tn
+				if p, isPtr := qtn.(*TypeNodePointer); isPtr {
+					qtn = p.TypeNode
+				}
+				if id, isID := qtn.(*TypeNodeIdent); isID && id.Qualifier.IsValid() {
+					if _, home, ok := f.typeIdentDecl(t.s, id); ok {
+						w.home, w.qual = home, id.Qualifier
+					}
+				}
 			}
 			t = typeAt{ftn, u.s, u.f}
 		case Index:
@@ -20590,12 +20607,18 @@ func (f *File) methodSingleResultName(s *Scope, head, member Token) string {
 	return ""
 }
 
-// fieldTypeName names the written type of "head.field", "" when the field's type is
-// not a plain name of this package.
+// fieldTypeName names the written type of "head.field" as this file writes it --
+// `lib.ID` for another package's, the field's type requalified (fieldTypeNode) --
+// and "" when it is no name. A qualified one answered nothing, so `f.ID.Node()` for
+// an `f *lib.Frame` was asked of the Kind ID is defined over, "type uint16 has no
+// method Node".
 func (f *File) fieldTypeName(s *Scope, head, field Token) string {
 	tn, isIdent := f.fieldTypeNode(s, head, field).(*TypeNodeIdent)
-	if !isIdent || tn.Qualifier.IsValid() {
+	if !isIdent {
 		return ""
+	}
+	if tn.Qualifier.IsValid() {
+		return tn.Qualifier.Src() + "." + tn.Name.Src()
 	}
 	return tn.Name.Src()
 }

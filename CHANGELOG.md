@@ -43,6 +43,11 @@ shipped section tells a reader on that version that they have behaviour they do 
 
 ### Fixed
 
+- **A method called on a field of another package's struct builds, and is
+  checked**: `f.ID.Node()` for an `f *lib.Frame` and a field `ID` of a `type ID
+  uint16` with methods was "type uint16 has no method Node", through a parameter, a
+  local or a pointer; once found, such a call's arguments and result were asked
+  nothing, and `f.In.ID.Node(3)` was taken.
 - **An address through a pointer a local struct holds is an address into what it
   points at**: `h := HP{&gt}; keepN = &h.p.n` was refused as the address of local
   h, by the checker and the emitter alike, wherever `h.p` pointed. What h holds

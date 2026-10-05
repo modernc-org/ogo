@@ -2747,6 +2747,13 @@ address whose steps reach a pointer or a slice before the last is the root's hol
 mark's question now (addrCrossing, addrThroughRef). Asking accessChainType from
 frameRefOf reached chainCText's assertion step in a pass with no locals, a nil map
 written -- the unchecked run of a run case crashed; the step answers nothing there.
+A FIELD of another package's struct with a method on it, `f.ID.Node()` for an `f
+*lib.Frame` (2026-10-05, a frame router of two packages): fieldTypeName answered a
+field's type name only where it was this package's, so the method was asked of the
+Kind the type is defined over, "type uint16 has no method Node", in v0.48.1 too; and
+callChainWalk gave up at any variable of another package's type, so once the method
+was found its arguments and result were asked nothing. The walk goes on through
+such a field and takes the package as its home there, as its method step does.
 A store through a pointer no NAME holds was the summaries' next row (2026-10-04,
 found making `(*f())[i] = v` writable, which the emitter had refused): a callee
 storing its parameter through a call's result, `gethp().p = v`, `fa()[0] = v`, in a
