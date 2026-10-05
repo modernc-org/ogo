@@ -747,7 +747,9 @@ still design-only.
   literal (2026-09-30, found by p2-11): the target's lexer reads an octal escape past
   three digits, so `cQuote` closes the literal after one a digit 0-7 follows, `"\033"
   "7"` (`doc/octal-escape-past-three-digits.c`; flexprop#115, filed 2026-10-01 with a
-  tested fix).
+  tested fix, fixed upstream 2026-10-05 by spin2cpp 639a8c8e with the same rule and
+  measured right on the board; the workaround stays, costing nothing, until a
+  regeneration's pin carries it).
   **A call stands in a header** (2026-09-29): one time in four `genHeaderCall`
   writes one as the init of an if, of a switch and of a for, and as the for's post,
   its results unread, which the call counter accounts for; every seed is a new
