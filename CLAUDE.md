@@ -932,6 +932,33 @@ is bound to recorded in a map of locals package scope had never made
 (resolvePkgVarTypes, emitPackageVars make it). No sweep had written a package
 initializer of that shape; a mutation moved a statement there by accident.
 
+**A MUTATION WITH GO AS THE ORACLE IS A PROBE OF THE CHECKER** (2026-10-05). The
+same run cases mutated by one TOKEN rather than a character -- a name swapped for
+another in scope, an integer literal for a string, a float, a bool, nil or a rune,
+a `&` added or dropped, `:=` for `=` and back, an operator for another, an argument
+dropped -- each mutant through a Go twin (GOARCH=386) and dumpc. Of 3,000 mutants Go
+refused 2,451 and this compiler took 89 of those; 39 are refused now. The rows they
+opened, each a rule written and never asked in a position: nil as an index, a
+bound, a print argument, a range, a min, a switch tag and a constant; an element of
+a literal ELIDED inside another; a store through a pointer CONVERSION, bare and
+parenthesised (checkConvTarget, convPlaceType); the arguments of a call through a
+call's result or an element as a STATEMENT, where the same call as a value was
+checked (checkValueCallSteps); a slice from `make` with no type for any walk
+(madeSliceType); a package variable whose initializer names one declared BELOW it,
+checked before that one had a type (demandVars resolves it first, as constants
+are); a field PROMOTED through an embedded struct, or named by its type, which
+every walk typing a selector skipped -- "not modelled here" -- so `o.n = true`
+built in silence (fieldTypeVia, Go's shallowest-depth rule, across a package too);
+and an array LITERAL's bound, evaluated where a type is declared and nowhere else,
+`[true]int{1}` built in silence. **Go's verdict on a mutant is the cheapest oracle
+there is: a program one token from a valid one is what a user writes by mistake.**
+Of the 50 still taken, 22 are Go's "declared and not used" -- `=` mistyped as `:=`,
+the shadowing mistake Go's rule exists for, which this compiler does not have and
+whose binaries are silent -- and the rest are loud at the backend or rarer: a
+builtin indexed, a non-function called, `&iota`, a type named as a value, no
+`main`. The tools are throwaway (gen.py, verdict.sh, tbuild.sh in the scratchpad);
+tbuild.sh builds each taken mutant for the TARGET, which ranks them -- SILENT first.
+
 **A COMPILER RUN IN A SWEEP IS CAPPED, AND A CRASH IS NOT A REFUSAL** (2026-09-20).
 A probe program is written to find a fault, and a fault is not always a wrong
 answer: `type A struct{ A }` sent the emitter down an embedding at 4 GB a second, the
@@ -1641,7 +1668,9 @@ cog, none failing (four loads that timed out passed on a second try); 201-500 wi
 510c8fb, 280 passing, 19 outgrowing, seed 359 refused by the backend
 (doc/uint64-shift-32-pair.c), none failing (twelve loads timed out under a busy
 host and passed on a second try). Seeds 501-1000 with 835694b: 469 passing, 30
-outgrowing, seed 852 refused by the backend the same way, none failing.
+outgrowing, seed 852 refused by the backend the same way, none failing. Seeds
+1001-1500 with 508e289: 463 passing, 37 outgrowing, none failing or refused (thirteen
+loads with no output passed on a second).
 An eighth round the same day -- a sort library over an interface, a heap of timers
 holding function values, three packages -- matched Go on the host once a literal of
 ANOTHER package's defined slice type was one: `order.Ints{5, 2, 9}` was a plain

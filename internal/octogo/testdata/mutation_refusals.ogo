@@ -1,0 +1,161 @@
+// Programs the run cases become by one edit -- a literal of another kind, an
+// operator swapped, a & dropped -- each one Go refuses and each one this compiler
+// took: a semantic mutation sweep with Go as the oracle.
+
+type T struct{ n int }
+
+func (t T) bump(k int) T { return T{t.n + k} }
+
+func mk(k int) T { return T{k} }
+
+func use(t *T) int { t.n++; return t.n }
+
+func pick() func(*T) int { return use }
+
+var hs = []func(*T) int{use}
+
+type item struct {
+	v []int
+	n int
+}
+
+type L []item
+
+var gt T
+
+var x int
+
+var arr = [3]int{1, 2, 3}
+
+var back [2]*int
+
+var m int
+
+type holder struct{ ps []*int }
+
+var h holder
+
+func shift(p *struct{ x, y int }, d int) { p.x += d }
+
+// ERROR "operator - not defined on int and string"
+var count = scale - "s"
+
+var scale = mkScale()
+
+func mkScale() int { return 2 }
+
+const two = 2.0
+
+// ERROR "operator && not defined"
+const greeting = "hello" + ", " && "world"
+
+// ERROR "operator \|\| not defined"
+const flags = 0 || 1
+
+func nils() {
+	var s []int
+	// ERROR "cannot convert nil to type int"
+	_ = arr[nil]
+	// ERROR "cannot convert nil to type int"
+	_ = s[nil:]
+	// ERROR "use of untyped nil in argument to built-in println"
+	println(nil)
+	// ERROR "cannot range over nil"
+	for range nil {
+	}
+	// ERROR "nil cannot be ordered"
+	_ = min(nil, 1)
+	// ERROR "use of untyped nil in switch expression"
+	switch nil {
+	}
+	// ERROR "mismatched types untyped bool and untyped nil"
+	println(s == nil != nil)
+	// ERROR "cannot use nil as int value"
+	*(*int)(&x) = nil
+}
+
+type Pkt struct{ b [2]int }
+
+func bounds() {
+	// ERROR "invalid array bound"
+	_ = [true]int{1}
+	// ERROR "invalid array bound"
+	_ = &Pkt{["s"]int{1, 2}}
+	// ERROR "non-constant array bound"
+	_ = [x]int{1}
+}
+
+func elided() {
+	// ERROR "cannot use .s. of type string as type int in array or slice literal"
+	_ = [2][2]int{{1, 2}, {"s", 4}}
+	// ERROR "constant 1.5 truncated to int"
+	_ = [][]int{{1}, {1.5}}
+}
+
+func targets() {
+	// ERROR "cannot use .s. of type string as type int in assignment"
+	*(*int)(&x) = "s"
+	// ERROR "cannot use .s. of type string as type int in assignment"
+	(*(*int)(&x)) = "s"
+	// ERROR "constant 2.5 truncated to int"
+	(*(*T)(&gt)).n = 2.5
+	n := 0
+	p := &n
+	// ERROR "cannot use true of type bool as type int in assignment"
+	*p += true
+	s := make([]item, 2)
+	// ERROR "constant 2.5 truncated to int"
+	s[1].n = 2.5
+	l := make(L, 2)
+	// ERROR "cannot use 2.5"
+	l[1].v = 2.5
+	h.ps = back[:]
+	// ERROR "cannot use m \(variable of type int\) as \*int value in assignment"
+	h.ps[1] = m
+}
+
+func calls() {
+	// ERROR "constant 1.5 truncated to int"
+	println(mk(1.5).n)
+	// ERROR "constant 1.5 truncated to int"
+	println(gt.bump(1.5).bump(2).n)
+	// ERROR "cannot use gt \(a value\) as \*T value in argument to pick\(\)"
+	pick()(gt)
+	// ERROR "cannot use gt \(a value\) as \*T value in argument to hs\[0\]"
+	hs[0](gt)
+	// ERROR "cannot use gt \(a value\) as \*T value in argument to pick\(\)"
+	defer pick()(gt)
+	var q struct{ x, y int }
+	// ERROR "cannot use q as a pointer value in argument to shift: it is a struct"
+	shift(q, 10)
+}
+
+func operators() {
+	// ERROR "operator % not defined on 5 \(untyped float constant\)"
+	println(5 % two)
+	var f32 float32 = 2
+	// ERROR "operator \^ not defined"
+	println(f32 ^ 1)
+}
+
+func statements() {
+	// ERROR "cannot declare in post statement of for loop"
+	for i := 0; i < 3; i := i + 1 {
+		_ = i
+	}
+	// ERROR "non-name .s. on left side of :="
+	for "s", v := range arr {
+		_ = v
+	}
+}
+
+func main() {
+	nils()
+	bounds()
+	elided()
+	targets()
+	calls()
+	operators()
+	statements()
+	_, _, _, _ = count, greeting, flags, h
+}

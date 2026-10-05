@@ -248,6 +248,31 @@ shipped section tells a reader on that version that they have behaviour they do 
 
 ### Behaviour changes
 
+- **A store into a field reached through an embedded struct is checked**, a
+  promoted one or one named by its type, in one package and across one:
+  `o.n = true`, `o.Holder.n = true`, `o.q.v = true`, `pg.m = 1.5`, `w.N = true`
+  for a `lib.Leaf` embedded in w's struct, `h.l.S = 1` for a field `l lib.Leaf`.
+  Each was taken, and the target built `o.n = true` in silence. The walks typing a
+  selector read a struct's own fields only; they follow Go's promotion now, the
+  shallowest embedding that has the field.
+- **A package variable's initializer is checked whatever order the variables are
+  written in**: `var count = scale - "s"` above `var scale int` was taken, the
+  variable below having no type yet when the one above was checked. It is
+  resolved first now, as a constant always was.
+- **One edit away from a valid program, each of these was taken and is refused as
+  Go refuses it** (a sweep of the run cases mutated by a token, with Go as the
+  oracle): nil as an index, a slice bound, a `print`/`println` argument, a `range`
+  operand, a `min`/`max` operand, a switch tag and a constant; a wrong value in a
+  literal elided inside another, `[2][2]int{{1, 2}, {"s", 4}}`; a store through a
+  pointer conversion, `*(*int)(&x) = "s"` and `(*(*int)(&x)) = "s"`; the arguments
+  of a call through a call's result or an element, `pick()(t)`, `hs[0](t)`, as a
+  statement, deferred and started, and of a call whose result is read further,
+  `mk(1.5).n`, `gt.bump(1.5).bump(2)`; a struct passed for a pointer to an unnamed
+  struct type; `s[1].n = 2.5` for a slice from `make`; `*p += true`; a scalar into
+  a slice of pointers, `h.ps[1] = m`; `%` and `^` of a float constant; `x == nil !=
+  nil`; `&&` and `||` of non-bool constants; a declaration in a `for` post
+  statement and a range key that is no name; and an array literal's bound that is
+  no integer constant, `[true]int{1}` -- which the target built in silence.
 - **A field and a method of one name are refused**, an embedded field's included,
   as Go refuses them: `type F struct{ m int }` with `func (f F) m()` was taken,
   the selector reading the field and the method unreachable.

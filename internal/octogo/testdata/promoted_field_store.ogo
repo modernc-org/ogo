@@ -1,0 +1,59 @@
+// A store into a field reached through an embedded struct, promoted or named by
+// its type, is asked what any field's is: `o.n = true` and `o.Holder.n = true`
+// were taken, the walks typing a selector reading a struct's own fields only.
+
+type Deep struct{ m int }
+
+type Q struct{ v int }
+
+type Holder struct {
+	n int
+	q *Q
+	Deep
+}
+
+type Outer struct {
+	Holder
+	*Q
+	tag int
+}
+
+var g Outer
+
+var pg = &g
+
+var os []Outer
+
+func main() {
+	var o Outer
+	o.n = 1
+	o.Holder.n = 2
+	o.Deep.m = 3
+	o.m = 4
+	o.q = &Q{5}
+	o.Q = &Q{6}
+	o.v = 7
+	// ERROR "cannot use true of type bool as type int in assignment"
+	o.n = true
+	// ERROR "cannot use true of type bool as type int in assignment"
+	o.Holder.n = true
+	// ERROR "cannot use .s. of type string as type int in assignment"
+	o.Holder.Deep.m = "s"
+	// ERROR "constant 1.5 truncated to int"
+	o.m = 1.5
+	// ERROR "cannot use true of type bool as type int in assignment"
+	o.q.v = true
+	// ERROR "cannot use true of type bool as type int in assignment"
+	o.v = true
+	// ERROR "cannot use 5 \(untyped int constant\) as Holder value in assignment"
+	o.Holder = 5
+	// ERROR "cannot use true of type bool as type int in assignment"
+	pg.n = true
+	// ERROR "cannot use true of type bool as type int in assignment"
+	os[0].Holder.m = true
+	// ERROR "constant 1.5 truncated to int"
+	o.n += 1.5
+	// ERROR "cannot use o.n of type int as type string in variable declaration"
+	var s string = o.n
+	_, _ = o, s
+}
