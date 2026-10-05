@@ -1469,6 +1469,67 @@ func main() {
 		panics: true,
 	},
 	{
+		// A failed type assertion panics in Go's words (runtime.TypeAssertionError):
+		// the operand's static type, the dynamic type its table names, and the type
+		// asserted. It said "interface{} is not *U", naming neither what the value
+		// held nor a package.
+		name: "a failed type assertion names the dynamic type",
+		src: `type T struct{ n int }
+
+type U struct{ n int }
+
+var gu U
+
+func main() {
+	var i any = &gu
+	println("before")
+	println(i.(*T).n)
+}
+`,
+		want:   "before\npanic: interface conversion: interface {} is *main.U, not *main.T",
+		panics: true,
+	},
+	{
+		name: "a failed assertion to an interface names the missing method",
+		src: `type T struct{ n int }
+
+func (t *T) Area() int { return t.n }
+
+type Shape interface{ Area() int }
+
+type Namer interface {
+	Area() int
+	Name() string
+}
+
+var gt T
+
+func main() {
+	var s Shape = &gt
+	n := s.(Namer)
+	println(n != nil)
+}
+`,
+		want:   "panic: interface conversion: *main.T is not main.Namer: missing method Name",
+		panics: true,
+	},
+	{
+		name: "a failed assertion of a nil error",
+		src: `type E struct{}
+
+func (e *E) Error() string { return "e" }
+
+func get() error { return nil }
+
+func main() {
+	p := get().(*E)
+	println(p != nil)
+}
+`,
+		want:   "panic: interface conversion: error is nil, not *main.E",
+		panics: true,
+	},
+	{
 		name: "a compound store through a nil pointer panics",
 		src: `func main() {
 	var p *int

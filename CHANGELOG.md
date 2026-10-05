@@ -43,6 +43,11 @@ shipped section tells a reader on that version that they have behaviour they do 
 
 ### Fixed
 
+- **A failed type assertion panics in Go's words**: `interface conversion:
+  interface {} is *main.U, not *main.T`, naming the dynamic type the value held (or
+  nil), and for an interface target `*main.T is not main.Namer: missing method
+  Name`. It said `interface{} is not *T`, naming neither what the value held nor a
+  package.
 - **A method called on a field of another package's struct builds, and is
   checked**: `f.ID.Node()` for an `f *lib.Frame` and a field `ID` of a `type ID
   uint16` with methods was "type uint16 has no method Node", through a parameter, a

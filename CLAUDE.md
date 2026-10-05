@@ -828,7 +828,10 @@ still design-only.
   uint64, spelled signed (d43ac82; A CONSTANT IS A VALUE). Seeds 3501-4000 with
   d43ac82: 475 passing, 25 outgrowing, none failing. Seeds 4001-4500 with 815f42a:
   461 passing, 39 outgrowing; 4501-5000 with eb4bedb: 468 passing, 32 outgrowing;
-  none failing, warned about or refused by the backend. A seed that outgrows can take
+  none failing, warned about or refused by the backend. Seeds 5001-5500 with 40aa62b
+  on 2026-10-05: 465 passing, 35 outgrowing, none failing; ten loads timed out
+  ("timeout waiting for checksum", "sendAddressSize: timeout") and passed on a
+  second, the loader's and not the program's. A seed that outgrows can take
   ten minutes to say so, the backend's allocator on one function of 200 lines, twice
   over when its functions were marked (seed 3146: 333 s and 244 s).
 - **Fixed miscompile (found by the oracle):** a shadowing local whose initializer

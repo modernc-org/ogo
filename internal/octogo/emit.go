@@ -5819,8 +5819,10 @@ func emitProgram(pkg *Package, w io.Writer, opts []EmitOption, rename map[string
 	if e.mintIfacePrinters(); e.err != nil {
 		return e.err
 	}
-	// So is the helper writing what an interface given to panic holds.
+	// So is the helper writing what an interface given to panic holds, and the one
+	// naming the method a failed assertion to an interface found missing.
 	e.mintPanicIfaces()
+	e.mintAssertMiss()
 
 	// A channel's helpers call ogo_panic and the P2 lock/wait intrinsics, so both
 	// must be requested before the include list is taken.
@@ -6704,6 +6706,7 @@ type emitter struct {
 	specPrinters       map[string]*specPrinter // a struct printed by %v under a spec, keyed by type, spec and '+': needStructSpecPrint
 	printIfaces        map[string]string       // interface C types printed by %v -> where the first such print is written, for a refusal minting its helper earns
 	panicIfaces        map[string]bool         // interface C types a panic is given, each needing its ogo_panicv_<T> helper (mintPanicIfaces)
+	assertMiss         map[[2]string]bool      // (interface, interface asserted) pairs a failed assertion names a missing method of (mintAssertMiss)
 	usesPanicEnd       bool                    // a panic of a value that is no plain string ends in ogo_panic_end
 	printPos           string                  // where the %v being emitted is written, for a printer minted from it later
 	printlnElems       map[string]bool         // element C types printed with a newline, needing ogo_println_slice_<T> (which calls ogo_print_slice_<T>)
@@ -30460,14 +30463,100 @@ func (e *emitter) hoistAssert(operand, iface, target string, targetIsIface bool)
 	if !e.needVTable(iface, target) {
 		return "", "", false
 	}
-	e.needPanic()
 	name := e.newTmp()
 	e.prologue = append(e.prologue,
-		"if (!("+e.assertOKC(operand, iface, target)+")) ogo_panic(\"interface conversion: "+
-			e.goTypeName(iface)+" is not *"+e.goTypeName(target)+"\");\n",
+		"if (!("+e.assertOKC(operand, iface, target)+")) "+e.assertPanicC(operand, iface, target)+"\n",
 		target+"* "+name+" = "+e.assertValueC(operand, target)+";\n")
 	e.locals[name] = target + "*"
 	return name, target + "*", true
+}
+
+// assertPanicC is the statement a failed assertion of operand, of interface type
+// iface, to the concrete *target panics with, in Go's words: "interface conversion:
+// interface {} is *main.T, not *main.U" -- the operand's static type, the dynamic
+// type its table names, nil for none, and the type asserted. It said "interface{} is
+// not *U", naming neither what the value held nor a package.
+func (e *emitter) assertPanicC(operand, iface, target string) string {
+	e.needPanicEnd()
+	vt := e.varRef(operand) + ".vt"
+	return "{ printf(\"panic: interface conversion: %s is %s, not %s\", " + cQuote(e.assertIfaceName(iface)) + ", " +
+		vt + " ? " + vt + "->" + vtTypeField + " : \"nil\", " + cQuote(e.typeNameForT(target+"*")) + "); ogo_panic_end(); }"
+}
+
+// assertIfacePanicC is assertPanicC for an INTERFACE target, which Go words by
+// what the value lacks: "*main.T is not main.Namer: missing method Name", or
+// "interface is nil, not main.Namer" for a value holding nothing. Which method is
+// missing is the dynamic type's, which a helper minted after the last body answers
+// from the tables (mintAssertMiss).
+func (e *emitter) assertIfacePanicC(operand, iface, target string) string {
+	e.needPanicEnd()
+	if e.assertMiss == nil {
+		e.assertMiss = map[[2]string]bool{}
+	}
+	e.assertMiss[[2]string{iface, target}] = true
+	vt := e.varRef(operand) + ".vt"
+	want := cQuote(e.typeNameForT(target))
+	return "{ if (" + vt + ") { printf(\"panic: interface conversion: %s is not %s: missing method %s\", " +
+		vt + "->" + vtTypeField + ", " + want + ", " + assertMissName(iface, target) + "(" + vt + ")); } else { " +
+		"printf(\"panic: interface conversion: interface is nil, not %s\", " + want + "); } ogo_panic_end(); }"
+}
+
+// assertIfaceName spells an assertion's interface as Go's runtime does: the empty
+// interface is `interface {}`, any other its %T name.
+func (e *emitter) assertIfaceName(iface string) string {
+	switch {
+	case len(e.ifaceMethods[iface]) == 0:
+		return "interface {}"
+	case e.isErrorIface(iface):
+		return "error" // the predeclared one, an anonymous interface here
+	}
+	return e.typeNameForT(iface)
+}
+
+// isErrorIface reports whether ct is the predeclared error's C type, asked of the
+// anonymous interfaces already minted: errorIfaceCType mints it, and a program with
+// no error then carried its typedef.
+func (e *emitter) isErrorIface(ct string) bool {
+	var key strings.Builder
+	for _, m := range e.errorIfaceMethods() {
+		key.WriteString(m.res + " " + m.name + "(" + strings.Join(m.params, ",") + ");")
+	}
+	name, ok := e.anonIfaceNames[key.String()]
+	return ok && name == ct
+}
+
+// assertMissName names the helper answering which method of target the dynamic type
+// behind a table of iface lacks.
+func assertMissName(iface, target string) string {
+	return "ogo_assert_miss_" + sanitizeElem(iface) + "__" + sanitizeElem(target)
+}
+
+// mintAssertMiss writes, into the vtable section, each helper assertIfacePanicC asked
+// for: per table the program made for the operand's interface, the first method of
+// the target -- by name, as Go's runtime takes them -- the table's type lacks.
+func (e *emitter) mintAssertMiss() {
+	for _, pair := range slices.SortedFunc(maps.Keys(e.assertMiss), func(a, b [2]string) int {
+		return strings.Compare(a[0]+"|"+a[1], b[0]+"|"+b[1])
+	}) {
+		iface, target := pair[0], pair[1]
+		names := make([]string, 0, len(e.ifaceMethods[target]))
+		for _, m := range e.ifaceMethods[target] {
+			names = append(names, m.name)
+		}
+		slices.Sort(names)
+		var b strings.Builder
+		fmt.Fprintf(&b, "static const char* %s(const void* vt) {\n", assertMissName(iface, target))
+		for _, concrete := range e.ifaceConcretes(iface) {
+			for _, m := range names {
+				if _, _, _, has := e.promotedMethod(concrete, m); !has {
+					fmt.Fprintf(&b, "\tif (vt == (const void*)&%s) { return %s; }\n", e.ifaceVTVar(iface, concrete), cQuote(m))
+					break
+				}
+			}
+		}
+		b.WriteString("\t(void)vt;\n\treturn \"\";\n}\n")
+		e.vtables.WriteString(b.String())
+	}
 }
 
 // hoistIfaceAssert emits `v.(T)` for an INTERFACE T standing as one value: the
@@ -30483,15 +30572,13 @@ func (e *emitter) hoistIfaceAssert(operand, iface, target string) (string, bool)
 		return "", false
 	}
 	name := e.newTmp()
-	e.needPanic()
 	rebind, ok := e.ifaceRebindC(name, target, operand, iface, types, 1)
 	if !ok {
 		return "", false
 	}
 	e.prologue = append(e.prologue,
 		target+" "+name+" = {0};\n",
-		"if (!("+cond+")) ogo_panic(\"interface conversion: "+e.goTypeName(iface)+
-			" is not "+e.goTypeName(target)+"\");\n",
+		"if (!("+cond+")) "+e.assertIfacePanicC(operand, iface, target)+"\n",
 		rebind)
 	return name, true
 }
@@ -47456,9 +47543,8 @@ func (e *emitter) emitExprNode(n Node) {
 				if !e.needVTable(iface, target) {
 					return
 				}
-				e.needPanic()
 				e.prologue = append(e.prologue, "if (!("+e.assertOKC(operand, iface, target)+")) "+
-					"ogo_panic(\"interface conversion: "+e.goTypeName(iface)+" is not *"+e.goTypeName(target)+"\");\n")
+					e.assertPanicC(operand, iface, target)+"\n")
 				e.emit(e.assertValueC(operand, target))
 				return
 			}
