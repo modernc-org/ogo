@@ -20,6 +20,10 @@ shipped section tells a reader on that version that they have behaviour they do 
 
 ### Fixed
 
+- **A package variable initialized from a field of a call's result builds**:
+  `var n = dev().n`, `var y [4]byte = dev().rx`, an element, a slice and an
+  address of one through a pointer the call returns. Every one crashed the
+  compiler, "assignment to entry in nil map", v0.48.1 too.
 - **A malformed file is a diagnostic, never a crash of the compiler.** An
   unterminated literal between two declarations, a unary operator left without its
   operand (`println(1 + <-)`) and a dereferenced constant in a constant declaration

@@ -919,6 +919,13 @@ were already dropped afterwards, BuildModule), which a unary operator left witho
 an operand met as a nil; and a constant declaration's evaluation had no case for a
 dereference, `const g = step ** 3`. `ogo fmt` over 5,000 of them crashed on none.
 **A front end is fed what is half written, not only what is right or wrong.**
+A second round of 30,000, each changed up to three times, found one more crash,
+and on a VALID program: a line swap moved `var y [4]byte = dev().rx` to package
+level, and a package variable initialized from any field of a call's result --
+`var n = dev().n` -- crashed the compiler in v0.48.1 as now, the temporary the call
+is bound to recorded in a map of locals package scope had never made
+(resolvePkgVarTypes, emitPackageVars make it). No sweep had written a package
+initializer of that shape; a mutation moved a statement there by accident.
 
 **A COMPILER RUN IN A SWEEP IS CAPPED, AND A CRASH IS NOT A REFUSAL** (2026-09-20).
 A probe program is written to find a fault, and a fault is not always a wrong

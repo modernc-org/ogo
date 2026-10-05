@@ -27958,6 +27958,53 @@ func main() {
 		want: "5050 7\n",
 	},
 	{
+		// Package variables initialized from a field of a call's result -- an array
+		// field, `var y [4]byte = dev().rx`, a scalar one, an element, a slice and
+		// an address of one through a pointer the call returns. Every one crashed
+		// the compiler, "assignment to entry in nil map": the temporary the call is
+		// bound to was recorded among the locals, and package scope had no map for
+		// them (resolvePkgVarTypes, emitPackageVars). Each call runs once.
+		name: "package variables from a field of a call's result",
+		src: `type Dev struct {
+	rx [4]byte
+	n  int
+}
+
+var gd = Dev{rx: [4]byte{1, 2, 3, 4}, n: 5}
+
+var calls int
+
+func dev() *Dev {
+	calls++
+	return &gd
+}
+
+func vdev() Dev {
+	calls++
+	return gd
+}
+
+var y [4]byte = dev().rx
+
+var z = vdev().rx
+
+var n = dev().n
+
+var w = dev().rx[1]
+
+var s = dev().rx[1:3]
+
+var p = &dev().n
+
+func main() {
+	gd.rx[1] = 9
+	*p = 7
+	println(y[2], z[3], n, w, len(s), s[0], gd.n, calls)
+}
+`,
+		want: "3 4 5 2 2 9 7 6\n",
+	},
+	{
 		// A store through a call's pointer written out, `(*f())[i] = v` -- the one
 		// spelling for a pointer to a SLICE, whose index Go does not dereference --
 		// and `+=`, `++`, `--` the same, through a method's result too; and a

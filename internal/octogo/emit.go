@@ -9358,10 +9358,15 @@ func (e *emitter) isArrayLitInit(initExpr []int32) bool {
 func (e *emitter) resolvePkgVarTypes() {
 	// Emits nothing and reports nothing, so whatever inference provoked on the way is
 	// discarded -- the emitting pass runs after this and says what is really wrong.
-	savedF, savedPrefix, savedErr, savedPro, savedHoists := e.f, e.curPkgPrefix, e.err, e.prologue, e.hoistedArrayCalls
+	savedF, savedPrefix, savedErr, savedPro, savedHoists, savedLocals := e.f, e.curPkgPrefix, e.err, e.prologue, e.hoistedArrayCalls, e.locals
 	defer func() {
-		e.f, e.curPkgPrefix, e.err, e.prologue, e.hoistedArrayCalls = savedF, savedPrefix, savedErr, savedPro, savedHoists
+		e.f, e.curPkgPrefix, e.err, e.prologue, e.hoistedArrayCalls, e.locals = savedF, savedPrefix, savedErr, savedPro, savedHoists, savedLocals
 	}()
+	// A temporary an initializer binds -- a call's result read through, `dev().n` --
+	// is recorded among the locals, of which there were none at package scope: every
+	// package variable initialized from a field of a call's result crashed the
+	// compiler, "assignment to entry in nil map". emitPackageVars makes the same map.
+	e.locals = map[string]string{}
 	pending := e.pkgVarPending
 	e.pkgVarPending = nil
 	for len(pending) != 0 {
@@ -9398,6 +9403,11 @@ func (e *emitter) emitPackageVars(ast []int32) {
 	// `var v = mk()[1]` stopped the compiler. A token indexes one file only, so each
 	// file's variables get a map of their own.
 	e.hoistedArrayCalls = map[int32]string{}
+	// And the temporaries it binds are locals of ogo_pkg_init, recorded as a body's
+	// are: there was no map for them, and `var n = dev().n` crashed the compiler.
+	savedLocals := e.locals
+	e.locals = map[string]string{}
+	defer func() { e.locals = savedLocals }()
 	for n := range it(ast) {
 		if n.sym != SourceFile {
 			continue
