@@ -1637,7 +1637,10 @@ the types alone: `func f(int int) int` reads its types outside the parameters'
 scope). Following it, a program's own `type Builder` had every method refused by
 the checker (isPredeclaredBuilder). Swept with that generator (651a7f5): seeds
 1-2000 on the host shim, clean, and 1-200 on a P2-EDGE, 192 passing, 8 outgrowing a
-cog, none failing (four loads that timed out passed on a second try).
+cog, none failing (four loads that timed out passed on a second try); 201-500 with
+510c8fb, 280 passing, 19 outgrowing, seed 359 refused by the backend
+(doc/uint64-shift-32-pair.c), none failing (twelve loads timed out under a busy
+host and passed on a second try).
 An eighth round the same day -- a sort library over an interface, a heap of timers
 holding function values, three packages -- matched Go on the host once a literal of
 ANOTHER package's defined slice type was one: `order.Ints{5, 2, 9}` was a plain
