@@ -15267,8 +15267,55 @@ func (e *emitter) addrOfRoot(ast []int32) (string, bool) {
 		if ct, ok := e.varType(name); ok && (e.isPointer(ct) || e.isSliceCType(ct)) {
 			return "", false
 		}
+		// Nor through a pointer or a slice the steps reach, `&h.p.n` for a pointer
+		// field p: what that addresses is what h HOLDS, which frameRefOf asks of h's
+		// holder mark (addrCrossing).
+		if _, crosses := e.addrCrossing(ast); crosses {
+			return "", false
+		}
 	}
 	return name, true
+}
+
+// addrCrossing reports an address `&h.p.n` whose steps reach a pointer or a slice
+// before the last, answering with its root: it addresses storage h does not own but
+// holds a reference to, which h's holder mark says the lifetime of. Read as h's own
+// storage, `h := HP{&gt}; keepN = &h.p.n` was refused as the address of local h, an
+// address into a package variable.
+func (e *emitter) addrCrossing(ast []int32) (string, bool) {
+	nodes := slices.Collect(it(ast))
+	for len(nodes) == 1 && (nodes[0].sym == Expression || nodes[0].sym == SimpleExpr || nodes[0].sym == Term) {
+		nodes = slices.Collect(it(nodes[0].ast))
+	}
+	if len(nodes) != 1 || nodes[0].sym != UnaryExpr {
+		return "", false
+	}
+	kids := slices.Collect(it(nodes[0].ast))
+	if len(kids) != 2 || kids[0].sym != UnaryOp || kids[1].sym != Factor {
+		return "", false
+	}
+	if tok, ok := e.unaryOpTok(kids[0].ast); !ok || e.f.ch(tok) != AND {
+		return "", false
+	}
+	fk := slices.Collect(it(kids[1].ast))
+	if len(fk) != 2 || fk[0].sym != 0 || e.f.ch(fk[0].tok) != IDENT || fk[1].sym != FactorSuffix {
+		return "", false
+	}
+	root := e.src(fk[0].tok)
+	if ct, ok := e.varType(root); ok && (e.isPointer(ct) || e.isSliceCType(ct)) {
+		return "", false // a pointer's or a slice's own: addrThroughPointer, addrOfSliceElem
+	}
+	steps := slices.Collect(it(fk[1].ast))
+	for k := 1; k < len(steps); k++ {
+		if steps[k-1].sym != Selector && steps[k-1].sym != Index {
+			return "", false
+		}
+		cur, ok := e.accessChainType(root, steps[:k])
+		if ok && (cur.slice || e.isPointer(cur.ctype)) {
+			return root, true
+		}
+	}
+	return "", false
 }
 
 // addrOfSliceElem reports whether an expression is the address of what a slice
@@ -34564,7 +34611,9 @@ func (e *emitter) chainCText(base string, steps []Node) (text, ctype string, add
 			// assertion on a name had a lowering, and every other was refused, "h.i
 			// has no field".
 			if _, isAssert := e.selectorTypeNode(n); isAssert {
-				if !e.isIfaceCType(cur.ctype) {
+				// A pass with no frame to bind in -- a scan ahead of the body -- has no
+				// answer for it.
+				if !e.isIfaceCType(cur.ctype) || e.locals == nil || e.hoistedArrayCalls == nil {
 					return "", "", false, false
 				}
 				target, targetIsIface, ok := e.assertedTargetC(n)
@@ -49185,6 +49234,12 @@ func (e *emitter) frameRefOf(ast []int32) (frameRef, bool) {
 			if origin := e.frameHolder[x]; origin != "" {
 				return readHolderRef(e.f.exprSource(Node{sym: Expression, ast: ast}), origin), true
 			}
+		}
+	}
+	// Through a pointer or a slice a holder's steps reach, `&h.p.n`: what h holds.
+	if root, crosses := e.addrCrossing(ast); crosses {
+		if origin := e.frameHolder[root]; origin != "" {
+			return readHolderRef(e.f.exprSource(Node{sym: Expression, ast: ast}), origin), true
 		}
 	}
 	if ptr, ok := e.addrThroughPointer(ast); ok {

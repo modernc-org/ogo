@@ -43,6 +43,11 @@ shipped section tells a reader on that version that they have behaviour they do 
 
 ### Fixed
 
+- **An address through a pointer a local struct holds is an address into what it
+  points at**: `h := HP{&gt}; keepN = &h.p.n` was refused as the address of local
+  h, by the checker and the emitter alike, wherever `h.p` pointed. What h holds
+  decides now -- a package variable's address is taken, a local's refused at every
+  sink -- and so it does through a slice field and a callee's parameter.
 - **A string sliced out of a method receiver's field is a string**: `s :=
   p.src[i:j]; return s` was refused, "cannot use s as string value in return
   statement: it is a slice" -- a receiver's type was recorded without the scope to

@@ -17473,6 +17473,40 @@ func (f *File) escapesFrame(s *Scope, root Token, suffixed bool) bool {
 	return !vd.isPtr && !vd.hasElemKind && !vd.isChan
 }
 
+// addrThroughRef reports an address `&h.p.n` whose steps pass through a pointer or
+// a slice before the last: it addresses storage h does not own, whose lifetime the
+// emitter's rules decide by what the pointer is known to hold (refuseStore) -- not
+// h's frame slot. Refused as h's, `h := HP{&gt}; keepN = &h.p.n` was "the address
+// of local variable h" of an address into a package variable.
+func (f *File) addrThroughRef(s *Scope, e Node) bool {
+	ue, ok := f.soleUnaryExpr(e)
+	if !ok {
+		return false
+	}
+	var fac Node
+	for c := range it(ue.ast) {
+		if c.sym == Factor {
+			fac = c
+		}
+	}
+	kids := slices.Collect(it(fac.ast))
+	if len(kids) != 2 || kids[0].sym != 0 || f.ch(kids[0].tok) != IDENT || kids[1].sym != FactorSuffix {
+		return false
+	}
+	steps := slices.Collect(it(kids[1].ast))
+	for k := 1; k < len(steps); k++ {
+		t, ok := f.headStepsType(s, f.tok(kids[0].tok), steps[:k], true)
+		if !ok || t.f == nil {
+			continue
+		}
+		switch t.f.underlyingTypeAt(t).tn.(type) {
+		case *TypeNodePointer, *TypeNodeSlice:
+			return true
+		}
+	}
+	return false
+}
+
 // checkEscapeReturn reports a return operand that would let a reference to
 // current-frame storage outlive the function: `return &x` (or `&x.f`) where x is a
 // local variable or parameter. On a target with no heap and no GC there is nowhere
@@ -17485,7 +17519,7 @@ func (f *File) checkEscapeReturn(s *Scope, e Node) {
 	if !ok {
 		return
 	}
-	if f.escapesFrame(s, root, suffixed) {
+	if f.escapesFrame(s, root, suffixed) && !f.addrThroughRef(s, e) {
 		f.err(root.Position(), "cannot return the address of local variable %s: it does not outlive the function", root.Src())
 	}
 }
@@ -17508,7 +17542,7 @@ func (f *File) checkEscapeStore(s *Scope, lhs []Token, lhsSuffixed []bool, op Sy
 		return
 	}
 	root, suffixed, ok := f.addressOperandRoot(s, rhs[0])
-	if !ok || !f.escapesFrame(s, root, suffixed) {
+	if !ok || !f.escapesFrame(s, root, suffixed) || f.addrThroughRef(s, rhs[0]) {
 		return
 	}
 	f.err(root.Position(), "cannot store the address of local variable %s in global %s: it does not outlive the function", root.Src(), lhs[0].Src())
@@ -17532,7 +17566,7 @@ func (f *File) checkEscapeStore(s *Scope, lhs []Token, lhsSuffixed []bool, op Sy
 // statement in the diagnostic.
 func (f *File) checkEscapeCross(s *Scope, e Node, arrow bool) {
 	root, suffixed, ok := f.addressOperandRoot(s, e)
-	if !ok || !f.escapesFrame(s, root, suffixed) {
+	if !ok || !f.escapesFrame(s, root, suffixed) || f.addrThroughRef(s, e) {
 		return
 	}
 	if arrow {

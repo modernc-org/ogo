@@ -2739,6 +2739,14 @@ the lowering let a program Go refuses through, `var k int = pick().(*T).s`, whic
 the emitter had refused in its own words: the checker's walk past a call had no
 assertion step (walkSteps, given the scope the chain is written in, callChain.at).
 **A lowering that makes a shape writable makes it a row of the checker's walks.**
+And an address through what a local HOLDS, `&h.p.n` for a pointer field p, was
+the address of h to both the checker (escapesFrame) and the emitter (addrOfRoot),
+which asked the root -- A RULE ASKED OF A ROOT MISSES WHAT A POINTER REACHES, from
+the permissive side: a false refusal of an address into a package variable. An
+address whose steps reach a pointer or a slice before the last is the root's holder
+mark's question now (addrCrossing, addrThroughRef). Asking accessChainType from
+frameRefOf reached chainCText's assertion step in a pass with no locals, a nil map
+written -- the unchecked run of a run case crashed; the step answers nothing there.
 A store through a pointer no NAME holds was the summaries' next row (2026-10-04,
 found making `(*f())[i] = v` writable, which the emitter had refused): a callee
 storing its parameter through a call's result, `gethp().p = v`, `fa()[0] = v`, in a
