@@ -65,6 +65,11 @@ shipped section tells a reader on that version that they have behaviour they do 
   "type Builder has no method Put", in its own package and as `lib.Builder` from
   another; and `type uintptr int16` was written as C's `uintptr_t`, so `z <<= 3`
   was 131064 for Go's -8, in silence on a P2-EDGE.
+- **A method may be declared on an alias of a type defined in the package**:
+  `type A = B; func (a A) m()` is B's m, as Go has it. It was refused, "invalid
+  receiver type A (A is an alias)". On an alias of a predeclared or another
+  package's type it is refused in Go's words, "cannot define new methods on
+  non-local type".
 - **A package variable may name a method declared below it**: `var f =
   (*B).get`, a table of method expressions `[2]h{(*B).get, (*B).twice}`, a
   method value `o.get`, a method's result `gb.square()`, and an interface value
@@ -243,6 +248,9 @@ shipped section tells a reader on that version that they have behaviour they do 
 
 ### Behaviour changes
 
+- **A field and a method of one name are refused**, an embedded field's included,
+  as Go refuses them: `type F struct{ m int }` with `func (f F) m()` was taken,
+  the selector reading the field and the method unreachable.
 - **A received value, and another package's variable, is asked what it is**: a
   struct, an array, a slice, a function, a channel or an interface received from
   a channel -- `if <-ch {`, `(<-fs) + 1`, `var n int = <-errs`, `!(<-as)` -- and

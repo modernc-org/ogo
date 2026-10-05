@@ -1,7 +1,9 @@
 // `type A = B` declares another NAME for B, not a new type: values pass between
-// the two spellings, B's methods are reachable through A, and a method may not be
-// declared ON A -- it would be a method on B through the back door. The target
-// must be a named type of this package or a predeclared one.
+// the two spellings, B's methods are reachable through A, and a method declared ON
+// A is B's where B is a type defined in this package -- the receiver's base type is
+// what the alias denotes. One on an alias of a predeclared type is a method of
+// int32, which no package may declare. The target must be a named type of this
+// package or a predeclared one.
 
 type point struct {
 	x, y int32
@@ -34,8 +36,12 @@ func ok() {
 	println(t.sum())
 }
 
-// ERROR "invalid receiver type spot"
-func (s spot) bad() int32 { return s.x }
+func (s spot) first() int32 { return s.x }
+
+func useFirst() int32 { return point{x: 3}.first() }
+
+// ERROR "cannot define new methods on non-local type MyInt"
+func (m MyInt) bad() int32 { return int32(m) }
 
 // ERROR "cannot alias a type literal yet"
 type lit = struct {

@@ -13484,11 +13484,33 @@ func (f *File) registerMethod(s *Scope, n Node) {
 		return
 	}
 	if td.TypeSpec != nil && td.TypeSpec.Alias {
-		// Go's rule: a method's receiver must be a DEFINED type, and an alias is
-		// another name for one, not one of its own. Attaching here would put the
-		// method on the target through the back door.
-		f.err(method.Position(), "invalid receiver type %s (%s is an alias)", recvType.Src(), recvType.Src())
-		return
+		// An alias names its target, and a method declared on it is the target's
+		// where that is a type DEFINED in this package (Go's rule is about the
+		// receiver's base type, which the alias denotes): `type A = B; func (a A)
+		// m()` is B's m. It was refused, "A is an alias". An alias of another
+		// package's type, of a predeclared one or of a type written out is no
+		// defined type of this package's, and is refused as before.
+		target, isLocal := f.aliasLocalTarget(s, td)
+		if !isLocal {
+			f.err(method.Position(), "cannot define new methods on non-local type %s", recvType.Src())
+			return
+		}
+		td = target
+	}
+	// A field and a method of one name, an embedded field's included: Go refuses
+	// the method, and here the selector read the field and the method was never
+	// reachable, in silence.
+	if td.TypeSpec != nil {
+		if st, isStruct := td.TypeSpec.TypeNode.(*TypeNodeStruct); isStruct {
+			for _, fld := range st.Fields {
+				for _, nm := range fld.Names {
+					if nm.Src() == method.Src() {
+						f.err(method.Position(), "field and method with the same name %s", method.Src())
+						return
+					}
+				}
+			}
+		}
 	}
 	if td.methods == nil {
 		td.methods = map[string]*FuncDeclNode{}
@@ -13507,6 +13529,26 @@ func (f *File) registerMethod(s *Scope, n Node) {
 		fd.Type.Signature = f.signature(s.child(), sig)
 	}
 	td.methods[method.Src()] = fd
+}
+
+// aliasLocalTarget follows an alias, `type A = B`, through any further aliases to
+// the type DEFINED in this package that it names, if it names one.
+func (f *File) aliasLocalTarget(s *Scope, td *TypeDeclaration) (*TypeDeclaration, bool) {
+	for range 16 {
+		if td.TypeSpec == nil || !td.TypeSpec.Alias {
+			return td, true
+		}
+		id, ok := td.TypeSpec.TypeNode.(*TypeNodeIdent)
+		if !ok || id.Qualifier.IsValid() {
+			return nil, false
+		}
+		next, ok := s.find(id.Name.Src()).(*TypeDeclaration)
+		if !ok {
+			return nil, false
+		}
+		td = next
+	}
+	return nil, false
 }
 
 // callResultMethodMember reports whether a FactorSuffix or Postfix is a method call

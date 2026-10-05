@@ -409,6 +409,28 @@ func main() {
 		want: "5 8 5 36 60\n",
 	},
 	{
+		// Methods declared on an ALIAS of a type defined here are the type's, as
+		// Go has it: `func (a A) m()` for `type A = B` is B's m. They were refused,
+		// "invalid receiver type A (A is an alias)".
+		name: "methods declared on an alias",
+		src: `type B struct{ n int }
+
+type A = B
+
+func (a A) m() int { return a.n + 1 }
+
+func (a *A) set(v int) { a.n = v }
+
+func main() {
+	var b B
+	b.set(4)
+	var a A = b
+	println(b.m(), a.m(), B{7}.m())
+}
+`,
+		want: "5 5 8\n",
+	},
+	{
 		// A program's own printf, deferred: its first argument is captured where
 		// the defer stands, as any function's is. It was the builtin to the
 		// emitter, "printf's format must be a constant string"; and the builtin's

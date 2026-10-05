@@ -1,0 +1,45 @@
+// A method's receiver base type is a type defined in this package, which an alias
+// of one denotes: `func (a A) m()` for `type A = B` is B's m. A field and a method
+// of one name are refused, an embedded field's included; a method of the name of
+// a PROMOTED field is not, and shadows it.
+
+type B struct{ n int }
+
+type A = B
+
+func (a A) m() int { return a.n + 1 }
+
+func (a *A) set(v int) { a.n = v }
+
+type I = int
+
+// ERROR "cannot define new methods on non-local type I"
+func (i I) bad() int { return 0 }
+
+type F struct{ m, k int }
+
+// ERROR "field and method with the same name m"
+func (f F) m() int { return 1 }
+
+type Leaf struct{ n int }
+
+type E struct {
+	Leaf
+	k int
+}
+
+// ERROR "field and method with the same name Leaf"
+func (e *E) Leaf() int { return 1 }
+
+type P struct {
+	Leaf
+	q int
+}
+
+func (p P) n() int { return 7 }
+
+func main() {
+	var b B
+	b.set(4)
+	println(b.m(), P{}.n(), F{}.k, E{}.k)
+}
