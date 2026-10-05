@@ -1617,12 +1617,17 @@ program's named len, cap, copy, min, max, append, println was taken for the buil
 variable min calling the builtins, a program's own println printing its argument, all
 silent on the board in v0.48.1 -- and its own make, new, panic or print refused as
 one. 72 programs (18 names, each as a function, a local function value, a parameter
-and a package variable) agree with Go now. `builtin` asks the emitter's environments
+and a package variable) agree with Go now. `universe` asks the emitter's environments
 what the checker asks its scopes, at every site that dispatches on a builtin's name;
 the checker's two by-name readers were termination, where a program's own panic ended
 a function (ownCallees, recorded by checkCallee where the scope is known), and a
-deferred call's "discards result". **A dispatch on a name asks what the name means
-where it is written**; the universe is the last scope, not the only one.
+deferred call's "discards result". The rest of the universe was the same row (104
+programs, its types and constants as a function, a local, a parameter and a package
+variable): `int8()` of a program's own int8 was a conversion of the call, a
+parameter `true` was C's 1 (convType and every reader of true, false and iota ask
+`universe` now). `nil` as a program's name is still refused by the checker, loudly,
+where Go takes it. **A dispatch on a name asks what the name means where it is
+written**; the universe is the last scope, not the only one.
 
 **AN ARRAY RESULT IS A ROW** (2026-09-23). A call returning an array is a STATEMENT in
 C -- the caller hands the callee storage to write -- so every position one stands in

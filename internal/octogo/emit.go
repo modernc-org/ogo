@@ -3620,7 +3620,7 @@ func (e *emitter) staticInitOK(initExpr []int32) bool {
 			return true
 		}
 		s := e.src(tok)
-		return s == "true" || s == "false"
+		return (s == "true" || s == "false") && e.universe(s)
 	}
 	return false
 }
@@ -10640,8 +10640,8 @@ func (e *emitter) foldConstBoolNode(n Node) (bool, bool) {
 			return e.foldConstBoolNode(kids[1])
 		}
 		if len(kids) == 1 && kids[0].sym == 0 && e.f.ch(kids[0].tok) == IDENT {
-			switch name := e.src(kids[0].tok); name {
-			case "true", "false":
+			switch name := e.src(kids[0].tok); {
+			case (name == "true" || name == "false") && e.universe(name):
 				return name == "true", true // as emitOperandToken reads them
 			default:
 				if cname, ok := e.constKey(name); ok {
@@ -10653,7 +10653,7 @@ func (e *emitter) foldConstBoolNode(n Node) (bool, bool) {
 		}
 		// A conversion to a bool type, `bool(x)` or `Flag(x)`.
 		if name, suffix, ok := e.factorCall(kids); ok {
-			if name != "bool" {
+			if name != "bool" || !e.universe(name) {
 				ct, used, isConv := e.convChainHead(name, suffix)
 				if !isConv || used != len(suffix) || e.underlyingCType(ct) != cBool {
 					return false, false
@@ -19113,7 +19113,7 @@ func (e *emitter) calleeMayWrite(name string, steps []Node) bool {
 		}
 		return true // a method, or another package's function
 	}
-	if isBuiltinFuncName(name) && !e.builtin(name) {
+	if isBuiltinFuncName(name) && !e.universe(name) {
 		return true // the program's own function of a builtin's name
 	}
 	switch name {
@@ -19464,7 +19464,7 @@ func (e *emitter) bindableCType(ct string) bool {
 // pureCall reports whether a call to recv cannot change state: the builtins that
 // only read their arguments, and a type conversion, which is a cast.
 func (e *emitter) pureCall(recv string) bool {
-	if isBuiltinFuncName(recv) && !e.builtin(recv) {
+	if isBuiltinFuncName(recv) && !e.universe(recv) {
 		return false // a function or a variable of the program's shadows the builtin
 	}
 	switch recv {
@@ -22128,7 +22128,7 @@ func (e *emitter) namedSliceType(typeAST []int32) (cname, elem string, ok bool) 
 // that is not a make of a slice.
 func (e *emitter) makeSliceCName(initExpr []int32) string {
 	recv, suffix, isCall := e.directCall(initExpr)
-	if !isCall || recv != "make" || len(suffix) != 1 || suffix[0].sym != CallSuffix || !e.builtin(recv) {
+	if !isCall || recv != "make" || len(suffix) != 1 || suffix[0].sym != CallSuffix || !e.universe(recv) {
 		return ""
 	}
 	args := e.callArgExprs(suffix[0].ast)
@@ -22869,13 +22869,16 @@ func (e *emitter) isMethodBase(ctype string) bool {
 // arithmetic source and a string conversion would need a copy -- so they are left
 // to the generic call path, which fails honestly.
 func (e *emitter) convType(recv string) (string, bool) {
-	if recv == "bool" {
+	// A predeclared type's name the program has declared something of -- a
+	// function `bool`, a variable `string` -- is that, and no conversion.
+	predeclared := e.universe(recv)
+	if predeclared && recv == "bool" {
 		return cBool, true
 	}
-	if recv == "string" {
+	if predeclared && recv == "string" {
 		return cString, true
 	}
-	if ct, ok := cTypes[recv]; ok {
+	if ct, ok := cTypes[recv]; ok && predeclared {
 		if strings.HasSuffix(ct, "_t") {
 			e.includes["stdint.h"] = true // a fixed-width target needs its header
 		}
@@ -22886,11 +22889,11 @@ func (e *emitter) convType(recv string) (string, bool) {
 	// universe holds it -- so it is answered here rather than found in a registry,
 	// exactly as cType answers it. Guarded on nothing having declared that name,
 	// which is what makes it the universe's and not the program's.
-	if recv == "any" && !e.typeNames[e.typeMangle(e.curPkgPrefix, "any")] {
+	if recv == "any" && predeclared {
 		return e.anonInterfaceOf(nil), true
 	}
 	// `error(x)`, the universe's other interface, for the same reason.
-	if recv == "error" && !e.typeNames[e.typeMangle(e.curPkgPrefix, "error")] {
+	if recv == "error" && predeclared {
 		return e.errorIfaceCType(), true
 	}
 	mn := e.unaliased(e.typeCName(recv))
@@ -25377,12 +25380,12 @@ func (e *emitter) foldIntToken(tok int32) (int64, bool) {
 		r, ok := runeLitValue(e.src(tok))
 		return int64(r), ok
 	case IDENT:
-		switch s := e.src(tok); s {
-		case "true":
+		switch s := e.src(tok); {
+		case s == "true" && e.universe(s):
 			return 1, true
-		case "false":
+		case s == "false" && e.universe(s):
 			return 0, true
-		case "iota":
+		case s == "iota" && e.universe(s):
 			if e.iota >= 0 {
 				return int64(e.iota), true
 			}
@@ -28137,7 +28140,7 @@ func (e *emitter) peelToFactorAST(ast []int32) []int32 {
 // two-argument form, where cap == len). ok is false for any other expression.
 func (e *emitter) makeSliceInit(initExpr []int32) (elem string, lenAST, capAST []int32, ok bool) {
 	recv, suffix, isCall := e.directCall(initExpr)
-	if !isCall || recv != "make" || len(suffix) != 1 || suffix[0].sym != CallSuffix || !e.builtin(recv) {
+	if !isCall || recv != "make" || len(suffix) != 1 || suffix[0].sym != CallSuffix || !e.universe(recv) {
 		return "", nil, nil, false
 	}
 	args := e.callArgExprs(suffix[0].ast)
@@ -30814,7 +30817,7 @@ func (e *emitter) emitSwitchGuard(guardAST []int32) (guardVar string, block, ok 
 		// which have none either: `switch true {` compared the cases with an
 		// undeclared `true`, which the target's C compiler happens to know.
 		_, isConst := e.inlinedConstRef(e.src(tok))
-		if s := e.src(tok); !isConst && s != "true" && s != "false" {
+		if s := e.src(tok); !isConst && (s != "true" && s != "false" || !e.universe(s)) {
 			return s, block, true
 		}
 	}
@@ -31808,7 +31811,7 @@ func (e *emitter) emitDefer(nodes []Node) {
 	// printf's format is a constant the replay reads from the source again, so a
 	// temporary captured for it would be set and never read. A program's own
 	// printf is an ordinary function, whose first argument is captured as any is.
-	isPrintf := len(suffix) == 1 && e.soleIdent(head.ast) == "printf" && e.builtin("printf")
+	isPrintf := len(suffix) == 1 && e.soleIdent(head.ast) == "printf" && e.universe("printf")
 	for i, a := range e.callArgExprs(call.ast) {
 		if e.isIntLiteral(a) || i == 0 && isPrintf {
 			d.args = append(d.args, deferArg{expr: a.ast, inline: true})
@@ -33390,8 +33393,11 @@ func (e *emitter) exprIsLiteral(ast []int32) bool {
 		switch e.f.ch(n.tok) {
 		case INT, FLOAT, STRING, CHAR:
 		case IDENT:
-			switch e.src(n.tok) {
+			switch s := e.src(n.tok); s {
 			case "true", "false", "nil":
+				if !e.universe(s) {
+					return false
+				}
 			default:
 				return false
 			}
@@ -33554,16 +33560,16 @@ func (e *emitter) emitCall(head Node, postfix []Node) {
 		e.fail("unsupported call target")
 		return
 	}
-	if len(postfix) == 1 && postfix[0].sym == CallSuffix && (recv == "println" || recv == "print") && e.builtin(recv) {
+	if len(postfix) == 1 && postfix[0].sym == CallSuffix && (recv == "println" || recv == "print") && e.universe(recv) {
 		e.emitPrint(recv == "println", postfix[0].ast)
 		return
 	}
-	if len(postfix) == 1 && postfix[0].sym == CallSuffix && recv == "panic" && e.builtin(recv) {
+	if len(postfix) == 1 && postfix[0].sym == CallSuffix && recv == "panic" && e.universe(recv) {
 		if e.emitPanicValue(postfix[0].ast) {
 			return
 		}
 	}
-	if len(postfix) == 1 && postfix[0].sym == CallSuffix && recv == "printf" && e.builtin(recv) {
+	if len(postfix) == 1 && postfix[0].sym == CallSuffix && recv == "printf" && e.universe(recv) {
 		e.emitPrintf(postfix[0].ast)
 		return
 	}
@@ -33685,7 +33691,7 @@ func (e *emitter) emitCallExpr(recv string, suffix []Node) bool {
 	case len(suffix) == 1 && suffix[0].sym == CallSuffix:
 		// A builtin's name may be the program's own -- a function, a variable, a
 		// parameter (builtin) -- which is called as any of those is, further down.
-		builtin := e.builtin(recv)
+		builtin := e.universe(recv)
 		if builtin && recv == "len" {
 			e.emitLen(suffix[0].ast)
 			return true
@@ -34359,22 +34365,24 @@ func (e *emitter) userFunc(name string) ([]string, bool) {
 }
 
 func (e *emitter) funcCallC(name string) string {
-	if name == "NewBuilder" && e.builtin(name) {
+	if name == "NewBuilder" && e.universe(name) {
 		return "ogo_builder_new"
 	}
 	return e.mangle(e.curPkgPrefix, name)
 }
 
-// builtin reports whether name, called where the emitter stands, is the predeclared
-// function of that name. Go lets a program declare its own -- a function `len`, a
-// parameter `max`, a package variable `copy` holding a function, a type `min` --
-// and the emitter dispatched a call by the name alone: `func len(s string) int`
-// called as len("abc") was folded to 3, a parameter max called the builtin, and a
-// program's own println printed its argument, each in silence. The checker resolves
-// the name through its scopes; this asks the emitter's environments the same
-// question, in the order a name resolves: a local or a parameter, a function, a
-// package variable or a type of the package being emitted, and the universe last.
-func (e *emitter) builtin(name string) bool {
+// universe reports whether name, where the emitter stands, is the universe's: a
+// predeclared function, type or constant. Go lets a program declare its own -- a
+// function `len` or `bool`, a parameter `max` or `true`, a package variable `copy`
+// holding a function, a type `min` -- and the emitter read such a name by its
+// spelling alone: `func len(s string) int` called as len("abc") was folded to 3, a
+// parameter max called the builtin, a program's own println printed its argument,
+// `bool() + 1` was a conversion, and a parameter true was C's 1, each in silence.
+// The checker resolves the name through its scopes; this asks the emitter's
+// environments the same question, in the order a name resolves: a local or a
+// parameter, a function, a package variable or a type of the package being
+// emitted, and the universe last.
+func (e *emitter) universe(name string) bool {
 	if e.localName(name) || e.ownFunc(name) {
 		return false
 	}
@@ -34388,7 +34396,7 @@ func (e *emitter) builtin(name string) bool {
 }
 
 // ownFunc reports whether the package being emitted declares a function of this
-// name, which shadows a predeclared one of it.
+// name, which shadows a predeclared one of it (universe).
 func (e *emitter) ownFunc(name string) bool {
 	_, ok := e.funcRet[e.mangle(e.curPkgPrefix, name)]
 	return ok
@@ -42982,7 +42990,7 @@ func (e *emitter) emitDestructure(targets []assignTarget, declare []bool, rhs []
 		e.fail("multiple assignment requires a single function call on the right-hand side")
 		return
 	}
-	if callee == "append" && len(suffix) == 1 && suffix[0].sym == CallSuffix && e.builtin(callee) {
+	if callee == "append" && len(suffix) == 1 && suffix[0].sym == CallSuffix && e.universe(callee) {
 		// Two-result append: s, ok = append(s, x) -- the ok form, no trap.
 		e.emitTryAppend(targets, declare, suffix[0].ast)
 		return
@@ -45800,7 +45808,7 @@ func (e *emitter) inferNode(n Node) (string, bool) {
 			return cString, true
 		case IDENT:
 			nm := e.src(n.tok)
-			if nm == "true" || nm == "false" {
+			if (nm == "true" || nm == "false") && e.universe(nm) {
 				return cBool, true // the predeclared bool constants
 			}
 			if ct, ok := e.locals[nm]; ok {
@@ -45873,7 +45881,7 @@ func (e *emitter) callResultCType(recv string, suffix []Node) (string, bool) {
 	case len(suffix) == 1 && suffix[0].sym == CallSuffix:
 		// The program's own function or variable of a builtin's name is typed as
 		// any of those is, further down.
-		builtin := e.builtin(recv)
+		builtin := e.universe(recv)
 		if builtin && (recv == "len" || recv == "cap" || recv == "copy") {
 			return "int", true // the builtins len, cap and copy return int
 		}
@@ -48215,8 +48223,14 @@ func (e *emitter) emitOperandToken(tok int32) {
 		e.emit(cFloatLit(e.src(tok))) // a float literal is valid C as written (see cFloatLit)
 	case IDENT:
 		// The predeclared bool constants have no C keyword here (bool is int); emit
-		// their integer values. Any other identifier is a name reference.
-		switch s := e.src(tok); s {
+		// their integer values. Any other identifier is a name reference, and so is
+		// one of theirs the program has declared (universe).
+		s := e.src(tok)
+		predeclared := s
+		if (s == "true" || s == "false" || s == "nil" || s == "iota") && !e.universe(s) {
+			predeclared = ""
+		}
+		switch predeclared {
 		case "true":
 			e.emit("1")
 		case "false":
@@ -49036,7 +49050,7 @@ func makeRef() frameRef {
 // isMakeCall reports whether ast is a call of the predeclared make.
 func (e *emitter) isMakeCall(ast []int32) bool {
 	recv, suffix, ok := e.directCall(e.unparenExpr(ast))
-	return ok && recv == "make" && len(suffix) == 1 && suffix[0].sym == CallSuffix && e.builtin(recv)
+	return ok && recv == "make" && len(suffix) == 1 && suffix[0].sym == CallSuffix && e.universe(recv)
 }
 
 // tempOrigin names the storage the emitter mints for a value that has none of its
@@ -49996,7 +50010,7 @@ func (e *emitter) sliceElemOrigin(value []int32) (origin string, has, decided bo
 // arguments and whether the last is spread.
 func (e *emitter) appendCallArgs(ast []int32) ([]Node, bool, bool) {
 	recv, suffix, ok := e.directCall(ast)
-	if !ok || recv != "append" || len(suffix) != 1 || suffix[0].sym != CallSuffix || !e.builtin(recv) {
+	if !ok || recv != "append" || len(suffix) != 1 || suffix[0].sym != CallSuffix || !e.universe(recv) {
 		return nil, false, false
 	}
 	return e.callArgExprs(suffix[0].ast), e.spreadCall(suffix[0].ast), true

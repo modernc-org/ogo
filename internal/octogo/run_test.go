@@ -40,7 +40,7 @@ var emitRunCases = []emitRunCase{
 	{
 		// A function, a package variable, a type, a parameter and a local of the
 		// program's, each named like a builtin: the name is the program's where its
-		// declaration is in scope (builtin). The emitter dispatched a call by the
+		// declaration is in scope (universe). The emitter dispatched a call by the
 		// name alone: len("abc") was folded to 3, a parameter max and a package
 		// variable min called the builtins, in silence on the board, and the
 		// program's own make was refused as the builtin.
@@ -107,6 +107,37 @@ func main() {
 }
 `,
 		want: "print 7004\nnot a panic: x\n3\n8009 done\n",
+	},
+	{
+		// A function, a parameter, a package variable and a local of the program's
+		// named like a predeclared type or constant: `int8()` and `bool()` are
+		// calls, `true` and `false` are variables, as Go reads them (universe).
+		// int8() was a conversion of the call's result, 44 for 300, bool() a bool,
+		// and a parameter true C's 1, in silence on the board.
+		name: "functions and variables named like predeclared types and constants",
+		src: `func int8() int { return 300 }
+
+func bool() int { return 301 }
+
+func any() int { return 302 }
+
+func f(true int) int { return true * 3 }
+
+var false = 7
+
+const k = 2
+
+func main() {
+	println(int8(), bool()+1, any(), f(14), false+1)
+	iota := 4
+	println(iota*k, uint8(int8()))
+	switch true := 3; true {
+	case 3:
+		println("three")
+	}
+}
+`,
+		want: "300 302 302 42 8\n8 44\nthree\n",
 	},
 	{
 		// A program's own printf, deferred: its first argument is captured where

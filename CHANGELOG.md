@@ -54,6 +54,12 @@ shipped section tells a reader on that version that they have behaviour they do 
   `make`, a parameter `print`, a function `panic` with a result, a `printf` of its
   own. The lifetime rules ask the same: a program's own `copy` or `print` keeping
   its pointer argument was taken for the builtin, keeping nothing.
+- **A function, a parameter or a variable the program names like a predeclared
+  type or constant is the program's too**: `func int8() int` called as `int8()`
+  was a conversion of its result, 44 for 300, `func bool() int` a bool printed
+  `true`, and a parameter or a variable named `true` or `false` was the constant,
+  `f(14)` 3 for 42 -- in silence on a P2-EDGE. A function named `string`, `any` or
+  `error` did not build.
 - **NewBuilder works in a library package**: `sb := NewBuilder(buf[:])` anywhere
   but the main package was "cannot infer a type for the declaration of sb".
 - **A failed type assertion panics in Go's words**: `interface conversion:
