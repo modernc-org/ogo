@@ -740,8 +740,20 @@ func (f *File) checkFuncBody(pkg *Scope, n Node) {
 // statement declares -- so `calls := calls*10 + k` records the right side's calls
 // as the package variable it is.
 func (f *File) noteRef(s *Scope, tok Token) {
-	vd, ok := s.findQuiet(tok.Src()).(*VarDeclaration)
-	if !ok || f.refs == nil {
+	if f.refs == nil {
+		return
+	}
+	d := s.findQuiet(tok.Src())
+	vd, ok := d.(*VarDeclaration)
+	if !ok {
+		// A constant, a function, a type: resolved, and no local's use -- `ratio`
+		// read as a package constant above a local `ratio := ...` counted for the
+		// local, read by name.
+		if d != nil {
+			if _, seen := f.refs[tok.index]; !seen {
+				f.refs[tok.index] = nil
+			}
+		}
 		return
 	}
 	if vd.clauseOf != nil {
@@ -851,6 +863,11 @@ func (f *File) collectIdentUses(n Node, declared, used map[string]bool, usedVar 
 			continue
 		}
 		if tok := f.tok(c.tok); Symbol(tok.Ch) == IDENT && !declared[tok.Position().String()] {
+			// A selector's member, `x.s`, is a field, a method or another package's
+			// name, and no variable's use.
+			if usedVar != nil && tok.index > 0 && f.ch(tok.index-1) == PERIOD {
+				continue
+			}
 			if vds, ok := f.refs[tok.index]; ok && usedVar != nil {
 				for _, vd := range vds {
 					usedVar[vd] = true
@@ -4418,6 +4435,19 @@ func (f *File) checkForPost(s *Scope, results []retResult, n Node) {
 	for _, l := range lhs {
 		if f.conversionTarget(s, l) {
 			return
+		}
+		// A post's targets as a statement's: a bare `j = v` is a write and no
+		// use, the head of any other -- `j++`, `s[i] = v` -- a use. Neither was
+		// recorded, and every variable named j counted as used.
+		if id, ok := f.exprSoleIdent(l); ok && op == ASSIGN {
+			f.writeTargets[id.Position().String()] = true
+		} else if fac, ok := f.soleFactorOf(l); ok {
+			for c := range it(fac.ast) {
+				if c.sym == 0 && f.ch(c.tok) == IDENT {
+					f.noteRef(s, f.tok(c.tok))
+				}
+				break
+			}
 		}
 	}
 	f.checkPostOp(s, lhs, op, opSrc, rhs)

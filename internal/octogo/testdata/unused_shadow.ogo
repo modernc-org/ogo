@@ -68,6 +68,33 @@ func uses() {
 	w = 1
 }
 
+const ratio = 2.5
+
+type Q struct{ s string }
+
+func byConst() {
+	println(ratio * 4)
+	// ERROR "declared and not used: ratio"
+	ratio := float32(0.5)
+}
+
+func bySelector(q Q) {
+	println(q.s)
+	// ERROR "declared and not used: s"
+	s := "x"
+}
+
+func byPost() {
+	n := 0
+	for i, j := 0, 0; i < 3; i, j = i+1, i {
+		n += j
+	}
+	// ERROR "declared and not used: j"
+	for i, j := 0, 0; i < 3; i, j = i+1, i {
+	}
+	_ = n
+}
+
 var lit = func(n int) int {
 	// ERROR "declared and not used: calls"
 	calls := calls + 1
@@ -80,5 +107,8 @@ func main() {
 	blocks()
 	later()
 	uses()
+	byConst()
+	bySelector(Q{})
+	byPost()
 	_ = lit
 }
