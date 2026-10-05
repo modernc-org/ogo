@@ -142,6 +142,11 @@ shipped section tells a reader on that version that they have behaviour they do 
 
 ### Behaviour changes
 
+- **A variable declared from a type assertion is of the asserted type whatever the
+  operand is**: `v := pick().(*T)`, `v, ok := h.i.(*T)`, `xs[0].(*T)`,
+  `h.get().(*T)`, `(i).(*T)`, and a field read straight off one, `i.(*T).s`. Only a
+  name before the dot was read, so the variable had no type and every rule skipped
+  it: `var k int = v.f` for a float field was taken, and built and ran, truncated.
 - **A constant of a defined type is that type, and two defined types are two types
   in a constant expression as in any other**: `const c B = A(1)`, `const c2 = ka +
   B(2)`, `const c = A(1)` then `var x int = c`, and a predeclared conversion beside

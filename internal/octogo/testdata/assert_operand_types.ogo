@@ -1,0 +1,44 @@
+// A variable declared from a type assertion is of the asserted type whatever the
+// operand is -- a call, a field, an element, a method's result, parentheses -- and
+// so is a field read straight off one. Only a name before the dot was read, so
+// each of these was taken, and a float field stored into an int built and ran.
+
+type T struct {
+	s string
+	f float64
+}
+
+var gt = T{"g", 2.75}
+
+var gi any = &gt
+
+var gis = []any{&gt}
+
+type H struct{ i any }
+
+var gh = H{&gt}
+
+func pick() any { return &gt }
+
+func (h *H) get() any { return h.i }
+
+func main() {
+	v1 := pick().(*T)
+	// ERROR cannot use v1.f of type float64 as type int in variable declaration
+	var k1 int = v1.f
+	v2, ok := gh.i.(*T)
+	// ERROR cannot use v2.s of type string as type int in variable declaration
+	var k2 int = v2.s
+	v3 := gis[0].(*T)
+	// ERROR cannot use v3.s of type string as type int in variable declaration
+	var k3 int = v3.s
+	v4 := gh.get().(*T)
+	// ERROR cannot use v4.f of type float64 as type int in variable declaration
+	var k4 int = v4.f
+	v5 := (gi).(*T)
+	// ERROR cannot use v5.s of type string as type int in variable declaration
+	var k5 int = v5.s
+	// ERROR cannot use gi.\(\*T\).s of type string as type int in variable declaration
+	var k6 int = gi.(*T).s
+	println(k1, k2, k3, k4, k5, k6, ok)
+}

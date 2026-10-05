@@ -4939,7 +4939,12 @@ func (f *File) factorType(s *Scope, n Node) (Kind, bool) {
 			return k, true
 		}
 		if field, ok := f.fieldSelector(suffix); ok && hasLit {
-			return f.fieldKind(s, lit, field)
+			// Known where the field is a variable's; anything longer, `gi.(*T).s`
+			// past an assertion, is the walk's below -- returned unknown from here,
+			// the field was asked nothing.
+			if k, ok := f.fieldKind(s, lit, field); ok {
+				return k, true
+			}
 		}
 		if hasLit && f.indexSuffix(suffix) {
 			if d, ok := s.find(lit.Src()).(*VarDeclaration); ok && d.hasElemKind && !d.isPtr {
@@ -7981,7 +7986,12 @@ func (f *File) checkAssignment(s *Scope, head, postfix Node) {
 	if len(rhs) == 1 && len(lhs) == 2 {
 		if tn, isLit := f.assertedPtrLit(s, rhs[0]); isLit {
 			assertLit, assertOK = tn, true
-		} else if _, tn, isAssert := f.typeAssertion(s, rhs[0]); isAssert {
+		} else if typN, isAssert := f.assertionTypeNode(rhs[0]); isAssert {
+			// Whatever the operand is, `v, ok := h.i.(*T)` as `v, ok := x.(*T)`
+			// (exprNamedType). The assertion's own check reports the type.
+			n0 := len(f.errList)
+			tn := f.typ(s, typN)
+			f.errList = f.errList[:n0]
 			assertBase, assertOK = namedTypeToken(tn)
 			// The qualifier travels with the name: `q, ok := s.(*geo.Quad)` binds a q
 			// of geo's type, and without it q carries a bare "Quad" this package
@@ -9160,6 +9170,17 @@ func (f *File) typeAssertion(s *Scope, n Node) (recv Token, typ TypeNode, ok boo
 		}
 	}
 	return recv, nil, false
+}
+
+// selectorType is the Type a Selector step holds where it is a type assertion,
+// `.(T)`, rather than a field's or a method's name.
+func (f *File) selectorType(step Node) (Node, bool) {
+	for c := range it(step.ast) {
+		if c.sym == Type {
+			return c, true
+		}
+	}
+	return Node{}, false
 }
 
 // assertedType returns the Type a FactorSuffix asserts, for the "x.(T)" whose
@@ -17106,7 +17127,13 @@ func (f *File) exprNamedType(s *Scope, n Node) (name, qual Token, isPtr, ok bool
 	// "v := x.(*T)" carries *T, so v's fields and methods are checked as an
 	// explicitly typed pointer's are. Without this v had no type and a field read
 	// off it reached the emitter as a puzzle.
-	if _, tn, isAssert := f.typeAssertion(s, n); isAssert {
+	// Whatever the operand is, `pick().(*T)`, `h.i.(*T)`, `xs[0].(*T)`: asked of a
+	// NAME only (typeAssertion), a variable declared from any other was of no type,
+	// and `v.s` was stored into an int unchecked.
+	if typN, isAssert := f.assertionTypeNode(n); isAssert {
+		n0 := len(f.errList)
+		tn := f.typ(s, typN) // the assertion's own check reports what is wrong with it
+		f.errList = f.errList[:n0]
 		// The qualifier with it, `x.(*lib.T)`: dropped, the variable was of a T this
 		// package resolves -- its own of the name, or none -- and every field read
 		// off it was asked of that.
@@ -25613,7 +25640,7 @@ func (f *File) operandType(s *Scope, n Node, calls bool) (typeAt, bool) {
 		if !ok {
 			return typeAt{}, false
 		}
-		return f.stepsType(t, slices.Collect(it(kids[3].ast)))
+		return f.stepsTypeIn(s, t, slices.Collect(it(kids[3].ast)))
 	}
 	if kids[0].sym != 0 || f.ch(kids[0].tok) != IDENT {
 		return typeAt{}, false
@@ -25663,15 +25690,38 @@ func (f *File) headStepsType(s *Scope, id Token, steps []Node, calls bool) (type
 		}
 		steps = steps[1:]
 	}
-	return f.stepsType(t, steps)
+	return f.stepsTypeIn(s, t, steps)
 }
 
 // stepsType is lenOperandType's walk of the steps taken on a value of type t: an
 // index, through a pointer to an array as well, and a field, through a pointer to
 // a struct as well. A slice step and a call answer false.
 func (f *File) stepsType(t typeAt, steps []Node) (typeAt, bool) {
+	return f.stepsTypeIn(nil, t, steps)
+}
+
+// stepsTypeIn is stepsType for steps written in scope at, which is what a TYPE
+// ASSERTION among them, `h.i.(*T).s`, is resolved in: the value it yields is of the
+// type asserted. Untyped, a field read off one was asked nothing, and `var k int =
+// gi.(*T).s` for a string s went through.
+func (f *File) stepsTypeIn(at *Scope, t typeAt, steps []Node) (typeAt, bool) {
 	for _, step := range steps {
 		u := f.underlyingTypeAt(t)
+		if step.sym == Selector {
+			if typN, isAssert := f.selectorType(step); isAssert {
+				if at == nil {
+					return typeAt{}, false
+				}
+				n0 := len(f.errList)
+				tn := f.typ(at, typN) // the assertion's own check reports the type
+				f.errList = f.errList[:n0]
+				if tn == nil {
+					return typeAt{}, false
+				}
+				t = typeAt{tn, at, f}
+				continue
+			}
+		}
 		switch step.sym {
 		case Index:
 			// A SLICE step, `rows[:]`, `pool[1:3]`, yields a slice -- of the defined

@@ -1574,6 +1574,17 @@ walked into the parentheses of `(*p)(x)` and dropped the call, so `!(*p)(x)` was
 "it is a function". **A value nothing typed hides every misreading of it**: giving
 the receiver its type put each rule asking about one back to work, and the spec
 tests and the matrices showed the one that answered wrong.
+The lesson taken across every way a variable is declared (29 forms, a struct's
+string field stored into an int through each, and the refusal read for its reason):
+all held but a TYPE ASSERTION whose operand is no name, `pick().(*T)`, `h.i.(*T)`,
+`xs[0].(*T)`, single-valued or comma-ok, and a field read off one, `i.(*T).s` --
+exprNamedType and the comma-ok declaration read the asserted type through
+typeAssertion, which wants a name before the dot (assertionTypeNode reads it from
+any operand), the walk had no step for an assertion (stepsTypeIn, given the scope it
+is written in), and factorType returned fieldKind's "unknown" for any chain ending in
+a field before the walk could answer. `var k int = v.f` for a float field built and
+ran on the board, 2 for Go's refusal. **A variable is a row of every declaration
+form**: one with no type is skipped by every rule, in silence.
 A fifth round (2026-10-05) -- a string-keyed hash table of open addressing with
 tombstones under an LRU over a fixed node pool, three packages, what a program here
 writes for want of a map -- matched Go on the host and the board once its first line
