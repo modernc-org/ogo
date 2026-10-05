@@ -299,9 +299,15 @@ func (s *Scope) find2(nm string) (resolvedIn *Scope, d Declaration) {
 		if s.litOf != nil {
 			switch in, d := enclosingLocal(s.litOf, nm); d.(type) {
 			case *VarDeclaration:
+				// Recorded for reportCaptures, which refuses it, and answered as
+				// the local it is: looking on outward found a package variable of
+				// the name or nothing, and a second use of a captured name was
+				// "undefined" -- an enclosing literal's own use of it among them,
+				// "undefined: k" where that literal captured k too.
 				if !slices.Contains(s.captures, nm) {
 					s.captures = append(s.captures, nm)
 				}
+				return in, d
 			case *ConstDeclaration, *TypeDeclaration:
 				return in, d
 			}

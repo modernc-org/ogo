@@ -1,0 +1,23 @@
+// A variable a function literal would capture is refused once, where the literal
+// first writes it, and is the local it names afterwards: a later use of it is not
+// "undefined", nor an enclosing literal's own use of it.
+
+func main() {
+	first := true
+	n := 0
+	f := func() {
+		// ERROR "may not capture first"
+		first = false
+		// ERROR "may not capture n"
+		n++
+		println(first, n)
+	}
+	f()
+	k := 2
+	g := func() int {
+		// ERROR "may not capture k"
+		h := func() int { return k * 2 }
+		return h() + k
+	}
+	println(g())
+}

@@ -65,6 +65,9 @@ shipped section tells a reader on that version that they have behaviour they do 
   "type Builder has no method Put", in its own package and as `lib.Builder` from
   another; and `type uintptr int16` was written as C's `uintptr_t`, so `z <<= 3`
   was 131064 for Go's -8, in silence on a P2-EDGE.
+- **A function literal capturing a variable is refused once, as it should be**:
+  a later use of the captured name was reported "undefined", and an enclosing
+  literal's own capture of it said "undefined: k" instead of what it is.
 - **A package struct literal may take an array from a variable, a row or a
   call**: `var cfg = Cfg{id: 2, pins: defPins}`, `Cfg{pins: grid[1]}`,
   `Cfg{pins: mk()}` -- how a board's table is put together -- were refused, "a
