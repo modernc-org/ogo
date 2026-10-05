@@ -1664,6 +1664,17 @@ its out parameter by the multiple assignment alone -- `return tab[i]()` and
 `take(tab[i]())` failed in one package too (valueOutCallC has the case now).
 **One question, one helper**: the three places taking a call of several results
 apart had each its own list of shapes, and each list lacked some.
+The same row taken across the other places a value of another package's declared
+type is read -- a receive, a range value, a variable passed as an argument -- had
+the qualifier given unasked in three more (chanFactorElemInfo, rangeElemNamed,
+qualifiedValueType); and its rejects grid found the category rules asking nothing
+of a RECEIVED value or of another package's VARIABLE: nonBoolOperand, which every
+rule asks what an operand is, had no case for either (nonBoolRecv; a qualified
+read is no field). 27 of 35 received cells and 19 of 35 qualified ones were taken
+where Go refuses them; of nine received cells built for the target, six built in
+silence. **A
+value of no name is asked what it is in every shape it comes in -- a receive is one
+of them** (A RECEIVE HAD NO TYPE gave it a Kind; the categories had none).
 
 **AN ARRAY RESULT IS A ROW** (2026-09-23). A call returning an array is a STATEMENT in
 C -- the caller hands the callee storage to write -- so every position one stands in

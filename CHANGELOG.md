@@ -74,6 +74,12 @@ shipped section tells a reader on that version that they have behaviour they do 
   `lib.Fns[1]()` and `lib.V.F()`, in a multiple assignment, a header, a return
   forwarding them and an argument list they are, were refused, "target/result
   count mismatch", or rejected by the C compiler.
+- **A value read off another package of a universe type is of that type**: a
+  range value over another package's `[]error`, a receive from its `chan error`,
+  and its variable of type `any` passed as one were of types "lib.error" and
+  "lib.any", which no rule took for an interface.
+- **A package slice initialized to nil builds**: `var V []int = nil` was refused,
+  and `var V L = nil` for a defined slice type did not build.
 - **A function element's several results are forwarded**: `return tab[i]()` and
   `take(tab[i]())` for a slice, an array, a field or a pointer to an array of
   functions of several results did not build; only `a, b := tab[i]()` did.
@@ -213,6 +219,14 @@ shipped section tells a reader on that version that they have behaviour they do 
 
 ### Behaviour changes
 
+- **A received value, and another package's variable, is asked what it is**: a
+  struct, an array, a slice, a function, a channel or an interface received from
+  a channel -- `if <-ch {`, `(<-fs) + 1`, `var n int = <-errs`, `!(<-as)` -- and
+  another package's variable of one, `var n int = lib.G`, were taken by the
+  checker where Go refuses them: 27 of 35 received cells and 19 of 35 qualified
+  ones. Of nine received cells built for the target, six built a binary without
+  a word -- a struct, an array, a channel and a function as a condition, a
+  channel and a function as an operand.
 - **A function ending in a call of the program's own `panic` is missing a
   return**, as in Go: a function, a parameter or a local named `panic` is no
   builtin, and its call terminates nothing. It was taken, and the function fell

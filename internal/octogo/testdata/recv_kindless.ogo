@@ -1,0 +1,28 @@
+// A received value is what the channel's elements are, and a value of no Kind --
+// a struct, an array, a slice, a function, a channel, an interface -- is no bool,
+// no number and no operand of one, as a variable of it is not.
+
+type P struct{ x int }
+
+var ps chan P
+
+var fs chan func()
+
+var es chan error
+
+var as chan [2]int
+
+func main() {
+	// ERROR "non-bool used as if condition"
+	if <-ps {
+	}
+	// ERROR "it is a function"
+	_ = (<-fs) + 1
+	// ERROR "it is an interface"
+	var n int = <-es
+	_ = n
+	// ERROR "it is an array"
+	_ = !(<-as)
+	v := <-ps
+	_ = v
+}

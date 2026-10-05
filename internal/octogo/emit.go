@@ -9664,6 +9664,12 @@ func (e *emitter) emitPackageVarDecl(ast []int32) {
 		if elem, ok := e.sliceType(typeAST); ok {
 			e.needSlice(elem)
 			cname := sliceCName(elem)
+			if initExpr != nil && e.isNilExpr(initExpr) {
+				// `var s []T = nil` is the zero header a declaration without one has;
+				// it was "a package slice initializer must be a slice of the declared
+				// type".
+				initExpr = nil
+			}
 			if initExpr != nil {
 				// `var s []T = []T{...}`: a static backing array plus a header over
 				// it, the same lowering the local form uses.
@@ -9735,6 +9741,12 @@ func (e *emitter) emitPackageVarDecl(ast []int32) {
 		ctype := e.cType(typeAST)
 		if ctype == "" {
 			return
+		}
+		if initExpr != nil && e.isSliceCType(e.underlyingCType(ctype)) && e.isNilExpr(initExpr) {
+			// `var g List = nil` for a defined slice type: the zero header. It was
+			// assigned the null pointer at package initialization, `g = 0`, which no
+			// C compiler takes for a struct.
+			initExpr = nil
 		}
 		for _, nm := range names {
 			if nm == "_" {

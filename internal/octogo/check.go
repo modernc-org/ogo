@@ -1138,7 +1138,7 @@ func (f *File) chanFactorElemInfo(s *Scope, fac Node) (name, qual Token, isPtr b
 				// cannot be resolved from here.
 				return Token{}, Token{}, false, d.chanElemKind, d.hasChanElemKind, true
 			}
-			return d.chanElemName, q, d.chanElemPtr, d.chanElemKind, d.hasChanElemKind, true
+			return d.chanElemName, homeQual(home, d.chanElemName, q), d.chanElemPtr, d.chanElemKind, d.hasChanElemKind, true
 		}
 	}
 	return Token{}, Token{}, false, 0, false, false
@@ -3808,14 +3808,16 @@ func (f *File) rangeElemNamed(s *Scope, expr Node) (Token, Token, bool, bool) {
 		if d.isChan {
 			// `range pkg.Ch`: the element is named in the channel's own package.
 			if d.chanElemName.IsValid() && !d.chanElemQual.IsValid() && !d.chanElemPtr {
-				return d.chanElemName, qual, false, true
+				return d.chanElemName, homeQual(home, d.chanElemName, qual), false, true
 			}
 			return Token{}, Token{}, false, false
 		}
 		if !d.elemTypeName.IsValid() {
 			return Token{}, Token{}, false, false
 		}
-		return d.elemTypeName, qual, f.elemIsPointer(home, d), true
+		// An element of the universe's type there is of it here: `for _, e :=
+		// range lib.Errs` was of a type "lib.error" (homeQual).
+		return d.elemTypeName, homeQual(home, d.elemTypeName, qual), f.elemIsPointer(home, d), true
 	}
 	return written()
 }
@@ -4495,7 +4497,21 @@ func (f *File) nonBoolOperand(s *Scope, n Node) (string, bool) {
 		return "", false
 	}
 	if head, field, ok := f.exprFieldRead(n); ok {
+		// Another package's variable, `a.G`, is no field: what its declaration
+		// says, read in the file that declares it. `var n int = a.G` for an error G
+		// was taken, the one-package spelling refused.
+		if home, isImp := f.importedPkgScope(head); isImp && f.isImportQualifier(s, head.Src()) {
+			if d, isVar := home.Declarations[field.Src()].(*VarDeclaration); isVar {
+				return f.fileOfToken(d.token).nonBoolVar(home, d)
+			}
+			return "", false
+		}
 		return f.nonBoolType(s, f.fieldTypeNode(s, head, field))
+	}
+	// A receive, `<-ch`, is what the channel's elements are: `var n int = <-ch`
+	// for a channel of errors was taken, in one package and across one.
+	if fac, isRecv := f.receiveFactor(s, n); isRecv {
+		return f.nonBoolRecv(s, fac)
 	}
 	if id, ok := f.sliceOfVar(n); ok {
 		// `xs[1:]` of an array or a slice is a slice, whatever its elements are.
@@ -4535,6 +4551,49 @@ func (f *File) nonBoolOperand(s *Scope, n Node) (string, bool) {
 		}
 	}
 	return f.nonBoolWritten(s, n)
+}
+
+// nonBoolRecv is nonBoolOperand for a value received from the channel fac names --
+// a variable of this package or another's -- by its element type as written, read
+// where it was written.
+func (f *File) nonBoolRecv(s *Scope, fac Node) (string, bool) {
+	var d *VarDeclaration
+	in, wf := s, f
+	if id, ok := f.exprIdent(fac); ok {
+		d, _ = s.find(id.Src()).(*VarDeclaration)
+	} else if q, member, ok := f.factorQualifiedIdent(s, fac); ok {
+		home, has := f.importedPkgScope(q)
+		if !has {
+			return "", false
+		}
+		d, _ = home.Declarations[member.Src()].(*VarDeclaration)
+		in = home
+		if d != nil {
+			wf = f.fileOfToken(d.token)
+		}
+	}
+	if d == nil || !d.isChan {
+		return "", false
+	}
+	if d.declScope != nil {
+		in = d.declScope
+	}
+	tn := d.chanTypeNode()
+	for range 16 {
+		switch x := tn.(type) {
+		case *TypeNodeChan:
+			return wf.nonBoolType(in, x.TypeNode)
+		case *TypeNodeIdent:
+			td, home, ok := wf.typeIdentDecl(in, x)
+			if !ok || td.TypeSpec.TypeNode == nil {
+				return "", false
+			}
+			tn, in = td.TypeSpec.TypeNode, home
+		default:
+			return "", false
+		}
+	}
+	return "", false
 }
 
 // nonBoolWritten is nonBoolOperand for what only the written types say: an element
@@ -12693,6 +12752,11 @@ func (f *File) qualifiedValueType(s *Scope, value Node) (from string, isPtr, ok 
 	}
 	if vd.isPtr {
 		isPtr = true
+	}
+	// A name of the universe there is the universe's here: `held(lib.A)` for a
+	// `var A any` was "lib.any", no interface, "write &lib.A" (homeQual).
+	if q := homeQual(imp.Import.Pkg.Scope, vd.typeName, head); !q.IsValid() {
+		return vd.typeName.Src(), isPtr, true
 	}
 	return head.Src() + "." + vd.typeName.Src(), isPtr, true
 }

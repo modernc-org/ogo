@@ -259,6 +259,26 @@ func main() {
 		want: "1 true 0 true 7 true 40 -100\n",
 	},
 	{
+		// A package slice initialized to nil, of a slice type written out and of a
+		// defined one: the zero header. The first was "a package slice initializer
+		// must be a slice of the declared type", the second assigned the null
+		// pointer to the header at package initialization, which no C compiler took.
+		name: "package slices initialized to nil",
+		src: `type L []int
+
+func (l L) n() int { return len(l) }
+
+var V []int = nil
+
+var W L = nil
+
+func main() {
+	println(V == nil, W == nil, len(V), W.n())
+}
+`,
+		want: "true true 0 0\n",
+	},
+	{
 		// A program's own printf, deferred: its first argument is captured where
 		// the defer stands, as any function's is. It was the builtin to the
 		// emitter, "printf's format must be a constant string"; and the builtin's
@@ -46119,6 +46139,7 @@ const multiPkgWant = "300\nLOUD\n50\n6\n5\n45\n6 1000\n200\n207\n3 100\n4 9\n" +
 	"greet.L 9 4 3 [5 6]\n" +
 	"3 4\n" +
 	"8 true 0 true 10 busy\n" +
+	"2 true\n" +
 	"1234567891 1 3 8 14 30 39\n" +
 	"2 4 7 4\n" +
 	"4 5 2 3\n" +
@@ -46175,6 +46196,8 @@ const Limit = 3
 const Count = 5
 
 func isNil(err error) bool { return err == nil }
+
+func held(a any) bool { return a != nil }
 
 func sumPair(n int, err error) int {
 	if err != nil {
@@ -46864,6 +46887,13 @@ func libShapes() {
 	pn, perr := lib.Pair(4)
 	qn, qerr := lib.PairFn(-1)
 	println(pn, isNil(perr), qn, qerr == lib.ErrBusy, sumPair(lib.PairTab[1](5)), errText(fwdPair(-2)))
+	nerr := 0
+	for _, e := range lib.Errs {
+		if !isNil(e) {
+			nerr++
+		}
+	}
+	println(nerr, held(lib.Held))
 }
 `,
 	"initord/itrace/itrace.ogo": `var Trace int
@@ -47495,6 +47525,12 @@ func Pair(n int) (int, error) {
 var PairFn = Pair
 
 var PairTab = [2]func(int) (int, error){Pair, Pair}
+
+// Errs and Held are of the universe's types, which a range value and a read
+// of them took for this package's: "lib.error", "lib.any".
+var Errs = []error{ErrBusy, nil, ErrGone}
+
+var Held any = ErrBusy
 
 type Named interface{ Name() string }
 
