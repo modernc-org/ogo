@@ -1640,7 +1640,8 @@ the checker (isPredeclaredBuilder). Swept with that generator (651a7f5): seeds
 cog, none failing (four loads that timed out passed on a second try); 201-500 with
 510c8fb, 280 passing, 19 outgrowing, seed 359 refused by the backend
 (doc/uint64-shift-32-pair.c), none failing (twelve loads timed out under a busy
-host and passed on a second try).
+host and passed on a second try). Seeds 501-1000 with 835694b: 469 passing, 30
+outgrowing, seed 852 refused by the backend the same way, none failing.
 An eighth round the same day -- a sort library over an interface, a heap of timers
 holding function values, three packages -- matched Go on the host once a literal of
 ANOTHER package's defined slice type was one: `order.Ints{5, 2, 9}` was a plain
