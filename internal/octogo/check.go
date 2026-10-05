@@ -324,12 +324,19 @@ func (p *Package) newFile(fn string, fsys fs.FS) (f *File) {
 	}
 
 	f.AST, _ = f.parser.Parse(fn, b)
+	// A file that did not parse is not checked: its tree is not what was written,
+	// and the phases after this one walked it anyway, its declarations not being
+	// declared -- a unary operator left without its operand, `println(1 + <-)`,
+	// crashed the compiler there. Its errors were dropped afterwards
+	// (BuildModule) for the same reason; now there is nothing to drop.
 	if f.errList = f.parser.sc.errList; f.errList.Err() != nil {
+		f.AST = nil
 		return f
 	}
 
 	if tok := f.parser.tok; tok.Ch != rune(EOF) {
 		f.errList.AddErr(tok.Position(), "%v: unexpected %v %q", tok.Position(), Symbol(tok.Ch), tok.Src())
+		f.AST = nil
 		return f
 	}
 
@@ -16404,6 +16411,16 @@ func (f *File) checkUnaryExpr(s *Scope, n Node) {
 		// as "type unknown" and slipped through -- `*q.xs` reached the C backend,
 		// which called it "invalid type argument of unary *", a diagnostic about the
 		// emitted C rather than about the program.
+		if cv, isConst := f.constNumeric(s, fac); isConst {
+			// In Go's words for a constant, which this said was a variable. A
+			// constant declaration's own is foldUnary's, at the same place.
+			desc := "untyped " + constClassName(cv) + " constant"
+			if src := f.exprSource(fac); src != cv.ExactString() {
+				desc += " " + cv.ExactString()
+			}
+			f.err(f.tok(inner.Pos()).Position(), "invalid operation: cannot indirect %s (%s)", f.exprSource(fac), desc)
+			return
+		}
 		if isPtr, known := f.exprPointerness(s, fac); known && !isPtr {
 			k, hasKind := f.exprType(s, fac)
 			f.err(f.tok(inner.Pos()).Position(), "invalid operation: cannot indirect %s%s",
@@ -25070,6 +25087,17 @@ func (f *File) unaryOp(s *Scope, n Node) (r Symbol) {
 // unary operators (pointer "*"/"&", receive "<-", "~") and non-constant operands
 // yield a UnaryExprNode for later (Phase 4) checking.
 func (f *File) foldUnary(op Symbol, opTok Token, e ExpressionNode) ExpressionNode {
+	if c, ok := e.Value().(constVal); ok && c.cv != nil && c.cv.Kind() != constant.Unknown && op == MUL {
+		// A constant is no pointer: `const g = 2 * *3`, a `**` mistyped. Taken as an
+		// operation to leave for later, a constant declaration's evaluation met it
+		// and crashed the compiler.
+		desc := "untyped " + constClassName(c.cv) + " constant"
+		if c.typed {
+			desc = "constant of type " + kindName(c.typ)
+		}
+		f.err(opTok.Position(), "invalid operation: cannot indirect %s (%s)", c.cv.ExactString(), desc)
+		return constVal{cv: constant.MakeUnknown()}
+	}
 	if c, ok := e.Value().(constVal); ok && c.cv != nil {
 		var t token.Token
 		switch op {

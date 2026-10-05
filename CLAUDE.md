@@ -907,6 +907,19 @@ reached the second machine without it; it lives under `scripts/` for that reason
   scripts/flexcc built under GOOS/GOARCH -- over doc/ and a dumpcorpus.sh dump, about
   1670 programs in four minutes.
 
+**A MUTATED PROGRAM IS A PROBE OF THE FRONT END** (2026-10-05). The run cases'
+sources, each changed once -- a line deleted, duplicated or swapped with another, a
+character dropped or inserted, a few deleted -- 28,000 of them through dumpc under
+the cap: what an editor hands the compiler mid-keystroke. Three crashes, each a Go
+panic: the scanner, finding no lexeme (an unterminated literal), recorded "invalid
+token" and returned a token at an index no token had, which the next reader asked
+of; a file whose parse FAILED was still walked by phases 2-5, its declarations not
+declared and its tree not what was written (newFile discards it now -- its errors
+were already dropped afterwards, BuildModule), which a unary operator left without
+an operand met as a nil; and a constant declaration's evaluation had no case for a
+dereference, `const g = step ** 3`. `ogo fmt` over 5,000 of them crashed on none.
+**A front end is fed what is half written, not only what is right or wrong.**
+
 **A COMPILER RUN IN A SWEEP IS CAPPED, AND A CRASH IS NOT A REFUSAL** (2026-09-20).
 A probe program is written to find a fault, and a fault is not always a wrong
 answer: `type A struct{ A }` sent the emitter down an embedding at 4 GB a second, the

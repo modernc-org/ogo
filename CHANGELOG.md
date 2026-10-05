@@ -20,6 +20,15 @@ shipped section tells a reader on that version that they have behaviour they do 
 
 ### Fixed
 
+- **A malformed file is a diagnostic, never a crash of the compiler.** An
+  unterminated literal between two declarations, a unary operator left without its
+  operand (`println(1 + <-)`) and a dereferenced constant in a constant declaration
+  (`const gain = step ** 3`) each crashed it with a Go panic. An unterminated
+  literal is said as Go says it, "string literal not terminated" (and rune and raw
+  string), and a dereferenced constant as "invalid operation: cannot indirect 3
+  (untyped int constant)", which a variable's initializer had called a variable.
+  Found by compiling 28,000 mutations of the test programs; `ogo fmt` crashed on
+  none.
 - **A store through a call's pointer written out builds**: `(*f())[i] = v`, the
   one spelling for a pointer to a slice, and `+=`, `++` and `--` the same, through
   a method's result too, `(*h.items())[0] *= 3`. They were "only assignment to a

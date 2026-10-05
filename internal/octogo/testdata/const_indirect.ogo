@@ -1,0 +1,21 @@
+// A constant is no pointer, and dereferencing one is refused in Go's words -- in a
+// constant declaration too, `const gain = step ** 3` being a `*` mistyped. There it
+// crashed the compiler, the constant's evaluation meeting a dereference it had no
+// case for; in a variable's initializer the constant was called a variable.
+
+const step = 2
+
+// ERROR "invalid operation: cannot indirect 3 \(untyped int constant\)"
+const gain = step ** 3
+
+// ERROR "invalid operation: cannot indirect 4 \(untyped int constant\)"
+var v = *4
+
+func main() {
+	// ERROR "invalid operation: cannot indirect 5 \(untyped int constant\)"
+	const k = *5
+
+	// ERROR "invalid operation: cannot indirect step \(untyped int constant 2\)"
+	x := *step
+	println(gain, v, k, x)
+}

@@ -100,6 +100,9 @@ func (f *File) evalConstExpr(e ExpressionNode) (r Value) {
 	case constVal:
 		return x
 	default:
-		panic(todo("%T", x))
+		// Not a constant: `const g = 2 * *3`, a dereference of one. Answered as
+		// none, for the declaration's own check to say what it is, where a
+		// mistyped `**` crashed the compiler.
+		return nil
 	}
 }

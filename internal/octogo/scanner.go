@@ -546,8 +546,23 @@ out:
 			switch id, length := s.scan(s.buf[off:]); {
 			case id < 0: // no lexeme was recognized
 				length = max(1, length) // Ensure we do not get stuck.
-				s.AddErr(s.Position(off), "invalid token")
+				switch {
+				case off < len(s.buf) && s.buf[off] == '"':
+					s.AddErr(s.Position(off), "string literal not terminated")
+				case off < len(s.buf) && s.buf[off] == '\'':
+					s.AddErr(s.Position(off), "rune literal not terminated")
+				case off < len(s.buf) && s.buf[off] == '`':
+					s.AddErr(s.Position(off), "raw string literal not terminated")
+				default:
+					s.AddErr(s.Position(off), "invalid token")
+				}
 				s.off += length
+				// Scanning goes on past the bytes reported, as past whitespace: the
+				// error is recorded, and what follows is the next token. Breaking out
+				// returned a token at an index no token had -- an unterminated literal
+				// in a file was a crash of the compiler, "index out of range", where
+				// it is a diagnostic.
+				continue
 			case id == s.whiteSpace:
 				if s.insertSemi {
 					// Check if this whitespace chunk contains a newline
