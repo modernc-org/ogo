@@ -2378,8 +2378,12 @@ as well, where the divisor's zero check handed it back as an int
 (`doc/mixed-sign-operands.c`, measured on a P2-EDGE; flexprop#114, reported the same
 day with a change giving C its own rules, tested natively: test_offline 588/588, and
 of 1222 programs 121 binaries differ, each printing on the board what it printed
-before). The emitter's spellings stay whatever upstream does, the C they write being
-right under either rule. A bare literal had
+before; fixed upstream 2026-10-05 by spin2cpp bf72f733, 7.8.0-beta, with that change,
+its two comparison rules widened from C to every language -- measured against the
+C-only form on the same tree, no binary of ours moved: 1302 C programs, the run
+cases', the fuzzer's and doc/'s, and 492 Spin and BASIC sources, spin2cpp's tests
+and p2-11's objects, for P1 and P2). The emitter's spellings stay whatever upstream
+does, the C they write being right under either rule. A bare literal had
 been taught this long before (a `u` suffix in an unsigned level); the row is the
 SHAPES an untyped constant is written in -- a literal, a rune literal, a name,
 another package's name, an iota name, a parenthesised expression of them, a constant
