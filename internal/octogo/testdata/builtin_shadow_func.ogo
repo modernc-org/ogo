@@ -1,0 +1,26 @@
+// A program may declare a function named like a builtin, and the name is the
+// program's wherever its declaration is in scope: a call of it is a call, typed by
+// its signature, and terminates nothing -- a function ending in its own panic is
+// missing a return, as in Go. The passes reading a body without its scopes asked
+// the name alone, and took such a function for the builtin.
+
+func panic(s string) {}
+
+func len(s string) string { return s }
+
+func ownPanic() int {
+	panic("x")
+	// ERROR "missing return"
+}
+
+func ownLenDeferred() {
+	defer len("x")
+}
+
+func ownLenTyped() {
+	// ERROR "cannot use .* as type int"
+	var n int = len("x")
+	_ = n
+}
+
+func main() {}

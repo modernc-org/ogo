@@ -19113,6 +19113,9 @@ func (e *emitter) calleeMayWrite(name string, steps []Node) bool {
 		}
 		return true // a method, or another package's function
 	}
+	if isBuiltinFuncName(name) && !e.builtin(name) {
+		return true // the program's own function of a builtin's name
+	}
 	switch name {
 	case "append", "copy", "clear", "close":
 		return true
@@ -19461,8 +19464,8 @@ func (e *emitter) bindableCType(ct string) bool {
 // pureCall reports whether a call to recv cannot change state: the builtins that
 // only read their arguments, and a type conversion, which is a cast.
 func (e *emitter) pureCall(recv string) bool {
-	if _, isUser := e.userFunc(recv); isUser {
-		return false // a user function of that name shadows the builtin
+	if isBuiltinFuncName(recv) && !e.builtin(recv) {
+		return false // a function or a variable of the program's shadows the builtin
 	}
 	switch recv {
 	case "len", "cap", "min", "max":
@@ -22125,7 +22128,7 @@ func (e *emitter) namedSliceType(typeAST []int32) (cname, elem string, ok bool) 
 // that is not a make of a slice.
 func (e *emitter) makeSliceCName(initExpr []int32) string {
 	recv, suffix, isCall := e.directCall(initExpr)
-	if !isCall || recv != "make" || len(suffix) != 1 || suffix[0].sym != CallSuffix {
+	if !isCall || recv != "make" || len(suffix) != 1 || suffix[0].sym != CallSuffix || !e.builtin(recv) {
 		return ""
 	}
 	args := e.callArgExprs(suffix[0].ast)
@@ -28134,7 +28137,7 @@ func (e *emitter) peelToFactorAST(ast []int32) []int32 {
 // two-argument form, where cap == len). ok is false for any other expression.
 func (e *emitter) makeSliceInit(initExpr []int32) (elem string, lenAST, capAST []int32, ok bool) {
 	recv, suffix, isCall := e.directCall(initExpr)
-	if !isCall || recv != "make" || len(suffix) != 1 || suffix[0].sym != CallSuffix {
+	if !isCall || recv != "make" || len(suffix) != 1 || suffix[0].sym != CallSuffix || !e.builtin(recv) {
 		return "", nil, nil, false
 	}
 	args := e.callArgExprs(suffix[0].ast)
@@ -31803,8 +31806,9 @@ func (e *emitter) emitDefer(nodes []Node) {
 		}
 	}
 	// printf's format is a constant the replay reads from the source again, so a
-	// temporary captured for it would be set and never read.
-	isPrintf := len(suffix) == 1 && e.soleIdent(head.ast) == "printf"
+	// temporary captured for it would be set and never read. A program's own
+	// printf is an ordinary function, whose first argument is captured as any is.
+	isPrintf := len(suffix) == 1 && e.soleIdent(head.ast) == "printf" && e.builtin("printf")
 	for i, a := range e.callArgExprs(call.ast) {
 		if e.isIntLiteral(a) || i == 0 && isPrintf {
 			d.args = append(d.args, deferArg{expr: a.ast, inline: true})
@@ -33550,16 +33554,16 @@ func (e *emitter) emitCall(head Node, postfix []Node) {
 		e.fail("unsupported call target")
 		return
 	}
-	if len(postfix) == 1 && postfix[0].sym == CallSuffix && (recv == "println" || recv == "print") {
+	if len(postfix) == 1 && postfix[0].sym == CallSuffix && (recv == "println" || recv == "print") && e.builtin(recv) {
 		e.emitPrint(recv == "println", postfix[0].ast)
 		return
 	}
-	if len(postfix) == 1 && postfix[0].sym == CallSuffix && recv == "panic" {
-		if _, isUser := e.userFunc(recv); !isUser && e.emitPanicValue(postfix[0].ast) {
+	if len(postfix) == 1 && postfix[0].sym == CallSuffix && recv == "panic" && e.builtin(recv) {
+		if e.emitPanicValue(postfix[0].ast) {
 			return
 		}
 	}
-	if len(postfix) == 1 && postfix[0].sym == CallSuffix && recv == "printf" {
+	if len(postfix) == 1 && postfix[0].sym == CallSuffix && recv == "printf" && e.builtin(recv) {
 		e.emitPrintf(postfix[0].ast)
 		return
 	}
@@ -33679,50 +33683,51 @@ func (e *emitter) emitCallExpr(recv string, suffix []Node) bool {
 	}
 	switch {
 	case len(suffix) == 1 && suffix[0].sym == CallSuffix:
-		if recv == "len" {
+		// A builtin's name may be the program's own -- a function, a variable, a
+		// parameter (builtin) -- which is called as any of those is, further down.
+		builtin := e.builtin(recv)
+		if builtin && recv == "len" {
 			e.emitLen(suffix[0].ast)
 			return true
 		}
-		if recv == "cap" {
+		if builtin && recv == "cap" {
 			e.emitCap(suffix[0].ast)
 			return true
 		}
-		if recv == "panic" {
+		if builtin && recv == "panic" {
 			e.emitPanic(suffix[0].ast)
 			return true
 		}
-		if recv == "append" {
+		if builtin && recv == "append" {
 			// Single-result append: s = append(s, x). The two-result form
 			// s, ok = append(s, x) is handled in emitMultiAssign.
 			e.emitAppend(suffix[0].ast)
 			return true
 		}
-		if recv == "copy" {
+		if builtin && recv == "copy" {
 			e.emitCopy(suffix[0].ast)
 			return true
 		}
-		if _, isUser := e.userFunc(recv); !isUser && recv == "close" {
+		if builtin && recv == "close" {
 			e.emitClose(suffix[0].ast)
 			return true
 		}
-		if _, isUser := e.userFunc(recv); !isUser && recv == "clear" {
+		if builtin && recv == "clear" {
 			e.emitClear(suffix[0].ast)
 			return true
 		}
-		if _, isUser := e.userFunc(recv); !isUser && (recv == "min" || recv == "max") {
-			// min and max are common names; a user function of that name (in funcRet)
-			// shadows the builtin, as Go allows, and is emitted as a real call below.
+		if builtin && (recv == "min" || recv == "max") {
 			e.emitMinMax(recv, suffix[0].ast)
 			return true
 		}
-		if recv == "make" {
+		if builtin && recv == "make" {
 			// make needs a hoisted backing array, so it is only handled as a
 			// `var s []T = make(...)` initializer (see emitMakeSliceVar), not as a
 			// general expression.
 			e.fail("make is only supported as a `var s []T = make(...)` initializer yet")
 			return true
 		}
-		if recv == "NewBuilder" {
+		if builtin && recv == "NewBuilder" {
 			// NewBuilder(back []byte) -> a Builder over the caller's backing.
 			args := e.callArgExprs(suffix[0].ast)
 			if len(args) != 1 {
@@ -33742,13 +33747,13 @@ func (e *emitter) emitCallExpr(recv string, suffix []Node) bool {
 				return true
 			}
 		}
-		if _, isUser := e.userFunc(recv); !isUser && isBuiltinFuncName(recv) {
+		if builtin && isBuiltinFuncName(recv) {
 			// A predeclared builtin the emitter does not implement. The checker
 			// exempts every builtin name from its undefined check, so one not handled
 			// above (len, cap, append, copy, make; print/println via emitCall) would
 			// otherwise fall through and emit a call to a C function that does not
-			// exist -- as copy silently did. Refuse it by name. A user function of the
-			// same name (funcRet holds it) shadows the builtin and is emitted below.
+			// exist -- as copy silently did. Refuse it by name. A function or a
+			// variable of the same name shadows the builtin and is emitted below.
 			e.fail("the %s builtin is not supported yet", recv)
 			return true
 		}
@@ -34343,12 +34348,51 @@ func (e *emitter) isChainFunc(base string) bool { _, ok := e.userFunc(base); ret
 // userFunc looks up a same-package top-level function's recorded result types by its
 // source name, mangling to the current package's namespace (see mangle). funcCallC
 // is the C name that same call emits, so a definition and its call always agree.
+//
+// NewBuilder is the one predeclared function answered here, as a function whose C
+// name is its helper's, ogo_builder_new: registered under its source name, it was
+// main's function -- a library's call of it, mangled into the library, typed as
+// nothing, and a program's own NewBuilder was overwritten by the builtin.
 func (e *emitter) userFunc(name string) ([]string, bool) {
-	rts, ok := e.funcRet[e.mangle(e.curPkgPrefix, name)]
+	rts, ok := e.funcRet[e.funcCallC(name)]
 	return rts, ok
 }
 
-func (e *emitter) funcCallC(name string) string { return e.mangle(e.curPkgPrefix, name) }
+func (e *emitter) funcCallC(name string) string {
+	if name == "NewBuilder" && e.builtin(name) {
+		return "ogo_builder_new"
+	}
+	return e.mangle(e.curPkgPrefix, name)
+}
+
+// builtin reports whether name, called where the emitter stands, is the predeclared
+// function of that name. Go lets a program declare its own -- a function `len`, a
+// parameter `max`, a package variable `copy` holding a function, a type `min` --
+// and the emitter dispatched a call by the name alone: `func len(s string) int`
+// called as len("abc") was folded to 3, a parameter max called the builtin, and a
+// program's own println printed its argument, each in silence. The checker resolves
+// the name through its scopes; this asks the emitter's environments the same
+// question, in the order a name resolves: a local or a parameter, a function, a
+// package variable or a type of the package being emitted, and the universe last.
+func (e *emitter) builtin(name string) bool {
+	if e.localName(name) || e.ownFunc(name) {
+		return false
+	}
+	if _, isVar := e.globals[e.globalC(name)]; isVar {
+		return false
+	}
+	if _, isType := e.localTypes[name]; isType {
+		return false
+	}
+	return !e.typeNames[e.typeMangle(e.curPkgPrefix, name)]
+}
+
+// ownFunc reports whether the package being emitted declares a function of this
+// name, which shadows a predeclared one of it.
+func (e *emitter) ownFunc(name string) bool {
+	_, ok := e.funcRet[e.mangle(e.curPkgPrefix, name)]
+	return ok
+}
 
 // argsCText renders a CallSuffix's arguments as C text -- the same output
 // emitCallArgs streams, captured to a string so a call reached mid-chain can be
@@ -35895,7 +35939,7 @@ func (e *emitter) emitAppend(callSuffix []int32) {
 // use (usesBuilder), set by needBuilder at the NewBuilder call.
 func (e *emitter) registerBuilder() {
 	e.namedTypes["ogo_builder"] = true
-	e.funcRet["NewBuilder"] = []string{"ogo_builder"}
+	e.funcRet["ogo_builder_new"] = []string{"ogo_builder"}
 	e.funcRet["ogo_builder_WriteString"] = nil
 	e.funcRet["ogo_builder_WriteByte"] = nil
 	e.funcRet["ogo_builder_WriteRune"] = nil
@@ -42938,7 +42982,7 @@ func (e *emitter) emitDestructure(targets []assignTarget, declare []bool, rhs []
 		e.fail("multiple assignment requires a single function call on the right-hand side")
 		return
 	}
-	if callee == "append" && len(suffix) == 1 && suffix[0].sym == CallSuffix {
+	if callee == "append" && len(suffix) == 1 && suffix[0].sym == CallSuffix && e.builtin(callee) {
 		// Two-result append: s, ok = append(s, x) -- the ok form, no trap.
 		e.emitTryAppend(targets, declare, suffix[0].ast)
 		return
@@ -45827,17 +45871,20 @@ func (e *emitter) callResultCType(recv string, suffix []Node) (string, bool) {
 	}
 	switch {
 	case len(suffix) == 1 && suffix[0].sym == CallSuffix:
-		if recv == "len" || recv == "cap" || recv == "copy" {
+		// The program's own function or variable of a builtin's name is typed as
+		// any of those is, further down.
+		builtin := e.builtin(recv)
+		if builtin && (recv == "len" || recv == "cap" || recv == "copy") {
 			return "int", true // the builtins len, cap and copy return int
 		}
-		if recv == "min" || recv == "max" {
+		if builtin && (recv == "min" || recv == "max") {
 			// min/max return the type of their arguments, which is minMaxCType's.
 			if args := e.callArgExprs(suffix[0].ast); len(args) >= 1 {
 				return e.minMaxCType(args)
 			}
 			return "", false
 		}
-		if recv == "append" {
+		if builtin && recv == "append" {
 			// append returns its first argument's type: a slice of its element, or
 			// the DEFINED slice type it is, with that type's methods.
 			args := e.callArgExprs(suffix[0].ast)
@@ -48989,11 +49036,7 @@ func makeRef() frameRef {
 // isMakeCall reports whether ast is a call of the predeclared make.
 func (e *emitter) isMakeCall(ast []int32) bool {
 	recv, suffix, ok := e.directCall(e.unparenExpr(ast))
-	if !ok || recv != "make" || len(suffix) != 1 || suffix[0].sym != CallSuffix {
-		return false
-	}
-	_, isUser := e.userFunc(recv)
-	return !isUser
+	return ok && recv == "make" && len(suffix) == 1 && suffix[0].sym == CallSuffix && e.builtin(recv)
 }
 
 // tempOrigin names the storage the emitter mints for a value that has none of its
@@ -49953,10 +49996,7 @@ func (e *emitter) sliceElemOrigin(value []int32) (origin string, has, decided bo
 // arguments and whether the last is spread.
 func (e *emitter) appendCallArgs(ast []int32) ([]Node, bool, bool) {
 	recv, suffix, ok := e.directCall(ast)
-	if !ok || recv != "append" || len(suffix) != 1 || suffix[0].sym != CallSuffix {
-		return nil, false, false
-	}
-	if _, isUser := e.userFunc(recv); isUser {
+	if !ok || recv != "append" || len(suffix) != 1 || suffix[0].sym != CallSuffix || !e.builtin(recv) {
 		return nil, false, false
 	}
 	return e.callArgExprs(suffix[0].ast), e.spreadCall(suffix[0].ast), true

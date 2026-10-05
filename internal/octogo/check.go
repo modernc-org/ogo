@@ -253,6 +253,7 @@ type File struct {
 	wholeConstToks    map[int32]Kind             // the same for a constant that is one token, by the token
 	lenConsts         map[*int32]int64           // the len and cap calls Go makes constants, by their parentheses' place in the AST, and their values (see constLenCap); read by the emitter
 	headerBindings    map[*int32]Node            // the statements headers declare or assign by, `if p := r; ...`, for the passes reading a body's statements by shape (headerBindingsIn)
+	ownCallees        map[int32]bool             // the token indexes of callees named like a builtin and resolving to the program's own declaration (checkCallee)
 	headerStmts       map[*int32]Node            // the statements standing in headers, `if two(); ok`, as the statements they are, by the place of the header's expression in the AST (see headerStmt); read by the emitter
 	parser            Parser
 	tld               *Scope // tld.Nodes are later moved into (*Package).Scope. Kind: PackageScope, Parent: .Scope.
@@ -1468,7 +1469,19 @@ func (f *File) isPanicCall(head, postfix Node) bool {
 		return false
 	}
 	id, ok := f.assignHeadIdent(head)
-	return ok && id.Src() == "panic"
+	return ok && id.Src() == "panic" && !f.ownCallees[id.index]
+}
+
+// isUniverseFunc reports whether name, written in scope s, is the predeclared
+// function of that name: one the universe declares, or one it leaves undeclared
+// (make, new, panic: isBuiltinFuncName), and not a function, variable, parameter or
+// type of the program's of that name, which Go lets a program declare.
+func (f *File) isUniverseFunc(s *Scope, name string) bool {
+	switch s.find(name).(type) {
+	case *PredeclaredFunc, nil:
+		return true
+	}
+	return false
 }
 
 // forInfo is a "for" header decomposed. It mirrors the emitter's forHeader; the
@@ -2439,8 +2452,10 @@ func (f *File) reportNotACall(s *Scope, head, stmt Node, kw string) bool {
 	}
 	switch id.Src() {
 	case "append", "cap", "len", "make":
-		f.err(id.Position(), "%s discards result of %s", kw, f.sourceSpan(head.Pos(), stmt.End()))
-		return true
+		if f.isUniverseFunc(s, id.Src()) {
+			f.err(id.Position(), "%s discards result of %s", kw, f.sourceSpan(head.Pos(), stmt.End()))
+			return true
+		}
 	}
 	switch s.find(id.Src()).(type) {
 	case *PredeclaredType, *TypeDeclaration:
@@ -21069,6 +21084,14 @@ func (f *File) checkCall(s *Scope, callee Token, direct bool, argList Node) {
 // walked already: what the callee takes of them -- a function's signature, a
 // conversion's operand, a builtin's.
 func (f *File) checkCallee(s *Scope, callee Token, argList Node, args []Node) {
+	// A callee named like a builtin and declared by the program is no builtin, which
+	// the passes reading a body without its scopes ask of the token (isPanicCall).
+	if isBuiltinFuncName(callee.Src()) && !f.isUniverseFunc(s, callee.Src()) {
+		if f.ownCallees == nil {
+			f.ownCallees = map[int32]bool{}
+		}
+		f.ownCallees[callee.index] = true
+	}
 	// A call or "go" statement whose callee is the blank identifier ("_()") reads
 	// "_" as a value; report that rather than "undefined: _". (An expression-form
 	// call is caught earlier, in checkFactorNames.)

@@ -1,0 +1,20 @@
+// A parameter or a local named like a builtin is the program's in its scope: a
+// function ending in a call of it is missing a return, and outside that scope the
+// builtin is the builtin again.
+
+func paramPanic(panic func(string)) int {
+	panic("x")
+	// ERROR "missing return"
+}
+
+func localPanic() int {
+	panic := func(string) {}
+	panic("x")
+	// ERROR "missing return"
+}
+
+func builtinPanic() int {
+	panic("x")
+}
+
+func main() {}

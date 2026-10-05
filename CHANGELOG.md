@@ -43,6 +43,19 @@ shipped section tells a reader on that version that they have behaviour they do 
 
 ### Fixed
 
+- **A function, a variable, a parameter or a type the program names like a
+  builtin is the program's**, as Go has it: `func len(s string) int`, a parameter
+  `max func(int, int) int`, `var min = func(a, b int) int {...}`, a local `make :=
+  func(...)`. The emitter dispatched a call by the name alone, so `len("abc")` was
+  folded to 3 for a `len` returning 99, a parameter `max` and a package variable
+  `min` called the builtins, a package variable `append` panicked "out of
+  capacity", and a program's own `println` printed its argument -- all in silence,
+  on the host and on a P2-EDGE -- and others did not build: a program's own
+  `make`, a parameter `print`, a function `panic` with a result, a `printf` of its
+  own. The lifetime rules ask the same: a program's own `copy` or `print` keeping
+  its pointer argument was taken for the builtin, keeping nothing.
+- **NewBuilder works in a library package**: `sb := NewBuilder(buf[:])` anywhere
+  but the main package was "cannot infer a type for the declaration of sb".
 - **A failed type assertion panics in Go's words**: `interface conversion:
   interface {} is *main.U, not *main.T`, naming the dynamic type the value held (or
   nil), and for an interface target `*main.T is not main.Namer: missing method
@@ -163,6 +176,10 @@ shipped section tells a reader on that version that they have behaviour they do 
 
 ### Behaviour changes
 
+- **A function ending in a call of the program's own `panic` is missing a
+  return**, as in Go: a function, a parameter or a local named `panic` is no
+  builtin, and its call terminates nothing. It was taken, and the function fell
+  off its end.
 - **A pointer handed back by a type assertion, or held by a variable an `if` or a
   `switch` header declares, is a pointer to what it points at**: `keepT =
   r.(*T)` for an `r` holding a local's address, a comma-ok's and a type switch's

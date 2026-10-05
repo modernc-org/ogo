@@ -1602,6 +1602,27 @@ negative zero -- `x := -0.0; 1/x` was -Inf on the board for Go's +Inf, through a
 declaration, an argument, a return, an operand, an element, a field and a package
 initializer (negatedFloatZero). **A constant's value is exact, and a C spelling of it
 that is not -- a sign on a zero -- is the C compiler's arithmetic, not Go's.**
+A seventh round (2026-10-05) -- fixed-point physical units in a library, each
+formatting itself through the predeclared Builder over a buffer of its own, printed
+by `%v`, `%s` and String() -- matched Go on the host and the board once its first
+line built: `NewBuilder` in any package but main was "cannot infer a type", the
+builtin having been registered as a function OF MAIN'S (funcRet["NewBuilder"]), which
+a library's call, mangled into the library, never found. Its key is its helper's C
+name now, ogo_builder_new, answered by funcCallC where the name is the builtin's. And
+the row it opened was a NAME OF THE UNIVERSE THE PROGRAM DECLARES: the checker
+resolves a builtin's name through its scopes, and the emitter dispatched a call by the
+name alone, so a function, a parameter, a local, a package variable or a type of the
+program's named len, cap, copy, min, max, append, println was taken for the builtin --
+`len("abc")` folded to 3 for a `len` returning 99, a parameter max and a package
+variable min calling the builtins, a program's own println printing its argument, all
+silent on the board in v0.48.1 -- and its own make, new, panic or print refused as
+one. 72 programs (18 names, each as a function, a local function value, a parameter
+and a package variable) agree with Go now. `builtin` asks the emitter's environments
+what the checker asks its scopes, at every site that dispatches on a builtin's name;
+the checker's two by-name readers were termination, where a program's own panic ended
+a function (ownCallees, recorded by checkCallee where the scope is known), and a
+deferred call's "discards result". **A dispatch on a name asks what the name means
+where it is written**; the universe is the last scope, not the only one.
 
 **AN ARRAY RESULT IS A ROW** (2026-09-23). A call returning an array is a STATEMENT in
 C -- the caller hands the callee storage to write -- so every position one stands in

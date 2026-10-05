@@ -38,6 +38,102 @@ type emitRunCase struct {
 
 var emitRunCases = []emitRunCase{
 	{
+		// A function, a package variable, a type, a parameter and a local of the
+		// program's, each named like a builtin: the name is the program's where its
+		// declaration is in scope (builtin). The emitter dispatched a call by the
+		// name alone: len("abc") was folded to 3, a parameter max and a package
+		// variable min called the builtins, in silence on the board, and the
+		// program's own make was refused as the builtin.
+		name: "functions and variables named like builtins",
+		src: `func len(s string) int { return 99 }
+
+func cap(s []int) int { return 98 }
+
+func copy(d, s []int) int { return 77 }
+
+var min = func(a, b int) int { return a + b }
+
+type max int
+
+func (m max) twice() max { return m * 2 }
+
+func clamp(v, lo int, append func(int) int) int { return append(v) + lo }
+
+func apply(new func(int) int) int { return new(5) }
+
+func size(xs []int) int {
+	var n int
+	for range xs {
+		n++
+	}
+	return n
+}
+
+func main() {
+	println(len("abc"), cap([]int{1, 2}), copy(nil, nil), min(3, 4))
+	println(clamp(5, 1, func(n int) int { return n * 3 }), apply(func(n int) int { return n + 1000 }))
+	m := max(7)
+	println(m.twice())
+	make := func(n int) int { return n + 2000 }
+	println(make(6), size([]int{4, 5, 6}))
+}
+`,
+		want: "99 98 77 7\n16 1005\n14\n2006 3\n",
+	},
+	{
+		// The program's own println, print, panic and NewBuilder: each call is the
+		// program's, a statement and a value alike, and a function ending in its
+		// own panic falls through to the return after it.
+		name: "a program's own println, print, panic and NewBuilder",
+		src: `func println(s string) int { return 7000 + len(s) }
+
+func print(n int) { printf("print %d\n", n) }
+
+func panic(s string) { printf("not a panic: %s\n", s) }
+
+func NewBuilder(n int) int { return n + 8000 }
+
+func f() int {
+	panic("x")
+	return 3
+}
+
+func main() {
+	n := println("abcd")
+	print(n)
+	printf("%d\n", f())
+	println("statement")
+	printf("%d done\n", NewBuilder(9))
+}
+`,
+		want: "print 7004\nnot a panic: x\n3\n8009 done\n",
+	},
+	{
+		// A program's own printf, deferred: its first argument is captured where
+		// the defer stands, as any function's is. It was the builtin to the
+		// emitter, "printf's format must be a constant string"; and the builtin's
+		// format, a constant, is read again at the replay, which for the program's
+		// would read the value its variable holds at the return.
+		name: "a program's own printf, deferred",
+		src: `var seen string
+
+func printf(s string, n int) { seen = s }
+
+func f() {
+	s := "first"
+	defer printf(s, 1)
+	s = "second"
+	printf(s, 2)
+}
+
+func main() {
+	f()
+	println(seen)
+}
+`,
+		want: "first\n",
+	},
+	{
 		// A type assertion in the MIDDLE of a chain, after a field, an element or a
 		// call and before a field, a method or a store: the value reached is bound
 		// once and asserted, as one on a name is (chainCText). Only an assertion on a
@@ -45869,6 +45965,7 @@ const multiPkgWant = "300\nLOUD\n50\n6\n5\n45\n6 1000\n200\n207\n3 100\n4 9\n" +
 	"[2]greet.Row [2]greet.Reader greet.Row\n" +
 	"123 p2 9 3 2 3\n1 1 2 1 102 3\n2 1 4 3 4 4 5 134\n21 10 100 200 7 0\n1 5 1 2 4 1 3 21 1 2 12 12 123 123 11\n10 21 110 21 14 true 3 42\n10 3 4\n6 10 2\n6 11\n6 5 8 6\ntrue 110 6 106\n7 5\ntrue true\n40 9 200 3\n" +
 	"false true 0 142 4294960296 5 3 false 0 10000\n" +
+	"n=7 34 4\n" +
 	"1234567891 1 3 8 14 30 39\n" +
 	"2 4 7 4\n" +
 	"4 5 2 3\n" +
@@ -46585,6 +46682,7 @@ func libShapes() {
 	// untyped constant takes the type of the operand it meets, as this one's does.
 	var top uint32 = 4294960296
 	println(lib.Over(top), lib.Over(70), lib.Under(top), lib.Under(70), lib.Counted(), Count, Limit, top < lib.Limit, lib.Limit/top, lib.Limit%top)
+	println(lib.Label(7), lib.Maxed(), max(3, 4))
 }
 `,
 	"initord/itrace/itrace.ogo": `var Trace int
@@ -47257,6 +47355,22 @@ func Over(v uint32) bool { return v < Limit }
 func Under(v uint32) uint32 { return Limit / v }
 
 func Counted() uint32 { return Count }
+
+// Label formats through the predeclared Builder from a library, whose call of
+// NewBuilder was mangled into the library and typed as nothing.
+func Label(n int) string {
+	sb := NewBuilder(labelBack[:])
+	sb.WriteString("n=")
+	sb.WriteByte(byte('0' + n))
+	return sb.String()
+}
+
+var labelBack [8]byte
+
+// max is the library's own, and so is the max its functions call.
+func max(a, b int) int { return a*10 + b }
+
+func Maxed() int { return max(3, 4) }
 `,
 }
 
