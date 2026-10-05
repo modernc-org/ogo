@@ -1,0 +1,97 @@
+// A fifth sweep of mutated run cases, with Go as the oracle: a method name for
+// another, an argument duplicated, a literal's type for another, a field selector
+// dropped, a return value duplicated.
+
+type N int
+
+func (n N) Add(m N) N { return n + m }
+
+const One N = 1
+
+const Two N = 2
+
+type P struct{ x int }
+
+func (p P) Show() {}
+
+func (p P) Two() (int, int) { return 1, 2 }
+
+func pick(i int) P { return P{i} }
+
+type Line struct {
+	sb  Builder
+	len int
+}
+
+type It interface{ Next() (int32, bool) }
+
+type Reg struct {
+	next  *Reg
+	count int
+}
+
+var gr Reg
+
+func dev() *Reg { return &gr }
+
+func typedConsts() {
+	// ERROR "too many arguments in call to Add"
+	_ = One.Add(Two, Two)
+	// ERROR "type N has no method Nosuch"
+	_ = One.Nosuch()
+}
+
+func chains(x, y N) {
+	// ERROR "too many arguments in call to pick"
+	pick(1, 1).Show()
+	// ERROR "too many arguments in call to pick"
+	defer pick(1, 1).Show()
+	// ERROR "too many arguments in call to pick"
+	go pick(1, 1).Show()
+	// ERROR "too many arguments in call to Add"
+	_ = (x - y).Add(1).Add(2, 2)
+}
+
+func builders() {
+	var buf [8]byte
+	var l Line
+	l.sb = NewBuilder(buf[:])
+	// ERROR "too many arguments in call to Builder.WriteByte"
+	l.sb.WriteByte(1, 2)
+	// ERROR "too many arguments in call to Builder.Reset"
+	l.sb.Reset(1)
+	sb := NewBuilder(buf[:])
+	// ERROR "sb.Reset\(\) \(no value\) used as value"
+	println(sb.Reset() == "OK")
+	// ERROR "mismatched types string and int"
+	println(sb.String() == 1)
+	// ERROR "cannot use NewBuilder\(buf\[:\]\) \(value of struct type Builder\) as Line value"
+	l = NewBuilder(buf[:])
+}
+
+func values(it It, q P) {
+	// ERROR "multiple-value it.Next\(\)"
+	println(1, it.Next())
+	xs := []int{1}
+	// ERROR "cannot use xs as int value in argument to append: it is a slice"
+	xs = append(xs, xs, 1)
+	var h P
+	// ERROR "cannot indirect h: it is a struct"
+	*h = 5
+	// ERROR "operator \+ not defined on dev\(\).next: it is a pointer"
+	dev().next += 3
+	switch q {
+	// ERROR "invalid case Line\{\} in switch on q \(mismatched types Line and P\)"
+	case Line{}:
+	}
+	// ERROR "cannot call non-function q"
+	defer (q)(1)
+	_, _ = xs, h
+}
+
+func main() {
+	typedConsts()
+	chains(3, 1)
+	builders()
+	values(nil, P{})
+}

@@ -1035,6 +1035,22 @@ variable from a several-result call had a name and no type for varTypeAt
 struct type's field order, `&iota`, `**np` of an `*int`, `printf(...)` as a value. A
 call of a call whose result is a slice, `var s string = mk()(1)`, has no type yet now
 that exprCallee no longer misreads it.
+A fifth batch -- a method name for another of the file's, an argument duplicated, a
+literal's type for another, a field selector dropped, a return value duplicated --
+had 111 taken, 66 of them `println` of a struct or an array (dropping `.x` leaves
+one), and of the other 45, 28 are refused now. Rows: a TYPED CONSTANT as a receiver
+was no receiver at all (checkMethodCall asked variables only); a call whose method is
+chained, `pick(1, 1).Show()`, was asked as an expression and not as a statement,
+deferred or started (leadingCall, which for a defer reads the statement's steps, its
+first child being the keyword); a chain on a parenthesised value or a literal checked
+its first call only (reportCallChainWalk -- with the pointer rule kept off, the walk
+there beginning at no storage, which falsely refused `(c).Inc()` of a variable on the
+first try); the predeclared Builder, with no declaration, stopped every walk that
+reached it through a field (callChain.builderCalls) and had no result types
+(methodSingleResultKind, zeroResultCall answer for it now). 17 are left, positional.
+A spec file marked `// COMPILE` carried an `// ERROR` annotation nothing met until
+`l.sb.Flush()` was checked (builder.ogo): **an ERROR line in a COMPILE file is an
+expectation nobody checks** -- the marker was dropped.
 
 **A COMPILER RUN IN A SWEEP IS CAPPED, AND A CRASH IS NOT A REFUSAL** (2026-09-20).
 A probe program is written to find a fault, and a fault is not always a wrong

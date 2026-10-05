@@ -1,5 +1,3 @@
-// COMPILE
-
 // Builder is a compiler-known string builder over a caller-owned []byte -- the
 // allocation-free counterpart to strings.Builder. NewBuilder(back[:]) wraps a fixed
 // backing array in a write cursor; WriteString, WriteByte, WriteRune (UTF-8 encoded)

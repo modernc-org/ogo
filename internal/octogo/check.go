@@ -2504,7 +2504,13 @@ func (f *File) checkCallStmt(s *Scope, head, stmt Node, kw string, kwTok Token, 
 	}
 	f.resolveArgNames(s, later)
 	id, ok := f.assignHeadIdent(head)
-	f.checkCall(s, id, direct && ok, argList)
+	// `defer pick(1, 1).Show()`: the leading call is the name's whatever follows.
+	// The statement node begins with its keyword, so its steps are asked.
+	lead := false
+	if steps, _ := callSteps(stmt); len(steps) != 0 && steps[0].sym == CallSuffix {
+		lead = true
+	}
+	f.checkCall(s, id, (direct || lead) && ok, argList)
 	if steps, _ := callSteps(stmt); ok {
 		f.checkValueCallSteps(s, id, steps)
 	}
@@ -7089,6 +7095,18 @@ func (f *File) checkCasesAgainstTag(s *Scope, clause, tag Node, tagKind Kind, ta
 			if xok && tok && !f.ifaceSetHolds(xm, tm) && !f.ifaceSetHolds(tm, xm) {
 				f.err(pos, "invalid case %s in switch%s (mismatched types %s and %s)", src, on, xt.f.typeNodeMessage(xt.s, xt.tn), tt.f.typeNodeMessage(tt.s, tt.tn))
 			}
+		case xknown && xw == tw && (tw == "a struct" || tw == "an array"):
+			// Two structs or two arrays of different types, `case Line{}:` in a
+			// switch on a P: compared by their names, as an assignment's are.
+			xn, _, xptr, xok := f.exprNamedType(s, x)
+			tn, _, tptr, tok := f.exprNamedType(s, tag)
+			if xok && tok && !xptr && !tptr && xn.IsValid() && tn.IsValid() {
+				xc, _ := f.canonicalType(s, xn, Token{})
+				tc, _ := f.canonicalType(s, tn, Token{})
+				if xc.Src() != tc.Src() {
+					f.err(pos, "invalid case %s in switch%s (mismatched types %s and %s)", src, on, xn.Src(), tn.Src())
+				}
+			}
 		}
 	}
 }
@@ -7998,7 +8016,9 @@ func (f *File) checkAssignment(s *Scope, head, postfix Node) {
 	if isCall {
 		f.resolveArgNames(s, later)
 		id, ok := f.assignHeadIdent(head)
-		f.checkCall(s, id, direct && ok, argList)
+		// `pick(1, 1).Show()` as a statement: the leading call is pick's, its
+		// arguments asked as an expression's are (leadingCall).
+		f.checkCall(s, id, (direct || leadingCall(postfix)) && ok, argList)
 		// A call through what a step reaches, `pick()(t)`, `hs[0](t)`: its
 		// arguments, which the same call as a value had asked.
 		if steps, pure := callSteps(postfix); ok && pure {
@@ -8216,6 +8236,34 @@ func (f *File) checkAssignment(s *Scope, head, postfix Node) {
 			// checkAssignType reads the BASE's declaration, which is the target only
 			// when there is no suffix. A field, an element or a pointee is the target's
 			// own type -- `p.mask |= 1 << bit` shifts a 1 of the field's type.
+			// A target of no Kind reached through steps, `dev().next += 3` for a
+			// pointer field: no arithmetic is defined on it, and nothing asked.
+			if lhsSuffixed[0] && !isShiftAssign(op) {
+				if base, stars, ok := f.targetHead(head); ok {
+					steps, _ := callSteps(postfix)
+					if tn, in := f.targetTypeNode(s, base, steps, stars); tn != nil && in != nil {
+						if u, _ := f.refTypeUnder(in, tn); u != nil {
+							if what := kindlessCategoryOf(u); what != "" && len(steps) != 0 {
+								opText := ""
+								for c := range it(postfix.ast) {
+									if c.sym == PostfixOp {
+										for pc := range it(c.ast) {
+											if pc.sym == AssignOp {
+												for t := range it(pc.ast) {
+													if t.sym == 0 {
+														opText = strings.TrimSuffix(f.tok(t.tok).Src(), "=")
+													}
+												}
+											}
+										}
+									}
+								}
+								f.err(f.tok(head.Pos()).Position(), "invalid operation: operator %s not defined on %s: it is %s", opText, f.sourceSpan(head.Pos(), steps[len(steps)-1].End()), what)
+							}
+						}
+					}
+				}
+			}
 			if lhsSuffixed[0] || deref {
 				if k, ok := f.suffixedTargetKind(s, head, postfix); ok {
 					// And its category, which checkAssignType asks of a bare name
@@ -14383,6 +14431,16 @@ func (f *File) checkBuilderArgs(s *Scope, base string, member Token, args []Node
 func (f *File) checkMethodCall(s *Scope, head, member Token, argList, suffix Node) {
 	d, ok := s.find(head.Src()).(*VarDeclaration)
 	if !ok {
+		// A typed CONSTANT's method, `One.Add(Two, Two)` for a `const One N = 1`:
+		// the method of its type, asked nothing as long as only a variable was.
+		if cd, isConst := s.find(head.Src()).(*ConstDeclaration); isConst && cd.ConstSpec != nil {
+			f.resolveConst(s, cd)
+			if id, isIdent := cd.ConstSpec.TypeNode.(*TypeNodeIdent); isIdent && !id.Qualifier.IsValid() {
+				if _, isType := s.find(id.Name.Src()).(*TypeDeclaration); isType {
+					f.checkMethodCallOn(s, &VarDeclaration{typeName: id.Name}, head.Src(), member, argList)
+				}
+			}
+		}
 		return
 	}
 	// `e.(*P).m()` -- the call is on what the ASSERTION yielded, not on e. The
@@ -14696,6 +14754,16 @@ func (f *File) methodResultKind(s *Scope, head Token, hasHead bool, suffix Node)
 // method member of variable head's named type, when it has exactly one and it is
 // predeclared -- the method analogue of funcSingleResultKind.
 func (f *File) methodSingleResultKind(s *Scope, head, member Token) (Kind, bool) {
+	// The predeclared Builder's String and Len, which no declaration states.
+	if d, ok := s.find(head.Src()).(*VarDeclaration); ok && !d.isPtr && (d.builderVar || d.typeName.Src() == "Builder" && !d.typeQual.IsValid() && isPredeclaredBuilder(s, "Builder")) {
+		switch member.Src() {
+		case "String":
+			return PredeclaredString, true
+		case "Len":
+			return PredeclaredInt, true
+		}
+		return 0, false
+	}
 	// Through callResults, which resolves a concrete type's method and an
 	// INTERFACE's alike: the lookup written out here read the receiver's declared
 	// methods, and an interface has none, so a call through one was untyped and
@@ -14896,6 +14964,9 @@ type callChain struct {
 	unexpType string
 	// calls are the methods the walk called, whose arguments the report checks.
 	calls []chainCall
+	// builderCalls are the steps calling a method of the predeclared Builder, which
+	// has no declaration to give a signature (checkBuilderArgs).
+	builderCalls []int
 }
 
 // chainCall is a method a chain calls: the Selector naming it, at, its signature as
@@ -15136,6 +15207,13 @@ func (f *File) walkSteps(t typeAt, addr bool, steps []Node, i, reportFrom int, w
 				}
 				w.home, w.qual, ts = home, id.Qualifier, home
 			}
+			if isID && !id.Qualifier.IsValid() && id.Name.Src() == "Builder" && isPredeclaredBuilder(ts, "Builder") {
+				// `l.sb.WriteByte(c)`: the Builder reached through a field. Its
+				// method and arguments are the report's to ask, and the walk stops,
+				// the results having no type node to go on with.
+				w.builderCalls = append(w.builderCalls, i)
+				return w
+			}
 			if isID {
 				if set, isIface := f.interfaceMethodsNamed(ts, id.Name.Src()); isIface {
 					spec, has := set[m.Src()]
@@ -15287,6 +15365,17 @@ func (f *File) walkSteps(t typeAt, addr bool, steps []Node, i, reportFrom int, w
 // from the type of what the chain reached (reportMissingMember).
 func (f *File) reportCallChainWalk(s *Scope, steps []Node, w callChain) {
 	f.reportMissingMember(steps, w)
+	for _, at := range w.builderCalls {
+		m, has := f.selectorMember(steps[at])
+		if !has || at+1 >= len(steps) || steps[at+1].sym != CallSuffix {
+			continue
+		}
+		if !builderMethods[m.Src()] {
+			f.err(m.Position(), "type Builder has no method %s", m.Src())
+			continue
+		}
+		f.checkBuilderArgs(s, "Builder", m, argNodes(f.callArgList(steps[at+1])))
+	}
 	// A method called on what the chain reached -- an element, a field, a call's
 	// result -- with the arguments its declaration asks for. Only a method called
 	// on a NAME was asked, so `xs[0].Add(5)` and `w.c.Add(1, 2)` reached the C
@@ -17352,6 +17441,9 @@ func (f *File) derefBase(s *Scope, base Token) (*VarDeclaration, bool) {
 	if !d.isPtr {
 		if k, known := f.identKind(s, base); known { // a known scalar is not a pointer
 			f.err(base.Position(), "invalid operation: cannot indirect %s%s", base.Src(), ofType(k, true))
+		} else if what, known := f.nonBoolVar(s, d); known && what != "a pointer" {
+			// A struct, a slice, a function: no pointer either, `*h = 5`.
+			f.err(base.Position(), "invalid operation: cannot indirect %s: it is %s", base.Src(), what)
 		}
 		return nil, false
 	}
@@ -19075,6 +19167,19 @@ func (f *File) checkRefAssign(s, wantScope *Scope, want TypeNode, value Node, wh
 		return
 	}
 	wu, wantNamed := f.refTypeUnder(wantScope, want)
+	// A Builder made by NewBuilder where a type of no Kind is wanted, `l =
+	// NewBuilder(b)` for a struct l: the call names no type the rules below know.
+	if f.isNewBuilderCall(s, value) {
+		if id, isIdent := want.(*TypeNodeIdent); !isIdent || id.Qualifier.IsValid() || id.Name.Src() != "Builder" {
+			switch wu.(type) {
+			case *FunctionType, *TypeNodeChan, *TypeNodeStruct, *TypeNodeArray, *TypeNodeSlice, *TypeNodePointer:
+				if w := f.typeNodeMessage(wantScope, want); w != "" {
+					f.err(f.tok(value.Pos()).Position(), "cannot use %s (value of struct type Builder) as %s value in %s", f.exprSource(value), f.qualifiedTypeName(wantScope, w), what)
+					return
+				}
+			}
+		}
+	}
 	switch wu.(type) {
 	case *TypeNodeSlice, *TypeNodePointer:
 	case *FunctionType, *TypeNodeChan, *TypeNodeStruct, *TypeNodeArray:
@@ -20933,6 +21038,16 @@ func (f *File) checkStepsOn(s *Scope, d *VarDeclaration, base string, steps []No
 // name -- `(&v).m(x)`, `(*p).f`, `(mk()).m()` -- through checkStepsOn. A bare name
 // in the parentheses is checked as the name itself is, elsewhere.
 func (f *File) checkParenChain(s *Scope, inner Node, steps []Node) {
+	// `(q)(1)` and `defer (q)(1)`: a name in parentheses called, asked what a
+	// call of the name is (checkCallee) -- a struct called was taken.
+	if len(steps) != 0 && steps[0].sym == CallSuffix {
+		if id, op, ok := f.parenOperandName(inner); ok && op == 0 {
+			if _, isVar := s.find(id.Src()).(*VarDeclaration); isVar {
+				argList := f.callArgList(steps[0])
+				f.checkCallee(s, id, argList, argNodes(argList))
+			}
+		}
+	}
 	// `(mk(1)).Count()`: a call's result in parentheses is the call's result, no
 	// storage, walked as `mk(1).Count()` is (callChainWalk) -- so a pointer method
 	// called on it is refused as there. It was taken, the method called on the
@@ -20947,8 +21062,12 @@ func (f *File) checkParenChain(s *Scope, inner Node, steps []Node) {
 		// Past the first step, which checkStepsOn answers for, a member the value
 		// lacks -- `(&gp).in.nosuch` -- reached the emitter, which called the form
 		// unsupported where the valid one works.
+		// And the arguments of every method the chain calls past the first,
+		// `(x - y).Add(1).Add(2, 2)`, which reportCallChainWalk checks.
 		if !qual.IsValid() {
-			f.reportMissingMember(steps, f.walkSteps(typeAt{&TypeNodeIdent{Name: name}, s, f}, false, steps, 0, 1, newCallChain()))
+			w := f.walkSteps(typeAt{&TypeNodeIdent{Name: name}, s, f}, false, steps, 0, 1, newCallChain())
+			w.ptrAt = -1 // `(c).Inc()` of a variable is addressable; the walk began at no storage
+			f.reportCallChainWalk(s, steps, w)
 		}
 	}
 }
@@ -21558,7 +21677,16 @@ func (f *File) zeroResultCall(s *Scope, id Token, suffix Node) bool {
 		// A VariableDeclaration is what tells a method call from a package one: an
 		// import qualifier resolves to no variable, so `pkg.F()` is left alone.
 		d, ok := s.find(id.Src()).(*VarDeclaration)
-		if !ok || !d.typeName.IsValid() {
+		if !ok {
+			return false
+		}
+		// The predeclared Builder's methods but String and Len yield nothing:
+		// `sb.Reset() == "OK"` was taken.
+		if d.builderVar || d.typeName.Src() == "Builder" && !d.typeQual.IsValid() && isPredeclaredBuilder(s, "Builder") {
+			_, isMethod := builderParams[member.Src()]
+			return isMethod && member.Src() != "String" && member.Src() != "Len"
+		}
+		if !d.typeName.IsValid() {
 			return false
 		}
 		td, ok := s.find(d.typeName.Src()).(*TypeDeclaration)
@@ -22437,6 +22565,12 @@ func (f *File) checkCallee(s *Scope, callee Token, argList Node, args []Node) {
 					f.err(f.tok(a.Pos()).Position(), "use of untyped nil in argument to built-in %s", callee.Src())
 					continue
 				}
+				// A call of several results among other arguments, `println(1,
+				// it.Next())`: Go takes one only as the whole argument list.
+				if v, ok := f.rhsValueCount(s, []Node{a}); ok && v > 1 && len(args) > 1 {
+					f.err(f.tok(a.Pos()).Position(), "multiple-value %s (value of type (%d values)) in single-value context", f.exprSource(a), v)
+					continue
+				}
 				f.checkInferredOverflow(s, a)
 			}
 		case "append":
@@ -22951,6 +23085,15 @@ func (f *File) checkAppendValues(s *Scope, argList Node, args []Node) {
 					f.exprSource(v), kindName(k), p.name)
 			}
 			continue
+		}
+		// A value of no Kind -- a slice, a struct, a pointer -- where the element is
+		// one: `append(xs, xs, 1)`, whose exprType answers xs's ELEMENT.
+		if p.kind != PredeclaredUnsafePointer {
+			if what, isKindless := f.nonBoolOperand(s, v); isKindless && what != "no bool" && what != "a struct" {
+				f.err(f.tok(v.Pos()).Position(), "cannot use %s as %s value in argument to append: it is %s",
+					f.exprSource(v), p.name, what)
+				continue
+			}
 		}
 		if k, known := f.exprType(s, v); known && !assignableKind(p.kind, k) {
 			f.err(f.tok(v.Pos()).Position(), "cannot use %s of type %s as type %s in append",

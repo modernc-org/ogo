@@ -252,6 +252,17 @@ shipped section tells a reader on that version that they have behaviour they do 
 
 ### Behaviour changes
 
+- **A fifth sweep of mutated run cases refuses what Go refuses**: a method of a
+  typed constant, `One.Add(Two, Two)`, `One.Nosuch()`; the arguments of a call
+  whose method is chained, `pick(1, 1).Show()`, as a statement, deferred and
+  started, and of every method past the first on a parenthesised value, `(x -
+  y).Add(1).Add(2, 2)`; the Builder reached through a field, `l.sb.WriteByte(1,
+  2)`, its methods' results (`sb.Reset() == "OK"`, `sb.String() == 1`) and a
+  NewBuilder stored into another struct type; a call of several results among
+  print's arguments, `println(1, it.Next())`; a slice where its element is wanted,
+  `append(xs, xs, 1)`; `*h = 5` for a struct h; `dev().next += 3` for a pointer
+  field; a case of another struct type, `case Line{}:` in a switch on a P; and a
+  variable called in parentheses, `defer (q)(1)`.
 - **A variable's type is asked wherever it can be known**, and what is done with
   the variable is checked: a variable from an untyped constant, from `len` or
   `cap`, or a range's index is an int, so `n := 1` then `var c C = n` for a `type C
