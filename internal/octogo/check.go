@@ -13963,6 +13963,7 @@ func (f *File) callValueAddressing(s *Scope, head Token, steps []Node) (sliceAt 
 
 // callChain is what callChainWalk found in a factor's steps.
 type callChain struct {
+	at      *Scope // where the chain is written, which a type assertion's type is resolved in
 	sliceAt int    // the step slicing an array with no storage, -1 for none
 	ptrAt   int    // the Selector of a POINTER method called on a value with no storage, -1 for none
 	ptrType string // that value's type, as a message names it
@@ -14149,6 +14150,7 @@ func (f *File) callChainWalk(s *Scope, head Token, steps []Node) (w callChain) {
 		}
 		w.home, w.qual = home, head
 	}
+	w.at = s
 	return f.walkSteps(t, addr, steps, i, len(steps), w)
 }
 
@@ -14170,6 +14172,24 @@ func (f *File) walkSteps(t typeAt, addr bool, steps []Node, i, reportFrom int, w
 	var sliced typeAt     // and that slice's type: a defined slice type's, sliced, is its own
 	for ; i < len(steps); i++ {
 		st := steps[i]
+		// A type assertion, `pick().(*T).s`: the value is of the type asserted,
+		// written in this file's scope. Untyped, a field read past one was asked
+		// nothing, and `var k int = pick().(*T).s` for a string s went through.
+		if st.sym == Selector {
+			if typN, isAssert := f.selectorType(st); isAssert {
+				if w.at == nil {
+					return w
+				}
+				n0 := len(f.errList)
+				tn := f.typ(w.at, typN) // the assertion's own check reports the type
+				f.errList = f.errList[:n0]
+				if tn == nil {
+					return w
+				}
+				t, addr = typeAt{tn, w.at, f}, false
+				continue
+			}
+		}
 		if sliceElem != nil {
 			switch {
 			case st.sym == Index && f.isSliceExpr(st):

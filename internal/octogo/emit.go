@@ -16468,6 +16468,17 @@ func (e *emitter) ptrConvShape(kids []Node) (arg Node, rest []Node, ok bool) {
 	return args[0], steps[1:], true
 }
 
+// selectorTypeNode is the Type a Selector step holds where it is a type assertion,
+// `.(T)`, rather than a member's name.
+func (e *emitter) selectorTypeNode(step Node) (Node, bool) {
+	for c := range it(step.ast) {
+		if c.sym == Type {
+			return c, true
+		}
+	}
+	return Node{}, false
+}
+
 // assertionOperand is the operand of an expression ending in a type assertion,
 // `r.(*T)`, `h.r.(*T)`, `(r).(*T)`, `pick().(*T)`: what the assertion hands back
 // is the pointer the operand holds -- an interface holds one and nothing else -- so
@@ -25779,11 +25790,33 @@ func (e *emitter) plainOrSlice(elem string) accessCur {
 // The prefix is accumulated as C text and written once the chain ends (see
 // emitAccessChainAt).
 func (e *emitter) emitAccessChain(base string, steps []Node) (accessCur, bool) {
+	// A chain holding a type assertion, `h.i.(*T).s`, is the renderer's, which binds
+	// the value it reaches and asserts on that (chainCText).
+	if e.hasAssertStep(steps) {
+		text, ct, _, ok := e.chainCText(base, steps)
+		if !ok {
+			return accessCur{}, false
+		}
+		e.emit(text)
+		return e.plainOrSlice(ct), true
+	}
 	cur, ok := e.accessBase(base)
 	if !ok {
 		return accessCur{}, false
 	}
 	return e.emitAccessChainAt(e.accessBaseText(base), cur, steps, false)
+}
+
+// hasAssertStep reports whether a chain's steps hold a type assertion, `.(T)`.
+func (e *emitter) hasAssertStep(steps []Node) bool {
+	for _, st := range steps {
+		if st.sym == Selector {
+			if _, isAssert := e.selectorTypeNode(st); isAssert {
+				return true
+			}
+		}
+	}
+	return false
 }
 
 // emitAccessChainAt emits a chain from a value already reached and named by prefix.
@@ -26010,6 +26043,9 @@ func (e *emitter) chainValueCType(cur accessCur) (string, bool) {
 // accessChainType walks a chain without emitting, for inference and for validating
 // ahead of emission.
 func (e *emitter) accessChainType(base string, steps []Node) (accessCur, bool) {
+	if e.hasAssertStep(steps) {
+		return e.renderedChainType(base, steps) // see emitAccessChain
+	}
 	cur, ok := e.accessBase(base)
 	if !ok {
 		return accessCur{}, false
@@ -34522,6 +34558,58 @@ func (e *emitter) chainCText(base string, steps []Node) (text, ctype string, add
 				text = e.hoist(cur.ctype, func() { e.emit(bound) })
 			}
 		case Selector:
+			// A TYPE ASSERTION in the chain, `h.i.(*T).s`, `pick().(*T).bump()`: the
+			// value reached so far is bound, asserted as `x.(*T)` on a name is
+			// (hoistAssert), and the steps after it read the asserted value. Only an
+			// assertion on a name had a lowering, and every other was refused, "h.i
+			// has no field".
+			if _, isAssert := e.selectorTypeNode(n); isAssert {
+				if !e.isIfaceCType(cur.ctype) {
+					return "", "", false, false
+				}
+				target, targetIsIface, ok := e.assertedTargetC(n)
+				if !ok {
+					return "", "", false, false
+				}
+				ct := target + "*"
+				if targetIsIface {
+					ct = target
+				}
+				// Once per occurrence, as a call's result is (hoistResult): the
+				// statement renders a chain more than once -- a compound assignment
+				// types its target and then writes it -- and each rendering bound and
+				// checked the operand again, an index in it evaluated as often.
+				tok := int32(-1)
+				for c := range it(n.ast) {
+					if c.sym == 0 {
+						tok = c.tok
+						break
+					}
+				}
+				if name, done := e.hoistedArrayCalls[tok]; done && name != "" {
+					text, addr, cur = name, true, e.plainOrSlice(ct)
+					continue
+				}
+				// On the chain's own variable, `e.(*P).x`, the variable is the operand,
+				// as typeAssertionPrefix has it: a copy is a cog register for nothing.
+				// Anything else is bound to a temporary of its own -- the text may be
+				// another variable's C name, which is no name to register as a local.
+				operand := base
+				if i != 0 || !e.isChainVar(base) {
+					bound := text
+					operand = e.hoist(cur.ctype, func() { e.emit(bound) })
+					e.locals[operand] = cur.ctype
+				}
+				name, _, ok := e.hoistAssert(operand, cur.ctype, target, targetIsIface)
+				if !ok {
+					return "", "", false, false
+				}
+				if tok >= 0 {
+					e.hoistedArrayCalls[tok] = name
+				}
+				text, addr, cur = name, true, e.plainOrSlice(ct)
+				continue
+			}
 			field := e.soleIdent(n.ast)
 			// A method reached through an interface: the slot's declared result is
 			// the call's type, the concrete function behind it being unknown here

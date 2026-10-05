@@ -38,6 +38,66 @@ type emitRunCase struct {
 
 var emitRunCases = []emitRunCase{
 	{
+		// A type assertion in the MIDDLE of a chain, after a field, an element or a
+		// call and before a field, a method or a store: the value reached is bound
+		// once and asserted, as one on a name is (chainCText). Only an assertion on a
+		// name had a lowering; every other was "gh.i has no field" or "unsupported
+		// call in expression". The calls an index or a head makes run once, a
+		// compound assignment's target included.
+		name: "a type assertion in the middle of a chain",
+		src: `type T struct {
+	s string
+	n int
+}
+
+func (t *T) bump() int {
+	t.n++
+	return t.n
+}
+
+type G interface{ bump() int }
+
+var gt = T{"g", 1}
+
+var gis = []any{&gt, &gt}
+
+type H struct{ i any }
+
+var gh = H{&gt}
+
+var calls int
+
+func pick() any {
+	calls++
+	return &gt
+}
+
+func idx() int {
+	calls++
+	return 1
+}
+
+func (h *H) get() any { return h.i }
+
+func main() {
+	println(gh.i.(*T).s, gis[idx()].(*T).n, gh.get().(*T).s, pick().(*T).n)
+	gh.i.(*T).n = 7
+	gis[idx()].(*T).n += 3
+	pick().(*T).s = "h"
+	x := gh.i.(*T).s
+	p := &gh.i.(*T).n
+	*p *= 2
+	println(x, gt.n, gt.s, calls)
+	a := gh.i.(*T).bump()
+	b := gh.i.(G).bump()
+	println(a, b, gt.n)
+	defer println("deferred", gis[idx()].(*T).n)
+	println(calls)
+}
+`,
+		want: "g 1 g 1\nh 20 h 4\n21 22 22\n5\ndeferred 22\n",
+	},
+	{
 		// A string sliced out of a receiver's field, declared and returned: the
 		// receiver had no scope recorded for its type, so no walk could type the
 		// slice, and the variable was "a slice" -- refused where a string is

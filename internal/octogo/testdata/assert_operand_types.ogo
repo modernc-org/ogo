@@ -40,5 +40,7 @@ func main() {
 	var k5 int = v5.s
 	// ERROR cannot use gi.\(\*T\).s of type string as type int in variable declaration
 	var k6 int = gi.(*T).s
-	println(k1, k2, k3, k4, k5, k6, ok)
+	// ERROR cannot use pick\(\).\(\*T\).f of type float64 as type int in variable declaration
+	var k7 int = pick().(*T).f
+	println(k1, k2, k3, k4, k5, k6, k7, ok)
 }

@@ -2727,6 +2727,18 @@ values rewrapped in the ExpressionList a statement writes, for the six passes th
 read statements by shape. **A new place a pointer can stand -- an operand, a
 header, a clause's name -- is a row in TestEmitCAssertLifetime's matrix, and a
 statement form a header can hold is a row of eachStmt.**
+The same day the emitter learned an assertion in the MIDDLE of a chain on any
+operand, `h.i.(*T).s`, `pick().(*T).bump()`: chainCText binds the value reached and
+asserts on the binding (hoistAssert), once per occurrence by the step's token in the
+statement's memo -- a compound assignment renders its target twice, and the first
+version bound and checked twice -- and the field walkers hand a chain holding an
+assertion to it (emitAccessChain, accessChainType through renderedChainType). On the
+chain's own variable, `e.(*P).x`, the variable is the operand, no copy: the first
+version copied it, one cog register more, and the corpus guard showed it. Enabling
+the lowering let a program Go refuses through, `var k int = pick().(*T).s`, which
+the emitter had refused in its own words: the checker's walk past a call had no
+assertion step (walkSteps, given the scope the chain is written in, callChain.at).
+**A lowering that makes a shape writable makes it a row of the checker's walks.**
 A store through a pointer no NAME holds was the summaries' next row (2026-10-04,
 found making `(*f())[i] = v` writable, which the emitter had refused): a callee
 storing its parameter through a call's result, `gethp().p = v`, `fa()[0] = v`, in a

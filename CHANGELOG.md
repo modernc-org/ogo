@@ -20,6 +20,12 @@ shipped section tells a reader on that version that they have behaviour they do 
 
 ### Language
 
+- **A type assertion may stand in the middle of a chain on any operand**:
+  `h.i.(*T).s`, `xs[i].(*T).n += 3`, `pick().(*T).bump()`, `&h.i.(*T).n`, and as
+  a store's target or a deferred call's argument. Only an assertion on a name could
+  be followed by more steps; every other was refused, "h.i has no field" or
+  "unsupported call in expression". What comes before the assertion is evaluated
+  once.
 - **panic takes any value Go's runtime can write**, not only a string: `panic(err)`
   writes the error's `Error()`, and a Stringer its `String()`, asked of what an
   interface holds; a number or a bool is written as `print` writes it, inside its
