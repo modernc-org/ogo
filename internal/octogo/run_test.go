@@ -46150,6 +46150,31 @@ func main() {
 `,
 		want: "2 4 3 7 2 2 3\ntwo\n",
 	},
+	{
+		// len and cap Go makes a constant, standing in a comparison, a condition and
+		// an operation: only the constant folder recorded their value, and the
+		// emitter, asked for it elsewhere, said len was supported for strings,
+		// arrays and slices only.
+		name: "constant len and cap in comparisons",
+		src: `type R [4]int
+
+var a [3]byte
+
+func main() {
+	a[1] = 7
+	n := 3
+	println(n == len([2]int{}), n < len(a), cap(R{}) > n)
+	if n == len([3]int{}) {
+		println("three")
+	}
+	for n < len([5]int{}) {
+		n++
+	}
+	println(n, len(a)+n, n-cap([2][3]int{}), a[1])
+}
+`,
+		want: "false false true\nthree\n5 8 3 7\n",
+	},
 }
 
 // TestEmitCRun compiles emitted C with a host compiler and runs it, checking what

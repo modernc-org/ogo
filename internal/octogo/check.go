@@ -4725,10 +4725,21 @@ func (f *File) checkPostOp(s *Scope, lhs []Node, op Symbol, opSrc string, rhs []
 				strings.TrimSuffix(opSrc, "="), f.exprSource(lhs[0]), kindName(k))
 			return
 		}
+		// nil and a value of no Kind, `y += nil`, `y += xs`: what the statement form
+		// refuses, which the post asked nothing of.
+		if f.isNilOperand(rhs[0]) {
+			f.err(f.tok(rhs[0].Pos()).Position(), "invalid operation: operator %s not defined on nil", strings.TrimSuffix(opSrc, "="))
+			return
+		}
 		if isShiftAssign(op) {
 			return
 		}
-		if vk, known := f.exprType(s, rhs[0]); known && !assignableKind(k, vk) {
+		vk, known := f.exprType(s, rhs[0])
+		if !known {
+			f.kindlessValueErr(s, rhs[0], kindName(k), "assignment")
+			return
+		}
+		if !assignableKind(k, vk) {
 			f.err(f.tok(rhs[0].Pos()).Position(), "cannot use %s of type %s as type %s in assignment", f.exprSource(rhs[0]), kindName(vk), kindName(k))
 			return
 		}
@@ -7413,6 +7424,12 @@ func (f *File) checkCaseExpr(s *Scope, guardKind Kind, e Node) {
 	}
 	if !assignableKind(guardKind, k) {
 		f.err(f.tok(e.Pos()).Position(), "cannot use %s of type %s as type %s in case", f.exprSource(e), kindName(k), kindName(guardKind))
+		return
+	}
+	// A constant the tag's type cannot hold, `case 2.5:` or `case 300:` in a switch
+	// on a uint8: compared, it was converted in C, where Go refuses it.
+	if isUntypedKind(k) && !isUntypedKind(guardKind) {
+		f.checkValueOverflow(s, retResult{name: kindName(guardKind), kind: guardKind, known: true}, e)
 	}
 }
 
@@ -9168,6 +9185,27 @@ func (f *File) funcLitSig(s *Scope, fac Node) *SignatureNode {
 		return sig
 	}
 	return nil
+}
+
+// storageOperand reports an operand that is a variable's field or element reached
+// through selectors and indexes alone, `m.f`, `errs[i]`, `h.rows[1].f` -- no call,
+// no operator, no dereference.
+func (f *File) storageOperand(n Node) bool {
+	fac, ok := f.soleFactor(n)
+	if !ok {
+		return false
+	}
+	kids := slices.Collect(it(fac.ast))
+	if len(kids) != 2 || kids[0].sym != 0 || f.ch(kids[0].tok) != IDENT || kids[1].sym != FactorSuffix {
+		return false
+	}
+	steps := slices.Collect(it(kids[1].ast))
+	for _, st := range steps {
+		if st.sym != Selector && st.sym != Index || st.sym == Index && f.indexIsSlice(st) {
+			return false
+		}
+	}
+	return len(steps) != 0
 }
 
 // isNamedCompositeLit reports an operand that is exactly a literal of a type named
@@ -11035,7 +11073,14 @@ func (f *File) checkQualifiedRef(s *Scope, qual Token, suffix Node) {
 						args = append(args, e)
 					}
 				}
-				f.checkConvArity(qual, qual.Src()+"."+m.Src(), args)
+				if f.checkConvArity(qual, qual.Src()+"."+m.Src(), args) {
+					// What a conversion to a type of this package asks of its
+					// operand, asked of another's: only the count was, and
+					// `vm.Op(-1)`, `vm.Op(true)` and `vm.Op(nil)` were taken.
+					if tk, ok := f.nameKind(pkg.Scope, m.Src()); ok && kindCategory(tk) != catUnknown && tk != PredeclaredUnsafePointer {
+						f.checkConversionToKind(s, tk, qual.Src()+"."+m.Src(), args[0])
+					}
+				}
 			}
 			return
 		}
@@ -13892,11 +13937,12 @@ func (f *File) checkImplements(s *Scope, ifaceName string, value Node, what stri
 			if _, _, resolved := f.typeDeclNamed(s, from); resolved {
 				f.checkImplementsKind(s, ifaceName, value, from, f.exprSource(value), "value of type *"+from, true, what)
 			}
-		} else if named && !qual.IsValid() && f.isNamedCompositeLit(value) {
-			// A literal of a named type, `show(failure{})`: Go's verdict where the
-			// value's method set falls short, and where it would not, the one an
-			// interface holding a pointer gives. Asked of nobody, the call went to
-			// the C compiler as a struct passed where the interface is wanted.
+		} else if named && !qual.IsValid() && (f.isNamedCompositeLit(value) || f.storageOperand(value)) {
+			// A literal of a named type, `show(failure{})`, a field or an element of
+			// one, `return m.f`, `return errs[i]`: Go's verdict where the value's
+			// method set falls short, and where it would not, the one an interface
+			// holding a pointer gives. Asked of nobody, the call went to the C
+			// compiler as a struct passed where the interface is wanted.
 			from := name.Src()
 			if _, fromIface := f.interfaceMethodsNamed(s, from); !fromIface {
 				if _, _, resolved := f.typeDeclNamed(s, from); resolved {
@@ -17143,6 +17189,11 @@ func (f *File) checkIndexBase(s *Scope, base Token) bool {
 	// -- a pointer resolves to no Kind -- so one parenthetical or the other, never
 	// both concatenated.
 	if k, known := f.identKind(s, base); known || f.indexingPointer(s, base) {
+		if known && kindCategory(k) == catString {
+			// A string is indexed and not written: Go's reason, not "cannot index".
+			f.err(base.Position(), "cannot assign to %s[...] (neither addressable nor a map index expression)", base.Src())
+			return true
+		}
 		of := f.pointerOfType(s, base)
 		if known {
 			of = ofType(k, true)
@@ -17554,6 +17605,25 @@ func (f *File) checkWalkedTarget(s *Scope, ah Node, steps []Node, value Node, so
 	}
 	if len(steps) == 0 && stars == 0 {
 		return
+	}
+	// An element of a STRING is no storage, `b, s[0] = true, "x"`, `h.name[1] = 'x'`:
+	// asked of a sole name only, as "cannot index".
+	for i, st := range steps {
+		if st.sym != Index || f.indexIsSlice(st) || sole && stars == 0 && len(steps) == 1 {
+			continue
+		}
+		var k Kind
+		known := false
+		if i == 0 && stars == 0 {
+			k, known = f.identKind(s, base)
+		} else if tn, in := f.targetTypeNode(s, base, steps[:i], stars); tn != nil {
+			rt := f.resultType(in, tn)
+			k, known = rt.kind, rt.known
+		}
+		if known && kindCategory(k) == catString {
+			f.err(f.tok(ah.Pos()).Position(), "cannot assign to %s (neither addressable nor a map index expression)", f.sourceSpan(ah.Pos(), st.End()))
+			return
+		}
 	}
 	if sole && stars == 0 && len(steps) == 1 {
 		return // checkFieldAssign's or checkIndexAssign's
@@ -21915,6 +21985,14 @@ func (f *File) checkFactorNames(s *Scope, n Node) {
 		f.checkMethodExpr(s, me, rest)
 		return
 	}
+	// `len(x)` and `cap(x)` Go makes a constant are recorded for the emitter
+	// wherever the call stands; only the constant folder recorded one, and `n ==
+	// len([2]int{})` was "len is only supported for strings, arrays and slices".
+	if kids := slices.Collect(it(n.ast)); len(kids) == 2 && kids[0].sym == 0 && f.ch(kids[0].tok) == IDENT {
+		if nm := f.tok(kids[0].tok).Src(); nm == "len" || nm == "cap" {
+			f.constLenCap(s, n)
+		}
+	}
 	// `(*T)(x)`: a conversion to a pointer type, the typed nil `(*T)(nil)` above all.
 	if pc, ok := f.ptrConvOf(s, n); ok {
 		f.checkPtrConv(s, pc)
@@ -23530,6 +23608,38 @@ func (f *File) checkConversion(s *Scope, callee Token, arg Node) bool {
 		return false
 	}
 	return true
+}
+
+// checkConversionToKind asks a conversion's operand what checkConversion asks of
+// one converted to a type of a Kind, the type named as shown: nil, a value of no
+// Kind, a Kind of another category, a constant the type cannot hold.
+func (f *File) checkConversionToKind(s *Scope, tk Kind, shown string, arg Node) {
+	pos, src := f.tok(arg.Pos()).Position(), f.exprSource(arg)
+	if _, isNil := f.nilOperand(s, arg); isNil {
+		f.err(pos, "cannot convert nil to type %s", shown)
+		return
+	}
+	if what, known := f.nonBoolOperand(s, arg); known {
+		if kindCategory(tk) == catString && (what == "a slice" || what == "an array or a slice") {
+			return
+		}
+		f.err(pos, "cannot convert %s to type %s: it is %s", src, shown, what)
+		return
+	}
+	k, ok := f.exprType(s, arg)
+	if !ok || kindCategory(k) == catUnknown {
+		return
+	}
+	tc, kc := kindCategory(tk), kindCategory(k)
+	legal := tc == kc
+	if tc == catString && kc == catNumeric {
+		legal = !isFloatKind(k) && k != UntypedFloat
+	}
+	if !legal {
+		f.err(pos, "cannot convert %s (%s) to type %s", src, f.convOperandDesc(s, arg, k), shown)
+		return
+	}
+	f.checkConvOverflow(s, retResult{name: shown, kind: tk, known: true}, arg)
 }
 
 // checkKindlessConversion is checkConversion for a target with no basic type under

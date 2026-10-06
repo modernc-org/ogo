@@ -46,6 +46,10 @@ shipped section tells a reader on that version that they have behaviour they do 
 
 ### Fixed
 
+- **`len` and `cap` Go makes a constant build wherever they stand**: `n ==
+  len([2]int{})`, `if n == len([3]int{})`, `n - cap([2][3]int{})` were "len is only
+  supported for strings, arrays and slices yet" -- only the constant folder had
+  recorded their value for the emitter.
 - **A whole float constant is taken where an integer is wanted**, as Go takes it:
   `const K = 2.0` as an array's length, `[K]int`, as a literal's key, `[3]int{K:
   5}`, and in `len([K]int{})`, a constant. The length was "invalid array bound",
@@ -282,6 +286,16 @@ shipped section tells a reader on that version that they have behaviour they do 
 
 ### Behaviour changes
 
+- **Mutations of two domain programs, a bitmap library and a stack machine, are
+  refused as Go refuses them**: a conversion to another package's defined type,
+  `vm.Op(-1)`, `vm.Op(true)`, `vm.Op(nil)`, whose operand was asked nothing but
+  its count; a struct field or element where an interface is wanted, `return m.f`
+  for an `error` whose method is on the pointer -- refused, where Go would take
+  it, by the rule that an interface holds a pointer -- which was written as a struct
+  returned for the interface; a constant a switch's tag type cannot hold, `case
+  2.5:` and `case 300:` on a uint8; a string's element as a target in a list,
+  `b, s[0] = true, s[1:]`, and through a field, `h.name[1] = 1`, in Go's words now;
+  and `nil` or a value of no Kind in a for post's compound assignment, `y += nil`.
 - **A ninth sweep of mutated run cases refuses what Go refuses**: a value of a
   predeclared type where an interface is wanted, `return false` for an `error`,
   `use("")` or `use(n)` for an int n and a `Shape` -- a return of one compiled;

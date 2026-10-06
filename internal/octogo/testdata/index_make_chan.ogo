@@ -37,7 +37,7 @@ func makes() {
 
 func strings() {
 	t := s[1:3]
-	// ERROR "invalid operation: cannot index t \(variable of type string\)"
+	// ERROR "cannot assign to t\[\.\.\.\] \(neither addressable nor a map index expression\)"
 	t[0] = 'c'
 	// Reading one is a byte, and slicing one a string.
 	b := s[0]

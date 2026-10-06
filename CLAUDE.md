@@ -1146,6 +1146,22 @@ and a method of several results reached through a chain typed none of its names
 2001-2500 with 331f03a, the generator unchanged since 651a7f5: 470 passing (three on a
 second load, the loader's "sendAddressSize: timeout" and "Error writing port"), 30
 outgrowing a cog, none failing.
+**The mutation sweep turned on a DOMAIN program** (2026-10-06): two programs written
+for the round -- a bitmap library (a font table, a canvas of byte rows, Bresenham,
+midpoint circles, flood fill on an explicit stack) and a stack machine (iota opcodes
+with String(), a fault kept in the machine since a literal's address cannot be
+returned, an assembler over the strings package), three packages each, matching Go on
+the host and the board -- each mutated 1,500 times in ONE file with every edit above
+(semdom/gendom.py, verdom.sh: the Go twin is a module). 34 taken, and the rows were
+the boundary's and the shapes' the run cases lack: a conversion to ANOTHER package's
+defined type asked only its operand count (checkConversionToKind), a struct FIELD or
+ELEMENT into an interface asked nothing (storageOperand), a case constant its tag's
+type cannot hold, a string's element as a list target, a for post's `+= nil`. And one
+false refusal of a valid program: `len` of an array type Go makes a constant was
+recorded for the emitter by the constant folder only, so `n == len([2]int{})` was
+refused (checkFactorNames records it wherever the call stands). **A program's own
+mutations are the run cases' mutations for the shapes it brings**: the single-file
+batches had no second package to convert into.
 
 **A COMPILER RUN IN A SWEEP IS CAPPED, AND A CRASH IS NOT A REFUSAL** (2026-09-20).
 A probe program is written to find a fault, and a fault is not always a wrong

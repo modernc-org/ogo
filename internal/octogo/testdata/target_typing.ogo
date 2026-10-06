@@ -50,7 +50,7 @@ func main() {
 	pa[1] = 5
 	// ERROR "cannot use 5 of type int as type string"
 	(*ps)[0] = 5
-	// ERROR "cannot index str"
+	// ERROR "cannot assign to str\[\.\.\.\]"
 	(str)[0] = 'x'
 	// The same targets, given what they take.
 	geth().s = "y"

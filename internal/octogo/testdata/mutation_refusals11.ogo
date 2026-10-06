@@ -1,0 +1,48 @@
+// Mutations of two domain programs, a bitmap library and a stack machine, with Go
+// as the oracle: what a value of a named type is where an interface is wanted, a
+// case a tag's type cannot hold, a string's element as a target, a for post of nil.
+
+type Fault struct{ What string }
+
+func (f *Fault) Error() string { return f.What }
+
+type M struct{ f Fault }
+
+var errs [2]Fault
+
+type Op uint8
+
+// ERROR "cannot use m.f \(value of struct type Fault\) as error value in return statement: Fault does not implement error \(method Error has pointer receiver\)"
+func field(m *M) error { return m.f }
+
+// ERROR "cannot use errs\[i\] \(value of struct type Fault\) as error value in return statement"
+func element(i int) error { return errs[i] }
+
+func cases(o Op) {
+	switch o {
+	// ERROR "constant 2.5 truncated to uint8"
+	case 2.5:
+	// ERROR "constant 300 overflows uint8"
+	case 300:
+	}
+}
+
+func strings(s string) {
+	var b bool
+	// ERROR "cannot assign to s\[0\] \(neither addressable nor a map index expression\)"
+	b, s[0] = true, s[1:]
+	_ = b
+}
+
+func posts() {
+	// ERROR "operator \+ not defined on nil"
+	for y := 0; y < 3; y += nil {
+	}
+}
+
+func main() {
+	_, _ = field, element
+	cases(1)
+	strings("x")
+	posts()
+}

@@ -65,3 +65,42 @@ func Addr(i int) unsafe.Pointer { return nil }
 		})
 	}
 }
+
+// TestCheckQualifiedConversion: a conversion to another package's defined type of a
+// Kind asks its operand what one to this package's asks. Only the count was asked,
+// so `lib.Op(-1)`, `lib.Op(true)`, `lib.Op(nil)` and `lib.Name(2.5)` were taken.
+func TestCheckQualifiedConversion(t *testing.T) {
+	const lib = "type Op uint8\n\ntype Name string\n\ntype F float32\n"
+	for _, test := range []struct {
+		conv string
+		want string // "" for a conversion Go takes
+	}{
+		{"lib.Op(-1)", "constant -1 overflows lib.Op"},
+		{"lib.Op(1 << 40)", "constant 1099511627776 overflows lib.Op"},
+		{"lib.Op(true)", "cannot convert true (untyped bool constant) to type lib.Op"},
+		{"lib.Op(nil)", "cannot convert nil to type lib.Op"},
+		{"lib.Op([]int{1})", "cannot convert []int{1} to type lib.Op: it is a slice"},
+		{"lib.Name(2.5)", "cannot convert 2.5 (untyped float constant) to type lib.Name"},
+		{"lib.F(\"s\")", "cannot convert \"s\" (untyped string constant) to type lib.F"},
+		{"lib.Op(3)", ""},
+		{"lib.Name(5)", ""},
+		{"lib.Name('a')", ""},
+		{"lib.F(2.5)", ""},
+		{"lib.Op(x)", ""},
+	} {
+		t.Run(test.conv, func(t *testing.T) {
+			src := "import \"lib\"\n\nfunc main() {\n\tx := 3\n\t_ = x\n\t_ = " + test.conv + "\n}\n"
+			fsys := fstest.MapFS{
+				"main.ogo":    &fstest.MapFile{Data: []byte(src)},
+				"lib/lib.ogo": &fstest.MapFile{Data: []byte(lib)},
+			}
+			_, err := Build(-1, []string{"main.ogo"}, fsys)
+			switch {
+			case test.want == "" && err != nil:
+				t.Fatalf("refused: %v", err)
+			case test.want != "" && (err == nil || !strings.Contains(err.Error(), test.want)):
+				t.Fatalf("got %v, want an error containing %q", err, test.want)
+			}
+		})
+	}
+}
