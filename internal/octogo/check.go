@@ -8750,9 +8750,19 @@ func (f *File) checkAssignment(s *Scope, head, postfix Node) {
 		reported := f.checkOperatorTarget(s, head, postfix, op, hasSelectorOrIndex(postfix), rhs)
 		if isShiftAssign(op) && len(rhs) == 1 {
 			f.checkShiftCount(s, rhs[0]) // `x <<= -1` is the same error as `x << -1`
-			// And a count of a typed float, `x >>= float64(n)`, as in `x >> ...`.
-			if k, ok := f.exprType(s, rhs[0]); ok && !reported && !isIntegerKind(k) && !isUntypedKind(k) {
-				f.err(f.tok(rhs[0].Pos()).Position(), "invalid operation: shift count %s (%s of type %s) must be integer", f.exprSource(rhs[0]), valueOrVariable(f, rhs[0]), kindName(k))
+			// And a count of a typed float, `x >>= float64(n)`, as in `x >> ...`; and
+			// nil, a bool or a string constant, `crc <<= true`, which the binary
+			// form refuses as no operand of a shift and this one took.
+			if k, ok := f.exprType(s, rhs[0]); (ok || f.isNilOperand(rhs[0])) && !reported {
+				pos := f.tok(rhs[0].Pos()).Position()
+				switch {
+				case f.isNilOperand(rhs[0]):
+					f.err(pos, "cannot convert nil to type uint")
+				case k == UntypedBool || k == UntypedString:
+					f.err(pos, "cannot convert %s (%s constant) to type uint", f.exprSource(rhs[0]), untypedName(k))
+				case !isIntegerKind(k) && !isUntypedKind(k):
+					f.err(pos, "invalid operation: shift count %s (%s of type %s) must be integer", f.exprSource(rhs[0]), valueOrVariable(f, rhs[0]), kindName(k))
+				}
 			}
 		}
 		// A dereference, `*p += v`, is a pointee and has no name in lhs: the block

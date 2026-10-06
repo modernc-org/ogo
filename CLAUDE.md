@@ -1537,6 +1537,30 @@ its mutants had two rows: a call of several results as a COMPARISON's operand,
 the unary ones and a condition, and not by checkComparison -- and a shift count of
 a TYPED float, `0x80 >> float64(k)`, checkShiftCount asking only a constant one,
 in a binary operation and in a compound assignment alike.
+An XMODEM-like transfer between two cogs (frames of 16 bytes with a CRC-16 over a
+channel, acks back on another, damaged frames retransmitted) and a text-mode widget
+tree (an interface, embedded bases, children as interface values, a table of
+handlers, a method value of a promoted method) both matched Go on the host and the
+board. Their mutants had one row taken, the compound shift by nil or a bool,
+`crc <<= true`, and one gap: a PARENTHESISED TYPE is in no type position of the
+grammar, `func f() (a, b (int))` among them, which Go reads as two results of type
+int. Rare in Go programs -- `chan <-chan int` already means `chan (<-chan int)` --
+and a "(" starting a type meets a result list's under LL(1); left as a gap.
+A conversion library's (strconv-like parsing and formatting in bases 2-36 with
+overflow, fixed-point decimals) mutants found nothing, and its BOARD build found two
+faults no sweep had: an index of 64 bits, `digits[u % uint64(base)]`, went to
+`ogo_bound(int, int)` as written, which the target's compiler passes as two words
+("Bad number of parameters", refused by the build since backendFault) and which
+cut an index past 2^31 to its low word on the host and the board alike, reading
+the element there where Go panics -- an int64 variable too. ogo_bound64 and
+ogo_bound64u ask it whole, and a slice bound of 64 bits is made an int through
+ogo_sbound64(u), panicking where it is none. And probing make's length beside it:
+a VARIABLE length was written into the header unasked, `make([]int, n, 8)` for an
+n of 20 a slice of 20 over 8 elements, read and written past the backing in
+silence; ogo_mklen asks 0 <= n <= cap (emitMakeLen). None of the 1,259 corpus
+programs had a 64-bit index, bound or length, nor a variable make length.
+**A domain program is run on the board even when the host matched**: the host's
+compiler converts a 64-bit argument for its prototype, and the target's does not.
 
 **A C NAME IS A ROW** (2026-09-25). The emitted C keeps a program's own names, so
 every name a program may write is a row across everything else that names things in

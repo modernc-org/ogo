@@ -55,6 +55,16 @@ shipped section tells a reader on that version that they have behaviour they do 
 
 ### Fixed
 
+- **An index or a slice bound of 64 bits is checked whole**: `xs[u]` and `s[v:]`
+  for an int64 or uint64 `u`, `v` went to the bound check as an int, so an index
+  past 2^31 was cut to its low word and read the element there where Go panics,
+  and on the target an index EXPRESSION of 64 bits, `digits[u % base]`, was passed
+  to the check as two words -- "Bad number of parameters", which the build refuses
+  since. Both panic as Go does now.
+- **A `make` length is asked against its capacity**: `make([]int, n, 8)` for an n
+  of 20 made a slice of 20 over a backing of 8, read and written past its end, and
+  an n of -1 a length of -1, in silence. It panics as Go does, "makeslice: len out
+  of range"; only a constant length had been asked.
 - **A variable of another package whose type is a THIRD package's is that type**:
   `var ErrShort = &bits.Error{...}` in package lz was read from main as a
   `*lz.Error`, of no package, so `var e error = lz.ErrShort` and `err ==
@@ -321,7 +331,8 @@ shipped section tells a reader on that version that they have behaviour they do 
 - **A call of several results is no operand of a comparison**, `h.Pop() > 1` and
   `lib.Pair() == 1`, as it was none of an arithmetic operator already; and **a
   shift count of a typed float is refused**, `0x80 >> float64(k)` and `x >>= f`,
-  where only a constant count was asked. Each was taken.
+  where only a constant count was asked; so is a compound shift by nil, a bool or
+  a string, `crc <<= true`, which the binary form refused already. Each was taken.
 - **An address is no operand of `&&` or `||`**: `&b && n > 0` and `gb = &b && gb`
   were taken, the address answered with its pointee's Kind; `!&b` and `if &b` were
   refused already.

@@ -26822,6 +26822,65 @@ func main() {
 		want: "3\n13\n",
 	},
 	{
+		name: "indexes, slice bounds and make lengths of 64 bits",
+		src: `var xs = [5]int{10, 11, 12, 13, 14}
+
+var sl = []int{20, 21, 22, 23, 24}
+
+const digits = "0123456789"
+
+func main() {
+	var u uint64 = 7
+	var v int64 = 3
+	k := uint32(2)
+	println(xs[u%5], sl[u%5], digits[u%10], xs[v], sl[v+1], digits[v*2], xs[u-5], xs[k])
+	xs[u%5] = 99
+	sl[v] = 98
+	println(xs[2], sl[3], xs[u>>1], len(digits[u%3:]), len(sl[v:u%5+3]), digits[v:v+2])
+	s := make([]int, v, 8)
+	t := make([]byte, u%4+1, 8)
+	n := 5
+	w := make([]int, n, 8)
+	println(len(s), cap(s), len(t), len(w))
+}
+`,
+		want: "12 22 55 13 24 54 12 12\n99 98 13 9 2 34\n3 8 4 5\n",
+	},
+	{
+		name: "an index of 64 bits past 2^32 traps",
+		src: `func main() {
+	sl := []int{1, 2, 3}
+	var u uint64 = 1<<32 + 1
+	println(sl[u])
+}
+`,
+		panics: true,
+		want:   "panic: index out of range\n",
+	},
+	{
+		name: "a slice bound of 64 bits past 2^32 traps",
+		src: `func main() {
+	sl := []int{1, 2, 3}
+	var v int64 = 1 << 32
+	println(len(sl[v:]))
+}
+`,
+		panics: true,
+		want:   "panic: slice bounds out of range\n",
+	},
+	{
+		name: "a make length past its capacity traps",
+		src: `var n = 20
+
+func main() {
+	s := make([]int, n, 8)
+	println(len(s))
+}
+`,
+		panics: true,
+		want:   "panic: makeslice: len out of range\n",
+	},
+	{
 		name: "index out of range traps",
 		src: `func main() {
 	s := make([]int, 2, 2)

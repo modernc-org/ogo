@@ -34,6 +34,10 @@ func shifts() {
 	println(1 << f)
 	// ERROR "shift count float64\(n\) \(value of type float64\) must be integer"
 	x >>= float64(n)
+	// ERROR "cannot convert true \(untyped bool constant\) to type uint"
+	x <<= true
+	// ERROR "cannot convert nil to type uint"
+	x <<= nil
 	println(x, 1<<uint(n), 8>>2.0, x<<n)
 }
 

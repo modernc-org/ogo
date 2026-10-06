@@ -4902,6 +4902,50 @@ const ogoBound = "static int ogo_bound(int i, int n) {\n" +
 	"\treturn i;\n" +
 	"}\n"
 
+// ogoBound64 is ogo_bound for an index of 64 bits, signed and unsigned, which it
+// asks whole: handed to ogo_bound's int, an index past 2^31 was cut to its low word
+// and read the element there, where Go panics -- and the target's compiler passes a
+// 64-bit EXPRESSION to an int parameter as two words, "Bad number of parameters in
+// call to ogo_bound", the check reading whatever came next.
+const ogoBound64 = "static int ogo_bound64(int64_t i, int n) {\n" +
+	"\tif (i < 0 || i >= n) ogo_panic(\"index out of range\");\n" +
+	"\treturn (int)i;\n" +
+	"}\n"
+
+const ogoBound64u = "static int ogo_bound64u(uint64_t i, int n) {\n" +
+	"\tif (i >= (uint64_t)(unsigned)n) ogo_panic(\"index out of range\");\n" +
+	"\treturn (int)i;\n" +
+	"}\n"
+
+// mkLenHelperDefs are the length checks of a make with a constant capacity
+// (emitMakeLen), for a length of int, int64 and uint64.
+var mkLenHelperDefs = map[string]string{
+	"ogo_mklen": "static int ogo_mklen(int n, int c) {\n" +
+		"\tif ((unsigned)n > (unsigned)c) ogo_panic(\"makeslice: len out of range\");\n" +
+		"\treturn n;\n" +
+		"}\n",
+	"ogo_mklen64": "static int ogo_mklen64(int64_t n, int c) {\n" +
+		"\tif (n < 0 || n > c) ogo_panic(\"makeslice: len out of range\");\n" +
+		"\treturn (int)n;\n" +
+		"}\n",
+	"ogo_mklen64u": "static int ogo_mklen64u(uint64_t n, int c) {\n" +
+		"\tif (n > (uint64_t)(unsigned)c) ogo_panic(\"makeslice: len out of range\");\n" +
+		"\treturn (int)n;\n" +
+		"}\n",
+}
+
+// ogoSliceBound64 makes a slice bound of 64 bits an int, panicking where it is
+// none; the reslice helper then asks it against the extent.
+const ogoSliceBound64 = "static int ogo_sbound64(int64_t i) {\n" +
+	"\tif (i < 0 || i > 2147483647) ogo_panic(\"slice bounds out of range\");\n" +
+	"\treturn (int)i;\n" +
+	"}\n"
+
+const ogoSliceBound64u = "static int ogo_sbound64u(uint64_t i) {\n" +
+	"\tif (i > 2147483647u) ogo_panic(\"slice bounds out of range\");\n" +
+	"\treturn (int)i;\n" +
+	"}\n"
+
 // nilHelperDef is the guard for a DEREFERENCE of one pointer type: it returns p when
 // non-nil, else panics. One is emitted per pointer type used.
 //
@@ -5667,7 +5711,7 @@ func typeNameCollisions(src []byte, names map[string]bool) map[string]bool {
 // emitProgram is EmitC's one pass. rename lists the main-package types spelled
 // ogo_T_<name> in C (see typeMangle).
 func emitProgram(pkg *Package, w io.Writer, opts []EmitOption, rename map[string]bool) error {
-	e := &emitter{renameTypes: rename, renamedTypes: map[string]string{}, includes: map[string]bool{}, funcRet: map[string][]string{}, funcSliceParams: map[string][]string{}, funcVariadic: map[string]int{}, nilHelpers: map[string]bool{}, initSkew: map[string]bool{}, arrPtrHelpers: map[string]arrDim{}, funcArrayRet: map[string]arrDim{}, funcStructRet: map[string]string{}, funcArrayParams: map[string][]arrDim{}, anonStructNames: map[string]string{}, methodValueTypes: map[string]funcValueType{}, methodValueOf: map[string]string{}, methodExprNames: map[string]string{}, funcParams: map[string][]string{}, methodPtr: map[string]bool{}, recvByRef: map[string]bool{}, globals: map[string]string{}, structs: map[string][]structField{}, namedTypes: map[string]bool{}, typeNames: map[string]bool{}, interfaceTypes: map[string]bool{}, ifaceMethods: map[string][]ifaceMethod{}, anonIfaceNames: map[string]string{}, anonIfaceMinted: map[string]bool{}, ifaceASTs: map[string]ifaceAST{}, ifaceVTables: map[string]bool{}, namedUnderlying: map[string]string{}, namedArrays: map[string]arrDim{}, constInt: map[string]string{}, constVal: map[string]constant.Value{}, constBool: map[string]bool{}, constWide: map[string]string{}, constStr: map[string]string{}, constUntyped: map[string]bool{}, constHuge: map[string]bool{}, arrays: map[string]arrDim{}, globalArrays: map[string]arrDim{}, sliceVars: map[string]string{}, globalSliceVars: map[string]string{}, chanElems: map[string]bool{}, chanInitElems: map[string]bool{}, chanSendElems: map[string]bool{}, chanRecvElems: map[string]bool{}, chanTryRecvElems: map[string]bool{}, chanTrySendElems: map[string]bool{}, chanGatedSendElems: map[string]bool{}, aliasOf: map[string]string{}, localTypes: map[string]string{}, gotoTargets: map[string]bool{}, chanCloseElems: map[string]bool{}, chanRecv2Elems: map[string]bool{}, mathWrappers: map[string]bool{}, chanElemByName: map[string]string{}, sliceElems: map[string]bool{}, sliceElemByName: map[string]string{}, appendElems: map[string]bool{}, tryappendElems: map[string]bool{}, appendSliceElems: map[string]bool{}, tryappendSliceEls: map[string]bool{}, appendokStructs: map[string]bool{}, copyElems: map[string]bool{}, resliceElems: map[string]bool{}, reslice3Elems: map[string]bool{}, clearElems: map[string]bool{}, minElems: map[string]bool{}, maxElems: map[string]bool{}, printSliceElems: map[string]bool{}, printStructs: map[string]string{}, printIfaces: map[string]string{}, printlnElems: map[string]bool{}, switchBreakUsed: map[string]bool{}, labelBreak: map[string]string{}, labelContinue: map[string]string{}, labelUsed: map[string]bool{}, eqStructs: map[string]bool{}, eqArrays: map[string]arrDim{}, frameBacked: map[string]bool{}, frameHolder: map[string]string{}, crossParams: map[string][]leak{}, crossContents: map[string][]leak{}, retContents: map[string][]bool{}, recvContents: map[string]leak{}, paramCalls: map[string][]paramCall{}, frameCalls: map[string][]frameCall{}, localConstSpecs: map[string]localConstSpec{}, inheritedTypes: map[string]bool{}, funcValueMembers: map[string][]string{}, methodExprMembers: map[string]emMethodExpr{}, memberShown: map[string]string{}, litLifted: map[string][]string{}, methodNames: map[string]bool{}, recvLeaks: map[string]leak{}, retRecv: map[string]bool{}, crossInto: map[string][]uint32{}, ifaceSummaries: map[string]ifaceSummary{}, retParams: map[string][]bool{}, funcValueOf: map[string]string{}, crossNames: map[string]string{}, initNames: map[string]string{}, funcValueTypes: map[string]funcValueType{}, funcTypeNames: map[string]string{}, funcTypeRet: map[string][]string{}, funcTypeParams: map[string][]string{}, funcTypeVariadic: map[string]int{}, recFuncTypes: map[string]bool{}, recFuncShapes: map[string]string{}, retStructs: map[string]string{}, retStructByKey: map[string]string{}, shiftHelpers: map[string][2]string{}, shiftCTypes: map[*int32]string{}, shiftWalked: map[shiftWalkKey]bool{}, shiftIn: map[*int32]bool{}, divHelpers: map[string][2]string{}, funcValueWrappers: map[string]string{}, deferReplay: -1, iota: -1}
+	e := &emitter{renameTypes: rename, renamedTypes: map[string]string{}, includes: map[string]bool{}, funcRet: map[string][]string{}, funcSliceParams: map[string][]string{}, funcVariadic: map[string]int{}, nilHelpers: map[string]bool{}, initSkew: map[string]bool{}, arrPtrHelpers: map[string]arrDim{}, funcArrayRet: map[string]arrDim{}, funcStructRet: map[string]string{}, funcArrayParams: map[string][]arrDim{}, anonStructNames: map[string]string{}, methodValueTypes: map[string]funcValueType{}, methodValueOf: map[string]string{}, methodExprNames: map[string]string{}, funcParams: map[string][]string{}, methodPtr: map[string]bool{}, recvByRef: map[string]bool{}, globals: map[string]string{}, structs: map[string][]structField{}, namedTypes: map[string]bool{}, typeNames: map[string]bool{}, interfaceTypes: map[string]bool{}, ifaceMethods: map[string][]ifaceMethod{}, anonIfaceNames: map[string]string{}, anonIfaceMinted: map[string]bool{}, ifaceASTs: map[string]ifaceAST{}, ifaceVTables: map[string]bool{}, namedUnderlying: map[string]string{}, namedArrays: map[string]arrDim{}, constInt: map[string]string{}, constVal: map[string]constant.Value{}, constBool: map[string]bool{}, constWide: map[string]string{}, constStr: map[string]string{}, constUntyped: map[string]bool{}, constHuge: map[string]bool{}, arrays: map[string]arrDim{}, globalArrays: map[string]arrDim{}, sliceVars: map[string]string{}, globalSliceVars: map[string]string{}, chanElems: map[string]bool{}, chanInitElems: map[string]bool{}, chanSendElems: map[string]bool{}, chanRecvElems: map[string]bool{}, chanTryRecvElems: map[string]bool{}, chanTrySendElems: map[string]bool{}, chanGatedSendElems: map[string]bool{}, aliasOf: map[string]string{}, localTypes: map[string]string{}, gotoTargets: map[string]bool{}, chanCloseElems: map[string]bool{}, chanRecv2Elems: map[string]bool{}, mathWrappers: map[string]bool{}, chanElemByName: map[string]string{}, sliceElems: map[string]bool{}, sliceElemByName: map[string]string{}, appendElems: map[string]bool{}, tryappendElems: map[string]bool{}, appendSliceElems: map[string]bool{}, tryappendSliceEls: map[string]bool{}, appendokStructs: map[string]bool{}, copyElems: map[string]bool{}, resliceElems: map[string]bool{}, reslice3Elems: map[string]bool{}, mkLenHelpers: map[string]bool{}, clearElems: map[string]bool{}, minElems: map[string]bool{}, maxElems: map[string]bool{}, printSliceElems: map[string]bool{}, printStructs: map[string]string{}, printIfaces: map[string]string{}, printlnElems: map[string]bool{}, switchBreakUsed: map[string]bool{}, labelBreak: map[string]string{}, labelContinue: map[string]string{}, labelUsed: map[string]bool{}, eqStructs: map[string]bool{}, eqArrays: map[string]arrDim{}, frameBacked: map[string]bool{}, frameHolder: map[string]string{}, crossParams: map[string][]leak{}, crossContents: map[string][]leak{}, retContents: map[string][]bool{}, recvContents: map[string]leak{}, paramCalls: map[string][]paramCall{}, frameCalls: map[string][]frameCall{}, localConstSpecs: map[string]localConstSpec{}, inheritedTypes: map[string]bool{}, funcValueMembers: map[string][]string{}, methodExprMembers: map[string]emMethodExpr{}, memberShown: map[string]string{}, litLifted: map[string][]string{}, methodNames: map[string]bool{}, recvLeaks: map[string]leak{}, retRecv: map[string]bool{}, crossInto: map[string][]uint32{}, ifaceSummaries: map[string]ifaceSummary{}, retParams: map[string][]bool{}, funcValueOf: map[string]string{}, crossNames: map[string]string{}, initNames: map[string]string{}, funcValueTypes: map[string]funcValueType{}, funcTypeNames: map[string]string{}, funcTypeRet: map[string][]string{}, funcTypeParams: map[string][]string{}, funcTypeVariadic: map[string]int{}, recFuncTypes: map[string]bool{}, recFuncShapes: map[string]string{}, retStructs: map[string]string{}, retStructByKey: map[string]string{}, shiftHelpers: map[string][2]string{}, shiftCTypes: map[*int32]string{}, shiftWalked: map[shiftWalkKey]bool{}, shiftIn: map[*int32]bool{}, divHelpers: map[string][2]string{}, funcValueWrappers: map[string]string{}, deferReplay: -1, iota: -1}
 	for _, opt := range opts {
 		opt(e)
 	}
@@ -6035,6 +6079,21 @@ func emitProgram(pkg *Package, w io.Writer, opts []EmitOption, rename map[string
 	}
 	if e.usesBound {
 		helperDefs.WriteString(ogoBound)
+	}
+	if e.usesBound64 {
+		helperDefs.WriteString(ogoBound64)
+	}
+	if e.usesBound64u {
+		helperDefs.WriteString(ogoBound64u)
+	}
+	if e.usesSBound64 {
+		helperDefs.WriteString(ogoSliceBound64)
+	}
+	for _, fn := range slices.Sorted(maps.Keys(e.mkLenHelpers)) {
+		helperDefs.WriteString(mkLenHelperDefs[fn])
+	}
+	if e.usesSBound64u {
+		helperDefs.WriteString(ogoSliceBound64u)
 	}
 	if e.usesLUT {
 		helperDefs.WriteString(lutHelperDef(e.checks))
@@ -6753,6 +6812,11 @@ type emitter struct {
 	usesPanic          bool                    // ogo_panic is called: emit its definition and pull in its includes
 	testEntry          string                  // the entry point of a test binary, replacing main (see TestEntry)
 	usesBound          bool                    // ogo_bound is called: emit the index bounds-check helper
+	usesBound64        bool                    // ogo_bound64 is called, for an index of int64
+	usesBound64u       bool                    // ogo_bound64u is called, for an index of uint64
+	usesSBound64       bool                    // ogo_sbound64 is called, for a slice bound of int64
+	mkLenHelpers       map[string]bool         // the length checks of make called (emitMakeLen)
+	usesSBound64u      bool                    // ogo_sbound64u is called, for a slice bound of uint64
 	usesLUT            bool                    // p2.ReadLUT or p2.WriteLUT is called: emit ogo_rdlut and ogo_wrlut (lutHelperDef)
 	nilHelpers         map[string]bool         // pointer types whose nil-dereference guard is called
 	initSkew           map[string]bool         // flexccInitSkew's answers, by C type
@@ -27684,6 +27748,38 @@ func (e *emitter) emitSliceBound(ast []int32) {
 			return
 		}
 	}
+	// A bound of 64 bits is made an int whole (ogoSliceBound64): handed to the
+	// helper's int it was cut to its low word, `s[u:]` for a u of 2^32 the whole
+	// slice, and the target's compiler passes a 64-bit expression to an int as two
+	// words, as at an index (ogoBound64).
+	if ct, ok := e.inferCType(ast); ok {
+		fn := ""
+		switch e.underlyingCType(ct) {
+		case "int64_t", "long long":
+			fn = "ogo_sbound64"
+		case "uint64_t", "unsigned long long":
+			fn = "ogo_sbound64u"
+		}
+		if fn != "" {
+			if !e.checks {
+				e.emit("(int)(")
+				e.emitExpr(ast)
+				e.emit(")")
+				return
+			}
+			e.needPanic()
+			e.includes["stdint.h"] = true
+			if fn == "ogo_sbound64" {
+				e.usesSBound64 = true
+			} else {
+				e.usesSBound64u = true
+			}
+			e.emit(fn + "(")
+			e.emitExpr(ast)
+			e.emit(")")
+			return
+		}
+	}
 	e.emitExpr(ast)
 }
 
@@ -28206,6 +28302,25 @@ func (e *emitter) emitIndex(idxAST []int32, lenExpr string) {
 		return
 	}
 	e.needPanic()
+	// An index of 64 bits is asked whole (ogoBound64).
+	if ct, ok := e.inferCType(idxAST); ok {
+		switch e.underlyingCType(ct) {
+		case "int64_t", "long long":
+			e.usesBound64 = true
+			e.includes["stdint.h"] = true
+			e.emit("ogo_bound64(")
+			idx()
+			e.emit(", " + lenExpr + ")")
+			return
+		case "uint64_t", "unsigned long long":
+			e.usesBound64u = true
+			e.includes["stdint.h"] = true
+			e.emit("ogo_bound64u(")
+			idx()
+			e.emit(", " + lenExpr + ")")
+			return
+		}
+	}
 	e.usesBound = true
 	e.emit("ogo_bound(")
 	idx()
@@ -28399,11 +28514,47 @@ func (e *emitter) emitMakeSliceAssign(lhs, cname, elem string, lenAST, capAST []
 	e.ind()
 	e.emit(lhs + " = (" + cname + "){" + backing + ", ")
 	if capAST != nil {
-		e.emitExpr(lenAST)
+		e.emitMakeLen(lenAST, size)
 	} else {
 		e.emit(size)
 	}
 	e.emit(", " + size + "};\n")
+}
+
+// emitMakeLen writes the length of `make([]T, n, cap)` for a constant cap of size:
+// a constant as it stands, the checker having asked it against cap, and anything
+// else through ogo_mklen, which panics as Go does where n is negative or past cap.
+// It was written as it stood: `make([]int, n, 8)` for an n of 20 made a slice of 20
+// over a backing of 8, read and written past its end, and an n of -1 a length of
+// -1. One of 64 bits is asked whole, as an index is (ogoBound64).
+func (e *emitter) emitMakeLen(lenAST []int32, size string) {
+	if _, isConst := e.foldConstInt(lenAST); isConst || !e.checks {
+		if ct, ok := e.inferCType(lenAST); ok && !isConst && cIntWidths[e.underlyingCType(ct)] == 64 {
+			e.emit("(int)(")
+			e.emitExpr(lenAST)
+			e.emit(")")
+			return
+		}
+		e.emitExpr(lenAST)
+		return
+	}
+	e.needPanic()
+	fn := "ogo_mklen"
+	if ct, ok := e.inferCType(lenAST); ok {
+		switch e.underlyingCType(ct) {
+		case "int64_t", "long long":
+			fn = "ogo_mklen64"
+		case "uint64_t", "unsigned long long":
+			fn = "ogo_mklen64u"
+		}
+	}
+	if fn != "ogo_mklen" {
+		e.includes["stdint.h"] = true
+	}
+	e.mkLenHelpers[fn] = true
+	e.emit(fn + "(")
+	e.emitExpr(lenAST)
+	e.emit(", " + size + ")")
 }
 
 func (e *emitter) emitMakeSliceVar(name, cname, elem string, lenAST, capAST []int32, static bool) {
@@ -28439,7 +28590,9 @@ func (e *emitter) emitMakeSliceVar(name, cname, elem string, lenAST, capAST []in
 		declName = e.localIdent(name)
 	}
 	e.emit(cname + " " + declName + " = {" + backing + ", ")
-	if capAST != nil {
+	if capAST != nil && !static {
+		e.emitMakeLen(lenAST, size)
+	} else if capAST != nil {
 		e.emitExpr(lenAST)
 	} else {
 		e.emit(size)
