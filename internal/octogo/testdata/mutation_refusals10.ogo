@@ -1,0 +1,52 @@
+// A ninth sweep of mutated run cases, with Go as the oracle: a function given a
+// second result, make's, len's and copy's arguments changed, a field renamed, &
+// put on a call's result, nil replaced by 0, "" or false.
+
+type Shape interface{ Area() int }
+
+type Reader interface{ Read() (int, error) }
+
+type Bus struct{ active Reader }
+
+var bus Bus
+
+// ERROR "cannot use false \(untyped bool constant\) as error value in return statement: bool does not implement error"
+func fails() error { return false }
+
+// ERROR "cannot use 0 \(untyped int constant\) as Shape value in return statement: int does not implement Shape"
+func none() Shape { return 0 }
+
+func use(s Shape) {}
+
+// ERROR "cannot take address of 2 \(constant of type int\)"
+const K = &len("ab") + 1
+
+func values() {
+	// ERROR "cannot use .. \(untyped string constant\) as Shape value in argument to use"
+	use("")
+	n := 3
+	// ERROR "cannot use n \(value of type int\) as Shape value in argument to use"
+	use(n)
+	// ERROR "cannot take address of func\(k int\) int"
+	p := &func(k int) int { return k }(9)
+	// ERROR "cannot take address of func\(k int\) int"
+	q := &func(k int) int { return k }
+	_, _ = p, q
+}
+
+func results() {
+	v, err := bus.active.Read()
+	// ERROR "mismatched types error and string"
+	println(v, err == "")
+	// ERROR "assignment mismatch: 1 variable but 2 values"
+	x := bus.active.Read()
+	_ = x
+}
+
+func main() {
+	_ = fails
+	_ = none
+	values()
+	results()
+	_ = K
+}

@@ -13805,6 +13805,25 @@ func (f *File) checkImplements(s *Scope, ifaceName string, value Node, what stri
 		}
 		return
 	}
+	// A value of a predeclared Kind and no defined type, `return false` for an
+	// error, `use("")` for a Shape: no methods, and no pointer either. Asked of
+	// nobody, a return of one compiled.
+	if k, known := f.exprType(s, value); known && k != UntypedNil && kindCategory(k) != catUnknown {
+		if _, _, _, named := f.exprNamedType(s, value); !named && !f.unsafePointerValue(s, value) {
+			desc := "value of type " + kindName(k)
+			if isUntypedKind(k) {
+				desc = untypedName(k) + " constant"
+			}
+			if len(set) != 0 {
+				f.err(f.tok(value.Pos()).Position(), "cannot use %s (%s) as %s value in %s: %s does not implement %s (missing method %s)",
+					f.exprSource(value), desc, ifaceName, what, kindName(defaultKind(k)), ifaceName, slices.Sorted(maps.Keys(set))[0])
+			} else {
+				f.err(f.tok(value.Pos()).Position(), "cannot use %s (%s) as %s value in %s: an interface holds a pointer here",
+					f.exprSource(value), desc, ifaceName, what)
+			}
+			return
+		}
+	}
 	// A literal of a type written out, `[]int{1}`, `[2]int{}`, `func() {}`: no
 	// methods, so no interface asking for some holds it. Asked of nobody, `h([]int{1})`
 	// for a Shape parameter reached the emitter.
@@ -15383,6 +15402,13 @@ func (f *File) checkAddressable(s *Scope, op Node, fac Node) {
 			f.err(f.tok(op.Pos()).Position(), "invalid operation: cannot take address of %s (untyped %s constant)", tok.Src(), kind)
 			return
 		}
+	}
+	// A function literal, `&func(k int) int {...}`, and its call, `&func(...)
+	// {...}(9)`: a value, no storage. Taken, as `&f()` of a declared function was
+	// not.
+	if len(kids) >= 1 && kids[0].sym == FuncLiteral && (len(kids) == 1 || len(kids) == 2 && kids[1].sym == FactorSuffix && f.soleCallSuffix(kids[1])) {
+		f.err(f.tok(op.Pos()).Position(), "invalid operation: cannot take address of %s", f.exprSource(fac))
+		return
 	}
 	// `&(1)`, a constant in parentheses, has no storage either.
 	if !hasLit && !hasID {
@@ -23910,6 +23936,16 @@ func (f *File) exprCallResults(s *Scope, n Node) ([]retResult, bool) {
 	if len(steps) == 0 || steps[len(steps)-1].sym != CallSuffix {
 		return nil, false
 	}
+	// A method at the end of a chain, `bus.active.Read()` of an interface field:
+	// the signature the walk names for it.
+	if len(steps) >= 2 && steps[len(steps)-2].sym == Selector && kids[0].sym == 0 && f.ch(kids[0].tok) == IDENT {
+		w := f.callChainWalk(s, f.tok(kids[0].tok), steps)
+		for _, c := range w.calls {
+			if c.at == len(steps)-2 && c.sig != nil && c.home == nil {
+				return f.flattenResults(c.in, c.sig), true
+			}
+		}
+	}
 	t, ok := f.valueTypeAt(s, factorWithoutLastStep(kids, steps))
 	if !ok || t.f != f || t.tn == nil {
 		return nil, false
@@ -27753,6 +27789,16 @@ func (f *File) foldUnary(op Symbol, opTok Token, e ExpressionNode) ExpressionNod
 			desc = "constant of type " + kindName(c.typ)
 		}
 		f.err(opTok.Position(), "invalid operation: cannot indirect %s (%s)", c.cv.ExactString(), desc)
+		return constVal{cv: constant.MakeUnknown()}
+	}
+	if c, ok := e.Value().(constVal); ok && c.cv != nil && c.cv.Kind() != constant.Unknown && op == AND {
+		// Nor has a constant an address, `const K = &5`, `&len("ab") + 1`: the &
+		// was dropped and the constant declared.
+		desc := "untyped " + constClassName(c.cv) + " constant"
+		if c.typed {
+			desc = "constant of type " + kindName(c.typ)
+		}
+		f.err(opTok.Position(), "invalid operation: cannot take address of %s (%s)", c.cv.ExactString(), desc)
 		return constVal{cv: constant.MakeUnknown()}
 	}
 	if c, ok := e.Value().(constVal); ok && c.cv != nil {

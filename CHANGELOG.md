@@ -282,6 +282,15 @@ shipped section tells a reader on that version that they have behaviour they do 
 
 ### Behaviour changes
 
+- **A ninth sweep of mutated run cases refuses what Go refuses**: a value of a
+  predeclared type where an interface is wanted, `return false` for an `error`,
+  `use("")` or `use(n)` for an int n and a `Shape` -- a return of one compiled;
+  a constant's address, `const K = &len("ab") + 1`, the `&` dropped; and the
+  address of a function literal or of its call, `&func(k int) int {...}(9)`. The
+  names declared from a method of several results reached through a chain, `v,
+  err := bus.active.Read()`, are typed, and one name for such a call is refused.
+  A constant where an empty interface is wanted, `var a any = 5`, is refused by the
+  checker now, in the words the emitter had: an interface holds a pointer here.
 - **An eighth sweep of mutated run cases refuses what Go refuses**: the
   arguments of a call leading a select clause's receive target, `case getp(1,
   2).x = <-ch:`, which were asked nothing; and the cases of a type switch on a

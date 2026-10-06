@@ -1135,6 +1135,17 @@ for one representable by an int; constLengthValue, foldIndexConst), and a switch
 an untyped constant compared its cases with the untyped kind, where Go converts the
 tag to its default type first. **A constant's CLASS against its TYPE is a row**:
 `2.0` for an int16 and `2.0` where an int is wanted are each a spelling Go folds.
+A ninth batch (gen9.py: a second result given, make's, len's and copy's arguments
+changed, a field renamed, `&` on a call's result, nil for 0, "" or false) had 16 taken
+of 3,000 and none refused that Go takes. The rows: a value of a predeclared Kind into
+an interface was asked by no rule but a variable's declaration (checkImplements asked
+names and pointers; `return false` for an error COMPILED), the constant folder dropped
+a unary `&`, `&` of a function literal or its call was taken where `&f()` was refused,
+and a method of several results reached through a chain typed none of its names
+(exprCallResults asks callChainWalk's calls). The board sweep of fuzzer seeds
+2001-2500 with 331f03a, the generator unchanged since 651a7f5: 470 passing (three on a
+second load, the loader's "sendAddressSize: timeout" and "Error writing port"), 30
+outgrowing a cog, none failing.
 
 **A COMPILER RUN IN A SWEEP IS CAPPED, AND A CRASH IS NOT A REFUSAL** (2026-09-20).
 A probe program is written to find a fault, and a fault is not always a wrong
