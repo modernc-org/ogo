@@ -1265,8 +1265,11 @@ func (f *File) chanFactorElemInfo(s *Scope, fac Node) (name, qual Token, isPtr b
 		}
 		if d, isVar := home.Declarations[member.Src()].(*VarDeclaration); isVar && d.isChan {
 			if d.chanElemQual.IsValid() {
-				// Named in a third package: the kind still answers, the name
-				// cannot be resolved from here.
+				// Named in a third package: as this file names it
+				// (foreignQual), and where it cannot be, the kind still answers.
+				if fq, ok := f.foreignQual(d.chanElemQual); ok {
+					return d.chanElemName, fq, d.chanElemPtr, d.chanElemKind, d.hasChanElemKind, true
+				}
 				return Token{}, Token{}, false, d.chanElemKind, d.hasChanElemKind, true
 			}
 			return d.chanElemName, homeQual(home, d.chanElemName, q), d.chanElemPtr, d.chanElemKind, d.hasChanElemKind, true
@@ -1286,6 +1289,17 @@ func (f *File) chanFactorElemInfo(s *Scope, fac Node) (name, qual Token, isPtr b
 		}
 		kind, hasKind = f.typeKind(t.s, t.tn)
 		return name, Token{}, isPtr, kind, hasKind, name.IsValid() || hasKind
+	} else if ok && t.f != nil {
+		// A channel another package declares, reached through its variable's
+		// field, an element or a call, `<-lib.V.In`, `<-lib.Get()`: the element
+		// spelled there, named as this file writes it (namedAcross). What was
+		// received had no type, and `var b bool = <-lib.V.In` built.
+		kind, hasKind = t.f.typeKind(t.s, t.tn)
+		name, qual, isPtr, named := f.namedAcross(t, Token{})
+		if !named {
+			name, qual, isPtr = Token{}, Token{}, false
+		}
+		return name, qual, isPtr, kind, hasKind, name.IsValid() || hasKind
 	}
 	return Token{}, Token{}, false, 0, false, false
 }
@@ -4029,7 +4043,7 @@ func (f *File) rangeElemNamed(s *Scope, expr Node) (Token, Token, bool, bool) {
 				return Token{}, Token{}, false, false
 			}
 			w.t = elem
-			return chainNamed(w)
+			return f.chainNamed(w)
 		}
 		// A name is this file's to read only where it was resolved on this file's
 		// scope chain: another package's is spelled as that package spells it.
@@ -5477,6 +5491,12 @@ func (f *File) exprType(s *Scope, n Node) (Kind, bool) {
 				if len(ops) == 1 && facSet {
 					if elem, hasElem, isChan := f.exprChan(s, fac); isChan && hasElem {
 						return elem, true
+					}
+					// Another package's channel, `<-lib.Ci`, as a variable declared
+					// from it is typed: `var b bool = <-lib.Ci` built, a received
+					// value having no Kind for any rule.
+					if _, _, _, k, hasKind, ok := f.chanFactorElemInfo(s, fac); ok && hasKind {
+						return k, true
 					}
 				}
 				return 0, false
@@ -10754,8 +10774,9 @@ func (f *File) indexedTypeNode(s *Scope, tn TypeNode) TypeNode {
 			// Another package's array or slice type, `t[0] = v` for a `t
 			// lib.Taps`: its element as this file writes it (requalifiedType).
 			// Read by its bare name it was nothing, and the store was asked
-			// nothing.
-			home, ok := f.importedPkgScope(id.Qualifier)
+			// nothing. The qualifier is resolved where it was written: a third
+			// package's type this file does not import was nothing too.
+			home, ok := f.fileOfToken(id.Qualifier).importedPkgScope(id.Qualifier)
 			if !ok {
 				return nil
 			}
@@ -15768,14 +15789,16 @@ func (w callChain) homeType(name string) (string, bool) {
 // chainNamed names what a walk reached as this file writes it (typeNodeNamed): a
 // type of the package a qualified walk began in gains its qualifier, a predeclared
 // one is the universe's, and a third package's, named as that package imports it,
-// names nothing here.
-func chainNamed(w callChain) (name, qual Token, isPtr, ok bool) {
+// is named as this file names that package (foreignQual).
+func (f *File) chainNamed(w callChain) (name, qual Token, isPtr, ok bool) {
 	name, qual, isPtr, ok = typeNodeNamed(w.t.tn)
 	if !ok || w.home == nil {
 		return name, qual, isPtr, ok
 	}
 	if qual.IsValid() {
-		return Token{}, Token{}, false, false
+		// A third package's, `q15.Q` written in lib, as this file writes it.
+		q, ok := f.foreignQual(qual)
+		return name, q, isPtr, ok
 	}
 	return name, homeQual(w.home, name, w.qual), isPtr, true
 }
@@ -15974,12 +15997,19 @@ func (f *File) walkSteps(t typeAt, addr bool, steps []Node, i, reportFrom int, w
 				// element or a field of a `lib.Counter`: the walk goes on in that
 				// package, as one beginning at `lib.F()` does, and names what it
 				// reaches as this file names that package. A third package's, named
-				// as the package the walk is in imports it, is not followed.
+				// as the package the walk is in imports it, `lib.G.Twice()` for a
+				// `var G q15.Q`, is named as this file names it (foreignQual).
 				_, home, ok := f.typeIdentDecl(t.s, id)
-				if w.home != nil || !ok {
+				if !ok {
 					return w
 				}
-				w.home, w.qual, ts = home, id.Qualifier, home
+				qual := id.Qualifier
+				if w.home != nil {
+					if qual, ok = f.foreignQual(id.Qualifier); !ok {
+						return w
+					}
+				}
+				w.home, w.qual, ts = home, qual, home
 			}
 			if isID && !id.Qualifier.IsValid() && id.Name.Src() == "Builder" && isPredeclaredBuilder(ts, "Builder") {
 				// `l.sb.WriteByte(c)`: the Builder reached through a field. Its
@@ -18939,6 +18969,18 @@ func (f *File) qualifiedValueNamedType(s *Scope, id Token, fac Node) (Token, Tok
 			}
 			return Token{}, Token{}, false, false
 		case *VarDeclaration:
+			// `pkg.Arr[i]` and `pkg.V.F`: what the step reaches, walked from the
+			// variable's type and named as this file writes it (namedAcross) -- a
+			// third package's type too, which the lookups below drop.
+			if len(steps) == 2 && (steps[1].sym == Index && !f.indexIsSlice(steps[1]) || steps[1].sym == Selector) {
+				if vt, ok := f.varTypeAt(d); ok {
+					if r, ok := f.stepsTypeIn(s, vt, steps[1:]); ok {
+						if nm, ql, isPtr, ok := f.namedAcross(r, id); ok {
+							return nm, ql, isPtr, true
+						}
+					}
+				}
+			}
 			switch {
 			case len(steps) == 1:
 				// `pkg.V` itself, which is what `*pkg.Ptr` derefs.
@@ -19375,7 +19417,7 @@ func (f *File) exprNamedType(s *Scope, n Node) (name, qual Token, isPtr, ok bool
 			if !w.known || w.t.tn == nil {
 				return Token{}, Token{}, false, false
 			}
-			nm, ql, rPtr, named := chainNamed(w)
+			nm, ql, rPtr, named := f.chainNamed(w)
 			return nm, ql, (isPtr || rPtr) && !isDeref, named
 		}
 		// "T{...}", or "pkg.T{...}" where the leading identifier is the qualifier
@@ -19441,7 +19483,7 @@ func (f *File) exprNamedType(s *Scope, n Node) (name, qual Token, isPtr, ok bool
 		steps := slices.Collect(it(kids[1].ast))
 		if len(steps) > 1 && slices.ContainsFunc(steps, func(n Node) bool { return n.sym == CallSuffix }) {
 			if w := f.callChainWalk(s, id, steps); w.known && w.t.tn != nil {
-				nm, ql, rPtr, named := chainNamed(w)
+				nm, ql, rPtr, named := f.chainNamed(w)
 				return nm, ql, (isPtr || rPtr) && !isDeref, named
 			}
 		}
@@ -20711,12 +20753,12 @@ func (f *File) structFieldTypeNode(s *Scope, owner TypeNode, field Token) TypeNo
 		// Another package's struct reached on the way, `h.l.S = 1` for an `l
 		// lib.Leaf`: its field is spelled there and requalified here, as
 		// fieldTypeNodeOf does for the first step. Read here by its bare name it
-		// was nothing, and the store was asked nothing.
-		if !f.isImportQualifier(s, id.Qualifier.Src()) {
-			return nil
-		}
-		td, home, ok := f.typeDeclNamed(s, id.Qualifier.Src()+"."+id.Name.Src())
-		if !ok || td.TypeSpec == nil {
+		// was nothing, and the store was asked nothing. The qualifier is
+		// resolved where it was written (typeIdentDecl): a third package's type
+		// this file does not import, `lib.GR.N = true` for a `var GR q15.R`, was
+		// nothing too.
+		td, home, ok := f.typeIdentDecl(s, id)
+		if !ok {
 			return nil
 		}
 		u := f.underlyingTypeAt(typeAt{td.TypeSpec.TypeNode, home, f.fileOfToken(td.Token())})
@@ -21335,13 +21377,56 @@ func (f *File) requalifiedType(from *Scope, qual Token, tn TypeNode) (TypeNode, 
 // foreignQual is the qualifier written in another package's file, `q15` of a `q15.Q`
 // in lib, as this file writes it: the package's name here, where this file imports
 // it too (importQualTok).
+//
+// Where this file does not import it, the qualifier as written there, which is
+// resolved through the file that wrote it (identFile) -- unless this file has a
+// name of that spelling of its own, which every lookup by the spelled name would
+// find first.
 func (f *File) foreignQual(written Token) (Token, bool) {
 	wf := f.fileOfToken(written)
 	imp, ok := wf.Scope.Declarations[written.Src()].(*ImportDeclaration)
 	if !ok || imp.Import == nil || imp.Import.Pkg == nil || imp.Import.Pkg == noPkg {
 		return Token{}, false
 	}
-	return f.importQualTok(imp.Import.Pkg)
+	if q, ok := f.importQualTok(imp.Import.Pkg); ok {
+		return q, true
+	}
+	if wf == f || f.Scope.Declarations[written.Src()] != nil || f.Package != nil && f.Package.Scope != nil && f.Package.Scope.Declarations[written.Src()] != nil {
+		return Token{}, false
+	}
+	return written, true
+}
+
+// namedAcross names the type a walk from another package's value reached, t, as
+// this file writes it: a name written qualified where it was declared, `q15.Q` in
+// lib, by this file's import of q15 or the qualifier lib wrote (foreignQual); one of
+// via's package, `lib.T`, qualified by via; one of a THIRD package's scope the walk
+// entered, by this file's name for that package; one of the universe bare.
+func (f *File) namedAcross(t typeAt, via Token) (name, qual Token, isPtr, ok bool) {
+	name, qual, isPtr, ok = typeNodeNamed(t.tn)
+	if !ok {
+		return Token{}, Token{}, false, false
+	}
+	if qual.IsValid() {
+		q, ok := f.foreignQual(qual)
+		return name, q, isPtr, ok
+	}
+	if t.s == nil {
+		return Token{}, Token{}, false, false
+	}
+	if home, ok := f.importedPkgScope(via); ok && t.s == home {
+		return name, homeQual(home, name, via), isPtr, true
+	}
+	if sc, _ := t.s.find2(name.Src()); sc != nil && sc.Kind == UniverseScope {
+		return name, Token{}, isPtr, true
+	}
+	for _, d := range f.Scope.Declarations {
+		if imp, isImp := d.(*ImportDeclaration); isImp && imp.Import != nil && imp.Import.Pkg != nil && imp.Import.Pkg != noPkg && imp.Import.Pkg.Scope == t.s {
+			q, ok := f.importQualTok(imp.Import.Pkg)
+			return name, q, isPtr, ok
+		}
+	}
+	return Token{}, Token{}, false, false
 }
 
 // carriedQual is the qualifier, as this file writes it, of a type name nm read off

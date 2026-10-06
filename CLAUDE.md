@@ -1323,7 +1323,18 @@ was asked nothing, and one read out of it, `var x int16 = filt.G`, was named
 `filt.Q`, a type of no package. It is spelled with main's own import of q15 where
 there is one (foreignQual, carriedQual; importQualTok finds a token of this file
 spelling the name, an alias or a use, which an import must have), and where there is
-none a literal's elements are asked their Kind (checkForeignElemKinds). Beside it,
+none by the qualifier filt wrote, which resolves through filt's file (identFile) --
+unless main has a name of that spelling, when a literal's elements are asked their
+Kind only (checkForeignElemKinds). The walks carried it too: a field or an element
+of filt's variable (namedAcross), a method of q15's type on one (the walk's method
+step, which stopped at a third package), and chainNamed. A row of 70 programs, each
+position with main importing q15 and not, went from 23 taken to 14, all of the 14
+an int16 taken for a q15.Q, the same Kind, where main does not import q15: the
+identity strings are SPELLINGS, `q15.Q`, which main cannot spell. And a value
+RECEIVED from another package's channel had no Kind at all, `var b bool = <-filt.Ci`
+built -- exprType's receive asked exprChan, which knows this package's channels
+(chanFactorElemInfo answers now, and for a channel reached through another package's
+field, element or call, `<-filt.V.In`, `<-filt.Get()`). Beside it,
 in two packages: another package's VARIABLE as a target, `filt.G = true` and `filt.G
 += true` (targetTypeNode had no case for a qualifier, which no scope finds), an
 element of another package's array type, `t[0] = true` (indexedTypeNode read no

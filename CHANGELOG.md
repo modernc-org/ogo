@@ -298,9 +298,13 @@ shipped section tells a reader on that version that they have behaviour they do 
   method called on such a literal, `filt.G = true` and `filt.G += true` for
   another package's variable, `t[0] = true` for a `t filt.Taps`, and a field,
   element or variable of a type from a THIRD package, `var G q15.Q` in filt, read
-  or written from main -- `var x int16 = filt.G` among them. Each was taken. A type
-  of a third package is spelled as this file imports it, where it does; where it
-  does not, its Kind is asked. And a chain on a named literal is typed, `var s
+  or written from main -- `var x int16 = filt.G` among them, and through a field,
+  an element, a literal, a method of q15's or a receive. Each was taken. A type of
+  a third package is spelled as this file imports it, where it does, and as the
+  package that wrote it spells it where it does not. And a value received from
+  another package's channel, `var b bool = <-filt.Ci`, through its variable's
+  field, an element or a call too, had no type and was put anywhere. And a chain on
+  a named literal is typed, `var s
   int16 = Taps{1, 2}[0]` for a `[3]Q` refused, as is a switch on an address
   against a case of its pointee's type, `switch &k { case 3: }`; `case nil:` is
   taken there, where it was refused.

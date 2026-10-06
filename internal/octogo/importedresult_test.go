@@ -146,6 +146,63 @@ func TestCheckQualifiedArrayLit(t *testing.T) {
 	}
 }
 
+// TestCheckThirdPackage: a type a package writes qualified, `q15.Q` in filt, read and
+// written from main, with main importing q15 and without. It could not be carried
+// into main's spelling, so a value going into filt's field, element, variable or
+// literal of a q15.Q was asked nothing, and one read out of it named nothing. And a
+// value received from another package's channel had no Kind, however reached.
+func TestCheckThirdPackage(t *testing.T) {
+	const q15 = "type Q int16\n\ntype R struct{ N int }\n\nfunc (q Q) Twice() Q { return q * 2 }\n"
+	const filt = "import \"q15\"\n\ntype S struct {\n\tX q15.Q\n\tR q15.R\n}\n\ntype Taps [3]q15.Q\n\nvar G q15.Q\n\nvar GR q15.R\n\nvar GS S\n\nvar Arr Taps\n\nvar Ch chan q15.Q\n\nvar Ci chan int\n\ntype H struct{ In chan int }\n\nvar V H\n\nfunc Get() chan int { return Ci }\n"
+	for _, test := range []struct {
+		imp  bool
+		body string
+		want string // "" for one Go takes
+	}{
+		{false, "filt.GS.X = true", "cannot use true of type bool as type Q in assignment"},
+		{false, "filt.GS.X = 70000", "constant 70000 overflows Q"},
+		{false, "filt.Arr[1] = true", "cannot use true of type bool as type Q in assignment"},
+		{false, "filt.GR.N = true", "cannot use true of type bool as type int in assignment"},
+		{false, "filt.GS.R.N = \"s\"", "cannot use \"s\" of type string as type int in assignment"},
+		{false, "_ = filt.Taps{1, true}", "cannot use true of type bool as type Q in array or slice literal"},
+		{false, "filt.G = 5\n\tfilt.Arr[1] = 9\n\tfilt.GR.N = 3", ""},
+		{true, "_ = filt.S{X: true}", "cannot use true of type bool as type Q in struct literal"},
+		{true, "filt.G = true", "cannot use true of type bool as type Q in assignment"},
+		{true, "var n int16\n\tfilt.G = n", "cannot use n of type int16 as type q15.Q in assignment"},
+		{true, "var x int16 = filt.G\n\t_ = x", "cannot use filt.G of type q15.Q as type int16"},
+		{true, "var x int16 = filt.GS.X\n\t_ = x", "of type q15.Q as type int16"},
+		{true, "var x int16 = filt.Arr[0]\n\t_ = x", "of type q15.Q as type int16"},
+		{true, "var x int16 = filt.Taps{1}[0]\n\t_ = x", "of type q15.Q as type int16"},
+		{true, "var x int16 = filt.G.Twice()\n\t_ = x", "of type q15.Q as type int16"},
+		{true, "var x int16 = <-filt.Ch\n\t_ = x", "of type q15.Q as type int16"},
+		{true, "var q q15.Q = filt.G + filt.GS.X + filt.Arr[0] + filt.G.Twice() + <-filt.Ch\n\tfilt.G = q", ""},
+		{false, "var x bool = <-filt.Ci\n\t_ = x", "cannot use <-filt.Ci of type int as type bool"},
+		{false, "var x bool = <-filt.V.In\n\t_ = x", "of type int as type bool"},
+		{false, "var x string\n\tx = <-filt.Get()\n\t_ = x", "of type int as type string"},
+		{false, "var x int = <-filt.Ci + <-filt.V.In + <-filt.Get()\n\t_ = x", ""},
+	} {
+		t.Run(test.body, func(t *testing.T) {
+			imp := "import \"filt\"\n\n"
+			if test.imp {
+				imp = "import (\n\t\"filt\"\n\t\"q15\"\n)\n\nvar _ q15.Q\n\n"
+			}
+			src := imp + "func main() {\n\t" + test.body + "\n}\n"
+			fsys := fstest.MapFS{
+				"main.ogo":      &fstest.MapFile{Data: []byte(src)},
+				"filt/filt.ogo": &fstest.MapFile{Data: []byte(filt)},
+				"q15/q15.ogo":   &fstest.MapFile{Data: []byte(q15)},
+			}
+			_, err := Build(-1, []string{"main.ogo"}, fsys)
+			switch {
+			case test.want == "" && err != nil:
+				t.Fatalf("refused: %v", err)
+			case test.want != "" && (err == nil || !strings.Contains(err.Error(), test.want)):
+				t.Fatalf("got %v, want an error containing %q", err, test.want)
+			}
+		})
+	}
+}
+
 // TestCheckIfaceMethodValue: a method value whose receiver is an interface value
 // is refused by design, as one whose receiver is a pointer is -- Go saves the
 // value when the method value is taken, and a binding made at compile time cannot
