@@ -1,0 +1,58 @@
+// A compound division by a constant zero is refused as the binary one is; an
+// operator over what a dereference of a pointer to a pointer yields is refused; a
+// value of a defined type that an operation, a conversion or a call made does not
+// go into an interface, nor does a variable in parentheses.
+
+const N = 4
+
+type P struct{ x int }
+
+type Y int
+
+func (y Y) foo() int { return int(y) }
+
+type T interface{ foo() int }
+
+type H struct{ n int }
+
+func take(a any) {}
+
+func mk() Y { return 2 }
+
+func main() {
+	y := 7
+	var h H
+	xs := []int{1}
+	ip := &y
+	// ERROR invalid operation: division by zero
+	y %= 0
+	// ERROR invalid operation: division by zero
+	y /= N - N
+	// ERROR invalid operation: division by zero
+	h.n %= (1 >> 33)
+	// ERROR invalid operation: division by zero
+	xs[0] /= 0
+	// ERROR invalid operation: division by zero
+	*ip /= 0
+	f := 1.5
+	f /= 2
+	var q P
+	p := &q
+	pp := &p
+	// ERROR operator - not defined on \*pp: it is a pointer
+	_ = -*pp
+	var v Y = 3
+	// ERROR cannot use \^v \(value of type Y\) as any value in variable declaration: an interface holds a pointer here
+	var a any = ^v
+	// ERROR cannot use v \+ 1 \(value of type Y\) as T value in variable declaration: an interface holds a pointer here
+	var t T = v + 1
+	// ERROR cannot use Y\(3\) \(value of type Y\) as any value in argument to take
+	take(Y(3))
+	// ERROR cannot use mk\(\) \(value of type Y\) as any value in argument to take
+	take(mk())
+	// ERROR cannot use v \(variable of type Y\) as any value in argument to take
+	take((v))
+	take(&v)
+	take((&v))
+	_, _, _, _ = a, t, f, h
+}

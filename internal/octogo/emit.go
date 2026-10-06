@@ -21424,8 +21424,18 @@ func (e *emitter) padLocalAggregates(values []*Node, a arrDim) []*Node {
 	if err != nil || n <= len(values) {
 		return values
 	}
+	// Written out, an array of more elements than Hub RAM has bytes ran the
+	// compiler out of memory, `[2147483647]Named{&a}` asking for 16 GB of padding;
+	// no such array fits the target, whose build says so for one declared bare.
+	if n > hubRAMBytes {
+		e.fail("%s does not fit the P2's 512 KB of Hub RAM", e.goArrayTypeName(a))
+		return values
+	}
 	return append(slices.Clone(values), make([]*Node, n-len(values))...)
 }
+
+// hubRAMBytes is the size of the P2's Hub RAM, which every array lives in.
+const hubRAMBytes = 512 << 10
 
 // rowValues reads one element of a multi-dimensional array literal as the values
 // of a row. The element is written either type-elided (`{1, 2}`, the usual form)

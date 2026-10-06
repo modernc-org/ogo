@@ -5712,6 +5712,28 @@ func main() {
 // refused at none of them: the question "is this a variable of this frame" asked
 // only the locals environment, and a local array is in the arrays one and nowhere
 // else -- so the shape the whole rule exists to stop walked straight through.
+// TestEmitCHugeArrayLiteralRefused pins that a literal of an array of more elements
+// than Hub RAM has bytes is refused in those terms. Padding it to its length with
+// zero elements (padLocalAggregates) ran the compiler out of memory, a mutant's
+// `[2147483647]Named{&a, &b}` asking for 16 GB; Go refuses the type as larger than
+// its address space.
+func TestEmitCHugeArrayLiteralRefused(t *testing.T) {
+	for _, src := range []string{
+		"func main() {\n\tx := [2147483647][2]int{{1, 2}}\n\tprintln(x[0][0])\n}\n",
+		"var g = [1 << 20][2]int{{1, 2}}\n\nfunc main() { println(g[0][1]) }\n",
+	} {
+		fsys := fstest.MapFS{"main.ogo": &fstest.MapFile{Data: []byte(src)}}
+		pkg, err := Build(-1, []string{"main.ogo"}, fsys)
+		if err != nil {
+			t.Fatalf("Build: %v", err)
+		}
+		var buf bytes.Buffer
+		if err := EmitC(pkg, &buf, Checked()); err == nil || !strings.Contains(err.Error(), "does not fit the P2's 512 KB of Hub RAM") {
+			t.Errorf("EmitC error %v, want Hub RAM's refusal, of\n%s", err, src)
+		}
+	}
+}
+
 func TestEmitCLocalArrayAddrRefused(t *testing.T) {
 	for _, test := range []struct{ name, src, want string }{
 		{

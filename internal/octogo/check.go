@@ -8778,6 +8778,21 @@ func (f *File) checkAssignment(s *Scope, head, postfix Node) {
 				}
 			}
 		}
+		// `y %= 0`, `y /= N - N`: an integer division by a constant zero, which the
+		// binary form refuses (constZeroDivisor) and this one took, to divide by
+		// zero at run time.
+		if (op == QUO_ASSIGN || op == REM_ASSIGN) && len(lhs) == 1 && len(rhs) == 1 && !reported {
+			tk, known := Kind(0), false
+			switch {
+			case lhsSuffixed[0] || f.headIsDeref(head):
+				tk, known = f.suffixedTargetKind(s, head, postfix)
+			case lhs[0].IsValid():
+				tk, known = f.identKind(s, lhs[0])
+			}
+			if known && f.constZeroDivisor(s, tk, rhs[0]) {
+				f.err(f.tok(rhs[0].Pos()).Position(), "invalid operation: division by zero")
+			}
+		}
 		// A dereference, `*p += v`, is a pointee and has no name in lhs: the block
 		// below was never entered for one, so `*p += true` went through.
 		deref := f.headIsDeref(head)
@@ -14315,6 +14330,15 @@ func (f *File) checkImplements(s *Scope, ifaceName string, value Node, what stri
 	if ifaceName == "" {
 		return
 	}
+	// `(y)` is y: asked of the parentheses, a variable was no variable to any rule
+	// below, and the emitter refused what the checker took.
+	for range 8 {
+		inner, ok := f.parenthesized(value)
+		if !ok {
+			break
+		}
+		value = inner
+	}
 	set, isIface := f.interfaceMethodsNamed(s, ifaceName)
 	if !isIface {
 		return
@@ -14347,6 +14371,19 @@ func (f *File) checkImplements(s *Scope, ifaceName string, value Node, what stri
 			if _, isPredeclared := s.find(name.Src()).(*PredeclaredType); isPredeclared && !f.isAddrOperand(s, value) {
 				if isPtr, known := f.exprPointerness(s, value); !known || !isPtr {
 					named = false
+				}
+			}
+		}
+		// A value of a DEFINED type over a Kind that an operation, a conversion or a
+		// call MADE, `y + 1`, `^y`, `Y(3)`, `mk()`: a value, which Go copies in and
+		// an interface here cannot hold. Named, it passed the rule below, and the
+		// declarations were refused by the emitter while an argument reached C.
+		if named && !qual.IsValid() && f.isMadeValue(s, value) {
+			if isPtr, known := f.exprPointerness(s, value); known && !isPtr && !f.isAddrOperand(s, value) {
+				if _, fromIface := f.interfaceMethodsNamed(s, name.Src()); !fromIface {
+					f.err(f.tok(value.Pos()).Position(), "cannot use %s (value of type %s) as %s value in %s: an interface holds a pointer here",
+						f.exprSource(value), name.Src(), ifaceName, what)
+					return
 				}
 			}
 		}
@@ -17314,6 +17351,69 @@ func (f *File) checkBinOp(s *Scope, opNode, lNode, rNode Node) {
 	}
 }
 
+// isMadeValue reports whether n is a value an operation, a conversion or a call
+// makes, and so no storage: `a + b`, `^y`, `Y(3)`, `mk()`, in parentheses or not.
+func (f *File) isMadeValue(s *Scope, n Node) bool {
+	for range 8 {
+		inner, ok := f.parenthesized(n)
+		if !ok {
+			break
+		}
+		n = inner
+	}
+	for n.sym == Expression || n.sym == SimpleExpr || n.sym == Term {
+		kids := slices.Collect(it(n.ast))
+		if len(kids) != 1 {
+			return true // an operation
+		}
+		n = kids[0]
+	}
+	if n.sym == UnaryExpr {
+		kids := slices.Collect(it(n.ast))
+		if len(kids) > 1 {
+			switch f.unaryOp(s, kids[0]) {
+			case SUB, ADD, XOR, NOT:
+				return true
+			}
+			return false
+		}
+		if len(kids) == 1 {
+			n = kids[0]
+		}
+	}
+	if n.sym != Factor {
+		return false
+	}
+	e := Node{sym: Expression, ast: encodeNode(SimpleExpr, encodeNode(Term, encodeNode(UnaryExpr, encodeNode(Factor, n.ast))))}
+	_, isCall := f.exprCallee(e)
+	return isCall
+}
+
+// derefYieldsPointer reports whether *x is itself a pointer: x a variable declared
+// a pointer to a pointer, `pp **P`, resolved past defined types.
+func (f *File) derefYieldsPointer(s *Scope, x Node) bool {
+	id, ok := f.exprSoleIdent(x)
+	if !ok {
+		return false
+	}
+	d, isVar := s.find(id.Src()).(*VarDeclaration)
+	if !isVar {
+		return false
+	}
+	t, known := f.varTypeAt(d)
+	if !known {
+		return false
+	}
+	u, _ := t.f.refTypeUnder(t.s, t.tn)
+	p, isPtr := u.(*TypeNodePointer)
+	if !isPtr {
+		return false
+	}
+	pu, _ := t.f.refTypeUnder(t.s, p.TypeNode)
+	_, inner := pu.(*TypeNodePointer)
+	return inner
+}
+
 // valueOrVariable is how Go names what n is in a message: a variable where n is a
 // name, a value otherwise.
 func valueOrVariable(f *File, n Node) string {
@@ -19219,6 +19319,18 @@ func (f *File) checkUnaryExpr(s *Scope, n Node) {
 			f.err(f.tok(inner.Pos()).Position(), "invalid operation: cannot indirect %s%s",
 				f.exprSource(fac), ofType(k, hasKind))
 			return
+		}
+		// An operator over what the dereference yields, `-*pp` for a `pp **P`: a
+		// pointer, on which no number's operator is defined. Asked of nothing, the C
+		// negated an address.
+		if len(ops) > 1 {
+			switch outer := ops[len(ops)-2]; f.unaryOp(s, outer) {
+			case SUB, ADD, XOR, NOT:
+				if f.derefYieldsPointer(s, fac) {
+					f.err(f.tok(outer.Pos()).Position(), "invalid operation: operator %s not defined on *%s: it is a pointer", f.tok(outer.Pos()).Src(), f.exprSource(fac))
+					return
+				}
+			}
 		}
 		if !known {
 			// What pointerness cannot say, the category can: `*x` of a [2]*int was

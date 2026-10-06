@@ -75,6 +75,8 @@ shipped section tells a reader on that version that they have behaviour they do 
 
 ### Fixed
 
+- **A literal of an array larger than Hub RAM is refused in those terms**: `x :=
+  [2147483647][2]int{{1, 2}}` ran the compiler out of memory.
 - **Constant operands leading a level are computed as Go computes them**:
   `100000 * 100000 % v` for a uint64 v printed 38 for Go's 60, `1 << 40 % v` 0 for
   16, and `2000000000 + 2000000000 + i` overflowed for an int64 i: C computed the
@@ -417,6 +419,15 @@ shipped section tells a reader on that version that they have behaviour they do 
 
 ### Behaviour changes
 
+- **A compound division by a constant zero is refused**, as the binary one is:
+  `y %= 0`, `y /= N - N`, `h.n %= (1 >> 33)`. Each divided by zero at run time.
+- **A value of a defined type that an operation, a conversion or a call made goes
+  into no interface**, as a variable does not: `var a any = y + 1`, `take(Y(3))`,
+  `take(mk())` for a `type Y int`. An argument reached the C compiler as the
+  value where the interface's two words were wanted. And a variable in
+  parentheses, `take((v))`, is the variable to the rule.
+- **A unary operator on what a pointer to a pointer points at is refused**: `-*pp`
+  for a `pp **P` negated an address.
 - **A value two steps or more from its variable has its type**: `var x Q2 =
   m[0][1]` for an element `Q` of a `type M [2][2]Q`, `take(h.k[0])`, `w.in.v` where
   another defined type of the same kind is wanted are refused, as one step away

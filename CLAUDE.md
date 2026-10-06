@@ -1275,7 +1275,27 @@ call through a NIL function value calling address zero (fnValueChecked, and the 
 trampoline's check). **A mutant that compiles is run**: the oracle that judged its
 acceptance has an output too, and the shapes a mutation makes -- a key written, a
 `continue` moved into a clause, a constant made wide -- are the ones no run case
-writes.
+writes. The domain programs' 6,053 mutants of that kind, run the same way the next
+day with those fixes in, had 5,579 match and nothing silent among the rest: goroutine
+races, endless loops on both sides, Go's stack overflow, the partial print, a panic
+in the middle of a line (the harness's), the twins' Builder panicking where the
+spec's truncates. Two loud gaps were left: `%q` of a rune Go's tables call
+unprintable, U+202C, written raw where Go escapes it (the tables would cost the
+target kilobytes), and a call of `main`, which C does not see declared.
+The batches had been written to find what is REFUSED, and most of their mutants are:
+a mutator meant to keep programs VALID (genv.py: a literal moved, an operator
+swapped within its class, a statement duplicated, wrapped in an always-true if or
+swapped, a continue or a break behind an always-true test, a defer inserted) made
+6,000 of the run cases of which 5,114 both compilers accept. Run against Go, none
+differed but by design or by a race -- most were the defers a panic leaves unrun, a
+`defer println` inserted ahead of one -- and judging them found one compiler CRASH,
+out of memory padding `[2147483647]Named{...}` to its length (refused now as larger
+than Hub RAM), and three checker rows: a compound `/=` and `%=` by a constant zero,
+`-*pp` of a pointer to a pointer, and a value of a defined type an operation, a
+conversion or a call MADE into an interface (`take(y * 2)` reached C), a variable in
+parentheses with it (isMadeValue). **A mutator that keeps programs valid is the
+emitter's probe; one that breaks them is the checker's** -- and each finds a little
+of the other's.
 
 **A COMPILER RUN IN A SWEEP IS CAPPED, AND A CRASH IS NOT A REFUSAL** (2026-09-20).
 A probe program is written to find a fault, and a fault is not always a wrong
