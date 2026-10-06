@@ -679,6 +679,22 @@ shipped section tells a reader on that version that they have behaviour they do 
   -137448951. Refused as well now: a method another package's type defined over a
   number does not have or does not export, `k.Nosuch()` for a `lib.Count`.
 
+### Toolchain
+
+- **`ogo smith` passes structs and arrays by value.** Two programs in three declare
+  a struct of mixed widths -- a sub-word field, an array of small elements, a
+  64-bit scalar -- with functions taking it by value, by pointer and in an array of
+  three, returning it alone and beside an int, and a procedure calling them where a
+  value is wanted, where a call stands (`agSum(agMod(agMk(k), d))`), through a
+  value read off a call's result, a slice of an array of them, a method of each
+  receiver and equality; half of those send it over a channel to a cog of its own
+  and back. No generated program had passed or returned a struct or an array, the
+  family the target's compiler has been silently wrong about most often. What the
+  procedure returns is computed by the generator itself, with its own random
+  source, so every other part of a seed's program draws what it drew before. Of
+  seeds 1-2000 all pass on the host; of seeds 1-200 on a P2-EDGE, 141 with such a
+  struct and 71 with the cog, 192 pass and 8 outgrow a cog.
+
 ## v0.48.1
 
 ### Fixed

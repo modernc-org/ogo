@@ -203,6 +203,11 @@ func (f *Fuzzer) GenerateProgram(vm Machine, mem Memory) error {
 	// initialized (see genStaticTables).
 	tables := f.genStaticTables()
 
+	// 4.9. A struct of mixed widths handed by value, by pointer and in an array,
+	// returned alone and beside an int, and a procedure exercising it (see
+	// genAggregates).
+	agCall, agWant, agOK := f.genAggregates()
+
 	// 5. Generate the main function
 	// FuncDecl = "func" identifier "(" ")" Block
 	fmt.Fprint(f.Out, "func main() {\n")
@@ -239,6 +244,17 @@ func (f *Fuzzer) GenerateProgram(vm Machine, mem Memory) error {
 		mem.Store(f.ChecksumName, nv)
 		writeIndent(f.Out, 1)
 		fmt.Fprintf(f.Out, "%s = %s ^ (%s)\n", f.ChecksumName, f.ChecksumName, t.sum)
+	}
+
+	// And the aggregates' procedure, whose value the generator computed itself.
+	if agOK {
+		nv, err := vm.Eval("^", mem.Load(f.ChecksumName), agWant)
+		if err != nil {
+			panic(err)
+		}
+		mem.Store(f.ChecksumName, nv)
+		writeIndent(f.Out, 1)
+		fmt.Fprintf(f.Out, "%s = %s ^ %s\n", f.ChecksumName, f.ChecksumName, agCall)
 	}
 
 	// Generate 20 sequential statements to mutate the checksum

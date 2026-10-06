@@ -17745,6 +17745,9 @@ func (f *File) checkNonValueTargetHead(s *Scope, head Token, postfix Node) {
 			return
 		}
 		f.err(head.Position(), "operand for field selector %s must be value of type %s", m.Src(), head.Src())
+	case *PredeclaredType:
+		// `int32.Count++`: a predeclared type has no fields and no methods.
+		f.err(m.Position(), "%s.%s undefined (type %s has no field or method %s)", head.Src(), m.Src(), head.Src(), m.Src())
 	case *ConstDeclaration:
 		what := "untyped constant"
 		if k, ok := f.identKind(s, head); ok {

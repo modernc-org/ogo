@@ -303,6 +303,22 @@ var generatedConstructs = []struct {
 	{"function literal called where it stands", `\^ func\(p_\d+ int`},
 	{"forward goto", `\n\s*goto L_\d+\n`},
 	{"goto target label", `\n\s*L_\d+:\n`},
+	// Aggregates (genAggregates): a struct of mixed widths -- a sub-word member, an
+	// array of small elements, a 64-bit scalar -- handed by value, by pointer and in
+	// an array, returned alone and beside an int, and exercised where a call stands,
+	// through a slice of an array of them, a method of each receiver and equality.
+	{"aggregate struct type", `\ntype AG_\d+ struct \{\n\t\w+ u?int(8|16) *\n`},
+	{"aggregate with a 64-bit field", `\ntype AG_\d+ struct \{\n(\t[^\n]*\n)*\t\w+ +u?int64\n`},
+	{"aggregate with an array field", `\ntype AG_\d+ struct \{\n(\t[^\n]*\n)*\t\w+ +\[\d\]u?int(8|16|32)\n`},
+	{"aggregate by value parameter and result", `\nfunc agMod_\d+\(v AG_\d+, d int\) AG_\d+ \{`},
+	{"aggregate array by value", `\nfunc agArr_\d+\(a \[3\]AG_\d+, d int\) int \{`},
+	{"aggregate beside an int", `\nfunc agPair_\d+\(v AG_\d+, d int\) \(AG_\d+, int\) \{`},
+	{"aggregate where a call stands", `agSum_\d+\(agMod_\d+\(agMk_\d+\(`},
+	{"aggregate field of a call's result", `int\(agMk_\d+\(-?\d+\)\.\w+`},
+	{"aggregate pointer method through a slice", `\n\ts\[2\]\.bump\(`},
+	{"aggregate equality", `\n\tif e == v \{`},
+	{"aggregate folded", `\n\toctosmith_checksum = octosmith_checksum \^ agRun_\d+\(\)`},
+	{"aggregate over a channel to a cog", `\n\tgo agCog_\d+\(2\)\n\tagIn_\d+ <- v\n`},
 	// A name C has spoken for, which newVarName draws now and then (cNames): the
 	// emitter renames each in every position, and a position it missed was a C
 	// error no generated program could show while every name was a counter's.

@@ -834,6 +834,31 @@ still design-only.
   second, the loader's and not the program's. A seed that outgrows can take
   ten minutes to say so, the backend's allocator on one function of 200 lines, twice
   over when its functions were marked (seed 3146: 333 s and 244 s).
+  **Aggregates** (2026-10-07, `aggregates.go`): no generated program had passed or
+  returned a struct or an array, which is the family the target's compiler has been
+  wrong about in silence most often (a struct over four words or of a sub-word
+  member returned through a reference sized wrong, flexprop#113; a struct holding
+  an array assigned at some sizes; a static initializer laid out otherwise). Two
+  programs in three declare a struct of mixed widths -- a sub-word field, an array
+  of 8- to 32-bit elements, a 64-bit scalar, three to seven fields -- with agMk
+  (built from an int), agMod (a by-value parameter updated and returned), agSum,
+  agPtr, agArr (an array of three by value), agPair (beside an int), a value and a
+  pointer method, and agRun calling them where a call stands, through a field of a
+  call's result, a slice of the array and equality; half of those send it to a cog
+  over a channel and back (agCog, drawn last and written after agRun). What agRun
+  returns is computed by the generator in Go with Go's integer semantics, int32
+  arithmetic included, as the tables are, not by the VM. **It draws from its own
+  source (`aggRand`, from the seed) and mints no name from VarSeq**: drawing from
+  Rand shifted every later draw, and two rare constructs fell out of the coverage
+  corpus; this way every other part of a seed's program is what it was, but for
+  the expected values that depend on the checksum. Swept the same day: seeds
+  1-2000 on the host shim, clean; 1-200 on a P2-EDGE, 141 with an aggregate and 71
+  with the cog, 192 passing and 8 outgrowing a cog, none failing. Seeds 3501-4000
+  with aab09a0, the generator before it: 472 passing, 28 outgrowing, none failing.
+  A domain program of the same family -- sample frames of mixed widths filled on
+  one cog, passed by value through a channel and a single-producer ring to another
+  -- matched Go on the host and the board, and its 1,000 mutants had one row
+  taken, a predeclared type as a target's head, `int32.Count++`.
 - **Fixed miscompile (found by the oracle):** a shadowing local whose initializer
   references the shadowed name — `var x = x + 5` with an outer `x` in scope — used
   to miscompile, because the emitter names locals verbatim so the C initializer read

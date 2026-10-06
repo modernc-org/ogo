@@ -46,6 +46,8 @@ func heads() {
 	K.P = 1
 	// ERROR "f.P undefined \(type func\(\) has no field or method P\)"
 	f.P = 1
+	// ERROR "int32.Count undefined \(type int32 has no field or method Count\)"
+	int32.Count++
 }
 
 func g() []byte { return nil }

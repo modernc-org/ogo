@@ -188,6 +188,11 @@ type Fuzzer struct {
 	// random stream, and with it every seed's program, is what it was. The passes that
 	// read a target by name alone took a parenthesised one for nobody's.
 	assigns int
+	// aggRand is genAggregates' own source, drawn from the seed: what it draws takes
+	// nothing from Rand, so every other part of a seed's program is what it was
+	// before the aggregates were generated, and the sweeps made of it still say
+	// what they said.
+	aggRand *rand.Rand
 }
 
 func NewFuzzer(seed int64, out io.Writer) *Fuzzer {
@@ -195,6 +200,7 @@ func NewFuzzer(seed int64, out io.Writer) *Fuzzer {
 	global := NewScope(nil)
 
 	return &Fuzzer{
+		aggRand:      rand.New(rand.NewSource(seed ^ 0x5a17c0de)),
 		Rand:         rng,
 		Out:          out,
 		GlobalEnv:    global,
