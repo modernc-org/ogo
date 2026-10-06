@@ -15922,6 +15922,11 @@ func cTypeIdent(ct string) string {
 func (e *emitter) emitPrototypes(ast []int32) {
 	e.eachFuncDeclAST(ast, func(d []int32) {
 		name, sig, _, recv, ok := e.funcParts(d)
+		if ok && recv == nil && name == "main" && e.testEntry == "" && e.funcDefCName(name, d) == "main" && e.mainReferenced() {
+			// The program's main is called, `go main()` from a trampoline written
+			// ahead of it: declared, as C wants a function before its use.
+			e.emit("int main(void);\n")
+		}
 		if !ok || name == "" || (recv == nil && name == "main") {
 			return
 		}
@@ -15947,6 +15952,43 @@ func (e *emitter) emitPrototypes(ast []int32) {
 			})
 		}
 	})
+}
+
+// mainReferenced reports whether the main package names its main function other
+// than where it declares it: a call, `go main()`, a value.
+func (e *emitter) mainReferenced() bool {
+	if e.f == nil || e.f.Package == nil {
+		return false
+	}
+	for _, f := range e.f.Package.Files {
+		prevFunc := false
+		var walk func(ast []int32) bool
+		walk = func(ast []int32) bool {
+			for n := range it(ast) {
+				if n.sym != 0 {
+					if walk(n.ast) {
+						return true
+					}
+					continue
+				}
+				switch f.ch(n.tok) {
+				case FUNC:
+					prevFunc = true
+					continue
+				case IDENT:
+					if f.tok(n.tok).Src() == "main" && !prevFunc {
+						return true
+					}
+				}
+				prevFunc = false
+			}
+			return false
+		}
+		if walk(f.AST) {
+			return true
+		}
+	}
+	return false
 }
 
 func (e *emitter) emitFuncDecl(ast []int32) {
@@ -17795,7 +17837,14 @@ func (e *emitter) emitMain(sig, body []int32) {
 	// hardware, where the host shim forgave the un-newed id.
 	if e.needsPkgInit() {
 		e.ind()
-		e.emit(pkgInitCName + "();\n")
+		if e.mainReferenced() {
+			// The program calls its own main, `go main()` or `main()`, which is C's
+			// main here: package initialization runs once, as in Go, and not again
+			// at every call -- it was re-run, in silence.
+			e.emit("static int ogo_main_inited; if (!ogo_main_inited) { ogo_main_inited = 1; " + pkgInitCName + "(); }\n")
+		} else {
+			e.emit(pkgInitCName + "();\n")
+		}
 	}
 	e.emitDeferDecls()
 	e.w.Write(bodyBuf.Bytes())

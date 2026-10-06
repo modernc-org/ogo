@@ -1295,7 +1295,17 @@ than Hub RAM), and three checker rows: a compound `/=` and `%=` by a constant ze
 conversion or a call MADE into an interface (`take(y * 2)` reached C), a variable in
 parentheses with it (isMadeValue). **A mutator that keeps programs valid is the
 emitter's probe; one that breaks them is the checker's** -- and each finds a little
-of the other's.
+of the other's. The same mutator over the 34 domain programs (genvdom.py, 200 each,
+5,862 both accept) found three more: a function LITERAL with results was never asked
+for a missing return, `func() int { }` taken, its C falling off the end; a
+conversion of a constant to ANOTHER package's type was no constant
+(`lib.Perm(1) << 3` "is not a constant", its overflow unasked; constConversion reads
+the qualified form); and a program calling its own `main`, `go main()`, re-ran every
+package initializer at each call, silent on the board (mainReferenced guards it, and
+declares main for the host). Its differences were otherwise races, timing, sizes the
+host's stack cannot hold, and one known: a printf whose argument's String() prints
+writes that output in the middle of the line, Go's fmt formatting the whole line
+before it writes it.
 
 **A COMPILER RUN IN A SWEEP IS CAPPED, AND A CRASH IS NOT A REFUSAL** (2026-09-20).
 A probe program is written to find a fault, and a fault is not always a wrong

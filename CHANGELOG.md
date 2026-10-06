@@ -75,6 +75,12 @@ shipped section tells a reader on that version that they have behaviour they do 
 
 ### Fixed
 
+- **A program calling its own `main` initializes its packages once**: `go main()`
+  or a call of `main` ran every package variable's initializer again, in silence
+  on the board, and did not build for the host.
+- **A conversion of a constant to another package's type is a constant**: `const
+  c = lib.Perm(1) << 3` was "lib.Perm is not a constant", and an overflow of one,
+  `lib.Perm(0xFFFF) << 12`, was asked nothing.
 - **A literal of an array larger than Hub RAM is refused in those terms**: `x :=
   [2147483647][2]int{{1, 2}}` ran the compiler out of memory.
 - **Constant operands leading a level are computed as Go computes them**:
@@ -419,6 +425,10 @@ shipped section tells a reader on that version that they have behaviour they do 
 
 ### Behaviour changes
 
+- **A function literal with results must end in a terminating statement**, as a
+  declared function must: `func(n int) int { if n > 0 { return 1 } }` and even
+  `func() int { }` were taken, and their C fell off the end with whatever the
+  result register held.
 - **A compound division by a constant zero is refused**, as the binary one is:
   `y %= 0`, `y /= N - N`, `h.n %= (1 >> 33)`. Each divided by zero at run time.
 - **A value of a defined type that an operation, a conversion or a call made goes

@@ -10171,7 +10171,14 @@ func (f *File) checkFuncLiterals(s *Scope, n Node) {
 		savedLoop, savedSwitch, savedSelect := f.loopDepth, f.switchDepth, f.selectDepth
 		f.loopDepth, f.switchDepth, f.selectDepth = 0, 0, 0
 		f.scanGotoLabels(body.ast)
-		f.checkBlock(ls.child(), f.flattenResults(ls, sig), body)
+		litResults := f.flattenResults(ls, sig)
+		f.checkBlock(ls.child(), litResults, body)
+		// A literal with results ends in a terminating statement, as a declared
+		// function does: `func(n int) int { if n > 0 { return 1 } }` was taken, and
+		// its C fell off the end with whatever the result register held.
+		if len(litResults) != 0 && body.sym == Block && !f.blockIsTerminating(body) {
+			f.err(f.tok(body.End()).Position(), "missing return")
+		}
 		f.loopDepth, f.switchDepth, f.selectDepth = savedLoop, savedSwitch, savedSelect
 		f.reportCaptures(ls, body)
 		f.checkGotos(ls)
@@ -29470,10 +29477,29 @@ func (f *File) constConversion(s *Scope, n Node) (ExpressionNode, bool) {
 	}
 	nameTok := f.tok(kids[0].tok)
 	k, ok := f.nameKind(s, nameTok.Src())
+	callSuffix := kids[1]
+	if steps := slices.Collect(it(kids[1].ast)); len(steps) == 2 && steps[0].sym == Selector && steps[1].sym == CallSuffix && f.isImportQualifier(s, nameTok.Src()) {
+		// ANOTHER package's type, `flags.Perm(0xFFFF)`: its Kind where it is
+		// declared. Read as no conversion, the constant was no constant --
+		// `const c = lib.Perm(1) << 20` was "lib.Perm is not a constant" -- and an
+		// overflow of it was asked nothing.
+		member, has := f.selectorMember(steps[0])
+		if !has {
+			return nil, false
+		}
+		qtn := &TypeNodeIdent{Qualifier: nameTok, Name: member}
+		if _, _, isType := f.typeIdentDecl(s, qtn); !isType {
+			return nil, false
+		}
+		if k, ok = f.typeKind(s, qtn); !ok {
+			return nil, false
+		}
+		callSuffix = Node{sym: FactorSuffix, ast: encodeNode(CallSuffix, steps[1].ast)}
+	}
 	if !ok {
 		return nil, false
 	}
-	arg, ok := soleCallArg(kids[1])
+	arg, ok := soleCallArg(callSuffix)
 	if !ok {
 		return nil, false
 	}

@@ -1,0 +1,48 @@
+// A function literal with results ends in a terminating statement, as a declared
+// function does.
+
+var g = func() int {
+	// ERROR missing return
+}
+
+func main() {
+	f := func(n int) int {
+		if n > 0 {
+			return 1
+		}
+		// ERROR missing return
+	}
+	h := func(n int) int {
+		switch n {
+		case 1:
+			return 1
+		}
+		// ERROR missing return
+	}
+	k := func(n int) int {
+		if n > 0 {
+			return 1
+		} else {
+			return 2
+		}
+	}
+	l := func(n int) int {
+		for {
+			return n
+		}
+	}
+	m := func(n int) int { panic("x") }
+	r := func(n int) (r int) {
+		r = n
+		return
+	}
+	func() {
+		_ = func() bool {
+			for len("a") > 0 {
+				return true
+			}
+			// ERROR missing return
+		}
+	}()
+	_, _, _, _, _, _ = f, h, k, l, m, r
+}

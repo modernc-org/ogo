@@ -447,6 +447,21 @@ func main() {
 	_ = x
 }
 `, "cannot use m[0][1] of type a.QE as type Q2", true},
+		{"a conversion to another package's type is a constant", `import "a"
+
+const c = a.Count(3) << 2
+
+func main() {
+	var x a.Count = c
+	println(x, a.Count(5)*2)
+}
+`, "12 10\n", false},
+		{"a constant conversion to another package's type overflows it", `import "a"
+
+func main() {
+	println(a.QE(0x7fffffff) << 4)
+}
+`, "overflows int32", true},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			fsys := fstest.MapFS{

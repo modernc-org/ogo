@@ -27400,6 +27400,40 @@ outer:
 		want: "got 0\nafter 0\ngot 2\nafter 2\nn 3\nk 1\nk 3\nab 0 0 0\nab 0 1 1\nsw 0\nc 1\nxy 0 10\nxy 2 8\nend\n",
 	},
 	{
+		name: "main called by the program initializes the packages once",
+		src: `var n = count()
+
+var depth int
+
+var done chan int
+
+func count() int {
+	println("init")
+	return 1
+}
+
+func again() {
+	if depth < 3 {
+		main()
+	}
+}
+
+func main() {
+	depth++
+	println("main", depth, n)
+	if depth == 1 {
+		go func() {
+			println("cog")
+			done <- 1
+		}()
+		<-done
+	}
+	again()
+}
+`,
+		want: "init\nmain 1 1\ncog\nmain 2 1\nmain 3 1\n",
+	},
+	{
 		name: "a struct parameter named like one of its members",
 		src: `type In struct {
 	x, y int
