@@ -286,6 +286,16 @@ shipped section tells a reader on that version that they have behaviour they do 
 
 ### Behaviour changes
 
+- **A method value whose receiver is an interface value is refused in its own
+  words**: `f := one.Area`, `tab[0].Area`, `use(h.s.Area)`. Go saves the interface
+  value when the method value is taken, which a binding made at compile time
+  cannot, as it cannot a pointer's; a function literal calling the method reads it
+  at each call. It was "type Shape has no field Area", or the emitter's "cannot
+  infer a type".
+- **What is received from an element of an array of channels is typed**: `r :=
+  <-reqs[w]`, in a select clause, a declaration and a comma-ok, and from a
+  channel field, `<-h.in`, so `r.ID` into a field of another type is refused as Go
+  refuses it. And a star over a channel in a send, `*ress <- v`, is refused.
 - **Mutations of two domain programs, a bitmap library and a stack machine, are
   refused as Go refuses them**: a conversion to another package's defined type,
   `vm.Op(-1)`, `vm.Op(true)`, `vm.Op(nil)`, whose operand was asked nothing but

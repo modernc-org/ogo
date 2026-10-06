@@ -1162,6 +1162,16 @@ recorded for the emitter by the constant folder only, so `n == len([2]int{})` wa
 refused (checkFactorNames records it wherever the call stands). **A program's own
 mutations are the run cases' mutations for the shapes it brings**: the single-file
 batches had no second package to convert into.
+A third, a worker pool on two cogs (jobs behind an interface in a package table,
+embedded base types, requests over an array of channels selected beside a quit
+channel), matched Go on the host and the board once one line was written another way:
+`name := job.Table[2].Name`, a method value of an INTERFACE value, was "cannot infer a
+type" -- refused by design, Go saving the interface value as it saves a pointer's
+(methodValueSavesPtr), and said so now (reportIfaceMethodValue). Its 1,500 mutants had
+8 taken: a value received from an ELEMENT of an array of channels or from a channel
+field had no type in any declaring form (chanFactorElemInfo and recvElemType walk the
+channel now), and a star over a channel in a send. A range over such an element
+channel and a parenthesised receive's field, `(<-reqs[0]).ID`, are still untyped.
 
 **A COMPILER RUN IN A SWEEP IS CAPPED, AND A CRASH IS NOT A REFUSAL** (2026-09-20).
 A probe program is written to find a fault, and a fault is not always a wrong

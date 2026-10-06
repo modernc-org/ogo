@@ -1270,6 +1270,21 @@ func (f *File) chanFactorElemInfo(s *Scope, fac Node) (name, qual Token, isPtr b
 			}
 			return d.chanElemName, homeQual(home, d.chanElemName, q), d.chanElemPtr, d.chanElemKind, d.hasChanElemKind, true
 		}
+		return Token{}, Token{}, false, 0, false, false
+	}
+	// Any other channel, `<-reqs[w]` of an array of them, `<-h.in`: its element as
+	// the walk types the channel. What it received had no type at all, so every
+	// field of a received struct was asked nothing.
+	if t, ok := f.recvElemType(s, fac); ok && t.f == f {
+		elem := t.tn
+		if p, isP := elem.(*TypeNodePointer); isP {
+			elem, isPtr = p.TypeNode, true
+		}
+		if id, isID := elem.(*TypeNodeIdent); isID && !id.Qualifier.IsValid() {
+			name = id.Name
+		}
+		kind, hasKind = f.typeKind(t.s, t.tn)
+		return name, Token{}, isPtr, kind, hasKind, name.IsValid() || hasKind
 	}
 	return Token{}, Token{}, false, 0, false, false
 }
@@ -5050,7 +5065,18 @@ func (f *File) recvElemType(s *Scope, fac Node) (typeAt, bool) {
 			wf = f.fileOfToken(d.token)
 		}
 	}
-	if d == nil || !d.isChan {
+	if d == nil {
+		// A channel reached through steps, `reqs[w]`, `h.in`: the walk's type.
+		t, ok := f.valueTypeAt(s, Node{sym: Expression, ast: encodeNode(SimpleExpr, encodeNode(Term, encodeNode(UnaryExpr, encodeNode(Factor, fac.ast))))})
+		if !ok || t.f == nil {
+			return typeAt{}, false
+		}
+		if ch, _ := t.f.chanTypeUnder(t.s, t.tn); ch != nil {
+			return typeAt{ch.TypeNode, t.s, t.f}, true
+		}
+		return typeAt{}, false
+	}
+	if !d.isChan {
 		return typeAt{}, false
 	}
 	if d.declScope != nil {
@@ -9624,6 +9650,9 @@ func (f *File) methodValueParts(s *Scope, head, field Token) (fd *FuncDeclNode, 
 //     value when the method value is taken, and a binding made at compile time
 //     can only read it when the value is called.
 func (f *File) reportUnsupportedFuncValue(s *Scope, n Node) bool {
+	if f.reportIfaceMethodValue(s, n) {
+		return true
+	}
 	head, field, ok := f.exprFieldRead(n)
 	if !ok {
 		return false
@@ -9645,6 +9674,59 @@ func (f *File) reportUnsupportedFuncValue(s *Scope, n Node) bool {
 	default:
 		return false // supported: lifted with the receiver bound
 	}
+	return true
+}
+
+// reportIfaceMethodValue refuses a method value whose receiver is an INTERFACE
+// value, `one.Area`, `tab[0].Area`, `lib.Table[2].Name`: Go saves the interface
+// value when the method value is taken, which a binding made at compile time cannot,
+// as it cannot a pointer's. It was "type Shape has no field Area", or the emitter's
+// "cannot infer a type".
+func (f *File) reportIfaceMethodValue(s *Scope, n Node) bool {
+	fac, ok := f.soleFactor(n)
+	if !ok {
+		return false
+	}
+	kids := slices.Collect(it(fac.ast))
+	if len(kids) < 2 || kids[len(kids)-1].sym != FactorSuffix {
+		return false
+	}
+	steps := slices.Collect(it(kids[len(kids)-1].ast))
+	last := steps[len(steps)-1]
+	if last.sym != Selector {
+		return false
+	}
+	m, ok := f.selectorMember(last)
+	if !ok {
+		return false
+	}
+	t, ok := f.valueTypeAt(s, factorWithoutLastStep(kids, steps))
+	if !ok || t.f == nil || t.tn == nil {
+		return false
+	}
+	var set map[string]*MethodSpecNode
+	switch x := t.f.underlyingTypeAt(t).tn.(type) {
+	case *TypeNodeInterface:
+		set = map[string]*MethodSpecNode{}
+		t.f.collectIfaceMethods(t.s, x, set, map[string]bool{})
+	default:
+		id, isID := t.tn.(*TypeNodeIdent)
+		if !isID {
+			return false
+		}
+		name := id.Name.Src()
+		if id.Qualifier.IsValid() {
+			name = id.Qualifier.Src() + "." + name
+		}
+		if set, ok = t.f.interfaceMethodsNamed(t.s, name); !ok {
+			return false
+		}
+	}
+	if _, has := set[m.Src()]; !has {
+		return false
+	}
+	shown := f.exprSource(n)
+	f.err(m.Position(), "cannot take %s as a value: its receiver is an interface, whose value Go saves when the method value is taken and one bound at compile time cannot; a function literal calling %s reads it at each call instead", shown, shown)
 	return true
 }
 
@@ -10536,6 +10618,19 @@ func (f *File) checkSendWalked(s *Scope, ah Node, steps []Node, valNode Node) {
 			stars = 1 // `(*p)` is `*p`; `(*p).ch` is p.ch, a step through the pointer
 		}
 		base = id
+	}
+	// `*ress <- v` for a channel ress: a star over what is no pointer, which the
+	// walk answers nothing for and the send took. With steps, `*h.p`, the star is
+	// over the chain, which the walk follows.
+	if stars > 0 && len(steps) == 0 {
+		if d, isVar := s.find(base.Src()).(*VarDeclaration); isVar && !d.isPtr {
+			if t, ok := f.varTypeAt(d); ok && t.f != nil {
+				if _, isP := t.f.underlyingTypeAt(t).tn.(*TypeNodePointer); !isP {
+					f.err(f.tok(ah.Pos()).Position(), "invalid operation: cannot indirect %s (variable of type %s)", base.Src(), t.f.typeAtMessage(t))
+					return
+				}
+			}
+		}
 	}
 	tn, in := f.targetTypeNode(s, base, steps, stars)
 	if tn == nil {
@@ -14394,7 +14489,12 @@ func (f *File) checkFieldAccessOn(s *Scope, d *VarDeclaration, head Token, base 
 	// An interface has methods and no fields at all: what it carries is reached by
 	// an assertion or a type switch, not by a selector. Without this the read went
 	// unchecked and surfaced from the emitter as a puzzle about C.
-	if _, isIface := f.interfaceMethodsNamed(s, d.typeName.Src()); isIface {
+	if set, isIface := f.interfaceMethodsNamed(s, d.typeName.Src()); isIface {
+		if _, isMethod := set[field.Src()]; isMethod {
+			shown := base + "." + field.Src()
+			f.err(field.Position(), "cannot take %s as a value: its receiver is an interface, whose value Go saves when the method value is taken and one bound at compile time cannot; a function literal calling %s reads it at each call instead", shown, shown)
+			return
+		}
 		f.err(field.Position(), "type %s has no field %s", d.typeName.Src(), field.Src())
 		return
 	}
@@ -21984,6 +22084,16 @@ func (f *File) checkFactorNames(s *Scope, n Node) {
 	if me, rest, ok := f.methodExprOf(s, n); ok {
 		f.checkMethodExpr(s, me, rest)
 		return
+	}
+	// An interface's method taken as a value through a chain, `tab[0].Area`: see
+	// reportIfaceMethodValue.
+	if kids := slices.Collect(it(n.ast)); len(kids) == 2 && kids[1].sym == FactorSuffix {
+		if steps := slices.Collect(it(kids[1].ast)); len(steps) >= 2 && steps[len(steps)-1].sym == Selector {
+			e := Node{sym: Expression, ast: encodeNode(SimpleExpr, encodeNode(Term, encodeNode(UnaryExpr, encodeNode(Factor, n.ast))))}
+			if f.reportIfaceMethodValue(s, e) {
+				return
+			}
+		}
 	}
 	// `len(x)` and `cap(x)` Go makes a constant are recorded for the emitter
 	// wherever the call stands; only the constant folder recorded one, and `n ==

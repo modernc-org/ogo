@@ -1,0 +1,34 @@
+// Mutations of a worker pool on cogs, with Go as the oracle: what is received from
+// an element of an array of channels, and a star over a channel.
+
+type Req struct {
+	ID int
+	In int32
+}
+
+type Res struct {
+	ID  uint16
+	Out int32
+}
+
+var reqs [2]chan Req
+
+var ress chan Res
+
+func worker(w int) {
+	select {
+	case r := <-reqs[w]:
+		// ERROR "cannot use r.ID of type int as type uint16"
+		ress <- Res{r.ID, r.In}
+	}
+	r := <-reqs[w]
+	// ERROR "cannot use r.In of type int32 as type string in variable declaration"
+	var s string = r.In
+	_ = s
+	// ERROR "cannot indirect ress \(variable of type chan Res\)"
+	*ress <- Res{}
+}
+
+func main() {
+	worker(0)
+}

@@ -104,3 +104,37 @@ func TestCheckQualifiedConversion(t *testing.T) {
 		})
 	}
 }
+
+// TestCheckIfaceMethodValue: a method value whose receiver is an interface value
+// is refused by design, as one whose receiver is a pointer is -- Go saves the
+// value when the method value is taken, and a binding made at compile time cannot
+// -- and says so in every position. It was "type Shape has no field Area", or the
+// emitter's "cannot infer a type".
+func TestCheckIfaceMethodValue(t *testing.T) {
+	const pre = "type Shape interface{ Area() int }\n\ntype Sq struct{ n int }\n\nfunc (s *Sq) Area() int { return s.n }\n\ntype H struct{ s Shape }\n\nvar gs = Sq{3}\n\nvar tab = [1]Shape{&gs}\n\nvar one Shape = &gs\n\nvar h = H{&gs}\n\nfunc use(f func() int) {}\n\n"
+	for _, test := range []struct {
+		body string
+		want string // "" for a program this takes
+	}{
+		{"f := one.Area\n\t_ = f", "cannot take one.Area as a value: its receiver is an interface"},
+		{"f := tab[0].Area\n\t_ = f", "cannot take tab[0].Area as a value: its receiver is an interface"},
+		{"var f func() int = tab[0].Area\n\t_ = f", "cannot take tab[0].Area as a value"},
+		{"use(h.s.Area)", "cannot take h.s.Area as a value"},
+		{"use(one.Area)", "cannot take one.Area as a value"},
+		{"println(one.Area(), tab[0].Area(), h.s.Area())", ""},
+		{"f := func() int { return one.Area() }\n\t_ = f", ""},
+		{"f := gs.Area\n\t_ = f", ""},
+	} {
+		t.Run(test.body, func(t *testing.T) {
+			src := pre + "func main() {\n\t" + test.body + "\n}\n"
+			fsys := fstest.MapFS{"main.ogo": &fstest.MapFile{Data: []byte(src)}}
+			_, err := Build(-1, []string{"main.ogo"}, fsys)
+			switch {
+			case test.want == "" && err != nil:
+				t.Fatalf("refused: %v", err)
+			case test.want != "" && (err == nil || !strings.Contains(err.Error(), test.want)):
+				t.Fatalf("got %v, want an error containing %q", err, test.want)
+			}
+		})
+	}
+}
