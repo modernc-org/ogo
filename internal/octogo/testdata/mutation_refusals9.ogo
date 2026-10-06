@@ -46,7 +46,17 @@ func switches(h H) {
 	}
 }
 
+const K16 int16 = 2
+
+func untypedTag() {
+	switch 2 {
+	// ERROR "cannot use K16 of type int16 as type int in case"
+	case K16:
+	}
+}
+
 func main() {
 	selects()
 	switches(H{})
+	untypedTag()
 }

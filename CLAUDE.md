@@ -1126,7 +1126,15 @@ implementation restriction Go allows) -- and found one CRASH on a valid program:
 receive target asked nothing, and a type switch on the empty interface WRITTEN OUT,
 `var e interface{}`, had no interface name for its cases to be asked against
 (typeSwitchIface reads it as any). A non-empty interface written out as an
-operand's type is still asked nothing there.
+operand's type is still asked nothing there. Sweeping the crash's row -- a constant
+whose value is of another class than its type, or an untyped whole float, in every
+position wanting an integer (91 programs) -- found no more crashes and three rows:
+a literal KEY and an array LENGTH from `const K = 2.0` were refused (the emitter's
+litKeyIndex and the checker's arrayBound asked for an integer constant, where Go asks
+for one representable by an int; constLengthValue, foldIndexConst), and a switch on
+an untyped constant compared its cases with the untyped kind, where Go converts the
+tag to its default type first. **A constant's CLASS against its TYPE is a row**:
+`2.0` for an int16 and `2.0` where an int is wanted are each a spelling Go folds.
 
 **A COMPILER RUN IN A SWEEP IS CAPPED, AND A CRASH IS NOT A REFUSAL** (2026-09-20).
 A probe program is written to find a fault, and a fault is not always a wrong

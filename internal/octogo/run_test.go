@@ -46125,6 +46125,31 @@ func main() {
 `,
 		want: "3 5 7 6 6 2\n2 9 4\n",
 	},
+	{
+		// A whole float constant, `const K = 2.0`, where Go wants an integer: an
+		// array's length, a literal's key, len of an array type written with it, a
+		// case beside an integer tag. The key was refused by the emitter, the
+		// length by the checker, and len was no constant.
+		name: "whole float constants as lengths and keys",
+		src: `const K = 2.0
+
+const M = 6e0 / 2
+
+const L = len([K]int{})
+
+func main() {
+	var a [K]int
+	a[1] = 4
+	b := [M]byte{K: 7}
+	println(len(a), a[1], len(b), b[2], len([K]int{}), L, len([...]int{K: 1}))
+	switch 2 {
+	case K:
+		println("two")
+	}
+}
+`,
+		want: "2 4 3 7 2 2 3\ntwo\n",
+	},
 }
 
 // TestEmitCRun compiles emitted C with a host compiler and runs it, checking what

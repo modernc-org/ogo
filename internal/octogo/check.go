@@ -6192,6 +6192,12 @@ func (f *File) checkSwitch(s *Scope, results []retResult, n Node) {
 			}
 			typeOnExpr = f.typeSwitchShaped(c)
 			guardKind, guardOK = f.checkSwitchGuard(s, ss, results, c)
+			// An untyped constant tag is converted to its default type first, as Go
+			// has it: `switch 2 { case K: }` for a `const K int16` compares an int
+			// with an int16, and was taken.
+			if guardOK && isUntypedKind(guardKind) && guardKind != UntypedNil {
+				guardKind = defaultKind(guardKind)
+			}
 			if g, ok := f.switchGuardParts(c.ast); ok {
 				tag, hasTag = g.tag, g.hasTag
 			}
@@ -21094,7 +21100,7 @@ func (f *File) checkBracketConv(s *Scope, n, typ Node, lbrack Token, conv Node) 
 	// the declaration they were the value of.
 	tn := TypeNode(&TypeNodeSlice{TypeNode: elem})
 	if bound.sym != 0 {
-		v, ok := f.constArgValue(s, bound)
+		v, ok := f.constLengthValue(s, bound)
 		if !ok {
 			return
 		}
@@ -26235,6 +26241,15 @@ func (f *File) arrayBound(s *Scope, n Node) ExpressionNode {
 
 	pos := f.tok(n.Pos()).Position()
 	cv, _ := e.Value().(constVal)
+	// A whole float, `[K]int` for a `const K = 2.0`: representable by an int, which
+	// is all Go asks of a length.
+	if cv.cv != nil && cv.cv.Kind() == constant.Float {
+		if iv := constant.ToInt(cv.cv); iv.Kind() == constant.Int {
+			// Recorded as the integer, which every reader of the length asks for.
+			cv.cv = iv
+			e = cv
+		}
+	}
 	switch {
 	case cv.cv == nil || cv.cv.Kind() == constant.Unknown:
 		// A non-constant bound. When factor already reported a more specific
@@ -27182,6 +27197,25 @@ func (f *File) constArgValue(s *Scope, n Node) (constant.Value, bool) {
 		return nil, false
 	}
 	return cv, true
+}
+
+// constLengthValue is constArgValue for a length or an index, which takes a whole
+// float as the integer it is, as Go does: `[K]int{}` and `{K: 5}` for a `const K =
+// 2.0`. A conversion's operand is no such place, `string(2.0)` being refused.
+func (f *File) constLengthValue(s *Scope, n Node) (constant.Value, bool) {
+	n0 := len(f.errList)
+	if e := f.expression(s, n); e != nil {
+		if uc, ok := e.Value().(constVal); ok && uc.cv != nil {
+			switch iv := constant.ToInt(uc.cv); {
+			case uc.cv.Kind() == constant.Int:
+				return uc.cv, true
+			case uc.cv.Kind() == constant.Float && iv.Kind() == constant.Int:
+				return iv, true
+			}
+		}
+	}
+	f.errList = f.errList[:n0]
+	return nil, false
 }
 
 // sizedTarget builds the overflow-report descriptor for a var or assignment
@@ -28428,7 +28462,7 @@ func (f *File) litOrConvType(s *Scope, n Node) (typeAt, bool) {
 			length = l
 		case bound.sym != 0:
 			f.resolveNamedConsts(s, bound)
-			v, ok := f.constArgValue(s, bound)
+			v, ok := f.constLengthValue(s, bound)
 			if !ok {
 				return typeAt{}, false
 			}
@@ -28480,7 +28514,7 @@ func (f *File) constLitLength(s *Scope, lit Node) (int64, bool) {
 	for _, el := range compositeLitElements(lit) {
 		if el.keyed {
 			f.resolveNamedConsts(s, el.key)
-			v, ok := f.constArgValue(s, el.key)
+			v, ok := f.constLengthValue(s, el.key)
 			if !ok {
 				return 0, false
 			}
@@ -28529,10 +28563,17 @@ func (f *File) arrayTypeLen(t typeAt, ptr bool) (int64, bool) {
 		return 0, false
 	}
 	cv, ok := a.Expression.Value().(constVal)
-	if !ok || cv.cv == nil || cv.cv.Kind() != constant.Int {
+	if !ok || cv.cv == nil {
 		return 0, false
 	}
-	v, exact := constant.Int64Val(cv.cv)
+	iv := cv.cv
+	if iv.Kind() == constant.Float {
+		iv = constant.ToInt(iv) // a whole float, `[K]int` for a `const K = 2.0`
+	}
+	if iv.Kind() != constant.Int {
+		return 0, false
+	}
+	v, exact := constant.Int64Val(iv)
 	return v, exact && v >= 0
 }
 

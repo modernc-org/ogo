@@ -20733,7 +20733,9 @@ func (e *emitter) litKeyIndex(keyAST []int32) (int, bool) {
 	// expression Go accepts -- `geo.K`, `K + 1`, `1 << 2` -- and reading a SOLE token
 	// answered only for a literal or a bare name, so a qualified constant was refused
 	// as "not a non-negative integer constant" about one that is.
-	n, ok := e.foldConstInt(keyAST)
+	// An integral float, `K: 5` for a `const K = 2.0` or `K int16 = 2.0`, is the
+	// integer it is, as an index and a bound are (foldIndexConst).
+	n, ok := e.foldIndexConst(keyAST)
 	if !ok || n < 0 {
 		return 0, false
 	}

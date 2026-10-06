@@ -46,6 +46,10 @@ shipped section tells a reader on that version that they have behaviour they do 
 
 ### Fixed
 
+- **A whole float constant is taken where an integer is wanted**, as Go takes it:
+  `const K = 2.0` as an array's length, `[K]int`, as a literal's key, `[3]int{K:
+  5}`, and in `len([K]int{})`, a constant. The length was "invalid array bound",
+  the key was refused by the emitter, and len was no constant.
 - **A typed integer constant written as a float builds**: `const Two int16 = 2.0`
   kept the float value, and an index by it, an array bound or a shift count
   crashed the compiler. Its value is the integer its type says.
@@ -283,7 +287,9 @@ shipped section tells a reader on that version that they have behaviour they do 
   2).x = <-ch:`, which were asked nothing; and the cases of a type switch on a
   value of the empty interface written out, `var e interface{}`, a field of it
   included, which were asked nothing either -- a duplicate case, and `case int:`,
-  which an interface holding a pointer cannot match.
+  which an interface holding a pointer cannot match. And a switch on an untyped
+  constant compares its cases with the constant's default type, as Go does:
+  `switch 2 { case K: }` for a `const K int16` was taken.
 - **A seventh sweep of mutated run cases refuses what Go refuses**: an index on a
   number as the target of `++` or of a compound assignment, `calls[0]++`, `acc[0]
   += 100`, `h.n[0]++`, which only the `=` form refused; an element of a string used
