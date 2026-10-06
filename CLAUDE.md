@@ -1358,6 +1358,26 @@ the emitter likewise (inferNodes), and the float spellings on the left are recor
 as the integers they are (noteShiftedWholeConsts), which foldIntToken now reads --
 for EVERY recorded whole constant, so four fuzzer seeds and one run case spell `7e1
 % z` as `70 % z` since, each checked on the board.
+A fifth, a stepper-motor trapezoidal planner in Q16.16 whose step generator runs on
+another cog behind three channels of another package (three packages), matched Go
+on the host and the board. Its 1,500 mutants found TWO COMPILER CRASHES, one row:
+a type named through a name that is no package, `r int32.Report`, panicked the
+type parser (it is Go's "int32.Report is not a type" now). And three taken: a
+compound assignment's suffixed target was asked its Kind and not its DEFINED type,
+`r.P += n` (the bare variable's was); a target headed by a type, a constant or a
+function, `R.P = 1`, was asked nothing (checkNonValueTargetHead); and `const One = 1
+<< true`, the folder leaving a bool count unmodelled without a word. **A name in a
+type position is a row of every declaration that resolves to no package** -- a
+predeclared type, a variable, a constant.
+A sixth, a serial command shell (a line editor taking backspace and Ctrl-U, words
+split as byte slices, a command table of functions in another package, typed errors
+through a type switch), matched Go on the host and the board. Its mutants had 3
+taken beside the extension: a call's argument count was skipped wherever the one
+argument LOOKED like a call forwarding several results -- `two(g()[:])`, the slice
+being one value whatever g returns (exprWholeCall asks that the call be the LAST
+step), and `two(lib.G())` and `two(lib.V.Line())`, whose results nothing resolved
+across the boundary (exprCallResults) -- and `"s"[0]`, a string literal's element,
+had no type (factorType).
 
 **A C NAME IS A ROW** (2026-09-25). The emitted C keeps a program's own names, so
 every name a program may write is a row across everything else that names things in

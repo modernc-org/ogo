@@ -5647,6 +5647,11 @@ func (f *File) factorType(s *Scope, n Node) (Kind, bool) {
 			if k, known := f.identKind(s, lit); known && kindCategory(k) == catString {
 				return PredeclaredUint8, true
 			}
+			// And of a string LITERAL, `"s"[0]`, which no name stands for: `one("s"[0])`
+			// passed a byte for an int32 unasked.
+			if Symbol(lit.Ch) == STRING && !f.indexIsSlice(slices.Collect(it(suffix.ast))[0]) && len(slices.Collect(it(suffix.ast))) == 1 {
+				return PredeclaredUint8, true
+			}
 		}
 		// What the steps reach through the types written for them: `p[i]` of a
 		// pointer to an array, whose element nothing recorded on p -- a pointer's
@@ -8571,6 +8576,8 @@ func (f *File) checkAssignment(s *Scope, head, postfix Node) {
 			case *ConstDeclaration, *FuncDeclaration, *TypeDeclaration, *PredeclaredFunc, *PredeclaredType:
 				if !lhsSuffixed[i] {
 					f.err(tok.Position(), "cannot assign to %s", nm)
+				} else if i == 0 {
+					f.checkNonValueTargetHead(s, tok, postfix)
 				}
 			}
 		}
@@ -8615,6 +8622,8 @@ func (f *File) checkAssignment(s *Scope, head, postfix Node) {
 			case *ConstDeclaration, *FuncDeclaration, *TypeDeclaration, *PredeclaredFunc, *PredeclaredType:
 				if !lhsSuffixed[i] {
 					f.err(tok.Position(), "cannot assign to %s", nm)
+				} else if i == 0 {
+					f.checkNonValueTargetHead(s, tok, postfix)
 				}
 			}
 		}
@@ -8673,6 +8682,21 @@ func (f *File) checkAssignment(s *Scope, head, postfix Node) {
 						f.err(f.tok(rhs[0].Pos()).Position(), "cannot use %s of type %s as type %s in assignment", f.exprSource(rhs[0]), kindName(vk), kindName(k))
 					} else {
 						f.checkValueOverflow(s, sizedTarget(k, Token{}), rhs[0])
+						// And its DEFINED type, which a bare name's was asked
+						// (checkAssignType): `r.P += n` for an F field and an
+						// int32 n was taken.
+						if base, stars, ok := f.targetHead(head); ok {
+							steps, _ := callSteps(postfix)
+							if tn, in := f.targetTypeNode(s, base, steps, stars); tn != nil && onScopeChain(s, in) {
+								if name, named := namedTypeToken(tn); named {
+									want := name.Src()
+									if q := namedTypeQual(tn); q.IsValid() {
+										want = q.Src() + "." + want
+									}
+									f.checkDefinedType(s, want, rhs[0], "assignment")
+								}
+							}
+						}
 					}
 				}
 			}
@@ -8795,6 +8819,8 @@ func (f *File) checkAssignment(s *Scope, head, postfix Node) {
 			case *ConstDeclaration, *FuncDeclaration, *TypeDeclaration, *PredeclaredFunc, *PredeclaredType:
 				if !lhsSuffixed[i] {
 					f.err(tok.Position(), "cannot assign to %s", nm)
+				} else if i == 0 {
+					f.checkNonValueTargetHead(s, tok, postfix)
 				}
 			}
 		}
@@ -17583,6 +17609,44 @@ func (f *File) checkOperatorTarget(s *Scope, head, postfix Node, op Symbol, suff
 	return len(rhs) == 1 && !isShiftAssign(op) && f.kindlessOperandErr(s, rhs[0], pos, sym)
 }
 
+// checkNonValueTargetHead refuses a target whose head names no value, a type, a
+// constant or a function, with a selector after it: `R.P = 1`, `R.P++`, `K.P += 1`,
+// `f.P = 1`. Each was taken, the head being no variable and the selector asked by
+// nothing a target is asked.
+func (f *File) checkNonValueTargetHead(s *Scope, head Token, postfix Node) {
+	steps, _ := callSteps(postfix)
+	if len(steps) == 0 || steps[0].sym != Selector {
+		return
+	}
+	m, has := f.selectorMember(steps[0])
+	if !has {
+		return
+	}
+	switch d := s.find(head.Src()).(type) {
+	case *TypeDeclaration:
+		if _, _, _, isMethod := f.methodOwnerPath(s, head.Src(), m.Src()); isMethod {
+			f.err(head.Position(), "cannot assign to %s.%s (neither addressable nor a map index expression)", head.Src(), m.Src())
+			return
+		}
+		f.err(head.Position(), "operand for field selector %s must be value of type %s", m.Src(), head.Src())
+	case *ConstDeclaration:
+		what := "untyped constant"
+		if k, ok := f.identKind(s, head); ok {
+			what = untypedName(k)
+			if !isUntypedKind(k) {
+				what = kindName(k)
+			}
+		}
+		f.err(m.Position(), "%s.%s undefined (type %s has no field or method %s)", head.Src(), m.Src(), what, m.Src())
+	case *FuncDeclaration:
+		what := "func"
+		if d.FuncDecl != nil && d.FuncDecl.Type != nil && d.FuncDecl.Type.Signature != nil {
+			what = f.sigString(d.FuncDecl.Type.Signature, false)
+		}
+		f.err(m.Position(), "%s.%s undefined (type %s has no field or method %s)", head.Src(), m.Src(), what, m.Src())
+	}
+}
+
 // headIsDeref reports whether an assignment's head is a dereference, "*p = v". The
 // stars are the head's own leading tokens.
 func (f *File) headIsDeref(head Node) bool {
@@ -24536,12 +24600,26 @@ func (f *File) exprCallResults(s *Scope, n Node) ([]retResult, bool) {
 	if len(steps) == 0 || steps[len(steps)-1].sym != CallSuffix {
 		return nil, false
 	}
+	// Another package's function, `lib.G()`: its results where it is declared. Not
+	// answered, a call of one standing as the whole argument list was taken for
+	// one forwarding any number, and `two(lib.G())` was asked no count.
+	if len(steps) == 2 && steps[0].sym == Selector && kids[0].sym == 0 && f.ch(kids[0].tok) == IDENT && f.isImportQualifier(s, f.tok(kids[0].tok).Src()) {
+		if home, ok := f.importedPkgScope(f.tok(kids[0].tok)); ok {
+			if m, has := f.selectorMember(steps[0]); has {
+				if fd, isFunc := home.Declarations[m.Src()].(*FuncDeclaration); isFunc && fd.FuncDecl != nil && fd.FuncDecl.Type != nil {
+					wf := f.fileOfToken(fd.Token())
+					return wf.flattenResults(wf.Scope, fd.FuncDecl.Type.Signature), true
+				}
+			}
+		}
+	}
 	// A method at the end of a chain, `bus.active.Read()` of an interface field:
-	// the signature the walk names for it.
+	// the signature the walk names for it -- another package's too, `lib.V.Two()`,
+	// counted in the package declaring it.
 	if len(steps) >= 2 && steps[len(steps)-2].sym == Selector && kids[0].sym == 0 && f.ch(kids[0].tok) == IDENT {
 		w := f.callChainWalk(s, f.tok(kids[0].tok), steps)
 		for _, c := range w.calls {
-			if c.at == len(steps)-2 && c.sig != nil && c.home == nil {
+			if c.at == len(steps)-2 && c.sig != nil {
 				return f.flattenResults(c.in, c.sig), true
 			}
 		}
@@ -24565,17 +24643,24 @@ func (f *File) exprCallResults(s *Scope, n Node) ([]retResult, bool) {
 // An index's own contents and a call's own arguments are not part of the shape, so
 // neither is walked: `devs[i+1].Read()` is a whole call, and `g() + 1` is not.
 func (f *File) exprWholeCall(n Node) bool {
-	sawCall, extra := false, false
+	// The value is the call's only where the call is the LAST step: `g()[:]` and
+	// `ed.Line()[0]` are one value whatever g returns, and were let through as a
+	// call forwarding several, `two(g()[:])` taken with an argument missing.
+	sawCall, lastCall, extra := false, false, false
 	var walk func(ast []int32)
 	walk = func(ast []int32) {
 		for c := range it(ast) {
 			switch c.sym {
-			case Expression, SimpleExpr, Term, UnaryExpr, Factor, FactorSuffix, Selector:
+			case Selector:
+				lastCall = false
+				walk(c.ast)
+			case Expression, SimpleExpr, Term, UnaryExpr, Factor, FactorSuffix:
 				walk(c.ast)
 			case Index:
 				// an index expression of its own
+				lastCall = false
 			case CallSuffix:
-				sawCall = true
+				sawCall, lastCall = true, true
 			case 0:
 				switch f.ch(c.tok) {
 				case IDENT, PERIOD:
@@ -24589,7 +24674,7 @@ func (f *File) exprWholeCall(n Node) bool {
 		}
 	}
 	walk(n.ast)
-	return sawCall && !extra
+	return sawCall && lastCall && !extra
 }
 
 // checkArgsIn is checkArgs with the parameter types resolved in a scope of their
@@ -26952,7 +27037,10 @@ func (f *File) typ(s *Scope, n Node) (r TypeNode) {
 					r = &ident
 					f.checkQualifiedType(ident.Qualifier, tok)
 				case ident.Name.IsValid():
-					panic(todo("", origin(1)))
+					// A second name after one that is no package, `int32.Report`,
+					// `x.T`: a selector on a type or a variable, which names no type.
+					// It crashed the compiler.
+					f.err(ident.Name.Position(), "%s.%s is not a type", ident.Name.Src(), nm)
 				case f.isImportQualifier(s, nm):
 					ident.Qualifier = tok // a "pkg.T" qualified type; the "." and T follow
 				default:
@@ -28176,6 +28264,16 @@ func (f *File) foldConstBinaryOp(opTok Token, lhs constant.Value, op Symbol, rhs
 		}
 		if lhs.Kind() != constant.Int {
 			f.reportBadConstOp(opTok, lhs, nil)
+			return constant.MakeUnknown(), true
+		}
+		if rhs.Kind() == constant.Bool || rhs.Kind() == constant.String {
+			// `const One = 1 << true`: no number at all, which a constant
+			// declaration's initializer, walked by no shift rule, took.
+			kind := "bool"
+			if rhs.Kind() == constant.String {
+				kind = "string"
+			}
+			f.err(opTok.Position(), "cannot convert %s (untyped %s constant) to type uint", rhs, kind)
 			return constant.MakeUnknown(), true
 		}
 		if rhs.Kind() != constant.Int {

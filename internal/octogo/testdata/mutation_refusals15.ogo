@@ -1,0 +1,75 @@
+// Mutation sweeps of a stepper-motor planner whose step generator runs on another
+// cog, and of a serial command shell: a type named through what is no package,
+// which crashed the compiler, a compound assignment into a field of a defined type,
+// a target headed by a type, a constant or a function, a constant shifted by a
+// bool, a call's result sliced as the only argument, and a string literal's
+// element.
+
+type F int32
+
+type R struct {
+	P F
+	A [2]F
+}
+
+func (r R) M() int { return 1 }
+
+const K = 3
+
+func f() {}
+
+// ERROR "int32.Report is not a type"
+func show(r int32.Report) {}
+
+// ERROR "cannot convert true \(untyped bool constant\) to type uint"
+const one = 1 << true
+
+func compound(n int32) {
+	var r R
+	// ERROR "cannot use n of type int32 as type F in assignment"
+	r.P += n
+	// ERROR "cannot use n of type int32 as type F in assignment"
+	r.A[0] -= n
+	r.P += F(n)
+	r.A[1] += r.P
+	_ = r
+}
+
+func heads() {
+	// ERROR "operand for field selector P must be value of type R"
+	R.P = 1
+	// ERROR "operand for field selector P must be value of type R"
+	R.P++
+	// ERROR "operand for field selector A must be value of type R"
+	R.A[0] += 1
+	// ERROR "K.P undefined \(type untyped int has no field or method P\)"
+	K.P = 1
+	// ERROR "f.P undefined \(type func\(\) has no field or method P\)"
+	f.P = 1
+}
+
+func g() []byte { return nil }
+
+func two(a []byte, n int) int { return n }
+
+func one32(r int32) {}
+
+func args() {
+	// ERROR "not enough arguments in call to two"
+	_ = two(g()[:])
+	// ERROR "not enough arguments in call to two"
+	_ = two(g()[1:])
+	// ERROR "cannot use .s.\[0\] of type uint8 as type int32 in argument to one32"
+	one32("s"[0])
+	x := "abc"[1]
+	// ERROR "cannot use x of type uint8 as type int32 in argument to one32"
+	one32(x)
+	_ = two(g()[:], int("s"[0]))
+}
+
+func main() {
+	compound(1)
+	heads()
+	args()
+	_ = one
+}

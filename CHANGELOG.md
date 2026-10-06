@@ -52,6 +52,9 @@ shipped section tells a reader on that version that they have behaviour they do 
 
 ### Fixed
 
+- **A type named through what is no package no longer crashes the compiler**:
+  `func show(r int32.Report)` and `var x string.T` panicked in the checker; it is
+  "int32.Report is not a type", as Go says.
 - **A float constant shifted by a constant count is an integer constant**, as Go
   has it: `const c = 2.0 << 2` and `x := 2.0 << 2` are the int 8, `var g uint64 =
   1.0 << 40` is 2^40, and `2.0 << 2 + 0.5` is a float again. The first two were
@@ -321,6 +324,16 @@ shipped section tells a reader on that version that they have behaviour they do 
   otherwise, an interface holding a pointer -- which built where the declaration
   was refused by the emitter; and the address of another package's pointer
   variable, `&lib.ErrX`, a pointer to a pointer, where an interface is wanted.
+- **A compound assignment into a field or an element of a defined type is asked the
+  type**, `r.P += n` for an `F` field and an int32 n, as a variable's was; a target
+  headed by a type, a constant or a function, `R.P = 1`, `R.P++`, `K.P += 1`,
+  `f.P = 1`, in Go's words; and a constant shifted by a bool or a string, `const
+  One = 1 << true`. Each was taken.
+- **A call with an argument missing is counted where the one argument is a slice
+  of a call, `two(g()[:])`, another package's function, `two(lib.G())`, or a
+  method of another package's variable**: each was taken for a call forwarding
+  several results. And an element of a string literal, `"s"[0]`, is a byte where
+  it stands, refused into an int32 as Go refuses it.
 - **A method value of a literal or a call's result is refused by the checker**:
   `Taps{1, 2}.Scale` of a pointer method in Go's words, and a value method,
   `P{1}.V`, `mk().V`, by design -- a method value binds the address of its

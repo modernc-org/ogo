@@ -233,6 +233,38 @@ func TestCheckAddrOfQualifiedPtr(t *testing.T) {
 	}
 }
 
+// TestCheckQualifiedCallCount: a call of another package's function, or of a method
+// of another package's variable, as the whole argument list is counted against the
+// parameters; it was taken for one forwarding any number of results.
+func TestCheckQualifiedCallCount(t *testing.T) {
+	const lib = "type E struct{ b [4]byte }\n\nfunc (e *E) Line() []byte { return e.b[:] }\n\nfunc (e *E) Two() ([]byte, int) { return e.b[:], 1 }\n\nfunc G() []byte { return nil }\n\nvar V E\n"
+	for _, test := range []struct {
+		body string
+		want string // "" for one Go takes
+	}{
+		{"_ = two(lib.G())", "not enough arguments in call to two"},
+		{"_ = two(lib.V.Line())", "not enough arguments in call to two"},
+		{"x, y := lib.G()\n\t_, _ = x, y", "assignment mismatch: 2 variables but 1 value"},
+		{"var e lib.E\n\t_ = two(e.Line()[:])", "not enough arguments in call to two"},
+		{"var e lib.E\n\t_ = two(e.Two())\n\t_ = two(lib.V.Two())", ""},
+	} {
+		t.Run(test.body, func(t *testing.T) {
+			src := "import \"lib\"\n\nfunc two(a []byte, n int) int { return n }\n\nfunc main() {\n\t" + test.body + "\n}\n"
+			fsys := fstest.MapFS{
+				"main.ogo":    &fstest.MapFile{Data: []byte(src)},
+				"lib/lib.ogo": &fstest.MapFile{Data: []byte(lib)},
+			}
+			_, err := Build(-1, []string{"main.ogo"}, fsys)
+			switch {
+			case test.want == "" && err != nil:
+				t.Fatalf("refused: %v", err)
+			case test.want != "" && (err == nil || !strings.Contains(err.Error(), test.want)):
+				t.Fatalf("got %v, want an error containing %q", err, test.want)
+			}
+		})
+	}
+}
+
 // TestCheckIfaceMethodValue: a method value whose receiver is an interface value
 // is refused by design, as one whose receiver is a pointer is -- Go saves the
 // value when the method value is taken, and a binding made at compile time cannot
