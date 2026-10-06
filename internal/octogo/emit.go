@@ -2250,6 +2250,33 @@ func (e *emitter) emitGo(nodes []Node) {
 			e.ind()
 			e.emit(line)
 		}
+		// An INTERFACE the chain produces, `go get().Run(ch)`: the value crosses in
+		// the receiver's slot, as a variable's does, bound here once -- the nil check
+		// and the slot both read it. Taken for a concrete type's receiver, it was
+		// "type Worker has no method Run".
+		if e.isIfaceCType(rct) {
+			if _, has := e.ifaceMethodRec(rct, name); !has {
+				e.fail("%s has no method %s", e.goTypeName(rct), name)
+				return
+			}
+			if !addr && !isCIdent(text) {
+				bound := text
+				_, pro := e.capturePrologue(func() { text = e.hoist(rct, func() { e.emit(bound) }) })
+				for _, line := range pro {
+					e.ind()
+					e.emit(line)
+				}
+			}
+			if e.checks {
+				e.usesIfaceNil = true
+				e.needPanic()
+				e.ind()
+				e.emit("ogo_iface_vt(" + text + ".vt);\n")
+			}
+			recvText, recvCType = text, rct
+			site = goSite{args: []string{rct}, ifaceMethod: name, ifaceCType: rct, id: len(e.goSites)}
+			break
+		}
 		cn, path, rt, okp := e.promotedMethod(rct, name)
 		if !okp {
 			e.fail("type %s has no method %s", e.goTypeName(methodBaseType(rct)), name)
@@ -3302,9 +3329,44 @@ func (e *emitter) zeroInitC(ctype string) string {
 		return e.isStruct(ct) || ct == cString || e.isSliceCType(ct) || ct == "ogo_builder"
 	}
 	if aggregate(ctype) || aggregate(e.underlyingCType(ctype)) {
+		if e.leadsZeroSized(e.underlyingCType(ctype)) {
+			return e.zeroBraceC(e.underlyingCType(ctype))
+		}
 		return "{0}"
 	}
 	return "0"
+}
+
+// zeroSizedField reports whether a struct field is an array with no elements --
+// `_ [0]func()`, Go's idiom for a struct no one may compare. Its zero is "{}":
+// "{0}" names an element it does not have, which the host's compiler refuses and
+// the target's warns about ("Extra initializers for array").
+func (e *emitter) zeroSizedField(f structField) bool {
+	a := f.dim
+	if a.bound == "" {
+		na, isArr := e.namedArrays[f.ctype]
+		if !isArr {
+			return false
+		}
+		a = na
+	}
+	return slices.Contains(a.bounds(), "0")
+}
+
+// leadsZeroSized reports whether a struct's first field is one of no elements, or
+// a struct that leads with one: "{0}" for the whole struct then initializes that
+// field, which gcc refuses and the target's compiler cannot ("Cannot handle memref
+// of size 0"), so the zero is written out (zeroBraceC).
+func (e *emitter) leadsZeroSized(ctype string) bool {
+	fields := e.structs[ctype]
+	if len(fields) == 0 {
+		return false
+	}
+	f := fields[0]
+	if e.zeroSizedField(f) {
+		return true
+	}
+	return f.dim.bound == "" && e.leadsZeroSized(e.underlyingCType(f.ctype))
 }
 
 // zeroBraceC is zeroInitC written out in full: every field of a struct, with an
@@ -3332,6 +3394,9 @@ func (e *emitter) zeroBraceC(ctype string) string {
 // on the declarator, so its zero is the element's wrapped in one brace per
 // dimension.
 func (e *emitter) zeroFieldC(f structField) string {
+	if e.zeroSizedField(f) {
+		return "{}"
+	}
 	z := e.zeroBraceC(f.ctype)
 	if f.dim.bound != "" {
 		for range f.dim.dims() {
@@ -9067,7 +9132,12 @@ func (e *emitter) ifaceChainMethod(recv string, suffix []Node) (ifaceCType strin
 			// count mismatch, where the same call on a local, a field or a method
 			// result was fine.
 			if cur, walked = e.constChainType(recv, steps); !walked {
-				return "", ifaceMethod{}, false
+				// A CALL at the head, `get().Read()`, `mk(1).dev.Read()`: the
+				// chain goes on from its result, as a call's chain is typed
+				// (chainResultCur).
+				if cur, walked = e.chainResultCur(recv, steps); !walked {
+					return "", ifaceMethod{}, false
+				}
 			}
 		}
 		ct = cur.ctype
@@ -9104,9 +9174,16 @@ func (e *emitter) ifaceRecvText(recv string, suffix []Node) (string, bool) {
 		}
 		text = e.varRef(recv)
 	} else {
-		var okc bool
-		if text, ct, _, okc = e.chainCText(recv, steps); !okc {
+		var okc, addr bool
+		if text, ct, addr, okc = e.chainCText(recv, steps); !okc {
 			return "", false
+		}
+		if !addr && !isCIdent(text) {
+			// A value a CALL produced, `get().Read()`: the table and the data are both
+			// read off it, so it is bound once, as the chain walk binds one
+			// (chainCText). Written twice, `get().Arr()` called get twice.
+			bound := text
+			text = e.hoist(ct, func() { e.emit(bound) })
 		}
 	}
 	if !e.isIfaceCType(ct) {
@@ -17799,6 +17876,8 @@ func (e *emitter) methodSignatureC(cname, recvName, recvCType string, sig []int3
 	// (emitRecvCopy), every call handing it an address (byRefRecvC).
 	if e.recvByRef[cname] {
 		recvParam = recvCType + "* " + paramArgName(recvName)
+	} else if e.memberShadowParam(recvName, recvCType) {
+		recvParam = recvCType + " " + paramArgName(recvName)
 	}
 	// An ARRAY value receiver is received as a POINTER and copied in the body,
 	// exactly as an array PARAMETER is: a parameter of array type corrupts unrelated
@@ -17950,6 +18029,10 @@ func (e *emitter) cParamList(ast []int32) []string {
 		// (emitParamCopies), as an array parameter is: see byRefParam.
 		if e.byRefParam(ct) {
 			out = append(out, ct+"* "+paramArgName(name))
+			return
+		}
+		if e.memberShadowParam(name, ct) {
+			out = append(out, ct+" "+paramArgName(name)) // copied in on entry (emitParamCopies)
 			return
 		}
 		out = append(out, ct+" "+e.localIdent(name)) // a parameter name may be Unicode
@@ -18472,6 +18555,25 @@ func (e *emitter) arrayParamCType(a arrDim) string { return e.sliceElemOfArray(a
 // pointer), distinct from the local copy the body sees under the source name.
 func paramArgName(name string) string { return paramArgPrefix + userIdent(name) }
 
+// memberShadowParam reports whether a STRUCT parameter or receiver passed by value,
+// of C type ct, is named like one of its own members holding an aggregate --
+// `func (n Named) String() string { return n.n }` for a string field n. The
+// target's C compiler refuses `n.n` for such a parameter, "Expecting identifier
+// after '.'" (doc/param-named-like-member.c), where a local of the name is right:
+// it is received under paramArgName and copied into a local of its own name on
+// entry (emitParamCopies, emitRecvCopy).
+func (e *emitter) memberShadowParam(name, ct string) bool {
+	if name == "" || name == "_" || e.isPointer(ct) || e.byRefParam(ct) {
+		return false
+	}
+	for _, f := range e.structs[e.underlyingCType(ct)] {
+		if f.name == name && (e.zeroInitC(f.ctype) == "{0}" || e.isIfaceCType(f.ctype)) {
+			return true
+		}
+	}
+	return false
+}
+
 // paramArgPrefix begins the C name of every parameter that is such a pointer.
 const paramArgPrefix = "_ogo_"
 
@@ -18558,6 +18660,9 @@ func (e *emitter) emitParamCopies(sig []int32) {
 						e.emit(ct + " " + nm + ";\n")
 						e.ind()
 						e.emit("memcpy(&" + nm + ", " + paramArgName(name) + ", sizeof(" + nm + "));\n")
+					} else if e.memberShadowParam(name, ct) {
+						e.ind()
+						e.emit(ct + " " + e.localIdent(name) + " = " + paramArgName(name) + ";\n")
 					}
 				})
 			}
@@ -18591,6 +18696,8 @@ func (e *emitter) emitParamVoids(sig, body []int32) {
 						cname = paramArgName(name) // an array parameter is received by pointer
 					} else if !variadic && synthetic && e.byRefParam(e.cType(ta)) {
 						cname = paramArgName(name) // and so is a by-ref struct, copied only when named
+					} else if !variadic && synthetic && e.memberShadowParam(name, e.cType(ta)) {
+						cname = paramArgName(name) // and one named like a member, copied only when named
 					}
 					e.ind()
 					e.emit("(void)" + cname + ";\n")
@@ -20175,6 +20282,32 @@ func (e *emitter) factorStructLitChain(kids []Node) (ctype string, lit Node, ste
 	return ctype, lit, steps, true
 }
 
+// litMethodHead binds a literal standing at the head of a method call, `M{...}.Inv()`
+// for a defined array or slice type and `P{1, 2}.Two()` for a struct, to a temporary
+// and answers it and the steps, for the paths that take a call apart by its head.
+// A pointer method a literal cannot take the address for is left to them.
+func (e *emitter) litMethodHead(rhs []int32) (string, []Node, bool) {
+	kids := e.factorKids(rhs)
+	isMethodCall := func(steps []Node) bool {
+		return len(steps) == 2 && steps[0].sym == Selector && steps[1].sym == CallSuffix
+	}
+	if typeAST, _, lit, steps, ok := e.namedArrayLitChain(kids); ok && isMethodCall(steps) {
+		if tmp, ok := e.hoistLitVar(typeAST, lit); ok {
+			return tmp, steps, true
+		}
+		return "", nil, false
+	}
+	if ctype, lit, steps, ok := e.factorStructLitChain(kids); ok && isMethodCall(steps) {
+		if e.methodPtr[e.methodCName(ctype, e.soleIdent(steps[0].ast))] {
+			return "", nil, false
+		}
+		tmp := e.hoist(ctype, func() { e.emitCompositeLit(ctype, lit, true) })
+		e.locals[tmp] = ctype
+		return tmp, steps, true
+	}
+	return "", nil, false
+}
+
 // emitStructLitChain emits a struct literal read through a suffix: the literal is
 // bound to a temporary of its type, declared ahead of the statement, and the steps
 // -- fields, indexes, a method call -- apply to that. The temporary is this frame's,
@@ -21224,7 +21357,13 @@ func (e *emitter) emitArrayLitVar(name string, typeAST []int32, lit Node, static
 	if !ok {
 		return
 	}
-	defer e.bindLitValues(lit)() // the values that do something, in the order written
+	// The values that do something, in the order written. At package scope they are
+	// bound where the package initializer's step renders them (emitSliceLitVar): bound
+	// here, the bindings went to a prologue no step writes, and `var curve =
+	// []Point{{FromInt(0), FromInt(10)}, ...}` named temporaries C had never seen.
+	if !static {
+		defer e.bindLitValues(lit)()
+	}
 	// The declared name as C spells it: a global's is mangled already, and a
 	// local's is renamed where it is read when it is a keyword or a macro.
 	declName := name
@@ -21388,6 +21527,7 @@ func (e *emitter) emitSliceLitVar(name, elem, cname string, lit Node, values []*
 		e.emit(decl + " " + backing + "[" + n + "]" + suffix + ";\n")
 		var fixups []litFixup
 		valsText, pro := e.pkgInitRender(func() {
+			defer e.bindLitValues(lit)()
 			fixups = e.captureLitFixups(func() { e.emitPositionalValues(values, elem) })
 		})
 		tmp := e.newTmp()
@@ -22023,7 +22163,10 @@ func (e *emitter) pkgSliceLitVar(elem, cname string, lit Node) (string, bool) {
 	e.pkgLitObjects = append(e.pkgLitObjects,
 		"static "+elem+" "+backing+"["+n+"];",
 		"static "+cname+" "+name+" = {"+backing+", "+n+", "+n+"};")
-	text := e.captureC(func() { e.emitPositionalValues(values, elem) })
+	text := e.captureC(func() {
+		defer e.bindLitValues(lit)()
+		e.emitPositionalValues(values, elem)
+	})
 	tmp := e.newTmp()
 	e.includes["string.h"] = true
 	e.prologue = append(e.prologue,
@@ -26033,7 +26176,25 @@ func (e *emitter) accessDeref(cur accessCur, prefix string) string {
 	if _, ok := e.arrayPtrCType(cur.ctype); ok {
 		return e.arrayPtrDerefC(prefix, cur.ctype)
 	}
-	return prefix
+	return e.wideRowC(cur, prefix)
+}
+
+// wideRowC is a ROW of an array of 64-bit elements, reached by an index and about
+// to be indexed, as a pointer to its first element: `(&r[I][0])[J]` for `r[I][J]`.
+// The target's C compiler reads and writes the element of `r[I][J]` wrong for an
+// int64 or uint64 r of two or more dimensions whenever I holds a call -- the bound
+// check ogo_bound is one, so every element of such a table indexed by a variable
+// in a checked build (doc/wide-row-call-index.c): a store was lost, a read gave
+// garbage, in silence. Through the row's address it does neither; measured on a
+// P2-EDGE, as a cast of the row or `I + 0` did not help. Pure, so nothing moves.
+func (e *emitter) wideRowC(cur accessCur, prefix string) string {
+	if cur.slice || len(cur.dims) == 0 || !strings.HasSuffix(prefix, "]") {
+		return prefix
+	}
+	if cIntWidths[e.underlyingCType(cur.elem)] != 64 {
+		return prefix
+	}
+	return "(&" + prefix + "[0])"
 }
 
 // accessSlice advances the chain by a slice step, `[l:h]`. Slicing an array or a
@@ -34084,6 +34245,30 @@ func (e *emitter) emitCallExpr(recv string, suffix []Node) bool {
 		e.emitMethodExpr(me)
 		return true
 	}
+	// `r.Read()`, `devs[i].Read()`, `get().Read()` as a STATEMENT, a method of
+	// several results reached through an interface: the slot writes them through a
+	// trailing parameter (ifaceMethod.out), so the call needs a temporary of this
+	// frame to write into, read by nobody. On a variable the call went out without
+	// one -- "Bad number of parameters" from the target's compiler, the results
+	// written through whatever the register held -- and through a chain it was
+	// refused.
+	if discard {
+		if ct, m, isIface := e.ifaceChainMethod(recv, suffix); isIface && m.out != "" && len(m.resList) > 1 {
+			call := suffix[len(suffix)-1].ast
+			if len(suffix) == 2 {
+				e.checkIfaceRecvKept(ct, m.name, recv)
+			}
+			e.checkIfaceArgs(ct, m.name, e.callArgExprs(call), e.spreadCall(call))
+			text, ok := e.ifaceRecvText(recv, suffix)
+			if !ok {
+				return false
+			}
+			tmp := e.newTmp()
+			e.prologue = append(e.prologue, m.out+" "+tmp+";\n")
+			e.emit(e.ifaceCallC(ct, text, m.name, call, tmp))
+			return true
+		}
+	}
 	// An UNQUALIFIED call to a math intrinsic, which happens only inside the math
 	// package's own source: Round and Trunc are written in OctoGo over Floor, Ceil
 	// and Abs. Without this they would emit calls to math_Floor, which is declared
@@ -34753,6 +34938,11 @@ func (e *emitter) guardedMulOp(ctype string, op, rhs Node) bool {
 // crosses, not what it means, so a method that writes to its receiver writes to the
 // copy and the caller's array is untouched.
 func (e *emitter) emitRecvCopy(recvName, recvCType string) {
+	if !e.recvByRef[e.curFunc] && e.memberShadowParam(recvName, recvCType) {
+		e.ind()
+		e.emit(recvCType + " " + e.localIdent(recvName) + " = " + paramArgName(recvName) + ";\n")
+		return
+	}
 	if e.recvByRef[e.curFunc] {
 		nm := e.localIdent(recvName)
 		e.includes["string.h"] = true
@@ -35661,7 +35851,25 @@ func (e *emitter) chainResultType(base string, steps []Node) (string, bool) {
 func (e *emitter) chainResultCur(base string, steps []Node) (accessCur, bool) {
 	var cur accessCur
 	pendingFn, pendingConv := false, false
+	// ANOTHER package's function at the head, `lib.Ident().T()`: the chain goes on
+	// from its result, an array or a value. The head was a qualifier, no variable
+	// and no function of this package's, and the chain was untyped -- an array
+	// field of a literal given one was "must be a literal, an array value or a call
+	// returning one".
+	qualified := false
+	if prefix, isImport := e.importQualifiers[base]; isImport && base != "p2" && len(steps) >= 2 && steps[0].sym == Selector && steps[1].sym == CallSuffix {
+		mn := e.mangle(prefix, e.soleIdent(steps[0].ast))
+		if a, isArr := e.funcArrayRet[mn]; isArr {
+			cur = curArray(a)
+		} else if rts, ok := e.funcRet[mn]; ok && len(rts) == 1 {
+			cur = e.plainOrSlice(rts[0])
+		} else {
+			return accessCur{}, false
+		}
+		steps, qualified = steps[2:], true
+	}
 	switch {
+	case qualified:
 	case e.isChainVar(base):
 		cur, _ = e.accessBase(base)
 	case e.isChainFunc(base):
@@ -43510,8 +43718,15 @@ func (e *emitter) emitDestructure(targets []assignTarget, declare []bool, rhs []
 			}
 			return
 		}
-		e.fail("multiple assignment requires a single function call on the right-hand side")
-		return
+		// `x, ok := M{{1, 2}, {3, 4}}.Inv()`, `n, ok := P{1, 2}.Two()`: a method of
+		// several results on a LITERAL, bound to a temporary as a chain of one
+		// result's is, the call made on that.
+		tmp, steps, isLit := e.litMethodHead(rhs)
+		if !isLit {
+			e.fail("multiple assignment requires a single function call on the right-hand side")
+			return
+		}
+		callee, suffix = tmp, steps
 	}
 	// Another package's variable at the head, `lib.Fn()` for a function variable,
 	// `lib.V.Get()` for a method of one: the chain from its global, as every other

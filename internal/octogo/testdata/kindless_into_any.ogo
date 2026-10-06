@@ -1,0 +1,56 @@
+// A slice, an array, a function or a channel whose type is written out does not go
+// into an interface asking for no method: Go stores a copy, and an interface here
+// holds a pointer. Their addresses do.
+
+type H struct{ v any }
+
+var ch chan any
+
+func show(v any) {}
+
+func showAll(n int, vs ...any) {}
+
+func ret(xs []int) any {
+	// ERROR cannot use xs as any value in return statement: it is a slice, and an interface holds a pointer here
+	return xs
+}
+
+func main() {
+	xs := []int{1, 2}
+	var c chan int
+	f := func() {}
+	var arr [2]int
+	// ERROR cannot use xs as any value in argument to show: it is a slice
+	show(xs)
+	// ERROR cannot use c as any value in argument to show: it is a channel
+	show(c)
+	// ERROR cannot use f as any value in argument to show: it is a function
+	show(f)
+	// ERROR cannot use arr as any value in argument to show: it is an array
+	show(arr)
+	// ERROR cannot use xs\[1:\] as any value in argument to show: it is a slice
+	show(xs[1:])
+	// ERROR cannot use \[\]int\{1\} as any value in argument to show: it is a slice
+	show([]int{1})
+	// ERROR cannot use main as any value in argument to show: it is a function
+	show(main)
+	// ERROR cannot use xs as any value in variable declaration: it is a slice
+	var a any = xs
+	// ERROR cannot use xs as any value in assignment: it is a slice
+	a = xs
+	h := H{}
+	// ERROR cannot use xs as any value in assignment: it is a slice
+	h.v = xs
+	// ERROR cannot use xs as any value in struct literal: it is a slice
+	h = H{v: xs}
+	// ERROR cannot use xs as any value in array or slice literal: it is a slice
+	vs := []any{xs}
+	// ERROR cannot use xs as any value in send: it is a slice
+	ch <- xs
+	// ERROR cannot use xs as any value in argument to showAll: it is a slice
+	showAll(1, xs)
+	show(&xs)
+	show(&arr)
+	show(nil)
+	_, _ = a, vs
+}

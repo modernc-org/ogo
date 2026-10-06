@@ -14367,6 +14367,23 @@ func (f *File) checkImplements(s *Scope, ifaceName string, value Node, what stri
 			return
 		}
 	}
+	// A slice, an array, a function, a channel or a struct whose type is written
+	// out, into an interface asking for no method: `show(xs)` for an `any`. Go
+	// stores a copy, and an interface here holds a pointer; the value went to the C
+	// compiler as the interface, "incompatible type for argument", where the
+	// declaration `var a any = xs` was the emitter's to refuse.
+	if len(set) == 0 {
+		if _, _, _, named := f.exprNamedType(s, value); !named {
+			if what2, known := f.nonBoolOperand(s, value); known {
+				switch what2 {
+				case "a slice", "an array", "a function", "a channel", "a struct":
+					f.err(f.tok(value.Pos()).Position(), "cannot use %s as %s value in %s: it is %s, and an interface holds a pointer here",
+						f.exprSource(value), ifaceName, what, what2)
+					return
+				}
+			}
+		}
+	}
 	// `&x` names the same variable as `x` and a different method set: the pointer
 	// carries every method, the value only those declared on it.
 	valueIsPtr := false

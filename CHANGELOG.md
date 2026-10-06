@@ -52,9 +52,54 @@ shipped section tells a reader on that version that they have behaviour they do 
 - **A method may be called on a parenthesised receive as a statement**:
   `(<-pc).set(7)` and `(<-in).show()` were "unsupported call target", where the
   same call as a value worked.
+- **A method of several results may be called on a literal**: `_, ok =
+  M{{1, 2}, {3, 4}}.Inv()`, `n, gt := P{3, 1}.Two()` and `a, b := L{7, 8,
+  9}.Two()`, for an array, a struct and a slice literal. Each was "multiple assignment
+  requires a single function call on the right-hand side".
+- **A method on another package's call returning an array**: `t :=
+  lib.IdentMx().T()` and a field given `lib.IdentMx().T().T()` were "cannot infer
+  a type" and "an element of a [2][2]int literal must be a literal, an array value
+  or a call returning one".
+- **A method of an interface reached by a call is called in every position**:
+  `get().Read()`, `x, ok := get().Read()`, `return get().Read()`,
+  `take(get().Read())`, `a := get().Arr()`, `geth().r.Read()` and `go
+  get().Run(done)`, for a `get() Reader`, were "cannot infer a type",
+  "multiple-assignment target/result count mismatch", "unsupported call in
+  expression" and "type Reader has no method Run". What the call returns is
+  evaluated once.
 
 ### Fixed
 
+- **An element of a table of 64-bit integers indexed by a variable is read and
+  written right on the board.** `r[i][j] = v` and `x := r[i][j]` for an `[N][M]int64`
+  or `uint64` of two dimensions or more lost the store and read garbage on the P2,
+  in silence, wherever the row index was checked -- which a checked build does for
+  every index that is not a constant: the target's compiler gets such an element
+  wrong when its row index holds a call, and the bound check is one
+  (doc/wide-row-call-index.c). A Kalman filter over 2x2 matrices of Q16.16 printed
+  zeros on the board where the host and Go agreed. Such a row is indexed through
+  its first element's address now. Every release had it.
+- **A method of several results called through an interface as a statement
+  builds**: `r.Read()` for a `Read() (byte, bool)` went out without the storage
+  its results are written into -- "too few arguments" from the host's compiler and
+  "Bad number of parameters" from the target's -- and `rs[i].Read()` and
+  `h.r.Read()` were refused. `get().Arr()` as a statement called get twice.
+- **A package slice literal whose elements call builds**: `var xs = []int{f(1),
+  f(2), f(3)}` and `var curve = []Point{{FromInt(0), FromInt(10)}, ...}` named
+  temporaries no C declared, where the calls were bound to keep their order.
+- **A struct holding an array of no elements builds**: a struct leading with one,
+  `type Outer struct{ Base; n int }` for a `type Base [0]struct{ id int }`, was
+  zeroed as `{0}`, which the target refuses ("Cannot handle memref of size 0") and
+  the host's compiler too, and a literal of a struct holding one wrote it `{0}`, an
+  element it does not have. (An array of no SCALAR elements, `_ [0]func()`, still
+  draws a warning from the target's compiler, which `ogo build` refuses.)
+- **A struct parameter or receiver named like one of its own members builds for
+  the target**: `func (n Named) String() string { return n.n }` over a string
+  field n, or `func (t T) Get() In { return t.t }`, was refused by the target's
+  compiler about the generated C, "Expecting identifier after '.'"
+  (doc/param-named-like-member.c), wherever the member is a string, a slice, a
+  struct or an interface. Such a parameter is received under another name and
+  copied into one of its own name on entry.
 - **A method value of a local is refused wherever it stands**, as its declaration
   was: as an argument, a print argument, a field, an element, a deferred call's
   argument or a typed declaration it reached the emitter, whose lifted function
@@ -346,6 +391,12 @@ shipped section tells a reader on that version that they have behaviour they do 
 
 ### Behaviour changes
 
+- **A slice, an array, a function or a channel whose type is written out is
+  refused where an interface is wanted**, as a struct and a number are: `show(xs)`
+  for a `show(v any)`, `var a any = xs`, a field, an element, a send, a return.
+  Go stores a copy, and an interface holds a pointer here: write `&xs`. Only the
+  declaration was refused before, by the emitter; every other position reached the
+  C compiler.
 - **A call's result of a predeclared type into an interface is refused** as a
   variable of one is, an interface holding a pointer here: `takeAny(three())` and
   `return g.Len()` for an `any` were taken, and their C refused.

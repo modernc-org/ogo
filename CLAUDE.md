@@ -1586,6 +1586,49 @@ that one, in silence (a fuzzer mutant's `gm := M{}; var th thunk = gm.tick`).
 **The target's build of every program the probes left behind is a probe of its
 own**, and it is cheap: 40 minutes for six thousand programs.
 
+The run cases' own mutants, 5,368 of the front-end batches, built the same way had
+7 refused by the backend, and two were one fault of the target's parser: a STRUCT
+parameter or receiver passed by value and named like a member of its own type that
+holds an aggregate -- `func (n Named) String() string { return n.n }` over a string
+field -- is "Expecting identifier after '.'" (doc/param-named-like-member.c); a
+scalar member, a pointer parameter and a local of the name are right. Such a
+parameter is received as `_ogo_<name>` and copied into a local of its name on entry
+(memberShadowParam). The rest were rows, each closed the same day. A slice, an
+array, a function or a channel of a type written out into `any`, refused by design
+and asked by the checker of named types, Kinds and literals only (checkImplements
+asks nonBoolOperand now); only the declaration had been refused, by the emitter. A
+method of SEVERAL results through an interface as a STATEMENT, `r.Read()`, went out
+without the storage its results are written through ("Bad number of parameters"),
+and through a chain was refused; with it, an interface reached by a CALL,
+`get().Read()`, was typed by nothing in any position -- statement, declaration,
+return, argument, `go` -- ifaceChainMethod asking accessChainType, which knows no
+call head (chainResultCur answers now), and `get().Arr()` called get twice, the
+table and the data each reading the text (ifaceRecvText binds what is no lvalue).
+A package slice literal whose elements call, `var xs = []int{f(1), f(2), f(3)}`:
+emitArrayLitVar bound the values for their order where no package-init step
+renders, and the step named temporaries nothing declared (bound inside the step's
+render now, pkgInitRender). And a struct holding an array of no elements: `{0}` for
+a struct LEADING with one is refused by both compilers, the target "Cannot handle
+memref of size 0" (leadsZeroSized writes the zero out, the array's as `{}`). The
+target still WARNS, "Extra initializers for array", about `{}` for an array of no
+SCALAR elements, `_ [0]func()` -- measured harmless on the board in every position,
+designated initializers warning alike -- so that shape is refused by `ogo build`,
+loudly.
+
+**A ROW OF 64-BIT ELEMENTS INDEXED BY A CALL IS LOST ON THE TARGET** (2026-10-06,
+found by a domain program: a Kalman filter over 2x2 matrices of Q16.16 in int64,
+zeros on the board where the host and Go agreed). flexcc reads and writes
+`r[f(i)][j]` of an int64_t or uint64_t array of two dimensions or more wrong -- the
+store lost, the read garbage -- where one dimension, int32_t elements, a call in the
+column alone, a struct row and arithmetic in the row are right
+(doc/wide-row-call-index.c). A checked build's bound check is a call, so every
+element of such a table with a variable row index was wrong in silence, in every
+release; no run case, fuzzer program or domain program before had a 64-bit table of
+two dimensions indexed by a variable. The row is written through its first
+element's address, `(&r[I][0])[J]` (wideRowC, from accessDeref), which the target
+reads right. **A numeric domain program crosses the element WIDTHS with the
+dimensions**; the sweeps had crossed the widths with the positions.
+
 **A C NAME IS A ROW** (2026-09-25). The emitted C keeps a program's own names, so
 every name a program may write is a row across everything else that names things in
 that one translation unit: the target's headers (a function, a type, a MACRO, which

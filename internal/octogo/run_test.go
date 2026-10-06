@@ -26822,6 +26822,326 @@ func main() {
 		want: "3\n13\n",
 	},
 	{
+		name: "tables of 64-bit elements indexed by variables",
+		src: `type Q int64
+
+type H struct {
+	m [2][3]uint64
+	n int
+}
+
+var g [3][2]int64
+
+var h H
+
+func idx(i int) int { return i % 2 }
+
+func sum(a [2][2]Q) Q {
+	var s Q
+	for i := range a {
+		for j := range a[i] {
+			s += a[i][j] * Q(i+1)
+		}
+	}
+	return s
+}
+
+func main() {
+	var r [2][2]Q
+	big := int64(1) << 33
+	for i := 0; i < 2; i++ {
+		for j := 0; j < 2; j++ {
+			r[i][j] = Q(big + int64(i*10+j))
+			r[i][j] += 5
+			r[i][j]++
+			g[i][j] = big * int64(j+1)
+			h.m[i][j+1] = uint64(big) + uint64(i)
+		}
+	}
+	println(r[0][0], r[1][1], sum(r), g[1][1], h.m[1][2])
+	p := &g
+	p[2][idx(3)] = 77
+	var c [2][2][2]int64
+	for i := 0; i < 2; i++ {
+		for j := 0; j < 2; j++ {
+			for k := 0; k < 2; k++ {
+				c[i][j][k] = big*int64(i) + int64(j*2+k)
+			}
+		}
+	}
+	println(c[1][1][1], c[1][0][1], g[2][1], p[1][1])
+	var x int64
+	g[idx(1)][idx(2)], x = 3, 4
+	println(g[1][0], x)
+	q := &r[1][1]
+	*q = 9
+	row := r[1]
+	r[0] = row
+	println(r[0][1], r[1][1], len(r[1]), row[0])
+	t := 0
+	for i, rw := range g {
+		for j, v := range rw {
+			t += int(v%7) + i*j
+		}
+	}
+	println(t, h.m[0][idx(5)])
+}
+`,
+		want: "8589934598 8589934609 51539607631 17179869184 8589934593\n8589934595 8589934593 77 17179869184\n3 4\n9 9 2 8589934608\n11 8589934592\n",
+	},
+	{
+		name: "a method of several results called on a literal",
+		src: `type M [2][2]int
+
+func (a M) Inv() (M, bool) { return M{{a[1][1], a[0][1]}, {a[1][0], a[0][0]}}, a[0][0] != 0 }
+
+type L []int
+
+func (l L) Two() (int, int) { return len(l), l[0] }
+
+type P struct{ a, b int }
+
+func (p P) Two() (int, bool) { return p.a + p.b, p.a > p.b }
+
+func main() {
+	var ok bool
+	_, ok = M{{1, 2}, {3, 4}}.Inv()
+	x, ok2 := M{{5, 2}, {3, 4}}.Inv()
+	a, b := L{7, 8, 9}.Two()
+	n, gt := P{3, 1}.Two()
+	println(ok, x[0][0], x[1][1], ok2, a, b, n, gt)
+}
+`,
+		want: "true 4 5 true 3 7 4 true\n",
+	},
+	{
+		name: "a method of several results through an interface, as a statement and reached by a call",
+		src: `type R struct{ n int }
+
+func (r *R) Read() (byte, bool) {
+	r.n++
+	return byte(r.n), r.n < 3
+}
+
+func (r *R) Arr() [2]int {
+	r.n += 100
+	return [2]int{r.n, 1}
+}
+
+func (r *R) Run(done chan int) {
+	r.n += 1000
+	done <- r.n
+}
+
+type Reader interface {
+	Read() (byte, bool)
+	Arr() [2]int
+	Run(done chan int)
+}
+
+type H struct{ r Reader }
+
+var g R
+
+var calls int
+
+var done chan int
+
+func get() Reader {
+	calls++
+	return &g
+}
+
+func geth() H {
+	calls += 10
+	return H{&g}
+}
+
+func take(b byte, ok bool) int { return int(b) * 2 }
+
+func two() (byte, bool) { return get().Read() }
+
+func main() {
+	var r Reader = &g
+	rs := [2]Reader{&g, &g}
+	h := H{&g}
+	r.Read()
+	rs[1].Read()
+	h.r.Read()
+	get().Read()
+	geth().r.Read()
+	get().Arr()
+	println(g.n, calls)
+	x, ok := get().Read()
+	y, ok2 := geth().r.Read()
+	println(x, ok, y, ok2, take(get().Read()), calls)
+	b, ok3 := two()
+	a := get().Arr()
+	println(b, ok3, a[0], a[1], calls)
+	go get().Run(done)
+	println(<-done, calls)
+	go geth().r.Run(done)
+	println(<-done, calls)
+	defer get().Read()
+	defer func() { println("deferred", g.n, calls) }()
+}
+`,
+		want: "105 12\n106 false 107 false 216 24\n109 false 209 1 26\n1209 27\n2209 37\ndeferred 2209 38\n",
+	},
+	{
+		name: "package slice literals whose elements call",
+		src: `type P struct{ a, b int }
+
+type Cfg struct {
+	xs []int
+	p  P
+}
+
+var order int
+
+func f(k int) int {
+	order = order*10 + k
+	return k
+}
+
+var c1 = []P{{f(1), f(2)}, {f(3), 4}, {f(5), f(6)}}
+
+var o1 = order
+
+var c2 []P = []P{{f(1), f(2)}, {f(3), f(4)}}
+
+var o2 = order
+
+var c3 = Cfg{xs: []int{f(1), f(2)}, p: P{f(3), f(4)}}
+
+var o3 = order
+
+var c4 = [2][]int{{f(1), f(2)}, {f(3)}}
+
+var o4 = order
+
+var c5 = [3]int{f(1), f(2), f(3)}
+
+var o5 = order
+
+var c6 = []int{f(1), f(2), f(3)}
+
+var o6 = order
+
+func main() {
+	println(c1[0].a, c1[0].b, c1[1].a, c1[2].b, o1)
+	println(c2[1].b, o2)
+	println(c3.xs[1], c3.p.b, o3)
+	println(c4[0][1], c4[1][0], o4)
+	println(c5[2], o5)
+	println(c6[2], o6)
+}
+`,
+		want: "1 2 3 6 12356\n4 123561234\n2 4 -1338240014\n2 3 1789782475\n3 -1218887309\n3 883403187\n",
+	},
+	{
+		name: "a struct leading with an array of no elements",
+		src: `type Named interface {
+	Name() string
+}
+
+type Base [0]struct{ id int }
+
+func (b Base) Name() string { return "base" }
+
+type Outer struct {
+	Base
+	n int
+}
+
+func (o *Outer) Name() string { return "outer" }
+
+func describe(n Named) string { return n.Name() }
+
+func main() {
+	var o Outer
+	println(describe(&o.Base), describe(&o))
+	var nm Named = &o.Base
+	println(nm.Name())
+	var no Named = &o
+	printf("%T %T %v\n", nm, no, nm)
+	p := &o.Base
+	println(describe(p))
+}
+`,
+		want: "base outer\nbase\n*main.Base *main.Outer &[]\nbase\n",
+	},
+	{
+		name: "a struct parameter named like one of its members",
+		src: `type In struct {
+	x, y int
+}
+
+type Named struct {
+	n string
+	k int
+}
+
+func (n Named) String() string { return n.n }
+
+type Box struct {
+	in In
+	s  []int
+	e  error
+}
+
+type E struct{ m string }
+
+func (e *E) Error() string { return e.m }
+
+func (in Box) X() int { return in.in.x + len(in.s) }
+
+func take(in Box, s []int) int {
+	return in.in.y + len(s) + len(in.s)
+}
+
+func unused(in Box) int { return 7 }
+
+func mod(in Box) Box {
+	in.in.x++
+	return in
+}
+
+func erred(e Box) string {
+	if e.e != nil {
+		return e.e.Error()
+	}
+	return "nil"
+}
+
+func lit() int {
+	f := func(in Box) int { return in.in.x * 2 }
+	return f(Box{in: In{3, 4}})
+}
+
+var done chan int
+
+func send(in Box) { done <- in.in.x + in.in.y }
+
+func main() {
+	n := Named{"nm", 2}
+	println(n.String(), n.k)
+	b := Box{In{1, 2}, []int{5, 6, 7}, nil}
+	println(b.X(), take(b, b.s[1:]), unused(b))
+	c := mod(b)
+	println(b.in.x, c.in.x)
+	println(erred(b), erred(Box{e: &E{"bad"}}))
+	println(lit())
+	var st interface{ String() string } = &n
+	println(st.String())
+	defer func(n Named) { println("deferred", n.String()) }(n)
+	go send(Box{in: b.in})
+	println(<-done)
+}
+`,
+		want: "nm 2\n4 7 7\n1 2\nnil bad\n6\nnm\n3\ndeferred nm\n",
+	},
+	{
 		name: "arrays of structs, interfaces and rows given fewer elements than their length",
 		src: `type S struct{ a, b int }
 
@@ -46954,7 +47274,8 @@ const multiPkgWant = "300\nLOUD\n50\n6\n5\n45\n6 1000\n200\n207\n3 100\n4 9\n" +
 	"654321\n" +
 	"10 3 1 2\n10 40 5\n5 10 21 7 2\n5 8 10 true 22 true 2\n12 true 2\n" +
 	"true false true true true\ntrue gone busy\ntick true true true false true\nfalse true true\n" +
-	"namer after 2\nnamer after 1\n"
+	"namer after 2\nnamer after 1\n" +
+	"3 2 2 1\n"
 
 var multiPkgProgram = map[string]string{
 	"main.ogo": `import "chain"
@@ -47147,6 +47468,22 @@ libDefers()
 libFrames()
 libSentinels()
 libDeferIface()
+libArrayChain()
+}
+
+// A method on ANOTHER package's call returning an array, lib.IdentMx().T(), as a
+// struct literal's array field and as a variable's initializer: the chain had no
+// head the walk knew, and the literal was "must be a literal, an array value or a
+// call returning one".
+type mxHolder struct {
+	P lib.Mx
+	n int
+}
+
+func libArrayChain() {
+	h := mxHolder{P: lib.IdentMx().T(), n: 1}
+	t := lib.IdentMx().T().T()
+	println(h.P[0][1], h.P[1][0], t[0][1], h.n)
 }
 
 // A deferred call of ANOTHER package's function taking an interface: the pointer is
@@ -48437,6 +48774,13 @@ var labelBack [8]byte
 func max(a, b int) int { return a*10 + b }
 
 func Maxed() int { return max(3, 4) }
+
+// Mx is an array type main reaches through a chain of calls (libArrayChain).
+type Mx [2][2]int
+
+func IdentMx() Mx { return Mx{{1, 2}, {3, 4}} }
+
+func (a Mx) T() Mx { return Mx{{a[0][0], a[1][0]}, {a[0][1], a[1][1]}} }
 
 // Namer is satisfied by a pointer of main's (libDeferIface).
 type Namer interface{ Name() string }
