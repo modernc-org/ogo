@@ -318,6 +318,9 @@ shipped section tells a reader on that version that they have behaviour they do 
 
 ### Behaviour changes
 
+- **An address is no operand of `&&` or `||`**: `&b && n > 0` and `gb = &b && gb`
+  were taken, the address answered with its pointee's Kind; `!&b` and `if &b` were
+  refused already.
 - **A typed constant must fit its type after every operation**, as Go has it:
   `uint32(1)<<32 - 1` and `int8(100) + 50 - 60` overflow at a step whatever the
   whole comes to, and were taken; so was `(uint64(1)<<H - 1) << col` for a `const

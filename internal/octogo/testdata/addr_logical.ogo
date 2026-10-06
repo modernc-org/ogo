@@ -1,0 +1,18 @@
+// An address is no operand of && or ||: exprType answers `&b` with its pointee's
+// Kind, a bool, and the logical operators asked nothing else.
+
+var gb bool
+
+var n int = 3
+
+func main() {
+	b := true
+	// ERROR "operand of a logical operator must be bool, and &b is a pointer"
+	println(&b && n > 0)
+	// ERROR "operand of a logical operator must be bool, and &b is a pointer"
+	println(n > 0 || &b)
+	// ERROR "operand of a logical operator must be bool, and &b is a pointer"
+	gb = &b && gb
+	p := &b
+	println(*p && true, !*p, gb || *p)
+}

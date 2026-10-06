@@ -1514,6 +1514,12 @@ silenced the end check for nine programs it had refused. And a METHOD VALUE the
 compiler does not bind, of a local or a value receiver, had no category at all,
 exprFuncSig answering only for one it binds: `var n int = p.can` was emitted as
 `int n = ogo_mv0;` (nonBoolOperand answers "a function" for any).
+A regular-expression and glob matcher (Pike's matcher, recursive over string
+slices, and classes with ranges and negation, three packages) matched Go on the
+host and the board; of its 1,500 mutants one row was taken: an ADDRESS as an
+operand of `&&` or `||`, `&anchored && i > 0` -- the logical operators asked
+exprType first, which answers `&x` with x's Kind (WHAT HAS NO KIND IS ASKED
+NOTHING's trap, in the one rule a sweep of `&b` in every bool position had left).
 
 **A C NAME IS A ROW** (2026-09-25). The emitted C keeps a program's own names, so
 every name a program may write is a row across everything else that names things in

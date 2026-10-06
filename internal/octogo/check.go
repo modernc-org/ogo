@@ -16641,6 +16641,12 @@ func (f *File) checkComparison(s *Scope, n Node) {
 	requireBoolGroup := func() {
 		if anyLogical && !groupHasCmp && groupStart < len(operands) {
 			operand := operands[groupStart]
+			// An ADDRESS, `&b && x`: exprType answers it with its pointee's Kind,
+			// a bool here, and the operand was taken.
+			if isPtr, known := f.exprPointerness(s, operand); known && isPtr {
+				f.err(f.tok(operand.Pos()).Position(), "invalid operation: operand of a logical operator must be bool, and %s is a pointer", f.exprSource(operand))
+				return
+			}
 			if k, ok := f.exprType(s, operand); ok && kindCategory(k) != catBool {
 				f.err(f.tok(operand.Pos()).Position(), "invalid operation: operand of a logical operator must be bool, got %s", kindName(k))
 			} else if what, known := f.nonBoolOperand(s, operand); !ok && known {
