@@ -1342,6 +1342,22 @@ qualified name), and that package's array literal, `filt.Taps{1, true}`, whose
 elements were checked only where they were predeclared. **A boundary sweep crosses
 two packages and three**: what one package writes qualified is the case two never
 reach.
+A fourth domain program the same day, a BMP280-style pressure sensor driver over a
+fake bus (four packages: register constants with a Stringer mode, a bus interface
+and its fake, the driver's 64-bit fixed-point compensation, main), matched Go on the
+host and the board with the datasheet's worked example, 25.08 C and 1006.53 hPa.
+Its 1,500 mutants had 5 taken: what a pointer points at into an interface, `return
+*P` for an error (derefOperand; the declaration form was the emitter's refusal and
+the return and argument built), `&lib.ErrX` of another package's pointer variable
+(addrOfQualifiedPtr), and a float constant shifted, `2.5 << 2`. The last was a row
+in both directions: Go makes a constant shift of an untyped float an INTEGER
+constant, and the folder refused `2.0 << 2` while the walk took `2.5 << 2` -- the
+folder's report dropped outside a declaration, as checkConstShiftBound's comment
+says of the count. The checker types the level an int at the shift (operandsType),
+the emitter likewise (inferNodes), and the float spellings on the left are recorded
+as the integers they are (noteShiftedWholeConsts), which foldIntToken now reads --
+for EVERY recorded whole constant, so four fuzzer seeds and one run case spell `7e1
+% z` as `70 % z` since, each checked on the board.
 
 **A C NAME IS A ROW** (2026-09-25). The emitted C keeps a program's own names, so
 every name a program may write is a row across everything else that names things in

@@ -203,6 +203,36 @@ func TestCheckThirdPackage(t *testing.T) {
 	}
 }
 
+// TestCheckAddrOfQualifiedPtr: `&lib.P` of another package's POINTER variable is a
+// pointer to a pointer, with no methods; it was read as the pointer and taken where
+// an interface is wanted.
+func TestCheckAddrOfQualifiedPtr(t *testing.T) {
+	const lib = "type E struct{ n int }\n\nfunc (e *E) Error() string { return \"e\" }\n\nvar PE = &E{}\n\nvar VE E\n"
+	for _, test := range []struct {
+		body string
+		want string // "" for one Go takes
+	}{
+		{"var err error = &lib.PE\n\t_ = err", "cannot use &lib.PE (value of type **lib.E) as error value in variable declaration: **lib.E does not implement error (missing method Error)"},
+		{"var err error = lib.PE\n\tprintln(err == &lib.PE)", "**lib.E does not implement error"},
+		{"var err error = &lib.VE\n\tprintln(err == lib.PE, err == &lib.VE)", ""},
+	} {
+		t.Run(test.body, func(t *testing.T) {
+			src := "import \"lib\"\n\nfunc main() {\n\t" + test.body + "\n}\n"
+			fsys := fstest.MapFS{
+				"main.ogo":    &fstest.MapFile{Data: []byte(src)},
+				"lib/lib.ogo": &fstest.MapFile{Data: []byte(lib)},
+			}
+			_, err := Build(-1, []string{"main.ogo"}, fsys)
+			switch {
+			case test.want == "" && err != nil:
+				t.Fatalf("refused: %v", err)
+			case test.want != "" && (err == nil || !strings.Contains(err.Error(), test.want)):
+				t.Fatalf("got %v, want an error containing %q", err, test.want)
+			}
+		})
+	}
+}
+
 // TestCheckIfaceMethodValue: a method value whose receiver is an interface value
 // is refused by design, as one whose receiver is a pointer is -- Go saves the
 // value when the method value is taken, and a binding made at compile time cannot

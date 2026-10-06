@@ -1,0 +1,59 @@
+// A mutation sweep of a sensor driver of four packages: a constant shift of a float
+// constant, which Go makes an integer constant where its value is whole and refuses
+// where it is not, and what a pointer points at stored where an interface is wanted.
+
+type E struct{ op string }
+
+func (e *E) Error() string { return e.op }
+
+type V struct{ op string }
+
+func (v V) Error() string { return v.op }
+
+var P = &E{"x"}
+
+var Q = &V{"y"}
+
+func take(e error) {}
+
+// ERROR "shifted operand 2.5 \(untyped float constant\) must be integer"
+const bad = 2.5 << 2
+
+const good = 2.0 << 2
+
+func shifts(n uint) {
+	// ERROR "shifted operand 2.5 \(untyped float constant\) must be integer"
+	var u uint8 = 2.5 << 2
+	// ERROR "shifted operand 2.5 \(untyped float constant\) must be integer"
+	println(2.5 << 2)
+	x := 2.0 << 2
+	// ERROR "cannot use x of type int as type string in variable declaration"
+	var s string = x
+	// ERROR "shifted operand 2.0 \(type float64\) must be integer"
+	y := 2.0 << n
+	var z int = 2.0 << n
+	_, _, _, _, _ = u, s, y, z, good
+}
+
+func f() error {
+	// ERROR "cannot use \*P \(value of struct type E\) as error value in return statement: E does not implement error \(method Error has pointer receiver\)"
+	return *P
+}
+
+func derefs() {
+	// ERROR "cannot use \*P \(value of struct type E\) as error value in argument to take: E does not implement error \(method Error has pointer receiver\)"
+	take(*P)
+	// Go takes it, a V's method set holding Error; refused by design, an interface
+	// holding a pointer here.
+	// ERROR "cannot use \*Q \(value of struct type V\) as error value in argument to take: an interface holds a pointer here"
+	take(*Q)
+	take(P)
+	take(Q)
+}
+
+func main() {
+	shifts(1)
+	_ = f()
+	derefs()
+	_ = bad
+}

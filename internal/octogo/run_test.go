@@ -46209,6 +46209,54 @@ func main() {
 `,
 		want: "5 13\n15 5 2\n13 4 7\n0 5\n1 6\n3 4\n",
 	},
+	{
+		// An untyped float constant shifted by a constant count is an integer
+		// constant, as Go has it: `2.0 << 2` is the int 8 and `2.0 << 2 + 0.5` a
+		// float again. Each was "operator << not defined on float", or a double
+		// shifted in the C, or a run-time shift of an int for `1.0 << 40`.
+		name: "constant shifts of float constants",
+		src: `const c = 2.0 << 2
+
+const d = 1.0 << 3 >> 1
+
+const e = 6.0 >> 1
+
+var g = 2.0 << 3
+
+func main() {
+	x := 2.0 << 2
+	var f float64 = 2.0 << 2
+	var u uint8 = 1.0 << 3
+	n := 2
+	var y int = 2.0 << n
+	var z uint16 = 4.0 << n
+	printf("%v %v %v %v %T %v %v %v %v %v\n", c, d, e, g, x, x, f, u, y, z)
+	println(4.0 >> 1, 1.0<<4 + 1)
+	more()
+	wide()
+}
+
+func more() {
+	a := 2.0 << 2 + 0.5
+	b := 2.0 << 2 * 1.5
+	c := 3.0 * 2 << 1
+	printf("%T %v %T %v %T %v\n", a, a, b, b, c, c)
+}
+
+const h = 2.0
+
+var gw uint64 = 1.0 << 40
+
+var gh = h << 3
+
+func wide() {
+	var l uint64 = 1.0 << 40
+	m := h << 4
+	printf("%v %v %v %v %T\n", gw, gh, l, m, m)
+}
+`,
+		want: "8 4 3 16 int 8 8 8 8 16\n2 17\nfloat64 8.5 float64 12 int 12\n1099511627776 16 1099511627776 32 int\n",
+	},
 }
 
 // TestEmitCRun compiles emitted C with a host compiler and runs it, checking what

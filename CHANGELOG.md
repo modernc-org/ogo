@@ -52,6 +52,12 @@ shipped section tells a reader on that version that they have behaviour they do 
 
 ### Fixed
 
+- **A float constant shifted by a constant count is an integer constant**, as Go
+  has it: `const c = 2.0 << 2` and `x := 2.0 << 2` are the int 8, `var g uint64 =
+  1.0 << 40` is 2^40, and `2.0 << 2 + 0.5` is a float again. The first two were
+  refused, "operator << not defined on float" and "shifted operand 2.0 (type
+  float64) must be integer"; a package variable from one did not build, and the
+  wide one was a run-time shift of an int.
 - **`len` and `cap` Go makes a constant build wherever they stand**: `n ==
   len([2]int{})`, `if n == len([3]int{})`, `n - cap([2][3]int{})` were "len is only
   supported for strings, arrays and slices yet" -- only the constant folder had
@@ -308,6 +314,13 @@ shipped section tells a reader on that version that they have behaviour they do 
   int16 = Taps{1, 2}[0]` for a `[3]Q` refused, as is a switch on an address
   against a case of its pointee's type, `switch &k { case 3: }`; `case nil:` is
   taken there, where it was refused.
+- **A float constant shifted that is no whole number is refused**, `var u uint8 =
+  2.5 << 2` and `println(2.5 << 2)`, in Go's words. Both were taken. So is what a
+  pointer points at where an interface is wanted, `return *P` and `take(*P)` for
+  an `error` -- in Go's words where the method is on the pointer, and by design
+  otherwise, an interface holding a pointer -- which built where the declaration
+  was refused by the emitter; and the address of another package's pointer
+  variable, `&lib.ErrX`, a pointer to a pointer, where an interface is wanted.
 - **A method value of a literal or a call's result is refused by the checker**:
   `Taps{1, 2}.Scale` of a pointer method in Go's words, and a value method,
   `P{1}.V`, `mk().V`, by design -- a method value binds the address of its

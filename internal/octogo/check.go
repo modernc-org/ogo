@@ -5365,11 +5365,21 @@ func (f *File) nonBoolNamed(s *Scope, name string) (string, bool) {
 func (f *File) operandsType(s *Scope, n Node) (Kind, bool) {
 	var first Kind
 	firstSet, firstOK, count := false, false, false
-	for c := range it(n.ast) {
+	kids := slices.Collect(it(n.ast))
+	for i, c := range kids {
 		switch c.sym {
 		case MulOp:
 			if op := f.mulOp(s, c); op == SHL || op == SHR {
 				count = true
+				// A constant shift of an untyped FLOAT constant is an integer
+				// constant, as Go has it: `2.0 << 2` is an int, and `2.0 << 2 +
+				// 0.5` a float again. The shift's left is everything before it,
+				// the level binding to the left.
+				if firstOK && first == UntypedFloat && i+1 < len(kids) {
+					if _, isConst := f.constNumeric(s, kids[i+1]); isConst {
+						first = UntypedInt
+					}
+				}
 			}
 		case Term, UnaryExpr:
 			if count {
@@ -9266,6 +9276,16 @@ func (f *File) storageOperand(n Node) bool {
 		}
 	}
 	return len(steps) != 0
+}
+
+// derefOperand reports an operand that is exactly a dereference, `*p`, `*h.p`.
+func (f *File) derefOperand(s *Scope, n Node) bool {
+	ue, ok := f.soleUnaryExpr(n)
+	if !ok {
+		return false
+	}
+	kids := slices.Collect(it(ue.ast))
+	return len(kids) == 2 && kids[0].sym == UnaryOp && f.unaryOp(s, kids[0]) == MUL && kids[1].sym == Factor
 }
 
 // isNamedCompositeLit reports an operand that is exactly a literal of a type named
@@ -14009,6 +14029,39 @@ func (f *File) qualifiedValueType(s *Scope, value Node) (from string, isPtr, ok 
 	return head.Src() + "." + vd.typeName.Src(), isPtr, true
 }
 
+// addrOfQualifiedPtr reports `&lib.P`, the address of another package's variable
+// that is itself a pointer, and names what it points at as this file writes it.
+func (f *File) addrOfQualifiedPtr(s *Scope, value Node) (string, bool) {
+	ue, ok := f.soleUnaryExpr(value)
+	if !ok {
+		return "", false
+	}
+	kids := slices.Collect(it(ue.ast))
+	if len(kids) != 2 || kids[0].sym != UnaryOp || f.unaryOp(s, kids[0]) != AND || kids[1].sym != Factor {
+		return "", false
+	}
+	head, member, isQual := f.factorQualifiedIdent(s, kids[1])
+	if !isQual {
+		return "", false
+	}
+	home, ok := f.importedPkgScope(head)
+	if !ok {
+		return "", false
+	}
+	vd, isVar := home.Declarations[member.Src()].(*VarDeclaration)
+	if !isVar || !vd.isPtr || !vd.typeName.IsValid() {
+		return "", false
+	}
+	q, ok := f.carriedQual(home, vd.typeName, vd.typeQual, head)
+	if !ok {
+		return "", false
+	}
+	if !q.IsValid() {
+		return vd.typeName.Src(), true
+	}
+	return q.Src() + "." + vd.typeName.Src(), true
+}
+
 // checkImplements reports a concrete value assigned where an interface is wanted
 // whose method set it does not satisfy, in the two ways that can happen: a method
 // missing, and a method present with another signature. The wording is Go's, down
@@ -14108,6 +14161,19 @@ func (f *File) checkImplements(s *Scope, ifaceName string, value Node, what stri
 	// compiler, which reported the two words against the struct -- where a local of
 	// the same type is told, in one sentence, to write its address.
 	if !ok {
+		// `&lib.P` of another package's POINTER variable is a pointer to a pointer,
+		// with no methods, as `&p` of a local one is (above): it was read as the
+		// pointer, and `var err error = &lib.ErrX` built.
+		if from, isPP := f.addrOfQualifiedPtr(s, value); isPP && len(set) != 0 {
+			missing := ""
+			for m := range set {
+				if missing == "" || m < missing {
+					missing = m
+				}
+			}
+			f.err(f.tok(value.Pos()).Position(), "cannot use %s (value of type **%s) as %s value in %s: **%s does not implement %s (missing method %s)", f.exprSource(value), from, ifaceName, what, from, ifaceName, missing)
+			return
+		}
 		if from, isPtr, isQual := f.qualifiedValueType(s, value); isQual {
 			f.checkImplementsNamed(s, ifaceName, value, from, f.exprSource(value), isPtr, what)
 			return
@@ -14126,9 +14192,11 @@ func (f *File) checkImplements(s *Scope, ifaceName string, value Node, what stri
 			if _, _, resolved := f.typeDeclNamed(s, from); resolved {
 				f.checkImplementsKind(s, ifaceName, value, from, f.exprSource(value), "value of type *"+from, true, what)
 			}
-		} else if named && !qual.IsValid() && (f.isNamedCompositeLit(value) || f.storageOperand(value)) {
+		} else if named && !qual.IsValid() && (f.isNamedCompositeLit(value) || f.storageOperand(value) || f.derefOperand(s, value)) {
 			// A literal of a named type, `show(failure{})`, a field or an element of
-			// one, `return m.f`, `return errs[i]`: Go's verdict where the value's
+			// one, `return m.f`, `return errs[i]`, or what a pointer points at,
+			// `return *P` -- which built, the struct returned for the interface,
+			// where its declaration was refused by the emitter: Go's verdict where the value's
 			// method set falls short, and where it would not, the one an interface
 			// holding a pointer gives. Asked of nobody, the call went to the C
 			// compiler as a struct passed where the interface is wanted.
@@ -16990,10 +17058,15 @@ func (f *File) checkShiftedConstant(s *Scope, lNode Node, lk Kind, rNode Node) {
 	if lk != UntypedFloat {
 		return
 	}
-	if _, constCount := f.constNumeric(s, rNode); constCount {
-		return // a constant shift, folded and reported as one
-	}
+	// A constant count too, `2.5 << 2`: the folder refuses it, in a pass whose
+	// reports an expression drops (as checkConstShiftBound has it), and `var u
+	// uint8 = 2.5 << 2` and `println(2.5 << 2)` were taken.
 	cv, ok := f.constNumeric(s, lNode)
+	if _, constCount := f.constNumeric(s, rNode); constCount && ok && constant.ToInt(cv).Kind() == constant.Int {
+		// `2.0 << 2` is the integer constant 8. Its float spellings are written
+		// as the integers they are (noteWholeConst), or the C shifts a double.
+		f.noteShiftedWholeConsts(s, lNode)
+	}
 	if !ok || cv.Kind() != constant.Float || constant.ToInt(cv).Kind() == constant.Int {
 		return
 	}
@@ -27572,6 +27645,54 @@ func (f *File) checkConstFits(s *Scope, dst retResult, n Node, implicit bool) {
 	f.reportOverflow(f.tok(n.Pos()).Position(), cv, dst.kind, dst.name)
 }
 
+// noteShiftedWholeConsts records each operand of n, the left of a constant shift,
+// that is a float constant of a whole value -- a literal or a constant's name -- as
+// the integer it stands for there (noteWholeConst): an int, or an int64 past one.
+// A float operand of no whole value leaves the rest unrecorded, the level then
+// holding no integer spelling (`2.5 * 2.0 << 1`).
+func (f *File) noteShiftedWholeConsts(s *Scope, n Node) {
+	var toks []int32
+	var kinds []Kind
+	var walk func(Node) bool
+	walk = func(n Node) bool {
+		for c := range it(n.ast) {
+			if c.sym == 0 {
+				continue
+			}
+			// A Factor of one token, a literal or a name, is asked its value.
+			if kids := slices.Collect(it(c.ast)); c.sym == Factor && len(kids) == 1 && kids[0].sym == 0 && (f.ch(kids[0].tok) == FLOAT || f.ch(kids[0].tok) == IDENT) {
+				cv, ok := f.constNumeric(s, c)
+				if !ok || cv.Kind() != constant.Float {
+					continue
+				}
+				iv := constant.ToInt(cv)
+				if iv.Kind() != constant.Int {
+					return false
+				}
+				kind := PredeclaredInt
+				if v, exact := constant.Int64Val(iv); !exact || v < math.MinInt32 || v > math.MaxInt32 {
+					kind = PredeclaredInt64
+				}
+				toks, kinds = append(toks, kids[0].tok), append(kinds, kind)
+				continue
+			}
+			if !walk(c) {
+				return false
+			}
+		}
+		return true
+	}
+	if !walk(n) {
+		return
+	}
+	if f.wholeConstToks == nil {
+		f.wholeConstToks = map[int32]Kind{}
+	}
+	for i, t := range toks {
+		f.wholeConstToks[t] = kinds[i]
+	}
+}
+
 // noteWholeConst records that the untyped constant n, written as a float, stands
 // where the integer type kind is wanted, for the emitter. Go converts it, 3e9 being
 // a uint32 of three thousand million there; the C written from the source is a
@@ -28041,6 +28162,17 @@ func (f *File) foldConstBinaryOp(opTok Token, lhs constant.Value, op Symbol, rhs
 		// propagates a prior error, so leave it unmodelled without a report.
 		if lhs.Kind() == constant.Unknown || rhs.Kind() == constant.Unknown {
 			return constant.MakeUnknown(), true
+		}
+		if lhs.Kind() == constant.Float {
+			// An untyped float constant shifted by a constant count is an INTEGER
+			// constant, as Go has it: `2.0 << 2` is 8, and `2.5 << 2` has no value.
+			// Both were "operator << not defined on float".
+			iv := constant.ToInt(lhs)
+			if iv.Kind() != constant.Int {
+				f.err(opTok.Position(), "invalid operation: shifted operand %s (untyped float constant) must be integer", lhs)
+				return constant.MakeUnknown(), true
+			}
+			lhs = iv
 		}
 		if lhs.Kind() != constant.Int {
 			f.reportBadConstOp(opTok, lhs, nil)

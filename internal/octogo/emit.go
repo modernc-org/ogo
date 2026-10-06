@@ -25553,6 +25553,18 @@ func unsignedNarrowLit(v int64, w int) string {
 }
 
 func (e *emitter) foldIntToken(tok int32) (int64, bool) {
+	// A float spelling the checker recorded as the integer it stands for, the left
+	// of `2.0 << 3` (noteShiftedWholeConsts): an integer here too, so the level
+	// folds as `2 << 3` does -- `1.0 << 40` was a run-time shift of an int, 0.
+	if _, whole := e.f.wholeConstToks[tok]; whole {
+		if v, ok := e.foldConstVal([]int32{tok}); ok {
+			if iv := constant.ToInt(v); iv.Kind() == constant.Int {
+				if x, exact := constant.Int64Val(iv); exact {
+					return x, true
+				}
+			}
+		}
+	}
 	switch e.f.ch(tok) {
 	case INT:
 		v, err := strconv.ParseInt(normalizeIntLit(e.src(tok)), 0, 64)
@@ -45132,16 +45144,24 @@ func (e *emitter) inferNodes(nodes []Node) (string, bool) {
 	// integers to 3 and the other was computed as a double and printed as an int,
 	// 1306764736.
 	var first Node
-	firstSet, count := false, false
+	firstSet, count, shiftedFloat := false, false, false
 	widest, widestRank := "", 0
 	context := ""
-	for _, n := range nodes {
+	for i, n := range nodes {
 		switch n.sym {
 		case AddOp, MulOp, UnaryOp:
 			if n.sym == MulOp && e.isShiftOp(n) {
 				count = true
 				if ct, ok := e.untypedShiftCType(n); ok {
 					context = ct
+				}
+				// A constant shift of an untyped float constant is an integer
+				// constant, `2.0 << 2` an int, as the checker has it
+				// (operandsType); declared a double, it printed float64 under %T.
+				if widestRank == untypedCTypeRank("double") && i+1 < len(nodes) {
+					if _, isConst := e.foldConstScalar(nodes[i+1]); isConst {
+						widest, widestRank, shiftedFloat = "int", untypedCTypeRank("int"), true
+					}
 				}
 			}
 			continue // an operator; the type comes from the operand(s)
@@ -45174,7 +45194,7 @@ func (e *emitter) inferNodes(nodes []Node) (string, bool) {
 	if context != "" {
 		return context, true
 	}
-	if widestRank > 1 {
+	if widestRank > 1 || shiftedFloat {
 		return widest, true
 	}
 	if firstSet {
@@ -47676,7 +47696,9 @@ func (e *emitter) emitExprNode(n Node) {
 					}
 					e.emitExprNode(c)
 				default:
-					if lit, ok := e.untypedOperandC(c, termType, false); ok {
+					if lit, ok := e.wholeConstOperandC(c); ok {
+						e.emit(lit) // `2.0 << 3`, an integer constant (noteShiftedWholeConsts)
+					} else if lit, ok := e.untypedOperandC(c, termType, false); ok {
 						e.emit(lit)
 					} else {
 						e.emitExprNode(c)
@@ -48497,6 +48519,24 @@ func (e *emitter) opText(ast []int32) string {
 		}
 	}
 	return ""
+}
+
+// wholeConstOperandC is the integer an operand of one token stands for where the
+// checker recorded it as a whole constant (wholeConstToks): a float spelling shifted
+// by a constant count, `2.0 << 3`, written as the integer 2 the shift is of.
+func (e *emitter) wholeConstOperandC(n Node) (string, bool) {
+	for n.sym != 0 {
+		kids := slices.Collect(it(n.ast))
+		if len(kids) != 1 {
+			return "", false
+		}
+		n = kids[0]
+	}
+	kind, ok := e.f.wholeConstToks[n.tok]
+	if !ok {
+		return "", false
+	}
+	return e.wholeConstC([]int32{n.tok}, kind)
 }
 
 func (e *emitter) emitOperandToken(tok int32) {
