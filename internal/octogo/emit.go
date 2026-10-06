@@ -20287,12 +20287,26 @@ func (e *emitter) factorStructLitChain(kids []Node) (ctype string, lit Node, ste
 // and answers it and the steps, for the paths that take a call apart by its head.
 // A pointer method a literal cannot take the address for is left to them.
 func (e *emitter) litMethodHead(rhs []int32) (string, []Node, bool) {
-	kids := e.factorKids(rhs)
+	kids := e.litMethodKids(rhs)
 	isMethodCall := func(steps []Node) bool {
 		return len(steps) == 2 && steps[0].sym == Selector && steps[1].sym == CallSuffix
 	}
+	// One occurrence binds once: a return renders its call more than once (the
+	// forms it tries), and each binding would be a copy and a cog register. The
+	// statement's memo, keyed apart from the array calls' by sign.
+	memo := func(lit Node, bind func() (string, bool)) (string, bool) {
+		key := -1 - lit.Pos()
+		if tmp, done := e.hoistedArrayCalls[key]; done {
+			return tmp, true
+		}
+		tmp, ok := bind()
+		if ok && e.hoistedArrayCalls != nil {
+			e.hoistedArrayCalls[key] = tmp
+		}
+		return tmp, ok
+	}
 	if typeAST, _, lit, steps, ok := e.namedArrayLitChain(kids); ok && isMethodCall(steps) {
-		if tmp, ok := e.hoistLitVar(typeAST, lit); ok {
+		if tmp, ok := memo(lit, func() (string, bool) { return e.hoistLitVar(typeAST, lit) }); ok {
 			return tmp, steps, true
 		}
 		return "", nil, false
@@ -20301,11 +20315,51 @@ func (e *emitter) litMethodHead(rhs []int32) (string, []Node, bool) {
 		if e.methodPtr[e.methodCName(ctype, e.soleIdent(steps[0].ast))] {
 			return "", nil, false
 		}
-		tmp := e.hoist(ctype, func() { e.emitCompositeLit(ctype, lit, true) })
-		e.locals[tmp] = ctype
+		tmp, _ := memo(lit, func() (string, bool) {
+			tmp := e.hoist(ctype, func() { e.emitCompositeLit(ctype, lit, true) })
+			e.locals[tmp] = ctype
+			return tmp, true
+		})
 		return tmp, steps, true
 	}
 	return "", nil, false
+}
+
+// litMethodKids is factorKids for litMethodHead, reading the address of a literal in
+// parentheses, `(&P{1, 2}).Two()`, as the literal, which is the receiver a value
+// method of it is called on: the literal's nodes and the steps after the
+// parentheses.
+func (e *emitter) litMethodKids(ast []int32) []Node {
+	kids := e.factorKids(ast)
+	if len(kids) != 4 || kids[0].sym != 0 || e.f.ch(kids[0].tok) != LPAREN || kids[1].sym != Expression || kids[3].sym != FactorSuffix {
+		return kids
+	}
+	inner := e.factorKids(kids[1].ast)
+	if len(inner) != 2 || inner[0].sym != UnaryOp || e.opText(inner[0].ast) != "&" || inner[1].sym != Factor {
+		return kids
+	}
+	return append(slices.Collect(it(inner[1].ast)), kids[3])
+}
+
+// litMethodMulti reports, binding nothing, whether ast is a method of SEVERAL
+// results called on a literal, one of litMethodHead's shapes: what a return or an
+// argument list forwards, `take2(P{1, 2}.Two())`, which only then is bound.
+func (e *emitter) litMethodMulti(ast []int32) bool {
+	kids := e.litMethodKids(ast)
+	var ctype string
+	var steps []Node
+	if typeAST, _, _, st, ok := e.namedArrayLitChain(kids); ok {
+		cur, _ := e.namedLitCur(typeAST)
+		ctype, steps = cur.name, st
+	} else if ct, _, st, ok := e.factorStructLitChain(kids); ok {
+		ctype, steps = ct, st
+	} else {
+		return false
+	}
+	if ctype == "" || len(steps) != 2 || steps[0].sym != Selector || steps[1].sym != CallSuffix {
+		return false
+	}
+	return len(e.funcRet[e.methodCName(methodBaseType(ctype), e.soleIdent(steps[0].ast))]) > 1
 }
 
 // emitStructLitChain emits a struct literal read through a suffix: the literal is
@@ -33282,6 +33336,15 @@ func (e *emitter) resultCallOf(ast []int32) (callee string, suffix []Node, ok bo
 			callee, suffix = mn, rest
 		}
 	}
+	// A method of several results on a LITERAL, `return P{1, 2}.Two()`,
+	// `take2(M{...}.Inv())`: the literal bound once, as a multiple assignment binds
+	// it (litMethodHead). Unread, the call forwarded nothing, and the C passed the
+	// result struct where its fields were wanted.
+	if !ok && e.litMethodMulti(ast) {
+		if tmp, steps, isLit := e.litMethodHead(ast); isLit {
+			return tmp, steps, true
+		}
+	}
 	return callee, suffix, ok
 }
 
@@ -35863,6 +35926,10 @@ func (e *emitter) chainResultCur(base string, steps []Node) (accessCur, bool) {
 			cur = curArray(a)
 		} else if rts, ok := e.funcRet[mn]; ok && len(rts) == 1 {
 			cur = e.plainOrSlice(rts[0])
+		} else if ct, used, isConv := e.convChainHead(base, steps); isConv && used == 2 {
+			// ANOTHER package's type converted at the head, `lib.C(3).Two()`: what
+			// the conversion yields, as for this package's own (below).
+			cur = e.plainOrSlice(ct)
 		} else {
 			return accessCur{}, false
 		}

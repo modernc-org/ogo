@@ -60,6 +60,11 @@ shipped section tells a reader on that version that they have behaviour they do 
   lib.IdentMx().T()` and a field given `lib.IdentMx().T().T()` were "cannot infer
   a type" and "an element of a [2][2]int literal must be a literal, an array value
   or a call returning one".
+- **A method of several results on a literal forwards its results**:
+  `take2(P{1, 2}.Two())`, `return M{{1, 2}, {3, 4}}.Two()` and `n, ok :=
+  (&P{3, 4}).Two()` build, and so does `n, ok := lib.C(3).Two()` for another
+  package's type. The first was refused as an argument short, the others by the
+  emitter.
 - **A method of an interface reached by a call is called in every position**:
   `get().Read()`, `x, ok := get().Read()`, `return get().Read()`,
   `take(get().Read())`, `a := get().Arr()`, `geth().r.Read()` and `go
@@ -391,6 +396,24 @@ shipped section tells a reader on that version that they have behaviour they do 
 
 ### Behaviour changes
 
+- **A value two steps or more from its variable has its type**: `var x Q2 =
+  m[0][1]` for an element `Q` of a `type M [2][2]Q`, `take(h.k[0])`, `w.in.v` where
+  another defined type of the same kind is wanted are refused, as one step away
+  always was.
+- **The arguments of a method of another package's type are counted and typed when
+  it is called on an element of that package's array type or on a conversion**:
+  `dk[1].Mul()`, `m[0][1].Mul(1, 2)` and `lib.Q(3).Mul()` were taken, and the
+  element of a defined array of arrays through an operation, `(-m[0][1]).Mul()`,
+  in one package too.
+- **A method of several results called on a literal is counted**: `_ = P{1,
+  2}.Two()`, `take(L{1, 2}.Two())` and a typed assignment from one are refused as
+  Go refuses them. And a call of several results is no single value of a return,
+  `return two()` from a function of one result: the checker says so, where the
+  emitter did, or for a call on a literal nobody.
+- **A call's result of no Kind goes into no variable or parameter of one**: `x, ok
+  = inv()` for an int x and an array, struct, slice, pointer, function or channel
+  result, and `take(inv())` for an int parameter, are refused; only the results of
+  a Kind were compared.
 - **A slice, an array, a function or a channel whose type is written out is
   refused where an interface is wanted**, as a struct and a number are: `show(xs)`
   for a `show(v any)`, `var a any = xs`, a field, an element, a send, a return.

@@ -1,0 +1,81 @@
+// A method of several results called on a literal, a conversion or a parenthesised
+// address has them counted and typed, as one called on a variable has, and a call of
+// several results is no single value of a return.
+
+type P struct{ a, b int }
+
+func (p P) Two() (int, bool) { return p.a, true }
+
+type M [2][2]int
+
+func (m M) Two() (int, bool) { return m[0][0], true }
+
+type L []int
+
+func (l L) Two() (int, bool) { return len(l), true }
+
+func two() (int, bool) { return 1, true }
+
+func take(n int) {}
+
+func take2(n int, ok bool) {}
+
+func ret() int {
+	// ERROR too many return values: P\{1, 2\}.Two\(\) returns 2 values, want 1 value
+	return P{1, 2}.Two()
+}
+
+func ret1() int {
+	// ERROR too many return values: two\(\) returns 2 values, want 1 value
+	return two()
+}
+
+func ret3() (int, int) {
+	// ERROR multiple-value two\(\) \(value of type \(2 values\)\) in single-value context
+	return two(), 3
+}
+
+func ret2() (int, bool) { return M{{1, 2}, {3, 4}}.Two() }
+
+func main() {
+	// ERROR assignment mismatch
+	_ = P{1, 2}.Two()
+	// ERROR assignment mismatch
+	_ = M{{1, 2}, {3, 4}}.Two()
+	// ERROR too many arguments in call to take
+	take(L{1, 2}.Two())
+	// ERROR too many arguments in call to take
+	take((&P{1, 2}).Two())
+	var s string
+	var ok bool
+	// ERROR cannot use
+	s, ok = P{1, 2}.Two()
+	take2(P{1, 2}.Two())
+	take2((&P{1, 2}).Two())
+	n, ok2 := (&P{3, 4}).Two()
+	_, _, _, _ = s, ok, n, ok2
+	_, _ = ret2()
+}
+
+// A result of no Kind, an array or a struct, goes into no variable or parameter of
+// one.
+
+type R struct{ n int }
+
+func (r R) Pair() (R, bool) { return r, true }
+
+func inv() (M, bool) { return M{}, true }
+
+func kinds() {
+	var x int
+	var ok bool
+	// ERROR cannot use result 1 of inv\(\) \(an array of type M\) as type int in assignment
+	x, ok = inv()
+	// ERROR cannot use result 1 of R\{\}.Pair\(\) \(a struct of type R\) as type int in assignment
+	x, ok = R{}.Pair()
+	// ERROR cannot use result 1 of inv\(\) \(an array of type M\) as type int in argument to take2
+	take2(inv())
+	var m M
+	m, ok = inv()
+	_, _, _ = x, ok, m
+}

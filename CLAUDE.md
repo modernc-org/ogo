@@ -884,7 +884,11 @@ still design-only.
   64-bit bounds and copied into a make of a 64-bit length -- no generated program had
   an index of 64 bits, which is why the sweeps never met ogo_bound's. Seeds 1-2000
   on the host shim, clean; 1-200 on a P2-EDGE, 78 with it, 192 passing and 8
-  outgrowing. Seeds 3501-4000
+  outgrowing. A seventh, agWide: tables of int64 and uint64 of two dimensions
+  written and read through a call in the row index (agRow) -- the shape of the
+  silent row fault (A ROW OF 64-BIT ELEMENTS INDEXED BY A CALL), which no generated
+  program had. Seeds 1-2000 on the host shim, clean; 1-200 on a P2-EDGE, 70 with
+  it, 192 passing and 8 outgrowing. Seeds 3501-4000
   with aab09a0, the generator before it: 472 passing, 28 outgrowing, none failing.
   A domain program of the same family -- sample frames of mixed widths filled on
   one cog, passed by value through a channel and a single-producer ring to another
@@ -1628,6 +1632,31 @@ two dimensions indexed by a variable. The row is written through its first
 element's address, `(&r[I][0])[J]` (wideRowC, from accessDeref), which the target
 reads right. **A numeric domain program crosses the element WIDTHS with the
 dimensions**; the sweeps had crossed the widths with the positions.
+Its 1,500 mutants, judged once the board run had passed, had 31 taken, two rows.
+Arguments of a method of ANOTHER package's type called on an element of its DEFINED
+array type, `dk[1].Mul(q)`, or on a conversion, `lib.Q(3).Mul(q)`, were asked
+nothing: callChainWalk returned at once for a variable of another package's type
+whose first step was an index, and the index step carried no home package where the
+field step did. Beside it, a value two steps or more from its variable with no call
+between, `m[0][1]` of a `type M [2][2]Q`, `h.k[0]`, `w.in.v`, had no type NAME at
+all -- localValueNamedType names a value one step away, plainChainNamed walks the
+rest -- so `var x Q2 = m[0][1]` for a Q went through, 60 of 80 programs of each grid,
+in one package and across two. And a method of several results called on a literal,
+`_ = P{1, 2}.Two()`, `take(M{...}.Inv())`, a typed assignment, was asked no count
+(exprCallResults answers a literal's and a parenthesised value's method now), where
+the valid forwarding of one, `take2(P{1, 2}.Two())`, was refused as an argument
+short; and a call of several results as one value of a return, `return two()` from
+a function of one result, was the emitter's to refuse, and is the checker's. Making
+the forwarding valid in the checker handed it to an emitter that could not take a
+literal's call apart -- C passing the result struct for its fields: resultCallOf
+binds the literal, once per statement (litMethodHead's memo), and only for a method
+of several results (litMethodMulti), so a literal's method of one result costs no
+temporary more. The last mutant taken was the result's row from the other side: a
+result of NO Kind -- an array, a struct, a slice, a pointer -- assigned from a call
+of several results into a variable of a Kind, or forwarded to a parameter of one,
+was asked nothing, checkResultsAssign skipping every result without a Kind, for
+every callee (kindlessResult, resolved in the file that wrote the type). **A false refusal fixed in the checker is a program the emitter is
+handed next**: the valid twin of every shape a new count or type rule settles is run.
 
 **A C NAME IS A ROW** (2026-09-25). The emitted C keeps a program's own names, so
 every name a program may write is a row across everything else that names things in

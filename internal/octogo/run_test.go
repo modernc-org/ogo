@@ -27072,6 +27072,45 @@ func main() {
 		want: "base outer\nbase\n*main.Base *main.Outer &[]\nbase\n",
 	},
 	{
+		name: "a method of several results on a literal, forwarded and returned",
+		src: `type P struct{ a, b int }
+
+func (p P) Two() (int, bool) { return p.a + p.b, p.a > p.b }
+
+type M [2][2]int
+
+func (m M) Two() (int, bool) { return m[0][1], m[1][0] > 2 }
+
+type L []int
+
+func (l L) Two() (int, bool) { return len(l), l[0] > 1 }
+
+var order int
+
+func f(k int) int {
+	order = order*10 + k
+	return k
+}
+
+func take2(n int, ok bool) { println("take2", n, ok, order) }
+
+func ret2() (int, bool) { return M{{1, f(2)}, {f(3), 4}}.Two() }
+
+func ret3() (int, bool) { return P{f(4), f(5)}.Two() }
+
+func main() {
+	take2(P{f(1), f(2)}.Two())
+	take2((&P{5, f(3)}).Two())
+	take2(L{f(4), 1, 1}.Two())
+	n, ok := (&P{3, 4}).Two()
+	m, ok2 := ret2()
+	k, ok3 := ret3()
+	println(n, ok, m, ok2, k, ok3, order)
+}
+`,
+		want: "take2 3 false 12\ntake2 8 true 123\ntake2 3 true 1234\n7 false 2 true 9 false 12342345\n",
+	},
+	{
 		name: "a struct parameter named like one of its members",
 		src: `type In struct {
 	x, y int
@@ -47275,7 +47314,8 @@ const multiPkgWant = "300\nLOUD\n50\n6\n5\n45\n6 1000\n200\n207\n3 100\n4 9\n" +
 	"10 3 1 2\n10 40 5\n5 10 21 7 2\n5 8 10 true 22 true 2\n12 true 2\n" +
 	"true false true true true\ntrue gone busy\ntick true true true false true\nfalse true true\n" +
 	"namer after 2\nnamer after 1\n" +
-	"3 2 2 1\n"
+	"3 2 2 1\n" +
+	"takeTwo 8 true\n6 false 6 true 6 -6\n"
 
 var multiPkgProgram = map[string]string{
 	"main.ogo": `import "chain"
@@ -47469,6 +47509,7 @@ libFrames()
 libSentinels()
 libDeferIface()
 libArrayChain()
+libLitCalls()
 }
 
 // A method on ANOTHER package's call returning an array, lib.IdentMx().T(), as a
@@ -47484,6 +47525,21 @@ func libArrayChain() {
 	h := mxHolder{P: lib.IdentMx().T(), n: 1}
 	t := lib.IdentMx().T().T()
 	println(h.P[0][1], h.P[1][0], t[0][1], h.n)
+}
+
+// A method of several results on another package's CONVERSION and LITERAL, forwarded
+// and destructured, and a method of an element of its defined array of arrays, on
+// the element and on an operation over it: the conversion's results were "target/result
+// count mismatch", and the element's arguments were asked nothing.
+func takeTwo(n int, ok bool) { println("takeTwo", n, ok) }
+
+func libLitCalls() {
+	n, ok := lib.Cnv(3).Two()
+	m, ok2 := lib.Mx{{5, 6}, {7, 8}}.Two()
+	takeTwo(lib.Cnv(4).Two())
+	var g lib.CGrid
+	g[1][0] = lib.Cnv(6)
+	println(n, ok, m, ok2, (-g[1][0]).Neg(), g[1][0].Neg())
 }
 
 // A deferred call of ANOTHER package's function taking an interface: the pointer is
@@ -48781,6 +48837,18 @@ type Mx [2][2]int
 func IdentMx() Mx { return Mx{{1, 2}, {3, 4}} }
 
 func (a Mx) T() Mx { return Mx{{a[0][0], a[1][0]}, {a[0][1], a[1][1]}} }
+
+func (a Mx) Two() (int, bool) { return a[0][1], a[1][0] > 6 }
+
+// Cnv is converted to where main calls its methods (libLitCalls), and CGrid is a
+// defined array of arrays of it.
+type Cnv int
+
+func (c Cnv) Two() (int, bool) { return int(c) * 2, c > 3 }
+
+func (c Cnv) Neg() int { return -int(c) }
+
+type CGrid [2][2]Cnv
 
 // Namer is satisfied by a pointer of main's (libDeferIface).
 type Namer interface{ Name() string }

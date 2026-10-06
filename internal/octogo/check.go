@@ -2810,6 +2810,18 @@ func (f *File) checkReturn(s *Scope, results []retResult, stmt Node) {
 	}
 	for i, e := range exprs {
 		f.checkNames(s, e)
+		// A call of SEVERAL results as one of the values, `return two()` from a
+		// function of one result, `return P{1, 2}.Two(), 3`: Go's refusal. It was
+		// the emitter's, "a multi-value call cannot be used as a single value", and
+		// for a call on a literal it was nobody's.
+		if r, ok := f.forwardedResults(s, e); ok {
+			if len(exprs) == 1 {
+				f.err(retTok.Position(), "too many return values: %s returns %s, want %s", f.exprSource(e), countUnits(len(r), "value"), countUnits(len(results), "value"))
+			} else {
+				f.err(f.tok(e.Pos()).Position(), "multiple-value %s (value of type (%d values)) in single-value context", f.exprSource(e), len(r))
+			}
+			continue
+		}
 		f.checkReturnValue(s, results[i], e)
 		f.checkEscapeReturn(s, e)
 	}
@@ -16118,6 +16130,34 @@ func (w callChain) homeType(name string) (string, bool) {
 	return w.qual.Src() + "." + name, true
 }
 
+// plainChainNamed is exprNamedType for a variable read through two steps or more
+// and no call, `m[0][1]`, `h.k[0]`, `w.in.v`: the type its written type reaches,
+// named as this file writes it.
+func (f *File) plainChainNamed(s *Scope, id Token, fac Node) (name, qual Token, isPtr, ok bool) {
+	kids := slices.Collect(it(fac.ast))
+	if len(kids) != 2 || kids[1].sym != FactorSuffix {
+		return Token{}, Token{}, false, false
+	}
+	steps := slices.Collect(it(kids[1].ast))
+	if len(steps) < 2 || slices.ContainsFunc(steps, func(n Node) bool { return n.sym == CallSuffix }) {
+		return Token{}, Token{}, false, false
+	}
+	d, isVar := s.find(id.Src()).(*VarDeclaration)
+	if !isVar {
+		return Token{}, Token{}, false, false
+	}
+	vt, known := f.varTypeAt(d)
+	if !known {
+		return Token{}, Token{}, false, false
+	}
+	w := newCallChain()
+	w.at = s
+	if w = f.walkSteps(vt, true, steps, 0, len(steps), w); !w.known || w.t.tn == nil {
+		return Token{}, Token{}, false, false
+	}
+	return f.chainNamed(w)
+}
+
 // chainNamed names what a walk reached as this file writes it (typeNodeNamed): a
 // type of the package a qualified walk began in gains its qualifier, a predeclared
 // one is the universe's, and a third package's, named as that package imports it,
@@ -16195,7 +16235,9 @@ func (f *File) callChainWalk(s *Scope, head Token, steps []Node) (w callChain) {
 		// checkImportedMethodArgs's; a FIELD first, `f.ID.Node(1)` for an `f
 		// *lib.Frame`, is walked -- it was walked by nothing, and its call's
 		// arguments and results asked nothing.
-		if d.typeQual.IsValid() && (len(steps) < 2 || steps[0].sym != Selector || steps[1].sym == CallSuffix) {
+		// An ELEMENT first, `dk[1].Mul(q)` for a `dk lib.K` of another package's
+		// array type, is walked as a field is: its arguments were asked nothing.
+		if d.typeQual.IsValid() && (len(steps) < 2 || steps[0].sym == Selector && steps[1].sym == CallSuffix || steps[0].sym == CallSuffix) {
 			return w
 		}
 		if len(steps) > 1 && steps[0].sym == Selector && steps[1].sym == CallSuffix {
@@ -16257,6 +16299,13 @@ func (f *File) callChainWalk(s *Scope, head Token, steps []Node) (w callChain) {
 				return w
 			}
 			t, addr, i = vt, true, 1
+		case *TypeDeclaration:
+			// A CONVERSION to another package's type, `lib.Q(3).Mul(q)`: a value of
+			// the type named, resolved in that package.
+			if steps[1].sym != CallSuffix {
+				return w
+			}
+			t, i = typeAt{&TypeNodeIdent{Name: member}, home, f.fileOfToken(md.Token())}, 2
 		default:
 			return w
 		}
@@ -16481,6 +16530,19 @@ func (f *File) walkSteps(t typeAt, addr bool, steps []Node, i, reportFrom int, w
 				elem, isSlice = x.TypeNode, true
 			default:
 				return w // a string, or what this does not type
+			}
+			// An element of ANOTHER package's array or slice type, `dk[1]` for a
+			// `dk lib.K`: the walk goes on in that package, as a field's does.
+			if w.home == nil {
+				qtn := t.tn
+				if p, isPtr := qtn.(*TypeNodePointer); isPtr {
+					qtn = p.TypeNode
+				}
+				if id, isID := qtn.(*TypeNodeIdent); isID && id.Qualifier.IsValid() {
+					if _, home, ok := f.typeIdentDecl(t.s, id); ok {
+						w.home, w.qual = home, id.Qualifier
+					}
+				}
 			}
 			if f.isSliceExpr(st) {
 				if !isSlice && !addr {
@@ -19990,6 +20052,12 @@ func (f *File) exprNamedType(s *Scope, n Node) (name, qual Token, isPtr, ok bool
 	// field `b.P`, a method's result `b.Get()` -- for the reason the qualified form
 	// above has: a variable with no type is a variable nothing is checked about.
 	if nm, ql, vPtr, has := f.localValueNamedType(s, id, fac); has {
+		return nm, ql, (isPtr || vPtr) && !isDeref, true
+	}
+	// Steps of no call past one, `m[0][1]` of a `type M [2][2]Q`, `h.k[0]`: what the
+	// variable's written type reaches (walkSteps). localValueNamedType names a value
+	// one step from its variable, and `var x Q2 = m[0][1]` for a Q went through.
+	if nm, ql, vPtr, has := f.plainChainNamed(s, id, fac); has {
 		return nm, ql, (isPtr || vPtr) && !isDeref, true
 	}
 	// Steps past a call, `f()[0]`, `h.rows()[1:]`, `mk().in`: what the result's
@@ -25124,6 +25192,31 @@ func (f *File) exprCallResults(s *Scope, n Node) ([]retResult, bool) {
 			}
 		}
 	}
+	// A method at the end of a chain on a value no name holds: a literal, `P{1,
+	// 2}.Two()`, `M{{1, 2}, {3, 4}}.Inv()`, `lib.P{1, 2}.Two()`, and a parenthesised
+	// value, `(&P{1, 2}).Two()`. Unanswered, `_ = P{1, 2}.Two()`, `take(P{1,
+	// 2}.Two())` and a return of one were asked no count, and a typed assignment no
+	// types.
+	if len(steps) >= 2 && steps[len(steps)-2].sym == Selector {
+		var rt typeAt
+		var rsteps []Node
+		found := false
+		if lt, lsteps, isLit := f.namedLitChain(s, n); isLit {
+			rt, rsteps, found = lt, lsteps, true
+		} else if len(kids) == 4 && kids[0].sym == 0 && f.ch(kids[0].tok) == LPAREN && kids[1].sym == Expression {
+			if pt, ok := f.valueTypeAt(s, kids[1]); ok && pt.tn != nil {
+				rt, rsteps, found = pt, steps, true
+			}
+		}
+		if found {
+			w := f.litChainWalk(s, rt, rsteps)
+			for _, c := range w.calls {
+				if c.at == len(rsteps)-2 && c.sig != nil {
+					return f.flattenResults(c.in, c.sig), true
+				}
+			}
+		}
+	}
 	t, ok := f.valueTypeAt(s, factorWithoutLastStep(kids, steps))
 	if !ok || t.f != f || t.tn == nil {
 		return nil, false
@@ -25252,6 +25345,9 @@ func (f *File) checkCallArgs(s, paramScope *Scope, at Token, callee string, sig 
 					if p := params[i]; p.known && r.known && !assignableKind(p.kind, r.kind) {
 						f.err(f.tok(args[0].Pos()).Position(), "cannot use result %d of %s (type %s) as type %s in argument to %s",
 							i+1, f.exprSource(args[0]), r.name, p.name, callee)
+					} else if what := f.kindlessResult(s, r); p.known && what != "" {
+						f.err(f.tok(args[0].Pos()).Position(), "cannot use result %d of %s (%s of type %s) as type %s in argument to %s",
+							i+1, f.exprSource(args[0]), what, f.resultName(r), p.name, callee)
 					}
 				}
 			}
@@ -25352,6 +25448,45 @@ func (f *File) checkCallArgs(s, paramScope *Scope, at Token, callee string, sig 
 	}
 }
 
+// kindlessResult names what a call's result of no Kind is -- "an array", "a
+// struct", "a slice", "a function", "a channel", "a pointer" -- resolved in the
+// file that wrote its type (refTypeUnder), and "" for a result of a Kind or one
+// this cannot resolve. Such a result goes into no variable or parameter of a Kind;
+// asked of the Kind alone, `x, ok = inv()` for an int x and an array result went
+// through.
+func (f *File) kindlessResult(s *Scope, r retResult) string {
+	if r.known || r.typeNode == nil {
+		return ""
+	}
+	u, _ := f.refTypeUnder(s, r.typeNode)
+	switch u.(type) {
+	case *TypeNodeArray:
+		return "an array"
+	case *TypeNodeStruct:
+		return "a struct"
+	case *TypeNodeSlice:
+		return "a slice"
+	case *FunctionType:
+		return "a function"
+	case *TypeNodeChan:
+		return "a channel"
+	case *TypeNodePointer:
+		return "a pointer"
+	}
+	return ""
+}
+
+// resultName is how a message spells a call's result type.
+func (f *File) resultName(r retResult) string {
+	if r.name != "" {
+		return r.name
+	}
+	if r.typeNode != nil {
+		return f.typeNodeString(r.typeNode, false)
+	}
+	return "?"
+}
+
 // checkResultsAssign checks a call of several results assigned to as many bare
 // targets, `n, s = two(5)`: each result against the target in its position, by the
 // rules a single value is held to where a Kind can say -- a scalar where a slice is
@@ -25368,7 +25503,20 @@ func (f *File) checkResultsAssign(s *Scope, lhs []Token, suffixed []bool, call N
 		return // the count is the mismatch check's to report
 	}
 	for i, tok := range lhs {
-		if suffixed[i] || tok.Src() == "_" || !res[i].known {
+		if suffixed[i] || tok.Src() == "_" {
+			continue
+		}
+		if !res[i].known {
+			if what := f.kindlessResult(s, res[i]); what != "" {
+				if lk, lok := f.identKind(s, tok); lok {
+					want := kindName(lk)
+					if d, isVar := s.find(tok.Src()).(*VarDeclaration); isVar && d.typeName.IsValid() {
+						want = d.declaredTypeName()
+					}
+					f.err(f.tok(call.Pos()).Position(), "cannot use result %d of %s (%s of type %s) as type %s in assignment",
+						i+1, f.exprSource(call), what, f.resultName(res[i]), want)
+				}
+			}
 			continue
 		}
 		d, isVar := s.find(tok.Src()).(*VarDeclaration)

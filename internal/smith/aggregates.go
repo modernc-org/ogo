@@ -460,6 +460,16 @@ func (a *aggregate) run(f *Fuzzer, k, d func() int64) (string, Int32, bool) {
 		step(a.idx(ki, di))
 		later = append(later, func() { a.writeIdx(f) })
 	}
+	// And tables of 64-bit integers of two dimensions, indexed by variables and by a
+	// call: the target's compiler lost the store and read garbage for such an element
+	// whenever its row index held a call -- which a checked build's bound check is
+	// (doc/wide-row-call-index.c) -- and no generated program had one.
+	if a.r.Intn(2) == 0 {
+		kw, dw := k(), d()
+		fmt.Fprintf(w, "\tr = r*31 + %s(%d, %d)\n", a.name("agWide"), kw, dw)
+		step(a.wide(kw, dw))
+		later = append(later, func() { a.writeWide(f) })
+	}
 	fmt.Fprint(w, "\treturn r\n}\n\n")
 	if cog {
 		in, out := a.name("agIn"), a.name("agOut")
@@ -700,4 +710,45 @@ func (a *aggregate) writeIdx(f *Fuzzer) {
 		fl.name, fl.n,
 		fl.n, fl.name,
 		fl.name, fl.n, fl.k.name, a.name("agSum"))
+}
+
+// wide is agWide(k, d), computed with Go's semantics, int being int32.
+func (a *aggregate) wide(k, d int64) int32 {
+	var t [3][2]int64
+	var u [2][3]uint64
+	K, D := int32(k), int32(d)
+	for i := int32(0); i < 3; i++ {
+		for j := int32(0); j < 2; j++ {
+			t[i][j] = int64(K+i)<<33 + int64(D*j+1)
+			u[j][i] = uint64(D+j)<<40 | uint64(K*i+j)
+		}
+	}
+	var r int32
+	for i := 0; i < 3; i++ {
+		for j := 0; j < 2; j++ {
+			t[i][j] += t[i][1-j] >> 3
+			u[j][i] ^= u[1-j][i] >> 7
+			r = r*31 + int32(t[i][j]>>33) + int32(t[i][j])
+			r = r*31 + int32(u[j][i]>>40) + int32(uint32(u[j][i]))
+		}
+	}
+	return r
+}
+
+// writeWide declares agWide and agRow, the call in the row index.
+func (a *aggregate) writeWide(f *Fuzzer) {
+	w := f.Out
+	row := a.name("agRow")
+	fmt.Fprintf(w, "func %s(i int) int { return i }\n\n", row)
+	fmt.Fprintf(w, "func %s(k, d int) int {\n\tvar t [3][2]int64\n\tvar u [2][3]uint64\n"+
+		"\tfor i := 0; i < 3; i++ {\n\t\tfor j := 0; j < 2; j++ {\n"+
+		"\t\t\tt[%s(i)][j] = int64(k+i)<<33 + int64(d*j+1)\n"+
+		"\t\t\tu[j][%s(i)] = uint64(d+j)<<40 | uint64(k*i+j)\n\t\t}\n\t}\n"+
+		"\tr := 0\n\tfor i := 0; i < 3; i++ {\n\t\tfor j := 0; j < 2; j++ {\n"+
+		"\t\t\tt[%s(i)][j] += t[i][1-j] >> 3\n"+
+		"\t\t\tu[j][i] ^= u[%s(1-j)][i] >> 7\n"+
+		"\t\t\tr = r*31 + int(t[%s(i)][j]>>33) + int(t[i][j])\n"+
+		"\t\t\tr = r*31 + int(u[%s(j)][i]>>40) + int(uint32(u[j][i]))\n"+
+		"\t\t}\n\t}\n\treturn r\n}\n\n",
+		a.name("agWide"), row, row, row, row, row, row)
 }

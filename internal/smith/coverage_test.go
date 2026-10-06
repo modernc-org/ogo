@@ -338,6 +338,7 @@ var generatedConstructs = []struct {
 	{"index of 64 bits", `\n\tr := int\(v\.\w+\[u%\d+\]\) \+ int\(v\.\w+\[w\]\)\*3\n`},
 	{"slice bounds of 64 bits", `\n\ts := v\.\w+\[w:\]\n`},
 	{"make length of 64 bits", `\n\tm := make\(\[\]int64, w, \d+\)\n`},
+	{"table of 64 bits indexed by a call", `\n\t\t\tt\[agRow_\d+\(i\)\]\[j\] \+= t\[i\]\[1 ?- ?j\] >> 3\n`},
 	// A name C has spoken for, which newVarName draws now and then (cNames): the
 	// emitter renames each in every position, and a position it missed was a C
 	// error no generated program could show while every name was a counter's.

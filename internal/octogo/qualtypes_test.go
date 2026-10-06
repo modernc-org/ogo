@@ -86,6 +86,14 @@ func Box() any { return &G }
 func Err() error { return nil }
 
 func Num() int { return 4 }
+
+type QE int32
+
+func (q QE) Mul(r QE) QE { return q * r }
+
+type QK [2]QE
+
+type QM [2][2]QE
 `
 	for _, test := range []struct {
 		name, main string
@@ -399,6 +407,46 @@ func send(c a.Ch) { c <- "x" }
 
 func main() { _ = send }
 `, `cannot use "x" of type string as type int in send`, true},
+		{"a method of an element of another package's array of arrays", `import "a"
+
+func main() {
+	var m a.QM
+	m[0][1] = 3
+	var k a.QK
+	k[1] = 5
+	println(m[0][1].Mul(2), (-m[0][1]).Mul(1), k[1].Mul(k[1]), a.QE(4).Mul(2))
+}
+`, "6 -3 25 8\n", false},
+		{"its arguments, through an element of another package's array of arrays", `import "a"
+
+func main() {
+	var m a.QM
+	_ = m[0][1].Mul()
+}
+`, "not enough arguments in call to", true},
+		{"its arguments, through an element of another package's array", `import "a"
+
+func main() {
+	var k a.QK
+	_ = k[1].Mul(1, 2)
+}
+`, "too many arguments in call to", true},
+		{"its arguments, through a conversion to another package's type", `import "a"
+
+func main() {
+	_ = a.QE(3).Mul()
+}
+`, "not enough arguments in call to", true},
+		{"an element of another package's array of arrays is of its element type", `import "a"
+
+type Q2 int32
+
+func main() {
+	var m a.QM
+	var x Q2 = m[0][1]
+	_ = x
+}
+`, "cannot use m[0][1] of type a.QE as type Q2", true},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			fsys := fstest.MapFS{

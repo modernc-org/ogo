@@ -1,0 +1,53 @@
+// A value two steps or more from its variable, with no call between, has the type
+// its variable's written type reaches: an element of a defined array of arrays, a
+// field's element, a field of a field. It had none, so a value of one defined type
+// went where another of the same Kind was wanted, and a method called on an
+// operation over it was asked nothing.
+
+type Q int32
+
+type Q2 int32
+
+func (q Q) Mul(r Q) Q { return q * r }
+
+type M [2][2]Q
+
+type In struct {
+	v Q
+	s []Q
+}
+
+type W struct{ in In }
+
+type H struct{ k [2]Q }
+
+func take(x Q2) {}
+
+func main() {
+	var m M
+	var w W
+	var h H
+	var a3 [2][2][2]Q
+	pm := &m
+	// ERROR cannot use m\[0\]\[1\] of type Q as type Q2
+	var x Q2 = m[0][1]
+	// ERROR cannot use -m\[0\]\[1\] of type Q as type Q2
+	x = -m[0][1]
+	// ERROR cannot use w.in.v
+	take(w.in.v)
+	// ERROR cannot use w.in.s\[1\]
+	take(w.in.s[1])
+	// ERROR cannot use h.k\[0\]
+	take(h.k[0])
+	// ERROR cannot use a3\[1\]\[0\]\[1\]
+	take(a3[1][0][1])
+	// ERROR cannot use pm\[0\]\[1\]
+	take(pm[0][1])
+	// ERROR not enough arguments in call to Mul
+	_ = (-m[0][1]).Mul()
+	// ERROR too many arguments in call to Mul
+	_ = (m[0][1] + 1).Mul(1, 2)
+	var y Q = m[0][1]
+	_ = m[1][0].Mul(y)
+	_ = x
+}
