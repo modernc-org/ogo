@@ -1145,7 +1145,8 @@ and a method of several results reached through a chain typed none of its names
 (exprCallResults asks callChainWalk's calls). The board sweep of fuzzer seeds
 2001-2500 with 331f03a, the generator unchanged since 651a7f5: 470 passing (three on a
 second load, the loader's "sendAddressSize: timeout" and "Error writing port"), 30
-outgrowing a cog, none failing.
+outgrowing a cog, none failing; and 2501-3000 with e28a36f: 463 passing (six on a
+second load, the first printing nothing), 37 outgrowing, none failing.
 **The mutation sweep turned on a DOMAIN program** (2026-10-06): two programs written
 for the round -- a bitmap library (a font table, a canvas of byte rows, Bresenham,
 midpoint circles, flood fill on an explicit stack) and a stack machine (iota opcodes
@@ -1314,6 +1315,22 @@ embedded `lib.point`, whose refusals came from FINDING NOTHING. **A rule that re
 by failing to resolve is found by widening the resolver and running the rejects
 again** -- 17 positions written with an unexported name, `scripts/rejects.sh`-style,
 showed the three, and a fourth older one, `case *lib.point:` (checked since).
+A THIRD package is the row's next column (2026-10-06, found mutating a DSP program of
+three packages, q15, filt and main): a type filt writes as `q15.Q` could not be
+carried into main's spelling -- requalifiedType answered false for a name qualified
+THERE -- so a value going into filt's field, element, literal or variable of a q15.Q
+was asked nothing, and one read out of it, `var x int16 = filt.G`, was named
+`filt.Q`, a type of no package. It is spelled with main's own import of q15 where
+there is one (foreignQual, carriedQual; importQualTok finds a token of this file
+spelling the name, an alias or a use, which an import must have), and where there is
+none a literal's elements are asked their Kind (checkForeignElemKinds). Beside it,
+in two packages: another package's VARIABLE as a target, `filt.G = true` and `filt.G
++= true` (targetTypeNode had no case for a qualifier, which no scope finds), an
+element of another package's array type, `t[0] = true` (indexedTypeNode read no
+qualified name), and that package's array literal, `filt.Taps{1, true}`, whose
+elements were checked only where they were predeclared. **A boundary sweep crosses
+two packages and three**: what one package writes qualified is the case two never
+reach.
 
 **A C NAME IS A ROW** (2026-09-25). The emitted C keeps a program's own names, so
 every name a program may write is a row across everything else that names things in
@@ -2815,10 +2832,10 @@ resultCTypeIn); a function literal called and then read through, `func() P { ...
 type, and one returning an ARRAY called at all, `func() Set { ... }()`; a method of
 a call's array result deferred or started on a cog, `defer mk(5).Count()` and `go
 mk(5).Count()` (as a value and a statement it works since 2026-09-24, and with the call
-parenthesised, `(mk(1)).Len()`, since 2026-09-25, spliceParenArrayCall); an index or a method called directly on a literal of a DEFINED slice type,
-`IS{4, 5}[1]` and `IS{6, 7}.Sum()`, "this form is not supported yet" (factorLitIndexed
-and factorStructLitChain take a bracketed type and a struct; the literal is typed as a
-value since 2026-09-25, when a print of one had read its header as an integer); a
+parenthesised, `(mk(1)).Len()`, since 2026-09-25, spliceParenArrayCall); a STATEMENT
+beginning with a literal of a defined type, `Taps{}.Zero()`, a syntax error (as a value
+an index or a method called directly on a literal of a DEFINED array or slice type,
+`IS{4, 5}[1]`, `IS{6, 7}.Sum()`, works since 2026-10-06, namedArrayLitChain); a
 field a BRACKETED literal lacks, `[]P{gp}[0].in.nosuch`,
 "a []P literal cannot be read through this suffix" from the emitter, where the valid
 form works (a call's result, a parenthesised value and a named literal are checked at

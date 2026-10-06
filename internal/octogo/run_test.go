@@ -46175,6 +46175,40 @@ func main() {
 `,
 		want: "false false true\nthree\n5 8 3 7\n",
 	},
+	{
+		// A literal of a DEFINED array or slice type read through a suffix, an
+		// index, a reslice or a method: "this form is not supported yet" where the
+		// bracketed `[3]int{...}[1]` was read all along.
+		name: "chains on literals of defined array and slice types",
+		src: `type IS []int
+
+func (s IS) Sum() int {
+	n := 0
+	for _, v := range s {
+		n += v
+	}
+	return n
+}
+
+func (s IS) Last() int { return s[len(s)-1] }
+
+type Taps [3]int16
+
+func (t Taps) First() int16 { return t[0] }
+
+func main() {
+	println(IS{4, 5}[1], IS{6, 7}.Sum())
+	x := IS{1, 2, 3}.Sum() + IS{9}[0]
+	println(x, IS{1, 2, 3}[1:].Sum(), len(IS{1, 2}))
+	printf("%d %d %v\n", IS{6, 7}.Sum(), IS{3, 4}.Last(), Taps{7, 8, 9}.First())
+	for i, v := range (IS{5, 6}) {
+		println(i, v)
+	}
+	println(Taps{1, 2, 3}[2], Taps{4, 5, 6}.First())
+}
+`,
+		want: "5 13\n15 5 2\n13 4 7\n0 5\n1 6\n3 4\n",
+	},
 }
 
 // TestEmitCRun compiles emitted C with a host compiler and runs it, checking what

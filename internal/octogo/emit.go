@@ -21767,6 +21767,44 @@ func (e *emitter) hoistLitVar(typeAST []int32, lit Node) (string, bool) {
 	return name, true
 }
 
+// namedArrayLitChain recognises a literal of a DEFINED array or slice type with
+// steps after it, `Taps{1, 2, 3}.Sum()` and another package's `filt.Taps{1,
+// 2}.Sum()`: the type as arrayDim and namedSliceType read it, the factor's nodes up
+// to the literal, the literal and the steps.
+func (e *emitter) namedArrayLitChain(kids []Node) (typeAST []int32, litKids []Node, lit Node, steps []Node, ok bool) {
+	switch {
+	case len(kids) == 3 && kids[0].sym == 0 && e.f.ch(kids[0].tok) == IDENT && kids[1].sym == CompositeLit && kids[2].sym == FactorSuffix:
+		typeAST = []int32{kids[0].tok}
+	case len(kids) == 4 && kids[0].sym == 0 && kids[1].sym == FactorSuffix && kids[2].sym == CompositeLit && kids[3].sym == FactorSuffix:
+		if typeAST, ok = e.qualifiedTypeTokens(kids[0], kids[1]); !ok {
+			return nil, nil, Node{}, nil, false
+		}
+	default:
+		return nil, nil, Node{}, nil, false
+	}
+	if _, ok := e.namedLitCur(typeAST); !ok {
+		return nil, nil, Node{}, nil, false
+	}
+	steps = slices.Collect(it(kids[len(kids)-1].ast))
+	if len(steps) == 0 {
+		return nil, nil, Node{}, nil, false
+	}
+	return typeAST, kids[:len(kids)-1], kids[len(kids)-2], steps, true
+}
+
+// namedLitCur is where a chain on a literal of a defined array or slice type
+// begins: the array, or the slice under its own type's name, whose methods its
+// reslices keep.
+func (e *emitter) namedLitCur(typeAST []int32) (accessCur, bool) {
+	if a, isArr := e.arrayDim(typeAST); isArr {
+		return curArray(a), true
+	}
+	if cname, elem, isSlice := e.namedSliceType(typeAST); isSlice {
+		return accessCur{elem: elem, slice: true, name: cname}, true
+	}
+	return accessCur{}, false
+}
+
 // hoistElidedSliceLit is hoistLitVar for a slice literal whose type is left out, a
 // row `{1, 2}` of a `[][]int`, taking the type the position gives it, sliceCType.
 // Go admits the elision in an array's, a slice's and a map's element, and each row
@@ -45744,6 +45782,26 @@ func (e *emitter) inferNode(n Node) (string, bool) {
 				}
 				return cur.ctype, true
 			}
+			// `Taps{1, 2, 3}.Sum()` and `Row{1, 2}[1]`, a literal of a DEFINED array
+			// type read through a suffix: the method's result, or what the steps
+			// reach from the array.
+			if typeAST, litKids, _, steps, ok := e.namedArrayLitChain(kids); ok {
+				if steps[len(steps)-1].sym == CallSuffix {
+					ctype, _, okLit := e.factorCompositeLit(litKids)
+					if sels, okSel := e.selectorFields(steps[:len(steps)-1]); okLit && okSel && len(sels) == 1 {
+						if rts, has := e.funcRet[e.methodCName(ctype, sels[0])]; has && len(rts) == 1 {
+							return rts[0], true
+						}
+					}
+					return "", false
+				}
+				start, _ := e.namedLitCur(typeAST)
+				cur, okc := e.accessChainTypeAt(start, steps, false)
+				if !okc {
+					return "", false
+				}
+				return e.chainValueCType(cur)
+			}
 			// `P{1, 2}.x` types as what the chain reaches from the literal's type,
 			// and `P{1, 2}.Sum()` as the method's result. Typed from the literal's
 			// type, since inferring a type must emit nothing.
@@ -47946,6 +48004,29 @@ func (e *emitter) emitExprNode(n Node) {
 					e.emit(name)
 					return
 				}
+			}
+			// `Taps{1, 2, 3}.Sum()`, `Row{1, 2}[1]`: a literal of a DEFINED array type
+			// read through a suffix, bound to a temporary as a variable declared from
+			// it is, the steps applied to that. It was "this form is not supported
+			// yet"; the bracketed form, `[3]int{...}[1]`, has been read so all along.
+			if typeAST, _, lit, steps, ok := e.namedArrayLitChain(kids); ok {
+				if e.litSliceUnaddressable(typeAST, steps) {
+					e.fail("cannot slice unaddressable value %s", e.f.exprSource(n))
+					return
+				}
+				if tmp, ok := e.hoistLitVar(typeAST, lit); ok {
+					if slices.ContainsFunc(steps, func(st Node) bool { return st.sym == CallSuffix }) {
+						if e.emitCallExpr(tmp, steps) {
+							return
+						}
+					} else if cur, ok := e.accessBase(tmp); ok {
+						if _, ok := e.emitAccessChainAt(e.accessBaseText(tmp), cur, steps, true); ok {
+							return
+						}
+					}
+				}
+				e.fail("cannot read %s: this form is not supported yet", e.f.exprSource(n))
+				return
 			}
 			// `P{1, 2}.x` -- a struct literal read through a suffix.
 			if ctype, lit, steps, ok := e.factorStructLitChain(kids); ok {

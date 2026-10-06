@@ -20,6 +20,12 @@ shipped section tells a reader on that version that they have behaviour they do 
 
 ### Language
 
+- **A literal of a defined array or slice type may be read through a suffix**:
+  `Taps{1, 2, 3}[2]`, `Taps{1, 2, 3}.First()`, `IS{1, 2, 3}[1:].Sum()`, another
+  package's `filt.Taps{...}.Sum()`, as an argument and in a printf. Each was "this
+  form is not supported yet"; the bracketed `[3]int{...}[1]` and a struct
+  literal's chain worked already. (A statement that BEGINS with such a literal is
+  still a syntax error.)
 - **A channel prints**: `println(ch)` writes its address, `0x0` for nil, and `%v`
   writes it or `<nil>`, as for a function value. Both were refused, "cannot print
   a value of type ogo_chan_int", where a channel field of a struct printed already.
@@ -286,6 +292,23 @@ shipped section tells a reader on that version that they have behaviour they do 
 
 ### Behaviour changes
 
+- **Values going into another package's array type, variable or third-package
+  type are checked**, found mutating a DSP program of three packages: the elements
+  of `filt.Taps{1, true}` and a constant overflowing its element type, a pointer
+  method called on such a literal, `filt.G = true` and `filt.G += true` for
+  another package's variable, `t[0] = true` for a `t filt.Taps`, and a field,
+  element or variable of a type from a THIRD package, `var G q15.Q` in filt, read
+  or written from main -- `var x int16 = filt.G` among them. Each was taken. A type
+  of a third package is spelled as this file imports it, where it does; where it
+  does not, its Kind is asked. And a chain on a named literal is typed, `var s
+  int16 = Taps{1, 2}[0]` for a `[3]Q` refused, as is a switch on an address
+  against a case of its pointee's type, `switch &k { case 3: }`; `case nil:` is
+  taken there, where it was refused.
+- **A method value of a literal or a call's result is refused by the checker**:
+  `Taps{1, 2}.Scale` of a pointer method in Go's words, and a value method,
+  `P{1}.V`, `mk().V`, by design -- a method value binds the address of its
+  receiver, and such a value has none. Both were the emitter's "this form is not
+  supported yet".
 - **A method value whose receiver is an interface value is refused in its own
   words**: `f := one.Area`, `tab[0].Area`, `use(h.s.Area)`. Go saves the interface
   value when the method value is taken, which a binding made at compile time

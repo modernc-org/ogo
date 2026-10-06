@@ -258,6 +258,7 @@ type File struct {
 	headerBindings    map[*int32]Node             // the statements headers declare or assign by, `if p := r; ...`, for the passes reading a body's statements by shape (headerBindingsIn)
 	ownCallees        map[int32]bool              // the token indexes of callees named like a builtin and resolving to the program's own declaration (checkCallee)
 	headerStmts       map[*int32]Node             // the statements standing in headers, `if two(); ok`, as the statements they are, by the place of the header's expression in the AST (see headerStmt); read by the emitter
+	importToks        map[*Package]Token          // a token of this file spelling the name it imports a package by, or none (importQualTok)
 	parser            Parser
 	tld               *Scope // tld.Nodes are later moved into (*Package).Scope. Kind: PackageScope, Parent: .Scope.
 }
@@ -6238,6 +6239,14 @@ func (f *File) checkSwitch(s *Scope, results []retResult, n Node) {
 			if g, ok := f.switchGuardParts(c.ast); ok {
 				tag, hasTag = g.tag, g.hasTag
 			}
+			// An ADDRESS, `switch &k`, whose Kind exprType answers with the
+			// pointee's: a pointer has none, and is asked what one is, so `case 3:`
+			// is refused and `case nil:` taken -- the other way round before.
+			if hasTag && guardOK {
+				if w, known := f.nonBoolOperand(ss, tag); known && w == "a pointer" {
+					guardOK = false
+				}
+			}
 		case CaseClause:
 			cs := ss.child()
 			// A case is a value, and is walked as one: before, it was folded to find
@@ -7240,7 +7249,10 @@ func (f *File) suffixedTargetKind(s *Scope, head, postfix Node) (Kind, bool) {
 	if !ok {
 		return 0, false
 	}
-	if field, ok := f.fieldSelector(postfix); ok {
+	// Another package's variable, `lib.G += v`, is the walk's below: read as a
+	// field of a variable named lib, it had no Kind, and `lib.G += true` was taken.
+	isQual := s.find(id.Src()) == nil && f.isImportQualifier(s, id.Src())
+	if field, ok := f.fieldSelector(postfix); ok && !isQual {
 		return f.fieldKind(s, id, field)
 	}
 	if base, ok := f.indexAssignTarget(head, postfix); ok {
@@ -7248,11 +7260,13 @@ func (f *File) suffixedTargetKind(s *Scope, head, postfix Node) (Kind, bool) {
 		if isVar && d.hasElemKind && !d.isPtr {
 			return d.elemKind, true
 		}
-		if !isVar || !d.isPtr {
+		if !isVar {
 			return 0, false
 		}
 		// `p[i]` of a pointer to an array, whose element nothing recorded on p: walked
-		// from p's type below. `p[0]++` for a *[4]string went to the C compiler.
+		// from p's type below. `p[0]++` for a *[4]string went to the C compiler. And
+		// `t[i]` of another package's array type, `t[0] += true` for a `t
+		// lib.Taps`, which recorded no element either.
 	}
 	// A longer chain, `h.s.n` or `ps[1].n`, walked from the base (targetTypeNode).
 	base, stars, ok := f.targetHead(head)
@@ -10733,7 +10747,26 @@ func (f *File) indexedTypeNode(s *Scope, tn TypeNode) TypeNode {
 			return elem
 		}
 		id, isIdent := tn.(*TypeNodeIdent)
-		if !isIdent || id.Qualifier.IsValid() {
+		if !isIdent {
+			return nil
+		}
+		if id.Qualifier.IsValid() {
+			// Another package's array or slice type, `t[0] = v` for a `t
+			// lib.Taps`: its element as this file writes it (requalifiedType).
+			// Read by its bare name it was nothing, and the store was asked
+			// nothing.
+			home, ok := f.importedPkgScope(id.Qualifier)
+			if !ok {
+				return nil
+			}
+			u := f.underlyingTypeAt(typeAt{tn, s, f})
+			elem := f.arrayElemTypeNode(u.tn)
+			if elem == nil || u.s != home {
+				return nil
+			}
+			if rq, ok := f.requalifiedType(home, id.Qualifier, elem); ok {
+				return rq
+			}
 			return nil
 		}
 		td, ok := s.find(id.Name.Src()).(*TypeDeclaration)
@@ -12235,22 +12268,36 @@ func (f *File) checkCompositeLit(s *Scope, t litType, hasID bool, fac, lit Node)
 	// behaves as what it is defined over. How many values it may take is the
 	// emitter's, which knows the bound; what TYPE each may be is written down here.
 	if elem, es, ok := f.litElemTypeNodeIn(s, t); ok {
+		named := &TypeNodeIdent{Qualifier: t.qual, Name: t.name}
 		// Another package's element type is spelled in that package, and the values
 		// are checked against a SPELLING, which here would name whatever this scope
 		// has under it. A predeclared element means the same in both.
 		if es != s {
-			if id, isIdent := elem.(*TypeNodeIdent); !isIdent || id.Qualifier.IsValid() {
-				return
-			} else if _, pre := es.find(id.Name.Src()).(*PredeclaredType); !pre {
+			// Written as this file writes it, `Q` of package lib being `lib.Q`
+			// (requalifiedType), where the literal names lib: `lib.Taps{1, true}`
+			// and a constant overflowing lib.Q were asked nothing, the element type
+			// being lib's spelling.
+			home, imp := f.importedPkgScope(t.qual)
+			if !t.qual.IsValid() || !imp || home != es {
 				return
 			}
-			// checkLitValue leaves every literal of another package's type alone for
-			// the same reason, which a predeclared element does not share.
-			t.qual = Token{}
+			rq, ok := f.requalifiedType(es, t.qual, elem)
+			switch {
+			case ok:
+				elem, t.qual = rq, Token{}
+				f.checkElemLit(s, t, elem, lit)
+			default:
+				// A third package's element, `q15.Q` of filt's `type Taps
+				// [5]q15.Q`, which this file need not import to name: its KIND is
+				// asked, resolved where it is written. `filt.Taps{true}` and a
+				// constant overflowing q15.Q were taken.
+				f.checkForeignElemKinds(s, es, elem, lit)
+			}
+		} else {
+			f.checkElemLit(s, t, elem, lit)
 		}
-		f.checkElemLit(s, t, elem, lit)
 		length := int64(-1)
-		if n, ok := f.arrayTypeLen(typeAt{&TypeNodeIdent{Qualifier: t.qual, Name: t.name}, s, f}, false); ok {
+		if n, ok := f.arrayTypeLen(typeAt{named, s, f}, false); ok {
 			length = n
 		}
 		f.checkLitKeys(s, lit, length)
@@ -12621,6 +12668,32 @@ func (f *File) checkElemLit(s *Scope, t litType, elem TypeNode, lit Node) {
 		// which Go refuses and the written form `lib.Point{4, 5, "u"}` was refused
 		// for here as well.
 		f.checkElidedStructLit(s, t, elem, el.value)
+	}
+}
+
+// checkForeignElemKinds checks the elements of a literal whose element type, elem,
+// is written in scope es and cannot be spelled in this file: the Kind it resolves to
+// there, and a constant's fit, as a value of a Kind is asked of one.
+func (f *File) checkForeignElemKinds(s, es *Scope, elem TypeNode, lit Node) {
+	ef := f.typeNodeFile(elem)
+	ft := ef.resultType(es, elem)
+	if !ft.known {
+		return
+	}
+	ft.name = ef.typeNodeString(elem, false)
+	for _, el := range compositeLitElements(lit) {
+		if el.value.sym == CompositeLit {
+			continue
+		}
+		vk, ok := f.exprType(s, el.value)
+		if !ok {
+			continue
+		}
+		if !assignableKind(ft.kind, vk) {
+			f.err(f.tok(el.value.Pos()).Position(), "cannot use %s of type %s as type %s in array or slice literal", f.exprSource(el.value), kindName(vk), ft.name)
+			continue
+		}
+		f.checkValueOverflow(s, ft, el.value)
 	}
 }
 
@@ -15645,9 +15718,13 @@ type callChain struct {
 	// none, and missingType that type as a message names it.
 	missingAt   int
 	missingType string
-	addr        bool   // what the steps reach is storage
-	known       bool   // every step was typed
-	t           typeAt // what the steps reach, where known
+	// mvalAt is the Selector of a VALUE-receiver method taken as a value of what
+	// has no storage, -1 for none: refused by design, a method value binding the
+	// address of its receiver.
+	mvalAt int
+	addr   bool   // what the steps reach is storage
+	known  bool   // every step was typed
+	t      typeAt // what the steps reach, where known
 	// home is the scope of the package a walk from another package's name began in,
 	// `lib.F()[0]`, and qual the qualifier this file names it by: what t names is
 	// spelled as that package spells it (chainNamed).
@@ -15985,6 +16062,24 @@ func (f *File) walkSteps(t typeAt, addr bool, steps []Node, i, reportFrom int, w
 				}
 			}
 			if ftn == nil {
+				// A METHOD VALUE of what has no storage, the last step: `Taps{1,
+				// 2}.Scale`, `mk().V`. A pointer method is Go's to refuse, and a value
+				// method this target's, which binds the address of the receiver
+				// (methodValueSavesPtr's design); both reached the emitter, which
+				// called the form unsupported.
+				if tname, named := unqualifiedTypeName(t.tn); named && !addr && i == len(steps)-1 {
+					if td, _, viaPtr, isMethod := f.methodOwnerPath(t.s, tname, name.Src()); isMethod && !viaPtr {
+						switch {
+						case td.ptrRecv[name.Src()] && w.ptrAt < 0:
+							w.ptrAt, w.ptrType = i, tname
+							if q, ok := w.homeType(tname); ok {
+								w.ptrType = q
+							}
+						case !td.ptrRecv[name.Src()] && w.mvalAt < 0:
+							w.mvalAt = i
+						}
+					}
+				}
 				// Promoted, or a method value -- or neither, a member the type does
 				// not have. Past a call, which is what the walk alone reaches, the
 				// emitter refused one as "unsupported call in expression", naming
@@ -16093,6 +16188,11 @@ func (f *File) reportCallChainWalk(s *Scope, steps []Node, w callChain) {
 	if w.unexpAt >= 0 {
 		if m, has := f.selectorMember(steps[w.unexpAt]); has {
 			f.err(m.Position(), "cannot refer to unexported %s %s of type %s", w.unexpWhat, m.Src(), w.unexpType)
+		}
+	}
+	if w.mvalAt >= 0 {
+		if m, has := f.selectorMember(steps[w.mvalAt]); has {
+			f.err(m.Position(), "cannot take the method %s as a value of what is no variable: a method value binds the address of its receiver, and a literal or a call's result has none; a function literal calling it is the way round", m.Src())
 		}
 	}
 	if w.ptrAt < 0 {
@@ -17726,7 +17826,11 @@ func (f *File) checkWalkedTarget(s *Scope, ah Node, steps []Node, value Node, so
 		}
 	}
 	if sole && stars == 0 && len(steps) == 1 {
-		return // checkFieldAssign's or checkIndexAssign's
+		// checkFieldAssign's or checkIndexAssign's -- but for another package's
+		// variable, `lib.G = v`, which neither asks.
+		if s.find(base.Src()) != nil || !f.isImportQualifier(s, base.Src()) {
+			return
+		}
 	}
 	tn, in := f.targetTypeNode(s, base, steps, stars)
 	if tn == nil {
@@ -18001,6 +18105,31 @@ func (f *File) targetTypeNode(s *Scope, base Token, steps []Node, stars int) (Ty
 			return nil, nil
 		}
 		t, steps = typeAt{tn: results[0].typeNode, s: wf.Scope}, steps[1:]
+	case nil:
+		// Another package's variable, `lib.G = v`, `lib.T[0] = v`: its type as this
+		// file writes it (requalifiedType). The walk took no qualifier, and
+		// `lib.G = true` for a `var G Q` was asked nothing.
+		if len(steps) == 0 || steps[0].sym != Selector || !f.isImportQualifier(s, base.Src()) {
+			return nil, nil
+		}
+		home, ok := f.importedPkgScope(base)
+		member, has := f.selectorMember(steps[0])
+		if !ok || !has || !token.IsExported(member.Src()) {
+			return nil, nil
+		}
+		vd, ok := home.Declarations[member.Src()].(*VarDeclaration)
+		if !ok {
+			return nil, nil
+		}
+		vt, ok := f.varTypeAt(vd)
+		if !ok || vt.s != home {
+			return nil, nil
+		}
+		rq, ok := f.requalifiedType(home, base, vt.tn)
+		if !ok {
+			return nil, nil
+		}
+		t, steps = typeAt{tn: rq, s: s}, steps[1:]
 	default:
 		return nil, nil
 	}
@@ -18802,8 +18931,10 @@ func (f *File) qualifiedValueNamedType(s *Scope, id Token, fac Node) (Token, Tok
 			// `pkg.C` declared with a type, `const Boil Temp = 100`: a value of that
 			// type, as this package's typed constants are (exprNamedType).
 			if len(steps) == 1 && d.ConstSpec != nil && d.ConstSpec.TypeNode != nil {
-				if nm, named := namedTypeToken(d.ConstSpec.TypeNode); named && !namedTypeQual(d.ConstSpec.TypeNode).IsValid() {
-					return nm, homeQual(home, nm, id), false, true
+				if nm, named := namedTypeToken(d.ConstSpec.TypeNode); named {
+					if q, ok := f.carriedQual(home, nm, namedTypeQual(d.ConstSpec.TypeNode), id); ok {
+						return nm, q, false, true
+					}
 				}
 			}
 			return Token{}, Token{}, false, false
@@ -18814,7 +18945,11 @@ func (f *File) qualifiedValueNamedType(s *Scope, id Token, fac Node) (Token, Tok
 				if !d.typeName.IsValid() {
 					return Token{}, Token{}, false, false
 				}
-				return d.typeName, homeQual(home, d.typeName, id), d.isPtr, true
+				q, ok := f.carriedQual(home, d.typeName, d.typeQual, id)
+				if !ok {
+					return Token{}, Token{}, false, false
+				}
+				return d.typeName, q, d.isPtr, true
 			case len(steps) == 2 && steps[1].sym == Index:
 				// `pkg.Arr[i]`: the element's type.
 				if !d.elemTypeName.IsValid() {
@@ -18854,7 +18989,11 @@ func (f *File) qualifiedValueNamedType(s *Scope, id Token, fac Node) (Token, Tok
 			if !named {
 				return Token{}, Token{}, false, false
 			}
-			return tn, homeQual(home, tn, id), f.isPointerType(home, res[0].typeNode), true
+			q, ok := f.carriedQual(home, tn, namedTypeQual(res[0].typeNode), id)
+			if !ok {
+				return Token{}, Token{}, false, false
+			}
+			return tn, q, f.isPointerType(home, res[0].typeNode), true
 		}
 		return Token{}, Token{}, false, false
 	}
@@ -19228,6 +19367,17 @@ func (f *File) exprNamedType(s *Scope, n Node) (name, qual Token, isPtr, ok bool
 		return Token{}, Token{}, false, false
 	}
 	if hasLit {
+		// Steps taken on the literal, `T{1, 2}[0]`, `lib.T{1}.First()`: what the
+		// literal's type reaches. Read as the literal itself, `P{1}.x` was a type
+		// named x of a package P, and an element nothing.
+		if t, steps, ok := f.namedLitChain(s, fac); ok {
+			w := f.litChainWalk(s, t, steps)
+			if !w.known || w.t.tn == nil {
+				return Token{}, Token{}, false, false
+			}
+			nm, ql, rPtr, named := chainNamed(w)
+			return nm, ql, (isPtr || rPtr) && !isDeref, named
+		}
 		// "T{...}", or "pkg.T{...}" where the leading identifier is the qualifier
 		// and the type is the single selector after it.
 		if !hasSuffix {
@@ -21147,7 +21297,14 @@ func (f *File) requalifiedType(from *Scope, qual Token, tn TypeNode) (TypeNode, 
 	switch x := tn.(type) {
 	case *TypeNodeIdent:
 		if x.Qualifier.IsValid() {
-			return nil, false
+			// A third package's, `q15.Q` written in lib: as this file names that
+			// package, where it imports it too. Answered false, a value went into
+			// lib's field, element or variable of a q15.Q asked nothing.
+			q, ok := f.foreignQual(x.Qualifier)
+			if !ok {
+				return nil, false
+			}
+			return &TypeNodeIdent{Qualifier: q, Name: x.Name}, true
 		}
 		if _, isType := from.Declarations[x.Name.Src()].(*TypeDeclaration); isType {
 			return &TypeNodeIdent{Qualifier: qual, Name: x.Name}, true
@@ -21173,6 +21330,66 @@ func (f *File) requalifiedType(from *Scope, qual Token, tn TypeNode) (TypeNode, 
 		}
 	}
 	return nil, false
+}
+
+// foreignQual is the qualifier written in another package's file, `q15` of a `q15.Q`
+// in lib, as this file writes it: the package's name here, where this file imports
+// it too (importQualTok).
+func (f *File) foreignQual(written Token) (Token, bool) {
+	wf := f.fileOfToken(written)
+	imp, ok := wf.Scope.Declarations[written.Src()].(*ImportDeclaration)
+	if !ok || imp.Import == nil || imp.Import.Pkg == nil || imp.Import.Pkg == noPkg {
+		return Token{}, false
+	}
+	return f.importQualTok(imp.Import.Pkg)
+}
+
+// carriedQual is the qualifier, as this file writes it, of a type name nm read off
+// a declaration of the package home, which this file names by via: written
+// qualified there, `var G q15.Q` in lib, the third package's as this file imports
+// it (foreignQual), and otherwise homeQual's. Given homeQual's answer for both, a
+// lib.G of a q15.Q was a `lib.Q`, which names nothing, and `var x int16 = lib.G`
+// was taken.
+func (f *File) carriedQual(home *Scope, nm, written, via Token) (Token, bool) {
+	if !written.IsValid() {
+		return homeQual(home, nm, via), true
+	}
+	return f.foreignQual(written)
+}
+
+// importQualTok is a token of this file spelling the name it imports pkg by, which
+// a type carried across a package boundary is qualified with (requalifiedType): the
+// alias where one is written, and where none is, a use of the name, which an
+// import nothing uses would not have. False where this file does not import pkg.
+func (f *File) importQualTok(pkg *Package) (Token, bool) {
+	if t, ok := f.importToks[pkg]; ok {
+		return t, t.IsValid()
+	}
+	if f.importToks == nil {
+		f.importToks = map[*Package]Token{}
+	}
+	var names []string
+	for name, d := range f.Scope.Declarations {
+		if imp, ok := d.(*ImportDeclaration); ok && imp.Import != nil && imp.Import.Pkg == pkg && !imp.Import.IsDotImport {
+			names = append(names, name)
+		}
+	}
+	slices.Sort(names)
+	var r Token
+	if len(names) != 0 {
+		sc := f.parser.sc
+		for i := range sc.toks {
+			if sc.toks[i].ch != rune(IDENT) {
+				continue
+			}
+			if t := sc.Token(i); t.Src() == names[0] {
+				r = t
+				break
+			}
+		}
+	}
+	f.importToks[pkg] = r
+	return r, r.IsValid()
 }
 
 // String spells the expression as Go does in a diagnostic.
@@ -21896,7 +22113,7 @@ func (f *File) checkParenChain(s *Scope, inner Node, steps []Node) {
 		// `(x - y).Add(1).Add(2, 2)`, which reportCallChainWalk checks.
 		if !qual.IsValid() {
 			w := f.walkSteps(typeAt{&TypeNodeIdent{Name: name}, s, f}, false, steps, 0, 1, newCallChain())
-			w.ptrAt = -1 // `(c).Inc()` of a variable is addressable; the walk began at no storage
+			w.ptrAt, w.mvalAt = -1, -1 // `(c).Inc()` of a variable is addressable; the walk began at no storage
 			f.reportCallChainWalk(s, steps, w)
 		}
 	}
@@ -21924,7 +22141,9 @@ func (f *File) callChainOf(n Node) (Token, []Node, bool) {
 }
 
 // newCallChain is a callChain that has found nothing yet.
-func newCallChain() callChain { return callChain{sliceAt: -1, ptrAt: -1, missingAt: -1, unexpAt: -1} }
+func newCallChain() callChain {
+	return callChain{sliceAt: -1, ptrAt: -1, missingAt: -1, unexpAt: -1, mvalAt: -1}
+}
 
 // parenInner is the expression a parenthesized head or factor holds, `&v` in `(&v)`.
 func (f *File) parenInner(n Node) (Node, bool) {
@@ -22252,11 +22471,14 @@ func (f *File) checkFactorNames(s *Scope, n Node) {
 		// A member a NAMED literal's type lacks, `P{}.in.nosuch`, at any step: the
 		// emitter called the form unsupported, and the valid one works. The
 		// literal's type is its name; a bracketed literal's is left to the emitter.
-		if hasID && !hasSuffix {
-			// And the arguments of a method it calls, `P{1, 2}.Scaled("s")`, which
-			// were asked nothing (reportCallChainWalk checks the calls it passed).
-			steps := slices.Collect(it(litSuffix.ast))
-			f.reportCallChainWalk(s, steps, f.walkSteps(typeAt{&TypeNodeIdent{Name: id}, s, f}, false, steps, 0, 0, newCallChain()))
+		//
+		// And the arguments of a method it calls, `P{1, 2}.Scaled("s")`, which were
+		// asked nothing (reportCallChainWalk checks the calls it passed). Another
+		// package's, `lib.Taps{1, 2}.Sum()`, the same way: a chain on one was walked
+		// by nothing, and a pointer method called on it was taken once the emitter
+		// learned to read a named array literal's chain.
+		if t, steps, ok := f.namedLitChain(s, n); ok {
+			f.reportCallChainWalk(s, steps, f.litChainWalk(s, t, steps))
 		}
 	}
 	// Reading the blank identifier -- as an operand, argument, initializer,
@@ -28385,6 +28607,17 @@ func (f *File) operandType(s *Scope, n Node, calls bool) (typeAt, bool) {
 	if t, ok := f.litOrConvType(s, n); ok {
 		return t, true
 	}
+	// A chain on a NAMED literal, `Taps{1, 2}[0]`, `lib.Taps{1, 2}.First()`, walked
+	// from the literal's type. Untyped, `var s string = Taps{1, 2}[0]` was taken.
+	if t, steps, ok := f.namedLitChain(s, n); ok {
+		if slices.ContainsFunc(steps, func(n Node) bool { return n.sym == CallSuffix }) {
+			if w := f.litChainWalk(s, t, steps); calls && w.known && w.t.tn != nil {
+				return w.t, true
+			}
+			return typeAt{}, false
+		}
+		return f.stepsTypeIn(s, t, steps)
+	}
 	// A parenthesised head and the steps after it, `(*p)[0]` of a pointer to a
 	// slice, where the parentheses are the only spelling.
 	if len(kids) == 4 && kids[0].sym == 0 && f.ch(kids[0].tok) == LPAREN && kids[1].sym == Expression && kids[3].sym == FactorSuffix {
@@ -28404,6 +28637,58 @@ func (f *File) operandType(s *Scope, n Node, calls bool) (typeAt, bool) {
 		return typeAt{}, false
 	}
 	return f.headStepsType(s, f.tok(kids[0].tok), steps, calls)
+}
+
+// namedLitChain matches a NAMED composite literal and the steps after it, `Row{1,
+// 2}[0]`, `P{1}.X()`, `lib.Taps{1, 2}.First()`, answering the literal's type, as
+// this file writes it, and the steps.
+func (f *File) namedLitChain(s *Scope, n Node) (typeAt, []Node, bool) {
+	for n.sym == Expression || n.sym == SimpleExpr || n.sym == Term || n.sym == UnaryExpr {
+		kids := slices.Collect(it(n.ast))
+		if len(kids) != 1 {
+			return typeAt{}, nil, false
+		}
+		n = kids[0]
+	}
+	if n.sym != Factor {
+		return typeAt{}, nil, false
+	}
+	kids := slices.Collect(it(n.ast))
+	if len(kids) < 3 || kids[0].sym != 0 || f.ch(kids[0].tok) != IDENT || kids[len(kids)-1].sym != FactorSuffix || kids[len(kids)-2].sym != CompositeLit {
+		return typeAt{}, nil, false
+	}
+	head := f.tok(kids[0].tok)
+	var tn *TypeNodeIdent
+	switch len(kids) {
+	case 3:
+		tn = &TypeNodeIdent{Name: head}
+	case 4:
+		qs := slices.Collect(it(kids[1].ast))
+		if kids[1].sym != FactorSuffix || len(qs) != 1 || qs[0].sym != Selector || !f.isImportQualifier(s, head.Src()) {
+			return typeAt{}, nil, false
+		}
+		tn = &TypeNodeIdent{Qualifier: head, Name: selectorTok(f, qs[0])}
+	default:
+		return typeAt{}, nil, false
+	}
+	return typeAt{tn, s, f}, slices.Collect(it(kids[len(kids)-1].ast)), true
+}
+
+// litChainWalk is callChainWalk from a literal of type t, which is no storage. A
+// type of another package is walked in that package, as a walk from `lib.F()` is,
+// naming what it reaches as this file names the package.
+func (f *File) litChainWalk(s *Scope, t typeAt, steps []Node) callChain {
+	w := newCallChain()
+	w.at = s
+	if id, ok := t.tn.(*TypeNodeIdent); ok && id.Qualifier.IsValid() {
+		td, home, ok := f.typeIdentDecl(s, id)
+		if !ok {
+			return w
+		}
+		w.home, w.qual = home, id.Qualifier
+		t = typeAt{&TypeNodeIdent{Name: td.Token()}, home, f.fileOfToken(td.Token())}
+	}
+	return f.walkSteps(t, false, steps, 0, 0, w)
 }
 
 // headStepsType is operandType for a name and the steps after it, `rows[1].in` and,

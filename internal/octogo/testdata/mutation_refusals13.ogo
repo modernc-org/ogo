@@ -1,0 +1,61 @@
+// A mutation sweep of a DSP program of three packages: a literal of a defined
+// array type read through a suffix, which the emitter reads now and the checker
+// typed by nothing, a method value of one, and a switch on an address.
+
+type Q int16
+
+type Taps [3]Q
+
+func (t *Taps) Scale(k Q) { t[0] *= k }
+
+func (t Taps) First() Q { return t[0] }
+
+type P struct{ x Q }
+
+func (p P) X() Q { return p.x }
+
+type Kind int
+
+const FIR Kind = 1
+
+func literals() {
+	// ERROR "cannot use Taps\{1, 2, 3\}\[0\] of type Q as type int16 in variable declaration"
+	var a int16 = Taps{1, 2, 3}[0]
+	// ERROR "cannot use Taps\{1, 2, 3\}.First\(\) of type Q as type int16 in variable declaration"
+	var b int16 = Taps{1, 2, 3}.First()
+	// ERROR "cannot use P\{1\}.x of type Q as type int16 in variable declaration"
+	var c int16 = P{1}.x
+	// ERROR "cannot use P\{1\}.X\(\) of type Q as type int16 in variable declaration"
+	var d int16 = P{1}.X()
+	x := Taps{4, 5, 6}[1]
+	// ERROR "cannot use x of type Q as type int16 in variable declaration"
+	var e int16 = x
+	// ERROR "cannot call pointer method Scale on Taps"
+	_ = Taps{1, 2, 3}.Scale
+	// A value method is taken by Go and refused here, by design: a method value
+	// binds the address of its receiver.
+	// ERROR "cannot take the method First as a value of what is no variable"
+	_ = Taps{1, 2, 3}.First
+	var q Q = Taps{1, 2, 3}[0] + Taps{}.First() + P{}.X() + P{1}.x
+	_, _, _, _, _, _ = a, b, c, d, e, q
+}
+
+func switches() {
+	k := FIR
+	switch &k {
+	// ERROR "invalid case FIR in switch on &k \(mismatched types\): &k is a pointer"
+	case FIR:
+	case nil:
+	case &k:
+	}
+	n := 3
+	switch &n {
+	// ERROR "invalid case 3 in switch on &n \(mismatched types\): &n is a pointer"
+	case 3:
+	}
+}
+
+func main() {
+	literals()
+	switches()
+}
