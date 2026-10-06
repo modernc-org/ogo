@@ -1,0 +1,59 @@
+// A typed constant must fit its type after every operation, and a method value is
+// a function wherever it stands. `uint32(1)<<32 - 1` was taken, only the whole
+// having been asked, and so was `var n int = p.can` for a local p, emitted as a
+// function stored in an int.
+
+const W = 70
+
+const H = 1e3
+
+var n uint = 3
+
+type P struct{ n int }
+
+func (p *P) can(c int) bool { return c > p.n }
+
+func (p P) val() int { return p.n }
+
+var gp P
+
+func mask(col int) uint64 {
+	// ERROR "constant 10715086071862673209484250490600018105614048117055336074437503883703510511249361224931983788156958581275946729175531468251871452856923140435984577574698574803934567774824230985421074605062371141877954182153046474983581941267398767559165543946077062914571196477686542167660429831652624386837205668069376 overflows uint64"
+	return (uint64(1)<<H - 1) << (col * 7)
+}
+
+// ERROR "constant 150 overflows int8"
+const c8 = int8(100) + 50 - 60
+
+func consts() {
+	// ERROR "constant 4294967296 overflows uint32"
+	x := uint32(1)<<32 - 1
+	// ERROR "constant 1180591620717411303424 overflows uint64"
+	y := (uint64(1)<<W - 1) << n
+	// ERROR "constant 510 overflows uint8"
+	var z uint8 = uint8(255) * 2 / 2
+	// ERROR "constant 32768 overflows int16"
+	println(int16(1) << 14 * 2)
+	println(x, y, z, uint64(1)<<63, int64(1)<<62, uint32(1)<<31, uint8(1)<<7, int8(-128)/2, uint16(65535)-1)
+}
+
+func (p P) asInt() int {
+	// ERROR "cannot use p.can as int value in return statement: it is a function"
+	return p.can
+}
+
+func methods() {
+	p := gp
+	// ERROR "cannot use p.can as int value in variable declaration: it is a function"
+	var a int = p.can
+	// ERROR "cannot use gp.val as int value in variable declaration: it is a function"
+	var b int = gp.val
+	_, _ = a, b
+}
+
+func main() {
+	println(mask(1))
+	consts()
+	methods()
+	println(gp.asInt())
+}

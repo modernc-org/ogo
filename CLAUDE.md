@@ -1499,6 +1499,21 @@ and an untyped constant BESIDE a non-constant shift, `r.acc & (1<<n - -1)`, whic
 converts to the context's type as it does the shifted one (untypedConstFits), and a
 float spelling of the shifted one, `b8 + 1e3>>n`. **A constant in a shift's
 expression is asked what the shifted one is.**
+A Connect-Four solver the same day -- Pons's bitboards over uint64, negamax with
+alpha-beta and a transposition table in a package struct of two arrays, the
+20-byte position passed by value at every level of the recursion and through an
+interface method -- matched Go on the host and the board, node counts included
+(124,209 and 73,028). Its 1,500 mutants had 2 rows taken. A TYPED constant was
+range-checked as a whole and never at a step, `uint32(1)<<32 - 1` fitting at the
+end; Go checks every operation. The folder's own reports are dropped wherever a
+value is folded only to be read, so the step's overflow is recorded rather than
+reported (foldBinary under trackedFold) and the two checks that fold to ask --
+checkConstFits where a constant meets a type, resolveConst for a declaration --
+report the first. Returning an unknown from the folder instead, the first try,
+silenced the end check for nine programs it had refused. And a METHOD VALUE the
+compiler does not bind, of a local or a value receiver, had no category at all,
+exprFuncSig answering only for one it binds: `var n int = p.can` was emitted as
+`int n = ogo_mv0;` (nonBoolOperand answers "a function" for any).
 
 **A C NAME IS A ROW** (2026-09-25). The emitted C keeps a program's own names, so
 every name a program may write is a row across everything else that names things in

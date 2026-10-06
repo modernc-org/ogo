@@ -318,6 +318,13 @@ shipped section tells a reader on that version that they have behaviour they do 
 
 ### Behaviour changes
 
+- **A typed constant must fit its type after every operation**, as Go has it:
+  `uint32(1)<<32 - 1` and `int8(100) + 50 - 60` overflow at a step whatever the
+  whole comes to, and were taken; so was `(uint64(1)<<H - 1) << col` for a `const
+  H = 1e3`, the constant under a shift by a variable. And **a method value is a
+  function wherever it stands**: `var n int = p.can` and `return p.can` of a local
+  or a value receiver were taken, the method value emitted as a function stored in
+  an int.
 - **A slice of a string is a string**: `s[1:]`, `K[:2]` of a constant and
   `"abc"[1:]` had no type where they stood, so `take(s[1:])` for a `[]byte`
   parameter and `var n int = s[1:]` were taken; only a variable declared from one

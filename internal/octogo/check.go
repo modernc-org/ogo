@@ -260,6 +260,8 @@ type File struct {
 	headerStmts       map[*int32]Node             // the statements standing in headers, `if two(); ok`, as the statements they are, by the place of the header's expression in the AST (see headerStmt); read by the emitter
 	importToks        map[*Package]Token          // a token of this file spelling the name it imports a package by, or none (importQualTok)
 	foreignPkgs       map[string]*Package         // a qualifier another package wrote, which this file spells a type with and does not import (foreignQual); nil where two packages share the name
+	trackFold         bool                        // foldBinary records a typed constant's overflow at a step (trackedFold)
+	foldOvf           []foldOverflow              // what it recorded
 	parser            Parser
 	tld               *Scope // tld.Nodes are later moved into (*Package).Scope. Kind: PackageScope, Parent: .Scope.
 }
@@ -4996,6 +4998,15 @@ func (f *File) nonBoolOperand(s *Scope, n Node) (string, bool) {
 			return f.nonBoolVar(s, d)
 		}
 		return "", false
+	}
+	// A METHOD VALUE exprFuncSig gives no signature, one this compiler does not
+	// bind -- of a local, of a value receiver: a function all the same, refused or
+	// not as a value. Nothing answered, and `var n int = p.can` was emitted as a
+	// function stored in an int.
+	if head, field, ok := f.exprFieldRead(n); ok && !f.isImportQualifier(s, head.Src()) {
+		if _, _, _, isMV := f.methodValueParts(s, head, field); isMV {
+			return "a function", true
+		}
 	}
 	if head, field, ok := f.exprFieldRead(n); ok {
 		// Another package's variable, `a.G`, is no field: what its declaration
@@ -27961,8 +27972,14 @@ func (f *File) resolveConst(s *Scope, cd *ConstDeclaration) {
 	}
 	if cs.hasExpr {
 		exprPos = f.tok(cs.exprNode.Pos()).Position()
-		cs.Expression = f.expression(s, cs.exprNode)
-		cs.Value = f.evalConstExpr(cs.Expression)
+		o, bad := f.trackedFold(func() {
+			cs.Expression = f.expression(s, cs.exprNode)
+			cs.Value = f.evalConstExpr(cs.Expression)
+		})
+		if bad {
+			f.err(o.pos, "%s", o.msg)
+			cs.Value = constVal{cv: constant.MakeUnknown()}
+		}
 		// Its operands are asked what a variable's initializer's are about their
 		// types: `ka + B(2)` for two defined types was folded and taken, which Go
 		// refuses as mismatched types. Only that is kept of the walk: the value's
@@ -28134,6 +28151,10 @@ func (f *File) checkConstFits(s *Scope, dst retResult, n Node, implicit bool) {
 	// The same positions are where an untyped shift operand takes its type, a float
 	// destination included, so they are visited for that first.
 	f.typeShiftOperands(s, n, shiftTargetOf(dst))
+	if o, bad := f.trackedFold(func() { f.constNumeric(s, n) }); bad {
+		f.err(o.pos, "%s", o.msg)
+		return
+	}
 	if dst.kind == PredeclaredFloat32 {
 		f.checkFloat32Overflow(s, dst, n)
 		return
@@ -28156,6 +28177,26 @@ func (f *File) checkConstFits(s *Scope, dst retResult, n Node, implicit bool) {
 		}
 	}
 	f.reportOverflow(f.tok(n.Pos()).Position(), cv, dst.kind, dst.name)
+}
+
+// foldOverflow is a typed constant's overflow at one step of a fold.
+type foldOverflow struct {
+	pos token.Position
+	msg string
+}
+
+// trackedFold runs fold with foldBinary recording a typed constant that overflows
+// its type at a step, and answers the first it recorded.
+func (f *File) trackedFold(fold func()) (foldOverflow, bool) {
+	saved, n0 := f.trackFold, len(f.foldOvf)
+	f.trackFold = true
+	fold()
+	f.trackFold = saved
+	defer func() { f.foldOvf = f.foldOvf[:n0] }()
+	if len(f.foldOvf) > n0 {
+		return f.foldOvf[n0], true
+	}
+	return foldOverflow{}, false
 }
 
 // noteShiftedWholeConsts records each operand of n, the left of a constant shift,
@@ -28661,10 +28702,23 @@ func (f *File) foldBinary(lhs ExpressionNode, op Symbol, opTok Token, rhs Expres
 			// A shift is of its LEFT operand's type, the count's taking no part:
 			// `15 << classShift` for a `const classShift int16` is an untyped
 			// constant, and was typed int16, refused beside the ID it is used with.
+			var r constVal
 			if op == SHL || op == SHR {
-				return constVal{cv: v}.sameTypeAs(lc, lc)
+				r = constVal{cv: v}.sameTypeAs(lc, lc)
+			} else {
+				r = constVal{cv: v}.sameTypeAs(lc, rc)
 			}
-			return constVal{cv: v}.sameTypeAs(lc, rc)
+			// A TYPED constant must fit its type after every operation, as Go has
+			// it: `uint32(1)<<32 - 1` overflows at the shift, whatever the whole
+			// comes to. Only the whole was asked, and it was taken. Recorded for the
+			// check that folds to ask (trackedFold), the folder's own reports being
+			// dropped where a value is folded only to be read.
+			if f.trackFold && r.typed && v.Kind() == constant.Int {
+				if lo, hi, isInt := intKindRange(r.typ); isInt && (constant.Compare(v, token.LSS, lo) || constant.Compare(v, token.GTR, hi)) {
+					f.foldOvf = append(f.foldOvf, foldOverflow{opTok.Position(), fmt.Sprintf("constant %s overflows %s", v.ExactString(), kindName(r.typ))})
+				}
+			}
+			return r
 		}
 	}
 	return &BinaryExpressionNode{LHS: lhs, Op: op, RHS: rhs}
