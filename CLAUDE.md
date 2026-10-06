@@ -686,7 +686,13 @@ still design-only.
   `harmlessWarnings`, examined and found to say nothing -- an unused CORDIC
   operation deleted, `go math.Sqrt(2)`'s. Each kind that had reached a build was a
   silent fault: Redefining, Bad number of parameters, incompatible pointer types in
-  parameter passing, incompatible types in comparison.
+  parameter passing, incompatible types in comparison. A build the backend REFUSES keeps
+  its C too since 2026-10-06 (backendRefusal): the error named a line of a file in
+  the build's removed directory, so a refusal such as doc/uint64-shift-32-pair.c's
+  could be neither read nor reported; one about the program's own .spin2 object is
+  left alone. And the backend's "final output size ... exceeds maximum of 524288"
+  -- a warning, the binary written all the same -- is the PROGRAM's size, which the
+  rule above had called a fault of ogo's (hubOverflow).
 - `smith` is seed-reproducible and generates compilable, self-checking programs.
   `ogo smith -seed N` emits the same program every run (the last non-determinism,
   map-iteration order in `Scope.GetSymbolsOfType`, was sorted), and `TestOracle`
@@ -828,7 +834,10 @@ still design-only.
   uint64, spelled signed (d43ac82; A CONSTANT IS A VALUE). Seeds 3501-4000 with
   d43ac82: 475 passing, 25 outgrowing, none failing. Seeds 4001-4500 with 815f42a:
   461 passing, 39 outgrowing; 4501-5000 with eb4bedb: 468 passing, 32 outgrowing;
-  none failing, warned about or refused by the backend. Seeds 5001-5500 with 40aa62b
+  none failing, warned about or refused by the backend. Seeds 201-500 with cf3bf5b
+  on 2026-10-06, the aggregate generator with all five of its shapes: 280 passing
+  (three on a second load), 19 outgrowing, seed 359 refused by the backend
+  (doc/uint64-shift-32-pair.c), none failing. Seeds 5001-5500 with 40aa62b
   on 2026-10-05: 465 passing, 35 outgrowing, none failing; ten loads timed out
   ("timeout waiting for checksum", "sendAddressSize: timeout") and passed on a
   second, the loader's and not the program's. A seed that outgrows can take

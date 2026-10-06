@@ -722,6 +722,16 @@ shipped section tells a reader on that version that they have behaviour they do 
 
 ### Toolchain
 
+- **A build the backend refuses keeps its C, and says whose fault it is.** The
+  backend's error named a line of a C file in a directory the build removed, so
+  "s359.c:580: error: Cannot handle expression yet" could be neither read nor
+  reported. `ogo build` and `ogo test` keep the C beside the output, as they do for
+  a backend warning, and say it is ogo's to fix; a refusal of the program's own
+  .spin2 object is left as it was.
+- **A program too big for Hub RAM is told so.** The backend only warns, "final
+  output size of 528080 bytes exceeds maximum of 524288", and the build called that
+  a fault of ogo's and asked for a report. It is the program's size: the build
+  fails saying the program does not fit the 512 KB of Hub RAM, and leaves no binary.
 - **`ogo smith` passes structs and arrays by value.** Two programs in three declare
   a struct of mixed widths -- a sub-word field, an array of small elements, a
   64-bit scalar -- with functions taking it by value, by pointer and in an array of

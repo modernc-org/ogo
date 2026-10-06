@@ -6,6 +6,7 @@ package build
 
 import (
 	"bytes"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -735,6 +736,77 @@ func TestBackendFault(t *testing.T) {
 				t.Errorf("the message names neither the C nor the way round it: %v", err)
 			}
 		})
+	}
+}
+
+// TestBackendRefusal: a build the backend refuses keeps the C, whose lines the
+// backend named in a directory removed with the build, and says the fault is ogo's;
+// where it spoke only of the program's own .spin2 objects, nothing is kept or said.
+func TestBackendRefusal(t *testing.T) {
+	const c = "int main(void) { return x; }\n"
+	dir := t.TempDir()
+	keep := filepath.Join(dir, "p.c")
+	failed := errors.New("flexcc: flexcc returned with status 1")
+	for _, test := range []struct {
+		name, said string
+		err        error
+		ours       bool
+	}{
+		{"the C", "/tmp/ogo-build-1/p.c:580: error: Cannot handle expression yet\n", failed, true},
+		{"a crash", "", errors.New("flexcc crashed: runtime error"), true},
+		{"the program's own Spin2", "/home/u/proj/drv/obj.spin2:2: error: syntax error\n", failed, false},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			os.Remove(keep)
+			code, err := backendRefusal([]byte(c), keep, []byte(test.said), 1, test.err)
+			kept, keepErr := os.ReadFile(keep)
+			switch {
+			case code == 0 || err == nil:
+				t.Errorf("code=%d err=%v, want a failure", code, err)
+			case test.ours && (keepErr != nil || string(kept) != c):
+				t.Errorf("the C is not kept: %v", keepErr)
+			case test.ours && !strings.Contains(err.Error(), keep):
+				t.Errorf("the message does not name the C: %v", err)
+			case !test.ours && keepErr == nil:
+				t.Errorf("the C is kept for a refusal of the program's own")
+			case !test.ours && err != test.err:
+				t.Errorf("err=%v, want %v as it was", err, test.err)
+			}
+		})
+	}
+}
+
+// TestBuildBackendRefusal builds a program the backend refuses, `x << 32 >> 32` of
+// a uint64 (doc/uint64-shift-32-pair.c, flexprop#122), and asks for the C to be kept
+// and named. The day the backend builds it, the test says so and stops.
+func TestBuildBackendRefusal(t *testing.T) {
+	dir := t.TempDir()
+	write(t, filepath.Join(dir, "prog", "main.ogo"), "var x uint64 = 0x123456789\n\nfunc main() { println(x << 32 >> 32) }\n")
+	out := filepath.Join(dir, "prog.binary")
+	var buf bytes.Buffer
+	code, err := Build([]string{"-o", out, filepath.Join(dir, "prog")}, nil, &buf, &buf)
+	if err == nil && code == 0 {
+		t.Skip("the backend builds it now: flexprop#122 is fixed, and doc/uint64-shift-32-pair.c says so")
+	}
+	keep := filepath.Join(dir, "prog.c")
+	if _, kerr := os.Stat(keep); kerr != nil || err == nil || !strings.Contains(err.Error(), keep) || !strings.Contains(err.Error(), "fault of ogo's") {
+		t.Fatalf("code=%d err=%v, want the C kept at %s and named\n%s", code, err, keep, buf.String())
+	}
+}
+
+// TestBuildHubOverflow: a program too big for Hub RAM is the program's, told so --
+// the backend only warns, and was taken for a fault of ogo's to be reported.
+func TestBuildHubOverflow(t *testing.T) {
+	dir := t.TempDir()
+	write(t, filepath.Join(dir, "prog", "main.ogo"), "var big [520000]byte\n\nfunc main() {\n\tbig[3] = 7\n\tprintln(big[3], len(big))\n}\n")
+	out := filepath.Join(dir, "prog.binary")
+	var buf bytes.Buffer
+	_, err := Build([]string{"-o", out, filepath.Join(dir, "prog")}, nil, &buf, &buf)
+	if err == nil || !strings.Contains(err.Error(), "does not fit") || strings.Contains(err.Error(), "fault of ogo's") {
+		t.Fatalf("err=%v, want the program's size named\n%s", err, buf.String())
+	}
+	if _, serr := os.Stat(out); serr == nil {
+		t.Errorf("a binary no P2 can load was left")
 	}
 }
 

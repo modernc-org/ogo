@@ -192,6 +192,9 @@ func compileMarked(c []byte, unmarked func() ([]byte, error), cFile, out, inc, k
 			if err == nil && !allowWarnings {
 				return backendFault(c, out, keepC, append(said.Bytes(), saidErr.Bytes()...))
 			}
+			if err != nil {
+				return backendRefusal(c, keepC, append(said.Bytes(), saidErr.Bytes()...), code, err)
+			}
 			return code, err
 		}
 		if c, err = unmarked(); err != nil {
@@ -207,11 +210,46 @@ func compileMarked(c []byte, unmarked func() ([]byte, error), cFile, out, inc, k
 	code, err := compileC(cFile, out, inc, io.MultiWriter(stdout, &said), io.MultiWriter(stderr, &said))
 	if err != nil && outgrewCog(said.Bytes()) {
 		fmt.Fprintln(stderr, cogHint(listing, start, programFuncs(c)))
+		return code, err
 	}
-	if err == nil && !allowWarnings {
+	if err != nil {
+		return backendRefusal(c, keepC, said.Bytes(), code, err)
+	}
+	if !allowWarnings {
 		return backendFault(c, out, keepC, said.Bytes())
 	}
 	return code, err
+}
+
+// backendRefusal is backendFault for a build the backend REFUSED: the C ogo wrote
+// is the compiler's own, so a C compiler refusing it -- "Cannot handle expression
+// yet" about a pair of shifts, a crash -- is a fault of ogo's or of the backend it
+// builds on, never of the program. The C was written to a directory removed when
+// the build ends, and the lines the backend named could not be read: it is kept at
+// keepC, to be reported. Where the backend spoke only of the program's own .spin2
+// objects, the program is what it refused, and nothing is kept or said.
+func backendRefusal(c []byte, keepC string, said []byte, code int, err error) (int, error) {
+	ours := strings.HasPrefix(err.Error(), "flexcc crashed")
+	for _, line := range strings.Split(string(said), "\n") {
+		if line = strings.TrimSpace(line); line == "" || harmlessWarning(line) || spin2Diag.MatchString(line) || hubOverflow(line) {
+			continue
+		}
+		ours = true
+	}
+	if !ours {
+		return code, err
+	}
+	if werr := os.WriteFile(keepC, c, 0o644); werr != nil {
+		return code, err
+	}
+	return code, fmt.Errorf("%v\nogo: the C compiler refused the C ogo wrote for this program. It is a fault of ogo's, not of the program: please report it, with the program and %s, the C whose lines it names", err, keepC)
+}
+
+// hubOverflow is the backend's word that the program does not fit Hub RAM, "final
+// output size of N bytes exceeds maximum of 524288", which is the PROGRAM's size:
+// it only warns, and writes a binary no P2 can load.
+func hubOverflow(line string) bool {
+	return strings.Contains(line, "exceeds maximum of")
 }
 
 // backendFault fails a build the backend completed and said something about. The C
@@ -226,6 +264,15 @@ func compileMarked(c []byte, unmarked func() ([]byte, error), cFile, out, inc, k
 // --allow-backend-warnings builds as before. A line holding one of
 // harmlessWarnings is passed over.
 func backendFault(c []byte, out, keepC string, said []byte) (int, error) {
+	// A program too big for Hub RAM is told so, and is no fault of ogo's: it is
+	// what the program declares. The backend warns and writes the binary all the
+	// same, which no P2 can load.
+	for _, line := range strings.Split(string(said), "\n") {
+		if line = strings.TrimSpace(line); hubOverflow(line) {
+			os.Remove(out)
+			return 1, fmt.Errorf("ogo: the program does not fit the P2's 512 KB of Hub RAM: %s", strings.TrimPrefix(line, "warning: "))
+		}
+	}
 	var left []string
 	for _, line := range strings.Split(string(said), "\n") {
 		// A line about a .spin2 file is about the program's own code, an object a
