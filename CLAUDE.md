@@ -1146,7 +1146,8 @@ and a method of several results reached through a chain typed none of its names
 2001-2500 with 331f03a, the generator unchanged since 651a7f5: 470 passing (three on a
 second load, the loader's "sendAddressSize: timeout" and "Error writing port"), 30
 outgrowing a cog, none failing; and 2501-3000 with e28a36f: 463 passing (six on a
-second load, the first printing nothing), 37 outgrowing, none failing.
+second load, the first printing nothing), 37 outgrowing, none failing; 3001-3500
+with 244d414: 469 passing (seven on a second load), 31 outgrowing, none failing.
 **The mutation sweep turned on a DOMAIN program** (2026-10-06): two programs written
 for the round -- a bitmap library (a font table, a canvas of byte rows, Bresenham,
 midpoint circles, flood fill on an explicit stack) and a stack machine (iota opcodes
