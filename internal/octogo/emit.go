@@ -26952,6 +26952,17 @@ func (e *emitter) emitParenMethod(kids []Node) bool {
 	// Built as text so a CHAIN can wrap it, `(a - b).Add(1).Scale(2)` -- each call
 	// becomes the receiver of the next, which is what the result type carries.
 	text := e.captureC(func() { e.emitExprNode(kids[1]) })
+	// Go evaluates the receiver before the arguments, and an argument's effect is
+	// bound ahead of the statement (argsCText): a head with an effect of its own, a
+	// call or a receive, is bound first where an argument has one too, or
+	// `(get()).add(<-in)` and `(<-in).add(<-in)` ran the argument first, in silence.
+	// A struct holding an array is no value C binds from a call (bindC); its receive
+	// and its call are temporaries already.
+	if e.nodeHasEffect(kids[1]) && !e.holdsArray(ct) && slices.ContainsFunc(steps, func(st Node) bool {
+		return st.sym == CallSuffix && e.exprHasEffect(st.ast)
+	}) {
+		text = e.hoist(ct, func() { e.emit(text) })
+	}
 	for i := 0; i < len(steps); i += 2 {
 		method := e.soleIdent(steps[i].ast)
 		if method == "" {
@@ -33791,6 +33802,28 @@ func (e *emitter) emitCall(head Node, postfix []Node) {
 			e.ind()
 			e.emit(e.recFuncCallee(ct, callee) + "(" + e.valueArgsCText(e.indirectCallee("", ct), ct, call.ast) + ");\n")
 			return
+		}
+		// `(<-pc).set(7)` as a statement: a method called on a value in parentheses
+		// that none of the above reads as a name or a chain -- a receive -- written
+		// as the expression form writes it (emitParenMethod), its result discarded.
+		if kids := slices.Collect(it(head.ast)); len(kids) == 3 && kids[0].sym == 0 && e.f.ch(kids[0].tok) == LPAREN && kids[1].sym == Expression {
+			var suf []int32
+			for _, st := range postfix {
+				suf = append(suf, encodeNode(st.sym, st.ast)...)
+			}
+			fk := append(kids, Node{sym: FactorSuffix, ast: suf})
+			if _, _, ok := e.parenMethodSteps(fk); ok {
+				var done bool
+				text := e.captureC(func() { done = e.emitParenMethod(fk) })
+				if e.err != nil {
+					return
+				}
+				if done {
+					e.ind()
+					e.emit(text + ";\n")
+					return
+				}
+			}
 		}
 		e.fail("unsupported call target")
 		return

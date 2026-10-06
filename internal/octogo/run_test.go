@@ -46257,6 +46257,242 @@ func wide() {
 `,
 		want: "8 4 3 16 int 8 8 8 8 16\n2 17\nfloat64 8.5 float64 12 int 12\n1099511627776 16 1099511627776 32 int\n",
 	},
+	{
+		name: "a method called on a parenthesised receive, as a value and as a statement",
+		src: `type T struct {
+	n int
+}
+
+func (t T) add(m T) int { return t.n*10 + m.n }
+
+func (t *T) set(m T) { t.n = t.n*10 + m.n }
+
+func (t T) show() { println("show", t.n) }
+
+func (t *T) bumpN(k int) int {
+	t.n += k
+	return t.n
+}
+
+var in chan T
+
+var pin chan *T
+
+var g T
+
+var calls int
+
+func mark(k int) int {
+	calls = calls*10 + k
+	return k
+}
+
+func (t T) addk(k int) int { return t.n*10 + k }
+
+func feed() {
+	for i := 1; i <= 8; i++ {
+		in <- T{i}
+	}
+}
+
+func feedp() {
+	pin <- &g
+	pin <- &g
+	pin <- &g
+}
+
+func main() {
+	go feed()
+	n := (<-in).add(<-in)
+	println(n)
+	m := (<-in).addk((<-in).n)
+	println(m)
+	var x int = (<-in).add(T{mark(3)})
+	println(x, calls)
+	go feedp()
+	(<-pin).set(<-in)
+	(<-pin).set(T{7})
+	(<-in).show()
+	(<-pin).bumpN(100)
+	println(g.n)
+}
+`,
+		want: "12\n34\n53 3\nshow 7\n167\n",
+	},
+	{
+		name: "the receiver of a method on a parenthesised call or receive evaluated before its arguments",
+		src: `type T struct {
+	n int
+}
+
+func (t T) add(m int) int { return t.n*10 + m }
+
+func (t *T) set(m int) { t.n = t.n*10 + m }
+
+var in chan int
+
+var ts [4]T
+
+var calls int
+
+func get() T { return T{<-in} }
+
+func getp() *T { return &ts[<-in] }
+
+func idx() int { return <-in }
+
+func mark(k int) int {
+	calls = calls*10 + k
+	return k
+}
+
+func markT(k int) T {
+	calls = calls*10 + k
+	return T{k}
+}
+
+func feed() {
+	for i := 1; i <= 40; i++ {
+		in <- i % 4
+	}
+}
+
+func main() {
+	go feed()
+	go feedT()
+	ts[0], ts[1], ts[2], ts[3] = T{5}, T{6}, T{7}, T{8}
+	a := (<-in2()).add(<-in)
+	b := get().add(<-in)
+	c := (get()).add(<-in)
+	d := ts[idx()].add(<-in)
+	println(a, b, c, d)
+	getp().set(<-in)
+	(getp()).set(<-in)
+	ts[idx()].set(<-in)
+	println(ts[0].n, ts[1].n, ts[2].n, ts[3].n)
+	println(get().n, (get()).n, get().add(1))
+	e := get().n + get().n*10
+	f := T{get().n + 100*(<-in)}
+	println(e, f.n)
+	calls = 0
+	g := markT(1).add(mark(2))
+	h := (markT(3)).add(mark(4))
+	println(g, h, calls)
+}
+
+func in2() chan T {
+	return tin
+}
+
+var tin chan T
+
+func feedT() {
+	for i := 1; i <= 4; i++ {
+		tin <- T{50 + i}
+	}
+}
+`,
+		want: "511 23 1 73\n511 6 73 8\n2 3 1\n21 3\n12 34 1234\n",
+	},
+	{
+		name: "ranges over channels and receives reached through fields, elements and calls",
+		src: `type Req struct {
+	ID  int
+	S   string
+	Arr [3]uint8
+}
+
+func (r *Req) bump() { r.ID++ }
+
+func (r Req) val() int { return r.ID * 10 }
+
+type Bus struct {
+	in  chan Req
+	ps  [2]chan *Req
+	cc  chan chan Req
+	fs  chan func(int) int
+	rep chan Req
+}
+
+var b Bus
+
+var bp = &b
+
+var gr = Req{ID: 40, S: "g"}
+
+func getCh() chan Req { return b.in }
+
+func getBus() *Bus { return bp }
+
+func inc(x int) int { return x + 1 }
+
+func feed() {
+	b.in <- Req{ID: 1, S: "a"}
+	b.in <- Req{ID: 2, S: "b"}
+	close(b.in)
+}
+
+func feed2() {
+	b.in <- Req{ID: 5, S: "q", Arr: [3]uint8{7, 8, 9}}
+	b.in <- Req{ID: 6, S: "r"}
+	b.in <- Req{ID: 7, S: "s", Arr: [3]uint8{1, 2, 3}}
+	b.in <- Req{ID: 8}
+}
+
+func feedP() {
+	b.ps[1] <- &gr
+	close(b.ps[1])
+}
+
+func feedC() {
+	b.cc <- b.rep
+	b.rep <- Req{ID: 33}
+	b.cc <- b.rep
+	b.rep <- Req{ID: 34}
+}
+
+func feedF() {
+	b.fs <- inc
+	b.fs <- inc
+}
+
+func main() {
+	go feed()
+	t := 0
+	for r := range bp.in {
+		var n int = r.ID
+		r.bump()
+		t = t*100 + n*10 + r.ID + r.val()
+		println(r.S, len(r.Arr))
+	}
+	println(t)
+	b.in = getBus().rep
+	go feed2()
+	var x int = (<-b.in).ID
+	var s string = (<-bp.in).S
+	var a [3]uint8 = (<-getCh()).Arr
+	v := (<-b.in).val()
+	println(x, s, len(a), a[1], v)
+	go feedP()
+	for p := range b.ps[1] {
+		p.bump()
+		var n int = p.ID
+		println(n, (*p).S)
+	}
+	println(gr.ID)
+	go feedC()
+	for i := 0; i < 2; i++ {
+		var id int = (<-<-b.cc).ID
+		println(id)
+	}
+	go feedF()
+	var y int = (<-b.fs)(2)
+	f := <-b.fs
+	println(y, f(5))
+}
+`,
+		want: "a 3\nb 3\n3253\n5 r 3 2 80\n41 g\n41\n33\n34\n3 6\n",
+	},
 }
 
 // TestEmitCRun compiles emitted C with a host compiler and runs it, checking what

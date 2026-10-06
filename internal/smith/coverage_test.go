@@ -319,6 +319,17 @@ var generatedConstructs = []struct {
 	{"aggregate equality", `\n\tif e == v \{`},
 	{"aggregate folded", `\n\toctosmith_checksum = octosmith_checksum \^ agRun_\d+\(\)`},
 	{"aggregate over a channel to a cog", `\n\tgo agCog_\d+\(2\)\n\tagIn_\d+ <- v\n`},
+	{"aggregate nested in a struct", `\ntype AN_\d+ struct \{\n\tn u?int(8|16)\n\tg AG_\d+\n\ts \[2\]AG_\d+\n`},
+	{"nested aggregate literal", `\treturn AN_\d+\{n: `},
+	{"nested aggregate equality", `\n\tif q != o \{`},
+	{"array of nested aggregates", `\n\tvar na \[2\]AN_\d+\n`},
+	{"aggregate array returned", `\nfunc agTrio_\d+\(p int\) \[3\]AG_\d+ \{`},
+	{"aggregate array result as an argument", `agArr_\d+\(agTrio_\d+\(`},
+	{"method of a call's array result", `agTrio_\d+\(k ?\+ ?2\)\[1\]\.sum\(\)`},
+	{"range over a call's array result", `range agTrio_\d+\(`},
+	{"aggregate given to a deferred call", `\n\tdefer agNote_\d+\(v, \d\)\n`},
+	{"aggregate given to a deferred literal", `\n\tdefer func\(w AG_\d+, m int\) \{`},
+	{"deferred value-receiver method", `\n\tdefer v\.note\(\d\)\n`},
 	// A name C has spoken for, which newVarName draws now and then (cNames): the
 	// emitter renames each in every position, and a position it missed was a C
 	// error no generated program could show while every name was a counter's.

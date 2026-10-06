@@ -1,0 +1,87 @@
+// A value received from a channel reached through steps, ranged over or read in
+// parentheses: its element's type, which every rule asks. Each was taken, the value
+// having no type, and slicing a received array or calling a pointer method on a
+// received value had no storage behind it.
+
+type Req struct {
+	ID  int
+	S   string
+	Arr [3]uint8
+}
+
+func (r *Req) bump() { r.ID++ }
+
+func (r Req) val() int { return r.ID }
+
+type Bus struct {
+	in  chan Req
+	ps  [2]chan *Req
+	cc  chan chan Req
+	fs  chan func(int) int
+}
+
+var reqs [2]chan Req
+
+var b Bus
+
+var bp = &b
+
+func getCh() chan Req { return b.in }
+
+func ranges() {
+	for r := range reqs[0] {
+		// ERROR "cannot use r.ID of type int as type string in variable declaration"
+		var n string = r.ID
+		_ = n
+	}
+	for r := range b.in {
+		// ERROR "operator \+ not defined on r: it is a struct"
+		r += 1
+	}
+	for r := range bp.in {
+		// ERROR "type Req has no method nosuch"
+		r.nosuch()
+	}
+	for r := range getCh() {
+		// ERROR "cannot use r.S of type string as type int in variable declaration"
+		var n int = r.S
+		_ = n
+	}
+	for p := range b.ps[1] {
+		// ERROR "cannot use p.ID of type int as type string in variable declaration"
+		var s string = p.ID
+		_ = s
+		p.bump()
+	}
+	// ERROR "range over a channel permits only one iteration variable"
+	for i, r := range b.in {
+		_, _ = i, r
+	}
+}
+
+func received() {
+	// ERROR "cannot use \(<-b.in\).ID of type int as type string in variable declaration"
+	var x string = (<-b.in).ID
+	// ERROR "cannot use \(<-reqs\[0\]\).S of type string as type int in variable declaration"
+	var y int = (<-reqs[0]).S
+	// ERROR "cannot use \(<-b.in\).val\(\) of type int as type string in variable declaration"
+	var z string = (<-b.in).val()
+	// ERROR "cannot use \(<-<-b.cc\).ID of type int as type string in variable declaration"
+	var w string = (<-<-b.cc).ID
+	// ERROR "cannot use \(<-b.fs\)\(2\) of type int as type string in variable declaration"
+	var v string = (<-b.fs)(2)
+	_, _, _, _, _ = x, y, z, w, v
+	// ERROR "cannot slice unaddressable value \(<-getCh\(\)\).Arr"
+	a := (<-getCh()).Arr[1:]
+	_ = a
+	// ERROR "cannot call pointer method bump on Req"
+	(<-b.in).bump()
+	(<-b.ps[0]).bump()
+	var q []uint8 = (<-b.ps[1]).Arr[1:]
+	_ = q
+}
+
+func main() {
+	ranges()
+	received()
+}

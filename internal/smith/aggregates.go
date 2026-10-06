@@ -118,6 +118,12 @@ type aggregate struct {
 	hiC    []int64 // the high half of each 64-bit field, its coefficient; 0 for none
 	pairAt [2]int  // the value agPair sets to its argument
 	r      *rand.Rand
+
+	anN, anZ agKind   // the nesting struct's scalars
+	anC      [4]int64 // anSum's coefficients
+	anEq     [2]int   // the value of q.s[1] agNest changes
+	trioAt   [2]int   // the value agTrioRun reads off a call's array result
+	lateM    [3]int64 // what agLate's deferred calls multiply by
 }
 
 func (a *aggregate) name(s string) string { return fmt.Sprintf("%s_%d", s, a.id) }
@@ -412,6 +418,33 @@ func (a *aggregate) run(f *Fuzzer, k, d func() int64) (string, Int32, bool) {
 			a.name("agCog"), in, out, in, mk, k12, out, sum, sum)
 		step(a.sum(a.apply(v, a.mod, dc)) + a.sum(a.apply(a.mk(k12), a.mod, dc))*3)
 	}
+
+	// Three more shapes, each half the time and each in a function of its own, so
+	// the procedure's registers stay what they were: a struct nesting the aggregate
+	// and an array of it, an array of it returned by value, and deferred calls
+	// taking it, whose copies are made at the defer. Drawn after everything above,
+	// for the reason the cog is.
+	var later []func()
+	if a.r.Intn(2) == 0 {
+		kn, dn := k(), d()
+		fmt.Fprintf(w, "\tr = r*31 + %s(%d, %d)\n", a.name("agNest"), kn, dn)
+		step(a.nest(kn, dn))
+		later = append(later, func() { a.writeNest(f) })
+	}
+	if a.r.Intn(2) == 0 {
+		kt, dt := k(), d()
+		fmt.Fprintf(w, "\tr = r*31 + %s(%d, %d)\n", a.name("agTrioRun"), kt, dt)
+		step(a.trioRun(kt, dt))
+		later = append(later, func() { a.writeTrio(f) })
+	}
+	if a.r.Intn(2) == 0 {
+		dl := d()
+		fmt.Fprintf(w, "\tr = r*31 + %s(w, %d)\n\tr = r*31 + %s\n", a.name("agLate"), dl, a.name("agLog"))
+		ret, log := a.late(wv, dl)
+		step(ret)
+		step(log)
+		later = append(later, func() { a.writeLate(f) })
+	}
 	fmt.Fprint(w, "\treturn r\n}\n\n")
 	if cog {
 		in, out := a.name("agIn"), a.name("agOut")
@@ -419,5 +452,152 @@ func (a *aggregate) run(f *Fuzzer, k, d func() int64) (string, Int32, bool) {
 		fmt.Fprintf(w, "func %s(n int) {\n\tfor i := 0; i < n; i++ {\n\t\tv := <-%s\n\t\t%s <- %s(v, %d)\n\t}\n}\n\n",
 			a.name("agCog"), in, out, mod, dc)
 	}
+	for _, f := range later {
+		f()
+	}
 	return proc + "()", Int32(r), true
+}
+
+// zero is the aggregate's zero value.
+func (a *aggregate) zero() agValue {
+	v := make(agValue, len(a.fields))
+	for i, fl := range a.fields {
+		v[i] = make([]int64, fl.elems())
+	}
+	return v
+}
+
+// agNested is a value of the struct agNest nests the aggregate in.
+type agNested struct {
+	n, z int64
+	g    agValue
+	s    [2]agValue
+}
+
+func (o agNested) clone() agNested {
+	return agNested{o.n, o.z, o.g.clone(), [2]agValue{o.s[0].clone(), o.s[1].clone()}}
+}
+
+func (o agNested) equal(q agNested) bool {
+	return o.n == q.n && o.z == q.z && o.g.equal(q.g) && o.s[0].equal(q.s[0]) && o.s[1].equal(q.s[1])
+}
+
+// nest is agNest(k, d), drawing what the nesting struct is made of first.
+func (a *aggregate) nest(k, d int64) int32 {
+	r := a.r
+	a.anN, a.anZ = agKinds[r.Intn(4)], agKinds[r.Intn(len(agKinds))]
+	for i := range a.anC {
+		a.anC[i] = int64(2 + r.Intn(8))
+	}
+	ei := r.Intn(len(a.fields))
+	a.anEq = [2]int{ei, r.Intn(a.fields[ei].elems())}
+
+	mk := func(p int64) agNested {
+		return agNested{
+			n: a.anN.wrap(int64(int32(p * 3))),
+			z: a.anZ.wrap(p),
+			g: a.mk(p),
+			s: [2]agValue{a.mk(p + 1), a.apply(a.mk(p), a.mod, p)},
+		}
+	}
+	sum := func(o agNested) int32 {
+		return toInt(o.n)*int32(a.anC[0]) + a.sum(o.g)*int32(a.anC[1]) + a.sum(o.s[0])*int32(a.anC[2]) +
+			a.sum(o.s[1])*int32(a.anC[3]) + toInt(o.z)
+	}
+	var res int32
+	o := mk(k)
+	o.s[1] = a.apply(o.s[1], []agOp{a.bump}, d)
+	o.g = a.apply(o.s[0], a.mod, d)
+	o.s[0] = a.apply(o.s[0], a.ptr, d)
+	res = res*31 + sum(o)
+	q := o.clone()
+	if q.equal(o) {
+		res++
+	}
+	q.s[1][ei][a.anEq[1]] = a.fields[ei].k.wrap(q.s[1][ei][a.anEq[1]] + 1)
+	if !q.equal(o) {
+		res += 2
+	}
+	zero := agNested{g: a.zero(), s: [2]agValue{a.zero(), a.zero()}}
+	return res*31 + sum(o) + sum(zero)
+}
+
+// writeNest declares the nesting struct and agNest.
+func (a *aggregate) writeNest(f *Fuzzer) {
+	w := f.Out
+	an, mk, sum := a.name("AN"), a.name("anMk"), a.name("anSum")
+	fmt.Fprintf(w, "type %s struct {\n\tn %s\n\tg %s\n\ts [2]%s\n\tz %s\n}\n\n", an, a.anN.name, a.typ, a.typ, a.anZ.name)
+	fmt.Fprintf(w, "func %s(p int) %s {\n\treturn %s{n: %s(p * 3), g: %s(p), s: [2]%s{%s(p + 1), %s(%s(p), p)}, z: %s(p)}\n}\n\n",
+		mk, an, an, a.anN.name, a.name("agMk"), a.typ, a.name("agMk"), a.name("agMod"), a.name("agMk"), a.anZ.name)
+	fmt.Fprintf(w, "func %s(o %s) int {\n\treturn int(o.n)*%d + %s(o.g)*%d + %s(o.s[0])*%d + o.s[1].sum()*%d + int(o.z)\n}\n\n",
+		sum, an, a.anC[0], a.name("agSum"), a.anC[1], a.name("agSum"), a.anC[2], a.anC[3])
+	fl := a.fields[a.anEq[0]]
+	fmt.Fprintf(w, "func %s(k, d int) int {\n\tr := 0\n\to := %s(k)\n\to.s[1].bump(d)\n\to.g = %s(o.s[0], d)\n\t%s(&o.s[0], d)\n"+
+		"\tr = r*31 + %s(o)\n\tq := o\n\tif q == o {\n\t\tr++\n\t}\n\t%s++\n\tif q != o {\n\t\tr += 2\n\t}\n"+
+		"\tvar na [2]%s\n\tna[1] = o\n\tr = r*31 + %s(na[1]) + %s(na[0])\n\treturn r\n}\n\n",
+		a.name("agNest"), mk, a.name("agMod"), a.name("agPtr"), sum, fl.ref("q.s[1]", a.anEq[1]), an, sum, sum)
+}
+
+// trio is agTrio(p).
+func (a *aggregate) trio(p int64) [3]agValue {
+	return [3]agValue{a.mk(p), a.apply(a.mk(p+7), []agOp{a.bump}, p), a.mk(p + 14)}
+}
+
+// trioRun is agTrioRun(k, d), drawing the value it reads off a call first.
+func (a *aggregate) trioRun(k, d int64) int32 {
+	fi := a.r.Intn(len(a.fields))
+	a.trioAt = [2]int{fi, a.r.Intn(a.fields[fi].elems())}
+	var r int32
+	step := func(v int32) { r = r*31 + v }
+	t := a.trio(k)
+	u := a.trio(k + 1)
+	step(a.sum(u[0]) + a.sum(a.apply(u[1], a.mod, d))*7 + a.sum(u[2]) + a.sum(t[2]))
+	step(a.sum(a.trio(k + 2)[1]))
+	step(toInt(a.trio(k + 3)[0][fi][a.trioAt[1]]))
+	for _, e := range a.trio(k + 4) {
+		step(a.sum(e))
+	}
+	return r
+}
+
+// writeTrio declares agTrio, returning an array of the aggregate, and agTrioRun,
+// which reads one where the call stands: an argument, an element's method, an
+// element's field and a range.
+func (a *aggregate) writeTrio(f *Fuzzer) {
+	w := f.Out
+	trio, sum := a.name("agTrio"), a.name("agSum")
+	fmt.Fprintf(w, "func %s(p int) [3]%s {\n\tvar t [3]%s\n\tfor i := range t {\n\t\tt[i] = %s(p + i*7)\n\t}\n\tt[1].bump(p)\n\treturn t\n}\n\n",
+		trio, a.typ, a.typ, a.name("agMk"))
+	fl := a.fields[a.trioAt[0]]
+	fmt.Fprintf(w, "func %s(k, d int) int {\n\tr := 0\n\tt := %s(k)\n\tr = r*31 + %s(%s(k+1), d) + %s(t[2])\n"+
+		"\tr = r*31 + %s(k + 2)[1].sum()\n\tr = r*31 + int(%s)\n\tfor _, e := range %s(k + 4) {\n\t\tr = r*31 + e.sum()\n\t}\n\treturn r\n}\n\n",
+		a.name("agTrioRun"), trio, a.name("agArr"), trio, sum, trio, fl.ref(trio+"(k + 3)[0]", a.trioAt[1]), trio)
+}
+
+// late is agLate(v, d) and what agLog holds after it, drawing the multipliers
+// first.
+func (a *aggregate) late(v agValue, d int64) (ret, log int32) {
+	for i := range a.lateM {
+		a.lateM[i] = int64(2 + a.r.Intn(8))
+	}
+	s := a.sum(v)
+	// The deferred calls run last first, each with the value v had at its defer.
+	log = s * int32(a.lateM[0])
+	log = log*31 + s*int32(a.lateM[1])
+	log = log*31 + s*int32(a.lateM[2])
+	return a.sum(a.apply(a.apply(v, []agOp{a.bump}, d), a.ptr, d)), log
+}
+
+// writeLate declares agLate, deferring a function, a function literal and a
+// value-receiver method each given the aggregate, which it changes afterwards.
+func (a *aggregate) writeLate(f *Fuzzer) {
+	w := f.Out
+	log, sum := a.name("agLog"), a.name("agSum")
+	fmt.Fprintf(w, "var %s int\n\n", log)
+	fmt.Fprintf(w, "func (v %s) note(m int) { %s = %s*31 + %s(v)*m }\n\n", a.typ, log, log, sum)
+	fmt.Fprintf(w, "func %s(v %s, m int) { %s = %s*31 + %s(v)*m }\n\n", a.name("agNote"), a.typ, log, log, sum)
+	fmt.Fprintf(w, "func %s(v %s, d int) int {\n\t%s = 0\n\tdefer v.note(%d)\n"+
+		"\tdefer func(w %s, m int) { %s = %s*31 + %s(w)*m }(v, %d)\n\tdefer %s(v, %d)\n"+
+		"\tv.bump(d)\n\t%s(&v, d)\n\treturn %s(v)\n}\n\n",
+		a.name("agLate"), a.typ, log, a.lateM[2], a.typ, log, log, sum, a.lateM[1], a.name("agNote"), a.lateM[0], a.name("agPtr"), sum)
 }

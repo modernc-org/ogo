@@ -49,9 +49,17 @@ shipped section tells a reader on that version that they have behaviour they do 
   array bound, and `Name("q") + "r"` folded. Each was "Name is not a constant", or
   refused as a run-time concatenation. And `&&` and `||` of boolean constants are
   constants too, folded with Go's precedences.
+- **A method may be called on a parenthesised receive as a statement**:
+  `(<-pc).set(7)` and `(<-in).show()` were "unsupported call target", where the
+  same call as a value worked.
 
 ### Fixed
 
+- **A method called on a parenthesised call or receive evaluates its receiver
+  before its arguments**: `(get()).add(<-in)`, `(<-in).add(<-in)` and
+  `(markT(3)).add(mark(4))` ran the argument first, silently wrong on the host and
+  the board alike; written without the parentheses, `get().add(<-in)`, the order
+  was right.
 - **A constant shifted by a TYPED count is of its left operand's type**: `const
   ClassErr = 15 << classShift` for a `const classShift int16` was typed int16, and
   `id == ClassErr` for an ID was refused, "mismatched types ID and int16".
@@ -304,6 +312,15 @@ shipped section tells a reader on that version that they have behaviour they do 
 
 ### Behaviour changes
 
+- **A value received from a channel reached through steps is typed**: the
+  variable of a range over a channel field, an element or a call's result, `for r
+  := range b.in`, `range reqs[0]`, `range getCh()`, and a receive in parentheses
+  read through, `(<-b.in).ID`, `(<-<-cc).ID`, `(<-in).val()`, `(<-fs)(2)`. Each was
+  asked nothing, so `var s string = r.ID` and `var x int = (<-in).S` built, and a
+  range over a channel FIELD declared its variable an int index and took a second
+  one. And slicing an array of a received value, `(<-in).Arr[1:]`, and calling a
+  pointer method on one, `(<-in).bump()`, are refused in Go's words, a received
+  value being no variable; both were taken.
 - **Values going into another package's array type, variable or third-package
   type are checked**, found mutating a DSP program of three packages: the elements
   of `filt.Taps{1, true}` and a constant overflowing its element type, a pointer
@@ -694,6 +711,15 @@ shipped section tells a reader on that version that they have behaviour they do 
   source, so every other part of a seed's program draws what it drew before. Of
   seeds 1-2000 all pass on the host; of seeds 1-200 on a P2-EDGE, 141 with such a
   struct and 71 with the cog, 192 pass and 8 outgrow a cog.
+- **`ogo smith` nests the struct, returns an array of it and defers calls taking
+  it.** Of the programs declaring one, half each also declare a struct holding it
+  and an array of two of it, built by a keyed literal and compared; a function
+  returning an array of three, read where the call stands -- as an argument, an
+  element's method, an element's field and a range; and a function deferring a
+  call, a function literal and a value-receiver method each given the struct,
+  which it changes afterwards. Seeds 1-2000 pass on the host, and of seeds 1-200 on
+  a P2-EDGE, 72 nesting, 65 returning the array and 70 deferring, 192 pass and 8
+  outgrow a cog, as before.
 
 ## v0.48.1
 

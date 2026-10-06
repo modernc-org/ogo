@@ -3644,7 +3644,7 @@ func (f *File) checkRange(s *Scope, kw string, fi forInfo) {
 		// A channel yields its ELEMENT, and only that: what a slice puts in the first
 		// variable is an index, and a channel has none. So the one variable a range
 		// over a channel may declare takes the element's type, not int.
-		declared = f.declareRangeVar(s, fi.keyVar, elem, hasElem, elemName, elemQual, false)
+		declared = f.declareRangeVar(s, fi.keyVar, elem, hasElem, elemName, elemQual, elemPtr)
 		if tn := f.recvChanType(s, fi.rangeExpr); declared && tn != nil {
 			if id, ok := f.exprSoleIdent(fi.keyVar); ok {
 				if vd, ok := s.find(id.Src()).(*VarDeclaration); ok {
@@ -3920,6 +3920,18 @@ func (f *File) rangeElem(s *Scope, expr Node) (elem Kind, hasElem, isInt, isChan
 			}
 		}
 	}
+	// A channel reached through steps, `range b.in`, `range bus.ports[1]`: the
+	// element as the walk types the channel (recvElemType). Nothing answered for it,
+	// so the one variable such a range declares was an int INDEX, every field of a
+	// received struct was asked nothing, and a second variable was taken.
+	if fac, ok := f.soleFactorOf(expr); ok {
+		if _, isIdent := f.exprIdent(fac); !isIdent {
+			if t, ok := f.recvElemType(s, fac); ok && t.f != nil {
+				k, hasK := t.f.typeKind(t.s, t.tn)
+				return k, hasK, false, true
+			}
+		}
+	}
 	// A field or an element, `range h.p` of a pointer to an array, `range rows[1]`,
 	// and a call's result, `range f()`: the element written for its type. Unknown,
 	// the value variable was asked nothing, `var s string = v` among it.
@@ -4036,6 +4048,16 @@ func (f *File) rangeElemNamed(s *Scope, expr Node) (Token, Token, bool, bool) {
 	// f()` (rangeElemTypeAt). The value had no name, so its fields and methods were
 	// asked nothing.
 	written := func() (Token, Token, bool, bool) {
+		// A channel reached through steps, `range reqs[0]`, `range b.in`: its
+		// element, named as this file names it, and whether it is a pointer.
+		if fac, ok := f.soleFactorOf(expr); ok {
+			if name, qual, isPtr, _, _, isChan := f.chanFactorElemInfo(s, fac); isChan {
+				if !name.IsValid() {
+					return Token{}, Token{}, false, false
+				}
+				return name, qual, isPtr, true
+			}
+		}
 		if head, steps, ok := f.callChainOf(expr); ok {
 			w := f.callChainWalk(s, head, steps)
 			elem, ok := f.elemTypeOf(w.t)
@@ -22503,6 +22525,24 @@ func (f *File) checkParenChain(s *Scope, inner Node, steps []Node) {
 		f.reportCallChainWalk(s, all, f.callChainWalk(s, id, all))
 		return
 	}
+	// `(<-in).Arr[1:]`, `(<-in).bump()`: a received value is no storage either, and
+	// is walked from its type as a literal is (litChainWalk), so slicing an array of
+	// it and calling a pointer method on it are refused as for a call's result. Both
+	// were taken, the emitter slicing and calling on its temporary.
+	if f.isRecvExpr(s, inner) {
+		if t, ok := f.valueTypeAt(s, inner); ok && t.f == f {
+			w := f.litChainWalk(s, t, steps)
+			if w.sliceAt >= 0 {
+				last := inner.End() + 1
+				if w.sliceAt > 0 {
+					last = steps[w.sliceAt-1].End()
+				}
+				f.err(f.tok(inner.Pos()-1).Position(), "cannot slice unaddressable value %s", f.sourceSpan(inner.Pos()-1, last))
+			}
+			f.reportCallChainWalk(s, steps, w)
+		}
+		return
+	}
 	if name, qual, _, ok := f.exprNamedType(s, inner); ok {
 		f.checkStepsOn(s, &VarDeclaration{typeName: name, typeQual: qual}, "("+f.exprSource(inner)+")", steps)
 		// Past the first step, which checkStepsOn answers for, a member the value
@@ -22516,6 +22556,31 @@ func (f *File) checkParenChain(s *Scope, inner Node, steps []Node) {
 			f.reportCallChainWalk(s, steps, w)
 		}
 	}
+}
+
+// isRecvExpr reports whether n is a receive, `<-ch`, or receives of receives,
+// `<-<-cc`, and nothing else.
+func (f *File) isRecvExpr(s *Scope, n Node) bool {
+	for n.sym == Expression || n.sym == SimpleExpr || n.sym == Term {
+		kids := slices.Collect(it(n.ast))
+		if len(kids) != 1 {
+			return false
+		}
+		n = kids[0]
+	}
+	if n.sym != UnaryExpr {
+		return false
+	}
+	kids := slices.Collect(it(n.ast))
+	if len(kids) < 2 || kids[len(kids)-1].sym != Factor {
+		return false
+	}
+	for _, k := range kids[:len(kids)-1] {
+		if k.sym != UnaryOp || f.unaryOp(s, k) != ARROW {
+			return false
+		}
+	}
+	return true
 }
 
 // callChainOf matches an expression that is a name and steps holding a call, `mk(1)`
@@ -29189,6 +29254,27 @@ func (f *File) valueTypeAt(s *Scope, n Node) (typeAt, bool) {
 func (f *File) operandType(s *Scope, n Node, calls bool) (typeAt, bool) {
 	for n.sym == Expression || n.sym == SimpleExpr || n.sym == Term || n.sym == UnaryExpr {
 		kids := slices.Collect(it(n.ast))
+		if n.sym == UnaryExpr && len(kids) > 2 && calls && kids[len(kids)-1].sym == Factor && !slices.ContainsFunc(kids[:len(kids)-1], func(k Node) bool {
+			return k.sym != UnaryOp || f.unaryOp(s, k) != ARROW
+		}) {
+			// Receives of receives, `<-<-cc` of a channel of reply channels: each
+			// arrow one channel's element.
+			t, ok := f.recvElemType(s, kids[len(kids)-1])
+			for range len(kids) - 2 {
+				if !ok || t.f == nil {
+					return typeAt{}, false
+				}
+				ch, _ := t.f.chanTypeUnder(t.s, t.tn)
+				if ch == nil {
+					return typeAt{}, false
+				}
+				t = typeAt{ch.TypeNode, t.s, t.f}
+			}
+			if !ok || t.f == nil {
+				return typeAt{}, false
+			}
+			return t, true
+		}
 		if n.sym == UnaryExpr && len(kids) == 2 && kids[0].sym == UnaryOp && kids[1].sym == Factor {
 			if op := f.unaryOp(s, kids[0]); op == AND && calls {
 				// `&arr[1]`, `&h.v`: a pointer to what the operand is. Untyped, a
@@ -29201,6 +29287,18 @@ func (f *File) operandType(s *Scope, n Node, calls bool) (typeAt, bool) {
 					return typeAt{}, false
 				}
 				return typeAt{&TypeNodePointer{TypeNode: t.tn}, t.s, t.f}, true
+			}
+			if op := f.unaryOp(s, kids[0]); op == ARROW && calls {
+				// A receive, `(<-reqs[0]).ID`, `(<-h.in)[1]`: the channel's element,
+				// as recvElemType reads it. Untyped, every step after it was asked
+				// nothing, and `var x int = (<-in).S` of a string field built.
+				// valueTypeAt's only, as an address is: a receive is no operand of a
+				// constant len.
+				t, ok := f.recvElemType(s, kids[1])
+				if !ok || t.f == nil {
+					return typeAt{}, false
+				}
+				return t, true
 			}
 			if f.unaryOp(s, kids[0]) != MUL {
 				return typeAt{}, false
@@ -29251,7 +29349,19 @@ func (f *File) operandType(s *Scope, n Node, calls bool) (typeAt, bool) {
 		if !ok {
 			return typeAt{}, false
 		}
-		return f.stepsTypeIn(s, t, slices.Collect(it(kids[3].ast)))
+		steps := slices.Collect(it(kids[3].ast))
+		// A call among the steps, `(<-in).val()`, `(<-fs)(2)`: walked from the
+		// head's type as a literal's chain is, its results typing what follows.
+		if slices.ContainsFunc(steps, func(n Node) bool { return n.sym == CallSuffix }) {
+			if !calls || t.f != f {
+				return typeAt{}, false
+			}
+			if w := f.litChainWalk(s, t, steps); w.known && w.t.tn != nil {
+				return w.t, true
+			}
+			return typeAt{}, false
+		}
+		return f.stepsTypeIn(s, t, steps)
 	}
 	if kids[0].sym != 0 || f.ch(kids[0].tok) != IDENT {
 		return typeAt{}, false

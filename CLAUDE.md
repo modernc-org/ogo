@@ -834,7 +834,7 @@ still design-only.
   second, the loader's and not the program's. A seed that outgrows can take
   ten minutes to say so, the backend's allocator on one function of 200 lines, twice
   over when its functions were marked (seed 3146: 333 s and 244 s).
-  **Aggregates** (2026-10-07, `aggregates.go`): no generated program had passed or
+  **Aggregates** (2026-10-06, `aggregates.go`): no generated program had passed or
   returned a struct or an array, which is the family the target's compiler has been
   wrong about in silence most often (a struct over four words or of a sub-word
   member returned through a reference sized wrong, flexprop#113; a struct holding
@@ -853,7 +853,19 @@ still design-only.
   corpus; this way every other part of a seed's program is what it was, but for
   the expected values that depend on the checksum. Swept the same day: seeds
   1-2000 on the host shim, clean; 1-200 on a P2-EDGE, 141 with an aggregate and 71
-  with the cog, 192 passing and 8 outgrowing a cog, none failing. Seeds 3501-4000
+  with the cog, 192 passing and 8 outgrowing a cog, none failing. Seeds 201-300
+  the same way: 95 passing (four on a second load) and 5 outgrowing, none failing.
+  Three more shapes the same day, each half the time and each drawn after the cog,
+  in a function of its own so agRun's registers stay what they were: AN, a struct
+  of a sub-word scalar, the aggregate, an array of two of it and another scalar,
+  built by a keyed literal and compared, and an array of two of THAT (agNest);
+  agTrio, returning `[3]AG` read where the call stands -- an argument, an element's
+  method, an element's field, a range (agTrioRun); and agLate, deferring a function,
+  a function literal and a value-receiver method each given the aggregate, which it
+  changes afterwards (each copy made at its defer). A hand-written probe of all
+  three matched Go on the host and the board before the generator wrote one. Seeds
+  1-2000 on the host shim, clean; 1-200 on a P2-EDGE, 72 nesting, 65 returning the
+  array and 70 deferring, 192 passing and 8 outgrowing, none failing. Seeds 3501-4000
   with aab09a0, the generator before it: 472 passing, 28 outgrowing, none failing.
   A domain program of the same family -- sample frames of mixed widths filled on
   one cog, passed by value through a channel and a single-producer ring to another
@@ -1198,7 +1210,23 @@ type" -- refused by design, Go saving the interface value as it saves a pointer'
 8 taken: a value received from an ELEMENT of an array of channels or from a channel
 field had no type in any declaring form (chanFactorElemInfo and recvElemType walk the
 channel now), and a star over a channel in a send. A range over such an element
-channel and a parenthesised receive's field, `(<-reqs[0]).ID`, are still untyped.
+channel and a parenthesised receive's field, `(<-reqs[0]).ID`, were left untyped,
+and were closed on 2026-10-06 with their row: 11 of 18 programs Go refuses were
+taken -- a range over a channel FIELD declared its variable an int index -- and a
+receive had no case in operandType, the walk every rule asks (recvElemType answers
+it, `<-<-cc` an arrow at a time); a parenthesised receive is walked from its type as
+a literal is, so `(<-in).Arr[1:]` and `(<-in).bump()` are refused as for a call's
+result (checkParenChain, isRecvExpr). Probing the valid side found a SILENT fault
+older than it: a method called on a parenthesised call or receive with an argument
+of an effect ran the argument first, `(get()).add(<-in)` and `(<-in).add(<-in)`, on
+the host and the board -- emitParenMethod left the head inline in the C while
+argsCText bound the argument ahead of the statement; it binds an effectful head
+first now -- and a method called on a parenthesised receive as a STATEMENT,
+`(<-pc).set(7)`, was "unsupported call target" (emitCall writes it through
+emitParenMethod). Still loud: a field selected on a channel, `in.n`, refused by the
+emitter in its own words, and `defer`/`go` of a method on a parenthesised receive.
+**A head the emitter writes as text is asked where its effects land against the
+arguments'**: the unparenthesised chain had been right all along.
 
 **A COMPILER RUN IN A SWEEP IS CAPPED, AND A CRASH IS NOT A REFUSAL** (2026-09-20).
 A probe program is written to find a fault, and a fault is not always a wrong
