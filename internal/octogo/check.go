@@ -4866,12 +4866,30 @@ func (f *File) exprTargetKind(s *Scope, t Node) (Kind, bool) {
 	return 0, false
 }
 
+// multiValueOperandErr refuses a call of several results where one value is wanted,
+// an operand or a condition, in Go's words. `!strings.Cut(s, "/")` built, the
+// emitter taking one of the results; a local function's was its refusal.
+func (f *File) multiValueOperandErr(s *Scope, n Node) bool {
+	if !f.exprWholeCall(n) {
+		return false
+	}
+	results, ok := f.forwardedResults(s, n)
+	if !ok {
+		return false
+	}
+	f.err(f.tok(n.Pos()).Position(), "multiple-value %s (value of type (%d values)) in single-value context", f.exprSource(n), len(results))
+	return true
+}
+
 // checkCondition resolves the names and operator operands of an "if"/"for"
 // condition and reports when its type is known and non-boolean. Both checks are
 // conservative: an expression whose type cannot yet be determined (a call,
 // selector, or unresolved name) yields no "non-bool" report.
 func (f *File) checkCondition(s *Scope, kw string, n Node) {
 	f.checkNames(s, n)
+	if f.multiValueOperandErr(s, n) {
+		return
+	}
 	if k, ok := f.exprType(s, n); ok && !isBoolKind(k) {
 		f.err(f.tok(n.Pos()).Position(), "non-bool used as %s condition", kw)
 		return
@@ -5801,6 +5819,27 @@ func (f *File) namedIsSlice(s *Scope, name, qual Token) bool {
 	return false
 }
 
+// inferredTypeName names a variable's walked type, t, as this file writes it: a
+// defined type of this package bare, another package's as this file names that
+// package (namedAcross); through one pointer, isPtr then saying so. A type written
+// out names nothing.
+func (f *File) inferredTypeName(s *Scope, t typeAt) (name, qual Token, isPtr, ok bool) {
+	name, qual, isPtr, ok = typeNodeNamed(t.tn)
+	if !ok || t.s == nil {
+		return Token{}, Token{}, false, false
+	}
+	if !qual.IsValid() && f.Package != nil && f.Package.Scope != nil && (t.s == f.Package.Scope || onScopeChain(s, t.s)) {
+		if _, isType := t.s.find(name.Src()).(*TypeDeclaration); isType {
+			return name, Token{}, isPtr, true
+		}
+		return Token{}, Token{}, false, false
+	}
+	if qual.IsValid() && t.f == f {
+		return name, qual, isPtr, true
+	}
+	return f.namedAcross(t, Token{})
+}
+
 // inferVarFrom records on vd the type its initializer gives it, for a variable
 // declared without a written one: "x := e", "var x = e" and the package-level
 // "var x = e" alike. All three mean the same thing in Go and now say so through one
@@ -5818,6 +5857,28 @@ func (f *File) inferVarFrom(s *Scope, vd *VarDeclaration, init Node) {
 	// before the variable (see inferredType).
 	if t, ok := f.valueTypeAt(s, init); ok {
 		vd.inferredType = &t
+		// And its NAME, where nothing below records one: `b := d.blobs[n]`, `rt :=
+		// &r.routes[i]` of a field's element was typed by the walk and named by
+		// nothing, so every rule asking a name -- a field function called, a member
+		// missing, an interface wanted -- said nothing of it.
+		defer func() {
+			if vd.typeName.IsValid() || vd.isChan || vd.isFunc || vd.builderVar || vd.declType != nil {
+				return
+			}
+			if nm, ql, isPtr, ok := f.inferredTypeName(s, t); ok {
+				vd.typeName, vd.typeQual, vd.isPtr = nm, ql, isPtr
+				// A named FUNCTION type, `f := tab.fs[0]` of a [2]F: callable,
+				// with the signature its type has.
+				if !isPtr && t.f != nil {
+					if ft, isFunc := t.f.underlyingTypeAt(t).tn.(*FunctionType); isFunc && ft.Signature != nil {
+						vd.isFunc = true
+						if !ql.IsValid() {
+							vd.funcSig = ft.Signature
+						}
+					}
+				}
+			}
+		}()
 		// A slice of what has a DEFINED slice or string type, `d := h.xs[1:]`, `u :=
 		// r.name[1:4]`, is of that type: named here for the rules asking a name --
 		// methods above all -- whatever the branches below record.
@@ -14225,7 +14286,7 @@ func (f *File) checkImplements(s *Scope, ifaceName string, value Node, what stri
 			if _, _, resolved := f.typeDeclNamed(s, from); resolved {
 				f.checkImplementsKind(s, ifaceName, value, from, f.exprSource(value), "value of type *"+from, true, what)
 			}
-		} else if named && !qual.IsValid() && (f.isNamedCompositeLit(value) || f.storageOperand(value) || f.derefOperand(s, value)) {
+		} else if named && (!qual.IsValid() && (f.isNamedCompositeLit(value) || f.storageOperand(value)) || f.derefOperand(s, value)) {
 			// A literal of a named type, `show(failure{})`, a field or an element of
 			// one, `return m.f`, `return errs[i]`, or what a pointer points at,
 			// `return *P` -- which built, the struct returned for the interface,
@@ -14233,9 +14294,14 @@ func (f *File) checkImplements(s *Scope, ifaceName string, value Node, what stri
 			// method set falls short, and where it would not, the one an interface
 			// holding a pointer gives. Asked of nobody, the call went to the C
 			// compiler as a struct passed where the interface is wanted.
+			// Another package's too where it is dereferenced, `*lib.ErrX`, its type
+			// resolved where it is declared whether or not it is exported.
 			from := name.Src()
+			if qual.IsValid() {
+				from = qual.Src() + "." + from
+			}
 			if _, fromIface := f.interfaceMethodsNamed(s, from); !fromIface {
-				if _, _, resolved := f.typeDeclNamed(s, from); resolved {
+				if _, _, resolved := f.typeDeclNamedIn(s, from, true); resolved {
 					missing, ptrRecv, _, _, _, ok := f.implements(s, from, false, ifaceName)
 					head := fmt.Sprintf("cannot use %s (value of struct type %s) as %s value in %s", f.exprSource(value), from, ifaceName, what)
 					switch {
@@ -16931,7 +16997,7 @@ func (f *File) checkBinOp(s *Scope, opNode, lNode, rNode Node) {
 	// them: `f + 1`, `xs << 1`, `v * v` and `nil + 1` reached the C compiler, and the
 	// target's builds most of them. Only a pointer was refused, by the rule above.
 	for _, n := range [2]Node{lNode, rNode} {
-		if f.kindlessOperandErr(s, n, pos, sym) {
+		if f.multiValueOperandErr(s, n) || f.kindlessOperandErr(s, n, pos, sym) {
 			return
 		}
 	}
@@ -18020,6 +18086,15 @@ func (f *File) checkWalkedTarget(s *Scope, ah Node, steps []Node, value Node, so
 			// list.
 			f.checkDerefAssign(s, base, value)
 		}
+		// One star more than there are pointers, `**z = v` for a `z *N`: the walk
+		// met no pointer at the last star, and the store was asked nothing.
+		if stars > 1 && len(steps) == 0 {
+			if t0, in0 := f.targetTypeNode(s, base, steps, stars-1); t0 != nil {
+				if _, isP := f.underlyingTypeAt(typeAt{t0, in0, f}).tn.(*TypeNodePointer); !isP {
+					f.err(f.tok(ah.Pos()).Position(), "invalid operation: cannot indirect %s%s (variable of type %s)", strings.Repeat("*", stars-1), base.Src(), f.typeAtMessage(typeAt{t0, in0, f}))
+				}
+			}
+		}
 		return
 	}
 	if sole && stars == 1 && len(steps) <= 1 && f.resultType(in, tn).known {
@@ -18307,13 +18382,29 @@ func (f *File) targetTypeNode(s *Scope, base Token, steps []Node, stars int) (Ty
 		}
 		rq, ok := f.requalifiedType(home, base, vt.tn)
 		if !ok {
+			// An array, whose length is an expression of that package, is not
+			// carried across: it is walked THERE, and what the steps reach is
+			// carried across at the end. `lib.Holding[1] = "s"` for a [8]uint16
+			// was asked nothing.
+			tn, in := f.targetTypeNodeIn(home, vt.tn, steps[1:], stars)
+			if tn == nil || in != home {
+				return nil, nil
+			}
+			if rq, ok := f.requalifiedType(home, base, tn); ok {
+				return rq, s
+			}
 			return nil, nil
 		}
 		t, steps = typeAt{tn: rq, s: s}, steps[1:]
 	default:
 		return nil, nil
 	}
-	tn, in := t.tn, t.s
+	return f.targetTypeNodeIn(t.s, t.tn, steps, stars)
+}
+
+// targetTypeNodeIn is targetTypeNode's walk of the steps and the stars from a type
+// tn written in scope in.
+func (f *File) targetTypeNodeIn(in *Scope, tn TypeNode, steps []Node, stars int) (TypeNode, *Scope) {
 	for _, c := range steps {
 		if tn == nil {
 			return nil, nil
@@ -18756,6 +18847,11 @@ func (f *File) checkUnaryExpr(s *Scope, n Node) {
 		}
 	}
 	if !facSet || len(ops) == 0 {
+		return
+	}
+	// A call of several results under an operator, `!strings.Cut(s, "/")`, `-pair()`:
+	// one value is what an operator takes.
+	if f.multiValueOperandErr(s, fac) {
 		return
 	}
 	// The innermost operator (nearest the factor) applies first. "*" (pointer
@@ -21519,6 +21615,19 @@ func (f *File) requalifiedType(from *Scope, qual Token, tn TypeNode) (TypeNode, 
 		if inner, ok := f.requalifiedType(from, qual, x.TypeNode); ok {
 			return &TypeNodeSlice{TypeNode: inner}, true
 		}
+	case *TypeNodeArray:
+		// Its length is an expression of that package, carried across as the
+		// constant it evaluated to, which names nothing: `bank.Holding[1] = "s"` for a
+		// field `Holding [8]uint16` of another package's struct was asked nothing,
+		// the array refused here.
+		if x.Expression == nil {
+			break
+		}
+		if cv, isConst := x.Expression.Value().(constVal); isConst && cv.cv != nil && cv.cv.Kind() == constant.Int {
+			if inner, ok := f.requalifiedType(from, qual, x.TypeNode); ok {
+				return &TypeNodeArray{Expression: constVal{cv: cv.cv}, TypeNode: inner}, true
+			}
+		}
 	case *TypeNodeChan:
 		if inner, ok := f.requalifiedType(from, qual, x.TypeNode); ok {
 			return &TypeNodeChan{TypeNode: inner, Dir: x.Dir}, true
@@ -23303,7 +23412,16 @@ func (f *File) callResults(s *Scope, callee, member Token) ([]retResult, bool) {
 		// it is declared, which is answered for this package and the receiver
 		// type's own.
 		otd, ohome, promoted := f.methodOwnerScoped(s, d.declaredTypeName(), member.Src())
-		if !promoted || ohome != home {
+		if !promoted {
+			// Or through an embedded INTERFACE, `m.Pos()` of a Move embedding a
+			// Driver: its method's results, which typed nothing, so `if m.Pos() {`
+			// and `var s string = m.Pos()` were taken.
+			if m, ihome, isProm := f.promotedIfaceMethod(home, d.declaredTypeName(), member.Src()); isProm && ihome == home {
+				return flatten(home, methodSpecSig(m))
+			}
+			return nil, false
+		}
+		if ohome != home {
 			return nil, false
 		}
 		fd = otd.methods[member.Src()]
@@ -24606,6 +24724,16 @@ func (f *File) exprCallResults(s *Scope, n Node) ([]retResult, bool) {
 	if callee, isCall := f.exprCallee(n); isCall {
 		if r, ok := f.callResults(s, callee, Token{}); ok {
 			return r, true
+		}
+		// A CONVERSION, `int(j)`, `T(x)`: one value, whatever it converts. Read as
+		// a call of unknown results, it was taken for one forwarding several, and
+		// `child(int(j))` was asked no count.
+		switch s.find(callee.Src()).(type) {
+		case *PredeclaredType, *TypeDeclaration:
+			if k, ok := f.exprType(s, n); ok {
+				return []retResult{{kind: k, known: true, name: kindName(k)}}, true
+			}
+			return []retResult{{}}, true
 		}
 	} else if recv, member, isMethod := f.exprMethodCall(n); isMethod {
 		if r, ok := f.callResults(s, recv, member); ok {
@@ -28269,6 +28397,12 @@ func (f *File) foldBinary(lhs ExpressionNode, op Symbol, opTok Token, rhs Expres
 	rc, rok := rhs.Value().(constVal)
 	if lok && rok && lc.cv != nil && rc.cv != nil {
 		if v, ok := f.foldConstBinaryOp(opTok, lc.cv, op, rc.cv); ok {
+			// A shift is of its LEFT operand's type, the count's taking no part:
+			// `15 << classShift` for a `const classShift int16` is an untyped
+			// constant, and was typed int16, refused beside the ID it is used with.
+			if op == SHL || op == SHR {
+				return constVal{cv: v}.sameTypeAs(lc, lc)
+			}
 			return constVal{cv: v}.sameTypeAs(lc, rc)
 		}
 	}
@@ -28769,6 +28903,7 @@ func (f *File) constLenCap(s *Scope, n Node) (ExpressionNode, bool) {
 	if !ok {
 		return nil, false
 	}
+	f.checkConstIndexes(s, arg)
 	for call := range it(kids[1].ast) {
 		if call.sym == CallSuffix && len(call.ast) != 0 {
 			if f.lenConsts == nil {
@@ -28780,6 +28915,57 @@ func (f *File) constLenCap(s *Scope, n Node) (ExpressionNode, bool) {
 		}
 	}
 	return constVal{cv: constant.MakeInt64(v)}.typedAs(PredeclaredInt), true
+}
+
+// checkConstIndexes refuses a constant index past the length of the array it
+// indexes in an operand len or cap folds to a constant: `len(d.blobs[300].Data)`
+// was taken, the call a constant and the index read by nothing after it. Elsewhere
+// the emitter refuses one.
+func (f *File) checkConstIndexes(s *Scope, n Node) {
+	fac, ok := f.soleFactorOf(n)
+	if !ok {
+		return
+	}
+	kids := slices.Collect(it(fac.ast))
+	if len(kids) != 2 || kids[0].sym != 0 || f.ch(kids[0].tok) != IDENT || kids[1].sym != FactorSuffix {
+		return
+	}
+	head := f.tok(kids[0].tok)
+	steps := slices.Collect(it(kids[1].ast))
+	for i, st := range steps {
+		if st.sym != Index || f.indexIsSlice(st) {
+			continue
+		}
+		var idx Node
+		for c := range it(st.ast) {
+			if c.sym == Expression {
+				idx = c
+			}
+		}
+		cv, isConst := f.constNumeric(s, idx)
+		if idx.sym == 0 || !isConst {
+			continue
+		}
+		t, ok := f.headStepsType(s, head, steps[:i], false)
+		if !ok || t.f == nil {
+			return
+		}
+		u := t.f.underlyingTypeAt(t)
+		if p, isPtr := u.tn.(*TypeNodePointer); isPtr {
+			u = t.f.underlyingTypeAt(typeAt{p.TypeNode, u.s, u.f})
+		}
+		if _, isArr := u.tn.(*TypeNodeArray); !isArr || u.f == nil {
+			continue
+		}
+		length, ok := u.f.arrayTypeLen(u, false)
+		if !ok {
+			continue
+		}
+		if c, exact := constant.Int64Val(constant.ToInt(cv)); exact && (c < 0 || c >= length) {
+			f.err(f.tok(idx.Pos()).Position(), "invalid argument: index %d out of bounds [0:%d]", c, length)
+			return
+		}
+	}
 }
 
 // constLenOf is the value constLenCap folds a call to, for its operand n.
@@ -29063,6 +29249,19 @@ func (f *File) headStepsType(s *Scope, id Token, steps []Node, calls bool) (type
 	if calls && slices.ContainsFunc(steps, func(n Node) bool { return n.sym == CallSuffix }) {
 		if w := f.callChainWalk(s, id, steps); w.known && w.t.tn != nil {
 			return w.t, true
+		}
+		// A method of another package's type called on a variable, `m.Trace()` of a
+		// `m lib.Move`, which the walk leaves to the argument check: its result,
+		// requalified for this file (callResults). Untyped, a slice it returns went
+		// into a string and stood as a condition unasked.
+		if len(steps) == 2 && steps[0].sym == Selector && steps[1].sym == CallSuffix {
+			if d, isVar := s.find(id.Src()).(*VarDeclaration); isVar && d.typeQual.IsValid() {
+				if m, has := f.selectorMember(steps[0]); has {
+					if r, ok := f.callResults(s, id, m); ok && len(r) == 1 && r[0].typeNode != nil {
+						return typeAt{r[0].typeNode, s, f}, true
+					}
+				}
+			}
 		}
 		return typeAt{}, false
 	}

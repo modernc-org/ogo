@@ -265,6 +265,42 @@ func TestCheckQualifiedCallCount(t *testing.T) {
 	}
 }
 
+// TestCheckQualifiedArrayVarStore: a store into an element of another package's ARRAY
+// variable, whose type cannot be carried across, is walked in that package; and a
+// dereference of another package's pointer variable where an interface is wanted.
+func TestCheckQualifiedArrayVarStore(t *testing.T) {
+	const lib = "var Holding [8]uint16\n\ntype crcErr struct{ n int }\n\nfunc (e *crcErr) Error() string { return \"crc\" }\n\nvar ErrCRC = &crcErr{}\n\ntype Bank struct{ Holding [8]uint16 }\n\ntype Move struct{ tr [2]int }\n\nfunc (m *Move) Trace() []int { return m.tr[:] }\n"
+	for _, test := range []struct {
+		body string
+		want string // "" for one Go takes
+	}{
+		{"lib.Holding[1] = uint64(5)", "cannot use uint64(5) of type uint64 as type uint16 in assignment"},
+		{"lib.Holding[1] = \"s\"", "cannot use \"s\" of type string as type uint16 in assignment"},
+		{"lib.Holding[1] = 70000", "constant 70000 overflows uint16"},
+		{"var err error = lib.ErrCRC\n\tprintln(err == *lib.ErrCRC)", "lib.crcErr does not implement error (method Error has pointer receiver)"},
+		{"var b lib.Bank\n\tb.Holding[1] = \"s\"", "cannot use \"s\" of type string as type uint16 in assignment"},
+		{"var b lib.Bank\n\tvar a [9]uint16 = b.Holding\n\t_ = a", "cannot use b.Holding (variable of type [8]uint16) as [9]uint16 value"},
+		{"var m lib.Move\n\tfor m.Trace() {\n\t}", "non-bool used as for condition: m.Trace() is a slice"},
+		{"var m lib.Move\n\tvar s string = m.Trace()\n\t_ = s", "it is a slice"},
+		{"lib.Holding[2] = 7\n\tlib.Holding[3]++\n\tvar err error = lib.ErrCRC\n\tprintln(err == lib.ErrCRC)\n\tvar b lib.Bank\n\tvar a [8]uint16 = b.Holding\n\tvar m lib.Move\n\tvar y []int = m.Trace()\n\t_, _ = a, y", ""},
+	} {
+		t.Run(test.body, func(t *testing.T) {
+			src := "import \"lib\"\n\nfunc main() {\n\t" + test.body + "\n}\n"
+			fsys := fstest.MapFS{
+				"main.ogo":    &fstest.MapFile{Data: []byte(src)},
+				"lib/lib.ogo": &fstest.MapFile{Data: []byte(lib)},
+			}
+			_, err := Build(-1, []string{"main.ogo"}, fsys)
+			switch {
+			case test.want == "" && err != nil:
+				t.Fatalf("refused: %v", err)
+			case test.want != "" && (err == nil || !strings.Contains(err.Error(), test.want)):
+				t.Fatalf("got %v, want an error containing %q", err, test.want)
+			}
+		})
+	}
+}
+
 // TestCheckIfaceMethodValue: a method value whose receiver is an interface value
 // is refused by design, as one whose receiver is a pointer is -- Go saves the
 // value when the method value is taken, and a binding made at compile time cannot

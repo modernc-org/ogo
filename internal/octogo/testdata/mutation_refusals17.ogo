@@ -1,0 +1,86 @@
+// Mutations of seventeen older domain programs: a variable typed by a field's
+// element and named by nothing, a conversion as the whole argument list, a call of
+// several results under an operator or as a condition, one star too many, a
+// constant index len folds away, a method promoted from an embedded interface, and
+// a constant shifted by a typed count, which was typed by the count.
+
+type ID uint16
+
+const classShift int16 = 7
+
+const (
+	ClassCmd ID = 1 << classShift
+	ClassErr    = 15 << classShift
+)
+
+type H func(n int) bool
+
+type route struct {
+	m int
+	h H
+}
+
+type Rec interface{ Tag() byte }
+
+type Blob struct{ Data [8]byte }
+
+func (b *Blob) Tag() byte { return 1 }
+
+type R struct {
+	routes [4]route
+	blobs  [2]Blob
+}
+
+var gr R
+
+var pg = &gr
+
+type Driver interface{ Pos() int }
+
+type Move struct {
+	Driver
+	target int
+}
+
+func child(i int, s string) int { return i }
+
+func two() (bool, int) { return true, 1 }
+
+func get() Rec {
+	b := gr.blobs[0]
+	// ERROR "cannot use b \(variable of type Blob\) as Rec value in return statement: an interface holds a pointer here"
+	return b
+}
+
+func fields() {
+	rt := &gr.routes[0]
+	// ERROR "too many arguments in call to h"
+	_ = rt.h(1, 2)
+	// ERROR "type route has no method nosuch"
+	_ = rt.nosuch(1)
+	_ = rt.h(1)
+}
+
+func values(id ID) {
+	// ERROR "not enough arguments in call to child"
+	_ = child(int(3))
+	// ERROR "multiple-value two\(\) \(value of type \(2 values\)\) in single-value context"
+	if !two() {
+	}
+	// ERROR "invalid operation: cannot indirect \*pg \(variable of type R\)"
+	**pg = R{}
+	// ERROR "invalid argument: index 300 out of bounds \[0:2\]"
+	_ = len(gr.blobs[300].Data)
+	var m Move
+	// ERROR "cannot use m.Pos\(\) of type int as type string in variable declaration"
+	var s string = m.Pos()
+	_ = id == ClassErr
+	_ = child(int(3), "s")
+	_ = s
+}
+
+func main() {
+	_ = get()
+	fields()
+	values(ClassCmd)
+}

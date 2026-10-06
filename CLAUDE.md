@@ -1389,6 +1389,27 @@ isAddrOperand: a field, an element, a walked target, a literal, a send) -- and a
 variable typed only by its initializer, `e := r.buf[0]` of a struct, called.
 **A rule asked at some store sites is a row of the others**, as A TARGET IS A
 POSITION had it of the store rules.
+Fourteen more of them, 500 mutants each, then had 33 taken between them and two
+FALSE REFUSALS. The false refusals were one row: a constant shift took its type from
+the COUNT where Go takes the left operand's, `15 << classShift` for a `const
+classShift int16` an int16 (foldBinary). The taken were mostly one row too: a
+variable declared from a FIELD's element, `rt := &r.routes[i]`, had a walked type
+and no NAME, which the rules asking a method, a field function, a member or an
+interface read -- inferVarFrom names it from the walk now (inferredTypeName), a
+named function type with its signature, or `f := tab.fs[0]; f()` was "cannot call
+non-function". The 26 batches and the nets showed no valid program lost. Beside
+it: a conversion as the whole argument list was taken for a call of several
+results (exprCallResults answers one); a call of several results under an
+operator or as a condition built for strings.Cut (multiValueOperandErr); `**z` of
+a single pointer; a constant index past an array's length that `len` folds before
+the emitter sees it (checkConstIndexes); a method promoted from an embedded
+INTERFACE had no results (callResults asks promotedIfaceMethod); and across the
+boundary, an ARRAY type could not be requalified at all, its length an expression
+of the other package -- carried across as the constant it evaluated to now, which
+put `bank.Holding[i] = uint64(x)` and `range *bank.Holding` in reach of every rule
+-- and a method of another package's type called on a variable was typed by
+nothing (headStepsType asks callResults). **The older programs were the
+cheapest probe left**: written for other rounds, matching Go, and never mutated.
 
 **A C NAME IS A ROW** (2026-09-25). The emitted C keeps a program's own names, so
 every name a program may write is a row across everything else that names things in

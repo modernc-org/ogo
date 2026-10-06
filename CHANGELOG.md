@@ -52,6 +52,9 @@ shipped section tells a reader on that version that they have behaviour they do 
 
 ### Fixed
 
+- **A constant shifted by a TYPED count is of its left operand's type**: `const
+  ClassErr = 15 << classShift` for a `const classShift int16` was typed int16, and
+  `id == ClassErr` for an ID was refused, "mismatched types ID and int16".
 - **A type named through what is no package no longer crashes the compiler**:
   `func show(r int32.Report)` and `var x string.T` panicked in the checker; it is
   "int32.Report is not a type", as Go says.
@@ -340,6 +343,21 @@ shipped section tells a reader on that version that they have behaviour they do 
   variable, a return and an argument only. And a variable typed by its
   initializer's struct, array, slice, pointer or channel element called, `e :=
   r.buf[0]; e()`, is refused as one of a Kind was.
+- **What a variable declared from a field's element is, is known by name**: `rt :=
+  &r.routes[i]` and `b := d.blobs[n]` were typed by the walk and named by nothing,
+  so `rt.h(f, f)` through a function field, `rt.nosuch()`, `rt.m(1)` of an int field
+  and `return b` of a struct where an interface is wanted were taken.
+- **Mistakes found mutating seventeen older domain programs are refused**: a
+  conversion as the whole argument list, `child(int(j))`, with an argument
+  missing; a call of several results under an operator or as a condition,
+  `!strings.Cut(s, "/")` -- which built; one star too many, `**z = v`; a constant
+  index past an array's length inside a `len` Go makes a constant; a method
+  promoted from an embedded interface, whose result had no type; an element of
+  another package's array variable, or of an array field of its struct, stored
+  into, `bank.Holding[i] = uint64(x)`; a method of another package's type
+  returning a slice, as a condition or a string; and the dereference of another
+  package's pointer variable where an interface is wanted, `err ==
+  *lib.ErrCRC`.
 - **A method value of a literal or a call's result is refused by the checker**:
   `Taps{1, 2}.Scale` of a pointer method in Go's words, and a value method,
   `P{1}.V`, `mk().V`, by design -- a method value binds the address of its
