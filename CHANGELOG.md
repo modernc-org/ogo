@@ -55,6 +55,24 @@ shipped section tells a reader on that version that they have behaviour they do 
 
 ### Fixed
 
+- **A method value of a local is refused wherever it stands**, as its declaration
+  was: as an argument, a print argument, a field, an element, a deferred call's
+  argument or a typed declaration it reached the emitter, whose lifted function
+  named the local where it is no name -- or, where a package variable of the name
+  was in scope, bound THAT, `gm := M{}; var th thunk = gm.tick` calling tick on the
+  package's gm in silence.
+- **An array given fewer elements than its length builds for the target**: a local
+  array of structs, strings or interfaces, `[3]S{{1, 2}}`, and any array of rows,
+  `var font = [256][7]byte{...}` with fewer rows, were refused by the target's C
+  compiler, "Expected multiple values" and "Internal compiler error, expected
+  initializer list". The rest is written out as zeros.
+- **A deferred call of another package's function taking an interface**, `defer
+  lib.Show(&g, 1)`, captures the argument as the interface value; it was captured
+  as the pointer and refused by every C compiler.
+- **A division by a negative constant is no call**: `x / -129` took the guarded
+  helper `x / (-129)` did not, and of an int64 it passed the constant as one word
+  where two are wanted, "Bad number of parameters", which the build refuses. A
+  constant divisor of -1 of a 64-bit type is spelled `-1LL`.
 - **An index or a slice bound of 64 bits is checked whole**: `xs[u]` and `s[v:]`
   for an int64 or uint64 `u`, `v` went to the bound check as an int, so an index
   past 2^31 was cut to its low word and read the element there where Go panics,
@@ -328,6 +346,9 @@ shipped section tells a reader on that version that they have behaviour they do 
 
 ### Behaviour changes
 
+- **A call's result of a predeclared type into an interface is refused** as a
+  variable of one is, an interface holding a pointer here: `takeAny(three())` and
+  `return g.Len()` for an `any` were taken, and their C refused.
 - **A call of several results is no operand of a comparison**, `h.Pop() > 1` and
   `lib.Pair() == 1`, as it was none of an arithmetic operator already; and **a
   shift count of a typed float is refused**, `0x80 >> float64(k)` and `x >>= f`,
@@ -760,6 +781,11 @@ shipped section tells a reader on that version that they have behaviour they do 
   source, so every other part of a seed's program draws what it drew before. Of
   seeds 1-2000 all pass on the host; of seeds 1-200 on a P2-EDGE, 141 with such a
   struct and 71 with the cog, 192 pass and 8 outgrow a cog.
+- **`ogo smith` indexes, slices and makes through values of 64 bits**: the
+  aggregate's array field read by a uint64 and an int64 index, sliced by 64-bit
+  bounds and copied into a make of a 64-bit length, which no generated program had
+  done. Seeds 1-2000 pass on the host, and of seeds 1-200 on a P2-EDGE, 78 with
+  it, 192 pass and 8 outgrow a cog.
 - **`ogo smith` passes the struct through function values and an interface**: a
   local, a package variable, a table of two, a literal, an interface's methods
   taking and returning it, and a method value. Seeds 1-2000 pass on the host; of

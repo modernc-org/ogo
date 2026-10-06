@@ -1,0 +1,46 @@
+// A method value of a local is refused wherever it stands, as its declaration is:
+// it was asked only of `f := c.Add`, and as an argument, a print argument, a
+// field, an element or a deferred call's argument it reached the emitter, whose
+// lifted function named the local where it is no name. And a call's result of a
+// predeclared type into an interface is refused as a variable of one is: an
+// interface holds a pointer here.
+
+type C struct{ n int }
+
+func (c *C) Add(k int) { c.n += k }
+
+func take(f func(int)) {}
+
+type H struct{ f func(int) }
+
+func takeAny(a any) {}
+
+func three() int { return 3 }
+
+var gc C
+
+func pop() any {
+	// ERROR "cannot use three\(\) \(value of type int\) as any value in return statement: an interface holds a pointer here"
+	return three()
+}
+
+func main() {
+	var c C
+	// ERROR "cannot take c.Add as a value: a method value binds the address of its receiver"
+	take(c.Add)
+	// ERROR "cannot take c.Add as a value: a method value binds the address of its receiver"
+	h := H{f: c.Add}
+	_ = h
+	var fs [1]func(int)
+	// ERROR "cannot take c.Add as a value: a method value binds the address of its receiver"
+	fs[0] = c.Add
+	// ERROR "cannot take c.Add as a value: a method value binds the address of its receiver"
+	defer take(c.Add)
+	// ERROR "cannot use three\(\) \(value of type int\) as any value in argument to takeAny"
+	takeAny(three())
+	take(gc.Add)
+	g := H{f: gc.Add}
+	g.f(1)
+	fs[0] = gc.Add
+	pop()
+}

@@ -879,7 +879,12 @@ still design-only.
   package variable, a table of two, a literal -- an interface's methods taking and
   returning it, and a method value, each a call through a pointer, where the
   backend has dropped and misconverted arguments before. Seeds 1-2000 on the host
-  shim, clean; 1-200 on a P2-EDGE, 76 with it, 192 passing and 8 outgrowing. Seeds 3501-4000
+  shim, clean; 1-200 on a P2-EDGE, 76 with it, 192 passing and 8 outgrowing. A
+  sixth, agIdx: the array field read by a uint64 and an int64 index, sliced by
+  64-bit bounds and copied into a make of a 64-bit length -- no generated program had
+  an index of 64 bits, which is why the sweeps never met ogo_bound's. Seeds 1-2000
+  on the host shim, clean; 1-200 on a P2-EDGE, 78 with it, 192 passing and 8
+  outgrowing. Seeds 3501-4000
   with aab09a0, the generator before it: 472 passing, 28 outgrowing, none failing.
   A domain program of the same family -- sample frames of mixed widths filled on
   one cog, passed by value through a channel and a single-producer ring to another
@@ -1561,6 +1566,25 @@ silence; ogo_mklen asks 0 <= n <= cap (emitMakeLen). None of the 1,259 corpus
 programs had a 64-bit index, bound or length, nor a variable make length.
 **A domain program is run on the board even when the host matched**: the host's
 compiler converts a 64-bit argument for its prototype, and the target's does not.
+The lesson taken whole the same day: every mutant of every batch that Go accepts
+and this compiler took, 5,891 programs of odd shapes, built for the TARGET with
+`ogo build` (tbuild1.sh in the scratchpad). 5,860 built silently, 11 exceeded Hub
+RAM (mutated sizes, now said as the program's), and 20 were faults of ours, five
+rows, each loud now or right: a local array of AGGREGATES given fewer elements than
+its length, which the target refuses where C zeroes the rest, and an array of ROWS
+the same even static (padLocalAggregates pads with zero elements, measured in C
+first); a division by a NEGATIVE constant, `x / -129`, guarded because foldConstInt
+read a UnaryExpr's children as no constant, and the constant then passed to the
+64-bit helper as one word -- "Bad number of parameters", the one warning; a
+deferred call of ANOTHER package's function taking an interface, its argument
+captured as the bare pointer; a call's result of a predeclared type into `any`,
+exprNamedType naming it by its written type `int`; and a METHOD VALUE of a local
+outside a declaration -- refused by design and asked only of `f := c.m`, so a print
+argument, an argument, a field or a typed declaration lifted a function naming the
+local where it is none, and where a PACKAGE variable of the name existed, bound
+that one, in silence (a fuzzer mutant's `gm := M{}; var th thunk = gm.tick`).
+**The target's build of every program the probes left behind is a probe of its
+own**, and it is cheap: 40 minutes for six thousand programs.
 
 **A C NAME IS A ROW** (2026-09-25). The emitted C keeps a program's own names, so
 every name a program may write is a row across everything else that names things in

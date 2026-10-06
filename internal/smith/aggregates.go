@@ -420,12 +420,13 @@ func (a *aggregate) run(f *Fuzzer, k, d func() int64) (string, Int32, bool) {
 		step(a.sum(a.apply(v, a.mod, dc)) + a.sum(a.apply(a.mk(k12), a.mod, dc))*3)
 	}
 
-	// Four more shapes, each half the time and each in a function of its own, so
+	// Five more shapes, each half the time and each in a function of its own, so
 	// the procedure's registers stay what they were: a struct nesting the aggregate
 	// and an array of it, an array of it returned by value, deferred calls taking
-	// it, whose copies are made at the defer, and calls through function values and
-	// an interface taking and returning it. Drawn after everything above, for the
-	// reason the cog is.
+	// it, whose copies are made at the defer, calls through function values and an
+	// interface taking and returning it, and its array field read, sliced and copied
+	// through indexes, bounds and a make length of 64 bits. Drawn after everything
+	// above, for the reason the cog is.
 	var later []func()
 	if a.r.Intn(2) == 0 {
 		kn, dn := k(), d()
@@ -452,6 +453,12 @@ func (a *aggregate) run(f *Fuzzer, k, d func() int64) (string, Int32, bool) {
 		fmt.Fprintf(w, "\tr = r*31 + %s(%d, %d)\n", a.name("agVia"), kv, dv)
 		step(a.via(kv, dv))
 		later = append(later, func() { a.writeVia(f) })
+	}
+	if a.r.Intn(2) == 0 {
+		ki, di := k(), d()
+		fmt.Fprintf(w, "\tr = r*31 + %s(%d, %d)\n", a.name("agIdx"), ki, di)
+		step(a.idx(ki, di))
+		later = append(later, func() { a.writeIdx(f) })
 	}
 	fmt.Fprint(w, "\treturn r\n}\n\n")
 	if cog {
@@ -657,4 +664,40 @@ func (a *aggregate) writeVia(f *Fuzzer) {
 		a.name("agMk"),
 		imp, sum,
 		a.typ, sum, sum)
+}
+
+// idx is agIdx(k, d): the aggregate's array field read, sliced and copied through
+// indexes, bounds and a make length of 64 bits.
+func (a *aggregate) idx(k, d int64) int32 {
+	fl := a.fields[1]
+	n := int64(fl.n)
+	v := a.mk(k)
+	u := uint64(int32(k*k + d*d + 3))
+	i := int64(u % uint64(n))
+	var r int32
+	r = toInt(v[1][i]) + toInt(v[1][i])*3
+	r = r*31 + int32(n-i)
+	r = r*31 + int32(i+1) + toInt(v[1][i])
+	r = r*31 + int32(i)
+	if i > 0 {
+		r += toInt(v[1][i-1])
+	}
+	v[1][i] = fl.k.wrap(d)
+	return r*31 + a.sum(v)
+}
+
+// writeIdx declares agIdx.
+func (a *aggregate) writeIdx(f *Fuzzer) {
+	w := f.Out
+	fl := a.fields[1]
+	fmt.Fprintf(w, "func %s(k, d int) int {\n\tv := %s(k)\n\tu := uint64(k*k + d*d + 3)\n\tw := int64(u %% %d)\n"+
+		"\tr := int(v.%s[u%%%d]) + int(v.%s[w])*3\n\ts := v.%s[w:]\n\tr = r*31 + len(s)\n"+
+		"\tt := v.%s[:u%%%d+1]\n\tr = r*31 + len(t) + int(t[len(t)-1])\n"+
+		"\tm := make([]int64, w, %d)\n\tfor i := range m {\n\t\tm[i] = int64(v.%s[i])\n\t}\n\tr = r*31 + len(m)\n"+
+		"\tif len(m) > 0 {\n\t\tr += int(m[len(m)-1])\n\t}\n\tv.%s[u%%%d] = %s(d)\n\treturn r*31 + %s(v)\n}\n\n",
+		a.name("agIdx"), a.name("agMk"), fl.n,
+		fl.name, fl.n, fl.name, fl.name,
+		fl.name, fl.n,
+		fl.n, fl.name,
+		fl.name, fl.n, fl.k.name, a.name("agSum"))
 }

@@ -20887,7 +20887,13 @@ func (e *emitter) emitPositionalValues(values []*Node, elemCType string) {
 			e.emit(", ")
 		}
 		if v == nil {
-			e.emit(e.zeroInitC(elemCType))
+			// Written out in full: "{0}" nested here leaves a struct holding an
+			// aggregate short of braces (zeroBraceC).
+			if e.zeroInitC(elemCType) == "{0}" {
+				e.emit(e.zeroBraceC(elemCType))
+			} else {
+				e.emit(e.zeroInitC(elemCType))
+			}
 			continue
 		}
 		e.litPath = litPath + "[" + strconv.Itoa(i) + "]"
@@ -21102,6 +21108,7 @@ func (e *emitter) emitArrayCopy(dst, src string, a arrDim) {
 // to name: cType models no array type at all, so only the innermost level has a
 // type to emit against, and it is the row's own extent that bounds the level above.
 func (e *emitter) emitArrayValues(values []*Node, a arrDim) {
+	values = e.padLocalAggregates(values, a)
 	if a.dims() == 1 {
 		e.emitPositionalValues(values, a.elem)
 		return
@@ -21119,7 +21126,14 @@ func (e *emitter) emitArrayValues(values []*Node, a arrDim) {
 			e.emit(", ")
 		}
 		if v == nil {
-			e.emit("{0}") // an index the literal skips: the whole row is zero
+			// An index the literal skips, or one past its last (padLocalAggregates):
+			// the whole row is zero, written out in full for a row of aggregates,
+			// which "{0}" nested here leaves short of braces.
+			if e.zeroInitC(row.elem) == "{0}" || e.isIfaceCType(row.elem) {
+				e.emit(e.zeroFieldC(structField{ctype: row.elem, dim: row}))
+			} else {
+				e.emit("{0}")
+			}
 			continue
 		}
 		e.litPath = litPath + "[" + strconv.Itoa(i) + "]"
@@ -21142,6 +21156,30 @@ func (e *emitter) emitArrayValues(values []*Node, a arrDim) {
 	e.litPath = litPath
 	e.litDepth--
 	e.emit("}")
+}
+
+// padLocalAggregates pads the values of a LOCAL array of aggregates -- structs,
+// strings, slices, interfaces, at any depth -- to the array's length with zero
+// elements. The target's C compiler refuses a local's initializer that gives such
+// an array fewer elements than its length, "Expected multiple values", where C zeroes
+// the rest and gcc does; `x := [3]S{{1, 2}}`, a `[99]Solver{a, b}` and a row of a
+// `[6][2]string` given one did not build. A file-scope one and an array of scalars
+// it takes, but a package variable's literal is rendered into a local temporary of
+// the initialization step, `filters = [3]filter{&ma, &lp}`, so every one is padded;
+// a nil value is written as a zero element (emitPositionalValues). An array of
+// ROWS is padded whatever its element, the target refusing a static one given fewer
+// rows than its length, "Internal compiler error, expected initializer list" -- a
+// font of `[1000][7]byte` with sixteen glyphs. None is padded where the literal
+// gives no value at all: "{0}" zeroes it whole.
+func (e *emitter) padLocalAggregates(values []*Node, a arrDim) []*Node {
+	if len(values) == 0 || a.dims() == 1 && e.zeroInitC(a.elem) != "{0}" && !e.isIfaceCType(a.elem) {
+		return values
+	}
+	n, err := strconv.Atoi(a.bound)
+	if err != nil || n <= len(values) {
+		return values
+	}
+	return append(slices.Clone(values), make([]*Node, n-len(values))...)
 }
 
 // rowValues reads one element of a multi-dimensional array literal as the values
@@ -24393,7 +24431,14 @@ func (e *emitter) foldIndexConst(ast []int32) (int64, bool) {
 }
 
 func (e *emitter) foldConstInt(ast []int32) (int64, bool) {
-	return e.foldIntSeq(slices.Collect(it(ast)))
+	kids := slices.Collect(it(ast))
+	// The children of a UnaryExpr, `-129` handed as its operator and its operand:
+	// the operator first is no operand of a sequence, and the constant was none at
+	// all -- `x / -129` took the guarded division `x / (-129)` did not.
+	if len(kids) > 1 && kids[0].sym == UnaryOp {
+		return e.foldIntNode(Node{sym: UnaryExpr, ast: ast})
+	}
+	return e.foldIntSeq(kids)
 }
 
 // fitsCInt reports whether a constant value fits C's int, which is 32 bits on this
@@ -32143,6 +32188,16 @@ func (e *emitter) emitDefer(nodes []Node) {
 		if base := e.soleIdent(head.ast); base != "" {
 			paramDims, paramTypes = e.funcArrayParams[e.funcCallC(base)], e.funcParams[e.funcCallC(base)]
 		}
+	case len(suffix) == 2 && suffix[0].sym == Selector && suffix[1].sym == CallSuffix:
+		// Another package's function, `defer lib.Show(&g, 1)`: its parameters by
+		// its mangled name. Unasked, an interface parameter's argument was captured
+		// as the pointer it was written as, and replayed into the two words.
+		if base := e.soleIdent(head.ast); base != "" {
+			if prefix, isImport := e.importQualifiers[base]; isImport {
+				cn := e.mangle(prefix, e.soleIdent(suffix[0].ast))
+				paramDims, paramTypes = e.funcArrayParams[cn], e.funcParams[cn]
+			}
+		}
 	}
 	// A call through a function VALUE takes the value's parameters, which no
 	// declared callee's name answers for: `defer f(&d)` for a literal taking an
@@ -34585,6 +34640,12 @@ func (e *emitter) shiftChainC(kids []Node) (string, bool) {
 			text = fn + "(" + text + ", " + e.shiftCountC(rhsText, rhs.ast) + ")"
 		case haveType && e.isDivOp(op) && e.divNeedsGuard1(ctype, rhs.ast):
 			fn := e.needDiv(e.opText(op.ast), e.underlyingCType(ctype))
+			// A constant divisor of a 64-bit level at its width, `-1LL`: a plain
+			// int constant after a 64-bit expression argument goes out as one word
+			// on the target, "Bad number of parameters" (see wideConstArg).
+			if v, ok := e.foldConstInt(rhs.ast); ok && cIntWidths[e.underlyingCType(ctype)] == 64 {
+				rhsText = e.constSpelling(v, e.underlyingCType(ctype))
+			}
 			text = fn + "(" + text + ", " + rhsText + ")"
 		case e.opText(op.ast) == "&^":
 			// C has no "&^": an AND with the complement, as the streaming path
@@ -42221,6 +42282,8 @@ func (e *emitter) guardedAssignC(target func(), t assignTail) (string, bool) {
 	rhsText := e.captureC(func() { e.emitExpr(t.rhs) })
 	if isShift {
 		rhsText = e.shiftCountC(rhsText, t.rhs)
+	} else if v, ok := e.foldConstInt(t.rhs); ok && cIntWidths[e.underlyingCType(ctype)] == 64 {
+		rhsText = e.constSpelling(v, e.underlyingCType(ctype)) // `x /= -1` of an int64, as above
 	}
 	return text + " = " + fn + "(" + text + ", " + rhsText + ")", true
 }

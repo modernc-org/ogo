@@ -261,6 +261,7 @@ type File struct {
 	importToks        map[*Package]Token          // a token of this file spelling the name it imports a package by, or none (importQualTok)
 	foreignPkgs       map[string]*Package         // a qualifier another package wrote, which this file spells a type with and does not import (foreignQual); nil where two packages share the name
 	trackFold         bool                        // foldBinary records a typed constant's overflow at a step (trackedFold)
+	mvReported        map[string]bool             // the method values reportUnsupportedFuncValue asked, by position
 	foldOvf           []foldOverflow              // what it recorded
 	parser            Parser
 	tld               *Scope // tld.Nodes are later moved into (*Package).Scope. Kind: PackageScope, Parent: .Scope.
@@ -9915,6 +9916,16 @@ func (f *File) reportUnsupportedFuncValue(s *Scope, n Node) bool {
 	if !isMV {
 		return false
 	}
+	// Asked where a declaration is made from one and wherever a value stands
+	// (checkFactorNames): once is what is said.
+	at := field.Position().String()
+	if f.mvReported[at] {
+		return !(ptrRecv && atPkg && !f.methodValueSavesPtr(s, head, field))
+	}
+	if f.mvReported == nil {
+		f.mvReported = map[string]bool{}
+	}
+	f.mvReported[at] = true
 	switch {
 	case !ptrRecv:
 		f.err(field.Position(), "cannot take %s.%s as a value: a method value copies its receiver, and only a pointer-receiver method may be taken here",
@@ -14314,7 +14325,20 @@ func (f *File) checkImplements(s *Scope, ifaceName string, value Node, what stri
 	// error, `use("")` for a Shape: no methods, and no pointer either. Asked of
 	// nobody, a return of one compiled.
 	if k, known := f.exprType(s, value); known && k != UntypedNil && kindCategory(k) != catUnknown {
-		if _, _, _, named := f.exprNamedType(s, value); !named && !f.unsafePointerValue(s, value) {
+		// A call's result is named by its written type, `int` for a `three() int`,
+		// which is no defined type and carries no methods: `takeAny(three())` and
+		// `return g.Len()` for an `any` were taken, where `takeAny(n)` was refused.
+		name, qual, _, named := f.exprNamedType(s, value)
+		if named && !qual.IsValid() {
+			// Not of an address, `&G` of an int, which exprType answers with its
+			// pointee's Kind: a pointer goes into an interface.
+			if _, isPredeclared := s.find(name.Src()).(*PredeclaredType); isPredeclared && !f.isAddrOperand(s, value) {
+				if isPtr, known := f.exprPointerness(s, value); !known || !isPtr {
+					named = false
+				}
+			}
+		}
+		if !named && !f.unsafePointerValue(s, value) {
 			desc := "value of type " + kindName(k)
 			if isUntypedKind(k) {
 				desc = untypedName(k) + " constant"
@@ -23128,6 +23152,15 @@ func (f *File) checkFactorNames(s *Scope, n Node) {
 	}
 	directCall, hasSelector := false, false
 	if hasSuffix {
+		// A METHOD VALUE wherever it stands, `take(c.Add)`, `println(c.Add)`, `H{f:
+		// c.Add}`: asked what a declaration from one is (reportUnsupportedFuncValue).
+		// Only the declaration asked, and the method value of a local went to the
+		// emitter, whose lifted function named the local where it is no name.
+		if hasID {
+			if steps := slices.Collect(it(suffix.ast)); len(steps) == 1 && steps[0].sym == Selector {
+				f.reportUnsupportedFuncValue(s, n)
+			}
+		}
 		f.checkIndexExprs(s, suffix) // the "i" in a read "a[i]"
 		// `mk(1).data[1:]`: an array reached from a call's value has no storage to
 		// slice (callValueAddressing); and `mk(1).Add(2)`, a pointer method, has

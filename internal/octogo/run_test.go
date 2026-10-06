@@ -26822,6 +26822,45 @@ func main() {
 		want: "3\n13\n",
 	},
 	{
+		name: "arrays of structs, interfaces and rows given fewer elements than their length",
+		src: `type S struct{ a, b int }
+
+type I interface{ N() int }
+
+type T struct{ n int }
+
+func (t *T) N() int { return t.n }
+
+var t1 = T{4}
+
+var t2 = T{5}
+
+var gs = [4]S{{1, 2}}
+
+var gi = [3]I{&t1, &t2}
+
+var font = [6][3]byte{{1, 2, 3}, {4, 5, 6}}
+
+var names = [3][2]string{{"a", "b"}, {"c"}}
+
+func main() {
+	x := [3]S{{1, 2}, {3, 4}}
+	y := [2][2]S{{{5, 6}, {7, 8}}, {{9, 10}}}
+	z := [4]I{&t2}
+	w := [3]string{"p"}
+	n := 0
+	for _, v := range gi {
+		if v != nil {
+			n += v.N()
+		}
+	}
+	println(x[1].b, x[2].a, y[1][0].b, y[1][1].a, z[0].N(), z[3] == nil, len(w[2]), w[0])
+	println(gs[0].b, gs[3].a, n, font[1][2], font[5][0], names[1][0], len(names[2][1]))
+}
+`,
+		want: "4 0 10 0 5 true 0 p\n2 0 9 6 0 c 0\n",
+	},
+	{
 		name: "indexes, slice bounds and make lengths of 64 bits",
 		src: `var xs = [5]int{10, 11, 12, 13, 14}
 
@@ -46914,7 +46953,8 @@ const multiPkgWant = "300\nLOUD\n50\n6\n5\n45\n6 1000\n200\n207\n3 100\n4 9\n" +
 	"3 13\n" +
 	"654321\n" +
 	"10 3 1 2\n10 40 5\n5 10 21 7 2\n5 8 10 true 22 true 2\n12 true 2\n" +
-	"true false true true true\ntrue gone busy\ntick true true true false true\nfalse true true\n"
+	"true false true true true\ntrue gone busy\ntick true true true false true\nfalse true true\n" +
+	"namer after 2\nnamer after 1\n"
 
 var multiPkgProgram = map[string]string{
 	"main.ogo": `import "chain"
@@ -47106,6 +47146,24 @@ libHooks()
 libDefers()
 libFrames()
 libSentinels()
+libDeferIface()
+}
+
+// A deferred call of ANOTHER package's function taking an interface: the pointer is
+// captured as the interface value where the defer stands. It was captured as the
+// pointer it was written as and replayed into the two words, which no C compiler
+// took.
+type namerT struct{ s string }
+
+func (n *namerT) Name() string { return n.s }
+
+var gNamer = namerT{"before"}
+
+func libDeferIface() {
+	defer lib.ShowNamer(&gNamer, 1)
+	q := &gNamer
+	defer lib.ShowNamer(q, 2)
+	gNamer.s = "after"
 }
 
 // Another package's sentinel errors of UNEXPORTED types, the idiom Go's own
@@ -48379,6 +48437,11 @@ var labelBack [8]byte
 func max(a, b int) int { return a*10 + b }
 
 func Maxed() int { return max(3, 4) }
+
+// Namer is satisfied by a pointer of main's (libDeferIface).
+type Namer interface{ Name() string }
+
+func ShowNamer(n Namer, k int) { println("namer", n.Name(), k) }
 `,
 }
 
