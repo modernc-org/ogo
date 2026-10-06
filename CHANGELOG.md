@@ -318,6 +318,10 @@ shipped section tells a reader on that version that they have behaviour they do 
 
 ### Behaviour changes
 
+- **A call of several results is no operand of a comparison**, `h.Pop() > 1` and
+  `lib.Pair() == 1`, as it was none of an arithmetic operator already; and **a
+  shift count of a typed float is refused**, `0x80 >> float64(k)` and `x >>= f`,
+  where only a constant count was asked. Each was taken.
 - **An address is no operand of `&&` or `||`**: `&b && n > 0` and `gb = &b && gb`
   were taken, the address answered with its pointee's Kind; `!&b` and `if &b` were
   refused already.

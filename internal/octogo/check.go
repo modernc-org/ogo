@@ -8750,6 +8750,10 @@ func (f *File) checkAssignment(s *Scope, head, postfix Node) {
 		reported := f.checkOperatorTarget(s, head, postfix, op, hasSelectorOrIndex(postfix), rhs)
 		if isShiftAssign(op) && len(rhs) == 1 {
 			f.checkShiftCount(s, rhs[0]) // `x <<= -1` is the same error as `x << -1`
+			// And a count of a typed float, `x >>= float64(n)`, as in `x >> ...`.
+			if k, ok := f.exprType(s, rhs[0]); ok && !reported && !isIntegerKind(k) && !isUntypedKind(k) {
+				f.err(f.tok(rhs[0].Pos()).Position(), "invalid operation: shift count %s (%s of type %s) must be integer", f.exprSource(rhs[0]), valueOrVariable(f, rhs[0]), kindName(k))
+			}
 		}
 		// A dereference, `*p += v`, is a pointee and has no name in lhs: the block
 		// below was never entered for one, so `*p += true` went through.
@@ -16624,6 +16628,15 @@ func (f *File) checkComparison(s *Scope, n Node) {
 	if len(operands) == 0 {
 		return
 	}
+	// A call of several results as an operand, `h.Pop() > 1`: one value is what a
+	// comparison takes, as an arithmetic operator asks (checkBinOp). It was taken.
+	if len(relOps) != 0 {
+		for _, o := range operands {
+			if f.multiValueOperandErr(s, o) {
+				return
+			}
+		}
+	}
 	// The grammar keeps comparison and logical operators at one flat level, but
 	// they differ in precedence: && and || bind looser than a comparison, so they
 	// partition the chain into comparison groups -- `a > 0 && a < 9` is
@@ -17164,6 +17177,10 @@ func (f *File) checkBinOp(s *Scope, opNode, lNode, rNode Node) {
 		// independent of the type being shifted, so "x << n" holds for any integer
 		// n.
 		f.err(pos, "mismatched types %s and %s", f.operandTypeName(s, lNode, lk), f.operandTypeName(s, rNode, rk))
+	case (op == SHL || op == SHR) && !isIntegerKind(rk) && !isUntypedKind(rk):
+		// A count of a TYPED float, `0x80 >> float64(k)`: Go's shift count is an
+		// integer, and only a constant one was asked (checkShiftCount).
+		f.err(f.tok(rNode.Pos()).Position(), "invalid operation: shift count %s (%s of type %s) must be integer", f.exprSource(rNode), valueOrVariable(f, rNode), kindName(rk))
 	case op == SHL || op == SHR:
 		// A shift's count is not converted to the shifted operand's type, and an
 		// untyped left operand takes its type from the context rather than from
@@ -17182,6 +17199,15 @@ func (f *File) checkBinOp(s *Scope, opNode, lNode, rNode Node) {
 			f.err(pos, "invalid operation: division by zero")
 		}
 	}
+}
+
+// valueOrVariable is how Go names what n is in a message: a variable where n is a
+// name, a value otherwise.
+func valueOrVariable(f *File, n Node) string {
+	if _, ok := f.exprSoleIdent(n); ok {
+		return "variable"
+	}
+	return "value"
 }
 
 // kindlessOperandErr reports operator sym, at pos, as not defined on operand n when

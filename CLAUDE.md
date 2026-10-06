@@ -1529,6 +1529,14 @@ host and the board; of its 1,500 mutants one row was taken: an ADDRESS as an
 operand of `&&` or `||`, `&anchored && i > 0` -- the logical operators asked
 exprType first, which answers `&x` with x's Kind (WHAT HAS NO KIND IS ASKED
 NOTHING's trap, in the one rule a sweep of `&b` in every bool position had left).
+A two-pass assembler with a VM to run what it assembles found nothing; a Huffman
+coder (a binary heap in another package, the tree in a fixed array of nodes linked
+by index, canonical codes, a bit buffer) matched Go on the host and the board, and
+its mutants had two rows: a call of several results as a COMPARISON's operand,
+`h.Pop() > 1` -- multiValueOperandErr was asked by the arithmetic operators,
+the unary ones and a condition, and not by checkComparison -- and a shift count of
+a TYPED float, `0x80 >> float64(k)`, checkShiftCount asking only a constant one,
+in a binary operation and in a compound assignment alike.
 
 **A C NAME IS A ROW** (2026-09-25). The emitted C keeps a program's own names, so
 every name a program may write is a row across everything else that names things in

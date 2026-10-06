@@ -1,0 +1,43 @@
+// A call of several results is no operand of a comparison, as it is none of an
+// arithmetic operator; and a shift count of a typed float is no integer. Both were
+// taken: `h.Pop() > 1` and `0x80 >> float64(k)`.
+
+type H struct{ n int }
+
+func (h *H) Pop() (int, bool) { return h.n, true }
+
+func pair() (int, bool) { return 1, true }
+
+var gh H
+
+func compares() {
+	var h H
+	// ERROR "multiple-value h.Pop\(\) \(value of type \(2 values\)\) in single-value context"
+	for h.Pop() > 1 {
+	}
+	// ERROR "multiple-value pair\(\) \(value of type \(2 values\)\) in single-value context"
+	println(pair() == 1)
+	// ERROR "multiple-value gh.Pop\(\) \(value of type \(2 values\)\) in single-value context"
+	println(1 < gh.Pop())
+	a, b := h.Pop()
+	c, d := pair()
+	println(a > 1, b, c == 1, d)
+}
+
+func shifts() {
+	n := 3
+	var f float32 = 2
+	x := uint8(5)
+	// ERROR "shift count float64\(n\) \(value of type float64\) must be integer"
+	println(0x80 >> float64(n))
+	// ERROR "shift count f \(variable of type float32\) must be integer"
+	println(1 << f)
+	// ERROR "shift count float64\(n\) \(value of type float64\) must be integer"
+	x >>= float64(n)
+	println(x, 1<<uint(n), 8>>2.0, x<<n)
+}
+
+func main() {
+	compares()
+	shifts()
+}
