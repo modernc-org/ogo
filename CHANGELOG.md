@@ -275,6 +275,17 @@ shipped section tells a reader on that version that they have behaviour they do 
 
 ### Behaviour changes
 
+- **A seventh sweep of mutated run cases refuses what Go refuses**: an index on a
+  number as the target of `++` or of a compound assignment, `calls[0]++`, `acc[0]
+  += 100`, `h.n[0]++`, which only the `=` form refused; an element of a string used
+  as a string, `var s string = b[0]`, `b[0] + "y"`, `a >= b[0]`, a string case in
+  a switch on `b[0]` -- it is a byte, and had no type where it stood; `range &p`
+  for a slice or a struct; `append`'s result stored where a pointer or a number
+  is wanted; a constant called or a number indexed in a constant declaration,
+  `zero = big - big()`; and one name for a call of two results through a
+  function value or a function field, `x := fv(1)`. The names declared from such a
+  call, `c, ok := fv(3)`, `b, ok := pick2()(6)`, `a, b := h.f(2)`, are typed for
+  every rule now.
 - **A sixth sweep of mutated run cases refuses what Go refuses**: a literal of no
   Kind where one is wanted, `num([]int{1})`, `int([]int{1})`, `var s string =
   []int{1}`; a slice, an array or a function literal where an interface asking

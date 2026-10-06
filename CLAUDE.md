@@ -1101,6 +1101,21 @@ method Int" -- methodSingleResultName asked a variable's declaration only, which
 run corpus showed (accdiff). **A rule that refuses on failing to resolve is a false
 refusal waiting for a shape it does not know**; the send keeps the refusal only
 where the walk fails too.
+A seventh batch (gen7.py: an index or a call added to a name, `defer` or `go` put
+before a statement, a receive arrow added or dropped, a slice type made an array and
+back, the range operand changed, a receiver toggled between value and pointer) had 22
+taken of 3,000 and 177 refused that Go takes -- all of those by design (a value
+receiver's method value, a local's address handed to a goroutine, a defer in a loop,
+a printf verb checked at compile time) but one loud gap: `go` of a BUILTIN, `go
+println(x)`, `go close(ch)`, "only `go f(args)` ... is supported yet", 142 of them,
+which Go takes and no program seen needs. The taken rows: the element of a STRING,
+`b[0]`, had no type where it stood -- factorType typed an index of an array or a
+slice and of nothing else, so `var s string = b[0]` was written as a byte stored in a
+string header; `++` and `op=` asked their index target nothing the `=` form asks
+(checkIndexBase, shared now); names declared from a call of several results through a
+function VALUE or a function FIELD were typed by nothing (callResults reads a
+variable's funcSig, exprCallResults the callee's type through valueTypeAt); and the
+constant folder took `big()` and `big[0]` of a number for an unknown value.
 
 **A COMPILER RUN IN A SWEEP IS CAPPED, AND A CRASH IS NOT A REFUSAL** (2026-09-20).
 A probe program is written to find a fault, and a fault is not always a wrong

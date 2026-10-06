@@ -3782,11 +3782,16 @@ func (f *File) rangeElem(s *Scope, expr Node) (elem Kind, hasElem, isInt, isChan
 	// only an array's ranges.
 	if x, ok := f.addrOfName(expr); ok {
 		if d, ok := s.find(x.Src()).(*VarDeclaration); ok {
-			isArr := false
+			isArr, typed := false, false
 			if t, ok := f.varTypeAt(d); ok && t.f != nil {
 				_, isArr = f.underlyingTypeAt(t).tn.(*TypeNodeArray)
+				typed = true
 			}
-			if !isArr && (d.hasKind || d.isPtr || d.isChan) {
+			// A slice, a struct, a function too: `range &p` for a []byte was taken.
+			if what, kindless := f.nonBoolVar(s, d); kindless && what != "an array" && what != "an array or a slice" {
+				typed = true
+			}
+			if !isArr && (d.hasKind || d.isPtr || d.isChan || typed) {
 				f.err(x.Position(), "cannot range over &%s: it is a pointer", x.Src())
 				return 0, false, false, false
 			}
@@ -4946,6 +4951,11 @@ func (f *File) nonBoolOperand(s *Scope, n Node) (string, bool) {
 		return f.nonBoolWritten(s, n)
 	}
 	if callee, ok := f.exprCallee(n); ok {
+		// The builtin append's result is a slice, whatever it appends:
+		// `gps[0] = append(gps, s...)` for a []*int stored a slice in a pointer.
+		if callee.Src() == "append" && f.isUniverseFunc(s, "append") {
+			return "a slice", true
+		}
 		var sig *SignatureNode
 		switch d := s.find(callee.Src()).(type) {
 		case *FuncDeclaration:
@@ -5561,6 +5571,13 @@ func (f *File) factorType(s *Scope, n Node) (Kind, bool) {
 		if hasLit && f.indexSuffix(suffix) {
 			if d, ok := s.find(lit.Src()).(*VarDeclaration); ok && d.hasElemKind && !d.isPtr {
 				return d.elemKind, true
+			}
+			// An element of a STRING, `b[0]`, a constant's or a defined string
+			// type's too, is a byte. It had no type where it stands, so `var s
+			// string = b[0]` and `b[0] + "y"` were taken -- the first written into a
+			// string header in C.
+			if k, known := f.identKind(s, lit); known && kindCategory(k) == catString {
+				return PredeclaredUint8, true
 			}
 		}
 		// What the steps reach through the types written for them: `p[i]` of a
@@ -9959,6 +9976,10 @@ func (f *File) rhsValueCount(s *Scope, rhs []Node) (int, bool) {
 		if res, ok := f.callResults(s, recv, member); ok && len(res) != 0 {
 			return len(res), true
 		}
+	}
+	// A call through a function value, `x := fv(1)` for a value of two results.
+	if res, ok := f.exprCallResults(s, e); ok && len(res) != 0 {
+		return len(res), true
 	}
 	if !f.exprHasCallOrReceive(e) {
 		return 1, true
@@ -17045,6 +17066,46 @@ func (f *File) targetSpan(head, postfix Node) string {
 	return f.sourceSpan(head.Pos(), end)
 }
 
+// checkIndexBase refuses an index target's base that has no elements -- a scalar,
+// a pointer to no array, a struct, a function, a channel, an interface, or no
+// variable at all, `main[0] = 255` -- and reports whether it did. It is what an
+// element store, an increment and a compound assignment ask alike: only the `=`
+// form asked, and `calls[0]++` and `acc[0] += 100` for an int went through.
+func (f *File) checkIndexBase(s *Scope, base Token) bool {
+	if _, ok := s.find(base.Src()).(*VarDeclaration); !ok {
+		// A function, a builtin, a type or nil indexed as a target: the read side's
+		// refusal, which no target asked.
+		if what, known := f.unindexableName(s, base); known {
+			f.reportUnindexable(base, "index", what)
+			return true
+		}
+		return false
+	}
+	// Neither a scalar variable nor a pointer can be indexed. The two are exclusive
+	// -- a pointer resolves to no Kind -- so one parenthetical or the other, never
+	// both concatenated.
+	if k, known := f.identKind(s, base); known || f.indexingPointer(s, base) {
+		of := f.pointerOfType(s, base)
+		if known {
+			of = ofType(k, true)
+		}
+		f.err(base.Position(), "invalid operation: cannot index %s%s", base.Src(), of)
+		return true
+	}
+	// What has no Kind and no elements either, as the read side asks it: a struct,
+	// a function, a channel, an interface. `v[0] = 1` for a struct went through here
+	// while `v[0]` read was refused.
+	if nm, isStruct := f.indexedStructName(s, base); isStruct {
+		f.err(base.Position(), "invalid operation: cannot index %s (variable of type %s)", base.Src(), nm)
+		return true
+	}
+	if what, known := f.unindexableName(s, base); known {
+		f.err(base.Position(), "invalid operation: cannot index %s: it is %s", base.Src(), what)
+		return true
+	}
+	return false
+}
+
 // checkOperatorTarget asks of an increment's or a compound assignment's target
 // what an arithmetic operator asks of its left operand: `x++` is `x += 1`, and `x
 // op= y` is `x = x op y`. Only the target's NAME was asked about -- that it is a
@@ -17052,6 +17113,18 @@ func (f *File) targetSpan(head, postfix Node) string {
 // and `f++` for a function all reached the C compiler, and a value of no Kind on
 // the right, `n += f`, went unasked too.
 func (f *File) checkOperatorTarget(s *Scope, head, postfix Node, op Symbol, suffixed bool, rhs []Node) (reported bool) {
+	// An index or a field's suffix where there is none to take, `calls[0]++`,
+	// `acc[0] += 100`, `h.n[0]++`: the `=` form's refusals, asked of no operator.
+	if id, ok := f.assignHeadIdent(head); ok {
+		n0 := len(f.errList)
+		f.checkFieldSuffix(s, id, head.Pos(), postfix)
+		if len(f.errList) > n0 {
+			return true
+		}
+	}
+	if base, ok := f.indexAssignTarget(head, postfix); ok && f.checkIndexBase(s, base) {
+		return true
+	}
 	pos := f.tok(head.Pos()).Position()
 	target := f.targetSpan(head, postfix)
 	k, hasKind, what, known := f.targetOperand(s, head, postfix, suffixed)
@@ -17962,35 +18035,11 @@ func (f *File) checkDerefAssign(s *Scope, base Token, rhsNode Node) {
 // that element type. The base identifier's definedness is already checked by the
 // general target loop, since an index head is a plain identifier.
 func (f *File) checkIndexAssign(s *Scope, base Token, rhsNode Node) {
+	if f.checkIndexBase(s, base) {
+		return
+	}
 	d, ok := s.find(base.Src()).(*VarDeclaration)
 	if !ok {
-		// A function, a builtin, a type or nil indexed as a target, `main[0] = 255`:
-		// the read side's refusal, which no target asked.
-		if what, known := f.unindexableName(s, base); known {
-			f.reportUnindexable(base, "index", what)
-		}
-		return
-	}
-	// Neither a scalar variable nor a pointer can be indexed. The two are exclusive
-	// -- a pointer resolves to no Kind -- so one parenthetical or the other, never
-	// both concatenated.
-	if k, known := f.identKind(s, base); known || f.indexingPointer(s, base) {
-		of := f.pointerOfType(s, base)
-		if known {
-			of = ofType(k, true)
-		}
-		f.err(base.Position(), "invalid operation: cannot index %s%s", base.Src(), of)
-		return
-	}
-	// What has no Kind and no elements either, as the read side asks it: a struct,
-	// a function, a channel, an interface. `v[0] = 1` for a struct went through here
-	// while `v[0]` read was refused.
-	if nm, isStruct := f.indexedStructName(s, base); isStruct {
-		f.err(base.Position(), "invalid operation: cannot index %s (variable of type %s)", base.Src(), nm)
-		return
-	}
-	if what, known := f.unindexableName(s, base); known {
-		f.err(base.Position(), "invalid operation: cannot index %s: it is %s", base.Src(), what)
 		return
 	}
 	if d.isPtr {
@@ -22452,6 +22501,14 @@ func (f *File) funcSingleResultName(s *Scope, callee Token) string {
 // guessed at.
 func (f *File) callResults(s *Scope, callee, member Token) ([]retResult, bool) {
 	if !member.IsValid() {
+		// A variable holding a function, `c, ok := fv(3)`: the signature it carries.
+		if d, isVar := s.find(callee.Src()).(*VarDeclaration); isVar && d.funcSig != nil && !d.typeQual.IsValid() {
+			in := d.declScope
+			if in == nil {
+				in = s
+			}
+			return f.flattenResults(in, d.funcSig), true
+		}
 		fd, ok := s.find(callee.Src()).(*FuncDeclaration)
 		if !ok || fd.FuncDecl == nil || fd.FuncDecl.Type == nil {
 			return nil, false
@@ -23797,12 +23854,40 @@ func (f *File) forwardedResults(s *Scope, n Node) ([]retResult, bool) {
 // alike for a call of one result and for a call nothing here can see.
 func (f *File) exprCallResults(s *Scope, n Node) ([]retResult, bool) {
 	if callee, isCall := f.exprCallee(n); isCall {
-		return f.callResults(s, callee, Token{})
+		if r, ok := f.callResults(s, callee, Token{}); ok {
+			return r, true
+		}
+	} else if recv, member, isMethod := f.exprMethodCall(n); isMethod {
+		if r, ok := f.callResults(s, recv, member); ok {
+			return r, true
+		}
 	}
-	if recv, member, isMethod := f.exprMethodCall(n); isMethod {
-		return f.callResults(s, recv, member)
+	// A call through a function VALUE -- a variable, `c, ok := fv(3)`, a literal
+	// bound to one, a call's result, `b, ok := pick2()(6)`: the results of the type
+	// what is called has. Unanswered, the names declared from one had no type, and
+	// `ok[0]` and `c()` were taken.
+	fac, ok := f.soleFactor(n)
+	if !ok {
+		return nil, false
 	}
-	return nil, false
+	kids := slices.Collect(it(fac.ast))
+	if len(kids) < 2 || kids[len(kids)-1].sym != FactorSuffix {
+		return nil, false
+	}
+	steps := slices.Collect(it(kids[len(kids)-1].ast))
+	if len(steps) == 0 || steps[len(steps)-1].sym != CallSuffix {
+		return nil, false
+	}
+	t, ok := f.valueTypeAt(s, factorWithoutLastStep(kids, steps))
+	if !ok || t.f != f || t.tn == nil {
+		return nil, false
+	}
+	u := f.underlyingTypeAt(t)
+	ft, isFunc := u.tn.(*FunctionType)
+	if !isFunc || ft.Signature == nil || u.f != f {
+		return nil, false
+	}
+	return f.flattenResults(u.s, ft.Signature), true
 }
 
 // exprWholeCall reports whether an expression is exactly a CALL -- `f(a)`,
@@ -28713,6 +28798,18 @@ func (f *File) factor(s *Scope, n Node) (r ExpressionNode) {
 			if cv, isConst := r.(constVal); isConst && cv.cv != nil && cv.cv.Kind() == constant.String &&
 				!f.inArrayBound && !f.inCaseExpr && f.firstStepIsIndex(n) {
 				f.err(f.tok(fac.Pos()).Position(), "%s is not constant", f.exprSource(fac))
+			} else if isConst && cv.cv != nil && cv.cv.Kind() != constant.Unknown {
+				// A constant called or a number indexed, `big - big()`, `c[0]`: the
+				// suffix was taken for an unknown value and the declaration for good.
+				if steps := slices.Collect(it(n.ast)); len(steps) != 0 {
+					head := f.sourceSpan(fac.Pos(), n.Pos()-1)
+					switch {
+					case steps[0].sym == CallSuffix:
+						f.err(f.tok(fac.Pos()).Position(), "invalid operation: cannot call non-function %s (untyped %s constant)", head, constClassName(cv.cv))
+					case steps[0].sym == Index && cv.cv.Kind() != constant.String:
+						f.err(f.tok(fac.Pos()).Position(), "invalid operation: cannot index %s (untyped %s constant)", head, constClassName(cv.cv))
+					}
+				}
 			}
 			r = constVal{cv: constant.MakeUnknown()}
 		case 0:

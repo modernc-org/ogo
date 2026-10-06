@@ -1,0 +1,88 @@
+// A seventh sweep of mutated run cases, with Go as the oracle: an index or a call
+// added to a name, a receive arrow added or dropped, a slice type made an array,
+// the range operand changed, a receiver toggled between value and pointer.
+
+const big = 44
+
+type H struct{ f func(int) (int, bool) }
+
+func two(n int) (int, bool) { return n, true }
+
+var fv = two
+
+func pick2() func(int) (int, bool) { return two }
+
+const (
+	// ERROR "cannot call non-function big \(untyped int constant\)"
+	zero = big - big()
+	// ERROR "cannot index big \(untyped int constant\)"
+	first = big[0]
+)
+
+var pre = "ab"
+
+// ERROR "cannot use pre\[0\] \+ .y. of type uint8 as type string"
+var parts = [2]string{pre[0] + "y", "plain"}
+
+func indexTargets() {
+	var calls int
+	// ERROR "cannot index calls \(variable of type int\)"
+	calls[0]++
+	var acc int32
+	// ERROR "cannot index acc \(variable of type int32\)"
+	acc[0] += 100
+	var h struct{ n int }
+	// ERROR "cannot index h.n \(variable of type int\)"
+	h.n[0]++
+	_, _, _ = calls, acc, h
+}
+
+func stringBytes(a, b string) {
+	// ERROR "mismatched types string and uint8"
+	_ = a >= b[0]
+	// ERROR "operator \+ not defined on uint8 and string"
+	_ = b[0] + "y"
+	// ERROR "cannot use b\[0\] of type uint8 as type string in variable declaration"
+	var s string = b[0]
+	switch b[0] {
+	// ERROR "cannot use .hi. of type string as type uint8 in case"
+	case "hi":
+	case 'a':
+	}
+	_ = s
+}
+
+func values(p []byte, gps []*int, xs []*int) {
+	// ERROR "cannot range over &p: it is a pointer"
+	for i := range &p {
+		_ = i
+	}
+	// ERROR "cannot use append\(gps, xs...\) as \*int value in assignment: it is a slice"
+	gps[0] = append(gps, xs...)
+}
+
+func throughValues() {
+	b, ok := pick2()(6)
+	// ERROR "cannot index ok \(variable of type bool\)"
+	_ = ok[0]
+	c, ok2 := fv(3)
+	// ERROR "cannot call non-function c"
+	_ = c()
+	// ERROR "assignment mismatch: 1 variable but 2 values"
+	x := fv(1)
+	var h H
+	h.f = two
+	m, n := h.f(2)
+	// ERROR "cannot use m of type int as type string in variable declaration"
+	var s string = m
+	_, _, _, _, _ = b, ok2, x, s, n
+}
+
+func main() {
+	indexTargets()
+	stringBytes("x", "y")
+	values(nil, nil, nil)
+	throughValues()
+	_, _ = zero, first
+	_ = parts
+}
