@@ -1692,6 +1692,9 @@ type goSite struct {
 	// point against, so the pointer travels in the argument block like an argument
 	// and the trampoline calls through it.
 	fnCType string
+	// nilFn says the trampoline checks the value for nil before calling it, in a
+	// checked build.
+	nilFn bool
 	// pack says the callee is VARIADIC and the call wrote values rather than a
 	// spread: the slots from packFrom on hold them, each as packElem, and the
 	// trampoline packs them into an array of the goroutine's own stack, which lives
@@ -2481,9 +2484,15 @@ func (e *emitter) emitGo(nodes []Node) {
 	e.emit(ap + "->ogo_slot = " + slot + ";\n")
 	if site.fnCType != "" {
 		// Read once, here: the variable may be reassigned before the cog runs, and
-		// Go evaluates the callee at the `go` statement.
+		// Go evaluates the callee at the `go` statement. A nil one panics on the
+		// cog, as Go's goroutine does (the trampoline's check), where the cog had
+		// jumped to address zero.
 		e.ind()
 		e.emit(ap + "->ogo_fn = " + site.callee + ";\n")
+		if e.checks {
+			e.needPanic()
+			e.goSites[len(e.goSites)-1].nilFn = true // the site is in the list already
+		}
 	}
 	first := 0
 	if recvText != "" {
@@ -2653,6 +2662,9 @@ func (e *emitter) goDefs() string {
 			callee = "a->ogo_fn"
 		}
 		fmt.Fprintf(&tramps, "static void %s(void* p) {\n\t%s* a = p;\n", goTrampolineCName(s.id), goArgsCName(s.id))
+		if s.nilFn {
+			tramps.WriteString("\tif (a->ogo_fn == 0) ogo_panic(\"nil pointer dereference\");\n")
+		}
 		n := len(s.args)
 		pack := ""
 		if s.pack {
@@ -2753,6 +2765,13 @@ func (e *emitter) emitSelect(ast []int32) {
 	// A name a select header declares belongs to the statement, not to the block
 	// around it (see enterScope).
 	defer e.enterScope()()
+	// Every clause's body runs only where its clause is chosen, so a defer in one
+	// needs the runtime flag a defer in an if's body has (deferBlockDepth). Without
+	// it the call was replayed at the return whichever clause ran, its captures
+	// zero: `case <-c: defer unlock()` ran unlock when c was not chosen.
+	e.deferBlockDepth++
+	e.selectInLoop++
+	defer func() { e.deferBlockDepth--; e.selectInLoop-- }()
 	var cases []selectCase
 	for n := range it(ast) {
 		if n.sym != CommClause {
@@ -6867,6 +6886,8 @@ type emitter struct {
 	retSeq             int                     // disambiguates a result-struct name two different result lists spell alike                      // counter minting unique labeled-loop break/continue labels
 	pendingContLabel   string                  // the current labeled for's C continue target, for emitLoopBody to place at the body's end
 	postContLabel      string                  // the enclosing loop's post-statement label, when its post cannot fit C's third clause
+	loopContLabel      string                  // the label ending the enclosing loop's body, for a continue a select's own C loop would take (selectInLoop)
+	selectInLoop       int                     // selects open since the enclosing loop's body began: each is a C loop of its own
 	pendingPost        func()                  // that loop's post statements, emitted after the label
 	pendingSwitchLabel string                  // the source label of a labeled switch, for emitSwitch to bind to its end label
 	deferBlockDepth    int                     // nesting inside if/for/switch bodies; a defer at depth > 0 needs a runtime flag
@@ -7833,10 +7854,32 @@ func (e *emitter) recFuncValue(cname string) string {
 // literal (doc/complit-arg-in-cast.c), and a variadic argument's pack is one --
 // `st(k, 1)` did not build for the target where the host was right.
 func (e *emitter) recFuncCallee(ct, callee string) string {
+	callee = e.fnValueChecked(callee, ct)
 	if ft := e.underlyingCType(ct); e.recFuncTypes[ft] {
 		return "((" + ft + "_call)" + callee + ")"
 	}
 	return callee
+}
+
+// fnValueChecked is the callee of a call through a function VALUE of C type ct,
+// nil-checked in a checked build: Go panics, "nil pointer dereference", and a call
+// through address zero here jumped to Hub RAM's first long -- on the host a crash,
+// on the target whatever was there, in silence. A value the summaries bind to a
+// declared function (boundFunc) is that function, and is not checked.
+func (e *emitter) fnValueChecked(callee, ct string) string {
+	if !e.checks || e.isCIdentBoundFunc(callee) {
+		return callee
+	}
+	return e.nilCheckedC(callee, e.underlyingCType(ct))
+}
+
+// isCIdentBoundFunc reports whether text is a local variable the bindings know holds
+// one declared function on every path (boundFunc).
+func (e *emitter) isCIdentBoundFunc(text string) bool {
+	if !isCIdent(text) {
+		return false
+	}
+	return e.boundFunc(text) != ""
 }
 
 // ifaceMethod is one method of an interface, as the vtable slot it becomes: the
@@ -19403,6 +19446,15 @@ func (e *emitter) calleeMayWrite(name string, steps []Node) bool {
 	return true
 }
 
+// deferConditional reports whether a defer being emitted may be passed by on the
+// way to a return, so that its call is replayed only where a runtime flag says the
+// statement ran: inside a nested body (deferBlockDepth), and anywhere in a function
+// with a goto, which may jump over it. A goto over a defer replayed the call with
+// its captures zero, an empty line printed for `defer println("late")`.
+func (e *emitter) deferConditional() bool {
+	return e.deferBlockDepth > 0 || len(e.gotoTargets) != 0
+}
+
 func (e *emitter) scanGotoTargets(ast []int32) {
 	for n := range it(ast) {
 		if n.sym != 0 {
@@ -19823,6 +19875,12 @@ func (e *emitter) emitStatementInner(nodes []Node, ast []int32) {
 			// third clause, so a plain `continue` would skip them.
 			e.emit("goto " + e.postContLabel + ";\n")
 			e.labelUsed[e.postContLabel] = true
+		case e.selectInLoop > 0 && e.loopContLabel != "":
+			// In a select's clause: the select is a C loop of its own, which a
+			// plain `continue` would have taken -- polling again, the select
+			// already done, and falling through to the rest of the Go loop's body.
+			e.emit("goto " + e.loopContLabel + ";\n")
+			e.labelUsed[e.loopContLabel] = true
 		default:
 			e.emit("continue;\n")
 		}
@@ -25634,6 +25692,52 @@ func (e *emitter) emitFloatPrefixFold(ast []int32, kids []Node) bool {
 	return false
 }
 
+// constPrefixLevel regroups the constant operands leading an integer level into a
+// level of their own where C would compute them otherwise than Go does: Go folds
+// `100000 * 100000 % v` as the constant 10000000000 % v, and C computed the product
+// in int, 38 for Go's 60 with a uint64 v; `1 << 40 % v` shifted a 32-bit 1 by 40,
+// and `2000000000 + 2000000000 + i` overflowed for an int64 i -- in silence on the
+// target, the host's compiler only warning. A prefix that is a level of its own,
+// `100000*100000 + v`, was folded already (levelConstLit), and the regrouped one is
+// one constant operand, spelled for the level's type as any is (untypedOperandC).
+// Only a prefix C would get wrong is regrouped -- one whose value leaves int at any
+// step -- and none in a level narrower than int, whose own regrouping
+// (narrowLevelPrefix) counts the level's children.
+func (e *emitter) constPrefixLevel(n Node, kids []Node) []Node {
+	if len(kids) < 5 || e.litDepth > 0 || e.declInit || e.narrowCType(n.ast) != "" {
+		return kids
+	}
+	if _, isInt := cIntWidths[e.levelUnderlying(kids)]; !isInt {
+		return kids
+	}
+	acc, ok := e.foldValNode(kids[0])
+	if !ok || acc.Kind() != constant.Int {
+		return kids
+	}
+	end, wide := 1, false
+	for i := 1; i+2 < len(kids); i += 2 {
+		if kids[i].sym != AddOp && kids[i].sym != MulOp {
+			break
+		}
+		rhs, ok := e.foldValNode(kids[i+1])
+		if !ok || rhs.Kind() != constant.Int {
+			break
+		}
+		next, ok := foldValOp(acc, e.opText(kids[i].ast), rhs)
+		if !ok || next.Kind() != constant.Int {
+			break
+		}
+		acc, end = next, i+2
+		if v, exact := constant.Int64Val(acc); !exact || v < math.MinInt32 || v > math.MaxInt32 {
+			wide = true
+		}
+	}
+	if !wide {
+		return kids
+	}
+	return append([]Node{narrowLevelPrefix(n, end)}, kids[end:]...)
+}
+
 // emitFloatLevelRest emits the operators and operands of a float level after its
 // folded prefix, a float32 level's constant operands as float32 literals.
 func (e *emitter) emitFloatLevelRest(rest []Node, ut string) {
@@ -28897,6 +29001,8 @@ type forHeader struct {
 	valVar    []int32 // the value variable, for `for i, v := range x`
 	rangeDef  bool    // ":=" rather than "="
 	keyStore  string  // emit-time: for an assigning clause, the variable the loop's counter is copied into each iteration
+	keyDecl   bool    // emit-time: keyStore is a DECLARED key the body writes, declared from the counter each iteration (of keyCType)
+	keyCType  string  // emit-time: the counter's C type, for keyDecl
 }
 
 // parseForHeader reads a ForHeader node.
@@ -29773,6 +29879,12 @@ func (e *emitter) emitLoopBody(body []int32, inject func()) {
 	e.pendingPost = nil
 	savedBreak := e.switchBreak
 	e.switchBreak = ""
+	// The end of this body, where a continue from inside a select jumps (see the
+	// continue statement); named here and written only where one used it.
+	savedCont, savedSel := e.loopContLabel, e.selectInLoop
+	e.labelSeq++
+	e.loopContLabel, e.selectInLoop = fmt.Sprintf("ogo_cont_%d", e.labelSeq), 0
+	defer func() { e.loopContLabel, e.selectInLoop = savedCont, savedSel }()
 	// Post statements at the end of the body would read the BODY's variables
 	// there: `for i, j := 0, 0; i < 6; i, j = i+s, j+1 { s := 10 ... }` stepped by
 	// ten, the body's s, where Go's post clause belongs to the loop's scope and
@@ -29795,6 +29907,10 @@ func (e *emitter) emitLoopBody(body []int32, inject func()) {
 	if cont != "" && e.labelUsed[cont] {
 		e.ind()
 		e.emit(cont + ":;\n")
+	}
+	if e.labelUsed[e.loopContLabel] {
+		e.ind()
+		e.emit(e.loopContLabel + ":;\n")
 	}
 	if post != nil {
 		if e.labelUsed[postLabel] {
@@ -29859,6 +29975,16 @@ func (e *emitter) emitRange(h *forHeader, body []int32) {
 			// from it at the top of each iteration -- which is where Go assigns it, so
 			// after the loop it holds the last index, as Go leaves it.
 			h.keyStore = key
+			key = e.newTmp()
+		}
+		// A DECLARED key the body writes, `for i := range s { i *= 5 }`: Go's is a
+		// variable of each iteration, so the write changes nothing about the next
+		// one. The counter it was had the loop end early, or never -- `for w, _ :=
+		// range s { for w != 0 { w &= w - 1 } }` spun for ever -- in silence. The
+		// counter stays hidden and the key is declared from it at the top of each
+		// iteration.
+		if name, isName := e.exprIdent(h.keyVar); h.rangeDef && isName && name != "_" && e.bodyWrites(body, name) {
+			h.keyStore, h.keyDecl = name, true
 			key = e.newTmp()
 		}
 	}
@@ -30052,8 +30178,7 @@ func (e *emitter) emitRange(h *forHeader, body []int32) {
 		}
 		inject := func() {
 			if h.keyStore != "" {
-				e.ind()
-				e.emit(h.keyStore + " = " + key + ";\n")
+				e.emitKeyStore(h, key)
 			}
 			e.ind()
 			if val == "_" {
@@ -30095,6 +30220,7 @@ func (e *emitter) emitRange(h *forHeader, body []int32) {
 		e.emit(ct + " " + n + " = " + e.exprC(h.rangeExpr) + ";\n")
 		e.shadow(key)
 		e.locals[key] = ct
+		h.keyCType = ct
 		e.ind()
 		e.emit("for (" + ct + " " + key + " = 0; " + key + " < " + n + "; " + key + "++) {\n")
 		e.emitLoopBody(body, e.rangeValueInject(h, key, ct, ""))
@@ -30134,11 +30260,28 @@ func (e *emitter) isFieldTarget(v []int32) bool {
 	return isArr
 }
 
+// emitKeyStore writes a range clause's key from the loop's counter at the top of an
+// iteration: assigned for an "=" clause, declared for a ":=" one the body writes
+// (keyDecl).
+func (e *emitter) emitKeyStore(h *forHeader, key string) {
+	e.ind()
+	if !h.keyDecl {
+		e.emit(h.keyStore + " = " + key + ";\n")
+		return
+	}
+	ct := h.keyCType
+	if ct == "" {
+		ct = "int"
+	}
+	e.shadow(h.keyStore)
+	e.locals[h.keyStore] = ct
+	e.emit(ct + " " + e.localIdent(h.keyStore) + " = " + key + ";\n")
+}
+
 func (e *emitter) rangeValueInject(h *forHeader, key, elem, access string) func() {
 	var lines []func()
 	if h.keyStore != "" {
-		store := h.keyStore
-		lines = append(lines, func() { e.ind(); e.emit(store + " = " + key + ";\n") })
+		lines = append(lines, func() { e.emitKeyStore(h, key) })
 	}
 	if h.valVar != nil {
 		if val := e.exprC(h.valVar); val != "_" { // "_" discards the value
@@ -32293,7 +32436,7 @@ func (e *emitter) emitDefer(nodes []Node) {
 		if !ok {
 			return
 		}
-		d := deferredCall{litName: cname, cond: e.deferBlockDepth > 0, slot: len(e.defers)}
+		d := deferredCall{litName: cname, cond: e.deferConditional(), slot: len(e.defers)}
 		args, params := e.callArgExprs(suffix[0].ast), e.funcParams[cname]
 		// A VARIADIC literal takes its packed arguments as its element's, each
 		// captured on its own and packed at the replay, as a named callee's are.
@@ -32347,7 +32490,7 @@ func (e *emitter) emitDefer(nodes []Node) {
 		e.fail("a defer statement must be a function call")
 		return
 	}
-	d := deferredCall{head: head, suffix: suffix, cond: e.deferBlockDepth > 0, slot: len(e.defers)}
+	d := deferredCall{head: head, suffix: suffix, cond: e.deferConditional(), slot: len(e.defers)}
 	// The call suffix is last; its arguments are what get captured.
 	call := suffix[len(suffix)-1]
 	if call.sym != CallSuffix {
@@ -33171,9 +33314,11 @@ func (e *emitter) emitDeferred() {
 					if args != "" {
 						args = ", " + args
 					}
-					e.emit("{ " + out + " " + tmp + "; " + deferRecvName(d.slot) + "(&" + tmp + args + "); }\n")
+					e.emit("{ " + out + " " + tmp + "; " + e.fnValueChecked(deferRecvName(d.slot), d.recvCType) + "(&" + tmp + args + "); }\n")
 				} else {
-					e.emit(deferRecvName(d.slot) + "(" + args + ");\n")
+					// Nil-checked where it is called, as Go's deferred call panics
+					// there (fnValueChecked).
+					e.emit(e.recFuncCallee(d.recvCType, deferRecvName(d.slot)) + "(" + args + ");\n")
 				}
 			} else {
 				if args != "" {
@@ -33258,7 +33403,7 @@ func (e *emitter) valueOutCallC(callee string, suffix []Node, out string) (strin
 		if !isVar || !e.isFuncCType(ct) || e.outResultOf(e.funcTypeRet[e.underlyingCType(ct)]) == "" {
 			return "", false
 		}
-		text := e.varRef(callee) + "(&" + out
+		text := e.fnValueChecked(e.varRef(callee), ct) + "(&" + out
 		if args := e.valueArgsCText(e.valueCallee(callee, ct), ct, suffix[0].ast); args != "" {
 			text += ", " + args
 		}
@@ -33275,7 +33420,7 @@ func (e *emitter) valueOutCallC(callee string, suffix []Node, out string) (strin
 		if !okFirst {
 			return "", false
 		}
-		text := first + "(&" + out
+		text := e.fnValueChecked(first, ct) + "(&" + out
 		if args := e.valueArgsCText(e.indirectCallee("", ct), ct, suffix[1].ast); args != "" {
 			text += ", " + args
 		}
@@ -33286,7 +33431,7 @@ func (e *emitter) valueOutCallC(callee string, suffix []Node, out string) (strin
 		if !isField || !e.isFuncCType(ft) || e.outResultOf(e.funcTypeRet[e.underlyingCType(ft)]) == "" {
 			return "", false
 		}
-		text := e.fieldAccessC(callee, []string{field}) + "(&" + out
+		text := e.fnValueChecked(e.fieldAccessC(callee, []string{field}), ft) + "(&" + out
 		if args := e.valueArgsCText(e.fieldCallee(callee, field, ft), ft, suffix[1].ast); args != "" {
 			text += ", " + args
 		}
@@ -33309,7 +33454,7 @@ func (e *emitter) valueOutCallC(callee string, suffix []Node, out string) (strin
 			return "", false
 		}
 		bound := e.hoist(ct, func() { e.emit(text) })
-		call := bound + "(&" + out
+		call := e.fnValueChecked(bound, ct) + "(&" + out
 		if args := e.valueArgsCText(e.indirectCallee("", ct), ct, suffix[len(suffix)-1].ast); args != "" {
 			call += ", " + args
 		}
@@ -34509,7 +34654,7 @@ func (e *emitter) emitCallExpr(recv string, suffix []Node) bool {
 				e.noteFrameCalls(recv, suffix[0].ast)
 				args := e.valueArgsCText(e.valueCallee(recv, ct), ct, suffix[0].ast)
 				e.emitOutValueCall(e.outResultOf(rets), discard || len(rets) > 1, func(tmp string) string {
-					call := e.varRef(recv) + "(&" + tmp
+					call := e.fnValueChecked(e.varRef(recv), ct) + "(&" + tmp
 					if args != "" {
 						call += ", " + args
 					}
@@ -34567,7 +34712,7 @@ func (e *emitter) emitCallExpr(recv string, suffix []Node) bool {
 			if rets := e.funcTypeRet[e.underlyingCType(ft)]; e.outResultOf(rets) != "" {
 				args := e.valueArgsCText(e.fieldCallee(recv, method, ft), ft, suffix[1].ast)
 				e.emitOutValueCall(e.outResultOf(rets), discard || len(rets) > 1, func(tmp string) string {
-					call := e.fieldAccessC(recv, []string{method}) + "(&" + tmp
+					call := e.fnValueChecked(e.fieldAccessC(recv, []string{method}), ft) + "(&" + tmp
 					if args != "" {
 						call += ", " + args
 					}
@@ -34766,7 +34911,7 @@ func (e *emitter) emitCallExpr(recv string, suffix []Node) bool {
 					// statement reaches here, so they are discarded.
 					args := e.valueArgsCText(e.indirectCallee("", ct), ct, callAst)
 					e.emitOutValueCall(out, true, func(tmp string) string {
-						call := bound + "(&" + tmp
+						call := e.fnValueChecked(bound, ct) + "(&" + tmp
 						if args != "" {
 							call += ", " + args
 						}
@@ -35405,7 +35550,7 @@ func (e *emitter) chainCText(base string, steps []Node) (text, ctype string, add
 					// (see outResultOf), into a temporary the chain carries on. The
 					// element is bound first for the reason given just below.
 					tmp := e.newTmp()
-					call := e.hoist(cur.ctype, func() { e.emit(text) }) + "(&" + tmp
+					call := e.fnValueChecked(e.hoist(cur.ctype, func() { e.emit(text) }), cur.ctype) + "(&" + tmp
 					if args := e.valueArgsCText(e.indirectCallee("", cur.ctype), cur.ctype, n.ast); args != "" {
 						call += ", " + args
 					}
@@ -37111,7 +37256,19 @@ func (e *emitter) hoistPrintArgs(args []Node) bool {
 		// program runs out of first.
 		calls := -1
 		for i, a := range args {
-			if ct, ok := e.inferCType(a.ast); ok && e.formatCallsMethod(ct, map[string]bool{}) {
+			ct, ok := e.inferCType(a.ast)
+			if !ok {
+				// An ARRAY, which has no C value type: what its type or its elements
+				// call, `[3]Temp` for a Stringer Temp. Asked of nothing, `printf("%v
+				// %d", arr, calls)` read calls after the three String() calls.
+				if arr, isArr := e.arrayShapeOf(a.ast); isArr {
+					ct, ok = arr.elem, true
+					if arr.name != "" {
+						ct = arr.name
+					}
+				}
+			}
+			if ok && e.formatCallsMethod(ct, map[string]bool{}) {
 				calls = i
 				break
 			}
@@ -48007,6 +48164,7 @@ func (e *emitter) emitExprNode(n Node) {
 		if e.emitFloatPrefixFold(n.ast, kids) {
 			return
 		}
+		kids = e.constPrefixLevel(n, kids)
 		// A string-typed additive expression is concatenation. C cannot add two
 		// ogo_string structs, and the target has no heap to build a new one at
 		// runtime, so a concatenation of constants is folded to a single literal and
@@ -48083,6 +48241,7 @@ func (e *emitter) emitExprNode(n Node) {
 		if e.emitFloatPrefixFold(n.ast, kids) {
 			return
 		}
+		kids = e.constPrefixLevel(n, kids)
 		narrow := e.narrowCType(n.ast) // see narrowCType
 		if text, ok := e.shiftChainC(kids); ok {
 			// The chain narrows every step itself, the last one included.
@@ -52278,6 +52437,21 @@ func (e *emitter) scanBindings(body []int32) {
 	e.bindSeq++
 	e.bindBody = e.bindSeq
 	e.scanBindingsIn(body, e.bindBody)
+}
+
+// bodyWrites reports whether body writes the variable name -- assigns it, steps it,
+// takes its address or calls a pointer method on it -- by the scan the bindings
+// use, run over the body alone and its findings put back.
+func (e *emitter) bodyWrites(body []int32, name string) bool {
+	writes, block, lits, value := e.bindWrites, e.bindBlock, e.bindLits, e.bindValue
+	opaque, aliased, gotos := e.bindOpaque, e.bindAliased, e.bindGotos
+	selfAddr, selfCall, seq, bodyBlock := e.bindSelfAddr, e.bindSelfCall, e.bindSeq, e.bindBody
+	e.scanBindings(body)
+	w := e.bindWrites[name] != 0 || e.bindSelfAddr[name] || e.bindSelfCall[name]
+	e.bindWrites, e.bindBlock, e.bindLits, e.bindValue = writes, block, lits, value
+	e.bindOpaque, e.bindAliased, e.bindGotos = opaque, aliased, gotos
+	e.bindSelfAddr, e.bindSelfCall, e.bindSeq, e.bindBody = selfAddr, selfCall, seq, bodyBlock
+	return w
 }
 
 // noteBindTarget counts one write of a target in block: a name, or a name and one

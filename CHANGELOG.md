@@ -75,6 +75,27 @@ shipped section tells a reader on that version that they have behaviour they do 
 
 ### Fixed
 
+- **Constant operands leading a level are computed as Go computes them**:
+  `100000 * 100000 % v` for a uint64 v printed 38 for Go's 60, `1 << 40 % v` 0 for
+  16, and `2000000000 + 2000000000 + i` overflowed for an int64 i: C computed the
+  constant product, shift or sum in `int`. Silent on the board in every release,
+  `1<<40 % big` 4776 for Go's 1099511627776.
+- **A range key the body writes is the iteration's own**: `for i := range s { i
+  *= 5 }` ended the loop early, and `for w, _ := range s { for w != 0 { w &= w - 1
+  } }` never ended, the key being the loop's counter. Go's is a variable of each
+  iteration. Silent in every release.
+- **A `continue` in a select clause continues the loop around the select**: it
+  continued the select's own polling, and the rest of the loop's body ran. Silent
+  in every release.
+- **A defer in a select clause runs only where its clause was chosen**, and one a
+  `goto` jumps over not at all: each was called at the return regardless, with its
+  arguments zero.
+- **printf of an array of Stringers reads the arguments after it first**, as Go
+  does: `printf("%v %d", arr, calls)` for a `[3]Temp` read calls after the three
+  String() calls had changed it. A slice was right.
+- **A call through a nil function value panics**, "nil pointer dereference", as
+  Go's does -- through a variable, a field, an element, a call's result, deferred
+  (at the return) and started on a cog (on the cog). It jumped to address zero.
 - **An element of a table of 64-bit integers indexed by a variable is read and
   written right on the board.** `r[i][j] = v` and `x := r[i][j]` for an `[N][M]int64`
   or `uint64` of two dimensions or more lost the store and read garbage on the P2,

@@ -1251,6 +1251,32 @@ emitter in its own words, and `defer`/`go` of a method on a parenthesised receiv
 **A head the emitter writes as text is asked where its effects land against the
 arguments'**: the unparenthesised chain had been right all along.
 
+**A MUTANT GO ACCEPTS IS A PROBE OF THE EMITTER** (2026-10-06). The mutation
+batches had judged each mutant by whether it COMPILES; the 5,366 run-case mutants Go
+and this compiler both accept are valid programs of odd shapes, and none had been
+run. Each was run against its Go twin (GOARCH=386, the batches' twin.go.txt for
+printf and the Builder) on the host shim -- outcmp2.sh in the scratchpad, an
+address normalized, a runtime panic named by its kind, a panic's trace and the exit
+status after it dropped, the host's stdout unbuffered (stdbuf) so a panic lands
+where Go's does, a package `var ch chan T` made in the twin, Go's println of a
+slice set apart. 4,350 matched at once; of the rest most were Go's or by design: a
+println of a slice (the extension), an append past capacity, out of cogs, a panic
+halting its cog with the defers unrun and every cog printing its own, float64 being
+32 bits, Go/386's own mis-rounding of int64 to float32, an order Go leaves
+unspecified, goroutine timing and poll counts, and a print whose later argument
+panics, which writes what came before it (Go evaluates first) -- that one left as
+it is. Six were faults, five of them SILENT and in every release: a constant
+prefix of a level computed in C's int (constPrefixLevel), a range key the body
+writes being the loop's counter (bodyWrites, keyDecl), a `continue` in a select
+clause taking the select's own C loop (loopContLabel), a defer in a select clause
+or past a goto replayed unflagged (deferConditional), an array of Stringers under
+printf not binding what follows it (formatCallsMethod asks arrayShapeOf), and a
+call through a NIL function value calling address zero (fnValueChecked, and the go
+trampoline's check). **A mutant that compiles is run**: the oracle that judged its
+acceptance has an output too, and the shapes a mutation makes -- a key written, a
+`continue` moved into a clause, a constant made wide -- are the ones no run case
+writes.
+
 **A COMPILER RUN IN A SWEEP IS CAPPED, AND A CRASH IS NOT A REFUSAL** (2026-09-20).
 A probe program is written to find a fault, and a fault is not always a wrong
 answer: `type A struct{ A }` sent the emitter down an embedding at 4 GB a second, the

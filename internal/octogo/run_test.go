@@ -1791,6 +1791,47 @@ func main() {
 		// call into an element of one. Each of the following is one such shape, and
 		// each panics before it runs on; `len(p)` and the index-only `for i := range
 		// p` do not, as in Go, and stand in the case above.
+		// A call through a nil function VALUE panics, as Go's does; it called
+		// through address zero, which on the target is Hub RAM's first long.
+		name: "a call through a nil function value panics",
+		src: `func main() {
+	var f func(int) int
+	println("before")
+	println(f(1))
+}
+`,
+		want:   "before\npanic: nil pointer dereference",
+		panics: true,
+	},
+	{
+		name: "a deferred call through a nil function field panics at the return",
+		src: `type H struct{ f func(int) }
+
+func run(h H) {
+	defer h.f(1)
+	println("body")
+}
+
+func main() {
+	run(H{})
+}
+`,
+		want:   "body\npanic: nil pointer dereference",
+		panics: true,
+	},
+	{
+		name: "a call of several results through a nil element panics",
+		src: `func main() {
+	fs := []func(int) (int, bool){nil}
+	println("before")
+	a, b := fs[0](1)
+	println(a, b)
+}
+`,
+		want:   "before\npanic: nil pointer dereference",
+		panics: true,
+	},
+	{
 		name: "a store through a nil pointer panics",
 		src: `func main() {
 	var p *int
@@ -27109,6 +27150,254 @@ func main() {
 }
 `,
 		want: "take2 3 false 12\ntake2 8 true 123\ntake2 3 true 1234\n7 false 2 true 9 false 12342345\n",
+	},
+	{
+		name: "constant operands leading a level, wider than int",
+		src: `var v uint64 = 70
+
+var big uint64 = 18446744073709544616
+
+var i int64 = 70
+
+var n int64 = -7
+
+func main() {
+	println(1<<40%v, 100000*100000%v, 3000000000*2%v, 1<<40/v, 1<<40*v)
+	println(2000000000+2000000000+i, 100000*100000/i, 1<<40%i, -1<<40%i)
+	println(1<<40%big, 100000*100000%big, 1<<63%big, 1<<40%n, 100000*100000/n)
+	println(100000*100000/100000%i, 1<<40>>35%v, 3*1<<40%i)
+}
+`,
+		want: "16 60 50 15707308968 76965813944320\n4000000070 142857142 16 -16\n1099511627776 10000000000 9223372036854775808 2 -1428571428\n40 32 48\n",
+	},
+	{
+		name: "printf of an array of Stringers reads the arguments after it first",
+		src: `var calls int
+
+type Temp int
+
+func (t Temp) String() string {
+	calls = calls*10 + 1
+	return "warm"
+}
+
+type Row [2]Temp
+
+type E struct{ s string }
+
+func (e *E) Error() string {
+	calls = calls*10 + 2
+	return e.s
+}
+
+type H struct {
+	ts [2]Temp
+	n  int
+}
+
+var ge = E{"bad"}
+
+func main() {
+	sl := [3]Temp{1, 2}
+	printf("%v %d\n", sl, calls)
+	calls = 0
+	var r Row
+	printf("%v %d\n", r, calls)
+	calls = 0
+	g := [2][2]Temp{}
+	printf("%v %d\n", g, calls)
+	calls = 0
+	es := [2]error{&ge, &ge}
+	printf("%v %d\n", es, calls)
+	calls = 0
+	h := H{n: 3}
+	printf("%v %d\n", h.ts, calls)
+	calls = 0
+	printf("%v %d %v\n", sl, calls, r)
+	calls = 0
+	printf("%s|%d\n", sl, calls)
+}
+`,
+		want: "[warm warm warm] 0\n[warm warm] 0\n[[warm warm] [warm warm]] 0\n[bad bad] 0\n[warm warm] 0\n[warm warm warm] 0 [warm warm]\n[warm warm warm]|0\n",
+	},
+	{
+		name: "a defer in a select clause and one a goto jumps over",
+		src: `var gc chan int
+
+func pick(n int) {
+	var c chan int
+	select {
+	case <-c:
+		defer println("never", n)
+	default:
+		defer println("default", n)
+	}
+	println("pick", n)
+}
+
+func skip(n int) {
+	if n < 5 {
+		goto out
+	}
+	defer println("late", n)
+out:
+	println("out", n)
+}
+
+func recv() {
+	go func() { gc <- 9 }()
+	select {
+	case v := <-gc:
+		defer println("got", v)
+	}
+	println("recv")
+}
+
+func main() {
+	pick(1)
+	skip(1)
+	skip(7)
+	recv()
+	println("end")
+}
+`,
+		want: "pick 1\ndefault 1\nout 1\nout 7\nlate 7\nrecv\ngot 9\nend\n",
+	},
+	{
+		name: "a range key the body writes is the iteration's own",
+		src: `type Set [4]uint32
+
+func (s Set) Count() (n int) {
+	for w, _ := range s {
+		for w != 0 {
+			w &= w - 1
+			n++
+		}
+	}
+	return
+}
+
+func main() {
+	var a [4]int
+	for i := range a {
+		i += 10
+		a[i-10] = i
+	}
+	println(a[0], a[3])
+	s := []int{1, 2, 3}
+	n := 0
+	for i := range s {
+		i *= 5
+		n += i
+	}
+	println(n)
+	for i := range 3 {
+		i += 2
+		print(i, " ")
+	}
+	println()
+	k := 0
+	for i := range "héllo" {
+		i++
+		k += i
+	}
+	println(k)
+	for i := range s {
+		p := &i
+		*p = 9
+		print(i, s[0], " ")
+	}
+	println()
+	println(Set{1, 3, 7, 15}.Count())
+}
+`,
+		want: "10 13\n15\n2 3 4 \n18\n91 91 91 \n4\n",
+	},
+	{
+		name: "a continue in a select clause continues the loop around it",
+		src: `var ch chan int
+
+func feed(n int) {
+	for i := 0; i < n; i++ {
+		ch <- i
+	}
+}
+
+func main() {
+	go feed(3)
+	for i := 0; i < 3; i++ {
+		select {
+		case v := <-ch:
+			if v == 1 {
+				continue
+			}
+			println("got", v)
+		}
+		println("after", i)
+	}
+	var idle chan int
+	n := 0
+	for j := range 3 {
+		select {
+		case <-idle:
+		default:
+			n += j
+			continue
+		}
+		println("never")
+	}
+	println("n", n)
+	k := 0
+	for k < 3 {
+		k++
+		select {
+		case <-idle:
+		default:
+			if k == 2 {
+				continue
+			}
+		}
+		println("k", k)
+	}
+	go feed(3)
+outer:
+	for a := 0; a < 2; a++ {
+		for b := 0; b < 2; b++ {
+			select {
+			case v := <-ch:
+				if v == 2 {
+					continue outer
+				}
+				println("ab", a, b, v)
+			}
+		}
+	}
+	go feed(1)
+	for c := 0; c < 2; c++ {
+		switch c {
+		case 0:
+			select {
+			case v := <-ch:
+				println("sw", v)
+				continue
+			}
+		}
+		println("c", c)
+	}
+	for x, y := 0, 10; x < 3; x, y = x+1, y-1 {
+		select {
+		case <-idle:
+		default:
+			if x == 1 {
+				continue
+			}
+		}
+		println("xy", x, y)
+	}
+	println("end")
+}
+`,
+		want: "got 0\nafter 0\ngot 2\nafter 2\nn 3\nk 1\nk 3\nab 0 0 0\nab 0 1 1\nsw 0\nc 1\nxy 0 10\nxy 2 8\nend\n",
 	},
 	{
 		name: "a struct parameter named like one of its members",
