@@ -1411,6 +1411,16 @@ put `bank.Holding[i] = uint64(x)` and `range *bank.Holding` in reach of every ru
 -- and a method of another package's type called on a variable was typed by
 nothing (headStepsType asks callResults). **The older programs were the
 cheapest probe left**: written for other rounds, matching Go, and never mutated.
+The last twelve had five more rows: NewBuilder's argument asked nothing
+(checkNewBuilderArg), an interface method of no result as a value (zeroResultCall
+asks callResults, which knows interfaces and promotion), a TYPED constant declared
+of another type (resolveConst), an append's destination that is no name
+(checkAppendValues asks the walk), and an untyped operand beside a typed one in a
+constant operation, which Go converts to the typed one's type before folding --
+`3*MB + -129*KB` overflows at `-129` whatever the whole comes to (foldBinary).
+Across all 38 batches, 22,000 mutants, only by-design rows remain taken -- `println`
+of an array, a missing `main` (`ogo build`'s), Go's 64 kB channel-element limit --
+and one contrived: a constant named `iota` in its own group, `iota` refers to itself.
 
 **A C NAME IS A ROW** (2026-09-25). The emitted C keeps a program's own names, so
 every name a program may write is a row across everything else that names things in

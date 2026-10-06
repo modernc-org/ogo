@@ -9191,6 +9191,49 @@ func (f *File) setChanOf(s *Scope, vd *VarDeclaration, tn TypeNode) {
 	vd.chanElemQual, vd.chanElemPtr = f.chanElemTypeInfo(s, tn)
 }
 
+// checkNewBuilderArg asks the predeclared NewBuilder's argument what Go would ask
+// a []byte parameter's: one argument, a slice of bytes. It was asked nothing, and
+// `NewBuilder(back[:])` of a [2][80]byte built.
+func (f *File) checkNewBuilderArg(s *Scope, args []Node) {
+	if len(args) != 1 {
+		what := "not enough"
+		if len(args) > 1 {
+			what = "too many"
+		}
+		if len(args) != 0 {
+			f.err(f.tok(args[0].Pos()).Position(), "%s arguments in call to NewBuilder", what)
+		}
+		return
+	}
+	a := args[0]
+	if k, ok := f.exprType(s, a); ok && kindCategory(k) != catUnknown {
+		f.err(f.tok(a.Pos()).Position(), "cannot use %s (value of type %s) as []byte value in argument to NewBuilder", f.exprSource(a), kindName(defaultKind(k)))
+		return
+	}
+	if what, known := f.nonBoolOperand(s, a); known && what != "a slice" {
+		f.err(f.tok(a.Pos()).Position(), "cannot use %s as []byte value in argument to NewBuilder: it is %s", f.exprSource(a), what)
+		return
+	}
+	t, ok := f.valueTypeAt(s, a)
+	if !ok || t.f == nil {
+		return
+	}
+	sl, isSlice := t.f.underlyingTypeAt(t).tn.(*TypeNodeSlice)
+	if !isSlice {
+		return
+	}
+	u := t.f.underlyingTypeAt(t)
+	if id, named := sl.TypeNode.(*TypeNodeIdent); named && !id.Qualifier.IsValid() {
+		// byte or uint8 itself; a DEFINED type over one, `[]B`, is no []byte.
+		if _, isPre := u.s.find(id.Name.Src()).(*PredeclaredType); isPre {
+			if k, ok := u.f.typeKind(u.s, sl.TypeNode); ok && k == PredeclaredUint8 {
+				return
+			}
+		}
+	}
+	f.err(f.tok(a.Pos()).Position(), "cannot use %s (value of type %s) as []byte value in argument to NewBuilder", f.exprSource(a), t.f.typeAtMessage(t))
+}
+
 // isNewBuilderCall reports whether an initializer is a call of the predeclared
 // NewBuilder, which yields a Builder.
 func (f *File) isNewBuilderCall(s *Scope, n Node) bool {
@@ -23112,15 +23155,11 @@ func (f *File) zeroResultCall(s *Scope, id Token, suffix Node) bool {
 		if !d.typeName.IsValid() {
 			return false
 		}
-		td, ok := s.find(d.typeName.Src()).(*TypeDeclaration)
-		if !ok {
-			return false
-		}
-		fd := td.methods[member.Src()]
-		if fd == nil || fd.Type == nil {
-			return false
-		}
-		return len(f.flattenResults(s, fd.Type.Signature)) == 0
+		// The method's results as callResults reads them: an INTERFACE's too, whose
+		// methods no type declaration holds -- `if data.Swap(i, j) {` was taken --
+		// and a promoted one's.
+		r, ok := f.callResults(s, id, member)
+		return ok && len(r) == 0
 	case len(ops) > 2 && ops[len(ops)-1].sym == CallSuffix && ops[len(ops)-2].sym == Selector:
 		// A method at the end of a chain, `h.rows[1].Show()`: the walk names it.
 		for _, c := range f.callChainWalk(s, id, ops).calls {
@@ -24058,6 +24097,8 @@ func (f *File) checkCallee(s *Scope, callee Token, argList Node, args []Node) {
 			f.checkAppendValues(s, argList, args)
 		case "min", "max":
 			f.checkMinMaxArgs(s, args)
+		case "NewBuilder":
+			f.checkNewBuilderArg(s, args)
 		}
 	case *PredeclaredType:
 		// A type callee "T(x)" is an explicit conversion. Numeric ones are lowered
@@ -24546,6 +24587,16 @@ func (f *File) checkAppendValues(s *Scope, argList Node, args []Node) {
 			if t, isLit := f.sliceLitType(s, args[0]); isLit && t.f == f {
 				if sl, isSlice := t.tn.(*TypeNodeSlice); isSlice {
 					d = &VarDeclaration{elemTypeNode: sl.TypeNode, declScope: t.s}
+				}
+			}
+			// Anything else the walk types as a slice, `append(*q, *t)` through a
+			// pointer to a defined slice type, `append(h.xs, v)`: its element.
+			// Unasked, a struct went into a []*T.
+			if t, ok := f.valueTypeAt(s, args[0]); d == nil && ok && t.f != nil {
+				if u := t.f.underlyingTypeAt(t); u.f != nil && u.f.Package == f.Package {
+					if sl, isSlice := u.tn.(*TypeNodeSlice); isSlice {
+						d = &VarDeclaration{elemTypeNode: sl.TypeNode, declScope: u.s}
+					}
 				}
 			}
 			if d == nil {
@@ -27763,6 +27814,11 @@ func (f *File) resolveConst(s *Scope, cd *ConstDeclaration) {
 			if name, bad := f.constClassMismatch(s, cs, k); bad {
 				f.err(exprPos, "cannot use %s (untyped %s constant) as %s value in constant declaration",
 					f.exprSource(cs.exprNode), constClassName(uc.cv), name)
+			} else if uc.typed && !isUntypedKind(uc.typ) && uc.typ != k {
+				// A TYPED value of another type, `const S uint = len(names) * 2`,
+				// len being an int: converted in silence, where Go refuses it.
+				f.err(exprPos, "cannot use %s (constant %s of type %s) as %s value in constant declaration",
+					f.exprSource(cs.exprNode), uc.cv.ExactString(), kindName(uc.typ), f.typeNodeString(cs.TypeNode, false))
 			}
 			cs.Value = uc.typedAs(k)
 		}
@@ -28396,6 +28452,21 @@ func (f *File) foldBinary(lhs ExpressionNode, op Symbol, opTok Token, rhs Expres
 	lc, lok := lhs.Value().(constVal)
 	rc, rok := rhs.Value().(constVal)
 	if lok && rok && lc.cv != nil && rc.cv != nil {
+		// An untyped operand beside a typed one is converted to its type first, and
+		// must fit it: `-129 * KB` for a KB of a uint64 type overflows, whatever the
+		// whole comes to. It was folded exactly, and taken.
+		if op != SHL && op != SHR && lc.typed != rc.typed {
+			typed, untyped := lc, rc
+			if rc.typed {
+				typed, untyped = rc, lc
+			}
+			if lo, hi, isInt := intKindRange(typed.typ); isInt {
+				if iv := constant.ToInt(untyped.cv); iv.Kind() == constant.Int && (constant.Compare(iv, token.LSS, lo) || constant.Compare(iv, token.GTR, hi)) {
+					f.err(opTok.Position(), "%s (untyped int constant) overflows %s", iv.ExactString(), kindName(typed.typ))
+					return constVal{cv: constant.MakeUnknown()}
+				}
+			}
+		}
 		if v, ok := f.foldConstBinaryOp(opTok, lc.cv, op, rc.cv); ok {
 			// A shift is of its LEFT operand's type, the count's taking no part:
 			// `15 << classShift` for a `const classShift int16` is an untyped

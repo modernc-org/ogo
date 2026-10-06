@@ -358,6 +358,13 @@ shipped section tells a reader on that version that they have behaviour they do 
   returning a slice, as a condition or a string; and the dereference of another
   package's pointer variable where an interface is wanted, `err ==
   *lib.ErrCRC`.
+- **And in twelve more**: the predeclared `NewBuilder`'s argument is asked to be a
+  `[]byte`, `NewBuilder(back[:])` of a `[2][80]byte` having built; an interface
+  method of no result used as a value, `if data.Swap(i, j) {`; a typed constant
+  declared of another type, `const Slots uint = len(names) * 2`; an append through
+  a dereference, `*q = append(*q, *t)` of a struct into a `[]*Timer`; and an
+  untyped constant operand its typed partner's type cannot hold, `3*MB + -129*KB`
+  for a uint64 KB, folded exactly and taken where Go converts `-129` first.
 - **A method value of a literal or a call's result is refused by the checker**:
   `Taps{1, 2}.Scale` of a pointer method in Go's words, and a value method,
   `P{1}.V`, `mk().V`, by design -- a method value binds the address of its

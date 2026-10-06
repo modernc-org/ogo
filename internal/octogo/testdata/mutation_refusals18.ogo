@@ -1,0 +1,62 @@
+// Mutations of twelve more older domain programs: the predeclared NewBuilder's
+// argument, an interface method of no result used as a value, a typed constant
+// declared of another type, an append through a dereference, and an untyped
+// constant operand that its typed partner's type cannot hold.
+
+type I interface {
+	Swap(i, j int)
+	Less(i, j int) bool
+}
+
+type Timer struct{ i int }
+
+type queue []*Timer
+
+func (q *queue) Push(t *Timer) {
+	// ERROR "cannot use \*t \(variable of type Timer\) as \*Timer value in argument to append"
+	*q = append(*q, *t)
+	*q = append(*q, t)
+}
+
+type Size uint64
+
+const (
+	KB Size = 1 << (10 * iota)
+	MB
+)
+
+// ERROR "-129 \(untyped int constant\) overflows uint64"
+const Limit Size = 3*MB + -129*KB
+
+const Fine Size = 3*MB + 512*KB
+
+var names = [5]string{}
+
+// ERROR "cannot use len\(names\) \* 2 \(constant 10 of type int\) as uint value in constant declaration"
+const Slots uint = len(names) * 2
+
+func sort(data I) {
+	// ERROR "data.Swap\(1, 0\) \(no value\) used as value"
+	if data.Swap(1, 0) {
+	}
+	if data.Less(1, 0) {
+		data.Swap(1, 0)
+	}
+}
+
+func builders() {
+	var back [2][80]byte
+	// ERROR "cannot use back\[:\] \(value of type \[\]\[80\]uint8\) as \[\]byte value in argument to NewBuilder"
+	sb := NewBuilder(back[:])
+	var line [80]byte
+	ok := NewBuilder(line[:])
+	_, _ = sb, ok
+}
+
+func main() {
+	var q queue
+	q.Push(&Timer{})
+	sort(nil)
+	builders()
+	_, _, _ = Limit, Fine, Slots
+}
