@@ -1378,6 +1378,17 @@ being one value whatever g returns (exprWholeCall asks that the call be the LAST
 step), and `two(lib.G())` and `two(lib.V.Line())`, whose results nothing resolved
 across the boundary (exprCallResults) -- and `"s"[0]`, a string literal's element,
 had no type (factorType).
+The OLDER domain programs of the scratchpad (dom1..dom28, up to 600 lines and five
+packages, written in earlier rounds) had never been mutated; three of them, a
+firmware of four packages, a controller's hooks and state machine, and a cache over
+a hash table, 1,000 mutants each, had two rows between them, both in the
+controller: an address stored where its pointee's Kind is wanted -- exprType
+answers `&x` with x's Kind, and checkPointerValue, which knows better, was asked
+at a declaration, a variable, a return and an argument only (checkPointerInto,
+isAddrOperand: a field, an element, a walked target, a literal, a send) -- and a
+variable typed only by its initializer, `e := r.buf[0]` of a struct, called.
+**A rule asked at some store sites is a row of the others**, as A TARGET IS A
+POSITION had it of the store rules.
 
 **A C NAME IS A ROW** (2026-09-25). The emitted C keeps a program's own names, so
 every name a program may write is a row across everything else that names things in

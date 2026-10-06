@@ -1,0 +1,61 @@
+// Mutations of an older domain program, a controller's hooks and state machine: an
+// address stored where its pointee's Kind is wanted -- exprType answers an address
+// with that Kind -- and a variable typed by its initializer's element called.
+
+type Ev struct{ k int }
+
+type F func() int
+
+type P struct {
+	n, m int
+	q    *int
+}
+
+type R struct {
+	buf [4]Ev
+	fs  [2]F
+}
+
+var g int
+
+var gp P
+
+var gr R
+
+var ch chan int
+
+func addresses() {
+	// ERROR "cannot use &gp.n \(an address\) as int value in assignment"
+	gp.m = &gp.n
+	p := &gp
+	// ERROR "cannot use &p.n \(an address\) as int value in assignment"
+	p.m = &p.n
+	var a [2]int
+	// ERROR "cannot use &g \(an address\) as int value in assignment"
+	a[0] = &g
+	// ERROR "cannot use &g \(an address\) as int value in send"
+	ch <- &g
+	// ERROR "cannot use &g \(an address\) as int value in struct literal"
+	_ = P{n: &g}
+	// ERROR "cannot use &g \(an address\) as int value in array or slice literal"
+	_ = []int{&g}
+	var h struct{ s P }
+	// ERROR "cannot use &g \(an address\) as int value in assignment"
+	h.s.m = &g
+	gp.q = &g
+	_ = P{q: &g}
+	_, _ = a, h
+}
+
+func calls() {
+	e := gr.buf[0]
+	// ERROR "cannot call non-function e"
+	_ = e()
+	f := gr.fs[0]
+	_ = f()
+}
+
+func main() {
+	addresses()
+	calls()
+}

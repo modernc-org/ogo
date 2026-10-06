@@ -10864,6 +10864,7 @@ func (f *File) checkSentValue(s *Scope, chanTN TypeNode, elem Kind, hasElem bool
 	if ct, ok := chanTN.(*TypeNodeChan); ok {
 		if _, named := ct.TypeNode.(*TypeNodeIdent); !named || elemName.IsValid() {
 			f.checkNilValue(s, s, ct.TypeNode, valNode, "send")
+			f.checkPointerInto(s, s, ct.TypeNode, valNode, "send")
 			// And a slice or a pointer element takes what a variable of its type
 			// does: a send was the one store that did not ask, and `cs <- a` for a
 			// chan []int and an array a went to the C compiler.
@@ -12534,6 +12535,12 @@ func (f *File) checkLitValue(s *Scope, t litType, tn TypeNode, value Node, what 
 		return
 	}
 	if !ft.known || !ok {
+		return
+	}
+	// An address is no value of its pointee's Kind, which is what exprType
+	// answered for it.
+	if !f.isPointerType(s, tn) && f.isAddrOperand(s, value) {
+		f.checkPointerInto(s, s, tn, value, what)
 		return
 	}
 	if !assignableKind(ft.kind, vk) {
@@ -17790,6 +17797,12 @@ func (f *File) checkFieldAssign(s *Scope, head, field Token, rhsNode Node) {
 	if !lok || !rok {
 		return
 	}
+	// An address is no value of its pointee's Kind, which is what exprType
+	// answered for it: `p.m = &p.n` for an int m was taken.
+	if f.isAddrOperand(s, rhsNode) {
+		f.checkPointerInto(s, s, f.fieldTypeNode(s, head, field), rhsNode, "assignment")
+		return
+	}
 	if !assignableKind(lk, rk) {
 		f.err(f.tok(rhsNode.Pos()).Position(), "cannot use %s of type %s as type %s in assignment", f.exprSource(rhsNode), kindName(rk), kindName(lk))
 		return
@@ -18374,6 +18387,12 @@ func (f *File) checkStoreInto(s, in *Scope, tn TypeNode, value Node, what string
 		f.kindlessValueErr(s, value, rt.name, what)
 		return
 	}
+	// An address is no value of its pointee's Kind, which is what exprType
+	// answered for it: `h.s.m = &g` for an int m.
+	if f.isAddrOperand(s, value) {
+		f.checkPointerInto(s, in, tn, value, what)
+		return
+	}
 	if !assignableKind(rt.kind, vk) {
 		f.err(f.tok(value.Pos()).Position(), "cannot use %s of type %s as type %s in %s", f.exprSource(value), kindName(vk), rt.name, what)
 		return
@@ -18601,9 +18620,12 @@ func (f *File) checkIndexAssign(s *Scope, base Token, rhsNode Node) {
 	case elemTN == nil:
 	case d.hasElemKind:
 		// A Kind's element is checkElemAssignType's, above; what a store asks
-		// besides is nil and a function's signature.
+		// besides is nil, a function's signature and an address.
 		f.checkNilValue(s, in, elemTN, rhsNode, "assignment")
 		f.checkFuncAssign(s, f.funcSig(in, elemTN), rhsNode, "assignment")
+		if f.isAddrOperand(s, rhsNode) {
+			f.checkPointerInto(s, in, elemTN, rhsNode, "assignment")
+		}
 	default:
 		// An element of NO Kind is asked all a store asks (checkStoreInto): a
 		// number stored into a function's or a channel's, a struct into a
@@ -24013,6 +24035,12 @@ func (f *File) checkCallee(s *Scope, callee Token, argList Node, args []Node) {
 		// Kind: no function either.
 		if t, ok := f.varTypeAt(d); ok && t.f != nil && t.f.resultType(t.s, t.tn).known {
 			f.err(callee.Position(), "cannot call non-function %s", callee.Src())
+		} else if ok && t.f != nil && t.tn != nil {
+			// Or of a category, `e := r.buf[0]` of a struct element, `e()` taken.
+			switch f.underlyingTypeAt(t).tn.(type) {
+			case *TypeNodeStruct, *TypeNodeArray, *TypeNodeSlice, *TypeNodePointer, *TypeNodeChan:
+				f.err(callee.Position(), "cannot call non-function %s", callee.Src())
+			}
 		}
 	case *ConstDeclaration:
 		// The callee is a value, not a function: "x()" where x is a constant. (A type
@@ -24963,6 +24991,29 @@ func (f *File) checkPointerValue(s *Scope, want bool, wantName string, e Node, w
 	}
 	f.err(f.tok(e.Pos()).Position(), "cannot use %s (%s) as %s value in %s",
 		f.exprSource(e), pointerDesc(have), wantName, what)
+}
+
+// isAddrOperand reports an operand that is exactly an address, `&x`, `&h.f`,
+// `&T{...}` -- the value exprType answers with its pointee's Kind.
+func (f *File) isAddrOperand(s *Scope, n Node) bool {
+	ue, ok := f.soleUnaryExpr(n)
+	if !ok {
+		return false
+	}
+	kids := slices.Collect(it(ue.ast))
+	return len(kids) == 2 && kids[0].sym == UnaryOp && f.unaryOp(s, kids[0]) == AND
+}
+
+// checkPointerInto is checkPointerValue for a store whose target's type is tn,
+// resolved in in: a field, an element, a target walked through steps, a literal's
+// field or element and a send. It was asked of a declaration, a variable, a
+// return and an argument only, the address's Kind being its pointee's to every
+// other rule: `p.m = &p.n` put a pointer into an int field unasked.
+func (f *File) checkPointerInto(s, in *Scope, tn TypeNode, value Node, what string) {
+	if tn == nil || in == nil || !onScopeChain(s, in) {
+		return
+	}
+	f.checkPointerValue(s, f.isPointerType(in, tn), f.typeNodeString(tn, false), value, what)
 }
 
 // isPointerType reports whether a type node is a pointer, following a chain of

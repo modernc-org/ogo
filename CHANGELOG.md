@@ -334,6 +334,12 @@ shipped section tells a reader on that version that they have behaviour they do 
   method of another package's variable**: each was taken for a call forwarding
   several results. And an element of a string literal, `"s"[0]`, is a byte where
   it stands, refused into an int32 as Go refuses it.
+- **An address stored where its pointee's Kind is wanted is refused at every
+  store**: `p.m = &p.n` for an int field, an element, a target reached through
+  steps, a literal's field or element, a send. It was asked of a declaration, a
+  variable, a return and an argument only. And a variable typed by its
+  initializer's struct, array, slice, pointer or channel element called, `e :=
+  r.buf[0]; e()`, is refused as one of a Kind was.
 - **A method value of a literal or a call's result is refused by the checker**:
   `Taps{1, 2}.Scale` of a pointer method in Go's words, and a value method,
   `P{1}.V`, `mk().V`, by design -- a method value binds the address of its
