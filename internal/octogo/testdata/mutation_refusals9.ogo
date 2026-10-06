@@ -1,0 +1,52 @@
+// An eighth sweep of mutated run cases, with Go as the oracle: a keyed literal made
+// partly positional, an untyped constant given a type, a switch case duplicated, a
+// parameter dropped, var and const swapped, a literal key duplicated, a receiver
+// retyped.
+
+type P struct{ x int }
+
+var gp P
+
+func getp(a int) *P { return &gp }
+
+var never chan int
+
+type Reader interface{ Read() int }
+
+type F struct{}
+
+func (f *F) Read() int { return 1 }
+
+type H struct{ e interface{} }
+
+func selects() {
+	select {
+	// ERROR "too many arguments in call to getp"
+	case getp(1, 2).x = <-never:
+	default:
+	}
+	select {
+	// ERROR "cannot use .s. of type string as type int in argument to getp"
+	case getp("s").x = <-never:
+	default:
+	}
+}
+
+func switches(h H) {
+	var e interface{} = &F{}
+	switch v := e.(type) {
+	// ERROR "duplicate case Reader in type switch"
+	case Reader, Reader:
+		_ = v
+	}
+	switch h.e.(type) {
+	case *F:
+	// ERROR "duplicate case \*F in type switch"
+	case *F:
+	}
+}
+
+func main() {
+	selects()
+	switches(H{})
+}

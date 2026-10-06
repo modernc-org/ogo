@@ -46101,6 +46101,30 @@ func main() {
 `,
 		want: "0x0 1 0x0\n0x02\n<nil> <nil> <nil>|\ntrue true true\n",
 	},
+	{
+		// A typed integer constant written as a float, `const Two int16 = 2.0`: its
+		// value is the integer, as its type says. The float was kept, and an index
+		// by it, an array bound and a shift count crashed the compiler, Int64Val
+		// being asked of a float.
+		name: "typed integer constants written as floats",
+		src: `const Two int16 = 2.0
+
+const Five uint8 = 5e0
+
+var xs = [4]int{1, 2, 3, 4}
+
+var arr [Five]int
+
+func main() {
+	arr[2] = 7
+	println(xs[Two], len(arr), arr[2], Two*3, int(Five)+1, xs[Two-1])
+	var a [Two]byte
+	a[1] = 9
+	println(len(a), a[1], 1<<Two)
+}
+`,
+		want: "3 5 7 6 6 2\n2 9 4\n",
+	},
 }
 
 // TestEmitCRun compiles emitted C with a host compiler and runs it, checking what

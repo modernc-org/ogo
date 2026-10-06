@@ -1116,6 +1116,17 @@ string header; `++` and `op=` asked their index target nothing the `=` form asks
 function VALUE or a function FIELD were typed by nothing (callResults reads a
 variable's funcSig, exprCallResults the callee's type through valueTypeAt); and the
 constant folder took `big()` and `big[0]` of a number for an unknown value.
+An eighth batch (gen8.py: a keyed literal made partly positional, an untyped constant
+given a type, a case duplicated, a parameter dropped, var and const swapped, a key
+duplicated, a receiver retyped) was nearly all refused alike -- 4 taken, 10 refused
+that Go takes (string building from a var, by design; a duplicate `case true`, an
+implementation restriction Go allows) -- and found one CRASH on a valid program:
+`const Two int16 = 2.0` kept its float value, and `xs[Two]` asked Int64Val of a float
+(checkConstOverflow stores the integer now). The four taken: a call leading a select
+receive target asked nothing, and a type switch on the empty interface WRITTEN OUT,
+`var e interface{}`, had no interface name for its cases to be asked against
+(typeSwitchIface reads it as any). A non-empty interface written out as an
+operand's type is still asked nothing there.
 
 **A COMPILER RUN IN A SWEEP IS CAPPED, AND A CRASH IS NOT A REFUSAL** (2026-09-20).
 A probe program is written to find a fault, and a fault is not always a wrong

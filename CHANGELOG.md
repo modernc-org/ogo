@@ -46,6 +46,9 @@ shipped section tells a reader on that version that they have behaviour they do 
 
 ### Fixed
 
+- **A typed integer constant written as a float builds**: `const Two int16 = 2.0`
+  kept the float value, and an index by it, an array bound or a shift count
+  crashed the compiler. Its value is the integer its type says.
 - **A send to a channel field of an element of a slice from `make` builds**: `ws :=
   make([]W, 1); ws[0].done <- true` was refused, "cannot send to non-channel".
 - **A method called on a typed constant's method result builds**:
@@ -275,6 +278,12 @@ shipped section tells a reader on that version that they have behaviour they do 
 
 ### Behaviour changes
 
+- **An eighth sweep of mutated run cases refuses what Go refuses**: the
+  arguments of a call leading a select clause's receive target, `case getp(1,
+  2).x = <-ch:`, which were asked nothing; and the cases of a type switch on a
+  value of the empty interface written out, `var e interface{}`, a field of it
+  included, which were asked nothing either -- a duplicate case, and `case int:`,
+  which an interface holding a pointer cannot match.
 - **A seventh sweep of mutated run cases refuses what Go refuses**: an index on a
   number as the target of `++` or of a compound assignment, `calls[0]++`, `acc[0]
   += 100`, `h.n[0]++`, which only the `=` form refused; an element of a string used

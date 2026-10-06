@@ -6422,6 +6422,12 @@ func (f *File) typeSwitchIface(s *Scope, ts typeSwitchGuard) (string, bool) {
 		return written, ok
 	}
 	d, isVar := s.find(ts.operand.Src()).(*VarDeclaration)
+	if isVar && !d.typeName.IsValid() && isEmptyIfaceNode(d.declType) {
+		// `var e interface{}`: the empty interface written out is any, and its
+		// cases are asked what any's are. Unnamed, none was asked anything, a
+		// duplicate and `case int:` alike.
+		return "any", true
+	}
 	if !isVar || !d.typeName.IsValid() {
 		return "", false // an unresolved operand: its own check reports it
 	}
@@ -6437,6 +6443,13 @@ func (f *File) typeSwitchIface(s *Scope, ts typeSwitchGuard) (string, bool) {
 // result's, as exprNamedType types each.
 func (f *File) typeSwitchIfaceName(s *Scope, ts typeSwitchGuard) (written string, nm, ql Token, ok bool) {
 	nm, ql, isPtr, named := f.exprNamedType(s, ts.expr)
+	if !named {
+		// An operand of the empty interface written out, `h.e.(type)` for a field
+		// `e interface{}`: any's.
+		if t, ok := f.valueTypeAt(s, ts.expr); ok && isEmptyIfaceNode(t.tn) {
+			return "any", Token{}, Token{}, true
+		}
+	}
 	if !named || isPtr {
 		return "", Token{}, Token{}, false
 	}
@@ -6448,6 +6461,12 @@ func (f *File) typeSwitchIfaceName(s *Scope, ts typeSwitchGuard) (written string
 		return "", Token{}, Token{}, false
 	}
 	return written, nm, ql, true
+}
+
+// isEmptyIfaceNode reports the empty interface written out, `interface{}`.
+func isEmptyIfaceNode(tn TypeNode) bool {
+	it, ok := tn.(*TypeNodeInterface)
+	return ok && len(it.Methods) == 0
 }
 
 // checkTypeCaseClause checks one clause of a type switch and declares the bound
@@ -7715,6 +7734,13 @@ func (f *File) commOp(s *Scope, op Node) {
 // sole target is asked of its value (checkAssignment): one field, one element and a
 // pointee by their own checks, and a deeper or a parenthesised target by the walk.
 func (f *File) checkRecvIntoTarget(s *Scope, head, postfixComm, v Node) {
+	// A call leading the target, `case getp(1, 2).x = <-ch:`: its arguments, as
+	// the statement form asks them. They were asked nothing.
+	if argList, later, direct, isCall := f.callInfoAll(postfixComm); isCall {
+		f.resolveArgNames(s, later)
+		id, ok := f.assignHeadIdent(head)
+		f.checkCall(s, id, (direct || leadingCall(postfixComm)) && ok, argList)
+	}
 	if !hasSelectorOrIndex(postfixComm) {
 		// A whole variable, `case s = <-ch:` and `case (s) = <-ch:`, asked what the
 		// statement's sole target is: only its Kind was, and a struct took an int.
@@ -26915,6 +26941,11 @@ func (f *File) checkConstOverflow(s *Scope, cs *ConstSpecNode, pos token.Positio
 	if !ok {
 		return
 	}
+	// The value IS an integer, as the type says: `const Two int16 = 2.0` kept the
+	// float 2.0, and every reader asking an integer constant for its int64 --
+	// an index, a bound -- crashed the compiler on it.
+	uc.cv = cv
+	cs.Value = uc
 	f.reportOverflow(pos, cv, k, id.Name.Src())
 }
 
