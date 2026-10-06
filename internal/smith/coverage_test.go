@@ -330,6 +330,11 @@ var generatedConstructs = []struct {
 	{"aggregate given to a deferred call", `\n\tdefer agNote_\d+\(v, \d\)\n`},
 	{"aggregate given to a deferred literal", `\n\tdefer func\(w AG_\d+, m int\) \{`},
 	{"deferred value-receiver method", `\n\tdefer v\.note\(\d\)\n`},
+	{"aggregate through an interface method", `\n\tMix\(v AG_\d+, d int\) AG_\d+\n`},
+	{"aggregate through a package function value", `agSum_\d+\(agFn_\d+\(agMk_\d+\(`},
+	{"aggregate through a table of function values", `agSum_\d+\(agFns_\d+\[i\]\(v, d ?\+ ?i\)\)`},
+	{"aggregate through a method value", `\n\tmv := agImp_\d+\.Mix\n`},
+	{"interface result handed to an interface method", `i\.Sum\(i\.Mix\(agMk_\d+\(`},
 	// A name C has spoken for, which newVarName draws now and then (cNames): the
 	// emitter renames each in every position, and a position it missed was a C
 	// error no generated program could show while every name was a counter's.

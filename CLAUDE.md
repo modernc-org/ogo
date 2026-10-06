@@ -865,7 +865,12 @@ still design-only.
   changes afterwards (each copy made at its defer). A hand-written probe of all
   three matched Go on the host and the board before the generator wrote one. Seeds
   1-2000 on the host shim, clean; 1-200 on a P2-EDGE, 72 nesting, 65 returning the
-  array and 70 deferring, 192 passing and 8 outgrowing, none failing. Seeds 3501-4000
+  array and 70 deferring, 192 passing and 8 outgrowing, none failing. And a
+  fifth, agVia: the aggregate by value through function values -- a local, a
+  package variable, a table of two, a literal -- an interface's methods taking and
+  returning it, and a method value, each a call through a pointer, where the
+  backend has dropped and misconverted arguments before. Seeds 1-2000 on the host
+  shim, clean; 1-200 on a P2-EDGE, 76 with it, 192 passing and 8 outgrowing. Seeds 3501-4000
   with aab09a0, the generator before it: 472 passing, 28 outgrowing, none failing.
   A domain program of the same family -- sample frames of mixed widths filled on
   one cog, passed by value through a channel and a single-producer ring to another
@@ -1474,6 +1479,26 @@ constant operation, which Go converts to the typed one's type before folding --
 Across all 38 batches, 22,000 mutants, only by-design rows remain taken -- `println`
 of an array, a missing `main` (`ogo build`'s), Go's 64 kB channel-element limit --
 and one contrived: a constant named `iota` in its own group, `iota` refers to itself.
+A new domain program the same day, an LZ77 compressor over a bit writer and reader
+with a CRC-32 table, a CRC worker on a second cog and typed errors (four packages:
+bits, crc, lz, main), met a FALSE refusal on its first build: lz's `var ErrShort =
+&bits.Error{...}` was a `*lz.Error` from main, no type of any package, so `err ==
+lz.ErrShort` was "does not implement error". qualifiedValueType named another
+package's variable by its home package alone, where its neighbour addrOfQualifiedPtr
+asked the variable's own qualifier (carriedQual); the range element reader had the
+same gap. And where main does not import bits, the spelling `b.Error` that
+foreignQual hands out resolved nowhere, every lookup by a qualified name asking this
+file's imports: foreignQual records the package it means (foreignPkgs, unambiguous
+names only) and typeDeclNamedIn resolves through it -- which closed a cell the
+2026-10-06 third-package row had left, `var c int = l.C` of a `b.Code` where main
+imports no b. A row of 28 programs agrees with Go (TestCheckThirdPackageVars). It
+matched Go on the host and the board, and its 1,500 mutants had 6 taken, two rows:
+a SLICE of a string had no type where it stood -- `s[0]` was a byte to factorType
+and `s[1:]` nothing, so `take(s[1:])` for a []byte and `var n int = s[1:]` built --
+and an untyped constant BESIDE a non-constant shift, `r.acc & (1<<n - -1)`, which Go
+converts to the context's type as it does the shifted one (untypedConstFits), and a
+float spelling of the shifted one, `b8 + 1e3>>n`. **A constant in a shift's
+expression is asked what the shifted one is.**
 
 **A C NAME IS A ROW** (2026-09-25). The emitted C keeps a program's own names, so
 every name a program may write is a row across everything else that names things in

@@ -124,6 +124,7 @@ type aggregate struct {
 	anEq     [2]int   // the value of q.s[1] agNest changes
 	trioAt   [2]int   // the value agTrioRun reads off a call's array result
 	lateM    [3]int64 // what agLate's deferred calls multiply by
+	viaK     int64    // agImpl's k
 }
 
 func (a *aggregate) name(s string) string { return fmt.Sprintf("%s_%d", s, a.id) }
@@ -419,11 +420,12 @@ func (a *aggregate) run(f *Fuzzer, k, d func() int64) (string, Int32, bool) {
 		step(a.sum(a.apply(v, a.mod, dc)) + a.sum(a.apply(a.mk(k12), a.mod, dc))*3)
 	}
 
-	// Three more shapes, each half the time and each in a function of its own, so
+	// Four more shapes, each half the time and each in a function of its own, so
 	// the procedure's registers stay what they were: a struct nesting the aggregate
-	// and an array of it, an array of it returned by value, and deferred calls
-	// taking it, whose copies are made at the defer. Drawn after everything above,
-	// for the reason the cog is.
+	// and an array of it, an array of it returned by value, deferred calls taking
+	// it, whose copies are made at the defer, and calls through function values and
+	// an interface taking and returning it. Drawn after everything above, for the
+	// reason the cog is.
 	var later []func()
 	if a.r.Intn(2) == 0 {
 		kn, dn := k(), d()
@@ -444,6 +446,12 @@ func (a *aggregate) run(f *Fuzzer, k, d func() int64) (string, Int32, bool) {
 		step(ret)
 		step(log)
 		later = append(later, func() { a.writeLate(f) })
+	}
+	if a.r.Intn(2) == 0 {
+		kv, dv := k(), d()
+		fmt.Fprintf(w, "\tr = r*31 + %s(%d, %d)\n", a.name("agVia"), kv, dv)
+		step(a.via(kv, dv))
+		later = append(later, func() { a.writeVia(f) })
 	}
 	fmt.Fprint(w, "\treturn r\n}\n\n")
 	if cog {
@@ -600,4 +608,53 @@ func (a *aggregate) writeLate(f *Fuzzer) {
 		"\tdefer func(w %s, m int) { %s = %s*31 + %s(w)*m }(v, %d)\n\tdefer %s(v, %d)\n"+
 		"\tv.bump(d)\n\t%s(&v, d)\n\treturn %s(v)\n}\n\n",
 		a.name("agLate"), a.typ, log, a.lateM[2], a.typ, log, log, sum, a.lateM[1], a.name("agNote"), a.lateM[0], a.name("agPtr"), sum)
+}
+
+// via is agVia(k, d), drawing the implementation's constant first.
+func (a *aggregate) via(k, d int64) int32 {
+	a.viaK = int64(2 + a.r.Intn(8))
+	var r int32
+	step := func(v int32) { r = r*31 + v }
+	v := a.mk(k)
+	step(a.sum(a.apply(v, a.mod, d)))
+	step(a.sum(a.apply(a.mk(k+1), a.mod, d)))
+	step(a.sum(a.apply(v, a.mod, d)))
+	step(a.sum(a.apply(v, []agOp{a.bump}, d+1)))
+	w := a.apply(v, a.mod, d+a.viaK)
+	step(a.sum(w) + a.sum(w)*int32(a.viaK))
+	step(a.sum(a.apply(a.mk(k+2), a.mod, d+a.viaK)) * int32(a.viaK))
+	step(a.sum(a.apply(v, a.mod, d+a.viaK)))
+	step(a.sum(v) + 1)
+	step(a.sum(v))
+	return r
+}
+
+// writeVia declares agVia, which hands the aggregate by value to a function value
+// -- a local, a package variable, an element of a table, a literal -- to an
+// interface's methods, and to a method value, each a call through a pointer.
+func (a *aggregate) writeVia(f *Fuzzer) {
+	w := f.Out
+	iface, impl, mod, sum := a.name("AGer"), a.name("agImpl"), a.name("agMod"), a.name("agSum")
+	fn, fns, imp := a.name("agFn"), a.name("agFns"), a.name("agImp")
+	fmt.Fprintf(w, "type %s interface {\n\tMix(v %s, d int) %s\n\tSum(v %s) int\n}\n\n", iface, a.typ, a.typ, a.typ)
+	fmt.Fprintf(w, "type %s struct {\n\tk int\n}\n\n", impl)
+	fmt.Fprintf(w, "func (m *%s) Mix(v %s, d int) %s {\n\tv = %s(v, d+m.k)\n\treturn v\n}\n\n", impl, a.typ, a.typ, mod)
+	fmt.Fprintf(w, "func (m *%s) Sum(v %s) int { return %s(v) * m.k }\n\n", impl, a.typ, sum)
+	fmt.Fprintf(w, "var %s = %s\n\nvar %s [2]func(%s, int) %s\n\nvar %s = %s{k: %d}\n\n", fn, mod, fns, a.typ, a.typ, imp, impl, a.viaK)
+	fmt.Fprintf(w, "func %s(k, d int) int {\n\tr := 0\n\tf := %s\n\tv := %s(k)\n\tr = r*31 + %s(f(v, d))\n"+
+		"\tr = r*31 + %s(%s(%s(k+1), d))\n"+
+		"\t%s[0], %s[1] = %s, func(w %s, e int) %s {\n\t\tw.bump(e)\n\t\treturn w\n\t}\n"+
+		"\tfor i := range %s {\n\t\tr = r*31 + %s(%s[i](v, d+i))\n\t}\n"+
+		"\tvar i %s = &%s\n\tw := i.Mix(v, d)\n\tr = r*31 + %s(w) + i.Sum(w)\n"+
+		"\tr = r*31 + i.Sum(i.Mix(%s(k+2), d))\n"+
+		"\tmv := %s.Mix\n\tr = r*31 + %s(mv(v, d))\n"+
+		"\tg := func(x %s) int { return %s(x) + 1 }\n\tr = r*31 + g(v)\n\tr = r*31 + %s(v)\n\treturn r\n}\n\n",
+		a.name("agVia"), mod, a.name("agMk"), sum,
+		sum, fn, a.name("agMk"),
+		fns, fns, mod, a.typ, a.typ,
+		fns, sum, fns,
+		iface, imp, sum,
+		a.name("agMk"),
+		imp, sum,
+		a.typ, sum, sum)
 }

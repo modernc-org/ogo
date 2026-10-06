@@ -55,6 +55,12 @@ shipped section tells a reader on that version that they have behaviour they do 
 
 ### Fixed
 
+- **A variable of another package whose type is a THIRD package's is that type**:
+  `var ErrShort = &bits.Error{...}` in package lz was read from main as a
+  `*lz.Error`, of no package, so `var e error = lz.ErrShort` and `err ==
+  lz.ErrShort` were refused, "does not implement error" -- the sentinel idiom with
+  the error type in a package of its own. Where main does not import bits, the
+  type is resolved through lz's import of it.
 - **A method called on a parenthesised call or receive evaluates its receiver
   before its arguments**: `(get()).add(<-in)`, `(<-in).add(<-in)` and
   `(markT(3)).add(mark(4))` ran the argument first, silently wrong on the host and
@@ -312,6 +318,14 @@ shipped section tells a reader on that version that they have behaviour they do 
 
 ### Behaviour changes
 
+- **A slice of a string is a string**: `s[1:]`, `K[:2]` of a constant and
+  `"abc"[1:]` had no type where they stood, so `take(s[1:])` for a `[]byte`
+  parameter and `var n int = s[1:]` were taken; only a variable declared from one
+  was typed. And **an untyped constant in an expression a non-constant shift leaves
+  to its context takes the context's type**, as Go converts it: `v & (1<<n - -1)`
+  for a uint32 `v`, `var x uint8 = 1<<n + 300`, `(1<<n - 1) * -3` and a float
+  spelling, `b8 + 1e3>>n`, are refused in Go's words. Only the shifted constant had
+  been asked.
 - **A value received from a channel reached through steps is typed**: the
   variable of a range over a channel field, an element or a call's result, `for r
   := range b.in`, `range reqs[0]`, `range getCh()`, and a receive in parentheses
@@ -711,6 +725,10 @@ shipped section tells a reader on that version that they have behaviour they do 
   source, so every other part of a seed's program draws what it drew before. Of
   seeds 1-2000 all pass on the host; of seeds 1-200 on a P2-EDGE, 141 with such a
   struct and 71 with the cog, 192 pass and 8 outgrow a cog.
+- **`ogo smith` passes the struct through function values and an interface**: a
+  local, a package variable, a table of two, a literal, an interface's methods
+  taking and returning it, and a method value. Seeds 1-2000 pass on the host; of
+  seeds 1-200 on a P2-EDGE, 76 with it, 192 pass and 8 outgrow a cog.
 - **`ogo smith` nests the struct, returns an array of it and defers calls taking
   it.** Of the programs declaring one, half each also declare a struct holding it
   and an array of two of it, built by a keyed literal and compared; a function

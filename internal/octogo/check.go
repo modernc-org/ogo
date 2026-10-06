@@ -259,6 +259,7 @@ type File struct {
 	ownCallees        map[int32]bool              // the token indexes of callees named like a builtin and resolving to the program's own declaration (checkCallee)
 	headerStmts       map[*int32]Node             // the statements standing in headers, `if two(); ok`, as the statements they are, by the place of the header's expression in the AST (see headerStmt); read by the emitter
 	importToks        map[*Package]Token          // a token of this file spelling the name it imports a package by, or none (importQualTok)
+	foreignPkgs       map[string]*Package         // a qualifier another package wrote, which this file spells a type with and does not import (foreignQual); nil where two packages share the name
 	parser            Parser
 	tld               *Scope // tld.Nodes are later moved into (*Package).Scope. Kind: PackageScope, Parent: .Scope.
 }
@@ -4121,8 +4122,13 @@ func (f *File) rangeElemNamed(s *Scope, expr Node) (Token, Token, bool, bool) {
 			return Token{}, Token{}, false, false
 		}
 		// An element of the universe's type there is of it here: `for _, e :=
-		// range lib.Errs` was of a type "lib.error" (homeQual).
-		return d.elemTypeName, homeQual(home, d.elemTypeName, qual), f.elemIsPointer(home, d), true
+		// range lib.Errs` was of a type "lib.error" (homeQual), and one of a third
+		// package's type is spelled as this file names it (carriedQual).
+		eq, ok := f.carriedQual(home, d.elemTypeName, namedTypeQual(d.elemTypeNode), qual)
+		if !ok {
+			return Token{}, Token{}, false, false
+		}
+		return d.elemTypeName, eq, f.elemIsPointer(home, d), true
 	}
 	return written()
 }
@@ -5674,6 +5680,23 @@ func (f *File) factorType(s *Scope, n Node) (Kind, bool) {
 			// the field was asked nothing.
 			if k, ok := f.fieldKind(s, lit, field); ok {
 				return k, true
+			}
+		}
+		// A SLICE of a string, `s[1:]`, `K[:2]`, `"abc"[1:]`, is a string, of the
+		// defined string type where it is one. It had no type where it stands --
+		// only a variable declared from one was typed -- so `var n int = s[1:]`
+		// and `take(s[1:])` for a []byte parameter were taken.
+		if hasLit {
+			if steps := slices.Collect(it(suffix.ast)); len(steps) == 1 && steps[0].sym == Index && f.indexIsSlice(steps[0]) {
+				if Symbol(lit.Ch) == STRING {
+					return PredeclaredString, true
+				}
+				if k, known := f.identKind(s, lit); known && kindCategory(k) == catString {
+					if isUntypedKind(k) {
+						return PredeclaredString, true
+					}
+					return k, true
+				}
 			}
 		}
 		if hasLit && f.indexSuffix(suffix) {
@@ -13556,14 +13579,19 @@ func (f *File) typeDeclNamedIn(s *Scope, name string, unexported bool) (*TypeDec
 		}
 		return td, s, ok
 	}
-	if !f.isImportQualifier(s, qual) || !unexported && !token.IsExported(member) {
-		return nil, nil, false
+	var ps *Scope
+	if pkg, foreign := f.foreignPkg(s, qual); foreign && (unexported || token.IsExported(member)) {
+		ps = pkg.Scope
+	} else {
+		if !f.isImportQualifier(s, qual) || !unexported && !token.IsExported(member) {
+			return nil, nil, false
+		}
+		imp, ok := f.Scope.Declarations[qual].(*ImportDeclaration)
+		if !ok || imp.Import == nil || imp.Import.Pkg == nil || imp.Import.Pkg.Scope == nil {
+			return nil, nil, false
+		}
+		ps = imp.Import.Pkg.Scope
 	}
-	imp, ok := f.Scope.Declarations[qual].(*ImportDeclaration)
-	if !ok || imp.Import == nil || imp.Import.Pkg == nil || imp.Import.Pkg.Scope == nil {
-		return nil, nil, false
-	}
-	ps := imp.Import.Pkg.Scope
 	td, ok := ps.Declarations[member].(*TypeDeclaration)
 	// An alias THERE, `lib.A` for a `type A = T`, is T, resolved where it is
 	// declared; one naming a third package's type is left as written.
@@ -14181,11 +14209,17 @@ func (f *File) qualifiedValueType(s *Scope, value Node) (from string, isPtr, ok 
 		isPtr = true
 	}
 	// A name of the universe there is the universe's here: `held(lib.A)` for a
-	// `var A any` was "lib.any", no interface, "write &lib.A" (homeQual).
-	if q := homeQual(imp.Import.Pkg.Scope, vd.typeName, head); !q.IsValid() {
+	// `var A any` was "lib.any", no interface, "write &lib.A" (homeQual). And a
+	// THIRD package's type there is spelled as this file names it (carriedQual):
+	// `var ErrShort = &bits.Error{...}` in lz was a `*lz.Error`, no error.
+	q, ok := f.carriedQual(imp.Import.Pkg.Scope, vd.typeName, vd.typeQual, head)
+	if !ok {
+		return "", false, false
+	}
+	if !q.IsValid() {
 		return vd.typeName.Src(), isPtr, true
 	}
-	return head.Src() + "." + vd.typeName.Src(), isPtr, true
+	return q.Src() + "." + vd.typeName.Src(), isPtr, true
 }
 
 // addrOfQualifiedPtr reports `&lib.P`, the address of another package's variable
@@ -17337,6 +17371,14 @@ func (f *File) typeShiftOperands(s *Scope, n Node, t shiftTarget) {
 				}
 			}
 		}
+		// A level made untyped and not constant by a shift takes its context's type,
+		// and so does every untyped constant in it: `v & (1<<n - -1)` for a uint32 v
+		// converts -1 to a uint32, which it does not fit. Only the shifted constant
+		// was asked (below), and the other built. A Term's operands before its first
+		// shift are what that shift shifts, asked there; one with no shift of its own
+		// is untyped by an operand that has one, `(1<<n - 1) * -3`.
+		_, constLevel := f.constNumeric(s, n)
+		askConsts := untyped && level.known && !constLevel && (n.sym == SimpleExpr || !shifts)
 		count = false
 		for _, c := range kids {
 			switch c.sym {
@@ -17344,6 +17386,7 @@ func (f *File) typeShiftOperands(s *Scope, n Node, t shiftTarget) {
 			case MulOp:
 				if op := f.mulOp(s, c); op == SHL || op == SHR {
 					count = true
+					askConsts = untyped && level.known && !constLevel
 				}
 			default:
 				switch k, ok := f.exprType(s, c); {
@@ -17351,6 +17394,9 @@ func (f *File) typeShiftOperands(s *Scope, n Node, t shiftTarget) {
 					count = false
 					f.typeShiftOperands(s, c, shiftTarget{kind: PredeclaredUint, name: "uint", known: true})
 				case ok && isUntypedKind(k):
+					if askConsts && !subtreeHasShift(f, c.ast) && f.untypedConstFits(s, c, level) {
+						return
+					}
 					f.typeShiftOperands(s, c, level)
 				default:
 					f.typeShiftOperands(s, c, shiftTarget{})
@@ -17381,6 +17427,20 @@ func (f *File) typeShiftOperands(s *Scope, n Node, t shiftTarget) {
 				// Taken, the emitter computed it in whatever width it was spelled in.
 				if lo, hi, isInt := intKindRange(level.kind); isInt {
 					left := narrowLevelPrefix(n, i)
+					// A float spelling of a whole number, `1e3 >> n`, the same: Go's
+					// words say the float was truncated.
+					if cv, ok := f.constNumeric(s, left); ok && cv.Kind() == constant.Float {
+						if iv := constant.ToInt(cv); iv.Kind() == constant.Int &&
+							(constant.Compare(iv, token.LSS, lo) || constant.Compare(iv, token.GTR, hi)) {
+							src := f.sourceSpan(kids[0].Pos(), kids[i-1].End())
+							what := "untyped float constant"
+							if src != cv.String() {
+								what += " " + cv.String()
+							}
+							f.err(f.tok(kids[0].Pos()).Position(), "%s (%s) truncated to %s", src, what, level.name)
+							return
+						}
+					}
 					if cv, ok := f.constNumeric(s, left); ok && cv.Kind() == constant.Int &&
 						(constant.Compare(cv, token.LSS, lo) || constant.Compare(cv, token.GTR, hi)) {
 						src := f.sourceSpan(kids[0].Pos(), kids[i-1].End())
@@ -17427,6 +17487,44 @@ func (f *File) typeShiftOperands(s *Scope, n Node, t shiftTarget) {
 			f.typeShiftOperands(s, kids[1], t)
 		}
 	}
+}
+
+// untypedConstFits reports, in Go's words, an untyped constant operand c of a level
+// that takes level's integer type from its context, where the type cannot hold it:
+// out of its range, or a float that is no whole number. It reports whether it did.
+func (f *File) untypedConstFits(s *Scope, c Node, level shiftTarget) bool {
+	lo, hi, isInt := intKindRange(level.kind)
+	if !isInt {
+		return false
+	}
+	cv, ok := f.constNumeric(s, c)
+	if !ok {
+		return false
+	}
+	src := f.exprSource(c)
+	pos := f.tok(c.Pos()).Position()
+	switch cv.Kind() {
+	case constant.Int:
+		if constant.Compare(cv, token.LSS, lo) || constant.Compare(cv, token.GTR, hi) {
+			what := "untyped int constant"
+			if src != cv.ExactString() {
+				what += " " + cv.ExactString()
+			}
+			f.err(pos, "%s (%s) overflows %s", src, what, level.name)
+			return true
+		}
+	case constant.Float:
+		iv := constant.ToInt(cv)
+		if iv.Kind() != constant.Int || constant.Compare(iv, token.LSS, lo) || constant.Compare(iv, token.GTR, hi) {
+			what := "untyped float constant"
+			if src != cv.String() {
+				what += " " + cv.String()
+			}
+			f.err(pos, "%s (%s) truncated to %s", src, what, level.name)
+			return true
+		}
+	}
+	return false
 }
 
 // comparisonShiftTarget is the type an operand of a comparison takes: its partner's
@@ -21730,7 +21828,31 @@ func (f *File) foreignQual(written Token) (Token, bool) {
 	if wf == f || f.Scope.Declarations[written.Src()] != nil || f.Package != nil && f.Package.Scope != nil && f.Package.Scope.Declarations[written.Src()] != nil {
 		return Token{}, false
 	}
+	// Recorded, so a lookup by the spelling resolves it (typeDeclNamedIn): `b.Error`
+	// read off l's `var E = &b.Error{}` had no methods here, and `var e error = l.E`
+	// was refused. Two packages written with one name are left unresolved.
+	if f.foreignPkgs == nil {
+		f.foreignPkgs = map[string]*Package{}
+	}
+	if pkg, seen := f.foreignPkgs[written.Src()]; seen && pkg != imp.Import.Pkg {
+		f.foreignPkgs[written.Src()] = nil
+		return Token{}, false
+	} else if seen && pkg == nil {
+		return Token{}, false
+	}
+	f.foreignPkgs[written.Src()] = imp.Import.Pkg
 	return written, true
+}
+
+// foreignPkg is the package a qualifier this file does not import stands for,
+// where foreignQual spelled a type with it, and nothing of this file's scopes
+// shadows the name at s.
+func (f *File) foreignPkg(s *Scope, qual string) (*Package, bool) {
+	pkg := f.foreignPkgs[qual]
+	if pkg == nil || pkg.Scope == nil || s.find(qual) != nil {
+		return nil, false
+	}
+	return pkg, true
 }
 
 // namedAcross names the type a walk from another package's value reached, t, as

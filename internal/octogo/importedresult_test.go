@@ -5,6 +5,7 @@
 package octogo
 
 import (
+	"fmt"
 	"io"
 	"strings"
 	"testing"
@@ -200,6 +201,49 @@ func TestCheckThirdPackage(t *testing.T) {
 				t.Fatalf("got %v, want an error containing %q", err, test.want)
 			}
 		})
+	}
+}
+
+// TestCheckThirdPackageVars: a variable of package l whose type is package b's,
+// `var E1 = &b.Error{...}`, read from main, which may import b or not. Its type was
+// named `l.Error`, of no package, so `var e error = l.E1` was refused, "does not
+// implement error"; and where main does not import b, `b.Error` resolved nowhere.
+func TestCheckThirdPackageVars(t *testing.T) {
+	const b = "type Error struct {\n\tMsg  string\n\tCode int\n}\n\nfunc (e *Error) Error() string { return e.Msg }\n\ntype Code int\n\nfunc (c Code) Twice() Code { return c * 2 }\n"
+	const l = "import \"b\"\n\nvar E1 = &b.Error{\"one\", 1}\n\nvar E2 = b.Error{\"two\", 2}\n\nvar Ls = []*b.Error{E1}\n\nvar Vs = []b.Error{{\"v\", 5}}\n\nvar C = b.Code(3)\n\nfunc Get() *b.Error { return E1 }\n"
+	for _, imp := range []bool{false, true} {
+		for _, test := range []struct {
+			body string
+			want string // "" for one Go takes
+		}{
+			{"var e error = l.E1\n\tprintln(e == l.Get(), takeErr(l.E1), takeErr(&l.E2))", ""},
+			{"for _, x := range l.Ls {\n\t\tvar y error = x\n\t\tprintln(y.Error(), x.Code)\n\t}\n\tprintln(int(l.C.Twice()))", ""},
+			{"var e error = l.E2\n\t_ = e", "cannot use l.E2 (variable of type b.Error) as error value in variable declaration: an interface holds a pointer here"},
+			{"println(takeErr(l.E2))", "an interface holds a pointer here"},
+			{"for _, x := range l.Vs {\n\t\tvar y error = x\n\t\t_ = y\n\t}", "an interface holds a pointer here"},
+			{"var s string = l.E1.Code\n\t_ = s", "cannot use l.E1.Code of type int as type string"},
+			{"var c int = l.C\n\t_ = c", "cannot use l.C of type b.Code as type int"},
+		} {
+			t.Run(fmt.Sprintf("%v/%s", imp, test.body), func(t *testing.T) {
+				hdr := "import \"l\"\n\n"
+				if imp {
+					hdr = "import (\n\t\"b\"\n\t\"l\"\n)\n\nvar _ b.Code\n\n"
+				}
+				src := hdr + "func takeErr(e error) bool { return e != nil }\n\nfunc main() {\n\t" + test.body + "\n}\n"
+				fsys := fstest.MapFS{
+					"main.ogo": &fstest.MapFile{Data: []byte(src)},
+					"l/l.ogo":  &fstest.MapFile{Data: []byte(l)},
+					"b/b.ogo":  &fstest.MapFile{Data: []byte(b)},
+				}
+				_, err := Build(-1, []string{"main.ogo"}, fsys)
+				switch {
+				case test.want == "" && err != nil:
+					t.Fatalf("refused: %v", err)
+				case test.want != "" && (err == nil || !strings.Contains(err.Error(), test.want)):
+					t.Fatalf("got %v, want an error containing %q", err, test.want)
+				}
+			})
+		}
 	}
 }
 

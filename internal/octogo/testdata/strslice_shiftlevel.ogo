@@ -1,0 +1,58 @@
+// A slice of a string is a string, and an untyped constant in an expression that a
+// non-constant shift leaves to its context takes the context's type. Both were
+// asked nothing: `var n int = s[1:]` and `take(s[1:])` for a []byte were taken,
+// and so was `v & (1<<n - -1)` for a uint32 v, where -1 is converted to a uint32.
+
+func take(b []byte) int { return len(b) }
+
+const K = "konst"
+
+type Name string
+
+var gs = "global"
+
+var n uint = 3
+
+var v uint32 = 77
+
+var b8 uint8 = 7
+
+func slices() {
+	s := "abc"
+	// ERROR "cannot use s\[1:\] \(value of type string\) as \[\]byte value in argument to take"
+	println(take(s[1:]))
+	// ERROR "cannot use .abc.\[1:\] \(value of type string\) as \[\]byte value in variable declaration"
+	var b []byte = "abc"[1:]
+	// ERROR "cannot use K\[:2\] \(value of type string\) as \[\]byte value in assignment"
+	b = K[:2]
+	_ = b
+	// ERROR "cannot use gs\[1:3\]"
+	var m int = gs[1:3]
+	_ = m
+	var nm Name = "joe"
+	var t Name = nm[1:]
+	var u string = s[1:] + K[2:] + gs[:1]
+	println(t, u, len(nm[:2]))
+}
+
+func shifts() {
+	// ERROR "-1 \(untyped int constant\) overflows uint32"
+	println(v & (1<<n - -1))
+	// ERROR "1.5 \(untyped float constant\) truncated to uint32"
+	println(v & (1<<n - 1.5))
+	// ERROR "300 \(untyped int constant\) overflows uint8"
+	var x uint8 = 1<<n + 300
+	// ERROR "-3 \(untyped int constant\) overflows uint32"
+	var y uint32 = (1<<n - 1) * -3
+	// ERROR "1e3 \(untyped float constant 1000\) truncated to uint8"
+	println(b8 + 1e3>>n)
+	// ERROR "1e10 \(untyped float constant 1e\+10\) truncated to uint32"
+	println(v & (2<<n * 1e10))
+	var z uint32 = 1<<n - 1
+	println(x, y, z, v&(1<<n-1), b8+(1<<n+2), b8+2e2>>n, v&(4e3<<n-1e0))
+}
+
+func main() {
+	slices()
+	shifts()
+}
