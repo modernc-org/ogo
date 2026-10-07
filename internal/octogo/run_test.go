@@ -1873,6 +1873,67 @@ func main() {
 		want: "0 false true 11\n1 true false -1\n2 false true 20\n0 false 6\n1 false 4\ntrue true 2\nfalse false true 6\n8 5\n",
 	},
 	{
+		// A package array with its type WRITTEN was a static initializer whatever
+		// its elements: `var ga [2]int = [2]int{gx, 1}` named a variable in one,
+		// which C refuses and the target's compiler refused. It is filled at
+		// package initialization, as the inferred form was; and a table of
+		// functions, the inferred form's, is static data, where it had been a
+		// copy of a local of the whole table.
+		name: "package arrays of elements that are no constants, with their type written",
+		src: `type H func(int) int
+
+type P struct{ a, b int }
+
+func dbl(n int) int { return n * 2 }
+
+func inc(n int) int { return n + 1 }
+
+var gx = 3
+
+var gy = gx + 4
+
+var ga [2]int = [2]int{gx, 1}
+
+var gb [2]P = [2]P{{1, gy}}
+
+var gc P = P{gx, gy}
+
+var handlers = [4]H{dbl, inc}
+
+func main() {
+	println(ga[0], ga[1], gb[0].b, gb[1].a, gc.a, gc.b)
+	for i, h := range handlers {
+		if h != nil {
+			println(i, h(10))
+		}
+	}
+}
+`,
+		want: "3 1 7 0 3 7\n0 20\n1 11\n",
+	},
+	{
+		// A row of ROWS a literal leaves out was written `{0}`, which the target's
+		// static initializer takes as a partial row and fails on, "Internal
+		// compiler error, expected initializer list" (doc/partial-aggregate-init.c);
+		// it is braced to the row's rank. The host's compiler took either.
+		name: "an array of rows of rows padded past what its literal writes",
+		src: `type Row [2]int
+
+var cube = [6][2]Row{{{1, 2}, {3, 4}}, {{5, 6}, {7, 8}}}
+
+var grid [5][2][2]int = [5][2][2]int{{{9}}}
+
+func main() {
+	local := [4][2][2]int{{{1, 2}}}
+	println(cube[1][1][0], cube[5][1][1], len(cube), grid[0][0][0], grid[4][1][1])
+	println(local[0][0][1], local[3][1][1])
+	cube[5][1][1] = 42
+	println(cube[5][1][1] + local[0][0][0])
+}
+`,
+		want: "7 0 6 9 0\n2 0\n43\n",
+	},
+	{
 		// The nil check missed two shapes since it shipped: a STORE through a
 		// pointer -- `*p = v`, on the board a silent write into hub address 0, the
 		// boot area -- and every dereference of a pointer to an ARRAY, which had

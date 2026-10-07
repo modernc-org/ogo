@@ -3726,6 +3726,18 @@ func (e *emitter) staticInitOK(initExpr []int32) bool {
 			return true
 		}
 		s := e.src(tok)
+		// A function's name is its address, which C takes in a static
+		// initializer: a table of functions, `var handlers = [4]Handler{a, b, c,
+		// d}`, is data, where it was a copy made at package initialization -- of
+		// a local of the whole table, 65535 entries of which were 256 KB of stack
+		// and a store instruction each. Not one of several results or of a struct:
+		// its value is a wrapper (funcValueWrapper), defined after the package's
+		// variables, which a static initializer cannot name yet.
+		if e.ownFunc(s) {
+			cname := e.mangle(e.curPkgPrefix, s)
+			_, isOut := e.funcStructRet[cname]
+			return isOut || e.outResultOf(e.funcRet[cname]) == ""
+		}
 		return (s == "true" || s == "false") && e.universe(s)
 	}
 	return false
@@ -9871,6 +9883,15 @@ func (e *emitter) emitPackageVarDecl(ast []int32) {
 				}
 				if !e.sameArrayType(a, litType) {
 					return
+				}
+				// Asked as the inferred form asks it: `var ga [2]int = [2]int{gx,
+				// 1}` was written `static int ga[2] = {gx, 1};`, a variable in a
+				// static initializer, which gcc refuses and the target's compiler
+				// reads as ITS initial value, not as Go's -- gx initialized from a
+				// call or another variable is 0 there.
+				if e.flexccInitSkew(a.elem) || !e.staticLitElementsOKLevels(lit, e.elemLitLevels(litType)) {
+					e.emitPkgArrayVar(e.globalC(names[0]), names[0], a, initExpr)
+					continue
 				}
 				e.emitArrayLitVar(e.globalC(names[0]), litType, lit, true)
 				continue
@@ -21430,10 +21451,14 @@ func (e *emitter) emitArrayValues(values []*Node, a arrDim) {
 			// An index the literal skips, or one past its last (padLocalAggregates):
 			// the whole row is zero, written out in full for a row of aggregates,
 			// which "{0}" nested here leaves short of braces.
+			// A row of ROWS is braced to its rank, `{{0}}`: the target's static
+			// initializer takes `{0}` for one as a partial row and fails, "Internal
+			// compiler error, expected initializer list" (doc/partial-aggregate-init.c),
+			// which a `[255][2]Row` padded past its two written rows met.
 			if e.zeroInitC(row.elem) == "{0}" || e.isIfaceCType(row.elem) {
 				e.emit(e.zeroFieldC(structField{ctype: row.elem, dim: row}))
 			} else {
-				e.emit("{0}")
+				e.emit(strings.Repeat("{", row.dims()) + "0" + strings.Repeat("}", row.dims()))
 			}
 			continue
 		}

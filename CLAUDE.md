@@ -1328,6 +1328,19 @@ the table the board runs, the host's compiler compared right, and `make board` w
 not run after the check went in, so v0.49.0 was tagged with it. **A change to what
 the emitter writes around every call or every dereference -- a check, a helper -- is
 run through `make board` before it is committed.**
+The same run's refusals were the target's, each about a package table: a package
+array with its type WRITTEN was a static initializer whatever its elements, `var ga
+[2]int = [2]int{gx, 1}` naming a variable in one (the inferred form asked
+staticLitElementsOKLevels; this one never did); an array of rows of ROWS padded
+past its written rows took `{0}` for a row, which the target's static initializer
+reads as a partial row and fails on (doc/partial-aggregate-init.c; braced to the
+row's rank now); and a table of functions with its type left out was copied from a
+local of the whole table, at 65535 entries a store instruction each, past what a
+call reaches -- a function's name counts as a static initializer now (staticInitOK),
+which moved every fuzzer seed's `var agFn = agMod` and 16 run cases into data. The
+assembler's "Operand for call is out of range" is the program's size, as "exceeds
+maximum of" is (callOutOfRange): a local array of 512 KB met it. gcc took every one
+of these, so no run case had held them; TestTargetBuild does now.
 
 **A COMPILER RUN IN A SWEEP IS CAPPED, AND A CRASH IS NOT A REFUSAL** (2026-09-20).
 A probe program is written to find a fault, and a fault is not always a wrong

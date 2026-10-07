@@ -237,6 +237,11 @@ func backendRefusal(c []byte, keepC string, said []byte, code int, err error) (i
 		ours = true
 	}
 	if !ours {
+		for _, line := range strings.Split(string(said), "\n") {
+			if callOutOfRange.MatchString(line) {
+				return code, errors.New("ogo: the program does not fit the P2's 512 KB of Hub RAM: its code lies past what a call can reach")
+			}
+		}
 		return code, err
 	}
 	if werr := os.WriteFile(keepC, c, 0o644); werr != nil {
@@ -249,8 +254,15 @@ func backendRefusal(c []byte, keepC string, said []byte, code int, err error) (i
 // output size of N bytes exceeds maximum of 524288", which is the PROGRAM's size:
 // it only warns, and writes a binary no P2 can load.
 func hubOverflow(line string) bool {
-	return strings.Contains(line, "exceeds maximum of")
+	return strings.Contains(line, "exceeds maximum of") || callOutOfRange.MatchString(line)
 }
+
+// callOutOfRange is the assembler's word that a call or a jump cannot reach its
+// target, "Operand for call is out of range", which in an image of Hub RAM's 512 KB
+// none is: the image is larger, and that is the program's size too. A local array
+// of 512 KB, its initializer a store an element, met it before anything said the
+// program did not fit.
+var callOutOfRange = regexp.MustCompile(`error: Operand for \w+ is out of range`)
 
 // backendFault fails a build the backend completed and said something about. The C
 // is the compiler's own, written to build without a word, so a warning about it is

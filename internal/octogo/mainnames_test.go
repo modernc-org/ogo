@@ -100,9 +100,10 @@ var n func() = nine
 
 func main() {
 	x := a.X()
+	n()
 	println(x, a.K(), cnt)
 }
-`, "1 2 0\n"},
+`, "1 2 9\n"},
 		{"a constant ranged over beside main's array", `const n = 4
 
 func X() int {

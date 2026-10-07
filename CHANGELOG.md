@@ -16,6 +16,31 @@ same area is a new entry under **Unreleased**, not an edit to the old one. Amend
 shipped section tells a reader on that version that they have behaviour they do not.
 `git show vX.Y.Z:CHANGELOG.md` is the check.
 
+## Unreleased
+
+### Fixed
+
+- **A package array with its type written may hold what is no constant**: `var
+  ga [2]int = [2]int{gx, 1}` and `var gb [2]P = [2]P{{1, gy}}` were refused by
+  the target's C compiler, "global initializers ... must be constant", as a fault
+  of ogo's; they are filled where the package is initialized, as the same lines
+  with the type left out were.
+- **An array of rows of rows given fewer rows than its length builds for the
+  target**: `var cube = [255][2]Row{{{1, 2}, {3, 4}}}` was refused, "Internal
+  compiler error, expected initializer list", the rows left out being written as
+  one brace where the target needs one per rank.
+- **A table of functions in a package variable is data**: `var handlers =
+  [4]Handler{a, b}` with its type left out was copied in at package
+  initialization from a local of the whole table, which at 65535 entries was 256
+  KB of stack and a store instruction an entry, past what a call reaches -- a
+  refusal the build called a fault of ogo's.
+
+### Toolchain
+
+- **A program whose code lies past what a call reaches is told it does not fit
+  Hub RAM**, as one past 512 KB of data was: the assembler's "Operand for call is
+  out of range" had been reported as a fault of ogo's.
+
 ## v0.49.1
 
 ### Fixed

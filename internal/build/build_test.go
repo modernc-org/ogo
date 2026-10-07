@@ -755,6 +755,8 @@ func TestBackendRefusal(t *testing.T) {
 		{"the C", "/tmp/ogo-build-1/p.c:580: error: Cannot handle expression yet\n", failed, true},
 		{"a crash", "", errors.New("flexcc crashed: runtime error"), true},
 		{"the program's own Spin2", "/home/u/proj/drv/obj.spin2:2: error: syntax error\n", failed, false},
+		// Code past what a call reaches is an image past Hub RAM: the program's.
+		{"the program's size", "/tmp/p.p2asm:159: error: Operand for call is out of range\n", failed, false},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			os.Remove(keep)
@@ -769,6 +771,10 @@ func TestBackendRefusal(t *testing.T) {
 				t.Errorf("the message does not name the C: %v", err)
 			case !test.ours && keepErr == nil:
 				t.Errorf("the C is kept for a refusal of the program's own")
+			case strings.Contains(test.said, "out of range"):
+				if !strings.Contains(err.Error(), "does not fit the P2's 512 KB of Hub RAM") {
+					t.Errorf("err=%v, want the program's size", err)
+				}
 			case !test.ours && err != test.err:
 				t.Errorf("err=%v, want %v as it was", err, test.err)
 			}
