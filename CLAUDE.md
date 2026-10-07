@@ -2662,7 +2662,10 @@ value without the shift (wideShift32C): zero, x evaluated, or the sign word of a
 signed x. **A run that reads a register nothing wrote can look right by luck: the
 listing is the measure, and a C harness passing a constant after a 64-bit argument
 is a second fault of its own** -- the first reductions here judged by `chku(..., e,
-0ULL)` and were misled. Seeds 1-2000 on the host shim with the new generator: clean.
+0ULL)` and were misled. Seeds 1-2000 on the host shim with the new generator: clean;
+on a P2-EDGE with c73d569, seeds 1-200 192 passing and 8 outgrowing a cog, and
+6001-6500 450 passing and 50 outgrowing, none failing (six loads that timed out or
+could not write the port passed on a second).
 A parenthesised head, `(uint64(x)) >> 32`, was the rewrite's first miss
 (unparenExpr). And the family is bounded on the board: a value widened and then
 compared, masked, added, multiplied, or shifted by any other count is right, and so
