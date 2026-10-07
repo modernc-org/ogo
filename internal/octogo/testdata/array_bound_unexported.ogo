@@ -1,0 +1,11 @@
+// An array bound naming another package's unexported constant is refused for that,
+// as every other position refuses it, not as a non-constant bound.
+
+import "p2"
+
+// ERROR "cannot refer to unexported name p2.dacMode"
+var a [p2.dacMode]int
+
+func main() {
+	println(len(a), p2.DriveHigh15K)
+}

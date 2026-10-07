@@ -1,0 +1,46 @@
+// A range over an address ranges over what it points at only where that is an
+// array; an address of anything else is a pointer, which has no elements -- where
+// `range &m.Len` of a uint8 was taken and ranged as the integer it points at.
+
+type P struct{ a, b int }
+
+var arr [3]int
+
+var sl = []int{1, 2}
+
+var n uint8 = 3
+
+var p P
+
+var str = "ab"
+
+func main() {
+	for i, v := range &arr {
+		println(i, v)
+	}
+	var m [2][3]int
+	for i, row := range &m {
+		println(i, len(row))
+	}
+	// ERROR "cannot range over &n \(value of type \*uint8\)"
+	for i := range &n {
+		println(i)
+	}
+	// ERROR "cannot range over &sl: it is a pointer to a slice"
+	for i := range &sl {
+		println(i)
+	}
+	// ERROR "cannot range over &p: it is a pointer to a struct"
+	for i := range &p {
+		println(i)
+	}
+	// ERROR "cannot range over &str \(value of type \*string\)"
+	for i := range &str {
+		println(i)
+	}
+	q := &p
+	// ERROR "cannot range over &q.a \(value of type \*int\)"
+	for i := range &q.a {
+		println(i)
+	}
+}

@@ -84,7 +84,7 @@ func targets(r R) {
 	// ERROR "cannot assign to .s."
 	for i := 0; i < 3; "s"++ {
 	}
-	// ERROR "cannot range over &gs: it is a pointer"
+	// ERROR "cannot range over &gs \(value of type \*string\)"
 	for i := range &gs {
 		_ = i
 	}

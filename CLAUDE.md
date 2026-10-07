@@ -1409,6 +1409,14 @@ x.(type)` was taken, Go's "no new variables"; and a bare-name operand of a Kind 
 both, "is not an interface" and "use of .(type) outside type switch"). A switch
 binding its operand and naming no type in any clause wrote an unused temporary
 (`(void)` now).
+Two domain programs the same day, Conway's Life on uint64 rows (dom29) and a
+message bus over cogs (dom30: static handler tables, state functions, a 64-bit
+clock from a wrapping counter, CRC-32 over payload structs), matched Go on the
+host and the board; their 6,000 mutants had one row taken, a range over an
+ADDRESS, `range &m.Len` of a uint8 ranged as the integer -- the address's Kind
+being its pointee's to the rule asking (checkRangeable asks what an address
+points at: an array only) -- and one message wrong, `[lib.n]int` of an
+unexported constant "non-constant array bound".
 
 **A COMPILER RUN IN A SWEEP IS CAPPED, AND A CRASH IS NOT A REFUSAL** (2026-09-20).
 A probe program is written to find a fault, and a fault is not always a wrong

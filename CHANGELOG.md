@@ -63,6 +63,13 @@ shipped section tells a reader on that version that they have behaviour they do 
 
 ### Behaviour changes
 
+- **A range over an address of anything but an array is refused**, as Go
+  refuses it: `for i := range &m.Len` of a uint8 was taken and ranged as the
+  integer the address points at, the address's Kind being its pointee's to the
+  rule that asked.
+- **An array bound naming another package's unexported constant says so**:
+  `[lib.n]int` was "non-constant array bound", where every other position said
+  "cannot refer to unexported name lib.n".
 - **`switch _ := x.(type)` is refused**, as Go refuses it: "no new variables on
   left side of :=".
 - **A type switch on a variable that is no interface, and `.(type)` outside a

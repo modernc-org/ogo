@@ -3766,6 +3766,21 @@ func (f *File) checkRangeable(s *Scope, expr Node) {
 		f.err(f.tok(expr.Pos()).Position(), "cannot range over nil")
 		return
 	}
+	// An address is a pointer, which ranges only where it points at an array:
+	// `range &m.Len` of a uint8 was taken, the address's Kind being its pointee's
+	// to exprType, and ranged as an integer.
+	if inner, isAddr := f.addressOperand(s, expr); isAddr {
+		ie := Node{sym: Expression, ast: encodeNode(SimpleExpr, encodeNode(Term, encodeNode(UnaryExpr, encodeNode(Factor, inner.ast))))}
+		what, known := f.nonBoolOperand(s, ie)
+		switch k, ok := f.exprType(s, ie); {
+		case known && what == "an array":
+		case ok && kindCategory(k) != catUnknown:
+			f.err(f.tok(expr.Pos()).Position(), "cannot range over %s (value of type *%s)", f.exprSource(expr), kindName(k))
+		case known:
+			f.err(f.tok(expr.Pos()).Position(), "cannot range over %s: it is a pointer to %s", f.exprSource(expr), what)
+		}
+		return
+	}
 	// A struct and an interface have no elements either: `for range gs` was taken,
 	// and with a value variable the emitter took the struct for a COUNT, "ranging an
 	// integer yields only the index".
@@ -27870,9 +27885,15 @@ func (f *File) arrayBound(s *Scope, n Node) ExpressionNode {
 	switch {
 	case cv.cv == nil || cv.cv.Kind() == constant.Unknown:
 		// A non-constant bound. When factor already reported a more specific
-		// cause (an undefined name), do not pile on.
+		// cause (an undefined name), do not pile on; and the names are walked for
+		// one, `[lib.n]int` of another package's unexported constant being "cannot
+		// refer to unexported name" where it was "non-constant array bound".
 		if !reported {
-			f.err(pos, "non-constant array bound")
+			n1 := len(f.errList)
+			f.checkNames(s, n)
+			if len(f.errList) == n1 {
+				f.err(pos, "non-constant array bound")
+			}
 		}
 	case cv.cv.Kind() != constant.Int:
 		f.err(pos, "invalid array bound")
