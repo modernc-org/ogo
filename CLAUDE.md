@@ -2583,6 +2583,16 @@ did a literal's element rendering a call -- emitVarDeclInit captures only for th
 literal itself or its address, as pkgInitAssign did, and notLitOwner clears the
 owner for an element that is no literal. **An owner of deferred work is the
 storage the literal fills, not whatever is being rendered when it is found.**
+A DSP program the same day (dom32: a Q15 radix-2 FFT of 64 points, scaled at every
+stage, windowed, its peaks found, a round trip through the inverse on another cog,
+a Goertzel detector beside it; three packages) matched Go on the host and the board
+once its Peaks took the caller's buffer -- a slice of a local returned is refused by
+design. Its 1,500 mutants had two rows taken: a header's step, `for ...; i <<= true`,
+`if x >>= f; ...`, asked nothing of a shift's count or a division's constant zero
+divisor, the statement form's checks living in the statement path alone
+(checkShiftAssignCount, asked by checkPostOp too); and an element store into a
+numeric constant, `K[0] = 1`, asked nothing (checkNonValueTargetHead read a
+selector only). Its 237 accepted mutants matched Go but for the panic's wording.
 
 **A STRUCT HOLDING AN ARRAY IS COPIED, NEVER ASSIGNED** (2026-09-23). The target's C
 compiler copy-initializes and assigns one only at some SIZES -- "Unable to multiply

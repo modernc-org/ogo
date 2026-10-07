@@ -4820,6 +4820,11 @@ func (f *File) checkPostOp(s *Scope, lhs []Node, op Symbol, opSrc string, rhs []
 			return
 		}
 		if isShiftAssign(op) {
+			f.checkShiftAssignCount(s, rhs[0], false)
+			return
+		}
+		if (op == QUO_ASSIGN || op == REM_ASSIGN) && f.constZeroDivisor(s, k, rhs[0]) {
+			f.err(f.tok(rhs[0].Pos()).Position(), "invalid operation: division by zero")
 			return
 		}
 		vk, known := f.exprType(s, rhs[0])
@@ -4832,6 +4837,27 @@ func (f *File) checkPostOp(s *Scope, lhs []Node, op Symbol, opSrc string, rhs []
 			return
 		}
 		f.checkValueOverflow(s, sizedTarget(k, Token{}), rhs[0])
+	}
+}
+
+// checkShiftAssignCount checks the count of a shift assignment, `x <<= n`: what
+// `x << n` asks of it (checkShiftCount), and a count of a typed float, `x >>=
+// float64(n)`, and nil, a bool or a string constant, `crc <<= true`, which the
+// binary form refuses as no operand of a shift. A for clause's post and an if's or a
+// switch's init asked none of it, `for ...; i <<= true` taken; reported says the
+// target has been refused already, which the type questions then leave alone.
+func (f *File) checkShiftAssignCount(s *Scope, n Node, reported bool) {
+	f.checkShiftCount(s, n) // `x <<= -1` is the same error as `x << -1`
+	if k, ok := f.exprType(s, n); (ok || f.isNilOperand(n)) && !reported {
+		pos := f.tok(n.Pos()).Position()
+		switch {
+		case f.isNilOperand(n):
+			f.err(pos, "cannot convert nil to type uint")
+		case k == UntypedBool || k == UntypedString:
+			f.err(pos, "cannot convert %s (%s constant) to type uint", f.exprSource(n), untypedName(k))
+		case !isIntegerKind(k) && !isUntypedKind(k):
+			f.err(pos, "invalid operation: shift count %s (%s of type %s) must be integer", f.exprSource(n), valueOrVariable(f, n), kindName(k))
+		}
 	}
 }
 
@@ -8876,21 +8902,7 @@ func (f *File) checkAssignment(s *Scope, head, postfix Node) {
 		}
 		reported := f.checkOperatorTarget(s, head, postfix, op, hasSelectorOrIndex(postfix), rhs)
 		if isShiftAssign(op) && len(rhs) == 1 {
-			f.checkShiftCount(s, rhs[0]) // `x <<= -1` is the same error as `x << -1`
-			// And a count of a typed float, `x >>= float64(n)`, as in `x >> ...`; and
-			// nil, a bool or a string constant, `crc <<= true`, which the binary
-			// form refuses as no operand of a shift and this one took.
-			if k, ok := f.exprType(s, rhs[0]); (ok || f.isNilOperand(rhs[0])) && !reported {
-				pos := f.tok(rhs[0].Pos()).Position()
-				switch {
-				case f.isNilOperand(rhs[0]):
-					f.err(pos, "cannot convert nil to type uint")
-				case k == UntypedBool || k == UntypedString:
-					f.err(pos, "cannot convert %s (%s constant) to type uint", f.exprSource(rhs[0]), untypedName(k))
-				case !isIntegerKind(k) && !isUntypedKind(k):
-					f.err(pos, "invalid operation: shift count %s (%s of type %s) must be integer", f.exprSource(rhs[0]), valueOrVariable(f, rhs[0]), kindName(k))
-				}
-			}
+			f.checkShiftAssignCount(s, rhs[0], reported)
 		}
 		// `y %= 0`, `y /= N - N`: an integer division by a constant zero, which the
 		// binary form refuses (constZeroDivisor) and this one took, to divide by
@@ -18243,6 +18255,20 @@ func (f *File) checkOperatorTarget(s *Scope, head, postfix Node, op Symbol, suff
 // nothing a target is asked.
 func (f *File) checkNonValueTargetHead(s *Scope, head Token, postfix Node) {
 	steps, _ := callSteps(postfix)
+	// `K[0] = 1` for a numeric constant K: no constant but a string has elements,
+	// and a string's are read only, which the store's own check says.
+	if len(steps) != 0 && steps[0].sym == Index {
+		if _, isConst := s.find(head.Src()).(*ConstDeclaration); isConst {
+			if k, ok := f.identKind(s, head); ok && k != UntypedString && k != PredeclaredString {
+				what := untypedName(k) + " constant"
+				if !isUntypedKind(k) {
+					what = "constant of type " + kindName(k)
+				}
+				f.err(head.Position(), "invalid operation: cannot index %s (%s)", head.Src(), what)
+			}
+		}
+		return
+	}
 	if len(steps) == 0 || steps[0].sym != Selector {
 		return
 	}

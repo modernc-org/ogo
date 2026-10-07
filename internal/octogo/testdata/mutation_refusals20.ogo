@@ -1,0 +1,33 @@
+// Mutations of a domain program, a Q15 FFT: a shift assignment by what is no
+// integer in a header -- a for clause's post, an if's and a switch's init -- which
+// the statement form refused, a division by a constant zero there, and an element
+// store into a numeric constant.
+
+const K = 6
+
+func main() {
+	x := 8
+	var fl float32 = 2
+	// ERROR "cannot convert true \(untyped bool constant\) to type uint"
+	for i := 1; i < 3; i <<= true {
+	}
+	// ERROR "shift count fl \(variable of type float32\) must be integer"
+	for i := 1; i < 3; i <<= fl {
+	}
+	// ERROR "cannot convert true \(untyped bool constant\) to type uint"
+	if x <<= true; x > 0 {
+	}
+	// ERROR "cannot convert true \(untyped bool constant\) to type uint"
+	switch x >>= true; x {
+	}
+	// ERROR "division by zero"
+	for i := 8; i > 1; i /= 0 {
+	}
+	// ERROR "cannot index K \(untyped int constant\)"
+	K[0] = 1
+	// ERROR "cannot index K \(untyped int constant\)"
+	K[1] += 1
+	// ERROR "cannot index K \(untyped int constant\)"
+	K[2]++
+	_, _ = x, fl
+}

@@ -27,6 +27,12 @@ shipped section tells a reader on that version that they have behaviour they do 
 
 ### Fixed
 
+- **A header's step asks what a statement's does**: a shift assignment by what is
+  no integer, `for ...; i <<= true` or an if's or a switch's `x >>= f` of a float,
+  and a division by a constant zero, `for ...; i /= 0`, were taken in a for clause's
+  post and an if's or a switch's init, where the statement refused them; and an
+  element store into a numeric constant, `K[0] = 1`, `K[0] += 1`, `K[0]++`, was
+  taken anywhere.
 - **A struct literal holding an array element that is no literal may stand as a
   value**: `take(R{1, la})`, `takep(&R{2, mk()})` and `R{1, la}.s[1]` were refused,
   "bind the literal to a variable first", where the same literal bound to a
