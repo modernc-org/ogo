@@ -6390,7 +6390,17 @@ func (f *File) checkSwitch(s *Scope, results []retResult, n Node) {
 					f.err(f.tok(ts.tag.Pos()).Position(),
 						"a type switch guard takes no expression after it: write %q", "switch "+ts.name.Src()+" := "+ts.src+".(type) {")
 				}
-				f.checkTypeSwitchOperand(s, ss, ts)
+				opScope := s
+				if ts.init {
+					// The init first, in the statement's scope, which the operand
+					// may name; the guard's name is the clauses', so it may shadow
+					// a name the init declares, and gets a scope of its own.
+					g, _ := f.switchGuardParts(c.ast)
+					f.checkSwitchInit(s, ss, results, c, g)
+					opScope = ss
+					ss = ss.child()
+				}
+				f.checkTypeSwitchOperand(opScope, ss, ts)
 				break
 			}
 			typeOnExpr = f.typeSwitchShaped(c)
@@ -6470,6 +6480,9 @@ type typeSwitchGuard struct {
 	// statement for it, so it is refused rather than read as one (see checkSwitch).
 	tag    Node
 	hasTag bool
+	// init marks a type switch behind an init statement, `switch s := f(); v :=
+	// s.(type)`, whose init is checked first and whose operand may name it.
+	init bool
 }
 
 // typeSwitchParts recognises a type switch's guard. The Selector spelling ".(type)"
@@ -6477,13 +6490,23 @@ type typeSwitchGuard struct {
 // ".(T)" that the same production admits.
 func (f *File) typeSwitchParts(guard Node) (ts typeSwitchGuard, ok bool) {
 	g, ok := f.switchGuardParts(guard.ast)
-	if !ok || g.assign {
-		// An assignment init ahead of `v.(type)` is refused by checkSwitchGuard,
-		// which is only reached when this declines it.
+	if !ok {
 		return ts, false
 	}
 	value := g.tag
-	if g.hasName {
+	switch {
+	case f.tagIsTypeSwitch(g):
+		// `switch s := f(); v := s.(type)`: an init statement, of any form, and the
+		// type switch after it, whose operand may name what the init declares.
+		ts.init = true
+		if g.hasTagName {
+			g.name, g.hasName = g.tagName, true
+		} else {
+			g.hasName = false
+		}
+	case g.assign:
+		return ts, false
+	case g.hasName:
 		value = g.value
 		// The guard is `name := value`, so anything after a ";" is a TAG the type
 		// switch has no room for. Recorded rather than ignored, which is what let
@@ -6517,6 +6540,7 @@ func (f *File) typeSwitchParts(guard Node) (ts typeSwitchGuard, ok bool) {
 	if len(kids) == 2 && kids[0].sym == 0 && f.ch(kids[0].tok) == IDENT && len(steps) == 1 {
 		ts.operand = f.tok(kids[0].tok)
 		ts.src = ts.operand.Src()
+		ts.expr = factorWithoutLastStep(kids, steps) // the name, as an expression
 	} else {
 		// An operand that is no bare name, `h.sh.(type)`, `f().(type)`, `(v).(type)`:
 		// the factor without its last step, rebuilt as an expression to be asked what
@@ -6597,11 +6621,18 @@ func (f *File) typeSwitchShaped(guard Node) bool {
 // rule. Go's rule there is that the name is unused only when no clause uses it,
 // which is what registering it once, rather than per clause, asks.
 func (f *File) checkTypeSwitchOperand(s, ss *Scope, ts typeSwitchGuard) {
+	if !ts.isExpr {
+		// A bare name of a Kind, `switch v := 1; v.(type)`, is no interface: the
+		// emitter said so in its own words.
+		if k, known := f.exprType(s, ts.expr); known && kindCategory(k) != catUnknown {
+			f.err(ts.operand.Position(), "invalid operation: %s (variable of type %s) is not an interface", ts.src, kindName(k))
+		}
+	}
 	if ts.isExpr {
 		// The names an expression operand uses, `pick(0)`'s arguments among them,
 		// which checkSwitchGuard resolved while such a switch was read as a plain
 		// one. And it must be an interface, which a bare name is asked per clause.
-		f.checkNames(s, ts.value)
+		f.checkNames(s, ts.expr)
 		if _, _, _, ok := f.typeSwitchIfaceName(s, ts); !ok {
 			what := "variable"
 			if strings.Contains(ts.src, "(") {
@@ -6622,6 +6653,10 @@ func (f *File) checkTypeSwitchOperand(s, ss *Scope, ts typeSwitchGuard) {
 		}
 	}
 	if !ts.name.IsValid() {
+		return
+	}
+	if ts.name.Src() == "_" {
+		f.errNoNewVars(ts.name) // `switch _ := x.(type)` binds nothing
 		return
 	}
 	vd := &VarDeclaration{declaration: declaration{token: ts.name}}
@@ -7166,17 +7201,28 @@ func (f *File) checkSwitchGuard(s, ss *Scope, results []retResult, n Node) (Kind
 		f.err(f.tok(n.Pos()).Position(), "malformed switch header")
 		return 0, false
 	}
-	if (g.assign || g.step != 0 || g.hasStmt) && g.hasTag && f.typeSwitchShaped(Node{sym: SwitchGuard, ast: n.ast}) {
-		f.err(f.tok(n.Pos()).Position(), "a type switch with an init statement is not supported yet")
+	if g.hasTagName {
+		// `switch f(); v := x`: only a type switch binds a name after the init.
+		f.err(f.tok(g.tagName.Pos()).Position(), "%s := %s used as value", f.exprSource(g.tagName), f.exprSource(g.tag))
 		return 0, false
 	}
+	if !f.checkSwitchInit(s, ss, results, n, g) {
+		return 0, false
+	}
+	return f.checkSwitchTag(ss, g)
+}
+
+// checkSwitchInit checks a switch header's init statement, declaring what it
+// declares in ss, the statement's scope. It reports false where the header is
+// refused.
+func (f *File) checkSwitchInit(s, ss *Scope, results []retResult, n Node, g switchGuard) bool {
 	if g.hasStmt {
 		// `switch two(); x` and `switch ch <- v; x`: a statement standing alone,
 		// which Go allows as the init as it allows an assignment. Without the ";" a
 		// send would have to be the thing switched on, and a send is no value.
 		if !g.semi {
 			f.err(f.tok(n.Pos()).Position(), "a send is a statement and cannot be switched on: write \";\" and the expression to switch on after it")
-			return 0, false
+			return false
 		}
 		f.checkHeaderStmt(s, results, g.stmtHead, g.stmtTail)
 	}
@@ -7187,7 +7233,7 @@ func (f *File) checkSwitchGuard(s, ss *Scope, results []retResult, n Node) (Kind
 		if !g.semi {
 			f.err(f.tok(n.Pos()).Position(), "%s%s is a statement and cannot be switched on: write \";\" and the expression to switch on after it",
 				f.exprSource(g.name), stepSpelling(g.step, g.opSrc))
-			return 0, false
+			return false
 		}
 		f.checkStepInit(s, g.name, g.step, g.opSrc, g.value, len(g.values) != 0)
 	}
@@ -7197,7 +7243,7 @@ func (f *File) checkSwitchGuard(s, ss *Scope, results []retResult, n Node) (Kind
 		// switched on, and an assignment is no value.
 		if !g.semi {
 			f.err(f.tok(n.Pos()).Position(), "an assignment cannot be switched on: write \";\" and the expression to switch on after it")
-			return 0, false
+			return false
 		}
 		f.checkHeaderAssignList(s, g.name, g.items, g.values)
 	} else if g.hasName && len(g.values) > 1 {
@@ -7206,7 +7252,7 @@ func (f *File) checkSwitchGuard(s, ss *Scope, results []retResult, n Node) (Kind
 		// there is no one name here to switch on.
 		if !g.semi {
 			f.err(f.tok(n.Pos()).Position(), "a switch init statement with several values needs a \";\" and the expression to switch on")
-			return 0, false
+			return false
 		}
 		f.declareHeaderValues(s, ss, g.name, g.items, g.values)
 	} else if g.hasName && len(g.items) != 0 {
@@ -7233,6 +7279,11 @@ func (f *File) checkSwitchGuard(s, ss *Scope, results []retResult, n Node) (Kind
 			}
 		}
 	}
+	return true
+}
+
+// checkSwitchTag checks the expression a switch switches on, answering its Kind.
+func (f *File) checkSwitchTag(ss *Scope, g switchGuard) (Kind, bool) {
 	if !g.hasTag {
 		// "switch v := f(); {" switches on true, like a bare "switch {", with v in
 		// scope. There is no guard type for the case expressions to match.
@@ -7277,6 +7328,10 @@ type switchGuard struct {
 	value  Node   // that name's initializer
 	values []Node // every initializer written: one, or one for each name
 	tag    Node   // the expression switched on
+	// tagName is the name a type switch behind an init statement binds, `v` of
+	// `switch s := f(); v := s.(type)`: the tag is then `s.(type)`.
+	tagName    Node
+	hasTagName bool
 
 	hasName bool
 	hasTag  bool
@@ -7297,6 +7352,60 @@ type switchGuard struct {
 	hasStmt  bool
 }
 
+// readSwitchTag reads what follows a switch header's ";": the expression switched
+// on, or a type switch's guard, `v := s.(type)`, whose name is the tag's name.
+func (f *File) readSwitchTag(g *switchGuard, tag Node) {
+	g.semi = true
+	var exprs []Node
+	define := false
+	for t := range it(tag.ast) {
+		switch {
+		case t.sym == Expression:
+			exprs = append(exprs, t)
+		case t.sym == 0 && f.ch(t.tok) == DEFINE:
+			define = true
+		}
+	}
+	switch {
+	case len(exprs) == 1:
+		g.tag, g.hasTag = exprs[0], true
+	case len(exprs) == 2 && define:
+		g.tagName, g.hasTagName = exprs[0], true
+		g.tag, g.hasTag = exprs[1], true
+	}
+}
+
+// tagIsTypeSwitch reports a switch whose tag, behind an init statement, is a type
+// switch's guard: `switch s := f(); s.(type)` and `switch s := f(); v := s.(type)`.
+func (f *File) tagIsTypeSwitch(g switchGuard) bool {
+	return g.semi && g.hasTag && f.isTypeSwitchValue(g.tag)
+}
+
+// isTypeSwitchValue reports `x.(type)`, whatever x is.
+func (f *File) isTypeSwitchValue(value Node) bool {
+	fac, isFac := f.soleFactor(value)
+	if !isFac {
+		return false
+	}
+	var last Node
+	for c := range it(fac.ast) {
+		if c.sym == FactorSuffix {
+			for st := range it(c.ast) {
+				last = st
+			}
+		}
+	}
+	if last.sym != Selector {
+		return false
+	}
+	for c := range it(last.ast) {
+		if c.sym == 0 && f.ch(c.tok) == TYPE {
+			return true
+		}
+	}
+	return false
+}
+
 // switchGuardParts decomposes a SwitchGuard node's children. ok is false for a
 // header matching none of the shapes above. A ";" not preceded by ":=" -- Go's
 // init statement in a form other than a short variable declaration -- is a shape
@@ -7310,12 +7419,7 @@ func (f *File) switchGuardParts(guard []int32) (g switchGuard, ok bool) {
 			g.stmtHead, g.stmtTail, g.hasStmt = kids[0], tail, true
 			for _, c := range kids[3:] {
 				if c.sym == SwitchTag {
-					g.semi = true
-					for t := range it(c.ast) {
-						if t.sym == Expression {
-							g.tag, g.hasTag = t, true
-						}
-					}
+					f.readSwitchTag(&g, c)
 				}
 			}
 			return g, true
@@ -7326,12 +7430,7 @@ func (f *File) switchGuardParts(guard []int32) (g switchGuard, ok bool) {
 		case Expression:
 			exprs = append(exprs, c)
 		case SwitchTag:
-			g.semi = true
-			for t := range it(c.ast) {
-				if t.sym == Expression {
-					g.tag, g.hasTag = t, true
-				}
-			}
+			f.readSwitchTag(&g, c)
 		case LhsItem:
 			g.items = append(g.items, c)
 		case AssignOp:
@@ -23157,6 +23256,13 @@ func (f *File) checkStepNames(s *Scope, steps []Node) {
 // a package-qualified read or call "pkg.X"/"pkg.F()", whose qualifier resolves
 // through the file scope; a literal is left alone.
 func (f *File) checkFactorNames(s *Scope, n Node) {
+	// `x.(type)` is a type switch's guard and nothing else: a type switch reads
+	// its operand without it (checkTypeSwitchOperand), so one met here is used as
+	// a value, `x := v.(type)`, which went to the emitter as "cannot infer a type".
+	if f.isTypeSwitchValue(Node{sym: Expression, ast: encodeNode(SimpleExpr, encodeNode(Term, encodeNode(UnaryExpr, encodeNode(Factor, n.ast))))}) {
+		f.err(f.tok(n.Pos()).Position(), "use of .(type) outside type switch")
+		return
+	}
 	// A function literal standing here is a function of its own: its body is
 	// checked in a scope hanging off the file's, which is what makes reading a
 	// local of the surrounding function the capture it is.

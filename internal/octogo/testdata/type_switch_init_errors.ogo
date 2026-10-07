@@ -1,0 +1,84 @@
+// What Go refuses around a type switch behind an init statement, and of a type
+// switch's guard on its own.
+
+type Shape interface{ Area() int }
+
+type Sq struct{ s int }
+
+func (q *Sq) Area() int { return q.s * q.s }
+
+var gq = Sq{3}
+
+var gs Shape = &gq
+
+func pick() Shape { return &gq }
+
+func asValue() {
+	// ERROR "y := x used as value"
+	switch x := 1; y := x {
+	case 1:
+	}
+}
+
+func initUnused() {
+	// ERROR "declared and not used: s"
+	switch s := pick(); v := gs.(type) {
+	case *Sq:
+		println(v.s)
+	}
+}
+
+func guardUnused() {
+	// ERROR "declared and not used: v"
+	switch s := pick(); v := s.(type) {
+	case *Sq:
+	}
+}
+
+func blankGuard() {
+	// ERROR "no new variables on left side of :="
+	switch s := pick(); _ := s.(type) {
+	case *Sq:
+	}
+	// ERROR "no new variables on left side of :="
+	switch _ := gs.(type) {
+	case *Sq:
+	}
+}
+
+func notIface() {
+	// ERROR "v \(variable of type int\) is not an interface"
+	switch v := 1; v.(type) {
+	case int:
+	}
+	n := 2
+	// ERROR "n \(variable of type int\) is not an interface"
+	switch n.(type) {
+	case int:
+	}
+}
+
+func outside() {
+	// ERROR "use of .\(type\) outside type switch"
+	x := gs.(type)
+	println(x)
+}
+
+func fall() {
+	switch s := pick(); s.(type) {
+	case *Sq:
+		// ERROR "cannot fallthrough in type switch"
+		fallthrough
+	default:
+	}
+}
+
+func main() {
+	asValue()
+	initUnused()
+	guardUnused()
+	blankGuard()
+	notIface()
+	outside()
+	fall()
+}

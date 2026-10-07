@@ -1940,6 +1940,113 @@ func main() {
 		want: "3 -1 1 2 0 0 -1 6\n",
 	},
 	{
+		// A type switch behind an init statement, `switch s := pick(i); v :=
+		// s.(type)`, which did not parse: every form of init -- a declaration, an
+		// assignment, a step, a statement, several names -- with the operand naming
+		// what it declared, and the guard's name shadowing the init's.
+		name: "a type switch behind an init statement",
+		src: `type Shape interface{ Area() int }
+
+type Sq struct{ s int }
+
+func (q *Sq) Area() int { return q.s * q.s }
+
+type Rect struct{ w, h int }
+
+func (r *Rect) Area() int { return r.w * r.h }
+
+var gq = Sq{3}
+var gr = Rect{2, 5}
+var shapes = [3]Shape{&gq, &gr, nil}
+var calls int
+
+func pick(i int) Shape {
+	calls++
+	return shapes[i]
+}
+
+func two(i int) (Shape, int) { return shapes[i], i * 10 }
+
+func kind(i int) string {
+	switch s := pick(i); v := s.(type) {
+	case *Sq:
+		return "sq"
+	case *Rect:
+		if v.w > 1 {
+			break
+		}
+		return "thin rect"
+	case nil:
+		return "nil"
+	}
+	return "rect"
+}
+
+
+func main() {
+	for i := range 3 {
+		println(i, kind(i))
+	}
+	var s Shape
+	switch s = pick(1); s.(type) {
+	case *Rect:
+		println("assigned rect", s.Area())
+	}
+	n := 0
+	switch n++; v := shapes[n-1].(type) {
+	case *Sq:
+		println("stepped", n, v.s)
+	}
+	switch calls++; pick(0).(type) {
+	default:
+		println("statement init", calls)
+	}
+	switch sh, k := two(1); v := sh.(type) {
+	case *Rect:
+		println("two", k, v.h)
+	}
+	switch v := pick(0); v := v.(type) {
+	case *Sq:
+		println("shadow", v.s)
+	}
+
+	switch x := shapes[0].(type) {
+	case *Sq:
+		println("send", x.Area())
+	}
+	println(calls)
+}
+`,
+		want: "0 sq\n1 rect\n2 nil\nassigned rect 10\nstepped 1 3\nstatement init 6\ntwo 10 5\nshadow 3\nsend 9\n7\n",
+	},
+	{
+		// `switch v := v.(type)`, Go's idiom: each clause declared v from the operand
+		// v, and in C a declaration's name is in scope in its own initializer, so
+		// the host's compiler refused `Sq* v = (Sq*)v.data;` and the target's read
+		// it as meant only by resolving the name outside. The operand is bound first.
+		name: "a type switch guard named like its operand",
+		src: `type Shape interface{ Area() int }
+
+type Sq struct{ s int }
+
+func (q *Sq) Area() int { return q.s * q.s }
+
+var gq = Sq{3}
+
+func show(v Shape) {
+	switch v := v.(type) {
+	case *Sq:
+		println("sq", v.s)
+	}
+}
+
+func main() {
+	show(&gq)
+}
+`,
+		want: "sq 3\n",
+	},
+	{
 		// A package array with its type WRITTEN was a static initializer whatever
 		// its elements: `var ga [2]int = [2]int{gx, 1}` named a variable in one,
 		// which C refuses and the target's compiler refused. It is filled at

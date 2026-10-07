@@ -48,8 +48,7 @@ func bad() {
 	// ERROR an assignment cannot be switched on
 	switch a = 7 {
 	}
-	// ERROR a type switch with an init statement is not supported yet
-	switch a = 1; sh.(type) {
+	switch a = 1; sh.(type) { // an assignment ahead of a type switch, as Go has it
 	}
 	println(a, b, h.n, sh == nil)
 }

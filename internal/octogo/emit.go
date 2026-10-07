@@ -14996,7 +14996,15 @@ func (e *emitter) typeSwitchAliases(body []int32) map[string]string {
 // ask, the summaries being computed before any body has declared a local.
 func (e *emitter) typeSwitchNames(guardAST []int32) (name, operand string, ok bool) {
 	g, ok := e.f.switchGuardParts(guardAST)
-	if !ok || !g.hasName || g.assign {
+	if !ok {
+		return "", "", false
+	}
+	if e.f.tagIsTypeSwitch(g) {
+		// Behind an init statement, `switch q := p; v := q.(type)`: the guard is
+		// the tag; the init's own binding is read where headers are.
+		g.name, g.hasName, g.value, g.assign = g.tagName, g.hasTagName, g.tag, false
+	}
+	if !g.hasName || g.assign {
 		return "", "", false
 	}
 	// The BASE answers for an operand that is not a plain name: a reference into
@@ -30684,26 +30692,22 @@ func (e *emitter) emitSwitch(ast []int32) {
 	// each clause. It is lowered on its own, sharing nothing below but the break
 	// label, which emitTypeSwitch mints for itself.
 	if guardAST != nil {
-		if ts, ok := e.typeSwitchGuard(guardAST); ok {
-			if ts.bindText != "" {
-				// The bound operand is scoped to the statement, like a guard
-				// variable, so it goes in a block of its own.
-				e.ind()
-				e.emit("{\n")
-				e.indent++
-				e.ind()
-				e.emit(ts.iface + " " + ts.operand + " = " + ts.bindText + ";\n")
-				e.locals[ts.operand] = ts.iface
-				if r, ok := e.frameRefOf(ts.bindAST); ok && ts.bindAST != nil {
-					e.frameHolder[ts.operand] = r.origin
-				}
-				e.emitTypeSwitch(ts, cases)
-				e.indent--
-				e.ind()
-				e.emit("}\n")
-				return
+		if g, ok := e.f.switchGuardParts(guardAST); ok && e.f.tagIsTypeSwitch(g) {
+			// `switch s := f(); v := s.(type)`: the init in a block of the
+			// statement's own, written before the operand is read, which may name
+			// what it declares; then the type switch, as alone.
+			e.ind()
+			e.emit("{\n")
+			e.indent++
+			if e.emitSwitchInit(g, func() {}) {
+				e.emitTypeSwitchStmt(guardAST, cases)
 			}
-			e.emitTypeSwitch(ts, cases)
+			e.indent--
+			e.ind()
+			e.emit("}\n")
+			return
+		}
+		if e.emitTypeSwitchStmt(guardAST, cases) {
 			return
 		}
 	}
@@ -30821,6 +30825,41 @@ func (e *emitter) emitSwitch(ast []int32) {
 	}
 }
 
+// emitTypeSwitchStmt writes a type switch whose guard is guardAST, reporting false
+// where the guard is no type switch's.
+func (e *emitter) emitTypeSwitchStmt(guardAST []int32, cases []Node) bool {
+	ts, ok := e.typeSwitchGuard(guardAST)
+	if !ok {
+		return false
+	}
+	if ts.bindText != "" {
+		// The bound operand is scoped to the statement, like a guard variable, so
+		// it goes in a block of its own.
+		e.ind()
+		e.emit("{\n")
+		e.indent++
+		e.ind()
+		e.emit(ts.iface + " " + ts.operand + " = " + ts.bindText + ";\n")
+		e.locals[ts.operand] = ts.iface
+		if r, ok := e.frameRefOf(ts.bindAST); ok && ts.bindAST != nil {
+			e.frameHolder[ts.operand] = r.origin
+		}
+		if !slices.ContainsFunc(cases, func(c Node) bool { _, isDefault := e.caseHead(c.ast); return !isDefault }) {
+			// Evaluated, as Go evaluates it, and read by no case: `switch
+			// f().(type) { default: }`.
+			e.ind()
+			e.emit("(void)" + ts.operand + ";\n")
+		}
+		e.emitTypeSwitch(ts, cases)
+		e.indent--
+		e.ind()
+		e.emit("}\n")
+		return true
+	}
+	e.emitTypeSwitch(ts, cases)
+	return true
+}
+
 // typeSwitch describes a "switch v := x.(type)" -- the name it binds (empty for the
 // bare "switch x.(type)"), the operand, and the interface type the operand holds,
 // which is what each case's type is looked up against.
@@ -30843,11 +30882,18 @@ type typeSwitch struct {
 // from the assertion ".(T)" the same production admits.
 func (e *emitter) typeSwitchGuard(guardAST []int32) (ts typeSwitch, ok bool) {
 	g, ok := e.f.switchGuardParts(guardAST)
-	if !ok || g.assign {
+	if !ok {
 		return ts, false
 	}
 	value := g.tag
-	if g.hasName {
+	switch {
+	case e.f.tagIsTypeSwitch(g):
+		// Behind an init statement, which emitSwitch has written already: the
+		// guard is the tag, and the name it binds the tag's.
+		g.name, g.hasName = g.tagName, g.hasTagName
+	case g.assign:
+		return ts, false
+	case g.hasName:
 		value = g.value
 	}
 	base, prefix, isTypeSwitch := e.typeSwitchOperand(value.ast)
@@ -30896,6 +30942,15 @@ func (e *emitter) typeSwitchGuard(guardAST []int32) (ts typeSwitch, ok bool) {
 	if ts.iface, ok = e.varType(base); !ok || !e.isIfaceCType(ts.iface) {
 		e.fail("%s is not an interface, so it has no dynamic type to switch on", base)
 		return ts, false
+	}
+	if ts.name == base {
+		// `switch v := v.(type)`: each clause declares v from the operand v, and in
+		// C a declaration's name is in scope in its own initializer, so `Sq* v =
+		// (Sq*)v.data;` read the new v -- the host's compiler refused it, the
+		// target's happens to resolve the name outside. The operand is bound to a
+		// temporary first, and the clauses read that.
+		ts.bindAST, _ = e.factorWithoutLastStep(value.ast)
+		ts.operand, ts.bindText = e.newTmp(), e.exprC(ts.bindAST)
 	}
 	return ts, true
 }
@@ -31601,36 +31656,47 @@ func (e *emitter) emitSwitchGuard(guardAST []int32) (guardVar string, block, ok 
 			block = true
 		}
 	}
+	if !e.emitSwitchInit(g, openBlock) {
+		return "", false, false
+	}
+	guardVar, ok = e.emitSwitchTag(g, &block, openBlock)
+	return guardVar, block, ok
+}
+
+// emitSwitchInit writes a switch header's init statement, opening the block that
+// scopes what it declares to the statement first (openBlock). It reports false
+// where the init could not be written, having said why.
+func (e *emitter) emitSwitchInit(g switchGuard, openBlock func()) bool {
 	if g.hasStmt {
 		// `switch two(); x` and `switch ch <- v; x`: a statement standing alone,
 		// in the block the switch's tests run in.
 		openBlock()
 		if !e.emitHeaderStmt(g.stmtHead, g.stmtTail) {
-			return "", false, false
+			return false
 		}
 	} else if g.assign {
 		// `switch err = f(); {`: the assignment, in the block the switch's tests
 		// run in, as the if form lowers it.
 		openBlock()
 		if !e.emitHeaderAssign(g.name, g.items, g.values) {
-			return "", false, false
+			return false
 		}
 	} else if g.step != 0 {
 		// `switch n++; n`: the step, in the same block.
 		openBlock()
 		if !e.emitHeaderStep(g.name, g.step, g.value, len(g.values) != 0) {
-			return "", false, false
+			return false
 		}
 	} else if g.hasName && len(g.values) > 1 {
 		// `switch a, b := x, y; a + b`: a value for each name, the statement `a, b
 		// := x, y` inside the block that scopes the names to the switch.
 		names, ok := e.guardNames(g)
 		if !ok {
-			return "", false, false
+			return false
 		}
 		if len(names) != len(g.values) || !g.semi {
 			e.fail("a switch init statement assigns %d values to %d names", len(g.values), len(names))
-			return "", false, false
+			return false
 		}
 		openBlock()
 		e.emitValueList(plainTargets(names), allTrue(len(names)), g.values)
@@ -31639,7 +31705,7 @@ func (e *emitter) emitSwitchGuard(guardAST []int32) (guardVar string, block, ok 
 		// inside the block that scopes the names to this statement.
 		names, ok := e.guardNames(g)
 		if !ok {
-			return "", false, false
+			return false
 		}
 		openBlock()
 		e.emitDestructure(plainTargets(names), allTrue(len(names)), g.value.ast)
@@ -31647,7 +31713,7 @@ func (e *emitter) emitSwitchGuard(guardAST []int32) (guardVar string, block, ok 
 		vtok, isID := e.soleToken(g.name.ast)
 		if !isID || e.f.ch(vtok) != IDENT {
 			e.fail("unsupported switch guard variable")
-			return "", false, false
+			return false
 		}
 		// What the value is, is emitInferredLocal's question, as it is for the `if`
 		// form: asking inferCType here first refused an ARRAY, which has no C value
@@ -31658,8 +31724,15 @@ func (e *emitter) emitSwitchGuard(guardAST []int32) (guardVar string, block, ok 
 		// name it -- which is the whole point of an init statement.
 		e.emitInferredLocal(e.src(vtok), g.value.ast)
 	}
+	return true
+}
+
+// emitSwitchTag writes the expression a switch switches on where it needs a name
+// of its own, answering what the cases compare with; block says the header has
+// opened its block already.
+func (e *emitter) emitSwitchTag(g switchGuard, block *bool, openBlock func()) (guardVar string, ok bool) {
 	if !g.hasTag { // `switch v := e; {` -- an expression switch with v in scope
-		return "", block, true
+		return "", true
 	}
 	// A tag of an integer type narrower than int is held in an int: C keeps such a
 	// variable at its width, and the target's compiler reads it so, extending it
@@ -31676,13 +31749,13 @@ func (e *emitter) emitSwitchGuard(guardAST []int32) (guardVar string, block, ok 
 				e.emit(";\n")
 				e.locals[tmp] = "int"
 			}
-			if block {
+			if *block {
 				e.emitStatementsHere(declare)
-				return tmp, block, true
+				return tmp, true
 			}
 			openBlock()
 			declare()
-			return tmp, block, true
+			return tmp, true
 		}
 	}
 	if tok, single := e.soleToken(g.tag.ast); single && e.f.ch(tok) == IDENT {
@@ -31694,24 +31767,24 @@ func (e *emitter) emitSwitchGuard(guardAST []int32) (guardVar string, block, ok 
 		// undeclared `true`, which the target's C compiler happens to know.
 		_, isConst := e.inlinedConstRef(e.src(tok))
 		if s := e.src(tok); !isConst && (s != "true" && s != "false" || !e.universe(s)) {
-			return s, block, true
+			return s, true
 		}
 	}
 	if _, tok := e.inferCType(g.tag.ast); !tok {
 		e.fail("cannot infer the type of the switch value")
-		return "", false, false
+		return "", false
 	}
 	tmp := e.newTmp()
-	if block {
+	if *block {
 		// Behind an init statement the value may read what the init declared, so
 		// what it needs ahead of itself runs in the init's block rather than before
 		// the statement, where it ran ahead of the init.
 		e.emitStatementsHere(func() { e.emitInferredLocal(tmp, g.tag.ast) })
-		return tmp, block, true
+		return tmp, true
 	}
 	openBlock()
 	e.emitInferredLocal(tmp, g.tag.ast)
-	return tmp, block, true
+	return tmp, true
 }
 
 // emitStatementsHere runs emit, which writes whole statements, with the prologue

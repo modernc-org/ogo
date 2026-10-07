@@ -2573,7 +2573,7 @@
 //	SwitchGuard = HeaderExpression [ { "," LhsItem } ( ":=" | "=" ) HeaderExpression { "," HeaderExpression }
 //		| "++" | "--" | AssignOp HeaderExpression | "<-" HeaderExpression ] [ SwitchTag ]
 //		| SwitchTag .
-//	SwitchTag  = ";" [ HeaderExpression ] .
+//	SwitchTag  = ";" [ HeaderExpression [ ":=" HeaderExpression ] ] .
 //	CaseClause = CaseHead ":" { Statement ";" } [ Statement ] .
 //	CaseHead   = "case" ExpressionList | "default" .
 //
@@ -2594,18 +2594,20 @@
 // so it may shadow a name from outside without disturbing it. The expression may
 // be left out, "switch v := f(); { case v > 3: }", which switches on true with v
 // in scope. The init may be an assignment instead, "switch err = f(); { ... }",
-// as an "if"'s may; being no value, it needs the ";", and a type switch takes
-// none (not implemented) -- nor a step, which needs the ";" as well. And it may be
-// an expression standing alone or a send, "switch flush(); n" and "switch ch <- v;
-// n", as an "if"'s may, or be left out with its ";" standing, "switch ; n".
+// as an "if"'s may; being no value, it needs the ";" -- as does a step. And it may
+// be an expression standing alone or a send, "switch flush(); n" and "switch ch <-
+// v; n", as an "if"'s may, or be left out with its ";" standing, "switch ; n".
 //
 // (OctoGo Specific): the ":=" guard without an init statement, "switch v := f()",
 // declares v and switches on it. Go rejects that text, so the portable spelling
 // of the same thing is "switch v := f(); v".
 //
-// A TYPE switch takes neither form: its guard is the whole statement, so nothing
-// may follow it. "switch x := v.(type); x {" is refused, as Go refuses it -- there
-// is no expression for a type switch to also switch on.
+// A TYPE switch takes no expression after its guard: "switch x := v.(type); x {"
+// is refused, as Go refuses it -- there is no expression for a type switch to also
+// switch on. It takes an init statement ahead of the guard, of any of the forms
+// above, as Go has it: "switch s := pick(); v := s.(type)". The guard's name is
+// each clause's, so it may shadow a name the init declares, and "switch v :=
+// v.(type)" reads the operand v and binds a new v.
 //
 // As in Go, a case body does not fall through to the next, and "break" leaves the
 // switch rather than any enclosing loop.

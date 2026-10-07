@@ -18,8 +18,19 @@ shipped section tells a reader on that version that they have behaviour they do 
 
 ## Unreleased
 
+### Language
+
+- **A type switch takes an init statement**: `switch s := pick(); v :=
+  s.(type)`, and every other init form -- `switch err = f(); err.(type)`, a step,
+  a call standing alone -- as Go has it. It was a syntax error. The guard's name
+  may shadow a name the init declares.
+
 ### Fixed
 
+- **`switch v := v.(type)` builds for the host as for the target**: each clause
+  declared v from the operand v, `Sq* v = (Sq*)v.data;`, which C reads as the
+  new v; the target's compiler resolved the name outside it and printed what Go
+  prints, the host's refused it. The operand is bound to a temporary first.
 - **A goroutine's stack is what it needs**: every slot was 256 longs unless
   `--gostack` said otherwise, and a goroutine holding a table of 512 bytes in a
   local ran past it, writing over whatever lay beyond -- another goroutine's slot
@@ -52,6 +63,12 @@ shipped section tells a reader on that version that they have behaviour they do 
 
 ### Behaviour changes
 
+- **`switch _ := x.(type)` is refused**, as Go refuses it: "no new variables on
+  left side of :=".
+- **A type switch on a variable that is no interface, and `.(type)` outside a
+  type switch, are refused by the checker in Go's terms**: "v (variable of type
+  int) is not an interface" and "use of .(type) outside type switch". The
+  emitter refused both before, in its own words.
 - **A program whose main stack does not fit in Hub RAM is refused**: `var big
   [140000]int` in `main` built, and ran its stack past the top of Hub RAM in
   silence. The build reads main's deepest stack off the listing as it does a

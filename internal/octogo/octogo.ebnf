@@ -171,7 +171,7 @@ SwitchStmt = "switch" [ SwitchGuard ] "{" { CaseClause } "}" .
 SwitchGuard = HeaderExpression [ { "," LhsItem } ( ":=" | "=" ) HeaderExpression { "," HeaderExpression }
 	| "++" | "--" | AssignOp HeaderExpression | "<-" HeaderExpression ] [ SwitchTag ]
 	| SwitchTag .
-SwitchTag  = ";" [ HeaderExpression ] .
+SwitchTag  = ";" [ HeaderExpression [ ":=" HeaderExpression ] ] .
 CaseClause = CaseHead ":" { Statement ";" } [ Statement ] .
 CaseHead   = "case" ExpressionList | "default" .
 SelectStmt  = "select" "{" { CommClause } "}" .

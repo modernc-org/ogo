@@ -60,6 +60,17 @@ func run() { t := T{7}; keep(&t) }`, true},
 		{"callee header store", `func keep(r *T) { if keepT = r; keepT != nil { println(1) } }
 
 func run() { t := T{7}; keep(&t) }`, true},
+		{"type switch behind an init", `func run() { t := T{7}; switch r := G(&t); v := r.(type) { case *T: keepT = v } }`, true},
+		{"type switch behind an assignment", `func run() { t := T{7}; var r G; switch r = &t; v := r.(type) { case *T: keepT = v } }`, true},
+		{"callee type switch behind an init", `func keep(p G) { switch q := p; v := q.(type) { case *T: keepT = v } }
+
+func run() { t := T{7}; keep(&t) }`, true},
+		{"callee type switch behind a statement", `func keep(p G) { switch use(nil); v := p.(type) { case *T: keepT = v } }
+
+func run() { t := T{7}; keep(&t) }`, true},
+		{"control type switch behind an init", `func keep(p G) { switch q := p; v := q.(type) { case *T: println(v.n) } }
+
+func run() { t := T{7}; keep(&t) }`, false},
 		{"control assert read", `func run() { t := T{7}; var r G = &t; println(r.(*T).n) }`, false},
 		{"control switch read", `func run() { t := T{7}; var r G = &t; switch v := r.(type) { case *T: println(v.n) } }`, false},
 		{"control if header", `func keep(r *T) { if p := r; p != nil { println(use(p)) } }

@@ -1,0 +1,82 @@
+// COMPILE
+// A type switch behind an init statement of every form, its operand naming what
+// the init declared, and a guard naming its own operand, `switch v := v.(type)`.
+
+type Shape interface{ Area() int }
+
+type Sq struct{ s int }
+
+func (q *Sq) Area() int { return q.s * q.s }
+
+type Rect struct{ w, h int }
+
+func (r *Rect) Area() int { return r.w * r.h }
+
+var gq = Sq{3}
+var gr = Rect{2, 5}
+var shapes = [3]Shape{&gq, &gr, nil}
+var calls int
+
+func pick(i int) Shape {
+	calls++
+	return shapes[i]
+}
+
+func two(i int) (Shape, int) { return shapes[i], i * 10 }
+
+func kind(i int) string {
+	switch s := pick(i); v := s.(type) {
+	case *Sq:
+		return "sq"
+	case *Rect:
+		if v.w > 1 {
+			break
+		}
+		return "thin rect"
+	case nil:
+		return "nil"
+	}
+	return "rect"
+}
+
+
+func main() {
+	for i := range 3 {
+		println(i, kind(i))
+	}
+	var s Shape
+	switch s = pick(1); s.(type) {
+	case *Rect:
+		println("assigned rect", s.Area())
+	}
+	n := 0
+	switch n++; v := shapes[n-1].(type) {
+	case *Sq:
+		println("stepped", n, v.s)
+	}
+	switch calls++; pick(0).(type) {
+	default:
+		println("statement init", calls)
+	}
+	switch sh, k := two(1); v := sh.(type) {
+	case *Rect:
+		println("two", k, v.h)
+	}
+	switch v := pick(0); v := v.(type) {
+	case *Sq:
+		println("shadow", v.s)
+	}
+
+	switch x := shapes[0].(type) {
+	case *Sq:
+		println("send", x.Area())
+	}
+	println(calls)
+}
+
+func show(v Shape) {
+	switch v := v.(type) {
+	case *Sq:
+		println("sq", v.s)
+	}
+}

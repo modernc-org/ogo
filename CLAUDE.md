@@ -1391,6 +1391,25 @@ most there). Tightening the indirect calls by the C's types is how the bound wou
 come down. **A listing is a probe of what the C costs**: cogHint reads registers
 off it, this reads stacks.
 
+**A TYPE SWITCH BEHIND AN INIT STATEMENT** (2026-10-07), `switch s := pick(); v :=
+s.(type)`, the last header shape on the open list: the grammar's SwitchTag takes `[
+HeaderExpression ":=" ] HeaderExpression` (egg's ambiguity count unchanged, 10),
+switchGuardParts reads the guard's name into tagName (readSwitchTag),
+tagIsTypeSwitch tells the form, the checker checks the init first in the
+statement's scope and gives the guard a scope of its own, so `switch v := f(); v :=
+v.(type)` shadows (checkSwitchInit, split out of checkSwitchGuard), and the emitter
+writes the init in a block before it renders the operand, which may name it
+(emitSwitchInit; typeSwitchNames reads the form for the summaries, or `keep(&x)`
+through a callee's `switch q := p; v := q.(type)` was taken). Three older holes
+next to it: `switch v := v.(type)`, Go's idiom, was `Sq* v = (Sq*)v.data;`, which C
+reads as the new v -- gcc refused it and the target resolved the name outside by
+luck, so no run case could hold it (the operand is bound first now); `switch _ :=
+x.(type)` was taken, Go's "no new variables"; and a bare-name operand of a Kind and
+`x := v.(type)` were refused by the emitter in its own words (the checker asks
+both, "is not an interface" and "use of .(type) outside type switch"). A switch
+binding its operand and naming no type in any clause wrote an unused temporary
+(`(void)` now).
+
 **A COMPILER RUN IN A SWEEP IS CAPPED, AND A CRASH IS NOT A REFUSAL** (2026-09-20).
 A probe program is written to find a fault, and a fault is not always a wrong
 answer: `type A struct{ A }` sent the emitter down an embedding at 4 GB a second, the
@@ -3309,9 +3328,7 @@ any depth since 2026-09-25, `getp().in.nosuch` and `(&gp).in.nosuch` being "type
 has no field nosuch": walkSteps' missingAt); `[]byte(s)`
 and `[]rune(s)` of a string VARIABLE (a copy of a length known at run time; a
 constant's converts since
-2026-09-23, constBytesConv); a type switch behind an init statement, `switch
-f(); x := v.(type)` (every other header takes every simple statement since
-2026-09-29, see A STATEMENT IN A HEADER IS THE STATEMENT); a parenthesised function value started on a cog,
+2026-09-23, constBytesConv); a parenthesised function value started on a cog,
 `go (h.f)(2)`, which works as a value, a statement and deferred; a deferred or
 started call through a dereference with an index, `defer (*ps)[0](x)` and `go
 (*pa)[0](x)` ("unsupported call target", and go's "only `go f(args)` ..."), where
