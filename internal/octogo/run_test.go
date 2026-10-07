@@ -10459,6 +10459,82 @@ func main() {
 		want: "4294967289 7 7 7 4294967289 7\n4294967287 9 4294967289 4294967288\n24 384 0\n12800 0\n5 7 7 7\n4 4\n",
 	},
 	{
+		name: "a narrow value converted to uint64 and shifted right by 32",
+		src: `// A value of 32 bits or fewer converted to uint64 and shifted right by 32. The
+// target's C compiler read the result of (uint64_t)x >> 32 from a register it never
+// writes, 4052137992 on the board for Go's 0, where every other count, an int64's
+// shift, and the high word of a computed 64-bit value were right
+// (doc/uint64-widened-shift-32.c); the emitter writes the value without the shift.
+func id(x uint32) uint32 { return x }
+
+func idi(x int32) int32 { return x }
+
+func idb(x uint8) uint8 { return x }
+
+func f1(u uint32) uint64 { return uint64(u) >> 32 }
+
+func f2(u uint32) uint64 {
+	w := uint64(u)
+	return w >> 32
+}
+
+func f3(u uint32) uint64 {
+	var w uint64 = uint64(u)
+	w >>= 32
+	return w
+}
+
+func f4(i int32) uint64 { return uint64(i) >> 32 }
+
+func f5(i int32) int64 { return int64(i) >> 32 }
+
+func f6(u uint32) uint64 { return uint64(u) >> 40 }
+
+func f7(u uint32) uint64 { return (uint64(u) | 0) >> 32 }
+
+func f8(u uint32) uint64 { return uint64(u) / (1 << 32) }
+
+func f9(u uint32) uint32 { return uint32(uint64(u) >> 32) }
+
+func f10(b uint8) uint64 { return uint64(b) >> 32 }
+
+func f11(u uint32) uint64 { return uint64(u) & 0xFFFFFFFF00000000 }
+
+func f12(u uint32) uint64 { return (uint64(u) << 8) >> 40 }
+
+func f13(u, v uint32) uint64 { return uint64(u) + uint64(v)>>32 }
+
+func f14(u uint32) uint64 { return uint64(u) >> 16 >> 16 }
+
+func f15(u uint32) uint64 {
+	w := uint64(u)
+	w = w >> 16
+	return w >> 16
+}
+
+func f16(u uint32) uint64 {
+	var w uint64
+	w = uint64(u)
+	return w >> 32
+}
+
+func f17(u uint32) int { return int(uint64(u) >> 32) }
+
+func f18(i int32) int64 { return int64(uint64(i) >> 32) }
+
+func main() {
+	u := id(0xFFFFFFF9)
+	i := idi(-7)
+	b := idb(200)
+	println(f1(u), f2(u), f3(u), f4(i), f5(i), f6(u))
+	println(f7(u), f8(u), f9(u), f10(b), f11(u), f12(u))
+	println(f13(u, u), f14(u), f15(u), f16(u), f17(u), f18(i))
+	println(uint64(u)>>32, uint64(i)>>32, int64(i)>>32, uint64(b)>>32)
+}
+`,
+		want: "0 0 0 4294967295 -1 0\n0 0 0 0 0 0\n4294967289 0 0 0 0 4294967295\n0 4294967295 -1 0\n",
+	},
+	{
 		name: "a composite literal of a defined slice type is a value of that type",
 		src: `// A composite literal of a DEFINED slice type is a value of that type. It was
 // untyped where it stood as a value, and a print took the argument it could not

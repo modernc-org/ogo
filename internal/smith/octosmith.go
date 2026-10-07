@@ -193,6 +193,8 @@ type Fuzzer struct {
 	// before the aggregates were generated, and the sweeps made of it still say
 	// what they said.
 	aggRand *rand.Rand
+	// wideRand is genWideFold's, for the same reason.
+	wideRand *rand.Rand
 }
 
 func NewFuzzer(seed int64, out io.Writer) *Fuzzer {
@@ -201,6 +203,7 @@ func NewFuzzer(seed int64, out io.Writer) *Fuzzer {
 
 	return &Fuzzer{
 		aggRand:      rand.New(rand.NewSource(seed ^ 0x5a17c0de)),
+		wideRand:     rand.New(rand.NewSource(seed ^ 0x3c1de64)),
 		Rand:         rng,
 		Out:          out,
 		GlobalEnv:    global,

@@ -2642,7 +2642,27 @@ implicit conversion are right, and so is a cast to uint32_t first, which the emi
 writes now wherever it widens such an expression (widenU32: the conversion, the
 int-to-float helper's operand, a shift's count). 422 corpus programs gained the
 inner cast and all build to byte-identical binaries, so the price is nothing; none
-of them had been hit. Recorded among the faults pending upstream.
+of them had been hit. Recorded among the faults pending upstream. A conversion sweep
+beside it, 11 integer types to 12 types over 17 expression shapes (396 lines),
+matched Go on the board with the fix and had 27 lines wrong without it, all from
+uint32, uint or uintptr to int64, uint64 or float32.
+No generated program had WIDENED an expression, so the fuzzer found the row only
+through a shift count's fold: genWideFold folds the high word of a narrower block's
+fold expression converted to int64 or uint64, `int(uint64(0 + e) >> 32)`, a zero on
+its left three times in four, drawing from its own source (wideRand) so the rest of
+each seed's program is what it was. Its first board run, with the pre-fix compiler
+to see it catch the zero-left fault, failed 4 of 20 seeds -- and failed the same 4
+with the fix: a SECOND silent fault, `(uint64_t)x >> 32` of any value of 32 bits or
+fewer, whose result the backend reads from a register nothing writes, `mov result1,
+_var02` in the listing (doc/uint64-widened-shift-32.c). Every other count goes
+through __system___int64_shr and is right, an int64's through __system___int64_sar,
+and so is the high word of a computed value, `((uint64_t)a * (uint64_t)b) >> 32`;
+`uint64(x) >> 32` of a uint32 printed 4052137992 for Go's 0. The emitter writes the
+value without the shift (wideShift32C): zero, x evaluated, or the sign word of a
+signed x. **A run that reads a register nothing wrote can look right by luck: the
+listing is the measure, and a C harness passing a constant after a 64-bit argument
+is a second fault of its own** -- the first reductions here judged by `chku(..., e,
+0ULL)` and were misled. Seeds 1-2000 on the host shim with the new generator: clean.
 
 **A STRUCT HOLDING AN ARRAY IS COPIED, NEVER ASSIGNED** (2026-09-23). The target's C
 compiler copy-initializes and assigns one only at some SIZES -- "Unable to multiply

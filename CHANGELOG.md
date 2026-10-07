@@ -27,6 +27,13 @@ shipped section tells a reader on that version that they have behaviour they do 
 
 ### Fixed
 
+- **`uint64(x) >> 32` of a value of 32 bits or fewer is right on the target**: it
+  printed 4052137992 on the board for Go's 0. The target's C compiler reads the
+  result of `(uint64_t)x >> 32` from a register it never writes, for any source type
+  (doc/uint64-widened-shift-32.c); every other count, an int64's shift and the high
+  word of a computed 64-bit value are right. The emitter writes the value without
+  the shift: zero, or the sign word of a signed x. Found by the fuzzer's new
+  widening fold; in every release.
 - **A 32-bit unsigned expression widened to 64 bits is right on the target**:
   `int64(0 - v)` for a uint32 v printed -166570509754957831 on the board for Go's
   4294967289, as did `uint64(z + v)` of a constant zero and `float64(0 + v)`, and a
@@ -162,6 +169,13 @@ shipped section tells a reader on that version that they have behaviour they do 
 
 ### Toolchain
 
+- **`ogo smith` widens a value to 64 bits**: a narrower block's fold expression is
+  converted to int64 or uint64 and its high word folded into the checksum, a zero
+  constant on its left three times in four -- in every uint32 block and one in two
+  of the others. No generated program had widened an expression; the first board
+  run of the new shape found the `uint64(x) >> 32` fault above, and a sweep had
+  found the zero-left one only by a shift count's accident. It draws from a source
+  of its own, so the rest of each seed's program is what it was.
 - **A goroutine's stack bound follows its interface calls**: a call through an
   interface's table was taken to reach every function whose address the program
   takes, so a goroutine calling one was charged the deepest of all of them -- p2-11's

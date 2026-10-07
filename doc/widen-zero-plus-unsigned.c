@@ -32,6 +32,16 @@
 //	0u*u hi=0 lo=0
 //	u+0u hi=0 lo=7
 //	(uint32_t)(0u+u) hi=0 lo=7
+//
+// The target printed, that day:
+//
+//	0u+u hi=1571815688 lo=7
+//	0u-u hi=1571815688 lo=4294967289
+//	0+u hi=1571815688 lo=7
+//	5u-5u+u hi=1571815688 lo=7
+//	0u*u hi=1571815688 lo=0
+//	u+0u hi=0 lo=7
+//	(uint32_t)(0u+u) hi=0 lo=7
 
 #include <stdio.h>
 #include <stdint.h>

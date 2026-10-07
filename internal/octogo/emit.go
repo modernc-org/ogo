@@ -35351,6 +35351,10 @@ func (e *emitter) shiftChainC(kids []Node) (string, bool) {
 			text = e.constSpelling(v, e.underlyingCType(ctype))
 		}
 	}
+	first := 1
+	if wide, ok := e.wideShift32C(kids, levelType); ok {
+		text, first = wide, 3
+	}
 	// The LEVEL's type, not the first operand's. The operands of an arithmetic
 	// operator are of one type and an untyped constant takes the other's, so reading
 	// the left operand outright typed `3 / b` for a uint64 b as an int -- and the
@@ -35358,7 +35362,7 @@ func (e *emitter) shiftChainC(kids []Node) (string, bool) {
 	// whose low word is zero, and panicked "integer divide by zero" in a program
 	// that divides by 0x1000000000000000. inferNodes is where this rule already
 	// lives; only this reader of it took the first operand.
-	for i := 1; i+1 < len(kids); i += 2 {
+	for i := first; i+1 < len(kids); i += 2 {
 		op, rhs := kids[i], kids[i+1]
 		if op.sym != MulOp {
 			return "", false
@@ -35456,6 +35460,52 @@ func leftNested(pieces []string) string {
 		text = "(" + text + pieces[i] + pieces[i+1] + ")"
 	}
 	return text
+}
+
+// wideShift32C renders the head of a level that is a value of 32 bits or fewer
+// converted to uint64 and shifted right by 32, `uint64(x) >> 32`, as the value it
+// is, without the shift: 0 of an unsigned x, and of a signed one its sign, all
+// ones in the low word where x is negative. The target's C compiler reads the high
+// word of `(uint64_t)x >> 32` from a register it never writes -- `mov result1,
+// _var02` in the listing, for any source type and through an inner cast -- where a
+// shift by any other count goes through its 64-bit helper and is right, as are an
+// int64's and a computed 64-bit value's (doc/uint64-widened-shift-32.c). Found by
+// the fuzzer's widening fold, `int(uint64(e) >> 32)`. It answers false for any
+// other head, leaving kids[0:3] to be written as they stand.
+func (e *emitter) wideShift32C(kids []Node, levelType string) (string, bool) {
+	if len(kids) < 3 || levelType != "uint64_t" || kids[1].sym != MulOp || e.opText(kids[1].ast) != ">>" {
+		return "", false
+	}
+	if v, ok := e.foldIntegral(kids[2].ast); !ok || v != 32 {
+		return "", false
+	}
+	recv, suffix, ok := e.directCall(kids[0].ast)
+	if !ok {
+		return "", false
+	}
+	ct, used, isConv := e.convChainHead(recv, suffix)
+	if !isConv || used != len(suffix) || e.underlyingCType(ct) != "uint64_t" {
+		return "", false
+	}
+	args := e.callArgExprs(suffix[used-1].ast)
+	if len(args) != 1 {
+		return "", false
+	}
+	src, ok := e.exprReprCType(args[0].ast)
+	if !ok {
+		return "", false
+	}
+	src = e.underlyingCType(src)
+	if w := cIntWidths[src]; w == 0 || w > 32 {
+		return "", false
+	}
+	e.includes["stdint.h"] = true
+	x := e.captureC(func() { e.emitExpr(args[0].ast) })
+	if isUnsignedCType(src) {
+		// Zero, with x evaluated as Go evaluates it.
+		return "(uint64_t)(uint32_t)(((uint32_t)(" + x + ") >> 31) >> 1)", true
+	}
+	return "(uint64_t)(uint32_t)((int32_t)(" + x + ") >> 31)", true
 }
 
 // isShiftOp and isDivOp name the operators whose C and Go answers can differ.
@@ -48838,7 +48888,14 @@ func (e *emitter) emitExprNode(n Node) {
 		// joined in a row, or left-nested where C would associate them otherwise
 		// (cPrecMixed).
 		var pieces []string
+		start := 0
+		if text, ok := e.wideShift32C(kids, termType); ok {
+			pieces, start = append(pieces, text), 3
+		}
 		for i, c := range kids {
+			if i < start {
+				continue
+			}
 			pieces = append(pieces, e.captureC(func() {
 				switch {
 				case c.sym == MulOp:

@@ -1777,7 +1777,62 @@ func (f *Fuzzer) genSizedStmt(vm Machine, mem Memory) Node {
 			}
 		}
 	}
+	if bits < 64 && haveFold {
+		if node, v, ok := f.genWideFold(foldNode, foldVal); ok {
+			c6, _ := vm.Eval("^", mem.Load(f.ChecksumName), v)
+			mem.Store(f.ChecksumName, c6)
+			stmts = append(stmts, &AssignStmtNode{
+				Lhs: f.ChecksumName,
+				Op:  "=",
+				Rhs: &BinaryExprNode{Left: &IdentNode{Name: f.ChecksumName}, Op: "^", Right: node},
+			})
+		}
+	}
 	return &BlockNode{Statements: stmts}
+}
+
+// genWideFold folds the HIGH word of a narrower block's fold expression widened to
+// 64 bits, `int(int64(0 + e) >> 32)`, in every uint32 block and one block in two of
+// the other kinds -- the widening itself being what is asked: the target's C
+// compiler wrote no high word for a 32-bit unsigned expression with a zero constant
+// on its left, keeping a register's garbage, and no generated program had widened an
+// expression until a shift count folded to `0u + n` and panicked on the board (seed
+// 5849, doc/widen-zero-plus-unsigned.c). A zero on the left three times in four,
+// spelled as a literal or as a constant expression folding to one, `(k &^ k)`; the
+// fourth the expression alone. It draws from its own source (wideRand), so the rest
+// of a seed's program is what it was.
+func (f *Fuzzer) genWideFold(e Node, v Sized) (Node, Int32, bool) {
+	r := f.wideRand
+	if r.Intn(2) != 0 && v.k != KindUint32 {
+		return nil, 0, false
+	}
+	switch r.Intn(4) {
+	case 0:
+		e = &BinaryExprNode{Left: &IntLitNode{Value: "0"}, Op: "+", Right: e}
+	case 1:
+		e = &BinaryExprNode{Left: &IntLitNode{Value: "0"}, Op: "|", Right: e}
+	case 2:
+		k := fmt.Sprintf("%d", 1+r.Intn(60))
+		e = &BinaryExprNode{Left: &BinaryExprNode{Left: &IntLitNode{Value: k}, Op: "&^", Right: &IntLitNode{Value: k}}, Op: "+", Right: e}
+	}
+	to := KindInt64
+	if r.Intn(2) == 0 {
+		to = KindUint64
+	}
+	// The widened value is the narrower one READ in its kind, as Go converts it: a
+	// uint32's pattern is its value, an int8's its signed one (Sized.v), and a
+	// uint64 holds the int64's pattern.
+	w := NewSized(v.v, to)
+	hi, err := w.binOp(">>", NewSized(32, to))
+	if err != nil {
+		return nil, 0, false
+	}
+	node := &ConvNode{Type: "int", X: &BinaryExprNode{
+		Left:  &ConvNode{Type: BasicType{Kind: to}.String(), X: e},
+		Op:    ">>",
+		Right: &IntLitNode{Value: "32"},
+	}}
+	return node, hi.(Sized).Int32(), true
 }
 
 // untypedShift is an untyped constant shifted by a declared count, `lit << count`,
