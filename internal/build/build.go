@@ -192,7 +192,19 @@ func compileSized(c []byte, unmarked func() ([]byte, error), cFile, out, inc, ke
 	}
 	needs := readStackNeeds(listing, built)
 	if _, hi, def := octogo.GoStackRange(); !stackAsked && needs.goLongs > def {
-		longs := min(hi, (needs.goLongs+15)&^15)
+		if needs.goLongs > hi {
+			// Capped at the largest slot, the goroutine ran on past it, over
+			// the slots after it and whatever followed the pool, in silence
+			// until it ended: a mutant's `var seen [65535]uint32` printed
+			// nothing on the board. --gostack takes it as asked, unmeasured.
+			os.Remove(out)
+			who := "a goroutine"
+			if needs.goName != "" {
+				who = "goroutine " + needs.goName
+			}
+			return 1, fmt.Errorf("ogo: %s needs a stack of %d longs by the backend's listing, and a goroutine's slot holds %d at most", who, needs.goLongs, hi)
+		}
+		longs := (needs.goLongs + 15) &^ 15
 		if code, err := compileMarked(octogo.WithGoStack(built, longs), unmarked, cFile, out, inc, keepC, allowWarnings, stdout, stderr); err != nil {
 			return code, err
 		}

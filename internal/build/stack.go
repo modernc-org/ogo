@@ -88,7 +88,8 @@ type stackEdge struct {
 // main cog's in bytes, -1 where recursion through direct calls leaves it unbounded.
 type stackNeeds struct {
 	goLongs  int
-	goKnown  bool // every goroutine's need is bounded
+	goKnown  bool   // every goroutine's need is bounded
+	goName   string // the deepest goroutine's function, as the C names it
 	mainNeed int
 }
 
@@ -311,16 +312,35 @@ func readStackNeeds(listing, c []byte) (r stackNeeds) {
 	}
 
 	r.goKnown = true
+	sort.Strings(tramps)
 	for _, t := range tramps {
 		v := need(t)
 		if v < 0 {
 			r.goKnown = false
 			continue
 		}
-		r.goLongs = max(r.goLongs, cogStartLongs+(v+3)/4)
+		if longs := cogStartLongs + (v+3)/4; longs > r.goLongs {
+			r.goLongs, r.goName = longs, goroutineName(fns[t].calls, need)
+		}
 	}
 	r.mainNeed = need("_main")
 	return r
+}
+
+// goroutineName is the function a trampoline starts, the one of its direct calls
+// whose stack is deepest, with the listing's underscore and number taken off; ""
+// where it calls the function through a register, a function value started.
+func goroutineName(calls []string, need func(string) int) string {
+	name, deep := "", -1
+	for _, c := range calls {
+		if strings.HasPrefix(c, "_ogo_cog_done") {
+			continue
+		}
+		if v := need(c); v > deep {
+			name, deep = c, v
+		}
+	}
+	return stackStatic.ReplaceAllString(strings.TrimPrefix(name, "_"), "")
 }
 
 // stackComponents numbers the strongly connected components of the call graph,

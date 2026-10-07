@@ -51,8 +51,9 @@ func TestStackNeeds(t *testing.T) {
 		listing []byte
 		longs   int
 		known   bool
+		goName  string // the deepest goroutine's function
 	}{
-		{"no goroutine", listingOf(fnListing("_main", 1, 0, "call\t#_work"), fnListing("_work", 2, 8)), 0, true},
+		{"no goroutine", listingOf(fnListing("_main", 1, 0, "call\t#_work"), fnListing("_work", 2, 8)), 0, true, ""},
 		{
 			// trampoline 4*(1+3), work 4*(2+3)+2400, leaf none: 2436 bytes, 609
 			// longs, and the long the cog's entry takes.
@@ -60,21 +61,21 @@ func TestStackNeeds(t *testing.T) {
 			listingOf(fnListing("_ogo_go0_0001", 1, 0, "call\t#_work"),
 				fnListing("_work", 2, 2400, "call\t#_leaf"),
 				fnListing("_leaf", -1, 0)),
-			610, true,
+			610, true, "work",
 		},
 		{
 			"the deepest of two callees",
 			listingOf(fnListing("_ogo_go0_0001", 1, 0, "call\t#_leaf", " if_e\tcall\t#_work"),
 				fnListing("_work", 2, 400),
 				fnListing("_leaf", 1, 16)),
-			1 + (16+420+3)/4, true,
+			1 + (16+420+3)/4, true, "work",
 		},
 		{
 			"recursion through a direct call",
 			listingOf(fnListing("_ogo_go0_0001", 1, 0, "call\t#_work"),
 				fnListing("_work", 2, 0, "call\t#_other"),
 				fnListing("_other", 2, 0, "call\t#_work")),
-			0, false,
+			0, false, "",
 		},
 		{
 			// The program's call through a register reaches the program's taken
@@ -85,7 +86,7 @@ func TestStackNeeds(t *testing.T) {
 				fnListing("_other", 1, 100),
 				fnListing("__system___handler", 1, 4000),
 				"ptr_a\n\tlong\t@_other\nptr_b\n\tlong\t@__system___handler"),
-			1 + (16+20+116+3)/4, true,
+			1 + (16+20+116+3)/4, true, "work",
 		},
 		{
 			// A library cycle through a pointer: flush calls a handler, which
@@ -95,13 +96,13 @@ func TestStackNeeds(t *testing.T) {
 				fnListing("___flush", 1, 40, "call\tlocal02"),
 				fnListing("___handler", 1, 60, "call\t#___flush"),
 				"ptr_a\n\tlong\t@___handler\nptr_b\n\tlong\t@___flush"),
-			1 + (16+56+76+3)/4, true,
+			1 + (16+56+76+3)/4, true, "__flush",
 		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			r := readStackNeeds(tc.listing, c)
-			if r.goLongs != tc.longs || r.goKnown != tc.known {
-				t.Fatalf("got %d longs, known %v; want %d, %v\n%s", r.goLongs, r.goKnown, tc.longs, tc.known, tc.listing)
+			if r.goLongs != tc.longs || r.goKnown != tc.known || r.goName != tc.goName {
+				t.Fatalf("got %d longs, known %v, name %q; want %d, %v, %q\n%s", r.goLongs, r.goKnown, r.goName, tc.longs, tc.known, tc.goName, tc.listing)
 			}
 		})
 	}
@@ -109,8 +110,9 @@ func TestStackNeeds(t *testing.T) {
 
 // TestBuildSizesGoroutineStacks builds a program whose goroutine holds 2400 bytes
 // of locals, which a slot of the default 256 longs cannot: the build compiles it
-// with slots that fit, read off its listing, unless --gostack asked for a size. And
-// a main cog holding more than Hub RAM is told it does not fit.
+// with slots that fit, read off its listing, unless --gostack asked for a size. A
+// goroutine needing more than the largest slot, and a main cog holding more than
+// Hub RAM, are told they do not fit.
 func TestBuildSizesGoroutineStacks(t *testing.T) {
 	const deep = `var out chan int
 
@@ -176,6 +178,18 @@ func main() {
 		}
 		if longs != def {
 			t.Fatalf("slots of %d longs where the stack was asked for, want the %d the C was emitted with", longs, def)
+		}
+	})
+	t.Run("past the largest slot", func(t *testing.T) {
+		// Slots of the largest size would leave this goroutine 2,000 longs short,
+		// in silence; the build says so instead, and --gostack is the way past.
+		big := strings.Replace(deep, "[600]int", "[10000]int", 1)
+		_, err := compile(t, big, false)
+		if err == nil || !strings.Contains(err.Error(), "goroutine work needs a stack of") {
+			t.Fatalf("err=%v, want goroutine work's stack not fitting a slot", err)
+		}
+		if _, err := compile(t, big, true); err != nil {
+			t.Fatalf("with the stack asked for: %v", err)
 		}
 	})
 	t.Run("main", func(t *testing.T) {

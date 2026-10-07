@@ -236,7 +236,8 @@ where the binary would be, to be reported with the program.
 	--gostack longs
 	              stack per goroutine, in longs (64..8192). Without it the
 	              build gives every slot what the program's deepest goroutine
-	              needs by the backend's listing, 256 at least; a goroutine
+	              needs by the backend's listing, 256 at least, and refuses a
+	              program whose goroutine needs more than 8192; a goroutine
 	              recursing through its own calls is not measured, and one
 	              that outruns its slot panics "goroutine stack overflow".
 	              Seven slots of it sit in hub RAM for the whole run.

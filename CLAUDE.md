@@ -1415,8 +1415,18 @@ p2-11's is 809, 15 KB more Hub RAM for its seven slots. The same reading bounds 
 MAIN cog, whose stack is the rest of Hub RAM: a program whose image and deepest main
 stack exceed 512 KB is refused (the corpus's largest is 471 KB; main needs 5 KB at
 most there). Tightening the indirect calls by the C's types is how the bound would
-come down. **A listing is a probe of what the C costs**: cogHint reads registers
-off it, this reads stacks.
+come down: p2-11's 809 is 432 with each interface call resolved to its
+implementations by hand (the startup path turn, find, fat.Volume.Find of 708 bytes,
+file, next, hold and the card's read; Serve's transfers need 206), and the old
+256-long slot was overrun on every boot that mounted a card, into an unclaimed
+slot. **A listing is a probe of what the C costs**: cogHint reads registers off it,
+this reads stacks.
+The slot was CAPPED at its largest, 8192 longs, where the need passed it, and the
+build said nothing: a board mutant's `var seen [65535]uint32` in a goroutine ran past
+its slot, the pool and what followed, and printed nothing at all. Such a program is
+refused now, the goroutine named (goroutineName: the trampoline's deepest direct
+callee), `--gostack` the way past. **A bound that is capped is a bound that is not
+kept**: where a size is clamped to a limit, the clamp is a refusal.
 
 **A TYPE SWITCH BEHIND AN INIT STATEMENT** (2026-10-07), `switch s := pick(); v :=
 s.(type)`, the last header shape on the open list: the grammar's SwitchTag takes `[

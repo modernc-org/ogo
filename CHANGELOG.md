@@ -38,7 +38,9 @@ shipped section tells a reader on that version that they have behaviour they do 
   build reads each goroutine's deepest stack off the backend's listing, its frames
   and calls, and compiles again with slots that hold it where the 256 do not, every
   slot the deepest goroutine's size. A goroutine recursing through its own calls is
-  not measured; an explicit `--gostack` is taken as asked.
+  not measured; an explicit `--gostack` is taken as asked. A goroutine needing more
+  than the largest slot, 8192 longs, is refused and named, where a slot capped at
+  that size would have been overrun in silence.
 - **A package array with its type written may hold what is no constant**: `var
   ga [2]int = [2]int{gx, 1}` and `var gb [2]P = [2]P{{1, gy}}` were refused by
   the target's C compiler, "global initializers ... must be constant", as a fault

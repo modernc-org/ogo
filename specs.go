@@ -2756,11 +2756,13 @@
 //     which makes running out of slots and running out of Cogs one condition.
 //   - Stack: every slot's stack is what the program's deepest goroutine needs,
 //     read by the build off the compiled program's frames and calls, 256 longs at
-//     least; "ogo build --gostack N" sets it outright. A goroutine recursing through
-//     its own calls is not measured and gets the 256. One that overruns its slot
-//     and then ends panics "goroutine stack overflow". The main function's stack is
-//     the rest of Hub RAM, and a program whose deepest main stack does not fit
-//     there beside its code and data is refused by the build.
+//     least, and a program whose goroutine needs more than a slot's largest, 8192
+//     longs, is refused by the build; "ogo build --gostack N" sets it outright. A
+//     goroutine recursing through its own calls is not measured and gets the 256.
+//     One that overruns its slot and then ends panics "goroutine stack overflow".
+//     The main function's stack is the rest of Hub RAM, and a program whose
+//     deepest main stack does not fit there beside its code and data is refused
+//     by the build.
 //   - Hardware Limit: The P2 hardware is strictly limited to 8 physical Cogs.
 //     The main function consumes the first Cog. Attempting to spawn more
 //     concurrent goroutines than there are available Cogs is a runtime panic.
