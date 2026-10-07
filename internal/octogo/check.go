@@ -9248,6 +9248,21 @@ func (f *File) checkAssignment(s *Scope, head, postfix Node) {
 			}
 		}
 	}
+	// A name already declared in this scope is ASSIGNED one of the call's results,
+	// as `=` assigns it, and asked what `=` asks: `var p *U; p, n := two()` for a U
+	// result was taken where `p, n = two()` was refused.
+	if len(rhs) == 1 && len(lhs) > 1 && !assertOK {
+		skip := make([]bool, len(lhs))
+		assigned := false
+		for i, id := range lhs {
+			skip[i] = !id.IsValid() || id.Src() == "_" || i < len(lhsSuffixed) && lhsSuffixed[i] || parenAt[i] ||
+				s.Declarations[id.Src()] == nil
+			assigned = assigned || !skip[i]
+		}
+		if assigned {
+			f.checkResultsAssign(s, lhs, skip, rhs[0])
+		}
+	}
 	newCount := 0
 	for i, id := range lhs {
 		nm := id.Src()
@@ -24325,6 +24340,15 @@ func (f *File) checkMakeBounds(s *Scope, suffix Node) {
 	if len(args) < 2 {
 		return
 	}
+	// A length or a capacity of a FLOAT type is no integer whatever its value,
+	// `make([]int, 1, F)` for a `const F float32 = 4`, which was taken as 4; Go says
+	// it as of an index.
+	for _, a := range args[1:] {
+		if k, known := f.exprType(s, a); known && isFloatKind(k) {
+			f.err(f.tok(a.Pos()).Position(), "invalid argument: index %s (%s) must be integer", f.exprSource(a), kindName(k))
+			return
+		}
+	}
 	over := false
 	val := func(n Node) (int64, bool) {
 		cv, ok := f.constNumeric(s, n)
@@ -25716,6 +25740,97 @@ func (f *File) kindlessResult(s *Scope, r retResult) string {
 	return ""
 }
 
+// kindlessTarget is a variable target of no Kind: its type as written (want), its
+// category in kindlessResult's words (have, "" for a variable of a Kind, of an
+// interface type, or of a type this cannot resolve), and the type underneath.
+type kindlessTarget struct {
+	want, have string
+	at         typeAt
+	under      TypeNode
+	named      bool
+}
+
+// kindlessTargetOf answers kindlessTarget for a bare target name.
+func (f *File) kindlessTargetOf(s *Scope, tok Token) (tg kindlessTarget) {
+	d, isVar := s.find(tok.Src()).(*VarDeclaration)
+	if !isVar {
+		return tg
+	}
+	t, ok := f.varTypeAt(d)
+	if !ok {
+		return tg
+	}
+	u, named := t.f.refTypeUnder(t.s, t.tn)
+	switch u.(type) {
+	case *TypeNodeArray:
+		tg.have = "an array"
+	case *TypeNodeStruct:
+		tg.have = "a struct"
+	case *TypeNodeSlice:
+		tg.have = "a slice"
+	case *FunctionType:
+		tg.have = "a function"
+	case *TypeNodeChan:
+		tg.have = "a channel"
+	case *TypeNodePointer:
+		tg.have = "a pointer"
+	default:
+		return tg
+	}
+	tg.want, tg.at, tg.under, tg.named = t.f.typeNodeString(t.tn, false), t, u, named
+	return tg
+}
+
+// otherKindless reports a result of no Kind that the target of its category does not
+// take: one of another DEFINED type, `v, n = two()` for a U2 v and a U result, and an
+// array of another length or element where either is unnamed, `u, n = two()` for a
+// [3]int u, as checkArrayIdentity asks of a single value.
+func (f *File) otherKindless(s *Scope, tg kindlessTarget, r retResult) bool {
+	if r.typeNode == nil {
+		return false
+	}
+	hu, haveNamed := f.refTypeUnder(s, r.typeNode)
+	if tg.named && haveNamed {
+		dw, dh := tg.at.f.definedDeclOf(tg.at.s, tg.at.tn), f.definedDeclOf(s, r.typeNode)
+		return dw != nil && dh != nil && dw != dh
+	}
+	_, wantArr := tg.under.(*TypeNodeArray)
+	_, haveArr := hu.(*TypeNodeArray)
+	if !wantArr || !haveArr {
+		return false
+	}
+	wi, hi := tg.at.f.typeNodeIdentity(tg.under), f.typeNodeIdentity(hu)
+	return wi != "" && hi != "" && wi != hi
+}
+
+// definedDeclOf is the declaration of the defined type a type node names, past any
+// alias, as refTypeUnder walks it; nil for a type no declaration defines.
+func (f *File) definedDeclOf(s *Scope, tn TypeNode) *TypeDeclaration {
+	for range 16 { // bounded; a type cycle is reported by its own pass
+		x, isIdent := tn.(*TypeNodeIdent)
+		if !isIdent {
+			return nil
+		}
+		written := x.Name.Src()
+		if x.Qualifier.IsValid() {
+			written = x.Qualifier.Src() + "." + written
+		}
+		wf, ws := f.identFile(x), s
+		if wf != f {
+			ws = wf.Scope
+		}
+		td, home, ok := wf.typeDeclNamed(ws, written)
+		if !ok || td.TypeSpec == nil {
+			return nil
+		}
+		if !td.TypeSpec.Alias {
+			return td
+		}
+		tn, s = td.TypeSpec.TypeNode, home
+	}
+	return nil
+}
+
 // resultName is how a message spells a call's result type.
 func (f *File) resultName(r retResult) string {
 	if r.name != "" {
@@ -25755,6 +25870,13 @@ func (f *File) checkResultsAssign(s *Scope, lhs []Token, suffixed []bool, call N
 					}
 					f.err(f.tok(call.Pos()).Position(), "cannot use result %d of %s (%s of type %s) as type %s in assignment",
 						i+1, f.exprSource(call), what, f.resultName(res[i]), want)
+				} else if tg := f.kindlessTargetOf(s, tok); tg.have != "" && (tg.have != what || f.otherKindless(s, tg, res[i])) {
+					// A result of no Kind into a target of ANOTHER category of
+					// none, or an array of another length or element: `p, n =
+					// two()` for a *U p and a U result was asked nothing, the Kind
+					// check above having nothing to ask.
+					f.err(f.tok(call.Pos()).Position(), "cannot use result %d of %s (%s of type %s) as type %s in assignment",
+						i+1, f.exprSource(call), what, f.resultName(res[i]), tg.want)
 				}
 			}
 			continue
@@ -27873,6 +27995,12 @@ func (f *File) arrayBound(s *Scope, n Node) ExpressionNode {
 
 	pos := f.tok(n.Pos()).Position()
 	cv, _ := e.Value().(constVal)
+	// A constant of a FLOAT TYPE is no length whatever its value, `[F]int` for a
+	// `const F float32 = 4`; only an untyped one may be a whole float.
+	if k, known := f.exprType(s, n); !reported && known && isFloatKind(k) && cv.cv != nil {
+		f.err(pos, "array length %s (constant %s of type %s) must be integer", f.exprSource(n), cv.cv, kindName(k))
+		return e
+	}
 	// A whole float, `[K]int` for a `const K = 2.0`: representable by an int, which
 	// is all Go asks of a length.
 	if cv.cv != nil && cv.cv.Kind() == constant.Float {
@@ -30453,7 +30581,13 @@ func (f *File) litOrConvType(s *Scope, n Node) (typeAt, bool) {
 			}
 			length = l
 		default:
-			return typeAt{}, false // a slice literal
+			// A slice literal, `[]int{1, 2}`: its type is the slice of the element
+			// written. Untyped, a range over one gave its value variable no type,
+			// and `var s string = n` and `n[0]` of an int were taken.
+			n0 := len(f.errList)
+			elemTN := f.typ(s, elem)
+			f.errList = f.errList[:n0]
+			return typeAt{&TypeNodeSlice{TypeNode: elemTN}, s, f}, true
 		}
 		// The element too, for an index into the literal's variable. The literal's own
 		// check resolves the same Type and reports what is wrong with it, so what

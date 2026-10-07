@@ -1,0 +1,58 @@
+// Mutations of a domain program, SHA-256 beside 2^256 arithmetic: a call's array
+// result into a pointer, a slice or another array type in a destructured
+// assignment, a typed float constant as a length, and an index of a range value
+// over a slice literal.
+
+type U [2]int
+
+type U2 [2]int
+
+type UA = U
+
+func two() (U, int) { return U{1, 2}, 3 }
+
+const F float32 = 4
+
+const G = 4.0
+
+var arr [8]int
+
+func main() {
+	var p *U
+	var n int
+	// ERROR "cannot use result 1 of two\(\) \(an array of type U\) as type \*U in assignment"
+	p, n = two()
+	var s []int
+	// ERROR "cannot use result 1 of two\(\) \(an array of type U\) as type \[\]int in assignment"
+	s, n = two()
+	var a3 [3]int
+	// ERROR "cannot use result 1 of two\(\) \(an array of type U\) as type \[3\]int in assignment"
+	a3, n = two()
+	var v2 U2
+	// ERROR "cannot use result 1 of two\(\) \(an array of type U\) as type U2 in assignment"
+	v2, n = two()
+	// ERROR "cannot use result 1 of two\(\) \(an array of type U\) as type \*U in assignment"
+	p, m := two()
+	var a2 [2]int
+	var va UA
+	a2, n = two()
+	va, n = two()
+	_, _, _, _, _, _, _, _ = p, s, a3, v2, m, a2, va, n
+
+	// ERROR "array length F \(constant 4 of type float32\) must be integer"
+	var bad [F]int
+	_ = bad
+	var good [G]int
+	_ = good
+	// ERROR "invalid argument: index F \(float32\) must be integer"
+	xs := make([]int, 1, F)
+	_ = xs
+
+	for _, k := range []int{1, 2} {
+		// ERROR "cannot index k"
+		_ = arr[:k[0]]
+		// ERROR "cannot use k"
+		var str string = k
+		_ = str
+	}
+}

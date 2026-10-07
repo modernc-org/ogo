@@ -27,6 +27,14 @@ shipped section tells a reader on that version that they have behaviour they do 
 
 ### Fixed
 
+- **Three mistakes Go refuses are refused**: a call's result of no Kind -- an
+  array, a struct, a pointer -- into a variable of another type of no Kind in a
+  destructured assignment, `p, n = two()` for a `*U` p and a `U` result, also
+  where `:=` assigns an existing p, and an array of another length or of another
+  defined type; a constant of a FLOAT type as an array length or a make length,
+  `[F]int` and `make([]int, 1, F)` for a `const F float32 = 4`; and anything asked
+  of a range value over a SLICE literal, which had no type, so `n[0]` of an int and
+  `var s string = n` were taken.
 - **A call returning an array may stand in a multiple assignment**: `a, b :=
   mk(1), mk(2)`, `x, y = u256.From(0), u256.From(1)` and `n, a = 1, mk(3)` were
   refused, "cannot infer the type of a value in a multiple assignment" with no

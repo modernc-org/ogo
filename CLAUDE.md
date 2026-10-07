@@ -2537,7 +2537,18 @@ in one package as in two (emitValueList binds it into a temporary in its turn, a
 emitDiscard does). The list declaration beside it, `var p, q [2]int = mk(1), mk(2)`,
 was "not supported yet" where the two lines it stands for built (emitVarList is the
 single declaration name by name for an array type). The program then matched Go on
-the host and the board, a million 'a's hashed on another cog in 90 s.
+the host and the board, a million 'a's hashed on another cog in 90 s. Its 1,500
+mutants had three rows taken: a destructured call's result of no Kind into a
+target of another category or another array, asked only against a target of a
+Kind (kindlessTargetOf, otherKindless; a `:=` assigning an existing name asks
+checkResultsAssign too, and two defined types are told apart by their declarations
+past any alias, definedDeclOf); a TYPED float constant as an array or a make
+length, the whole-float rule for an untyped one having taken it (arrayBound,
+checkMakeBounds); and a SLICE literal, which litOrConvType typed as nothing -- an
+array literal had a type and a slice literal none, so a range value over one was
+asked nothing. One cell refuses where gc takes it: `1 << F` for a typed float
+constant F of whole value, which go/types checks for an integer type only where
+the count is not a constant -- the spec's words refuse it, and so does this.
 
 **A STRUCT HOLDING AN ARRAY IS COPIED, NEVER ASSIGNED** (2026-09-23). The target's C
 compiler copy-initializes and assigns one only at some SIZES -- "Unable to multiply
