@@ -1873,6 +1873,37 @@ func main() {
 		want: "0 false true 11\n1 true false -1\n2 false true 20\n0 false 6\n1 false 4\ntrue true 2\nfalse false true 6\n8 5\n",
 	},
 	{
+		// A goroutine's stack is a slot of 256 longs unless the build is told
+		// otherwise, and 2400 bytes of locals overran it: the second goroutine's
+		// sum was printed, and then "goroutine stack overflow" as the first one
+		// ended -- having written past its slot. The build reads what each
+		// goroutine needs off the backend's listing and gives the slots that
+		// (internal/build, compileSized); only the board can tell.
+		name: "a goroutine whose locals outgrow the default stack",
+		src: `var out chan int
+
+func work(n int) {
+	var buf [600]int
+	for i := range buf {
+		buf[i] = i * n
+	}
+	s := 0
+	for _, v := range buf {
+		s += v
+	}
+	out <- s
+}
+
+func main() {
+	go work(2)
+	println(<-out)
+	go work(3)
+	println(<-out)
+}
+`,
+		want: "359400\n539100\n",
+	},
+	{
 		// A package array with its type WRITTEN was a static initializer whatever
 		// its elements: `var ga [2]int = [2]int{gx, 1}` named a variable in one,
 		// which C refuses and the target's compiler refused. It is filled at

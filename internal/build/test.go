@@ -115,7 +115,7 @@ func Test(args []string, stdin io.Reader, stdout, stderr io.Writer) (int, error)
 		clockOpts = append(clockOpts, octogo.GoStack(goStack))
 	}
 
-	opts := testOptions{compileOnly: compileOnly, allowWarnings: allowWarnings, port: port, runPat: runPat, clockOpts: clockOpts}
+	opts := testOptions{compileOnly: compileOnly, allowWarnings: allowWarnings, stackAsked: goStack != 0, port: port, runPat: runPat, clockOpts: clockOpts}
 	if runPat != "" {
 		if opts.run, err = regexp.Compile(runPat); err != nil {
 			return 2, fmt.Errorf("test: bad -run pattern %q: %v", runPat, err)
@@ -164,7 +164,10 @@ type testOptions struct {
 	compileOnly bool
 	// allowWarnings builds tests the backend warned about (backendFault).
 	allowWarnings bool
-	port          string
+	// stackAsked says --gostack chose the goroutine stack, which the build then
+	// leaves as asked (compileSized).
+	stackAsked bool
+	port       string
 	// run selects which tests the runner calls, as `go test -run` does: an
 	// unanchored regular expression over the test's name, compiled HERE rather
 	// than on the board -- the selection is made where the runner is generated, so
@@ -327,7 +330,7 @@ func testPackage(dir string, opts testOptions, stdout, stderr io.Writer) (int, e
 		return 2, err
 	}
 	keepC := filepath.Join(dir, dirPkgName(dir)+".test.c")
-	if code, err := compileMarked(cbuf.Bytes(), unmarked, cFile, binary, root, keepC, opts.allowWarnings, stdout, stderr); err != nil {
+	if code, err := compileSized(cbuf.Bytes(), unmarked, cFile, binary, root, keepC, opts.allowWarnings, opts.stackAsked, stdout, stderr); err != nil {
 		return code, err
 	}
 	if compileOnly {

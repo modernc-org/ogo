@@ -11540,6 +11540,24 @@ func GoStack(longs int) EmitOption {
 	return func(e *emitter) { e.goStack = longs }
 }
 
+// WithGoStack answers c, C that EmitC wrote, with every goroutine slot holding longs
+// of stack: what GoStack would have asked for, applied to C already written. The
+// build sizes the slots from the listing of a first compile (internal/build), and
+// the size changes nothing else the backend makes of the program.
+func WithGoStack(c []byte, longs int) []byte {
+	const def = "\n#define OGO_STACK_LONGS " // the line of ogoCogPool sizing a slot's stack
+	i := bytes.Index(c, []byte(def))
+	if i < 0 {
+		return c
+	}
+	i += len(def)
+	n := bytes.IndexByte(c[i:], '\n')
+	if n < 0 {
+		return c
+	}
+	return slices.Concat(c[:i], []byte(strconv.Itoa(longs)), c[i+n:])
+}
+
 // GoStackRange is what a caller may ask for, for a diagnostic that names the bounds
 // rather than making the caller find them.
 func GoStackRange() (min, max, def int) {

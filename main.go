@@ -234,10 +234,12 @@ where the binary would be, to be reported with the program.
 	--release     reboot the board on a panic instead of halting the cog
 	--clock hz    the system clock to ask for, e.g. 200MHz (default 160 MHz)
 	--gostack longs
-	              stack per goroutine, in longs (default 256, 64..8192). A
-	              goroutine that outruns its slot panics "goroutine stack
-	              overflow"; this is how that limit moves. Seven slots of it
-	              sit in hub RAM for the whole run.
+	              stack per goroutine, in longs (64..8192). Without it the
+	              build gives every slot what the program's deepest goroutine
+	              needs by the backend's listing, 256 at least; a goroutine
+	              recursing through its own calls is not measured, and one
+	              that outruns its slot panics "goroutine stack overflow".
+	              Seven slots of it sit in hub RAM for the whole run.
 	--xtal hz     the board's crystal (default 20MHz)
 	--allow-backend-warnings
 	              build a program the C backend warned about

@@ -340,9 +340,12 @@ broken.
   arguments and locals count toward the frame of the function that makes it, and an
   `--unchecked` build can need more registers than a checked one. Splitting the
   function into several is the fix, and is what the code wanted anyway.
-* A **goroutine's stack is 256 longs by default** and cannot be sized per `go`
-  statement, though `ogo build --gostack N` sets it for the whole program (64 to
-  8192 longs; seven slots of it sit in hub RAM for the run). Recursion works — `main` runs on the cog's own stack and a goroutine on
+* A **goroutine's stack is sized by the build**: every pool slot gets what the
+  program's deepest goroutine needs, read off the backend's listing of its frames
+  and calls, 256 longs at least; it cannot be sized per `go` statement, and `ogo
+  build --gostack N` sets it outright (64 to 8192 longs; seven slots of it sit in
+  hub RAM for the run). The listing cannot bound a goroutine RECURSING through its
+  own calls, which gets the 256. Recursion works — `main` runs on the cog's own stack and a goroutine on
   its pool slot's — but a deep enough call chain in a goroutine overruns that slot,
   this part having no memory protection. The slot is fenced, so a goroutine that
   overruns it and still returns ends with `panic: goroutine stack overflow` rather

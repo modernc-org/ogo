@@ -1342,6 +1342,42 @@ assembler's "Operand for call is out of range" is the program's size, as "exceed
 maximum of" is (callOutOfRange): a local array of 512 KB met it. gcc took every one
 of these, so no run case had held them; TestTargetBuild does now.
 
+**A GOROUTINE'S STACK IS READ OFF THE LISTING** (2026-10-07). A domain program --
+Conway's Life on a 64x64 torus of uint64 rows, one generation a 512-byte local --
+matched Go on the host and on the board printed every line right and then
+"goroutine stack overflow": its goroutine had run past the 256 longs of its slot,
+and the fence the runtime keeps at the slot's end (ad90bef; specs.go's TODO had
+said it was abandoned) was read only as the goroutine ENDED. p2-11's disk cog is
+the same by its listing -- turn, find, fat.Volume.Find (a 708-byte frame), file,
+next, hold come to 1488 bytes before the device call -- and never ends, so nothing
+looked. The backend's listing has the whole story: a frame is `mov COUNT_, #n` and
+`call #pushregs_` (n registers and three longs of its own) plus `add ptra, ##m`, a
+function with no frame keeps its return in the cog's hardware stack, a call is
+`call #name`. internal/build/stack.go reads it (readStackNeeds) and compileSized
+compiles the same C again with slots that fit (octogo.WithGoStack), every slot the
+deepest goroutine's size, unless --gostack asked for one. Three things a call graph
+of a listing has to get right, each met: a call through a register is a call of
+every taken function ON ITS SIDE -- the library's FILE functions reach the library's
+handlers, the program's function values and tables the program's (the program's
+side is what the C defines); taking one set for both joined everything into one
+component through the I/O handlers. Recursion is a cycle of DIRECT calls, and
+answers "unknown" (the slot stays 256); a cycle through an indirect call is the
+library's -- flush calls a FILE function that calls flush -- and is taken as its
+deepest simple path, a search over (function, visited set) for a component of 20 or
+fewer and the sum of its frames past that. And a library function that reads ptra
+into a register formats into the memory past it unreserved (the number printer):
+256 bytes. Measured: dom29's goroutine reaches 272 longs on the board (prefilled
+slot, high-water read as it ended) and the listing says 413; five run cases the
+listing puts past 256 reach 23 to 120 -- the bound counts the panic's print chain and
+every interface method an indirect call might reach, which is what a bound costs.
+Of 478 run cases starting goroutines the median need is 158 longs and 5 exceed 256;
+p2-11's is 809, 15 KB more Hub RAM for its seven slots. The same reading bounds the
+MAIN cog, whose stack is the rest of Hub RAM: a program whose image and deepest main
+stack exceed 512 KB is refused (the corpus's largest is 471 KB; main needs 5 KB at
+most there). Tightening the indirect calls by the C's types is how the bound would
+come down. **A listing is a probe of what the C costs**: cogHint reads registers
+off it, this reads stacks.
+
 **A COMPILER RUN IN A SWEEP IS CAPPED, AND A CRASH IS NOT A REFUSAL** (2026-09-20).
 A probe program is written to find a fault, and a fault is not always a wrong
 answer: `type A struct{ A }` sent the emitter down an embedding at 4 GB a second, the

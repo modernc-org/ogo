@@ -165,10 +165,45 @@ func compile(args []string, stdout, stderr io.Writer) (binary string, code int, 
 		return "", 2, err
 	}
 	keepC := strings.TrimSuffix(out, filepath.Ext(out)) + ".c"
-	if code, err := compileMarked(cbuf.Bytes(), unmarked, cFile, out, root, keepC, flags.allowWarnings, stdout, stderr); err != nil {
+	if code, err := compileSized(cbuf.Bytes(), unmarked, cFile, out, root, keepC, flags.allowWarnings, flags.goStack != 0, stdout, stderr); err != nil {
 		return "", code, err
 	}
 	return out, 0, nil
+}
+
+// compileSized is compileMarked, and then the program's stacks held to what its
+// listing says they need (readStackNeeds). Where a goroutine needs more than a slot
+// holds and --gostack asked for no size, the same C is compiled again with slots
+// that fit, every slot the size of the deepest goroutine's need; an explicit
+// --gostack is the program's to choose. And a program whose main cog's deepest
+// stack does not fit in Hub RAM beside its code and data is told so, the binary
+// removed: the stack grows into whatever lies past the top, without a word.
+func compileSized(c []byte, unmarked func() ([]byte, error), cFile, out, inc, keepC string, allowWarnings, stackAsked bool, stdout, stderr io.Writer) (int, error) {
+	if code, err := compileMarked(c, unmarked, cFile, out, inc, keepC, allowWarnings, stdout, stderr); err != nil {
+		return code, err
+	}
+	built, err := os.ReadFile(cFile)
+	if err != nil {
+		return 1, err
+	}
+	listing, err := os.ReadFile(strings.TrimSuffix(out, filepath.Ext(out)) + ".p2asm")
+	if err != nil {
+		return 0, nil // nothing to read the stacks off: the build stands as it is
+	}
+	needs := readStackNeeds(listing, built)
+	if _, hi, def := octogo.GoStackRange(); !stackAsked && needs.goLongs > def {
+		longs := min(hi, (needs.goLongs+15)&^15)
+		if code, err := compileMarked(octogo.WithGoStack(built, longs), unmarked, cFile, out, inc, keepC, allowWarnings, stdout, stderr); err != nil {
+			return code, err
+		}
+	}
+	if needs.mainNeed > 0 {
+		if fi, err := os.Stat(out); err == nil && fi.Size()+int64(needs.mainNeed) > hubRAMBytes {
+			os.Remove(out)
+			return 1, fmt.Errorf("ogo: the program does not fit the P2's 512 KB of Hub RAM: main's stack needs %d bytes beside its %d of code and data", needs.mainNeed, fi.Size())
+		}
+	}
+	return 0, nil
 }
 
 // compileMarked writes the C of a program to cFile and compiles it into out. Where
