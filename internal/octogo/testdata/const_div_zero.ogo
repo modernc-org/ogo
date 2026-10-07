@@ -1,0 +1,26 @@
+// A constant divided by a constant zero, which the folder reported only where a
+// constant was declared or a length folded: in an expression it was taken.
+
+const N = 64
+
+const Z = 0
+
+func f(int) {}
+
+func main() {
+	// ERROR "invalid operation: division by zero"
+	_ = 64 / 0
+	// ERROR "invalid operation: division by zero"
+	for i := 0; i < N/0; i++ {
+	}
+	// ERROR "invalid operation: division by zero"
+	f(N % Z)
+	// ERROR "invalid operation: division by zero"
+	_ = []int{N / (N - 64)}
+	// ERROR "invalid operation: division by zero"
+	_ = 6.0 / 0
+	var z float32
+	var x float32 = 1.5
+	x /= 0
+	_ = x + 6.0/z + 6.0/N
+}

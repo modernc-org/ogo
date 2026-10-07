@@ -1,0 +1,15 @@
+// A variable of an interface type written out called, `i(1)`, was taken; one of a
+// named interface type, `error`, was refused.
+
+var gi interface{}
+
+func main() {
+	var i interface{ M() }
+	// ERROR "cannot call non-function i"
+	i()
+	// ERROR "cannot call non-function gi"
+	_ = gi(1)
+	var e error
+	// ERROR "cannot call non-function e"
+	e()
+}

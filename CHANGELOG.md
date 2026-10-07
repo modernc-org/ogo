@@ -27,6 +27,16 @@ shipped section tells a reader on that version that they have behaviour they do 
 
 ### Fixed
 
+- **Another package's variable or constant called is checked**: `lib.Half(a, b)`
+  of a constant, `lib.V(1)` of an int, an array, a struct or an interface was taken
+  in every position, a value, a statement, `defer` and `go`, and a function
+  variable's arguments, `lib.Hook("x")` for a `func(int) int`, were asked nothing;
+  in one package both were refused. A variable of an interface type written out,
+  `var i interface{}`, called was taken in one package too.
+- **A constant divided by a constant zero is refused wherever it stands**: `_ = 64
+  / 0`, `i < N/0`, `f(N % Z)`, `6.0 / 0` and `lib.N / 0` were taken outside a
+  constant declaration and an array length, the folder's report standing only
+  there.
 - **A call returning an array may be appended, sent and stored through a
   pointer**: `append(rows, mk())`, `ch <- mk()`, `case ch <- mk():` and `*p = mk()`
   were refused, "must be bound to a variable first"; the call writes into a

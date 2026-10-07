@@ -11575,6 +11575,27 @@ func (f *File) checkQualifiedRef(s *Scope, qual Token, suffix Node) {
 		// there. Nothing checked it before -- the walk stopped at the variable -- so
 		// `lib.V.hidden` read another package's unexported field, and
 		// `lib.V.hidden()` called its unexported method, both silently.
+		// `lib.V(x)`, another package's variable or constant called: a function
+		// variable's arguments are asked what the same call in its own package asks
+		// them, and anything else is no function. Neither was asked -- `lib.Hook("x")`
+		// for a func(int) went to C, and so did `lib.Half(a, b)` of a constant, in
+		// every position.
+		// A go or defer statement hands its whole node, keyword first (callSteps).
+		if steps, _ := callSteps(suffix); len(steps) >= 2 && steps[0].sym == Selector && steps[1].sym == CallSuffix {
+			switch x := d.(type) {
+			case *ConstDeclaration:
+				f.err(qual.Position(), "invalid operation: cannot call non-function %s.%s", qual.Src(), m.Src())
+				return
+			case *VarDeclaration:
+				switch {
+				case x.isFunc && x.funcSig != nil:
+					f.checkArgsIn(s, pkg.Scope, m, x.funcSig, argNodes(f.callArgList(steps[1])))
+				case f.varHoldsNoFunc(x):
+					f.err(qual.Position(), "invalid operation: cannot call non-function %s.%s", qual.Src(), m.Src())
+					return
+				}
+			}
+		}
 		if vd, isVar := d.(*VarDeclaration); isVar {
 			if member, call, isCall, ok := f.qualifiedMember(suffix); ok && vd.typeName.IsValid() {
 				switch {
@@ -17489,11 +17510,13 @@ func (f *File) checkBinOp(s *Scope, opNode, lNode, rNode Node) {
 		f.checkConstShiftBound(s, lNode, rNode)
 	default:
 		f.checkConstOperands(s, lNode, lk, rNode, rk)
-		if (op == QUO || op == REM) && f.constZeroDivisor(s, lk, rNode) {
+		if (op == QUO || op == REM) && (f.constZeroDivisor(s, lk, rNode) || f.constOverConstZero(s, lNode, rNode)) {
 			// Go refuses an integer division by a constant zero whatever the
-			// dividend is; a constant dividend is folded and reported before this
-			// runs, so this is the typed one. A float dividend is left alone: its
-			// division by zero is an infinity, not an error, in Go too.
+			// dividend is, and a CONSTANT one of any number. A float VALUE is
+			// left alone: its division by zero is an infinity, not an error, in Go
+			// too. The constant dividend had been left to the folder, whose report
+			// stands only where a constant is declared or a length folded, so
+			// `_ = 64 / 0`, `i < N/0` and `f(N % 0)` were taken.
 			f.err(pos, "invalid operation: division by zero")
 		}
 	}
@@ -17981,6 +18004,16 @@ func (f *File) checkConstOperands(s *Scope, lNode Node, lk Kind, rNode Node, rk 
 // constZeroDivisor reports whether a division's divisor is a constant zero and its
 // dividend is of an integer type -- the pair Go refuses at compile time. A float
 // constant zero counts: it converts to the integer dividend's type first, as 0.
+// constOverConstZero reports a constant divided by a constant zero, of any numeric
+// class: `6.0 / 0` is an error where `x / 0` of a float variable is not.
+func (f *File) constOverConstZero(s *Scope, lNode, rNode Node) bool {
+	if _, ok := f.constNumeric(s, lNode); !ok {
+		return false
+	}
+	cv, ok := f.constNumeric(s, rNode)
+	return ok && constant.Sign(cv) == 0
+}
+
 func (f *File) constZeroDivisor(s *Scope, lk Kind, rNode Node) bool {
 	if _, _, isInt := intKindRange(lk); !isInt {
 		return false
@@ -24663,6 +24696,37 @@ func (f *File) exprMakeElem(s *Scope, n Node) (kind Kind, hasKind bool, tn TypeN
 	return 0, false, nil, false
 }
 
+// varHoldsNoFunc answers whether a variable not declared of a function type is
+// KNOWN to hold something else, which calling it is then a mistake about. Only
+// when the variable's type is actually known: a ":=" from an expression the
+// checker cannot type records nothing at all, and calling what it holds is then
+// not something to call non-callable -- saying so would assert a type nobody
+// determined. The emitter, which types more, has the last word on those.
+func (f *File) varHoldsNoFunc(d *VarDeclaration) bool {
+	if d.isFunc {
+		return false
+	}
+	if d.hasKind || d.isPtr || d.isChan || d.hasElemKind || d.typeName.IsValid() {
+		return true
+	}
+	// A type only the declaration's initializer gave it, `a := pick()(4)`, of a
+	// Kind: no function either.
+	t, ok := f.varTypeAt(d)
+	if !ok || t.f == nil || t.tn == nil {
+		return false
+	}
+	if t.f.resultType(t.s, t.tn).known {
+		return true
+	}
+	// Or of a category, `e := r.buf[0]` of a struct element, `e()` taken, and an
+	// interface written out, `var i interface{}`, whose `i(1)` was taken as well.
+	switch f.underlyingTypeAt(t).tn.(type) {
+	case *TypeNodeStruct, *TypeNodeArray, *TypeNodeSlice, *TypeNodePointer, *TypeNodeChan, *TypeNodeInterface:
+		return true
+	}
+	return false
+}
+
 // checkCall resolves the names in a call's arguments and, for a direct call
 // (the callee is a bare name, not a selector or index), checks the callee: an
 // unresolved name is reported "undefined", a name resolving to a variable or
@@ -24832,25 +24896,8 @@ func (f *File) checkCallee(s *Scope, callee Token, argList Node, args []Node) {
 			return
 		}
 
-		// Only when the variable's type is actually known. A ":=" from an
-		// expression the checker cannot type records nothing at all, and calling
-		// what it holds is then not something to call non-callable -- saying so
-		// would assert a type nobody determined. The emitter, which types more,
-		// has the last word on those.
-		if d.hasKind || d.isPtr || d.isChan || d.hasElemKind || d.typeName.IsValid() {
+		if f.varHoldsNoFunc(d) {
 			f.err(callee.Position(), "cannot call non-function %s", callee.Src())
-			return
-		}
-		// A type only the declaration's initializer gave it, `a := pick()(4)`, of a
-		// Kind: no function either.
-		if t, ok := f.varTypeAt(d); ok && t.f != nil && t.f.resultType(t.s, t.tn).known {
-			f.err(callee.Position(), "cannot call non-function %s", callee.Src())
-		} else if ok && t.f != nil && t.tn != nil {
-			// Or of a category, `e := r.buf[0]` of a struct element, `e()` taken.
-			switch f.underlyingTypeAt(t).tn.(type) {
-			case *TypeNodeStruct, *TypeNodeArray, *TypeNodeSlice, *TypeNodePointer, *TypeNodeChan:
-				f.err(callee.Position(), "cannot call non-function %s", callee.Src())
-			}
 		}
 	case *ConstDeclaration:
 		// The callee is a value, not a function: "x()" where x is a constant. (A type

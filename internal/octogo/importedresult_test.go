@@ -378,3 +378,46 @@ func TestCheckIfaceMethodValue(t *testing.T) {
 		})
 	}
 }
+
+// TestCheckQualifiedCallee: another package's variable or constant CALLED, `lib.V(x)`.
+// A function variable's arguments were asked nothing and anything else was taken
+// for a function -- a constant, an int, an array, a struct, an interface -- in a
+// value, a statement, a defer and a go alike, all of it reaching C. The same calls
+// in one package were refused.
+func TestCheckQualifiedCallee(t *testing.T) {
+	const lib = "type Q int16\n\nconst Half Q = 1 << 14\n\nconst U = 3\n\nvar V int\n\nvar A [3]int\n\ntype S struct{ F func(int) int }\n\nvar SV S\n\nvar I interface{}\n\ntype H func(int) int\n\nvar Hook func(int) int\n\nvar NH H\n"
+	for _, test := range []struct {
+		body string
+		want string // "" for one Go takes
+	}{
+		{"_ = lib.Half(1, 2)", "cannot call non-function lib.Half"},
+		{"var x lib.Q = lib.Half(1)\n\t_ = x", "cannot call non-function lib.Half"},
+		{"lib.Half(1)", "cannot call non-function lib.Half"},
+		{"defer lib.Half(1)", "cannot call non-function lib.Half"},
+		{"println(lib.U(1))", "cannot call non-function lib.U"},
+		{"lib.V(1)", "cannot call non-function lib.V"},
+		{"go lib.V(1)", "cannot call non-function lib.V"},
+		{"_ = lib.A(1)", "cannot call non-function lib.A"},
+		{"_ = lib.SV(1)", "cannot call non-function lib.SV"},
+		{"_ = lib.I(1)", "cannot call non-function lib.I"},
+		{"_ = lib.Hook(\"x\")", "cannot use \"x\" of type string as type int in argument to Hook"},
+		{"_ = lib.Hook(1, 2)", "too many arguments in call to Hook"},
+		{"defer lib.NH(\"x\")", "cannot use \"x\" of type string as type int in argument to NH"},
+		{"lib.Hook = func(x int) int { return x }\n\tlib.NH = lib.Hook\n\tprintln(lib.Hook(1), lib.NH(2), lib.SV.F == nil)\n\tdefer lib.NH(3)\n\t_ = lib.Q(3)", ""},
+	} {
+		t.Run(test.body, func(t *testing.T) {
+			src := "import \"lib\"\n\nfunc main() {\n\t" + test.body + "\n}\n"
+			fsys := fstest.MapFS{
+				"main.ogo":    &fstest.MapFile{Data: []byte(src)},
+				"lib/lib.ogo": &fstest.MapFile{Data: []byte(lib)},
+			}
+			_, err := Build(-1, []string{"main.ogo"}, fsys)
+			switch {
+			case test.want == "" && err != nil:
+				t.Fatalf("refused: %v", err)
+			case test.want != "" && (err == nil || !strings.Contains(err.Error(), test.want)):
+				t.Fatalf("got %v, want an error containing %q", err, test.want)
+			}
+		})
+	}
+}

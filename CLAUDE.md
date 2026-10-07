@@ -2606,6 +2606,20 @@ select's send and a store through a pointer was refused -- arrayCallTemp writes 
 into a temporary ahead of the statement, arraySourceC answering for a call through
 it. **A limitation listed for users is checked against the compiler like any other
 note**: three of the README's had been closed weeks before.
+A second FFT (dom34: four packages, the transform a method of a pointer to a frame
+array, the frames sent by value to a worker cog and the results back as a struct
+holding an array of peaks) matched Go on the host and the board. Its 1,500 mutants
+had one taken, `q15.Half(a, b)` of a constant, and its row was whole: another
+package's variable or constant CALLED, `lib.V(1)`, was asked nothing in any
+position, a function variable's arguments neither, where one package refused both
+-- checkQualifiedRef handled a function, a type and a member of a variable, and
+not the variable itself (varHoldsNoFunc is the local rule's, an interface written
+out added to it). Its 1,200 valid-keeping mutants found the other: a constant
+divided by a constant zero, `fft.N/0`, and with it `_ = 64 / 0` in one package, was
+taken outside a constant declaration and an array length -- the binary rule had
+left a constant dividend to the folder, whose reports stand only there
+(constOverConstZero). Their 1,189 mutants both compilers accept matched Go but for
+races the mutations made.
 
 **A STRUCT HOLDING AN ARRAY IS COPIED, NEVER ASSIGNED** (2026-09-23). The target's C
 compiler copy-initializes and assigns one only at some SIZES -- "Unable to multiply
