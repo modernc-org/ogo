@@ -1414,13 +1414,32 @@ Of 478 run cases starting goroutines the median need is 158 longs and 5 exceed 2
 p2-11's is 809, 15 KB more Hub RAM for its seven slots. The same reading bounds the
 MAIN cog, whose stack is the rest of Hub RAM: a program whose image and deepest main
 stack exceed 512 KB is refused (the corpus's largest is 471 KB; main needs 5 KB at
-most there). Tightening the indirect calls by the C's types is how the bound would
-come down: p2-11's 809 is 432 with each interface call resolved to its
+most there). p2-11's 809 was 432 with each interface call resolved to its
 implementations by hand (the startup path turn, find, fat.Volume.Find of 708 bytes,
 file, next, hold and the card's read; Serve's transfers need 206), and the old
 256-long slot was overrun on every boot that mounted a card, into an unclaimed
 slot. **A listing is a probe of what the C costs**: cogHint reads registers off it,
 this reads stacks.
+The interface calls are resolved since (octogo.ScanCalls, narrowTargets): the
+listing has no types and no C lines, and the C says exactly where an interface call
+goes -- `((const X_vt*)...)->ogo_m_M(` reaches what the static tables of X_vt hold
+in M. ScanCalls tokenizes the C and reads each function's calls by name, its
+interface calls and its OTHER calls, those not proved by name (a variable, a
+parameter or a local named like a function, an element, a member, a parenthesised
+callee); a program function whose calls through a register are all interface calls
+-- in its own C and in what was inlined into it, the functions its C calls and its
+listing does not -- and whose listing makes exactly as many reaches their slots,
+and any other keeps every taken function. Two nets: a misread call costs
+precision unless it is taken for a call BY NAME, which TestScanCallsAgainstGCC
+rules out over the run corpus -- gcc -O0 makes one indirect call instruction per
+indirect call, and no function may count fewer than gcc's (327 functions, 326
+exact); and the listing's count. p2-11 is 579 now, the rest the panic's print
+chain through the library's FILE functions, which keeps the deepest-simple-path
+bound; of 480 corpus programs starting goroutines, 6 came down, and on the board
+none reached past its new bound (79 longs the most, for 244). **The decision a
+precise bound rests on is made where it is verifiable**: the emitter's
+bookkeeping would have been one more place to forget a site, the C text is the
+one place every site is written, and gcc counts them.
 The slot was CAPPED at its largest, 8192 longs, where the need passed it, and the
 build said nothing: a board mutant's `var seen [65535]uint32` in a goroutine ran past
 its slot, the pool and what followed, and printed nothing at all. Such a program is

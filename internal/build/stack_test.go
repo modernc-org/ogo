@@ -108,6 +108,69 @@ func TestStackNeeds(t *testing.T) {
 	}
 }
 
+// TestStackNeedsInterfaceCalls reads a goroutine whose one call through a register
+// is an interface call: it reaches the two functions its table's slot holds and not
+// the deep taken function beside them, which a call through a function value, or a
+// listing making more calls through a register than the C makes through tables,
+// still reaches.
+func TestStackNeedsInterfaceCalls(t *testing.T) {
+	const decls = `#define ogo_iface_vt(v) (v)
+struct I_vt { const char* _ogo_type; int (*ogo_m_M)(void*); };
+typedef struct I { void* data; const I_vt* vt; } I;
+typedef int (*fnT)(int ogo_p0);
+static int I_A_M(void* p) { return 1; }
+static int I_B_M(void* p) { return 2; }
+static int big(int n) { return n; }
+static const I_vt I_vt_A = { "*main.A", I_A_M };
+static const I_vt I_vt_B = { "*main.B", I_B_M };
+`
+	viaTable := decls + `int use(I x) {
+	return ((const I_vt*)ogo_iface_vt(x.vt))->ogo_m_M(x.data);
+}
+static void ogo_go0(void* p) {
+	use(*(I*)p);
+}
+`
+	viaValue := decls + `int use(I x) {
+	fnT f = big;
+	return ((const I_vt*)ogo_iface_vt(x.vt))->ogo_m_M(x.data) + f(1);
+}
+static void ogo_go0(void* p) {
+	use(*(I*)p);
+}
+`
+	listing := func(useIndirect int) []byte {
+		body := []string{}
+		for range useIndirect {
+			body = append(body, "call\tlocal01")
+		}
+		return listingOf(fnListing("_ogo_go0_0001", 1, 0, "call\t#_use"),
+			fnListing("_use", 2, 0, body...),
+			fnListing("_I_A_M_0002", 1, 40),
+			fnListing("_I_B_M_0003", 1, 80),
+			fnListing("_big_0004", 1, 4000),
+			"ptr_a\n\tlong\t@_I_A_M_0002\nptr_b\n\tlong\t@_I_B_M_0003\nptr_c\n\tlong\t@_big_0004")
+	}
+	narrow := 1 + (16+20+96+3)/4 // trampoline, use, I_B_M
+	wide := 1 + (16+20+4016+3)/4 // trampoline, use, big
+	for _, tc := range []struct {
+		name  string
+		c     string
+		calls int
+		longs int
+	}{
+		{"an interface call reaches its slot", viaTable, 1, narrow},
+		{"a call through a function value reaches every taken function", viaValue, 2, wide},
+		{"a listing the C does not account for", viaTable, 2, wide},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			if r := readStackNeeds(listing(tc.calls), []byte(tc.c)); r.goLongs != tc.longs || !r.goKnown {
+				t.Fatalf("got %d longs, known %v; want %d", r.goLongs, r.goKnown, tc.longs)
+			}
+		})
+	}
+}
+
 // TestBuildSizesGoroutineStacks builds a program whose goroutine holds 2400 bytes
 // of locals, which a slot of the default 256 longs cannot: the build compiles it
 // with slots that fit, read off its listing, unless --gostack asked for a size. A

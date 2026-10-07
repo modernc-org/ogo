@@ -9,6 +9,8 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+
+	"modernc.org/ogo/internal/octogo"
 )
 
 // A goroutine runs on a stack of its own, a slot of the pool the emitted runtime
@@ -35,6 +37,17 @@ import (
 // goroutine is left to the slot it gets and the fence. A cycle through an indirect
 // call is the library's -- a flush calling a FILE's function that can reach flush
 // again -- and is taken as the deepest simple path through it.
+//
+// The program's side was as wide as the program: p2-11's disk cog, whose FAT code
+// calls the card through an interface, was charged the deepest path through every
+// PDP-11 device method a table holds, 809 longs where 432 are reachable. An
+// interface call reaches only the functions its table's slot holds, which the C
+// says (octogo.ScanCalls), so a program function whose calls through a register are
+// all interface calls -- in its own C and in the C of what was inlined into it, the
+// functions its C calls by name and its listing does not -- reaches those, where
+// the listing agrees: its calls through a register number exactly the interface
+// calls the C has there (narrowTargets). Any other function, and any that does not
+// agree, reaches every taken function of its side.
 
 // hubRAMBytes is the P2's Hub RAM, which a program's code, data and main stack
 // share.
@@ -75,7 +88,7 @@ type stackFunc struct {
 	reserve  int  // bytes add ptra reserves, and ptra++ pushes
 	scratch  bool // formats into the memory past ptra
 	calls    []string
-	indirect bool
+	indirect int // calls through a register
 }
 
 type stackEdge struct {
@@ -143,7 +156,7 @@ func readStackNeeds(listing, c []byte) (r stackNeeds) {
 			cur.pushes = true
 		case m == nil:
 			if stackICall.MatchString(l) {
-				cur.indirect = true
+				cur.indirect++
 			}
 		case labels[m[1]+"_ret"]:
 			cur.calls = append(cur.calls, m[1])
@@ -184,6 +197,11 @@ func readStackNeeds(listing, c []byte) (r stackNeeds) {
 		names = append(names, n)
 	}
 	sort.Strings(names)
+	scan := octogo.ScanCalls(c)
+	byCName := map[string]string{}
+	for _, n := range names {
+		byCName[stackCName(n)] = n
+	}
 	frame := map[string]int{}
 	succ := map[string][]stackEdge{}
 	for _, n := range names {
@@ -199,10 +217,13 @@ func readStackNeeds(listing, c []byte) (r stackNeeds) {
 		for _, c := range f.calls {
 			succ[n] = append(succ[n], stackEdge{c, false})
 		}
-		if f.indirect {
+		if f.indirect != 0 {
 			targets := libTaken
 			if isOwn(n) {
 				targets = ownTaken
+				if t, ok := narrowTargets(n, fns, scan, byCName); ok {
+					targets = t
+				}
 			}
 			for _, c := range targets {
 				succ[n] = append(succ[n], stackEdge{c, true})
@@ -325,6 +346,71 @@ func readStackNeeds(listing, c []byte) (r stackNeeds) {
 	}
 	r.mainNeed = need("_main")
 	return r
+}
+
+// stackCName is the name the C gives the function the listing names n: without the
+// listing's underscore, and without the number it gives a static function.
+func stackCName(n string) string {
+	return stackStatic.ReplaceAllString(strings.TrimPrefix(n, "_"), "")
+}
+
+// narrowTargets answers the functions the calls through a register of the program
+// function n may reach where they are all interface calls, and false where that is
+// not known. The C read is n's own and that of every function it calls by name that
+// n's listing does not call -- inlined into it, or gone -- and every call there must
+// be by name or through a table (no Other), the tables must hold something in each
+// slot called, and n's listing must make as many calls through a register as the C
+// makes through tables. Anything else is the caller's every-taken-function.
+func narrowTargets(n string, fns map[string]*stackFunc, scan *octogo.CallScan, byCName map[string]string) ([]string, bool) {
+	f, cn := fns[n], stackCName(n)
+	if scan.Funcs[cn] == nil {
+		return nil, false
+	}
+	listed := map[string]bool{}
+	for _, c := range f.calls {
+		listed[stackCName(c)] = true
+	}
+	var sites []octogo.IfaceSite
+	other := 0
+	seen := map[string]bool{}
+	var visit func(string)
+	visit = func(name string) {
+		if seen[name] {
+			return
+		}
+		seen[name] = true
+		fc := scan.Funcs[name]
+		sites, other = append(sites, fc.Iface...), other+fc.Other
+		for _, d := range fc.Direct {
+			if !listed[d] && scan.Funcs[d] != nil {
+				visit(d)
+			}
+		}
+	}
+	visit(cn)
+	if other != 0 || len(sites) != f.indirect {
+		return nil, false
+	}
+	have := map[string]bool{}
+	var targets []string
+	for _, site := range sites {
+		fs, ok := scan.Targets(site)
+		if !ok {
+			return nil, false
+		}
+		for _, fn := range fs {
+			ln, ok := byCName[fn]
+			if !ok {
+				return nil, false
+			}
+			if !have[ln] {
+				have[ln] = true
+				targets = append(targets, ln)
+			}
+		}
+	}
+	sort.Strings(targets)
+	return targets, true
 }
 
 // goroutineName is the function a trampoline starts, the one of its direct calls

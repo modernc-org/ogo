@@ -122,6 +122,13 @@ shipped section tells a reader on that version that they have behaviour they do 
 
 ### Toolchain
 
+- **A goroutine's stack bound follows its interface calls**: a call through an
+  interface's table was taken to reach every function whose address the program
+  takes, so a goroutine calling one was charged the deepest of all of them -- p2-11's
+  disk cog the PDP-11 device methods it never calls, 809 longs a slot. It reaches
+  the functions the tables hold in its slot now, read off the C, and the listing has
+  to agree; every other call through a pointer keeps the wide bound. p2-11's slots
+  are 579 longs, its binary 6 KB smaller.
 - **A program whose code lies past what a call reaches is told it does not fit
   Hub RAM**, as one past 512 KB of data was: the assembler's "Operand for call is
   out of range" had been reported as a fault of ogo's.
