@@ -43,6 +43,13 @@ shipped section tells a reader on that version that they have behaviour they do 
   KB of stack and a store instruction an entry, past what a call reaches -- a
   refusal the build called a fault of ogo's.
 
+- **An increment of a target holding a 64-bit cast builds for the target**:
+  `hist[v>>k]++` of a byte v and `h[int(ll&3)]++` were refused by the target's C
+  compiler, "bad cast of expression", as a fault of ogo's -- a shift past a
+  byte's width goes to a helper taking a 64-bit count, and the backend refuses
+  `++` of a target with such a cast in it (doc/incdec-64-cast.c). An increment
+  of any target but a plain name or field path is written as `+= 1`.
+
 ### Behaviour changes
 
 - **A program whose main stack does not fit in Hub RAM is refused**: `var big

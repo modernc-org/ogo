@@ -4191,11 +4191,11 @@ func main() {
 		"\tBuf b = {0};\n" +
 		"\tPoint ogo_backing_0[2] = {0};\n" +
 		"\tb.pts = (ogo_slice_Point){ogo_backing_0, 2, 2};\n" +
-		"\tb.arr[0]++;\n" +
-		"\tb.pts.ptr[1].x++;\n" +
+		"\tb.arr[0] += 1;\n" +
+		"\tb.pts.ptr[1].x += 1;\n" +
 		"\tPoint ogo_backing_1[2] = {0};\n" +
 		"\togo_slice_Point s = {ogo_backing_1, 2, 2};\n" +
-		"\ts.ptr[0].x--;\n" +
+		"\ts.ptr[0].x -= 1;\n" +
 		"\tprintf(\"%d\\n\", (b.arr[0] + b.pts.ptr[1].x + s.ptr[0].x));\n" +
 		"\treturn 0;\n" +
 		"}\n"
@@ -4238,8 +4238,8 @@ func main() {
 	}
 
 	for _, want := range []string{
-		"\tb.arr[ogo_bound(i, 3)]++;\n",
-		"\tb.pts.ptr[ogo_bound(i, b.pts.len)].x--;\n",
+		"\tb.arr[ogo_bound(i, 3)] += 1;\n",
+		"\tb.pts.ptr[ogo_bound(i, b.pts.len)].x -= 1;\n",
 	} {
 		if got := buf.String(); !strings.Contains(got, want) {
 			t.Errorf("EmitC checked indexed ++/--: missing %q in\n%s", want, got)

@@ -1904,6 +1904,42 @@ func main() {
 		want: "359400\n539100\n",
 	},
 	{
+		// The target's compiler refuses an increment whose target holds a cast to
+		// or from a 64-bit type, "bad cast of expression": a byte shifted past its
+		// width goes to a helper taking an int64_t count, and an index converted
+		// from an int64 is a cast of a 64-bit expression (doc/incdec-64-cast.c).
+		// Any target but a plain name or field path is incremented as `+= 1`.
+		name: "increments of targets holding a 64-bit cast",
+		src: `type bins struct {
+	n [4]int
+}
+
+var b bins
+
+func slot(ll int64) *int { return &b.n[ll&3] }
+
+func main() {
+	var hist [4]int
+	var ll int64 = 6
+	vs := []byte{3, 200, 64, 255}
+	for _, v := range vs {
+		hist[v>>6]++
+		hist[v>>12]++
+	}
+	k := 7
+	for _, v := range vs {
+		hist[v>>k]--
+	}
+	hist[int(ll&3)]++
+	b.n[int(ll>>1)]++
+	*slot(ll + 1) += 5
+	(*slot(ll))--
+	println(hist[0], hist[1], hist[2], hist[3], b.n[0], b.n[1], b.n[2], b.n[3])
+}
+`,
+		want: "3 -1 1 2 0 0 -1 6\n",
+	},
+	{
 		// A package array with its type WRITTEN was a static initializer whatever
 		// its elements: `var ga [2]int = [2]int{gx, 1}` named a variable in one,
 		// which C refuses and the target's compiler refused. It is filled at

@@ -1327,7 +1327,12 @@ trampoline's); no listing of the corpus calls funcptr_cmp now. The run case stoo
 the table the board runs, the host's compiler compared right, and `make board` was
 not run after the check went in, so v0.49.0 was tagged with it. **A change to what
 the emitter writes around every call or every dereference -- a check, a helper -- is
-run through `make board` before it is committed.**
+run through `make board` before it is committed.** Of the 2,031 run-case mutants
+that built, 1,918 matched Go on the board at once and 87 more once rebuilt with the
+fixes (most first lost to the loader, the port shared). What differs is known: a
+print whose later argument panics writes its earlier ones first (Go evaluates them
+all), two cogs' panics interleaved, a race the mutation made (two receivers on one
+channel), and loops of 2^31 passes the 15 s the runner waits cannot see end.
 The same run's refusals were the target's, each about a package table: a package
 array with its type WRITTEN was a static initializer whatever its elements, `var ga
 [2]int = [2]int{gx, 1}` naming a variable in one (the inferred form asked
@@ -1341,6 +1346,14 @@ which moved every fuzzer seed's `var agFn = agMod` and 16 run cases into data. T
 assembler's "Operand for call is out of range" is the program's size, as "exceeds
 maximum of" is (callOutOfRange): a local array of 512 KB met it. gcc took every one
 of these, so no run case had held them; TestTargetBuild does now.
+The domain mutants' run added one more refusal: `hist[v>>12]++` of a byte v, the
+count past the width going to a helper with an `(int64_t)` cast, and the target
+refusing `++` of ANY target holding a cast to or from a 64-bit type -- an index, a
+call's argument, under a dereference -- "bad cast of expression", where `+= 1` of the
+same target builds (doc/incdec-64-cast.c). Every increment of a target that is no
+plain name or field path is `+= 1` (incDecC), 261 corpus programs changed in that
+alone, and the backend compiles the compound form no larger (137 of 152 the same
+size, the rest smaller).
 
 **A GOROUTINE'S STACK IS READ OFF THE LISTING** (2026-10-07). A domain program --
 Conway's Life on a 64x64 torus of uint64 rows, one generation a 512-byte local --

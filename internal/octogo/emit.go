@@ -29863,9 +29863,9 @@ condition:
 				lhs := e.exprC(h.postLHS)
 				switch h.postOp {
 				case INC:
-					e.emit(lhs + "++")
+					e.emit(incDecC(lhs, "++"))
 				case DEC:
-					e.emit(lhs + "--")
+					e.emit(incDecC(lhs, "--"))
 				case ASSIGN, DEFINE:
 					e.emitPostAssign(h.postLHS, lhs, "=", h.postRHS, false)
 				default:
@@ -32229,9 +32229,9 @@ func (e *emitter) emitHeaderStep(head Node, op Symbol, value Node, hasValue bool
 		lhs := e.exprC(head.ast)
 		switch op {
 		case INC:
-			e.emit(lhs + "++")
+			e.emit(incDecC(lhs, "++"))
 		case DEC:
-			e.emit(lhs + "--")
+			e.emit(incDecC(lhs, "--"))
 		default:
 			c, ok := cAssignOps[op]
 			if !ok || !hasValue {
@@ -41705,11 +41705,11 @@ func (e *emitter) emitAssignment(head Node, postfix []Node) {
 		switch e.f.ch(op[0].tok) {
 		case INC:
 			e.ind()
-			e.emit(lhs + "++;\n")
+			e.emit(incDecC(lhs, "++") + ";\n")
 			return
 		case DEC:
 			e.ind()
-			e.emit(lhs + "--;\n")
+			e.emit(incDecC(lhs, "--") + ";\n")
 			return
 		}
 	}
@@ -42661,8 +42661,28 @@ func (e *emitter) emitAssignTailOrCopy(target func(), t assignTail) {
 	if e.emitHoistedCompound(target, t) {
 		return
 	}
+	if t.rhs == nil { // "++" or "--"
+		e.emit(incDecC(e.captureC(target), t.op) + ";\n")
+		return
+	}
 	target()
 	e.emitAssignTail(t)
+}
+
+// incDecC spells `x++` or `x--` of a target given as its C text. One that is no
+// plain name or field path is written `x += 1`: the target's C compiler refuses an
+// increment whose target holds a cast to or from a 64-bit type anywhere, "bad cast
+// of expression" -- `hist[v>>k]++` of a byte v, whose guarded shift widens k, and
+// `h[int(ll&3)]++` -- and takes the compound form of the same target
+// (doc/incdec-64-cast.c).
+func incDecC(lhs, op string) string {
+	if plainTargetText(lhs) {
+		return lhs + op
+	}
+	if op == "++" {
+		return lhs + " += 1"
+	}
+	return lhs + " -= 1"
 }
 
 // hoistCompoundTarget is emitHoistedCompound's mirror, for the TARGET of a compound
