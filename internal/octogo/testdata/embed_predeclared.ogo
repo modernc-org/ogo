@@ -1,0 +1,10 @@
+// A predeclared type embedded in a struct is legal Go and not supported here yet
+// (specs.go): said so, where it was "undefined: int". An embedded error, a
+// predeclared interface, is supported.
+
+// ERROR "an embedded field of the predeclared type int is not supported yet"
+type S struct{ int }
+
+type E struct{ error }
+
+func main() {}

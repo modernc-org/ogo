@@ -318,10 +318,11 @@ broken.
   of your own error type whose address you return. A caller recognises one by
   comparing against it, `err == &dev.ErrTimeout`, which is what `errors.Is` does for
   a sentinel anyway.
-* **The standard library is four packages.** `strings` is the allocation-free part
+* **The standard library is six packages.** `strings` is the allocation-free part
   of Go's — the functions that answer a question about a string or return a
   substring of one, each meaning exactly what Go's of the same name means, checked
-  by running the same program under Go. `math` is the elementary functions on the
+  by running the same program under Go — and `bytes` is the same part of Go's for
+  a byte slice. `math` is the elementary functions on the
   same terms — `Abs`, `Ceil`, `Floor`, `Trunc`, `Round`, `Sqrt`, `Pow`, `Exp`, the
   three logarithms, the six trigonometric functions, `Atan2`, `Mod`, `Copysign`,
   `Inf`, `NaN`, `IsNaN`, `IsInf`, `Signbit`, Go's mathematical constants and the
@@ -329,8 +330,8 @@ broken.
   `MaxFloat64` and `SmallestNonzeroFloat64`, which name values a 32-bit float
   cannot hold. `p2` wraps thirty-three intrinsics
   (pin control, smart pins including the ADC, timing and the clock, the serial line
-  in both directions, the hardware locks, the cog's LUT RAM), and `testing` carries the state
-  a test reports through. That is the whole of it. Your own packages do import and
+  in both directions, the hardware locks, the cog's LUT RAM), `testing` carries the state
+  a test reports through, and `unsafe` has `unsafe.Pointer`. That is the whole of it. Your own packages do import and
   build; there is just little else to import yet.
 * **One function's locals live in cog RAM, and there are 480 longs of it** for all
   of them together. A function big enough to exhaust that fails to build with the
@@ -364,9 +365,6 @@ broken.
   at compile time, which is what keeps a function value one word
   (`doc/funcval-cost.c` prices the alternative). Every other function-valued form
   works, `go` through one included.
-* An array *beside another result*, `func f() ([3]int, int)`, is refused — that would
-  need a struct holding an array, which the backend cannot assign. An array result on
-  its own is used like any other value.
 * A **type alias of a type literal or of another package's type** — `type S =
   struct{ ... }` and `type T = lib.X` are refused; alias a NAMED type of the
   same package (or a predeclared one), which works whole: identity, methods,
@@ -376,15 +374,6 @@ broken.
   and shadowing included.
 * A `range` clause written with `=` accepts a variable or a struct field, not an
   element: `for xs[0], a[0] = range xs` is refused.
-* A **select's SEND clause takes a channel named by a variable, a field or an
-  element, not by a call**: `case ws[i].cmd <- v` is a clause, `case qof(i) <- v` is a
-  syntax error. The clause's grammar admits selectors and indexes only. Every other
-  position a channel is written in — a send, a receive, a bare receive statement, a
-  select's *receive* clause — takes any expression of channel type.
-* A **call returning an array cannot stand in an `append` or a channel send**:
-  `append(rows, mk())` and `ch <- mk()` are refused — bind the result to a variable
-  and use that, which is what the diagnostic asks for. An array *literal* stands in
-  both, as it does everywhere else.
 * **Every import path names a directory below the program's root**, whoever writes
   the import — and an `ogo.mod` file is what says where that root is. It holds one
   line, `module example.com/proj`, and a build looks for the nearest one at or above

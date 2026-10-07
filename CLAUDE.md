@@ -2592,7 +2592,20 @@ design. Its 1,500 mutants had two rows taken: a header's step, `for ...; i <<= t
 divisor, the statement form's checks living in the statement path alone
 (checkShiftAssignCount, asked by checkPostOp too); and an element store into a
 numeric constant, `K[0] = 1`, asked nothing (checkNonValueTargetHead read a
-selector only). Its 237 accepted mutants matched Go but for the panic's wording.
+selector only). Its 237 accepted mutants matched Go but for the panic's wording,
+on the host and on the board. A CAN codec the same day (dom33: CRC-15, bit
+stuffing, standard and extended identifiers, a flipped bit detected, arbitration,
+the decoder on another cog) matched Go on the host and the board once its errors
+were package sentinels -- `d.err = &Error{...}` keeps a literal's address past its
+frame, refused by design -- and its 1,500 mutants had nothing taken. An audit of
+specs.go and the README against the compiler the same evening found five stale
+notes (ranging a channel and close are in the language; an array beside another
+result, a select's send to a call's channel and `bytes`/`unsafe` work), and one
+listed limitation worth closing: a call returning an array in an append, a send, a
+select's send and a store through a pointer was refused -- arrayCallTemp writes it
+into a temporary ahead of the statement, arraySourceC answering for a call through
+it. **A limitation listed for users is checked against the compiler like any other
+note**: three of the README's had been closed weeks before.
 
 **A STRUCT HOLDING AN ARRAY IS COPIED, NEVER ASSIGNED** (2026-09-23). The target's C
 compiler copy-initializes and assigns one only at some SIZES -- "Unable to multiply

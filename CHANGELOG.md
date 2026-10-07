@@ -27,6 +27,13 @@ shipped section tells a reader on that version that they have behaviour they do 
 
 ### Fixed
 
+- **A call returning an array may be appended, sent and stored through a
+  pointer**: `append(rows, mk())`, `ch <- mk()`, `case ch <- mk():` and `*p = mk()`
+  were refused, "must be bound to a variable first"; the call writes into a
+  temporary ahead of the statement, the slice, the channel and the pointer
+  evaluated before it as Go evaluates them.
+- **An embedded field of a predeclared type, `struct{ int }`, is said to be not
+  supported yet**, as the spec has it, where it was "undefined: int".
 - **A header's step asks what a statement's does**: a shift assignment by what is
   no integer, `for ...; i <<= true` or an if's or a switch's `x >>= f` of a float,
   and a division by a constant zero, `for ...; i /= 0`, were taken in a for clause's

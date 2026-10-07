@@ -20,8 +20,9 @@
 // sets it outright). What is left: a goroutine RECURSING through its own calls has
 // no depth a listing bounds and gets the 256, which a deep enough recursion overruns
 // -- measured on a P2-EDGE, one recursing 2000 deep printed nothing at all; a call
-// through an interface or a function value is taken to reach any function whose
-// address the program takes, so a slot can be larger than it needs; and every slot
+// through a function value is taken to reach any function whose address the program
+// takes, so a slot can be larger than it needs (a call through an interface reaches
+// what its table's slot holds, since 2026-10-07); and every slot
 // is the deepest goroutine's size, where a stack the "go" statement chooses would
 // size each. The slot is fenced (since 2026-08-20; this note said otherwise until
 // 2026-10-07): a goroutine that overruns it and still ends panics "goroutine stack
@@ -2377,7 +2378,7 @@
 // Ranging an integer yields only the index; the two-variable form is available
 // for a slice, an array or a string, where the second variable is a copy of the
 // element -- for a string, the rune (see the range clause below). Ranging a
-// channel is not provided: it has no close.
+// channel yields each value received, one variable, until the channel is closed.
 //
 // A clause written with "=" rather than ":=" assigns variables that already
 // exist instead of declaring new ones. They are written at the top of each
@@ -2567,9 +2568,9 @@
 // and the array it points at is read live, and so is a slice, with its length
 // taken once. (OctoGo Specific): the copy is made only where the body can write
 // the array -- a store into it, a store through a pointer or a slice, or a call
-// that may -- so a loop that only reads costs no copy. Ranging over a map or a
-// channel is not implemented (a map needs a heap; a channel range needs a close,
-// which the rendezvous does not model yet).
+// that may -- so a loop that only reads costs no copy. Ranging over a channel
+// receives until the channel is closed (see Channel types); ranging over a map is
+// not provided, a map needing a heap.
 //
 // # Switch Statements
 //

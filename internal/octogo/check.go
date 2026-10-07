@@ -27398,6 +27398,13 @@ func (f *File) checkStructEmbedNames(s *Scope, ts *TypeSpecNode) {
 		}
 		td, _, resolved := f.typeDeclNamed(s, name)
 		if !resolved || td.TypeSpec == nil {
+			// `struct{ int }`: a predeclared type is a legal embedded field in Go,
+			// and not one here yet (specs.go) -- not an undefined name, which is
+			// what this said.
+			if _, isPre := s.find(name).(*PredeclaredType); isPre && !fld.EmbeddedPkg.IsValid() {
+				f.err(tok.Position(), "an embedded field of the predeclared type %s is not supported yet; give the field a name", name)
+				continue
+			}
 			f.errUndefined(tok.Position(), name)
 			continue
 		}

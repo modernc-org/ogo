@@ -1959,6 +1959,79 @@ func main() {
 		want: "5 10 13 1\n4 24 2\n7 8 3\n4 13\n16 5\nfalse 3\n4 4 5 5\n6 6\n7 7 7\n",
 	},
 	{
+		// A call returning an ARRAY where an array VALUE is copied from -- an
+		// append's value, a send, a select's send clause, a store through a
+		// pointer -- writes into a temporary ahead of the statement, in its turn:
+		// each was refused, "must be bound to a variable first". The calls record
+		// their order: the slice and the pointer ahead of the value, as Go has it.
+		name: "calls returning arrays appended, sent and stored through a pointer",
+		src: `type Row [2]int
+
+var calls int
+
+func mk(n int) [2]int {
+	calls = calls*10 + n
+	return [2]int{n, n * 10}
+}
+
+func mkr(n int) Row {
+	calls = calls*10 + n
+	return Row{n, -n}
+}
+
+var back [8][2]int
+
+func rows(n int) [][2]int {
+	calls = calls*10 + n
+	return back[:0]
+}
+
+var ch chan [2]int
+
+var rch chan Row
+
+var res chan int
+
+var ga [2]int
+
+func getp() *[2]int {
+	calls = calls*10 + 9
+	return &ga
+}
+
+func main() {
+	r := back[:0]
+	r = append(r, mk(1), mk(2))
+	println(len(r), r[0][1], r[1][0], calls)
+	calls = 0
+	r = append(rows(3), mk(4))
+	println(len(r), r[0][1], calls)
+	calls = 0
+	go func() { ch <- mk(5) }()
+	v := <-ch
+	println(v[1], calls)
+	calls = 0
+	go func() { rch <- mkr(7) }()
+	x := <-rch
+	println(x[1], calls)
+	calls = 0
+	go func() {
+		w := <-ch
+		res <- w[1]
+	}()
+	select {
+	case ch <- mk(6):
+		println("sent", calls)
+	}
+	println(<-res)
+	calls = 0
+	*getp() = mk(8)
+	println(ga[0], ga[1], calls)
+}
+`,
+		want: "2 10 2 12\n1 40 34\n50 5\n-7 7\nsent 6\n60\n8 80 98\n",
+	},
+	{
 		// A call through a nil function VALUE panics, as Go's does; it called
 		// through address zero, which on the target is Hub RAM's first long.
 		name: "a call through a nil function value panics",

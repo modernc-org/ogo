@@ -2860,7 +2860,14 @@ func (e *emitter) emitSelect(ast []int32) {
 			switch a, isArr := e.namedArrays[c.elem]; {
 			case isArr:
 				// An ARRAY is copied, not assigned: C has no array assignment, so
-				// `elem tmp = arr` was not C at all.
+				// `elem tmp = arr` was not C at all. A call returning one writes it
+				// into the temporary, `case ch <- mk():`, which was refused.
+				if cname, _, isCall := e.arrayResultCall(c.val.ast); isCall {
+					e.ind()
+					e.emit(a.elem + " " + valTmp + a.declSuffix() + ";\n")
+					e.emitArrayResultCall(valTmp, cname, c.val.ast)
+					break
+				}
 				e.emitArrayCopy(valTmp, e.captureC(func() { e.emitExpr(c.val.ast) }), a)
 			case e.chanStructByPtr(c.elem):
 				// A STRUCT holding one is declared and copied in: the target's C
@@ -10437,6 +10444,9 @@ func (e *emitter) emitChanSend(ch, elem string, op []Node) {
 		return
 	}
 	sent, hoisted := e.hoistStructCallArg(op[1])
+	if !hoisted {
+		sent, hoisted = e.arrayCallTemp(op[1].ast) // `ch <- mk()` of an array
+	}
 	e.ind()
 	e.chanSendElems[elem] = true
 	e.emit(chanSendCName(elem) + "(" + ch + ", ")
@@ -22090,6 +22100,11 @@ func (e *emitter) checkArrayShape(dst arrDim, ast []int32, what string) bool {
 func (e *emitter) arraySourceC(ast []int32) (string, bool) {
 	if dim, operand, ok := e.sliceArrayConv(ast); ok {
 		return e.hoistSliceArrayConv(dim, operand)
+	}
+	// A call returning one writes it into a temporary ahead of the statement:
+	// `*p = mk()` was "must be bound to a variable first".
+	if tmp, ok := e.arrayCallTemp(ast); ok {
+		return tmp, true
 	}
 	ast = e.arrayOperandAST(ast)
 	if name, ok := e.exprIdent(ast); ok {
@@ -37136,12 +37151,25 @@ func (e *emitter) emitAppend(callSuffix []int32) {
 	// The values are arguments of nested helper calls, whose order C leaves open:
 	// `append(s, f(1), f(2))` ran f(2) first on the host.
 	defer e.bindEffectOperands(args)()
+	// A call returning an ARRAY is no value: it writes into a temporary bound ahead
+	// of the statement (arrayCallTemp), and so the slice is bound ahead of it where
+	// it does something too, Go evaluating it first.
+	arrayCalls := slices.ContainsFunc(values, func(v Node) bool { _, _, ok := e.arrayResultCall(v.ast); return ok })
+	head := e.captureC(func() { e.emitExpr(args[0].ast) })
+	if arrayCalls && e.exprHasEffect(args[0].ast) {
+		text := head
+		head = e.hoist(sliceCName(elem), func() { e.emit(text) })
+	}
 	for range values {
 		e.emit(appendCName(elem) + "(")
 	}
-	e.emitExpr(args[0].ast)
+	e.emit(head)
 	for _, v := range values {
 		e.emit(", ")
+		if tmp, ok := e.arrayCallTemp(v.ast); ok {
+			e.emit(tmp + ")")
+			continue
+		}
 		// A concrete value appended to a slice of INTERFACE elements is wrapped
 		// where it stands, into the two words the element is -- the same wrap a
 		// parameter, an assignment and a literal element take. The raw pointer went
@@ -37174,6 +37202,25 @@ func (e *emitter) emitAppend(callSuffix []int32) {
 		e.emitExpr(v.ast)
 		e.emit(")")
 	}
+}
+
+// arrayCallTemp writes a call returning an ARRAY into a temporary declared ahead of
+// the statement and names the temporary, which stands where an array variable would:
+// `append(rows, mk())` and `ch <- mk()`, which were refused, "must be bound to a
+// variable first". ok is false for anything else.
+func (e *emitter) arrayCallTemp(ast []int32) (string, bool) {
+	cname, a, isCall := e.arrayResultCall(ast)
+	if !isCall {
+		return "", false
+	}
+	tmp := e.newTmp()
+	e.prologue = append(e.prologue, a.elem+" "+tmp+a.declSuffix()+";\n")
+	saved := e.indent
+	e.indent = 0
+	text := e.captureC(func() { e.emitArrayResultCall(tmp, cname, ast) })
+	e.indent = saved
+	e.prologue = append(e.prologue, text)
+	return tmp, true
 }
 
 // emitCopy emits the builtin copy(dst, src). Both must be slices of the same
