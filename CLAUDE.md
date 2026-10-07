@@ -2619,7 +2619,16 @@ divided by a constant zero, `fft.N/0`, and with it `_ = 64 / 0` in one package, 
 taken outside a constant declaration and an array length -- the binary rule had
 left a constant dividend to the folder, whose reports stand only there
 (constOverConstZero). Their 1,189 mutants both compilers accept matched Go but for
-races the mutations made.
+races the mutations made. Two of its refused mutants were a loud gap, `%d` of a
+struct, which every verb but %v was: the spec printers of %v under a width
+(needStructSpecPrint) keep a verb other than %v per field now, '+' a sign there,
+a byte row as one text, String() asked only under fmt's verbs for it -- and a field
+of a defined type had been handed to the scalar printer by that type, so `%5v` of
+one was "%v wants an integer, not R" (emitValueSpec passes the type underneath). A
+sweep of ten struct shapes under fourteen verbs and seven specs, 980 programs
+against Go, had 407 match and none differ; the refusals are a field the verb does
+not suit (fmt's `%!d(...)`, refused by design), '#' (Go-syntax %#v among them), a
+float under %x or %b, and an exported String() field under the text verbs.
 
 **A STRUCT HOLDING AN ARRAY IS COPIED, NEVER ASSIGNED** (2026-09-23). The target's C
 compiler copy-initializes and assigns one only at some SIZES -- "Unable to multiply

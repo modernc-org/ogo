@@ -10352,6 +10352,80 @@ func main() {
 		want: "[{    -3    2.5     ab {     7   true} [     1     22] [     4     55]    122}]\n[{-3    2.5   ab    {7     true } [1     22   ] [4     55   ] 122  }]\n[{-00003 0002.5 0000ab {000007 00true} [000001 000022] [000004 000055] 000122}]\n[{x:  -3 f: 2.5 s:  ab in:{a:   7 ok:true} arr:[   1   22] sl:[   4   55] r: 122}]\n[{-03 2.5 ab {07 true} [01 22] [04 55] 122}]\n[  <nil>] [&{-3   2.5  ab   {7    true} [1    22  ] [4    55  ] 122 }]\n[{   9    0   mk {   0 false} [   0    0] []    0}]\n[[{  1   0   a {  0 false} [  0   0] []   0} { 22   0  bb {  0 false} [  0   0] []   0}]] [[{0   false} {3   false}]]\n",
 	},
 	{
+		name: "printf's other verbs on a struct",
+		src: `// printf's other verbs on a struct, as fmt applies them: to every field in turn,
+// through nested structs, arrays and slices, a flag, a width and a precision with
+// them -- %x of Pt{5, -12} is "{5 -c}", '+' a sign and not the fields' names. A
+// byte slice or a row of bytes under %s, %x, %X and %q is one text, and an exported
+// field with a String() is not asked for it under a verb fmt does not ask it under.
+// Each was "%d wants an integer, not main.Pt"; and %v under a width refused a field
+// of a defined type, "%v wants an integer, not R".
+type Pt struct {
+	X, Y int
+}
+
+type Lvl int
+
+func (l Lvl) String() string { return "L" }
+
+type Rec struct {
+	ID   uint16
+	At   Pt
+	Raw  [3]uint8
+	Vals []int32
+	Lv   Lvl
+	n    int8
+}
+
+type Names struct {
+	A, B string
+}
+
+type Fl struct {
+	F float32
+	G float64
+}
+
+type Bin struct {
+	Tag  string
+	Data []byte
+	Arr  [2]byte
+	Grid [2][2]uint8
+}
+
+type Wrap struct {
+	in Pt
+	k  [2]Pt
+}
+
+type Named struct{ v int }
+
+func (n Named) String() string { return "named" }
+
+func mk(n int) Pt { return Pt{n, -n} }
+
+func main() {
+	p := Pt{5, -12}
+	printf("[%d] [%x] [%X] [%o] [%b] [%+d] [%5d] [%-4x|] [%08b] [%c] [%U]\n", p, p, p, p, p, p, p, p, p, Pt{65, 66}, Pt{65, 0x1F600})
+	r := Rec{7, Pt{1, 2}, [3]uint8{10, 255, 0}, []int32{-1, 300}, 3, -4}
+	printf("[%d] [%3d] [%o] [%5v]\n", r, r, r, struct{ l Lvl }{4})
+	ps := []Pt{{1, 2}, {3, 4}}
+	pa := [2]Pt{{9, 8}, {7, 6}}
+	printf("[%d] [%x] [%4d] [%d] [%02x]\n", ps, ps, ps, pa, pa)
+	nm := Names{"ab", "c"}
+	printf("[%s] [%q] [%5s] [%-3s|] [%x] [%X] [%.1s]\n", nm, nm, nm, nm, nm, Names{"hi", "z"}, nm)
+	fl := Fl{1.5, -2.25}
+	printf("[%t] [%f] [%.2f] [%e] [%8.3f] [%+.1f]\n", struct{ a, b bool }{true, false}, fl, fl, fl, fl, fl)
+	b := Bin{"ok", []byte{1, 2, 254}, [2]byte{0xab, 0xcd}, [2][2]uint8{{1, 2}, {3, 4}}}
+	printf("[%x] [% X] [%s]\n", b, b, Bin{"t", []byte("hey"), [2]byte{'h', 'i'}, [2][2]uint8{{'a', 'b'}, {'c', 'd'}}})
+	w := Wrap{Pt{1, 2}, [2]Pt{{3, 4}, {5, 6}}}
+	printf("[%d] [%x] [%d] [%d]\n", w, w, mk(3), []Wrap{w})
+	printf("[%d %v %+d %+v] [%d %s]\n", p, p, p, p, Named{3}, Named{3})
+}
+`,
+		want: "[{5 -12}] [{5 -c}] [{5 -C}] [{5 -14}] [{101 -1100}] [{+5 -12}] [{    5   -12}] [{5    -c  }|] [{00000101 -0001100}] [{A B}] [{U+0041 U+1F600}]\n[{7 {1 2} [10 255 0] [-1 300] 3 -4}] [{  7 {  1   2} [ 10 255   0] [ -1 300]   3  -4}] [{7 {1 2} [12 377 0] [-1 454] 3 -4}] [{    4}]\n[[{1 2} {3 4}]] [[{1 2} {3 4}]] [[{   1    2} {   3    4}]] [[{9 8} {7 6}]] [[{09 08} {07 06}]]\n[{ab c}] [{\"ab\" \"c\"}] [{   ab     c}] [{ab  c  }|] [{6162 63}] [{6869 7A}] [{a c}]\n[{true false}] [{1.500000 -2.250000}] [{1.50 -2.25}] [{1.500000e+00 -2.250000e+00}] [{   1.500   -2.250}] [{+1.5 -2.2}]\n[{6f6b 0102fe abcd [0102 0304]}] [{6F 6B 01 02 FE AB CD [01 02 03 04]}] [{t hey hi [ab cd]}]\n[{{1 2} [{3 4} {5 6}]}] [{{1 2} [{3 4} {5 6}]}] [{3 -3}] [[{{1 2} [{3 4} {5 6}]}]]\n[{5 -12} {5 -12} {+5 -12} {X:5 Y:-12}] [{3} named]\n",
+	},
+	{
 		name: "a composite literal of a defined slice type is a value of that type",
 		src: `// A composite literal of a DEFINED slice type is a value of that type. It was
 // untyped where it stood as a value, and a print took the argument it could not

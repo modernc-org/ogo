@@ -5906,6 +5906,26 @@ func main() {
 			want: "printf: %U wants an integer, not string",
 		},
 		{
+			// fmt writes its complaint for the field, `{1 %!d(string=a)}`; the verb
+			// is checked here as one at the top is.
+			name: "%d of a struct holding a string",
+			src:  "type S struct {\n\tN int\n\tT string\n}\n\nfunc main() {\n\tprintf(\"%d\\n\", S{1, \"a\"})\n}\n",
+			want: "printf: %d of S wants an integer in every field",
+		},
+		{
+			// fmt prints a nil one as an integer under %d and %x and as its
+			// complaint under the rest.
+			name: "%d of a pointer to a struct",
+			src:  "type S struct{ N int }\n\nfunc main() {\n\tprintf(\"%d\\n\", &S{1})\n}\n",
+			want: "printf: %d of *S is not supported yet (a pointer to a struct is printed under %v only)",
+		},
+		{
+			// fmt hex-encodes an exported field's String() under %x.
+			name: "%x of a struct whose exported field has a String()",
+			src:  "type L int\n\nfunc (l L) String() string { return \"L\" }\n\ntype E struct{ Lv L }\n\nfunc main() {\n\tprintf(\"%x\\n\", E{1})\n}\n",
+			want: "printf: %x of E is not supported yet (field Lv has a String() method",
+		},
+		{
 			// An array has no C value type, and the refusal named nothing after
 			// "not" until its shape was asked.
 			name: "%d of an array of strings",

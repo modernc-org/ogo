@@ -2234,6 +2234,15 @@
 // A multi-dimensional array is printed so row by row, "[[1 2] [3 4]]", and one of
 // bytes as a text a row, `%x` of [2][2]byte{{1, 2}, {3, 4}} being "[0102 0304]".
 //
+// Every verb applies to a struct FIELD by field too, through the structs, arrays
+// and slices it holds, the flags, width and precision to each: `%x` of P{5, -12} is
+// "{5 -c}", `%+d` "{+5 -12}", `%5d` "{    5   -12}"; '+' is a sign here, naming
+// the fields under %v alone. A byte slice or a row of bytes among the fields prints
+// as one text under %s, %x, %X and %q, as above. A field the verb does not suit --
+// a string under %d -- is refused where the call is written, where fmt writes its
+// complaint, `{1 %!d(string=a)}`, as a verb not suiting its argument is refused at
+// the top; and a pointer to a struct is printed under %v only.
+//
 // The hex dump takes fmt's flags, width and precision, as fmt lays them out: ' '
 // puts a space between the bytes, '#' writes 0x ahead of them -- ahead of each
 // under ' ', `%# x` being "0xde 0xad" -- a precision is the number of BYTES

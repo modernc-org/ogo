@@ -27,6 +27,15 @@ shipped section tells a reader on that version that they have behaviour they do 
 
 ### Fixed
 
+- **printf's other verbs print a struct as fmt does**: `%d`, `%x`, `%X`, `%o`,
+  `%b`, `%c`, `%U`, `%s`, `%q`, `%t` and the float verbs apply to every field in
+  turn, through nested structs, arrays and slices, with a flag, a width and a
+  precision -- `%x` of Pt{5, -12} is "{5 -c}", `%+d` "{+5 -12}" -- and to a slice
+  or an array of structs; a byte slice or a row of bytes under %s, %x, %X and %q is
+  one text. Each was "%d wants an integer, not main.Pt". A field the verb does not
+  print is refused at compile time, where fmt writes its complaint, as a top-level
+  one is. And `%5v` of a struct with a field of a defined type over a number or a
+  string was refused, "%v wants an integer, not R".
 - **Another package's variable or constant called is checked**: `lib.Half(a, b)`
   of a constant, `lib.V(1)` of an int, an array, a struct or an interface was taken
   in every position, a value, a statement, `defer` and `go`, and a function

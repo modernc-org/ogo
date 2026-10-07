@@ -38704,6 +38704,10 @@ func (e *emitter) printArrayC(expr string, a arrDim, methods bool, plus string) 
 		") { printf(\" \"); } " + inner + " } printf(\"]\");", ""
 }
 
+// byteForm reports the verbs fmt applies to a []byte or a byte array whole, as one
+// text: %s, %x, %X and %q.
+func byteForm(verb byte) bool { return strings.IndexByte("sxXq", verb) >= 0 }
+
 // isPrintStruct reports whether a value of C type ct is a struct to the printer.
 func (e *emitter) isPrintStruct(ct string) bool {
 	u := e.underlyingCType(ct)
@@ -38731,13 +38735,27 @@ func (e *emitter) emitStructSpecVerb(item printfItem, arg Node, ct string, known
 		return false, false
 	}
 	u := e.underlyingCType(base)
-	if why := e.structSpecRefusal(u); why != "" {
+	if item.verb != 'v' {
+		if stringerVerb(item.verb) {
+			if _, _, isStringer := e.stringerCallC(base, "_"); isStringer {
+				return false, false // its text, which the stringer path prints
+			}
+		}
+		if base != ct {
+			// fmt prints a nil pointer as an integer under %d and %x and as its
+			// complaint under the rest, `%!s(*main.P=<nil>)`.
+			return true, noSpec("a pointer to a struct is printed under %v only")
+		}
+	}
+	if why := e.structSpecRefusal(u, item.verb); why != "" {
 		return true, noSpec(why)
 	}
 	flags := item.flags()
-	plus := strings.IndexByte(flags, '+') >= 0
+	plus := item.verb == 'v' && strings.IndexByte(flags, '+') >= 0
 	fieldItem := item
-	fieldItem.spec = strings.ReplaceAll(flags, "+", "") + item.spec[len(flags):]
+	if item.verb == 'v' {
+		fieldItem.spec = strings.ReplaceAll(flags, "+", "") + item.spec[len(flags):]
+	}
 	helper, ok := e.needStructSpecPrint(u, fieldItem, plus, wrong, noSpec)
 	if !ok {
 		return true, false
@@ -38814,13 +38832,20 @@ func (e *emitter) emitStructsSpecVerb(item printfItem, idx int, arg Node, ct str
 	if !e.isPrintStruct(elem) {
 		return false, false
 	}
+	if item.verb != 'v' && stringerVerb(item.verb) {
+		if _, _, isStringer := e.stringerCallC(elem, "_"); isStringer {
+			return true, noSpec("a slice of values with a String() method is printed element by element here")
+		}
+	}
 	u := e.underlyingCType(elem)
-	if why := e.structSpecRefusal(u); why != "" {
+	if why := e.structSpecRefusal(u, item.verb); why != "" {
 		return true, noSpec(why)
 	}
 	flags := item.flags()
-	plus := strings.IndexByte(flags, '+') >= 0
-	item.spec = strings.ReplaceAll(flags, "+", "") + item.spec[len(flags):]
+	plus := item.verb == 'v' && strings.IndexByte(flags, '+') >= 0
+	if item.verb == 'v' {
+		item.spec = strings.ReplaceAll(flags, "+", "") + item.spec[len(flags):]
+	}
 	helper, ok := e.needStructSpecPrint(u, item, plus, wrong, noSpec)
 	if !ok {
 		return true, false
@@ -38869,7 +38894,7 @@ type specPrinter struct {
 // under item's spec, plus naming them, minting it on first ask: `static void
 // ogo_printvs_N(u* v)`.
 func (e *emitter) needStructSpecPrint(u string, item printfItem, plus bool, wrong, noSpec func(string) bool) (string, bool) {
-	key := u + "|" + item.spec + "|" + strconv.FormatBool(plus)
+	key := u + "|" + string(item.verb) + item.spec + "|" + strconv.FormatBool(plus)
 	if e.specPrinters == nil {
 		e.specPrinters = map[string]*specPrinter{}
 	}
@@ -38889,15 +38914,16 @@ func (e *emitter) needStructSpecPrint(u string, item printfItem, plus bool, wron
 }
 
 // structSpecRefusal names the first field of struct C type u, or of what it holds,
-// that emitStructSpecVerb cannot print as fmt would under a spec, "" when there is
-// none: only numbers, strings, bools, and structs, arrays and slices of them are.
-func (e *emitter) structSpecRefusal(u string) string {
+// that emitStructSpecVerb cannot print as fmt would under verb with a spec, "" when
+// there is none: only numbers, strings, bools, and structs, arrays and slices of
+// them are.
+func (e *emitter) structSpecRefusal(u string, verb byte) string {
 	for _, fld := range e.structs[u] {
 		ct := fld.ctype
 		if fld.dim.bound != "" {
 			ct = fld.dim.elem
 		}
-		if why := e.specValueRefusal(ct, token.IsExported(fld.name)); why != "" {
+		if why := e.specValueRefusal(ct, token.IsExported(fld.name) && stringerVerb(verb), verb); why != "" {
 			return "field " + fld.name + " " + why
 		}
 	}
@@ -38905,8 +38931,9 @@ func (e *emitter) structSpecRefusal(u string) string {
 }
 
 // specValueRefusal is structSpecRefusal for a value of C type ct; methods says fmt
-// would ask it for String() or Error(), which it does of an exported field.
-func (e *emitter) specValueRefusal(ct string, methods bool) string {
+// would ask it for String() or Error(), which it does of an exported field under
+// %v, %s, %x, %X and %q.
+func (e *emitter) specValueRefusal(ct string, methods bool, verb byte) string {
 	if methods {
 		if _, _, isStringer := e.stringerCallC(ct, "_"); isStringer {
 			return "has a String() method, whose text is padded here by nothing yet"
@@ -38916,11 +38943,11 @@ func (e *emitter) specValueRefusal(ct string, methods bool) string {
 	case isIntCType(u), isFloatCType(u), u == cString, u == cBool:
 		return ""
 	case e.isPrintStruct(u):
-		return e.structSpecRefusal(e.underlyingCType(u))
+		return e.structSpecRefusal(e.underlyingCType(u), verb)
 	case e.isSliceCType(u):
-		return e.specValueRefusal(sliceElemFromCName(u), methods)
+		return e.specValueRefusal(sliceElemFromCName(u), methods, verb)
 	case e.namedArrays[u].bound != "":
-		return e.specValueRefusal(e.namedArrays[u].elem, methods)
+		return e.specValueRefusal(e.namedArrays[u].elem, methods, verb)
 	}
 	return "is of a type printed without a width here"
 }
@@ -38958,14 +38985,25 @@ func (e *emitter) emitFieldsSpec(item printfItem, plus bool, u, p string, wrong,
 func (e *emitter) emitValueSpec(item printfItem, plus bool, ct, expr string, wrong, noSpec func(string) bool) bool {
 	u := e.underlyingCType(ct)
 	switch {
-	case isIntCType(u):
-		item.verb = 'd'
-	case isFloatCType(u):
-		item.verb = 'g'
-	case u == cString:
-		item.verb = 's'
-	case u == cBool:
-		item.verb = 't'
+	case isIntCType(u), isFloatCType(u), u == cString, u == cBool:
+		if item.verb == 'v' {
+			switch {
+			case isIntCType(u):
+				item.verb = 'd'
+			case isFloatCType(u):
+				item.verb = 'g'
+			case u == cString:
+				item.verb = 's'
+			default:
+				item.verb = 't'
+			}
+		}
+	case e.isSliceCType(u) && byteForm(item.verb) && e.underlyingCType(sliceElemFromCName(u)) == "uint8_t":
+		// A byte slice under %s, %x, %X and %q is one text, as at the top.
+		if sliceElemFromCName(u) != "uint8_t" {
+			return noSpec("a slice of a defined byte type is printed byte by byte here")
+		}
+		return e.emitScalarVerb(item, sliceCName("uint8_t"), func() { e.emit(expr) }, wrong, noSpec)
 	case e.isPrintStruct(u):
 		helper, ok := e.needStructSpecPrint(e.underlyingCType(u), item, plus, wrong, noSpec)
 		e.ind()
@@ -38992,12 +39030,25 @@ func (e *emitter) emitValueSpec(item printfItem, plus bool, ct, expr string, wro
 	default:
 		return noSpec("a value of this type is printed without a width here")
 	}
-	return e.emitScalarVerb(item, ct, func() { e.emit(expr) }, wrong, noSpec)
+	// The type underneath: a field of a defined type, `lv Level`, is the number or
+	// the text it is defined over -- what fmt prints where it asks no String() --
+	// and was "%v wants an integer, not R" under a width.
+	return e.emitScalarVerb(item, u, func() { e.emit(expr) }, wrong, noSpec)
 }
 
 // emitArraySpec prints the array of extents a the C expression expr names, element
 // by element under item's spec, as a field of emitFieldsSpec.
 func (e *emitter) emitArraySpec(item printfItem, plus bool, a arrDim, expr string, wrong, noSpec func(string) bool) bool {
+	if len(a.inner) == 0 && byteForm(item.verb) && e.underlyingCType(a.elem) == "uint8_t" {
+		// A row of bytes under %s, %x, %X and %q is one text, through a header over
+		// it, as a byte array at the top is (emitElementwiseVerb).
+		if a.elem != "uint8_t" {
+			return noSpec("an array of a defined byte type is printed byte by byte here")
+		}
+		e.needSlice(a.elem)
+		header := func() { e.emit("(" + sliceCName(a.elem) + "){" + expr + ", " + a.bound + ", " + a.bound + "}") }
+		return e.emitScalarVerb(item, sliceCName(a.elem), header, wrong, noSpec)
+	}
 	i := e.newTmp()
 	e.ind()
 	e.emit("putchar('[');\n")
@@ -39527,6 +39578,32 @@ func (e *emitter) emitPrintfVerb(item printfItem, idx int, arg Node) bool {
 		}
 		e.emitPrintOne(false, idx, arg)
 		return true
+	}
+	// A struct, and a slice or an array of them, under any other verb: fmt applies
+	// the verb to every field, through nested structs, arrays and slices -- `%x` of
+	// Pt{5, -12} is "{5 -c}" and `%+d` "{+5 -12}" -- as %v with a width applies its
+	// spec (emitStructSpecVerb). A field the verb does not print is refused here,
+	// where fmt writes its complaint, `%!d(string=ok)`, as one at the top is. Every
+	// such print was "%d wants an integer, not main.Pt" until 2026-10-07.
+	{
+		name := e.goTypeName(ct)
+		if name == "" {
+			name, _ = e.arrayTypeNameForT(arg.ast)
+		}
+		structWrong := func(want string) bool {
+			e.failAt(arg.ast, "printf: %%%c of %s wants %s in every field", verb, name, want)
+			return false
+		}
+		structNo := func(why string) bool {
+			e.failAt(arg.ast, "printf: %%%s%c of %s is not supported yet (%s)", spec, verb, name, why)
+			return false
+		}
+		if handled, ok := e.emitStructsSpecVerb(item, idx, arg, ct, known, value, structWrong, structNo); handled {
+			return ok
+		}
+		if handled, ok := e.emitStructSpecVerb(item, arg, ct, known, value, structWrong, structNo); handled {
+			return ok
+		}
 	}
 	// fmt applies every verb to a slice or an array ELEMENT by element: `%d` of
 	// []int{1, 2} is "[1 2]", `%5.1f` pads each float. Asked before the type is
