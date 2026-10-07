@@ -331,7 +331,8 @@ broken.
   cannot hold. `p2` wraps thirty-three intrinsics
   (pin control, smart pins including the ADC, timing and the clock, the serial line
   in both directions, the hardware locks, the cog's LUT RAM), `testing` carries the state
-  a test reports through, and `unsafe` has `unsafe.Pointer`. That is the whole of it. Your own packages do import and
+  a test reports through, and `unsafe` has `unsafe.Pointer` and `Sizeof`, `Alignof` and
+  `Offsetof`, of the P2's layout. That is the whole of it. Your own packages do import and
   build; there is just little else to import yet.
 * **One function's locals live in cog RAM, and there are 480 longs of it** for all
   of them together. A function big enough to exhaust that fails to build with the

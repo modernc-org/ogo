@@ -77,6 +77,10 @@ var generatedConstructs = []struct {
 	// on its left or not (genWideFold).
 	{"a widened fold's high word", `int\(\(u?int64\(.+\) >> 32\)\)`},
 	{"a widened fold with a zero on its left", `int\(\(u?int64\(\(0 [+|] `},
+	// A fold converted to another sized kind, with an operation in it or not
+	// (genCrossFold).
+	{"a fold converted to another sized kind", `int\(u?int(8|16|32)\(\(`},
+	{"an operation on a converted fold", `int\(\(u?int(8|16|32|64)\(.+\) [+*>]+ \d+\)\)`},
 	// The one that matters: a value folded into the checksum WITHOUT being stored
 	// back first. A store truncates to the type, so a stored result cannot tell a
 	// compiler that computed in the wrong width from one that did not.

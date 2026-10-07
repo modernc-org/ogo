@@ -10540,6 +10540,251 @@ func main() {
 		want: "0 0 0 4294967295 -1 0\n0 0 0 0 0 0\n4294967289 0 0 0 0 4294967295\n0 4294967295 -1 0\n0 0 0 0 0 true\n",
 	},
 	{
+		name: "unsafe.Sizeof, Offsetof and Alignof of the target's layout",
+		src: `// unsafe.Sizeof, Offsetof and Alignof report the TARGET's layout: a member aligned on
+// four where it takes four bytes or more and on its own alignment otherwise, a
+// float64 four bytes, an int64 eight aligned on four, and a struct laid out twice, as
+// its C compiler does (targetLayout). Each value was measured against that compiler's
+// sizeof and offsetof on a P2-EDGE.
+import "unsafe"
+
+type M interface{ M() }
+
+type A struct {
+	a uint8
+	b int16
+	c uint8
+	d int32
+}
+
+type B struct {
+	x int64
+	y uint8
+	z [3]uint16
+	w bool
+	v [5]uint8
+	u float64
+	t float32
+}
+
+type C struct {
+	p  *A
+	s  string
+	sl []int
+	i  M
+	f  func()
+	ch chan int
+	e  error
+}
+
+type D struct {
+	a uint8
+	A
+	b uint8
+}
+
+type E struct {
+	a [2]A
+	b uint8
+	c [0]int32
+	d int16
+}
+
+type F struct{}
+
+type G struct {
+	a uint8
+	f F
+	b uint8
+}
+
+type H struct {
+	a uint8
+	b [1]int16
+	c uint8
+	d [2]int8
+	e int64
+}
+
+type I struct {
+	b1, b2 bool
+	i8     int8
+	u16    uint16
+	r      rune
+	by     byte
+}
+
+type J struct {
+	n struct{ a, b uint8 }
+	c uint8
+}
+
+func main() {
+	var a A
+	var b B
+	var c C
+	var d D
+	var e E
+	var g G
+	var h H
+	var i I
+	var j J
+	println(a.a, b.y, c.p == nil, d.a, e.b, g.a, h.a, i.by, j.c)
+	println("A", unsafe.Sizeof(a), unsafe.Offsetof(a.b), unsafe.Offsetof(a.c), unsafe.Offsetof(a.d))
+	println("B", unsafe.Sizeof(b), unsafe.Offsetof(b.y), unsafe.Offsetof(b.z), unsafe.Offsetof(b.w), unsafe.Offsetof(b.v), unsafe.Offsetof(b.u), unsafe.Offsetof(b.t))
+	println("C", unsafe.Sizeof(c), unsafe.Offsetof(c.s), unsafe.Offsetof(c.sl), unsafe.Offsetof(c.i), unsafe.Offsetof(c.f), unsafe.Offsetof(c.ch), unsafe.Offsetof(c.e))
+	println("D", unsafe.Sizeof(d), unsafe.Offsetof(d.A), unsafe.Offsetof(d.b), unsafe.Offsetof(d.d))
+	println("E", unsafe.Sizeof(e), unsafe.Offsetof(e.b), unsafe.Offsetof(e.c), unsafe.Offsetof(e.d))
+	println("G", unsafe.Sizeof(g), unsafe.Offsetof(g.f), unsafe.Offsetof(g.b), unsafe.Sizeof(F{}))
+	println("H", unsafe.Sizeof(h), unsafe.Offsetof(h.b), unsafe.Offsetof(h.c), unsafe.Offsetof(h.d), unsafe.Offsetof(h.e))
+	println("I", unsafe.Sizeof(i), unsafe.Offsetof(i.b2), unsafe.Offsetof(i.i8), unsafe.Offsetof(i.u16), unsafe.Offsetof(i.r), unsafe.Offsetof(i.by))
+	println("J", unsafe.Sizeof(j), unsafe.Offsetof(j.c), unsafe.Sizeof(j.n))
+	println("al", unsafe.Alignof(a.b), unsafe.Alignof(b.z), unsafe.Alignof(b.v), unsafe.Alignof(h.b), unsafe.Alignof(j.n), unsafe.Alignof(b.x))
+}
+`,
+		want: "0 0 true 0 0 0 0 0 0\nA 12 2 4 8\nB 36 8 12 18 20 28 32\nC 48 4 12 24 32 36 40\nD 20 4 16 12\nE 28 24 25 26\nG 12 4 8 4\nH 16 2 4 5 8\nI 16 1 2 4 8 12\nJ 8 4 4\nal 2 4 4 2 4 4\n",
+	},
+	{
+		name: "unsafe layout of structs a second pass sizes",
+		src: `// The layout corners the target's two passes make: a member of no bytes, which moves
+// nothing (zeroSizedDecl), a [2]uint8 the sizing pass aligns on two and the placing
+// pass does not, a struct of zero-sized fields alone, and such structs as members.
+import "unsafe"
+
+type K struct {
+	b uint8
+	c [0]int32
+	d int16
+}
+
+type L struct {
+	k K
+	z uint8
+}
+
+type M struct {
+	ks [2]K
+	z  uint8
+}
+
+type N struct {
+	a uint8
+	b [2]uint8
+	c uint8
+}
+
+type Q struct {
+	a [0]int32
+}
+
+type R struct {
+	n  N
+	q  Q
+	y  [3]N
+	t  bool
+	h  [1]int16
+	ys [2][2]uint8
+	w  uint32
+}
+
+func main() {
+	var k K
+	var l L
+	var m M
+	var n N
+	var r R
+	println(k.b, l.z, m.z, n.a, r.w)
+	println("K", unsafe.Sizeof(k), unsafe.Offsetof(k.c), unsafe.Offsetof(k.d))
+	println("L", unsafe.Sizeof(l), unsafe.Offsetof(l.z))
+	println("M", unsafe.Sizeof(m), unsafe.Offsetof(m.z))
+	println("N", unsafe.Sizeof(n), unsafe.Offsetof(n.b), unsafe.Offsetof(n.c))
+	println("Q", unsafe.Sizeof(Q{}))
+	println("R", unsafe.Sizeof(r), unsafe.Offsetof(r.q), unsafe.Offsetof(r.y), unsafe.Offsetof(r.t), unsafe.Offsetof(r.h), unsafe.Offsetof(r.ys), unsafe.Offsetof(r.w))
+}
+`,
+		want: "0 0 0 0 0\nK 4 1 2\nL 8 4\nM 12 8\nN 8 1 3\nQ 4\nR 48 8 12 36 38 40 44\n",
+	},
+	{
+		name: "unsafe layout constants as values and declarations",
+		src: `// unsafe.Sizeof, Offsetof and Alignof are constants of type uintptr: a constant's
+// value, an array's length, a variable's, an operand, and an offset added to an
+// address through uintptr.
+import "unsafe"
+
+type Hdr struct {
+	kind uint8
+	n    uint16
+	crc  uint32
+	body [5]byte
+}
+
+const hdrSize = unsafe.Sizeof(Hdr{})
+
+func payload(total uintptr) uintptr { return total - hdrSize }
+
+var h Hdr
+
+func main() {
+	n := unsafe.Sizeof(h)
+	var buf [hdrSize * 2]byte
+	buf[1] = 7
+	off := unsafe.Offsetof(h.body)
+	printf("%d %d %d %v %d %d\n", n, len(buf), off, payload(64), unsafe.Alignof(h.n), buf[1])
+	if n == hdrSize && off+5 <= n {
+		println("fits", int(n-off), uint32(hdrSize)<<1)
+	}
+	p := unsafe.Pointer(&h)
+	b := (*byte)(unsafe.Pointer(uintptr(p) + unsafe.Offsetof(h.crc)))
+	h.crc = 0x11223344
+	println(*b == 0x44, *b)
+}
+`,
+		want: "16 32 8 48 2 7\nfits 8 32\ntrue 68\n",
+	},
+	{
+		name: "a zero-length array member whose element is aligned on more than a byte",
+		src: `// A member of no elements whose element is aligned on more than a byte, [0]int32 or
+// the idiom _ [0]func(): the target's compiler sized such a struct without moving the
+// member and placed its members with the move, so the field after it in a containing
+// struct overwrote the last of its own, l.k.d reading 3 for Go's 2 on the board. It
+// is declared over a byte now (doc/zero-length-member-moved.c).
+type K struct {
+	b uint8
+	c [0]int32
+	d int16
+}
+
+type L struct {
+	k K
+	z uint8
+}
+
+type T struct {
+	a  uint8
+	_  [0]func()
+	n  int16
+}
+
+func main() {
+	var ks [3]K
+	for i := range ks {
+		ks[i].b = uint8(10 + i)
+		ks[i].d = int16(100 + i)
+	}
+	for _, k := range ks {
+		println(k.b, k.d)
+	}
+	var l L
+	l.k.b, l.k.d, l.z = 1, 2, 3
+	println(l.k.b, l.k.d, l.z)
+	var ts [2]T
+	ts[0].a, ts[0].n, ts[1].a, ts[1].n = 5, 6, 7, 8
+	println(ts[0].a, ts[0].n, ts[1].a, ts[1].n)
+}
+`,
+		want: "10 100\n11 101\n12 102\n1 2 3\n5 6 7 8\n",
+	},
+	{
 		name: "a composite literal of a defined slice type is a value of that type",
 		src: `// A composite literal of a DEFINED slice type is a value of that type. It was
 // untyped where it stood as a value, and a print took the argument it could not

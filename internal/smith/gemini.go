@@ -1777,6 +1777,17 @@ func (f *Fuzzer) genSizedStmt(vm Machine, mem Memory) Node {
 			}
 		}
 	}
+	if haveFold {
+		if node, v, ok := f.genCrossFold(foldNode, foldVal); ok {
+			c7, _ := vm.Eval("^", mem.Load(f.ChecksumName), v)
+			mem.Store(f.ChecksumName, c7)
+			stmts = append(stmts, &AssignStmtNode{
+				Lhs: f.ChecksumName,
+				Op:  "=",
+				Rhs: &BinaryExprNode{Left: &IdentNode{Name: f.ChecksumName}, Op: "^", Right: node},
+			})
+		}
+	}
 	if bits < 64 && haveFold {
 		if node, v, ok := f.genWideFold(foldNode, foldVal); ok {
 			c6, _ := vm.Eval("^", mem.Load(f.ChecksumName), v)
@@ -1833,6 +1844,59 @@ func (f *Fuzzer) genWideFold(e Node, v Sized) (Node, Int32, bool) {
 		Right: &IntLitNode{Value: "32"},
 	}}
 	return node, hi.(Sized).Int32(), true
+}
+
+// genCrossFold folds a block's fold expression CONVERTED to another sized kind, one
+// block in two: `int(int16(e))`, now and then with an operation in the new kind,
+// `int(uint8(e) + 90)`, and the high word where the kind is 64 bits wide. The
+// fuzzer had converted a sized value to int and nothing else, so a narrowing from
+// 64 bits, a change of sign at one width and a widening of anything but the fold's
+// own kind were made by no generated program. It draws from its own source
+// (convRand), so the rest of a seed's program is what it was.
+func (f *Fuzzer) genCrossFold(e Node, v Sized) (Node, Int32, bool) {
+	r := f.convRand
+	if r.Intn(2) != 0 {
+		return nil, 0, false
+	}
+	to := sizedKinds[r.Intn(len(sizedKinds))]
+	if to == v.k {
+		return nil, 0, false
+	}
+	var x Node = &ConvNode{Type: BasicType{Kind: to}.String(), X: e}
+	w := NewSized(v.v, to)
+	switch r.Intn(5) {
+	case 0:
+		k := int64(1 + r.Intn(100)) // an int8 holds it
+		x = &BinaryExprNode{Left: x, Op: "+", Right: &IntLitNode{Value: fmt.Sprintf("%d", k)}}
+		nw, err := w.binOp("+", NewSized(k, to))
+		if err != nil {
+			return nil, 0, false
+		}
+		w = nw.(Sized)
+	case 1:
+		x = &BinaryExprNode{Left: x, Op: "*", Right: &IntLitNode{Value: "3"}}
+		nw, err := w.binOp("*", NewSized(3, to))
+		if err != nil {
+			return nil, 0, false
+		}
+		w = nw.(Sized)
+	case 2:
+		x = &BinaryExprNode{Left: x, Op: ">>", Right: &IntLitNode{Value: "1"}}
+		nw, err := w.binOp(">>", NewSized(1, to))
+		if err != nil {
+			return nil, 0, false
+		}
+		w = nw.(Sized)
+	}
+	bits, _, _ := sizedInfo(to)
+	if bits == 64 && r.Intn(2) == 0 {
+		hi, err := w.binOp(">>", NewSized(32, to))
+		if err != nil {
+			return nil, 0, false
+		}
+		return &ConvNode{Type: "int", X: &BinaryExprNode{Left: x, Op: ">>", Right: &IntLitNode{Value: "32"}}}, hi.(Sized).Int32(), true
+	}
+	return &ConvNode{Type: "int", X: x}, w.Int32(), true
 }
 
 // untypedShift is an untyped constant shifted by a declared count, `lit << count`,

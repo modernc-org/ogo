@@ -2596,6 +2596,10 @@ func (f *File) reportUnusedValue(s *Scope, head Node, steps []Node, postfix Node
 	}
 	at, span := f.tok(head.Pos()).Position(), f.sourceSpan(head.Pos(), postfix.End())
 	if qual.IsValid() {
+		if unsafeLayoutFuncs[name.Src()] && f.unsafeQualifier(qual) {
+			f.err(at, "%s (constant of type uintptr) is not used", span)
+			return true
+		}
 		if _, _, isType := f.typeDeclNamed(s, qual.Src()+"."+name.Src()); isType {
 			f.err(at, "%s (value of type %s.%s) is not used", span, qual.Src(), name.Src())
 			return true
@@ -2637,7 +2641,16 @@ func (f *File) reportUnusedValue(s *Scope, head Node, steps []Node, postfix Node
 // conversion, which is an ordinary defer, and a selector after the call says so.
 func (f *File) reportNotACall(s *Scope, head, stmt Node, kw string) bool {
 	id, ok := f.assignHeadIdent(head)
-	if !ok || hasSelectorChild(stmt) {
+	if !ok {
+		return false
+	}
+	// `defer unsafe.Sizeof(x)`, a constant.
+	if steps, _ := callSteps(stmt); len(steps) == 2 && steps[0].sym == Selector && steps[1].sym == CallSuffix &&
+		f.isImportQualifier(s, id.Src()) && f.unsafeQualifier(id) && unsafeLayoutFuncs[selectorTok(f, steps[0]).Src()] {
+		f.err(id.Position(), "%s discards result of %s", kw, f.sourceSpan(head.Pos(), stmt.End()))
+		return true
+	}
+	if hasSelectorChild(stmt) {
 		return false
 	}
 	switch id.Src() {
@@ -5673,6 +5686,10 @@ func (f *File) bracketLitStepsType(s *Scope, fac Node) (typeAt, bool) {
 // expression, or a bare identifier bound to a typed variable or constant. A
 // call/index/selector suffix makes the result type unknown.
 func (f *File) factorType(s *Scope, n Node) (Kind, bool) {
+	// `unsafe.Sizeof(x)` and its two neighbours, constants of type uintptr.
+	if _, _, _, ok := f.unsafeLayoutCall(s, n); ok {
+		return PredeclaredUintptr, true
+	}
 	var lit Token
 	var paren, suffix Node
 	var hasLit, hasParen, hasSuffix, hasType bool
@@ -11559,6 +11576,10 @@ func (f *File) checkQualifiedRef(s *Scope, qual Token, suffix Node) {
 		}
 		d := pkg.Scope.Declarations[m.Src()]
 		if d == nil {
+			if pkg.ImportPath == "unsafe" && unsafeLayoutFuncs[m.Src()] {
+				f.checkUnsafeLayoutCall(s, qual, m, suffix)
+				return
+			}
 			if pkg.ImportPath == "unsafe" && unsafeFuncs[m.Src()] {
 				f.err(m.Position(), "unsafe.%s is not supported yet", m.Src())
 				return
@@ -11745,6 +11766,42 @@ func (f *File) checkQualifiedType(qualifier, name Token) {
 			f.err(name.Position(), "undefined: %s.%s", qualifier.Src(), name.Src())
 		}
 	}
+}
+
+// checkUnsafeLayoutCall checks a use of unsafe.Sizeof, Alignof or Offsetof: called,
+// with one argument, whose type the target's layout answers for (unsafeLayoutConst).
+// The argument is not evaluated, and its names are resolved as any are.
+func (f *File) checkUnsafeLayoutCall(s *Scope, qual, m Token, suffix Node) {
+	steps, _ := callSteps(suffix)
+	if len(steps) < 2 || steps[0].sym != Selector || steps[1].sym != CallSuffix {
+		f.err(m.Position(), "unsafe.%s (built-in function) must be called", m.Src())
+		return
+	}
+	args := argNodes(f.callArgList(steps[1]))
+	switch {
+	case len(args) == 0:
+		f.err(m.Position(), "not enough arguments for unsafe.%s (expected 1, found 0)", m.Src())
+		return
+	case len(args) > 1:
+		f.err(f.tok(args[1].Pos()).Position(), "too many arguments for unsafe.%s (expected 1, found %d)", m.Src(), len(args))
+		return
+	}
+	n0 := len(f.errList)
+	f.checkNames(s, args[0])
+	if len(f.errList) != n0 {
+		return
+	}
+	v, why := f.unsafeLayoutConst(s, m.Src(), args[0])
+	if why != "" {
+		f.err(f.tok(args[0].Pos()).Position(), "%s", why)
+		return
+	}
+	// Recorded wherever the call stands, as a constant len is (constLenCap): the
+	// fold sees it only where a constant is asked for.
+	if f.lenConsts == nil {
+		f.lenConsts = map[*int32]int64{}
+	}
+	f.lenConsts[&steps[1].ast[0]] = v
 }
 
 // unsafeFuncs are the functions Go's unsafe has beside Pointer, which this one does
@@ -31261,6 +31318,11 @@ func (f *File) factor(s *Scope, n Node) (r ExpressionNode) {
 	}
 	// `len(table)` and `len("abc")`, which Go makes constants.
 	if v, ok := f.constLenCap(s, n); ok {
+		return v
+	}
+	// `unsafe.Sizeof(x)`, `unsafe.Alignof(x)` and `unsafe.Offsetof(x.f)`, constants
+	// of the target's layout.
+	if v, ok := f.constUnsafe(s, n); ok {
 		return v
 	}
 	// A constant of an imported package, `geo.MaxPoints`. Checked before the walk

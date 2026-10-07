@@ -20,6 +20,14 @@ shipped section tells a reader on that version that they have behaviour they do 
 
 ### Language
 
+- **`unsafe.Sizeof`, `unsafe.Alignof` and `unsafe.Offsetof`** are Go's: constants of
+  type uintptr, usable in a constant declaration and an array's length, of the P2's
+  layout -- a float64 four bytes, an int64 eight aligned on four, a field of four
+  bytes or more aligned on four and a struct a multiple of four, an empty struct four
+  bytes -- measured against the target's compiler's `sizeof` and `offsetof`. A build
+  holds what `Sizeof` says of each type it is asked against that compiler, and fails
+  where the two differ. They were "not supported yet".
+
 - **A type switch takes an init statement**: `switch s := pick(); v :=
   s.(type)`, and every other init form -- `switch err = f(); err.(type)`, a step,
   a call standing alone -- as Go has it. It was a syntax error. The guard's name
@@ -27,6 +35,14 @@ shipped section tells a reader on that version that they have behaviour they do 
 
 ### Fixed
 
+- **A struct field of no elements whose element is aligned on more than a byte no
+  longer overlaps what follows the struct**: `struct { b uint8; c [0]int32; d int16
+  }` was six bytes alone and four as a field of another struct, the target's
+  compiler laying a struct out twice and sizing its containers by the first pass,
+  so the next field of the container overwrote `d` -- 3 for Go's 2 on the board, in
+  silence (doc/zero-length-member-moved.c). Such a field, `[0]int32` or the idiom
+  `_ [0]func()`, is declared over a byte where it would move, and a struct of no
+  field but those gets the hidden byte an empty struct has.
 - **One call's several results into a field, an element or a pointee are
   checked**: `v.pos, v.n, v.err = rs.Correct(c)` took any result into any field, in
   one package and across two, `b[0], y = pair()` an int into an int8 element and
@@ -183,6 +199,11 @@ shipped section tells a reader on that version that they have behaviour they do 
 
 ### Toolchain
 
+- **`ogo smith` converts a value between sized types**: a block's fold expression is
+  converted to another of the sized kinds, half the time with an operation in that
+  kind after it, and folded into the checksum -- a narrowing from 64 bits, a change
+  of sign at one width and a widening other than to int64 had been in no generated
+  program.
 - **`ogo smith` widens a value to 64 bits**: a narrower block's fold expression is
   converted to int64 or uint64 and its high word folded into the checksum, a zero
   constant on its left three times in four -- in every uint32 block and one in two

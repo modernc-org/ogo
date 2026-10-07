@@ -973,8 +973,33 @@
 // program's to answer for, as in Go: nothing here can know which storage an
 // arbitrary number addresses.
 //
-// Sizeof, Alignof, Offsetof, Add, Slice, String, StringData and SliceData are not
-// provided yet.
+// Sizeof, Alignof and Offsetof are Go's: constants of type uintptr, of an operand
+// that is not evaluated -- the size of a value of its type, its alignment, and for a
+// selector x.f the offset of the field f in the struct x is or points to, through
+// embedded structs but no embedded pointer. The values are the TARGET's layout, which
+// is not Go's on a 32-bit host in every case:
+//
+//   - a bool, an int8 and a uint8 take a byte and an int16 and a uint16 two; every
+//     other scalar four, a float64 included, which is 32 bits here; an int64 and a
+//     uint64 eight, aligned on four;
+//   - a pointer, a channel, a function value and a Pointer four; a string eight, a
+//     slice twelve, an interface eight;
+//   - an array its elements, aligned as its element;
+//   - a struct aligned on four and its size a multiple of four, a field aligned on
+//     four where it takes four bytes or more and on its own alignment otherwise --
+//     struct{ a uint8; b [3]uint16 } has b at 4 and takes twelve bytes, where Go
+//     puts b at 2 and takes eight -- and an empty struct four, struct{} taking a
+//     hidden byte here. A field of no bytes moves nothing, whatever its element.
+//
+// Alignof is the alignment a field of the type is given: four for any value of four
+// bytes or more. A build checks what Sizeof says of each type it is asked against
+// the target's own compiler and fails where the two differ.
+//
+//	const hdrSize = unsafe.Sizeof(Hdr{})
+//	var frame [hdrSize + 64]byte
+//	crc := (*uint32)(unsafe.Pointer(uintptr(unsafe.Pointer(&h)) + unsafe.Offsetof(h.crc))) // a package h
+//
+// Add, Slice, String, StringData and SliceData are not provided yet.
 //
 // # Interface types
 //

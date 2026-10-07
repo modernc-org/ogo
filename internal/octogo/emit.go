@@ -3379,6 +3379,157 @@ func (e *emitter) zeroSizedField(f structField) bool {
 	return slices.Contains(a.bounds(), "0")
 }
 
+// zeroSizedDecl is the C declaration of a field of no elements whose element is
+// aligned on more than a byte, `[0]int32` and `_ [0]func()`, declared over uint8_t.
+// The target's compiler lays a struct out twice (structSize in unsafelayout.go):
+// the pass sizing it does not align a member of no bytes, the pass placing the
+// members aligns it on its element, and a struct a member it so moves then ended
+// past the size its containers take it to have -- `struct { b uint8; c [0]int32;
+// d int16 }` is six bytes alone and four as a field, so the field after it in a
+// containing struct overwrote d, in silence on the board
+// (doc/zero-length-member-moved.c). Over a byte a member of no bytes moves nothing.
+// Its uses touch no element: an index panics first, and a copy, a comparison or a
+// print of it reads none. Only one that WOULD move is so declared (zeroMoves): at
+// an aligned offset, the first member above all, the C type stays its own, which
+// is what the address of one, `&o.Base`, is typed by.
+func (e *emitter) zeroSizedDecl(fld structField, moves bool) (string, bool) {
+	if !moves || !e.zeroSizedField(fld) {
+		return "", false
+	}
+	a := fld.dim
+	if a.bound == "" {
+		a = e.namedArrays[fld.ctype]
+	}
+	switch e.underlyingCType(a.elem) {
+	case "uint8_t", "int8_t", "char", cBool:
+		return "", false
+	}
+	return "uint8_t " + e.fieldIdent(fld.name) + a.declSuffix(), true
+}
+
+// zeroMoves reports which fields of a struct are of no bytes and would be MOVED by
+// the target's placing pass -- at an offset their element's alignment does not
+// divide -- laid out as cLayout lays out, the earlier such fields not moved. It
+// answers nothing where a size cannot be told, which leaves the field its type.
+func (e *emitter) zeroMoves(fields []structField) map[int]bool {
+	var moves map[int]bool
+	var off int64
+	for i, fld := range fields {
+		size, align, ok := e.fieldLayoutC(fld)
+		if !ok {
+			return moves
+		}
+		if size == 0 {
+			if align > 1 && off%align != 0 {
+				if moves == nil {
+					moves = map[int]bool{}
+				}
+				moves[i] = true
+			}
+			continue
+		}
+		a := align
+		if size >= 4 {
+			a = 4
+		}
+		off = (off + a - 1) / a * a
+		off += size
+	}
+	return moves
+}
+
+// fieldLayoutC is cLayout of a struct field, an array field's extents taken.
+func (e *emitter) fieldLayoutC(fld structField) (size, align int64, ok bool) {
+	if fld.dim.bound == "" {
+		return e.cLayout(fld.ctype, 0)
+	}
+	return e.arrayLayoutC(fld.dim, 0)
+}
+
+// arrayLayoutC is cLayout of an array of the given extents.
+func (e *emitter) arrayLayoutC(a arrDim, depth int) (size, align int64, ok bool) {
+	es, ea, ok := e.cLayout(a.elem, depth+1)
+	if !ok {
+		return 0, 0, false
+	}
+	n := int64(1)
+	for _, b := range a.bounds() {
+		k, err := strconv.ParseInt(b, 10, 64)
+		if err != nil || k < 0 {
+			return 0, 0, false
+		}
+		n *= k
+	}
+	return n * es, ea, true
+}
+
+// cLayout is the size and the alignment the target's compiler gives a C type the
+// emitter writes, by the rules the checker's targetLayout states (unsafelayout.go):
+// what a struct with a member of no bytes is declared as depends on where that
+// member stands, which is this.
+func (e *emitter) cLayout(ct string, depth int) (size, align int64, ok bool) {
+	if depth > 16 {
+		return 0, 0, false
+	}
+	u := e.underlyingCType(e.unaliased(ct))
+	switch u {
+	case cBool, "char", "int8_t", "uint8_t":
+		return 1, 1, true
+	case "int16_t", "uint16_t":
+		return 2, 2, true
+	case "int", "unsigned", "int32_t", "uint32_t", "uintptr_t", "float", "double":
+		return 4, 4, true
+	case "int64_t", "uint64_t":
+		return 8, 4, true
+	case cString:
+		return 8, 4, true
+	}
+	switch {
+	case strings.HasSuffix(u, "*") || u == cUnsafePtr || e.isChanCType(u) || e.isFuncCType(u):
+		return 4, 4, true
+	case e.isSliceCType(u):
+		return 12, 4, true
+	case e.isIfaceCType(u):
+		return 8, 4, true
+	}
+	if a, ok := e.namedArrays[u]; ok {
+		return e.arrayLayoutC(a, depth)
+	}
+	fields, ok := e.structs[u]
+	if !ok {
+		return 0, 0, false
+	}
+	var end1, end2 int64
+	for _, fld := range fields {
+		size, align, ok := e.fieldLayoutC(fld)
+		if !ok {
+			return 0, 0, false
+		}
+		if size != 0 {
+			a := align
+			if size >= 4 {
+				a = 4
+			}
+			end2 = (end2+a-1)/a*a + size
+		}
+		switch {
+		case size == 2:
+			end1 = (end1 + 1) &^ 1
+		case size >= 4:
+			end1 = (end1 + 3) &^ 3
+		}
+		end1 += size
+	}
+	if end1 == 0 {
+		end1 = 1 // char _ogo_empty
+	}
+	size = (end1 + 3) &^ 3
+	if end2 > size {
+		size = end2
+	}
+	return size, 4, true
+}
+
 // leadsZeroSized reports whether a struct's first field is one of no elements, or
 // a struct that leads with one: "{0}" for the whole struct then initializes that
 // field, which gcc refuses and the target's compiler cannot ("Cannot handle memref
@@ -4198,11 +4349,16 @@ func (e *emitter) anonStructType(structAST []int32) string {
 	deps := make([]string, 0, len(fields))
 	text := e.captureC(func() {
 		e.emit("typedef struct {")
-		for _, fld := range fields {
+		moves := e.zeroMoves(fields)
+		for i, fld := range fields {
 			deps = append(deps, fld.ctype)
+			if decl, ok := e.zeroSizedDecl(fld, moves[i]); ok {
+				e.emit(" " + decl + ";")
+				continue
+			}
 			e.emit(" " + fld.ctype + " " + e.fieldIdent(fld.name) + fieldDeclSuffix(fld) + ";")
 		}
-		if len(fields) == 0 {
+		if !slices.ContainsFunc(fields, func(f structField) bool { return !e.zeroSizedField(f) }) {
 			// As for a named empty struct: C rejects a member-less one.
 			e.emit(" char _ogo_empty;")
 		}
@@ -6604,6 +6760,14 @@ func emitProgram(pkg *Package, w io.Writer, opts []EmitOption, rename map[string
 		return e.err
 	}
 	out.Write(body.Bytes())
+	// What the checker computed of the target's layout for unsafe.Sizeof and
+	// Offsetof, held against the target's compiler: an array of a negative size
+	// does not build, where a false constant would have built in silence. One
+	// array of one byte however many, and the host's compiler, whose pointers are
+	// wider, asked nothing.
+	if len(e.layoutChecks) != 0 {
+		out.WriteString("\n#ifdef __FLEXC__\nstatic char ogo_layout_check[(" + strings.Join(e.layoutChecks, " && ") + ") ? 1 : -1];\n#endif\n")
+	}
 	text := e.endProgramC(out.Bytes(), endsCogs)
 	_, err := w.Write(wrapLongLines(ensureStdint(insertStringLits(text, e.stringLitDecls))))
 	return err
@@ -6921,6 +7085,7 @@ type emitter struct {
 	printSliceElems    map[string]bool         // element C types printed without a newline, needing the ogo_print_slice_<T> helper
 	printStructs       map[string]string       // struct C types printed by %v -> the definition of their ogo_printv_<T> helper
 	specPrinters       map[string]*specPrinter // a struct printed by %v under a spec, keyed by type, spec and '+': needStructSpecPrint
+	layoutChecks       []string                // the target's sizeof and offsetof each unsafe.Sizeof and Offsetof value claims: layoutCheck
 	printIfaces        map[string]string       // interface C types printed by %v -> where the first such print is written, for a refusal minting its helper earns
 	panicIfaces        map[string]bool         // interface C types a panic is given, each needing its ogo_panicv_<T> helper (mintPanicIfaces)
 	assertMiss         map[[2]string]bool      // (interface, interface asserted) pairs a failed assertion names a missing method of (mintAssertMiss)
@@ -7512,23 +7677,32 @@ func (e *emitter) structTypedefText(mn string, fields []structField) (string, []
 	deps := make([]string, 0, len(fields))
 	text := e.captureC(func() {
 		e.emit("struct " + mn + " {")
-		for _, fld := range fields {
+		moves := e.zeroMoves(fields)
+		for i, fld := range fields {
 			// A field name may be Unicode; cIdent it in the typedef and, to match,
 			// wherever a field is selected (see fieldAccessC and the chain/selector
 			// paths). The structs map still stores the source name, so the type
 			// lookups (structFieldType etc.) compare source names.
 			deps = append(deps, fld.ctype)
+			if decl, ok := e.zeroSizedDecl(fld, moves[i]); ok {
+				e.emit(" " + decl + ";")
+				continue
+			}
 			if fld.dim.bound != "" {
 				e.emit(" " + fld.ctype + " " + e.fieldIdent(fld.name) + fld.dim.declSuffix() + ";")
 				continue
 			}
 			e.emit(" " + fld.ctype + " " + e.fieldIdent(fld.name) + ";")
 		}
-		if len(fields) == 0 {
+		if !slices.ContainsFunc(fields, func(f structField) bool { return !e.zeroSizedField(f) }) {
 			// C rejects a struct with no members; Go's empty struct is a
 			// legal, zero-information type (markers, chan struct{} signals).
 			// Give it one hidden byte so the C type is well-formed. OctoGo
-			// code cannot name the field, so it stays invisible.
+			// code cannot name the field, so it stays invisible. So does a
+			// struct of zero-sized fields alone, which would take no bytes
+			// and be aligned on four, and so be moved as a member where the
+			// target's compiler sized its container without moving it
+			// (zeroSizedDecl).
 			e.emit(" char _ogo_empty;")
 		}
 		e.emit(" };" + "\n")
@@ -36809,16 +36983,44 @@ func (e *emitter) lenConstOf(callSuffix []int32) (int64, bool) {
 	return v, ok
 }
 
-// lenConstKids is lenConstOf for a Factor's children, `len` and its call.
+// layoutCheck records the C condition that holds where the checker's layout of the
+// target is right about one unsafe.Sizeof, v its value (targetLayout): `sizeof(T)
+// == v` of a value whose C type the emitter names. Not of a bool, whose C type takes
+// four bytes standing alone and one as a member or an element, nor of an array of
+// no C value type; and not an Offsetof, the target's compiler taking no offsetof
+// in an array's size -- offsets follow the rule sizes do, and a run case holds
+// them against the target's offsetof.
+func (e *emitter) layoutCheck(kids []Node, v int64) {
+	steps := slices.Collect(it(kids[1].ast))
+	if e.soleIdent(steps[0].ast) != "Sizeof" {
+		return
+	}
+	args := e.callArgExprs(steps[1].ast)
+	if len(args) != 1 {
+		return
+	}
+	ct, ok := e.inferCType(args[0].ast)
+	if !ok || ct == "" || e.underlyingCType(ct) == cBool {
+		return
+	}
+	e.layoutChecks = append(e.layoutChecks, fmt.Sprintf("sizeof(%s) == %d", ct, v))
+}
+
+// lenConstKids is lenConstOf for a Factor's children, `len` and its call, or
+// `unsafe` and `.Sizeof(x)`, whose constant the checker records the same way
+// (constUnsafe).
 func (e *emitter) lenConstKids(kids []Node) (int64, bool) {
 	if len(kids) != 2 || kids[0].sym != 0 || kids[1].sym != FactorSuffix {
 		return 0, false
 	}
 	steps := slices.Collect(it(kids[1].ast))
-	if len(steps) != 1 || steps[0].sym != CallSuffix {
-		return 0, false
+	switch {
+	case len(steps) == 1 && steps[0].sym == CallSuffix:
+		return e.lenConstOf(steps[0].ast)
+	case len(steps) == 2 && steps[0].sym == Selector && steps[1].sym == CallSuffix:
+		return e.lenConstOf(steps[1].ast)
 	}
-	return e.lenConstOf(steps[0].ast)
+	return 0, false
 }
 
 // emitPanic emits the builtin panic of a plain string, mapping to the runtime
@@ -46840,6 +47042,11 @@ func (e *emitter) inferNode(n Node) (string, bool) {
 	case UnaryExpr, Factor:
 		kids := slices.Collect(it(n.ast))
 		if n.sym == Factor {
+			// `unsafe.Sizeof(x)`, Alignof and Offsetof: constants of type uintptr.
+			if _, ok := e.lenConstKids(kids); ok && len(slices.Collect(it(kids[1].ast))) == 2 {
+				e.includes["stdint.h"] = true
+				return "uintptr_t", true
+			}
 			if spliced, ok := e.spliceParenArrayCall(kids); ok {
 				return e.inferNode(spliced) // `(mk(5)).Len()` is `mk(5).Len()`
 			}
@@ -49030,6 +49237,13 @@ func (e *emitter) emitExprNode(n Node) {
 	case UnaryExpr, Factor:
 		kids := slices.Collect(it(n.ast))
 		if n.sym == Factor {
+			// A call the checker folded to a constant, `unsafe.Sizeof(x)`: the value,
+			// its operand not evaluated.
+			if v, ok := e.lenConstKids(kids); ok && len(kids) == 2 && len(slices.Collect(it(kids[1].ast))) == 2 {
+				e.layoutCheck(kids, v)
+				e.emit(strconv.FormatInt(v, 10))
+				return
+			}
 			if me, isME := e.methodExprAt(kids); isME {
 				e.emitMethodExpr(me)
 				return

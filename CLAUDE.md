@@ -630,8 +630,32 @@ still design-only.
   through a conversion, `*(*T)(p) = v`, which every write through an unsafe.Pointer
   is, binds the converted pointer first (`convTargetHead`, `bindPtrConv`). Not yet:
   a type DEFINED over unsafe.Pointer (refused at the declaration; an alias is
-  taken), `Sizeof` and the rest of Go's unsafe ("not supported yet"), and printf
-  verbs but `%v` and `%T`. Tests: `unsafe_pointer*.ogo`, `TestEmitCUnsafeLifetime`,
+  taken), `Add`, `Slice` and the rest of Go's unsafe ("not supported yet"), and
+  printf verbs but `%v` and `%T`. `Sizeof`, `Alignof` and `Offsetof` came on
+  2026-10-08 (unsafelayout.go): constants of type uintptr the checker computes from
+  the TARGET's layout (targetLayout) -- recorded by the call's parentheses in
+  lenConsts as a constant len is, from the fold (constUnsafe) and wherever the call
+  stands (checkUnsafeLayoutCall) -- and the emitter writes the value. The layout was
+  measured on the board in C first and then read off spin2cpp's source: TypeAlign
+  (a scalar's size, 8 giving 4; 4 for a pointer and a struct; an array's element's),
+  PaddedTypeAlign for a member (4 for four bytes or more), and a struct laid out
+  TWICE (frontends/common.c): the declaring pass aligns a member of 2 bytes on 2 and
+  of 4 or more on 4, nothing else, and rounds to 4, which is the size; the placing
+  pass (fixupVarOffset) aligns each on its PaddedTypeAlign, gives the offsets, and
+  RAISES the size, unrounded, where it ends past the first. They part on a zero-sized
+  member, which only the second aligns -- and a struct the second sized larger was
+  laid out by its containers with the first pass's size, its last field overwritten
+  by the next field of the container, in silence (doc/zero-length-member-moved.c).
+  Such a member is declared over uint8_t where it would move (zeroSizedDecl,
+  zeroMoves over cLayout, the emitter's copy of the rules), so the two passes agree
+  and every struct is a multiple of four; a struct of zero-sized fields alone gets
+  `_ogo_empty`. Each use of Sizeof whose operand has a C type the emitter names adds
+  `sizeof(T) == v` to one `static char ogo_layout_check[...]` under `__FLEXC__`, a
+  negative size failing the build where the model is wrong -- flexcc takes a
+  negative array size in a typedef in silence and no offsetof in an array size, so
+  the check is a sized global and covers sizes only; the offsets are pinned by two
+  run cases measured against the target's offsetof. The check fired on its first
+  use, which is how the second pass was found. Tests: `unsafe_pointer*.ogo`, `TestEmitCUnsafeLifetime`,
   three run cases, `TestOnBoardUnsafe` (a uint32 address read through by a Spin2
   method, and Hub RAM at 0x14 equal to `p2.ClockFreq()`). Building it found two
   lifetime holes older than it, both in the summaries: a callee storing `(*T)(p)`
@@ -2665,7 +2689,11 @@ is a second fault of its own** -- the first reductions here judged by `chku(...,
 0ULL)` and were misled. Seeds 1-2000 on the host shim with the new generator: clean;
 on a P2-EDGE with c73d569, seeds 1-200 192 passing and 8 outgrowing a cog, and
 6001-6500 450 passing and 50 outgrowing, none failing (six loads that timed out or
-could not write the port passed on a second).
+could not write the port passed on a second). The next day a CROSS-conversion fold
+beside it (genCrossFold, convRand): the fold expression converted to another sized
+kind, half the time with an operation in it, the high word too at 64 bits -- the
+fuzzer had converted to int and to the 64-bit kinds only. Seeds 1-2000 on the host
+shim: clean.
 A parenthesised head, `(uint64(x)) >> 32`, was the rewrite's first miss
 (unparenExpr). And the family is bounded on the board: a value widened and then
 compared, masked, added, multiplied, or shifted by any other count is right, and so

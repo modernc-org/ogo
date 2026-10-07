@@ -1,0 +1,51 @@
+// unsafe.Sizeof, Alignof and Offsetof: constants of type uintptr, and what Go
+// refuses of them.
+
+import "unsafe"
+
+type P struct {
+	a uint8
+	b int32
+}
+
+type Q struct {
+	*P
+	c int
+}
+
+func take(n int) {}
+
+func main() {
+	var p P
+	var q Q
+	var u uintptr = unsafe.Sizeof(p) + unsafe.Offsetof(p.b) + unsafe.Alignof(p.a)
+	const k = unsafe.Sizeof(p) * 2
+	var buf [k]byte
+	_, _, _, _ = q, u, buf, unsafe.Offsetof((q.c))
+	// ERROR "cannot use unsafe.Sizeof\(p\) of type uintptr as type int in variable declaration"
+	var n int = unsafe.Sizeof(p)
+	_ = n
+	// ERROR "cannot use unsafe.Sizeof\(p\) of type uintptr as type int in argument to take"
+	take(unsafe.Sizeof(p))
+	// ERROR "unsafe.Sizeof \(built-in function\) must be called"
+	f := unsafe.Sizeof
+	_ = f
+	// ERROR "not enough arguments for unsafe.Sizeof"
+	_ = unsafe.Sizeof()
+	// ERROR "too many arguments for unsafe.Alignof"
+	_ = unsafe.Alignof(p, q)
+	// ERROR "p is not a selector expression"
+	_ = unsafe.Offsetof(p)
+	// ERROR "p.b \+ 1 is not a selector expression"
+	_ = unsafe.Offsetof(p.b + 1)
+	// ERROR "selector implies indirection of embedded field q.b"
+	_ = unsafe.Offsetof(q.b)
+	// ERROR "use of untyped nil"
+	_ = unsafe.Sizeof(nil)
+	// ERROR "constant -92 overflows uintptr"
+	const neg = unsafe.Sizeof(p) - 100
+	// ERROR "unsafe.Sizeof\(p\) \(constant of type uintptr\) is not used"
+	unsafe.Sizeof(p)
+	// ERROR "defer discards result of unsafe.Sizeof\(p\)"
+	defer unsafe.Sizeof(p)
+}
