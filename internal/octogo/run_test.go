@@ -10465,6 +10465,10 @@ func main() {
 // writes, 4052137992 on the board for Go's 0, where every other count, an int64's
 // shift, and the high word of a computed 64-bit value were right
 // (doc/uint64-widened-shift-32.c); the emitter writes the value without the shift.
+type T uint64
+
+const Sh = 32
+
 func id(x uint32) uint32 { return x }
 
 func idi(x int32) int32 { return x }
@@ -10530,9 +10534,10 @@ func main() {
 	println(f7(u), f8(u), f9(u), f10(b), f11(u), f12(u))
 	println(f13(u, u), f14(u), f15(u), f16(u), f17(u), f18(i))
 	println(uint64(u)>>32, uint64(i)>>32, int64(i)>>32, uint64(b)>>32)
+	println((uint64(u))>>32, T(u)>>32, uint64(u)>>Sh, uint64(u)>>(16+16), uint64(uint16(u))>>32, uint64(id(5))>>32 == 0)
 }
 `,
-		want: "0 0 0 4294967295 -1 0\n0 0 0 0 0 0\n4294967289 0 0 0 0 4294967295\n0 4294967295 -1 0\n",
+		want: "0 0 0 4294967295 -1 0\n0 0 0 0 0 0\n4294967289 0 0 0 0 4294967295\n0 4294967295 -1 0\n0 0 0 0 0 true\n",
 	},
 	{
 		name: "a composite literal of a defined slice type is a value of that type",

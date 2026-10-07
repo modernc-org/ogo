@@ -2663,6 +2663,34 @@ signed x. **A run that reads a register nothing wrote can look right by luck: th
 listing is the measure, and a C harness passing a constant after a 64-bit argument
 is a second fault of its own** -- the first reductions here judged by `chku(..., e,
 0ULL)` and were misled. Seeds 1-2000 on the host shim with the new generator: clean.
+A parenthesised head, `(uint64(x)) >> 32`, was the rewrite's first miss
+(unparenExpr). And the family is bounded on the board: a value widened and then
+compared, masked, added, multiplied, or shifted by any other count is right, and so
+are `uint64(hi)<<32 | uint64(lo)` and a matrix of 64-bit expressions narrowed to
+every type (192 lines against Go).
+A Reed-Solomon codec the same day (dom35: GF(2^8) by log/exp tables, polynomials as
+a struct of an array and a length passed by value, Berlekamp-Massey, Chien, Forney,
+the decoder on another cog) matched Go on the host and the board once written as the
+target wants -- no closure over a local, no runtime concatenation, `%s` of a byte
+slice for `string(b)` -- and two of those refusals named no position, `emit: string
+concatenation ... needs allocation` (five e.fail sites, failAt now). Its 1,500
+mutants had 14 taken, two rows: one call's several results into a FIELD, an ELEMENT
+or a POINTEE, `v.pos, v.n, v.err = rs.Correct(...)`, were asked nothing, a bare name
+being the only target checkResultsAssign asked (walkedTargets, checkResultInto: Kind
+into Kind with defined types told apart, Kind into category and back, an interface
+into what is none), and a bare variable of a struct type took a number; and
+`poly.Rem(x).Reverse()` with an argument dropped was taken, checkQualifiedRef
+returning at the member it reached before asking the call. Its 1,200 valid-keeping
+mutants found a TYPE no storage can hold: `[2147483647]uint8` beside an int, which
+Go's own compiler cannot lay out, built here without a word, and so did `[1 <<
+30]uint32` -- the backend sizes a type in 32-bit arithmetic, 4 GB is 0 bytes and a
+frame past 2 GB is negative, `add ptra, ##-1073741808`, which the stack reader's
+pattern skipped. A type of more than 1 GB is refused where it is written
+(checkTypeSize, typeMinBytes: a lower bound, 0 for what is not resolved yet), and a
+negative frame reads as larger than Hub RAM. **A probe that makes the backend lay
+out a gigabyte of data costs the machine**: one such build wrote a 1 GB image, and
+the user asked about the load the same hour: the dev machine also hosts the builder
+VMs, so a batch runs at `xargs -P 4` at most, and not beside the full suite.
 
 **A STRUCT HOLDING AN ARRAY IS COPIED, NEVER ASSIGNED** (2026-09-23). The target's C
 compiler copy-initializes and assigns one only at some SIZES -- "Unable to multiply

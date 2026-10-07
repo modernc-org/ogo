@@ -69,7 +69,7 @@ const maxWalkComponent = 20
 var (
 	stackLabel  = regexp.MustCompile(`^(_\w+)$`)
 	stackCount  = regexp.MustCompile(`^\s*mov\s+COUNT_, ##?(\d+)`)
-	stackAdd    = regexp.MustCompile(`^\s*add\s+ptra, ##?(\d+)`)
+	stackAdd    = regexp.MustCompile(`^\s*add\s+ptra, ##?(-?\d+)`)
 	stackPush   = regexp.MustCompile(`^\s*call\s+#pushregs_\s*$`)
 	stackCall   = regexp.MustCompile(`^\s*(?:if_\w+\s+)?(?:call|jmp)\s+#(_\w+)`)
 	stackICall  = regexp.MustCompile(`^\s*(?:if_\w+\s+)?(?:call|calla|callb)\s+[^#\s]`)
@@ -143,6 +143,12 @@ func readStackNeeds(listing, c []byte) (r stackNeeds) {
 		}
 		if m := stackAdd.FindStringSubmatch(l); m != nil {
 			n, _ := strconv.Atoi(m[1])
+			if n < 0 {
+				// A frame past 2 GB, wrapped negative by the backend's 32-bit
+				// arithmetic: no frame shrinks the stack, and the bound reads it
+				// as larger than any Hub RAM.
+				n = 1 << 31
+			}
 			cur.reserve += n
 		}
 		if strings.Contains(l, "ptra++") {

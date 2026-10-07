@@ -262,3 +262,15 @@ func main() {
 		}
 	})
 }
+
+// TestStackNeedsWrappedFrame reads a frame past 2 GB, which the backend's 32-bit
+// arithmetic writes negative, `add ptra, ##-1073741808` for three locals of a
+// gigabyte: it was skipped, the pattern taking digits only, and the frame counted as
+// nothing.
+func TestStackNeedsWrappedFrame(t *testing.T) {
+	c := []byte("int main(void) {\n")
+	listing := listingOf(fnListing("_main", 1, 0, "add\tptra, ##-1073741808"))
+	if r := readStackNeeds(listing, c); r.mainNeed <= 512<<10 {
+		t.Fatalf("main needs %d bytes; want more than Hub RAM\n%s", r.mainNeed, listing)
+	}
+}

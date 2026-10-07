@@ -1,0 +1,46 @@
+// One call's several results into a field, an element or a pointee: the targets
+// were asked nothing but a bare name, `v.pos, v.n, v.err = rs.Correct(c)` taking
+// any result at all.
+
+type V struct {
+	pos [8]int8
+	n   int8
+	err error
+	ce  chan error
+	a   [8]int
+	m   int
+	in  struct{ a, b int }
+}
+
+func two() ([8]int, int, error) { return [8]int{}, 1, nil }
+
+func pair() (int, int) { return 5, 6 }
+
+func main() {
+	var v V
+	// ERROR "cannot use result 1 of two\(\) \(type \[8\]int\) as type \[8\]int8 in assignment"
+	v.pos, v.m, v.err = two()
+	// ERROR "cannot use result 2 of two\(\) \(type int\) as type int8 in assignment"
+	v.a, v.n, v.err = two()
+	// ERROR "cannot use result 3 of two\(\) \(type error\) as type chan error in assignment"
+	v.a, v.m, v.ce = two()
+	// ERROR "cannot use result 2 of two\(\) \(type int\) as type V in assignment"
+	v.a, v, v.err = two()
+	var b [3]int8
+	var y int
+	// ERROR "cannot use result 1 of pair\(\) \(type int\) as type int8 in assignment"
+	b[0], y = pair()
+	p := &v
+	// ERROR "cannot use result 1 of pair\(\) \(type int\) as type int8 in assignment"
+	p.n, p.m = pair()
+	var ok bool
+	// ERROR "cannot use result 2 of pair\(\) \(type int\) as type int8 in assignment"
+	if v.m, v.n = pair(); ok {
+	}
+	v.a, v.m, v.err = two()
+	v.in.a, v.in.b = pair()
+	p.m, p.in.a = pair()
+	var xs [2]int
+	xs[0], xs[1] = pair()
+	_, _, _ = b, y, xs
+}

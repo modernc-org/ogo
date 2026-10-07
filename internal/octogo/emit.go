@@ -24313,7 +24313,7 @@ func (e *emitter) emitConversion(ct string, arg Node) {
 				e.emit(", " + buf + ")")
 				return
 			}
-			e.fail("a string conversion needs allocation, which the target does not have")
+			e.failAt(arg.ast, "a string conversion needs allocation, which the target does not have")
 			return
 		}
 		// Two DISTINCT struct types, `B(a)`. Reached only when the representations
@@ -35479,7 +35479,7 @@ func (e *emitter) wideShift32C(kids []Node, levelType string) (string, bool) {
 	if v, ok := e.foldIntegral(kids[2].ast); !ok || v != 32 {
 		return "", false
 	}
-	recv, suffix, ok := e.directCall(kids[0].ast)
+	recv, suffix, ok := e.directCall(e.unparenExpr(kids[0].ast))
 	if !ok {
 		return "", false
 	}
@@ -43049,7 +43049,7 @@ func (e *emitter) emitAssignTailOrCopy(target func(), t assignTail) {
 	// which flexcc rejects as "Expected integer type".
 	if t.rhs != nil && t.op != "=" {
 		if ct, ok := e.exprReprCType(t.rhs); ok && ct == cString {
-			e.fail("string concatenation with a non-constant operand needs allocation, which the target does not have")
+			e.failAt(t.rhs, "string concatenation with a non-constant operand needs allocation, which the target does not have")
 			return
 		}
 	}
@@ -47044,7 +47044,7 @@ func (e *emitter) inferNode(n Node) (string, bool) {
 					return sliceCName(elem), true
 				}
 				if e.stringSliceConv(typeAST, arg) {
-					e.fail("a string conversion needs allocation, which the target does not have")
+					e.failAt(n.ast, "a string conversion needs allocation, which the target does not have")
 					return "", false
 				}
 				if _, isID := e.bracketConvOperand(typeAST, arg); !isID || len(steps) != 0 {
@@ -48792,7 +48792,7 @@ func (e *emitter) emitExprNode(n Node) {
 				e.emitFoldedString(v)
 				return
 			}
-			e.fail("string concatenation with a non-constant operand needs allocation, which the target does not have")
+			e.failAt(n.ast, "string concatenation with a non-constant operand needs allocation, which the target does not have")
 			return
 		}
 		// A standalone string equality is a content compare (see emitStringCompare); a C
@@ -49253,7 +49253,7 @@ func (e *emitter) emitExprNode(n Node) {
 					return
 				}
 				if e.stringSliceConv(typeAST, arg) {
-					e.fail("a string conversion needs allocation, which the target does not have")
+					e.failAt(n.ast, "a string conversion needs allocation, which the target does not have")
 					return
 				}
 				if dim, isArray := e.arrayDim(typeAST); isArray && len(steps) == 0 && e.isSliceOperand(arg) {

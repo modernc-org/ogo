@@ -27,6 +27,20 @@ shipped section tells a reader on that version that they have behaviour they do 
 
 ### Fixed
 
+- **One call's several results into a field, an element or a pointee are
+  checked**: `v.pos, v.n, v.err = rs.Correct(c)` took any result into any field, in
+  one package and across two, `b[0], y = pair()` an int into an int8 element and
+  `p.n, p.m = pair()` the same through a pointer; only a bare name was asked. And a
+  bare variable of a struct type took a result of a number.
+- **A qualified call reached through a member is asked its arguments**:
+  `lib.F(1).M()` for an F of two parameters was taken, the walk ending at M.
+- **An array or a struct type larger than 1 GB is refused**: `var g [1 <<
+  30]uint32` built without a word, the target's C compiler sizing it in 32-bit
+  arithmetic to 0 bytes, and a local's frame past 2 GB came out negative, which the
+  stack bound skipped; such a frame now reads as too large. A gigabyte behind a
+  pointer, `(*[1 << 30]byte)(p)`, stays legal.
+- **A refusal of a string concatenation or a string conversion names its
+  position**: five of them said only "emit: ... needs allocation".
 - **`uint64(x) >> 32` of a value of 32 bits or fewer is right on the target**: it
   printed 4052137992 on the board for Go's 0. The target's C compiler reads the
   result of `(uint64_t)x >> 32` from a register it never writes, for any source type

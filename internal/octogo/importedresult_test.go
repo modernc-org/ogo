@@ -421,3 +421,37 @@ func TestCheckQualifiedCallee(t *testing.T) {
 		})
 	}
 }
+
+// TestCheckQualifiedResultsAndChains: another package's call of several results into
+// fields, `v.pos, v.n, v.err = rs.Correct(c)`, was asked nothing of the fields (as
+// in one package), and a qualified call reached through a member, `lib.F(1).M()`,
+// was asked nothing of its arguments -- the walk ended at the member.
+func TestCheckQualifiedResultsAndChains(t *testing.T) {
+	const lib = "type P struct{ n int }\n\nfunc (p P) M() int { return p.n }\n\nfunc (p P) Q() P { return p }\n\nfunc F(a, b int) P { return P{a + b} }\n\nfunc Two() ([8]int, int, error) { return [8]int{}, 1, nil }\n"
+	for _, test := range []struct {
+		body string
+		want string // "" for one Go takes
+	}{
+		{"var v struct{ a [8]int8; n int; e error }\n\tv.a, v.n, v.e = lib.Two()", "cannot use result 1 of lib.Two() (type [8]int) as type [8]int8 in assignment"},
+		{"var v struct{ a [8]int; n int8; e error }\n\tv.a, v.n, v.e = lib.Two()", "cannot use result 2 of lib.Two() (type int) as type int8 in assignment"},
+		{"var v struct{ a [8]int; n int; e chan error }\n\tv.a, v.n, v.e = lib.Two()", "cannot use result 3 of lib.Two() (type error) as type chan error in assignment"},
+		{"_ = lib.F(1).M()", "not enough arguments in call to F"},
+		{"lib.F(1, \"x\").M()", "cannot use \"x\" of type string as type int in argument to F"},
+		{"var v struct{ a [8]int; n int; e error }\n\tv.a, v.n, v.e = lib.Two()\n\tprintln(lib.F(1, 2).M(), lib.F(3, 4).Q().M(), v.n)", ""},
+	} {
+		t.Run(test.body, func(t *testing.T) {
+			src := "import \"lib\"\n\nfunc main() {\n\t" + test.body + "\n}\n"
+			fsys := fstest.MapFS{
+				"main.ogo":    &fstest.MapFile{Data: []byte(src)},
+				"lib/lib.ogo": &fstest.MapFile{Data: []byte(lib)},
+			}
+			_, err := Build(-1, []string{"main.ogo"}, fsys)
+			switch {
+			case test.want == "" && err != nil:
+				t.Fatalf("refused: %v", err)
+			case test.want != "" && (err == nil || !strings.Contains(err.Error(), test.want)):
+				t.Fatalf("got %v, want an error containing %q", err, test.want)
+			}
+		})
+	}
+}

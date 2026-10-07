@@ -1,0 +1,26 @@
+// A type the target's 32-bit sizes cannot hold: the backend's size of it wrapped,
+// `var g [1 << 30]uint32` building in silence with no storage behind it.
+
+type R [1 << 20]uint32
+
+// ERROR "array type \[1024\]R is too large: at least 4294967296 bytes"
+var g [1024]R
+
+// ERROR "struct type is too large: at least 2147483652 bytes"
+type P struct {
+	a [1 << 30]byte
+	b [1 << 30]byte
+	n int
+}
+
+// A gigabyte stands behind a pointer, as the unsafe idiom has it.
+type B [1 << 30]byte
+
+func main() {
+	// ERROR "array type \[1 << 30\]uint32 is too large"
+	var a [1 << 30]uint32
+	_ = a
+	var p *B
+	var q *P
+	_, _, _ = p, q, g
+}

@@ -230,6 +230,7 @@ type File struct {
 	errList           ErrList
 	hasInvalidImports bool
 	inArrayBound      bool                        // evaluating an array length: suppress "is not a constant"
+	tooLarge          map[int32]bool              // array types reported too large, by position
 	inCaseExpr        bool                        // evaluating a switch case expression, where a non-constant operand is legal: suppress "is not a constant"
 	namingConsts      map[*ConstDeclaration]bool  // constants whose initializer exprNamedType is reading, against a cycle
 	varSpecsDone      map[int32]bool              // package var specs resolved, by position: in source order, or first where an initializer above names them
@@ -3511,7 +3512,17 @@ func (f *File) checkHeaderAssignList(s *Scope, head Node, items, values []Node) 
 	if len(values) == 1 && len(targets) > 1 {
 		// One call's several results, each asked of its target as the statement
 		// `a, b = f()` asks them.
-		f.checkResultsAssign(s, bases, suffixed, values[0])
+		var walked []typeAt
+		for _, t := range targets {
+			var at typeAt
+			if base, steps, stars, ok := f.exprTarget(t); ok && (len(steps) != 0 || stars != 0) {
+				if tn, in := f.targetTypeNode(s, base, steps, stars); tn != nil {
+					at = typeAt{tn, in, f}
+				}
+			}
+			walked = append(walked, at)
+		}
+		f.checkResultsAssign(s, bases, suffixed, values[0], walked)
 		return
 	}
 	f.checkHeaderAssign(s, targets, values)
@@ -9148,7 +9159,7 @@ func (f *File) checkAssignment(s *Scope, head, postfix Node) {
 			}
 		}
 		if len(rhs) == 1 && lhsItems > 0 {
-			f.checkResultsAssign(s, lhs, lhsSuffixed, rhs[0])
+			f.checkResultsAssign(s, lhs, lhsSuffixed, rhs[0], f.walkedTargets(s, head, postfix))
 		}
 		// `v, ok = <-ch`: the flag takes a bool. It was asked nothing, and a string
 		// took it as far as the C compiler.
@@ -9272,7 +9283,7 @@ func (f *File) checkAssignment(s *Scope, head, postfix Node) {
 			assigned = assigned || !skip[i]
 		}
 		if assigned {
-			f.checkResultsAssign(s, lhs, skip, rhs[0])
+			f.checkResultsAssign(s, lhs, skip, rhs[0], nil)
 		}
 	}
 	newCount := 0
@@ -11561,6 +11572,13 @@ func (f *File) checkQualifiedRef(s *Scope, qual Token, suffix Node) {
 		// the field at all -- another package's unexported one could be read, and
 		// written.
 		if tn, member, isCall, ok := f.crossPkgReachedField(pkg, suffix); ok {
+			// The call the member is reached through is asked its arguments first:
+			// `lib.F(1).M()` for an F of two was taken, the walk ending here.
+			if fd, isFunc := d.(*FuncDeclaration); isFunc && fd.FuncDecl != nil && fd.FuncDecl.Type != nil {
+				if steps, _ := callSteps(suffix); len(steps) > 2 && steps[0].sym == Selector && steps[1].sym == CallSuffix {
+					f.checkArgsIn(s, pkg.Scope, m, fd.FuncDecl.Type.Signature, argNodes(f.callArgList(steps[1])))
+				}
+			}
 			f.checkCrossPkgReached(s, qual, tn, member, isCall, suffix)
 			return
 		}
@@ -18547,6 +18565,51 @@ func (f *File) checkWalkedTargets(s *Scope, head, postfix Node, rhs []Node, lhsI
 			i++
 		}
 	}
+}
+
+// walkedTargets is the type each target of an assignment statement walks to, the
+// head's and each LhsItem's in order, a zero typeAt where it has no steps or the
+// walk cannot follow it -- for checkResultsAssign, whose one call's several results
+// pair with the targets one by one.
+func (f *File) walkedTargets(s *Scope, head, postfix Node) []typeAt {
+	at := func(ah Node, steps []Node) typeAt {
+		base, stars, ok := f.targetHead(ah)
+		if !ok || len(steps) == 0 && stars == 0 {
+			return typeAt{}
+		}
+		if tn, in := f.targetTypeNode(s, base, steps, stars); tn != nil {
+			return typeAt{tn, in, f}
+		}
+		return typeAt{}
+	}
+	var out []typeAt
+	var steps []Node
+	for c := range it(postfix.ast) {
+		switch c.sym {
+		case Selector, Index, CallSuffix:
+			steps = append(steps, c)
+		case PostfixOp:
+			out = append(out, at(head, steps))
+			for item := range it(c.ast) {
+				if item.sym != LhsItem {
+					continue
+				}
+				var ah Node
+				var isteps []Node
+				for x := range it(item.ast) {
+					switch x.sym {
+					case AssignHead:
+						ah = x
+					case Selector, Index, CallSuffix:
+						isteps = append(isteps, x)
+					}
+				}
+				out = append(out, at(ah, isteps))
+			}
+			return out
+		}
+	}
+	return out
 }
 
 // checkCallValueTargets refuses a store into what a CALL's value holds -- a field of
@@ -25833,6 +25896,15 @@ func (f *File) kindlessTargetOf(s *Scope, tok Token) (tg kindlessTarget) {
 	if !ok {
 		return tg
 	}
+	return f.kindlessTargetAt(t)
+}
+
+// kindlessTargetAt is kindlessTargetOf for a target of type t: a variable's, or a
+// field's or an element's a target walks to.
+func (f *File) kindlessTargetAt(t typeAt) (tg kindlessTarget) {
+	if t.f == nil {
+		t.f = f
+	}
 	u, named := t.f.refTypeUnder(t.s, t.tn)
 	switch u.(type) {
 	case *TypeNodeArray:
@@ -25920,7 +25992,7 @@ func (f *File) resultName(r retResult) string {
 // rules a single value is held to where a Kind can say -- a scalar where a slice is
 // wanted, and a Kind the target's does not accept. No result was checked against
 // any target, and the C compiler refused an int stored in a slice header.
-func (f *File) checkResultsAssign(s *Scope, lhs []Token, suffixed []bool, call Node) {
+func (f *File) checkResultsAssign(s *Scope, lhs []Token, suffixed []bool, call Node, walked []typeAt) {
 	res, _, ok := f.qualifiedCallResults(s, call)
 	if !ok {
 		if res, ok = f.exprCallResults(s, call); !ok {
@@ -25931,8 +26003,28 @@ func (f *File) checkResultsAssign(s *Scope, lhs []Token, suffixed []bool, call N
 		return // the count is the mismatch check's to report
 	}
 	for i, tok := range lhs {
-		if suffixed[i] || tok.Src() == "_" {
+		if suffixed[i] {
+			// A field, an element or a pointee, `v.n, v.err = rs.Correct(c)`, asked
+			// what its type takes: nothing was, in one package or across two.
+			if i < len(walked) && walked[i].tn != nil {
+				f.checkResultInto(s, call, i, res[i], walked[i])
+			}
 			continue
+		}
+		if tok.Src() == "_" {
+			continue
+		}
+		if res[i].known {
+			// A result of a Kind into a variable of none, `v.pos, v, v.err =
+			// rs.Correct(c)` for a struct v: the Kind check below has nothing to
+			// ask of v.
+			if _, lok := f.identKind(s, tok); !lok {
+				if tg := f.kindlessTargetOf(s, tok); tg.have != "" {
+					f.err(f.tok(call.Pos()).Position(), "cannot use result %d of %s (type %s) as type %s in assignment",
+						i+1, f.exprSource(call), res[i].name, tg.want)
+					continue
+				}
+			}
 		}
 		if !res[i].known {
 			if what := f.kindlessResult(s, res[i]); what != "" {
@@ -25974,6 +26066,68 @@ func (f *File) checkResultsAssign(s *Scope, lhs []Token, suffixed []bool, call N
 				i+1, f.exprSource(call), res[i].name, want)
 		}
 	}
+}
+
+// checkResultInto is checkResultsAssign's question for a target a walk reaches, of
+// type t: result i of call, r, a Kind into a Kind and a defined type into another,
+// a Kind into a category of none or the other way, a category into another, and an
+// interface into what is no interface.
+func (f *File) checkResultInto(s *Scope, call Node, i int, r retResult, t typeAt) {
+	if t.f == nil {
+		t.f = f
+	}
+	want := t.f.resultType(t.s, t.tn)
+	wantName := t.f.typeNodeString(t.tn, false)
+	report := func() {
+		f.err(f.tok(call.Pos()).Position(), "cannot use result %d of %s (type %s) as type %s in assignment",
+			i+1, f.exprSource(call), f.resultName(r), wantName)
+	}
+	tg := f.kindlessTargetAt(t)
+	switch {
+	case r.known && want.known:
+		if !assignableKind(want.kind, r.kind) {
+			report()
+			return
+		}
+		if r.typeNode != nil {
+			dw, dh := t.f.definedDeclOf(t.s, t.tn), f.definedDeclOf(s, r.typeNode)
+			if dw != nil && dh != nil && dw != dh {
+				report()
+			}
+		}
+	case r.known:
+		if tg.have != "" {
+			report()
+		}
+	case want.known:
+		if f.kindlessResult(s, r) != "" || f.ifaceResult(s, r) {
+			report()
+		}
+	default:
+		have := f.kindlessResult(s, r)
+		switch {
+		case have != "" && tg.have != "" && (tg.have != have || f.otherKindless(s, tg, r)):
+			report()
+		case tg.have != "" && f.ifaceResult(s, r):
+			report() // `v.err` of a chan error taking an error
+		}
+	}
+}
+
+// ifaceResult reports a result of an interface type, the predeclared error among
+// them.
+func (f *File) ifaceResult(s *Scope, r retResult) bool {
+	if r.typeNode == nil {
+		return false
+	}
+	if id, ok := r.typeNode.(*TypeNodeIdent); ok && !id.Qualifier.IsValid() && id.Name.Src() == "error" {
+		if _, isPre := s.find("error").(*PredeclaredType); isPre || s.find("error") == nil {
+			return true
+		}
+	}
+	u, _ := f.refTypeUnder(s, r.typeNode)
+	_, isIface := u.(*TypeNodeInterface)
+	return isIface
 }
 
 // checkPointerArg reports an argument whose pointer-ness does not match the
@@ -28224,7 +28378,112 @@ func (f *File) typ(s *Scope, n Node) (r TypeNode) {
 		f.err(ident.Qualifier.Position(), "%s (package name) is not a type", ident.Qualifier.Src())
 		return nil
 	}
+	switch r.(type) {
+	case *TypeNodeArray, *TypeNodeStruct:
+		f.checkTypeSize(s, r, n)
+	}
 	return r
+}
+
+// maxTypeBytes is the most bytes a type may span: the target's C compiler computes
+// a size in 32-bit arithmetic, where 2 GB is negative and 4 GB nothing, and a frame
+// or the data adds the rest of what it holds to a value of the type.
+const maxTypeBytes = 1 << 30
+
+// checkTypeSize refuses an array or a struct type of more than maxTypeBytes, as Go
+// refuses a type larger than its address space: `var g [1 << 30]uint32` built in
+// silence, the backend's size of it wrapping to 0 bytes -- a local's frame to
+// -2147483644, which no check of the stack read -- and every store into it went over
+// whatever lay there. A type of up to 1 GB stands behind a pointer, `(*[1 <<
+// 30]byte)(p)`, and a VALUE of one past the 512 KB of Hub RAM is the build's to
+// refuse, which it is.
+func (f *File) checkTypeSize(s *Scope, tn TypeNode, n Node) {
+	size := f.typeMinBytes(s, tn, 0)
+	if size <= maxTypeBytes {
+		return
+	}
+	if f.tooLarge == nil {
+		f.tooLarge = map[int32]bool{}
+	}
+	if f.tooLarge[n.Pos()] {
+		return
+	}
+	f.tooLarge[n.Pos()] = true
+	what := "array type " + f.sourceSpan(n.Pos(), n.End())
+	if _, ok := tn.(*TypeNodeStruct); ok {
+		what = "struct type" // its source spans lines; the position says which
+	}
+	f.err(f.tok(n.Pos()).Position(), "%s is too large: at least %d bytes, and a type spans at most %d here",
+		what, size, maxTypeBytes)
+}
+
+// typeMinBytes is a lower bound of the bytes a value of tn spans on the target,
+// saturating past maxTypeBytes; 0 for what it cannot size -- a type not resolved
+// yet, or one only a later declaration completes.
+func (f *File) typeMinBytes(s *Scope, tn TypeNode, depth int) int64 {
+	const cap = 1 << 40
+	if depth > 16 || tn == nil {
+		return 0
+	}
+	switch x := tn.(type) {
+	case *TypeNodeArray:
+		n, ok := arrayNodeLen(x)
+		if !ok || n <= 0 || n > math.MaxInt32 {
+			return 0 // a length no int holds is arrayBound's to report
+		}
+		e := f.typeMinBytes(s, x.TypeNode, depth+1)
+		if e == 0 {
+			return 0
+		}
+		if n > cap/e {
+			return cap
+		}
+		return n * e
+	case *TypeNodeStruct:
+		var sum int64
+		for _, fd := range x.Fields {
+			k := int64(len(fd.Names))
+			if k == 0 {
+				k = 1
+			}
+			sum += k * f.typeMinBytes(s, fd.TypeNode, depth+1)
+			if sum > cap {
+				return cap
+			}
+		}
+		return sum
+	case *TypeNodePointer, *TypeNodeChan, *FunctionType:
+		return 4
+	case *TypeNodeSlice:
+		return 12
+	case *TypeNodeInterface:
+		return 8
+	case *TypeNodeIdent:
+		if td, home, ok := f.typeIdentDecl(s, x); ok {
+			if td.TypeSpec.TypeNode == nil {
+				return 0
+			}
+			wf := f
+			if x.Qualifier.IsValid() {
+				wf = f.fileOfToken(x.Qualifier)
+			}
+			return wf.typeMinBytes(home, td.TypeSpec.TypeNode, depth+1)
+		}
+		if k, ok := f.typeKind(s, x); ok {
+			switch k {
+			case PredeclaredBool, PredeclaredInt8, PredeclaredUint8:
+				return 1
+			case PredeclaredInt16, PredeclaredUint16:
+				return 2
+			case PredeclaredInt64, PredeclaredUint64:
+				return 8
+			case PredeclaredString:
+				return 8
+			}
+			return 4
+		}
+	}
+	return 0
 }
 
 // StructType = "struct" "{" { FieldDecl ";" } [ FieldDecl ] "}" .
