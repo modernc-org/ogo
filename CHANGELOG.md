@@ -16,6 +16,21 @@ same area is a new entry under **Unreleased**, not an edit to the old one. Amend
 shipped section tells a reader on that version that they have behaviour they do not.
 `git show vX.Y.Z:CHANGELOG.md` is the check.
 
+## Unreleased
+
+### Fixed
+
+- **A function value from a table in a package variable is not nil on the
+  board**: `if h != nil { h(x) }` skipped the call and `h == nil` printed true for
+  every function a static initializer named -- `var table [3]H = [3]H{inc, nil,
+  dbl}`, a slice literal of functions, an array of structs with a function field
+  -- and since v0.49.0 a call through such a value panicked with "nil pointer
+  dereference". The target's C compiler compares a function pointer through a
+  helper that reads the memory at it, and stores a function named statically as an
+  index that, read as an address, is address 0 (doc/funcptr-compare-nil.c). Every
+  nil test of a function value is a test of its word now. Right on the host in
+  every release.
+
 ## v0.49.0
 
 ### Language

@@ -1784,13 +1784,6 @@ func main() {
 		want: "true\nx 7 x 7 field 9 deep 4\n1 13 6 43 63 0 8 2 13 100 1 4 4\n",
 	},
 	{
-		// The nil check missed two shapes since it shipped: a STORE through a
-		// pointer -- `*p = v`, on the board a silent write into hub address 0, the
-		// boot area -- and every dereference of a pointer to an ARRAY, which had
-		// been left out because the C backend drops a store made through the guard's
-		// call into an element of one. Each of the following is one such shape, and
-		// each panics before it runs on; `len(p)` and the index-only `for i := range
-		// p` do not, as in Go, and stand in the case above.
 		// A call through a nil function VALUE panics, as Go's does; it called
 		// through address zero, which on the target is Hub RAM's first long.
 		name: "a call through a nil function value panics",
@@ -1832,6 +1825,61 @@ func main() {
 		panics: true,
 	},
 	{
+		// A function named in a static initializer -- a table of functions in a
+		// package variable -- is stored by the target's compiler as its method-table
+		// index shifted up by 20, and `f == 0` there calls a helper that reads the
+		// memory AT the two pointers, which for such a value is address 0: every
+		// entry compared nil, so the test skipped the call and the nil check of a
+		// call through the value panicked (doc/funcptr-compare-nil.c). The emitter
+		// tests the word, `!f`.
+		name: "functions of a static table compared with nil and called",
+		src: `type H func(int) int
+
+func inc(n int) int { return n + 1 }
+
+func dbl(n int) int { return 2 * n }
+
+var table [3]H = [3]H{inc, nil, dbl}
+
+var list []H = []H{dbl, inc}
+
+type Ops struct {
+	f, g H
+}
+
+var ops Ops = Ops{f: inc}
+
+var opsArr [2]Ops = [2]Ops{{f: dbl}, {g: inc}}
+
+func run(h H, n int) int {
+	if h == nil {
+		return -1
+	}
+	return h(n)
+}
+
+func main() {
+	for i, h := range table {
+		println(i, h == nil, h != nil, run(h, 10))
+	}
+	for i, h := range list {
+		println(i, h == nil, run(h, 3))
+	}
+	println(ops.f != nil, ops.g == nil, ops.f(1))
+	println(opsArr[0].f == nil, opsArr[1].g == nil, opsArr[0].g == nil, opsArr[1].g(5))
+	println(table[2](4), list[1](4))
+}
+`,
+		want: "0 false true 11\n1 true false -1\n2 false true 20\n0 false 6\n1 false 4\ntrue true 2\nfalse false true 6\n8 5\n",
+	},
+	{
+		// The nil check missed two shapes since it shipped: a STORE through a
+		// pointer -- `*p = v`, on the board a silent write into hub address 0, the
+		// boot area -- and every dereference of a pointer to an ARRAY, which had
+		// been left out because the C backend drops a store made through the guard's
+		// call into an element of one. Each of the following is one such shape, and
+		// each panics before it runs on; `len(p)` and the index-only `for i := range
+		// p` do not, as in Go, and stand in the case above.
 		name: "a store through a nil pointer panics",
 		src: `func main() {
 	var p *int

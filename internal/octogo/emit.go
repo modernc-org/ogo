@@ -2663,7 +2663,7 @@ func (e *emitter) goDefs() string {
 		}
 		fmt.Fprintf(&tramps, "static void %s(void* p) {\n\t%s* a = p;\n", goTrampolineCName(s.id), goArgsCName(s.id))
 		if s.nilFn {
-			tramps.WriteString("\tif (a->ogo_fn == 0) ogo_panic(\"nil pointer dereference\");\n")
+			tramps.WriteString("\tif (!a->ogo_fn) ogo_panic(\"nil pointer dereference\");\n") // !, not == 0: nilHelperDef
 		}
 		n := len(s.args)
 		pack := ""
@@ -5044,9 +5044,16 @@ const ogoSliceBound64u = "static int ogo_sbound64u(uint64_t i) {\n" +
 // Address zero on this target is ordinary Hub RAM rather than a trap, so without
 // this a read through a nil pointer yields whatever lives at 0 and a WRITE stores
 // into the boot area, both silently. Go panics for each.
+//
+// The test is `!p` and not `p == 0`: the target's compiler compares a FUNCTION
+// pointer by calling its system module's funcptr_cmp, which takes the ADDRESSES of
+// two method pointers and is handed the values, so `p == 0` compares the memory at
+// p with the memory at 0. A function named in a static initializer is stored as
+// its method-table index shifted up by 20, which addresses 0 again, so a table of
+// functions read back nil (doc/funcptr-compare-nil.c). `!p` tests the word.
 func nilHelperDef(ptrType, name string) string {
 	return "static " + ptrType + " " + name + "(" + ptrType + " p) {\n" +
-		"\tif (p == 0) ogo_panic(\"nil pointer dereference\");\n" +
+		"\tif (!p) ogo_panic(\"nil pointer dereference\");\n" +
 		"\treturn p;\n" +
 		"}\n"
 }
@@ -47519,6 +47526,44 @@ func (e *emitter) sliceNilCompareAt(kids []Node, i int) (op string, sliceNode No
 	return "", Node{}, false
 }
 
+// funcNilCompareAt is sliceNilCompareAt for a FUNCTION value: `f == nil` or `f !=
+// nil`, either operand order.
+func (e *emitter) funcNilCompareAt(kids []Node, i int) (op string, fn Node, ok bool) {
+	if i+2 >= len(kids) || kids[i+1].sym != RelOp {
+		return "", Node{}, false
+	}
+	if op = e.opText(kids[i+1].ast); op != "==" && op != "!=" {
+		return "", Node{}, false
+	}
+	l, r := kids[i], kids[i+2]
+	lNil, rNil := e.isNilExpr(l.ast), e.isNilExpr(r.ast)
+	if lNil == rNil {
+		return "", Node{}, false
+	}
+	operand := l
+	if lNil {
+		operand = r
+	}
+	if ct, ok := e.inferCType(operand.ast); ok && e.isFuncCType(ct) {
+		return op, operand, true
+	}
+	return "", Node{}, false
+}
+
+// emitFuncNilTriple lowers a function-vs-nil comparison to a test of the word,
+// `(!f)` and `(!!f)`: the target's compiler compares function pointers through a
+// helper that reads memory at them, which a function named in a static initializer
+// sends to address 0 (nilHelperDef).
+func (e *emitter) emitFuncNilTriple(fn Node, op string) {
+	if op == "==" {
+		e.emit("(!(")
+	} else {
+		e.emit("(!!(")
+	}
+	e.emitExprNode(fn)
+	e.emit("))")
+}
+
 // emitSliceNilTriple lowers a slice-vs-nil comparison. A slice is nil exactly when
 // its backing pointer is null, so `s == nil` becomes `(s.ptr == 0)`.
 func (e *emitter) emitSliceNilTriple(sliceNode Node, op string) {
@@ -47785,6 +47830,12 @@ func (e *emitter) emitKidsStringCompare(kids []Node) {
 		}
 		if op, sn, ok := e.sliceNilCompareAt(kids, i); ok {
 			e.emitSliceNilTriple(sn, op)
+			i += 3
+			seen++
+			continue
+		}
+		if op, fn, ok := e.funcNilCompareAt(kids, i); ok {
+			e.emitFuncNilTriple(fn, op)
 			i += 3
 			seen++
 			continue

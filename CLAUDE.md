@@ -1307,6 +1307,28 @@ host's stack cannot hold, and one known: a printf whose argument's String() prin
 writes that output in the middle of the line, Go's fmt formatting the whole line
 before it writes it.
 
+**A MUTANT IS RUN ON THE BOARD, AND SO IS EVERY CHANGE TO A CHECK** (2026-10-07).
+The valid mutants had matched Go on the host and had never run on the target; the
+run-case mutants whose change is a constant or an operator -- value edges, the
+target's typing rules -- were built and loaded one by one (bmut/ in the scratchpad:
+prep.sh writes Go's normalized output and builds, brun loads under the board lock
+and reads until the output equals Go's). The first board-only difference was not
+the mutant's: its parent run case panicked, "nil pointer dereference". The check of
+a call through a function value written the day before was `p == 0`, and the
+target's compiler compares a FUNCTION pointer by calling its system module's
+funcptr_cmp, which takes the ADDRESSES of two method pointers and is handed the
+values, so it compares the memory at p with the memory at 0. A function named in a
+static initializer is stored as its method-table index shifted up by 20, which is
+address 0 again: every entry of a table of functions in a package variable compared
+nil. The check panicked, and a program's own `if h != nil { h(x) }` had skipped the
+call in every release (doc/funcptr-compare-nil.c). Every nil test of a function
+value is a test of its word, `!f` (emitFuncNilTriple, nilHelperDef, the go
+trampoline's); no listing of the corpus calls funcptr_cmp now. The run case stood in
+the table the board runs, the host's compiler compared right, and `make board` was
+not run after the check went in, so v0.49.0 was tagged with it. **A change to what
+the emitter writes around every call or every dereference -- a check, a helper -- is
+run through `make board` before it is committed.**
+
 **A COMPILER RUN IN A SWEEP IS CAPPED, AND A CRASH IS NOT A REFUSAL** (2026-09-20).
 A probe program is written to find a fault, and a fault is not always a wrong
 answer: `type A struct{ A }` sent the emitter down an embedding at 4 GB a second, the
