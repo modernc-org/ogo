@@ -482,6 +482,12 @@ func boardBuildPaths(ogo, out, allowWarning string, flags []string, src string) 
 // it closes the port cleanly and exits 0. SIGKILL remains only as a last resort
 // if a genuinely hung load ignores Ctrl-].
 func boardLoad(ogo, port, binary, stop string) (string, bool) {
+	return boardLoadGrace(ogo, port, binary, stop, 0)
+}
+
+// boardLoadGrace is boardLoad reading on for grace after stop has come, which is how
+// a test sees that nothing FOLLOWS what a program printed.
+func boardLoadGrace(ogo, port, binary, stop string, grace time.Duration) (string, bool) {
 	// -t echoes the program's serial output; -NOEOF keeps terminal mode alive
 	// despite the stdin pipe carrying no keystrokes until we send Ctrl-].
 	cmd := exec.Command(ogo, "loadp2", "-t", "-NOEOF", "-p", port, "-b", strconv.Itoa(boardBaud), binary)
@@ -528,7 +534,11 @@ func boardLoad(ogo, port, binary, stop string) (string, bool) {
 				buf.Write(tmp[:n])
 				if !matched && strings.Contains(cleanBoardOutput(buf.String()), stop) {
 					matched = true
-					quit()
+					if grace == 0 {
+						quit()
+					} else {
+						time.AfterFunc(grace, quit)
+					}
 				}
 			}
 			if rerr != nil {

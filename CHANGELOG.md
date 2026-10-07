@@ -63,6 +63,17 @@ shipped section tells a reader on that version that they have behaviour they do 
 
 ### Behaviour changes
 
+- **A program ends as Go's does, every cog with it**: an unrecovered panic on any
+  cog stops every cog -- the program's goroutines and any driver a Spin2 object
+  started -- where it stopped the panicking cog alone and the others ran on,
+  `main` included; and a return from `main` stops every cog too, where the
+  target's startup code stopped main's own and left the goroutines running, which
+  specs.go had promised otherwise and the host never did. A stopped cog releases
+  its pins and holds its smart pins in reset, measured on a P2-EDGE, so a program
+  that has ended leaves the pins as a reset does. `--release` still reboots. A
+  program meant to run its cogs on after main is done blocks main, `select {}`.
+  `ogo test` reports a panic at once, "a panic stopped the board", where a
+  panic in a test's goroutine left the runner to wait out its timeout.
 - **A range over an address of anything but an array is refused**, as Go
   refuses it: `for i := range &m.Len` of a uint8 was taken and ranged as the
   integer the address points at, the address's Kind being its pointee's to the

@@ -854,8 +854,8 @@
 //
 //   - The value of an uninitialized pointer is nil.
 //
-// Dereferencing a nil pointer panics, "panic: nil pointer dereference", and halts the
-// cog — one of the runtime checks, alongside an out-of-range index or slice, a
+// Dereferencing a nil pointer panics, "panic: nil pointer dereference", which ends
+// the program — one of the runtime checks, alongside an out-of-range index or slice, a
 // division or remainder by zero, a shift by a negative count and appending past a
 // capacity. It has to be a check rather than a trap the hardware springs: address
 // zero on this target is ordinary Hub RAM, so without one a read yields whatever
@@ -2161,8 +2161,9 @@
 // appended. copy copies
 // min(len(dst), len(src)) elements between two slices of the same element type —
 // which may overlap — and yields that count. clear zeroes a slice's elements in
-// place. panic writes "panic: " and its argument to the serial console and halts
-// the cog; with --release it reboots the board instead. The argument is written as
+// place. panic writes "panic: " and its argument to the serial console and stops
+// every cog, ending the program (see Program execution); with --release it reboots
+// the board instead. The argument is written as
 // Go's runtime writes one: a string as it is; an error's Error() or a Stringer's
 // String(), asked of the dynamic type of an interface; a number or a bool as print
 // writes it, inside its type's name for a defined type, "main.Code(8)", a string's
@@ -3111,13 +3112,13 @@
 // When main returns, or execution falls through the end of the main block,
 // the program terminates.
 //
-// (OctoGo Specific): Standard Go semantics dictate that when main terminates,
-// the program exits and all other goroutines are immediately stopped. Because
-// OctoGo maps goroutines directly to physical Propeller 2 Cogs,
-// the transpiled main function is guaranteed to emit a hardware-level reset
-// or shutdown signal (e.g., _clkset(0, 0)) immediately prior to returning.
-// This prevents orphaned worker Cogs from continuing hardware I/O
-// indefinitely.
+// As in Go, when main returns every other goroutine stops: the cogs the program
+// started -- its goroutines, and any a Spin2 object's driver started -- are
+// stopped before main's own. An unrecovered panic on any cog ends the program the
+// same way, after its message is written (a "--release" build reboots instead). A
+// stopped cog releases its pins and holds its smart pins in reset, so a program
+// that has ended leaves the pins as a reset does, and nothing it started goes on
+// driving them.
 //
 // If an OctoGo program is intended to run indefinitely (e.g., as a daemon
 // handling hardware interrupts or channels on worker Cogs), the main function

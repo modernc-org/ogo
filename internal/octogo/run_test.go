@@ -1784,6 +1784,38 @@ func main() {
 		want: "true\nx 7 x 7 field 9 deep 4\n1 13 6 43 63 0 8 2 13 100 1 4 4\n",
 	},
 	{
+		// A panic ends the whole program, as Go's does: every cog stops, main's
+		// among them, where the panicking goroutine's cog had stopped alone and
+		// main went on to print "main survived" on the board.
+		name: "a goroutine's panic stops main",
+		src: `import "p2"
+
+var started chan bool
+
+var stop bool
+
+func worker() {
+	var a [2]int
+	i := 2
+	started <- true
+	for !stop {
+	}
+	println(a[i])
+}
+
+func main() {
+	go worker()
+	<-started
+	println("before")
+	stop = true
+	p2.WaitMs(200)
+	println("main survived")
+}
+`,
+		want:   "before\npanic: index out of range",
+		panics: true,
+	},
+	{
 		// A call through a nil function VALUE panics, as Go's does; it called
 		// through address zero, which on the target is Hub RAM's first long.
 		name: "a call through a nil function value panics",

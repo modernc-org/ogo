@@ -68,6 +68,23 @@ Until then an imaginary literal (the scanner) and complex64/complex128 where the
 program declares no such name (`errUndefined`) say "complex numbers are not
 supported yet"; flexcc has no `_Complex`, so the emitter will lower them itself.
 
+**A program ends as Go's does, every cog with it** (the user's call, 2026-10-07): a
+debug build's panic stops every other cog and then its own (panicHaltC), and a
+return from main stops every other cog (ogo_end_program, written where main returns
+in a program that starts a cog -- a goroutine or a Spin2 object, whose driver may --
+and nowhere else, so no other program's C changed; a program calling its own main
+ends only in the run of main it began with, ogo_main_top). Before, the panicking cog
+stopped alone and main ran on, and the target's startup code stopped main's cog
+alone after it returned, so goroutines printed and drove their pins on -- where
+specs.go promised them stopped and the host's exit stopped them; mutants run on the
+board showed it, a deferred println after main's return. A stopped cog releases its
+pins and holds its smart pins in reset, measured on a P2-EDGE (a goroutine's 625
+kHz smart pin, 6250 edges in 10 ms, none after its panic), so an ended program
+leaves the pins as a reset does. TestOnBoardProgramEnd reads on past the expected
+text and asks that nothing followed -- the table's board check stops at it, and
+passed the old behaviour. `ogo test` stops reading at a panic's line (loadp2.Capture)
+and says so, where a goroutine's panic left the runner waiting out two minutes.
+
 **recover is PLANNED, for after v1** (the user's call, 2026-10-07), and with it
 the deferred calls a panic runs on its way out. Neither needs a heap -- a record of
 each frame with deferred calls, set up on entry, which a panic unwinds to -- so they

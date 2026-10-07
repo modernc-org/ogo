@@ -23,6 +23,7 @@ import (
 	"bytes"
 	"os"
 	"os/exec"
+	"regexp"
 	"strconv"
 	"strings"
 	"time"
@@ -126,7 +127,9 @@ func buildArgs(o Options) []string {
 
 // Capture loads a program, reads what it prints over the serial line until the
 // output contains stop, and returns it. It is what `ogo test` reports: the board
-// returns no exit status, so the verdict travels back as text.
+// returns no exit status, so the verdict travels back as text. A panic's line ends
+// the capture too, ok false: a debug build's panic stops every cog, so nothing
+// follows it, and the wait for stop would run out the timeout.
 //
 // The loader runs as a SUBPROCESS of this same executable rather than in-process.
 // loadp2's terminal mode owns the real serial port and does not return on its own,
@@ -134,6 +137,9 @@ func buildArgs(o Options) []string {
 // stdin this program can write to. Killing it instead leaves the port in a state
 // that wedges the board until it is physically reset, so SIGKILL is a last resort
 // and not the mechanism.
+// panicLine is a whole line of a panic's message, which ends a program's output.
+var panicLine = regexp.MustCompile(`(?m)^panic: [^\n]*\n`)
+
 func Capture(o Options, stop string, timeout time.Duration) (out string, ok bool) {
 	self, err := os.Executable()
 	if err != nil {
@@ -170,14 +176,19 @@ func Capture(o Options, stop string, timeout time.Duration) (out string, ok bool
 	go func() {
 		var buf bytes.Buffer
 		tmp := make([]byte, 4096)
-		matched := false
+		matched, ended := false, false
 		for {
 			n, rerr := outR.Read(tmp)
 			if n > 0 {
 				buf.Write(tmp[:n])
-				if !matched && strings.Contains(buf.String(), stop) {
+				switch {
+				case matched || ended:
+				case strings.Contains(buf.String(), stop):
 					matched = true
 					stdinW.Write([]byte{0x1d}) // leave terminal mode, close the port
+				case panicLine.MatchString(buf.String()):
+					ended = true
+					stdinW.Write([]byte{0x1d})
 				}
 			}
 			if rerr != nil {

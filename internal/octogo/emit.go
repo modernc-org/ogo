@@ -4974,12 +4974,28 @@ func maxCName(ct string) string { return "ogo_max_" + sanitizeElem(ct) }
 func printSliceCName(elem string) string   { return "ogo_print_slice_" + sanitizeElem(elem) }
 func printlnSliceCName(elem string) string { return "ogo_println_slice_" + sanitizeElem(elem) }
 
+// panicHaltC ends a debug build's panic: every other cog stopped, then this one. On
+// the host abort ends the process, every goroutine's thread with it.
+const panicHaltC = "#ifdef __FLEXC__\n" +
+	"\tfor (int _ogo_c = 0, _ogo_me = _cogid(); _ogo_c < 8; _ogo_c++) if (_ogo_c != _ogo_me) _cogstop(_ogo_c);\n" +
+	"#endif\n" +
+	"\tabort(); // -> _Exit -> _cogstop: halt this cog\n"
+
 // ogoPanicDef is the runtime panic: a best-effort diagnostic to the serial line, a
 // short drain so it flushes, then a halt or -- in a release build -- a reboot. A
-// debug halt (abort -> _Exit -> _cogstop) stops the offending cog for inspection; a
-// release _reboot() restarts the board so an unattended device self-heals.
+// debug halt stops EVERY cog, the program's and the drivers a Spin2 object started,
+// and then the offending one (abort -> _Exit -> _cogstop), as Go ends the whole
+// program at an unrecovered panic; a release _reboot() restarts the board so an
+// unattended device self-heals.
+//
+// It stopped the offending cog alone until 2026-10-07, which left half a program:
+// a stopped cog releases its pins and holds its smart pins in reset -- measured on a
+// P2-EDGE, a goroutine's 625 kHz smart pin went from 6250 edges in 10 ms to none
+// when it panicked -- while every other cog went on driving its own on state nobody
+// updated any more. Every cog stopped is the pin state of a reset, the one the
+// board must stand already, with the message left on the serial line.
 func ogoPanicDef(release bool) string {
-	tail := "\tabort(); // -> _Exit -> _cogstop: halt the offending cog\n"
+	tail := panicHaltC
 	if release {
 		tail = "\t_reboot(); // restart the board (release: self-heal)\n"
 	}
@@ -5497,9 +5513,9 @@ func sortedKeys(m map[string]bool) []string {
 // The traversal mirrors the checker (see it()/sourceFile/funcDecl in check.go):
 // dispatch non-terminals on Node.sym, read terminals via File.tok/File.ch.
 // EmitOption configures a build. The zero configuration emits no automatic runtime
-// checks and halts the offending cog on a panic (abort -> _cogstop). The `ogo build`
-// CLI enables checks by default (see internal/build); its --unchecked omits them and
-// its --release reboots instead of halting.
+// checks and stops every cog on a panic (panicHaltC). The `ogo build` CLI enables
+// checks by default (see internal/build); its --unchecked omits them and its
+// --release reboots instead.
 type EmitOption func(*emitter)
 
 // Checked emits automatic runtime bounds and divide-by-zero checks: an out-of-range
@@ -5508,8 +5524,8 @@ type EmitOption func(*emitter)
 // independent of this option (choose the s, ok = append form to avoid it).
 func Checked() EmitOption { return func(e *emitter) { e.checks = true } }
 
-// Release makes a panic reboot the board (_reboot) instead of halting the cog, so
-// an unattended device self-heals. Diagnostics and checks are unaffected.
+// Release makes a panic reboot the board (_reboot) instead of stopping every cog,
+// so an unattended device self-heals. Diagnostics and checks are unaffected.
 func Release() EmitOption { return func(e *emitter) { e.release = true } }
 
 // InlineMark is what the C of a function marked for the backend to inline says
@@ -5999,6 +6015,12 @@ func emitProgram(pkg *Package, w io.Writer, opts []EmitOption, rename map[string
 		e.needPanic()
 		e.includes["propeller2.h"] = true
 	}
+	// A program that starts a cog -- a goroutine, or a driver a Spin2 object
+	// starts -- stops every other one where main returns (ogoEndProgram).
+	endsCogs := len(e.goSites) != 0 || e.usesSpin2
+	if endsCogs {
+		e.includes["propeller2.h"] = true
+	}
 	// Assemble: header, sorted #includes, result-struct typedefs, prototypes,
 	// then the definitions.
 	incs := make([]string, 0, len(e.includes))
@@ -6174,6 +6196,9 @@ func emitProgram(pkg *Package, w io.Writer, opts []EmitOption, rename map[string
 	// Runtime helpers: the panic routine, then the per-element append helpers (the
 	// trapping form and the ok form), after the typedefs they reference.
 	var helperDefs bytes.Buffer
+	if endsCogs {
+		helperDefs.WriteString(ogoEndProgram)
+	}
 	if e.usesPanic {
 		helperDefs.WriteString(ogoPanicDef(e.release))
 	}
@@ -6572,7 +6597,8 @@ func emitProgram(pkg *Package, w io.Writer, opts []EmitOption, rename map[string
 		return e.err
 	}
 	out.Write(body.Bytes())
-	_, err := w.Write(wrapLongLines(ensureStdint(insertStringLits(out.Bytes(), e.stringLitDecls))))
+	text := e.endProgramC(out.Bytes(), endsCogs)
+	_, err := w.Write(wrapLongLines(ensureStdint(insertStringLits(text, e.stringLitDecls))))
 	return err
 }
 
@@ -6915,6 +6941,7 @@ type emitter struct {
 	deferReplayArgs    []deferArg              // that slot's arguments, so emitCallArgs knows which were captured
 	deferReplayOff     int                     // where a print's own argument 0 is among them: 1 for printf, past its format
 	usesPanic          bool                    // ogo_panic is called: emit its definition and pull in its includes
+	usesSpin2          bool                    // a Spin2 object is declared, whose methods may start cogs
 	testEntry          string                  // the entry point of a test binary, replacing main (see TestEntry)
 	usesBound          bool                    // ogo_bound is called: emit the index bounds-check helper
 	usesBound64        bool                    // ogo_bound64 is called, for an index of int64
@@ -6953,7 +6980,7 @@ type emitter struct {
 	shiftIn            map[*int32]bool         // whether a shift operator occurs under a node, by its place in the AST (see hasShift)
 	divHelpers         map[string][2]string    // guarded signed division helper name -> {operator, value C type}
 	clock              *clockSetting           // a clock the program asks for, instead of the backend's 160 MHz default
-	release            bool                    // release build: a panic reboots (_reboot) instead of halting the cog
+	release            bool                    // release build: a panic reboots (_reboot) instead of stopping every cog
 	inline             bool                    // mark the small functions for the backend to inline (set by Inline)
 	calledNames        map[string]int          // how many times each name is written with a "(" after it, in the whole program: its calls and its declarations (see inlineCandidate)
 	usesInline         bool                    // a function was marked, so the C defines the mark (inlineMacro)
@@ -17900,13 +17927,65 @@ func (e *emitter) emitMain(sig, body []int32) {
 			e.emit(pkgInitCName + "();\n")
 		}
 	}
+	if e.mainReferenced() {
+		// Only the run of main the program began with ends it: a main the program
+		// calls itself, `main()` or `go main()`, returns as any function does.
+		e.ind()
+		e.emit(mainTopMark + "\n")
+	}
 	e.emitDeferDecls()
 	e.w.Write(bodyBuf.Bytes())
 	e.ind()
-	e.emit("return 0;\n")
+	e.emit(e.mainEndC() + "return 0;\n")
 	e.indent--
 	e.emit("}\n")
 }
+
+// endProgramMark stands where main returns, for the program's end to stop every
+// other cog (ogo_end_program); EmitC writes the call there, or nothing where the
+// program starts no cog, which is known only once every body has been emitted.
+const endProgramMark = "/*ogo_end_program*/"
+
+// mainTopMark stands at the top of a main the program calls itself, for the flag
+// telling the run it began with from the others (endProgramC).
+const mainTopMark = "/*ogo_main_top*/"
+
+// mainEndC is what main writes ahead of a return: the mark of the program's end.
+func (e *emitter) mainEndC() string { return endProgramMark + " " }
+
+// endProgramC writes the marks main left: the end of the program where it starts
+// a cog, in the run of main it began with, and nothing at all where it starts none.
+func (e *emitter) endProgramC(text []byte, endsCogs bool) []byte {
+	if !endsCogs {
+		text = bytes.ReplaceAll(text, []byte(endProgramMark+" "), nil)
+		var b bytes.Buffer
+		for line := range bytes.Lines(text) {
+			if string(bytes.TrimSpace(line)) != mainTopMark {
+				b.Write(line)
+			}
+		}
+		return b.Bytes()
+	}
+	end := "ogo_end_program(); "
+	if e.mainReferenced() {
+		end = "if (ogo_main_top) { ogo_end_program(); } "
+		text = bytes.ReplaceAll(text, []byte(mainTopMark),
+			[]byte("static int ogo_main_entered; int ogo_main_top = !ogo_main_entered; ogo_main_entered = 1;"))
+	}
+	return bytes.ReplaceAll(text, []byte(endProgramMark+" "), []byte(end))
+}
+
+// ogoEndProgram ends a program whose main returned: every other cog stopped, as Go
+// ends every goroutine with main. The startup code the target's compiler writes
+// stops main's own cog after it and no other, so the cogs a program started went on
+// running -- printing, and driving their pins -- where specs.go promised them
+// stopped and the host's process exit stopped them. On the host it is nothing: the
+// process ends with main.
+const ogoEndProgram = "static void ogo_end_program(void) {\n" +
+	"#ifdef __FLEXC__\n" +
+	"\tfor (int _ogo_c = 0, _ogo_me = _cogid(); _ogo_c < 8; _ogo_c++) if (_ogo_c != _ogo_me) _cogstop(_ogo_c);\n" +
+	"#endif\n" +
+	"}\n"
 
 // funcSignatureC builds the C signature `<ret> name(params)` for a user function,
 // e.g. `int add(int a, int b)`, `void run(void)`, or -- for more than one result
@@ -33972,7 +34051,7 @@ func (e *emitter) emitReturn(nodes []Node) {
 		// named-result function returns its result variables (naked return).
 		switch {
 		case e.mainRet:
-			e.emit("return 0;\n")
+			e.emit(e.mainEndC() + "return 0;\n")
 		case len(e.curResultNames) == 0:
 			e.emit("return;\n")
 		case len(e.curResultNames) == 1:
@@ -36743,7 +36822,7 @@ func (e *emitter) needPanicEnd() {
 // ogoPanicEndDef is the end of a panic whose message was written by the statements
 // before it: ogo_panic's newline, drain and halt.
 func ogoPanicEndDef(release bool) string {
-	tail := "\tabort(); // -> _Exit -> _cogstop: halt the offending cog\n"
+	tail := panicHaltC
 	if release {
 		tail = "\t_reboot(); // restart the board (release: self-heal)\n"
 	}

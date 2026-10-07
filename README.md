@@ -300,8 +300,8 @@ broken.
   zero, a shift by a negative count, appending past a slice's capacity, and cog
   exhaustion, and a **nil pointer dereference**. Each prints
   `panic: <what>` and
-  halts the offending cog; `--release` reboots the board instead, and `--unchecked`
-  omits the checks.
+  stops every cog, as Go ends the whole program; `--release` reboots the board
+  instead, and `--unchecked` omits the checks.
 * Small functions are inlined where they are called, a call being dear on this
   target: an accessor of one line costs the check it makes and not the call as
   well. `--no-inline` leaves it to the C backend.

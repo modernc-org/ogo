@@ -1676,7 +1676,10 @@ func TestEmitCAppend(t *testing.T) {
 		"\tprintf(\"panic: %s\\n\", msg);\n" +
 		"\tfflush(stdout); // abort discards a buffered message; a pipe buffers\n" +
 		"\t_waitms(10); // let the message flush over the serial line first\n" +
-		"\tabort(); // -> _Exit -> _cogstop: halt the offending cog\n" +
+		"#ifdef __FLEXC__\n" +
+		"\tfor (int _ogo_c = 0, _ogo_me = _cogid(); _ogo_c < 8; _ogo_c++) if (_ogo_c != _ogo_me) _cogstop(_ogo_c);\n" +
+		"#endif\n" +
+		"\tabort(); // -> _Exit -> _cogstop: halt this cog\n" +
 		"}\n" +
 		"static ogo_slice_int ogo_append_int(ogo_slice_int s, int v) {\n" +
 		"\tif (s.len >= s.cap) {\n" +
@@ -2211,7 +2214,10 @@ func TestEmitCChecks(t *testing.T) {
 		"\tprintf(\"panic: %s\\n\", msg);\n" +
 		"\tfflush(stdout); // abort discards a buffered message; a pipe buffers\n" +
 		"\t_waitms(10); // let the message flush over the serial line first\n" +
-		"\tabort(); // -> _Exit -> _cogstop: halt the offending cog\n" +
+		"#ifdef __FLEXC__\n" +
+		"\tfor (int _ogo_c = 0, _ogo_me = _cogid(); _ogo_c < 8; _ogo_c++) if (_ogo_c != _ogo_me) _cogstop(_ogo_c);\n" +
+		"#endif\n" +
+		"\tabort(); // -> _Exit -> _cogstop: halt this cog\n" +
 		"}\n" +
 		"static int ogo_bound(int i, int n) {\n" +
 		"\tif ((unsigned)i >= (unsigned)n) ogo_panic(\"index out of range\");\n" +
@@ -2438,7 +2444,10 @@ func TestEmitCSliceBounds(t *testing.T) {
 		"\tprintf(\"panic: %s\\n\", msg);\n" +
 		"\tfflush(stdout); // abort discards a buffered message; a pipe buffers\n" +
 		"\t_waitms(10); // let the message flush over the serial line first\n" +
-		"\tabort(); // -> _Exit -> _cogstop: halt the offending cog\n" +
+		"#ifdef __FLEXC__\n" +
+		"\tfor (int _ogo_c = 0, _ogo_me = _cogid(); _ogo_c < 8; _ogo_c++) if (_ogo_c != _ogo_me) _cogstop(_ogo_c);\n" +
+		"#endif\n" +
+		"\tabort(); // -> _Exit -> _cogstop: halt this cog\n" +
 		"}\n" +
 		"static ogo_slice_int ogo_reslice_int(int* p, int c, int lo, int hi) {\n" +
 		"\tif ((unsigned)hi > (unsigned)c || (unsigned)lo > (unsigned)hi) ogo_panic(\"slice bounds out of range\");\n" +
@@ -4644,7 +4653,10 @@ func main() {
 		"\tprintf(\"panic: %s\\n\", msg);\n" +
 		"\tfflush(stdout); // abort discards a buffered message; a pipe buffers\n" +
 		"\t_waitms(10); // let the message flush over the serial line first\n" +
-		"\tabort(); // -> _Exit -> _cogstop: halt the offending cog\n" +
+		"#ifdef __FLEXC__\n" +
+		"\tfor (int _ogo_c = 0, _ogo_me = _cogid(); _ogo_c < 8; _ogo_c++) if (_ogo_c != _ogo_me) _cogstop(_ogo_c);\n" +
+		"#endif\n" +
+		"\tabort(); // -> _Exit -> _cogstop: halt this cog\n" +
 		"}\n" +
 		"static ogo_slice_int ogo_append_int(ogo_slice_int s, int v) {\n" +
 		"\tif (s.len >= s.cap) {\n" +

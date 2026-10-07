@@ -199,8 +199,8 @@ writes no binary, so -o has nothing to write and says so.
 
 Runtime checks are on by default: out-of-range indexing and slicing, division and
 remainder by zero, a shift by a negative count, appending past a slice's capacity,
-a nil pointer dereference and cog exhaustion. Each prints "panic: <what>" and halts
-the offending cog. A pointer to an ARRAY is the one that carries no nil check, which
+a nil pointer dereference and cog exhaustion. Each prints "panic: <what>" and stops
+every cog, as Go ends the program. A pointer to an ARRAY is the one that carries no nil check, which
 is a limit of the C backend rather than a rule.
 
 The system clock is 160 MHz unless --clock asks for another, that being what the C
@@ -231,7 +231,7 @@ where the binary would be, to be reported with the program.
 	-o output     write the binary here
 	--unchecked   omit the runtime checks
 	--no-inline   inline no more than the C backend does by itself
-	--release     reboot the board on a panic instead of halting the cog
+	--release     reboot the board on a panic instead of stopping every cog
 	--clock hz    the system clock to ask for, e.g. 200MHz (default 160 MHz)
 	--gostack longs
 	              stack per goroutine, in longs (64..8192). Without it the

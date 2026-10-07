@@ -354,6 +354,10 @@ func testPackage(dir string, opts testOptions, stdout, stderr io.Writer) (int, e
 		}
 	}
 	switch {
+	case !ok && strings.Contains(out, "panic: "):
+		// A panic stops every cog of a debug build, the runner's among them.
+		fmt.Fprintf(stdout, "FAIL\t%s\t[a panic stopped the board]\n", dir)
+		return 1, nil
 	case !ok:
 		fmt.Fprintf(stdout, "FAIL\t%s\t[the board produced no result]\n", dir)
 		return 1, nil

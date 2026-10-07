@@ -235,6 +235,7 @@ func (e *emitter) emitSpin2Objects(pkgs []*Package) {
 		}
 	}
 	if n != 0 {
+		e.usesSpin2 = true
 		e.emit("\n")
 	}
 }
