@@ -27,6 +27,16 @@ shipped section tells a reader on that version that they have behaviour they do 
 
 ### Fixed
 
+- **A struct literal holding an array element that is no literal may stand as a
+  value**: `take(R{1, la})`, `takep(&R{2, mk()})` and `R{1, la}.s[1]` were refused,
+  "bind the literal to a variable first", where the same literal bound to a
+  variable built; it is a temporary declared ahead of the statement, with the
+  copies C cannot put in an initializer after it. Beside it, two older faults: a
+  literal standing in a call inside a declaration's initializer, `x := take(R{5,
+  la})`, sent its copy to `x.s` of an int x, a C error on the host; and a call
+  filling an array element ran after the elements written after it, `R{mk(), g}`
+  reading g before mk changed it, where Go's compiler and every other position here
+  read it after.
 - **Three mistakes Go refuses are refused**: a call's result of no Kind -- an
   array, a struct, a pointer -- into a variable of another type of no Kind in a
   destructured assignment, `p, n = two()` for a `*U` p and a `U` result, also

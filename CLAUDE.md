@@ -2549,6 +2549,21 @@ array literal had a type and a slice literal none, so a range value over one was
 asked nothing. One cell refuses where gc takes it: `1 << F` for a typed float
 constant F of whole value, which go/types checks for an integer type only where
 the count is not a constant -- the spec's words refuse it, and so does this.
+Its valid mutants, run against Go, showed one order of ours: `result{j.id, d.Sum(),
+d.Blocks}` with Sum a pointer method read d.Blocks before Sum ran. A call filling an
+ARRAY element runs after the whole literal (its litFixup), so bindLitValues binds
+it in its turn wherever a value after it reads anything, even as the last value
+that does something. Probing the row found the literal itself refused as a value,
+`take(R{1, la})`, `R{1, la}.s[1]`, "bind the literal to a variable first": the
+expression path renders a struct literal with an owner for its copies once, and
+where it collected some it is a temporary declared ahead with the copies after it
+(hoistStructLit for the paths that hoisted a literal already). And the OWNER
+leaked: a declaration captured the copies of any literal anywhere in its
+initializer, `x := take(R{5, la})` writing `memcpy(x.s, ...)` for an int x, and so
+did a literal's element rendering a call -- emitVarDeclInit captures only for the
+literal itself or its address, as pkgInitAssign did, and notLitOwner clears the
+owner for an element that is no literal. **An owner of deferred work is the
+storage the literal fills, not whatever is being rendered when it is found.**
 
 **A STRUCT HOLDING AN ARRAY IS COPIED, NEVER ASSIGNED** (2026-09-23). The target's C
 compiler copy-initializes and assigns one only at some SIZES -- "Unable to multiply

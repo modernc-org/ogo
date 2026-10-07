@@ -20555,11 +20555,10 @@ func (e *emitter) litMethodHead(rhs []int32) (string, []Node, bool) {
 		if e.methodPtr[e.methodCName(ctype, e.soleIdent(steps[0].ast))] {
 			return "", nil, false
 		}
-		tmp, _ := memo(lit, func() (string, bool) {
-			tmp := e.hoist(ctype, func() { e.emitCompositeLit(ctype, lit, true) })
-			e.locals[tmp] = ctype
-			return tmp, true
-		})
+		tmp, ok := memo(lit, func() (string, bool) { return e.hoistStructLit(ctype, lit) })
+		if !ok {
+			return "", nil, false
+		}
 		return tmp, steps, true
 	}
 	return "", nil, false
@@ -20602,6 +20601,28 @@ func (e *emitter) litMethodMulti(ast []int32) bool {
 	return len(e.funcRet[e.methodCName(methodBaseType(ctype), e.soleIdent(steps[0].ast))]) > 1
 }
 
+// hoistStructLit binds a struct literal to a temporary declared ahead of the
+// statement: its braces initialize the temporary, and an element C cannot put in an
+// initializer -- an array, or a struct holding one, from a variable or a call -- is
+// copied in after it (litFixupCopies), as ifaceAddrLitOperand does for `&T{...}`.
+// Hoisted bare, such a literal had no owner for the copies and was refused, "bind
+// the literal to a variable first", where Go reads `R{1, la}.s[1]` as it stands.
+func (e *emitter) hoistStructLit(ctype string, lit Node) (string, bool) {
+	name := ""
+	fixups := e.captureLitFixups(func() {
+		name = e.hoist(ctype, func() { e.emitCompositeLit(ctype, lit, true) })
+	})
+	stmts, ok := e.litFixupCopies(name, fixups)
+	if !ok {
+		return "", false
+	}
+	for _, stmt := range stmts {
+		e.prologue = append(e.prologue, stmt+"\n")
+	}
+	e.locals[name] = ctype
+	return name, true
+}
+
 // emitStructLitChain emits a struct literal read through a suffix: the literal is
 // bound to a temporary of its type, declared ahead of the statement, and the steps
 // -- fields, indexes, a method call -- apply to that. The temporary is this frame's,
@@ -20633,8 +20654,10 @@ func (e *emitter) emitStructLitChain(n Node, ctype string, lit Node, steps []Nod
 			return
 		}
 	}
-	tmp := e.hoist(ctype, func() { e.emitCompositeLit(ctype, lit, true) })
-	e.locals[tmp] = ctype
+	tmp, ok := e.hoistStructLit(ctype, lit)
+	if !ok {
+		return
+	}
 	if slices.ContainsFunc(steps, func(st Node) bool { return st.sym == CallSuffix }) {
 		if !e.emitCallExpr(tmp, steps) {
 			e.fail("cannot read %s: this form is not supported yet", e.f.exprSource(n))
@@ -21142,7 +21165,7 @@ func (e *emitter) emitLitElement(v Node, expect structField, brace bool) {
 		if isName {
 			base = e.varRef(base)
 		} else {
-			base = e.hoist(expectType, func() { e.emitExpr(v.ast) })
+			base = e.hoist(expectType, func() { e.notLitOwner(v, func() { e.emitExpr(v.ast) }) })
 		}
 		e.emit(e.structBraceC(base, expectType))
 		return
@@ -21151,7 +21174,24 @@ func (e *emitter) emitLitElement(v Node, expect structField, brace bool) {
 		e.emit(lit) // a wide integer standing for a float; see floatConstC
 		return
 	}
-	e.emitExpr(v.ast)
+	e.notLitOwner(v, func() { e.emitExpr(v.ast) })
+}
+
+// notLitOwner renders an element of a literal that is no literal itself -- a call, an
+// operation -- with no owner for a literal's deferred copies (litFixable): a literal
+// INSIDE it, `[]int{take(R{1, la})}`, is the call's argument and not storage the
+// outer literal fills, and recorded at the outer's path its copy went into the outer
+// element, `memcpy(xs[0].s, ...)` for an int element. A literal written as the
+// element itself keeps the owner, its copies being the outer's own.
+func (e *emitter) notLitOwner(v Node, render func()) {
+	if _, _, isAddr := e.addrOfCompositeLit(v.ast); isAddr || e.isCompositeLitExpr(v) {
+		render()
+		return
+	}
+	saved := e.litFixable
+	e.litFixable = false
+	render()
+	e.litFixable = saved
 }
 
 // structBraceC renders a struct VALUE reached by base as the brace initializer an
@@ -23088,19 +23128,39 @@ func (e *emitter) bindLitValues(lit Node) (release func()) {
 		return release
 	}
 	var cands []Node
-	for _, v := range e.litValueOrder(lit, nil) {
+	order := e.litValueOrder(lit, nil)
+	lastAt := -1
+	for i, v := range order {
 		if len(v.ast) == 0 || !e.exprHasEffect(v.ast) {
 			continue
 		}
 		if _, bound := e.boundOperands[&v.ast[0]]; bound {
 			continue
 		}
-		cands = append(cands, v)
+		cands, lastAt = append(cands, v), i
 	}
-	if len(cands) < 2 {
+	// A call returning an ARRAY fills its element after the literal is built (its
+	// fixup), so even as the last value that does something it runs after every
+	// value written after it: `R{mk(), g}` read g before mk changed it, where Go's
+	// compiler and every other position here read it after. Such a call is bound
+	// in its turn when a value after it reads anything.
+	keepLast := false
+	if len(cands) > 0 {
+		if _, _, isCall := e.arrayResultCall(cands[len(cands)-1].ast); isCall {
+			for _, v := range order[lastAt+1:] {
+				if _, isConst := e.foldConstVal(v.ast); len(v.ast) != 0 && !isConst {
+					keepLast = true
+					break
+				}
+			}
+		}
+	}
+	if len(cands) < 2 && !keepLast {
 		return release
 	}
-	cands = cands[:len(cands)-1]
+	if !keepLast {
+		cands = cands[:len(cands)-1]
+	}
 	cts := make([]string, len(cands))
 	arrayCall := make([]bool, len(cands))
 	bindable := true
@@ -42458,7 +42518,18 @@ func (e *emitter) emitVarDeclInit(ctype, name string, initExpr []int32) {
 	}
 	// An element of a struct literal that C cannot put in an initializer -- an
 	// ARRAY field filled from a value -- is zeroed there and copied in here, the
-	// declaration being what gives the literal a name to copy into.
+	// declaration being what gives the literal a name to copy into. Only where the
+	// initializer IS the literal: one standing in a call's argument, `x :=
+	// take(R{1, la})`, is not the variable's storage, and its copy went to `x.s` of
+	// an int x (it binds itself, emitExprNode).
+	_, _, isLit := e.soleCompositeLit(initExpr)
+	if _, _, isAddr := e.addrOfCompositeLit(initExpr); !isLit && !isAddr {
+		e.ind()
+		e.emit(ctype + " " + cn + " = ")
+		e.emitVarInit(initExpr)
+		e.emit(";\n")
+		return
+	}
 	fixups := e.captureLitFixups(func() {
 		e.ind()
 		e.emit(ctype + " " + cn + " = ")
@@ -49090,7 +49161,37 @@ func (e *emitter) emitExprNode(n Node) {
 				return
 			}
 			if name, lit, ok := e.factorCompositeLit(kids); ok {
-				e.emitCompositeLit(name, lit, e.declInit)
+				// A struct literal standing as a value, `take(R{1, la})`, rendered
+				// with an owner for the copies C cannot put in it: where it has
+				// none it stands as it is, and where it has some it is a temporary
+				// declared ahead of the statement with the copies after it -- it
+				// was refused, "bind the literal to a variable first".
+				if e.declInit || e.litFixable || !e.isStruct(name) {
+					e.emitCompositeLit(name, lit, e.declInit)
+					return
+				}
+				text := ""
+				underAddr := e.litUnderAddr // `&R{1, la}`: the copies go through the address
+				fixups := e.captureLitFixups(func() { text = e.captureC(func() { e.emitCompositeLit(name, lit, false) }) })
+				if len(fixups) == 0 {
+					e.emit(text)
+					return
+				}
+				tmp := e.newTmp()
+				e.prologue = append(e.prologue, e.bindC(name, tmp, text)...)
+				dst := tmp
+				if underAddr {
+					dst = "(&" + tmp + ")"
+				}
+				stmts, ok := e.litFixupCopies(dst, fixups)
+				if !ok {
+					return
+				}
+				for _, stmt := range stmts {
+					e.prologue = append(e.prologue, stmt+"\n")
+				}
+				e.locals[tmp] = name
+				e.emit(tmp)
 				return
 			}
 			// A slice literal standing as a value: bound to a local declared before

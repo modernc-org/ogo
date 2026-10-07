@@ -1897,6 +1897,68 @@ func main() {
 		want: "1 10 2 20 12\n5 4 5 345\n6 1 10 6\n30 4 1234\n4 4 777\n5 9 8\n12 2\n10 2\n8 811298\n",
 	},
 	{
+		// A struct literal holding an array element that is no literal -- a
+		// variable, a call -- standing as a VALUE, an argument or a chain's head,
+		// is a temporary declared ahead of the statement with the copies after it:
+		// it was refused, "bind the literal to a variable first". And a call
+		// filling such an element runs in its turn, before what is written after
+		// it reads what it changed: `struct{...}{mk(), g}` read g first.
+		name: "struct literals holding arrays as values",
+		src: `type R struct {
+	a int
+	s [2]int
+}
+
+type H struct {
+	p *R
+	n int
+}
+
+var ga = [2]int{7, 8}
+
+var g int
+
+func mk() [2]int {
+	g++
+	return [2]int{g, 10 * g}
+}
+
+func take(r R) int { return r.a + r.s[1] }
+
+func takep(r *R) int { return r.a + r.s[0] }
+
+func (r R) sum() int { return r.a + r.s[0] + r.s[1] }
+
+var ch chan R
+
+func main() {
+	la := [2]int{3, 4}
+	println(take(R{1, la}), take(R{2, ga}), take(R{3, mk()}), g)
+	println(R{1, la}.s[1], R{2, mk()}.sum(), g)
+	println(takep(&R{4, la}), takep(&R{5, mk()}), g)
+	h := H{&R{1, la}, takep(&R{6, ga})}
+	println(h.p.s[1], h.n)
+	x := take(R{5, la}) + R{6, ga}.s[0]
+	xs := []int{take(R{1, la}), 2}
+	println(x, xs[0])
+	ok := false && take(R{1, mk()}) > 0
+	println(ok, g)
+	r := R{4, mk()}
+	q := R{5, mk()}
+	println(r.s[0], r.a, q.s[0], g)
+	w := struct {
+		s [2]int
+		n int
+	}{mk(), g}
+	println(w.s[0], w.n)
+	go func() { ch <- R{7, mk()} }()
+	v := <-ch
+	println(v.s[0], v.a, g)
+}
+`,
+		want: "5 10 13 1\n4 24 2\n7 8 3\n4 13\n16 5\nfalse 3\n4 4 5 5\n6 6\n7 7 7\n",
+	},
+	{
 		// A call through a nil function VALUE panics, as Go's does; it called
 		// through address zero, which on the target is Hub RAM's first long.
 		name: "a call through a nil function value panics",
