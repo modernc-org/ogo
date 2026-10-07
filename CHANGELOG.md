@@ -27,6 +27,14 @@ shipped section tells a reader on that version that they have behaviour they do 
 
 ### Fixed
 
+- **A 32-bit unsigned expression widened to 64 bits is right on the target**:
+  `int64(0 - v)` for a uint32 v printed -166570509754957831 on the board for Go's
+  4294967289, as did `uint64(z + v)` of a constant zero and `float64(0 + v)`, and a
+  shift whose count folded to `0u + n` -- `x << ((28 &^ 28) + (55 >> g))` -- panicked
+  "negative shift amount". The target's C compiler writes no high word when it
+  widens such an expression with a zero constant on its left
+  (doc/widen-zero-plus-unsigned.c); the operand is cast to uint32_t first. Found
+  by OctoSmith seed 5849 on the board; right on the host, and in every release.
 - **printf's other verbs print a struct as fmt does**: `%d`, `%x`, `%X`, `%o`,
   `%b`, `%c`, `%U`, `%s`, `%q`, `%t` and the float verbs apply to every field in
   turn, through nested structs, arrays and slices, with a flag, a width and a

@@ -2629,6 +2629,20 @@ sweep of ten struct shapes under fourteen verbs and seven specs, 980 programs
 against Go, had 407 match and none differ; the refusals are a field the verb does
 not suit (fmt's `%!d(...)`, refused by design), '#' (Go-syntax %#v among them), a
 float under %x or %b, and an exported String() field under the text verbs.
+The board sweep of fuzzer seeds 5501-6000 the same day, with 6586c9d -- 456 passing
+(five on a second load, the loader's), 43 outgrowing a cog -- found a SILENT backend
+fault in seed 5849 ("negative shift amount" on the board, OK on the host): a
+cast to a 64-bit type of a 32-bit UNSIGNED expression with a zero constant on its
+left, `(int64_t)(0u + u)` and any operator, writes no high word -- the shift count
+of `x << ((28 &^ 28) + (55 >> g))` was folded to `0u + ...` and widened for the
+helper -- and `int64(0 - v)` of a uint32 printed garbage, in every release
+(doc/widen-zero-plus-unsigned.c). Bounded on the board over 180 shapes first: a
+zero on the right, an int, a narrower unsigned, a variable, a call and every
+implicit conversion are right, and so is a cast to uint32_t first, which the emitter
+writes now wherever it widens such an expression (widenU32: the conversion, the
+int-to-float helper's operand, a shift's count). 422 corpus programs gained the
+inner cast and all build to byte-identical binaries, so the price is nothing; none
+of them had been hit. Recorded among the faults pending upstream.
 
 **A STRUCT HOLDING AN ARRAY IS COPIED, NEVER ASSIGNED** (2026-09-23). The target's C
 compiler copy-initializes and assigns one only at some SIZES -- "Unable to multiply

@@ -10426,6 +10426,39 @@ func main() {
 		want: "[{5 -12}] [{5 -c}] [{5 -C}] [{5 -14}] [{101 -1100}] [{+5 -12}] [{    5   -12}] [{5    -c  }|] [{00000101 -0001100}] [{A B}] [{U+0041 U+1F600}]\n[{7 {1 2} [10 255 0] [-1 300] 3 -4}] [{  7 {  1   2} [ 10 255   0] [ -1 300]   3  -4}] [{7 {1 2} [12 377 0] [-1 454] 3 -4}] [{    4}]\n[[{1 2} {3 4}]] [[{1 2} {3 4}]] [[{   1    2} {   3    4}]] [[{9 8} {7 6}]] [[{09 08} {07 06}]]\n[{ab c}] [{\"ab\" \"c\"}] [{   ab     c}] [{ab  c  }|] [{6162 63}] [{6869 7A}] [{a c}]\n[{true false}] [{1.500000 -2.250000}] [{1.50 -2.25}] [{1.500000e+00 -2.250000e+00}] [{   1.500   -2.250}] [{+1.5 -2.2}]\n[{6f6b 0102fe abcd [0102 0304]}] [{6F 6B 01 02 FE AB CD [01 02 03 04]}] [{t hey hi [ab cd]}]\n[{{1 2} [{3 4} {5 6}]}] [{{1 2} [{3 4} {5 6}]}] [{3 -3}] [[{{1 2} [{3 4} {5 6}]}]]\n[{5 -12} {5 -12} {+5 -12} {X:5 Y:-12}] [{3} named]\n",
 	},
 	{
+		name: "a 32-bit unsigned expression widened to 64 bits",
+		src: `// A 32-bit unsigned EXPRESSION widened to 64 bits by a conversion, an int-to-float
+// conversion or a shift's count. The target's C compiler wrote no high word for one
+// with a zero constant on its left, 0 - v or 0u + n, keeping a register's garbage:
+// int64(0 - v) printed -166570509754957831 on the board, and a shift count folded
+// to 0u + n came out negative and panicked (doc/widen-zero-plus-unsigned.c).
+func id(x uint32) uint32 { return x }
+
+func idu(x uint) uint { return x }
+
+const z = 0
+
+type W uint32
+
+func main() {
+	v := id(7)
+	w := idu(9)
+	println(int64(0-v), uint64(0+v), int64(0|v), int64(0^v), int64(z-v), uint64(z+v))
+	println(int64(0-w), uint64(z+w), int64(-v), uint64(^v))
+	s := 3
+	println(s<<(0+v>>1), s<<((5&^5)+v), s>>(z+v))
+	var x int64 = 100
+	println(x<<(0+v), x>>(z|v))
+	k := W(5)
+	println(int64(0+k), float64(0+v), int64(v-0), uint64(1*v))
+	var arr [10]int
+	arr[0+v] = 4
+	println(arr[z+v], arr[7])
+}
+`,
+		want: "4294967289 7 7 7 4294967289 7\n4294967287 9 4294967289 4294967288\n24 384 0\n12800 0\n5 7 7 7\n4 4\n",
+	},
+	{
 		name: "a composite literal of a defined slice type is a value of that type",
 		src: `// A composite literal of a DEFINED slice type is a value of that type. It was
 // untyped where it stood as a value, and a print took the argument it could not

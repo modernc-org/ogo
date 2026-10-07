@@ -24082,7 +24082,7 @@ func (e *emitter) intToFloatC(ct, src, operand string, argAST []int32) (string, 
 		}
 	} else if cIntWidths[src] < 64 {
 		if unsigned {
-			operand = "(uint64_t)" + operand
+			operand = "(uint64_t)" + e.widenU32(src, operand, argAST)
 		} else {
 			operand = "(int64_t)" + operand
 		}
@@ -24238,6 +24238,9 @@ func (e *emitter) emitConversion(ct string, arg Node) {
 				e.emit(text)
 				return
 			}
+		}
+		if srcOK && cIntWidths[e.underlyingCType(ct)] == 64 {
+			text = e.widenU32(src, text, arg.ast)
 		}
 		e.emit("(" + ct + ")" + text)
 		return
@@ -43220,11 +43223,37 @@ func (e *emitter) guardedAssignC(target func(), t assignTail) (string, bool) {
 // this backend has -- a cast to a 64-bit type applied to a 64-bit expression, the
 // very thing shiftHelperDef binds a temporary to avoid.
 func (e *emitter) shiftCountC(text string, rhs []int32) string {
-	if ct, ok := e.inferCType(rhs); ok && cIntWidths[e.underlyingCType(ct)] == 64 {
+	ct, ok := e.inferCType(rhs)
+	if ok && cIntWidths[e.underlyingCType(ct)] == 64 {
 		return text
 	}
 	e.includes["stdint.h"] = true
+	if ok {
+		text = e.widenU32(ct, "("+text+")", rhs)
+	}
 	return "(int64_t)(" + text + ")"
+}
+
+// widenU32 is the operand text of a cast to a 64-bit type, cast to uint32_t first
+// where the operand is a 32-bit unsigned EXPRESSION of C type src. The target's C
+// compiler widens such an expression with a zero constant on its left -- `0u + u`,
+// `0 - u`, `5u - 5u + u`, under any operator -- without writing the high word,
+// which keeps whatever its register held: `int64(0 - v)` for a uint32 v printed
+// -166570509754957831 on the board for Go's 4294967289, and a shift count folded
+// to `0u + n` was negative and panicked (OctoSmith seed 5849). A variable, a call,
+// an implicit conversion and `(int64_t)(uint32_t)(...)` are right
+// (doc/widen-zero-plus-unsigned.c).
+func (e *emitter) widenU32(src, text string, operand []int32) string {
+	switch e.underlyingCType(src) {
+	case "unsigned", "uint32_t", "uintptr_t":
+	default:
+		return text
+	}
+	if _, isName := e.exprIdent(operand); isName {
+		return text
+	}
+	e.includes["stdint.h"] = true
+	return "(uint32_t)" + text
 }
 
 // divNeedsGuard1 reports whether a division needs the guarded helper, for a value
