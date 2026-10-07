@@ -68,6 +68,16 @@ Until then an imaginary literal (the scanner) and complex64/complex128 where the
 program declares no such name (`errUndefined`) say "complex numbers are not
 supported yet"; flexcc has no `_Complex`, so the emitter will lower them itself.
 
+**recover is PLANNED, for after v1** (the user's call, 2026-10-07), and with it
+the deferred calls a panic runs on its way out. Neither needs a heap -- a record of
+each frame with deferred calls, set up on entry, which a panic unwinds to -- so they
+are owed, not excluded; but they touch the defer lowering, the goroutine
+trampolines, the inlined copies and the stack sizing, cost every call of a function
+that defers, and rest on setjmp/longjmp on the target, never measured. Until then
+recover is "not supported yet" and a panic runs no deferred call. Nothing before
+then should foreclose it; the one thing that would pull the deferred calls forward
+is firmware wanting a `defer` to put a pin safe on a panic.
+
 `specs.go`'s "Relationship to Go" section states the same policy for language
 users; keep the two in step.
 

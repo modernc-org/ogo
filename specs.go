@@ -87,6 +87,12 @@
 // is written down under Complex types (planned), so that nothing before them
 // forecloses it.
 //
+// Recovering from a panic is owed as well, and planned for after v1: recover, and
+// the deferred calls a panic runs on its way out, need no heap -- a record of each
+// frame with deferred calls, which a panic unwinds to -- but they touch every
+// function that defers and must be measured on the target before they are relied
+// on. Until then recover is refused, and a panic runs no deferred call.
+//
 // Generics are the one part of Go held at arm's length: not supported, not
 // planned, and not ruled out either. They are a question for after v1, on three
 // counts -- whether an LL(1) grammar can describe them at all, whether they earn
@@ -2305,8 +2311,8 @@
 // whether the call stands as a statement or as a value: complex, delete, imag,
 // real and recover each report "the X builtin is not supported yet". complex, real
 // and imag come with complex numbers (see Complex types (planned)); delete wants a
-// map, which this target does not have; and recover wants a panic to unwind out of,
-// where a panic here halts the cog it ran on.
+// map, which this target does not have; and recover is planned for after v1 (see
+// Relationship to Go), a panic here running no deferred call yet.
 //
 // new is the exception, and so is every make form other than the slice one above:
 // those are rejected as "dynamic allocation not supported", a heap having no place
