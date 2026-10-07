@@ -1816,6 +1816,87 @@ func main() {
 		panics: true,
 	},
 	{
+		// A call returning an ARRAY in a multiple assignment or declaration is
+		// written into a temporary in its turn, as a single declaration writes
+		// it into the variable: `a, b := mk(1), mk(2)` was "cannot infer the type
+		// of a value", and a list declared with an array type, `var p, q [2]int =
+		// mk(1), mk(2)`, "not supported yet". The calls record their order.
+		name: "calls returning arrays in a multiple assignment",
+		src: `type A [3]int
+
+type Row [2]int
+
+type G struct {
+	r Row
+	n int
+}
+
+var calls int
+
+func mk(n int) [2]int {
+	calls = calls*10 + n
+	return [2]int{n, n * 10}
+}
+
+func mka(n int) A {
+	calls = calls*10 + n
+	return A{n, n + 1, n + 2}
+}
+
+func k(n int) int {
+	calls = calls*10 + n
+	return n
+}
+
+func (r Row) twice() Row {
+	calls = calls*10 + 7
+	return Row{r[0] * 2, r[1] * 2}
+}
+
+func (g *G) row() Row {
+	calls = calls*10 + 8
+	return g.r
+}
+
+type Shaper interface{ Corners() A }
+
+type Sq struct{ s int }
+
+func (q *Sq) Corners() A { return A{q.s, q.s * 2, q.s * 3} }
+
+func main() {
+	a, b := mk(1), mk(2)
+	println(a[0], a[1], b[0], b[1], calls)
+	calls = 0
+	x, n, y := mka(3), k(4), mka(5)
+	println(x[2], n, y[0], calls)
+	calls = 0
+	a, b = mk(6), a
+	println(a[0], b[0], b[1], calls)
+	calls = 0
+	var xs [4][2]int
+	xs[k(1)], xs[k(2)] = mk(3), mk(4)
+	println(xs[1][1], xs[2][0], calls)
+	calls = 0
+	r := Row{1, 2}
+	r2, r3 := r.twice(), r.twice().twice()
+	println(r2[1], r3[0], calls)
+	calls = 0
+	g := G{Row{5, 6}, 9}
+	gr, gn := g.row(), g.n
+	println(gr[0], gn, calls)
+	var sh Shaper = &Sq{4}
+	c1, c2 := sh.Corners(), mka(1)
+	println(c1[2], c2[1])
+	var p, q [2]int = mk(1), mk(2)
+	println(p[1], q[0])
+	_, z := mk(9), mk(8)
+	println(z[0], calls)
+}
+`,
+		want: "1 10 2 20 12\n5 4 5 345\n6 1 10 6\n30 4 1234\n4 4 777\n5 9 8\n12 2\n10 2\n8 811298\n",
+	},
+	{
 		// A call through a nil function VALUE panics, as Go's does; it called
 		// through address zero, which on the target is Hub RAM's first long.
 		name: "a call through a nil function value panics",

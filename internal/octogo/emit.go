@@ -23174,12 +23174,20 @@ func (e *emitter) emitVarInit(initExpr []int32) {
 
 // emitVarList emits a local `var a, b = e0, e1` (typed or inferred): each name is
 // an independent declaration taking its own value, so this is the single-name path
-// repeated. A declared array type is refused -- C cannot initialize an array from
-// an expression, and copying one needs the single-name path's memcpy.
+// repeated. A declared ARRAY type is that path outright, name by name in order: C
+// cannot initialize an array from an expression, and the single-name path is where
+// a literal, a call filling the declaration and a copy are each lowered. `var p, q
+// [2]int = mk(1), mk(2)` was refused, "not supported yet", where the two lines it
+// stands for built. A value reading a name of the spec was bound by emitVarSpec
+// before this is reached.
 func (e *emitter) emitVarList(names []string, typeAST []int32, inits [][]int32) {
 	if typeAST != nil {
 		if _, ok := e.arrayDim(typeAST); ok {
-			e.fail("a multi-name array var with an initializer is not supported yet")
+			for i, nm := range names {
+				if e.emitVarSpec([]string{nm}, typeAST, [][]int32{inits[i]}); e.err != nil {
+					return
+				}
+			}
 			return
 		}
 	}
@@ -43731,10 +43739,21 @@ func (e *emitter) emitValueList(targets []assignTarget, declare []bool, rhs []No
 		// what stopped `m[i], m[j] = m[j], m[i]`, the swap every sort of a table of
 		// rows is written with. The temporary is what makes a swap a swap, and an
 		// array needs one as much as anything else does.
+		// A CALL returning an array writes it through an out parameter, into a
+		// temporary of this frame, in its turn: `a, b := mk(1), mk(2)` and `x, y :=
+		// u256.From(0), u256.From(1)` were "cannot infer the type of a value", with
+		// no position, where `a := mk(1)` on a line of its own built.
+		if cname, a, isCall := e.arrayResultCall(r.ast); isCall {
+			tmps[i], dims[i] = e.newTmp(), a
+			e.ind()
+			e.emit(a.elem + " " + tmps[i] + a.declSuffix() + ";\n")
+			e.emitArrayResultCall(tmps[i], cname, r.ast)
+			continue
+		}
 		if a, isArr := e.arrayShapeOf(r.ast); isArr {
 			src, ok := e.arraySourceC(r.ast)
 			if !ok {
-				e.fail("cannot read %s in a multiple assignment: it is not an array this can copy from",
+				e.failAt(r.ast, "cannot read %s in a multiple assignment: it is not an array this can copy from",
 					e.goArrayTypeName(a))
 				return
 			}
@@ -43760,7 +43779,7 @@ func (e *emitter) emitValueList(targets []assignTarget, declare []bool, rhs []No
 		}
 		ct, ok := e.inferCType(r.ast)
 		if !ok {
-			e.fail("cannot infer the type of a value in a multiple assignment")
+			e.failAt(r.ast, "cannot infer the type of a value in a multiple assignment")
 			return
 		}
 		if typedTarget {

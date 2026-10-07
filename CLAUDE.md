@@ -2528,6 +2528,16 @@ POINTER method on the call's value, compile -- and the rule was nowhere:
 `mka()[0].Set(1)` and `mkw().p.Set(1)` had compiled all along, calling the method on
 the emitter's temporary (`callChainWalk`, which types every call of a chain now,
 not only the last).
+A MULTIPLE ASSIGNMENT was a position nobody wrote one into until 2026-10-07, when a
+domain program -- SHA-256 with HMAC beside 2^256 arithmetic on eight limbs, three
+packages, the published vectors as its oracle -- wrote `a, b := d.Sum(),
+sha256.Of(p)` and `x, y = u256.From(0), u256.From(1)`: "cannot infer the type of a
+value in a multiple assignment", with no position, for any call returning an array,
+in one package as in two (emitValueList binds it into a temporary in its turn, as
+emitDiscard does). The list declaration beside it, `var p, q [2]int = mk(1), mk(2)`,
+was "not supported yet" where the two lines it stands for built (emitVarList is the
+single declaration name by name for an array type). The program then matched Go on
+the host and the board, a million 'a's hashed on another cog in 90 s.
 
 **A STRUCT HOLDING AN ARRAY IS COPIED, NEVER ASSIGNED** (2026-09-23). The target's C
 compiler copy-initializes and assigns one only at some SIZES -- "Unable to multiply

@@ -13664,14 +13664,15 @@ var gsl, gsl2 []int
 }
 
 // frameRefFormsSkipped is the number of cells TestEmitCFrameRefForms cannot test
-// yet, each a form one kind does not take for a reason of its own. All twelve are
-// the three ARRAY kinds', the array, the elided row and the elided address, in a
-// typed var list, first and second, in both variants ("a multi-name array var with
-// an initializer is not supported yet"). The switch and for init declarations were
-// here too until they learned to declare an array, and the three destructured
-// forms until an array could be returned beside another result (2026-09-24); their
-// cells are tested from then on.
-const frameRefFormsSkipped = 12
+// yet, each a form one kind does not take for a reason of its own. There are none
+// since 2026-10-07: the last twelve were the three ARRAY kinds', the array, the
+// elided row and the elided address, in a typed var list, first and second, in both
+// variants ("a multi-name array var with an initializer is not supported yet"),
+// until a list declared with an array type became the single declaration name by
+// name. The switch and for init declarations were here until they learned to
+// declare an array, and the three destructured forms until an array could be
+// returned beside another result (2026-09-24); all are tested from then on.
+const frameRefFormsSkipped = 0
 
 func TestEmitCSliceEscapeRefused(t *testing.T) {
 	for _, test := range []struct {

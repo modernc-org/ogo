@@ -27,6 +27,13 @@ shipped section tells a reader on that version that they have behaviour they do 
 
 ### Fixed
 
+- **A call returning an array may stand in a multiple assignment**: `a, b :=
+  mk(1), mk(2)`, `x, y = u256.From(0), u256.From(1)` and `n, a = 1, mk(3)` were
+  refused, "cannot infer the type of a value in a multiple assignment" with no
+  position, where each call on a line of its own built; and a list declared with
+  an array type, `var p, q [2]int = mk(1), mk(2)`, was "not supported yet". Each
+  call writes its array into a temporary in its turn, and a list declaration is
+  the single declaration name by name. The refusal names its line now.
 - **`switch v := v.(type)` builds for the host as for the target**: each clause
   declared v from the operand v, `Sq* v = (Sq*)v.data;`, which C reads as the
   new v; the target's compiler resolved the name outside it and printed what Go
