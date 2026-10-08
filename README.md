@@ -182,6 +182,10 @@ It is a draft and is reconciled with the implementation as the compiler moves;
 the **Status** section below is the shorter answer to what works today, and
 [CHANGELOG.md](CHANGELOG.md) records what changed in each release — including the
 cases where a new release rejects a program the last one accepted.
+[DIFFERENCES.md](DIFFERENCES.md) lists what builds both as OctoGo and as Go and runs
+differently — `float64` precision, how a channel is made, a panic and its deferred
+calls, among others — each with a program and what each compiler makes of it, run
+as a test on a P2 board and under Go.
 
 ## **Architecture & Design**
 

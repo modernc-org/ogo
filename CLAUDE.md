@@ -1021,6 +1021,15 @@ Semantic-check tests are table-driven over `.ogo` files in
 `etc.go` in each package provides the `todo()`/`trc()` position-tagged debug
 helpers (guarded with `//lint:ignore U1000`); prefer them for temporary tracing.
 
+`DIFFERENCES.md` (2026-10-08) is read by `internal/octogo/differences_test.go`: each
+"### " entry's program joins `emitRunCases` in an init, named "DIFFERENCES.md:
+<title>", so it runs on the host, builds for the target and runs in `make board`;
+`TestDifferencesGo` runs it under Go and holds the "Go prints" block to what Go
+prints (a panic's trace dropped). `<!-- board-only: ... -->` keeps an entry off the
+host (a float64 is 64 bits there, `boardOnly`), `<!-- go-varies: ... -->` leaves
+Go's output unchecked. **A behaviour that differs from Go is an entry there**, not
+only a paragraph of specs.go -- the page is what a Go programmer reads first.
+
 ## Probe harness (`scripts/`)
 
 The method that finds most bugs is not the test suite but a PROBE: a program a

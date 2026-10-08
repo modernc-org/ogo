@@ -84,6 +84,10 @@
 // written, and is retired as X lands -- it is not, by itself, evidence that X was
 // ruled out.
 //
+// What builds both as OctoGo and as Go and runs differently is listed in
+// DIFFERENCES.md, each entry with a program and what each compiler makes of it; the
+// examples are tests, run on a P2 board and under Go.
+//
 // Complex numbers are the one kind of Go type still owed -- maps being excluded
 // by the heap they need: they are planned for release 1.1, and what they are to be
 // is written down under Complex types (planned), so that nothing before them

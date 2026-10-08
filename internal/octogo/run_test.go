@@ -34,6 +34,10 @@ type emitRunCase struct {
 	// wrong answer until aa300e2. Listing an exception here keeps it visible rather
 	// than swallowed, and each one should say why it is not a defect.
 	backendWarning string
+	// boardOnly marks a program the host cannot run as the target does: a float64
+	// is a C double, 64 bits on the host and 32 on the target (DIFFERENCES.md). It
+	// is built for the target and run on the board, and not run on the host.
+	boardOnly bool
 }
 
 var emitRunCases = []emitRunCase{
@@ -48796,6 +48800,9 @@ func runCorpus(t *testing.T, checked bool, opts []EmitOption, keep func(emitRunC
 	for _, test := range emitRunCases {
 		if test.panics && !checked {
 			continue // the panic is the check; with none, there is nothing to expect
+		}
+		if test.boardOnly {
+			continue
 		}
 		if keep != nil && !keep(test) {
 			continue

@@ -18,6 +18,15 @@ shipped section tells a reader on that version that they have behaviour they do 
 
 ## Unreleased
 
+### Documentation
+
+- **[DIFFERENCES.md](DIFFERENCES.md)** lists what builds both as OctoGo and as Go
+  and runs differently: `float64` precision, 32-bit `int`, a channel made by its
+  declaration, `append` past capacity, seven goroutines at most, a panic running no
+  deferred call, the order a print and `printf` write in, `println` of a slice,
+  memory shared between cogs, and how a `select` chooses. Each entry has a program
+  and both outputs, and is a test: run on the host and a P2 board, and under Go.
+
 ### Language
 
 - **`testing.T` has Go's `Log`, `Logf`, `Error`, `Errorf`, `Fatal`, `Fatalf`,
