@@ -12953,9 +12953,15 @@ func (e *emitter) collectFuncCross(fi funcInfo) {
 					e.crossInto[cname][i] |= 1 << slot
 				}
 				// Its contents land in storage the caller chose at that position,
-				// which this summary has no slot for: kept conservatively.
+				// which this summary has no slot for: kept conservatively -- but
+				// for a parameter's own contents stored back through it, `*ps =
+				// (*ps)[1:]` and `ph.s = append(ph.s, v)`, which land where they
+				// already were and keep nothing more. Taken for a keeper, the pop of a
+				// stack through a pointer to its slice refused every caller's local.
 				for _, i := range r.conts {
-					e.crossContents[cname][i] |= leakGlobal
+					if i != slot {
+						e.crossContents[cname][i] |= leakGlobal
+					}
 				}
 				if st.value != nil {
 					derived(st.value, 0, slot)
@@ -51057,6 +51063,11 @@ func (e *emitter) sliceBackingIsFrame(ast []int32) (string, bool) {
 	// `(*p)[:]`, the written-out form: what it reaches is what p points at, which is
 	// the holder mark's business rather than the pointer's own storage.
 	if name, steps, isDeref := e.factorDerefChain(kids); isDeref && e.endsInSliceStep(steps) {
+		// A pointer at a local SLICE, `ps := &s`, reslices s: s's backing decides,
+		// and `(*ps)[1:]` of an `s := gs` views package storage.
+		if x, isLocal := strings.CutPrefix(e.frameHolder[name], "local "); isLocal && len(steps) == 1 && e.isFrameVar(x) && e.isSliceVar(x) {
+			return x, e.frameBacked[x]
+		}
 		return name, e.frameHolder[name] != ""
 	}
 	base, steps, isChain := e.factorAccessChain(kids)
@@ -51582,6 +51593,28 @@ func (e *emitter) frameRefOf(ast []int32) (frameRef, bool) {
 		if x, isElem := strings.CutPrefix(e.frameHolder[ptr], elemOriginPrefix); isElem && e.isFrameVar(x) {
 			if origin := e.frameHolder[x]; origin != "" {
 				return readHolderRef(e.f.exprSource(Node{sym: Expression, ast: ast}), origin), true
+			}
+		}
+	}
+	// The same with steps after the dereference, `(*ps)[0]` and `(*ph).s[0]`: a
+	// part of what the pointer points at, carrying what that local holds where the
+	// value read can carry a reference (a reslice is sliceBackingIsFrame's). Nothing
+	// read the shape, so each was taken where `ph.s[0]` and `t := *ps; gq = t[0]`
+	// were refused.
+	if kids, ok := e.soleFactor(ast); ok {
+		if ptr, steps, isDeref := e.factorDerefChain(kids); isDeref && !slices.ContainsFunc(steps, func(n Node) bool { return n.sym == CallSuffix }) {
+			read := e.f.exprSource(Node{sym: Expression, ast: ast})
+			ct, typed := e.inferCType(ast)
+			carries := !typed || ct == cString || e.carriesReference(ct)
+			if x, isLocal := strings.CutPrefix(e.frameHolder[ptr], "local "); isLocal && e.isFrameVar(x) {
+				if origin := e.viewedHolder(x); origin != "" && carries {
+					return readHolderRef(read, origin), true
+				}
+			}
+			if x, isElem := strings.CutPrefix(e.frameHolder[ptr], elemOriginPrefix); isElem && e.isFrameVar(x) {
+				if origin := e.viewedHolder(x); origin != "" && carries {
+					return readHolderRef(read, origin), true
+				}
 			}
 		}
 	}
@@ -54203,9 +54236,24 @@ func (e *emitter) contentsRef(ast []int32) (frameRef, bool) {
 			return frameRef{}, false
 		}
 	}
+	// The contents of a pointer at a whole local SLICE, `&s` or a `ps := &s`, are
+	// s's header, which views this frame where s's backing is its: a callee keeping
+	// `*ps` or `(*ps)[1:]` kept a view of the caller's array, the backing mark being
+	// one no contents question asked.
+	view := func(x string) (frameRef, bool) {
+		if !e.isFrameVar(x) || !e.isSliceVar(x) || !e.frameBacked[x] {
+			return frameRef{}, false
+		}
+		r := sliceRef(x)
+		r.what = src + ", which points at a slice backed by local " + x
+		return r, true
+	}
 	if name, ok := e.addrOfRoot(ast); ok {
-		if origin := e.frameHolder[name]; origin != "" {
+		if origin := e.viewedHolder(name); origin != "" {
 			return ref(origin)
+		}
+		if x, whole := e.addrOperand(ast); whole && x == name {
+			return view(x)
 		}
 		return frameRef{}, false
 	}
@@ -54214,9 +54262,10 @@ func (e *emitter) contentsRef(ast []int32) (frameRef, bool) {
 		if ct, isVar := e.varType(name); isVar && e.isPointer(ct) {
 			// A pointer's contents are what the storage it points at holds.
 			if x, isLocal := strings.CutPrefix(origin, "local "); isLocal && e.isFrameVar(x) {
-				if o := e.frameHolder[x]; o != "" {
+				if o := e.viewedHolder(x); o != "" {
 					return ref(o)
 				}
+				return view(x)
 			}
 			return frameRef{}, false
 		}

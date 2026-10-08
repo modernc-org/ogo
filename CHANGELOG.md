@@ -49,6 +49,16 @@ shipped section tells a reader on that version that they have behaviour they do 
   given the address by its post statement, and a backward `goto`. A program whose
   loops mark a variable their head can see is emitted again with the marks given at
   each head, until nothing new is marked. In every release.
+- **What a pointer at a local points at is followed through steps and into a
+  callee**: `ps := &s; gq = (*ps)[0]` and `(*ph).s[0]` read a local's address out
+  of what the pointer points at and stored it in a package variable in silence,
+  where `ph.s[0]` was refused; and a function keeping `*ps` or `(*ps)[1:]` was handed
+  `&s` of a slice over a local array. In every release.
+- **The pop of a stack through a pointer to its slice is taken**: `func pop(ps
+  *[]T) { *ps = (*ps)[1:] }` and `ph.s = ph.s[1:]` were refused for a caller's
+  slice of pointers to locals, or a struct holding one, as though they kept what
+  they only store back where it was; and `(*ps)[1:]` was refused for any pointer at a
+  local slice, whatever the slice viewed.
 - **A slice and the local array it views share their marks**: `s := a[:]; a[0] =
   &x; gq = s[0]` for an array a of pointers was taken, s holding the marks a had
   when it was bound, and so was the store the other way round, `s[0] = &x; gq =

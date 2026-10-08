@@ -2701,7 +2701,18 @@ beside it (genCrossFold, convRand): the fold expression converted to another siz
 kind, half the time with an operation in it, the high word too at 64 bits -- the
 fuzzer had converted to int and to the 64-bit kinds only. Seeds 1-2000 on the host
 shim: clean; 1-200 on a P2-EDGE with ee4168c, 192 passing (three on a second load)
-and 8 outgrowing a cog, none failing.
+and 8 outgrowing a cog, none failing; 6501-7000 the same way, 461 passing (seven on
+a second load), 38 outgrowing and ONE failing, seed 6978, "Call Count Failure" on
+the board alone and passing `--no-inline`: a SILENT backend fault. The CORDIC
+reordering pass (OptimizeCORDIC, -O1) moves a block down past a QMUL taking a
+CONDITIONAL move for a definition of its register, so a max's `if_be mov result1,
+#69 ; mov t, result1` went below code that overwrote result1, and a value computed
+before a multiplication read as one computed after it -- here the guard of an
+inlined call, which then ran once more (doc/cordic-reorder-conditional-move.c, d
+119 for 142; it needs inlined code on both sides, which the emitter's marks give).
+A two-line fix in FindBlockForReorderingDownward -- only an unconditional write
+meets a dependency, a conditional one adds its dst as one -- prints 142 on the
+board natively; not carried yet.
 A parenthesised head, `(uint64(x)) >> 32`, was the rewrite's first miss
 (unparenExpr). And the family is bounded on the board: a value widened and then
 compared, masked, added, multiplied, or shifted by any other count is right, and so
@@ -2806,6 +2817,18 @@ unsafe.Slice; a store through a view known to view a local marks it
 (noteStoredThrough, viewedLocal). **A mark is a fact about a variable at a point;
 a rule reading one asks what reaches that point -- a loop's back edge and an alias
 both do.** TestEmitCLoopCarriedMarks, TestEmitCSliceViewMarks.
+The pointer row the same day: `*p` was read through a pointer's mark and `(*ps)[0]`,
+`(*ph).s[0]` -- the parenthesised dereference with steps -- by nothing (frameRefOf
+reads factorDerefChain now); a reslice of it was asked whether the pointer pointed
+at ANY local, refusing `(*ps)[1:]` of an `s := gs` (sliceBackingIsFrame asks the
+slice it points at); and the CONTENTS of `&s`, a header viewing a local array, were
+no reference to a callee keeping `*ps` (contentsRef answers the backing, `view`).
+That last opened a false refusal of the commonest pointer idiom, `func pop(ps *[]T)
+{ *ps = (*ps)[1:] }`: a parameter's contents stored through a pointer parameter
+were "kept" (the summary has no slot for the storage the caller chose), and stored
+back through the SAME parameter they keep nothing -- refused for a slice of pointers
+to locals and a struct holding a view in every release, and for every view of a
+local array once contents answered the backing. TestEmitCPointerToSliceMarks.
 
 **KNOWN MEANS MUST** (2026-09-24). The first version of that rule believed the holder
 marks, `frameHolder` and `frameBacked` -- and a mark says what a variable MAY reach:
