@@ -16,6 +16,40 @@ same area is a new entry under **Unreleased**, not an edit to the old one. Amend
 shipped section tells a reader on that version that they have behaviour they do not.
 `git show vX.Y.Z:CHANGELOG.md` is the check.
 
+## Unreleased
+
+### Fixed
+
+- **A printf of one argument evaluates it before writing anything**, as one of
+  several did: `printf("got %d\n", <-ch)` wrote "got " and then waited on the
+  receive mid-line, another cog's output running into it, and `printf(" %d", f())`
+  for an f that prints wrote f's line into the middle of this one. In every
+  release.
+- **An untyped constant beside a typed one takes its type before the operation**,
+  as Go has it: `One / 1e3` for a `const One Fx = 65536` of an integer type is the
+  integer division, 65, where it was folded as 65.536 and refused as truncated --
+  in a constant declaration, an array's length and a case alike.
+- **A method of a defined type called on what an interface's method returns is
+  taken**: `f.Eval(x).Put(b)`, for an Eval returning a `type Fx int32` with a
+  method Put, was refused as "type int32 has no method Put", the result named by the
+  Kind it is defined over.
+
+### Behaviour changes
+
+- **A typed constant times a float constant that is no integer is refused**, as Go
+  refuses it: `const k = One * 2.5` for an integer One was taken, the product being
+  whole; `2.5` is truncated converting to One's type first.
+- **The arguments of a method called on what another package's method returns are
+  checked** where the call is a statement, deferred or a typed declaration's value:
+  `f.Eval(2).Put(nb[:0])` for an `f lib.F` took a `[]bool` for Put's `[]byte`, where
+  the same call as an operand was refused.
+- **A value a conversion, a call or a literal makes is refused where an interface
+  is wanted, whatever its type**, where only one of this package's type over a Kind
+  was: `sort(Strs(xs[:n]))` of a slice type, and `lib.Count(lib.N(5))`,
+  `lib.Count(lib.MkN())`, `lib.L = lib.N(2)` and `lib.Count(lib.Strs{"x"})` of
+  another package's, reached the C compiler, which refused them in its own words.
+  An interface holds a pointer here: `ss := Strs(xs[:n]); sort(&ss)`.
+
 ## v0.50.0
 
 ### Language

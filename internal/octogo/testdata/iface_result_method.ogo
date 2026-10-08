@@ -1,0 +1,37 @@
+// A method of a defined type called on what an interface's method returns, `f.Eval(2).
+// Put(b)` for an Eval returning a `type Fx int32`: the result was named by the Kind it
+// is defined over, "type int32 has no method Put", and a valid program refused; the
+// arguments are asked what Put's parameters want.
+
+type Fx int32
+
+func (a Fx) Put(b []byte) int { return len(b) + int(a) }
+
+type F interface{ Eval(x int) Fx }
+
+type sq struct{}
+
+func (*sq) Eval(x int) Fx { return Fx(x * x) }
+
+var g sq
+
+var fs = [1]F{&g}
+
+func main() {
+	var bb [4]byte
+	var nb [4]bool
+	var f F = &g
+	println(f.Eval(2).Put(bb[:1]))
+	_ = f.Eval(2).Put(bb[:0]) + fs[0].Eval(1).Put(nil)
+	for _, h := range fs {
+		println(h.Eval(3).Put(bb[:]))
+	}
+	var n int = f.Eval(2).Put(nil)
+	_ = n
+	// ERROR "cannot use nb\[:0\] \(variable of type \[\]bool\) as \[\]byte value in argument to Put"
+	println(f.Eval(2).Put(nb[:0]))
+	// ERROR "type Fx has no method Nope"
+	println(f.Eval(2).Nope())
+	// ERROR "too many arguments in call to Put"
+	f.Eval(2).Put(bb[:0], 1)
+}

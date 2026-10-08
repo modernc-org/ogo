@@ -366,10 +366,9 @@ broken.
   at compile time, which is what keeps a function value one word
   (`doc/funcval-cost.c` prices the alternative). Every other function-valued form
   works, `go` through one included.
-* A **type alias of a type literal or of another package's type** — `type S =
-  struct{ ... }` and `type T = lib.X` are refused; alias a NAMED type of the
-  same package (or a predeclared one), which works whole: identity, methods,
-  literals via either spelling.
+* A **type alias of a type literal** — `type S = struct{ ... }` is refused; alias
+  a NAMED type, of this package, of another one (`type T = lib.X`) or a predeclared
+  one, which works whole: identity, methods, literals via either spelling.
 * A **local interface type**, and a **second local type of one name in one
   function** — every other `type` declaration inside a function works, aliases
   and shadowing included.

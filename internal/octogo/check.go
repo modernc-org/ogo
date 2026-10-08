@@ -9714,6 +9714,21 @@ func (f *File) isNamedCompositeLit(n Node) bool {
 	return len(kids) == 2 && kids[0].sym == 0 && f.ch(kids[0].tok) == IDENT && kids[1].sym == CompositeLit
 }
 
+// isQualifiedCompositeLit reports an operand that is exactly a literal of another
+// package's named type, `geo.Buf{...}`.
+func (f *File) isQualifiedCompositeLit(n Node) bool {
+	fac, ok := f.soleFactor(n)
+	if !ok {
+		return false
+	}
+	kids := slices.Collect(it(fac.ast))
+	if len(kids) != 3 || kids[0].sym != 0 || f.ch(kids[0].tok) != IDENT || kids[1].sym != FactorSuffix || kids[2].sym != CompositeLit {
+		return false
+	}
+	steps := slices.Collect(it(kids[1].ast))
+	return len(steps) == 1 && steps[0].sym == Selector && f.isImportQualifier(f.Scope, f.tok(kids[0].tok).Src())
+}
+
 // isFuncLiteral reports an operand that is exactly a function literal, `func() {}`,
 // called nowhere.
 func (f *File) isFuncLiteral(n Node) bool {
@@ -14597,6 +14612,17 @@ func (f *File) checkImplements(s *Scope, ifaceName string, value Node, what stri
 		}
 		return
 	}
+	// A value of a DEFINED type that an operation, a conversion or a call MADE, `y +
+	// 1`, `^y`, `Y(3)`, `mk()`: a value, which Go copies in and an interface here
+	// cannot hold. Named, it passed the rules below: the declarations were refused
+	// by the emitter while an argument reached C. Asked of a type over a Kind of
+	// this package only, `Strs(xs[:2])` of a slice type and every value of another
+	// package's type, `a.N(5)`, `a.MkN()`, `n + 1`, reached C.
+	if shown, made := f.madeDefinedValue(s, value); made {
+		f.err(f.tok(value.Pos()).Position(), "cannot use %s (value of type %s) as %s value in %s: an interface holds a pointer here",
+			f.exprSource(value), shown, ifaceName, what)
+		return
+	}
 	// A value of a predeclared Kind and no defined type, `return false` for an
 	// error, `use("")` for a Shape: no methods, and no pointer either. Asked of
 	// nobody, a return of one compiled.
@@ -14611,19 +14637,6 @@ func (f *File) checkImplements(s *Scope, ifaceName string, value Node, what stri
 			if _, isPredeclared := s.find(name.Src()).(*PredeclaredType); isPredeclared && !f.isAddrOperand(s, value) {
 				if isPtr, known := f.exprPointerness(s, value); !known || !isPtr {
 					named = false
-				}
-			}
-		}
-		// A value of a DEFINED type over a Kind that an operation, a conversion or a
-		// call MADE, `y + 1`, `^y`, `Y(3)`, `mk()`: a value, which Go copies in and
-		// an interface here cannot hold. Named, it passed the rule below, and the
-		// declarations were refused by the emitter while an argument reached C.
-		if named && !qual.IsValid() && f.isMadeValue(s, value) {
-			if isPtr, known := f.exprPointerness(s, value); known && !isPtr && !f.isAddrOperand(s, value) {
-				if _, fromIface := f.interfaceMethodsNamed(s, name.Src()); !fromIface {
-					f.err(f.tok(value.Pos()).Position(), "cannot use %s (value of type %s) as %s value in %s: an interface holds a pointer here",
-						f.exprSource(value), name.Src(), ifaceName, what)
-					return
 				}
 			}
 		}
@@ -14740,7 +14753,7 @@ func (f *File) checkImplements(s *Scope, ifaceName string, value Node, what stri
 			if _, _, resolved := f.typeDeclNamed(s, from); resolved {
 				f.checkImplementsKind(s, ifaceName, value, from, f.exprSource(value), "value of type *"+from, true, what)
 			}
-		} else if named && (!qual.IsValid() && (f.isNamedCompositeLit(value) || f.storageOperand(value)) || f.derefOperand(s, value)) {
+		} else if named && (!qual.IsValid() && (f.isNamedCompositeLit(value) || f.storageOperand(value)) || f.isQualifiedCompositeLit(value) || f.derefOperand(s, value)) {
 			// A literal of a named type, `show(failure{})`, a field or an element of
 			// one, `return m.f`, `return errs[i]`, or what a pointer points at,
 			// `return *P` -- which built, the struct returned for the interface,
@@ -16514,7 +16527,28 @@ func (f *File) callChainWalk(s *Scope, head Token, steps []Node) (w callChain) {
 		// arguments and results asked nothing.
 		// An ELEMENT first, `dk[1].Mul(q)` for a `dk lib.K` of another package's
 		// array type, is walked as a field is: its arguments were asked nothing.
-		if d.typeQual.IsValid() && (len(steps) < 2 || steps[0].sym == Selector && steps[1].sym == CallSuffix || steps[0].sym == CallSuffix) {
+		if d.typeQual.IsValid() && (len(steps) < 2 || steps[0].sym == CallSuffix) {
+			return w
+		}
+		// A method of another package's type called on the variable is walked from
+		// the variable, the walk's method step going on in that package, and what
+		// it reaches past the call is asked: `f.Eval(2).Put(b)` for an `f lib.F`,
+		// as a statement, deferred or declaring a variable, asked Put's arguments
+		// nothing. The first call stays checkImportedMethodArgs's.
+		if d.typeQual.IsValid() && steps[0].sym == Selector && steps[1].sym == CallSuffix {
+			vt, ok := f.varTypeAt(d)
+			if !ok || len(steps) < 3 {
+				return w
+			}
+			w.at = s
+			w = f.walkSteps(vt, true, steps, 0, len(steps), w)
+			w.calls = slices.DeleteFunc(w.calls, func(c chainCall) bool { return c.at == 0 })
+			if w.unexpAt == 0 {
+				w.unexpAt = -1
+			}
+			if w.ptrAt == 0 {
+				w.ptrAt = -1
+			}
 			return w
 		}
 		if len(steps) > 1 && steps[0].sym == Selector && steps[1].sym == CallSuffix {
@@ -17626,9 +17660,45 @@ func (f *File) isMadeValue(s *Scope, n Node) bool {
 	if n.sym != Factor {
 		return false
 	}
+	// A chain ending in a call, `t.Self()`, `a.MkN()`, a conversion to another
+	// package's type, `a.N(5)`: a value made as a call's is. exprCallee wants a
+	// bare name before the calls.
+	if kids := slices.Collect(it(n.ast)); len(kids) == 2 && kids[1].sym == FactorSuffix {
+		if steps := slices.Collect(it(kids[1].ast)); len(steps) != 0 && steps[len(steps)-1].sym == CallSuffix {
+			return true
+		}
+	}
 	e := Node{sym: Expression, ast: encodeNode(SimpleExpr, encodeNode(Term, encodeNode(UnaryExpr, encodeNode(Factor, n.ast))))}
 	_, isCall := f.exprCallee(e)
 	return isCall
+}
+
+// madeDefinedValue reports a value of a defined type -- this package's or another's,
+// over a Kind or not -- that an operation, a conversion or a call made, which is no
+// pointer and no interface, and names its type as this file writes it.
+func (f *File) madeDefinedValue(s *Scope, value Node) (shown string, ok bool) {
+	if !f.isMadeValue(s, value) || f.isAddrOperand(s, value) {
+		return "", false
+	}
+	name, qual, isPtr, named := f.exprNamedType(s, value)
+	if !named || isPtr {
+		return "", false
+	}
+	shown = name.Src()
+	if qual.IsValid() {
+		shown = qual.Src() + "." + shown
+	}
+	td, home, found := f.typeDeclNamed(s, shown)
+	if !found || td.TypeSpec == nil {
+		return "", false // a predeclared type, or one not resolved
+	}
+	if _, isIface := f.interfaceMethodsNamed(home, td.Name()); isIface {
+		return "", false
+	}
+	if f.isPointerType(home, td.TypeSpec.TypeNode) {
+		return "", false
+	}
+	return shown, true
 }
 
 // derefYieldsPointer reports whether *x is itself a pointer: x a variable declared
@@ -24324,6 +24394,13 @@ func (f *File) methodSingleResultName(s *Scope, head, member Token) string {
 	}
 	fd := td.methods[member.Src()]
 	if fd == nil || fd.Type == nil {
+		// An interface's method, or a promoted one, which the type's own methods do
+		// not hold and callResults resolves: `f.Eval(2).Put(b)` for an interface f
+		// whose Eval returns a `type Fx int32` was "type int32 has no method Put",
+		// the Kind Fx is defined over.
+		if results, ok := f.callResults(s, head, member); ok && len(results) == 1 {
+			return results[0].name
+		}
 		return ""
 	}
 	if results := f.flattenResults(s, fd.Type.Signature); len(results) == 1 {
@@ -29708,9 +29785,24 @@ func (f *File) foldBinary(lhs ExpressionNode, op Symbol, opTok Token, rhs Expres
 				typed, untyped = rc, lc
 			}
 			if lo, hi, isInt := intKindRange(typed.typ); isInt {
-				if iv := constant.ToInt(untyped.cv); iv.Kind() == constant.Int && (constant.Compare(iv, token.LSS, lo) || constant.Compare(iv, token.GTR, hi)) {
+				iv := constant.ToInt(untyped.cv)
+				if iv.Kind() == constant.Int && (constant.Compare(iv, token.LSS, lo) || constant.Compare(iv, token.GTR, hi)) {
 					f.err(opTok.Position(), "%s (untyped int constant) overflows %s", iv.ExactString(), kindName(typed.typ))
 					return constVal{cv: constant.MakeUnknown()}
+				}
+				// And it takes the typed one's class: `One / 1e3` for an integer One
+				// is an integer division, 65 -- folded as 65.536 it was refused as
+				// truncated, and `One * 2.5`, whole at the end, was taken.
+				if untyped.cv.Kind() == constant.Float {
+					if iv.Kind() != constant.Int {
+						f.err(opTok.Position(), "%s (untyped float constant) truncated to %s", untyped.cv, kindName(typed.typ))
+						return constVal{cv: constant.MakeUnknown()}
+					}
+					if rc.typed {
+						lc.cv = iv
+					} else {
+						rc.cv = iv
+					}
 				}
 			}
 		}

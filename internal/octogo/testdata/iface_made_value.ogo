@@ -1,0 +1,37 @@
+// A value of a defined type that a conversion, a call or an operation made goes
+// into no interface: Go copies it in, and an interface here holds a pointer. Asked
+// of a type over a Kind only, `Strs(xs[:2])` of a slice type reached C.
+
+type Lenner interface{ Len() int }
+
+type Strs []string
+
+func (s Strs) Len() int { return len(s) }
+
+type N int
+
+func (n N) Len() int { return int(n) }
+
+func (n N) Self() N { return n }
+
+func Count(l Lenner) int { return l.Len() }
+
+func MkN() N { return 3 }
+
+func main() {
+	var xs [4]string
+	var n N = 2
+	ys := Strs(xs[:3])
+	println(Count(&ys), Count(&n))
+	// ERROR "cannot use Strs\(xs\[:2\]\) \(value of type Strs\) as Lenner value in argument to Count: an interface holds a pointer here"
+	println(Count(Strs(xs[:2])))
+	// ERROR "cannot use Strs\(nil\) \(value of type Strs\) as Lenner value in argument to Count"
+	println(Count(Strs(nil)))
+	// ERROR "cannot use Strs\(xs\[:1\]\) \(value of type Strs\) as Lenner value in variable declaration"
+	var l Lenner = Strs(xs[:1])
+	_ = l
+	// ERROR "cannot use n.Self\(\) \(value of type N\) as Lenner value in argument to Count"
+	println(Count(n.Self()))
+	// ERROR "cannot use MkN\(\) \(value of type N\) as Lenner value in argument to Count"
+	println(Count(MkN()))
+}

@@ -2767,6 +2767,41 @@ negative frame reads as larger than Hub RAM. **A probe that makes the backend la
 out a gigabyte of data costs the machine**: one such build wrote a 1 GB image, and
 the user asked about the load the same hour: the dev machine also hosts the builder
 VMs, so a batch runs at `xargs -P 4` at most, and not beside the full suite.
+A fixed-point library (2026-10-08, dom36: Q16.16 with a software CORDIC for sin,
+cos and atan2, a bit-by-bit sqrt over uint64, log2 and exp2, and a resolver's
+angle-tracking loop on a second cog behind channels of structs; three packages)
+matched Go on the host and the board, checked and unchecked. Its 1,500 mutants
+had one false refusal and one row taken. `One / 1e3` for a typed integer One was
+"constant 65.536 truncated": Go converts the untyped operand to the typed one's
+type before the operation, and foldBinary asked only whether it overflowed; the
+emitter's exact fold (foldValSeq, constNodeType) had the same rule missing, so an
+array length `[One / 1e4]int` was "unsupported type" -- and `const k = One * 2.5`,
+whole at the end, was taken. And a method of a defined type over a Kind called on
+an INTERFACE method's result, `f.Eval(2).Put(b)`, was "type int32 has no method
+Put" (methodSingleResultName asked the variable's type's own methods, which an
+interface's are not; callResults knows them); across packages its arguments were
+asked as an operand only, callChainWalk stopping at a method of another package's
+type -- a statement, a defer and a typed declaration took a `[]bool` for a
+`[]byte` (the walk goes on from the variable now, the first call left to
+checkImportedMethodArgs). Its valid mutants found the printf ORDER: a printf of
+ONE argument wrote the format's text before evaluating it, emitPrintf having
+copied println's "a single argument has nothing written before it" --
+`printf("got %d\n", <-ch)` wrote "got " and waited mid-line, the hang-shaped
+interleaving the several-argument hoist exists for. A Czech text program beside it
+(dom37: UTF-8 runes, word wrap and justification by rune count, a dictionary
+collation with "ch" a letter of its own, two packages) matched Go on the host and
+the board, and its first draft found a hole by being idiomatic Go:
+`coll.Sort(coll.Strs(ws))`, sort.Sort's shape, reached C -- a value MADE by a
+conversion, a call or a literal into an interface was refused only for a type of
+this package over a Kind (madeDefinedValue: any defined type that is no pointer
+and no interface, any chain ending in a call, another package's literal).
+`ss := coll.Strs(ws); coll.Sort(&ss)` is the spelling here. Its 2,700 mutants had
+nothing else taken. Nets for the false refusals: 6,719 probe programs of the
+earlier rounds, HEAD's verdict against the tree's, none moved; 5,366 mutants both
+compilers accepted, all still accepted; the corpus changed in four printf programs
+only. **A domain program written as Go is written finds what one written for this
+compiler does not**: the conversion into an interface was the commonest sort idiom
+there is, and every domain program before had passed `&x`.
 
 **A STRUCT HOLDING AN ARRAY IS COPIED, NEVER ASSIGNED** (2026-09-23). The target's C
 compiler copy-initializes and assigns one only at some SIZES -- "Unable to multiply

@@ -25890,6 +25890,7 @@ func (e *emitter) foldValSeq(kids []Node) (constant.Value, bool) {
 	if !ok {
 		return nil, false
 	}
+	accT := e.constNodeType(kids[0])
 	for i := 1; i+1 < len(kids); i += 2 {
 		op := kids[i]
 		if op.sym != AddOp && op.sym != MulOp {
@@ -25899,11 +25900,72 @@ func (e *emitter) foldValSeq(kids []Node) (constant.Value, bool) {
 		if !ok {
 			return nil, false
 		}
-		if acc, ok = foldValOp(acc, e.opText(op.ast), rhs); !ok {
+		text := e.opText(op.ast)
+		// An untyped operand beside a typed one takes its type, as Go has it: `One
+		// / 1e3` for an integer One divides as integers, 65, where the float
+		// spelling made it 65.536 and no integer at all. A shift is of its left
+		// operand's type, the count taking no part.
+		if text != "<<" && text != ">>" {
+			rt := e.constNodeType(kids[i+1])
+			switch {
+			case accT != "" && rt == "":
+				if rhs, ok = constOfCType(rhs, accT, e); !ok {
+					return nil, false
+				}
+			case accT == "" && rt != "":
+				if acc, ok = constOfCType(acc, rt, e); !ok {
+					return nil, false
+				}
+				accT = rt
+			}
+		}
+		if acc, ok = foldValOp(acc, text, rhs); !ok {
 			return nil, false
 		}
 	}
 	return acc, true
+}
+
+// constOfCType is an untyped constant's value as an operand of the type ct: an
+// integer for an integer type -- none where the value is not whole, which Go
+// refuses -- and the value as it is for any other.
+func constOfCType(v constant.Value, ct string, e *emitter) (constant.Value, bool) {
+	if _, isInt := cIntWidths[e.underlyingCType(ct)]; !isInt || v.Kind() != constant.Float {
+		return v, true
+	}
+	iv := constant.ToInt(v)
+	return iv, iv.Kind() == constant.Int
+}
+
+// constNodeType is the C type of a typed constant operand -- a typed constant's
+// name, a conversion, either in parentheses or under a unary operator, a sequence
+// of operands holding one (a shift its left operand's) -- and "" for an untyped
+// one.
+func (e *emitter) constNodeType(n Node) string {
+	switch n.sym {
+	case Expression, SimpleExpr, Term:
+		kids := slices.Collect(it(n.ast))
+		for i := 0; i < len(kids); i += 2 {
+			if t := e.constNodeType(kids[i]); t != "" {
+				return t
+			}
+			if i+1 < len(kids) {
+				if op := e.opText(kids[i+1].ast); op == "<<" || op == ">>" {
+					return ""
+				}
+			}
+		}
+		return ""
+	case UnaryExpr, Factor:
+		kids := slices.Collect(it(n.ast))
+		if len(kids) == 3 && kids[0].sym == 0 && e.f.ch(kids[0].tok) == LPAREN {
+			return e.constNodeType(kids[1])
+		}
+		if len(kids) == 2 && (kids[0].sym == UnaryOp || kids[0].sym == 0 && e.f.ch(kids[0].tok) != IDENT) {
+			return e.constNodeType(kids[1])
+		}
+	}
+	return e.typedConstOperand([]Node{n})
 }
 
 func (e *emitter) foldValNode(n Node) (constant.Value, bool) {
@@ -38569,8 +38631,12 @@ func (e *emitter) emitPrintf(callSuffix []int32) {
 	}
 	// As in emitPrint: every argument is evaluated before anything is written. The
 	// format itself is a constant, so only the arguments after it are hoisted, and
-	// they are indexed from zero exactly as the verbs read them.
-	if len(rest) > 1 || e.arrayCallArg(rest) {
+	// they are indexed from zero exactly as the verbs read them. A single argument
+	// is no exception where the format writes text ahead of its verb, as emitPrint's
+	// is: `printf("got %d\n", <-ch)` wrote "got " and then waited on the receive,
+	// mid-line, and `printf(" %d", f())` for an f that prints wrote its line into
+	// the middle of this one.
+	if len(rest) > 1 || len(rest) == 1 && len(items) > 0 && items[0].lit != "" || e.arrayCallArg(rest) {
 		saved := e.printArgs
 		e.printArgs = nil
 		e.hoistPrintArgs(rest)

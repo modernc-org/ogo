@@ -38,6 +38,113 @@ type emitRunCase struct {
 
 var emitRunCases = []emitRunCase{
 	{
+		// A printf of ONE argument evaluates it before it writes anything, as one of
+		// several did: the format's text ahead of the verb was written first, so
+		// `printf("got %d\n", <-ch)` wrote "got " and waited on the receive mid-line,
+		// and an argument whose evaluation prints wrote its line into this one.
+		name: "a printf of one argument evaluates it before writing the format's text",
+		src: `type T int
+
+func (t T) Put(b []byte) int {
+	println("in Put")
+	return len(b) + int(t)
+}
+
+func (t T) Name() string {
+	println("in Name")
+	return "tee"
+}
+
+func f() int {
+	println("in f")
+	return 1
+}
+
+func mk() T {
+	println("in mk")
+	return 2
+}
+
+var ch chan int
+
+func send() {
+	println("sending")
+	ch <- 42
+}
+
+func main() {
+	var buf [4]byte
+	printf(" %d\n", f())
+	printf("[%s]\n", buf[:f()-1])
+	printf("<%d>\n", mk().Put(buf[:0]))
+	t := T(3)
+	printf("name=%s\n", t.Name())
+	printf("%d is first\n", f())
+	go send()
+	printf("got %d\n", <-ch)
+}
+`,
+		want: "in f\n 1\nin f\n[]\nin mk\nin Put\n<2>\nin Name\nname=tee\nin f\n1 is first\nsending\ngot 42\n",
+	},
+	{
+		// An untyped constant beside a typed one takes its type before the
+		// operation: `One / 1e3` for an integer One is 65, in a declaration, an
+		// array length, a case and an expression -- the checker folded 65.536 and
+		// refused it, and the emitter's exact fold read no integer for the length.
+		// And a method of a defined type over a Kind called on what an interface's
+		// method returns, `f.Eval(2).Put(b)`, refused as "type int32 has no method
+		// Put".
+		name: "an untyped constant takes a typed operand's type; a method on an interface method's result",
+		src: `type Fx int32
+
+func (a Fx) Put(b []byte) int { return len(b) + int(a) }
+
+type F interface{ Eval(x int) Fx }
+
+type sq struct{}
+
+func (*sq) Eval(x int) Fx { return Fx(x * x) }
+
+var g sq
+
+var fs = [2]F{&g, &g}
+
+const One Fx = 65536
+
+const (
+	A    = One / 1e3
+	B Fx = One / 1e3
+	C    = 1e3 / One
+	D    = One % 1e3
+	E    = One * (2.0 * 1.5)
+	G    = uint8(200) / 3.0
+)
+
+var arr [One / 1e4]int
+
+func main() {
+	var v Fx = 70000
+	switch v / 1e3 {
+	case One / 1e3:
+		println("one")
+	case 70:
+		println("seventy")
+	}
+	arr[5] = 2
+	println(A, B, C, D, E, G, len(arr), arr[5], v+One/1e3, One/1e3*v)
+	var bb [4]byte
+	var f F = &g
+	println(f.Eval(2).Put(bb[:1]), fs[1].Eval(3).Put(nil))
+	var n int = f.Eval(2).Put(bb[:2])
+	for _, h := range fs {
+		n += h.Eval(1).Put(bb[:])
+	}
+	println(n)
+}
+`,
+		want: "seventy\n65 65 0 536 196608 66 6 2 70065 4550000\n5 9\n16\n",
+	},
+	{
 		// A function, a package variable, a type, a parameter and a local of the
 		// program's, each named like a builtin: the name is the program's where its
 		// declaration is in scope (universe). The emitter dispatched a call by the

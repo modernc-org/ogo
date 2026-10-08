@@ -1,0 +1,43 @@
+// An untyped constant beside a typed one takes its type before the operation, as
+// Go has it: `One / 1e3` for an integer One is an integer division, 65. Folded as
+// written it was 65.536, refused as truncated in a declaration and an array length,
+// and `One * 2.5`, whole at the end, was taken.
+
+type Fx int32
+
+const One Fx = 65536
+
+const Th = 2.5
+
+const (
+	A    = One / 1e3
+	B Fx = One / 1e3
+	C    = 1e3 / One
+	D    = One % 1e3
+	E    = One * (2.0 * 1.5)
+	G    = uint8(200) / 3.0
+)
+
+var arr [One / 1e4]int
+
+// ERROR "2.5 \(untyped float constant\) truncated to int32"
+const K2 = One * 2.5
+
+func main() {
+	var v Fx = 7
+	x := One / 1e3
+	_, _ = v/1e1, x
+	_ = len(arr) + int(A+B+C+D+E) + int(G)
+	// ERROR "constant 2.5 truncated to Fx"
+	_ = One * 2.5
+	// ERROR "constant 0.5 truncated to Fx"
+	_ = One + 0.5
+	// ERROR "constant 2.5 truncated to Fx"
+	_ = 2.5 * One
+	// ERROR "constant 2.5 truncated to Fx"
+	_ = One * Th
+	// ERROR "constant 1.5 truncated to Fx"
+	_ = One * 2.0 * 1.5
+	// ERROR "constant 1.5 truncated to uint8"
+	_ = uint8(3) * 1.5
+}
