@@ -20,6 +20,15 @@ shipped section tells a reader on that version that they have behaviour they do 
 
 ### Documentation
 
+- **specs.go's "Memory shared between cogs" says what a call and a hardware lock
+  order**: a call only what its body does, and a lock as a flag does both ways, so a
+  record written and read under one lock is seen whole -- measured on a P2-EDGE, 0
+  torn reads of 2000 with the lock and 53 without, and held by a listing test. A cog
+  a Spin2 driver starts is one of the same eight a goroutine takes, and a program
+  reserves its drivers' by starting them first. The `Builder`'s `String()` is named
+  as the one exception to "strings are immutable", and two plans are recorded: a
+  `float64` of 64 bits computed in software, and a channel made as Go makes one,
+  with `make(chan T)`.
 - **[DIFFERENCES.md](DIFFERENCES.md)** lists what builds both as OctoGo and as Go
   and runs differently: `float64` precision, 32-bit `int`, a channel made by its
   declaration, `append` past capacity, seven goroutines at most, a panic running no
@@ -29,6 +38,10 @@ shipped section tells a reader on that version that they have behaviour they do 
 
 ### Language
 
+- **A channel of receive-only channels is written as Go writes it**: `chan (<-chan
+  T)`, `chan<- <-chan T` and `<-chan (<-chan T)` parse, an element of a channel may
+  be parenthesised, and `ogo fmt` lays them out as gofmt does. A channel's element
+  could not begin with an arrow, and a named element type had to stand in.
 - **`testing.T` has Go's `Log`, `Logf`, `Error`, `Errorf`, `Fatal`, `Fatalf`,
   `Skip`, `Skipf`, `FailNow`, `SkipNow`, `Name` and `Helper`**, where it had
   `Fail`, `Failed`, `Skip` and `Skipped` and a test printed with `println`. The
@@ -42,6 +55,11 @@ shipped section tells a reader on that version that they have behaviour they do 
 
 ### Fixed
 
+- **A channel received from a channel of channels keeps its direction**: `c :=
+  <-pipe; c <- 1` for a pipe of receive-only channels, `close(c)` of one, and `var
+  d chan int = <-pipe` were taken, the received channel having no type for the
+  direction rules to ask. A named element type, `chan Src` for a `type Src <-chan
+  int`, was the same.
 - **A printf of one argument evaluates it before writing anything**, as one of
   several did: `printf("got %d\n", <-ch)` wrote "got " and then waited on the
   receive mid-line, another cog's output running into it, and `printf(" %d", f())`
@@ -80,6 +98,11 @@ shipped section tells a reader on that version that they have behaviour they do 
   checked** where the call is a statement, deferred or a typed declaration's value:
   `f.Eval(2).Put(nb[:0])` for an `f lib.F` took a `[]bool` for Put's `[]byte`, where
   the same call as an operand was refused.
+- **A goroutine that recurses is refused unless `--gostack` sizes the stacks**:
+  the build cannot read a recursion's depth off the listing, and such a goroutine
+  ran in the default slot of 256 longs, the overrun found only if it ended, after it
+  had written past the slot. The error names the function the recursion goes
+  through. Recursion on `main`'s cog is unchanged.
 - **A value a conversion, a call or a literal makes is refused where an interface
   is wanted, whatever its type**, where only one of this package's type over a Kind
   was: `sort(Strs(xs[:n]))` of a slice type, and `lib.Count(lib.N(5))`,

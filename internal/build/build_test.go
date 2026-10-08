@@ -595,6 +595,108 @@ func main() {
 	}
 }
 
+// TestBuildLockedRecord holds the lock rule of specs.go's "Memory shared between
+// cogs" to the backend: a cog's writes before p2.Unlock are made before its
+// lockrel, and its reads after a p2.TryLock that answered true after its locktry.
+// The writer's every hub write lies between a locktry and the lockrel after it, and
+// the reader's three reads lie between its own. The run case "a record written and
+// read under a hardware lock" holds what the program does, on the host and on the
+// board, where without the lock 53 snapshots of 2000 were torn.
+func TestBuildLockedRecord(t *testing.T) {
+	const src = `import "p2"
+
+type rec struct {
+	a, b, c int
+}
+
+var (
+	shared rec
+	lk     int
+	done   chan bool
+)
+
+func writer() {
+	for i := 1; i <= 1000; i++ {
+		for !p2.TryLock(lk) {
+		}
+		shared.a = i
+		shared.b = i * 2
+		shared.c = i * 3
+		p2.Unlock(lk)
+	}
+	done <- true
+}
+
+func snapshot() (int, int, int) {
+	for !p2.TryLock(lk) {
+	}
+	a, b, c := shared.a, shared.b, shared.c
+	p2.Unlock(lk)
+	return a, b, c
+}
+
+func main() {
+	lk = p2.NewLock()
+	go writer()
+	torn := 0
+	for i := 0; i < 2000; i++ {
+		a, b, c := snapshot()
+		if b != a*2 || c != a*3 {
+			torn++
+		}
+	}
+	<-done
+	println("torn:", torn)
+}
+`
+	op := func(l, name string) bool {
+		f := strings.Fields(l)
+		if len(f) != 0 && strings.HasPrefix(f[0], "if_") {
+			f = f[1:]
+		}
+		return len(f) != 0 && f[0] == name
+	}
+	for _, flags := range [][]string{nil, {"--unchecked"}, {"--no-inline"}} {
+		_, listing := buildProgram(t, src, flags...)
+		lines := strings.Split(string(listing), "\n")
+		from, to := slices.Index(lines, "_writer"), slices.Index(lines, "_writer_ret")
+		if from < 0 || to < from {
+			t.Fatalf("%v: no _writer in the listing", flags)
+		}
+		// Each span runs from a locktry to the lockrel after it; held counts the
+		// hub accesses of the kind asked in the span, and outside those not in one.
+		spans := func(lines []string, access string) (held []int, outside int) {
+			in := false
+			for _, l := range lines {
+				switch {
+				case op(l, "locktry"):
+					in = true
+					held = append(held, 0)
+				case op(l, "lockrel"):
+					in = false
+				case op(l, access) && in:
+					held[len(held)-1]++
+				case op(l, access):
+					outside++
+				}
+			}
+			return held, outside
+		}
+		held, outside := spans(lines[from:to], "wrlong")
+		if len(held) != 1 || held[0] < 3 || outside != 0 {
+			t.Errorf("%v: _writer's writes under the lock %v, outside it %d; want the three fields' between locktry and lockrel and none outside:\n%s",
+				flags, held, outside, strings.Join(lines[from:to+1], "\n"))
+		}
+		// The reader is snapshot or wherever it was inlined: some span outside the
+		// writer reads the three fields and the lock's number for its lockrel.
+		other := append(slices.Clone(lines[:from]), lines[to:]...)
+		held, _ = spans(other, "rdlong")
+		if !slices.ContainsFunc(held, func(n int) bool { return n >= 4 }) {
+			t.Errorf("%v: no reader span holds the three fields' reads, rdlongs under each lock %v", flags, held)
+		}
+	}
+}
+
 // TestCogHint pins how a program that outgrew a cog is told which functions hold
 // the registers: from the listing, the program's own functions only -- those its C
 // defines without static -- by the number of distinct local registers each uses,

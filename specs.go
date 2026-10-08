@@ -126,7 +126,12 @@
 //     defined here instead ("Memory shared between cogs"): a cog may spin on a
 //     flag another cog raises, and one writer and one reader need no lock.
 //   - A channel is a P2 hardware lock over statically allocated Hub RAM, giving a
-//     synchronous rendezvous with no scheduler behind it.
+//     synchronous rendezvous with no scheduler behind it. Today a channel is made
+//     by its declaration, which Go does not do; it is planned (2026-10-08) to be
+//     made as Go makes one -- a declared channel nil, "make(chan T)" the way to
+//     make one, its cell static at package level and the frame's in a function,
+//     and refused where it would outlive the call, as a slice of a local array
+//     is. Then a channel program means what it means in Go.
 //   - An interface value holds a POINTER, so a pointer is what goes into one: "&x",
 //     not "x". Go accepts either and copies the value in, allocating for it; there
 //     is no heap here to allocate into, so the value form is refused rather than
@@ -467,6 +472,15 @@
 //     cog sees it whole. A wider one -- a 64-bit integer, a string, a slice, an
 //     interface value, a struct, an array -- takes several, and a cog that reads
 //     one while another writes it may see part of each.
+//   - A call orders only what its body does: one whose body writes, branches,
+//     loops or waits stands between two accesses as those do, and one whose body
+//     does none of them may be inlined and order nothing. Putting an access in a
+//     function of its own does not order it.
+//   - A hardware lock orders as a flag does, both ways: what a cog writes before
+//     p2.Unlock reaches Hub RAM before the lock is free, and what it reads after a
+//     p2.TryLock that answered true -- a test, which orders as above -- is read
+//     after the lock was taken. So a record of several words written and read
+//     under one lock is seen whole, by every cog that takes the lock to read it.
 //
 // So a cog may wait for another by spinning on a variable the other sets,
 //
@@ -477,7 +491,11 @@
 // waits for, or a ring buffer whose producer moves only its head and whose
 // consumer moves only its tail. Where two cogs write one variable, an update such
 // as "n++" is a read and a write, and of two made at once one may be lost; that is
-// what a channel, or a hardware lock (p2.TryLock), is for.
+// what a channel, or a hardware lock (p2.TryLock), is for. Which a program needs is
+// a question of who writes: one writer and one reader need a flag; two writers of
+// one variable, a lock or a channel; a record of several words that is rewritten
+// while other cogs read it, a lock around it. One published once, or handed over a
+// slot at a time as a ring buffer hands its elements over, needs only the flag.
 //
 // # Types
 //
@@ -485,15 +503,25 @@
 // specific to those values.
 //
 //	Type = [ identifier "." ] identifier
-//		| "chan" [ "<-" ] ChanElemType
-//		| "<-" "chan" Type
+//		| "chan" ( "<-" ArrowElemType | ChanElemType )
+//		| "<-" "chan" ArrowElemType
 //		| "[" [ Expression ] "]" Type
 //		| "*" Type
 //		| InterfaceType
 //		| StructType
 //		| "func" Signature .
 //	ChanElemType = [ identifier "." ] identifier
-//		| "chan" [ "<-" ] ChanElemType
+//		| "chan" ( "<-" ArrowElemType | ChanElemType )
+//		| "(" Type ")"
+//		| "[" [ Expression ] "]" Type
+//		| "*" Type
+//		| InterfaceType
+//		| StructType
+//		| "func" Signature .
+//	ArrowElemType = [ identifier "." ] identifier
+//		| "chan" ( "<-" ArrowElemType | ChanElemType )
+//		| "<-" "chan" ArrowElemType
+//		| "(" Type ")"
 //		| "[" [ Expression ] "]" Type
 //		| "*" Type
 //		| InterfaceType
@@ -583,6 +611,14 @@
 // not carry extra precision here. Programs needing more than ~7 digits must scale
 // to integers.
 //
+// Planned (the decision of 2026-10-08): float64 is to become IEEE double precision
+// computed in software, as Go's is. The P2 has no floating-point hardware for either
+// width -- float32 is computed in software already -- so a float64 is to cost a
+// factor more in time and code, not the difference between a floating-point unit and
+// none. Refusing float64 instead was considered and declined: an untyped float
+// constant would have to default to float32, and `x := 0.5` would differ from Go
+// in its type.
+//
 // # Complex types (planned)
 //
 // Complex numbers are planned for release 1.1 and not implemented yet. What follows
@@ -599,9 +635,9 @@
 //     Go's `imaginary_lit = (decimal_digits | int_lit | float_lit) "i"` -- and is an
 //     untyped complex constant whose real part is zero.
 //   - A value is a pair of floats, its real part and then its imaginary part, of
-//     float32 for complex64 and float64 for complex128 -- which is float32's
-//     precision on this target (see Numeric types), so complex128 has the same
-//     precision as complex64 here, as float64 has that of float32.
+//     float32 for complex64 and float64 for complex128, so complex128 is as precise
+//     as float64 is: float32's precision on this target today (see Numeric types),
+//     and double precision once float64 is.
 //   - Constant arithmetic is exact, as for every numeric constant, and an untyped
 //     complex constant whose imaginary part is zero is taken by a float or an
 //     integer context where its real part is representable there, as in Go.
@@ -628,7 +664,11 @@
 //   - The number of bytes is called the length of the string and is never
 //     negative.
 //   - Strings are immutable: once created, it is impossible to change the
-//     contents of a string.
+//     contents of a string. (OctoGo Specific): with one exception, the string a
+//     Builder's String() returns, which is a view of the Builder's backing array,
+//     so a Reset and the writes after it change what an earlier result reads (see
+//     the Builder below). Apart from what package unsafe can reach, no other
+//     string shares storage a program can write.
 //   - A string's bytes can be accessed by integer indices 0 through len(s)-1.
 //
 // (OctoGo Specific): Concatenation with "+" is limited to compile-time constants,
@@ -736,12 +776,13 @@
 // earlier results survive; there is no heap to do that with here. A *Builder may be
 // passed to a function, so building can be factored into helpers.
 //
-// Intent: Builder is predeclared for now, but it is meant to become strings.Builder
-// once packages exist; the method names follow Go's (Write, not WriteBytes, so a
-// later Builder can satisfy io.Writer). OctoGo is pre-v1 with no compatibility
-// promise, so the name and the method results (currently none, where Go returns
-// (int, error)) may change; if type aliases (type T = U) arrive first, the move can
-// keep the predeclared name working via `type Builder = strings.Builder`.
+// Intent: Builder is predeclared for now, and is meant to move into the strings
+// package, which exists, as strings.Builder. Its methods already have Go's names and
+// results (Write, not WriteBytes, so a later Builder can satisfy io.Writer). What
+// the move has to settle is the constructor: Go's Builder starts from its zero value
+// and grows, and this one needs the backing NewBuilder is given, which Go's package
+// has no function for. A type alias, `type Builder = strings.Builder`, can keep the
+// predeclared name working through the move.
 //
 // # Array types
 //
@@ -1554,7 +1595,7 @@
 //		| rune_lit
 //		| "(" Expression ")" [ FactorSuffix ]
 //		| "[" [ Expression | "..." ] "]" Type [ CompositeLit [ FactorSuffix ] | CallSuffix [ FactorSuffix ] ]
-//		| "chan" Type
+//		| "chan" ( "<-" ArrowElemType | ChanElemType )
 //		| StructType CompositeLit [ FactorSuffix ]
 //		| FuncLiteral [ FactorSuffix ] .
 //	CompositeLit = "{" [ ElementList ] "}" .
@@ -1718,7 +1759,7 @@
 //		| rune_lit
 //		| "(" Expression ")" [ FactorSuffix ]
 //		| "[" [ Expression | "..." ] "]" Type [ CompositeLit [ FactorSuffix ] | CallSuffix [ FactorSuffix ] ]
-//		| "chan" Type
+//		| "chan" ( "<-" ArrowElemType | ChanElemType )
 //		| StructType CompositeLit [ FactorSuffix ]
 //		| FuncLiteral [ FactorSuffix ] .
 //
@@ -2821,8 +2862,11 @@
 //     read by the build off the compiled program's frames and calls, 256 longs at
 //     least, and a program whose goroutine needs more than a slot's largest, 8192
 //     longs, is refused by the build; "ogo build --gostack N" sets it outright. A
-//     goroutine recursing through its own calls is not measured and gets the 256.
-//     One that overruns its slot and then ends panics "goroutine stack overflow".
+//     goroutine recursing through its own calls has no depth the build can read,
+//     and a program starting one is refused unless --gostack gives the size. One
+//     that overruns its slot and then ends panics "goroutine stack overflow"; one
+//     still running has written past it by then, which is why the build refuses
+//     rather than guesses.
 //     The main function's stack is the rest of Hub RAM, and a program whose
 //     deepest main stack does not fit there beside its code and data is refused
 //     by the build.
@@ -2832,6 +2876,16 @@
 //     A go statement inside a loop is therefore legal, unlike a defer inside
 //     one: the hardware bounds it, and exhaustion is reported rather than
 //     silently exceeding anything.
+//   - Drivers' Cogs: a cog a Spin2 object starts for its driver (see
+//     "Functions implemented in Spin2") is one of the same eight, taken from the
+//     hardware as a goroutine's is. The pool keeps a slot for each cog but main's,
+//     and a go statement that finds a slot free and no cog panics "out of cogs"
+//     as one that finds no slot does; a driver starting after the goroutines have
+//     taken every cog fails as its own start method reports. The compiler does
+//     not read a driver's code and does not count its cogs, so a program reserves
+//     them by starting its drivers first, before its goroutines. The hardware
+//     locks are shared the same way: a channel's lock and a driver's come from
+//     one pool of sixteen.
 //   - Termination: When the invoked function terminates, its associated Cog is
 //     freed and returned to the hardware pool. If the function has any return
 //     values, they are discarded when the function completes.
@@ -2866,12 +2920,18 @@
 //		}
 //	}
 //
-// (OctoGo Specific): a channel type's element cannot begin with an arrow, which
-// is what keeps the grammar LL(1), so a send-only channel of receive-only ones,
-// Go's "chan<- <-chan T", and its bidirectional "chan (<-chan T)" cannot be
-// written. A named element type stands in for both: "type Src <-chan T" and then
-// "chan<- Src". A receive-only channel's element may be receive-only itself,
-// "<-chan <-chan T", since there the arrow cannot be read as the outer one's.
+// An arrow belongs to the leftmost "chan" it can, as in Go: "chan<- chan T" is a
+// send-only channel of "chan T", "chan<- <-chan T" a send-only channel of
+// receive-only ones, "<-chan <-chan T" a receive-only channel of them, and a
+// channel of receive-only channels that is itself both ways is written with its
+// element in parentheses, "chan (<-chan T)". A channel's element may be written in
+// parentheses after any channel's keyword or arrow, "<-chan (<-chan T)" meaning
+// "<-chan <-chan T". (Until 2026-10-08 an element could not begin with an arrow, the
+// grammar's way of staying LL(1), and a named element type stood in for one; the
+// arrow after "chan" now always being the channel's own is what keeps it LL(1).)
+// A type in parentheses is taken nowhere else yet -- Go's "[](int)" and "*(T)",
+// which programs rarely write -- and a conversion to a channel type, "(chan<-
+// T)(ch)", is not supported yet.
 //
 //   - Hardware Representation: A channel is a reference to a rendezvous cell in
 //     Hub RAM, synchronized by one of the P2's native hardware locks (0-15).

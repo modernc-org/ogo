@@ -175,9 +175,11 @@ func compile(args []string, stdout, stderr io.Writer) (binary string, code int, 
 // listing says they need (readStackNeeds). Where a goroutine needs more than a slot
 // holds and --gostack asked for no size, the same C is compiled again with slots
 // that fit, every slot the size of the deepest goroutine's need; an explicit
-// --gostack is the program's to choose. And a program whose main cog's deepest
-// stack does not fit in Hub RAM beside its code and data is told so, the binary
-// removed: the stack grows into whatever lies past the top, without a word.
+// --gostack is the program's to choose, and a goroutine that recurses, whose need
+// the listing cannot bound, is refused without one. And a program whose main
+// cog's deepest stack does not fit in Hub RAM beside its code and data is told so,
+// the binary removed: the stack grows into whatever lies past the top, without a
+// word.
 func compileSized(c []byte, unmarked func() ([]byte, error), cFile, out, inc, keepC string, allowWarnings, stackAsked bool, stdout, stderr io.Writer) (int, error) {
 	if code, err := compileMarked(c, unmarked, cFile, out, inc, keepC, allowWarnings, stdout, stderr); err != nil {
 		return code, err
@@ -191,6 +193,17 @@ func compileSized(c []byte, unmarked func() ([]byte, error), cFile, out, inc, ke
 		return 0, nil // nothing to read the stacks off: the build stands as it is
 	}
 	needs := readStackNeeds(listing, built)
+	if !stackAsked && !needs.goKnown {
+		// A recursion has no depth the listing can bound, and the default slot
+		// was a guess the fence checked only as the goroutine ended -- after it
+		// had written past its slot. --gostack makes the size the program's.
+		os.Remove(out)
+		through := ""
+		if needs.goRecurse != "" {
+			through = " through " + needs.goRecurse
+		}
+		return 1, fmt.Errorf("ogo: a goroutine recurses%s, so its stack has no bound the backend's listing can read; give the goroutine stacks a size with --gostack longs", through)
+	}
 	if _, hi, def := octogo.GoStackRange(); !stackAsked && needs.goLongs > def {
 		if needs.goLongs > hi {
 			// Capped at the largest slot, the goroutine ran on past it, over

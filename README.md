@@ -294,8 +294,8 @@ broken.
   backing writes what fits and returns a non-nil error, "short write", rather than
   growing it — you chose the size — and that `String` is a
   view of the backing, overwritten by a `Reset` and the writes after it, since
-  there is no heap to copy it into. It is meant to become `strings.Builder` once
-  there is a standard library to put it in.
+  there is no heap to copy it into. It is meant to move into the `strings`
+  package as `strings.Builder`.
 * `go`, `chan` and `select`, mapped to cogs and hardware locks. A method may be
   launched too, `go w.run(ch)`, its receiver evaluated and copied where the `go`
   stands — including one reached through fields and indexes, `go ws[i].run(ch)`,
@@ -358,9 +358,10 @@ broken.
   whose goroutine needs more than the largest slot, 8192 longs, is refused, and
   `ogo build --gostack N` sets it outright (64 to 8192 longs; seven slots of it sit
   in hub RAM for the run). The listing cannot bound a goroutine RECURSING through its
-  own calls, which gets the 256. Recursion works — `main` runs on the cog's own stack and a goroutine on
-  its pool slot's — but a deep enough call chain in a goroutine overruns that slot,
-  this part having no memory protection. The slot is fenced, so a goroutine that
+  own calls, so a program starting one is refused unless `--gostack` gives the size.
+  Recursion works — `main` runs on the cog's own stack and a goroutine on its pool
+  slot's — but a deep enough call chain in a goroutine overruns that slot, this part
+  having no memory protection. The slot is fenced, so a goroutine that
   overruns it and still returns ends with `panic: goroutine stack overflow` rather
   than the silence it used to end with. Measured on a P2-EDGE: a goroutine recursing
   a hundred deep already trips the fence — and used to print the right answer while
@@ -412,7 +413,8 @@ Floating point (float32/float64) is supported, exponent literals included
 so float arithmetic, comparison, int conversions and printing all work. Note the
 target has no double-precision hardware, so `float64` is 32-bit here, same as
 `float32` (~7 significant digits, not ~15) -- the name is kept for Go source
-compatibility but carries no extra precision. Printing, though, is EXACT: the
+compatibility but carries no extra precision; a 64-bit `float64`, computed in
+software, is planned. Printing, though, is EXACT: the
 compiler renders a float from its own exact decimal value rather than through the
 target's `printf`, so `%f`, `%e`, `%g` and `%v` all produce the digits Go produces
 -- `21.0` prints `21.000000`, and `%v` gives the shortest form that round-trips to

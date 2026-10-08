@@ -38,15 +38,25 @@ string_lit             = raw_string_lit | interpreted_string_lit .
 raw_string_lit         = '`' { `[^\x60]` } '`' .
 interpreted_string_lit = '"' { `[^"\\\n\r]` | unicode_value | byte_value } '"' .
 Type = [ identifier "." ] identifier
-	| "chan" [ "<-" ] ChanElemType
-	| "<-" "chan" Type
+	| "chan" ( "<-" ArrowElemType | ChanElemType )
+	| "<-" "chan" ArrowElemType
 	| "[" [ Expression ] "]" Type
 	| "*" Type
 	| InterfaceType
 	| StructType
 	| "func" Signature .
 ChanElemType = [ identifier "." ] identifier
-	| "chan" [ "<-" ] ChanElemType
+	| "chan" ( "<-" ArrowElemType | ChanElemType )
+	| "(" Type ")"
+	| "[" [ Expression ] "]" Type
+	| "*" Type
+	| InterfaceType
+	| StructType
+	| "func" Signature .
+ArrowElemType = [ identifier "." ] identifier
+	| "chan" ( "<-" ArrowElemType | ChanElemType )
+	| "<-" "chan" ArrowElemType
+	| "(" Type ")"
 	| "[" [ Expression ] "]" Type
 	| "*" Type
 	| InterfaceType
@@ -84,7 +94,7 @@ Factor     = identifier [ FactorSuffix ] [ CompositeLit [ FactorSuffix ] ]
 	| rune_lit
 	| "(" Expression ")" [ FactorSuffix ]
 	| "[" [ Expression | "..." ] "]" Type [ CompositeLit [ FactorSuffix ] | CallSuffix [ FactorSuffix ] ]
-	| "chan" Type
+	| "chan" ( "<-" ArrowElemType | ChanElemType )
 	| StructType CompositeLit [ FactorSuffix ]
 	| FuncLiteral [ FactorSuffix ] .
 CompositeLit = "{" [ ElementList ] "}" .
@@ -102,7 +112,7 @@ HeaderFactor     = identifier [ FactorSuffix ]
 	| rune_lit
 	| "(" Expression ")" [ FactorSuffix ]
 	| "[" [ Expression | "..." ] "]" Type [ CompositeLit [ FactorSuffix ] | CallSuffix [ FactorSuffix ] ]
-	| "chan" Type
+	| "chan" ( "<-" ArrowElemType | ChanElemType )
 	| StructType CompositeLit [ FactorSuffix ]
 	| FuncLiteral [ FactorSuffix ] .
 FactorSuffix = { Selector | Index | CallSuffix } .

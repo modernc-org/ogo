@@ -147,16 +147,23 @@ func baseSym(s Symbol) Symbol {
 		return UnaryExpr
 	case HeaderFactor:
 		return Factor
-	case ChanElemType:
-		// A channel's element type is a Type that cannot start with "<-", which is
-		// what keeps `chan<- T` LL(1) (see specs.go's Type production); to everything
-		// reading the tree it is a Type.
+	case ChanElemType, ArrowElemType:
+		// A channel's element type is a Type that cannot start with "<-" after a
+		// bare "chan", which is what keeps `chan<- T` LL(1), and may be written in
+		// parentheses, `chan (<-chan T)` (see specs.go's Type production); to
+		// everything reading the tree it is a Type, the parentheses dropped (it).
 		return Type
 	default:
 		return s
 	}
 }
 
+// it iterates the nodes of a flat AST. A channel's parenthesised element type,
+// the "(" Type ")" of "chan (<-chan int)", is handed out as the Type inside the
+// parentheses, which is what it means: the parentheses are there for the parser,
+// telling the element's arrow from the channel's, and nothing reading the tree for
+// its meaning has to know they were written. What reads the tree for its tokens --
+// the formatter, the spans of firstIndex and lastIndex -- uses itRaw.
 func it(ast []int32) iter.Seq[Node] {
 	return func(yield func(Node) bool) {
 		for len(ast) != 0 {
@@ -164,7 +171,16 @@ func it(ast []int32) iter.Seq[Node] {
 			case v < 0:
 				// Non-Terminal: [-SymbolID, Size, Children...]
 				n := ast[1]
-				if !yield(Node{ast: ast[2 : 2+n], sym: baseSym(Symbol(-v))}) {
+				kids := ast[2 : 2+n]
+				if sym := Symbol(-v); (sym == ChanElemType || sym == ArrowElemType) && len(kids) > 3 && kids[0] >= 0 && kids[1] < 0 && int(kids[2])+4 == len(kids) {
+					kids = kids[1 : len(kids)-1] // the Type between "(" and ")"
+					if !yield(Node{ast: kids[2:], sym: baseSym(Symbol(-kids[0]))}) {
+						return
+					}
+					ast = ast[2+n:]
+					continue
+				}
+				if !yield(Node{ast: kids, sym: baseSym(Symbol(-v))}) {
 					return
 				}
 
@@ -181,12 +197,34 @@ func it(ast []int32) iter.Seq[Node] {
 	}
 }
 
+// itRaw iterates the nodes of a flat AST as the parser wrote them, a channel's
+// parenthesised element type included (see it).
+func itRaw(ast []int32) iter.Seq[Node] {
+	return func(yield func(Node) bool) {
+		for len(ast) != 0 {
+			switch v := ast[0]; {
+			case v < 0:
+				n := ast[1]
+				if !yield(Node{ast: ast[2 : 2+n], sym: baseSym(Symbol(-v))}) {
+					return
+				}
+				ast = ast[2+n:]
+			default:
+				if !yield(Node{tok: v}) {
+					return
+				}
+				ast = ast[1:]
+			}
+		}
+	}
+}
+
 // lastIndex recursively traverses the flat AST slice to find the last token index.
 // It returns -1 if no token is found.
 func lastIndex(ast []int32) (last int32) {
 	last = -1
 
-	for child := range it(ast) {
+	for child := range itRaw(ast) {
 		if child.sym == 0 {
 			// It's a terminal; update our last seen token index
 			last = child.tok
@@ -204,7 +242,7 @@ func lastIndex(ast []int32) (last int32) {
 // firstIndex recursively traverses the flat AST slice to find the first token index.
 // It returns -1 if no token is found.
 func firstIndex(ast []int32) int32 {
-	for child := range it(ast) {
+	for child := range itRaw(ast) {
 		if child.sym == 0 {
 			// Found the first terminal (token)
 			return child.tok
@@ -21052,6 +21090,14 @@ func (f *File) exprChanTypeNode(s *Scope, n Node) (tn TypeNode, variable bool) {
 	}
 	if tn, _ = f.callChanTypeNode(s, n); tn != nil {
 		return tn, false
+	}
+	// A channel RECEIVED from a channel of channels, `c := <-pipe`: its type is the
+	// outer one's element, direction and all. It had none, so `c <- 1` for a
+	// `chan (<-chan int)` pipe, `close(c)` and `var d chan int = <-pipe` were taken.
+	if fac, isRecv := f.receiveFactor(s, n); isRecv {
+		if tn = f.recvChanType(s, fac); tn != nil {
+			return tn, false
+		}
 	}
 	return f.convChanTypeNode(s, n), false
 }

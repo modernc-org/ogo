@@ -749,7 +749,7 @@ func isBinaryBound(ast []int32) bool {
 	for {
 		var child []int32
 		spine := 0
-		for n := range it(ast) {
+		for n := range itRaw(ast) {
 			switch n.sym {
 			case RelOp, AddOp, MulOp:
 				return true
@@ -773,7 +773,7 @@ func isBinaryBound(ast []int32) bool {
 // qualifies.
 func sliceColonNeedsBlanks(indexKids []int32) bool {
 	var bounds [][]int32
-	for n := range it(indexKids) {
+	for n := range itRaw(indexKids) {
 		if n.sym == Expression {
 			bounds = append(bounds, n.ast)
 		}
@@ -1521,12 +1521,12 @@ func formatFile(fn string, b []byte, broken map[int32]bool) (out []byte, long []
 // ChanElemType reads as a Type). The grammar is what tells it from a receive-only
 // type's "<-", which is the same token in front of the keyword instead.
 func (f *formatter) markSendArrows(ast []int32) {
-	for c := range it(ast) {
+	for c := range itRaw(ast) {
 		if c.sym == 0 {
 			continue
 		}
-		if c.sym == Type {
-			kids := slices.Collect(it(c.ast))
+		if c.sym == Type || c.sym == Factor { // a Factor's: the type of a conversion, `(chan<- int)(c)`
+			kids := slices.Collect(itRaw(c.ast))
 			if len(kids) >= 2 && kids[0].sym == 0 && kids[1].sym == 0 &&
 				Symbol(f.p.Token(kids[0].tok).Ch) == CHAN && Symbol(f.p.Token(kids[1].tok).Ch) == ARROW {
 				f.sendArrows[kids[1].tok] = true
@@ -1541,7 +1541,7 @@ func (f *formatter) markSendArrows(ast []int32) {
 // "(((s))).y" as "(s).y". Only the doubled pairs go; a single pair stays however
 // redundant it is, exactly as gofmt keeps it.
 func (f *formatter) markRedundantParens(ast []int32) {
-	for c := range it(ast) {
+	for c := range itRaw(ast) {
 		if c.sym == Factor || c.sym == HeaderFactor || c.sym == AssignHead {
 			f.markFactorParens(c)
 		}
@@ -1558,11 +1558,11 @@ func (f *formatter) markRedundantParens(ast []int32) {
 // holds a composite literal of a NAMED type outside inner parentheses, `if (x ==
 // T{}.a) {`, which a header cannot write bare.
 func (f *formatter) markHeaderParens(ast []int32) {
-	for c := range it(ast) {
+	for c := range itRaw(ast) {
 		if c.sym == 0 {
 			continue
 		}
-		kids := slices.Collect(it(c.ast))
+		kids := slices.Collect(itRaw(c.ast))
 		switch c.sym {
 		case IfStmt:
 			var cond Node
@@ -1572,7 +1572,7 @@ func (f *formatter) markHeaderParens(ast []int32) {
 					cond = k // the condition, unless an init follows it
 				case k.sym == IfInit:
 					cond = Node{}
-					for _, ik := range slices.Collect(it(k.ast)) {
+					for _, ik := range slices.Collect(itRaw(k.ast)) {
 						if isHeaderExpr(ik.sym) {
 							cond = ik // the last, after the init's ";"
 						}
@@ -1588,7 +1588,7 @@ func (f *formatter) markHeaderParens(ast []int32) {
 					tag = k
 				case k.sym == SwitchTag:
 					tag = Node{}
-					for _, tk := range slices.Collect(it(k.ast)) {
+					for _, tk := range slices.Collect(itRaw(k.ast)) {
 						if isHeaderExpr(tk.sym) {
 							tag = tk
 						}
@@ -1597,7 +1597,7 @@ func (f *formatter) markHeaderParens(ast []int32) {
 					tag = Node{} // an init's target; the tag, if any, is SwitchTag's
 					for _, tk := range kids {
 						if tk.sym == SwitchTag {
-							for _, t2 := range slices.Collect(it(tk.ast)) {
+							for _, t2 := range slices.Collect(itRaw(tk.ast)) {
 								if isHeaderExpr(t2.sym) {
 									tag = t2
 								}
@@ -1653,7 +1653,7 @@ func (f *formatter) stripHeaderParens(expr Node) {
 		if !ok {
 			return
 		}
-		fk := slices.Collect(it(fac.ast))
+		fk := slices.Collect(itRaw(fac.ast))
 		if f.holdsNamedLit(fk[1].ast) {
 			return
 		}
@@ -1666,12 +1666,12 @@ func (f *formatter) stripHeaderParens(expr Node) {
 // holdsNamedLit reports a composite literal of a NAMED type -- `T{}`, `pkg.T{}` --
 // in an expression, outside any parentheses inside it, which protect one.
 func (f *formatter) holdsNamedLit(ast []int32) bool {
-	for c := range it(ast) {
+	for c := range itRaw(ast) {
 		if c.sym == 0 {
 			continue
 		}
 		if c.sym == Factor || c.sym == HeaderFactor {
-			kids := slices.Collect(it(c.ast))
+			kids := slices.Collect(itRaw(c.ast))
 			if len(kids) != 0 && kids[0].sym == 0 {
 				switch Symbol(f.p.Token(kids[0].tok).Ch) {
 				case LPAREN:
@@ -1693,7 +1693,7 @@ func (f *formatter) holdsNamedLit(ast []int32) bool {
 func (f *formatter) markFactorParens(fac Node) {
 	// An AssignHead in parentheses, `((x)) = 5`, is the same pair doubled: gofmt
 	// prints `(x) = 5`.
-	kids := slices.Collect(it(fac.ast))
+	kids := slices.Collect(itRaw(fac.ast))
 	if len(kids) < 3 || kids[0].sym != 0 || Symbol(f.p.Token(kids[0].tok).Ch) != LPAREN {
 		return
 	}
@@ -1716,7 +1716,7 @@ func (f *formatter) markFactorParens(fac Node) {
 // Factor -- no operators, no unary prefixes, no suffix on the factor.
 func soleParenFactor(n Node) (Node, bool) {
 	for {
-		kids := slices.Collect(it(n.ast))
+		kids := slices.Collect(itRaw(n.ast))
 		if len(kids) != 1 {
 			return Node{}, false
 		}
@@ -1725,7 +1725,7 @@ func soleParenFactor(n Node) (Node, bool) {
 			n = kids[0]
 			continue
 		case Factor, HeaderFactor:
-			fk := slices.Collect(it(kids[0].ast))
+			fk := slices.Collect(itRaw(kids[0].ast))
 			// exactly "(" Expression ")" -- a suffix or a literal makes the parens
 			// load-bearing for what follows them
 			if len(fk) == 3 && fk[0].sym == 0 && fk[2].sym == 0 &&
@@ -1748,7 +1748,7 @@ func soleParenFactor(n Node) (Node, bool) {
 // expression list of more than one element, and for the operands of a binary node;
 // parentheses give one level back.
 func (f *formatter) computeTightOps(ast []int32, depth int) {
-	kids := slices.Collect(it(ast))
+	kids := slices.Collect(itRaw(ast))
 	for k, n := range kids {
 		switch n.sym {
 		case Block:
@@ -1818,7 +1818,7 @@ func (f *formatter) computeTightOps(ast []int32, depth int) {
 func (f *formatter) tightExpr(n Node, depth int) {
 	var operands []Node
 	var ops []Node
-	for c := range it(n.ast) {
+	for c := range itRaw(n.ast) {
 		switch c.sym {
 		case RelOp, AddOp, MulOp:
 			ops = append(ops, c)
@@ -1860,7 +1860,7 @@ func (f *formatter) tightExpr(n Node, depth int) {
 // composite literal, a function literal's block -- takes its rule from
 // computeTightOps.
 func (f *formatter) tightFactor(n Node, depth int) {
-	kids := slices.Collect(it(n.ast))
+	kids := slices.Collect(itRaw(n.ast))
 	for i, c := range kids {
 		if c.sym == Expression && i > 0 && kids[i-1].sym == 0 && Symbol(f.p.Token(kids[i-1].tok).Ch) == LPAREN {
 			f.tightExpr(c, reduceDepth(depth))
@@ -1883,7 +1883,7 @@ func (f *formatter) tightFactor(n Node, depth int) {
 // forced by an operator directly followed by a unary that would read badly tight:
 // a division against a leading "*", a sign against the same sign.
 func (f *formatter) binFlags(n Node) (has4, has5 bool, maxProblem int) {
-	kids := slices.Collect(it(n.ast))
+	kids := slices.Collect(itRaw(n.ast))
 	var opSyms []Node
 	for _, c := range kids {
 		if c.sym == AddOp || c.sym == MulOp {
@@ -1936,11 +1936,11 @@ func (f *formatter) binFlags(n Node) (has4, has5 bool, maxProblem int) {
 
 // leadingUnary is the unary operator a UnaryExpr begins with, if it begins with one.
 func (f *formatter) leadingUnary(n Node) (Symbol, bool) {
-	for c := range it(n.ast) {
+	for c := range itRaw(n.ast) {
 		if c.sym != UnaryOp {
 			return 0, false // the Factor comes first: no leading unary
 		}
-		for u := range it(c.ast) {
+		for u := range itRaw(c.ast) {
 			if u.sym == 0 {
 				return Symbol(f.p.Token(u.tok).Ch), true
 			}
@@ -1952,7 +1952,7 @@ func (f *formatter) leadingUnary(n Node) (Symbol, bool) {
 
 // opTokenIndex is the token index of a RelOp/AddOp/MulOp production's operator.
 func opTokenIndex(op Node) int32 {
-	for c := range it(op.ast) {
+	for c := range itRaw(op.ast) {
 		if c.sym == 0 {
 			return c.tok
 		}
@@ -1962,7 +1962,7 @@ func opTokenIndex(op Node) int32 {
 
 // opText is the operator's source text.
 func opText(p *Parser, op Node) string {
-	for c := range it(op.ast) {
+	for c := range itRaw(op.ast) {
 		if c.sym == 0 {
 			return string(p.Token(c.tok).SrcBytes())
 		}
@@ -2003,7 +2003,7 @@ func multiAssign(ast []int32) bool {
 	lhs, rhs := 0, 0
 	var count func(ast []int32)
 	count = func(ast []int32) {
-		for c := range it(ast) {
+		for c := range itRaw(ast) {
 			switch c.sym {
 			case AssignHead, LhsItem:
 				lhs++
@@ -2032,7 +2032,7 @@ func multiAssign(ast []int32) bool {
 // An if's first name is the if's own expression and stands outside the IfInit; a
 // switch's is the guard's first child.
 func (f *formatter) headerInitTightOps(n Node, depth int) {
-	kids := slices.Collect(it(n.ast))
+	kids := slices.Collect(itRaw(n.ast))
 	isExpr := func(k Node) bool { return k.sym == Expression || k.sym == HeaderExpression }
 	ch := func(k Node) Symbol { return Symbol(f.p.Token(k.tok).Ch) }
 	names, values, defined, ended := 0, 0, false, false
@@ -2084,7 +2084,7 @@ func (f *formatter) headerInitTightOps(n Node, depth int) {
 // flat, so the init's extent is read off the tokens: it ends at the first ";". Any
 // other header takes the ordinary walk.
 func (f *formatter) forHeaderTightOps(h Node, depth int) {
-	kids := slices.Collect(it(h.ast))
+	kids := slices.Collect(itRaw(h.ast))
 	var rest Node
 	for _, k := range kids {
 		if k.sym == ForRest {
@@ -2094,7 +2094,7 @@ func (f *formatter) forHeaderTightOps(h Node, depth int) {
 	lhs, rhs, seenOp := 1, 0, false
 	if rest.sym == ForRest {
 	count:
-		for c := range it(rest.ast) {
+		for c := range itRaw(rest.ast) {
 			switch {
 			case c.sym == HeaderExpression || c.sym == Expression:
 				if seenOp {
@@ -2122,7 +2122,7 @@ func (f *formatter) forHeaderTightOps(h Node, depth int) {
 			f.tightExpr(k, depth+1) // the first name
 		case ForRest:
 			init := true
-			for c := range it(k.ast) {
+			for c := range itRaw(k.ast) {
 				switch {
 				case c.sym == 0:
 					if Symbol(f.p.Token(c.tok).Ch) == SEMICOLON {
@@ -2152,7 +2152,7 @@ func (f *formatter) forHeaderTightOps(h Node, depth int) {
 // are bare HeaderExpression runs around the assignment token.
 func (f *formatter) forPostMultiAssign(ast []int32) bool {
 	lhs, rhs, seenOp := 0, 0, false
-	for c := range it(ast) {
+	for c := range itRaw(ast) {
 		switch {
 		case c.sym == HeaderExpression || c.sym == Expression:
 			if seenOp {
@@ -2173,7 +2173,7 @@ func (f *formatter) forPostMultiAssign(ast []int32) bool {
 // exprCount counts an ExpressionList's or ArgumentList's direct Expression
 // children -- what decides whether the list raises gofmt's expression depth.
 func exprCount(ast []int32) (n int) {
-	for c := range it(ast) {
+	for c := range itRaw(ast) {
 		if c.sym == Expression || c.sym == HeaderExpression {
 			n++
 		}

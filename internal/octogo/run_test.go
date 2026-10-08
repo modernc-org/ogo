@@ -42,6 +42,103 @@ type emitRunCase struct {
 
 var emitRunCases = []emitRunCase{
 	{
+		// specs.go's "Memory shared between cogs": a cog's writes before Unlock
+		// reach Hub RAM before the lock is free, and its reads after a TryLock that
+		// answered true are made after the lock was taken, so a record of several
+		// words written and read under one lock is never seen torn. Without the
+		// lock the board saw 53 torn snapshots of 2000.
+		name: "a record written and read under a hardware lock",
+		src: `import "p2"
+
+type rec struct {
+	a, b, c int
+}
+
+var (
+	shared rec
+	lk     int
+	done   chan bool
+)
+
+func writer() {
+	for i := 1; i <= 1000; i++ {
+		for !p2.TryLock(lk) {
+		}
+		shared.a = i
+		shared.b = i * 2
+		shared.c = i * 3
+		p2.Unlock(lk)
+	}
+	done <- true
+}
+
+func snapshot() (int, int, int) {
+	for !p2.TryLock(lk) {
+	}
+	a, b, c := shared.a, shared.b, shared.c
+	p2.Unlock(lk)
+	return a, b, c
+}
+
+func main() {
+	lk = p2.NewLock()
+	go writer()
+	torn := 0
+	for i := 0; i < 2000; i++ {
+		a, b, c := snapshot()
+		if b != a*2 || c != a*3 {
+			torn++
+		}
+	}
+	<-done
+	println("torn:", torn)
+}
+`,
+		want: "torn: 0\n",
+	},
+	{
+		// A channel of receive-only channels is written as Go writes it: both
+		// ways with its element in parentheses, send-only and receive-only with
+		// the element's arrow after the channel's. A named element type had to
+		// stand in for one before.
+		name: "a channel of receive-only channels, written as Go writes it",
+		src: `var pipe chan (<-chan int)
+var a chan int
+var b chan int
+
+func source(out chan<- int, v int) {
+	out <- v
+	out <- v + 10
+	close(out)
+}
+
+func route(p chan<- <-chan int, c <-chan int) {
+	p <- c
+}
+
+func drain(p <-chan (<-chan int)) int {
+	c := <-p
+	s := 0
+	for v := range c {
+		s += v
+	}
+	return s
+}
+
+func main() {
+	go source(a, 1)
+	go route(pipe, a)
+	println(drain(pipe))
+	var d <-chan int = b
+	go source(b, 2)
+	go route(pipe, d)
+	var r <-chan <-chan int = pipe
+	println(drain(r))
+}
+`,
+		want: "12\n14\n",
+	},
+	{
 		// The Builder's writes answer Go's strings.Builder's results, (int, error)
 		// and error, and a write that does not fit the backing writes what does and
 		// answers "short write" -- WriteRune nothing of a rune that does not fit

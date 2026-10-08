@@ -16,7 +16,8 @@ what is written under "Go prints", unless the entry says Go's output varies.
 The P2's C toolchain has no 64-bit floating point, so `float64` is `float32` under its
 Go name. A program gets about 7 significant digits from either, not 15. Printing is
 exact (`%v` gives the shortest decimal that reads back the same float), so it is the
-value that is short of digits, not its rendering.
+value that is short of digits, not its rendering. A `float64` of 64 bits, computed in
+software, is planned.
 
 <!-- board-only: the host's C double has 64 bits -->
 
@@ -69,7 +70,9 @@ Go prints:
 There is no heap to `make` a channel in, so `var ch chan T` is a live channel, its
 cell allocated statically. A local declaration names one cell for every run of the
 function: two calls, or two cogs running it at once, share it. In Go, `var ch chan T`
-is a nil channel and every `make` a new one.
+is a nil channel and every `make` a new one. Making a channel as Go makes one is
+planned: `make(chan T)`, a cell of the frame in a function, refused where it would
+outlive the call.
 
 ```go
 func newChan() chan int {

@@ -51,7 +51,7 @@ func TestStackNeeds(t *testing.T) {
 		listing []byte
 		longs   int
 		known   bool
-		goName  string // the deepest goroutine's function
+		goName  string // the deepest goroutine's function, or the one recursing
 	}{
 		{"no goroutine", listingOf(fnListing("_main", 1, 0, "call\t#_work"), fnListing("_work", 2, 8)), 0, true, ""},
 		{
@@ -75,7 +75,7 @@ func TestStackNeeds(t *testing.T) {
 			listingOf(fnListing("_ogo_go0_0001", 1, 0, "call\t#_work"),
 				fnListing("_work", 2, 0, "call\t#_other"),
 				fnListing("_other", 2, 0, "call\t#_work")),
-			0, false, "",
+			0, false, "work",
 		},
 		{
 			// The program's call through a register reaches the program's taken
@@ -101,8 +101,12 @@ func TestStackNeeds(t *testing.T) {
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			r := readStackNeeds(tc.listing, c)
-			if r.goLongs != tc.longs || r.goKnown != tc.known || r.goName != tc.goName {
-				t.Fatalf("got %d longs, known %v, name %q; want %d, %v, %q\n%s", r.goLongs, r.goKnown, r.goName, tc.longs, tc.known, tc.goName, tc.listing)
+			name := r.goName
+			if !r.goKnown {
+				name = r.goRecurse
+			}
+			if r.goLongs != tc.longs || r.goKnown != tc.known || name != tc.goName {
+				t.Fatalf("got %d longs, known %v, name %q; want %d, %v, %q\n%s", r.goLongs, r.goKnown, name, tc.longs, tc.known, tc.goName, tc.listing)
 			}
 		})
 	}
@@ -219,7 +223,7 @@ func main() {
 		}
 		m := slot.FindSubmatch(built)
 		if m == nil {
-			t.Fatalf("no slot size in the C compiled")
+			return 0, nil // a program starting no goroutine has no slots
 		}
 		longs, _ = strconv.Atoi(string(m[1]))
 		return longs, nil
@@ -253,6 +257,40 @@ func main() {
 		}
 		if _, err := compile(t, big, true); err != nil {
 			t.Fatalf("with the stack asked for: %v", err)
+		}
+	})
+	t.Run("recursion", func(t *testing.T) {
+		// No listing bounds a recursion's depth, and the default slot was a guess
+		// the fence checked only as the goroutine ended; --gostack is the size
+		// the program chooses.
+		rec := `var out chan int
+
+func depth(n int) int {
+	if n == 0 {
+		return 0
+	}
+	return 1 + depth(n-1)
+}
+
+func work(n int) {
+	out <- depth(n)
+}
+
+func main() {
+	go work(5)
+	println(<-out)
+}
+`
+		_, err := compile(t, rec, false)
+		if err == nil || !strings.Contains(err.Error(), "a goroutine recurses through depth") {
+			t.Fatalf("err=%v, want the goroutine's recursion through depth refused", err)
+		}
+		if _, err := compile(t, rec, true); err != nil {
+			t.Fatalf("with the stack asked for: %v", err)
+		}
+		// A recursion on main's cog is main's stack, the rest of Hub RAM.
+		if _, err := compile(t, strings.Replace(rec, "go work(5)\n\tprintln(<-out)", "println(depth(5))", 1), false); err != nil {
+			t.Fatalf("recursion on main's cog: %v", err)
 		}
 	})
 	t.Run("main", func(t *testing.T) {

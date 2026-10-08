@@ -237,8 +237,8 @@ where the binary would be, to be reported with the program.
 	              stack per goroutine, in longs (64..8192). Without it the
 	              build gives every slot what the program's deepest goroutine
 	              needs by the backend's listing, 256 at least, and refuses a
-	              program whose goroutine needs more than 8192; a goroutine
-	              recursing through its own calls is not measured, and one
+	              program whose goroutine needs more than 8192, or recurses
+	              through its own calls, which the listing cannot measure; one
 	              that outruns its slot panics "goroutine stack overflow".
 	              Seven slots of it sit in hub RAM for the whole run.
 	--xtal hz     the board's crystal (default 20MHz)

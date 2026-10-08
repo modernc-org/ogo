@@ -1,0 +1,46 @@
+// A channel received from a channel of channels has the element's type, its
+// direction included, however the element is written: in parentheses after a
+// bidirectional chan, after an arrow, or named. It had none, so a send to a
+// receive-only channel received, a close of one and a store of one into a
+// bidirectional variable were taken.
+
+type Src <-chan int
+
+type Snk chan<- int
+
+var pipe chan (<-chan int)
+var named chan Src
+var sinks chan Snk
+var replies chan chan<- int
+
+func use(p chan<- <-chan int, a chan int) {
+	c := <-pipe
+	// ERROR cannot send to receive-only channel c
+	c <- 1
+	// ERROR cannot close receive-only channel c
+	close(c)
+	// ERROR cannot use <-pipe \(value of type <-chan int\) as chan int value in variable declaration
+	var d chan int = <-pipe
+	_ = d
+	n := <-named
+	// ERROR cannot send to receive-only channel n
+	n <- 2
+	y := <-sinks
+	// ERROR cannot receive from send-only channel y
+	<-y
+	r := <-replies
+	// ERROR cannot receive from send-only channel r
+	<-r
+	// ERROR cannot use pipe \(variable of type chan \(<-chan int\)\) as chan<- chan int value in variable declaration
+	var x chan<- chan int = pipe
+	_ = x
+	p <- a
+	var q <-chan (<-chan int) = pipe
+	// ERROR cannot send to receive-only channel q
+	q <- a
+}
+
+func main() {
+	var a chan int
+	use(pipe, a)
+}

@@ -33,8 +33,10 @@ import (
 // into a register formats into the memory past it unreserved (the number printer
 // does), which is given 256 bytes.
 //
-// Recursion through direct calls has no depth a listing can bound, and such a
-// goroutine is left to the slot it gets and the fence. A cycle through an indirect
+// Recursion through direct calls has no depth a listing can bound, and a build
+// starting such a goroutine is refused unless --gostack gives the slots a size: left
+// to the 256 longs a slot holds by default, it ran past them in silence, the fence
+// saying so only when it ended. A cycle through an indirect
 // call is the library's -- a flush calling a FILE's function that can reach flush
 // again -- and is taken as the deepest simple path through it.
 //
@@ -100,10 +102,11 @@ type stackEdge struct {
 // it: the deepest goroutine's in longs, 0 for a program that starts none, and the
 // main cog's in bytes, -1 where recursion through direct calls leaves it unbounded.
 type stackNeeds struct {
-	goLongs  int
-	goKnown  bool   // every goroutine's need is bounded
-	goName   string // the deepest goroutine's function, as the C names it
-	mainNeed int
+	goLongs   int
+	goKnown   bool   // every goroutine's need is bounded
+	goName    string // the deepest goroutine's function, as the C names it
+	goRecurse string // where the first goroutine of unbounded need recurses, as the C names it
+	mainNeed  int
 }
 
 // readStackNeeds reads a program's stack needs off the listing the backend wrote
@@ -343,6 +346,9 @@ func readStackNeeds(listing, c []byte) (r stackNeeds) {
 	for _, t := range tramps {
 		v := need(t)
 		if v < 0 {
+			if r.goKnown {
+				r.goRecurse = recursingName(fns[t].calls, need)
+			}
 			r.goKnown = false
 			continue
 		}
@@ -433,6 +439,18 @@ func goroutineName(calls []string, need func(string) int) string {
 		}
 	}
 	return stackStatic.ReplaceAllString(strings.TrimPrefix(name, "_"), "")
+}
+
+// recursingName names where a goroutine whose need is unbounded recurses: the
+// function its trampoline calls that reaches the recursion, the goroutine's own
+// unless the backend inlined that.
+func recursingName(calls []string, need func(string) int) string {
+	for _, c := range calls {
+		if !strings.HasPrefix(c, "_ogo_cog_done") && need(c) < 0 {
+			return stackStatic.ReplaceAllString(strings.TrimPrefix(c, "_"), "")
+		}
+	}
+	return ""
 }
 
 // stackComponents numbers the strongly connected components of the call graph,

@@ -62,11 +62,43 @@ them, and do not design them out.
 is not rushed, and correctness comes before completeness, so they land after it as
 a purely additive change with time to bake). They need no heap, so they are owed,
 not excluded. specs.go's "Complex types (planned)" specifies them ahead of the work
--- Go's, a value two floats at the target's float precision, so complex128 is no
-more precise than complex64 -- and nothing before 1.1 should foreclose any of it.
+-- Go's, a value two floats of its float type, so complex128 is as precise as
+float64 is -- and nothing before 1.1 should foreclose any of it.
 Until then an imaginary literal (the scanner) and complex64/complex128 where the
 program declares no such name (`errUndefined`) say "complex numbers are not
 supported yet"; flexcc has no `_Complex`, so the emitter will lower them itself.
+
+**float64 is to be IEEE double precision, in software, eventually** (the user's
+call, 2026-10-08, following an outside review). Today it is a float32 under its Go
+name, the target's C double having 32 bits, and that is DIFFERENCES.md's first
+entry. The P2 has no floating-point hardware at all, so float32 is software already
+and a binary64 costs a factor more, not an FPU's worth; refusing float64 was
+declined, since an untyped float constant would then default to float32 and `x :=
+0.5` would differ from Go in its type. A release-sized job -- the arithmetic and
+conversion helpers over uint64, the constant fold, `math`, the exact printing, the
+fuzzer -- not scheduled; nothing before it should assume float64 is 32 bits where
+it can avoid it.
+
+**A channel is to be made as Go makes one** (the user's call, 2026-10-08, the
+review's first item): `var ch chan T` nil, as in Go, and `make(chan T)` the way to
+make one -- its cell static at package level, the FRAME's in a function and refused
+where it would outlive the call by the rules a slice of a local array is refused
+by -- so a channel program means what it means in Go and DIFFERENCES.md's
+declaration-site entry goes. It breaks every channel program written so far (`var
+ch chan int` becomes `var ch = make(chan int)`), p2-11's included, which is why it
+is to come before v1. Its design pass comes first: the lock of a frame's cell, a
+nil channel in a select (Go's way to disable a case), and the migration.
+
+**Later, from the same review** (recorded at the user's request, not scheduled): a
+`go` that reports a cog it could not start instead of panicking; contracts on a
+bodyless Spin2 function's pointer parameters, borrowed for the call or kept, so a
+local buffer may go to a synchronous method; a resource report from `ogo build`
+(Hub RAM by globals, backings, channel cells and stacks; cog stacks and their
+bounds; locks; per-function code size); explicit Load/Store operations beside the
+defined plain accesses; a `tryAppend` name for the ok form of append; stack slots
+sized per goroutine rather than all at the deepest one's; a check at a goroutine
+function's entry that stops an overrun before it writes; and splitting specs.go into
+the rules, the implementation status and the rationale.
 
 **A program ends as Go's does, every cog with it** (the user's call, 2026-10-07): a
 debug build's panic stops every other cog and then its own (panicHaltC), and a
@@ -2176,8 +2208,9 @@ run case's: **Go's exceptions are part of a category rule** -- a slice into an
 array or a pointer to one, a string into bytes or runes, nil into what holds a
 pointer, anything into an interface. nil to a defined slice, function or channel
 type, `L(nil)`, was the emitter's loud gap (zeroInitC writes it now); a conversion
-to `(chan int)`, to `[3]int` of an array literal, and to a function or struct type
-in parentheses, which does not parse, are still refused, loudly. Grids of the
+to a channel type, `(chan int)` and `(chan<- int)`, to `[3]int` of an array
+literal, and to a function or struct type in parentheses, which does not parse,
+are still refused, loudly. Grids of the
 builtins and assertions (110), the unary operators and steps (156) and the
 statements (110) over each category found three more: a literal called, `S{1, 2}()`,
 and a range over a struct or an interface without a value variable, taken, and with
@@ -2847,7 +2880,27 @@ a body still leaves the select): measured on a P2-EDGE, two busy channels gave
 host's threads had shared them fairly all along, so only the board showed it.
 Its implementation claims were checked first: three were stale notes, fixed
 (c41a47b). **A review's claim about the compiler is probed before it is answered:
-a note it read may be months behind the code.**
+a note it read may be months behind the code.** Its smaller items came next. A
+channel of receive-only channels is written as Go writes it, `chan (<-chan T)`,
+`chan<- <-chan T` and `<-chan (<-chan T)`: an arrow after "chan" is always the
+channel's own, so the element after it may begin with one (ArrowElemType), and an
+element may be parenthesised after any channel's keyword or arrow (ChanElemType's
+"(" Type ")"), egg's ambiguities still 10. The parentheses are the parser's alone:
+`it` hands a semantic reader the Type inside them, and the formatter and the token
+spans read `itRaw`. Factor's "chan" took Type, so `(chan<- int)(c)` was a syntax
+error and is the emitter's loud "not supported yet" now, as `(chan int)(c)` was.
+Writing the forms found an older row: a channel RECEIVED from a channel of channels
+had no type node, so `c := <-pipe; c <- 1` for a receive-only element, `close(c)` and
+`var d chan int = <-pipe` were taken, a named element too (exprChanTypeNode answers
+a receive now; 34 programs agree with Go). A goroutine that recurses is refused
+without --gostack (compileSized, goRecurse): its slot was the default 256 longs and
+the fence spoke only at its end. The lock rule was measured before it was written
+into specs.go: a record of three words under p2.TryLock and p2.Unlock, written by
+one cog and read 2000 times by another, torn 0 times on the board and 53 times
+without the lock, and the listing keeps every write between locktry and lockrel
+(TestBuildLockedRecord). Found and left: `%T` of a directional channel prints it
+both ways, `chan int` for a `chan<- int` -- the C type has no direction, so the
+spelling has to come from the checker.
 
 **A STRUCT HOLDING AN ARRAY IS COPIED, NEVER ASSIGNED** (2026-09-23). The target's C
 compiler copy-initializes and assigns one only at some SIZES -- "Unable to multiply
