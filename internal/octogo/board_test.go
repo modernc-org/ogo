@@ -377,8 +377,9 @@ func TestOnBoard(t *testing.T) {
 
 	for _, test := range emitRunCases {
 		t.Run(test.name, func(t *testing.T) {
+			// main.ogo, as the host runs name it: a test's message names its file.
 			bin := filepath.Join(dir, "prog.binary")
-			if err := boardBuild(ogo, dir, "prog", test.src, bin, test.backendWarning); err != nil {
+			if err := boardBuild(ogo, dir, "main", test.src, bin, test.backendWarning); err != nil {
 				t.Fatalf("build: %v", err)
 			}
 			// A panic case aborts through ogo_panic, which prints "panic: <msg>"

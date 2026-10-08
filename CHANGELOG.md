@@ -18,6 +18,19 @@ shipped section tells a reader on that version that they have behaviour they do 
 
 ## Unreleased
 
+### Language
+
+- **`testing.T` has Go's `Log`, `Logf`, `Error`, `Errorf`, `Fatal`, `Fatalf`,
+  `Skip`, `Skipf`, `FailNow`, `SkipNow`, `Name` and `Helper`**, where it had
+  `Fail`, `Failed`, `Skip` and `Skipped` and a test printed with `println`. The
+  output reads as `go test -v`'s does, `    stack_test.ogo:12: got 3, want 4`, a
+  message's later lines indented. A format is a constant string, as `printf`'s is.
+  `FailNow` and its kin stop the test where they are called however deep, as Go's
+  do, but run no deferred call on the way out, as a panic runs none here; on another
+  goroutine they end that goroutine and the test runs on, which is Go's behaviour
+  too. `Helper` does nothing: a message names the line it is written on. A deferred
+  or started `t.Log` is not supported yet, said where it is written.
+
 ### Fixed
 
 - **A printf of one argument evaluates it before writing anything**, as one of
@@ -36,6 +49,10 @@ shipped section tells a reader on that version that they have behaviour they do 
 
 ### Behaviour changes
 
+- **`t.Skip()` stops the test**, as Go's does; it only marked it skipped and let it
+  run on. A test that failed before it skipped is reported failed, as before.
+- **`ogo test` prints `=== RUN   TestName` before each test**, as `go test -v`
+  does, so what a test prints stands between its RUN line and its result.
 - **A typed constant times a float constant that is no integer is refused**, as Go
   refuses it: `const k = One * 2.5` for an integer One was taken, the product being
   whole; `2.5` is truncated converting to One's type first.

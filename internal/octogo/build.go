@@ -483,42 +483,102 @@ func p2ConstDecls() string {
 }
 
 // testingSrc is the testing package: what a test needs, and no more than this
-// target can provide. There is no heap and no formatting, so there is no Errorf --
-// println is a builtin that already prints mixed types, and duplicating it in a
-// package that cannot allocate would be worse than pointing at it.
+// target can provide. Its formatting methods -- Log, Logf, Error, Errorf, Fatal,
+// Fatalf, Skip, Skipf -- are declared without bodies and written at each call by the
+// emitter as printf writes its builtin (emitTestingCall): a format here is a
+// constant, and nothing is formatted into memory. So are run and exit, the C that
+// leaves a test from any depth (testingRunC, testingExitC), which is what FailNow
+// and SkipNow need.
 const testingSrc = `// Package testing provides the state a test reports its outcome through. A test is
 // a function named Test<Something> taking a *testing.T, in a file whose name ends
 // _test.ogo; "ogo test" builds them into a program of their own and runs it.
 //
-// A failure is reported by calling Fail, and what went wrong is printed with the
-// builtin println, which takes mixed types:
-//
 //	func TestPop(t *testing.T) {
 //		if got := pop(); got != 3 {
-//			println("pop:", got, "want 3")
-//			t.Fail()
+//			t.Errorf("pop: got %d, want 3", got)
 //		}
 //	}
 //
-// There is no Errorf: formatting needs allocation this target does not have.
+// Log and Logf print as go test prints them, "    file_test.ogo:12: " ahead of
+// the message: Log's operands as println separates them, Logf's by a format, which
+// is a constant, as printf's is. Error and Errorf print so and fail the test;
+// Fatal and Fatalf print, fail it and stop it; Skip and Skipf print and stop it,
+// marked skipped.
+//
+// FailNow and SkipNow stop the test where they are called, however deep, as Go's
+// do, but run no deferred call on the way out -- as a panic runs none here. Called
+// on another goroutine, they end that goroutine and the test runs on, which is what
+// Go's do too. Helper does nothing: a message names the line it is written on.
 
 type T struct {
 	failed  bool
 	skipped bool
+	name    string
 }
 
 // Fail marks the test as failed and lets it keep running.
 func (t *T) Fail() { t.failed = true }
 
-// Failed reports whether Fail has been called.
+// Failed reports whether the test has failed.
 func (t *T) Failed() bool { return t.failed }
 
-// Skip marks the test as skipped. It does NOT stop the test: there is no panic to
-// unwind with, so a skipping test returns on its own.
-func (t *T) Skip() { t.skipped = true }
+// FailNow marks the test as failed and stops it.
+func (t *T) FailNow() {
+	t.failed = true
+	t.exit()
+}
 
-// Skipped reports whether Skip has been called.
+// SkipNow marks the test as skipped and stops it.
+func (t *T) SkipNow() {
+	t.skipped = true
+	t.exit()
+}
+
+// Skipped reports whether the test was skipped.
 func (t *T) Skipped() bool { return t.skipped }
+
+// Name is the test's name.
+func (t *T) Name() string { return t.name }
+
+// Helper does nothing here.
+func (t *T) Helper() {}
+
+// Log prints its operands, separated by spaces.
+func (t *T) Log(args ...any)
+
+// Logf prints by a constant format.
+func (t *T) Logf(format string, args ...any)
+
+// Error is Log and Fail.
+func (t *T) Error(args ...any)
+
+// Errorf is Logf and Fail.
+func (t *T) Errorf(format string, args ...any)
+
+// Fatal is Log and FailNow.
+func (t *T) Fatal(args ...any)
+
+// Fatalf is Logf and FailNow.
+func (t *T) Fatalf(format string, args ...any)
+
+// Skip is Log and SkipNow.
+func (t *T) Skip(args ...any)
+
+// Skipf is Logf and SkipNow.
+func (t *T) Skipf(format string, args ...any)
+
+// exit leaves the test: to RunTest on its cog, and on another the goroutine ends.
+func (t *T) exit()
+
+// RunTest runs f as the test name, with t its state. It is what the runner "ogo
+// test" generates calls; a test does not call it.
+func RunTest(t *T, name string, f func(*T)) {
+	t.name = name
+	run(t, f)
+}
+
+// run calls f(t) where exit returns to.
+func run(t *T, f func(*T))
 `
 
 // stringsSrc is the strings package: the allocation-free part of Go's. It is

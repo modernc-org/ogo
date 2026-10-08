@@ -105,9 +105,21 @@ static inline int _lockrel(int l) { return pthread_mutex_unlock(&ogo_host_lock[l
 #define OGO_HOST_COGS 8
 static volatile int ogo_host_cog_live[OGO_HOST_COGS] = {1};
 struct ogo_host_start { void (*fn)(void *); void *arg; int cog; };
+/* The cog a thread stands in for, 0 for main's: _cogid answers it, and _cogstop of
+   it ends the thread as the hardware ends the cog. Another cog is not stopped here,
+   which only a panic asks for, and a panic ends the process. */
+static __thread int ogo_host_cogid;
+static inline int _cogid(void) { return ogo_host_cogid; }
+static inline void _cogstop(int cog) {
+	if (cog == ogo_host_cogid && cog != 0) {
+		ogo_host_cog_live[cog] = 0;
+		pthread_exit(0);
+	}
+}
 static void *ogo_host_trampoline(void *p) {
 	struct ogo_host_start s = *(struct ogo_host_start *)p;
 	free(p);
+	ogo_host_cogid = s.cog;
 	s.fn(s.arg);
 	ogo_host_cog_live[s.cog] = 0;
 	return 0;

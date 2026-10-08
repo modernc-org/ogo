@@ -90,7 +90,14 @@ the deferred calls a panic runs on its way out. Neither needs a heap -- a record
 each frame with deferred calls, set up on entry, which a panic unwinds to -- so they
 are owed, not excluded; but they touch the defer lowering, the goroutine
 trampolines, the inlined copies and the stack sizing, cost every call of a function
-that defers, and rest on setjmp/longjmp on the target, never measured. Until then
+that defers, and rest on setjmp/longjmp on the target -- measured since 2026-10-08,
+when testing's FailNow was built on them: the target's longjmp restores the frame
+pointer, the hub stack and the frames' registers and NOT the cog's eight-level
+hardware return stack, where a frameless function keeps its return address while it
+calls, so a stale address survives the jump and a later return takes it (main's
+returned into a test long finished). run saves all eight levels after its setjmp and
+restores them where the longjmp lands (testingHWStackC); recover needs the same, at
+every frame it can land in. Until then
 recover is "not supported yet" and a panic runs no deferred call. Nothing before
 then should foreclose it; the one thing that would pull the deferred calls forward
 is firmware wanting a `defer` to put a pin safe on a panic.
@@ -552,7 +559,23 @@ still design-only.
   The `testing` package is EMBEDDED SOURCE, not an intrinsic: `embeddedPkgs` in
   `internal/octogo/build.go` maps the import path to ordinary OctoGo that is
   compiled and mangled like any other package. The day it ships on disk, the only
-  change is where it is read from.
+  change is where it is read from. Since 2026-10-08 it has Go's Log, Logf, Error,
+  Errorf, Fatal, Fatalf, Skip, Skipf, FailNow, SkipNow, Name and Helper. The
+  formatting ones are declared without bodies and written at each call as printf is
+  (emitTestingCall: go test's "    file:line: " decoration, %v per operand for the
+  non-f forms, then Fail, FailNow or SkipNow), their arguments checked as printf's
+  are where the call is checked (checkArgsDeclaredIn -> checkTestingFormatArgs), not
+  against `args ...any`, which no value of a Kind goes into here; no prototype is
+  written for them. FailNow and SkipNow leave a test by longjmp to `run`, the
+  testing package's other bodiless function, whose C the emitter writes behind its
+  own header (emitTestingIntrinsic) -- with the hardware-stack save (see recover
+  above); on another cog they end the goroutine as its trampoline does
+  (ogo_test_goexit, after the pool, testingRuntimeC). The runner calls each test
+  through testing.RunTest and prints go test -v's `=== RUN` line. The host shim
+  models `_cogid` and a cog stopping itself for it. Not yet: subtests, Cleanup,
+  benchmarks, a deferred or started t.Log (refused with the literal that does it),
+  the deferred calls FailNow skips, and Helper's attribution of a line to the
+  caller.
 - **Interfaces are done and devirtualization is not.** A method call through an
   interface is an indirect call through a static vtable, always; the WPO pass that
   would make it direct where the concrete type is provable is design-only. Nothing

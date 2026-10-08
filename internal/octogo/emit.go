@@ -13,6 +13,7 @@ import (
 	"maps"
 	"math"
 	"math/big"
+	"path"
 	"slices"
 	"strconv"
 	"strings"
@@ -1906,6 +1907,9 @@ func (e *emitter) emitGo(nodes []Node) {
 		case Selector, Index, CallSuffix:
 			suffix = append(suffix, n)
 		}
+	}
+	if lit.sym != FuncLiteral && e.refuseDeferredTestingCall(head, suffix, "go") {
+		return
 	}
 	base := e.soleIdent(head.ast)
 	// `go (&v).M(args)` is `go v.M(args)`; `go (*T)(x).M(args)` calls M on the
@@ -6791,6 +6795,10 @@ func emitProgram(pkg *Package, w io.Writer, opts []EmitOption, rename map[string
 		out.WriteString(gd)
 		out.WriteByte('\n')
 	}
+	if e.testingRuntime {
+		out.WriteString(e.testingRuntimeC())
+		out.WriteByte('\n')
+	}
 	// Cells for locally declared channels. Discovered while walking the bodies, so
 	// they can only be written now, and they must precede the package initializer
 	// that takes their locks.
@@ -7035,6 +7043,7 @@ type emitter struct {
 	// once every body has been walked -- like the channel cells.
 	liftedProtos      []string
 	liftedDefs        []string
+	testingRuntime    bool // the testing package's run and exit were written; see testingRuntimeC
 	liftSeq           int
 	funcValueWrappers map[string]string // a multi-result function -> its void wrapper, minted once (see funcValueWrapper)
 	// methodValueTypes: a method's C name -> its type AS A VALUE, which is its
@@ -16280,6 +16289,12 @@ func (e *emitter) emitPrototypes(ast []int32) {
 		if !ok || name == "" || (recv == nil && name == "main") {
 			return
 		}
+		// The testing package's formatting methods are written at each call and
+		// never called (emitTestingCall): a prototype would only name the slice of
+		// `any` their declarations spell.
+		if _, written := testingCalls[name]; written && recv != nil && e.curPkgPrefix == "testing" {
+			return
+		}
 		var proto string
 		if recv == nil {
 			proto = e.funcSignatureC(e.funcDefCName(name, d), sig)
@@ -16355,6 +16370,10 @@ func (e *emitter) emitFuncDecl(ast []int32) {
 		// function calling the object's method (emitSpin2Func).
 		if b := e.f.Package.spin2Funcs[name]; recv == nil && b != nil {
 			e.emitSpin2Func(ast, name, sig, b)
+		}
+		// Or it is one of the testing package's intrinsics, its C written here.
+		if e.curPkgPrefix == "testing" {
+			e.emitTestingIntrinsic(ast, name, sig, recv)
 		}
 		return
 	}
@@ -33245,6 +33264,9 @@ func (e *emitter) emitDefer(nodes []Node) {
 			suffix = append(suffix, n)
 		}
 	}
+	if lit.sym != FuncLiteral && e.refuseDeferredTestingCall(head, suffix, "defer") {
+		return
+	}
 	// `defer func(p T) { ... }(v)`: the literal is lifted here, where the defer
 	// statement is written, and the replay calls the lifted function by name. Its
 	// arguments are captured now, as a named function's are -- Go evaluates them
@@ -35128,6 +35150,9 @@ func (e *emitter) emitAssignHeadStmt(nodes []Node) {
 // via emitCallExpr, a user-function or p2-intrinsic call, indented and closed
 // with `;`.
 func (e *emitter) emitCall(head Node, postfix []Node) {
+	if e.emitTestingCall(head, postfix) {
+		return
+	}
 	recv := e.soleIdent(head.ast)
 	if recv == "" {
 		// `(*T).M(p, x)`, a method expression called as a statement.
@@ -38611,14 +38636,235 @@ func (e *emitter) emitPrintf(callSuffix []int32) {
 		e.failAt(args[0].ast, "printf's format must be a constant string")
 		return
 	}
-	items, verbs, badVerb, ok := parsePrintfFormat(format)
-	if !ok {
-		e.failAt(args[0].ast, "printf: unknown formatting verb %s", badVerb)
+	e.emitPrintfFormat("printf", format, args[1:], args[0].ast)
+}
+
+// testingCalls are the testing package's methods written at each call rather than
+// called (emitTestingCall), each with the method of T it calls after printing: the
+// ones that fail or stop the test.
+var testingCalls = map[string]string{
+	"Log": "", "Logf": "",
+	"Error": "Fail", "Errorf": "Fail",
+	"Fatal": "FailNow", "Fatalf": "FailNow",
+	"Skip": "SkipNow", "Skipf": "SkipNow",
+}
+
+// emitTestingCall writes a call of a *testing.T's Log, Logf, Error, Errorf, Fatal,
+// Fatalf, Skip or Skipf as a statement: a printf of the message as go test prints
+// it, "    file_test.ogo:12: " ahead of it and a newline after, then Fail, FailNow
+// or SkipNow where the method asks for one. Log and its kin print their operands as
+// fmt.Sprintln does, each by %v and a space between; Logf and its kin by their
+// format, which is a constant, as printf's is. The receiver is rendered once, ahead
+// of the message, as Go evaluates it first. It reports whether the call was one.
+func (e *emitter) emitTestingCall(head Node, postfix []Node) bool {
+	method, text, ct, isCall := e.testingCallOf(head, postfix)
+	if !isCall {
+		return false
+	}
+	n := len(postfix)
+	then := testingCalls[method]
+	base := methodBaseType(e.underlyingCType(ct))
+	recv := text
+	if ct == base {
+		recv = "&" + text // a T variable: the methods are its pointer's
+	} else if slices.ContainsFunc(postfix[:n-2], func(st Node) bool { return st.sym == CallSuffix || e.exprHasEffect(st.ast) }) {
+		recv = e.hoist(ct, func() { e.emit(text) })
+	}
+	args := e.callArgExprs(postfix[n-1].ast)
+	var msg string
+	var rest []Node
+	if strings.HasSuffix(method, "f") {
+		if len(args) == 0 {
+			e.failAt(postfix[n-1].ast, "%s takes a format string", method)
+			return true
+		}
+		format, isConst := e.foldConstString(args[0].ast)
+		if !isConst {
+			e.failAt(args[0].ast, "%s's format must be a constant string, as printf's is", method)
+			return true
+		}
+		msg, rest = format, args[1:]
+	} else {
+		msg = strings.TrimSuffix(strings.Repeat("%v ", len(args)), " ")
+		rest = args
+	}
+	pos := e.f.tok(postfix[n-2].Pos()).Position()
+	e.emitPrintfFormat(method, testingDecorate(path.Base(pos.Filename), pos.Line, msg), rest, postfix[n-1].ast)
+	e.ind()
+	if then == "" {
+		// Log and Logf read nothing of the T, and Go evaluates the receiver all the
+		// same; a parameter read by nothing else is one the C compiler warns about.
+		e.emit("(void)(" + recv + ");\n")
+		return true
+	}
+	e.emit(e.methodCName(base, then) + "(" + recv + ");\n")
+	return true
+}
+
+// testingCallOf reports a call of one of testingCalls on a testing.T, `t.Logf(...)`
+// or through a chain, `h.t.Logf(...)`: the method, the receiver's C text and its C
+// type, a T or a pointer to one.
+func (e *emitter) testingCallOf(head Node, postfix []Node) (method, text, ct string, ok bool) {
+	n := len(postfix)
+	if n < 2 || postfix[n-1].sym != CallSuffix || postfix[n-2].sym != Selector {
+		return "", "", "", false
+	}
+	method = e.soleIdent(postfix[n-2].ast)
+	if _, isCall := testingCalls[method]; !isCall {
+		return "", "", "", false
+	}
+	name := e.soleIdent(head.ast)
+	if name == "" {
+		return "", "", "", false
+	}
+	if n == 2 {
+		if ct, ok = e.varType(name); !ok {
+			return "", "", "", false
+		}
+		text = e.varRef(name)
+	} else if text, ct, _, ok = e.chainCText(name, postfix[:n-2]); !ok {
+		return "", "", "", false
+	}
+	if methodBaseType(e.underlyingCType(ct)) != e.mangle("testing", "T") {
+		return "", "", "", false
+	}
+	return method, text, ct, true
+}
+
+// refuseDeferredTestingCall refuses `defer t.Log(...)` and `go t.Errorf(...)`: the
+// call is written where it stands (emitTestingCall), and a deferred or started one
+// would have to be written where it runs, with its arguments captured, which is not
+// done yet. A function literal calling it is the way round.
+func (e *emitter) refuseDeferredTestingCall(head Node, postfix []Node, stmt string) bool {
+	method, _, _, isCall := e.testingCallOf(head, postfix)
+	if !isCall {
+		return false
+	}
+	e.failAt(postfix[len(postfix)-1].ast, "`%s t.%s(...)` is not supported yet; write `%s func(t *testing.T) { t.%s(...) }(t)`", stmt, method, stmt, method)
+	return true
+}
+
+// testingDecorate is go test's decoration of a message, as a printf format: four
+// spaces, the file and the line, the message with its later lines indented four
+// spaces more, and one newline at its end. Only the format's own lines are
+// indented: a newline a value prints is written as it is.
+func testingDecorate(file string, line int, msg string) string {
+	lines := strings.Split(msg, "\n")
+	if k := len(lines); k > 1 && lines[k-1] == "" {
+		lines = lines[:k-1]
+	}
+	return "    " + strings.ReplaceAll(file, "%", "%%") + ":" + strconv.Itoa(line) + ": " + strings.Join(lines, "\n        ") + "\n"
+}
+
+// emitTestingIntrinsic writes the C of the testing package's run and exit, which
+// leave a test from any depth: run calls the test where a setjmp keeps its frame,
+// and exit longjmps back to it -- on run's cog. On another, the goroutine calling it
+// ends as its trampoline would end it (testingRuntimeC), which is Go's runtime.Goexit;
+// outside a test, it panics. Neither runs a deferred call on the way out, as a panic
+// runs none.
+func (e *emitter) emitTestingIntrinsic(ast []int32, name string, sig, recv []int32) {
+	var proto, body string
+	switch {
+	case recv == nil && name == "run":
+		proto = e.funcSignatureC(e.funcDefCName(name, ast), sig)
+		body = "\togo_test_cog = _cogid();\n\togo_test_armed = 1;\n" +
+			"\tif (!setjmp(ogo_test_jmp)) {\n" + testingHWStackC(true) + "\t\tf(t);\n\t} else {\n" + testingHWStackC(false) + "\t}\n" +
+			"\togo_test_armed = 0;\n"
+	case recv != nil && name == "exit":
+		rn, rct, _ := e.receiverInfo(recv)
+		proto = e.methodSignatureC(e.methodCName(methodBaseType(rct), name), rn, rct, sig)
+		body = "\t(void)" + rn + ";\n\tint me = _cogid();\n" +
+			"\tif (ogo_test_armed && me == ogo_test_cog) {\n\t\tlongjmp(ogo_test_jmp, 1);\n\t}\n" +
+			"\togo_test_goexit(me);\n"
+	default:
 		return
 	}
-	rest := args[1:]
+	if proto == "" {
+		return
+	}
+	e.testingRuntime = true
+	e.includes["setjmp.h"] = true
+	e.needPanic()
+	if e.wroteDecl {
+		e.emit("\n")
+	}
+	e.wroteDecl = true
+	e.emit(proto + " {\n" + body + "}\n")
+}
+
+// testingHWStackC saves the cog's hardware return stack where run's setjmp returns
+// first, and puts it back where the longjmp lands. The target's setjmp and longjmp
+// restore the frame pointer, the hub stack and the frames' registers, and not the
+// eight levels of return addresses the cog keeps in hardware -- where a function
+// with no frame keeps its own while it calls. So a longjmp out of one left its
+// address there, and a later return from a frameless caller of run took it:
+// measured on a P2-EDGE, main's own return went back into a test SkipNow had left
+// long before, and ran its last line. All eight levels are saved and restored, the
+// stack having no depth to read; the host's longjmp needs none of it.
+func testingHWStackC(save bool) string {
+	var b strings.Builder
+	b.WriteString("#ifdef __FLEXC__\n")
+	if save {
+		b.WriteString("\t\tunsigned h0, h1, h2, h3, h4, h5, h6, h7;\n\t\t__asm const {\n")
+		for i := 0; i < 8; i++ {
+			fmt.Fprintf(&b, "\t\t\tpop h%d\n", i)
+		}
+	} else {
+		b.WriteString("\t\tunsigned h0 = ogo_test_hw[0], h1 = ogo_test_hw[1], h2 = ogo_test_hw[2], h3 = ogo_test_hw[3];\n" +
+			"\t\tunsigned h4 = ogo_test_hw[4], h5 = ogo_test_hw[5], h6 = ogo_test_hw[6], h7 = ogo_test_hw[7], x;\n\t\t__asm const {\n")
+		for i := 0; i < 8; i++ {
+			b.WriteString("\t\t\tpop x\n")
+		}
+	}
+	for i := 7; i >= 0; i-- {
+		fmt.Fprintf(&b, "\t\t\tpush h%d\n", i)
+	}
+	b.WriteString("\t\t}\n")
+	if save {
+		for i := 0; i < 8; i++ {
+			fmt.Fprintf(&b, "\t\togo_test_hw[%d] = h%d;\n", i, i)
+		}
+	}
+	b.WriteString("#endif\n")
+	return b.String()
+}
+
+// testingRuntimeC is what the testing package's run and exit share, written after
+// the goroutine pool and before the bodies: the jump buffer, the cog the test runs
+// on, and ogo_test_goexit, which ends a goroutine that called FailNow or SkipNow as
+// its trampoline ends it -- the slot marked done, the cog stopped. A goroutine's cog
+// is written into its slot by the cog that started it, which may not have happened
+// yet when the goroutine is that quick: it is waited for, as the pool waits for a
+// cog to stop.
+func (e *emitter) testingRuntimeC() string {
+	var b strings.Builder
+	b.WriteString("static jmp_buf ogo_test_jmp;\nstatic int ogo_test_cog = -1, ogo_test_armed;\n")
+	b.WriteString("#ifdef __FLEXC__\nstatic unsigned ogo_test_hw[8];\n#endif\n")
+	b.WriteString("static void ogo_test_goexit(int me) {\n")
+	if len(e.goSites) != 0 {
+		b.WriteString("\tfor (int spin = 0; spin < OGO_STOP_SPINS; spin++) {\n" +
+			"\t\tfor (int i = 0; i < OGO_COGS - 1; i++) {\n" +
+			"\t\t\tif (ogo_cog_pool[i].ogo_used && !ogo_cog_pool[i].ogo_done && ogo_cog_pool[i].ogo_cog == me) {\n" +
+			"\t\t\t\togo_cog_done(i);\n\t\t\t\t_cogstop(me);\n\t\t\t}\n\t\t}\n\t\t_waitx(1);\n\t}\n")
+	} else {
+		b.WriteString("\t(void)me;\n")
+	}
+	b.WriteString("\togo_panic(\"testing: FailNow or SkipNow called outside a test\");\n}\n")
+	return b.String()
+}
+
+// emitPrintfFormat is emitPrintf for a format already in hand, which a caller may
+// have built: the testing package's Logf writes go test's "file:line: " ahead of
+// the program's own (emitTestingCall). what names the call in a diagnostic, and at
+// is where one is reported.
+func (e *emitter) emitPrintfFormat(what, format string, rest []Node, at []int32) {
+	items, verbs, badVerb, ok := parsePrintfFormat(format)
+	if !ok {
+		e.failAt(at, "%s: unknown formatting verb %s", what, badVerb)
+		return
+	}
 	if verbs != len(rest) {
-		e.failAt(args[0].ast, "printf: the format has %s but %s given",
+		e.failAt(at, "%s: the format has %s but %s given", what,
 			countUnits(verbs, "verb"), countUnits(len(rest), "argument"))
 		return
 	}

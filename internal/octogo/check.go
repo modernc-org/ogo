@@ -12681,6 +12681,10 @@ func (f *File) importedMethodSig(qual, typeName, member Token) *SignatureNode {
 // promoted from a third package, or a parameter of an array type.
 func (f *File) checkArgsDeclaredIn(s *Scope, qual, decl, at Token, sig *SignatureNode, args []Node) {
 	wf := f.fileOfToken(decl)
+	if wf.Package != nil && wf.Package.ImportPath == "testing" && testingFormatMethods[decl.Src()] != "" {
+		f.checkTestingFormatArgs(s, decl.Src(), at, args)
+		return
+	}
 	if home, ok := f.importedPkgScope(qual); ok && wf.Package != nil && wf.Package.Scope == home {
 		if r, ok := f.requalifiedSig(home, qual, sig); ok {
 			f.checkArgs(s, at, r, args)
@@ -12688,6 +12692,36 @@ func (f *File) checkArgsDeclaredIn(s *Scope, qual, decl, at Token, sig *Signatur
 		}
 	}
 	f.checkArgsIn(s, wf.Scope, at, sig, args)
+}
+
+// testingFormatMethods are the methods of testing.T whose arguments are a print's
+// rather than their declaration's -- `args ...any` there, which no value of a Kind
+// goes into, an interface holding a pointer here -- by what each takes ahead of
+// them: a format, or nothing.
+var testingFormatMethods = map[string]string{
+	"Log": "args", "Error": "args", "Fatal": "args", "Skip": "args",
+	"Logf": "format", "Errorf": "format", "Fatalf": "format", "Skipf": "format",
+}
+
+// checkTestingFormatArgs checks the arguments of t.Logf and its kin as printf's are
+// checked: a format that is a constant string first, where the method takes one.
+// The verbs are counted against the arguments, and each asked whether its verb
+// suits it, where the call is written (emitTestingCall), as printf's are.
+func (f *File) checkTestingFormatArgs(s *Scope, method string, at Token, args []Node) {
+	if testingFormatMethods[method] != "format" {
+		return
+	}
+	if len(args) == 0 {
+		f.err(at.Position(), "not enough arguments in call to %s: it takes a format", method)
+		return
+	}
+	if k, ok := f.exprType(s, args[0]); ok && k != UntypedString && k != PredeclaredString {
+		f.err(f.tok(args[0].Pos()).Position(), "cannot use %s (value of type %s) as string value in argument to %s", f.exprSource(args[0]), kindName(k), method)
+		return
+	}
+	if _, isConst := f.constStringOperand(s, args[0]); !isConst {
+		f.err(f.tok(args[0].Pos()).Position(), "%s's format must be a constant string, as printf's is", method)
+	}
 }
 
 // importedPkgScope is the package scope behind an import qualifier, which is where

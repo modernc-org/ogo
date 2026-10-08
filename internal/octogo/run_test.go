@@ -38,6 +38,178 @@ type emitRunCase struct {
 
 var emitRunCases = []emitRunCase{
 	{
+		// The testing package's methods, through RunTest as the runner ogo test
+		// generates calls it: Log and Logf print as go test prints them, the file
+		// and line ahead and later lines of a message indented; Error and Errorf
+		// fail and run on; Fatalf two calls deep, Skipf and FailNow through a field
+		// stop the test where they are called; and t.Fatal on another goroutine ends
+		// that goroutine and the test runs on, as Go's Goexit does. None of the
+		// "nr-" lines may print.
+		name: "the testing package's Log, Errorf, Fatalf, Skipf and FailNow",
+		src: `import "testing"
+
+type P struct{ x, y int }
+
+type holder struct{ t *testing.T }
+
+var done chan bool
+
+var reached int
+
+func deeper(t *testing.T, n int) {
+	if n == 0 {
+		t.Fatalf("deep: n=%d", n)
+	} else {
+		deeper(t, n-1)
+	}
+	reached++
+}
+
+func helper(t *testing.T, got, want int) {
+	t.Helper()
+	if got != want {
+		t.Errorf("got %d,\nwant %d", got, want)
+	}
+}
+
+func testLog(t *testing.T) {
+	t.Log("a", 1, true, P{1, 2})
+	t.Logf("%d|%s|%v", 7, "x", P{3, 4})
+	t.Log()
+}
+
+func testError(t *testing.T) {
+	t.Error("first")
+	helper(t, 1, 2)
+	t.Errorf("after %d errors", 2)
+}
+
+func testFatal(t *testing.T) {
+	deeper(t, 3)
+	println("nr-fatal")
+}
+
+func testSkip(t *testing.T) {
+	t.Skipf("skipping: %s", t.Name())
+	println("nr-skip")
+}
+
+func testGoroutine(t *testing.T) {
+	go func(t *testing.T) {
+		t.Fatal("from a goroutine")
+		println("nr-goroutine")
+	}(t)
+	for !t.Failed() {
+	}
+	println("main goes on")
+}
+
+func testField(t *testing.T) {
+	h := holder{t}
+	h.t.Logf("via a field: %d", 5)
+	if !h.t.Failed() {
+		h.t.FailNow()
+	}
+}
+
+func run(name string, f func(*testing.T)) {
+	var t testing.T
+	println("=== RUN  ", name)
+	testing.RunTest(&t, name, f)
+	println(name, "failed", t.Failed(), "skipped", t.Skipped())
+}
+
+func main() {
+	run("TestLog", testLog)
+	run("TestError", testError)
+	run("TestFatal", testFatal)
+	println("reached", reached)
+	run("TestSkip", testSkip)
+	run("TestField", testField)
+	run("TestGoroutine", testGoroutine)
+}
+`,
+		want: "=== RUN   TestLog\n    main.ogo:28: a 1 true {1 2}\n    main.ogo:29: 7|x|{3 4}\n    main.ogo:30: \nTestLog failed false skipped false\n=== RUN   TestError\n    main.ogo:34: first\n    main.ogo:23: got 1,\n        want 2\n    main.ogo:36: after 2 errors\nTestError failed true skipped false\n=== RUN   TestFatal\n    main.ogo:13: deep: n=0\nTestFatal failed true skipped false\nreached 0\n=== RUN   TestSkip\n    main.ogo:45: skipping: TestSkip\nTestSkip failed false skipped true\n=== RUN   TestField\n    main.ogo:61: via a field: 5\nTestField failed true skipped false\n=== RUN   TestGoroutine\n    main.ogo:51: from a goroutine\nmain goes on\nTestGoroutine failed true skipped false\n",
+	},
+	{
+		// FailNow and SkipNow leave a test by longjmp, twenty times over, from chains
+		// of functions with no frame and from a recursion: the target's longjmp
+		// restores no hardware return stack, where a frameless function keeps its
+		// address while it calls, and a stale one left there sent main's own return
+		// back into a test long finished, measured on a P2-EDGE (testingHWStackC).
+		name: "a test left by FailNow twenty times from frameless chains returns where it should",
+		src: `import "testing"
+
+var depth int
+var after int
+
+func f1(t *testing.T) { f2(t); after++ }
+func f2(t *testing.T) { f3(t); after++ }
+func f3(t *testing.T) { f4(t); after++ }
+func f4(t *testing.T) { f5(t); after++ }
+func f5(t *testing.T) { f6(t); after++ }
+func f6(t *testing.T) {
+	if depth == 6 {
+		t.FailNow()
+	}
+	after++
+}
+
+func rec(t *testing.T, n int) int {
+	if n == 0 {
+		t.SkipNow()
+		return 0
+	}
+	return rec(t, n-1) + 1
+}
+
+func a1(x int) int { return a2(x) + 1 }
+func a2(x int) int { return a3(x) + 2 }
+func a3(x int) int { return a4(x) + 3 }
+func a4(x int) int { return x * 2 }
+
+func chain(t *testing.T) {
+	depth = 6
+	f1(t)
+}
+
+func recur(t *testing.T) {
+	println(rec(t, 12))
+}
+
+func pass(t *testing.T) {
+	if a1(5) != 16 {
+		t.Fail()
+	}
+}
+
+func fatalf(t *testing.T) {
+	t.Fatalf("at %d", a1(1))
+}
+
+var tests = [...]func(*testing.T){chain, recur, pass, fatalf}
+
+func main() {
+	failed, skipped := 0, 0
+	for i := 0; i < 20; i++ {
+		var t testing.T
+		testing.RunTest(&t, "T", tests[i%len(tests)])
+		if t.Failed() {
+			failed++
+		}
+		if t.Skipped() {
+			skipped++
+		}
+		if a1(i) != 2*i+6 {
+			println("bad return", i)
+		}
+	}
+	println("failed", failed, "skipped", skipped, "after", after, "a1", a1(10))
+}
+`,
+		want: "    main.ogo:47: at 8\n    main.ogo:47: at 8\n    main.ogo:47: at 8\n    main.ogo:47: at 8\n    main.ogo:47: at 8\nfailed 10 skipped 5 after 0 a1 26\n",
+	},
+	{
 		// A printf of ONE argument evaluates it before it writes anything, as one of
 		// several did: the format's text ahead of the verb was written first, so
 		// `printf("got %d\n", <-ch)` wrote "got " and waited on the receive mid-line,

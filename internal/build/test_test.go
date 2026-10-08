@@ -47,9 +47,12 @@ func TestPushPop(t *testing.T) {
 	var r Ring
 	r.Push(1)
 	if v, ok := r.Pop(); !ok || v != 1 {
-		println("pop:", v, ok, "want 1 true")
-		t.Fail()
+		t.Errorf("pop: %d, %v; want 1 true", v, ok)
 	}
+	if _, ok := r.Pop(); ok {
+		t.Fatal("pop of an empty ring")
+	}
+	t.Log("done", t.Name())
 }
 
 func TestSkipped(t *testing.T) { t.Skip() }
@@ -283,19 +286,21 @@ func TestBroken(t *testing.T) { t.Nope() }
 }
 
 // TestRunnerSrc pins the shape of the generated runner: one testing.T per test, so
-// a failure in one does not mark the next, and Go's own result lines -- with the
-// failure asked about BEFORE the skip, as Go asks. The two marks are independent,
-// and Skip stops nothing here, so a test that fails and then skips has failed;
-// asked the other way round it was reported skipped and the package passed.
+// a failure in one does not mark the next, each run through testing.RunTest, which
+// FailNow returns to, and Go's own RUN and result lines -- with the failure asked
+// about BEFORE the skip, as Go asks. The two marks are independent, so a test that
+// fails and then skips has failed; asked the other way round it was reported
+// skipped and the package passed.
 func TestRunnerSrc(t *testing.T) {
 	got := testRunnerSrc([]string{"TestA", "TestB"})
 	for _, want := range []string{
 		`import "testing"`,
 		"func ogoTestMain() {",
 		"var t0 testing.T",
-		"TestA(&t0)",
+		`println("=== RUN   TestA")`,
+		`testing.RunTest(&t0, "TestA", TestA)`,
 		"var t1 testing.T",
-		"TestB(&t1)",
+		`testing.RunTest(&t1, "TestB", TestB)`,
 		`println("--- PASS: TestA")`,
 		`println("--- FAIL: TestB")`,
 		`println("--- SKIP: TestB")`,

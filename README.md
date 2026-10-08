@@ -113,14 +113,19 @@ import "testing"
 
 func TestPop(t *testing.T) {
 	if got, ok := pop(); !ok || got != 3 {
-		println("pop:", got, ok, "want 3 true")
-		t.Fail()
+		t.Errorf("pop: got %d, %v; want 3, true", got, ok)
 	}
 }
 ```
 
-There is no `Errorf` — formatting needs allocation this target does not have — so a
-test prints with the builtin `println` and calls `t.Fail()`. `ogo test ./...` tests
+`t.Log`, `Logf`, `Error`, `Errorf`, `Fatal`, `Fatalf`, `Skip`, `Skipf`, `Fail`,
+`FailNow`, `SkipNow`, `Name` and `Helper` are Go's, and the output reads as
+`go test -v`'s does, each message after its file and line. A format is a constant
+string, as the builtin `printf`'s is, since nothing is formatted into memory.
+`FailNow` and its kin stop the test where they are called, however deep, but run no
+deferred call on the way out, as a panic runs none here; and a message is placed on
+the line it is written on, `Helper` or not. A `t.Log` can't be deferred or started
+with `go` directly yet; wrap it in a function literal. `ogo test ./...` tests
 every package under a root, one board run each; `ogo test -run Push` runs only the
 tests whose name matches, and compiles only those, which is what makes iterating on
 one of them worth the board's ten seconds. `ogo test -c` builds
@@ -330,8 +335,8 @@ broken.
   `MaxFloat64` and `SmallestNonzeroFloat64`, which name values a 32-bit float
   cannot hold. `p2` wraps thirty-three intrinsics
   (pin control, smart pins including the ADC, timing and the clock, the serial line
-  in both directions, the hardware locks, the cog's LUT RAM), `testing` carries the state
-  a test reports through, and `unsafe` has `unsafe.Pointer`, `Add`, `Slice` and
+  in both directions, the hardware locks, the cog's LUT RAM), `testing` is Go's `*testing.T`
+  for logging, failing and skipping (no subtests, `Cleanup` or benchmarks yet), and `unsafe` has `unsafe.Pointer`, `Add`, `Slice` and
   `Sizeof`, `Alignof` and `Offsetof`, of the P2's layout. That is the whole of it. Your own packages do import and
   build; there is just little else to import yet.
 * **One function's locals live in cog RAM, and there are 480 longs of it** for all
