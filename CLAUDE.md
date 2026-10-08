@@ -277,7 +277,9 @@ inputs, and never hand-edit the outputs.
    > but for doc/register-limit-crash.c, a crash both ways. Since macOS 27 the Mac's
    > darwin/amd64 turn runs with DEVELOPER_DIR and SDKROOT naming the Universal CLT
    > 26.6 (its script, regen-darwin.sh, sets them). No new C library names. Host
-   > suite and `make board` (928 cases) green; seed 6978 passes on the board.
+   > suite and `make board` (928 cases) green; seed 6978 passes on the board, and
+   > seeds 1-400 on a P2-EDGE: 377 passing (nine on a second load), 22 outgrowing a
+   > cog, seed 359 refused by the backend (doc/uint64-shift-32-pair.c), none failing.
    >
    > **Backend regenerated 2026-10-02 at the same pin with a fix of its own, and with
    > go.mod's ccgo v4.36.1 and libc v1.77.1** -- spin2cpp `eb263961` (v7.7.3, still
