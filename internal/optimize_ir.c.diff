@@ -1,5 +1,5 @@
 diff --git a/backends/asm/optimize_ir.c b/backends/asm/optimize_ir.c
-index ff9b671a..fbffe440 100644
+index ff9b671a..c28ff3bc 100644
 --- a/backends/asm/optimize_ir.c
 +++ b/backends/asm/optimize_ir.c
 @@ -2045,6 +2045,11 @@ TransformConstDst(IRList *irl, IR *ir, Operand *imm)
@@ -14,3 +14,21 @@ index ff9b671a..fbffe440 100644
          if (!ApplyConditionAfter(irl,ir, cval, val1, &condchange)) {
              return condchange; // Couldn't apply condition :(
          }
+@@ -5027,13 +5032,15 @@ FindBlockForReorderingDownward(IR *after) {
+                 // Can't reorder over code that sets a non-dead value
+                 if (ModifiedInRange(bottom->next,after,top->dst) && !IsDeadAfter(after,top->dst)) break;
+                 // Check if this instruction meets some dependencies
+-                DeleteDependencies(&depends,top->dst);
++                // (only an unconditional write does: where a conditional one
++                // does not run, dst keeps the value it had before it)
++                if (top->cond == COND_TRUE) DeleteDependencies(&depends,top->dst);
+             }
+             // Does _this_ depend on anything that we can't take through reorder?
+             if (ModifiedInRange(bottom->next,after,top->src)) {
+                 PrependDependency(&depends,top->src);
+             }
+-            if (InstrReadsDst(top) && ModifiedInRange(bottom->next,after,top->dst)) {
++            if ((InstrReadsDst(top) || (InstrSetsDst(top) && top->cond != COND_TRUE)) && ModifiedInRange(bottom->next,after,top->dst)) {
+                 PrependDependency(&depends,top->dst);
+             }
+             // Ok, if there are no unmet dependencies, the block is good.

@@ -1516,7 +1516,7 @@ func s__is_macro_call(tls *libc.TLS, cc *CC, defp uintptr, cp uintptr, endf uint
 	if int32((*_DEFBUF)(unsafe.Pointer(defp)).Fnargs) >= 0 || int32((*_DEFBUF)(unsafe.Pointer(defp)).Fnargs) == -libc.Int32FromInt32(1)-(libc.Int32FromInt32(m___SCHAR_MAX__)*libc.Int32FromInt32(2)+libc.Int32FromInt32(1)+libc.Int32FromInt32(1)|(libc.Int32FromInt32(m___SCHAR_MAX__)*libc.Int32FromInt32(2)+libc.Int32FromInt32(1)+libc.Int32FromInt32(1))*libc.Int32FromInt32(2)) { /* _Pragma() pseudo-macro       */
 		c = s__squeeze_ws(tls, cc, cp, endf, mgc_seq) /* See the next char.   */
 		if c == m_CHAR_EOF {                          /* End of file          */
-			x__unget_string(tls, cc, __ccgo_ts+4265, libc.UintptrFromInt32(0))
+			x__unget_string(tls, cc, __ccgo_ts+4267, libc.UintptrFromInt32(0))
 		} else {
 			if c != int32(m_RT_END) {
 				/* Still in the file and rescan boundary ?  */
@@ -2198,6 +2198,69 @@ func x__MarkUsed(tls *libc.TLS, cc *CC, f uintptr, caller uintptr) {
 	s__MarkUsedBody(tls, cc, (*_Function)(unsafe.Pointer(f)).Fbody, caller)
 	cc.x__current = oldcurrent
 	cc.x__curfunc = oldfunc
+}
+
+// C documentation
+//
+//	//
+//	// insert promotion code under AST for either the left or right type
+//	// if "force" is nonzero then we will always promote small integers,
+//	// otherwise we promote only if their sizes do not match
+//	// return the final type
+//	//
+func x__MatchIntegerTypes(tls *libc.TLS, cc *CC, ast uintptr, lefttype uintptr, righttype uintptr, force int32) (r uintptr) {
+	var finalsize, leftunsigned, lsize, rightunsigned, rsize int32
+	var long_type, rettype, ulong_type uintptr
+	_, _, _, _, _, _, _, _ = finalsize, leftunsigned, long_type, lsize, rettype, rightunsigned, rsize, ulong_type
+	lsize = x__TypeSize(tls, cc, lefttype)
+	rsize = x__TypeSize(tls, cc, righttype)
+	rettype = lefttype
+	leftunsigned = x__IsUnsignedType(tls, cc, lefttype)
+	rightunsigned = x__IsUnsignedType(tls, cc, righttype)
+	force = libc.BoolInt32(force != 0 || lsize != rsize)
+	if lsize > int32(m_LONG_SIZE) || rsize > int32(m_LONG_SIZE) {
+		finalsize = int32(m_LONG64_SIZE)
+		ulong_type = cc.x__ast_type_unsigned_long64
+		long_type = cc.x__ast_type_long64
+	} else {
+		finalsize = int32(m_LONG_SIZE)
+		ulong_type = cc.x__ast_type_unsigned_long
+		long_type = cc.x__ast_type_long
+	}
+	if lsize < finalsize && force != 0 {
+		if leftunsigned != 0 {
+			(*_AST)(unsafe.Pointer(ast)).Fleft = s__dopromote(tls, cc, (*_AST)(unsafe.Pointer(ast)).Fleft, lsize, finalsize, int32(_K_ZEROEXTEND))
+			lefttype = ulong_type
+		} else {
+			(*_AST)(unsafe.Pointer(ast)).Fleft = s__dopromote(tls, cc, (*_AST)(unsafe.Pointer(ast)).Fleft, lsize, finalsize, int32(_K_SIGNEXTEND))
+			lefttype = long_type
+		}
+		rettype = righttype
+	}
+	if rsize < finalsize && force != 0 {
+		if rightunsigned != 0 {
+			(*_AST)(unsafe.Pointer(ast)).Fright = s__dopromote(tls, cc, (*_AST)(unsafe.Pointer(ast)).Fright, rsize, finalsize, int32(_K_ZEROEXTEND))
+			righttype = ulong_type
+		} else {
+			(*_AST)(unsafe.Pointer(ast)).Fright = s__dopromote(tls, cc, (*_AST)(unsafe.Pointer(ast)).Fright, rsize, finalsize, int32(_K_SIGNEXTEND))
+			righttype = long_type
+		}
+		rettype = lefttype
+	}
+	if leftunsigned != 0 || rightunsigned != 0 {
+		if x__GetCurrentLang(tls, cc) >= int32(m_LANG_CFAMILY_C) && x__GetCurrentLang(tls, cc) <= int32(m_LANG_CFAMILY_CPP) {
+			// C converts both operands to unsigned when one of them is an
+			// unsigned type of the full size, whichever side it is on
+			// (the result of a comparison is an int there)
+			if leftunsigned != 0 && lsize == finalsize && !(x__IsBoolType(tls, cc, lefttype) != 0) || rightunsigned != 0 && rsize == finalsize && !(x__IsBoolType(tls, cc, righttype) != 0) {
+				return ulong_type
+			}
+		}
+		return rettype
+	} else {
+		return long_type
+	}
+	return r
 }
 
 func x__NuHashFunc(tls *libc.TLS, cc *CC, f uintptr) (r uint8) {

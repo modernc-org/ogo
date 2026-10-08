@@ -256,6 +256,29 @@ inputs, and never hand-edit the outputs.
    `freopen`, and the `ungetc`/`abort` todo-stub redirects — that libc lacks or
    stubs for both darwin arches).
 
+   > **Backend regenerated 2026-10-08 at spin2cpp `1d709b25`** (upstream's master of
+   > 2026-10-05, 7.8.0-beta, inside flexprop `v7.7.0`; ccgo v4.36.1, libc v1.77.1),
+   > with `internal/optimize_ir.c.diff` carrying a SECOND hunk beside #118's: the
+   > CORDIC reordering's FindBlockForReorderingDownward took a CONDITIONAL write for a
+   > definition that meets a dependency, so a max's `if_be mov result1, #69 ; mov t,
+   > result1` moved below a QMUL past code overwriting result1, silently
+   > (doc/cordic-reorder-conditional-move.c; fuzzer seed 6978, see the smith notes).
+   > The pin carries upstream's fixes of #114 (bf72f733) and #115 (639a8c8e); the
+   > emitter's workarounds for both stay, costing nothing, and so does widenU32, whose
+   > fault (doc/widen-zero-plus-unsigned.c) bf72f733 fixed too. Measured before
+   > adoption, natively: test_offline 588/588; of 1366 programs (the run cases and
+   > fuzzer seeds 1-400 dumped, doc/) 131 build differently from the old pin, and on a
+   > P2-EDGE each prints what it printed before but four reproducers, which print
+   > gcc's values now (the CORDIC one, mixed-sign-operands, octal-escape and
+   > widen-zero); the second hunk alone moved only its reproducer, p2-11
+   > byte-identical. Each builder's turn changed its own target only (the fold
+   > expanded and hashed before and after each), and scripts/flexcc of all five
+   > builds the 1366 programs to one cccorpus list, a native build's of the same tree
+   > but for doc/register-limit-crash.c, a crash both ways. Since macOS 27 the Mac's
+   > darwin/amd64 turn runs with DEVELOPER_DIR and SDKROOT naming the Universal CLT
+   > 26.6 (its script, regen-darwin.sh, sets them). No new C library names. Host
+   > suite and `make board` (928 cases) green; seed 6978 passes on the board.
+   >
    > **Backend regenerated 2026-10-02 at the same pin with a fix of its own, and with
    > go.mod's ccgo v4.36.1 and libc v1.77.1** -- spin2cpp `eb263961` (v7.7.3, still
    > upstream's master), flexprop `v7.7.0`, `internal/optimize_ir.c.diff` carried
@@ -812,8 +835,8 @@ still design-only.
   three digits, so `cQuote` closes the literal after one a digit 0-7 follows, `"\033"
   "7"` (`doc/octal-escape-past-three-digits.c`; flexprop#115, filed 2026-10-01 with a
   tested fix, fixed upstream 2026-10-05 by spin2cpp 639a8c8e with the same rule and
-  measured right on the board; the workaround stays, costing nothing, until a
-  regeneration's pin carries it).
+  measured right on the board; the pin carries it since 2026-10-08, and the
+  workaround stays, costing nothing).
   **A call stands in a header** (2026-09-29): one time in four `genHeaderCall`
   writes one as the init of an if, of a switch and of a for, and as the for's post,
   its results unread, which the call counter accounts for; every seed is a new
@@ -2711,8 +2734,9 @@ before a multiplication read as one computed after it -- here the guard of an
 inlined call, which then ran once more (doc/cordic-reorder-conditional-move.c, d
 119 for 142; it needs inlined code on both sides, which the emitter's marks give).
 A two-line fix in FindBlockForReorderingDownward -- only an unconditional write
-meets a dependency, a conditional one adds its dst as one -- prints 142 on the
-board natively; not carried yet.
+meets a dependency, a conditional one adds its dst as one -- printed 142 on the
+board natively and is carried since the same day (the regeneration of 2026-10-08,
+under Code generation).
 A parenthesised head, `(uint64(x)) >> 32`, was the rewrite's first miss
 (unparenExpr). And the family is bounded on the board: a value widened and then
 compared, masked, added, multiplied, or shifted by any other count is right, and so

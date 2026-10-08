@@ -230,6 +230,17 @@ shipped section tells a reader on that version that they have behaviour they do 
 
 ### Toolchain
 
+- **The C backend is regenerated at spin2cpp's master of 2026-10-05**, which
+  carries upstream's fixes of the mixed-sign typing (flexprop#114) and of an octal
+  escape past three digits (#115), both worked around in the emitter before, and a
+  second fix of ours, carried ahead of upstream: the CORDIC reordering pass took a
+  conditional move for a definition of its register and moved a maximum's past
+  the code computing a multiplication's operand, so a value computed before the
+  multiplication read as one computed after it -- `d` printed 119 for 142 in
+  doc/cordic-reorder-conditional-move.c, and fuzzer seed 6978 counted a call
+  twice; silent, wherever inlined code met a QMUL or a QDIV. The five platforms'
+  backends compile the reproducers, the run cases and 400 fuzzer programs exactly
+  as a native build of the same backend does.
 - **`ogo smith` converts a value between sized types**: a block's fold expression is
   converted to another of the sized kinds, half the time with an operation in that
   kind after it, and folded into the checksum -- a narrowing from 64 bits, a change

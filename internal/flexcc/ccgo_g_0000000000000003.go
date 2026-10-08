@@ -471,10 +471,10 @@ type CC struct {
 	s__w_level                               int32
 	s__warned_once                           int32
 	s__warnflag                              [10]_FlagTable
-	s__yycheck                               [29169]_yytype_int16
+	s__yycheck                               [29256]_yytype_int16
 	s__yycheck1                              [6989]_yytype_int16
 	s__yycheck2                              [4749]_yytype_int16
-	s__yydefact                              [1234]_yytype_uint16
+	s__yydefact                              [1235]_yytype_uint16
 	s__yydefact1                             [967]_yytype_uint16
 	s__yydefact2                             [858]_yytype_uint16
 	s__yydefgoto                             [99]_yytype_int16
@@ -486,37 +486,37 @@ type CC struct {
 	s__yyor                                  [7]int8
 	s__yyor1                                 [7]int8
 	s__yyor2                                 [7]int8
-	s__yypact                                [1234]_yytype_int16
+	s__yypact                                [1235]_yytype_int16
 	s__yypact1                               [967]_yytype_int16
 	s__yypact2                               [858]_yytype_int16
 	s__yypgoto                               [99]_yytype_int16
 	s__yypgoto1                              [140]_yytype_int16
 	s__yypgoto2                              [131]_yytype_int16
-	s__yyprhs                                [560]_yytype_uint16
+	s__yyprhs                                [561]_yytype_uint16
 	s__yyprhs1                               [478]_yytype_uint16
 	s__yyprhs2                               [467]_yytype_uint16
-	s__yyr1                                  [560]_yytype_uint16
+	s__yyr1                                  [561]_yytype_uint16
 	s__yyr11                                 [478]_yytype_uint16
 	s__yyr12                                 [467]_yytype_uint16
-	s__yyr2                                  [560]_yytype_uint8
+	s__yyr2                                  [561]_yytype_uint8
 	s__yyr21                                 [478]_yytype_uint8
 	s__yyr22                                 [467]_yytype_uint8
-	s__yyrhs                                 [2124]_yytype_int16
+	s__yyrhs                                 [2126]_yytype_int16
 	s__yyrhs1                                [1671]_yytype_int16
 	s__yyrhs2                                [1525]_yytype_int16
-	s__yyrline                               [560]_yytype_uint16
+	s__yyrline                               [561]_yytype_uint16
 	s__yyrline1                              [478]_yytype_uint16
 	s__yyrline2                              [467]_yytype_uint16
-	s__yystos                                [1234]_yytype_uint16
+	s__yystos                                [1235]_yytype_uint16
 	s__yystos1                               [967]_yytype_uint16
 	s__yystos2                               [858]_yytype_uint16
-	s__yytable                               [29169]_yytype_int16
+	s__yytable                               [29256]_yytype_int16
 	s__yytable1                              [6989]_yytype_int16
 	s__yytable2                              [4749]_yytype_int16
-	s__yytname                               [336]uintptr
+	s__yytname                               [337]uintptr
 	s__yytname1                              [319]uintptr
 	s__yytname2                              [287]uintptr
-	s__yytranslate                           [468]_yytype_uint8
+	s__yytranslate                           [469]_yytype_uint8
 	s__yytranslate1                          [411]_yytype_uint8
 	s__yytranslate2                          [382]_yytype_uint8
 	s__yyunexpected                          [28]int8
@@ -699,7 +699,7 @@ type CC struct {
 	x__init_spin1_words                      [6]_reservedword
 	x__init_spin2_soft_words                 [28]_reservedword_soft
 	x__init_spin2_words                      [63]_reservedword
-	x__init_spin_words                       [118]_reservedword
+	x__init_spin_words                       [119]_reservedword
 	x__insert_sep                            int32
 	x__instr                                 uintptr
 	x__instr_p1                              [80]_Instruction
@@ -813,7 +813,7 @@ type CC struct {
 	x__unsdivfunc                            uintptr
 	x__unsmulfunc                            uintptr
 	x__varargs_ident                         uintptr
-	x__version_string                        [6]int8
+	x__version_string                        [11]int8
 	x__warn_level                            int32
 	x__work_buf                              [66560]int8
 	x__work_end                              uintptr
@@ -1811,11 +1811,11 @@ const m_EILSEQ = 92
 
 const m_SP_ABORT = 328
 
-const m_SP_ABS = 409
+const m_SP_ABS = 410
 
-const m_SP_ADDBITS = 404
+const m_SP_ADDBITS = 405
 
-const m_SP_ADDPINS = 405
+const m_SP_ADDPINS = 406
 
 const m_SP_ALIGNL = 291
 
@@ -1823,9 +1823,9 @@ const m_SP_ALIGNW = 292
 
 const m_SP_ALLOCA = 325
 
-const m_SP_AND = 376
+const m_SP_AND = 377
 
-const m_SP_ANDTHEN = 378
+const m_SP_ANDTHEN = 379
 
 const m_SP_ANNOTATION = 339
 
@@ -1843,11 +1843,11 @@ const m_SP_ASM_ENDIF = 346
 
 const m_SP_ASM_IF = 343
 
-const m_SP_ASSIGN = 373
+const m_SP_ASSIGN = 374
 
 const m_SP_BACKTICK_STRING = 262
 
-const m_SP_BMASK = 434
+const m_SP_BMASK = 435
 
 const m_SP_BYTE = 274
 
@@ -1855,7 +1855,7 @@ const m_SP_BYTECODE = 259
 
 const m_SP_BYTEFIT = 278
 
-const m_SP_BYTES = 351
+const m_SP_BYTES = 352
 
 const m_SP_CASE = 320
 
@@ -1869,39 +1869,39 @@ const m_SP_COGREG = 265
 
 const m_SP_CON = 266
 
-const m_SP_CONDITIONAL = 439
+const m_SP_CONDITIONAL = 440
 
-const m_SP_CONDITIONAL_SEP = 440
+const m_SP_CONDITIONAL_SEP = 441
 
-const m_SP_CONSTANT = 427
+const m_SP_CONSTANT = 428
 
-const m_SP_COPY = 363
+const m_SP_COPY = 364
 
-const m_SP_C_Z = 369
+const m_SP_C_Z = 370
 
 const m_SP_DAT = 268
 
-const m_SP_DAT_LBRACK = 465
+const m_SP_DAT_LBRACK = 466
 
-const m_SP_DAT_RBRACK = 466
+const m_SP_DAT_RBRACK = 467
 
-const m_SP_DEBUG = 437
+const m_SP_DEBUG = 438
 
-const m_SP_DEBUG_END_SESSION = 452
+const m_SP_DEBUG_END_SESSION = 453
 
-const m_SP_DECODE = 412
+const m_SP_DECODE = 413
 
-const m_SP_DECREMENT = 418
+const m_SP_DECREMENT = 419
 
-const m_SP_DITTO = 372
+const m_SP_DITTO = 373
 
 const m_SP_DOTS = 335
 
-const m_SP_DOUBLEAT = 421
+const m_SP_DOUBLEAT = 422
 
-const m_SP_DOUBLETILDE = 416
+const m_SP_DOUBLETILDE = 417
 
-const m_SP_DOUBLE_DOLLAR = 467
+const m_SP_DOUBLE_DOLLAR = 468
 
 const m_SP_ELSE = 302
 
@@ -1909,87 +1909,87 @@ const m_SP_ELSEIF = 303
 
 const m_SP_ELSEIFNOT = 304
 
-const m_SP_EMPTY = 429
+const m_SP_EMPTY = 430
 
-const m_SP_ENCODE = 413
+const m_SP_ENCODE = 414
 
-const m_SP_ENCODE2 = 414
+const m_SP_ENCODE2 = 415
 
 const m_SP_END = 272
 
 const m_SP_ENDASM = 342
 
-const m_SP_ENDIANL = 450
+const m_SP_ENDIANL = 451
 
-const m_SP_ENDIANW = 451
+const m_SP_ENDIANW = 452
 
 const m_SP_EOF = 334
 
 const m_SP_EOLN = 333
 
-const m_SP_EQ = 386
+const m_SP_EQ = 387
 
-const m_SP_EXP = 447
+const m_SP_EXP = 448
 
-const m_SP_EXP10 = 445
+const m_SP_EXP10 = 446
 
-const m_SP_EXP2 = 443
+const m_SP_EXP2 = 444
 
-const m_SP_FABS = 411
+const m_SP_FABS = 412
 
-const m_SP_FADD = 454
+const m_SP_FADD = 455
 
-const m_SP_FDIV = 457
+const m_SP_FDIV = 458
 
-const m_SP_FEQ = 461
+const m_SP_FEQ = 462
 
-const m_SP_FGE = 463
+const m_SP_FGE = 464
 
-const m_SP_FGT = 459
+const m_SP_FGT = 460
 
-const m_SP_FIELD = 350
+const m_SP_FIELD = 351
 
-const m_SP_FIELDPTR = 423
+const m_SP_FIELDPTR = 424
 
 const m_SP_FILE = 338
 
-const m_SP_FILL = 362
+const m_SP_FILL = 363
 
 const m_SP_FIT = 290
 
-const m_SP_FLE = 462
+const m_SP_FLE = 463
 
-const m_SP_FLOAT = 424
+const m_SP_FLOAT = 425
 
 const m_SP_FLOATNUM = 263
 
-const m_SP_FLT = 458
+const m_SP_FLT = 459
 
-const m_SP_FMUL = 456
+const m_SP_FMUL = 457
 
-const m_SP_FNE = 460
+const m_SP_FNE = 461
 
-const m_SP_FRAC = 393
+const m_SP_FRAC = 394
 
 const m_SP_FROM = 294
 
-const m_SP_FSQRT = 410
+const m_SP_FSQRT = 411
 
-const m_SP_FSUB = 455
+const m_SP_FSUB = 456
 
 const m_SP_FVAR = 280
 
 const m_SP_FVARS = 281
 
-const m_SP_GE = 379
+const m_SP_GE = 380
 
-const m_SP_GEU = 381
+const m_SP_GEU = 382
 
-const m_SP_GTU = 383
+const m_SP_GTU = 384
 
 const m_SP_HERE = 336
 
-const m_SP_HIGHMULT = 394
+const m_SP_HIGHMULT = 395
 
 const m_SP_HWREG = 285
 
@@ -1999,7 +1999,7 @@ const m_SP_IF = 300
 
 const m_SP_IFNOT = 301
 
-const m_SP_INCREMENT = 417
+const m_SP_INCREMENT = 418
 
 const m_SP_INDENT = 331
 
@@ -2011,23 +2011,23 @@ const m_SP_INSTRMODIFIER = 284
 
 const m_SP_INTERFACE = 347
 
-const m_SP_LE = 380
+const m_SP_LE = 381
 
-const m_SP_LEU = 382
+const m_SP_LEU = 383
 
-const m_SP_LIMITMAX = 389
+const m_SP_LIMITMAX = 390
 
-const m_SP_LIMITMIN = 388
+const m_SP_LIMITMIN = 389
 
-const m_SP_LOG = 446
+const m_SP_LOG = 447
 
-const m_SP_LOG10 = 444
+const m_SP_LOG10 = 445
 
-const m_SP_LOG2 = 442
+const m_SP_LOG2 = 443
 
 const m_SP_LONG = 276
 
-const m_SP_LONGS = 353
+const m_SP_LONGS = 354
 
 const m_SP_LOOKDOWN = 307
 
@@ -2037,37 +2037,37 @@ const m_SP_LOOKUP = 309
 
 const m_SP_LOOKUPZ = 310
 
-const m_SP_LOOK_SEP = 438
+const m_SP_LOOK_SEP = 439
 
-const m_SP_LSTRING = 354
+const m_SP_LSTRING = 355
 
-const m_SP_LTU = 384
+const m_SP_LTU = 385
 
-const m_SP_MOVBYTS = 449
+const m_SP_MOVBYTS = 450
 
 const m_SP_NAMESP = 348
 
-const m_SP_NAN = 432
+const m_SP_NAN = 433
 
-const m_SP_NE = 385
+const m_SP_NE = 386
 
-const m_SP_NEWTASK = 370
+const m_SP_NEWTASK = 371
 
 const m_SP_NEXT = 324
 
-const m_SP_NOT = 415
+const m_SP_NOT = 416
 
 const m_SP_NUM = 260
 
 const m_SP_OBJ = 271
 
-const m_SP_OFFSETOF = 453
+const m_SP_OFFSETOF = 454
 
-const m_SP_ONES = 433
+const m_SP_ONES = 434
 
-const m_SP_OR = 375
+const m_SP_OR = 376
 
-const m_SP_ORELSE = 377
+const m_SP_ORELSE = 378
 
 const m_SP_ORG = 286
 
@@ -2089,35 +2089,35 @@ const m_SP_PINT = 316
 
 const m_SP_PINW = 317
 
-const m_SP_POW = 448
+const m_SP_POW = 449
 
 const m_SP_PRI = 270
 
 const m_SP_PUB = 269
 
-const m_SP_QEXP = 436
+const m_SP_QEXP = 437
 
-const m_SP_QLOG = 435
+const m_SP_QLOG = 436
 
 const m_SP_QUAD = 277
 
 const m_SP_QUIT = 323
 
-const m_SP_RANDOM = 428
+const m_SP_RANDOM = 429
 
-const m_SP_REF_DEC = 420
+const m_SP_REF_DEC = 421
 
-const m_SP_REF_INC = 419
+const m_SP_REF_INC = 420
 
 const m_SP_REGEXEC = 326
 
 const m_SP_REGLOAD = 327
 
-const m_SP_REMAINDER = 390
+const m_SP_REMAINDER = 391
 
 const m_SP_REPEAT = 293
 
-const m_SP_REPEAT_SEP = 441
+const m_SP_REPEAT_SEP = 442
 
 const m_SP_RES = 289
 
@@ -2125,33 +2125,35 @@ const m_SP_RESULT = 329
 
 const m_SP_RETURN = 330
 
-const m_SP_REV = 402
+const m_SP_REV = 403
 
-const m_SP_REV2 = 403
+const m_SP_REV2 = 404
 
-const m_SP_ROTL = 398
+const m_SP_ROTL = 399
 
-const m_SP_ROTR = 397
+const m_SP_ROTR = 398
 
-const m_SP_ROUND = 426
+const m_SP_ROUND = 427
 
-const m_SP_SAR = 401
+const m_SP_SAR = 402
 
-const m_SP_SCAS = 395
+const m_SP_SCAS = 396
 
-const m_SP_SGNCOMP = 387
+const m_SP_SELF = 349
 
-const m_SP_SHL = 399
+const m_SP_SGNCOMP = 388
 
-const m_SP_SHR = 400
+const m_SP_SHL = 400
 
-const m_SP_SIGNX = 430
+const m_SP_SHR = 401
 
-const m_SP_SIZEOF = 367
+const m_SP_SIGNX = 431
+
+const m_SP_SIZEOF = 368
 
 const m_SP_SPR = 264
 
-const m_SP_SQRT = 408
+const m_SP_SQRT = 409
 
 const m_SP_STEP = 296
 
@@ -2159,11 +2161,11 @@ const m_SP_STRING = 261
 
 const m_SP_STRINGPTR = 337
 
-const m_SP_STRUCT = 366
+const m_SP_STRUCT = 367
 
-const m_SP_SWAP = 364
+const m_SP_SWAP = 365
 
-const m_SP_SWAP_OP = 368
+const m_SP_SWAP_OP = 369
 
 const m_SP_TASKHLT = 314
 
@@ -2171,27 +2173,27 @@ const m_SP_TASKINIT = 313
 
 const m_SP_THEN = 305
 
-const m_SP_THISTASK = 371
+const m_SP_THISTASK = 372
 
 const m_SP_TO = 295
 
-const m_SP_TRIPLEAT = 422
+const m_SP_TRIPLEAT = 423
 
-const m_SP_TRUNC = 425
+const m_SP_TRUNC = 426
 
-const m_SP_TYPENAME = 355
+const m_SP_TYPENAME = 356
 
-const m_SP_UNSDIV = 391
+const m_SP_UNSDIV = 392
 
-const m_SP_UNSHIGHMULT = 396
+const m_SP_UNSHIGHMULT = 397
 
-const m_SP_UNSMOD = 392
+const m_SP_UNSMOD = 393
 
 const m_SP_UNTIL = 299
 
 const m_SP_VAR = 267
 
-const m_SP_VARARGS = 349
+const m_SP_VARARGS = 350
 
 const m_SP_WHILE = 297
 
@@ -2201,11 +2203,11 @@ const m_SP_WORD = 275
 
 const m_SP_WORDFIT = 279
 
-const m_SP_WORDS = 352
+const m_SP_WORDS = 353
 
-const m_SP_XOR = 374
+const m_SP_XOR = 375
 
-const m_SP_ZEROX = 431
+const m_SP_ZEROX = 432
 
 const m_S_IFBLK = 24576
 
@@ -2250,7 +2252,7 @@ func s__AddClosureSymbol(tls *libc.TLS, cc *CC, f uintptr, P uintptr, ident uint
 		ident = (*_AST)(unsafe.Pointer(ident)).Fright
 	}
 	if (*_AST)(unsafe.Pointer(ident)).Fkind != int32(_AST_IDENTIFIER) {
-		x__ERROR(tls, cc, ident, __ccgo_ts+29099, 0)
+		x__ERROR(tls, cc, ident, __ccgo_ts+29107, 0)
 		return
 	}
 	if !(typ != 0) {
@@ -2264,18 +2266,18 @@ func s__AddRestOfLine(tls *libc.TLS, cc *CC, f uintptr, s uintptr) {
 	var v1 uintptr
 	_, _ = c, v1
 	for cc.s__bytesOnLine < int32(4) {
-		x__flexbuf_printf(tls, cc, f, __ccgo_ts+40843, 0)
+		x__flexbuf_printf(tls, cc, f, __ccgo_ts+40851, 0)
 		cc.s__bytesOnLine = cc.s__bytesOnLine + 1
 	}
 	// at this point we have written 6+4+12 == 22 characters
 	// line it up to 24 to make tabs work
-	x__flexbuf_printf(tls, cc, f, __ccgo_ts+40847, 0)
+	x__flexbuf_printf(tls, cc, f, __ccgo_ts+40855, 0)
 	for **(**int8)(__ccgo_up(s)) != 0 {
 		v1 = s
 		s = s + 1
 		c = int32(**(**int8)(__ccgo_up(v1)))
 		if c == int32('{') && int32(**(**int8)(__ccgo_up(s))) == int32('#') {
-			if !(libc.Xstrncmp(tls, s, __ccgo_ts+40850, libc.Xstrlen(tls, __ccgo_ts+40850)) != 0) {
+			if !(libc.Xstrncmp(tls, s, __ccgo_ts+40858, libc.Xstrlen(tls, __ccgo_ts+40858)) != 0) {
 				// just abort now
 				break
 			}
@@ -2327,15 +2329,15 @@ func s__AddToCSESet(tls *libc.TLS, cc *CC, name uintptr, cse uintptr, expr uintp
 			reftype = x__ExprType(tls, cc, origexpr)
 			if !(reftype != 0) {
 				reftype = cc.x__ast_type_generic
-				(*_CSEEntry)(unsafe.Pointer(entry)).Freplace = x__AstTempLocalVariable(tls, cc, __ccgo_ts+31834, libc.UintptrFromInt32(0))
+				(*_CSEEntry)(unsafe.Pointer(entry)).Freplace = x__AstTempLocalVariable(tls, cc, __ccgo_ts+31842, libc.UintptrFromInt32(0))
 			} else {
-				(*_CSEEntry)(unsafe.Pointer(entry)).Freplace = x__AstTempLocalVariable(tls, cc, __ccgo_ts+31840, reftype)
+				(*_CSEEntry)(unsafe.Pointer(entry)).Freplace = x__AstTempLocalVariable(tls, cc, __ccgo_ts+31848, reftype)
 			}
 			origexpr = x__NewAST(tls, cc, int32(_AST_ADDROF), origexpr, libc.UintptrFromInt32(0))
 			assign = x__AstAssign(tls, cc, (*_CSEEntry)(unsafe.Pointer(entry)).Freplace, origexpr)
 			(*_CSEEntry)(unsafe.Pointer(entry)).Freplace = x__NewAST(tls, cc, int32(_AST_ARRAYREF), x__NewAST(tls, cc, int32(_AST_MEMREF), reftype, (*_CSEEntry)(unsafe.Pointer(entry)).Freplace), x__AstInteger(tls, cc, 0))
 		} else {
-			(*_CSEEntry)(unsafe.Pointer(entry)).Freplace = x__AstTempLocalVariable(tls, cc, __ccgo_ts+31834, libc.UintptrFromInt32(0))
+			(*_CSEEntry)(unsafe.Pointer(entry)).Freplace = x__AstTempLocalVariable(tls, cc, __ccgo_ts+31842, libc.UintptrFromInt32(0))
 			assign = x__AstAssign(tls, cc, (*_CSEEntry)(unsafe.Pointer(entry)).Freplace, origexpr)
 		}
 		// we do not want to create a CSE for "i+1" in "i = i + 1"
@@ -2368,7 +2370,7 @@ func s__AddToIf(tls *libc.TLS, cc *CC, ast uintptr, newclause uintptr) (r uintpt
 	_ = x
 	x = (*_AST)(unsafe.Pointer(newclause)).Fright
 	if (*_AST)(unsafe.Pointer(x)).Fkind != int32(_AST_THENELSE) || (*_AST)(unsafe.Pointer(x)).Fright != libc.UintptrFromInt32(0) {
-		x__WARNING(tls, cc, newclause, __ccgo_ts+30069, 0)
+		x__WARNING(tls, cc, newclause, __ccgo_ts+30077, 0)
 	} else {
 		(*_AST)(unsafe.Pointer(x)).Fright = ast
 	}
@@ -2563,7 +2565,7 @@ func s__AdjustReference(tls *libc.TLS, cc *CC, astptr uintptr, ast uintptr, typ 
 		case int32(_K_REF_PREINC):
 			ast = x__AstOperator(tls, cc, int32(_K_INCREMENT), libc.UintptrFromInt32(0), deref)
 		default:
-			x__ERROR(tls, cc, ast, __ccgo_ts+32192, 0)
+			x__ERROR(tls, cc, ast, __ccgo_ts+32200, 0)
 			break
 		}
 	}
@@ -2579,7 +2581,7 @@ func s__AppendLblJump(tls *libc.TLS, cc *CC, lbl uintptr, jmp uintptr) {
 	var entry uintptr
 	_ = entry
 	if (*_IR)(unsafe.Pointer(lbl)).Fopc != int32(_OPC_LABEL) {
-		x__ERROR(tls, cc, libc.UintptrFromInt32(0), __ccgo_ts+61964, libc.VaList(bp+8, (*_IR)(unsafe.Pointer(lbl)).Fopc))
+		x__ERROR(tls, cc, libc.UintptrFromInt32(0), __ccgo_ts+61972, libc.VaList(bp+8, (*_IR)(unsafe.Pointer(lbl)).Fopc))
 	}
 	entry = malloc(tls, cc, uint64(16))
 	(*_ir_lbljumps)(unsafe.Pointer(entry)).Fnext = (*_IR)(unsafe.Pointer(lbl)).Faux
@@ -2610,13 +2612,13 @@ func s__AppendOneSrcLine(tls *libc.TLS, cc *CC, f uintptr, line int32, L uintptr
 	if !(theline != 0) {
 		return libc.BoolUint8(m_true != 0)
 	}
-	if !(libc.Xstrncmp(tls, theline, __ccgo_ts+40883, uint64(4)) != 0) {
+	if !(libc.Xstrncmp(tls, theline, __ccgo_ts+40891, uint64(4)) != 0) {
 		// we may want to skip this line, if the next line is
 		// not a comment
 		if line < maxline-int32(1) {
 			nextline = (**(**_LineInfo)(__ccgo_up(srcinfo + uintptr(line+int32(1))*24))).Flinedata
 		}
-		if !(libc.Xstrncmp(tls, nextline, __ccgo_ts+40883, uint64(4)) != 0) {
+		if !(libc.Xstrncmp(tls, nextline, __ccgo_ts+40891, uint64(4)) != 0) {
 			theline = theline + uintptr(4)
 			s__CheckForOrg(tls, cc, theline)
 		} else {
@@ -2627,7 +2629,7 @@ func s__AppendOneSrcLine(tls *libc.TLS, cc *CC, f uintptr, line int32, L uintptr
 			prevline = (**(**_LineInfo)(__ccgo_up(srcinfo + uintptr(line-int32(1))*24))).Flinedata
 		}
 	}
-	if prevline != 0 && !(libc.Xstrncmp(tls, prevline, __ccgo_ts+40883, uint64(4)) != 0) {
+	if prevline != 0 && !(libc.Xstrncmp(tls, prevline, __ccgo_ts+40891, uint64(4)) != 0) {
 		theline = prevline + uintptr(4)
 		// check for ORG and ORGH
 		s__CheckForOrg(tls, cc, theline)
@@ -2692,7 +2694,7 @@ func s__ApplyArrayIndex(tls *libc.TLS, cc *CC, irl uintptr, base uintptr, offset
 		}
 	}
 	if !(s__IsMemRef(tls, cc, base) != 0) {
-		x__ERROR(tls, cc, libc.UintptrFromInt32(0), __ccgo_ts+47187, 0)
+		x__ERROR(tls, cc, libc.UintptrFromInt32(0), __ccgo_ts+47195, 0)
 		return base
 	}
 	if siz == 0 {
@@ -2705,7 +2707,7 @@ func s__ApplyArrayIndex(tls *libc.TLS, cc *CC, irl uintptr, base uintptr, offset
 	case int32(_COGMEM_REF):
 		siz = siz / int32(4)
 	default:
-		x__ERROR(tls, cc, libc.UintptrFromInt32(0), __ccgo_ts+47219, 0)
+		x__ERROR(tls, cc, libc.UintptrFromInt32(0), __ccgo_ts+47227, 0)
 		siz = int32(1)
 		break
 	}
@@ -2750,7 +2752,7 @@ func s__ArrayDeclType(tls *libc.TLS, cc *CC, indices uintptr, basetype uintptr, 
 	} else {
 		if !(x__IsConstExpr(tls, cc, indices) != 0) {
 			if ident != 0 {
-				x__ERROR(tls, cc, ident, __ccgo_ts+28593, libc.VaList(bp+8, x__GetUserIdentifierName(tls, cc, ident)))
+				x__ERROR(tls, cc, ident, __ccgo_ts+28601, libc.VaList(bp+8, x__GetUserIdentifierName(tls, cc, ident)))
 				indices = x__AstInteger(tls, cc, int64(1))
 			}
 		}
@@ -2792,14 +2794,14 @@ func s__AssignOneFuncName(tls *libc.TLS, cc *CC, f uintptr) {
 	}
 	fname = x__IdentifierModuleName(tls, cc, P, (*_Function)(unsafe.Pointer(f)).Fname)
 	frname = malloc(tls, cc, libc.Xstrlen(tls, fname)+uint64(5))
-	libc.Xsprintf(tls, frname, __ccgo_ts+49537, libc.VaList(bp+8, fname))
+	libc.Xsprintf(tls, frname, __ccgo_ts+49545, libc.VaList(bp+8, fname))
 	if cc.x__gl_output == int32(m_OUTPUT_COGSPIN) && s__InCog(tls, cc, f) != 0 && int32(*(*uint32)(unsafe.Pointer(f + 1248))&0x1>>0) != 0 && !(cc.x__gl_p2 != 0) {
 		faltname = malloc(tls, cc, libc.Xstrlen(tls, fname)+uint64(6))
-		libc.Xsprintf(tls, faltname, __ccgo_ts+49544, libc.VaList(bp+8, fname))
+		libc.Xsprintf(tls, faltname, __ccgo_ts+49552, libc.VaList(bp+8, fname))
 	}
 	if int32(*(*uint32)(unsafe.Pointer(f + 1248))&0x40>>6) != 0 {
 		fentername = malloc(tls, cc, libc.Xstrlen(tls, fname)+uint64(16))
-		libc.Xsprintf(tls, fentername, __ccgo_ts+49551, libc.VaList(bp+8, fname))
+		libc.Xsprintf(tls, fentername, __ccgo_ts+49559, libc.VaList(bp+8, fname))
 	}
 	(*_Function)(unsafe.Pointer(f)).Fbedata = calloc(tls, cc, uint64(1), uint64(160))
 	// figure out calling convention
@@ -2840,7 +2842,7 @@ func s__AssignOneFuncName(tls *libc.TLS, cc *CC, f uintptr) {
 	}
 	if (*_Function)(unsafe.Pointer(f)).Fextradecl != 0 {
 		// this case should be handled at an earlier level
-		x__ERROR(tls, cc, (*_Function)(unsafe.Pointer(f)).Fextradecl, __ccgo_ts+49560, 0)
+		x__ERROR(tls, cc, (*_Function)(unsafe.Pointer(f)).Fextradecl, __ccgo_ts+49568, 0)
 	}
 	cc.x__curfunc = savecur
 }
@@ -2850,8 +2852,8 @@ func s__BCAddHeap(tls *libc.TLS, cc *CC, bob uintptr, P uintptr) {
 	var heapsize, heapstart _uint32_t
 	var off int32
 	_, _, _, _, _, _, _ = L, heapsize, heapstart, objsym, off, sym, v1
-	sym = x__LookupSymbolInTable(tls, cc, cc.x__systemModule+144, __ccgo_ts+44956)
-	objsym = x__LookupSymbolInTable(tls, cc, P+144, __ccgo_ts+10196)
+	sym = x__LookupSymbolInTable(tls, cc, cc.x__systemModule+144, __ccgo_ts+44964)
+	objsym = x__LookupSymbolInTable(tls, cc, P+144, __ccgo_ts+10198)
 	if !(cc.x__gl_features_used&libc.Int32FromInt32(m_FEATURE_NEED_HEAP) != 0) {
 		return
 	}
@@ -2864,7 +2866,7 @@ func s__BCAddHeap(tls *libc.TLS, cc *CC, bob uintptr, P uintptr) {
 	L = *(*uintptr)(unsafe.Pointer(sym + 32))
 	off = libc.Int32FromUint32((*_Label)(unsafe.Pointer(L)).Fhubval)
 	off = off + x__BCgetDAToffset(tls, cc, cc.x__systemModule, libc.BoolUint8(m_true != 0), libc.UintptrFromInt32(0), libc.BoolUint8(m_false != 0))
-	sym = x__LookupSymbolInTable(tls, cc, cc.x__systemModule+144, __ccgo_ts+11484)
+	sym = x__LookupSymbolInTable(tls, cc, cc.x__systemModule+144, __ccgo_ts+11486)
 	if !(sym != 0) || (*_Symbol)(unsafe.Pointer(sym)).Fkind != int32(_SYM_CONSTANT) {
 		return
 	}
@@ -2905,12 +2907,12 @@ func s__BCAddPointerCalledObjects(tls *libc.TLS, cc *CC, P uintptr, ast uintptr)
 				if (*_AST)(unsafe.Pointer(receiver)).Fkind == int32(_AST_IDENTIFIER) || (*_AST)(unsafe.Pointer(receiver)).Fkind == int32(_AST_LOCAL_IDENTIFIER) {
 					objsym = x__LookupAstSymbol(tls, cc, receiver, libc.UintptrFromInt32(0))
 					if objsym != 0 {
-						x__DEBUG(tls, cc, ast, __ccgo_ts+79646, libc.VaList(bp+8, (*_Symbol)(unsafe.Pointer(objsym)).Fkind))
+						x__DEBUG(tls, cc, ast, __ccgo_ts+79652, libc.VaList(bp+8, (*_Symbol)(unsafe.Pointer(objsym)).Fkind))
 					} else {
-						x__DEBUG(tls, cc, ast, __ccgo_ts+79686, 0)
+						x__DEBUG(tls, cc, ast, __ccgo_ts+79692, 0)
 					}
 					if objsym != 0 && (*_Symbol)(unsafe.Pointer(objsym)).Fkind != int32(_SYM_VARIABLE) {
-						x__DEBUG(tls, cc, ast, __ccgo_ts+79723, 0)
+						x__DEBUG(tls, cc, ast, __ccgo_ts+79729, 0)
 						type1 = x__ExprType(tls, cc, receiver)
 						if type1 != 0 && (*_AST)(unsafe.Pointer(type1)).Fkind == int32(_AST_OBJECT) {
 							s__BCAddStaticReference(tls, cc, P, type1)
@@ -2935,11 +2937,11 @@ func s__BCAddStaticReference(tls *libc.TLS, cc *CC, P uintptr, obj uintptr) {
 	var v3 uintptr
 	_, _, _ = i, v2, v3
 	if !(obj != 0) {
-		x__ERROR(tls, cc, libc.UintptrFromInt32(0), __ccgo_ts+79432, 0)
+		x__ERROR(tls, cc, libc.UintptrFromInt32(0), __ccgo_ts+79438, 0)
 		return
 	} else {
 		if (*_AST)(unsafe.Pointer(obj)).Fkind != int32(_AST_OBJECT) {
-			x__ERROR(tls, cc, obj, __ccgo_ts+79510, libc.VaList(bp+8, (*_AST)(unsafe.Pointer(obj)).Fkind))
+			x__ERROR(tls, cc, obj, __ccgo_ts+79516, libc.VaList(bp+8, (*_AST)(unsafe.Pointer(obj)).Fkind))
 			return
 		}
 	}
@@ -2957,7 +2959,7 @@ func s__BCAddStaticReference(tls *libc.TLS, cc *CC, P uintptr, obj uintptr) {
 		i = i + 1
 	}
 	if (*_BCModData)(unsafe.Pointer((*_Module)(unsafe.Pointer(P)).Fbedata)).Fobj_cnt == int32(m_BC_MAX_POINTERS) {
-		x__ERROR(tls, cc, obj, __ccgo_ts+79586, 0)
+		x__ERROR(tls, cc, obj, __ccgo_ts+79592, 0)
 		return
 	}
 	v3 = (*_Module)(unsafe.Pointer(P)).Fbedata + 12
@@ -2965,7 +2967,7 @@ func s__BCAddStaticReference(tls *libc.TLS, cc *CC, P uintptr, obj uintptr) {
 	*(*int32)(unsafe.Pointer(v3)) = *(*int32)(unsafe.Pointer(v3)) + 1
 	**(**uintptr)(__ccgo_up((*_Module)(unsafe.Pointer(P)).Fbedata + 4112 + uintptr(v2)*8)) = obj
 	s__BCPrepareObject(tls, cc, x__GetClassPtr(tls, cc, obj))
-	x__DEBUG(tls, cc, obj, __ccgo_ts+79612, libc.VaList(bp+8, (*_Module)(unsafe.Pointer(x__GetClassPtr(tls, cc, obj))).Fclassname))
+	x__DEBUG(tls, cc, obj, __ccgo_ts+79618, libc.VaList(bp+8, (*_Module)(unsafe.Pointer(x__GetClassPtr(tls, cc, obj))).Fclassname))
 }
 
 func s__BCCompileCast(tls *libc.TLS, cc *CC, irbuf uintptr, node uintptr, context _BCContext, asStatement uint8) {
@@ -2983,11 +2985,11 @@ func s__BCCompileCast(tls *libc.TLS, cc *CC, irbuf uintptr, node uintptr, contex
 	newSize = x__TypeSize(tls, cc, newType)
 	oldSize = x__TypeSize(tls, cc, oldType)
 	if newSize != oldSize {
-		x__ERROR(tls, cc, node, __ccgo_ts+74041, 0)
+		x__ERROR(tls, cc, node, __ccgo_ts+74047, 0)
 		return
 	}
 	if x__IsFloatType(tls, cc, oldType) != 0 && !(x__IsFloatType(tls, cc, newType) != 0) && !(x__IsGenericType(tls, cc, newType) != 0) || x__IsFloatType(tls, cc, newType) != 0 && !(x__IsFloatType(tls, cc, oldType) != 0) && !(x__IsGenericType(tls, cc, oldType) != 0) {
-		x__ERROR(tls, cc, node, __ccgo_ts+74094, 0)
+		x__ERROR(tls, cc, node, __ccgo_ts+74100, 0)
 		return
 	}
 }
@@ -3005,17 +3007,17 @@ func s__BCCompileCoginit(tls *libc.TLS, cc *CC, irbuf uintptr, node uintptr, con
 	_, _, _, _, _, _ = cogidExpr, cogidExpr1, funcall, list, val, val1
 	if x__IsSpinCoginit(tls, cc, node, bp) != 0 {
 		// Spin coginit
-		x__DEBUG(tls, cc, node, __ccgo_ts+72911, libc.VaList(bp+240, (*_Function)(unsafe.Pointer(**(**uintptr)(__ccgo_up(bp)))).Fname))
+		x__DEBUG(tls, cc, node, __ccgo_ts+72917, libc.VaList(bp+240, (*_Function)(unsafe.Pointer(**(**uintptr)(__ccgo_up(bp)))).Fname))
 		if cc.x__gl_interp_kind != int32(m_INTERP_KIND_P1ROM) {
-			x__ERROR(tls, cc, node, __ccgo_ts+72945, 0)
+			x__ERROR(tls, cc, node, __ccgo_ts+72951, 0)
 			return
 		}
 		if !((*_AST)(unsafe.Pointer(node)).Fleft != 0) {
-			x__ERROR(tls, cc, libc.UintptrFromInt32(0), __ccgo_ts+72983, 0)
+			x__ERROR(tls, cc, libc.UintptrFromInt32(0), __ccgo_ts+72989, 0)
 			return
 		} else {
 			if (*_AST)(unsafe.Pointer((*_AST)(unsafe.Pointer(node)).Fleft)).Fkind != int32(_AST_EXPRLIST) {
-				x__ERROR(tls, cc, (*_AST)(unsafe.Pointer(node)).Fleft, __ccgo_ts+73063, libc.VaList(bp+240, (*_AST)(unsafe.Pointer((*_AST)(unsafe.Pointer(node)).Fleft)).Fkind))
+				x__ERROR(tls, cc, (*_AST)(unsafe.Pointer(node)).Fleft, __ccgo_ts+73069, libc.VaList(bp+240, (*_AST)(unsafe.Pointer((*_AST)(unsafe.Pointer(node)).Fleft)).Fkind))
 				return
 			}
 		}
@@ -3028,13 +3030,13 @@ func s__BCCompileCoginit(tls *libc.TLS, cc *CC, irbuf uintptr, node uintptr, con
 				if !(list != 0) {
 					break
 				}
-				x__DEBUG(tls, cc, node, __ccgo_ts+73141, 0)
+				x__DEBUG(tls, cc, node, __ccgo_ts+73147, 0)
 				if !(list != 0) {
-					x__ERROR(tls, cc, libc.UintptrFromInt32(0), __ccgo_ts+73176, 0)
+					x__ERROR(tls, cc, libc.UintptrFromInt32(0), __ccgo_ts+73182, 0)
 					return
 				} else {
 					if (*_AST)(unsafe.Pointer(list)).Fkind != int32(_AST_EXPRLIST) {
-						x__ERROR(tls, cc, list, __ccgo_ts+73256, libc.VaList(bp+240, (*_AST)(unsafe.Pointer(list)).Fkind))
+						x__ERROR(tls, cc, list, __ccgo_ts+73262, libc.VaList(bp+240, (*_AST)(unsafe.Pointer(list)).Fkind))
 						return
 					}
 				}
@@ -3047,16 +3049,16 @@ func s__BCCompileCoginit(tls *libc.TLS, cc *CC, irbuf uintptr, node uintptr, con
 		}
 		// Target function info
 		if (*_Function)(unsafe.Pointer(**(**uintptr)(__ccgo_up(bp)))).Fmodule != cc.x__current {
-			x__ERROR(tls, cc, node, __ccgo_ts+73334, 0)
+			x__ERROR(tls, cc, node, __ccgo_ts+73340, 0)
 			return
 		}
 		s__BCCompileInteger(tls, cc, irbuf, (*_Function)(unsafe.Pointer(**(**uintptr)(__ccgo_up(bp)))).Fnumparams<<int32(8)+s__getFuncIDForKnownFunc(tls, cc, cc.x__current, **(**uintptr)(__ccgo_up(bp))))
 		if !((*_AST)(unsafe.Pointer((*_AST)(unsafe.Pointer((*_AST)(unsafe.Pointer(node)).Fleft)).Fright)).Fright != 0) {
-			x__ERROR(tls, cc, libc.UintptrFromInt32(0), __ccgo_ts+73392, 0)
+			x__ERROR(tls, cc, libc.UintptrFromInt32(0), __ccgo_ts+73398, 0)
 			return
 		} else {
 			if (*_AST)(unsafe.Pointer((*_AST)(unsafe.Pointer((*_AST)(unsafe.Pointer((*_AST)(unsafe.Pointer(node)).Fleft)).Fright)).Fright)).Fkind != int32(_AST_EXPRLIST) {
-				x__ERROR(tls, cc, (*_AST)(unsafe.Pointer((*_AST)(unsafe.Pointer((*_AST)(unsafe.Pointer(node)).Fleft)).Fright)).Fright, __ccgo_ts+73472, libc.VaList(bp+240, (*_AST)(unsafe.Pointer((*_AST)(unsafe.Pointer((*_AST)(unsafe.Pointer((*_AST)(unsafe.Pointer(node)).Fleft)).Fright)).Fright)).Fkind))
+				x__ERROR(tls, cc, (*_AST)(unsafe.Pointer((*_AST)(unsafe.Pointer((*_AST)(unsafe.Pointer(node)).Fleft)).Fright)).Fright, __ccgo_ts+73478, libc.VaList(bp+240, (*_AST)(unsafe.Pointer((*_AST)(unsafe.Pointer((*_AST)(unsafe.Pointer((*_AST)(unsafe.Pointer(node)).Fleft)).Fright)).Fright)).Fkind))
 				return
 			}
 		}
@@ -3088,13 +3090,13 @@ func s__BCCompileCoginit(tls *libc.TLS, cc *CC, irbuf uintptr, node uintptr, con
 		x__BIRB_PushCopy(tls, cc, irbuf, bp+120) // Write cogid????
 	} else {
 		// PASM coginit
-		x__DEBUG(tls, cc, node, __ccgo_ts+73550, 0)
+		x__DEBUG(tls, cc, node, __ccgo_ts+73556, 0)
 		if !((*_AST)(unsafe.Pointer(node)).Fleft != 0) {
-			x__ERROR(tls, cc, libc.UintptrFromInt32(0), __ccgo_ts+73567, 0)
+			x__ERROR(tls, cc, libc.UintptrFromInt32(0), __ccgo_ts+73573, 0)
 			return
 		} else {
 			if (*_AST)(unsafe.Pointer((*_AST)(unsafe.Pointer(node)).Fleft)).Fkind != int32(_AST_EXPRLIST) {
-				x__ERROR(tls, cc, (*_AST)(unsafe.Pointer(node)).Fleft, __ccgo_ts+73647, libc.VaList(bp+240, (*_AST)(unsafe.Pointer((*_AST)(unsafe.Pointer(node)).Fleft)).Fkind))
+				x__ERROR(tls, cc, (*_AST)(unsafe.Pointer(node)).Fleft, __ccgo_ts+73653, libc.VaList(bp+240, (*_AST)(unsafe.Pointer((*_AST)(unsafe.Pointer(node)).Fleft)).Fkind))
 				return
 			}
 		}
@@ -3111,21 +3113,21 @@ func s__BCCompileCoginit(tls *libc.TLS, cc *CC, irbuf uintptr, node uintptr, con
 			s__BCCompileExpression(tls, cc, irbuf, cogidExpr1, context, libc.BoolUint8(m_false != 0))
 		}
 		if !((*_AST)(unsafe.Pointer((*_AST)(unsafe.Pointer(node)).Fleft)).Fright != 0) {
-			x__ERROR(tls, cc, libc.UintptrFromInt32(0), __ccgo_ts+73725, 0)
+			x__ERROR(tls, cc, libc.UintptrFromInt32(0), __ccgo_ts+73731, 0)
 			return
 		} else {
 			if (*_AST)(unsafe.Pointer((*_AST)(unsafe.Pointer((*_AST)(unsafe.Pointer(node)).Fleft)).Fright)).Fkind != int32(_AST_EXPRLIST) {
-				x__ERROR(tls, cc, (*_AST)(unsafe.Pointer((*_AST)(unsafe.Pointer(node)).Fleft)).Fright, __ccgo_ts+73805, libc.VaList(bp+240, (*_AST)(unsafe.Pointer((*_AST)(unsafe.Pointer((*_AST)(unsafe.Pointer(node)).Fleft)).Fright)).Fkind))
+				x__ERROR(tls, cc, (*_AST)(unsafe.Pointer((*_AST)(unsafe.Pointer(node)).Fleft)).Fright, __ccgo_ts+73811, libc.VaList(bp+240, (*_AST)(unsafe.Pointer((*_AST)(unsafe.Pointer((*_AST)(unsafe.Pointer(node)).Fleft)).Fright)).Fkind))
 				return
 			}
 		}
 		s__BCCompileExpression(tls, cc, irbuf, (*_AST)(unsafe.Pointer((*_AST)(unsafe.Pointer((*_AST)(unsafe.Pointer(node)).Fleft)).Fright)).Fleft, context, libc.BoolUint8(m_false != 0)) // entry point
 		if !((*_AST)(unsafe.Pointer((*_AST)(unsafe.Pointer((*_AST)(unsafe.Pointer(node)).Fleft)).Fright)).Fright != 0) {
-			x__ERROR(tls, cc, libc.UintptrFromInt32(0), __ccgo_ts+73883, 0)
+			x__ERROR(tls, cc, libc.UintptrFromInt32(0), __ccgo_ts+73889, 0)
 			return
 		} else {
 			if (*_AST)(unsafe.Pointer((*_AST)(unsafe.Pointer((*_AST)(unsafe.Pointer((*_AST)(unsafe.Pointer(node)).Fleft)).Fright)).Fright)).Fkind != int32(_AST_EXPRLIST) {
-				x__ERROR(tls, cc, (*_AST)(unsafe.Pointer((*_AST)(unsafe.Pointer((*_AST)(unsafe.Pointer(node)).Fleft)).Fright)).Fright, __ccgo_ts+73963, libc.VaList(bp+240, (*_AST)(unsafe.Pointer((*_AST)(unsafe.Pointer((*_AST)(unsafe.Pointer((*_AST)(unsafe.Pointer(node)).Fleft)).Fright)).Fright)).Fkind))
+				x__ERROR(tls, cc, (*_AST)(unsafe.Pointer((*_AST)(unsafe.Pointer((*_AST)(unsafe.Pointer(node)).Fleft)).Fright)).Fright, __ccgo_ts+73969, libc.VaList(bp+240, (*_AST)(unsafe.Pointer((*_AST)(unsafe.Pointer((*_AST)(unsafe.Pointer((*_AST)(unsafe.Pointer(node)).Fleft)).Fright)).Fright)).Fkind))
 				return
 			}
 		}
@@ -3153,13 +3155,13 @@ func s__BCCompileConditionalJump(tls *libc.TLS, cc *CC, irbuf uintptr, condition
 	(**(**_ByteOpIR)(__ccgo_up(bp))).FjumpTo = label
 	stackdiff = context.FhiddenVariables - *(*int32)(unsafe.Pointer(&(*_ByteOpIR)(unsafe.Pointer(label)).Fattr))
 	if stackdiff != 0 {
-		x__ERROR(tls, cc, condition, __ccgo_ts+66959, 0)
+		x__ERROR(tls, cc, condition, __ccgo_ts+66965, 0)
 	}
 	if condition != 0 && (*_AST)(unsafe.Pointer(condition)).Fkind == int32(_AST_EXPECT) {
 		condition = (*_AST)(unsafe.Pointer(condition)).Fleft
 	}
 	if !(condition != 0) {
-		x__ERROR(tls, cc, libc.UintptrFromInt32(0), __ccgo_ts+67015, 0)
+		x__ERROR(tls, cc, libc.UintptrFromInt32(0), __ccgo_ts+67021, 0)
 		return
 	} else {
 		if x__IsConstExpr(tls, cc, condition) != 0 {
@@ -3253,7 +3255,7 @@ func s__BCCompileConditionalJump(tls *libc.TLS, cc *CC, irbuf uintptr, condition
 }
 
 func s__BCCompileDatModuleFuncRef(tls *libc.TLS, cc *CC, where uintptr, M uintptr, funcid _int32_t) {
-	x__ERROR(tls, cc, libc.UintptrFromInt32(0), __ccgo_ts+66721, 0)
+	x__ERROR(tls, cc, libc.UintptrFromInt32(0), __ccgo_ts+66727, 0)
 }
 
 func s__BCCompileJumpEx(tls *libc.TLS, cc *CC, irbuf uintptr, label uintptr, kind _ByteOpKind, context _BCContext, stackoffset int32, logicallyTerminal uint8) {
@@ -3266,13 +3268,13 @@ func s__BCCompileJumpEx(tls *libc.TLS, cc *CC, irbuf uintptr, label uintptr, kin
 	if stackdiff > 0 {
 		// emit pop to get rid of hidden vars
 		if kind != int32(_BOK_JUMP) {
-			x__ERROR(tls, cc, libc.UintptrFromInt32(0), __ccgo_ts+66781, 0)
+			x__ERROR(tls, cc, libc.UintptrFromInt32(0), __ccgo_ts+66787, 0)
 		} else {
 			s__BCCompilePopN(tls, cc, irbuf, stackdiff)
 		}
 	} else {
 		if stackdiff < 0 {
-			x__ERROR(tls, cc, libc.UintptrFromInt32(0), __ccgo_ts+66876, 0)
+			x__ERROR(tls, cc, libc.UintptrFromInt32(0), __ccgo_ts+66882, 0)
 		}
 	}
 	*(*_ByteOpIR)(unsafe.Pointer(bp)) = _ByteOpIR{}
@@ -3295,30 +3297,30 @@ func s__BCCompileObject(tls *libc.TLS, cc *CC, bob uintptr, P uintptr) {
 	defer func() { realloc(tls, cc, objOffsetSpans, 0) }()
 	save = cc.x__current
 	cc.x__current = P
-	x__DEBUG(tls, cc, libc.UintptrFromInt32(0), __ccgo_ts+80491, libc.VaList(bp+72, (*_Module)(unsafe.Pointer(P)).Ffullname))
+	x__DEBUG(tls, cc, libc.UintptrFromInt32(0), __ccgo_ts+80497, libc.VaList(bp+72, (*_Module)(unsafe.Pointer(P)).Ffullname))
 	x__BOB_Align(tls, cc, bob, int32(4)) // Long-align
-	x__BOB_Push(tls, cc, bob, libc.UintptrFromInt32(0), 0, x__auto_printf(tls, cc, uint64(128), __ccgo_ts+80524, libc.VaList(bp+72, (*_Module)(unsafe.Pointer(P)).Fclassname)))
+	x__BOB_Push(tls, cc, bob, libc.UintptrFromInt32(0), 0, x__auto_printf(tls, cc, uint64(128), __ccgo_ts+80530, libc.VaList(bp+72, (*_Module)(unsafe.Pointer(P)).Fclassname)))
 	// prepare object
 	s__BCPrepareObject(tls, cc, P)
 	if (*_BCModData)(unsafe.Pointer((*_Module)(unsafe.Pointer(P)).Fbedata)).FcompiledAddress < 0 {
 		(*_BCModData)(unsafe.Pointer((*_Module)(unsafe.Pointer(P)).Fbedata)).FcompiledAddress = (*_ByteOutputBuffer)(unsafe.Pointer(bob)).Ftotal_size
 		s__BCEmitModuleRelocations(tls, cc, bob, P)
 	} else {
-		x__ERROR(tls, cc, libc.UintptrFromInt32(0), __ccgo_ts+80549, libc.VaList(bp+72, (*_Module)(unsafe.Pointer(P)).Ffullname))
+		x__ERROR(tls, cc, libc.UintptrFromInt32(0), __ccgo_ts+80555, libc.VaList(bp+72, (*_Module)(unsafe.Pointer(P)).Ffullname))
 		return
 	}
 	pub_cnt = (*_BCModData)(unsafe.Pointer((*_Module)(unsafe.Pointer(P)).Fbedata)).Fpub_cnt
 	pri_cnt = (*_BCModData)(unsafe.Pointer((*_Module)(unsafe.Pointer(P)).Fbedata)).Fpri_cnt
 	obj_cnt = (*_BCModData)(unsafe.Pointer((*_Module)(unsafe.Pointer(P)).Fbedata)).Fobj_cnt
-	x__DEBUG(tls, cc, libc.UintptrFromInt32(0), __ccgo_ts+80576, libc.VaList(bp+72, (*_Module)(unsafe.Pointer(P)).Fclassname, pub_cnt, pri_cnt, obj_cnt))
+	x__DEBUG(tls, cc, libc.UintptrFromInt32(0), __ccgo_ts+80582, libc.VaList(bp+72, (*_Module)(unsafe.Pointer(P)).Fclassname, pub_cnt, pri_cnt, obj_cnt))
 	v1 = libc.Uint64FromInt32(obj_cnt) * 8
 	objOffsetSpans = realloc(tls, cc, objOffsetSpans, v1)
 	// Emit object header
 	switch cc.x__gl_interp_kind {
 	case int32(m_INTERP_KIND_P1ROM):
-		sizeSpan = x__BOB_PushWord(tls, cc, bob, uint16(0), __ccgo_ts+80633)
-		x__BOB_PushByte(tls, cc, bob, libc.Uint8FromInt32(pri_cnt+pub_cnt+int32(1)), __ccgo_ts+80645)
-		x__BOB_PushByte(tls, cc, bob, libc.Uint8FromInt32(obj_cnt), __ccgo_ts+80662)
+		sizeSpan = x__BOB_PushWord(tls, cc, bob, uint16(0), __ccgo_ts+80639)
+		x__BOB_PushByte(tls, cc, bob, libc.Uint8FromInt32(pri_cnt+pub_cnt+int32(1)), __ccgo_ts+80651)
+		x__BOB_PushByte(tls, cc, bob, libc.Uint8FromInt32(obj_cnt), __ccgo_ts+80668)
 		i = 0
 		for {
 			if !(i < pri_cnt+pub_cnt) {
@@ -3334,9 +3336,9 @@ func s__BCCompileObject(tls *libc.TLS, cc *CC, bob uintptr, P uintptr) {
 				(*_Function)(unsafe.Pointer(fun)).Fbedata = calloc(tls, cc, uint64(16), uint64(1))
 			}
 			if (*_BCFunData)(unsafe.Pointer((*_Function)(unsafe.Pointer(fun)).Fbedata)).FheaderEntry != libc.UintptrFromInt32(0) {
-				x__ERROR(tls, cc, libc.UintptrFromInt32(0), __ccgo_ts+80672, libc.VaList(bp+72, (*_Function)(unsafe.Pointer(fun)).Fname))
+				x__ERROR(tls, cc, libc.UintptrFromInt32(0), __ccgo_ts+80678, libc.VaList(bp+72, (*_Function)(unsafe.Pointer(fun)).Fname))
 			}
-			span = x__BOB_PushLong(tls, cc, bob, uint32(0), __ccgo_ts+80715)
+			span = x__BOB_PushLong(tls, cc, bob, uint32(0), __ccgo_ts+80721)
 			(*_BCFunData)(unsafe.Pointer((*_Function)(unsafe.Pointer(fun)).Fbedata)).FheaderEntry = span
 			goto _2
 		_2:
@@ -3348,13 +3350,13 @@ func s__BCCompileObject(tls *libc.TLS, cc *CC, bob uintptr, P uintptr) {
 			if !(i1 < obj_cnt) {
 				break
 			}
-			*(*uintptr)(unsafe.Add(unsafe.Pointer(objOffsetSpans), i1*8)) = x__BOB_PushWord(tls, cc, bob, uint16(0), __ccgo_ts+80744)
+			*(*uintptr)(unsafe.Add(unsafe.Pointer(objOffsetSpans), i1*8)) = x__BOB_PushWord(tls, cc, bob, uint16(0), __ccgo_ts+80750)
 			obj = **(**uintptr)(__ccgo_up((*_Module)(unsafe.Pointer(P)).Fbedata + 4112 + uintptr(i1)*8))
 			varOffset = s__BCGetOBJOffset(tls, cc, P, obj) + **(**int32)(__ccgo_up((*_Module)(unsafe.Pointer(P)).Fbedata + 6160 + uintptr(i1)*4))*s__BCGetOBJSize(tls, cc, P, obj)
 			if (*_AST)(unsafe.Pointer(obj)).Fkind == int32(_AST_OBJECT) {
-				v3 = __ccgo_ts + 80758
+				v3 = __ccgo_ts + 80764
 			} else {
-				v3 = __ccgo_ts + 80777
+				v3 = __ccgo_ts + 80783
 			}
 			x__BOB_PushWord(tls, cc, bob, libc.Uint16FromInt32(varOffset), v3) // VAR Offset (from current object's VAR base)
 			goto _4
@@ -3363,7 +3365,7 @@ func s__BCCompileObject(tls *libc.TLS, cc *CC, bob uintptr, P uintptr) {
 			i1 = i1 + 1
 		}
 	default:
-		x__ERROR(tls, cc, libc.UintptrFromInt32(0), __ccgo_ts+66438, 0)
+		x__ERROR(tls, cc, libc.UintptrFromInt32(0), __ccgo_ts+66444, 0)
 		return
 	}
 	if (*_Module)(unsafe.Pointer(P)).Fdatblock != 0 {
@@ -3371,7 +3373,7 @@ func s__BCCompileObject(tls *libc.TLS, cc *CC, bob uintptr, P uintptr) {
 		x__flexbuf_init(tls, cc, bp+32, uint64(1024))
 		// FIXME for some reason, this sometimes(??) prints empty DAT blocks for subobjects ???
 		x__PrintDataBlock(tls, cc, bp, (*_Module)(unsafe.Pointer(P)).Fdatblock, libc.UintptrFromInt32(0), bp+32)
-		x__BOB_Push(tls, cc, bob, libc.UintptrFromInt32(0), 0, __ccgo_ts+80788)
+		x__BOB_Push(tls, cc, bob, libc.UintptrFromInt32(0), 0, __ccgo_ts+80794)
 		datSpan = x__BOB_Push(tls, cc, bob, x__flexbuf_peek(tls, cc, bp), libc.Int32FromUint64(x__flexbuf_curlen(tls, cc, bp)), libc.UintptrFromInt32(0))
 		s__BCProcessDatRelocs(tls, cc, P, datSpan, x__flexbuf_peek(tls, cc, bp+32), x__flexbuf_curlen(tls, cc, bp+32)/uint64(24))
 		x__flexbuf_delete(tls, cc, bp+32)
@@ -3406,11 +3408,11 @@ func s__BCCompileObject(tls *libc.TLS, cc *CC, bob uintptr, P uintptr) {
 		x__BOB_Align(tls, cc, bob, int32(4)) // Do we need this?
 		x__BOB_ReplaceWord(tls, cc, sizeSpan, libc.Uint16FromInt32((*_ByteOutputBuffer)(unsafe.Pointer(bob)).Ftotal_size-(*_BCModData)(unsafe.Pointer((*_Module)(unsafe.Pointer(P)).Fbedata)).FcompiledAddress), libc.UintptrFromInt32(0))
 	default:
-		x__ERROR(tls, cc, libc.UintptrFromInt32(0), __ccgo_ts+66438, 0)
+		x__ERROR(tls, cc, libc.UintptrFromInt32(0), __ccgo_ts+66444, 0)
 		return
 	}
 	if obj_cnt != (*_BCModData)(unsafe.Pointer((*_Module)(unsafe.Pointer(P)).Fbedata)).Fobj_cnt {
-		x__ERROR(tls, cc, libc.UintptrFromInt32(0), __ccgo_ts+80802, libc.VaList(bp+72, (*_Module)(unsafe.Pointer(P)).Fclassname))
+		x__ERROR(tls, cc, libc.UintptrFromInt32(0), __ccgo_ts+80808, libc.VaList(bp+72, (*_Module)(unsafe.Pointer(P)).Fclassname))
 	}
 	// emit subobjects
 	i4 = 0
@@ -3430,7 +3432,7 @@ func s__BCCompileObject(tls *libc.TLS, cc *CC, bob uintptr, P uintptr) {
 		case int32(m_INTERP_KIND_P1ROM):
 			x__BOB_ReplaceWord(tls, cc, *(*uintptr)(unsafe.Add(unsafe.Pointer(objOffsetSpans), i4*8)), libc.Uint16FromInt32((*_BCModData)(unsafe.Pointer((*_Module)(unsafe.Pointer(mod)).Fbedata)).FcompiledAddress-(*_BCModData)(unsafe.Pointer((*_Module)(unsafe.Pointer(P)).Fbedata)).FcompiledAddress), libc.UintptrFromInt32(0))
 		default:
-			x__ERROR(tls, cc, libc.UintptrFromInt32(0), __ccgo_ts+66438, 0)
+			x__ERROR(tls, cc, libc.UintptrFromInt32(0), __ccgo_ts+66444, 0)
 			return
 		}
 		goto _8
@@ -3446,7 +3448,7 @@ func s__BCCompilePopN(tls *libc.TLS, cc *CC, irbuf uintptr, popcount int32) {
 	defer tls.Free(64)
 	var _ /* popOp at bp+0 */ _ByteOpIR
 	if popcount < 0 {
-		x__ERROR(tls, cc, libc.UintptrFromInt32(0), __ccgo_ts+66746, 0)
+		x__ERROR(tls, cc, libc.UintptrFromInt32(0), __ccgo_ts+66752, 0)
 	} else {
 		if popcount > 0 {
 			s__BCCompileInteger(tls, cc, irbuf, popcount*int32(4))
@@ -3467,7 +3469,7 @@ func s__BCEmitModuleRelocations(tls *libc.TLS, cc *CC, bob uintptr, P uintptr) {
 		if (*_BCRelocList)(unsafe.Pointer(list)).Ffunc1 != 0 {
 			(*(*func(*libc.TLS, *CC, uintptr, uintptr, _uint32_t))(unsafe.Pointer(&struct{ uintptr }{(*_BCRelocList)(unsafe.Pointer(list)).Ffunc1})))(tls, cc, P, (*_BCRelocList)(unsafe.Pointer(list)).Fpos, addr)
 		} else {
-			x__ERROR(tls, cc, libc.UintptrFromInt32(0), __ccgo_ts+80268, 0)
+			x__ERROR(tls, cc, libc.UintptrFromInt32(0), __ccgo_ts+80274, 0)
 		}
 		list = (*_BCRelocList)(unsafe.Pointer(list)).Fnext
 	}
@@ -3492,7 +3494,7 @@ func s__BCGetOBJOffset(tls *libc.TLS, cc *CC, P uintptr, ast uintptr) (r int32) 
 			ident = (*_AST)(unsafe.Pointer(ident)).Fleft
 		}
 		if (*_AST)(unsafe.Pointer(ident)).Fkind != int32(_AST_IDENTIFIER) {
-			x__ERROR(tls, cc, ident, __ccgo_ts+66251, 0)
+			x__ERROR(tls, cc, ident, __ccgo_ts+66257, 0)
 			return 0
 		}
 		name = *(*uintptr)(unsafe.Pointer(ident + 8))
@@ -3507,12 +3509,12 @@ func s__BCGetOBJOffset(tls *libc.TLS, cc *CC, P uintptr, ast uintptr) (r int32) 
 				// Static reference to type, must have zero offset
 				return 0
 			} else {
-				x__ERROR(tls, cc, ast, __ccgo_ts+66269, libc.VaList(bp+8, (*_AST)(unsafe.Pointer(ast)).Fkind))
+				x__ERROR(tls, cc, ast, __ccgo_ts+66275, libc.VaList(bp+8, (*_AST)(unsafe.Pointer(ast)).Fkind))
 			}
 		}
 	}
 	if !(sym != 0) {
-		x__ERROR(tls, cc, ast, __ccgo_ts+66310, 0)
+		x__ERROR(tls, cc, ast, __ccgo_ts+66316, 0)
 		return -int32(1)
 	}
 	//printf("In BCGetOBJOffset: ");
@@ -3531,7 +3533,7 @@ func s__BCGetOBJSize(tls *libc.TLS, cc *CC, P uintptr, ast uintptr) (r int32) {
 	if (*_AST)(unsafe.Pointer(ast)).Fkind == int32(_AST_DECLARE_VAR) {
 		mod = x__GetClassPtr(tls, cc, (*_AST)(unsafe.Pointer(ast)).Fleft)
 		if !(mod != 0) {
-			x__ERROR(tls, cc, ast, __ccgo_ts+66179, 0)
+			x__ERROR(tls, cc, ast, __ccgo_ts+66185, 0)
 			return 0
 		}
 		return (*_Module)(unsafe.Pointer(mod)).Fvarsize
@@ -3540,7 +3542,7 @@ func s__BCGetOBJSize(tls *libc.TLS, cc *CC, P uintptr, ast uintptr) (r int32) {
 			// static reference has no size
 			return 0
 		} else {
-			x__ERROR(tls, cc, ast, __ccgo_ts+66212, libc.VaList(bp+8, (*_AST)(unsafe.Pointer(ast)).Fkind))
+			x__ERROR(tls, cc, ast, __ccgo_ts+66218, libc.VaList(bp+8, (*_AST)(unsafe.Pointer(ast)).Fkind))
 		}
 	}
 	return 0
@@ -3559,7 +3561,7 @@ func s__BCIR_AllDetermined(tls *libc.TLS, cc *CC, irbuf uintptr) (r uint8) {
 		if s__BCIR_SizeDetermined(tls, cc, ir) != 0 {
 			goto _1
 		}
-		x__DEBUG(tls, cc, libc.UintptrFromInt32(0), __ccgo_ts+82833, libc.VaList(bp+8, cc.x__byteOpKindNames[(*_ByteOpIR)(unsafe.Pointer(ir)).Fkind]))
+		x__DEBUG(tls, cc, libc.UintptrFromInt32(0), __ccgo_ts+82839, libc.VaList(bp+8, cc.x__byteOpKindNames[(*_ByteOpIR)(unsafe.Pointer(ir)).Fkind]))
 		return libc.BoolUint8(m_false != 0)
 		goto _1
 	_1:
@@ -3583,7 +3585,7 @@ func s__BCIR_DetermineSizes(tls *libc.TLS, cc *CC, irbuf uintptr, force uint8, m
 	} else {
 		v1 = int32('N')
 	}
-	x__DEBUG(tls, cc, libc.UintptrFromInt32(0), __ccgo_ts+82735, libc.VaList(bp+16, maxRecursion, v1))
+	x__DEBUG(tls, cc, libc.UintptrFromInt32(0), __ccgo_ts+82741, libc.VaList(bp+16, maxRecursion, v1))
 	didSomething = libc.BoolUint8(m_false != 0)
 	ir = (*_BCIRBuffer)(unsafe.Pointer(irbuf)).Fhead
 	for {
@@ -3597,7 +3599,7 @@ func s__BCIR_DetermineSizes(tls *libc.TLS, cc *CC, irbuf uintptr, force uint8, m
 		**(**int32)(__ccgo_up(bp + 4)) = -int32(1)
 		(*(*func(*libc.TLS, *CC, uintptr, uintptr, uintptr, int32))(unsafe.Pointer(&struct{ uintptr }{cc.s__GetSizeBound_Func})))(tls, cc, ir, bp, bp+4, maxRecursion)
 		if **(**int32)(__ccgo_up(bp)) < 0 || **(**int32)(__ccgo_up(bp + 4)) < 0 {
-			x__ERROR(tls, cc, libc.UintptrFromInt32(0), __ccgo_ts+82796, 0)
+			x__ERROR(tls, cc, libc.UintptrFromInt32(0), __ccgo_ts+82802, 0)
 		}
 		if **(**int32)(__ccgo_up(bp)) == **(**int32)(__ccgo_up(bp + 4)) {
 			(*_ByteOpIR)(unsafe.Pointer(ir)).FfixedSize = **(**int32)(__ccgo_up(bp + 4))
@@ -3625,7 +3627,7 @@ func s__BCIR_InsertPopNBefore(tls *libc.TLS, cc *CC, irbuf uintptr, jump uintptr
 	var _ /* popAmount at bp+0 */ _ByteOpIR
 	var _ /* popOp at bp+56 */ _ByteOpIR
 	if popcount < 0 {
-		x__ERROR(tls, cc, libc.UintptrFromInt32(0), __ccgo_ts+66746, 0)
+		x__ERROR(tls, cc, libc.UintptrFromInt32(0), __ccgo_ts+66752, 0)
 	} else {
 		if popcount > 0 {
 			*(*_ByteOpIR)(unsafe.Pointer(bp)) = _ByteOpIR{}
@@ -3651,13 +3653,13 @@ func s__BCPrepareObject(tls *libc.TLS, cc *CC, P uintptr) {
 	}
 	save = cc.x__current
 	cc.x__current = P
-	x__DEBUG(tls, cc, libc.UintptrFromInt32(0), __ccgo_ts+79745, libc.VaList(bp+8, (*_Module)(unsafe.Pointer(P)).Ffullname))
+	x__DEBUG(tls, cc, libc.UintptrFromInt32(0), __ccgo_ts+79751, libc.VaList(bp+8, (*_Module)(unsafe.Pointer(P)).Ffullname))
 	(*_Module)(unsafe.Pointer(P)).Fbedata = calloc(tls, cc, uint64(7192), uint64(1))
 	(*_BCModData)(unsafe.Pointer((*_Module)(unsafe.Pointer(P)).Fbedata)).FcompiledAddress = -int32(1)
 	// insert system module
 	if cc.x__systemModule != 0 && cc.x__systemModule != P && (*_Module)(unsafe.Pointer(cc.x__systemModule)).Ffunctions != 0 && (*_Module)(unsafe.Pointer(P)).Ffunctions != 0 {
 		if !((*_Module)(unsafe.Pointer(P)).FisInterface != 0) {
-			s__BCInsertModule(tls, cc, P, cc.x__systemModule, __ccgo_ts+10196)
+			s__BCInsertModule(tls, cc, P, cc.x__systemModule, __ccgo_ts+10198)
 		}
 	}
 	// Count and gather private/public methods
@@ -3682,7 +3684,7 @@ func s__BCPrepareObject(tls *libc.TLS, cc *CC, P uintptr) {
 		}
 		//printf("Got function %s\n",f->user_name);
 		if pub_cnt+pri_cnt >= int32(m_BC_MAX_POINTERS) {
-			x__ERROR(tls, cc, libc.UintptrFromInt32(0), __ccgo_ts+79765, libc.VaList(bp+8, (*_Module)(unsafe.Pointer(P)).Ffullname))
+			x__ERROR(tls, cc, libc.UintptrFromInt32(0), __ccgo_ts+79771, libc.VaList(bp+8, (*_Module)(unsafe.Pointer(P)).Ffullname))
 			return
 		}
 		goto _1
@@ -3703,7 +3705,7 @@ func s__BCPrepareObject(tls *libc.TLS, cc *CC, P uintptr) {
 			break
 		}
 		if (*_AST)(unsafe.Pointer(upper)).Fkind != int32(_AST_LISTHOLDER) {
-			x__ERROR(tls, cc, upper, __ccgo_ts+79797, 0)
+			x__ERROR(tls, cc, upper, __ccgo_ts+79803, 0)
 			return
 		}
 		var1 = (*_AST)(unsafe.Pointer(upper)).Fleft
@@ -3712,26 +3714,26 @@ func s__BCPrepareObject(tls *libc.TLS, cc *CC, P uintptr) {
 		}
 		// Wrangle info from the AST
 		if !((*_AST)(unsafe.Pointer(var1)).Fleft != 0) {
-			x__ERROR(tls, cc, libc.UintptrFromInt32(0), __ccgo_ts+79833, 0)
+			x__ERROR(tls, cc, libc.UintptrFromInt32(0), __ccgo_ts+79839, 0)
 			return
 		} else {
 			if (*_AST)(unsafe.Pointer((*_AST)(unsafe.Pointer(var1)).Fleft)).Fkind != int32(_AST_OBJECT) {
-				x__ERROR(tls, cc, (*_AST)(unsafe.Pointer(var1)).Fleft, __ccgo_ts+79911, libc.VaList(bp+8, (*_AST)(unsafe.Pointer((*_AST)(unsafe.Pointer(var1)).Fleft)).Fkind))
+				x__ERROR(tls, cc, (*_AST)(unsafe.Pointer(var1)).Fleft, __ccgo_ts+79917, libc.VaList(bp+8, (*_AST)(unsafe.Pointer((*_AST)(unsafe.Pointer(var1)).Fleft)).Fkind))
 				return
 			}
 		}
 		if !((*_AST)(unsafe.Pointer(var1)).Fright != 0) {
-			x__ERROR(tls, cc, libc.UintptrFromInt32(0), __ccgo_ts+79987, 0)
+			x__ERROR(tls, cc, libc.UintptrFromInt32(0), __ccgo_ts+79993, 0)
 			return
 		} else {
 			if (*_AST)(unsafe.Pointer((*_AST)(unsafe.Pointer(var1)).Fright)).Fkind != int32(_AST_LISTHOLDER) {
-				x__ERROR(tls, cc, (*_AST)(unsafe.Pointer(var1)).Fright, __ccgo_ts+80069, libc.VaList(bp+8, (*_AST)(unsafe.Pointer((*_AST)(unsafe.Pointer(var1)).Fright)).Fkind))
+				x__ERROR(tls, cc, (*_AST)(unsafe.Pointer(var1)).Fright, __ccgo_ts+80075, libc.VaList(bp+8, (*_AST)(unsafe.Pointer((*_AST)(unsafe.Pointer(var1)).Fright)).Fkind))
 				return
 			}
 		}
 		arrsize = 0
 		if !((*_AST)(unsafe.Pointer((*_AST)(unsafe.Pointer(var1)).Fright)).Fleft != 0) {
-			x__ERROR(tls, cc, (*_AST)(unsafe.Pointer(var1)).Fright, __ccgo_ts+80149, 0)
+			x__ERROR(tls, cc, (*_AST)(unsafe.Pointer(var1)).Fright, __ccgo_ts+80155, 0)
 		} else {
 			if (*_AST)(unsafe.Pointer((*_AST)(unsafe.Pointer((*_AST)(unsafe.Pointer(var1)).Fright)).Fleft)).Fkind == int32(_AST_IDENTIFIER) {
 				//printf("Got obj of type %s named %s\n",((Module*)var->left->d.ptr)->classname,var->right->left->d.string);
@@ -3739,9 +3741,9 @@ func s__BCPrepareObject(tls *libc.TLS, cc *CC, P uintptr) {
 			} else {
 				if (*_AST)(unsafe.Pointer((*_AST)(unsafe.Pointer((*_AST)(unsafe.Pointer(var1)).Fright)).Fleft)).Fkind == int32(_AST_ARRAYDECL) {
 					arrsize = int32(x__EvalConstExpr(tls, cc, (*_AST)(unsafe.Pointer((*_AST)(unsafe.Pointer((*_AST)(unsafe.Pointer(var1)).Fright)).Fleft)).Fright))
-					x__DEBUG(tls, cc, libc.UintptrFromInt32(0), __ccgo_ts+80169, libc.VaList(bp+8, (*_Module)(unsafe.Pointer(*(*uintptr)(unsafe.Pointer((*_AST)(unsafe.Pointer(var1)).Fleft + 8)))).Fclassname, arrsize, *(*uintptr)(unsafe.Pointer((*_AST)(unsafe.Pointer((*_AST)(unsafe.Pointer((*_AST)(unsafe.Pointer(var1)).Fright)).Fleft)).Fleft + 8))))
+					x__DEBUG(tls, cc, libc.UintptrFromInt32(0), __ccgo_ts+80175, libc.VaList(bp+8, (*_Module)(unsafe.Pointer(*(*uintptr)(unsafe.Pointer((*_AST)(unsafe.Pointer(var1)).Fleft + 8)))).Fclassname, arrsize, *(*uintptr)(unsafe.Pointer((*_AST)(unsafe.Pointer((*_AST)(unsafe.Pointer((*_AST)(unsafe.Pointer(var1)).Fright)).Fleft)).Fleft + 8))))
 				} else {
-					x__ERROR(tls, cc, (*_AST)(unsafe.Pointer(var1)).Fright, __ccgo_ts+80212, libc.VaList(bp+8, (*_AST)(unsafe.Pointer((*_AST)(unsafe.Pointer((*_AST)(unsafe.Pointer(var1)).Fright)).Fleft)).Fkind))
+					x__ERROR(tls, cc, (*_AST)(unsafe.Pointer(var1)).Fright, __ccgo_ts+80218, libc.VaList(bp+8, (*_AST)(unsafe.Pointer((*_AST)(unsafe.Pointer((*_AST)(unsafe.Pointer(var1)).Fright)).Fleft)).Fkind))
 				}
 			}
 		}
@@ -3767,7 +3769,7 @@ func s__BCPrepareObject(tls *libc.TLS, cc *CC, P uintptr) {
 			i = i + 1
 		}
 		if pub_cnt1+pri_cnt1+obj_cnt >= int32(m_BC_MAX_POINTERS) {
-			x__ERROR(tls, cc, libc.UintptrFromInt32(0), __ccgo_ts+80238, libc.VaList(bp+8, (*_Module)(unsafe.Pointer(P)).Ffullname))
+			x__ERROR(tls, cc, libc.UintptrFromInt32(0), __ccgo_ts+80244, libc.VaList(bp+8, (*_Module)(unsafe.Pointer(P)).Ffullname))
 			return
 		}
 		goto _4
@@ -3810,7 +3812,7 @@ func s__BCProcessDatRelocs(tls *libc.TLS, cc *CC, P uintptr, span uintptr, reloc
 	spdata = span + 20
 	maxsize = libc.Uint64FromInt32((*_OutputSpan)(unsafe.Pointer(span)).Fsize)
 	if datbase < 0 {
-		x__ERROR(tls, cc, libc.UintptrFromInt32(0), __ccgo_ts+80300, libc.VaList(bp+8, (*_Module)(unsafe.Pointer(P)).Fclassname))
+		x__ERROR(tls, cc, libc.UintptrFromInt32(0), __ccgo_ts+80306, libc.VaList(bp+8, (*_Module)(unsafe.Pointer(P)).Fclassname))
 		return
 	}
 	i = uint64(0)
@@ -3823,7 +3825,7 @@ func s__BCProcessDatRelocs(tls *libc.TLS, cc *CC, P uintptr, span uintptr, reloc
 			sym = (*_Reloc)(unsafe.Pointer(reloc)).Fsym
 			off = (*_Reloc)(unsafe.Pointer(reloc)).Faddr
 			if libc.Uint64FromInt32(off+int32(4)) > maxsize {
-				x__ERROR(tls, cc, libc.UintptrFromInt32(0), __ccgo_ts+80330, 0)
+				x__ERROR(tls, cc, libc.UintptrFromInt32(0), __ccgo_ts+80336, 0)
 				return
 			}
 			if !(sym != 0) {
@@ -3835,13 +3837,13 @@ func s__BCProcessDatRelocs(tls *libc.TLS, cc *CC, P uintptr, span uintptr, reloc
 					F = *(*uintptr)(unsafe.Pointer(sym + 32))
 					Obj = (*_Function)(unsafe.Pointer(F)).Fmodule
 					if (*_Module)(unsafe.Pointer(Obj)).Fbedata == libc.UintptrFromInt32(0) {
-						x__ERROR(tls, cc, libc.UintptrFromInt32(0), __ccgo_ts+80363, libc.VaList(bp+8, (*_Module)(unsafe.Pointer(Obj)).Fclassname))
+						x__ERROR(tls, cc, libc.UintptrFromInt32(0), __ccgo_ts+80369, libc.VaList(bp+8, (*_Module)(unsafe.Pointer(Obj)).Fclassname))
 						return
 					}
 					addr = (*_BCModData)(unsafe.Pointer((*_Module)(unsafe.Pointer(Obj)).Fbedata)).FcompiledAddress
 					id = s__getFuncIDForKnownFunc(tls, cc, Obj, F)
 					if id < 0 {
-						x__ERROR(tls, cc, libc.UintptrFromInt32(0), __ccgo_ts+80385, libc.VaList(bp+8, (*_Function)(unsafe.Pointer(F)).Fname))
+						x__ERROR(tls, cc, libc.UintptrFromInt32(0), __ccgo_ts+80391, libc.VaList(bp+8, (*_Function)(unsafe.Pointer(F)).Fname))
 					}
 					if addr < 0 {
 						s__BCCompileDatModuleFuncRef(tls, cc, spdata+uintptr(off), Obj, id)
@@ -3850,7 +3852,7 @@ func s__BCProcessDatRelocs(tls *libc.TLS, cc *CC, P uintptr, span uintptr, reloc
 						s__BCDatPutLong(tls, cc, spdata+uintptr(off), data)
 					}
 				} else {
-					x__ERROR(tls, cc, libc.UintptrFromInt32(0), __ccgo_ts+80418, libc.VaList(bp+8, (*_Symbol)(unsafe.Pointer(sym)).Fuser_name))
+					x__ERROR(tls, cc, libc.UintptrFromInt32(0), __ccgo_ts+80424, libc.VaList(bp+8, (*_Symbol)(unsafe.Pointer(sym)).Fuser_name))
 				}
 			}
 		case int32(_RELOC_KIND_NONE):
@@ -3861,7 +3863,7 @@ func s__BCProcessDatRelocs(tls *libc.TLS, cc *CC, P uintptr, span uintptr, reloc
 		case int32(_RELOC_KIND_AUGD):
 			fallthrough
 		default:
-			x__ERROR(tls, cc, libc.UintptrFromInt32(0), __ccgo_ts+80453, libc.VaList(bp+8, (*_Reloc)(unsafe.Pointer(reloc)).Fkind))
+			x__ERROR(tls, cc, libc.UintptrFromInt32(0), __ccgo_ts+80459, libc.VaList(bp+8, (*_Reloc)(unsafe.Pointer(reloc)).Fkind))
 			break
 		}
 		goto _1
@@ -3887,7 +3889,7 @@ func s__BuildOnGotoCases(tls *libc.TLS, cc *CC, exprlist uintptr) (r uintptr) {
 			if (*_AST)(unsafe.Pointer(target)).Fkind == int32(_AST_INTEGER) {
 				gostmt = x__NewAST(tls, cc, int32(_AST_GOTO), x__IntegerLabel(tls, cc, target), libc.UintptrFromInt32(0))
 			} else {
-				x__SYNTAX_ERROR(tls, cc, __ccgo_ts+119804, 0)
+				x__SYNTAX_ERROR(tls, cc, __ccgo_ts+119818, 0)
 				return libc.UintptrFromInt32(0)
 			}
 		}
@@ -3937,7 +3939,7 @@ func s__CORDICconstPropagate(tls *libc.TLS, cc *CC, irl uintptr) (r uint8) {
 			foundY = libc.BoolUint8(m_false != 0)
 			switch (*_IR)(unsafe.Pointer(ir1)).Fopc {
 			case int32(_OPC_QMUL):
-				x__DEBUG(tls, cc, libc.UintptrFromInt32(0), __ccgo_ts+62414, libc.VaList(bp+8, (*_Operand)(unsafe.Pointer((*_IR)(unsafe.Pointer(ir1)).Fdst)).Fval, (*_Operand)(unsafe.Pointer((*_IR)(unsafe.Pointer(ir1)).Fsrc)).Fval))
+				x__DEBUG(tls, cc, libc.UintptrFromInt32(0), __ccgo_ts+62422, libc.VaList(bp+8, (*_Operand)(unsafe.Pointer((*_IR)(unsafe.Pointer(ir1)).Fdst)).Fval, (*_Operand)(unsafe.Pointer((*_IR)(unsafe.Pointer(ir1)).Fsrc)).Fval))
 				tmp = uint64(libc.Uint32FromInt64((*_Operand)(unsafe.Pointer((*_IR)(unsafe.Pointer(ir1)).Fdst)).Fval)) * uint64(libc.Uint32FromInt64((*_Operand)(unsafe.Pointer((*_IR)(unsafe.Pointer(ir1)).Fsrc)).Fval))
 				const_x = libc.Int32FromUint64(tmp)
 				const_y = libc.Int32FromUint64(tmp >> libc.Int32FromInt32(32))
@@ -3966,13 +3968,13 @@ func s__CORDICconstPropagate(tls *libc.TLS, cc *CC, irl uintptr) (r uint8) {
 			if constantCommand != 0 && ((*_IR)(unsafe.Pointer(ir1)).Fopc == int32(_OPC_GETQX) || (*_IR)(unsafe.Pointer(ir1)).Fopc == int32(_OPC_GETQY)) {
 				if (*_IR)(unsafe.Pointer(ir1)).Fopc == int32(_OPC_GETQX) {
 					if foundX != 0 {
-						x__WARNING(tls, cc, libc.UintptrFromInt32(0), __ccgo_ts+62437, 0)
+						x__WARNING(tls, cc, libc.UintptrFromInt32(0), __ccgo_ts+62445, 0)
 					}
 					foundX = libc.BoolUint8(m_true != 0)
 					(*_IR)(unsafe.Pointer(ir1)).Fsrc = x__NewImmediate(tls, cc, const_x)
 				} else {
 					if foundY != 0 {
-						x__WARNING(tls, cc, libc.UintptrFromInt32(0), __ccgo_ts+62499, 0)
+						x__WARNING(tls, cc, libc.UintptrFromInt32(0), __ccgo_ts+62507, 0)
 					}
 					foundY = libc.BoolUint8(m_true != 0)
 					(*_IR)(unsafe.Pointer(ir1)).Fsrc = x__NewImmediate(tls, cc, const_y)
@@ -3981,7 +3983,7 @@ func s__CORDICconstPropagate(tls *libc.TLS, cc *CC, irl uintptr) (r uint8) {
 			} else {
 				if constantCommand != 0 && (x__IsBranch(tls, cc, ir1) != 0 || s__IsLabel(tls, cc, ir1) != 0 || s__IsCordicCommand(tls, cc, ir1) != 0) {
 					if !(foundX != 0) && !(foundY != 0) {
-						x__WARNING(tls, cc, libc.UintptrFromInt32(0), __ccgo_ts+62561, 0)
+						x__WARNING(tls, cc, libc.UintptrFromInt32(0), __ccgo_ts+62569, 0)
 					}
 					constantCommand = libc.BoolUint8(m_false != 0)
 					setq1_valid = libc.BoolUint8(m_false != 0)
@@ -4003,7 +4005,7 @@ func s__CORDICconstPropagate(tls *libc.TLS, cc *CC, irl uintptr) (r uint8) {
 		ir1 = (*_IR)(unsafe.Pointer(ir1)).Fnext
 	}
 	if constantCommand != 0 && !(foundX != 0) && !(foundY != 0) {
-		x__WARNING(tls, cc, libc.UintptrFromInt32(0), __ccgo_ts+62604, 0)
+		x__WARNING(tls, cc, libc.UintptrFromInt32(0), __ccgo_ts+62612, 0)
 	}
 	return change
 }
@@ -4096,11 +4098,11 @@ func s__CheckRetStatementList(tls *libc.TLS, cc *CC, func1 uintptr, ast uintptr)
 			ast = (*_AST)(unsafe.Pointer(ast)).Fleft
 		}
 		if !(ast != 0) {
-			x__ERROR(tls, cc, libc.UintptrFromInt32(0), __ccgo_ts+30224, 0)
+			x__ERROR(tls, cc, libc.UintptrFromInt32(0), __ccgo_ts+30232, 0)
 			return 0
 		} else {
 			if (*_AST)(unsafe.Pointer(ast)).Fkind != int32(_AST_STMTLIST) {
-				x__ERROR(tls, cc, ast, __ccgo_ts+30290, libc.VaList(bp+8, (*_AST)(unsafe.Pointer(ast)).Fkind))
+				x__ERROR(tls, cc, ast, __ccgo_ts+30298, libc.VaList(bp+8, (*_AST)(unsafe.Pointer(ast)).Fkind))
 				return 0
 			}
 		}
@@ -4155,7 +4157,7 @@ func s__CheckSymbolUsage(tls *libc.TLS, cc *CC, sym uintptr, arg uintptr) (r int
 			}
 		}
 		if needWarn != 0 && (*_Function)(unsafe.Pointer(F)).Fwarn_flags&int32(m_WARN_UNINIT_VARS) != 0 {
-			x__WARNING(tls, cc, **(**uintptr)(__ccgo_up(bp)), __ccgo_ts+32136, libc.VaList(bp+16, (*_Symbol)(unsafe.Pointer(sym)).Fuser_name, (*_Function)(unsafe.Pointer(F)).Fname))
+			x__WARNING(tls, cc, **(**uintptr)(__ccgo_up(bp)), __ccgo_ts+32144, libc.VaList(bp+16, (*_Symbol)(unsafe.Pointer(sym)).Fuser_name, (*_Function)(unsafe.Pointer(F)).Fname))
 		}
 	}
 	return int32(1)
@@ -4195,7 +4197,7 @@ func s__CombineTypes(tls *libc.TLS, cc *CC, first uintptr, second uintptr, ident
 	case int32(_AST_METHODREF):
 		if module != 0 {
 			if **(**uintptr)(__ccgo_up(module)) != 0 {
-				x__ERROR(tls, cc, second, __ccgo_ts+123033, 0)
+				x__ERROR(tls, cc, second, __ccgo_ts+123047, 0)
 			} else {
 				**(**uintptr)(__ccgo_up(module)) = x__FindClassByAst(tls, cc, (*_AST)(unsafe.Pointer(second)).Fleft)
 			}
@@ -4255,13 +4257,13 @@ func s__CombineTypes(tls *libc.TLS, cc *CC, first uintptr, second uintptr, ident
 	case int32(_AST_ANNOTATION):
 		P = x__GetClassPtr(tls, cc, first)
 		if !(P != 0) {
-			x__WARNING(tls, cc, second, __ccgo_ts+123079, 0)
+			x__WARNING(tls, cc, second, __ccgo_ts+123093, 0)
 			return first
 		}
-		if x__FindAnnotation(tls, cc, second, __ccgo_ts+123121) != 0 {
+		if x__FindAnnotation(tls, cc, second, __ccgo_ts+123135) != 0 {
 			(*_Module)(unsafe.Pointer(P)).FisPacked = int8(m_true)
 			if !(cc.x__gl_p2 != 0) {
-				x__WARNING(tls, cc, second, __ccgo_ts+123128, 0)
+				x__WARNING(tls, cc, second, __ccgo_ts+123142, 0)
 			}
 		}
 		return first
@@ -4283,7 +4285,7 @@ func s__CombineTypes(tls *libc.TLS, cc *CC, first uintptr, second uintptr, ident
 		} else {
 			v1 = second
 		}
-		x__ERROR(tls, cc, v1, __ccgo_ts+123186, 0)
+		x__ERROR(tls, cc, v1, __ccgo_ts+123200, 0)
 		return first
 	}
 	return r
@@ -4305,7 +4307,7 @@ func s__CompileBasicBoolExpression(tls *libc.TLS, cc *CC, irl uintptr, expr uint
 	} else {
 		typ = x__ExprType(tls, cc, expr)
 		if x__IsFloatType(tls, cc, typ) != 0 {
-			x__ERROR(tls, cc, expr, __ccgo_ts+46367, 0)
+			x__ERROR(tls, cc, expr, __ccgo_ts+46375, 0)
 		} else {
 			if x__IsInt64Type(tls, cc, typ) != 0 {
 				x__AstReportAs(tls, cc, expr, bp)
@@ -4355,7 +4357,7 @@ func s__CompileBasicBoolExpression(tls *libc.TLS, cc *CC, irl uintptr, expr uint
 			}
 			return v1
 		}
-		rhs = x__NewOperand(tls, cc, int32(_IMM_INT), __ccgo_ts+7138, 0)
+		rhs = x__NewOperand(tls, cc, int32(_IMM_INT), __ccgo_ts+7140, 0)
 		break
 	}
 	/* emit a compare operator */
@@ -4599,7 +4601,7 @@ func s__CompileBasicOperator(tls *libc.TLS, cc *CC, irl uintptr, expr uintptr, d
 		}
 		return temp
 	case int32(_K_DECODE):
-		x__ERROR(tls, cc, rhs, __ccgo_ts+46513, 0)
+		x__ERROR(tls, cc, rhs, __ccgo_ts+46521, 0)
 		return s__EmptyOperand(tls, cc)
 	case int32(_K_BOOL_NOT):
 		fallthrough
@@ -4651,10 +4653,10 @@ func s__CompileBasicOperator(tls *libc.TLS, cc *CC, irl uintptr, expr uintptr, d
 	case int32(_K_QLOG):
 		fallthrough
 	case int32('?'):
-		x__ERROR(tls, cc, expr, __ccgo_ts+46594, libc.VaList(bp+8, op))
+		x__ERROR(tls, cc, expr, __ccgo_ts+46602, libc.VaList(bp+8, op))
 		return s__EmptyOperand(tls, cc)
 	default:
-		x__ERROR(tls, cc, lhs, __ccgo_ts+46436, libc.VaList(bp+8, op))
+		x__ERROR(tls, cc, lhs, __ccgo_ts+46444, libc.VaList(bp+8, op))
 		return s__EmptyOperand(tls, cc)
 	}
 	return r
@@ -4672,7 +4674,7 @@ func s__CompileCaseStmt(tls *libc.TLS, cc *CC, irl uintptr, cold_irl uintptr, as
 		var1 = (*_AST)(unsafe.Pointer(var1)).Fleft
 	} else {
 		if !((*_AST)(unsafe.Pointer(var1)).Fkind == int32(_AST_IDENTIFIER) || (*_AST)(unsafe.Pointer(var1)).Fkind == int32(_AST_LOCAL_IDENTIFIER)) {
-			x__ERROR(tls, cc, var1, __ccgo_ts+49025, 0)
+			x__ERROR(tls, cc, var1, __ccgo_ts+49033, 0)
 			return
 		}
 	}
@@ -4680,7 +4682,7 @@ func s__CompileCaseStmt(tls *libc.TLS, cc *CC, irl uintptr, cold_irl uintptr, as
 	for ast != 0 {
 		starttempreg = (*_IRFuncData)(unsafe.Pointer((*_Function)(unsafe.Pointer(cc.x__curfunc)).Fbedata)).Fcurtempreg
 		if (*_AST)(unsafe.Pointer(ast)).Fkind != int32(_AST_LISTHOLDER) {
-			x__ERROR(tls, cc, ast, __ccgo_ts+49069, 0)
+			x__ERROR(tls, cc, ast, __ccgo_ts+49077, 0)
 			return
 		}
 		item = (*_AST)(unsafe.Pointer(ast)).Fleft
@@ -4724,30 +4726,30 @@ func s__CompileCoginit(tls *libc.TLS, cc *CC, irl uintptr, expr uintptr) (r uint
 	if x__IsSpinCoginit(tls, cc, expr, libc.UintptrFromInt32(0)) != 0 {
 		numparams = 0
 		if !(cc.s__kernelptr != 0) {
-			cc.s__kernelptr = x__NewImmediatePtr(tls, cc, __ccgo_ts+47357, x__NewOperand(tls, cc, int32(_IMM_HUB_LABEL), __ccgo_ts+47368, 0))
+			cc.s__kernelptr = x__NewImmediatePtr(tls, cc, __ccgo_ts+47365, x__NewOperand(tls, cc, int32(_IMM_HUB_LABEL), __ccgo_ts+47376, 0))
 		}
 		kernel = x__NewAST(tls, cc, int32(_AST_OPERAND), libc.UintptrFromInt32(0), libc.UintptrFromInt32(0))
 		*(*uintptr)(unsafe.Pointer(kernel + 8)) = cc.s__kernelptr
 		exprlist = (*_AST)(unsafe.Pointer(expr)).Fleft
 		if !(exprlist != 0) {
-			x__ERROR(tls, cc, expr, __ccgo_ts+34473, 0)
+			x__ERROR(tls, cc, expr, __ccgo_ts+34481, 0)
 			return x__GetArgReg(tls, cc, 0)
 		}
 		cogid = (*_AST)(unsafe.Pointer(exprlist)).Fleft
 		exprlist = (*_AST)(unsafe.Pointer(exprlist)).Fright
 		if !(exprlist != 0) {
-			x__ERROR(tls, cc, expr, __ccgo_ts+47374, 0)
+			x__ERROR(tls, cc, expr, __ccgo_ts+47382, 0)
 			return x__GetArgReg(tls, cc, 0)
 		}
 		func1 = (*_AST)(unsafe.Pointer(exprlist)).Fleft
 		exprlist = (*_AST)(unsafe.Pointer(exprlist)).Fright
 		if !(exprlist != 0) {
-			x__ERROR(tls, cc, expr, __ccgo_ts+34554, 0)
+			x__ERROR(tls, cc, expr, __ccgo_ts+34562, 0)
 			return x__GetArgReg(tls, cc, 0)
 		}
 		stack = (*_AST)(unsafe.Pointer(exprlist)).Fleft
 		if (*_AST)(unsafe.Pointer(exprlist)).Fright != libc.UintptrFromInt32(0) {
-			x__ERROR(tls, cc, expr, __ccgo_ts+34597, 0)
+			x__ERROR(tls, cc, expr, __ccgo_ts+34605, 0)
 		}
 		remote = x__CompileGetFunctionInfo(tls, cc, irl, func1, bp+16, bp+24, bp+8, bp)
 		fobjptr = x__NewFunctionTempRegister(tls, cc)
@@ -4760,18 +4762,18 @@ func s__CompileCoginit(tls *libc.TLS, cc *CC, irl uintptr, expr uintptr) (r uint
 			x__EmitOp2(tls, cc, irl, int32(_OPC_ADD), fobjptr, **(**uintptr)(__ccgo_up(bp + 24)))
 		}
 		if !(remote == uintptr(0) || !((*_Function)(unsafe.Pointer(remote)).Fbedata != 0) || (*_IRFuncData)(unsafe.Pointer((*_Function)(unsafe.Pointer(remote)).Fbedata)).Fconvention == int32(_FAST_CALL)) {
-			x__ERROR(tls, cc, expr, __ccgo_ts+47420, 0)
+			x__ERROR(tls, cc, expr, __ccgo_ts+47428, 0)
 			return x__GetArgReg(tls, cc, 0)
 		}
 		if cc.x__gl_output == int32(m_OUTPUT_COGSPIN) {
-			x__ERROR(tls, cc, expr, __ccgo_ts+47473, 0)
+			x__ERROR(tls, cc, expr, __ccgo_ts+47481, 0)
 			return x__GetArgReg(tls, cc, 0)
 		}
 		if remote != 0 && s__InCog(tls, cc, remote) != 0 {
 			if cc.x__gl_p2 != 0 {
 				//WARNING(expr, "target in cog memory");
 			} else {
-				x__ERROR(tls, cc, expr, __ccgo_ts+47535, 0)
+				x__ERROR(tls, cc, expr, __ccgo_ts+47543, 0)
 				return x__GetArgReg(tls, cc, 0)
 			}
 		}
@@ -4782,14 +4784,14 @@ func s__CompileCoginit(tls *libc.TLS, cc *CC, irl uintptr, expr uintptr) (r uint
 			if (*_AST)(unsafe.Pointer(func1)).Fkind == int32(_AST_FUNCCALL) {
 				params = (*_AST)(unsafe.Pointer(func1)).Fright
 			} else {
-				x__ERROR(tls, cc, expr, __ccgo_ts+47729, 0)
+				x__ERROR(tls, cc, expr, __ccgo_ts+47737, 0)
 				return x__GetArgReg(tls, cc, 0)
 			}
 		}
 		x__ValidateObjbase(tls, cc)
 		if (*_AST)(unsafe.Pointer(stack)).Fkind != int32(_AST_ADDROF) && (*_AST)(unsafe.Pointer(stack)).Fkind != int32(_AST_DATADDROF) && (*_AST)(unsafe.Pointer(stack)).Fkind != int32(_AST_ABSADDROF) {
 			if !(x__IsPointerType(tls, cc, x__ExprType(tls, cc, stack)) != 0) {
-				x__WARNING(tls, cc, stack, __ccgo_ts+47768, 0)
+				x__WARNING(tls, cc, stack, __ccgo_ts+47776, 0)
 			}
 		}
 		newstackptr = s__CompileExpression(tls, cc, irl, stack, libc.UintptrFromInt32(0))
@@ -4818,11 +4820,11 @@ func s__CompileCoginit(tls *libc.TLS, cc *CC, irl uintptr, expr uintptr) (r uint
 		// now we need to call coginit(cogid, @entry, stack)
 		params = x__NewAST(tls, cc, int32(_AST_EXPRLIST), cogid, x__NewAST(tls, cc, int32(_AST_EXPRLIST), kernel, x__NewAST(tls, cc, int32(_AST_EXPRLIST), stack, libc.UintptrFromInt32(0))))
 		if numparams > cc.s__max_coginit_args {
-			x__ERROR(tls, cc, libc.UintptrFromInt32(0), __ccgo_ts+47826, 0)
+			x__ERROR(tls, cc, libc.UintptrFromInt32(0), __ccgo_ts+47834, 0)
 			cc.s__max_coginit_args = numparams
 		}
 	}
-	funccall = x__AstIdentifier(tls, cc, __ccgo_ts+30933)
+	funccall = x__AstIdentifier(tls, cc, __ccgo_ts+30941)
 	funccall = x__NewAST(tls, cc, int32(_AST_FUNCCALL), funccall, params)
 	return s__CompileFunccallFirstResult(tls, cc, irl, funccall)
 }
@@ -4910,7 +4912,7 @@ func s__CompileDiv(tls *libc.TLS, cc *CC, irl uintptr, expr uintptr, getmod int3
 			x__EmitOp1(tls, cc, irl, int32(_OPC_GETQX), temp)
 			return temp
 		} else {
-			x__ERROR(tls, cc, expr, __ccgo_ts+46294, 0)
+			x__ERROR(tls, cc, expr, __ccgo_ts+46302, 0)
 			return temp //???
 		}
 	}
@@ -4987,10 +4989,10 @@ func s__CompileDiv(tls *libc.TLS, cc *CC, irl uintptr, expr uintptr, getmod int3
 	}
 	// Fall back on function call
 	if !(cc.x__divfunc != 0) {
-		cc.x__divfunc = x__NewOperand(tls, cc, int32(_IMM_COG_LABEL), __ccgo_ts+46323, 0)
-		cc.x__unsdivfunc = x__NewOperand(tls, cc, int32(_IMM_COG_LABEL), __ccgo_ts+46331, 0)
-		cc.x__muldiva = x__GetOneGlobal(tls, cc, int32(_REG_ARG), __ccgo_ts+46276, 0)
-		cc.x__muldivb = x__GetOneGlobal(tls, cc, int32(_REG_ARG), __ccgo_ts+46285, 0)
+		cc.x__divfunc = x__NewOperand(tls, cc, int32(_IMM_COG_LABEL), __ccgo_ts+46331, 0)
+		cc.x__unsdivfunc = x__NewOperand(tls, cc, int32(_IMM_COG_LABEL), __ccgo_ts+46339, 0)
+		cc.x__muldiva = x__GetOneGlobal(tls, cc, int32(_REG_ARG), __ccgo_ts+46284, 0)
+		cc.x__muldivb = x__GetOneGlobal(tls, cc, int32(_REG_ARG), __ccgo_ts+46293, 0)
 	}
 	x__EmitMove(tls, cc, irl, cc.x__muldiva, lhs, expr)
 	x__EmitMove(tls, cc, irl, cc.x__muldivb, rhs, expr)
@@ -5053,7 +5055,7 @@ func s__CompileExpression(tls *libc.TLS, cc *CC, irl uintptr, expr uintptr, dest
 	case int32(_AST_MASKMOVE):
 		return s__CompileMaskMove(tls, cc, irl, expr)
 	case int32(_AST_CATCH):
-		x__ERROR(tls, cc, expr, __ccgo_ts+48073, 0)
+		x__ERROR(tls, cc, expr, __ccgo_ts+48081, 0)
 		return x__GetArgReg(tls, cc, 0)
 	case int32(_AST_SETJMP):
 		s__ValidateAbortFuncs(tls, cc)
@@ -5156,7 +5158,7 @@ func s__CompileExpression(tls *libc.TLS, cc *CC, irl uintptr, expr uintptr, dest
 		return s__CompileFunccallFirstResult(tls, cc, irl, expr)
 	case int32(_AST_ASSIGN):
 		if *(*_uint64_t)(unsafe.Pointer(expr + 8)) != uint64(_K_ASSIGN) {
-			x__ERROR(tls, cc, expr, __ccgo_ts+48114, 0)
+			x__ERROR(tls, cc, expr, __ccgo_ts+48122, 0)
 		}
 		if (*_AST)(unsafe.Pointer(expr)).Fleft != 0 {
 			typ = x__ExprType(tls, cc, (*_AST)(unsafe.Pointer(expr)).Fleft)
@@ -5198,7 +5200,7 @@ func s__CompileExpression(tls *libc.TLS, cc *CC, irl uintptr, expr uintptr, dest
 		return s__CompileExpression(tls, cc, irl, x__TransformRangeUse(tls, cc, expr), dest)
 	case int32(_AST_STRING):
 		if libc.Xstrlen(tls, *(*uintptr)(unsafe.Pointer(expr + 8))) > uint64(1) {
-			x__ERROR(tls, cc, expr, __ccgo_ts+48164, 0)
+			x__ERROR(tls, cc, expr, __ccgo_ts+48172, 0)
 		}
 		return x__NewImmediate(tls, cc, int32(**(**int8)(__ccgo_up(*(*uintptr)(unsafe.Pointer(expr + 8))))))
 	case int32(_AST_STRINGPTR):
@@ -5213,11 +5215,11 @@ func s__CompileExpression(tls *libc.TLS, cc *CC, irl uintptr, expr uintptr, dest
 		return x__NewImmediatePtr(tls, cc, libc.UintptrFromInt32(0), r)
 	case int32(_AST_ARRAYREF):
 		if !((*_AST)(unsafe.Pointer(expr)).Fright != 0) || !((*_AST)(unsafe.Pointer(expr)).Fleft != 0) {
-			x__ERROR(tls, cc, expr, __ccgo_ts+48209, 0)
-			return x__NewOperand(tls, cc, int32(_REG_REG), __ccgo_ts+47924, 0)
+			x__ERROR(tls, cc, expr, __ccgo_ts+48217, 0)
+			return x__NewOperand(tls, cc, int32(_REG_REG), __ccgo_ts+47932, 0)
 		}
 		if !(s__validateArrayRef(tls, cc, (*_AST)(unsafe.Pointer(expr)).Fleft) != 0) {
-			x__ERROR(tls, cc, expr, __ccgo_ts+48229, libc.VaList(bp+16, x__GetVarNameForError(tls, cc, (*_AST)(unsafe.Pointer(expr)).Fleft)))
+			x__ERROR(tls, cc, expr, __ccgo_ts+48237, libc.VaList(bp+16, x__GetVarNameForError(tls, cc, (*_AST)(unsafe.Pointer(expr)).Fleft)))
 		}
 		base = s__CompileExpression(tls, cc, irl, (*_AST)(unsafe.Pointer(expr)).Fleft, libc.UintptrFromInt32(0))
 		offset = s__CompileExpression(tls, cc, irl, (*_AST)(unsafe.Pointer(expr)).Fright, libc.UintptrFromInt32(0))
@@ -5228,8 +5230,8 @@ func s__CompileExpression(tls *libc.TLS, cc *CC, irl uintptr, expr uintptr, dest
 		return s__ApplyArrayIndex(tls, cc, irl, base, offset, siz)
 	case int32(_AST_SPRREF):
 		if !((*_AST)(unsafe.Pointer(expr)).Fleft != 0) {
-			x__ERROR(tls, cc, expr, __ccgo_ts+48248, 0)
-			return x__NewOperand(tls, cc, int32(_REG_REG), __ccgo_ts+47924, 0)
+			x__ERROR(tls, cc, expr, __ccgo_ts+48256, 0)
+			return x__NewOperand(tls, cc, int32(_REG_REG), __ccgo_ts+47932, 0)
 		}
 		base1 = s__CompileExpression(tls, cc, irl, (*_AST)(unsafe.Pointer(expr)).Fleft, libc.UintptrFromInt32(0))
 		return x__CogMemRef(tls, cc, base1, 0)
@@ -5301,14 +5303,14 @@ func s__CompileExpression(tls *libc.TLS, cc *CC, irl uintptr, expr uintptr, dest
 					fallthrough
 				case int32(_AST_LABEL):
 					s__CompileStatement(tls, cc, irl, libc.UintptrFromInt32(0), list)
-					x__WARNING(tls, cc, expr, __ccgo_ts+48271, 0)
+					x__WARNING(tls, cc, expr, __ccgo_ts+48279, 0)
 					return x__GetArgReg(tls, cc, 0)
 				default:
 					return s__CompileExpression(tls, cc, irl, finalexpr, dest)
 				}
 			}
 		}
-		x__ERROR(tls, cc, expr, __ccgo_ts+48317, 0)
+		x__ERROR(tls, cc, expr, __ccgo_ts+48325, 0)
 		return x__GetArgReg(tls, cc, 0)
 	case int32(_AST_VA_ARG):
 		// x = va_arg(vl, type) should act like:
@@ -5324,7 +5326,7 @@ func s__CompileExpression(tls *libc.TLS, cc *CC, irl uintptr, expr uintptr, dest
 			temp3 = v3
 		} else {
 			temp3 = x__NewFunctionTempRegister(tls, cc)
-			x__WARNING(tls, cc, expr, __ccgo_ts+48362, 0)
+			x__WARNING(tls, cc, expr, __ccgo_ts+48370, 0)
 		}
 		r = s__CompileMemref(tls, cc, irl, expr)
 		x__EmitMove(tls, cc, irl, temp3, r, expr)
@@ -5341,18 +5343,18 @@ func s__CompileExpression(tls *libc.TLS, cc *CC, irl uintptr, expr uintptr, dest
 			}
 			name = x__GetUserIdentifierName(tls, cc, (*_AST)(unsafe.Pointer(expr)).Fright)
 			if !(objtype != 0) {
-				x__ERROR(tls, cc, expr, __ccgo_ts+48398, libc.VaList(bp+16, x__GetIdentifierName(tls, cc, (*_AST)(unsafe.Pointer(expr)).Fleft)))
+				x__ERROR(tls, cc, expr, __ccgo_ts+48406, libc.VaList(bp+16, x__GetIdentifierName(tls, cc, (*_AST)(unsafe.Pointer(expr)).Fleft)))
 				return s__EmptyOperand(tls, cc)
 			} else {
 				if !(x__IsClassType(tls, cc, objtype) != 0) {
-					x__ERROR(tls, cc, expr, __ccgo_ts+48435, libc.VaList(bp+16, name))
+					x__ERROR(tls, cc, expr, __ccgo_ts+48443, libc.VaList(bp+16, name))
 					return s__EmptyOperand(tls, cc)
 				}
 			}
 			if (*_AST)(unsafe.Pointer(expr)).Fleft != 0 && (*_AST)(unsafe.Pointer((*_AST)(unsafe.Pointer(expr)).Fleft)).Fkind == int32(_AST_OBJECT) {
 				// FIXME: we could potentially support calls of static class
 				// member functions, but for now, punt
-				x__ERROR(tls, cc, expr, __ccgo_ts+48490, 0)
+				x__ERROR(tls, cc, expr, __ccgo_ts+48498, 0)
 				return s__EmptyOperand(tls, cc)
 			}
 			sym1 = x__LookupMemberSymbol(tls, cc, expr, objtype, name, bp, libc.UintptrFromInt32(0))
@@ -5377,9 +5379,9 @@ func s__CompileExpression(tls *libc.TLS, cc *CC, irl uintptr, expr uintptr, dest
 				base2 = x__LabelRef(tls, cc, irl, sym1)
 			default:
 				if **(**uintptr)(__ccgo_up(bp)) != 0 {
-					x__ERROR(tls, cc, expr, __ccgo_ts+48550, libc.VaList(bp+16, name, (*_Module)(unsafe.Pointer(**(**uintptr)(__ccgo_up(bp)))).Fclassname))
+					x__ERROR(tls, cc, expr, __ccgo_ts+48558, libc.VaList(bp+16, name, (*_Module)(unsafe.Pointer(**(**uintptr)(__ccgo_up(bp)))).Fclassname))
 				} else {
-					x__ERROR(tls, cc, expr, __ccgo_ts+48588, libc.VaList(bp+16, name))
+					x__ERROR(tls, cc, expr, __ccgo_ts+48596, libc.VaList(bp+16, name))
 				}
 				return s__EmptyOperand(tls, cc)
 			}
@@ -5411,7 +5413,7 @@ func s__CompileExpression(tls *libc.TLS, cc *CC, irl uintptr, expr uintptr, dest
 		return temp4
 	case int32(_AST_CONSTANT):
 		if !(x__IsConstExpr(tls, cc, (*_AST)(unsafe.Pointer(expr)).Fleft) != 0) {
-			x__WARNING(tls, cc, expr, __ccgo_ts+48620, 0)
+			x__WARNING(tls, cc, expr, __ccgo_ts+48628, 0)
 		}
 		return s__CompileExpression(tls, cc, irl, (*_AST)(unsafe.Pointer(expr)).Fleft, dest)
 	case int32(_AST_GETHIGH):
@@ -5448,7 +5450,7 @@ func s__CompileExpression(tls *libc.TLS, cc *CC, irl uintptr, expr uintptr, dest
 		if x == 0 {
 			astmsg = (*_AST)(unsafe.Pointer(expr)).Fright
 			msg = x__GetStringFromAst(tls, cc, astmsg)
-			x__ERROR(tls, cc, expr, __ccgo_ts+7088, libc.VaList(bp+16, msg))
+			x__ERROR(tls, cc, expr, __ccgo_ts+7090, libc.VaList(bp+16, msg))
 		}
 		return x__NewImmediate(tls, cc, x)
 	case int32(_AST_EXPRLIST):
@@ -5459,8 +5461,8 @@ func s__CompileExpression(tls *libc.TLS, cc *CC, irl uintptr, expr uintptr, dest
 		/* otherwise fall through */
 		fallthrough
 	default:
-		x__ERROR(tls, cc, expr, __ccgo_ts+48699, 0)
-		return x__NewOperand(tls, cc, int32(_REG_REG), __ccgo_ts+47924, 0)
+		x__ERROR(tls, cc, expr, __ccgo_ts+48707, 0)
+		return x__NewOperand(tls, cc, int32(_REG_REG), __ccgo_ts+47932, 0)
 	}
 	return r1
 }
@@ -5472,13 +5474,13 @@ func s__CompileForLoop(tls *libc.TLS, cc *CC, irl uintptr, cold_irl uintptr, ast
 	initstmt = (*_AST)(unsafe.Pointer(ast)).Fleft
 	ast = (*_AST)(unsafe.Pointer(ast)).Fright
 	if !(ast != 0) || (*_AST)(unsafe.Pointer(ast)).Fkind != int32(_AST_TO) {
-		x__ERROR(tls, cc, ast, __ccgo_ts+48981, 0)
+		x__ERROR(tls, cc, ast, __ccgo_ts+48989, 0)
 		return
 	}
 	loopcond = (*_AST)(unsafe.Pointer(ast)).Fleft
 	ast = (*_AST)(unsafe.Pointer(ast)).Fright
 	if !(ast != 0) || (*_AST)(unsafe.Pointer(ast)).Fkind != int32(_AST_STEP) {
-		x__ERROR(tls, cc, ast, __ccgo_ts+48981, 0)
+		x__ERROR(tls, cc, ast, __ccgo_ts+48989, 0)
 		return
 	}
 	update = (*_AST)(unsafe.Pointer(ast)).Fleft
@@ -5587,7 +5589,7 @@ func s__CompileFunccall(tls *libc.TLS, cc *CC, irl uintptr, expr uintptr) (r uin
 	numresults = x__FuncNumResults(tls, cc, **(**uintptr)(__ccgo_up(bp)))
 	if func1 != 0 && (*_Function)(unsafe.Pointer(func1)).Fnumresults != numresults {
 		if **(**uintptr)(__ccgo_up(bp)) != 0 {
-			x__WARNING(tls, cc, libc.UintptrFromInt32(0), __ccgo_ts+46810, libc.VaList(bp+48, (*_Function)(unsafe.Pointer(func1)).Fname))
+			x__WARNING(tls, cc, libc.UintptrFromInt32(0), __ccgo_ts+46818, libc.VaList(bp+48, (*_Function)(unsafe.Pointer(func1)).Fname))
 			(*_Function)(unsafe.Pointer(func1)).Fnumresults = numresults
 		} else {
 			numresults = (*_Function)(unsafe.Pointer(func1)).Fnumresults
@@ -5621,7 +5623,7 @@ func s__CompileJumpOffset_Spin1(tls *libc.TLS, cc *CC, buf uintptr, pos uintptr,
 	_, _, _, _, _, _, _, _, _, _ = hlimit1, hlimit2, isLittleEndian, isVarlen, llimit1, llimit2, offset, v1, v2, v3
 	offset = x__BCIR_GetJumpOffset(tls, cc, ir, func_relative) + offset_offset
 	if encoding != int32(_S1OffEn_VARLEN_SIGNED) && offset < 0 {
-		x__ERROR(tls, cc, libc.UintptrFromInt32(0), __ccgo_ts+82975, 0)
+		x__ERROR(tls, cc, libc.UintptrFromInt32(0), __ccgo_ts+82981, 0)
 	}
 	hlimit1 = 0
 	llimit1 = 0
@@ -5654,7 +5656,7 @@ func s__CompileJumpOffset_Spin1(tls *libc.TLS, cc *CC, buf uintptr, pos uintptr,
 	switch (*_ByteOpIR)(unsafe.Pointer(ir)).FfixedSize - baseSize {
 	case int32(1):
 		if offset > hlimit1 || offset < llimit1 {
-			x__ERROR(tls, cc, libc.UintptrFromInt32(0), __ccgo_ts+83042, libc.VaList(bp+8, offset, encoding))
+			x__ERROR(tls, cc, libc.UintptrFromInt32(0), __ccgo_ts+83048, libc.VaList(bp+8, offset, encoding))
 		}
 		v2 = pos
 		v1 = *(*int32)(unsafe.Pointer(v2))
@@ -5667,7 +5669,7 @@ func s__CompileJumpOffset_Spin1(tls *libc.TLS, cc *CC, buf uintptr, pos uintptr,
 		**(**_uint8_t)(__ccgo_up(buf + uintptr(v1))) = libc.Uint8FromInt32(v3)
 	case int32(2):
 		if offset > hlimit2 || offset < llimit2 {
-			x__ERROR(tls, cc, libc.UintptrFromInt32(0), __ccgo_ts+83093, libc.VaList(bp+8, offset, encoding))
+			x__ERROR(tls, cc, libc.UintptrFromInt32(0), __ccgo_ts+83099, libc.VaList(bp+8, offset, encoding))
 		}
 		if isLittleEndian != 0 {
 			v2 = pos
@@ -5691,7 +5693,7 @@ func s__CompileJumpOffset_Spin1(tls *libc.TLS, cc *CC, buf uintptr, pos uintptr,
 			**(**_uint8_t)(__ccgo_up(buf + uintptr(v1))) = libc.Uint8FromInt32(offset & int32(0xFF))
 		}
 	default:
-		x__ERROR(tls, cc, libc.UintptrFromInt32(0), __ccgo_ts+83145, libc.VaList(bp+8, (*_ByteOpIR)(unsafe.Pointer(ir)).FfixedSize))
+		x__ERROR(tls, cc, libc.UintptrFromInt32(0), __ccgo_ts+83151, libc.VaList(bp+8, (*_ByteOpIR)(unsafe.Pointer(ir)).FfixedSize))
 		break
 	}
 	return offset
@@ -5708,13 +5710,13 @@ func s__CompileLookupDown(tls *libc.TLS, cc *CC, irl uintptr, expr uintptr) (r u
 	_, _, _, _, _, _, _, _, _, _, _, _, _, _ = arrid, base, basereg, ev, finalidx, funccall, idx, len1, n, params, popsize, src, table, value
 	popsize = 0
 	if (*_AST)(unsafe.Pointer(expr)).Fkind == int32(_AST_LOOKDOWN) {
-		funccall = x__AstIdentifier(tls, cc, __ccgo_ts+31149)
+		funccall = x__AstIdentifier(tls, cc, __ccgo_ts+31157)
 	} else {
-		funccall = x__AstIdentifier(tls, cc, __ccgo_ts+31141)
+		funccall = x__AstIdentifier(tls, cc, __ccgo_ts+31149)
 	}
 	ev = (*_AST)(unsafe.Pointer(expr)).Fleft
 	if (*_AST)(unsafe.Pointer(ev)).Fkind != int32(_AST_LOOKEXPR) {
-		x__ERROR(tls, cc, ev, __ccgo_ts+30140, 0)
+		x__ERROR(tls, cc, ev, __ccgo_ts+30148, 0)
 		return x__GetArgReg(tls, cc, 0)
 	}
 	base = (*_AST)(unsafe.Pointer(ev)).Fleft
@@ -5746,7 +5748,7 @@ func s__CompileLookupDown(tls *libc.TLS, cc *CC, irl uintptr, expr uintptr) (r u
 			len1 = x__AstInteger(tls, cc, int64(n))
 			popsize = n * int32(m_LONG_SIZE)
 		} else {
-			x__ERROR(tls, cc, table, __ccgo_ts+47869, 0)
+			x__ERROR(tls, cc, table, __ccgo_ts+47877, 0)
 			return x__GetArgReg(tls, cc, 0)
 		}
 	}
@@ -5778,7 +5780,7 @@ func s__CompileMaskMove(tls *libc.TLS, cc *CC, irl uintptr, expr uintptr) (r uin
 		maskast = (*_AST)(unsafe.Pointer((*_AST)(unsafe.Pointer(expr)).Fright)).Fleft
 		valast = (*_AST)(unsafe.Pointer((*_AST)(unsafe.Pointer(expr)).Fright)).Fright
 	} else {
-		x__ERROR(tls, cc, expr, __ccgo_ts+47247, 0)
+		x__ERROR(tls, cc, expr, __ccgo_ts+47255, 0)
 		return tmp
 	}
 	val = s__CompileExpression(tls, cc, irl, valast, libc.UintptrFromInt32(0))
@@ -5799,7 +5801,7 @@ func s__CompileMaskMove(tls *libc.TLS, cc *CC, irl uintptr, expr uintptr) (r uin
 	case int32(_AST_MEMREF):
 		dest = s__CompileExpression(tls, cc, irl, destast, libc.UintptrFromInt32(0))
 	default:
-		x__ERROR(tls, cc, expr, __ccgo_ts+47269, 0)
+		x__ERROR(tls, cc, expr, __ccgo_ts+47277, 0)
 		return tmp
 	}
 	ir = x__EmitMove(tls, cc, irl, tmp, dest, expr)
@@ -5845,7 +5847,7 @@ func s__CompileMiniDatBlock(tls *libc.TLS, cc *CC, irl uintptr, origtop uintptr,
 	(*_Function)(unsafe.Pointer(cc.x__curfunc)).FlocalsUsedInAsm = uint64(0)
 	x__AssignAddresses(tls, cc, bp+24, cc.x__curfunc+160, top, 0)
 	if (**(**_PASMAddresses)(__ccgo_up(bp + 24))).FcogPc > libc.Uint32FromInt32(cc.x__gl_fcache_size*int32(m_LONG_SIZE)) {
-		x__ERROR(tls, cc, origtop, __ccgo_ts+65971, libc.VaList(bp+48, cc.x__gl_fcache_size))
+		x__ERROR(tls, cc, origtop, __ccgo_ts+65977, libc.VaList(bp+48, cc.x__gl_fcache_size))
 	}
 	x__PrintDataBlock(tls, cc, fb, top, libc.UintptrFromInt32(0), relocs)
 	/* copy the locals used in the inline assembly */
@@ -5914,7 +5916,7 @@ func s__CompileMultipleAssign(tls *libc.TLS, cc *CC, irl uintptr, lhs uintptr, r
 		rhs = (*_AST)(unsafe.Pointer(rhs)).Fright
 	}
 	if !(rhs != 0) {
-		x__ERROR(tls, cc, lhs, __ccgo_ts+46880, 0)
+		x__ERROR(tls, cc, lhs, __ccgo_ts+46888, 0)
 		return x__GetArgReg(tls, cc, 0)
 	}
 	if (*_AST)(unsafe.Pointer(rhs)).Fkind == int32(_AST_EXPRLIST) {
@@ -5923,14 +5925,14 @@ func s__CompileMultipleAssign(tls *libc.TLS, cc *CC, irl uintptr, lhs uintptr, r
 		if (*_AST)(unsafe.Pointer(rhs)).Fkind == int32(_AST_FUNCCALL) {
 			opList = s__CompileFunccall(tls, cc, irl, rhs)
 		} else {
-			x__ERROR(tls, cc, rhs, __ccgo_ts+46923, 0)
+			x__ERROR(tls, cc, rhs, __ccgo_ts+46931, 0)
 			return x__GetArgReg(tls, cc, 0)
 		}
 	}
 	ptr = opList
 	for lhs != 0 && ptr != 0 {
 		if (*_AST)(unsafe.Pointer(lhs)).Fkind != int32(_AST_EXPRLIST) {
-			x__ERROR(tls, cc, lhs, __ccgo_ts+46948, 0)
+			x__ERROR(tls, cc, lhs, __ccgo_ts+46956, 0)
 			return x__GetArgReg(tls, cc, 0)
 		}
 		target = (*_AST)(unsafe.Pointer(lhs)).Fleft
@@ -5949,7 +5951,7 @@ func s__CompileMultipleAssign(tls *libc.TLS, cc *CC, irl uintptr, lhs uintptr, r
 				ptr = (*_OperandList)(unsafe.Pointer(ptr)).Fnext
 				r = s__CompileExpression(tls, cc, irl, hiexpr, libc.UintptrFromInt32(0))
 			} else {
-				x__ERROR(tls, cc, lhs, __ccgo_ts+46995, 0)
+				x__ERROR(tls, cc, lhs, __ccgo_ts+47003, 0)
 				r = s__EmptyOperand(tls, cc)
 			}
 		}
@@ -5960,10 +5962,10 @@ func s__CompileMultipleAssign(tls *libc.TLS, cc *CC, irl uintptr, lhs uintptr, r
 		}
 	}
 	if ptr != 0 {
-		x__ERROR(tls, cc, rhs, __ccgo_ts+47033, 0)
+		x__ERROR(tls, cc, rhs, __ccgo_ts+47041, 0)
 	} else {
 		if lhs != 0 {
-			x__ERROR(tls, cc, rhs, __ccgo_ts+47084, 0)
+			x__ERROR(tls, cc, rhs, __ccgo_ts+47092, 0)
 		}
 	}
 	return r
@@ -5995,7 +5997,7 @@ func s__CompileOperator(tls *libc.TLS, cc *CC, irl uintptr, expr uintptr, dest u
 			stepsize = x__AstInteger(tls, cc, int64(x__TypeSize(tls, cc, x__BaseType(tls, cc, desttype))))
 		} else {
 			if x__IsFloatType(tls, cc, desttype) != 0 {
-				x__ERROR(tls, cc, expr, __ccgo_ts+46681, 0)
+				x__ERROR(tls, cc, expr, __ccgo_ts+46689, 0)
 			}
 			stepsize = x__AstInteger(tls, cc, int64(1))
 		}
@@ -6147,7 +6149,7 @@ func s__CompileStatement(tls *libc.TLS, cc *CC, irl uintptr, cold_irl uintptr, a
 		}
 		if !(retval != 0) || (*_AST)(unsafe.Pointer(retval)).Fkind == int32(_AST_EXPRLIST) {
 			// cannot abort back multiple values!
-			x__WARNING(tls, cc, ast, __ccgo_ts+49178, 0)
+			x__WARNING(tls, cc, ast, __ccgo_ts+49186, 0)
 			retval = x__AstInteger(tls, cc, 0)
 		}
 		s__ValidateAbortFuncs(tls, cc)
@@ -6252,14 +6254,14 @@ func s__CompileStatement(tls *libc.TLS, cc *CC, irl uintptr, cold_irl uintptr, a
 	case int32(_AST_ENDCASE):
 		s__EmitDebugComment(tls, cc, irl, ast)
 		if !(cc.s__quitlabel != 0) {
-			x__ERROR(tls, cc, ast, __ccgo_ts+49213, 0)
+			x__ERROR(tls, cc, ast, __ccgo_ts+49221, 0)
 		} else {
 			x__EmitJump(tls, cc, irl, int32(_COND_TRUE), cc.s__quitlabel)
 		}
 	case int32(_AST_CONTINUE):
 		s__EmitDebugComment(tls, cc, irl, ast)
 		if !(cc.s__nextlabel != 0) {
-			x__ERROR(tls, cc, ast, __ccgo_ts+49249, 0)
+			x__ERROR(tls, cc, ast, __ccgo_ts+49257, 0)
 		} else {
 			x__EmitJump(tls, cc, irl, int32(_COND_TRUE), cc.s__nextlabel)
 		}
@@ -6276,7 +6278,7 @@ func s__CompileStatement(tls *libc.TLS, cc *CC, irl uintptr, cold_irl uintptr, a
 				}
 				likely = v1
 			} else {
-				x__DEBUG(tls, cc, condition, __ccgo_ts+49289, 0)
+				x__DEBUG(tls, cc, condition, __ccgo_ts+49297, 0)
 			}
 		}
 		ast = (*_AST)(unsafe.Pointer(ast)).Fright
@@ -6285,10 +6287,10 @@ func s__CompileStatement(tls *libc.TLS, cc *CC, irl uintptr, cold_irl uintptr, a
 			ast = (*_AST)(unsafe.Pointer(ast)).Fleft
 		}
 		if !(ast != 0) {
-			x__ERROR(tls, cc, libc.UintptrFromInt32(0), __ccgo_ts+49328, 0)
+			x__ERROR(tls, cc, libc.UintptrFromInt32(0), __ccgo_ts+49336, 0)
 		} else {
 			if (*_AST)(unsafe.Pointer(ast)).Fkind != int32(_AST_THENELSE) {
-				x__ERROR(tls, cc, ast, __ccgo_ts+49404, libc.VaList(bp+16, (*_AST)(unsafe.Pointer(ast)).Fkind))
+				x__ERROR(tls, cc, ast, __ccgo_ts+49412, libc.VaList(bp+16, (*_AST)(unsafe.Pointer(ast)).Fkind))
 			}
 		}
 		if likely != 0 && cold_irl != 0 { // emit to cold irl
@@ -6398,13 +6400,13 @@ func s__CompileStatement(tls *libc.TLS, cc *CC, irl uintptr, cold_irl uintptr, a
 			s__EmitOp0(tls, cc, irl, int32(_OPC_ALIGNL))
 		}
 		if (*_AST)(unsafe.Pointer(ast)).Fkind != int32(_AST_STMTLIST) {
-			x__ERROR(tls, cc, ast, __ccgo_ts+49478, 0)
+			x__ERROR(tls, cc, ast, __ccgo_ts+49486, 0)
 			break
 		}
 		s__CompileStatementList(tls, cc, irl, cold_irl, ast)
 	case int32(_AST_BRKDEBUG):
 		if !(cc.x__gl_p2 != 0) {
-			x__ERROR(tls, cc, ast, __ccgo_ts+49503, 0)
+			x__ERROR(tls, cc, ast, __ccgo_ts+49511, 0)
 		}
 		brkCode = x__AsmDebug_CodeGen(tls, cc, ast, __ccgo_fp(x__OutAsm_DebugEval), irl)
 		if brkCode >= 0 {
@@ -6430,7 +6432,7 @@ func s__CompileStatementList(tls *libc.TLS, cc *CC, irl uintptr, cold_irl uintpt
 	defer tls.Free(16)
 	for ast != 0 {
 		if (*_AST)(unsafe.Pointer(ast)).Fkind != int32(_AST_STMTLIST) {
-			x__ERROR(tls, cc, ast, __ccgo_ts+48728, libc.VaList(bp+8, (*_AST)(unsafe.Pointer(ast)).Fkind))
+			x__ERROR(tls, cc, ast, __ccgo_ts+48736, libc.VaList(bp+8, (*_AST)(unsafe.Pointer(ast)).Fkind))
 			return
 		}
 		s__CompileStatement(tls, cc, irl, cold_irl, (*_AST)(unsafe.Pointer(ast)).Fleft)
@@ -6460,7 +6462,7 @@ func s__CompileTraditionalInlineAsm(tls *libc.TLS, cc *CC, irl uintptr, origtop 
 	asmNest = uint32(0)
 	state[asmNest].Fis_active = libc.BoolUint8(m_true != 0)
 	if !(cc.x__curfunc != 0) {
-		x__ERROR(tls, cc, origtop, __ccgo_ts+65562, 0)
+		x__ERROR(tls, cc, origtop, __ccgo_ts+65570, 0)
 		return
 	}
 	if int32(*(*uint32)(unsafe.Pointer(cc.x__curfunc + 1248))&0x6>>1) != int32(m_CODE_PLACE_HUB) {
@@ -6470,7 +6472,7 @@ func s__CompileTraditionalInlineAsm(tls *libc.TLS, cc *CC, irl uintptr, origtop 
 	enddst = x__NewHubLabel(tls, cc)
 	if asmFlags&uint32(m_INLINE_ASM_FLAG_FCACHE) != 0 {
 		if cc.x__gl_fcache_size <= 0 {
-			x__WARNING(tls, cc, origtop, __ccgo_ts+65609, 0)
+			x__WARNING(tls, cc, origtop, __ccgo_ts+65617, 0)
 		} else {
 			isInFcache = libc.BoolUint8(m_true != 0)
 			startdst = x__NewHubLabel(tls, cc)
@@ -6512,11 +6514,11 @@ func s__CompileTraditionalInlineAsm(tls *libc.TLS, cc *CC, irl uintptr, origtop 
 			wasActive = state[asmNest].Fis_active
 			asmNest = asmNest + 1
 			if asmNest == uint32(m_MAX_ASM_NEST) {
-				x__ERROR(tls, cc, ast, __ccgo_ts+36955, 0)
+				x__ERROR(tls, cc, ast, __ccgo_ts+36963, 0)
 				asmNest = asmNest - 1
 			}
 			if !(x__IsConstExpr(tls, cc, (*_AST)(unsafe.Pointer(ast)).Fleft) != 0) {
-				x__ERROR(tls, cc, ast, __ccgo_ts+36992, 0)
+				x__ERROR(tls, cc, ast, __ccgo_ts+37000, 0)
 				val = 0
 			} else {
 				val = int32(x__EvalConstExpr(tls, cc, (*_AST)(unsafe.Pointer(ast)).Fleft))
@@ -6531,7 +6533,7 @@ func s__CompileTraditionalInlineAsm(tls *libc.TLS, cc *CC, irl uintptr, origtop 
 		} else {
 			if (*_AST)(unsafe.Pointer(ast)).Fkind == int32(_AST_ASM_ELSEIF) {
 				if !(x__IsConstExpr(tls, cc, (*_AST)(unsafe.Pointer(ast)).Fleft) != 0) {
-					x__ERROR(tls, cc, ast, __ccgo_ts+36992, 0)
+					x__ERROR(tls, cc, ast, __ccgo_ts+37000, 0)
 					val1 = 0
 				} else {
 					val1 = int32(x__EvalConstExpr(tls, cc, (*_AST)(unsafe.Pointer(ast)).Fleft))
@@ -6545,7 +6547,7 @@ func s__CompileTraditionalInlineAsm(tls *libc.TLS, cc *CC, irl uintptr, origtop 
 			} else {
 				if (*_AST)(unsafe.Pointer(ast)).Fkind == int32(_AST_ASM_ENDIF) {
 					if asmNest == uint32(0) {
-						x__ERROR(tls, cc, ast, __ccgo_ts+37044, 0)
+						x__ERROR(tls, cc, ast, __ccgo_ts+37052, 0)
 					} else {
 						asmNest = asmNest - 1
 					}
@@ -6589,11 +6591,11 @@ func s__CompileTraditionalInlineAsm(tls *libc.TLS, cc *CC, irl uintptr, origtop 
 				wasActive1 = state[asmNest].Fis_active
 				asmNest = asmNest + 1
 				if asmNest == uint32(m_MAX_ASM_NEST) {
-					x__ERROR(tls, cc, ast, __ccgo_ts+36955, 0)
+					x__ERROR(tls, cc, ast, __ccgo_ts+36963, 0)
 					asmNest = asmNest - 1
 				}
 				if !(x__IsConstExpr(tls, cc, (*_AST)(unsafe.Pointer(ast)).Fleft) != 0) {
-					x__ERROR(tls, cc, ast, __ccgo_ts+36992, 0)
+					x__ERROR(tls, cc, ast, __ccgo_ts+37000, 0)
 					val2 = 0
 				} else {
 					val2 = int32(x__EvalConstExpr(tls, cc, (*_AST)(unsafe.Pointer(ast)).Fleft))
@@ -6608,7 +6610,7 @@ func s__CompileTraditionalInlineAsm(tls *libc.TLS, cc *CC, irl uintptr, origtop 
 			} else {
 				if (*_AST)(unsafe.Pointer(ast)).Fkind == int32(_AST_ASM_ELSEIF) {
 					if !(x__IsConstExpr(tls, cc, (*_AST)(unsafe.Pointer(ast)).Fleft) != 0) {
-						x__ERROR(tls, cc, ast, __ccgo_ts+36992, 0)
+						x__ERROR(tls, cc, ast, __ccgo_ts+37000, 0)
 						val3 = 0
 					} else {
 						val3 = int32(x__EvalConstExpr(tls, cc, (*_AST)(unsafe.Pointer(ast)).Fleft))
@@ -6622,7 +6624,7 @@ func s__CompileTraditionalInlineAsm(tls *libc.TLS, cc *CC, irl uintptr, origtop 
 				} else {
 					if (*_AST)(unsafe.Pointer(ast)).Fkind == int32(_AST_ASM_ENDIF) {
 						if asmNest == uint32(0) {
-							x__ERROR(tls, cc, ast, __ccgo_ts+37044, 0)
+							x__ERROR(tls, cc, ast, __ccgo_ts+37052, 0)
 						} else {
 							asmNest = asmNest - 1
 						}
@@ -6650,7 +6652,7 @@ func s__CompileTraditionalInlineAsm(tls *libc.TLS, cc *CC, irl uintptr, origtop 
 								x__AppendIR(tls, cc, irl, ir1)
 								relpc = relpc + 1
 								if (*_IR)(unsafe.Pointer(ir1)).Fopc == int32(_OPC_REPEAT) && !(isConst != 0) {
-									x__WARNING(tls, cc, ast, __ccgo_ts+65648, 0)
+									x__WARNING(tls, cc, ast, __ccgo_ts+65656, 0)
 									isConst = libc.BoolUint8(m_true != 0)
 									v1 = ir1 + 48
 									*(*int32)(unsafe.Pointer(v1)) = int32(uint32(*(*int32)(unsafe.Pointer(v1))) | uint32(_FLAG_KEEP_INSTR))
@@ -6680,7 +6682,7 @@ func s__CompileTraditionalInlineAsm(tls *libc.TLS, cc *CC, irl uintptr, origtop 
 								if (*_AST)(unsafe.Pointer(ast)).Fkind == int32(_AST_IDENTIFIER) {
 									sym = x__FindSymbolEx(tls, cc, cc.x__curfunc+160, *(*uintptr)(unsafe.Pointer(ast + 8)), 0)
 									if !(sym != 0) || (*_Symbol)(unsafe.Pointer(sym)).Fkind != int32(_SYM_LOCALLABEL) {
-										x__ERROR(tls, cc, ast, __ccgo_ts+65703, libc.VaList(bp+8, *(*uintptr)(unsafe.Pointer(ast + 8))))
+										x__ERROR(tls, cc, ast, __ccgo_ts+65711, libc.VaList(bp+8, *(*uintptr)(unsafe.Pointer(ast + 8))))
 										break
 									}
 									if !(*(*uintptr)(unsafe.Pointer(sym + 32)) != 0) {
@@ -6703,7 +6705,7 @@ func s__CompileTraditionalInlineAsm(tls *libc.TLS, cc *CC, irl uintptr, origtop 
 											count = int32(1)
 											for list != 0 {
 												if (*_AST)(unsafe.Pointer(list)).Fkind != int32(_AST_EXPRLIST) {
-													x__ERROR(tls, cc, list, __ccgo_ts+65744, 0)
+													x__ERROR(tls, cc, list, __ccgo_ts+65752, 0)
 													break
 												}
 												item = (*_AST)(unsafe.Pointer(list)).Fleft
@@ -6720,7 +6722,7 @@ func s__CompileTraditionalInlineAsm(tls *libc.TLS, cc *CC, irl uintptr, origtop 
 													if !(j < count) {
 														break
 													}
-													op1 = x__NewOperand(tls, cc, int32(_IMM_INT), __ccgo_ts+7138, int64(val4))
+													op1 = x__NewOperand(tls, cc, int32(_IMM_INT), __ccgo_ts+7140, int64(val4))
 													ir3 = x__EmitOp1(tls, cc, irl, int32(_OPC_LONG), op1)
 													relpc = relpc + 1
 													if isConst != 0 {
@@ -6735,12 +6737,12 @@ func s__CompileTraditionalInlineAsm(tls *libc.TLS, cc *CC, irl uintptr, origtop 
 											}
 										} else {
 											if (*_AST)(unsafe.Pointer(ast)).Fkind == int32(_AST_WORDLIST) || (*_AST)(unsafe.Pointer(ast)).Fkind == int32(_AST_BYTELIST) {
-												x__ERROR(tls, cc, ast, __ccgo_ts+65767, 0)
+												x__ERROR(tls, cc, ast, __ccgo_ts+65775, 0)
 												break
 											} else {
 												if (*_AST)(unsafe.Pointer(ast)).Fkind == int32(_AST_RES) {
 													val5 = int32(x__EvalConstExpr(tls, cc, (*_AST)(unsafe.Pointer(ast)).Fleft))
-													op2 = x__NewOperand(tls, cc, int32(_IMM_INT), __ccgo_ts+7138, int64(val5))
+													op2 = x__NewOperand(tls, cc, int32(_IMM_INT), __ccgo_ts+7140, int64(val5))
 													ir = x__EmitOp1(tls, cc, irl, int32(_OPC_RESERVE), op2)
 													v1 = ir + 48
 													*(*int32)(unsafe.Pointer(v1)) = int32(uint32(*(*int32)(unsafe.Pointer(v1))) | uint32(_FLAG_KEEP_INSTR))
@@ -6756,10 +6758,10 @@ func s__CompileTraditionalInlineAsm(tls *libc.TLS, cc *CC, irl uintptr, origtop 
 																*(*int32)(unsafe.Pointer(v1)) = int32(uint32(*(*int32)(unsafe.Pointer(v1))) | uint32(_FLAG_KEEP_INSTR))
 															}
 														} else {
-															x__WARNING(tls, cc, ast, __ccgo_ts+65842, 0)
+															x__WARNING(tls, cc, ast, __ccgo_ts+65850, 0)
 														}
 													} else {
-														x__ERROR(tls, cc, ast, __ccgo_ts+65879, 0)
+														x__ERROR(tls, cc, ast, __ccgo_ts+65887, 0)
 														break
 													}
 												}
@@ -6776,7 +6778,7 @@ func s__CompileTraditionalInlineAsm(tls *libc.TLS, cc *CC, irl uintptr, origtop 
 	}
 	if fcache != 0 || endlabel != 0 {
 		if relpc > libc.Uint32FromInt32(cc.x__gl_fcache_size) {
-			x__ERROR(tls, cc, origtop, __ccgo_ts+65926, 0)
+			x__ERROR(tls, cc, origtop, __ccgo_ts+65934, 0)
 		}
 		if fcache != 0 && cc.x__gl_p2 != 0 {
 			fitir = x__NewIR(tls, cc, int32(_OPC_FIT))
@@ -6839,7 +6841,7 @@ func s__CondFromExpr(tls *libc.TLS, cc *CC, kind int32) (r _IRCond1) {
 	default:
 		break
 	}
-	x__ERROR(tls, cc, libc.UintptrFromInt32(0), __ccgo_ts+46342, 0)
+	x__ERROR(tls, cc, libc.UintptrFromInt32(0), __ccgo_ts+46350, 0)
 	return int32(_COND_FALSE)
 }
 
@@ -6847,7 +6849,7 @@ func s__ConditionalizeInstructions(tls *libc.TLS, cc *CC, ir uintptr, cond _IRCo
 	for ir != 0 && n > 0 {
 		if !(x__IsDummy(tls, cc, ir) != 0) {
 			if (*_IR)(unsafe.Pointer(ir)).Fopc == int32(_OPC_LABEL) {
-				x__ERROR(tls, cc, libc.UintptrFromInt32(0), __ccgo_ts+62085, 0)
+				x__ERROR(tls, cc, libc.UintptrFromInt32(0), __ccgo_ts+62093, 0)
 				return
 			}
 			(*_IR)(unsafe.Pointer(ir)).Fcond = libc.Int32FromUint32(libc.Uint32FromInt32(cond) | libc.Uint32FromInt32((*_IR)(unsafe.Pointer(ir)).Fcond))
@@ -6872,7 +6874,7 @@ func s__ConstructDefaultValue(tls *libc.TLS, cc *CC, decl uintptr, val uintptr) 
 		return decl
 	}
 	if !(decl != 0) || (*_AST)(unsafe.Pointer(decl)).Fkind != int32(_AST_DECLARE_VAR) {
-		x__ERROR(tls, cc, decl, __ccgo_ts+124135, 0)
+		x__ERROR(tls, cc, decl, __ccgo_ts+124149, 0)
 		return decl
 	}
 	ident = (*_AST)(unsafe.Pointer(decl)).Fright
@@ -7030,7 +7032,7 @@ func s__CreateBuiltinOp(tls *libc.TLS, cc *CC, op _NuIrOpcode1, impl uintptr) {
 	defer tls.Free(16)
 	if impl != 0 && int32(**(**int8)(__ccgo_up(impl))) == 0 {
 		// asking for a default jmp
-		impl = x__auto_printf(tls, cc, uint64(64), __ccgo_ts+87993, libc.VaList(bp+8, cc.s__NuOpName[op]))
+		impl = x__auto_printf(tls, cc, uint64(64), __ccgo_ts+87999, libc.VaList(bp+8, cc.s__NuOpName[op]))
 	}
 	cc.s__impl_ptrs[op] = impl
 	if impl != 0 {
@@ -7053,7 +7055,7 @@ func s__DeclareBaud(tls *libc.TLS, cc *CC, P uintptr) {
 	_, _, _ = baud, sym, v1
 	baud = 0
 	if cc.x__gl_debug != 0 && ((*_Module)(unsafe.Pointer(P)).FmainLanguage >= m_LANG_SPIN_SPIN1 && (*_Module)(unsafe.Pointer(P)).FmainLanguage <= int32(m_LANG_SPIN_SPIN2)) {
-		sym = x__FindSymbolEx(tls, cc, P+144, __ccgo_ts+9399, 0)
+		sym = x__FindSymbolEx(tls, cc, P+144, __ccgo_ts+9401, 0)
 		if sym != 0 && (*_Symbol)(unsafe.Pointer(sym)).Fkind == int32(_SYM_CONSTANT) {
 			baud = x__EvalConstSym(tls, cc, sym)
 		}
@@ -7069,15 +7071,15 @@ func s__DeclareBaud(tls *libc.TLS, cc *CC, P uintptr) {
 			baud = v1
 		}
 	}
-	x__AddInternalSymbol(tls, cc, P+144, __ccgo_ts+9410, int32(_SYM_CONSTANT), x__AstInteger(tls, cc, int64(baud)), libc.UintptrFromInt32(0))
-	x__AddInternalSymbol(tls, cc, cc.x__systemModule+144, __ccgo_ts+9410, int32(_SYM_CONSTANT), x__AstInteger(tls, cc, int64(baud)), libc.UintptrFromInt32(0))
+	x__AddInternalSymbol(tls, cc, P+144, __ccgo_ts+9412, int32(_SYM_CONSTANT), x__AstInteger(tls, cc, int64(baud)), libc.UintptrFromInt32(0))
+	x__AddInternalSymbol(tls, cc, cc.x__systemModule+144, __ccgo_ts+9412, int32(_SYM_CONSTANT), x__AstInteger(tls, cc, int64(baud)), libc.UintptrFromInt32(0))
 }
 
 func s__DeclareCGlobalVariables(tls *libc.TLS, cc *CC, slist uintptr) {
 	var inDat, v1 int32
 	var temp uintptr
 	_, _, _ = inDat, temp, v1
-	if !(cc.x__current != 0) || x__IsTopLevel(tls, cc, cc.x__current) != 0 || !(libc.Xstrcmp(tls, (*_Module)(unsafe.Pointer(cc.x__current)).Fclassname, __ccgo_ts+10196) != 0) {
+	if !(cc.x__current != 0) || x__IsTopLevel(tls, cc, cc.x__current) != 0 || !(libc.Xstrcmp(tls, (*_Module)(unsafe.Pointer(cc.x__current)).Fclassname, __ccgo_ts+10198) != 0) {
 		inDat = int32(1)
 	} else {
 		//        inDat = 0;
@@ -7094,7 +7096,7 @@ func s__DeclareCGlobalVariables(tls *libc.TLS, cc *CC, slist uintptr) {
 	}
 	for slist != 0 {
 		if (*_AST)(unsafe.Pointer(slist)).Fkind != int32(_AST_STMTLIST) {
-			x__ERROR(tls, cc, slist, __ccgo_ts+123339, 0)
+			x__ERROR(tls, cc, slist, __ccgo_ts+123353, 0)
 		}
 		temp = (*_AST)(unsafe.Pointer(slist)).Fleft
 		x__DeclareTypedGlobalVariables(tls, cc, temp, inDat)
@@ -7115,7 +7117,7 @@ func s__DeclareCMemberVariables(tls *libc.TLS, cc *CC, P uintptr, astlist uintpt
 		return
 	}
 	if (*_AST)(unsafe.Pointer(astlist)).Fkind != int32(_AST_STMTLIST) {
-		x__ERROR(tls, cc, astlist, __ccgo_ts+123421, 0)
+		x__ERROR(tls, cc, astlist, __ccgo_ts+123435, 0)
 		return
 	}
 	if is_union != 0 {
@@ -7133,14 +7135,14 @@ func s__DeclareCMemberVariables(tls *libc.TLS, cc *CC, P uintptr, astlist uintpt
 			continue
 		}
 		if is_private == -int32(1) {
-			x__WARNING(tls, cc, ast, __ccgo_ts+123456, 0)
+			x__WARNING(tls, cc, ast, __ccgo_ts+123470, 0)
 			is_private = int32(1)
 		}
 		if (*_AST)(unsafe.Pointer(ast)).Fkind == int32(_AST_FUNCDECL) {
 			is_public = libc.BoolInt32(!(is_private != 0))
 			list = (*_AST)(unsafe.Pointer(ast)).Fleft
 			if (*_AST)(unsafe.Pointer(list)).Fkind != int32(_AST_LISTHOLDER) {
-				x__ERROR(tls, cc, list, __ccgo_ts+123531, 0)
+				x__ERROR(tls, cc, list, __ccgo_ts+123545, 0)
 				return
 			}
 			type1 = (*_AST)(unsafe.Pointer(list)).Fleft
@@ -7152,14 +7154,14 @@ func s__DeclareCMemberVariables(tls *libc.TLS, cc *CC, P uintptr, astlist uintpt
 			continue
 		}
 		if (*_AST)(unsafe.Pointer(ast)).Fkind != int32(_AST_DECLARE_VAR) {
-			x__ERROR(tls, cc, ast, __ccgo_ts+123551, 0)
+			x__ERROR(tls, cc, ast, __ccgo_ts+123565, 0)
 			return
 		}
 		idlist = (*_AST)(unsafe.Pointer(ast)).Fright
 		typ = (*_AST)(unsafe.Pointer(ast)).Fleft
 		if (*_AST)(unsafe.Pointer(idlist)).Fkind == int32(_AST_LISTHOLDER) {
 			if (*_AST)(unsafe.Pointer(typ)).Fkind == int32(_AST_BITFIELD) {
-				x__ERROR(tls, cc, typ, __ccgo_ts+123583, 0)
+				x__ERROR(tls, cc, typ, __ccgo_ts+123597, 0)
 				typ = (*_AST)(unsafe.Pointer(typ)).Fleft
 			}
 			for idlist != 0 {
@@ -7187,10 +7189,10 @@ func s__DeclareCTypedFunction(tls *libc.TLS, cc *CC, P uintptr, ftype uintptr, n
 			if nameAst != 0 {
 				v1 = x__GetUserIdentifierName(tls, cc, nameAst)
 			} else {
-				v1 = __ccgo_ts + 7138
+				v1 = __ccgo_ts + 7140
 			}
 			name = v1
-			x__ERROR(tls, cc, attribute, __ccgo_ts+124006, libc.VaList(bp+8, name))
+			x__ERROR(tls, cc, attribute, __ccgo_ts+124020, libc.VaList(bp+8, name))
 		} else {
 			attribute = ftype
 			ftype = (*_AST)(unsafe.Pointer(ftype)).Fleft
@@ -7208,7 +7210,7 @@ func s__DeclareCTypedFunction(tls *libc.TLS, cc *CC, P uintptr, ftype uintptr, n
 		x__EnterLocalAlias(tls, cc, cc.x__currentTypes, globalName, nameString)
 		nameAst = x__NewAST(tls, cc, int32(_AST_LOCAL_IDENTIFIER), globalName, nameAst)
 		if body != 0 && (*_AST)(unsafe.Pointer(body)).Fkind == int32(_AST_STRING) {
-			x__ERROR(tls, cc, body, __ccgo_ts+124087, 0)
+			x__ERROR(tls, cc, body, __ccgo_ts+124101, 0)
 		} else {
 			// we have to fix up the body of the function so that references
 			// to the original name are replaced with the new name
@@ -7218,7 +7220,7 @@ func s__DeclareCTypedFunction(tls *libc.TLS, cc *CC, P uintptr, ftype uintptr, n
 	name1 = x__GetIdentifierName(tls, cc, nameAst)
 	// handle some special cases
 	// if "main" is declared as "main(argc, argv) we need ARGV processing
-	if !(libc.Xstrcmp(tls, name1, __ccgo_ts+11685) != 0) {
+	if !(libc.Xstrcmp(tls, name1, __ccgo_ts+11687) != 0) {
 		if ftype != 0 {
 			v1 = (*_AST)(unsafe.Pointer(ftype)).Fright
 		} else {
@@ -7262,13 +7264,13 @@ func s__DeclareLabelsGas(tls *libc.TLS, cc *CC, f uintptr, P uintptr, inlineAsm 
 			}
 			lab = *(*uintptr)(unsafe.Pointer(sym + 32))
 			if (*_Label)(unsafe.Pointer(lab)).Fflags&uint32(m_LABEL_USED_IN_SPIN) != 0 {
-				x__flexbuf_printf(tls, cc, f, __ccgo_ts+93872, 0)
+				x__flexbuf_printf(tls, cc, f, __ccgo_ts+93878, 0)
 				x__PrintType(tls, cc, f, (*_Label)(unsafe.Pointer(lab)).Ftype1, 0)
-				x__flexbuf_printf(tls, cc, f, __ccgo_ts+98642, libc.VaList(bp+8, name, name))
+				x__flexbuf_printf(tls, cc, f, __ccgo_ts+98648, libc.VaList(bp+8, name, name))
 				if (*_Label)(unsafe.Pointer(lab)).Fflags&uint32(m_LABEL_NEEDS_EXTRA_ALIGN) != 0 {
-					x__flexbuf_printf(tls, cc, f, __ccgo_ts+98661, 0)
+					x__flexbuf_printf(tls, cc, f, __ccgo_ts+98667, 0)
 				}
-				x__flexbuf_printf(tls, cc, f, __ccgo_ts+90198, 0)
+				x__flexbuf_printf(tls, cc, f, __ccgo_ts+90204, 0)
 			}
 		}
 		goto _1
@@ -7305,7 +7307,7 @@ func s__DeclareMemberVariablesOfSizeFlag(tls *libc.TLS, cc *CC, P uintptr, sizeR
 			break
 		}
 		if (*_AST)(unsafe.Pointer(upper)).Fkind != int32(_AST_LISTHOLDER) {
-			x__ERROR(tls, cc, upper, __ccgo_ts+8384, 0)
+			x__ERROR(tls, cc, upper, __ccgo_ts+8386, 0)
 		}
 		ast = (*_AST)(unsafe.Pointer(upper)).Fleft
 		if (*_AST)(unsafe.Pointer(ast)).Fkind == int32(_AST_COMMENTEDNODE) {
@@ -7340,11 +7342,11 @@ func s__DeclareMemberVariablesOfSizeFlag(tls *libc.TLS, cc *CC, P uintptr, sizeR
 				curSizeFlag = int32(m_SIZEFLAG_OBJ)
 				if Q != 0 {
 					if (*_Module)(unsafe.Pointer(Q)).FisInterface != 0 {
-						x__ERROR(tls, cc, ast, __ccgo_ts+8406, 0)
+						x__ERROR(tls, cc, ast, __ccgo_ts+8408, 0)
 					}
 					if (*_Module)(unsafe.Pointer(Q)).Fvarsize_used_valid != 0 {
 						if (*_Module)(unsafe.Pointer(Q)).Fvarsize_used != curtypesize {
-							x__ERROR(tls, cc, ast, __ccgo_ts+8464, libc.VaList(bp+8, (*_Module)(unsafe.Pointer(Q)).Fclassname, (*_Module)(unsafe.Pointer(Q)).Fvarsize_used, curtypesize))
+							x__ERROR(tls, cc, ast, __ccgo_ts+8466, libc.VaList(bp+8, (*_Module)(unsafe.Pointer(Q)).Fclassname, (*_Module)(unsafe.Pointer(Q)).Fvarsize_used, curtypesize))
 						}
 					}
 					(*_Module)(unsafe.Pointer(Q)).Fvarsize_used = curtypesize
@@ -7375,18 +7377,18 @@ func s__DeclareMemberVariablesOfSizeFlag(tls *libc.TLS, cc *CC, P uintptr, sizeR
 			}
 			if (*_AST)(unsafe.Pointer(curtype)).Fkind == int32(_AST_ASSIGN) {
 				if sizeRequest&int32(m_SIZEFLAG_DONE) != 0 {
-					x__ERROR(tls, cc, ast, __ccgo_ts+8523, 0)
+					x__ERROR(tls, cc, ast, __ccgo_ts+8525, 0)
 					return offset
 				}
 			}
 			if (*_Module)(unsafe.Pointer(P)).FisInterface != 0 {
-				x__ERROR(tls, cc, ast, __ccgo_ts+8567, 0)
+				x__ERROR(tls, cc, ast, __ccgo_ts+8569, 0)
 				return offset
 			}
 		case int32(_AST_ALIGN):
 			if (*_Module)(unsafe.Pointer(P)).FmainLanguage == m_LANG_SPIN_SPIN1 {
 				if sizeRequest&int32(m_SIZEFLAG_DONE) != 0 {
-					x__WARNING(tls, cc, ast, __ccgo_ts+8608, 0)
+					x__WARNING(tls, cc, ast, __ccgo_ts+8610, 0)
 				}
 				goto _1
 			}
@@ -7405,7 +7407,7 @@ func s__DeclareMemberVariablesOfSizeFlag(tls *libc.TLS, cc *CC, P uintptr, sizeR
 			/* skip */
 			goto _1
 		default:
-			x__ERROR(tls, cc, ast, __ccgo_ts+8660, libc.VaList(bp+8, (*_AST)(unsafe.Pointer(ast)).Fkind))
+			x__ERROR(tls, cc, ast, __ccgo_ts+8662, libc.VaList(bp+8, (*_AST)(unsafe.Pointer(ast)).Fkind))
 			return offset
 		}
 		if isUnion != 0 {
@@ -7450,7 +7452,7 @@ func s__Dereference(tls *libc.TLS, cc *CC, irl uintptr, op uintptr) (r uintptr) 
 		temp = x__NewFunctionTempRegister(tls, cc)
 		x__EmitMove(tls, cc, irl, temp, op, libc.UintptrFromInt32(0))
 		if (*_Operand)(unsafe.Pointer(op)).Fsize > int32(4) {
-			x__ERROR(tls, cc, libc.UintptrFromInt32(0), __ccgo_ts+46462, 0)
+			x__ERROR(tls, cc, libc.UintptrFromInt32(0), __ccgo_ts+46470, 0)
 		}
 		return temp
 	}
@@ -7464,7 +7466,7 @@ func s__DereferenceDest(tls *libc.TLS, cc *CC, irl uintptr, op uintptr) (r uintp
 		temp = x__NewFunctionTempRegister(tls, cc)
 		x__EmitMove(tls, cc, irl, temp, op, libc.UintptrFromInt32(0))
 		if (*_Operand)(unsafe.Pointer(op)).Fsize > int32(4) {
-			x__ERROR(tls, cc, libc.UintptrFromInt32(0), __ccgo_ts+46462, 0)
+			x__ERROR(tls, cc, libc.UintptrFromInt32(0), __ccgo_ts+46470, 0)
 		}
 		return temp
 	}
@@ -7476,13 +7478,13 @@ func s__DoPrintOp(tls *libc.TLS, cc *CC, fb uintptr, ptr uintptr) {
 	_ = op
 	op = ptr
 	if (*_Operand)(unsafe.Pointer(op)).Fkind == int32(_IMM_INT) {
-		x__flexbuf_addstr(tls, cc, fb, __ccgo_ts+22702)
+		x__flexbuf_addstr(tls, cc, fb, __ccgo_ts+22710)
 	}
 	x__PrintOperandAsValue(tls, cc, fb, op)
 }
 
 func s__DumpConstants(tls *libc.TLS, cc *CC, f uintptr, P uintptr) {
-	x__flexbuf_printf(tls, cc, f, __ccgo_ts+41004, 0)
+	x__flexbuf_printf(tls, cc, f, __ccgo_ts+41012, 0)
 	x__IterateOverSymbols(tls, cc, P+144, __ccgo_fp(s__putConstant), f)
 }
 
@@ -7550,8 +7552,8 @@ func s__EmitBuiltins(tls *libc.TLS, cc *CC, irl uintptr) {
 	}
 	if cc.x__mulfunc != 0 {
 		if cc.x__gl_p2 != 0 {
-			x__ERROR(tls, cc, libc.UintptrFromInt32(0), __ccgo_ts+54565, 0)
-			loop3 = x__NewOperand(tls, cc, int32(_IMM_STRING), __ccgo_ts+7138, 0)
+			x__ERROR(tls, cc, libc.UintptrFromInt32(0), __ccgo_ts+54573, 0)
+			loop3 = x__NewOperand(tls, cc, int32(_IMM_STRING), __ccgo_ts+7140, 0)
 		} else {
 			if cc.s__g_NeedMulHi != 0 {
 				loop3 = x__NewOperand(tls, cc, int32(_IMM_STRING), cc.s__builtin_mul_p1, 0)
@@ -7560,9 +7562,9 @@ func s__EmitBuiltins(tls *libc.TLS, cc *CC, irl uintptr) {
 			}
 		}
 		x__EmitOp1(tls, cc, irl, int32(_OPC_LITERAL), loop3)
-		x__GetOneGlobal(tls, cc, int32(_REG_REG), __ccgo_ts+54636, 0)
-		x__GetOneGlobal(tls, cc, int32(_REG_REG), __ccgo_ts+54643, 0)
-		x__GetOneGlobal(tls, cc, int32(_REG_REG), __ccgo_ts+54650, 0)
+		x__GetOneGlobal(tls, cc, int32(_REG_REG), __ccgo_ts+54644, 0)
+		x__GetOneGlobal(tls, cc, int32(_REG_REG), __ccgo_ts+54651, 0)
+		x__GetOneGlobal(tls, cc, int32(_REG_REG), __ccgo_ts+54658, 0)
 	}
 	if cc.x__divfunc != 0 {
 		if cc.x__gl_p2 != 0 {
@@ -7571,9 +7573,9 @@ func s__EmitBuiltins(tls *libc.TLS, cc *CC, irl uintptr) {
 			loop4 = x__NewOperand(tls, cc, int32(_IMM_STRING), cc.s__builtin_div_p1, 0)
 		}
 		x__EmitOp1(tls, cc, irl, int32(_OPC_LITERAL), loop4)
-		x__GetOneGlobal(tls, cc, int32(_REG_REG), __ccgo_ts+54636, 0)
-		x__GetOneGlobal(tls, cc, int32(_REG_REG), __ccgo_ts+54643, 0)
-		x__GetOneGlobal(tls, cc, int32(_REG_REG), __ccgo_ts+54650, 0)
+		x__GetOneGlobal(tls, cc, int32(_REG_REG), __ccgo_ts+54644, 0)
+		x__GetOneGlobal(tls, cc, int32(_REG_REG), __ccgo_ts+54651, 0)
+		x__GetOneGlobal(tls, cc, int32(_REG_REG), __ccgo_ts+54658, 0)
 	}
 	if cc.s__longjmpfunc != 0 {
 		if cc.x__gl_p2 != 0 {
@@ -7590,7 +7592,7 @@ func s__EmitBuiltins(tls *libc.TLS, cc *CC, irl uintptr) {
 		if cc.x__gl_outputflags&int32(m_OUTFLAG_COG_CODE) != 0 {
 			// abort saves the pc, which we don't have in COG mode, so
 			// add a dummy pc register
-			x__GetOneGlobal(tls, cc, int32(_REG_REG), __ccgo_ts+54658, 0)
+			x__GetOneGlobal(tls, cc, int32(_REG_REG), __ccgo_ts+54666, 0)
 		}
 	}
 	if cc.x__putcogreg != 0 {
@@ -7624,7 +7626,7 @@ func s__EmitCogread(tls *libc.TLS, cc *CC, irl uintptr, dst uintptr, src uintptr
 		return ir
 	} else {
 		if !(cc.x__putcogreg != 0) {
-			cc.x__putcogreg = x__NewOperand(tls, cc, int32(_IMM_COG_LABEL), __ccgo_ts+48784, 0)
+			cc.x__putcogreg = x__NewOperand(tls, cc, int32(_IMM_COG_LABEL), __ccgo_ts+48792, 0)
 		}
 		dstimm = x__GetLea(tls, cc, irl, dst)
 		x__EmitOp2(tls, cc, irl, int32(_OPC_MOVS), cc.x__putcogreg, src)
@@ -7658,7 +7660,7 @@ func s__EmitCogwrite(tls *libc.TLS, cc *CC, irl uintptr, src uintptr, dst uintpt
 		return ir
 	} else {
 		if !(cc.x__putcogreg != 0) {
-			cc.x__putcogreg = x__NewOperand(tls, cc, int32(_IMM_COG_LABEL), __ccgo_ts+48784, 0)
+			cc.x__putcogreg = x__NewOperand(tls, cc, int32(_IMM_COG_LABEL), __ccgo_ts+48792, 0)
 		}
 		srcimm = x__GetLea(tls, cc, irl, src)
 		x__EmitOp2(tls, cc, irl, int32(_OPC_MOVS), cc.x__putcogreg, srcimm)
@@ -7682,7 +7684,7 @@ func s__EmitComments(tls *libc.TLS, cc *CC, irl uintptr, comment uintptr) {
 					x__EmitOp1(tls, cc, irl, int32(_OPC_COMMENT), r)
 				}
 			} else {
-				x__ERROR(tls, cc, comment, __ccgo_ts+48035, 0)
+				x__ERROR(tls, cc, comment, __ccgo_ts+48043, 0)
 			}
 		}
 		comment = (*_AST)(unsafe.Pointer(comment)).Fright
@@ -7693,7 +7695,7 @@ func s__EmitLineDirective(tls *libc.TLS, cc *CC, f uintptr, name uintptr, line i
 	bp := tls.Alloc(32)
 	defer tls.Free(32)
 	if name != 0 {
-		x__flexbuf_printf(tls, cc, f, __ccgo_ts+27823, libc.VaList(bp+8, line, name))
+		x__flexbuf_printf(tls, cc, f, __ccgo_ts+27831, libc.VaList(bp+8, line, name))
 		cc.s__lastfile = name
 		cc.s__lastline = line
 	}
@@ -7749,7 +7751,7 @@ _3:
 _4:
 	;
 	if irl != 0 {
-		op = x__NewOperand(tls, cc, int32(_IMM_INT), __ccgo_ts+7138, int64(libc.Int32FromUint64(*(*_uint64_t)(unsafe.Pointer(ast + 8)))))
+		op = x__NewOperand(tls, cc, int32(_IMM_INT), __ccgo_ts+7140, int64(libc.Int32FromUint64(*(*_uint64_t)(unsafe.Pointer(ast + 8)))))
 		x__EmitOp1(tls, cc, irl, int32(_OPC_BYTE), op)
 	}
 	return int32(1)
@@ -7760,24 +7762,24 @@ _5:
 	name = x__GetIdentifierName(tls, cc, ast)
 	sym = x__LookupSymbol(tls, cc, name)
 	if !(sym != 0) {
-		x__ERROR(tls, cc, ast, __ccgo_ts+45693, libc.VaList(bp+8, name))
+		x__ERROR(tls, cc, ast, __ccgo_ts+45701, libc.VaList(bp+8, name))
 		return 0
 	}
 	if (*_Symbol)(unsafe.Pointer(sym)).Fkind == int32(_SYM_CONSTANT) || (*_Symbol)(unsafe.Pointer(sym)).Fkind == int32(_SYM_ALIAS) {
 		return s__EmitStringNoTrailingZero(tls, cc, irl, *(*uintptr)(unsafe.Pointer(sym + 32)))
 	} else {
-		x__ERROR(tls, cc, ast, __ccgo_ts+45717, libc.VaList(bp+8, name))
+		x__ERROR(tls, cc, ast, __ccgo_ts+45725, libc.VaList(bp+8, name))
 		return 0
 	}
 _7:
 	;
 	if x__IsConstExpr(tls, cc, ast) != 0 {
 		if irl != 0 {
-			op = x__NewOperand(tls, cc, int32(_IMM_INT), __ccgo_ts+7138, x__EvalConstExpr(tls, cc, ast))
+			op = x__NewOperand(tls, cc, int32(_IMM_INT), __ccgo_ts+7140, x__EvalConstExpr(tls, cc, ast))
 			x__EmitOp1(tls, cc, irl, int32(_OPC_BYTE), op)
 		}
 	} else {
-		x__ERROR(tls, cc, ast, __ccgo_ts+45749, 0)
+		x__ERROR(tls, cc, ast, __ccgo_ts+45757, 0)
 	}
 	return int32(1)
 _8:
@@ -7801,11 +7803,11 @@ func s__EnterVariable(tls *libc.TLS, cc *CC, kind int32, stab uintptr, astname u
 			name = v1
 		} else {
 			if (*_AST)(unsafe.Pointer(astname)).Fkind == int32(_AST_VARARGS) {
-				v1 = __ccgo_ts + 7128
+				v1 = __ccgo_ts + 7130
 				username = v1
 				name = v1
 			} else {
-				x__ERROR(tls, cc, astname, __ccgo_ts+28427, 0)
+				x__ERROR(tls, cc, astname, __ccgo_ts+28435, 0)
 				return libc.UintptrFromInt32(0)
 			}
 		}
@@ -7817,9 +7819,9 @@ func s__EnterVariable(tls *libc.TLS, cc *CC, kind int32, stab uintptr, astname u
 			return sym
 		}
 		oldsym = x__LookupSymbolInTable(tls, cc, stab, name)
-		x__ERROR(tls, cc, astname, __ccgo_ts+28458, libc.VaList(bp+8, username))
+		x__ERROR(tls, cc, astname, __ccgo_ts+28466, libc.VaList(bp+8, username))
 		if oldsym != 0 && (*_Symbol)(unsafe.Pointer(oldsym)).Fdef != 0 {
-			x__NOTE(tls, cc, (*_Symbol)(unsafe.Pointer(oldsym)).Fdef, __ccgo_ts+28486, 0)
+			x__NOTE(tls, cc, (*_Symbol)(unsafe.Pointer(oldsym)).Fdef, __ccgo_ts+28494, 0)
 		}
 	} else {
 		v1 = sym + 40
@@ -7848,9 +7850,9 @@ func s__EnterVariable(tls *libc.TLS, cc *CC, kind int32, stab uintptr, astname u
 						case int32(_SYM_FUNCTION):
 							/* no warning for this */
 						default:
-							x__WARNING(tls, cc, astname, __ccgo_ts+28518, libc.VaList(bp+8, username))
+							x__WARNING(tls, cc, astname, __ccgo_ts+28526, libc.VaList(bp+8, username))
 							if (*_Symbol)(unsafe.Pointer(sym2)).Fdef != 0 {
-								x__NOTE(tls, cc, (*_Symbol)(unsafe.Pointer(sym2)).Fdef, __ccgo_ts+28559, libc.VaList(bp+8, username))
+								x__NOTE(tls, cc, (*_Symbol)(unsafe.Pointer(sym2)).Fdef, __ccgo_ts+28567, libc.VaList(bp+8, username))
 							}
 							break
 						}
@@ -7885,7 +7887,7 @@ func s__EvalExpr(tls *libc.TLS, cc *CC, expr uintptr, flags uint32, valid uintpt
 		return x__intExpr(tls, cc, 0)
 	}
 	if depth > int32(m_MAX_DEPTH) {
-		x__ERROR(tls, cc, expr, __ccgo_ts+25498, 0)
+		x__ERROR(tls, cc, expr, __ccgo_ts+25506, 0)
 		return x__intExpr(tls, cc, 0)
 	}
 	kind = (*_AST)(unsafe.Pointer(expr)).Fkind
@@ -7923,32 +7925,32 @@ func s__EvalExpr(tls *libc.TLS, cc *CC, expr uintptr, flags uint32, valid uintpt
 		typ1 = x__ExprType(tls, cc, (*_AST)(unsafe.Pointer(expr)).Fleft)
 		if !(typ1 != 0) {
 			if (*_AST)(unsafe.Pointer((*_AST)(unsafe.Pointer(expr)).Fleft)).Fkind == int32(_AST_IDENTIFIER) || (*_AST)(unsafe.Pointer((*_AST)(unsafe.Pointer(expr)).Fleft)).Fkind == int32(_AST_LOCAL_IDENTIFIER) {
-				x__ERROR(tls, cc, expr, __ccgo_ts+25551, libc.VaList(bp+24, x__GetUserIdentifierName(tls, cc, (*_AST)(unsafe.Pointer(expr)).Fleft)))
+				x__ERROR(tls, cc, expr, __ccgo_ts+25559, libc.VaList(bp+24, x__GetUserIdentifierName(tls, cc, (*_AST)(unsafe.Pointer(expr)).Fleft)))
 			} else {
-				x__ERROR(tls, cc, expr, __ccgo_ts+25606, 0)
+				x__ERROR(tls, cc, expr, __ccgo_ts+25614, 0)
 			}
 		}
 		return x__intExpr(tls, cc, int64(x__TypeSize(tls, cc, typ1)))
 	case int32(_AST_OFFSETOF):
 		typ2 = x__ExprType(tls, cc, (*_AST)(unsafe.Pointer(expr)).Fleft)
 		if !(typ2 != 0) {
-			x__ERROR(tls, cc, expr, __ccgo_ts+25630, 0)
+			x__ERROR(tls, cc, expr, __ccgo_ts+25638, 0)
 			return x__intExpr(tls, cc, 0)
 		}
 		typ2 = x__RemoveTypeModifiers(tls, cc, typ2)
 		if !(x__IsClassType(tls, cc, typ2) != 0) {
-			x__ERROR(tls, cc, expr, __ccgo_ts+25656, 0)
+			x__ERROR(tls, cc, expr, __ccgo_ts+25664, 0)
 			return x__intExpr(tls, cc, 0)
 		}
 		Q = x__GetClassPtr(tls, cc, typ2)
 		if !(Q != 0) {
-			x__ERROR(tls, cc, expr, __ccgo_ts+25697, 0)
+			x__ERROR(tls, cc, expr, __ccgo_ts+25705, 0)
 			return x__intExpr(tls, cc, 0)
 		}
 		fieldname = x__GetUserIdentifierName(tls, cc, (*_AST)(unsafe.Pointer(expr)).Fright)
 		sym1 = x__LookupSymbolInTable(tls, cc, Q+144, fieldname)
 		if !(sym1 != 0) || (*_Symbol)(unsafe.Pointer(sym1)).Fkind != int32(_SYM_VARIABLE) {
-			x__ERROR(tls, cc, expr, __ccgo_ts+25746, libc.VaList(bp+24, fieldname))
+			x__ERROR(tls, cc, expr, __ccgo_ts+25754, libc.VaList(bp+24, fieldname))
 			return x__intExpr(tls, cc, 0)
 		}
 		/* For unions all members have offset 0 (already stored in sym->offset) */
@@ -7989,7 +7991,7 @@ func s__EvalExpr(tls *libc.TLS, cc *CC, expr uintptr, flags uint32, valid uintpt
 				ok = int32(1)
 			}
 			if reportError != 0 && !(ok != 0) {
-				x__WARNING(tls, cc, expr, __ccgo_ts+25777, 0)
+				x__WARNING(tls, cc, expr, __ccgo_ts+25785, 0)
 			}
 		}
 		return x__intExpr(tls, cc, int64(val))
@@ -8008,7 +8010,7 @@ func s__EvalExpr(tls *libc.TLS, cc *CC, expr uintptr, flags uint32, valid uintpt
 	case int32(_AST_TOFLOAT):
 		lval = s__EvalExpr(tls, cc, (*_AST)(unsafe.Pointer(expr)).Fleft, flags, valid, depth+int32(1))
 		if !(!(lval.Ftype1 != 0) || x__IsGenericType(tls, cc, lval.Ftype1) != 0 || x__IsIntType(tls, cc, lval.Ftype1) != 0) {
-			x__ERROR(tls, cc, expr, __ccgo_ts+25814, 0)
+			x__ERROR(tls, cc, expr, __ccgo_ts+25822, 0)
 		}
 		return s__convToFloat(tls, cc, lval)
 	case int32(_AST_TRUNC):
@@ -8017,7 +8019,7 @@ func s__EvalExpr(tls *libc.TLS, cc *CC, expr uintptr, flags uint32, valid uintpt
 			return x__intExpr(tls, cc, 0)
 		}
 		if !(x__IsFloatType(tls, cc, lval.Ftype1) != 0) {
-			x__ERROR(tls, cc, expr, __ccgo_ts+25857, 0)
+			x__ERROR(tls, cc, expr, __ccgo_ts+25865, 0)
 		}
 		if cc.x__gl_fixedreal != 0 {
 			return x__intExpr(tls, cc, lval.Fval>>int32(m_G_FIXPOINT))
@@ -8031,7 +8033,7 @@ func s__EvalExpr(tls *libc.TLS, cc *CC, expr uintptr, flags uint32, valid uintpt
 			return x__intExpr(tls, cc, 0)
 		}
 		if !(x__IsFloatType(tls, cc, lval.Ftype1) != 0) {
-			x__ERROR(tls, cc, expr, __ccgo_ts+25898, 0)
+			x__ERROR(tls, cc, expr, __ccgo_ts+25906, 0)
 		}
 		if cc.x__gl_fixedreal != 0 {
 			return x__intExpr(tls, cc, (lval.Fval+int64(libc.Int32FromInt32(1)<<(libc.Int32FromInt32(m_G_FIXPOINT)-libc.Int32FromInt32(1))))>>int32(m_G_FIXPOINT))
@@ -8059,7 +8061,7 @@ func s__EvalExpr(tls *libc.TLS, cc *CC, expr uintptr, flags uint32, valid uintpt
 				}
 				if (*_Label)(unsafe.Pointer(lref)).Fcogval&uint32(0x03) != 0 {
 					if reportError != 0 {
-						x__ERROR(tls, cc, expr, __ccgo_ts+25939, libc.VaList(bp+24, (*_Symbol)(unsafe.Pointer(sym)).Fuser_name))
+						x__ERROR(tls, cc, expr, __ccgo_ts+25947, libc.VaList(bp+24, (*_Symbol)(unsafe.Pointer(sym)).Fuser_name))
 					} else {
 						**(**int32)(__ccgo_up(valid)) = 0
 					}
@@ -8124,7 +8126,7 @@ func s__EvalExpr(tls *libc.TLS, cc *CC, expr uintptr, flags uint32, valid uintpt
 					// we must be in inline assembly
 					offset = libc.Uint64FromInt32(((*_Symbol)(unsafe.Pointer(sym)).Foffset + int32(3)) / int32(4))
 					if offset > uint64(m_PASM_MAX_ASM_VAR_OFFSET) {
-						x__ERROR(tls, cc, expr, __ccgo_ts+25987, libc.VaList(bp+24, int32(m_PASM_MAX_ASM_VAR_OFFSET)))
+						x__ERROR(tls, cc, expr, __ccgo_ts+25995, libc.VaList(bp+24, int32(m_PASM_MAX_ASM_VAR_OFFSET)))
 					} else {
 						**(**_uint64_t)(__ccgo_up(cc.x__curfunc + 1232)) |= uint64(1) << offset
 					}
@@ -8132,7 +8134,7 @@ func s__EvalExpr(tls *libc.TLS, cc *CC, expr uintptr, flags uint32, valid uintpt
 					return x__intExpr(tls, cc, libc.Int64FromUint64(offset))
 				}
 				if reportError != 0 {
-					x__ERROR(tls, cc, expr, __ccgo_ts+26064, libc.VaList(bp+24, (*_Symbol)(unsafe.Pointer(sym)).Fuser_name))
+					x__ERROR(tls, cc, expr, __ccgo_ts+26072, libc.VaList(bp+24, (*_Symbol)(unsafe.Pointer(sym)).Fuser_name))
 				} else {
 					**(**int32)(__ccgo_up(valid)) = 0
 				}
@@ -8145,7 +8147,7 @@ func s__EvalExpr(tls *libc.TLS, cc *CC, expr uintptr, flags uint32, valid uintpt
 					}
 					if (*_Label)(unsafe.Pointer(lref1)).Fcogval&uint32(0x03) != 0 {
 						if reportError != 0 {
-							x__ERROR(tls, cc, expr, __ccgo_ts+25939, libc.VaList(bp+24, (*_Symbol)(unsafe.Pointer(sym)).Fuser_name))
+							x__ERROR(tls, cc, expr, __ccgo_ts+25947, libc.VaList(bp+24, (*_Symbol)(unsafe.Pointer(sym)).Fuser_name))
 						} else {
 							**(**int32)(__ccgo_up(valid)) = 0
 						}
@@ -8157,7 +8159,7 @@ func s__EvalExpr(tls *libc.TLS, cc *CC, expr uintptr, flags uint32, valid uintpt
 				fallthrough
 			default:
 				if reportError != 0 {
-					x__ERROR(tls, cc, expr, __ccgo_ts+26113, libc.VaList(bp+24, name))
+					x__ERROR(tls, cc, expr, __ccgo_ts+26121, libc.VaList(bp+24, name))
 				} else {
 					**(**int32)(__ccgo_up(valid)) = 0
 				}
@@ -8209,7 +8211,7 @@ func s__EvalExpr(tls *libc.TLS, cc *CC, expr uintptr, flags uint32, valid uintpt
 			return x__intExpr(tls, cc, libc.Int64FromUint32((*_HwReg)(unsafe.Pointer(hw)).Faddr))
 		}
 		if reportError != 0 {
-			x__ERROR(tls, cc, expr, __ccgo_ts+26139, 0)
+			x__ERROR(tls, cc, expr, __ccgo_ts+26147, 0)
 		} else {
 			if valid != 0 {
 				**(**int32)(__ccgo_up(valid)) = 0
@@ -8266,11 +8268,11 @@ func s__EvalExpr(tls *libc.TLS, cc *CC, expr uintptr, flags uint32, valid uintpt
 					sym = x__LookupSymbol(tls, cc, name)
 				} else {
 					if (*_AST)(unsafe.Pointer(expr)).Fkind == int32(_AST_CONSTREF) || (*_AST)(unsafe.Pointer(expr)).Fkind == int32(_AST_METHODREF) {
-						name = __ccgo_ts + 26189
+						name = __ccgo_ts + 26197
 						sym = x__LookupMethodRef(tls, cc, expr, libc.UintptrFromInt32(0), valid)
 					} else {
 						if reportError != 0 {
-							x__ERROR(tls, cc, expr, __ccgo_ts+26196, 0)
+							x__ERROR(tls, cc, expr, __ccgo_ts+26204, 0)
 						} else {
 							**(**int32)(__ccgo_up(valid)) = 0
 						}
@@ -8290,7 +8292,7 @@ func s__EvalExpr(tls *libc.TLS, cc *CC, expr uintptr, flags uint32, valid uintpt
 			}
 			if cc.x__gl_dat_offset == -int32(1) && kind == int32(_AST_ABSADDROF) && cc.x__gl_output != int32(m_OUTPUT_BYTECODE) || uint32(0) == flags&uint32(m_PASM_FLAG) {
 				if reportError != 0 {
-					x__ERROR(tls, cc, expr, __ccgo_ts+26234, 0)
+					x__ERROR(tls, cc, expr, __ccgo_ts+26242, 0)
 				} else {
 					**(**int32)(__ccgo_up(valid)) = 0
 				}
@@ -8343,9 +8345,9 @@ func s__EvalExpr(tls *libc.TLS, cc *CC, expr uintptr, flags uint32, valid uintpt
 			} else {
 				if reportError != 0 {
 					if !(sym != 0) {
-						x__ERROR(tls, cc, expr, __ccgo_ts+26275, libc.VaList(bp+24, name))
+						x__ERROR(tls, cc, expr, __ccgo_ts+26283, libc.VaList(bp+24, name))
 					} else {
-						x__ERROR(tls, cc, expr, __ccgo_ts+26293, 0)
+						x__ERROR(tls, cc, expr, __ccgo_ts+26301, 0)
 					}
 				} else {
 					**(**int32)(__ccgo_up(valid)) = 0
@@ -8384,7 +8386,7 @@ func s__EvalExpr(tls *libc.TLS, cc *CC, expr uintptr, flags uint32, valid uintpt
 invalid_const_expr:
 	;
 	if reportError != 0 {
-		x__ERROR(tls, cc, expr, __ccgo_ts+26326, 0)
+		x__ERROR(tls, cc, expr, __ccgo_ts+26334, 0)
 	} else {
 		**(**int32)(__ccgo_up(valid)) = 0
 	}
@@ -8457,7 +8459,7 @@ func s__EvalFixedOperator(tls *libc.TLS, cc *CC, op int32, lval _ExprInt, rval _
 		if valid != 0 {
 			**(**int32)(__ccgo_up(valid)) = 0
 		} else {
-			x__ERROR(tls, cc, libc.UintptrFromInt32(0), __ccgo_ts+25373, libc.VaList(bp+8, op))
+			x__ERROR(tls, cc, libc.UintptrFromInt32(0), __ccgo_ts+25381, libc.VaList(bp+8, op))
 		}
 		return 0
 	}
@@ -8557,7 +8559,7 @@ func s__EvalFloatOperator(tls *libc.TLS, cc *CC, op int32, lval _ExprFloat, rval
 		if valid != 0 {
 			**(**int32)(__ccgo_up(valid)) = 0
 		} else {
-			x__ERROR(tls, cc, libc.UintptrFromInt32(0), __ccgo_ts+25373, libc.VaList(bp+8, op))
+			x__ERROR(tls, cc, libc.UintptrFromInt32(0), __ccgo_ts+25381, libc.VaList(bp+8, op))
 		}
 		return libc.Float32FromInt32(0)
 	}
@@ -8572,28 +8574,28 @@ func s__EvalOperandExpr(tls *libc.TLS, cc *CC, instr uintptr, op uintptr) (r _ui
 	_, _, _ = badAddr, iname, opname
 	iname = (*_Instruction)(unsafe.Pointer(instr)).Fname
 	badAddr = 0
-	opname = __ccgo_ts + 7138
+	opname = __ccgo_ts + 7140
 	switch (*_AST)(unsafe.Pointer(op)).Fkind {
 	case int32(_AST_CATCH):
-		x__ERROR(tls, cc, op, __ccgo_ts+39478, libc.VaList(bp+8, iname))
+		x__ERROR(tls, cc, op, __ccgo_ts+39486, libc.VaList(bp+8, iname))
 		return uint32(0)
 	case int32(_AST_OPERATOR):
 		if *(*_uint64_t)(unsafe.Pointer(op + 8)) == uint64(_K_INCREMENT) || *(*_uint64_t)(unsafe.Pointer(op + 8)) == uint64(_K_DECREMENT) {
 			badAddr = int32(1)
 			if (*_Instruction)(unsafe.Pointer(instr)).Fops == int32(_P2_RDWR_OPERANDS) {
-				opname = __ccgo_ts + 39524
+				opname = __ccgo_ts + 39532
 			}
 		}
 	case int32(_AST_RANGEREF):
 		badAddr = int32(1)
 		if (*_Instruction)(unsafe.Pointer(instr)).Fops == int32(_P2_RDWR_OPERANDS) {
-			opname = __ccgo_ts + 39524
+			opname = __ccgo_ts + 39532
 		}
 	default:
 		break
 	}
 	if badAddr != 0 {
-		x__ERROR(tls, cc, op, __ccgo_ts+39542, libc.VaList(bp+8, opname, iname))
+		x__ERROR(tls, cc, op, __ccgo_ts+39550, libc.VaList(bp+8, opname, iname))
 		return uint32(0)
 	}
 	return libc.Uint32FromInt64(x__EvalPasmExpr(tls, cc, op))
@@ -8613,7 +8615,7 @@ func s__FindBlockForReorderingDownward(tls *libc.TLS, cc *CC, after uintptr) (r 
 	var _ /* depends at bp+0 */ uintptr
 	_, _, _, _, _, _, _, _, _, _, _ = bottom, count, dependC, dependZ, foundC, foundZ, needC, needZ, top, volatileC, volatileZ
 	bottom = after
-	x__DEBUG(tls, cc, libc.UintptrFromInt32(0), __ccgo_ts+62248, libc.VaList(bp+16, (*_Function)(unsafe.Pointer(cc.x__curfunc)).Fname))
+	x__DEBUG(tls, cc, libc.UintptrFromInt32(0), __ccgo_ts+62256, libc.VaList(bp+16, (*_Function)(unsafe.Pointer(cc.x__curfunc)).Fname))
 	// Are the flags used at after?
 	volatileC = uint8(libc.BoolUint32(s__FlagsUsedAt(tls, cc, after, uint32(_FLAG_WC)) != 0))
 	volatileZ = uint8(libc.BoolUint32(s__FlagsUsedAt(tls, cc, after, uint32(_FLAG_WZ)) != 0))
@@ -8689,13 +8691,17 @@ func s__FindBlockForReorderingDownward(tls *libc.TLS, cc *CC, after uintptr) (r 
 					break
 				}
 				// Check if this instruction meets some dependencies
-				s__DeleteDependencies(tls, cc, bp, (*_IR)(unsafe.Pointer(top)).Fdst)
+				// (only an unconditional write does: where a conditional one
+				// does not run, dst keeps the value it had before it)
+				if (*_IR)(unsafe.Pointer(top)).Fcond == int32(_COND_TRUE) {
+					s__DeleteDependencies(tls, cc, bp, (*_IR)(unsafe.Pointer(top)).Fdst)
+				}
 			}
 			// Does _this_ depend on anything that we can't take through reorder?
 			if s__ModifiedInRange(tls, cc, (*_IR)(unsafe.Pointer(bottom)).Fnext, after, (*_IR)(unsafe.Pointer(top)).Fsrc) != 0 {
 				s__PrependDependency(tls, cc, bp, (*_IR)(unsafe.Pointer(top)).Fsrc)
 			}
-			if s__InstrReadsDst(tls, cc, top) != 0 && s__ModifiedInRange(tls, cc, (*_IR)(unsafe.Pointer(bottom)).Fnext, after, (*_IR)(unsafe.Pointer(top)).Fdst) != 0 {
+			if (s__InstrReadsDst(tls, cc, top) != 0 || s__InstrSetsDst(tls, cc, top) != 0 && (*_IR)(unsafe.Pointer(top)).Fcond != int32(_COND_TRUE)) && s__ModifiedInRange(tls, cc, (*_IR)(unsafe.Pointer(bottom)).Fnext, after, (*_IR)(unsafe.Pointer(top)).Fdst) != 0 {
 				s__PrependDependency(tls, cc, bp, (*_IR)(unsafe.Pointer(top)).Fdst)
 			}
 			// Ok, if there are no unmet dependencies, the block is good.
@@ -8742,7 +8748,7 @@ func s__FindBlockForReorderingUpward(tls *libc.TLS, cc *CC, before uintptr) (r _
 	var _ /* depends at bp+0 */ uintptr
 	_, _, _, _, _, _, _, _, _, _, _ = bottom, count, foundC, foundClocal, foundZ, foundZlocal, needC, needZ, top, volatileC, volatileZ
 	top = before
-	x__DEBUG(tls, cc, libc.UintptrFromInt32(0), __ccgo_ts+62292, libc.VaList(bp+16, (*_Function)(unsafe.Pointer(cc.x__curfunc)).Fname))
+	x__DEBUG(tls, cc, libc.UintptrFromInt32(0), __ccgo_ts+62300, libc.VaList(bp+16, (*_Function)(unsafe.Pointer(cc.x__curfunc)).Fname))
 	// Are the flags used at before?
 	volatileC = uint8(libc.BoolUint32(s__FlagsUsedAt(tls, cc, before, uint32(_FLAG_WC)) != 0))
 	volatileZ = uint8(libc.BoolUint32(s__FlagsUsedAt(tls, cc, before, uint32(_FLAG_WZ)) != 0))
@@ -8876,7 +8882,7 @@ func s__FindDeclInList(tls *libc.TLS, cc *CC, param uintptr, decl_list uintptr) 
 	_, _ = decl, ident
 	for decl_list != 0 {
 		if (*_AST)(unsafe.Pointer(decl_list)).Fkind != int32(_AST_STMTLIST) {
-			x__ERROR(tls, cc, decl_list, __ccgo_ts+123851, 0)
+			x__ERROR(tls, cc, decl_list, __ccgo_ts+123865, 0)
 			return libc.UintptrFromInt32(0)
 		}
 		decl = (*_AST)(unsafe.Pointer(decl_list)).Fleft
@@ -9070,7 +9076,7 @@ func s__FixupCode(tls *libc.TLS, cc *CC, P uintptr, isBinary int32) {
 		if !(pf != 0) {
 			break
 		}
-		if !(libc.Xstrcasecmp(tls, (*_Function)(unsafe.Pointer(pf)).Fname, __ccgo_ts+11382) != 0) {
+		if !(libc.Xstrcasecmp(tls, (*_Function)(unsafe.Pointer(pf)).Fname, __ccgo_ts+11384) != 0) {
 			need_heap = libc.BoolUint8(m_true != 0)
 			cc.x__gl_features_used = cc.x__gl_features_used | int32(m_FEATURE_NEED_HEAP)
 			break
@@ -9081,23 +9087,23 @@ func s__FixupCode(tls *libc.TLS, cc *CC, P uintptr, isBinary int32) {
 		pf = (*_Function)(unsafe.Pointer(pf)).Fnext
 	}
 	if need_heap != 0 {
-		sym = x__FindSymbolEx(tls, cc, P+144, __ccgo_ts+11391, 0)
+		sym = x__FindSymbolEx(tls, cc, P+144, __ccgo_ts+11393, 0)
 		heapsize = uint32(0)
 		if !(sym != 0) || (*_Symbol)(unsafe.Pointer(sym)).Fkind != int32(_SYM_CONSTANT) {
-			sym2 = x__FindSymbolEx(tls, cc, P+144, __ccgo_ts+11400, 0)
+			sym2 = x__FindSymbolEx(tls, cc, P+144, __ccgo_ts+11402, 0)
 			if sym2 != 0 {
 				sym = sym2
 			}
 		}
 		if !(sym != 0) || (*_Symbol)(unsafe.Pointer(sym)).Fkind != int32(_SYM_CONSTANT) {
-			sym21 = x__FindSymbolEx(tls, cc, P+144, __ccgo_ts+11409, 0)
+			sym21 = x__FindSymbolEx(tls, cc, P+144, __ccgo_ts+11411, 0)
 			if sym21 != 0 {
 				sym = sym21
 			}
 		}
 		if sym != 0 {
 			if (*_Symbol)(unsafe.Pointer(sym)).Fkind != int32(_SYM_CONSTANT) {
-				x__WARNING(tls, cc, libc.UintptrFromInt32(0), __ccgo_ts+11419, 0)
+				x__WARNING(tls, cc, libc.UintptrFromInt32(0), __ccgo_ts+11421, 0)
 			} else {
 				heapsize = libc.Uint32FromInt64(x__EvalConstExpr(tls, cc, *(*uintptr)(unsafe.Pointer(sym + 32))))
 			}
@@ -9110,14 +9116,14 @@ func s__FixupCode(tls *libc.TLS, cc *CC, P uintptr, isBinary int32) {
 		if heapsize != uint32(0) {
 			// user changed heap size
 			if heapsize < uint32(64) {
-				x__WARNING(tls, cc, libc.UintptrFromInt32(0), __ccgo_ts+11446, libc.VaList(bp+8, heapsize))
+				x__WARNING(tls, cc, libc.UintptrFromInt32(0), __ccgo_ts+11448, libc.VaList(bp+8, heapsize))
 				heapsize = uint32(64)
 			}
 			heapsize = (heapsize + uint32(3)) / uint32(4) // convert to longs
 			heapAst = x__AstInteger(tls, cc, libc.Int64FromUint32(heapsize))
-			sym = x__FindSymbolEx(tls, cc, cc.x__systemModule+144, __ccgo_ts+11484, 0)
+			sym = x__FindSymbolEx(tls, cc, cc.x__systemModule+144, __ccgo_ts+11486, 0)
 			if !(sym != 0) || (*_Symbol)(unsafe.Pointer(sym)).Fkind != int32(_SYM_CONSTANT) {
-				x__ERROR(tls, cc, libc.UintptrFromInt32(0), __ccgo_ts+11502, 0)
+				x__ERROR(tls, cc, libc.UintptrFromInt32(0), __ccgo_ts+11504, 0)
 			} else {
 				// reset the size
 				*(*uintptr)(unsafe.Pointer(sym + 32)) = heapAst
@@ -9181,29 +9187,29 @@ func s__FixupFuncData(tls *libc.TLS, cc *CC, P uintptr) {
 			cc.x__curfunc = f
 			for ast != 0 {
 				if (*_AST)(unsafe.Pointer(ast)).Fkind != int32(_AST_LISTHOLDER) {
-					x__ERROR(tls, cc, ast, __ccgo_ts+11141, 0)
+					x__ERROR(tls, cc, ast, __ccgo_ts+11143, 0)
 					break
 				}
 				decl = (*_AST)(unsafe.Pointer(ast)).Fleft
 				if (*_AST)(unsafe.Pointer(decl)).Fkind != int32(_AST_TEMPARRAYDECL) {
-					x__ERROR(tls, cc, ast, __ccgo_ts+11178, 0)
+					x__ERROR(tls, cc, ast, __ccgo_ts+11180, 0)
 					break
 				}
 				name = (*_AST)(unsafe.Pointer(decl)).Fleft // this is the array def
 				tablelen = int32(x__EvalConstExpr(tls, cc, (*_AST)(unsafe.Pointer(name)).Fright))
 				name = (*_AST)(unsafe.Pointer(name)).Fleft
 				if !((*_AST)(unsafe.Pointer(name)).Fkind == int32(_AST_IDENTIFIER) || (*_AST)(unsafe.Pointer(name)).Fkind == int32(_AST_LOCAL_IDENTIFIER)) {
-					x__ERROR(tls, cc, ast, __ccgo_ts+8140, 0)
+					x__ERROR(tls, cc, ast, __ccgo_ts+8142, 0)
 					break
 				}
 				sym = x__FindSymbolEx(tls, cc, P+144, x__GetIdentifierName(tls, cc, name), 0)
 				if !(sym != 0) || (*_Symbol)(unsafe.Pointer(sym)).Fkind != int32(_SYM_TEMPVAR) {
-					x__ERROR(tls, cc, name, __ccgo_ts+11219, 0)
+					x__ERROR(tls, cc, name, __ccgo_ts+11221, 0)
 					break
 				}
 				table = (*_AST)(unsafe.Pointer(decl)).Fright
 				if (*_AST)(unsafe.Pointer(table)).Fkind != int32(_AST_EXPRLIST) {
-					x__ERROR(tls, cc, table, __ccgo_ts+11257, 0)
+					x__ERROR(tls, cc, table, __ccgo_ts+11259, 0)
 					break
 				}
 				if libc.Bool(int32(1) != 0) || !(cc.x__gl_p2 != 0) {
@@ -9249,7 +9255,7 @@ func s__FixupHereLabel(tls *libc.TLS, cc *CC, irl uintptr, firstir uintptr, addr
 	_, _, _ = jir, labelir, newlabel
 	addr = int32(int64(addr) + (*_Operand)(unsafe.Pointer(dst)).Fval)
 	if addr < 0 {
-		x__ERROR(tls, cc, libc.UintptrFromInt32(0), __ccgo_ts+65436, libc.VaList(bp+8, libc.Uint64FromInt64(-(*_Operand)(unsafe.Pointer(dst)).Fval)))
+		x__ERROR(tls, cc, libc.UintptrFromInt32(0), __ccgo_ts+65444, libc.VaList(bp+8, libc.Uint64FromInt64(-(*_Operand)(unsafe.Pointer(dst)).Fval)))
 		return x__NewImmediate(tls, cc, 0)
 	}
 	jir = firstir
@@ -9270,9 +9276,9 @@ func s__FixupHereLabel(tls *libc.TLS, cc *CC, irl uintptr, firstir uintptr, addr
 		jir = (*_IR)(unsafe.Pointer(jir)).Fnext
 	}
 	if (*_Operand)(unsafe.Pointer(dst)).Fval < 0 {
-		x__ERROR(tls, cc, libc.UintptrFromInt32(0), __ccgo_ts+65436, libc.VaList(bp+8, libc.Uint64FromInt64(-(*_Operand)(unsafe.Pointer(dst)).Fval)))
+		x__ERROR(tls, cc, libc.UintptrFromInt32(0), __ccgo_ts+65444, libc.VaList(bp+8, libc.Uint64FromInt64(-(*_Operand)(unsafe.Pointer(dst)).Fval)))
 	} else {
-		x__ERROR(tls, cc, libc.UintptrFromInt32(0), __ccgo_ts+65499, libc.VaList(bp+8, libc.Uint64FromInt64((*_Operand)(unsafe.Pointer(dst)).Fval)))
+		x__ERROR(tls, cc, libc.UintptrFromInt32(0), __ccgo_ts+65507, libc.VaList(bp+8, libc.Uint64FromInt64((*_Operand)(unsafe.Pointer(dst)).Fval)))
 	}
 	return x__NewImmediate(tls, cc, 0)
 	return r
@@ -9291,7 +9297,7 @@ func s__FixupList(tls *libc.TLS, cc *CC, list uintptr) (r uintptr) {
 			right = (*_AST)(unsafe.Pointer(item)).Fright
 			if s__IsLongString(tls, cc, left) != 0 {
 				if s__IsLongString(tls, cc, right) != 0 {
-					x__SYNTAX_ERROR(tls, cc, __ccgo_ts+114714, 0)
+					x__SYNTAX_ERROR(tls, cc, __ccgo_ts+114720, 0)
 				} else {
 					// convert to AST_EXPRLIST( most of left, left_last_char OP right )
 					shortstr = libc.Xstrdup(tls, *(*uintptr)(unsafe.Pointer(left + 8)))
@@ -9350,7 +9356,7 @@ func s__FixupLoneCORDIC(tls *libc.TLS, cc *CC, irl uintptr) (r uint8) {
 					x__DeleteIR(tls, cc, irl, (*_IR)(unsafe.Pointer(ir1)).Fprev)
 				}
 				if libc.Uint32FromInt32((*_IR)(unsafe.Pointer(ir1)).Fflags)&uint32(_FLAG_USER_INSTR) != 0 {
-					x__WARNING(tls, cc, (*_IR)(unsafe.Pointer(ir1)).Fline, __ccgo_ts+62666, libc.VaList(bp+8, (*_Instruction)(unsafe.Pointer((*_IR)(unsafe.Pointer(ir1)).Finstr)).Fname))
+					x__WARNING(tls, cc, (*_IR)(unsafe.Pointer(ir1)).Fline, __ccgo_ts+62674, libc.VaList(bp+8, (*_Instruction)(unsafe.Pointer((*_IR)(unsafe.Pointer(ir1)).Finstr)).Fname))
 				}
 				x__DeleteIR(tls, cc, irl, ir1)
 				change = libc.BoolUint8(m_true != 0)
@@ -9418,7 +9424,7 @@ func s__FixupQMux(tls *libc.TLS, cc *CC, arg int32, irl uintptr, ir1 uintptr) (r
 		_12:
 			andnotir = v2
 		} else {
-			x__ERROR(tls, cc, libc.UintptrFromInt32(0), __ccgo_ts+64707, 0)
+			x__ERROR(tls, cc, libc.UintptrFromInt32(0), __ccgo_ts+64715, 0)
 			return 0
 		}
 	}
@@ -9515,16 +9521,16 @@ func s__GetAddrOffset(tls *libc.TLS, cc *CC, ast uintptr) (r1 int32) {
 		user_name = x__GetUserIdentifierName(tls, cc, ast)
 		internal_name = x__GetIdentifierName(tls, cc, ast)
 	} else {
-		x__ERROR(tls, cc, ast, __ccgo_ts+37637, 0)
+		x__ERROR(tls, cc, ast, __ccgo_ts+37645, 0)
 		return 0
 	}
 	sym = x__LookupSymbol(tls, cc, internal_name)
 	if !(sym != 0) {
-		x__ERROR(tls, cc, ast, __ccgo_ts+26275, libc.VaList(bp+8, user_name))
+		x__ERROR(tls, cc, ast, __ccgo_ts+26283, libc.VaList(bp+8, user_name))
 		return 0
 	}
 	if (*_Symbol)(unsafe.Pointer(sym)).Fkind != int32(_SYM_LABEL) {
-		x__ERROR(tls, cc, ast, __ccgo_ts+37671, libc.VaList(bp+8, user_name))
+		x__ERROR(tls, cc, ast, __ccgo_ts+37679, libc.VaList(bp+8, user_name))
 		return 0
 	}
 	label = *(*uintptr)(unsafe.Pointer(sym + 32))
@@ -9573,7 +9579,7 @@ func s__GetBytecodeFor(tls *libc.TLS, cc *CC, ir uintptr) (r uintptr) {
 		(*_NuBytecode)(unsafe.Pointer(b)).Fimpl_ptr = cc.s__impl_ptrs[(*_NuIr)(unsafe.Pointer(ir)).Fop]
 		if (*_NuBytecode)(unsafe.Pointer(b)).Fimpl_ptr != 0 && !(**(**int8)(__ccgo_up((*_NuBytecode)(unsafe.Pointer(b)).Fimpl_ptr)) != 0) {
 			// builtin: access it via jumping to it
-			(*_NuBytecode)(unsafe.Pointer(b)).Fimpl_ptr = x__auto_printf(tls, cc, uint64(64), __ccgo_ts+87993, libc.VaList(bp+8, (*_NuBytecode)(unsafe.Pointer(b)).Fname))
+			(*_NuBytecode)(unsafe.Pointer(b)).Fimpl_ptr = x__auto_printf(tls, cc, uint64(64), __ccgo_ts+87999, libc.VaList(bp+8, (*_NuBytecode)(unsafe.Pointer(b)).Fname))
 			(*_NuBytecode)(unsafe.Pointer(b)).Fimpl_size = int32(1)
 		} else {
 			(*_NuBytecode)(unsafe.Pointer(b)).Fimpl_size = cc.s__impl_sizes[(*_NuIr)(unsafe.Pointer(ir)).Fop]
@@ -9595,7 +9601,7 @@ func s__GetBytecodeFor(tls *libc.TLS, cc *CC, ir uintptr) (r uintptr) {
 			libc.SetBitFieldPtr16Uint32(b+48, libc.Uint32FromInt32(1), 0, 0x1)
 		}
 	} else {
-		x__ERROR(tls, cc, libc.UintptrFromInt32(0), __ccgo_ts+88096, 0)
+		x__ERROR(tls, cc, libc.UintptrFromInt32(0), __ccgo_ts+88102, 0)
 		return libc.UintptrFromInt32(0)
 	}
 	return b
@@ -9622,7 +9628,7 @@ func s__GetBytecodeForConst(tls *libc.TLS, cc *CC, val _intptr_t, is_label int32
 	}
 	b = s__AllocBytecode(tls, cc)
 	if !(b != 0) {
-		x__ERROR(tls, cc, libc.UintptrFromInt32(0), __ccgo_ts+88070, 0)
+		x__ERROR(tls, cc, libc.UintptrFromInt32(0), __ccgo_ts+88076, 0)
 		return libc.UintptrFromInt32(0)
 	}
 	(*_NuBytecode)(unsafe.Pointer(b)).Fcode = bytecode
@@ -9658,7 +9664,7 @@ func s__GetFunctionParameterForCall(tls *libc.TLS, cc *CC, irl uintptr, func1 ui
 		return libc.UintptrFromInt32(0) // signals we have to push the parameter
 	} else {
 		if !(x__IsFunctionType(tls, cc, functype) != 0) {
-			x__ERROR(tls, cc, functype, __ccgo_ts+46067, 0)
+			x__ERROR(tls, cc, functype, __ccgo_ts+46075, 0)
 			return s__EmptyOperand(tls, cc)
 		}
 		numresults = x__FuncNumResults(tls, cc, functype)
@@ -9673,11 +9679,11 @@ func s__GetFunctionParameterForCall(tls *libc.TLS, cc *CC, irl uintptr, func1 ui
 				if func1 != 0 {
 					sym = x__FindSymbolEx(tls, cc, func1+160, name, 0)
 					if !(sym != 0) {
-						x__ERROR(tls, cc, libc.UintptrFromInt32(0), __ccgo_ts+46090, libc.VaList(bp+8, name))
+						x__ERROR(tls, cc, libc.UintptrFromInt32(0), __ccgo_ts+46098, libc.VaList(bp+8, name))
 						return s__EmptyOperand(tls, cc)
 					}
 					if (*_Symbol)(unsafe.Pointer(sym)).Foffset != offset {
-						x__ERROR(tls, cc, libc.UintptrFromInt32(0), __ccgo_ts+46126, libc.VaList(bp+8, offset, (*_Symbol)(unsafe.Pointer(sym)).Foffset))
+						x__ERROR(tls, cc, libc.UintptrFromInt32(0), __ccgo_ts+46134, libc.VaList(bp+8, offset, (*_Symbol)(unsafe.Pointer(sym)).Foffset))
 					}
 				}
 				// we have to leave space for:
@@ -9692,10 +9698,10 @@ func s__GetFunctionParameterForCall(tls *libc.TLS, cc *CC, irl uintptr, func1 ui
 		if func1 != 0 {
 			v1 = (*_Function)(unsafe.Pointer(func1)).Fname
 		} else {
-			v1 = __ccgo_ts + 7138
+			v1 = __ccgo_ts + 7140
 		}
-		x__ERROR(tls, cc, libc.UintptrFromInt32(0), __ccgo_ts+46173, libc.VaList(bp+8, v1))
-		return x__GetOneGlobal(tls, cc, int32(_REG_ARG), __ccgo_ts+46208, 0)
+		x__ERROR(tls, cc, libc.UintptrFromInt32(0), __ccgo_ts+46181, libc.VaList(bp+8, v1))
+		return x__GetOneGlobal(tls, cc, int32(_REG_ARG), __ccgo_ts+46216, 0)
 	}
 	return r
 }
@@ -9709,12 +9715,12 @@ func s__GetFunctionTempRegister(tls *libc.TLS, cc *CC, f uintptr, n int32) (r ui
 	P = (*_Function)(unsafe.Pointer(f)).Fmodule
 	if cc.x__gl_compress == 0 && (int32(*(*uint32)(unsafe.Pointer(f + 1248))&0x4000>>14) != 0 || (*_Function)(unsafe.Pointer(f)).Fbedata != 0 && (*_IRFuncData)(unsafe.Pointer((*_Function)(unsafe.Pointer(f)).Fbedata)).FeffectivelyLeaf != 0) {
 		// leaf functions can share a set of temporary registers
-		libc.X__builtin_snprintf(tls, bp, libc.Uint64FromInt64(1024)-libc.Uint64FromInt32(1), __ccgo_ts+45787, libc.VaList(bp+1032, n))
+		libc.X__builtin_snprintf(tls, bp, libc.Uint64FromInt64(1024)-libc.Uint64FromInt32(1), __ccgo_ts+45795, libc.VaList(bp+1032, n))
 	} else {
 		if x__IsTopLevel(tls, cc, P) != 0 {
-			libc.X__builtin_snprintf(tls, bp, libc.Uint64FromInt64(1024)-libc.Uint64FromInt32(1), __ccgo_ts+45797, libc.VaList(bp+1032, s__cleanname(tls, cc, (*_Function)(unsafe.Pointer(f)).Fname), n))
+			libc.X__builtin_snprintf(tls, bp, libc.Uint64FromInt64(1024)-libc.Uint64FromInt32(1), __ccgo_ts+45805, libc.VaList(bp+1032, s__cleanname(tls, cc, (*_Function)(unsafe.Pointer(f)).Fname), n))
 		} else {
-			libc.X__builtin_snprintf(tls, bp, libc.Uint64FromInt64(1024)-libc.Uint64FromInt32(1), __ccgo_ts+45809, libc.VaList(bp+1032, (*_Module)(unsafe.Pointer(P)).Fclassname, s__cleanname(tls, cc, (*_Function)(unsafe.Pointer(f)).Fname), n))
+			libc.X__builtin_snprintf(tls, bp, libc.Uint64FromInt64(1024)-libc.Uint64FromInt32(1), __ccgo_ts+45817, libc.VaList(bp+1032, (*_Module)(unsafe.Pointer(P)).Fclassname, s__cleanname(tls, cc, (*_Function)(unsafe.Pointer(f)).Fname), n))
 		}
 	}
 	return x__GetOneGlobal(tls, cc, int32(_REG_TEMP), libc.Xstrdup(tls, bp), 0)
@@ -9724,15 +9730,15 @@ func s__GetGeneralLocalReg(tls *libc.TLS, cc *CC, n int32) (r uintptr) {
 	bp := tls.Alloc(16)
 	defer tls.Free(16)
 	if n < 0 || n >= int32(m_MAX_LOCAL_REGISTER) {
-		x__ERROR(tls, cc, libc.UintptrFromInt32(0), __ccgo_ts+45370, 0)
+		x__ERROR(tls, cc, libc.UintptrFromInt32(0), __ccgo_ts+45378, 0)
 		return libc.UintptrFromInt32(0)
 	}
 	if !(cc.x__localreg[n] != 0) {
 		// tricky stuff to make sure local100 sorts after local99
 		if n < int32(99) {
-			libc.Xsprintf(tls, uintptr(unsafe.Pointer(&cc.s__rvalname3)), __ccgo_ts+45508, libc.VaList(bp+8, n+int32(1)))
+			libc.Xsprintf(tls, uintptr(unsafe.Pointer(&cc.s__rvalname3)), __ccgo_ts+45516, libc.VaList(bp+8, n+int32(1)))
 		} else {
-			libc.Xsprintf(tls, uintptr(unsafe.Pointer(&cc.s__rvalname3)), __ccgo_ts+45518, libc.VaList(bp+8, n+int32(1)))
+			libc.Xsprintf(tls, uintptr(unsafe.Pointer(&cc.s__rvalname3)), __ccgo_ts+45526, libc.VaList(bp+8, n+int32(1)))
 		}
 		/* do not use REG_LOCAL here, that will break optimization of recursive
 		   functions */
@@ -9748,7 +9754,7 @@ func s__GetHeapSize(tls *libc.TLS, cc *CC) (r int64) {
 	if !(cc.x__gl_features_used&libc.Int32FromInt32(m_FEATURE_NEED_HEAP) != 0) {
 		return 0
 	}
-	sym = x__LookupSymbolInTable(tls, cc, cc.x__systemModule+144, __ccgo_ts+11484)
+	sym = x__LookupSymbolInTable(tls, cc, cc.x__systemModule+144, __ccgo_ts+11486)
 	if !(sym != 0) || (*_Symbol)(unsafe.Pointer(sym)).Fkind != int32(_SYM_CONSTANT) {
 		return 0
 	}
@@ -9761,11 +9767,11 @@ func s__GetLeafLocalReg(tls *libc.TLS, cc *CC, n int32) (r uintptr) {
 	bp := tls.Alloc(16)
 	defer tls.Free(16)
 	if n < 0 || n >= int32(m_MAX_LOCAL_REGISTER) {
-		x__ERROR(tls, cc, libc.UintptrFromInt32(0), __ccgo_ts+45529, 0)
+		x__ERROR(tls, cc, libc.UintptrFromInt32(0), __ccgo_ts+45537, 0)
 		return libc.UintptrFromInt32(0)
 	}
 	if !(cc.s__leafreg[n] != 0) {
-		libc.Xsprintf(tls, uintptr(unsafe.Pointer(&cc.s__rvalname4)), __ccgo_ts+45574, libc.VaList(bp+8, n+int32(1)))
+		libc.Xsprintf(tls, uintptr(unsafe.Pointer(&cc.s__rvalname4)), __ccgo_ts+45582, libc.VaList(bp+8, n+int32(1)))
 		/* do not use REG_LOCAL here, that will break optimization of recursive
 		   functions */
 		cc.s__leafreg[n] = x__GetOneGlobal(tls, cc, int32(_REG_ARG), libc.Xstrdup(tls, uintptr(unsafe.Pointer(&cc.s__rvalname4))), 0)
@@ -9828,7 +9834,7 @@ _3:
 			modifyCode = libc.Uint8FromInt32(int32(0b0111000) + modsize)
 			sizedModifyOp = libc.BoolUint8(m_true != 0)
 		default:
-			x__ERROR(tls, cc, libc.UintptrFromInt32(0), __ccgo_ts+83423, libc.VaList(bp+8, cc.x__mathOpKindNames[(*_ByteOpIR)(unsafe.Pointer(ir)).FmathKind]))
+			x__ERROR(tls, cc, libc.UintptrFromInt32(0), __ccgo_ts+83429, libc.VaList(bp+8, cc.x__mathOpKindNames[(*_ByteOpIR)(unsafe.Pointer(ir)).FmathKind]))
 			break
 		}
 	} else {
@@ -9861,7 +9867,7 @@ func s__GetSizedVarCond(tls *libc.TLS, cc *CC, fb uintptr, kind _Operandkind1, n
 					/* OK, pretend this is a match */
 				} else {
 					if allocateIfNeeded != 0 {
-						x__ERROR(tls, cc, libc.UintptrFromInt32(0), __ccgo_ts+45120, libc.VaList(bp+32, name))
+						x__ERROR(tls, cc, libc.UintptrFromInt32(0), __ccgo_ts+45128, libc.VaList(bp+32, name))
 					}
 				}
 			}
@@ -9957,16 +9963,16 @@ func s__GetSystemFunction(tls *libc.TLS, cc *CC, name uintptr) (r uintptr) {
 	_, _ = calledf, sym
 	sym = x__FindSymbolEx(tls, cc, cc.x__systemModule+144, name, 0)
 	if !(sym != 0) {
-		x__ERROR(tls, cc, libc.UintptrFromInt32(0), __ccgo_ts+45967, libc.VaList(bp+8, name))
+		x__ERROR(tls, cc, libc.UintptrFromInt32(0), __ccgo_ts+45975, libc.VaList(bp+8, name))
 		return cc.x__mulfunc
 	}
 	if (*_Symbol)(unsafe.Pointer(sym)).Fkind != int32(_SYM_FUNCTION) {
-		x__ERROR(tls, cc, libc.UintptrFromInt32(0), __ccgo_ts+46000, libc.VaList(bp+8, name))
+		x__ERROR(tls, cc, libc.UintptrFromInt32(0), __ccgo_ts+46008, libc.VaList(bp+8, name))
 		return cc.x__mulfunc
 	}
 	calledf = *(*uintptr)(unsafe.Pointer(sym + 32))
 	if !(calledf != 0) || !((*_Function)(unsafe.Pointer(calledf)).Fbedata != 0) {
-		x__ERROR(tls, cc, libc.UintptrFromInt32(0), __ccgo_ts+46037, libc.VaList(bp+8, name))
+		x__ERROR(tls, cc, libc.UintptrFromInt32(0), __ccgo_ts+46045, libc.VaList(bp+8, name))
 		return cc.x__mulfunc
 	}
 	return (*_IRFuncData)(unsafe.Pointer((*_Function)(unsafe.Pointer(calledf)).Fbedata)).Fasmname
@@ -9981,12 +9987,12 @@ func s__HWReg2Index(tls *libc.TLS, cc *CC, reg uintptr) (r int32) {
 	case int32(m_INTERP_KIND_P1ROM):
 		index = libc.Int32FromUint32((*_HwReg)(unsafe.Pointer(reg)).Faddr - uint32(0x1E0))
 		if index < 0 || index >= int32(32) {
-			x__ERROR(tls, cc, libc.UintptrFromInt32(0), __ccgo_ts+66683, libc.VaList(bp+8, index, (*_HwReg)(unsafe.Pointer(reg)).Fname))
+			x__ERROR(tls, cc, libc.UintptrFromInt32(0), __ccgo_ts+66689, libc.VaList(bp+8, index, (*_HwReg)(unsafe.Pointer(reg)).Fname))
 			return 0
 		}
 		return index
 	default:
-		x__ERROR(tls, cc, libc.UintptrFromInt32(0), __ccgo_ts+66438, 0)
+		x__ERROR(tls, cc, libc.UintptrFromInt32(0), __ccgo_ts+66444, 0)
 		return 0
 	}
 	return r
@@ -10000,14 +10006,14 @@ func s__HWRegRetval(tls *libc.TLS, cc *CC, n int32) (r int32) {
 	defer tls.Free(16)
 	if cc.x__gl_interp_kind == int32(m_INTERP_KIND_P1ROM) {
 		if n < int32(1) || n > int32(3) {
-			x__ERROR(tls, cc, libc.UintptrFromInt32(0), __ccgo_ts+66586, libc.VaList(bp+8, n))
+			x__ERROR(tls, cc, libc.UintptrFromInt32(0), __ccgo_ts+66592, libc.VaList(bp+8, n))
 			return 0
 		}
 		// return index for OUTB, DIRB, INB
 		// these are $1f5, $1f7, $1f3 respectively
 		return cc.s__reg_addr[n-int32(1)] - int32(0x1e0)
 	}
-	x__ERROR(tls, cc, libc.UintptrFromInt32(0), __ccgo_ts+66624, 0)
+	x__ERROR(tls, cc, libc.UintptrFromInt32(0), __ccgo_ts+66630, 0)
 	return 0
 }
 
@@ -10016,7 +10022,7 @@ func s__HWRegVBase(tls *libc.TLS, cc *CC) (r int32) {
 	case int32(m_INTERP_KIND_P1ROM):
 		return libc.Int32FromInt32(0x1EC) - libc.Int32FromInt32(0x1E0)
 	default:
-		x__ERROR(tls, cc, libc.UintptrFromInt32(0), __ccgo_ts+66438, 0)
+		x__ERROR(tls, cc, libc.UintptrFromInt32(0), __ccgo_ts+66444, 0)
 		return 0
 	}
 	return r
@@ -10030,10 +10036,10 @@ func s__HandleBASICOption(tls *libc.TLS, cc *CC, optid uintptr, exprlist uintptr
 	_, _, _, _ = arrayBase, expr, name, sym
 	name = x__GetIdentifierName(tls, cc, optid)
 	if !(name != 0) {
-		x__SYNTAX_ERROR(tls, cc, __ccgo_ts+119442, 0)
+		x__SYNTAX_ERROR(tls, cc, __ccgo_ts+119456, 0)
 		return libc.UintptrFromInt32(0)
 	}
-	if !(libc.Xstrcasecmp(tls, name, __ccgo_ts+119463) != 0) {
+	if !(libc.Xstrcasecmp(tls, name, __ccgo_ts+119477) != 0) {
 		expr = libc.UintptrFromInt32(0)
 		if exprlist != 0 && (*_AST)(unsafe.Pointer(exprlist)).Fkind == int32(_AST_EXPRLIST) {
 			expr = (*_AST)(unsafe.Pointer(exprlist)).Fleft
@@ -10043,22 +10049,22 @@ func s__HandleBASICOption(tls *libc.TLS, cc *CC, optid uintptr, exprlist uintptr
 			}
 		}
 		if !(expr != 0) || !(x__IsConstExpr(tls, cc, expr) != 0) {
-			x__SYNTAX_ERROR(tls, cc, __ccgo_ts+119468, 0)
+			x__SYNTAX_ERROR(tls, cc, __ccgo_ts+119482, 0)
 			return libc.UintptrFromInt32(0)
 		}
 		arrayBase = int32(x__EvalConstExpr(tls, cc, expr))
 		sym = x__GetCurArrayBase(tls, cc)
 		*(*uintptr)(unsafe.Pointer(sym + 32)) = x__AstInteger(tls, cc, int64(arrayBase))
 	} else {
-		if !(libc.Xstrcasecmp(tls, name, __ccgo_ts+22157) != 0) {
-			sym = x__GetCurOptionSymbol(tls, cc, __ccgo_ts+119511, int32(m_DEFAULT_EXPLICIT_DECLARES))
+		if !(libc.Xstrcasecmp(tls, name, __ccgo_ts+22165) != 0) {
+			sym = x__GetCurOptionSymbol(tls, cc, __ccgo_ts+119525, int32(m_DEFAULT_EXPLICIT_DECLARES))
 			*(*uintptr)(unsafe.Pointer(sym + 32)) = x__AstInteger(tls, cc, int64(255))
 		} else {
-			if !(libc.Xstrcasecmp(tls, name, __ccgo_ts+119540) != 0) {
-				sym = x__GetCurOptionSymbol(tls, cc, __ccgo_ts+119511, int32(m_DEFAULT_EXPLICIT_DECLARES))
+			if !(libc.Xstrcasecmp(tls, name, __ccgo_ts+119554) != 0) {
+				sym = x__GetCurOptionSymbol(tls, cc, __ccgo_ts+119525, int32(m_DEFAULT_EXPLICIT_DECLARES))
 				*(*uintptr)(unsafe.Pointer(sym + 32)) = x__AstInteger(tls, cc, 0)
 			} else {
-				x__SYNTAX_ERROR(tls, cc, __ccgo_ts+119549, libc.VaList(bp+8, name))
+				x__SYNTAX_ERROR(tls, cc, __ccgo_ts+119563, libc.VaList(bp+8, name))
 			}
 		}
 	}
@@ -10272,13 +10278,13 @@ func s__HandleTwoNumerics(tls *libc.TLS, cc *CC, op int32, ast uintptr, lefttype
 			}
 			**(**_AST)(__ccgo_up(ast)) = **(**_AST)(__ccgo_up(x__MakeOperatorCall(tls, cc, v3, (*_AST)(unsafe.Pointer(ast)).Fleft, (*_AST)(unsafe.Pointer(ast)).Fright, libc.UintptrFromInt32(0))))
 		default:
-			x__ERROR(tls, cc, ast, __ccgo_ts+32686, 0)
+			x__ERROR(tls, cc, ast, __ccgo_ts+32694, 0)
 			break
 		}
 		x__AstReportDone(tls, cc, bp)
 		return cc.x__ast_type_float
 	}
-	if !(x__MakeBothIntegers(tls, cc, ast, lefttype, righttype, __ccgo_ts+22239) != 0) {
+	if !(x__MakeBothIntegers(tls, cc, ast, lefttype, righttype, __ccgo_ts+22247) != 0) {
 		x__AstReportDone(tls, cc, bp)
 		return libc.UintptrFromInt32(0)
 	}
@@ -10339,7 +10345,7 @@ func s__HandleTwoNumerics(tls *libc.TLS, cc *CC, op int32, ast uintptr, lefttype
 				**(**_AST)(__ccgo_up(ast)) = **(**_AST)(__ccgo_up(x__MakeOperatorCall(tls, cc, cc.s__int64_shl, (*_AST)(unsafe.Pointer(ast)).Fleft, (*_AST)(unsafe.Pointer(ast)).Fright, libc.UintptrFromInt32(0))))
 			}
 		default:
-			x__ERROR(tls, cc, ast, __ccgo_ts+32720, 0)
+			x__ERROR(tls, cc, ast, __ccgo_ts+32728, 0)
 			break
 		}
 	}
@@ -10353,7 +10359,7 @@ func s__ImmCogRef(tls *libc.TLS, cc *CC, addr uintptr) (r uintptr) {
 	var immname uintptr
 	_ = immname
 	immname = calloc(tls, cc, uint64(1), uint64(16))
-	libc.Xsprintf(tls, immname, __ccgo_ts+48776, libc.VaList(bp+8, libc.Uint64FromInt64((*_Operand)(unsafe.Pointer(addr)).Fval)))
+	libc.Xsprintf(tls, immname, __ccgo_ts+48784, libc.VaList(bp+8, libc.Uint64FromInt64((*_Operand)(unsafe.Pointer(addr)).Fval)))
 	return x__NewOperand(tls, cc, int32(_REG_REG), immname, 0)
 }
 
@@ -10371,7 +10377,7 @@ func s__InferTypesStmtList(tls *libc.TLS, cc *CC, list uintptr) (r int32) {
 	}
 	for list != 0 {
 		if (*_AST)(unsafe.Pointer(list)).Fkind != int32(_AST_STMTLIST) {
-			x__ERROR(tls, cc, list, __ccgo_ts+30884, 0)
+			x__ERROR(tls, cc, list, __ccgo_ts+30892, 0)
 			return 0
 		}
 		changes = changes | s__InferTypesStmt(tls, cc, (*_AST)(unsafe.Pointer(list)).Fleft)
@@ -10440,9 +10446,9 @@ func s__IsRelocatable(tls *libc.TLS, cc *CC, sub uintptr, symptr uintptr, offptr
 	kind = (*_AST)(unsafe.Pointer(sub)).Fkind
 	if kind == int32(_AST_SIMPLEFUNCPTR) {
 		offset = 0
-		sym = x__LookupAstSymbol(tls, cc, (*_AST)(unsafe.Pointer(sub)).Fleft, __ccgo_ts+37727)
+		sym = x__LookupAstSymbol(tls, cc, (*_AST)(unsafe.Pointer(sub)).Fleft, __ccgo_ts+37735)
 		if !(sym != 0) || (*_Symbol)(unsafe.Pointer(sym)).Fkind != int32(_SYM_FUNCTION) {
-			x__ERROR(tls, cc, sub, __ccgo_ts+37743, 0)
+			x__ERROR(tls, cc, sub, __ccgo_ts+37751, 0)
 			return int32(_RELOC_KIND_NONE)
 		}
 		if (*_AST)(unsafe.Pointer(sub)).Fright != 0 {
@@ -10536,7 +10542,7 @@ func s__IsResultVar(tls *libc.TLS, cc *CC, func1 uintptr, lhs uintptr) (r uint8)
 	}
 	if (*_AST)(unsafe.Pointer(lhs)).Fkind == int32(_AST_RESULT) {
 		if (*_AST)(unsafe.Pointer((*_Function)(unsafe.Pointer(func1)).Fresultexpr)).Fkind == int32(_AST_EXPRLIST) {
-			x__ERROR(tls, cc, lhs, __ccgo_ts+30354, 0)
+			x__ERROR(tls, cc, lhs, __ccgo_ts+30362, 0)
 			return libc.BoolUint8(m_false != 0)
 		}
 		return libc.BoolUint8(m_true != 0)
@@ -10659,7 +10665,7 @@ func s__LabelName(tls *libc.TLS, cc *CC, x uintptr) (r uintptr) {
 		return x
 	}
 	new_name = calloc(tls, cc, libc.Xstrlen(tls, orig_name)+uint64(8), uint64(1))
-	libc.Xstrcpy(tls, new_name, __ccgo_ts+122987)
+	libc.Xstrcpy(tls, new_name, __ccgo_ts+123001)
 	libc.Xstrcat(tls, new_name, orig_name)
 	return x__AstIdentifier(tls, cc, new_name)
 }
@@ -10680,7 +10686,7 @@ func s__LookupAsCase(tls *libc.TLS, cc *CC, top uintptr) (r uintptr) {
 	isLookup = libc.BoolInt32((*_AST)(unsafe.Pointer(top)).Fkind == int32(_AST_LOOKUP))
 	newvar = libc.UintptrFromInt32(0)
 	if !((*_AST)(unsafe.Pointer(lookvar)).Fkind == int32(_AST_IDENTIFIER) || (*_AST)(unsafe.Pointer(lookvar)).Fkind == int32(_AST_LOCAL_IDENTIFIER)) {
-		newvar = x__AstTempVariable(tls, cc, __ccgo_ts+30101)
+		newvar = x__AstTempVariable(tls, cc, __ccgo_ts+30109)
 		x__AddLocalVariable(tls, cc, cc.x__curfunc, newvar, libc.UintptrFromInt32(0), int32(_SYM_LOCALVAR))
 		lookvar = newvar
 	}
@@ -10693,7 +10699,7 @@ func s__LookupAsCase(tls *libc.TLS, cc *CC, top uintptr) (r uintptr) {
 			index = x__AstOperator(tls, cc, int32('+'), index, x__AstOperator(tls, cc, int32('+'), one, x__AstOperator(tls, cc, int32('-'), (*_AST)(unsafe.Pointer(expr)).Fright, (*_AST)(unsafe.Pointer(expr)).Fleft)))
 		} else {
 			if (*_AST)(unsafe.Pointer(expr)).Fkind == int32(_AST_STRING) {
-				x__ERROR(tls, cc, expr, __ccgo_ts+30108, 0)
+				x__ERROR(tls, cc, expr, __ccgo_ts+30116, 0)
 			} else {
 				stmtlist = s__AddToIf(tls, cc, stmtlist, s__GenCase(tls, cc, isLookup, expr, libc.UintptrFromInt32(0), lookvar, index))
 				index = x__AstOperator(tls, cc, int32('+'), index, one)
@@ -10743,7 +10749,7 @@ func s__MakeNewStruct(tls *libc.TLS, cc *CC, Parent uintptr, skind uintptr, iden
 		/* this causes problems with struct references inside structs */
 		classname = (*_Module)(unsafe.Pointer(cc.x__current)).Fclassname
 	} else {
-		classname = __ccgo_ts + 7138
+		classname = __ccgo_ts + 7140
 	}
 	if (*_AST)(unsafe.Pointer(skind)).Fkind == int32(_AST_STRUCT) {
 		is_union = 0
@@ -10753,15 +10759,15 @@ func s__MakeNewStruct(tls *libc.TLS, cc *CC, Parent uintptr, skind uintptr, iden
 			is_union = int32(1)
 			is_class = 0
 		} else {
-			x__ERROR(tls, cc, skind, __ccgo_ts+123618, 0)
+			x__ERROR(tls, cc, skind, __ccgo_ts+123632, 0)
 			return libc.UintptrFromInt32(0)
 		}
 	}
 	if attributes != 0 {
-		if x__FindAnnotation(tls, cc, attributes, __ccgo_ts+123121) != 0 {
+		if x__FindAnnotation(tls, cc, attributes, __ccgo_ts+123135) != 0 {
 			is_packed = int32(1)
 			if !(cc.x__gl_p2 != 0) {
-				x__WARNING(tls, cc, skind, __ccgo_ts+123654, 0)
+				x__WARNING(tls, cc, skind, __ccgo_ts+123668, 0)
 			}
 		}
 	}
@@ -10772,12 +10778,12 @@ func s__MakeNewStruct(tls *libc.TLS, cc *CC, Parent uintptr, skind uintptr, iden
 		if root != 0 {
 			stem_name = root + uintptr(1)
 		}
-		libc.Xsprintf(tls, bp, __ccgo_ts+123712, libc.VaList(bp+136, stem_name, (*_LexStream)(unsafe.Pointer((*_Module)(unsafe.Pointer(cc.x__current)).FLptr)).FlineCounter))
+		libc.Xsprintf(tls, bp, __ccgo_ts+123726, libc.VaList(bp+136, stem_name, (*_LexStream)(unsafe.Pointer((*_Module)(unsafe.Pointer(cc.x__current)).FLptr)).FlineCounter))
 		identifier = x__AstIdentifier(tls, cc, libc.Xstrdup(tls, bp))
 		force_typedef = libc.BoolUint8(m_true != 0)
 	}
 	if !((*_AST)(unsafe.Pointer(identifier)).Fkind == int32(_AST_IDENTIFIER) || (*_AST)(unsafe.Pointer(identifier)).Fkind == int32(_AST_LOCAL_IDENTIFIER)) {
-		x__ERROR(tls, cc, identifier, __ccgo_ts+123727, 0)
+		x__ERROR(tls, cc, identifier, __ccgo_ts+123741, 0)
 		return libc.UintptrFromInt32(0)
 	}
 	name = x__GetIdentifierName(tls, cc, identifier)
@@ -10786,7 +10792,7 @@ func s__MakeNewStruct(tls *libc.TLS, cc *CC, Parent uintptr, skind uintptr, iden
 		libc.Xstrcpy(tls, typname, name)
 	} else {
 		libc.Xstrcpy(tls, typname, classname)
-		libc.Xstrcat(tls, typname, __ccgo_ts+123758)
+		libc.Xstrcat(tls, typname, __ccgo_ts+123772)
 		libc.Xstrcat(tls, typname, name)
 	}
 	/* see if there is already a type with that name */
@@ -10797,15 +10803,15 @@ func s__MakeNewStruct(tls *libc.TLS, cc *CC, Parent uintptr, skind uintptr, iden
 	if sym != 0 && (*_Symbol)(unsafe.Pointer(sym)).Fkind == int32(_SYM_TYPEDEF) {
 		class_type = *(*uintptr)(unsafe.Pointer(sym + 32))
 		if !(x__IsClassType(tls, cc, class_type) != 0) {
-			x__SYNTAX_ERROR(tls, cc, __ccgo_ts+122994, libc.VaList(bp+136, typname))
+			x__SYNTAX_ERROR(tls, cc, __ccgo_ts+123008, libc.VaList(bp+136, typname))
 			return libc.UintptrFromInt32(0)
 		}
 		C = *(*uintptr)(unsafe.Pointer(class_type + 8))
 		if int32((*_Module)(unsafe.Pointer(C)).FisUnion) != is_union {
-			x__SYNTAX_ERROR(tls, cc, __ccgo_ts+123768, libc.VaList(bp+136, typname))
+			x__SYNTAX_ERROR(tls, cc, __ccgo_ts+123782, libc.VaList(bp+136, typname))
 		}
 		if options != 0 {
-			x__SYNTAX_ERROR(tls, cc, __ccgo_ts+123808, 0)
+			x__SYNTAX_ERROR(tls, cc, __ccgo_ts+123822, 0)
 		} else {
 			(*_Module)(unsafe.Pointer(C)).FLptr = (*_Module)(unsafe.Pointer(cc.x__current)).FLptr
 		}
@@ -10949,7 +10955,7 @@ func s__ModifiedInRange(tls *libc.TLS, cc *CC, start uintptr, end uintptr, reg u
 			offset = offset + s__AddSubVal(tls, cc, ir)
 		} else {
 			if (*_IR)(unsafe.Pointer(ir)).Fopc == int32(_OPC_CALL) {
-				if !(x__IsLocal(tls, cc, reg) != 0) && !(s__IsArg(tls, cc, reg) != 0 && !(s__FuncUsesArg(tls, cc, (*_IR)(unsafe.Pointer(ir)).Fdst, reg) != 0)) && (*_Operand)(unsafe.Pointer(reg)).Fkind != int32(_REG_HUBPTR) && !((*_Operand)(unsafe.Pointer(reg)).Fkind == int32(_REG_REG) && !(libc.Xstrcmp(tls, (*_Operand)(unsafe.Pointer(reg)).Fname, __ccgo_ts+44993) != 0)) {
+				if !(x__IsLocal(tls, cc, reg) != 0) && !(s__IsArg(tls, cc, reg) != 0 && !(s__FuncUsesArg(tls, cc, (*_IR)(unsafe.Pointer(ir)).Fdst, reg) != 0)) && (*_Operand)(unsafe.Pointer(reg)).Fkind != int32(_REG_HUBPTR) && !((*_Operand)(unsafe.Pointer(reg)).Fkind == int32(_REG_REG) && !(libc.Xstrcmp(tls, (*_Operand)(unsafe.Pointer(reg)).Fname, __ccgo_ts+45001) != 0)) {
 					return libc.BoolUint8(m_true != 0)
 				}
 			} else {
@@ -10986,7 +10992,7 @@ func s__ModifyLookup(tls *libc.TLS, cc *CC, top uintptr) (r uintptr) {
 		return libc.UintptrFromInt32(0)
 	}
 	if (*_AST)(unsafe.Pointer(ev)).Fkind != int32(_AST_LOOKEXPR) || (*_AST)(unsafe.Pointer(table)).Fkind != int32(_AST_EXPRLIST) {
-		x__ERROR(tls, cc, ev, __ccgo_ts+30140, 0)
+		x__ERROR(tls, cc, ev, __ccgo_ts+30148, 0)
 		return libc.UintptrFromInt32(0)
 	}
 	// Bytecode has native lookup/lookdown
@@ -11024,7 +11030,7 @@ func s__ModifyLookup(tls *libc.TLS, cc *CC, top uintptr) (r uintptr) {
 		return libc.UintptrFromInt32(0)
 	}
 	/* create a temporary identifier for it */
-	id = x__AstTempVariable(tls, cc, __ccgo_ts+30165)
+	id = x__AstTempVariable(tls, cc, __ccgo_ts+30173)
 	/* replace the table in the top expression */
 	(*_AST)(unsafe.Pointer(top)).Fright = x__NewAST(tls, cc, int32(_AST_TEMPARRAYUSE), id, x__AstInteger(tls, cc, int64(len1)))
 	/* create a declaration */
@@ -11059,14 +11065,14 @@ func s__MultipleDeclareVar(tls *libc.TLS, cc *CC, first uintptr, second uintptr)
 	regtype = libc.UintptrFromInt32(0)
 	for second != 0 {
 		if (*_AST)(unsafe.Pointer(second)).Fkind != int32(_AST_LISTHOLDER) {
-			x__ERROR(tls, cc, second, __ccgo_ts+123210, 0)
+			x__ERROR(tls, cc, second, __ccgo_ts+123224, 0)
 			return stmtlist
 		}
 		item = (*_AST)(unsafe.Pointer(second)).Fleft
 		second = (*_AST)(unsafe.Pointer(second)).Fright
 		type1 = s__CombineTypes(tls, cc, first, item, bp, bp+8)
 		if **(**uintptr)(__ccgo_up(bp + 8)) != 0 {
-			x__ERROR(tls, cc, first, __ccgo_ts+123271, 0)
+			x__ERROR(tls, cc, first, __ccgo_ts+123285, 0)
 		}
 		if x__IsStaticType(tls, cc, type1) != 0 {
 			stmtlist = x__AddToList(tls, cc, stmtlist, s__DeclareStatics(tls, cc, cc.x__current, x__ExtractStaticType(tls, cc, type1), **(**uintptr)(__ccgo_up(bp))))
@@ -11108,7 +11114,7 @@ func s__NewOrgName(tls *libc.TLS, cc *CC) (r uintptr) {
 	if !(buf != 0) {
 		return buf
 	}
-	libc.Xsprintf(tls, buf, __ccgo_ts+36312, libc.VaList(bp+8, cc.s__counter))
+	libc.Xsprintf(tls, buf, __ccgo_ts+36320, libc.VaList(bp+8, cc.s__counter))
 	return buf
 }
 
@@ -11117,15 +11123,15 @@ func s__NuBytecodeString(tls *libc.TLS, cc *CC, bc uintptr) (r uintptr) {
 	defer tls.Free(16)
 	switch (*_NuBytecode)(unsafe.Pointer(bc)).Fcode {
 	case int32(m_DIRECT_BYTECODE):
-		libc.Xsprintf(tls, uintptr(unsafe.Pointer(&cc.s__dummy)), __ccgo_ts+89781, libc.VaList(bp+8, (*_NuBytecode)(unsafe.Pointer(bc)).Fname))
+		libc.Xsprintf(tls, uintptr(unsafe.Pointer(&cc.s__dummy)), __ccgo_ts+89787, libc.VaList(bp+8, (*_NuBytecode)(unsafe.Pointer(bc)).Fname))
 	case int32(m_PUSHI_BYTECODE):
-		libc.Xstrcpy(tls, uintptr(unsafe.Pointer(&cc.s__dummy)), __ccgo_ts+89808)
+		libc.Xstrcpy(tls, uintptr(unsafe.Pointer(&cc.s__dummy)), __ccgo_ts+89814)
 	case int32(m_PUSHA_BYTECODE):
-		libc.Xstrcpy(tls, uintptr(unsafe.Pointer(&cc.s__dummy)), __ccgo_ts+89820)
+		libc.Xstrcpy(tls, uintptr(unsafe.Pointer(&cc.s__dummy)), __ccgo_ts+89826)
 	case int32(m_CALLA_BYTECODE):
-		libc.Xstrcpy(tls, uintptr(unsafe.Pointer(&cc.s__dummy)), __ccgo_ts+89832)
+		libc.Xstrcpy(tls, uintptr(unsafe.Pointer(&cc.s__dummy)), __ccgo_ts+89838)
 	default:
-		libc.Xsprintf(tls, uintptr(unsafe.Pointer(&cc.s__dummy)), __ccgo_ts+89844, libc.VaList(bp+8, (*_NuBytecode)(unsafe.Pointer(bc)).Fname))
+		libc.Xsprintf(tls, uintptr(unsafe.Pointer(&cc.s__dummy)), __ccgo_ts+89850, libc.VaList(bp+8, (*_NuBytecode)(unsafe.Pointer(bc)).Fname))
 		break
 	}
 	return uintptr(unsafe.Pointer(&cc.s__dummy))
@@ -11138,14 +11144,14 @@ func s__NuCompileAlloca(tls *libc.TLS, cc *CC, irl uintptr, siz uintptr) {
 	var n int32
 	_ = n
 	x__NuEmitConst(tls, cc, irl, 0)
-	x__NuEmitCommentedOp(tls, cc, irl, int32(_NU_OP_ADD_SP), __ccgo_ts+85764)
+	x__NuEmitCommentedOp(tls, cc, irl, int32(_NU_OP_ADD_SP), __ccgo_ts+85770)
 	n = s__NuCompileExpression(tls, cc, irl, siz)
 	if n != int32(1) {
-		x__ERROR(tls, cc, siz, __ccgo_ts+85776, 0)
+		x__ERROR(tls, cc, siz, __ccgo_ts+85782, 0)
 	}
-	x__NuEmitCommentedOp(tls, cc, irl, int32(_NU_OP_ADD_SP), __ccgo_ts+85809)
+	x__NuEmitCommentedOp(tls, cc, irl, int32(_NU_OP_ADD_SP), __ccgo_ts+85815)
 	s__NuCompileLhsAddress(tls, cc, irl, cc.s__nu_stack_ptr)
-	x__NuEmitCommentedOp(tls, cc, irl, int32(_NU_OP_STREG), __ccgo_ts+85830)
+	x__NuEmitCommentedOp(tls, cc, irl, int32(_NU_OP_STREG), __ccgo_ts+85836)
 }
 
 // C documentation
@@ -11168,7 +11174,7 @@ func s__NuCompileArrayAddress(tls *libc.TLS, cc *CC, irl uintptr, node uintptr, 
 		} else {
 			n = s__NuCompileExpression(tls, cc, irl, index)
 			if n != int32(1) {
-				x__ERROR(tls, cc, node, __ccgo_ts+84828, 0)
+				x__ERROR(tls, cc, node, __ccgo_ts+84834, 0)
 			}
 		}
 		x__NuEmitOp(tls, cc, irl, int32(_NU_OP_ADD))
@@ -11191,11 +11197,11 @@ func s__NuCompileAssign(tls *libc.TLS, cc *CC, irl uintptr, ast uintptr, inExpre
 	lhs = (*_AST)(unsafe.Pointer(ast)).Fleft
 	rhs = (*_AST)(unsafe.Pointer(ast)).Fright
 	if *(*_uint64_t)(unsafe.Pointer(ast + 8)) != uint64(_K_ASSIGN) {
-		x__ERROR(tls, cc, ast, __ccgo_ts+85282, 0)
+		x__ERROR(tls, cc, ast, __ccgo_ts+85288, 0)
 	}
 	n = s__NuCompileExpression(tls, cc, irl, rhs)
 	if n == 0 {
-		x__ERROR(tls, cc, rhs, __ccgo_ts+85315, 0)
+		x__ERROR(tls, cc, rhs, __ccgo_ts+85321, 0)
 		return int32(1)
 	} else {
 		if n != int32(1) && inExpression != 0 {
@@ -11211,14 +11217,14 @@ func s__NuCompileAssign(tls *libc.TLS, cc *CC, irl uintptr, ast uintptr, inExpre
 		// if insufficient items given, just drop the rest
 		got = s__NuPopMultiple(tls, cc, irl, lhs, n)
 		if got != n {
-			x__ERROR(tls, cc, rhs, __ccgo_ts+85342, libc.VaList(bp+8, n, got))
+			x__ERROR(tls, cc, rhs, __ccgo_ts+85348, libc.VaList(bp+8, n, got))
 		}
 		return 0 // everything has been popped
 	}
 	// single assignment
 	op = s__NuCompileLhsAddress(tls, cc, irl, lhs)
 	if op == int32(_NU_OP_ILLEGAL) {
-		x__ERROR(tls, cc, lhs, __ccgo_ts+85213, 0)
+		x__ERROR(tls, cc, lhs, __ccgo_ts+85219, 0)
 	} else {
 		x__NuEmitOp(tls, cc, irl, op)
 	}
@@ -11273,11 +11279,11 @@ func s__NuCompileBasicBoolExpression(tls *libc.TLS, cc *CC, irl uintptr, expr ui
 	}
 	n = s__NuCompileExpression(tls, cc, irl, left)
 	if n != int32(1) {
-		x__ERROR(tls, cc, left, __ccgo_ts+84879, 0)
+		x__ERROR(tls, cc, left, __ccgo_ts+84885, 0)
 	}
 	n = s__NuCompileExpression(tls, cc, irl, right)
 	if n != int32(1) {
-		x__ERROR(tls, cc, left, __ccgo_ts+84879, 0)
+		x__ERROR(tls, cc, left, __ccgo_ts+84885, 0)
 	}
 	return opc
 }
@@ -11308,11 +11314,11 @@ func s__NuCompileBoolBranches(tls *libc.TLS, cc *CC, irl uintptr, expr uintptr, 
 		needNewFalsedest = libc.BoolUint8(m_false != 0)
 		n = s__NuCompileExpression(tls, cc, irl, (*_AST)(unsafe.Pointer((*_AST)(unsafe.Pointer(expr)).Fright)).Fleft)
 		if n != int32(1) {
-			x__ERROR(tls, cc, expr, __ccgo_ts+84923, 0)
+			x__ERROR(tls, cc, expr, __ccgo_ts+84929, 0)
 		}
 		n = s__NuCompileExpression(tls, cc, irl, (*_AST)(unsafe.Pointer((*_AST)(unsafe.Pointer(expr)).Fright)).Fright)
 		if n != int32(1) {
-			x__ERROR(tls, cc, expr, __ccgo_ts+84923, 0)
+			x__ERROR(tls, cc, expr, __ccgo_ts+84929, 0)
 		}
 		x__NuEmitOp(tls, cc, irl, int32(_NU_OP_DUP2)) // stack now looks like A B A B
 		// make stack look like MIN(A, B) MAX(A, B)
@@ -11321,7 +11327,7 @@ func s__NuCompileBoolBranches(tls *libc.TLS, cc *CC, irl uintptr, expr uintptr, 
 		x__NuEmitOp(tls, cc, irl, int32(_NU_OP_MAXS))                                 // MIN(A, B) MAX(A, B)
 		n = s__NuCompileExpression(tls, cc, irl, (*_AST)(unsafe.Pointer(expr)).Fleft) // MIN MAX v
 		if n != int32(1) {
-			x__ERROR(tls, cc, expr, __ccgo_ts+84923, 0)
+			x__ERROR(tls, cc, expr, __ccgo_ts+84929, 0)
 		}
 		x__NuEmitOp(tls, cc, irl, int32(_NU_OP_DUP))   // MIN MAX v v
 		x__NuEmitOp(tls, cc, irl, int32(_NU_OP_SWAP2)) // MIN v MAX v
@@ -11399,40 +11405,40 @@ func s__NuCompileCoginit(tls *libc.TLS, cc *CC, irl uintptr, expr uintptr) (r in
 	params = (*_AST)(unsafe.Pointer(expr)).Fleft
 	if x__IsSpinCoginit(tls, cc, expr, libc.UintptrFromInt32(0)) != 0 {
 		**(**uintptr)(__ccgo_up(bp)) = uintptr(0)
-		tmpreg = x__AstIdentifier(tls, cc, __ccgo_ts+10314)
+		tmpreg = x__AstIdentifier(tls, cc, __ccgo_ts+10316)
 		// need to push some stuff onto the new stack, namely:
 		//   the arguments
 		//   initial PC
 		//   initial object base
 		exprlist = (*_AST)(unsafe.Pointer(expr)).Fleft
 		if !(exprlist != 0) {
-			x__ERROR(tls, cc, expr, __ccgo_ts+34473, 0)
+			x__ERROR(tls, cc, expr, __ccgo_ts+34481, 0)
 			return int32(1)
 		}
 		cogid = (*_AST)(unsafe.Pointer(exprlist)).Fleft
 		exprlist = (*_AST)(unsafe.Pointer(exprlist)).Fright
 		if !(exprlist != 0) {
-			x__ERROR(tls, cc, expr, __ccgo_ts+47374, 0)
+			x__ERROR(tls, cc, expr, __ccgo_ts+47382, 0)
 			return int32(1)
 		}
 		funccall1 = (*_AST)(unsafe.Pointer(exprlist)).Fleft
 		exprlist = (*_AST)(unsafe.Pointer(exprlist)).Fright
 		if !(exprlist != 0) {
-			x__ERROR(tls, cc, expr, __ccgo_ts+34554, 0)
+			x__ERROR(tls, cc, expr, __ccgo_ts+34562, 0)
 			return int32(1)
 		}
 		stack = (*_AST)(unsafe.Pointer(exprlist)).Fleft
 		if (*_AST)(unsafe.Pointer(exprlist)).Fright != libc.UintptrFromInt32(0) {
-			x__ERROR(tls, cc, expr, __ccgo_ts+34597, 0)
+			x__ERROR(tls, cc, expr, __ccgo_ts+34605, 0)
 		}
 		// get initial stack pointer into tmpreg
 		n = s__NuCompileExpression(tls, cc, irl, stack)
 		if n != int32(1) {
-			x__ERROR(tls, cc, expr, __ccgo_ts+85491, 0)
+			x__ERROR(tls, cc, expr, __ccgo_ts+85497, 0)
 			return int32(1)
 		}
 		stOp = s__NuCompileLhsAddress(tls, cc, irl, tmpreg)
-		x__NuEmitCommentedOp(tls, cc, irl, stOp, __ccgo_ts+85507)
+		x__NuEmitCommentedOp(tls, cc, irl, stOp, __ccgo_ts+85513)
 		// compile arguments
 		params = (*_AST)(unsafe.Pointer(funccall1)).Fright
 		// make sure we push at least 2 items onto the stack (2 will be popped by the caller)
@@ -11448,11 +11454,11 @@ func s__NuCompileCoginit(tls *libc.TLS, cc *CC, irl uintptr, expr uintptr) (r in
 			s__NuCompileExpression(tls, cc, irl, tmpreg)
 			switch n {
 			case int32(1):
-				x__NuEmitCommentedOp(tls, cc, irl, int32(_NU_OP_STL), __ccgo_ts+85531)
+				x__NuEmitCommentedOp(tls, cc, irl, int32(_NU_OP_STL), __ccgo_ts+85537)
 			case int32(2):
-				x__NuEmitCommentedOp(tls, cc, irl, int32(_NU_OP_STD), __ccgo_ts+85544)
+				x__NuEmitCommentedOp(tls, cc, irl, int32(_NU_OP_STD), __ccgo_ts+85550)
 			default:
-				x__ERROR(tls, cc, arg, __ccgo_ts+85559, 0)
+				x__ERROR(tls, cc, arg, __ccgo_ts+85565, 0)
 				return int32(1)
 			}
 			// increment tmpreg pointer
@@ -11461,12 +11467,12 @@ func s__NuCompileCoginit(tls *libc.TLS, cc *CC, irl uintptr, expr uintptr) (r in
 		// now compile initial PC
 		sym = x__FindFuncSymbol(tls, cc, funccall1, bp, int32(1))
 		if !(sym != 0) || (*_Symbol)(unsafe.Pointer(sym)).Fkind != int32(_SYM_FUNCTION) {
-			x__ERROR(tls, cc, funccall1, __ccgo_ts+85589, 0)
+			x__ERROR(tls, cc, funccall1, __ccgo_ts+85595, 0)
 			return int32(1)
 		}
 		F = *(*uintptr)(unsafe.Pointer(sym + 32))
 		if (*_AST)(unsafe.Pointer((*_Function)(unsafe.Pointer(F)).Fbody)).Fkind == int32(_AST_BYTECODE) {
-			x__ERROR(tls, cc, funccall1, __ccgo_ts+85621, 0)
+			x__ERROR(tls, cc, funccall1, __ccgo_ts+85627, 0)
 			return int32(1)
 		}
 		// push new PC
@@ -11474,24 +11480,24 @@ func s__NuCompileCoginit(tls *libc.TLS, cc *CC, irl uintptr, expr uintptr) (r in
 		x__NuEmitCommentedAddress(tls, cc, irl, (*_NuFunData)(unsafe.Pointer((*_Function)(unsafe.Pointer(F)).Fbedata)).FentryLabel, (*_Function)(unsafe.Pointer(F)).Fname)
 		// copy to final stack
 		s__NuCompileExpression(tls, cc, irl, tmpreg)
-		x__NuEmitCommentedOp(tls, cc, irl, int32(_NU_OP_STL), __ccgo_ts+85679)
+		x__NuEmitCommentedOp(tls, cc, irl, int32(_NU_OP_STL), __ccgo_ts+85685)
 		s__NuCompileIncrement(tls, cc, irl, tmpreg, int32(m_LONG_SIZE))
 		// push new VBASE
 		if !(**(**uintptr)(__ccgo_up(bp)) != 0) {
 			x__NuEmitConst(tls, cc, irl, 0)
-			x__NuEmitCommentedOp(tls, cc, irl, int32(_NU_OP_ADD_VBASE), __ccgo_ts+85687)
+			x__NuEmitCommentedOp(tls, cc, irl, int32(_NU_OP_ADD_VBASE), __ccgo_ts+85693)
 		} else {
 			s__NuCompileExpression(tls, cc, irl, **(**uintptr)(__ccgo_up(bp)))
 		}
 		// copy to final stack
 		s__NuCompileExpression(tls, cc, irl, tmpreg)
-		x__NuEmitCommentedOp(tls, cc, irl, int32(_NU_OP_STL), __ccgo_ts+85697)
+		x__NuEmitCommentedOp(tls, cc, irl, int32(_NU_OP_STL), __ccgo_ts+85703)
 		s__NuCompileIncrement(tls, cc, irl, tmpreg, int32(m_LONG_SIZE))
 		// OK, new stack is all set up
 		// now we need to call coginit(cogid, @entry, stack)
 		params = x__NewAST(tls, cc, int32(_AST_EXPRLIST), cogid, x__NewAST(tls, cc, int32(_AST_EXPRLIST), x__AstInteger(tls, cc, int64(m_NU_INTERP_START)), x__NewAST(tls, cc, int32(_AST_EXPRLIST), tmpreg, libc.UintptrFromInt32(0))))
 	}
-	funccall = x__AstIdentifier(tls, cc, __ccgo_ts+30933)
+	funccall = x__AstIdentifier(tls, cc, __ccgo_ts+30941)
 	funccall = x__NewAST(tls, cc, int32(_AST_FUNCCALL), funccall, params)
 	return s__NuCompileFunCall(tls, cc, irl, funccall)
 }
@@ -11517,7 +11523,7 @@ func s__NuCompileCondResult(tls *libc.TLS, cc *CC, irl uintptr, expr uintptr) (r
 	n_else = s__NuCompileExpression(tls, cc, irl, elsepart)
 	x__NuEmitLabel(tls, cc, irl, label2)
 	if n_if != n_else {
-		x__ERROR(tls, cc, expr, __ccgo_ts+85433, 0)
+		x__ERROR(tls, cc, expr, __ccgo_ts+85439, 0)
 	}
 	return n_if
 }
@@ -11531,7 +11537,7 @@ func s__NuCompileExprList(tls *libc.TLS, cc *CC, irl uintptr, node uintptr) (r i
 		node = (*_AST)(unsafe.Pointer(node)).Fright
 	}
 	if node != 0 {
-		x__ERROR(tls, cc, node, __ccgo_ts+86435, 0)
+		x__ERROR(tls, cc, node, __ccgo_ts+86441, 0)
 	}
 	return pushed
 }
@@ -11543,13 +11549,13 @@ func s__NuCompileForLoop(tls *libc.TLS, cc *CC, irl uintptr, ast uintptr, atleas
 	initstmt = (*_AST)(unsafe.Pointer(ast)).Fleft
 	ast = (*_AST)(unsafe.Pointer(ast)).Fright
 	if !(ast != 0) || (*_AST)(unsafe.Pointer(ast)).Fkind != int32(_AST_TO) {
-		x__ERROR(tls, cc, ast, __ccgo_ts+48981, 0)
+		x__ERROR(tls, cc, ast, __ccgo_ts+48989, 0)
 		return
 	}
 	loopcond = (*_AST)(unsafe.Pointer(ast)).Fleft
 	ast = (*_AST)(unsafe.Pointer(ast)).Fright
 	if !(ast != 0) || (*_AST)(unsafe.Pointer(ast)).Fkind != int32(_AST_STEP) {
-		x__ERROR(tls, cc, ast, __ccgo_ts+48981, 0)
+		x__ERROR(tls, cc, ast, __ccgo_ts+48989, 0)
 		return
 	}
 	update = (*_AST)(unsafe.Pointer(ast)).Fleft
@@ -11598,7 +11604,7 @@ func s__NuCompileFunCall(tls *libc.TLS, cc *CC, irl uintptr, node uintptr) (r in
 		pushed = (*_Function)(unsafe.Pointer(func1)).Fnumresults
 		if !((*_Function)(unsafe.Pointer(func1)).Fbody != 0) {
 			if pushed != 0 {
-				x__ERROR(tls, cc, node, __ccgo_ts+84442, 0)
+				x__ERROR(tls, cc, node, __ccgo_ts+84448, 0)
 			}
 			return 0
 		}
@@ -11612,22 +11618,22 @@ func s__NuCompileFunCall(tls *libc.TLS, cc *CC, irl uintptr, node uintptr) (r in
 			s__NuPrepareFunctionBedata(tls, cc, func1)
 			if int32(*(*uint32)(unsafe.Pointer(func1 + 1248))&0x20>>5) != 0 || (*_Function)(unsafe.Pointer(func1)).Fmodule == cc.x__current {
 				// plain CALL is OK
-				x__NuEmitCall(tls, cc, irl, int32(_NU_OP_CALLA), (*_NuFunData)(unsafe.Pointer((*_Function)(unsafe.Pointer(func1)).Fbedata)).FentryLabel, x__auto_printf(tls, cc, uint64(128), __ccgo_ts+84482, libc.VaList(bp+16, (*_Function)(unsafe.Pointer(func1)).Fname)))
+				x__NuEmitCall(tls, cc, irl, int32(_NU_OP_CALLA), (*_NuFunData)(unsafe.Pointer((*_Function)(unsafe.Pointer(func1)).Fbedata)).FentryLabel, x__auto_printf(tls, cc, uint64(128), __ccgo_ts+84488, libc.VaList(bp+16, (*_Function)(unsafe.Pointer(func1)).Fname)))
 			} else {
 				if (*_Function)(unsafe.Pointer(func1)).Fmodule == cc.x__systemModule {
 					// system modules don't actually have non-static functions
 					//WARNING(node, "non-static system module function called");
 					// plain CALL is OK
-					x__NuEmitCall(tls, cc, irl, int32(_NU_OP_CALLA), (*_NuFunData)(unsafe.Pointer((*_Function)(unsafe.Pointer(func1)).Fbedata)).FentryLabel, x__auto_printf(tls, cc, uint64(128), __ccgo_ts+84482, libc.VaList(bp+16, (*_Function)(unsafe.Pointer(func1)).Fname)))
+					x__NuEmitCall(tls, cc, irl, int32(_NU_OP_CALLA), (*_NuFunData)(unsafe.Pointer((*_Function)(unsafe.Pointer(func1)).Fbedata)).FentryLabel, x__auto_printf(tls, cc, uint64(128), __ccgo_ts+84488, libc.VaList(bp+16, (*_Function)(unsafe.Pointer(func1)).Fname)))
 				} else {
 					if **(**uintptr)(__ccgo_up(bp)) != 0 {
 						// compile a method call
 						s__NuCompileLhsAddress(tls, cc, irl, **(**uintptr)(__ccgo_up(bp)))
 						x__NuEmitCommentedAddress(tls, cc, irl, (*_NuFunData)(unsafe.Pointer((*_Function)(unsafe.Pointer(func1)).Fbedata)).FentryLabel, (*_Function)(unsafe.Pointer(func1)).Fname)
 						ir = x__NuEmitOp(tls, cc, irl, int32(_NU_OP_CALLM))
-						(*_NuIr)(unsafe.Pointer(ir)).Fcomment = x__auto_printf(tls, cc, uint64(128), __ccgo_ts+84490, libc.VaList(bp+16, (*_Function)(unsafe.Pointer(func1)).Fname))
+						(*_NuIr)(unsafe.Pointer(ir)).Fcomment = x__auto_printf(tls, cc, uint64(128), __ccgo_ts+84496, libc.VaList(bp+16, (*_Function)(unsafe.Pointer(func1)).Fname))
 					} else {
-						x__ERROR(tls, cc, node, __ccgo_ts+84505, 0)
+						x__ERROR(tls, cc, node, __ccgo_ts+84511, 0)
 					}
 				}
 			}
@@ -11641,18 +11647,18 @@ func s__NuCompileFunCall(tls *libc.TLS, cc *CC, irl uintptr, node uintptr) (r in
 			if **(**uintptr)(__ccgo_up(bp)) != 0 {
 				x__NuEmitConst(tls, cc, irl, (*_Symbol)(unsafe.Pointer(sym)).Foffset)
 				s__NuCompileLhsAddress(tls, cc, irl, **(**uintptr)(__ccgo_up(bp)))
-				x__NuEmitCommentedOp(tls, cc, irl, int32(_NU_OP_ADD), __ccgo_ts+84541)
+				x__NuEmitCommentedOp(tls, cc, irl, int32(_NU_OP_ADD), __ccgo_ts+84547)
 			} else {
 				ldop = s__NuCompileSymbolAddress(tls, cc, irl, sym, int32(m_true), node)
 			}
-			x__NuEmitCommentedOp(tls, cc, irl, ldop, __ccgo_ts+84559)
-			x__NuEmitCommentedOp(tls, cc, irl, int32(_NU_OP_LDD), __ccgo_ts+84574)
-			x__NuEmitCommentedOp(tls, cc, irl, int32(_NU_OP_CALLM), __ccgo_ts+84594)
+			x__NuEmitCommentedOp(tls, cc, irl, ldop, __ccgo_ts+84565)
+			x__NuEmitCommentedOp(tls, cc, irl, int32(_NU_OP_LDD), __ccgo_ts+84580)
+			x__NuEmitCommentedOp(tls, cc, irl, int32(_NU_OP_CALLM), __ccgo_ts+84600)
 			functype = x__ExprType(tls, cc, (*_AST)(unsafe.Pointer(node)).Fleft)
 			pushed = x__FuncLongResults(tls, cc, functype)
 		} else {
 			if (*_AST)(unsafe.Pointer(node)).Fleft != 0 && ((*_AST)(unsafe.Pointer((*_AST)(unsafe.Pointer(node)).Fleft)).Fkind == int32(_AST_IDENTIFIER) || (*_AST)(unsafe.Pointer((*_AST)(unsafe.Pointer(node)).Fleft)).Fkind == int32(_AST_LOCAL_IDENTIFIER)) && !(x__LookupAstSymbol(tls, cc, (*_AST)(unsafe.Pointer(node)).Fleft, libc.UintptrFromInt32(0)) != 0) {
-				x__ERROR(tls, cc, node, __ccgo_ts+26275, libc.VaList(bp+16, x__GetUserIdentifierName(tls, cc, (*_AST)(unsafe.Pointer(node)).Fleft)))
+				x__ERROR(tls, cc, node, __ccgo_ts+26283, libc.VaList(bp+16, x__GetUserIdentifierName(tls, cc, (*_AST)(unsafe.Pointer(node)).Fleft)))
 			} else {
 				funcNode = (*_AST)(unsafe.Pointer(node)).Fleft
 				functype = x__ExprType(tls, cc, funcNode)
@@ -11666,11 +11672,11 @@ func s__NuCompileFunCall(tls *libc.TLS, cc *CC, irl uintptr, node uintptr) (r in
 				}
 				pushed = s__NuCompileExpression(tls, cc, irl, funcNode)
 				if pushed != int32(1) {
-					x__ERROR(tls, cc, node, __ccgo_ts+84608, libc.VaList(bp+16, pushed))
+					x__ERROR(tls, cc, node, __ccgo_ts+84614, libc.VaList(bp+16, pushed))
 				}
 				// at this point the method pointer address is on the stack; need to load both words
-				x__NuEmitCommentedOp(tls, cc, irl, int32(_NU_OP_LDD), __ccgo_ts+84574)
-				x__NuEmitCommentedOp(tls, cc, irl, int32(_NU_OP_CALLM), __ccgo_ts+84594)
+				x__NuEmitCommentedOp(tls, cc, irl, int32(_NU_OP_LDD), __ccgo_ts+84580)
+				x__NuEmitCommentedOp(tls, cc, irl, int32(_NU_OP_CALLM), __ccgo_ts+84600)
 				pushed = x__FuncLongResults(tls, cc, functype)
 			}
 		}
@@ -11691,7 +11697,7 @@ func s__NuCompileIncrement(tls *libc.TLS, cc *CC, irl uintptr, val uintptr, n in
 	}
 	s__NuCompileExpression(tls, cc, irl, val)
 	x__NuEmitConst(tls, cc, irl, n)
-	x__NuEmitCommentedOp(tls, cc, irl, int32(_NU_OP_ADD), __ccgo_ts+85473)
+	x__NuEmitCommentedOp(tls, cc, irl, int32(_NU_OP_ADD), __ccgo_ts+85479)
 	stOp = s__NuCompileLhsAddress(tls, cc, irl, val)
 	x__NuEmitOp(tls, cc, irl, stOp)
 }
@@ -11720,7 +11726,7 @@ func s__NuCompileInlineAsm(tls *libc.TLS, cc *CC, irl uintptr, ast uintptr) {
 	startLabel = s__NuIrOffsetLabel(tls, cc, (*_NuFunData)(unsafe.Pointer(fdata)).FdataLabel, libc.Int32FromUint32(startPos))
 	x__AssignAddresses(tls, cc, bp, cc.x__curfunc+160, list, 0)
 	if (**(**_PASMAddresses)(__ccgo_up(bp))).FcogPc > libc.Uint32FromInt32(cc.x__gl_fcache_size*int32(m_LONG_SIZE)) {
-		x__ERROR(tls, cc, ast, __ccgo_ts+65971, libc.VaList(bp+24, cc.x__gl_fcache_size))
+		x__ERROR(tls, cc, ast, __ccgo_ts+65977, libc.VaList(bp+24, cc.x__gl_fcache_size))
 	}
 	x__PrintDataBlock(tls, cc, fdata+48, list, libc.UintptrFromInt32(0), fdata+80)
 	// append a RET instruction
@@ -11740,7 +11746,7 @@ func s__NuCompileInlineAsm(tls *libc.TLS, cc *CC, irl uintptr, ast uintptr) {
 	// sanity check size
 	maxSize = v1
 	if endPos > libc.Uint32FromInt32(maxSize) {
-		x__ERROR(tls, cc, ast, __ccgo_ts+86461, libc.VaList(bp+24, endPos, maxSize))
+		x__ERROR(tls, cc, ast, __ccgo_ts+86467, libc.VaList(bp+24, endPos, maxSize))
 	}
 	x__NuEmitAddress(tls, cc, irl, startLabel)
 	x__NuEmitConst(tls, cc, irl, libc.Int32FromUint32(endPos-uint32(1)))
@@ -11760,13 +11766,13 @@ func s__NuCompileLookupDown(tls *libc.TLS, cc *CC, irl uintptr, expr uintptr) (r
 	tmpreg2 = libc.UintptrFromInt32(0)
 	popsize = 0
 	if (*_AST)(unsafe.Pointer(expr)).Fkind == int32(_AST_LOOKDOWN) {
-		funccall = x__AstIdentifier(tls, cc, __ccgo_ts+31149)
+		funccall = x__AstIdentifier(tls, cc, __ccgo_ts+31157)
 	} else {
-		funccall = x__AstIdentifier(tls, cc, __ccgo_ts+31141)
+		funccall = x__AstIdentifier(tls, cc, __ccgo_ts+31149)
 	}
 	ev = (*_AST)(unsafe.Pointer(expr)).Fleft
 	if (*_AST)(unsafe.Pointer(ev)).Fkind != int32(_AST_LOOKEXPR) {
-		x__ERROR(tls, cc, ev, __ccgo_ts+30140, 0)
+		x__ERROR(tls, cc, ev, __ccgo_ts+30148, 0)
 		return int32(1)
 	}
 	base = (*_AST)(unsafe.Pointer(ev)).Fleft
@@ -11778,8 +11784,8 @@ func s__NuCompileLookupDown(tls *libc.TLS, cc *CC, irl uintptr, expr uintptr) (r
 	} else {
 		if (*_AST)(unsafe.Pointer(table)).Fkind == int32(_AST_EXPRLIST) {
 			// FIXME?? ASSUMES STACK GROWS UP!!!
-			tmpreg1 = x__AstIdentifier(tls, cc, __ccgo_ts+10314)
-			tmpreg2 = x__AstIdentifier(tls, cc, __ccgo_ts+10329)
+			tmpreg1 = x__AstIdentifier(tls, cc, __ccgo_ts+10316)
+			tmpreg2 = x__AstIdentifier(tls, cc, __ccgo_ts+10331)
 			/* NOTE!
 			   we have to evaluate the index before evaluating array elements
 			*/
@@ -11798,7 +11804,7 @@ func s__NuCompileLookupDown(tls *libc.TLS, cc *CC, irl uintptr, expr uintptr) (r
 			popsize = s__NuCompileExpression(tls, cc, irl, table)
 			len1 = x__AstInteger(tls, cc, int64(popsize))
 		} else {
-			x__ERROR(tls, cc, table, __ccgo_ts+47869, 0)
+			x__ERROR(tls, cc, table, __ccgo_ts+47877, 0)
 			return int32(1)
 		}
 	}
@@ -11806,7 +11812,7 @@ func s__NuCompileLookupDown(tls *libc.TLS, cc *CC, irl uintptr, expr uintptr) (r
 	funccall = x__NewAST(tls, cc, int32(_AST_FUNCCALL), funccall, params)
 	pushed = s__NuCompileFunCall(tls, cc, irl, funccall)
 	if pushed != int32(1) {
-		x__ERROR(tls, cc, table, __ccgo_ts+85708, 0)
+		x__ERROR(tls, cc, table, __ccgo_ts+85714, 0)
 	}
 	if popsize != 0 {
 		s__NuCompileLhsAddress(tls, cc, irl, tmpreg1)
@@ -11831,19 +11837,19 @@ func s__NuCompileMaskMove(tls *libc.TLS, cc *CC, irl uintptr, expr uintptr) (r i
 		maskast = (*_AST)(unsafe.Pointer((*_AST)(unsafe.Pointer(expr)).Fright)).Fleft
 		valast = (*_AST)(unsafe.Pointer((*_AST)(unsafe.Pointer(expr)).Fright)).Fright
 	} else {
-		x__ERROR(tls, cc, expr, __ccgo_ts+47247, 0)
+		x__ERROR(tls, cc, expr, __ccgo_ts+47255, 0)
 		return int32(1)
 	}
 	// push A
 	if int32(1) != s__NuCompileExpression(tls, cc, irl, destast) {
-		x__ERROR(tls, cc, destast, __ccgo_ts+85252, 0)
+		x__ERROR(tls, cc, destast, __ccgo_ts+85258, 0)
 	}
 	if int32(1) != s__NuCompileExpression(tls, cc, irl, maskast) {
-		x__ERROR(tls, cc, maskast, __ccgo_ts+85252, 0)
+		x__ERROR(tls, cc, maskast, __ccgo_ts+85258, 0)
 	}
 	x__NuEmitOp(tls, cc, irl, int32(_NU_OP_AND))
 	if int32(1) != s__NuCompileExpression(tls, cc, irl, valast) {
-		x__ERROR(tls, cc, valast, __ccgo_ts+85252, 0)
+		x__ERROR(tls, cc, valast, __ccgo_ts+85258, 0)
 	}
 	x__NuEmitOp(tls, cc, irl, int32(_NU_OP_IOR))
 	return int32(1)
@@ -11861,7 +11867,7 @@ func s__NuCompileObject(tls *libc.TLS, cc *CC, vptr uintptr, P uintptr) (r int32
 	if (*_NuModData)(unsafe.Pointer((*_Module)(unsafe.Pointer(P)).Fbedata)).FisCompiled != 0 {
 		return 0
 	} // already done
-	x__flexbuf_printf(tls, cc, fb, __ccgo_ts+87085, libc.VaList(bp+72, (*_Module)(unsafe.Pointer(P)).Fclassname))
+	x__flexbuf_printf(tls, cc, fb, __ccgo_ts+87091, libc.VaList(bp+72, (*_Module)(unsafe.Pointer(P)).Fclassname))
 	/* compile DAT block */
 	if (*_Module)(unsafe.Pointer(P)).Fdatblock != 0 {
 		// Got DAT block
@@ -11891,14 +11897,14 @@ func s__NuCompileObject(tls *libc.TLS, cc *CC, vptr uintptr, P uintptr) (r int32
 				break
 			}
 			f2 = (*_FunctionList)(unsafe.Pointer(fl)).Ffunc1
-			x__flexbuf_printf(tls, cc, fb, __ccgo_ts+87102, libc.VaList(bp+72, (*_Function)(unsafe.Pointer(f2)).Fname))
+			x__flexbuf_printf(tls, cc, fb, __ccgo_ts+87108, libc.VaList(bp+72, (*_Function)(unsafe.Pointer(f2)).Fname))
 			x__NuOutputLabelNL(tls, cc, fb, (*_NuFunData)(unsafe.Pointer((*_Function)(unsafe.Pointer(f2)).Fbedata)).FentryLabel)
 			goto _2
 		_2:
 			;
 			fl = (*_FunctionList)(unsafe.Pointer(fl)).Fnext
 		}
-		x__flexbuf_printf(tls, cc, fb, __ccgo_ts+87102, libc.VaList(bp+72, (*_Function)(unsafe.Pointer(pf)).Fname))
+		x__flexbuf_printf(tls, cc, fb, __ccgo_ts+87108, libc.VaList(bp+72, (*_Function)(unsafe.Pointer(pf)).Fname))
 		x__NuOutputIrList(tls, cc, fb, (*_Function)(unsafe.Pointer(pf)).Fbedata+8)
 		if (*_NuFunData)(unsafe.Pointer((*_Function)(unsafe.Pointer(pf)).Fbedata)).FdataLabel != 0 {
 			x__NuOutputLabelNL(tls, cc, fb, (*_NuFunData)(unsafe.Pointer((*_Function)(unsafe.Pointer(pf)).Fbedata)).FdataLabel)
@@ -12002,7 +12008,7 @@ func s__NuCompileOperator(tls *libc.TLS, cc *CC, irl uintptr, node uintptr) (r i
 				stepSize = x__TypeSize(tls, cc, x__BaseType(tls, cc, desttype))
 			} else {
 				if x__IsFloatType(tls, cc, desttype) != 0 {
-					x__ERROR(tls, cc, node, __ccgo_ts+46681, 0)
+					x__ERROR(tls, cc, node, __ccgo_ts+46689, 0)
 				}
 			}
 			pushed = int32(1)
@@ -12056,7 +12062,7 @@ func s__NuCompileOperator(tls *libc.TLS, cc *CC, irl uintptr, node uintptr) (r i
 												rhs_temp = x__AstOperator(tls, cc, int32('-'), **(**uintptr)(__ccgo_up(bp + 8)), x__AstInteger(tls, cc, int64(1)))
 												rhs_temp = x__FoldIfConst(tls, cc, rhs_temp)
 												if s__NuCompileExpression(tls, cc, irl, **(**uintptr)(__ccgo_up(bp))) != int32(1) {
-													x__ERROR(tls, cc, **(**uintptr)(__ccgo_up(bp)), __ccgo_ts+85386, 0)
+													x__ERROR(tls, cc, **(**uintptr)(__ccgo_up(bp)), __ccgo_ts+85392, 0)
 												}
 												s__NuCompileExpression(tls, cc, irl, rhs_temp)
 												if **(**int32)(__ccgo_up(bp + 16)) == int32(_K_SIGNEXTEND) {
@@ -12121,7 +12127,7 @@ func s__NuCompileOperator(tls *libc.TLS, cc *CC, irl uintptr, node uintptr) (r i
 													x__NuEmitOp(tls, cc, irl, int32(_NU_OP_MULU16))
 													fallthrough
 												default:
-													x__ERROR(tls, cc, node, __ccgo_ts+85402, libc.VaList(bp+32, **(**int32)(__ccgo_up(bp + 16))))
+													x__ERROR(tls, cc, node, __ccgo_ts+85408, libc.VaList(bp+32, **(**int32)(__ccgo_up(bp + 16))))
 													break
 												}
 											}
@@ -12138,6 +12144,48 @@ func s__NuCompileOperator(tls *libc.TLS, cc *CC, irl uintptr, node uintptr) (r i
 	return pushed
 }
 
+func s__NuCopyImpl(tls *libc.TLS, cc *CC, fb uintptr, lineptr uintptr, skipRet int32) {
+	var c int32
+	var v2 uintptr
+	_, _ = c, v2
+	if !(libc.Xstrncmp(tls, lineptr, __ccgo_ts+87993, uint64(5)) != 0) {
+		// skip label
+		for **(**int8)(__ccgo_up(lineptr)) != 0 && int32(**(**int8)(__ccgo_up(lineptr))) != int32('\n') {
+			lineptr = lineptr + 1
+		}
+		if **(**int8)(__ccgo_up(lineptr)) != 0 {
+			lineptr = lineptr + 1
+		}
+	}
+	for {
+		v2 = lineptr
+		lineptr = lineptr + 1
+		c = int32(**(**int8)(__ccgo_up(v2)))
+		if !(c != 0) {
+			break
+		}
+		x__flexbuf_addchar(tls, cc, fb, c)
+		if c == int32('\n') && (int32(**(**int8)(__ccgo_up(lineptr))) == 0 || int32(**(**int8)(__ccgo_up(lineptr))) == int32('\n')) {
+			break
+		}
+		if c == int32(' ') || c == int32('\t') {
+			if skipRet != 0 {
+				if !(libc.Xstrncmp(tls, lineptr, __ccgo_ts+88138, uint64(6)) != 0) || !(libc.Xstrncmp(tls, lineptr, __ccgo_ts+88145, uint64(6)) != 0) {
+					x__flexbuf_addstr(tls, cc, fb, __ccgo_ts+88152)
+					lineptr = lineptr + uintptr(5)
+				} else {
+					if !(libc.Xstrncmp(tls, lineptr, __ccgo_ts+88158, uint64(4)) != 0) || !(libc.Xstrncmp(tls, lineptr, __ccgo_ts+88163, uint64(4)) != 0) {
+						x__flexbuf_addstr(tls, cc, fb, __ccgo_ts+4282)
+						lineptr = lineptr + uintptr(3)
+					}
+				}
+			}
+		}
+		goto _1
+	_1:
+	}
+}
+
 func s__NuDebugEval(tls *libc.TLS, cc *CC, ast uintptr, regNum int32, addr uintptr, ourArg uintptr) (r int32) {
 	bp := tls.Alloc(16)
 	defer tls.Free(16)
@@ -12151,7 +12199,7 @@ func s__NuDebugEval(tls *libc.TLS, cc *CC, ast uintptr, regNum int32, addr uintp
 	}
 	n = s__NuCompileExpression(tls, cc, irl, ast)
 	if n != int32(1) {
-		x__ERROR(tls, cc, ast, __ccgo_ts+86512, libc.VaList(bp+8, n))
+		x__ERROR(tls, cc, ast, __ccgo_ts+86518, libc.VaList(bp+8, n))
 	}
 	x__NuEmitConst(tls, cc, irl, regNum)
 	x__NuEmitOp(tls, cc, irl, int32(_NU_OP_STREG))
@@ -12166,7 +12214,7 @@ func s__NuGetLabelFromSymbol(tls *libc.TLS, cc *CC, where uintptr, name uintptr)
 	_ = sym
 	sym = x__FindSymbolEx(tls, cc, cc.x__curfunc+160, name, 0)
 	if !(sym != 0) || (*_Symbol)(unsafe.Pointer(sym)).Fkind != int32(_SYM_LOCALLABEL) {
-		x__ERROR(tls, cc, where, __ccgo_ts+64731, libc.VaList(bp+8, name))
+		x__ERROR(tls, cc, where, __ccgo_ts+64739, libc.VaList(bp+8, name))
 		return libc.UintptrFromInt32(0)
 	}
 	if !(*(*uintptr)(unsafe.Pointer(sym + 32)) != 0) {
@@ -12180,7 +12228,7 @@ func s__NuImplSize(tls *libc.TLS, cc *CC, lineptr uintptr) (r int32) {
 	var v2 uintptr
 	_, _, _ = c, size, v2
 	size = 0
-	if !(libc.Xstrncmp(tls, lineptr, __ccgo_ts+87987, uint64(5)) != 0) {
+	if !(libc.Xstrncmp(tls, lineptr, __ccgo_ts+87993, uint64(5)) != 0) {
 		size = size - 1 // ignore label
 	}
 	for {
@@ -12232,7 +12280,7 @@ func s__NuLoadOpFor(tls *libc.TLS, cc *CC, stOp _NuIrOpcode1) (r _NuIrOpcode1) {
 	case int32(_NU_OP_STREG):
 		return int32(_NU_OP_LDREG)
 	default:
-		x__ERROR(tls, cc, libc.UintptrFromInt32(0), __ccgo_ts+84668, 0)
+		x__ERROR(tls, cc, libc.UintptrFromInt32(0), __ccgo_ts+84674, 0)
 		return int32(_NU_OP_ILLEGAL)
 	}
 	return r
@@ -12286,7 +12334,7 @@ func s__NuPopMultiple(tls *libc.TLS, cc *CC, irl uintptr, lhs uintptr, numRhs in
 		} else {
 			op = s__NuCompileLhsAddress(tls, cc, irl, (*_AST)(unsafe.Pointer(lhs)).Fleft)
 			if op == int32(_NU_OP_ILLEGAL) {
-				x__ERROR(tls, cc, lhs, __ccgo_ts+85213, 0)
+				x__ERROR(tls, cc, lhs, __ccgo_ts+85219, 0)
 			} else {
 				x__NuEmitOp(tls, cc, irl, op)
 			}
@@ -12301,7 +12349,7 @@ func s__NuPopMultiple(tls *libc.TLS, cc *CC, irl uintptr, lhs uintptr, numRhs in
 	}
 	op = s__NuCompileLhsAddress(tls, cc, irl, lhs)
 	if op == int32(_NU_OP_ILLEGAL) {
-		x__ERROR(tls, cc, lhs, __ccgo_ts+85213, 0)
+		x__ERROR(tls, cc, lhs, __ccgo_ts+85219, 0)
 	} else {
 		x__NuEmitOp(tls, cc, irl, op)
 	}
@@ -12313,7 +12361,7 @@ func s__NuPopQuitNext(tls *libc.TLS, cc *CC) {
 	_, _ = nl, ql
 	ql = cc.s__quitstack1.Fnext
 	if !(ql != 0) || !((*_NuLabelList)(unsafe.Pointer(ql)).Fnext != 0) {
-		x__ERROR(tls, cc, libc.UintptrFromInt32(0), __ccgo_ts+46719, 0)
+		x__ERROR(tls, cc, libc.UintptrFromInt32(0), __ccgo_ts+46727, 0)
 		return
 	}
 	nl = (*_NuLabelList)(unsafe.Pointer(ql)).Fnext
@@ -12339,7 +12387,7 @@ func s__NuReplaceMacro(tls *libc.TLS, cc *CC, lists uintptr, macro uintptr) (r u
 	first = (*_NuMacro)(unsafe.Pointer(macro)).FfirstCode
 	second = (*_NuMacro)(unsafe.Pointer(macro)).FsecondCode
 	libc.SetBitFieldPtr16Uint32(bc+48, libc.Uint32FromInt32(int32(uint32(*(*uint16)(unsafe.Pointer(first + 48))&0x4>>2))|int32(uint32(*(*uint16)(unsafe.Pointer(second + 48))&0x4>>2))), 2, 0x4)
-	(*_NuBytecode)(unsafe.Pointer(bc)).Fname = x__auto_printf(tls, cc, uint64(128), __ccgo_ts+88570, libc.VaList(bp+8, (*_NuBytecode)(unsafe.Pointer(first)).Fname, (*_NuBytecode)(unsafe.Pointer(second)).Fname))
+	(*_NuBytecode)(unsafe.Pointer(bc)).Fname = x__auto_printf(tls, cc, uint64(128), __ccgo_ts+88576, libc.VaList(bp+8, (*_NuBytecode)(unsafe.Pointer(first)).Fname, (*_NuBytecode)(unsafe.Pointer(second)).Fname))
 	(*_NuBytecode)(unsafe.Pointer(bc)).Fimpl_ptr = s__NuMergeBytecodes(tls, cc, (*_NuBytecode)(unsafe.Pointer(bc)).Fname, first, second)
 	(*_NuBytecode)(unsafe.Pointer(bc)).Fimpl_size = s__NuImplSize(tls, cc, (*_NuBytecode)(unsafe.Pointer(bc)).Fimpl_ptr)
 	for irl != 0 {
@@ -12416,7 +12464,7 @@ func s__OffsetMemory(tls *libc.TLS, cc *CC, irl uintptr, base uintptr, offset ui
 		}
 	}
 	if !(s__IsMemRef(tls, cc, base) != 0) {
-		x__ERROR(tls, cc, linenum, __ccgo_ts+47137, 0)
+		x__ERROR(tls, cc, linenum, __ccgo_ts+47145, 0)
 		return base
 	}
 	if (*_Operand)(unsafe.Pointer(base)).Fkind == int32(_COGMEM_REF) {
@@ -12492,7 +12540,7 @@ func s__OpcFromOp(tls *libc.TLS, cc *CC, op int32) (r _IROpcode1) {
 	case int32(_K_MULS16):
 		return int32(_OPC_MULS)
 	default:
-		x__ERROR(tls, cc, libc.UintptrFromInt32(0), __ccgo_ts+46436, libc.VaList(bp+8, op))
+		x__ERROR(tls, cc, libc.UintptrFromInt32(0), __ccgo_ts+46444, libc.VaList(bp+8, op))
 		return int32(_OPC_UNKNOWN)
 	}
 	return r
@@ -12554,7 +12602,7 @@ func s__OptimizeCORDIC(tls *libc.TLS, cc *CC, irl uintptr) (r uint8) {
 			if blk.Fcount == uint32(0) {
 				break
 			} // No block found
-			x__DEBUG(tls, cc, libc.UintptrFromInt32(0), __ccgo_ts+62334, libc.VaList(bp+8, blk.Fcount))
+			x__DEBUG(tls, cc, libc.UintptrFromInt32(0), __ccgo_ts+62342, libc.VaList(bp+8, blk.Fcount))
 			s__DoReorderBlock(tls, cc, irl, ir1, blk.Ftop, blk.Fbottom)
 			cycles = cycles + s__MinCyclesInRange(tls, cc, blk.Ftop, blk.Fbottom)
 			change = libc.BoolUint8(m_true != 0)
@@ -12608,7 +12656,7 @@ func s__OptimizeCORDIC(tls *libc.TLS, cc *CC, irl uintptr) (r uint8) {
 			if blk1.Fcount == uint32(0) {
 				break
 			} // No block found
-			x__DEBUG(tls, cc, libc.UintptrFromInt32(0), __ccgo_ts+62375, libc.VaList(bp+8, blk1.Fcount))
+			x__DEBUG(tls, cc, libc.UintptrFromInt32(0), __ccgo_ts+62383, libc.VaList(bp+8, blk1.Fcount))
 			s__DoReorderBlock(tls, cc, irl, (*_IR)(unsafe.Pointer(ir2)).Fprev, blk1.Ftop, blk1.Fbottom)
 			cycles1 = cycles1 + s__MinCyclesInRange(tls, cc, blk1.Ftop, blk1.Fbottom)
 			change = libc.BoolUint8(m_true != 0)
@@ -12902,7 +12950,7 @@ func s__OutputBlob(tls *libc.TLS, cc *CC, fb uintptr, label uintptr, op uintptr,
 	var baseLabel, databuf, relocbuf uintptr
 	_, _, _ = baseLabel, databuf, relocbuf
 	if (*_Operand)(unsafe.Pointer(op)).Fkind != int32(_IMM_BINARY) {
-		x__ERROR(tls, cc, libc.UintptrFromInt32(0), __ccgo_ts+56169, 0)
+		x__ERROR(tls, cc, libc.UintptrFromInt32(0), __ccgo_ts+56177, 0)
 		return
 	}
 	if label != 0 {
@@ -12922,7 +12970,7 @@ func s__OutputDebugReloc(tls *libc.TLS, cc *CC, fb uintptr, nextreloc uintptr) {
 	_, _ = info, p
 	info = (*_Reloc)(unsafe.Pointer(nextreloc)).Fsym
 	if info != 0 && (*_LineInfo)(unsafe.Pointer(info)).Flinedata != 0 {
-		x__flexbuf_printf(tls, cc, fb, __ccgo_ts+40883, 0)
+		x__flexbuf_printf(tls, cc, fb, __ccgo_ts+40891, 0)
 		// print the line, up to but not including the line end
 		p = (*_LineInfo)(unsafe.Pointer(info)).Flinedata
 		for {
@@ -12937,7 +12985,7 @@ func s__OutputDebugReloc(tls *libc.TLS, cc *CC, fb uintptr, nextreloc uintptr) {
 		}
 		if (*_Reloc)(unsafe.Pointer(nextreloc)).Fsymoff != 0 {
 			// feed some data through
-			x__flexbuf_printf(tls, cc, fb, __ccgo_ts+55706, libc.VaList(bp+8, (*_Reloc)(unsafe.Pointer(nextreloc)).Fsymoff))
+			x__flexbuf_printf(tls, cc, fb, __ccgo_ts+55714, libc.VaList(bp+8, (*_Reloc)(unsafe.Pointer(nextreloc)).Fsymoff))
 		}
 		x__flexbuf_addchar(tls, cc, fb, int32('\n'))
 	}
@@ -12948,9 +12996,9 @@ func s__OutputEscapedChar(tls *libc.TLS, cc *CC, fb uintptr, c int32, ctxt uintp
 	defer tls.Free(16)
 	switch c {
 	case int32('0'):
-		x__flexbuf_printf(tls, cc, fb, __ccgo_ts+42337, libc.VaList(bp+8, (*_NuContext)(unsafe.Pointer(ctxt)).FclockFreq))
+		x__flexbuf_printf(tls, cc, fb, __ccgo_ts+42345, libc.VaList(bp+8, (*_NuContext)(unsafe.Pointer(ctxt)).FclockFreq))
 	case int32('1'):
-		x__flexbuf_printf(tls, cc, fb, __ccgo_ts+88695, libc.VaList(bp+8, (*_NuContext)(unsafe.Pointer(ctxt)).FclockMode))
+		x__flexbuf_printf(tls, cc, fb, __ccgo_ts+88701, libc.VaList(bp+8, (*_NuContext)(unsafe.Pointer(ctxt)).FclockMode))
 	case int32('2'):
 		x__NuOutputLabel(tls, cc, fb, (*_NuContext)(unsafe.Pointer(ctxt)).FentryPt)
 	case int32('3'):
@@ -12960,11 +13008,11 @@ func s__OutputEscapedChar(tls *libc.TLS, cc *CC, fb uintptr, c int32, ctxt uintp
 	case int32('5'):
 		x__NuOutputLabel(tls, cc, fb, (*_NuContext)(unsafe.Pointer(ctxt)).FinitSp)
 	case int32('6'):
-		x__flexbuf_printf(tls, cc, fb, __ccgo_ts+42337, libc.VaList(bp+8, cc.s__nu_heap_size/uint32(4)))
+		x__flexbuf_printf(tls, cc, fb, __ccgo_ts+42345, libc.VaList(bp+8, cc.s__nu_heap_size/uint32(4)))
 	case int32('7'):
-		x__flexbuf_printf(tls, cc, fb, __ccgo_ts+42337, libc.VaList(bp+8, (*_NuContext)(unsafe.Pointer(ctxt)).FvarSize/uint32(4)))
+		x__flexbuf_printf(tls, cc, fb, __ccgo_ts+42345, libc.VaList(bp+8, (*_NuContext)(unsafe.Pointer(ctxt)).FvarSize/uint32(4)))
 	default:
-		x__ERROR(tls, cc, libc.UintptrFromInt32(0), __ccgo_ts+88699, libc.VaList(bp+8, c))
+		x__ERROR(tls, cc, libc.UintptrFromInt32(0), __ccgo_ts+88705, libc.VaList(bp+8, c))
 		break
 	}
 }
@@ -12982,14 +13030,14 @@ func s__OutputSpinBCHeader(tls *libc.TLS, cc *CC, bob uintptr, P uintptr) (r _bc
 		**(**uint32)(__ccgo_up(bp)) = uint32(80000000)
 		**(**uint32)(__ccgo_up(bp + 4)) = uint32(0x6f)
 	}
-	x__BOB_PushLong(tls, cc, bob, **(**uint32)(__ccgo_up(bp)), __ccgo_ts+66515)            // offset 0
-	x__BOB_PushByte(tls, cc, bob, uint8(**(**uint32)(__ccgo_up(bp + 4))), __ccgo_ts+66523) // offset 4
-	x__BOB_PushByte(tls, cc, bob, uint8(0), __ccgo_ts+66531)                               // checksum
-	spans.Fpbase = x__BOB_PushWord(tls, cc, bob, uint16(0x0010), __ccgo_ts+66556)          // PBASE
-	spans.Fvbase = x__BOB_PushWord(tls, cc, bob, uint16(0x7fe8), __ccgo_ts+66562)          // VBASE offset 8
-	spans.Fdbase = x__BOB_PushWord(tls, cc, bob, uint16(0x7ff0), __ccgo_ts+66568)          // DBASE
-	spans.Fpcurr = x__BOB_PushWord(tls, cc, bob, uint16(0x0018), __ccgo_ts+66574)          // PCURR  offset 12
-	spans.Fdcurr = x__BOB_PushWord(tls, cc, bob, uint16(0x7ff8), __ccgo_ts+66580)          // DCURR
+	x__BOB_PushLong(tls, cc, bob, **(**uint32)(__ccgo_up(bp)), __ccgo_ts+66521)            // offset 0
+	x__BOB_PushByte(tls, cc, bob, uint8(**(**uint32)(__ccgo_up(bp + 4))), __ccgo_ts+66529) // offset 4
+	x__BOB_PushByte(tls, cc, bob, uint8(0), __ccgo_ts+66537)                               // checksum
+	spans.Fpbase = x__BOB_PushWord(tls, cc, bob, uint16(0x0010), __ccgo_ts+66562)          // PBASE
+	spans.Fvbase = x__BOB_PushWord(tls, cc, bob, uint16(0x7fe8), __ccgo_ts+66568)          // VBASE offset 8
+	spans.Fdbase = x__BOB_PushWord(tls, cc, bob, uint16(0x7ff0), __ccgo_ts+66574)          // DBASE
+	spans.Fpcurr = x__BOB_PushWord(tls, cc, bob, uint16(0x0018), __ccgo_ts+66580)          // PCURR  offset 12
+	spans.Fdcurr = x__BOB_PushWord(tls, cc, bob, uint16(0x7ff8), __ccgo_ts+66586)          // DCURR
 	return spans
 }
 
@@ -13024,10 +13072,10 @@ func s__ParseCAttribute(tls *libc.TLS, cc *CC, L uintptr, ast_ptr uintptr) (r in
 }
 
 func s__ParseDirectives(tls *libc.TLS, cc *CC, str uintptr) {
-	if x__match(tls, cc, str, __ccgo_ts+30211) != 0 {
+	if x__match(tls, cc, str, __ccgo_ts+30219) != 0 {
 		cc.x__gl_nospin = int32(1)
 	} else {
-		if x__match(tls, cc, str, __ccgo_ts+30218) != 0 {
+		if x__match(tls, cc, str, __ccgo_ts+30226) != 0 {
 			if cc.x__gl_output == m_OUTPUT_CPP {
 				cc.x__gl_output = int32(m_OUTPUT_C)
 			}
@@ -13100,7 +13148,7 @@ func s__ParseIdeFile(tls *libc.TLS, cc *CC, P uintptr, fpidename uintptr, is_dup
 			if int32(**(**int8)(__ccgo_up(ptr))) == int32('>') {
 				// side directive
 				def = ptr + 1
-				if !(libc.Xstrncmp(tls, def, __ccgo_ts+11564, uint64(6)) != 0) {
+				if !(libc.Xstrncmp(tls, def, __ccgo_ts+11566, uint64(6)) != 0) {
 					def = def + uintptr(6)
 					s__ProcessIdeDefs(tls, cc, def)
 				} else {
@@ -13111,7 +13159,7 @@ func s__ParseIdeFile(tls *libc.TLS, cc *CC, P uintptr, fpidename uintptr, is_dup
 							s__ProcessOneIdeInc(tls, cc, def)
 						} else {
 							// for now ignore everything else
-							x__WARNING(tls, cc, libc.UintptrFromInt32(0), __ccgo_ts+11571, libc.VaList(bp+264, ptr))
+							x__WARNING(tls, cc, libc.UintptrFromInt32(0), __ccgo_ts+11573, libc.VaList(bp+264, ptr))
 						}
 					}
 				}
@@ -13123,7 +13171,7 @@ func s__ParseIdeFile(tls *libc.TLS, cc *CC, P uintptr, fpidename uintptr, is_dup
 						// ignore, simple IDE includes header files in the .side file
 					} else {
 						if num_ide_files == int32(m_MAX_IDE_FILES) {
-							x__ERROR(tls, cc, libc.UintptrFromInt32(0), __ccgo_ts+11598, libc.VaList(bp+264, fpidename))
+							x__ERROR(tls, cc, libc.UintptrFromInt32(0), __ccgo_ts+11600, libc.VaList(bp+264, fpidename))
 						} else {
 							//                        printf("File: [%s]\n", ptr);
 							fullname = x__find_file_on_path(tls, cc, uintptr(unsafe.Pointer(&cc.x__gl_pp)), ptr, libc.UintptrFromInt32(0), fpidename)
@@ -13158,7 +13206,7 @@ func s__ParseIdeFile(tls *libc.TLS, cc *CC, P uintptr, fpidename uintptr, is_dup
 			i = i + 1
 		}
 	} else {
-		x__ERROR(tls, cc, libc.UintptrFromInt32(0), __ccgo_ts+11632, libc.VaList(bp+264, fpidename))
+		x__ERROR(tls, cc, libc.UintptrFromInt32(0), __ccgo_ts+11634, libc.VaList(bp+264, fpidename))
 	}
 	return P
 }
@@ -13168,7 +13216,7 @@ func s__PopQuitNext(tls *libc.TLS, cc *CC) {
 	_, _ = nl, ql
 	ql = cc.s__quitstack.Fnext
 	if !(ql != 0) || !((*_OperandList)(unsafe.Pointer(ql)).Fnext != 0) {
-		x__ERROR(tls, cc, libc.UintptrFromInt32(0), __ccgo_ts+46719, 0)
+		x__ERROR(tls, cc, libc.UintptrFromInt32(0), __ccgo_ts+46727, 0)
 		return
 	}
 	nl = (*_OperandList)(unsafe.Pointer(ql)).Fnext
@@ -13189,13 +13237,13 @@ func s__PrintCaseItem(tls *libc.TLS, cc *CC, f uintptr, var1 uintptr, ast uintpt
 		exprlist = (*_AST)(unsafe.Pointer(ast)).Fleft
 		for exprlist != 0 {
 			if (*_AST)(unsafe.Pointer(exprlist)).Fkind == int32(_AST_OTHER) {
-				x__flexbuf_printf(tls, cc, f, __ccgo_ts+97548, libc.VaList(bp+8, indent, int32(' ')))
+				x__flexbuf_printf(tls, cc, f, __ccgo_ts+97554, libc.VaList(bp+8, indent, int32(' ')))
 				x__PrintNewline(tls, cc, f)
 			} else {
 				if (*_AST)(unsafe.Pointer(exprlist)).Fkind == int32(_AST_EXPRLIST) {
 					expr = (*_AST)(unsafe.Pointer(exprlist)).Fleft
 					if (*_AST)(unsafe.Pointer(expr)).Fkind == int32(_AST_OTHER) {
-						x__flexbuf_printf(tls, cc, f, __ccgo_ts+97560, libc.VaList(bp+8, indent, int32(' ')))
+						x__flexbuf_printf(tls, cc, f, __ccgo_ts+97566, libc.VaList(bp+8, indent, int32(' ')))
 					} else {
 						if (*_AST)(unsafe.Pointer(expr)).Fkind == int32(_AST_STRING) {
 							sptr = *(*uintptr)(unsafe.Pointer(expr + 8))
@@ -13207,36 +13255,36 @@ func s__PrintCaseItem(tls *libc.TLS, cc *CC, f uintptr, var1 uintptr, ast uintpt
 								if !(v1 != 0) {
 									break
 								}
-								x__flexbuf_printf(tls, cc, f, __ccgo_ts+97571, libc.VaList(bp+8, indent, int32(' '), c))
+								x__flexbuf_printf(tls, cc, f, __ccgo_ts+97577, libc.VaList(bp+8, indent, int32(' '), c))
 								if **(**int8)(__ccgo_up(sptr)) != 0 {
-									x__flexbuf_printf(tls, cc, f, __ccgo_ts+97584, 0)
+									x__flexbuf_printf(tls, cc, f, __ccgo_ts+97590, 0)
 									x__PrintNewline(tls, cc, f)
 								}
 							}
 						} else {
-							x__flexbuf_printf(tls, cc, f, __ccgo_ts+97586, libc.VaList(bp+8, indent, int32(' ')))
+							x__flexbuf_printf(tls, cc, f, __ccgo_ts+97592, libc.VaList(bp+8, indent, int32(' ')))
 							x__PrintExpr(tls, cc, f, expr, m_PRINTEXPR_DEFAULT)
 						}
 					}
-					x__flexbuf_printf(tls, cc, f, __ccgo_ts+97584, 0)
+					x__flexbuf_printf(tls, cc, f, __ccgo_ts+97590, 0)
 					x__PrintNewline(tls, cc, f)
 				} else {
-					x__ERROR(tls, cc, ast, __ccgo_ts+97595, 0)
+					x__ERROR(tls, cc, ast, __ccgo_ts+97601, 0)
 				}
 			}
 			exprlist = (*_AST)(unsafe.Pointer(exprlist)).Fright
 		}
 		x__PrintStatementList(tls, cc, f, (*_AST)(unsafe.Pointer(ast)).Fright, indent+int32(2))
-		x__flexbuf_printf(tls, cc, f, __ccgo_ts+97641, libc.VaList(bp+8, indent+int32(2), int32(' ')))
+		x__flexbuf_printf(tls, cc, f, __ccgo_ts+97647, libc.VaList(bp+8, indent+int32(2), int32(' ')))
 		x__PrintNewline(tls, cc, f)
 	} else {
-		x__flexbuf_printf(tls, cc, f, __ccgo_ts+97651, 0)
+		x__flexbuf_printf(tls, cc, f, __ccgo_ts+97657, 0)
 		expr = x__TransformCaseExprList(tls, cc, var1, (*_AST)(unsafe.Pointer(ast)).Fleft)
 		x__PrintBoolExpr(tls, cc, f, expr, m_PRINTEXPR_DEFAULT)
-		x__flexbuf_printf(tls, cc, f, __ccgo_ts+97656, 0)
+		x__flexbuf_printf(tls, cc, f, __ccgo_ts+97662, 0)
 		x__PrintNewline(tls, cc, f)
 		x__PrintStatementList(tls, cc, f, (*_AST)(unsafe.Pointer(ast)).Fright, indent+int32(2))
-		x__flexbuf_printf(tls, cc, f, __ccgo_ts+97660, libc.VaList(bp+8, indent, int32(' ')))
+		x__flexbuf_printf(tls, cc, f, __ccgo_ts+97666, libc.VaList(bp+8, indent, int32(' ')))
 	}
 }
 
@@ -13257,7 +13305,7 @@ func s__PrintCaseStmt(tls *libc.TLS, cc *CC, f uintptr, expr uintptr, ast uintpt
 			break
 		}
 		if (*_AST)(unsafe.Pointer(ptr)).Fkind != int32(_AST_LISTHOLDER) {
-			x__ERROR(tls, cc, ast, __ccgo_ts+49069, 0)
+			x__ERROR(tls, cc, ast, __ccgo_ts+49077, 0)
 			return
 		}
 		item = (*_AST)(unsafe.Pointer(ptr)).Fleft
@@ -13286,17 +13334,17 @@ func s__PrintCaseStmt(tls *libc.TLS, cc *CC, f uintptr, expr uintptr, ast uintpt
 	}
 	if allConst != 0 && (otherIsLast != 0 || noOther != 0) {
 		// use switch/case for this
-		x__flexbuf_printf(tls, cc, f, __ccgo_ts+24631, libc.VaList(bp+8, indent, int32(' ')))
-		x__flexbuf_printf(tls, cc, f, __ccgo_ts+97665, 0)
+		x__flexbuf_printf(tls, cc, f, __ccgo_ts+24639, libc.VaList(bp+8, indent, int32(' ')))
+		x__flexbuf_printf(tls, cc, f, __ccgo_ts+97671, 0)
 		x__PrintExpr(tls, cc, f, expr, m_PRINTEXPR_DEFAULT)
-		x__flexbuf_printf(tls, cc, f, __ccgo_ts+97656, 0)
+		x__flexbuf_printf(tls, cc, f, __ccgo_ts+97662, 0)
 		x__PrintNewline(tls, cc, f)
 		for ast != 0 {
 			item = (*_AST)(unsafe.Pointer(ast)).Fleft
 			s__PrintCaseItem(tls, cc, f, libc.UintptrFromInt32(0), item, indent, int32(m_USE_CASE))
 			ast = (*_AST)(unsafe.Pointer(ast)).Fright
 		}
-		x__flexbuf_printf(tls, cc, f, __ccgo_ts+97660, libc.VaList(bp+8, indent, int32(' ')))
+		x__flexbuf_printf(tls, cc, f, __ccgo_ts+97666, libc.VaList(bp+8, indent, int32(' ')))
 		x__PrintNewline(tls, cc, f)
 		return
 	}
@@ -13305,21 +13353,21 @@ func s__PrintCaseStmt(tls *libc.TLS, cc *CC, f uintptr, expr uintptr, ast uintpt
 	} else {
 		if (*_AST)(unsafe.Pointer(expr)).Fkind == int32(_AST_ASSIGN) {
 			var1 = (*_AST)(unsafe.Pointer(expr)).Fleft
-			x__flexbuf_printf(tls, cc, f, __ccgo_ts+24631, libc.VaList(bp+8, indent, int32(' ')))
+			x__flexbuf_printf(tls, cc, f, __ccgo_ts+24639, libc.VaList(bp+8, indent, int32(' ')))
 			x__PrintAssign(tls, cc, f, var1, (*_AST)(unsafe.Pointer(expr)).Fright, m_PRINTEXPR_DEFAULT)
-			x__flexbuf_printf(tls, cc, f, __ccgo_ts+97363, 0)
+			x__flexbuf_printf(tls, cc, f, __ccgo_ts+97369, 0)
 			x__PrintNewline(tls, cc, f)
 		} else {
-			x__ERROR(tls, cc, expr, __ccgo_ts+97673, 0)
+			x__ERROR(tls, cc, expr, __ccgo_ts+97679, 0)
 			var1 = libc.UintptrFromInt32(0)
 		}
 	}
 	for ast != 0 {
 		if first != 0 {
-			x__flexbuf_printf(tls, cc, f, __ccgo_ts+97731, libc.VaList(bp+8, indent, int32(' ')))
+			x__flexbuf_printf(tls, cc, f, __ccgo_ts+97737, libc.VaList(bp+8, indent, int32(' ')))
 			first = 0
 		} else {
-			x__flexbuf_printf(tls, cc, f, __ccgo_ts+97736, 0)
+			x__flexbuf_printf(tls, cc, f, __ccgo_ts+97742, 0)
 		}
 		s__PrintCaseItem(tls, cc, f, var1, (*_AST)(unsafe.Pointer(ast)).Fleft, indent, m_USE_IF)
 		ast = (*_AST)(unsafe.Pointer(ast)).Fright
@@ -13352,13 +13400,13 @@ func s__PrintCompressCondJump(tls *libc.TLS, cc *CC, fb uintptr, cond int32, dst
 	case int32(_COND_LE):
 		flag = flag | int32(0xe)
 	default:
-		x__ERROR(tls, cc, libc.UintptrFromInt32(0), __ccgo_ts+60498, 0)
+		x__ERROR(tls, cc, libc.UintptrFromInt32(0), __ccgo_ts+60506, 0)
 		break
 	}
-	x__flexbuf_printf(tls, cc, fb, __ccgo_ts+60539, libc.VaList(bp+8, flag))
-	x__flexbuf_addstr(tls, cc, fb, __ccgo_ts+60552)
+	x__flexbuf_printf(tls, cc, fb, __ccgo_ts+60547, libc.VaList(bp+8, flag))
+	x__flexbuf_addstr(tls, cc, fb, __ccgo_ts+60560)
 	x__PrintOperandAsValue(tls, cc, fb, dst)
-	x__flexbuf_addstr(tls, cc, fb, __ccgo_ts+4265)
+	x__flexbuf_addstr(tls, cc, fb, __ccgo_ts+4267)
 }
 
 // C documentation
@@ -13367,24 +13415,24 @@ func s__PrintCompressCondJump(tls *libc.TLS, cc *CC, fb uintptr, cond int32, dst
 func s__PrintCompressLocalCall(tls *libc.TLS, cc *CC, fb uintptr, labelStr uintptr) {
 	bp := tls.Alloc(32)
 	defer tls.Free(32)
-	x__flexbuf_printf(tls, cc, fb, __ccgo_ts+60462, libc.VaList(bp+8, labelStr, labelStr))
+	x__flexbuf_printf(tls, cc, fb, __ccgo_ts+60470, libc.VaList(bp+8, labelStr, labelStr))
 }
 
 func s__PrintCond(tls *libc.TLS, cc *CC, fb uintptr, cond _IRCond1) {
 	switch cond {
 	case int32(_COND_TRUE):
 	case int32(_COND_EQ):
-		x__flexbuf_addstr(tls, cc, fb, __ccgo_ts+55510)
+		x__flexbuf_addstr(tls, cc, fb, __ccgo_ts+55518)
 	case int32(_COND_NE):
-		x__flexbuf_addstr(tls, cc, fb, __ccgo_ts+55516)
+		x__flexbuf_addstr(tls, cc, fb, __ccgo_ts+55524)
 	case int32(_COND_LT):
-		x__flexbuf_addstr(tls, cc, fb, __ccgo_ts+55523)
+		x__flexbuf_addstr(tls, cc, fb, __ccgo_ts+55531)
 	case int32(_COND_GE):
-		x__flexbuf_addstr(tls, cc, fb, __ccgo_ts+55529)
+		x__flexbuf_addstr(tls, cc, fb, __ccgo_ts+55537)
 	case int32(_COND_GT):
-		x__flexbuf_addstr(tls, cc, fb, __ccgo_ts+55536)
+		x__flexbuf_addstr(tls, cc, fb, __ccgo_ts+55544)
 	case int32(_COND_LE):
-		x__flexbuf_addstr(tls, cc, fb, __ccgo_ts+55542)
+		x__flexbuf_addstr(tls, cc, fb, __ccgo_ts+55550)
 		break
 		// case COND_C:
 		//   flexbuf_addstr(fb, " if_c");
@@ -13397,24 +13445,24 @@ func s__PrintCond(tls *libc.TLS, cc *CC, fb uintptr, cond _IRCond1) {
 		//   break;
 		fallthrough
 	case int32(_COND_NC_AND_Z):
-		x__flexbuf_addstr(tls, cc, fb, __ccgo_ts+55549)
+		x__flexbuf_addstr(tls, cc, fb, __ccgo_ts+55557)
 	case int32(_COND_C_AND_NZ):
-		x__flexbuf_addstr(tls, cc, fb, __ccgo_ts+55562)
+		x__flexbuf_addstr(tls, cc, fb, __ccgo_ts+55570)
 	case int32(_COND_C_AND_Z):
-		x__flexbuf_addstr(tls, cc, fb, __ccgo_ts+55575)
+		x__flexbuf_addstr(tls, cc, fb, __ccgo_ts+55583)
 	case int32(_COND_C_OR_NZ):
-		x__flexbuf_addstr(tls, cc, fb, __ccgo_ts+55587)
+		x__flexbuf_addstr(tls, cc, fb, __ccgo_ts+55595)
 	case int32(_COND_NC_OR_NZ):
-		x__flexbuf_addstr(tls, cc, fb, __ccgo_ts+55599)
+		x__flexbuf_addstr(tls, cc, fb, __ccgo_ts+55607)
 	case int32(_COND_NC_OR_Z):
-		x__flexbuf_addstr(tls, cc, fb, __ccgo_ts+55612)
+		x__flexbuf_addstr(tls, cc, fb, __ccgo_ts+55620)
 	case int32(_COND_C_EQ_Z):
-		x__flexbuf_addstr(tls, cc, fb, __ccgo_ts+55624)
+		x__flexbuf_addstr(tls, cc, fb, __ccgo_ts+55632)
 	case int32(_COND_C_NE_Z):
-		x__flexbuf_addstr(tls, cc, fb, __ccgo_ts+55635)
+		x__flexbuf_addstr(tls, cc, fb, __ccgo_ts+55643)
 	default:
-		x__ERROR(tls, cc, libc.UintptrFromInt32(0), __ccgo_ts+55646, 0)
-		x__flexbuf_addstr(tls, cc, fb, __ccgo_ts+55683)
+		x__ERROR(tls, cc, libc.UintptrFromInt32(0), __ccgo_ts+55654, 0)
+		x__flexbuf_addstr(tls, cc, fb, __ccgo_ts+55691)
 		break
 	}
 	x__flexbuf_addchar(tls, cc, fb, int32('\t'))
@@ -13424,9 +13472,9 @@ func s__PrintGasConstantDecl(tls *libc.TLS, cc *CC, f uintptr, ast uintptr, inli
 	bp := tls.Alloc(16)
 	defer tls.Free(16)
 	s__startLine(tls, cc, f, inlineAsm)
-	x__flexbuf_printf(tls, cc, f, __ccgo_ts+98690, libc.VaList(bp+8, __ccgo_ts+61558))
+	x__flexbuf_printf(tls, cc, f, __ccgo_ts+98696, libc.VaList(bp+8, __ccgo_ts+61566))
 	x__PrintObjConstName(tls, cc, f, cc.x__current, *(*uintptr)(unsafe.Pointer(ast + 8)))
-	x__flexbuf_printf(tls, cc, f, __ccgo_ts+60153, 0)
+	x__flexbuf_printf(tls, cc, f, __ccgo_ts+60161, 0)
 	x__PrintInteger(tls, cc, f, int32(x__EvalConstExpr(tls, cc, ast)), m_PRINTEXPR_DEFAULT)
 	s__endLine(tls, cc, f, inlineAsm)
 }
@@ -13441,15 +13489,15 @@ func s__PrintHere(tls *libc.TLS, cc *CC, f uintptr, ast uintptr, flags int32) {
 	org = *(*uintptr)(unsafe.Pointer(ast + 8)) // last origin value seen
 	if (*_Module)(unsafe.Pointer(cc.x__current)).FpasmLabels != 0 {
 		if divBy4 != 0 {
-			x__flexbuf_printf(tls, cc, f, __ccgo_ts+99393, libc.VaList(bp+8, (*_Symbol)(unsafe.Pointer(org)).Fuser_name))
+			x__flexbuf_printf(tls, cc, f, __ccgo_ts+99399, libc.VaList(bp+8, (*_Symbol)(unsafe.Pointer(org)).Fuser_name))
 		} else {
-			x__flexbuf_printf(tls, cc, f, __ccgo_ts+99406, libc.VaList(bp+8, (*_Symbol)(unsafe.Pointer(org)).Fuser_name))
+			x__flexbuf_printf(tls, cc, f, __ccgo_ts+99412, libc.VaList(bp+8, (*_Symbol)(unsafe.Pointer(org)).Fuser_name))
 		}
 	} else {
 		if (*_Module)(unsafe.Pointer(cc.x__current)).FgasPasm != 0 {
-			x__flexbuf_printf(tls, cc, f, __ccgo_ts+99415, 0)
+			x__flexbuf_printf(tls, cc, f, __ccgo_ts+99421, 0)
 		} else {
-			x__ERROR(tls, cc, ast, __ccgo_ts+99417, 0)
+			x__ERROR(tls, cc, ast, __ccgo_ts+99423, 0)
 		}
 	}
 }
@@ -13464,7 +13512,7 @@ func s__PrintHexExpr(tls *libc.TLS, cc *CC, f uintptr, left uintptr, flags int32
 	bp := tls.Alloc(16)
 	defer tls.Free(16)
 	if (*_AST)(unsafe.Pointer(left)).Fkind == int32(_AST_INTEGER) || (*_AST)(unsafe.Pointer(left)).Fkind == int32(_AST_FLOAT) {
-		x__flexbuf_printf(tls, cc, f, __ccgo_ts+100100, libc.VaList(bp+8, x__EvalConstExpr(tls, cc, left)))
+		x__flexbuf_printf(tls, cc, f, __ccgo_ts+100106, libc.VaList(bp+8, x__EvalConstExpr(tls, cc, left)))
 	} else {
 		x__PrintExpr(tls, cc, f, left, flags)
 	}
@@ -13479,15 +13527,15 @@ func s__PrintInOp(tls *libc.TLS, cc *CC, f uintptr, op uintptr, left uintptr, ri
 	defer tls.Free(16)
 	if left != 0 && right != 0 {
 		x__PrintTypedExpr(tls, cc, f, libc.UintptrFromInt32(0), left, flags)
-		x__flexbuf_printf(tls, cc, f, __ccgo_ts+100095, libc.VaList(bp+8, op))
+		x__flexbuf_printf(tls, cc, f, __ccgo_ts+100101, libc.VaList(bp+8, op))
 		x__PrintTypedExpr(tls, cc, f, libc.UintptrFromInt32(0), right, flags)
 	} else {
 		if right != 0 {
-			x__flexbuf_printf(tls, cc, f, __ccgo_ts+7088, libc.VaList(bp+8, op))
+			x__flexbuf_printf(tls, cc, f, __ccgo_ts+7090, libc.VaList(bp+8, op))
 			x__PrintTypedExpr(tls, cc, f, libc.UintptrFromInt32(0), right, flags)
 		} else {
 			x__PrintTypedExpr(tls, cc, f, libc.UintptrFromInt32(0), left, flags)
-			x__flexbuf_printf(tls, cc, f, __ccgo_ts+7088, libc.VaList(bp+8, op))
+			x__flexbuf_printf(tls, cc, f, __ccgo_ts+7090, libc.VaList(bp+8, op))
 		}
 	}
 }
@@ -13503,7 +13551,7 @@ func s__PrintInlineAsm(tls *libc.TLS, cc *CC, f uintptr, top uintptr, indent int
 	var ast, name, name1, state uintptr
 	_, _, _, _ = ast, name, name1, state
 	state = calloc(tls, cc, uint64(24), uint64(1))
-	x__flexbuf_printf(tls, cc, f, __ccgo_ts+97810, libc.VaList(bp+8, indent, int32(' ')))
+	x__flexbuf_printf(tls, cc, f, __ccgo_ts+97816, libc.VaList(bp+8, indent, int32(' ')))
 	(*_CppInlineState)(unsafe.Pointer(state)).Findent = indent + int32(4)
 	for top != 0 {
 		ast = top
@@ -13514,23 +13562,23 @@ func s__PrintInlineAsm(tls *libc.TLS, cc *CC, f uintptr, top uintptr, indent int
 		if (*_AST)(unsafe.Pointer(ast)).Fkind == int32(_AST_INSTRHOLDER) {
 			x__outputGasInstruction(tls, cc, f, (*_AST)(unsafe.Pointer(ast)).Fleft, int32(1), state)
 		} else {
-			x__ERROR(tls, cc, ast, __ccgo_ts+97832, 0)
+			x__ERROR(tls, cc, ast, __ccgo_ts+97838, 0)
 			break
 		}
 	}
 	/* print outputs */
-	x__flexbuf_printf(tls, cc, f, __ccgo_ts+97879, libc.VaList(bp+8, indent, int32(' ')))
+	x__flexbuf_printf(tls, cc, f, __ccgo_ts+97885, libc.VaList(bp+8, indent, int32(' ')))
 	ast = (*_CppInlineState)(unsafe.Pointer(state)).Foutputs
 	for {
 		if !(ast != 0) {
 			break
 		}
 		name = x__GetUserIdentifierName(tls, cc, (*_AST)(unsafe.Pointer(ast)).Fleft)
-		x__flexbuf_printf(tls, cc, f, __ccgo_ts+97884, libc.VaList(bp+8, name, name))
+		x__flexbuf_printf(tls, cc, f, __ccgo_ts+97890, libc.VaList(bp+8, name, name))
 		if (*_AST)(unsafe.Pointer(ast)).Fright != 0 {
-			x__flexbuf_printf(tls, cc, f, __ccgo_ts+28074, 0)
+			x__flexbuf_printf(tls, cc, f, __ccgo_ts+28082, 0)
 		} else {
-			x__flexbuf_printf(tls, cc, f, __ccgo_ts+4265, 0)
+			x__flexbuf_printf(tls, cc, f, __ccgo_ts+4267, 0)
 		}
 		goto _1
 	_1:
@@ -13538,25 +13586,25 @@ func s__PrintInlineAsm(tls *libc.TLS, cc *CC, f uintptr, top uintptr, indent int
 		ast = (*_AST)(unsafe.Pointer(ast)).Fright
 	}
 	/* print inputs */
-	x__flexbuf_printf(tls, cc, f, __ccgo_ts+97879, libc.VaList(bp+8, indent, int32(' ')))
+	x__flexbuf_printf(tls, cc, f, __ccgo_ts+97885, libc.VaList(bp+8, indent, int32(' ')))
 	ast = (*_CppInlineState)(unsafe.Pointer(state)).Finputs
 	for {
 		if !(ast != 0) {
 			break
 		}
 		name1 = x__GetUserIdentifierName(tls, cc, (*_AST)(unsafe.Pointer(ast)).Fleft)
-		x__flexbuf_printf(tls, cc, f, __ccgo_ts+97899, libc.VaList(bp+8, name1, name1))
+		x__flexbuf_printf(tls, cc, f, __ccgo_ts+97905, libc.VaList(bp+8, name1, name1))
 		if (*_AST)(unsafe.Pointer(ast)).Fright != 0 {
-			x__flexbuf_printf(tls, cc, f, __ccgo_ts+28074, 0)
+			x__flexbuf_printf(tls, cc, f, __ccgo_ts+28082, 0)
 		} else {
-			x__flexbuf_printf(tls, cc, f, __ccgo_ts+4265, 0)
+			x__flexbuf_printf(tls, cc, f, __ccgo_ts+4267, 0)
 		}
 		goto _2
 	_2:
 		;
 		ast = (*_AST)(unsafe.Pointer(ast)).Fright
 	}
-	x__flexbuf_printf(tls, cc, f, __ccgo_ts+97913, libc.VaList(bp+8, indent, int32(' ')))
+	x__flexbuf_printf(tls, cc, f, __ccgo_ts+97919, libc.VaList(bp+8, indent, int32(' ')))
 	free(tls, cc, state)
 }
 
@@ -13565,15 +13613,15 @@ func s__PrintLogicOp(tls *libc.TLS, cc *CC, f uintptr, op uintptr, left uintptr,
 	defer tls.Free(16)
 	if left != 0 && right != 0 {
 		s__PrintHexExpr(tls, cc, f, left, flags)
-		x__flexbuf_printf(tls, cc, f, __ccgo_ts+100095, libc.VaList(bp+8, op))
+		x__flexbuf_printf(tls, cc, f, __ccgo_ts+100101, libc.VaList(bp+8, op))
 		s__PrintHexExpr(tls, cc, f, right, flags)
 	} else {
 		if right != 0 {
-			x__flexbuf_printf(tls, cc, f, __ccgo_ts+7088, libc.VaList(bp+8, op))
+			x__flexbuf_printf(tls, cc, f, __ccgo_ts+7090, libc.VaList(bp+8, op))
 			s__PrintHexExpr(tls, cc, f, right, flags)
 		} else {
 			s__PrintHexExpr(tls, cc, f, left, flags)
-			x__flexbuf_printf(tls, cc, f, __ccgo_ts+7088, libc.VaList(bp+8, op))
+			x__flexbuf_printf(tls, cc, f, __ccgo_ts+7090, libc.VaList(bp+8, op))
 		}
 	}
 }
@@ -13586,46 +13634,46 @@ func s__PrintLookExpr(tls *libc.TLS, cc *CC, f uintptr, name uintptr, ev uintptr
 	_, _, _, _, _, _ = arrid, base, idx, idxvar, inExpr, len1
 	inExpr = 0
 	if (*_AST)(unsafe.Pointer(ev)).Fkind != int32(_AST_LOOKEXPR) || (*_AST)(unsafe.Pointer(table)).Fkind != int32(_AST_EXPRLIST) && (*_AST)(unsafe.Pointer(table)).Fkind != int32(_AST_TEMPARRAYUSE) {
-		x__ERROR(tls, cc, ev, __ccgo_ts+30140, 0)
+		x__ERROR(tls, cc, ev, __ccgo_ts+30148, 0)
 		return
 	}
 	base = (*_AST)(unsafe.Pointer(ev)).Fleft
 	idx = (*_AST)(unsafe.Pointer(ev)).Fright
 	if (*_AST)(unsafe.Pointer(table)).Fkind == int32(_AST_EXPRLIST) {
 		inExpr = int32(1)
-		idxvar = x__AstTempVariable(tls, cc, __ccgo_ts+101120)
-		arrid = x__AstTempVariable(tls, cc, __ccgo_ts+30165)
-		x__flexbuf_printf(tls, cc, f, __ccgo_ts+101123, 0)
-		x__flexbuf_printf(tls, cc, f, __ccgo_ts+101140, libc.VaList(bp+8, cc.x__gl_intstring, *(*uintptr)(unsafe.Pointer(idxvar + 8))))
+		idxvar = x__AstTempVariable(tls, cc, __ccgo_ts+101126)
+		arrid = x__AstTempVariable(tls, cc, __ccgo_ts+30173)
+		x__flexbuf_printf(tls, cc, f, __ccgo_ts+101129, 0)
+		x__flexbuf_printf(tls, cc, f, __ccgo_ts+101146, libc.VaList(bp+8, cc.x__gl_intstring, *(*uintptr)(unsafe.Pointer(idxvar + 8))))
 		x__PrintExpr(tls, cc, f, idx, m_PRINTEXPR_DEFAULT)
-		x__flexbuf_printf(tls, cc, f, __ccgo_ts+101149, libc.VaList(bp+8, cc.x__gl_intstring, *(*uintptr)(unsafe.Pointer(arrid + 8))))
+		x__flexbuf_printf(tls, cc, f, __ccgo_ts+101155, libc.VaList(bp+8, cc.x__gl_intstring, *(*uintptr)(unsafe.Pointer(arrid + 8))))
 		len1 = x__PrintLookupArray(tls, cc, f, table, m_PRINTEXPR_DEFAULT)
-		x__flexbuf_printf(tls, cc, f, __ccgo_ts+101163, 0)
+		x__flexbuf_printf(tls, cc, f, __ccgo_ts+101169, 0)
 		idx = idxvar
 	} else {
 		len1 = int32(x__EvalConstExpr(tls, cc, (*_AST)(unsafe.Pointer(table)).Fright))
 		arrid = (*_AST)(unsafe.Pointer(table)).Fleft
 	}
-	x__flexbuf_printf(tls, cc, f, __ccgo_ts+99567, libc.VaList(bp+8, name))
+	x__flexbuf_printf(tls, cc, f, __ccgo_ts+99573, libc.VaList(bp+8, name))
 	x__PrintExpr(tls, cc, f, idx, m_PRINTEXPR_DEFAULT)
-	x__flexbuf_printf(tls, cc, f, __ccgo_ts+60153, 0)
+	x__flexbuf_printf(tls, cc, f, __ccgo_ts+60161, 0)
 	x__PrintExpr(tls, cc, f, base, m_PRINTEXPR_DEFAULT)
-	x__flexbuf_printf(tls, cc, f, __ccgo_ts+60153, 0)
+	x__flexbuf_printf(tls, cc, f, __ccgo_ts+60161, 0)
 	x__PrintExpr(tls, cc, f, arrid, m_PRINTEXPR_DEFAULT)
-	x__flexbuf_printf(tls, cc, f, __ccgo_ts+101167, libc.VaList(bp+8, len1))
+	x__flexbuf_printf(tls, cc, f, __ccgo_ts+101173, libc.VaList(bp+8, len1))
 	if inExpr != 0 {
-		x__flexbuf_printf(tls, cc, f, __ccgo_ts+101173, 0)
+		x__flexbuf_printf(tls, cc, f, __ccgo_ts+101179, 0)
 	}
 }
 
 func s__PrintMacroExpr(tls *libc.TLS, cc *CC, f uintptr, name uintptr, left uintptr, right uintptr, flags int32) {
 	bp := tls.Alloc(16)
 	defer tls.Free(16)
-	x__flexbuf_printf(tls, cc, f, __ccgo_ts+99567, libc.VaList(bp+8, name))
+	x__flexbuf_printf(tls, cc, f, __ccgo_ts+99573, libc.VaList(bp+8, name))
 	x__PrintTypedExpr(tls, cc, f, libc.UintptrFromInt32(0), left, flags)
-	x__flexbuf_printf(tls, cc, f, __ccgo_ts+60153, 0)
+	x__flexbuf_printf(tls, cc, f, __ccgo_ts+60161, 0)
 	x__PrintTypedExpr(tls, cc, f, libc.UintptrFromInt32(0), right, flags)
-	x__flexbuf_printf(tls, cc, f, __ccgo_ts+28072, 0)
+	x__flexbuf_printf(tls, cc, f, __ccgo_ts+28080, 0)
 }
 
 func s__PrintQuotedChar(tls *libc.TLS, cc *CC, f uintptr, val int32) {
@@ -13637,15 +13685,15 @@ func s__PrintQuotedChar(tls *libc.TLS, cc *CC, f uintptr, val int32) {
 	case int32('\''):
 		fallthrough
 	case int32('\\'):
-		x__flexbuf_printf(tls, cc, f, __ccgo_ts+98337, libc.VaList(bp+8, val))
+		x__flexbuf_printf(tls, cc, f, __ccgo_ts+98343, libc.VaList(bp+8, val))
 	case 0:
-		x__flexbuf_printf(tls, cc, f, __ccgo_ts+98341, 0)
-	case int32(10):
-		x__flexbuf_printf(tls, cc, f, __ccgo_ts+98344, 0)
-	case int32(13):
 		x__flexbuf_printf(tls, cc, f, __ccgo_ts+98347, 0)
+	case int32(10):
+		x__flexbuf_printf(tls, cc, f, __ccgo_ts+98350, 0)
+	case int32(13):
+		x__flexbuf_printf(tls, cc, f, __ccgo_ts+98353, 0)
 	default:
-		x__flexbuf_printf(tls, cc, f, __ccgo_ts+42328, libc.VaList(bp+8, val))
+		x__flexbuf_printf(tls, cc, f, __ccgo_ts+42336, libc.VaList(bp+8, val))
 		break
 	}
 }
@@ -13673,7 +13721,7 @@ func s__PrintStatement(tls *libc.TLS, cc *CC, f uintptr, ast uintptr, indent int
 		x__PrintIndentedComment(tls, cc, f, ast, indent)
 	case int32(_AST_ANNOTATION):
 		// pure C code to emit inline
-		x__flexbuf_printf(tls, cc, f, __ccgo_ts+4267, libc.VaList(bp+8, *(*uintptr)(unsafe.Pointer(ast + 8))))
+		x__flexbuf_printf(tls, cc, f, __ccgo_ts+4269, libc.VaList(bp+8, *(*uintptr)(unsafe.Pointer(ast + 8))))
 	case int32(_AST_RETURN):
 		retval = (*_AST)(unsafe.Pointer(ast)).Fleft
 		if !(retval != 0) {
@@ -13690,25 +13738,25 @@ func s__PrintStatement(tls *libc.TLS, cc *CC, f uintptr, ast uintptr, indent int
 					retval = (*_AST)(unsafe.Pointer(retval)).Fleft
 				}
 			}
-			x__flexbuf_printf(tls, cc, f, __ccgo_ts+97920, libc.VaList(bp+8, indent, int32(' ')))
+			x__flexbuf_printf(tls, cc, f, __ccgo_ts+97926, libc.VaList(bp+8, indent, int32(' ')))
 			if (*_AST)(unsafe.Pointer(retval)).Fkind == int32(_AST_EXPRLIST) {
 				n = x__AstListLen(tls, cc, retval)
-				x__flexbuf_printf(tls, cc, f, __ccgo_ts+97931, libc.VaList(bp+8, n))
+				x__flexbuf_printf(tls, cc, f, __ccgo_ts+97937, libc.VaList(bp+8, n))
 				x__PrintExprList(tls, cc, f, retval, m_PRINTEXPR_DEFAULT, libc.UintptrFromInt32(0))
-				x__flexbuf_printf(tls, cc, f, __ccgo_ts+28072, 0)
+				x__flexbuf_printf(tls, cc, f, __ccgo_ts+28080, 0)
 			} else {
 				x__PrintTypedExpr(tls, cc, f, x__GetFunctionReturnType(tls, cc, cc.x__curfunc), retval, m_PRINTEXPR_DEFAULT)
 			}
 		} else {
-			x__flexbuf_printf(tls, cc, f, __ccgo_ts+97946, libc.VaList(bp+8, indent, int32(' ')))
+			x__flexbuf_printf(tls, cc, f, __ccgo_ts+97952, libc.VaList(bp+8, indent, int32(' ')))
 		}
-		x__flexbuf_printf(tls, cc, f, __ccgo_ts+97363, 0)
+		x__flexbuf_printf(tls, cc, f, __ccgo_ts+97369, 0)
 		x__PrintNewline(tls, cc, f)
 	case int32(_AST_THROW):
 		x__PrintDebugDirective(tls, cc, f, ast)
-		x__flexbuf_printf(tls, cc, f, __ccgo_ts+97956, libc.VaList(bp+8, indent, int32(' ')))
+		x__flexbuf_printf(tls, cc, f, __ccgo_ts+97962, libc.VaList(bp+8, indent, int32(' ')))
 		x__PrintNewline(tls, cc, f)
-		x__flexbuf_printf(tls, cc, f, __ccgo_ts+97987, libc.VaList(bp+8, indent, int32(' ')))
+		x__flexbuf_printf(tls, cc, f, __ccgo_ts+97993, libc.VaList(bp+8, indent, int32(' ')))
 		if (*_AST)(unsafe.Pointer(ast)).Fleft != 0 {
 			x__PrintExpr(tls, cc, f, (*_AST)(unsafe.Pointer(ast)).Fleft, m_PRINTEXPR_DEFAULT)
 		} else {
@@ -13718,43 +13766,43 @@ func s__PrintStatement(tls *libc.TLS, cc *CC, f uintptr, ast uintptr, indent int
 				x__PrintExpr(tls, cc, f, x__AstInteger(tls, cc, 0), m_PRINTEXPR_DEFAULT)
 			}
 		}
-		x__flexbuf_printf(tls, cc, f, __ccgo_ts+97363, 0)
+		x__flexbuf_printf(tls, cc, f, __ccgo_ts+97369, 0)
 		x__PrintNewline(tls, cc, f)
-		x__flexbuf_printf(tls, cc, f, __ccgo_ts+98012, libc.VaList(bp+8, indent, int32(' ')))
+		x__flexbuf_printf(tls, cc, f, __ccgo_ts+98018, libc.VaList(bp+8, indent, int32(' ')))
 		x__PrintNewline(tls, cc, f)
 	case int32(_AST_YIELD):
 		x__PrintDebugDirective(tls, cc, f, ast)
-		x__flexbuf_printf(tls, cc, f, __ccgo_ts+98046, libc.VaList(bp+8, indent, int32(' ')))
+		x__flexbuf_printf(tls, cc, f, __ccgo_ts+98052, libc.VaList(bp+8, indent, int32(' ')))
 		x__PrintNewline(tls, cc, f)
 	case int32(_AST_QUITLOOP):
 		fallthrough
 	case int32(_AST_ENDCASE):
 		x__PrintDebugDirective(tls, cc, f, ast)
-		x__flexbuf_printf(tls, cc, f, __ccgo_ts+97641, libc.VaList(bp+8, indent, int32(' ')))
+		x__flexbuf_printf(tls, cc, f, __ccgo_ts+97647, libc.VaList(bp+8, indent, int32(' ')))
 		x__PrintNewline(tls, cc, f)
 	case int32(_AST_CONTINUE):
 		x__PrintDebugDirective(tls, cc, f, ast)
-		x__flexbuf_printf(tls, cc, f, __ccgo_ts+98060, libc.VaList(bp+8, indent, int32(' ')))
+		x__flexbuf_printf(tls, cc, f, __ccgo_ts+98066, libc.VaList(bp+8, indent, int32(' ')))
 		x__PrintNewline(tls, cc, f)
 	case int32(_AST_GOTO):
 		x__PrintDebugDirective(tls, cc, f, ast)
-		x__flexbuf_printf(tls, cc, f, __ccgo_ts+98073, libc.VaList(bp+8, indent, int32(' ')))
+		x__flexbuf_printf(tls, cc, f, __ccgo_ts+98079, libc.VaList(bp+8, indent, int32(' ')))
 		x__CppPrintName(tls, cc, f, *(*uintptr)(unsafe.Pointer((*_AST)(unsafe.Pointer(ast)).Fleft + 8)), 0)
-		x__flexbuf_printf(tls, cc, f, __ccgo_ts+97363, 0)
+		x__flexbuf_printf(tls, cc, f, __ccgo_ts+97369, 0)
 		x__PrintNewline(tls, cc, f)
 	case int32(_AST_LABEL):
 		x__PrintDebugDirective(tls, cc, f, ast)
-		x__flexbuf_printf(tls, cc, f, __ccgo_ts+24631, libc.VaList(bp+8, indent, int32(' ')))
+		x__flexbuf_printf(tls, cc, f, __ccgo_ts+24639, libc.VaList(bp+8, indent, int32(' ')))
 		x__CppPrintName(tls, cc, f, *(*uintptr)(unsafe.Pointer((*_AST)(unsafe.Pointer(ast)).Fleft + 8)), 0)
 		/* the semicolon prevents errors if the label is at the end
 		   of a compound statement */
-		x__flexbuf_printf(tls, cc, f, __ccgo_ts+98082, 0)
+		x__flexbuf_printf(tls, cc, f, __ccgo_ts+98088, 0)
 		x__PrintNewline(tls, cc, f)
 	case int32(_AST_IF):
 		x__PrintDebugDirective(tls, cc, f, (*_AST)(unsafe.Pointer(ast)).Fleft)
-		x__flexbuf_printf(tls, cc, f, __ccgo_ts+98086, libc.VaList(bp+8, indent, int32(' ')))
+		x__flexbuf_printf(tls, cc, f, __ccgo_ts+98092, libc.VaList(bp+8, indent, int32(' ')))
 		x__PrintBoolExpr(tls, cc, f, (*_AST)(unsafe.Pointer(ast)).Fleft, m_PRINTEXPR_DEFAULT)
-		x__flexbuf_printf(tls, cc, f, __ccgo_ts+97656, 0)
+		x__flexbuf_printf(tls, cc, f, __ccgo_ts+97662, 0)
 		x__PrintNewline(tls, cc, f)
 		ast = (*_AST)(unsafe.Pointer(ast)).Fright
 		// NOTE:
@@ -13766,12 +13814,12 @@ func s__PrintStatement(tls *libc.TLS, cc *CC, f uintptr, ast uintptr, indent int
 			ast = (*_AST)(unsafe.Pointer(ast)).Fleft
 		}
 		if (*_AST)(unsafe.Pointer(ast)).Fkind != int32(_AST_THENELSE) {
-			x__ERROR(tls, cc, ast, __ccgo_ts+98094, libc.VaList(bp+8, (*_AST)(unsafe.Pointer(ast)).Fkind))
+			x__ERROR(tls, cc, ast, __ccgo_ts+98100, libc.VaList(bp+8, (*_AST)(unsafe.Pointer(ast)).Fkind))
 			return
 		}
 		x__PrintStatementList(tls, cc, f, (*_AST)(unsafe.Pointer(ast)).Fleft, indent+int32(2))
 		if (*_AST)(unsafe.Pointer(ast)).Fright != 0 {
-			x__flexbuf_printf(tls, cc, f, __ccgo_ts+98145, libc.VaList(bp+8, indent, int32(' ')))
+			x__flexbuf_printf(tls, cc, f, __ccgo_ts+98151, libc.VaList(bp+8, indent, int32(' ')))
 			x__PrintNewline(tls, cc, f)
 			if comment != 0 {
 				x__PrintIndentedComment(tls, cc, f, comment, indent+int32(2))
@@ -13780,50 +13828,50 @@ func s__PrintStatement(tls *libc.TLS, cc *CC, f uintptr, ast uintptr, indent int
 			x__PrintDebugDirective(tls, cc, f, (*_AST)(unsafe.Pointer(ast)).Fright)
 			x__PrintStatementList(tls, cc, f, (*_AST)(unsafe.Pointer(ast)).Fright, indent+int32(2))
 		}
-		x__flexbuf_printf(tls, cc, f, __ccgo_ts+97660, libc.VaList(bp+8, indent, int32(' ')))
+		x__flexbuf_printf(tls, cc, f, __ccgo_ts+97666, libc.VaList(bp+8, indent, int32(' ')))
 		x__PrintNewline(tls, cc, f)
 	case int32(_AST_WHILE):
 		x__PrintDebugDirective(tls, cc, f, (*_AST)(unsafe.Pointer(ast)).Fleft)
-		x__flexbuf_printf(tls, cc, f, __ccgo_ts+98157, libc.VaList(bp+8, indent, int32(' ')))
+		x__flexbuf_printf(tls, cc, f, __ccgo_ts+98163, libc.VaList(bp+8, indent, int32(' ')))
 		x__PrintBoolExpr(tls, cc, f, (*_AST)(unsafe.Pointer(ast)).Fleft, m_PRINTEXPR_DEFAULT)
-		x__flexbuf_printf(tls, cc, f, __ccgo_ts+97656, 0)
+		x__flexbuf_printf(tls, cc, f, __ccgo_ts+97662, 0)
 		x__PrintNewline(tls, cc, f)
 		x__PrintStatementList(tls, cc, f, (*_AST)(unsafe.Pointer(ast)).Fright, indent+int32(2))
-		x__flexbuf_printf(tls, cc, f, __ccgo_ts+97660, libc.VaList(bp+8, indent, int32(' ')))
+		x__flexbuf_printf(tls, cc, f, __ccgo_ts+97666, libc.VaList(bp+8, indent, int32(' ')))
 		x__PrintNewline(tls, cc, f)
 	case int32(_AST_FOR):
 		fallthrough
 	case int32(_AST_FORATLEASTONCE):
 		x__PrintDebugDirective(tls, cc, f, ast)
-		x__flexbuf_printf(tls, cc, f, __ccgo_ts+98168, libc.VaList(bp+8, indent, int32(' ')))
+		x__flexbuf_printf(tls, cc, f, __ccgo_ts+98174, libc.VaList(bp+8, indent, int32(' ')))
 		if (*_AST)(unsafe.Pointer(ast)).Fleft != 0 {
 			x__PrintExpr(tls, cc, f, (*_AST)(unsafe.Pointer(ast)).Fleft, int32(m_PRINTEXPR_TOPLEVEL))
 		}
-		x__flexbuf_printf(tls, cc, f, __ccgo_ts+98176, 0)
+		x__flexbuf_printf(tls, cc, f, __ccgo_ts+98182, 0)
 		ast = (*_AST)(unsafe.Pointer(ast)).Fright
 		if (*_AST)(unsafe.Pointer(ast)).Fleft != 0 {
 			x__PrintBoolExpr(tls, cc, f, (*_AST)(unsafe.Pointer(ast)).Fleft, m_PRINTEXPR_DEFAULT)
 		}
-		x__flexbuf_printf(tls, cc, f, __ccgo_ts+98176, 0)
+		x__flexbuf_printf(tls, cc, f, __ccgo_ts+98182, 0)
 		ast = (*_AST)(unsafe.Pointer(ast)).Fright
 		if (*_AST)(unsafe.Pointer(ast)).Fleft != 0 {
 			x__PrintExpr(tls, cc, f, (*_AST)(unsafe.Pointer(ast)).Fleft, int32(m_PRINTEXPR_TOPLEVEL))
 		}
-		x__flexbuf_printf(tls, cc, f, __ccgo_ts+97656, 0)
+		x__flexbuf_printf(tls, cc, f, __ccgo_ts+97662, 0)
 		x__PrintNewline(tls, cc, f)
 		x__PrintStatementList(tls, cc, f, (*_AST)(unsafe.Pointer(ast)).Fright, indent+int32(2))
-		x__flexbuf_printf(tls, cc, f, __ccgo_ts+97660, libc.VaList(bp+8, indent, int32(' ')))
+		x__flexbuf_printf(tls, cc, f, __ccgo_ts+97666, libc.VaList(bp+8, indent, int32(' ')))
 		x__PrintNewline(tls, cc, f)
 	case int32(_AST_DOWHILE):
-		x__flexbuf_printf(tls, cc, f, __ccgo_ts+98179, libc.VaList(bp+8, indent, int32(' ')))
+		x__flexbuf_printf(tls, cc, f, __ccgo_ts+98185, libc.VaList(bp+8, indent, int32(' ')))
 		x__PrintNewline(tls, cc, f)
 		x__PrintStatementList(tls, cc, f, (*_AST)(unsafe.Pointer(ast)).Fright, indent+int32(2))
-		x__flexbuf_printf(tls, cc, f, __ccgo_ts+98187, libc.VaList(bp+8, indent, int32(' ')))
+		x__flexbuf_printf(tls, cc, f, __ccgo_ts+98193, libc.VaList(bp+8, indent, int32(' ')))
 		x__PrintBoolExpr(tls, cc, f, (*_AST)(unsafe.Pointer(ast)).Fleft, m_PRINTEXPR_DEFAULT)
-		x__flexbuf_printf(tls, cc, f, __ccgo_ts+97328, 0)
+		x__flexbuf_printf(tls, cc, f, __ccgo_ts+97334, 0)
 		x__PrintNewline(tls, cc, f)
 	case int32(_AST_COUNTREPEAT):
-		x__ERROR(tls, cc, ast, __ccgo_ts+98200, 0)
+		x__ERROR(tls, cc, ast, __ccgo_ts+98206, 0)
 		//PrintCountRepeat(f, ast, indent);
 	case int32(_AST_STMTLIST):
 		x__PrintStatementList(tls, cc, f, ast, indent)
@@ -13855,36 +13903,36 @@ func s__PrintStatement(tls *libc.TLS, cc *CC, f uintptr, ast uintptr, indent int
 					rhs = (*_AST)(unsafe.Pointer(rhs)).Fleft
 				}
 			}
-			x__flexbuf_printf(tls, cc, f, __ccgo_ts+24631, libc.VaList(bp+8, indent, int32(' ')))
-			x__flexbuf_printf(tls, cc, f, __ccgo_ts+98239, libc.VaList(bp+8, n1))
+			x__flexbuf_printf(tls, cc, f, __ccgo_ts+24639, libc.VaList(bp+8, indent, int32(' ')))
+			x__flexbuf_printf(tls, cc, f, __ccgo_ts+98245, libc.VaList(bp+8, n1))
 			if rhs != 0 && (*_AST)(unsafe.Pointer(rhs)).Fkind == int32(_AST_EXPRLIST) {
-				x__flexbuf_printf(tls, cc, f, __ccgo_ts+97931, libc.VaList(bp+8, n1, n1))
+				x__flexbuf_printf(tls, cc, f, __ccgo_ts+97937, libc.VaList(bp+8, n1, n1))
 				x__PrintExprList(tls, cc, f, rhs, m_PRINTEXPR_DEFAULT, libc.UintptrFromInt32(0))
-				x__flexbuf_printf(tls, cc, f, __ccgo_ts+28072, 0)
+				x__flexbuf_printf(tls, cc, f, __ccgo_ts+28080, 0)
 			} else {
 				x__PrintExpr(tls, cc, f, rhs, m_PRINTEXPR_DEFAULT)
 			}
-			x__flexbuf_printf(tls, cc, f, __ccgo_ts+98176, 0)
+			x__flexbuf_printf(tls, cc, f, __ccgo_ts+98182, 0)
 			n1 = 0
 			for lhs != 0 {
 				if (*_AST)(unsafe.Pointer(lhs)).Fleft != 0 && (*_AST)(unsafe.Pointer((*_AST)(unsafe.Pointer(lhs)).Fleft)).Fkind != int32(_AST_EMPTY) {
 					x__PrintLHS(tls, cc, f, (*_AST)(unsafe.Pointer(lhs)).Fleft, int32(m_PRINTEXPR_ASSIGNMENT))
-					x__flexbuf_printf(tls, cc, f, __ccgo_ts+98260, libc.VaList(bp+8, n1))
+					x__flexbuf_printf(tls, cc, f, __ccgo_ts+98266, libc.VaList(bp+8, n1))
 				}
 				n1 = n1 + 1
 				lhs = (*_AST)(unsafe.Pointer(lhs)).Fright
 			}
-			x__flexbuf_printf(tls, cc, f, __ccgo_ts+98275, 0)
+			x__flexbuf_printf(tls, cc, f, __ccgo_ts+98281, 0)
 		} else {
 			if (*_AST)(unsafe.Pointer(ast)).Fkind == int32(_AST_ASSIGN) {
-				x__flexbuf_printf(tls, cc, f, __ccgo_ts+24631, libc.VaList(bp+8, indent, int32(' ')))
+				x__flexbuf_printf(tls, cc, f, __ccgo_ts+24639, libc.VaList(bp+8, indent, int32(' ')))
 				x__PrintAssign(tls, cc, f, (*_AST)(unsafe.Pointer(ast)).Fleft, (*_AST)(unsafe.Pointer(ast)).Fright, m_PRINTEXPR_DEFAULT)
 			} else {
-				x__flexbuf_printf(tls, cc, f, __ccgo_ts+24631, libc.VaList(bp+8, indent, int32(' ')))
+				x__flexbuf_printf(tls, cc, f, __ccgo_ts+24639, libc.VaList(bp+8, indent, int32(' ')))
 				x__PrintExpr(tls, cc, f, ast, m_PRINTEXPR_DEFAULT)
 			}
 		}
-		x__flexbuf_printf(tls, cc, f, __ccgo_ts+97363, 0)
+		x__flexbuf_printf(tls, cc, f, __ccgo_ts+97369, 0)
 		x__PrintNewline(tls, cc, f)
 		break
 	}
@@ -13915,21 +13963,21 @@ _6:
 _2:
 	if v1 != 0 {
 		if c == int32('\\') || c == int32('"') || c == int32('\'') {
-			x__flexbuf_printf(tls, cc, f, __ccgo_ts+98337, libc.VaList(bp+8, c))
+			x__flexbuf_printf(tls, cc, f, __ccgo_ts+98343, libc.VaList(bp+8, c))
 		} else {
-			x__flexbuf_printf(tls, cc, f, __ccgo_ts+42328, libc.VaList(bp+8, c))
+			x__flexbuf_printf(tls, cc, f, __ccgo_ts+42336, libc.VaList(bp+8, c))
 		}
 	} else {
 		if c == int32(9) {
-			x__flexbuf_printf(tls, cc, f, __ccgo_ts+100950, 0)
+			x__flexbuf_printf(tls, cc, f, __ccgo_ts+100956, 0)
 		} else {
 			if c == int32(10) {
-				x__flexbuf_printf(tls, cc, f, __ccgo_ts+98344, 0)
+				x__flexbuf_printf(tls, cc, f, __ccgo_ts+98350, 0)
 			} else {
 				if c == int32(13) {
-					x__flexbuf_printf(tls, cc, f, __ccgo_ts+98347, 0)
+					x__flexbuf_printf(tls, cc, f, __ccgo_ts+98353, 0)
 				} else {
-					x__flexbuf_printf(tls, cc, f, __ccgo_ts+100953, libc.VaList(bp+8, c))
+					x__flexbuf_printf(tls, cc, f, __ccgo_ts+100959, libc.VaList(bp+8, c))
 				}
 			}
 		}
@@ -13940,14 +13988,14 @@ func s__PrintStringList(tls *libc.TLS, cc *CC, f uintptr, ast uintptr) {
 	var c int32
 	var elem, s, v1 uintptr
 	_, _, _, _ = c, elem, s, v1
-	x__flexbuf_printf(tls, cc, f, __ccgo_ts+98375, 0)
+	x__flexbuf_printf(tls, cc, f, __ccgo_ts+98381, 0)
 	for ast != 0 {
 		elem = (*_AST)(unsafe.Pointer(ast)).Fleft
 		if !(elem != 0) && (*_AST)(unsafe.Pointer(ast)).Fkind == int32(_AST_STRING) {
 			elem = ast
 		}
 		if !(elem != 0) {
-			x__ERROR(tls, cc, ast, __ccgo_ts+100959, 0)
+			x__ERROR(tls, cc, ast, __ccgo_ts+100965, 0)
 			break
 		}
 		if (*_AST)(unsafe.Pointer(elem)).Fkind == int32(_AST_STRING) {
@@ -13964,14 +14012,14 @@ func s__PrintStringList(tls *libc.TLS, cc *CC, f uintptr, ast uintptr) {
 		}
 		ast = (*_AST)(unsafe.Pointer(ast)).Fright
 	}
-	x__flexbuf_printf(tls, cc, f, __ccgo_ts+98375, 0)
+	x__flexbuf_printf(tls, cc, f, __ccgo_ts+98381, 0)
 }
 
 func s__PrintStringLiteral(tls *libc.TLS, cc *CC, f uintptr, s uintptr) {
 	var c, v1 int32
 	var v2 uintptr
 	_, _, _ = c, v1, v2
-	x__flexbuf_printf(tls, cc, f, __ccgo_ts+98375, 0)
+	x__flexbuf_printf(tls, cc, f, __ccgo_ts+98381, 0)
 	for {
 		v2 = s
 		s = s + 1
@@ -13982,7 +14030,7 @@ func s__PrintStringLiteral(tls *libc.TLS, cc *CC, f uintptr, s uintptr) {
 		}
 		s__PrintStringChar(tls, cc, f, c)
 	}
-	x__flexbuf_printf(tls, cc, f, __ccgo_ts+98375, 0)
+	x__flexbuf_printf(tls, cc, f, __ccgo_ts+98381, 0)
 }
 
 func s__PrintUpper(tls *libc.TLS, cc *CC, f uintptr, name uintptr) {
@@ -14204,7 +14252,7 @@ func s__ProcessParamList(tls *libc.TLS, cc *CC, list uintptr) (r uintptr) {
 		list = (*_AST)(unsafe.Pointer(list)).Fright
 		if entry == cc.x__ast_type_void {
 			if list != 0 || count != 0 {
-				x__SYNTAX_ERROR(tls, cc, __ccgo_ts+123376, 0)
+				x__SYNTAX_ERROR(tls, cc, __ccgo_ts+123390, 0)
 			}
 			return libc.UintptrFromInt32(0)
 		}
@@ -14243,7 +14291,7 @@ func s__PropagateConstForward(tls *libc.TLS, cc *CC, irl uintptr, orig_ir uintpt
 		return 0
 	}
 	if !(s__isConstMove(tls, cc, orig_ir, bp) != 0) {
-		x__ERROR(tls, cc, libc.UintptrFromInt32(0), __ccgo_ts+62039, 0)
+		x__ERROR(tls, cc, libc.UintptrFromInt32(0), __ccgo_ts+62047, 0)
 	}
 	if (*_Operand)(unsafe.Pointer(immval)).Fval != int64(**(**_int32_t)(__ccgo_up(bp))) {
 		immval = x__NewImmediate(tls, cc, **(**_int32_t)(__ccgo_up(bp)))
@@ -14315,7 +14363,7 @@ func s__PushLoop(tls *libc.TLS, cc *CC, token int32) {
 	var v1 int32
 	_ = v1
 	if cc.s__loop_sp >= int32(m_MAX_LOOP_NEST) {
-		x__SYNTAX_ERROR(tls, cc, __ccgo_ts+119780, 0)
+		x__SYNTAX_ERROR(tls, cc, __ccgo_ts+119794, 0)
 	} else {
 		v1 = cc.s__loop_sp
 		cc.s__loop_sp = cc.s__loop_sp + 1
@@ -14356,7 +14404,7 @@ func s__RangeXor(tls *libc.TLS, cc *CC, dst uintptr, src uintptr) (r uintptr) {
 					x__AstReportDone(tls, cc, bp)
 					return result
 				} else {
-					x__ERROR(tls, cc, hwreg, __ccgo_ts+25067, 0)
+					x__ERROR(tls, cc, hwreg, __ccgo_ts+25075, 0)
 				}
 			}
 		}
@@ -14395,7 +14443,7 @@ func s__RemappedName(tls *libc.TLS, cc *CC, name uintptr) (r uintptr) {
 		return s__QuotedName(tls, cc, name)
 	}
 	num = uint32(libc.Uint64FromInt64(*(*_int64_t)(unsafe.Pointer(sym + 32))))
-	libc.Xsprintf(tls, uintptr(unsafe.Pointer(&cc.s__buf3)), __ccgo_ts+55202, libc.VaList(bp+8, num))
+	libc.Xsprintf(tls, uintptr(unsafe.Pointer(&cc.s__buf3)), __ccgo_ts+55210, libc.VaList(bp+8, num))
 	return uintptr(unsafe.Pointer(&cc.s__buf3))
 }
 
@@ -14412,7 +14460,7 @@ func s__ReplaceJumpTarget(tls *libc.TLS, cc *CC, jmpir uintptr, dst uintptr) {
 	case int32(_OPC_GENERIC_BRCOND):
 		(*_IR)(unsafe.Pointer(jmpir)).Fsrc = dst
 	default:
-		x__ERROR(tls, cc, libc.UintptrFromInt32(0), __ccgo_ts+45628, 0)
+		x__ERROR(tls, cc, libc.UintptrFromInt32(0), __ccgo_ts+45636, 0)
 		break
 	}
 }
@@ -14526,7 +14574,7 @@ func s__ScalePointer(tls *libc.TLS, cc *CC, type1 uintptr, val uintptr) (r uintp
 	var size int32
 	_ = size
 	if !(x__IsPointerType(tls, cc, type1) != 0) {
-		x__ERROR(tls, cc, val, __ccgo_ts+32908, 0)
+		x__ERROR(tls, cc, val, __ccgo_ts+32916, 0)
 		return val
 	}
 	size = x__TypeSize(tls, cc, x__BaseType(tls, cc, type1))
@@ -14568,7 +14616,7 @@ func s__ScanFunctionBody(tls *libc.TLS, cc *CC, fdef uintptr, body uintptr, uppe
 					}
 				}
 				x__AstReportDone(tls, cc, bp)
-				x__LANGUAGE_WARNING(tls, cc, int32(m_LANG_SPIN_SPIN2), body, __ccgo_ts+41026, 0)
+				x__LANGUAGE_WARNING(tls, cc, int32(m_LANG_SPIN_SPIN2), body, __ccgo_ts+41034, 0)
 			}
 		}
 		return
@@ -14594,14 +14642,14 @@ func s__ScanFunctionBody(tls *libc.TLS, cc *CC, fdef uintptr, body uintptr, uppe
 					if sym != 0 && (*_Symbol)(unsafe.Pointer(sym)).Fkind == int32(_SYM_LABEL) {
 						lab = *(*uintptr)(unsafe.Pointer(sym + 32))
 						if (*_Label)(unsafe.Pointer(lab)).Ftype1 == cc.x__ast_type_void {
-							x__WARNING(tls, cc, body, __ccgo_ts+41080, libc.VaList(bp+56, x__GetIdentifierName(tls, cc, ast)))
+							x__WARNING(tls, cc, body, __ccgo_ts+41088, libc.VaList(bp+56, x__GetIdentifierName(tls, cc, ast)))
 						}
 						if (*_AST)(unsafe.Pointer(upper)).Fkind == int32(_AST_MEMREF) {
 							refalign = x__TypeAlign(tls, cc, (*_AST)(unsafe.Pointer(upper)).Fleft)
 							labalign = x__TypeAlign(tls, cc, (*_Label)(unsafe.Pointer(lab)).Ftype1)
 							if refalign > labalign && !(cc.x__gl_p2 != 0) {
 								**(**uint32)(__ccgo_up(lab + 24)) |= libc.Uint32FromInt32(libc.Int32FromInt32(m_LABEL_NEEDS_EXTRA_ALIGN) | libc.Int32FromInt32(m_LABEL_USED_IN_SPIN))
-								x__WARNING(tls, cc, body, __ccgo_ts+41144, 0)
+								x__WARNING(tls, cc, body, __ccgo_ts+41152, 0)
 							}
 						}
 					} else {
@@ -14617,7 +14665,7 @@ func s__ScanFunctionBody(tls *libc.TLS, cc *CC, fdef uintptr, body uintptr, uppe
 								(*_AST)(unsafe.Pointer(upper)).Fleft = getaddr
 								return
 							}
-							x__WARNING(tls, cc, body, __ccgo_ts+41215, 0)
+							x__WARNING(tls, cc, body, __ccgo_ts+41223, 0)
 						}
 					}
 				}
@@ -14629,7 +14677,7 @@ func s__ScanFunctionBody(tls *libc.TLS, cc *CC, fdef uintptr, body uintptr, uppe
 				   so force all of those into the _parm_ array
 				*/
 				if !((*_Function)(unsafe.Pointer(fdef)).Fparmarray != 0) {
-					(*_Function)(unsafe.Pointer(fdef)).Fparmarray = x__NewTemporaryVariable(tls, cc, __ccgo_ts+30501, fdef+1304)
+					(*_Function)(unsafe.Pointer(fdef)).Fparmarray = x__NewTemporaryVariable(tls, cc, __ccgo_ts+30509, fdef+1304)
 				}
 				(*_Function)(unsafe.Pointer(fdef)).Flocalarray = (*_Function)(unsafe.Pointer(fdef)).Fparmarray
 				if !((*_Function)(unsafe.Pointer(fdef)).Fresult_in_parmarray != 0) {
@@ -14652,7 +14700,7 @@ func s__ScanFunctionBody(tls *libc.TLS, cc *CC, fdef uintptr, body uintptr, uppe
 							(*_AST)(unsafe.Pointer(upper)).Fleft = getaddr1
 							return
 						}
-						x__WARNING(tls, cc, body, __ccgo_ts+41215, 0)
+						x__WARNING(tls, cc, body, __ccgo_ts+41223, 0)
 					}
 				}
 			}
@@ -14683,7 +14731,7 @@ func s__ScanFunctionBody(tls *libc.TLS, cc *CC, fdef uintptr, body uintptr, uppe
 						if body == (*_AST)(unsafe.Pointer(upper)).Fright {
 							(*_AST)(unsafe.Pointer(upper)).Fright = deref
 						} else {
-							x__ERROR(tls, cc, body, __ccgo_ts+41278, libc.VaList(bp+56, *(*uintptr)(unsafe.Pointer(body + 8))))
+							x__ERROR(tls, cc, body, __ccgo_ts+41286, libc.VaList(bp+56, *(*uintptr)(unsafe.Pointer(body + 8))))
 						}
 					}
 				}
@@ -14701,7 +14749,7 @@ func s__ScanFunctionBody(tls *libc.TLS, cc *CC, fdef uintptr, body uintptr, uppe
 					}
 				}
 				x__AstReportDone(tls, cc, bp+16)
-				x__LANGUAGE_WARNING(tls, cc, int32(m_LANG_SPIN_SPIN2), body, __ccgo_ts+41026, 0)
+				x__LANGUAGE_WARNING(tls, cc, int32(m_LANG_SPIN_SPIN2), body, __ccgo_ts+41034, 0)
 			}
 		}
 	case int32(_AST_STRINGPTR):
@@ -14738,7 +14786,7 @@ func s__ScanFunctionBody(tls *libc.TLS, cc *CC, fdef uintptr, body uintptr, uppe
 				if (*_AST)(unsafe.Pointer(paramId)).Fkind == int32(_AST_VARARGS) {
 					// for bytecode, we have to handle specially
 					if cc.x__gl_output == int32(m_OUTPUT_BYTECODE) || cc.x__gl_output <= int32(m_OUTPUT_C) {
-						x__ERROR(tls, cc, body, __ccgo_ts+41303, 0)
+						x__ERROR(tls, cc, body, __ccgo_ts+41311, 0)
 					}
 				}
 				actualParam = (*_AST)(unsafe.Pointer(actualParamList)).Fleft
@@ -14785,13 +14833,13 @@ func s__ScanFunctionBody(tls *libc.TLS, cc *CC, fdef uintptr, body uintptr, uppe
 func s__SetLocalArray(tls *libc.TLS, cc *CC, fdef uintptr, sym uintptr, body uintptr) {
 	if (*_Symbol)(unsafe.Pointer(sym)).Fkind == int32(_SYM_PARAMETER) {
 		if !((*_Function)(unsafe.Pointer(fdef)).Fparmarray != 0) {
-			(*_Function)(unsafe.Pointer(fdef)).Fparmarray = x__NewTemporaryVariable(tls, cc, __ccgo_ts+30501, fdef+1304)
+			(*_Function)(unsafe.Pointer(fdef)).Fparmarray = x__NewTemporaryVariable(tls, cc, __ccgo_ts+30509, fdef+1304)
 		}
 		(*_Function)(unsafe.Pointer(fdef)).Flocalarray = (*_Function)(unsafe.Pointer(fdef)).Fparmarray
 	} else {
 		if (*_Symbol)(unsafe.Pointer(sym)).Fkind == int32(_SYM_LOCALVAR) && (!(body != 0) || s__IsAddrRef(tls, cc, body, sym) != 0) {
 			if !((*_Function)(unsafe.Pointer(fdef)).Flocalarray != 0) {
-				(*_Function)(unsafe.Pointer(fdef)).Flocalarray = x__NewTemporaryVariable(tls, cc, __ccgo_ts+41018, fdef+1304)
+				(*_Function)(unsafe.Pointer(fdef)).Flocalarray = x__NewTemporaryVariable(tls, cc, __ccgo_ts+41026, fdef+1304)
 			}
 		}
 	}
@@ -14806,7 +14854,7 @@ func s__ShortZipName(tls *libc.TLS, cc *CC, sf uintptr, root uintptr, rootlen _s
 	if !(libc.Xstrcmp(tls, (*_SourceFile)(unsafe.Pointer(sf)).FfullName, (*_SourceFile)(unsafe.Pointer(sf)).FshortName) != 0) {
 		return (*_SourceFile)(unsafe.Pointer(sf)).FfullName
 	}
-	return x__strdupcat(tls, cc, __ccgo_ts+102198, (*_SourceFile)(unsafe.Pointer(sf)).FshortName)
+	return x__strdupcat(tls, cc, __ccgo_ts+102204, (*_SourceFile)(unsafe.Pointer(sf)).FshortName)
 }
 
 func s__ShouldExpandPureFunction(tls *libc.TLS, cc *CC, ir uintptr) (r uint8) {
@@ -14895,7 +14943,7 @@ func s__ShouldPrintAsString(tls *libc.TLS, cc *CC, ast uintptr) (r uint8) {
 func s__SpinAddDatList(tls *libc.TLS, cc *CC, datlist uintptr) (r uintptr) {
 	var ast, label, ptr uintptr
 	_, _, _ = ast, label, ptr
-	label = x__AstTempIdentifier(tls, cc, __ccgo_ts+114617)
+	label = x__AstTempIdentifier(tls, cc, __ccgo_ts+114623)
 	ptr = x__NewAST(tls, cc, int32(_AST_ABSADDROF), x__DupAST(tls, cc, label), libc.UintptrFromInt32(0))
 	ast = label
 	if datlist != 0 && (*_AST)(unsafe.Pointer(datlist)).Fkind != int32(_AST_LISTHOLDER) {
@@ -14971,7 +15019,7 @@ func s__StringAppend(tls *libc.TLS, cc *CC, fb uintptr, expr uintptr) {
 	case int32(_AST_INTEGER):
 		i = libc.Int32FromUint64(*(*_uint64_t)(unsafe.Pointer(expr + 8)))
 		if i < 0 || i > int32(255) {
-			x__ERROR(tls, cc, expr, __ccgo_ts+112286, 0)
+			x__ERROR(tls, cc, expr, __ccgo_ts+112292, 0)
 		}
 		x__flexbuf_addchar(tls, cc, fb, i)
 	case int32(_AST_STRING):
@@ -14987,11 +15035,11 @@ func s__StringAppend(tls *libc.TLS, cc *CC, fb uintptr, expr uintptr) {
 		if x__IsConstExpr(tls, cc, expr) != 0 {
 			i1 = int32(x__EvalConstExpr(tls, cc, expr))
 			if i1 < 0 || i1 > int32(255) {
-				x__ERROR(tls, cc, expr, __ccgo_ts+112286, 0)
+				x__ERROR(tls, cc, expr, __ccgo_ts+112292, 0)
 			}
 			x__flexbuf_addchar(tls, cc, fb, i1)
 		} else {
-			x__ERROR(tls, cc, expr, __ccgo_ts+112310, 0)
+			x__ERROR(tls, cc, expr, __ccgo_ts+112316, 0)
 		}
 		break
 	}
@@ -15035,7 +15083,7 @@ func s__TransformAssignChainNoCasts(tls *libc.TLS, cc *CC, astptr uintptr) (r ui
 			tmp = rhs
 		default:
 			x__AstReportAs(tls, cc, rhs, bp)
-			tmp = x__AstTempLocalVariable(tls, cc, __ccgo_ts+32268, libc.UintptrFromInt32(0))
+			tmp = x__AstTempLocalVariable(tls, cc, __ccgo_ts+32276, libc.UintptrFromInt32(0))
 			newseq = x__NewAST(tls, cc, int32(_AST_SEQUENCE), x__AstAssign(tls, cc, tmp, rhs), x__AstAssign(tls, cc, lhs, tmp))
 			**(**uintptr)(__ccgo_up(astptr)) = newseq
 			x__AstReportDone(tls, cc, bp)
@@ -15166,7 +15214,7 @@ func s__TransformUsing(tls *libc.TLS, cc *CC, usestr uintptr, _params uintptr) (
 		if c == int32('#') || c == int32('%') {
 			goto handlenumeric
 		}
-		x__ERROR(tls, cc, **(**uintptr)(__ccgo_up(bp)), __ccgo_ts+41795, 0)
+		x__ERROR(tls, cc, **(**uintptr)(__ccgo_up(bp)), __ccgo_ts+41803, 0)
 		x__AstReportDone(tls, cc, bp+40)
 		return exprlist
 	_9:
@@ -15248,7 +15296,7 @@ func s__TransformUsing(tls *libc.TLS, cc *CC, usestr uintptr, _params uintptr) (
 			usestr = usestr - 1
 			goto handlenumeric
 		}
-		x__ERROR(tls, cc, **(**uintptr)(__ccgo_up(bp)), __ccgo_ts+41852, 0)
+		x__ERROR(tls, cc, **(**uintptr)(__ccgo_up(bp)), __ccgo_ts+41860, 0)
 		x__AstReportDone(tls, cc, bp+40)
 		return exprlist
 	_14:
@@ -15257,7 +15305,7 @@ func s__TransformUsing(tls *libc.TLS, cc *CC, usestr uintptr, _params uintptr) (
 		;
 	_12:
 		;
-		x__ERROR(tls, cc, **(**uintptr)(__ccgo_up(bp)), __ccgo_ts+41891, libc.VaList(bp+64, c))
+		x__ERROR(tls, cc, **(**uintptr)(__ccgo_up(bp)), __ccgo_ts+41899, libc.VaList(bp+64, c))
 		x__AstReportDone(tls, cc, bp+40)
 		return exprlist
 	_15:
@@ -15288,7 +15336,7 @@ func s__UniqJumpForLabel(tls *libc.TLS, cc *CC, lbl uintptr) (r uintptr) {
 	var list uintptr
 	_ = list
 	if (*_IR)(unsafe.Pointer(lbl)).Fopc != int32(_OPC_LABEL) {
-		x__ERROR(tls, cc, libc.UintptrFromInt32(0), __ccgo_ts+61908, libc.VaList(bp+8, (*_IR)(unsafe.Pointer(lbl)).Fopc))
+		x__ERROR(tls, cc, libc.UintptrFromInt32(0), __ccgo_ts+61916, libc.VaList(bp+8, (*_IR)(unsafe.Pointer(lbl)).Fopc))
 	}
 	list = (*_IR)(unsafe.Pointer(lbl)).Faux
 	if list != 0 && !((*_ir_lbljumps)(unsafe.Pointer(list)).Fnext != 0) {
@@ -15344,7 +15392,7 @@ func s__UseInternal(tls *libc.TLS, cc *CC, name uintptr) (r uint8) {
 	sym = x__FindSymbolEx(tls, cc, cc.x__systemModule+144, name, 0)
 	if sym != 0 && (*_Symbol)(unsafe.Pointer(sym)).Fkind == int32(_SYM_FUNCTION) {
 		func1 = *(*uintptr)(unsafe.Pointer(sym + 32))
-		x__MarkUsed(tls, cc, func1, __ccgo_ts+30924)
+		x__MarkUsed(tls, cc, func1, __ccgo_ts+30932)
 		libc.SetBitFieldPtr32Uint32(cc.x__curfunc+1248, libc.Uint32FromInt32(0), 14, 0x4000) // caller is not a leaf function
 		return libc.BoolUint8(m_true != 0)
 	} else {
@@ -15371,7 +15419,7 @@ func s__UsesMemory(tls *libc.TLS, cc *CC, ast uintptr) (r uint8) {
 	case int32(_AST_IDENTIFIER):
 		fallthrough
 	case int32(_AST_LOCAL_IDENTIFIER):
-		sym = x__LookupAstSymbol(tls, cc, ast, __ccgo_ts+31742)
+		sym = x__LookupAstSymbol(tls, cc, ast, __ccgo_ts+31750)
 		if !(sym != 0) {
 			return libc.BoolUint8(m_true != 0)
 		} // assume it uses memory
@@ -15463,7 +15511,7 @@ func s__ValidIR(tls *libc.TLS, cc *CC, irl uintptr, ir uintptr) (r uint8) {
 		}
 	}
 	if v3 || v2 != ir {
-		x__DEBUG(tls, cc, libc.UintptrFromInt32(0), __ccgo_ts+62119, libc.VaList(bp+8, (*_Function)(unsafe.Pointer(cc.x__curfunc)).Fuser_name))
+		x__DEBUG(tls, cc, libc.UintptrFromInt32(0), __ccgo_ts+62127, libc.VaList(bp+8, (*_Function)(unsafe.Pointer(cc.x__curfunc)).Fuser_name))
 		return libc.BoolUint8(m_false != 0)
 	} else {
 		return libc.BoolUint8(m_true != 0)
@@ -15473,12 +15521,12 @@ func s__ValidIR(tls *libc.TLS, cc *CC, irl uintptr, ir uintptr) (r uint8) {
 
 func s__ValidateAbortFuncs(tls *libc.TLS, cc *CC) {
 	if 0 == cc.x__gl_features_used&int32(m_FEATURE_LONGJMP_USED) {
-		x__ERROR(tls, cc, libc.UintptrFromInt32(0), __ccgo_ts+44996, 0)
+		x__ERROR(tls, cc, libc.UintptrFromInt32(0), __ccgo_ts+45004, 0)
 	}
 	if !(cc.s__longjmpfunc != 0) {
-		cc.s__longjmpfunc = x__NewOperand(tls, cc, int32(_IMM_COG_LABEL), __ccgo_ts+45057, 0)
-		cc.s__setjmpfunc = x__NewOperand(tls, cc, int32(_IMM_COG_LABEL), __ccgo_ts+45067, 0)
-		cc.s__abortchain = x__GetOneGlobal(tls, cc, int32(_REG_REG), __ccgo_ts+45076, 0)
+		cc.s__longjmpfunc = x__NewOperand(tls, cc, int32(_IMM_COG_LABEL), __ccgo_ts+45065, 0)
+		cc.s__setjmpfunc = x__NewOperand(tls, cc, int32(_IMM_COG_LABEL), __ccgo_ts+45075, 0)
+		cc.s__abortchain = x__GetOneGlobal(tls, cc, int32(_REG_REG), __ccgo_ts+45084, 0)
 		cc.s__abortcaught = x__GetResultReg(tls, cc, int32(1))
 		cc.s__abortresult = x__GetResultReg(tls, cc, 0)
 		x__ValidateFrameptr(tls, cc)
@@ -15495,7 +15543,7 @@ func s__ValidateDatBase(tls *libc.TLS, cc *CC, P uintptr) (r uintptr) {
 		PD = (*_Module)(unsafe.Pointer(P)).Fbedata
 	}
 	if !((*_AsmModData)(unsafe.Pointer(PD)).Fdatbase != 0) {
-		(*_AsmModData)(unsafe.Pointer(PD)).Fdatlabel = x__NewOperand(tls, cc, int32(_IMM_HUB_LABEL), x__IdentifierModuleName(tls, cc, P, __ccgo_ts+45824), 0)
+		(*_AsmModData)(unsafe.Pointer(PD)).Fdatlabel = x__NewOperand(tls, cc, int32(_IMM_HUB_LABEL), x__IdentifierModuleName(tls, cc, P, __ccgo_ts+45832), 0)
 		(*_AsmModData)(unsafe.Pointer(PD)).Fdatbase = x__NewImmediatePtr(tls, cc, libc.UintptrFromInt32(0), (*_AsmModData)(unsafe.Pointer(PD)).Fdatlabel)
 	}
 	return (*_AsmModData)(unsafe.Pointer(PD)).Fdatbase
@@ -15503,10 +15551,10 @@ func s__ValidateDatBase(tls *libc.TLS, cc *CC, P uintptr) (r uintptr) {
 
 func s__ValidateGosub(tls *libc.TLS, cc *CC) {
 	if 0 == cc.x__gl_features_used&int32(m_FEATURE_GOSUB_USED) {
-		x__ERROR(tls, cc, libc.UintptrFromInt32(0), __ccgo_ts+44996, 0)
+		x__ERROR(tls, cc, libc.UintptrFromInt32(0), __ccgo_ts+45004, 0)
 	}
 	s__ValidatePushregs(tls, cc)
-	cc.s__gosub_ = x__NewOperand(tls, cc, int32(_IMM_COG_LABEL), __ccgo_ts+45113, 0)
+	cc.s__gosub_ = x__NewOperand(tls, cc, int32(_IMM_COG_LABEL), __ccgo_ts+45121, 0)
 }
 
 func s__ValidatePushregs(tls *libc.TLS, cc *CC) {
@@ -15516,11 +15564,11 @@ func s__ValidatePushregs(tls *libc.TLS, cc *CC) {
 		// we will need local01
 		local1 = x__GetLocalReg(tls, cc, 0, 0)
 		(*_Operand)(unsafe.Pointer(local1)).Fused = (*_Operand)(unsafe.Pointer(local1)).Fused + 1
-		cc.s__pushregs_ = x__NewOperand(tls, cc, int32(_IMM_COG_LABEL), __ccgo_ts+45087, 0)
-		cc.s__popregs_ = x__NewOperand(tls, cc, int32(_IMM_COG_LABEL), __ccgo_ts+45097, 0)
-		cc.s__count_ = x__NewOperand(tls, cc, int32(_REG_REG), __ccgo_ts+45106, 0)
+		cc.s__pushregs_ = x__NewOperand(tls, cc, int32(_IMM_COG_LABEL), __ccgo_ts+45095, 0)
+		cc.s__popregs_ = x__NewOperand(tls, cc, int32(_IMM_COG_LABEL), __ccgo_ts+45105, 0)
+		cc.s__count_ = x__NewOperand(tls, cc, int32(_REG_REG), __ccgo_ts+45114, 0)
 		if cc.x__gl_p2 != 0 {
-			cc.x__frameptr = x__NewOperand(tls, cc, int32(_REG_REG), __ccgo_ts+44993, 0)
+			cc.x__frameptr = x__NewOperand(tls, cc, int32(_REG_REG), __ccgo_ts+45001, 0)
 		}
 	}
 }
@@ -15533,7 +15581,7 @@ func s__ValidatePushregs(tls *libc.TLS, cc *CC) {
 func s___fmt_unsupported(tls *libc.TLS, cc *CC, pi uintptr, args uintptr) (r int32) {
 	s__fetchint(tls, cc, args, 0, int32(4))
 	(*_Printf_info)(unsafe.Pointer(pi)).Fprec = -int32(1)
-	return s___fmtputstr(tls, cc, __ccgo_ts+27716, pi)
+	return s___fmtputstr(tls, cc, __ccgo_ts+27724, pi)
 }
 
 // C documentation
@@ -15727,7 +15775,7 @@ func s__adjustFuncCall(tls *libc.TLS, cc *CC, ast uintptr) {
 				modtyp = (*_AST)(unsafe.Pointer(modtyp)).Fleft
 			}
 			if !(x__IsClassType(tls, cc, modtyp) != 0) {
-				x__ERROR(tls, cc, methodref, __ccgo_ts+42184, 0)
+				x__ERROR(tls, cc, methodref, __ccgo_ts+42192, 0)
 				x__AstReportDone(tls, cc, bp)
 				return
 			}
@@ -15771,9 +15819,9 @@ func s__adjustFuncCall(tls *libc.TLS, cc *CC, ast uintptr) {
 			}
 		} else {
 			if (*_AST)(unsafe.Pointer(left)).Fkind == int32(_AST_IDENTIFIER) && leftparent != 0 && typ != 0 {
-				if !(libc.Xstrcmp(tls, *(*uintptr)(unsafe.Pointer(left + 8)), __ccgo_ts+42215) != 0) && x__IsStringType(tls, cc, typ) != 0 {
+				if !(libc.Xstrcmp(tls, *(*uintptr)(unsafe.Pointer(left + 8)), __ccgo_ts+42223) != 0) && x__IsStringType(tls, cc, typ) != 0 {
 					/* change to _basic_open_string */
-					newleft = x__AstIdentifier(tls, cc, __ccgo_ts+42227)
+					newleft = x__AstIdentifier(tls, cc, __ccgo_ts+42235)
 					(*_AST)(unsafe.Pointer(leftparent)).Fleft = newleft
 					/* append O_RDWR | O_CREAT */
 					(*_AST)(unsafe.Pointer(leftparent)).Fright = x__AddToList(tls, cc, (*_AST)(unsafe.Pointer(leftparent)).Fright, x__AstInteger(tls, cc, int64(6)))
@@ -15799,36 +15847,36 @@ func s__appendType(tls *libc.TLS, cc *CC, base uintptr, typ uintptr) (r uintptr)
 	case int32(_AST_MODIFIER_VOLATILE):
 		return s__appendType(tls, cc, base, (*_AST)(unsafe.Pointer(typ)).Fleft)
 	case int32(_AST_INTTYPE):
-		libc.Xsprintf(tls, bp, __ccgo_ts+31542, libc.VaList(bp+40, x__EvalConstExpr(tls, cc, (*_AST)(unsafe.Pointer(typ)).Fleft)))
+		libc.Xsprintf(tls, bp, __ccgo_ts+31550, libc.VaList(bp+40, x__EvalConstExpr(tls, cc, (*_AST)(unsafe.Pointer(typ)).Fleft)))
 		return s__concatstr(tls, cc, base, bp)
 	case int32(_AST_UNSIGNEDTYPE):
-		libc.Xsprintf(tls, bp, __ccgo_ts+31548, libc.VaList(bp+40, x__EvalConstExpr(tls, cc, (*_AST)(unsafe.Pointer(typ)).Fleft)))
+		libc.Xsprintf(tls, bp, __ccgo_ts+31556, libc.VaList(bp+40, x__EvalConstExpr(tls, cc, (*_AST)(unsafe.Pointer(typ)).Fleft)))
 		return s__concatstr(tls, cc, base, bp)
 	case int32(_AST_FLOATTYPE):
-		libc.Xsprintf(tls, bp, __ccgo_ts+31554, libc.VaList(bp+40, x__EvalConstExpr(tls, cc, (*_AST)(unsafe.Pointer(typ)).Fleft)))
+		libc.Xsprintf(tls, bp, __ccgo_ts+31562, libc.VaList(bp+40, x__EvalConstExpr(tls, cc, (*_AST)(unsafe.Pointer(typ)).Fleft)))
 		return s__concatstr(tls, cc, base, bp)
 	case int32(_AST_GENERICTYPE):
-		return s__concatstr(tls, cc, base, __ccgo_ts+31560)
+		return s__concatstr(tls, cc, base, __ccgo_ts+31568)
 	case int32(_AST_REFTYPE):
 		fallthrough
 	case int32(_AST_PTRTYPE):
-		base = s__concatstr(tls, cc, base, __ccgo_ts+31562)
+		base = s__concatstr(tls, cc, base, __ccgo_ts+31570)
 		return s__appendType(tls, cc, base, (*_AST)(unsafe.Pointer(typ)).Fleft)
 	case int32(_AST_FUNCTYPE):
-		base = s__concatstr(tls, cc, base, __ccgo_ts+31564)
+		base = s__concatstr(tls, cc, base, __ccgo_ts+31572)
 		return s__appendType(tls, cc, base, (*_AST)(unsafe.Pointer(typ)).Fleft)
 	case int32(_AST_ARRAYTYPE):
-		libc.Xsprintf(tls, bp, __ccgo_ts+31566, libc.VaList(bp+40, x__EvalConstExpr(tls, cc, (*_AST)(unsafe.Pointer(typ)).Fright)))
+		libc.Xsprintf(tls, bp, __ccgo_ts+31574, libc.VaList(bp+40, x__EvalConstExpr(tls, cc, (*_AST)(unsafe.Pointer(typ)).Fright)))
 		base = s__concatstr(tls, cc, base, bp)
 		return s__appendType(tls, cc, base, (*_AST)(unsafe.Pointer(typ)).Fleft)
 	case int32(_AST_OBJECT):
 		P = x__GetClassPtr(tls, cc, typ)
-		libc.Xsprintf(tls, bp, __ccgo_ts+31572, libc.VaList(bp+40, libc.Int64FromUint64(libc.Xstrlen(tls, (*_Module)(unsafe.Pointer(P)).Fclassname))))
+		libc.Xsprintf(tls, bp, __ccgo_ts+31580, libc.VaList(bp+40, libc.Int64FromUint64(libc.Xstrlen(tls, (*_Module)(unsafe.Pointer(P)).Fclassname))))
 		base = s__concatstr(tls, cc, base, bp)
 		base = s__concatstr(tls, cc, base, (*_Module)(unsafe.Pointer(P)).Fclassname)
 		return base
 	default:
-		x__ERROR(tls, cc, typ, __ccgo_ts+31577, 0)
+		x__ERROR(tls, cc, typ, __ccgo_ts+31585, 0)
 		return base
 	}
 	return r
@@ -15883,7 +15931,7 @@ func s__assembleFile(tls *libc.TLS, cc *CC, f uintptr, ast uintptr) {
 	name = *(*uintptr)(unsafe.Pointer(ast + 8))
 	inf = fopen(tls, cc, name, __ccgo_ts+2456)
 	if !(inf != 0) {
-		x__ERROR(tls, cc, ast, __ccgo_ts+36586, libc.VaList(bp+8, name, libc.Xstrerror(tls, **(**int32)(__ccgo_up(libc.X__error(tls))))))
+		x__ERROR(tls, cc, ast, __ccgo_ts+36594, libc.VaList(bp+8, name, libc.Xstrerror(tls, **(**int32)(__ccgo_up(libc.X__error(tls))))))
 		return
 	}
 	for {
@@ -15911,7 +15959,7 @@ func s__catenate(tls *libc.TLS, cc *CC, defp uintptr, arglist uintptr, _out uint
 	var len1 _size_t
 	_, _, _, _, _, _, _, _, _ = argp, c, in_arg, invalid_token, len1, prev_prev_token, prev_token, v1, v3
 	prev_prev_token = libc.UintptrFromInt32(0)
-	invalid_token = __ccgo_ts + 105575             /* Pointer to an actual argument*/
+	invalid_token = __ccgo_ts + 105581             /* Pointer to an actual argument*/
 	prev_token = **(**uintptr)(__ccgo_up(token_p)) /* Preceding token              */
 	in_arg = m_FALSE                               /* Value of a character         */
 	/* Get the previous token   */
@@ -16014,7 +16062,7 @@ func s__catenate(tls *libc.TLS, cc *CC, defp uintptr, arglist uintptr, _out uint
 		c = x__get_ch(tls, cc)                                                            /* This line should be before the next line. */
 		(*_FILEINFO)(unsafe.Pointer(cc.x__infile)).Ffp = uintptr(-libc.Int32FromInt32(1)) /* To check token length*/
 		if cc.x__mcpp_debug&int32(m_EXPAND) != 0 {
-			x__dump_string(tls, cc, __ccgo_ts+105612, (*_FILEINFO)(unsafe.Pointer(cc.x__infile)).Fbuffer)
+			x__dump_string(tls, cc, __ccgo_ts+105618, (*_FILEINFO)(unsafe.Pointer(cc.x__infile)).Fbuffer)
 		}
 		cc.x__workp = uintptr(unsafe.Pointer(&cc.x__work_buf))
 		x__scan_token(tls, cc, c, uintptr(unsafe.Pointer(&cc.x__workp)), cc.x__work_end)
@@ -16135,7 +16183,7 @@ docomment:
 	x__flexbuf_addchar(tls, cc, cbp, 0)
 	commentLine = x__flexbuf_get(tls, cc, cbp)
 	//printf("comment: %s", commentLine);
-	if !(libc.Xstrncmp(tls, commentLine, __ccgo_ts+21545, uint64(6)) != 0) {
+	if !(libc.Xstrncmp(tls, commentLine, __ccgo_ts+21553, uint64(6)) != 0) {
 		**(**uintptr)(__ccgo_up(bp)) = commentLine + uintptr(6)
 		lineno = int32(libc.Xstrtol(tls, **(**uintptr)(__ccgo_up(bp)), bp, int32(10)))
 		if lineno > 0 {
@@ -16146,11 +16194,11 @@ docomment:
 			(*_LexStream)(unsafe.Pointer(L)).FfileName = s__getFileName(tls, cc, **(**uintptr)(__ccgo_up(bp)), (*_LexStream)(unsafe.Pointer(L)).FfileName)
 		}
 	} else {
-		if !(libc.Xstrncmp(tls, commentLine, __ccgo_ts+21552, uint64(8)) != 0) {
+		if !(libc.Xstrncmp(tls, commentLine, __ccgo_ts+21560, uint64(8)) != 0) {
 			s__handlePragma(tls, cc, L, commentLine)
 		} else {
 			if language >= m_LANG_SPIN_SPIN1 && language <= int32(m_LANG_SPIN_SPIN2) && int32(**(**int8)(__ccgo_up(commentLine))) == int32('#') && cameFromHash != 0 {
-				x__SYNTAX_ERROR(tls, cc, __ccgo_ts+21561, 0)
+				x__SYNTAX_ERROR(tls, cc, __ccgo_ts+21569, 0)
 			} else {
 				ast = x__NewAST(tls, cc, int32(_AST_COMMENT), libc.UintptrFromInt32(0), libc.UintptrFromInt32(0))
 				*(*uintptr)(unsafe.Pointer(ast + 8)) = commentLine
@@ -16182,7 +16230,7 @@ func s__chk_ops(tls *libc.TLS, cc *CC) (r int32) {
 	case int32(m_OP_2):
 		fallthrough
 	case int32(m_OP_3):
-		x__cerror(tls, cc, __ccgo_ts+106826, uintptr(unsafe.Pointer(&cc.x__work_buf)), 0, libc.UintptrFromInt32(0))
+		x__cerror(tls, cc, __ccgo_ts+106832, uintptr(unsafe.Pointer(&cc.x__work_buf)), 0, libc.UintptrFromInt32(0))
 		return libc.Int32FromInt32(m_OP_END) + libc.Int32FromInt32(1)
 	default:
 		return cc.x__openum
@@ -16208,12 +16256,12 @@ func s__chk_opts(tls *libc.TLS, cc *CC, sflag int32, trad int32) {
 		incompat = int32(m_TRUE)
 	}
 	if cc.x__mcpp_debug&int32(m_MACRO_CALL) != 0 && cc.x__option_flags.Fc != 0 {
-		(*(*func(*libc.TLS, *CC, uintptr, _OUTDEST) int32)(unsafe.Pointer(&struct{ uintptr }{cc.x__mcpp_fputs})))(tls, cc, __ccgo_ts+109243, int32(_ERR))
+		(*(*func(*libc.TLS, *CC, uintptr, _OUTDEST) int32)(unsafe.Pointer(&struct{ uintptr }{cc.x__mcpp_fputs})))(tls, cc, __ccgo_ts+109249, int32(_ERR))
 		cc.x__mcpp_debug = cc.x__mcpp_debug & ^libc.Int32FromInt32(m_MACRO_CALL)
 		/* -a and -C options do not co-exist with -K    */
 	}
 	if incompat != 0 {
-		(*(*func(*libc.TLS, *CC, uintptr, _OUTDEST) int32)(unsafe.Pointer(&struct{ uintptr }{cc.x__mcpp_fputs})))(tls, cc, __ccgo_ts+109264, int32(_ERR))
+		(*(*func(*libc.TLS, *CC, uintptr, _OUTDEST) int32)(unsafe.Pointer(&struct{ uintptr }{cc.x__mcpp_fputs})))(tls, cc, __ccgo_ts+109270, int32(_ERR))
 		s__usage(tls, cc, int32('?'))
 	}
 	x__expand_init(tls, cc, cc.s__compat_mode1)
@@ -16417,7 +16465,7 @@ func s__collect_args(tls *libc.TLS, cc *CC, defp uintptr, arglist uintptr, m_num
 	more_to_come = m_FALSE                                                                                                                                                     /* Next argument is expected*/
 	locs = libc.UintptrFromInt32(0)
 	if cc.x__mcpp_debug&int32(m_EXPAND) != 0 {
-		x__dump_unget(tls, cc, __ccgo_ts+105896)
+		x__dump_unget(tls, cc, __ccgo_ts+105902)
 	}
 	if int32((*_DEFBUF)(unsafe.Pointer(defp)).Fnargs) == -libc.Int32FromInt32(1)-(libc.Int32FromInt32(m___SCHAR_MAX__)*libc.Int32FromInt32(2)+libc.Int32FromInt32(1)+libc.Int32FromInt32(1)|(libc.Int32FromInt32(m___SCHAR_MAX__)*libc.Int32FromInt32(2)+libc.Int32FromInt32(1)+libc.Int32FromInt32(1))*libc.Int32FromInt32(2)) {
 		v1 = int32(1)
@@ -16567,17 +16615,17 @@ func s__collect_args(tls *libc.TLS, cc *CC, defp uintptr, arglist uintptr, m_num
 			if var_arg != 0 && nargs == args-int32(1) {
 				if cc.x__warn_level&int32(1) != 0 {
 					if nargs < args {
-						v2 = __ccgo_ts + 105915
+						v2 = __ccgo_ts + 105921
 					} else {
-						v2 = __ccgo_ts + 105920
+						v2 = __ccgo_ts + 105926
 					}
 					s__diag_macro(tls, cc, int32(m_CWARN), cc.s__narg_error, v2, int64(args), sequence, defp, libc.UintptrFromInt32(0))
 				}
 			} else {
 				if nargs < args {
-					v2 = __ccgo_ts + 105915
+					v2 = __ccgo_ts + 105921
 				} else {
-					v2 = __ccgo_ts + 105920
+					v2 = __ccgo_ts + 105926
 				}
 				s__diag_macro(tls, cc, int32(m_CERROR), cc.s__narg_error, v2, int64(args), sequence, defp, libc.UintptrFromInt32(0))
 			}
@@ -16630,9 +16678,9 @@ func s__collect_args(tls *libc.TLS, cc *CC, defp uintptr, arglist uintptr, m_num
 			if nargs > args {
 				nargs = args
 			}
-			s__dump_args(tls, cc, __ccgo_ts+105925, nargs, arglist)
+			s__dump_args(tls, cc, __ccgo_ts+105931, nargs, arglist)
 		}
-		x__dump_unget(tls, cc, __ccgo_ts+105925)
+		x__dump_unget(tls, cc, __ccgo_ts+105931)
 	}
 	goto arg_ret
 arg_ret:
@@ -16671,7 +16719,7 @@ func s__copyLocal(tls *libc.TLS, cc *CC, sym uintptr, arg uintptr) (r int32) {
 			return int32(1)
 		}
 		hubtmp = x__CompileSymbolForFunc(tls, cc, irl, sym, cc.x__curfunc, linesrc)
-		cogtmp = x__NewOperand(tls, cc, int32(_REG_HW), __ccgo_ts+65969, libc.Int64FromUint32(offset+uint32(m_PASM_INLINE_ASM_VAR_BASE)))
+		cogtmp = x__NewOperand(tls, cc, int32(_REG_HW), __ccgo_ts+2841, libc.Int64FromUint32(offset+uint32(m_PASM_INLINE_ASM_VAR_BASE)))
 		v1 = libc.Int32FromUint32(size)
 		(*_Operand)(unsafe.Pointer(hubtmp)).Fsize = v1
 		(*_Operand)(unsafe.Pointer(cogtmp)).Fsize = v1
@@ -16709,7 +16757,7 @@ func s__cur_file(tls *libc.TLS, cc *CC, file uintptr, sharp_file uintptr, flag i
 			name = (*_FILEINFO)(unsafe.Pointer(file)).Ffilename
 		} else {
 			if libc.Xstrcmp(tls, (*_FILEINFO)(unsafe.Pointer(file)).Ffilename, (*_FILEINFO)(unsafe.Pointer(file)).Freal_fname) == 0 {
-				libc.Xsprintf(tls, uintptr(unsafe.Pointer(&cc.x__work_buf)), __ccgo_ts+84093, libc.VaList(bp+8, **(**uintptr)(__ccgo_up((*_FILEINFO)(unsafe.Pointer(file)).Fdirp)), cc.x__cur_fname))
+				libc.Xsprintf(tls, uintptr(unsafe.Pointer(&cc.x__work_buf)), __ccgo_ts+84099, libc.VaList(bp+8, **(**uintptr)(__ccgo_up((*_FILEINFO)(unsafe.Pointer(file)).Fdirp)), cc.x__cur_fname))
 				name = uintptr(unsafe.Pointer(&cc.x__work_buf))
 			} else { /* Changed by '#line fname' directive   */
 				name = (*_FILEINFO)(unsafe.Pointer(file)).Ffilename
@@ -16722,7 +16770,7 @@ func s__cur_file(tls *libc.TLS, cc *CC, file uintptr, sharp_file uintptr, flag i
 		}
 		cc.s__sharp_filename = x__save_string(tls, cc, name)
 	}
-	(*(*func(*libc.TLS, *CC, _OUTDEST, uintptr, uintptr) int32)(unsafe.Pointer(&struct{ uintptr }{cc.x__mcpp_fprintf})))(tls, cc, int32(_OUT), __ccgo_ts+109868, libc.VaList(bp+8, name))
+	(*(*func(*libc.TLS, *CC, _OUTDEST, uintptr, uintptr) int32)(unsafe.Pointer(&struct{ uintptr }{cc.x__mcpp_fprintf})))(tls, cc, int32(_OUT), __ccgo_ts+109874, libc.VaList(bp+8, name))
 }
 
 // C documentation
@@ -16767,9 +16815,9 @@ func s__deduceTemplateTypes(tls *libc.TLS, cc *CC, templateVars uintptr, functyp
 									name = x__GetUserIdentifierName(tls, cc, (*_AST)(unsafe.Pointer(call)).Fleft)
 								}
 								if !(name != 0) {
-									name = __ccgo_ts + 26582
+									name = __ccgo_ts + 26590
 								}
-								x__ERROR(tls, cc, callparams, __ccgo_ts+31649, libc.VaList(bp+8, templName, name))
+								x__ERROR(tls, cc, callparams, __ccgo_ts+31657, libc.VaList(bp+8, templName, name))
 							}
 							break
 						}
@@ -16810,9 +16858,9 @@ func s__def_a_macro(tls *libc.TLS, cc *CC, opt int32, def uintptr) {
 	cp = v1
 	if v1 != libc.UintptrFromInt32(0) {
 		**(**int8)(__ccgo_up(cp)) = int8(' ') /* Remove the '='       */
-		cp = __ccgo_ts + 4265                 /* Append <newline>     */
+		cp = __ccgo_ts + 4267                 /* Append <newline>     */
 	} else {
-		cp = __ccgo_ts + 109230 /* With definition "1"  */
+		cp = __ccgo_ts + 109236 /* With definition "1"  */
 	}
 	libc.Xstrcat(tls, definition, cp)
 	cp = definition
@@ -16833,7 +16881,7 @@ func s__def_a_macro(tls *libc.TLS, cc *CC, opt int32, def uintptr) {
 		s__usage(tls, cc, opt)
 	}
 	**(**int8)(__ccgo_up(cp)) = int8('\000')
-	if libc.Xstrcmp(tls, definition, __ccgo_ts+109234) == 0 {
+	if libc.Xstrcmp(tls, definition, __ccgo_ts+109240) == 0 {
 		defp = x__look_id(tls, cc, definition)
 		(*_DEFBUF)(unsafe.Pointer(defp)).Fnargs = int16(-libc.Int32FromInt32(2) - (libc.Int32FromInt32(m___SCHAR_MAX__)*libc.Int32FromInt32(2) + libc.Int32FromInt32(1) + libc.Int32FromInt32(1) | (libc.Int32FromInt32(m___SCHAR_MAX__)*libc.Int32FromInt32(2)+libc.Int32FromInt32(1)+libc.Int32FromInt32(1))*libc.Int32FromInt32(2)) - libc.Int32FromInt32(3))
 		/* Restore Standard-predefinedness  */
@@ -16862,9 +16910,9 @@ func s__def_special(tls *libc.TLS, cc *CC, defp uintptr) (r uintptr) {
 _1:
 	; /* __LINE__             */
 	if (cc.x__src_line > cc.x__std_limits.Fline_num || cc.x__src_line <= 0) && cc.x__warn_level&int32(1) != 0 {
-		s__diag_macro(tls, cc, int32(m_CWARN), __ccgo_ts+105537, libc.UintptrFromInt32(0), cc.x__src_line, libc.UintptrFromInt32(0), defp, libc.UintptrFromInt32(0))
+		s__diag_macro(tls, cc, int32(m_CWARN), __ccgo_ts+105543, libc.UintptrFromInt32(0), cc.x__src_line, libc.UintptrFromInt32(0), defp, libc.UintptrFromInt32(0))
 	}
-	libc.Xsprintf(tls, (*_DEFBUF)(unsafe.Pointer(defp)).Frepl, __ccgo_ts+99460, libc.VaList(bp+16, cc.x__src_line)) /* Re-define    */
+	libc.Xsprintf(tls, (*_DEFBUF)(unsafe.Pointer(defp)).Frepl, __ccgo_ts+99466, libc.VaList(bp+16, cc.x__src_line)) /* Re-define    */
 	goto _3
 _2:
 	; /* __FILE__             */
@@ -16875,13 +16923,13 @@ _6:
 		goto _4
 	}
 	if (*_FILEINFO)(unsafe.Pointer(file)).Ffp != libc.UintptrFromInt32(0) {
-		libc.Xsprintf(tls, uintptr(unsafe.Pointer(&cc.x__work_buf)), __ccgo_ts+2841, libc.VaList(bp+16, (*_FILEINFO)(unsafe.Pointer(file)).Ffilename))
+		libc.Xsprintf(tls, uintptr(unsafe.Pointer(&cc.x__work_buf)), __ccgo_ts+2843, libc.VaList(bp+16, (*_FILEINFO)(unsafe.Pointer(file)).Ffilename))
 		if libc.Xstrcmp(tls, uintptr(unsafe.Pointer(&cc.x__work_buf)), (*_DEFBUF)(unsafe.Pointer(defp)).Frepl) == 0 {
 			goto _4
 		} /* No change    */
 		(*_DEFBUF)(unsafe.Pointer(defp)).Fnargs = int16(-libc.Int32FromInt32(2) - (libc.Int32FromInt32(m___SCHAR_MAX__)*libc.Int32FromInt32(2) + libc.Int32FromInt32(1) + libc.Int32FromInt32(1) | (libc.Int32FromInt32(m___SCHAR_MAX__)*libc.Int32FromInt32(2)+libc.Int32FromInt32(1)+libc.Int32FromInt32(1))*libc.Int32FromInt32(2))) /* Enable to redefine   */
 		prevp = x__look_prev(tls, cc, defp+49, bp)
-		defp = x__install_macro(tls, cc, __ccgo_ts+27875, -libc.Int32FromInt32(2)-(libc.Int32FromInt32(m___SCHAR_MAX__)*libc.Int32FromInt32(2)+libc.Int32FromInt32(1)+libc.Int32FromInt32(1)|(libc.Int32FromInt32(m___SCHAR_MAX__)*libc.Int32FromInt32(2)+libc.Int32FromInt32(1)+libc.Int32FromInt32(1))*libc.Int32FromInt32(2))-libc.Int32FromInt32(4)-libc.Int32FromInt32(2), __ccgo_ts+7138, uintptr(unsafe.Pointer(&cc.x__work_buf)), prevp, **(**int32)(__ccgo_up(bp)), 0) /* Re-define    */
+		defp = x__install_macro(tls, cc, __ccgo_ts+27883, -libc.Int32FromInt32(2)-(libc.Int32FromInt32(m___SCHAR_MAX__)*libc.Int32FromInt32(2)+libc.Int32FromInt32(1)+libc.Int32FromInt32(1)|(libc.Int32FromInt32(m___SCHAR_MAX__)*libc.Int32FromInt32(2)+libc.Int32FromInt32(1)+libc.Int32FromInt32(1))*libc.Int32FromInt32(2))-libc.Int32FromInt32(4)-libc.Int32FromInt32(2), __ccgo_ts+7140, uintptr(unsafe.Pointer(&cc.x__work_buf)), prevp, **(**int32)(__ccgo_up(bp)), 0) /* Re-define    */
 		goto _4
 	}
 	goto _5
@@ -16938,7 +16986,7 @@ func s__def_stringization(tls *libc.TLS, cc *CC, _repl_cur uintptr) (r uintptr) 
 			return **(**uintptr)(__ccgo_up(bp))
 		}
 	}
-	x__cerror(tls, cc, __ccgo_ts+104852, cc.s__token_p, 0, libc.UintptrFromInt32(0)) /* _E_  */
+	x__cerror(tls, cc, __ccgo_ts+104858, cc.s__token_p, 0, libc.UintptrFromInt32(0)) /* _E_  */
 	return libc.UintptrFromInt32(0)
 }
 
@@ -16953,12 +17001,12 @@ func s__default_errfunc(tls *libc.TLS, cc *CC, dummy uintptr, filename uintptr, 
 	var level uintptr
 	_ = level
 	level = dummy
-	if !(libc.Xstrcasecmp(tls, level, __ccgo_ts+4025) != 0) {
+	if !(libc.Xstrcasecmp(tls, level, __ccgo_ts+4027) != 0) {
 		cc.x__gl_errors = cc.x__gl_errors + 1
 	}
-	fprintf(tls, cc, libc.X__stderrp, __ccgo_ts+27811, libc.VaList(bp+8, filename, line, level))
-	fprintf(tls, cc, libc.X__stderrp, __ccgo_ts+7088, libc.VaList(bp+8, msg))
-	fprintf(tls, cc, libc.X__stderrp, __ccgo_ts+4265, 0)
+	fprintf(tls, cc, libc.X__stderrp, __ccgo_ts+27819, libc.VaList(bp+8, filename, line, level))
+	fprintf(tls, cc, libc.X__stderrp, __ccgo_ts+7090, libc.VaList(bp+8, msg))
+	fprintf(tls, cc, libc.X__stderrp, __ccgo_ts+4267, 0)
 }
 
 func s__devide_line(tls *libc.TLS, cc *CC, out uintptr) {
@@ -16992,7 +17040,7 @@ func s__devide_line(tls *libc.TLS, cc *CC, out uintptr) {
 		}
 		x__scan_token(tls, cc, c, bp, cc.s__out_wend)                                                                              /* Read a token     */
 		if int64(libc.Int32FromInt32(m_NBUFF)-libc.Int32FromInt32(2)) < int64(**(**uintptr)(__ccgo_up(bp)))-int64(cc.s__out_ptr) { /* Too long a token */
-			x__cfatal(tls, cc, __ccgo_ts+108204, cc.s__out_ptr, 0, libc.UintptrFromInt32(0)) /* _F_  */
+			x__cfatal(tls, cc, __ccgo_ts+108210, cc.s__out_ptr, 0, libc.UintptrFromInt32(0)) /* _F_  */
 		} else {
 			if cc.s__out_end <= **(**uintptr)(__ccgo_up(bp)) { /* Too long line    */
 				if cc.x__mcpp_debug&int32(m_MACRO_CALL) != 0 { /* -K option        */
@@ -17043,7 +17091,7 @@ func s__disable_repl(tls *libc.TLS, cc *CC, defp uintptr) (r int32) {
 		return int32(m_TRUE)
 	}
 	if cc.s__rescan_level >= int32(m_RESCAN_LIMIT) {
-		s__diag_macro(tls, cc, int32(m_CERROR), __ccgo_ts+105846, cc.x__macro_name, libc.Int64FromInt32(m_RESCAN_LIMIT), defp+49, defp, libc.UintptrFromInt32(0))
+		s__diag_macro(tls, cc, int32(m_CERROR), __ccgo_ts+105852, cc.x__macro_name, libc.Int64FromInt32(m_RESCAN_LIMIT), defp+49, defp, libc.UintptrFromInt32(0))
 		return m_FALSE
 	}
 	cc.s__replacing[cc.s__rescan_level].Fdef = defp
@@ -17281,7 +17329,7 @@ func s__doBasicTransform(tls *libc.TLS, cc *CC, astptr uintptr, transformFuncall
 	case int32(_AST_CASETABLE):
 		list = (*_AST)(unsafe.Pointer(ast)).Fright
 		if (*_AST)(unsafe.Pointer(ast)).Fkind == int32(_AST_CASETABLE) {
-			v1 = __ccgo_ts + 42385
+			v1 = __ccgo_ts + 42393
 		} else {
 			v1 = libc.UintptrFromInt32(0)
 		}
@@ -17290,7 +17338,7 @@ func s__doBasicTransform(tls *libc.TLS, cc *CC, astptr uintptr, transformFuncall
 		x__AstReportAs(tls, cc, ast, bp+8)
 		for list != 0 {
 			if (*_AST)(unsafe.Pointer(list)).Fkind != int32(_AST_STMTLIST) {
-				x__ERROR(tls, cc, list, __ccgo_ts+42393, 0)
+				x__ERROR(tls, cc, list, __ccgo_ts+42401, 0)
 			}
 			caseitem = (*_AST)(unsafe.Pointer(list)).Fleft
 			s__doBasicTransform(tls, cc, caseitem+16, transformFuncall)
@@ -17336,7 +17384,7 @@ func s__doBasicTransform(tls *libc.TLS, cc *CC, astptr uintptr, transformFuncall
 		if f != 0 {
 			libc.SetBitFieldPtr32Uint32(f+1248, libc.Uint32FromInt32(1), 9, 0x200)
 			if (*_Function)(unsafe.Pointer(f)).FcallSites == uint32(0) {
-				x__MarkUsed(tls, cc, f, __ccgo_ts+42430)
+				x__MarkUsed(tls, cc, f, __ccgo_ts+42438)
 			}
 		}
 	case int32(_AST_FUNCCALL):
@@ -17350,7 +17398,7 @@ func s__doBasicTransform(tls *libc.TLS, cc *CC, astptr uintptr, transformFuncall
 		// check for some special cases like chr$(65)
 		if (*_AST)(unsafe.Pointer(ast)).Fkind == int32(_AST_FUNCCALL) && ((*_AST)(unsafe.Pointer((*_AST)(unsafe.Pointer(ast)).Fleft)).Fkind == int32(_AST_IDENTIFIER) || (*_AST)(unsafe.Pointer((*_AST)(unsafe.Pointer(ast)).Fleft)).Fkind == int32(_AST_LOCAL_IDENTIFIER)) {
 			funcName = x__GetIdentifierName(tls, cc, (*_AST)(unsafe.Pointer(ast)).Fleft)
-			if !(libc.Xstrcasecmp(tls, funcName, __ccgo_ts+42380) != 0) {
+			if !(libc.Xstrcasecmp(tls, funcName, __ccgo_ts+42388) != 0) {
 				arg = (*_AST)(unsafe.Pointer((*_AST)(unsafe.Pointer(ast)).Fright)).Fleft
 				if arg != 0 && (*_AST)(unsafe.Pointer((*_AST)(unsafe.Pointer(ast)).Fright)).Fright == libc.UintptrFromInt32(0) && x__IsConstExpr(tls, cc, arg) != 0 {
 					n = int32(x__EvalConstExpr(tls, cc, arg))
@@ -17387,7 +17435,7 @@ func s__doBasicTransform(tls *libc.TLS, cc *CC, astptr uintptr, transformFuncall
 				**(**_AST)(__ccgo_up(ast)) = **(**_AST)(__ccgo_up(x))
 			}
 		} else {
-			x__WARNING(tls, cc, ast, __ccgo_ts+42443, 0)
+			x__WARNING(tls, cc, ast, __ccgo_ts+42451, 0)
 		}
 	case int32(_AST_TRYENV):
 		s__doBasicTransform(tls, cc, ast+16, transformFuncall)
@@ -17405,11 +17453,11 @@ func s__doBasicTransform(tls *libc.TLS, cc *CC, astptr uintptr, transformFuncall
 		lineptr = libc.UintptrFromInt32(0)
 		x__AstReportAs(tls, cc, ast, bp+32)
 		if handle != 0 {
-			lineptr = x__AstTempLocalVariable(tls, cc, __ccgo_ts+10173, cc.x__ast_type_string)
+			lineptr = x__AstTempLocalVariable(tls, cc, __ccgo_ts+10175, cc.x__ast_type_string)
 			read_lineptr = x__AstAssign(tls, cc, lineptr, x__NewAST(tls, cc, int32(_AST_FUNCCALL), cc.x__basic_read_line, x__NewAST(tls, cc, int32(_AST_EXPRLIST), handle, libc.UintptrFromInt32(0))))
 			seq = x__NewAST(tls, cc, int32(_AST_SEQUENCE), read_lineptr, libc.UintptrFromInt32(0))
 		} else {
-			lineptr = x__AstIdentifier(tls, cc, __ccgo_ts+10550)
+			lineptr = x__AstIdentifier(tls, cc, __ccgo_ts+10552)
 			seq = libc.UintptrFromInt32(0)
 		}
 		for exprlist != 0 {
@@ -17427,11 +17475,11 @@ func s__doBasicTransform(tls *libc.TLS, cc *CC, astptr uintptr, transformFuncall
 					} else {
 						name = x__GetVarNameForError(tls, cc, var1)
 						if type1 != 0 {
-							v1 = __ccgo_ts + 42467
+							v1 = __ccgo_ts + 42475
 						} else {
-							v1 = __ccgo_ts + 22694
+							v1 = __ccgo_ts + 22702
 						}
-						x__ERROR(tls, cc, ast, __ccgo_ts+42487, libc.VaList(bp+56, name, v1))
+						x__ERROR(tls, cc, ast, __ccgo_ts+42495, libc.VaList(bp+56, name, v1))
 					}
 				}
 			}
@@ -17448,12 +17496,12 @@ func s__doBasicTransform(tls *libc.TLS, cc *CC, astptr uintptr, transformFuncall
 		**(**uintptr)(__ccgo_up(astptr)) = v1
 	case int32(_AST_LABEL):
 		if !((*_AST)(unsafe.Pointer(ast)).Fleft != 0) || !((*_AST)(unsafe.Pointer((*_AST)(unsafe.Pointer(ast)).Fleft)).Fkind == int32(_AST_IDENTIFIER) || (*_AST)(unsafe.Pointer((*_AST)(unsafe.Pointer(ast)).Fleft)).Fkind == int32(_AST_LOCAL_IDENTIFIER)) {
-			x__ERROR(tls, cc, ast, __ccgo_ts+9675, 0)
+			x__ERROR(tls, cc, ast, __ccgo_ts+9677, 0)
 		} else {
 			name1 = x__GetIdentifierName(tls, cc, (*_AST)(unsafe.Pointer(ast)).Fleft)
 			sym1 = x__FindSymbolEx(tls, cc, cc.x__curfunc+160, name1, 0)
 			if sym1 != 0 {
-				x__WARNING(tls, cc, ast, __ccgo_ts+9702, libc.VaList(bp+56, name1))
+				x__WARNING(tls, cc, ast, __ccgo_ts+9704, libc.VaList(bp+56, name1))
 			}
 			x__AddSymbol(tls, cc, cc.x__curfunc+160, name1, int32(_SYM_LOCALLABEL), uintptr(0), libc.UintptrFromInt32(0))
 		}
@@ -17463,7 +17511,7 @@ func s__doBasicTransform(tls *libc.TLS, cc *CC, astptr uintptr, transformFuncall
 		origast = ast
 		ast = (*_AST)(unsafe.Pointer(ast)).Fleft
 		if !(ast != 0) || (*_AST)(unsafe.Pointer(ast)).Fkind != int32(_AST_EXPRLIST) {
-			x__ERROR(tls, cc, ast, __ccgo_ts+42504, 0)
+			x__ERROR(tls, cc, ast, __ccgo_ts+42512, 0)
 			break
 		}
 		for ast != 0 {
@@ -17525,7 +17573,7 @@ func s__doCast(tls *libc.TLS, cc *CC, desttype uintptr, srctype uintptr, src uin
 	if src != 0 && ((*_AST)(unsafe.Pointer(src)).Fkind == int32(_AST_IDENTIFIER) || (*_AST)(unsafe.Pointer(src)).Fkind == int32(_AST_LOCAL_IDENTIFIER)) {
 		name = x__GetUserIdentifierName(tls, cc, src)
 	} else {
-		name = __ccgo_ts + 8689
+		name = __ccgo_ts + 8691
 	}
 	if x__IsArrayType(tls, cc, srctype) != 0 {
 		src = x__ArrayAddress(tls, cc, src)
@@ -17553,7 +17601,7 @@ func s__doCast(tls *libc.TLS, cc *CC, desttype uintptr, srctype uintptr, src uin
 			n1 = x__NumArgsForType(tls, cc, srctype)
 			n2 = x__NumArgsForType(tls, cc, desttype)
 			if n1 != n2 && (cc.x__gl_output == int32(m_OUTPUT_BYTECODE) && cc.x__gl_interp_kind == int32(m_INTERP_KIND_NUCODE)) {
-				x__WARNING(tls, cc, src, __ccgo_ts+34141, libc.VaList(bp+24, n1, n2))
+				x__WARNING(tls, cc, src, __ccgo_ts+34149, libc.VaList(bp+24, n1, n2))
 			}
 		}
 		if x__IsPointerType(tls, cc, srctype) != 0 {
@@ -17561,7 +17609,7 @@ func s__doCast(tls *libc.TLS, cc *CC, desttype uintptr, srctype uintptr, src uin
 				srcbase = x__BaseType(tls, cc, srctype)
 				dstbase = x__BaseType(tls, cc, desttype)
 				if x__IsConstType(tls, cc, srcbase) != 0 && !(x__IsConstType(tls, cc, dstbase) != 0) && !(cc.x__curfunc != 0 && ((*_Function)(unsafe.Pointer(cc.x__curfunc)).Flanguage >= int32(m_LANG_CFAMILY_C) && (*_Function)(unsafe.Pointer(cc.x__curfunc)).Flanguage <= int32(m_LANG_CFAMILY_CPP))) {
-					x__WARNING(tls, cc, src, __ccgo_ts+34214, 0)
+					x__WARNING(tls, cc, src, __ccgo_ts+34222, 0)
 				}
 			}
 			x__AstReportDone(tls, cc, bp)
@@ -17576,7 +17624,7 @@ func s__doCast(tls *libc.TLS, cc *CC, desttype uintptr, srctype uintptr, src uin
 			x__AstReportDone(tls, cc, bp)
 			return x__NewAST(tls, cc, int32(_AST_ADDROF), src, libc.UintptrFromInt32(0))
 		}
-		x__ERROR(tls, cc, src, __ccgo_ts+34251, libc.VaList(bp+24, name))
+		x__ERROR(tls, cc, src, __ccgo_ts+34259, libc.VaList(bp+24, name))
 		x__AstReportDone(tls, cc, bp)
 		return libc.UintptrFromInt32(0)
 	}
@@ -17593,7 +17641,7 @@ func s__doCast(tls *libc.TLS, cc *CC, desttype uintptr, srctype uintptr, src uin
 			x__AstReportDone(tls, cc, bp)
 			return r
 		}
-		x__ERROR(tls, cc, src, __ccgo_ts+34290, libc.VaList(bp+24, name))
+		x__ERROR(tls, cc, src, __ccgo_ts+34298, libc.VaList(bp+24, name))
 		x__AstReportDone(tls, cc, bp)
 		return libc.UintptrFromInt32(0)
 	}
@@ -17630,7 +17678,7 @@ func s__doCast(tls *libc.TLS, cc *CC, desttype uintptr, srctype uintptr, src uin
 		}
 	}
 	x__AstReportDone(tls, cc, bp)
-	x__ERROR(tls, cc, src, __ccgo_ts+34327, libc.VaList(bp+24, name))
+	x__ERROR(tls, cc, src, __ccgo_ts+34335, libc.VaList(bp+24, name))
 	return libc.UintptrFromInt32(0)
 }
 
@@ -17731,10 +17779,10 @@ func s__doCompileMul(tls *libc.TLS, cc *CC, irl uintptr, lhs uintptr, rhs uintpt
 		}
 	}
 	if !(cc.x__mulfunc != 0) {
-		cc.x__mulfunc = x__NewOperand(tls, cc, int32(_IMM_COG_LABEL), __ccgo_ts+46253, 0)
-		cc.x__unsmulfunc = x__NewOperand(tls, cc, int32(_IMM_COG_LABEL), __ccgo_ts+46263, 0)
-		cc.x__muldiva = x__GetOneGlobal(tls, cc, int32(_REG_REG), __ccgo_ts+46276, 0)
-		cc.x__muldivb = x__GetOneGlobal(tls, cc, int32(_REG_REG), __ccgo_ts+46285, 0)
+		cc.x__mulfunc = x__NewOperand(tls, cc, int32(_IMM_COG_LABEL), __ccgo_ts+46261, 0)
+		cc.x__unsmulfunc = x__NewOperand(tls, cc, int32(_IMM_COG_LABEL), __ccgo_ts+46271, 0)
+		cc.x__muldiva = x__GetOneGlobal(tls, cc, int32(_REG_REG), __ccgo_ts+46284, 0)
+		cc.x__muldivb = x__GetOneGlobal(tls, cc, int32(_REG_REG), __ccgo_ts+46293, 0)
 	}
 	x__EmitMove(tls, cc, irl, cc.x__muldiva, lhs, linenum)
 	x__EmitMove(tls, cc, irl, cc.x__muldivb, rhs, linenum)
@@ -17800,8 +17848,8 @@ func s__doGetAddress(tls *libc.TLS, cc *CC, irl uintptr, expr uintptr, isField u
 		return tmp
 	case int32(_AST_ARRAYREF):
 		if !((*_AST)(unsafe.Pointer(expr)).Fright != 0) {
-			x__ERROR(tls, cc, expr, __ccgo_ts+47899, 0)
-			return x__NewOperand(tls, cc, int32(_REG_REG), __ccgo_ts+47924, 0)
+			x__ERROR(tls, cc, expr, __ccgo_ts+47907, 0)
+			return x__NewOperand(tls, cc, int32(_REG_REG), __ccgo_ts+47932, 0)
 		}
 		base = s__CompileExpression(tls, cc, irl, (*_AST)(unsafe.Pointer(expr)).Fleft, libc.UintptrFromInt32(0))
 		offset = s__CompileExpression(tls, cc, irl, (*_AST)(unsafe.Pointer(expr)).Fright, libc.UintptrFromInt32(0))
@@ -17835,7 +17883,7 @@ func s__doGetAddress(tls *libc.TLS, cc *CC, irl uintptr, expr uintptr, isField u
 		}
 		if !(**(**uintptr)(__ccgo_up(bp)) != 0) {
 			name = x__GetUserIdentifierName(tls, cc, (*_AST)(unsafe.Pointer(expr)).Fright)
-			x__ERROR(tls, cc, expr, __ccgo_ts+47928, libc.VaList(bp+40, name))
+			x__ERROR(tls, cc, expr, __ccgo_ts+47936, libc.VaList(bp+40, name))
 			**(**uintptr)(__ccgo_up(bp)) = x__GetArgReg(tls, cc, 0)
 		} else {
 			if flags != 0 {
@@ -17861,7 +17909,7 @@ func s__doGetAddress(tls *libc.TLS, cc *CC, irl uintptr, expr uintptr, isField u
 				return base2
 			}
 			if (*_AST)(unsafe.Pointer(range1)).Fkind != int32(_AST_RANGE) {
-				x__ERROR(tls, cc, expr, __ccgo_ts+47970, 0)
+				x__ERROR(tls, cc, expr, __ccgo_ts+47978, 0)
 				return base2
 			}
 			if (*_AST)(unsafe.Pointer(range1)).Fleft != 0 && !((*_AST)(unsafe.Pointer(range1)).Fright != 0) {
@@ -17892,7 +17940,7 @@ func s__doGetAddress(tls *libc.TLS, cc *CC, irl uintptr, expr uintptr, isField u
 		/* otherwise fall through */
 		fallthrough
 	default:
-		x__ERROR(tls, cc, expr, __ccgo_ts+48001, 0)
+		x__ERROR(tls, cc, expr, __ccgo_ts+48009, 0)
 		break
 	}
 	return x__NewImmediate(tls, cc, -int32(1))
@@ -17916,7 +17964,7 @@ func s__doLoopOptimizeList(tls *libc.TLS, cc *CC, lvs uintptr, list uintptr) {
 	for list != libc.UintptrFromInt32(0) {
 		pull = libc.UintptrFromInt32(0)
 		if (*_AST)(unsafe.Pointer(list)).Fkind != int32(_AST_STMTLIST) {
-			x__ERROR(tls, cc, list, __ccgo_ts+31897, 0)
+			x__ERROR(tls, cc, list, __ccgo_ts+31905, 0)
 		}
 		stmtptr = list
 		stmt = (*_AST)(unsafe.Pointer(stmtptr)).Fleft
@@ -18014,7 +18062,7 @@ func s__doParseFile(tls *libc.TLS, cc *CC, name uintptr, P uintptr, is_dup uintp
 	// check language to process
 	**(**uintptr)(__ccgo_up(bp)) = s__GetExtension(tls, cc, name)
 	if **(**uintptr)(__ccgo_up(bp)) != 0 {
-		if !(libc.Xstrcmp(tls, **(**uintptr)(__ccgo_up(bp)), __ccgo_ts+3264) != 0) {
+		if !(libc.Xstrcmp(tls, **(**uintptr)(__ccgo_up(bp)), __ccgo_ts+3266) != 0) {
 			// try to figure out language based on contents of file
 			fname = x__find_file_on_path(tls, cc, uintptr(unsafe.Pointer(&cc.x__gl_pp)), name, **(**uintptr)(__ccgo_up(bp)), libc.UintptrFromInt32(0))
 			if fname != 0 {
@@ -18023,25 +18071,25 @@ func s__doParseFile(tls *libc.TLS, cc *CC, name uintptr, P uintptr, is_dup uintp
 				**(**uintptr)(__ccgo_up(bp)) = libc.UintptrFromInt32(0)
 			}
 			if !(**(**uintptr)(__ccgo_up(bp)) != 0) {
-				x__WARNING(tls, cc, libc.UintptrFromInt32(0), __ccgo_ts+10701, libc.VaList(bp+2072, name))
-				**(**uintptr)(__ccgo_up(bp)) = __ccgo_ts + 10650
+				x__WARNING(tls, cc, libc.UintptrFromInt32(0), __ccgo_ts+10703, libc.VaList(bp+2072, name))
+				**(**uintptr)(__ccgo_up(bp)) = __ccgo_ts + 10652
 			}
 		}
 		language = x__LanguageFromExtension(tls, cc, **(**uintptr)(__ccgo_up(bp)), bp+8, bp)
 	} else {
 		if cc.x__current != 0 && (*_Module)(unsafe.Pointer(cc.x__current)).FmainLanguage == m_LANG_SPIN_SPIN1 {
-			**(**uintptr)(__ccgo_up(bp)) = __ccgo_ts + 6574
+			**(**uintptr)(__ccgo_up(bp)) = __ccgo_ts + 6576
 			language = m_LANG_SPIN_SPIN1
 		} else {
 			if cc.x__current != 0 && (*_Module)(unsafe.Pointer(cc.x__current)).FmainLanguage == int32(m_LANG_SPIN_SPIN2) {
-				**(**uintptr)(__ccgo_up(bp)) = __ccgo_ts + 10694
+				**(**uintptr)(__ccgo_up(bp)) = __ccgo_ts + 10696
 				language = int32(m_LANG_SPIN_SPIN2)
 			} else {
 				if cc.x__gl_p2 != 0 {
-					**(**uintptr)(__ccgo_up(bp)) = __ccgo_ts + 10694
+					**(**uintptr)(__ccgo_up(bp)) = __ccgo_ts + 10696
 					language = int32(m_LANG_SPIN_SPIN2)
 				} else {
-					**(**uintptr)(__ccgo_up(bp)) = __ccgo_ts + 6574
+					**(**uintptr)(__ccgo_up(bp)) = __ccgo_ts + 6576
 					language = m_LANG_SPIN_SPIN1
 				}
 			}
@@ -18052,17 +18100,17 @@ func s__doParseFile(tls *libc.TLS, cc *CC, name uintptr, P uintptr, is_dup uintp
 		if !(fname != 0) {
 			if language == int32(m_LANG_SPIN_SPIN2) {
 				/* look for a Spin1 file */
-				fname = x__find_file_on_path(tls, cc, uintptr(unsafe.Pointer(&cc.x__gl_pp)), name, __ccgo_ts+6574, (*_Module)(unsafe.Pointer(cc.x__current)).Ffullname)
+				fname = x__find_file_on_path(tls, cc, uintptr(unsafe.Pointer(&cc.x__gl_pp)), name, __ccgo_ts+6576, (*_Module)(unsafe.Pointer(cc.x__current)).Ffullname)
 				if fname != 0 {
 					language = m_LANG_SPIN_SPIN1
-					**(**uintptr)(__ccgo_up(bp)) = __ccgo_ts + 6574
+					**(**uintptr)(__ccgo_up(bp)) = __ccgo_ts + 6576
 				}
 			} else {
 				if language == m_LANG_SPIN_SPIN1 {
-					fname = x__find_file_on_path(tls, cc, uintptr(unsafe.Pointer(&cc.x__gl_pp)), name, __ccgo_ts+10694, (*_Module)(unsafe.Pointer(cc.x__current)).Ffullname)
+					fname = x__find_file_on_path(tls, cc, uintptr(unsafe.Pointer(&cc.x__gl_pp)), name, __ccgo_ts+10696, (*_Module)(unsafe.Pointer(cc.x__current)).Ffullname)
 					if fname != 0 {
 						language = int32(m_LANG_SPIN_SPIN2)
-						**(**uintptr)(__ccgo_up(bp)) = __ccgo_ts + 10694
+						**(**uintptr)(__ccgo_up(bp)) = __ccgo_ts + 10696
 					}
 				}
 			}
@@ -18071,7 +18119,7 @@ func s__doParseFile(tls *libc.TLS, cc *CC, name uintptr, P uintptr, is_dup uintp
 			fname = x__NormalizePath(tls, cc, fname)
 		}
 	} else {
-		if !(libc.Xstrcasecmp(tls, **(**uintptr)(__ccgo_up(bp)), __ccgo_ts+10656) != 0) {
+		if !(libc.Xstrcasecmp(tls, **(**uintptr)(__ccgo_up(bp)), __ccgo_ts+10658) != 0) {
 			fname = x__find_file_on_path(tls, cc, uintptr(unsafe.Pointer(&cc.x__gl_pp)), name, **(**uintptr)(__ccgo_up(bp)), libc.UintptrFromInt32(0))
 		}
 	}
@@ -18080,7 +18128,7 @@ func s__doParseFile(tls *libc.TLS, cc *CC, name uintptr, P uintptr, is_dup uintp
 	}
 	if **(**uint8)(__ccgo_up(bp + 8)) != 0 {
 		if !(**(**uintptr)(__ccgo_up(bp)) != 0) {
-			**(**uintptr)(__ccgo_up(bp)) = __ccgo_ts + 6574
+			**(**uintptr)(__ccgo_up(bp)) = __ccgo_ts + 6576
 		}
 		shortName = malloc(tls, cc, libc.Xstrlen(tls, name)+libc.Xstrlen(tls, **(**uintptr)(__ccgo_up(bp)))+uint64(2))
 		libc.Xstrcpy(tls, shortName, name)
@@ -18097,7 +18145,7 @@ func s__doParseFile(tls *libc.TLS, cc *CC, name uintptr, P uintptr, is_dup uintp
 		sym = x__FindSymbolEx(tls, cc, P+144, fname, 0)
 		if sym != 0 {
 			if (*_Symbol)(unsafe.Pointer(sym)).Fkind != int32(_SYM_FILE) {
-				x__ERROR(tls, cc, libc.UintptrFromInt32(0), __ccgo_ts+10745, libc.VaList(bp+2072, fname))
+				x__ERROR(tls, cc, libc.UintptrFromInt32(0), __ccgo_ts+10747, libc.VaList(bp+2072, fname))
 				return P
 			}
 			if is_dup != 0 {
@@ -18106,7 +18154,7 @@ func s__doParseFile(tls *libc.TLS, cc *CC, name uintptr, P uintptr, is_dup uintp
 			return P
 		}
 	}
-	f = fopen(tls, cc, fname, __ccgo_ts+10626)
+	f = fopen(tls, cc, fname, __ccgo_ts+10628)
 	if !(f != 0) {
 		if cc.x__current != 0 {
 			v1 = (*_LexStream)(unsafe.Pointer((*_Module)(unsafe.Pointer(cc.x__current)).FLptr)).FlineCounter
@@ -18120,7 +18168,7 @@ func s__doParseFile(tls *libc.TLS, cc *CC, name uintptr, P uintptr, is_dup uintp
 			v2 = libc.UintptrFromInt32(0)
 		}
 		errAst = v2
-		x__ERROR(tls, cc, errAst, __ccgo_ts+10778, libc.VaList(bp+2072, fname, libc.Xstrerror(tls, **(**int32)(__ccgo_up(libc.X__error(tls))))))
+		x__ERROR(tls, cc, errAst, __ccgo_ts+10780, libc.VaList(bp+2072, fname, libc.Xstrerror(tls, **(**int32)(__ccgo_up(libc.X__error(tls))))))
 		exit(tls, cc, int32(1))
 	}
 	x__AddSourceFile(tls, cc, shortName, fullName)
@@ -18139,7 +18187,7 @@ func s__doParseFile(tls *libc.TLS, cc *CC, name uintptr, P uintptr, is_dup uintp
 	if cc.x__gl_printprogress != 0 {
 		n = cc.x__gl_depth
 		for n > 0 {
-			printf(tls, cc, __ccgo_ts+10807, 0)
+			printf(tls, cc, __ccgo_ts+10809, 0)
 			n = n - 1
 		}
 		tail = x__FindLastDirectoryChar(tls, cc, fname)
@@ -18148,7 +18196,7 @@ func s__doParseFile(tls *libc.TLS, cc *CC, name uintptr, P uintptr, is_dup uintp
 		} else {
 			tail = fname
 		}
-		printf(tls, cc, __ccgo_ts+4267, libc.VaList(bp+2072, tail))
+		printf(tls, cc, __ccgo_ts+4269, libc.VaList(bp+2072, tail))
 		cc.x__gl_depth = cc.x__gl_depth + 1
 	}
 	/* if we have already visited this file, skip it */
@@ -18197,10 +18245,10 @@ func s__doParseFile(tls *libc.TLS, cc *CC, name uintptr, P uintptr, is_dup uintp
 			argc = 0
 			v1 = argc
 			argc = argc + 1
-			(**(**[256]uintptr)(__ccgo_up(bp + 16)))[v1] = __ccgo_ts + 10810
+			(**(**[256]uintptr)(__ccgo_up(bp + 16)))[v1] = __ccgo_ts + 10812
 			argc = x__pp_get_defines_as_args(tls, cc, uintptr(unsafe.Pointer(&cc.x__gl_pp)), argc, bp+16, int32(m_MAX_MCPP_ARGC))
 			if argc >= libc.Int32FromInt32(m_MAX_MCPP_ARGC)-libc.Int32FromInt32(1) {
-				x__ERROR(tls, cc, libc.UintptrFromInt32(0), __ccgo_ts+10819, 0)
+				x__ERROR(tls, cc, libc.UintptrFromInt32(0), __ccgo_ts+10821, 0)
 			}
 			v1 = argc
 			argc = argc + 1
@@ -18212,14 +18260,14 @@ func s__doParseFile(tls *libc.TLS, cc *CC, name uintptr, P uintptr, is_dup uintp
 			parseString = x__mcpp_get_mem_buffer(tls, cc, int32(_OUT))
 			if r != 0 {
 				if errString != 0 {
-					x__ERROR(tls, cc, libc.UintptrFromInt32(0), __ccgo_ts+10844, libc.VaList(bp+2072, errString))
+					x__ERROR(tls, cc, libc.UintptrFromInt32(0), __ccgo_ts+10846, libc.VaList(bp+2072, errString))
 				} else {
-					x__ERROR(tls, cc, libc.UintptrFromInt32(0), __ccgo_ts+10868, 0)
+					x__ERROR(tls, cc, libc.UintptrFromInt32(0), __ccgo_ts+10870, 0)
 				}
 				exit(tls, cc, int32(1))
 			} else {
 				if errString != 0 && libc.Xstrlen(tls, errString) != 0 {
-					x__WARNING(tls, cc, libc.UintptrFromInt32(0), __ccgo_ts+10890, libc.VaList(bp+2072, errString))
+					x__WARNING(tls, cc, libc.UintptrFromInt32(0), __ccgo_ts+10892, libc.VaList(bp+2072, errString))
 				}
 			}
 		} else {
@@ -18228,10 +18276,10 @@ func s__doParseFile(tls *libc.TLS, cc *CC, name uintptr, P uintptr, is_dup uintp
 				x__pp_push_file(tls, cc, uintptr(unsafe.Pointer(&cc.x__gl_pp)), fname)
 				defineState = x__pp_get_define_state(tls, cc, uintptr(unsafe.Pointer(&cc.x__gl_pp)))
 				if language == int32(m_LANG_SPIN_SPIN2) { /* add predefined ASMCLK macro */
-					x__pp_define(tls, cc, uintptr(unsafe.Pointer(&cc.x__gl_pp)), __ccgo_ts+10916, uintptr(unsafe.Pointer(&cc.s__asmclk_def)))
-					x__pp_define(tls, cc, uintptr(unsafe.Pointer(&cc.x__gl_pp)), __ccgo_ts+10923, uintptr(unsafe.Pointer(&cc.s__asmclk_def)))
-					x__pp_define(tls, cc, uintptr(unsafe.Pointer(&cc.x__gl_pp)), __ccgo_ts+10930, uintptr(unsafe.Pointer(&cc.s__asmclk_def)))
-					x__pp_define(tls, cc, uintptr(unsafe.Pointer(&cc.x__gl_pp)), __ccgo_ts+10937, uintptr(unsafe.Pointer(&cc.s__asmclk_def)))
+					x__pp_define(tls, cc, uintptr(unsafe.Pointer(&cc.x__gl_pp)), __ccgo_ts+10918, uintptr(unsafe.Pointer(&cc.s__asmclk_def)))
+					x__pp_define(tls, cc, uintptr(unsafe.Pointer(&cc.x__gl_pp)), __ccgo_ts+10925, uintptr(unsafe.Pointer(&cc.s__asmclk_def)))
+					x__pp_define(tls, cc, uintptr(unsafe.Pointer(&cc.x__gl_pp)), __ccgo_ts+10932, uintptr(unsafe.Pointer(&cc.s__asmclk_def)))
+					x__pp_define(tls, cc, uintptr(unsafe.Pointer(&cc.x__gl_pp)), __ccgo_ts+10939, uintptr(unsafe.Pointer(&cc.s__asmclk_def)))
 				}
 				x__pp_run(tls, cc, uintptr(unsafe.Pointer(&cc.x__gl_pp)))
 				parseString = x__pp_finish(tls, cc, uintptr(unsafe.Pointer(&cc.x__gl_pp)))
@@ -18261,12 +18309,12 @@ func s__doParseFile(tls *libc.TLS, cc *CC, name uintptr, P uintptr, is_dup uintp
 		if cc.x__gl_gas_dat != 0 {
 			(*_Module)(unsafe.Pointer(cc.x__current)).Fdatname = malloc(tls, cc, libc.Xstrlen(tls, (*_Module)(unsafe.Pointer(P)).Fclassname)+uint64(40))
 			if !((*_Module)(unsafe.Pointer(cc.x__current)).Fdatname != 0) {
-				fprintf(tls, cc, libc.X__stderrp, __ccgo_ts+10944, 0)
+				fprintf(tls, cc, libc.X__stderrp, __ccgo_ts+10946, 0)
 				exit(tls, cc, int32(2))
 			}
-			libc.Xsprintf(tls, (*_Module)(unsafe.Pointer(cc.x__current)).Fdatname, __ccgo_ts+10960, libc.VaList(bp+2072, (*_Module)(unsafe.Pointer(P)).Fclassname))
+			libc.Xsprintf(tls, (*_Module)(unsafe.Pointer(cc.x__current)).Fdatname, __ccgo_ts+10962, libc.VaList(bp+2072, (*_Module)(unsafe.Pointer(P)).Fclassname))
 		} else {
-			(*_Module)(unsafe.Pointer(cc.x__current)).Fdatname = __ccgo_ts + 10969
+			(*_Module)(unsafe.Pointer(cc.x__current)).Fdatname = __ccgo_ts + 10971
 		}
 	}
 	if cc.x__gl_errors >= cc.x__gl_max_errors {
@@ -18587,7 +18635,7 @@ _24:
 		ast = (*_AST)(unsafe.Pointer(ast)).Fleft
 	}
 	if (*_AST)(unsafe.Pointer(ast)).Fkind != int32(_AST_THENELSE) {
-		x__ERROR(tls, cc, ast, __ccgo_ts+31850, 0)
+		x__ERROR(tls, cc, ast, __ccgo_ts+31858, 0)
 		return newflags
 	}
 	s__blockCSE(tls, cc, stmtptr, ast+16, cse, flags)
@@ -18696,7 +18744,7 @@ func s__do_debug(tls *libc.TLS, cc *CC, set int32) (r int32) {
 		x__unget_ch(tls, cc)
 		if set != 0 {
 			if cc.x__warn_level&int32(1) != 0 {
-				x__cwarn(tls, cc, __ccgo_ts+103713, libc.UintptrFromInt32(0), 0, libc.UintptrFromInt32(0))
+				x__cwarn(tls, cc, __ccgo_ts+103719, libc.UintptrFromInt32(0), 0, libc.UintptrFromInt32(0))
 			} /* _W1_ */
 			return int32(m_TRUE)
 		} else {
@@ -18896,7 +18944,7 @@ func s__do_if(tls *libc.TLS, cc *CC, hash int32, directive_name uintptr) (r int3
 	}
 	if cc.x__mcpp_debug&int32(m_MACRO_CALL) != 0 {
 		s__sync_linenum(tls, cc)
-		(*(*func(*libc.TLS, *CC, _OUTDEST, uintptr, uintptr) int32)(unsafe.Pointer(&struct{ uintptr }{cc.x__mcpp_fprintf})))(tls, cc, int32(_OUT), __ccgo_ts+104078, libc.VaList(bp+8, directive_name, cc.x__src_line))
+		(*(*func(*libc.TLS, *CC, _OUTDEST, uintptr, uintptr) int32)(unsafe.Pointer(&struct{ uintptr }{cc.x__mcpp_fprintf})))(tls, cc, int32(_OUT), __ccgo_ts+104084, libc.VaList(bp+8, directive_name, cc.x__src_line))
 	}
 	if hash == libc.Int32FromUint8('i')^libc.Int32FromUint8('\000')<<libc.Int32FromInt32(1) { /* #if or #elif             */
 		x__unget_ch(tls, cc)
@@ -18916,7 +18964,7 @@ func s__do_if(tls *libc.TLS, cc *CC, hash int32, directive_name uintptr) (r int3
 		found = libc.BoolInt32(v2 != libc.UintptrFromInt32(0)) /* Look in table*/
 		if cc.x__mcpp_debug&int32(m_MACRO_CALL) != 0 {
 			if found != 0 {
-				(*(*func(*libc.TLS, *CC, _OUTDEST, uintptr, uintptr) int32)(unsafe.Pointer(&struct{ uintptr }{cc.x__mcpp_fprintf})))(tls, cc, int32(_OUT), __ccgo_ts+104089, libc.VaList(bp+8, defp+49))
+				(*(*func(*libc.TLS, *CC, _OUTDEST, uintptr, uintptr) int32)(unsafe.Pointer(&struct{ uintptr }{cc.x__mcpp_fprintf})))(tls, cc, int32(_OUT), __ccgo_ts+104095, libc.VaList(bp+8, defp+49))
 			}
 		}
 	}
@@ -18932,7 +18980,7 @@ func s__do_if(tls *libc.TLS, cc *CC, hash int32, directive_name uintptr) (r int3
 		} else {
 			v1 = int32('F')
 		}
-		(*(*func(*libc.TLS, *CC, _OUTDEST, uintptr, uintptr) int32)(unsafe.Pointer(&struct{ uintptr }{cc.x__mcpp_fprintf})))(tls, cc, int32(_OUT), __ccgo_ts+104096, libc.VaList(bp+8, v1))
+		(*(*func(*libc.TLS, *CC, _OUTDEST, uintptr, uintptr) int32)(unsafe.Pointer(&struct{ uintptr }{cc.x__mcpp_fprintf})))(tls, cc, int32(_OUT), __ccgo_ts+104102, libc.VaList(bp+8, v1))
 		/* Report wheather the directive is evaluated TRUE or FALSE */
 	}
 	return int32(m_TRUE)
@@ -18953,8 +19001,8 @@ func s__do_line1(tls *libc.TLS, cc *CC) (r int64) {
 	var not_digits, out_of_range, save, valp uintptr
 	var v5, v6 ___darwin_ct_rune_t
 	_, _, _, _, _, _, _, _, _, _ = c, not_digits, out_of_range, save, token_type, valp, v1, v3, v5, v6
-	not_digits = __ccgo_ts + 104106 /* _E_ _W1_ */
-	out_of_range = __ccgo_ts + 104155
+	not_digits = __ccgo_ts + 104112 /* _E_ _W1_ */
+	out_of_range = __ccgo_ts + 104161
 	v1 = x__skip_ws(tls, cc)
 	c = v1
 	if v1 == int32('\n') {
@@ -19040,17 +19088,17 @@ func s__do_line1(tls *libc.TLS, cc *CC) (r int64) {
 	goto no_num
 no_num:
 	;
-	x__cerror(tls, cc, __ccgo_ts+104199, libc.UintptrFromInt32(0), 0, libc.UintptrFromInt32(0)) /* _E_  */
+	x__cerror(tls, cc, __ccgo_ts+104205, libc.UintptrFromInt32(0), 0, libc.UintptrFromInt32(0)) /* _E_  */
 	return -int64(1)
 	goto illeg_num
 illeg_num:
 	;
-	x__cerror(tls, cc, __ccgo_ts+104214, uintptr(unsafe.Pointer(&cc.x__work_buf)), 0, libc.UintptrFromInt32(0)) /* _E_  */
+	x__cerror(tls, cc, __ccgo_ts+104220, uintptr(unsafe.Pointer(&cc.x__work_buf)), 0, libc.UintptrFromInt32(0)) /* _E_  */
 	return -int64(1)
 	goto not_fname
 not_fname:
 	;
-	x__cerror(tls, cc, __ccgo_ts+104237, uintptr(unsafe.Pointer(&cc.x__work_buf)), 0, libc.UintptrFromInt32(0)) /* _E_  */
+	x__cerror(tls, cc, __ccgo_ts+104243, uintptr(unsafe.Pointer(&cc.x__work_buf)), 0, libc.UintptrFromInt32(0)) /* _E_  */
 	return -int64(1)
 }
 
@@ -19162,14 +19210,14 @@ func s__do_msg(tls *libc.TLS, cc *CC, severity uintptr, format uintptr, arg1 uin
 	} /* Skip macro   */
 	if file != libc.UintptrFromInt32(0) {
 		(*_FILEINFO)(unsafe.Pointer(file)).Fline = cc.x__src_line
-		(*(*func(*libc.TLS, *CC, _OUTDEST, uintptr, uintptr) int32)(unsafe.Pointer(&struct{ uintptr }{cc.x__mcpp_fprintf})))(tls, cc, int32(_ERR), __ccgo_ts+111939, libc.VaList(bp+8, cc.x__cur_fullname, cc.x__src_line, severity))
+		(*(*func(*libc.TLS, *CC, _OUTDEST, uintptr, uintptr) int32)(unsafe.Pointer(&struct{ uintptr }{cc.x__mcpp_fprintf})))(tls, cc, int32(_ERR), __ccgo_ts+111945, libc.VaList(bp+8, cc.x__cur_fullname, cc.x__src_line, severity))
 	}
 	(*(*func(*libc.TLS, *CC, _OUTDEST, uintptr, uintptr) int32)(unsafe.Pointer(&struct{ uintptr }{cc.x__mcpp_fprintf})))(tls, cc, int32(_ERR), format, libc.VaList(bp+8, arg_t[0], arg2, arg_t[int32(1)]))
 	(*(*func(*libc.TLS, *CC, int32, _OUTDEST) int32)(unsafe.Pointer(&struct{ uintptr }{cc.x__mcpp_fputc})))(tls, cc, int32('\n'), int32(_ERR))
 	/* Print source line, includers and expanding macros    */
 	file = cc.x__infile
 	if file != libc.UintptrFromInt32(0) && (*_FILEINFO)(unsafe.Pointer(file)).Ffp != libc.UintptrFromInt32(0) {
-		(*(*func(*libc.TLS, *CC, _OUTDEST, uintptr, uintptr) int32)(unsafe.Pointer(&struct{ uintptr }{cc.x__mcpp_fprintf})))(tls, cc, int32(_ERR), __ccgo_ts+111952, libc.VaList(bp+8, (*_FILEINFO)(unsafe.Pointer(file)).Fbuffer))
+		(*(*func(*libc.TLS, *CC, _OUTDEST, uintptr, uintptr) int32)(unsafe.Pointer(&struct{ uintptr }{cc.x__mcpp_fprintf})))(tls, cc, int32(_ERR), __ccgo_ts+111958, libc.VaList(bp+8, (*_FILEINFO)(unsafe.Pointer(file)).Fbuffer))
 		/* Current source line  */
 		file = (*_FILEINFO)(unsafe.Pointer(file)).Fparent
 	}
@@ -19179,19 +19227,19 @@ func s__do_msg(tls *libc.TLS, cc *CC, severity uintptr, format uintptr, arg1 uin
 				defp = x__look_id(tls, cc, (*_FILEINFO)(unsafe.Pointer(file)).Ffilename)
 				if int32((*_DEFBUF)(unsafe.Pointer(defp)).Fnargs) > -libc.Int32FromInt32(2)-(libc.Int32FromInt32(m___SCHAR_MAX__)*libc.Int32FromInt32(2)+libc.Int32FromInt32(1)+libc.Int32FromInt32(1)|(libc.Int32FromInt32(m___SCHAR_MAX__)*libc.Int32FromInt32(2)+libc.Int32FromInt32(1)+libc.Int32FromInt32(1))*libc.Int32FromInt32(2))-libc.Int32FromInt32(3) && !((*_FILEINFO)(unsafe.Pointer(file)).Fparent != 0 && (*_fileinfo)(unsafe.Pointer((*_FILEINFO)(unsafe.Pointer(file)).Fparent)).Ffilename != 0 && libc.Xstrcmp(tls, (*_FILEINFO)(unsafe.Pointer(file)).Ffilename, (*_fileinfo)(unsafe.Pointer((*_FILEINFO)(unsafe.Pointer(file)).Fparent)).Ffilename) == 0) {
 					/* If the name is not duplicate of parent   */
-					x__dump_a_def(tls, cc, __ccgo_ts+110551, defp, m_FALSE, int32(m_TRUE), cc.x__fp_err)
+					x__dump_a_def(tls, cc, __ccgo_ts+110557, defp, m_FALSE, int32(m_TRUE), cc.x__fp_err)
 				}
 			}
 		} else { /* Source file          */
 			if int32(**(**int8)(__ccgo_up((*_FILEINFO)(unsafe.Pointer(file)).Fbuffer))) == int32('\000') {
-				libc.Xstrcpy(tls, (*_FILEINFO)(unsafe.Pointer(file)).Fbuffer, __ccgo_ts+4265)
+				libc.Xstrcpy(tls, (*_FILEINFO)(unsafe.Pointer(file)).Fbuffer, __ccgo_ts+4267)
 			}
 			if (*_FILEINFO)(unsafe.Pointer(file)).Fline != 0 {
 				v2 = (*_FILEINFO)(unsafe.Pointer(file)).Ffull_fname
 			} else {
-				v2 = __ccgo_ts + 108033
+				v2 = __ccgo_ts + 108039
 			}
-			(*(*func(*libc.TLS, *CC, _OUTDEST, uintptr, uintptr) int32)(unsafe.Pointer(&struct{ uintptr }{cc.x__mcpp_fprintf})))(tls, cc, int32(_ERR), __ccgo_ts+111959, libc.VaList(bp+8, v2, (*_FILEINFO)(unsafe.Pointer(file)).Fline, (*_FILEINFO)(unsafe.Pointer(file)).Fbuffer)) /* The source line      */
+			(*(*func(*libc.TLS, *CC, _OUTDEST, uintptr, uintptr) int32)(unsafe.Pointer(&struct{ uintptr }{cc.x__mcpp_fprintf})))(tls, cc, int32(_ERR), __ccgo_ts+111965, libc.VaList(bp+8, v2, (*_FILEINFO)(unsafe.Pointer(file)).Fline, (*_FILEINFO)(unsafe.Pointer(file)).Fbuffer)) /* The source line      */
 		}
 		file = (*_FILEINFO)(unsafe.Pointer(file)).Fparent
 	}
@@ -19243,7 +19291,7 @@ func s__do_msg(tls *libc.TLS, cc *CC, severity uintptr, format uintptr, arg1 uin
 			if int32((*_DEFBUF)(unsafe.Pointer(defp)).Fnargs) <= -libc.Int32FromInt32(2)-(libc.Int32FromInt32(m___SCHAR_MAX__)*libc.Int32FromInt32(2)+libc.Int32FromInt32(1)+libc.Int32FromInt32(1)|(libc.Int32FromInt32(m___SCHAR_MAX__)*libc.Int32FromInt32(2)+libc.Int32FromInt32(1)+libc.Int32FromInt32(1))*libc.Int32FromInt32(2))-libc.Int32FromInt32(3) {
 				goto _9
 			} /* Standard predefined  */
-			x__dump_a_def(tls, cc, __ccgo_ts+110551, defp, m_FALSE, int32(m_TRUE), cc.x__fp_err)
+			x__dump_a_def(tls, cc, __ccgo_ts+110557, defp, m_FALSE, int32(m_TRUE), cc.x__fp_err)
 			/* Macro already read over  */
 		}
 		goto _9
@@ -19307,7 +19355,7 @@ func s__do_pragma_op(tls *libc.TLS, cc *CC) {
 		if v3 && v1 != libc.UintptrFromInt32(0) && int32((*_DEFBUF)(unsafe.Pointer(defp)).Fnargs) == -libc.Int32FromInt32(1)-(libc.Int32FromInt32(m___SCHAR_MAX__)*libc.Int32FromInt32(2)+libc.Int32FromInt32(1)+libc.Int32FromInt32(1)|(libc.Int32FromInt32(m___SCHAR_MAX__)*libc.Int32FromInt32(2)+libc.Int32FromInt32(1)+libc.Int32FromInt32(1))*libc.Int32FromInt32(2)) { /* _Pragma() operator   */
 			if prev != 0 {
 				s__putout(tls, cc, uintptr(unsafe.Pointer(&cc.s__output)))                                            /* Putout the previous sequence */
-				**(**uintptr)(__ccgo_up(bp)) = _stpcpy(tls, uintptr(unsafe.Pointer(&cc.s__output)), __ccgo_ts+108151) /* From top of buffer   */
+				**(**uintptr)(__ccgo_up(bp)) = _stpcpy(tls, uintptr(unsafe.Pointer(&cc.s__output)), __ccgo_ts+108157) /* From top of buffer   */
 			}
 			/* is_macro() already read over possible spaces after _Pragma   */
 			v1 = **(**uintptr)(__ccgo_up(bp))
@@ -19347,7 +19395,7 @@ func s__do_pragma_op(tls *libc.TLS, cc *CC) {
 				s__put_seq(tls, cc, uintptr(unsafe.Pointer(&cc.s__output)), **(**uintptr)(__ccgo_up(bp)))
 				return
 			}
-			libc.Xstrcpy(tls, cc.x__workp, __ccgo_ts+4265) /* Terminate with <newline> */
+			libc.Xstrcpy(tls, cc.x__workp, __ccgo_ts+4267) /* Terminate with <newline> */
 			x__unget_string(tls, cc, uintptr(unsafe.Pointer(&cc.x__work_buf)), libc.UintptrFromInt32(0))
 			x__do_pragma(tls, cc)                                                                                                  /* Do the #pragma "line"    */
 			**(**uintptr)(__ccgo_up(cc.x__infile)) += uintptr(libc.Xstrlen(tls, (*_FILEINFO)(unsafe.Pointer(cc.x__infile)).Fbptr)) /* Clear sequence   */
@@ -19375,7 +19423,7 @@ func s__do_preprocessed(tls *libc.TLS, cc *CC) {
 	var colon, comment, corrupted, cp, dir, file, incptr, lbuf, v1, v2, v4 uintptr
 	var v3, v5, v7 bool
 	_, _, _, _, _, _, _, _, _, _, _, _, _, _ = colon, comment, corrupted, cp, dir, file, incptr, lbuf, v1, v2, v3, v4, v5, v7
-	corrupted = __ccgo_ts + 110239
+	corrupted = __ccgo_ts + 110245
 	comment = libc.UintptrFromInt32(0)
 	colon = libc.UintptrFromInt32(0)
 	file = cc.x__infile
@@ -19383,20 +19431,20 @@ func s__do_preprocessed(tls *libc.TLS, cc *CC) {
 	(*_FILEINFO)(unsafe.Pointer(file)).Fbptr = v1
 	lbuf = v1 /* Reset file->bptr */
 	/* Copy the input to output until a comment line appears.       */
-	for libc.Xfgets(tls, lbuf, int32(m_NBUFF), (*_FILEINFO)(unsafe.Pointer(file)).Ffp) != libc.UintptrFromInt32(0) && libc.Xmemcmp(tls, lbuf, __ccgo_ts+22439, uint64(2)) != 0 {
+	for libc.Xfgets(tls, lbuf, int32(m_NBUFF), (*_FILEINFO)(unsafe.Pointer(file)).Ffp) != libc.UintptrFromInt32(0) && libc.Xmemcmp(tls, lbuf, __ccgo_ts+22447, uint64(2)) != 0 {
 		(*(*func(*libc.TLS, *CC, uintptr, _OUTDEST) int32)(unsafe.Pointer(&struct{ uintptr }{cc.x__mcpp_fputs})))(tls, cc, lbuf, int32(_OUT))
 	}
-	if !(libc.Xstrcmp(tls, lbuf, __ccgo_ts+105082) == libc.Int32FromInt32(0)) {
-		x__cfatal(tls, cc, __ccgo_ts+110275, libc.UintptrFromInt32(0), 0, libc.UintptrFromInt32(0))
+	if !(libc.Xstrcmp(tls, lbuf, __ccgo_ts+105088) == libc.Int32FromInt32(0)) {
+		x__cfatal(tls, cc, __ccgo_ts+110281, libc.UintptrFromInt32(0), 0, libc.UintptrFromInt32(0))
 	}
 	/* Define macros according to the #define lines.    */
 	for libc.Xfgets(tls, lbuf, int32(m_NBUFF), (*_FILEINFO)(unsafe.Pointer(file)).Ffp) != libc.UintptrFromInt32(0) {
-		if libc.Xmemcmp(tls, lbuf, __ccgo_ts+22439, uint64(2)) == 0 {
+		if libc.Xmemcmp(tls, lbuf, __ccgo_ts+22447, uint64(2)) == 0 {
 			/* Standard predefined macro    */
 			continue
 		}
-		if libc.Xmemcmp(tls, lbuf, __ccgo_ts+90161, uint64(8)) != 0 {
-			if libc.Xmemcmp(tls, lbuf, __ccgo_ts+10628, uint64(5)) == 0 {
+		if libc.Xmemcmp(tls, lbuf, __ccgo_ts+90167, uint64(8)) != 0 {
+			if libc.Xmemcmp(tls, lbuf, __ccgo_ts+10630, uint64(5)) == 0 {
 				continue
 			} else {
 				x__cfatal(tls, cc, corrupted, libc.UintptrFromInt32(0), 0, libc.UintptrFromInt32(0))
@@ -19405,7 +19453,7 @@ func s__do_preprocessed(tls *libc.TLS, cc *CC) {
 		/* Filename and line-number information in comment as:  */
 		/* dir/fname:1234\t*/
 		cp = lbuf + uintptr(libc.Xstrlen(tls, lbuf))
-		if v3 = libc.Xmemcmp(tls, cp-uintptr(4), __ccgo_ts+110309, uint64(4)) != 0; !v3 {
+		if v3 = libc.Xmemcmp(tls, cp-uintptr(4), __ccgo_ts+110315, uint64(4)) != 0; !v3 {
 			**(**int8)(__ccgo_up(cp - libc.UintptrFromInt32(4))) = int8('\000')
 			v1 = libc.Xstrrchr(tls, lbuf, int32('*'))
 			comment = v1
@@ -19414,7 +19462,7 @@ func s__do_preprocessed(tls *libc.TLS, cc *CC) {
 			comment = comment - 1
 			v2 = comment
 		}
-		if v7 = v5 || libc.Xmemcmp(tls, v2, __ccgo_ts+90146, uint64(3)) != 0; !v7 {
+		if v7 = v5 || libc.Xmemcmp(tls, v2, __ccgo_ts+90152, uint64(3)) != 0; !v7 {
 			v4 = libc.Xstrrchr(tls, comment, int32(':'))
 			colon = v4
 		}
@@ -19443,7 +19491,7 @@ func s__do_preprocessed(tls *libc.TLS, cc *CC) {
 		/* Register the filename to fnamelist[] */
 		/* inc_dirp may be NULL, and cur_fname may be "(predefined)"    */
 		cc.x__cur_fname = s__set_fname(tls, cc, dir+uintptr(libc.Xstrlen(tls, **(**uintptr)(__ccgo_up(cc.x__inc_dirp)))))
-		libc.Xstrcpy(tls, comment-uintptr(2), __ccgo_ts+4265) /* Remove the comment   */
+		libc.Xstrcpy(tls, comment-uintptr(2), __ccgo_ts+4267) /* Remove the comment   */
 		x__unget_string(tls, cc, lbuf+uintptr(8), libc.UintptrFromInt32(0))
 		x__do_define(tls, cc, m_FALSE, 0)
 		x__get_ch(tls, cc)   /* '\n' */
@@ -19478,12 +19526,12 @@ func s__do_undef(tls *libc.TLS, cc *CC) {
 		defp = v2
 		if v2 == libc.UintptrFromInt32(0) {
 			if cc.x__warn_level&int32(8) != 0 {
-				x__cwarn(tls, cc, __ccgo_ts+104880, uintptr(unsafe.Pointer(&cc.x__identifier)), 0, libc.UintptrFromInt32(0))
+				x__cwarn(tls, cc, __ccgo_ts+104886, uintptr(unsafe.Pointer(&cc.x__identifier)), 0, libc.UintptrFromInt32(0))
 			}
 		} else {
 			if int32((*_DEFBUF)(unsafe.Pointer(defp)).Fnargs) <= -libc.Int32FromInt32(2)-(libc.Int32FromInt32(m___SCHAR_MAX__)*libc.Int32FromInt32(2)+libc.Int32FromInt32(1)+libc.Int32FromInt32(1)|(libc.Int32FromInt32(m___SCHAR_MAX__)*libc.Int32FromInt32(2)+libc.Int32FromInt32(1)+libc.Int32FromInt32(1))*libc.Int32FromInt32(2))-libc.Int32FromInt32(3) || int32((*_DEFBUF)(unsafe.Pointer(defp)).Fnargs) == -libc.Int32FromInt32(1)-(libc.Int32FromInt32(m___SCHAR_MAX__)*libc.Int32FromInt32(2)+libc.Int32FromInt32(1)+libc.Int32FromInt32(1)|(libc.Int32FromInt32(m___SCHAR_MAX__)*libc.Int32FromInt32(2)+libc.Int32FromInt32(1)+libc.Int32FromInt32(1))*libc.Int32FromInt32(2)) {
 				/* _Pragma() pseudo-macro   */
-				x__cerror(tls, cc, __ccgo_ts+104900, uintptr(unsafe.Pointer(&cc.x__identifier)), 0, libc.UintptrFromInt32(0))
+				x__cerror(tls, cc, __ccgo_ts+104906, uintptr(unsafe.Pointer(&cc.x__identifier)), 0, libc.UintptrFromInt32(0))
 			} else {
 				c = x__skip_ws(tls, cc)
 				x__unget_ch(tls, cc)
@@ -19512,7 +19560,7 @@ func s__domakedouble(tls *libc.TLS, cc *CC, typ uintptr, ast uintptr) (r uintptr
 		return x__FoldIfConst(tls, cc, ret)
 	}
 	if !(!(typ != 0) || x__IsGenericType(tls, cc, typ) != 0 || x__IsIntType(tls, cc, typ) != 0) {
-		x__ERROR(tls, cc, ast, __ccgo_ts+32652, 0)
+		x__ERROR(tls, cc, ast, __ccgo_ts+32660, 0)
 		return ast
 	}
 	ast = s__forcepromote(tls, cc, typ, ast)
@@ -19552,7 +19600,7 @@ func s__domakefloat(tls *libc.TLS, cc *CC, typ uintptr, ast uintptr) (r uintptr)
 		return x__FoldIfConst(tls, cc, ret)
 	}
 	if !(!(typ != 0) || x__IsGenericType(tls, cc, typ) != 0 || x__IsIntType(tls, cc, typ) != 0) {
-		x__ERROR(tls, cc, ast, __ccgo_ts+32652, 0)
+		x__ERROR(tls, cc, ast, __ccgo_ts+32660, 0)
 		return ast
 	}
 	ast = s__forcepromote(tls, cc, typ, ast)
@@ -19594,13 +19642,13 @@ func s__dump_args(tls *libc.TLS, cc *CC, why uintptr, nargs int32, arglist uintp
 	 */
 	var i int32
 	_ = i
-	(*(*func(*libc.TLS, *CC, _OUTDEST, uintptr, uintptr) int32)(unsafe.Pointer(&struct{ uintptr }{cc.x__mcpp_fprintf})))(tls, cc, int32(_DBG), __ccgo_ts+105982, libc.VaList(bp+8, nargs, why))
+	(*(*func(*libc.TLS, *CC, _OUTDEST, uintptr, uintptr) int32)(unsafe.Pointer(&struct{ uintptr }{cc.x__mcpp_fprintf})))(tls, cc, int32(_DBG), __ccgo_ts+105988, libc.VaList(bp+8, nargs, why))
 	i = 0
 	for {
 		if !(i < nargs) {
 			break
 		}
-		(*(*func(*libc.TLS, *CC, _OUTDEST, uintptr, uintptr) int32)(unsafe.Pointer(&struct{ uintptr }{cc.x__mcpp_fprintf})))(tls, cc, int32(_DBG), __ccgo_ts+106014, libc.VaList(bp+8, i+int32(1)))
+		(*(*func(*libc.TLS, *CC, _OUTDEST, uintptr, uintptr) int32)(unsafe.Pointer(&struct{ uintptr }{cc.x__mcpp_fprintf})))(tls, cc, int32(_DBG), __ccgo_ts+106020, libc.VaList(bp+8, i+int32(1)))
 		x__dump_string(tls, cc, libc.UintptrFromInt32(0), **(**uintptr)(__ccgo_up(arglist + uintptr(i)*8)))
 		goto _1
 	_1:
@@ -19617,8 +19665,8 @@ func s__dump_path(tls *libc.TLS, cc *CC) {
 	 */
 	var dir, inc_dir, incptr uintptr
 	_, _, _ = dir, inc_dir, incptr
-	dir = __ccgo_ts + 109476
-	(*(*func(*libc.TLS, *CC, uintptr, _OUTDEST) int32)(unsafe.Pointer(&struct{ uintptr }{cc.x__mcpp_fputs})))(tls, cc, __ccgo_ts+110355, int32(_DBG))
+	dir = __ccgo_ts + 109482
+	(*(*func(*libc.TLS, *CC, uintptr, _OUTDEST) int32)(unsafe.Pointer(&struct{ uintptr }{cc.x__mcpp_fputs})))(tls, cc, __ccgo_ts+110361, int32(_DBG))
 	incptr = cc.s__incdir
 	for {
 		if !(incptr < cc.s__incend) {
@@ -19628,13 +19676,13 @@ func s__dump_path(tls *libc.TLS, cc *CC) {
 		if int32(**(**int8)(__ccgo_up(inc_dir))) == int32('\000') {
 			inc_dir = dir
 		}
-		(*(*func(*libc.TLS, *CC, _OUTDEST, uintptr, uintptr) int32)(unsafe.Pointer(&struct{ uintptr }{cc.x__mcpp_fprintf})))(tls, cc, int32(_DBG), __ccgo_ts+110388, libc.VaList(bp+8, inc_dir))
+		(*(*func(*libc.TLS, *CC, _OUTDEST, uintptr, uintptr) int32)(unsafe.Pointer(&struct{ uintptr }{cc.x__mcpp_fprintf})))(tls, cc, int32(_DBG), __ccgo_ts+110394, libc.VaList(bp+8, inc_dir))
 		goto _1
 	_1:
 		;
 		incptr += 8
 	}
-	(*(*func(*libc.TLS, *CC, uintptr, _OUTDEST) int32)(unsafe.Pointer(&struct{ uintptr }{cc.x__mcpp_fputs})))(tls, cc, __ccgo_ts+110396, int32(_DBG))
+	(*(*func(*libc.TLS, *CC, uintptr, _OUTDEST) int32)(unsafe.Pointer(&struct{ uintptr }{cc.x__mcpp_fputs})))(tls, cc, __ccgo_ts+110402, int32(_DBG))
 }
 
 /*
@@ -19674,7 +19722,7 @@ func s__dump_repl(tls *libc.TLS, cc *CC, dp uintptr, fp uintptr, gcc2_va int32) 
 				if gcc2_va != 0 {
 					v3 = parm.Fname
 				} else {
-					v3 = __ccgo_ts + 104308
+					v3 = __ccgo_ts + 104314
 				}
 				if fp == cc.x__fp_out {
 					v2 = int32(_OUT)
@@ -19742,7 +19790,7 @@ func s__dump_repl(tls *libc.TLS, cc *CC, dp uintptr, fp uintptr, gcc2_va int32) 
 				}
 				v2 = v6
 			}
-			(*(*func(*libc.TLS, *CC, uintptr, _OUTDEST) int32)(unsafe.Pointer(&struct{ uintptr }{cc.x__mcpp_fputs})))(tls, cc, __ccgo_ts+22704, v2)
+			(*(*func(*libc.TLS, *CC, uintptr, _OUTDEST) int32)(unsafe.Pointer(&struct{ uintptr }{cc.x__mcpp_fputs})))(tls, cc, __ccgo_ts+22712, v2)
 		case int32(m_ST_QUOTE):
 			if fp == cc.x__fp_out {
 				v2 = int32(_OUT)
@@ -19759,7 +19807,7 @@ func s__dump_repl(tls *libc.TLS, cc *CC, dp uintptr, fp uintptr, gcc2_va int32) 
 				}
 				v2 = v6
 			}
-			(*(*func(*libc.TLS, *CC, uintptr, _OUTDEST) int32)(unsafe.Pointer(&struct{ uintptr }{cc.x__mcpp_fputs})))(tls, cc, __ccgo_ts+22702, v2)
+			(*(*func(*libc.TLS, *CC, uintptr, _OUTDEST) int32)(unsafe.Pointer(&struct{ uintptr }{cc.x__mcpp_fputs})))(tls, cc, __ccgo_ts+22710, v2)
 		case int32(m_COM_SEP):
 			/*
 			 * Though TOK_SEP coincides to COM_SEP, this cannot appear in
@@ -19803,10 +19851,10 @@ func s__dump_stack(tls *libc.TLS, cc *CC, opstack uintptr, opp uintptr, value ui
 	var v1 uintptr
 	_ = v1
 	if opstack < opp {
-		(*(*func(*libc.TLS, *CC, _OUTDEST, uintptr, uintptr) int32)(unsafe.Pointer(&struct{ uintptr }{cc.x__mcpp_fprintf})))(tls, cc, int32(_DBG), __ccgo_ts+107948, libc.VaList(bp+8, (*_FILEINFO)(unsafe.Pointer(cc.x__infile)).Fbptr))
+		(*(*func(*libc.TLS, *CC, _OUTDEST, uintptr, uintptr) int32)(unsafe.Pointer(&struct{ uintptr }{cc.x__mcpp_fprintf})))(tls, cc, int32(_DBG), __ccgo_ts+107954, libc.VaList(bp+8, (*_FILEINFO)(unsafe.Pointer(cc.x__infile)).Fbptr))
 	}
 	for opstack < opp {
-		(*(*func(*libc.TLS, *CC, _OUTDEST, uintptr, uintptr) int32)(unsafe.Pointer(&struct{ uintptr }{cc.x__mcpp_fprintf})))(tls, cc, int32(_DBG), __ccgo_ts+107990, libc.VaList(bp+8, int32((int64(opp)-int64(opstack))/3), int32((*_OPTAB)(unsafe.Pointer(opp)).Fop), int32((*_OPTAB)(unsafe.Pointer(opp)).Fprec), int32((*_OPTAB)(unsafe.Pointer(opp)).Fskip), cc.s__opname[int32((*_OPTAB)(unsafe.Pointer(opp)).Fop)]))
+		(*(*func(*libc.TLS, *CC, _OUTDEST, uintptr, uintptr) int32)(unsafe.Pointer(&struct{ uintptr }{cc.x__mcpp_fprintf})))(tls, cc, int32(_DBG), __ccgo_ts+107996, libc.VaList(bp+8, int32((int64(opp)-int64(opstack))/3), int32((*_OPTAB)(unsafe.Pointer(opp)).Fop), int32((*_OPTAB)(unsafe.Pointer(opp)).Fprec), int32((*_OPTAB)(unsafe.Pointer(opp)).Fskip), cc.s__opname[int32((*_OPTAB)(unsafe.Pointer(opp)).Fop)]))
 		opp -= 3
 	}
 	for {
@@ -19815,14 +19863,14 @@ func s__dump_stack(tls *libc.TLS, cc *CC, opstack uintptr, opp uintptr, value ui
 		if !(value <= v1) {
 			break
 		}
-		(*(*func(*libc.TLS, *CC, _OUTDEST, uintptr, uintptr) int32)(unsafe.Pointer(&struct{ uintptr }{cc.x__mcpp_fprintf})))(tls, cc, int32(_DBG), __ccgo_ts+108016, libc.VaList(bp+8, int32((int64(valp)-int64(value))/16)))
-		s__dump_val(tls, cc, __ccgo_ts+7138, valp)
+		(*(*func(*libc.TLS, *CC, _OUTDEST, uintptr, uintptr) int32)(unsafe.Pointer(&struct{ uintptr }{cc.x__mcpp_fprintf})))(tls, cc, int32(_DBG), __ccgo_ts+108022, libc.VaList(bp+8, int32((int64(valp)-int64(value))/16)))
+		s__dump_val(tls, cc, __ccgo_ts+7140, valp)
 		(*(*func(*libc.TLS, *CC, int32, _OUTDEST) int32)(unsafe.Pointer(&struct{ uintptr }{cc.x__mcpp_fputc})))(tls, cc, int32('\n'), int32(_DBG))
 	}
 }
 
 func s__dump_token(tls *libc.TLS, cc *CC, token_type int32, cp uintptr) {
-	(*(*func(*libc.TLS, *CC, uintptr, _OUTDEST) int32)(unsafe.Pointer(&struct{ uintptr }{cc.x__mcpp_fputs})))(tls, cc, __ccgo_ts+110319, int32(_DBG))
+	(*(*func(*libc.TLS, *CC, uintptr, _OUTDEST) int32)(unsafe.Pointer(&struct{ uintptr }{cc.x__mcpp_fputs})))(tls, cc, __ccgo_ts+110325, int32(_DBG))
 	x__dump_string(tls, cc, cc.s__t_type[token_type-int32(m_NAM)], cp)
 }
 
@@ -19835,12 +19883,12 @@ func s__dump_val(tls *libc.TLS, cc *CC, msg uintptr, valp uintptr) {
 	var format, v1 uintptr
 	var sign int32
 	_, _, _ = format, sign, v1
-	format = __ccgo_ts + 107913
+	format = __ccgo_ts + 107919
 	sign = (*_VAL_SIGN)(unsafe.Pointer(valp)).Fsign
 	if sign != 0 {
-		v1 = __ccgo_ts + 7138
+		v1 = __ccgo_ts + 7140
 	} else {
-		v1 = __ccgo_ts + 107945
+		v1 = __ccgo_ts + 107951
 	}
 	(*(*func(*libc.TLS, *CC, _OUTDEST, uintptr, uintptr) int32)(unsafe.Pointer(&struct{ uintptr }{cc.x__mcpp_fprintf})))(tls, cc, int32(_DBG), format, libc.VaList(bp+8, msg, v1, (*_VAL_SIGN)(unsafe.Pointer(valp)).Fval))
 }
@@ -19849,11 +19897,11 @@ func s__emitAsmConstant(tls *libc.TLS, cc *CC, f uintptr, val _uint32_t) {
 	bp := tls.Alloc(16)
 	defer tls.Free(16)
 	if val < uint32(0x4000) {
-		x__DEBUG(tls, cc, libc.UintptrFromInt32(0), __ccgo_ts+113030, libc.VaList(bp+8, val))
+		x__DEBUG(tls, cc, libc.UintptrFromInt32(0), __ccgo_ts+113036, libc.VaList(bp+8, val))
 		x__flexbuf_addchar(tls, cc, f, libc.Int32FromUint32(val>>libc.Int32FromInt32(8)))
 		x__flexbuf_addchar(tls, cc, f, libc.Int32FromUint32(val&libc.Uint32FromInt32(255)))
 	} else {
-		x__DEBUG(tls, cc, libc.UintptrFromInt32(0), __ccgo_ts+113061, libc.VaList(bp+8, val))
+		x__DEBUG(tls, cc, libc.UintptrFromInt32(0), __ccgo_ts+113067, libc.VaList(bp+8, val))
 		x__flexbuf_addchar(tls, cc, f, int32(0b01000000))
 		x__flexbuf_addchar(tls, cc, f, libc.Int32FromUint32(val>>libc.Int32FromInt32(0)&libc.Uint32FromInt32(255)))
 		x__flexbuf_addchar(tls, cc, f, libc.Int32FromUint32(val>>libc.Int32FromInt32(8)&libc.Uint32FromInt32(255)))
@@ -19866,9 +19914,9 @@ func s__emitAsmRegref(tls *libc.TLS, cc *CC, f uintptr, reg uint32) {
 	bp := tls.Alloc(16)
 	defer tls.Free(16)
 	if reg >= uint32(1024) {
-		x__ERROR(tls, cc, libc.UintptrFromInt32(0), __ccgo_ts+113091, 0)
+		x__ERROR(tls, cc, libc.UintptrFromInt32(0), __ccgo_ts+113097, 0)
 	}
-	x__DEBUG(tls, cc, libc.UintptrFromInt32(0), __ccgo_ts+113118, libc.VaList(bp+8, reg))
+	x__DEBUG(tls, cc, libc.UintptrFromInt32(0), __ccgo_ts+113124, libc.VaList(bp+8, reg))
 	x__flexbuf_addchar(tls, cc, f, libc.Int32FromUint32(libc.Uint32FromInt32(128)|reg>>libc.Int32FromInt32(8)))
 	x__flexbuf_addchar(tls, cc, f, libc.Int32FromUint32(reg&libc.Uint32FromInt32(255)))
 }
@@ -19892,11 +19940,11 @@ func s__endLine(tls *libc.TLS, cc *CC, f uintptr, inlineAsm int32) {
 		}
 		if linelen < uint64(m_INLINE_ASM_LINELEN) {
 			linelen = uint64(m_INLINE_ASM_LINELEN) - linelen
-			x__flexbuf_printf(tls, cc, f, __ccgo_ts+98312, libc.VaList(bp+8, linelen, __ccgo_ts+61558))
+			x__flexbuf_printf(tls, cc, f, __ccgo_ts+98318, libc.VaList(bp+8, linelen, __ccgo_ts+61566))
 		}
-		x__flexbuf_printf(tls, cc, f, __ccgo_ts+97328, 0)
+		x__flexbuf_printf(tls, cc, f, __ccgo_ts+97334, 0)
 	}
-	x__flexbuf_printf(tls, cc, f, __ccgo_ts+4265, 0)
+	x__flexbuf_printf(tls, cc, f, __ccgo_ts+4267, 0)
 }
 
 func s__eval_char(tls *libc.TLS, cc *CC, token uintptr) (r uintptr) {
@@ -19913,13 +19961,13 @@ func s__eval_char(tls *libc.TLS, cc *CC, token uintptr) (r uintptr) {
 	var _ /* cp at bp+8 */ uintptr
 	var _ /* ucn8 at bp+0 */ int32
 	_, _, _, _, _, _, _, _, _, _, _, _, _, _, _ = bits, c_out_of_range, c_out_of_range_long, cl, erange, erange_long, i, mbits, tmp, value, w_out_of_range, w_out_of_range_long, wide, v1, v3
-	w_out_of_range = __ccgo_ts + 107020 /* _E_ _W8_ */
-	c_out_of_range = __ccgo_ts + 107070
+	w_out_of_range = __ccgo_ts + 107026 /* _E_ _W8_ */
+	c_out_of_range = __ccgo_ts + 107076
 	erange = m_FALSE
 	wide = libc.BoolInt32(int32(**(**int8)(__ccgo_up(token))) == int32('L'))
 	**(**uintptr)(__ccgo_up(bp + 8)) = token + uintptr(1) /* Character content        */
-	w_out_of_range_long = __ccgo_ts + 107123
-	c_out_of_range_long = __ccgo_ts + 107190
+	w_out_of_range_long = __ccgo_ts + 107129
+	c_out_of_range_long = __ccgo_ts + 107196
 	erange_long = m_FALSE
 	bits = int32(m___CHAR_BIT__)
 	mbits = libc.Int32FromInt32(m___CHAR_BIT__) * libc.Int32FromInt32(4)
@@ -20011,14 +20059,14 @@ func s__eval_char(tls *libc.TLS, cc *CC, token uintptr) (r uintptr) {
 			} else {
 				v3 = libc.UintptrFromInt32(0)
 			}
-			x__cwarn(tls, cc, __ccgo_ts+107260, token, 0, v3)
+			x__cwarn(tls, cc, __ccgo_ts+107266, token, 0, v3)
 		} else {
 			if cc.s__skip != 0 {
 				v3 = cc.s__non_eval
 			} else {
 				v3 = libc.UintptrFromInt32(0)
 			}
-			x__cwarn(tls, cc, __ccgo_ts+107325, token, 0, v3)
+			x__cwarn(tls, cc, __ccgo_ts+107331, token, 0, v3)
 		}
 	}
 	return uintptr(unsafe.Pointer(&cc.s__ev))
@@ -20049,8 +20097,8 @@ func s__eval_eval(tls *libc.TLS, cc *CC, _valp uintptr, op int32) (r uintptr) {
 	var v4 int64
 	var _ /* negate at bp+8 */ [94]int8
 	_, _, _, _, _, _, _, _, _, _, _ = neg_format, sign1, sign2, v1, v2, v3, zero_div, v11, v4, v6, v7
-	zero_div = __ccgo_ts + 107511 /* _E_ _W8_ */
-	neg_format = __ccgo_ts + 107537
+	zero_div = __ccgo_ts + 107517 /* _E_ _W8_ */
+	neg_format = __ccgo_ts + 107543
 	if int32(m_OP_MUL) <= op && op <= int32(m_OP_COL) {
 		**(**uintptr)(__ccgo_up(bp)) -= 16
 		v11 = **(**uintptr)(__ccgo_up(bp))
@@ -20066,14 +20114,14 @@ func s__eval_eval(tls *libc.TLS, cc *CC, _valp uintptr, op int32) (r uintptr) {
 	sign1 = (*_VAL_SIGN)(unsafe.Pointer(**(**uintptr)(__ccgo_up(bp)))).Fsign
 	if cc.x__mcpp_debug&int32(m_EXPRESSION) != 0 {
 		if int32(m_OP_MUL) <= op && op <= int32(m_OP_COL) {
-			v11 = __ccgo_ts + 107592
+			v11 = __ccgo_ts + 107598
 		} else {
-			v11 = __ccgo_ts + 107599
+			v11 = __ccgo_ts + 107605
 		}
-		(*(*func(*libc.TLS, *CC, _OUTDEST, uintptr, uintptr) int32)(unsafe.Pointer(&struct{ uintptr }{cc.x__mcpp_fprintf})))(tls, cc, int32(_DBG), __ccgo_ts+107605, libc.VaList(bp+112, v11, cc.s__opname[op]))
-		s__dump_val(tls, cc, __ccgo_ts+107614, **(**uintptr)(__ccgo_up(bp)))
+		(*(*func(*libc.TLS, *CC, _OUTDEST, uintptr, uintptr) int32)(unsafe.Pointer(&struct{ uintptr }{cc.x__mcpp_fprintf})))(tls, cc, int32(_DBG), __ccgo_ts+107611, libc.VaList(bp+112, v11, cc.s__opname[op]))
+		s__dump_val(tls, cc, __ccgo_ts+107620, **(**uintptr)(__ccgo_up(bp)))
 		if int32(m_OP_MUL) <= op && op <= int32(m_OP_COL) {
-			s__dump_val(tls, cc, __ccgo_ts+107622, **(**uintptr)(__ccgo_up(bp))+uintptr(1)*16)
+			s__dump_val(tls, cc, __ccgo_ts+107628, **(**uintptr)(__ccgo_up(bp))+uintptr(1)*16)
 		}
 		(*(*func(*libc.TLS, *CC, int32, _OUTDEST) int32)(unsafe.Pointer(&struct{ uintptr }{cc.x__mcpp_fputc})))(tls, cc, int32('\n'), int32(_DBG))
 	}
@@ -20106,7 +20154,7 @@ func s__eval_eval(tls *libc.TLS, cc *CC, _valp uintptr, op int32) (r uintptr) {
 			} else {
 				v11 = libc.UintptrFromInt32(0)
 			}
-			x__cwarn(tls, cc, __ccgo_ts+107630, libc.UintptrFromInt32(0), v2, v11)
+			x__cwarn(tls, cc, __ccgo_ts+107636, libc.UintptrFromInt32(0), v2, v11)
 		} else {
 			if libc.Uint64FromInt64(v2) >= libc.Uint64FromInt64(8)*libc.Uint64FromInt32(m___CHAR_BIT__) && (!(cc.s__skip != 0) && cc.x__warn_level&cc.s__w_level != 0 || cc.s__skip != 0 && cc.x__warn_level&int32(8) != 0) {
 				if cc.s__skip != 0 {
@@ -20114,7 +20162,7 @@ func s__eval_eval(tls *libc.TLS, cc *CC, _valp uintptr, op int32) (r uintptr) {
 				} else {
 					v11 = libc.UintptrFromInt32(0)
 				}
-				x__cwarn(tls, cc, __ccgo_ts+107662, libc.UintptrFromInt32(0), v2, v11)
+				x__cwarn(tls, cc, __ccgo_ts+107668, libc.UintptrFromInt32(0), v2, v11)
 			}
 		}
 	}
@@ -20200,7 +20248,7 @@ func s__eval_lex(tls *libc.TLS, cc *CC) (r int32) {
 	} /* Only macro(s) expanding to 0-token   */
 	switch token_type {
 	case int32(m_NAM):
-		if libc.Xstrcmp(tls, uintptr(unsafe.Pointer(&cc.x__identifier)), __ccgo_ts+104300) == 0 { /* defined name */
+		if libc.Xstrcmp(tls, uintptr(unsafe.Pointer(&cc.x__identifier)), __ccgo_ts+104306) == 0 { /* defined name */
 			v1 = x__skip_ws(tls, cc)
 			c = v1
 			c1 = v1
@@ -20214,7 +20262,7 @@ func s__eval_lex(tls *libc.TLS, cc *CC) (r int32) {
 					cc.s__ev.Fval = libc.BoolInt64(defp != libc.UintptrFromInt32(0))
 					if cc.x__mcpp_debug&int32(m_MACRO_CALL) != 0 && !(cc.s__skip != 0) && defp != 0 {
 						/* Annotate if the macro is in non-skipped expr.    */
-						(*(*func(*libc.TLS, *CC, _OUTDEST, uintptr, uintptr) int32)(unsafe.Pointer(&struct{ uintptr }{cc.x__mcpp_fprintf})))(tls, cc, int32(_OUT), __ccgo_ts+104089, libc.VaList(bp+8, defp+49))
+						(*(*func(*libc.TLS, *CC, _OUTDEST, uintptr, uintptr) int32)(unsafe.Pointer(&struct{ uintptr }{cc.x__mcpp_fprintf})))(tls, cc, int32(_OUT), __ccgo_ts+104095, libc.VaList(bp+8, defp+49))
 					}
 				}
 				if c1 != int32('(') || x__skip_ws(tls, cc) == int32(')') { /* Balanced ?   */
@@ -20222,11 +20270,11 @@ func s__eval_lex(tls *libc.TLS, cc *CC) (r int32) {
 				} /* Parsed ok            */
 			}
 			if (*_FILEINFO)(unsafe.Pointer(cc.x__infile)).Ffp != 0 {
-				v2 = __ccgo_ts + 7138
+				v2 = __ccgo_ts + 7140
 			} else {
 				v2 = (*_FILEINFO)(unsafe.Pointer(cc.x__infile)).Fbuffer
 			}
-			x__cerror(tls, cc, __ccgo_ts+106654, v2, 0, libc.UintptrFromInt32(0))
+			x__cerror(tls, cc, __ccgo_ts+106660, v2, 0, libc.UintptrFromInt32(0))
 			break
 		}
 		/*
@@ -20239,9 +20287,9 @@ func s__eval_lex(tls *libc.TLS, cc *CC) (r int32) {
 			if cc.s__skip != 0 {
 				v2 = cc.s__non_eval
 			} else {
-				v2 = __ccgo_ts + 106677
+				v2 = __ccgo_ts + 106683
 			}
-			x__cwarn(tls, cc, __ccgo_ts+106694, uintptr(unsafe.Pointer(&cc.x__identifier)), 0, v2)
+			x__cwarn(tls, cc, __ccgo_ts+106700, uintptr(unsafe.Pointer(&cc.x__identifier)), 0, v2)
 		}
 		return int32(m_VAL)
 	case int32(m_CHR): /* Character constant   */
@@ -20252,28 +20300,28 @@ func s__eval_lex(tls *libc.TLS, cc *CC) (r int32) {
 			break
 		}
 		if cc.x__mcpp_debug&int32(m_EXPRESSION) != 0 {
-			s__dump_val(tls, cc, __ccgo_ts+106723, uintptr(unsafe.Pointer(&cc.s__ev)))
+			s__dump_val(tls, cc, __ccgo_ts+106729, uintptr(unsafe.Pointer(&cc.s__ev)))
 			(*(*func(*libc.TLS, *CC, int32, _OUTDEST) int32)(unsafe.Pointer(&struct{ uintptr }{cc.x__mcpp_fputc})))(tls, cc, int32('\n'), int32(_DBG))
 		}
 		return int32(m_VAL) /* Return a value       */
 	case int32(m_STR): /* String literal       */
 		fallthrough
 	case int32(m_WSTR): /* Wide string literal  */
-		x__cerror(tls, cc, __ccgo_ts+106742, uintptr(unsafe.Pointer(&cc.x__work_buf)), 0, libc.UintptrFromInt32(0)) /* _E_  */
+		x__cerror(tls, cc, __ccgo_ts+106748, uintptr(unsafe.Pointer(&cc.x__work_buf)), 0, libc.UintptrFromInt32(0)) /* _E_  */
 	case int32(m_NUM): /* Numbers are harder   */
 		valp = x__eval_num(tls, cc, uintptr(unsafe.Pointer(&cc.x__work_buf))) /* 'valp' points 'ev'   */
 		if (*_VAL_SIGN)(unsafe.Pointer(valp)).Fsign == -int32(1) {
 			break
 		}
 		if cc.x__mcpp_debug&int32(m_EXPRESSION) != 0 {
-			s__dump_val(tls, cc, __ccgo_ts+106772, uintptr(unsafe.Pointer(&cc.s__ev)))
+			s__dump_val(tls, cc, __ccgo_ts+106778, uintptr(unsafe.Pointer(&cc.s__ev)))
 			(*(*func(*libc.TLS, *CC, int32, _OUTDEST) int32)(unsafe.Pointer(&struct{ uintptr }{cc.x__mcpp_fputc})))(tls, cc, int32('\n'), int32(_DBG))
 		}
 		return int32(m_VAL)
 	case int32(m_OPE): /* Operator or punctuator   */
 		return s__chk_ops(tls, cc)
 	default: /* Total nonsense       */
-		x__cerror(tls, cc, __ccgo_ts+106790, libc.UintptrFromInt32(0), int64(c), libc.UintptrFromInt32(0))
+		x__cerror(tls, cc, __ccgo_ts+106796, libc.UintptrFromInt32(0), int64(c), libc.UintptrFromInt32(0))
 		break
 	}
 	return libc.Int32FromInt32(m_OP_END) + libc.Int32FromInt32(1) /* Any errors           */
@@ -20293,7 +20341,7 @@ func s__eval_one(tls *libc.TLS, cc *CC, seq_pp uintptr, wide int32, mbits int32,
 	var v11 ___darwin_ct_rune_t
 	var v12 uint64
 	_, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _ = bits, count, cp, digits, erange, out_of_range, seq, uc, uc1, value, wchar_max, v1, v11, v12, v13, v15, v16, v18, v2, v3, v9
-	out_of_range = __ccgo_ts + 107399
+	out_of_range = __ccgo_ts + 107405
 	erange = m_FALSE
 	seq = **(**uintptr)(__ccgo_up(seq_pp))
 	v2 = seq_pp
@@ -20326,7 +20374,7 @@ func s__eval_one(tls *libc.TLS, cc *CC, seq_pp uintptr, wide int32, mbits int32,
 	case uint32('v'):
 		return int64('\v')
 	case uint32('x'): /* '\xFF'               */
-		digits = __ccgo_ts + 107447
+		digits = __ccgo_ts + 107453
 		bits = int32(4)
 		v2 = seq_pp
 		v1 = *(*uintptr)(unsafe.Pointer(v2))
@@ -20347,7 +20395,7 @@ func s__eval_one(tls *libc.TLS, cc *CC, seq_pp uintptr, wide int32, mbits int32,
 	case uint32('6'):
 		fallthrough
 	case uint32('7'):
-		digits = __ccgo_ts + 107464
+		digits = __ccgo_ts + 107470
 		bits = int32(3)
 	case uint32('\''):
 		fallthrough
@@ -20438,7 +20486,7 @@ undefined:
 		} else {
 			v1 = libc.UintptrFromInt32(0)
 		}
-		x__cwarn(tls, cc, __ccgo_ts+107473, v1, 0, seq)
+		x__cwarn(tls, cc, __ccgo_ts+107479, v1, 0, seq)
 	}
 	**(**int8)(__ccgo_up(**(**uintptr)(__ccgo_up(seq_pp)))) = libc.Int8FromUint32(uc1)
 	**(**uintptr)(__ccgo_up(seq_pp)) = seq + uintptr(1)
@@ -20484,8 +20532,8 @@ func s__eval_signed(tls *libc.TLS, cc *CC, valpp uintptr, v1 _expr_t, v2 _expr_t
 	var val _expr_t
 	var v3 int64
 	_, _, _, _, _, _, _, _ = chk, illeg_op, not_portable, op_name, val, valp, v11, v3
-	illeg_op = __ccgo_ts + 107719     /* _F_  */
-	not_portable = __ccgo_ts + 107763 /* _W1_ _W8_*/
+	illeg_op = __ccgo_ts + 107725     /* _F_  */
+	not_portable = __ccgo_ts + 107769 /* _W1_ _W8_*/
 	op_name = cc.s__opname[op]
 	valp = **(**uintptr)(__ccgo_up(valpp)) /* Flag of overflow in long long    */
 	switch op {
@@ -20607,7 +20655,7 @@ func s__eval_unsigned(tls *libc.TLS, cc *CC, valpp uintptr, v1u _uexpr_t, v2u _u
 	var illeg_op, op_name, valp uintptr
 	var v1 _uexpr_t
 	_, _, _, _, _, _ = chk, illeg_op, minus, op_name, v1, valp
-	illeg_op = __ccgo_ts + 107809 /* _F_  */
+	illeg_op = __ccgo_ts + 107815 /* _F_  */
 	op_name = cc.s__opname[op]
 	valp = **(**uintptr)(__ccgo_up(valpp))
 	v1 = uint64(0) /* Big integer converted from signed long   */
@@ -20787,7 +20835,7 @@ exp_end:
 	;
 	**(**int8)(__ccgo_up(**(**uintptr)(__ccgo_up(bp + 263168)))) = int8('\000')
 	if cc.x__mcpp_debug&int32(m_EXPAND) != 0 {
-		x__dump_string(tls, cc, __ccgo_ts+105290, out)
+		x__dump_string(tls, cc, __ccgo_ts+105296, out)
 	}
 	cc.x__macro_name = libc.UintptrFromInt32(0)
 	x__clear_exp_mac(tls, cc) /* Clear the information for diagnostic */
@@ -20822,9 +20870,9 @@ func s__fetchOrgValue(tls *libc.TLS, cc *CC, s uintptr) (r uint32) {
 	val = uint32(0)
 	// scan ahead to see if there is a <left-brace>#pragma cogval}
 	// to give us the true (calculated) value
-	p = libc.Xstrstr(tls, s, __ccgo_ts+40866)
+	p = libc.Xstrstr(tls, s, __ccgo_ts+40874)
 	if p != 0 {
-		s = p + uintptr(libc.Xstrlen(tls, __ccgo_ts+40866))
+		s = p + uintptr(libc.Xstrlen(tls, __ccgo_ts+40874))
 	}
 	if int32(**(**int8)(__ccgo_up(s))) == int32('$') {
 		base = int32(16)
@@ -20890,12 +20938,12 @@ func s__filelen(tls *libc.TLS, cc *CC, ast uintptr) (r1 int64) {
 	name = *(*uintptr)(unsafe.Pointer(ast + 8))
 	f = fopen(tls, cc, name, __ccgo_ts+2456)
 	if !(f != 0) {
-		x__ERROR(tls, cc, ast, __ccgo_ts+36586, libc.VaList(bp+8, name, libc.Xstrerror(tls, **(**int32)(__ccgo_up(libc.X__error(tls))))))
+		x__ERROR(tls, cc, ast, __ccgo_ts+36594, libc.VaList(bp+8, name, libc.Xstrerror(tls, **(**int32)(__ccgo_up(libc.X__error(tls))))))
 		return 0
 	}
 	r = libc.Xfseek(tls, f, 0, int32(m_SEEK_END))
 	if r < 0 {
-		x__ERROR(tls, cc, ast, __ccgo_ts+36586, libc.VaList(bp+8, name, libc.Xstrerror(tls, **(**int32)(__ccgo_up(libc.X__error(tls))))))
+		x__ERROR(tls, cc, ast, __ccgo_ts+36594, libc.VaList(bp+8, name, libc.Xstrerror(tls, **(**int32)(__ccgo_up(libc.X__error(tls))))))
 		return 0
 	}
 	siz = libc.Xftell(tls, f)
@@ -20946,7 +20994,7 @@ func s__fixReferences(tls *libc.TLS, cc *CC, astptr uintptr, incdecop int32, mem
 			}
 			typ1 = v1
 			if !(x__IsRefType(tls, cc, typ1) != 0) {
-				x__ERROR(tls, cc, ast, __ccgo_ts+32229, 0)
+				x__ERROR(tls, cc, ast, __ccgo_ts+32237, 0)
 			} else {
 				s__fixReferences(tls, cc, ast+16, op, memtype)
 				s__fixReferences(tls, cc, ast+24, op, memtype)
@@ -21046,7 +21094,7 @@ func s__fixupInitializer(tls *libc.TLS, cc *CC, P uintptr, initializer uintptr, 
 			}
 			newinit = x__NewAST(tls, cc, int32(_AST_EXPRLIST), libc.UintptrFromInt32(0), libc.UintptrFromInt32(0))
 			**(**_AST)(__ccgo_up(newinit)) = **(**_AST)(__ccgo_up(elem))
-			newident = x__AstTempIdentifier(tls, cc, __ccgo_ts+36632)
+			newident = x__AstTempIdentifier(tls, cc, __ccgo_ts+36640)
 			declare = x__AstAssign(tls, cc, newident, newinit)
 			declare = x__NewAST(tls, cc, int32(_AST_DECLARE_VAR), subtype, declare)
 			ast = x__NewAST(tls, cc, int32(_AST_COMMENTEDNODE), declare, libc.UintptrFromInt32(0))
@@ -21083,14 +21131,14 @@ func s__fixupInitializer(tls *libc.TLS, cc *CC, P uintptr, initializer uintptr, 
 				thisval = libc.UintptrFromInt32(0)
 				varlist = (*_Module)(unsafe.Pointer(Q)).Ffinalvarblock
 				if (*_Module)(unsafe.Pointer(Q)).Fpendingvarblock != 0 {
-					x__ERROR(tls, cc, initializer, __ccgo_ts+36640, 0)
+					x__ERROR(tls, cc, initializer, __ccgo_ts+36648, 0)
 					return
 				}
 				if (*_AST)(unsafe.Pointer(initializer)).Fkind != int32(_AST_EXPRLIST) {
 					if (*_AST)(unsafe.Pointer(initializer)).Fkind == int32(_AST_INTEGER) && *(*_uint64_t)(unsafe.Pointer(initializer + 8)) == uint64(0) {
 						/* do nothing */
 					} else {
-						x__ERROR(tls, cc, initializer, __ccgo_ts+36689, 0)
+						x__ERROR(tls, cc, initializer, __ccgo_ts+36697, 0)
 					}
 					return
 				}
@@ -21120,7 +21168,7 @@ func s__fixupInitializer(tls *libc.TLS, cc *CC, P uintptr, initializer uintptr, 
 							foundItems = foundItems + 1
 							elem2 = (*_AST)(unsafe.Pointer(elem2)).Fright
 						}
-						x__ERROR(tls, cc, initializer, __ccgo_ts+36731, libc.VaList(bp+48, expectedItems, foundItems))
+						x__ERROR(tls, cc, initializer, __ccgo_ts+36739, libc.VaList(bp+48, expectedItems, foundItems))
 						return
 					}
 					foundItems = foundItems + 1
@@ -21128,18 +21176,18 @@ func s__fixupInitializer(tls *libc.TLS, cc *CC, P uintptr, initializer uintptr, 
 					for varlist != 0 && (*_AST)(unsafe.Pointer(varlist)).Fleft != 0 && (*_AST)(unsafe.Pointer((*_AST)(unsafe.Pointer(varlist)).Fleft)).Fkind == int32(_AST_DECLARE_BITFIELD) {
 						baseval = (*_AST)(unsafe.Pointer((*_AST)(unsafe.Pointer(varlist)).Fleft)).Fleft
 						if (*_AST)(unsafe.Pointer(baseval)).Fkind != int32(_AST_CAST) {
-							x__ERROR(tls, cc, varlist, __ccgo_ts+36795, 0)
+							x__ERROR(tls, cc, varlist, __ccgo_ts+36803, 0)
 							return
 						}
 						casttype = (*_AST)(unsafe.Pointer(baseval)).Fleft
 						baseval = (*_AST)(unsafe.Pointer(baseval)).Fright
 						if (*_AST)(unsafe.Pointer(baseval)).Fkind != int32(_AST_RANGEREF) {
-							x__ERROR(tls, cc, varlist, __ccgo_ts+36812, 0)
+							x__ERROR(tls, cc, varlist, __ccgo_ts+36820, 0)
 							return
 						}
 						baseval = (*_AST)(unsafe.Pointer(baseval)).Fright
 						if (*_AST)(unsafe.Pointer(baseval)).Fkind != int32(_AST_RANGE) {
-							x__ERROR(tls, cc, varlist, __ccgo_ts+36829, 0)
+							x__ERROR(tls, cc, varlist, __ccgo_ts+36837, 0)
 							return
 						}
 						if elem2 != 0 {
@@ -21214,7 +21262,7 @@ func s__forceAlign(tls *libc.TLS, cc *CC, f uintptr, size int32, inlineAsm int32
 	defer tls.Free(32)
 	if cc.s__datacount2%size != 0 {
 		s__startLine(tls, cc, f, inlineAsm)
-		x__flexbuf_printf(tls, cc, f, __ccgo_ts+98316, libc.VaList(bp+8, __ccgo_ts+61558, __ccgo_ts+98329, size))
+		x__flexbuf_printf(tls, cc, f, __ccgo_ts+98322, libc.VaList(bp+8, __ccgo_ts+61566, __ccgo_ts+98335, size))
 		s__endLine(tls, cc, f, inlineAsm)
 		cc.s__datacount2 = (cc.s__datacount2 + size - int32(1)) & ^(size - libc.Int32FromInt32(1))
 	}
@@ -21230,7 +21278,7 @@ func s__forcepromote(tls *libc.TLS, cc *CC, type1 uintptr, expr uintptr) (r uint
 		return expr
 	}
 	if !(x__IsIntType(tls, cc, type1) != 0) && !(x__IsGenericType(tls, cc, type1) != 0) {
-		x__ERROR(tls, cc, expr, __ccgo_ts+32621, 0)
+		x__ERROR(tls, cc, expr, __ccgo_ts+32629, 0)
 	}
 	tsize = x__TypeSize(tls, cc, type1)
 	if x__IsUnsignedType(tls, cc, type1) != 0 {
@@ -21258,7 +21306,7 @@ func s__forcepromote64(tls *libc.TLS, cc *CC, type1 uintptr, expr uintptr) (r ui
 		return expr
 	}
 	if !(x__IsIntType(tls, cc, type1) != 0) && !(x__IsGenericType(tls, cc, type1) != 0) {
-		x__ERROR(tls, cc, expr, __ccgo_ts+32621, 0)
+		x__ERROR(tls, cc, expr, __ccgo_ts+32629, 0)
 	}
 	tsize = x__TypeSize(tls, cc, type1)
 	if x__IsUnsignedType(tls, cc, type1) != 0 {
@@ -21427,7 +21475,7 @@ again:
 														if c24 == libc.Int32FromUint8('>')+libc.Int32FromUint8('>') {
 															c = int32(m_BAS_SHR)
 														} else {
-															x__SYNTAX_ERROR(tls, cc, __ccgo_ts+22449, 0)
+															x__SYNTAX_ERROR(tls, cc, __ccgo_ts+22457, 0)
 														}
 													}
 												}
@@ -21445,7 +21493,7 @@ again:
 											x__lexungetc(tls, cc, L, c25)
 										}
 									} else {
-										if x__lexpeekc(tls, cc, L) == int32('=') && libc.Xstrchr(tls, __ccgo_ts+22470, c) != uintptr(0) {
+										if x__lexpeekc(tls, cc, L) == int32('=') && libc.Xstrchr(tls, __ccgo_ts+22478, c) != uintptr(0) {
 											x__lexgetc(tls, cc, L) // get the =
 											switch c {
 											case int32('+'):
@@ -21457,7 +21505,7 @@ again:
 											case int32('*'):
 												c = int32(m_BAS_MUL_ASSIGN)
 											default:
-												x__SYNTAX_ERROR(tls, cc, __ccgo_ts+22449, 0)
+												x__SYNTAX_ERROR(tls, cc, __ccgo_ts+22457, 0)
 												break
 											}
 										}
@@ -21486,11 +21534,11 @@ func s__getCChar(tls *libc.TLS, cc *CC, L uintptr, isWide int32) (r int32) {
 	}
 	c2 = x__lexgetc(tls, cc, L)
 	if c2 != int32('\'') {
-		x__SYNTAX_ERROR(tls, cc, __ccgo_ts+22475, 0)
+		x__SYNTAX_ERROR(tls, cc, __ccgo_ts+22483, 0)
 	}
 	if !(isWide != 0) {
 		if uint32(255) < libc.Uint32FromInt32(c) {
-			x__SYNTAX_ERROR(tls, cc, __ccgo_ts+22495, 0)
+			x__SYNTAX_ERROR(tls, cc, __ccgo_ts+22503, 0)
 			c = c & int32(255)
 		}
 	}
@@ -21619,7 +21667,7 @@ parse_number:
 								if (*_LexStream)(unsafe.Pointer(L)).FlastGlobal != 0 {
 									v1 = (*_LexStream)(unsafe.Pointer(L)).FlastGlobal
 								} else {
-									v1 = __ccgo_ts + 7138
+									v1 = __ccgo_ts + 7140
 								}
 								c = s__parseSpinIdentifier(tls, cc, L, bp, v1)
 							} else {
@@ -21648,7 +21696,7 @@ parse_number:
 									if (*_LexStream)(unsafe.Pointer(L)).FlastGlobal != 0 {
 										v1 = (*_LexStream)(unsafe.Pointer(L)).FlastGlobal
 									} else {
-										v1 = __ccgo_ts + 7138
+										v1 = __ccgo_ts + 7140
 									}
 									c = s__parseSpinIdentifier(tls, cc, L, bp, v1)
 								} else {
@@ -21857,7 +21905,7 @@ func s__getFuncID(tls *libc.TLS, cc *CC, M uintptr, name uintptr) (r int32) {
 	var i, i1 int32
 	_, _, _ = StrComp, i, i1
 	if !((*_Module)(unsafe.Pointer(M)).Fbedata != 0) {
-		x__ERROR(tls, cc, libc.UintptrFromInt32(0), __ccgo_ts+70252, 0)
+		x__ERROR(tls, cc, libc.UintptrFromInt32(0), __ccgo_ts+70258, 0)
 		return -int32(1)
 	}
 	if cc.x__curfunc != 0 && ((*_Function)(unsafe.Pointer(cc.x__curfunc)).Flanguage >= int32(m_LANG_CFAMILY_C) && (*_Function)(unsafe.Pointer(cc.x__curfunc)).Flanguage <= int32(m_LANG_CFAMILY_CPP)) || (*_Module)(unsafe.Pointer(M)).FcurLanguage >= int32(m_LANG_CFAMILY_C) && (*_Module)(unsafe.Pointer(M)).FcurLanguage <= int32(m_LANG_CFAMILY_CPP) {
@@ -21898,7 +21946,7 @@ func s__getFuncIDForKnownFunc(tls *libc.TLS, cc *CC, M uintptr, F uintptr) (r in
 	var i, i1 int32
 	_, _ = i, i1
 	if !((*_Module)(unsafe.Pointer(M)).Fbedata != 0) {
-		x__ERROR(tls, cc, libc.UintptrFromInt32(0), __ccgo_ts+70252, 0)
+		x__ERROR(tls, cc, libc.UintptrFromInt32(0), __ccgo_ts+70258, 0)
 		return -int32(1)
 	}
 	i = 0
@@ -21940,7 +21988,7 @@ func s__getObjID(tls *libc.TLS, cc *CC, M uintptr, name uintptr, gettype uintptr
 	var ident, obj uintptr
 	_, _, _ = i, ident, obj
 	if !((*_Module)(unsafe.Pointer(M)).Fbedata != 0) {
-		x__ERROR(tls, cc, libc.UintptrFromInt32(0), __ccgo_ts+70252, 0)
+		x__ERROR(tls, cc, libc.UintptrFromInt32(0), __ccgo_ts+70258, 0)
 		return -int32(1)
 	}
 	i = 0
@@ -21953,20 +22001,20 @@ func s__getObjID(tls *libc.TLS, cc *CC, M uintptr, name uintptr, gettype uintptr
 			goto _1
 		}
 		if !((*_AST)(unsafe.Pointer(obj)).Fleft != 0) {
-			x__ERROR(tls, cc, libc.UintptrFromInt32(0), __ccgo_ts+70293, 0)
+			x__ERROR(tls, cc, libc.UintptrFromInt32(0), __ccgo_ts+70299, 0)
 			return 0
 		} else {
 			if (*_AST)(unsafe.Pointer((*_AST)(unsafe.Pointer(obj)).Fleft)).Fkind != int32(_AST_OBJECT) {
-				x__ERROR(tls, cc, (*_AST)(unsafe.Pointer(obj)).Fleft, __ccgo_ts+70371, libc.VaList(bp+8, (*_AST)(unsafe.Pointer((*_AST)(unsafe.Pointer(obj)).Fleft)).Fkind))
+				x__ERROR(tls, cc, (*_AST)(unsafe.Pointer(obj)).Fleft, __ccgo_ts+70377, libc.VaList(bp+8, (*_AST)(unsafe.Pointer((*_AST)(unsafe.Pointer(obj)).Fleft)).Fkind))
 				return 0
 			}
 		}
 		if !((*_AST)(unsafe.Pointer(obj)).Fright != 0) {
-			x__ERROR(tls, cc, libc.UintptrFromInt32(0), __ccgo_ts+70447, 0)
+			x__ERROR(tls, cc, libc.UintptrFromInt32(0), __ccgo_ts+70453, 0)
 			return 0
 		} else {
 			if (*_AST)(unsafe.Pointer((*_AST)(unsafe.Pointer(obj)).Fright)).Fkind != int32(_AST_LISTHOLDER) {
-				x__ERROR(tls, cc, (*_AST)(unsafe.Pointer(obj)).Fright, __ccgo_ts+70529, libc.VaList(bp+8, (*_AST)(unsafe.Pointer((*_AST)(unsafe.Pointer(obj)).Fright)).Fkind))
+				x__ERROR(tls, cc, (*_AST)(unsafe.Pointer(obj)).Fright, __ccgo_ts+70535, libc.VaList(bp+8, (*_AST)(unsafe.Pointer((*_AST)(unsafe.Pointer(obj)).Fright)).Fkind))
 				return 0
 			}
 		}
@@ -21978,7 +22026,7 @@ func s__getObjID(tls *libc.TLS, cc *CC, M uintptr, name uintptr, gettype uintptr
 			ident = (*_AST)(unsafe.Pointer(ident)).Fleft
 		}
 		if !((*_AST)(unsafe.Pointer(ident)).Fkind == int32(_AST_IDENTIFIER) || (*_AST)(unsafe.Pointer(ident)).Fkind == int32(_AST_LOCAL_IDENTIFIER)) {
-			x__ERROR(tls, cc, ident, __ccgo_ts+27000, 0)
+			x__ERROR(tls, cc, ident, __ccgo_ts+27008, 0)
 			return 0
 		}
 		if libc.Xstrcmp(tls, x__GetIdentifierName(tls, cc, ident), name) != 0 {
@@ -21993,7 +22041,7 @@ func s__getObjID(tls *libc.TLS, cc *CC, M uintptr, name uintptr, gettype uintptr
 		;
 		i = i + 1
 	}
-	x__ERROR(tls, cc, libc.UintptrFromInt32(0), __ccgo_ts+70609, libc.VaList(bp+8, name))
+	x__ERROR(tls, cc, libc.UintptrFromInt32(0), __ccgo_ts+70615, libc.VaList(bp+8, name))
 	return 0
 }
 
@@ -22011,7 +22059,7 @@ func s__getObjIDByClass(tls *libc.TLS, cc *CC, M uintptr, classBase uintptr, mus
 		return 0
 	}
 	if !((*_Module)(unsafe.Pointer(M)).Fbedata != 0) {
-		x__ERROR(tls, cc, libc.UintptrFromInt32(0), __ccgo_ts+70252, 0)
+		x__ERROR(tls, cc, libc.UintptrFromInt32(0), __ccgo_ts+70258, 0)
 		return -int32(1)
 	}
 	i = 0
@@ -22025,31 +22073,31 @@ func s__getObjIDByClass(tls *libc.TLS, cc *CC, M uintptr, classBase uintptr, mus
 				goto _1
 			}
 			if !((*_AST)(unsafe.Pointer(obj)).Fleft != 0) {
-				x__ERROR(tls, cc, libc.UintptrFromInt32(0), __ccgo_ts+70634, 0)
+				x__ERROR(tls, cc, libc.UintptrFromInt32(0), __ccgo_ts+70640, 0)
 				return 0
 			} else {
 				if (*_AST)(unsafe.Pointer((*_AST)(unsafe.Pointer(obj)).Fleft)).Fkind != int32(_AST_OBJECT) {
-					x__ERROR(tls, cc, (*_AST)(unsafe.Pointer(obj)).Fleft, __ccgo_ts+70712, libc.VaList(bp+8, (*_AST)(unsafe.Pointer((*_AST)(unsafe.Pointer(obj)).Fleft)).Fkind))
+					x__ERROR(tls, cc, (*_AST)(unsafe.Pointer(obj)).Fleft, __ccgo_ts+70718, libc.VaList(bp+8, (*_AST)(unsafe.Pointer((*_AST)(unsafe.Pointer(obj)).Fleft)).Fkind))
 					return 0
 				}
 			}
 			if !((*_AST)(unsafe.Pointer(obj)).Fright != 0) {
-				x__ERROR(tls, cc, libc.UintptrFromInt32(0), __ccgo_ts+70788, 0)
+				x__ERROR(tls, cc, libc.UintptrFromInt32(0), __ccgo_ts+70794, 0)
 				return 0
 			} else {
 				if (*_AST)(unsafe.Pointer((*_AST)(unsafe.Pointer(obj)).Fright)).Fkind != int32(_AST_LISTHOLDER) {
-					x__ERROR(tls, cc, (*_AST)(unsafe.Pointer(obj)).Fright, __ccgo_ts+70870, libc.VaList(bp+8, (*_AST)(unsafe.Pointer((*_AST)(unsafe.Pointer(obj)).Fright)).Fkind))
+					x__ERROR(tls, cc, (*_AST)(unsafe.Pointer(obj)).Fright, __ccgo_ts+70876, libc.VaList(bp+8, (*_AST)(unsafe.Pointer((*_AST)(unsafe.Pointer(obj)).Fright)).Fkind))
 					return 0
 				}
 			}
 			ident = (*_AST)(unsafe.Pointer((*_AST)(unsafe.Pointer(obj)).Fright)).Fleft
 			ptr = x__GetClassPtr(tls, cc, (*_AST)(unsafe.Pointer(obj)).Fleft)
 			if !(ident != 0) {
-				x__ERROR(tls, cc, libc.UintptrFromInt32(0), __ccgo_ts+70950, 0)
+				x__ERROR(tls, cc, libc.UintptrFromInt32(0), __ccgo_ts+70956, 0)
 				return 0
 			} else {
 				if (*_AST)(unsafe.Pointer(ident)).Fkind != int32(_AST_IDENTIFIER) {
-					x__ERROR(tls, cc, ident, __ccgo_ts+71032, libc.VaList(bp+8, (*_AST)(unsafe.Pointer(ident)).Fkind))
+					x__ERROR(tls, cc, ident, __ccgo_ts+71038, libc.VaList(bp+8, (*_AST)(unsafe.Pointer(ident)).Fkind))
 					return 0
 				}
 			}
@@ -22075,7 +22123,7 @@ func s__getObjIDByClass(tls *libc.TLS, cc *CC, M uintptr, classBase uintptr, mus
 		;
 		i = i + 1
 	}
-	x__ERROR(tls, cc, classBase, __ccgo_ts+71112, libc.VaList(bp+8, (*_Module)(unsafe.Pointer(classptr)).Fclassname))
+	x__ERROR(tls, cc, classBase, __ccgo_ts+71118, libc.VaList(bp+8, (*_Module)(unsafe.Pointer(classptr)).Fclassname))
 	return 0
 }
 
@@ -22232,7 +22280,7 @@ func s__get_an_arg(tls *libc.TLS, cc *CC, c int32, argpp uintptr, arg_end uintpt
 						} else {
 							v1 = cc.x__null
 						}
-						x__cerror(tls, cc, __ccgo_ts+105943, v1, 0, libc.UintptrFromInt32(0))
+						x__cerror(tls, cc, __ccgo_ts+105949, v1, 0, libc.UintptrFromInt32(0))
 						return 0
 					} else {
 						cc.s__in_src_num = cc.s__in_src_num + 1
@@ -22347,19 +22395,19 @@ func s__get_line(tls *libc.TLS, cc *CC, in_comment int32) (r uintptr) {
 		/* Translation phase 1  */
 		cc.x__src_line = cc.x__src_line + 1 /* Gotten next physical line    */
 		if cc.x__src_line == cc.x__std_limits.Fline_num+int64(1) && cc.x__warn_level&int32(1) != 0 {
-			x__cwarn(tls, cc, __ccgo_ts+111441, libc.UintptrFromInt32(0), cc.x__src_line, libc.UintptrFromInt32(0))
+			x__cwarn(tls, cc, __ccgo_ts+111447, libc.UintptrFromInt32(0), cc.x__src_line, libc.UintptrFromInt32(0))
 		}
 		if cc.x__mcpp_debug&(libc.Int32FromInt32(m_TOKEN)|libc.Int32FromInt32(m_GETC)) != 0 { /* Dump it to DBG       */
-			(*(*func(*libc.TLS, *CC, _OUTDEST, uintptr, uintptr) int32)(unsafe.Pointer(&struct{ uintptr }{cc.x__mcpp_fprintf})))(tls, cc, int32(_DBG), __ccgo_ts+111480, libc.VaList(bp+8, cc.x__src_line, cc.x__cur_fullname))
+			(*(*func(*libc.TLS, *CC, _OUTDEST, uintptr, uintptr) int32)(unsafe.Pointer(&struct{ uintptr }{cc.x__mcpp_fprintf})))(tls, cc, int32(_DBG), __ccgo_ts+111486, libc.VaList(bp+8, cc.x__src_line, cc.x__cur_fullname))
 			x__dump_string(tls, cc, libc.UintptrFromInt32(0), ptr)
 		}
 		len1 = libc.Int32FromUint64(libc.Xstrlen(tls, ptr))
 		if int64(libc.Int32FromInt32(m_NBUFF)-libc.Int32FromInt32(1)) <= int64(ptr)-int64((*_FILEINFO)(unsafe.Pointer(cc.x__infile)).Fbuffer)+int64(len1) && int32(**(**int8)(__ccgo_up(ptr + uintptr(len1) - libc.UintptrFromInt32(1)))) != int32('\n') {
 			/* The line does not yet end, though the buffer is full.    */
 			if libc.Int32FromInt32(m_NBUFF)-libc.Int32FromInt32(1) <= len1 {
-				x__cfatal(tls, cc, __ccgo_ts+111496, libc.UintptrFromInt32(0), 0, libc.UintptrFromInt32(0))
+				x__cfatal(tls, cc, __ccgo_ts+111502, libc.UintptrFromInt32(0), 0, libc.UintptrFromInt32(0))
 			} else {
-				x__cfatal(tls, cc, __ccgo_ts+111517, libc.UintptrFromInt32(0), 0, libc.UintptrFromInt32(0))
+				x__cfatal(tls, cc, __ccgo_ts+111523, libc.UintptrFromInt32(0), 0, libc.UintptrFromInt32(0))
 			}
 		}
 		if int32(**(**int8)(__ccgo_up(ptr + uintptr(len1) - libc.UintptrFromInt32(1)))) != int32('\n') { /* Unterminated source line */
@@ -22371,7 +22419,7 @@ func s__get_line(tls *libc.TLS, cc *CC, in_comment int32) (r uintptr) {
 			v3 = len1
 			**(**int8)(__ccgo_up(ptr + uintptr(v3))) = int8('\000')
 			if !(cc.s__cr_converted != 0) && cc.x__warn_level&int32(m_cr_warn_level) != 0 {
-				x__cwarn(tls, cc, __ccgo_ts+111539, libc.UintptrFromInt32(0), 0, libc.UintptrFromInt32(0))
+				x__cwarn(tls, cc, __ccgo_ts+111545, libc.UintptrFromInt32(0), 0, libc.UintptrFromInt32(0))
 				cc.s__cr_converted = int32(m_TRUE)
 			}
 		}
@@ -22404,7 +22452,7 @@ func s__get_line(tls *libc.TLS, cc *CC, in_comment int32) (r uintptr) {
 			}
 		}
 		if int64(ptr)-int64((*_FILEINFO)(unsafe.Pointer(cc.x__infile)).Fbuffer)+int64(len1)+int64(2) > cc.x__std_limits.Fstr_len+int64(1) && cc.x__warn_level&int32(4) != 0 { /* +1 for '\n'          */
-			x__cwarn(tls, cc, __ccgo_ts+111565, libc.UintptrFromInt32(0), cc.x__std_limits.Fstr_len, libc.UintptrFromInt32(0))
+			x__cwarn(tls, cc, __ccgo_ts+111571, libc.UintptrFromInt32(0), cc.x__std_limits.Fstr_len, libc.UintptrFromInt32(0))
 		}
 		if cc.x__mcpp_debug&int32(m_MACRO_CALL) != 0 && cc.x__ifstack[0].Fstat != 0 {
 			if cat_line != 0 && cat_line < int32(m_MAX_CAT_LINE) {
@@ -22421,7 +22469,7 @@ func s__get_line(tls *libc.TLS, cc *CC, in_comment int32) (r uintptr) {
 	}
 	/* End of a (possibly included) source file */
 	if libc.Xferror(tls, (*_FILEINFO)(unsafe.Pointer(cc.x__infile)).Ffp) != 0 {
-		x__cfatal(tls, cc, __ccgo_ts+111611, libc.UintptrFromInt32(0), 0, libc.UintptrFromInt32(0))
+		x__cfatal(tls, cc, __ccgo_ts+111617, libc.UintptrFromInt32(0), 0, libc.UintptrFromInt32(0))
 	} /* _F_  */
 	v1 = s__at_eof(tls, cc, in_comment)
 	ptr = v1
@@ -22443,9 +22491,9 @@ func s__get_parm(tls *libc.TLS, cc *CC) (r int32) {
 	var c, token_type, v2, v4 int32
 	var illeg_parm, many_parms, misplaced_ellip, v1 uintptr
 	_, _, _, _, _, _, _, _ = c, illeg_parm, many_parms, misplaced_ellip, token_type, v1, v2, v4
-	many_parms = __ccgo_ts + 104413 /* _E_ _W4_     */
-	illeg_parm = __ccgo_ts + 104442 /* _E_          */
-	misplaced_ellip = __ccgo_ts + 104465
+	many_parms = __ccgo_ts + 104419 /* _E_ _W4_     */
+	illeg_parm = __ccgo_ts + 104448 /* _E_          */
+	misplaced_ellip = __ccgo_ts + 104471
 	v1 = uintptr(unsafe.Pointer(&cc.x__work_buf))
 	cc.x__workp = v1
 	cc.s__parms[0].Fname = v1
@@ -22475,7 +22523,7 @@ func s__get_parm(tls *libc.TLS, cc *CC) (r int32) {
 					break
 				} else {
 					if c == int32(',') || c == int32(')') {
-						x__cerror(tls, cc, __ccgo_ts+104496, libc.UintptrFromInt32(0), 0, libc.UintptrFromInt32(0)) /* _E_  */
+						x__cerror(tls, cc, __ccgo_ts+104502, libc.UintptrFromInt32(0), 0, libc.UintptrFromInt32(0)) /* _E_  */
 						return m_FALSE
 					} else {
 						if cc.x__stdc_val != 0 && token_type == int32(m_OPE) && cc.x__openum == int32(m_OP_ELL) {
@@ -22500,13 +22548,13 @@ func s__get_parm(tls *libc.TLS, cc *CC) (r int32) {
 					}
 				}
 			}
-			if cc.x__stdc_val != 0 && libc.Xstrcmp(tls, uintptr(unsafe.Pointer(&cc.x__identifier)), __ccgo_ts+104308) == 0 {
+			if cc.x__stdc_val != 0 && libc.Xstrcmp(tls, uintptr(unsafe.Pointer(&cc.x__identifier)), __ccgo_ts+104314) == 0 {
 				x__cerror(tls, cc, illeg_parm, cc.s__parms[cc.s__nargs].Fname, 0, libc.UintptrFromInt32(0))
 				return m_FALSE
 				/* __VA_ARGS__ should not be used as a parameter    */
 			}
 			if s__is_formal(tls, cc, cc.s__parms[cc.s__nargs].Fname, m_FALSE) != 0 {
-				x__cerror(tls, cc, __ccgo_ts+104512, cc.s__parms[cc.s__nargs].Fname, 0, libc.UintptrFromInt32(0))
+				x__cerror(tls, cc, __ccgo_ts+104518, cc.s__parms[cc.s__nargs].Fname, 0, libc.UintptrFromInt32(0))
 				return m_FALSE
 			}
 			cc.s__parms[cc.s__nargs].Flen1 = libc.Uint64FromInt64(int64(cc.x__workp) - int64(cc.s__parms[cc.s__nargs].Fname))
@@ -22529,7 +22577,7 @@ func s__get_parm(tls *libc.TLS, cc *CC) (r int32) {
 		**(**int8)(__ccgo_up(v1)) = int8('\000') /* Remove excessive ',' */
 		if c != int32(')') {                     /* Must end at )        */
 			x__unget_ch(tls, cc) /* Push back '\n'       */
-			x__cerror(tls, cc, __ccgo_ts+104542, uintptr(unsafe.Pointer(&cc.x__work_buf)), 0, libc.UintptrFromInt32(0))
+			x__cerror(tls, cc, __ccgo_ts+104548, uintptr(unsafe.Pointer(&cc.x__work_buf)), 0, libc.UintptrFromInt32(0))
 			return m_FALSE
 		}
 	} else {
@@ -22567,8 +22615,8 @@ func s__get_repl(tls *libc.TLS, cc *CC, macroname uintptr) (r int32) {
 	var mixed_ops, multiple_cats, prev_prev_token, prev_token, temp, v1 uintptr
 	var _ /* repl_cur at bp+0 */ uintptr
 	_, _, _, _, _, _, _, _, _, _ = c, mixed_ops, multi_cats, multiple_cats, prev_prev_token, prev_token, temp, token_type, v1, v4
-	mixed_ops = __ccgo_ts + 104585             /* _W4_ */
-	multiple_cats = __ccgo_ts + 104640         /* _W4_ */
+	mixed_ops = __ccgo_ts + 104591             /* _W4_ */
+	multiple_cats = __ccgo_ts + 104646         /* _W4_ */
 	prev_token = libc.UintptrFromInt32(0)      /* Preceding token      */
 	prev_prev_token = libc.UintptrFromInt32(0) /* Pre-preceding token  */
 	multi_cats = m_FALSE
@@ -22578,7 +22626,7 @@ func s__get_repl(tls *libc.TLS, cc *CC, macroname uintptr) (r int32) {
 	c = x__get_ch(tls, cc)
 	x__unget_ch(tls, cc)
 	if int32(**(**int16)(__ccgo_up(cc.x__char_type + uintptr(c)*2)))&int32(m_SPA) == 0 && cc.s__nargs < 0 && cc.x__warn_level&int32(1) != 0 {
-		x__cwarn(tls, cc, __ccgo_ts+104688, macroname, 0, libc.UintptrFromInt32(0))
+		x__cwarn(tls, cc, __ccgo_ts+104694, macroname, 0, libc.UintptrFromInt32(0))
 	}
 	c = x__skip_ws(tls, cc) /* Get to the body      */
 	for c != int32('\n') {
@@ -22591,11 +22639,11 @@ func s__get_repl(tls *libc.TLS, cc *CC, macroname uintptr) (r int32) {
 			switch cc.x__openum {
 			case int32(m_OP_CAT): /* ##                   */
 				if prev_token == libc.UintptrFromInt32(0) {
-					x__cerror(tls, cc, __ccgo_ts+104735, libc.UintptrFromInt32(0), 0, libc.UintptrFromInt32(0))
+					x__cerror(tls, cc, __ccgo_ts+104741, libc.UintptrFromInt32(0), 0, libc.UintptrFromInt32(0))
 					return m_FALSE
 				} else {
 					if int32(**(**int8)(__ccgo_up(prev_token))) == int32(m_CAT) {
-						x__cerror(tls, cc, __ccgo_ts+104754, libc.UintptrFromInt32(0), 0, libc.UintptrFromInt32(0)) /* _E_  */
+						x__cerror(tls, cc, __ccgo_ts+104760, libc.UintptrFromInt32(0), 0, libc.UintptrFromInt32(0)) /* _E_  */
 						return m_FALSE
 					} else {
 						if prev_prev_token != 0 && int32(**(**int8)(__ccgo_up(prev_prev_token))) == int32(m_CAT) {
@@ -22639,8 +22687,8 @@ func s__get_repl(tls *libc.TLS, cc *CC, macroname uintptr) (r int32) {
 			 */
 			temp = s__is_formal(tls, cc, uintptr(unsafe.Pointer(&cc.x__identifier)), int32(m_TRUE))
 			if temp == libc.UintptrFromInt32(0) { /* Not a parameter name */
-				if cc.x__stdc_val != 0 && libc.Xstrcmp(tls, uintptr(unsafe.Pointer(&cc.x__identifier)), __ccgo_ts+104308) == 0 {
-					x__cerror(tls, cc, __ccgo_ts+104766, uintptr(unsafe.Pointer(&cc.x__identifier)), 0, libc.UintptrFromInt32(0))
+				if cc.x__stdc_val != 0 && libc.Xstrcmp(tls, uintptr(unsafe.Pointer(&cc.x__identifier)), __ccgo_ts+104314) == 0 {
+					x__cerror(tls, cc, __ccgo_ts+104772, uintptr(unsafe.Pointer(&cc.x__identifier)), 0, libc.UintptrFromInt32(0))
 					return m_FALSE
 				}
 				v1 = s__mgtoken_save(tls, cc, macroname)
@@ -22679,7 +22727,7 @@ func s__get_repl(tls *libc.TLS, cc *CC, macroname uintptr) (r int32) {
 	**(**int8)(__ccgo_up(**(**uintptr)(__ccgo_up(bp)))) = int8('\000') /* Terminate work       */
 	x__unget_ch(tls, cc)                                               /* For syntax check     */
 	if cc.s__token_p != 0 && int32(**(**int8)(__ccgo_up(cc.s__token_p))) == int32(m_CAT) {
-		x__cerror(tls, cc, __ccgo_ts+104799, libc.UintptrFromInt32(0), 0, libc.UintptrFromInt32(0)) /* _E_  */
+		x__cerror(tls, cc, __ccgo_ts+104805, libc.UintptrFromInt32(0), 0, libc.UintptrFromInt32(0)) /* _E_  */
 		return m_FALSE
 	}
 	if multi_cats != 0 && cc.x__warn_level&int32(4) != 0 {
@@ -22687,7 +22735,7 @@ func s__get_repl(tls *libc.TLS, cc *CC, macroname uintptr) (r int32) {
 	}
 	if cc.s__nargs&(libc.Int32FromInt32(m___SCHAR_MAX__)*libc.Int32FromInt32(2)+libc.Int32FromInt32(1)+libc.Int32FromInt32(1)) != 0 && cc.x__stdc_ver < int64(199901) && cc.x__warn_level&int32(2) != 0 {
 		/* Variable arg macro is the spec of C99, not C90 nor C++98     */
-		x__cwarn(tls, cc, __ccgo_ts+104817, libc.UintptrFromInt32(0), 0, libc.UintptrFromInt32(0))
+		x__cwarn(tls, cc, __ccgo_ts+104823, libc.UintptrFromInt32(0), 0, libc.UintptrFromInt32(0))
 	}
 	return int32(m_TRUE)
 }
@@ -22703,12 +22751,12 @@ func s__handle_define(tls *libc.TLS, cc *CC, pp uintptr, P uintptr, isDef int32)
 	}
 	name = s__parse_getwordafterspaces(tls, cc, P)
 	if s__classify_char(tls, cc, pp, int32(**(**int8)(__ccgo_up(name)))) != int32(m_PARSE_IDCHAR) {
-		s__doerror(tls, cc, pp, __ccgo_ts+28014, libc.VaList(bp+40, name))
+		s__doerror(tls, cc, pp, __ccgo_ts+28022, libc.VaList(bp+40, name))
 		return
 	}
 	oldvalue = x__pp_getdef(tls, cc, pp, name)
 	if oldvalue != 0 && isDef != 0 {
-		s__dowarning(tls, cc, pp, __ccgo_ts+28054, libc.VaList(bp+40, name))
+		s__dowarning(tls, cc, pp, __ccgo_ts+28062, libc.VaList(bp+40, name))
 	}
 	name = libc.Xstrdup(tls, name)
 	if isDef != 0 {
@@ -22729,11 +22777,11 @@ func s__handle_else(tls *libc.TLS, cc *CC, pp uintptr, P uintptr) {
 	I = (*_preprocess)(unsafe.Pointer(pp)).Fifs
 	_ = P /* unused parameter */
 	if !(I != 0) {
-		s__doerror(tls, cc, pp, __ccgo_ts+27896, 0)
+		s__doerror(tls, cc, pp, __ccgo_ts+27904, 0)
 		return
 	}
 	if (*_ifstate)(unsafe.Pointer(I)).Fsawelse != 0 {
-		s__doerror(tls, cc, pp, __ccgo_ts+27926, 0)
+		s__doerror(tls, cc, pp, __ccgo_ts+27934, 0)
 		return
 	}
 	(*_ifstate)(unsafe.Pointer(I)).Fsawelse = int32(1)
@@ -22751,7 +22799,7 @@ func s__handle_elseifdef(tls *libc.TLS, cc *CC, pp uintptr, P uintptr, invert in
 	_, _, _ = I, def, word
 	I = (*_preprocess)(unsafe.Pointer(pp)).Fifs
 	if !(I != 0) {
-		s__doerror(tls, cc, pp, __ccgo_ts+27896, 0)
+		s__doerror(tls, cc, pp, __ccgo_ts+27904, 0)
 		return
 	}
 	if (*_ifstate)(unsafe.Pointer(I)).Fskiprest != 0 {
@@ -22774,7 +22822,7 @@ func s__handle_endif(tls *libc.TLS, cc *CC, pp uintptr, P uintptr) {
 	_ = I
 	I = (*_preprocess)(unsafe.Pointer(pp)).Fifs
 	if !(I != 0) {
-		s__doerror(tls, cc, pp, __ccgo_ts+27962, 0)
+		s__doerror(tls, cc, pp, __ccgo_ts+27970, 0)
 		return
 	}
 	(*_preprocess)(unsafe.Pointer(pp)).Fifs = (*_ifstate)(unsafe.Pointer(I)).Fnext
@@ -22790,7 +22838,7 @@ func s__handle_error(tls *libc.TLS, cc *CC, pp uintptr, P uintptr) {
 		return
 	}
 	msg = s__parse_restofline(tls, cc, pp, P)
-	s__doerror(tls, cc, pp, __ccgo_ts+27993, libc.VaList(bp+8, msg))
+	s__doerror(tls, cc, pp, __ccgo_ts+28001, libc.VaList(bp+8, msg))
 }
 
 // C documentation
@@ -22813,16 +22861,16 @@ func s__handle_export_def(tls *libc.TLS, cc *CC, pp uintptr, P uintptr) {
 	for more != 0 {
 		word = s__parse_getwordafterspaces(tls, cc, P)
 		//printf("word=[%s]\n", word);
-		if !(libc.Xstrcmp(tls, word, __ccgo_ts+28070) != 0) {
+		if !(libc.Xstrcmp(tls, word, __ccgo_ts+28078) != 0) {
 			nest = nest + 1
 		} else {
-			if !(libc.Xstrcmp(tls, word, __ccgo_ts+28072) != 0) {
+			if !(libc.Xstrcmp(tls, word, __ccgo_ts+28080) != 0) {
 				nest = nest - 1
 				if nest <= 0 {
 					more = libc.BoolUint8(m_false != 0)
 				}
 			} else {
-				if !(libc.Xstrcmp(tls, word, __ccgo_ts+28074) != 0) {
+				if !(libc.Xstrcmp(tls, word, __ccgo_ts+28082) != 0) {
 					// do nothing
 				} else {
 					v3 = int32(**(**int8)(__ccgo_up(word)))
@@ -22845,20 +22893,20 @@ func s__handle_export_def(tls *libc.TLS, cc *CC, pp uintptr, P uintptr) {
 					if v1 != 0 || int32(**(**int8)(__ccgo_up(word))) == int32('_') {
 						def = x__pp_getdef(tls, cc, pp, word)
 						if !(def != 0) {
-							s__dowarning(tls, cc, pp, __ccgo_ts+28076, libc.VaList(bp+8, word))
+							s__dowarning(tls, cc, pp, __ccgo_ts+28084, libc.VaList(bp+8, word))
 							s__pp_define_internal(tls, cc, pp, word, libc.UintptrFromInt32(0), int32(m_PREDEF_FLAG_FREEDEFS))
 							def = x__pp_getdef(tls, cc, pp, word)
 						}
 						if def != 0 {
 							x__pp_define_weak_global(tls, cc, pp, libc.Xstrdup(tls, word), libc.Xstrdup(tls, def))
 						} else {
-							s__doerror(tls, cc, pp, __ccgo_ts+28131, libc.VaList(bp+8, word))
+							s__doerror(tls, cc, pp, __ccgo_ts+28139, libc.VaList(bp+8, word))
 						}
 					} else {
 						if !(**(**int8)(__ccgo_up(word)) != 0) {
 							more = libc.BoolUint8(m_false != 0)
 						} else {
-							s__doerror(tls, cc, pp, __ccgo_ts+28177, libc.VaList(bp+8, word))
+							s__doerror(tls, cc, pp, __ccgo_ts+28185, libc.VaList(bp+8, word))
 						}
 					}
 				}
@@ -22875,7 +22923,7 @@ func s__handle_include(tls *libc.TLS, cc *CC, pp uintptr, P uintptr) {
 	}
 	orig_name = s__parse_getincludestring(tls, cc, P)
 	if !(orig_name != 0) {
-		s__doerror(tls, cc, pp, __ccgo_ts+28245, 0)
+		s__doerror(tls, cc, pp, __ccgo_ts+28253, 0)
 		return
 	}
 	/* if the file does not start with a /, it could be relative
@@ -22906,15 +22954,15 @@ func s__handle_pragma(tls *libc.TLS, cc *CC, pp uintptr, P uintptr) (r uint8) {
 		return libc.BoolUint8(m_true != 0)
 	}
 	word = s__parse_getwordafterspaces(tls, cc, P)
-	if !(x__pp_strcmp(tls, cc, pp, word, __ccgo_ts+28213) != 0) {
+	if !(x__pp_strcmp(tls, cc, pp, word, __ccgo_ts+28221) != 0) {
 		(*_preprocess)(unsafe.Pointer(pp)).Fignore_case = int32(1)
 		return libc.BoolUint8(m_true != 0)
 	} else {
-		if !(x__pp_strcmp(tls, cc, pp, word, __ccgo_ts+28225) != 0) {
+		if !(x__pp_strcmp(tls, cc, pp, word, __ccgo_ts+28233) != 0) {
 			(*_preprocess)(unsafe.Pointer(pp)).Fignore_case = 0
 			return libc.BoolUint8(m_true != 0)
 		} else {
-			if !(x__pp_strcmp(tls, cc, pp, word, __ccgo_ts+28235) != 0) {
+			if !(x__pp_strcmp(tls, cc, pp, word, __ccgo_ts+28243) != 0) {
 				s__handle_export_def(tls, cc, pp, P)
 				return libc.BoolUint8(m_true != 0)
 			}
@@ -22932,7 +22980,7 @@ func s__handle_warn(tls *libc.TLS, cc *CC, pp uintptr, P uintptr) {
 		return
 	}
 	msg = s__parse_restofline(tls, cc, pp, P)
-	s__dowarning(tls, cc, pp, __ccgo_ts+28004, libc.VaList(bp+8, msg))
+	s__dowarning(tls, cc, pp, __ccgo_ts+28012, libc.VaList(bp+8, msg))
 }
 
 func s__included(tls *libc.TLS, cc *CC, fullname uintptr) (r int32) {
@@ -22957,7 +23005,7 @@ func s__included(tls *libc.TLS, cc *CC, fullname uintptr) (r int32) {
 		if (*_INC_LIST)(unsafe.Pointer(inc)).Flen1 == fnamelen && libc.Xstrcasecmp(tls, (*_INC_LIST)(unsafe.Pointer(inc)).Fname, fullname) == 0 {
 			/* Already included */
 			if cc.x__mcpp_debug&int32(m_PATH) != 0 {
-				(*(*func(*libc.TLS, *CC, _OUTDEST, uintptr, uintptr) int32)(unsafe.Pointer(&struct{ uintptr }{cc.x__mcpp_fprintf})))(tls, cc, int32(_DBG), __ccgo_ts+110100, libc.VaList(bp+8, fullname))
+				(*(*func(*libc.TLS, *CC, _OUTDEST, uintptr, uintptr) int32)(unsafe.Pointer(&struct{ uintptr }{cc.x__mcpp_fprintf})))(tls, cc, int32(_DBG), __ccgo_ts+110106, libc.VaList(bp+8, fullname))
 			}
 			return int32(m_TRUE)
 		}
@@ -22999,7 +23047,7 @@ func s__init_defines(tls *libc.TLS, cc *CC) {
 		;
 		pp += 16
 	}
-	x__look_and_install(tls, cc, __ccgo_ts+108144, -libc.Int32FromInt32(2)-(libc.Int32FromInt32(m___SCHAR_MAX__)*libc.Int32FromInt32(2)+libc.Int32FromInt32(1)+libc.Int32FromInt32(1)|(libc.Int32FromInt32(m___SCHAR_MAX__)*libc.Int32FromInt32(2)+libc.Int32FromInt32(1)+libc.Int32FromInt32(1))*libc.Int32FromInt32(2))-libc.Int32FromInt32(2), cc.x__null, __ccgo_ts+2730)
+	x__look_and_install(tls, cc, __ccgo_ts+108150, -libc.Int32FromInt32(2)-(libc.Int32FromInt32(m___SCHAR_MAX__)*libc.Int32FromInt32(2)+libc.Int32FromInt32(1)+libc.Int32FromInt32(1)|(libc.Int32FromInt32(m___SCHAR_MAX__)*libc.Int32FromInt32(2)+libc.Int32FromInt32(1)+libc.Int32FromInt32(1))*libc.Int32FromInt32(2))-libc.Int32FromInt32(2), cc.x__null, __ccgo_ts+2730)
 	/* MCPP V.2.x   */
 	/* This macro is predefined and is not undefined by -N option,  */
 	/*      yet can be undefined by -U or #undef.                   */
@@ -23080,9 +23128,9 @@ func s__init_predefines(tls *libc.TLS, cc *CC) {
 			x__un_predefine(tls, cc, m_FALSE) /* Undefine "unix" or so    */
 		}
 	}
-	libc.Xsprintf(tls, bp, __ccgo_ts+109301, libc.VaList(bp+24, cc.x__stdc_ver))
+	libc.Xsprintf(tls, bp, __ccgo_ts+109307, libc.VaList(bp+24, cc.x__stdc_ver))
 	if cc.x__stdc_ver != 0 {
-		x__look_and_install(tls, cc, __ccgo_ts+109306, -libc.Int32FromInt32(2)-(libc.Int32FromInt32(m___SCHAR_MAX__)*libc.Int32FromInt32(2)+libc.Int32FromInt32(1)+libc.Int32FromInt32(1)|(libc.Int32FromInt32(m___SCHAR_MAX__)*libc.Int32FromInt32(2)+libc.Int32FromInt32(1)+libc.Int32FromInt32(1))*libc.Int32FromInt32(2))-libc.Int32FromInt32(3), cc.x__null, bp)
+		x__look_and_install(tls, cc, __ccgo_ts+109312, -libc.Int32FromInt32(2)-(libc.Int32FromInt32(m___SCHAR_MAX__)*libc.Int32FromInt32(2)+libc.Int32FromInt32(1)+libc.Int32FromInt32(1)|(libc.Int32FromInt32(m___SCHAR_MAX__)*libc.Int32FromInt32(2)+libc.Int32FromInt32(1)+libc.Int32FromInt32(1))*libc.Int32FromInt32(2))-libc.Int32FromInt32(3), cc.x__null, bp)
 	}
 	s__set_limit(tls, cc)
 	s__init_std_defines(tls, cc)
@@ -23105,9 +23153,9 @@ func s__init_std_defines(tls *libc.TLS, cc *CC) {
 	var _ /* tmp at bp+0 */ [16]int8
 	var _ /* tvec at bp+32 */ _time_t
 	_, _ = tstring, v1
-	x__look_and_install(tls, cc, __ccgo_ts+27884, -libc.Int32FromInt32(2)-(libc.Int32FromInt32(m___SCHAR_MAX__)*libc.Int32FromInt32(2)+libc.Int32FromInt32(1)+libc.Int32FromInt32(1)|(libc.Int32FromInt32(m___SCHAR_MAX__)*libc.Int32FromInt32(2)+libc.Int32FromInt32(1)+libc.Int32FromInt32(1))*libc.Int32FromInt32(2))-libc.Int32FromInt32(4)-libc.Int32FromInt32(1), cc.x__null, __ccgo_ts+109323)
+	x__look_and_install(tls, cc, __ccgo_ts+27892, -libc.Int32FromInt32(2)-(libc.Int32FromInt32(m___SCHAR_MAX__)*libc.Int32FromInt32(2)+libc.Int32FromInt32(1)+libc.Int32FromInt32(1)|(libc.Int32FromInt32(m___SCHAR_MAX__)*libc.Int32FromInt32(2)+libc.Int32FromInt32(1)+libc.Int32FromInt32(1))*libc.Int32FromInt32(2))-libc.Int32FromInt32(4)-libc.Int32FromInt32(1), cc.x__null, __ccgo_ts+109329)
 	/* Room for 11 chars (10 for long and 1 for '-' in case of wrap round.  */
-	x__look_and_install(tls, cc, __ccgo_ts+27875, -libc.Int32FromInt32(2)-(libc.Int32FromInt32(m___SCHAR_MAX__)*libc.Int32FromInt32(2)+libc.Int32FromInt32(1)+libc.Int32FromInt32(1)|(libc.Int32FromInt32(m___SCHAR_MAX__)*libc.Int32FromInt32(2)+libc.Int32FromInt32(1)+libc.Int32FromInt32(1))*libc.Int32FromInt32(2))-libc.Int32FromInt32(4)-libc.Int32FromInt32(2), cc.x__null, cc.x__null)
+	x__look_and_install(tls, cc, __ccgo_ts+27883, -libc.Int32FromInt32(2)-(libc.Int32FromInt32(m___SCHAR_MAX__)*libc.Int32FromInt32(2)+libc.Int32FromInt32(1)+libc.Int32FromInt32(1)|(libc.Int32FromInt32(m___SCHAR_MAX__)*libc.Int32FromInt32(2)+libc.Int32FromInt32(1)+libc.Int32FromInt32(1))*libc.Int32FromInt32(2))-libc.Int32FromInt32(4)-libc.Int32FromInt32(2), cc.x__null, cc.x__null)
 	/* Should be stuffed    */
 	/* Define __DATE__, __TIME__ as present date and time.          */
 	libc.Xtime(tls, bp+32)
@@ -23117,22 +23165,22 @@ func s__init_std_defines(tls *libc.TLS, cc *CC) {
 	} else {
 		v1 = int32(**(**int8)(__ccgo_up(tstring + libc.UintptrFromInt32(8))))
 	}
-	libc.Xsprintf(tls, bp+16, __ccgo_ts+109335, libc.VaList(bp+48, tstring+uintptr(4), v1, int32(**(**int8)(__ccgo_up(tstring + libc.UintptrFromInt32(9)))), tstring+uintptr(20)))
-	x__look_and_install(tls, cc, __ccgo_ts+2869, -libc.Int32FromInt32(2)-(libc.Int32FromInt32(m___SCHAR_MAX__)*libc.Int32FromInt32(2)+libc.Int32FromInt32(1)+libc.Int32FromInt32(1)|(libc.Int32FromInt32(m___SCHAR_MAX__)*libc.Int32FromInt32(2)+libc.Int32FromInt32(1)+libc.Int32FromInt32(1))*libc.Int32FromInt32(2))-libc.Int32FromInt32(4), cc.x__null, bp+16)
-	libc.Xsprintf(tls, bp+16, __ccgo_ts+109352, libc.VaList(bp+48, tstring+uintptr(11)))
-	x__look_and_install(tls, cc, __ccgo_ts+2889, -libc.Int32FromInt32(2)-(libc.Int32FromInt32(m___SCHAR_MAX__)*libc.Int32FromInt32(2)+libc.Int32FromInt32(1)+libc.Int32FromInt32(1)|(libc.Int32FromInt32(m___SCHAR_MAX__)*libc.Int32FromInt32(2)+libc.Int32FromInt32(1)+libc.Int32FromInt32(1))*libc.Int32FromInt32(2))-libc.Int32FromInt32(4), cc.x__null, bp+16)
-	if !(x__look_id(tls, cc, __ccgo_ts+109359) != 0) {
+	libc.Xsprintf(tls, bp+16, __ccgo_ts+109341, libc.VaList(bp+48, tstring+uintptr(4), v1, int32(**(**int8)(__ccgo_up(tstring + libc.UintptrFromInt32(9)))), tstring+uintptr(20)))
+	x__look_and_install(tls, cc, __ccgo_ts+2871, -libc.Int32FromInt32(2)-(libc.Int32FromInt32(m___SCHAR_MAX__)*libc.Int32FromInt32(2)+libc.Int32FromInt32(1)+libc.Int32FromInt32(1)|(libc.Int32FromInt32(m___SCHAR_MAX__)*libc.Int32FromInt32(2)+libc.Int32FromInt32(1)+libc.Int32FromInt32(1))*libc.Int32FromInt32(2))-libc.Int32FromInt32(4), cc.x__null, bp+16)
+	libc.Xsprintf(tls, bp+16, __ccgo_ts+109358, libc.VaList(bp+48, tstring+uintptr(11)))
+	x__look_and_install(tls, cc, __ccgo_ts+2891, -libc.Int32FromInt32(2)-(libc.Int32FromInt32(m___SCHAR_MAX__)*libc.Int32FromInt32(2)+libc.Int32FromInt32(1)+libc.Int32FromInt32(1)|(libc.Int32FromInt32(m___SCHAR_MAX__)*libc.Int32FromInt32(2)+libc.Int32FromInt32(1)+libc.Int32FromInt32(1))*libc.Int32FromInt32(2))-libc.Int32FromInt32(4), cc.x__null, bp+16)
+	if !(x__look_id(tls, cc, __ccgo_ts+109365) != 0) {
 		/*
 		 * Some compilers, e.g. GCC older than 3.3, define this macro by
 		 * -D option.
 		 */
-		libc.Xsprintf(tls, bp, __ccgo_ts+27893, libc.VaList(bp+48, int32(m_STDC_HOSTED)))
-		x__look_and_install(tls, cc, __ccgo_ts+109359, -libc.Int32FromInt32(2)-(libc.Int32FromInt32(m___SCHAR_MAX__)*libc.Int32FromInt32(2)+libc.Int32FromInt32(1)+libc.Int32FromInt32(1)|(libc.Int32FromInt32(m___SCHAR_MAX__)*libc.Int32FromInt32(2)+libc.Int32FromInt32(1)+libc.Int32FromInt32(1))*libc.Int32FromInt32(2))-libc.Int32FromInt32(2), cc.x__null, bp)
+		libc.Xsprintf(tls, bp, __ccgo_ts+27901, libc.VaList(bp+48, int32(m_STDC_HOSTED)))
+		x__look_and_install(tls, cc, __ccgo_ts+109365, -libc.Int32FromInt32(2)-(libc.Int32FromInt32(m___SCHAR_MAX__)*libc.Int32FromInt32(2)+libc.Int32FromInt32(1)+libc.Int32FromInt32(1)|(libc.Int32FromInt32(m___SCHAR_MAX__)*libc.Int32FromInt32(2)+libc.Int32FromInt32(1)+libc.Int32FromInt32(1))*libc.Int32FromInt32(2))-libc.Int32FromInt32(2), cc.x__null, bp)
 	}
 	/* Define __STDC__ as 1 or such for Standard conforming compiler.   */
-	if !(x__look_id(tls, cc, __ccgo_ts+109234) != 0) {
-		libc.Xsprintf(tls, bp, __ccgo_ts+27893, libc.VaList(bp+48, cc.x__stdc_val))
-		x__look_and_install(tls, cc, __ccgo_ts+109234, -libc.Int32FromInt32(2)-(libc.Int32FromInt32(m___SCHAR_MAX__)*libc.Int32FromInt32(2)+libc.Int32FromInt32(1)+libc.Int32FromInt32(1)|(libc.Int32FromInt32(m___SCHAR_MAX__)*libc.Int32FromInt32(2)+libc.Int32FromInt32(1)+libc.Int32FromInt32(1))*libc.Int32FromInt32(2))-libc.Int32FromInt32(3), cc.x__null, bp)
+	if !(x__look_id(tls, cc, __ccgo_ts+109240) != 0) {
+		libc.Xsprintf(tls, bp, __ccgo_ts+27901, libc.VaList(bp+48, cc.x__stdc_val))
+		x__look_and_install(tls, cc, __ccgo_ts+109240, -libc.Int32FromInt32(2)-(libc.Int32FromInt32(m___SCHAR_MAX__)*libc.Int32FromInt32(2)+libc.Int32FromInt32(1)+libc.Int32FromInt32(1)|(libc.Int32FromInt32(m___SCHAR_MAX__)*libc.Int32FromInt32(2)+libc.Int32FromInt32(1)+libc.Int32FromInt32(1))*libc.Int32FromInt32(2))-libc.Int32FromInt32(3), cc.x__null, bp)
 	}
 }
 
@@ -23201,7 +23249,7 @@ func s__isPushAddDbaseLdl(tls *libc.TLS, cc *CC, bcname uintptr) (r int32) {
 	_, _, _, _, _, _, _ = n, ptr, v1, v3, v4, v6, v7
 	n = 0
 	ptr = bcname
-	if libc.Xstrncmp(tls, ptr, __ccgo_ts+88162, uint64(5)) != 0 {
+	if libc.Xstrncmp(tls, ptr, __ccgo_ts+88168, uint64(5)) != 0 {
 		return -int32(1)
 	}
 	ptr = ptr + uintptr(5)
@@ -23226,7 +23274,7 @@ func s__isPushAddDbaseLdl(tls *libc.TLS, cc *CC, bcname uintptr) (r int32) {
 		n = int32(10)*n + int32(**(**int8)(__ccgo_up(ptr))) - int32('0')
 		ptr = ptr + 1
 	}
-	if libc.Xstrcmp(tls, ptr, __ccgo_ts+88168) != 0 {
+	if libc.Xstrcmp(tls, ptr, __ccgo_ts+88174) != 0 {
 		return -int32(1)
 	}
 	return n
@@ -23243,7 +23291,7 @@ func s__isPushAddDbaseStl(tls *libc.TLS, cc *CC, bcname uintptr) (r int32) {
 	_, _, _, _, _, _, _ = n, ptr, v1, v3, v4, v6, v7
 	n = 0
 	ptr = bcname
-	if libc.Xstrncmp(tls, ptr, __ccgo_ts+88162, uint64(5)) != 0 {
+	if libc.Xstrncmp(tls, ptr, __ccgo_ts+88168, uint64(5)) != 0 {
 		return -int32(1)
 	}
 	ptr = ptr + uintptr(5)
@@ -23268,7 +23316,7 @@ func s__isPushAddDbaseStl(tls *libc.TLS, cc *CC, bcname uintptr) (r int32) {
 		n = int32(10)*n + int32(**(**int8)(__ccgo_up(ptr))) - int32('0')
 		ptr = ptr + 1
 	}
-	if libc.Xstrcmp(tls, ptr, __ccgo_ts+88183) != 0 {
+	if libc.Xstrcmp(tls, ptr, __ccgo_ts+88189) != 0 {
 		return -int32(1)
 	}
 	return n
@@ -23285,7 +23333,7 @@ func s__is_formal(tls *libc.TLS, cc *CC, name uintptr, conv int32) (r uintptr) {
 	var parm _PARM
 	var repl_cur, va_arg, v2 uintptr
 	_, _, _, _, _, _ = i, len1, parm, repl_cur, va_arg, v2
-	va_arg = __ccgo_ts + 104308
+	va_arg = __ccgo_ts + 104314
 	len1 = libc.Xstrlen(tls, name)
 	i = 0
 	for {
@@ -23336,7 +23384,7 @@ func s__lstEndAst(tls *libc.TLS, cc *CC, f uintptr, ast uintptr) {
 				//                printf("got label %s\n", name);
 				labelref = *(*uintptr)(unsafe.Pointer(sym + 32))
 				if (*_Label)(unsafe.Pointer(labelref)).Fhubval != cc.s__hubPc {
-					x__ERROR(tls, cc, ast, __ccgo_ts+40931, libc.VaList(bp+8, name, cc.s__hubPc, (*_Label)(unsafe.Pointer(labelref)).Fhubval))
+					x__ERROR(tls, cc, ast, __ccgo_ts+40939, libc.VaList(bp+8, name, cc.s__hubPc, (*_Label)(unsafe.Pointer(labelref)).Fhubval))
 				}
 			}
 		}
@@ -23353,7 +23401,7 @@ func s__lstPutByte(tls *libc.TLS, cc *CC, f uintptr, c int32) {
 	if cc.s__bytesOnLine >= int32(4) {
 		s__startNewLine1(tls, cc, f)
 	}
-	x__flexbuf_printf(tls, cc, f, __ccgo_ts+40837, libc.VaList(bp+8, c))
+	x__flexbuf_printf(tls, cc, f, __ccgo_ts+40845, libc.VaList(bp+8, c))
 	cc.s__bytesOnLine = cc.s__bytesOnLine + 1
 	cc.s__hubPc = cc.s__hubPc + 1
 	cc.s__cogPc = cc.s__cogPc + 1
@@ -23398,7 +23446,7 @@ func s__lstStartAst(tls *libc.TLS, cc *CC, f uintptr, ast uintptr) {
 		} else {
 			expectHubPc = uint32(*(*_uint64_t)(unsafe.Pointer(ast + 8)) & libc.Uint64FromInt32(0x00ffffff))
 			if expectHubPc != cc.s__hubPc {
-				x__ERROR(tls, cc, ast, __ccgo_ts+40888, libc.VaList(bp+8, expectHubPc, cc.s__hubPc))
+				x__ERROR(tls, cc, ast, __ccgo_ts+40896, libc.VaList(bp+8, expectHubPc, cc.s__hubPc))
 				xAbort(tls)
 			}
 		}
@@ -23430,7 +23478,7 @@ func s__makeAnonAlias(tls *libc.TLS, cc *CC, sym uintptr, arg uintptr) (r int32)
 	if newsym != 0 {
 		**(**int32)(__ccgo_up(newsym + 40)) |= int32(m_SYMF_NOALLOC)
 	} else {
-		x__ERROR(tls, cc, (*_AnonAliasStruct)(unsafe.Pointer(A)).Fprefix, __ccgo_ts+9627, libc.VaList(bp+8, newname))
+		x__ERROR(tls, cc, (*_AnonAliasStruct)(unsafe.Pointer(A)).Fprefix, __ccgo_ts+9629, libc.VaList(bp+8, newname))
 	}
 	return int32(1)
 }
@@ -23447,7 +23495,7 @@ func s__matchType(tls *libc.TLS, cc *CC, decl uintptr, use uintptr, var1 uintptr
 	if (*_AST)(unsafe.Pointer(decl)).Fkind == (*_AST)(unsafe.Pointer(use)).Fkind {
 		return s__matchType(tls, cc, (*_AST)(unsafe.Pointer(decl)).Fleft, (*_AST)(unsafe.Pointer(use)).Fleft, var1)
 	}
-	x__ERROR(tls, cc, decl, __ccgo_ts+31612, libc.VaList(bp+8, x__GetUserIdentifierName(tls, cc, var1)))
+	x__ERROR(tls, cc, decl, __ccgo_ts+31620, libc.VaList(bp+8, x__GetUserIdentifierName(tls, cc, var1)))
 	return cc.x__ast_type_generic
 }
 
@@ -23774,8 +23822,8 @@ func s__md_init(tls *libc.TLS, cc *CC, filename uintptr, output uintptr) (r uint
 	}
 	if !(cc.s__mkdep_fp != 0) { /* Unless already opened by -MF, -MD, -MMD options  */
 		if cc.x__mkdep&int32(m_MD_FILE) != 0 {
-			libc.Xstrcpy(tls, cp, __ccgo_ts+109606)
-			cc.s__mkdep_fp = x__mcpp_fopen(tls, cc, bp, __ccgo_ts+4253)
+			libc.Xstrcpy(tls, cp, __ccgo_ts+109612)
+			cc.s__mkdep_fp = x__mcpp_fopen(tls, cc, bp, __ccgo_ts+4255)
 		} else {
 			cc.s__mkdep_fp = cc.x__fp_out         /* Output dependency line to normal output  */
 			cc.x__no_output = cc.x__no_output + 1 /* Without normal output    */
@@ -23788,7 +23836,7 @@ func s__md_init(tls *libc.TLS, cc *CC, filename uintptr, output uintptr) (r uint
 			out_p = _stpcpy(tls, output, cc.s__mkdep_target)
 		}
 	} else {
-		libc.Xstrcpy(tls, cp, __ccgo_ts+109608)
+		libc.Xstrcpy(tls, cp, __ccgo_ts+109614)
 		out_p = _stpcpy(tls, output, bp)
 	}
 	v1 = out_p
@@ -23879,7 +23927,7 @@ func s__norm_path(tls *libc.TLS, cc *CC, dir uintptr, fname uintptr, inf int32, 
 	_, _, _, _, _, _, _, _, _ = abs_path, cp1, cp2, len1, norm_name, start, start_pos, v1, v5 /* Should not be size_t */
 	start_pos = uint64(0)
 	if !(dir != 0) || **(**int8)(__ccgo_up(dir)) != 0 && s__is_full_path(tls, cc, fname) != 0 {
-		x__cfatal(tls, cc, __ccgo_ts+109412, libc.UintptrFromInt32(0), 0, libc.UintptrFromInt32(0))
+		x__cfatal(tls, cc, __ccgo_ts+109418, libc.UintptrFromInt32(0), 0, libc.UintptrFromInt32(0))
 	}
 	inf = libc.BoolInt32(inf != 0 && cc.x__mcpp_debug&int32(m_PATH) != 0) /* Output information   */
 	libc.Xstrcpy(tls, bp, dir)                                            /* Include directory    */
@@ -23945,7 +23993,7 @@ func s__norm_path(tls *libc.TLS, cc *CC, dir uintptr, fname uintptr, inf int32, 
 			} else {
 				v5 = cc.x__null
 			}
-			(*(*func(*libc.TLS, *CC, _OUTDEST, uintptr, uintptr) int32)(unsafe.Pointer(&struct{ uintptr }{cc.x__mcpp_fprintf})))(tls, cc, int32(_DBG), __ccgo_ts+109447, libc.VaList(bp+3240, dir, v5, bp))
+			(*(*func(*libc.TLS, *CC, _OUTDEST, uintptr, uintptr) int32)(unsafe.Pointer(&struct{ uintptr }{cc.x__mcpp_fprintf})))(tls, cc, int32(_DBG), __ccgo_ts+109453, libc.VaList(bp+3240, dir, v5, bp))
 		}
 	}
 	len1 = libc.Int32FromUint64(libc.Xstrlen(tls, bp))
@@ -23957,7 +24005,7 @@ func s__norm_path(tls *libc.TLS, cc *CC, dir uintptr, fname uintptr, inf int32, 
 	if len1 == int32(1) && int32(**(**int8)(__ccgo_up(norm_name))) == int32('/') { /* Only "/"     */
 		return norm_name
 	}
-	if libc.Xstrncmp(tls, cp1, __ccgo_ts+109476, uint64(2)) == 0 { /* Remove beginning "./"    */
+	if libc.Xstrncmp(tls, cp1, __ccgo_ts+109482, uint64(2)) == 0 { /* Remove beginning "./"    */
 		libc.Xmemmove(tls, cp1, cp1+uintptr(2), libc.Xstrlen(tls, cp1+uintptr(2))+uint64(1))
 	} /* +1 for EOS   */
 	if int32(**(**int8)(__ccgo_up(start))) != int32('/') { /* Relative path to current directory   */
@@ -23972,7 +24020,7 @@ func s__norm_path(tls *libc.TLS, cc *CC, dir uintptr, fname uintptr, inf int32, 
 		start = v5
 	}
 	for {
-		v5 = libc.Xstrstr(tls, cp1, __ccgo_ts+109479)
+		v5 = libc.Xstrstr(tls, cp1, __ccgo_ts+109485)
 		cp1 = v5
 		if !(v5 != libc.UintptrFromInt32(0)) {
 			break
@@ -23983,7 +24031,7 @@ func s__norm_path(tls *libc.TLS, cc *CC, dir uintptr, fname uintptr, inf int32, 
 	cp1 = start
 	/* Remove redundant "foo/../"   */
 	for {
-		v5 = libc.Xstrstr(tls, cp1, __ccgo_ts+109483)
+		v5 = libc.Xstrstr(tls, cp1, __ccgo_ts+109489)
 		cp1 = v5
 		if !(v5 != libc.UintptrFromInt32(0)) {
 			break
@@ -24012,7 +24060,7 @@ func s__norm_path(tls *libc.TLS, cc *CC, dir uintptr, fname uintptr, inf int32, 
 		}
 		libc.Xstrcat(tls, bp+2200, v5)
 		if !(libc.Xstrcmp(tls, bp+2200, norm_name) == libc.Int32FromInt32(0)) {
-			(*(*func(*libc.TLS, *CC, _OUTDEST, uintptr, uintptr) int32)(unsafe.Pointer(&struct{ uintptr }{cc.x__mcpp_fprintf})))(tls, cc, int32(_DBG), __ccgo_ts+109488, libc.VaList(bp+3240, bp+2200, norm_name))
+			(*(*func(*libc.TLS, *CC, _OUTDEST, uintptr, uintptr) int32)(unsafe.Pointer(&struct{ uintptr }{cc.x__mcpp_fprintf})))(tls, cc, int32(_DBG), __ccgo_ts+109494, libc.VaList(bp+3240, bp+2200, norm_name))
 		}
 	}
 	return norm_name
@@ -24040,7 +24088,7 @@ func s__open_file(tls *libc.TLS, cc *CC, dirp uintptr, src_dir uintptr, filename
 		} else {
 			v1 = cc.x__null
 		}
-		(*(*func(*libc.TLS, *CC, _OUTDEST, uintptr, uintptr) int32)(unsafe.Pointer(&struct{ uintptr }{cc.x__mcpp_fprintf})))(tls, cc, int32(_DBG), __ccgo_ts+109724, libc.VaList(bp+1032, **(**uintptr)(__ccgo_up(dirp)), v1, filename))
+		(*(*func(*libc.TLS, *CC, _OUTDEST, uintptr, uintptr) int32)(unsafe.Pointer(&struct{ uintptr }{cc.x__mcpp_fprintf})))(tls, cc, int32(_DBG), __ccgo_ts+109730, libc.VaList(bp+1032, **(**uintptr)(__ccgo_up(dirp)), v1, filename))
 	}
 	/* src_dir is usually NULL.  This is specified to   */
 	/* search the source directory of the includer.     */
@@ -24060,14 +24108,14 @@ func s__open_file(tls *libc.TLS, cc *CC, dirp uintptr, src_dir uintptr, filename
 		goto true_case
 	}
 	if v3 = cc.s__max_open != 0 && cc.s__max_open <= cc.x__include_nest; !v3 {
-		v1 = x__mcpp_fopen(tls, cc, fullname, __ccgo_ts+10626)
+		v1 = x__mcpp_fopen(tls, cc, fullname, __ccgo_ts+10628)
 		fp = v1
 	}
 	if v3 || v1 == libc.UintptrFromInt32(0) && **(**int32)(__ccgo_up(libc.X__error(tls))) == int32(m_EMFILE) {
 		/* Reached the limit for the first time */
 		if cc.x__mcpp_debug&int32(m_PATH) != 0 {
 			if cc.s__max_open == 0 {
-				(*(*func(*libc.TLS, *CC, _OUTDEST, uintptr, uintptr) int32)(unsafe.Pointer(&struct{ uintptr }{cc.x__mcpp_fprintf})))(tls, cc, int32(_DBG), __ccgo_ts+109742, libc.VaList(bp+1032, cc.x__include_nest, **(**int32)(__ccgo_up(libc.X__error(tls)))))
+				(*(*func(*libc.TLS, *CC, _OUTDEST, uintptr, uintptr) int32)(unsafe.Pointer(&struct{ uintptr }{cc.x__mcpp_fprintf})))(tls, cc, int32(_DBG), __ccgo_ts+109748, libc.VaList(bp+1032, cc.x__include_nest, **(**int32)(__ccgo_up(libc.X__error(tls)))))
 			}
 		}
 		/*
@@ -24078,10 +24126,10 @@ func s__open_file(tls *libc.TLS, cc *CC, dirp uintptr, src_dir uintptr, filename
 		(*_FILEINFO)(unsafe.Pointer(file)).Fpos = libc.Xftell(tls, (*_FILEINFO)(unsafe.Pointer(file)).Ffp)
 		fclose(tls, cc, (*_FILEINFO)(unsafe.Pointer(file)).Ffp)
 		/* In case of failure, re-open the includer */
-		v1 = x__mcpp_fopen(tls, cc, fullname, __ccgo_ts+10626)
+		v1 = x__mcpp_fopen(tls, cc, fullname, __ccgo_ts+10628)
 		fp = v1
 		if v1 == libc.UintptrFromInt32(0) {
-			(*_FILEINFO)(unsafe.Pointer(file)).Ffp = x__mcpp_fopen(tls, cc, cc.x__cur_fullname, __ccgo_ts+10626)
+			(*_FILEINFO)(unsafe.Pointer(file)).Ffp = x__mcpp_fopen(tls, cc, cc.x__cur_fullname, __ccgo_ts+10628)
 			libc.Xfseek(tls, (*_FILEINFO)(unsafe.Pointer(file)).Ffp, (*_FILEINFO)(unsafe.Pointer(file)).Fpos, m_SEEK_SET)
 			goto false_case
 		}
@@ -24158,7 +24206,7 @@ func s__open_include(tls *libc.TLS, cc *CC, filename uintptr, searchlocal int32,
 		has_dir = libc.BoolInt32(has_dir_src != 0 || has_dir_fname != 0 || int32(**(**int8)(__ccgo_up(**(**uintptr)(__ccgo_up((*_FILEINFO)(unsafe.Pointer(cc.x__infile)).Fdirp))))) != int32('\000'))
 	}
 	if cc.x__mcpp_debug&int32(m_PATH) != 0 {
-		(*(*func(*libc.TLS, *CC, _OUTDEST, uintptr, uintptr) int32)(unsafe.Pointer(&struct{ uintptr }{cc.x__mcpp_fprintf})))(tls, cc, int32(_DBG), __ccgo_ts+109710, libc.VaList(bp+1032, filename))
+		(*(*func(*libc.TLS, *CC, _OUTDEST, uintptr, uintptr) int32)(unsafe.Pointer(&struct{ uintptr }{cc.x__mcpp_fprintf})))(tls, cc, int32(_DBG), __ccgo_ts+109716, libc.VaList(bp+1032, filename))
 	}
 	if searchlocal != 0 && (cc.s__search_rule&int32(m_CURRENT) != 0 || !(has_dir != 0)) || full_path != 0 {
 		/*
@@ -24197,10 +24245,10 @@ func s__outputFinalOrgs(tls *libc.TLS, cc *CC, f uintptr, ast uintptr, count int
 	if count == 0 || inlineAsm == 0 {
 		return
 	}
-	x__flexbuf_printf(tls, cc, f, __ccgo_ts+98953, 0)
-	x__flexbuf_printf(tls, cc, f, __ccgo_ts+98957, 0)
-	x__flexbuf_printf(tls, cc, f, __ccgo_ts+99042, 0)
-	x__flexbuf_printf(tls, cc, f, __ccgo_ts+98953, 0)
+	x__flexbuf_printf(tls, cc, f, __ccgo_ts+98959, 0)
+	x__flexbuf_printf(tls, cc, f, __ccgo_ts+98963, 0)
+	x__flexbuf_printf(tls, cc, f, __ccgo_ts+99048, 0)
+	x__flexbuf_printf(tls, cc, f, __ccgo_ts+98959, 0)
 	i = 0
 	for {
 		if !(i < count) {
@@ -24208,7 +24256,7 @@ func s__outputFinalOrgs(tls *libc.TLS, cc *CC, f uintptr, ast uintptr, count int
 		}
 		sym = *(*uintptr)(unsafe.Pointer(**(**uintptr)(__ccgo_up(ast + uintptr(i)*8)) + 8))
 		s__startLine(tls, cc, f, inlineAsm)
-		x__flexbuf_printf(tls, cc, f, __ccgo_ts+99101, libc.VaList(bp+8, (*_Symbol)(unsafe.Pointer(sym)).Fuser_name, (*_Symbol)(unsafe.Pointer(sym)).Fuser_name))
+		x__flexbuf_printf(tls, cc, f, __ccgo_ts+99107, libc.VaList(bp+8, (*_Symbol)(unsafe.Pointer(sym)).Fuser_name, (*_Symbol)(unsafe.Pointer(sym)).Fuser_name))
 		s__endLine(tls, cc, f, inlineAsm)
 		goto _1
 	_1:
@@ -24227,7 +24275,7 @@ func s__outputFvar(tls *libc.TLS, cc *CC, f uintptr, relocs uintptr, ast uintptr
 	_, _, _, _, _, _, _ = count, i, maxval, origVal, val, v1, v2
 	count = uint32(0)
 	if !(ast != 0) || (*_AST)(unsafe.Pointer(ast)).Fkind != int32(_AST_EXPRLIST) {
-		x__ERROR(tls, cc, ast, __ccgo_ts+38147, 0)
+		x__ERROR(tls, cc, ast, __ccgo_ts+38155, 0)
 		return
 	}
 	ast = (*_AST)(unsafe.Pointer(ast)).Fleft
@@ -24235,7 +24283,7 @@ func s__outputFvar(tls *libc.TLS, cc *CC, f uintptr, relocs uintptr, ast uintptr
 	origVal = v1
 	val = v1
 	if !(isSigned != 0) && val < 0 {
-		x__ERROR(tls, cc, ast, __ccgo_ts+38167, 0)
+		x__ERROR(tls, cc, ast, __ccgo_ts+38175, 0)
 		return
 	}
 	if isSigned != 0 {
@@ -24265,7 +24313,7 @@ func s__outputFvar(tls *libc.TLS, cc *CC, f uintptr, relocs uintptr, ast uintptr
 	s__outputByte(tls, cc, f, val)
 	count = count + 1
 	if count != x__BytesForFvar(tls, cc, origVal, isSigned, ast) {
-		x__ERROR(tls, cc, ast, __ccgo_ts+38193, 0)
+		x__ERROR(tls, cc, ast, __ccgo_ts+38201, 0)
 	}
 }
 
@@ -24282,23 +24330,23 @@ func s__outputGasDataList(tls *libc.TLS, cc *CC, f uintptr, prefix uintptr, ast 
 	var reps int32
 	var val, val1 uint32
 	_, _, _, _, _, _, _, _, _, _ = comma, isFloat, isString, origval, ptr, reps, sub, val, val1, v1
-	comma = __ccgo_ts + 7138
+	comma = __ccgo_ts + 7140
 	origval = libc.UintptrFromInt32(0)
 	isString = libc.BoolUint8(m_false != 0)
 	isFloat = libc.BoolUint8(m_false != 0)
 	if size == int32(1) && s__ShouldPrintAsString(tls, cc, ast) != 0 {
 		isString = libc.BoolUint8(m_true != 0)
-		prefix = __ccgo_ts + 98350
+		prefix = __ccgo_ts + 98356
 	}
 	if size == int32(4) && s__AllFloats(tls, cc, ast) != 0 {
-		prefix = __ccgo_ts + 98357
+		prefix = __ccgo_ts + 98363
 		isFloat = libc.BoolUint8(m_true != 0)
 	}
 	s__forceAlign(tls, cc, f, size, inlineAsm)
 	s__startLine(tls, cc, f, inlineAsm)
-	x__flexbuf_printf(tls, cc, f, __ccgo_ts+98364, libc.VaList(bp+8, __ccgo_ts+61558, prefix))
+	x__flexbuf_printf(tls, cc, f, __ccgo_ts+98370, libc.VaList(bp+8, __ccgo_ts+61566, prefix))
 	if isString != 0 {
-		x__flexbuf_printf(tls, cc, f, __ccgo_ts+98375, 0)
+		x__flexbuf_printf(tls, cc, f, __ccgo_ts+98381, 0)
 	}
 	for ast != 0 {
 		sub = (*_AST)(unsafe.Pointer(ast)).Fleft
@@ -24315,9 +24363,9 @@ func s__outputGasDataList(tls *libc.TLS, cc *CC, f uintptr, prefix uintptr, ast 
 					if isString != 0 {
 						s__PrintQuotedChar(tls, cc, f, libc.Int32FromUint32(val))
 					} else {
-						x__flexbuf_printf(tls, cc, f, __ccgo_ts+98377, libc.VaList(bp+8, comma, val))
+						x__flexbuf_printf(tls, cc, f, __ccgo_ts+98383, libc.VaList(bp+8, comma, val))
 					}
-					comma = __ccgo_ts + 60153
+					comma = __ccgo_ts + 60161
 					cc.s__datacount2 = cc.s__datacount2 + size
 				}
 				reps = 0
@@ -24331,9 +24379,9 @@ func s__outputGasDataList(tls *libc.TLS, cc *CC, f uintptr, prefix uintptr, ast 
 				val1 = libc.Uint32FromInt64(x__EvalConstExpr(tls, cc, origval))
 				s__PrintQuotedChar(tls, cc, f, libc.Int32FromUint32(val1))
 			} else {
-				x__flexbuf_printf(tls, cc, f, __ccgo_ts+7088, libc.VaList(bp+8, comma))
+				x__flexbuf_printf(tls, cc, f, __ccgo_ts+7090, libc.VaList(bp+8, comma))
 				x__PrintGasExpr(tls, cc, f, origval, isFloat)
-				comma = __ccgo_ts + 60153
+				comma = __ccgo_ts + 60161
 			}
 			reps = reps - 1
 			cc.s__datacount2 = cc.s__datacount2 + size
@@ -24341,7 +24389,7 @@ func s__outputGasDataList(tls *libc.TLS, cc *CC, f uintptr, prefix uintptr, ast 
 		ast = (*_AST)(unsafe.Pointer(ast)).Fright
 	}
 	if isString != 0 {
-		x__flexbuf_printf(tls, cc, f, __ccgo_ts+98375, 0)
+		x__flexbuf_printf(tls, cc, f, __ccgo_ts+98381, 0)
 	}
 	s__endLine(tls, cc, f, inlineAsm)
 }
@@ -24350,11 +24398,11 @@ func s__outputGasDirective(tls *libc.TLS, cc *CC, f uintptr, prefix uintptr, exp
 	bp := tls.Alloc(32)
 	defer tls.Free(32)
 	s__startLine(tls, cc, f, inlineAsm)
-	x__flexbuf_printf(tls, cc, f, __ccgo_ts+98364, libc.VaList(bp+8, __ccgo_ts+61558, prefix))
+	x__flexbuf_printf(tls, cc, f, __ccgo_ts+98370, libc.VaList(bp+8, __ccgo_ts+61566, prefix))
 	if expr != 0 {
 		x__PrintExpr(tls, cc, f, expr, int32(m_PRINTEXPR_GAS))
 	} else {
-		x__flexbuf_printf(tls, cc, f, __ccgo_ts+65969, 0)
+		x__flexbuf_printf(tls, cc, f, __ccgo_ts+2841, 0)
 	}
 	s__endLine(tls, cc, f, inlineAsm)
 }
@@ -24370,7 +24418,7 @@ func s__outputGasLabel(tls *libc.TLS, cc *CC, f uintptr, id uintptr, inlineAsm i
 	align = int32(1)
 	if sym != 0 {
 		if (*_Symbol)(unsafe.Pointer(sym)).Fkind != int32(_SYM_LABEL) {
-			x__ERROR(tls, cc, id, __ccgo_ts+98614, 0)
+			x__ERROR(tls, cc, id, __ccgo_ts+98620, 0)
 		} else {
 			lab = *(*uintptr)(unsafe.Pointer(sym + 32))
 			align = x__TypeAlign(tls, cc, (*_Label)(unsafe.Pointer(lab)).Ftype1)
@@ -24378,7 +24426,7 @@ func s__outputGasLabel(tls *libc.TLS, cc *CC, f uintptr, id uintptr, inlineAsm i
 	}
 	s__forceAlign(tls, cc, f, align, inlineAsm)
 	s__startLine(tls, cc, f, inlineAsm)
-	x__flexbuf_printf(tls, cc, f, __ccgo_ts+98636, libc.VaList(bp+8, name))
+	x__flexbuf_printf(tls, cc, f, __ccgo_ts+98642, libc.VaList(bp+8, name))
 	s__endLine(tls, cc, f, inlineAsm)
 }
 
@@ -24390,17 +24438,17 @@ func s__outputGasOrg(tls *libc.TLS, cc *CC, f uintptr, ast uintptr, inlineAsm in
 	_, _ = sym, val
 	val = 0
 	if !(inlineAsm != 0) {
-		s__outputGasDirective(tls, cc, f, __ccgo_ts+98896, (*_AST)(unsafe.Pointer(ast)).Fleft, inlineAsm)
+		s__outputGasDirective(tls, cc, f, __ccgo_ts+98902, (*_AST)(unsafe.Pointer(ast)).Fleft, inlineAsm)
 		return
 	}
 	if (*_AST)(unsafe.Pointer(ast)).Fleft != 0 {
 		val = int32(x__EvalConstExpr(tls, cc, (*_AST)(unsafe.Pointer(ast)).Fleft))
 	}
 	sym = *(*uintptr)(unsafe.Pointer(ast + 8))
-	x__flexbuf_printf(tls, cc, f, __ccgo_ts+98901, 0)
-	x__flexbuf_printf(tls, cc, f, __ccgo_ts+98916, libc.VaList(bp+8, (*_Symbol)(unsafe.Pointer(sym)).Fuser_name))
+	x__flexbuf_printf(tls, cc, f, __ccgo_ts+98907, 0)
+	x__flexbuf_printf(tls, cc, f, __ccgo_ts+98922, libc.VaList(bp+8, (*_Symbol)(unsafe.Pointer(sym)).Fuser_name))
 	s__startLine(tls, cc, f, inlineAsm)
-	x__flexbuf_printf(tls, cc, f, __ccgo_ts+98934, libc.VaList(bp+8, (*_Symbol)(unsafe.Pointer(sym)).Fuser_name, val))
+	x__flexbuf_printf(tls, cc, f, __ccgo_ts+98940, libc.VaList(bp+8, (*_Symbol)(unsafe.Pointer(sym)).Fuser_name, val))
 	s__endLine(tls, cc, f, inlineAsm)
 }
 
@@ -24427,18 +24475,18 @@ func s__outputVarDeclare(tls *libc.TLS, cc *CC, f uintptr, ast uintptr, relocs u
 	s__AlignPc(tls, cc, f, x__TypeAlign(tls, cc, type1))
 	siz = x__outputInitializer(tls, cc, f, type1, initval, relocs, 0)
 	if siz != typsiz {
-		x__ERROR(tls, cc, initval, __ccgo_ts+40678, libc.VaList(bp+8, typsiz, siz))
+		x__ERROR(tls, cc, initval, __ccgo_ts+40686, libc.VaList(bp+8, typsiz, siz))
 	}
 }
 
 func s__overflow(tls *libc.TLS, cc *CC, op_name uintptr, valpp uintptr, ll_overflow int32) {
 	var out_of_range uintptr
 	_ = out_of_range
-	out_of_range = __ccgo_ts + 107855 /* _E_ _W1_ _W8_    */
+	out_of_range = __ccgo_ts + 107861 /* _E_ _W1_ _W8_    */
 	if !(ll_overflow != 0) {
 		/* Overflow of long not in C99 mode */
 		if !(cc.s__skip != 0) && cc.x__warn_level&cc.s__w_level != 0 || cc.s__skip != 0 && cc.x__warn_level&int32(8) != 0 {
-			x__cwarn(tls, cc, out_of_range, op_name, 0, __ccgo_ts+107893)
+			x__cwarn(tls, cc, out_of_range, op_name, 0, __ccgo_ts+107899)
 		}
 	} else {
 		if cc.s__skip != 0 {
@@ -24476,7 +24524,7 @@ func s__parseBacktickString(tls *libc.TLS, cc *CC, L uintptr, ast_ptr uintptr, f
 	for c > 0 && c < int32(256) {
 		if c == int32(10) || c == int32(13) {
 			// newline in mid-string, this is bad news
-			x__SYNTAX_ERROR(tls, cc, __ccgo_ts+21413, 0)
+			x__SYNTAX_ERROR(tls, cc, __ccgo_ts+21421, 0)
 			x__lexungetc(tls, cc, L, c)
 			break
 		} else {
@@ -24583,7 +24631,7 @@ func s__parseBasicIdentifier(tls *libc.TLS, cc *CC, L uintptr, ast_ptr uintptr) 
 				**(**uintptr)(__ccgo_up(ast_ptr)) = ast
 				return int32(m_BAS_HWREG)
 			}
-			fprintf(tls, cc, libc.X__stderrp, __ccgo_ts+21183, libc.VaList(bp+40, (*_Symbol)(unsafe.Pointer(sym)).Fkind))
+			fprintf(tls, cc, libc.X__stderrp, __ccgo_ts+21191, libc.VaList(bp+40, (*_Symbol)(unsafe.Pointer(sym)).Fkind))
 		}
 	}
 	// check for keywords
@@ -24754,7 +24802,7 @@ func s__parseCIdentifier(tls *libc.TLS, cc *CC, L uintptr, ast_ptr uintptr, pref
 				**(**uintptr)(__ccgo_up(ast_ptr)) = ast
 				return int32(m_C_HWREG)
 			}
-			fprintf(tls, cc, libc.X__stderrp, __ccgo_ts+21183, libc.VaList(bp+40, (*_Symbol)(unsafe.Pointer(sym)).Fkind))
+			fprintf(tls, cc, libc.X__stderrp, __ccgo_ts+21191, libc.VaList(bp+40, (*_Symbol)(unsafe.Pointer(sym)).Fkind))
 		}
 	}
 	// check for keywords
@@ -24870,7 +24918,7 @@ again:
 	for c != int32('"') && c >= 0 && c < int32(256) {
 		if c == int32(10) || c == int32(13) {
 			// newline in mid-string, this is bad news
-			x__SYNTAX_ERROR(tls, cc, __ccgo_ts+21393, 0)
+			x__SYNTAX_ERROR(tls, cc, __ccgo_ts+21401, 0)
 			x__lexungetc(tls, cc, L, c)
 			break
 		}
@@ -25184,7 +25232,7 @@ func s__parseSpinIdentifier(tls *libc.TLS, cc *CC, L uintptr, ast_ptr uintptr, p
 				**(**uintptr)(__ccgo_up(ast_ptr)) = ast
 				return int32(m_SP_HWREG)
 			}
-			fprintf(tls, cc, libc.X__stderrp, __ccgo_ts+21183, libc.VaList(bp+40, (*_Symbol)(unsafe.Pointer(sym)).Fkind))
+			fprintf(tls, cc, libc.X__stderrp, __ccgo_ts+21191, libc.VaList(bp+40, (*_Symbol)(unsafe.Pointer(sym)).Fkind))
 		}
 	}
 	if (*_LexStream)(unsafe.Pointer(L)).Flanguage == int32(m_LANG_SPIN_SPIN2) {
@@ -25214,10 +25262,10 @@ func s__parseSpinIdentifier(tls *libc.TLS, cc *CC, L uintptr, ast_ptr uintptr, p
 								// to
 								if userVersion != 0 && userVersion >= minVersion && userVersion <= maxVersion {
 									// leave the symbol as is, and let the parser fail
-									x__WARNING(tls, cc, x__DummyLineAst(tls, cc, startline), __ccgo_ts+21228, libc.VaList(bp+40, idstr))
+									x__WARNING(tls, cc, x__DummyLineAst(tls, cc, startline), __ccgo_ts+21236, libc.VaList(bp+40, idstr))
 								} else {
 									if userVersion == 0 && 0 != cc.x__gl_warn_flags&int32(m_WARN_LANG_VERSION) {
-										x__WARNING(tls, cc, x__DummyLineAst(tls, cc, startline), __ccgo_ts+21264, libc.VaList(bp+40, idstr, minVersion))
+										x__WARNING(tls, cc, x__DummyLineAst(tls, cc, startline), __ccgo_ts+21272, libc.VaList(bp+40, idstr, minVersion))
 									}
 									sym = libc.UintptrFromInt32(0)
 								}
@@ -25286,7 +25334,7 @@ func s__parseSpinIdentifier(tls *libc.TLS, cc *CC, L uintptr, ast_ptr uintptr, p
 				fallthrough
 			case int32(m_SP_ORGH):
 				if (*_LexStream)(unsafe.Pointer(L)).Fblock_type == int32(m_BLOCK_ASM) && (c == int32(m_SP_ASM) || c == int32(m_SP_ASM_CONST)) {
-					x__WARNING(tls, cc, x__DummyLineAst(tls, cc, (*_LexStream)(unsafe.Pointer(L)).FlineCounter), __ccgo_ts+21319, libc.VaList(bp+40, (*_LexStream)(unsafe.Pointer(L)).FlineCounter))
+					x__WARNING(tls, cc, x__DummyLineAst(tls, cc, (*_LexStream)(unsafe.Pointer(L)).FlineCounter), __ccgo_ts+21327, libc.VaList(bp+40, (*_LexStream)(unsafe.Pointer(L)).FlineCounter))
 				} else {
 					if s__InDatBlock(tls, cc, L) != 0 {
 						/* for ORG or ORGH, nothing special to do */
@@ -25452,7 +25500,7 @@ func s__parseSpinIdentifier(tls *libc.TLS, cc *CC, L uintptr, ast_ptr uintptr, p
 			**(**uintptr)(__ccgo_up(ast_ptr)) = ast
 			return int32(m_SP_HWREG)
 		}
-		fprintf(tls, cc, libc.X__stderrp, __ccgo_ts+21353, libc.VaList(bp+40, (*_Symbol)(unsafe.Pointer(sym)).Fkind))
+		fprintf(tls, cc, libc.X__stderrp, __ccgo_ts+21361, libc.VaList(bp+40, (*_Symbol)(unsafe.Pointer(sym)).Fkind))
 	}
 	if cc.x__current != 0 {
 		if cc.s__open_obj != 0 {
@@ -25593,7 +25641,7 @@ func s__parse_c_line(tls *libc.TLS, cc *CC) (r uintptr) {
 				/* Comment when C++ or __STDC_VERSION__ >= 199901L      */
 				/* Need not to convert to a space because '\n' follows  */
 				if cc.x__warn_level&int32(2) != 0 {
-					x__cwarn(tls, cc, __ccgo_ts+111173, libc.UintptrFromInt32(0), 0, libc.UintptrFromInt32(0))
+					x__cwarn(tls, cc, __ccgo_ts+111179, libc.UintptrFromInt32(0), 0, libc.UintptrFromInt32(0))
 				}
 				if cc.x__keep_comments != 0 {
 					sp = sp - uintptr(2)
@@ -25620,7 +25668,7 @@ func s__parse_c_line(tls *libc.TLS, cc *CC) (r uintptr) {
 			fallthrough
 		case int32('\v'):
 			if cc.x__warn_level&int32(4) != 0 {
-				x__cwarn(tls, cc, __ccgo_ts+111196, libc.UintptrFromInt32(0), int64(c), libc.UintptrFromInt32(0))
+				x__cwarn(tls, cc, __ccgo_ts+111202, libc.UintptrFromInt32(0), int64(c), libc.UintptrFromInt32(0))
 			}
 			fallthrough
 		case int32('\t'): /* Horizontal space     */
@@ -25659,7 +25707,7 @@ func s__parse_c_line(tls *libc.TLS, cc *CC) (r uintptr) {
 			goto _15
 		_15:
 			if v3 != 0 {
-				x__cerror(tls, cc, __ccgo_ts+111229, libc.UintptrFromInt32(0), int64(c), libc.UintptrFromInt32(0))
+				x__cerror(tls, cc, __ccgo_ts+111235, libc.UintptrFromInt32(0), int64(c), libc.UintptrFromInt32(0))
 			} else { /* Any valid character  */
 				v1 = tp
 				tp = tp + 1
@@ -25669,7 +25717,7 @@ func s__parse_c_line(tls *libc.TLS, cc *CC) (r uintptr) {
 		}
 		if limit < tp {
 			**(**int8)(__ccgo_up(tp)) = int8('\000')
-			x__cfatal(tls, cc, __ccgo_ts+111288, libc.UintptrFromInt32(0), 0, libc.UintptrFromInt32(0))
+			x__cfatal(tls, cc, __ccgo_ts+111294, libc.UintptrFromInt32(0), 0, libc.UintptrFromInt32(0))
 		}
 	}
 	goto end_line
@@ -25691,7 +25739,7 @@ end_line:
 		}
 		if int32(**(**int8)(__ccgo_up(temp))) == int32('#') || int32(**(**int8)(__ccgo_up(temp))) == int32('%') && int32(**(**int8)(__ccgo_up(temp + libc.UintptrFromInt32(1)))) == int32(':') {
 			if cc.x__warn_level&int32(1) != 0 {
-				x__cwarn(tls, cc, __ccgo_ts+111322, libc.UintptrFromInt32(0), cc.x__macro_line, libc.UintptrFromInt32(0))
+				x__cwarn(tls, cc, __ccgo_ts+111328, libc.UintptrFromInt32(0), cc.x__macro_line, libc.UintptrFromInt32(0))
 			}
 		}
 	}
@@ -25825,7 +25873,7 @@ func s__parse_spin_line(tls *libc.TLS, cc *CC) (r uintptr) {
 			fallthrough
 		case int32('\v'):
 			if cc.x__warn_level&int32(4) != 0 {
-				x__cwarn(tls, cc, __ccgo_ts+111196, libc.UintptrFromInt32(0), int64(c), libc.UintptrFromInt32(0))
+				x__cwarn(tls, cc, __ccgo_ts+111202, libc.UintptrFromInt32(0), int64(c), libc.UintptrFromInt32(0))
 			}
 			fallthrough
 		case int32('\t'): /* Horizontal space     */
@@ -25874,7 +25922,7 @@ func s__parse_spin_line(tls *libc.TLS, cc *CC) (r uintptr) {
 			goto _15
 		_15:
 			if v3 != 0 {
-				x__cerror(tls, cc, __ccgo_ts+111229, libc.UintptrFromInt32(0), int64(c), libc.UintptrFromInt32(0))
+				x__cerror(tls, cc, __ccgo_ts+111235, libc.UintptrFromInt32(0), int64(c), libc.UintptrFromInt32(0))
 			} else { /* Any valid character  */
 				v1 = tp
 				tp = tp + 1
@@ -25884,7 +25932,7 @@ func s__parse_spin_line(tls *libc.TLS, cc *CC) (r uintptr) {
 		}
 		if limit < tp {
 			**(**int8)(__ccgo_up(tp)) = int8('\000')
-			x__cfatal(tls, cc, __ccgo_ts+111288, libc.UintptrFromInt32(0), 0, libc.UintptrFromInt32(0))
+			x__cfatal(tls, cc, __ccgo_ts+111294, libc.UintptrFromInt32(0), 0, libc.UintptrFromInt32(0))
 		}
 	}
 	goto end_line
@@ -25906,7 +25954,7 @@ end_line:
 		}
 		if int32(**(**int8)(__ccgo_up(temp))) == int32('#') || int32(**(**int8)(__ccgo_up(temp))) == int32('%') && int32(**(**int8)(__ccgo_up(temp + libc.UintptrFromInt32(1)))) == int32(':') {
 			if cc.x__warn_level&int32(1) != 0 {
-				x__cwarn(tls, cc, __ccgo_ts+111322, libc.UintptrFromInt32(0), cc.x__macro_line, libc.UintptrFromInt32(0))
+				x__cwarn(tls, cc, __ccgo_ts+111328, libc.UintptrFromInt32(0), cc.x__macro_line, libc.UintptrFromInt32(0))
 			}
 		}
 	}
@@ -25925,7 +25973,7 @@ func s__parseargnum(tls *libc.TLS, cc *CC, n uintptr) (r int32) {
 		reg = int32(10)*reg + (int32(**(**int8)(__ccgo_up(n))) - int32('0'))
 	}
 	if reg < int32(1) || reg > int32(99) {
-		x__ERROR(tls, cc, libc.UintptrFromInt32(0), __ccgo_ts+64766, 0)
+		x__ERROR(tls, cc, libc.UintptrFromInt32(0), __ccgo_ts+64774, 0)
 		return 0
 	}
 	return reg - int32(1)
@@ -25938,7 +25986,7 @@ func s__parseargnum(tls *libc.TLS, cc *CC, n uintptr) (r int32) {
 //	 */
 func s__placeword(tls *libc.TLS, cc *CC, where uintptr, value _uint32_t) {
 	if value > uint32(0xffff) && !(cc.s__warned_once != 0) {
-		x__WARNING(tls, cc, libc.UintptrFromInt32(0), __ccgo_ts+37566, 0)
+		x__WARNING(tls, cc, libc.UintptrFromInt32(0), __ccgo_ts+37574, 0)
 		cc.s__warned_once = cc.s__warned_once + 1
 	}
 	**(**_uint8_t)(__ccgo_up(where)) = uint8(value & uint32(0xff))
@@ -26094,12 +26142,12 @@ func s__print_macro_inf(tls *libc.TLS, cc *CC, c int32, cpp uintptr, opp uintptr
 	}
 	switch c {
 	case int32(m_MAC_CALL_START): /* Start of a macro expansion   */
-		**(**uintptr)(__ccgo_up(opp)) += uintptr(libc.Xsprintf(tls, **(**uintptr)(__ccgo_up(opp)), __ccgo_ts+105306, libc.VaList(bp+8, (*_MACRO_INF)(unsafe.Pointer(m_inf)).Fdefp+49))) /* Macro name   */
+		**(**uintptr)(__ccgo_up(opp)) += uintptr(libc.Xsprintf(tls, **(**uintptr)(__ccgo_up(opp)), __ccgo_ts+105312, libc.VaList(bp+8, (*_MACRO_INF)(unsafe.Pointer(m_inf)).Fdefp+49))) /* Macro name   */
 		if (*_MACRO_INF)(unsafe.Pointer(m_inf)).Flocs.Fstart_line != 0 {
 			/* Location of the macro call in source file        */
-			**(**uintptr)(__ccgo_up(opp)) += uintptr(libc.Xsprintf(tls, **(**uintptr)(__ccgo_up(opp)), __ccgo_ts+105312, libc.VaList(bp+8, (*_MACRO_INF)(unsafe.Pointer(m_inf)).Flocs.Fstart_line, libc.Int32FromUint64((*_MACRO_INF)(unsafe.Pointer(m_inf)).Flocs.Fstart_col), (*_MACRO_INF)(unsafe.Pointer(m_inf)).Flocs.Fend_line, libc.Int32FromUint64((*_MACRO_INF)(unsafe.Pointer(m_inf)).Flocs.Fend_col))))
+			**(**uintptr)(__ccgo_up(opp)) += uintptr(libc.Xsprintf(tls, **(**uintptr)(__ccgo_up(opp)), __ccgo_ts+105318, libc.VaList(bp+8, (*_MACRO_INF)(unsafe.Pointer(m_inf)).Flocs.Fstart_line, libc.Int32FromUint64((*_MACRO_INF)(unsafe.Pointer(m_inf)).Flocs.Fstart_col), (*_MACRO_INF)(unsafe.Pointer(m_inf)).Flocs.Fend_line, libc.Int32FromUint64((*_MACRO_INF)(unsafe.Pointer(m_inf)).Flocs.Fend_col))))
 		}
-		**(**uintptr)(__ccgo_up(opp)) = _stpcpy(tls, **(**uintptr)(__ccgo_up(opp)), __ccgo_ts+22442)
+		**(**uintptr)(__ccgo_up(opp)) = _stpcpy(tls, **(**uintptr)(__ccgo_up(opp)), __ccgo_ts+22450)
 		v7 = (*_MACRO_INF)(unsafe.Pointer(m_inf)).Fnum_args
 		num_args = v7
 		if v7 >= int32(1) {
@@ -26126,7 +26174,7 @@ func s__print_macro_inf(tls *libc.TLS, cc *CC, c int32, cpp uintptr, opp uintptr
 		/* Else fall through    */
 		fallthrough
 	case int32(m_MAC_ARG_END): /* End of an argument       */
-		**(**uintptr)(__ccgo_up(opp)) = _stpcpy(tls, **(**uintptr)(__ccgo_up(opp)), __ccgo_ts+105327)
+		**(**uintptr)(__ccgo_up(opp)) = _stpcpy(tls, **(**uintptr)(__ccgo_up(opp)), __ccgo_ts+105333)
 		break
 	}
 	return int32(**(**int8)(__ccgo_up(**(**uintptr)(__ccgo_up(cpp))))) & (libc.Int32FromInt32(m___SCHAR_MAX__)*libc.Int32FromInt32(2) + libc.Int32FromInt32(1))
@@ -26167,7 +26215,7 @@ func s__push_or_pop(tls *libc.TLS, cc *CC, direction int32) {
 			if direction == int32(m_PUSH) { /* #pragma push_macro( "MACRO") */
 				if (*_DEFBUF)(unsafe.Pointer(defp)).Fpush != 0 { /* No current definition*/
 					if cc.x__warn_level&int32(1) != 0 {
-						x__cwarn(tls, cc, __ccgo_ts+110120, uintptr(unsafe.Pointer(&cc.x__identifier)), 0, libc.UintptrFromInt32(0))
+						x__cwarn(tls, cc, __ccgo_ts+110126, uintptr(unsafe.Pointer(&cc.x__identifier)), 0, libc.UintptrFromInt32(0))
 					}
 					return
 				}
@@ -26183,7 +26231,7 @@ func s__push_or_pop(tls *libc.TLS, cc *CC, direction int32) {
 				if int32((*_DEFBUF)(unsafe.Pointer(defp)).Fpush) == 0 { /* Current definition   */
 					if (*_DEFBUF)(unsafe.Pointer(defp)).Flink == libc.UintptrFromInt32(0) || !(libc.Xstrcmp(tls, uintptr(unsafe.Pointer(&cc.x__identifier)), (*_DEFBUF)(unsafe.Pointer(defp)).Flink+49) == libc.Int32FromInt32(0)) {
 						if cc.x__warn_level&int32(1) != 0 {
-							x__cwarn(tls, cc, __ccgo_ts+110143, uintptr(unsafe.Pointer(&cc.x__identifier)), 0, libc.UintptrFromInt32(0))
+							x__cwarn(tls, cc, __ccgo_ts+110149, uintptr(unsafe.Pointer(&cc.x__identifier)), 0, libc.UintptrFromInt32(0))
 						}
 						return
 					} else {
@@ -26212,17 +26260,17 @@ func s__push_or_pop(tls *libc.TLS, cc *CC, direction int32) {
 			}
 		} else { /* No current definition nor pushed definition  */
 			if cc.x__warn_level&int32(1) != 0 {
-				x__cwarn(tls, cc, __ccgo_ts+110168, uintptr(unsafe.Pointer(&cc.x__identifier)), 0, libc.UintptrFromInt32(0))
+				x__cwarn(tls, cc, __ccgo_ts+110174, uintptr(unsafe.Pointer(&cc.x__identifier)), 0, libc.UintptrFromInt32(0))
 			}
 		}
 	} else { /* Wrong syntax */
 		if cc.x__warn_level&int32(1) != 0 {
 			if direction == int32(m_PUSH) {
-				v2 = __ccgo_ts + 110069
+				v2 = __ccgo_ts + 110075
 			} else {
-				v2 = __ccgo_ts + 110080
+				v2 = __ccgo_ts + 110086
 			}
-			x__cwarn(tls, cc, __ccgo_ts+110194, v2, 0, libc.UintptrFromInt32(0))
+			x__cwarn(tls, cc, __ccgo_ts+110200, v2, 0, libc.UintptrFromInt32(0))
 		}
 	}
 }
@@ -26240,7 +26288,7 @@ func s__putConstant(tls *libc.TLS, cc *CC, sym uintptr, arg uintptr) (r int32) {
 		if (*_Symbol)(unsafe.Pointer(sym)).Fflags&int32(m_SYMF_INTERNAL) != 0 {
 			return int32(1)
 		}
-		x__flexbuf_printf(tls, cc, f, __ccgo_ts+40985, libc.VaList(bp+8, (*_Symbol)(unsafe.Pointer(sym)).Fuser_name, val, val))
+		x__flexbuf_printf(tls, cc, f, __ccgo_ts+40993, libc.VaList(bp+8, (*_Symbol)(unsafe.Pointer(sym)).Fuser_name, val, val))
 	}
 	return int32(1)
 }
@@ -26271,7 +26319,7 @@ func s__put_a_line(tls *libc.TLS, cc *CC, out uintptr) {
 		**(**int8)(__ccgo_up(v1)) = int8('\000')
 	}
 	if (*(*func(*libc.TLS, *CC, uintptr, _OUTDEST) int32)(unsafe.Pointer(&struct{ uintptr }{cc.x__mcpp_fputs})))(tls, cc, out, int32(_OUT)) == -int32(1) {
-		x__cfatal(tls, cc, __ccgo_ts+108222, libc.UintptrFromInt32(0), 0, libc.UintptrFromInt32(0))
+		x__cfatal(tls, cc, __ccgo_ts+108228, libc.UintptrFromInt32(0), 0, libc.UintptrFromInt32(0))
 	} /* _F_  */
 }
 
@@ -26283,7 +26331,7 @@ func s__put_seq(tls *libc.TLS, cc *CC, begin uintptr, seq uintptr) {
 	var file, v1 uintptr
 	_, _, _ = c, file, v1
 	file = cc.x__infile
-	x__cerror(tls, cc, __ccgo_ts+108159, libc.UintptrFromInt32(0), 0, libc.UintptrFromInt32(0))
+	x__cerror(tls, cc, __ccgo_ts+108165, libc.UintptrFromInt32(0), 0, libc.UintptrFromInt32(0))
 	for {
 		c = x__get_ch(tls, cc)
 		if !(file == cc.x__infile) {
@@ -26328,7 +26376,7 @@ func s__read_c_comment(tls *libc.TLS, cc *CC, sp uintptr, sizp uintptr) (r uintp
 	_, _, _, _, _, _ = c, cat_line, saved_sp, v1, v2, v3
 	cat_line = 0                  /* Number of catenated lines    */
 	if cc.x__keep_comments != 0 { /* If writing comments  */
-		(*(*func(*libc.TLS, *CC, uintptr, _OUTDEST) int32)(unsafe.Pointer(&struct{ uintptr }{cc.x__mcpp_fputs})))(tls, cc, __ccgo_ts+22439, int32(_OUT))
+		(*(*func(*libc.TLS, *CC, uintptr, _OUTDEST) int32)(unsafe.Pointer(&struct{ uintptr }{cc.x__mcpp_fputs})))(tls, cc, __ccgo_ts+22447, int32(_OUT))
 	} /* Write the initializer*/
 	v1 = sp
 	sp = sp + 1
@@ -26347,7 +26395,7 @@ func s__read_c_comment(tls *libc.TLS, cc *CC, sp uintptr, sizp uintptr) (r uintp
 				continue
 			} /*   nest.              */
 			if cc.x__warn_level&int32(1) != 0 {
-				x__cwarn(tls, cc, __ccgo_ts+111382, libc.UintptrFromInt32(0), 0, libc.UintptrFromInt32(0))
+				x__cwarn(tls, cc, __ccgo_ts+111388, libc.UintptrFromInt32(0), 0, libc.UintptrFromInt32(0))
 			} /* _W1_ */
 			if cc.x__keep_comments != 0 {
 				(*(*func(*libc.TLS, *CC, int32, _OUTDEST) int32)(unsafe.Pointer(&struct{ uintptr }{cc.x__mcpp_fputc})))(tls, cc, c, int32(_OUT))
@@ -26387,7 +26435,7 @@ func s__read_c_comment(tls *libc.TLS, cc *CC, sp uintptr, sizp uintptr) (r uintp
 					**(**_size_t)(__ccgo_up(sizp)) = uint64(0) /* Discard the too long comment */
 					cat_line = 0
 					if cc.x__warn_level&int32(4) != 0 {
-						x__cwarn(tls, cc, __ccgo_ts+111402, libc.UintptrFromInt32(0), 0, libc.UintptrFromInt32(0))
+						x__cwarn(tls, cc, __ccgo_ts+111408, libc.UintptrFromInt32(0), 0, libc.UintptrFromInt32(0))
 					}
 				}
 				cat_line = cat_line + 1
@@ -26422,7 +26470,7 @@ func s__read_spin_comment(tls *libc.TLS, cc *CC, sp uintptr, sizp uintptr) (r ui
 	cat_line = 0 /* Number of catenated lines    */
 	nest = 0
 	if cc.x__keep_comments != 0 { /* If writing comments  */
-		(*(*func(*libc.TLS, *CC, uintptr, _OUTDEST) int32)(unsafe.Pointer(&struct{ uintptr }{cc.x__mcpp_fputs})))(tls, cc, __ccgo_ts+22445, int32(_OUT))
+		(*(*func(*libc.TLS, *CC, uintptr, _OUTDEST) int32)(unsafe.Pointer(&struct{ uintptr }{cc.x__mcpp_fputs})))(tls, cc, __ccgo_ts+22453, int32(_OUT))
 	} /* Write the initializer*/
 	v1 = sp
 	sp = sp + 1
@@ -26450,7 +26498,7 @@ func s__read_spin_comment(tls *libc.TLS, cc *CC, sp uintptr, sizp uintptr) (r ui
 					**(**_size_t)(__ccgo_up(sizp)) = uint64(0) /* Discard the too long comment */
 					cat_line = 0
 					if cc.x__warn_level&int32(4) != 0 {
-						x__cwarn(tls, cc, __ccgo_ts+111402, libc.UintptrFromInt32(0), 0, libc.UintptrFromInt32(0))
+						x__cwarn(tls, cc, __ccgo_ts+111408, libc.UintptrFromInt32(0), 0, libc.UintptrFromInt32(0))
 					}
 				}
 				cat_line = cat_line + 1
@@ -26485,7 +26533,7 @@ func s__reduceStrings(tls *libc.TLS, cc *CC, orig_exprlist uintptr) (r uintptr) 
 	exprlist = orig_exprlist
 	first = libc.UintptrFromInt32(0)
 	if !(exprlist != 0) || (*_AST)(unsafe.Pointer(exprlist)).Fkind != int32(_AST_EXPRLIST) {
-		x__ERROR(tls, cc, exprlist, __ccgo_ts+36598, 0)
+		x__ERROR(tls, cc, exprlist, __ccgo_ts+36606, 0)
 		return exprlist
 	}
 	for exprlist != 0 {
@@ -26888,16 +26936,16 @@ func s__replace(tls *libc.TLS, cc *CC, defp uintptr, out uintptr, out_end uintpt
 	m_num = 0                          /* 'mac_num' of current macro   */
 	m_inf = libc.UintptrFromInt32(0)   /* Pointer into mac_inf[]       */
 	if cc.x__mcpp_debug&int32(m_EXPAND) != 0 {
-		x__dump_a_def(tls, cc, __ccgo_ts+105346, defp, m_FALSE, int32(m_TRUE), cc.x__fp_debug)
-		x__dump_unget(tls, cc, __ccgo_ts+105346)
+		x__dump_a_def(tls, cc, __ccgo_ts+105352, defp, m_FALSE, int32(m_TRUE), cc.x__fp_debug)
+		x__dump_unget(tls, cc, __ccgo_ts+105352)
 	}
 	if cc.x__mcpp_debug&int32(m_MACRO_CALL) != 0 && cc.x__in_if != 0 {
-		(*(*func(*libc.TLS, *CC, _OUTDEST, uintptr, uintptr) int32)(unsafe.Pointer(&struct{ uintptr }{cc.x__mcpp_fprintf})))(tls, cc, int32(_OUT), __ccgo_ts+104089, libc.VaList(bp+24, defp+49))
+		(*(*func(*libc.TLS, *CC, _OUTDEST, uintptr, uintptr) int32)(unsafe.Pointer(&struct{ uintptr }{cc.x__mcpp_fprintf})))(tls, cc, int32(_OUT), __ccgo_ts+104095, libc.VaList(bp+24, defp+49))
 	}
 	enable_trace_macro = libc.BoolInt32(cc.s__trace_macro != 0 && int32((*_DEFBUF)(unsafe.Pointer(defp)).Fnargs) != -libc.Int32FromInt32(1)-(libc.Int32FromInt32(m___SCHAR_MAX__)*libc.Int32FromInt32(2)+libc.Int32FromInt32(1)+libc.Int32FromInt32(1)|(libc.Int32FromInt32(m___SCHAR_MAX__)*libc.Int32FromInt32(2)+libc.Int32FromInt32(1)+libc.Int32FromInt32(1))*libc.Int32FromInt32(2)))
 	if enable_trace_macro != 0 {
 		if cc.s__mac_num >= libc.Int32FromInt32(m_MAX_MAC_INF)-libc.Int32FromInt32(1) {
-			x__cerror(tls, cc, __ccgo_ts+105360, defp+49, 0, libc.UintptrFromInt32(0))
+			x__cerror(tls, cc, __ccgo_ts+105366, defp+49, 0, libc.UintptrFromInt32(0))
 			return libc.UintptrFromInt32(0)
 		} else {
 			if cc.s__mac_num >= cc.s__max_mac_num-int32(1) {
@@ -26982,7 +27030,7 @@ func s__replace(tls *libc.TLS, cc *CC, defp uintptr, out uintptr, out_end uintpt
 		return cur_out
 	} else {
 		if nargs == -libc.Int32FromInt32(2)-(libc.Int32FromInt32(m___SCHAR_MAX__)*libc.Int32FromInt32(2)+libc.Int32FromInt32(1)+libc.Int32FromInt32(1)|(libc.Int32FromInt32(m___SCHAR_MAX__)*libc.Int32FromInt32(2)+libc.Int32FromInt32(1)+libc.Int32FromInt32(1))*libc.Int32FromInt32(2))-libc.Int32FromInt32(1) && cc.x__warn_level&int32(1) != 0 { /* Some macros on GCC   */
-			x__cwarn(tls, cc, __ccgo_ts+105397, defp+49, 0, libc.UintptrFromInt32(0))
+			x__cwarn(tls, cc, __ccgo_ts+105403, defp+49, 0, libc.UintptrFromInt32(0))
 		} else {
 			if nargs >= 0 { /* Function-like macro  */
 				s__squeeze_ws(tls, cc, libc.UintptrFromInt32(0), libc.UintptrFromInt32(0), libc.UintptrFromInt32(0)) /* Skip to '('          */
@@ -27011,9 +27059,9 @@ func s__replace(tls *libc.TLS, cc *CC, defp uintptr, out uintptr, out_end uintpt
 							if outer != 0 {
 								v2 = outer + 49
 							} else {
-								v2 = __ccgo_ts + 105437
+								v2 = __ccgo_ts + 105443
 							}
-							x__dump_string(tls, cc, __ccgo_ts+105443, v2)
+							x__dump_string(tls, cc, __ccgo_ts+105449, v2)
 						}
 					} else {
 						cc.s__replacing[cc.s__rescan_level-int32(1)].Fread_over = int32(m_READ_OVER)
@@ -27024,8 +27072,8 @@ func s__replace(tls *libc.TLS, cc *CC, defp uintptr, out uintptr, out_end uintpt
 	}
 	catbuf = x__xmalloc(tls, cc, libc.Uint64FromInt32(libc.Int32FromInt32(m_NBUFF)*libc.Int32FromInt32(4)+libc.Int32FromInt32(m_IDMAX)))
 	if cc.x__mcpp_debug&int32(m_EXPAND) != 0 {
-		(*(*func(*libc.TLS, *CC, _OUTDEST, uintptr, uintptr) int32)(unsafe.Pointer(&struct{ uintptr }{cc.x__mcpp_fprintf})))(tls, cc, int32(_DBG), __ccgo_ts+100764, libc.VaList(bp+24, defp+49))
-		x__dump_string(tls, cc, __ccgo_ts+105464, (*_DEFBUF)(unsafe.Pointer(defp)).Frepl)
+		(*(*func(*libc.TLS, *CC, _OUTDEST, uintptr, uintptr) int32)(unsafe.Pointer(&struct{ uintptr }{cc.x__mcpp_fprintf})))(tls, cc, int32(_DBG), __ccgo_ts+100770, libc.VaList(bp+24, defp+49))
+		x__dump_string(tls, cc, __ccgo_ts+105470, (*_DEFBUF)(unsafe.Pointer(defp)).Frepl)
 	}
 	if s__prescan(tls, cc, defp, arglist, catbuf, catbuf+uintptr(libc.Int32FromInt32(m_NBUFF)*libc.Int32FromInt32(4))) == m_FALSE { /* Process #, ## operators      */
 		s__diag_macro(tls, cc, int32(m_CERROR), cc.s__macbuf_overflow, defp+49, 0, catbuf, defp, libc.UintptrFromInt32(0))
@@ -27042,14 +27090,14 @@ func s__replace(tls *libc.TLS, cc *CC, defp uintptr, out uintptr, out_end uintpt
 	catbuf = x__xrealloc(tls, cc, catbuf, libc.Xstrlen(tls, catbuf)+uint64(1))
 	/* Use memory sparingly */
 	if cc.x__mcpp_debug&int32(m_EXPAND) != 0 {
-		(*(*func(*libc.TLS, *CC, _OUTDEST, uintptr, uintptr) int32)(unsafe.Pointer(&struct{ uintptr }{cc.x__mcpp_fprintf})))(tls, cc, int32(_DBG), __ccgo_ts+100764, libc.VaList(bp+24, defp+49))
-		x__dump_string(tls, cc, __ccgo_ts+105478, catbuf)
+		(*(*func(*libc.TLS, *CC, _OUTDEST, uintptr, uintptr) int32)(unsafe.Pointer(&struct{ uintptr }{cc.x__mcpp_fprintf})))(tls, cc, int32(_DBG), __ccgo_ts+100770, libc.VaList(bp+24, defp+49))
+		x__dump_string(tls, cc, __ccgo_ts+105484, catbuf)
 	}
 	if nargs > 0 { /* Function-like macro with any argument    */
 		expbuf = x__xmalloc(tls, cc, libc.Uint64FromInt32(libc.Int32FromInt32(m_NBUFF)*libc.Int32FromInt32(4)+libc.Int32FromInt32(m_IDMAX)))
 		if cc.x__mcpp_debug&int32(m_EXPAND) != 0 {
-			(*(*func(*libc.TLS, *CC, _OUTDEST, uintptr, uintptr) int32)(unsafe.Pointer(&struct{ uintptr }{cc.x__mcpp_fprintf})))(tls, cc, int32(_DBG), __ccgo_ts+100764, libc.VaList(bp+24, defp+49))
-			x__dump_string(tls, cc, __ccgo_ts+105491, catbuf)
+			(*(*func(*libc.TLS, *CC, _OUTDEST, uintptr, uintptr) int32)(unsafe.Pointer(&struct{ uintptr }{cc.x__mcpp_fprintf})))(tls, cc, int32(_DBG), __ccgo_ts+100770, libc.VaList(bp+24, defp+49))
+			x__dump_string(tls, cc, __ccgo_ts+105497, catbuf)
 		}
 		out_p = s__substitute(tls, cc, defp, arglist, catbuf, expbuf, expbuf+uintptr(libc.Int32FromInt32(m_NBUFF)*libc.Int32FromInt32(4))) /* Expand each arguments    */
 		if !(enable_trace_macro != 0) {
@@ -27060,8 +27108,8 @@ func s__replace(tls *libc.TLS, cc *CC, defp uintptr, out uintptr, out_end uintpt
 		expbuf = x__xrealloc(tls, cc, expbuf, libc.Xstrlen(tls, expbuf)+uint64(1))
 		/* Use memory sparingly */
 		if cc.x__mcpp_debug&int32(m_EXPAND) != 0 {
-			(*(*func(*libc.TLS, *CC, _OUTDEST, uintptr, uintptr) int32)(unsafe.Pointer(&struct{ uintptr }{cc.x__mcpp_fprintf})))(tls, cc, int32(_DBG), __ccgo_ts+100764, libc.VaList(bp+24, defp+49))
-			x__dump_string(tls, cc, __ccgo_ts+105508, expbuf)
+			(*(*func(*libc.TLS, *CC, _OUTDEST, uintptr, uintptr) int32)(unsafe.Pointer(&struct{ uintptr }{cc.x__mcpp_fprintf})))(tls, cc, int32(_DBG), __ccgo_ts+100770, libc.VaList(bp+24, defp+49))
+			x__dump_string(tls, cc, __ccgo_ts+105514, expbuf)
 		}
 	} else { /* Object-like macro or */
 		if nargs == 0 && !(enable_trace_macro != 0) {
@@ -27085,7 +27133,7 @@ func s__replace(tls *libc.TLS, cc *CC, defp uintptr, out uintptr, out_end uintpt
 		out_p = s__close_macro_inf(tls, cc, out_p, m_num, in_src_n)
 	}
 	if cc.x__mcpp_debug&int32(m_EXPAND) != 0 {
-		x__dump_string(tls, cc, __ccgo_ts+105524, out)
+		x__dump_string(tls, cc, __ccgo_ts+105530, out)
 	}
 	if cc.s__trace_macro != 0 && int32((*_DEFBUF)(unsafe.Pointer(defp)).Fnargs) == -libc.Int32FromInt32(1)-(libc.Int32FromInt32(m___SCHAR_MAX__)*libc.Int32FromInt32(2)+libc.Int32FromInt32(1)+libc.Int32FromInt32(1)|(libc.Int32FromInt32(m___SCHAR_MAX__)*libc.Int32FromInt32(2)+libc.Int32FromInt32(1)+libc.Int32FromInt32(1))*libc.Int32FromInt32(2)) {
 		v2 = out
@@ -27159,10 +27207,10 @@ func s__rescan(tls *libc.TLS, cc *CC, outer uintptr, in uintptr, out uintptr, ou
 		if outer != 0 {
 			v1 = outer + 49
 		} else {
-			v1 = __ccgo_ts + 105437
+			v1 = __ccgo_ts + 105443
 		}
-		(*(*func(*libc.TLS, *CC, _OUTDEST, uintptr, uintptr) int32)(unsafe.Pointer(&struct{ uintptr }{cc.x__mcpp_fprintf})))(tls, cc, int32(_DBG), __ccgo_ts+105732, libc.VaList(bp+48, cc.s__rescan_level+int32(1), v1))
-		x__dump_string(tls, cc, __ccgo_ts+105755, in)
+		(*(*func(*libc.TLS, *CC, _OUTDEST, uintptr, uintptr) int32)(unsafe.Pointer(&struct{ uintptr }{cc.x__mcpp_fprintf})))(tls, cc, int32(_DBG), __ccgo_ts+105738, libc.VaList(bp+48, cc.s__rescan_level+int32(1), v1))
+		x__dump_string(tls, cc, __ccgo_ts+105761, in)
 	}
 	if !(s__disable_repl(tls, cc, outer) != 0) { /* Don't re-replace replacing macro */
 		return libc.UintptrFromInt32(0)
@@ -27331,7 +27379,7 @@ func s__rescan(tls *libc.TLS, cc *CC, outer uintptr, in uintptr, out uintptr, ou
 			x__unget_ch(tls, cc)
 			if outer != libc.UintptrFromInt32(0) { /* outer isn't a macro in argument  */
 				if cc.x__infile != 0 && (*_FILEINFO)(unsafe.Pointer(cc.x__infile)).Fbptr != cur_cp && !(tp != 0 && int32(**(**int8)(__ccgo_up(tp))) == int32(m_DEF_MAGIC)) && (!(cc.s__compat_mode != 0) && cc.x__warn_level&int32(1) != 0 || cc.s__compat_mode != 0 && cc.x__warn_level&int32(8) != 0) {
-					s__diag_macro(tls, cc, int32(m_CWARN), __ccgo_ts+105768, in, 0, outer+49, outer, inner)
+					s__diag_macro(tls, cc, int32(m_CWARN), __ccgo_ts+105774, in, 0, outer+49, outer, inner)
 				}
 			}
 		} /* Else remove RT_END           */
@@ -27341,10 +27389,10 @@ func s__rescan(tls *libc.TLS, cc *CC, outer uintptr, in uintptr, out uintptr, ou
 		if outer != 0 {
 			v1 = outer + 49
 		} else {
-			v1 = __ccgo_ts + 105437
+			v1 = __ccgo_ts + 105443
 		}
-		(*(*func(*libc.TLS, *CC, _OUTDEST, uintptr, uintptr) int32)(unsafe.Pointer(&struct{ uintptr }{cc.x__mcpp_fprintf})))(tls, cc, int32(_DBG), __ccgo_ts+105732, libc.VaList(bp+48, cc.s__rescan_level+int32(1), v1))
-		x__dump_string(tls, cc, __ccgo_ts+105834, out)
+		(*(*func(*libc.TLS, *CC, _OUTDEST, uintptr, uintptr) int32)(unsafe.Pointer(&struct{ uintptr }{cc.x__mcpp_fprintf})))(tls, cc, int32(_DBG), __ccgo_ts+105738, libc.VaList(bp+48, cc.s__rescan_level+int32(1), v1))
+		x__dump_string(tls, cc, __ccgo_ts+105840, out)
 	}
 	return **(**uintptr)(__ccgo_up(bp))
 }
@@ -27463,12 +27511,12 @@ func s__scan_id(tls *libc.TLS, cc *CC, c int32) {
 	x__unget_ch(tls, cc)
 	**(**int8)(__ccgo_up(bp)) = int8('\000')
 	if bp >= cc.s__limit && cc.x__warn_level&int32(1) != 0 { /* Limit of token   */
-		x__cwarn(tls, cc, __ccgo_ts+110633, uintptr(unsafe.Pointer(&cc.x__identifier)), 0, libc.UintptrFromInt32(0))
+		x__cwarn(tls, cc, __ccgo_ts+110639, uintptr(unsafe.Pointer(&cc.x__identifier)), 0, libc.UintptrFromInt32(0))
 	}
 	len1 = libc.Uint64FromInt64(int64(bp) - ___predefined_ptrdiff_t(uintptr(unsafe.Pointer(&cc.x__identifier))))
 	/* UCN16, UCN32, MBCHAR are counted as one character for each.  */
 	if (*_FILEINFO)(unsafe.Pointer(cc.x__infile)).Ffp != 0 && len1 > cc.x__std_limits.Fid_len && cc.x__warn_level&int32(4) != 0 {
-		x__cwarn(tls, cc, __ccgo_ts+110671, libc.UintptrFromInt32(0), libc.Int64FromUint64(cc.x__std_limits.Fid_len), uintptr(unsafe.Pointer(&cc.x__identifier)))
+		x__cwarn(tls, cc, __ccgo_ts+110677, libc.UintptrFromInt32(0), libc.Int64FromUint64(cc.x__std_limits.Fid_len), uintptr(unsafe.Pointer(&cc.x__identifier)))
 	}
 }
 
@@ -27502,7 +27550,7 @@ func s__scan_number(tls *libc.TLS, cc *CC, c int32, out uintptr, out_end uintptr
 	}
 	**(**int8)(__ccgo_up(out_p)) = int8('\000')
 	if out_end < out_p {
-		x__cfatal(tls, cc, __ccgo_ts+111041, out, 0, libc.UintptrFromInt32(0))
+		x__cfatal(tls, cc, __ccgo_ts+111047, out, 0, libc.UintptrFromInt32(0))
 	}
 	x__unget_ch(tls, cc)
 	return out_p
@@ -27707,7 +27755,7 @@ func s__scan_op(tls *libc.TLS, cc *CC, c int32, out uintptr) (r uintptr) {
 	case int32(':'):
 		cc.x__openum = int32(m_OP_COL)
 	default: /* Never reach here */
-		x__cfatal(tls, cc, __ccgo_ts+111071, libc.UintptrFromInt32(0), int64(c), libc.UintptrFromInt32(0))
+		x__cfatal(tls, cc, __ccgo_ts+111077, libc.UintptrFromInt32(0), int64(c), libc.UintptrFromInt32(0))
 		cc.x__openum = int32(m_OP_1)
 		break
 	}
@@ -27813,7 +27861,7 @@ func s__set_env_dirs(tls *libc.TLS, cc *CC) {
 	 */
 	var env, v1 uintptr
 	_, _ = env, v1
-	v1 = libc.Xgetenv(tls, __ccgo_ts+109404)
+	v1 = libc.Xgetenv(tls, __ccgo_ts+109410)
 	env = v1
 	if v1 != libc.UintptrFromInt32(0) {
 		s__parse_env(tls, cc, env)
@@ -27845,7 +27893,7 @@ func s__set_files(tls *libc.TLS, cc *CC, argc int32, argv uintptr, in_pp uintptr
 	if int32(**(**int8)(__ccgo_up(**(**uintptr)(__ccgo_up(argv + uintptr(cc.s__mcpp_optind)*8))))) == int32('-') {
 		return **(**uintptr)(__ccgo_up(argv + uintptr(cc.s__mcpp_optind)*8))
 	} /* More options */
-	x__cfatal(tls, cc, __ccgo_ts+109375, **(**uintptr)(__ccgo_up(argv + uintptr(cc.s__mcpp_optind)*8)), 0, libc.UintptrFromInt32(0))
+	x__cfatal(tls, cc, __ccgo_ts+109381, **(**uintptr)(__ccgo_up(argv + uintptr(cc.s__mcpp_optind)*8)), 0, libc.UintptrFromInt32(0))
 	return libc.UintptrFromInt32(0)
 }
 
@@ -27919,12 +27967,12 @@ func s__set_opt_list(tls *libc.TLS, cc *CC, optlist uintptr) {
 	var _ /* list at bp+0 */ [3]uintptr
 	_, _ = lp, v1
 	**(**[3]uintptr)(__ccgo_up(bp)) = [3]uintptr{
-		0: __ccgo_ts + 109187,
-		1: __ccgo_ts + 109190,
+		0: __ccgo_ts + 109193,
+		1: __ccgo_ts + 109196,
 		2: libc.UintptrFromInt32(0),
 	}
 	lp = bp
-	libc.Xstrcpy(tls, optlist, __ccgo_ts+109192)
+	libc.Xstrcpy(tls, optlist, __ccgo_ts+109198)
 	/* Default options  */
 	for **(**uintptr)(__ccgo_up(lp)) != 0 {
 		v1 = lp
@@ -27932,7 +27980,7 @@ func s__set_opt_list(tls *libc.TLS, cc *CC, optlist uintptr) {
 		libc.Xstrcat(tls, optlist, **(**uintptr)(__ccgo_up(v1)))
 	}
 	if libc.Xstrlen(tls, optlist) >= uint64(m_OPTLISTLEN) {
-		x__cfatal(tls, cc, __ccgo_ts+109204, libc.UintptrFromInt32(0), 0, libc.UintptrFromInt32(0))
+		x__cfatal(tls, cc, __ccgo_ts+109210, libc.UintptrFromInt32(0), 0, libc.UintptrFromInt32(0))
 	} /* _F_  */
 }
 
@@ -28114,7 +28162,7 @@ again:
 		}
 		if c == -int32(1) {
 			if commentNest > 0 {
-				x__ERROR(tls, cc, x__DummyLineAst(tls, cc, startline), __ccgo_ts+21773, libc.VaList(bp+96, startline))
+				x__ERROR(tls, cc, x__DummyLineAst(tls, cc, startline), __ccgo_ts+21781, libc.VaList(bp+96, startline))
 			}
 			return eof_token
 		}
@@ -28133,7 +28181,7 @@ again:
 			if directive != 0 {
 				x__flexbuf_addchar(tls, cc, bp+32, int32('\000'))
 				dir = x__flexbuf_get(tls, cc, bp+32)
-				if !(libc.Xstrncmp(tls, dir, __ccgo_ts+21834, uint64(5)) != 0) {
+				if !(libc.Xstrncmp(tls, dir, __ccgo_ts+21842, uint64(5)) != 0) {
 					**(**uintptr)(__ccgo_up(bp + 64)) = dir + uintptr(5)
 					lineno = int32(libc.Xstrtol(tls, **(**uintptr)(__ccgo_up(bp + 64)), bp+64, int32(10)))
 					if lineno > 0 {
@@ -28144,7 +28192,7 @@ again:
 						(*_LexStream)(unsafe.Pointer(L)).FlineCounter = lineno
 					}
 				} else {
-					if !(libc.Xstrncmp(tls, dir, __ccgo_ts+21840, uint64(3)) != 0) {
+					if !(libc.Xstrncmp(tls, dir, __ccgo_ts+21848, uint64(3)) != 0) {
 						**(**uintptr)(__ccgo_up(bp + 72)) = dir + uintptr(3)
 						for {
 							if v14 = **(**int8)(__ccgo_up(**(**uintptr)(__ccgo_up(bp + 72)))) != 0; v14 {
@@ -28175,7 +28223,7 @@ again:
 							s__SetLanguageVersion(tls, cc, L, version)
 						}
 					} else {
-						if !(libc.Xstrncasecmp(tls, dir, __ccgo_ts+21844, uint64(7)) != 0) {
+						if !(libc.Xstrncasecmp(tls, dir, __ccgo_ts+21852, uint64(7)) != 0) {
 							**(**uintptr)(__ccgo_up(bp + 80)) = dir + uintptr(7)
 							version1 = int32(libc.Xstrtol(tls, **(**uintptr)(__ccgo_up(bp + 80)), bp+80, int32(10)))
 							if version1 > 0 {
@@ -28410,7 +28458,7 @@ func s__squeeze_ws(tls *libc.TLS, cc *CC, out uintptr, endf uintptr, mgc_seq uin
 
 func s__startLine(tls *libc.TLS, cc *CC, f uintptr, inlineAsm int32) {
 	if inlineAsm != 0 {
-		x__flexbuf_printf(tls, cc, f, __ccgo_ts+98305, 0)
+		x__flexbuf_printf(tls, cc, f, __ccgo_ts+98311, 0)
 	}
 }
 
@@ -28421,13 +28469,13 @@ func s__startNewLine1(tls *libc.TLS, cc *CC, f uintptr) {
 	if (*_Flexbuf)(unsafe.Pointer(f)).Flen1 != 0 {
 		x__flexbuf_addchar(tls, cc, f, int32('\n'))
 	}
-	x__flexbuf_printf(tls, cc, f, __ccgo_ts+40820, libc.VaList(bp+8, cc.s__hubPc))
+	x__flexbuf_printf(tls, cc, f, __ccgo_ts+40828, libc.VaList(bp+8, cc.s__hubPc))
 	if cc.s__inCog != 0 {
-		x__flexbuf_printf(tls, cc, f, __ccgo_ts+40826, libc.VaList(bp+8, cc.s__cogPc/uint32(4)))
+		x__flexbuf_printf(tls, cc, f, __ccgo_ts+40834, libc.VaList(bp+8, cc.s__cogPc/uint32(4)))
 		cc.s__cogPc = cc.s__cogPc + libc.Uint32FromInt32(cc.s__cogPcUpdate)
 		cc.s__cogPcUpdate = 0
 	} else {
-		x__flexbuf_printf(tls, cc, f, __ccgo_ts+40832, 0)
+		x__flexbuf_printf(tls, cc, f, __ccgo_ts+40840, 0)
 	}
 }
 
@@ -28607,7 +28655,7 @@ func s__stringize(tls *libc.TLS, cc *CC, defp uintptr, argp uintptr, out uintptr
 		invalid = m_FALSE
 		x__unget_string(tls, cc, out, defp+49)
 		if cc.x__mcpp_debug&int32(m_EXPAND) != 0 {
-			x__dump_string(tls, cc, __ccgo_ts+105612, (*_FILEINFO)(unsafe.Pointer(cc.x__infile)).Fbuffer)
+			x__dump_string(tls, cc, __ccgo_ts+105618, (*_FILEINFO)(unsafe.Pointer(cc.x__infile)).Fbuffer)
 		}
 		x__scan_quote(tls, cc, x__get_ch(tls, cc), uintptr(unsafe.Pointer(&cc.x__work_buf)), cc.x__work_end, int32(m_TRUE))
 		/* Unterminated or too long string will be diagnosed    */
@@ -28618,11 +28666,11 @@ func s__stringize(tls *libc.TLS, cc *CC, defp uintptr, argp uintptr, out uintptr
 		x__get_ch(tls, cc) /* Clear the "file"     */
 		x__unget_ch(tls, cc)
 		if invalid != 0 {
-			s__diag_macro(tls, cc, int32(m_CERROR), __ccgo_ts+105637, out, 0, libc.UintptrFromInt32(0), defp, libc.UintptrFromInt32(0))
+			s__diag_macro(tls, cc, int32(m_CERROR), __ccgo_ts+105643, out, 0, libc.UintptrFromInt32(0), defp, libc.UintptrFromInt32(0))
 		}
 	} else {
 		if cc.x__warn_level&int32(4) != 0 && int64(**(**uintptr)(__ccgo_up(bp)))-int64(out) > cc.x__std_limits.Fstr_len {
-			s__diag_macro(tls, cc, int32(m_CWARN), __ccgo_ts+105667, libc.UintptrFromInt32(0), cc.x__std_limits.Fstr_len, out, defp, libc.UintptrFromInt32(0))
+			s__diag_macro(tls, cc, int32(m_CWARN), __ccgo_ts+105673, libc.UintptrFromInt32(0), cc.x__std_limits.Fstr_len, out, defp, libc.UintptrFromInt32(0))
 		}
 	}
 	return **(**uintptr)(__ccgo_up(bp))
@@ -28652,7 +28700,7 @@ func s__substitute(tls *libc.TLS, cc *CC, defp uintptr, arglist uintptr, in uint
 			in = in + 1
 			c = int32(**(**int8)(__ccgo_up(v3))) & (libc.Int32FromInt32(m___SCHAR_MAX__)*libc.Int32FromInt32(2) + libc.Int32FromInt32(1)) /* Parameter number     */
 			if cc.x__mcpp_debug&int32(m_EXPAND) != 0 {
-				(*(*func(*libc.TLS, *CC, _OUTDEST, uintptr, uintptr) int32)(unsafe.Pointer(&struct{ uintptr }{cc.x__mcpp_fprintf})))(tls, cc, int32(_DBG), __ccgo_ts+105711, libc.VaList(bp+8, c))
+				(*(*func(*libc.TLS, *CC, _OUTDEST, uintptr, uintptr) int32)(unsafe.Pointer(&struct{ uintptr }{cc.x__mcpp_fprintf})))(tls, cc, int32(_DBG), __ccgo_ts+105717, libc.VaList(bp+8, c))
 				x__dump_string(tls, cc, libc.UintptrFromInt32(0), **(**uintptr)(__ccgo_up(arglist + uintptr(c-int32(1))*8)))
 			}
 			v2 = s__rescan(tls, cc, libc.UintptrFromInt32(0), **(**uintptr)(__ccgo_up(arglist + uintptr(c-int32(1))*8)), out, out_end)
@@ -29074,7 +29122,7 @@ func s__tdefl_start_dynamic_block(tls *libc.TLS, cc *CC, d uintptr) {
 			v4 = packed_code_sizes_index
 			packed_code_sizes_index = packed_code_sizes_index + 1
 			bits6 = uint32(packed_code_sizes[v4])
-			len6 = libc.Uint32FromInt8(**(**int8)(__ccgo_up(__ccgo_ts + 102347 + uintptr(code-uint32(16)))))
+			len6 = libc.Uint32FromInt8(**(**int8)(__ccgo_up(__ccgo_ts + 102353 + uintptr(code-uint32(16)))))
 			**(**_mz_uint)(__ccgo_up(d + 96)) |= bits6 << (*_tdefl_compressor)(unsafe.Pointer(d)).Fm_bits_in
 			**(**_mz_uint)(__ccgo_up(d + 92)) += len6
 			for (*_tdefl_compressor)(unsafe.Pointer(d)).Fm_bits_in >= uint32(8) {
@@ -29113,7 +29161,7 @@ func s__undef_macros(tls *libc.TLS, cc *CC) {
 			x__undefine(tls, cc, name)
 		} else {
 			if cc.x__warn_level&int32(8) != 0 {
-				(*(*func(*libc.TLS, *CC, _OUTDEST, uintptr, uintptr) int32)(unsafe.Pointer(&struct{ uintptr }{cc.x__mcpp_fprintf})))(tls, cc, int32(_ERR), __ccgo_ts+109522, libc.VaList(bp+8, name))
+				(*(*func(*libc.TLS, *CC, _OUTDEST, uintptr, uintptr) int32)(unsafe.Pointer(&struct{ uintptr }{cc.x__mcpp_fprintf})))(tls, cc, int32(_ERR), __ccgo_ts+109528, libc.VaList(bp+8, name))
 			}
 		}
 		goto _1
@@ -29133,25 +29181,25 @@ func s__usage(tls *libc.TLS, cc *CC, opt int32) {
 	var _ /* mes at bp+0 */ [17]uintptr
 	_, _, _ = illegopt, mpp, v1
 	**(**[17]uintptr)(__ccgo_up(bp)) = [17]uintptr{
-		0:  __ccgo_ts + 108405,
-		1:  __ccgo_ts + 108414,
-		2:  __ccgo_ts + 108419,
-		3:  __ccgo_ts + 108484,
-		4:  __ccgo_ts + 108550,
-		5:  __ccgo_ts + 108575,
-		6:  __ccgo_ts + 108610,
-		7:  __ccgo_ts + 108674,
-		8:  __ccgo_ts + 108742,
-		9:  __ccgo_ts + 108819,
-		10: __ccgo_ts + 108887,
-		11: __ccgo_ts + 108953,
-		12: __ccgo_ts + 109017,
-		13: __ccgo_ts + 109026,
-		14: __ccgo_ts + 109088,
-		15: __ccgo_ts + 109119,
+		0:  __ccgo_ts + 108411,
+		1:  __ccgo_ts + 108420,
+		2:  __ccgo_ts + 108425,
+		3:  __ccgo_ts + 108490,
+		4:  __ccgo_ts + 108556,
+		5:  __ccgo_ts + 108581,
+		6:  __ccgo_ts + 108616,
+		7:  __ccgo_ts + 108680,
+		8:  __ccgo_ts + 108748,
+		9:  __ccgo_ts + 108825,
+		10: __ccgo_ts + 108893,
+		11: __ccgo_ts + 108959,
+		12: __ccgo_ts + 109023,
+		13: __ccgo_ts + 109032,
+		14: __ccgo_ts + 109094,
+		15: __ccgo_ts + 109125,
 		16: libc.UintptrFromInt32(0),
 	}
-	illegopt = __ccgo_ts + 109163
+	illegopt = __ccgo_ts + 109169
 	mpp = bp
 	if opt != int32('?') {
 		if cc.s__mcpp_optarg != 0 {
@@ -29181,9 +29229,9 @@ func s__version(tls *libc.TLS, cc *CC) {
 	var _ /* mes at bp+0 */ [4]uintptr
 	_, _ = mpp, v1
 	**(**[4]uintptr)(__ccgo_up(bp)) = [4]uintptr{
-		0: __ccgo_ts + 108320,
-		1: __ccgo_ts + 108343,
-		2: __ccgo_ts + 108377,
+		0: __ccgo_ts + 108326,
+		1: __ccgo_ts + 108349,
+		2: __ccgo_ts + 108383,
 		3: libc.UintptrFromInt32(0),
 	}
 	mpp = bp
@@ -29202,16 +29250,16 @@ func s__yy_reduce_print(tls *libc.TLS, cc *CC, yyvsp uintptr, yyrule int32) {
 	_, _, _ = yyi, yylno, yynrhs
 	yynrhs = libc.Int32FromUint8(cc.s__yyr2[yyrule])
 	yylno = uint64(cc.s__yyrline[yyrule])
-	fprintf(tls, cc, libc.X__stderrp, __ccgo_ts+117741, libc.VaList(bp+8, yyrule-int32(1), yylno))
+	fprintf(tls, cc, libc.X__stderrp, __ccgo_ts+117755, libc.VaList(bp+8, yyrule-int32(1), yylno))
 	/* The symbols being reduced.  */
 	yyi = 0
 	for {
 		if !(yyi < yynrhs) {
 			break
 		}
-		fprintf(tls, cc, libc.X__stderrp, __ccgo_ts+117780, libc.VaList(bp+8, yyi+int32(1)))
+		fprintf(tls, cc, libc.X__stderrp, __ccgo_ts+117794, libc.VaList(bp+8, yyi+int32(1)))
 		s__yy_symbol_print(tls, cc, libc.X__stderrp, int32(cc.s__yyrhs[libc.Int32FromUint16(cc.s__yyprhs[yyrule])+yyi]), yyvsp+uintptr(yyi+int32(1)-yynrhs)*8)
-		fprintf(tls, cc, libc.X__stderrp, __ccgo_ts+4265, 0)
+		fprintf(tls, cc, libc.X__stderrp, __ccgo_ts+4267, 0)
 		goto _1
 	_1:
 		;
@@ -29236,16 +29284,16 @@ func s__yy_reduce_print1(tls *libc.TLS, cc *CC, yyvsp uintptr, yyrule int32) {
 	_, _, _ = yyi, yylno, yynrhs
 	yynrhs = libc.Int32FromUint8(cc.s__yyr21[yyrule])
 	yylno = uint64(cc.s__yyrline1[yyrule])
-	fprintf(tls, cc, libc.X__stderrp, __ccgo_ts+117741, libc.VaList(bp+8, yyrule-int32(1), yylno))
+	fprintf(tls, cc, libc.X__stderrp, __ccgo_ts+117755, libc.VaList(bp+8, yyrule-int32(1), yylno))
 	/* The symbols being reduced.  */
 	yyi = 0
 	for {
 		if !(yyi < yynrhs) {
 			break
 		}
-		fprintf(tls, cc, libc.X__stderrp, __ccgo_ts+117780, libc.VaList(bp+8, yyi+int32(1)))
+		fprintf(tls, cc, libc.X__stderrp, __ccgo_ts+117794, libc.VaList(bp+8, yyi+int32(1)))
 		s__yy_symbol_print1(tls, cc, libc.X__stderrp, int32(cc.s__yyrhs1[libc.Int32FromUint16(cc.s__yyprhs1[yyrule])+yyi]), yyvsp+uintptr(yyi+int32(1)-yynrhs)*8)
-		fprintf(tls, cc, libc.X__stderrp, __ccgo_ts+4265, 0)
+		fprintf(tls, cc, libc.X__stderrp, __ccgo_ts+4267, 0)
 		goto _1
 	_1:
 		;
@@ -29270,16 +29318,16 @@ func s__yy_reduce_print2(tls *libc.TLS, cc *CC, yyvsp uintptr, yyrule int32) {
 	_, _, _ = yyi, yylno, yynrhs
 	yynrhs = libc.Int32FromUint8(cc.s__yyr22[yyrule])
 	yylno = uint64(cc.s__yyrline2[yyrule])
-	fprintf(tls, cc, libc.X__stderrp, __ccgo_ts+117741, libc.VaList(bp+8, yyrule-int32(1), yylno))
+	fprintf(tls, cc, libc.X__stderrp, __ccgo_ts+117755, libc.VaList(bp+8, yyrule-int32(1), yylno))
 	/* The symbols being reduced.  */
 	yyi = 0
 	for {
 		if !(yyi < yynrhs) {
 			break
 		}
-		fprintf(tls, cc, libc.X__stderrp, __ccgo_ts+117780, libc.VaList(bp+8, yyi+int32(1)))
+		fprintf(tls, cc, libc.X__stderrp, __ccgo_ts+117794, libc.VaList(bp+8, yyi+int32(1)))
 		s__yy_symbol_print2(tls, cc, libc.X__stderrp, int32(cc.s__yyrhs2[libc.Int32FromUint16(cc.s__yyprhs2[yyrule])+yyi]), yyvsp+uintptr(yyi+int32(1)-yynrhs)*8)
-		fprintf(tls, cc, libc.X__stderrp, __ccgo_ts+4265, 0)
+		fprintf(tls, cc, libc.X__stderrp, __ccgo_ts+4267, 0)
 		goto _1
 	_1:
 		;
@@ -29299,18 +29347,18 @@ func s__yy_reduce_print2(tls *libc.TLS, cc *CC, yyvsp uintptr, yyrule int32) {
 func s__yy_stack_print(tls *libc.TLS, cc *CC, bottom uintptr, top uintptr) {
 	bp := tls.Alloc(16)
 	defer tls.Free(16)
-	fprintf(tls, cc, libc.X__stderrp, __ccgo_ts+117727, 0)
+	fprintf(tls, cc, libc.X__stderrp, __ccgo_ts+117741, 0)
 	for {
 		if !(bottom <= top) {
 			break
 		}
-		fprintf(tls, cc, libc.X__stderrp, __ccgo_ts+117737, libc.VaList(bp+8, int32(**(**_yytype_int16)(__ccgo_up(bottom)))))
+		fprintf(tls, cc, libc.X__stderrp, __ccgo_ts+117751, libc.VaList(bp+8, int32(**(**_yytype_int16)(__ccgo_up(bottom)))))
 		goto _1
 	_1:
 		;
 		bottom += 2
 	}
-	fprintf(tls, cc, libc.X__stderrp, __ccgo_ts+4265, 0)
+	fprintf(tls, cc, libc.X__stderrp, __ccgo_ts+4267, 0)
 }
 
 /*------------------------------------------------.
@@ -29320,18 +29368,18 @@ func s__yy_stack_print(tls *libc.TLS, cc *CC, bottom uintptr, top uintptr) {
 func s__yy_stack_print1(tls *libc.TLS, cc *CC, bottom uintptr, top uintptr) {
 	bp := tls.Alloc(16)
 	defer tls.Free(16)
-	fprintf(tls, cc, libc.X__stderrp, __ccgo_ts+117727, 0)
+	fprintf(tls, cc, libc.X__stderrp, __ccgo_ts+117741, 0)
 	for {
 		if !(bottom <= top) {
 			break
 		}
-		fprintf(tls, cc, libc.X__stderrp, __ccgo_ts+117737, libc.VaList(bp+8, int32(**(**_yytype_int16)(__ccgo_up(bottom)))))
+		fprintf(tls, cc, libc.X__stderrp, __ccgo_ts+117751, libc.VaList(bp+8, int32(**(**_yytype_int16)(__ccgo_up(bottom)))))
 		goto _1
 	_1:
 		;
 		bottom += 2
 	}
-	fprintf(tls, cc, libc.X__stderrp, __ccgo_ts+4265, 0)
+	fprintf(tls, cc, libc.X__stderrp, __ccgo_ts+4267, 0)
 }
 
 /*------------------------------------------------.
@@ -29341,18 +29389,18 @@ func s__yy_stack_print1(tls *libc.TLS, cc *CC, bottom uintptr, top uintptr) {
 func s__yy_stack_print2(tls *libc.TLS, cc *CC, bottom uintptr, top uintptr) {
 	bp := tls.Alloc(16)
 	defer tls.Free(16)
-	fprintf(tls, cc, libc.X__stderrp, __ccgo_ts+117727, 0)
+	fprintf(tls, cc, libc.X__stderrp, __ccgo_ts+117741, 0)
 	for {
 		if !(bottom <= top) {
 			break
 		}
-		fprintf(tls, cc, libc.X__stderrp, __ccgo_ts+117737, libc.VaList(bp+8, int32(**(**_yytype_int16)(__ccgo_up(bottom)))))
+		fprintf(tls, cc, libc.X__stderrp, __ccgo_ts+117751, libc.VaList(bp+8, int32(**(**_yytype_int16)(__ccgo_up(bottom)))))
 		goto _1
 	_1:
 		;
 		bottom += 2
 	}
-	fprintf(tls, cc, libc.X__stderrp, __ccgo_ts+4265, 0)
+	fprintf(tls, cc, libc.X__stderrp, __ccgo_ts+4267, 0)
 }
 
 /*------------------------------------------------.
@@ -29363,12 +29411,12 @@ func s__yy_symbol_print(tls *libc.TLS, cc *CC, yyoutput uintptr, yytype int32, y
 	bp := tls.Alloc(16)
 	defer tls.Free(16)
 	if yytype < int32(m_YYNTOKENS) {
-		fprintf(tls, cc, yyoutput, __ccgo_ts+117705, libc.VaList(bp+8, cc.s__yytname[yytype]))
+		fprintf(tls, cc, yyoutput, __ccgo_ts+117719, libc.VaList(bp+8, cc.s__yytname[yytype]))
 	} else {
-		fprintf(tls, cc, yyoutput, __ccgo_ts+117716, libc.VaList(bp+8, cc.s__yytname[yytype]))
+		fprintf(tls, cc, yyoutput, __ccgo_ts+117730, libc.VaList(bp+8, cc.s__yytname[yytype]))
 	}
 	s__yy_symbol_value_print(tls, cc, yyoutput, yytype, yyvaluep)
-	fprintf(tls, cc, yyoutput, __ccgo_ts+28072, 0)
+	fprintf(tls, cc, yyoutput, __ccgo_ts+28080, 0)
 }
 
 /*------------------------------------------------------------------.
@@ -29380,12 +29428,12 @@ func s__yy_symbol_print1(tls *libc.TLS, cc *CC, yyoutput uintptr, yytype int32, 
 	bp := tls.Alloc(16)
 	defer tls.Free(16)
 	if yytype < int32(m_YYNTOKENS1) {
-		fprintf(tls, cc, yyoutput, __ccgo_ts+117705, libc.VaList(bp+8, cc.s__yytname1[yytype]))
+		fprintf(tls, cc, yyoutput, __ccgo_ts+117719, libc.VaList(bp+8, cc.s__yytname1[yytype]))
 	} else {
-		fprintf(tls, cc, yyoutput, __ccgo_ts+117716, libc.VaList(bp+8, cc.s__yytname1[yytype]))
+		fprintf(tls, cc, yyoutput, __ccgo_ts+117730, libc.VaList(bp+8, cc.s__yytname1[yytype]))
 	}
 	s__yy_symbol_value_print1(tls, cc, yyoutput, yytype, yyvaluep)
-	fprintf(tls, cc, yyoutput, __ccgo_ts+28072, 0)
+	fprintf(tls, cc, yyoutput, __ccgo_ts+28080, 0)
 }
 
 /*------------------------------------------------------------------.
@@ -29397,12 +29445,12 @@ func s__yy_symbol_print2(tls *libc.TLS, cc *CC, yyoutput uintptr, yytype int32, 
 	bp := tls.Alloc(16)
 	defer tls.Free(16)
 	if yytype < int32(m_YYNTOKENS2) {
-		fprintf(tls, cc, yyoutput, __ccgo_ts+117705, libc.VaList(bp+8, cc.s__yytname2[yytype]))
+		fprintf(tls, cc, yyoutput, __ccgo_ts+117719, libc.VaList(bp+8, cc.s__yytname2[yytype]))
 	} else {
-		fprintf(tls, cc, yyoutput, __ccgo_ts+117716, libc.VaList(bp+8, cc.s__yytname2[yytype]))
+		fprintf(tls, cc, yyoutput, __ccgo_ts+117730, libc.VaList(bp+8, cc.s__yytname2[yytype]))
 	}
 	s__yy_symbol_value_print2(tls, cc, yyoutput, yytype, yyvaluep)
-	fprintf(tls, cc, yyoutput, __ccgo_ts+28072, 0)
+	fprintf(tls, cc, yyoutput, __ccgo_ts+28080, 0)
 }
 
 /*------------------------------------------------------------------.
@@ -29472,12 +29520,12 @@ func s__yydestruct(tls *libc.TLS, cc *CC, yymsg uintptr, yytype int32, yyvaluep 
 	defer tls.Free(16)
 	_ = yyvaluep
 	if !(yymsg != 0) {
-		yymsg = __ccgo_ts + 117790
+		yymsg = __ccgo_ts + 117804
 	}
 	if cc.x__spinyydebug != 0 {
-		fprintf(tls, cc, libc.X__stderrp, __ccgo_ts+4261, libc.VaList(bp+8, yymsg))
+		fprintf(tls, cc, libc.X__stderrp, __ccgo_ts+4263, libc.VaList(bp+8, yymsg))
 		s__yy_symbol_print(tls, cc, libc.X__stderrp, yytype, yyvaluep)
-		fprintf(tls, cc, libc.X__stderrp, __ccgo_ts+4265, 0)
+		fprintf(tls, cc, libc.X__stderrp, __ccgo_ts+4267, 0)
 	}
 	switch yytype {
 	default:
@@ -29497,12 +29545,12 @@ func s__yydestruct1(tls *libc.TLS, cc *CC, yymsg uintptr, yytype int32, yyvaluep
 	defer tls.Free(16)
 	_ = yyvaluep
 	if !(yymsg != 0) {
-		yymsg = __ccgo_ts + 117790
+		yymsg = __ccgo_ts + 117804
 	}
 	if cc.x__basicyydebug != 0 {
-		fprintf(tls, cc, libc.X__stderrp, __ccgo_ts+4261, libc.VaList(bp+8, yymsg))
+		fprintf(tls, cc, libc.X__stderrp, __ccgo_ts+4263, libc.VaList(bp+8, yymsg))
 		s__yy_symbol_print1(tls, cc, libc.X__stderrp, yytype, yyvaluep)
-		fprintf(tls, cc, libc.X__stderrp, __ccgo_ts+4265, 0)
+		fprintf(tls, cc, libc.X__stderrp, __ccgo_ts+4267, 0)
 	}
 	switch yytype {
 	default:
@@ -29522,12 +29570,12 @@ func s__yydestruct2(tls *libc.TLS, cc *CC, yymsg uintptr, yytype int32, yyvaluep
 	defer tls.Free(16)
 	_ = yyvaluep
 	if !(yymsg != 0) {
-		yymsg = __ccgo_ts + 117790
+		yymsg = __ccgo_ts + 117804
 	}
 	if cc.x__cgramyydebug != 0 {
-		fprintf(tls, cc, libc.X__stderrp, __ccgo_ts+4261, libc.VaList(bp+8, yymsg))
+		fprintf(tls, cc, libc.X__stderrp, __ccgo_ts+4263, libc.VaList(bp+8, yymsg))
 		s__yy_symbol_print2(tls, cc, libc.X__stderrp, yytype, yyvaluep)
-		fprintf(tls, cc, libc.X__stderrp, __ccgo_ts+4265, 0)
+		fprintf(tls, cc, libc.X__stderrp, __ccgo_ts+4267, 0)
 	}
 	switch yytype {
 	default:
@@ -29619,7 +29667,7 @@ func s__yysyntax_error(tls *libc.TLS, cc *CC, yyresult uintptr, yystate int32, s
 	var _ /* yyformat at bp+0 */ [60]int8
 	_, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _ = yyarg, yychecklim, yycount, yyf, yyfmt, yyi, yyn, yyp, yyprefix, yysize, yysize0, yysize1, yysize_overflow, yytype, yyx, yyxbegin, yyxend, v1, v2, v3, v6
 	yyn = int32(cc.s__yypact[yystate])
-	if !(-int32(1086) < yyn && yyn <= int32(m_YYLAST)) {
+	if !(-int32(1112) < yyn && yyn <= int32(m_YYLAST)) {
 		return uint64(0)
 	} else {
 		if libc.Uint32FromInt32(spinyychar) <= uint32(m_YYMAXUTOK) {
@@ -30154,7 +30202,7 @@ func x__AddSourceFile(tls *libc.TLS, cc *CC, shortName uintptr, fullName uintptr
 		cc.x__maxSourceFiles = cc.x__maxSourceFiles + int32(1024)
 		cc.x__sourceData = realloc(tls, cc, cc.x__sourceData, libc.Uint64FromInt32(cc.x__maxSourceFiles)*uint64(32))
 		if !(cc.x__sourceData != 0) {
-			fprintf(tls, cc, libc.X__stderrp, __ccgo_ts+4238, 0)
+			fprintf(tls, cc, libc.X__stderrp, __ccgo_ts+4240, 0)
 			exit(tls, cc, int32(2))
 		}
 	}
@@ -30220,7 +30268,7 @@ func x__AddSymbol(tls *libc.TLS, cc *CC, table uintptr, name uintptr, type1 int3
 	if sym != 0 {
 		// it's OK for us to override a weak alias
 		if (*_Symbol)(unsafe.Pointer(sym)).Fkind != int32(_SYM_WEAK_ALIAS) {
-			fprintf(tls, cc, libc.X__stderrp, __ccgo_ts+22522, libc.VaList(bp+8, user_name))
+			fprintf(tls, cc, libc.X__stderrp, __ccgo_ts+22530, libc.VaList(bp+8, user_name))
 		}
 	}
 	sym = x__NewSymbol(tls, cc)
@@ -30259,7 +30307,7 @@ func x__AggregateCount(tls *libc.TLS, cc *CC, typ uintptr) (r int32) {
 	sawBitfield = 0
 	if x__IsArrayType(tls, cc, typ) != 0 {
 		if !(x__IsConstExpr(tls, cc, (*_AST)(unsafe.Pointer(typ)).Fright) != 0) {
-			x__ERROR(tls, cc, typ, __ccgo_ts+26432, 0)
+			x__ERROR(tls, cc, typ, __ccgo_ts+26440, 0)
 			size = int32(1)
 		} else {
 			size = int32(x__EvalConstExpr(tls, cc, (*_AST)(unsafe.Pointer(typ)).Fright))
@@ -30272,7 +30320,7 @@ func x__AggregateCount(tls *libc.TLS, cc *CC, typ uintptr) (r int32) {
 			return int32(1)
 		}
 		if (*_Module)(unsafe.Pointer(P)).Fpendingvarblock != 0 {
-			x__ERROR(tls, cc, typ, __ccgo_ts+26466, 0)
+			x__ERROR(tls, cc, typ, __ccgo_ts+26474, 0)
 		}
 		list = (*_Module)(unsafe.Pointer(P)).Ffinalvarblock
 		size = 0
@@ -30291,7 +30339,7 @@ func x__AggregateCount(tls *libc.TLS, cc *CC, typ uintptr) (r int32) {
 		}
 		return size
 	}
-	x__ERROR(tls, cc, typ, __ccgo_ts+27394, 0)
+	x__ERROR(tls, cc, typ, __ccgo_ts+27402, 0)
 	return int32(1)
 }
 
@@ -30678,7 +30726,7 @@ func x__ArrayBaseType(tls *libc.TLS, cc *CC, var1 uintptr) (r uintptr) {
 	if !((*_AST)(unsafe.Pointer(var1)).Fkind == int32(_AST_IDENTIFIER) || (*_AST)(unsafe.Pointer(var1)).Fkind == int32(_AST_LOCAL_IDENTIFIER)) {
 		return libc.UintptrFromInt32(0)
 	}
-	sym = x__LookupAstSymbol(tls, cc, var1, __ccgo_ts+31765)
+	sym = x__LookupAstSymbol(tls, cc, var1, __ccgo_ts+31773)
 	if !(sym != 0) {
 		return libc.UintptrFromInt32(0)
 	}
@@ -30706,11 +30754,11 @@ func x__ArrayBaseType(tls *libc.TLS, cc *CC, var1 uintptr) (r uintptr) {
 	case int32(_SYM_VARIABLE):
 		stype = *(*uintptr)(unsafe.Pointer(sym + 32))
 		if !(stype != 0) {
-			x__ERROR(tls, cc, var1, __ccgo_ts+31781, 0)
+			x__ERROR(tls, cc, var1, __ccgo_ts+31789, 0)
 			return libc.UintptrFromInt32(0)
 		}
 		if (*_AST)(unsafe.Pointer(stype)).Fkind != int32(_AST_ARRAYTYPE) {
-			x__ERROR(tls, cc, var1, __ccgo_ts+31805, 0)
+			x__ERROR(tls, cc, var1, __ccgo_ts+31813, 0)
 			return libc.UintptrFromInt32(0)
 		}
 		if (*_AST)(unsafe.Pointer(stype)).Fleft != 0 {
@@ -30744,15 +30792,15 @@ func x__AsmDebug_CodeGen(tls *libc.TLS, cc *CC, ast uintptr, __ccgo_fp_evalFunc 
 	var _ /* addr at bp+0 */ int32
 	_, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _ = addrKind, arg, arglist, brkCode, dbgmask, do_cogn, expectedArgs, expr, exprAst, exprbase, exprlist, f, func1, gotArgs, item, n, name, nameLen, needcomma, noExpr, opcode, regNum, select1, simple, v1, v4
 	/* check for DEBUG_DISABLE */
-	if x__const_or_default(tls, cc, cc.x__current, __ccgo_ts+113143, 0) != 0 {
+	if x__const_or_default(tls, cc, cc.x__current, __ccgo_ts+113149, 0) != 0 {
 		return -int32(1)
 	}
 	if !(ast != 0) {
-		x__ERROR(tls, cc, libc.UintptrFromInt32(0), __ccgo_ts+113157, 0)
+		x__ERROR(tls, cc, libc.UintptrFromInt32(0), __ccgo_ts+113163, 0)
 		return -int32(1)
 	} else {
 		if (*_AST)(unsafe.Pointer(ast)).Fkind != int32(_AST_BRKDEBUG) {
-			x__ERROR(tls, cc, ast, __ccgo_ts+113230, libc.VaList(bp+16, (*_AST)(unsafe.Pointer(ast)).Fkind))
+			x__ERROR(tls, cc, ast, __ccgo_ts+113236, libc.VaList(bp+16, (*_AST)(unsafe.Pointer(ast)).Fkind))
 			return -int32(1)
 		}
 	}
@@ -30761,16 +30809,16 @@ func x__AsmDebug_CodeGen(tls *libc.TLS, cc *CC, ast uintptr, __ccgo_fp_evalFunc 
 		return 0
 	}
 	if !((*_AST)(unsafe.Pointer(ast)).Fleft != 0) {
-		x__ERROR(tls, cc, libc.UintptrFromInt32(0), __ccgo_ts+113301, 0)
+		x__ERROR(tls, cc, libc.UintptrFromInt32(0), __ccgo_ts+113307, 0)
 		return -int32(1)
 	} else {
 		if (*_AST)(unsafe.Pointer((*_AST)(unsafe.Pointer(ast)).Fleft)).Fkind != int32(_AST_EXPRLIST) {
-			x__ERROR(tls, cc, (*_AST)(unsafe.Pointer(ast)).Fleft, __ccgo_ts+113374, libc.VaList(bp+16, (*_AST)(unsafe.Pointer((*_AST)(unsafe.Pointer(ast)).Fleft)).Fkind))
+			x__ERROR(tls, cc, (*_AST)(unsafe.Pointer(ast)).Fleft, __ccgo_ts+113380, libc.VaList(bp+16, (*_AST)(unsafe.Pointer((*_AST)(unsafe.Pointer(ast)).Fleft)).Fkind))
 			return -int32(1)
 		}
 	}
 	if (*_AST)(unsafe.Pointer(ast)).Fright != 0 {
-		dbgmask = libc.Uint32FromInt32(x__const_or_default(tls, cc, cc.x__current, __ccgo_ts+113445, -int32(1)))
+		dbgmask = libc.Uint32FromInt32(x__const_or_default(tls, cc, cc.x__current, __ccgo_ts+113451, -int32(1)))
 		select1 = libc.Uint32FromInt64(x__EvalConstExpr(tls, cc, (*_AST)(unsafe.Pointer(ast)).Fright))
 		if !(dbgmask&(libc.Uint32FromUint32(1)<<select1) != 0) {
 			/* this particular debug is disabled */
@@ -30784,7 +30832,7 @@ func x__AsmDebug_CodeGen(tls *libc.TLS, cc *CC, ast uintptr, __ccgo_fp_evalFunc 
 	do_cogn = libc.BoolUint8(m_false != 0)
 	/* sanity check on codes */
 	if brkCode >= uint32(m_MAX_BRK) {
-		x__ERROR(tls, cc, ast, __ccgo_ts+113456, 0)
+		x__ERROR(tls, cc, ast, __ccgo_ts+113462, 0)
 		return -int32(1)
 	}
 	f = uintptr(unsafe.Pointer(&cc.s__brkExpr)) + uintptr(brkCode)*32
@@ -30798,11 +30846,11 @@ func x__AsmDebug_CodeGen(tls *libc.TLS, cc *CC, ast uintptr, __ccgo_fp_evalFunc 
 		exprbase = (*_AST)(unsafe.Pointer(ast)).Fleft
 	}
 	if !(exprbase != 0) {
-		x__ERROR(tls, cc, libc.UintptrFromInt32(0), __ccgo_ts+113474, 0)
+		x__ERROR(tls, cc, libc.UintptrFromInt32(0), __ccgo_ts+113480, 0)
 		return -int32(1)
 	} else {
 		if (*_AST)(unsafe.Pointer(exprbase)).Fkind != int32(_AST_EXPRLIST) {
-			x__ERROR(tls, cc, exprbase, __ccgo_ts+113547, libc.VaList(bp+16, (*_AST)(unsafe.Pointer(exprbase)).Fkind))
+			x__ERROR(tls, cc, exprbase, __ccgo_ts+113553, libc.VaList(bp+16, (*_AST)(unsafe.Pointer(exprbase)).Fkind))
 			return -int32(1)
 		}
 	}
@@ -30812,7 +30860,7 @@ func x__AsmDebug_CodeGen(tls *libc.TLS, cc *CC, ast uintptr, __ccgo_fp_evalFunc 
 		x__flexbuf_addchar(tls, cc, f, int32(_DBC_COGN))
 	}
 	needcomma = libc.BoolUint8(m_false != 0)
-	x__DEBUG(tls, cc, ast, __ccgo_ts+113618, libc.VaList(bp+16, brkCode))
+	x__DEBUG(tls, cc, ast, __ccgo_ts+113624, libc.VaList(bp+16, brkCode))
 	exprlist = exprbase
 	for {
 		if !(exprlist != 0) {
@@ -30820,7 +30868,7 @@ func x__AsmDebug_CodeGen(tls *libc.TLS, cc *CC, ast uintptr, __ccgo_fp_evalFunc 
 		}
 		item = (*_AST)(unsafe.Pointer(exprlist)).Fleft
 		if !(item != 0) {
-			x__WARNING(tls, cc, exprlist, __ccgo_ts+113650, 0)
+			x__WARNING(tls, cc, exprlist, __ccgo_ts+113656, 0)
 			goto _2
 		}
 		if (*_AST)(unsafe.Pointer(item)).Fkind == int32(_AST_EXPRLIST) && !((*_AST)(unsafe.Pointer(item)).Fright != 0) {
@@ -30838,16 +30886,16 @@ func x__AsmDebug_CodeGen(tls *libc.TLS, cc *CC, ast uintptr, __ccgo_fp_evalFunc 
 			s__emitAsmConstant(tls, cc, f, uint32(*(*_uint64_t)(unsafe.Pointer(item + 8))))
 		case int32(_AST_FUNCCALL):
 			if !((*_AST)(unsafe.Pointer(item)).Fleft != 0) {
-				x__ERROR(tls, cc, libc.UintptrFromInt32(0), __ccgo_ts+113682, 0)
+				x__ERROR(tls, cc, libc.UintptrFromInt32(0), __ccgo_ts+113688, 0)
 				break
 			} else {
 				if (*_AST)(unsafe.Pointer((*_AST)(unsafe.Pointer(item)).Fleft)).Fkind != int32(_AST_IDENTIFIER) {
-					x__ERROR(tls, cc, (*_AST)(unsafe.Pointer(item)).Fleft, __ccgo_ts+113757, libc.VaList(bp+16, (*_AST)(unsafe.Pointer((*_AST)(unsafe.Pointer(item)).Fleft)).Fkind))
+					x__ERROR(tls, cc, (*_AST)(unsafe.Pointer(item)).Fleft, __ccgo_ts+113763, libc.VaList(bp+16, (*_AST)(unsafe.Pointer((*_AST)(unsafe.Pointer(item)).Fleft)).Fkind))
 					break
 				}
 			}
 			name = x__GetUserIdentifierName(tls, cc, (*_AST)(unsafe.Pointer(item)).Fleft)
-			x__DEBUG(tls, cc, item, __ccgo_ts+113830, libc.VaList(bp+16, name))
+			x__DEBUG(tls, cc, item, __ccgo_ts+113836, libc.VaList(bp+16, name))
 			nameLen = libc.Xstrlen(tls, name)
 			noExpr = libc.BoolUint8(int32(**(**int8)(__ccgo_up(name + uintptr(nameLen-uint64(1))))) == int32('_'))
 			if noExpr != 0 {
@@ -30867,13 +30915,13 @@ func x__AsmDebug_CodeGen(tls *libc.TLS, cc *CC, ast uintptr, __ccgo_fp_evalFunc 
 				func1 += 16
 			}
 			if !((*_DebugFunc)(unsafe.Pointer(func1)).Fname != 0) {
-				x__ERROR(tls, cc, item, __ccgo_ts+113851, libc.VaList(bp+16, name))
+				x__ERROR(tls, cc, item, __ccgo_ts+113857, libc.VaList(bp+16, name))
 				break
 			}
 			opcode = (*_DebugFunc)(unsafe.Pointer(func1)).Fopcode
 			simple = libc.BoolUint8(!(libc.Int32FromUint8(opcode)&libc.Int32FromInt32(0xE0) != 0))
 			if simple != 0 && noExpr != 0 {
-				x__ERROR(tls, cc, item, __ccgo_ts+113877, 0)
+				x__ERROR(tls, cc, item, __ccgo_ts+113883, 0)
 			}
 			if (!(simple != 0) || libc.Int32FromUint8(opcode) == int32(_DBC_CZ)) && !(needcomma != 0) {
 				opcode = libc.Uint8FromInt32(int32(opcode) | int32(_DBC_FLAG_NOCOMMA))
@@ -30884,10 +30932,10 @@ func x__AsmDebug_CodeGen(tls *libc.TLS, cc *CC, ast uintptr, __ccgo_fp_evalFunc 
 			if libc.Int32FromUint8(opcode) & ^int32(_DBC_FLAG_NOCOMMA) == int32(_DBC_CZ) {
 				// Special no-argument function C_Z (I hate what I have brought upon myself)
 				if (*_AST)(unsafe.Pointer(item)).Fright != 0 && (*_AST)(unsafe.Pointer((*_AST)(unsafe.Pointer(item)).Fright)).Fleft != 0 {
-					x__ERROR(tls, cc, item, __ccgo_ts+113919, 0)
+					x__ERROR(tls, cc, item, __ccgo_ts+113925, 0)
 				}
 				x__flexbuf_addchar(tls, cc, f, libc.Int32FromUint8(opcode))
-				x__DEBUG(tls, cc, item, __ccgo_ts+113942, libc.VaList(bp+16, libc.Int32FromUint8(opcode)))
+				x__DEBUG(tls, cc, item, __ccgo_ts+113948, libc.VaList(bp+16, libc.Int32FromUint8(opcode)))
 			} else {
 				if libc.Int32FromUint8((*_DebugFunc)(unsafe.Pointer(func1)).Fopcode)&int32(_DBC_FLAG_ARRAY) != 0 {
 					v4 = int32(2)
@@ -30897,11 +30945,11 @@ func x__AsmDebug_CodeGen(tls *libc.TLS, cc *CC, ast uintptr, __ccgo_fp_evalFunc 
 				expectedArgs = v4
 				gotArgs = 0
 				if !((*_AST)(unsafe.Pointer(item)).Fright != 0) {
-					x__ERROR(tls, cc, libc.UintptrFromInt32(0), __ccgo_ts+113969, 0)
+					x__ERROR(tls, cc, libc.UintptrFromInt32(0), __ccgo_ts+113975, 0)
 					break
 				} else {
 					if (*_AST)(unsafe.Pointer((*_AST)(unsafe.Pointer(item)).Fright)).Fkind != int32(_AST_EXPRLIST) {
-						x__ERROR(tls, cc, (*_AST)(unsafe.Pointer(item)).Fright, __ccgo_ts+114042, libc.VaList(bp+16, (*_AST)(unsafe.Pointer((*_AST)(unsafe.Pointer(item)).Fright)).Fkind))
+						x__ERROR(tls, cc, (*_AST)(unsafe.Pointer(item)).Fright, __ccgo_ts+114048, libc.VaList(bp+16, (*_AST)(unsafe.Pointer((*_AST)(unsafe.Pointer(item)).Fright)).Fkind))
 						break
 					}
 				}
@@ -30912,7 +30960,7 @@ func x__AsmDebug_CodeGen(tls *libc.TLS, cc *CC, ast uintptr, __ccgo_fp_evalFunc 
 					}
 					if gotArgs == 0 {
 						x__flexbuf_addchar(tls, cc, f, libc.Int32FromUint8(opcode))
-						x__DEBUG(tls, cc, item, __ccgo_ts+113942, libc.VaList(bp+16, libc.Int32FromUint8(opcode)))
+						x__DEBUG(tls, cc, item, __ccgo_ts+113948, libc.VaList(bp+16, libc.Int32FromUint8(opcode)))
 					}
 					gotArgs = gotArgs + 1
 					arg = (*_AST)(unsafe.Pointer(arglist)).Fleft
@@ -30954,7 +31002,7 @@ func x__AsmDebug_CodeGen(tls *libc.TLS, cc *CC, ast uintptr, __ccgo_fp_evalFunc 
 							if gotArgs == expectedArgs {
 								opcode = libc.Uint8FromInt32(int32(opcode) & ^int32(_DBC_FLAG_NOCOMMA))
 								x__flexbuf_addchar(tls, cc, f, libc.Int32FromUint8(opcode)|int32(_DBC_FLAG_NOEXPR))
-								x__DEBUG(tls, cc, item, __ccgo_ts+113942, libc.VaList(bp+16, libc.Int32FromUint8(opcode)|int32(_DBC_FLAG_NOEXPR)))
+								x__DEBUG(tls, cc, item, __ccgo_ts+113948, libc.VaList(bp+16, libc.Int32FromUint8(opcode)|int32(_DBC_FLAG_NOEXPR)))
 								gotArgs = int32(1)
 							} else {
 								gotArgs = gotArgs + 1
@@ -30969,7 +31017,7 @@ func x__AsmDebug_CodeGen(tls *libc.TLS, cc *CC, ast uintptr, __ccgo_fp_evalFunc 
 						}
 						needcomma = libc.BoolUint8(m_true != 0)
 					default:
-						x__ERROR(tls, cc, arg, __ccgo_ts+114113, 0)
+						x__ERROR(tls, cc, arg, __ccgo_ts+114119, 0)
 						break
 					}
 					if gotArgs == expectedArgs {
@@ -30984,16 +31032,16 @@ func x__AsmDebug_CodeGen(tls *libc.TLS, cc *CC, ast uintptr, __ccgo_fp_evalFunc 
 					arglist = (*_AST)(unsafe.Pointer(arglist)).Fright
 				}
 				if gotArgs != 0 {
-					x__ERROR(tls, cc, item, __ccgo_ts+114155, libc.VaList(bp+16, name, expectedArgs, gotArgs))
+					x__ERROR(tls, cc, item, __ccgo_ts+114161, libc.VaList(bp+16, name, expectedArgs, gotArgs))
 				}
 			}
 			needcomma = libc.BoolUint8(m_true != 0)
 		case int32(_AST_IDENTIFIER):
 			fallthrough
 		case int32(_AST_LOCAL_IDENTIFIER):
-			x__ERROR(tls, cc, item, __ccgo_ts+114182, 0)
+			x__ERROR(tls, cc, item, __ccgo_ts+114188, 0)
 		default:
-			x__ERROR(tls, cc, item, __ccgo_ts+114260, libc.VaList(bp+16, (*_AST)(unsafe.Pointer(item)).Fkind))
+			x__ERROR(tls, cc, item, __ccgo_ts+114266, libc.VaList(bp+16, (*_AST)(unsafe.Pointer(item)).Fkind))
 			break
 		}
 		goto _2
@@ -31009,7 +31057,7 @@ func x__AssembleAsmDebug(tls *libc.TLS, cc *CC, f uintptr, ast uintptr) {
 	var brkCode int32
 	_ = brkCode
 	if !(cc.x__gl_p2 != 0) {
-		x__ERROR(tls, cc, ast, __ccgo_ts+40643, 0)
+		x__ERROR(tls, cc, ast, __ccgo_ts+40651, 0)
 	}
 	brkCode = x__AsmDebug_CodeGen(tls, cc, ast, __ccgo_fp(x__Pasm_DebugEval), libc.UintptrFromInt32(0))
 	if brkCode >= 0 {
@@ -31092,12 +31140,12 @@ again:
 		}
 		if inHub != 0 {
 			if hublimit != 0 && hubpc >= hublimit {
-				x__ERROR(tls, cc, ast, __ccgo_ts+37082, libc.VaList(bp+24, libc.Int64FromUint32(hubpc), libc.Int64FromUint32(hublimit)))
+				x__ERROR(tls, cc, ast, __ccgo_ts+37090, libc.VaList(bp+24, libc.Int64FromUint32(hubpc), libc.Int64FromUint32(hublimit)))
 				hublimit = uint32(0)
 			}
 		} else {
 			if coglimit != 0 && cogpc >= coglimit {
-				x__ERROR(tls, cc, ast, __ccgo_ts+37120, libc.VaList(bp+24, libc.Int64FromUint32(cogpc)/int64(4), libc.Int64FromUint32(coglimit)/int64(4)))
+				x__ERROR(tls, cc, ast, __ccgo_ts+37128, libc.VaList(bp+24, libc.Int64FromUint32(cogpc)/int64(4), libc.Int64FromUint32(coglimit)/int64(4)))
 				coglimit = uint32(0)
 			}
 		}
@@ -31105,11 +31153,11 @@ again:
 			was_active = state[asm_nest].Fis_active
 			asm_nest = asm_nest + 1
 			if asm_nest == uint32(m_MAX_ASM_NEST) {
-				x__ERROR(tls, cc, ast, __ccgo_ts+36955, 0)
+				x__ERROR(tls, cc, ast, __ccgo_ts+36963, 0)
 				asm_nest = asm_nest - 1
 			}
 			if !(x__IsConstExpr(tls, cc, (*_AST)(unsafe.Pointer(ast)).Fleft) != 0) {
-				x__ERROR(tls, cc, ast, __ccgo_ts+36992, 0)
+				x__ERROR(tls, cc, ast, __ccgo_ts+37000, 0)
 				val = 0
 			} else {
 				val = int32(x__EvalConstExpr(tls, cc, (*_AST)(unsafe.Pointer(ast)).Fleft))
@@ -31126,7 +31174,7 @@ again:
 		} else {
 			if (*_AST)(unsafe.Pointer(ast)).Fkind == int32(_AST_ASM_ELSEIF) {
 				if !(x__IsConstExpr(tls, cc, (*_AST)(unsafe.Pointer(ast)).Fleft) != 0) {
-					x__ERROR(tls, cc, ast, __ccgo_ts+36992, 0)
+					x__ERROR(tls, cc, ast, __ccgo_ts+37000, 0)
 					val1 = 0
 				} else {
 					val1 = int32(x__EvalConstExpr(tls, cc, (*_AST)(unsafe.Pointer(ast)).Fleft))
@@ -31142,7 +31190,7 @@ again:
 			} else {
 				if (*_AST)(unsafe.Pointer(ast)).Fkind == int32(_AST_ASM_ENDIF) {
 					if asm_nest == uint32(0) {
-						x__ERROR(tls, cc, ast, __ccgo_ts+37044, 0)
+						x__ERROR(tls, cc, ast, __ccgo_ts+37052, 0)
 					} else {
 						asm_nest = asm_nest - 1
 					}
@@ -31160,7 +31208,7 @@ again:
 						case int32(_AST_BYTEFITLIST):
 							label_flags = label_flags & libc.Uint32FromInt32(^libc.Int32FromInt32(m_LABEL_HAS_INSTR))
 							if pendingLabels != 0 && lasttype != cc.x__ast_type_byte && warnAsmTypes != 0 {
-								x__WARNING(tls, cc, ast, __ccgo_ts+37158, 0)
+								x__WARNING(tls, cc, ast, __ccgo_ts+37166, 0)
 							}
 							pendingLabels = x__emitPendingLabels(tls, cc, symtab, pendingLabels, hubpc, cogpc, lasttype, lastOrg, inHub, label_flags, pass)
 							if inHub != 0 {
@@ -31185,7 +31233,7 @@ again:
 								hubpc = x__align(tls, cc, hubpc, libc.Int32FromUint32(inc))
 							}
 							if pendingLabels != 0 && lasttype != cc.x__ast_type_word && warnAsmTypes != 0 {
-								x__WARNING(tls, cc, ast, __ccgo_ts+37158, 0)
+								x__WARNING(tls, cc, ast, __ccgo_ts+37166, 0)
 							}
 							pendingLabels = x__emitPendingLabels(tls, cc, symtab, pendingLabels, hubpc, cogpc, lasttype, lastOrg, inHub, label_flags, pass)
 							if inHub != 0 {
@@ -31208,7 +31256,7 @@ again:
 								hubpc = x__align(tls, cc, hubpc, libc.Int32FromUint32(inc))
 							}
 							if pendingLabels != 0 && lasttype != cc.x__ast_type_long && warnAsmTypes != 0 {
-								x__WARNING(tls, cc, ast, __ccgo_ts+37158, 0)
+								x__WARNING(tls, cc, ast, __ccgo_ts+37166, 0)
 							}
 							pendingLabels = x__emitPendingLabels(tls, cc, symtab, pendingLabels, hubpc, cogpc, lasttype, lastOrg, inHub, label_flags, pass)
 							if inHub != 0 {
@@ -31263,7 +31311,7 @@ again:
 							(*_Module)(unsafe.Pointer(cc.x__current)).FdatHasCode = int8(1)
 						case int32(_AST_BRKDEBUG):
 							if !(cc.x__gl_brkdebug != 0) {
-								x__WARNING(tls, cc, ast, __ccgo_ts+37192, 0)
+								x__WARNING(tls, cc, ast, __ccgo_ts+37200, 0)
 							}
 							label_flags = label_flags | uint32(m_LABEL_HAS_INSTR)
 							// Kinda similiar the instruction code above ..
@@ -31346,7 +31394,7 @@ again:
 							if *(*_uint64_t)(unsafe.Pointer(ast + 8)) <= uint64(hubpc) {
 								*(*_uint64_t)(unsafe.Pointer(ast + 8)) = uint64(hubpc) - *(*_uint64_t)(unsafe.Pointer(ast + 8))
 							} else {
-								x__ERROR(tls, cc, ast, __ccgo_ts+37259, libc.VaList(bp+24, libc.Int64FromUint32(hubpc), *(*_uint64_t)(unsafe.Pointer(ast + 8))))
+								x__ERROR(tls, cc, ast, __ccgo_ts+37267, libc.VaList(bp+24, libc.Int64FromUint32(hubpc), *(*_uint64_t)(unsafe.Pointer(ast + 8))))
 								*(*_uint64_t)(unsafe.Pointer(ast + 8)) = uint64(0)
 							}
 							lasttype = cc.x__ast_type_long
@@ -31354,7 +31402,7 @@ again:
 							label_flags = label_flags | uint32(m_LABEL_IN_HUB)
 						case int32(_AST_ORGF):
 							if inHub != 0 {
-								x__ERROR(tls, cc, ast, __ccgo_ts+37310, 0)
+								x__ERROR(tls, cc, ast, __ccgo_ts+37318, 0)
 								*(*_uint64_t)(unsafe.Pointer(ast + 8)) = uint64(0)
 							} else {
 								addr3 = (*_AST)(unsafe.Pointer(ast)).Fleft
@@ -31376,14 +31424,14 @@ again:
 						case int32(_AST_RES):
 							label_flags = label_flags & libc.Uint32FromInt32(^libc.Int32FromInt32(m_LABEL_HAS_INSTR))
 							if inHub != 0 {
-								x__ERROR(tls, cc, ast, __ccgo_ts+37338, 0)
+								x__ERROR(tls, cc, ast, __ccgo_ts+37346, 0)
 							}
 							cogpc = x__align(tls, cc, cogpc, int32(4))
 							pendingLabels = x__emitPendingLabels(tls, cc, symtab, pendingLabels, hubpc, cogpc, cc.x__ast_type_void, lastOrg, inHub, label_flags, pass)
 							s__replaceHeres(tls, cc, (*_AST)(unsafe.Pointer(ast)).Fleft, cogpc/uint32(4), lastOrg)
 							delta = libc.Uint32FromInt64(x__EvalPasmExpr(tls, cc, (*_AST)(unsafe.Pointer(ast)).Fleft))
 							if libc.Int32FromUint32(delta) < 0 {
-								x__ERROR(tls, cc, ast, __ccgo_ts+37363, 0)
+								x__ERROR(tls, cc, ast, __ccgo_ts+37371, 0)
 								delta = uint32(0)
 							} else {
 								if delta == uint32(0) {
@@ -31398,7 +31446,7 @@ again:
 										} else {
 											// suppress this warning the second time around
 											if !(cc.x__gl_warn_flags&libc.Int32FromInt32(m_WARN_ASM_FIRST_PASS) != 0) {
-												x__WARNING(tls, cc, ast, __ccgo_ts+37399, 0)
+												x__WARNING(tls, cc, ast, __ccgo_ts+37407, 0)
 											}
 										}
 									}
@@ -31414,7 +31462,7 @@ again:
 								max = int32(x__EvalPasmExpr(tls, cc, (*_AST)(unsafe.Pointer(ast)).Fleft))
 								cur = libc.Int32FromUint32(cogpc / uint32(4))
 								if cur > max {
-									x__ERROR(tls, cc, ast, __ccgo_ts+37415, libc.VaList(bp+24, max, cur))
+									x__ERROR(tls, cc, ast, __ccgo_ts+37423, libc.VaList(bp+24, max, cur))
 								}
 							}
 							lasttype = cc.x__ast_type_long
@@ -31478,7 +31526,7 @@ again:
 								// empty object; this is OK if it has methods
 								Q = x__GetClassPtr(tls, cc, type1)
 								if Q != 0 && !((*_Module)(unsafe.Pointer(Q)).Ffunctions != 0) {
-									x__ERROR(tls, cc, ast, __ccgo_ts+37439, libc.VaList(bp+24, x__GetUserIdentifierName(tls, cc, ident)))
+									x__ERROR(tls, cc, ast, __ccgo_ts+37447, libc.VaList(bp+24, x__GetUserIdentifierName(tls, cc, ident)))
 								}
 							}
 							if initptr != 0 && (x__IsClassType(tls, cc, type1) != 0 || x__IsArrayType(tls, cc, type1) != 0) {
@@ -31494,7 +31542,7 @@ again:
 									ident = (*_AST)(unsafe.Pointer(ident)).Fleft
 								}
 								if (*_AST)(unsafe.Pointer(ident)).Fkind != int32(_AST_IDENTIFIER) {
-									x__ERROR(tls, cc, ast, __ccgo_ts+37482, 0)
+									x__ERROR(tls, cc, ast, __ccgo_ts+37490, 0)
 								} else {
 									pendingLabels = x__AddToList(tls, cc, pendingLabels, x__NewAST(tls, cc, int32(_AST_LISTHOLDER), ident, libc.UintptrFromInt32(0)))
 								}
@@ -31507,7 +31555,7 @@ again:
 							s__fixupInitializer(tls, cc, cc.x__current, initializer, type1)
 							x__AstReportDone(tls, cc, bp)
 						default:
-							x__ERROR(tls, cc, ast, __ccgo_ts+37533, libc.VaList(bp+24, (*_AST)(unsafe.Pointer(ast)).Fkind))
+							x__ERROR(tls, cc, ast, __ccgo_ts+37541, libc.VaList(bp+24, (*_AST)(unsafe.Pointer(ast)).Fkind))
 							break
 						}
 					}
@@ -31546,11 +31594,11 @@ func x__AstFuncTempMemory(tls *libc.TLS, cc *CC, siz uint32) (r uintptr) {
 	var ptr, val uintptr
 	_, _ = ptr, val
 	if !(cc.x__curfunc != 0) {
-		x__ERROR(tls, cc, libc.UintptrFromInt32(0), __ccgo_ts+31700, 0)
+		x__ERROR(tls, cc, libc.UintptrFromInt32(0), __ccgo_ts+31708, 0)
 		return libc.UintptrFromInt32(0)
 	}
 	val = x__NewAST(tls, cc, int32(_AST_ALLOCA), cc.x__ast_type_ptr_void, x__AstInteger(tls, cc, libc.Int64FromUint32(siz)))
-	ptr = x__AstTempLocalVariable(tls, cc, __ccgo_ts+31732, libc.UintptrFromInt32(0))
+	ptr = x__AstTempLocalVariable(tls, cc, __ccgo_ts+31740, libc.UintptrFromInt32(0))
 	val = x__AstAssign(tls, cc, ptr, val)
 	val = x__NewAST(tls, cc, int32(_AST_STMTLIST), val, (*_Function)(unsafe.Pointer(cc.x__curfunc)).Fbody)
 	(*_Function)(unsafe.Pointer(cc.x__curfunc)).Fbody = val
@@ -31567,22 +31615,22 @@ func x__AstMergeStrings(tls *libc.TLS, cc *CC, left uintptr, right uintptr) (r u
 	newLen = int32(1)
 	if left != 0 {
 		if (*_AST)(unsafe.Pointer(left)).Fkind != int32(_AST_STRINGPTR) {
-			x__ERROR(tls, cc, left, __ccgo_ts+22736, 0)
+			x__ERROR(tls, cc, left, __ccgo_ts+22744, 0)
 			return left
 		}
 		if *(*_uint64_t)(unsafe.Pointer(left + 8)) != uint64(0) {
-			x__ERROR(tls, cc, left, __ccgo_ts+22769, 0)
+			x__ERROR(tls, cc, left, __ccgo_ts+22777, 0)
 			return left
 		}
 		newLen = newLen + x__AstStringLen(tls, cc, left)
 	}
 	if right != 0 {
 		if (*_AST)(unsafe.Pointer(right)).Fkind != int32(_AST_STRINGPTR) {
-			x__ERROR(tls, cc, right, __ccgo_ts+22736, 0)
+			x__ERROR(tls, cc, right, __ccgo_ts+22744, 0)
 			return left
 		}
 		if *(*_uint64_t)(unsafe.Pointer(right + 8)) != uint64(0) {
-			x__ERROR(tls, cc, right, __ccgo_ts+22769, 0)
+			x__ERROR(tls, cc, right, __ccgo_ts+22777, 0)
 			return right
 		}
 		newLen = newLen + x__AstStringLen(tls, cc, right)
@@ -31605,7 +31653,7 @@ func x__BCIR_GetJumpOffset(tls *libc.TLS, cc *CC, jump uintptr, func_relative ui
 	var _ /* min at bp+0 */ int32
 	x__BCIR_GetJumpOffsetBounds(tls, cc, jump, func_relative, bp, bp+4, 0)
 	if **(**int32)(__ccgo_up(bp)) != **(**int32)(__ccgo_up(bp + 4)) {
-		x__ERROR(tls, cc, libc.UintptrFromInt32(0), __ccgo_ts+82388, libc.VaList(bp+16, cc.x__byteOpKindNames[(*_ByteOpIR)(unsafe.Pointer(jump)).Fkind], **(**int32)(__ccgo_up(bp)), **(**int32)(__ccgo_up(bp + 4))))
+		x__ERROR(tls, cc, libc.UintptrFromInt32(0), __ccgo_ts+82394, libc.VaList(bp+16, cc.x__byteOpKindNames[(*_ByteOpIR)(unsafe.Pointer(jump)).Fkind], **(**int32)(__ccgo_up(bp)), **(**int32)(__ccgo_up(bp + 4))))
 	}
 	return **(**int32)(__ccgo_up(bp + 4))
 }
@@ -31616,7 +31664,7 @@ func x__BCIR_Init(tls *libc.TLS, cc *CC) {
 		cc.s__CompileIROP_Func = __ccgo_fp(x__CompileIROP_Spin1)
 		cc.s__GetSizeBound_Func = __ccgo_fp(x__GetSizeBound_Spin1)
 	default:
-		x__ERROR(tls, cc, libc.UintptrFromInt32(0), __ccgo_ts+66438, 0)
+		x__ERROR(tls, cc, libc.UintptrFromInt32(0), __ccgo_ts+66444, 0)
 		return
 	}
 }
@@ -31682,9 +31730,9 @@ func x__BCIR_Optimize(tls *libc.TLS, cc *CC, irbuf uintptr) {
 		}
 	}
 	if iterations >= int32(m_BCOPT_MAX_ITERATIONS) {
-		x__WARNING(tls, cc, (*_Function)(unsafe.Pointer(cc.x__curfunc)).Fbody, __ccgo_ts+82470, libc.VaList(bp+8, int32(m_BCOPT_MAX_ITERATIONS), (*_Function)(unsafe.Pointer(cc.x__curfunc)).Fname))
+		x__WARNING(tls, cc, (*_Function)(unsafe.Pointer(cc.x__curfunc)).Fbody, __ccgo_ts+82476, libc.VaList(bp+8, int32(m_BCOPT_MAX_ITERATIONS), (*_Function)(unsafe.Pointer(cc.x__curfunc)).Fname))
 	}
-	x__DEBUG(tls, cc, libc.UintptrFromInt32(0), __ccgo_ts+82523, libc.VaList(bp+8, iterations, (*_Function)(unsafe.Pointer(cc.x__curfunc)).Fname))
+	x__DEBUG(tls, cc, libc.UintptrFromInt32(0), __ccgo_ts+82529, libc.VaList(bp+8, iterations, (*_Function)(unsafe.Pointer(cc.x__curfunc)).Fname))
 	cc.x__current_birb = libc.UintptrFromInt32(0)
 }
 
@@ -31713,11 +31761,11 @@ func x__BCIR_ResolveNamedLabels(tls *libc.TLS, cc *CC, irbuf uintptr) {
 						if (*_ByteOpIR)(unsafe.Pointer(jr)).Fkind == int32(_BOK_JUMP) {
 							s__BCIR_InsertPopNBefore(tls, cc, irbuf, jr, stackdiff)
 						} else {
-							x__ERROR(tls, cc, libc.UintptrFromInt32(0), __ccgo_ts+82562, libc.VaList(bp+8, name))
+							x__ERROR(tls, cc, libc.UintptrFromInt32(0), __ccgo_ts+82568, libc.VaList(bp+8, name))
 						}
 					} else {
 						if stackdiff < 0 {
-							x__ERROR(tls, cc, libc.UintptrFromInt32(0), __ccgo_ts+82614, libc.VaList(bp+8, name))
+							x__ERROR(tls, cc, libc.UintptrFromInt32(0), __ccgo_ts+82620, libc.VaList(bp+8, name))
 						}
 					}
 					(*_ByteOpIR)(unsafe.Pointer(jr)).FjumpTo = lbl
@@ -31742,10 +31790,10 @@ func x__BCIR_ResolveNamedLabels(tls *libc.TLS, cc *CC, irbuf uintptr) {
 		if x__BCIR_UsesLabel(tls, cc, jr1) != 0 {
 			if (*_ByteOpIR)(unsafe.Pointer(jr1)).FjumpTo != 0 {
 				if (*_bcirstruct)(unsafe.Pointer((*_ByteOpIR)(unsafe.Pointer(jr1)).FjumpTo)).Fkind == int32(_BOK_NAMEDLABEL) {
-					x__ERROR(tls, cc, libc.UintptrFromInt32(0), __ccgo_ts+82655, libc.VaList(bp+8, *(*uintptr)(unsafe.Pointer((*_ByteOpIR)(unsafe.Pointer(jr1)).FjumpTo + 32)), (*_Function)(unsafe.Pointer(cc.x__curfunc)).Fname))
+					x__ERROR(tls, cc, libc.UintptrFromInt32(0), __ccgo_ts+82661, libc.VaList(bp+8, *(*uintptr)(unsafe.Pointer((*_ByteOpIR)(unsafe.Pointer(jr1)).FjumpTo + 32)), (*_Function)(unsafe.Pointer(cc.x__curfunc)).Fname))
 				}
 			} else {
-				x__ERROR(tls, cc, libc.UintptrFromInt32(0), __ccgo_ts+82690, libc.VaList(bp+8, (*_Function)(unsafe.Pointer(cc.x__curfunc)).Fname))
+				x__ERROR(tls, cc, libc.UintptrFromInt32(0), __ccgo_ts+82696, libc.VaList(bp+8, (*_Function)(unsafe.Pointer(cc.x__curfunc)).Fname))
 			}
 		}
 		goto _3
@@ -31771,17 +31819,17 @@ func x__BCIR_to_BOB(tls *libc.TLS, cc *CC, irbuf uintptr, bob uintptr, pbase_fun
 		}
 		instrSpan = uintptr(0)
 		if (*_ByteOpIR)(unsafe.Pointer(ir)).FfixedSize < 0 {
-			x__ERROR(tls, cc, libc.UintptrFromInt32(0), __ccgo_ts+82868, 0)
+			x__ERROR(tls, cc, libc.UintptrFromInt32(0), __ccgo_ts+82874, 0)
 			goto _1
 		}
 		instrSpan = calloc(tls, cc, uint64(24)+libc.Uint64FromInt32((*_ByteOpIR)(unsafe.Pointer(ir)).FfixedSize), uint64(1))
 		if !(instrSpan != 0) {
-			x__ERROR(tls, cc, libc.UintptrFromInt32(0), __ccgo_ts+82907, 0)
+			x__ERROR(tls, cc, libc.UintptrFromInt32(0), __ccgo_ts+82913, 0)
 		}
 		(*_OutputSpan)(unsafe.Pointer(instrSpan)).Fsize = (*_ByteOpIR)(unsafe.Pointer(ir)).FfixedSize
 		comment = (*(*func(*libc.TLS, *CC, uintptr, int32, uintptr) uintptr)(unsafe.Pointer(&struct{ uintptr }{cc.s__CompileIROP_Func})))(tls, cc, instrSpan+20, (*_OutputSpan)(unsafe.Pointer(instrSpan)).Fsize, ir)
 		if !(comment != 0) {
-			comment = __ccgo_ts + 82957
+			comment = __ccgo_ts + 82963
 		}
 		(*_OutputSpan)(unsafe.Pointer(instrSpan)).Fcomment = comment
 		x__BOB_PushSpan(tls, cc, bob, instrSpan)
@@ -31803,13 +31851,13 @@ func x__BCgetDAToffset(tls *libc.TLS, cc *CC, P uintptr, absolute uint8, errloc 
 	_, _ = compiledAddress, pbase_offset
 	if cc.x__gl_output != int32(m_OUTPUT_BYTECODE) {
 		if printErrors != 0 {
-			x__ERROR(tls, cc, errloc, __ccgo_ts+66339, 0)
+			x__ERROR(tls, cc, errloc, __ccgo_ts+66345, 0)
 		}
 		return -int32(1)
 	}
 	if !((*_Module)(unsafe.Pointer(P)).Fbedata != 0) {
 		if printErrors != 0 {
-			x__ERROR(tls, cc, errloc, __ccgo_ts+66387, libc.VaList(bp+8, (*_Module)(unsafe.Pointer(P)).Fclassname))
+			x__ERROR(tls, cc, errloc, __ccgo_ts+66393, libc.VaList(bp+8, (*_Module)(unsafe.Pointer(P)).Fclassname))
 		}
 		return -int32(1)
 	}
@@ -31819,7 +31867,7 @@ func x__BCgetDAToffset(tls *libc.TLS, cc *CC, P uintptr, absolute uint8, errloc 
 		pbase_offset = int32(4) * ((*_BCModData)(unsafe.Pointer((*_Module)(unsafe.Pointer(P)).Fbedata)).Fpub_cnt + (*_BCModData)(unsafe.Pointer((*_Module)(unsafe.Pointer(P)).Fbedata)).Fpri_cnt + (*_BCModData)(unsafe.Pointer((*_Module)(unsafe.Pointer(P)).Fbedata)).Fobj_cnt + int32(1))
 	default:
 		if printErrors != 0 {
-			x__ERROR(tls, cc, errloc, __ccgo_ts+66438, 0)
+			x__ERROR(tls, cc, errloc, __ccgo_ts+66444, 0)
 		}
 		return -int32(1)
 	}
@@ -31827,7 +31875,7 @@ func x__BCgetDAToffset(tls *libc.TLS, cc *CC, P uintptr, absolute uint8, errloc 
 		compiledAddress = (*_BCModData)(unsafe.Pointer((*_Module)(unsafe.Pointer(P)).Fbedata)).FcompiledAddress
 		if compiledAddress < 0 {
 			if printErrors != 0 {
-				x__ERROR(tls, cc, errloc, __ccgo_ts+66463, 0)
+				x__ERROR(tls, cc, errloc, __ccgo_ts+66469, 0)
 			}
 			return -int32(1)
 		}
@@ -31843,7 +31891,7 @@ func x__BCgetFuncForId(tls *libc.TLS, cc *CC, M uintptr, id int32) (r uintptr) {
 		return libc.UintptrFromInt32(0)
 	}
 	if !((*_Module)(unsafe.Pointer(M)).Fbedata != 0) {
-		x__ERROR(tls, cc, libc.UintptrFromInt32(0), __ccgo_ts+70252, 0)
+		x__ERROR(tls, cc, libc.UintptrFromInt32(0), __ccgo_ts+70258, 0)
 		return libc.UintptrFromInt32(0)
 	}
 	if id == 0 {
@@ -31869,7 +31917,7 @@ func x__BCgetFuncNameForId(tls *libc.TLS, cc *CC, M uintptr, id int32) (r uintpt
 	if F != 0 {
 		v1 = (*_Function)(unsafe.Pointer(F)).Fname
 	} else {
-		v1 = __ccgo_ts + 70281
+		v1 = __ccgo_ts + 70287
 	}
 	return v1
 }
@@ -31880,7 +31928,7 @@ func x__BCgetModuleForOBJID(tls *libc.TLS, cc *CC, M uintptr, id int32) (r uintp
 	var obj uintptr
 	_ = obj
 	if !((*_Module)(unsafe.Pointer(M)).Fbedata != 0) {
-		x__ERROR(tls, cc, libc.UintptrFromInt32(0), __ccgo_ts+70252, 0)
+		x__ERROR(tls, cc, libc.UintptrFromInt32(0), __ccgo_ts+70258, 0)
 		return libc.UintptrFromInt32(0)
 	}
 	id = id - (int32(1) + (*_BCModData)(unsafe.Pointer((*_Module)(unsafe.Pointer(M)).Fbedata)).Fpub_cnt + (*_BCModData)(unsafe.Pointer((*_Module)(unsafe.Pointer(M)).Fbedata)).Fpri_cnt)
@@ -31890,11 +31938,11 @@ func x__BCgetModuleForOBJID(tls *libc.TLS, cc *CC, M uintptr, id int32) (r uintp
 	obj = **(**uintptr)(__ccgo_up((*_Module)(unsafe.Pointer(M)).Fbedata + 4112 + uintptr(id)*8))
 	if (*_AST)(unsafe.Pointer(obj)).Fkind == int32(_AST_DECLARE_VAR) {
 		if !((*_AST)(unsafe.Pointer(obj)).Fleft != 0) {
-			x__ERROR(tls, cc, libc.UintptrFromInt32(0), __ccgo_ts+71143, 0)
+			x__ERROR(tls, cc, libc.UintptrFromInt32(0), __ccgo_ts+71149, 0)
 			return libc.UintptrFromInt32(0)
 		} else {
 			if (*_AST)(unsafe.Pointer((*_AST)(unsafe.Pointer(obj)).Fleft)).Fkind != int32(_AST_OBJECT) {
-				x__ERROR(tls, cc, (*_AST)(unsafe.Pointer(obj)).Fleft, __ccgo_ts+71221, libc.VaList(bp+8, (*_AST)(unsafe.Pointer((*_AST)(unsafe.Pointer(obj)).Fleft)).Fkind))
+				x__ERROR(tls, cc, (*_AST)(unsafe.Pointer(obj)).Fleft, __ccgo_ts+71227, libc.VaList(bp+8, (*_AST)(unsafe.Pointer((*_AST)(unsafe.Pointer(obj)).Fleft)).Fkind))
 				return libc.UintptrFromInt32(0)
 			}
 		}
@@ -31903,7 +31951,7 @@ func x__BCgetModuleForOBJID(tls *libc.TLS, cc *CC, M uintptr, id int32) (r uintp
 		if (*_AST)(unsafe.Pointer(obj)).Fkind == int32(_AST_OBJECT) {
 			return x__GetClassPtr(tls, cc, obj)
 		} else {
-			x__ERROR(tls, cc, obj, __ccgo_ts+71297, libc.VaList(bp+8, (*_AST)(unsafe.Pointer(obj)).Fkind))
+			x__ERROR(tls, cc, obj, __ccgo_ts+71303, libc.VaList(bp+8, (*_AST)(unsafe.Pointer(obj)).Fkind))
 			return libc.UintptrFromInt32(0)
 		}
 	}
@@ -31919,21 +31967,21 @@ func x__BCgetNameForOBJID(tls *libc.TLS, cc *CC, M uintptr, id int32) (r uintptr
 	var ident, obj uintptr
 	_, _ = ident, obj
 	if !((*_Module)(unsafe.Pointer(M)).Fbedata != 0) {
-		x__ERROR(tls, cc, libc.UintptrFromInt32(0), __ccgo_ts+70252, 0)
-		return __ccgo_ts + 71359
+		x__ERROR(tls, cc, libc.UintptrFromInt32(0), __ccgo_ts+70258, 0)
+		return __ccgo_ts + 71365
 	}
 	id = id - (int32(1) + (*_BCModData)(unsafe.Pointer((*_Module)(unsafe.Pointer(M)).Fbedata)).Fpub_cnt + (*_BCModData)(unsafe.Pointer((*_Module)(unsafe.Pointer(M)).Fbedata)).Fpri_cnt)
 	if id < 0 {
-		return __ccgo_ts + 71367
+		return __ccgo_ts + 71373
 	}
 	obj = **(**uintptr)(__ccgo_up((*_Module)(unsafe.Pointer(M)).Fbedata + 4112 + uintptr(id)*8))
 	if (*_AST)(unsafe.Pointer(obj)).Fkind == int32(_AST_DECLARE_VAR) {
 		if !((*_AST)(unsafe.Pointer(obj)).Fright != 0) {
-			x__ERROR(tls, cc, libc.UintptrFromInt32(0), __ccgo_ts+71377, 0)
+			x__ERROR(tls, cc, libc.UintptrFromInt32(0), __ccgo_ts+71383, 0)
 			return libc.UintptrFromInt32(0)
 		} else {
 			if (*_AST)(unsafe.Pointer((*_AST)(unsafe.Pointer(obj)).Fright)).Fkind != int32(_AST_LISTHOLDER) {
-				x__ERROR(tls, cc, (*_AST)(unsafe.Pointer(obj)).Fright, __ccgo_ts+71459, libc.VaList(bp+8, (*_AST)(unsafe.Pointer((*_AST)(unsafe.Pointer(obj)).Fright)).Fkind))
+				x__ERROR(tls, cc, (*_AST)(unsafe.Pointer(obj)).Fright, __ccgo_ts+71465, libc.VaList(bp+8, (*_AST)(unsafe.Pointer((*_AST)(unsafe.Pointer(obj)).Fright)).Fkind))
 				return libc.UintptrFromInt32(0)
 			}
 		}
@@ -31945,11 +31993,11 @@ func x__BCgetNameForOBJID(tls *libc.TLS, cc *CC, M uintptr, id int32) (r uintptr
 			ident = (*_AST)(unsafe.Pointer(ident)).Fleft
 		}
 		if !(ident != 0) {
-			x__ERROR(tls, cc, libc.UintptrFromInt32(0), __ccgo_ts+71539, 0)
+			x__ERROR(tls, cc, libc.UintptrFromInt32(0), __ccgo_ts+71545, 0)
 			return libc.UintptrFromInt32(0)
 		} else {
 			if (*_AST)(unsafe.Pointer(ident)).Fkind != int32(_AST_IDENTIFIER) {
-				x__ERROR(tls, cc, ident, __ccgo_ts+71621, libc.VaList(bp+8, (*_AST)(unsafe.Pointer(ident)).Fkind))
+				x__ERROR(tls, cc, ident, __ccgo_ts+71627, libc.VaList(bp+8, (*_AST)(unsafe.Pointer(ident)).Fkind))
 				return libc.UintptrFromInt32(0)
 			}
 		}
@@ -31958,7 +32006,7 @@ func x__BCgetNameForOBJID(tls *libc.TLS, cc *CC, M uintptr, id int32) (r uintptr
 		if (*_AST)(unsafe.Pointer(obj)).Fkind == int32(_AST_OBJECT) {
 			return (*_Module)(unsafe.Pointer(x__GetClassPtr(tls, cc, obj))).Fclassname
 		} else {
-			x__ERROR(tls, cc, obj, __ccgo_ts+71701, libc.VaList(bp+8, (*_AST)(unsafe.Pointer(obj)).Fkind))
+			x__ERROR(tls, cc, obj, __ccgo_ts+71707, libc.VaList(bp+8, (*_AST)(unsafe.Pointer(obj)).Fkind))
 			return libc.UintptrFromInt32(0)
 		}
 	}
@@ -31970,7 +32018,7 @@ func x__BOB_Align(tls *libc.TLS, cc *CC, buf uintptr, alignment int32) (r int32)
 	_ = pad
 	pad = alignment - (*_ByteOutputBuffer)(unsafe.Pointer(buf)).Ftotal_size%alignment
 	if pad != alignment {
-		x__BOB_Push(tls, cc, buf, libc.UintptrFromInt32(0), pad, __ccgo_ts+81193)
+		x__BOB_Push(tls, cc, buf, libc.UintptrFromInt32(0), pad, __ccgo_ts+81199)
 		return pad
 	} else {
 		return 0
@@ -31988,7 +32036,7 @@ func x__BOB_FixupData(tls *libc.TLS, cc *CC, bob uintptr, fixaddr _uint32_t, dat
 	_, _, _, _, _, _ = i, off, ptr, sp, v3, v4
 	off = uint32(0)
 	if size > libc.Uint64FromInt32((*_ByteOutputBuffer)(unsafe.Pointer(bob)).Ftotal_size) {
-		x__ERROR(tls, cc, libc.UintptrFromInt32(0), __ccgo_ts+81203, 0)
+		x__ERROR(tls, cc, libc.UintptrFromInt32(0), __ccgo_ts+81209, 0)
 		return
 	}
 	sp = (*_ByteOutputBuffer)(unsafe.Pointer(bob)).Fhead
@@ -32006,7 +32054,7 @@ func x__BOB_FixupData(tls *libc.TLS, cc *CC, bob uintptr, fixaddr _uint32_t, dat
 		sp = (*_OutputSpan)(unsafe.Pointer(sp)).Fnext
 	}
 	if !(sp != 0) || uint64(fixaddr)+size > uint64(off+libc.Uint32FromInt32((*_OutputSpan)(unsafe.Pointer(sp)).Fsize)) {
-		x__ERROR(tls, cc, libc.UintptrFromInt32(0), __ccgo_ts+81230, 0)
+		x__ERROR(tls, cc, libc.UintptrFromInt32(0), __ccgo_ts+81236, 0)
 	}
 	ptr = sp + 20 + uintptr(fixaddr-off)
 	i = 0
@@ -32031,7 +32079,7 @@ func x__BOB_Push(tls *libc.TLS, cc *CC, buf uintptr, data uintptr, data_size int
 	_ = newSpan
 	newSpan = calloc(tls, cc, uint64(24)+libc.Uint64FromInt32(data_size), uint64(1))
 	if !(newSpan != 0) {
-		x__ERROR(tls, cc, libc.UintptrFromInt32(0), __ccgo_ts+81080, 0)
+		x__ERROR(tls, cc, libc.UintptrFromInt32(0), __ccgo_ts+81086, 0)
 		exit(tls, cc, int32(1))
 	}
 	if data != 0 && data_size != 0 {
@@ -32049,7 +32097,7 @@ func x__BOB_Replace(tls *libc.TLS, cc *CC, span uintptr, data uintptr, data_size
 		return
 	}
 	if data != 0 && (*_OutputSpan)(unsafe.Pointer(span)).Fsize != data_size {
-		x__ERROR(tls, cc, libc.UintptrFromInt32(0), __ccgo_ts+81124, libc.VaList(bp+8, data_size, (*_OutputSpan)(unsafe.Pointer(span)).Fsize))
+		x__ERROR(tls, cc, libc.UintptrFromInt32(0), __ccgo_ts+81130, libc.VaList(bp+8, data_size, (*_OutputSpan)(unsafe.Pointer(span)).Fsize))
 		return
 	}
 	if data != 0 {
@@ -32120,7 +32168,7 @@ func x__BuildExprlistFromObject(tls *libc.TLS, cc *CC, origexpr uintptr, typ uin
 	for i < n {
 		sym = x__FindSymbolByOffsetAndKind(tls, cc, P+144, i, int32(_SYM_VARIABLE))
 		if !(sym != 0) || (*_Symbol)(unsafe.Pointer(sym)).Fkind != int32(_SYM_VARIABLE) {
-			x__ERROR(tls, cc, expr, __ccgo_ts+26921, libc.VaList(bp+24, i))
+			x__ERROR(tls, cc, expr, __ccgo_ts+26929, libc.VaList(bp+24, i))
 			break
 		}
 		siz = x__TypeSize(tls, cc, *(*uintptr)(unsafe.Pointer(sym + 32)))
@@ -32149,9 +32197,9 @@ func x__BuildMethodPointer(tls *libc.TLS, cc *CC, ast uintptr, is_abs uint8) (r 
 	sym = x__FindCalledFuncSymbol(tls, cc, ast, bp, 0)
 	if !(sym != 0) || (*_Symbol)(unsafe.Pointer(sym)).Fkind != int32(_SYM_FUNCTION) {
 		if sym != 0 {
-			x__ERROR(tls, cc, ast, __ccgo_ts+11033, libc.VaList(bp+16, (*_Symbol)(unsafe.Pointer(sym)).Fuser_name))
+			x__ERROR(tls, cc, ast, __ccgo_ts+11035, libc.VaList(bp+16, (*_Symbol)(unsafe.Pointer(sym)).Fuser_name))
 		} else {
-			x__ERROR(tls, cc, ast, __ccgo_ts+112166, 0)
+			x__ERROR(tls, cc, ast, __ccgo_ts+112172, 0)
 		}
 		return ast
 	}
@@ -32168,7 +32216,7 @@ func x__BuildMethodPointer(tls *libc.TLS, cc *CC, ast uintptr, is_abs uint8) (r 
 	funcptrtype = x__NewAST(tls, cc, int32(_AST_PTRTYPE), (*_Function)(unsafe.Pointer(func1)).Foveralltype, libc.UintptrFromInt32(0))
 	x__AddIndirectFunctionCall(tls, cc, func1, libc.BoolUint8(m_false != 0))
 	if (*_Function)(unsafe.Pointer(func1)).FcallSites == uint32(0) {
-		x__MarkUsed(tls, cc, func1, __ccgo_ts+42430)
+		x__MarkUsed(tls, cc, func1, __ccgo_ts+42438)
 	}
 	// save off the current @ node
 	if cc.x__gl_p2 != 0 && cc.x__gl_output != int32(m_OUTPUT_BYTECODE) {
@@ -32178,10 +32226,10 @@ func x__BuildMethodPointer(tls *libc.TLS, cc *CC, ast uintptr, is_abs uint8) (r 
 	}
 	// create a call
 	if !(cc.s__make_methodptr != 0) {
-		cc.s__make_methodptr = x__AstIdentifier(tls, cc, __ccgo_ts+112214)
+		cc.s__make_methodptr = x__AstIdentifier(tls, cc, __ccgo_ts+112220)
 	}
 	if !(cc.s__get_rawfuncaddr != 0) {
-		cc.s__get_rawfuncaddr = x__AstIdentifier(tls, cc, __ccgo_ts+112230)
+		cc.s__get_rawfuncaddr = x__AstIdentifier(tls, cc, __ccgo_ts+112236)
 	}
 	call = x__NewAST(tls, cc, int32(_AST_EXPRLIST), funcaddr, libc.UintptrFromInt32(0))
 	call = x__NewAST(tls, cc, int32(_AST_EXPRLIST), **(**uintptr)(__ccgo_up(bp)), call)
@@ -32211,10 +32259,10 @@ func x__BytesForFvar(tls *libc.TLS, cc *CC, val int32, isSigned int32, line uint
 		if val >= -(libc.Int32FromInt32(1)<<libc.Int32FromInt32(28)) && val < libc.Int32FromInt32(1)<<libc.Int32FromInt32(28) {
 			return uint32(4)
 		}
-		x__ERROR(tls, cc, line, __ccgo_ts+36322, libc.VaList(bp+8, libc.Uint64FromInt32(val)))
+		x__ERROR(tls, cc, line, __ccgo_ts+36330, libc.VaList(bp+8, libc.Uint64FromInt32(val)))
 	} else {
 		if val < 0 {
-			x__ERROR(tls, cc, line, __ccgo_ts+36322, libc.VaList(bp+8, libc.Uint64FromInt32(val)))
+			x__ERROR(tls, cc, line, __ccgo_ts+36330, libc.VaList(bp+8, libc.Uint64FromInt32(val)))
 		}
 		if val < libc.Int32FromInt32(1)<<libc.Int32FromInt32(7) {
 			return uint32(1)
@@ -32228,7 +32276,7 @@ func x__BytesForFvar(tls *libc.TLS, cc *CC, val int32, isSigned int32, line uint
 		if val < libc.Int32FromInt32(1)<<libc.Int32FromInt32(29) {
 			return uint32(4)
 		}
-		x__ERROR(tls, cc, line, __ccgo_ts+36322, libc.VaList(bp+8, libc.Uint64FromInt32(val)))
+		x__ERROR(tls, cc, line, __ccgo_ts+36330, libc.VaList(bp+8, libc.Uint64FromInt32(val)))
 	}
 	return uint32(4)
 }
@@ -32282,7 +32330,7 @@ func x__CoerceAssignTypes(tls *libc.TLS, cc *CC, line uintptr, kind int32, astpt
 	if x__IsRefType(tls, cc, desttype) != 0 && (kind == int32(_AST_FUNCCALL) || kind == int32(_AST_RETURN)) && !(lang >= m_LANG_SPIN_SPIN1 && lang <= int32(m_LANG_SPIN_SPIN2)) {
 		// passing or returning reference parameter
 		if !(astptr != 0) {
-			x__ERROR(tls, cc, line, __ccgo_ts+33396, 0)
+			x__ERROR(tls, cc, line, __ccgo_ts+33404, 0)
 			x__AstReportDone(tls, cc, bp)
 			return libc.UintptrFromInt32(0)
 		}
@@ -32338,7 +32386,7 @@ func x__CoerceAssignTypes(tls *libc.TLS, cc *CC, line uintptr, kind int32, astpt
 	if x__IsFloatType(tls, cc, desttype) != 0 {
 		if x__IsIntType(tls, cc, srctype) != 0 {
 			if !(astptr != 0) {
-				x__ERROR(tls, cc, line, __ccgo_ts+33469, 0)
+				x__ERROR(tls, cc, line, __ccgo_ts+33477, 0)
 				x__AstReportDone(tls, cc, bp)
 				return cc.x__ast_type_float
 			}
@@ -32349,7 +32397,7 @@ func x__CoerceAssignTypes(tls *libc.TLS, cc *CC, line uintptr, kind int32, astpt
 	// allow floats to be cast as ints
 	if x__IsIntType(tls, cc, desttype) != 0 && x__IsFloatType(tls, cc, srctype) != 0 {
 		if !(astptr != 0) {
-			x__ERROR(tls, cc, line, __ccgo_ts+33521, 0)
+			x__ERROR(tls, cc, line, __ccgo_ts+33529, 0)
 		} else {
 			expr = s__dofloatToInt(tls, cc, expr, srctype, desttype)
 			**(**uintptr)(__ccgo_up(astptr)) = expr
@@ -32361,7 +32409,7 @@ func x__CoerceAssignTypes(tls *libc.TLS, cc *CC, line uintptr, kind int32, astpt
 	if x__IsArrayType(tls, cc, srctype) != 0 && (x__IsPointerType(tls, cc, desttype) != 0 || !(desttype != 0)) {
 		srctype = x__ArrayToPointerType(tls, cc, srctype)
 		if !(astptr != 0) {
-			x__ERROR(tls, cc, line, __ccgo_ts+33572, 0)
+			x__ERROR(tls, cc, line, __ccgo_ts+33580, 0)
 		} else {
 			expr = x__ArrayAddress(tls, cc, expr)
 			**(**uintptr)(__ccgo_up(astptr)) = expr
@@ -32371,7 +32419,7 @@ func x__CoerceAssignTypes(tls *libc.TLS, cc *CC, line uintptr, kind int32, astpt
 	if x__IsClassType(tls, cc, srctype) != 0 && (x__IsPointerType(tls, cc, desttype) != 0 || !(desttype != 0)) && lang == int32(m_LANG_BASIC_FBASIC) {
 		srctype = x__ClassToPointerType(tls, cc, srctype)
 		if !(astptr != 0) {
-			x__ERROR(tls, cc, line, __ccgo_ts+33623, 0)
+			x__ERROR(tls, cc, line, __ccgo_ts+33631, 0)
 		} else {
 			expr = x__StructAddress(tls, cc, expr)
 			**(**uintptr)(__ccgo_up(astptr)) = expr
@@ -32383,7 +32431,7 @@ func x__CoerceAssignTypes(tls *libc.TLS, cc *CC, line uintptr, kind int32, astpt
 			expr = x__FunctionAddress(tls, cc, expr, libc.BoolUint8(m_false != 0))
 			**(**uintptr)(__ccgo_up(astptr)) = expr
 		} else {
-			x__ERROR(tls, cc, line, __ccgo_ts+33674, 0)
+			x__ERROR(tls, cc, line, __ccgo_ts+33682, 0)
 		}
 	}
 	// allow pair of 32 bit untyped to fill in a 64 bit
@@ -32401,7 +32449,7 @@ func x__CoerceAssignTypes(tls *libc.TLS, cc *CC, line uintptr, kind int32, astpt
 		// check for interface conversion
 		if x__IsInterfaceType(tls, cc, x__BaseType(tls, cc, desttype)) != 0 {
 			if !(x__IsPointerType(tls, cc, desttype) != 0) && kind != int32(_AST_CAST) {
-				x__ERROR(tls, cc, expr, __ccgo_ts+33719, 0)
+				x__ERROR(tls, cc, expr, __ccgo_ts+33727, 0)
 				x__AstReportDone(tls, cc, bp)
 				return desttype
 			}
@@ -32409,7 +32457,7 @@ func x__CoerceAssignTypes(tls *libc.TLS, cc *CC, line uintptr, kind int32, astpt
 			if !(cvt != 0) {
 				desttype_name = x__TypeName(tls, cc, x__BaseType(tls, cc, desttype))
 				srctype_name = x__TypeName(tls, cc, x__BaseType(tls, cc, srctype))
-				x__ERROR(tls, cc, expr, __ccgo_ts+33776, libc.VaList(bp+32, srctype_name, desttype_name))
+				x__ERROR(tls, cc, expr, __ccgo_ts+33784, libc.VaList(bp+32, srctype_name, desttype_name))
 				x__AstReportDone(tls, cc, bp)
 				return desttype
 			}
@@ -32434,7 +32482,7 @@ func x__CoerceAssignTypes(tls *libc.TLS, cc *CC, line uintptr, kind int32, astpt
 					if cc.x__curfunc != 0 && ((*_Function)(unsafe.Pointer(cc.x__curfunc)).Flanguage >= m_LANG_SPIN_SPIN1 && (*_Function)(unsafe.Pointer(cc.x__curfunc)).Flanguage <= int32(m_LANG_SPIN_SPIN2)) && x__IsRefType(tls, cc, desttype) != 0 && (x__IsArrayType(tls, cc, (*_AST)(unsafe.Pointer(srctype)).Fleft) != 0 || !(x__IsRefType(tls, cc, srctype) != 0)) && x__CompatibleTypes(tls, cc, x__BaseType(tls, cc, (*_AST)(unsafe.Pointer(srctype)).Fleft), x__BaseType(tls, cc, desttype)) != 0 {
 						/* no warning for passing arrays to Spin pointers */
 					} else {
-						x__WARNING(tls, cc, line, __ccgo_ts+33813, libc.VaList(bp+32, msg, desttype_name, srctype_name))
+						x__WARNING(tls, cc, line, __ccgo_ts+33821, libc.VaList(bp+32, msg, desttype_name, srctype_name))
 					}
 				}
 			}
@@ -32451,9 +32499,9 @@ func x__CoerceAssignTypes(tls *libc.TLS, cc *CC, line uintptr, kind int32, astpt
 				}
 			}
 			if onlyWarn != 0 {
-				x__WARNING(tls, cc, line, __ccgo_ts+33870, libc.VaList(bp+32, msg, desttype_name, srctype_name))
+				x__WARNING(tls, cc, line, __ccgo_ts+33878, libc.VaList(bp+32, msg, desttype_name, srctype_name))
 			} else {
-				x__ERROR(tls, cc, line, __ccgo_ts+33933, libc.VaList(bp+32, msg, desttype_name, srctype_name))
+				x__ERROR(tls, cc, line, __ccgo_ts+33941, libc.VaList(bp+32, msg, desttype_name, srctype_name))
 			}
 			x__AstReportDone(tls, cc, bp)
 			return desttype
@@ -32462,14 +32510,14 @@ func x__CoerceAssignTypes(tls *libc.TLS, cc *CC, line uintptr, kind int32, astpt
 	if x__IsConstType(tls, cc, desttype) != 0 && kind == int32(_AST_ASSIGN) {
 		// see if we can find an exact name
 		if line != 0 && (*_AST)(unsafe.Pointer(line)).Fkind == int32(_AST_ASSIGN) && ((*_AST)(unsafe.Pointer((*_AST)(unsafe.Pointer(line)).Fleft)).Fkind == int32(_AST_IDENTIFIER) || (*_AST)(unsafe.Pointer((*_AST)(unsafe.Pointer(line)).Fleft)).Fkind == int32(_AST_LOCAL_IDENTIFIER)) {
-			x__WARNING(tls, cc, line, __ccgo_ts+33982, libc.VaList(bp+32, x__GetUserIdentifierName(tls, cc, (*_AST)(unsafe.Pointer(line)).Fleft)))
+			x__WARNING(tls, cc, line, __ccgo_ts+33990, libc.VaList(bp+32, x__GetUserIdentifierName(tls, cc, (*_AST)(unsafe.Pointer(line)).Fleft)))
 		} else {
-			x__WARNING(tls, cc, line, __ccgo_ts+34016, 0)
+			x__WARNING(tls, cc, line, __ccgo_ts+34024, 0)
 		}
 	}
 	if x__IsPointerType(tls, cc, srctype) != 0 && x__IsConstType(tls, cc, x__BaseType(tls, cc, srctype)) != 0 && !(x__IsConstType(tls, cc, x__BaseType(tls, cc, desttype)) != 0) {
 		if desttype != cc.x__ast_type_const_generic {
-			x__WARNING(tls, cc, line, __ccgo_ts+34041, libc.VaList(bp+32, msg))
+			x__WARNING(tls, cc, line, __ccgo_ts+34049, libc.VaList(bp+32, msg))
 		}
 	}
 	if x__IsIntType(tls, cc, desttype) != 0 || x__IsGenericType(tls, cc, desttype) != 0 {
@@ -32484,7 +32532,7 @@ func x__CoerceAssignTypes(tls *libc.TLS, cc *CC, line uintptr, kind int32, astpt
 						**(**uintptr)(__ccgo_up(astptr)) = s__dopromote(tls, cc, expr, rsize, lsize, int32(_K_SIGNEXTEND))
 					}
 				} else {
-					x__WARNING(tls, cc, line, __ccgo_ts+34082, 0)
+					x__WARNING(tls, cc, line, __ccgo_ts+34090, 0)
 				}
 			} else {
 				if rsize == int32(8) {
@@ -32493,7 +32541,7 @@ func x__CoerceAssignTypes(tls *libc.TLS, cc *CC, line uintptr, kind int32, astpt
 						if astptr != 0 {
 							**(**uintptr)(__ccgo_up(astptr)) = s__donarrow(tls, cc, expr, rsize, lsize, x__IsUnsignedType(tls, cc, srctype))
 						} else {
-							x__ERROR(tls, cc, line, __ccgo_ts+34114, 0)
+							x__ERROR(tls, cc, line, __ccgo_ts+34122, 0)
 						}
 					} else {
 						if lsize == int32(8) && (*_AST)(unsafe.Pointer(expr)).Fkind == int32(_AST_INTEGER) {
@@ -32509,8 +32557,9 @@ func x__CoerceAssignTypes(tls *libc.TLS, cc *CC, line uintptr, kind int32, astpt
 }
 
 func x__CompileComparison(tls *libc.TLS, cc *CC, op int32, ast uintptr, lefttype uintptr, righttype uintptr) {
+	var cmpUnsigned, cmpUnsigned1 uint8
 	var isfloat, isint64, leftUnsigned, lsize, rightUnsigned, rsize, v1 int32
-	_, _, _, _, _, _, _ = isfloat, isint64, leftUnsigned, lsize, rightUnsigned, rsize, v1
+	_, _, _, _, _, _, _, _, _ = cmpUnsigned, cmpUnsigned1, isfloat, isint64, leftUnsigned, lsize, rightUnsigned, rsize, v1
 	isfloat = 0
 	leftUnsigned = 0
 	rightUnsigned = 0
@@ -32538,7 +32587,7 @@ func x__CompileComparison(tls *libc.TLS, cc *CC, op int32, ast uintptr, lefttype
 	// allow for string comparison
 	if s__IsBasicString(tls, cc, lefttype) != 0 || s__IsBasicString(tls, cc, righttype) != 0 {
 		if !(x__CompatibleTypes(tls, cc, lefttype, righttype) != 0) {
-			x__ERROR(tls, cc, ast, __ccgo_ts+32784, 0)
+			x__ERROR(tls, cc, ast, __ccgo_ts+32792, 0)
 			return
 		}
 		(*_AST)(unsafe.Pointer(ast)).Fleft = x__MakeOperatorCall(tls, cc, cc.s__string_cmp, (*_AST)(unsafe.Pointer(ast)).Fleft, (*_AST)(unsafe.Pointer(ast)).Fright, libc.UintptrFromInt32(0))
@@ -32556,7 +32605,7 @@ func x__CompileComparison(tls *libc.TLS, cc *CC, op int32, ast uintptr, lefttype
 			return
 		}
 	} else {
-		if !(x__MakeBothIntegers(tls, cc, ast, lefttype, righttype, __ccgo_ts+32815) != 0) {
+		if !(x__MakeBothIntegers(tls, cc, ast, lefttype, righttype, __ccgo_ts+32823) != 0) {
 			return
 		}
 		// need to widen the types
@@ -32575,7 +32624,8 @@ func x__CompileComparison(tls *libc.TLS, cc *CC, op int32, ast uintptr, lefttype
 	// handle unsigned/signed comparisons here
 	//
 	if isint64 != 0 {
-		if leftUnsigned != 0 || rightUnsigned != 0 {
+		cmpUnsigned = libc.BoolUint8(leftUnsigned != 0 && x__TypeSize(tls, cc, lefttype) == int32(m_LONG64_SIZE) || rightUnsigned != 0 && x__TypeSize(tls, cc, righttype) == int32(m_LONG64_SIZE))
+		if cmpUnsigned != 0 {
 			(*_AST)(unsafe.Pointer(ast)).Fleft = x__MakeOperatorCall(tls, cc, cc.s__int64_cmpu, (*_AST)(unsafe.Pointer(ast)).Fleft, (*_AST)(unsafe.Pointer(ast)).Fright, libc.UintptrFromInt32(0))
 		} else {
 			(*_AST)(unsafe.Pointer(ast)).Fleft = x__MakeOperatorCall(tls, cc, cc.s__int64_cmps, (*_AST)(unsafe.Pointer(ast)).Fleft, (*_AST)(unsafe.Pointer(ast)).Fright, libc.UintptrFromInt32(0))
@@ -32583,7 +32633,14 @@ func x__CompileComparison(tls *libc.TLS, cc *CC, op int32, ast uintptr, lefttype
 		(*_AST)(unsafe.Pointer(ast)).Fright = x__AstInteger(tls, cc, 0)
 	} else {
 		if leftUnsigned != 0 || rightUnsigned != 0 {
-			if leftUnsigned != 0 && (rightUnsigned != 0 || x__IsUnsignedConst(tls, cc, (*_AST)(unsafe.Pointer(ast)).Fright) != 0) || rightUnsigned != 0 && x__IsUnsignedConst(tls, cc, (*_AST)(unsafe.Pointer(ast)).Fleft) != 0 {
+			cmpUnsigned1 = libc.BoolUint8(m_false != 0)
+			if libc.Bool(int32(1) != 0) || x__GetCurrentLang(tls, cc) >= int32(m_LANG_CFAMILY_C) && x__GetCurrentLang(tls, cc) <= int32(m_LANG_CFAMILY_CPP) {
+				// in C the comparison is unsigned when either operand is an
+				// unsigned int after the integer promotions, which leave
+				// anything narrower, and the result of a comparison, a signed int
+				cmpUnsigned1 = libc.BoolUint8(leftUnsigned != 0 && x__TypeSize(tls, cc, lefttype) == int32(m_LONG_SIZE) && !(x__IsBoolType(tls, cc, lefttype) != 0) || rightUnsigned != 0 && x__TypeSize(tls, cc, righttype) == int32(m_LONG_SIZE) && !(x__IsBoolType(tls, cc, righttype) != 0))
+			}
+			if cmpUnsigned1 != 0 || leftUnsigned != 0 && (rightUnsigned != 0 || x__IsUnsignedConst(tls, cc, (*_AST)(unsafe.Pointer(ast)).Fright) != 0) || rightUnsigned != 0 && x__IsUnsignedConst(tls, cc, (*_AST)(unsafe.Pointer(ast)).Fleft) != 0 {
 				switch op {
 				case int32('<'):
 					*(*_uint64_t)(unsafe.Pointer(ast + 8)) = uint64(_K_LTU)
@@ -32604,14 +32661,14 @@ func x__CompileComparison(tls *libc.TLS, cc *CC, op int32, ast uintptr, lefttype
 				rsize = x__TypeSize(tls, cc, righttype)
 				if lsize == int32(4) && rsize == int32(4) && op != int32(_K_EQ) && op != int32(_K_NE) {
 					if !(x__IsBoolType(tls, cc, lefttype) != 0) && !(x__IsBoolType(tls, cc, righttype) != 0) {
-						x__WARNING(tls, cc, ast, __ccgo_ts+32826, 0)
+						x__WARNING(tls, cc, ast, __ccgo_ts+32834, 0)
 					}
 				}
 			}
 		}
 	}
 	if !(x__CompatibleTypes(tls, cc, lefttype, righttype) != 0) {
-		x__WARNING(tls, cc, ast, __ccgo_ts+32875, 0)
+		x__WARNING(tls, cc, ast, __ccgo_ts+32883, 0)
 	}
 }
 
@@ -32731,7 +32788,7 @@ func x__CompileGetFunctionInfo(tls *libc.TLS, cc *CC, irl uintptr, expr uintptr,
 			**(**uintptr)(__ccgo_up(bp)) = libc.UintptrFromInt32(0) // no need to update object
 		} else {
 			if abstract != 0 && objptr != 0 && funcptr != 0 {
-				x__ERROR(tls, cc, expr, __ccgo_ts+46752, 0)
+				x__ERROR(tls, cc, expr, __ccgo_ts+46760, 0)
 			}
 		}
 	}
@@ -33058,7 +33115,7 @@ _3:
 		**(**_uint8_t)(__ccgo_up(buf + uintptr(v63))) = libc.Uint8FromInt32(libc.Int32FromInt32(0xE0) + libc.Int32FromInt32(0b00110)) // NEG
 		break
 	}
-	comment = x__auto_printf(tls, cc, uint64(32), __ccgo_ts+83514, libc.VaList(bp+16, imm))
+	comment = x__auto_printf(tls, cc, uint64(32), __ccgo_ts+83520, libc.VaList(bp+16, imm))
 	goto _62
 _4:
 	;
@@ -33066,7 +33123,7 @@ _4:
 	v63 = **(**int32)(__ccgo_up(bp))
 	**(**int32)(__ccgo_up(bp)) = **(**int32)(__ccgo_up(bp)) + 1
 	**(**_uint8_t)(__ccgo_up(buf + uintptr(v63))) = libc.Uint8FromInt32(int32(0xE0) + mathID)
-	comment = x__auto_printf(tls, cc, uint64(28), __ccgo_ts+83526, libc.VaList(bp+16, cc.x__mathOpKindNames[(*_ByteOpIR)(unsafe.Pointer(ir)).FmathKind]))
+	comment = x__auto_printf(tls, cc, uint64(28), __ccgo_ts+83532, libc.VaList(bp+16, cc.x__mathOpKindNames[(*_ByteOpIR)(unsafe.Pointer(ir)).FmathKind]))
 	goto _62
 _13:
 	;
@@ -33147,18 +33204,18 @@ _5:
 		**(**int32)(__ccgo_up(bp)) = **(**int32)(__ccgo_up(bp)) + 1
 		**(**_uint8_t)(__ccgo_up(buf + uintptr(v63))) = s__GetModifyByte_Spin1(tls, cc, ir, libc.UintptrFromInt32(0))
 		if int32(uint32(*(*uint16)(unsafe.Pointer(ir + 24 + 0))&0x4>>2)) != 0 {
-			v109 = __ccgo_ts + 83537
+			v109 = __ccgo_ts + 83543
 		} else {
-			v109 = __ccgo_ts + 7138
+			v109 = __ccgo_ts + 7140
 		}
 		if int32(uint32(*(*uint16)(unsafe.Pointer(ir + 24 + 0))&0x2>>1)) != 0 {
-			v110 = __ccgo_ts + 83547
+			v110 = __ccgo_ts + 83553
 		} else {
-			v110 = __ccgo_ts + 7138
+			v110 = __ccgo_ts + 7140
 		}
-		comment = x__auto_printf(tls, cc, uint64(128), __ccgo_ts+83561, libc.VaList(bp+16, cc.x__byteOpKindNames[(*_ByteOpIR)(unsafe.Pointer(ir)).Fkind], reg+int32(0x1E0), cc.s__Spin1RegNames[reg&int32(31)], cc.x__mathOpKindNames[(*_ByteOpIR)(unsafe.Pointer(ir)).FmathKind], v109, v110))
+		comment = x__auto_printf(tls, cc, uint64(128), __ccgo_ts+83567, libc.VaList(bp+16, cc.x__byteOpKindNames[(*_ByteOpIR)(unsafe.Pointer(ir)).Fkind], reg+int32(0x1E0), cc.s__Spin1RegNames[reg&int32(31)], cc.x__mathOpKindNames[(*_ByteOpIR)(unsafe.Pointer(ir)).FmathKind], v109, v110))
 	} else {
-		comment = x__auto_printf(tls, cc, uint64(40), __ccgo_ts+83581, libc.VaList(bp+16, cc.x__byteOpKindNames[(*_ByteOpIR)(unsafe.Pointer(ir)).Fkind], reg+int32(0x1E0), cc.s__Spin1RegNames[reg&int32(31)]))
+		comment = x__auto_printf(tls, cc, uint64(40), __ccgo_ts+83587, libc.VaList(bp+16, cc.x__byteOpKindNames[(*_ByteOpIR)(unsafe.Pointer(ir)).Fkind], reg+int32(0x1E0), cc.s__Spin1RegNames[reg&int32(31)]))
 	}
 	goto _62
 _16:
@@ -33187,16 +33244,16 @@ _14:
 		**(**int32)(__ccgo_up(bp)) = **(**int32)(__ccgo_up(bp)) + 1
 		**(**_uint8_t)(__ccgo_up(buf + uintptr(v63))) = s__GetModifyByte_Spin1(tls, cc, ir, libc.UintptrFromInt32(0))
 		if int32(uint32(*(*uint16)(unsafe.Pointer(ir + 24 + 0))&0x4>>2)) != 0 {
-			v109 = __ccgo_ts + 83537
+			v109 = __ccgo_ts + 83543
 		} else {
-			v109 = __ccgo_ts + 7138
+			v109 = __ccgo_ts + 7140
 		}
 		if int32(uint32(*(*uint16)(unsafe.Pointer(ir + 24 + 0))&0x2>>1)) != 0 {
-			v110 = __ccgo_ts + 83547
+			v110 = __ccgo_ts + 83553
 		} else {
-			v110 = __ccgo_ts + 7138
+			v110 = __ccgo_ts + 7140
 		}
-		comment = x__auto_printf(tls, cc, uint64(128), __ccgo_ts+83593, libc.VaList(bp+16, cc.x__byteOpKindNames[(*_ByteOpIR)(unsafe.Pointer(ir)).Fkind], cc.x__mathOpKindNames[(*_ByteOpIR)(unsafe.Pointer(ir)).FmathKind], v109, v110))
+		comment = x__auto_printf(tls, cc, uint64(128), __ccgo_ts+83599, libc.VaList(bp+16, cc.x__byteOpKindNames[(*_ByteOpIR)(unsafe.Pointer(ir)).Fkind], cc.x__mathOpKindNames[(*_ByteOpIR)(unsafe.Pointer(ir)).FmathKind], v109, v110))
 	} else {
 		comment = cc.x__byteOpKindNames[(*_ByteOpIR)(unsafe.Pointer(ir)).Fkind]
 	}
@@ -33250,7 +33307,7 @@ _17:
 				if int32(uint32(*(*uint16)(unsafe.Pointer(ir + 24 + 0))&0xc0>>6)) == int32(m_MEMOP_SIZE_LONG) {
 					opcode1 = libc.Uint8FromInt32(int32(opcode1) + libc.Int32FromInt32(2)<<libc.Int32FromInt32(5))
 				} else {
-					x__ERROR(tls, cc, libc.UintptrFromInt32(0), __ccgo_ts+83604, 0)
+					x__ERROR(tls, cc, libc.UintptrFromInt32(0), __ccgo_ts+83610, 0)
 				}
 			}
 		}
@@ -33266,7 +33323,7 @@ _17:
 					if int32(uint32(*(*uint16)(unsafe.Pointer(ir + 24 + 0))&0x30>>4)) == int32(m_MEMOP_BASE_DBASE) {
 						opcode1 = libc.Uint8FromInt32(int32(opcode1) + libc.Int32FromInt32(3)<<libc.Int32FromInt32(2))
 					} else {
-						x__ERROR(tls, cc, libc.UintptrFromInt32(0), __ccgo_ts+83636, 0)
+						x__ERROR(tls, cc, libc.UintptrFromInt32(0), __ccgo_ts+83642, 0)
 					}
 				}
 			}
@@ -33283,7 +33340,7 @@ _17:
 					if (*_ByteOpIR)(unsafe.Pointer(ir)).Fkind == int32(_BOK_MEM_ADDRESS) {
 						opcode1 = libc.Uint8FromInt32(int32(opcode1) + libc.Int32FromInt32(3))
 					} else {
-						x__ERROR(tls, cc, libc.UintptrFromInt32(0), __ccgo_ts+83665, 0)
+						x__ERROR(tls, cc, libc.UintptrFromInt32(0), __ccgo_ts+83671, 0)
 					}
 				}
 			}
@@ -33305,7 +33362,7 @@ _17:
 					**(**int32)(__ccgo_up(bp)) = **(**int32)(__ccgo_up(bp)) + 1
 					**(**_uint8_t)(__ccgo_up(buf + uintptr(v63))) = uint8(offset & uint32(0xFF))
 				} else {
-					x__ERROR(tls, cc, libc.UintptrFromInt32(0), __ccgo_ts+83694, 0)
+					x__ERROR(tls, cc, libc.UintptrFromInt32(0), __ccgo_ts+83700, 0)
 				}
 			}
 		}
@@ -33315,7 +33372,7 @@ _17:
 	if (*_ByteOpIR)(unsafe.Pointer(ir)).Fkind == int32(_BOK_MEM_MODIFY) {
 		if (*_ByteOpIR)(unsafe.Pointer(ir)).FmathKind == int32(_MOK_MOD_REPEATSTEP) {
 			if int32(uint32(*(*uint16)(unsafe.Pointer(ir + 24 + 0))&0x2>>1)) != 0 {
-				x__ERROR(tls, cc, libc.UintptrFromInt32(0), __ccgo_ts+83723, 0)
+				x__ERROR(tls, cc, libc.UintptrFromInt32(0), __ccgo_ts+83729, 0)
 			}
 			v63 = **(**int32)(__ccgo_up(bp))
 			**(**int32)(__ccgo_up(bp)) = **(**int32)(__ccgo_up(bp)) + 1
@@ -33333,99 +33390,99 @@ _17:
 		}
 	}
 	if cc.x__gl_listing != 0 { // This is complex, so only run when we actually want a listing
-		basetext = __ccgo_ts + 83782
+		basetext = __ccgo_ts + 83788
 		switch int32(uint32(*(*uint16)(unsafe.Pointer(ir + 24 + 0)) & 0x30 >> 4)) {
 		case m_MEMOP_BASE_POP:
-			basetext = __ccgo_ts + 83788
+			basetext = __ccgo_ts + 83794
 		case int32(m_MEMOP_BASE_PBASE):
-			basetext = x__auto_printf(tls, cc, uint64(14), __ccgo_ts+83799, libc.VaList(bp+16, offset))
+			basetext = x__auto_printf(tls, cc, uint64(14), __ccgo_ts+83805, libc.VaList(bp+16, offset))
 		case int32(m_MEMOP_BASE_VBASE):
-			basetext = x__auto_printf(tls, cc, uint64(14), __ccgo_ts+83811, libc.VaList(bp+16, offset))
+			basetext = x__auto_printf(tls, cc, uint64(14), __ccgo_ts+83817, libc.VaList(bp+16, offset))
 		case int32(m_MEMOP_BASE_DBASE):
-			basetext = x__auto_printf(tls, cc, uint64(14), __ccgo_ts+83823, libc.VaList(bp+16, offset))
+			basetext = x__auto_printf(tls, cc, uint64(14), __ccgo_ts+83829, libc.VaList(bp+16, offset))
 			break
 		}
-		sizetext = __ccgo_ts + 83782
+		sizetext = __ccgo_ts + 83788
 		switch int32(uint32(*(*uint16)(unsafe.Pointer(ir + 24 + 0)) & 0xc0 >> 6)) {
 		case m_MEMOP_SIZE_BIT:
-			sizetext = __ccgo_ts + 83835
+			sizetext = __ccgo_ts + 83841
 		case int32(m_MEMOP_SIZE_BYTE):
-			sizetext = __ccgo_ts + 83845
+			sizetext = __ccgo_ts + 83851
 		case int32(m_MEMOP_SIZE_WORD):
-			sizetext = __ccgo_ts + 83850
+			sizetext = __ccgo_ts + 83856
 		case int32(m_MEMOP_SIZE_LONG):
-			sizetext = __ccgo_ts + 83855
+			sizetext = __ccgo_ts + 83861
 			break
 		}
-		modsizetext = __ccgo_ts + 83782
+		modsizetext = __ccgo_ts + 83788
 		switch int32(uint32(*(*uint16)(unsafe.Pointer(ir + 24 + 0)) & 0x300 >> 8)) {
 		case m_MEMOP_SIZE_BIT:
-			modsizetext = __ccgo_ts + 83860
-		case int32(m_MEMOP_SIZE_BYTE):
 			modsizetext = __ccgo_ts + 83866
+		case int32(m_MEMOP_SIZE_BYTE):
+			modsizetext = __ccgo_ts + 83872
 		case int32(m_MEMOP_SIZE_WORD):
-			modsizetext = __ccgo_ts + 83873
+			modsizetext = __ccgo_ts + 83879
 		case int32(m_MEMOP_SIZE_LONG):
-			modsizetext = __ccgo_ts + 83880
+			modsizetext = __ccgo_ts + 83886
 			break
 		}
 		if (*_ByteOpIR)(unsafe.Pointer(ir)).Fkind == int32(_BOK_MEM_MODIFY) && (*_ByteOpIR)(unsafe.Pointer(ir)).FmathKind == int32(_MOK_MOD_REPEATSTEP) {
 			if int32(uint32(*(*uint16)(unsafe.Pointer(ir + 24 + 0))&0x1>>0)) != 0 {
-				v109 = __ccgo_ts + 83887
+				v109 = __ccgo_ts + 83893
 			} else {
-				v109 = __ccgo_ts + 7138
+				v109 = __ccgo_ts + 7140
 			}
 			if shortForm != 0 {
-				v110 = __ccgo_ts + 83900
+				v110 = __ccgo_ts + 83906
 			} else {
-				v110 = __ccgo_ts + 7138
+				v110 = __ccgo_ts + 7140
 			}
 			if int32(uint32(*(*uint16)(unsafe.Pointer(ir + 24 + 0))&0x8>>3)) != 0 {
-				v115 = __ccgo_ts + 83908
+				v115 = __ccgo_ts + 83914
 			} else {
-				v115 = __ccgo_ts + 7138
+				v115 = __ccgo_ts + 7140
 			}
-			comment = x__auto_printf(tls, cc, uint64(256), __ccgo_ts+83919, libc.VaList(bp+16, cc.x__byteOpKindNames[(*_ByteOpIR)(unsafe.Pointer(ir)).Fkind], sizetext, basetext, v109, v110, cc.x__mathOpKindNames[(*_ByteOpIR)(unsafe.Pointer(ir)).FmathKind], v115, jumpOffset))
+			comment = x__auto_printf(tls, cc, uint64(256), __ccgo_ts+83925, libc.VaList(bp+16, cc.x__byteOpKindNames[(*_ByteOpIR)(unsafe.Pointer(ir)).Fkind], sizetext, basetext, v109, v110, cc.x__mathOpKindNames[(*_ByteOpIR)(unsafe.Pointer(ir)).FmathKind], v115, jumpOffset))
 		} else {
 			if (*_ByteOpIR)(unsafe.Pointer(ir)).Fkind == int32(_BOK_MEM_MODIFY) {
 				if int32(uint32(*(*uint16)(unsafe.Pointer(ir + 24 + 0))&0x1>>0)) != 0 {
-					v109 = __ccgo_ts + 83887
+					v109 = __ccgo_ts + 83893
 				} else {
-					v109 = __ccgo_ts + 7138
+					v109 = __ccgo_ts + 7140
 				}
 				if shortForm != 0 {
-					v110 = __ccgo_ts + 83900
+					v110 = __ccgo_ts + 83906
 				} else {
-					v110 = __ccgo_ts + 7138
+					v110 = __ccgo_ts + 7140
 				}
 				if **(**uint8)(__ccgo_up(bp + 4)) != 0 {
 					v115 = modsizetext
 				} else {
-					v115 = __ccgo_ts + 7138
+					v115 = __ccgo_ts + 7140
 				}
 				if int32(uint32(*(*uint16)(unsafe.Pointer(ir + 24 + 0))&0x4>>2)) != 0 {
-					v116 = __ccgo_ts + 83537
+					v116 = __ccgo_ts + 83543
 				} else {
-					v116 = __ccgo_ts + 7138
+					v116 = __ccgo_ts + 7140
 				}
 				if int32(uint32(*(*uint16)(unsafe.Pointer(ir + 24 + 0))&0x2>>1)) != 0 {
-					v125 = __ccgo_ts + 83547
+					v125 = __ccgo_ts + 83553
 				} else {
-					v125 = __ccgo_ts + 7138
+					v125 = __ccgo_ts + 7140
 				}
-				comment = x__auto_printf(tls, cc, uint64(256), __ccgo_ts+83942, libc.VaList(bp+16, cc.x__byteOpKindNames[(*_ByteOpIR)(unsafe.Pointer(ir)).Fkind], sizetext, basetext, v109, v110, cc.x__mathOpKindNames[(*_ByteOpIR)(unsafe.Pointer(ir)).FmathKind], v115, v116, v125))
+				comment = x__auto_printf(tls, cc, uint64(256), __ccgo_ts+83948, libc.VaList(bp+16, cc.x__byteOpKindNames[(*_ByteOpIR)(unsafe.Pointer(ir)).Fkind], sizetext, basetext, v109, v110, cc.x__mathOpKindNames[(*_ByteOpIR)(unsafe.Pointer(ir)).FmathKind], v115, v116, v125))
 			} else {
 				if int32(uint32(*(*uint16)(unsafe.Pointer(ir + 24 + 0))&0x1>>0)) != 0 {
-					v109 = __ccgo_ts + 83887
+					v109 = __ccgo_ts + 83893
 				} else {
-					v109 = __ccgo_ts + 7138
+					v109 = __ccgo_ts + 7140
 				}
 				if shortForm != 0 {
-					v110 = __ccgo_ts + 83900
+					v110 = __ccgo_ts + 83906
 				} else {
-					v110 = __ccgo_ts + 7138
+					v110 = __ccgo_ts + 7140
 				}
-				comment = x__auto_printf(tls, cc, uint64(128), __ccgo_ts+83966, libc.VaList(bp+16, cc.x__byteOpKindNames[(*_ByteOpIR)(unsafe.Pointer(ir)).Fkind], sizetext, basetext, v109, v110))
+				comment = x__auto_printf(tls, cc, uint64(128), __ccgo_ts+83972, libc.VaList(bp+16, cc.x__byteOpKindNames[(*_ByteOpIR)(unsafe.Pointer(ir)).Fkind], sizetext, basetext, v109, v110))
 			}
 		}
 	}
@@ -33454,11 +33511,11 @@ _21:
 	}
 	offset1 = s__CompileJumpOffset_Spin1(tls, cc, buf, bp, ir, int32(1), libc.BoolUint8(m_true != 0), cc.x__pbase_offset, v63)
 	if addPbase != 0 {
-		v109 = __ccgo_ts + 83980
+		v109 = __ccgo_ts + 83986
 	} else {
-		v109 = __ccgo_ts + 7138
+		v109 = __ccgo_ts + 7140
 	}
-	comment = x__auto_printf(tls, cc, uint64(64), __ccgo_ts+83988, libc.VaList(bp+16, offset1, v109))
+	comment = x__auto_printf(tls, cc, uint64(64), __ccgo_ts+83994, libc.VaList(bp+16, offset1, v109))
 	goto _62
 _22:
 	;
@@ -33466,12 +33523,12 @@ _22:
 	**(**int32)(__ccgo_up(bp)) = **(**int32)(__ccgo_up(bp)) + 1
 	**(**_uint8_t)(__ccgo_up(buf + uintptr(v63))) = uint8(0xB4) // MEM_READ WORD with INDEX and PBASE
 	offset2 = s__CompileJumpOffset_Spin1(tls, cc, buf, bp, ir, int32(1), libc.BoolUint8(m_true != 0), cc.x__pbase_offset, int32(_S1OffEn_VARLEN_UNSIGNED))
-	comment = x__auto_printf(tls, cc, uint64(64), __ccgo_ts+84014, libc.VaList(bp+16, offset2))
+	comment = x__auto_printf(tls, cc, uint64(64), __ccgo_ts+84020, libc.VaList(bp+16, offset2))
 	goto _62
 _23:
 	;
 	offset3 = s__CompileJumpOffset_Spin1(tls, cc, buf, bp, ir, 0, libc.BoolUint8(m_true != 0), cc.x__pbase_offset, int32(_S1OffEn_FIXLEN_LE))
-	comment = x__auto_printf(tls, cc, uint64(64), __ccgo_ts+84051, libc.VaList(bp+16, offset3))
+	comment = x__auto_printf(tls, cc, uint64(64), __ccgo_ts+84057, libc.VaList(bp+16, offset3))
 	goto _62
 _24:
 	;
@@ -33481,17 +33538,17 @@ _24:
 _25:
 	;
 	opcode2 = uint8(0b00011000)
-	sizetext1 = __ccgo_ts + 83782
+	sizetext1 = __ccgo_ts + 83788
 	switch int32(uint32(*(*uint8)(unsafe.Pointer(ir + 24 + 0)) & 0x3 >> 0)) {
 	case int32(m_BULKMEM_SIZE_BYTE):
 		opcode2 = libc.Uint8FromInt32(int32(opcode2) + libc.Int32FromInt32(0))
-		sizetext1 = __ccgo_ts + 83845
+		sizetext1 = __ccgo_ts + 83851
 	case int32(m_BULKMEM_SIZE_WORD):
 		opcode2 = libc.Uint8FromInt32(int32(opcode2) + libc.Int32FromInt32(1))
-		sizetext1 = __ccgo_ts + 83850
+		sizetext1 = __ccgo_ts + 83856
 	case int32(m_BULKMEM_SIZE_LONG):
 		opcode2 = libc.Uint8FromInt32(int32(opcode2) + libc.Int32FromInt32(2))
-		sizetext1 = __ccgo_ts + 83855
+		sizetext1 = __ccgo_ts + 83861
 		break
 	}
 	if int32(uint32(*(*uint8)(unsafe.Pointer(ir + 24 + 0))&0x4>>2)) != 0 {
@@ -33501,11 +33558,11 @@ _25:
 	**(**int32)(__ccgo_up(bp)) = **(**int32)(__ccgo_up(bp)) + 1
 	**(**_uint8_t)(__ccgo_up(buf + uintptr(v63))) = opcode2
 	if int32(uint32(*(*uint8)(unsafe.Pointer(ir + 24 + 0))&0x4>>2)) != 0 {
-		v109 = __ccgo_ts + 84083
+		v109 = __ccgo_ts + 84089
 	} else {
-		v109 = __ccgo_ts + 84088
+		v109 = __ccgo_ts + 84094
 	}
-	comment = x__auto_printf(tls, cc, uint64(10), __ccgo_ts+84093, libc.VaList(bp+16, sizetext1, v109))
+	comment = x__auto_printf(tls, cc, uint64(10), __ccgo_ts+84099, libc.VaList(bp+16, sizetext1, v109))
 	goto _62
 _26:
 	;
@@ -33513,16 +33570,16 @@ _26:
 	**(**int32)(__ccgo_up(bp)) = **(**int32)(__ccgo_up(bp)) + 1
 	**(**_uint8_t)(__ccgo_up(buf + uintptr(v63))) = libc.Uint8FromInt32(0b00000000 + libc.BoolInt32(!(int32(uint32(*(*uint8)(unsafe.Pointer(ir + 24 + 0))&0x2>>1)) != 0))&int32(1) + int32(uint32(*(*uint8)(unsafe.Pointer(ir + 24 + 0))&0x1>>0))<<libc.Int32FromInt32(1))
 	if int32(uint32(*(*uint8)(unsafe.Pointer(ir + 24 + 0))&0x1>>0)) != 0 {
-		v109 = __ccgo_ts + 84098
+		v109 = __ccgo_ts + 84104
 	} else {
-		v109 = __ccgo_ts + 7138
+		v109 = __ccgo_ts + 7140
 	}
 	if int32(uint32(*(*uint8)(unsafe.Pointer(ir + 24 + 0))&0x2>>1)) != 0 {
-		v110 = __ccgo_ts + 7138
+		v110 = __ccgo_ts + 7140
 	} else {
-		v110 = __ccgo_ts + 84107
+		v110 = __ccgo_ts + 84113
 	}
-	comment = x__auto_printf(tls, cc, uint64(32), __ccgo_ts+84117, libc.VaList(bp+16, v109, v110))
+	comment = x__auto_printf(tls, cc, uint64(32), __ccgo_ts+84123, libc.VaList(bp+16, v109, v110))
 	goto _62
 _27:
 	;
@@ -33537,7 +33594,7 @@ _27:
 	v63 = **(**int32)(__ccgo_up(bp))
 	**(**int32)(__ccgo_up(bp)) = **(**int32)(__ccgo_up(bp)) + 1
 	**(**_uint8_t)(__ccgo_up(buf + uintptr(v63))) = libc.Uint8FromInt32(funID)
-	comment = x__auto_printf(tls, cc, uint64(128), __ccgo_ts+84130, libc.VaList(bp+16, funID, x__BCgetFuncNameForId(tls, cc, cc.x__current, funID)))
+	comment = x__auto_printf(tls, cc, uint64(128), __ccgo_ts+84136, libc.VaList(bp+16, funID, x__BCgetFuncNameForId(tls, cc, cc.x__current, funID)))
 	goto _62
 _28:
 	;
@@ -33561,7 +33618,7 @@ _28:
 	**(**int32)(__ccgo_up(bp)) = **(**int32)(__ccgo_up(bp)) + 1
 	**(**_uint8_t)(__ccgo_up(buf + uintptr(v63))) = libc.Uint8FromInt32(funID1)
 	object = x__BCgetModuleForOBJID(tls, cc, cc.x__current, objID)
-	comment = x__auto_printf(tls, cc, uint64(128), __ccgo_ts+84148, libc.VaList(bp+16, objID, funID1, x__BCgetNameForOBJID(tls, cc, cc.x__current, objID), x__BCgetFuncNameForId(tls, cc, object, funID1)))
+	comment = x__auto_printf(tls, cc, uint64(128), __ccgo_ts+84154, libc.VaList(bp+16, objID, funID1, x__BCgetNameForOBJID(tls, cc, cc.x__current, objID), x__BCgetFuncNameForId(tls, cc, object, funID1)))
 	goto _62
 _29:
 	;
@@ -33585,7 +33642,7 @@ _29:
 	**(**int32)(__ccgo_up(bp)) = **(**int32)(__ccgo_up(bp)) + 1
 	**(**_uint8_t)(__ccgo_up(buf + uintptr(v63))) = libc.Uint8FromInt32(funID2)
 	object1 = x__BCgetModuleForOBJID(tls, cc, cc.x__current, objID1)
-	comment = x__auto_printf(tls, cc, uint64(128), __ccgo_ts+84173, libc.VaList(bp+16, objID1, funID2, x__BCgetNameForOBJID(tls, cc, cc.x__current, objID1), x__BCgetFuncNameForId(tls, cc, object1, funID2)))
+	comment = x__auto_printf(tls, cc, uint64(128), __ccgo_ts+84179, libc.VaList(bp+16, objID1, funID2, x__BCgetNameForOBJID(tls, cc, cc.x__current, objID1), x__BCgetFuncNameForId(tls, cc, object1, funID2)))
 	goto _62
 _30:
 	;
@@ -33633,7 +33690,7 @@ _36:
 jump_common:
 	;
 	offset4 = s__CompileJumpOffset_Spin1(tls, cc, buf, bp, ir, int32(1), libc.BoolUint8(m_false != 0), 0, int32(_S1OffEn_VARLEN_SIGNED))
-	comment = x__auto_printf(tls, cc, uint64(40), __ccgo_ts+84206, libc.VaList(bp+16, cc.x__byteOpKindNames[(*_ByteOpIR)(unsafe.Pointer(ir)).Fkind], offset4))
+	comment = x__auto_printf(tls, cc, uint64(40), __ccgo_ts+84212, libc.VaList(bp+16, cc.x__byteOpKindNames[(*_ByteOpIR)(unsafe.Pointer(ir)).Fkind], offset4))
 	goto _62
 _37:
 	;
@@ -33644,24 +33701,24 @@ _37:
 		v63 = **(**int32)(__ccgo_up(bp))
 		**(**int32)(__ccgo_up(bp)) = **(**int32)(__ccgo_up(bp)) + 1
 		**(**_uint8_t)(__ccgo_up(buf + uintptr(v63))) = uint8(0b00011011)
-		comment = __ccgo_ts + 84213
+		comment = __ccgo_ts + 84219
 	case int32(_BCW_WAITPNE):
 		v63 = **(**int32)(__ccgo_up(bp))
 		**(**int32)(__ccgo_up(bp)) = **(**int32)(__ccgo_up(bp)) + 1
 		**(**_uint8_t)(__ccgo_up(buf + uintptr(v63))) = uint8(0b00011111)
-		comment = __ccgo_ts + 84221
+		comment = __ccgo_ts + 84227
 	case int32(_BCW_WAITCNT):
 		v63 = **(**int32)(__ccgo_up(bp))
 		**(**int32)(__ccgo_up(bp)) = **(**int32)(__ccgo_up(bp)) + 1
 		**(**_uint8_t)(__ccgo_up(buf + uintptr(v63))) = uint8(0b00100011)
-		comment = __ccgo_ts + 84229
+		comment = __ccgo_ts + 84235
 	case int32(_BCW_WAITVID):
 		v63 = **(**int32)(__ccgo_up(bp))
 		**(**int32)(__ccgo_up(bp)) = **(**int32)(__ccgo_up(bp)) + 1
 		**(**_uint8_t)(__ccgo_up(buf + uintptr(v63))) = uint8(0b00100111)
-		comment = __ccgo_ts + 84237
+		comment = __ccgo_ts + 84243
 	default:
-		x__ERROR(tls, cc, libc.UintptrFromInt32(0), __ccgo_ts+84245, libc.VaList(bp+16, (*(*struct {
+		x__ERROR(tls, cc, libc.UintptrFromInt32(0), __ccgo_ts+84251, libc.VaList(bp+16, (*(*struct {
 			Ftype1 _BCWaitType
 		})(unsafe.Pointer(&(*_ByteOpIR)(unsafe.Pointer(ir)).Fattr))).Ftype1))
 		break
@@ -33824,20 +33881,20 @@ _60:
 		**(**int32)(__ccgo_up(bp)) = **(**int32)(__ccgo_up(bp)) + 1
 		**(**_uint8_t)(__ccgo_up(buf + uintptr(v63))) = uint8(0)
 	}
-	comment = x__auto_printf(tls, cc, uint64(14), __ccgo_ts+84268, libc.VaList(bp+16, (*_ByteOpIR)(unsafe.Pointer(ir)).Fdata.Fint321))
+	comment = x__auto_printf(tls, cc, uint64(14), __ccgo_ts+84274, libc.VaList(bp+16, (*_ByteOpIR)(unsafe.Pointer(ir)).Fdata.Fint321))
 	goto _62
 _61:
 	;
-	x__ERROR(tls, cc, libc.UintptrFromInt32(0), __ccgo_ts+84277, libc.VaList(bp+16, (*_ByteOpIR)(unsafe.Pointer(ir)).Fkind, cc.x__byteOpKindNames[(*_ByteOpIR)(unsafe.Pointer(ir)).Fkind]))
-	return x__auto_printf(tls, cc, uint64(256), __ccgo_ts+84277, libc.VaList(bp+16, (*_ByteOpIR)(unsafe.Pointer(ir)).Fkind, cc.x__byteOpKindNames[(*_ByteOpIR)(unsafe.Pointer(ir)).Fkind]))
+	x__ERROR(tls, cc, libc.UintptrFromInt32(0), __ccgo_ts+84283, libc.VaList(bp+16, (*_ByteOpIR)(unsafe.Pointer(ir)).Fkind, cc.x__byteOpKindNames[(*_ByteOpIR)(unsafe.Pointer(ir)).Fkind]))
+	return x__auto_printf(tls, cc, uint64(256), __ccgo_ts+84283, libc.VaList(bp+16, (*_ByteOpIR)(unsafe.Pointer(ir)).Fkind, cc.x__byteOpKindNames[(*_ByteOpIR)(unsafe.Pointer(ir)).Fkind]))
 _62:
 	;
 	if !(comment != 0) {
 		comment = cc.x__byteOpKindNames[(*_ByteOpIR)(unsafe.Pointer(ir)).Fkind]
 	}
 	if **(**int32)(__ccgo_up(bp)) != size {
-		x__ERROR(tls, cc, libc.UintptrFromInt32(0), __ccgo_ts+84309, libc.VaList(bp+16, **(**int32)(__ccgo_up(bp)), size, cc.x__byteOpKindNames[(*_ByteOpIR)(unsafe.Pointer(ir)).Fkind]))
-		return __ccgo_ts + 84397
+		x__ERROR(tls, cc, libc.UintptrFromInt32(0), __ccgo_ts+84315, libc.VaList(bp+16, **(**int32)(__ccgo_up(bp)), size, cc.x__byteOpKindNames[(*_ByteOpIR)(unsafe.Pointer(ir)).Fkind]))
+		return __ccgo_ts + 84403
 	}
 	return comment
 }
@@ -33864,7 +33921,7 @@ func x__CompileInlineAsm(tls *libc.TLS, cc *CC, irl uintptr, origtop uintptr, as
 	}
 	if useMiniDat != 0 {
 		if cc.x__gl_fcache_size <= 0 {
-			x__WARNING(tls, cc, origtop, __ccgo_ts+65609, 0)
+			x__WARNING(tls, cc, origtop, __ccgo_ts+65617, 0)
 		} else {
 			s__CompileMiniDatBlock(tls, cc, irl, origtop, asmFlags)
 			return
@@ -33883,10 +33940,10 @@ func x__CompressExecutable(tls *libc.TLS, cc *CC, inPtr uintptr, inSize int32) (
 	compressBuffer = libc.UintptrFromInt32(0)
 	x__flexbuf_init(tls, cc, bp, libc.Uint64FromInt32(libc.Int32FromInt32(16)*libc.Int32FromInt32(1024)))
 	if !(cc.x__gl_p2 != 0) {
-		x__WARNING(tls, cc, libc.UintptrFromInt32(0), __ccgo_ts+102002, 0)
+		x__WARNING(tls, cc, libc.UintptrFromInt32(0), __ccgo_ts+102008, 0)
 		goto fail
 	}
-	stubSize = libc.Int32FromUint64(x__CompileStub(tls, cc, bp, __ccgo_ts+102056, uintptr(unsafe.Pointer(&cc.x__sys_p2_lz4stub_spin)), uint64(cc.x__sys_p2_lz4stub_spin_len)))
+	stubSize = libc.Int32FromUint64(x__CompileStub(tls, cc, bp, __ccgo_ts+102062, uintptr(unsafe.Pointer(&cc.x__sys_p2_lz4stub_spin)), uint64(cc.x__sys_p2_lz4stub_spin_len)))
 	// TODO add method to resize flexbuf, could eliminate malloc and copy
 	if libc.Uint32FromInt32(inSize) > libc.Uint32FromInt32(m_LZ4_MAX_INPUT_SIZE) {
 		v1 = 0
@@ -33901,9 +33958,9 @@ func x__CompressExecutable(tls *libc.TLS, cc *CC, inPtr uintptr, inSize int32) (
 	}
 	compressedSize = x__LZ4_compress_HC(tls, cc, inPtr, compressBuffer, inSize, v1, int32(m_LZ4HC_CLEVEL_MAX))
 	totalSize = stubSize + int32(4) + compressedSize
-	printf(tls, cc, __ccgo_ts+102068, libc.VaList(bp+40, inSize, totalSize, float64(float64(totalSize)/float64(inSize)*float64(100)), stubSize+int32(4)))
+	printf(tls, cc, __ccgo_ts+102074, libc.VaList(bp+40, inSize, totalSize, float64(float64(totalSize)/float64(inSize)*float64(100)), stubSize+int32(4)))
 	if totalSize >= inSize {
-		x__WARNING(tls, cc, libc.UintptrFromInt32(0), __ccgo_ts+102135, 0)
+		x__WARNING(tls, cc, libc.UintptrFromInt32(0), __ccgo_ts+102141, 0)
 		goto fail
 	}
 	// Fill compressed data size
@@ -33946,7 +34003,7 @@ func x__ConvertInterface(tls *libc.TLS, cc *CC, ifaceType uintptr, classType uin
 	P = x__GetClassPtr(tls, cc, classType)
 	I = x__GetClassPtr(tls, cc, ifaceType)
 	if !((*_Module)(unsafe.Pointer(I)).FisInterface != 0) {
-		x__ERROR(tls, cc, expr, __ccgo_ts+36272, 0)
+		x__ERROR(tls, cc, expr, __ccgo_ts+36280, 0)
 		return libc.UintptrFromInt32(0)
 	}
 	if P == I {
@@ -34002,7 +34059,7 @@ func x__CreateJumpTable(tls *libc.TLS, cc *CC, switchstmt uintptr, defaultlabel 
 	assign = (*_AST)(unsafe.Pointer(switchstmt)).Fleft
 	switchstmt = (*_AST)(unsafe.Pointer(switchstmt)).Fright
 	if (*_AST)(unsafe.Pointer(assign)).Fkind != int32(_AST_ASSIGN) {
-		x__ERROR(tls, cc, libc.UintptrFromInt32(0), __ccgo_ts+9922, 0)
+		x__ERROR(tls, cc, libc.UintptrFromInt32(0), __ccgo_ts+9924, 0)
 		return libc.UintptrFromInt32(0)
 	}
 	ident = (*_AST)(unsafe.Pointer(assign)).Fleft
@@ -34022,18 +34079,18 @@ func x__CreateJumpTable(tls *libc.TLS, cc *CC, switchstmt uintptr, defaultlabel 
 		}
 		ast = (*_AST)(unsafe.Pointer(top)).Fleft
 		if (*_AST)(unsafe.Pointer(ast)).Fkind != int32(_AST_IF) {
-			x__ERROR(tls, cc, libc.UintptrFromInt32(0), __ccgo_ts+9969, 0)
+			x__ERROR(tls, cc, libc.UintptrFromInt32(0), __ccgo_ts+9971, 0)
 			return libc.UintptrFromInt32(0)
 		}
 		expr = (*_AST)(unsafe.Pointer(ast)).Fleft
 		label = (*_AST)(unsafe.Pointer(ast)).Fright
 		if (*_AST)(unsafe.Pointer(label)).Fkind != int32(_AST_THENELSE) || (*_AST)(unsafe.Pointer((*_AST)(unsafe.Pointer(label)).Fleft)).Fkind != int32(_AST_STMTLIST) {
-			x__ERROR(tls, cc, libc.UintptrFromInt32(0), __ccgo_ts+10008, 0)
+			x__ERROR(tls, cc, libc.UintptrFromInt32(0), __ccgo_ts+10010, 0)
 			return libc.UintptrFromInt32(0)
 		}
 		label = (*_AST)(unsafe.Pointer((*_AST)(unsafe.Pointer(label)).Fleft)).Fleft
 		if (*_AST)(unsafe.Pointer(label)).Fkind != int32(_AST_GOTO) {
-			x__ERROR(tls, cc, libc.UintptrFromInt32(0), __ccgo_ts+10053, 0)
+			x__ERROR(tls, cc, libc.UintptrFromInt32(0), __ccgo_ts+10055, 0)
 			return libc.UintptrFromInt32(0)
 		}
 		label = (*_AST)(unsafe.Pointer(label)).Fleft
@@ -34093,7 +34150,7 @@ func x__CreateJumpTable(tls *libc.TLS, cc *CC, switchstmt uintptr, defaultlabel 
 	minrange = v3
 	if range1 > maxrange {
 		if force_reason != 0 {
-			x__ERROR(tls, cc, switchstmt, __ccgo_ts+10094, libc.VaList(bp+40, force_reason))
+			x__ERROR(tls, cc, switchstmt, __ccgo_ts+10096, libc.VaList(bp+40, force_reason))
 		}
 		return libc.UintptrFromInt32(0)
 	}
@@ -34124,7 +34181,7 @@ func x__CreateJumpTable(tls *libc.TLS, cc *CC, switchstmt uintptr, defaultlabel 
 		(*_AST)(unsafe.Pointer(ast)).Fright = x__AddToList(tls, cc, (*_AST)(unsafe.Pointer(ast)).Fright, x__NewAST(tls, cc, int32(_AST_LISTHOLDER), (*_CaseHolder)(unsafe.Pointer(curcase)).Flabel, libc.UintptrFromInt32(0)))
 		curcase += 16
 		if libc.Uint64FromInt32(i) < siz-uint64(1) && (*_CaseHolder)(unsafe.Pointer(curcase)).Fval == lastval && (*_CaseHolder)(unsafe.Pointer(curcase)).Flabel != 0 {
-			x__ERROR(tls, cc, (*_CaseHolder)(unsafe.Pointer(curcase)).Flabel, __ccgo_ts+10137, libc.VaList(bp+40, (*_CaseHolder)(unsafe.Pointer(curcase)).Fval))
+			x__ERROR(tls, cc, (*_CaseHolder)(unsafe.Pointer(curcase)).Flabel, __ccgo_ts+10139, libc.VaList(bp+40, (*_CaseHolder)(unsafe.Pointer(curcase)).Fval))
 		} else {
 			lastval = lastval + 1
 		}
@@ -34165,6 +34222,74 @@ func x__CreateJumpTable(tls *libc.TLS, cc *CC, switchstmt uintptr, defaultlabel 
 	return ast
 }
 
+func x__CreatePrintfDebug(tls *libc.TLS, cc *CC, exprlist uintptr, dbgmask uintptr) (r uintptr) {
+	bp := tls.Alloc(48)
+	defer tls.Free(48)
+	var fmtstr, item, name, newarg, outlist, printf_call, sub uintptr
+	var mask, select1 _uint32_t
+	var needcomma int32
+	var _ /* fb at bp+0 */ _flexbuf
+	var _ /* save at bp+32 */ _ASTReportInfo
+	_, _, _, _, _, _, _, _, _, _ = fmtstr, item, mask, name, needcomma, newarg, outlist, printf_call, select1, sub
+	outlist = libc.UintptrFromInt32(0)
+	needcomma = 0
+	if 0 != x__const_or_default(tls, cc, cc.x__current, __ccgo_ts+113149, 0) {
+		return libc.UintptrFromInt32(0)
+	}
+	if dbgmask != 0 {
+		mask = libc.Uint32FromInt32(x__const_or_default(tls, cc, cc.x__current, __ccgo_ts+113451, -int32(1)))
+		select1 = libc.Uint32FromInt64(x__EvalConstExpr(tls, cc, dbgmask))
+		if !(mask&(libc.Uint32FromUint32(1)<<select1) != 0) {
+			return libc.UintptrFromInt32(0)
+		}
+	}
+	x__AstReportAs(tls, cc, exprlist, bp+32)
+	x__flexbuf_init(tls, cc, bp, uint64(1024))
+	if exprlist != 0 && (*_AST)(unsafe.Pointer(exprlist)).Fleft != 0 && (*_AST)(unsafe.Pointer((*_AST)(unsafe.Pointer(exprlist)).Fleft)).Fkind == int32(_AST_LABEL) {
+		x__flexbuf_addstr(tls, cc, bp, __ccgo_ts+114612)
+		outlist = x__NewAST(tls, cc, int32(_AST_FUNCCALL), x__AstIdentifier(tls, cc, __ccgo_ts+4358), libc.UintptrFromInt32(0))
+		outlist = x__NewAST(tls, cc, int32(_AST_EXPRLIST), outlist, libc.UintptrFromInt32(0))
+		exprlist = (*_AST)(unsafe.Pointer(exprlist)).Fright
+	} else {
+		outlist = libc.UintptrFromInt32(0)
+	}
+	for exprlist != 0 && (*_AST)(unsafe.Pointer(exprlist)).Fkind == int32(_AST_EXPRLIST) {
+		item = (*_AST)(unsafe.Pointer(exprlist)).Fleft
+		exprlist = (*_AST)(unsafe.Pointer(exprlist)).Fright
+		if !(item != 0) {
+			continue
+		}
+		if (*_AST)(unsafe.Pointer(item)).Fkind == int32(_AST_STRING) {
+			sub = x__NewAST(tls, cc, int32(_AST_STRINGPTR), item, libc.UintptrFromInt32(0))
+			sub = x__NewAST(tls, cc, int32(_AST_EXPRLIST), sub, libc.UintptrFromInt32(0))
+			outlist = x__AddToList(tls, cc, outlist, sub)
+			x__flexbuf_addstr(tls, cc, bp, __ccgo_ts+7090)
+			needcomma = 0
+		} else {
+			if (*_AST)(unsafe.Pointer(item)).Fkind == int32(_AST_FUNCCALL) {
+				name = x__GetUserIdentifierName(tls, cc, (*_AST)(unsafe.Pointer(item)).Fleft)
+				item = (*_AST)(unsafe.Pointer(item)).Fright /* the parameter list */
+				newarg = s__GetFormatForDebug(tls, cc, bp, name, item, needcomma)
+				if newarg != 0 {
+					needcomma = int32(1)
+					outlist = x__AddToList(tls, cc, outlist, newarg)
+				}
+			}
+		}
+	}
+	x__flexbuf_addstr(tls, cc, bp, __ccgo_ts+114620)
+	x__flexbuf_addchar(tls, cc, bp, 0)
+	fmtstr = x__flexbuf_get(tls, cc, bp)
+	x__flexbuf_delete(tls, cc, bp)
+	sub = x__AstStringPtr(tls, cc, fmtstr)
+	sub = x__NewAST(tls, cc, int32(_AST_EXPRLIST), sub, libc.UintptrFromInt32(0))
+	outlist = x__AddToList(tls, cc, sub, outlist)
+	printf_call = x__NewAST(tls, cc, int32(_AST_PRINT), libc.UintptrFromInt32(0), libc.UintptrFromInt32(0))
+	printf_call = x__NewAST(tls, cc, int32(_AST_FUNCCALL), printf_call, outlist)
+	x__AstReportDone(tls, cc, bp+32)
+	return x__genPrintf(tls, cc, printf_call)
+}
+
 // C documentation
 //
 //	//
@@ -34198,16 +34323,16 @@ func x__CreateSwitch(tls *libc.TLS, cc *CC, origast uintptr, force_reason uintpt
 		filterCases = int32(1)
 	} else {
 		if cc.x__gl_output == int32(m_OUTPUT_BYTECODE) && !(cc.x__gl_interp_kind == libc.Int32FromInt32(m_INTERP_KIND_NUCODE)) {
-			use_expr = x__NewAST(tls, cc, int32(_AST_CASEEXPR), x__AstTempIdentifier(tls, cc, __ccgo_ts+10163), libc.UintptrFromInt32(0))
+			use_expr = x__NewAST(tls, cc, int32(_AST_CASEEXPR), x__AstTempIdentifier(tls, cc, __ccgo_ts+10165), libc.UintptrFromInt32(0))
 			tmpvar = use_expr // Assigning to AST_CASEEXPR can't compile to anything meaningful and thus it should not leave this function...
 			filterCases = 0
 		} else {
-			tmpvar = x__AstTempLocalVariable(tls, cc, __ccgo_ts+10173, x__RemoveTypeModifiers(tls, cc, casetype))
+			tmpvar = x__AstTempLocalVariable(tls, cc, __ccgo_ts+10175, x__RemoveTypeModifiers(tls, cc, casetype))
 			use_expr = tmpvar
 			filterCases = 0
 		}
 	}
-	endswitch = x__AstTempIdentifier(tls, cc, __ccgo_ts+10179)
+	endswitch = x__AstTempIdentifier(tls, cc, __ccgo_ts+10181)
 	switchstmt = x__NewAST(tls, cc, int32(_AST_STMTLIST), x__AstAssign(tls, cc, tmpvar, expr), libc.UintptrFromInt32(0))
 	// find all CASE labels within stmt; turn them into labels, and
 	// create if(tmpvar == val) goto label;
@@ -34252,11 +34377,11 @@ func x__DEBUG(tls *libc.TLS, cc *CC, instr uintptr, msg uintptr, va uintptr) {
 		return
 	}
 	x__SETCOLOR(tls, cc, int32(_PRINT_DEBUG))
-	s__ERRORHEADER_AST(tls, cc, instr, __ccgo_ts+7123)
+	s__ERRORHEADER_AST(tls, cc, instr, __ccgo_ts+7125)
 	args = va
 	vfprintf(tls, cc, libc.X__stderrp, msg, args)
 	_ = args
-	fprintf(tls, cc, libc.X__stderrp, __ccgo_ts+4265, 0)
+	fprintf(tls, cc, libc.X__stderrp, __ccgo_ts+4267, 0)
 	x__SETCOLOR(tls, cc, int32(_PRINT_NORMAL))
 }
 
@@ -34273,14 +34398,14 @@ func x__DeclareBASICMemberVariables(tls *libc.TLS, cc *CC, ast uintptr) {
 		return
 	}
 	if (*_AST)(unsafe.Pointer(ast)).Fkind == int32(_AST_SEQUENCE) {
-		x__ERROR(tls, cc, ast, __ccgo_ts+7822, 0)
+		x__ERROR(tls, cc, ast, __ccgo_ts+7824, 0)
 		return
 	}
 	if (*_AST)(unsafe.Pointer(ast)).Fkind == int32(_AST_DECLARE_ALIAS) {
 		newname = (*_AST)(unsafe.Pointer(ast)).Fleft
 		oldname = (*_AST)(unsafe.Pointer(ast)).Fright
 		if !(newname != 0) || !(oldname != 0) {
-			x__ERROR(tls, cc, ast, __ccgo_ts+9591, 0)
+			x__ERROR(tls, cc, ast, __ccgo_ts+9593, 0)
 			return
 		}
 		sym = x__DeclareAlias(tls, cc, cc.x__current+144, newname, oldname)
@@ -34288,7 +34413,7 @@ func x__DeclareBASICMemberVariables(tls *libc.TLS, cc *CC, ast uintptr) {
 		return
 	}
 	if (*_AST)(unsafe.Pointer(ast)).Fkind != int32(_AST_DECLARE_VAR) {
-		x__ERROR(tls, cc, ast, __ccgo_ts+119749, 0)
+		x__ERROR(tls, cc, ast, __ccgo_ts+119763, 0)
 		return
 	}
 	idlist = (*_AST)(unsafe.Pointer(ast)).Fright
@@ -34328,7 +34453,7 @@ func x__DeclareFunctionTemplate(tls *libc.TLS, cc *CC, P uintptr, templ uintptr)
 			name_user = v1
 			name_internal = v1
 		} else {
-			x__ERROR(tls, cc, templ, __ccgo_ts+31471, 0)
+			x__ERROR(tls, cc, templ, __ccgo_ts+31479, 0)
 			return
 		}
 	}
@@ -34336,9 +34461,9 @@ func x__DeclareFunctionTemplate(tls *libc.TLS, cc *CC, P uintptr, templ uintptr)
 	sym = x__FindSymbolEx(tls, cc, P+144, name_internal, 0)
 	if sym != 0 {
 		olddef = (*_Symbol)(unsafe.Pointer(sym)).Fdef
-		x__ERROR(tls, cc, templ, __ccgo_ts+8176, libc.VaList(bp+8, name_user))
+		x__ERROR(tls, cc, templ, __ccgo_ts+8178, libc.VaList(bp+8, name_user))
 		if olddef != 0 {
-			x__ERROR(tls, cc, olddef, __ccgo_ts+31510, 0)
+			x__ERROR(tls, cc, olddef, __ccgo_ts+31518, 0)
 		}
 	}
 	/* create */
@@ -34421,8 +34546,8 @@ func x__DeclareOneMemberVar(tls *libc.TLS, cc *CC, P uintptr, ident uintptr, typ
 			// in declarations of other variables
 			name = x__GetIdentifierName(tls, cc, ident)
 			flags = uint32(0)
-			if !(libc.Xstrcmp(tls, name, __ccgo_ts+8689) != 0) && (*_AST)(unsafe.Pointer(ident)).Fkind == int32(_AST_ARRAYDECL) {
-				name = __ccgo_ts + 8700
+			if !(libc.Xstrcmp(tls, name, __ccgo_ts+8691) != 0) && (*_AST)(unsafe.Pointer(ident)).Fkind == int32(_AST_ARRAYDECL) {
+				name = __ccgo_ts + 8702
 				flags = uint32(m_SYMF_NOALLOC)
 			}
 			sym = x__AddSymbol(tls, cc, P+144, name, int32(_SYM_VARIABLE), type1, libc.UintptrFromInt32(0))
@@ -34445,19 +34570,19 @@ func x__DeclareOneRegisterVar(tls *libc.TLS, cc *CC, P uintptr, ident uintptr, t
 		typ = x__InferTypeFromName(tls, cc, ident)
 	}
 	if x__TypeSize(tls, cc, typ) > int32(m_LONG_SIZE) {
-		x__ERROR(tls, cc, ident, __ccgo_ts+7858, 0)
+		x__ERROR(tls, cc, ident, __ccgo_ts+7860, 0)
 		typ = cc.x__ast_type_generic
 	}
 	v1 = s__AlreadyDeclared(tls, cc, (*_Module)(unsafe.Pointer(P)).Fpendingvarblock, ident)
 	oldtyp = v1
 	if uintptr(0) != v1 {
 		if !(x__SameTypes(tls, cc, oldtyp, typ) != 0) {
-			x__ERROR(tls, cc, ident, __ccgo_ts+8832, libc.VaList(bp+8, name))
+			x__ERROR(tls, cc, ident, __ccgo_ts+8834, libc.VaList(bp+8, name))
 		}
 		return
 	}
 	if cc.x__gl_output == int32(m_OUTPUT_BYTECODE) {
-		x__ERROR(tls, cc, ident, __ccgo_ts+8865, 0)
+		x__ERROR(tls, cc, ident, __ccgo_ts+8867, 0)
 		return
 	}
 	sym = x__AddSymbol(tls, cc, P+144, name, int32(_SYM_VARIABLE), typ, libc.UintptrFromInt32(0))
@@ -34478,7 +34603,7 @@ func x__DeclareTypedGlobalVariables(tls *libc.TLS, cc *CC, ast uintptr, inDat in
 		return
 	}
 	if (*_AST)(unsafe.Pointer(ast)).Fkind == int32(_AST_SEQUENCE) {
-		x__ERROR(tls, cc, ast, __ccgo_ts+7822, 0)
+		x__ERROR(tls, cc, ast, __ccgo_ts+7824, 0)
 		return
 	}
 	idlist = (*_AST)(unsafe.Pointer(ast)).Fright
@@ -34519,7 +34644,7 @@ func x__DeclareTypedRegisterVariables(tls *libc.TLS, cc *CC, ast uintptr) {
 		return
 	}
 	if (*_AST)(unsafe.Pointer(ast)).Fkind == int32(_AST_SEQUENCE) {
-		x__ERROR(tls, cc, ast, __ccgo_ts+7822, 0)
+		x__ERROR(tls, cc, ast, __ccgo_ts+7824, 0)
 		return
 	}
 	idlist = (*_AST)(unsafe.Pointer(ast)).Fright
@@ -34538,11 +34663,11 @@ func x__DeclareTypedRegisterVariables(tls *libc.TLS, cc *CC, ast uintptr) {
 		}
 	}
 	if x__TypeSize(tls, cc, typ) > int32(m_LONG_SIZE) {
-		x__ERROR(tls, cc, ast, __ccgo_ts+7858, 0)
+		x__ERROR(tls, cc, ast, __ccgo_ts+7860, 0)
 		typ = cc.x__ast_type_generic
 	}
 	if x__TypeGoesOnStack(tls, cc, typ) != 0 {
-		x__ERROR(tls, cc, ast, __ccgo_ts+7907, 0)
+		x__ERROR(tls, cc, ast, __ccgo_ts+7909, 0)
 	}
 	if (*_AST)(unsafe.Pointer(idlist)).Fkind == int32(_AST_LISTHOLDER) {
 		for idlist != 0 {
@@ -34571,7 +34696,7 @@ func x__DefineDefaultVarTypes(tls *libc.TLS, cc *CC, deflist uintptr, type1 uint
 		if x__IsFloatType(tls, cc, type1) != 0 {
 			mask = uint32(1)
 		} else {
-			x__SYNTAX_ERROR(tls, cc, __ccgo_ts+119567, 0)
+			x__SYNTAX_ERROR(tls, cc, __ccgo_ts+119581, 0)
 			return libc.UintptrFromInt32(0)
 		}
 	}
@@ -34579,11 +34704,11 @@ func x__DefineDefaultVarTypes(tls *libc.TLS, cc *CC, deflist uintptr, type1 uint
 		entry = (*_AST)(unsafe.Pointer(deflist)).Fleft
 		deflist = (*_AST)(unsafe.Pointer(deflist)).Fright
 		if (*_AST)(unsafe.Pointer(entry)).Fkind != int32(_AST_SEQUENCE) {
-			x__SYNTAX_ERROR(tls, cc, __ccgo_ts+119608, 0)
+			x__SYNTAX_ERROR(tls, cc, __ccgo_ts+119622, 0)
 			return libc.UintptrFromInt32(0)
 		}
 		if !((*_AST)(unsafe.Pointer(entry)).Fleft != 0) || !((*_AST)(unsafe.Pointer(entry)).Fright != 0) {
-			x__SYNTAX_ERROR(tls, cc, __ccgo_ts+119646, 0)
+			x__SYNTAX_ERROR(tls, cc, __ccgo_ts+119660, 0)
 			return libc.UintptrFromInt32(0)
 		}
 		first = x__GetIdentifierName(tls, cc, (*_AST)(unsafe.Pointer(entry)).Fleft)
@@ -34597,11 +34722,11 @@ func x__DefineDefaultVarTypes(tls *libc.TLS, cc *CC, deflist uintptr, type1 uint
 	_4:
 		high = libc.Uint32FromInt32(v1 - int32('A'))
 		if libc.Xstrlen(tls, first) != uint64(1) || libc.Xstrlen(tls, last) != uint64(1) || low > uint32(25) || high > uint32(25) {
-			x__SYNTAX_ERROR(tls, cc, __ccgo_ts+119679, 0)
+			x__SYNTAX_ERROR(tls, cc, __ccgo_ts+119693, 0)
 			return libc.UintptrFromInt32(0)
 		}
 		if high < low {
-			x__WARNING(tls, cc, libc.UintptrFromInt32(0), __ccgo_ts+119722, libc.VaList(bp+8, low, high))
+			x__WARNING(tls, cc, libc.UintptrFromInt32(0), __ccgo_ts+119736, libc.VaList(bp+8, low, high))
 		}
 		for low <= high {
 			if mask != 0 {
@@ -34635,7 +34760,7 @@ func x__DoPropellerPostprocess(tls *libc.TLS, cc *CC, fname uintptr, eepromSize 
 	var _ /* debugger at bp+0 */ _Flexbuf
 	_, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _ = buffer, buffer1, c, checksum, extralen, f, len1, maxlen, padbytes, r, r1, r2, reserveSize, save_casesensitive, sym, v1, v3
 	defer func() { realloc(tls, cc, buffer, 0); realloc(tls, cc, buffer1, 0) }()
-	f = fopen(tls, cc, fname, __ccgo_ts+7181)
+	f = fopen(tls, cc, fname, __ccgo_ts+7183)
 	checksum = uint8(0)
 	reserveSize = uint32(0)
 	if !(f != 0) {
@@ -34660,14 +34785,14 @@ func x__DoPropellerPostprocess(tls *libc.TLS, cc *CC, fname uintptr, eepromSize 
 	// check for special symbols
 	cc.x__current = x__GetTopLevelModule(tls, cc)
 	if !(cc.x__current != 0) {
-		x__WARNING(tls, cc, libc.UintptrFromInt32(0), __ccgo_ts+7185, 0)
+		x__WARNING(tls, cc, libc.UintptrFromInt32(0), __ccgo_ts+7187, 0)
 	}
 	// we are at the end of compilation, check for stack info in a
 	// case insensitive manner
 	save_casesensitive = cc.x__gl_caseSensitive
 	cc.x__gl_caseSensitive = 0
 	if cc.x__current != 0 {
-		v1 = x__FindSymbolEx(tls, cc, cc.x__current+144, __ccgo_ts+7204, 0)
+		v1 = x__FindSymbolEx(tls, cc, cc.x__current+144, __ccgo_ts+7206, 0)
 	} else {
 		v1 = libc.UintptrFromInt32(0)
 	}
@@ -34676,7 +34801,7 @@ func x__DoPropellerPostprocess(tls *libc.TLS, cc *CC, fname uintptr, eepromSize 
 		reserveSize = libc.Uint32FromInt64(int64(reserveSize) + libc.Int64FromInt32(m_LONG_SIZE)*x__EvalConstExpr(tls, cc, *(*uintptr)(unsafe.Pointer(sym + 32))))
 	}
 	if cc.x__current != 0 {
-		v1 = x__FindSymbolEx(tls, cc, cc.x__current+144, __ccgo_ts+7211, 0)
+		v1 = x__FindSymbolEx(tls, cc, cc.x__current+144, __ccgo_ts+7213, 0)
 	} else {
 		v1 = libc.UintptrFromInt32(0)
 	}
@@ -34700,9 +34825,9 @@ func x__DoPropellerPostprocess(tls *libc.TLS, cc *CC, fname uintptr, eepromSize 
 	}
 	if len1+reserveSize > maxlen {
 		if reserveSize != 0 {
-			x__WARNING(tls, cc, libc.UintptrFromInt32(0), __ccgo_ts+7217, libc.VaList(bp+72, len1, reserveSize, maxlen, len1+reserveSize-maxlen))
+			x__WARNING(tls, cc, libc.UintptrFromInt32(0), __ccgo_ts+7219, libc.VaList(bp+72, len1, reserveSize, maxlen, len1+reserveSize-maxlen))
 		} else {
-			x__WARNING(tls, cc, libc.UintptrFromInt32(0), __ccgo_ts+7301, libc.VaList(bp+72, len1, maxlen, len1-maxlen))
+			x__WARNING(tls, cc, libc.UintptrFromInt32(0), __ccgo_ts+7303, libc.VaList(bp+72, len1, maxlen, len1-maxlen))
 		}
 	}
 	extralen = uint32(0)
@@ -34712,7 +34837,7 @@ func x__DoPropellerPostprocess(tls *libc.TLS, cc *CC, fname uintptr, eepromSize 
 		libc.Xfseek(tls, f, 0, m_SEEK_SET)
 		r1 = libc.Int32FromUint64(libc.Xfread(tls, buffer, uint64(len1), uint64(1), f))
 		if r1 != int32(1) {
-			x__WARNING(tls, cc, libc.UintptrFromInt32(0), __ccgo_ts+7365, 0)
+			x__WARNING(tls, cc, libc.UintptrFromInt32(0), __ccgo_ts+7367, 0)
 		}
 		**(**_Flexbuf)(__ccgo_up(bp)) = x__CompileBrkDebugger(tls, cc, uint64(len1))
 		extralen = uint32(uint64(extralen) + x__flexbuf_curlen(tls, cc, bp))
@@ -34723,7 +34848,7 @@ func x__DoPropellerPostprocess(tls *libc.TLS, cc *CC, fname uintptr, eepromSize 
 		libc.Xfflush(tls, f)
 	}
 	if len1+extralen > maxlen {
-		x__WARNING(tls, cc, libc.UintptrFromInt32(0), __ccgo_ts+7403, libc.VaList(bp+72, len1, extralen, len1+extralen, maxlen, len1+extralen-maxlen))
+		x__WARNING(tls, cc, libc.UintptrFromInt32(0), __ccgo_ts+7405, libc.VaList(bp+72, len1, extralen, len1+extralen, maxlen, len1+extralen-maxlen))
 	}
 	len1 = len1 + extralen
 	if cc.x__gl_compress_output != 0 {
@@ -34732,11 +34857,11 @@ func x__DoPropellerPostprocess(tls *libc.TLS, cc *CC, fname uintptr, eepromSize 
 		libc.Xfseek(tls, f, 0, m_SEEK_SET)
 		r2 = libc.Int32FromUint64(libc.Xfread(tls, buffer1, uint64(len1), uint64(1), f))
 		if r2 != int32(1) {
-			x__WARNING(tls, cc, libc.UintptrFromInt32(0), __ccgo_ts+7478, 0)
+			x__WARNING(tls, cc, libc.UintptrFromInt32(0), __ccgo_ts+7480, 0)
 		}
 		**(**_Flexbuf)(__ccgo_up(bp + 32)) = x__CompressExecutable(tls, cc, buffer1, libc.Int32FromUint32(len1))
-		if !(_freopen(tls, libc.UintptrFromInt32(0), __ccgo_ts+7506, f) != 0) { // Do this to make file actually smaller
-			x__WARNING(tls, cc, libc.UintptrFromInt32(0), __ccgo_ts+7510, 0)
+		if !(_freopen(tls, libc.UintptrFromInt32(0), __ccgo_ts+7508, f) != 0) { // Do this to make file actually smaller
+			x__WARNING(tls, cc, libc.UintptrFromInt32(0), __ccgo_ts+7512, 0)
 		}
 		libc.Xfwrite(tls, x__flexbuf_peek(tls, cc, bp+32), x__flexbuf_curlen(tls, cc, bp+32), uint64(1), f)
 		len1 = uint32(x__flexbuf_curlen(tls, cc, bp+32))
@@ -34759,13 +34884,13 @@ func x__DoPropellerPostprocess(tls *libc.TLS, cc *CC, fname uintptr, eepromSize 
 		checksum = libc.Uint8FromInt32(int32(0x14) - libc.Int32FromUint8(checksum))
 		r = libc.Xfseek(tls, f, int64(5), m_SEEK_SET)
 		if r != 0 {
-			libc.Xperror(tls, __ccgo_ts+7530)
+			libc.Xperror(tls, __ccgo_ts+7532)
 			return -int32(1)
 		}
 		//printf("writing checksum 0x%x\n", checksum);
 		r = libc.Xfputc(tls, libc.Int32FromUint8(checksum), f)
 		if r < 0 {
-			libc.Xperror(tls, __ccgo_ts+7536)
+			libc.Xperror(tls, __ccgo_ts+7538)
 			return -int32(1)
 		}
 	}
@@ -34797,11 +34922,11 @@ func x__ERROR(tls *libc.TLS, cc *CC, instr uintptr, msg uintptr, va uintptr) {
 	var args _va_list
 	_ = args
 	x__SETCOLOR(tls, cc, int32(_PRINT_ERROR))
-	s__ERRORHEADER_AST(tls, cc, instr, __ccgo_ts+4025)
+	s__ERRORHEADER_AST(tls, cc, instr, __ccgo_ts+4027)
 	args = va
 	vfprintf(tls, cc, libc.X__stderrp, msg, args)
 	_ = args
-	fprintf(tls, cc, libc.X__stderrp, __ccgo_ts+4265, 0)
+	fprintf(tls, cc, libc.X__stderrp, __ccgo_ts+4267, 0)
 	cc.x__gl_errors = cc.x__gl_errors + 1
 	x__SETCOLOR(tls, cc, int32(_PRINT_NORMAL))
 }
@@ -34814,10 +34939,10 @@ func x__ERRORHEADER(tls *libc.TLS, cc *CC, fileName uintptr, lineno int32, msg u
 	if fileName != 0 && lineno != 0 {
 		save = cc.x__current_print_color
 		x__SETCOLOR(tls, cc, int32(_PRINT_ERROR_LOCATION))
-		fprintf(tls, cc, libc.X__stderrp, __ccgo_ts+7091, libc.VaList(bp+8, fileName, lineno))
+		fprintf(tls, cc, libc.X__stderrp, __ccgo_ts+7093, libc.VaList(bp+8, fileName, lineno))
 		x__SETCOLOR(tls, cc, save)
 	}
-	fprintf(tls, cc, libc.X__stderrp, __ccgo_ts+7099, libc.VaList(bp+8, msg))
+	fprintf(tls, cc, libc.X__stderrp, __ccgo_ts+7101, libc.VaList(bp+8, msg))
 }
 
 // C documentation
@@ -34948,7 +35073,7 @@ func x__EmitMove(tls *libc.TLS, cc *CC, irl uintptr, origdst uintptr, origsrc ui
 		return ir
 	}
 	if !(src != 0) {
-		x__ERROR(tls, cc, linenum, __ccgo_ts+48790, 0)
+		x__ERROR(tls, cc, linenum, __ccgo_ts+48798, 0)
 		return ir
 	}
 	if (*_Operand)(unsafe.Pointer(src)).Fkind == int32(_IMM_HUB_LABEL) {
@@ -34960,7 +35085,7 @@ func x__EmitMove(tls *libc.TLS, cc *CC, irl uintptr, origdst uintptr, origsrc ui
 		size = libc.Uint32FromInt32((*_Operand)(unsafe.Pointer(origsrc)).Fsize)
 		num_tmp_regs = (size + uint32(3)) / uint32(4)
 		if num_tmp_regs > uint32(m_MAX_TMP_REGS) {
-			x__ERROR(tls, cc, linenum, __ccgo_ts+48807, 0)
+			x__ERROR(tls, cc, linenum, __ccgo_ts+48815, 0)
 			return ir
 		}
 		// if we are reading into a register, no need for
@@ -35039,7 +35164,7 @@ func x__EmitMove(tls *libc.TLS, cc *CC, irl uintptr, origdst uintptr, origsrc ui
 					}
 				}
 			} else {
-				x__ERROR(tls, cc, linenum, __ccgo_ts+48843, 0)
+				x__ERROR(tls, cc, linenum, __ccgo_ts+48851, 0)
 			}
 		}
 		if off != 0 && (*_Operand)(unsafe.Pointer(src)).Fkind != int32(_IMM_INT) {
@@ -35059,7 +35184,7 @@ func x__EmitMove(tls *libc.TLS, cc *CC, irl uintptr, origdst uintptr, origsrc ui
 		if (*_Operand)(unsafe.Pointer(src)).Fkind == int32(_IMM_INT) || (*_Operand)(unsafe.Pointer(src)).Fkind == int32(_IMM_COG_LABEL) || x__SrcOnlyHwReg(tls, cc, src) != 0 || off1 != 0 && src == dst || (*_Operand)(unsafe.Pointer(src)).Fkind == int32(_STRING_DEF) {
 			num_tmp_regs = libc.Uint32FromInt32(((*_Operand)(unsafe.Pointer(origdst)).Fsize + int32(3)) / int32(4))
 			if num_tmp_regs > uint32(m_MAX_TMP_REGS) {
-				x__ERROR(tls, cc, linenum, __ccgo_ts+48807, 0)
+				x__ERROR(tls, cc, linenum, __ccgo_ts+48815, 0)
 				return ir
 			}
 			temp2 = x__NewFunctionTempRegister(tls, cc)
@@ -35086,7 +35211,7 @@ func x__EmitMove(tls *libc.TLS, cc *CC, irl uintptr, origdst uintptr, origsrc ui
 		}
 		if (*_Operand)(unsafe.Pointer(origdst)).Fkind == int32(_COGMEM_REF) {
 			if num_tmp_regs != uint32(1) {
-				x__ERROR(tls, cc, linenum, __ccgo_ts+48868, 0)
+				x__ERROR(tls, cc, linenum, __ccgo_ts+48876, 0)
 				return ir
 			}
 			ir = s__EmitCogwrite(tls, cc, irl, src, dst)
@@ -35104,7 +35229,7 @@ func x__EmitMove(tls *libc.TLS, cc *CC, irl uintptr, origdst uintptr, origsrc ui
 						} else {
 							inc41 = x__NewImmediate(tls, cc, int32(4))
 							if src != temps[0] {
-								x__ERROR(tls, cc, linenum, __ccgo_ts+48906, libc.VaList(bp+8, size1))
+								x__ERROR(tls, cc, linenum, __ccgo_ts+48914, libc.VaList(bp+8, size1))
 								return ir
 							}
 							i = uint32(0)
@@ -35126,7 +35251,7 @@ func x__EmitMove(tls *libc.TLS, cc *CC, irl uintptr, origdst uintptr, origsrc ui
 					}
 				}
 			} else {
-				x__ERROR(tls, cc, linenum, __ccgo_ts+48843, 0)
+				x__ERROR(tls, cc, linenum, __ccgo_ts+48851, 0)
 			}
 		}
 		if off1 != 0 && (*_Operand)(unsafe.Pointer(dst)).Fkind != int32(_IMM_INT) {
@@ -35135,7 +35260,7 @@ func x__EmitMove(tls *libc.TLS, cc *CC, irl uintptr, origdst uintptr, origsrc ui
 	} else {
 		if dst != src {
 			if (*_Operand)(unsafe.Pointer(dst)).Fkind == int32(_IMM_INT) {
-				x__ERROR(tls, cc, linenum, __ccgo_ts+48938, 0)
+				x__ERROR(tls, cc, linenum, __ccgo_ts+48946, 0)
 			}
 			ir = x__EmitOp2(tls, cc, irl, int32(_OPC_MOV), dst, src)
 		}
@@ -35188,96 +35313,96 @@ func x__EmitSpinMethods(tls *libc.TLS, cc *CC, fb uintptr, P uintptr) {
 			varlen = int32(1)
 		}
 		if cc.x__gl_p2 != 0 {
-			v1 = __ccgo_ts + 56230
+			v1 = __ccgo_ts + 56238
 		} else {
-			v1 = __ccgo_ts + 7138
+			v1 = __ccgo_ts + 7140
 		}
 		noargs = v1
-		x__flexbuf_addstr(tls, cc, fb, __ccgo_ts+56233)
-		x__flexbuf_addstr(tls, cc, fb, __ccgo_ts+56238)
-		x__flexbuf_printf(tls, cc, fb, __ccgo_ts+56312, libc.VaList(bp+8, varlen/int32(4)))
-		x__flexbuf_addstr(tls, cc, fb, __ccgo_ts+56375)
-		x__flexbuf_addstr(tls, cc, fb, __ccgo_ts+56425)
-		x__flexbuf_addstr(tls, cc, fb, __ccgo_ts+56511)
-		x__flexbuf_addstr(tls, cc, fb, __ccgo_ts+56563)
-		x__flexbuf_addstr(tls, cc, fb, __ccgo_ts+56619)
-		x__flexbuf_addstr(tls, cc, fb, __ccgo_ts+56642)
-		x__flexbuf_printf(tls, cc, fb, __ccgo_ts+56695, libc.VaList(bp+8, noargs))
-		x__flexbuf_addstr(tls, cc, fb, __ccgo_ts+56720)
+		x__flexbuf_addstr(tls, cc, fb, __ccgo_ts+56241)
+		x__flexbuf_addstr(tls, cc, fb, __ccgo_ts+56246)
+		x__flexbuf_printf(tls, cc, fb, __ccgo_ts+56320, libc.VaList(bp+8, varlen/int32(4)))
+		x__flexbuf_addstr(tls, cc, fb, __ccgo_ts+56383)
+		x__flexbuf_addstr(tls, cc, fb, __ccgo_ts+56433)
+		x__flexbuf_addstr(tls, cc, fb, __ccgo_ts+56519)
+		x__flexbuf_addstr(tls, cc, fb, __ccgo_ts+56571)
+		x__flexbuf_addstr(tls, cc, fb, __ccgo_ts+56627)
+		x__flexbuf_addstr(tls, cc, fb, __ccgo_ts+56650)
+		x__flexbuf_printf(tls, cc, fb, __ccgo_ts+56703, libc.VaList(bp+8, noargs))
+		x__flexbuf_addstr(tls, cc, fb, __ccgo_ts+56728)
 		if cc.x__gl_p2 != 0 {
-			x__flexbuf_addstr(tls, cc, fb, __ccgo_ts+56759)
+			x__flexbuf_addstr(tls, cc, fb, __ccgo_ts+56767)
 		} else {
-			x__flexbuf_addstr(tls, cc, fb, __ccgo_ts+56784)
+			x__flexbuf_addstr(tls, cc, fb, __ccgo_ts+56792)
 		}
-		x__flexbuf_addstr(tls, cc, fb, __ccgo_ts+56823)
-		x__flexbuf_addstr(tls, cc, fb, __ccgo_ts+56851)
-		x__flexbuf_addstr(tls, cc, fb, __ccgo_ts+56878)
-		x__flexbuf_addstr(tls, cc, fb, __ccgo_ts+56895)
-		x__flexbuf_addstr(tls, cc, fb, __ccgo_ts+56932)
-		x__flexbuf_addstr(tls, cc, fb, __ccgo_ts+56942)
-		x__flexbuf_addstr(tls, cc, fb, __ccgo_ts+57003)
-		x__flexbuf_addstr(tls, cc, fb, __ccgo_ts+57027)
-		x__flexbuf_printf(tls, cc, fb, __ccgo_ts+57041, libc.VaList(bp+8, noargs))
-		x__flexbuf_addstr(tls, cc, fb, __ccgo_ts+57061)
-		x__flexbuf_addstr(tls, cc, fb, __ccgo_ts+57086)
-		x__flexbuf_printf(tls, cc, fb, __ccgo_ts+57118, libc.VaList(bp+8, noargs))
-		x__flexbuf_addstr(tls, cc, fb, __ccgo_ts+57135)
-		x__flexbuf_printf(tls, cc, fb, __ccgo_ts+57150, libc.VaList(bp+8, noargs))
-		x__flexbuf_addstr(tls, cc, fb, __ccgo_ts+57204)
-		x__flexbuf_addstr(tls, cc, fb, __ccgo_ts+57232)
-		x__flexbuf_addstr(tls, cc, fb, __ccgo_ts+57252)
-		x__flexbuf_addstr(tls, cc, fb, __ccgo_ts+57272)
-		x__flexbuf_addstr(tls, cc, fb, __ccgo_ts+57312)
-		x__flexbuf_addstr(tls, cc, fb, __ccgo_ts+57387)
-		x__flexbuf_addstr(tls, cc, fb, __ccgo_ts+57475)
-		x__flexbuf_printf(tls, cc, fb, __ccgo_ts+57561, libc.VaList(bp+8, noargs))
-		x__flexbuf_addstr(tls, cc, fb, __ccgo_ts+57575)
-		x__flexbuf_addstr(tls, cc, fb, __ccgo_ts+57585)
-		x__flexbuf_addstr(tls, cc, fb, __ccgo_ts+57668)
-		x__flexbuf_addstr(tls, cc, fb, __ccgo_ts+57721)
-		x__flexbuf_addstr(tls, cc, fb, __ccgo_ts+57790)
-		x__flexbuf_addstr(tls, cc, fb, __ccgo_ts+57867)
-		x__flexbuf_printf(tls, cc, fb, __ccgo_ts+57910, libc.VaList(bp+8, noargs))
-		x__flexbuf_addstr(tls, cc, fb, __ccgo_ts+57926)
-		x__flexbuf_addstr(tls, cc, fb, __ccgo_ts+57945)
-		x__flexbuf_printf(tls, cc, fb, __ccgo_ts+58015, libc.VaList(bp+8, noargs))
-		x__flexbuf_addstr(tls, cc, fb, __ccgo_ts+58033)
-		x__flexbuf_addstr(tls, cc, fb, __ccgo_ts+58059)
-		x__flexbuf_addstr(tls, cc, fb, __ccgo_ts+58134)
-		x__flexbuf_addstr(tls, cc, fb, __ccgo_ts+58191)
-		x__flexbuf_addstr(tls, cc, fb, __ccgo_ts+58278)
-		x__flexbuf_addstr(tls, cc, fb, __ccgo_ts+58366)
-		x__flexbuf_addstr(tls, cc, fb, __ccgo_ts+58458)
+		x__flexbuf_addstr(tls, cc, fb, __ccgo_ts+56831)
+		x__flexbuf_addstr(tls, cc, fb, __ccgo_ts+56859)
+		x__flexbuf_addstr(tls, cc, fb, __ccgo_ts+56886)
+		x__flexbuf_addstr(tls, cc, fb, __ccgo_ts+56903)
+		x__flexbuf_addstr(tls, cc, fb, __ccgo_ts+56940)
+		x__flexbuf_addstr(tls, cc, fb, __ccgo_ts+56950)
+		x__flexbuf_addstr(tls, cc, fb, __ccgo_ts+57011)
+		x__flexbuf_addstr(tls, cc, fb, __ccgo_ts+57035)
+		x__flexbuf_printf(tls, cc, fb, __ccgo_ts+57049, libc.VaList(bp+8, noargs))
+		x__flexbuf_addstr(tls, cc, fb, __ccgo_ts+57069)
+		x__flexbuf_addstr(tls, cc, fb, __ccgo_ts+57094)
+		x__flexbuf_printf(tls, cc, fb, __ccgo_ts+57126, libc.VaList(bp+8, noargs))
+		x__flexbuf_addstr(tls, cc, fb, __ccgo_ts+57143)
+		x__flexbuf_printf(tls, cc, fb, __ccgo_ts+57158, libc.VaList(bp+8, noargs))
+		x__flexbuf_addstr(tls, cc, fb, __ccgo_ts+57212)
+		x__flexbuf_addstr(tls, cc, fb, __ccgo_ts+57240)
+		x__flexbuf_addstr(tls, cc, fb, __ccgo_ts+57260)
+		x__flexbuf_addstr(tls, cc, fb, __ccgo_ts+57280)
+		x__flexbuf_addstr(tls, cc, fb, __ccgo_ts+57320)
+		x__flexbuf_addstr(tls, cc, fb, __ccgo_ts+57395)
+		x__flexbuf_addstr(tls, cc, fb, __ccgo_ts+57483)
+		x__flexbuf_printf(tls, cc, fb, __ccgo_ts+57569, libc.VaList(bp+8, noargs))
+		x__flexbuf_addstr(tls, cc, fb, __ccgo_ts+57583)
+		x__flexbuf_addstr(tls, cc, fb, __ccgo_ts+57593)
+		x__flexbuf_addstr(tls, cc, fb, __ccgo_ts+57676)
+		x__flexbuf_addstr(tls, cc, fb, __ccgo_ts+57729)
+		x__flexbuf_addstr(tls, cc, fb, __ccgo_ts+57798)
+		x__flexbuf_addstr(tls, cc, fb, __ccgo_ts+57875)
+		x__flexbuf_printf(tls, cc, fb, __ccgo_ts+57918, libc.VaList(bp+8, noargs))
+		x__flexbuf_addstr(tls, cc, fb, __ccgo_ts+57934)
+		x__flexbuf_addstr(tls, cc, fb, __ccgo_ts+57953)
+		x__flexbuf_printf(tls, cc, fb, __ccgo_ts+58023, libc.VaList(bp+8, noargs))
+		x__flexbuf_addstr(tls, cc, fb, __ccgo_ts+58041)
+		x__flexbuf_addstr(tls, cc, fb, __ccgo_ts+58067)
+		x__flexbuf_addstr(tls, cc, fb, __ccgo_ts+58142)
+		x__flexbuf_addstr(tls, cc, fb, __ccgo_ts+58199)
+		x__flexbuf_addstr(tls, cc, fb, __ccgo_ts+58286)
+		x__flexbuf_addstr(tls, cc, fb, __ccgo_ts+58374)
+		x__flexbuf_addstr(tls, cc, fb, __ccgo_ts+58466)
 		if cc.x__gl_p2 != 0 {
-			x__flexbuf_addstr(tls, cc, fb, __ccgo_ts+58493)
+			x__flexbuf_addstr(tls, cc, fb, __ccgo_ts+58501)
 		} else {
-			x__flexbuf_addstr(tls, cc, fb, __ccgo_ts+58585)
+			x__flexbuf_addstr(tls, cc, fb, __ccgo_ts+58593)
 		}
-		x__flexbuf_addstr(tls, cc, fb, __ccgo_ts+58677)
-		x__flexbuf_addstr(tls, cc, fb, __ccgo_ts+58745)
-		x__flexbuf_addstr(tls, cc, fb, __ccgo_ts+58812)
-		x__flexbuf_printf(tls, cc, fb, __ccgo_ts+58874, libc.VaList(bp+8, noargs))
-		x__flexbuf_addstr(tls, cc, fb, __ccgo_ts+58932)
-		x__flexbuf_addstr(tls, cc, fb, __ccgo_ts+58945)
-		x__flexbuf_addstr(tls, cc, fb, __ccgo_ts+59011)
-		x__flexbuf_addstr(tls, cc, fb, __ccgo_ts+59081)
-		x__flexbuf_addstr(tls, cc, fb, __ccgo_ts+59158)
-		x__flexbuf_addstr(tls, cc, fb, __ccgo_ts+59230)
-		x__flexbuf_addstr(tls, cc, fb, __ccgo_ts+59309)
-		x__flexbuf_addstr(tls, cc, fb, __ccgo_ts+59397)
-		x__flexbuf_printf(tls, cc, fb, __ccgo_ts+59483, libc.VaList(bp+8, noargs))
-		x__flexbuf_addstr(tls, cc, fb, __ccgo_ts+59529)
-		x__flexbuf_addstr(tls, cc, fb, __ccgo_ts+59554)
-		x__flexbuf_addstr(tls, cc, fb, __ccgo_ts+59630)
-		x__flexbuf_addstr(tls, cc, fb, __ccgo_ts+59679)
-		x__flexbuf_addstr(tls, cc, fb, __ccgo_ts+59721)
-		x__flexbuf_addstr(tls, cc, fb, __ccgo_ts+59791)
-		x__flexbuf_addstr(tls, cc, fb, __ccgo_ts+59854)
-		x__flexbuf_addstr(tls, cc, fb, __ccgo_ts+59920)
-		x__flexbuf_addstr(tls, cc, fb, __ccgo_ts+59940)
-		x__flexbuf_addstr(tls, cc, fb, __ccgo_ts+59986)
-		x__flexbuf_addstr(tls, cc, fb, __ccgo_ts+60039)
-		x__flexbuf_addstr(tls, cc, fb, __ccgo_ts+60092)
+		x__flexbuf_addstr(tls, cc, fb, __ccgo_ts+58685)
+		x__flexbuf_addstr(tls, cc, fb, __ccgo_ts+58753)
+		x__flexbuf_addstr(tls, cc, fb, __ccgo_ts+58820)
+		x__flexbuf_printf(tls, cc, fb, __ccgo_ts+58882, libc.VaList(bp+8, noargs))
+		x__flexbuf_addstr(tls, cc, fb, __ccgo_ts+58940)
+		x__flexbuf_addstr(tls, cc, fb, __ccgo_ts+58953)
+		x__flexbuf_addstr(tls, cc, fb, __ccgo_ts+59019)
+		x__flexbuf_addstr(tls, cc, fb, __ccgo_ts+59089)
+		x__flexbuf_addstr(tls, cc, fb, __ccgo_ts+59166)
+		x__flexbuf_addstr(tls, cc, fb, __ccgo_ts+59238)
+		x__flexbuf_addstr(tls, cc, fb, __ccgo_ts+59317)
+		x__flexbuf_addstr(tls, cc, fb, __ccgo_ts+59405)
+		x__flexbuf_printf(tls, cc, fb, __ccgo_ts+59491, libc.VaList(bp+8, noargs))
+		x__flexbuf_addstr(tls, cc, fb, __ccgo_ts+59537)
+		x__flexbuf_addstr(tls, cc, fb, __ccgo_ts+59562)
+		x__flexbuf_addstr(tls, cc, fb, __ccgo_ts+59638)
+		x__flexbuf_addstr(tls, cc, fb, __ccgo_ts+59687)
+		x__flexbuf_addstr(tls, cc, fb, __ccgo_ts+59729)
+		x__flexbuf_addstr(tls, cc, fb, __ccgo_ts+59799)
+		x__flexbuf_addstr(tls, cc, fb, __ccgo_ts+59862)
+		x__flexbuf_addstr(tls, cc, fb, __ccgo_ts+59928)
+		x__flexbuf_addstr(tls, cc, fb, __ccgo_ts+59948)
+		x__flexbuf_addstr(tls, cc, fb, __ccgo_ts+59994)
+		x__flexbuf_addstr(tls, cc, fb, __ccgo_ts+60047)
+		x__flexbuf_addstr(tls, cc, fb, __ccgo_ts+60100)
 		// now we have to create the stub functions
 		f = (*_Module)(unsafe.Pointer(P)).Ffunctions
 		for {
@@ -35288,43 +35413,43 @@ func x__EmitSpinMethods(tls *libc.TLS, cc *CC, fb uintptr, P uintptr) {
 				list = (*_Function)(unsafe.Pointer(f)).Fparams
 				paramnum = int32(2)
 				needcomma = 0
-				x__flexbuf_printf(tls, cc, fb, __ccgo_ts+60146, libc.VaList(bp+8, (*_Function)(unsafe.Pointer(f)).Fname))
+				x__flexbuf_printf(tls, cc, fb, __ccgo_ts+60154, libc.VaList(bp+8, (*_Function)(unsafe.Pointer(f)).Fname))
 				if list != 0 {
-					x__flexbuf_addstr(tls, cc, fb, __ccgo_ts+28070)
+					x__flexbuf_addstr(tls, cc, fb, __ccgo_ts+28078)
 					for list != 0 {
 						ast = (*_AST)(unsafe.Pointer(list)).Fleft
 						if needcomma != 0 {
-							x__flexbuf_addstr(tls, cc, fb, __ccgo_ts+60153)
+							x__flexbuf_addstr(tls, cc, fb, __ccgo_ts+60161)
 						}
 						x__flexbuf_addstr(tls, cc, fb, x__VarName(tls, cc, ast))
 						needcomma = int32(1)
 						list = (*_AST)(unsafe.Pointer(list)).Fright
 					}
-					x__flexbuf_addstr(tls, cc, fb, __ccgo_ts+28072)
+					x__flexbuf_addstr(tls, cc, fb, __ccgo_ts+28080)
 				} else {
 					if cc.x__gl_p2 != 0 {
-						x__flexbuf_addstr(tls, cc, fb, __ccgo_ts+56230)
+						x__flexbuf_addstr(tls, cc, fb, __ccgo_ts+56238)
 					}
 				}
 				if (*_Function)(unsafe.Pointer(f)).Fnumresults > int32(1) {
-					x__flexbuf_addstr(tls, cc, fb, __ccgo_ts+60156)
+					x__flexbuf_addstr(tls, cc, fb, __ccgo_ts+60164)
 					i = int32(1)
 					for {
 						if !(i < (*_Function)(unsafe.Pointer(f)).Fnumresults) {
 							break
 						}
-						x__flexbuf_printf(tls, cc, fb, __ccgo_ts+60162, libc.VaList(bp+8, i))
+						x__flexbuf_printf(tls, cc, fb, __ccgo_ts+60170, libc.VaList(bp+8, i))
 						goto _3
 					_3:
 						;
 						i = i + 1
 					}
 				}
-				x__flexbuf_addstr(tls, cc, fb, __ccgo_ts+4265)
-				x__flexbuf_printf(tls, cc, fb, __ccgo_ts+60168, libc.VaList(bp+8, noargs))
+				x__flexbuf_addstr(tls, cc, fb, __ccgo_ts+4267)
+				x__flexbuf_printf(tls, cc, fb, __ccgo_ts+60176, libc.VaList(bp+8, noargs))
 				list = (*_Function)(unsafe.Pointer(f)).Fparams
 				for list != 0 {
-					x__flexbuf_printf(tls, cc, fb, __ccgo_ts+60180, libc.VaList(bp+8, paramnum, x__VarName(tls, cc, (*_AST)(unsafe.Pointer(list)).Fleft)))
+					x__flexbuf_printf(tls, cc, fb, __ccgo_ts+60188, libc.VaList(bp+8, paramnum, x__VarName(tls, cc, (*_AST)(unsafe.Pointer(list)).Fleft)))
 					list = (*_AST)(unsafe.Pointer(list)).Fright
 					paramnum = paramnum + 1
 				}
@@ -35344,23 +35469,23 @@ func x__EmitSpinMethods(tls *libc.TLS, cc *CC, fb uintptr, P uintptr) {
 				callLabel = v1
 				callname = (*_Operand)(unsafe.Pointer(callLabel)).Fname
 				if (*_Function)(unsafe.Pointer(f)).Fnumresults < int32(2) {
-					x__flexbuf_printf(tls, cc, fb, __ccgo_ts+60200, libc.VaList(bp+8, callname, synchronous))
+					x__flexbuf_printf(tls, cc, fb, __ccgo_ts+60208, libc.VaList(bp+8, callname, synchronous))
 				} else {
 					// synchronous call, fetch all results
-					x__flexbuf_printf(tls, cc, fb, __ccgo_ts+60229, libc.VaList(bp+8, callname))
-					x__flexbuf_printf(tls, cc, fb, __ccgo_ts+60258, 0)
+					x__flexbuf_printf(tls, cc, fb, __ccgo_ts+60237, libc.VaList(bp+8, callname))
+					x__flexbuf_printf(tls, cc, fb, __ccgo_ts+60266, 0)
 					i = 0
 					for {
 						if !(i < (*_Function)(unsafe.Pointer(f)).Fnumresults) {
 							break
 						}
-						x__flexbuf_printf(tls, cc, fb, __ccgo_ts+60289, libc.VaList(bp+8, i, int32(2)+i))
+						x__flexbuf_printf(tls, cc, fb, __ccgo_ts+60297, libc.VaList(bp+8, i, int32(2)+i))
 						goto _5
 					_5:
 						;
 						i = i + 1
 					}
-					x__flexbuf_printf(tls, cc, fb, __ccgo_ts+60310, libc.VaList(bp+8, noargs))
+					x__flexbuf_printf(tls, cc, fb, __ccgo_ts+60318, libc.VaList(bp+8, noargs))
 				}
 			}
 			goto _2
@@ -35368,13 +35493,13 @@ func x__EmitSpinMethods(tls *libc.TLS, cc *CC, fb uintptr, P uintptr) {
 			;
 			f = (*_Function)(unsafe.Pointer(f)).Fnext
 		}
-		x__flexbuf_addstr(tls, cc, fb, __ccgo_ts+59986)
-		x__flexbuf_addstr(tls, cc, fb, __ccgo_ts+60325)
-		x__flexbuf_addstr(tls, cc, fb, __ccgo_ts+60375)
-		x__flexbuf_addstr(tls, cc, fb, __ccgo_ts+60092)
+		x__flexbuf_addstr(tls, cc, fb, __ccgo_ts+59994)
+		x__flexbuf_addstr(tls, cc, fb, __ccgo_ts+60333)
+		x__flexbuf_addstr(tls, cc, fb, __ccgo_ts+60383)
+		x__flexbuf_addstr(tls, cc, fb, __ccgo_ts+60100)
 	} else {
-		x__flexbuf_addstr(tls, cc, fb, __ccgo_ts+60427)
-		x__flexbuf_addstr(tls, cc, fb, __ccgo_ts+60437)
+		x__flexbuf_addstr(tls, cc, fb, __ccgo_ts+60435)
+		x__flexbuf_addstr(tls, cc, fb, __ccgo_ts+60445)
 	}
 }
 
@@ -35400,40 +35525,40 @@ func x__EnterLabel(tls *libc.TLS, cc *CC, symtab uintptr, origLabel uintptr, hub
 		// redefining a label with the exact same values is OK
 		if (*_Symbol)(unsafe.Pointer(sym)).Fkind != int32(_SYM_LABEL) {
 			olddef = (*_Symbol)(unsafe.Pointer(sym)).Fdef
-			x__ERROR(tls, cc, origLabel, __ccgo_ts+8176, libc.VaList(bp+8, name))
+			x__ERROR(tls, cc, origLabel, __ccgo_ts+8178, libc.VaList(bp+8, name))
 			if olddef != 0 {
-				x__ERROR(tls, cc, olddef, __ccgo_ts+31510, 0)
+				x__ERROR(tls, cc, olddef, __ccgo_ts+31518, 0)
 			}
 			return
 		}
 		labelref = *(*uintptr)(unsafe.Pointer(sym + 32))
 		if libc.Int64FromUint32((*_Label)(unsafe.Pointer(labelref)).Fhubval) != hubpc {
 			if (*_Label)(unsafe.Pointer(labelref)).Fpass == pass {
-				x__ERROR(tls, cc, origLabel, __ccgo_ts+36418, libc.VaList(bp+8, name))
+				x__ERROR(tls, cc, origLabel, __ccgo_ts+36426, libc.VaList(bp+8, name))
 				return
 			}
 			cc.s__labels_changed = cc.s__labels_changed + 1
 		}
 		if libc.Int64FromUint32((*_Label)(unsafe.Pointer(labelref)).Fcogval) != cogpc && (*_Label)(unsafe.Pointer(labelref)).Fpass == pass {
-			x__ERROR(tls, cc, origLabel, __ccgo_ts+36451, libc.VaList(bp+8, name))
+			x__ERROR(tls, cc, origLabel, __ccgo_ts+36459, libc.VaList(bp+8, name))
 			return
 		}
 		if !(x__CompatibleTypes(tls, cc, (*_Label)(unsafe.Pointer(labelref)).Ftype1, ltype) != 0) {
-			x__ERROR(tls, cc, origLabel, __ccgo_ts+36484, libc.VaList(bp+8, name))
+			x__ERROR(tls, cc, origLabel, __ccgo_ts+36492, libc.VaList(bp+8, name))
 			return
 		}
 		if ltype != 0 && (*_Label)(unsafe.Pointer(labelref)).Fsize != libc.Uint32FromInt32(x__TypeSize(tls, cc, ltype)) {
-			x__ERROR(tls, cc, origLabel, __ccgo_ts+36511, libc.VaList(bp+8, name, (*_Label)(unsafe.Pointer(labelref)).Fsize, x__TypeSize(tls, cc, ltype)))
+			x__ERROR(tls, cc, origLabel, __ccgo_ts+36519, libc.VaList(bp+8, name, (*_Label)(unsafe.Pointer(labelref)).Fsize, x__TypeSize(tls, cc, ltype)))
 			return
 		}
 		if inHub != 0 {
 			if !((*_Label)(unsafe.Pointer(labelref)).Fflags&libc.Uint32FromInt32(m_LABEL_IN_HUB) != 0) {
-				x__ERROR(tls, cc, origLabel, __ccgo_ts+36552, libc.VaList(bp+8, name))
+				x__ERROR(tls, cc, origLabel, __ccgo_ts+36560, libc.VaList(bp+8, name))
 				return
 			}
 		} else {
 			if (*_Label)(unsafe.Pointer(labelref)).Fflags&uint32(m_LABEL_IN_HUB) != 0 {
-				x__ERROR(tls, cc, origLabel, __ccgo_ts+36552, libc.VaList(bp+8, name))
+				x__ERROR(tls, cc, origLabel, __ccgo_ts+36560, libc.VaList(bp+8, name))
 				return
 			}
 		}
@@ -35441,7 +35566,7 @@ func x__EnterLabel(tls *libc.TLS, cc *CC, symtab uintptr, origLabel uintptr, hub
 		labelref = calloc(tls, cc, uint64(1), uint64(40))
 	}
 	if !(labelref != 0) {
-		fprintf(tls, cc, libc.X__stderrp, __ccgo_ts+6559, 0)
+		fprintf(tls, cc, libc.X__stderrp, __ccgo_ts+6561, 0)
 		exit(tls, cc, int32(1))
 	}
 	(*_Label)(unsafe.Pointer(labelref)).Fhubval = libc.Uint32FromInt64(hubpc)
@@ -35498,7 +35623,7 @@ func x__EnterVars(tls *libc.TLS, cc *CC, kind int32, stab uintptr, defaulttype u
 				}
 			}
 			if !(ast != 0) {
-				ast = x__AstTempIdentifier(tls, cc, __ccgo_ts+28630)
+				ast = x__AstTempIdentifier(tls, cc, __ccgo_ts+28638)
 			}
 			switch (*_AST)(unsafe.Pointer(ast)).Fkind {
 			case int32(_AST_INTTYPE):
@@ -35524,7 +35649,7 @@ func x__EnterVars(tls *libc.TLS, cc *CC, kind int32, stab uintptr, defaulttype u
 			case int32(_AST_OBJECT):
 				// a type with no associated variable
 				actualtype = ast
-				ast = x__AstTempIdentifier(tls, cc, __ccgo_ts+28630)
+				ast = x__AstTempIdentifier(tls, cc, __ccgo_ts+28638)
 				// fall through
 				fallthrough
 			case int32(_AST_VARARGS):
@@ -35558,18 +35683,18 @@ func x__EnterVars(tls *libc.TLS, cc *CC, kind int32, stab uintptr, defaulttype u
 					id = (*_AST)(unsafe.Pointer(id)).Fleft
 				}
 				if id != 0 {
-					x__ERROR(tls, cc, ast, __ccgo_ts+28638, libc.VaList(bp+24, x__GetIdentifierName(tls, cc, id)))
+					x__ERROR(tls, cc, ast, __ccgo_ts+28646, libc.VaList(bp+24, x__GetIdentifierName(tls, cc, id)))
 				} else {
-					x__ERROR(tls, cc, ast, __ccgo_ts+28693, 0)
+					x__ERROR(tls, cc, ast, __ccgo_ts+28701, 0)
 				}
 				return offset
 			default:
 				/* this may be a type with no variable */
-				x__ERROR(tls, cc, ast, __ccgo_ts+6772, libc.VaList(bp+24, (*_AST)(unsafe.Pointer(ast)).Fkind))
+				x__ERROR(tls, cc, ast, __ccgo_ts+6774, libc.VaList(bp+24, (*_AST)(unsafe.Pointer(ast)).Fkind))
 				break
 			}
 		} else {
-			x__ERROR(tls, cc, lower, __ccgo_ts+28752, libc.VaList(bp+24, (*_AST)(unsafe.Pointer(lower)).Fkind))
+			x__ERROR(tls, cc, lower, __ccgo_ts+28760, libc.VaList(bp+24, (*_AST)(unsafe.Pointer(lower)).Fkind))
 			x__AstReportDone(tls, cc, bp)
 			return offset
 		}
@@ -35597,7 +35722,7 @@ func x__EvalRelocPasmExpr(tls *libc.TLS, cc *CC, expr uintptr, f uintptr, relocs
 	_, _, _ = addr, checkReloc, val
 	if (*_AST)(unsafe.Pointer(expr)).Fkind == int32(_AST_OPERATOR) {
 		if *(*_uint64_t)(unsafe.Pointer(expr + 8)) == uint64(_K_INCREMENT) || *(*_uint64_t)(unsafe.Pointer(expr + 8)) == uint64(_K_DECREMENT) {
-			x__ERROR(tls, cc, expr, __ccgo_ts+37764, 0)
+			x__ERROR(tls, cc, expr, __ccgo_ts+37772, 0)
 			return 0
 		}
 	}
@@ -35608,7 +35733,7 @@ func x__EvalRelocPasmExpr(tls *libc.TLS, cc *CC, expr uintptr, f uintptr, relocs
 		checkReloc = s__IsRelocatable(tls, cc, expr, bp+8, bp, isInitVal)
 		if checkReloc != int32(_RELOC_KIND_NONE) {
 			if checkReloc == -int32(1) {
-				x__ERROR(tls, cc, expr, __ccgo_ts+37804, 0)
+				x__ERROR(tls, cc, expr, __ccgo_ts+37812, 0)
 			} else {
 				addr = libc.Int32FromUint64(x__flexbuf_curlen(tls, cc, f))
 				(**(**_Reloc)(__ccgo_up(bp + 16))).Fkind = relocKind
@@ -35656,7 +35781,7 @@ func x__EvalTerminatedStringConst(tls *libc.TLS, cc *CC, expr uintptr, lenVal in
 			byteMask = libc.Uint32FromInt32(int32(1)<<lenVal - int32(1))
 			encodeLength = stringLength & byteMask
 			if encodeLength != stringLength {
-				x__ERROR(tls, cc, expr, __ccgo_ts+112247, libc.VaList(bp+8, lenVal))
+				x__ERROR(tls, cc, expr, __ccgo_ts+112253, libc.VaList(bp+8, lenVal))
 			}
 		} else {
 			encodeLength = stringLength
@@ -35694,7 +35819,7 @@ func x__ExpandArguments(tls *libc.TLS, cc *CC, sendptr uintptr, args uintptr) (r
 			switch (*_AST)(unsafe.Pointer(arg)).Fkind {
 			case int32(_AST_STRING):
 				if !(cc.s__sendstring != 0) {
-					cc.s__sendstring = x__AstIdentifier(tls, cc, __ccgo_ts+30411)
+					cc.s__sendstring = x__AstIdentifier(tls, cc, __ccgo_ts+30419)
 				}
 				arg = x__NewAST(tls, cc, int32(_AST_EXPRLIST), arg, libc.UintptrFromInt32(0))
 				arg = x__NewAST(tls, cc, int32(_AST_STRINGPTR), arg, libc.UintptrFromInt32(0))
@@ -35757,7 +35882,7 @@ func x__ExpandCEscapes(tls *libc.TLS, cc *CC, str uintptr) (r uintptr) {
 	_, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _ = c, d2, digit, dummy, elem, elist, inpstr, ptr, v1, v11, v12, v14, v15, v3, v5, v6, v8, v9
 	elist = libc.UintptrFromInt32(0)
 	if (*_AST)(unsafe.Pointer(str)).Fkind != int32(_AST_STRING) {
-		x__ERROR(tls, cc, str, __ccgo_ts+114627, 0)
+		x__ERROR(tls, cc, str, __ccgo_ts+114633, 0)
 		return libc.UintptrFromInt32(0)
 	}
 	inpstr = *(*uintptr)(unsafe.Pointer(str + 8))
@@ -35816,7 +35941,7 @@ func x__ExpandCEscapes(tls *libc.TLS, cc *CC, str uintptr) (r uintptr) {
 				_10:
 				}
 				if v15 || !(v9 != 0) {
-					x__ERROR(tls, cc, str, __ccgo_ts+114663, 0)
+					x__ERROR(tls, cc, str, __ccgo_ts+114669, 0)
 				} else {
 					v3 = libc.X__toupper(tls, int32(**(**int8)(__ccgo_up(inpstr))))
 					goto _17
@@ -35887,21 +36012,21 @@ func x__ExpandDittos(tls *libc.TLS, cc *CC, instrlist uintptr) {
 		}
 		if (*_AST)(unsafe.Pointer(ast)).Fkind == int32(_AST_DITTO_START) {
 			if ditto_start != 0 {
-				x__ERROR(tls, cc, ast, __ccgo_ts+36846, 0)
+				x__ERROR(tls, cc, ast, __ccgo_ts+36854, 0)
 			}
 			if (*_AST)(unsafe.Pointer(ast)).Fright != 0 {
-				x__ERROR(tls, cc, ast, __ccgo_ts+36869, 0)
+				x__ERROR(tls, cc, ast, __ccgo_ts+36877, 0)
 			}
 			ditto_start = oldtop
 			ditto_count = (*_AST)(unsafe.Pointer(ast)).Fleft
 		} else {
 			if (*_AST)(unsafe.Pointer(ast)).Fkind == int32(_AST_DITTO_END) {
 				if !(ditto_start != 0) {
-					x__ERROR(tls, cc, ast, __ccgo_ts+36898, 0)
+					x__ERROR(tls, cc, ast, __ccgo_ts+36906, 0)
 					continue
 				}
 				if (*_AST)(unsafe.Pointer(ast)).Fright != 0 {
-					x__ERROR(tls, cc, ast, __ccgo_ts+36922, 0)
+					x__ERROR(tls, cc, ast, __ccgo_ts+36930, 0)
 				}
 				s__DupDitto(tls, cc, ditto_start, oldtop, ditto_count)
 				v1 = libc.UintptrFromInt32(0)
@@ -35982,11 +36107,11 @@ func x__ExpandInlines(tls *libc.TLS, cc *CC, irl uintptr) (r int32) {
 //	// check for a list with just one element; returns that element
 func x__ExpectOneListElem(tls *libc.TLS, cc *CC, list uintptr) (r uintptr) {
 	if (*_AST)(unsafe.Pointer(list)).Fkind != int32(_AST_EXPRLIST) {
-		x__ERROR(tls, cc, list, __ccgo_ts+24645, 0)
+		x__ERROR(tls, cc, list, __ccgo_ts+24653, 0)
 		return list
 	}
 	if (*_AST)(unsafe.Pointer(list)).Fright != libc.UintptrFromInt32(0) {
-		x__ERROR(tls, cc, list, __ccgo_ts+24661, 0)
+		x__ERROR(tls, cc, list, __ccgo_ts+24669, 0)
 	}
 	return (*_AST)(unsafe.Pointer(list)).Fleft
 }
@@ -36223,7 +36348,7 @@ func x__ExprTypeRelative(tls *libc.TLS, cc *CC, table uintptr, expr uintptr, P u
 						return libc.UintptrFromInt32(0)
 					}
 				}
-				x__ERROR(tls, cc, expr, __ccgo_ts+26726, libc.VaList(bp+8, (*_Symbol)(unsafe.Pointer(sym1)).Fuser_name))
+				x__ERROR(tls, cc, expr, __ccgo_ts+26734, libc.VaList(bp+8, (*_Symbol)(unsafe.Pointer(sym1)).Fuser_name))
 			default:
 				return libc.UintptrFromInt32(0)
 			}
@@ -36252,7 +36377,7 @@ func x__ExprTypeRelative(tls *libc.TLS, cc *CC, table uintptr, expr uintptr, P u
 		typexpr1 = libc.UintptrFromInt32(0)
 		sym2 = libc.UintptrFromInt32(0)
 		if (*_AST)(unsafe.Pointer((*_AST)(unsafe.Pointer(expr)).Fright)).Fkind != int32(_AST_IDENTIFIER) && (*_AST)(unsafe.Pointer((*_AST)(unsafe.Pointer(expr)).Fright)).Fkind != int32(_AST_LOCAL_IDENTIFIER) {
-			x__ERROR(tls, cc, expr, __ccgo_ts+26770, 0)
+			x__ERROR(tls, cc, expr, __ccgo_ts+26778, 0)
 			return libc.UintptrFromInt32(0)
 		}
 		methodname = x__GetUserIdentifierName(tls, cc, (*_AST)(unsafe.Pointer(expr)).Fright)
@@ -36261,16 +36386,16 @@ func x__ExprTypeRelative(tls *libc.TLS, cc *CC, table uintptr, expr uintptr, P u
 			return libc.UintptrFromInt32(0)
 		}
 		if !(x__IsClassType(tls, cc, objtype) != 0) {
-			x__ERROR(tls, cc, expr, __ccgo_ts+26801, libc.VaList(bp+8, methodname))
+			x__ERROR(tls, cc, expr, __ccgo_ts+26809, libc.VaList(bp+8, methodname))
 			return libc.UintptrFromInt32(0)
 		}
 		sym2 = x__LookupMemberSymbol(tls, cc, expr, objtype, methodname, libc.UintptrFromInt32(0), libc.UintptrFromInt32(0))
 		if !(sym2 != 0) {
-			x__ERROR(tls, cc, expr, __ccgo_ts+26840, libc.VaList(bp+8, methodname, x__TypeName(tls, cc, objtype)))
+			x__ERROR(tls, cc, expr, __ccgo_ts+26848, libc.VaList(bp+8, methodname, x__TypeName(tls, cc, objtype)))
 			return libc.UintptrFromInt32(0)
 		}
 		if (*_Symbol)(unsafe.Pointer(sym2)).Fflags&int32(m_SYMF_PRIVATE) != 0 {
-			x__ERROR(tls, cc, expr, __ccgo_ts+26653, libc.VaList(bp+8, (*_Symbol)(unsafe.Pointer(sym2)).Fuser_name))
+			x__ERROR(tls, cc, expr, __ccgo_ts+26661, libc.VaList(bp+8, (*_Symbol)(unsafe.Pointer(sym2)).Fuser_name))
 			**(**int32)(__ccgo_up(sym2 + 40)) &= ^libc.Int32FromInt32(m_SYMF_PRIVATE) // prevent future errors
 		}
 		subclass = x__GetClassPtr(tls, cc, objtype)
@@ -36305,7 +36430,7 @@ func x__ExprTypeRelative(tls *libc.TLS, cc *CC, table uintptr, expr uintptr, P u
 			/* fall through to default */
 			fallthrough
 		default:
-			x__ERROR(tls, cc, expr, __ccgo_ts+26865, libc.VaList(bp+8, methodname))
+			x__ERROR(tls, cc, expr, __ccgo_ts+26873, libc.VaList(bp+8, methodname))
 			return libc.UintptrFromInt32(0)
 		}
 		fallthrough
@@ -36508,7 +36633,7 @@ func x__ExprTypeRelative(tls *libc.TLS, cc *CC, table uintptr, expr uintptr, P u
 	case int32(_AST_CONDRESULT):
 		sub1 = (*_AST)(unsafe.Pointer(expr)).Fright
 		if !(sub1 != 0) || (*_AST)(unsafe.Pointer(sub1)).Fkind != int32(_AST_THENELSE) {
-			x__ERROR(tls, cc, expr, __ccgo_ts+26892, 0)
+			x__ERROR(tls, cc, expr, __ccgo_ts+26900, 0)
 			return libc.UintptrFromInt32(0)
 		}
 		left = x__ExprTypeRelative(tls, cc, table, (*_AST)(unsafe.Pointer(sub1)).Fleft, P)
@@ -36548,7 +36673,7 @@ func x__ExtractSideEffects(tls *libc.TLS, cc *CC, expr uintptr, preseq uintptr) 
 	case int32(_AST_MEMREF):
 		if x__ExprHasSideEffects(tls, cc, (*_AST)(unsafe.Pointer(expr)).Fright) != 0 {
 			x__AstReportAs(tls, cc, expr, bp)
-			temp = x__AstTempLocalVariable(tls, cc, __ccgo_ts+32268, libc.UintptrFromInt32(0))
+			temp = x__AstTempLocalVariable(tls, cc, __ccgo_ts+32276, libc.UintptrFromInt32(0))
 			sideexpr = x__AstAssign(tls, cc, temp, (*_AST)(unsafe.Pointer(expr)).Fright)
 			(*_AST)(unsafe.Pointer(expr)).Fright = temp
 			if **(**uintptr)(__ccgo_up(preseq)) != 0 {
@@ -36561,7 +36686,7 @@ func x__ExtractSideEffects(tls *libc.TLS, cc *CC, expr uintptr, preseq uintptr) 
 		if (*_AST)(unsafe.Pointer(expr)).Fkind == int32(_AST_ARRAYREF) && s__NeedTempArrayPtr(tls, cc, (*_AST)(unsafe.Pointer(expr)).Fleft) != 0 {
 			x__AstReportAs(tls, cc, expr, bp)
 			typ = x__ExprType(tls, cc, (*_AST)(unsafe.Pointer(expr)).Fleft)
-			temp = x__AstTempLocalVariable(tls, cc, __ccgo_ts+32275, typ)
+			temp = x__AstTempLocalVariable(tls, cc, __ccgo_ts+32283, typ)
 			sideexpr = x__AstAssign(tls, cc, temp, (*_AST)(unsafe.Pointer(expr)).Fleft)
 			(*_AST)(unsafe.Pointer(expr)).Fleft = temp
 			if **(**uintptr)(__ccgo_up(preseq)) != 0 {
@@ -36647,13 +36772,13 @@ func x__FindClassByAst(tls *libc.TLS, cc *CC, astName uintptr) (r uintptr) {
 	if sym != 0 && (*_Symbol)(unsafe.Pointer(sym)).Fkind == int32(_SYM_TYPEDEF) {
 		typ = *(*uintptr)(unsafe.Pointer(sym + 32))
 		if (*_AST)(unsafe.Pointer(typ)).Fkind != int32(_AST_OBJECT) {
-			x__ERROR(tls, cc, astName, __ccgo_ts+122994, libc.VaList(bp+8, name))
+			x__ERROR(tls, cc, astName, __ccgo_ts+123008, libc.VaList(bp+8, name))
 			return libc.UintptrFromInt32(0)
 		}
 		P = x__GetClassPtr(tls, cc, typ)
 	}
 	if !(P != 0) {
-		x__ERROR(tls, cc, astName, __ccgo_ts+123012, libc.VaList(bp+8, name))
+		x__ERROR(tls, cc, astName, __ccgo_ts+123026, libc.VaList(bp+8, name))
 	}
 	return P
 }
@@ -36672,7 +36797,7 @@ func x__FindFuncSymbol(tls *libc.TLS, cc *CC, ast uintptr, objrefPtr uintptr, er
 	expr = ast
 	if (*_AST)(unsafe.Pointer(expr)).Fkind == int32(_AST_IDENTIFIER) || (*_AST)(unsafe.Pointer(expr)).Fkind == int32(_AST_LOCAL_IDENTIFIER) {
 		if errflag != 0 {
-			v1 = __ccgo_ts + 26582
+			v1 = __ccgo_ts + 26590
 		} else {
 			v1 = libc.UintptrFromInt32(0)
 		}
@@ -36706,28 +36831,28 @@ func x__FindFuncSymbol(tls *libc.TLS, cc *CC, ast uintptr, objrefPtr uintptr, er
 		}
 		if !(x__IsClassType(tls, cc, objtype) != 0) {
 			if errflag != 0 {
-				x__ERROR(tls, cc, ast, __ccgo_ts+26596, libc.VaList(bp+8, thename))
+				x__ERROR(tls, cc, ast, __ccgo_ts+26604, libc.VaList(bp+8, thename))
 			}
 			return libc.UintptrFromInt32(0)
 		}
 		sym = x__LookupMemberSymbol(tls, cc, objref, objtype, thename, libc.UintptrFromInt32(0), libc.UintptrFromInt32(0))
 		if sym != 0 {
 			if (*_Symbol)(unsafe.Pointer(sym)).Fflags&int32(m_SYMF_PRIVATE) != 0 {
-				x__ERROR(tls, cc, ast, __ccgo_ts+26653, libc.VaList(bp+8, thename))
+				x__ERROR(tls, cc, ast, __ccgo_ts+26661, libc.VaList(bp+8, thename))
 				**(**int32)(__ccgo_up(sym + 40)) &= ^libc.Int32FromInt32(m_SYMF_PRIVATE) // prevent future errors
 			}
 		}
 	} else {
 		if expr != 0 {
 			if errflag != 0 {
-				v1 = __ccgo_ts + 26582
+				v1 = __ccgo_ts + 26590
 			} else {
 				v1 = libc.UintptrFromInt32(0)
 			}
 			sym = x__LookupAstSymbol(tls, cc, expr, v1)
 		} else {
 			if errflag != 0 {
-				x__ERROR(tls, cc, ast, __ccgo_ts+26696, 0)
+				x__ERROR(tls, cc, ast, __ccgo_ts+26704, 0)
 			}
 		}
 		if sym != 0 && (*_Symbol)(unsafe.Pointer(sym)).Fkind == int32(_SYM_ALIAS) {
@@ -36769,7 +36894,7 @@ func x__FindInstrForOpc(tls *libc.TLS, cc *CC, kind _IROpcode1) (r1 uintptr) {
 	}
 	r = **(**uintptr)(__ccgo_up(cc.s__lookup_table + uintptr(libc.Uint32FromInt32(kind))*8))
 	if !(r != 0) {
-		x__ERROR(tls, cc, libc.UintptrFromInt32(0), __ccgo_ts+45583, libc.VaList(bp+8, kind))
+		x__ERROR(tls, cc, libc.UintptrFromInt32(0), __ccgo_ts+45591, libc.VaList(bp+8, kind))
 	}
 	return r
 }
@@ -36783,7 +36908,7 @@ func x__FindMethodInList(tls *libc.TLS, cc *CC, list uintptr, ident uintptr, cur
 	_ = curelem
 	curelem = 0
 	if !((*_AST)(unsafe.Pointer(ident)).Fkind == int32(_AST_IDENTIFIER) || (*_AST)(unsafe.Pointer(ident)).Fkind == int32(_AST_LOCAL_IDENTIFIER)) {
-		x__ERROR(tls, cc, ident, __ccgo_ts+27000, 0)
+		x__ERROR(tls, cc, ident, __ccgo_ts+27008, 0)
 		return libc.UintptrFromInt32(0)
 	}
 	if (*_AST)(unsafe.Pointer(ident)).Fkind == int32(_AST_LOCAL_IDENTIFIER) {
@@ -36894,7 +37019,7 @@ func x__FixupFunccallTypes(tls *libc.TLS, cc *CC, ast uintptr, typedLanguage uin
 							if cc.x__gl_output == int32(m_OUTPUT_BYTECODE) || cc.x__gl_output <= int32(m_OUTPUT_C) {
 								bytes = s__PushSize(tls, cc, actualParamList)
 								funcall = x__NewAST(tls, cc, int32(_AST_FUNCCALL), cc.s__gc_alloc_managed, x__NewAST(tls, cc, int32(_AST_EXPRLIST), x__AstInteger(tls, cc, int64(bytes)), libc.UintptrFromInt32(0)))
-								varArgs = x__AstTempLocalVariable(tls, cc, __ccgo_ts+34342, libc.UintptrFromInt32(0))
+								varArgs = x__AstTempLocalVariable(tls, cc, __ccgo_ts+34350, libc.UintptrFromInt32(0))
 								varArgsPlace = actualParamListPrev + 24
 								varArgsList = x__NewAST(tls, cc, int32(_AST_SEQUENCE), x__AstAssign(tls, cc, varArgs, funcall), libc.UintptrFromInt32(0))
 							}
@@ -36924,12 +37049,12 @@ func x__FixupFunccallTypes(tls *libc.TLS, cc *CC, ast uintptr, typedLanguage uin
 			if tupleType != 0 {
 				// we can't actually modify the arguments
 				if typedLanguage != 0 || x__IsRefType(tls, cc, expectType) != 0 {
-					x__CoerceAssignTypes(tls, cc, ast, int32(_AST_FUNCCALL), libc.UintptrFromInt32(0), expectType, passedType, __ccgo_ts+34352)
+					x__CoerceAssignTypes(tls, cc, ast, int32(_AST_FUNCCALL), libc.UintptrFromInt32(0), expectType, passedType, __ccgo_ts+34360)
 				}
 				tupleType = (*_AST)(unsafe.Pointer(tupleType)).Fright
 			} else {
 				if typedLanguage != 0 || x__IsRefType(tls, cc, expectType) != 0 {
-					x__CoerceAssignTypes(tls, cc, ast, int32(_AST_FUNCCALL), actualParamList+16, expectType, passedType, __ccgo_ts+34352)
+					x__CoerceAssignTypes(tls, cc, ast, int32(_AST_FUNCCALL), actualParamList+16, expectType, passedType, __ccgo_ts+34360)
 				}
 			}
 			if !(tupleType != 0) {
@@ -37049,7 +37174,7 @@ func x__FixupInitList(tls *libc.TLS, cc *CC, type1 uintptr, initval uintptr, uni
 		}
 		astarr = calloc(tls, cc, libc.Uint64FromInt32(numelems), uint64(8))
 		if !(astarr != 0) {
-			x__ERROR(tls, cc, libc.UintptrFromInt32(0), __ccgo_ts+27020, 0)
+			x__ERROR(tls, cc, libc.UintptrFromInt32(0), __ccgo_ts+27028, 0)
 			return uintptr(0)
 		}
 		**(**int32)(__ccgo_up(bp)) = 0
@@ -37062,15 +37187,15 @@ func x__FixupInitList(tls *libc.TLS, cc *CC, type1 uintptr, initval uintptr, uni
 				fixup = (*_AST)(unsafe.Pointer(root)).Fleft
 				newval = (*_AST)(unsafe.Pointer(root)).Fright
 				if !(fixup != 0) || (*_AST)(unsafe.Pointer(fixup)).Fkind != int32(_AST_ARRAYREF) {
-					x__ERROR(tls, cc, fixup, __ccgo_ts+27034, 0)
+					x__ERROR(tls, cc, fixup, __ccgo_ts+27042, 0)
 					(*_AST)(unsafe.Pointer(val)).Fleft = x__AstInteger(tls, cc, 0)
 				} else {
 					if (*_AST)(unsafe.Pointer(fixup)).Fleft != libc.UintptrFromInt32(0) {
-						x__ERROR(tls, cc, fixup, __ccgo_ts+27094, 0)
+						x__ERROR(tls, cc, fixup, __ccgo_ts+27102, 0)
 						(*_AST)(unsafe.Pointer(val)).Fleft = x__AstInteger(tls, cc, 0)
 					} else {
 						if !(x__IsConstExpr(tls, cc, (*_AST)(unsafe.Pointer(fixup)).Fright) != 0) {
-							x__ERROR(tls, cc, fixup, __ccgo_ts+27143, 0)
+							x__ERROR(tls, cc, fixup, __ccgo_ts+27151, 0)
 							(*_AST)(unsafe.Pointer(val)).Fleft = x__AstInteger(tls, cc, 0)
 						} else {
 							**(**int32)(__ccgo_up(bp)) = int32(x__EvalConstExpr(tls, cc, (*_AST)(unsafe.Pointer(fixup)).Fright))
@@ -37083,12 +37208,12 @@ func x__FixupInitList(tls *libc.TLS, cc *CC, type1 uintptr, initval uintptr, uni
 				if **(**uintptr)(__ccgo_up(astarr + uintptr(**(**int32)(__ccgo_up(bp)))*8)) != 0 {
 					// C99 says the last definition applies, so this probably isn't
 					// an error
-					x__WARNING(tls, cc, val, __ccgo_ts+27195, libc.VaList(bp+24, **(**int32)(__ccgo_up(bp))))
+					x__WARNING(tls, cc, val, __ccgo_ts+27203, libc.VaList(bp+24, **(**int32)(__ccgo_up(bp))))
 				}
 				**(**uintptr)(__ccgo_up(astarr + uintptr(**(**int32)(__ccgo_up(bp)))*8)) = val
 				**(**int32)(__ccgo_up(bp)) = **(**int32)(__ccgo_up(bp)) + 1
 			} else {
-				x__WARNING(tls, cc, val, __ccgo_ts+27240, 0)
+				x__WARNING(tls, cc, val, __ccgo_ts+27248, 0)
 			}
 		}
 	case int32(_AST_OBJECT):
@@ -37101,7 +37226,7 @@ func x__FixupInitList(tls *libc.TLS, cc *CC, type1 uintptr, initval uintptr, uni
 		numelems = x__AggregateCount(tls, cc, type1)
 		astarr = calloc(tls, cc, libc.Uint64FromInt32(numelems), uint64(8))
 		if !(astarr != 0) {
-			x__ERROR(tls, cc, libc.UintptrFromInt32(0), __ccgo_ts+27020, 0)
+			x__ERROR(tls, cc, libc.UintptrFromInt32(0), __ccgo_ts+27028, 0)
 			return uintptr(0)
 		}
 		/* now pull out the initializers */
@@ -37116,17 +37241,17 @@ func x__FixupInitList(tls *libc.TLS, cc *CC, type1 uintptr, initval uintptr, uni
 				fixup1 = (*_AST)(unsafe.Pointer(root1)).Fleft
 				newval1 = (*_AST)(unsafe.Pointer(root1)).Fright
 				if !(fixup1 != 0) || (*_AST)(unsafe.Pointer(fixup1)).Fkind != int32(_AST_METHODREF) {
-					x__ERROR(tls, cc, fixup1, __ccgo_ts+27269, 0)
+					x__ERROR(tls, cc, fixup1, __ccgo_ts+27277, 0)
 					newval1 = x__AstInteger(tls, cc, 0)
 				} else {
 					if (*_AST)(unsafe.Pointer(fixup1)).Fleft != libc.UintptrFromInt32(0) {
-						x__ERROR(tls, cc, fixup1, __ccgo_ts+27094, 0)
+						x__ERROR(tls, cc, fixup1, __ccgo_ts+27102, 0)
 						newval1 = x__AstInteger(tls, cc, 0)
 					} else {
 						methodname = (*_AST)(unsafe.Pointer(fixup1)).Fright
 						varlist = x__FindMethodInList(tls, cc, (*_Module)(unsafe.Pointer(P)).Ffinalvarblock, methodname, bp)
 						if !(varlist != 0) {
-							x__ERROR(tls, cc, fixup1, __ccgo_ts+27332, libc.VaList(bp+24, x__GetUserIdentifierName(tls, cc, (*_AST)(unsafe.Pointer(fixup1)).Fright)))
+							x__ERROR(tls, cc, fixup1, __ccgo_ts+27340, libc.VaList(bp+24, x__GetUserIdentifierName(tls, cc, (*_AST)(unsafe.Pointer(fixup1)).Fright)))
 							break
 						}
 					}
@@ -37151,7 +37276,7 @@ func x__FixupInitList(tls *libc.TLS, cc *CC, type1 uintptr, initval uintptr, uni
 				**(**int32)(__ccgo_up(bp)) = **(**int32)(__ccgo_up(bp)) + 1
 				varlist = (*_AST)(unsafe.Pointer(varlist)).Fright
 			} else {
-				x__WARNING(tls, cc, val1, __ccgo_ts+27355, 0)
+				x__WARNING(tls, cc, val1, __ccgo_ts+27363, 0)
 			}
 		}
 	default:
@@ -37227,12 +37352,12 @@ func x__FixupThreeOperands(tls *libc.TLS, cc *CC, val _uint32_t, op uintptr, imm
 	var NN _uint32_t
 	_ = NN
 	if !(op != 0) || immflags == uint32(0) {
-		x__ERROR(tls, cc, line, __ccgo_ts+38648, libc.VaList(bp+8, (*_Instruction)(unsafe.Pointer(instr)).Fname))
+		x__ERROR(tls, cc, line, __ccgo_ts+38656, libc.VaList(bp+8, (*_Instruction)(unsafe.Pointer(instr)).Fname))
 		return val
 	}
 	NN = libc.Uint32FromInt64(x__EvalPasmExpr(tls, cc, op))
 	if NN >= maxN {
-		x__ERROR(tls, cc, line, __ccgo_ts+38690, libc.VaList(bp+8, (*_Instruction)(unsafe.Pointer(instr)).Fname, maxN))
+		x__ERROR(tls, cc, line, __ccgo_ts+38698, libc.VaList(bp+8, (*_Instruction)(unsafe.Pointer(instr)).Fname, maxN))
 		return val
 	}
 	val = val | NN<<int32(19)
@@ -37243,11 +37368,11 @@ func x__GetArgReg(tls *libc.TLS, cc *CC, n int32) (r uintptr) {
 	bp := tls.Alloc(16)
 	defer tls.Free(16)
 	if n < 0 || n >= int32(m_MAX_ARG_REGISTER) {
-		x__ERROR(tls, cc, libc.UintptrFromInt32(0), __ccgo_ts+45205, 0)
+		x__ERROR(tls, cc, libc.UintptrFromInt32(0), __ccgo_ts+45213, 0)
 		return libc.UintptrFromInt32(0)
 	}
 	if !(cc.x__argreg[n] != 0) {
-		libc.Xsprintf(tls, uintptr(unsafe.Pointer(&cc.s__rvalname1)), __ccgo_ts+45281, libc.VaList(bp+8, n+int32(1)))
+		libc.Xsprintf(tls, uintptr(unsafe.Pointer(&cc.s__rvalname1)), __ccgo_ts+45289, libc.VaList(bp+8, n+int32(1)))
 		cc.x__argreg[n] = x__GetOneGlobal(tls, cc, int32(_REG_ARG), libc.Xstrdup(tls, uintptr(unsafe.Pointer(&cc.s__rvalname1))), int64(n))
 	}
 	return cc.x__argreg[n]
@@ -37262,29 +37387,29 @@ func x__GetClassPtr(tls *libc.TLS, cc *CC, objtype uintptr) (r uintptr) {
 	}
 	objtype = x__BaseType(tls, cc, objtype)
 	if (*_AST)(unsafe.Pointer(objtype)).Fkind != int32(_AST_OBJECT) {
-		x__ERROR(tls, cc, objtype, __ccgo_ts+24712, 0)
+		x__ERROR(tls, cc, objtype, __ccgo_ts+24720, 0)
 		return libc.UintptrFromInt32(0)
 	}
 	return *(*uintptr)(unsafe.Pointer(objtype + 8))
 }
 
 func x__GetCurArrayBase(tls *libc.TLS, cc *CC) (r uintptr) {
-	return x__GetCurOptionSymbol(tls, cc, __ccgo_ts+119412, 0)
+	return x__GetCurOptionSymbol(tls, cc, __ccgo_ts+119426, 0)
 }
 
 func x__GetCurImplicitTypes(tls *libc.TLS, cc *CC) (r uintptr) {
-	return x__GetCurOptionSymbol(tls, cc, __ccgo_ts+119425, 0)
+	return x__GetCurOptionSymbol(tls, cc, __ccgo_ts+119439, 0)
 }
 
 func x__GetDebugReg(tls *libc.TLS, cc *CC, n int32) (r uintptr) {
 	bp := tls.Alloc(16)
 	defer tls.Free(16)
 	if n < 0 || n >= int32(m_MAX_LOCAL_REGISTER) {
-		x__ERROR(tls, cc, libc.UintptrFromInt32(0), __ccgo_ts+45289, 0)
+		x__ERROR(tls, cc, libc.UintptrFromInt32(0), __ccgo_ts+45297, 0)
 		return libc.UintptrFromInt32(0)
 	}
 	if !(cc.s__debugreg[n] != 0) {
-		libc.Xsprintf(tls, uintptr(unsafe.Pointer(&cc.s__rvalname2)), __ccgo_ts+45365, libc.VaList(bp+8, n))
+		libc.Xsprintf(tls, uintptr(unsafe.Pointer(&cc.s__rvalname2)), __ccgo_ts+45373, libc.VaList(bp+8, n))
 		cc.s__debugreg[n] = x__GetOneGlobal(tls, cc, int32(_REG_HW), libc.Xstrdup(tls, uintptr(unsafe.Pointer(&cc.s__rvalname2))), 0)
 		cc.s__debugaddr[n] = n
 	}
@@ -37298,7 +37423,7 @@ func x__GetIORegisterPair(tls *libc.TLS, cc *CC, name1 uintptr, name2 uintptr) (
 	_, _, _ = reg1, reg2, sym
 	sym = x__FindSymbolEx(tls, cc, uintptr(unsafe.Pointer(&cc.x__basicReservedWords)), name1, 0)
 	if !(sym != 0) {
-		x__SYNTAX_ERROR(tls, cc, __ccgo_ts+119390, libc.VaList(bp+8, name1))
+		x__SYNTAX_ERROR(tls, cc, __ccgo_ts+119404, libc.VaList(bp+8, name1))
 		return libc.UintptrFromInt32(0)
 	}
 	reg1 = x__NewAST(tls, cc, int32(_AST_HWREG), libc.UintptrFromInt32(0), libc.UintptrFromInt32(0))
@@ -37334,7 +37459,7 @@ func x__GetInterfaceSkeleton(tls *libc.TLS, cc *CC, P uintptr, I uintptr, n_ptr 
 	// figure out how many functions we need in the interface
 	n = (*_Module)(unsafe.Pointer(I)).Fvarsize / int32(m_LONG_SIZE)
 	**(**int32)(__ccgo_up(n_ptr)) = n
-	skelName = x__strdupcat(tls, cc, __ccgo_ts+36062, (*_Module)(unsafe.Pointer(I)).Fclassname)
+	skelName = x__strdupcat(tls, cc, __ccgo_ts+36070, (*_Module)(unsafe.Pointer(I)).Fclassname)
 	sym = x__LookupSymbolInTable(tls, cc, P+144, skelName)
 	if sym != 0 {
 		return sym
@@ -37354,18 +37479,18 @@ func x__GetInterfaceSkeleton(tls *libc.TLS, cc *CC, P uintptr, I uintptr, n_ptr 
 		funcSym = x__LookupSymbolInTable(tls, cc, P+144, (*_Function)(unsafe.Pointer(pf)).Fname)
 		if funcSym != 0 {
 			if (*_Symbol)(unsafe.Pointer(funcSym)).Fkind != int32(_SYM_FUNCTION) {
-				x__ERROR(tls, cc, line, __ccgo_ts+36069, libc.VaList(bp+8, (*_Function)(unsafe.Pointer(pf)).Fname, (*_Module)(unsafe.Pointer(P)).Fclassname, (*_Module)(unsafe.Pointer(I)).Fclassname))
+				x__ERROR(tls, cc, line, __ccgo_ts+36077, libc.VaList(bp+8, (*_Function)(unsafe.Pointer(pf)).Fname, (*_Module)(unsafe.Pointer(P)).Fclassname, (*_Module)(unsafe.Pointer(I)).Fclassname))
 				return libc.UintptrFromInt32(0)
 			}
 			ifaceType = (*_Function)(unsafe.Pointer(pf)).Foveralltype
 			moduleFunc = *(*uintptr)(unsafe.Pointer(funcSym + 32))
 			modType = (*_Function)(unsafe.Pointer(moduleFunc)).Foveralltype
 			if !(x__CompatibleTypes(tls, cc, ifaceType, modType) != 0) {
-				x__ERROR(tls, cc, line, __ccgo_ts+36139, libc.VaList(bp+8, (*_Function)(unsafe.Pointer(pf)).Fname, x__TypeName(tls, cc, ifaceType), (*_Module)(unsafe.Pointer(P)).Fclassname, x__TypeName(tls, cc, modType)))
+				x__ERROR(tls, cc, line, __ccgo_ts+36147, libc.VaList(bp+8, (*_Function)(unsafe.Pointer(pf)).Fname, x__TypeName(tls, cc, ifaceType), (*_Module)(unsafe.Pointer(P)).Fclassname, x__TypeName(tls, cc, modType)))
 			}
 		} else {
 			if !((*_Function)(unsafe.Pointer(pf)).Fbody != 0) {
-				x__ERROR(tls, cc, line, __ccgo_ts+36221, libc.VaList(bp+8, (*_Module)(unsafe.Pointer(P)).Fclassname, (*_Function)(unsafe.Pointer(pf)).Fname))
+				x__ERROR(tls, cc, line, __ccgo_ts+36229, libc.VaList(bp+8, (*_Module)(unsafe.Pointer(P)).Fclassname, (*_Function)(unsafe.Pointer(pf)).Fname))
 				return libc.UintptrFromInt32(0)
 			} else {
 				// use the default implementation
@@ -37404,7 +37529,7 @@ func x__GetLabelFromSymbol(tls *libc.TLS, cc *CC, where uintptr, name uintptr, i
 	_ = sym
 	sym = x__FindSymbolEx(tls, cc, cc.x__curfunc+160, name, 0)
 	if !(sym != 0) || (*_Symbol)(unsafe.Pointer(sym)).Fkind != int32(_SYM_LOCALLABEL) {
-		x__ERROR(tls, cc, where, __ccgo_ts+64731, libc.VaList(bp+8, name))
+		x__ERROR(tls, cc, where, __ccgo_ts+64739, libc.VaList(bp+8, name))
 		return libc.UintptrFromInt32(0)
 	}
 	if !(*(*uintptr)(unsafe.Pointer(sym + 32)) != 0) {
@@ -37470,7 +37595,7 @@ func x__GetLea(tls *libc.TLS, cc *CC, irl uintptr, src uintptr) (r uintptr) {
 		if (*_Operand)(unsafe.Pointer(src)).Fkind == int32(_IMM_HUB_LABEL) {
 			return x__NewImmediatePtr(tls, cc, libc.UintptrFromInt32(0), src)
 		} else {
-			x__ERROR(tls, cc, libc.UintptrFromInt32(0), __ccgo_ts+47308, 0)
+			x__ERROR(tls, cc, libc.UintptrFromInt32(0), __ccgo_ts+47316, 0)
 			return libc.UintptrFromInt32(0)
 		}
 	}
@@ -37484,13 +37609,13 @@ func x__GetMainFunction(tls *libc.TLS, cc *CC, P uintptr) (r uintptr) {
 	_, _, _ = f, mainName, pf
 	mainName = libc.UintptrFromInt32(0)
 	if (*_Module)(unsafe.Pointer(P)).FmainLanguage == int32(m_LANG_BASIC_FBASIC) {
-		mainName = __ccgo_ts + 10618
+		mainName = __ccgo_ts + 10620
 	} else {
 		if (*_Module)(unsafe.Pointer(P)).FmainLanguage >= int32(m_LANG_CFAMILY_C) && (*_Module)(unsafe.Pointer(P)).FmainLanguage <= int32(m_LANG_CFAMILY_CPP) {
 			if cc.x__gl_cenv_flags != 0 {
-				mainName = __ccgo_ts + 11674
+				mainName = __ccgo_ts + 11676
 			} else {
-				mainName = __ccgo_ts + 11685
+				mainName = __ccgo_ts + 11687
 			}
 		}
 	}
@@ -37508,7 +37633,7 @@ func x__GetMainFunction(tls *libc.TLS, cc *CC, P uintptr) (r uintptr) {
 			;
 			f = (*_Function)(unsafe.Pointer(f)).Fnext
 		}
-		x__ERROR(tls, cc, libc.UintptrFromInt32(0), __ccgo_ts+11690, libc.VaList(bp+8, mainName))
+		x__ERROR(tls, cc, libc.UintptrFromInt32(0), __ccgo_ts+11692, libc.VaList(bp+8, mainName))
 	}
 	/* for Spin, return first public function */
 	pf = (*_Module)(unsafe.Pointer(P)).Ffunctions
@@ -37526,7 +37651,7 @@ func x__GetMainFunction(tls *libc.TLS, cc *CC, P uintptr) (r uintptr) {
 	}
 	if !(pf != 0) && (*_Module)(unsafe.Pointer(P)).Ffunctions != 0 {
 		pf = (*_Module)(unsafe.Pointer(P)).Ffunctions
-		x__WARNING(tls, cc, libc.UintptrFromInt32(0), __ccgo_ts+11717, libc.VaList(bp+8, (*_Function)(unsafe.Pointer(pf)).Fname))
+		x__WARNING(tls, cc, libc.UintptrFromInt32(0), __ccgo_ts+11719, libc.VaList(bp+8, (*_Function)(unsafe.Pointer(pf)).Fname))
 		libc.SetBitFieldPtr32Uint32(pf+1248, libc.Uint32FromInt32(m_true), 0, 0x1)
 	}
 	return pf
@@ -37536,11 +37661,11 @@ func x__GetResultReg(tls *libc.TLS, cc *CC, n int32) (r uintptr) {
 	bp := tls.Alloc(16)
 	defer tls.Free(16)
 	if n < 0 || n >= int32(m_MAX_TUPLE) {
-		x__ERROR(tls, cc, libc.UintptrFromInt32(0), __ccgo_ts+45159, 0)
+		x__ERROR(tls, cc, libc.UintptrFromInt32(0), __ccgo_ts+45167, 0)
 		return libc.UintptrFromInt32(0)
 	}
 	if !(cc.x__resultreg[n] != 0) {
-		libc.Xsprintf(tls, uintptr(unsafe.Pointer(&cc.s__rvalname)), __ccgo_ts+45196, libc.VaList(bp+8, n+int32(1)))
+		libc.Xsprintf(tls, uintptr(unsafe.Pointer(&cc.s__rvalname)), __ccgo_ts+45204, libc.VaList(bp+8, n+int32(1)))
 		cc.x__resultreg[n] = x__GetOneGlobal(tls, cc, int32(_REG_RESULT), libc.Xstrdup(tls, uintptr(unsafe.Pointer(&cc.s__rvalname))), int64(n))
 	}
 	return cc.x__resultreg[n]
@@ -37688,7 +37813,7 @@ func x__GetSizeBound_Spin1(tls *libc.TLS, cc *CC, ir uintptr, min uintptr, max u
 			**(**int32)(__ccgo_up(bp + 20)) = **(**int32)(__ccgo_up(bp + 20)) + cc.x__pbase_offset
 			if (*_ByteOpIR)(unsafe.Pointer(ir)).Fkind == int32(_BOK_FUNDATA_LOOKUPJUMP) || int32(uint32(*(*uint8)(unsafe.Pointer(ir + 24 + 0))&0x1>>0)) != 0 {
 				if **(**int32)(__ccgo_up(bp + 20)) < 0 || **(**int32)(__ccgo_up(bp + 16)) < 0 {
-					x__ERROR(tls, cc, libc.UintptrFromInt32(0), __ccgo_ts+83230, 0)
+					x__ERROR(tls, cc, libc.UintptrFromInt32(0), __ccgo_ts+83236, 0)
 					v1 = libc.Int32FromInt32(3)
 					**(**int32)(__ccgo_up(max)) = v1
 					**(**int32)(__ccgo_up(min)) = v1
@@ -37710,7 +37835,7 @@ func x__GetSizeBound_Spin1(tls *libc.TLS, cc *CC, ir uintptr, min uintptr, max u
 				}
 			} else {
 				if **(**int32)(__ccgo_up(bp + 20)) < 0 || **(**int32)(__ccgo_up(bp + 16)) < 0 {
-					x__ERROR(tls, cc, libc.UintptrFromInt32(0), __ccgo_ts+83298, 0)
+					x__ERROR(tls, cc, libc.UintptrFromInt32(0), __ccgo_ts+83304, 0)
 					v1 = libc.Int32FromInt32(5)
 					**(**int32)(__ccgo_up(max)) = v1
 					**(**int32)(__ccgo_up(min)) = v1
@@ -37919,7 +38044,7 @@ func x__GetSizeBound_Spin1(tls *libc.TLS, cc *CC, ir uintptr, min uintptr, max u
 		**(**int32)(__ccgo_up(max)) = v2
 		**(**int32)(__ccgo_up(min)) = v2
 	default:
-		x__ERROR(tls, cc, libc.UintptrFromInt32(0), __ccgo_ts+83369, libc.VaList(bp+40, (*_ByteOpIR)(unsafe.Pointer(ir)).Fkind, cc.x__byteOpKindNames[(*_ByteOpIR)(unsafe.Pointer(ir)).Fkind]))
+		x__ERROR(tls, cc, libc.UintptrFromInt32(0), __ccgo_ts+83375, libc.VaList(bp+40, (*_ByteOpIR)(unsafe.Pointer(ir)).Fkind, cc.x__byteOpKindNames[(*_ByteOpIR)(unsafe.Pointer(ir)).Fkind]))
 		return
 	}
 }
@@ -37932,7 +38057,7 @@ func x__GetStringFromAst(tls *libc.TLS, cc *CC, ast uintptr) (r uintptr) {
 		ast = (*_AST)(unsafe.Pointer(ast)).Fleft
 	}
 	if !(ast != 0) || (*_AST)(unsafe.Pointer(ast)).Fkind != int32(_AST_STRING) {
-		return __ccgo_ts + 22694
+		return __ccgo_ts + 22702
 	}
 	return *(*uintptr)(unsafe.Pointer(ast + 8))
 }
@@ -38012,12 +38137,12 @@ func x__IdentifierLocalName(tls *libc.TLS, cc *CC, func1 uintptr, name uintptr) 
 	_ = P
 	P = (*_Function)(unsafe.Pointer(func1)).Fmodule
 	if x__IsTopLevel(tls, cc, P) != 0 {
-		libc.X__builtin_snprintf(tls, bp, libc.Uint64FromInt64(1024)-libc.Uint64FromInt32(1), __ccgo_ts+44879, libc.VaList(bp+1032, s__cleanname(tls, cc, (*_Function)(unsafe.Pointer(func1)).Fname)))
+		libc.X__builtin_snprintf(tls, bp, libc.Uint64FromInt64(1024)-libc.Uint64FromInt32(1), __ccgo_ts+44887, libc.VaList(bp+1032, s__cleanname(tls, cc, (*_Function)(unsafe.Pointer(func1)).Fname)))
 	} else {
 		if (*_Module)(unsafe.Pointer(P)).Fsuperclass != 0 && !(x__IsTopLevel(tls, cc, (*_Module)(unsafe.Pointer(P)).Fsuperclass) != 0) {
-			libc.X__builtin_snprintf(tls, bp, libc.Uint64FromInt64(1024)-libc.Uint64FromInt32(1), __ccgo_ts+44884, libc.VaList(bp+1032, (*_modulestate)(unsafe.Pointer((*_Module)(unsafe.Pointer(P)).Fsuperclass)).Fclassname, (*_Module)(unsafe.Pointer(P)).Fclassname, s__cleanname(tls, cc, (*_Function)(unsafe.Pointer(func1)).Fname)))
+			libc.X__builtin_snprintf(tls, bp, libc.Uint64FromInt64(1024)-libc.Uint64FromInt32(1), __ccgo_ts+44892, libc.VaList(bp+1032, (*_modulestate)(unsafe.Pointer((*_Module)(unsafe.Pointer(P)).Fsuperclass)).Fclassname, (*_Module)(unsafe.Pointer(P)).Fclassname, s__cleanname(tls, cc, (*_Function)(unsafe.Pointer(func1)).Fname)))
 		} else {
-			libc.X__builtin_snprintf(tls, bp, libc.Uint64FromInt64(1024)-libc.Uint64FromInt32(1), __ccgo_ts+44895, libc.VaList(bp+1032, (*_Module)(unsafe.Pointer(P)).Fclassname, s__cleanname(tls, cc, (*_Function)(unsafe.Pointer(func1)).Fname)))
+			libc.X__builtin_snprintf(tls, bp, libc.Uint64FromInt64(1024)-libc.Uint64FromInt32(1), __ccgo_ts+44903, libc.VaList(bp+1032, (*_Module)(unsafe.Pointer(P)).Fclassname, s__cleanname(tls, cc, (*_Function)(unsafe.Pointer(func1)).Fname)))
 		}
 	}
 	libc.Xstrncat(tls, bp, s__cleanname(tls, cc, name), libc.Uint64FromInt64(1024)-libc.Uint64FromInt32(1))
@@ -38030,12 +38155,12 @@ func x__IdentifierModuleName(tls *libc.TLS, cc *CC, P uintptr, name uintptr) (r 
 	var _ /* temp at bp+0 */ [1024]int8
 	if x__IsTopLevel(tls, cc, P) != 0 {
 		// avoid conflict with built-in assembler names by prepending "_"
-		libc.X__builtin_snprintf(tls, bp, libc.Uint64FromInt64(1024)-libc.Uint64FromInt32(1), __ccgo_ts+44903, libc.VaList(bp+1032, s__cleanname(tls, cc, name)))
+		libc.X__builtin_snprintf(tls, bp, libc.Uint64FromInt64(1024)-libc.Uint64FromInt32(1), __ccgo_ts+44911, libc.VaList(bp+1032, s__cleanname(tls, cc, name)))
 	} else {
 		if (*_Module)(unsafe.Pointer(P)).Fsuperclass != 0 && !(x__IsTopLevel(tls, cc, (*_Module)(unsafe.Pointer(P)).Fsuperclass) != 0) {
-			libc.X__builtin_snprintf(tls, bp, libc.Uint64FromInt64(1024)-libc.Uint64FromInt32(1), __ccgo_ts+44884, libc.VaList(bp+1032, (*_modulestate)(unsafe.Pointer((*_Module)(unsafe.Pointer(P)).Fsuperclass)).Fclassname, (*_Module)(unsafe.Pointer(P)).Fclassname, s__cleanname(tls, cc, name)))
+			libc.X__builtin_snprintf(tls, bp, libc.Uint64FromInt64(1024)-libc.Uint64FromInt32(1), __ccgo_ts+44892, libc.VaList(bp+1032, (*_modulestate)(unsafe.Pointer((*_Module)(unsafe.Pointer(P)).Fsuperclass)).Fclassname, (*_Module)(unsafe.Pointer(P)).Fclassname, s__cleanname(tls, cc, name)))
 		} else {
-			libc.X__builtin_snprintf(tls, bp, libc.Uint64FromInt64(1024)-libc.Uint64FromInt32(1), __ccgo_ts+44907, libc.VaList(bp+1032, (*_Module)(unsafe.Pointer(P)).Fclassname, s__cleanname(tls, cc, name)))
+			libc.X__builtin_snprintf(tls, bp, libc.Uint64FromInt64(1024)-libc.Uint64FromInt32(1), __ccgo_ts+44915, libc.VaList(bp+1032, (*_Module)(unsafe.Pointer(P)).Fclassname, s__cleanname(tls, cc, name)))
 		}
 	}
 	return libc.Xstrdup(tls, bp)
@@ -38050,7 +38175,7 @@ func x__ImmediateRef(tls *libc.TLS, cc *CC, immflag int32, val _intptr_t) (r uin
 	if immflag != 0 {
 		return x__NewImmediate(tls, cc, int32(val))
 	} else {
-		libc.Xsprintf(tls, bp, __ccgo_ts+64811, libc.VaList(bp+112, libc.Uint64FromInt64(val)))
+		libc.Xsprintf(tls, bp, __ccgo_ts+64819, libc.VaList(bp+112, libc.Uint64FromInt64(val)))
 		return x__NewOperand(tls, cc, int32(_REG_HW), libc.Xstrdup(tls, bp), 0)
 	}
 	return r
@@ -38068,14 +38193,14 @@ func x__InferTypeFromName(tls *libc.TLS, cc *CC, identifier uintptr) (r uintptr)
 		identifier = (*_AST)(unsafe.Pointer(identifier)).Fleft
 	}
 	if (*_AST)(unsafe.Pointer(identifier)).Fkind != int32(_AST_IDENTIFIER) {
-		x__ERROR(tls, cc, identifier, __ccgo_ts+8140, 0)
+		x__ERROR(tls, cc, identifier, __ccgo_ts+8142, 0)
 		return libc.UintptrFromInt32(0)
 	}
 	v1 = *(*uintptr)(unsafe.Pointer(identifier + 8))
 	name = v1
 	suffix = v1
 	if !(**(**int8)(__ccgo_up(name)) != 0) {
-		x__ERROR(tls, cc, identifier, __ccgo_ts+10459, 0)
+		x__ERROR(tls, cc, identifier, __ccgo_ts+10461, 0)
 		return libc.UintptrFromInt32(0)
 	}
 	for int32(**(**int8)(__ccgo_up(suffix + 1))) != 0 {
@@ -38103,7 +38228,7 @@ func x__InferTypeFromName(tls *libc.TLS, cc *CC, identifier uintptr) (r uintptr)
 			return cc.x__ast_type_long
 		}
 		if (*_Symbol)(unsafe.Pointer(sym)).Fkind != int32(_SYM_CONSTANT) {
-			x__ERROR(tls, cc, identifier, __ccgo_ts+10492, 0)
+			x__ERROR(tls, cc, identifier, __ccgo_ts+10494, 0)
 		} else {
 			typemask = libc.Uint32FromInt64(x__EvalConstExpr(tls, cc, *(*uintptr)(unsafe.Pointer(sym + 32))))
 		}
@@ -38122,7 +38247,7 @@ func x__InitPreprocessor(tls *libc.TLS, cc *CC, argv uintptr) {
 	x__SetPreprocessorLanguage(tls, cc, m_LANG_SPIN_SPIN1)
 	// add a path relative to the executable
 	if **(**uintptr)(__ccgo_up(argv)) == libc.UintptrFromInt32(0) {
-		**(**uintptr)(__ccgo_up(argv)) = __ccgo_ts + 10810
+		**(**uintptr)(__ccgo_up(argv)) = __ccgo_ts + 10812
 	}
 	if x__getProgramPath(tls, cc, argv, uintptr(unsafe.Pointer(&cc.x__gl_prognamebuf)), int32(1024)) != 0 {
 		libc.Xstrcpy(tls, uintptr(unsafe.Pointer(&cc.x__gl_prognamebuf)), **(**uintptr)(__ccgo_up(argv)))
@@ -38135,12 +38260,12 @@ func x__InitPreprocessor(tls *libc.TLS, cc *CC, argv uintptr) {
 	}
 	libc.Xstrcpy(tls, progname, __ccgo_ts+1853)
 	// check for environment variables
-	envpath = libc.Xgetenv(tls, __ccgo_ts+22367)
+	envpath = libc.Xgetenv(tls, __ccgo_ts+22375)
 	if !(envpath != 0) {
-		envpath = libc.Xgetenv(tls, __ccgo_ts+22387)
+		envpath = libc.Xgetenv(tls, __ccgo_ts+22395)
 	}
 	if !(envpath != 0) {
-		envpath = libc.Xgetenv(tls, __ccgo_ts+22409)
+		envpath = libc.Xgetenv(tls, __ccgo_ts+22417)
 	}
 	if envpath != 0 {
 		x__pp_add_to_path(tls, cc, uintptr(unsafe.Pointer(&cc.x__gl_pp)), envpath)
@@ -38214,7 +38339,7 @@ func x__IsArrayType(tls *libc.TLS, cc *CC, ast uintptr) (r int32) {
 	case int32(_AST_TYPEOF):
 		return x__IsArrayType(tls, cc, x__ExprType(tls, cc, (*_AST)(unsafe.Pointer(ast)).Fleft))
 	default:
-		x__ERROR(tls, cc, ast, __ccgo_ts+26378, libc.VaList(bp+8, (*_AST)(unsafe.Pointer(ast)).Fkind))
+		x__ERROR(tls, cc, ast, __ccgo_ts+26386, libc.VaList(bp+8, (*_AST)(unsafe.Pointer(ast)).Fkind))
 	}
 	return 0
 }
@@ -38239,16 +38364,16 @@ func x__IsSpinCoginit(tls *libc.TLS, cc *CC, params uintptr, methodptr uintptr) 
 	exprlist = (*_AST)(unsafe.Pointer(params)).Fleft
 	exprlist = (*_AST)(unsafe.Pointer(exprlist)).Fright // skip over cog id
 	if !(exprlist != 0) {
-		x__ERROR(tls, cc, params, __ccgo_ts+24981, 0)
+		x__ERROR(tls, cc, params, __ccgo_ts+24989, 0)
 		return libc.BoolUint8(m_false != 0)
 	}
 	if (*_AST)(unsafe.Pointer(exprlist)).Fkind != int32(_AST_EXPRLIST) || !((*_AST)(unsafe.Pointer(exprlist)).Fleft != 0) {
-		x__ERROR(tls, cc, params, __ccgo_ts+25017, 0)
+		x__ERROR(tls, cc, params, __ccgo_ts+25025, 0)
 		return libc.BoolUint8(m_false != 0)
 	}
 	func1 = (*_AST)(unsafe.Pointer(exprlist)).Fleft
 	if (*_AST)(unsafe.Pointer(func1)).Fkind == int32(_AST_IDENTIFIER) || (*_AST)(unsafe.Pointer(func1)).Fkind == int32(_AST_LOCAL_IDENTIFIER) {
-		sym = x__LookupAstSymbol(tls, cc, func1, __ccgo_ts+25052)
+		sym = x__LookupAstSymbol(tls, cc, func1, __ccgo_ts+25060)
 		if sym != 0 && (*_Symbol)(unsafe.Pointer(sym)).Fkind == int32(_SYM_FUNCTION) {
 			if methodptr != 0 {
 				**(**uintptr)(__ccgo_up(methodptr)) = *(*uintptr)(unsafe.Pointer(sym + 32))
@@ -38294,11 +38419,11 @@ func x__LANGUAGE_WARNING(tls *libc.TLS, cc *CC, language int32, ast uintptr, msg
 		return
 	}
 	if cc.x__gl_warnings_are_errors != 0 {
-		banner = __ccgo_ts + 7104
+		banner = __ccgo_ts + 7106
 		x__SETCOLOR(tls, cc, int32(_PRINT_ERROR))
 		cc.x__gl_errors = cc.x__gl_errors + 1
 	} else {
-		banner = __ccgo_ts + 7110
+		banner = __ccgo_ts + 7112
 		x__SETCOLOR(tls, cc, int32(_PRINT_WARNING))
 	}
 	if ast != 0 {
@@ -38313,7 +38438,7 @@ func x__LANGUAGE_WARNING(tls *libc.TLS, cc *CC, language int32, ast uintptr, msg
 	args = va
 	vfprintf(tls, cc, libc.X__stderrp, msg, args)
 	_ = args
-	fprintf(tls, cc, libc.X__stderrp, __ccgo_ts+4265, 0)
+	fprintf(tls, cc, libc.X__stderrp, __ccgo_ts+4267, 0)
 	x__SETCOLOR(tls, cc, int32(_PRINT_NORMAL))
 }
 
@@ -38327,33 +38452,33 @@ func x__LanguageFromExtension(tls *libc.TLS, cc *CC, langptr uintptr, needExtPtr
 		langptr = s__GetExtension(tls, cc, langptr)
 	}
 	if langptr != 0 {
-		if !(libc.Xstrcasecmp(tls, langptr, __ccgo_ts+10634) != 0) || !(libc.Xstrcasecmp(tls, langptr, __ccgo_ts+10639) != 0) || !(libc.Xstrcasecmp(tls, langptr, __ccgo_ts+10646) != 0) {
+		if !(libc.Xstrcasecmp(tls, langptr, __ccgo_ts+10636) != 0) || !(libc.Xstrcasecmp(tls, langptr, __ccgo_ts+10641) != 0) || !(libc.Xstrcasecmp(tls, langptr, __ccgo_ts+10648) != 0) {
 			language = int32(m_LANG_BASIC_FBASIC)
 		} else {
-			if !(libc.Xstrcasecmp(tls, langptr, __ccgo_ts+10650) != 0) || !(libc.Xstrcasecmp(tls, langptr, __ccgo_ts+10653) != 0) || !(libc.Xstrcasecmp(tls, langptr, __ccgo_ts+10656) != 0) {
+			if !(libc.Xstrcasecmp(tls, langptr, __ccgo_ts+10652) != 0) || !(libc.Xstrcasecmp(tls, langptr, __ccgo_ts+10655) != 0) || !(libc.Xstrcasecmp(tls, langptr, __ccgo_ts+10658) != 0) {
 				language = int32(m_LANG_CFAMILY_C)
 			} else {
-				if !(libc.Xstrcasecmp(tls, langptr, __ccgo_ts+10659) != 0) || !(libc.Xstrcasecmp(tls, langptr, __ccgo_ts+10664) != 0) || !(libc.Xstrcasecmp(tls, langptr, __ccgo_ts+10668) != 0) || !(libc.Xstrcasecmp(tls, langptr, __ccgo_ts+10673) != 0) || !(libc.Xstrcasecmp(tls, langptr, __ccgo_ts+10678) != 0) || !(libc.Xstrcasecmp(tls, langptr, __ccgo_ts+10683) != 0) {
+				if !(libc.Xstrcasecmp(tls, langptr, __ccgo_ts+10661) != 0) || !(libc.Xstrcasecmp(tls, langptr, __ccgo_ts+10666) != 0) || !(libc.Xstrcasecmp(tls, langptr, __ccgo_ts+10670) != 0) || !(libc.Xstrcasecmp(tls, langptr, __ccgo_ts+10675) != 0) || !(libc.Xstrcasecmp(tls, langptr, __ccgo_ts+10680) != 0) || !(libc.Xstrcasecmp(tls, langptr, __ccgo_ts+10685) != 0) {
 					language = int32(m_LANG_CFAMILY_CPP)
 				} else {
-					if !(libc.Xstrcasecmp(tls, langptr, __ccgo_ts+10687) != 0) || !(libc.Xstrcasecmp(tls, langptr, __ccgo_ts+10690) != 0) {
+					if !(libc.Xstrcasecmp(tls, langptr, __ccgo_ts+10689) != 0) || !(libc.Xstrcasecmp(tls, langptr, __ccgo_ts+10692) != 0) {
 						language = int32(m_LANG_BF)
 					} else {
-						if !(libc.Xstrcasecmp(tls, langptr, __ccgo_ts+10694) != 0) {
+						if !(libc.Xstrcasecmp(tls, langptr, __ccgo_ts+10696) != 0) {
 							language = int32(m_LANG_SPIN_SPIN2)
-							langptr = __ccgo_ts + 10694
+							langptr = __ccgo_ts + 10696
 						} else {
-							if !(libc.Xstrcasecmp(tls, langptr, __ccgo_ts+6574) != 0) {
+							if !(libc.Xstrcasecmp(tls, langptr, __ccgo_ts+6576) != 0) {
 								language = m_LANG_SPIN_SPIN1
-								langptr = __ccgo_ts + 6574
+								langptr = __ccgo_ts + 6576
 							} else {
 								if cc.x__gl_p2 != 0 {
 									language = int32(m_LANG_SPIN_SPIN2)
-									langptr = __ccgo_ts + 10694
+									langptr = __ccgo_ts + 10696
 									needExtension = libc.BoolUint8(m_true != 0)
 								} else {
 									language = m_LANG_SPIN_SPIN1
-									langptr = __ccgo_ts + 6574
+									langptr = __ccgo_ts + 6576
 									needExtension = libc.BoolUint8(m_true != 0)
 								}
 							}
@@ -38368,18 +38493,18 @@ func x__LanguageFromExtension(tls *libc.TLS, cc *CC, langptr uintptr, needExtPtr
 		// as the default
 		needExtension = libc.BoolUint8(m_true != 0)
 		if cc.x__current != 0 && (*_Module)(unsafe.Pointer(cc.x__current)).FmainLanguage == m_LANG_SPIN_SPIN1 {
-			langptr = __ccgo_ts + 6574
+			langptr = __ccgo_ts + 6576
 			language = m_LANG_SPIN_SPIN1
 		} else {
 			if cc.x__current != 0 && (*_Module)(unsafe.Pointer(cc.x__current)).FmainLanguage == int32(m_LANG_SPIN_SPIN2) {
-				langptr = __ccgo_ts + 10694
+				langptr = __ccgo_ts + 10696
 				language = int32(m_LANG_SPIN_SPIN2)
 			} else {
 				if cc.x__gl_p2 != 0 {
-					langptr = __ccgo_ts + 10694
+					langptr = __ccgo_ts + 10696
 					language = int32(m_LANG_SPIN_SPIN2)
 				} else {
-					langptr = __ccgo_ts + 6574
+					langptr = __ccgo_ts + 6576
 					language = m_LANG_SPIN_SPIN1
 				}
 			}
@@ -38411,7 +38536,7 @@ func x__ListInsertBefore(tls *libc.TLS, cc *CC, list uintptr, member uintptr, ne
 		list = (*_AST)(unsafe.Pointer(list)).Fright
 	}
 	if !(list != 0) {
-		x__ERROR(tls, cc, member, __ccgo_ts+22650, 0)
+		x__ERROR(tls, cc, member, __ccgo_ts+22658, 0)
 		return orig
 	}
 	(*_AST)(unsafe.Pointer(newelem)).Fright = (*_AST)(unsafe.Pointer(list)).Fright
@@ -38432,7 +38557,7 @@ func x__LookupAstSymbol(tls *libc.TLS, cc *CC, ast uintptr, msg uintptr) (r uint
 	var id, ourname, sym, username, v1 uintptr
 	_, _, _, _, _ = id, ourname, sym, username, v1
 	sym = libc.UintptrFromInt32(0)
-	username = __ccgo_ts + 7138
+	username = __ccgo_ts + 7140
 	if (*_AST)(unsafe.Pointer(ast)).Fkind == int32(_AST_SYMBOL) {
 		return *(*uintptr)(unsafe.Pointer(ast + 8))
 	}
@@ -38458,13 +38583,13 @@ func x__LookupAstSymbol(tls *libc.TLS, cc *CC, ast uintptr, msg uintptr) (r uint
 			ourname = v1
 			username = v1
 		} else {
-			x__ERROR(tls, cc, ast, __ccgo_ts+24749, 0)
+			x__ERROR(tls, cc, ast, __ccgo_ts+24757, 0)
 			return libc.UintptrFromInt32(0)
 		}
 	}
 	sym = x__LookupSymbol(tls, cc, ourname)
 	if !(sym != 0) && msg != 0 {
-		x__ERROR(tls, cc, id, __ccgo_ts+24769, libc.VaList(bp+8, username, msg))
+		x__ERROR(tls, cc, id, __ccgo_ts+24777, libc.VaList(bp+8, username, msg))
 	}
 	return sym
 }
@@ -38526,7 +38651,7 @@ func x__LookupMemberSymbol(tls *libc.TLS, cc *CC, expr uintptr, objtype uintptr,
 		if valid != 0 {
 			**(**int32)(__ccgo_up(valid)) = 0
 		} else {
-			x__ERROR(tls, cc, expr, __ccgo_ts+24802, libc.VaList(bp+8, name))
+			x__ERROR(tls, cc, expr, __ccgo_ts+24810, libc.VaList(bp+8, name))
 		}
 		return libc.UintptrFromInt32(0)
 	}
@@ -38536,7 +38661,7 @@ func x__LookupMemberSymbol(tls *libc.TLS, cc *CC, expr uintptr, objtype uintptr,
 	}
 	sym = x__FindSymbolEx(tls, cc, P+144, name, 0)
 	if !(sym != 0) {
-		x__ERROR(tls, cc, expr, __ccgo_ts+24851, libc.VaList(bp+8, name, (*_Module)(unsafe.Pointer(P)).Fclassname))
+		x__ERROR(tls, cc, expr, __ccgo_ts+24859, libc.VaList(bp+8, name, (*_Module)(unsafe.Pointer(P)).Fclassname))
 	} else {
 		if (*_Symbol)(unsafe.Pointer(sym)).Fkind == int32(_SYM_WEAK_ALIAS) {
 			sym = x__FindSymbolEx(tls, cc, P+144, *(*uintptr)(unsafe.Pointer(sym + 32)), 0)
@@ -38548,12 +38673,12 @@ func x__LookupMemberSymbol(tls *libc.TLS, cc *CC, expr uintptr, objtype uintptr,
 					subname = x__GetIdentifierName(tls, cc, (*_AST)(unsafe.Pointer(newexpr)).Fright)
 					basesym = x__FindSymbolEx(tls, cc, P+144, basename, 0)
 					if !(basesym != 0) || (*_Symbol)(unsafe.Pointer(basesym)).Fkind != int32(_SYM_VARIABLE) {
-						x__ERROR(tls, cc, expr, __ccgo_ts+24885, libc.VaList(bp+8, basename, (*_Module)(unsafe.Pointer(P)).Fclassname))
+						x__ERROR(tls, cc, expr, __ccgo_ts+24893, libc.VaList(bp+8, basename, (*_Module)(unsafe.Pointer(P)).Fclassname))
 						return libc.UintptrFromInt32(0)
 					}
 					Qtype = *(*uintptr)(unsafe.Pointer(basesym + 32))
 					if !(x__IsClassType(tls, cc, Qtype) != 0) {
-						x__ERROR(tls, cc, expr, __ccgo_ts+24885, libc.VaList(bp+8, basename, (*_Module)(unsafe.Pointer(P)).Fclassname))
+						x__ERROR(tls, cc, expr, __ccgo_ts+24893, libc.VaList(bp+8, basename, (*_Module)(unsafe.Pointer(P)).Fclassname))
 						return libc.UintptrFromInt32(0)
 					}
 					finalsym = x__LookupMemberSymbol(tls, cc, newexpr, Qtype, subname, libc.UintptrFromInt32(0), valid)
@@ -38583,7 +38708,7 @@ func x__MakeOperatorCall(tls *libc.TLS, cc *CC, func1 uintptr, left uintptr, rig
 	_, _ = call, params
 	params = libc.UintptrFromInt32(0)
 	if !(func1 != 0) {
-		x__ERROR(tls, cc, left, __ccgo_ts+32590, 0)
+		x__ERROR(tls, cc, left, __ccgo_ts+32598, 0)
 		return x__AstInteger(tls, cc, 0)
 	}
 	if left != 0 {
@@ -38683,7 +38808,7 @@ func x__MathOp_to_ID_Spin1(tls *libc.TLS, cc *CC, mathKind _MathOpKind) (r _uint
 	case int32(_MOK_BOOLNOT):
 		return uint8(0b11111)
 	default:
-		x__ERROR(tls, cc, libc.UintptrFromInt32(0), __ccgo_ts+83199, libc.VaList(bp+8, mathKind, cc.x__mathOpKindNames[mathKind]))
+		x__ERROR(tls, cc, libc.UintptrFromInt32(0), __ccgo_ts+83205, libc.VaList(bp+8, mathKind, cc.x__mathOpKindNames[mathKind]))
 		return uint8(0)
 	}
 	return r
@@ -38692,7 +38817,7 @@ func x__MathOp_to_ID_Spin1(tls *libc.TLS, cc *CC, mathKind _MathOpKind) (r _uint
 func x__MaybeHubDest(tls *libc.TLS, cc *CC, dst uintptr) (r uint8) {
 	switch (*_Operand)(unsafe.Pointer(dst)).Fkind {
 	case int32(_IMM_COG_LABEL):
-		if !(libc.Xstrcmp(tls, (*_Operand)(unsafe.Pointer(dst)).Fname, __ccgo_ts+45113) != 0) {
+		if !(libc.Xstrcmp(tls, (*_Operand)(unsafe.Pointer(dst)).Fname, __ccgo_ts+45121) != 0) {
 			return libc.BoolUint8(m_true != 0)
 		}
 		return libc.BoolUint8(m_false != 0)
@@ -38723,11 +38848,11 @@ func x__MergeOldStyleDeclarationList(tls *libc.TLS, cc *CC, orig_funcdecl uintpt
 		funcdecl = (*_AST)(unsafe.Pointer(funcdecl)).Fleft
 	}
 	if (*_AST)(unsafe.Pointer(funcdecl)).Fkind != int32(_AST_DECLARE_VAR) {
-		x__ERROR(tls, cc, funcdecl, __ccgo_ts+123897, 0)
+		x__ERROR(tls, cc, funcdecl, __ccgo_ts+123911, 0)
 		return orig_funcdecl
 	}
 	if (*_AST)(unsafe.Pointer((*_AST)(unsafe.Pointer(funcdecl)).Fleft)).Fkind != int32(_AST_FUNCTYPE) {
-		x__ERROR(tls, cc, funcdecl, __ccgo_ts+123933, 0)
+		x__ERROR(tls, cc, funcdecl, __ccgo_ts+123947, 0)
 		return orig_funcdecl
 	}
 	funcdecl = (*_AST)(unsafe.Pointer(funcdecl)).Fleft
@@ -38735,7 +38860,7 @@ func x__MergeOldStyleDeclarationList(tls *libc.TLS, cc *CC, orig_funcdecl uintpt
 	for param_list != 0 {
 		param = (*_AST)(unsafe.Pointer(param_list)).Fleft
 		if !(param != 0) || (*_AST)(unsafe.Pointer(param)).Fkind != int32(_AST_DECLARE_VAR) {
-			x__ERROR(tls, cc, param, __ccgo_ts+123963, 0)
+			x__ERROR(tls, cc, param, __ccgo_ts+123977, 0)
 			return orig_funcdecl
 		}
 		// find the corresponding one from decl_list and replace it
@@ -38752,11 +38877,11 @@ func x__NOTE(tls *libc.TLS, cc *CC, instr uintptr, msg uintptr, va uintptr) {
 	var args _va_list
 	_ = args
 	x__SETCOLOR(tls, cc, int32(_PRINT_NOTE))
-	s__ERRORHEADER_AST(tls, cc, instr, __ccgo_ts+7118)
+	s__ERRORHEADER_AST(tls, cc, instr, __ccgo_ts+7120)
 	args = va
 	vfprintf(tls, cc, libc.X__stderrp, msg, args)
 	_ = args
-	fprintf(tls, cc, libc.X__stderrp, __ccgo_ts+4265, 0)
+	fprintf(tls, cc, libc.X__stderrp, __ccgo_ts+4267, 0)
 	x__SETCOLOR(tls, cc, int32(_PRINT_NORMAL))
 }
 
@@ -38765,7 +38890,7 @@ func x__NewAST(tls *libc.TLS, cc *CC, kind _astkind, left uintptr, right uintptr
 	_ = ast
 	ast = malloc(tls, cc, uint64(48))
 	if !(ast != 0) {
-		fprintf(tls, cc, libc.X__stderrp, __ccgo_ts+22622, 0)
+		fprintf(tls, cc, libc.X__stderrp, __ccgo_ts+22630, 0)
 		xAbort(tls)
 	}
 	(*_AST)(unsafe.Pointer(ast)).Fkind = kind
@@ -38792,7 +38917,7 @@ func x__NewFunction(tls *libc.TLS, cc *CC, language int32) (r uintptr) {
 	_, _ = f, pf
 	f = calloc(tls, cc, uint64(1), uint64(1328))
 	if !(f != 0) {
-		fprintf(tls, cc, libc.X__stderrp, __ccgo_ts+28398, 0)
+		fprintf(tls, cc, libc.X__stderrp, __ccgo_ts+28406, 0)
 		exit(tls, cc, int32(1))
 	}
 	/* now link it into the current object */
@@ -38815,9 +38940,9 @@ func x__NewImmediate(tls *libc.TLS, cc *CC, val _int32_t) (r uintptr) {
 	defer tls.Free(1040)
 	var _ /* temp at bp+0 */ [1024]int8
 	if cc.x__gl_p2 != 0 || val >= 0 && val < int32(512) {
-		return x__NewOperand(tls, cc, int32(_IMM_INT), __ccgo_ts+7138, int64(val))
+		return x__NewOperand(tls, cc, int32(_IMM_INT), __ccgo_ts+7140, int64(val))
 	}
-	libc.Xsprintf(tls, bp, __ccgo_ts+45771, libc.VaList(bp+1032, libc.Uint32FromInt32(val)))
+	libc.Xsprintf(tls, bp, __ccgo_ts+45779, libc.VaList(bp+1032, libc.Uint32FromInt32(val)))
 	return x__GetOneGlobal(tls, cc, int32(_IMM_INT), libc.Xstrdup(tls, bp), int64(val))
 }
 
@@ -38826,7 +38951,7 @@ func x__NewImmediatePtr(tls *libc.TLS, cc *CC, name uintptr, val uintptr) (r uin
 	defer tls.Free(1040)
 	var _ /* temp at bp+0 */ [1024]int8
 	if !(name != 0) {
-		libc.Xsprintf(tls, bp, __ccgo_ts+45779, libc.VaList(bp+1032, s__cleanname(tls, cc, (*_Operand)(unsafe.Pointer(val)).Fname)))
+		libc.Xsprintf(tls, bp, __ccgo_ts+45787, libc.VaList(bp+1032, s__cleanname(tls, cc, (*_Operand)(unsafe.Pointer(val)).Fname)))
 		name = libc.Xstrdup(tls, bp)
 	}
 	if (*_Operand)(unsafe.Pointer(val)).Fkind == int32(_IMM_COG_LABEL) {
@@ -38848,7 +38973,7 @@ func x__NewModule(tls *libc.TLS, cc *CC, fullname uintptr, language int32) (r ui
 	_, _, _, _ = P, root, s, v1
 	P = calloc(tls, cc, uint64(1), uint64(1352))
 	if !(P != 0) {
-		fprintf(tls, cc, libc.X__stderrp, __ccgo_ts+6559, 0)
+		fprintf(tls, cc, libc.X__stderrp, __ccgo_ts+6561, 0)
 		exit(tls, cc, int32(1))
 	}
 	v1 = language
@@ -38861,7 +38986,7 @@ func x__NewModule(tls *libc.TLS, cc *CC, fullname uintptr, language int32) (r ui
 	s = libc.Xstrrchr(tls, (*_Module)(unsafe.Pointer(P)).Fbasename, int32('.'))
 	if s != 0 {
 		/* make sure sub-object names cannot conflict with the main object name, even if the roots match (like foo.spin and foo.c) */
-		if cc.x__allparse != 0 && (libc.Xstrncmp(tls, s, __ccgo_ts+6574, uint64(5)) != 0 || !((*_Module)(unsafe.Pointer(cc.x__allparse)).FmainLanguage >= m_LANG_SPIN_SPIN1 && (*_Module)(unsafe.Pointer(cc.x__allparse)).FmainLanguage <= int32(m_LANG_SPIN_SPIN2))) {
+		if cc.x__allparse != 0 && (libc.Xstrncmp(tls, s, __ccgo_ts+6576, uint64(5)) != 0 || !((*_Module)(unsafe.Pointer(cc.x__allparse)).FmainLanguage >= m_LANG_SPIN_SPIN1 && (*_Module)(unsafe.Pointer(cc.x__allparse)).FmainLanguage <= int32(m_LANG_SPIN_SPIN2))) {
 			**(**int8)(__ccgo_up(s)) = int8('_')
 		} else {
 			**(**int8)(__ccgo_up(s)) = 0
@@ -38904,7 +39029,7 @@ func x__NewModule(tls *libc.TLS, cc *CC, fullname uintptr, language int32) (r ui
 //
 //	// create a new temporary label name
 func x__NewTempLabelName(tls *libc.TLS, cc *CC) (r uintptr) {
-	return x__NewTemporaryVariable(tls, cc, __ccgo_ts+45678, libc.UintptrFromInt32(0))
+	return x__NewTemporaryVariable(tls, cc, __ccgo_ts+45686, libc.UintptrFromInt32(0))
 }
 
 // C documentation
@@ -38920,17 +39045,17 @@ func x__NewTemporaryVariable(tls *libc.TLS, cc *CC, prefix uintptr, counter uint
 	var _ /* buf at bp+0 */ [32]int8
 	_, _ = countval, str
 	if !(prefix != 0) {
-		prefix = __ccgo_ts + 10173
+		prefix = __ccgo_ts + 10175
 	}
 	if !(counter != 0) {
 		counter = uintptr(unsafe.Pointer(&cc.s__tmpvarnum))
 	}
 	countval = **(**int32)(__ccgo_up(counter))
-	libc.Xsprintf(tls, bp, __ccgo_ts+22560, libc.VaList(bp+40, countval))
+	libc.Xsprintf(tls, bp, __ccgo_ts+22568, libc.VaList(bp+40, countval))
 	str = x__strdupcat(tls, cc, prefix, bp)
 	countval = countval + 1
 	if countval > cc.s__tmpvarmax {
-		fprintf(tls, cc, libc.X__stderrp, __ccgo_ts+22566, libc.VaList(bp+40, cc.s__tmpvarmax))
+		fprintf(tls, cc, libc.X__stderrp, __ccgo_ts+22574, libc.VaList(bp+40, cc.s__tmpvarmax))
 		xAbort(tls)
 	}
 	**(**int32)(__ccgo_up(counter)) = countval
@@ -38993,7 +39118,7 @@ func x__NormalizePath(tls *libc.TLS, cc *CC, path uintptr) (r uintptr) {
 		return libc.Xstrdup(tls, path)
 	}
 	if !(libc.Xgetcwd(tls, bp, uint64(m_PATH_MAX)) != 0) {
-		x__cfatal(tls, cc, __ccgo_ts+108239, libc.Xstrerror(tls, **(**int32)(__ccgo_up(libc.X__error(tls)))), 0, libc.UintptrFromInt32(0))
+		x__cfatal(tls, cc, __ccgo_ts+108245, libc.Xstrerror(tls, **(**int32)(__ccgo_up(libc.X__error(tls)))), 0, libc.UintptrFromInt32(0))
 	}
 	return s__norm_path(tls, cc, bp, path, m_FALSE, m_FALSE)
 }
@@ -39006,8 +39131,8 @@ func x__NuCodeSymbolName(tls *libc.TLS, cc *CC, sym uintptr) (r uintptr) {
 		s__NuPrepareFunctionBedata(tls, cc, F)
 		return (*_NuFunData)(unsafe.Pointer((*_Function)(unsafe.Pointer(F)).Fbedata)).FentryLabel + 8
 	}
-	x__ERROR(tls, cc, libc.UintptrFromInt32(0), __ccgo_ts+84416, 0)
-	return __ccgo_ts + 47924
+	x__ERROR(tls, cc, libc.UintptrFromInt32(0), __ccgo_ts+84422, 0)
+	return __ccgo_ts + 47932
 }
 
 func x__NuCreateLabel(tls *libc.TLS, cc *CC) (r1 uintptr) {
@@ -39020,7 +39145,7 @@ func x__NuCreateLabel(tls *libc.TLS, cc *CC) (r1 uintptr) {
 	v1 = cc.s__labelnum
 	cc.s__labelnum = cc.s__labelnum + 1
 	(*_NuIrLabel)(unsafe.Pointer(r)).Fnum = v1
-	libc.X__builtin_snprintf(tls, r+8, uint64(16), __ccgo_ts+88039, libc.VaList(bp+8, (*_NuIrLabel)(unsafe.Pointer(r)).Fnum))
+	libc.X__builtin_snprintf(tls, r+8, uint64(16), __ccgo_ts+88045, libc.VaList(bp+8, (*_NuIrLabel)(unsafe.Pointer(r)).Fnum))
 	return r
 }
 
@@ -39045,7 +39170,7 @@ func x__NuEmitNamedOpcode(tls *libc.TLS, cc *CC, irl uintptr, name uintptr) (r u
 		i = i + 1
 	}
 	if op == int32(_NU_OP_DUMMY) {
-		x__ERROR(tls, cc, libc.UintptrFromInt32(0), __ccgo_ts+88052, libc.VaList(bp+8, name))
+		x__ERROR(tls, cc, libc.UintptrFromInt32(0), __ccgo_ts+88058, libc.VaList(bp+8, name))
 		return libc.UintptrFromInt32(0)
 	}
 	return x__NuEmitOp(tls, cc, irl, op)
@@ -39086,7 +39211,7 @@ func x__NuInvertCondition(tls *libc.TLS, cc *CC, op _NuIrOpcode1) (r _NuIrOpcode
 	case int32(_NU_OP_CBGTU):
 		return int32(_NU_OP_CBLEU)
 	default:
-		x__ERROR(tls, cc, libc.UintptrFromInt32(0), __ccgo_ts+84847, 0)
+		x__ERROR(tls, cc, libc.UintptrFromInt32(0), __ccgo_ts+84853, 0)
 	}
 	return int32(_NU_OP_ILLEGAL)
 }
@@ -39112,21 +39237,21 @@ func x__NuIrInit(tls *libc.TLS, cc *CC, ctxt uintptr) {
 	_1:
 	}
 	// some functions are always built in to the interpreter
-	s__CreateBuiltinOp(tls, cc, int32(_NU_OP_DROP), __ccgo_ts+7138)
-	s__CreateBuiltinOp(tls, cc, int32(_NU_OP_DROP2), __ccgo_ts+7138)
-	s__CreateBuiltinOp(tls, cc, int32(_NU_OP_DUP), __ccgo_ts+7138)
-	s__CreateBuiltinOp(tls, cc, int32(_NU_OP_DUP2), __ccgo_ts+7138)
-	s__CreateBuiltinOp(tls, cc, int32(_NU_OP_SWAP), __ccgo_ts+7138)
-	s__CreateBuiltinOp(tls, cc, int32(_NU_OP_SWAP2), __ccgo_ts+7138)
-	s__CreateBuiltinOp(tls, cc, int32(_NU_OP_OVER), __ccgo_ts+7138)
-	s__CreateBuiltinOp(tls, cc, int32(_NU_OP_CALL), __ccgo_ts+7138)
-	s__CreateBuiltinOp(tls, cc, int32(_NU_OP_CALLM), __ccgo_ts+7138)
-	s__CreateBuiltinOp(tls, cc, int32(_NU_OP_ENTER), __ccgo_ts+7138)
-	s__CreateBuiltinOp(tls, cc, int32(_NU_OP_RET), __ccgo_ts+7138)
-	s__CreateBuiltinOp(tls, cc, int32(_NU_OP_PUSHI), __ccgo_ts+7138)
-	s__CreateBuiltinOp(tls, cc, int32(_NU_OP_PUSHA), __ccgo_ts+7138)
-	s__CreateBuiltinOp(tls, cc, int32(_NU_OP_CALLA), __ccgo_ts+7138)
-	s__CreateBuiltinOp(tls, cc, int32(_NU_OP_BREAK), __ccgo_ts+7138)
+	s__CreateBuiltinOp(tls, cc, int32(_NU_OP_DROP), __ccgo_ts+7140)
+	s__CreateBuiltinOp(tls, cc, int32(_NU_OP_DROP2), __ccgo_ts+7140)
+	s__CreateBuiltinOp(tls, cc, int32(_NU_OP_DUP), __ccgo_ts+7140)
+	s__CreateBuiltinOp(tls, cc, int32(_NU_OP_DUP2), __ccgo_ts+7140)
+	s__CreateBuiltinOp(tls, cc, int32(_NU_OP_SWAP), __ccgo_ts+7140)
+	s__CreateBuiltinOp(tls, cc, int32(_NU_OP_SWAP2), __ccgo_ts+7140)
+	s__CreateBuiltinOp(tls, cc, int32(_NU_OP_OVER), __ccgo_ts+7140)
+	s__CreateBuiltinOp(tls, cc, int32(_NU_OP_CALL), __ccgo_ts+7140)
+	s__CreateBuiltinOp(tls, cc, int32(_NU_OP_CALLM), __ccgo_ts+7140)
+	s__CreateBuiltinOp(tls, cc, int32(_NU_OP_ENTER), __ccgo_ts+7140)
+	s__CreateBuiltinOp(tls, cc, int32(_NU_OP_RET), __ccgo_ts+7140)
+	s__CreateBuiltinOp(tls, cc, int32(_NU_OP_PUSHI), __ccgo_ts+7140)
+	s__CreateBuiltinOp(tls, cc, int32(_NU_OP_PUSHA), __ccgo_ts+7140)
+	s__CreateBuiltinOp(tls, cc, int32(_NU_OP_CALLA), __ccgo_ts+7140)
+	s__CreateBuiltinOp(tls, cc, int32(_NU_OP_BREAK), __ccgo_ts+7140)
 	s__CreateBuiltinOp(tls, cc, int32(_NU_OP_BRA), libc.UintptrFromInt32(0))
 	s__CreateBuiltinOp(tls, cc, int32(_NU_OP_BZ), libc.UintptrFromInt32(0))
 	s__CreateBuiltinOp(tls, cc, int32(_NU_OP_BNZ), libc.UintptrFromInt32(0))
@@ -39144,7 +39269,7 @@ func x__NuIrInit(tls *libc.TLS, cc *CC, ctxt uintptr) {
 	// find the other implementations that we may need
 	for c != 0 {
 		linestart = ptr
-		if !(libc.Xstrncmp(tls, linestart, __ccgo_ts+87987, uint64(5)) != 0) {
+		if !(libc.Xstrncmp(tls, linestart, __ccgo_ts+87993, uint64(5)) != 0) {
 			// find the opcode this is an implementation of
 			ptr = linestart + uintptr(5)
 			i = 0
@@ -39155,7 +39280,7 @@ func x__NuIrInit(tls *libc.TLS, cc *CC, ctxt uintptr) {
 				n = libc.Int32FromUint64(libc.Xstrlen(tls, cc.s__NuOpName[i]))
 				if !(libc.Xstrncmp(tls, ptr, cc.s__NuOpName[i], libc.Uint64FromInt32(n)) != 0) && int32(**(**int8)(__ccgo_up(ptr + uintptr(n)))) == int32('\n') {
 					if cc.s__impl_ptrs[i] != 0 {
-						x__ERROR(tls, cc, libc.UintptrFromInt32(0), __ccgo_ts+88010, libc.VaList(bp+8, cc.s__NuOpName[i]))
+						x__ERROR(tls, cc, libc.UintptrFromInt32(0), __ccgo_ts+88016, libc.VaList(bp+8, cc.s__NuOpName[i]))
 					}
 					cc.s__impl_ptrs[i] = linestart
 					cc.s__impl_sizes[i] = s__NuImplSize(tls, cc, cc.s__impl_ptrs[i])
@@ -39205,7 +39330,7 @@ func x__NuOutputFinish(tls *libc.TLS, cc *CC, fb uintptr, ctxt uintptr) {
 			x__flexbuf_addchar(tls, cc, fb, c)
 		}
 	}
-	x__flexbuf_printf(tls, cc, fb, __ccgo_ts+89763, 0)
+	x__flexbuf_printf(tls, cc, fb, __ccgo_ts+89769, 0)
 }
 
 func x__NuOutputInterpreter(tls *libc.TLS, cc *CC, fb uintptr, ctxt uintptr) {
@@ -39223,24 +39348,24 @@ func x__NuOutputInterpreter(tls *libc.TLS, cc *CC, fb uintptr, ctxt uintptr) {
 	heapsize = (heapsize + uint32(3)) & libc.Uint32FromInt32(^libc.Int32FromInt32(3)) // long align
 	cc.s__nu_heap_size = heapsize
 	// output lead in
-	x__flexbuf_printf(tls, cc, fb, __ccgo_ts+60586, 0)
-	x__flexbuf_printf(tls, cc, fb, __ccgo_ts+88722, libc.VaList(bp+8, (*_NuContext)(unsafe.Pointer(ctxt)).FclockFreq))
-	x__flexbuf_printf(tls, cc, fb, __ccgo_ts+88739, 0)
-	x__flexbuf_printf(tls, cc, fb, __ccgo_ts+88764, 0)
-	x__flexbuf_printf(tls, cc, fb, __ccgo_ts+60597, 0)
-	x__flexbuf_addstr(tls, cc, fb, __ccgo_ts+61742)
-	x__flexbuf_addstr(tls, cc, fb, __ccgo_ts+88790)
+	x__flexbuf_printf(tls, cc, fb, __ccgo_ts+60594, 0)
+	x__flexbuf_printf(tls, cc, fb, __ccgo_ts+88728, libc.VaList(bp+8, (*_NuContext)(unsafe.Pointer(ctxt)).FclockFreq))
+	x__flexbuf_printf(tls, cc, fb, __ccgo_ts+88745, 0)
+	x__flexbuf_printf(tls, cc, fb, __ccgo_ts+88770, 0)
+	x__flexbuf_printf(tls, cc, fb, __ccgo_ts+60605, 0)
+	x__flexbuf_addstr(tls, cc, fb, __ccgo_ts+61750)
+	x__flexbuf_addstr(tls, cc, fb, __ccgo_ts+88796)
 	if !(cc.x__gl_no_coginit != 0) && cc.x__gl_output != int32(m_OUTPUT_COGSPIN) {
-		x__flexbuf_addstr(tls, cc, fb, __ccgo_ts+88816)
-		x__flexbuf_addstr(tls, cc, fb, __ccgo_ts+60602)
-		x__flexbuf_addstr(tls, cc, fb, __ccgo_ts+60608)
-		x__flexbuf_addstr(tls, cc, fb, __ccgo_ts+88824)
-		x__flexbuf_printf(tls, cc, fb, __ccgo_ts+60638, libc.VaList(bp+8, int32(m_P2_CONFIG_BASE)))
-		x__flexbuf_addstr(tls, cc, fb, __ccgo_ts+88851)
-		x__flexbuf_addstr(tls, cc, fb, __ccgo_ts+88900)
-		x__flexbuf_addstr(tls, cc, fb, __ccgo_ts+88933)
-		x__flexbuf_addstr(tls, cc, fb, __ccgo_ts+88966)
-		x__flexbuf_addstr(tls, cc, fb, __ccgo_ts+89001)
+		x__flexbuf_addstr(tls, cc, fb, __ccgo_ts+88822)
+		x__flexbuf_addstr(tls, cc, fb, __ccgo_ts+60610)
+		x__flexbuf_addstr(tls, cc, fb, __ccgo_ts+60616)
+		x__flexbuf_addstr(tls, cc, fb, __ccgo_ts+88830)
+		x__flexbuf_printf(tls, cc, fb, __ccgo_ts+60646, libc.VaList(bp+8, int32(m_P2_CONFIG_BASE)))
+		x__flexbuf_addstr(tls, cc, fb, __ccgo_ts+88857)
+		x__flexbuf_addstr(tls, cc, fb, __ccgo_ts+88906)
+		x__flexbuf_addstr(tls, cc, fb, __ccgo_ts+88939)
+		x__flexbuf_addstr(tls, cc, fb, __ccgo_ts+88972)
+		x__flexbuf_addstr(tls, cc, fb, __ccgo_ts+89007)
 	}
 	// copy interpreter source until ^L
 	for {
@@ -39263,8 +39388,8 @@ func x__NuOutputInterpreter(tls *libc.TLS, cc *CC, fb uintptr, ctxt uintptr) {
 	}
 	// emit opcode implementations
 	// these start in LUT from $300 - $400
-	x__flexbuf_printf(tls, cc, fb, __ccgo_ts+89031, 0)
-	x__flexbuf_printf(tls, cc, fb, __ccgo_ts+89047, 0)
+	x__flexbuf_printf(tls, cc, fb, __ccgo_ts+89037, 0)
+	x__flexbuf_printf(tls, cc, fb, __ccgo_ts+89053, 0)
 	i = 0
 	for {
 		if !(i < cc.s__num_bytecodes) {
@@ -39274,18 +39399,18 @@ func x__NuOutputInterpreter(tls *libc.TLS, cc *CC, fb uintptr, ctxt uintptr) {
 		ptr1 = (*_NuBytecode)(unsafe.Pointer(bc)).Fimpl_ptr
 		if !(ptr1 != 0) {
 			if !(int32(uint32(*(*uint16)(unsafe.Pointer(bc + 48))&0x10>>4)) != 0 || int32(uint32(*(*uint16)(unsafe.Pointer(bc + 48))&0x1>>0)) != 0) {
-				x__WARNING(tls, cc, libc.UintptrFromInt32(0), __ccgo_ts+89057, libc.VaList(bp+8, (*_NuBytecode)(unsafe.Pointer(bc)).Fname))
+				x__WARNING(tls, cc, libc.UintptrFromInt32(0), __ccgo_ts+89063, libc.VaList(bp+8, (*_NuBytecode)(unsafe.Pointer(bc)).Fname))
 			}
 			goto _4
 		}
-		if libc.Xstrncmp(tls, ptr1, __ccgo_ts+87987, uint64(5)) != 0 {
+		if libc.Xstrncmp(tls, ptr1, __ccgo_ts+87993, uint64(5)) != 0 {
 			// does not start with impl_, so not really needed
 			goto _4
 		}
 		impl_pc = impl_pc + (*_NuBytecode)(unsafe.Pointer(bc)).Fimpl_size
 		if impl_pc >= impl_max && !(saw_orgh != 0) {
 			saw_orgh = int32(1)
-			x__flexbuf_printf(tls, cc, fb, __ccgo_ts+61742, 0)
+			x__flexbuf_printf(tls, cc, fb, __ccgo_ts+61750, 0)
 		}
 		if saw_orgh != 0 {
 			libc.SetBitFieldPtr16Uint32(bc+48, libc.Uint32FromInt32(1), 6, 0x40)
@@ -39307,7 +39432,7 @@ func x__NuOutputInterpreter(tls *libc.TLS, cc *CC, fb uintptr, ctxt uintptr) {
 		_5:
 		}
 		if !(saw_orgh != 0) {
-			x__flexbuf_printf(tls, cc, fb, __ccgo_ts+89082, libc.VaList(bp+8, impl_pc))
+			x__flexbuf_printf(tls, cc, fb, __ccgo_ts+89088, libc.VaList(bp+8, impl_pc))
 		}
 		goto _4
 	_4:
@@ -39315,23 +39440,23 @@ func x__NuOutputInterpreter(tls *libc.TLS, cc *CC, fb uintptr, ctxt uintptr) {
 		i = i + 1
 	}
 	if !(saw_orgh != 0) {
-		x__flexbuf_printf(tls, cc, fb, __ccgo_ts+89094, 0)
+		x__flexbuf_printf(tls, cc, fb, __ccgo_ts+89100, 0)
 	}
 	// now add the jump table
-	x__flexbuf_printf(tls, cc, fb, __ccgo_ts+89124, 0)
+	x__flexbuf_printf(tls, cc, fb, __ccgo_ts+89130, 0)
 	// add the predefined entries
-	x__flexbuf_printf(tls, cc, fb, __ccgo_ts+89136, 0)
-	x__flexbuf_printf(tls, cc, fb, __ccgo_ts+89155, 0)
-	x__flexbuf_printf(tls, cc, fb, __ccgo_ts+89173, 0)
-	x__flexbuf_printf(tls, cc, fb, __ccgo_ts+89191, 0)
-	x__flexbuf_printf(tls, cc, fb, __ccgo_ts+89209, 0)
-	x__flexbuf_printf(tls, cc, fb, __ccgo_ts+89226, 0)
-	x__flexbuf_printf(tls, cc, fb, __ccgo_ts+89243, 0)
-	x__flexbuf_printf(tls, cc, fb, __ccgo_ts+89260, 0)
-	x__flexbuf_printf(tls, cc, fb, __ccgo_ts+89277, 0)
-	x__flexbuf_printf(tls, cc, fb, __ccgo_ts+89294, 0)
-	x__flexbuf_printf(tls, cc, fb, __ccgo_ts+89311, 0)
-	x__flexbuf_printf(tls, cc, fb, __ccgo_ts+89328, 0)
+	x__flexbuf_printf(tls, cc, fb, __ccgo_ts+89142, 0)
+	x__flexbuf_printf(tls, cc, fb, __ccgo_ts+89161, 0)
+	x__flexbuf_printf(tls, cc, fb, __ccgo_ts+89179, 0)
+	x__flexbuf_printf(tls, cc, fb, __ccgo_ts+89197, 0)
+	x__flexbuf_printf(tls, cc, fb, __ccgo_ts+89215, 0)
+	x__flexbuf_printf(tls, cc, fb, __ccgo_ts+89232, 0)
+	x__flexbuf_printf(tls, cc, fb, __ccgo_ts+89249, 0)
+	x__flexbuf_printf(tls, cc, fb, __ccgo_ts+89266, 0)
+	x__flexbuf_printf(tls, cc, fb, __ccgo_ts+89283, 0)
+	x__flexbuf_printf(tls, cc, fb, __ccgo_ts+89300, 0)
+	x__flexbuf_printf(tls, cc, fb, __ccgo_ts+89317, 0)
+	x__flexbuf_printf(tls, cc, fb, __ccgo_ts+89334, 0)
 	i = 0
 	for {
 		if !(i < cc.s__num_bytecodes) {
@@ -39341,9 +39466,9 @@ func x__NuOutputInterpreter(tls *libc.TLS, cc *CC, fb uintptr, ctxt uintptr) {
 		code = (*_NuBytecode)(unsafe.Pointer(bc1)).Fcode
 		if code >= int32(m_FIRST_BYTECODE) {
 			if int32(uint32(*(*uint16)(unsafe.Pointer(bc1 + 48))&0x40>>6)) != 0 {
-				x__flexbuf_printf(tls, cc, fb, __ccgo_ts+89345, libc.VaList(bp+8, (*_NuBytecode)(unsafe.Pointer(bc1)).Fname))
+				x__flexbuf_printf(tls, cc, fb, __ccgo_ts+89351, libc.VaList(bp+8, (*_NuBytecode)(unsafe.Pointer(bc1)).Fname))
 			} else {
-				x__flexbuf_printf(tls, cc, fb, __ccgo_ts+89387, libc.VaList(bp+8, (*_NuBytecode)(unsafe.Pointer(bc1)).Fname))
+				x__flexbuf_printf(tls, cc, fb, __ccgo_ts+89393, libc.VaList(bp+8, (*_NuBytecode)(unsafe.Pointer(bc1)).Fname))
 			}
 		}
 		goto _7
@@ -39352,34 +39477,34 @@ func x__NuOutputInterpreter(tls *libc.TLS, cc *CC, fb uintptr, ctxt uintptr) {
 		i = i + 1
 	}
 	// end of jump table
-	x__flexbuf_printf(tls, cc, fb, __ccgo_ts+89402, 0)
+	x__flexbuf_printf(tls, cc, fb, __ccgo_ts+89408, 0)
 	// emit constants for everything
-	x__flexbuf_printf(tls, cc, fb, __ccgo_ts+89425, 0)
+	x__flexbuf_printf(tls, cc, fb, __ccgo_ts+89431, 0)
 	// direct constants
 	i = 0
 	for {
 		if !(i <= int32(m_MAX_DIRECT_CONST)) {
 			break
 		}
-		x__flexbuf_printf(tls, cc, fb, __ccgo_ts+89431, libc.VaList(bp+8, i, i))
+		x__flexbuf_printf(tls, cc, fb, __ccgo_ts+89437, libc.VaList(bp+8, i, i))
 		goto _8
 	_8:
 		;
 		i = i + 1
 	}
 	// other predefined
-	x__flexbuf_printf(tls, cc, fb, __ccgo_ts+89452, libc.VaList(bp+8, int32(m_DIRECT_BYTECODE)))
-	x__flexbuf_printf(tls, cc, fb, __ccgo_ts+89472, libc.VaList(bp+8, int32(m_PUSHI_BYTECODE)))
-	x__flexbuf_printf(tls, cc, fb, __ccgo_ts+89491, libc.VaList(bp+8, int32(m_PUSHA_BYTECODE)))
-	x__flexbuf_printf(tls, cc, fb, __ccgo_ts+89510, libc.VaList(bp+8, int32(m_CALLA_BYTECODE)))
-	x__flexbuf_printf(tls, cc, fb, __ccgo_ts+89529, libc.VaList(bp+8, int32(m_ADDI_BYTECODE)))
-	x__flexbuf_printf(tls, cc, fb, __ccgo_ts+89547, libc.VaList(bp+8, int32(m_SUBI_BYTECODE)))
-	x__flexbuf_printf(tls, cc, fb, __ccgo_ts+89565, libc.VaList(bp+8, int32(m_ANDI_BYTECODE)))
-	x__flexbuf_printf(tls, cc, fb, __ccgo_ts+89583, libc.VaList(bp+8, int32(m_IORI_BYTECODE)))
-	x__flexbuf_printf(tls, cc, fb, __ccgo_ts+89601, libc.VaList(bp+8, int32(m_XORI_BYTECODE)))
-	x__flexbuf_printf(tls, cc, fb, __ccgo_ts+89619, libc.VaList(bp+8, int32(m_SHLI_BYTECODE)))
-	x__flexbuf_printf(tls, cc, fb, __ccgo_ts+89637, libc.VaList(bp+8, int32(m_SHRI_BYTECODE)))
-	x__flexbuf_printf(tls, cc, fb, __ccgo_ts+89655, libc.VaList(bp+8, int32(m_SARI_BYTECODE)))
+	x__flexbuf_printf(tls, cc, fb, __ccgo_ts+89458, libc.VaList(bp+8, int32(m_DIRECT_BYTECODE)))
+	x__flexbuf_printf(tls, cc, fb, __ccgo_ts+89478, libc.VaList(bp+8, int32(m_PUSHI_BYTECODE)))
+	x__flexbuf_printf(tls, cc, fb, __ccgo_ts+89497, libc.VaList(bp+8, int32(m_PUSHA_BYTECODE)))
+	x__flexbuf_printf(tls, cc, fb, __ccgo_ts+89516, libc.VaList(bp+8, int32(m_CALLA_BYTECODE)))
+	x__flexbuf_printf(tls, cc, fb, __ccgo_ts+89535, libc.VaList(bp+8, int32(m_ADDI_BYTECODE)))
+	x__flexbuf_printf(tls, cc, fb, __ccgo_ts+89553, libc.VaList(bp+8, int32(m_SUBI_BYTECODE)))
+	x__flexbuf_printf(tls, cc, fb, __ccgo_ts+89571, libc.VaList(bp+8, int32(m_ANDI_BYTECODE)))
+	x__flexbuf_printf(tls, cc, fb, __ccgo_ts+89589, libc.VaList(bp+8, int32(m_IORI_BYTECODE)))
+	x__flexbuf_printf(tls, cc, fb, __ccgo_ts+89607, libc.VaList(bp+8, int32(m_XORI_BYTECODE)))
+	x__flexbuf_printf(tls, cc, fb, __ccgo_ts+89625, libc.VaList(bp+8, int32(m_SHLI_BYTECODE)))
+	x__flexbuf_printf(tls, cc, fb, __ccgo_ts+89643, libc.VaList(bp+8, int32(m_SHRI_BYTECODE)))
+	x__flexbuf_printf(tls, cc, fb, __ccgo_ts+89661, libc.VaList(bp+8, int32(m_SARI_BYTECODE)))
 	// others
 	i = 0
 	for {
@@ -39389,7 +39514,7 @@ func x__NuOutputInterpreter(tls *libc.TLS, cc *CC, fb uintptr, ctxt uintptr) {
 		bc2 = cc.s__globalBytecodes[i]
 		code1 = (*_NuBytecode)(unsafe.Pointer(bc2)).Fcode
 		if code1 >= int32(m_FIRST_BYTECODE) {
-			x__flexbuf_printf(tls, cc, fb, __ccgo_ts+89673, libc.VaList(bp+8, (*_NuBytecode)(unsafe.Pointer(bc2)).Fname, code1, (*_NuBytecode)(unsafe.Pointer(bc2)).Fusage))
+			x__flexbuf_printf(tls, cc, fb, __ccgo_ts+89679, libc.VaList(bp+8, (*_NuBytecode)(unsafe.Pointer(bc2)).Fname, code1, (*_NuBytecode)(unsafe.Pointer(bc2)).Fusage))
 		}
 		goto _9
 	_9:
@@ -39397,9 +39522,9 @@ func x__NuOutputInterpreter(tls *libc.TLS, cc *CC, fb uintptr, ctxt uintptr) {
 		i = i + 1
 	}
 	// after this comes the actual bytecode
-	x__flexbuf_printf(tls, cc, fb, __ccgo_ts+89708, 0)
-	x__flexbuf_addstr(tls, cc, fb, __ccgo_ts+89720)
-	x__flexbuf_addstr(tls, cc, fb, __ccgo_ts+89744)
+	x__flexbuf_printf(tls, cc, fb, __ccgo_ts+89714, 0)
+	x__flexbuf_addstr(tls, cc, fb, __ccgo_ts+89726)
+	x__flexbuf_addstr(tls, cc, fb, __ccgo_ts+89750)
 }
 
 func x__NuOutputIrList(tls *libc.TLS, cc *CC, fb uintptr, irl uintptr) {
@@ -39426,18 +39551,18 @@ func x__NuOutputIrList(tls *libc.TLS, cc *CC, fb uintptr, irl uintptr) {
 		case int32(_NU_OP_LABEL):
 			x__NuOutputLabel(tls, cc, fb, *(*uintptr)(unsafe.Add(unsafe.Pointer(ir), 24)))
 		case int32(_NU_OP_ALIGN):
-			x__flexbuf_printf(tls, cc, fb, __ccgo_ts+89853, 0)
+			x__flexbuf_printf(tls, cc, fb, __ccgo_ts+89859, 0)
 		case int32(_NU_OP_BRA3):
 			/* must always take 3 bytes because of its use with JMPREL */
 			cc.s__labelNum = cc.s__labelNum + 1
-			x__flexbuf_printf(tls, cc, fb, __ccgo_ts+89861, libc.VaList(bp+8, s__NuBytecodeString(tls, cc, bc)))
+			x__flexbuf_printf(tls, cc, fb, __ccgo_ts+89867, libc.VaList(bp+8, s__NuBytecodeString(tls, cc, bc)))
 			x__NuOutputLabel(tls, cc, fb, *(*uintptr)(unsafe.Add(unsafe.Pointer(ir), 24)))
-			x__flexbuf_printf(tls, cc, fb, __ccgo_ts+89878, libc.VaList(bp+8, cc.s__labelNum))
+			x__flexbuf_printf(tls, cc, fb, __ccgo_ts+89884, libc.VaList(bp+8, cc.s__labelNum))
 			if comment != 0 {
-				x__flexbuf_printf(tls, cc, fb, __ccgo_ts+89901, libc.VaList(bp+8, comment))
+				x__flexbuf_printf(tls, cc, fb, __ccgo_ts+89907, libc.VaList(bp+8, comment))
 				comment = libc.UintptrFromInt32(0)
 			}
-			x__flexbuf_printf(tls, cc, fb, __ccgo_ts+89907, libc.VaList(bp+8, cc.s__labelNum))
+			x__flexbuf_printf(tls, cc, fb, __ccgo_ts+89913, libc.VaList(bp+8, cc.s__labelNum))
 		case int32(_NU_OP_BRA):
 			fallthrough
 		case int32(_NU_OP_BZ):
@@ -39468,14 +39593,14 @@ func x__NuOutputIrList(tls *libc.TLS, cc *CC, fb uintptr, irl uintptr) {
 			fallthrough
 		case int32(_NU_OP_CBGEU):
 			cc.s__labelNum = cc.s__labelNum + 1
-			x__flexbuf_printf(tls, cc, fb, __ccgo_ts+89927, libc.VaList(bp+8, s__NuBytecodeString(tls, cc, bc)))
+			x__flexbuf_printf(tls, cc, fb, __ccgo_ts+89933, libc.VaList(bp+8, s__NuBytecodeString(tls, cc, bc)))
 			x__NuOutputLabel(tls, cc, fb, *(*uintptr)(unsafe.Add(unsafe.Pointer(ir), 24)))
-			x__flexbuf_printf(tls, cc, fb, __ccgo_ts+89878, libc.VaList(bp+8, cc.s__labelNum))
+			x__flexbuf_printf(tls, cc, fb, __ccgo_ts+89884, libc.VaList(bp+8, cc.s__labelNum))
 			if comment != 0 {
-				x__flexbuf_printf(tls, cc, fb, __ccgo_ts+89901, libc.VaList(bp+8, comment))
+				x__flexbuf_printf(tls, cc, fb, __ccgo_ts+89907, libc.VaList(bp+8, comment))
 				comment = libc.UintptrFromInt32(0)
 			}
-			x__flexbuf_printf(tls, cc, fb, __ccgo_ts+89907, libc.VaList(bp+8, cc.s__labelNum))
+			x__flexbuf_printf(tls, cc, fb, __ccgo_ts+89913, libc.VaList(bp+8, cc.s__labelNum))
 		default:
 			if bc != 0 {
 				use_const = libc.BoolUint8(m_false != 0)
@@ -39492,7 +39617,7 @@ func x__NuOutputIrList(tls *libc.TLS, cc *CC, fb uintptr, irl uintptr) {
 						//flexbuf_printf(fb, "\tbyte\tlong %s | (", name);
 						//NuOutputLabel(fb, ir->label);
 						//flexbuf_printf(fb, "<< 8)");
-						x__flexbuf_printf(tls, cc, fb, __ccgo_ts+89945, libc.VaList(bp+8, name))
+						x__flexbuf_printf(tls, cc, fb, __ccgo_ts+89951, libc.VaList(bp+8, name))
 						x__NuOutputLabel(tls, cc, fb, *(*uintptr)(unsafe.Add(unsafe.Pointer(ir), 24)))
 					} else {
 						if (*_NuIr)(unsafe.Pointer(ir)).F__ccgo4_24.Fval >= 0 && (*_NuIr)(unsafe.Pointer(ir)).F__ccgo4_24.Fval <= int64(0xffffff) {
@@ -39504,34 +39629,34 @@ func x__NuOutputIrList(tls *libc.TLS, cc *CC, fb uintptr, irl uintptr) {
 								v2 = libc.UintptrFromInt32(0)
 							}
 							nextbc = v2
-							name = __ccgo_ts + 89820
+							name = __ccgo_ts + 89826
 							// check for next byte being an immediate op
 							// that was not merged
 							if nextbc != 0 && libc.Int32FromUint8((*_NuBytecode)(unsafe.Pointer(nextbc)).Fmacro_depth) == 0 {
 								switch (*_NuIr)(unsafe.Pointer(nextir)).Fop {
 								case int32(_NU_OP_ADD):
-									name = __ccgo_ts + 89961
+									name = __ccgo_ts + 89967
 									merged = libc.BoolUint8(m_true != 0)
 								case int32(_NU_OP_SUB):
-									name = __ccgo_ts + 89972
+									name = __ccgo_ts + 89978
 									merged = libc.BoolUint8(m_true != 0)
 								case int32(_NU_OP_AND):
-									name = __ccgo_ts + 89983
+									name = __ccgo_ts + 89989
 									merged = libc.BoolUint8(m_true != 0)
 								case int32(_NU_OP_IOR):
-									name = __ccgo_ts + 89994
+									name = __ccgo_ts + 90000
 									merged = libc.BoolUint8(m_true != 0)
 								case int32(_NU_OP_XOR):
-									name = __ccgo_ts + 90005
+									name = __ccgo_ts + 90011
 									merged = libc.BoolUint8(m_true != 0)
 								case int32(_NU_OP_SHL):
-									name = __ccgo_ts + 90016
+									name = __ccgo_ts + 90022
 									merged = libc.BoolUint8(m_true != 0)
 								case int32(_NU_OP_SHR):
-									name = __ccgo_ts + 90027
+									name = __ccgo_ts + 90033
 									merged = libc.BoolUint8(m_true != 0)
 								case int32(_NU_OP_SAR):
-									name = __ccgo_ts + 90038
+									name = __ccgo_ts + 90044
 									merged = libc.BoolUint8(m_true != 0)
 								default:
 									break
@@ -39541,22 +39666,22 @@ func x__NuOutputIrList(tls *libc.TLS, cc *CC, fb uintptr, irl uintptr) {
 								}
 							}
 							if !(merged != 0) && (*_NuIr)(unsafe.Pointer(ir)).F__ccgo4_24.Fval >= 0 && (*_NuIr)(unsafe.Pointer(ir)).F__ccgo4_24.Fval <= int64(m_MAX_DIRECT_CONST) {
-								x__flexbuf_printf(tls, cc, fb, __ccgo_ts+90049, libc.VaList(bp+8, int32((*_NuIr)(unsafe.Pointer(ir)).F__ccgo4_24.Fval)))
+								x__flexbuf_printf(tls, cc, fb, __ccgo_ts+90055, libc.VaList(bp+8, int32((*_NuIr)(unsafe.Pointer(ir)).F__ccgo4_24.Fval)))
 							} else {
-								x__flexbuf_printf(tls, cc, fb, __ccgo_ts+90069, libc.VaList(bp+8, name, (*_NuIr)(unsafe.Pointer(ir)).F__ccgo4_24.Fval))
+								x__flexbuf_printf(tls, cc, fb, __ccgo_ts+90075, libc.VaList(bp+8, name, (*_NuIr)(unsafe.Pointer(ir)).F__ccgo4_24.Fval))
 							}
 						} else {
-							x__flexbuf_printf(tls, cc, fb, __ccgo_ts+90087, libc.VaList(bp+8, name, (*_NuIr)(unsafe.Pointer(ir)).F__ccgo4_24.Fval))
+							x__flexbuf_printf(tls, cc, fb, __ccgo_ts+90093, libc.VaList(bp+8, name, (*_NuIr)(unsafe.Pointer(ir)).F__ccgo4_24.Fval))
 						}
 					}
 				} else {
-					x__flexbuf_printf(tls, cc, fb, __ccgo_ts+90105, libc.VaList(bp+8, s__NuBytecodeString(tls, cc, bc)))
+					x__flexbuf_printf(tls, cc, fb, __ccgo_ts+90111, libc.VaList(bp+8, s__NuBytecodeString(tls, cc, bc)))
 				}
 			}
 			break
 		}
 		if comment != 0 {
-			x__flexbuf_printf(tls, cc, fb, __ccgo_ts+89901, libc.VaList(bp+8, comment))
+			x__flexbuf_printf(tls, cc, fb, __ccgo_ts+89907, libc.VaList(bp+8, comment))
 		}
 		x__flexbuf_addchar(tls, cc, fb, int32('\n'))
 		goto _1
@@ -39570,13 +39695,13 @@ func x__NuOutputLabel(tls *libc.TLS, cc *CC, fb uintptr, label uintptr) {
 	bp := tls.Alloc(32)
 	defer tls.Free(32)
 	if !(label != 0) {
-		x__flexbuf_printf(tls, cc, fb, __ccgo_ts+65969, 0)
+		x__flexbuf_printf(tls, cc, fb, __ccgo_ts+2841, 0)
 		return
 	}
 	if (*_NuIrLabel)(unsafe.Pointer(label)).Foffset != 0 {
-		x__flexbuf_printf(tls, cc, fb, __ccgo_ts+88685, libc.VaList(bp+8, label+8, (*_NuIrLabel)(unsafe.Pointer(label)).Foffset))
+		x__flexbuf_printf(tls, cc, fb, __ccgo_ts+88691, libc.VaList(bp+8, label+8, (*_NuIrLabel)(unsafe.Pointer(label)).Foffset))
 	} else {
-		x__flexbuf_printf(tls, cc, fb, __ccgo_ts+7088, libc.VaList(bp+8, label+8))
+		x__flexbuf_printf(tls, cc, fb, __ccgo_ts+7090, libc.VaList(bp+8, label+8))
 	}
 }
 
@@ -39589,7 +39714,7 @@ func x__ObjClassName(tls *libc.TLS, cc *CC, objtype uintptr) (r uintptr) {
 	var P uintptr
 	_ = P
 	if !(x__IsClassType(tls, cc, objtype) != 0) {
-		x__ERROR(tls, cc, objtype, __ccgo_ts+24962, 0)
+		x__ERROR(tls, cc, objtype, __ccgo_ts+24970, 0)
 		return libc.UintptrFromInt32(0)
 	}
 	P = x__GetClassPtr(tls, cc, objtype)
@@ -39604,7 +39729,7 @@ func x__OffsetName(tls *libc.TLS, cc *CC, basename uintptr, offset uint64) (r ui
 	_, _ = len1, tempname
 	len1 = libc.Xstrlen(tls, basename) + uint64(5)
 	tempname = calloc(tls, cc, uint64(1), len1)
-	libc.Xsprintf(tls, tempname, __ccgo_ts+44870, libc.VaList(bp+8, basename, offset))
+	libc.Xsprintf(tls, tempname, __ccgo_ts+44878, libc.VaList(bp+8, basename, offset))
 	return tempname
 }
 
@@ -39632,23 +39757,23 @@ func x__OptimizeIRLocal(tls *libc.TLS, cc *CC, irl uintptr, f uintptr) {
 	hooked = libc.BoolUint8(m_false != 0) //!strcmp(FuncData(curfunc)->asmname->name,"_libc_a_fopen");
 	if hooked != 0 {
 		x__flexbuf_init(tls, cc, bp, uint64(512))
-		x__flexbuf_addstr(tls, cc, bp, __ccgo_ts+62733)
+		x__flexbuf_addstr(tls, cc, bp, __ccgo_ts+62741)
 		x__flexbuf_addstr(tls, cc, bp, (*_Operand)(unsafe.Pointer((*_IRFuncData)(unsafe.Pointer((*_Function)(unsafe.Pointer(cc.x__curfunc)).Fbedata)).Fasmname)).Fname)
-		x__flexbuf_addstr(tls, cc, bp, __ccgo_ts+62764)
+		x__flexbuf_addstr(tls, cc, bp, __ccgo_ts+62772)
 		s__append_disasm(tls, cc, bp, irl)
 	}
 	// multiply divide optimization need only be performed once,
 	// and should be done before other optimizations confuse things
 	passchg = x__OptimizeMulDiv(tls, cc, irl)
 	if hooked != 0 {
-		x__DEBUG(tls, cc, libc.UintptrFromInt32(0), __ccgo_ts+62775, libc.VaList(bp+296, (*_Operand)(unsafe.Pointer((*_IRFuncData)(unsafe.Pointer((*_Function)(unsafe.Pointer(cc.x__curfunc)).Fbedata)).Fasmname)).Fname, passchg))
-		x__flexbuf_addstr(tls, cc, bp, __ccgo_ts+62818)
+		x__DEBUG(tls, cc, libc.UintptrFromInt32(0), __ccgo_ts+62783, libc.VaList(bp+296, (*_Operand)(unsafe.Pointer((*_IRFuncData)(unsafe.Pointer((*_Function)(unsafe.Pointer(cc.x__curfunc)).Fbedata)).Fasmname)).Fname, passchg))
+		x__flexbuf_addstr(tls, cc, bp, __ccgo_ts+62826)
 		if passchg != 0 {
 			s__append_disasm(tls, cc, bp, irl)
 		} else {
-			x__flexbuf_addstr(tls, cc, bp, __ccgo_ts+62845)
+			x__flexbuf_addstr(tls, cc, bp, __ccgo_ts+62853)
 		}
-		x__flexbuf_addstr(tls, cc, bp, __ccgo_ts+4265)
+		x__flexbuf_addstr(tls, cc, bp, __ccgo_ts+4267)
 	}
 	change = change | passchg
 	goto again
@@ -39660,87 +39785,87 @@ again:
 		if flags&int32(m_OPT_BASIC_REGS) != 0 {
 			passchg1 = s__CheckLabelUsage(tls, cc, irl)
 			if hooked != 0 {
-				x__DEBUG(tls, cc, libc.UintptrFromInt32(0), __ccgo_ts+62857, libc.VaList(bp+296, (*_Operand)(unsafe.Pointer((*_IRFuncData)(unsafe.Pointer((*_Function)(unsafe.Pointer(cc.x__curfunc)).Fbedata)).Fasmname)).Fname, passchg1))
-				x__flexbuf_addstr(tls, cc, bp, __ccgo_ts+62901)
+				x__DEBUG(tls, cc, libc.UintptrFromInt32(0), __ccgo_ts+62865, libc.VaList(bp+296, (*_Operand)(unsafe.Pointer((*_IRFuncData)(unsafe.Pointer((*_Function)(unsafe.Pointer(cc.x__curfunc)).Fbedata)).Fasmname)).Fname, passchg1))
+				x__flexbuf_addstr(tls, cc, bp, __ccgo_ts+62909)
 				if passchg1 != 0 {
 					s__append_disasm(tls, cc, bp, irl)
 				} else {
-					x__flexbuf_addstr(tls, cc, bp, __ccgo_ts+62845)
+					x__flexbuf_addstr(tls, cc, bp, __ccgo_ts+62853)
 				}
-				x__flexbuf_addstr(tls, cc, bp, __ccgo_ts+4265)
+				x__flexbuf_addstr(tls, cc, bp, __ccgo_ts+4267)
 			}
 			change = change | passchg1
 			passchg2 = s__OptimizeReadWrite(tls, cc, irl)
 			if hooked != 0 {
-				x__DEBUG(tls, cc, libc.UintptrFromInt32(0), __ccgo_ts+62929, libc.VaList(bp+296, (*_Operand)(unsafe.Pointer((*_IRFuncData)(unsafe.Pointer((*_Function)(unsafe.Pointer(cc.x__curfunc)).Fbedata)).Fasmname)).Fname, passchg2))
-				x__flexbuf_addstr(tls, cc, bp, __ccgo_ts+62975)
+				x__DEBUG(tls, cc, libc.UintptrFromInt32(0), __ccgo_ts+62937, libc.VaList(bp+296, (*_Operand)(unsafe.Pointer((*_IRFuncData)(unsafe.Pointer((*_Function)(unsafe.Pointer(cc.x__curfunc)).Fbedata)).Fasmname)).Fname, passchg2))
+				x__flexbuf_addstr(tls, cc, bp, __ccgo_ts+62983)
 				if passchg2 != 0 {
 					s__append_disasm(tls, cc, bp, irl)
 				} else {
-					x__flexbuf_addstr(tls, cc, bp, __ccgo_ts+62845)
+					x__flexbuf_addstr(tls, cc, bp, __ccgo_ts+62853)
 				}
-				x__flexbuf_addstr(tls, cc, bp, __ccgo_ts+4265)
+				x__flexbuf_addstr(tls, cc, bp, __ccgo_ts+4267)
 			}
 			change = change | passchg2
 			passchg3 = x__EliminateDeadCode(tls, cc, irl)
 			if hooked != 0 {
-				x__DEBUG(tls, cc, libc.UintptrFromInt32(0), __ccgo_ts+63005, libc.VaList(bp+296, (*_Operand)(unsafe.Pointer((*_IRFuncData)(unsafe.Pointer((*_Function)(unsafe.Pointer(cc.x__curfunc)).Fbedata)).Fasmname)).Fname, passchg3))
-				x__flexbuf_addstr(tls, cc, bp, __ccgo_ts+63051)
+				x__DEBUG(tls, cc, libc.UintptrFromInt32(0), __ccgo_ts+63013, libc.VaList(bp+296, (*_Operand)(unsafe.Pointer((*_IRFuncData)(unsafe.Pointer((*_Function)(unsafe.Pointer(cc.x__curfunc)).Fbedata)).Fasmname)).Fname, passchg3))
+				x__flexbuf_addstr(tls, cc, bp, __ccgo_ts+63059)
 				if passchg3 != 0 {
 					s__append_disasm(tls, cc, bp, irl)
 				} else {
-					x__flexbuf_addstr(tls, cc, bp, __ccgo_ts+62845)
+					x__flexbuf_addstr(tls, cc, bp, __ccgo_ts+62853)
 				}
-				x__flexbuf_addstr(tls, cc, bp, __ccgo_ts+4265)
+				x__flexbuf_addstr(tls, cc, bp, __ccgo_ts+4267)
 			}
 			change = change | passchg3
 			passchg4 = s__OptimizeCogWrites(tls, cc, irl)
 			if hooked != 0 {
-				x__DEBUG(tls, cc, libc.UintptrFromInt32(0), __ccgo_ts+63081, libc.VaList(bp+296, (*_Operand)(unsafe.Pointer((*_IRFuncData)(unsafe.Pointer((*_Function)(unsafe.Pointer(cc.x__curfunc)).Fbedata)).Fasmname)).Fname, passchg4))
-				x__flexbuf_addstr(tls, cc, bp, __ccgo_ts+63127)
+				x__DEBUG(tls, cc, libc.UintptrFromInt32(0), __ccgo_ts+63089, libc.VaList(bp+296, (*_Operand)(unsafe.Pointer((*_IRFuncData)(unsafe.Pointer((*_Function)(unsafe.Pointer(cc.x__curfunc)).Fbedata)).Fasmname)).Fname, passchg4))
+				x__flexbuf_addstr(tls, cc, bp, __ccgo_ts+63135)
 				if passchg4 != 0 {
 					s__append_disasm(tls, cc, bp, irl)
 				} else {
-					x__flexbuf_addstr(tls, cc, bp, __ccgo_ts+62845)
+					x__flexbuf_addstr(tls, cc, bp, __ccgo_ts+62853)
 				}
-				x__flexbuf_addstr(tls, cc, bp, __ccgo_ts+4265)
+				x__flexbuf_addstr(tls, cc, bp, __ccgo_ts+4267)
 			}
 			change = change | passchg4
 			passchg5 = s__OptimizeSimpleAssignments(tls, cc, irl)
 			if hooked != 0 {
-				x__DEBUG(tls, cc, libc.UintptrFromInt32(0), __ccgo_ts+63157, libc.VaList(bp+296, (*_Operand)(unsafe.Pointer((*_IRFuncData)(unsafe.Pointer((*_Function)(unsafe.Pointer(cc.x__curfunc)).Fbedata)).Fasmname)).Fname, passchg5))
-				x__flexbuf_addstr(tls, cc, bp, __ccgo_ts+63211)
+				x__DEBUG(tls, cc, libc.UintptrFromInt32(0), __ccgo_ts+63165, libc.VaList(bp+296, (*_Operand)(unsafe.Pointer((*_IRFuncData)(unsafe.Pointer((*_Function)(unsafe.Pointer(cc.x__curfunc)).Fbedata)).Fasmname)).Fname, passchg5))
+				x__flexbuf_addstr(tls, cc, bp, __ccgo_ts+63219)
 				if passchg5 != 0 {
 					s__append_disasm(tls, cc, bp, irl)
 				} else {
-					x__flexbuf_addstr(tls, cc, bp, __ccgo_ts+62845)
+					x__flexbuf_addstr(tls, cc, bp, __ccgo_ts+62853)
 				}
-				x__flexbuf_addstr(tls, cc, bp, __ccgo_ts+4265)
+				x__flexbuf_addstr(tls, cc, bp, __ccgo_ts+4267)
 			}
 			change = change | passchg5
 			passchg6 = x__OptimizeMoves(tls, cc, irl)
 			if hooked != 0 {
-				x__DEBUG(tls, cc, libc.UintptrFromInt32(0), __ccgo_ts+63249, libc.VaList(bp+296, (*_Operand)(unsafe.Pointer((*_IRFuncData)(unsafe.Pointer((*_Function)(unsafe.Pointer(cc.x__curfunc)).Fbedata)).Fasmname)).Fname, passchg6))
-				x__flexbuf_addstr(tls, cc, bp, __ccgo_ts+63291)
+				x__DEBUG(tls, cc, libc.UintptrFromInt32(0), __ccgo_ts+63257, libc.VaList(bp+296, (*_Operand)(unsafe.Pointer((*_IRFuncData)(unsafe.Pointer((*_Function)(unsafe.Pointer(cc.x__curfunc)).Fbedata)).Fasmname)).Fname, passchg6))
+				x__flexbuf_addstr(tls, cc, bp, __ccgo_ts+63299)
 				if passchg6 != 0 {
 					s__append_disasm(tls, cc, bp, irl)
 				} else {
-					x__flexbuf_addstr(tls, cc, bp, __ccgo_ts+62845)
+					x__flexbuf_addstr(tls, cc, bp, __ccgo_ts+62853)
 				}
-				x__flexbuf_addstr(tls, cc, bp, __ccgo_ts+4265)
+				x__flexbuf_addstr(tls, cc, bp, __ccgo_ts+4267)
 			}
 			change = change | passchg6
 			if libc.Uint32FromInt32(flags)&uint32(m_OPT_EXPERIMENTAL) != 0 {
 				passchg7 = x__OptimizeReturnValues(tls, cc, irl)
 				if hooked != 0 {
-					x__DEBUG(tls, cc, libc.UintptrFromInt32(0), __ccgo_ts+63317, libc.VaList(bp+296, (*_Operand)(unsafe.Pointer((*_IRFuncData)(unsafe.Pointer((*_Function)(unsafe.Pointer(cc.x__curfunc)).Fbedata)).Fasmname)).Fname, passchg7))
-					x__flexbuf_addstr(tls, cc, bp, __ccgo_ts+63366)
+					x__DEBUG(tls, cc, libc.UintptrFromInt32(0), __ccgo_ts+63325, libc.VaList(bp+296, (*_Operand)(unsafe.Pointer((*_IRFuncData)(unsafe.Pointer((*_Function)(unsafe.Pointer(cc.x__curfunc)).Fbedata)).Fasmname)).Fname, passchg7))
+					x__flexbuf_addstr(tls, cc, bp, __ccgo_ts+63374)
 					if passchg7 != 0 {
 						s__append_disasm(tls, cc, bp, irl)
 					} else {
-						x__flexbuf_addstr(tls, cc, bp, __ccgo_ts+62845)
+						x__flexbuf_addstr(tls, cc, bp, __ccgo_ts+62853)
 					}
-					x__flexbuf_addstr(tls, cc, bp, __ccgo_ts+4265)
+					x__flexbuf_addstr(tls, cc, bp, __ccgo_ts+4267)
 				}
 				change = change | passchg7
 			}
@@ -39748,78 +39873,78 @@ again:
 		if flags&int32(m_OPT_CONST_PROPAGATE) != 0 {
 			passchg8 = s__OptimizeImmediates(tls, cc, irl)
 			if hooked != 0 {
-				x__DEBUG(tls, cc, libc.UintptrFromInt32(0), __ccgo_ts+63399, libc.VaList(bp+296, (*_Operand)(unsafe.Pointer((*_IRFuncData)(unsafe.Pointer((*_Function)(unsafe.Pointer(cc.x__curfunc)).Fbedata)).Fasmname)).Fname, passchg8))
-				x__flexbuf_addstr(tls, cc, bp, __ccgo_ts+63446)
+				x__DEBUG(tls, cc, libc.UintptrFromInt32(0), __ccgo_ts+63407, libc.VaList(bp+296, (*_Operand)(unsafe.Pointer((*_IRFuncData)(unsafe.Pointer((*_Function)(unsafe.Pointer(cc.x__curfunc)).Fbedata)).Fasmname)).Fname, passchg8))
+				x__flexbuf_addstr(tls, cc, bp, __ccgo_ts+63454)
 				if passchg8 != 0 {
 					s__append_disasm(tls, cc, bp, irl)
 				} else {
-					x__flexbuf_addstr(tls, cc, bp, __ccgo_ts+62845)
+					x__flexbuf_addstr(tls, cc, bp, __ccgo_ts+62853)
 				}
-				x__flexbuf_addstr(tls, cc, bp, __ccgo_ts+4265)
+				x__flexbuf_addstr(tls, cc, bp, __ccgo_ts+4267)
 			}
 			change = change | passchg8
 		}
 		if flags&int32(m_OPT_BASIC_REGS) != 0 {
 			passchg9 = s__OptimizeCompares(tls, cc, irl)
 			if hooked != 0 {
-				x__DEBUG(tls, cc, libc.UintptrFromInt32(0), __ccgo_ts+63477, libc.VaList(bp+296, (*_Operand)(unsafe.Pointer((*_IRFuncData)(unsafe.Pointer((*_Function)(unsafe.Pointer(cc.x__curfunc)).Fbedata)).Fasmname)).Fname, passchg9))
-				x__flexbuf_addstr(tls, cc, bp, __ccgo_ts+63522)
+				x__DEBUG(tls, cc, libc.UintptrFromInt32(0), __ccgo_ts+63485, libc.VaList(bp+296, (*_Operand)(unsafe.Pointer((*_IRFuncData)(unsafe.Pointer((*_Function)(unsafe.Pointer(cc.x__curfunc)).Fbedata)).Fasmname)).Fname, passchg9))
+				x__flexbuf_addstr(tls, cc, bp, __ccgo_ts+63530)
 				if passchg9 != 0 {
 					s__append_disasm(tls, cc, bp, irl)
 				} else {
-					x__flexbuf_addstr(tls, cc, bp, __ccgo_ts+62845)
+					x__flexbuf_addstr(tls, cc, bp, __ccgo_ts+62853)
 				}
-				x__flexbuf_addstr(tls, cc, bp, __ccgo_ts+4265)
+				x__flexbuf_addstr(tls, cc, bp, __ccgo_ts+4267)
 			}
 			change = change | passchg9
 			passchg10 = s__OptimizeAddSub(tls, cc, irl)
 			if hooked != 0 {
-				x__DEBUG(tls, cc, libc.UintptrFromInt32(0), __ccgo_ts+63551, libc.VaList(bp+296, (*_Operand)(unsafe.Pointer((*_IRFuncData)(unsafe.Pointer((*_Function)(unsafe.Pointer(cc.x__curfunc)).Fbedata)).Fasmname)).Fname, passchg10))
-				x__flexbuf_addstr(tls, cc, bp, __ccgo_ts+63594)
+				x__DEBUG(tls, cc, libc.UintptrFromInt32(0), __ccgo_ts+63559, libc.VaList(bp+296, (*_Operand)(unsafe.Pointer((*_IRFuncData)(unsafe.Pointer((*_Function)(unsafe.Pointer(cc.x__curfunc)).Fbedata)).Fasmname)).Fname, passchg10))
+				x__flexbuf_addstr(tls, cc, bp, __ccgo_ts+63602)
 				if passchg10 != 0 {
 					s__append_disasm(tls, cc, bp, irl)
 				} else {
-					x__flexbuf_addstr(tls, cc, bp, __ccgo_ts+62845)
+					x__flexbuf_addstr(tls, cc, bp, __ccgo_ts+62853)
 				}
-				x__flexbuf_addstr(tls, cc, bp, __ccgo_ts+4265)
+				x__flexbuf_addstr(tls, cc, bp, __ccgo_ts+4267)
 			}
 			change = change | passchg10
 			passchg11 = s__OptimizeLoopPtrOffset(tls, cc, irl)
 			if hooked != 0 {
-				x__DEBUG(tls, cc, libc.UintptrFromInt32(0), __ccgo_ts+63621, libc.VaList(bp+296, (*_Operand)(unsafe.Pointer((*_IRFuncData)(unsafe.Pointer((*_Function)(unsafe.Pointer(cc.x__curfunc)).Fbedata)).Fasmname)).Fname, passchg11))
-				x__flexbuf_addstr(tls, cc, bp, __ccgo_ts+63671)
+				x__DEBUG(tls, cc, libc.UintptrFromInt32(0), __ccgo_ts+63629, libc.VaList(bp+296, (*_Operand)(unsafe.Pointer((*_IRFuncData)(unsafe.Pointer((*_Function)(unsafe.Pointer(cc.x__curfunc)).Fbedata)).Fasmname)).Fname, passchg11))
+				x__flexbuf_addstr(tls, cc, bp, __ccgo_ts+63679)
 				if passchg11 != 0 {
 					s__append_disasm(tls, cc, bp, irl)
 				} else {
-					x__flexbuf_addstr(tls, cc, bp, __ccgo_ts+62845)
+					x__flexbuf_addstr(tls, cc, bp, __ccgo_ts+62853)
 				}
-				x__flexbuf_addstr(tls, cc, bp, __ccgo_ts+4265)
+				x__flexbuf_addstr(tls, cc, bp, __ccgo_ts+4267)
 			}
 			change = change | passchg11
 		}
 		if flags&int32(m_OPT_PEEPHOLE) != 0 {
 			passchg12 = x__OptimizePeepholes(tls, cc, irl)
 			if hooked != 0 {
-				x__DEBUG(tls, cc, libc.UintptrFromInt32(0), __ccgo_ts+63705, libc.VaList(bp+296, (*_Operand)(unsafe.Pointer((*_IRFuncData)(unsafe.Pointer((*_Function)(unsafe.Pointer(cc.x__curfunc)).Fbedata)).Fasmname)).Fname, passchg12))
-				x__flexbuf_addstr(tls, cc, bp, __ccgo_ts+63751)
+				x__DEBUG(tls, cc, libc.UintptrFromInt32(0), __ccgo_ts+63713, libc.VaList(bp+296, (*_Operand)(unsafe.Pointer((*_IRFuncData)(unsafe.Pointer((*_Function)(unsafe.Pointer(cc.x__curfunc)).Fbedata)).Fasmname)).Fname, passchg12))
+				x__flexbuf_addstr(tls, cc, bp, __ccgo_ts+63759)
 				if passchg12 != 0 {
 					s__append_disasm(tls, cc, bp, irl)
 				} else {
-					x__flexbuf_addstr(tls, cc, bp, __ccgo_ts+62845)
+					x__flexbuf_addstr(tls, cc, bp, __ccgo_ts+62853)
 				}
-				x__flexbuf_addstr(tls, cc, bp, __ccgo_ts+4265)
+				x__flexbuf_addstr(tls, cc, bp, __ccgo_ts+4267)
 			}
 			change = change | passchg12
 			passchg13 = x__OptimizePeephole2(tls, cc, irl)
 			if hooked != 0 {
-				x__DEBUG(tls, cc, libc.UintptrFromInt32(0), __ccgo_ts+63781, libc.VaList(bp+296, (*_Operand)(unsafe.Pointer((*_IRFuncData)(unsafe.Pointer((*_Function)(unsafe.Pointer(cc.x__curfunc)).Fbedata)).Fasmname)).Fname, passchg13))
-				x__flexbuf_addstr(tls, cc, bp, __ccgo_ts+63827)
+				x__DEBUG(tls, cc, libc.UintptrFromInt32(0), __ccgo_ts+63789, libc.VaList(bp+296, (*_Operand)(unsafe.Pointer((*_IRFuncData)(unsafe.Pointer((*_Function)(unsafe.Pointer(cc.x__curfunc)).Fbedata)).Fasmname)).Fname, passchg13))
+				x__flexbuf_addstr(tls, cc, bp, __ccgo_ts+63835)
 				if passchg13 != 0 {
 					s__append_disasm(tls, cc, bp, irl)
 				} else {
-					x__flexbuf_addstr(tls, cc, bp, __ccgo_ts+62845)
+					x__flexbuf_addstr(tls, cc, bp, __ccgo_ts+62853)
 				}
-				x__flexbuf_addstr(tls, cc, bp, __ccgo_ts+4265)
+				x__flexbuf_addstr(tls, cc, bp, __ccgo_ts+4267)
 			}
 			change = change | passchg13
 		}
@@ -39827,106 +39952,106 @@ again:
 			if libc.Uint32FromInt32(flags)&uint32(m_OPT_EXPERIMENTAL) != 0 {
 				passchg14 = x__OptimizeBranchCommonOps(tls, cc, irl)
 				if hooked != 0 {
-					x__DEBUG(tls, cc, libc.UintptrFromInt32(0), __ccgo_ts+63857, libc.VaList(bp+296, (*_Operand)(unsafe.Pointer((*_IRFuncData)(unsafe.Pointer((*_Function)(unsafe.Pointer(cc.x__curfunc)).Fbedata)).Fasmname)).Fname, passchg14))
-					x__flexbuf_addstr(tls, cc, bp, __ccgo_ts+63909)
+					x__DEBUG(tls, cc, libc.UintptrFromInt32(0), __ccgo_ts+63865, libc.VaList(bp+296, (*_Operand)(unsafe.Pointer((*_IRFuncData)(unsafe.Pointer((*_Function)(unsafe.Pointer(cc.x__curfunc)).Fbedata)).Fasmname)).Fname, passchg14))
+					x__flexbuf_addstr(tls, cc, bp, __ccgo_ts+63917)
 					if passchg14 != 0 {
 						s__append_disasm(tls, cc, bp, irl)
 					} else {
-						x__flexbuf_addstr(tls, cc, bp, __ccgo_ts+62845)
+						x__flexbuf_addstr(tls, cc, bp, __ccgo_ts+62853)
 					}
-					x__flexbuf_addstr(tls, cc, bp, __ccgo_ts+4265)
+					x__flexbuf_addstr(tls, cc, bp, __ccgo_ts+4267)
 				}
 				change = change | passchg14
 			}
 			passchg15 = x__OptimizeShortBranches(tls, cc, irl)
 			if hooked != 0 {
-				x__DEBUG(tls, cc, libc.UintptrFromInt32(0), __ccgo_ts+63945, libc.VaList(bp+296, (*_Operand)(unsafe.Pointer((*_IRFuncData)(unsafe.Pointer((*_Function)(unsafe.Pointer(cc.x__curfunc)).Fbedata)).Fasmname)).Fname, passchg15))
-				x__flexbuf_addstr(tls, cc, bp, __ccgo_ts+63995)
+				x__DEBUG(tls, cc, libc.UintptrFromInt32(0), __ccgo_ts+63953, libc.VaList(bp+296, (*_Operand)(unsafe.Pointer((*_IRFuncData)(unsafe.Pointer((*_Function)(unsafe.Pointer(cc.x__curfunc)).Fbedata)).Fasmname)).Fname, passchg15))
+				x__flexbuf_addstr(tls, cc, bp, __ccgo_ts+64003)
 				if passchg15 != 0 {
 					s__append_disasm(tls, cc, bp, irl)
 				} else {
-					x__flexbuf_addstr(tls, cc, bp, __ccgo_ts+62845)
+					x__flexbuf_addstr(tls, cc, bp, __ccgo_ts+62853)
 				}
-				x__flexbuf_addstr(tls, cc, bp, __ccgo_ts+4265)
+				x__flexbuf_addstr(tls, cc, bp, __ccgo_ts+4267)
 			}
 			change = change | passchg15
 		}
 		if flags&int32(m_OPT_BASIC_REGS) != 0 {
 			passchg16 = s__OptimizeIncDec(tls, cc, irl)
 			if hooked != 0 {
-				x__DEBUG(tls, cc, libc.UintptrFromInt32(0), __ccgo_ts+64029, libc.VaList(bp+296, (*_Operand)(unsafe.Pointer((*_IRFuncData)(unsafe.Pointer((*_Function)(unsafe.Pointer(cc.x__curfunc)).Fbedata)).Fasmname)).Fname, passchg16))
-				x__flexbuf_addstr(tls, cc, bp, __ccgo_ts+64072)
+				x__DEBUG(tls, cc, libc.UintptrFromInt32(0), __ccgo_ts+64037, libc.VaList(bp+296, (*_Operand)(unsafe.Pointer((*_IRFuncData)(unsafe.Pointer((*_Function)(unsafe.Pointer(cc.x__curfunc)).Fbedata)).Fasmname)).Fname, passchg16))
+				x__flexbuf_addstr(tls, cc, bp, __ccgo_ts+64080)
 				if passchg16 != 0 {
 					s__append_disasm(tls, cc, bp, irl)
 				} else {
-					x__flexbuf_addstr(tls, cc, bp, __ccgo_ts+62845)
+					x__flexbuf_addstr(tls, cc, bp, __ccgo_ts+62853)
 				}
-				x__flexbuf_addstr(tls, cc, bp, __ccgo_ts+4265)
+				x__flexbuf_addstr(tls, cc, bp, __ccgo_ts+4267)
 			}
 			change = change | passchg16
 			passchg17 = s__OptimizeJumps(tls, cc, irl)
 			if hooked != 0 {
-				x__DEBUG(tls, cc, libc.UintptrFromInt32(0), __ccgo_ts+64099, libc.VaList(bp+296, (*_Operand)(unsafe.Pointer((*_IRFuncData)(unsafe.Pointer((*_Function)(unsafe.Pointer(cc.x__curfunc)).Fbedata)).Fasmname)).Fname, passchg17))
-				x__flexbuf_addstr(tls, cc, bp, __ccgo_ts+64141)
+				x__DEBUG(tls, cc, libc.UintptrFromInt32(0), __ccgo_ts+64107, libc.VaList(bp+296, (*_Operand)(unsafe.Pointer((*_IRFuncData)(unsafe.Pointer((*_Function)(unsafe.Pointer(cc.x__curfunc)).Fbedata)).Fasmname)).Fname, passchg17))
+				x__flexbuf_addstr(tls, cc, bp, __ccgo_ts+64149)
 				if passchg17 != 0 {
 					s__append_disasm(tls, cc, bp, irl)
 				} else {
-					x__flexbuf_addstr(tls, cc, bp, __ccgo_ts+62845)
+					x__flexbuf_addstr(tls, cc, bp, __ccgo_ts+62853)
 				}
-				x__flexbuf_addstr(tls, cc, bp, __ccgo_ts+4265)
+				x__flexbuf_addstr(tls, cc, bp, __ccgo_ts+4267)
 			}
 			change = change | passchg17
 		}
 		if cc.x__gl_p2 != 0 && flags&int32(m_OPT_BASIC_REGS) != 0 {
 			passchg18 = x__OptimizeP2(tls, cc, irl)
 			if hooked != 0 {
-				x__DEBUG(tls, cc, libc.UintptrFromInt32(0), __ccgo_ts+64167, libc.VaList(bp+296, (*_Operand)(unsafe.Pointer((*_IRFuncData)(unsafe.Pointer((*_Function)(unsafe.Pointer(cc.x__curfunc)).Fbedata)).Fasmname)).Fname, passchg18))
-				x__flexbuf_addstr(tls, cc, bp, __ccgo_ts+64206)
+				x__DEBUG(tls, cc, libc.UintptrFromInt32(0), __ccgo_ts+64175, libc.VaList(bp+296, (*_Operand)(unsafe.Pointer((*_IRFuncData)(unsafe.Pointer((*_Function)(unsafe.Pointer(cc.x__curfunc)).Fbedata)).Fasmname)).Fname, passchg18))
+				x__flexbuf_addstr(tls, cc, bp, __ccgo_ts+64214)
 				if passchg18 != 0 {
 					s__append_disasm(tls, cc, bp, irl)
 				} else {
-					x__flexbuf_addstr(tls, cc, bp, __ccgo_ts+62845)
+					x__flexbuf_addstr(tls, cc, bp, __ccgo_ts+62853)
 				}
-				x__flexbuf_addstr(tls, cc, bp, __ccgo_ts+4265)
+				x__flexbuf_addstr(tls, cc, bp, __ccgo_ts+4267)
 			}
 			change = change | passchg18
 		}
 		if cc.x__gl_p2 != 0 {
 			passchg19 = x__OptimizeLongfill(tls, cc, irl)
 			if hooked != 0 {
-				x__DEBUG(tls, cc, libc.UintptrFromInt32(0), __ccgo_ts+64229, libc.VaList(bp+296, (*_Operand)(unsafe.Pointer((*_IRFuncData)(unsafe.Pointer((*_Function)(unsafe.Pointer(cc.x__curfunc)).Fbedata)).Fasmname)).Fname, passchg19))
-				x__flexbuf_addstr(tls, cc, bp, __ccgo_ts+64274)
+				x__DEBUG(tls, cc, libc.UintptrFromInt32(0), __ccgo_ts+64237, libc.VaList(bp+296, (*_Operand)(unsafe.Pointer((*_IRFuncData)(unsafe.Pointer((*_Function)(unsafe.Pointer(cc.x__curfunc)).Fbedata)).Fasmname)).Fname, passchg19))
+				x__flexbuf_addstr(tls, cc, bp, __ccgo_ts+64282)
 				if passchg19 != 0 {
 					s__append_disasm(tls, cc, bp, irl)
 				} else {
-					x__flexbuf_addstr(tls, cc, bp, __ccgo_ts+62845)
+					x__flexbuf_addstr(tls, cc, bp, __ccgo_ts+62853)
 				}
-				x__flexbuf_addstr(tls, cc, bp, __ccgo_ts+4265)
+				x__flexbuf_addstr(tls, cc, bp, __ccgo_ts+4267)
 			}
 			change = change | passchg19
 			passchg20 = libc.Int32FromUint8(s__FixupLoneCORDIC(tls, cc, irl))
 			if hooked != 0 {
-				x__DEBUG(tls, cc, libc.UintptrFromInt32(0), __ccgo_ts+64303, libc.VaList(bp+296, (*_Operand)(unsafe.Pointer((*_IRFuncData)(unsafe.Pointer((*_Function)(unsafe.Pointer(cc.x__curfunc)).Fbedata)).Fasmname)).Fname, passchg20))
-				x__flexbuf_addstr(tls, cc, bp, __ccgo_ts+64347)
+				x__DEBUG(tls, cc, libc.UintptrFromInt32(0), __ccgo_ts+64311, libc.VaList(bp+296, (*_Operand)(unsafe.Pointer((*_IRFuncData)(unsafe.Pointer((*_Function)(unsafe.Pointer(cc.x__curfunc)).Fbedata)).Fasmname)).Fname, passchg20))
+				x__flexbuf_addstr(tls, cc, bp, __ccgo_ts+64355)
 				if passchg20 != 0 {
 					s__append_disasm(tls, cc, bp, irl)
 				} else {
-					x__flexbuf_addstr(tls, cc, bp, __ccgo_ts+62845)
+					x__flexbuf_addstr(tls, cc, bp, __ccgo_ts+62853)
 				}
-				x__flexbuf_addstr(tls, cc, bp, __ccgo_ts+4265)
+				x__flexbuf_addstr(tls, cc, bp, __ccgo_ts+4267)
 			}
 			change = change | passchg20
 			if flags&int32(m_OPT_CONST_PROPAGATE) != 0 {
 				passchg21 = libc.Int32FromUint8(s__CORDICconstPropagate(tls, cc, irl))
 				if hooked != 0 {
-					x__DEBUG(tls, cc, libc.UintptrFromInt32(0), __ccgo_ts+64375, libc.VaList(bp+296, (*_Operand)(unsafe.Pointer((*_IRFuncData)(unsafe.Pointer((*_Function)(unsafe.Pointer(cc.x__curfunc)).Fbedata)).Fasmname)).Fname, passchg21))
-					x__flexbuf_addstr(tls, cc, bp, __ccgo_ts+64424)
+					x__DEBUG(tls, cc, libc.UintptrFromInt32(0), __ccgo_ts+64383, libc.VaList(bp+296, (*_Operand)(unsafe.Pointer((*_IRFuncData)(unsafe.Pointer((*_Function)(unsafe.Pointer(cc.x__curfunc)).Fbedata)).Fasmname)).Fname, passchg21))
+					x__flexbuf_addstr(tls, cc, bp, __ccgo_ts+64432)
 					if passchg21 != 0 {
 						s__append_disasm(tls, cc, bp, irl)
 					} else {
-						x__flexbuf_addstr(tls, cc, bp, __ccgo_ts+62845)
+						x__flexbuf_addstr(tls, cc, bp, __ccgo_ts+62853)
 					}
-					x__flexbuf_addstr(tls, cc, bp, __ccgo_ts+4265)
+					x__flexbuf_addstr(tls, cc, bp, __ccgo_ts+4267)
 				}
 				change = change | passchg21
 			}
@@ -39935,14 +40060,14 @@ again:
 	if flags&int32(m_OPT_TAIL_CALLS) != 0 {
 		passchg22 = s__OptimizeTailCalls(tls, cc, irl, f)
 		if hooked != 0 {
-			x__DEBUG(tls, cc, libc.UintptrFromInt32(0), __ccgo_ts+64457, libc.VaList(bp+296, (*_Operand)(unsafe.Pointer((*_IRFuncData)(unsafe.Pointer((*_Function)(unsafe.Pointer(cc.x__curfunc)).Fbedata)).Fasmname)).Fname, passchg22))
-			x__flexbuf_addstr(tls, cc, bp, __ccgo_ts+64506)
+			x__DEBUG(tls, cc, libc.UintptrFromInt32(0), __ccgo_ts+64465, libc.VaList(bp+296, (*_Operand)(unsafe.Pointer((*_IRFuncData)(unsafe.Pointer((*_Function)(unsafe.Pointer(cc.x__curfunc)).Fbedata)).Fasmname)).Fname, passchg22))
+			x__flexbuf_addstr(tls, cc, bp, __ccgo_ts+64514)
 			if passchg22 != 0 {
 				s__append_disasm(tls, cc, bp, irl)
 			} else {
-				x__flexbuf_addstr(tls, cc, bp, __ccgo_ts+62845)
+				x__flexbuf_addstr(tls, cc, bp, __ccgo_ts+62853)
 			}
-			x__flexbuf_addstr(tls, cc, bp, __ccgo_ts+4265)
+			x__flexbuf_addstr(tls, cc, bp, __ccgo_ts+4267)
 		}
 		change = change | passchg22
 	}
@@ -39952,14 +40077,14 @@ again:
 	if cc.x__gl_p2 != 0 && flags&int32(m_OPT_CORDIC_REORDER) != 0 {
 		passchg23 = libc.Int32FromUint8(s__OptimizeCORDIC(tls, cc, irl))
 		if hooked != 0 {
-			x__DEBUG(tls, cc, libc.UintptrFromInt32(0), __ccgo_ts+64539, libc.VaList(bp+296, (*_Operand)(unsafe.Pointer((*_IRFuncData)(unsafe.Pointer((*_Function)(unsafe.Pointer(cc.x__curfunc)).Fbedata)).Fasmname)).Fname, passchg23))
-			x__flexbuf_addstr(tls, cc, bp, __ccgo_ts+64582)
+			x__DEBUG(tls, cc, libc.UintptrFromInt32(0), __ccgo_ts+64547, libc.VaList(bp+296, (*_Operand)(unsafe.Pointer((*_IRFuncData)(unsafe.Pointer((*_Function)(unsafe.Pointer(cc.x__curfunc)).Fbedata)).Fasmname)).Fname, passchg23))
+			x__flexbuf_addstr(tls, cc, bp, __ccgo_ts+64590)
 			if passchg23 != 0 {
 				s__append_disasm(tls, cc, bp, irl)
 			} else {
-				x__flexbuf_addstr(tls, cc, bp, __ccgo_ts+62845)
+				x__flexbuf_addstr(tls, cc, bp, __ccgo_ts+62853)
 			}
-			x__flexbuf_addstr(tls, cc, bp, __ccgo_ts+4265)
+			x__flexbuf_addstr(tls, cc, bp, __ccgo_ts+4267)
 		}
 		change = change | passchg23
 	}
@@ -39969,14 +40094,14 @@ again:
 	if flags&int32(m_OPT_LOCAL_REUSE) != 0 {
 		passchg24 = libc.Int32FromUint8(s__ReuseLocalRegisters(tls, cc, irl))
 		if hooked != 0 {
-			x__DEBUG(tls, cc, libc.UintptrFromInt32(0), __ccgo_ts+64609, libc.VaList(bp+296, (*_Operand)(unsafe.Pointer((*_IRFuncData)(unsafe.Pointer((*_Function)(unsafe.Pointer(cc.x__curfunc)).Fbedata)).Fasmname)).Fname, passchg24))
-			x__flexbuf_addstr(tls, cc, bp, __ccgo_ts+64657)
+			x__DEBUG(tls, cc, libc.UintptrFromInt32(0), __ccgo_ts+64617, libc.VaList(bp+296, (*_Operand)(unsafe.Pointer((*_IRFuncData)(unsafe.Pointer((*_Function)(unsafe.Pointer(cc.x__curfunc)).Fbedata)).Fasmname)).Fname, passchg24))
+			x__flexbuf_addstr(tls, cc, bp, __ccgo_ts+64665)
 			if passchg24 != 0 {
 				s__append_disasm(tls, cc, bp, irl)
 			} else {
-				x__flexbuf_addstr(tls, cc, bp, __ccgo_ts+62845)
+				x__flexbuf_addstr(tls, cc, bp, __ccgo_ts+62853)
 			}
-			x__flexbuf_addstr(tls, cc, bp, __ccgo_ts+4265)
+			x__flexbuf_addstr(tls, cc, bp, __ccgo_ts+4267)
 		}
 		change = change | passchg24
 	}
@@ -39986,8 +40111,8 @@ again:
 	if hooked != 0 {
 		cc.s__hookcnt = cc.s__hookcnt + 1
 		v1 = cc.s__hookcnt
-		libc.X__builtin_snprintf(tls, bp+32, uint64(255), __ccgo_ts+64689, libc.VaList(bp+296, v1, (*_Operand)(unsafe.Pointer((*_IRFuncData)(unsafe.Pointer((*_Function)(unsafe.Pointer(cc.x__curfunc)).Fbedata)).Fasmname)).Fname))
-		logf = fopen(tls, cc, bp+32, __ccgo_ts+4253)
+		libc.X__builtin_snprintf(tls, bp+32, uint64(255), __ccgo_ts+64697, libc.VaList(bp+296, v1, (*_Operand)(unsafe.Pointer((*_IRFuncData)(unsafe.Pointer((*_Function)(unsafe.Pointer(cc.x__curfunc)).Fbedata)).Fasmname)).Fname))
+		logf = fopen(tls, cc, bp+32, __ccgo_ts+4255)
 		libc.Xfputs(tls, x__flexbuf_peek(tls, cc, bp), logf)
 		fclose(tls, cc, logf)
 		x__flexbuf_delete(tls, cc, bp)
@@ -40017,7 +40142,7 @@ func x__OptimizeLongfill(tls *libc.TLS, cc *CC, irl uintptr) (r int32) {
 		if x__IsDummy(tls, cc, ir) != 0 {
 			goto _1
 		}
-		if v3 = (*_IR)(unsafe.Pointer(ir)).Fopc == int32(_OPC_CALL) && !(libc.Xstrcmp(tls, (*_Operand)(unsafe.Pointer((*_IR)(unsafe.Pointer(ir)).Fdst)).Fname, __ccgo_ts+62715) != 0) && s__CondIsSubset(tls, cc, (*_IR)(unsafe.Pointer(ir)).Fcond, (*_IR)(unsafe.Pointer(ir)).Fcond>>libc.Int32FromInt32(2)|int32(_COND_NC)) != 0; v3 {
+		if v3 = (*_IR)(unsafe.Pointer(ir)).Fopc == int32(_OPC_CALL) && !(libc.Xstrcmp(tls, (*_Operand)(unsafe.Pointer((*_IR)(unsafe.Pointer(ir)).Fdst)).Fname, __ccgo_ts+62723) != 0) && s__CondIsSubset(tls, cc, (*_IR)(unsafe.Pointer(ir)).Fcond, (*_IR)(unsafe.Pointer(ir)).Fcond>>libc.Int32FromInt32(2)|int32(_COND_NC)) != 0; v3 {
 			v2 = s__FindPrevSetterForReplace(tls, cc, ir, x__GetArgReg(tls, cc, int32(1)))
 			prevset = v2
 		}
@@ -40351,7 +40476,7 @@ func x__OutAsm_DebugEval(tls *libc.TLS, cc *CC, ast uintptr, regNum int32, addr 
 				break
 			}
 			if n > int32(m_PASM_EVAL_ISREG_4) {
-				x__WARNING(tls, cc, ast, __ccgo_ts+49097, libc.VaList(bp+8, int32(m_PASM_EVAL_ISREG_4)))
+				x__WARNING(tls, cc, ast, __ccgo_ts+49105, libc.VaList(bp+8, int32(m_PASM_EVAL_ISREG_4)))
 				return int32(m_PASM_EVAL_ISREG_4)
 			}
 			dstop = x__GetDebugReg(tls, cc, regNum)
@@ -40394,9 +40519,9 @@ single_value:
 
 func x__OutputAlignLong(tls *libc.TLS, cc *CC, fb uintptr) {
 	if cc.x__gl_p2 != 0 || cc.x__gl_compress != 0 {
-		x__flexbuf_printf(tls, cc, fb, __ccgo_ts+55690, 0) // ensure long alignment
+		x__flexbuf_printf(tls, cc, fb, __ccgo_ts+55698, 0) // ensure long alignment
 	} else {
-		x__flexbuf_printf(tls, cc, fb, __ccgo_ts+55699, 0) // ensure long alignment
+		x__flexbuf_printf(tls, cc, fb, __ccgo_ts+55707, 0) // ensure long alignment
 	}
 }
 
@@ -40410,9 +40535,9 @@ func x__OutputAsmCode(tls *libc.TLS, cc *CC, fname uintptr, P uintptr, outputMai
 	_, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _ = F, Fptr, Q, asmcode, cog_bss_start, cog_limit, count, emitSpinCode, entrylabel, f, func1, heapsize, i, limitop, lutstart, maxLeafSize, maxargs, maxrets, mboxSize, orgh, pf, save, savesize, stackSize, stackSym, sym
 	f = libc.UintptrFromInt32(0)
 	orgh = libc.UintptrFromInt32(0)
-	entrylabel = x__NewOperand(tls, cc, int32(_IMM_COG_LABEL), __ccgo_ts+47368, 0)
+	entrylabel = x__NewOperand(tls, cc, int32(_IMM_COG_LABEL), __ccgo_ts+47376, 0)
 	lutstart = libc.UintptrFromInt32(0)
-	cog_bss_start = x__NewOperand(tls, cc, int32(_IMM_COG_LABEL), __ccgo_ts+54924, 0)
+	cog_bss_start = x__NewOperand(tls, cc, int32(_IMM_COG_LABEL), __ccgo_ts+54932, 0)
 	emitSpinCode = libc.BoolUint8(m_true != 0)
 	maxargs = int32(2) // initialization code wants 2 arguments
 	maxrets = int32(1) // assume 1 return value is default
@@ -40439,13 +40564,13 @@ func x__OutputAsmCode(tls *libc.TLS, cc *CC, fname uintptr, P uintptr, outputMai
 		stackSize = int32(1)
 		maxLeafSize = 0
 		func1 = (*_Module)(unsafe.Pointer(P)).Ffunctions
-		stackSym = x__FindSymbolEx(tls, cc, P+144, __ccgo_ts+54938, 0)
+		stackSym = x__FindSymbolEx(tls, cc, P+144, __ccgo_ts+54946, 0)
 		for func1 != 0 {
 			if int32(*(*uint32)(unsafe.Pointer(func1 + 1248))&0x1>>0) != 0 {
 				if (*_Function)(unsafe.Pointer(func1)).Fnumparams > maxargs {
 					maxargs = (*_Function)(unsafe.Pointer(func1)).Fnumparams
 					if maxargs > int32(m_MAX_COGSPIN_ARGS) {
-						x__ERROR(tls, cc, libc.UintptrFromInt32(0), __ccgo_ts+54951, libc.VaList(bp+8, (*_Function)(unsafe.Pointer(func1)).Fname))
+						x__ERROR(tls, cc, libc.UintptrFromInt32(0), __ccgo_ts+54959, libc.VaList(bp+8, (*_Function)(unsafe.Pointer(func1)).Fname))
 					}
 				}
 				if (*_Function)(unsafe.Pointer(func1)).Fnumresults > maxrets {
@@ -40473,9 +40598,9 @@ func x__OutputAsmCode(tls *libc.TLS, cc *CC, fname uintptr, P uintptr, outputMai
 		} else {
 			mboxSize = maxrets + int32(3)
 		}
-		x__EmitOp2(tls, cc, uintptr(unsafe.Pointer(&cc.s__cogcode)), int32(_OPC_CONST), x__NewOperand(tls, cc, int32(_IMM_STRING), __ccgo_ts+54997, int64(mboxSize)), x__NewImmediate(tls, cc, mboxSize))
+		x__EmitOp2(tls, cc, uintptr(unsafe.Pointer(&cc.s__cogcode)), int32(_OPC_CONST), x__NewOperand(tls, cc, int32(_IMM_STRING), __ccgo_ts+55005, int64(mboxSize)), x__NewImmediate(tls, cc, mboxSize))
 		if !(stackSym != 0) {
-			x__EmitOp2(tls, cc, uintptr(unsafe.Pointer(&cc.s__cogcode)), int32(_OPC_CONST), x__NewOperand(tls, cc, int32(_IMM_STRING), __ccgo_ts+54938, int64(stackSize)), x__NewImmediate(tls, cc, stackSize))
+			x__EmitOp2(tls, cc, uintptr(unsafe.Pointer(&cc.s__cogcode)), int32(_OPC_CONST), x__NewOperand(tls, cc, int32(_IMM_STRING), __ccgo_ts+54946, int64(stackSize)), x__NewImmediate(tls, cc, stackSize))
 		}
 	}
 	/* count max parameters to coginit */
@@ -40492,7 +40617,7 @@ func x__OutputAsmCode(tls *libc.TLS, cc *CC, fname uintptr, P uintptr, outputMai
 			if int32(*(*uint32)(unsafe.Pointer(pf + 1248))&0x100>>8) != 0 {
 				if (*_Function)(unsafe.Pointer(pf)).Fnumparams > cc.s__max_coginit_args {
 					if (*_Function)(unsafe.Pointer(pf)).Fnumparams > int32(m_MAX_COGSPIN_ARGS) {
-						x__ERROR(tls, cc, libc.UintptrFromInt32(0), __ccgo_ts+55009, libc.VaList(bp+8, (*_Function)(unsafe.Pointer(pf)).Fname, (*_Function)(unsafe.Pointer(pf)).Fnumparams, int32(m_MAX_COGSPIN_ARGS)))
+						x__ERROR(tls, cc, libc.UintptrFromInt32(0), __ccgo_ts+55017, libc.VaList(bp+8, (*_Function)(unsafe.Pointer(pf)).Fname, (*_Function)(unsafe.Pointer(pf)).Fnumparams, int32(m_MAX_COGSPIN_ARGS)))
 					} else {
 						cc.s__max_coginit_args = (*_Function)(unsafe.Pointer(pf)).Fnumparams
 					}
@@ -40524,7 +40649,7 @@ func x__OutputAsmCode(tls *libc.TLS, cc *CC, fname uintptr, P uintptr, outputMai
 		x__EmitInfoLabel(tls, cc, uintptr(unsafe.Pointer(&cc.s__cogcode)), x__NewOperand(tls, cc, int32(_IMM_COG_LABEL), __ccgo_ts+2485, 0))
 		x__EmitLabel(tls, cc, uintptr(unsafe.Pointer(&cc.s__cogcode)), entrylabel)
 		if cc.x__gl_have_lut != 0 {
-			lutstart = x__NewOperand(tls, cc, int32(_STRING_DEF), __ccgo_ts+55069, 0)
+			lutstart = x__NewOperand(tls, cc, int32(_STRING_DEF), __ccgo_ts+55077, 0)
 			x__EmitOp1(tls, cc, uintptr(unsafe.Pointer(&cc.s__lutcode)), int32(_OPC_ORG), x__NewImmediate(tls, cc, int32(0x210))) // leave 16 longs free for streamer
 			x__EmitLabel(tls, cc, uintptr(unsafe.Pointer(&cc.s__lutcode)), lutstart)
 		}
@@ -40551,11 +40676,11 @@ func x__OutputAsmCode(tls *libc.TLS, cc *CC, fname uintptr, P uintptr, outputMai
 		if !(cc.x__gl_outputflags&libc.Int32FromInt32(m_OUTFLAG_COG_CODE) != 0) {
 			x__ValidateStackptr(tls, cc)
 			if !(cc.x__gl_p2 != 0) {
-				x__EmitLabel(tls, cc, uintptr(unsafe.Pointer(&cc.s__hubcode)), x__NewOperand(tls, cc, int32(_IMM_HUB_LABEL), __ccgo_ts+55078, 0))
-				x__EmitJump(tls, cc, uintptr(unsafe.Pointer(&cc.s__hubcode)), int32(_COND_TRUE), x__NewOperand(tls, cc, int32(_IMM_COG_LABEL), __ccgo_ts+55093, 0))
+				x__EmitLabel(tls, cc, uintptr(unsafe.Pointer(&cc.s__hubcode)), x__NewOperand(tls, cc, int32(_IMM_HUB_LABEL), __ccgo_ts+55086, 0))
+				x__EmitJump(tls, cc, uintptr(unsafe.Pointer(&cc.s__hubcode)), int32(_COND_TRUE), x__NewOperand(tls, cc, int32(_IMM_COG_LABEL), __ccgo_ts+55101, 0))
 			}
 			x__EmitInfoLabel(tls, cc, uintptr(unsafe.Pointer(&cc.s__hubcode)), x__NewOperand(tls, cc, int32(_IMM_HUB_LABEL), __ccgo_ts+2533, 0))
-			x__EmitLabel(tls, cc, uintptr(unsafe.Pointer(&cc.s__hubcode)), x__NewOperand(tls, cc, int32(_IMM_HUB_LABEL), __ccgo_ts+55115, 0))
+			x__EmitLabel(tls, cc, uintptr(unsafe.Pointer(&cc.s__hubcode)), x__NewOperand(tls, cc, int32(_IMM_HUB_LABEL), __ccgo_ts+55123, 0))
 			if !(x__CompileToIR_hub(tls, cc, uintptr(unsafe.Pointer(&cc.s__hubcode)), P) != 0) {
 				return
 			}
@@ -40593,11 +40718,11 @@ func x__OutputAsmCode(tls *libc.TLS, cc *CC, fname uintptr, P uintptr, outputMai
 		// COG bss
 		// FCACHE space
 		if !(cc.x__gl_outputflags&libc.Int32FromInt32(m_OUTFLAG_COG_CODE) != 0) && !(cc.x__gl_p2 != 0) {
-			x__EmitNamedCogLabel(tls, cc, uintptr(unsafe.Pointer(&cc.s__cogbss)), __ccgo_ts+55124)
+			x__EmitNamedCogLabel(tls, cc, uintptr(unsafe.Pointer(&cc.s__cogbss)), __ccgo_ts+55132)
 			x__EmitReserve(tls, cc, uintptr(unsafe.Pointer(&cc.s__cogbss)), int32(1), m_COG_RESERVE)
-			x__EmitNamedCogLabel(tls, cc, uintptr(unsafe.Pointer(&cc.s__cogbss)), __ccgo_ts+55135)
+			x__EmitNamedCogLabel(tls, cc, uintptr(unsafe.Pointer(&cc.s__cogbss)), __ccgo_ts+55143)
 			x__EmitReserve(tls, cc, uintptr(unsafe.Pointer(&cc.s__cogbss)), cc.x__gl_fcache_size+int32(1), m_COG_RESERVE)
-			x__EmitNamedCogLabel(tls, cc, uintptr(unsafe.Pointer(&cc.s__cogbss)), __ccgo_ts+55152)
+			x__EmitNamedCogLabel(tls, cc, uintptr(unsafe.Pointer(&cc.s__cogbss)), __ccgo_ts+55160)
 		}
 	}
 	// we need to emit all dat sections
@@ -40626,7 +40751,7 @@ func x__OutputAsmCode(tls *libc.TLS, cc *CC, fname uintptr, P uintptr, outputMai
 	}
 	// emit heap space, if we need it
 	if cc.s__heaplabel != 0 {
-		sym = x__LookupSymbol(tls, cc, __ccgo_ts+11484)
+		sym = x__LookupSymbol(tls, cc, __ccgo_ts+11486)
 		if sym != 0 && (*_Symbol)(unsafe.Pointer(sym)).Fkind == int32(_SYM_CONSTANT) {
 			heapsize = libc.Uint32FromInt64(x__EvalConstExpr(tls, cc, *(*uintptr)(unsafe.Pointer(sym + 32))))
 		} else {
@@ -40677,16 +40802,16 @@ func x__OutputAsmCode(tls *libc.TLS, cc *CC, fname uintptr, P uintptr, outputMai
 	// and assemble the result
 	asmcode = x__IRAssemble(tls, cc, uintptr(unsafe.Pointer(&cc.s__cogcode)), P)
 	cc.x__current = save
-	f = fopen(tls, cc, fname, __ccgo_ts+4253)
+	f = fopen(tls, cc, fname, __ccgo_ts+4255)
 	if !(f != 0) {
-		fprintf(tls, cc, libc.X__stderrp, __ccgo_ts+55167, 0)
+		fprintf(tls, cc, libc.X__stderrp, __ccgo_ts+55175, 0)
 		libc.Xperror(tls, fname)
 		exit(tls, cc, int32(1))
 	}
 	// write a header if appropriate
 	if cc.x__gl_output == int32(m_OUTPUT_COGSPIN) && cc.x__gl_header1 != 0 {
-		fprintf(tls, cc, f, __ccgo_ts+55196, libc.VaList(bp+8, cc.x__gl_header1))
-		fprintf(tls, cc, f, __ccgo_ts+55196, libc.VaList(bp+8, cc.x__gl_header2))
+		fprintf(tls, cc, f, __ccgo_ts+55204, libc.VaList(bp+8, cc.x__gl_header1))
+		fprintf(tls, cc, f, __ccgo_ts+55204, libc.VaList(bp+8, cc.x__gl_header2))
 	}
 	libc.Xfwrite(tls, asmcode, uint64(1), libc.Xstrlen(tls, asmcode), f)
 	fclose(tls, cc, f)
@@ -40707,7 +40832,7 @@ func x__OutputByteCode(tls *libc.TLS, cc *CC, fname uintptr, P uintptr) {
 	cc.x__current = P
 	x__BCIR_Init(tls, cc)
 	if !((*_Module)(unsafe.Pointer(P)).Ffunctions != 0) {
-		x__ERROR(tls, cc, libc.UintptrFromInt32(0), __ccgo_ts+80831, 0)
+		x__ERROR(tls, cc, libc.UintptrFromInt32(0), __ccgo_ts+80837, 0)
 	}
 	// Emit header / interp ASM
 	headerspans = _bcheaderspans{}
@@ -40715,7 +40840,7 @@ func x__OutputByteCode(tls *libc.TLS, cc *CC, fname uintptr, P uintptr) {
 	case int32(m_INTERP_KIND_P1ROM):
 		headerspans = s__OutputSpinBCHeader(tls, cc, bp, P)
 	default:
-		x__ERROR(tls, cc, libc.UintptrFromInt32(0), __ccgo_ts+66438, 0)
+		x__ERROR(tls, cc, libc.UintptrFromInt32(0), __ccgo_ts+66444, 0)
 		return
 	}
 	headerSize = (**(**_ByteOutputBuffer)(__ccgo_up(bp))).Ftotal_size
@@ -40727,26 +40852,26 @@ func x__OutputByteCode(tls *libc.TLS, cc *CC, fname uintptr, P uintptr) {
 	variableSize = (*_Module)(unsafe.Pointer(P)).Fvarsize          // Already rounded up!
 	stackBase = headerSize + programSize + variableSize + int32(8) // space for that stack init thing
 	if cc.x__gl_printprogress != 0 {
-		printf(tls, cc, __ccgo_ts+80868, libc.VaList(bp+32, programSize))
-		printf(tls, cc, __ccgo_ts+80894, libc.VaList(bp+32, variableSize))
+		printf(tls, cc, __ccgo_ts+80874, libc.VaList(bp+32, programSize))
+		printf(tls, cc, __ccgo_ts+80900, libc.VaList(bp+32, variableSize))
 		if !(cc.x__gl_p2 != 0) {
-			printf(tls, cc, __ccgo_ts+80920, libc.VaList(bp+32, int32(0x8000)-(headerSize+programSize+variableSize)))
+			printf(tls, cc, __ccgo_ts+80926, libc.VaList(bp+32, int32(0x8000)-(headerSize+programSize+variableSize)))
 		} else {
-			printf(tls, cc, __ccgo_ts+80946, libc.VaList(bp+32, 0))
+			printf(tls, cc, __ccgo_ts+80952, libc.VaList(bp+32, 0))
 		}
 		//printf("Stack base = %x\n", stackBase);
 	}
 	mainFunc = x__GetMainFunction(tls, cc, P)
 	if !(mainFunc != 0) {
-		x__ERROR(tls, cc, libc.UintptrFromInt32(0), __ccgo_ts+80971, 0)
+		x__ERROR(tls, cc, libc.UintptrFromInt32(0), __ccgo_ts+80977, 0)
 		return
 	} else {
 		if !((*_Function)(unsafe.Pointer(mainFunc)).Fbedata != 0) {
-			x__ERROR(tls, cc, libc.UintptrFromInt32(0), __ccgo_ts+80995, 0)
+			x__ERROR(tls, cc, libc.UintptrFromInt32(0), __ccgo_ts+81001, 0)
 			return
 		} else {
 			if (*_BCFunData)(unsafe.Pointer((*_Function)(unsafe.Pointer(mainFunc)).Fbedata)).FcompiledAddress < 0 {
-				x__ERROR(tls, cc, libc.UintptrFromInt32(0), __ccgo_ts+81024, 0)
+				x__ERROR(tls, cc, libc.UintptrFromInt32(0), __ccgo_ts+81030, 0)
 				return
 			}
 		}
@@ -40760,12 +40885,12 @@ func x__OutputByteCode(tls *libc.TLS, cc *CC, fname uintptr, P uintptr) {
 		x__BOB_ReplaceWord(tls, cc, headerspans.Fdbase, libc.Uint16FromInt32(stackBase), libc.UintptrFromInt32(0))
 		x__BOB_ReplaceWord(tls, cc, headerspans.Fdcurr, libc.Uint16FromInt32(stackBase+(*_BCFunData)(unsafe.Pointer((*_Function)(unsafe.Pointer(mainFunc)).Fbedata)).FlocalSize+(*_Function)(unsafe.Pointer(mainFunc)).Fnumparams*int32(4)+int32(4)), libc.UintptrFromInt32(0))
 	default:
-		x__ERROR(tls, cc, libc.UintptrFromInt32(0), __ccgo_ts+66438, 0)
+		x__ERROR(tls, cc, libc.UintptrFromInt32(0), __ccgo_ts+66444, 0)
 		return
 	}
-	bin_file = fopen(tls, cc, fname, __ccgo_ts+37605)
+	bin_file = fopen(tls, cc, fname, __ccgo_ts+37613)
 	if cc.x__gl_listing != 0 {
-		lst_file = fopen(tls, cc, x__ReplaceExtension(tls, cc, fname, __ccgo_ts+2625), __ccgo_ts+4253)
+		lst_file = fopen(tls, cc, x__ReplaceExtension(tls, cc, fname, __ccgo_ts+2625), __ccgo_ts+4255)
 	} // FIXME: Get list file name from cmdline
 	// Walk through buffer and emit the stuff
 	outPosition = 0
@@ -40788,7 +40913,7 @@ func x__OutputByteCode(tls *libc.TLS, cc *CC, fname uintptr, P uintptr) {
 		if cc.x__gl_listing != 0 {
 			if (*_OutputSpan)(unsafe.Pointer(span)).Fsize == 0 {
 				if (*_OutputSpan)(unsafe.Pointer(span)).Fcomment != 0 {
-					fprintf(tls, cc, lst_file, __ccgo_ts+81050, libc.VaList(bp+32, (*_OutputSpan)(unsafe.Pointer(span)).Fcomment))
+					fprintf(tls, cc, lst_file, __ccgo_ts+81056, libc.VaList(bp+32, (*_OutputSpan)(unsafe.Pointer(span)).Fcomment))
 				}
 			} else {
 				listPosition = 0
@@ -40797,9 +40922,9 @@ func x__OutputByteCode(tls *libc.TLS, cc *CC, fname uintptr, P uintptr) {
 					list_linelen = 0
 					if cc.x__gl_listing > 0 { // check for --test-listing
 						if cc.x__gl_p2 != 0 {
-							v3 = __ccgo_ts + 81055
+							v3 = __ccgo_ts + 81061
 						} else {
-							v3 = __ccgo_ts + 81062
+							v3 = __ccgo_ts + 81068
 						}
 						list_linelen = list_linelen + fprintf(tls, cc, lst_file, v3, libc.VaList(bp+32, outPosition+listPosition_curline))
 					}
@@ -40808,7 +40933,7 @@ func x__OutputByteCode(tls *libc.TLS, cc *CC, fname uintptr, P uintptr) {
 						if !(listPosition-listPosition_curline < maxBytesPerLine && listPosition < (*_OutputSpan)(unsafe.Pointer(span)).Fsize) {
 							break
 						}
-						list_linelen = list_linelen + fprintf(tls, cc, lst_file, __ccgo_ts+40837, libc.VaList(bp+32, libc.Int32FromUint8(*(*_uint8_t)(unsafe.Pointer(span + 20 + uintptr(listPosition))))))
+						list_linelen = list_linelen + fprintf(tls, cc, lst_file, __ccgo_ts+40845, libc.VaList(bp+32, libc.Int32FromUint8(*(*_uint8_t)(unsafe.Pointer(span + 20 + uintptr(listPosition))))))
 						goto _4
 					_4:
 						;
@@ -40827,9 +40952,9 @@ func x__OutputByteCode(tls *libc.TLS, cc *CC, fname uintptr, P uintptr) {
 							list_linelen = list_linelen + 1
 						}
 						if listPosition_curline == 0 { // First line? (of potential multi-line span)
-							fprintf(tls, cc, lst_file, __ccgo_ts+81069, libc.VaList(bp+32, (*_OutputSpan)(unsafe.Pointer(span)).Fcomment))
+							fprintf(tls, cc, lst_file, __ccgo_ts+81075, libc.VaList(bp+32, (*_OutputSpan)(unsafe.Pointer(span)).Fcomment))
 						} else {
-							fprintf(tls, cc, lst_file, __ccgo_ts+81074, 0)
+							fprintf(tls, cc, lst_file, __ccgo_ts+81080, 0)
 						}
 					}
 					libc.Xfputc(tls, int32('\n'), lst_file)
@@ -40860,9 +40985,9 @@ func x__OutputDatFile(tls *libc.TLS, cc *CC, fname uintptr, P uintptr, prefixBin
 	save = cc.x__current
 	cc.x__current = P
 	cc.x__gl_nospin = int32(1) // we are outputting only the dat section
-	f = fopen(tls, cc, fname, __ccgo_ts+37605)
+	f = fopen(tls, cc, fname, __ccgo_ts+37613)
 	if !(f != 0) {
-		fprintf(tls, cc, libc.X__stderrp, __ccgo_ts+37608, 0)
+		fprintf(tls, cc, libc.X__stderrp, __ccgo_ts+37616, 0)
 		libc.Xperror(tls, fname)
 		exit(tls, cc, int32(1))
 	}
@@ -40906,7 +41031,7 @@ func x__OutputDataBlob(tls *libc.TLS, cc *CC, fb uintptr, databuf uintptr, reloc
 	if outLabel != 0 && startLabel != 0 {
 		x__OutputAlignLong(tls, cc, fb)
 		x__flexbuf_printf(tls, cc, fb, startLabel, 0)
-		x__flexbuf_printf(tls, cc, fb, __ccgo_ts+4265, 0)
+		x__flexbuf_printf(tls, cc, fb, __ccgo_ts+4267, 0)
 	}
 	if relocbuf != 0 {
 		relocs = libc.Int32FromUint64(x__flexbuf_curlen(tls, cc, relocbuf) / uint64(24))
@@ -40950,7 +41075,7 @@ func x__OutputDataBlob(tls *libc.TLS, cc *CC, fb uintptr, databuf uintptr, reloc
 					fallthrough
 				case int32(_RELOC_KIND_FPTR12):
 					if bytesPending < int32(4) {
-						x__ERROR(tls, cc, libc.UintptrFromInt32(0), __ccgo_ts+55730, 0)
+						x__ERROR(tls, cc, libc.UintptrFromInt32(0), __ccgo_ts+55738, 0)
 						return
 					}
 				case int32(_RELOC_KIND_AUGD):
@@ -40958,7 +41083,7 @@ func x__OutputDataBlob(tls *libc.TLS, cc *CC, fb uintptr, databuf uintptr, reloc
 				case int32(_RELOC_KIND_AUGS):
 					indexedFunc = libc.BoolUint8(m_false != 0)
 					if bytesPending < int32(8) {
-						x__ERROR(tls, cc, libc.UintptrFromInt32(0), __ccgo_ts+55730, 0)
+						x__ERROR(tls, cc, libc.UintptrFromInt32(0), __ccgo_ts+55738, 0)
 						return
 					}
 				case int32(_RELOC_KIND_NONE):
@@ -40967,17 +41092,17 @@ func x__OutputDataBlob(tls *libc.TLS, cc *CC, fb uintptr, databuf uintptr, reloc
 					relocs = relocs - 1
 					goto again
 				default:
-					x__ERROR(tls, cc, libc.UintptrFromInt32(0), __ccgo_ts+55773, libc.VaList(bp+8, (*_Reloc)(unsafe.Pointer(nextreloc)).Fkind))
+					x__ERROR(tls, cc, libc.UintptrFromInt32(0), __ccgo_ts+55781, libc.VaList(bp+8, (*_Reloc)(unsafe.Pointer(nextreloc)).Fkind))
 					return
 				}
-				x__flexbuf_printf(tls, cc, fb, __ccgo_ts+55807, 0)
+				x__flexbuf_printf(tls, cc, fb, __ccgo_ts+55815, 0)
 				sym = (*_Reloc)(unsafe.Pointer(nextreloc)).Fsym
 				offset = (*_Reloc)(unsafe.Pointer(nextreloc)).Fsymoff
 				if !(sym != 0) {
 					symname = startLabel
 					if indexedFunc != 0 {
 						indexedFunc = libc.BoolUint8(m_false != 0)
-						x__ERROR(tls, cc, libc.UintptrFromInt32(0), __ccgo_ts+55814, 0)
+						x__ERROR(tls, cc, libc.UintptrFromInt32(0), __ccgo_ts+55822, 0)
 					}
 				} else {
 					if indexedFunc != 0 {
@@ -40988,7 +41113,7 @@ func x__OutputDataBlob(tls *libc.TLS, cc *CC, fb uintptr, databuf uintptr, reloc
 							indexForFunc = -int32(1)
 						}
 						if indexForFunc < 0 {
-							x__ERROR(tls, cc, libc.UintptrFromInt32(0), __ccgo_ts+55865, libc.VaList(bp+8, (*_Symbol)(unsafe.Pointer(sym)).Fuser_name))
+							x__ERROR(tls, cc, libc.UintptrFromInt32(0), __ccgo_ts+55873, libc.VaList(bp+8, (*_Symbol)(unsafe.Pointer(sym)).Fuser_name))
 							indexForFunc = 0
 						}
 						symname = x__BackendNameForSymbol(tls, cc, sym)
@@ -40999,12 +41124,12 @@ func x__OutputDataBlob(tls *libc.TLS, cc *CC, fb uintptr, databuf uintptr, reloc
 				switch (*_Reloc)(unsafe.Pointer(nextreloc)).Fkind {
 				case int32(_RELOC_KIND_I32):
 					if offset == 0 {
-						x__flexbuf_printf(tls, cc, fb, __ccgo_ts+55945, libc.VaList(bp+8, symname))
+						x__flexbuf_printf(tls, cc, fb, __ccgo_ts+55953, libc.VaList(bp+8, symname))
 					} else {
 						if offset > 0 {
-							x__flexbuf_printf(tls, cc, fb, __ccgo_ts+55952, libc.VaList(bp+8, symname, offset))
+							x__flexbuf_printf(tls, cc, fb, __ccgo_ts+55960, libc.VaList(bp+8, symname, offset))
 						} else {
-							x__flexbuf_printf(tls, cc, fb, __ccgo_ts+55964, libc.VaList(bp+8, symname, -offset))
+							x__flexbuf_printf(tls, cc, fb, __ccgo_ts+55972, libc.VaList(bp+8, symname, -offset))
 						}
 					}
 					data = data + uintptr(4)
@@ -41019,34 +41144,34 @@ func x__OutputDataBlob(tls *libc.TLS, cc *CC, fb uintptr, databuf uintptr, reloc
 					}
 					shiftAmount = v1
 					if indexedFunc != 0 {
-						x__flexbuf_printf(tls, cc, fb, __ccgo_ts+55976, libc.VaList(bp+8, indexForFunc, symname))
+						x__flexbuf_printf(tls, cc, fb, __ccgo_ts+55984, libc.VaList(bp+8, indexForFunc, symname))
 					} else {
-						x__flexbuf_printf(tls, cc, fb, __ccgo_ts+55985, libc.VaList(bp+8, symname))
+						x__flexbuf_printf(tls, cc, fb, __ccgo_ts+55993, libc.VaList(bp+8, symname))
 					}
-					x__flexbuf_printf(tls, cc, fb, __ccgo_ts+55992, libc.VaList(bp+8, shiftAmount))
+					x__flexbuf_printf(tls, cc, fb, __ccgo_ts+56000, libc.VaList(bp+8, shiftAmount))
 					if offset != 0 {
-						x__flexbuf_printf(tls, cc, fb, __ccgo_ts+55998, libc.VaList(bp+8, offset))
+						x__flexbuf_printf(tls, cc, fb, __ccgo_ts+56006, libc.VaList(bp+8, offset))
 					}
-					x__flexbuf_printf(tls, cc, fb, __ccgo_ts+4265, 0)
+					x__flexbuf_printf(tls, cc, fb, __ccgo_ts+4267, 0)
 					data = data + uintptr(4)
 					addr = addr + int32(4)
 				case int32(_RELOC_KIND_AUGS):
 					fallthrough
 				case int32(_RELOC_KIND_AUGD):
 					baseWord = s__fetchUint32(tls, cc, data)
-					x__flexbuf_printf(tls, cc, fb, __ccgo_ts+56005, libc.VaList(bp+8, symname, offset, baseWord))
+					x__flexbuf_printf(tls, cc, fb, __ccgo_ts+56013, libc.VaList(bp+8, symname, offset, baseWord))
 					data = data + uintptr(4)
 					addr = addr + int32(4)
 					baseWord = s__fetchUint32(tls, cc, data)
 					if (*_Reloc)(unsafe.Pointer(nextreloc)).Fkind == int32(_RELOC_KIND_AUGD) {
-						x__flexbuf_printf(tls, cc, fb, __ccgo_ts+56032, libc.VaList(bp+8, symname, offset, baseWord))
+						x__flexbuf_printf(tls, cc, fb, __ccgo_ts+56040, libc.VaList(bp+8, symname, offset, baseWord))
 					} else {
-						x__flexbuf_printf(tls, cc, fb, __ccgo_ts+56072, libc.VaList(bp+8, symname, offset, baseWord))
+						x__flexbuf_printf(tls, cc, fb, __ccgo_ts+56080, libc.VaList(bp+8, symname, offset, baseWord))
 					}
 					data = data + uintptr(4)
 					addr = addr + int32(4)
 				default:
-					x__ERROR(tls, cc, libc.UintptrFromInt32(0), __ccgo_ts+56107, 0)
+					x__ERROR(tls, cc, libc.UintptrFromInt32(0), __ccgo_ts+56115, 0)
 					break
 				}
 				nextreloc += 24
@@ -41066,7 +41191,7 @@ func x__OutputDataBlob(tls *libc.TLS, cc *CC, fb uintptr, databuf uintptr, reloc
 				runlen = runlen + 1
 			}
 			if runlen > uint32(4) {
-				x__flexbuf_printf(tls, cc, fb, __ccgo_ts+56132, libc.VaList(bp+8, lastdata, runlen))
+				x__flexbuf_printf(tls, cc, fb, __ccgo_ts+56140, libc.VaList(bp+8, lastdata, runlen))
 				addr = libc.Int32FromUint32(uint32(addr) + runlen)
 				data = data + uintptr(runlen)
 				continue
@@ -41076,17 +41201,17 @@ func x__OutputDataBlob(tls *libc.TLS, cc *CC, fb uintptr, databuf uintptr, reloc
 		if bytesPending > int32(m_MAX_BYTES_ON_LINE) {
 			bytesPending = int32(m_MAX_BYTES_ON_LINE)
 		}
-		x__flexbuf_printf(tls, cc, fb, __ccgo_ts+56149, libc.VaList(bp+8, libc.Int32FromUint8(**(**_uint8_t)(__ccgo_up(data)))))
+		x__flexbuf_printf(tls, cc, fb, __ccgo_ts+56157, libc.VaList(bp+8, libc.Int32FromUint8(**(**_uint8_t)(__ccgo_up(data)))))
 		data = data + 1
 		addr = addr + 1
 		bytesPending = bytesPending - 1
 		for bytesPending > 0 {
-			x__flexbuf_printf(tls, cc, fb, __ccgo_ts+56161, libc.VaList(bp+8, libc.Int32FromUint8(**(**_uint8_t)(__ccgo_up(data)))))
+			x__flexbuf_printf(tls, cc, fb, __ccgo_ts+56169, libc.VaList(bp+8, libc.Int32FromUint8(**(**_uint8_t)(__ccgo_up(data)))))
 			data = data + 1
 			addr = addr + 1
 			bytesPending = bytesPending - 1
 		}
-		x__flexbuf_printf(tls, cc, fb, __ccgo_ts+4265, 0)
+		x__flexbuf_printf(tls, cc, fb, __ccgo_ts+4267, 0)
 	}
 	for relocs > 0 && nextreloc != 0 {
 		if (*_Reloc)(unsafe.Pointer(nextreloc)).Fkind == int32(_RELOC_KIND_DEBUG) {
@@ -41106,7 +41231,7 @@ func x__OutputGasFile(tls *libc.TLS, cc *CC, fname uintptr, P uintptr) {
 	f = libc.UintptrFromInt32(0)
 	save = cc.x__current
 	cc.x__current = P
-	f = fopen(tls, cc, fname, __ccgo_ts+37605)
+	f = fopen(tls, cc, fname, __ccgo_ts+37613)
 	if !(f != 0) {
 		libc.Xperror(tls, fname)
 		exit(tls, cc, int32(1))
@@ -41129,9 +41254,9 @@ func x__OutputLstFile(tls *libc.TLS, cc *CC, fname uintptr, P uintptr) {
 	_, _, _, _, _, _ = L, curlen, f, listing, maxline, save
 	f = libc.UintptrFromInt32(0)
 	save = cc.x__current
-	f = fopen(tls, cc, fname, __ccgo_ts+37605)
+	f = fopen(tls, cc, fname, __ccgo_ts+37613)
 	if !(f != 0) {
-		fprintf(tls, cc, libc.X__stderrp, __ccgo_ts+37608, 0)
+		fprintf(tls, cc, libc.X__stderrp, __ccgo_ts+37616, 0)
 		libc.Xperror(tls, fname)
 		exit(tls, cc, int32(1))
 	}
@@ -41173,12 +41298,12 @@ func x__OutputNuCode(tls *libc.TLS, cc *CC, asmFileName uintptr, P uintptr) {
 	saveCurrent = cc.x__current
 	saveFunc = cc.x__curfunc
 	**(**uintptr)(__ccgo_up(bp + 80)) = uintptr(0)
-	cc.s__nu_stack_ptr = x__AstIdentifier(tls, cc, __ccgo_ts+10344)
-	cc.s__nu_abortchain_ptr = x__AstIdentifier(tls, cc, __ccgo_ts+10258)
-	cc.s__nu_abortresult_ptr = x__AstIdentifier(tls, cc, __ccgo_ts+10278)
+	cc.s__nu_stack_ptr = x__AstIdentifier(tls, cc, __ccgo_ts+10346)
+	cc.s__nu_abortchain_ptr = x__AstIdentifier(tls, cc, __ccgo_ts+10260)
+	cc.s__nu_abortresult_ptr = x__AstIdentifier(tls, cc, __ccgo_ts+10280)
 	x__NuIrInit(tls, cc, bp+32)
 	if !((*_Module)(unsafe.Pointer(P)).Ffunctions != 0) {
-		x__ERROR(tls, cc, libc.UintptrFromInt32(0), __ccgo_ts+87121, 0)
+		x__ERROR(tls, cc, libc.UintptrFromInt32(0), __ccgo_ts+87127, 0)
 		return
 	}
 	// convert functions to IR
@@ -41193,15 +41318,15 @@ func x__OutputNuCode(tls *libc.TLS, cc *CC, asmFileName uintptr, P uintptr) {
 	// find main entry point
 	mainFunc = x__GetMainFunction(tls, cc, P)
 	if !(mainFunc != 0) {
-		x__ERROR(tls, cc, libc.UintptrFromInt32(0), __ccgo_ts+80971, 0)
+		x__ERROR(tls, cc, libc.UintptrFromInt32(0), __ccgo_ts+80977, 0)
 		return
 	} else {
 		if !((*_Function)(unsafe.Pointer(mainFunc)).Fbedata != 0) {
-			x__ERROR(tls, cc, libc.UintptrFromInt32(0), __ccgo_ts+80995, 0)
+			x__ERROR(tls, cc, libc.UintptrFromInt32(0), __ccgo_ts+81001, 0)
 			return
 		} else {
 			if (*_NuFunData)(unsafe.Pointer((*_Function)(unsafe.Pointer(mainFunc)).Fbedata)).FentryLabel == libc.UintptrFromInt32(0) {
-				x__ERROR(tls, cc, libc.UintptrFromInt32(0), __ccgo_ts+81024, 0)
+				x__ERROR(tls, cc, libc.UintptrFromInt32(0), __ccgo_ts+81030, 0)
 				return
 			}
 		}
@@ -41225,9 +41350,9 @@ func x__OutputNuCode(tls *libc.TLS, cc *CC, asmFileName uintptr, P uintptr) {
 	// finish -- heap could go here too
 	x__NuOutputFinish(tls, cc, bp, bp+32)
 	// output the data
-	asm_file = fopen(tls, cc, asmFileName, __ccgo_ts+4253)
+	asm_file = fopen(tls, cc, asmFileName, __ccgo_ts+4255)
 	if !(asm_file != 0) {
-		x__ERROR(tls, cc, libc.UintptrFromInt32(0), __ccgo_ts+87155, libc.VaList(bp+104, asmFileName))
+		x__ERROR(tls, cc, libc.UintptrFromInt32(0), __ccgo_ts+87161, libc.VaList(bp+104, asmFileName))
 		return
 	}
 	// emit PASM code
@@ -41268,7 +41393,7 @@ func x__OutputZipFile(tls *libc.TLS, cc *CC, zipname uintptr) {
 	if lastslash != 0 {
 		**(**int8)(__ccgo_up(lastslash + 1)) = 0
 	} else {
-		rootname = __ccgo_ts + 7138
+		rootname = __ccgo_ts + 7140
 	}
 	rootnamelen = libc.Xstrlen(tls, rootname)
 	i = 0
@@ -41286,7 +41411,7 @@ func x__OutputZipFile(tls *libc.TLS, cc *CC, zipname uintptr) {
 		}
 		x__zip_entry_open(tls, cc, zip, zipEntryName)
 		if x__zip_entry_fwrite(tls, cc, zip, (*_SourceFile)(unsafe.Pointer(sf)).FfullName) != 0 {
-			x__ERROR(tls, cc, (*_SourceFile)(unsafe.Pointer(sf)).FwhereFrom, __ccgo_ts+102207, libc.VaList(bp+8, (*_SourceFile)(unsafe.Pointer(sf)).FfullName))
+			x__ERROR(tls, cc, (*_SourceFile)(unsafe.Pointer(sf)).FwhereFrom, __ccgo_ts+102213, libc.VaList(bp+8, (*_SourceFile)(unsafe.Pointer(sf)).FfullName))
 			x__zip_close(tls, cc, zip)
 			libc.Xremove(tls, zipname)
 			return
@@ -41352,7 +41477,7 @@ func x__ParseOptimizeString(tls *libc.TLS, cc *CC, line uintptr, str uintptr, fl
 				flags = libc.Int32FromUint32(libc.Uint32FromInt32(libc.Int32FromInt32(m_OPT_BASIC_REGS)|libc.Int32FromInt32(m_OPT_BRANCHES)|libc.Int32FromInt32(m_OPT_PEEPHOLE)|libc.Int32FromInt32(m_OPT_CONST_PROPAGATE)|libc.Int32FromInt32(m_OPT_REMOVE_FEATURES)|libc.Int32FromInt32(m_OPT_MAKE_MACROS)|libc.Int32FromInt32(m_OPT_FASTASM)|libc.Int32FromInt32(m_OPT_DEADCODE)|libc.Int32FromInt32(m_OPT_REMOVE_UNUSED_FUNCS)|libc.Int32FromInt32(m_OPT_INLINE_SMALLFUNCS)|libc.Int32FromInt32(m_OPT_AUTO_FCACHE)|libc.Int32FromInt32(m_OPT_LOOP_BASIC)|libc.Int32FromInt32(m_OPT_TAIL_CALLS)|libc.Int32FromInt32(m_OPT_SPECIAL_FUNCS)|libc.Int32FromInt32(m_OPT_CORDIC_REORDER)|libc.Int32FromInt32(m_OPT_LOCAL_REUSE)|libc.Int32FromInt32(m_OPT_LOOP_BASIC)) | (libc.Uint32FromInt32(libc.Int32FromInt32(m_OPT_INLINE_SINGLEUSE)|libc.Int32FromInt32(m_OPT_PERFORM_CSE)|libc.Int32FromInt32(m_OPT_PERFORM_LOOPREDUCE)|libc.Int32FromInt32(m_OPT_REMOVE_HUB_BSS)) | libc.Uint32FromUint32(m_OPT_EXPERIMENTAL) | libc.Uint32FromInt32(m_OPT_AGGRESSIVE_MEM) | libc.Uint32FromInt32(m_OPT_MERGE_DUPLICATES) | libc.Uint32FromInt32(m_OPT_PEEK_ARGS)))
 				continue
 			default:
-				x__ERROR(tls, cc, line, __ccgo_ts+3795, libc.VaList(bp+88, buf))
+				x__ERROR(tls, cc, line, __ccgo_ts+3797, libc.VaList(bp+88, buf))
 				return 0
 			}
 		}
@@ -41372,7 +41497,7 @@ func x__ParseOptimizeString(tls *libc.TLS, cc *CC, line uintptr, str uintptr, fl
 			i = i + 1
 		}
 		if !(bits != 0) {
-			x__WARNING(tls, cc, line, __ccgo_ts+3829, libc.VaList(bp+88, buf))
+			x__WARNING(tls, cc, line, __ccgo_ts+3831, libc.VaList(bp+88, buf))
 		}
 		if notflag != 0 {
 			flags = flags & ^bits
@@ -41404,7 +41529,7 @@ func x__ParsePrintStatement(tls *libc.TLS, cc *CC, ast uintptr) (r uintptr) {
 	for exprlist != 0 {
 		fmtAst = defaultFmt
 		if (*_AST)(unsafe.Pointer(exprlist)).Fkind != int32(_AST_EXPRLIST) {
-			x__ERROR(tls, cc, exprlist, __ccgo_ts+42277, 0)
+			x__ERROR(tls, cc, exprlist, __ccgo_ts+42285, 0)
 		}
 		expr = (*_AST)(unsafe.Pointer(exprlist)).Fleft
 		exprlist = (*_AST)(unsafe.Pointer(exprlist)).Fright
@@ -41449,7 +41574,7 @@ func x__ParsePrintStatement(tls *libc.TLS, cc *CC, ast uintptr) (r uintptr) {
 				// optimize print chr$(x) to use basic_print_char
 				if (*_AST)(unsafe.Pointer(expr)).Fkind == int32(_AST_FUNCCALL) && ((*_AST)(unsafe.Pointer((*_AST)(unsafe.Pointer(expr)).Fleft)).Fkind == int32(_AST_IDENTIFIER) || (*_AST)(unsafe.Pointer((*_AST)(unsafe.Pointer(expr)).Fleft)).Fkind == int32(_AST_LOCAL_IDENTIFIER)) {
 					name = x__GetIdentifierName(tls, cc, (*_AST)(unsafe.Pointer(expr)).Fleft)
-					if libc.Xstrcasecmp(tls, name, __ccgo_ts+42380) == 0 && (*_AST)(unsafe.Pointer(expr)).Fright != 0 && !((*_AST)(unsafe.Pointer((*_AST)(unsafe.Pointer(expr)).Fright)).Fright != 0) {
+					if libc.Xstrcasecmp(tls, name, __ccgo_ts+42388) == 0 && (*_AST)(unsafe.Pointer(expr)).Fright != 0 && !((*_AST)(unsafe.Pointer((*_AST)(unsafe.Pointer(expr)).Fright)).Fright != 0) {
 						seq = x__addPrintCall(tls, cc, seq, handle, cc.x__basic_print_char, (*_AST)(unsafe.Pointer((*_AST)(unsafe.Pointer(expr)).Fright)).Fleft, fmtAst)
 						print_done = libc.BoolUint8(m_true != 0)
 					}
@@ -41479,7 +41604,7 @@ func x__ParsePrintStatement(tls *libc.TLS, cc *CC, ast uintptr) (r uintptr) {
 									seq = s__addPrintDec(tls, cc, seq, handle, cc.x__basic_print_integer, expr, fmtAst)
 								}
 							} else {
-								x__ERROR(tls, cc, ast, __ccgo_ts+42340, 0)
+								x__ERROR(tls, cc, ast, __ccgo_ts+42348, 0)
 							}
 						}
 					}
@@ -41522,7 +41647,7 @@ func x__ParseWarnString(tls *libc.TLS, cc *CC, line uintptr, str uintptr, flag_p
 			continue
 		}
 		bits = 0
-		if !(libc.Xstrcmp(tls, buf, __ccgo_ts+3990) != 0) {
+		if !(libc.Xstrcmp(tls, buf, __ccgo_ts+3992) != 0) {
 			bits = int32(m_WARN_ALL)
 			notflag = int32(m_true)
 		} else {
@@ -41542,7 +41667,7 @@ func x__ParseWarnString(tls *libc.TLS, cc *CC, line uintptr, str uintptr, flag_p
 			}
 		}
 		if !(bits != 0) {
-			x__ERROR(tls, cc, line, __ccgo_ts+3995, libc.VaList(bp+88, buf))
+			x__ERROR(tls, cc, line, __ccgo_ts+3997, libc.VaList(bp+88, buf))
 			return 0
 		}
 		if notflag != 0 {
@@ -41566,7 +41691,7 @@ func x__PrintAsAddr(tls *libc.TLS, cc *CC, f uintptr, expr uintptr, flags int32)
 	case int32(_AST_STRING):
 		s__PrintStringLiteral(tls, cc, f, *(*uintptr)(unsafe.Pointer(expr + 8)))
 	case int32(_AST_ADDROF):
-		x__flexbuf_printf(tls, cc, f, __ccgo_ts+99571, 0)
+		x__flexbuf_printf(tls, cc, f, __ccgo_ts+99577, 0)
 		x__PrintLHS(tls, cc, f, (*_AST)(unsafe.Pointer(expr)).Fleft, flags)
 	case int32(_AST_LOCAL_IDENTIFIER):
 		fallthrough
@@ -41583,9 +41708,9 @@ func x__PrintAsAddr(tls *libc.TLS, cc *CC, f uintptr, expr uintptr, flags int32)
 	case int32(_AST_ASSIGN):
 		fallthrough
 	default:
-		x__flexbuf_printf(tls, cc, f, __ccgo_ts+100989, 0)
+		x__flexbuf_printf(tls, cc, f, __ccgo_ts+100995, 0)
 		x__PrintExpr(tls, cc, f, expr, flags)
-		x__flexbuf_printf(tls, cc, f, __ccgo_ts+28072, 0)
+		x__flexbuf_printf(tls, cc, f, __ccgo_ts+28080, 0)
 		break
 	}
 }
@@ -41602,38 +41727,38 @@ func x__PrintAssign(tls *libc.TLS, cc *CC, f uintptr, lhs uintptr, rhs uintptr, 
 	var n int32
 	_, _ = desttype, n
 	if (*_AST)(unsafe.Pointer(lhs)).Fkind == int32(_AST_EXPRLIST) {
-		x__ERROR(tls, cc, lhs, __ccgo_ts+100999, 0)
+		x__ERROR(tls, cc, lhs, __ccgo_ts+101005, 0)
 		// multiple assignment
 		n = x__AstListLen(tls, cc, lhs)
-		x__flexbuf_printf(tls, cc, f, __ccgo_ts+101075, libc.VaList(bp+8, n))
+		x__flexbuf_printf(tls, cc, f, __ccgo_ts+101081, libc.VaList(bp+8, n))
 		if rhs != 0 && (*_AST)(unsafe.Pointer(rhs)).Fkind == int32(_AST_EXPRLIST) {
-			x__flexbuf_printf(tls, cc, f, __ccgo_ts+97931, libc.VaList(bp+8, n, n))
+			x__flexbuf_printf(tls, cc, f, __ccgo_ts+97937, libc.VaList(bp+8, n, n))
 			x__PrintExprList(tls, cc, f, rhs, m_PRINTEXPR_DEFAULT, libc.UintptrFromInt32(0))
-			x__flexbuf_printf(tls, cc, f, __ccgo_ts+28072, 0)
+			x__flexbuf_printf(tls, cc, f, __ccgo_ts+28080, 0)
 		} else {
 			x__PrintExpr(tls, cc, f, rhs, m_PRINTEXPR_DEFAULT)
 		}
-		x__flexbuf_printf(tls, cc, f, __ccgo_ts+98176, 0)
+		x__flexbuf_printf(tls, cc, f, __ccgo_ts+98182, 0)
 		n = 0
 		for lhs != 0 {
 			if (*_AST)(unsafe.Pointer(lhs)).Fleft != 0 && (*_AST)(unsafe.Pointer((*_AST)(unsafe.Pointer(lhs)).Fleft)).Fkind != int32(_AST_EMPTY) {
 				x__PrintLHS(tls, cc, f, (*_AST)(unsafe.Pointer(lhs)).Fleft, int32(m_PRINTEXPR_ASSIGNMENT))
-				x__flexbuf_printf(tls, cc, f, __ccgo_ts+98260, libc.VaList(bp+8, n))
+				x__flexbuf_printf(tls, cc, f, __ccgo_ts+98266, libc.VaList(bp+8, n))
 			}
 			n = n + 1
 			lhs = (*_AST)(unsafe.Pointer(lhs)).Fright
 		}
-		x__flexbuf_printf(tls, cc, f, __ccgo_ts+101097, 0)
+		x__flexbuf_printf(tls, cc, f, __ccgo_ts+101103, 0)
 	} else {
 		if (*_AST)(unsafe.Pointer(lhs)).Fkind == int32(_AST_RANGEREF) {
 			x__PrintRangeAssign(tls, cc, f, lhs, rhs, flags)
 		} else {
 			if (*_AST)(unsafe.Pointer(lhs)).Fkind == int32(_AST_SPRREF) {
-				x__flexbuf_printf(tls, cc, f, __ccgo_ts+101101, 0)
+				x__flexbuf_printf(tls, cc, f, __ccgo_ts+101107, 0)
 				x__PrintExpr(tls, cc, f, (*_AST)(unsafe.Pointer(lhs)).Fleft, flags)
-				x__flexbuf_printf(tls, cc, f, __ccgo_ts+60153, 0)
+				x__flexbuf_printf(tls, cc, f, __ccgo_ts+60161, 0)
 				x__PrintTypedExpr(tls, cc, f, cc.x__ast_type_long, rhs, flags)
-				x__flexbuf_printf(tls, cc, f, __ccgo_ts+28072, 0)
+				x__flexbuf_printf(tls, cc, f, __ccgo_ts+28080, 0)
 			} else {
 				/* in Spin an expression like
 				     arr := 1
@@ -41646,9 +41771,9 @@ func x__PrintAssign(tls *libc.TLS, cc *CC, f uintptr, lhs uintptr, rhs uintptr, 
 				/* shortcut certain expressions */
 				if (*_AST)(unsafe.Pointer(rhs)).Fkind == int32(_AST_OPERATOR) && (*(*_uint64_t)(unsafe.Pointer(rhs + 8)) == uint64('|') || *(*_uint64_t)(unsafe.Pointer(rhs + 8)) == uint64('&') || *(*_uint64_t)(unsafe.Pointer(rhs + 8)) == uint64('^')) && x__AstMatch(tls, cc, lhs, (*_AST)(unsafe.Pointer(rhs)).Fleft) != 0 {
 					x__PrintLHS(tls, cc, f, lhs, flags|int32(m_PRINTEXPR_ASSIGNMENT))
-					x__flexbuf_printf(tls, cc, f, __ccgo_ts+100898, libc.VaList(bp+8, *(*_uint64_t)(unsafe.Pointer(rhs + 8))))
+					x__flexbuf_printf(tls, cc, f, __ccgo_ts+100904, libc.VaList(bp+8, *(*_uint64_t)(unsafe.Pointer(rhs + 8))))
 					if (*_AST)(unsafe.Pointer((*_AST)(unsafe.Pointer(rhs)).Fright)).Fkind == int32(_AST_INTEGER) {
-						x__flexbuf_printf(tls, cc, f, __ccgo_ts+100100, libc.VaList(bp+8, *(*_uint64_t)(unsafe.Pointer((*_AST)(unsafe.Pointer(rhs)).Fright + 8))))
+						x__flexbuf_printf(tls, cc, f, __ccgo_ts+100106, libc.VaList(bp+8, *(*_uint64_t)(unsafe.Pointer((*_AST)(unsafe.Pointer(rhs)).Fright + 8))))
 					} else {
 						x__PrintExpr(tls, cc, f, (*_AST)(unsafe.Pointer(rhs)).Fright, flags)
 					}
@@ -41656,7 +41781,7 @@ func x__PrintAssign(tls *libc.TLS, cc *CC, f uintptr, lhs uintptr, rhs uintptr, 
 				}
 				x__PrintLHS(tls, cc, f, lhs, flags|int32(m_PRINTEXPR_ASSIGNMENT))
 				desttype = x__ExprType(tls, cc, lhs)
-				x__flexbuf_printf(tls, cc, f, __ccgo_ts+60593, 0)
+				x__flexbuf_printf(tls, cc, f, __ccgo_ts+60601, 0)
 				/*
 				 * Normally we put parentheses around operators, but at
 				 * the top of an assignment we should not have to.
@@ -41685,22 +41810,22 @@ func x__PrintBoolExpr(tls *libc.TLS, cc *CC, f uintptr, expr uintptr, flags int3
 		op = libc.Int32FromUint64(*(*_uint64_t)(unsafe.Pointer(expr + 8)))
 		switch op {
 		case int32(_K_BOOL_NOT):
-			x__flexbuf_printf(tls, cc, f, __ccgo_ts+101649, 0)
+			x__flexbuf_printf(tls, cc, f, __ccgo_ts+101655, 0)
 			x__PrintBoolExpr(tls, cc, f, rhs, flags)
-			x__flexbuf_printf(tls, cc, f, __ccgo_ts+28072, 0)
+			x__flexbuf_printf(tls, cc, f, __ccgo_ts+28080, 0)
 		case int32(_K_BOOL_OR):
 			fallthrough
 		case int32(_K_BOOL_AND):
-			x__flexbuf_printf(tls, cc, f, __ccgo_ts+28070, 0)
+			x__flexbuf_printf(tls, cc, f, __ccgo_ts+28078, 0)
 			x__PrintBoolExpr(tls, cc, f, lhs, flags)
 			if op == int32(_K_BOOL_OR) {
-				v1 = __ccgo_ts + 101652
+				v1 = __ccgo_ts + 101658
 			} else {
-				v1 = __ccgo_ts + 101659
+				v1 = __ccgo_ts + 101665
 			}
-			x__flexbuf_printf(tls, cc, f, __ccgo_ts+7088, libc.VaList(bp+8, v1))
+			x__flexbuf_printf(tls, cc, f, __ccgo_ts+7090, libc.VaList(bp+8, v1))
 			x__PrintBoolExpr(tls, cc, f, rhs, flags)
-			x__flexbuf_printf(tls, cc, f, __ccgo_ts+28072, 0)
+			x__flexbuf_printf(tls, cc, f, __ccgo_ts+28080, 0)
 		default:
 			x__PrintOperator(tls, cc, f, op, lhs, rhs, flags)
 			break
@@ -41711,28 +41836,28 @@ func x__PrintBoolExpr(tls *libc.TLS, cc *CC, f uintptr, expr uintptr, flags int3
 			if x__IsConstExpr(tls, cc, (*_AST)(unsafe.Pointer((*_AST)(unsafe.Pointer(expr)).Fright)).Fleft) != 0 && x__IsConstExpr(tls, cc, (*_AST)(unsafe.Pointer((*_AST)(unsafe.Pointer(expr)).Fright)).Fright) != 0 {
 				onlyone = int32(1)
 			} else {
-				x__flexbuf_printf(tls, cc, f, __ccgo_ts+28070, 0)
+				x__flexbuf_printf(tls, cc, f, __ccgo_ts+28078, 0)
 			}
-			x__flexbuf_printf(tls, cc, f, __ccgo_ts+28070, 0)
+			x__flexbuf_printf(tls, cc, f, __ccgo_ts+28078, 0)
 			x__PrintExpr(tls, cc, f, (*_AST)(unsafe.Pointer((*_AST)(unsafe.Pointer(expr)).Fright)).Fleft, flags)
-			x__flexbuf_printf(tls, cc, f, __ccgo_ts+101666, 0)
+			x__flexbuf_printf(tls, cc, f, __ccgo_ts+101672, 0)
 			x__PrintExpr(tls, cc, f, (*_AST)(unsafe.Pointer(expr)).Fleft, flags)
-			x__flexbuf_printf(tls, cc, f, __ccgo_ts+101659, 0)
+			x__flexbuf_printf(tls, cc, f, __ccgo_ts+101665, 0)
 			x__PrintExpr(tls, cc, f, (*_AST)(unsafe.Pointer(expr)).Fleft, flags)
-			x__flexbuf_printf(tls, cc, f, __ccgo_ts+101666, 0)
+			x__flexbuf_printf(tls, cc, f, __ccgo_ts+101672, 0)
 			x__PrintExpr(tls, cc, f, (*_AST)(unsafe.Pointer((*_AST)(unsafe.Pointer(expr)).Fright)).Fright, flags)
 			if onlyone != 0 {
-				x__flexbuf_printf(tls, cc, f, __ccgo_ts+28072, 0)
+				x__flexbuf_printf(tls, cc, f, __ccgo_ts+28080, 0)
 			} else {
-				x__flexbuf_printf(tls, cc, f, __ccgo_ts+101671, 0)
+				x__flexbuf_printf(tls, cc, f, __ccgo_ts+101677, 0)
 				x__PrintExpr(tls, cc, f, (*_AST)(unsafe.Pointer((*_AST)(unsafe.Pointer(expr)).Fright)).Fleft, flags)
-				x__flexbuf_printf(tls, cc, f, __ccgo_ts+101680, 0)
+				x__flexbuf_printf(tls, cc, f, __ccgo_ts+101686, 0)
 				x__PrintExpr(tls, cc, f, (*_AST)(unsafe.Pointer(expr)).Fleft, flags)
-				x__flexbuf_printf(tls, cc, f, __ccgo_ts+101659, 0)
+				x__flexbuf_printf(tls, cc, f, __ccgo_ts+101665, 0)
 				x__PrintExpr(tls, cc, f, (*_AST)(unsafe.Pointer(expr)).Fleft, flags)
-				x__flexbuf_printf(tls, cc, f, __ccgo_ts+101680, 0)
+				x__flexbuf_printf(tls, cc, f, __ccgo_ts+101686, 0)
 				x__PrintExpr(tls, cc, f, (*_AST)(unsafe.Pointer((*_AST)(unsafe.Pointer(expr)).Fright)).Fright, flags)
-				x__flexbuf_printf(tls, cc, f, __ccgo_ts+101685, 0)
+				x__flexbuf_printf(tls, cc, f, __ccgo_ts+101691, 0)
 			}
 		} else {
 			x__PrintExpr(tls, cc, f, expr, flags)
@@ -41742,7 +41867,7 @@ func x__PrintBoolExpr(tls *libc.TLS, cc *CC, f uintptr, expr uintptr, flags int3
 
 func x__PrintCogInit(tls *libc.TLS, cc *CC, f uintptr, params uintptr) {
 	if !(params != 0) || !((*_AST)(unsafe.Pointer(params)).Fleft != 0) {
-		x__ERROR(tls, cc, params, __ccgo_ts+100060, 0)
+		x__ERROR(tls, cc, params, __ccgo_ts+100066, 0)
 		return
 	}
 	if x__IsSpinCoginit(tls, cc, params, libc.UintptrFromInt32(0)) != 0 {
@@ -41756,11 +41881,11 @@ func x__PrintConstantsGas(tls *libc.TLS, cc *CC, f uintptr, P uintptr, inlineAsm
 	var ast, upper uintptr
 	_, _ = ast, upper
 	if inlineAsm != 0 {
-		x__flexbuf_printf(tls, cc, f, __ccgo_ts+98704, 0)
-		x__flexbuf_printf(tls, cc, f, __ccgo_ts+98740, 0)
-		x__flexbuf_printf(tls, cc, f, __ccgo_ts+98784, 0)
-		x__flexbuf_printf(tls, cc, f, __ccgo_ts+98839, 0)
-		x__flexbuf_printf(tls, cc, f, __ccgo_ts+98869, 0)
+		x__flexbuf_printf(tls, cc, f, __ccgo_ts+98710, 0)
+		x__flexbuf_printf(tls, cc, f, __ccgo_ts+98746, 0)
+		x__flexbuf_printf(tls, cc, f, __ccgo_ts+98790, 0)
+		x__flexbuf_printf(tls, cc, f, __ccgo_ts+98845, 0)
+		x__flexbuf_printf(tls, cc, f, __ccgo_ts+98875, 0)
 		return
 	}
 	upper = (*_Module)(unsafe.Pointer(P)).Fconblock
@@ -41870,7 +41995,7 @@ func x__PrintDataBlock(tls *libc.TLS, cc *CC, f uintptr, list uintptr, funcs uin
 					x__AssembleInstruction(tls, cc, f, ast, relocs)
 				case int32(_AST_BRKDEBUG):
 					if !(cc.x__gl_brkdebug != 0) {
-						x__WARNING(tls, cc, ast, __ccgo_ts+37192, 0)
+						x__WARNING(tls, cc, ast, __ccgo_ts+37200, 0)
 					}
 					if !(cc.x__gl_p2 != 0) && !(cc.x__gl_compress != 0) || !(inHub != 0) {
 						for cc.s__datacount%int32(4) != 0 {
@@ -41886,7 +42011,7 @@ func x__PrintDataBlock(tls *libc.TLS, cc *CC, f uintptr, list uintptr, funcs uin
 					s__assembleFile(tls, cc, f, (*_AST)(unsafe.Pointer(ast)).Fleft)
 				case int32(_AST_ORGH):
 					if !(cc.x__gl_nospin != 0) && *(*_uint64_t)(unsafe.Pointer(ast + 8)) > uint64(3) && cc.x__gl_output != int32(m_OUTPUT_DAT) {
-						x__WARNING(tls, cc, ast, __ccgo_ts+40722, 0)
+						x__WARNING(tls, cc, ast, __ccgo_ts+40730, 0)
 					}
 					s__SendOneComment(tls, cc, relocs, libc.UintptrFromInt32(0), uint32(x__flexbuf_curlen(tls, cc, f)), libc.Uint32FromInt64(x__EvalPasmExpr(tls, cc, (*_AST)(unsafe.Pointer(ast)).Fleft)))
 					/* skip ahead to PC */
@@ -41927,7 +42052,7 @@ func x__PrintDataBlock(tls *libc.TLS, cc *CC, f uintptr, list uintptr, funcs uin
 						(*_Module)(unsafe.Pointer(cc.x__current)).Fname_space = libc.UintptrFromInt32(0)
 					}
 				default:
-					x__ERROR(tls, cc, ast, __ccgo_ts+40790, 0)
+					x__ERROR(tls, cc, ast, __ccgo_ts+40798, 0)
 					break
 				}
 			}
@@ -41956,13 +42081,13 @@ func x__PrintDataBlockForGas(tls *libc.TLS, cc *CC, f uintptr, P uintptr, inline
 	s__DeclareLabelsGas(tls, cc, f, P, inlineAsm)
 	if inlineAsm != 0 {
 		s__startLine(tls, cc, f, inlineAsm)
-		x__flexbuf_printf(tls, cc, f, __ccgo_ts+99120, libc.VaList(bp+648, __ccgo_ts+61558, (*_Module)(unsafe.Pointer(P)).Fclassname))
+		x__flexbuf_printf(tls, cc, f, __ccgo_ts+99126, libc.VaList(bp+648, __ccgo_ts+61566, (*_Module)(unsafe.Pointer(P)).Fclassname))
 		s__endLine(tls, cc, f, inlineAsm)
 		s__startLine(tls, cc, f, inlineAsm)
-		x__flexbuf_printf(tls, cc, f, __ccgo_ts+99147, libc.VaList(bp+648, __ccgo_ts+61558))
+		x__flexbuf_printf(tls, cc, f, __ccgo_ts+99153, libc.VaList(bp+648, __ccgo_ts+61566))
 		s__endLine(tls, cc, f, inlineAsm)
 		s__startLine(tls, cc, f, inlineAsm)
-		x__flexbuf_printf(tls, cc, f, __ccgo_ts+99166, 0)
+		x__flexbuf_printf(tls, cc, f, __ccgo_ts+99172, 0)
 		s__endLine(tls, cc, f, inlineAsm)
 	}
 	top = (*_Module)(unsafe.Pointer(P)).Fdatblock
@@ -41972,16 +42097,16 @@ func x__PrintDataBlockForGas(tls *libc.TLS, cc *CC, f uintptr, P uintptr, inline
 		}
 		ast = top
 		for (*_AST)(unsafe.Pointer(ast)).Fkind == int32(_AST_COMMENTEDNODE) {
-			s__outputGasComment(tls, cc, f, (*_AST)(unsafe.Pointer(ast)).Fright, inlineAsm, __ccgo_ts+99181)
+			s__outputGasComment(tls, cc, f, (*_AST)(unsafe.Pointer(ast)).Fright, inlineAsm, __ccgo_ts+99187)
 			ast = (*_AST)(unsafe.Pointer(ast)).Fleft
 		}
 		switch (*_AST)(unsafe.Pointer(ast)).Fkind {
 		case int32(_AST_BYTELIST):
-			s__outputGasDataList(tls, cc, f, __ccgo_ts+99197, (*_AST)(unsafe.Pointer(ast)).Fleft, int32(1), inlineAsm)
+			s__outputGasDataList(tls, cc, f, __ccgo_ts+99203, (*_AST)(unsafe.Pointer(ast)).Fleft, int32(1), inlineAsm)
 		case int32(_AST_WORDLIST):
-			s__outputGasDataList(tls, cc, f, __ccgo_ts+99203, (*_AST)(unsafe.Pointer(ast)).Fleft, int32(2), inlineAsm)
+			s__outputGasDataList(tls, cc, f, __ccgo_ts+99209, (*_AST)(unsafe.Pointer(ast)).Fleft, int32(2), inlineAsm)
 		case int32(_AST_LONGLIST):
-			s__outputGasDataList(tls, cc, f, __ccgo_ts+99209, (*_AST)(unsafe.Pointer(ast)).Fleft, int32(4), inlineAsm)
+			s__outputGasDataList(tls, cc, f, __ccgo_ts+99215, (*_AST)(unsafe.Pointer(ast)).Fleft, int32(4), inlineAsm)
 		case int32(_AST_INSTRHOLDER):
 			x__outputGasInstruction(tls, cc, f, (*_AST)(unsafe.Pointer(ast)).Fleft, inlineAsm, libc.UintptrFromInt32(0))
 		case int32(_AST_LINEBREAK):
@@ -41989,10 +42114,10 @@ func x__PrintDataBlockForGas(tls *libc.TLS, cc *CC, f uintptr, P uintptr, inline
 			// FIXME: need to handle labels not on lines (type and alignment)
 			s__outputGasLabel(tls, cc, f, ast, inlineAsm)
 		case int32(_AST_FILE):
-			x__ERROR(tls, cc, ast, __ccgo_ts+99215, 0)
+			x__ERROR(tls, cc, ast, __ccgo_ts+99221, 0)
 		case int32(_AST_ORG):
 			if orgCount == int32(m_MAX_ORG_COUNT) {
-				x__ERROR(tls, cc, ast, __ccgo_ts+99258, 0)
+				x__ERROR(tls, cc, ast, __ccgo_ts+99264, 0)
 			} else {
 				v2 = orgCount
 				orgCount = orgCount + 1
@@ -42001,9 +42126,9 @@ func x__PrintDataBlockForGas(tls *libc.TLS, cc *CC, f uintptr, P uintptr, inline
 			s__outputGasOrg(tls, cc, f, ast, inlineAsm)
 		case int32(_AST_RES):
 			if libc.Bool(libc.Bool(0 != 0) && inlineAsm != 0) && (*_AST)(unsafe.Pointer(ast)).Fleft != 0 {
-				s__outputGasDirective(tls, cc, f, __ccgo_ts+99297, (*_AST)(unsafe.Pointer(ast)).Fleft, inlineAsm)
+				s__outputGasDirective(tls, cc, f, __ccgo_ts+99303, (*_AST)(unsafe.Pointer(ast)).Fleft, inlineAsm)
 			} else {
-				s__outputGasDirective(tls, cc, f, __ccgo_ts+99309, (*_AST)(unsafe.Pointer(ast)).Fleft, inlineAsm)
+				s__outputGasDirective(tls, cc, f, __ccgo_ts+99315, (*_AST)(unsafe.Pointer(ast)).Fleft, inlineAsm)
 			}
 		case int32(_AST_FIT):
 			if (*_AST)(unsafe.Pointer(ast)).Fleft != 0 {
@@ -42011,13 +42136,13 @@ func x__PrintDataBlockForGas(tls *libc.TLS, cc *CC, f uintptr, P uintptr, inline
 			} else {
 				v3 = x__AstInteger(tls, cc, int64(496))
 			}
-			s__outputGasDirective(tls, cc, f, __ccgo_ts+99314, v3, inlineAsm)
+			s__outputGasDirective(tls, cc, f, __ccgo_ts+99320, v3, inlineAsm)
 		case int32(_AST_COMMENT):
 			fallthrough
 		case int32(_AST_SRCCOMMENT):
 			//            outputGasComment(f, ast, inlineAsm, "++comment"); // printed above already??
 		default:
-			x__ERROR(tls, cc, ast, __ccgo_ts+40790, 0)
+			x__ERROR(tls, cc, ast, __ccgo_ts+40798, 0)
 			break
 		}
 		goto _1
@@ -42028,12 +42153,12 @@ func x__PrintDataBlockForGas(tls *libc.TLS, cc *CC, f uintptr, P uintptr, inline
 	s__outputFinalOrgs(tls, cc, f, bp, orgCount, inlineAsm)
 	if inlineAsm != 0 {
 		s__startLine(tls, cc, f, inlineAsm)
-		x__flexbuf_printf(tls, cc, f, __ccgo_ts+99319, libc.VaList(bp+648, __ccgo_ts+61558))
+		x__flexbuf_printf(tls, cc, f, __ccgo_ts+99325, libc.VaList(bp+648, __ccgo_ts+61566))
 		s__endLine(tls, cc, f, inlineAsm)
 		s__startLine(tls, cc, f, inlineAsm)
-		x__flexbuf_printf(tls, cc, f, __ccgo_ts+99342, libc.VaList(bp+648, __ccgo_ts+61558))
+		x__flexbuf_printf(tls, cc, f, __ccgo_ts+99348, libc.VaList(bp+648, __ccgo_ts+61566))
 		s__endLine(tls, cc, f, inlineAsm)
-		x__flexbuf_printf(tls, cc, f, __ccgo_ts+4265, 0)
+		x__flexbuf_printf(tls, cc, f, __ccgo_ts+4267, 0)
 	}
 	(*_Module)(unsafe.Pointer(P)).FpasmLabels = int8(saveState)
 }
@@ -42046,9 +42171,9 @@ func x__PrintDependencies(tls *libc.TLS, cc *CC, depname uintptr, outname uintpt
 	_, _, _ = F, i, outf
 	outf = libc.X__stdoutp
 	if depname != 0 {
-		outf = fopen(tls, cc, depname, __ccgo_ts+4253)
+		outf = fopen(tls, cc, depname, __ccgo_ts+4255)
 	}
-	fprintf(tls, cc, outf, __ccgo_ts+4255, libc.VaList(bp+8, outname))
+	fprintf(tls, cc, outf, __ccgo_ts+4257, libc.VaList(bp+8, outname))
 	i = 0
 	for {
 		if !(i < cc.x__numSourceFiles) {
@@ -42058,13 +42183,13 @@ func x__PrintDependencies(tls *libc.TLS, cc *CC, depname uintptr, outname uintpt
 		if int32(uint32(*(*uint8)(unsafe.Pointer(F + 24))&0x1>>0)) != 0 {
 			goto _1
 		}
-		fprintf(tls, cc, outf, __ccgo_ts+4261, libc.VaList(bp+8, (*_SourceFile)(unsafe.Pointer(F)).FshortName))
+		fprintf(tls, cc, outf, __ccgo_ts+4263, libc.VaList(bp+8, (*_SourceFile)(unsafe.Pointer(F)).FshortName))
 		goto _1
 	_1:
 		;
 		i = i + 1
 	}
-	fprintf(tls, cc, outf, __ccgo_ts+4265, 0)
+	fprintf(tls, cc, outf, __ccgo_ts+4267, 0)
 }
 
 // C documentation
@@ -42087,11 +42212,11 @@ func x__PrintExprList(tls *libc.TLS, cc *CC, f uintptr, list uintptr, flags int3
 	}
 	for list != 0 {
 		if (*_AST)(unsafe.Pointer(list)).Fkind != int32(_AST_EXPRLIST) {
-			x__ERROR(tls, cc, list, __ccgo_ts+99983, 0)
+			x__ERROR(tls, cc, list, __ccgo_ts+99989, 0)
 			return
 		}
 		if needcomma != 0 {
-			x__flexbuf_printf(tls, cc, f, __ccgo_ts+60153, 0)
+			x__flexbuf_printf(tls, cc, f, __ccgo_ts+60161, 0)
 		}
 		paramtype = libc.UintptrFromInt32(0)
 		if paramlist != 0 {
@@ -42162,7 +42287,7 @@ func x__PrintFloat(tls *libc.TLS, cc *CC, f uintptr, v _int32_t, flags int32) {
 				if cc.x__current != 0 {
 					language = (*_Module)(unsafe.Pointer(cc.x__current)).FcurLanguage
 				} else {
-					x__ERROR(tls, cc, libc.UintptrFromInt32(0), __ccgo_ts+99480, 0)
+					x__ERROR(tls, cc, libc.UintptrFromInt32(0), __ccgo_ts+99486, 0)
 					language = m_LANG_SPIN_SPIN1
 				}
 			}
@@ -42175,16 +42300,16 @@ func x__PrintFloat(tls *libc.TLS, cc *CC, f uintptr, v _int32_t, flags int32) {
 	}
 	if printAsFloat != 0 {
 		if cc.x__gl_fixedreal != 0 {
-			x__flexbuf_printf(tls, cc, f, __ccgo_ts+42331, libc.VaList(bp+8, float64(float32(v)/float32(libc.Int32FromInt32(1)<<libc.Int32FromInt32(m_G_FIXPOINT)))))
+			x__flexbuf_printf(tls, cc, f, __ccgo_ts+42339, libc.VaList(bp+8, float64(float32(v)/float32(libc.Int32FromInt32(1)<<libc.Int32FromInt32(m_G_FIXPOINT)))))
 		} else {
-			x__flexbuf_printf(tls, cc, f, __ccgo_ts+42331, libc.VaList(bp+8, float64(x__intAsFloat(tls, cc, int64(v)))))
+			x__flexbuf_printf(tls, cc, f, __ccgo_ts+42339, libc.VaList(bp+8, float64(x__intAsFloat(tls, cc, int64(v)))))
 		}
 		return
 	}
 	if v < 0 {
-		x__flexbuf_printf(tls, cc, f, __ccgo_ts+99509, libc.VaList(bp+8, cc.x__gl_intstring, libc.Int64FromUint32(libc.Uint32FromInt32(v))))
+		x__flexbuf_printf(tls, cc, f, __ccgo_ts+99515, libc.VaList(bp+8, cc.x__gl_intstring, libc.Int64FromUint32(libc.Uint32FromInt32(v))))
 	} else {
-		x__flexbuf_printf(tls, cc, f, __ccgo_ts+99519, libc.VaList(bp+8, int64(v)))
+		x__flexbuf_printf(tls, cc, f, __ccgo_ts+99525, libc.VaList(bp+8, int64(v)))
 	}
 }
 
@@ -42202,11 +42327,11 @@ func x__PrintIndentedComment(tls *libc.TLS, cc *CC, f uintptr, ast uintptr, inde
 		if (*_AST)(unsafe.Pointer(ast)).Fkind == int32(_AST_SRCCOMMENT) {
 			info = x__GetLineInfo(tls, cc, ast)
 			if info != 0 && (*_LineInfo)(unsafe.Pointer(info)).Flinedata != 0 {
-				x__flexbuf_printf(tls, cc, f, __ccgo_ts+90155, libc.VaList(bp+8, (*_LineInfo)(unsafe.Pointer(info)).Flinedata))
+				x__flexbuf_printf(tls, cc, f, __ccgo_ts+90161, libc.VaList(bp+8, (*_LineInfo)(unsafe.Pointer(info)).Flinedata))
 			}
 		} else {
 			if (*_AST)(unsafe.Pointer(ast)).Fkind != int32(_AST_COMMENT) {
-				x__ERROR(tls, cc, ast, __ccgo_ts+29593, 0)
+				x__ERROR(tls, cc, ast, __ccgo_ts+29601, 0)
 				return
 			}
 			x__PrintCommentString(tls, cc, f, *(*uintptr)(unsafe.Pointer(ast + 8)), indent)
@@ -42226,15 +42351,15 @@ func x__PrintInteger(tls *libc.TLS, cc *CC, f uintptr, v _int32_t, flags int32) 
 			v = v * int32(4) // adjust for COG addressing
 		}
 		if v > -int32(10) && v < int32(10) {
-			x__flexbuf_printf(tls, cc, f, __ccgo_ts+99460, libc.VaList(bp+8, int64(v)))
+			x__flexbuf_printf(tls, cc, f, __ccgo_ts+99466, libc.VaList(bp+8, int64(v)))
 		} else {
-			x__flexbuf_printf(tls, cc, f, __ccgo_ts+99464, libc.VaList(bp+8, libc.Int64FromUint32(libc.Uint32FromInt32(v))))
+			x__flexbuf_printf(tls, cc, f, __ccgo_ts+99470, libc.VaList(bp+8, libc.Int64FromUint32(libc.Uint32FromInt32(v))))
 		}
 	} else {
 		if v == libc.Int32FromUint32(0x80000000) {
-			x__flexbuf_printf(tls, cc, f, __ccgo_ts+99469, libc.VaList(bp+8, cc.x__gl_intstring, libc.Int64FromUint32(libc.Uint32FromInt32(v))))
+			x__flexbuf_printf(tls, cc, f, __ccgo_ts+99475, libc.VaList(bp+8, cc.x__gl_intstring, libc.Int64FromUint32(libc.Uint32FromInt32(v))))
 		} else {
-			x__flexbuf_printf(tls, cc, f, __ccgo_ts+99460, libc.VaList(bp+8, int64(v)))
+			x__flexbuf_printf(tls, cc, f, __ccgo_ts+99466, libc.VaList(bp+8, int64(v)))
 		}
 	}
 }
@@ -42261,13 +42386,13 @@ func x__PrintLHS(tls *libc.TLS, cc *CC, f uintptr, expr uintptr, flags int32) {
 	switch (*_AST)(unsafe.Pointer(expr)).Fkind {
 	case int32(_AST_RESULT):
 		if flags&int32(m_PRINTEXPR_DEBUG) != 0 {
-			x__flexbuf_addstr(tls, cc, f, __ccgo_ts+100680)
+			x__flexbuf_addstr(tls, cc, f, __ccgo_ts+100686)
 		} else {
 			if !(cc.x__curfunc != 0) {
-				x__ERROR(tls, cc, expr, __ccgo_ts+100687, 0)
+				x__ERROR(tls, cc, expr, __ccgo_ts+100693, 0)
 			} else {
 				if (*_Function)(unsafe.Pointer(cc.x__curfunc)).Fresult_in_parmarray != 0 {
-					x__flexbuf_printf(tls, cc, f, __ccgo_ts+99554, libc.VaList(bp+8, (*_Function)(unsafe.Pointer(cc.x__curfunc)).Fparmarray))
+					x__flexbuf_printf(tls, cc, f, __ccgo_ts+99560, libc.VaList(bp+8, (*_Function)(unsafe.Pointer(cc.x__curfunc)).Fparmarray))
 				} else {
 					x__PrintLHS(tls, cc, f, (*_Function)(unsafe.Pointer(cc.x__curfunc)).Fresultexpr, flags)
 				}
@@ -42287,14 +42412,14 @@ func x__PrintLHS(tls *libc.TLS, cc *CC, f uintptr, expr uintptr, flags int32) {
 			} else {
 				if (*_Symbol)(unsafe.Pointer(sym)).Fkind == int32(_SYM_FUNCTION) || (*_Symbol)(unsafe.Pointer(sym)).Fkind == int32(_SYM_BUILTIN) {
 					if assignment != 0 {
-						x__ERROR(tls, cc, expr, __ccgo_ts+100722, libc.VaList(bp+8, (*_Symbol)(unsafe.Pointer(sym)).Fuser_name))
+						x__ERROR(tls, cc, expr, __ccgo_ts+100728, libc.VaList(bp+8, (*_Symbol)(unsafe.Pointer(sym)).Fuser_name))
 					} else {
 						if (*_Symbol)(unsafe.Pointer(sym)).Fkind == int32(_SYM_BUILTIN) {
 							b = *(*uintptr)(unsafe.Pointer(sym + 32))
 							(*(*func(*libc.TLS, *CC, uintptr, uintptr, uintptr))(unsafe.Pointer(&struct{ uintptr }{(*_Builtin)(unsafe.Pointer(b)).Fprintit})))(tls, cc, f, b, libc.UintptrFromInt32(0))
 						} else {
 							if cc.x__gl_output == int32(m_OUTPUT_C) {
-								x__flexbuf_printf(tls, cc, f, __ccgo_ts+97324, libc.VaList(bp+8, (*_Module)(unsafe.Pointer(cc.x__current)).Fclassname))
+								x__flexbuf_printf(tls, cc, f, __ccgo_ts+97330, libc.VaList(bp+8, (*_Module)(unsafe.Pointer(cc.x__current)).Fclassname))
 							}
 							x__PrintFuncCall(tls, cc, f, sym, libc.UintptrFromInt32(0), libc.UintptrFromInt32(0), libc.UintptrFromInt32(0))
 						}
@@ -42310,7 +42435,7 @@ func x__PrintLHS(tls *libc.TLS, cc *CC, f uintptr, expr uintptr, flags int32) {
 		fallthrough
 	case int32(_AST_ABSADDROF):
 		if !(ref != 0) {
-			x__flexbuf_printf(tls, cc, f, __ccgo_ts+100764, libc.VaList(bp+8, cc.x__gl_intstring))
+			x__flexbuf_printf(tls, cc, f, __ccgo_ts+100770, libc.VaList(bp+8, cc.x__gl_intstring))
 		}
 		x__PrintLHS(tls, cc, f, (*_AST)(unsafe.Pointer(expr)).Fleft, flags|int32(m_PRINTEXPR_ISREF))
 	case int32(_AST_ARRAYREF):
@@ -42324,29 +42449,29 @@ func x__PrintLHS(tls *libc.TLS, cc *CC, f uintptr, expr uintptr, flags int32) {
 			x__PrintLHS(tls, cc, f, (*_AST)(unsafe.Pointer(expr)).Fleft, flags)
 		} else {
 			if sym != 0 && (*_Symbol)(unsafe.Pointer(sym)).Fkind == int32(_SYM_LOCALVAR) && cc.x__curfunc != 0 && (*_Function)(unsafe.Pointer(cc.x__curfunc)).Flocalarray != 0 {
-				x__flexbuf_printf(tls, cc, f, __ccgo_ts+100769, libc.VaList(bp+8, (*_Function)(unsafe.Pointer(cc.x__curfunc)).Flocalarray, (*_Symbol)(unsafe.Pointer(sym)).Foffset/int32(4)))
+				x__flexbuf_printf(tls, cc, f, __ccgo_ts+100775, libc.VaList(bp+8, (*_Function)(unsafe.Pointer(cc.x__curfunc)).Flocalarray, (*_Symbol)(unsafe.Pointer(sym)).Foffset/int32(4)))
 				x__PrintExpr(tls, cc, f, (*_AST)(unsafe.Pointer(expr)).Fright, flags)
-				x__flexbuf_printf(tls, cc, f, __ccgo_ts+61637, 0)
+				x__flexbuf_printf(tls, cc, f, __ccgo_ts+61645, 0)
 			} else {
 				if sym != 0 && !(x__IsArrayOrPointerSymbol(tls, cc, sym) != 0) {
 					//                ERROR(expr, "array dereference of bad symbol %s", sym->user_name);
-					x__flexbuf_printf(tls, cc, f, __ccgo_ts+100778, 0)
+					x__flexbuf_printf(tls, cc, f, __ccgo_ts+100784, 0)
 					x__PrintLHS(tls, cc, f, (*_AST)(unsafe.Pointer(expr)).Fleft, flags|int32(m_PRINTEXPR_ISREF))
-					x__flexbuf_printf(tls, cc, f, __ccgo_ts+28072, 0)
+					x__flexbuf_printf(tls, cc, f, __ccgo_ts+28080, 0)
 				} else {
 					x__PrintLHS(tls, cc, f, (*_AST)(unsafe.Pointer(expr)).Fleft, flags|int32(m_PRINTEXPR_ISREF))
 				}
-				x__flexbuf_printf(tls, cc, f, __ccgo_ts+61635, 0)
+				x__flexbuf_printf(tls, cc, f, __ccgo_ts+61643, 0)
 				x__PrintExpr(tls, cc, f, (*_AST)(unsafe.Pointer(expr)).Fright, flags)
-				x__flexbuf_printf(tls, cc, f, __ccgo_ts+61637, 0)
+				x__flexbuf_printf(tls, cc, f, __ccgo_ts+61645, 0)
 			}
 		}
 	case int32(_AST_HWREG):
 		hw = *(*uintptr)(unsafe.Pointer(expr + 8))
 		if flags&(libc.Int32FromInt32(m_PRINTEXPR_GAS)|libc.Int32FromInt32(m_PRINTEXPR_DEBUG)) != 0 {
-			x__flexbuf_printf(tls, cc, f, __ccgo_ts+7088, libc.VaList(bp+8, (*_HwReg)(unsafe.Pointer(hw)).Fname))
+			x__flexbuf_printf(tls, cc, f, __ccgo_ts+7090, libc.VaList(bp+8, (*_HwReg)(unsafe.Pointer(hw)).Fname))
 		} else {
-			x__flexbuf_printf(tls, cc, f, __ccgo_ts+7088, libc.VaList(bp+8, (*_HwReg)(unsafe.Pointer(hw)).Fcname))
+			x__flexbuf_printf(tls, cc, f, __ccgo_ts+7090, libc.VaList(bp+8, (*_HwReg)(unsafe.Pointer(hw)).Fcname))
 		}
 	case int32(_AST_MEMREF):
 		flags = flags & ^(libc.Int32FromInt32(m_PRINTEXPR_ISREF) | libc.Int32FromInt32(m_PRINTEXPR_ASSIGNMENT))
@@ -42355,17 +42480,17 @@ func x__PrintLHS(tls *libc.TLS, cc *CC, f uintptr, expr uintptr, flags int32) {
 		s__PrintStringLiteral(tls, cc, f, *(*uintptr)(unsafe.Pointer(expr + 8)))
 	case int32(_AST_METHODREF):
 		x__PrintExpr(tls, cc, f, (*_AST)(unsafe.Pointer(expr)).Fleft, flags)
-		x__flexbuf_addstr(tls, cc, f, __ccgo_ts+99415)
+		x__flexbuf_addstr(tls, cc, f, __ccgo_ts+99421)
 		thename = x__GetIdentifierName(tls, cc, (*_AST)(unsafe.Pointer(expr)).Fright)
 		if !(thename != 0) {
-			x__ERROR(tls, cc, expr, __ccgo_ts+100781, 0)
+			x__ERROR(tls, cc, expr, __ccgo_ts+100787, 0)
 			break
 		}
 		x__flexbuf_addstr(tls, cc, f, thename)
 	case int32(_AST_CAST):
 		x__PrintTypedExpr(tls, cc, f, (*_AST)(unsafe.Pointer(expr)).Fleft, (*_AST)(unsafe.Pointer(expr)).Fright, flags)
 	default:
-		x__ERROR(tls, cc, expr, __ccgo_ts+100819, 0)
+		x__ERROR(tls, cc, expr, __ccgo_ts+100825, 0)
 		break
 	}
 }
@@ -42399,7 +42524,7 @@ func x__PrintLookupArray(tls *libc.TLS, cc *CC, f uintptr, array uintptr, flags 
 				if !(i <= d) {
 					break
 				}
-				x__flexbuf_printf(tls, cc, f, __ccgo_ts+101115, libc.VaList(bp+8, i))
+				x__flexbuf_printf(tls, cc, f, __ccgo_ts+101121, libc.VaList(bp+8, i))
 				sz = sz + 1
 				goto _1
 			_1:
@@ -42410,12 +42535,12 @@ func x__PrintLookupArray(tls *libc.TLS, cc *CC, f uintptr, array uintptr, flags 
 			if (*_AST)(unsafe.Pointer(expr)).Fkind == int32(_AST_STRING) {
 				s = *(*uintptr)(unsafe.Pointer(expr + 8))
 				for **(**int8)(__ccgo_up(s)) != 0 {
-					x__flexbuf_printf(tls, cc, f, __ccgo_ts+101115, libc.VaList(bp+8, int32(**(**int8)(__ccgo_up(s)))))
+					x__flexbuf_printf(tls, cc, f, __ccgo_ts+101121, libc.VaList(bp+8, int32(**(**int8)(__ccgo_up(s)))))
 					s = s + 1
 				}
 			} else {
 				x__PrintExpr(tls, cc, f, expr, flags)
-				x__flexbuf_printf(tls, cc, f, __ccgo_ts+60153, 0)
+				x__flexbuf_printf(tls, cc, f, __ccgo_ts+60161, 0)
 				sz = sz + 1
 			}
 		}
@@ -42437,7 +42562,7 @@ func x__PrintRangeAssign(tls *libc.TLS, cc *CC, f uintptr, dst uintptr, src uint
 	var lhs, newast, rhs uintptr
 	var op int32
 	_, _, _, _ = lhs, newast, op, rhs
-	x__ERROR(tls, cc, dst, __ccgo_ts+100845, 0)
+	x__ERROR(tls, cc, dst, __ccgo_ts+100851, 0)
 	newast = x__TransformRangeAssign(tls, cc, dst, src, 0, 0)
 	/* try to pretty print if we can */
 	lhs = (*_AST)(unsafe.Pointer(newast)).Fleft
@@ -42447,9 +42572,9 @@ func x__PrintRangeAssign(tls *libc.TLS, cc *CC, f uintptr, dst uintptr, src uint
 		if op == int32('&') || op == int32('|') || op == int32('^') {
 			rhs = (*_AST)(unsafe.Pointer(rhs)).Fright
 			x__PrintLHS(tls, cc, f, lhs, flags|int32(m_PRINTEXPR_ASSIGNMENT))
-			x__flexbuf_printf(tls, cc, f, __ccgo_ts+100898, libc.VaList(bp+8, op))
+			x__flexbuf_printf(tls, cc, f, __ccgo_ts+100904, libc.VaList(bp+8, op))
 			if (*_AST)(unsafe.Pointer(rhs)).Fkind == int32(_AST_INTEGER) {
-				x__flexbuf_printf(tls, cc, f, __ccgo_ts+100100, libc.VaList(bp+8, *(*_uint64_t)(unsafe.Pointer(rhs + 8))))
+				x__flexbuf_printf(tls, cc, f, __ccgo_ts+100106, libc.VaList(bp+8, *(*_uint64_t)(unsafe.Pointer(rhs + 8))))
 			} else {
 				x__PrintExpr(tls, cc, f, rhs, flags)
 			}
@@ -42468,7 +42593,7 @@ func x__PrintRangeUse(tls *libc.TLS, cc *CC, f uintptr, src uintptr, flags int32
 	var expr uintptr
 	_ = expr
 	expr = x__TransformRangeUse(tls, cc, src)
-	x__ERROR(tls, cc, src, __ccgo_ts+100904, 0)
+	x__ERROR(tls, cc, src, __ccgo_ts+100910, 0)
 	x__PrintExpr(tls, cc, f, expr, flags)
 }
 
@@ -42484,75 +42609,75 @@ func x__PrintSpinCoginit(tls *libc.TLS, cc *CC, f uintptr, body uintptr) {
 	if (*_AST)(unsafe.Pointer(body)).Fkind == int32(_AST_COGINIT) {
 		body = (*_AST)(unsafe.Pointer(body)).Fleft
 	} else {
-		x__ERROR(tls, cc, params, __ccgo_ts+99588, 0)
+		x__ERROR(tls, cc, params, __ccgo_ts+99594, 0)
 		return
 	}
 	if !(body != 0) || (*_AST)(unsafe.Pointer(body)).Fkind != int32(_AST_EXPRLIST) {
-		x__ERROR(tls, cc, body, __ccgo_ts+99752, 0)
+		x__ERROR(tls, cc, body, __ccgo_ts+99758, 0)
 		return
 	}
 	cogid = (*_AST)(unsafe.Pointer(body)).Fleft
 	body = (*_AST)(unsafe.Pointer(body)).Fright
 	if !(body != 0) || (*_AST)(unsafe.Pointer(body)).Fkind != int32(_AST_EXPRLIST) {
-		x__ERROR(tls, cc, body, __ccgo_ts+99777, 0)
+		x__ERROR(tls, cc, body, __ccgo_ts+99783, 0)
 		return
 	}
 	func1 = (*_AST)(unsafe.Pointer(body)).Fleft
 	stack = (*_AST)(unsafe.Pointer(body)).Fright
 	if !(stack != 0) || !(func1 != 0) {
-		x__ERROR(tls, cc, body, __ccgo_ts+99808, 0)
+		x__ERROR(tls, cc, body, __ccgo_ts+99814, 0)
 		return
 	}
 	if (*_AST)(unsafe.Pointer(stack)).Fkind != int32(_AST_EXPRLIST) {
-		x__ERROR(tls, cc, stack, __ccgo_ts+99859, 0)
+		x__ERROR(tls, cc, stack, __ccgo_ts+99865, 0)
 		return
 	}
 	if (*_AST)(unsafe.Pointer(stack)).Fright != uintptr(0) {
-		x__ERROR(tls, cc, stack, __ccgo_ts+99894, 0)
+		x__ERROR(tls, cc, stack, __ccgo_ts+99900, 0)
 		return
 	}
 	stack = (*_AST)(unsafe.Pointer(stack)).Fleft
 	if (*_AST)(unsafe.Pointer(func1)).Fkind == int32(_AST_IDENTIFIER) || (*_AST)(unsafe.Pointer(func1)).Fkind == int32(_AST_LOCAL_IDENTIFIER) {
-		sym = x__LookupAstSymbol(tls, cc, func1, __ccgo_ts+25052)
+		sym = x__LookupAstSymbol(tls, cc, func1, __ccgo_ts+25060)
 	} else {
 		if (*_AST)(unsafe.Pointer(func1)).Fkind == int32(_AST_FUNCCALL) {
-			sym = x__LookupAstSymbol(tls, cc, (*_AST)(unsafe.Pointer(func1)).Fleft, __ccgo_ts+25052)
+			sym = x__LookupAstSymbol(tls, cc, (*_AST)(unsafe.Pointer(func1)).Fleft, __ccgo_ts+25060)
 			params = (*_AST)(unsafe.Pointer(func1)).Fright
 		}
 	}
 	if !(sym != 0) || (*_Symbol)(unsafe.Pointer(sym)).Fkind != int32(_SYM_FUNCTION) {
-		x__ERROR(tls, cc, body, __ccgo_ts+99932, 0)
+		x__ERROR(tls, cc, body, __ccgo_ts+99938, 0)
 		return
 	}
-	x__flexbuf_printf(tls, cc, f, __ccgo_ts+99961, 0)
+	x__flexbuf_printf(tls, cc, f, __ccgo_ts+99967, 0)
 	x__PrintExpr(tls, cc, f, cogid, int32(m_PRINTEXPR_TOPLEVEL))
-	x__flexbuf_printf(tls, cc, f, __ccgo_ts+99972, 0)
+	x__flexbuf_printf(tls, cc, f, __ccgo_ts+99978, 0)
 	/* need to find stack size */
 	x__PrintStackWithSize(tls, cc, f, stack)
-	x__flexbuf_printf(tls, cc, f, __ccgo_ts+99972, 0)
+	x__flexbuf_printf(tls, cc, f, __ccgo_ts+99978, 0)
 	if cc.x__gl_output == int32(m_OUTPUT_C) && sym != 0 && (*_Symbol)(unsafe.Pointer(sym)).Fkind == int32(_SYM_FUNCTION) {
-		x__flexbuf_printf(tls, cc, f, __ccgo_ts+97324, libc.VaList(bp+8, (*_Module)(unsafe.Pointer(cc.x__current)).Fclassname))
+		x__flexbuf_printf(tls, cc, f, __ccgo_ts+97330, libc.VaList(bp+8, (*_Module)(unsafe.Pointer(cc.x__current)).Fclassname))
 	}
 	x__PrintSymbol(tls, cc, f, sym, m_PRINTEXPR_DEFAULT)
 	/* print parameters, and pad with 0's */
 	for params != 0 || n < int32(4) {
 		if params != 0 && (*_AST)(unsafe.Pointer(params)).Fkind != int32(_AST_EXPRLIST) {
-			x__ERROR(tls, cc, params, __ccgo_ts+99983, 0)
+			x__ERROR(tls, cc, params, __ccgo_ts+99989, 0)
 			return
 		}
-		x__flexbuf_printf(tls, cc, f, __ccgo_ts+60153, 0)
+		x__flexbuf_printf(tls, cc, f, __ccgo_ts+60161, 0)
 		if params != 0 {
 			x__PrintTypedExpr(tls, cc, f, libc.UintptrFromInt32(0), (*_AST)(unsafe.Pointer(params)).Fleft, int32(m_PRINTEXPR_TOPLEVEL))
 			params = (*_AST)(unsafe.Pointer(params)).Fright
 		} else {
-			x__flexbuf_printf(tls, cc, f, __ccgo_ts+65969, 0)
+			x__flexbuf_printf(tls, cc, f, __ccgo_ts+2841, 0)
 		}
 		n = n + 1
 	}
 	if n > int32(4) {
-		x__ERROR(tls, cc, body, __ccgo_ts+100008, 0)
+		x__ERROR(tls, cc, body, __ccgo_ts+100014, 0)
 	}
-	x__flexbuf_printf(tls, cc, f, __ccgo_ts+28072, 0)
+	x__flexbuf_printf(tls, cc, f, __ccgo_ts+28080, 0)
 }
 
 func x__PrintStackWithSize(tls *libc.TLS, cc *CC, f uintptr, origstack uintptr) {
@@ -42563,31 +42688,31 @@ func x__PrintStackWithSize(tls *libc.TLS, cc *CC, f uintptr, origstack uintptr) 
 	_, _, _, _ = stack, stacksize, stype, sym
 	stack = origstack
 	if (*_AST)(unsafe.Pointer(stack)).Fkind != int32(_AST_ADDROF) {
-		x__ERROR(tls, cc, stack, __ccgo_ts+99613, 0)
+		x__ERROR(tls, cc, stack, __ccgo_ts+99619, 0)
 		return
 	}
 	stack = (*_AST)(unsafe.Pointer(stack)).Fleft
 	if (*_AST)(unsafe.Pointer(stack)).Fkind != int32(_AST_ARRAYREF) || !((*_AST)(unsafe.Pointer(stack)).Fleft != 0) {
-		x__ERROR(tls, cc, stack, __ccgo_ts+99652, 0)
+		x__ERROR(tls, cc, stack, __ccgo_ts+99658, 0)
 		return
 	}
 	if !((*_AST)(unsafe.Pointer((*_AST)(unsafe.Pointer(stack)).Fleft)).Fkind == int32(_AST_IDENTIFIER) || (*_AST)(unsafe.Pointer((*_AST)(unsafe.Pointer(stack)).Fleft)).Fkind == int32(_AST_LOCAL_IDENTIFIER)) {
-		x__ERROR(tls, cc, stack, __ccgo_ts+99690, 0)
+		x__ERROR(tls, cc, stack, __ccgo_ts+99696, 0)
 		return
 	}
-	sym = x__LookupAstSymbol(tls, cc, (*_AST)(unsafe.Pointer(stack)).Fleft, __ccgo_ts+25052)
+	sym = x__LookupAstSymbol(tls, cc, (*_AST)(unsafe.Pointer(stack)).Fleft, __ccgo_ts+25060)
 	if !(sym != 0) {
 		return
 	}
 	stype = *(*uintptr)(unsafe.Pointer(sym + 32))
 	if !(stype != 0) || (*_AST)(unsafe.Pointer(stype)).Fkind != int32(_AST_ARRAYTYPE) {
-		x__ERROR(tls, cc, stack, __ccgo_ts+99720, 0)
+		x__ERROR(tls, cc, stack, __ccgo_ts+99726, 0)
 		return
 	}
 	stacksize = int32(x__EvalConstExpr(tls, cc, (*_AST)(unsafe.Pointer(stype)).Fright) * int64(x__TypeSize(tls, cc, (*_AST)(unsafe.Pointer(stype)).Fleft)))
 	/* now change the array reference to use the top of stack */
 	x__PrintSymbol(tls, cc, f, sym, m_PRINTEXPR_DEFAULT)
-	x__flexbuf_printf(tls, cc, f, __ccgo_ts+99747, libc.VaList(bp+8, stacksize))
+	x__flexbuf_printf(tls, cc, f, __ccgo_ts+99753, libc.VaList(bp+8, stacksize))
 }
 
 func x__PrintStatementList(tls *libc.TLS, cc *CC, f uintptr, ast uintptr, indent int32) {
@@ -42595,7 +42720,7 @@ func x__PrintStatementList(tls *libc.TLS, cc *CC, f uintptr, ast uintptr, indent
 	defer tls.Free(16)
 	for ast != 0 {
 		if (*_AST)(unsafe.Pointer(ast)).Fkind != int32(_AST_STMTLIST) {
-			x__ERROR(tls, cc, ast, __ccgo_ts+48728, libc.VaList(bp+8, (*_AST)(unsafe.Pointer(ast)).Fkind))
+			x__ERROR(tls, cc, ast, __ccgo_ts+48736, libc.VaList(bp+8, (*_AST)(unsafe.Pointer(ast)).Fkind))
 			return
 		}
 		s__PrintStatement(tls, cc, f, (*_AST)(unsafe.Pointer(ast)).Fleft, indent)
@@ -42635,21 +42760,21 @@ func x__PrintTypedExpr(tls *libc.TLS, cc *CC, f uintptr, casttype uintptr, expr 
 	if !(x__CompatibleTypes(tls, cc, et, casttype) != 0) || needCast != 0 {
 		needCloseParen = libc.BoolUint8(!(flags&libc.Int32FromInt32(m_PRINTEXPR_TOPLEVEL) != 0))
 		if needCloseParen != 0 {
-			x__flexbuf_printf(tls, cc, f, __ccgo_ts+28070, 0)
+			x__flexbuf_printf(tls, cc, f, __ccgo_ts+28078, 0)
 		}
-		x__flexbuf_printf(tls, cc, f, __ccgo_ts+28070, 0)
+		x__flexbuf_printf(tls, cc, f, __ccgo_ts+28078, 0)
 		x__PrintCastType(tls, cc, f, casttype)
-		x__flexbuf_printf(tls, cc, f, __ccgo_ts+28072, 0)
+		x__flexbuf_printf(tls, cc, f, __ccgo_ts+28080, 0)
 	}
 	if addZero != 0 {
-		x__flexbuf_printf(tls, cc, f, __ccgo_ts+28070, 0)
+		x__flexbuf_printf(tls, cc, f, __ccgo_ts+28078, 0)
 	}
 	x__PrintExpr(tls, cc, f, expr, flags)
 	if addZero != 0 {
-		x__flexbuf_printf(tls, cc, f, __ccgo_ts+101688, 0)
+		x__flexbuf_printf(tls, cc, f, __ccgo_ts+101694, 0)
 	}
 	if needCloseParen != 0 {
-		x__flexbuf_printf(tls, cc, f, __ccgo_ts+28072, 0)
+		x__flexbuf_printf(tls, cc, f, __ccgo_ts+28080, 0)
 	}
 }
 
@@ -42697,49 +42822,49 @@ func x__ProcessCommandLine(tls *libc.TLS, cc *CC, cmd uintptr) (r int32) {
 	x__pp_define(tls, cc, uintptr(unsafe.Pointer(&cc.x__gl_pp)), __ccgo_ts+2784, __ccgo_ts+2745)
 	// exact version number
 	x__pp_define(tls, cc, uintptr(unsafe.Pointer(&cc.x__gl_pp)), __ccgo_ts+2796, __ccgo_ts+2745)
-	x__pp_define(tls, cc, uintptr(unsafe.Pointer(&cc.x__gl_pp)), __ccgo_ts+2811, __ccgo_ts+2745)
-	x__pp_define(tls, cc, uintptr(unsafe.Pointer(&cc.x__gl_pp)), __ccgo_ts+2826, __ccgo_ts+2839)
+	x__pp_define(tls, cc, uintptr(unsafe.Pointer(&cc.x__gl_pp)), __ccgo_ts+2811, __ccgo_ts+2826)
+	x__pp_define(tls, cc, uintptr(unsafe.Pointer(&cc.x__gl_pp)), __ccgo_ts+2828, __ccgo_ts+2841)
 	// time and date versions
 	**(**_time_t)(__ccgo_up(bp + 256)) = libc.Xtime(tls, libc.UintptrFromInt32(0))
 	tm = libc.Xlocaltime(tls, bp+256)
-	libc.Xsprintf(tls, bp, __ccgo_ts+2841, libc.VaList(bp+408, uintptr(unsafe.Pointer(&cc.x__version_string))))
-	x__pp_define(tls, cc, uintptr(unsafe.Pointer(&cc.x__gl_pp)), __ccgo_ts+2846, libc.Xstrdup(tls, bp))
-	libc.Xstrftime(tls, bp, uint64(256), __ccgo_ts+2858, tm)
-	x__pp_define(tls, cc, uintptr(unsafe.Pointer(&cc.x__gl_pp)), __ccgo_ts+2869, libc.Xstrdup(tls, bp))
-	libc.Xstrftime(tls, bp, uint64(256), __ccgo_ts+2878, tm)
-	x__pp_define(tls, cc, uintptr(unsafe.Pointer(&cc.x__gl_pp)), __ccgo_ts+2889, libc.Xstrdup(tls, bp))
+	libc.Xsprintf(tls, bp, __ccgo_ts+2843, libc.VaList(bp+408, uintptr(unsafe.Pointer(&cc.x__version_string))))
+	x__pp_define(tls, cc, uintptr(unsafe.Pointer(&cc.x__gl_pp)), __ccgo_ts+2848, libc.Xstrdup(tls, bp))
+	libc.Xstrftime(tls, bp, uint64(256), __ccgo_ts+2860, tm)
+	x__pp_define(tls, cc, uintptr(unsafe.Pointer(&cc.x__gl_pp)), __ccgo_ts+2871, libc.Xstrdup(tls, bp))
+	libc.Xstrftime(tls, bp, uint64(256), __ccgo_ts+2880, tm)
+	x__pp_define(tls, cc, uintptr(unsafe.Pointer(&cc.x__gl_pp)), __ccgo_ts+2891, libc.Xstrdup(tls, bp))
 	if cc.x__gl_cenv_flags&int32(m_CENV_PROVIDE_EXIT) != 0 {
-		x__pp_define(tls, cc, uintptr(unsafe.Pointer(&cc.x__gl_pp)), __ccgo_ts+2898, __ccgo_ts+2330)
+		x__pp_define(tls, cc, uintptr(unsafe.Pointer(&cc.x__gl_pp)), __ccgo_ts+2900, __ccgo_ts+2330)
 	}
 	if cc.x__gl_cenv_flags&int32(m_CENV_NO_CRNL) != 0 {
-		x__pp_define(tls, cc, uintptr(unsafe.Pointer(&cc.x__gl_pp)), __ccgo_ts+2914, __ccgo_ts+2330)
+		x__pp_define(tls, cc, uintptr(unsafe.Pointer(&cc.x__gl_pp)), __ccgo_ts+2916, __ccgo_ts+2330)
 	}
 	if cc.x__gl_debug != 0 {
-		x__pp_define(tls, cc, uintptr(unsafe.Pointer(&cc.x__gl_pp)), __ccgo_ts+2932, __ccgo_ts+2330)
+		x__pp_define(tls, cc, uintptr(unsafe.Pointer(&cc.x__gl_pp)), __ccgo_ts+2934, __ccgo_ts+2330)
 	}
 	if cc.x__gl_output == int32(m_OUTPUT_ASM) || cc.x__gl_output == int32(m_OUTPUT_COGSPIN) {
-		x__pp_define(tls, cc, uintptr(unsafe.Pointer(&cc.x__gl_pp)), __ccgo_ts+2942, __ccgo_ts+2330)
-		x__pp_define(tls, cc, uintptr(unsafe.Pointer(&cc.x__gl_pp)), __ccgo_ts+2956, __ccgo_ts+2330)
+		x__pp_define(tls, cc, uintptr(unsafe.Pointer(&cc.x__gl_pp)), __ccgo_ts+2944, __ccgo_ts+2330)
+		x__pp_define(tls, cc, uintptr(unsafe.Pointer(&cc.x__gl_pp)), __ccgo_ts+2958, __ccgo_ts+2330)
 	} else {
 		if cc.x__gl_output == m_OUTPUT_CPP || cc.x__gl_output == int32(m_OUTPUT_C) {
-			x__pp_define(tls, cc, uintptr(unsafe.Pointer(&cc.x__gl_pp)), __ccgo_ts+2971, __ccgo_ts+2330)
+			x__pp_define(tls, cc, uintptr(unsafe.Pointer(&cc.x__gl_pp)), __ccgo_ts+2973, __ccgo_ts+2330)
 			if cc.x__gl_output == m_OUTPUT_CPP {
-				x__pp_define(tls, cc, uintptr(unsafe.Pointer(&cc.x__gl_pp)), __ccgo_ts+2984, __ccgo_ts+2330)
-				x__pp_define(tls, cc, uintptr(unsafe.Pointer(&cc.x__gl_pp)), __ccgo_ts+2996, __ccgo_ts+2330)
+				x__pp_define(tls, cc, uintptr(unsafe.Pointer(&cc.x__gl_pp)), __ccgo_ts+2986, __ccgo_ts+2330)
+				x__pp_define(tls, cc, uintptr(unsafe.Pointer(&cc.x__gl_pp)), __ccgo_ts+2998, __ccgo_ts+2330)
 			} else {
-				x__pp_define(tls, cc, uintptr(unsafe.Pointer(&cc.x__gl_pp)), __ccgo_ts+3011, __ccgo_ts+2330)
+				x__pp_define(tls, cc, uintptr(unsafe.Pointer(&cc.x__gl_pp)), __ccgo_ts+3013, __ccgo_ts+2330)
 			}
 		} else {
 			if cc.x__gl_output == int32(m_OUTPUT_BYTECODE) {
-				x__pp_define(tls, cc, uintptr(unsafe.Pointer(&cc.x__gl_pp)), __ccgo_ts+3024, __ccgo_ts+2330)
+				x__pp_define(tls, cc, uintptr(unsafe.Pointer(&cc.x__gl_pp)), __ccgo_ts+3026, __ccgo_ts+2330)
 				if cc.x__gl_interp_kind == int32(m_INTERP_KIND_P1ROM) {
-					x__pp_define(tls, cc, uintptr(unsafe.Pointer(&cc.x__gl_pp)), __ccgo_ts+3044, __ccgo_ts+2330)
+					x__pp_define(tls, cc, uintptr(unsafe.Pointer(&cc.x__gl_pp)), __ccgo_ts+3046, __ccgo_ts+2330)
 				} else {
 					if cc.x__gl_interp_kind == int32(m_INTERP_KIND_P2SPIN) {
-						x__pp_define(tls, cc, uintptr(unsafe.Pointer(&cc.x__gl_pp)), __ccgo_ts+3070, __ccgo_ts+2330)
+						x__pp_define(tls, cc, uintptr(unsafe.Pointer(&cc.x__gl_pp)), __ccgo_ts+3072, __ccgo_ts+2330)
 					} else {
 						if cc.x__gl_interp_kind == int32(m_INTERP_KIND_NUCODE) {
-							x__pp_define(tls, cc, uintptr(unsafe.Pointer(&cc.x__gl_pp)), __ccgo_ts+3097, __ccgo_ts+2330)
+							x__pp_define(tls, cc, uintptr(unsafe.Pointer(&cc.x__gl_pp)), __ccgo_ts+3099, __ccgo_ts+2330)
 						}
 					}
 				}
@@ -42750,9 +42875,9 @@ func x__ProcessCommandLine(tls *libc.TLS, cc *CC, cmd uintptr) (r int32) {
 		basename = cc.x__gl_outname
 	} else {
 		if **(**uintptr)(__ccgo_up(cmd + 72)) != 0 {
-			basename = x__ReplaceExtension(tls, cc, **(**uintptr)(__ccgo_up(cmd + 72)), __ccgo_ts+3124)
+			basename = x__ReplaceExtension(tls, cc, **(**uintptr)(__ccgo_up(cmd + 72)), __ccgo_ts+3126)
 		} else {
-			basename = __ccgo_ts + 3132
+			basename = __ccgo_ts + 3134
 		}
 	}
 	len1 = libc.Xstrlen(tls, basename) + uint64(2)
@@ -42761,20 +42886,20 @@ func x__ProcessCommandLine(tls *libc.TLS, cc *CC, cmd uintptr) (r int32) {
 	libc.Xstrcpy(tls, our_progname+uintptr(1), basename)
 	**(**int8)(__ccgo_up(our_progname + uintptr(len1-uint64(1)))) = int8('"')
 	**(**int8)(__ccgo_up(our_progname + uintptr(len1))) = 0
-	x__pp_define(tls, cc, uintptr(unsafe.Pointer(&cc.x__gl_pp)), __ccgo_ts+3141, our_progname)
-	x__pp_define(tls, cc, uintptr(unsafe.Pointer(&cc.x__gl_pp)), __ccgo_ts+3162, __ccgo_ts+2330)
+	x__pp_define(tls, cc, uintptr(unsafe.Pointer(&cc.x__gl_pp)), __ccgo_ts+3143, our_progname)
+	x__pp_define(tls, cc, uintptr(unsafe.Pointer(&cc.x__gl_pp)), __ccgo_ts+3164, __ccgo_ts+2330)
 	if cc.x__gl_p2 != 0 {
-		x__pp_define(tls, cc, uintptr(unsafe.Pointer(&cc.x__gl_pp)), __ccgo_ts+3172, __ccgo_ts+2330)
-		x__pp_define(tls, cc, uintptr(unsafe.Pointer(&cc.x__gl_pp)), __ccgo_ts+3179, __ccgo_ts+2330)
+		x__pp_define(tls, cc, uintptr(unsafe.Pointer(&cc.x__gl_pp)), __ccgo_ts+3174, __ccgo_ts+2330)
+		x__pp_define(tls, cc, uintptr(unsafe.Pointer(&cc.x__gl_pp)), __ccgo_ts+3181, __ccgo_ts+2330)
 	} else {
-		x__pp_define(tls, cc, uintptr(unsafe.Pointer(&cc.x__gl_pp)), __ccgo_ts+3194, __ccgo_ts+2330)
+		x__pp_define(tls, cc, uintptr(unsafe.Pointer(&cc.x__gl_pp)), __ccgo_ts+3196, __ccgo_ts+2330)
 	}
 	if cc.x__gl_fixedreal != 0 {
-		x__pp_define(tls, cc, uintptr(unsafe.Pointer(&cc.x__gl_pp)), __ccgo_ts+3201, __ccgo_ts+2330)
+		x__pp_define(tls, cc, uintptr(unsafe.Pointer(&cc.x__gl_pp)), __ccgo_ts+3203, __ccgo_ts+2330)
 	}
 	// Note: replicating logic from GuessFcacheSize here, kinda terrible
 	if cc.x__gl_fcache_size > 0 || cc.x__gl_fcache_size == -int32(1) && (!(cc.x__gl_p2 != 0) || cc.x__gl_optimize_flags&int32(m_OPT_AUTO_FCACHE) != 0) {
-		x__pp_define(tls, cc, uintptr(unsafe.Pointer(&cc.x__gl_pp)), __ccgo_ts+3215, __ccgo_ts+2330)
+		x__pp_define(tls, cc, uintptr(unsafe.Pointer(&cc.x__gl_pp)), __ccgo_ts+3217, __ccgo_ts+2330)
 	}
 	/* if -Oremove-features is not on, then assume certain features are present */
 	if 0 == cc.x__gl_optimize_flags&int32(m_OPT_REMOVE_FEATURES) {
@@ -42816,7 +42941,7 @@ func x__ProcessCommandLine(tls *libc.TLS, cc *CC, cmd uintptr) (r int32) {
 		cc.x__gl_fcache_size = 0
 		cc.x__gl_optimize_flags = cc.x__gl_optimize_flags | int32(m_OPT_REMOVE_HUB_BSS)
 		if cc.x__gl_p2 != 0 {
-			fprintf(tls, cc, libc.X__stderrp, __ccgo_ts+3231, 0)
+			fprintf(tls, cc, libc.X__stderrp, __ccgo_ts+3233, 0)
 			exit(tls, cc, int32(2))
 		}
 	}
@@ -42852,13 +42977,13 @@ func x__ProcessCommandLine(tls *libc.TLS, cc *CC, cmd uintptr) (r int32) {
 			depname = cc.x__gl_outname
 			binname = cc.x__gl_outname
 			if !(depname != 0) {
-				depname = x__ReplaceExtension(tls, cc, (*_Module)(unsafe.Pointer(P)).Ffullname, __ccgo_ts+3261)
+				depname = x__ReplaceExtension(tls, cc, (*_Module)(unsafe.Pointer(P)).Ffullname, __ccgo_ts+3263)
 			}
 			if !(binname != 0) {
 				if cc.x__gl_output == int32(m_OUTPUT_OBJ) {
-					binname = x__ReplaceExtension(tls, cc, (*_Module)(unsafe.Pointer(P)).Ffullname, __ccgo_ts+3264)
+					binname = x__ReplaceExtension(tls, cc, (*_Module)(unsafe.Pointer(P)).Ffullname, __ccgo_ts+3266)
 				} else {
-					binname = x__ReplaceExtension(tls, cc, (*_Module)(unsafe.Pointer(P)).Ffullname, __ccgo_ts+3124)
+					binname = x__ReplaceExtension(tls, cc, (*_Module)(unsafe.Pointer(P)).Ffullname, __ccgo_ts+3126)
 				}
 			}
 			x__PrintDependencies(tls, cc, depname, binname)
@@ -42866,7 +42991,7 @@ func x__ProcessCommandLine(tls *libc.TLS, cc *CC, cmd uintptr) (r int32) {
 		if cc.x__gl_output == int32(m_OUTPUT_OBJ) {
 			binname1 = cc.x__gl_outname
 			if !(binname1 != 0) {
-				binname1 = x__ReplaceExtension(tls, cc, (*_Module)(unsafe.Pointer(P)).Ffullname, __ccgo_ts+3264)
+				binname1 = x__ReplaceExtension(tls, cc, (*_Module)(unsafe.Pointer(P)).Ffullname, __ccgo_ts+3266)
 			}
 			if cc.x__gl_errors >= cc.x__gl_max_errors {
 				libc.Xremove(tls, binname1)
@@ -42879,35 +43004,35 @@ func x__ProcessCommandLine(tls *libc.TLS, cc *CC, cmd uintptr) (r int32) {
 				if !(zipname != 0) {
 					**(**_time_t)(__ccgo_up(bp + 392)) = libc.Xtime(tls, libc.UintptrFromInt32(0))
 					tm1 = libc.Xlocaltime(tls, bp+392)
-					libc.Xstrftime(tls, bp+264, uint64(128), __ccgo_ts+3267, tm1)
+					libc.Xstrftime(tls, bp+264, uint64(128), __ccgo_ts+3269, tm1)
 					zipname = x__ReplaceExtension(tls, cc, (*_Module)(unsafe.Pointer(P)).Ffullname, bp+264)
 				}
 				x__OutputZipFile(tls, cc, zipname)
 				if cc.x__gl_errors == 0 {
-					printf(tls, cc, __ccgo_ts+3281, libc.VaList(bp+408, zipname))
+					printf(tls, cc, __ccgo_ts+3283, libc.VaList(bp+408, zipname))
 				}
 			} else {
 				if (*_CmdLineOptions)(unsafe.Pointer(cmd)).FoutputDat != 0 {
 					(*_CmdLineOptions)(unsafe.Pointer(cmd)).Foutname = cc.x__gl_outname
 					if cc.x__gl_gas_dat != 0 {
 						if !((*_CmdLineOptions)(unsafe.Pointer(cmd)).Foutname != 0) {
-							(*_CmdLineOptions)(unsafe.Pointer(cmd)).Foutname = x__ReplaceExtension(tls, cc, (*_Module)(unsafe.Pointer(P)).Ffullname, __ccgo_ts+3293)
+							(*_CmdLineOptions)(unsafe.Pointer(cmd)).Foutname = x__ReplaceExtension(tls, cc, (*_Module)(unsafe.Pointer(P)).Ffullname, __ccgo_ts+3295)
 						}
 						x__OutputGasFile(tls, cc, (*_CmdLineOptions)(unsafe.Pointer(cmd)).Foutname, P)
 					} else {
 						if !((*_CmdLineOptions)(unsafe.Pointer(cmd)).Foutname != 0) {
 							if (*_CmdLineOptions)(unsafe.Pointer(cmd)).FoutputBin != 0 {
 								if (*_CmdLineOptions)(unsafe.Pointer(cmd)).FuseEeprom != 0 {
-									(*_CmdLineOptions)(unsafe.Pointer(cmd)).Foutname = x__ReplaceExtension(tls, cc, (*_Module)(unsafe.Pointer(P)).Ffullname, __ccgo_ts+3296)
+									(*_CmdLineOptions)(unsafe.Pointer(cmd)).Foutname = x__ReplaceExtension(tls, cc, (*_Module)(unsafe.Pointer(P)).Ffullname, __ccgo_ts+3298)
 								} else {
-									(*_CmdLineOptions)(unsafe.Pointer(cmd)).Foutname = x__ReplaceExtension(tls, cc, (*_Module)(unsafe.Pointer(P)).Ffullname, __ccgo_ts+3124)
+									(*_CmdLineOptions)(unsafe.Pointer(cmd)).Foutname = x__ReplaceExtension(tls, cc, (*_Module)(unsafe.Pointer(P)).Ffullname, __ccgo_ts+3126)
 								}
 							} else {
-								(*_CmdLineOptions)(unsafe.Pointer(cmd)).Foutname = x__ReplaceExtension(tls, cc, (*_Module)(unsafe.Pointer(P)).Ffullname, __ccgo_ts+3304)
+								(*_CmdLineOptions)(unsafe.Pointer(cmd)).Foutname = x__ReplaceExtension(tls, cc, (*_Module)(unsafe.Pointer(P)).Ffullname, __ccgo_ts+3306)
 							}
 						}
 						if (*_CmdLineOptions)(unsafe.Pointer(cmd)).FbstcMode != 0 && !(listFile != 0) {
-							(*_CmdLineOptions)(unsafe.Pointer(cmd)).Foutname = x__ReplaceExtension(tls, cc, (*_CmdLineOptions)(unsafe.Pointer(cmd)).Foutname, __ccgo_ts+3124)
+							(*_CmdLineOptions)(unsafe.Pointer(cmd)).Foutname = x__ReplaceExtension(tls, cc, (*_CmdLineOptions)(unsafe.Pointer(cmd)).Foutname, __ccgo_ts+3126)
 						}
 						if cc.x__gl_errors >= cc.x__gl_max_errors {
 							libc.Xremove(tls, (*_CmdLineOptions)(unsafe.Pointer(cmd)).Foutname)
@@ -42934,16 +43059,16 @@ func x__ProcessCommandLine(tls *libc.TLS, cc *CC, cmd uintptr) (r int32) {
 							binname2 = cc.x__gl_outname
 							if binname2 != 0 {
 								if cc.x__gl_p2 != 0 {
-									v4 = __ccgo_ts + 3309
+									v4 = __ccgo_ts + 3311
 								} else {
-									v4 = __ccgo_ts + 3316
+									v4 = __ccgo_ts + 3318
 								}
 								asmname = x__ReplaceExtension(tls, cc, binname2, v4)
 							} else {
 								if (*_CmdLineOptions)(unsafe.Pointer(cmd)).FuseEeprom != 0 {
-									binname2 = x__ReplaceExtension(tls, cc, (*_Module)(unsafe.Pointer(P)).Ffullname, __ccgo_ts+3296)
+									binname2 = x__ReplaceExtension(tls, cc, (*_Module)(unsafe.Pointer(P)).Ffullname, __ccgo_ts+3298)
 								} else {
-									binname2 = x__ReplaceExtension(tls, cc, (*_Module)(unsafe.Pointer(P)).Ffullname, __ccgo_ts+3124)
+									binname2 = x__ReplaceExtension(tls, cc, (*_Module)(unsafe.Pointer(P)).Ffullname, __ccgo_ts+3126)
 								}
 							}
 						} else {
@@ -42952,15 +43077,15 @@ func x__ProcessCommandLine(tls *libc.TLS, cc *CC, cmd uintptr) (r int32) {
 						if !(asmname != 0) {
 							if cc.x__gl_output == int32(m_OUTPUT_COGSPIN) {
 								if cc.x__gl_p2 != 0 {
-									asmname = x__ReplaceExtension(tls, cc, (*_Module)(unsafe.Pointer(P)).Ffullname, __ccgo_ts+3322)
+									asmname = x__ReplaceExtension(tls, cc, (*_Module)(unsafe.Pointer(P)).Ffullname, __ccgo_ts+3324)
 								} else {
-									asmname = x__ReplaceExtension(tls, cc, (*_Module)(unsafe.Pointer(P)).Ffullname, __ccgo_ts+3333)
+									asmname = x__ReplaceExtension(tls, cc, (*_Module)(unsafe.Pointer(P)).Ffullname, __ccgo_ts+3335)
 								}
 							} else {
 								if cc.x__gl_p2 != 0 {
-									v4 = __ccgo_ts + 3309
+									v4 = __ccgo_ts + 3311
 								} else {
-									v4 = __ccgo_ts + 3316
+									v4 = __ccgo_ts + 3318
 								}
 								asmname = x__ReplaceExtension(tls, cc, (*_Module)(unsafe.Pointer(P)).Ffullname, v4)
 							}
@@ -42981,7 +43106,7 @@ func x__ProcessCommandLine(tls *libc.TLS, cc *CC, cmd uintptr) (r int32) {
 						} else {
 							if cc.x__gl_interp_kind == int32(m_INTERP_KIND_NUCODE) {
 								if !(cc.x__gl_p2 != 0) {
-									x__ERROR(tls, cc, libc.UintptrFromInt32(0), __ccgo_ts+3343, 0)
+									x__ERROR(tls, cc, libc.UintptrFromInt32(0), __ccgo_ts+3345, 0)
 								}
 								x__OutputNuCode(tls, cc, asmname, P)
 							} else {
@@ -43005,7 +43130,7 @@ func x__ProcessCommandLine(tls *libc.TLS, cc *CC, cmd uintptr) (r int32) {
 								libc.Xremove(tls, binname2)
 							}
 							if !((*_CmdLineOptions)(unsafe.Pointer(cmd)).Fquiet != 0) {
-								printf(tls, cc, __ccgo_ts+3371, 0)
+								printf(tls, cc, __ccgo_ts+3373, 0)
 								if cc.x__gl_errors == 0 {
 									x__PrintFileSize(tls, cc, binname2)
 								}
@@ -43015,9 +43140,9 @@ func x__ProcessCommandLine(tls *libc.TLS, cc *CC, cmd uintptr) (r int32) {
 						if (*_CmdLineOptions)(unsafe.Pointer(cmd)).FoutputBytecode != 0 {
 							if !((*_CmdLineOptions)(unsafe.Pointer(cmd)).Foutname != 0) {
 								if (*_CmdLineOptions)(unsafe.Pointer(cmd)).FuseEeprom != 0 {
-									(*_CmdLineOptions)(unsafe.Pointer(cmd)).Foutname = x__ReplaceExtension(tls, cc, (*_Module)(unsafe.Pointer(P)).Ffullname, __ccgo_ts+3296)
+									(*_CmdLineOptions)(unsafe.Pointer(cmd)).Foutname = x__ReplaceExtension(tls, cc, (*_Module)(unsafe.Pointer(P)).Ffullname, __ccgo_ts+3298)
 								} else {
-									(*_CmdLineOptions)(unsafe.Pointer(cmd)).Foutname = x__ReplaceExtension(tls, cc, (*_Module)(unsafe.Pointer(P)).Ffullname, __ccgo_ts+3124)
+									(*_CmdLineOptions)(unsafe.Pointer(cmd)).Foutname = x__ReplaceExtension(tls, cc, (*_Module)(unsafe.Pointer(P)).Ffullname, __ccgo_ts+3126)
 								}
 							}
 							if cc.x__gl_errors >= cc.x__gl_max_errors {
@@ -43025,7 +43150,7 @@ func x__ProcessCommandLine(tls *libc.TLS, cc *CC, cmd uintptr) (r int32) {
 								return int32(1)
 							}
 							if cc.x__gl_interp_kind == int32(m_INTERP_KIND_NUCODE) {
-								x__ERROR(tls, cc, libc.UintptrFromInt32(0), __ccgo_ts+3378, 0)
+								x__ERROR(tls, cc, libc.UintptrFromInt32(0), __ccgo_ts+3380, 0)
 							} else {
 								x__OutputByteCode(tls, cc, (*_CmdLineOptions)(unsafe.Pointer(cmd)).Foutname, P)
 								if (*_CmdLineOptions)(unsafe.Pointer(cmd)).FuseEeprom != 0 {
@@ -43036,14 +43161,14 @@ func x__ProcessCommandLine(tls *libc.TLS, cc *CC, cmd uintptr) (r int32) {
 								x__DoPropellerPostprocess(tls, cc, (*_CmdLineOptions)(unsafe.Pointer(cmd)).Foutname, libc.Uint64FromInt32(v2))
 							}
 						} else {
-							fprintf(tls, cc, libc.X__stderrp, __ccgo_ts+3399, 0)
+							fprintf(tls, cc, libc.X__stderrp, __ccgo_ts+3401, 0)
 						}
 					}
 				}
 			}
 		}
 	} else {
-		fprintf(tls, cc, libc.X__stderrp, __ccgo_ts+3435, 0)
+		fprintf(tls, cc, libc.X__stderrp, __ccgo_ts+3437, 0)
 		return int32(1)
 	}
 	return 0
@@ -43131,7 +43256,7 @@ func x__ProcessOneFunc(tls *libc.TLS, cc *CC, pf uintptr) {
 			libc.SetBitFieldPtr32Uint32(pf+1248, libc.Uint32FromInt32(1), 3, 0x8)
 			if sawreturn != 0 && (*_Function)(unsafe.Pointer(pf)).Fnumresults > 0 {
 				if (*_Function)(unsafe.Pointer(pf)).Flanguage == int32(m_LANG_SPIN_SPIN2) && 0 != cc.x__gl_warn_flags&(libc.Int32FromInt32(m_WARN_DEPRECATED)|libc.Int32FromInt32(m_WARN_LANG_EXTENSIONS)) {
-					x__WARNING(tls, cc, (*_Function)(unsafe.Pointer(pf)).Fdecl, __ccgo_ts+30774, libc.VaList(bp+24, (*_Function)(unsafe.Pointer(pf)).Fname))
+					x__WARNING(tls, cc, (*_Function)(unsafe.Pointer(pf)).Fdecl, __ccgo_ts+30782, libc.VaList(bp+24, (*_Function)(unsafe.Pointer(pf)).Fname))
 				}
 			}
 		}
@@ -43191,7 +43316,7 @@ func x__PullElement(tls *libc.TLS, cc *CC, type1 uintptr, rawlist_ptr uintptr) (
 			sawBitfield = 0
 			P = *(*uintptr)(unsafe.Pointer(type1 + 8))
 			if (*_Module)(unsafe.Pointer(P)).Fpendingvarblock != 0 {
-				x__ERROR(tls, cc, type1, __ccgo_ts+26956, 0)
+				x__ERROR(tls, cc, type1, __ccgo_ts+26964, 0)
 				return libc.UintptrFromInt32(0)
 			}
 			varlist = (*_Module)(unsafe.Pointer(P)).Ffinalvarblock
@@ -43241,7 +43366,7 @@ func x__RemoveUnusedMethods(tls *libc.TLS, cc *CC, isBinary int32) {
 	// zero out call sites
 	x__IterateOverModules(tls, cc, __ccgo_fp(s__zeroCallSites))
 	if isBinary != 0 && !(keep != 0) {
-		x__MarkUsed(tls, cc, x__GetMainFunction(tls, cc, cc.x__allparse), __ccgo_ts+10980)
+		x__MarkUsed(tls, cc, x__GetMainFunction(tls, cc, cc.x__allparse), __ccgo_ts+10982)
 	} else {
 		// mark stuff called via public functions
 		x__IterateOverModules(tls, cc, __ccgo_fp(s__markPublicFuncsUsed))
@@ -43272,7 +43397,7 @@ func x__ReplaceExtension(tls *libc.TLS, cc *CC, basename uintptr, extension uint
 	_, _ = dot, ret
 	ret = malloc(tls, cc, libc.Xstrlen(tls, basename)+libc.Xstrlen(tls, extension)+uint64(1))
 	if !(ret != 0) {
-		fprintf(tls, cc, libc.X__stderrp, __ccgo_ts+7159, 0)
+		fprintf(tls, cc, libc.X__stderrp, __ccgo_ts+7161, 0)
 		exit(tls, cc, int32(2))
 	}
 	libc.Xstrcpy(tls, ret, basename)
@@ -43309,9 +43434,9 @@ func x__ReplaceIRWithInline(tls *libc.TLS, cc *CC, irl uintptr, origir uintptr, 
 	if (*_Function)(unsafe.Pointer(cc.x__curfunc)).Foptimize_flags&int32(m_OPT_LOCAL_REUSE) != 0 {
 		cc.s__inlineNum = cc.s__inlineNum + 1
 		v1 = cc.s__inlineNum
-		libc.X__builtin_snprintf(tls, bp, libc.Uint64FromInt32(libc.Int32FromInt32(64)-libc.Int32FromInt32(1)), __ccgo_ts+45658, libc.VaList(bp+72, v1))
+		libc.X__builtin_snprintf(tls, bp, libc.Uint64FromInt32(libc.Int32FromInt32(64)-libc.Int32FromInt32(1)), __ccgo_ts+45666, libc.VaList(bp+72, v1))
 	} else {
-		libc.Xstrcpy(tls, bp, __ccgo_ts+45669)
+		libc.Xstrcpy(tls, bp, __ccgo_ts+45677)
 	}
 	x__DeleteIR(tls, cc, irl, origir)
 	if cond != int32(_COND_TRUE) {
@@ -43410,7 +43535,7 @@ func x__ReplaceZWithNC(tls *libc.TLS, cc *CC, ir uintptr) {
 		fallthrough
 	case int32(_COND_FALSE):
 	default:
-		x__ERROR(tls, cc, libc.UintptrFromInt32(0), __ccgo_ts+62154, libc.VaList(bp+8, (*_IR)(unsafe.Pointer(ir)).Fcond))
+		x__ERROR(tls, cc, libc.UintptrFromInt32(0), __ccgo_ts+62162, libc.VaList(bp+8, (*_IR)(unsafe.Pointer(ir)).Fcond))
 	}
 	switch (*_IR)(unsafe.Pointer(ir)).Fopc {
 	case int32(_OPC_MUXZ):
@@ -43479,7 +43604,7 @@ func x__ReplaceZWithNC(tls *libc.TLS, cc *CC, ir uintptr) {
 	case int32(_OPC_PUSH):
 		fallthrough
 	case int32(_OPC_POP):
-		x__ERROR(tls, cc, libc.UintptrFromInt32(0), __ccgo_ts+62212, 0)
+		x__ERROR(tls, cc, libc.UintptrFromInt32(0), __ccgo_ts+62220, 0)
 	default:
 		break
 	}
@@ -43492,7 +43617,7 @@ func x__ResolveTempIdentifiers(tls *libc.TLS, cc *CC, instrlist uintptr) {
 	var val, val1, v1 int32
 	var was_active uint8
 	_, _, _, _, _, _, _, _, _ = asm_nest, ast, prefix, state, top, val, val1, was_active, v1
-	prefix = __ccgo_ts + 7138
+	prefix = __ccgo_ts + 7140
 	state = [16]_AsmState{}
 	asm_nest = uint32(0)
 	state[asm_nest].Fis_active = libc.BoolUint8(m_true != 0)
@@ -43516,11 +43641,11 @@ func x__ResolveTempIdentifiers(tls *libc.TLS, cc *CC, instrlist uintptr) {
 			val = 0
 			asm_nest = asm_nest + 1
 			if asm_nest == uint32(m_MAX_ASM_NEST) {
-				x__ERROR(tls, cc, ast, __ccgo_ts+36955, 0)
+				x__ERROR(tls, cc, ast, __ccgo_ts+36963, 0)
 				asm_nest = asm_nest - 1
 			}
 			if !(x__IsConstExpr(tls, cc, (*_AST)(unsafe.Pointer(ast)).Fleft) != 0) {
-				x__ERROR(tls, cc, ast, __ccgo_ts+36992, 0)
+				x__ERROR(tls, cc, ast, __ccgo_ts+37000, 0)
 				val = 0
 			} else {
 				val = int32(x__EvalConstExpr(tls, cc, (*_AST)(unsafe.Pointer(ast)).Fleft))
@@ -43537,7 +43662,7 @@ func x__ResolveTempIdentifiers(tls *libc.TLS, cc *CC, instrlist uintptr) {
 		case int32(_AST_ASM_ELSEIF):
 			val1 = 0
 			if !(x__IsConstExpr(tls, cc, (*_AST)(unsafe.Pointer(ast)).Fleft) != 0) {
-				x__ERROR(tls, cc, ast, __ccgo_ts+36992, 0)
+				x__ERROR(tls, cc, ast, __ccgo_ts+37000, 0)
 				val1 = 0
 			} else {
 				val1 = int32(x__EvalConstExpr(tls, cc, (*_AST)(unsafe.Pointer(ast)).Fleft))
@@ -43552,7 +43677,7 @@ func x__ResolveTempIdentifiers(tls *libc.TLS, cc *CC, instrlist uintptr) {
 			}
 		case int32(_AST_ASM_ENDIF):
 			if asm_nest == uint32(0) {
-				x__ERROR(tls, cc, ast, __ccgo_ts+37044, 0)
+				x__ERROR(tls, cc, ast, __ccgo_ts+37052, 0)
 			} else {
 				asm_nest = asm_nest - 1
 			}
@@ -43577,7 +43702,7 @@ func x__SETCOLOR(tls *libc.TLS, cc *CC, color _printColorKind) {
 	if !(cc.x__gl_colorize_output != 0) {
 		return
 	}
-	fprintf(tls, cc, libc.X__stderrp, __ccgo_ts+7088, libc.VaList(bp+8, cc.s__colorANSI[color]))
+	fprintf(tls, cc, libc.X__stderrp, __ccgo_ts+7090, libc.VaList(bp+8, cc.s__colorANSI[color]))
 	cc.x__current_print_color = color
 }
 
@@ -43586,14 +43711,14 @@ func x__SYNTAX_ERROR(tls *libc.TLS, cc *CC, msg uintptr, va uintptr) {
 	_ = args
 	x__SETCOLOR(tls, cc, int32(_PRINT_ERROR))
 	if cc.x__current != 0 {
-		x__ERRORHEADER(tls, cc, (*_LexStream)(unsafe.Pointer((*_Module)(unsafe.Pointer(cc.x__current)).FLptr)).FfileName, (*_LexStream)(unsafe.Pointer((*_Module)(unsafe.Pointer(cc.x__current)).FLptr)).FlineCounter, __ccgo_ts+4025)
+		x__ERRORHEADER(tls, cc, (*_LexStream)(unsafe.Pointer((*_Module)(unsafe.Pointer(cc.x__current)).FLptr)).FfileName, (*_LexStream)(unsafe.Pointer((*_Module)(unsafe.Pointer(cc.x__current)).FLptr)).FlineCounter, __ccgo_ts+4027)
 	} else {
-		x__ERRORHEADER(tls, cc, libc.UintptrFromInt32(0), 0, __ccgo_ts+4025)
+		x__ERRORHEADER(tls, cc, libc.UintptrFromInt32(0), 0, __ccgo_ts+4027)
 	}
 	args = va
 	vfprintf(tls, cc, libc.X__stderrp, msg, args)
 	_ = args
-	fprintf(tls, cc, libc.X__stderrp, __ccgo_ts+4265, 0)
+	fprintf(tls, cc, libc.X__stderrp, __ccgo_ts+4267, 0)
 	cc.x__gl_errors = cc.x__gl_errors + 1
 	x__SETCOLOR(tls, cc, int32(_PRINT_NORMAL))
 }
@@ -43611,7 +43736,7 @@ func x__SetFunctionReturnType(tls *libc.TLS, cc *CC, f uintptr, typ uintptr, lin
 			(*_AST)(unsafe.Pointer((*_Function)(unsafe.Pointer(f)).Foveralltype)).Fleft = typ
 			if (*_Function)(unsafe.Pointer(f)).Fnumresults > int32(1) {
 				if (*_Function)(unsafe.Pointer(f)).Fnumresults != x__AstListLen(tls, cc, typ) {
-					x__ERROR(tls, cc, line, __ccgo_ts+31392, libc.VaList(bp+8, (*_Function)(unsafe.Pointer(f)).Fname, (*_Function)(unsafe.Pointer(f)).Fnumresults, x__AstListLen(tls, cc, typ)))
+					x__ERROR(tls, cc, line, __ccgo_ts+31400, libc.VaList(bp+8, (*_Function)(unsafe.Pointer(f)).Fname, (*_Function)(unsafe.Pointer(f)).Fnumresults, x__AstListLen(tls, cc, typ)))
 				}
 			}
 			(*_Function)(unsafe.Pointer(f)).Fnumresults = libc.Int32FromUint64(*(*_uint64_t)(unsafe.Pointer(typ + 8)))
@@ -43629,7 +43754,7 @@ func x__SetFunctionReturnType(tls *libc.TLS, cc *CC, f uintptr, typ uintptr, lin
 			(*_Function)(unsafe.Pointer(f)).Fnumresults = len1
 		} else {
 			if (*_Function)(unsafe.Pointer(f)).Fnumresults != len1 {
-				x__ERROR(tls, cc, line, __ccgo_ts+31392, libc.VaList(bp+8, (*_Function)(unsafe.Pointer(f)).Fname, (*_Function)(unsafe.Pointer(f)).Fnumresults, x__AstListLen(tls, cc, typ)))
+				x__ERROR(tls, cc, line, __ccgo_ts+31400, libc.VaList(bp+8, (*_Function)(unsafe.Pointer(f)).Fname, (*_Function)(unsafe.Pointer(f)).Fnumresults, x__AstListLen(tls, cc, typ)))
 			}
 		}
 	}
@@ -43653,7 +43778,7 @@ func x__SingleDeclareInitedVar(tls *libc.TLS, cc *CC, decl_spec uintptr, declara
 		return libc.UintptrFromInt32(0)
 	}
 	if **(**uintptr)(__ccgo_up(bp + 8)) != 0 {
-		x__ERROR(tls, cc, declarator, __ccgo_ts+123292, 0)
+		x__ERROR(tls, cc, declarator, __ccgo_ts+123306, 0)
 	}
 	for type1 != 0 && (*_AST)(unsafe.Pointer(type1)).Fkind == int32(_AST_REGISTER) {
 		type1 = (*_AST)(unsafe.Pointer(type1)).Fleft
@@ -43682,7 +43807,7 @@ func x__SpecialRdOperand(tls *libc.TLS, cc *CC, ast uintptr, opimm _uint32_t) (r
 		// fits in $00-$ff
 		val = libc.Uint32FromInt64(x__EvalPasmExpr(tls, cc, ast))
 		if val > uint32(0xff) && uint32(0) == opimm&uint32(m_BIG_IMM_SRC) {
-			x__ERROR(tls, cc, ast, __ccgo_ts+38418, 0)
+			x__ERROR(tls, cc, ast, __ccgo_ts+38426, 0)
 		}
 	}
 	val = uint32(0)
@@ -43696,7 +43821,7 @@ func x__SpecialRdOperand(tls *libc.TLS, cc *CC, ast uintptr, opimm _uint32_t) (r
 	if (*_AST)(unsafe.Pointer(ast)).Fkind == int32(_AST_OPERATOR) && (*(*_uint64_t)(unsafe.Pointer(ast + 8)) == uint64(_K_INCREMENT) || *(*_uint64_t)(unsafe.Pointer(ast + 8)) == uint64(_K_DECREMENT)) {
 		if !(subval != 0) {
 			if saw_array != 0 {
-				x__ERROR(tls, cc, ast, __ccgo_ts+38447, 0)
+				x__ERROR(tls, cc, ast, __ccgo_ts+38455, 0)
 			}
 			subval = int32(1)
 		}
@@ -43734,7 +43859,7 @@ func x__SpecialRdOperand(tls *libc.TLS, cc *CC, ast uintptr, opimm _uint32_t) (r
 		idx = (*_AST)(unsafe.Pointer(ast)).Fright
 		if idx != 0 && (*_AST)(unsafe.Pointer(idx)).Fkind == int32(_AST_RANGE) {
 			if (*_AST)(unsafe.Pointer(idx)).Fright != 0 {
-				x__ERROR(tls, cc, ast, __ccgo_ts+38476, 0)
+				x__ERROR(tls, cc, ast, __ccgo_ts+38484, 0)
 				return uint32(0)
 			}
 			subval = int32(x__EvalPasmExpr(tls, cc, (*_AST)(unsafe.Pointer(idx)).Fleft) * int64(negsubval))
@@ -43744,7 +43869,7 @@ func x__SpecialRdOperand(tls *libc.TLS, cc *CC, ast uintptr, opimm _uint32_t) (r
 				subval = int32(x__EvalPasmExpr(tls, cc, idx) * int64(negsubval))
 				ast = (*_AST)(unsafe.Pointer(ast)).Fleft
 			} else {
-				x__ERROR(tls, cc, ast, __ccgo_ts+38500, 0)
+				x__ERROR(tls, cc, ast, __ccgo_ts+38508, 0)
 				return uint32(0)
 			}
 		}
@@ -43760,14 +43885,14 @@ func x__SpecialRdOperand(tls *libc.TLS, cc *CC, ast uintptr, opimm _uint32_t) (r
 				val = val | uint32(0x180)
 			} else {
 				if val != 0 {
-					x__ERROR(tls, cc, ast, __ccgo_ts+38519, 0)
+					x__ERROR(tls, cc, ast, __ccgo_ts+38527, 0)
 				}
 				return uint32(0)
 			}
 		}
 	} else {
 		if val != 0 || saw_array != 0 {
-			x__ERROR(tls, cc, ast, __ccgo_ts+38545, 0)
+			x__ERROR(tls, cc, ast, __ccgo_ts+38553, 0)
 			return uint32(0x100)
 		}
 	}
@@ -43786,7 +43911,7 @@ func x__SpecialRdOperand(tls *libc.TLS, cc *CC, ast uintptr, opimm _uint32_t) (r
 			if cc.x__gl_p2 >= int32(m_P2_REV_A) && subval == int32(16) {
 				// this is actually OK, 16 gets encoded as 0
 			} else {
-				x__ERROR(tls, cc, ast, __ccgo_ts+38592, 0)
+				x__ERROR(tls, cc, ast, __ccgo_ts+38600, 0)
 			}
 			subval = 0
 		}
@@ -43794,7 +43919,7 @@ func x__SpecialRdOperand(tls *libc.TLS, cc *CC, ast uintptr, opimm _uint32_t) (r
 	} else {
 		// plain indexing on rev B and later
 		if subval < -int32(32) || subval > int32(31) {
-			x__ERROR(tls, cc, ast, __ccgo_ts+38625, 0)
+			x__ERROR(tls, cc, ast, __ccgo_ts+38633, 0)
 			subval = 0
 		}
 		return val | libc.Uint32FromInt32(subval&libc.Int32FromInt32(0x3f))
@@ -43815,7 +43940,7 @@ func x__SrcOnlyHwReg(tls *libc.TLS, cc *CC, orig uintptr) (r uint8) {
 	if (*_Operand)(unsafe.Pointer(orig)).Fval != 0 {
 		return libc.BoolUint8(m_true != 0)
 	}
-	if !(libc.Xstrcasecmp(tls, (*_Operand)(unsafe.Pointer(orig)).Fname, __ccgo_ts+62017) != 0) || !(libc.Xstrcasecmp(tls, (*_Operand)(unsafe.Pointer(orig)).Fname, __ccgo_ts+62021) != 0) || !(libc.Xstrcasecmp(tls, (*_Operand)(unsafe.Pointer(orig)).Fname, __ccgo_ts+62026) != 0) || !(libc.Xstrcasecmp(tls, (*_Operand)(unsafe.Pointer(orig)).Fname, __ccgo_ts+62031) != 0) || !(libc.Xstrcasecmp(tls, (*_Operand)(unsafe.Pointer(orig)).Fname, __ccgo_ts+62035) != 0) {
+	if !(libc.Xstrcasecmp(tls, (*_Operand)(unsafe.Pointer(orig)).Fname, __ccgo_ts+62025) != 0) || !(libc.Xstrcasecmp(tls, (*_Operand)(unsafe.Pointer(orig)).Fname, __ccgo_ts+62029) != 0) || !(libc.Xstrcasecmp(tls, (*_Operand)(unsafe.Pointer(orig)).Fname, __ccgo_ts+62034) != 0) || !(libc.Xstrcasecmp(tls, (*_Operand)(unsafe.Pointer(orig)).Fname, __ccgo_ts+62039) != 0) || !(libc.Xstrcasecmp(tls, (*_Operand)(unsafe.Pointer(orig)).Fname, __ccgo_ts+62043) != 0) {
 		return libc.BoolUint8(m_true != 0)
 	}
 	return libc.BoolUint8(m_false != 0)
@@ -43831,7 +43956,7 @@ func x__StringBuildBuffer(tls *libc.TLS, cc *CC, fb uintptr, expr uintptr, lenPr
 		if lenPrefix < int32(m_LONG_SIZE) {
 			maxLen = int32(1) << (lenPrefix * int32(8))
 			if maxLen <= actualLen {
-				x__ERROR(tls, cc, expr, __ccgo_ts+112247, libc.VaList(bp+8, lenPrefix))
+				x__ERROR(tls, cc, expr, __ccgo_ts+112253, libc.VaList(bp+8, lenPrefix))
 			}
 		}
 		i = 0
@@ -43862,7 +43987,7 @@ func x__StructAddress(tls *libc.TLS, cc *CC, expr uintptr) (r uintptr) {
 		return expr
 	}
 	if (*_AST)(unsafe.Pointer(expr)).Fkind == int32(_AST_INTEGER) {
-		x__ERROR(tls, cc, expr, __ccgo_ts+32946, 0)
+		x__ERROR(tls, cc, expr, __ccgo_ts+32954, 0)
 	}
 	return x__NewAST(tls, cc, int32(_AST_ABSADDROF), expr, libc.UintptrFromInt32(0))
 }
@@ -43870,7 +43995,7 @@ func x__StructAddress(tls *libc.TLS, cc *CC, expr uintptr) (r uintptr) {
 func x__TemplateFuncName(tls *libc.TLS, cc *CC, templpairs uintptr, orig_base uintptr) (r uintptr) {
 	var ast, base, typ uintptr
 	_, _, _ = ast, base, typ
-	base = s__concatstr(tls, cc, orig_base, __ccgo_ts+31609)
+	base = s__concatstr(tls, cc, orig_base, __ccgo_ts+31617)
 	for templpairs != 0 {
 		ast = (*_AST)(unsafe.Pointer(templpairs)).Fleft
 		templpairs = (*_AST)(unsafe.Pointer(templpairs)).Fright
@@ -43897,7 +44022,7 @@ func x__TransformAssignChain(tls *libc.TLS, cc *CC, dst uintptr, src uintptr) (r
 	_, _, _ = final, seq, temp
 	seq = libc.UintptrFromInt32(0)
 	if !(src != 0) {
-		x__ERROR(tls, cc, dst, __ccgo_ts+25093, 0)
+		x__ERROR(tls, cc, dst, __ccgo_ts+25101, 0)
 		return src
 	}
 	x__AstReportAs(tls, cc, src, bp)
@@ -43912,7 +44037,7 @@ func x__TransformAssignChain(tls *libc.TLS, cc *CC, dst uintptr, src uintptr) (r
 		seq = x__NewAST(tls, cc, int32(_AST_SEQUENCE), src, libc.UintptrFromInt32(0))
 		final = src
 	default:
-		temp = x__AstTempLocalVariable(tls, cc, __ccgo_ts+25124, cc.x__ast_type_unsigned_long)
+		temp = x__AstTempLocalVariable(tls, cc, __ccgo_ts+25132, cc.x__ast_type_unsigned_long)
 		seq = x__NewAST(tls, cc, int32(_AST_SEQUENCE), x__AstAssign(tls, cc, temp, src), libc.UintptrFromInt32(0))
 		final = temp
 		break
@@ -43970,7 +44095,7 @@ func x__TransformCountRepeat(tls *libc.TLS, cc *CC, ast uintptr) (r uintptr) {
 			if (*_AST)(unsafe.Pointer((*_AST)(unsafe.Pointer(ast)).Fleft)).Fkind == int32(_AST_RESULT) {
 				loopvar = (*_AST)(unsafe.Pointer(ast)).Fleft
 			} else {
-				x__ERROR(tls, cc, ast, __ccgo_ts+31962, 0)
+				x__ERROR(tls, cc, ast, __ccgo_ts+31970, 0)
 				x__AstReportDone(tls, cc, bp)
 				return origast
 			}
@@ -43983,21 +44108,21 @@ func x__TransformCountRepeat(tls *libc.TLS, cc *CC, ast uintptr) (r uintptr) {
 	}
 	ast = (*_AST)(unsafe.Pointer(ast)).Fright
 	if (*_AST)(unsafe.Pointer(ast)).Fkind != int32(_AST_FROM) {
-		x__ERROR(tls, cc, ast, __ccgo_ts+31996, 0)
+		x__ERROR(tls, cc, ast, __ccgo_ts+32004, 0)
 		x__AstReportDone(tls, cc, bp)
 		return origast
 	}
 	fromval = (*_AST)(unsafe.Pointer(ast)).Fleft
 	ast = (*_AST)(unsafe.Pointer(ast)).Fright
 	if (*_AST)(unsafe.Pointer(ast)).Fkind != int32(_AST_TO) {
-		x__ERROR(tls, cc, ast, __ccgo_ts+32010, 0)
+		x__ERROR(tls, cc, ast, __ccgo_ts+32018, 0)
 		x__AstReportDone(tls, cc, bp)
 		return origast
 	}
 	toval = (*_AST)(unsafe.Pointer(ast)).Fleft
 	ast = (*_AST)(unsafe.Pointer(ast)).Fright
 	if (*_AST)(unsafe.Pointer(ast)).Fkind != int32(_AST_STEP) {
-		x__ERROR(tls, cc, ast, __ccgo_ts+32022, 0)
+		x__ERROR(tls, cc, ast, __ccgo_ts+32030, 0)
 		x__AstReportDone(tls, cc, bp)
 		return origast
 	}
@@ -44115,7 +44240,7 @@ func x__TransformCountRepeat(tls *libc.TLS, cc *CC, ast uintptr) (r uintptr) {
 						if sym != 0 && ((*_Symbol)(unsafe.Pointer(sym)).Fkind == int32(_SYM_LOCALVAR) || (*_Symbol)(unsafe.Pointer(sym)).Fkind == int32(_SYM_TEMPVAR)) {
 							//printf("switch loop to count down");
 							initstmt = x__AstAssign(tls, cc, loopvar, x__AstInteger(tls, cc, int64(toi+int32(1))))
-							loopvar = x__AstTempLocalVariable(tls, cc, __ccgo_ts+32036, looptype)
+							loopvar = x__AstTempLocalVariable(tls, cc, __ccgo_ts+32044, looptype)
 							fromi = reps + int32(1)
 							toi = int32(1)
 							knownStepDir = -int32(1)
@@ -44150,11 +44275,11 @@ func x__TransformCountRepeat(tls *libc.TLS, cc *CC, ast uintptr) (r uintptr) {
 	}
 	/* get the loop variable, if we don't already have one */
 	if !(loopvar != 0) {
-		loopvar = x__AstTempLocalVariable(tls, cc, __ccgo_ts+32036, looptype)
+		loopvar = x__AstTempLocalVariable(tls, cc, __ccgo_ts+32044, looptype)
 		delayedUpdate = libc.BoolUint8(m_false != 0) // no need to restore this variable
 	}
 	if !(x__IsConstExpr(tls, cc, fromval) != 0) && x__AstUses(tls, cc, fromval, loopvar) != 0 {
-		initvar = x__AstTempLocalVariable(tls, cc, __ccgo_ts+32042, looptype)
+		initvar = x__AstTempLocalVariable(tls, cc, __ccgo_ts+32050, looptype)
 		initstmt = x__AstAssign(tls, cc, loopvar, x__AstAssign(tls, cc, initvar, fromval))
 		fromval = initvar
 	} else {
@@ -44173,13 +44298,13 @@ func x__TransformCountRepeat(tls *libc.TLS, cc *CC, ast uintptr) (r uintptr) {
 		if (*_AST)(unsafe.Pointer(toval)).Fkind == int32(_AST_IDENTIFIER) && !(x__AstModifiesIdentifier(tls, cc, body, toval) != 0) {
 			/* do nothing, toval is already OK */
 		} else {
-			limitvar = x__AstTempLocalVariable(tls, cc, __ccgo_ts+32050, looptype)
+			limitvar = x__AstTempLocalVariable(tls, cc, __ccgo_ts+32058, looptype)
 			initstmt = x__NewAST(tls, cc, int32(_AST_SEQUENCE), initstmt, x__AstAssign(tls, cc, limitvar, toval))
 			toval = limitvar
 		}
 	}
 	if delayedUpdate != 0 {
-		updatevar = x__AstTempLocalVariable(tls, cc, __ccgo_ts+32058, looptype)
+		updatevar = x__AstTempLocalVariable(tls, cc, __ccgo_ts+32066, looptype)
 	} else {
 		updatevar = libc.UintptrFromInt32(0)
 	}
@@ -44198,7 +44323,7 @@ func x__TransformCountRepeat(tls *libc.TLS, cc *CC, ast uintptr) (r uintptr) {
 			}
 		}
 	} else {
-		stepvar = x__AstTempLocalVariable(tls, cc, __ccgo_ts+32067, looptype)
+		stepvar = x__AstTempLocalVariable(tls, cc, __ccgo_ts+32075, looptype)
 		if isUnsignedLoop != 0 {
 			v1 = int32(_K_GEU)
 		} else {
@@ -44264,14 +44389,14 @@ func x__TransformCountRepeat(tls *libc.TLS, cc *CC, ast uintptr) (r uintptr) {
 				/* toval is constant, but step isn't, so we need to introduce
 				   a variable for the limit = toval + step */
 				if !(limitvar != 0) {
-					limitvar = x__AstTempLocalVariable(tls, cc, __ccgo_ts+32050, looptype)
+					limitvar = x__AstTempLocalVariable(tls, cc, __ccgo_ts+32058, looptype)
 				}
 				initstmt = x__NewAST(tls, cc, int32(_AST_SEQUENCE), initstmt, x__AstAssign(tls, cc, limitvar, x__SimpleOptimizeExpr(tls, cc, x__AstOperator(tls, cc, int32('+'), toval, stepval))))
 				toval = limitvar
 			}
 		} else {
 			if !(limitvar != 0) {
-				limitvar = x__AstTempLocalVariable(tls, cc, __ccgo_ts+32050, looptype)
+				limitvar = x__AstTempLocalVariable(tls, cc, __ccgo_ts+32058, looptype)
 			}
 			initstmt = x__NewAST(tls, cc, int32(_AST_SEQUENCE), initstmt, x__AstAssign(tls, cc, limitvar, x__SimpleOptimizeExpr(tls, cc, x__AstOperator(tls, cc, int32('+'), toval, stepval))))
 			toval = limitvar
@@ -44350,7 +44475,7 @@ func x__TransformCountRepeat(tls *libc.TLS, cc *CC, ast uintptr) (r uintptr) {
 		}
 	}
 	if s__LoopTestAlwaysTrue(tls, cc, condtest) != 0 {
-		x__WARNING(tls, cc, ast, __ccgo_ts+32074, 0)
+		x__WARNING(tls, cc, ast, __ccgo_ts+32082, 0)
 	}
 	if delayedUpdate != 0 {
 		stepstmt = x__NewAST(tls, cc, int32(_AST_SEQUENCE), x__AstAssign(tls, cc, updatevar, loopvar), stepstmt)
@@ -44403,7 +44528,7 @@ func x__TransformRangeAssign(tls *libc.TLS, cc *CC, dst uintptr, src uintptr, op
 		return dst
 	}
 	if !((*_AST)(unsafe.Pointer(dst)).Fright != 0) || (*_AST)(unsafe.Pointer((*_AST)(unsafe.Pointer(dst)).Fright)).Fkind != int32(_AST_RANGE) {
-		x__ERROR(tls, cc, dst, __ccgo_ts+25130, 0)
+		x__ERROR(tls, cc, dst, __ccgo_ts+25138, 0)
 		return uintptr(0)
 	}
 	if src != 0 && (*_AST)(unsafe.Pointer(src)).Fkind == int32(_AST_ASSIGN) {
@@ -44438,7 +44563,7 @@ func x__TransformRangeAssign(tls *libc.TLS, cc *CC, dst uintptr, src uintptr, op
 		// here we don't know which set of pins to use, so
 		// we have to generate an IF statement
 		if !(toplevel != 0) {
-			x__ERROR(tls, cc, dst, __ccgo_ts+25162, 0)
+			x__ERROR(tls, cc, dst, __ccgo_ts+25170, 0)
 			x__AstReportDone(tls, cc, bp)
 			return assign
 		}
@@ -44458,7 +44583,7 @@ func x__TransformRangeAssign(tls *libc.TLS, cc *CC, dst uintptr, src uintptr, op
 		return assign_again
 	}
 	if optoken != int32(_K_ASSIGN) {
-		x__ERROR(tls, cc, dst, __ccgo_ts+25213, libc.VaList(bp+32, optoken))
+		x__ERROR(tls, cc, dst, __ccgo_ts+25221, libc.VaList(bp+32, optoken))
 	}
 	/* special case logical operators */
 	/* doing a NOT on the whole thing */
@@ -44487,14 +44612,14 @@ func x__TransformRangeAssign(tls *libc.TLS, cc *CC, dst uintptr, src uintptr, op
 		if x__IsConstExpr(tls, cc, nbits) != 0 {
 			nbits = x__FoldIfConst(tls, cc, nbits)
 		} else {
-			nbits = x__ReplaceExprWithVariable(tls, cc, __ccgo_ts+25268, nbits, bp+16)
+			nbits = x__ReplaceExprWithVariable(tls, cc, __ccgo_ts+25276, nbits, bp+16)
 		}
 		needrev = x__FoldIfConst(tls, cc, x__AstOperator(tls, cc, int32('<'), hiexpr, loexpr))
 		loexpr = x__AstOperator(tls, cc, int32(_K_LIMITMAX), loexpr, hiexpr)
 		if x__IsConstExpr(tls, cc, loexpr) != 0 {
 			loexpr = x__FoldIfConst(tls, cc, loexpr)
 		} else {
-			loexpr = x__ReplaceExprWithVariable(tls, cc, __ccgo_ts+25275, loexpr, bp+16)
+			loexpr = x__ReplaceExprWithVariable(tls, cc, __ccgo_ts+25283, loexpr, bp+16)
 		}
 		revsrc = x__AstOperator(tls, cc, int32(_K_REV), src, nbits)
 		if x__IsConstExpr(tls, cc, needrev) != 0 {
@@ -44532,7 +44657,7 @@ func x__TransformRangeAssign(tls *libc.TLS, cc *CC, dst uintptr, src uintptr, op
 	 *    outa &= ~mask
 	 */
 	if toplevel != 0 && x__IsConstExpr(tls, cc, nbits) != 0 && x__EvalConstExpr(tls, cc, nbits) == int64(1) {
-		maskvar = x__AstTempLocalVariable(tls, cc, __ccgo_ts+25279, cc.x__ast_type_unsigned_long)
+		maskvar = x__AstTempLocalVariable(tls, cc, __ccgo_ts+25287, cc.x__ast_type_unsigned_long)
 		if x__IsConstExpr(tls, cc, loexpr) != 0 {
 			loexpr = x__FoldIfConst(tls, cc, x__AstOperator(tls, cc, int32('&'), loexpr, x__AstInteger(tls, cc, int64(0x1f))))
 		}
@@ -44569,11 +44694,11 @@ func x__TransformRangeAssign(tls *libc.TLS, cc *CC, dst uintptr, src uintptr, op
 		loexpr = x__FoldIfConst(tls, cc, x__AstOperator(tls, cc, int32('&'), loexpr, x__AstInteger(tls, cc, int64(0x1f))))
 	} else {
 		if (*_AST)(unsafe.Pointer(loexpr)).Fkind != int32(_AST_IDENTIFIER) && (*_AST)(unsafe.Pointer(loexpr)).Fkind != int32(_AST_LOCAL_IDENTIFIER) {
-			loexpr = x__ReplaceExprWithVariable(tls, cc, __ccgo_ts+25285, loexpr, bp+16)
+			loexpr = x__ReplaceExprWithVariable(tls, cc, __ccgo_ts+25293, loexpr, bp+16)
 		}
 	}
 	if !(x__IsConstExpr(tls, cc, maskexpr) != 0) {
-		maskexpr = x__ReplaceExprWithVariable(tls, cc, __ccgo_ts+25289, maskexpr, bp+16)
+		maskexpr = x__ReplaceExprWithVariable(tls, cc, __ccgo_ts+25297, maskexpr, bp+16)
 	}
 	andexpr = x__AstOperator(tls, cc, int32(_K_SHL), maskexpr, loexpr)
 	andexpr = x__AstOperator(tls, cc, int32(_K_BIT_NOT), libc.UintptrFromInt32(0), andexpr)
@@ -44608,20 +44733,20 @@ func x__TransformRangeUse(tls *libc.TLS, cc *CC, src uintptr) (r uintptr) {
 	_, _, _, _, _, _, _, _, _, _, _, _, _, _ = c_31, cond, hi, lo, nbits, range1, rega, regb, test, tmphi, tmplo, val, x, v1
 	**(**uintptr)(__ccgo_up(bp + 16)) = libc.UintptrFromInt32(0)
 	if !(cc.x__curfunc != 0) {
-		x__ERROR(tls, cc, src, __ccgo_ts+25295, 0)
+		x__ERROR(tls, cc, src, __ccgo_ts+25303, 0)
 		return x__AstInteger(tls, cc, 0)
 	}
 	if !(src != 0) {
 		return src
 	}
 	if (*_AST)(unsafe.Pointer(src)).Fkind != int32(_AST_RANGEREF) {
-		x__ERROR(tls, cc, src, __ccgo_ts+25335, 0)
+		x__ERROR(tls, cc, src, __ccgo_ts+25343, 0)
 		return src
 	}
 	val = (*_AST)(unsafe.Pointer(src)).Fleft
 	range1 = (*_AST)(unsafe.Pointer(src)).Fright
 	if (*_AST)(unsafe.Pointer(range1)).Fkind != int32(_AST_RANGE) {
-		x__ERROR(tls, cc, src, __ccgo_ts+25130, 0)
+		x__ERROR(tls, cc, src, __ccgo_ts+25138, 0)
 		return src
 	}
 	x__AstReportAs(tls, cc, src, bp)
@@ -44679,14 +44804,14 @@ func x__TransformRangeUse(tls *libc.TLS, cc *CC, src uintptr) (r uintptr) {
 		if x__IsConstExpr(tls, cc, lo) != 0 {
 			lo = x__AstInteger(tls, cc, x__EvalConstExpr(tls, cc, lo))
 		} else {
-			lo = x__ReplaceExprWithVariable(tls, cc, __ccgo_ts+25362, x__FoldIfConst(tls, cc, lo), bp+16)
+			lo = x__ReplaceExprWithVariable(tls, cc, __ccgo_ts+25370, x__FoldIfConst(tls, cc, lo), bp+16)
 		}
 		/* nbits = (hi - lo + 1); */
 		nbits = x__AstOperator(tls, cc, int32('+'), x__AstInteger(tls, cc, int64(1)), x__AstOperator(tls, cc, int32('-'), hi, lo))
 		if x__IsConstExpr(tls, cc, nbits) != 0 {
 			nbits = x__FoldIfConst(tls, cc, nbits)
 		} else {
-			nbits = x__ReplaceExprWithVariable(tls, cc, __ccgo_ts+25367, nbits, bp+16)
+			nbits = x__ReplaceExprWithVariable(tls, cc, __ccgo_ts+25375, nbits, bp+16)
 		}
 	}
 	val = x__FoldIfConst(tls, cc, x__AstOperator(tls, cc, int32(_K_SHR), val, lo))
@@ -44728,7 +44853,7 @@ func x__TypeSize(tls *libc.TLS, cc *CC, typ uintptr) (r int32) {
 		return x__TypeSize(tls, cc, (*_AST)(unsafe.Pointer(typ)).Fleft)
 	case int32(_AST_ARRAYTYPE):
 		if !(x__IsConstExpr(tls, cc, (*_AST)(unsafe.Pointer(typ)).Fright) != 0) {
-			x__ERROR(tls, cc, typ, __ccgo_ts+26432, 0)
+			x__ERROR(tls, cc, typ, __ccgo_ts+26440, 0)
 			size = int32(1)
 		} else {
 			size = int32(x__EvalConstExpr(tls, cc, (*_AST)(unsafe.Pointer(typ)).Fright))
@@ -44757,7 +44882,7 @@ func x__TypeSize(tls *libc.TLS, cc *CC, typ uintptr) (r int32) {
 	case int32(_AST_OBJECT):
 		P = *(*uintptr)(unsafe.Pointer(typ + 8))
 		if (*_Module)(unsafe.Pointer(P)).Fpendingvarblock != 0 {
-			x__ERROR(tls, cc, typ, __ccgo_ts+26466, 0)
+			x__ERROR(tls, cc, typ, __ccgo_ts+26474, 0)
 		}
 		return (*_Module)(unsafe.Pointer(P)).Fvarsize
 	case int32(_AST_TUPLE_TYPE):
@@ -44773,7 +44898,7 @@ func x__TypeSize(tls *libc.TLS, cc *CC, typ uintptr) (r int32) {
 	case int32(_AST_USING):
 		return x__TypeSize(tls, cc, x__ExprType(tls, cc, (*_AST)(unsafe.Pointer(typ)).Fleft))
 	default:
-		x__ERROR(tls, cc, typ, __ccgo_ts+26531, libc.VaList(bp+8, (*_AST)(unsafe.Pointer(typ)).Fkind))
+		x__ERROR(tls, cc, typ, __ccgo_ts+26539, libc.VaList(bp+8, (*_AST)(unsafe.Pointer(typ)).Fkind))
 		return int32(1)
 	}
 	return r
@@ -44785,7 +44910,7 @@ func x__ValidateFrameptr(tls *libc.TLS, cc *CC) {
 			// fp is defined with the pushregs
 			s__ValidatePushregs(tls, cc)
 		} else {
-			cc.x__frameptr = x__GetOneGlobal(tls, cc, int32(_REG_REG), __ccgo_ts+44993, 0)
+			cc.x__frameptr = x__GetOneGlobal(tls, cc, int32(_REG_REG), __ccgo_ts+45001, 0)
 		}
 	}
 	x__ValidateStackptr(tls, cc)
@@ -44796,30 +44921,30 @@ func x__ValidateHeapptr(tls *libc.TLS, cc *CC) {
 		return
 	}
 	if !(cc.x__gl_outputflags&libc.Int32FromInt32(m_OUTFLAG_COG_DATA) != 0) {
-		cc.s__heaplabel = x__NewOperand(tls, cc, int32(_IMM_HUB_LABEL), __ccgo_ts+44956, 0)
+		cc.s__heaplabel = x__NewOperand(tls, cc, int32(_IMM_HUB_LABEL), __ccgo_ts+44964, 0)
 	} else {
-		cc.s__heaplabel = x__NewOperand(tls, cc, int32(_IMM_COG_LABEL), __ccgo_ts+44956, 0)
+		cc.s__heaplabel = x__NewOperand(tls, cc, int32(_IMM_COG_LABEL), __ccgo_ts+44964, 0)
 	}
-	cc.x__heapptr = x__NewImmediatePtr(tls, cc, __ccgo_ts+44968, cc.s__heaplabel)
+	cc.x__heapptr = x__NewImmediatePtr(tls, cc, __ccgo_ts+44976, cc.s__heaplabel)
 }
 
 func x__ValidateMethodTable(tls *libc.TLS, cc *CC) {
 	if !(cc.x__method_table_base != 0) {
-		cc.x__method_table_label = x__NewOperand(tls, cc, int32(_IMM_HUB_LABEL), __ccgo_ts+44914, 0)
-		cc.x__method_table_base = x__NewImmediatePtr(tls, cc, __ccgo_ts+44930, cc.x__method_table_label)
+		cc.x__method_table_label = x__NewOperand(tls, cc, int32(_IMM_HUB_LABEL), __ccgo_ts+44922, 0)
+		cc.x__method_table_base = x__NewImmediatePtr(tls, cc, __ccgo_ts+44938, cc.x__method_table_label)
 	}
 }
 
 func x__ValidateObjbase(tls *libc.TLS, cc *CC) {
 	if !(cc.x__objbase != 0) {
-		cc.s__objlabel = x__NewOperand(tls, cc, int32(_IMM_HUB_LABEL), __ccgo_ts+44942, 0)
-		cc.x__objbase = x__NewImmediatePtr(tls, cc, __ccgo_ts+44949, cc.s__objlabel)
+		cc.s__objlabel = x__NewOperand(tls, cc, int32(_IMM_HUB_LABEL), __ccgo_ts+44950, 0)
+		cc.x__objbase = x__NewImmediatePtr(tls, cc, __ccgo_ts+44957, cc.s__objlabel)
 	}
 }
 
 func x__VarName(tls *libc.TLS, cc *CC, ast uintptr) (r uintptr) {
 	if (*_AST)(unsafe.Pointer(ast)).Fkind == int32(_AST_VARARGS) || (*_AST)(unsafe.Pointer(ast)).Fkind == int32(_AST_VA_START) {
-		return __ccgo_ts + 7128
+		return __ccgo_ts + 7130
 	}
 	if (*_AST)(unsafe.Pointer(ast)).Fkind == int32(_AST_DECLARE_VAR) {
 		// left is type, right is name
@@ -44832,8 +44957,8 @@ func x__VarName(tls *libc.TLS, cc *CC, ast uintptr) (r uintptr) {
 		ast = (*_AST)(unsafe.Pointer(ast)).Fleft
 	}
 	if (*_AST)(unsafe.Pointer(ast)).Fkind != int32(_AST_IDENTIFIER) {
-		x__ERROR(tls, cc, ast, __ccgo_ts+8140, 0)
-		return __ccgo_ts + 22606
+		x__ERROR(tls, cc, ast, __ccgo_ts+8142, 0)
+		return __ccgo_ts + 22614
 	}
 	return *(*uintptr)(unsafe.Pointer(ast + 8))
 }
@@ -44855,7 +44980,7 @@ func x__VerifyIntegerType(tls *libc.TLS, cc *CC, astForError uintptr, typ uintpt
 	if x__IsGenericType(tls, cc, typ) != 0 {
 		return libc.BoolUint8(m_true != 0)
 	}
-	x__ERROR(tls, cc, astForError, __ccgo_ts+32548, libc.VaList(bp+8, opname))
+	x__ERROR(tls, cc, astForError, __ccgo_ts+32556, libc.VaList(bp+8, opname))
 	return libc.BoolUint8(m_false != 0)
 }
 
@@ -44885,7 +45010,7 @@ func x__VisitRecursive(tls *libc.TLS, cc *CC, vptr uintptr, P uintptr, __ccgo_fp
 			break
 		}
 		if (*_AST)(unsafe.Pointer(subobj)).Fkind != int32(_AST_OBJECT) {
-			x__ERROR(tls, cc, subobj, __ccgo_ts+112344, 0)
+			x__ERROR(tls, cc, subobj, __ccgo_ts+112350, 0)
 			break
 		}
 		Q = *(*uintptr)(unsafe.Pointer(subobj + 8))
@@ -44918,17 +45043,17 @@ func x__WARNING(tls *libc.TLS, cc *CC, instr uintptr, msg uintptr, va uintptr) {
 	_, _ = args, banner
 	if cc.x__gl_warnings_are_errors != 0 {
 		cc.x__gl_errors = cc.x__gl_errors + 1
-		banner = __ccgo_ts + 7104
+		banner = __ccgo_ts + 7106
 		x__SETCOLOR(tls, cc, int32(_PRINT_ERROR))
 	} else {
-		banner = __ccgo_ts + 7110
+		banner = __ccgo_ts + 7112
 		x__SETCOLOR(tls, cc, int32(_PRINT_WARNING))
 	}
 	s__ERRORHEADER_AST(tls, cc, instr, banner)
 	args = va
 	vfprintf(tls, cc, libc.X__stderrp, msg, args)
 	_ = args
-	fprintf(tls, cc, libc.X__stderrp, __ccgo_ts+4265, 0)
+	fprintf(tls, cc, libc.X__stderrp, __ccgo_ts+4267, 0)
 	x__SETCOLOR(tls, cc, int32(_PRINT_NORMAL))
 }
 
@@ -44943,7 +45068,7 @@ func x__add_file(tls *libc.TLS, cc *CC, fp uintptr, src_dir uintptr, filename ui
 	var file, too_many_include_nest uintptr
 	var i int32
 	_, _, _, _, _ = FILE_HEAD, UTF8_BOM, file, i, too_many_include_nest
-	too_many_include_nest = __ccgo_ts + 109814 /* _F_ _W4_ */
+	too_many_include_nest = __ccgo_ts + 109820 /* _F_ _W4_ */
 	//
 	// When encoding is UTF-8, skip BOM if present.
 	//
@@ -45004,28 +45129,28 @@ func x__basicyyerror(tls *libc.TLS, cc *CC, msg uintptr) {
 	_ = basicyychar
 	basicyychar = cc.x__saved_basicyychar
 	x__SETCOLOR(tls, cc, int32(_PRINT_ERROR))
-	x__ERRORHEADER(tls, cc, (*_LexStream)(unsafe.Pointer((*_Module)(unsafe.Pointer(cc.x__current)).FLptr)).FfileName, (*_LexStream)(unsafe.Pointer((*_Module)(unsafe.Pointer(cc.x__current)).FLptr)).FlineCounter, __ccgo_ts+4025)
-	if !(libc.Xstrcmp(tls, msg, __ccgo_ts+119179) != 0) {
-		fprintf(tls, cc, libc.X__stderrp, __ccgo_ts+119209, 0)
-		msg = __ccgo_ts + 7138
+	x__ERRORHEADER(tls, cc, (*_LexStream)(unsafe.Pointer((*_Module)(unsafe.Pointer(cc.x__current)).FLptr)).FfileName, (*_LexStream)(unsafe.Pointer((*_Module)(unsafe.Pointer(cc.x__current)).FLptr)).FlineCounter, __ccgo_ts+4027)
+	if !(libc.Xstrcmp(tls, msg, __ccgo_ts+119193) != 0) {
+		fprintf(tls, cc, libc.X__stderrp, __ccgo_ts+119223, 0)
+		msg = __ccgo_ts + 7140
 	}
 	// massage bison's error messages to make them easier to understand
 	for **(**int8)(__ccgo_up(msg)) != 0 {
 		// say which identifier was unexpected
-		if !(libc.Xstrncmp(tls, msg, __ccgo_ts+119246, libc.Xstrlen(tls, __ccgo_ts+119246)) != 0) && cc.x__last_ast != 0 && (*_AST)(unsafe.Pointer(cc.x__last_ast)).Fkind == int32(_AST_IDENTIFIER) {
-			fprintf(tls, cc, libc.X__stderrp, __ccgo_ts+119268, libc.VaList(bp+8, *(*uintptr)(unsafe.Pointer(cc.x__last_ast + 8))))
-			msg = msg + uintptr(libc.Xstrlen(tls, __ccgo_ts+119246))
+		if !(libc.Xstrncmp(tls, msg, __ccgo_ts+119260, libc.Xstrlen(tls, __ccgo_ts+119260)) != 0) && cc.x__last_ast != 0 && (*_AST)(unsafe.Pointer(cc.x__last_ast)).Fkind == int32(_AST_IDENTIFIER) {
+			fprintf(tls, cc, libc.X__stderrp, __ccgo_ts+119282, libc.VaList(bp+8, *(*uintptr)(unsafe.Pointer(cc.x__last_ast + 8))))
+			msg = msg + uintptr(libc.Xstrlen(tls, __ccgo_ts+119260))
 		} else {
-			if !(libc.Xstrncmp(tls, msg, __ccgo_ts+114759, libc.Xstrlen(tls, __ccgo_ts+114759)) != 0) && basicyychar >= int32(' ') && basicyychar < int32(127) {
-				fprintf(tls, cc, libc.X__stderrp, __ccgo_ts+42328, libc.VaList(bp+8, basicyychar))
-				msg = msg + uintptr(libc.Xstrlen(tls, __ccgo_ts+114759))
+			if !(libc.Xstrncmp(tls, msg, __ccgo_ts+114765, libc.Xstrlen(tls, __ccgo_ts+114765)) != 0) && basicyychar >= int32(' ') && basicyychar < int32(127) {
+				fprintf(tls, cc, libc.X__stderrp, __ccgo_ts+42336, libc.VaList(bp+8, basicyychar))
+				msg = msg + uintptr(libc.Xstrlen(tls, __ccgo_ts+114765))
 			} else {
-				fprintf(tls, cc, libc.X__stderrp, __ccgo_ts+42328, libc.VaList(bp+8, int32(**(**int8)(__ccgo_up(msg)))))
+				fprintf(tls, cc, libc.X__stderrp, __ccgo_ts+42336, libc.VaList(bp+8, int32(**(**int8)(__ccgo_up(msg)))))
 				msg = msg + 1
 			}
 		}
 	}
-	fprintf(tls, cc, libc.X__stderrp, __ccgo_ts+4265, 0)
+	fprintf(tls, cc, libc.X__stderrp, __ccgo_ts+4267, 0)
 	cc.x__gl_errors = cc.x__gl_errors + 1
 	x__SETCOLOR(tls, cc, int32(_PRINT_NORMAL))
 }
@@ -45062,7 +45187,7 @@ func x__bfparse(tls *libc.TLS, cc *CC) (r int32) {
 	// we should be at EOF here
 	c = x__lexpeekc(tls, cc, L)
 	if c > 0 {
-		x__ERROR(tls, cc, libc.UintptrFromInt32(0), __ccgo_ts+42656, 0)
+		x__ERROR(tls, cc, libc.UintptrFromInt32(0), __ccgo_ts+42664, 0)
 		return -int32(1)
 	}
 	return 0
@@ -45072,7 +45197,7 @@ func x__cfatal(tls *libc.TLS, cc *CC, format uintptr, arg1 uintptr, arg2 int64, 
 	/*
 	 * A real disaster.
 	 */
-	s__do_msg(tls, cc, __ccgo_ts+111983, format, arg1, arg2, arg3)
+	s__do_msg(tls, cc, __ccgo_ts+111989, format, arg1, arg2, arg3)
 	tls.Longjmp(uintptr(unsafe.Pointer(&cc.x__error_exit)), -libc.Int32FromInt32(1))
 }
 
@@ -45083,33 +45208,33 @@ func x__cgramyyerror(tls *libc.TLS, cc *CC, msg uintptr) {
 	_ = cgramyychar
 	cgramyychar = cc.x__saved_cgramyychar
 	x__SETCOLOR(tls, cc, int32(_PRINT_ERROR))
-	x__ERRORHEADER(tls, cc, (*_LexStream)(unsafe.Pointer((*_Module)(unsafe.Pointer(cc.x__current)).FLptr)).FfileName, (*_LexStream)(unsafe.Pointer((*_Module)(unsafe.Pointer(cc.x__current)).FLptr)).FlineCounter, __ccgo_ts+4025)
-	if !(libc.Xstrcmp(tls, msg, __ccgo_ts+119179) != 0) {
-		fprintf(tls, cc, libc.X__stderrp, __ccgo_ts+119209, 0)
-		msg = __ccgo_ts + 7138
+	x__ERRORHEADER(tls, cc, (*_LexStream)(unsafe.Pointer((*_Module)(unsafe.Pointer(cc.x__current)).FLptr)).FfileName, (*_LexStream)(unsafe.Pointer((*_Module)(unsafe.Pointer(cc.x__current)).FLptr)).FlineCounter, __ccgo_ts+4027)
+	if !(libc.Xstrcmp(tls, msg, __ccgo_ts+119193) != 0) {
+		fprintf(tls, cc, libc.X__stderrp, __ccgo_ts+119223, 0)
+		msg = __ccgo_ts + 7140
 	}
 	// massage bison's error messages to make them easier to understand
 	for **(**int8)(__ccgo_up(msg)) != 0 {
 		// say which identifier was unexpected
-		if !(libc.Xstrncmp(tls, msg, __ccgo_ts+119246, libc.Xstrlen(tls, __ccgo_ts+119246)) != 0) && cc.x__last_ast != 0 && (*_AST)(unsafe.Pointer(cc.x__last_ast)).Fkind == int32(_AST_IDENTIFIER) {
-			fprintf(tls, cc, libc.X__stderrp, __ccgo_ts+119268, libc.VaList(bp+8, *(*uintptr)(unsafe.Pointer(cc.x__last_ast + 8))))
-			msg = msg + uintptr(libc.Xstrlen(tls, __ccgo_ts+119246))
+		if !(libc.Xstrncmp(tls, msg, __ccgo_ts+119260, libc.Xstrlen(tls, __ccgo_ts+119260)) != 0) && cc.x__last_ast != 0 && (*_AST)(unsafe.Pointer(cc.x__last_ast)).Fkind == int32(_AST_IDENTIFIER) {
+			fprintf(tls, cc, libc.X__stderrp, __ccgo_ts+119282, libc.VaList(bp+8, *(*uintptr)(unsafe.Pointer(cc.x__last_ast + 8))))
+			msg = msg + uintptr(libc.Xstrlen(tls, __ccgo_ts+119260))
 		} else {
-			if !(libc.Xstrncmp(tls, msg, __ccgo_ts+127584, libc.Xstrlen(tls, __ccgo_ts+127584)) != 0) && cc.x__last_ast != 0 && (*_AST)(unsafe.Pointer(cc.x__last_ast)).Fkind == int32(_AST_IDENTIFIER) {
-				fprintf(tls, cc, libc.X__stderrp, __ccgo_ts+127605, libc.VaList(bp+8, *(*uintptr)(unsafe.Pointer(cc.x__last_ast + 8))))
-				msg = msg + uintptr(libc.Xstrlen(tls, __ccgo_ts+127584))
+			if !(libc.Xstrncmp(tls, msg, __ccgo_ts+127598, libc.Xstrlen(tls, __ccgo_ts+127598)) != 0) && cc.x__last_ast != 0 && (*_AST)(unsafe.Pointer(cc.x__last_ast)).Fkind == int32(_AST_IDENTIFIER) {
+				fprintf(tls, cc, libc.X__stderrp, __ccgo_ts+127619, libc.VaList(bp+8, *(*uintptr)(unsafe.Pointer(cc.x__last_ast + 8))))
+				msg = msg + uintptr(libc.Xstrlen(tls, __ccgo_ts+127598))
 			} else {
-				if !(libc.Xstrncmp(tls, msg, __ccgo_ts+114759, libc.Xstrlen(tls, __ccgo_ts+114759)) != 0) && cgramyychar >= int32(' ') && cgramyychar < int32(127) {
-					fprintf(tls, cc, libc.X__stderrp, __ccgo_ts+42328, libc.VaList(bp+8, cgramyychar))
-					msg = msg + uintptr(libc.Xstrlen(tls, __ccgo_ts+114759))
+				if !(libc.Xstrncmp(tls, msg, __ccgo_ts+114765, libc.Xstrlen(tls, __ccgo_ts+114765)) != 0) && cgramyychar >= int32(' ') && cgramyychar < int32(127) {
+					fprintf(tls, cc, libc.X__stderrp, __ccgo_ts+42336, libc.VaList(bp+8, cgramyychar))
+					msg = msg + uintptr(libc.Xstrlen(tls, __ccgo_ts+114765))
 				} else {
-					fprintf(tls, cc, libc.X__stderrp, __ccgo_ts+42328, libc.VaList(bp+8, int32(**(**int8)(__ccgo_up(msg)))))
+					fprintf(tls, cc, libc.X__stderrp, __ccgo_ts+42336, libc.VaList(bp+8, int32(**(**int8)(__ccgo_up(msg)))))
 					msg = msg + 1
 				}
 			}
 		}
 	}
-	fprintf(tls, cc, libc.X__stderrp, __ccgo_ts+4265, 0)
+	fprintf(tls, cc, libc.X__stderrp, __ccgo_ts+4267, 0)
 	cc.x__gl_errors = cc.x__gl_errors + 1
 	x__SETCOLOR(tls, cc, int32(_PRINT_NORMAL))
 }
@@ -45148,7 +45273,7 @@ func x__dataListLen(tls *libc.TLS, cc *CC, ast uintptr, elemsize int32) (r uint3
 			if (*_AST)(unsafe.Pointer(sub)).Fkind == int32(_AST_ARRAYDECL) || (*_AST)(unsafe.Pointer(sub)).Fkind == int32(_AST_ARRAYREF) {
 				numelems = libc.Uint32FromInt64(x__EvalPasmExpr(tls, cc, (*_AST)(unsafe.Pointer((*_AST)(unsafe.Pointer(ast)).Fleft)).Fright))
 				if libc.Int32FromUint32(numelems) < 0 {
-					x__ERROR(tls, cc, sub, __ccgo_ts+36354, 0)
+					x__ERROR(tls, cc, sub, __ccgo_ts+36362, 0)
 					numelems = uint32(0)
 				}
 			} else {
@@ -45159,7 +45284,7 @@ func x__dataListLen(tls *libc.TLS, cc *CC, ast uintptr, elemsize int32) (r uint3
 						start = int32(x__EvalPasmExpr(tls, cc, (*_AST)(unsafe.Pointer(sub)).Fleft))
 						numelems = libc.Uint32FromInt64(x__EvalPasmExpr(tls, cc, (*_AST)(unsafe.Pointer(sub)).Fright) - int64(start) + int64(1))
 						if libc.Int32FromUint32(numelems) < 0 {
-							x__ERROR(tls, cc, sub, __ccgo_ts+36388, 0)
+							x__ERROR(tls, cc, sub, __ccgo_ts+36396, 0)
 							numelems = uint32(0)
 						}
 					} else {
@@ -45191,19 +45316,19 @@ func x__defaultBuiltin(tls *libc.TLS, cc *CC, f uintptr, b uintptr, params uintp
 	bp := tls.Alloc(16)
 	defer tls.Free(16)
 	if (*_Builtin)(unsafe.Pointer(b)).Fnumparameters >= 0 && x__AstListLen(tls, cc, params) != (*_Builtin)(unsafe.Pointer(b)).Fnumparameters {
-		x__ERROR(tls, cc, params, __ccgo_ts+101693, libc.VaList(bp+8, (*_Builtin)(unsafe.Pointer(b)).Fname))
+		x__ERROR(tls, cc, params, __ccgo_ts+101699, libc.VaList(bp+8, (*_Builtin)(unsafe.Pointer(b)).Fname))
 	}
 	if cc.x__gl_p2 != 0 && (*_Builtin)(unsafe.Pointer(b)).Fp2_cname != 0 {
-		x__flexbuf_printf(tls, cc, f, __ccgo_ts+99567, libc.VaList(bp+8, (*_Builtin)(unsafe.Pointer(b)).Fp2_cname))
+		x__flexbuf_printf(tls, cc, f, __ccgo_ts+99573, libc.VaList(bp+8, (*_Builtin)(unsafe.Pointer(b)).Fp2_cname))
 	} else {
 		if cc.x__gl_gas_dat != 0 && (*_Builtin)(unsafe.Pointer(b)).Fgas_cname != 0 {
-			x__flexbuf_printf(tls, cc, f, __ccgo_ts+99567, libc.VaList(bp+8, (*_Builtin)(unsafe.Pointer(b)).Fgas_cname))
+			x__flexbuf_printf(tls, cc, f, __ccgo_ts+99573, libc.VaList(bp+8, (*_Builtin)(unsafe.Pointer(b)).Fgas_cname))
 		} else {
-			x__flexbuf_printf(tls, cc, f, __ccgo_ts+99567, libc.VaList(bp+8, (*_Builtin)(unsafe.Pointer(b)).Fp1_cname))
+			x__flexbuf_printf(tls, cc, f, __ccgo_ts+99573, libc.VaList(bp+8, (*_Builtin)(unsafe.Pointer(b)).Fp1_cname))
 		}
 	}
 	x__PrintExprList(tls, cc, f, params, int32(m_PRINTEXPR_TOPLEVEL), libc.UintptrFromInt32(0))
-	x__flexbuf_printf(tls, cc, f, __ccgo_ts+28072, 0)
+	x__flexbuf_printf(tls, cc, f, __ccgo_ts+28080, 0)
 }
 
 func x__doSimplifyAssignments(tls *libc.TLS, cc *CC, astptr uintptr, insertCasts int32, atTopLevel int32) {
@@ -45234,7 +45359,7 @@ func x__doSimplifyAssignments(tls *libc.TLS, cc *CC, astptr uintptr, insertCasts
 		lhs = (*_AST)(unsafe.Pointer(ast)).Fright
 		siz = x__TypeSize(tls, cc, typ)
 		x__AstReportAs(tls, cc, ast, bp+8)
-		rhs = x__AstTempLocalVariable(tls, cc, __ccgo_ts+32281, typ)
+		rhs = x__AstTempLocalVariable(tls, cc, __ccgo_ts+32289, typ)
 		chain = x__AstAssign(tls, cc, lhs, x__AstOperator(tls, cc, int32('+'), lhs, x__AstInteger(tls, cc, int64(siz))))
 		chain = x__NewAST(tls, cc, int32(_AST_SEQUENCE), chain, rhs)
 		chain = x__NewAST(tls, cc, int32(_AST_SEQUENCE), x__AstAssign(tls, cc, rhs, x__NewAST(tls, cc, int32(_AST_ARRAYREF), x__NewAST(tls, cc, int32(_AST_CAST), x__NewAST(tls, cc, int32(_AST_PTRTYPE), typ, libc.UintptrFromInt32(0)), lhs), x__AstInteger(tls, cc, 0))), chain)
@@ -45277,7 +45402,7 @@ func x__doSimplifyAssignments(tls *libc.TLS, cc *CC, astptr uintptr, insertCasts
 			cond = (*_AST)(unsafe.Pointer(ast)).Fleft
 			ifcond = (*_AST)(unsafe.Pointer((*_AST)(unsafe.Pointer(ast)).Fright)).Fleft
 			elsecond = (*_AST)(unsafe.Pointer((*_AST)(unsafe.Pointer(ast)).Fright)).Fright
-			tempvar = x__AstTempLocalVariable(tls, cc, __ccgo_ts+32268, typ1)
+			tempvar = x__AstTempLocalVariable(tls, cc, __ccgo_ts+32276, typ1)
 			newif = x__NewAST(tls, cc, int32(_AST_IF), cond, x__NewAST(tls, cc, int32(_AST_THENELSE), s__AstTypedAssignStmt(tls, cc, tempvar, ifcond, typ1), s__AstTypedAssignStmt(tls, cc, tempvar, elsecond, typ1)))
 			stmt = x__NewAST(tls, cc, int32(_AST_STMTLIST), newif, x__NewAST(tls, cc, int32(_AST_STMTLIST), tempvar, libc.UintptrFromInt32(0)))
 			v3 = stmt
@@ -45314,9 +45439,9 @@ func x__doSimplifyAssignments(tls *libc.TLS, cc *CC, astptr uintptr, insertCasts
 		if x__IsConstExpr(tls, cc, lhs) != 0 {
 			if (*_AST)(unsafe.Pointer(lhs)).Fkind == int32(_AST_IDENTIFIER) || (*_AST)(unsafe.Pointer(lhs)).Fkind == int32(_AST_LOCAL_IDENTIFIER) {
 				// check for CON := x
-				x__ERROR(tls, cc, ast, __ccgo_ts+32287, libc.VaList(bp+32, x__GetUserIdentifierName(tls, cc, lhs)))
+				x__ERROR(tls, cc, ast, __ccgo_ts+32295, libc.VaList(bp+32, x__GetUserIdentifierName(tls, cc, lhs)))
 			} else {
-				x__ERROR(tls, cc, ast, __ccgo_ts+32315, 0)
+				x__ERROR(tls, cc, ast, __ccgo_ts+32323, 0)
 			}
 		}
 		if (*_AST)(unsafe.Pointer(lhs)).Fkind == int32(_AST_EXPRLIST) {
@@ -45325,17 +45450,17 @@ func x__doSimplifyAssignments(tls *libc.TLS, cc *CC, astptr uintptr, insertCasts
 			// here because we have not yet done type inference, so
 			// the count for functions is unknown
 			if op != int32(_K_ASSIGN) {
-				x__ERROR(tls, cc, ast, __ccgo_ts+32344, 0)
+				x__ERROR(tls, cc, ast, __ccgo_ts+32352, 0)
 				return
 			}
 			list = libc.UintptrFromInt32(0)
 			for lhs != 0 {
 				if !(lhs != 0) {
-					x__ERROR(tls, cc, libc.UintptrFromInt32(0), __ccgo_ts+32396, 0)
+					x__ERROR(tls, cc, libc.UintptrFromInt32(0), __ccgo_ts+32404, 0)
 					return
 				} else {
 					if (*_AST)(unsafe.Pointer(lhs)).Fkind != int32(_AST_EXPRLIST) {
-						x__ERROR(tls, cc, lhs, __ccgo_ts+32473, libc.VaList(bp+32, (*_AST)(unsafe.Pointer(lhs)).Fkind))
+						x__ERROR(tls, cc, lhs, __ccgo_ts+32481, libc.VaList(bp+32, (*_AST)(unsafe.Pointer(lhs)).Fkind))
 						return
 					}
 				}
@@ -45365,7 +45490,7 @@ func x__doSimplifyAssignments(tls *libc.TLS, cc *CC, astptr uintptr, insertCasts
 				if (x__ExprHasSideEffects(tls, cc, lhs) != 0 || s__IsBoolOp(tls, cc, op) != 0) && !(cc.x__gl_output == int32(m_OUTPUT_BYTECODE) && cc.x__gl_interp_kind != int32(m_INTERP_KIND_NUCODE)) {
 					if cc.x__curfunc != 0 && ((*_Function)(unsafe.Pointer(cc.x__curfunc)).Flanguage >= m_LANG_SPIN_SPIN1 && (*_Function)(unsafe.Pointer(cc.x__curfunc)).Flanguage <= int32(m_LANG_SPIN_SPIN2)) && rhs != 0 && !(x__IsConstExpr(tls, cc, rhs) != 0) {
 						// Spin must maintain a strict evaluation order
-						temp = x__AstTempLocalVariable(tls, cc, __ccgo_ts+32268, libc.UintptrFromInt32(0))
+						temp = x__AstTempLocalVariable(tls, cc, __ccgo_ts+32276, libc.UintptrFromInt32(0))
 						p2 = x__AstAssign(tls, cc, temp, rhs)
 						if **(**uintptr)(__ccgo_up(bp)) != 0 {
 							**(**uintptr)(__ccgo_up(bp)) = x__NewAST(tls, cc, int32(_AST_SEQUENCE), **(**uintptr)(__ccgo_up(bp)), p2)
@@ -45504,7 +45629,7 @@ func x__doSimplifyAssignments(tls *libc.TLS, cc *CC, astptr uintptr, insertCasts
 				size1 = s__IncDecSize(tls, cc, typ4)
 				if needTransform1 != 0 {
 					x__AstReportAs(tls, cc, ast, bp+8)
-					temp1 = x__AstTempLocalVariable(tls, cc, __ccgo_ts+32268, typ4)
+					temp1 = x__AstTempLocalVariable(tls, cc, __ccgo_ts+32276, typ4)
 					save = x__AstAssign(tls, cc, temp1, (*_AST)(unsafe.Pointer(ast)).Fleft)
 					update = x__AstAssign(tls, cc, (*_AST)(unsafe.Pointer(ast)).Fleft, x__AstOperator(tls, cc, newop, (*_AST)(unsafe.Pointer(ast)).Fleft, x__AstInteger(tls, cc, int64(size1))))
 					v3 = x__NewAST(tls, cc, int32(_AST_SEQUENCE), x__NewAST(tls, cc, int32(_AST_SEQUENCE), save, update), temp1)
@@ -45584,7 +45709,7 @@ func x__do_define(tls *libc.TLS, cc *CC, ignore_redef int32, predefine int32) (r
 	var _ /* repl_list at bp+0 */ [263168]int8
 	var _ /* s_line_col at bp+264200 */ _LINE_COL
 	_, _, _, _, _, _, _, _, _, _, _ = c, cp, def_end, def_start, defp, dnargs, predef, prevp, redefined, v1, v2
-	predef = __ccgo_ts + 104272 /* TRUE if redefined    */
+	predef = __ccgo_ts + 104278 /* TRUE if redefined    */
 	dnargs = 0                  /* Column of macro definition   */
 	v1 = libc.Uint64FromInt32(0)
 	def_start = v1
@@ -45609,8 +45734,8 @@ func x__do_define(tls *libc.TLS, cc *CC, ignore_redef int32, predefine int32) (r
 			/* Find place in the macro list to insert the definition    */
 			defp = **(**uintptr)(__ccgo_up(prevp))
 			if **(**int32)(__ccgo_up(bp + 264196)) != 0 || (*_DEFBUF)(unsafe.Pointer(defp)).Fpush != 0 { /* Not known or 'pushed' macro      */
-				if libc.Xstrcmp(tls, uintptr(unsafe.Pointer(&cc.x__identifier)), __ccgo_ts+104300) == 0 || cc.x__stdc_val != 0 && libc.Xstrcmp(tls, uintptr(unsafe.Pointer(&cc.x__identifier)), __ccgo_ts+104308) == 0 {
-					x__cerror(tls, cc, __ccgo_ts+104320, uintptr(unsafe.Pointer(&cc.x__identifier)), 0, libc.UintptrFromInt32(0)) /* _E_  */
+				if libc.Xstrcmp(tls, uintptr(unsafe.Pointer(&cc.x__identifier)), __ccgo_ts+104306) == 0 || cc.x__stdc_val != 0 && libc.Xstrcmp(tls, uintptr(unsafe.Pointer(&cc.x__identifier)), __ccgo_ts+104314) == 0 {
+					x__cerror(tls, cc, __ccgo_ts+104326, uintptr(unsafe.Pointer(&cc.x__identifier)), 0, libc.UintptrFromInt32(0)) /* _E_  */
 					return libc.UintptrFromInt32(0)
 				}
 				redefined = m_FALSE /* Quite new definition */
@@ -45655,8 +45780,8 @@ func x__do_define(tls *libc.TLS, cc *CC, ignore_redef int32, predefine int32) (r
 	if redefined != 0 {
 		if dnargs != cc.s__nargs || !(libc.Xstrcmp(tls, (*_DEFBUF)(unsafe.Pointer(defp)).Frepl, bp) == libc.Int32FromInt32(0)) || !(libc.Xstrcmp(tls, (*_DEFBUF)(unsafe.Pointer(defp)).Fparmnames, uintptr(unsafe.Pointer(&cc.x__work_buf))) == libc.Int32FromInt32(0)) { /* Warn if differently redefined    */
 			if cc.x__warn_level&int32(1) != 0 {
-				x__cwarn(tls, cc, __ccgo_ts+104346, libc.UintptrFromInt32(0), 0, libc.UintptrFromInt32(0)) /* _W1_ */
-				x__dump_a_def(tls, cc, __ccgo_ts+104369, defp, m_FALSE, int32(m_TRUE), cc.x__fp_err)
+				x__cwarn(tls, cc, __ccgo_ts+104352, libc.UintptrFromInt32(0), 0, libc.UintptrFromInt32(0)) /* _W1_ */
+				x__dump_a_def(tls, cc, __ccgo_ts+104375, defp, m_FALSE, int32(m_TRUE), cc.x__fp_err)
 			}
 		} else { /* Identical redefinition   */
 			return defp
@@ -45672,7 +45797,7 @@ func x__do_define(tls *libc.TLS, cc *CC, ignore_redef int32, predefine int32) (r
 		(**(**_LINE_COL)(__ccgo_up(bp + 264216))).Fcol = def_end
 		x__get_src_location(tls, cc, bp+264216)
 		/* Putout the macro definition information embedded in comment  */
-		(*(*func(*libc.TLS, *CC, _OUTDEST, uintptr, uintptr) int32)(unsafe.Pointer(&struct{ uintptr }{cc.x__mcpp_fprintf})))(tls, cc, int32(_OUT), __ccgo_ts+104390, libc.VaList(bp+264240, defp+49, (**(**_LINE_COL)(__ccgo_up(bp + 264200))).Fline, (**(**_LINE_COL)(__ccgo_up(bp + 264200))).Fcol, (**(**_LINE_COL)(__ccgo_up(bp + 264216))).Fline, (**(**_LINE_COL)(__ccgo_up(bp + 264216))).Fcol))
+		(*(*func(*libc.TLS, *CC, _OUTDEST, uintptr, uintptr) int32)(unsafe.Pointer(&struct{ uintptr }{cc.x__mcpp_fprintf})))(tls, cc, int32(_OUT), __ccgo_ts+104396, libc.VaList(bp+264240, defp+49, (**(**_LINE_COL)(__ccgo_up(bp + 264200))).Fline, (**(**_LINE_COL)(__ccgo_up(bp + 264200))).Fcol, (**(**_LINE_COL)(__ccgo_up(bp + 264216))).Fline, (**(**_LINE_COL)(__ccgo_up(bp + 264216))).Fcol))
 		cc.x__wrong_line = int32(m_TRUE) /* Need #line later */
 	}
 	return defp
@@ -45700,7 +45825,7 @@ func x__do_include(tls *libc.TLS, cc *CC, next int32) (r int32) {
 	var filename, fname, hp, no_name, v3 uintptr
 	var _ /* header at bp+0 */ [1040]int8
 	_, _, _, _, _, _, _, _, _, _ = c, delim, filename, fname, hp, no_name, sys_header, token_type, v1, v3
-	no_name = __ccgo_ts + 109643 /* " or <, >            */
+	no_name = __ccgo_ts + 109649 /* " or <, >            */
 	sys_header = 0
 	v1 = x__skip_ws(tls, cc)
 	delim = v1
@@ -45778,7 +45903,7 @@ found_name:
 		}
 		return int32(m_TRUE)
 	}
-	x__cerror(tls, cc, __ccgo_ts+109658, filename, 0, libc.UintptrFromInt32(0)) /* _E_  */
+	x__cerror(tls, cc, __ccgo_ts+109664, filename, 0, libc.UintptrFromInt32(0)) /* _E_  */
 	goto error
 error:
 	;
@@ -45787,7 +45912,7 @@ error:
 	goto not_header
 not_header:
 	;
-	x__cerror(tls, cc, __ccgo_ts+109687, fname, 0, libc.UintptrFromInt32(0)) /* _E_  */
+	x__cerror(tls, cc, __ccgo_ts+109693, fname, 0, libc.UintptrFromInt32(0)) /* _E_  */
 	goto syntax_error
 syntax_error:
 	;
@@ -45800,7 +45925,7 @@ func x__do_old(tls *libc.TLS, cc *CC) {
 		x__cerror(tls, cc, cc.s__unknown, uintptr(unsafe.Pointer(&cc.x__identifier)), 0, libc.UintptrFromInt32(0))
 	} else {
 		if cc.x__warn_level&int32(8) != 0 {
-			x__cwarn(tls, cc, cc.s__unknown, uintptr(unsafe.Pointer(&cc.x__identifier)), 0, __ccgo_ts+103886)
+			x__cwarn(tls, cc, cc.s__unknown, uintptr(unsafe.Pointer(&cc.x__identifier)), 0, __ccgo_ts+103892)
 		}
 	}
 	x__skip_nl(tls, cc)
@@ -45846,7 +45971,7 @@ func x__dump_a_def(tls *libc.TLS, cc *CC, why uintptr, dp uintptr, newdef int32,
 			}
 			v1 = v2
 		}
-		(*(*func(*libc.TLS, *CC, _OUTDEST, uintptr, uintptr) int32)(unsafe.Pointer(&struct{ uintptr }{cc.x__mcpp_fprintf})))(tls, cc, v1, __ccgo_ts+105022, libc.VaList(bp+8, why, dp+49))
+		(*(*func(*libc.TLS, *CC, _OUTDEST, uintptr, uintptr) int32)(unsafe.Pointer(&struct{ uintptr }{cc.x__mcpp_fprintf})))(tls, cc, v1, __ccgo_ts+105028, libc.VaList(bp+8, why, dp+49))
 	}
 	if fp == cc.x__fp_out {
 		v1 = int32(_OUT)
@@ -45864,11 +45989,11 @@ func x__dump_a_def(tls *libc.TLS, cc *CC, why uintptr, dp uintptr, newdef int32,
 		v1 = v2
 	}
 	if commented != 0 {
-		v7 = __ccgo_ts + 90146
+		v7 = __ccgo_ts + 90152
 	} else {
-		v7 = __ccgo_ts + 7138
+		v7 = __ccgo_ts + 7140
 	}
-	(*(*func(*libc.TLS, *CC, _OUTDEST, uintptr, uintptr) int32)(unsafe.Pointer(&struct{ uintptr }{cc.x__mcpp_fprintf})))(tls, cc, v1, __ccgo_ts+105043, libc.VaList(bp+8, v7, dp+49)) /* Macro name           */
+	(*(*func(*libc.TLS, *CC, _OUTDEST, uintptr, uintptr) int32)(unsafe.Pointer(&struct{ uintptr }{cc.x__mcpp_fprintf})))(tls, cc, v1, __ccgo_ts+105049, libc.VaList(bp+8, v7, dp+49)) /* Macro name           */
 	if numargs >= 0 {                                                                                                                                                                 /* Parameter list       */
 		appendix = cc.x__null
 		if !(newdef != 0) {
@@ -45909,7 +46034,7 @@ func x__dump_a_def(tls *libc.TLS, cc *CC, why uintptr, dp uintptr, newdef int32,
 			}
 			v1 = v2
 		}
-		(*(*func(*libc.TLS, *CC, _OUTDEST, uintptr, uintptr) int32)(unsafe.Pointer(&struct{ uintptr }{cc.x__mcpp_fprintf})))(tls, cc, v1, __ccgo_ts+105056, libc.VaList(bp+8, (*_DEFBUF)(unsafe.Pointer(dp)).Fparmnames, appendix))
+		(*(*func(*libc.TLS, *CC, _OUTDEST, uintptr, uintptr) int32)(unsafe.Pointer(&struct{ uintptr }{cc.x__mcpp_fprintf})))(tls, cc, v1, __ccgo_ts+105062, libc.VaList(bp+8, (*_DEFBUF)(unsafe.Pointer(dp)).Fparmnames, appendix))
 	}
 	if **(**int8)(__ccgo_up((*_DEFBUF)(unsafe.Pointer(dp)).Frepl)) != 0 {
 		if fp == cc.x__fp_out {
@@ -45947,7 +46072,7 @@ func x__dump_a_def(tls *libc.TLS, cc *CC, why uintptr, dp uintptr, newdef int32,
 			}
 			v1 = v2
 		}
-		(*(*func(*libc.TLS, *CC, uintptr, _OUTDEST) int32)(unsafe.Pointer(&struct{ uintptr }{cc.x__mcpp_fputs})))(tls, cc, __ccgo_ts+105063, v1)
+		(*(*func(*libc.TLS, *CC, uintptr, _OUTDEST) int32)(unsafe.Pointer(&struct{ uintptr }{cc.x__mcpp_fputs})))(tls, cc, __ccgo_ts+105069, v1)
 	}
 	if comment != 0 { /* Not -dM option       */
 		if fp == cc.x__fp_out {
@@ -45965,7 +46090,7 @@ func x__dump_a_def(tls *libc.TLS, cc *CC, why uintptr, dp uintptr, newdef int32,
 			}
 			v1 = v2
 		}
-		(*(*func(*libc.TLS, *CC, _OUTDEST, uintptr, uintptr) int32)(unsafe.Pointer(&struct{ uintptr }{cc.x__mcpp_fprintf})))(tls, cc, v1, __ccgo_ts+105067, libc.VaList(bp+8, (*_DEFBUF)(unsafe.Pointer(dp)).Ffname, (*_DEFBUF)(unsafe.Pointer(dp)).Fmline))
+		(*(*func(*libc.TLS, *CC, _OUTDEST, uintptr, uintptr) int32)(unsafe.Pointer(&struct{ uintptr }{cc.x__mcpp_fprintf})))(tls, cc, v1, __ccgo_ts+105073, libc.VaList(bp+8, (*_DEFBUF)(unsafe.Pointer(dp)).Ffname, (*_DEFBUF)(unsafe.Pointer(dp)).Fmline))
 	}
 	if fp == cc.x__fp_out {
 		v1 = int32(_OUT)
@@ -45995,7 +46120,7 @@ func x__dump_def(tls *libc.TLS, cc *CC, comment int32, K_opt int32) {
 	_, _, _, _ = dp, symp, v2, v3
 	x__sharp(tls, cc, libc.UintptrFromInt32(0), 0) /* Report the current source file & line    */
 	if comment != 0 {
-		(*(*func(*libc.TLS, *CC, uintptr, _OUTDEST) int32)(unsafe.Pointer(&struct{ uintptr }{cc.x__mcpp_fputs})))(tls, cc, __ccgo_ts+105082, int32(_OUT))
+		(*(*func(*libc.TLS, *CC, uintptr, _OUTDEST) int32)(unsafe.Pointer(&struct{ uintptr }{cc.x__mcpp_fputs})))(tls, cc, __ccgo_ts+105088, int32(_OUT))
 	}
 	symp = uintptr(unsafe.Pointer(&cc.s__symtab))
 	for {
@@ -46007,7 +46132,7 @@ func x__dump_def(tls *libc.TLS, cc *CC, comment int32, K_opt int32) {
 		if v2 != libc.UintptrFromInt32(0) {
 			for {
 				if K_opt != 0 {
-					(*(*func(*libc.TLS, *CC, _OUTDEST, uintptr, uintptr) int32)(unsafe.Pointer(&struct{ uintptr }{cc.x__mcpp_fprintf})))(tls, cc, int32(_OUT), __ccgo_ts+105115, libc.VaList(bp+8, dp+49))
+					(*(*func(*libc.TLS, *CC, _OUTDEST, uintptr, uintptr) int32)(unsafe.Pointer(&struct{ uintptr }{cc.x__mcpp_fprintf})))(tls, cc, int32(_OUT), __ccgo_ts+105121, libc.VaList(bp+8, dp+49))
 				} else {
 					x__dump_a_def(tls, cc, libc.UintptrFromInt32(0), dp, m_FALSE, comment, cc.x__fp_out)
 				}
@@ -46041,11 +46166,11 @@ func x__dump_string(tls *libc.TLS, cc *CC, why uintptr, text uintptr) {
 	var chr, cp, v3 uintptr
 	_, _, _, _, _, _, _, _ = c, c1, c2, chr, cp, num, v2, v3
 	if why != libc.UintptrFromInt32(0) {
-		(*(*func(*libc.TLS, *CC, _OUTDEST, uintptr, uintptr) int32)(unsafe.Pointer(&struct{ uintptr }{cc.x__mcpp_fprintf})))(tls, cc, int32(_DBG), __ccgo_ts+111995, libc.VaList(bp+8, why))
+		(*(*func(*libc.TLS, *CC, _OUTDEST, uintptr, uintptr) int32)(unsafe.Pointer(&struct{ uintptr }{cc.x__mcpp_fprintf})))(tls, cc, int32(_DBG), __ccgo_ts+112001, libc.VaList(bp+8, why))
 	}
-	(*(*func(*libc.TLS, *CC, uintptr, _OUTDEST) int32)(unsafe.Pointer(&struct{ uintptr }{cc.x__mcpp_fputs})))(tls, cc, __ccgo_ts+112001, int32(_DBG))
+	(*(*func(*libc.TLS, *CC, uintptr, _OUTDEST) int32)(unsafe.Pointer(&struct{ uintptr }{cc.x__mcpp_fputs})))(tls, cc, __ccgo_ts+112007, int32(_DBG))
 	if text == libc.UintptrFromInt32(0) {
-		(*(*func(*libc.TLS, *CC, uintptr, _OUTDEST) int32)(unsafe.Pointer(&struct{ uintptr }{cc.x__mcpp_fputs})))(tls, cc, __ccgo_ts+22234, int32(_DBG))
+		(*(*func(*libc.TLS, *CC, uintptr, _OUTDEST) int32)(unsafe.Pointer(&struct{ uintptr }{cc.x__mcpp_fputs})))(tls, cc, __ccgo_ts+22242, int32(_DBG))
 		return
 	}
 	cp = text
@@ -46084,7 +46209,7 @@ func x__dump_string(tls *libc.TLS, cc *CC, why uintptr, text uintptr) {
 		v3 = cp
 		cp = cp + 1
 		c = int32(**(**int8)(__ccgo_up(v3))) & (libc.Int32FromInt32(m___SCHAR_MAX__)*libc.Int32FromInt32(2) + libc.Int32FromInt32(1)) /* Macro parameter number   */
-		(*(*func(*libc.TLS, *CC, _OUTDEST, uintptr, uintptr) int32)(unsafe.Pointer(&struct{ uintptr }{cc.x__mcpp_fprintf})))(tls, cc, int32(_DBG), __ccgo_ts+112006, libc.VaList(bp+8, c))
+		(*(*func(*libc.TLS, *CC, _OUTDEST, uintptr, uintptr) int32)(unsafe.Pointer(&struct{ uintptr }{cc.x__mcpp_fprintf})))(tls, cc, int32(_DBG), __ccgo_ts+112012, libc.VaList(bp+8, c))
 		goto _13
 	_5:
 		;
@@ -46105,34 +46230,34 @@ func x__dump_string(tls *libc.TLS, cc *CC, why uintptr, text uintptr) {
 		}
 		switch c2 {
 		case int32(m_MAC_CALL_START):
-			(*(*func(*libc.TLS, *CC, _OUTDEST, uintptr, uintptr) int32)(unsafe.Pointer(&struct{ uintptr }{cc.x__mcpp_fprintf})))(tls, cc, int32(_DBG), __ccgo_ts+112011, libc.VaList(bp+8, c))
+			(*(*func(*libc.TLS, *CC, _OUTDEST, uintptr, uintptr) int32)(unsafe.Pointer(&struct{ uintptr }{cc.x__mcpp_fprintf})))(tls, cc, int32(_DBG), __ccgo_ts+112017, libc.VaList(bp+8, c))
 		case int32(m_MAC_CALL_END):
-			chr = __ccgo_ts + 112019
+			chr = __ccgo_ts + 112025
 		case int32(m_MAC_ARG_START):
 			v3 = cp
 			cp = cp + 1
 			c1 = int32(**(**int8)(__ccgo_up(v3))) & (libc.Int32FromInt32(m___SCHAR_MAX__)*libc.Int32FromInt32(2) + libc.Int32FromInt32(1))
-			(*(*func(*libc.TLS, *CC, _OUTDEST, uintptr, uintptr) int32)(unsafe.Pointer(&struct{ uintptr }{cc.x__mcpp_fprintf})))(tls, cc, int32(_DBG), __ccgo_ts+112029, libc.VaList(bp+8, c, c1-int32(1)))
+			(*(*func(*libc.TLS, *CC, _OUTDEST, uintptr, uintptr) int32)(unsafe.Pointer(&struct{ uintptr }{cc.x__mcpp_fprintf})))(tls, cc, int32(_DBG), __ccgo_ts+112035, libc.VaList(bp+8, c, c1-int32(1)))
 		case int32(m_MAC_ARG_END):
-			chr = __ccgo_ts + 112043
+			chr = __ccgo_ts + 112049
 			break
 		}
 		goto _13
 	_6:
 		;
-		chr = __ccgo_ts + 112053
+		chr = __ccgo_ts + 112059
 		goto _13
 	_7:
 		;
-		chr = __ccgo_ts + 22704
+		chr = __ccgo_ts + 22712
 		goto _13
 	_8:
 		;
-		chr = __ccgo_ts + 22702
+		chr = __ccgo_ts + 22710
 		goto _13
 	_9:
 		;
-		chr = __ccgo_ts + 112061
+		chr = __ccgo_ts + 112067
 		goto _13
 	_10:
 		;
@@ -46143,14 +46268,14 @@ func x__dump_string(tls *libc.TLS, cc *CC, why uintptr, text uintptr) {
 			v3 = cp
 			cp = cp + 1
 			num = num + (int32(**(**int8)(__ccgo_up(v3)))&(libc.Int32FromInt32(m___SCHAR_MAX__)*libc.Int32FromInt32(2)+libc.Int32FromInt32(1)) - int32(1))
-			(*(*func(*libc.TLS, *CC, _OUTDEST, uintptr, uintptr) int32)(unsafe.Pointer(&struct{ uintptr }{cc.x__mcpp_fprintf})))(tls, cc, int32(_DBG), __ccgo_ts+112070, libc.VaList(bp+8, num))
+			(*(*func(*libc.TLS, *CC, _OUTDEST, uintptr, uintptr) int32)(unsafe.Pointer(&struct{ uintptr }{cc.x__mcpp_fprintf})))(tls, cc, int32(_DBG), __ccgo_ts+112076, libc.VaList(bp+8, num))
 		} else {
-			chr = __ccgo_ts + 112078
+			chr = __ccgo_ts + 112084
 		}
 		goto _13
 	_11:
 		;
-		chr = __ccgo_ts + 112084
+		chr = __ccgo_ts + 112090
 		goto _13
 	_12:
 		;
@@ -46158,7 +46283,7 @@ func x__dump_string(tls *libc.TLS, cc *CC, why uintptr, text uintptr) {
 	no_magic:
 		;
 		if c < int32(' ') {
-			(*(*func(*libc.TLS, *CC, _OUTDEST, uintptr, uintptr) int32)(unsafe.Pointer(&struct{ uintptr }{cc.x__mcpp_fprintf})))(tls, cc, int32(_DBG), __ccgo_ts+112091, libc.VaList(bp+8, c+int32('@')))
+			(*(*func(*libc.TLS, *CC, _OUTDEST, uintptr, uintptr) int32)(unsafe.Pointer(&struct{ uintptr }{cc.x__mcpp_fprintf})))(tls, cc, int32(_DBG), __ccgo_ts+112097, libc.VaList(bp+8, c+int32('@')))
 		} else {
 			(*(*func(*libc.TLS, *CC, int32, _OUTDEST) int32)(unsafe.Pointer(&struct{ uintptr }{cc.x__mcpp_fputc})))(tls, cc, c, int32(_DBG))
 		}
@@ -46180,9 +46305,9 @@ func x__dump_unget(tls *libc.TLS, cc *CC, why uintptr) {
 	 */
 	var file, v2, v3 uintptr
 	_, _, _ = file, v2, v3
-	(*(*func(*libc.TLS, *CC, uintptr, _OUTDEST) int32)(unsafe.Pointer(&struct{ uintptr }{cc.x__mcpp_fputs})))(tls, cc, __ccgo_ts+112097, int32(_DBG))
+	(*(*func(*libc.TLS, *CC, uintptr, _OUTDEST) int32)(unsafe.Pointer(&struct{ uintptr }{cc.x__mcpp_fputs})))(tls, cc, __ccgo_ts+112103, int32(_DBG))
 	if why != libc.UintptrFromInt32(0) {
-		(*(*func(*libc.TLS, *CC, uintptr, _OUTDEST) int32)(unsafe.Pointer(&struct{ uintptr }{cc.x__mcpp_fputs})))(tls, cc, __ccgo_ts+112124, int32(_DBG))
+		(*(*func(*libc.TLS, *CC, uintptr, _OUTDEST) int32)(unsafe.Pointer(&struct{ uintptr }{cc.x__mcpp_fputs})))(tls, cc, __ccgo_ts+112130, int32(_DBG))
 		(*(*func(*libc.TLS, *CC, uintptr, _OUTDEST) int32)(unsafe.Pointer(&struct{ uintptr }{cc.x__mcpp_fputs})))(tls, cc, why, int32(_DBG))
 	}
 	(*(*func(*libc.TLS, *CC, int32, _OUTDEST) int32)(unsafe.Pointer(&struct{ uintptr }{cc.x__mcpp_fputc})))(tls, cc, int32('\n'), int32(_DBG))
@@ -46197,7 +46322,7 @@ func x__dump_unget(tls *libc.TLS, cc *CC, why uintptr) {
 			if (*_FILEINFO)(unsafe.Pointer(file)).Ffilename != 0 {
 				v3 = (*_FILEINFO)(unsafe.Pointer(file)).Ffilename
 			} else {
-				v3 = __ccgo_ts + 22234
+				v3 = __ccgo_ts + 22242
 			}
 			v2 = v3
 		}
@@ -46241,7 +46366,7 @@ func x__eval_if(tls *libc.TLS, cc *CC) (r _expr_t) {
 	cc.s__skip = v1 /* Not skipping now     */
 	for int32(1) != 0 {
 		if cc.x__mcpp_debug&int32(m_EXPRESSION) != 0 {
-			(*(*func(*libc.TLS, *CC, _OUTDEST, uintptr, uintptr) int32)(unsafe.Pointer(&struct{ uintptr }{cc.x__mcpp_fprintf})))(tls, cc, int32(_DBG), __ccgo_ts+106102, libc.VaList(bp+10528, int32((*_OPTAB)(unsafe.Pointer(opp)).Fskip), binop, (*_FILEINFO)(unsafe.Pointer(cc.x__infile)).Fbptr))
+			(*(*func(*libc.TLS, *CC, _OUTDEST, uintptr, uintptr) int32)(unsafe.Pointer(&struct{ uintptr }{cc.x__mcpp_fprintf})))(tls, cc, int32(_DBG), __ccgo_ts+106108, libc.VaList(bp+10528, int32((*_OPTAB)(unsafe.Pointer(opp)).Fskip), binop, (*_FILEINFO)(unsafe.Pointer(cc.x__infile)).Fbptr))
 		}
 		cc.s__skip = int32((*_OPTAB)(unsafe.Pointer(opp)).Fskip)
 		op = s__eval_lex(tls, cc)
@@ -46259,20 +46384,20 @@ func x__eval_if(tls *libc.TLS, cc *CC) (r _expr_t) {
 			return 0 /* Token error          */
 		}
 		if cc.x__mcpp_debug&int32(m_EXPRESSION) != 0 {
-			(*(*func(*libc.TLS, *CC, _OUTDEST, uintptr, uintptr) int32)(unsafe.Pointer(&struct{ uintptr }{cc.x__mcpp_fprintf})))(tls, cc, int32(_DBG), __ccgo_ts+106151, libc.VaList(bp+10528, cc.s__opname[op], int32(cc.s__opdope[op]), binop, int32((*_OPTAB)(unsafe.Pointer(opp)).Fskip)))
+			(*(*func(*libc.TLS, *CC, _OUTDEST, uintptr, uintptr) int32)(unsafe.Pointer(&struct{ uintptr }{cc.x__mcpp_fprintf})))(tls, cc, int32(_DBG), __ccgo_ts+106157, libc.VaList(bp+10528, cc.s__opname[op], int32(cc.s__opdope[op]), binop, int32((*_OPTAB)(unsafe.Pointer(opp)).Fskip)))
 		}
 		if op == int32(m_VAL) { /* Value?               */
 			if binop != 0 { /* Binop is needed      */
-				x__cerror(tls, cc, __ccgo_ts+106198, uintptr(unsafe.Pointer(&cc.x__work_buf)), 0, libc.UintptrFromInt32(0))
+				x__cerror(tls, cc, __ccgo_ts+106204, uintptr(unsafe.Pointer(&cc.x__work_buf)), 0, libc.UintptrFromInt32(0))
 				return 0
 			} else {
 				if bp+uintptr(libc.Int32FromInt32(m_NEXP)*libc.Int32FromInt32(2))*16 <= valp {
-					x__cerror(tls, cc, __ccgo_ts+106222, libc.UintptrFromInt32(0), int64(libc.Int32FromInt32(m_NEXP)*libc.Int32FromInt32(2)-libc.Int32FromInt32(1)), uintptr(unsafe.Pointer(&cc.x__work_buf)))
+					x__cerror(tls, cc, __ccgo_ts+106228, libc.UintptrFromInt32(0), int64(libc.Int32FromInt32(m_NEXP)*libc.Int32FromInt32(2)-libc.Int32FromInt32(1)), uintptr(unsafe.Pointer(&cc.x__work_buf)))
 					return 0
 				} else {
 					if cc.x__mcpp_debug&int32(m_EXPRESSION) != 0 {
-						s__dump_val(tls, cc, __ccgo_ts+106264, uintptr(unsafe.Pointer(&cc.s__ev)))
-						(*(*func(*libc.TLS, *CC, _OUTDEST, uintptr, uintptr) int32)(unsafe.Pointer(&struct{ uintptr }{cc.x__mcpp_fprintf})))(tls, cc, int32(_DBG), __ccgo_ts+106273, libc.VaList(bp+10528, int32((int64(valp)-___predefined_ptrdiff_t(bp))/16)))
+						s__dump_val(tls, cc, __ccgo_ts+106270, uintptr(unsafe.Pointer(&cc.s__ev)))
+						(*(*func(*libc.TLS, *CC, _OUTDEST, uintptr, uintptr) int32)(unsafe.Pointer(&struct{ uintptr }{cc.x__mcpp_fprintf})))(tls, cc, int32(_DBG), __ccgo_ts+106279, libc.VaList(bp+10528, int32((int64(valp)-___predefined_ptrdiff_t(bp))/16)))
 					}
 					(*_VAL_SIGN)(unsafe.Pointer(valp)).Fval = cc.s__ev.Fval
 					v3 = valp
@@ -46286,16 +46411,16 @@ func x__eval_if(tls *libc.TLS, cc *CC) (r _expr_t) {
 		prec = int32(cc.s__opdope[op])
 		if binop != prec&int32(1) {
 			if op == m_INV {
-				x__cerror(tls, cc, __ccgo_ts+106296, libc.UintptrFromInt32(0), 0, libc.UintptrFromInt32(0))
+				x__cerror(tls, cc, __ccgo_ts+106302, libc.UintptrFromInt32(0), 0, libc.UintptrFromInt32(0))
 			} else {
-				x__cerror(tls, cc, __ccgo_ts+106320, cc.s__opname[op], 0, libc.UintptrFromInt32(0))
+				x__cerror(tls, cc, __ccgo_ts+106326, cc.s__opname[op], 0, libc.UintptrFromInt32(0))
 			}
 			return 0
 		}
 		binop = prec & int32(2) >> int32(1) /* Binop should follow? */
 		for int32(1) != 0 {
 			if cc.x__mcpp_debug&int32(m_EXPRESSION) != 0 {
-				(*(*func(*libc.TLS, *CC, _OUTDEST, uintptr, uintptr) int32)(unsafe.Pointer(&struct{ uintptr }{cc.x__mcpp_fprintf})))(tls, cc, int32(_DBG), __ccgo_ts+106355, libc.VaList(bp+10528, cc.s__opname[op], prec, cc.s__opname[int32((*_OPTAB)(unsafe.Pointer(opp)).Fop)], int32((*_OPTAB)(unsafe.Pointer(opp)).Fprec), int32((*_OPTAB)(unsafe.Pointer(opp)).Fskip)))
+				(*(*func(*libc.TLS, *CC, _OUTDEST, uintptr, uintptr) int32)(unsafe.Pointer(&struct{ uintptr }{cc.x__mcpp_fprintf})))(tls, cc, int32(_DBG), __ccgo_ts+106361, libc.VaList(bp+10528, cc.s__opname[op], prec, cc.s__opname[int32((*_OPTAB)(unsafe.Pointer(opp)).Fop)], int32((*_OPTAB)(unsafe.Pointer(opp)).Fprec), int32((*_OPTAB)(unsafe.Pointer(opp)).Fskip)))
 			}
 			/* Stack coming sub-expression of higher precedence.    */
 			if int32((*_OPTAB)(unsafe.Pointer(opp)).Fprec) < prec {
@@ -46306,7 +46431,7 @@ func x__eval_if(tls *libc.TLS, cc *CC) (r _expr_t) {
 						v1 = parens
 					}
 					if v5 && v1 == cc.x__std_limits.Fexp_nest+int32(1) {
-						x__cwarn(tls, cc, __ccgo_ts+106404, libc.UintptrFromInt32(0), int64(cc.x__std_limits.Fexp_nest), libc.UintptrFromInt32(0))
+						x__cwarn(tls, cc, __ccgo_ts+106410, libc.UintptrFromInt32(0), int64(cc.x__std_limits.Fexp_nest), libc.UintptrFromInt32(0))
 					}
 				} else {
 					if op == int32(m_OP_QUE) {
@@ -46323,7 +46448,7 @@ func x__eval_if(tls *libc.TLS, cc *CC) (r _expr_t) {
 				 */
 				opp += 3
 				if bp+8208+uintptr(libc.Int32FromInt32(m_NEXP)*libc.Int32FromInt32(3))*3 <= opp {
-					x__cerror(tls, cc, __ccgo_ts+106440, libc.UintptrFromInt32(0), int64(libc.Int32FromInt32(m_NEXP)*libc.Int32FromInt32(3)-libc.Int32FromInt32(1)), cc.s__opname[op])
+					x__cerror(tls, cc, __ccgo_ts+106446, libc.UintptrFromInt32(0), int64(libc.Int32FromInt32(m_NEXP)*libc.Int32FromInt32(3)-libc.Int32FromInt32(1)), cc.s__opname[op])
 					return 0
 				}
 				(*_OPTAB)(unsafe.Pointer(opp)).Fop = int8(op)
@@ -46363,11 +46488,11 @@ func x__eval_if(tls *libc.TLS, cc *CC) (r _expr_t) {
 					}
 				}
 				if cc.x__mcpp_debug&int32(m_EXPRESSION) != 0 {
-					(*(*func(*libc.TLS, *CC, _OUTDEST, uintptr, uintptr) int32)(unsafe.Pointer(&struct{ uintptr }{cc.x__mcpp_fprintf})))(tls, cc, int32(_DBG), __ccgo_ts+106493, libc.VaList(bp+10528, cc.s__opname[op]))
+					(*(*func(*libc.TLS, *CC, _OUTDEST, uintptr, uintptr) int32)(unsafe.Pointer(&struct{ uintptr }{cc.x__mcpp_fprintf})))(tls, cc, int32(_DBG), __ccgo_ts+106499, libc.VaList(bp+10528, cc.s__opname[op]))
 					if bp < valp {
-						s__dump_val(tls, cc, __ccgo_ts+106507, valp-uintptr(1)*16)
+						s__dump_val(tls, cc, __ccgo_ts+106513, valp-uintptr(1)*16)
 					}
-					(*(*func(*libc.TLS, *CC, _OUTDEST, uintptr, uintptr) int32)(unsafe.Pointer(&struct{ uintptr }{cc.x__mcpp_fprintf})))(tls, cc, int32(_DBG), __ccgo_ts+106524, libc.VaList(bp+10528, (*_FILEINFO)(unsafe.Pointer(cc.x__infile)).Fbptr))
+					(*(*func(*libc.TLS, *CC, _OUTDEST, uintptr, uintptr) int32)(unsafe.Pointer(&struct{ uintptr }{cc.x__mcpp_fprintf})))(tls, cc, int32(_DBG), __ccgo_ts+106530, libc.VaList(bp+10528, (*_FILEINFO)(unsafe.Pointer(cc.x__infile)).Fbptr))
 					s__dump_stack(tls, cc, bp+8208, opp, bp, valp)
 				}
 				break
@@ -46384,7 +46509,7 @@ func x__eval_if(tls *libc.TLS, cc *CC) (r _expr_t) {
 			switch v1 { /* Look at stacked op   */
 			case int32(m_OP_END): /* Stack end marker     */
 				if op == int32(m_OP_RPA) { /* No corresponding (   */
-					x__cerror(tls, cc, __ccgo_ts+106532, libc.UintptrFromInt32(0), 0, libc.UintptrFromInt32(0)) /* _E_  */
+					x__cerror(tls, cc, __ccgo_ts+106538, libc.UintptrFromInt32(0), 0, libc.UintptrFromInt32(0)) /* _E_  */
 					return 0
 				}
 				if op == m_INV {
@@ -46392,7 +46517,7 @@ func x__eval_if(tls *libc.TLS, cc *CC) (r _expr_t) {
 				} /* Finished ok.         */
 			case int32(m_OP_LPA): /* ( on stack           */
 				if op != int32(m_OP_RPA) { /* Matches ) on input?  */
-					x__cerror(tls, cc, __ccgo_ts+106546, libc.UintptrFromInt32(0), 0, libc.UintptrFromInt32(0)) /* _E_  */
+					x__cerror(tls, cc, __ccgo_ts+106552, libc.UintptrFromInt32(0), 0, libc.UintptrFromInt32(0)) /* _E_  */
 					return 0
 				}
 				opp -= 3            /* Unstack it           */
@@ -46401,7 +46526,7 @@ func x__eval_if(tls *libc.TLS, cc *CC) (r _expr_t) {
 			case int32(m_OP_COL): /* : on stack           */
 				opp -= 3                                                          /* Unstack :            */
 				if int32((*_OPTAB)(unsafe.Pointer(opp)).Fop) != int32(m_OP_QUE) { /* Matches ? on stack?  */
-					x__cerror(tls, cc, __ccgo_ts+106558, cc.s__opname[int32((*_OPTAB)(unsafe.Pointer(opp)).Fop)], 0, libc.UintptrFromInt32(0))
+					x__cerror(tls, cc, __ccgo_ts+106564, cc.s__opname[int32((*_OPTAB)(unsafe.Pointer(opp)).Fop)], 0, libc.UintptrFromInt32(0))
 					return 0
 				}
 				/* Evaluate op1.            Fall through            */
@@ -46409,7 +46534,7 @@ func x__eval_if(tls *libc.TLS, cc *CC) (r _expr_t) {
 			default: /* Others:              */
 				opp -= 3 /* Unstack the operator */
 				if cc.x__mcpp_debug&int32(m_EXPRESSION) != 0 {
-					(*(*func(*libc.TLS, *CC, _OUTDEST, uintptr, uintptr) int32)(unsafe.Pointer(&struct{ uintptr }{cc.x__mcpp_fprintf})))(tls, cc, int32(_DBG), __ccgo_ts+106599, libc.VaList(bp+10528, cc.s__opname[op1]))
+					(*(*func(*libc.TLS, *CC, _OUTDEST, uintptr, uintptr) int32)(unsafe.Pointer(&struct{ uintptr }{cc.x__mcpp_fprintf})))(tls, cc, int32(_DBG), __ccgo_ts+106605, libc.VaList(bp+10528, cc.s__opname[op1]))
 					s__dump_stack(tls, cc, bp+8208, opp, bp, valp)
 				}
 				if op1 == int32(m_OP_COL) {
@@ -46424,7 +46549,7 @@ func x__eval_if(tls *libc.TLS, cc *CC) (r _expr_t) {
 				valp += 16
 				cc.s__skip = 0
 				if cc.x__mcpp_debug&int32(m_EXPRESSION) != 0 {
-					(*(*func(*libc.TLS, *CC, _OUTDEST, uintptr, uintptr) int32)(unsafe.Pointer(&struct{ uintptr }{cc.x__mcpp_fprintf})))(tls, cc, int32(_DBG), __ccgo_ts+106630, 0)
+					(*(*func(*libc.TLS, *CC, _OUTDEST, uintptr, uintptr) int32)(unsafe.Pointer(&struct{ uintptr }{cc.x__mcpp_fprintf})))(tls, cc, int32(_DBG), __ccgo_ts+106636, 0)
 					s__dump_stack(tls, cc, bp+8208, opp, bp, valp)
 				}
 			} /* op1 switch end       */
@@ -46450,14 +46575,14 @@ func x__eval_num(tls *libc.TLS, cc *CC, nump uintptr) (r uintptr) {
 	var v10 ___darwin_ct_rune_t
 	var v111 uint64
 	_, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _ = base, c, c1, cp, erange, erange_long, lflag, ll_suffix, llflag, not_integer, out_of_range, out_of_range_long, uflag, v, v1, value, v11, v10, v111, v12, v14, v2, v3, v6, v8
-	not_integer = __ccgo_ts + 106854  /* _E_  */
-	out_of_range = __ccgo_ts + 106874 /* unsigned long long or unsigned long  */
+	not_integer = __ccgo_ts + 106860  /* _E_  */
+	out_of_range = __ccgo_ts + 106880 /* unsigned long long or unsigned long  */
 	uflag = m_FALSE
 	lflag = m_FALSE
 	erange = m_FALSE
 	cp = nump
-	out_of_range_long = __ccgo_ts + 106911
-	ll_suffix = __ccgo_ts + 106967 /* _W1_ _W2_ _W8_ */
+	out_of_range_long = __ccgo_ts + 106917
+	ll_suffix = __ccgo_ts + 106973 /* _W1_ _W2_ _W8_ */
 	llflag = m_FALSE
 	erange_long = m_FALSE
 	cc.s__ev.Fsign = int32(m_SIGNED) /* Default signedness   */
@@ -46782,7 +46907,7 @@ func x__genPrintf(tls *libc.TLS, cc *CC, ast uintptr) (r uintptr) {
 	}
 	if !(fmtstring != 0) {
 		if warnFallback != 0 {
-			x__WARNING(tls, cc, ast, __ccgo_ts+41932, 0)
+			x__WARNING(tls, cc, ast, __ccgo_ts+41940, 0)
 		}
 		return libc.UintptrFromInt32(0)
 	}
@@ -46801,7 +46926,7 @@ func x__genPrintf(tls *libc.TLS, cc *CC, ast uintptr) (r uintptr) {
 			c = int32(**(**int8)(__ccgo_up(v1)))
 			if !(c != 0) {
 				if warnFallback != 0 {
-					x__WARNING(tls, cc, ast, __ccgo_ts+41996, 0)
+					x__WARNING(tls, cc, ast, __ccgo_ts+42004, 0)
 				}
 				x__AstReportDone(tls, cc, bp+32)
 				return libc.UintptrFromInt32(0)
@@ -46814,7 +46939,7 @@ func x__genPrintf(tls *libc.TLS, cc *CC, ast uintptr) (r uintptr) {
 					seq = x__addPrintCall(tls, cc, seq, Handle, cc.x__basic_print_string, (*_AST)(unsafe.Pointer(exprlist)).Fleft, Zero)
 				}
 				if !(args != 0) || (*_AST)(unsafe.Pointer(args)).Fkind != int32(_AST_EXPRLIST) {
-					x__WARNING(tls, cc, ast, __ccgo_ts+42061, 0)
+					x__WARNING(tls, cc, ast, __ccgo_ts+42069, 0)
 					break
 				}
 				fmt = 0
@@ -46832,7 +46957,7 @@ func x__genPrintf(tls *libc.TLS, cc *CC, ast uintptr) (r uintptr) {
 					c = int32(**(**int8)(__ccgo_up(v1)))
 					if !(c != 0) {
 						if warnFallback != 0 {
-							x__WARNING(tls, cc, ast, __ccgo_ts+41996, 0)
+							x__WARNING(tls, cc, ast, __ccgo_ts+42004, 0)
 						}
 						x__AstReportDone(tls, cc, bp+32)
 						return libc.UintptrFromInt32(0)
@@ -46920,7 +47045,7 @@ func x__genPrintf(tls *libc.TLS, cc *CC, ast uintptr) (r uintptr) {
 					seq = x__addFloatPrintCall(tls, cc, seq, Handle, cc.x__basic_print_float, thisarg, x__AstInteger(tls, cc, int64(fmt)), c)
 				default:
 					if warnFallback != 0 {
-						x__WARNING(tls, cc, ast, __ccgo_ts+42108, libc.VaList(bp+56, c))
+						x__WARNING(tls, cc, ast, __ccgo_ts+42116, libc.VaList(bp+56, c))
 					}
 					x__AstReportDone(tls, cc, bp+32)
 					return libc.UintptrFromInt32(0)
@@ -47074,11 +47199,11 @@ func x__getSpinToken(tls *libc.TLS, cc *CC, L uintptr, ast_ptr uintptr) (r int32
 		return c
 	_6:
 		;
-		x__ERROR(tls, cc, x__DummyLineAst(tls, cc, (*_LexStream)(unsafe.Pointer(L)).FlineCounter), __ccgo_ts+21852, 0)
+		x__ERROR(tls, cc, x__DummyLineAst(tls, cc, (*_LexStream)(unsafe.Pointer(L)).FlineCounter), __ccgo_ts+21860, 0)
 		goto _8
 	_7:
 		;
-		x__ERROR(tls, cc, x__DummyLineAst(tls, cc, (*_LexStream)(unsafe.Pointer(L)).FlineCounter), __ccgo_ts+21896, libc.VaList(bp+32, int32((*_LexStream)(unsafe.Pointer(L)).Fbacktick_state)))
+		x__ERROR(tls, cc, x__DummyLineAst(tls, cc, (*_LexStream)(unsafe.Pointer(L)).FlineCounter), __ccgo_ts+21904, libc.VaList(bp+32, int32((*_LexStream)(unsafe.Pointer(L)).Fbacktick_state)))
 		(*_LexStream)(unsafe.Pointer(L)).Fbacktick_state = m_BACKTICK_STATE_NONE
 		goto _8
 	_8:
@@ -47128,14 +47253,14 @@ func x__getSpinToken(tls *libc.TLS, cc *CC, L uintptr, ast_ptr uintptr) (r int32
 							for {
 								c = x__lexgetc(tls, cc, L)
 								if c < 0 {
-									x__SYNTAX_ERROR(tls, cc, __ccgo_ts+21918, 0)
+									x__SYNTAX_ERROR(tls, cc, __ccgo_ts+21926, 0)
 								} else {
 									if c == int32('"') {
 										break
 									} else {
 										if shift >= int32(32) {
 											shift = 0
-											x__SYNTAX_ERROR(tls, cc, __ccgo_ts+21952, 0)
+											x__SYNTAX_ERROR(tls, cc, __ccgo_ts+21960, 0)
 										}
 										val = val | libc.Uint32FromInt32(c)<<shift
 										shift = shift + int32(8)
@@ -47154,7 +47279,7 @@ func x__getSpinToken(tls *libc.TLS, cc *CC, L uintptr, ast_ptr uintptr) (r int32
 								x__lexungetc(tls, cc, L, int32('%'))
 								c = s__parseSpinIdentifier(tls, cc, L, bp, libc.UintptrFromInt32(0))
 								if c == int32(m_SP_IDENTIFIER) {
-									x__SYNTAX_ERROR(tls, cc, __ccgo_ts+21987, libc.VaList(bp+32, *(*uintptr)(unsafe.Pointer(**(**uintptr)(__ccgo_up(bp)) + 8))))
+									x__SYNTAX_ERROR(tls, cc, __ccgo_ts+21995, libc.VaList(bp+32, *(*uintptr)(unsafe.Pointer(**(**uintptr)(__ccgo_up(bp)) + 8))))
 								}
 							} else {
 								x__lexungetc(tls, cc, L, c)
@@ -47187,12 +47312,12 @@ func x__getSpinToken(tls *libc.TLS, cc *CC, L uintptr, ast_ptr uintptr) (r int32
 								if x__isIdentifierStart(tls, cc, peekc) != 0 && s__InDatBlock(tls, cc, L) != 0 {
 									x__lexungetc(tls, cc, L, peekc)
 									if cc.x__gl_p2 != 0 {
-										x__SYNTAX_ERROR(tls, cc, __ccgo_ts+22006, 0)
+										x__SYNTAX_ERROR(tls, cc, __ccgo_ts+22014, 0)
 									}
 									if (*_LexStream)(unsafe.Pointer(L)).FlastGlobal != 0 {
 										v9 = (*_LexStream)(unsafe.Pointer(L)).FlastGlobal
 									} else {
-										v9 = __ccgo_ts + 7138
+										v9 = __ccgo_ts + 7140
 									}
 									c = s__parseSpinIdentifier(tls, cc, L, bp, v9)
 								} else {
@@ -47219,7 +47344,7 @@ func x__getSpinToken(tls *libc.TLS, cc *CC, L uintptr, ast_ptr uintptr) (r int32
 								if (*_LexStream)(unsafe.Pointer(L)).FlastGlobal != 0 {
 									v9 = (*_LexStream)(unsafe.Pointer(L)).FlastGlobal
 								} else {
-									v9 = __ccgo_ts + 7138
+									v9 = __ccgo_ts + 7140
 								}
 								c = s__parseSpinIdentifier(tls, cc, L, bp, v9)
 							} else {
@@ -47388,15 +47513,15 @@ func x__get_ch(tls *libc.TLS, cc *CC) (r int32) {
 				if (*_FILEINFO)(unsafe.Pointer(file)).Ffilename != 0 {
 					v3 = (*_FILEINFO)(unsafe.Pointer(file)).Ffilename
 				} else {
-					v3 = __ccgo_ts + 22234
+					v3 = __ccgo_ts + 22242
 				}
 				v2 = v3
 			}
 			v1 = v2
 		}
-		(*(*func(*libc.TLS, *CC, _OUTDEST, uintptr, uintptr) int32)(unsafe.Pointer(&struct{ uintptr }{cc.x__mcpp_fprintf})))(tls, cc, int32(_DBG), __ccgo_ts+111116, libc.VaList(bp+8, v1, int32(**(**int8)(__ccgo_up((*_FILEINFO)(unsafe.Pointer(file)).Fbptr)))&(libc.Int32FromInt32(m___SCHAR_MAX__)*libc.Int32FromInt32(2)+libc.Int32FromInt32(1)), cc.x__src_line, int32(int64((*_FILEINFO)(unsafe.Pointer(file)).Fbptr)-int64((*_FILEINFO)(unsafe.Pointer(file)).Fbuffer))))
+		(*(*func(*libc.TLS, *CC, _OUTDEST, uintptr, uintptr) int32)(unsafe.Pointer(&struct{ uintptr }{cc.x__mcpp_fprintf})))(tls, cc, int32(_DBG), __ccgo_ts+111122, libc.VaList(bp+8, v1, int32(**(**int8)(__ccgo_up((*_FILEINFO)(unsafe.Pointer(file)).Fbptr)))&(libc.Int32FromInt32(m___SCHAR_MAX__)*libc.Int32FromInt32(2)+libc.Int32FromInt32(1)), cc.x__src_line, int32(int64((*_FILEINFO)(unsafe.Pointer(file)).Fbptr)-int64((*_FILEINFO)(unsafe.Pointer(file)).Fbuffer))))
 		x__dump_string(tls, cc, libc.UintptrFromInt32(0), (*_FILEINFO)(unsafe.Pointer(file)).Fbuffer)
-		x__dump_unget(tls, cc, __ccgo_ts+111160)
+		x__dump_unget(tls, cc, __ccgo_ts+111166)
 	}
 	/*
 	 * Read a character from the current input logical line or macro.
@@ -47442,7 +47567,7 @@ func x__get_ch(tls *libc.TLS, cc *CC) (r int32) {
 		cc.x__cur_fullname = (*_FILEINFO)(unsafe.Pointer(cc.x__infile)).Ffull_fname
 		cc.x__cur_fname = (*_FILEINFO)(unsafe.Pointer(cc.x__infile)).Freal_fname /* Restore current fname*/
 		if (*_FILEINFO)(unsafe.Pointer(cc.x__infile)).Fpos != 0 {                /* Includer was closed  */
-			(*_FILEINFO)(unsafe.Pointer(cc.x__infile)).Ffp = x__mcpp_fopen(tls, cc, cc.x__cur_fullname, __ccgo_ts+10626)
+			(*_FILEINFO)(unsafe.Pointer(cc.x__infile)).Ffp = x__mcpp_fopen(tls, cc, cc.x__cur_fullname, __ccgo_ts+10628)
 			libc.Xfseek(tls, (*_FILEINFO)(unsafe.Pointer(cc.x__infile)).Ffp, (*_FILEINFO)(unsafe.Pointer(cc.x__infile)).Fpos, m_SEEK_SET)
 		} /* Re-open the includer and restore the file-position   */
 		len1 = int32(int64((*_FILEINFO)(unsafe.Pointer(cc.x__infile)).Fbptr) - int64((*_FILEINFO)(unsafe.Pointer(cc.x__infile)).Fbuffer))
@@ -47529,14 +47654,14 @@ func x__get_unexpandable(tls *libc.TLS, cc *CC, c int32, diag int32) (r int32) {
 		(*(*func(*libc.TLS, *CC, uintptr, uintptr, uintptr, _LINE_COL, uintptr) uintptr)(unsafe.Pointer(&struct{ uintptr }{cc.x__expand_macro})))(tls, cc, defp, uintptr(unsafe.Pointer(&cc.x__work_buf)), cc.x__work_end, line_col, bp)
 		/* Expand macro     */
 		if **(**int32)(__ccgo_up(bp)) != 0 {
-			x__cerror(tls, cc, __ccgo_ts+110476, libc.UintptrFromInt32(0), 0, libc.UintptrFromInt32(0))
+			x__cerror(tls, cc, __ccgo_ts+110482, libc.UintptrFromInt32(0), 0, libc.UintptrFromInt32(0))
 		}
 		file = x__unget_string(tls, cc, uintptr(unsafe.Pointer(&cc.x__work_buf)), defp+49) /* Stack to re-read */
 		c = x__skip_ws(tls, cc)                                                            /* Skip TOK_SEP     */
 		if file != cc.x__infile && cc.x__macro_line != -int64(1) && cc.x__warn_level&int32(1) != 0 {
 			/* This diagnostic is issued even if "diag" is FALSE.   */
-			x__cwarn(tls, cc, __ccgo_ts+110517, defp+49, 0, libc.UintptrFromInt32(0))
-			x__dump_a_def(tls, cc, __ccgo_ts+110551, defp, m_FALSE, int32(m_TRUE), cc.x__fp_err)
+			x__cwarn(tls, cc, __ccgo_ts+110523, defp+49, 0, libc.UintptrFromInt32(0))
+			x__dump_a_def(tls, cc, __ccgo_ts+110557, defp, m_FALSE, int32(m_TRUE), cc.x__fp_err)
 		}
 	}
 	if c == int32('\n') || c == int32('\000') {
@@ -47553,8 +47678,8 @@ func x__get_unexpandable(tls *libc.TLS, cc *CC, c int32, diag int32) (r int32) {
 				c = x__get_ch(tls, cc)
 				continue
 			}
-			if libc.Xstrcmp(tls, uintptr(unsafe.Pointer(&cc.x__identifier)), __ccgo_ts+104300) == 0 {
-				x__cwarn(tls, cc, __ccgo_ts+110561, defp+49, 0, libc.UintptrFromInt32(0))
+			if libc.Xstrcmp(tls, uintptr(unsafe.Pointer(&cc.x__identifier)), __ccgo_ts+104306) == 0 {
+				x__cwarn(tls, cc, __ccgo_ts+110567, defp+49, 0, libc.UintptrFromInt32(0))
 				break
 			}
 			c = x__get_ch(tls, cc)
@@ -47586,7 +47711,7 @@ func x__initSpinLexer(tls *libc.TLS, cc *CC, flags int32) {
 	/* add our reserved words */
 	i = 0
 	for {
-		if !(libc.Uint64FromInt32(i) < libc.Uint64FromInt64(1888)/libc.Uint64FromInt64(16)) {
+		if !(libc.Uint64FromInt32(i) < libc.Uint64FromInt64(1904)/libc.Uint64FromInt64(16)) {
 			break
 		}
 		x__AddSymbol(tls, cc, uintptr(unsafe.Pointer(&cc.x__spinCommonReservedWords)), cc.x__init_spin_words[i].Fname, int32(_SYM_RESERVED), uintptr(cc.x__init_spin_words[i].Fval), libc.UintptrFromInt32(0))
@@ -47758,7 +47883,7 @@ func x__install_macro(tls *libc.TLS, cc *CC, name uintptr, numargs int32, parmna
 	} /* Standard predefined  */
 	if parmnames == libc.UintptrFromInt32(0) || repl == libc.UintptrFromInt32(0) || predefine != 0 && numargs > 0 || predefine != 0 && predefine != -libc.Int32FromInt32(2)-(libc.Int32FromInt32(m___SCHAR_MAX__)*libc.Int32FromInt32(2)+libc.Int32FromInt32(1)+libc.Int32FromInt32(1)|(libc.Int32FromInt32(m___SCHAR_MAX__)*libc.Int32FromInt32(2)+libc.Int32FromInt32(1)+libc.Int32FromInt32(1))*libc.Int32FromInt32(2))-libc.Int32FromInt32(2) && predefine != -libc.Int32FromInt32(2)-(libc.Int32FromInt32(m___SCHAR_MAX__)*libc.Int32FromInt32(2)+libc.Int32FromInt32(1)+libc.Int32FromInt32(1)|(libc.Int32FromInt32(m___SCHAR_MAX__)*libc.Int32FromInt32(2)+libc.Int32FromInt32(1)+libc.Int32FromInt32(1))*libc.Int32FromInt32(2))-libc.Int32FromInt32(1) {
 		/* Shouldn't happen */
-		x__cfatal(tls, cc, __ccgo_ts+104928, name, 0, libc.UintptrFromInt32(0))
+		x__cfatal(tls, cc, __ccgo_ts+104934, name, 0, libc.UintptrFromInt32(0))
 	} /* Use "" instead of NULL   */
 	s_name = libc.Xstrlen(tls, name)
 	s_parmnames = libc.Xstrlen(tls, parmnames) + uint64(1)
@@ -47793,7 +47918,7 @@ func x__install_macro(tls *libc.TLS, cc *CC, name uintptr, numargs int32, parmna
 	}
 	if v3 && v2 == cc.x__std_limits.Fn_macro+int64(1) && cc.x__std_limits.Fn_macro != 0 && cc.x__warn_level&int32(4) != 0 {
 		/* '&& std_limits.n_macro' to avoid warning before initialization   */
-		x__cwarn(tls, cc, __ccgo_ts+104968, libc.UintptrFromInt32(0), cc.x__std_limits.Fn_macro, libc.UintptrFromInt32(0))
+		x__cwarn(tls, cc, __ccgo_ts+104974, libc.UintptrFromInt32(0), cc.x__std_limits.Fn_macro, libc.UintptrFromInt32(0))
 	}
 	return dp
 }
@@ -47805,7 +47930,7 @@ func x__interp_can_multireturn(tls *libc.TLS, cc *CC) (r uint8) {
 	case int32(m_INTERP_KIND_NUCODE):
 		return libc.BoolUint8(m_true != 0)
 	default:
-		x__ERROR(tls, cc, libc.UintptrFromInt32(0), __ccgo_ts+66438, 0)
+		x__ERROR(tls, cc, libc.UintptrFromInt32(0), __ccgo_ts+66444, 0)
 		return libc.BoolUint8(m_false != 0)
 	}
 	return r
@@ -47818,7 +47943,7 @@ func x__interp_can_unsigned(tls *libc.TLS, cc *CC) (r uint8) {
 	case int32(m_INTERP_KIND_NUCODE):
 		return libc.BoolUint8(m_true != 0)
 	default:
-		x__ERROR(tls, cc, libc.UintptrFromInt32(0), __ccgo_ts+66438, 0)
+		x__ERROR(tls, cc, libc.UintptrFromInt32(0), __ccgo_ts+66444, 0)
 		return libc.BoolUint8(m_false != 0)
 	}
 	return r
@@ -48348,32 +48473,32 @@ func x__memFillBuiltin(tls *libc.TLS, cc *CC, f uintptr, b uintptr, params uintp
 	   are working with
 	*/
 	if (*_Builtin)(unsafe.Pointer(b)).Fextradata == int32(2) {
-		v1 = __ccgo_ts + 101787
+		v1 = __ccgo_ts + 101793
 	} else {
 		v1 = cc.x__gl_intstring
 	}
 	type_name = v1
 	/* if the source is 0, use memset instead */
 	if x__IsConstExpr(tls, cc, src) != 0 && x__EvalConstExpr(tls, cc, src) == 0 {
-		x__flexbuf_printf(tls, cc, f, __ccgo_ts+101796, 0)
+		x__flexbuf_printf(tls, cc, f, __ccgo_ts+101802, 0)
 		x__PrintExpr(tls, cc, f, dst, m_PRINTEXPR_DEFAULT)
-		x__flexbuf_printf(tls, cc, f, __ccgo_ts+101813, libc.VaList(bp+8, type_name))
+		x__flexbuf_printf(tls, cc, f, __ccgo_ts+101819, libc.VaList(bp+8, type_name))
 		x__PrintExpr(tls, cc, f, count, m_PRINTEXPR_DEFAULT)
-		x__flexbuf_printf(tls, cc, f, __ccgo_ts+28072, 0)
+		x__flexbuf_printf(tls, cc, f, __ccgo_ts+28080, 0)
 		return
 	}
-	idxname = x__NewTemporaryVariable(tls, cc, __ccgo_ts+101830, libc.UintptrFromInt32(0))
-	valname = x__NewTemporaryVariable(tls, cc, __ccgo_ts+101837, libc.UintptrFromInt32(0))
-	ptrname = x__NewTemporaryVariable(tls, cc, __ccgo_ts+101843, libc.UintptrFromInt32(0))
-	x__flexbuf_printf(tls, cc, f, __ccgo_ts+101849, libc.VaList(bp+8, cc.x__gl_intstring, idxname))
-	x__flexbuf_printf(tls, cc, f, __ccgo_ts+101859, libc.VaList(bp+8, type_name, ptrname, type_name))
+	idxname = x__NewTemporaryVariable(tls, cc, __ccgo_ts+101836, libc.UintptrFromInt32(0))
+	valname = x__NewTemporaryVariable(tls, cc, __ccgo_ts+101843, libc.UintptrFromInt32(0))
+	ptrname = x__NewTemporaryVariable(tls, cc, __ccgo_ts+101849, libc.UintptrFromInt32(0))
+	x__flexbuf_printf(tls, cc, f, __ccgo_ts+101855, libc.VaList(bp+8, cc.x__gl_intstring, idxname))
+	x__flexbuf_printf(tls, cc, f, __ccgo_ts+101865, libc.VaList(bp+8, type_name, ptrname, type_name))
 	x__PrintAsAddr(tls, cc, f, dst, m_PRINTEXPR_DEFAULT)
-	x__flexbuf_printf(tls, cc, f, __ccgo_ts+101875, libc.VaList(bp+8, type_name, valname))
+	x__flexbuf_printf(tls, cc, f, __ccgo_ts+101881, libc.VaList(bp+8, type_name, valname))
 	x__PrintExpr(tls, cc, f, src, m_PRINTEXPR_DEFAULT)
-	x__flexbuf_printf(tls, cc, f, __ccgo_ts+101886, libc.VaList(bp+8, idxname))
+	x__flexbuf_printf(tls, cc, f, __ccgo_ts+101892, libc.VaList(bp+8, idxname))
 	x__PrintExpr(tls, cc, f, count, m_PRINTEXPR_DEFAULT)
-	x__flexbuf_printf(tls, cc, f, __ccgo_ts+101899, libc.VaList(bp+8, idxname, idxname))
-	x__flexbuf_printf(tls, cc, f, __ccgo_ts+101918, libc.VaList(bp+8, ptrname, valname))
+	x__flexbuf_printf(tls, cc, f, __ccgo_ts+101905, libc.VaList(bp+8, idxname, idxname))
+	x__flexbuf_printf(tls, cc, f, __ccgo_ts+101924, libc.VaList(bp+8, ptrname, valname))
 }
 
 func x__mz_zip_reader_init_file_v2(tls *libc.TLS, cc *CC, pZip1 uintptr, pFilename uintptr, flags _mz_uint, file_start_ofs _mz_uint64, archive_size _mz_uint64) (r _mz_bool) {
@@ -48460,7 +48585,7 @@ func x__mz_zip_reader_init_file_v2_rpb(tls *libc.TLS, cc *CC, pZip1 uintptr, pFi
 	_3:
 		return v2
 	}
-	pFile = fopen(tls, cc, pFilename, __ccgo_ts+7181)
+	pFile = fopen(tls, cc, pFilename, __ccgo_ts+7183)
 	if !(pFile != 0) {
 		v1 = pZip1
 		if v1 != 0 {
@@ -48807,9 +48932,9 @@ func x__mz_zip_writer_init_file_v2(tls *libc.TLS, cc *CC, pZip1 uintptr, pFilena
 		return libc.Int32FromInt32(m_MZ_FALSE)
 	}
 	if flags&uint32(_MZ_ZIP_FLAG_WRITE_ALLOW_READING) != 0 {
-		v2 = __ccgo_ts + 7506
+		v2 = __ccgo_ts + 7508
 	} else {
-		v2 = __ccgo_ts + 37605
+		v2 = __ccgo_ts + 37613
 	}
 	v1 = fopen(tls, cc, pFilename, v2)
 	pFile = v1
@@ -48883,9 +49008,9 @@ func x__outputInitItem(tls *libc.TLS, cc *CC, f uintptr, elemsize int32, _item u
 		}
 		if exprType != 0 {
 			if !(x__IsPointerType(tls, cc, exprType) != 0) && !(x__IsArrayType(tls, cc, exprType) != 0) && !(x__IsConstExpr(tls, cc, **(**uintptr)(__ccgo_up(bp))) != 0) {
-				x__ERROR(tls, cc, **(**uintptr)(__ccgo_up(bp)), __ccgo_ts+37847, 0)
+				x__ERROR(tls, cc, **(**uintptr)(__ccgo_up(bp)), __ccgo_ts+37855, 0)
 			}
-			type1 = x__CoerceAssignTypes(tls, cc, **(**uintptr)(__ccgo_up(bp)), int32(_AST_ASSIGN), bp, type1, exprType, __ccgo_ts+37928)
+			type1 = x__CoerceAssignTypes(tls, cc, **(**uintptr)(__ccgo_up(bp)), int32(_AST_ASSIGN), bp, type1, exprType, __ccgo_ts+37936)
 			// ignore any casts added
 			for (*_AST)(unsafe.Pointer(**(**uintptr)(__ccgo_up(bp)))).Fkind == int32(_AST_CAST) {
 				**(**uintptr)(__ccgo_up(bp)) = (*_AST)(unsafe.Pointer(**(**uintptr)(__ccgo_up(bp)))).Fright
@@ -48908,7 +49033,7 @@ func x__outputInitItem(tls *libc.TLS, cc *CC, f uintptr, elemsize int32, _item u
 			rptr = uintptr(0)
 		}
 		if rptr != 0 && (*_Reloc)(unsafe.Pointer(rptr)).Fkind > int32(_RELOC_KIND_NONE) && reps > int32(1) {
-			x__ERROR(tls, cc, **(**uintptr)(__ccgo_up(bp)), __ccgo_ts+37943, 0)
+			x__ERROR(tls, cc, **(**uintptr)(__ccgo_up(bp)), __ccgo_ts+37951, 0)
 		}
 	} else {
 		origval = uint64(0)
@@ -48988,7 +49113,7 @@ func x__outputInitializer(tls *libc.TLS, cc *CC, f uintptr, type1 uintptr, initv
 		numelems = typesize / elemsize
 		//printf("...typesize = %d typealign = %d\n", typesize, typealign);
 		if initval != 0 && (*_AST)(unsafe.Pointer(initval)).Fkind != int32(_AST_EXPRLIST) {
-			x__ERROR(tls, cc, initval, __ccgo_ts+37992, 0)
+			x__ERROR(tls, cc, initval, __ccgo_ts+38000, 0)
 			break
 		}
 		for numelems > 0 && initval != 0 {
@@ -49000,7 +49125,7 @@ func x__outputInitializer(tls *libc.TLS, cc *CC, f uintptr, type1 uintptr, initv
 			siz = siz + x__outputInitList(tls, cc, f, elemsize, libc.UintptrFromInt32(0), numelems, relocs, type1)
 		} else {
 			if initval != 0 {
-				x__WARNING(tls, cc, initval, __ccgo_ts+38043, 0)
+				x__WARNING(tls, cc, initval, __ccgo_ts+38051, 0)
 			}
 		}
 	case int32(_AST_OBJECT):
@@ -49060,10 +49185,10 @@ func x__outputInitializer(tls *libc.TLS, cc *CC, f uintptr, type1 uintptr, initv
 			}
 		}
 		if initval != 0 {
-			x__WARNING(tls, cc, initval, __ccgo_ts+38082, 0)
+			x__WARNING(tls, cc, initval, __ccgo_ts+38090, 0)
 		}
 	default:
-		x__ERROR(tls, cc, initval, __ccgo_ts+38104, 0)
+		x__ERROR(tls, cc, initval, __ccgo_ts+38112, 0)
 		initval = libc.UintptrFromInt32(0)
 		break
 	}
@@ -49097,7 +49222,7 @@ func x__pp_get_defines_as_args(tls *libc.TLS, cc *CC, pp uintptr, argc int32, ar
 		}
 		n = libc.Int32FromUint64(libc.Xstrlen(tls, **(**uintptr)(__ccgo_up(inc_paths + uintptr(i)*8))) + uint64(4))
 		cdef = malloc(tls, cc, libc.Uint64FromInt32(n))
-		libc.Xsprintf(tls, cdef, __ccgo_ts+28385, libc.VaList(bp+8, **(**uintptr)(__ccgo_up(inc_paths + uintptr(i)*8))))
+		libc.Xsprintf(tls, cdef, __ccgo_ts+28393, libc.VaList(bp+8, **(**uintptr)(__ccgo_up(inc_paths + uintptr(i)*8))))
 		v2 = argc
 		argc = argc + 1
 		**(**uintptr)(__ccgo_up(argv + uintptr(v2)*8)) = cdef
@@ -49122,7 +49247,7 @@ func x__pp_get_defines_as_args(tls *libc.TLS, cc *CC, pp uintptr, argc int32, ar
 			n = libc.Int32FromUint64(uint64(n) + libc.Xstrlen(tls, def))
 			n = n + int32(4) /* room for "-D", "=", and trailing 0 */
 			cdef = malloc(tls, cc, libc.Uint64FromInt32(n))
-			libc.Xsprintf(tls, cdef, __ccgo_ts+28390, libc.VaList(bp+8, (*_predef)(unsafe.Pointer(x)).Fname, def))
+			libc.Xsprintf(tls, cdef, __ccgo_ts+28398, libc.VaList(bp+8, (*_predef)(unsafe.Pointer(x)).Fname, def))
 			(*_predef)(unsafe.Pointer(x)).Fargcdef = cdef
 		}
 		v2 = argc
@@ -49163,12 +49288,12 @@ func x__pp_getdef(tls *libc.TLS, cc *CC, pp uintptr, name uintptr) (r uintptr) {
 		X = (*_predef)(unsafe.Pointer(X)).Fnext
 	}
 	if !(def != 0) { // check for certain predefined words
-		if !((*(*func(*libc.TLS, *CC, uintptr, uintptr) int32)(unsafe.Pointer(&struct{ uintptr }{strcmp_func})))(tls, cc, __ccgo_ts+27875, name) != 0) {
-			libc.X__builtin_snprintf(tls, uintptr(unsafe.Pointer(&cc.s__newdef)), uint64(1024), __ccgo_ts+2841, libc.VaList(bp+8, (*_filestate)(unsafe.Pointer((*_preprocess)(unsafe.Pointer(pp)).Ffil)).Fname))
+		if !((*(*func(*libc.TLS, *CC, uintptr, uintptr) int32)(unsafe.Pointer(&struct{ uintptr }{strcmp_func})))(tls, cc, __ccgo_ts+27883, name) != 0) {
+			libc.X__builtin_snprintf(tls, uintptr(unsafe.Pointer(&cc.s__newdef)), uint64(1024), __ccgo_ts+2843, libc.VaList(bp+8, (*_filestate)(unsafe.Pointer((*_preprocess)(unsafe.Pointer(pp)).Ffil)).Fname))
 			def = uintptr(unsafe.Pointer(&cc.s__newdef))
 		} else {
-			if !((*(*func(*libc.TLS, *CC, uintptr, uintptr) int32)(unsafe.Pointer(&struct{ uintptr }{strcmp_func})))(tls, cc, __ccgo_ts+27884, name) != 0) {
-				libc.X__builtin_snprintf(tls, uintptr(unsafe.Pointer(&cc.s__newdef)), uint64(1024), __ccgo_ts+27893, libc.VaList(bp+8, (*_filestate)(unsafe.Pointer((*_preprocess)(unsafe.Pointer(pp)).Ffil)).Flineno-int32(1)))
+			if !((*(*func(*libc.TLS, *CC, uintptr, uintptr) int32)(unsafe.Pointer(&struct{ uintptr }{strcmp_func})))(tls, cc, __ccgo_ts+27892, name) != 0) {
+				libc.X__builtin_snprintf(tls, uintptr(unsafe.Pointer(&cc.s__newdef)), uint64(1024), __ccgo_ts+27901, libc.VaList(bp+8, (*_filestate)(unsafe.Pointer((*_preprocess)(unsafe.Pointer(pp)).Ffil)).Flineno-int32(1)))
 				def = uintptr(unsafe.Pointer(&cc.s__newdef))
 			}
 		}
@@ -49188,9 +49313,9 @@ func x__pp_init(tls *libc.TLS, cc *CC, pp uintptr) {
 	x__flexbuf_init(tls, cc, pp+176, uint64(128))
 	(*_preprocess)(unsafe.Pointer(pp)).Ferrfunc = __ccgo_fp(s__default_errfunc)
 	(*_preprocess)(unsafe.Pointer(pp)).Fwarnfunc = __ccgo_fp(s__default_errfunc)
-	(*_preprocess)(unsafe.Pointer(pp)).Ferrarg = __ccgo_ts + 4025
-	(*_preprocess)(unsafe.Pointer(pp)).Fwarnarg = __ccgo_ts + 7110
-	(*_preprocess)(unsafe.Pointer(pp)).Flinechange = __ccgo_ts + 27823
+	(*_preprocess)(unsafe.Pointer(pp)).Ferrarg = __ccgo_ts + 4027
+	(*_preprocess)(unsafe.Pointer(pp)).Fwarnarg = __ccgo_ts + 7112
+	(*_preprocess)(unsafe.Pointer(pp)).Flinechange = __ccgo_ts + 27831
 }
 
 // C documentation
@@ -49296,9 +49421,9 @@ func x__pp_nextline(tls *libc.TLS, cc *CC, pp uintptr) (r1 int32) {
 	if (*_preprocess)(unsafe.Pointer(pp)).Fincomment == 0 {
 		/* look for special sequences */
 		full_line = x__flexbuf_peek(tls, cc, pp+8)
-		if !(libc.Xstrncmp(tls, full_line, __ccgo_ts+27745, uint64(10)) != 0) || !(libc.Xstrncmp(tls, full_line, __ccgo_ts+27756, uint64(9)) != 0) {
+		if !(libc.Xstrncmp(tls, full_line, __ccgo_ts+27753, uint64(10)) != 0) || !(libc.Xstrncmp(tls, full_line, __ccgo_ts+27764, uint64(9)) != 0) {
 			if (*_preprocess)(unsafe.Pointer(pp)).Fspecial_flexspin_comment != 0 {
-				s__doerror(tls, cc, pp, __ccgo_ts+27766, 0)
+				s__doerror(tls, cc, pp, __ccgo_ts+27774, 0)
 			}
 			(*_preprocess)(unsafe.Pointer(pp)).Fspecial_flexspin_comment = (*_preprocess)(unsafe.Pointer(pp)).Fspecial_flexspin_comment + 1
 			full_line = x__flexbuf_get(tls, cc, pp+8)
@@ -49366,7 +49491,7 @@ func x__pp_pop_file(tls *libc.TLS, cc *CC, pp uintptr) {
 			break
 		}
 		(*_preprocess)(unsafe.Pointer(pp)).Fifs = (*_ifstate)(unsafe.Pointer(I)).Fnext
-		s__doerror(tls, cc, pp, __ccgo_ts+27838, libc.VaList(bp+136, (*_ifstate)(unsafe.Pointer(I)).Flinenum))
+		s__doerror(tls, cc, pp, __ccgo_ts+27846, libc.VaList(bp+136, (*_ifstate)(unsafe.Pointer(I)).Flinenum))
 		free(tls, cc, I)
 	}
 	A = (*_preprocess)(unsafe.Pointer(pp)).Ffil
@@ -49394,7 +49519,7 @@ func x__pp_push_file(tls *libc.TLS, cc *CC, pp uintptr, name uintptr) {
 	_ = f
 	f = x__fopen_fileonly(tls, cc, name, __ccgo_ts+2456)
 	if !(f != 0) {
-		s__doerror(tls, cc, pp, __ccgo_ts+11632, libc.VaList(bp+8, name))
+		s__doerror(tls, cc, pp, __ccgo_ts+11634, libc.VaList(bp+8, name))
 		return
 	}
 	x__pp_push_file_struct(tls, cc, pp, f, name)
@@ -49419,7 +49544,7 @@ func x__pp_push_file_struct(tls *libc.TLS, cc *CC, pp uintptr, f uintptr, filena
 	defer tls.FreeAlloca()()
 	A = calloc(tls, cc, uint64(1), uint64(48))
 	if !(A != 0) {
-		s__doerror(tls, cc, pp, __ccgo_ts+10944, 0)
+		s__doerror(tls, cc, pp, __ccgo_ts+10946, 0)
 		return
 	}
 	(*_filestate)(unsafe.Pointer(A)).Flineno = int32(1)
@@ -49464,7 +49589,7 @@ func x__put_depend(tls *libc.TLS, cc *CC, filename uintptr) {
 			cc.s__out_p = _stpcpy(tls, cc.s__out_p, __ccgo_ts+1850)
 			if cc.x__mkdep&int32(m_MD_PHONY) != 0 {
 				if libc.Xstrlen(tls, cc.s__output1)*uint64(2)+libc.Uint64FromInt32(cc.s__pos_num*libc.Int32FromInt32(2)) >= libc.Uint64FromInt32(libc.Int32FromInt32(m_MKDEP_INIT)*libc.Int32FromInt32(0x100)*libc.Int32FromInt32(0x10)) {
-					x__cerror(tls, cc, __ccgo_ts+109543, libc.UintptrFromInt32(0), 0, libc.UintptrFromInt32(0))
+					x__cerror(tls, cc, __ccgo_ts+109549, libc.UintptrFromInt32(0), 0, libc.UintptrFromInt32(0))
 					if cc.s__fp == cc.x__fp_out {
 						(*(*func(*libc.TLS, *CC, uintptr, _OUTDEST) int32)(unsafe.Pointer(&struct{ uintptr }{cc.x__mcpp_fputs})))(tls, cc, cc.s__output1, int32(_OUT))
 					} else {
@@ -49509,7 +49634,7 @@ func x__put_depend(tls *libc.TLS, cc *CC, filename uintptr) {
 					}
 					**(**int8)(__ccgo_up(cp)) = int8('\000')
 					cc.s__out_p = _stpcpy(tls, cc.s__out_p, cc.s__output1+uintptr(**(**_size_t)(__ccgo_up(pos_p))))
-					cc.s__out_p = _stpcpy(tls, cc.s__out_p, __ccgo_ts+109568)
+					cc.s__out_p = _stpcpy(tls, cc.s__out_p, __ccgo_ts+109574)
 					**(**int8)(__ccgo_up(cp)) = int8(c)
 					goto _3
 				_3:
@@ -49544,12 +49669,12 @@ func x__put_depend(tls *libc.TLS, cc *CC, filename uintptr) {
 	}
 	/* Any new header.  Append its name to output.  */
 	if cc.s__llen+fnamlen > uint64(m_MAX_OUT_LEN) { /* Line is long     */
-		cc.s__out_p = _stpcpy(tls, cc.s__out_p, __ccgo_ts+109572) /* Fold it          */
+		cc.s__out_p = _stpcpy(tls, cc.s__out_p, __ccgo_ts+109578) /* Fold it          */
 		cc.s__llen = uint64(1)
 	}
 	cc.s__llen = cc.s__llen + (fnamlen + uint64(1))
 	if cc.s__pos_num >= libc.Int32FromInt32(m_MKDEP_INIT)*libc.Int32FromInt32(0x10) || cc.s__out_p+uintptr(fnamlen)+uintptr(1) >= cc.s__output1+uintptr(libc.Int32FromInt32(m_MKDEP_INIT)*libc.Int32FromInt32(0x100)*libc.Int32FromInt32(0x10)) {
-		x__cfatal(tls, cc, __ccgo_ts+109577, cc.s__output1, 0, libc.UintptrFromInt32(0))
+		x__cfatal(tls, cc, __ccgo_ts+109583, cc.s__output1, 0, libc.UintptrFromInt32(0))
 	}
 	/* Need to enlarge the buffer   */
 	if libc.Uint64FromInt32(cc.s__pos_num) >= cc.s__pos_max {
@@ -49995,12 +50120,12 @@ func x__rebootBuiltin(tls *libc.TLS, cc *CC, f uintptr, b uintptr, params uintpt
 	bp := tls.Alloc(16)
 	defer tls.Free(16)
 	if x__AstListLen(tls, cc, params) != (*_Builtin)(unsafe.Pointer(b)).Fnumparameters {
-		x__ERROR(tls, cc, params, __ccgo_ts+101693, libc.VaList(bp+8, (*_Builtin)(unsafe.Pointer(b)).Fname))
+		x__ERROR(tls, cc, params, __ccgo_ts+101699, libc.VaList(bp+8, (*_Builtin)(unsafe.Pointer(b)).Fname))
 	}
 	if cc.x__gl_gas_dat != 0 {
-		x__flexbuf_printf(tls, cc, f, __ccgo_ts+101950, 0)
+		x__flexbuf_printf(tls, cc, f, __ccgo_ts+101956, 0)
 	} else {
-		x__flexbuf_printf(tls, cc, f, __ccgo_ts+101986, 0)
+		x__flexbuf_printf(tls, cc, f, __ccgo_ts+101992, 0)
 	}
 }
 
@@ -50021,10 +50146,10 @@ func x__scan_quote(tls *libc.TLS, cc *CC, delim int32, out uintptr, out_end uint
 	var v9 uint64
 	var _ /* out_p at bp+0 */ uintptr
 	_, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _ = bptr, buf, c, chlen, empty_const, len1, skip, skip_line, unterm_char, unterm_string, v1, v10, v12, v15, v2, v4, v6, v8, v9
-	skip_line = __ccgo_ts + 110718 /* _E_  */
-	unterm_string = __ccgo_ts + 110737
-	unterm_char = __ccgo_ts + 110767
-	empty_const = __ccgo_ts + 110809
+	skip_line = __ccgo_ts + 110724 /* _E_  */
+	unterm_string = __ccgo_ts + 110743
+	unterm_char = __ccgo_ts + 110773
+	empty_const = __ccgo_ts + 110815
 	**(**uintptr)(__ccgo_up(bp)) = out
 	/* Set again in case of called from routines other than scan_token().   */
 	cc.s__in_token = int32(m_TRUE)
@@ -50055,7 +50180,7 @@ func x__scan_quote(tls *libc.TLS, cc *CC, delim int32, out uintptr, out_end uint
 						buf = x__xmalloc(tls, cc, v4)
 						libc.Xmemcpy(tls, buf, bptr, chlen-uint64(1))
 						**(**int8)(__ccgo_up(buf + uintptr(chlen-uint64(1)))) = int8('\000')
-						x__cwarn(tls, cc, __ccgo_ts+110844, buf, 0, libc.UintptrFromInt32(0))
+						x__cwarn(tls, cc, __ccgo_ts+110850, buf, 0, libc.UintptrFromInt32(0))
 						free(tls, cc, buf)
 					}
 				}
@@ -50102,7 +50227,7 @@ func x__scan_quote(tls *libc.TLS, cc *CC, delim int32, out uintptr, out_end uint
 		_7:
 		}
 		if v15 && v2 != 0 && int32(**(**int16)(__ccgo_up(cc.x__char_type + uintptr(c)*2)))&int32(m_SPA) == 0 && cc.x__warn_level&int32(1) != 0 {
-			x__cwarn(tls, cc, __ccgo_ts+110900, libc.UintptrFromInt32(0), int64(c), libc.UintptrFromInt32(0))
+			x__cwarn(tls, cc, __ccgo_ts+110906, libc.UintptrFromInt32(0), int64(c), libc.UintptrFromInt32(0))
 		}
 		v1 = **(**uintptr)(__ccgo_up(bp))
 		**(**uintptr)(__ccgo_up(bp)) = **(**uintptr)(__ccgo_up(bp)) + 1
@@ -50112,7 +50237,7 @@ func x__scan_quote(tls *libc.TLS, cc *CC, delim int32, out uintptr, out_end uint
 		;
 		if out_end < **(**uintptr)(__ccgo_up(bp)) {
 			**(**int8)(__ccgo_up(out_end)) = int8('\000')
-			x__cfatal(tls, cc, __ccgo_ts+110951, libc.UintptrFromInt32(0), 0, libc.UintptrFromInt32(0)) /* _F_  */
+			x__cfatal(tls, cc, __ccgo_ts+110957, libc.UintptrFromInt32(0), 0, libc.UintptrFromInt32(0)) /* _F_  */
 		}
 	}
 	if c == int32('\n') || c == int32('\000') {
@@ -50138,7 +50263,7 @@ func x__scan_quote(tls *libc.TLS, cc *CC, delim int32, out uintptr, out_end uint
 				if delim == int32('\'') {
 					x__cerror(tls, cc, unterm_char, out, 0, skip) /* _E_  */
 				} else {
-					x__cerror(tls, cc, __ccgo_ts+110970, out, 0, skip)
+					x__cerror(tls, cc, __ccgo_ts+110976, out, 0, skip)
 				}
 			}
 			**(**uintptr)(__ccgo_up(bp)) = libc.UintptrFromInt32(0)
@@ -50150,7 +50275,7 @@ func x__scan_quote(tls *libc.TLS, cc *CC, delim int32, out uintptr, out_end uint
 			}
 		}
 		if int64(**(**uintptr)(__ccgo_up(bp)))-int64(out) > cc.x__std_limits.Fstr_len && cc.x__warn_level&int32(4) != 0 {
-			x__cwarn(tls, cc, __ccgo_ts+111005, libc.UintptrFromInt32(0), cc.x__std_limits.Fstr_len, libc.UintptrFromInt32(0))
+			x__cwarn(tls, cc, __ccgo_ts+111011, libc.UintptrFromInt32(0), cc.x__std_limits.Fstr_len, libc.UintptrFromInt32(0))
 		}
 	}
 	goto done
@@ -50274,7 +50399,7 @@ _6:
 _7:
 	;
 	if out_end < out {
-		x__cfatal(tls, cc, __ccgo_ts+110597, **(**uintptr)(__ccgo_up(out_pp)), 0, libc.UintptrFromInt32(0))
+		x__cfatal(tls, cc, __ccgo_ts+110603, **(**uintptr)(__ccgo_up(out_pp)), 0, libc.UintptrFromInt32(0))
 	}
 	if cc.x__mcpp_debug&int32(m_TOKEN) != 0 {
 		s__dump_token(tls, cc, token_type, **(**uintptr)(__ccgo_up(out_pp)))
@@ -50323,9 +50448,9 @@ func x__sharp(tls *libc.TLS, cc *CC, sharp_file uintptr, flag int32) {
 		(*(*func(*libc.TLS, *CC, int32, _OUTDEST) int32)(unsafe.Pointer(&struct{ uintptr }{cc.x__mcpp_fputc})))(tls, cc, int32('\n'), int32(_OUT))
 	} /* Ensure to be on line top */
 	if cc.x__std_line_prefix != 0 {
-		(*(*func(*libc.TLS, *CC, _OUTDEST, uintptr, uintptr) int32)(unsafe.Pointer(&struct{ uintptr }{cc.x__mcpp_fprintf})))(tls, cc, int32(_OUT), __ccgo_ts+109852, libc.VaList(bp+8, line))
+		(*(*func(*libc.TLS, *CC, _OUTDEST, uintptr, uintptr) int32)(unsafe.Pointer(&struct{ uintptr }{cc.x__mcpp_fprintf})))(tls, cc, int32(_OUT), __ccgo_ts+109858, libc.VaList(bp+8, line))
 	} else {
-		(*(*func(*libc.TLS, *CC, _OUTDEST, uintptr, uintptr) int32)(unsafe.Pointer(&struct{ uintptr }{cc.x__mcpp_fprintf})))(tls, cc, int32(_OUT), __ccgo_ts+109862, libc.VaList(bp+8, __ccgo_ts+21545, line))
+		(*(*func(*libc.TLS, *CC, _OUTDEST, uintptr, uintptr) int32)(unsafe.Pointer(&struct{ uintptr }{cc.x__mcpp_fprintf})))(tls, cc, int32(_OUT), __ccgo_ts+109868, libc.VaList(bp+8, __ccgo_ts+21553, line))
 	}
 	s__cur_file(tls, cc, file, sharp_file, flag)
 	(*(*func(*libc.TLS, *CC, int32, _OUTDEST) int32)(unsafe.Pointer(&struct{ uintptr }{cc.x__mcpp_fputc})))(tls, cc, int32('\n'), int32(_OUT))
@@ -50344,36 +50469,36 @@ func x__spinyyerror(tls *libc.TLS, cc *CC, msg uintptr) {
 	spinyychar = cc.x__saved_spinyychar
 	new_keyword = libc.UintptrFromInt32(0)
 	x__SETCOLOR(tls, cc, int32(_PRINT_ERROR))
-	x__ERRORHEADER(tls, cc, (*_LexStream)(unsafe.Pointer((*_Module)(unsafe.Pointer(cc.x__current)).FLptr)).FfileName, (*_LexStream)(unsafe.Pointer((*_Module)(unsafe.Pointer(cc.x__current)).FLptr)).FlineCounter, __ccgo_ts+4025)
-	if !(libc.Xstrcmp(tls, msg, __ccgo_ts+119179) != 0) {
-		fprintf(tls, cc, libc.X__stderrp, __ccgo_ts+119209, 0)
-		msg = __ccgo_ts + 7138
+	x__ERRORHEADER(tls, cc, (*_LexStream)(unsafe.Pointer((*_Module)(unsafe.Pointer(cc.x__current)).FLptr)).FfileName, (*_LexStream)(unsafe.Pointer((*_Module)(unsafe.Pointer(cc.x__current)).FLptr)).FlineCounter, __ccgo_ts+4027)
+	if !(libc.Xstrcmp(tls, msg, __ccgo_ts+119193) != 0) {
+		fprintf(tls, cc, libc.X__stderrp, __ccgo_ts+119223, 0)
+		msg = __ccgo_ts + 7140
 	}
 	// massage bison's error messages to make them easier to understand
 	for **(**int8)(__ccgo_up(msg)) != 0 {
 		// say which identifier was unexpected
-		if !(libc.Xstrncmp(tls, msg, __ccgo_ts+119246, libc.Xstrlen(tls, __ccgo_ts+119246)) != 0) && cc.x__last_ast != 0 && (*_AST)(unsafe.Pointer(cc.x__last_ast)).Fkind == int32(_AST_IDENTIFIER) {
-			fprintf(tls, cc, libc.X__stderrp, __ccgo_ts+119268, libc.VaList(bp+8, *(*uintptr)(unsafe.Pointer(cc.x__last_ast + 8))))
-			msg = msg + uintptr(libc.Xstrlen(tls, __ccgo_ts+119246))
+		if !(libc.Xstrncmp(tls, msg, __ccgo_ts+119260, libc.Xstrlen(tls, __ccgo_ts+119260)) != 0) && cc.x__last_ast != 0 && (*_AST)(unsafe.Pointer(cc.x__last_ast)).Fkind == int32(_AST_IDENTIFIER) {
+			fprintf(tls, cc, libc.X__stderrp, __ccgo_ts+119282, libc.VaList(bp+8, *(*uintptr)(unsafe.Pointer(cc.x__last_ast + 8))))
+			msg = msg + uintptr(libc.Xstrlen(tls, __ccgo_ts+119260))
 			if x__Spin2NewKeyword(tls, cc, (*_Module)(unsafe.Pointer(cc.x__current)).FLptr, *(*uintptr)(unsafe.Pointer(cc.x__last_ast + 8))) != 0 {
 				new_keyword = *(*uintptr)(unsafe.Pointer(cc.x__last_ast + 8))
 			}
 		} else {
-			if !(libc.Xstrncmp(tls, msg, __ccgo_ts+114759, libc.Xstrlen(tls, __ccgo_ts+114759)) != 0) && spinyychar >= int32(' ') && spinyychar < int32(127) {
-				fprintf(tls, cc, libc.X__stderrp, __ccgo_ts+42328, libc.VaList(bp+8, spinyychar))
-				msg = msg + uintptr(libc.Xstrlen(tls, __ccgo_ts+114759))
+			if !(libc.Xstrncmp(tls, msg, __ccgo_ts+114765, libc.Xstrlen(tls, __ccgo_ts+114765)) != 0) && spinyychar >= int32(' ') && spinyychar < int32(127) {
+				fprintf(tls, cc, libc.X__stderrp, __ccgo_ts+42336, libc.VaList(bp+8, spinyychar))
+				msg = msg + uintptr(libc.Xstrlen(tls, __ccgo_ts+114765))
 			} else {
-				if !(libc.Xstrncmp(tls, msg, __ccgo_ts+119295, libc.Xstrlen(tls, __ccgo_ts+119295)) != 0) && spinyychar >= int32(' ') && spinyychar < int32(127) {
-					fprintf(tls, cc, libc.X__stderrp, __ccgo_ts+42328, libc.VaList(bp+8, spinyychar))
-					msg = msg + uintptr(libc.Xstrlen(tls, __ccgo_ts+119295))
+				if !(libc.Xstrncmp(tls, msg, __ccgo_ts+119309, libc.Xstrlen(tls, __ccgo_ts+119309)) != 0) && spinyychar >= int32(' ') && spinyychar < int32(127) {
+					fprintf(tls, cc, libc.X__stderrp, __ccgo_ts+42336, libc.VaList(bp+8, spinyychar))
+					msg = msg + uintptr(libc.Xstrlen(tls, __ccgo_ts+119309))
 				} else {
-					fprintf(tls, cc, libc.X__stderrp, __ccgo_ts+42328, libc.VaList(bp+8, int32(**(**int8)(__ccgo_up(msg)))))
+					fprintf(tls, cc, libc.X__stderrp, __ccgo_ts+42336, libc.VaList(bp+8, int32(**(**int8)(__ccgo_up(msg)))))
 					msg = msg + 1
 				}
 			}
 		}
 	}
-	fprintf(tls, cc, libc.X__stderrp, __ccgo_ts+4265, 0)
+	fprintf(tls, cc, libc.X__stderrp, __ccgo_ts+4267, 0)
 	cc.x__gl_errors = cc.x__gl_errors + 1
 	x__SETCOLOR(tls, cc, int32(_PRINT_NORMAL))
 	if !(new_keyword != 0) && cc.x__prev_last_ast != 0 && (*_AST)(unsafe.Pointer(cc.x__prev_last_ast)).Fkind == int32(_AST_IDENTIFIER) {
@@ -50383,8 +50508,8 @@ func x__spinyyerror(tls *libc.TLS, cc *CC, msg uintptr) {
 	}
 	if new_keyword != 0 {
 		x__SETCOLOR(tls, cc, int32(_PRINT_WARNING))
-		x__ERRORHEADER(tls, cc, (*_LexStream)(unsafe.Pointer((*_Module)(unsafe.Pointer(cc.x__current)).FLptr)).FfileName, (*_LexStream)(unsafe.Pointer((*_Module)(unsafe.Pointer(cc.x__current)).FLptr)).FlineCounter, __ccgo_ts+7118)
-		fprintf(tls, cc, libc.X__stderrp, __ccgo_ts+119309, libc.VaList(bp+8, new_keyword))
+		x__ERRORHEADER(tls, cc, (*_LexStream)(unsafe.Pointer((*_Module)(unsafe.Pointer(cc.x__current)).FLptr)).FfileName, (*_LexStream)(unsafe.Pointer((*_Module)(unsafe.Pointer(cc.x__current)).FLptr)).FlineCounter, __ccgo_ts+7120)
+		fprintf(tls, cc, libc.X__stderrp, __ccgo_ts+119323, libc.VaList(bp+8, new_keyword))
 		x__SETCOLOR(tls, cc, int32(_PRINT_NORMAL))
 	}
 }
@@ -50407,23 +50532,23 @@ func x__spinyylex(tls *libc.TLS, cc *CC, yval uintptr) (r int32) {
 func x__str1Builtin(tls *libc.TLS, cc *CC, f uintptr, b uintptr, params uintptr) {
 	bp := tls.Alloc(16)
 	defer tls.Free(16)
-	x__flexbuf_printf(tls, cc, f, __ccgo_ts+99567, libc.VaList(bp+8, (*_Builtin)(unsafe.Pointer(b)).Fp1_cname))
+	x__flexbuf_printf(tls, cc, f, __ccgo_ts+99573, libc.VaList(bp+8, (*_Builtin)(unsafe.Pointer(b)).Fp1_cname))
 	x__PrintTypedExpr(tls, cc, f, cc.x__ast_type_string, (*_AST)(unsafe.Pointer(params)).Fleft, int32(m_PRINTEXPR_TOPLEVEL))
 	params = (*_AST)(unsafe.Pointer(params)).Fright
-	x__flexbuf_printf(tls, cc, f, __ccgo_ts+28072, 0)
+	x__flexbuf_printf(tls, cc, f, __ccgo_ts+28080, 0)
 }
 
 // C documentation
 //
 //	/* code to do strcomp(a, b) */
 func x__strcompBuiltin(tls *libc.TLS, cc *CC, f uintptr, b uintptr, params uintptr) {
-	x__flexbuf_printf(tls, cc, f, __ccgo_ts+101935, 0)
+	x__flexbuf_printf(tls, cc, f, __ccgo_ts+101941, 0)
 	x__PrintTypedExpr(tls, cc, f, cc.x__ast_type_string, (*_AST)(unsafe.Pointer(params)).Fleft, int32(m_PRINTEXPR_TOPLEVEL))
 	params = (*_AST)(unsafe.Pointer(params)).Fright
-	x__flexbuf_printf(tls, cc, f, __ccgo_ts+60153, 0)
+	x__flexbuf_printf(tls, cc, f, __ccgo_ts+60161, 0)
 	x__PrintTypedExpr(tls, cc, f, cc.x__ast_type_string, (*_AST)(unsafe.Pointer(params)).Fleft, int32(m_PRINTEXPR_TOPLEVEL))
 	params = (*_AST)(unsafe.Pointer(params)).Fright
-	x__flexbuf_printf(tls, cc, f, __ccgo_ts+101685, 0)
+	x__flexbuf_printf(tls, cc, f, __ccgo_ts+101691, 0)
 }
 
 func x__strndup(tls *libc.TLS, cc *CC, src uintptr, n _size_t) (r1 uintptr) {
@@ -50628,7 +50753,7 @@ func x__undefine(tls *libc.TLS, cc *CC, name uintptr) (r int32) {
 	**(**uintptr)(__ccgo_up(prevp)) = (*_DEFBUF)(unsafe.Pointer(dp)).Flink /* Link the previous and the next   */
 	if cc.x__mcpp_debug&int32(m_MACRO_CALL) != 0 && (*_DEFBUF)(unsafe.Pointer(dp)).Fmline != 0 {
 		/* Notice this directive unless the macro is predefined     */
-		(*(*func(*libc.TLS, *CC, _OUTDEST, uintptr, uintptr) int32)(unsafe.Pointer(&struct{ uintptr }{cc.x__mcpp_fprintf})))(tls, cc, int32(_OUT), __ccgo_ts+105001, libc.VaList(bp+16, cc.x__src_line, dp+49))
+		(*(*func(*libc.TLS, *CC, _OUTDEST, uintptr, uintptr) int32)(unsafe.Pointer(&struct{ uintptr }{cc.x__mcpp_fprintf})))(tls, cc, int32(_OUT), __ccgo_ts+105007, libc.VaList(bp+16, cc.x__src_line, dp+49))
 		cc.x__wrong_line = int32(m_TRUE)
 	}
 	free(tls, cc, dp) /* Delete the definition    */
@@ -50650,11 +50775,11 @@ func x__unget_ch(tls *libc.TLS, cc *CC) {
 	if cc.x__infile != libc.UintptrFromInt32(0) {
 		(*_FILEINFO)(unsafe.Pointer(cc.x__infile)).Fbptr = (*_FILEINFO)(unsafe.Pointer(cc.x__infile)).Fbptr - 1
 		if (*_FILEINFO)(unsafe.Pointer(cc.x__infile)).Fbptr < (*_FILEINFO)(unsafe.Pointer(cc.x__infile)).Fbuffer { /* Shouldn't happen */
-			x__cfatal(tls, cc, __ccgo_ts+111855, libc.UintptrFromInt32(0), 0, libc.UintptrFromInt32(0))
+			x__cfatal(tls, cc, __ccgo_ts+111861, libc.UintptrFromInt32(0), 0, libc.UintptrFromInt32(0))
 		} /* _F_  */
 	}
 	if cc.x__mcpp_debug&int32(m_GETC) != 0 {
-		x__dump_unget(tls, cc, __ccgo_ts+111878)
+		x__dump_unget(tls, cc, __ccgo_ts+111884)
 	}
 }
 
@@ -50668,7 +50793,7 @@ func x__waitpeqBuiltin(tls *libc.TLS, cc *CC, f uintptr, b uintptr, origparams u
 	_, _, _, _ = a1, a2, a3, params
 	params = origparams
 	if x__AstListLen(tls, cc, params) != int32(3) {
-		x__ERROR(tls, cc, params, __ccgo_ts+101693, libc.VaList(bp+8, (*_Builtin)(unsafe.Pointer(b)).Fname))
+		x__ERROR(tls, cc, params, __ccgo_ts+101699, libc.VaList(bp+8, (*_Builtin)(unsafe.Pointer(b)).Fname))
 	}
 	a1 = (*_AST)(unsafe.Pointer(params)).Fleft
 	params = (*_AST)(unsafe.Pointer(params)).Fright
@@ -50677,22 +50802,22 @@ func x__waitpeqBuiltin(tls *libc.TLS, cc *CC, f uintptr, b uintptr, origparams u
 	a3 = (*_AST)(unsafe.Pointer(params)).Fleft
 	params = (*_AST)(unsafe.Pointer(params)).Fright
 	if !(x__IsConstExpr(tls, cc, a3) != 0) || x__EvalConstExpr(tls, cc, a3) != 0 {
-		x__ERROR(tls, cc, params, __ccgo_ts+101726, libc.VaList(bp+8, (*_Builtin)(unsafe.Pointer(b)).Fname))
+		x__ERROR(tls, cc, params, __ccgo_ts+101732, libc.VaList(bp+8, (*_Builtin)(unsafe.Pointer(b)).Fname))
 		return
 	}
 	if cc.x__gl_p2 != 0 && (*_Builtin)(unsafe.Pointer(b)).Fp2_cname != 0 {
-		x__flexbuf_printf(tls, cc, f, __ccgo_ts+99567, libc.VaList(bp+8, (*_Builtin)(unsafe.Pointer(b)).Fp2_cname))
+		x__flexbuf_printf(tls, cc, f, __ccgo_ts+99573, libc.VaList(bp+8, (*_Builtin)(unsafe.Pointer(b)).Fp2_cname))
 	} else {
 		if cc.x__gl_gas_dat != 0 && (*_Builtin)(unsafe.Pointer(b)).Fgas_cname != 0 {
-			x__flexbuf_printf(tls, cc, f, __ccgo_ts+99567, libc.VaList(bp+8, (*_Builtin)(unsafe.Pointer(b)).Fgas_cname))
+			x__flexbuf_printf(tls, cc, f, __ccgo_ts+99573, libc.VaList(bp+8, (*_Builtin)(unsafe.Pointer(b)).Fgas_cname))
 		} else {
-			x__flexbuf_printf(tls, cc, f, __ccgo_ts+99567, libc.VaList(bp+8, (*_Builtin)(unsafe.Pointer(b)).Fp1_cname))
+			x__flexbuf_printf(tls, cc, f, __ccgo_ts+99573, libc.VaList(bp+8, (*_Builtin)(unsafe.Pointer(b)).Fp1_cname))
 		}
 	}
 	x__PrintTypedExpr(tls, cc, f, cc.x__ast_type_long, a1, int32(m_PRINTEXPR_TOPLEVEL))
-	x__flexbuf_printf(tls, cc, f, __ccgo_ts+60153, 0)
+	x__flexbuf_printf(tls, cc, f, __ccgo_ts+60161, 0)
 	x__PrintTypedExpr(tls, cc, f, cc.x__ast_type_long, a2, int32(m_PRINTEXPR_TOPLEVEL))
-	x__flexbuf_printf(tls, cc, f, __ccgo_ts+28072, 0)
+	x__flexbuf_printf(tls, cc, f, __ccgo_ts+28080, 0)
 }
 
 func x__zip_entry_fwrite(tls *libc.TLS, cc *CC, zip uintptr, filename uintptr) (r int32) {

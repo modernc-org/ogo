@@ -61,6 +61,11 @@
 // 18446744073709551615 for a w past 2^63 on the host and the board alike
 // (ogoNonzero64u, and the run case "a uint64 divides a constant unsigned").
 //
+// FIXED upstream 2026-10-05 by spin2cpp bf72f733 (7.8.0-beta), the change reported
+// with the issue, its two comparison rules widened from C to every language, and
+// adopted 2026-10-08 with the pin 1d709b25: under the backend regenerated then the
+// reproducer prints gcc's values on every line on the board.
+//
 // To check, build for the P2 with -2 and read the lines: gcc's are C's.
 
 #include <stdio.h>

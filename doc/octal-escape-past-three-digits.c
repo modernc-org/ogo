@@ -28,9 +28,9 @@
 // FIXED upstream 2026-10-05 by spin2cpp 639a8c8e (7.7.4-beta, the commit after our
 // pin eb263961), Eric Smith's own change with the same rule, three digits at most,
 // and #115 closed. Built natively there, the reproducer prints gcc's values on every
-// line on a P2-EDGE. Not adopted: cQuote's closed literal is right under either
-// lexer and costs nothing, so it stays, and the fix comes in with the next
-// regeneration's pin.
+// line on a P2-EDGE. Adopted 2026-10-08 with the pin 1d709b25: under the backend
+// regenerated then the reproducer prints gcc's values on the board. cQuote's closed
+// literal stays, right under either lexer and costing nothing.
 
 #include <stdio.h>
 

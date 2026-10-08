@@ -23,6 +23,11 @@
 // right on the host). The emitter casts a 32-bit unsigned expression to uint32_t
 // before widening it (widenU32).
 //
+// FIXED upstream by spin2cpp bf72f733 (2026-10-05, the change reported as
+// flexprop#114, which reworked MatchIntegerTypes): under the backend regenerated
+// 2026-10-08 at 1d709b25 the reproducer prints gcc's values on the board. widenU32
+// stays; it costs nothing.
+//
 // gcc prints, and the target should print:
 //
 //	0u+u hi=0 lo=7

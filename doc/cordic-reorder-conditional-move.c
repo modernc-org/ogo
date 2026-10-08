@@ -36,7 +36,9 @@
 //
 // Measured on a P2-EDGE with the in-process flexcc (spin2cpp eb263961 with the
 // carried optimize_ir.c.diff) 2026-10-08, and with a native build of the same commit,
-// with and without the fix.
+// with and without the fix. CARRIED since the same day as optimize_ir.c.diff's second
+// hunk, the backend regenerated at spin2cpp 1d709b25: the reproducer prints gcc's
+// values on the board. Not reported upstream yet.
 //
 // gcc prints, and the target should print:
 //

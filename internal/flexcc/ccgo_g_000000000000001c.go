@@ -578,11 +578,11 @@ const _SPINYYerror = 256
 
 const _SP_ABORT = 328
 
-const _SP_ABS = 409
+const _SP_ABS = 410
 
-const _SP_ADDBITS = 404
+const _SP_ADDBITS = 405
 
-const _SP_ADDPINS = 405
+const _SP_ADDPINS = 406
 
 const _SP_ALIGNL = 291
 
@@ -590,9 +590,9 @@ const _SP_ALIGNW = 292
 
 const _SP_ALLOCA = 325
 
-const _SP_AND = 376
+const _SP_AND = 377
 
-const _SP_ANDTHEN = 378
+const _SP_ANDTHEN = 379
 
 const _SP_ANNOTATION = 339
 
@@ -610,11 +610,11 @@ const _SP_ASM_ENDIF = 346
 
 const _SP_ASM_IF = 343
 
-const _SP_ASSIGN = 373
+const _SP_ASSIGN = 374
 
 const _SP_BACKTICK_STRING = 262
 
-const _SP_BMASK = 434
+const _SP_BMASK = 435
 
 const _SP_BYTE = 274
 
@@ -622,7 +622,7 @@ const _SP_BYTECODE = 259
 
 const _SP_BYTEFIT = 278
 
-const _SP_BYTES = 351
+const _SP_BYTES = 352
 
 const _SP_CASE = 320
 
@@ -636,39 +636,39 @@ const _SP_COGREG = 265
 
 const _SP_CON = 266
 
-const _SP_CONDITIONAL = 439
+const _SP_CONDITIONAL = 440
 
-const _SP_CONDITIONAL_SEP = 440
+const _SP_CONDITIONAL_SEP = 441
 
-const _SP_CONSTANT = 427
+const _SP_CONSTANT = 428
 
-const _SP_COPY = 363
+const _SP_COPY = 364
 
-const _SP_C_Z = 369
+const _SP_C_Z = 370
 
 const _SP_DAT = 268
 
-const _SP_DAT_LBRACK = 465
+const _SP_DAT_LBRACK = 466
 
-const _SP_DAT_RBRACK = 466
+const _SP_DAT_RBRACK = 467
 
-const _SP_DEBUG = 437
+const _SP_DEBUG = 438
 
-const _SP_DEBUG_END_SESSION = 452
+const _SP_DEBUG_END_SESSION = 453
 
-const _SP_DECODE = 412
+const _SP_DECODE = 413
 
-const _SP_DECREMENT = 418
+const _SP_DECREMENT = 419
 
-const _SP_DITTO = 372
+const _SP_DITTO = 373
 
 const _SP_DOTS = 335
 
-const _SP_DOUBLEAT = 421
+const _SP_DOUBLEAT = 422
 
-const _SP_DOUBLETILDE = 416
+const _SP_DOUBLETILDE = 417
 
-const _SP_DOUBLE_DOLLAR = 467
+const _SP_DOUBLE_DOLLAR = 468
 
 const _SP_ELSE = 302
 
@@ -676,87 +676,87 @@ const _SP_ELSEIF = 303
 
 const _SP_ELSEIFNOT = 304
 
-const _SP_EMPTY = 429
+const _SP_EMPTY = 430
 
-const _SP_ENCODE = 413
+const _SP_ENCODE = 414
 
-const _SP_ENCODE2 = 414
+const _SP_ENCODE2 = 415
 
 const _SP_END = 272
 
 const _SP_ENDASM = 342
 
-const _SP_ENDIANL = 450
+const _SP_ENDIANL = 451
 
-const _SP_ENDIANW = 451
+const _SP_ENDIANW = 452
 
 const _SP_EOF = 334
 
 const _SP_EOLN = 333
 
-const _SP_EQ = 386
+const _SP_EQ = 387
 
-const _SP_EXP = 447
+const _SP_EXP = 448
 
-const _SP_EXP10 = 445
+const _SP_EXP10 = 446
 
-const _SP_EXP2 = 443
+const _SP_EXP2 = 444
 
-const _SP_FABS = 411
+const _SP_FABS = 412
 
-const _SP_FADD = 454
+const _SP_FADD = 455
 
-const _SP_FDIV = 457
+const _SP_FDIV = 458
 
-const _SP_FEQ = 461
+const _SP_FEQ = 462
 
-const _SP_FGE = 463
+const _SP_FGE = 464
 
-const _SP_FGT = 459
+const _SP_FGT = 460
 
-const _SP_FIELD = 350
+const _SP_FIELD = 351
 
-const _SP_FIELDPTR = 423
+const _SP_FIELDPTR = 424
 
 const _SP_FILE = 338
 
-const _SP_FILL = 362
+const _SP_FILL = 363
 
 const _SP_FIT = 290
 
-const _SP_FLE = 462
+const _SP_FLE = 463
 
-const _SP_FLOAT = 424
+const _SP_FLOAT = 425
 
 const _SP_FLOATNUM = 263
 
-const _SP_FLT = 458
+const _SP_FLT = 459
 
-const _SP_FMUL = 456
+const _SP_FMUL = 457
 
-const _SP_FNE = 460
+const _SP_FNE = 461
 
-const _SP_FRAC = 393
+const _SP_FRAC = 394
 
 const _SP_FROM = 294
 
-const _SP_FSQRT = 410
+const _SP_FSQRT = 411
 
-const _SP_FSUB = 455
+const _SP_FSUB = 456
 
 const _SP_FVAR = 280
 
 const _SP_FVARS = 281
 
-const _SP_GE = 379
+const _SP_GE = 380
 
-const _SP_GEU = 381
+const _SP_GEU = 382
 
-const _SP_GTU = 383
+const _SP_GTU = 384
 
 const _SP_HERE = 336
 
-const _SP_HIGHMULT = 394
+const _SP_HIGHMULT = 395
 
 const _SP_HWREG = 285
 
@@ -766,7 +766,7 @@ const _SP_IF = 300
 
 const _SP_IFNOT = 301
 
-const _SP_INCREMENT = 417
+const _SP_INCREMENT = 418
 
 const _SP_INDENT = 331
 
@@ -778,23 +778,23 @@ const _SP_INSTRMODIFIER = 284
 
 const _SP_INTERFACE = 347
 
-const _SP_LE = 380
+const _SP_LE = 381
 
-const _SP_LEU = 382
+const _SP_LEU = 383
 
-const _SP_LIMITMAX = 389
+const _SP_LIMITMAX = 390
 
-const _SP_LIMITMIN = 388
+const _SP_LIMITMIN = 389
 
-const _SP_LOG = 446
+const _SP_LOG = 447
 
-const _SP_LOG10 = 444
+const _SP_LOG10 = 445
 
-const _SP_LOG2 = 442
+const _SP_LOG2 = 443
 
 const _SP_LONG = 276
 
-const _SP_LONGS = 353
+const _SP_LONGS = 354
 
 const _SP_LOOKDOWN = 307
 
@@ -804,37 +804,37 @@ const _SP_LOOKUP = 309
 
 const _SP_LOOKUPZ = 310
 
-const _SP_LOOK_SEP = 438
+const _SP_LOOK_SEP = 439
 
-const _SP_LSTRING = 354
+const _SP_LSTRING = 355
 
-const _SP_LTU = 384
+const _SP_LTU = 385
 
-const _SP_MOVBYTS = 449
+const _SP_MOVBYTS = 450
 
 const _SP_NAMESP = 348
 
-const _SP_NAN = 432
+const _SP_NAN = 433
 
-const _SP_NE = 385
+const _SP_NE = 386
 
-const _SP_NEWTASK = 370
+const _SP_NEWTASK = 371
 
 const _SP_NEXT = 324
 
-const _SP_NOT = 415
+const _SP_NOT = 416
 
 const _SP_NUM = 260
 
 const _SP_OBJ = 271
 
-const _SP_OFFSETOF = 453
+const _SP_OFFSETOF = 454
 
-const _SP_ONES = 433
+const _SP_ONES = 434
 
-const _SP_OR = 375
+const _SP_OR = 376
 
-const _SP_ORELSE = 377
+const _SP_ORELSE = 378
 
 const _SP_ORG = 286
 
@@ -856,35 +856,35 @@ const _SP_PINT = 316
 
 const _SP_PINW = 317
 
-const _SP_POW = 448
+const _SP_POW = 449
 
 const _SP_PRI = 270
 
 const _SP_PUB = 269
 
-const _SP_QEXP = 436
+const _SP_QEXP = 437
 
-const _SP_QLOG = 435
+const _SP_QLOG = 436
 
 const _SP_QUAD = 277
 
 const _SP_QUIT = 323
 
-const _SP_RANDOM = 428
+const _SP_RANDOM = 429
 
-const _SP_REF_DEC = 420
+const _SP_REF_DEC = 421
 
-const _SP_REF_INC = 419
+const _SP_REF_INC = 420
 
 const _SP_REGEXEC = 326
 
 const _SP_REGLOAD = 327
 
-const _SP_REMAINDER = 390
+const _SP_REMAINDER = 391
 
 const _SP_REPEAT = 293
 
-const _SP_REPEAT_SEP = 441
+const _SP_REPEAT_SEP = 442
 
 const _SP_RES = 289
 
@@ -892,33 +892,35 @@ const _SP_RESULT = 329
 
 const _SP_RETURN = 330
 
-const _SP_REV = 402
+const _SP_REV = 403
 
-const _SP_REV2 = 403
+const _SP_REV2 = 404
 
-const _SP_ROTL = 398
+const _SP_ROTL = 399
 
-const _SP_ROTR = 397
+const _SP_ROTR = 398
 
-const _SP_ROUND = 426
+const _SP_ROUND = 427
 
-const _SP_SAR = 401
+const _SP_SAR = 402
 
-const _SP_SCAS = 395
+const _SP_SCAS = 396
 
-const _SP_SGNCOMP = 387
+const _SP_SELF = 349
 
-const _SP_SHL = 399
+const _SP_SGNCOMP = 388
 
-const _SP_SHR = 400
+const _SP_SHL = 400
 
-const _SP_SIGNX = 430
+const _SP_SHR = 401
 
-const _SP_SIZEOF = 367
+const _SP_SIGNX = 431
+
+const _SP_SIZEOF = 368
 
 const _SP_SPR = 264
 
-const _SP_SQRT = 408
+const _SP_SQRT = 409
 
 const _SP_STEP = 296
 
@@ -926,11 +928,11 @@ const _SP_STRING = 261
 
 const _SP_STRINGPTR = 337
 
-const _SP_STRUCT = 366
+const _SP_STRUCT = 367
 
-const _SP_SWAP = 364
+const _SP_SWAP = 365
 
-const _SP_SWAP_OP = 368
+const _SP_SWAP_OP = 369
 
 const _SP_TASKHLT = 314
 
@@ -938,27 +940,27 @@ const _SP_TASKINIT = 313
 
 const _SP_THEN = 305
 
-const _SP_THISTASK = 371
+const _SP_THISTASK = 372
 
 const _SP_TO = 295
 
-const _SP_TRIPLEAT = 422
+const _SP_TRIPLEAT = 423
 
-const _SP_TRUNC = 425
+const _SP_TRUNC = 426
 
-const _SP_TYPENAME = 355
+const _SP_TYPENAME = 356
 
-const _SP_UNSDIV = 391
+const _SP_UNSDIV = 392
 
-const _SP_UNSHIGHMULT = 396
+const _SP_UNSHIGHMULT = 397
 
-const _SP_UNSMOD = 392
+const _SP_UNSMOD = 393
 
 const _SP_UNTIL = 299
 
 const _SP_VAR = 267
 
-const _SP_VARARGS = 349
+const _SP_VARARGS = 350
 
 const _SP_WHILE = 297
 
@@ -968,11 +970,11 @@ const _SP_WORD = 275
 
 const _SP_WORDFIT = 279
 
-const _SP_WORDS = 352
+const _SP_WORDS = 353
 
-const _SP_XOR = 374
+const _SP_XOR = 375
 
-const _SP_ZEROX = 431
+const _SP_ZEROX = 432
 
 const _YYSYMBOL_YYEMPTY = -2
 
@@ -1023,7 +1025,7 @@ type _yytype_int16 = int16
 
 type _yytype_int8 = int8
 
-const m_YYNSTATES = 1234
+const m_YYNSTATES = 1235
 
 const m_YYNSTATES1 = 967
 
@@ -1304,7 +1306,7 @@ func s__yypcontext_expected_tokens(tls *libc.TLS, cc *CC, yyctx uintptr, yyarg u
 	/* Actual size of YYARG. */
 	yycount = 0
 	yyn = int32(cc.s__yypact[+int32(**(**_yy_state_t)(__ccgo_up((*_yypcontext_t)(unsafe.Pointer(yyctx)).Fyyssp)))])
-	if !(yyn == -libc.Int32FromInt32(1086)) {
+	if !(yyn == -libc.Int32FromInt32(1112)) {
 		if yyn < 0 {
 			v1 = -yyn
 		} else {
