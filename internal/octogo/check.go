@@ -15833,6 +15833,36 @@ var builderParams = map[string][]Kind{
 	"Reset":       nil,
 }
 
+// builderResults are the predeclared Builder's methods' results, as Go's
+// strings.Builder declares them: Write, WriteString and WriteRune the bytes written
+// and an error, WriteByte an error, String a string and Len an int. Here a write
+// that does not fit the backing answers a non-nil error -- Go's never does, its
+// backing growing -- which is how a truncation is seen (builderHelpersC). The type
+// names are the universe's own.
+func builderResults(method string) ([]retResult, bool) {
+	res := func(nm string) retResult {
+		d := Universe.Declarations[nm]
+		r := retResult{name: nm, typeNode: &TypeNodeIdent{Name: d.Token()}}
+		if pt, isKind := d.(*PredeclaredType); isKind {
+			r.kind, r.known = pt.Kind(), true
+		}
+		return r
+	}
+	switch method {
+	case "Write", "WriteString", "WriteRune":
+		return []retResult{res("int"), res("error")}, true
+	case "WriteByte":
+		return []retResult{res("error")}, true
+	case "String":
+		return []retResult{res("string")}, true
+	case "Len":
+		return []retResult{res("int")}, true
+	case "Reset":
+		return nil, true
+	}
+	return nil, false
+}
+
 // checkBuilderArgs checks a call of one of the Builder's methods against its
 // parameters: their number and the Kind of each. Only the name was asked, so
 // `sb.WriteByte("Hi, ")` reached the C compiler.
@@ -24051,11 +24081,11 @@ func (f *File) zeroResultCall(s *Scope, id Token, suffix Node) bool {
 		if !ok {
 			return false
 		}
-		// The predeclared Builder's methods but String and Len yield nothing:
-		// `sb.Reset() == "OK"` was taken.
+		// The predeclared Builder's Reset yields nothing: `sb.Reset() == "OK"` was
+		// taken.
 		if d.builderVar || d.typeName.Src() == "Builder" && !d.typeQual.IsValid() && isPredeclaredBuilder(s, "Builder") {
-			_, isMethod := builderParams[member.Src()]
-			return isMethod && member.Src() != "String" && member.Src() != "Len"
+			r, isMethod := builderResults(member.Src())
+			return isMethod && len(r) == 0
 		}
 		if !d.typeName.IsValid() {
 			return false
@@ -24307,6 +24337,9 @@ func (f *File) callResults(s *Scope, callee, member Token) ([]retResult, bool) {
 		return nil, false
 	}
 	d, ok := s.find(callee.Src()).(*VarDeclaration)
+	if ok && (d.builderVar || d.typeName.Src() == "Builder" && !d.typeQual.IsValid() && isPredeclaredBuilder(s, "Builder")) {
+		return builderResults(member.Src())
+	}
 	if !ok || !d.typeName.IsValid() {
 		return nil, false
 	}

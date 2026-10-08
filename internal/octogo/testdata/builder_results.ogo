@@ -1,0 +1,26 @@
+// The Builder's writes answer Go's strings.Builder's results -- Write, WriteString
+// and WriteRune the bytes written and an error, WriteByte an error -- and are held
+// to them as any call is.
+
+func fill(sb *Builder, s string) (int, error) {
+	return sb.WriteString(s)
+}
+
+func main() {
+	var back [8]byte
+	sb := NewBuilder(back[:])
+	n, err := sb.WriteString("hello")
+	var e error = sb.WriteByte('x')
+	k, e2 := sb.WriteRune('z')
+	_, _ = fill(&sb, "y")
+	sb.WriteString("statement")
+	_, _, _, _, _ = n, err, e, k, e2
+	// ERROR "assignment mismatch: 1 variable but 2 values"
+	x := sb.WriteString("a")
+	// ERROR "multiple-value sb.WriteString\("a"\) \(value of type \(2 values\)\) in single-value context"
+	if sb.WriteString("a") == 3 {
+	}
+	// ERROR "assignment mismatch: 2 variables but 1 value"
+	m, merr := sb.WriteByte('x')
+	_, _, _ = x, m, merr
+}

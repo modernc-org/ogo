@@ -895,34 +895,49 @@ const stringTypedef = "typedef struct { const char* str; int len; } ogo_string;\
 // the count written so far. No allocation: the storage is the caller's.
 const builderTypedef = "typedef struct { uint8_t* ptr; int cap; int len; } ogo_builder;\n"
 
-// builderHelpers implement the Builder methods. NewBuilder(back) takes a []byte and
-// starts empty. WriteString/WriteByte append into the free tail, bounded by cap (an
-// overflowing write is truncated, not a trap -- the caller sized the backing).
-// String() returns a VIEW: an ogo_string aliasing the backing's written prefix, no
-// copy -- so it is only valid until the next write, exactly like Go's strings.Builder
-// forbidding use after further building.
-const builderHelpers = "static ogo_builder ogo_builder_new(ogo_slice_uint8_t back) { ogo_builder b; b.ptr = back.ptr; b.cap = back.len; b.len = 0; return b; }\n" +
-	"static void ogo_builder_WriteString(ogo_builder* b, ogo_string s) { int n = s.len; if (n > b->cap - b->len) n = b->cap - b->len; if (n > 0) { memcpy(b->ptr + b->len, s.str, (unsigned)n); b->len += n; } }\n" +
-	// Write appends a byte slice's bytes. Named Write (not WriteBytes) so a future
-	// Builder can satisfy io.Writer's method set once interfaces exist, matching Go's
-	// strings.Builder.Write; the result will grow to (int, error) then.
-	"static void ogo_builder_Write(ogo_builder* b, ogo_slice_uint8_t p) { int n = p.len; if (n > b->cap - b->len) n = b->cap - b->len; if (n > 0) { memcpy(b->ptr + b->len, p.ptr, (unsigned)n); b->len += n; } }\n" +
-	"static void ogo_builder_WriteByte(ogo_builder* b, uint8_t c) { if (b->len < b->cap) b->ptr[b->len++] = c; }\n" +
-	// WriteRune encodes a rune as UTF-8. An out-of-range or surrogate value is
-	// written as U+FFFD, as Go's WriteRune does. It writes nothing if the encoding
-	// would not fit whole (never a partial rune).
-	"static void ogo_builder_WriteRune(ogo_builder* b, int32_t r) {\n" +
-	"\tunsigned int c = (unsigned int)r; uint8_t t[4]; int n;\n" +
-	"\tif (r < 0 || c > 0x10FFFF || (c >= 0xD800 && c <= 0xDFFF)) c = 0xFFFD;\n" +
-	"\tif (c < 0x80) { t[0] = (uint8_t)c; n = 1; }\n" +
-	"\telse if (c < 0x800) { t[0] = (uint8_t)(0xC0 | (c >> 6)); t[1] = (uint8_t)(0x80 | (c & 0x3F)); n = 2; }\n" +
-	"\telse if (c < 0x10000) { t[0] = (uint8_t)(0xE0 | (c >> 12)); t[1] = (uint8_t)(0x80 | ((c >> 6) & 0x3F)); t[2] = (uint8_t)(0x80 | (c & 0x3F)); n = 3; }\n" +
-	"\telse { t[0] = (uint8_t)(0xF0 | (c >> 18)); t[1] = (uint8_t)(0x80 | ((c >> 12) & 0x3F)); t[2] = (uint8_t)(0x80 | ((c >> 6) & 0x3F)); t[3] = (uint8_t)(0x80 | (c & 0x3F)); n = 4; }\n" +
-	"\tif (n > b->cap - b->len) return;\n" +
-	"\tfor (int i = 0; i < n; i++) b->ptr[b->len++] = t[i];\n}\n" +
-	"static ogo_string ogo_builder_String(ogo_builder* b) { ogo_string s; s.str = (const char*)b->ptr; s.len = b->len; return s; }\n" +
-	"static int ogo_builder_Len(ogo_builder* b) { return b->len; }\n" +
-	"static void ogo_builder_Reset(ogo_builder* b) { b->len = 0; }\n"
+// builderHelpersC implements the Builder methods. NewBuilder(back) takes a []byte and
+// starts empty. The writes append into the free tail, bounded by cap, and answer as
+// Go's strings.Builder's are declared to -- Write, WriteString and WriteRune the
+// bytes written and an error, WriteByte an error -- where Go's never fails and this
+// one's backing is fixed: a write that does not fit writes what does (WriteRune
+// nothing of a rune that does not fit whole) and answers "short write", Go's
+// io.ErrShortWrite. Without results, a truncation was silent. String() returns a
+// VIEW: an ogo_string aliasing the backing's written prefix, no copy -- so it is
+// only valid until a Reset and a write, which overwrite what it shows.
+//
+// errC and ret are the C types of `error` and of the (int, error) pair, minted
+// where the Builder is first needed (needBuilder).
+func (e *emitter) builderHelpersC() string {
+	errC, ret := e.builderErrC, e.builderRet
+	vt := e.ifaceVTName(errC)
+	return "static ogo_builder ogo_builder_new(ogo_slice_uint8_t back) { ogo_builder b; b.ptr = back.ptr; b.cap = back.len; b.len = 0; return b; }\n" +
+		"static ogo_string ogo_builder_short_Error(void* p) { ogo_string s; (void)p; s.str = \"short write\"; s.len = 11; return s; }\n" +
+		"static const " + vt + " ogo_builder_short_vt = { \"*errors.errorString\", ogo_builder_short_Error };\n" +
+		"static char ogo_builder_short;\n" +
+		"static " + errC + " ogo_builder_err(int full) { " + errC + " r; r.data = 0; r.vt = 0; if (!full) { r.data = &ogo_builder_short; r.vt = &ogo_builder_short_vt; } return r; }\n" +
+		// The pair is built in a local and the local returned: a return of a call
+		// yielding a struct is what the target's compiler copies wrong
+		// (flexprop#113), warning "incompatible pointer types in return".
+		"static " + ret + " ogo_builder_WriteString(ogo_builder* b, ogo_string s) { " + ret + " r; int n = s.len; if (n > b->cap - b->len) n = b->cap - b->len; if (n > 0) { memcpy(b->ptr + b->len, s.str, (unsigned)n); b->len += n; } else { n = 0; } r._0 = n; r._1 = ogo_builder_err(n == s.len); return r; }\n" +
+		"static " + ret + " ogo_builder_Write(ogo_builder* b, ogo_slice_uint8_t p) { " + ret + " r; int n = p.len; if (n > b->cap - b->len) n = b->cap - b->len; if (n > 0) { memcpy(b->ptr + b->len, p.ptr, (unsigned)n); b->len += n; } else { n = 0; } r._0 = n; r._1 = ogo_builder_err(n == p.len); return r; }\n" +
+		"static " + errC + " ogo_builder_WriteByte(ogo_builder* b, uint8_t c) { if (b->len < b->cap) { b->ptr[b->len++] = c; return ogo_builder_err(1); } return ogo_builder_err(0); }\n" +
+		// WriteRune encodes a rune as UTF-8. An out-of-range or surrogate value is
+		// written as U+FFFD, as Go's WriteRune does. It writes nothing if the encoding
+		// does not fit whole.
+		"static " + ret + " ogo_builder_WriteRune(ogo_builder* b, int32_t r) {\n" +
+		"\tunsigned int c = (unsigned int)r; uint8_t t[4]; int n; " + ret + " res;\n" +
+		"\tif (r < 0 || c > 0x10FFFF || (c >= 0xD800 && c <= 0xDFFF)) c = 0xFFFD;\n" +
+		"\tif (c < 0x80) { t[0] = (uint8_t)c; n = 1; }\n" +
+		"\telse if (c < 0x800) { t[0] = (uint8_t)(0xC0 | (c >> 6)); t[1] = (uint8_t)(0x80 | (c & 0x3F)); n = 2; }\n" +
+		"\telse if (c < 0x10000) { t[0] = (uint8_t)(0xE0 | (c >> 12)); t[1] = (uint8_t)(0x80 | ((c >> 6) & 0x3F)); t[2] = (uint8_t)(0x80 | (c & 0x3F)); n = 3; }\n" +
+		"\telse { t[0] = (uint8_t)(0xF0 | (c >> 18)); t[1] = (uint8_t)(0x80 | ((c >> 12) & 0x3F)); t[2] = (uint8_t)(0x80 | ((c >> 6) & 0x3F)); t[3] = (uint8_t)(0x80 | (c & 0x3F)); n = 4; }\n" +
+		"\tres._0 = 0; res._1 = ogo_builder_err(0);\n" +
+		"\tif (n > b->cap - b->len) return res;\n" +
+		"\tfor (int i = 0; i < n; i++) b->ptr[b->len++] = t[i];\n\tres._0 = n; res._1 = ogo_builder_err(1);\n\treturn res;\n}\n" +
+		"static ogo_string ogo_builder_String(ogo_builder* b) { ogo_string s; s.str = (const char*)b->ptr; s.len = b->len; return s; }\n" +
+		"static int ogo_builder_Len(ogo_builder* b) { return b->len; }\n" +
+		"static void ogo_builder_Reset(ogo_builder* b) { b->len = 0; }\n"
+}
 
 // runeStringHelper is `string(r)` for a RUNE the program computes rather than
 // writes: the UTF-8 bytes into a buffer the CALLER supplies, and a string over them.
@@ -2977,40 +2992,98 @@ func (e *emitter) emitSelect(ast []int32) {
 				offered + " = !" + tryRecv + "; }\n")
 		}
 	}
-	first := true
+	// Each clause's TEST, and what its success commits besides choosing it -- a
+	// standing offer taken is no longer standing. A receive's test fills its
+	// temporary; the targets are stored, and every body run, in the clause's arm.
+	type clauseTest struct{ test, commit string }
+	tests := make([]clauseTest, len(cases))
+	var live []int // the clauses but the default, in source order
 	for i, c := range cases {
 		if c.def {
-			continue // emitted last, as the else
+			continue
 		}
+		live = append(live, i)
+		switch {
+		case c.send && gated:
+			// The GATED form: offer only when a receiver has announced itself, so a
+			// default can be answered and two sends can never both stand.
+			tests[i].test = "ogo_chan_trysend_" + sanitizeElem(c.elem) + "(" + c.ch + ", " + e.chanSendArg(c.elem, sendVals[i]) + ")"
+		case c.send:
+			tests[i] = clauseTest{offered + " && " + chanOfferedCName(c.elem) + "(" + c.ch + ", " + mine + ")", offered + " = 0;"}
+		default:
+			e.chanTryRecvElems[c.elem] = true
+			// An array temporary is already a pointer where one is wanted.
+			addr := "&"
+			if _, isArr := e.namedArrays[c.elem]; isArr {
+				addr = ""
+			}
+			guard := ""
+			if tryRecv != "" {
+				guard = tryRecv + " && "
+			}
+			try := chanTryRecvCName(c.elem) + "(" + c.ch + ", " + addr + tmps[i] + ")"
+			if c.hasOk {
+				try = "(" + gots[i] + " = " + try + ")"
+			}
+			tests[i].test = guard + try
+		}
+	}
+	// With two clauses or more the tests start where the last choice left off,
+	// rotating past the clause chosen, so one that is always ready cannot starve the
+	// others: Go chooses among the ready ones at random, and polled in source order
+	// the first was chosen every round it was ready. A counter per select, shared by
+	// every cog running it -- any value of it is a valid start. One clause and a
+	// default keep the plain test.
+	chosen, rot := "", ""
+	if len(live) > 1 {
+		chosen, rot = e.newTmp(), fmt.Sprintf("ogo_selrot%d", len(e.selectRots))
+		e.selectRots = append(e.selectRots, "static int "+rot+";")
+		k, at := e.newTmp(), e.newTmp()
+		e.ind()
+		e.emit("int " + chosen + " = -1;\n")
+		e.ind()
+		e.emit(fmt.Sprintf("for (int %s = 0; %s < %d && %s < 0; %s++) {\n", k, k, len(live), chosen, k))
+		e.indent++
+		e.ind()
+		e.emit(fmt.Sprintf("int %s = %s + %s; if (%s >= %d) %s -= %d;\n", at, rot, k, at, len(live), at, len(live)))
+		e.ind()
+		e.emit("switch (" + at + ") {\n")
+		for pos, i := range live {
+			e.ind()
+			e.emit(fmt.Sprintf("case %d: if (%s) { %s%s = %d; } break;\n", pos, tests[i].test, tests[i].commit+sepIf(tests[i].commit), chosen, pos))
+		}
+		e.ind()
+		e.emit("}\n")
+		e.indent--
+		e.ind()
+		e.emit("}\n")
+	}
+	first := true
+	for pos, i := range live {
+		c := cases[i]
 		e.ind()
 		if !first {
 			e.emit("else ")
 		}
 		first = false
-		if c.send {
-			if gated {
-				// The GATED form: offer only when a receiver has announced itself, so
-				// a default can be answered and two sends can never both stand.
-				e.emit("if (ogo_chan_trysend_" + sanitizeElem(c.elem) + "(" + c.ch + ", " + e.chanSendArg(c.elem, sendVals[i]) + ")) {\n")
-				e.indent++
-				if !hasDefault {
-					e.ind()
-					e.emit(done + " = 1;\n") // set before the body, so a break in it is the user's
-				}
-				for _, st := range c.body {
-					e.emitStatement(st.ast)
-				}
-				e.indent--
-				e.ind()
-				e.emit("}\n")
-				continue
-			}
-			e.emit("if (" + offered + " && " + chanOfferedCName(c.elem) + "(" + c.ch + ", " + mine + ")) {\n")
+		if chosen != "" {
+			e.emit(fmt.Sprintf("if (%s == %d) {\n", chosen, pos))
 			e.indent++
 			e.ind()
-			e.emit(offered + " = 0;\n")
+			e.emit(fmt.Sprintf("%s = %d;\n", rot, (pos+1)%len(live)))
+		} else {
+			e.emit("if (" + tests[i].test + ") {\n")
+			e.indent++
+			if tests[i].commit != "" {
+				e.ind()
+				e.emit(tests[i].commit + "\n")
+			}
+		}
+		if !hasDefault {
 			e.ind()
 			e.emit(done + " = 1;\n") // set before the body, so a break in it is the user's
+		}
+		if c.send {
 			for _, st := range c.body {
 				e.emitStatement(st.ast)
 			}
@@ -3020,26 +3093,6 @@ func (e *emitter) emitSelect(ast []int32) {
 			continue
 		}
 		tmp := tmps[i]
-		e.chanTryRecvElems[c.elem] = true
-		// An array temporary is already a pointer where one is wanted.
-		addr := "&"
-		if _, isArr := e.namedArrays[c.elem]; isArr {
-			addr = ""
-		}
-		guard := ""
-		if tryRecv != "" {
-			guard = tryRecv + " && "
-		}
-		try := chanTryRecvCName(c.elem) + "(" + c.ch + ", " + addr + tmp + ")"
-		if c.hasOk {
-			try = "(" + gots[i] + " = " + try + ")"
-		}
-		e.emit("if (" + guard + try + ") {\n")
-		e.indent++
-		if !hasDefault {
-			e.ind()
-			e.emit(done + " = 1;\n") // set before the body, so a break in it is the user's
-		}
 		// Go evaluates the targets' operands once the clause is chosen, and then
 		// stores: a call in a target's chain, `case getp().x = <-ch:`, and what a
 		// dereference reaches, `case (*s)[0] = <-ch:`, are bound here, ahead of both
@@ -3134,6 +3187,14 @@ func (e *emitter) emitSelect(ast []int32) {
 	e.indent--
 	e.ind()
 	e.emit("}\n")
+}
+
+// sepIf is a space after a statement that is not empty.
+func sepIf(stmt string) string {
+	if stmt == "" {
+		return ""
+	}
+	return " "
 }
 
 // emitWaitingMark adjusts a channel's parked-receiver count under its lock: "++"
@@ -6611,7 +6672,7 @@ func emitProgram(pkg *Package, w io.Writer, opts []EmitOption, rename map[string
 		helperDefs.WriteString(runeStringHelper)
 	}
 	if e.usesBuilder {
-		helperDefs.WriteString(builderHelpers)
+		helperDefs.WriteString(e.builderHelpersC())
 	}
 	// clear(s): zero every element (memset, since every zero value is all-zero
 	// bytes), the length unchanged.
@@ -6802,6 +6863,12 @@ func emitProgram(pkg *Package, w io.Writer, opts []EmitOption, rename map[string
 	// Cells for locally declared channels. Discovered while walking the bodies, so
 	// they can only be written now, and they must precede the package initializer
 	// that takes their locks.
+	if len(e.selectRots) != 0 {
+		for _, decl := range e.selectRots {
+			out.WriteString(decl + "\n")
+		}
+		out.WriteByte('\n')
+	}
 	if len(e.chanCells) != 0 {
 		for _, decl := range e.chanCells {
 			out.WriteString(decl + "\n")
@@ -7145,6 +7212,8 @@ type emitter struct {
 	usesCopyStr        bool                    // copy(dst []byte, src string) is used: emit the ogo_copystr helper
 	usesRuneString     bool                    // string(r) for a run-time rune is used: emit the ogo_rune_string helper
 	usesBuilder        bool                    // the Builder type is used: emit its typedef and method helpers
+	builderErrC        string                  // the C type of `error`, minted with the Builder (needBuilder)
+	builderRet         string                  // the C type of the Builder's (int, error) results
 	importQualifiers   map[string]string       // import qualifier -> the imported package's C symbol prefix (resolved user packages, not p2)
 	unsafeQualifiers   map[string]bool         // the qualifiers an import of unsafe is named by
 	mainGlobals        map[string]bool         // the C names of main's package-level names, which are their source names (bareGlobal)
@@ -7311,6 +7380,7 @@ type emitter struct {
 	loopSeedsIn        loopSeeds               // the marks the pass before found each loop's body to make, given at its head (applyLoopSeeds)
 	loopSeedsOut       loopSeeds               // the marks this pass found a loop's body to make that its head did not have (noteLoopSeeds)
 	chanCells          []string                // file-scope static cell declarations for locally declared channels, discovered while emitting bodies (see emitLocalChanCell)
+	selectRots         []string                // file-scope counters where each select of two clauses or more starts its tests (emitSelect)
 	pkgLitObjects      []string                // file-scope static objects that give a package initializer's &T{...} its storage (see pkgLitObject)
 	chanCellN          int                     // counter minting unique cell names, program-wide like makeN
 	usesStringCmp      bool                    // a string < <= > >= appears: emit ogo_string_cmp
@@ -37837,6 +37907,17 @@ func (e *emitter) registerBuilder() {
 // emitted, and pulls in what they reference: the byte-slice header, the string type,
 // and the stdint/string.h headers.
 func (e *emitter) needBuilder() {
+	if !e.usesBuilder {
+		// The writes answer Go's results, (int, error) and error: the C types of
+		// `error` and of the pair are minted here, where a Builder is first needed,
+		// so a program with none carries neither (builderHelpersC).
+		e.builderErrC = e.errorIfaceCType()
+		e.builderRet = e.retStructNameOf([]string{"int", e.builderErrC})
+		for _, m := range []string{"WriteString", "WriteRune", "Write"} {
+			e.funcRet["ogo_builder_"+m] = []string{"int", e.builderErrC}
+		}
+		e.funcRet["ogo_builder_WriteByte"] = []string{e.builderErrC}
+	}
 	e.usesBuilder = true
 	e.needSlice("uint8_t")
 	e.usesString = true

@@ -709,15 +709,21 @@
 //	s := sb.String()           // "value=4"
 //
 // NewBuilder(back []byte) wraps a fixed byte slice. The methods append into the free
-// tail, truncating a write that would exceed the backing (the caller sized it):
+// tail, and answer as Go's strings.Builder's are declared to:
 //
-//	WriteString(s string)   append a string's bytes
-//	WriteByte(c byte)        append one byte
-//	WriteRune(r rune)        append a rune, UTF-8 encoded (U+FFFD for an invalid one)
-//	Write(p []byte)          append a byte slice's bytes
-//	Reset()                  rewind to empty, reusing the backing
-//	Len() int                the number of bytes written
-//	String() string          a view of the written prefix
+//	WriteString(s string) (int, error)   append a string's bytes
+//	WriteByte(c byte) error               append one byte
+//	WriteRune(r rune) (int, error)        append a rune, UTF-8 encoded (U+FFFD for an invalid one)
+//	Write(p []byte) (int, error)          append a byte slice's bytes
+//	Reset()                               rewind to empty, reusing the backing
+//	Len() int                             the number of bytes written
+//	String() string                       a view of the written prefix
+//
+// Go's never fails, its backing growing; this one's is the caller's, of the size
+// the caller chose. A write that does not fit writes what does -- WriteRune nothing
+// of a rune that does not fit whole -- and answers the bytes written and a non-nil
+// error, "short write" (Go's io.ErrShortWrite), so a truncation is seen where it
+// happens. A statement that ignores the results is the Go one that ignores them.
 //
 // String() returns an ordinary string aliasing the backing, so it makes no copy. It
 // stays valid across further writes, which land after it, but not across a Reset
@@ -2695,10 +2701,15 @@
 //		| AssignHead PostfixComm .
 //	PostfixComm = { Selector | Index | CallSuffix } ( [ "," LhsItem ] ( "=" | ":=" ) "<-" Expression | "<-" Expression ) .
 //
-// (OctoGo Specific): A select polls its clauses in order, retrying the
-// non-blocking form of each communication. A default clause makes the select
-// non-blocking: the clauses are tried once and the default runs if none was
-// ready. Without a default the poll repeats, yielding via _waitx between rounds
+// (OctoGo Specific): A select polls its clauses, retrying the non-blocking form of
+// each communication. A select of two clauses or more starts each round's tests
+// after the clause it chose last, so a clause that is always ready cannot starve
+// the others: Go chooses among the ready ones at random, and polled in source order
+// the first was chosen every round it was ready -- on a P2-EDGE, 1000 of 1000 values
+// came from the first of two busy channels. Priority by order is not a select's to
+// give; a program wanting it tests the channels it prefers first, each select with
+// a default. A default clause makes the select non-blocking: the clauses are tried
+// once and the default runs if none was ready. Without a default the poll repeats, yielding via _waitx between rounds
 // to prevent Hub RAM bus starvation. Because OctoGo reaches Propeller 2 Smart
 // Pins through the standard library, the same loop can multiplex channels and
 // Smart Pin state checks: the select's DEFAULT arm polls the pin, so a command

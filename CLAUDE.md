@@ -2825,6 +2825,20 @@ compilers accepted, all still accepted; the corpus changed in four printf progra
 only. **A domain program written as Go is written finds what one written for this
 compiler does not**: the conversion into an interface was the commonest sort idiom
 there is, and every domain program before had passed `&x`.
+An outside review of the language design (2026-10-08, kept out of git) led to two
+changes the user asked for. The Builder's writes return Go's strings.Builder
+results, (int, error) and error, a write that does not fit answering "short write"
+(builderHelpersC; the C types of `error` and the pair are minted in needBuilder,
+so a program with no Builder carries neither; the checker's answer is
+builderResults, read by callResults and zeroResultCall). And a select of two
+clauses or more starts its tests after the clause it chose last (a try phase over
+a per-site counter, ogo_selrotN, then the arm of the clause chosen, so a break in
+a body still leaves the select): measured on a P2-EDGE, two busy channels gave
+1000 of 1000 values to the first clause in source order, 500 of each since -- the
+host's threads had shared them fairly all along, so only the board showed it.
+Its implementation claims were checked first: three were stale notes, fixed
+(c41a47b). **A review's claim about the compiler is probed before it is answered:
+a note it read may be months behind the code.**
 
 **A STRUCT HOLDING AN ARRAY IS COPIED, NEVER ASSIGNED** (2026-09-23). The target's C
 compiler copy-initializes and assigns one only at some SIZES -- "Unable to multiply

@@ -38,6 +38,114 @@ type emitRunCase struct {
 
 var emitRunCases = []emitRunCase{
 	{
+		// The Builder's writes answer Go's strings.Builder's results, (int, error)
+		// and error, and a write that does not fit the backing writes what does and
+		// answers "short write" -- WriteRune nothing of a rune that does not fit
+		// whole. Without results a truncation was silent.
+		name: "the Builder's writes report a write that does not fit",
+		src: `type P struct {
+	sb Builder
+}
+
+func fill(sb *Builder, s string) (int, error) {
+	return sb.WriteString(s)
+}
+
+func main() {
+	var back [8]byte
+	sb := NewBuilder(back[:])
+	n, err := sb.WriteString("hello")
+	println(n, err == nil)
+	n, err = sb.WriteString("world")
+	println(n, err != nil, sb.String())
+	if err != nil {
+		println(err.Error())
+		printf("%v %T\n", err, err)
+	}
+	if _, err := sb.WriteString("x"); err != nil {
+		println("still full")
+	}
+	sb.Reset()
+	println(sb.WriteByte('a') == nil)
+	k, e2 := sb.WriteRune('ž')
+	println(k, e2 == nil, sb.Len())
+	var buf [3]byte
+	m, e3 := sb.Write(buf[:])
+	println(m, e3 == nil, sb.Len())
+	k, e2 = sb.WriteRune('€')
+	println(k, e2 != nil, sb.Len())
+	sb.WriteString("ignored")
+	var back2 [4]byte
+	p := P{NewBuilder(back2[:])}
+	c, e4 := fill(&p.sb, "abcdef")
+	println(c, e4 != nil, p.sb.String())
+	_, e5 := p.sb.WriteString("z")
+	println(e5 != nil)
+}
+`,
+		want: "5 true\n3 true hellowor\nshort write\nshort write *errors.errorString\nstill full\ntrue\n2 true 3\n3 true 6\n0 true 6\n4 true abcd\ntrue\n",
+	},
+	{
+		// A select of two clauses or more starts its tests after the clause it
+		// chose last, so a clause that is always ready cannot starve the others:
+		// polled in source order, the first won every round it was ready -- on a
+		// P2-EDGE, 1000 of 1000 values from the first of two busy channels, and 500
+		// of each since. Closed channels are always ready, which makes the turns
+		// exact; a channel never ready is passed over, and a default runs only when
+		// no clause is ready.
+		name: "a select takes its ready clauses in turn",
+		src: `var a chan int
+var b chan int
+var c chan int
+var d chan int
+
+func pick() string {
+	r := ""
+	select {
+	case <-a:
+		r = "a"
+	case <-b:
+		r = "b"
+	case <-c:
+		r = "c"
+	}
+	return r
+}
+
+func pickDefault() string {
+	select {
+	case <-a:
+		return "a"
+	case <-d:
+		return "d"
+	default:
+		return "-"
+	}
+}
+
+func main() {
+	close(a)
+	close(b)
+	var back [16]byte
+	sb := NewBuilder(back[:])
+	for i := 0; i < 7; i++ {
+		sb.WriteString(pick())
+	}
+	println(sb.String())
+	sb.Reset()
+	for i := 0; i < 4; i++ {
+		sb.WriteString(pickDefault())
+	}
+	close(d)
+	for i := 0; i < 4; i++ {
+		sb.WriteString(pickDefault())
+	}
+	println(sb.String())
+}
+`,
+		want: "abababa\naaaadada\n",
+	},
+	{
 		// The testing package's methods, through RunTest as the runner ogo test
 		// generates calls it: Log and Logf print as go test prints them, the file
 		// and line ahead and later lines of a message indented; Error and Errorf

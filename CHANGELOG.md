@@ -49,6 +49,17 @@ shipped section tells a reader on that version that they have behaviour they do 
 
 ### Behaviour changes
 
+- **The `Builder`'s writes return Go's results**: `WriteString`, `Write` and
+  `WriteRune` the bytes written and an `error`, `WriteByte` an `error`, as
+  `strings.Builder` declares them. A write that does not fit the backing writes
+  what does and returns a non-nil error, "short write", where it truncated in
+  silence. A statement ignoring the results is unchanged; `x := sb.WriteString(s)`
+  is now Go's assignment mismatch.
+- **A `select` takes its ready clauses in turn**: each round starts after the
+  clause chosen last, where clauses were tried in source order and the first won
+  every time it was ready -- on a P2-EDGE, 1000 of 1000 values from the first of
+  two busy channels, 500 of each now. Go chooses at random and promises no order;
+  a program counting on the first clause winning has to ask for it.
 - **`t.Skip()` stops the test**, as Go's does; it only marked it skipped and let it
   run on. A test that failed before it skipped is reported failed, as before.
 - **`ogo test` prints `=== RUN   TestName` before each test**, as `go test -v`
