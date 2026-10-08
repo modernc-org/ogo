@@ -2,7 +2,7 @@
 // Use of this source code is governed by a BSD-style
 // license that can be found in the LICENSE file.
 
-// Reconciled with the implementation 20260728. What landed in each release,
+// Reconciled with the implementation 2026-10-08. What landed in each release,
 // including the changes that reject a program an earlier one accepted, is in
 // CHANGELOG.md; this list is only what is still owed.
 //
@@ -38,13 +38,14 @@
 // `touch specs.go` can land in the same second as a preceding checkout and leave
 // parser.go "up to date", which reports zero warnings and has twice produced a false
 // baseline.
-// TODO 20260808 Three diagnostics still read differently from Go's, in shape rather
+// TODO 20260808 Two diagnostics still read differently from Go's, in shape rather
 // than in content: an "invalid operation:" prefix on "cannot index"/"cannot slice",
-// which Go drops there and keeps on "cannot indirect"; "type int has no field f",
-// where Go writes "n.f undefined (type int has no field or method f)"; and "cannot
-// call non-function q.n", where Go writes "cannot call q.n (variable of type int):
-// int is not a function". A COMPOSITE operand gets no type in the parenthetical --
-// a Kind names only a predeclared type, and a wrong name is worse than none.
+// which Go drops there and keeps on "cannot indirect"; and "type int has no field
+// f", where Go writes "n.f undefined (type int has no field or method f)". (A third,
+// "cannot call non-function q.n", reads as Go's now: "invalid operation: cannot call
+// q.n (variable of type int): int is not a function".) A COMPOSITE operand gets no
+// type in the parenthetical -- a Kind names only a predeclared type, and a wrong
+// name is worse than none.
 
 // The C backend and the board loader are embedded, so no separate flexprop
 // installation is needed.
@@ -66,12 +67,12 @@
 //
 // Run "ogo help <command>" for more information about a command.
 //
-// Installation is "go install modernc.org/ogo@latest", which needs Go 1.25 or
+// Installation is "go install modernc.org/ogo@latest", which needs Go 1.26 or
 // newer. The rest of this document is the language specification.
 //
 // # OctoGo Language Specification
 //
-// Draft of Jul 19, 2026.
+// Draft of Oct 8, 2026.
 //
 // # Relationship to Go
 //
@@ -2743,13 +2744,12 @@
 // declaration's are. A send clause on one panics, as a plain send does, and it panics on
 // entering the select whether or not another clause is ready.
 //
-// Two limits follow from the rendezvous having no scheduler behind it, and both
-// are refused rather than approximated. A select may carry at most one send
-// clause: two offers cannot stand at once, because a receiver taking each would
-// send twice, and offering them by turns would let a receiver polling one miss it
-// while the other is up. And a send clause may not be combined with a default,
-// which asks whether a receiver is ready at this instant -- a receiver here
-// reveals itself only by taking a value, so there is nothing to ask.
+// What makes several send clauses, and a send clause beside a default, possible is
+// that gating: offering two values at once would let a receiver taking each send
+// twice, and offering them by turns would let a receiver polling one miss it while
+// the other is up -- so no offer stands until a receiver has announced itself, and
+// a default asks whether one has. (Until 2026-09-04 both were refused for those
+// reasons, and this section said so after they worked.)
 //
 // # Go Statements (Concurrency)
 //

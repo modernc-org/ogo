@@ -154,11 +154,11 @@
 // int64 came back truncated. A counter would have been correct by construction.
 // Readability chosen over uniqueness is a bug waiting for the right two type names.
 //
-// The same principle is what unblocks what is still refused. A channel whose element
-// is an array is refused today because the rendezvous copies its element by value,
-// which C cannot do for an array -- but the cell can hold the array and the helpers
-// can take a POINTER either way, which was measured correct on a P2-EDGE. That is a
-// generated-representation problem, not a wall.
+// The same principle unblocked what was once refused. A channel whose element is an
+// array was refused because the rendezvous copies its element by value, which C
+// cannot do for an array -- but the cell can hold the array and the helpers can take
+// a POINTER either way, which was measured correct on a P2-EDGE. It was a
+// generated-representation problem, not a wall, and `chan [3]int` works since.
 //
 // # Escape & Lifetime Analysis (Static Guarantees)
 //
@@ -189,21 +189,24 @@
 // is refused, the local carrying the same holder mark a struct field and a slice
 // backing carry.
 //
-// What is left is where the callee cannot be named at all, and each of these
-// compiles today with a dangling reference:
+// Where the callee cannot be named at all, the call is judged by what it could be.
+// Three such shapes compiled with a dangling reference when this was first written
+// (2026-08-03), and each is refused since:
 //
-//   - a function value held in a struct FIELD, `b.run(&x)` -- the binder tracks
-//     variables, and a field is not one;
-//   - a function value arriving as a PARAMETER, `call(keep, &x)` -- which function
-//     it holds is the caller's fact, so judging it needs the summary to travel with
-//     the argument rather than with the name;
+//   - a function value held in a struct FIELD, `b.run(&x)`: a call through a value
+//     nothing names is judged by every function of its type the program uses as a
+//     value (typeSummary over funcValueMembers, 2026-09-19);
+//   - a function value arriving as a PARAMETER, `call(keep, &x)`: the callee records
+//     which parameter it calls with what (a paramCall), and the call site, which
+//     knows the function it passes, asks that function's summary
+//     (checkCallbackArgs);
 //   - a method result reached through another call, `return mid(&x)` where mid
-//     returns `r.id(p)` -- the seeds that build the result graph resolve plain names
-//     only, so the edge into the method is never recorded.
+//     returns `r.id(p)`: the result graph resolves the method as the call does.
 //
-// All three want the same thing the first two increments wanted: a callee identity
-// where the call site has only a value. That is the shape of the work, and it is
-// also what an interface dispatch will need, which makes it worth doing once.
+// TestEmitCFuncValueUnion, TestEmitCSummaryCallbacks and TestEmitCSummaryIndirect
+// hold them, beside the forms and sinks matrices (TestEmitCFrameRefForms,
+// TestEmitCFrameRefSinks): a new way to call, or to hold a function value, is a new
+// row there.
 //
 // Purpose. On a target with no heap and no GC, every reference -- a pointer, a
 // slice header, or a zero-copy string view -- borrows storage owned by some frame.
@@ -502,7 +505,8 @@
 // channel already does. A struct copied, passed, returned or assigned carries the
 // pointer; the cell stays where it was declared. A nested struct recurses. An array
 // of such structs needs one cell per element -- a static array of cells and a loop
-// at init -- which is a separate increment, not a separate design.
+// at init -- which was a separate increment, not a separate design, and is done
+// (below).
 //
 // WHAT IT TOOK, and the one thing that was not obvious. The checker resolves a
 // channel operand in one place (exprChan) and a send in another (checkSend), and
