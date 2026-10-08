@@ -1,0 +1,72 @@
+// What Go refuses of unsafe.Add and unsafe.Slice, refused in the same terms: Add
+// takes an unsafe.Pointer, Slice a pointer, and both a length of an integer type, a
+// constant one fitting an int and, for Slice, not negative; each is a value of its
+// type, unsafe.Pointer and a slice of what the pointer points at, which must be used
+// and must be called.
+
+import "unsafe"
+
+var g [4]uint32
+
+var up unsafe.Pointer
+
+func take(xs []int) {}
+
+func main() {
+	// ERROR "cannot use &g as unsafe.Pointer value in argument to unsafe.Add"
+	_ = unsafe.Add(&g, 1)
+	// ERROR "invalid argument: 1.5 must be integer"
+	_ = unsafe.Add(up, 1.5)
+	// ERROR "invalid argument: .x. must be integer"
+	_ = unsafe.Add(up, "x")
+	// ERROR "not enough arguments for unsafe.Add \(expected 2, found 1\)"
+	_ = unsafe.Add(up)
+	// ERROR "too many arguments for unsafe.Add \(expected 2, found 3\)"
+	_ = unsafe.Add(up, 1, 2)
+	// ERROR "invalid argument: up is not a pointer"
+	_ = unsafe.Slice(up, 1)
+	// ERROR "invalid argument: nil is not a pointer"
+	_ = unsafe.Slice(nil, 1)
+	// ERROR "invalid argument: g is not a pointer"
+	_ = unsafe.Slice(g, 1)
+	// ERROR "invalid argument: length -1 \(constant of type int\) must not be negative"
+	_ = unsafe.Slice(&g[0], -1)
+	const k int8 = -1
+	// ERROR "invalid argument: length k \(constant -1 of type int8\) must not be negative"
+	_ = unsafe.Slice(&g[0], k)
+	// ERROR "invalid argument: true must be integer"
+	_ = unsafe.Slice(&g[0], true)
+	// ERROR "1<<40 \(untyped int constant 1099511627776\) overflows int"
+	_ = unsafe.Add(up, 1<<40)
+	// ERROR "invalid argument: length int64\(1<<40\) \(constant 1099511627776 of type int64\) overflows int"
+	_ = unsafe.Slice(&g[0], int64(1<<40))
+	// ERROR "cannot use unsafe.Slice\(&g\[0\], 2\) \(value of type \[\]uint32\) as \[\]int value in variable declaration"
+	var s []int = unsafe.Slice(&g[0], 2)
+	_ = s
+	var t []int
+	// ERROR "cannot use unsafe.Slice\(&g\[0\], 2\) \(value of type \[\]uint32\) as \[\]int value in assignment"
+	t = unsafe.Slice(&g[0], 2)
+	_ = t
+	// ERROR "cannot use unsafe.Slice\(&g\[0\], 2\) \(value of type \[\]uint32\) as \[\]int value in argument to take"
+	take(unsafe.Slice(&g[0], 2))
+	// ERROR "cannot use unsafe.Add\(up, 4\) \(a value\) as \*int value in variable declaration"
+	var q *int = unsafe.Add(up, 4)
+	_ = q
+	// ERROR "cannot use unsafe.Add\(up, 1\) of type unsafe.Pointer as type int in variable declaration"
+	var y int = unsafe.Add(up, 1)
+	_ = y
+	// ERROR "unsafe.Add \(built-in function\) must be called"
+	f := unsafe.Add
+	_ = f
+	// ERROR "unsafe.Add\(up, 1\) \(value of type unsafe.Pointer\) is not used"
+	unsafe.Add(up, 1)
+	// ERROR "unsafe.Slice\(&g\[0\], 1\) \(value of type \[\]uint32\) is not used"
+	unsafe.Slice(&g[0], 1)
+	// ERROR "invalid slice indices: 1 < 5"
+	_ = unsafe.Slice(&g[0], 2)[5:1]
+	// ERROR "operator \+ not defined on unsafe.Slice\(&g\[0\], 2\)"
+	_ = unsafe.Slice(&g[0], 2) + 1
+	_ = unsafe.Slice(&g[0], 2) == nil
+	_ = unsafe.Add(up, -4)
+	_ = unsafe.Slice(&g[0], 1<<31-1)
+}

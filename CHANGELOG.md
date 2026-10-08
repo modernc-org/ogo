@@ -28,6 +28,12 @@ shipped section tells a reader on that version that they have behaviour they do 
   holds what `Sizeof` says of each type it is asked against that compiler, and fails
   where the two differ. They were "not supported yet".
 
+- **`unsafe.Add` and `unsafe.Slice`** are Go's: `unsafe.Add(p, n)` is p moved on n
+  bytes and `unsafe.Slice(p, n)` a slice of n elements over the storage p points
+  at, refused where Go refuses them -- a length of no integer type, one not fitting
+  an int, a negative constant length to Slice -- and panicking where Go's runtime
+  does. The lifetime rules read through both, `unsafe.Slice(&a[0], n)` of a local
+  array being refused wherever `a[:]` is. They were "not supported yet".
 - **A type switch takes an init statement**: `switch s := pick(); v :=
   s.(type)`, and every other init form -- `switch err = f(); err.(type)`, a step,
   a call standing alone -- as Go has it. It was a syntax error. The guard's name
@@ -35,6 +41,21 @@ shipped section tells a reader on that version that they have behaviour they do 
 
 ### Fixed
 
+- **A loop's body is checked for what it marks on its next run**: `for ... { gq =
+  p; p = &x }` stored a local's address in a package variable in silence -- the
+  lifetime rules mark a variable given a reference to the frame as the statements
+  are emitted, and the statement before the marking one reads it again when the
+  body runs again. So did a loop over a range, a three-clause loop's own variable
+  given the address by its post statement, and a backward `goto`. A program whose
+  loops mark a variable their head can see is emitted again with the marks given at
+  each head, until nothing new is marked. In every release.
+- **A slice and the local array it views share their marks**: `s := a[:]; a[0] =
+  &x; gq = s[0]` for an array a of pointers was taken, s holding the marks a had
+  when it was bound, and so was the store the other way round, `s[0] = &x; gq =
+  a[0]`; gq held x's address after the function returned. A read of a slice's
+  elements asks what every statement may have made it view -- a copy, a reslice, a
+  row, a field, `unsafe.Slice` -- and a store through a view marks the array. In
+  every release.
 - **A struct field of no elements whose element is aligned on more than a byte no
   longer overlaps what follows the struct**: `struct { b uint8; c [0]int32; d int16
   }` was six bytes alone and four as a field of another struct, the target's

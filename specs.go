@@ -999,7 +999,20 @@
 //	var frame [hdrSize + 64]byte
 //	crc := (*uint32)(unsafe.Pointer(uintptr(unsafe.Pointer(&h)) + unsafe.Offsetof(h.crc))) // a package h
 //
-// Add, Slice, String, StringData and SliceData are not provided yet.
+// Add and Slice are Go's too. Add(ptr, len) is ptr moved on len bytes, an
+// unsafe.Pointer; Slice(ptr, len) is a slice of len elements over the storage ptr
+// points at, of type []T for a ptr of type *T, its capacity len. The length is of
+// any integer type or an untyped constant, which must fit an int and, for Slice, not
+// be negative; at run time Slice panics where Go's does, for a negative length or one
+// past an int, and for a nil ptr with a length. The lifetime rules read Add as the
+// pointer it moves and a slice from Slice -- or a slice of it, or an element's
+// address in it -- as the storage its pointer points at: "unsafe.Slice(&a[0], n)" of
+// a local array a is refused where "a[:]" is.
+//
+//	words := unsafe.Slice((*uint32)(unsafe.Pointer(uintptr(params[1]))), 16)
+//	next := unsafe.Add(p, unsafe.Sizeof(Hdr{}))
+//
+// String, StringData and SliceData are not provided yet.
 //
 // # Interface types
 //

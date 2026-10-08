@@ -6,6 +6,8 @@ package octogo
 
 import (
 	"go/constant"
+	"go/token"
+	"math"
 	"slices"
 )
 
@@ -369,25 +371,138 @@ func (f *File) constUnsafe(s *Scope, n Node) (ExpressionNode, bool) {
 // unsafeLayoutCall matches a Factor that is a call of one of unsafeLayoutFuncs, the
 // qualifier naming this file's import of unsafe, with exactly one argument.
 func (f *File) unsafeLayoutCall(s *Scope, n Node) (fn string, arg, call Node, ok bool) {
+	fn, args, call, ok := f.unsafeCallOf(s, n)
+	if !ok || !unsafeLayoutFuncs[fn] || len(args) != 1 {
+		return "", Node{}, Node{}, false
+	}
+	return fn, args[0], call, true
+}
+
+// unsafeCallOf matches a Factor that is a call of a function of unsafe, the
+// qualifier naming this file's import of it, answering its name and arguments.
+func (f *File) unsafeCallOf(s *Scope, n Node) (fn string, args []Node, call Node, ok bool) {
 	kids := slices.Collect(it(n.ast))
 	if len(kids) != 2 || kids[0].sym != 0 || f.ch(kids[0].tok) != IDENT || kids[1].sym != FactorSuffix {
-		return "", Node{}, Node{}, false
+		return "", nil, Node{}, false
 	}
 	qual := f.tok(kids[0].tok)
 	if !f.isImportQualifier(s, qual.Src()) || !f.unsafeQualifier(qual) {
-		return "", Node{}, Node{}, false
+		return "", nil, Node{}, false
 	}
 	steps := slices.Collect(it(kids[1].ast))
 	if len(steps) != 2 || steps[0].sym != Selector || steps[1].sym != CallSuffix || len(steps[1].ast) == 0 {
-		return "", Node{}, Node{}, false
+		return "", nil, Node{}, false
 	}
-	fn = selectorTok(f, steps[0]).Src()
-	if !unsafeLayoutFuncs[fn] {
-		return "", Node{}, Node{}, false
+	return selectorTok(f, steps[0]).Src(), argNodes(f.callArgList(steps[1])), steps[1], true
+}
+
+// unsafeSliceChain matches a Factor beginning with `unsafe.Slice(p, n)`, answering
+// the slice's type and the steps written after the call, `[1:]` of
+// `unsafe.Slice(p, n)[1:]`.
+func (f *File) unsafeSliceChain(s *Scope, n Node) (typeAt, []Node, bool) {
+	kids := slices.Collect(it(n.ast))
+	if len(kids) != 2 || kids[0].sym != 0 || f.ch(kids[0].tok) != IDENT || kids[1].sym != FactorSuffix {
+		return typeAt{}, nil, false
+	}
+	qual := f.tok(kids[0].tok)
+	if !f.isImportQualifier(s, qual.Src()) || !f.unsafeQualifier(qual) {
+		return typeAt{}, nil, false
+	}
+	steps := slices.Collect(it(kids[1].ast))
+	if len(steps) < 2 || steps[0].sym != Selector || steps[1].sym != CallSuffix || len(steps[1].ast) == 0 || selectorTok(f, steps[0]).Src() != "Slice" {
+		return typeAt{}, nil, false
 	}
 	args := argNodes(f.callArgList(steps[1]))
-	if len(args) != 1 {
-		return "", Node{}, Node{}, false
+	if len(args) != 2 {
+		return typeAt{}, nil, false
 	}
-	return fn, args[0], steps[1], true
+	t, ok := f.unsafeSliceOf(s, args[0])
+	return t, steps[2:], ok
+}
+
+// unsafeSliceOf is the type of `unsafe.Slice(p, n)` for its first argument p.
+func (f *File) unsafeSliceOf(s *Scope, p Node) (typeAt, bool) {
+	t, ok := f.valueTypeAt(s, p)
+	if !ok || t.tn == nil {
+		return typeAt{}, false
+	}
+	if t.f == nil {
+		t.f = f
+	}
+	pt, isPtr := t.f.underlyingTypeAt(t).tn.(*TypeNodePointer)
+	if !isPtr {
+		return typeAt{}, false
+	}
+	return typeAt{&TypeNodeSlice{TypeNode: pt.TypeNode}, t.s, t.f}, true
+}
+
+// checkUnsafeAddSlice checks a use of unsafe.Add or unsafe.Slice, Go 1.17's: Add of
+// a Pointer and a length is a Pointer that many bytes on, and Slice of a pointer to
+// a T and a length is a []T over the storage it points at; the length an integer,
+// not negative where it is a constant.
+func (f *File) checkUnsafeAddSlice(s *Scope, m Token, suffix Node) {
+	steps, _ := callSteps(suffix)
+	if len(steps) < 2 || steps[0].sym != Selector || steps[1].sym != CallSuffix {
+		f.err(m.Position(), "unsafe.%s (built-in function) must be called", m.Src())
+		return
+	}
+	args := argNodes(f.callArgList(steps[1]))
+	switch {
+	case len(args) < 2:
+		f.err(m.Position(), "not enough arguments for unsafe.%s (expected 2, found %d)", m.Src(), len(args))
+		return
+	case len(args) > 2:
+		f.err(f.tok(args[2].Pos()).Position(), "too many arguments for unsafe.%s (expected 2, found %d)", m.Src(), len(args))
+		return
+	}
+	n0 := len(f.errList)
+	f.checkNames(s, args[0])
+	f.checkNames(s, args[1])
+	if len(f.errList) != n0 {
+		return
+	}
+	ptr, length := args[0], args[1]
+	switch m.Src() {
+	case "Add":
+		if !f.isNilOperand(ptr) && !f.unsafePointerValue(s, ptr) {
+			f.err(f.tok(ptr.Pos()).Position(), "cannot use %s as unsafe.Pointer value in argument to unsafe.Add", f.exprSource(ptr))
+			return
+		}
+	case "Slice":
+		if f.isNilOperand(ptr) {
+			f.err(f.tok(ptr.Pos()).Position(), "invalid argument: %s is not a pointer", f.exprSource(ptr))
+			return
+		}
+		if isPtr, known := f.exprPointerness(s, ptr); known && !isPtr || f.unsafePointerValue(s, ptr) {
+			f.err(f.tok(ptr.Pos()).Position(), "invalid argument: %s is not a pointer", f.exprSource(ptr))
+			return
+		}
+	}
+	k, known := f.exprType(s, length)
+	if known && !isIntegerKind(k) && !(k == UntypedFloat || k == UntypedRune) {
+		f.err(f.tok(length.Pos()).Position(), "invalid argument: %s must be integer", f.exprSource(length))
+		return
+	}
+	if cv, isConst := f.constNumeric(s, length); isConst {
+		at, src := f.tok(length.Pos()).Position(), f.exprSource(length)
+		typed := known && !isUntypedKind(k)
+		iv := constant.ToInt(cv)
+		switch {
+		case iv.Kind() != constant.Int:
+			f.err(at, "invalid argument: %s must be integer", src)
+		case !constant.Compare(iv, token.GEQ, constant.MakeInt64(math.MinInt32)) || !constant.Compare(iv, token.LEQ, constant.MakeInt64(math.MaxInt32)):
+			if typed {
+				f.err(at, "invalid argument: length %s (constant %s of type %s) overflows int", src, iv.ExactString(), kindName(k))
+			} else {
+				f.err(at, "%s (untyped int constant %s) overflows int", src, iv.ExactString())
+			}
+		case m.Src() == "Slice" && constant.Sign(iv) < 0:
+			// Add moves a pointer either way; a slice has no negative length.
+			if typed {
+				f.err(at, "invalid argument: length %s (constant %s of type %s) must not be negative", src, iv.ExactString(), kindName(k))
+			} else {
+				f.err(at, "invalid argument: length %s (constant of type int) must not be negative", src)
+			}
+		}
+	}
 }

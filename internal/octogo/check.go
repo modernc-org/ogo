@@ -2600,6 +2600,20 @@ func (f *File) reportUnusedValue(s *Scope, head Node, steps []Node, postfix Node
 			f.err(at, "%s (constant of type uintptr) is not used", span)
 			return true
 		}
+		if name.Src() == "Add" && f.unsafeQualifier(qual) {
+			f.err(at, "%s (value of type unsafe.Pointer) is not used", span)
+			return true
+		}
+		if name.Src() == "Slice" && f.unsafeQualifier(qual) {
+			if args := argNodes(f.callArgList(steps[1])); len(args) != 2 {
+				return false
+			} else if t, ok := f.unsafeSliceOf(s, args[0]); ok {
+				f.err(at, "%s (value of type %s) is not used", span, f.typeAtMessage(t))
+			} else {
+				f.err(at, "%s is not used", span)
+			}
+			return true
+		}
 		if _, _, isType := f.typeDeclNamed(s, qual.Src()+"."+name.Src()); isType {
 			f.err(at, "%s (value of type %s.%s) is not used", span, qual.Src(), name.Src())
 			return true
@@ -5686,9 +5700,13 @@ func (f *File) bracketLitStepsType(s *Scope, fac Node) (typeAt, bool) {
 // expression, or a bare identifier bound to a typed variable or constant. A
 // call/index/selector suffix makes the result type unknown.
 func (f *File) factorType(s *Scope, n Node) (Kind, bool) {
-	// `unsafe.Sizeof(x)` and its two neighbours, constants of type uintptr.
+	// `unsafe.Sizeof(x)` and its two neighbours, constants of type uintptr, and
+	// `unsafe.Add(p, n)`, a Pointer.
 	if _, _, _, ok := f.unsafeLayoutCall(s, n); ok {
 		return PredeclaredUintptr, true
+	}
+	if fn, _, _, ok := f.unsafeCallOf(s, n); ok && fn == "Add" {
+		return PredeclaredUnsafePointer, true
 	}
 	var lit Token
 	var paren, suffix Node
@@ -10661,37 +10679,6 @@ func (f *File) directCallResultCount(s *Scope, e Node) (int, bool) {
 	return len(res), true
 }
 
-// soleFactor returns the single Factor of an expression that applies no operator --
-// an Expression with no relational operator, a SimpleExpr with no additive one, a
-// Term with no multiplicative one and a UnaryExpr with no unary one -- i.e. a bare
-// operand such as a literal, a name or a call. Any operator (including a unary "-",
-// "*" or "<-") yields ok == false.
-// typeAssertion recognises "x.(T)" -- a Factor that is an identifier followed by a
-// single Selector holding a Type rather than a field name -- and returns the
-// operand's name with the asserted type. The grammar admits the same Selector for
-// ".(type)", which belongs to a type switch and carries no Type child, so the child
-// is what tells the two apart.
-func (f *File) typeAssertion(s *Scope, n Node) (recv Token, typ TypeNode, ok bool) {
-	fac, isFac := f.soleFactor(n)
-	if !isFac {
-		return recv, nil, false
-	}
-	kids := slices.Collect(it(fac.ast))
-	if len(kids) != 2 || kids[0].sym != 0 || f.ch(kids[0].tok) != IDENT || kids[1].sym != FactorSuffix {
-		return recv, nil, false
-	}
-	steps := slices.Collect(it(kids[1].ast))
-	if len(steps) != 1 || steps[0].sym != Selector {
-		return recv, nil, false
-	}
-	for c := range it(steps[0].ast) {
-		if c.sym == Type {
-			return f.tok(kids[0].tok), f.typ(s, c), true
-		}
-	}
-	return recv, nil, false
-}
-
 // selectorType is the Type a Selector step holds where it is a type assertion,
 // `.(T)`, rather than a field's or a method's name.
 func (f *File) selectorType(step Node) (Node, bool) {
@@ -10844,6 +10831,11 @@ func (f *File) assertionTypeNode(n Node) (Node, bool) {
 	return Node{}, false
 }
 
+// soleFactor returns the single Factor of an expression that applies no operator --
+// an Expression with no relational operator, a SimpleExpr with no additive one, a
+// Term with no multiplicative one and a UnaryExpr with no unary one -- i.e. a bare
+// operand such as a literal, a name or a call. Any operator (including a unary "-",
+// "*" or "<-") yields ok == false.
 func (f *File) soleFactor(n Node) (Node, bool) {
 	switch n.sym {
 	case Expression, SimpleExpr, Term:
@@ -11578,6 +11570,10 @@ func (f *File) checkQualifiedRef(s *Scope, qual Token, suffix Node) {
 		if d == nil {
 			if pkg.ImportPath == "unsafe" && unsafeLayoutFuncs[m.Src()] {
 				f.checkUnsafeLayoutCall(s, qual, m, suffix)
+				return
+			}
+			if pkg.ImportPath == "unsafe" && (m.Src() == "Add" || m.Src() == "Slice") {
+				f.checkUnsafeAddSlice(s, m, suffix)
 				return
 			}
 			if pkg.ImportPath == "unsafe" && unsafeFuncs[m.Src()] {
@@ -21528,6 +21524,16 @@ func (f *File) operandTypeAt(s *Scope, n Node) (t typeAt, variable, ok bool) {
 	if t, ok := f.madeSliceType(s, orig); ok {
 		return t, false, true
 	}
+	// `unsafe.Slice(p, n)`, its elements the storage p points at.
+	if t, rest, ok := f.unsafeSliceChain(s, n); ok {
+		if len(rest) == 0 {
+			return t, false, true
+		}
+		if w := f.litChainWalk(s, t, rest); w.known && w.t.tn != nil {
+			return w.t, w.addr, true
+		}
+		return typeAt{}, false, false
+	}
 	if t, ok = f.lenOperandType(s, n); ok {
 		return t, true, true
 	}
@@ -30535,6 +30541,16 @@ func (f *File) operandType(s *Scope, n Node, calls bool) (typeAt, bool) {
 	}
 	if t, ok := f.litOrConvType(s, n); ok {
 		return t, true
+	}
+	// `unsafe.Slice(p, n)`: a slice of what p points to, and the steps after it.
+	if t, rest, ok := f.unsafeSliceChain(s, n); ok && calls {
+		if len(rest) == 0 {
+			return t, true
+		}
+		if w := f.litChainWalk(s, t, rest); w.known && w.t.tn != nil {
+			return w.t, true
+		}
+		return typeAt{}, false
 	}
 	// A chain on a NAMED literal, `Taps{1, 2}[0]`, `lib.Taps{1, 2}.First()`, walked
 	// from the literal's type. Untyped, `var s string = Taps{1, 2}[0]` was taken.

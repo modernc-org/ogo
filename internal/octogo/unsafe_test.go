@@ -231,6 +231,229 @@ func main() { println(run(), bits(1)) }
 	}
 }
 
+// TestEmitCUnsafeAddSliceLifetime is the lifetime matrix of unsafe.Add and
+// unsafe.Slice: Add reaches what its pointer reaches, and a slice from Slice -- or
+// one sliced from it, or an element's address in it -- is backed by the storage its
+// pointer points at; each read through by frameRefOf, the summaries and callExprsIn
+// as a conversion is (unsafeConvOperand, unsafeSliceAddrOperand). A store through a
+// slice known to view a local marks the local (noteStoredThrough), which `s := a[:]`
+// had not either. The controls over package storage and over reads stay taken.
+func TestEmitCUnsafeAddSliceLifetime(t *testing.T) {
+	const hdr = `import "unsafe"
+
+var gs []uint32
+
+var gp unsafe.Pointer
+
+var gq *uint32
+
+var garr [4]uint32
+
+func keep(s []uint32) { gs = s }
+
+func keepP(p unsafe.Pointer) { gp = p }
+
+`
+	for _, test := range []struct {
+		name, src string
+		refuse    bool
+	}{
+		{"a slice of a local returned", `func f() []uint32 { var a [4]uint32; return unsafe.Slice(&a[0], 2) }
+
+func main() { f() }
+`, true},
+		{"a slice of a local stored", `func f() { var a [4]uint32; gs = unsafe.Slice(&a[0], 2) }
+
+func main() { f() }
+`, true},
+		{"a slice of a local passed to a keeper", `func f() { var a [4]uint32; keep(unsafe.Slice(&a[0], 2)) }
+
+func main() { f() }
+`, true},
+		{"a slice of a local held, then stored", `func f() { var a [4]uint32; s := unsafe.Slice(&a[0], 2); gs = s }
+
+func main() { f() }
+`, true},
+		{"a slice of a local resliced", `func f() { var a [4]uint32; gs = unsafe.Slice(&a[0], 2)[1:] }
+
+func main() { f() }
+`, true},
+		{"a slice of a local resliced twice", `func f() { var a [4]uint32; gs = unsafe.Slice(&a[0], 4)[1:][:2] }
+
+func main() { f() }
+`, true},
+		{"a slice of a local resliced, returned", `func f() []uint32 { var a [4]uint32; return unsafe.Slice(&a[0], 2)[1:] }
+
+func main() { f() }
+`, true},
+		{"a slice of a local resliced, passed", `func f() { var a [4]uint32; keep(unsafe.Slice(&a[0], 2)[1:]) }
+
+func main() { f() }
+`, true},
+		{"an element's address of a slice of a local", `func f() { var a [4]uint32; gq = &unsafe.Slice(&a[0], 2)[1] }
+
+func main() { f() }
+`, true},
+		{"a slice of a scalar local", `func f() { var x uint32; gs = unsafe.Slice(&x, 1) }
+
+func main() { f() }
+`, true},
+		{"a slice through a pointer held", `func f() { var a [4]uint32; p := &a[0]; gs = unsafe.Slice(p, 2) }
+
+func main() { f() }
+`, true},
+		{"a slice of a converted pointer", `func f() { var a [4]uint32; gs = unsafe.Slice((*uint32)(unsafe.Pointer(&a)), 2) }
+
+func main() { f() }
+`, true},
+		{"a slice of an added pointer", `func f() { var a [4]uint32; gs = unsafe.Slice((*uint32)(unsafe.Add(unsafe.Pointer(&a), 4)), 2) }
+
+func main() { f() }
+`, true},
+		{"an added pointer stored", `func f() { var a [4]uint32; gp = unsafe.Add(unsafe.Pointer(&a), 4) }
+
+func main() { f() }
+`, true},
+		{"an added pointer passed to a keeper", `func f() { var a [4]uint32; keepP(unsafe.Add(unsafe.Pointer(&a), 4)) }
+
+func main() { f() }
+`, true},
+		{"an added pointer converted and stored", `func f() { var a [4]uint32; gq = (*uint32)(unsafe.Add(unsafe.Pointer(&a), 4)) }
+
+func main() { f() }
+`, true},
+		{"an added pointer returned", `func f() unsafe.Pointer { var a [4]uint32; return unsafe.Add(unsafe.Pointer(&a), 4) }
+
+func main() { f() }
+`, true},
+		{"an added pointer held, then stored", `func f() { var a [4]uint32; p := unsafe.Add(unsafe.Pointer(&a), 4); gp = p }
+
+func main() { f() }
+`, true},
+		{"a slice to a goroutine", `func f() { var a [4]uint32; go keep(unsafe.Slice(&a[0], 2)) }
+
+func main() { f() }
+`, true},
+		{"a slice to a deferred keeper", `func f() { var a [4]uint32; defer keep(unsafe.Slice(&a[0], 2)) }
+
+func main() { f() }
+`, true},
+		{"a callee slicing its parameter into a package variable", `func k(p *uint32) { gs = unsafe.Slice(p, 2) }
+
+func f() { var a [4]uint32; k(&a[0]) }
+
+func main() { f() }
+`, true},
+		{"a callee reslicing its parameter", `func k(p *uint32) { gs = unsafe.Slice(p, 2)[1:] }
+
+func f() { var a [4]uint32; k(&a[0]) }
+
+func main() { f() }
+`, true},
+		{"a callee storing an element's address", `func k(p *uint32) { gq = &unsafe.Slice(p, 2)[1] }
+
+func f() { var a [4]uint32; k(&a[0]) }
+
+func main() { f() }
+`, true},
+		{"a callee adding to its parameter", `func k(p unsafe.Pointer) { gq = (*uint32)(unsafe.Add(p, 4)) }
+
+func f() { var a [4]uint32; k(unsafe.Pointer(&a)) }
+
+func main() { f() }
+`, true},
+		{"a callee holding the slice", `func k(p *uint32) { s := unsafe.Slice(p, 2); gs = s }
+
+func f() { var a [4]uint32; k(&a[0]) }
+
+func main() { f() }
+`, true},
+		{"a callee returning the slice", `func k(p *uint32) []uint32 { return unsafe.Slice(p, 2) }
+
+func f() { var a [4]uint32; gs = k(&a[0]) }
+
+func main() { f() }
+`, true},
+		{"a callee returning the added pointer", `func k(p unsafe.Pointer) unsafe.Pointer { return unsafe.Add(p, 4) }
+
+func f() { var a [4]uint32; gp = k(unsafe.Pointer(&a)) }
+
+func main() { f() }
+`, true},
+		{"a callee passing the slice on", `func k(p *uint32) { keep(unsafe.Slice(p, 2)) }
+
+func f() { var a [4]uint32; k(&a[0]) }
+
+func main() { f() }
+`, true},
+		{"a callee keeping an element of what it slices", `func k(p **uint32) { gq = unsafe.Slice(p, 2)[0] }
+
+func f() { var x uint32; b := [2]*uint32{&x, &x}; k(&b[0]) }
+
+func main() { f() }
+`, true},
+		{"an address stored through a view, read through the array", `func f() { var a [4]*uint32; var x uint32; s := unsafe.Slice(&a[0], 2); s[0] = &x; gq = a[0] }
+
+func main() { f() }
+`, true},
+		{"an address stored through a view, read through it", `func f() { var a [4]*uint32; var x uint32; s := unsafe.Slice(&a[0], 2); s[0] = &x; gq = s[0] }
+
+func main() { f() }
+`, true},
+		{"an address stored through a reslice view, read through the array", `func f() { var a [4]*uint32; var x uint32; s := a[1:]; s[0] = &x; gq = a[1] }
+
+func main() { f() }
+`, true},
+		{"an address stored through a slice view, read through the array", `func f() { var a [4]*uint32; var x uint32; s := a[:]; s[0] = &x; gq = a[0] }
+
+func main() { f() }
+`, true},
+		{"control: a slice of package storage", `func f() { gs = unsafe.Slice(&garr[0], 2) }
+
+func main() { f() }
+`, false},
+		{"control: a reslice of package storage", `func f() { gs = unsafe.Slice(&garr[0], 2)[1:] }
+
+func main() { f() }
+`, false},
+		{"control: an added pointer into package storage", `func f() { gp = unsafe.Add(unsafe.Pointer(&garr), 4) }
+
+func main() { f() }
+`, false},
+		{"control: a slice of a local read", `func f() { var a [4]uint32; s := unsafe.Slice(&a[0], 2); s[0] = 1; println(s[0], unsafe.Slice(&a[0], 2)[1:][0]) }
+
+func main() { f() }
+`, false},
+		{"control: a callee only reading", `func k(p *uint32) { println(unsafe.Slice(p, 2)[1]) }
+
+func f() { var a [4]uint32; k(&a[0]) }
+
+func main() { f() }
+`, false},
+		{"control: an address stored through a view of a local, read locally", `func f() { var a [4]*uint32; var x uint32; s := unsafe.Slice(&a[0], 2); s[0] = &x; println(*a[0]) }
+
+func main() { f() }
+`, false},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			src := hdr + test.src
+			fsys := fstest.MapFS{"main.ogo": &fstest.MapFile{Data: []byte(src)}}
+			pkg, err := Build(-1, []string{"main.ogo"}, fsys)
+			if err == nil {
+				err = EmitC(pkg, io.Discard, Checked())
+			}
+			switch {
+			case test.refuse && err == nil:
+				t.Errorf("a reference to this frame left it:\n%s", src)
+			case test.refuse && !strings.Contains(err.Error(), "outlive") && !strings.Contains(err.Error(), "lifetime"):
+				t.Errorf("refused, but not for its lifetime: %v", err)
+			case !test.refuse && err != nil:
+				t.Errorf("refused: %v\n%s", err, src)
+			}
+		})
+	}
+}
+
 // spin2Unsafe is a driver reading a parameter block the way p2-11's VGA driver does:
 // an address written into the block as a long, read back and read through.
 const spin2Unsafe = `PUB third(params) : r

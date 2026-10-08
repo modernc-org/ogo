@@ -56,8 +56,8 @@ func main() {
 	_ = unsafe.Pointer(&g) + 1
 	// ERROR "unsafe.Pointer is a type and not a value"
 	_ = unsafe.Pointer
-	// ERROR "unsafe.Slice is not supported yet"
-	_ = unsafe.Slice(g, 1)
+	// ERROR "unsafe.String is not supported yet"
+	_ = unsafe.String(nil, 1)
 	// ERROR "undefined: unsafe.Foo"
 	_ = unsafe.Foo
 	// ERROR "unsafe.Pointer does not implement Shape \(missing method Area\)"

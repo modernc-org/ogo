@@ -630,8 +630,15 @@ still design-only.
   through a conversion, `*(*T)(p) = v`, which every write through an unsafe.Pointer
   is, binds the converted pointer first (`convTargetHead`, `bindPtrConv`). Not yet:
   a type DEFINED over unsafe.Pointer (refused at the declaration; an alias is
-  taken), `Add`, `Slice` and the rest of Go's unsafe ("not supported yet"), and
-  printf verbs but `%v` and `%T`. `Sizeof`, `Alignof` and `Offsetof` came on
+  taken), `String`, `StringData` and `SliceData` ("not supported yet"), and
+  printf verbs but `%v` and `%T`. `Add` and `Slice` came on 2026-10-08
+  (checkUnsafeAddSlice; emitUnsafeAddSlice, a byte offset and a per-element helper,
+  usliceHelperDef, panicking where Go's runtime.unsafeslice64 does): the checker
+  types them through unsafeSliceChain wherever operandType walks, steps after the
+  call included, and the lifetime readers read Add as its pointer and a Slice, a
+  reslice of one and an element's address in one as the storage the pointer points
+  at (unsafeConvOperand, unsafeSliceAddrOperand), the summaries an element of one as
+  the pointer's contents. `Sizeof`, `Alignof` and `Offsetof` came on
   2026-10-08 (unsafelayout.go): constants of type uintptr the checker computes from
   the TARGET's layout (targetLayout) -- recorded by the call's parentheses in
   lenConsts as a constant len is, from the fold (constUnsafe) and wherever the call
@@ -2693,7 +2700,8 @@ could not write the port passed on a second). The next day a CROSS-conversion fo
 beside it (genCrossFold, convRand): the fold expression converted to another sized
 kind, half the time with an operation in it, the high word too at 64 bits -- the
 fuzzer had converted to int and to the 64-bit kinds only. Seeds 1-2000 on the host
-shim: clean.
+shim: clean; 1-200 on a P2-EDGE with ee4168c, 192 passing (three on a second load)
+and 8 outgrowing a cog, none failing.
 A parenthesised head, `(uint64(x)) >> 32`, was the rewrite's first miss
 (unparenExpr). And the family is bounded on the board: a value widened and then
 compared, masked, added, multiplied, or shifted by any other count is right, and so
@@ -2777,6 +2785,28 @@ result writes what that reaches, which is refused unless the pointer is known to
 point at a local of this frame, whose block then decides (`checkStoreThroughRef`,
 `targetThroughRef`). Found while making targets through calls writable, which would
 have widened it: the rule was asked on the way, not by a sweep.
+**A MARK IS MADE IN EMISSION ORDER, AND A LOOP RUNS ITS BODY AGAIN** (2026-10-08,
+found probing unsafe.Slice's views). The holder marks are set as statements are
+emitted, so a statement read a variable's mark as the statements BEFORE it had left
+it -- and a loop runs the statements before again: `for ... { gq = p; p = &x }`, a
+three-clause loop's own variable given the address by its post, a range loop, a
+backward goto, all stored a local's address in a package variable in silence, in
+every release. EmitC emits a program again while a loop's body marks a variable its
+head can see (loopSeeds: emitFor and a goto target record their head's marks,
+noteLoopSeeds at the body's end or at a goto back compares, applyLoopSeeds gives
+the next pass's head the difference -- a for's own variable after its init), until
+nothing new is marked; each pass a fresh emitter, so nothing of the first leaks into
+the C. The corpus and p2-11 build byte-identically, p2-11 in the same time. Beside
+it, the marks of a slice and the local it VIEWS were two: `s := a[:]; a[0] = &x; gq
+= s[0]`, and the store the other way, `s[0] = &x; gq = a[0]`, were taken -- s held
+a's marks as they stood when it was bound. A read of a slice's elements asks the
+marks of whatever any statement may bind it to view (viewedHolder over bindViews,
+the function's summaryHolds), through copies, reslices, rows, fields and
+unsafe.Slice; a store through a view known to view a local marks it
+(noteStoredThrough, viewedLocal). **A mark is a fact about a variable at a point;
+a rule reading one asks what reaches that point -- a loop's back edge and an alias
+both do.** TestEmitCLoopCarriedMarks, TestEmitCSliceViewMarks.
+
 **KNOWN MEANS MUST** (2026-09-24). The first version of that rule believed the holder
 marks, `frameHolder` and `frameBacked` -- and a mark says what a variable MAY reach:
 a pointer or a slice assigned again keeps the mark of its first value, and a slice's

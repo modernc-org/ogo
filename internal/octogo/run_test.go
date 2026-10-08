@@ -10785,6 +10785,116 @@ func main() {
 		want: "10 100\n11 101\n12 102\n1 2 3\n5 6 7 8\n",
 	},
 	{
+		name: "unsafe.Add and unsafe.Slice",
+		src: `// Go 1.17's unsafe.Add, a pointer moved on by bytes, and unsafe.Slice, a slice over
+// the storage a pointer points at: read and written through, resliced, ranged over,
+// and Add over the target's layout, unsafe.Sizeof and unsafe.Offsetof.
+import "unsafe"
+
+type P struct {
+	a uint8
+	b int32
+	c [3]uint16
+}
+
+var g [6]uint32
+var ps [3]P
+
+func sum(xs []uint32) uint32 {
+	var t uint32
+	for _, x := range xs {
+		t += x
+	}
+	return t
+}
+
+func main() {
+	for i := range g {
+		g[i] = uint32(i * 10)
+	}
+	s := unsafe.Slice(&g[1], 3)
+	println(len(s), cap(s), s[0], s[2], sum(s))
+	s[1] = 99
+	println(g[2])
+	var n int64 = 2
+	t := unsafe.Slice(&g[0], n)
+	println(len(t), t[1])
+	up := unsafe.Pointer(&g[0])
+	q := (*uint32)(unsafe.Add(up, 8))
+	println(*q)
+	q2 := (*uint32)(unsafe.Add(up, unsafe.Sizeof(g[0])*3))
+	println(*q2)
+	r := (*uint32)(unsafe.Add(unsafe.Pointer(q2), -4))
+	println(*r)
+	ps[1].b = 7
+	ps[1].c[2] = 5
+	pp := (*P)(unsafe.Add(unsafe.Pointer(&ps[0]), unsafe.Sizeof(ps[0])))
+	println(pp.b, pp.c[2])
+	cp := (*uint16)(unsafe.Add(unsafe.Pointer(&ps[1]), unsafe.Offsetof(ps[1].c)+2*2))
+	println(*cp)
+	var nilp *uint32
+	z := unsafe.Slice(nilp, 0)
+	println(len(z), z == nil)
+	println(unsafe.Slice(&g[0], 6)[5], len(unsafe.Slice(&g[0], 4)[1:]))
+	for i, v := range unsafe.Slice(&ps[0], 2) {
+		println(i, v.b)
+	}
+	b := unsafe.Slice((*byte)(unsafe.Pointer(&g[1])), 4)
+	println(b[0], len(b))
+	var u8 uint8 = 3
+	println(len(unsafe.Slice(&g[0], u8)))
+}
+`,
+		want: "3 3 10 30 60\n99\n2 10\n99\n30\n99\n7 5\n5\n0 true\n50 3\n0 0\n1 7\n10 4\n3\n",
+	},
+	{
+		name: "unsafe.Slice of a negative length panics",
+		src: `import "unsafe"
+
+var g [4]uint32
+
+func main() {
+	n := -1
+	println(len(unsafe.Slice(&g[0], 0)))
+	s := unsafe.Slice(&g[0], n)
+	println(len(s))
+}
+`,
+		want:   "0\npanic: unsafe.Slice: len out of range",
+		panics: true,
+	},
+	{
+		name: "unsafe.Slice of a length past an int panics",
+		src: `import "unsafe"
+
+var g [4]uint32
+
+func main() {
+	var n int64 = 1 << 40
+	println("before")
+	s := unsafe.Slice(&g[0], n)
+	println(len(s))
+}
+`,
+		want:   "before\npanic: unsafe.Slice: len out of range",
+		panics: true,
+	},
+	{
+		name: "unsafe.Slice of a nil pointer and a length panics",
+		src: `import "unsafe"
+
+func main() {
+	var p *uint32
+	n := 2
+	println(len(unsafe.Slice(p, 0)))
+	s := unsafe.Slice(p, n)
+	println(len(s))
+}
+`,
+		want:   "0\npanic: unsafe.Slice: ptr is nil and len is not zero",
+		panics: true,
+	},
+	{
 		name: "a composite literal of a defined slice type is a value of that type",
 		src: `// A composite literal of a DEFINED slice type is a value of that type. It was
 // untyped where it stood as a value, and a print took the argument it could not

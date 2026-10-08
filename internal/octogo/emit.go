@@ -2276,7 +2276,7 @@ func (e *emitter) emitGo(nodes []Node) {
 				e.ind()
 				e.emit("ogo_iface_vt(" + text + ".vt);\n")
 			}
-			recvText, recvCType = text, rct
+			recvText = text
 			site = goSite{args: []string{rct}, ifaceMethod: name, ifaceCType: rct, id: len(e.goSites)}
 			break
 		}
@@ -5922,11 +5922,70 @@ func EmitC(pkg *Package, w io.Writer, opts ...EmitOption) error {
 	// one something else uses. Those alone are spelled so in the real pass. A
 	// program with no such collision emits exactly what it did before. A probe that
 	// fails -- a spelling the funnel missed -- falls back to the plain pass.
+	//
+	// And a pass is repeated while a LOOP's body marks a variable its head can see
+	// (loopSeeds): the lifetime marks are made in the order the statements are
+	// emitted, and a loop runs its body again after the statement that marked it.
 	var probe bytes.Buffer
-	if err := emitProgram(pkg, &probe, append(slices.Clip(opts), renameAllTypes()), nil); err != nil {
-		return emitProgram(pkg, w, opts, nil)
+	seeds, err := emitProgram(pkg, &probe, append(slices.Clip(opts), renameAllTypes()), nil, nil)
+	var rename map[string]bool
+	if err == nil {
+		rename = typeNameCollisions(probe.Bytes(), mainTypeNames(pkg))
 	}
-	return emitProgram(pkg, w, opts, typeNameCollisions(probe.Bytes(), mainTypeNames(pkg)))
+	for range maxLoopPasses {
+		var out bytes.Buffer
+		more, err := emitProgram(pkg, &out, opts, rename, seeds)
+		if err != nil {
+			return err
+		}
+		if len(more) == 0 {
+			_, err = w.Write(out.Bytes())
+			return err
+		}
+		seeds = mergeLoopSeeds(seeds, more)
+	}
+	return fmt.Errorf("emit: the lifetime marks of the program's loops did not settle in %d passes", maxLoopPasses)
+}
+
+// maxLoopPasses bounds EmitC's passes for the loops' marks. Each pass adds a mark
+// the one before did not have, of finitely many, so it is no limit a program
+// reaches; it only keeps a fault of the emitter from looping.
+const maxLoopPasses = 64
+
+// loopSeeds is what a pass learned of each loop's body: the frame marks it gave a
+// variable its head can see, keyed by the loop's body, which the next pass gives the
+// variable at the loop's head (applyLoopSeeds).
+type loopSeeds map[*int32]map[string]loopMark
+
+// loopMark is one variable's seeded marks: frameBacked, frameHolder's origin, and
+// whether the variable is declared by the loop's own header, `for p := ...; ; p =
+// &x`, and so is marked after the header declares it rather than ahead of the loop.
+type loopMark struct {
+	backed bool
+	holder string
+	header bool
+}
+
+// mergeLoopSeeds adds more to seeds, in a new map.
+func mergeLoopSeeds(seeds, more loopSeeds) loopSeeds {
+	r := loopSeeds{}
+	for _, src := range []loopSeeds{seeds, more} {
+		for k, m := range src {
+			if r[k] == nil {
+				r[k] = map[string]loopMark{}
+			}
+			for n, v := range m {
+				w := r[k][n]
+				w.backed = w.backed || v.backed
+				if w.holder == "" {
+					w.holder = v.holder
+				}
+				w.header = v.header
+				r[k][n] = w
+			}
+		}
+	}
+	return r
 }
 
 // renameAllTypes spells every main-package type ogo_T_<name> in C; see EmitC.
@@ -5992,8 +6051,8 @@ func typeNameCollisions(src []byte, names map[string]bool) map[string]bool {
 
 // emitProgram is EmitC's one pass. rename lists the main-package types spelled
 // ogo_T_<name> in C (see typeMangle).
-func emitProgram(pkg *Package, w io.Writer, opts []EmitOption, rename map[string]bool) error {
-	e := &emitter{renameTypes: rename, renamedTypes: map[string]string{}, includes: map[string]bool{}, funcRet: map[string][]string{}, funcSliceParams: map[string][]string{}, funcVariadic: map[string]int{}, nilHelpers: map[string]bool{}, initSkew: map[string]bool{}, arrPtrHelpers: map[string]arrDim{}, funcArrayRet: map[string]arrDim{}, funcStructRet: map[string]string{}, funcArrayParams: map[string][]arrDim{}, anonStructNames: map[string]string{}, methodValueTypes: map[string]funcValueType{}, methodValueOf: map[string]string{}, methodExprNames: map[string]string{}, funcParams: map[string][]string{}, methodPtr: map[string]bool{}, recvByRef: map[string]bool{}, globals: map[string]string{}, structs: map[string][]structField{}, namedTypes: map[string]bool{}, typeNames: map[string]bool{}, interfaceTypes: map[string]bool{}, ifaceMethods: map[string][]ifaceMethod{}, anonIfaceNames: map[string]string{}, anonIfaceMinted: map[string]bool{}, ifaceASTs: map[string]ifaceAST{}, ifaceVTables: map[string]bool{}, namedUnderlying: map[string]string{}, namedArrays: map[string]arrDim{}, constInt: map[string]string{}, constVal: map[string]constant.Value{}, constBool: map[string]bool{}, constWide: map[string]string{}, constStr: map[string]string{}, constUntyped: map[string]bool{}, constHuge: map[string]bool{}, arrays: map[string]arrDim{}, globalArrays: map[string]arrDim{}, sliceVars: map[string]string{}, globalSliceVars: map[string]string{}, chanElems: map[string]bool{}, chanInitElems: map[string]bool{}, chanSendElems: map[string]bool{}, chanRecvElems: map[string]bool{}, chanTryRecvElems: map[string]bool{}, chanTrySendElems: map[string]bool{}, chanGatedSendElems: map[string]bool{}, aliasOf: map[string]string{}, localTypes: map[string]string{}, gotoTargets: map[string]bool{}, chanCloseElems: map[string]bool{}, chanRecv2Elems: map[string]bool{}, mathWrappers: map[string]bool{}, chanElemByName: map[string]string{}, sliceElems: map[string]bool{}, sliceElemByName: map[string]string{}, appendElems: map[string]bool{}, tryappendElems: map[string]bool{}, appendSliceElems: map[string]bool{}, tryappendSliceEls: map[string]bool{}, appendokStructs: map[string]bool{}, copyElems: map[string]bool{}, resliceElems: map[string]bool{}, reslice3Elems: map[string]bool{}, mkLenHelpers: map[string]bool{}, clearElems: map[string]bool{}, minElems: map[string]bool{}, maxElems: map[string]bool{}, printSliceElems: map[string]bool{}, printStructs: map[string]string{}, printIfaces: map[string]string{}, printlnElems: map[string]bool{}, switchBreakUsed: map[string]bool{}, labelBreak: map[string]string{}, labelContinue: map[string]string{}, labelUsed: map[string]bool{}, eqStructs: map[string]bool{}, eqArrays: map[string]arrDim{}, frameBacked: map[string]bool{}, frameHolder: map[string]string{}, crossParams: map[string][]leak{}, crossContents: map[string][]leak{}, retContents: map[string][]bool{}, recvContents: map[string]leak{}, paramCalls: map[string][]paramCall{}, frameCalls: map[string][]frameCall{}, localConstSpecs: map[string]localConstSpec{}, inheritedTypes: map[string]bool{}, funcValueMembers: map[string][]string{}, methodExprMembers: map[string]emMethodExpr{}, memberShown: map[string]string{}, litLifted: map[string][]string{}, methodNames: map[string]bool{}, recvLeaks: map[string]leak{}, retRecv: map[string]bool{}, crossInto: map[string][]uint32{}, ifaceSummaries: map[string]ifaceSummary{}, retParams: map[string][]bool{}, funcValueOf: map[string]string{}, crossNames: map[string]string{}, initNames: map[string]string{}, funcValueTypes: map[string]funcValueType{}, funcTypeNames: map[string]string{}, funcTypeRet: map[string][]string{}, funcTypeParams: map[string][]string{}, funcTypeVariadic: map[string]int{}, recFuncTypes: map[string]bool{}, recFuncShapes: map[string]string{}, retStructs: map[string]string{}, retStructByKey: map[string]string{}, shiftHelpers: map[string][2]string{}, shiftCTypes: map[*int32]string{}, shiftWalked: map[shiftWalkKey]bool{}, shiftIn: map[*int32]bool{}, divHelpers: map[string][2]string{}, funcValueWrappers: map[string]string{}, deferReplay: -1, iota: -1}
+func emitProgram(pkg *Package, w io.Writer, opts []EmitOption, rename map[string]bool, seeds loopSeeds) (loopSeeds, error) {
+	e := &emitter{loopSeedsIn: seeds, loopSeedsOut: loopSeeds{}, renameTypes: rename, renamedTypes: map[string]string{}, includes: map[string]bool{}, funcRet: map[string][]string{}, funcSliceParams: map[string][]string{}, funcVariadic: map[string]int{}, nilHelpers: map[string]bool{}, initSkew: map[string]bool{}, arrPtrHelpers: map[string]arrDim{}, usliceHelpers: map[string]bool{}, funcArrayRet: map[string]arrDim{}, funcStructRet: map[string]string{}, funcArrayParams: map[string][]arrDim{}, anonStructNames: map[string]string{}, methodValueTypes: map[string]funcValueType{}, methodValueOf: map[string]string{}, methodExprNames: map[string]string{}, funcParams: map[string][]string{}, methodPtr: map[string]bool{}, recvByRef: map[string]bool{}, globals: map[string]string{}, structs: map[string][]structField{}, namedTypes: map[string]bool{}, typeNames: map[string]bool{}, interfaceTypes: map[string]bool{}, ifaceMethods: map[string][]ifaceMethod{}, anonIfaceNames: map[string]string{}, anonIfaceMinted: map[string]bool{}, ifaceASTs: map[string]ifaceAST{}, ifaceVTables: map[string]bool{}, namedUnderlying: map[string]string{}, namedArrays: map[string]arrDim{}, constInt: map[string]string{}, constVal: map[string]constant.Value{}, constBool: map[string]bool{}, constWide: map[string]string{}, constStr: map[string]string{}, constUntyped: map[string]bool{}, constHuge: map[string]bool{}, arrays: map[string]arrDim{}, globalArrays: map[string]arrDim{}, sliceVars: map[string]string{}, globalSliceVars: map[string]string{}, chanElems: map[string]bool{}, chanInitElems: map[string]bool{}, chanSendElems: map[string]bool{}, chanRecvElems: map[string]bool{}, chanTryRecvElems: map[string]bool{}, chanTrySendElems: map[string]bool{}, chanGatedSendElems: map[string]bool{}, aliasOf: map[string]string{}, localTypes: map[string]string{}, gotoTargets: map[string]bool{}, chanCloseElems: map[string]bool{}, chanRecv2Elems: map[string]bool{}, mathWrappers: map[string]bool{}, chanElemByName: map[string]string{}, sliceElems: map[string]bool{}, sliceElemByName: map[string]string{}, appendElems: map[string]bool{}, tryappendElems: map[string]bool{}, appendSliceElems: map[string]bool{}, tryappendSliceEls: map[string]bool{}, appendokStructs: map[string]bool{}, copyElems: map[string]bool{}, resliceElems: map[string]bool{}, reslice3Elems: map[string]bool{}, mkLenHelpers: map[string]bool{}, clearElems: map[string]bool{}, minElems: map[string]bool{}, maxElems: map[string]bool{}, printSliceElems: map[string]bool{}, printStructs: map[string]string{}, printIfaces: map[string]string{}, printlnElems: map[string]bool{}, switchBreakUsed: map[string]bool{}, labelBreak: map[string]string{}, labelContinue: map[string]string{}, labelUsed: map[string]bool{}, eqStructs: map[string]bool{}, eqArrays: map[string]arrDim{}, frameBacked: map[string]bool{}, frameHolder: map[string]string{}, crossParams: map[string][]leak{}, crossContents: map[string][]leak{}, retContents: map[string][]bool{}, recvContents: map[string]leak{}, paramCalls: map[string][]paramCall{}, frameCalls: map[string][]frameCall{}, localConstSpecs: map[string]localConstSpec{}, inheritedTypes: map[string]bool{}, funcValueMembers: map[string][]string{}, methodExprMembers: map[string]emMethodExpr{}, memberShown: map[string]string{}, litLifted: map[string][]string{}, methodNames: map[string]bool{}, recvLeaks: map[string]leak{}, retRecv: map[string]bool{}, crossInto: map[string][]uint32{}, ifaceSummaries: map[string]ifaceSummary{}, retParams: map[string][]bool{}, funcValueOf: map[string]string{}, crossNames: map[string]string{}, initNames: map[string]string{}, funcValueTypes: map[string]funcValueType{}, funcTypeNames: map[string]string{}, funcTypeRet: map[string][]string{}, funcTypeParams: map[string][]string{}, funcTypeVariadic: map[string]int{}, recFuncTypes: map[string]bool{}, recFuncShapes: map[string]string{}, retStructs: map[string]string{}, retStructByKey: map[string]string{}, shiftHelpers: map[string][2]string{}, shiftCTypes: map[*int32]string{}, shiftWalked: map[shiftWalkKey]bool{}, shiftIn: map[*int32]bool{}, divHelpers: map[string][2]string{}, funcValueWrappers: map[string]string{}, deferReplay: -1, iota: -1}
 	for _, opt := range opts {
 		opt(e)
 	}
@@ -6153,19 +6212,19 @@ func emitProgram(pkg *Package, w io.Writer, opts []EmitOption, rename map[string
 	e.wroteDecl = false
 	forEachFile(func() { e.emitFileDecls(e.f.AST) })
 	if e.err != nil {
-		return e.err
+		return nil, e.err
 	}
 	// A function handed to a callee that calls it with the callee's own storage:
 	// known only once the callee's body has been emitted, which may follow the call.
 	if e.checkPendingCallbacks(); e.err != nil {
-		return e.err
+		return nil, e.err
 	}
 	// The %v printer of an interface tests the value's table against every table the
 	// program makes for that interface, and a store into it may be written anywhere
 	// -- after the print as easily as before. So the printers are minted here, once
 	// every body has been emitted and no pair can still arrive.
 	if e.mintIfacePrinters(); e.err != nil {
-		return e.err
+		return nil, e.err
 	}
 	// So is the helper writing what an interface given to panic holds, and the one
 	// naming the method a failed assertion to an interface found missing.
@@ -6394,6 +6453,9 @@ func emitProgram(pkg *Package, w io.Writer, opts []EmitOption, rename map[string
 	}
 	for _, ct := range slices.Sorted(maps.Keys(e.arrPtrHelpers)) {
 		helperDefs.WriteString(arrPtrHelperDef(ct, e.arrPtrHelpers[ct], e.checks))
+	}
+	for _, elem := range slices.Sorted(maps.Keys(e.usliceHelpers)) {
+		helperDefs.WriteString(usliceHelperDef(elem, e.checks))
 	}
 	if e.usesIfaceNil {
 		helperDefs.WriteString(ogoIfaceNil)
@@ -6757,7 +6819,7 @@ func emitProgram(pkg *Package, w io.Writer, opts []EmitOption, rename map[string
 	// without this a diagnostic raised while assembling was computed and dropped,
 	// and the program compiled as though nothing had been said.
 	if e.err != nil {
-		return e.err
+		return nil, e.err
 	}
 	out.Write(body.Bytes())
 	// What the checker computed of the target's layout for unsafe.Sizeof and
@@ -6770,7 +6832,7 @@ func emitProgram(pkg *Package, w io.Writer, opts []EmitOption, rename map[string
 	}
 	text := e.endProgramC(out.Bytes(), endsCogs)
 	_, err := w.Write(wrapLongLines(ensureStdint(insertStringLits(text, e.stringLitDecls))))
-	return err
+	return e.loopSeedsOut, err
 }
 
 // The target's preprocessor reads a line into a buffer of 65536 bytes (mcpp's
@@ -7039,6 +7101,7 @@ type emitter struct {
 	aliasOf            map[string]string        // `type A = B`: mangled alias name -> mangled target name
 	localTypes         map[string]string        // a LOCAL type declaration's source name -> its minted C name, per function
 	gotoTargets        map[string]bool          // labels a goto of the CURRENT function names, scanned before its body is emitted
+	labelHeads         map[string]loopHead      // the marks at each goto target of the current function emitted so far, a goto back to which is a loop's end (noteLoopSeeds)
 	aliasedLocals      map[string]bool          // locals of the CURRENT function whose storage something else may reach (see scanAliasedLocals)
 	localTypeSeq       int                      // uniquifies minted local-type names across the program
 	chanElemByName     map[string]string        // ogo_chan_<T> C type name -> its element C type
@@ -7125,6 +7188,7 @@ type emitter struct {
 	nilHelpers         map[string]bool         // pointer types whose nil-dereference guard is called
 	initSkew           map[string]bool         // flexccInitSkew's answers, by C type
 	arrPtrHelpers      map[string]arrDim       // pointer-to-array types a slice is converted to: emit each one's helper
+	usliceHelpers      map[string]bool         // element C types unsafe.Slice makes a slice of: emit each one's helper
 	usesNonzero        bool                    // ogo_nonzero is called: emit the divide-by-zero-check helper
 	usesFloatFmt       bool                    // ogo_print_float is called: a float printed by print, println or any float verb (see floatFmtHelper)
 	usesBytesPrint     bool                    // ogo_print_hex_bytes / ogo_print_qbytes are called: %x, %X or %q over a string or a byte slice
@@ -7214,6 +7278,7 @@ type emitter struct {
 	bindAliased        map[string]bool         // ... a name something else may write through: its address is taken, or a method is called on it
 	bindSelfAddr       map[string]bool         // ... a name whose OWN value something else may write: `&x` of x itself -- not of an element or a field of it, which bindAliased counts too
 	bindSelfCall       map[string]bool         // ... a name a method is called on itself, `x.m()`, whose address a pointer receiver takes unless x is a pointer (see onceBound)
+	bindViews          map[string][]held       // ... what each name the function binds may hold, by shape (summaryHolds): a slice's VIEWS, read by viewedHolder
 	bindGotos          bool                    // ... it has a goto, which may run a block's writes again after a later one
 	derefShown         map[string]string       // a temporary bound for a store through `(*f())`, and the source it stands for, for a message (emitAssignment)
 	nilSafe            map[string]bool         // the C names of the pointer parameters an earlier statement of the function body's own list dereferenced, which need no nil check again (emitTopStatement)
@@ -7234,6 +7299,8 @@ type emitter struct {
 	derivedEdges       []derivedEdge           // a call's result, derived from a parameter, stored or crossed (see derivedEdge)
 	crossNames         map[string]string       // C function name -> the name it was declared with, for crossParams diagnostics
 	frameHolder        map[string]string       // local -> the local whose storage it holds a reference to, a struct field having been given one (see noteFrameHolder)
+	loopSeedsIn        loopSeeds               // the marks the pass before found each loop's body to make, given at its head (applyLoopSeeds)
+	loopSeedsOut       loopSeeds               // the marks this pass found a loop's body to make that its head did not have (noteLoopSeeds)
 	chanCells          []string                // file-scope static cell declarations for locally declared channels, discovered while emitting bodies (see emitLocalChanCell)
 	pkgLitObjects      []string                // file-scope static objects that give a package initializer's &T{...} its storage (see pkgLitObject)
 	chanCellN          int                     // counter minting unique cell names, program-wide like makeN
@@ -14691,6 +14758,11 @@ func (e *emitter) summaryReach(ast []int32) (out []held) {
 	if lit, isLit := e.funcLitArg(ast); isLit {
 		return []held{{e.litKey(lit), heldAlias}}
 	}
+	// `&unsafe.Slice(p, n)[i]` points where p does; asked first, addrOfRoot taking
+	// the qualifier for the root.
+	if arg, ok := e.unsafeSliceAddrOperand(ast); ok {
+		return e.summaryReach(arg)
+	}
 	if name, ok := e.addrOfRoot(ast); ok {
 		return []held{{name, heldAlias}}
 	}
@@ -14724,6 +14796,10 @@ func (e *emitter) summaryReach(ast []int32) (out []held) {
 	}
 	if arg, ok := e.unsafeConvOperand(ast); ok {
 		return e.summaryReach(arg) // `unsafe.Pointer(p)` is p
+	}
+	// `unsafe.Slice(p, n)[i]` is an element of what p points at, as `(*T)(p).x` is.
+	if arg, rest, ok := e.unsafeSliceChainOf(ast); ok && len(rest) != 0 {
+		return asElem(e.summaryReach(arg))
 	}
 	if arg, ok := e.assertionOperand(ast); ok {
 		return e.summaryReach(arg) // `r.(*T)` is the pointer r holds
@@ -14888,6 +14964,9 @@ func (e *emitter) callExprsIn(v []int32) (out [][]int32) {
 	}
 	if arg, ok := e.unsafeConvOperand(v); ok {
 		return e.callExprsIn(arg) // `unsafe.Pointer(pass(v))`
+	}
+	if arg, ok := e.unsafeSliceAddrOperand(v); ok {
+		return e.callExprsIn(arg) // `&unsafe.Slice(pass(v), n)[i]`
 	}
 	if arg, ok := e.assertionOperand(v); ok {
 		return e.callExprsIn(arg) // `pass(v).(*T)`
@@ -16296,7 +16375,7 @@ func (e *emitter) emitFuncDecl(ast []int32) {
 	}
 	e.locals = map[string]string{}
 	e.localTypes = map[string]string{}
-	e.gotoTargets = map[string]bool{}
+	e.gotoTargets, e.labelHeads = map[string]bool{}, map[string]loopHead{}
 	e.scanGotoTargets(body)
 	e.aliasedLocals = map[string]bool{}
 	e.scanAliasedLocals(body)
@@ -16505,6 +16584,7 @@ func (e *emitter) liftFuncLit(lit Node) (string, bool) {
 		sliceVars                      map[string]string
 		frameBacked                    map[string]bool
 		frameHolder                    map[string]string
+		labelHeads                     map[string]loopHead
 		tmp, indent, deferReplay       int
 		defers                         []deferredCall
 		curFunc, curArrayResult        string
@@ -16523,6 +16603,7 @@ func (e *emitter) liftFuncLit(lit Node) (string, bool) {
 		bindValue                   map[string][]int32
 		bindOpaque, bindAliased     map[string]bool
 		bindSelfAddr, bindSelfCall  map[string]bool
+		bindViews                   map[string][]held
 		bindGotos                   bool
 		bindBody                    int
 		curParams                   map[string]bool
@@ -16553,9 +16634,10 @@ func (e *emitter) liftFuncLit(lit Node) (string, bool) {
 		funcValueOf:   maps.Clone(e.funcValueOf), funcParamAlias: e.funcParamAlias,
 		bindWrites: e.bindWrites, bindBlock: e.bindBlock, bindLits: e.bindLits, bindValue: e.bindValue,
 		bindOpaque: e.bindOpaque, bindAliased: e.bindAliased, bindGotos: e.bindGotos, bindBody: e.bindBody,
-		bindSelfAddr: e.bindSelfAddr, bindSelfCall: e.bindSelfCall,
+		bindSelfAddr: e.bindSelfAddr, bindSelfCall: e.bindSelfCall, bindViews: e.bindViews,
 		curParams: e.curParams, curParamOrder: e.curParamOrder,
 		localTypes: e.localTypes, gotoTargets: e.gotoTargets, localConsts: e.localConsts,
+		labelHeads:      e.labelHeads,
 		localConstSpecs: e.localConstSpecs, inheritedTypes: e.inheritedTypes,
 		constInt: maps.Clone(e.constInt), constStr: maps.Clone(e.constStr), constVal: maps.Clone(e.constVal),
 		constBool:    maps.Clone(e.constBool),
@@ -16576,7 +16658,7 @@ func (e *emitter) liftFuncLit(lit Node) (string, bool) {
 			e.inheritedTypes[n] = true
 		}
 	}
-	e.gotoTargets = map[string]bool{}
+	e.gotoTargets, e.labelHeads = map[string]bool{}, map[string]loopHead{}
 	e.scanGotoTargets(body)
 	e.aliasedLocals = map[string]bool{}
 	e.scanAliasedLocals(body)
@@ -16639,6 +16721,7 @@ func (e *emitter) liftFuncLit(lit Node) (string, bool) {
 	_, resTypes := e.cSig(sig)
 	e.funcRet[cname] = resTypes
 	e.localTypes, e.gotoTargets, e.localConsts = saved.localTypes, saved.gotoTargets, saved.localConsts
+	e.labelHeads = saved.labelHeads
 	e.localConstSpecs, e.inheritedTypes = saved.localConstSpecs, saved.inheritedTypes
 	e.constInt, e.constStr, e.constVal = saved.constInt, saved.constStr, saved.constVal
 	e.constBool = saved.constBool
@@ -16657,6 +16740,7 @@ func (e *emitter) liftFuncLit(lit Node) (string, bool) {
 	e.bindValue = saved.bindValue
 	e.bindOpaque, e.bindAliased, e.bindGotos, e.bindBody = saved.bindOpaque, saved.bindAliased, saved.bindGotos, saved.bindBody
 	e.bindSelfAddr, e.bindSelfCall = saved.bindSelfAddr, saved.bindSelfCall
+	e.bindViews = saved.bindViews
 	e.curParams, e.curParamOrder = saved.curParams, saved.curParamOrder
 	if proto == "" {
 		return "", false
@@ -17186,6 +17270,11 @@ func (e *emitter) factorWithoutLastStep(ast []int32) ([]int32, bool) {
 // package's, `lib.P(x)`: the same conversion by another name, which reached every
 // sink unread until it was asked here.
 func (e *emitter) unsafeConvOperand(ast []int32) ([]int32, bool) {
+	// `unsafe.Slice(p, n)[i:j]`: a slice of it is backed by what p points at too.
+	if arg, rest, ok := e.unsafeSliceChainOf(ast); ok && len(rest) != 0 &&
+		!slices.ContainsFunc(rest, func(st Node) bool { _, _, _, isSlice := e.sliceParts(st.ast); return st.sym != Index || !isSlice }) {
+		return arg, true
+	}
 	recv, suffix, ok := e.directCall(e.unparenExpr(ast))
 	if !ok {
 		return nil, false
@@ -17197,6 +17286,15 @@ func (e *emitter) unsafeConvOperand(ast []int32) ([]int32, bool) {
 		if e.unsafeQualifiers[recv] && member == "Pointer" {
 			call = suffix[1]
 			break
+		}
+		// `unsafe.Add(p, n)` reaches what p reaches, and `unsafe.Slice(p, n)` is
+		// backed by the storage p points at: each read as its pointer, as a
+		// conversion is.
+		if e.unsafeQualifiers[recv] && (member == "Add" || member == "Slice") {
+			if args := e.callArgExprs(suffix[1].ast); len(args) == 2 {
+				return args[0].ast, true
+			}
+			return nil, false
 		}
 		if ct, isConv := e.qualConvType(recv, member); !isConv || ct != cUnsafePtr {
 			return nil, false
@@ -17218,6 +17316,35 @@ func (e *emitter) unsafeConvOperand(ast []int32) ([]int32, bool) {
 		return nil, false
 	}
 	return args[0].ast, true
+}
+
+// unsafeSliceChainOf matches, by shape, a value that is `unsafe.Slice(p, n)` and the
+// steps written after it, answering p.
+func (e *emitter) unsafeSliceChainOf(ast []int32) (arg []int32, rest []Node, ok bool) {
+	kids, ok := e.soleFactor(e.unparenExpr(ast))
+	if !ok {
+		return nil, nil, false
+	}
+	fn, args, rest, ok := e.unsafeAddSliceCall(kids)
+	if !ok || fn != "Slice" {
+		return nil, nil, false
+	}
+	return args[0].ast, rest, true
+}
+
+// unsafeSliceAddrOperand matches the address of what `unsafe.Slice(p, n)` reaches,
+// `&unsafe.Slice(p, n)[i]` and `&unsafe.Slice(p, n)[i].f`, answering p: an address
+// into the storage p points at.
+func (e *emitter) unsafeSliceAddrOperand(ast []int32) ([]int32, bool) {
+	operand, ok := e.addrOperandFactor(e.unparenExpr(ast))
+	if !ok || operand.sym != Factor {
+		return nil, false
+	}
+	arg, rest, ok := e.unsafeSliceChainOf(encodeNode(Factor, operand.ast))
+	if !ok || len(rest) == 0 {
+		return nil, false
+	}
+	return arg, true
 }
 
 // uintptrConvOperands finds every `uintptr(x)` in a body, by shape, and answers the
@@ -17358,6 +17485,102 @@ func arrPtrHelperDef(ct string, a arrDim, checks bool) string {
 	}
 	return def + "\treturn (" + ct + ")s.ptr;\n}\n"
 }
+
+// unsafeAddSliceCall matches a Factor's children that are `unsafe.Add(p, n)` or
+// `unsafe.Slice(p, n)`, answering the function, its two arguments and, for Slice,
+// the fields and indexes written after the call, `[1:]` of `unsafe.Slice(p,
+// n)[1:]`.
+func (e *emitter) unsafeAddSliceCall(kids []Node) (fn string, args, rest []Node, ok bool) {
+	if len(kids) != 2 || kids[0].sym != 0 || kids[1].sym != FactorSuffix || !e.unsafeQualifiers[e.src(kids[0].tok)] {
+		return "", nil, nil, false
+	}
+	steps := slices.Collect(it(kids[1].ast))
+	if len(steps) < 2 || steps[0].sym != Selector || steps[1].sym != CallSuffix {
+		return "", nil, nil, false
+	}
+	fn = e.soleIdent(steps[0].ast)
+	if fn != "Add" && fn != "Slice" || fn == "Add" && len(steps) != 2 {
+		return "", nil, nil, false
+	}
+	for _, st := range steps[2:] {
+		if st.sym != Index && st.sym != Selector {
+			return "", nil, nil, false
+		}
+	}
+	args = e.callArgExprs(steps[1].ast)
+	if len(args) != 2 {
+		return "", nil, nil, false
+	}
+	return fn, args, steps[2:], true
+}
+
+// unsafeSliceElem is the element C type of `unsafe.Slice(p, n)`, what p points at.
+func (e *emitter) unsafeSliceElem(p Node) (string, bool) {
+	pt, ok := e.inferCType(p.ast)
+	if !ok || !strings.HasSuffix(pt, "*") {
+		return "", false
+	}
+	return strings.TrimSuffix(pt, "*"), true
+}
+
+// emitUnsafeAddSlice writes `unsafe.Add(p, n)`, p moved on n bytes, and
+// `unsafe.Slice(p, n)`, a slice over n elements from p (usliceHelperDef) -- bound
+// to a temporary where steps follow it, which are walked from there as a
+// parenthesised head's are (emitParenChain).
+func (e *emitter) emitUnsafeAddSlice(kids []Node) bool {
+	fn, args, rest, ok := e.unsafeAddSliceCall(kids)
+	if !ok {
+		return false
+	}
+	e.includes["stdint.h"] = true
+	p, n := e.exprC(args[0].ast), e.exprC(args[1].ast)
+	if fn == "Add" {
+		e.emit("((void*)((uint8_t*)(" + p + ") + (" + n + ")))")
+		return true
+	}
+	elem, ok := e.unsafeSliceElem(args[0])
+	if !ok {
+		e.failAt(args[0].ast, "unsafe.Slice of %s is not supported yet", e.f.exprSource(args[0]))
+		return true
+	}
+	e.needSlice(elem)
+	if e.checks {
+		e.needPanic()
+	}
+	e.usliceHelpers[elem] = true
+	call := usliceHelperName(elem) + "(" + p + ", (int64_t)(" + n + "))"
+	if len(rest) == 0 {
+		e.emit(call)
+		return true
+	}
+	ct := sliceCName(elem)
+	tmp := e.hoist(ct, func() { e.emit(call) })
+	e.locals[tmp] = ct
+	e.sliceVars[tmp] = elem
+	if _, ok := e.emitAccessChainAt(tmp, e.plainOrSlice(ct), rest, true); !ok && e.err == nil {
+		e.failAt(kids[1].ast, "this read through unsafe.Slice is not supported yet")
+	}
+	return true
+}
+
+// usliceHelperDef is unsafe.Slice for an element type: a slice of n elements from p,
+// panicking where Go does when checked -- a negative length, and a nil pointer with
+// a length.
+func usliceHelperDef(elem string, checks bool) string {
+	sc := sliceCName(elem)
+	def := "static " + sc + " " + usliceHelperName(elem) + "(" + elem + "* p, int64_t n) {\n"
+	if checks {
+		// Go's runtime.unsafeslice64: the length an int, not negative, a nil pointer
+		// with no elements, and the elements within the address space past p.
+		def += "\tif (n < 0 || n > 0x7fffffff) ogo_panic(\"unsafe.Slice: len out of range\");\n"
+		def += "\tif (!p && n > 0) ogo_panic(\"unsafe.Slice: ptr is nil and len is not zero\");\n"
+		def += "\tif ((uint64_t)n * sizeof(" + elem + ") > (uint64_t)((uintptr_t)0 - (uintptr_t)p)) ogo_panic(\"unsafe.Slice: len out of range\");\n"
+	}
+	return def + "\treturn (" + sc + "){p, (int)n, (int)n};\n}\n"
+}
+
+// usliceHelperName is usliceHelperDef's C name for an element type.
+func usliceHelperName(elem string) string { return "ogo_uslice_" + sanitizeElem(elem) }
 
 // arrPtrHelperName is arrPtrHelperDef's C name for a pointer to an array type.
 func arrPtrHelperName(ct string) string { return "ogo_arrptr_" + sanitizeElem(ct) }
@@ -18053,7 +18276,7 @@ func (e *emitter) emitMain(sig, body []int32) {
 	}
 	e.locals = map[string]string{}
 	e.localTypes = map[string]string{}
-	e.gotoTargets = map[string]bool{}
+	e.gotoTargets, e.labelHeads = map[string]bool{}, map[string]loopHead{}
 	e.scanGotoTargets(body)
 	e.aliasedLocals = map[string]bool{}
 	e.scanAliasedLocals(body)
@@ -19847,6 +20070,9 @@ func (e *emitter) emitLabeledStatement(label string, inner []int32) {
 		// whatever statement it stands on -- a loop head included.
 		e.ind()
 		e.emit("ogo_goto_" + cIdent(label) + ":;\n")
+		// A goto after it is a loop's end, this its head (loopSeeds).
+		e.applyLoopSeeds(&inner[0], false)
+		e.labelHeads[label] = e.loopHeadAt(&inner[0], nil)
 	}
 	switch e.stmtKind(inner) {
 	case FOR:
@@ -20262,6 +20488,10 @@ func (e *emitter) emitStatementInner(nodes []Node, ast []int32) {
 		if len(nodes) >= 2 && nodes[1].sym == 0 {
 			e.ind()
 			e.emit("goto ogo_goto_" + cIdent(e.src(nodes[1].tok)) + ";\n")
+			// Back to a label already emitted: the end of a loop (loopSeeds).
+			if h, ok := e.labelHeads[e.src(nodes[1].tok)]; ok {
+				e.noteLoopSeeds(h)
+			}
 		}
 	case first.sym == 0:
 		e.fail("%v statement is not supported yet", e.f.ch(first.tok))
@@ -29974,6 +30204,13 @@ func (e *emitter) emitFor(nodes []Node) {
 		e.fail("for-loop without a body")
 		return
 	}
+	// The body runs again after a statement in it marked a variable, which an
+	// earlier statement then reads: the marks of the pass before are given here, and
+	// what this pass's body marks is recorded for the next (loopSeeds). Registered
+	// after the scope's restore, so it runs first, the header's names still visible.
+	headerNames := e.forHeaderNames(h)
+	e.applyLoopSeeds(&body[0], false)
+	defer e.noteLoopSeeds(e.loopHeadAt(&body[0], headerNames))
 	if h.isRange {
 		e.emitRange(&h, body)
 		return
@@ -30065,6 +30302,7 @@ func (e *emitter) emitFor(nodes []Node) {
 		}
 	}
 condition:
+	e.applyLoopSeeds(&body[0], true) // the header's own names, declared now
 	var condText string
 	var condPro []string
 	if h.cond != nil {
@@ -47047,6 +47285,27 @@ func (e *emitter) inferNode(n Node) (string, bool) {
 				e.includes["stdint.h"] = true
 				return "uintptr_t", true
 			}
+			if fn, args, rest, ok := e.unsafeAddSliceCall(kids); ok {
+				if fn == "Add" {
+					return cUnsafePtr, true
+				}
+				if elem, ok := e.unsafeSliceElem(args[0]); ok {
+					e.needSlice(elem)
+					ct := sliceCName(elem)
+					if len(rest) == 0 {
+						return ct, true
+					}
+					// The steps after it, as parenChainType walks them.
+					cur, ok := e.accessChainTypeAt(e.plainOrSlice(ct), rest, true)
+					if !ok || len(cur.dims) != 0 {
+						return "", false
+					}
+					if cur.slice {
+						return e.chainValueCType(cur)
+					}
+					return cur.ctype, cur.ctype != ""
+				}
+			}
 			if spliced, ok := e.spliceParenArrayCall(kids); ok {
 				return e.inferNode(spliced) // `(mk(5)).Len()` is `mk(5).Len()`
 			}
@@ -49244,6 +49503,9 @@ func (e *emitter) emitExprNode(n Node) {
 				e.emit(strconv.FormatInt(v, 10))
 				return
 			}
+			if e.emitUnsafeAddSlice(kids) {
+				return
+			}
 			if me, isME := e.methodExprAt(kids); isME {
 				e.emitMethodExpr(me)
 				return
@@ -51080,6 +51342,48 @@ func (e *emitter) initViewsFrame(initExpr []int32) bool {
 	return ref
 }
 
+// viewedHolder is what the ELEMENTS of a local slice reach of this frame: its own
+// holder mark, or the mark of any local whose storage it may view -- what any
+// statement of the function binds it to, by shape (bindViews), through other
+// slices, and a pointer known to point at a local. A view's marks were the slice's
+// as they stood when it was bound: `s := a[:]; a[0] = &x; gq = s[0]` stored x's
+// address in a package variable in silence, a's mark made after s took a's.
+func (e *emitter) viewedHolder(name string) string {
+	if o := e.frameHolder[name]; o != "" || !e.isSliceVar(name) {
+		return o
+	}
+	seen := map[string]bool{name: true}
+	var walk func(n string) string
+	walk = func(n string) string {
+		for _, h := range e.bindViews[n] {
+			m := h.name
+			if seen[m] || !e.isFrameVar(m) {
+				continue
+			}
+			seen[m] = true
+			if o := e.frameHolder[m]; o != "" {
+				if x, isLocal := strings.CutPrefix(o, "local "); isLocal {
+					if ct, ok := e.varType(m); ok && e.isPointer(ct) {
+						// `s := p[:]` of a pointer to a local array: the array's.
+						if o := e.frameHolder[x]; o != "" && e.isFrameVar(x) {
+							return o
+						}
+						continue
+					}
+				}
+				return o
+			}
+			if e.isSliceVar(m) {
+				if o := walk(m); o != "" {
+					return o
+				}
+			}
+		}
+		return ""
+	}
+	return walk(name)
+}
+
 // readHolderRef names a value read out of a marked holder -- `b.d`, `xs[0]`,
 // `bs[1].d`. It says what the program WROTE rather than naming the variable, which
 // would send a reader looking at a line they did not write.
@@ -51179,7 +51483,10 @@ func (e *emitter) frameRefOf(ast []int32) (frameRef, bool) {
 			if arg, ok = e.unsafeConvOperand(ast); !ok {
 				// And `r.(*T)` the pointer r holds (assertionOperand).
 				if arg, ok = e.assertionOperand(ast); !ok {
-					break
+					// And `&unsafe.Slice(p, n)[i]` an address where p points.
+					if arg, ok = e.unsafeSliceAddrOperand(ast); !ok {
+						break
+					}
 				}
 			}
 		}
@@ -51352,7 +51659,7 @@ func (e *emitter) frameRefOf(ast []int32) (frameRef, bool) {
 	}
 	if fac, isFac := e.soleFactorNode(ast); isFac {
 		if base, steps, isChain := e.factorAccessChain(e.unparenKids(slices.Collect(it(fac.ast)))); isChain {
-			if origin := e.frameHolder[base]; origin != "" {
+			if origin := e.viewedHolder(base); origin != "" {
 				// The whole chain, not a field path: an ARRAY of slices or of structs
 				// is marked on the array, and `xs[0]` and `bs[1].d` reach out of it
 				// exactly as `b.d` does.
@@ -51870,7 +52177,7 @@ func (e *emitter) sliceElemOrigin(value []int32) (origin string, has, decided bo
 		return r.origin, ok, true
 	}
 	if name, ok := e.exprIdent(ast); ok {
-		origin = e.frameHolder[name]
+		origin = e.viewedHolder(name)
 		return origin, origin != "", true
 	}
 	// `append(s, v...)`: s's elements and each value appended; of a spread, the
@@ -52099,6 +52406,36 @@ func (e *emitter) noteStoredThrough(t lifeTarget, r frameRef) {
 	if through, frame, pointee := e.targetThroughRef(t.base, t.stars, t.steps); through && frame && pointee != "" {
 		e.noteHolderRef(pointee, r)
 	}
+	// An element of a slice known to view a local, `s := a[:]` or `s :=
+	// unsafe.Slice(&a[0], n)`, the one shape refuseStoreThroughSlice lets a store
+	// through: what is written is the local's, which a later `gq = a[0]` reads. Only
+	// the slice was marked, and that read was taken.
+	if t.deref == "" && t.stars == 0 && len(t.steps) != 0 && t.steps[0].sym == Index && e.isSliceVar(t.base) && e.onceBound(t.base) {
+		if _, _, _, sliced := e.sliceParts(t.steps[0].ast); !sliced && e.frameViewValue(e.bindValue[t.base]) {
+			if root := e.viewedLocal(e.bindValue[t.base]); root != "" {
+				e.noteHolderRef(root, r)
+			}
+		}
+	}
+}
+
+// viewedLocal is the local a slice value frameViewValue takes views, `a` of `a[1:]`
+// and of `unsafe.Slice(&a[0], n)`; "" for one that views storage of no name, a
+// literal's or a make's.
+func (e *emitter) viewedLocal(ast []int32) string {
+	if arg, rest, ok := e.unsafeSliceChainOf(ast); ok && len(rest) == 0 {
+		if operand, ok := e.addrOperandFactor(arg); ok && operand.sym == Factor {
+			if kids := slices.Collect(it(operand.ast)); len(kids) != 0 && kids[0].sym == 0 && e.f.ch(kids[0].tok) == IDENT {
+				return e.src(kids[0].tok)
+			}
+		}
+		return ""
+	}
+	kids, ok := e.soleFactor(ast)
+	if !ok || len(kids) != 2 || kids[0].sym != 0 || e.f.ch(kids[0].tok) != IDENT || kids[1].sym != FactorSuffix {
+		return ""
+	}
+	return e.src(kids[0].tok)
 }
 
 // noteStoredThroughOp is noteStoredThrough for the values of a plain "=".
@@ -52181,6 +52518,38 @@ func (e *emitter) frameViewValue(ast []int32) bool {
 	if typeAST, _, isLit := e.factorArrayLit(fac); isLit {
 		_, isSlice := e.litSliceType(typeAST)
 		return isSlice
+	}
+	// `unsafe.Slice(&loc[i], n)` and `unsafe.Slice(&loc, n)`: a view of a local's own
+	// storage, an array's or a variable's that is no pointer.
+	if arg, rest, ok := e.unsafeSliceChainOf(ast); ok && len(rest) == 0 {
+		operand, ok := e.addrOperandFactor(arg)
+		if !ok || operand.sym != Factor {
+			return false
+		}
+		kids := slices.Collect(it(operand.ast))
+		if len(kids) == 0 || kids[0].sym != 0 || e.f.ch(kids[0].tok) != IDENT {
+			return false
+		}
+		name := e.src(kids[0].tok)
+		if !e.isFrameVar(name) || e.curParams[name] {
+			return false
+		}
+		switch len(kids) {
+		case 1:
+			ct, ok := e.varType(name)
+			return ok && !e.isPointer(ct) && !e.isSliceCType(e.underlyingCType(ct))
+		case 2:
+			steps := slices.Collect(it(kids[1].ast))
+			if kids[1].sym != FactorSuffix || len(steps) != 1 || steps[0].sym != Index {
+				return false
+			}
+			if _, _, _, isSlice := e.sliceParts(steps[0].ast); isSlice {
+				return false
+			}
+			_, isArr := e.arrayVar(name)
+			return isArr
+		}
+		return false
 	}
 	kids := slices.Collect(it(fac.ast))
 	if len(kids) != 2 || kids[0].sym != 0 || e.f.ch(kids[0].tok) != IDENT || kids[1].sym != FactorSuffix {
@@ -53306,6 +53675,9 @@ func (e *emitter) scanBindings(body []int32) {
 	e.bindSeq++
 	e.bindBody = e.bindSeq
 	e.scanBindingsIn(body, e.bindBody)
+	calls := e.heldCallValues
+	e.bindViews = e.summaryHolds(body)
+	e.heldCallValues = calls
 }
 
 // bodyWrites reports whether body writes the variable name -- assigns it, steps it,
@@ -53315,11 +53687,13 @@ func (e *emitter) bodyWrites(body []int32, name string) bool {
 	writes, block, lits, value := e.bindWrites, e.bindBlock, e.bindLits, e.bindValue
 	opaque, aliased, gotos := e.bindOpaque, e.bindAliased, e.bindGotos
 	selfAddr, selfCall, seq, bodyBlock := e.bindSelfAddr, e.bindSelfCall, e.bindSeq, e.bindBody
+	views := e.bindViews
 	e.scanBindings(body)
 	w := e.bindWrites[name] != 0 || e.bindSelfAddr[name] || e.bindSelfCall[name]
 	e.bindWrites, e.bindBlock, e.bindLits, e.bindValue = writes, block, lits, value
 	e.bindOpaque, e.bindAliased, e.bindGotos = opaque, aliased, gotos
 	e.bindSelfAddr, e.bindSelfCall, e.bindSeq, e.bindBody = selfAddr, selfCall, seq, bodyBlock
+	e.bindViews = views
 	return w
 }
 
@@ -53979,6 +54353,100 @@ func (e *emitter) calleeSummaryName(recv string) string {
 // one-map question answered "no" for it -- and "return &a[i]" over a local array went
 // unrefused, which is the shape the whole rule exists to stop. The same split has
 // caught isPackageVar before.
+// loopHead is what a loop's head saw of the frame marks (loopHeadAt), against which
+// noteLoopSeeds finds what its body added.
+type loopHead struct {
+	key     *int32
+	backed  map[string]bool
+	holder  map[string]string
+	visible map[string]bool
+	header  map[string]bool
+}
+
+// loopHeadAt snapshots the marks at a loop's head, with the names visible there and
+// the names its own header declares.
+func (e *emitter) loopHeadAt(key *int32, header map[string]bool) loopHead {
+	return loopHead{key, maps.Clone(e.frameBacked), maps.Clone(e.frameHolder), e.visibleLocals(), header}
+}
+
+// applyLoopSeeds gives the variables the pass before found a loop's body to mark
+// their marks at the loop's head: those its header declares where header is set,
+// after the declaration, and the others ahead of the loop.
+func (e *emitter) applyLoopSeeds(key *int32, header bool) {
+	for n, m := range e.loopSeedsIn[key] {
+		if m.header != header {
+			continue
+		}
+		if m.backed {
+			e.frameBacked[n] = true
+		}
+		if m.holder != "" && e.frameHolder[n] == "" {
+			e.frameHolder[n] = m.holder
+		}
+	}
+}
+
+// noteLoopSeeds records, at a loop's end, every mark its body gave a variable the
+// head could see -- or the loop's header declares, which each pass of the body
+// carries to the next -- and neither the head nor the pass before had: the next
+// pass gives it at the head, where the statements before the marking one read it
+// on the body's next run. `for ... { gq = p; p = &x }` stored a local's address in a
+// package variable in silence, p being marked only after the statement that read it.
+func (e *emitter) noteLoopSeeds(h loopHead) {
+	if e.err != nil {
+		return
+	}
+	note := func(n string, m loopMark) {
+		if !h.visible[n] && !h.header[n] {
+			return
+		}
+		m.header = h.header[n]
+		old := e.loopSeedsIn[h.key][n]
+		if m.backed && old.backed || m.holder != "" && old.holder != "" {
+			return
+		}
+		if e.loopSeedsOut[h.key] == nil {
+			e.loopSeedsOut[h.key] = map[string]loopMark{}
+		}
+		w := e.loopSeedsOut[h.key][n]
+		w.backed = w.backed || m.backed
+		if w.holder == "" {
+			w.holder = m.holder
+		}
+		w.header = m.header
+		e.loopSeedsOut[h.key][n] = w
+	}
+	for n, b := range e.frameBacked {
+		if b && !h.backed[n] {
+			note(n, loopMark{backed: true})
+		}
+	}
+	for n, o := range e.frameHolder {
+		if o != "" && h.holder[n] == "" {
+			note(n, loopMark{holder: o})
+		}
+	}
+}
+
+// forHeaderNames is the names a three-clause for's init declares, `for p := q; ...`,
+// whose values each run of the body hands to the next.
+func (e *emitter) forHeaderNames(h forHeader) map[string]bool {
+	r := map[string]bool{}
+	if h.isRange || !h.hasClause || h.initOp != DEFINE {
+		return r
+	}
+	lhss := h.initLHSs
+	if len(lhss) == 0 && h.initLHS != nil {
+		lhss = [][]int32{h.initLHS}
+	}
+	for _, l := range lhss {
+		if n, ok := e.exprIdent(l); ok {
+			r[n] = true
+		}
+	}
+	return r
+}
+
 // visibleLocals is the set of local names in scope right now, whatever environment
 // the emitter keeps each kind in.
 func (e *emitter) visibleLocals() map[string]bool {
