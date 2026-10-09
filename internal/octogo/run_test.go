@@ -97,6 +97,37 @@ func main() {
 		want: "torn: 0\n",
 	},
 	{
+		// %T spells a channel's direction as Go does, at every level, the arrow
+		// after "chan" belonging to the outer channel. The C type has no direction,
+		// so a `chan<- int` printed `chan int`; the checker records each level's
+		// (noteChanTDirs). Go's output, from go run.
+		name: "%T of directional channels",
+		src: `type Src <-chan int
+
+var c chan int
+
+func send(c chan<- int) { printf("%T\n", c) }
+func recv(c <-chan int) { printf("%T\n", c) }
+
+func pick(p <-chan (<-chan int)) <-chan (<-chan int) { return p }
+
+func main() {
+	send(c)
+	recv(c)
+	var a chan (<-chan int)
+	var b chan<- <-chan int
+	var d <-chan (<-chan int)
+	var e chan (chan<- int)
+	var g chan Src
+	var h <-chan chan int
+	printf("%T|%T|%T|%T|%T|%T|%T\n", a, b, d, e, g, h, c)
+	printf("%T\n", pick(d))
+	defer printf("%T\n", b)
+}
+`,
+		want: "chan<- int\n<-chan int\nchan (<-chan int)|chan<- <-chan int|<-chan <-chan int|chan chan<- int|chan main.Src|<-chan chan int|chan int\n<-chan <-chan int\nchan<- <-chan int\n",
+	},
+	{
 		// A channel of receive-only channels is written as Go writes it: both
 		// ways with its element in parentheses, send-only and receive-only with
 		// the element's arrow after the channel's. A named element type had to
@@ -19795,10 +19826,9 @@ func main() {
 		panics: true,
 	},
 	{
-		// A send CLAUSE on a closed channel panics, as the blocking send does and as
-		// Go does from inside a select -- and Go panics whether or not another clause
-		// is ready, so the offer asks on the way in. It used to offer a value nothing
-		// could take and poll until the other clause fired, or for ever.
+		// A send CLAUSE on a closed channel panics where it is chosen, as the
+		// blocking send does and as Go does from inside a select. It used to offer a
+		// value nothing could take and poll until the other clause fired, or for ever.
 		name: "a select send clause on a closed channel panics",
 		src: `var c chan int
 var d chan int
@@ -19815,6 +19845,63 @@ func main() {
 `,
 		want:   "panic: send on closed channel",
 		panics: true,
+	},
+	{
+		// A send clause on a closed channel is a READY clause, as in Go, which
+		// chooses among the ready ones -- 504 of 1000 runs panicked beside a ready
+		// receive. The first round tests the receive first, a closed channel's being
+		// ready too, so it is taken; the second starts after it, and the send is
+		// chosen and panics. Until 2026-10-09 the select panicked on entry whatever
+		// else was ready.
+		name: "a select send clause on a closed channel is chosen in its turn",
+		src: `var c chan int
+var d chan int
+
+func main() {
+	close(c)
+	close(d)
+	for i := 0; i < 2; i++ {
+		select {
+		case v, ok := <-d:
+			println("received", v, ok)
+		case c <- 1:
+			println("sent")
+		}
+	}
+}
+`,
+		want:   "received 0 false\npanic: send on closed channel",
+		panics: true,
+	},
+	{
+		// The same beside a default, which gates the send (ogo_chan_trysend): the
+		// receive clause tested first is ready, so the select takes it and the
+		// closed channel's clause is never reached.
+		name: "a gated select send clause on a closed channel waits its turn",
+		src: `var c chan int
+var d chan int
+
+func main() {
+	close(c)
+	close(d)
+	select {
+	case v, ok := <-d:
+		println("received", v, ok)
+	case c <- 1:
+		println("sent")
+	default:
+		println("default")
+	}
+	select {
+	case v, ok := <-d:
+		println("received", v, ok)
+	case c <- 1:
+		println("sent")
+	}
+	println("end")
+}
+`,
+		want: "received 0 false\nreceived 0 false\nend\n",
 	},
 	{
 		// A NIL channel parks whoever touches it, as in Go: the receive blocks for

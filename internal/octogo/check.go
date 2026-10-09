@@ -293,6 +293,7 @@ type File struct {
 	shiftTypes        map[*int32]Kind             // the shift operators whose left operand is an untyped constant, by their place in the AST, and the type the context gives it (see typeShiftOperands); read by the emitter
 	wholeConsts       map[*int32]Kind             // the constants written as FLOATS that stand where an integer type is wanted, `var u uint32 = 3e9`, by their place in the AST, and that type (see checkValueOverflow); read by the emitter
 	wholeConstToks    map[int32]Kind              // the same for a constant that is one token, by the token
+	chanTDirs         map[*int32][]chanDir        // a format's argument of an unnamed channel type with a direction in it, by its place in the AST, and each channel level's direction (see noteChanTDirs); read by the emitter for %T
 	lenConsts         map[*int32]int64            // the len and cap calls Go makes constants, by their parentheses' place in the AST, and their values (see constLenCap); read by the emitter
 	headerBindings    map[*int32]Node             // the statements headers declare or assign by, `if p := r; ...`, for the passes reading a body's statements by shape (headerBindingsIn)
 	ownCallees        map[int32]bool              // the token indexes of callees named like a builtin and resolving to the program's own declaration (checkCallee)
@@ -12760,6 +12761,36 @@ func (f *File) checkTestingFormatArgs(s *Scope, method string, at Token, args []
 	if _, isConst := f.constStringOperand(s, args[0]); !isConst {
 		f.err(f.tok(args[0].Pos()).Position(), "%s's format must be a constant string, as printf's is", method)
 	}
+	for _, a := range args[1:] {
+		f.noteChanTDirs(s, a)
+	}
+}
+
+// noteChanTDirs records, for an argument a format may print with %T, the direction
+// of each level of an unnamed channel type with a direction in it, outermost first:
+// a direction is no part of the C type, so %T spelled a `chan<- int` as `chan int`
+// (staticTypeName reads it). A named channel type prints as its name, and is not
+// recorded.
+func (f *File) noteChanTDirs(s *Scope, a Node) {
+	tn, _ := f.exprChanTypeNode(s, a)
+	var dirs []chanDir
+	directed := false
+	for {
+		ch, ok := tn.(*TypeNodeChan)
+		if !ok {
+			break
+		}
+		dirs = append(dirs, ch.Dir)
+		directed = directed || ch.Dir != bothDir
+		tn = ch.TypeNode
+	}
+	if !directed {
+		return
+	}
+	if f.chanTDirs == nil {
+		f.chanTDirs = map[*int32][]chanDir{}
+	}
+	f.chanTDirs[&a.ast[0]] = dirs
 }
 
 // importedPkgScope is the package scope behind an import qualifier, which is where
@@ -25121,6 +25152,10 @@ func (f *File) checkCallee(s *Scope, callee Token, argList Node, args []Node) {
 					continue
 				}
 				f.checkInferredOverflow(s, a)
+			}
+		case "printf":
+			for _, a := range args[min(1, len(args)):] {
+				f.noteChanTDirs(s, a)
 			}
 		case "append":
 			// The one whose element type IS reachable here: the destination names a

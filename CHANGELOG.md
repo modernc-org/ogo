@@ -55,6 +55,10 @@ shipped section tells a reader on that version that they have behaviour they do 
 
 ### Fixed
 
+- **`%T` prints a channel's direction**: `chan<- int` and `<-chan int` printed as
+  `chan int`, the C type carrying no direction, and a channel of receive-only
+  channels prints `chan (<-chan int)`, as Go's does. In every release with
+  directional channels.
 - **A channel received from a channel of channels keeps its direction**: `c :=
   <-pipe; c <- 1` for a pipe of receive-only channels, `close(c)` of one, and `var
   d chan int = <-pipe` were taken, the received channel having no type for the
@@ -87,6 +91,11 @@ shipped section tells a reader on that version that they have behaviour they do 
   every time it was ready -- on a P2-EDGE, 1000 of 1000 values from the first of
   two busy channels, 500 of each now. Go chooses at random and promises no order;
   a program counting on the first clause winning has to ask for it.
+- **A `select`'s send clause on a closed channel panics only where it is chosen**:
+  it is a ready clause, as in Go, so a clause ready before it in the round is
+  taken instead. The select panicked on entering whatever else was ready, where Go
+  chooses among the ready clauses (beside a ready receive, 504 of 1000 Go runs
+  panicked).
 - **`t.Skip()` stops the test**, as Go's does; it only marked it skipped and let it
   run on. A test that failed before it skipped is reported failed, as before.
 - **`ogo test` prints `=== RUN   TestName` before each test**, as `go test -v`

@@ -2797,8 +2797,11 @@
 // the statement form's is -- which is how a select tells a closed producer from a
 // sent zero. The "=" form's targets may be anything an assignment writes to,
 // "case r.val, r.ok = <-ch:"; the ":=" form's must be names, as a short
-// declaration's are. A send clause on one panics, as a plain send does, and it panics on
-// entering the select whether or not another clause is ready.
+// declaration's are. A send clause on one is READY too, as in Go, and chosen it
+// panics, as a plain send does -- so a clause ready before it in the round is
+// taken instead, where Go chooses among them (beside a ready receive, 504 of 1000
+// Go runs panicked). Until 2026-10-09 the select panicked on entering, whatever
+// else was ready.
 //
 // What makes several send clauses, and a send clause beside a default, possible is
 // that gating: offering two values at once would let a receiver taking each send

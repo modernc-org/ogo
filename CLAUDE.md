@@ -85,7 +85,8 @@ make one -- its cell static at package level, the FRAME's in a function and refu
 where it would outlive the call by the rules a slice of a local array is refused
 by -- so a channel program means what it means in Go and DIFFERENCES.md's
 declaration-site entry goes. It breaks every channel program written so far (`var
-ch chan int` becomes `var ch = make(chan int)`), p2-11's included, which is why it
+ch chan int` becomes `var ch = make(chan int)`) -- 184 run cases, 79 spec tests, an
+example, the fuzzer's channels; p2-11 has no channel (2026-10-09) -- which is why it
 is to come before v1. Its design pass comes first: the lock of a frame's cell, a
 nil channel in a select (Go's way to disable a case), and the migration.
 
@@ -2898,9 +2899,14 @@ the fence spoke only at its end. The lock rule was measured before it was writte
 into specs.go: a record of three words under p2.TryLock and p2.Unlock, written by
 one cog and read 2000 times by another, torn 0 times on the board and 53 times
 without the lock, and the listing keeps every write between locktry and lockrel
-(TestBuildLockedRecord). Found and left: `%T` of a directional channel prints it
-both ways, `chan int` for a `chan<- int` -- the C type has no direction, so the
-spelling has to come from the checker.
+(TestBuildLockedRecord). `%T` of a directional channel printed it both ways,
+`chan int` for a `chan<- int`, the C type having no direction: the checker records
+each level's for a format's argument (noteChanTDirs, chanTDirs) and the emitter
+spells it (chanTypeNameForT). And a select's send clause on a closed channel
+panicked on entering the select whatever else was ready, its offer asking on the
+way in, where Go's is a ready clause, chosen among the others -- 504 of 1000 Go runs
+panicked beside a ready receive: the standing offer's clause asks in its turn now
+(ogo_chan_sendclosed), as the gated one's trysend already did.
 
 **A STRUCT HOLDING AN ARRAY IS COPIED, NEVER ASSIGNED** (2026-09-23). The target's C
 compiler copy-initializes and assigns one only at some SIZES -- "Unable to multiply
