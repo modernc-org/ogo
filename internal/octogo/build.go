@@ -30,7 +30,7 @@ var intrinsicImports = map[string]bool{"p2": true, "unsafe": true}
 // from a directory. They are ORDINARY OctoGo, compiled and mangled like any other
 // package -- nothing about them is intrinsic -- so the day one of them ships as
 // source on disk, the only change is where it is read from.
-var embeddedPkgs = map[string]string{"testing": testingSrc, "p2": p2Src, "strings": stringsSrc, "bytes": bytesSrc, "math": mathSrc, "unsafe": unsafeSrc}
+var embeddedPkgs = map[string]string{"testing": testingSrc, "p2": p2Src, "strings": stringsSrc, "bytes": bytesSrc, "math": mathSrc, "unsafe": unsafeSrc, "errors": errorsSrc}
 
 // unsafeSrc is the unsafe package. Its one name, Pointer, is no declaration a source
 // can write -- a pointer of no type, which every pointer converts to and from, and
@@ -579,6 +579,189 @@ func RunTest(t *T, name string, f func(*T)) {
 
 // run calls f(t) where exit returns to.
 func run(t *T, f func(*T))
+`
+
+// errorsSrc is the errors package: Go's, but for Join. Two of its functions are
+// written by the compiler and have no body here. New is the address of an
+// errorString made where the call stands (errorsNewC), static in a package
+// variable's initializer and the block's in a function, as make makes a channel --
+// so a function's error is refused where it would outlive the function, by the rules
+// that refuse a composite literal's address. And asTarget, As's question whether an
+// error's concrete value is assignable to what target points at, which Go's asks of
+// reflection and the compiler answers by testing target's table against every table
+// of the empty interface the program makes (mintErrorsAsTarget). The rest -- Is, As's
+// walk of the tree, Unwrap -- is ordinary OctoGo over interfaces, as Go's is.
+const errorsSrc = `// Package errors is Go's errors but for Join: New, Is, As, Unwrap and
+// ErrUnsupported, each meaning what Go's of the same name means.
+//
+// New makes its error where the call stands, as make makes a channel, since there
+// is no heap to make it on: in a package variable's initializer it is static, the
+// sentinel idiom,
+//
+//	var ErrTimeout = errors.New("timeout")
+//
+// and in a function it is the block's, so the lifetime rules keep it from being
+// returned or kept, as they keep the address of a composite literal; the error a
+// function returns is declared at package level. Join is not provided: the error it
+// returns holds a copy of its arguments, which needs somewhere to live.
+
+type errorString struct {
+	s string
+}
+
+func (e *errorString) Error() string {
+	return e.s
+}
+
+// New returns an error whose Error method returns text. Each call of New is a
+// distinct error, even if the text is identical. The compiler writes it at the
+// call, as the address of an errorString made where the call stands.
+func New(text string) error
+
+// ErrUnsupported indicates that a requested operation cannot be performed,
+// because it is unsupported.
+var ErrUnsupported = New("unsupported operation")
+
+type wrapper interface {
+	Unwrap() error
+}
+
+type multiWrapper interface {
+	Unwrap() []error
+}
+
+type iser interface {
+	Is(error) bool
+}
+
+type aser interface {
+	As(any) bool
+}
+
+// Unwrap returns the result of calling the Unwrap method on err, if err's type
+// contains an Unwrap method returning error. Otherwise, Unwrap returns nil.
+//
+// Unwrap only calls a method of the form "Unwrap() error". In particular Unwrap
+// does not unwrap errors returned by Join.
+func Unwrap(err error) error {
+	u, ok := err.(wrapper)
+	if !ok {
+		return nil
+	}
+	return u.Unwrap()
+}
+
+// Is reports whether any error in err's tree matches target.
+//
+// The tree consists of err itself, followed by the errors obtained by repeatedly
+// calling its Unwrap() error or Unwrap() []error method. When err wraps multiple
+// errors, Is examines err followed by a depth-first traversal of its children.
+//
+// An error is considered to match a target if it is equal to that target or if it
+// implements a method Is(error) bool such that Is(target) returns true.
+//
+// An interface holds a pointer here, which is always comparable, so the equality is
+// asked of every error in the tree.
+func Is(err, target error) bool {
+	if err == nil || target == nil {
+		return err == target
+	}
+	var w walk
+	for ; err != nil; err = w.next(err) {
+		if err == target {
+			return true
+		}
+		if x, ok := err.(iser); ok && x.Is(target) {
+			return true
+		}
+	}
+	return false
+}
+
+// maxJoinDepth is how deeply errors of the form Unwrap() []error may nest in a tree
+// Is and As walk. Go's walk recurses there, and a goroutine whose calls recurse has
+// no stack bound the build can read, so this one keeps the lists it is in the middle
+// of in a stack of its own, of this many. A chain of Unwrap() error is no deeper
+// for any length.
+const maxJoinDepth = 8
+
+// walk is the depth-first order Is and As visit an error tree in, Go's: an error,
+// then what its Unwrap() error returns, or each error its Unwrap() []error returns
+// with that error's own tree before the next.
+type walk struct {
+	lists [maxJoinDepth][]error
+	n     int
+}
+
+// next answers the error to visit after err, nil when the tree is done. Each
+// Unwrap is called once, where Go's walk calls it, and a nil in a list is skipped.
+func (w *walk) next(err error) error {
+	switch x := err.(type) {
+	case wrapper:
+		if u := x.Unwrap(); u != nil {
+			return u
+		}
+	case multiWrapper:
+		if w.n == maxJoinDepth {
+			panic("errors: Unwrap() []error nested too deeply")
+		}
+		w.lists[w.n] = x.Unwrap()
+		w.n++
+	}
+	for w.n != 0 {
+		list := w.lists[w.n-1]
+		if len(list) == 0 {
+			w.n--
+			continue
+		}
+		w.lists[w.n-1] = list[1:]
+		if list[0] != nil {
+			return list[0]
+		}
+	}
+	return nil
+}
+
+// As finds the first error in err's tree that matches target, and if one is found,
+// sets target to that error value and returns true. Otherwise, it returns false.
+//
+// The tree consists of err itself, followed by the errors obtained by repeatedly
+// calling its Unwrap() error or Unwrap() []error method. When err wraps multiple
+// errors, As examines err followed by a depth-first traversal of its children.
+//
+// An error matches target if the error's concrete value is assignable to the value
+// pointed to by target, or if the error has a method As(any) bool such that
+// As(target) returns true. In the latter case, the As method is responsible for
+// setting target.
+//
+// As panics if target is not a non-nil pointer to either a type that implements
+// error, or to any interface type; the compiler refuses such a target where it can
+// see its type.
+func As(err error, target any) bool {
+	if err == nil {
+		return false
+	}
+	if target == nil {
+		panic("errors: target cannot be nil")
+	}
+	var w walk
+	for ; err != nil; err = w.next(err) {
+		if asTarget(err, target) {
+			return true
+		}
+		if x, ok := err.(aser); ok && x.As(target) {
+			return true
+		}
+	}
+	return false
+}
+
+// asTarget reports whether err's concrete value is assignable to what target points
+// at, and if it is, stores it there. It panics as As does for a target that is no
+// non-nil pointer to an interface or to a type implementing error. The compiler
+// writes it, testing target's table against every table of the empty interface the
+// program makes.
+func asTarget(err error, target any) bool
 `
 
 // stringsSrc is the strings package: the allocation-free part of Go's. It is

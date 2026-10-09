@@ -684,8 +684,8 @@ still design-only.
   is rejected for failing to prove one -- rejection is spent on lifetime.
   A case or an assertion naming an INTERFACE tests every type of the program that
   implements both, and the emitter enumerates them (implementsIface): asked by
-  method NAME only until 2026-10-09, a `Unwrap() []error` met `case interface{
-  Unwrap() error }` and the case was chosen, silent on the board, and a method
+  method NAME only until 2026-10-09, a `Unwrap() []error` met a case of a named
+  `interface{ Unwrap() error }` and was chosen, silent on the board, and a method
   through an embedded interface field did not count. It compares the C signature
   since (methodHasSig: a defined type is a typedef of its own, an array parameter
   compared by its extents). **A question the checker answers for an assignment is
@@ -735,8 +735,36 @@ still design-only.
   imports, transitively -- is emitted into **one C translation unit** in dependency
   order, with top-level symbols mangled into their package's namespace. `import
   "p2"` remains the one dotless, directory-less import, mapping to the hardware
-  intrinsics; `unsafe`, `testing`, `strings`, `bytes` and `math` are likewise bare,
-  module or not. There is no standard library beyond those.
+  intrinsics; `unsafe`, `testing`, `strings`, `bytes`, `math` and `errors` are
+  likewise bare, module or not. There is no standard library beyond those.
+- **The `errors` package** (2026-10-09, `errorsSrc` in build.go, the compiler's part
+  in `internal/octogo/errorspkg.go`): Go's but for Join, held to Go by
+  TestErrorsMatchesGo and TestOnBoardErrors. Two functions have no body. `New` is
+  written at the call (errorsNewC) as the address of an errorString made where the
+  call stands -- a static object and a static interface value in a package
+  variable's initializer (the sentinel), two temporaries of the block in a function,
+  never a compound literal -- and frameRefOf answers errorsNewRef for one in a
+  function, so the lifetime rules treat it as `&T{}`; `defer`/`go errors.New` are the
+  checker's refusal. `asTarget`, As's assignability test, is minted after the last
+  body (mintErrorsAsTarget): target's table against every table of the empty
+  interface (`ifaceConcretes(any)`), rewritten until minting it makes no new one, and
+  its summary is seeded (seedErrorsAsTarget: param 0 stored through param 1), which
+  is what refuses `errors.As(localErr, &gp)`. A target vet's errorsas refuses is the
+  emitter's refusal (checkErrorsAsTarget). Is and As walk iteratively (`walk`, an
+  explicit stack of 8 lists): written recursively as Go's, every goroutine calling
+  errors.Is was refused for want of a stack bound, which only the board build showed
+  -- **a library function a goroutine may call does not recurse**. Building it by
+  hand first as an ordinary package found four faults older than it: the
+  signature-blind interface case (above), a `**T` table named `..._vt_T*`, a struct
+  literal holding an array of interfaces refused (emitLitElement read the array
+  field's ELEMENT type as the field's), and `fill(&le, &p)` with both local refused
+  (checkIntoArgsIn looked through `&p` as through a pointer `p`). Two left open: a
+  callee storing through an ASSERTION of an `any` parameter, `if d, ok :=
+  dst.(**E); ok { *d = v }`, is summarised as storing nothing (an interface
+  parameter is no pointer slot, pointerParamSlots), so `fill(&le, &gp)` keeps a
+  local in a package variable in silence -- a program's own `As(any) bool` method
+  is that shape; and a type switch case of an interface WRITTEN OUT, `case
+  interface{ Unwrap() error }:`, is a syntax error (the assertion parses).
 - **Functions implemented in Spin2** (2026-09-30, `internal/octogo/spin2.go`) are
   OctoGo's .s files, asked for by p2-11's VGA text console (Eric Smith's MIT
   `vga_tile_driver.spin2`, used as it is). A package may carry `.spin2` files; a

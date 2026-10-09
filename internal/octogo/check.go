@@ -2786,6 +2786,14 @@ func (f *File) reportNotACall(s *Scope, head, stmt Node, kw string) bool {
 		f.err(id.Position(), "%s discards result of %s", kw, f.sourceSpan(head.Pos(), stmt.End()))
 		return true
 	}
+	// `defer errors.New(x)`, whose whole effect is the error it makes where the call
+	// stands (errorsNewC) -- made and thrown away. Go takes it; nothing is written for
+	// a deferred or a started one.
+	if steps, _ := callSteps(stmt); len(steps) == 2 && steps[0].sym == Selector && steps[1].sym == CallSuffix &&
+		f.isImportQualifier(s, id.Src()) && f.qualifierOf(id, "errors") && selectorTok(f, steps[0]).Src() == "New" {
+		f.err(id.Position(), "%s errors.New is not supported: the error it makes would be discarded", kw)
+		return true
+	}
 	// Another package's type, `go lib.T(x)`: a conversion as the local one is. The
 	// selector after the qualifier is no method call, and it was let through, to a
 	// trampoline calling the type.
@@ -12030,12 +12038,17 @@ var unsafeFuncs = map[string]bool{
 // unsafeQualifier reports whether a qualifier names the unsafe import of the file
 // that wrote it.
 func (f *File) unsafeQualifier(qualifier Token) bool {
+	return f.qualifierOf(qualifier, "unsafe")
+}
+
+// qualifierOf reports whether a qualifier names the package of the import path.
+func (f *File) qualifierOf(qualifier Token, importPath string) bool {
 	if !qualifier.IsValid() {
 		return false
 	}
 	wf := f.fileOfToken(qualifier)
 	imp, ok := wf.Scope.Declarations[qualifier.Src()].(*ImportDeclaration)
-	return ok && imp.Import != nil && imp.Import.Pkg != nil && imp.Import.Pkg.ImportPath == "unsafe"
+	return ok && imp.Import != nil && imp.Import.Pkg != nil && imp.Import.Pkg.ImportPath == importPath
 }
 
 // isUnsafePointer reports whether a written type is unsafe.Pointer.

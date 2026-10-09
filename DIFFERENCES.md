@@ -91,6 +91,47 @@ Go prints:
 3
 ```
 
+### `errors.Is` and `errors.As` walk at most eight nested `Unwrap() []error`
+
+Go's walk of an error tree recurses into each error that wraps a list, and a goroutine
+whose calls recurse has no stack size the build can read off the program. So the walk
+here keeps the lists it is part way through in a stack of its own, eight deep, and
+panics past that. A chain of `Unwrap() error` is no deeper for any length.
+
+```go
+import "errors"
+
+type Join struct{ errs [1]error }
+
+func (j *Join) Error() string { return "join" }
+
+func (j *Join) Unwrap() []error { return j.errs[:] }
+
+var js [9]Join
+
+var ErrX = errors.New("x")
+
+func main() {
+	js[8].errs[0] = ErrX
+	for i := 0; i < 8; i++ {
+		js[i].errs[0] = &js[i+1]
+	}
+	println(errors.Is(&js[0], ErrX))
+}
+```
+
+OctoGo prints:
+
+```
+panic: errors: Unwrap() []error nested too deeply
+```
+
+Go prints:
+
+```
+true
+```
+
 ### At most seven goroutines run at once
 
 A goroutine is a cog, and the P2 has eight, `main` running on one of them. A `go`
@@ -316,9 +357,9 @@ listed so a Go programmer is not surprised by them. The README lists what is not
 supported.
 
 - **Allocation**: `new`, `make` of anything but a slice or a channel, maps, a
-  function literal capturing its surrounding scope, runtime string concatenation, and
-  `string(b)` of a byte slice variable all need a heap. `Builder` assembles a string
-  in storage the program owns.
+  function literal capturing its surrounding scope, runtime string concatenation,
+  `string(b)` of a byte slice variable and `errors.Join` all need a heap. `Builder`
+  assembles a string in storage the program owns.
 - **A buffered channel of a size that is no constant**, `make(chan T, n)` for a
   variable `n`: the buffer's slots are made where the make stands, with no heap.
 - **A value into an interface**: an interface holds a pointer, `var s Shape = &q`,
@@ -326,8 +367,8 @@ supported.
 - **A method value of a local or of a value receiver**: the receiver is bound at
   compile time, by address.
 - **A reference that outlives its storage**: the address of a local, a slice of a
-  local array, or a channel made in a function, stored where it outlives the function,
-  returned, or handed to a goroutine. Go would move the local to the heap. `main`'s
+  local array, a channel made in a function or an error `errors.New` makes in one,
+  stored where it outlives the function, returned, or handed to a goroutine. Go would move the local to the heap. `main`'s
   outermost block outlives every goroutine, so what is declared or made there may go
   anywhere.
 - **A channel nothing makes**: one declared without a value and never assigned, used

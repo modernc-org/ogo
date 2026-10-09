@@ -1132,14 +1132,16 @@
 // name, and it obeys every rule above: a POINTER goes in, an interface may embed it,
 // and it is one type across every package because it belongs to none of them.
 //
-//	func read() (int, error)      // what a failing operation returns
-//	if err != nil { ... }         // the zero interface carries no table
-//	if err == &ErrTimeout { ... } // a SENTINEL, compared by identity
+//	var ErrTimeout = errors.New("timeout") // a SENTINEL, made where it is declared
+//	func read() (int, error)              // what a failing operation returns
+//	if err != nil { ... }                 // the zero interface carries no table
+//	if errors.Is(err, ErrTimeout) { ... } // recognised by identity, through wrapping
 //
-// With no heap there is no errors.New: a value has to live somewhere, so a package
-// exports a variable of its own error type and hands out its address. That makes a
-// sentinel comparison the ordinary way to recognise one, and a type switch or an
-// assertion the way to read what it carries.
+// An error value has to live somewhere, and there is no heap: errors.New makes its
+// error where the call stands, as make makes a channel, so the sentinel is declared
+// in a package variable and a function returns one of those, or the address of a
+// variable of its own error type. errors.As and a type switch read what an error
+// carries. See the errors package under Packages.
 //
 // A comparison between an interface and a CONCRETE value is one of these: Go
 // converts the concrete side to the interface and compares the same two words, so a
@@ -3237,8 +3239,8 @@
 // program, so the program does not carry it anywhere.
 //
 // The intrinsic packages p2 and unsafe and the packages the compiler carries as
-// source (testing, strings, bytes, math) are imported by their bare names whether or
-// not there is a module, as Go imports its standard library.
+// source (testing, strings, bytes, math, errors) are imported by their bare names
+// whether or not there is a module, as Go imports its standard library.
 //
 // strings and bytes are the allocation-free part of Go's packages of those names:
 // every function either answers a question about what it was given -- a bool, an
@@ -3266,6 +3268,24 @@
 // bits -- and of float32. What it leaves out is MaxFloat64 and
 // SmallestNonzeroFloat64, which name values a 32-bit float cannot hold; and Signbit
 // of a NaN is false, the sign of a NaN not being read.
+//
+// errors is Go's but for Join: New, Is, As, Unwrap and ErrUnsupported, each meaning
+// what Go's of the same name means, held to it as strings is. New makes its error
+// where the call stands, there being no heap to make it on: in a package variable's
+// initializer it is static, which is the sentinel idiom, and in a function it is the
+// block's, so the lifetime rules refuse it where it would outlive the block, as they
+// refuse a composite literal's address -- a function returns a sentinel declared at
+// package level, or the address of a variable of its own error type. Each New is a
+// distinct error whatever its text. As finds what an error's concrete value is
+// assignable to by testing the target's table against every table the program makes
+// for the empty interface, and a target whose type says Go's As would panic -- no
+// pointer, or a pointer to neither an interface nor a type implementing error -- is
+// refused where it is written, as go vet refuses it; one handed through an any panics
+// as Go's does. Is and As walk an error tree depth first as Go's do, with the lists
+// of Unwrap() []error they are part way through kept in a stack of their own, eight
+// deep: Go's recurses, and a goroutine whose calls recurse has no stack size the
+// build can read. Join is left out, the error it returns holding a copy of its
+// arguments, and so is fmt.Errorf, there being no fmt.
 //
 // The main package must declare a function main that takes no arguments and
 // returns no value:

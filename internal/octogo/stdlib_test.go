@@ -645,3 +645,253 @@ func TestOnBoardMath(t *testing.T) {
 			boardAttempts, firstDiff(out, string(want)))
 	}
 }
+
+// errorsExercise calls everything the errors package exports, on the shapes where a
+// plausible implementation and Go's part company: an error tree walked depth first
+// through both Unwrap forms with nil entries, an Is and an As method of the
+// program's own, a target of every kind As takes -- a pointer, an interface, error
+// itself, any -- the first match winning, and New's errors distinct whatever their
+// text. Made in a function and used there, and made in main's outermost block and
+// handed to a goroutine, which outlives nothing it needs. Go's output is the
+// expectation, as for strings.
+const errorsExercise = `import "errors"
+
+var ErrA = errors.New("a")
+
+var ErrA2 = errors.New("a")
+
+var ErrB = errors.New("b")
+
+type PathError struct {
+	Op  string
+	Err error
+}
+
+func (e *PathError) Error() string { return e.Op }
+
+func (e *PathError) Unwrap() error { return e.Err }
+
+type Temp struct{ n int }
+
+func (t *Temp) Error() string { return "temp" }
+
+func (t *Temp) Temporary() bool { return t.n > 0 }
+
+// Is says a Temp matches ErrUnsupported, as an error type may.
+func (t *Temp) Is(target error) bool { return target == errors.ErrUnsupported }
+
+type Join struct{ list []error }
+
+func (j *Join) Error() string { return "join" }
+
+func (j *Join) Unwrap() []error { return j.list }
+
+// Mapped answers As for a *PathError itself, as an error type may.
+type Mapped struct{ pe PathError }
+
+func (m *Mapped) Error() string { return "mapped" }
+
+func (m *Mapped) As(target any) bool {
+	if p, ok := target.(**PathError); ok {
+		*p = &m.pe
+		return true
+	}
+	return false
+}
+
+type temporary interface{ Temporary() bool }
+
+var t0 = Temp{0}
+
+var t7 = Temp{7}
+
+var pa = PathError{"open", ErrA}
+
+var pt = PathError{"read", &t7}
+
+var list = [4]error{ErrB, nil, &pa, &pt}
+
+var join = Join{list[:]}
+
+var mapped = Mapped{PathError{"mapped", ErrB}}
+
+// A join inside a join, then a wrapped one: depth first, so As finds the inner
+// join's *PathError before the outer's.
+var innerList = [2]error{nil, &pa}
+
+var inner = Join{innerList[:]}
+
+var wrapInner = PathError{"wrap", &inner}
+
+var outerList = [3]error{ErrB, &wrapInner, &pt}
+
+var outer = Join{outerList[:]}
+
+func basics() {
+	printf("%v %v %v %v\n", ErrA, ErrA == ErrA2, errors.Is(ErrA, ErrA2), errors.ErrUnsupported)
+	printf("%v %v %v %v\n", errors.Is(nil, nil), errors.Is(ErrA, nil), errors.Is(nil, ErrA), errors.Is(ErrA, ErrA))
+	printf("%v %v %v\n", errors.Unwrap(&pa) == ErrA, errors.Unwrap(ErrA) == nil, errors.Unwrap(&join) == nil)
+}
+
+func trees() {
+	printf("%v %v %v %v\n", errors.Is(&pa, ErrA), errors.Is(&pa, ErrB), errors.Is(&pt, errors.ErrUnsupported), errors.Is(&t0, errors.ErrUnsupported))
+	printf("%v %v %v %v\n", errors.Is(&join, ErrA), errors.Is(&join, ErrB), errors.Is(&join, errors.ErrUnsupported), errors.Is(&join, ErrA2))
+	printf("%v %v %v\n", errors.Is(&outer, ErrA), errors.Is(&outer, errors.ErrUnsupported), errors.Is(&outer, ErrA2))
+	var p *PathError
+	ok := errors.As(&outer, &p)
+	printf("%v %v\n", ok, p.Op)
+	var tp *Temp
+	ok = errors.As(&outer, &tp)
+	printf("%v %v\n", ok, tp.n)
+}
+
+func targets() {
+	var p *PathError
+	ok := errors.As(&join, &p)
+	printf("%v %v\n", ok, p.Op)
+	var tp *Temp
+	ok = errors.As(&pa, &tp)
+	printf("%v %v\n", ok, tp == nil)
+	ok = errors.As(&join, &tp)
+	printf("%v %v\n", ok, tp.n)
+	var tmp temporary
+	ok = errors.As(ErrA, &tmp)
+	printf("%v %v\n", ok, tmp == nil)
+	ok = errors.As(&pt, &tmp)
+	printf("%v %v\n", ok, tmp.Temporary())
+	var e error
+	ok = errors.As(&pt, &e)
+	printf("%v %v\n", ok, e == &pt)
+	var a any
+	ok = errors.As(&pa, &a)
+	printf("%v %v\n", ok, a == any(&pa))
+	ok = errors.As(&mapped, &p)
+	printf("%v %v %v\n", ok, p.Op, errors.As(nil, &p))
+}
+
+func local() bool {
+	err := errors.New("local")
+	var e error = err
+	return errors.Is(e, err) && !errors.Is(e, ErrA) && e.Error() == "local"
+}
+
+func report(err error, done chan bool) {
+	printf("%v %v\n", err, errors.Is(err, err))
+	done <- true
+}
+
+func main() {
+	basics()
+	trees()
+	targets()
+	printf("%v\n", local())
+	err := errors.New("main")
+	done := make(chan bool)
+	go report(err, done)
+	<-done
+}
+`
+
+// errorsGoTwin is stringsGoTwin for the errors exercise.
+func errorsGoTwin(src string) string {
+	src = strings.Replace(src, `import "errors"`, "package main\n\nimport (\n\t\"errors\"\n\t\"fmt\"\n)", 1)
+	return printfCall.ReplaceAllString(src, "fmt.Printf(")
+}
+
+// TestErrorsMatchesGo is TestStringsMatchesGo for the errors package.
+func TestErrorsMatchesGo(t *testing.T) {
+	cc := ""
+	for _, c := range []string{"cc", "gcc", "clang"} {
+		if p, err := exec.LookPath(c); err == nil {
+			cc = p
+			break
+		}
+	}
+	if cc == "" {
+		t.Skip("no C compiler found; skipping the compare-with-Go test")
+	}
+	if _, err := exec.LookPath("go"); err != nil {
+		t.Skip("no go tool found; skipping the compare-with-Go test")
+	}
+	shim, err := filepath.Abs(filepath.Join("testdata", "hostp2"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	dir := t.TempDir()
+	goSrc := filepath.Join(dir, "twin.go")
+	if err := os.WriteFile(goSrc, []byte(errorsGoTwin(errorsExercise)), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	want, err := exec.Command("go", "run", goSrc).CombinedOutput()
+	if err != nil {
+		t.Fatalf("go run: %v\n%s", err, want)
+	}
+	fsys := fstest.MapFS{"main.ogo": &fstest.MapFile{Data: []byte(errorsExercise)}}
+	pkg, err := Build(-1, []string{"main.ogo"}, fsys)
+	if err != nil {
+		t.Fatalf("Build: %v", err)
+	}
+	var buf bytes.Buffer
+	if err := EmitC(pkg, &buf, Checked()); err != nil {
+		t.Fatalf("EmitC: %v", err)
+	}
+	csrc := filepath.Join(dir, "main.c")
+	if err := os.WriteFile(csrc, buf.Bytes(), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	bin := filepath.Join(dir, "prog")
+	ccOut, err := exec.Command(cc, "-std=gnu11", "-fwrapv", "-Wall", "-Wextra",
+		"-Wno-unused-function", "-Wno-format", "-I", shim, "-o", bin, csrc, "-lpthread").CombinedOutput()
+	if err != nil {
+		t.Fatalf("cc: %v\n%s\n--- emitted ---\n%s", err, ccOut, buf.String())
+	}
+	if len(bytes.TrimSpace(ccOut)) != 0 {
+		t.Errorf("cc warned:\n%s", ccOut)
+	}
+	got, err := exec.Command(bin).CombinedOutput()
+	if err != nil {
+		t.Fatalf("run: %v\n%s", err, got)
+	}
+	if g, w := strings.ReplaceAll(string(got), "\r\n", "\n"), string(want); g != w {
+		t.Errorf("errors differs from Go's:\n%s", firstDiff(g, w))
+	}
+}
+
+// TestOnBoardErrors runs the same exercise on real hardware: the tree walks are
+// calls through interface tables and As's test of its target a chain of table
+// comparisons the compiler writes, which the two C compilers need not agree about.
+func TestOnBoardErrors(t *testing.T) {
+	port := os.Getenv("OGO_BOARD_PORT")
+	if port == "" {
+		t.Skip("set OGO_BOARD_PORT (e.g. /dev/ttyUSB0) to run the on-board tests")
+	}
+	if _, err := exec.LookPath("go"); err != nil {
+		t.Skip("no go tool found; skipping the compare-with-Go test")
+	}
+	ogo := buildOgoCLI(t)
+	dir := t.TempDir()
+	goSrc := filepath.Join(dir, "twin.go")
+	if err := os.WriteFile(goSrc, []byte(errorsGoTwin(errorsExercise)), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	want, err := exec.Command("go", "run", goSrc).CombinedOutput()
+	if err != nil {
+		t.Fatalf("go run: %v\n%s", err, want)
+	}
+	bin := filepath.Join(dir, "prog.binary")
+	if err := boardBuild(ogo, dir, "prog", errorsExercise, bin, ""); err != nil {
+		t.Fatalf("build: %v", err)
+	}
+	var out string
+	var matched bool
+	for attempt := 0; attempt < boardAttempts && !matched; attempt++ {
+		if attempt > 0 {
+			t.Logf("retry %d/%d (transient serial flake)", attempt, boardAttempts-1)
+		}
+		out, matched = boardLoad(ogo, port, bin, string(want))
+	}
+	if !matched {
+		t.Errorf("board output does not match Go's after %d attempts:\n%s",
+			boardAttempts, firstDiff(out, string(want)))
+	}
+}

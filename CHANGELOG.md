@@ -18,19 +18,40 @@ shipped section tells a reader on that version that they have behaviour they do 
 
 ## Unreleased
 
+### Language
+
+- **The `errors` package**: `New`, `Is`, `As`, `Unwrap` and `ErrUnsupported`, each
+  meaning what Go's does, checked by running the same program under Go and on the
+  board. `New` makes its error where the call stands, there being no heap: a
+  sentinel, `var ErrTimeout = errors.New("timeout")`, is static, and an error made
+  in a function may be used there and is refused where it would outlive the
+  function, as the address of a composite literal is. `Is` and `As` walk a tree of
+  wrapped errors depth first through `Unwrap() error` and `Unwrap() []error`, and
+  honour an `Is` or `As` method of the program's own; `As` takes a pointer to an
+  interface, to `error`, to `any` or to a type implementing `error`, and a target
+  `go vet` would refuse is refused where it is written. `Join` and `fmt.Errorf` are
+  not provided, and `Unwrap() []error` may nest eight deep (DIFFERENCES.md).
+
 ### Fixed
 
 - **A type switch case or an assertion naming an interface asks each method's
   signature**, not only its name. The types such a case tests are every type of the
-  program implementing both interfaces, and a type whose `Unwrap() []error` met
-  `case interface{ Unwrap() error }:` was taken for one: the case chosen and
-  `v.(I)` true, silent on the host and the board, and a call through it reading a
-  result of another type. And a method a type has through an embedded interface
-  field counts, as it does when the value is stored: a `struct{ J }` was no `I` to a
-  case or an assertion where `J`'s method was `I`'s, also in silence.
+  program implementing both interfaces, and a type whose `Unwrap() []error` met a
+  case of a `type wrapper interface{ Unwrap() error }` was taken for one: the case
+  chosen and `v.(I)` true, silent on the host and the board, and a call through it
+  reading a result of another type. And a method a type has through an embedded
+  interface field counts, as it does when the value is stored: a `struct{ J }` was
+  no `I` to a case or an assertion where `J`'s method was `I`'s, also in silence.
 - **A pointer to a pointer goes into an interface**: `any(&p)` for a `p *T`, what
   `errors.As` is handed in Go, named its table after the C type and did not compile.
   It is held, asserted back with `a.(**T)` and printed by `%T` as Go does.
+- **A struct literal holding an array of interfaces**, `W{[2]error{&e, nil}}`, was
+  refused, "cannot use this value as error in a literal", in a function, a package
+  initializer and a return alike.
+- **A callee storing through the address of the caller's own pointer variable**,
+  `fill(&le, &p)` with both `le` and `p` local, was refused as though the store went
+  into whatever `p` pointed at; `errors.As(err, &p)` is that call. A `p` outliving
+  `le`'s block is still refused.
 
 ## v0.54.0
 

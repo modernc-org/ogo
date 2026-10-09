@@ -320,14 +320,7 @@ broken.
 
 **Does not work yet**, in rough order of how likely you are to hit it:
 
-* **There is no `errors` package**, so no `errors.New`, `fmt.Errorf`, `errors.Is` or
-  `errors.As`. The predeclared `error` itself works — `func read() (int, error)`,
-  `err != nil`, `err.Error()`, an interface embedding it, a type switch on it — but a
-  value has to live somewhere, and with no heap that means a package-level variable
-  of your own error type whose address you return. A caller recognises one by
-  comparing against it, `err == &dev.ErrTimeout`, which is what `errors.Is` does for
-  a sentinel anyway.
-* **The standard library is six packages.** `strings` is the allocation-free part
+* **The standard library is seven packages.** `strings` is the allocation-free part
   of Go's — the functions that answer a question about a string or return a
   substring of one, each meaning exactly what Go's of the same name means, checked
   by running the same program under Go — and `bytes` is the same part of Go's for
@@ -337,7 +330,12 @@ broken.
   `Inf`, `NaN`, `IsNaN`, `IsInf`, `Signbit`, Go's mathematical constants and the
   limits of the integer types and of `float32` — and what it leaves out is
   `MaxFloat64` and `SmallestNonzeroFloat64`, which name values a 32-bit float
-  cannot hold. `p2` wraps thirty-three intrinsics
+  cannot hold. `errors` is Go's but for `Join` (and there is no `fmt.Errorf`): `New`
+  makes its error where the call stands, there being no heap, so a sentinel,
+  `var ErrTimeout = errors.New("timeout")`, is declared at package level and a
+  function returns one of those; `errors.New` in a function makes an error that
+  function may use and not return. `Is`, `As` and `Unwrap` walk a tree of wrapped
+  errors as Go's do. `p2` wraps thirty-three intrinsics
   (pin control, smart pins including the ADC, timing and the clock, the serial line
   in both directions, the hardware locks, the cog's LUT RAM), `testing` is Go's `*testing.T`
   for logging, failing and skipping (no subtests, `Cleanup` or benchmarks yet), and `unsafe` has `unsafe.Pointer`, `Add`, `Slice` and

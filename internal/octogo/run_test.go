@@ -97,6 +97,40 @@ func main() {
 		want: "torn: 0\n",
 	},
 	{
+		// A struct literal holding an ARRAY of interfaces, `multi{[2]error{&ge, nil}}`:
+		// the field's C type is its element's, and emitLitElement handed the whole
+		// array literal to the interface conversion, which refused it -- "cannot use
+		// this value as error in a literal" -- in a function, a package initializer
+		// and a return alike. Met by an error type keeping the errors it joins.
+		name: "a struct literal holding an array of interfaces",
+		src: `type E struct{ n int }
+
+func (e *E) Error() string { return "e" }
+
+type multi struct {
+	tag  int
+	errs [2]error
+}
+
+type grid struct{ rows [2][2]error }
+
+var ge = E{4}
+
+var pkg = multi{1, [2]error{&ge, nil}}
+
+func mk(err error) multi { return multi{2, [2]error{nil, err}} }
+
+func main() {
+	m := multi{3, [2]error{&ge, &ge}}
+	n := mk(&ge)
+	g := grid{[2][2]error{{nil, &ge}, {&ge, nil}}}
+	println(pkg.tag, pkg.errs[0] != nil, pkg.errs[1] == nil, m.errs[1].Error(), n.errs[0] == nil, n.errs[1] == error(&ge))
+	println(g.rows[0][0] == nil, g.rows[0][1] == error(&ge), g.rows[1][0].Error())
+}
+`,
+		want: "1 true true e true true\ntrue true e\n",
+	},
+	{
 		// A type switch case or an assertion naming an INTERFACE tests every type of
 		// the program that implements both interfaces, and the emitter enumerated
 		// them by method NAME: a *T2 whose M returns a Count was taken for an IA,

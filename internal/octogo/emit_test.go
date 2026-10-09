@@ -18347,3 +18347,166 @@ func main() { println(f()) }
 		})
 	}
 }
+
+// TestEmitCErrorsPackage: errors.New in a function makes its error in the block
+// the call stands in (errorsNewC), held there by the lifetime rules as a composite
+// literal's address is: returned, stored in a package variable or kept past its
+// loop's body, it is refused, and used where it is made it is no reference leaving
+// anything. Made in a package variable's initializer it is static, and in main's
+// outermost block it outlives every cog. errors.As's target is refused where its type
+// says Go's As panics on it (checkErrorsAsTarget, go vet's errorsas), and the error
+// As stores through it is asked where it would outlive (seedErrorsAsTarget) -- and
+// a target of the caller's own pointer variable, `&p`, is that variable's storage,
+// which a store through it was once taken to look past (checkIntoArgsIn).
+func TestEmitCErrorsPackage(t *testing.T) {
+	const head = `import "errors"
+
+type E struct{ n int }
+
+func (e *E) Error() string { return "e" }
+
+type V struct{ n int }
+
+func (v V) Error() string { return "v" }
+
+type temporary interface{ Temporary() bool }
+
+var ge = E{1}
+
+var gerr error = &ge
+
+var gp *E
+
+var g error
+
+var ErrX = errors.New("x")
+`
+	for _, test := range []struct {
+		name, src string
+		want      string // "" means the program must be accepted
+	}{
+		{"New returned", `func f() error { return errors.New("x") }
+
+func main() { _ = f() }
+`, "cannot return an error made by errors.New in this function"},
+		{"New stored in a package variable", `func f() { g = errors.New("x") }
+
+func main() { f() }
+`, "cannot store an error made by errors.New in this function"},
+		{"New held by a local, stored", `func f() {
+	e := errors.New("x")
+	g = e
+}
+
+func main() { f() }
+`, "cannot store local e"},
+		{"New kept past its loop's body", `func main() {
+	var keep error
+	for i := 0; i < 2; i++ {
+		e := errors.New("x")
+		keep = e
+	}
+	_ = keep
+}
+`, "does not outlive the block"},
+		{"New used where it is made", `func f() bool {
+	e := errors.New("x")
+	return errors.Is(e, e) && e.Error() == "x"
+}
+
+func main() { _ = f() }
+`, ""},
+		{"New in main's outermost block", `func show(e error, d chan bool) { println(e.Error()); d <- true }
+
+func main() {
+	e := errors.New("x")
+	g = e
+	d := make(chan bool)
+	go show(e, d)
+	<-d
+}
+`, ""},
+		{"New in package initializers", `var tab = [2]error{errors.New("a"), ErrX}
+
+type W struct{ errs [2]error }
+
+var w = W{[2]error{ErrX, errors.New("b")}}
+
+func main() { println(tab[0].Error(), w.errs[1].Error()) }
+`, ""},
+		{"As of a nil target", `func main() { _ = errors.As(gerr, nil) }
+`, "second argument to errors.As must be a non-nil pointer"},
+		{"As of a pointer to a type implementing no error", `func main() { var x E; _ = errors.As(gerr, &x) }
+`, "second argument to errors.As must be a non-nil pointer"},
+		{"As of no pointer to error", `func main() { var p *E; _ = errors.As(gerr, p) }
+`, "second argument to errors.As must be a non-nil pointer"},
+		{"As of a pointer to an int", `func main() { var n int; _ = errors.As(gerr, &n) }
+`, "second argument to errors.As must be a non-nil pointer"},
+		{"As of a pointer to a value implementing error", `func main() { var v V; _ = errors.As(gerr, &v) }
+`, ""},
+		{"As of a pointer to an interface", `func main() { var t temporary; _ = errors.As(gerr, &t) }
+`, ""},
+		{"As of a local's error into a package variable", `func f() {
+	le := E{1}
+	var err error = &le
+	_ = errors.As(err, &gp)
+}
+
+func main() { f() }
+`, "it is stored through gp, which outlives this function"},
+		{"As of a local's error into a local", `func f() int {
+	le := E{3}
+	var err error = &le
+	var p *E
+	if errors.As(err, &p) {
+		return p.n
+	}
+	return 0
+}
+
+func main() { _ = f() }
+`, ""},
+		{"As of a local's error into an outer block's local", `func f() int {
+	var p *E
+	if true {
+		le := E{3}
+		var err error = &le
+		_ = errors.As(err, &p)
+	}
+	return p.n
+}
+
+func main() { _ = f() }
+`, "which outlives the block local le is declared in"},
+		{"a callee storing through the address of a local pointer", `func fill(src *E, dst **E) { *dst = src }
+
+func f() int {
+	le := E{3}
+	var p *E
+	fill(&le, &p)
+	return p.n
+}
+
+func main() { _ = f() }
+`, ""},
+		{"New deferred", `func main() { defer errors.New("x") }
+`, "defer errors.New is not supported"},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			src := head + "\n" + test.src
+			fsys := fstest.MapFS{"main.ogo": &fstest.MapFile{Data: []byte(src)}}
+			pkg, err := Build(-1, []string{"main.ogo"}, fsys)
+			if err == nil {
+				err = EmitC(pkg, io.Discard, Checked())
+			}
+			switch {
+			case test.want == "" && err != nil:
+				t.Errorf("refused: %v\n%s", err, src)
+			case test.want != "" && err == nil:
+				t.Errorf("accepted, want %q\n%s", test.want, src)
+			case test.want != "" && !strings.Contains(err.Error(), test.want):
+				t.Errorf("got %v, want %q", err, test.want)
+			}
+		})
+	}
+}

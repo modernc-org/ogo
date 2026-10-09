@@ -6526,6 +6526,11 @@ func emitProgram(pkg *Package, w io.Writer, opts []EmitOption, rename map[string
 	// naming the method a failed assertion to an interface found missing.
 	e.mintPanicIfaces()
 	e.mintAssertMiss()
+	// And errors.As's test of its target, which asks every table of the empty
+	// interface the program makes.
+	if e.mintErrorsAsTarget(); e.err != nil {
+		return nil, e.err
+	}
 
 	// A channel's helpers call ogo_panic and the P2 lock/wait intrinsics, so both
 	// must be requested before the include list is taken.
@@ -7618,6 +7623,7 @@ type emitter struct {
 	chanCells           []string                // file-scope static cell declarations for locally declared channels, discovered while emitting bodies (see emitLocalChanCell)
 	selectRots          []string                // file-scope counters where each select of two clauses or more starts its tests (emitSelect)
 	pkgLitObjects       []string                // file-scope static objects that give a package initializer's &T{...} its storage (see pkgLitObject)
+	errorsAsTarget      bool                    // the errors package is in the program, so its asTarget is written after the last body (mintErrorsAsTarget)
 	chanCellN           int                     // counter minting unique cell names, program-wide like makeN
 	chanSiteInit        []string                // what package initialization does first: each make site's lock taken, each package-level cell made (emitMakeChan)
 	chanLockN           int                     // counter minting the make sites' lock variables
@@ -12348,6 +12354,7 @@ func (e *emitter) collectCrossParams(ast []int32) {
 			return
 		}
 		e.seedSpin2Cross(d)
+		e.seedErrorsAsTarget(d)
 	})
 	// A function LITERAL is a function, and was summarised as nothing: called where
 	// it stands, through a variable or by a defer, `func(xs []int) { g = xs }(a[:])`
@@ -21503,8 +21510,10 @@ func (e *emitter) emitLitElement(v Node, expect structField, brace bool) {
 	// pointer standing here has to become {data, table} the way it does at an
 	// assignment or an argument. Put in raw, the C compiler refused the literal --
 	// "expected _struct__Shape but got pointer to _struct__Rect" -- so `Box{&gr}`
-	// did not compile though Go accepts it.
-	if e.isIfaceCType(expectType) {
+	// did not compile though Go accepts it. Not an ARRAY of interfaces, whose ctype
+	// is its element's: `multi{[2]error{&ge, nil}}` handed the array literal to
+	// ifaceBraceC as one interface and was refused.
+	if e.isIfaceCType(expectType) && expect.dim.bound == "" {
 		text, ok := e.ifaceBraceC(expectType, v.ast)
 		if !ok {
 			e.fail("cannot use this value as %s in a literal: an interface holds a pointer here, "+
@@ -35438,6 +35447,18 @@ func (e *emitter) emitCallExpr(recv string, suffix []Node) bool {
 			return true
 		}
 	}
+	// `New(text)` in the errors package's own source, ErrUnsupported's initializer:
+	// written at the call (errorsNewC).
+	if len(suffix) == 1 && suffix[0].sym == CallSuffix && recv == "New" && e.curPkgPrefix == errorsPrefix {
+		if args := e.callArgExprs(suffix[0].ast); len(args) == 1 {
+			text, ok := e.errorsNewC(args[0], discard)
+			if !ok {
+				return false
+			}
+			e.emit(text)
+			return true
+		}
+	}
 	// An UNQUALIFIED call to a math intrinsic, which happens only inside the math
 	// package's own source: Round and Trunc are written in OctoGo over Floor, Ceil
 	// and Abs. Without this they would emit calls to math_Floor, which is declared
@@ -35804,6 +35825,22 @@ func (e *emitter) emitCallExpr(recv string, suffix []Node) bool {
 			e.emitMathArgs(e.mangle("math", method), suffix[1].ast)
 			e.emit(")")
 			return true
+		}
+		if prefix, ok := e.importQualifiers[recv]; ok && prefix == errorsPrefix {
+			// errors.New, written at the call (errorsNewC), and the target errors.As
+			// is given, asked where its type is seen (checkErrorsAsTarget).
+			args := e.callArgExprs(suffix[1].ast)
+			switch {
+			case method == "New" && len(args) == 1:
+				text, ok := e.errorsNewC(args[0], discard)
+				if !ok {
+					return false
+				}
+				e.emit(text)
+				return true
+			case method == "As" && !e.checkErrorsAsTarget(args):
+				return false
+			}
 		}
 		if prefix, ok := e.importQualifiers[recv]; ok {
 			// A call into an imported user package: the exported function is emitted
@@ -51940,6 +51977,8 @@ func (r frameRef) advice() string {
 		return "declare the backing array at package scope"
 	case r.origin == chanCellOrigin:
 		return "make the channel in a package variable's declaration, var ch = make(chan T), or in main"
+	case r.origin == errorsNewOrigin:
+		return "declare the error in a package variable, var errX = errors.New(...), and use that"
 	case r.origin == tempOrigin:
 		return "assign the value to a package variable and use that"
 	}
@@ -52038,6 +52077,11 @@ func (e *emitter) frameRefAny(ast []int32) (frameRef, bool) {
 	// stands in (emitMakeChan), so it reaches this frame as `&T{...}` does.
 	if _, ok := e.makeChanElem(ast); ok && !e.pkgScope {
 		return chanMakeRef(), true
+	}
+	// So is an error from errors.New in a function: what it points at is a
+	// temporary of the block the call stands in (errorsNewC).
+	if _, ok := e.errorsNewArg(ast); ok && !e.pkgScope {
+		return errorsNewRef(), true
 	}
 	// And so is what make allocates in a function: a backing array of the frame.
 	// Only a declaration from make recorded it (emitMakeSliceVar), so `s = make([]int,
@@ -53817,6 +53861,15 @@ func (e *emitter) checkIntoArgsIn(intos []uint32, who string, args []Node) {
 			// it belongs to without the function ever returning.
 			outlives := "this function"
 			storage, local, sure := e.storageBehind(tgt)
+			// An argument that ADDRESSES its root, `&p` or `&x.f`, stores into the
+			// root's own storage, not into what a pointer root points at: read through
+			// storageBehind, `fill(&le, &p)` for a local `p *E` was a store into
+			// whatever p held and refused, though p dies with le -- and errors.As(err,
+			// &p) is that call. addrOfRoot answers only where the address is the
+			// root's own (`&p.f` through a pointer it declines).
+			if _, isAddr := e.addrOfRoot(args[j].ast); isAddr {
+				storage, local, sure = tgt, e.isFrameVar(tgt), true
+			}
 			switch {
 			case e.isPackageVar(tgt) || !local || !sure:
 			case e.blockDepthOf(r.name) > e.blockDepthOf(storage):
