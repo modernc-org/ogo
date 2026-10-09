@@ -17,11 +17,11 @@ func (r *R) M() int { return r.w }
 
 var r R
 
-var fns chan func()
+var fns = make(chan func())
 
-var xs chan []int
+var xs = make(chan []int)
 
-var ok1 chan int
+var ok1 = make(chan int)
 
 func typeSwitch() {
 	var i I = &r

@@ -4,7 +4,7 @@
 // brace, as a switch clause's and a block's may: `select { case v = <-ch: a = 1 }`
 // did not parse, CommClause taking a list of statements each of which ended in one.
 
-var ch chan int
+var ch = make(chan int)
 
 func main() {
 	var a, v int

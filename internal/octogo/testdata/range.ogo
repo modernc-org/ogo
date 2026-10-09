@@ -38,7 +38,7 @@ func int_two_vars() {
 // single variable holds the ELEMENT -- a channel has no index to put in a first one
 // -- so a second is refused, as it is for a range over an integer.
 func over_channel() {
-	var ch chan int
+	var ch = make(chan int)
 	for v := range ch {
 		println(v)
 	}

@@ -23,7 +23,7 @@ var gd Desc
 
 var ps [2]unsafe.Pointer
 
-var ch chan unsafe.Pointer
+var ch = make(chan unsafe.Pointer)
 
 func id(p unsafe.Pointer) unsafe.Pointer { return p }
 

@@ -20,7 +20,7 @@ type Bus struct {
 	fs  chan func(int) int
 }
 
-var reqs [2]chan Req
+var reqs = [2]chan Req{make(chan Req), make(chan Req)}
 
 var b Bus
 

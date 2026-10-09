@@ -5,9 +5,9 @@
 
 type Job func(k int) int
 
-var work chan Job
+var work = make(chan Job)
 
-var raw chan func(k int) int
+var raw = make(chan func(k int) int)
 
 func ok() {
 	a := <-work

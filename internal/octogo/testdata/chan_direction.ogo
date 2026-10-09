@@ -5,8 +5,8 @@
 
 type Source <-chan int
 
-var work chan int
-var results chan int
+var work = make(chan int)
+var results = make(chan int)
 
 func producer(out chan<- int, n int) {
 	for i := 0; i < n; i++ {

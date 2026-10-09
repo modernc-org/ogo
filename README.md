@@ -42,10 +42,9 @@ func blinkWorker(pin int, rateChan chan int) {
 }
 
 func main() {
-	// A channel is created by its declaration. OctoGo has no allocator, so
-	// make(chan int) is rejected: the declaration is what allocates the
-	// rendezvous cell and acquires its hardware lock.
-	var rateChan chan int
+	// A channel is made as Go makes one. Its rendezvous cell is a static or a
+	// frame's, not a heap's, and main's outlives every cog.
+	rateChan := make(chan int)
 
 	// Spawns directly to a new hardware Cog!
 	go blinkWorker(56, rateChan)
@@ -183,8 +182,8 @@ the **Status** section below is the shorter answer to what works today, and
 [CHANGELOG.md](CHANGELOG.md) records what changed in each release — including the
 cases where a new release rejects a program the last one accepted.
 [DIFFERENCES.md](DIFFERENCES.md) lists what builds both as OctoGo and as Go and runs
-differently — `float64` precision, how a channel is made, a panic and its deferred
-calls, among others — each with a program and what each compiler makes of it, run
+differently — `float64` precision, a panic and its deferred calls, among
+others — each with a program and what each compiler makes of it, run
 as a test on a P2 board and under Go.
 
 ## **Architecture & Design**
@@ -193,7 +192,7 @@ OctoGo is designed to be a zero-cost abstraction over the Propeller 2's unique 8
 
 * **Native Hardware Concurrency:** The go keyword transpiles to a scoped block that claims a pooled slot holding the goroutine's stack and its arguments, then invokes \_cogstart\_C. The pool has one slot per available Cog, so the P2's 8-cog limit is enforced by construction; exceeding it is a runtime panic.
 
-* **Hardware-Backed Channels:** Channels (chan) are not software queues. Each is a rendezvous cell in Hub RAM guarded by one of the P2's native hardware locks (0-15), giving atomic, lock-step transfer. A channel is created by its declaration, not by make: there is no allocator to make it with. Past the sixteenth channel the locks are shared rather than exhausted, which costs contention and nothing else — twenty-four channels each completing a rendezvous run correctly on a P2-EDGE.  
+* **Hardware-Backed Channels:** Channels (chan) are not software queues. Each is a rendezvous cell in Hub RAM guarded by one of the P2's native hardware locks (0-15), giving atomic, lock-step transfer. A channel is made as Go makes one, `make(chan T)`, its cell static at package level and the frame's in a function, with no allocator behind it; a buffered channel is not supported yet. Past the sixteenth channel the locks are shared rather than exhausted, which costs contention and nothing else — twenty-four channels each completing a rendezvous run correctly on a P2-EDGE.  
 * **Zero-Allocation & No GC:** OctoGo operates without a Garbage Collector. Memory scoping is strict (Hub RAM vs. Cog RAM), and slices are implemented as non-escaping views over fixed arrays.  
 * **Select Statements:** The select statement is transpiled into an efficient polling loop, utilizing flexprop's \_waitx yield instructions to prevent bus starvation during non-blocking hardware polling.
 
@@ -303,9 +302,9 @@ broken.
   `go driver.Poll(ch)`. A `select`
   multiplexes receives and one send, `case ch <- v:`, and a receive clause may take
   the comma-ok form, `case v, ok := <-ch:`, whose `ok` is false once the channel is
-  closed. Channels may be declared at
-  package level as well as locally, and the P2's locks are reachable directly through
-  the `p2` package.
+  closed. A channel is made with `make(chan T)`, at package level or in a function,
+  and a channel a function makes stays in it -- but for `main`'s, which goroutines
+  may share. The P2's locks are reachable directly through the `p2` package.
 * Runtime traps for out-of-range indexing and slicing, division and remainder by
   zero, a shift by a negative count, appending past a slice's capacity, and cog
   exhaustion, and a **nil pointer dereference**. Each prints
@@ -445,7 +444,7 @@ stops them all, so a buffer declared there may go to a goroutine:
 ```
 func main() {
 	var buf [64]byte
-	var done chan int
+	done := make(chan int)
 	go fill(buf[:], done)   // main's outermost block outlives every cog
 	<-done
 }

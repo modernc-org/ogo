@@ -11,9 +11,9 @@ type Res struct {
 	Out int32
 }
 
-var reqs [2]chan Req
+var reqs = [2]chan Req{make(chan Req), make(chan Req)}
 
-var ress chan Res
+var ress = make(chan Res)
 
 func worker(w int) {
 	select {

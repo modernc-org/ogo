@@ -2,7 +2,7 @@
 // brace: running into the next clause, `case 1: v = 2 default:`, is Go's syntax
 // error, and a switch took it, as a select has since a one-line select parses.
 
-var ch chan int
+var ch = make(chan int)
 
 func main() {
 	var a, v int

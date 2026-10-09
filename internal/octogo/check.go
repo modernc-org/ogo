@@ -16,6 +16,7 @@ import (
 	"slices"
 	"strconv"
 	"strings"
+	"sync/atomic"
 	"unicode"
 )
 
@@ -790,7 +791,81 @@ func (f *File) checkFuncBody(pkg *Scope, n Node) {
 	if len(results) != 0 && !f.blockIsTerminating(body) {
 		f.err(f.tok(body.End()).Position(), "missing return")
 	}
+	for _, vd := range f.localVars {
+		f.reportNeverMade(vd)
+	}
 	f.reportUnusedLocals(body)
+}
+
+// noteChanUse records that a channel variable is the operand of a channel
+// operation, a send, a receive, a close or a range (neverMade).
+func (f *File) noteChanUse(s *Scope, n Node) {
+	if id, ok := f.exprIdent(n); ok {
+		if d, ok := s.findQuiet(id.Src()).(*VarDeclaration); ok && d.isChan {
+			atomic.StoreUint32(&d.chanUse, 1)
+		}
+	}
+}
+
+// noteWritten records that the variable a name resolves to is written, or that its
+// address is taken, which writing through is (neverMade).
+func (f *File) noteWritten(s *Scope, tok Token) {
+	if d, ok := s.findQuiet(tok.Src()).(*VarDeclaration); ok {
+		atomic.StoreUint32(&d.written, 1)
+	}
+}
+
+// neverMade reports a channel variable declared without a value, which nothing
+// writes and whose address nothing takes, and which a send, a receive, a close or a
+// range uses: it is nil, as in Go, and every operation on it blocks for ever. Go
+// takes such a program and its runtime may say "all goroutines are asleep"; on the
+// board it stops in silence. Until 2026-10-09 the declaration made the channel, so
+// this is also the program written for that rule.
+func (f *File) neverMade(vd *VarDeclaration) bool {
+	if vd == nil || !vd.isChan || !vd.noValue || vd.Name() == "_" {
+		return false
+	}
+	return atomic.LoadUint32(&vd.chanUse) != 0 && atomic.LoadUint32(&vd.written) == 0
+}
+
+// reportNeverMade says neverMade's finding where the channel is declared.
+func (f *File) reportNeverMade(vd *VarDeclaration) {
+	if !f.neverMade(vd) {
+		return
+	}
+	nm, how := vd.Name(), "make(chan T)"
+	if tn, ok := vd.declType.(*TypeNodeChan); ok {
+		if elem := f.typeNodeString(tn.TypeNode, false); elem != "" {
+			how = "make(chan " + elem + ")"
+		}
+		if tn.Dir == bothDir {
+			how = "var " + nm + " = " + how
+		} else {
+			how = "var " + nm + " " + f.typeNodeString(tn, false) + " = " + how
+		}
+	}
+	f.err(vd.token.Position(), "channel %s is never made: a channel declared without a value is nil, and a send or a receive on it blocks for ever; make it, %s", nm, how)
+}
+
+// reportNeverMadeChans is reportNeverMade for the package's variables, once every
+// body that may write one has been checked. An exported variable of a package
+// another imports may be made by the importer, so only the main package's and an
+// unexported one are asked.
+func (p *Package) reportNeverMadeChans() {
+	var vds []*VarDeclaration
+	for _, d := range p.Scope.Declarations {
+		if vd, ok := d.(*VarDeclaration); ok && vd.VarSpec != nil && vd.VarSpec.file != nil {
+			if p.ImportPath == "" || !token.IsExported(vd.Name()) {
+				vds = append(vds, vd)
+			}
+		}
+	}
+	slices.SortFunc(vds, func(a, b *VarDeclaration) int {
+		return strings.Compare(a.token.Position().String(), b.token.Position().String())
+	})
+	for _, vd := range vds {
+		vd.VarSpec.file.reportNeverMade(vd)
+	}
 }
 
 // noteRef records the local variable a name read at tok resolves to in s, for
@@ -3846,6 +3921,7 @@ func (f *File) checkRange(s *Scope, kw string, fi forInfo) {
 // COUNT: `for range f` over a func value became `int t = f;`, a function pointer
 // assigned to an int, and the C compiler reported it about a line nobody wrote.
 func (f *File) checkRangeable(s *Scope, expr Node) {
+	f.noteChanUse(s, expr)
 	if f.isNilOperand(expr) {
 		f.err(f.tok(expr.Pos()).Position(), "cannot range over nil")
 		return
@@ -3913,6 +3989,9 @@ func (f *File) checkRangeTarget(s *Scope, v Node) {
 	f.checkNames(s, v)
 	// A bare target is written, not used, as a statement's is: `var at int` stored
 	// only by `for at, last = range t` was no "declared and not used".
+	if bare {
+		f.noteWritten(s, id)
+	}
 	if bare && f.writeTargets != nil {
 		f.writeTargets[id.Position().String()] = true
 	}
@@ -4820,6 +4899,7 @@ func (f *File) checkForPost(s *Scope, results []retResult, n Node) {
 		// recorded, and every variable named j counted as used.
 		if id, ok := f.exprSoleIdent(l); ok && op == ASSIGN {
 			f.writeTargets[id.Position().String()] = true
+			f.noteWritten(s, id)
 		} else if fac, ok := f.soleFactorOf(l); ok {
 			for c := range it(fac.ast) {
 				if c.sym == 0 && f.ch(c.tok) == IDENT {
@@ -8211,6 +8291,9 @@ func (f *File) checkRecvIntoTarget(s *Scope, head, postfixComm, v Node) {
 				ok = false
 			}
 		}
+		if ok {
+			f.noteWritten(s, id)
+		}
 		if _, hasKind := f.identKind(s, id); ok && !hasKind && id.Src() != "_" {
 			// A target of a Kind is commRecvAssignTarget's.
 			f.checkAssignType(s, id, v, true)
@@ -8583,7 +8666,7 @@ func (f *File) declareLocalVar(s *Scope, n Node) {
 		}
 		ts := declaredAt(s, names)
 		for i, nm := range names {
-			vd := &VarDeclaration{declaration: declaration{token: nm}, kind: kind, hasKind: hasKind, isPtr: isPtr, typeName: typeName, typeQual: typeQual, elemKind: elemKind, hasElemKind: hasElemKind, isChan: isChan, chanElemKind: chanElemKind, hasChanElemKind: hasChanElemKind, chanElemName: chanElemName, chanElemQual: chanElemQual, chanElemPtr: chanElemPtr, elemTypeName: elemName, elemTypeNode: elemTypeNode, funcSig: funcSig, isFunc: funcSig != nil, declType: declType, declScope: ts}
+			vd := &VarDeclaration{declaration: declaration{token: nm}, kind: kind, hasKind: hasKind, isPtr: isPtr, typeName: typeName, typeQual: typeQual, elemKind: elemKind, hasElemKind: hasElemKind, isChan: isChan, chanElemKind: chanElemKind, hasChanElemKind: hasChanElemKind, chanElemName: chanElemName, chanElemQual: chanElemQual, chanElemPtr: chanElemPtr, elemTypeName: elemName, elemTypeNode: elemTypeNode, funcSig: funcSig, isFunc: funcSig != nil, declType: declType, declScope: ts, noValue: len(initExprs) == 0}
 			if declType == nil && len(names) == len(initExprs) {
 				// No type written: the variable takes the one its own initializer
 				// gives it, exactly as ":=" does. A multi-result call feeding
@@ -9111,6 +9194,7 @@ func (f *File) checkAssignment(s *Scope, head, postfix Node) {
 		for i, tok := range lhs {
 			if !lhsSuffixed[i] && tok.IsValid() {
 				f.writeTargets[tok.Position().String()] = true
+				f.noteWritten(s, tok)
 			}
 		}
 	}
@@ -11003,6 +11087,9 @@ func (f *File) checkSend(s *Scope, chTok Token, fields []Token, indexed, tailInd
 		return
 	}
 	d, ok := s.find(chTok.Src()).(*VarDeclaration)
+	if ok && len(fields) == 0 && !indexed {
+		atomic.StoreUint32(&d.chanUse, 1)
+	}
 	if !ok {
 		// A channel a package EXPORTS, `work.Out <- v`. The qualifier names no
 		// variable of this scope, so the declaration is the imported package's --
@@ -11392,6 +11479,7 @@ func (f *File) importedVarDecl(s *Scope, qual, member string) (*VarDeclaration, 
 // channel of a named type declared elsewhere is therefore checked for kind and not
 // for identity, which is narrower than the same send within a package.
 func (f *File) checkSendTo(s *Scope, d *VarDeclaration, at Token, valNode Node) {
+	atomic.StoreUint32(&d.chanUse, 1)
 	elem, hasElem, isChan := f.chanElemOf(d)
 	if !isChan {
 		f.err(at.Position(), "invalid operation: cannot send to non-channel")
@@ -11431,6 +11519,7 @@ func (f *File) checkRecvAssign(s *Scope, target Token, rhs Node) {
 // that checkUnaryExpr would otherwise apply is made here explicitly.
 func (f *File) checkReceiveOperand(s *Scope, chanExpr Node) {
 	f.checkNames(s, chanExpr)
+	f.noteChanUse(s, chanExpr)
 	_, _, isChan := f.exprChan(s, chanExpr)
 	if isChan && f.exprChanDir(s, chanExpr) == sendDir {
 		f.err(f.tok(chanExpr.Pos()).Position(), "invalid operation: cannot receive from send-only channel %s", f.exprSource(chanExpr))
@@ -19804,6 +19893,10 @@ func (f *File) checkUnaryExpr(s *Scope, n Node) {
 	// modelled, so the check stops here in either case.
 	switch inner := ops[len(ops)-1]; f.unaryOp(s, inner) {
 	case AND:
+		// What is written through the address is the variable's.
+		if root, _, ok := f.factorRoot(fac); ok {
+			f.noteWritten(s, root)
+		}
 		f.checkAddressable(s, inner, fac)
 		// An address under an operator that takes a number or a bool, `-&a16`,
 		// `!&n`: the C negated a pointer.
@@ -19865,6 +19958,7 @@ func (f *File) checkUnaryExpr(s *Scope, n Node) {
 		return
 	case ARROW:
 		_, _, isChan := f.exprChan(s, fac)
+		f.noteChanUse(s, fac)
 		if isChan && f.exprChanDir(s, fac) == sendDir {
 			f.err(f.tok(inner.Pos()).Position(), "invalid operation: cannot receive from send-only channel %s", f.exprSource(fac))
 			return
@@ -21073,6 +21167,11 @@ func (f *File) exprChan(s *Scope, n Node) (elem Kind, hasElem, isChan bool) {
 // convChanTypeNode is the channel type a conversion converts to, `Pipe(bi)` for a
 // `type Pipe chan int`, and nil for anything else.
 func (f *File) convChanTypeNode(s *Scope, n Node) TypeNode {
+	// `make(chan T)`: the channel it makes. Asked here, the last answer of every
+	// question about a channel's type (exprChan, exprChanTypeNode, inferChanFrom).
+	if tn := f.makeChanType(s, n); tn != nil {
+		return tn
+	}
 	t, ok := f.litOrConvType(s, n)
 	if !ok {
 		return nil
@@ -23994,6 +24093,10 @@ func (f *File) checkFactorNames(s *Scope, n Node) {
 			// backing array -- no heap allocation -- so it is allowed. Every other
 			// make form and all of new remain rejected below.
 			f.checkMakeBounds(s, suffix)
+		case id.Src() == "make" && hasSuffix && f.isChanMake(s, suffix):
+			// make(chan T) makes a channel: a cell of the frame, or a static one at
+			// package level, whose lock the make's site takes once (emitMakeChan).
+			f.checkChanMake(s, suffix)
 		case id.Src() == "make" || id.Src() == "new":
 			// The Go dynamic-allocation builtins have no place on a
 			// zero-allocation, no-GC target; reported even in call position,
@@ -24845,6 +24948,113 @@ func (f *File) isSliceMake(s *Scope, suffix Node) bool {
 	return false
 }
 
+// makeArgsOf answers the arguments of the call a suffix is, when it is one call and
+// nothing after it.
+func (f *File) makeArgsOf(suffix Node) (args []Node, ok bool) {
+	steps := slices.Collect(it(suffix.ast))
+	if len(steps) != 1 || steps[0].sym != CallSuffix {
+		return nil, false
+	}
+	argList, _, isCall := f.callInfo(suffix)
+	if !isCall {
+		return nil, false
+	}
+	for a := range it(argList.ast) {
+		if a.sym == Expression {
+			args = append(args, a)
+		}
+	}
+	return args, len(args) != 0
+}
+
+// isChanMake reports whether a call suffix of make is make(chan T, ...): its first
+// argument written as a channel type.
+func (f *File) isChanMake(s *Scope, suffix Node) bool {
+	args, ok := f.makeArgsOf(suffix)
+	return ok && f.chanTypeFactor(s, args[0]) != nil
+}
+
+// checkChanMake checks make(chan T) and make(chan T, n). A channel here holds one
+// value in flight, a rendezvous, so the size may only be a constant 0: a buffer of n
+// values is not supported yet.
+func (f *File) checkChanMake(s *Scope, suffix Node) {
+	args, _ := f.makeArgsOf(suffix)
+	if fac := unwrapSingle(args[0]); fac.sym == Factor {
+		f.typ(s, fac) // the element's names, reported where they are written
+	}
+	switch {
+	case len(args) > 2:
+		f.err(f.tok(args[2].Pos()).Position(), "invalid operation: make(%s) expects 1 or 2 arguments; found %d", f.exprSource(args[0]), len(args))
+	case len(args) == 2:
+		if cv, ok := f.constNumeric(s, args[1]); ok {
+			if iv := constant.ToInt(cv); iv.Kind() == constant.Int && constant.Sign(iv) == 0 {
+				return
+			}
+		}
+		f.err(f.tok(args[1].Pos()).Position(), "buffered channels are not supported yet: a channel holds one value in flight here; make(%s) makes one", f.exprSource(args[0]))
+	}
+}
+
+// makeChanType is the channel type `make(chan T)` makes, when n is that call of the
+// builtin make, and nil for anything else.
+func (f *File) makeChanType(s *Scope, n Node) TypeNode {
+	fac, ok := f.soleFactorOf(n)
+	if !ok {
+		return nil
+	}
+	if root, suffixed, ok := f.factorRoot(fac); !ok || !suffixed || root.Src() != "make" || s.find("make") != nil {
+		return nil
+	}
+	var suffix Node
+	for c := range it(fac.ast) {
+		if c.sym == FactorSuffix {
+			suffix = c
+		}
+	}
+	args, ok := f.makeArgsOf(suffix)
+	if !ok {
+		return nil
+	}
+	return f.chanTypeFactor(s, args[0])
+}
+
+// chanTypeFactor reads an argument written as a channel type, `chan T` or `chan<-
+// T`, or naming a defined one, `Pipe` for a `type Pipe chan int`, as the type it
+// names, saying nothing: it is asked wherever a value's type is, and what is wrong
+// with the element is said once, by checkChanMake.
+func (f *File) chanTypeFactor(s *Scope, n Node) TypeNode {
+	fac := unwrapSingle(n)
+	if fac.sym == 0 && f.ch(fac.tok) == IDENT {
+		tn := &TypeNodeIdent{Name: f.tok(fac.tok), Index: fac.tok}
+		if _, isType := s.findQuiet(tn.Name.Src()).(*TypeDeclaration); !isType {
+			return nil
+		}
+		if ch, _ := f.chanTypeUnder(s, tn); ch != nil {
+			return tn
+		}
+		return nil
+	}
+	if fac.sym != Factor {
+		return nil
+	}
+	kids := slices.Collect(it(fac.ast))
+	if len(kids) < 2 || kids[0].sym != 0 || f.ch(kids[0].tok) != CHAN {
+		return nil
+	}
+	for _, k := range kids[1:] {
+		if k.sym != Type && !(k.sym == 0 && f.ch(k.tok) == ARROW) {
+			return nil // a conversion, `chan int(x)`, or a step after the type
+		}
+	}
+	n0 := len(f.errList)
+	tn, _ := f.typ(s, fac).(*TypeNodeChan)
+	f.errList = f.errList[:n0]
+	if tn == nil {
+		return nil
+	}
+	return tn
+}
+
 // namesSliceType reports whether an argument expression is an identifier naming a
 // DEFINED slice type, following a chain of definitions ("type Alias List" over
 // "type List []int").
@@ -25146,6 +25356,7 @@ func (f *File) checkCallee(s *Scope, callee Token, argList Node, args []Node) {
 	// builtin is asked for by name, it being declared nowhere a user's close could
 	// not shadow it.
 	if callee.Src() == "close" && len(args) == 1 && s.find("close") == nil {
+		f.noteChanUse(s, args[0])
 		if _, _, isChan := f.exprChan(s, args[0]); isChan && f.exprChanDir(s, args[0]) == recvDir {
 			f.err(f.tok(args[0].Pos()).Position(), "invalid operation: cannot close receive-only channel %s", f.exprSource(args[0]))
 		}
@@ -28104,8 +28315,14 @@ func (f *File) declareVar(s *Scope, n Node) {
 			if s.Kind != PackageScope {
 				valid = n.End() + 1
 			}
+			noValue := true
+			for c := range it(n.ast) {
+				if c.sym == ExpressionList {
+					noValue = false
+				}
+			}
 			for _, nm := range names {
-				if err := s.add(&VarDeclaration{declaration: declaration{token: nm, valid: valid}, VarSpec: vs}); err != nil {
+				if err := s.add(&VarDeclaration{declaration: declaration{token: nm, valid: valid}, VarSpec: vs, noValue: noValue}); err != nil {
 					f.err(nm.Position(), "%v", err)
 				}
 			}
@@ -30728,6 +30945,11 @@ func (f *File) lenOperandType(s *Scope, n Node) (typeAt, bool) {
 // element of a call's result, so `var s string = f()[0]` and `if f()[0] {` went to
 // the C compiler for a slice, an array or a pointer to an array, named or not.
 func (f *File) valueTypeAt(s *Scope, n Node) (typeAt, bool) {
+	// `make(chan T)`: the channel it makes, so a variable declared from one has
+	// the type a variable declared `chan T` has, for every rule that walks one.
+	if tn := f.makeChanType(s, n); tn != nil {
+		return typeAt{tn, s, f}, true
+	}
 	return f.operandType(s, n, true)
 }
 

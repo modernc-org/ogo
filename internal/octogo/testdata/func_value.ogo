@@ -57,7 +57,7 @@ func mismatch() {
 // compiler, which the target's builds with a warning.
 type sqHolder struct{ fn func(int, int) int }
 
-var sends chan func(int, int) int
+var sends = make(chan func(int, int) int)
 
 // ERROR "cannot use sq \(value of type func\(n int\) int\) as func\(int, int\) int value in variable declaration"
 var pkgChosen func(int, int) int = sq

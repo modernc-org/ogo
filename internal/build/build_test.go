@@ -612,7 +612,7 @@ type rec struct {
 var (
 	shared rec
 	lk     int
-	done   chan bool
+	done   = make(chan bool)
 )
 
 func writer() {

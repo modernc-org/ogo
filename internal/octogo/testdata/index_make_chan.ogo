@@ -18,9 +18,9 @@ var p P
 
 var s = "hello"
 
-var ch chan int
+var ch = make(chan int)
 
-var ch2 chan int
+var ch2 = make(chan int)
 
 func makes() {
 	// ERROR "invalid argument: length and capacity swapped"

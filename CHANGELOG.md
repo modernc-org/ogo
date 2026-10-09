@@ -20,6 +20,19 @@ shipped section tells a reader on that version that they have behaviour they do 
 
 ### Language
 
+- **A channel is made as Go makes one, with `make(chan T)`**, and a declared
+  channel is nil: `var ch chan int` used to be a live channel, its cell made by the
+  declaration, one per declaration site, which Go does not do. `make(chan T)`,
+  `make(chan T, 0)` and `make(C)` of a defined channel type make one anywhere a
+  value stands: in a package variable's initializer its cell is static, in a
+  function it is the block's, and the lifetime rules hold it there as they hold a
+  composite literal's address -- a channel a function makes is not returned, kept
+  in a package variable, handed to a goroutine or sent on a channel, but for
+  `main`'s outermost block, which outlives every cog. Every cell one `make` makes
+  shares that make's hardware lock, taken before the program starts, so a `make`
+  in a loop or in a function called often costs no lock of its own. A nil channel
+  is Go's: a send or a receive on one blocks for ever, a select clause on one is
+  never ready, and closing one panics.
 - **Main's outermost block outlives every cog**, so what a variable declared
   directly in `main`'s body holds, and what a statement there makes, may go to a
   goroutine, be sent on a channel and be stored in a package variable: `var buf
@@ -29,6 +42,25 @@ shipped section tells a reader on that version that they have behaviour they do 
   cogs first, and a panic stops them all. Not from a block inside `main`, a loop's
   body or a function literal, nor in a program that calls its own `main` or has a
   `goto` in it.
+
+### Behaviour changes
+
+- **A channel declared without a value is nil, as in Go, and every program that
+  relied on the declaration making it has to make it**: `var ch chan int` becomes
+  `var ch = make(chan int)` at package level and `ch := make(chan int)` in a
+  function; a struct's channel field and an array of channels are made element by
+  element, `W{in: make(chan int)}`, `[2]chan int{make(chan int), make(chan int)}`.
+  A channel variable nothing makes or assigns that a send, a receive, a `close` or
+  a `range` uses is refused, "channel ch is never made", with the line to write: on
+  the board it would block for ever in silence. A channel field or element nothing
+  makes is nil, and is not refused.
+- **A channel a function other than `main` makes stays in that function**: handed
+  to a goroutine, sent on a channel, returned or stored in a package variable, it is
+  refused as the address of a local is, where the declared channel of before was a
+  static cell shared by every run of the function. Make it at package level, or in
+  `main` and pass it down.
+- **A buffered channel is refused**, `make(chan T, n)` for an `n` other than 0:
+  "buffered channels are not supported yet".
 
 ## v0.51.0
 

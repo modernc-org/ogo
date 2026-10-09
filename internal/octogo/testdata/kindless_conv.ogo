@@ -7,7 +7,7 @@ func one() int { return 1 }
 
 func main() {
 	f := one
-	var ch chan int
+	var ch = make(chan int)
 	var xs []int
 	var a [2]float64
 	// ERROR "cannot convert f to type int: it is a function"

@@ -11,7 +11,7 @@ func (b Box) flag() bool { return b.on }
 
 // A send of a struct field and of an array element names the field and element.
 func sendOperands() {
-	var ch chan int
+	var ch = make(chan int)
 	var b Box
 	var a [3]bool
 

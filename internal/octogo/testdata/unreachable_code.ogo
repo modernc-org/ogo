@@ -113,7 +113,7 @@ func stop() {
 // A labeled break out of a select, a switch or a nested loop ends the labeled loop,
 // so what follows it is reached: the commonest way a Go program leaves a select
 // loop, which was refused here as unreachable code.
-var uch chan int
+var uch = make(chan int)
 
 func leavesSelectLoop() int {
 	got := 0

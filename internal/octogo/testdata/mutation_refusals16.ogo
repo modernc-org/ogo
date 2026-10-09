@@ -22,7 +22,7 @@ var gp P
 
 var gr R
 
-var ch chan int
+var ch = make(chan int)
 
 func addresses() {
 	// ERROR "cannot use &gp.n \(an address\) as int value in assignment"

@@ -9,7 +9,7 @@ var cfg = struct {
 	name      string
 }{115200, 62, "uart"}
 
-var sig chan struct{}
+var sig = make(chan struct{})
 
 func pair() struct{ a, b int } {
 	return struct{ a, b int }{3, 4}

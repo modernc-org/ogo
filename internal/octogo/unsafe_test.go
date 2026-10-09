@@ -142,7 +142,7 @@ func main() { run() }
 	done <- true
 }
 
-var done chan bool
+var done = make(chan bool)
 
 func run() {
 	var x int

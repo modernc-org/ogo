@@ -65,41 +65,6 @@ Go prints:
 2147483648
 ```
 
-### A channel is made by its declaration, one per declaration site
-
-There is no heap to `make` a channel in, so `var ch chan T` is a live channel, its
-cell allocated statically. A local declaration names one cell for every run of the
-function: two calls, or two cogs running it at once, share it. In Go, `var ch chan T`
-is a nil channel and every `make` a new one. Making a channel as Go makes one is
-planned: `make(chan T)`, a cell of the frame in a function, refused where it would
-outlive the call.
-
-```go
-func newChan() chan int {
-	var ch chan int
-	return ch
-}
-
-func main() {
-	a, b := newChan(), newChan()
-	close(a)
-	_, ok := <-b
-	println(a == b, ok)
-}
-```
-
-OctoGo prints:
-
-```
-true false
-```
-
-Go prints:
-
-```
-panic: close of nil channel
-```
-
 ### `append` does not grow a slice past its capacity
 
 A slice's backing is fixed when it is made. An `append` that does not fit panics, where
@@ -132,7 +97,7 @@ A goroutine is a cog, and the P2 has eight, `main` running on one of them. A `go
 statement finding none free panics.
 
 ```go
-var block chan int
+var block = make(chan int)
 
 func wait() { <-block }
 
@@ -314,8 +279,8 @@ order.
 <!-- go-varies: Go chooses at random -->
 
 ```go
-var a chan int
-var b chan int
+var a = make(chan int)
+var b = make(chan int)
 
 func main() {
 	close(a)
@@ -350,17 +315,24 @@ These are compile-time errors, so they cannot change what a program does. They a
 listed so a Go programmer is not surprised by them. The README lists what is not yet
 supported.
 
-- **Allocation**: `new`, `make` of anything but a slice, maps, a function literal
-  capturing its surrounding scope, runtime string concatenation, and `string(b)` of a
-  byte slice variable all need a heap. `Builder` assembles a string in storage the
-  program owns.
+- **Allocation**: `new`, `make` of anything but a slice or a channel, maps, a
+  function literal capturing its surrounding scope, runtime string concatenation, and
+  `string(b)` of a byte slice variable all need a heap. `Builder` assembles a string
+  in storage the program owns.
+- **A buffered channel**, `make(chan T, n)` for an `n` other than 0: a channel holds
+  one value in flight, a rendezvous.
 - **A value into an interface**: an interface holds a pointer, `var s Shape = &q`,
   never `= q`. Go would copy `q` and this target has nowhere to copy it.
 - **A method value of a local or of a value receiver**: the receiver is bound at
   compile time, by address.
-- **A reference that outlives its storage**: the address of a local, or a slice of a
-  local array, stored where it outlives the function. Go would move the local to the
-  heap.
+- **A reference that outlives its storage**: the address of a local, a slice of a
+  local array, or a channel made in a function, stored where it outlives the function,
+  returned, or handed to a goroutine. Go would move the local to the heap. `main`'s
+  outermost block outlives every goroutine, so what is declared or made there may go
+  anywhere.
+- **A channel nothing makes**: one declared without a value and never assigned, used
+  in a send, a receive, a `close` or a `range`. Go takes it, and every operation on it
+  blocks for ever.
 - **Unreachable code** is an error, which `go vet` only reports.
 - **`defer` in a loop**, and **`go` of a builtin**, `go println(x)`.
 - **`recover`** and **complex numbers** are planned. Generics are an open question.

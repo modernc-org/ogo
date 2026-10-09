@@ -7,7 +7,7 @@
 // A send's channel operand is resolved: undefined, blank and non-channel operands
 // are each reported, a channel is accepted.
 func sendOperand() {
-	var ch chan int
+	var ch = make(chan int)
 	var n int
 
 	ch <- 1
@@ -28,7 +28,7 @@ func sendOperand() {
 // A bare receive statement's channel operand is resolved and required to be a
 // channel, mirroring a receive assignment.
 func recvOperand() {
-	var ch chan int
+	var ch = make(chan int)
 	var n int
 
 	<-ch

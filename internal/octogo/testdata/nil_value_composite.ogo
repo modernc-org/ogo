@@ -28,7 +28,7 @@ func bad() P {
 
 var gp P
 var ga A
-var ch chan P
+var ch = make(chan P)
 
 // ERROR "cannot use nil as P value in variable declaration"
 var pkg P = nil

@@ -57,7 +57,7 @@ type rec struct {
 var (
 	shared rec
 	lk     int
-	done   chan bool
+	done = make(chan bool)
 )
 
 func writer() {
@@ -97,6 +97,75 @@ func main() {
 		want: "torn: 0\n",
 	},
 	{
+		// A channel is made as Go makes one (emitMakeChan), and a declared one is
+		// nil, as in Go: a select clause on a nil channel is never ready, which is
+		// how a merge turns off the clause of an input that has closed, the
+		// commonest use of a nil channel there is. A make of a defined channel
+		// type, a make with a buffer of 0, and a make in a loop's body, one cell
+		// made again each pass, beside it. Measured against Go on the host and on a
+		// P2-EDGE before it was written.
+		name: "a nil channel turns a select clause off",
+		src: `type Pipe chan int
+
+var evens = make(chan int)
+
+func gen(c chan int, from, n int) {
+	for i := 0; i < n; i++ {
+		c <- from + 2*i
+	}
+	close(c)
+}
+
+func main() {
+	odds := make(chan int)
+	go gen(evens, 0, 3)
+	go gen(odds, 1, 4)
+	a, b := evens, odds
+	sum, count := 0, 0
+	for a != nil || b != nil {
+		select {
+		case v, ok := <-a:
+			if !ok {
+				a = nil
+				continue
+			}
+			sum += v
+			count++
+		case v, ok := <-b:
+			if !ok {
+				b = nil
+				continue
+			}
+			sum += v
+			count++
+		}
+	}
+	println(sum, count)
+
+	var never chan int = nil
+	select {
+	case <-never:
+		println("never")
+	default:
+		println("nil clause skipped")
+	}
+
+	p := make(Pipe, 0)
+	var q Pipe
+	println(p != nil, q == nil)
+	for i := 0; i < 3; i++ {
+		c := make(chan int)
+		select {
+		case c <- i:
+		default:
+			println("no taker", i)
+		}
+	}
+}
+`,
+		want: "22 7\nnil clause skipped\ntrue true\nno taker 0\nno taker 1\nno taker 2\n",
+	},
+	{
 		// main's outermost block outlives every cog (outlivesCogs): its local array,
 		// a local's address, a slice from make and a composite literal's address go
 		// to goroutines, a local's address goes on a channel and into a package
@@ -105,8 +174,8 @@ func main() {
 		name: "main's outermost block outlives every cog",
 		src: `type T struct{ n int }
 
-var done chan int
-var ptrs chan *int
+var done = make(chan int)
+var ptrs = make(chan *int)
 var gp *int
 var kept *int
 
@@ -166,7 +235,7 @@ func main() {
 		name: "%T of directional channels",
 		src: `type Src <-chan int
 
-var c chan int
+var c = make(chan int)
 
 func send(c chan<- int) { printf("%T\n", c) }
 func recv(c <-chan int) { printf("%T\n", c) }
@@ -176,12 +245,12 @@ func pick(p <-chan (<-chan int)) <-chan (<-chan int) { return p }
 func main() {
 	send(c)
 	recv(c)
-	var a chan (<-chan int)
-	var b chan<- <-chan int
-	var d <-chan (<-chan int)
-	var e chan (chan<- int)
-	var g chan Src
-	var h <-chan chan int
+	var a = make(chan (<-chan int))
+	var b chan<- <-chan int = make(chan (<-chan int))
+	var d <-chan (<-chan int) = make(chan (<-chan int))
+	var e = make(chan (chan<- int))
+	var g = make(chan Src)
+	var h <-chan chan int = make(chan chan int)
 	printf("%T|%T|%T|%T|%T|%T|%T\n", a, b, d, e, g, h, c)
 	printf("%T\n", pick(d))
 	defer printf("%T\n", b)
@@ -195,9 +264,9 @@ func main() {
 		// the element's arrow after the channel's. A named element type had to
 		// stand in for one before.
 		name: "a channel of receive-only channels, written as Go writes it",
-		src: `var pipe chan (<-chan int)
-var a chan int
-var b chan int
+		src: `var pipe = make(chan (<-chan int))
+var a = make(chan int)
+var b = make(chan int)
 
 func source(out chan<- int, v int) {
 	out <- v
@@ -288,10 +357,10 @@ func main() {
 		// exact; a channel never ready is passed over, and a default runs only when
 		// no clause is ready.
 		name: "a select takes its ready clauses in turn",
-		src: `var a chan int
-var b chan int
-var c chan int
-var d chan int
+		src: `var a = make(chan int)
+var b = make(chan int)
+var c = make(chan int)
+var d = make(chan int)
 
 func pick() string {
 	r := ""
@@ -354,7 +423,7 @@ type P struct{ x, y int }
 
 type holder struct{ t *testing.T }
 
-var done chan bool
+var done = make(chan bool)
 
 var reached int
 
@@ -539,7 +608,7 @@ func mk() T {
 	return 2
 }
 
-var ch chan int
+var ch = make(chan int)
 
 func send() {
 	println("sending")
@@ -1513,7 +1582,7 @@ func (c *Counter) Next() (int32, bool) {
 
 var g Counter
 var held func() (int32, bool)
-var ch chan int32
+var ch = make(chan int32)
 
 type Box struct {
 	fn func() (int32, bool)
@@ -1574,7 +1643,7 @@ func main() {
 
 var box Box
 var pkgFn func(int32) (int32, bool)
-var ch chan int32
+var ch = make(chan int32)
 
 func two(v int32) (int32, bool) { return v * 2, true }
 
@@ -1661,7 +1730,7 @@ func (s *Sweep) Name() string { return "sweep" }
 
 var src Sweep
 var iface Source
-var ch chan int32
+var ch = make(chan int32)
 
 func drain(s Source) int32 {
 	sum := int32(0)
@@ -1808,8 +1877,9 @@ func sender(ch chan Temp) { ch <- Boil }
 
 func worker(ch chan Temp, t Temp) { ch <- t.Half() }
 
+var ch = make(chan Temp)
+
 func partA() {
-	var ch chan Temp
 	go sender(ch)
 	got := <-ch
 	printf("recv %v %d\n", got, got.Int())
@@ -1882,7 +1952,6 @@ func partC() {
 	*pt = *pt + Two
 	*pt *= Two
 	printf("field %v %v\n", p.t, gp.t.Abs())
-	var ch chan Temp
 	go sender(ch)
 	select {
 	case v := <-ch:
@@ -2013,7 +2082,7 @@ func deferred(c Cmd) { println("deferred", string(c)) }
 func sender(ch chan Cmd) { ch <- Start }
 
 func main() {
-	var ch chan Cmd
+	var ch = make(chan Cmd)
 	go sender(ch)
 	got := <-ch
 	println("recv", string(got), got.Len())
@@ -2102,7 +2171,7 @@ func sender(c chan Q) {
 }
 
 func main() {
-	var ch chan Q
+	var ch = make(chan Q)
 	go sender(ch)
 	got := <-ch
 	println("recv", got.Int())
@@ -2371,7 +2440,7 @@ func main() {
 		name: "a goroutine's panic stops main",
 		src: `import "p2"
 
-var started chan bool
+var started = make(chan bool)
 
 var stop bool
 
@@ -2510,7 +2579,7 @@ func takep(r *R) int { return r.a + r.s[0] }
 
 func (r R) sum() int { return r.a + r.s[0] + r.s[1] }
 
-var ch chan R
+var ch = make(chan R)
 
 func main() {
 	la := [2]int{3, 4}
@@ -2567,11 +2636,11 @@ func rows(n int) [][2]int {
 	return back[:0]
 }
 
-var ch chan [2]int
+var ch = make(chan [2]int)
 
-var rch chan Row
+var rch = make(chan Row)
 
-var res chan int
+var res = make(chan int)
 
 var ga [2]int
 
@@ -2709,7 +2778,7 @@ func main() {
 		// goroutine needs off the backend's listing and gives the slots that
 		// (internal/build, compileSized); only the board can tell.
 		name: "a goroutine whose locals outgrow the default stack",
-		src: `var out chan int
+		src: `var out = make(chan int)
 
 func work(n int) {
 	var buf [600]int
@@ -3814,11 +3883,11 @@ type P struct{ a, b int }
 var gp = P{5, 6}
 var l = List{21, 22}
 
-var cl chan List
-var cp chan *P
-var cf chan float32
-var cb chan byte
-var done chan int
+var cl = make(chan List)
+var cp = make(chan *P)
+var cf = make(chan float32)
+var cb = make(chan byte)
+var done = make(chan int)
 
 func send() {
 	cl <- l
@@ -5220,7 +5289,7 @@ var gw W
 
 var gxs [3]Counter
 
-var done chan int
+var done = make(chan int)
 
 func run(xs []Counter) {
 	defer (xs[0]).Bump()
@@ -6390,9 +6459,9 @@ func main() {
 		// parentheses. Both were syntax errors in an if and a for, and a send in a
 		// switch.
 		name: "a send and a receive standing alone in a header",
-		src: `var ch chan int
+		src: `var ch = make(chan int)
 
-var back chan int
+var back = make(chan int)
 
 func feed() {
 	for i := 1; i <= 6; i++ {
@@ -6450,7 +6519,7 @@ func main() {
 		// `(f())` was "(f()) evaluated but not used", on a line of its own and,
 		// once a header took a statement, in a header.
 		name: "a call and a receive in parentheses are statements",
-		src: `var ch chan int
+		src: `var ch = make(chan int)
 
 var calls int
 
@@ -6809,7 +6878,7 @@ func two() (int, int) { return k(7), k(8) }
 
 type R struct{ ok bool }
 
-var ch chan int
+var ch = make(chan int)
 
 func send() { ch <- 4 }
 
@@ -7712,9 +7781,9 @@ var table = [2]struct{ k, v int }{{1, 10}, {2, 20}}
 
 var nums [4]int
 
-var sig chan struct{}
+var sig = make(chan struct{})
 
-var events chan struct{ id, code int }
+var events = make(chan struct{ id, code int })
 
 func pair() struct{ a, b int } {
 	return struct{ a, b int }{3, 4}
@@ -7793,7 +7862,7 @@ type Grid struct {
 	n     int
 }
 
-var ch chan P
+var ch = make(chan P)
 
 func takeP(p P) int { return p.x }
 
@@ -8338,8 +8407,8 @@ func supervisor(base int, out chan int, done chan int) {
 }
 
 func main() {
-	var out chan int
-	var done chan int
+	var out = make(chan int)
+	var done = make(chan int)
 
 	go supervisor(1, out, done)
 	go supervisor(3, out, done)
@@ -8372,7 +8441,7 @@ func main() {
 // order is nondeterministic but the SUM is not, so the checksum is stable
 // whatever the interleaving -- which is the point of testing two producers on
 // one hardware-lock rendezvous.
-var ch chan int
+var ch = make(chan int)
 
 const perProducer = 20
 
@@ -8413,8 +8482,8 @@ func main() {
 // filter stage smooths them (a 2-tap moving sum) and rescales, and main
 // aggregates. Each stage is its own cog, chained through channels -- the shape a
 // real sampling-and-processing firmware has.
-var raw chan int
-var filtered chan int
+var raw = make(chan int)
+var filtered = make(chan int)
 
 const nSamples = 12
 
@@ -8757,7 +8826,7 @@ func main() {
 	println(total(shapes[:]), shapes[1].Name())
 
 	// Sent across a cog boundary.
-	var ch chan Shape
+	var ch = make(chan Shape)
 	go feed(ch)
 	got := <-ch
 	println(got.Name(), got.Area())
@@ -9557,9 +9626,9 @@ func main() {
 		// Every line of this prints what real Go prints for the same program,
 		// deferred order included.
 		name: "a function literal after go and defer",
-		src: `var ch chan int
+		src: `var ch = make(chan int)
 
-var done chan int
+var done = make(chan int)
 
 func work(k int) {
 	ch <- k * 2
@@ -9731,7 +9800,7 @@ type Op struct {
 	fn   func(*Point, int)
 }
 
-var done chan int
+var done = make(chan int)
 
 type Worker struct {
 	n int
@@ -10115,11 +10184,11 @@ type named struct {
 	n int
 }
 
-var p ports
+var p = ports{tx: make(chan int), rx: make(chan int)}
 
 var q ports
 
-var nm named
+var nm = named{c: make(Ch)}
 
 func worker() {
 	v := <-p.tx
@@ -10131,8 +10200,7 @@ func tag() {
 }
 
 func main() {
-	// Two variables of one struct type have a channel each: the declaration owns
-	// the cell, so p.tx and q.tx are different channels.
+	// A struct's channel fields, made where the variable is declared.
 	go worker()
 	p.tx <- 21
 	println(<-p.rx)
@@ -10149,7 +10217,7 @@ func main() {
 	go tag()
 	println(<-nm.c)
 
-	// The other variable's channels are its own and were never used.
+	// The other variable's channels were never made, and are nil, as in Go.
 	println(q.name == "")
 }
 `,
@@ -10173,9 +10241,9 @@ func main() {
 	b chan int
 }
 
-var p ports
+var p = ports{make(chan int), make(chan int)}
 
-var done chan int
+var done = make(chan int)
 
 func feedA() { p.a <- 1 }
 
@@ -10256,15 +10324,15 @@ var arr [2]int
 
 var rv Row
 
-var ci chan I
+var ci = make(chan I)
 
-var ca chan [2]int
+var ca = make(chan [2]int)
 
-var cr chan Row
+var cr = make(chan Row)
 
-var idle chan int
+var idle = make(chan int)
 
-var done chan int
+var done = make(chan int)
 
 func drainI() { v := <-ci; done <- v.n() }
 
@@ -10324,7 +10392,7 @@ func main() {
 	done chan int
 }
 
-var ws [2]worker
+var ws = [2]worker{{make(chan int), make(chan int)}, {make(chan int), make(chan int)}}
 
 func run0() {
 	v := <-ws[0].cmd
@@ -10337,9 +10405,8 @@ func run1() {
 }
 
 func main() {
-	// One worker per element, each with channels of its own: the array's
-	// declaration owns a cell per element per field, so ws[0] and ws[1] rendezvous
-	// with different cogs and never with each other.
+	// One worker per element, each with channels of its own, so ws[0] and ws[1]
+	// rendezvous with different cogs and never with each other.
 	go run0()
 	go run1()
 	ws[0].cmd <- 1
@@ -10462,9 +10529,9 @@ func (g Gate) Open() { g <- 1 }
 
 func (g Gate) Wait() int { return <-g }
 
-var c Ch
+var c = make(Ch)
 
-var g Gate
+var g = make(Gate)
 
 func worker() {
 	v := c.Recv()
@@ -10598,7 +10665,7 @@ type s []int
 
 type val float32
 
-var done chan slot
+var done = make(chan slot)
 
 func worker(n int) {
 	done <- slot{id: n, val: n * n}
@@ -10769,7 +10836,7 @@ var Shape_Sq_Area = 5
 
 var Shape_vt_Sq = 6
 
-var ch chan int
+var ch = make(chan int)
 
 var ch_cell = 41
 
@@ -10865,7 +10932,7 @@ func main() {
 	for _, EOF := range []P{{3, 4}} {
 		println(EOF.b)
 	}
-	var auto chan int
+	var auto = make(chan int)
 	go send(auto)
 	println(<-auto)
 	z, w := bump2()
@@ -12080,9 +12147,9 @@ var pool [4][2]int
 
 var rpool [4]Row
 
-var ch chan [2]int
+var ch = make(chan [2]int)
 
-var rch chan Row
+var rch = make(chan Row)
 
 func feed() {
 	ch <- [2]int{1, 2}
@@ -12908,7 +12975,7 @@ func main() {
 
 type Grid [2][2]int
 
-var ch chan Row
+var ch = make(chan Row)
 
 var back [4]Row
 
@@ -13193,9 +13260,9 @@ func main() {
 		// builds, it runs, and it says nothing.
 		//
 		// A channel FIELD a declaration's literal fills is the same bug one level
-		// down, and the nested literal is it two levels down. What still mints a cell
-		// is a declaration that fills nothing -- `var w W`, `W{}`, `W{In{}}` -- which
-		// is where this language's channel-is-storage rule lives.
+		// down, and the nested literal is it two levels down. (Since 2026-10-09 a
+		// declaration makes no channel at all, make does, and a field nothing fills is
+		// nil, as in Go.)
 		name: "a channel declared from another names the same channel",
 		src: `type Ch chan int
 
@@ -13212,13 +13279,13 @@ type Deep struct {
 	in In
 }
 
-var a Ch
+var a = make(Ch)
 
-var b chan int
+var b = make(chan int)
 
-var c chan int
+var c = make(chan int)
 
-var done chan int
+var done = make(chan int)
 
 func sendA() { a <- 1 }
 
@@ -13292,11 +13359,11 @@ type Ports struct {
 	tag int
 }
 
-var p Ports
+var p = Ports{in: In{make(chan int)}, tx: make(chan int)}
 
-var ws [2]Ports
+var ws = [2]Ports{{}, {tx: make(chan int)}}
 
-var done chan int
+var done = make(chan int)
 
 // The channel a send names may be two fields deep, one field deep, or reached
 // through an index. All three are the same channel to the program and were three
@@ -13487,7 +13554,7 @@ type H struct {
 	r Row
 }
 
-var done chan int
+var done = make(chan int)
 
 func (r Row) Send() { done <- r[0] + r[1] }
 
@@ -13921,7 +13988,7 @@ type M struct{}
 
 func (m *M) make1(n int) S { return mk(n) }
 
-var ch chan S
+var ch = make(chan S)
 
 func mk(n int) S {
 	var s S
@@ -14147,15 +14214,15 @@ func main() {
 	v [3]int
 }
 
-var ch chan [3]int
+var ch = make(chan [3]int)
 
-var done chan int
+var done = make(chan int)
 
 var t T
 
 var gw [3]int
 
-var deep chan [2][3]int
+var deep = make(chan [2][3]int)
 
 // The rendezvous cannot copy an array BY VALUE -- C has no array assignment, and a
 // parameter of a typedef'd array type miscompiles here -- so the cell holds the
@@ -14397,7 +14464,7 @@ func main() {
 	fn func(int)
 }
 
-var done chan int
+var done = make(chan int)
 
 func a(n int) { done <- n }
 
@@ -15062,7 +15129,7 @@ type pool struct {
 var back [3]worker
 
 func main() {
-	var ch chan int
+	var ch = make(chan int)
 
 	for i := 0; i < 3; i++ {
 		back[i].id = i + 1
@@ -15209,8 +15276,8 @@ func produce(ch chan int, v int) { ch <- v }
 var back [3]int
 
 func main() {
-	var a chan int
-	var b chan int
+	var a = make(chan int)
+	var b = make(chan int)
 	s := sink{slots: back[:]}
 	n := 0
 	p := &n
@@ -15280,9 +15347,9 @@ var gh H
 
 func geth() *H { return &gh }
 
-var ch chan int
+var ch = make(chan int)
 
-var cha chan [3]int
+var cha = make(chan [3]int)
 
 func feed(n int) {
 	for i := 1; i <= n; i++ {
@@ -15393,12 +15460,12 @@ func main() {
 
 var gbus Bus
 
-var got chan int
+var got = make(chan int)
 
 func take(ch chan int) { got <- <-ch }
 
 func main() {
-	var ch chan int
+	var ch = make(chan int)
 	gbus.ch = ch
 	pch := &ch
 	go take(ch)
@@ -17301,8 +17368,8 @@ func run(in chan int, out chan result) (int, int, int) {
 }
 
 func main() {
-	var in chan int
-	var out chan result
+	var in = make(chan int)
+	var out = make(chan result)
 
 	grand := 0
 	allSeen := 0
@@ -18713,7 +18780,7 @@ func main() {
 
 var lock int
 var counter int
-var finished chan int
+var finished = make(chan int)
 
 func bump() {
 	for i := 0; i < 100; i++ {
@@ -18752,7 +18819,7 @@ func main() {
 		// completion channel, so every one of those fields is now ogo_-prefixed.
 		// The names below are exactly that set.
 		name: "package names matching runtime struct fields",
-		src: `var done chan int
+		src: `var done = make(chan int)
 var used int
 var cog int
 var slot int
@@ -18778,8 +18845,8 @@ func main() {
 		// goroutine. Until this worked the wait had to be spelled "_ = <-ch", or a
 		// value bound and ignored.
 		name: "bare receive statement",
-		src: `var step chan int
-var done chan int
+		src: `var step = make(chan int)
+var done = make(chan int)
 
 func worker() {
 	step <- 1
@@ -19112,24 +19179,25 @@ func main() {
 		want: "1 2\n9\n4\n5\n2\n3\nyes\n8\n7 8\n",
 	},
 	{
-		// A locally declared channel, used across cogs, from a function called
-		// repeatedly. Its cell is a file-scope static -- one per declaration site,
-		// its lock taken once at package init -- rather than a local of the
-		// declaring frame. Both halves of that mattered: the cell used to live on
-		// spawn's stack, so `go worker(ch)` handed another cog a pointer into a frame
-		// spawn was free to leave, and the lock was re-acquired on every call and
-		// never released, so the sixteenth call ran the P2 out of locks.
+		// A make in a function called repeatedly takes no lock of its own: the lock
+		// of each make SITE is taken once at package initialization and shared by the
+		// cells the site makes (emitMakeChan), so decl's twenty makes run on one lock
+		// where re-acquiring one each call, never released, ran the P2 out of locks at
+		// the sixteenth. Until 2026-10-09 a declaration made the channel, a static
+		// cell per declaration site, and spawn handed its own to the goroutine; a
+		// channel a function makes is its frame's now, and goes to no goroutine.
 		name: "local channel across cogs, called repeatedly",
-		src: `func worker(ch chan int, n int) { ch <- n }
+		src: `var res = make(chan int)
+
+func worker(n int) { res <- n }
 
 func spawn(n int) int {
-	var ch chan int
-	go worker(ch, n)
-	return <-ch
+	go worker(n)
+	return <-res
 }
 
 func decl(n int) int {
-	var unused chan int
+	var unused = make(chan int)
 	if n < 0 {
 		<-unused
 	}
@@ -19187,7 +19255,7 @@ func batch(ch chan int, n int) int {
 }
 
 func main() {
-	var ch chan int
+	var ch = make(chan int)
 	sum := 0
 	for i := 1; i <= 20; i++ {
 		go worker(ch, i)
@@ -19294,12 +19362,12 @@ func main() {
 	id int32
 }
 
-var a chan int32
-var b chan samp
-var c chan int32
-var work [2]chan int32
-var rest chan int32
-var quiet chan int32
+var a = make(chan int32)
+var b = make(chan samp)
+var c = make(chan int32)
+var work = [2]chan int32{make(chan int32), make(chan int32)}
+var rest = make(chan int32)
+var quiet = make(chan int32)
 
 func feedA() {
 	for i := int32(1); i <= 4; i++ {
@@ -19396,9 +19464,9 @@ func main() {
 	ok bool
 }
 
-var ch chan int32
-var st chan samp
-var q chan int32
+var ch = make(chan int32)
+var st = make(chan samp)
+var q = make(chan int32)
 
 func feed() {
 	for i := int32(1); i <= 3; i++ {
@@ -19457,9 +19525,9 @@ type Stage struct {
 	k   int
 }
 
-var raw chan int
-var mid chan int
-var done chan int
+var raw = make(chan int)
+var mid = make(chan int)
+var done = make(chan int)
 
 func producer(out Sink, n int) {
 	for i := 1; i <= n; i++ {
@@ -19516,10 +19584,10 @@ func main() {
 		name: "a channel of reply channels, and a conversion to a channel type",
 		src: `type Pipe chan int
 
-var reqs chan chan<- int
-var stop chan chan<- int
-var reply chan int
-var sig chan int
+var reqs = make(chan chan<- int)
+var stop = make(chan chan<- int)
+var reply = make(chan int)
+var sig = make(chan int)
 
 func server(q <-chan chan<- int) {
 	n := 100
@@ -19583,8 +19651,8 @@ func main() {
 		// wrong answer, where Go takes the receive and its zero. The receive, the
 		// comma-ok receive and `for range` all knew; the select's own half did not.
 		name: "a select on a closed channel",
-		src: `var c chan int
-var d chan int
+		src: `var c = make(chan int)
+var d = make(chan int)
 
 func feed() {
 	c <- 7
@@ -19770,8 +19838,8 @@ var errParse parseErr
 var errRange rangeErr
 
 var errs [3]error
-var ch chan error
-var done chan int
+var ch = make(chan error)
+var done = make(chan int)
 
 type job struct {
 	id  int
@@ -19892,8 +19960,8 @@ func main() {
 		// blocking send does and as Go does from inside a select. It used to offer a
 		// value nothing could take and poll until the other clause fired, or for ever.
 		name: "a select send clause on a closed channel panics",
-		src: `var c chan int
-var d chan int
+		src: `var c = make(chan int)
+var d = make(chan int)
 
 func main() {
 	close(c)
@@ -19916,8 +19984,8 @@ func main() {
 		// chosen and panics. Until 2026-10-09 the select panicked on entry whatever
 		// else was ready.
 		name: "a select send clause on a closed channel is chosen in its turn",
-		src: `var c chan int
-var d chan int
+		src: `var c = make(chan int)
+var d = make(chan int)
 
 func main() {
 	close(c)
@@ -19940,8 +20008,8 @@ func main() {
 		// receive clause tested first is ready, so the select takes it and the
 		// closed channel's clause is never reached.
 		name: "a gated select send clause on a closed channel waits its turn",
-		src: `var c chan int
-var d chan int
+		src: `var c = make(chan int)
+var d = make(chan int)
 
 func main() {
 	close(c)
@@ -19971,7 +20039,7 @@ func main() {
 		// guard, address 0 was dereferenced as a cell and the receive "succeeded"
 		// with garbage -- got 0 -- on the board.
 		name: "a receive from a nil channel blocks for ever",
-		src: `var real chan int32
+		src: `var real = make(chan int32)
 
 func bad() {
 	var c chan int32 = nil
@@ -20000,7 +20068,7 @@ func main() {
 		// for switching an arm off. Before the guard the nil arm read address 0,
 		// an always-ready case of zeroes that starved the live channel: 0, not 85.
 		name: "a nil channel disables its select clause",
-		src: `var live chan int32
+		src: `var live = make(chan int32)
 
 func producer() {
 	live <- 42
@@ -20704,7 +20772,7 @@ func main() {
 		// parked is up to which thread runs first, and `idle > 0` printed false
 		// about one host run in a hundred until 2026-09-19.
 		name: "a non-blocking send reaches a parked receiver",
-		src: `var ch chan int32
+		src: `var ch = make(chan int32)
 
 func consumer() {
 	p := int32(0)
@@ -20714,7 +20782,7 @@ func consumer() {
 	done <- p
 }
 
-var done chan int32
+var done = make(chan int32)
 
 func main() {
 	idle := 0
@@ -20747,9 +20815,9 @@ func main() {
 		// receiver, so no two offers ever stand at once -- the shape the old
 		// refusal called unfair.
 		name: "two send clauses feed two sinks",
-		src: `var a chan int32
+		src: `var a = make(chan int32)
 
-var b chan int32
+var b = make(chan int32)
 
 func sink(c chan int32, out chan int32) {
 	t := int32(0)
@@ -20759,9 +20827,9 @@ func sink(c chan int32, out chan int32) {
 	out <- t
 }
 
-var ra chan int32
+var ra = make(chan int32)
 
-var rb chan int32
+var rb = make(chan int32)
 
 func main() {
 	go sink(a, ra)
@@ -20783,7 +20851,7 @@ func main() {
 	{
 		// Nobody ever receives: every pass takes the default, and nothing is sent.
 		name: "a non-blocking send with no receiver takes the default",
-		src: `var ch chan int32
+		src: `var ch = make(chan int32)
 
 func main() {
 	tried := 0
@@ -20806,9 +20874,9 @@ func main() {
 		// which is what lets a gated send in another cog's select see it: two
 		// selects pairing, neither blocking.
 		name: "two selects pair through the waiting count",
-		src: `var ch chan int32
+		src: `var ch = make(chan int32)
 
-var done chan int32
+var done = make(chan int32)
 
 func consumer() {
 	got := int32(0)
@@ -20844,9 +20912,9 @@ func main() {
 		// when the partner parks on its receive, the receive arm drains the
 		// replies, and the default keeps the loop turning.
 		name: "send, receive and default in one select",
-		src: `var in chan int32
+		src: `var in = make(chan int32)
 
-var out chan int32
+var out = make(chan int32)
 
 func partner() {
 	for i := 0; i < 3; i++ {
@@ -21187,7 +21255,7 @@ func main() {
 		// be settled before the cog init() spawns reads it. Board-verified against
 		// Go (round 19).
 		name: "a driver: init spawns a worker over dependency-ordered config",
-		src: `var ch chan int
+		src: `var ch = make(chan int)
 
 var scale = mkScale()
 var offset = 3
@@ -21502,7 +21570,7 @@ type bank struct {
 	name string
 }
 
-var b bank
+var b = bank{q: [nw]chan int32{make(chan int32), make(chan int32), make(chan int32)}, out: make(chan int32)}
 
 func worker(id int32) {
 	// A field element bound to a name, which is how a driver reads once the
@@ -21544,8 +21612,8 @@ type req struct {
 	b  int32
 }
 
-var q [nw]chan req
-var reply chan int32
+var q = [nw]chan req{make(chan req), make(chan req), make(chan req)}
+var reply = make(chan int32)
 
 func apply(r req) int32 {
 	if r.op == 0 {
@@ -21581,9 +21649,8 @@ func main() {
 		}
 		println("round", round, sum)
 	}
-	// A LOCAL array of channels owns a cell per element too, on the same rule: the
-	// declaration owns it.
-	var local [2]chan int32
+	// A LOCAL array of channels, made in main.
+	var local = [2]chan int32{make(chan int32), make(chan int32)}
 	go pair(local[0], local[1])
 	local[0] <- 4
 	println("local", <-local[1])
@@ -21601,8 +21668,8 @@ func pair(in chan int32, out chan int32) { out <- <-in * 5 }
 	rx chan int32
 }
 
-var up chan int32
-var down chan int32
+var up = make(chan int32)
+var down = make(chan int32)
 var p ports
 
 func echo() {
@@ -21654,7 +21721,7 @@ func relay2(c chan int32) {
 	},
 	{
 		name: "a print evaluates every argument before it writes anything",
-		src: `var ch chan int32
+		src: `var ch = make(chan int32)
 
 func f(n int32) int32 {
 	println("  side", n)
@@ -21745,7 +21812,7 @@ func main() {
 }
 
 func main() {
-	var ch chan int
+	var ch = make(chan int)
 	go worker(ch, 1)
 	go worker(ch, 2)
 	go worker(ch, 3)
@@ -21764,7 +21831,7 @@ func main() {
 }
 
 func main() {
-	var ch chan int
+	var ch = make(chan int)
 	x := 0
 	select {
 	case x = <-ch:
@@ -21795,7 +21862,7 @@ func main() {
 }
 
 func main() {
-	var ch chan int
+	var ch = make(chan int)
 	go worker(ch)
 
 	for i := 0; i < 2; i++ {
@@ -21895,7 +21962,7 @@ func main() {
 var a = 2
 var b = a + 3
 var c = five()
-var ch chan int
+var ch = make(chan int)
 var tally int
 
 func init() {
@@ -22217,7 +22284,7 @@ func (g guard) release() { p2.Unlock(g.id) }
 
 var lk guard
 var shared int
-var done chan int
+var done = make(chan int)
 
 func bump(n int) {
 	for i := 0; i < n; i++ {
@@ -22378,8 +22445,8 @@ type cmd struct {
 	arg int
 }
 
-var cmds chan cmd
-var ticks chan int
+var cmds = make(chan cmd)
+var ticks = make(chan int)
 
 func (s state) name() string {
 	switch s {
@@ -22626,9 +22693,9 @@ func main() {
 type Sig chan bool
 type Alias Ch
 
-var gch Ch
-var sig Sig
-var ali Alias
+var gch = make(Ch)
+var sig = make(Sig)
+var ali = make(Alias)
 
 func send(c Ch, n int) { c <- n }
 
@@ -22668,9 +22735,9 @@ func main() {
 		// so the two sides have to make progress against each other; a select that
 		// only ever receives never exercises that.
 		name: "a select that both sends and receives",
-		src: `var out chan int
-var in chan int
-var quit chan int
+		src: `var out = make(chan int)
+var in = make(chan int)
+var quit = make(chan int)
 
 func consumer() {
 	for i := 0; i < 4; i++ {
@@ -22710,10 +22777,10 @@ func main() {
 		// and which select case fires when both are ready, are not specified. What
 		// is specified is that every value is delivered exactly once.
 		name: "channels under contention",
-		src: `var work chan int
-var done chan int
-var a chan int
-var b chan int
+		src: `var work = make(chan int)
+var done = make(chan int)
+var a = make(chan int)
+var b = make(chan int)
 
 func worker() {
 	for i := 0; i < 3; i++ {
@@ -22820,7 +22887,7 @@ func main() {
 	}
 	println(s)
 
-	var ch chan int
+	var ch = make(chan int)
 	go send(ch)
 	select {
 	case s := <-ch:
@@ -23039,9 +23106,9 @@ func main() {
 	y uint64
 }
 
-var ch chan int64
-var uch chan uint64
-var pch chan pair
+var ch = make(chan int64)
+var uch = make(chan uint64)
+var pch = make(chan pair)
 
 func sender(v int64) { ch <- v }
 
@@ -23278,7 +23345,7 @@ func worker(out chan Frame) {
 }
 
 func main() {
-	var ch chan Frame
+	var ch = make(chan Frame)
 	go worker(ch)
 	for i := 0; i < 3; i++ {
 		f := <-ch
@@ -23882,8 +23949,8 @@ func rows(g Grid, out chan int) {
 	out <- g[0][0]*100 + g[1][2]
 }
 
-var gate chan int
-var ch chan int
+var gate = make(chan int)
+var ch = make(chan int)
 
 func main() {
 	arr := [4]int{1, 2, 3, 4}
@@ -24079,7 +24146,7 @@ func mkPt() pt {
 	return pt{1, 2}
 }
 
-var ch chan int
+var ch = make(chan int)
 
 func send() { ch <- 7 }
 
@@ -25814,7 +25881,7 @@ var pkgS = []float32{-2147483648, -3000000000, -9223371487098961920, 3000000000,
 
 var pkgT = S{f: -3000000000, d: -2147483648}
 
-var ch chan float32
+var ch = make(chan float32)
 
 func id(x float32) float32 { return x }
 
@@ -26050,7 +26117,7 @@ func main() {
 }
 
 func main() {
-	var ch chan int
+	var ch = make(chan int)
 	go produce(ch, 3)
 	sum := 0
 	open := true
@@ -26068,7 +26135,7 @@ func main() {
 	}
 	var last int
 	var more bool
-	var ch2 chan int
+	var ch2 = make(chan int)
 	go produce(ch2, 2)
 	for i := 0; i < 3; i++ {
 		select {
@@ -26816,9 +26883,9 @@ func main() {
 	devs[1] = &t2
 	devs[2] = &p1
 
-	var vals chan int32
-	var fails chan int32
-	var done chan int32
+	var vals = make(chan int32)
+	var fails = make(chan int32)
+	var done = make(chan int32)
 	go poller(vals, fails, done)
 	a := <-vals
 	b := <-vals
@@ -26826,8 +26893,8 @@ func main() {
 	<-done
 	println("read", a, b, bad)
 
-	var samples chan Sample
-	var sdone chan int32
+	var samples = make(chan Sample)
+	var sdone = make(chan int32)
 	go sampler(samples, sdone)
 	var total int32
 	var chans int
@@ -26842,8 +26909,8 @@ func main() {
 	<-sdone
 	println("samples", total, chans)
 
-	var names chan string
-	var ndone chan int32
+	var names = make(chan string)
+	var ndone = make(chan int32)
 	go namer(names, ndone)
 	n0 := <-names
 	n1 := <-names
@@ -27252,8 +27319,8 @@ func main() {
 		// names code, not the frame it was made in, so unlike a slice or an address
 		// it is always safe to send -- the escape rules have nothing to say about it.
 		name: "a function value crosses a channel",
-		src: `var ch chan func(int) int
-var done chan int
+		src: `var ch = make(chan func(int) int)
+var done = make(chan int)
 
 func sq(n int) int  { return n * n }
 func neg(n int) int { return -n }
@@ -27324,7 +27391,7 @@ func main() {
 }
 
 func main() {
-	var ch chan int
+	var ch = make(chan int)
 	go send(ch, 4)
 	println(<-ch)
 }
@@ -27353,12 +27420,12 @@ func feeder(c chan int, n int) {
 }
 
 func main() {
-	var a1 chan int
-	var a2 chan int
-	var b1 chan int
-	var b2 chan int
-	var c1 chan int
-	var c2 chan int
+	var a1 = make(chan int)
+	var a2 = make(chan int)
+	var b1 = make(chan int)
+	var b2 = make(chan int)
+	var c1 = make(chan int)
+	var c2 = make(chan int)
 
 	go feeder(a1, 10)
 	go worker(a1, a2)
@@ -27395,19 +27462,19 @@ func send(k chan int, n int) {
 }
 
 func main() {
-	var a chan int
+	var a = make(chan int)
 	go send(a, 1)
 	println(<-a)
 
-	var b chan int
+	var b = make(chan int)
 	go send(b, 2)
 	println(id(<-b))
 
-	var c chan int
+	var c = make(chan int)
 	go send(c, 3)
 	println(1 + <-c)
 
-	var d chan int
+	var d = make(chan int)
 	go send(d, 4)
 	println(<-d)
 }
@@ -27772,8 +27839,8 @@ func twice(c Count) Count { return c * 2 }
 func main() {
 	var e error
 	println(e == nil)
-	var c1 chan int
-	var c2 chan *P
+	var c1 = make(chan int)
+	var c2 = make(chan *P)
 	var c3 []chan Count
 	var a1 [2]func() int
 	var f0 func()
@@ -27783,7 +27850,7 @@ func main() {
 	var ss [][]Count
 	var ps *[]Count
 	var v func(...Count) int = sum
-	var pc chan Count
+	var pc = make(chan Count)
 	var g func(Count) Count = twice
 	m := (*P).M
 	var h func(int, *P) (Count, bool)
@@ -27863,8 +27930,8 @@ func main() {
 		name: "a receive clause's target is evaluated when the clause is chosen",
 		src: `var trace int
 var arr [4]int
-var ready chan int
-var never chan int
+var ready = make(chan int)
+var never = make(chan int)
 
 func mark(v int) int {
 	trace = trace*10 + v
@@ -28094,7 +28161,7 @@ func main() {
 		// taken and nothing here waits.
 		name: "a select's clause operands are evaluated in source order",
 		src: `var trace int
-var out chan int
+var out = make(chan int)
 
 func mark(v int) int {
 	trace = trace*10 + v
@@ -28142,7 +28209,7 @@ func main() {
 		// named by a call with arguments and is fed by a cog.
 		name: "a blocking select's clause operands are evaluated in source order",
 		src: `var trace int
-var out chan int
+var out = make(chan int)
 
 func mark(v int) int {
 	trace = trace*10 + v
@@ -28697,7 +28764,7 @@ var g R
 
 var calls int
 
-var done chan int
+var done = make(chan int)
 
 func get() Reader {
 	calls++
@@ -28933,10 +29000,10 @@ func main() {
 	},
 	{
 		name: "a defer in a select clause and one a goto jumps over",
-		src: `var gc chan int
+		src: `var gc = make(chan int)
 
 func pick(n int) {
-	var c chan int
+	var c = make(chan int)
 	select {
 	case <-c:
 		defer println("never", n)
@@ -29026,7 +29093,7 @@ func main() {
 	},
 	{
 		name: "a continue in a select clause continues the loop around it",
-		src: `var ch chan int
+		src: `var ch = make(chan int)
 
 func feed(n int) {
 	for i := 0; i < n; i++ {
@@ -29046,7 +29113,7 @@ func main() {
 		}
 		println("after", i)
 	}
-	var idle chan int
+	var idle = make(chan int)
 	n := 0
 	for j := range 3 {
 		select {
@@ -29116,7 +29183,7 @@ outer:
 
 var depth int
 
-var done chan int
+var done = make(chan int)
 
 func count() int {
 	println("init")
@@ -29192,7 +29259,7 @@ func lit() int {
 	return f(Box{in: In{3, 4}})
 }
 
-var done chan int
+var done = make(chan int)
 
 func send(in Box) { done <- in.in.x + in.in.y }
 
@@ -29420,8 +29487,8 @@ func peer(in chan int, out chan int, done chan int) {
 }
 
 func main() {
-	var ch chan int
-	var done chan int
+	var ch = make(chan int)
+	var done = make(chan int)
 	go drain(ch, done)
 	for i := 1; i <= 3; i++ {
 		select {
@@ -29430,9 +29497,9 @@ func main() {
 	}
 	println("single", <-done)
 
-	var in chan int
-	var out chan int
-	var pdone chan int
+	var in = make(chan int)
+	var out = make(chan int)
+	var pdone = make(chan int)
 	go peer(in, out, pdone)
 	sent := 0
 	got := 0
@@ -29469,8 +29536,8 @@ func feedB(b chan int) {
 }
 
 func main() {
-	var a chan int
-	var b chan int
+	var a = make(chan int)
+	var b = make(chan int)
 	go feedA(a)
 	go feedB(b)
 
@@ -29488,7 +29555,7 @@ func main() {
 	}
 	println("mux", sum, n)
 
-	var c chan int
+	var c = make(chan int)
 	got := 0
 	select {
 	case <-a:
@@ -29571,7 +29638,7 @@ func (w *worker) size(ch chan int) { ch <- len(w.data) }
 func (c counter) add(ch chan int, k int) { ch <- int(c) + k }
 
 func main() {
-	var ch chan int
+	var ch = make(chan int)
 
 	w := worker{21, backing[:]}
 	go w.twice(ch)
@@ -30212,7 +30279,7 @@ func fill(s []int, ch chan int) {
 }
 
 func main() {
-	var ch chan int
+	var ch = make(chan int)
 	go fill(buf[:], ch)
 	n := <-ch
 	println(n, buf[0], buf[1], buf[3])
@@ -30231,7 +30298,7 @@ func main() {
 }
 
 func main() {
-	var ch chan int
+	var ch = make(chan int)
 	go spin(ch)
 	go spin(ch)
 	go spin(ch)
@@ -30792,9 +30859,9 @@ func main() {
 
 var g int
 
-var ch chan unsafe.Pointer
+var ch = make(chan unsafe.Pointer)
 
-var done chan bool
+var done = make(chan bool)
 
 func worker() {
 	p := <-ch
@@ -31156,7 +31223,7 @@ func main() {
 		name: "the LUT RAM of each cog",
 		src: `import "p2"
 
-var done chan uint32
+var done = make(chan uint32)
 
 func other() {
 	p2.WriteLUT(3, 900)
@@ -31705,9 +31772,9 @@ var a1 = 12
 
 var fn = 13
 
-var out chan int
+var out = make(chan int)
 
-var done chan bool
+var done = make(chan bool)
 
 func feeder(n, k int) {
 	for i := 0; i < n; i++ {
@@ -31773,7 +31840,7 @@ var w = W{H{&gq}}
 
 var calls int
 
-var ch chan Shape
+var ch = make(chan Shape)
 
 func pick(i int) Shape {
 	calls++
@@ -32381,7 +32448,7 @@ func work(s Shape, ch chan int) { ch <- s.Area() }
 
 func main() {
 	box.p = &big
-	var ch chan int
+	var ch = make(chan int)
 	go work(&big, ch)
 	println(<-ch)
 	go work(get(), ch)
@@ -32638,7 +32705,7 @@ func main() {
 		// routes -- a receive walks the expression and a send asked the declaration
 		// -- and a send to a call was the half that had no answer.
 		name: "a channel from a call",
-		src: `var q [3]chan int
+		src: `var q = [3]chan int{make(chan int), make(chan int), make(chan int)}
 
 func qof(i int) chan int { return q[i] }
 
@@ -32684,9 +32751,9 @@ type holder struct {
 	p *chan int
 }
 
-var b bank
+var b = bank{make(chan int), make(chan int)}
 var h holder
-var done chan int
+var done = make(chan int)
 
 func (k *bank) In() chan int {
 	return k.in
@@ -32725,8 +32792,8 @@ func main() {
 		// select happened to wait, and a clause over a bank polled a different
 		// channel each time.
 		name: "a channel operand is evaluated once",
-		src: `var q [3]chan int
-var done chan int
+		src: `var q = [3]chan int{make(chan int), make(chan int), make(chan int)}
+var done = make(chan int)
 var calls int
 
 func qof(i int) chan int {
@@ -33634,7 +33701,7 @@ type Board struct {
 	regs [3]Regs
 }
 
-var out chan Sample
+var out = make(chan Sample)
 
 var board Board
 
@@ -33737,7 +33804,7 @@ var port = Port{&regs[1], 7}
 
 var pos = Pos{3, 4}
 
-var out chan int
+var out = make(chan int)
 
 var calls int
 
@@ -34768,10 +34835,10 @@ type Bus struct {
 	peer  *Port
 }
 
-var bus Bus
-var spare Port
-var qs [2]chan int
-var done chan int
+var bus = Bus{ports: [2]Port{{make(chan int)}, {make(chan int)}}}
+var spare = Port{make(chan int)}
+var qs = [2]chan int{make(chan int), make(chan int)}
+var done = make(chan int)
 var calls int
 
 func pick(i int) int {
@@ -34836,10 +34903,10 @@ type Bus struct {
 	ports [2]Port
 }
 
-var bus Bus
-var qs [2]chan int
-var direct chan int
-var done chan int
+var bus = Bus{ports: [2]Port{{make(chan int)}, {make(chan int)}}}
+var qs = [2]chan int{make(chan int), make(chan int)}
+var direct = make(chan int)
+var done = make(chan int)
 var calls int
 
 func (b *Bus) port(i int) *Port {
@@ -34920,7 +34987,7 @@ func main() {
 	}
 	println(<-done)
 	// A plain send through an element's field: the index stands between two fields,
-	// and the channel is one of a bank that its struct's declaration allocates.
+	// and the channel is one of a bank made where its struct is declared.
 	calls = 0
 	go drain(bus.ports[1].ch)
 	bus.ports[pick(1)].ch <- val(12)
@@ -35240,7 +35307,7 @@ func main() {
 		//
 		// Every line of this prints what real Go prints for the same program.
 		name: "go through an embedded pointer and through what a call returns",
-		src: `var done chan int
+		src: `var done = make(chan int)
 
 type Holder struct {
 	n int
@@ -35292,7 +35359,7 @@ func main() {
 		name: "a sent, selected or appended value is evaluated once",
 		src: `var calls int
 
-var ch chan int
+var ch = make(chan int)
 
 func name() string {
 	calls = calls*10 + 1
@@ -35359,7 +35426,7 @@ var gq = Sq{2}
 
 var calls int
 
-var done chan int
+var done = make(chan int)
 
 func get() Shape {
 	calls = calls*10 + 1
@@ -35489,7 +35556,7 @@ func (c Counter) Get() int { return c.n }
 
 var gc Counter
 
-var done chan bool
+var done = make(chan bool)
 
 func deferred() {
 	defer (&gc).Inc(100)
@@ -35546,7 +35613,7 @@ var _ Shape = (*Sq)(nil)
 
 var gq Sq
 
-var done chan bool
+var done = make(chan bool)
 
 var calls int
 
@@ -36935,11 +37002,11 @@ func main() {
 	tag string
 }
 
-var ch chan int
-var done chan int
-var msgs chan Msg
-var strs chan string
-var idle chan int
+var ch = make(chan int)
+var done = make(chan int)
+var msgs = make(chan Msg)
+var strs = make(chan string)
+var idle = make(chan int)
 
 func produce(n int) {
 	for i := 1; i <= n; i++ {
@@ -37254,7 +37321,7 @@ func part2() {
 	j := 0
 	j, rows[j] = 1, [2]int{7, 7}
 	println("E4", rows[0][0], rows[1][0], j)
-	var ch chan int
+	var ch = make(chan int)
 	close(ch)
 	ok := [3]bool{true, true, true}
 	k := 1
@@ -37308,8 +37375,8 @@ func main() {
 	ok  bool
 }
 
-var ch chan int
-var done chan int
+var ch = make(chan int)
+var done = make(chan int)
 
 func produce() {
 	ch <- 7
@@ -39241,13 +39308,13 @@ type Result struct {
 	id, sum int
 }
 
-var results chan Result
-var jobs chan Job
-var ping chan int
-var pong chan int
-var nums chan int
-var done chan int
-var one chan int
+var results = make(chan Result)
+var jobs = make(chan Job)
+var ping = make(chan int)
+var pong = make(chan int)
+var nums = make(chan int)
+var done = make(chan int)
+var one = make(chan int)
 
 var calls int
 
@@ -39760,7 +39827,7 @@ func twice(x int) int {
 	return x * 2
 }
 
-var done chan int
+var done = make(chan int)
 
 var a Act = record
 
@@ -39954,9 +40021,9 @@ type Pair struct {
 	a, b int
 }
 
-var ch chan int
-var pch chan Pair
-var done chan int
+var ch = make(chan int)
+var pch = make(chan Pair)
+var done = make(chan int)
 
 func feed() {
 	ch <- 4
@@ -41135,7 +41202,7 @@ func pick() func(Reader) int { return tab[flip] }
 
 func apply(f func(Reader) int) int { return f(&d) }
 
-var done chan int
+var done = make(chan int)
 
 func run(r Reader) { done <- r.Read() }
 
@@ -41376,7 +41443,7 @@ func sum(xs ...int) {
 	done <- n*10 + len(xs)
 }
 
-var done chan int
+var done = make(chan int)
 
 var d1 = Dev{3}
 
@@ -41501,7 +41568,7 @@ var gh = half
 
 var tab = []func(float32, float32) float32{mulf}
 
-var out chan float64
+var out = make(chan float64)
 
 func run(f func(float64) float64) { out <- f(9) }
 
@@ -41562,7 +41629,7 @@ type P struct{ n int }
 
 func (p *P) Inc() int { p.n++; return p.n }
 
-var done chan int
+var done = make(chan int)
 
 var gss = []func(int){show}
 
@@ -41788,7 +41855,7 @@ func t(k int) bool {
 	return true
 }
 
-var ch chan int
+var ch = make(chan int)
 
 func feed(n int) {
 	for i := 0; i < n; i++ {
@@ -41876,9 +41943,9 @@ again:
 		// loop or a switch inside one of its clauses leaves the select. It was
 		// refused, "invalid break label sel: not a for or switch".
 		name: "a break out of a labeled select",
-		src: `var ch chan int
+		src: `var ch = make(chan int)
 
-var done chan int
+var done = make(chan int)
 
 func feed(n int) {
 	for i := 1; i <= n; i++ {
@@ -42042,7 +42109,7 @@ var gsh Shape
 
 var gf func(int) int
 
-var ch chan []int
+var ch = make(chan []int)
 
 func takeSlice(xs []int) int { return len(xs) }
 
@@ -42108,15 +42175,15 @@ type P struct{ n int }
 
 func (p *P) Area() int { return p.n }
 
-var chs chan []int
+var chs = make(chan []int)
 
-var chl chan L
+var chl = make(chan L)
 
-var chi chan Shape
+var chi = make(chan Shape)
 
-var chf chan func(int) int
+var chf = make(chan func(int) int)
 
-var done chan int
+var done = make(chan int)
 
 var gxs = []int{1}
 
@@ -42200,7 +42267,7 @@ type T struct{ k int }
 
 var gt = T{10}
 
-var done chan int
+var done = make(chan int)
 
 func sum(xs ...[3]int) int {
 	s := 0
@@ -42296,7 +42363,7 @@ func (l *L) Name() string { return "L" }
 
 var gl = L{10}
 
-var done chan int
+var done = make(chan int)
 
 
 func worker(lg Logger) {
@@ -42395,7 +42462,7 @@ func main() {
 
 type W struct{ k int }
 
-var done chan int
+var done = make(chan int)
 
 func (w *W) Run(tag int) { done <- tag*100 + w.k }
 
@@ -42458,7 +42525,7 @@ type K struct{}
 
 var kept []int
 
-var done chan int
+var done = make(chan int)
 
 func (k *K) Keep(xs ...int) { kept = xs }
 
@@ -42613,9 +42680,9 @@ var tbl [3]state
 
 var cur state = a
 
-var ch chan state
+var ch = make(chan state)
 
-var done chan int
+var done = make(chan int)
 
 func (r *R) run(m *M, s state) int {
 	for s != nil {
@@ -42814,15 +42881,15 @@ func main() {
 
 type H struct{ ch chan Job }
 
-var work chan Job
+var work = make(chan Job)
 
-var raw chan func(k int) int
+var raw = make(chan func(k int) int)
 
-var side chan Job
+var side = make(chan Job)
 
-var more chan Job
+var more = make(chan Job)
 
-var done chan bool
+var done = make(chan bool)
 
 var gh H
 
@@ -42874,7 +42941,7 @@ func main() {
 		name: "a parenthesised function value called",
 		src: `type H struct{ f func(k int) int }
 
-var fc chan func(k int) int
+var fc = make(chan func(k int) int)
 
 var calls int
 
@@ -42925,7 +42992,7 @@ func main() {
 
 var trace int
 
-var fc chan func(k int)
+var fc = make(chan func(k int))
 
 func show(k int) { trace = trace*10 + k }
 
@@ -43027,7 +43094,7 @@ type H struct{ in In }
 
 var gh H
 
-var done chan int
+var done = make(chan int)
 
 func show(k int) { done <- k }
 
@@ -43065,7 +43132,7 @@ func main() {
 
 var trace int
 
-var done chan int
+var done = make(chan int)
 
 func show(k int) { trace = trace*10 + k }
 
@@ -43445,13 +43512,13 @@ func main() {
 
 type Small struct{ v [2]int }
 
-var ch chan Msg
+var ch = make(chan Msg)
 
-var sc chan Small
+var sc = make(chan Small)
 
-var back chan Small
+var back = make(chan Small)
 
-var done chan bool
+var done = make(chan bool)
 
 func producer() {
 	for i := 0; i < 3; i++ {
@@ -43514,11 +43581,11 @@ type Outer struct {
 
 type Hub struct{ q chan Outer }
 
-var a chan Outer
+var a = make(chan Outer)
 
-var b chan Outer
+var b = make(chan Outer)
 
-var done chan bool
+var done = make(chan bool)
 
 var gh Hub
 
@@ -43675,9 +43742,9 @@ var gbox = Box{s: &gh.b}
 
 var ga = [2]Named{&gh.a, &gh.b}
 
-var ch chan Named
+var ch = make(chan Named)
 
-var done chan bool
+var done = make(chan bool)
 
 var buf [4]Named
 
@@ -43835,7 +43902,7 @@ func main() {
 		name: "an array result nobody reads",
 		src: `var calls int
 
-var done chan bool
+var done = make(chan bool)
 
 func mk(k int) [3]int {
 	calls = calls*10 + k
@@ -43871,7 +43938,7 @@ func deferred(m *M) {
 	calls = 0
 }
 
-var fin chan bool
+var fin = make(chan bool)
 
 var gf int
 
@@ -43958,9 +44025,9 @@ var gs Src
 
 var gsrc = S{1}
 
-var done chan bool
+var done = make(chan bool)
 
-var fin chan bool
+var fin = make(chan bool)
 
 func use(r Src) int {
 	a := r.Read(1)
@@ -44198,7 +44265,7 @@ var gt T
 
 var calls int
 
-var done chan bool
+var done = make(chan bool)
 
 func mk() [3]int {
 	n++
@@ -44266,7 +44333,7 @@ func main() {
 
 var calls int
 
-var done chan bool
+var done = make(chan bool)
 
 func mk(k int) [3]int {
 	n += k
@@ -44555,7 +44622,7 @@ var calls int
 
 var last int
 
-var done chan bool
+var done = make(chan bool)
 
 func sum(p Packet) int {
 	calls = calls*10 + 1
@@ -44656,7 +44723,7 @@ var last int
 
 var gs S
 
-var done chan bool
+var done = make(chan bool)
 
 func (s *S) Take(t T12, k int) int {
 	s.n += t.a[0] * k
@@ -44770,7 +44837,7 @@ var last int
 
 var kept T12
 
-var done chan bool
+var done = make(chan bool)
 
 func (s *S) Take(t T12, k int) int {
 	s.n += t.a[0] * k
@@ -44911,7 +44978,7 @@ var gb = Buf{1, [3]int{2, 3, 4}}
 
 var last int
 
-var done chan bool
+var done = make(chan bool)
 
 func (b Buf) Report() {
 	last = b.Sum()
@@ -45005,7 +45072,7 @@ var gh = Holder{&gb}
 
 var last int
 
-var done chan bool
+var done = make(chan bool)
 
 func get() *Buf { return &gb }
 
@@ -45088,7 +45155,7 @@ var gb = Buf{7, [3]int{1, 2, 3}}
 
 var last int
 
-var done chan bool
+var done = make(chan bool)
 
 func mk(k int) Buf {
 	calls++
@@ -45186,9 +45253,9 @@ func main() {
 
 var calls int
 
-var done chan bool
+var done = make(chan bool)
 
-var ch chan Buf
+var ch = make(chan Buf)
 
 func mk(k int) Buf {
 	calls = calls*10 + k
@@ -45348,9 +45415,9 @@ type W struct {
 
 var calls int
 
-var ch chan [3]int
+var ch = make(chan [3]int)
 
-var done chan bool
+var done = make(chan bool)
 
 func mk(k int) Buf {
 	calls = calls*10 + k
@@ -45438,7 +45505,7 @@ var calls int
 
 var gr Ring
 
-var done chan bool
+var done = make(chan bool)
 
 func mk(k int) Frame {
 	calls = calls*10 + k
@@ -45573,7 +45640,7 @@ var calls int
 
 var gr Ring
 
-var done chan bool
+var done = make(chan bool)
 
 func mk(k int) Frame {
 	calls = calls*10 + k
@@ -45681,7 +45748,7 @@ var calls int
 
 var gt = T{10}
 
-var done chan bool
+var done = make(chan bool)
 
 func total(xs []int) int {
 	s := 0
@@ -45795,9 +45862,9 @@ type Assembler struct {
 	ne   int
 }
 
-var bytesIn chan byte
+var bytesIn = make(chan byte)
 
-var done chan bool
+var done = make(chan bool)
 
 const sync = 0x7E
 
@@ -45955,7 +46022,7 @@ var calls int
 
 var ga, gerr = readAt(1)
 
-var done chan bool
+var done = make(chan bool)
 
 func readAt(k int) ([4]byte, error) {
 	calls = calls*10 + k
@@ -46370,9 +46437,9 @@ type Holder struct {
 	q int
 }
 
-var ch chan W
+var ch = make(chan W)
 
-var done chan bool
+var done = make(chan bool)
 
 var gw = W{Buf{1, [3]int{2, 3, 4}}, 5}
 
@@ -46979,7 +47046,7 @@ var q2 = Q{4, 5}
 
 var gb = B{}
 
-var done chan int
+var done = make(chan int)
 
 func area(s Shape) int { return s.Area() }
 
@@ -47057,7 +47124,7 @@ var q2 = Q{4, 5}
 
 var gb = B{}
 
-var done chan int
+var done = make(chan int)
 
 var calls int
 
@@ -47600,13 +47667,13 @@ func main() {
 		// formats. It was "cannot print a value of type [3]int16", and a print that
 		// was a channel's only receive went without the channel's receive helper.
 		name: "a received array printed where it stands",
-		src: `var car chan [3]int16
+		src: `var car = make(chan [3]int16)
 
-var cgrid chan [2][2]int
+var cgrid = make(chan [2][2]int)
 
 type P struct{ a, b int }
 
-var cp chan P
+var cp = make(chan P)
 
 var calls int
 
@@ -48765,9 +48832,9 @@ func (t *T) bumpN(k int) int {
 	return t.n
 }
 
-var in chan T
+var in = make(chan T)
 
-var pin chan *T
+var pin = make(chan *T)
 
 var g T
 
@@ -48820,7 +48887,7 @@ func (t T) add(m int) int { return t.n*10 + m }
 
 func (t *T) set(m int) { t.n = t.n*10 + m }
 
-var in chan int
+var in = make(chan int)
 
 var ts [4]T
 
@@ -48875,7 +48942,7 @@ func in2() chan T {
 	return tin
 }
 
-var tin chan T
+var tin = make(chan T)
 
 func feedT() {
 	for i := 1; i <= 4; i++ {
@@ -48905,7 +48972,7 @@ type Bus struct {
 	rep chan Req
 }
 
-var b Bus
+var b = Bus{in: make(chan Req), ps: [2]chan *Req{make(chan *Req), make(chan *Req)}, cc: make(chan chan Req), fs: make(chan func(int) int), rep: make(chan Req)}
 
 var bp = &b
 
@@ -49458,7 +49525,7 @@ println(pair.Lo.B, pair.Hi.Sum())
 println(unit.Sum(), vecs[1].A)
 // A goroutine launched on an imported package's function: it resolves to the
 // same mangled name an ordinary call into that package does.
-var ch chan int
+var ch = make(chan int)
 go greet.Send(ch, 20)
 println(<-ch)
 // A constant of an imported package used in a CONST declaration of this one,
@@ -50371,12 +50438,11 @@ func scaleUp() int { return Adjust + 3 }
 
 func init() { Adjust = Adjust + 100 }
 
-// Relay and Ack are this package's channels, used by whoever imports it. With no
-// heap there is nothing for a constructor to return, so a package-level channel is
-// how two packages come to share one -- the ordinary spelling here rather than the
-// exotic one it would be in Go.
-var Relay chan int
-var Ack chan int
+// Relay and Ack are this package's channels, used by whoever imports it. A channel
+// a function makes stays in its frame, so a package-level one is how two packages
+// come to share one.
+var Relay = make(chan int)
+var Ack = make(chan int)
 
 // Answer runs on a COG started by another package and rendezvouses on this
 // package's channels, in both directions.
@@ -50627,7 +50693,7 @@ func Inc(n int) int { return n + 1 }
 // Hook and Launch are function VARIABLES main defers and starts through.
 var Seen int
 
-var Sent chan int
+var Sent = make(chan int)
 
 func Mark(k int) { Seen = Seen*10 + k }
 

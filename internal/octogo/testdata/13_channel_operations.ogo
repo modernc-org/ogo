@@ -1,5 +1,5 @@
-var intChan chan int
-var boolChan chan bool
+var intChan = make(chan int)
+var boolChan = make(chan bool)
 
 func testChannels() {
 	var x int = 5

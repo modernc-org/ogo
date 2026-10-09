@@ -36,9 +36,9 @@ type H struct {
 	p    P
 }
 
-var ch chan int
+var ch = make(chan int)
 
-var cp chan P
+var cp = make(chan P)
 
 func named(r rec) {
 	u := r.name[1:4]

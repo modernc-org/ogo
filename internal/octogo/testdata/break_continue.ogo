@@ -51,7 +51,7 @@ func misplaced_continue() {
 	}
 }
 
-var ch chan int
+var ch = make(chan int)
 
 // A break in a communication clause leaves the select.
 func breaks_select() {

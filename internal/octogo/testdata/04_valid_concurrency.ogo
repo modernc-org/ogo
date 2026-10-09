@@ -2,7 +2,7 @@
 
 import "p2"
 
-var rateChan chan int
+var rateChan = make(chan int)
 
 func blinkWorker() {
 	for {

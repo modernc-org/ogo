@@ -39,7 +39,7 @@ var gr Row
 
 func main() {
 	f := one
-	var ch chan int
+	var ch = make(chan int)
 	var a [3]byte
 	xs := []int{1}
 	n := 1

@@ -30,7 +30,7 @@ func main() {
 	f := one
 	f = two
 	f = nil
-	var ch chan int
+	var ch = make(chan int)
 	ch = nil
 	var a [3]byte
 	a = [3]byte{1, 2, 3}

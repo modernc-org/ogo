@@ -23,9 +23,9 @@ var gi int
 
 var p = &gi
 
-var ch chan int
+var ch = make(chan int)
 
-var cs chan []int
+var cs = make(chan []int)
 
 var ss [][]int
 

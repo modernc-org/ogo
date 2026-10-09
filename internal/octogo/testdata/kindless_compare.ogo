@@ -18,7 +18,7 @@ var gi I
 
 func main() {
 	f := one
-	var ch chan int
+	var ch = make(chan int)
 	var a [3]int
 	var b [3]int
 	var xs, ys []int

@@ -11,7 +11,7 @@ const answer = 42
 // A comm-clause send "case ch <- v": the channel and the value are both resolved,
 // and the value's type is checked against the channel's element.
 func commSend() {
-	var ch chan int
+	var ch = make(chan int)
 	var n int
 
 	select {
@@ -37,7 +37,7 @@ func commSend() {
 // A comm-clause bare receive "case <-ch": the channel operand is resolved and
 // required to be a channel.
 func commRecv() {
-	var ch chan int
+	var ch = make(chan int)
 	var n int
 
 	select {
@@ -58,7 +58,7 @@ func commRecv() {
 // and required to be a channel, the target is resolved for assignability, and the
 // channel's element type is checked against the target.
 func commRecvAssign() {
-	var ch chan int
+	var ch = make(chan int)
 	var i int
 	var b bool
 
@@ -84,7 +84,7 @@ func commRecvAssign() {
 // A comm-clause short-declaration receive "case v := <-ch": the channel operand is
 // resolved and required to be a channel; the new variable v is scoped to its clause.
 func commRecvDecl() {
-	var ch chan int
+	var ch = make(chan int)
 	var n int
 
 	select {

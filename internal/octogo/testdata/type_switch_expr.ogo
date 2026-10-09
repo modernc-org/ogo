@@ -24,7 +24,7 @@ var w = W{H{&gq}}
 
 var shapes = [2]Shape{&gq, &gq}
 
-var ch chan Shape
+var ch = make(chan Shape)
 
 func pick(i int) Shape { return shapes[i] }
 

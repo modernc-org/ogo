@@ -473,7 +473,7 @@ func (a *aggregate) run(f *Fuzzer, k, d func() int64) (string, Int32, bool) {
 	fmt.Fprint(w, "\treturn r\n}\n\n")
 	if cog {
 		in, out := a.name("agIn"), a.name("agOut")
-		fmt.Fprintf(w, "var %s chan %s\n\nvar %s chan %s\n\n", in, a.typ, out, a.typ)
+		fmt.Fprintf(w, "var %s = make(chan %s)\n\nvar %s = make(chan %s)\n\n", in, a.typ, out, a.typ)
 		fmt.Fprintf(w, "func %s(n int) {\n\tfor i := 0; i < n; i++ {\n\t\tv := <-%s\n\t\t%s <- %s(v, %d)\n\t}\n}\n\n",
 			a.name("agCog"), in, out, mod, dc)
 	}

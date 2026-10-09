@@ -2605,11 +2605,13 @@ type cogWorker struct {
 
 // idleChannel names a package channel nothing ever sends to, for a select's second
 // arm (SelectRecvNode). One per program is enough: what it is there for is to be
-// polled and not ready, and every select may poll the same one.
+// polled and not ready, and every select may poll the same one. It is made, as a
+// channel a program polls is: one declared without a value is nil and refused where
+// nothing makes it.
 func (f *Fuzzer) idleChannel() string {
 	if f.idleChan == "" {
 		f.idleChan = f.newVarName("idle")
-		fmt.Fprintf(f.Out, "var %s chan int\n\n", f.idleChan)
+		fmt.Fprintf(f.Out, "var %s = make(chan int)\n\n", f.idleChan)
 	}
 	return f.idleChan
 }
@@ -2622,7 +2624,7 @@ func (f *Fuzzer) genCogWorker() *cogWorker {
 	for i, n := 0, 1+f.Rand.Intn(2); i < n; i++ {
 		w.Sends = append(w.Sends, f.genPureExpr([]string{w.Param}, 0))
 	}
-	fmt.Fprintf(f.Out, "var %s chan int\n\n", w.Chan)
+	fmt.Fprintf(f.Out, "var %s = make(chan int)\n\n", w.Chan)
 	fmt.Fprintf(f.Out, "func %s(c chan int, %s int) {\n", w.Name, w.Param)
 	for _, send := range w.Sends {
 		writeIndent(f.Out, 1)

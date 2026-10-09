@@ -1,5 +1,5 @@
 func testSelect() {
-    var ch chan int
+    var ch = make(chan int)
     var x int = 0
 
     for {

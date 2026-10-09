@@ -26,7 +26,7 @@ var gp *[4]int
 
 var g2 *[2]int
 
-var ch chan *[4]int
+var ch = make(chan *[4]int)
 
 var gu uintptr
 

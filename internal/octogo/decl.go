@@ -499,6 +499,15 @@ type VarDeclaration struct {
 	chanElemPtr     bool  // the element is a POINTER; chanElemName names the pointee
 	elemTypeName    Token // an array's or slice's element type NAME, for a field reached through an index
 
+	// chanUse and written are 1 once a channel variable is the operand of a channel
+	// operation, and once anything writes the variable or takes its address
+	// (noteChanUse, noteWritten). A channel declared without a value, noValue, and
+	// written by nothing is nil, and every operation on it blocks for ever
+	// (neverMade). Set atomically: a package variable's are set by the bodies of
+	// several files at once.
+	chanUse, written uint32
+	noValue          bool
+
 	// chanType is the channel type of a variable that has no written one: `c := ro`
 	// takes ro's, `c := src()` the result's, as written there. It is what a direction
 	// and an element's identity are read from when declType is nil -- a receive-only

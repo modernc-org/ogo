@@ -8,10 +8,10 @@ type Src <-chan int
 
 type Snk chan<- int
 
-var pipe chan (<-chan int)
-var named chan Src
-var sinks chan Snk
-var replies chan chan<- int
+var pipe = make(chan (<-chan int))
+var named = make(chan Src)
+var sinks = make(chan Snk)
+var replies = make(chan chan<- int)
 
 func use(p chan<- <-chan int, a chan int) {
 	c := <-pipe
@@ -41,6 +41,6 @@ func use(p chan<- <-chan int, a chan int) {
 }
 
 func main() {
-	var a chan int
+	var a = make(chan int)
 	use(pipe, a)
 }

@@ -30,7 +30,7 @@ func TestEmitCSummaryArrayElems(t *testing.T) {
 
 var gp *Counter
 
-var gch chan *Counter
+var gch = make(chan *Counter)
 
 func (c *Counter) Keep() { gp = c }
 

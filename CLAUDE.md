@@ -37,12 +37,12 @@ feature actually works** -- and if a stale note is found, fix the note.
 The deliberate exceptions, all rooted in the Propeller 2 hardware:
 
 - **No heap.** Nothing allocates at run time. This is what rules out `new`, every
-  `make` form but the slice one, maps, runtime string concatenation, and a
-  function literal that captures its surrounding scope.
+  `make` form but the slice and the (unbuffered) channel one, maps, runtime string
+  concatenation, and a function literal that captures its surrounding scope.
 - **A goroutine is a physical cog** (there are eight). No scheduler, no
   preemption; `go` starts a real core, not a task.
-- **A channel is a P2 hardware lock** over statically allocated Hub RAM -- a
-  synchronous rendezvous with no scheduler behind it.
+- **A channel is a P2 hardware lock** over a cell in Hub RAM, static or the
+  frame's -- a synchronous rendezvous with no scheduler behind it.
 - **An interface value holds a POINTER**, and only a pointer: `var s Shape = &q`,
   never `= q`. Shipped 2026-08-03 -- a data pointer beside a pointer to a statically
   emitted vtable, one table per (concrete type, interface) pair, with type
@@ -79,24 +79,38 @@ conversion helpers over uint64, the constant fold, `math`, the exact printing, t
 fuzzer -- not scheduled; nothing before it should assume float64 is 32 bits where
 it can avoid it.
 
-**A channel is to be made as Go makes one** (the user's call, 2026-10-08, the
-review's first item): `var ch chan T` nil, as in Go, and `make(chan T)` the way to
-make one -- its cell static at package level, the FRAME's in a function and refused
-where it would outlive the call by the rules a slice of a local array is refused
-by -- so a channel program means what it means in Go and DIFFERENCES.md's
-declaration-site entry goes. It breaks every channel program written so far (`var
-ch chan int` becomes `var ch = make(chan int)`) -- 184 run cases, 79 spec tests, an
-example, the fuzzer's channels; p2-11 has no channel (2026-10-09) -- which is why it
-is to come before v1. Its design pass comes first: the lock of a frame's cell, a
-nil channel in a select (Go's way to disable a case), and the migration.
+**A channel is made as Go makes one** (the user's call, 2026-10-08, the review's
+first item; done 2026-10-09): `var ch chan T` is nil, `make(chan T)` makes one
+(emitMakeChan), its cell static in a package variable's initializer and the
+block's in a function, held there by the lifetime rules as a composite literal's
+address is (chanMakeRef; a channel counts as a reference, carriesReference and
+noteDeclFrameHolder), so a channel a function makes is not returned, kept,
+sent or handed to a goroutine -- but for main's outermost block, below. Every
+cell one make site makes shares the site's lock, taken first thing in package
+initialization (chanSiteInit), so a make costs no lock at run time. A buffered
+channel is refused (checkChanMake), and so is a channel variable declared
+without a value that nothing writes or addresses and that a channel operation
+uses (neverMade: chanUse/written marked where the checker meets each, the
+package's reported once every body is checked), which is what every program of
+the old rule meets. Gone: every cell a declaration made -- a variable's, an
+array element's, a struct field's, nested -- and DIFFERENCES.md's
+declaration-site entry. The migration: 184 run cases, 66 spec tests, an example,
+the fuzzer's three channels and DIFFERENCES.md by a script (the scratchpad's
+migrate.py), ten run cases by hand -- channels in struct fields and arrays,
+which nothing refuses unmade and which hung. p2-11 has no channel. Migrating the
+spec tests showed `var ch = make(chan T)` asked less than `var ch chan T`: five
+files lost a diagnostic, `*ress` of a channel among them, the inferred variable
+having no walked type until valueTypeAt answered a make. **A migration that moves
+every program to a new spelling asks the new spelling every question the old one
+was asked** -- the spec tests are that net when they are migrated rather than
+rewritten.
 
 **Main's outermost block outlives every cog** (the user's call, 2026-10-09, the
 first step of the channel design): every return from main stops the other cogs
 inside main's frame (ogo_end_program) and a panic stops them all or reboots, so a
 reference to a variable declared directly in main's body, or to what a statement
 there makes, may go to a goroutine, a send or a package variable -- `var buf
-[64]byte; go fill(buf[:])` and, once channels are made, `ch := make(chan int); go
-worker(ch)` in main. The emitter's frameRefOf answers no reference for it
+[64]byte; go fill(buf[:])` and `ch := make(chan int); go worker(ch)` in main. The emitter's frameRefOf answers no reference for it
 (outlivesCogs: main's own body, blockDepthOf <= 1) and the checker's escapesFrame
 the same (mainOutlivesCogs, File.mainScope); neither where the program references
 its own main (Package.mainReferenced, cached) or main has a goto, which can run a

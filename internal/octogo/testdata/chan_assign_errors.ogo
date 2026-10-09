@@ -14,7 +14,7 @@ type Ports struct {
 	out chan<- int
 }
 
-var gbi chan int
+var gbi = make(chan int)
 
 var gro <-chan int = gbi
 
@@ -35,7 +35,7 @@ func widen(ro <-chan int) chan int {
 func get() <-chan int { return gro }
 
 func main() {
-	var bi chan int
+	var bi = make(chan int)
 	var ro <-chan int = bi
 	var so chan<- int = bi
 	var p Ports
@@ -67,7 +67,7 @@ func main() {
 	q := Ports{in: so}
 	// ERROR cannot use ro \(variable of type <-chan int\) as chan int value in array or slice literal
 	cs := []chan int{bi, ro}
-	var cc chan chan int
+	var cc = make(chan chan int)
 	// ERROR cannot use ro \(variable of type <-chan int\) as chan int value in send
 	cc <- ro
 	var pp Pipe

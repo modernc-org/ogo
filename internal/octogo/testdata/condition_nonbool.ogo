@@ -29,7 +29,7 @@ var gp P
 var w W
 var arr [2]int
 var ptrs [2]*P
-var ch chan int
+var ch = make(chan int)
 var n int
 
 func main() {

@@ -181,7 +181,7 @@ static void ogo_go0(void* p) {
 // goroutine needing more than the largest slot, and a main cog holding more than
 // Hub RAM, are told they do not fit.
 func TestBuildSizesGoroutineStacks(t *testing.T) {
-	const deep = `var out chan int
+	const deep = `var out = make(chan int)
 
 func work(n int) {
 	var buf [600]int
@@ -263,7 +263,7 @@ func main() {
 		// No listing bounds a recursion's depth, and the default slot was a guess
 		// the fence checked only as the goroutine ended; --gostack is the size
 		// the program chooses.
-		rec := `var out chan int
+		rec := `var out = make(chan int)
 
 func depth(n int) int {
 	if n == 0 {

@@ -123,8 +123,8 @@ func positions(ci chan int, cs chan string) {
 }
 
 func main() {
-	var ci chan int
-	var cs chan string
+	var ci = make(chan int)
+	var cs = make(chan string)
 	statements(ci)
 	clauses(ci)
 	positions(ci, cs)

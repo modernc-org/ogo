@@ -3770,12 +3770,6 @@ type pkgInitStep struct {
 	pos     string
 }
 
-// deferPkgInit records a statement to run at package initialization, as a step of
-// its own that depends on nothing and so keeps its place.
-func (e *emitter) deferPkgInit(stmt string) {
-	e.pkgInit = append(e.pkgInit, pkgInitStep{stmts: []string{stmt}, pkg: 2 * e.pkgOrd})
-}
-
 // pkgInitAssign records a package variable's initialization at run time, the
 // assignment C forbids in a file-scope initializer.
 //
@@ -4162,6 +4156,11 @@ func (e *emitter) pkgInitDefs() string {
 	}
 	var b strings.Builder
 	fmt.Fprintf(&b, "static void %s(void) {\n", pkgInitCName)
+	// The locks of the make sites, and the cells a package initializer makes, ahead
+	// of every step: any of them may make a channel or use one.
+	for _, stmt := range e.chanSiteInit {
+		fmt.Fprintf(&b, "\t%s\n", stmt)
+	}
 	e.resolveFuncRefs()
 	names := make([]string, len(e.pkgInit))
 	deps := make([][]string, len(e.pkgInit))
@@ -4181,7 +4180,7 @@ func (e *emitter) pkgInitDefs() string {
 }
 
 // needsPkgInit reports whether the package has anything to initialize.
-func (e *emitter) needsPkgInit() bool { return len(e.pkgInit) != 0 }
+func (e *emitter) needsPkgInit() bool { return len(e.pkgInit) != 0 || len(e.chanSiteInit) != 0 }
 
 // chanType recognises a channel type `chan T`, returning its element C type. A
 // directional one, `chan<- T` or `<-chan T`, is the same cell: the direction is
@@ -4714,11 +4713,12 @@ func (e *emitter) chanRuntimeDefs(elem string) string {
 	c, snd, rcv, ini := chanCName(elem), chanSendCName(elem), chanRecvCName(elem), chanInitCName(elem)
 	var b strings.Builder
 	if e.chanInitElems[elem] {
-		fmt.Fprintf(&b, `static void %[5]s(%[1]s ch) {
-	ch->lock = _locknew();
-	if (ch->lock < 0) {
-		ogo_panic("out of hardware locks");
-	}
+		// A cell is made with the lock of the make that makes it, taken once before
+		// the program starts (makeChanLock): every cell one make site makes shares
+		// it, which costs contention and nothing else, as the locks past the
+		// sixteenth channel always did.
+		fmt.Fprintf(&b, `static void %[5]s(%[1]s ch, int lock) {
+	ch->lock = lock;
 	ch->full = 0;
 	ch->taken = 0;
 	ch->closed = 0;
@@ -7402,6 +7402,8 @@ type emitter struct {
 	selectRots          []string                // file-scope counters where each select of two clauses or more starts its tests (emitSelect)
 	pkgLitObjects       []string                // file-scope static objects that give a package initializer's &T{...} its storage (see pkgLitObject)
 	chanCellN           int                     // counter minting unique cell names, program-wide like makeN
+	chanSiteInit        []string                // what package initialization does first: each make site's lock taken, each package-level cell made (emitMakeChan)
+	chanLockN           int                     // counter minting the make sites' lock variables
 	usesStringCmp       bool                    // a string < <= > >= appears: emit ogo_string_cmp
 	usesRuneDecode      bool                    // `for i, c := range s` appears: emit ogo_decode_rune
 	err                 error
@@ -10278,13 +10280,6 @@ func (e *emitter) emitPackageVarDecl(ast []int32) {
 					gn := e.globalC(nm)
 					e.globalArrays[gn] = a
 					e.emit("static " + a.elem + " " + gn + a.declSuffix() + ";\n")
-					// An array of structs holding channels owns a cell per ELEMENT per
-					// channel field: `var ws [8]worker` is eight workers with a channel
-					// each, which is the shape this target is for -- one per cog.
-					e.emitChanFieldCellsArray(gn, a)
-					// And an array whose ELEMENT is itself a channel, `var qs [7]chan
-					// req`, on the same rule: one cell per element.
-					e.emitChanElemCellsArray(gn, a)
 				}
 			}
 			continue
@@ -10449,299 +10444,8 @@ func (e *emitter) emitPackageVarDecl(ast []int32) {
 				defer e.pkgInitAssign(gn, nm, initExpr)
 			}
 			e.emit(";\n")
-			if e.isChanCType(ctype) {
-				// The cell is a file-scope object like the variable pointing at it;
-				// acquiring its lock is a call, so it waits for package init.
-				elem := e.chanElemOfCType(ctype)
-				cell := e.joinName(gn + "_cell")
-				e.emit("static " + chanCellCName(elem) + " " + cell + ";\n")
-				e.deferPkgInit(gn + " = &" + cell + ";")
-				e.chanInitElems[elem] = true
-				e.deferPkgInit(chanInitCName(elem) + "(" + gn + ");")
-			}
-			// A struct variable owns a cell per CHANNEL FIELD, on the same rule: the
-			// declaration owns the cell, the field is a reference to it. Declaring the
-			// struct TYPE allocates nothing, and a copy of the variable shares the
-			// channel, which is what a copy of a channel does in Go too.
-			e.emitChanFieldCells(gn, ctype)
 		}
 	}
-}
-
-// emitChanFieldCells mints a rendezvous cell for every channel field of a struct
-// variable and wires the field to it at package initialization, which is where a
-// channel variable's own cell is wired for the same reason: acquiring the lock is a
-// call, and C has no calls in a file-scope initializer.
-//
-// The rule is the one a channel variable already obeys -- the DECLARATION owns the
-// cell -- so a struct type declares nothing, two variables of one type have a
-// channel each, and a copy of a variable shares the channel it was copied from.
-// That last is not a compromise: a channel value is a reference in Go as well.
-func (e *emitter) emitChanFieldCells(gn, ctype string) {
-	for _, fld := range e.structs[ctype] {
-		if !e.isChanCType(fld.ctype) {
-			_, nested := e.structs[fld.ctype]
-			switch {
-			case nested && fld.dim.bound == "":
-				// A struct field holding a struct with channel fields of its own.
-				e.emitChanFieldCells(gn+"."+e.fieldIdent(fld.name), fld.ctype)
-			case nested && e.hasChanField(fld.ctype):
-				// A field that is an ARRAY of such structs, `ports [2]Port`: a bus and
-				// its bank of ports, each with a channel. The declaration owns these
-				// cells as it owns every other, and until 2026-09-17 it minted none:
-				// the channels stayed nil, and a send on one parked its cog for ever,
-				// as a nil channel's does, with nothing said.
-				subs, ok := e.arrayIndexSuffixes(fld.dim)
-				if !ok {
-					return
-				}
-				for _, sub := range subs {
-					e.emitChanFieldCells(gn+"."+e.fieldIdent(fld.name)+sub, fld.ctype)
-				}
-			}
-			continue
-		}
-		elem := e.chanElemOfCType(fld.ctype)
-		if fld.dim.bound != "" {
-			// A field that is an ARRAY of channels, `q [4]chan req`: a cell per
-			// element, on the same rule -- the declaration owns them. A struct is
-			// how a bank of channels is packaged once it has anything else to carry.
-			subs, ok := e.arrayIndexSuffixes(fld.dim)
-			if !ok {
-				return
-			}
-			cells := e.joinName(userIdent(strings.NewReplacer(".", "_").Replace(gn)) + "_" + e.fieldIdent(fld.name) + "_cells")
-			e.emit("static " + chanCellCName(elem) + " " + cells + fld.dim.declSuffix() + ";\n")
-			e.chanInitElems[elem] = true
-			for _, sub := range subs {
-				at := gn + "." + e.fieldIdent(fld.name) + sub
-				e.deferPkgInit(at + " = &" + cells + sub + ";")
-				e.deferPkgInit(chanInitCName(elem) + "(" + at + ");")
-			}
-			continue
-		}
-		cell := e.joinName(userIdent(strings.NewReplacer(".", "_").Replace(gn)) + "_" + e.fieldIdent(fld.name) + "_cell")
-		e.emit("static " + chanCellCName(elem) + " " + cell + ";\n")
-		e.deferPkgInit(gn + "." + e.fieldIdent(fld.name) + " = &" + cell + ";")
-		e.chanInitElems[elem] = true
-		e.deferPkgInit(chanInitCName(elem) + "(" + gn + "." + e.fieldIdent(fld.name) + ");")
-	}
-}
-
-// emitChanFieldCellsArray mints the cells for an ARRAY of structs holding channels,
-// one per element, and wires each element's field at package initialization. A
-// multi-dimensional array is walked in row-major order, so the index expression
-// matches the C declarator.
-func (e *emitter) emitChanFieldCellsArray(gn string, a arrDim) {
-	if !e.hasChanField(a.elem) {
-		return
-	}
-	bounds := a.bounds()
-	counts := make([]int, len(bounds))
-	total := 1
-	for i, b := range bounds {
-		n, err := strconv.Atoi(b)
-		if err != nil || n < 0 {
-			e.fail("a channel field in an array needs a constant bound, got %q", b)
-			return
-		}
-		counts[i], total = n, total*n
-	}
-	idx := make([]int, len(counts))
-	for k := 0; k < total; k++ {
-		sub := gn
-		for _, i := range idx {
-			sub += "[" + strconv.Itoa(i) + "]"
-		}
-		e.emitChanFieldCells(sub, a.elem)
-		for d := len(idx) - 1; d >= 0; d-- {
-			idx[d]++
-			if idx[d] < counts[d] {
-				break
-			}
-			idx[d] = 0
-		}
-	}
-}
-
-// emitLocalChanElemCells is emitChanElemCellsArray for a LOCAL array of channels:
-// the cells are still file-scope objects, their locks taken once before main, but
-// each element is wired at the declaration rather than at package initialization --
-// which is where a local channel variable's own cell is wired, and for the same
-// reason.
-func (e *emitter) emitLocalChanElemCells(nm string, a arrDim) {
-	if !e.isChanCType(a.elem) {
-		return
-	}
-	subs, ok := e.arrayIndexSuffixes(a)
-	if !ok {
-		return
-	}
-	elem := e.chanElemOfCType(a.elem)
-	for _, sub := range subs {
-		e.ind()
-		e.emit(nm + sub + " = &" + e.localChanCell(elem) + ";\n")
-	}
-}
-
-// emitChanElemCellsArray mints a rendezvous cell for every element of an array whose
-// ELEMENT TYPE is a channel, and wires each element to its cell at package
-// initialization -- the same rule a channel variable and a struct's channel field
-// obey: the DECLARATION owns the cell.
-//
-// Without this the array was emitted as what it is in C, an array of pointers, and
-// nothing ever set them: `var qs [2]chan int32` left every element NULL, and
-// `<-qs[0]` -- which the checker accepts -- was a receive on a null channel. The
-// element-per-cog bank of channels is the shape an eight-cog machine is written in,
-// and it was the one array of channels that allocated nothing.
-func (e *emitter) emitChanElemCellsArray(gn string, a arrDim) {
-	if !e.isChanCType(a.elem) {
-		return
-	}
-	subs, ok := e.arrayIndexSuffixes(a)
-	if !ok {
-		return
-	}
-	elem := e.chanElemOfCType(a.elem)
-	cell := e.joinName(gn + "_cells")
-	e.emit("static " + chanCellCName(elem) + " " + cell + a.declSuffix() + ";\n")
-	e.chanInitElems[elem] = true
-	for _, sub := range subs {
-		e.deferPkgInit(gn + sub + " = &" + cell + sub + ";")
-		e.deferPkgInit(chanInitCName(elem) + "(" + gn + sub + ");")
-	}
-}
-
-// arrayIndexSuffixes lists every element of an array as the C subscript run that
-// reaches it, "[0][1]", in row-major order -- which is the order the declarator
-// lays them out in. A bound that is not a constant answers no; every array here has
-// one, and a walk that assumed so would emit a subscript from a parse failure.
-func (e *emitter) arrayIndexSuffixes(a arrDim) ([]string, bool) {
-	bounds := a.bounds()
-	counts := make([]int, len(bounds))
-	total := 1
-	for i, b := range bounds {
-		n, err := strconv.Atoi(b)
-		if err != nil || n < 0 {
-			e.fail("a channel in an array needs a constant bound, got %q", b)
-			return nil, false
-		}
-		counts[i], total = n, total*n
-	}
-	out := make([]string, 0, total)
-	idx := make([]int, len(counts))
-	for k := 0; k < total; k++ {
-		sub := ""
-		for _, i := range idx {
-			sub += "[" + strconv.Itoa(i) + "]"
-		}
-		out = append(out, sub)
-		for d := len(idx) - 1; d >= 0; d-- {
-			idx[d]++
-			if idx[d] < counts[d] {
-				break
-			}
-			idx[d] = 0
-		}
-	}
-	return out, true
-}
-
-// hasChanField reports whether a struct type holds a channel, at any depth. It is
-// what keeps an ordinary array of ordinary structs from walking its elements.
-func (e *emitter) hasChanField(ctype string) bool {
-	for _, fld := range e.structs[ctype] {
-		if e.isChanCType(fld.ctype) {
-			return true
-		}
-		if _, nested := e.structs[fld.ctype]; nested && fld.dim.bound == "" && e.hasChanField(fld.ctype) {
-			return true
-		}
-	}
-	return false
-}
-
-// emitLocalChanFieldCells is emitChanFieldCells for a local struct: the cells are
-// still file-scope objects (their locks are taken once, before main), but the field
-// is wired at the declaration rather than at package initialization, because that is
-// where the variable comes into existence.
-// lit is the composite literal the declaration was initialized with, or nil. A field
-// that literal fills already refers to whatever the value written there does, so no
-// cell is minted over it: doing so replaced the channel the program wrote with a
-// private one nobody ever sends to, and the first receive on it blocked for ever --
-// `var w W = W{ch}` hung where `w := W{ch}`, which takes another path, did not.
-//
-// A nested struct filled by a nested LITERAL is walked against that literal, so the
-// rule reaches all the way down and an empty one (`W{In{}}`) still gets its cells.
-// One filled by anything else is not walked at all: the value copied in brings
-// whatever channels it has.
-func (e *emitter) emitLocalChanFieldCells(nm, ctype string, lit *Node) {
-	if _, isStruct := e.structs[ctype]; !isStruct {
-		return // no fields, and a keyed literal's keys are indexes (bindLitFuncFields)
-	}
-	var values []*Node
-	var fields []structField
-	if lit != nil {
-		values, fields, _ = e.litFieldValues(ctype, *lit)
-	}
-	filled := func(name string) (*Node, bool) {
-		for i, f := range fields {
-			if f.name == name && i < len(values) && values[i] != nil {
-				return values[i], true
-			}
-		}
-		return nil, false
-	}
-	for _, fld := range e.structs[ctype] {
-		v, has := filled(fld.name)
-		if !e.isChanCType(fld.ctype) {
-			if _, nested := e.structs[fld.ctype]; nested && fld.dim.bound == "" {
-				switch sub, isLit := e.litValueNode(v); {
-				case !has:
-					e.emitLocalChanFieldCells(nm+"."+e.fieldIdent(fld.name), fld.ctype, nil)
-				case isLit:
-					e.emitLocalChanFieldCells(nm+"."+e.fieldIdent(fld.name), fld.ctype, sub)
-				}
-			}
-			continue
-		}
-		if has {
-			continue
-		}
-		if fld.dim.bound != "" {
-			e.fail("a channel field that is an array is not supported yet")
-			return
-		}
-		e.ind()
-		e.emit(nm + "." + e.fieldIdent(fld.name) + " = &" + e.localChanCell(e.chanElemOfCType(fld.ctype)) + ";\n")
-	}
-}
-
-// litValueNode reads a literal's element as a composite literal of its own, in both
-// spellings: written with its type, `In{ch}`, and type-elided, `{ch}`.
-func (e *emitter) litValueNode(v *Node) (*Node, bool) {
-	if v == nil {
-		return nil, false
-	}
-	if v.sym == CompositeLit {
-		return v, true
-	}
-	if _, lit, ok := e.soleCompositeLit(v.ast); ok {
-		return &lit, true
-	}
-	return nil, false
-}
-
-// declLitNode reads a declaration's initializer as a composite literal, for the
-// channel-cell walk, which must know which fields the literal fills itself.
-func (e *emitter) declLitNode(initExpr []int32) *Node {
-	if initExpr == nil {
-		return nil
-	}
-	if _, lit, ok := e.soleCompositeLit(initExpr); ok {
-		return &lit
-	}
-	return nil
 }
 
 // emitChanSend emits one send on an already-rendered channel, whatever named it: a
@@ -20762,13 +20466,6 @@ func (e *emitter) emitVarSpec(names []string, typeAST []int32, initExprs [][]int
 					continue
 				}
 				e.emit(elem + " " + cnm + a.declSuffix() + " = {0};\n")
-				// An array whose ELEMENT is a channel owns a cell per element,
-				// on the rule a local channel already obeys: the declaration
-				// owns the cell, and the cell is static so it outlives every
-				// frame. Without this every element stayed a null pointer, and
-				// -- since the checker accepts `<-qs[0]` -- the program built
-				// and read rubbish off address zero rather than saying anything.
-				e.emitLocalChanElemCells(cnm, a)
 				continue
 			}
 			// A literal initializer is aggregate initialization, not a copy.
@@ -20965,28 +20662,9 @@ func (e *emitter) emitVarSpec(names []string, typeAST []int32, initExprs [][]int
 			e.ind()
 			e.emit(ctype + " " + e.localIdent(nm) + " = " + e.zeroInitC(ctype) + ";\n")
 		}
-		// A channel is storage, not a handle: the checker rejects make() for one
-		// ("dynamic allocation not supported"), so the declaration is what
-		// creates it. Acquiring the hardware lock here is what makes the cell
-		// usable, and ties the lock's lifetime to the variable's.
-		//
-		// Only a declaration with NO initializer creates one. `var c chan int = ch`
-		// names the channel ch already is -- which is Go's reading too, a channel
-		// value being copied so that the two then refer to one channel -- and the
-		// cell was minted for it anyway, overwriting the alias one line after it
-		// was written with a private cell nobody ever sends to. The first receive
-		// then blocked for ever. `c := ch` and `c = ch` always aliased, so this
-		// was the one spelling of three that did not.
-		if initExpr == nil && e.isChanCType(ctype) {
-			// The declaration owns the cell; the variable is a reference to it.
-			e.ind()
-			e.emit(e.localIdent(nm) + " = &" + e.localChanCell(e.chanElemOfCType(ctype)) + ";\n")
-		}
-		// A local struct owns a cell per channel field, on the same rule as a
-		// local channel: the declaration owns it. Without this the field would be
-		// a null pointer that builds and then faults at the first send, which is
-		// the worst way for a feature to be missing.
-		e.emitLocalChanFieldCells(e.localIdent(nm), ctype, e.declLitNode(initExpr))
+		// A channel declared is nil, as in Go: make(chan T) makes one (emitMakeChan).
+		// Until 2026-10-09 the declaration made it, a cell per channel variable,
+		// channel field and element of an array of channels.
 	}
 }
 
@@ -35549,6 +35227,10 @@ func (e *emitter) emitCallExpr(recv string, suffix []Node) bool {
 			return true
 		}
 		if builtin && recv == "make" {
+			if elem, ok := e.makeChanSuffixElem(suffix); ok {
+				e.emitMakeChan(elem)
+				return true
+			}
 			// make needs a hoisted backing array, so it is only handled as a
 			// `var s []T = make(...)` initializer (see emitMakeSliceVar), not as a
 			// general expression.
@@ -43408,7 +43090,8 @@ func (e *emitter) noteDeclFrameHolder(ctype, name string, initExpr []int32) {
 	// a reference to this frame as surely as a struct with a slice field does, and
 	// it is not in e.structs, being a type the compiler supplies rather than one the
 	// program declares.
-	if _, isStruct := e.structs[methodBaseType(ctype)]; !isStruct && !e.isPointer(ctype) && ctype != "ogo_builder" {
+	// And a CHANNEL, a pointer to a cell a make in a function puts in its frame.
+	if _, isStruct := e.structs[methodBaseType(ctype)]; !isStruct && !e.isPointer(ctype) && ctype != "ogo_builder" && !e.isChanCType(e.underlyingCType(ctype)) {
 		return
 	}
 	if r, ok := e.frameRefOf(initExpr); ok {
@@ -47255,6 +46938,9 @@ func (e *emitter) fieldAccessC(base string, fields []string) string {
 // false when the type is outside the modelled subset, so the caller fails
 // honestly rather than emitting a wrongly-typed variable.
 func (e *emitter) inferCType(ast []int32) (string, bool) {
+	if ct, ok := e.makeChanCType(ast); ok {
+		return ct, true
+	}
 	return e.inferNodes(slices.Collect(it(ast)))
 }
 
@@ -51668,6 +51354,15 @@ func makeRef() frameRef {
 	}
 }
 
+// chanMakeRef names a channel from make in a function, whose cell is a local of the
+// block the make stands in (emitMakeChan).
+func chanMakeRef() frameRef {
+	return frameRef{origin: chanCellOrigin, what: "a channel from make, whose cell is this function's"}
+}
+
+// chanCellOrigin names the cell a channel's make allocates in a function.
+const chanCellOrigin = "the cell make allocates for a channel"
+
 // isMakeCall reports whether ast is a call of the predeclared make.
 func (e *emitter) isMakeCall(ast []int32) bool {
 	recv, suffix, ok := e.directCall(e.unparenExpr(ast))
@@ -51872,8 +51567,9 @@ func (e *emitter) carriesReferenceIn(ctype string, seen map[string]bool) bool {
 	if a, isArr := e.namedArrays[u]; isArr {
 		return e.carriesReferenceIn(a.elem, seen)
 	}
-	// An INTERFACE holds a pointer, whatever it is asked through.
-	if e.isSliceCType(u) || e.isPointer(u) || e.isIfaceCType(u) {
+	// An INTERFACE holds a pointer, whatever it is asked through, and a CHANNEL is
+	// one, to a cell a make in a function puts in its frame (emitMakeChan).
+	if e.isSliceCType(u) || e.isPointer(u) || e.isIfaceCType(u) || e.isChanCType(u) {
 		return true
 	}
 	if !e.isStruct(u) {
@@ -51902,6 +51598,8 @@ func (r frameRef) advice() string {
 	switch {
 	case r.view || r.backing:
 		return "declare the backing array at package scope"
+	case r.origin == chanCellOrigin:
+		return "make the channel in a package variable's declaration, var ch = make(chan T), or in main"
 	case r.origin == tempOrigin:
 		return "assign the value to a package variable and use that"
 	}
@@ -51995,6 +51693,11 @@ func (e *emitter) frameRefAny(ast []int32) (frameRef, bool) {
 	}
 	if _, _, ok := e.constBytesConvNamed(ast); ok && !e.pkgScope {
 		return constBytesRef(), true
+	}
+	// A channel from make in a function: its cell is a local of the block the make
+	// stands in (emitMakeChan), so it reaches this frame as `&T{...}` does.
+	if _, ok := e.makeChanElem(ast); ok && !e.pkgScope {
+		return chanMakeRef(), true
 	}
 	// And so is what make allocates in a function: a backing array of the frame.
 	// Only a declaration from make recorded it (emitMakeSliceVar), so `s = make([]int,
@@ -55027,31 +54730,86 @@ func (e *emitter) funcSourceName(cname string) string {
 	return cname
 }
 
-// localChanCell gives a locally declared channel its cell, and returns the cell's
-// C name. The cell is a file-scope static, one per declaration site, initialised
-// once at package init.
+// makeChanElem reports whether ast is `make(chan T)` or `make(chan T, 0)`, the
+// builtin's, and answers the element's C type.
+func (e *emitter) makeChanElem(ast []int32) (string, bool) {
+	recv, suffix, isCall := e.directCall(e.unparenExpr(ast))
+	if !isCall || recv != "make" || !e.universe(recv) {
+		return "", false
+	}
+	return e.makeChanSuffixElem(suffix)
+}
+
+// makeChanSuffixElem is makeChanElem for the suffix of a call of make.
+func (e *emitter) makeChanSuffixElem(suffix []Node) (string, bool) {
+	ct, ok := e.makeChanSuffixCType(suffix)
+	if !ok {
+		return "", false
+	}
+	return e.chanElemOfCType(ct), true
+}
+
+// makeChanCType is the C type of the channel a make makes: a defined channel
+// type's own name, `make(Pipe)`, so a variable declared from it keeps the type, and
+// the cell pointer's for `make(chan T)`.
+func (e *emitter) makeChanCType(ast []int32) (string, bool) {
+	recv, suffix, isCall := e.directCall(e.unparenExpr(ast))
+	if !isCall || recv != "make" || !e.universe(recv) {
+		return "", false
+	}
+	return e.makeChanSuffixCType(suffix)
+}
+
+func (e *emitter) makeChanSuffixCType(suffix []Node) (string, bool) {
+	if len(suffix) != 1 || suffix[0].sym != CallSuffix {
+		return "", false
+	}
+	args := e.callArgExprs(suffix[0].ast)
+	if len(args) == 0 {
+		return "", false
+	}
+	typeAST := e.makeTypeAST(args[0])
+	if elem, ok := e.chanType(typeAST); ok {
+		e.needChan(elem) // the typedef a variable declared from it is written with
+		return chanCName(elem), true
+	}
+	if kids := slices.Collect(it(typeAST)); len(kids) == 1 && kids[0].sym == 0 && e.f.ch(kids[0].tok) == IDENT {
+		if ct, ok := e.convType(e.src(kids[0].tok)); ok && e.isChanCType(ct) {
+			return ct, true
+		}
+	}
+	return "", false
+}
+
+// emitMakeChan writes the channel `make(chan T)` makes: a cell, made with the lock
+// of this make's site. The site's lock is taken once, first thing at package
+// initialization (chanSiteInit), so a make costs no lock of its own -- a make in a
+// loop or in a function called again would otherwise take one each time and give
+// none back, and the hardware has sixteen.
 //
-// It used to be an ordinary local, which put a channel's rendezvous state on the
-// declaring function's stack. Two things followed. Passing such a channel to a
-// goroutine -- `var ch chan int; go worker(ch)`, the ordinary way to write this --
-// handed another cog a pointer into a frame that the spawner was free to leave,
-// after which the goroutine's sends wrote over whatever reused that stack. And the
-// lock was acquired on every call and never released, so a function declaring a
-// channel could be called about fifteen times before the P2 ran out of locks.
-//
-// A static cell fixes both: the storage outlives every frame, and the lock is taken
-// once. The cost is that the cell belongs to the *site*, not to the call, so two
-// concurrent calls of the same function share one channel rather than getting one
-// each -- which is the trade the no-heap model asks for, and is why the cell can be
-// bounded at all: the P2 has 16 hardware locks, so a program cannot have more live
-// channels than sites anyway.
-func (e *emitter) localChanCell(elem string) string {
+// In a function the cell is a local of the block the statement stands in, declared
+// and made ahead of it, and the value is its address: the lifetime rules hold it to
+// that block as they hold the address of a composite literal (frameRefOf,
+// chanMakeRef), and main's outermost block outlives every cog. In a package
+// variable's initializer the cell is a static and is made with the locks, ahead of
+// every initialization step.
+func (e *emitter) emitMakeChan(elem string) {
+	e.chanInitElems[elem] = true
+	e.needChan(elem)
+	lock := fmt.Sprintf("ogo_chan_lock%d", e.chanLockN)
+	e.chanLockN++
+	e.chanCells = append(e.chanCells, "static int "+lock+";")
+	e.chanSiteInit = append(e.chanSiteInit, lock+" = _locknew();")
 	cell := fmt.Sprintf("ogo_chan_cell_%d", e.chanCellN)
 	e.chanCellN++
-	e.chanCells = append(e.chanCells, "static "+chanCellCName(elem)+" "+cell+";")
-	e.chanInitElems[elem] = true
-	e.deferPkgInit(chanInitCName(elem) + "(&" + cell + ");")
-	return cell
+	if e.pkgScope {
+		e.chanCells = append(e.chanCells, "static "+chanCellCName(elem)+" "+cell+";")
+		e.chanSiteInit = append(e.chanSiteInit, chanInitCName(elem)+"(&"+cell+", "+lock+");")
+	} else {
+		e.prologue = append(e.prologue, chanCellCName(elem)+" "+cell+";\n",
+			chanInitCName(elem)+"(&"+cell+", "+lock+");\n")
+	}
+	e.emit("(&" + cell + ")")
 }
 
 // embeddedPointee resolves the struct type an embedded "*T" or "*lib.T" points at,

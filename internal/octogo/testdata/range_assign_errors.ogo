@@ -15,7 +15,7 @@ var fs [2]F
 
 var wrong [2]func(a, b int) int
 
-var ch chan string
+var ch = make(chan string)
 
 func ok() {
 	var n int

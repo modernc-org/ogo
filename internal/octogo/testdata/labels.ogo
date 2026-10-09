@@ -36,7 +36,7 @@ sw:
 
 // A label on a select makes it a break target, as a switch's does: the break
 // leaves the select from inside a loop or a switch of one of its clauses.
-var lsch chan int
+var lsch = make(chan int)
 
 func breakSelect() int {
 	n := 0

@@ -152,7 +152,7 @@ func breaksOutOfFor(x int) int {
 // a select, a switch or a nested loop -- so the labeled loop ends there and control
 // falls off the function. Only an unlabeled break at the loop's own level used to
 // count, and each of these compiled with no return on the path the break takes.
-var lch chan int
+var lch = make(chan int)
 
 func breaksLabeledFromSelect() int {
 loop:

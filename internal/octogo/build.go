@@ -1821,6 +1821,7 @@ func (c *BuildContext) NewPackage(importPath string, files []string, fsys fs.FS)
 	// This runs after body checking, so usage in function bodies has been seen,
 	// and below the noDeclarationChecks early return, so a parse-only pass does
 	// not see these semantic diagnostics.
+	p.reportNeverMadeChans()
 	for _, v := range p.Files {
 		v.rejectDotImports()
 		if p.ImportPath == "" {

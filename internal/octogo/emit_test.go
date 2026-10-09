@@ -4895,10 +4895,8 @@ func main() {
 // must be one here: handing a by-value cell to a goroutine would give it a copy,
 // and the two would rendezvous with themselves rather than each other.
 //
-// The declaration is what creates a channel, not make(): the checker rejects
-// `ch = make(chan int)` as "dynamic allocation not supported", which is the spec's
-// position ("channels are not created with make ... statically allocated"). The
-// README's blinky example disagrees and is wrong.
+// make(chan T) creates a channel, as in Go, and a declaration without a value is
+// nil (since 2026-10-09; the declaration made it before).
 //
 // `taken` counts consumed values. A sender watching `full` alone could mistake
 // another sender's deposit for its own handoff, so it records `taken` before
@@ -4908,7 +4906,7 @@ func main() {
 // sleep, and spinning on the Hub bus without yielding starves the cogs doing work.
 func TestEmitCChannel(t *testing.T) {
 	src := `func main() {
-	var ch chan int
+	var ch = make(chan int)
 	ch <- 2
 	println(<-ch)
 }
@@ -4933,13 +4931,14 @@ func TestEmitCChannel(t *testing.T) {
 		// chanTypedefDefDim.
 		"typedef struct { int lock; volatile int full; volatile int taken; volatile int closed; volatile int waiting; int volatile val; } ogo_chan_int_cell;\n",
 		"typedef ogo_chan_int_cell* ogo_chan_int;\n",
-		// A locally declared channel's cell is a file-scope static, one per
-		// declaration site, and its lock is taken once at package init -- not a
-		// local, which put the rendezvous state on the declaring frame's stack and
-		// leaked a lock per call.
-		"static ogo_chan_int_cell ogo_chan_cell_0;\n",
-		"\togo_chan_init_int(&ogo_chan_cell_0);\n",
-		"\tch = &ogo_chan_cell_0;\n",
+		// A channel make makes in a function is a cell of the block, made with the
+		// lock of its make site, taken once at package init: a lock per call, never
+		// given back, ran the P2 out of locks at the sixteenth.
+		"static int ogo_chan_lock0;\n",
+		"\togo_chan_lock0 = _locknew();\n",
+		"\togo_chan_int_cell ogo_chan_cell_0;\n",
+		"\togo_chan_init_int(&ogo_chan_cell_0, ogo_chan_lock0);\n",
+		"\togo_chan_int ch = (&ogo_chan_cell_0);\n",
 		"\togo_chan_send_int(ch, 2);\n",
 		"\tprintf(\"%d\\n\", ogo_chan_recv_int(ch));\n",
 		"#include <propeller2.h>\n",
@@ -4960,7 +4959,7 @@ func TestEmitCChannel(t *testing.T) {
 // channel and its element -- looked up under the whole name -- came back empty:
 // `*p <- v` called `ogo_chan_send_`, a helper of no element type at all.
 func TestEmitCChanExpr(t *testing.T) {
-	src := `var q [2]chan int
+	src := `var q = [2]chan int{make(chan int), make(chan int)}
 
 func qof(i int) chan int { return q[i] }
 
@@ -5004,8 +5003,8 @@ func main() {
 // ("initializer element is not constant"). They are now declared zeroed and
 // assigned in ogo_pkg_init, which main calls before anything else.
 //
-// The same function is where a package-level channel gets its cell wired up and
-// its hardware lock acquired -- a call, so it cannot happen at file scope -- and
+// The same function is where a make site's hardware lock is taken and a package
+// variable's channel made -- calls, so they cannot happen at file scope -- and
 // where a user init() is called. Before this, init() was emitted and never
 // invoked, so its effects silently did not happen.
 //
@@ -5018,7 +5017,7 @@ func TestEmitCPackageInit(t *testing.T) {
 var a = 2
 var b = a + 3
 var c = five()
-var ch chan int
+var ch = make(chan int)
 var tally int
 
 func init() {
@@ -5048,8 +5047,10 @@ func main() {
 		"static void ogo_pkg_init(void) {\n",
 		"\tb = (a + 3);\n",
 		"\tc = five();\n",
-		"\tch = &ch_cell;\n",
-		"\togo_chan_init_int(ch);\n",
+		"static ogo_chan_int_cell ogo_chan_cell_0;\n", // a package variable's make is static
+		"\togo_chan_lock0 = _locknew();\n",            // the make sites' locks first
+		"\togo_chan_init_int(&ogo_chan_cell_0, ogo_chan_lock0);\n",
+		"\tch = (&ogo_chan_cell_0);\n",
 		"\togo_init0();\n", // a package may declare several, so each is numbered
 		"int main(void) {\n\togo_pkg_init();\n",
 	} {
@@ -5078,7 +5079,7 @@ func TestEmitCGo(t *testing.T) {
 }
 
 func main() {
-	var ch chan int
+	var ch = make(chan int)
 	go worker(ch, 42)
 	println(<-ch)
 }
@@ -5134,7 +5135,7 @@ func TestEmitCSelect(t *testing.T) {
 }
 
 func main() {
-	var ch chan int
+	var ch = make(chan int)
 	x := 0
 	select {
 	case x = <-ch:
@@ -5774,7 +5775,7 @@ func main() { bad(); println(*g) }
 		},
 		{
 			name: "handed to a goroutine",
-			src: `var done chan int
+			src: `var done = make(chan int)
 
 func use(p *int) { done <- *p }
 
@@ -6270,7 +6271,7 @@ func TestEmitCGoValueShapes(t *testing.T) {
 	fn func(int)
 }
 
-var done chan int
+var done = make(chan int)
 
 var gt T
 
@@ -6961,7 +6962,7 @@ func main() {
 			name: "in a channel send, which names no storage",
 			src: `var a = [2]int{1, 2}
 
-var ch chan [2][2]int
+var ch = make(chan [2][2]int)
 
 func send() { ch <- [2][2]int{a, a} }
 
@@ -7700,8 +7701,8 @@ func TestEmitCSelectSendGated(t *testing.T) {
 		{
 			name: "two send clauses",
 			src: `func main() {
-	var a chan int
-	var b chan int
+	var a = make(chan int)
+	var b = make(chan int)
 	select {
 	case a <- 1:
 	case b <- 2:
@@ -7712,7 +7713,7 @@ func TestEmitCSelectSendGated(t *testing.T) {
 		{
 			name: "send with a default",
 			src: `func main() {
-	var ch chan int
+	var ch = make(chan int)
 	select {
 	case ch <- 1:
 		println("sent")
@@ -8796,9 +8797,9 @@ func TestEmitCRuneStringEscape(t *testing.T) {
 
 var out [3]string
 
-var ch chan string
+var ch = make(chan string)
 
-var done chan int
+var done = make(chan int)
 
 type B struct{ s string }
 
@@ -8951,7 +8952,7 @@ type Other struct{ n int }
 
 var gs []int
 
-var done chan int
+var done = make(chan int)
 
 var back [4]int
 
@@ -9134,7 +9135,7 @@ type H struct {
 
 var gs []int
 
-var done chan int
+var done = make(chan int)
 
 var h H
 
@@ -10075,7 +10076,7 @@ func main() {
 		},
 		{
 			name: "an element read out of the literal, sent",
-			src: `var ch chan Box
+			src: `var ch = make(chan Box)
 
 func leak() {
 	var a [4]int
@@ -10092,7 +10093,7 @@ func main() {
 		},
 		{
 			name: "an element read out of the literal, launched",
-			src: `var done chan int
+			src: `var done = make(chan int)
 
 func work(b Box) { done <- len(b.d) }
 
@@ -10385,7 +10386,7 @@ var gx int
 
 var gw W
 
-var done chan int
+var done = make(chan int)
 
 var gslice []int
 var gaddr *int
@@ -10397,14 +10398,14 @@ var grows [1][]int
 var gaddrs [1]*Box
 var gbox Box
 
-var chslice chan []int
-var chaddr chan *int
-var chstruct chan Box
-var charray chan [1]Box
-var chiface chan Any
-var chanon chan struct{ d []int }
-var chrows chan [1][]int
-var chaddrs chan [1]*Box
+var chslice = make(chan []int)
+var chaddr = make(chan *int)
+var chstruct = make(chan Box)
+var charray = make(chan [1]Box)
+var chiface = make(chan Any)
+var chanon = make(chan struct{ d []int })
+var chrows = make(chan [1][]int)
+var chaddrs = make(chan [1]*Box)
 
 var gaslice [1][]int
 var gaaddr [1]*int
@@ -10656,7 +10657,7 @@ var gh Holder
 
 var ga [2]Counter
 
-var ch chan *Counter
+var ch = make(chan *Counter)
 
 func (c *Counter) Save() { g = c }
 
@@ -10873,7 +10874,7 @@ func (t T) deep() { t.in.save() }
 
 type T2 struct{ p *W }
 
-var gch chan []int
+var gch = make(chan []int)
 
 var gw = W{gb[:]}
 
@@ -10988,7 +10989,7 @@ var gx int
 
 var gsq Sq
 
-var ch chan *int
+var ch = make(chan *int)
 
 func keep(p *int) { gp = p }
 
@@ -11308,7 +11309,7 @@ type W struct{ q *Q }
 
 func mkw() W { return W{&gq} }
 
-var qc chan *Q
+var qc = make(chan *Q)
 
 func run() {
 	var loc [2]int
@@ -11632,7 +11633,7 @@ var gbs [1]B
 
 var gc C
 
-var ch chan []int
+var ch = make(chan []int)
 
 var back [4]int
 
@@ -11808,7 +11809,7 @@ var gback [4]int
 
 var gbc B
 
-var ch chan *int
+var ch = make(chan *int)
 
 var kk K = &T{}
 
@@ -12742,7 +12743,7 @@ func run(f func([]int)) {
 
 func main() { run(keepNone) }
 `, true},
-		{"rebound by a select", `var fch chan func([]int)
+		{"rebound by a select", `var fch = make(chan func([]int))
 
 func feed() { fch <- keepGlobal }
 
@@ -13208,7 +13209,7 @@ var gp *int
 
 var back [4]int
 
-var done chan int
+var done = make(chan int)
 
 var bus Bus
 
@@ -14170,7 +14171,7 @@ func main() {
 		{
 			name: "sent on a channel",
 			src: `func run() {
-	var ch chan []int
+	var ch = make(chan []int)
 	s := make([]int, 2)
 	ch <- s
 }
@@ -14184,7 +14185,7 @@ func main() {
 		{
 			name: "slice of a local array sent on a channel",
 			src: `func run() {
-	var ch chan []int
+	var ch = make(chan []int)
 	var a [4]int
 	ch <- a[:]
 }
@@ -14225,7 +14226,7 @@ func main() {
 			src: `func work(s []int, ch chan int) { ch <- len(s) }
 
 func run() {
-	var ch chan int
+	var ch = make(chan int)
 	go work([]int{1, 2}, ch)
 	println(<-ch)
 }
@@ -14240,8 +14241,9 @@ func main() {
 			name: "slice literal sent on a channel",
 			src: `func work(ch chan []int) { println(len(<-ch)) }
 
+var ch = make(chan []int)
+
 func run() {
-	var ch chan []int
 	go work(ch)
 	ch <- []int{1, 2}
 }
@@ -14316,7 +14318,7 @@ func main() {
 func work(s L, ch chan int) { ch <- len(s) }
 
 func run() {
-	var ch chan int
+	var ch = make(chan int)
 	go work(L{1, 2}, ch)
 	println(<-ch)
 }
@@ -14333,8 +14335,9 @@ func main() {
 
 func work(ch chan L) { println(len(<-ch)) }
 
+var ch = make(chan L)
+
 func run() {
-	var ch chan L
 	go work(ch)
 	ch <- L{1, 2}
 }
@@ -14519,7 +14522,7 @@ func main() { println(len(mk())) }
 	d []int
 }
 
-var ch chan []int
+var ch = make(chan []int)
 
 func feed() {
 	var a [4]int
@@ -14541,7 +14544,7 @@ func main() {
 	d []int
 }
 
-var done chan int
+var done = make(chan int)
 
 func work(xs []int) { done <- len(xs) }
 
@@ -14857,7 +14860,7 @@ func main() {
 func (w *worker) run(ch chan int) { ch <- w.n }
 
 func main() {
-	var ch chan int
+	var ch = make(chan int)
 	var w worker
 	go w.run(ch)
 	println(<-ch)
@@ -14874,7 +14877,7 @@ func main() {
 func (w worker) run(ch chan int) { ch <- len(w.data) }
 
 func run() {
-	var ch chan int
+	var ch = make(chan int)
 	var buf [4]int
 	var w worker
 	w.data = buf[:]
@@ -14896,7 +14899,7 @@ func main() {
 func (w worker) run(ch chan int) { ch <- w.n }
 
 func main() {
-	var ch chan int
+	var ch = make(chan int)
 	var w worker
 	go w.run(ch)
 	println(<-ch)
@@ -14956,7 +14959,7 @@ func main() {
 			src: `func send(s []int, ch chan []int) { ch <- s }
 
 func run() {
-	var ch chan []int
+	var ch = make(chan []int)
 	var a [4]int
 	send(a[:], ch)
 }
@@ -15397,7 +15400,7 @@ func main() {
 		},
 		{
 			name: "handing a laundered address to a cog",
-			src: `var done chan int
+			src: `var done = make(chan int)
 
 func id(p *int) *int { return p }
 
@@ -15664,7 +15667,7 @@ func main() {
 			src: `type buf struct{ data []int }
 
 func run() {
-	var ch chan buf
+	var ch = make(chan buf)
 	var a [4]int
 	var b buf
 	b.data = a[:]
@@ -15931,7 +15934,7 @@ func fill(ch chan Shape) {
 }
 
 func main() {
-	var ch chan Shape
+	var ch = make(chan Shape)
 	go work(ch)
 	fill(ch)
 }
@@ -16215,7 +16218,7 @@ func fill(ch chan Shape) {
 }
 
 func main() {
-	var ch chan Shape
+	var ch = make(chan Shape)
 	go work(ch)
 	fill(ch)
 }
@@ -16426,7 +16429,7 @@ func send(ch chan Shape) {
 }
 
 func main() {
-	var ch chan Shape
+	var ch = make(chan Shape)
 	go work(ch)
 	send(ch)
 }
@@ -16557,7 +16560,7 @@ func main() {
 		},
 		{
 			name: "the address of an array literal, sent",
-			src: `var ch chan *[3]int
+			src: `var ch = make(chan *[3]int)
 
 func run() {
 	ch <- &[3]int{1, 2, 3}
@@ -16754,7 +16757,7 @@ func main() {
 		},
 		{
 			name: "parenthesized, sent",
-			src: `var ch chan []int
+			src: `var ch = make(chan []int)
 
 func leak() {
 	var a [4]int
@@ -16770,7 +16773,7 @@ func main() {
 		},
 		{
 			name: "parenthesized, launched",
-			src: `var done chan int
+			src: `var done = make(chan int)
 
 func work(xs []int) { done <- len(xs) }
 
@@ -17946,7 +17949,7 @@ var fc = countv
 func TestEmitCHeaderStmtEscape(t *testing.T) {
 	const decls = `var gs []int
 
-var cs chan []int
+var cs = make(chan []int)
 
 type C struct{ n int }
 
@@ -18099,7 +18102,7 @@ func main() {
 	println(*gp)
 }
 `, "cannot store the address of local variable y"},
-		{"a local array of an inner block of main to a goroutine", `var done chan int
+		{"a local array of an inner block of main to a goroutine", `var done = make(chan int)
 func fill(b []byte) { b[0] = 7; done <- 1 }
 func main() {
 	if true {
@@ -18119,7 +18122,7 @@ func main() {
 	println(len(gs))
 }
 `, "cannot store a slice from make"},
-		{"a slice of main's local array to a goroutine", `var done chan int
+		{"a slice of main's local array to a goroutine", `var done = make(chan int)
 func fill(b []byte) { b[0] = 7; done <- 1 }
 func main() {
 	var buf [4]byte
@@ -18136,7 +18139,7 @@ func main() {
 	println(*gp)
 }
 `, ""},
-		{"main's local's address to a goroutine and back", `var res chan *int
+		{"main's local's address to a goroutine and back", `var res = make(chan *int)
 func work(p *int) { *p = 9; res <- p }
 func main() {
 	x := 1
@@ -18145,7 +18148,7 @@ func main() {
 	println(*p, x)
 }
 `, ""},
-		{"main's local's address sent on a channel", `var ch chan *int
+		{"main's local's address sent on a channel", `var ch = make(chan *int)
 func recv() { p := <-ch; *p = 3; ch <- p }
 func main() {
 	x := 1
@@ -18155,7 +18158,7 @@ func main() {
 	println(x)
 }
 `, ""},
-		{"a slice from make and a slice literal of main to a goroutine", `var done chan int
+		{"a slice from make and a slice literal of main to a goroutine", `var done = make(chan int)
 func sum(s []int) { t := 0; for _, v := range s { t += v }; s[0] = t; done <- 1 }
 func main() {
 	s := make([]int, 4)
@@ -18169,7 +18172,7 @@ func main() {
 }
 `, ""},
 		{"main's composite literal's address to a goroutine", `type T struct{ n int }
-var done chan int
+var done = make(chan int)
 func bump(t *T) { t.n++; done <- 1 }
 func main() {
 	go bump(&T{41})
@@ -18202,6 +18205,140 @@ func main() {
 				t.Errorf("refused: %v\n%s", err, test.src)
 			case test.want != "" && err == nil:
 				t.Errorf("accepted, want %q\n%s", test.want, test.src)
+			case test.want != "" && !strings.Contains(err.Error(), test.want):
+				t.Errorf("got %v, want %q", err, test.want)
+			}
+		})
+	}
+}
+
+// TestEmitCChanMakeLifetime: a channel make makes in a function is a cell of the
+// block the make stands in, held there by the lifetime rules as a composite
+// literal's address is (chanMakeRef): returned, stored in a package variable,
+// handed to a goroutine, sent on a channel, kept by a callee or stored outside its
+// loop's body, it is refused. Main's outermost block outlives every cog, so a
+// channel made there goes everywhere, and a function's own channel used where it
+// is made is no reference leaving anything.
+func TestEmitCChanMakeLifetime(t *testing.T) {
+	const head = `type W struct{ c chan int }
+
+var g chan int = nil
+var gw W
+var gk chan int = nil
+var cc = make(chan chan int)
+
+func worker(c chan int) { c <- 1 }
+
+func keep(c chan int) { gk = c }
+
+func look(c chan int) int {
+	select {
+	case v := <-c:
+		return v
+	default:
+		return -1
+	}
+}
+`
+	for _, test := range []struct {
+		name, src string
+		want      string // "" means the program must be accepted
+	}{
+		{"returned", `func f() chan int {
+	ch := make(chan int)
+	return ch
+}
+
+func main() { _ = f() }
+`, "cannot return local ch"},
+		{"returned where it is made", `func f() chan int {
+	return make(chan int)
+}
+
+func main() { _ = f() }
+`, "cannot return a channel from make"},
+		{"stored in a package variable", `func f() {
+	g = make(chan int)
+}
+
+func main() { f() }
+`, "cannot store a channel from make"},
+		{"handed to a goroutine", `func f() {
+	ch := make(chan int)
+	go worker(ch)
+	<-ch
+}
+
+func main() { f() }
+`, "cannot pass local ch"},
+		{"sent on a channel", `func f() {
+	ch := make(chan int)
+	cc <- ch
+}
+
+func main() { f() }
+`, "cannot send local ch"},
+		{"kept by a callee", `func f() {
+	ch := make(chan int)
+	keep(ch)
+}
+
+func main() { f() }
+`, "keep"},
+		{"in a struct stored in a package variable", `func f() {
+	gw = W{make(chan int)}
+}
+
+func main() { f() }
+`, "cannot store"},
+		{"made in a loop of main and stored outside it", `func main() {
+	var c chan int
+	for i := 0; i < 2; i++ {
+		c = make(chan int)
+	}
+	_ = look(c)
+}
+`, "does not outlive the block"},
+		{"made in an inner block of main and handed to a goroutine", `func main() {
+	if true {
+		ch := make(chan int)
+		go worker(ch)
+		<-ch
+	}
+}
+`, "cannot pass local ch"},
+		{"main's outermost block to every sink", `func main() {
+	ch := make(chan int)
+	go worker(ch)
+	<-ch
+	g = ch
+	keep(ch)
+	gw = W{make(chan int)}
+	ch2 := make(chan int)
+	go func() { <-cc }()
+	cc <- ch2
+}
+`, ""},
+		{"a function's own channel used where it is made", `func f() int {
+	ch := make(chan int)
+	return look(ch)
+}
+
+func main() { println(f()) }
+`, ""},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			src := head + "\n" + test.src
+			fsys := fstest.MapFS{"main.ogo": &fstest.MapFile{Data: []byte(src)}}
+			pkg, err := Build(-1, []string{"main.ogo"}, fsys)
+			if err == nil {
+				err = EmitC(pkg, io.Discard, Checked())
+			}
+			switch {
+			case test.want == "" && err != nil:
+				t.Errorf("refused: %v\n%s", err, src)
+			case test.want != "" && err == nil:
+				t.Errorf("accepted, want %q\n%s", test.want, src)
 			case test.want != "" && !strings.Contains(err.Error(), test.want):
 				t.Errorf("got %v, want %q", err, test.want)
 			}

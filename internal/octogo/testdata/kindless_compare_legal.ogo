@@ -20,8 +20,8 @@ var gi I
 
 func main() {
 	f := one
-	var ch chan int
-	var ch2 chan int
+	var ch = make(chan int)
+	var ch2 = make(chan int)
 	var a, b [3]int
 	xs := []int{1}
 	p := &gp

@@ -4,13 +4,13 @@
 
 type P struct{ x int }
 
-var ps chan P
+var ps = make(chan P)
 
-var fs chan func()
+var fs = make(chan func())
 
-var es chan error
+var es = make(chan error)
 
-var as chan [2]int
+var as = make(chan [2]int)
 
 func main() {
 	// ERROR "non-bool used as if condition"

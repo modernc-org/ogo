@@ -16,7 +16,7 @@ type Ports struct {
 	out chan<- int
 }
 
-var work chan int
+var work = make(chan int)
 
 func take(c chan int) {}
 
@@ -27,7 +27,7 @@ func recvOnly() <-chan int { return work }
 func narrow(c chan int) <-chan int { return c }
 
 func main() {
-	var bi chan int
+	var bi = make(chan int)
 	var ro <-chan int = bi
 	var so chan<- int = bi
 	var src Source = bi

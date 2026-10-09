@@ -6,7 +6,7 @@
 // A local channel supports valid sends and receives, and its element type is
 // enforced on both.
 func localChan() {
-	var ch chan int
+	var ch = make(chan int)
 	var i int
 
 	ch <- 1

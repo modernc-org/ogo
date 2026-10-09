@@ -136,7 +136,7 @@ var a0 = 2
 
 var fn = 3
 
-var out chan int
+var out = make(chan int)
 
 func f(n int) { out <- n }
 

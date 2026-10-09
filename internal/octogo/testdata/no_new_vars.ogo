@@ -7,7 +7,7 @@ func f() int  { return 1 }
 func g() int  { return 2 }
 func h() (int, int) { return 1, 2 }
 
-var ch chan int
+var ch = make(chan int)
 
 func statement() {
 	// ERROR "no new variables on left side of :="

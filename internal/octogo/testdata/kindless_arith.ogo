@@ -21,7 +21,7 @@ var gw W
 
 func main() {
 	f := one
-	var ch chan int
+	var ch = make(chan int)
 	xs := []int{1, 2}
 	var a [3]int
 	var v P

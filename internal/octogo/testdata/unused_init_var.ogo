@@ -43,7 +43,7 @@ func rangeValue() {
 }
 
 func selectRecv() {
-	var ch chan int
+	var ch = make(chan int)
 	select {
 	// ERROR "declared and not used: v"
 	case v := <-ch:
@@ -66,7 +66,7 @@ func used() {
 	for i, v := range []int{7, 8} {
 		println(i, v)
 	}
-	var ch chan int
+	var ch = make(chan int)
 	select {
 	case v := <-ch:
 		println(v)

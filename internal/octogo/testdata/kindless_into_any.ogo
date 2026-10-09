@@ -4,7 +4,7 @@
 
 type H struct{ v any }
 
-var ch chan any
+var ch = make(chan any)
 
 func show(v any) {}
 
@@ -17,7 +17,7 @@ func ret(xs []int) any {
 
 func main() {
 	xs := []int{1, 2}
-	var c chan int
+	var c = make(chan int)
 	f := func() {}
 	var arr [2]int
 	// ERROR cannot use xs as any value in argument to show: it is a slice

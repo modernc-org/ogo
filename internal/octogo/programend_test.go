@@ -29,7 +29,7 @@ func TestOnBoardProgramEnd(t *testing.T) {
 	}{
 		{"a goroutine's panic", `import "p2"
 
-var started chan bool
+var started = make(chan bool)
 
 var stop bool
 
@@ -53,7 +53,7 @@ func main() {
 `, "panic:", "before\npanic: index out of range", "survived"},
 		{"main's return", `import "p2"
 
-var started chan bool
+var started = make(chan bool)
 
 func chatter() {
 	started <- true

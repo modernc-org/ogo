@@ -151,7 +151,7 @@ func one() int { return 1 }
 func main() {
 	var p P
 	var a A
-	var c chan int
+	var c = make(chan int)
 	println(num(1, 2, 3, true), ptr(&p, &g), str("s"), slc(a[:]), stc(p), arr(a), fun(one), ifc(nil), p.value(), p.pointer(), a.array())
 	println(chn(c))
 }
@@ -204,7 +204,7 @@ func main() {
 `, asked, []string{"flt", "named", "none", "num", "ptr"}},
 		{"more than it looks", `var g int
 
-var c chan int
+var c = make(chan int)
 
 func deferred(k int) int {
 	defer note(k)

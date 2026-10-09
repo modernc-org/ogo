@@ -9,7 +9,7 @@ func produce(ch chan int) {
 }
 
 func main() {
-	var ch chan int
+	var ch = make(chan int)
 	var last int
 	var more bool
 	go produce(ch)

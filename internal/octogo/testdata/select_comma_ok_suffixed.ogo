@@ -9,7 +9,7 @@ type R struct {
 }
 
 func main() {
-	var ch chan int
+	var ch = make(chan int)
 	var r R
 	var flags [2]bool
 	var vals [2]int

@@ -15,7 +15,7 @@ const declared int = 1.5
 // ERROR "constant 2.5 truncated to int"
 var pkgVar int = 2.5
 
-var ch chan int
+var ch = make(chan int)
 
 func take(n int) int { return n }
 
@@ -65,7 +65,7 @@ func whole() {
 }
 
 // A constant sent must fit the element type too, which the send never used to ask.
-var small chan int8
+var small = make(chan int8)
 
 func sends() {
 	// ERROR "constant 200 overflows int8"

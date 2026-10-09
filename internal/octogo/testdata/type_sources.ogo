@@ -96,7 +96,7 @@ func namedFuncElement() {
 // A RECEIVE is a type source too, in each of its forms: the value has the
 // channel's element type, read off the channel's declaration.
 
-var pch chan Point
+var pch = make(chan Point)
 
 func fromReceive() {
 	go feedPch()

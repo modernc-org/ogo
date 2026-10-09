@@ -154,7 +154,7 @@ type Held struct {
 	p Pt
 }
 
-var locs chan Loc
+var locs = make(chan Loc)
 
 func takePt(p Pt) int   { return p.x }
 func takeLoc(l Loc) int { return l.x }
@@ -254,7 +254,7 @@ type Frame struct {
 	r Row
 }
 
-var cols chan Col
+var cols = make(chan Col)
 
 func takeRow(r Row) int { return r[0] }
 

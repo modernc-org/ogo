@@ -36,7 +36,7 @@ var gp *int
 
 var gf F = fn
 
-var gc chan int
+var gc = make(chan int)
 
 var gi I
 
@@ -89,7 +89,7 @@ func run() {
 	// ERROR "cannot use nil as int32 value in assignment"
 	xs[0] = nil
 
-	var ch chan int32
+	var ch = make(chan int32)
 
 	// ERROR "cannot use nil as int32 value in send"
 	ch <- nil

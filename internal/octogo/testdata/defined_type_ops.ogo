@@ -25,7 +25,7 @@ type Title string
 
 func takeT(t Title) int { return len(t) }
 
-var ch chan B
+var ch = make(chan B)
 
 func bad(a A) B {
 	// ERROR "cannot use a \+ 1 of type A as type B in return statement"
@@ -102,7 +102,7 @@ func derived() {
 
 var as = []A{1, 2}
 var arr = [2]A{3, 4}
-var cha chan A
+var cha = make(chan A)
 
 const ca A = 5
 

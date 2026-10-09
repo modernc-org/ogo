@@ -46,7 +46,7 @@ type worker struct {
 
 var ws [2]worker
 
-var cha chan [3]int
+var cha = make(chan [3]int)
 
 var iv any
 
@@ -134,7 +134,7 @@ func targets() {
 	}
 	table := [3][2]int{}
 	var row [2]int
-	var at chan int
+	var at = make(chan int)
 	// ERROR "cannot use at \(value of type int\) as chan int value in assignment"
 	for at, row = range table {
 	}

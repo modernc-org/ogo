@@ -9,7 +9,7 @@ var gp P
 
 func getp(a int) *P { return &gp }
 
-var never chan int
+var never = make(chan int)
 
 type Reader interface{ Read() int }
 

@@ -22,7 +22,7 @@ func main() {
 	n := 1
 	f := one
 	p := &gx
-	var ch chan int
+	var ch = make(chan int)
 	switch n {
 	// ERROR "too many arguments in call to get"
 	case get(1, 2):

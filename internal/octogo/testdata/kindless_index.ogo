@@ -14,7 +14,7 @@ var gi I
 
 func main() {
 	f := one
-	var ch chan int
+	var ch = make(chan int)
 	var v P
 	// ERROR "cannot index f: it is a function"
 	_ = f[0]

@@ -21,7 +21,7 @@ var xs []int
 
 var ps []*[4]int
 
-var ch chan *[4]int
+var ch = make(chan *[4]int)
 
 func f() *[4]int { return &g }
 

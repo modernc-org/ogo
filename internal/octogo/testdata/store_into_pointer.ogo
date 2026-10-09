@@ -36,7 +36,7 @@ func ok() {
 	hs[0].p = &gp
 	fs := []func(){f}
 	fs[0] = f
-	var cs [1]chan int
+	var cs = [1]chan int{make(chan int)}
 	cs[0] = nil
 	println(take(&gp), hp.x, h.p.y, hs[0].n, give() == nil)
 }
@@ -63,7 +63,7 @@ func bad() {
 	var fs = []func(){f}
 	// ERROR cannot use 3 \(untyped int constant\) as func\(\) value in assignment
 	fs[0] = 3
-	var cs [1]chan int
+	var cs = [1]chan int{make(chan int)}
 	// ERROR cannot use 5 \(untyped int constant\) as chan int value in assignment
 	cs[0] = 5
 	ls := []H{{}}

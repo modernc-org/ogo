@@ -34,7 +34,7 @@ var gp *int
 
 var gps *S
 
-var gc chan int
+var gc = make(chan int)
 
 var gi I
 

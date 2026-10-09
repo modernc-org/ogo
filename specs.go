@@ -127,13 +127,16 @@
 //     Go calls a data race, a variable one cog writes while another reads it, is
 //     defined here instead ("Memory shared between cogs"): a cog may spin on a
 //     flag another cog raises, and one writer and one reader need no lock.
-//   - A channel is a P2 hardware lock over statically allocated Hub RAM, giving a
-//     synchronous rendezvous with no scheduler behind it. Today a channel is made
-//     by its declaration, which Go does not do; it is planned (2026-10-08) to be
-//     made as Go makes one -- a declared channel nil, "make(chan T)" the way to
-//     make one, its cell static at package level and the frame's in a function,
-//     and refused where it would outlive the call, as a slice of a local array
-//     is. Then a channel program means what it means in Go.
+//   - A channel is a P2 hardware lock over a cell in Hub RAM, giving a
+//     synchronous rendezvous with no scheduler behind it. It is made as Go makes
+//     one, "make(chan T)", and a declared channel is nil. The cell is static at
+//     package level and the frame's in a function, so a channel a function makes
+//     is refused where it would outlive the call, as a slice of a local array is
+//     -- returned, kept, or handed to a goroutine -- but for main's outermost
+//     block, which outlives every cog. A channel holds one value in flight: a
+//     buffered one, "make(chan T, n)", is not supported yet. (Until 2026-10-09 a
+//     channel was made by its declaration, a static cell per declaration site,
+//     which Go does not do.)
 //   - An interface value holds a POINTER, so a pointer is what goes into one: "&x",
 //     not "x". Go accepts either and copies the value in, allocating for it; there
 //     is no heap here to allocate into, so the value form is refused rather than
@@ -1282,14 +1285,36 @@
 // statically allocated Hub RAM buffers. They facilitate synchronous, lock-step
 // communication without a software scheduler.
 //
-// A channel's storage is static wherever it is declared. A local declaration binds
-// the variable to a cell belonging to that declaration *site*, not to the call, and
-// the cell's lock is taken once before the program starts. So a channel may be
-// passed to a goroutine or sent through another channel without any question of
-// whether the declaring function has returned -- which is what makes the ordinary
-// "var ch chan T; go worker(ch)" safe here. The consequence of a per-site cell is
-// that two concurrent calls of one function share its channel rather than each
-// having one; the hardware bounds channels to the 16 locks in any case.
+// A channel is made by "make(chan T)", or "make(chan T, 0)", as in Go, and a
+// defined channel type by "make(C)"; a declared channel with no value is nil, and a
+// send, a receive or a range on a nil channel blocks for ever and closing one
+// panics, as in Go. A make in a package variable's initializer makes a static cell.
+// A make in a function makes a cell in the block the make stands in, which the
+// lifetime rules hold to that block as they hold a composite literal's address: a
+// channel a function makes may not be returned, kept in a package variable, handed
+// to a goroutine or sent on a channel, and a make in a loop's body makes the one
+// cell for every pass, which may not be stored outside it. Main's outermost block
+// outlives every cog (see the lifetime rules), so the ordinary
+//
+//	func main() {
+//		ch := make(chan int)
+//		go worker(ch)
+//		println(<-ch)
+//	}
+//
+// is what it is in Go. A channel a goroutine of another function uses is made at
+// package level, "var ch = make(chan T)", or in main and passed down.
+//
+// Every cell one make makes shares that make's hardware lock, taken once before
+// the program starts, so a make costs no lock of its own however often it runs;
+// the lock serves only the atomicity of the cell, and sharing one costs contention
+// and nothing else. A channel variable declared without a value that nothing
+// assigns, and whose address nothing takes, and that a send, a receive, a close or
+// a range uses, is refused: it is nil, every operation on it blocks for ever, and
+// on the board nothing says so. Go takes such a program. (Until 2026-10-09 a
+// channel was made by its declaration -- "var ch chan T" a live channel, one cell
+// per declaration site shared by every run of a function -- and that refusal is
+// what an unchanged program of then meets.)
 //
 // A receive may stand alone as a statement, "<-ch", discarding the value. The
 // receive still happens, so on a rendezvous channel that is how one goroutine
@@ -1742,9 +1767,7 @@
 // is used -- available for an array element as for every other.
 //
 // A "chan" type may stand where a type-as-value may, so that "make(chan T)"
-// parses and is then refused by the checker, which can name the real problem;
-// left out of the grammar it would break the parse instead and be reported as
-// something else entirely. Because the grammar is LL(1), a composite literal
+// parses, which is how a channel is made. Because the grammar is LL(1), a composite literal
 // may not appear at the top level of an "if", "for" or "switch" header, where the
 // "{" would be indistinguishable from the block that follows: those headers use
 // HeaderExpression below, which is the ordinary expression grammar minus this one
@@ -2100,7 +2123,7 @@
 //
 //	func main() {
 //		var buf [64]byte
-//		var done chan int
+//		done := make(chan int)
 //		go fill(buf[:], done)   // main's outermost block outlives every cog
 //		<-done
 //	}
@@ -2967,10 +2990,10 @@
 //     which costs contention and nothing else, a lock being needed only for
 //     atomicity around the cell. Twenty-four channels each completing a
 //     rendezvous have been run on a P2-EDGE and are correct.
-//   - Zero-Allocation: OctoGo has no dynamic memory allocator, and channels are
-//     not created with make -- doing so is rejected as a dynamic allocation. A
-//     channel is created by its declaration, which is what allocates its cell and
-//     acquires its lock, so the lock's lifetime is the variable's.
+//   - Zero-Allocation: OctoGo has no dynamic memory allocator. "make(chan T)"
+//     allocates nothing at run time: its cell is static at package level and the
+//     frame's in a function, and its lock is its make's, taken before the
+//     program starts.
 //   - Unbuffered: A channel holds one value in flight. A send completes only once
 //     a receiver has taken that value, so the two meet in lock step, which is
 //     what makes a buffer unnecessary.
@@ -2998,11 +3021,9 @@
 //   - The channel is an EXPRESSION, in either direction and in a select clause:
 //     a variable, a struct field, an element of a bank, a package's exported
 //     channel, a parenthesised operand, a dereferenced pointer to one, or the
-//     result of a call. Because there is no heap, a function returning a channel
-//     is the ordinary way a package hands one out rather than the exotic one it
-//     would be in Go: make allocates and is therefore rejected, so a channel is
-//     declared once and an accessor over the declaration is what other code
-//     calls. Each such operand is evaluated exactly once, where the statement
+//     result of a call -- a function returning a package's channel being how a
+//     package hands one out, a channel a function makes in its frame being one it
+//     may not return. Each such operand is evaluated exactly once, where the statement
 //     stands, as Go evaluates it -- including every clause of a select, whose
 //     operands are evaluated in source order upon entering it.
 //

@@ -33,9 +33,9 @@ var Held any = &theE
 
 var Errs = []error{&theE, nil}
 
-var Ch chan error
+var Ch = make(chan error)
 
-var PCh chan P
+var PCh = make(chan P)
 
 var Fn func() (int, error) = Two
 

@@ -1,13 +1,21 @@
-// A channel is created by its declaration, so make() has no channel form: there
-// is no allocator to make one with. "chan T" is admitted by the grammar as a
-// type-in-value position purely so that this call parses and the rejection can
-// name the real problem -- otherwise the parse fails and the error comes out as
-// something unrelated on another line.
+// A channel is made by make, as in Go, and a declared channel with no value is nil.
+// Its cell is static at package level and the frame's in a function, so make
+// allocates nothing at run time. A buffered channel is not supported yet, and new has
+// no form at all: there is no allocator.
+
+type Pipe chan int
+
+var made = make(chan int)
+
+var madeDefined = make(Pipe)
 
 func viaShortDecl() {
-	// ERROR "dynamic allocation not supported"
 	c := make(chan int)
-	println(<-c)
+	select {
+	case v := <-c:
+		println(v)
+	default:
+	}
 }
 
 func viaArgument(c chan int) {
@@ -15,11 +23,74 @@ func viaArgument(c chan int) {
 }
 
 func caller() {
-	// ERROR "dynamic allocation not supported"
-	viaArgument(make(chan int))
+	viaArgument(make(chan int, 0))
+	viaArgument(made)
 }
 
-// new is refused for the same reason.
+func buffered() {
+	// ERROR "buffered channels are not supported yet"
+	c := make(chan int, 4)
+	println(<-c)
+}
+
+func tooMany() {
+	// ERROR "expects 1 or 2 arguments; found 3"
+	c := make(chan int, 0, 1)
+	println(<-c)
+}
+
+func elemOfMake() {
+	c := make(chan string)
+	// ERROR "cannot use 1"
+	c <- 1
+}
+
+// A channel declared without a value, which nothing assigns and a send, a receive,
+// a close or a range uses, is nil for ever: refused where it is declared.
+func neverMade() {
+	// ERROR "channel c is never made"
+	var c chan int
+	c <- 1
+}
+
+func neverMadeClosed() {
+	// ERROR "channel c is never made"
+	var c chan int
+	close(c)
+}
+
+// ERROR "channel g is never made"
+var g chan bool
+
+func useG() { <-g }
+
+// Assigned, addressed or nil on purpose, it is no such channel.
+func madeLater() {
+	var c chan int
+	c = make(chan int)
+	select {
+	case c <- 1:
+	default:
+	}
+}
+
+func setP(p *chan int) {}
+
+func addressed() {
+	var c chan int
+	setP(&c)
+	<-c
+}
+
+func explicitNil() {
+	var c chan int = nil
+	select {
+	case <-c:
+	default:
+	}
+}
+
+// new is refused for the same reason it always was.
 func viaNew() {
 	// ERROR "dynamic allocation not supported"
 	p := new(int)
@@ -29,5 +100,15 @@ func viaNew() {
 func main() {
 	viaShortDecl()
 	caller()
+	buffered()
+	tooMany()
+	elemOfMake()
+	neverMade()
+	neverMadeClosed()
+	useG()
+	madeLater()
+	addressed()
+	explicitNil()
 	viaNew()
+	println(madeDefined == nil)
 }

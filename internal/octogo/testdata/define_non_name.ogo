@@ -11,7 +11,7 @@ type P struct {
 
 var gp P
 
-var ch chan int
+var ch = make(chan int)
 
 func getp() *P { return &gp }
 

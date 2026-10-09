@@ -30,7 +30,7 @@ var garr [2]int
 
 var keepN *int
 
-var cn chan *int
+var cn = make(chan *int)
 
 `
 	for _, test := range []struct {
