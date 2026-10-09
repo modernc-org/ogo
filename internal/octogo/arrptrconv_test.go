@@ -39,31 +39,51 @@ var _ = unsafe.Pointer(&g)
 		name, src string
 		refuse    bool
 	}{
-		{"a local's address stored", `func main() {
+		{"a local's address stored", `func run() {
 	var a [4]int
 	gp = (*[4]int)(&a)
 }
+
+func main() {
+	run()
+}
 `, true},
-		{"a local's address through an unsafe.Pointer stored", `func main() {
+		{"a local's address through an unsafe.Pointer stored", `func run() {
 	var a [4]int
 	gp = (*[4]int)(unsafe.Pointer(&a))
 }
+
+func main() {
+	run()
+}
 `, true},
-		{"a slice of a local stored", `func main() {
+		{"a slice of a local stored", `func run() {
 	var a [4]int
 	g2 = (*[2]int)(a[2:])
 }
+
+func main() {
+	run()
+}
 `, true},
-		{"a slice of a local held in a local stored", `func main() {
+		{"a slice of a local held in a local stored", `func run() {
 	var a [4]int
 	s := a[1:]
 	g2 = (*[2]int)(s)
 }
+
+func main() {
+	run()
+}
 `, true},
-		{"a conversion held in a local stored", `func main() {
+		{"a conversion held in a local stored", `func run() {
 	var a [4]int
 	p := (*[2]int)(a[:])
 	g2 = p
+}
+
+func main() {
+	run()
 }
 `, true},
 		{"a local's address returned", `func f() *[4]int {
@@ -82,30 +102,46 @@ func main() { _ = f() }
 `, true},
 		{"a callee storing its slice", `func keep(s []int) { g2 = (*[2]int)(s) }
 
-func main() {
+func run() {
 	var a [4]int
 	keep(a[:])
+}
+
+func main() {
+	run()
 }
 `, true},
 		{"a callee storing its pointer", `func keep(p *[4]int) { gp = (*[4]int)(p) }
 
-func main() {
+func run() {
 	var a [4]int
 	keep(&a)
+}
+
+func main() {
+	run()
 }
 `, true},
 		{"a callee storing its pointer through an unsafe.Pointer", `func keep(p *int) { gp = (*[4]int)(unsafe.Pointer(p)) }
 
-func main() {
+func run() {
 	var a [4]int
 	keep(&a[0])
+}
+
+func main() {
+	run()
 }
 `, true},
 		{"a callee returning its slice", `func view(s []int) *[2]int { return (*[2]int)(s) }
 
-func main() {
+func run() {
 	var a [4]int
 	g2 = view(a[:])
+}
+
+func main() {
+	run()
 }
 `, true},
 		{"a callee storing through a local", `func keep(s []int) {
@@ -113,9 +149,13 @@ func main() {
 	g2 = p
 }
 
-func main() {
+func run() {
 	var a [4]int
 	keep(a[:])
+}
+
+func main() {
+	run()
 }
 `, true},
 		{"a callee storing into a parameter's field", `type W struct{ p *[2]int }
@@ -124,9 +164,13 @@ var w W
 
 func keep(dst *W, s []int) { dst.p = (*[2]int)(s) }
 
-func main() {
+func run() {
 	var a [4]int
 	keep(&w, a[:])
+}
+
+func main() {
+	run()
 }
 `, true},
 		{"a method keeping its receiver's array", `type R struct{ b [4]int }
@@ -140,14 +184,22 @@ func main() {
 `, true},
 		{"a callee sending its pointer to another cog", `func send(p *int) { ch <- (*[4]int)(unsafe.Pointer(p)) }
 
-func main() {
+func run() {
 	var a [4]int
 	send(&a[0])
 }
+
+func main() {
+	run()
+}
 `, true},
-		{"a uintptr of a conversion of a slice of a local", `func main() {
+		{"a uintptr of a conversion of a slice of a local", `func run() {
 	var a [4]int
 	gu = uintptr(unsafe.Pointer((*[2]int)(a[:])))
+}
+
+func main() {
+	run()
 }
 `, true},
 		{"package storage stored, directly and by a callee", `func keep(s []int) { g2 = (*[2]int)(s) }

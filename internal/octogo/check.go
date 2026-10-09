@@ -285,6 +285,7 @@ type File struct {
 	gotoLabels        map[string]bool             // labels any goto of the function names, scanned ahead: a targeted label is reachable however the flow above it ended
 	labelUsed         map[string]bool             // the labels a break or continue named, for the unused report
 	localVars         []*VarDeclaration           // local variables of the function body being checked, for the unused-variable report
+	mainScope         *Scope                      // the scope of main's outermost block where it outlives every cog (mainOutlivesCogs), or nil
 	ifaceInits        []ifaceInit                 // package variables' initializers of an interface type, checked once every method is known
 	writeTargets      map[string]bool             // positions of bare "="/":=" assignment-target identifiers in the body: writes, which do not count as uses
 	clauseFallthrough map[string]bool             // positions of "fallthrough" keywords checkSwitch has accounted for, so the statement walk reports only the misplaced ones
@@ -741,6 +742,7 @@ func (f *File) checkFuncBody(pkg *Scope, n Node) {
 	var body Node
 	var sig *SignatureNode
 	hasBody, isMethod, sigErrs := false, false, false
+	decl := n
 	for n := range it(n.ast) {
 		switch n.sym {
 		case Receiver:
@@ -762,7 +764,12 @@ func (f *File) checkFuncBody(pkg *Scope, n Node) {
 			sigErrs = len(f.errList) > errs
 		case Block:
 			f.scanGotoLabels(n.ast)
+			f.mainScope = nil
+			if f.mainOutlivesCogs(decl, isMethod) {
+				f.mainScope = fs
+			}
 			f.checkBlock(fs, results, n)
+			f.mainScope = nil
 			body, hasBody = n, true
 		}
 	}
@@ -20872,13 +20879,36 @@ func (f *File) addressOperandRoot(s *Scope, e Node) (root Token, suffixed, ok bo
 func (f *File) escapesFrame(s *Scope, root Token, suffixed bool) bool {
 	sc, d := s.find2(root.Src())
 	vd, ok := d.(*VarDeclaration)
-	if !ok || sc == nil || sc.Kind != BlockScope {
+	if !ok || sc == nil || sc.Kind != BlockScope || sc == f.mainScope {
 		return false
 	}
 	if !suffixed {
 		return true
 	}
 	return !vd.isPtr && !vd.hasElemKind && !vd.isChan
+}
+
+// mainOutlivesCogs reports, for the body of the function being checked, that it is
+// func main of the program's own package, whose outermost block outlives every cog:
+// every return from main stops the other cogs inside main's frame, and a panic stops
+// them all, so a reference to a variable declared there may go to a goroutine, a
+// channel or a package variable (escapesFrame) -- `ch := make(chan int); go
+// worker(ch)` and `var buf [64]byte; go fill(buf[:])` in main. Not where the program
+// calls its own main, whose other runs return as any function does, nor where a
+// goto may run a declaration of main again over storage a goroutine still holds.
+// The emitter asks the same of its references (outlivesCogs).
+func (f *File) mainOutlivesCogs(fn Node, isMethod bool) bool {
+	if isMethod || f.Package == nil || f.Package.ImportPath != "" || len(f.gotoLabels) != 0 {
+		return false
+	}
+	name := ""
+	for c := range it(fn.ast) {
+		if c.sym == 0 && f.ch(c.tok) == IDENT {
+			name = f.tok(c.tok).Src()
+			break
+		}
+	}
+	return name == "main" && !f.Package.mainReferenced()
 }
 
 // addrThroughRef reports an address `&h.p.n` whose steps pass through a pointer or

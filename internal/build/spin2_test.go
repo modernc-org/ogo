@@ -96,9 +96,13 @@ func main() {
 `)
 	write(t, filepath.Join(root, "cmd", "bad", "main.ogo"), `import "example.com/proj/drv"
 
-func main() {
+func run() {
 	var local int32
 	println(drv.Start(&local))
+}
+
+func main() {
+	run()
 }
 `)
 	out := filepath.Join(root, "demo.binary")

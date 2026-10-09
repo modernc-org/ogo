@@ -438,18 +438,21 @@ variable, or handing either to another cog as a `go` argument or through a chann
 struct holding such a reference counts as one — and so does reading the reference
 back out of it, `b.d` being the same slice header `b` carries, and an interface made
 from one, `any(&q)` reaching `q` exactly as `&q` does — and the requirement
-follows a parameter back to the call sites that chose the storage. Declare the buffer
-at package scope and pass a slice of it, which is what the diagnostics ask for:
+follows a parameter back to the call sites that chose the storage. `main`'s
+outermost block is the exception: it outlives every cog, since the end of `main`
+stops them all, so a buffer declared there may go to a goroutine:
 
 ```
-var buf [64]byte
-
 func main() {
+	var buf [64]byte
 	var done chan int
-	go fill(buf[:], done)   // buf outlives every frame
+	go fill(buf[:], done)   // main's outermost block outlives every cog
 	<-done
 }
 ```
+
+Anywhere else, declare the buffer at package scope and pass a slice of it, which is
+what the diagnostics ask for.
 
 Everything else Go has is meant to be here eventually — anything missing above is
 work not yet done rather than a decision taken. Generics are the one open question:

@@ -90,6 +90,20 @@ example, the fuzzer's channels; p2-11 has no channel (2026-10-09) -- which is wh
 is to come before v1. Its design pass comes first: the lock of a frame's cell, a
 nil channel in a select (Go's way to disable a case), and the migration.
 
+**Main's outermost block outlives every cog** (the user's call, 2026-10-09, the
+first step of the channel design): every return from main stops the other cogs
+inside main's frame (ogo_end_program) and a panic stops them all or reboots, so a
+reference to a variable declared directly in main's body, or to what a statement
+there makes, may go to a goroutine, a send or a package variable -- `var buf
+[64]byte; go fill(buf[:])` and, once channels are made, `ch := make(chan int); go
+worker(ch)` in main. The emitter's frameRefOf answers no reference for it
+(outlivesCogs: main's own body, blockDepthOf <= 1) and the checker's escapesFrame
+the same (mainOutlivesCogs, File.mainScope); neither where the program references
+its own main (Package.mainReferenced, cached) or main has a goto, which can run a
+declaration again over storage a goroutine holds. 108 subtests of twelve lifetime
+tests had written their refused shape in main and were moved into a `run()` main
+calls: **a lifetime test writes its refused shape in a function other than main**.
+
 **Later, from the same review** (recorded at the user's request, not scheduled): a
 `go` that reports a cog it could not start instead of panicking; contracts on a
 bodyless Spin2 function's pointer parameters, borrowed for the call or kept, so a

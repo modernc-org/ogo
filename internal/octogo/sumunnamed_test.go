@@ -50,7 +50,7 @@ func gethp() *H { return &gh }
 		"func keep(v *int) {\n\tfor i := 0; i < 1; gethp().p = v {\n\t\ti++\n\t}\n}",
 	} {
 		for _, call := range []string{"keep(&x)", "keep(&gx)"} {
-			src := head + callee + "\n\nfunc main() {\n\tx := 5\n\t_ = x\n\t" + call + "\n}\n"
+			src := head + callee + "\n\nfunc run() {\n\tx := 5\n\t_ = x\n\t" + call + "\n}\n\nfunc main() {\n\trun()\n}\n"
 			t.Run(callee+"/"+call, func(t *testing.T) {
 				fsys := fstest.MapFS{"main.ogo": &fstest.MapFile{Data: []byte(src)}}
 				pkg, err := Build(-1, []string{"main.ogo"}, fsys)
@@ -81,9 +81,13 @@ func TestEmitCDerefCallRefusals(t *testing.T) {
 
 func f() *[]*int { return &gp }
 
-func main() {
+func run() {
 	x := 5
 	(*f())[0] = &x
+}
+
+func main() {
+	run()
 }
 `, "through (*f())[0]"},
 		{`type H struct{ n int }
@@ -95,10 +99,14 @@ func (h *H) keep() int {
 	return h.n
 }
 
-func main() {
+func run() {
 	var l H
 	x := (*(&l)).keep()
 	println(x)
+}
+
+func main() {
+	run()
 }
 `, "its receiver is stored where it outlives every frame"},
 	} {
@@ -160,7 +168,7 @@ func (h *H) set(v *int) { h.p = v }
 			if call == "" {
 				continue
 			}
-			src := head + test.callee + "\n\nfunc main() {\n\tx := 5\n\tvar loc [2]*int\n\tvar loc8 [8]byte\n\tvar data [3]byte\n\t_, _, _, _ = x, loc, loc8, data\n\t" + call + "\n}\n"
+			src := head + test.callee + "\n\nfunc run() {\n\tx := 5\n\tvar loc [2]*int\n\tvar loc8 [8]byte\n\tvar data [3]byte\n\t_, _, _, _ = x, loc, loc8, data\n\t" + call + "\n}\n\nfunc main() {\n\trun()\n}\n"
 			t.Run(test.callee+"/"+call, func(t *testing.T) {
 				fsys := fstest.MapFS{"main.ogo": &fstest.MapFile{Data: []byte(src)}}
 				pkg, err := Build(-1, []string{"main.ogo"}, fsys)

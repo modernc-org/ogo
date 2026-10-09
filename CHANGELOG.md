@@ -16,6 +16,20 @@ same area is a new entry under **Unreleased**, not an edit to the old one. Amend
 shipped section tells a reader on that version that they have behaviour they do not.
 `git show vX.Y.Z:CHANGELOG.md` is the check.
 
+## Unreleased
+
+### Language
+
+- **Main's outermost block outlives every cog**, so what a variable declared
+  directly in `main`'s body holds, and what a statement there makes, may go to a
+  goroutine, be sent on a channel and be stored in a package variable: `var buf
+  [64]byte; go fill(buf[:])`, `go work(&x)`, `ch <- &x`, `gp = &x`, `go sum(s)` for
+  `s := make([]int, 4)`, in `main`. Each was refused as storage that does not
+  outlive the function, which main's does: every return from `main` stops the other
+  cogs first, and a panic stops them all. Not from a block inside `main`, a loop's
+  body or a function literal, nor in a program that calls its own `main` or has a
+  `goto` in it.
+
 ## v0.51.0
 
 ### Documentation

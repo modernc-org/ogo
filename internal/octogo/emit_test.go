@@ -7930,9 +7930,13 @@ func TestEmitCCrossPackageParam(t *testing.T) {
 	fsys := fstest.MapFS{
 		"main.ogo": &fstest.MapFile{Data: []byte(`import "helper"
 
-func main() {
+func run() {
 	var a [4]int
 	helper.Spawn(a[:])
+}
+
+func main() {
+	run()
 }
 `)},
 		"helper/helper.ogo": &fstest.MapFile{Data: []byte(`func Work(s []int) { println(s[0]) }
@@ -8841,10 +8845,14 @@ func main() {
 		},
 		{
 			name: "stored in a package struct's field",
-			src: `func main() {
+			src: `func run() {
 	var r rune = 'z'
 	gb.s = string(r)
 	println(gb.s)
+}
+
+func main() {
+	run()
 }
 `,
 			want: "cannot store a string converted from a rune",
@@ -8867,10 +8875,14 @@ func main() {
 	done <- 1
 }
 
-func main() {
+func run() {
 	var r rune = 'y'
 	go show(string(r))
 	<-done
+}
+
+func main() {
+	run()
 }
 `,
 			want: "cannot pass a string converted from a rune",
@@ -14129,9 +14141,13 @@ func main() {
 			name: "passed to a goroutine",
 			src: `func work(s []int) { println(s[0]) }
 
-func main() {
+func run() {
 	s := make([]int, 2)
 	go work(s)
+}
+
+func main() {
+	run()
 }
 `,
 			want: "cannot pass a slice backed by local s to a goroutine",
@@ -14140,29 +14156,41 @@ func main() {
 			name: "slice of a local array passed to a goroutine",
 			src: `func work(s []int) { println(s[0]) }
 
-func main() {
+func run() {
 	var a [4]int
 	go work(a[:])
+}
+
+func main() {
+	run()
 }
 `,
 			want: "cannot pass a slice backed by local a to a goroutine",
 		},
 		{
 			name: "sent on a channel",
-			src: `func main() {
+			src: `func run() {
 	var ch chan []int
 	s := make([]int, 2)
 	ch <- s
+}
+
+func main() {
+	run()
 }
 `,
 			want: "cannot send a slice backed by local s",
 		},
 		{
 			name: "slice of a local array sent on a channel",
-			src: `func main() {
+			src: `func run() {
 	var ch chan []int
 	var a [4]int
 	ch <- a[:]
+}
+
+func main() {
+	run()
 }
 `,
 			want: "cannot send a slice backed by local a",
@@ -14196,10 +14224,14 @@ func main() {
 			name: "slice literal handed to a goroutine",
 			src: `func work(s []int, ch chan int) { ch <- len(s) }
 
-func main() {
+func run() {
 	var ch chan int
 	go work([]int{1, 2}, ch)
 	println(<-ch)
+}
+
+func main() {
+	run()
 }
 `,
 			want: "cannot pass a slice literal, whose backing array is this function's",
@@ -14208,10 +14240,14 @@ func main() {
 			name: "slice literal sent on a channel",
 			src: `func work(ch chan []int) { println(len(<-ch)) }
 
-func main() {
+func run() {
 	var ch chan []int
 	go work(ch)
 	ch <- []int{1, 2}
+}
+
+func main() {
+	run()
 }
 `,
 			want: "cannot send a slice literal, whose backing array is this function's",
@@ -14279,10 +14315,14 @@ func main() {
 
 func work(s L, ch chan int) { ch <- len(s) }
 
-func main() {
+func run() {
 	var ch chan int
 	go work(L{1, 2}, ch)
 	println(<-ch)
+}
+
+func main() {
+	run()
 }
 `,
 			want: "cannot pass a slice literal, whose backing array is this function's",
@@ -14293,10 +14333,14 @@ func main() {
 
 func work(ch chan L) { println(len(<-ch)) }
 
-func main() {
+func run() {
 	var ch chan L
 	go work(ch)
 	ch <- L{1, 2}
+}
+
+func main() {
+	run()
 }
 `,
 			want: "cannot send a slice literal, whose backing array is this function's",
@@ -14829,13 +14873,17 @@ func main() {
 
 func (w worker) run(ch chan int) { ch <- len(w.data) }
 
-func main() {
+func run() {
 	var ch chan int
 	var buf [4]int
 	var w worker
 	w.data = buf[:]
 	go w.run(ch)
 	println(<-ch)
+}
+
+func main() {
+	run()
 }
 `,
 			want: "cannot pass local w, which holds a pointer into local buf to a goroutine",
@@ -14892,9 +14940,13 @@ func main() { spawn(g[:]) }
 
 func spawn(p []int) { go work(p) }
 
-func main() {
+func run() {
 	var a [4]int
 	spawn(a[:])
+}
+
+func main() {
+	run()
 }
 `,
 			want: "cannot pass a slice backed by local a to spawn: its parameter 1 reaches another cog",
@@ -14903,10 +14955,14 @@ func main() {
 			name: "local passed to a function that sends",
 			src: `func send(s []int, ch chan []int) { ch <- s }
 
-func main() {
+func run() {
 	var ch chan []int
 	var a [4]int
 	send(a[:], ch)
+}
+
+func main() {
+	run()
 }
 `,
 			want: "cannot pass a slice backed by local a to send: its parameter 1 reaches another cog",
@@ -14921,9 +14977,13 @@ func spawn(p []int) { go work(p) }
 
 func mid(q []int) { spawn(q) }
 
-func main() {
+func run() {
 	var a [4]int
 	mid(a[:])
+}
+
+func main() {
+	run()
 }
 `,
 			want: "cannot pass a slice backed by local a to mid: its parameter 1 reaches another cog",
@@ -14940,9 +15000,13 @@ func spawn(p []int) int {
 
 func mid(q []int) int { return spawn(q) }
 
-func main() {
+func run() {
 	var a [4]int
 	println(mid(a[:]))
+}
+
+func main() {
+	run()
 }
 `,
 			want: "cannot pass a slice backed by local a to mid: its parameter 1 reaches another cog",
@@ -14953,9 +15017,13 @@ func main() {
 
 func spawn(q *int) { go work(q) }
 
-func main() {
+func run() {
 	var x int = 3
 	spawn(&x)
+}
+
+func main() {
+	run()
 }
 `,
 			want: "cannot pass the address of local variable x to spawn: its parameter 1 reaches another cog",
@@ -14977,9 +15045,13 @@ func b(p []int) {
 	}
 }
 
-func main() {
+func run() {
 	var x [4]int
 	a(x[:])
+}
+
+func main() {
+	run()
 }
 `,
 			want: "cannot pass a slice backed by local x to a: its parameter 1 reaches another cog",
@@ -15042,10 +15114,14 @@ func main() {
 
 func keep(p *int) { g = p }
 
-func main() {
+func run() {
 	var x int
 	keep(&x)
 	println(*g)
+}
+
+func main() {
+	run()
 }
 `,
 			want: "cannot pass the address of local variable x to keep: its parameter 1 is stored where it outlives every frame; declare x at package scope",
@@ -15058,10 +15134,14 @@ func inner(p *int) { g = p }
 
 func outer(p *int) { inner(p) }
 
-func main() {
+func run() {
 	var x int
 	outer(&x)
 	println(*g)
+}
+
+func main() {
+	run()
 }
 `,
 			want: "cannot pass the address of local variable x to outer: its parameter 1 is stored where it outlives every frame",
@@ -15072,10 +15152,14 @@ func main() {
 
 func keep(s []int) { gs = s }
 
-func main() {
+func run() {
 	var a [4]int
 	keep(a[:])
 	println(len(gs))
+}
+
+func main() {
+	run()
 }
 `,
 			want: "cannot pass a slice backed by local a to keep: its parameter 1 is stored where it outlives every frame; declare the backing array at package scope",
@@ -15090,10 +15174,14 @@ var g box
 
 func keep(p *int) { g.p = p }
 
-func main() {
+func run() {
 	var x int
 	keep(&x)
 	println(*g.p)
+}
+
+func main() {
+	run()
 }
 `,
 			want: "cannot pass the address of local variable x to keep: its parameter 1 is stored where it outlives every frame",
@@ -15113,12 +15201,16 @@ var g *int
 
 func keep(p *int) { g = p }
 
-func main() {
+func run() {
 	var b B
 	b.run = keep
 	var x int
 	b.run(&x)
 	println(*g)
+}
+
+func main() {
+	run()
 }
 `,
 			want: "cannot pass the address of local variable x to keep: its parameter 1 is stored where it outlives every frame",
@@ -15137,11 +15229,15 @@ var g *int
 
 func keep(p *int) { g = p }
 
-func main() {
+func run() {
 	b := B{run: keep}
 	var x int
 	b.run(&x)
 	println(*g, b.n)
+}
+
+func main() {
+	run()
 }
 `,
 			want: "cannot pass the address of local variable x to keep: its parameter 1 is stored where it outlives every frame",
@@ -15158,11 +15254,15 @@ var g *int
 
 func keep(p *int) { g = p }
 
-func main() {
+func run() {
 	var b B = B{keep}
 	var x int
 	b.run(&x)
 	println(*g)
+}
+
+func main() {
+	run()
 }
 `,
 			want: "cannot pass the address of local variable x to keep: its parameter 1 is stored where it outlives every frame",
@@ -15175,10 +15275,14 @@ func main() {
 
 func keep(s []int) { t[0] = s }
 
-func main() {
+func run() {
 	var a [3]int
 	keep(a[:])
 	println(len(t[0]))
+}
+
+func main() {
+	run()
 }
 `,
 			want: "cannot pass a slice backed by local a to keep: its parameter 1 is stored where it outlives every frame",
@@ -15193,12 +15297,16 @@ var g box
 
 func keep(b box) { g = b }
 
-func main() {
+func run() {
 	var x int
 	var b box
 	b.p = &x
 	keep(b)
 	println(*g.p)
+}
+
+func main() {
+	run()
 }
 `,
 			want: "which holds a pointer into local x to keep: its parameter 1 is stored where it outlives every frame",
@@ -15275,10 +15383,14 @@ func main() { println(*mk()) }
 
 func id(p *int) *int { return p }
 
-func main() {
+func run() {
 	var x int
 	g = id(&x)
 	println(*g)
+}
+
+func main() {
+	run()
 }
 `,
 			want: "cannot store the address of local variable x in package variable g",
@@ -15291,10 +15403,14 @@ func id(p *int) *int { return p }
 
 func work(p *int) { done <- *p }
 
-func main() {
+func run() {
 	var x int
 	go work(id(&x))
 	println(<-done)
+}
+
+func main() {
+	run()
 }
 `,
 			want: "cannot pass the address of local variable x to a goroutine",
@@ -15398,11 +15514,15 @@ func main() {
 
 func keep(p *int) { g = p }
 
-func main() {
+func run() {
 	var x int
 	f := keep
 	f(&x)
 	println(*g)
+}
+
+func main() {
+	run()
 }
 `,
 			want: "cannot pass the address of local variable x to keep: its parameter 1 is stored where it outlives every frame",
@@ -15415,10 +15535,14 @@ func keep(p *int) { g = p }
 
 var f = keep
 
-func main() {
+func run() {
 	var x int
 	f(&x)
 	println(*g)
+}
+
+func main() {
+	run()
 }
 `,
 			want: "cannot pass the address of local variable x to a func(*int) value, which may hold keep",
@@ -15429,11 +15553,15 @@ func main() {
 
 func keep(s []int) { gs = s }
 
-func main() {
+func run() {
 	var a [4]int
 	f := keep
 	f(a[:])
 	println(len(gs))
+}
+
+func main() {
+	run()
 }
 `,
 			want: "cannot pass a slice backed by local a to keep",
@@ -15495,11 +15623,15 @@ func main() {
 
 func work(b buf) { println(b.data[0]) }
 
-func main() {
+func run() {
 	var a [4]int
 	var b buf
 	b.data = a[:]
 	go work(b)
+}
+
+func main() {
+	run()
 }
 `,
 			want: "cannot pass local b, which holds a pointer into local a to a goroutine",
@@ -15514,11 +15646,15 @@ func main() {
 
 func take(n node) { println(*n.p) }
 
-func main() {
+func run() {
 	var x int = 4
 	var n node
 	n.p = &x
 	go take(n)
+}
+
+func main() {
+	run()
 }
 `,
 			want: "cannot pass local n, which holds a pointer into local x to a goroutine",
@@ -15527,12 +15663,16 @@ func main() {
 			name: "a struct holding a frame reference, sent on a channel",
 			src: `type buf struct{ data []int }
 
-func main() {
+func run() {
 	var ch chan buf
 	var a [4]int
 	var b buf
 	b.data = a[:]
 	ch <- b
+}
+
+func main() {
+	run()
 }
 `,
 			want: "cannot send local b, which holds a pointer into local a",
@@ -15544,10 +15684,14 @@ func main() {
 
 func work(b buf) { println(b.data[0]) }
 
-func main() {
+func run() {
 	var a [4]int
 	b := buf{data: a[:]}
 	go work(b)
+}
+
+func main() {
+	run()
 }
 `,
 			want: "cannot pass local b, which holds a pointer into local a to a goroutine",
@@ -15559,12 +15703,16 @@ func main() {
 
 func work(b buf) { println(b.data[0]) }
 
-func main() {
+func run() {
 	var a [4]int
 	var b buf
 	b.data = a[:]
 	c := b
 	go work(c)
+}
+
+func main() {
+	run()
 }
 `,
 			want: "cannot pass local c, which holds a pointer into local a to a goroutine",
@@ -15614,11 +15762,15 @@ func work(b buf) { println(b.data[0]) }
 
 func spawn(b buf) { go work(b) }
 
-func main() {
+func run() {
 	var a [4]int
 	var b buf
 	b.data = a[:]
 	spawn(b)
+}
+
+func main() {
+	run()
 }
 `,
 			want: "cannot pass local b, which holds a pointer into local a to spawn",
@@ -15801,9 +15953,13 @@ func (q *Quad) area() int { return q.w * q.h }
 
 func show(s Shape) { println(s.area()) }
 
-func main() {
+func run() {
 	q := Quad{3, 4}
 	go show(Shape(&q))
+}
+
+func main() {
+	run()
 }
 `,
 			want: "cannot pass the address of local variable q to a goroutine",
@@ -16085,11 +16241,15 @@ type Box struct {
 
 func show(s Shape) { println(s.Area()) }
 
-func main() {
+func run() {
 	lq := Quad{3, 4}
 	var b Box
 	b.p = &lq
 	go show(b.p)
+}
+
+func main() {
+	run()
 }
 `,
 			want: "cannot pass b.p, which holds a pointer into local lq to a goroutine",
@@ -16399,8 +16559,12 @@ func main() {
 			name: "the address of an array literal, sent",
 			src: `var ch chan *[3]int
 
-func main() {
+func run() {
 	ch <- &[3]int{1, 2, 3}
+}
+
+func main() {
+	run()
 }
 `,
 			want: "cannot send the address of a composite literal",
@@ -16411,9 +16575,13 @@ func main() {
 
 func keep(p *[3]int) { g = p }
 
-func main() {
+func run() {
 	keep(&[...]int{1, 2, 3})
 	println(g[0])
+}
+
+func main() {
+	run()
 }
 `,
 			want: "cannot pass the address of a composite literal",
@@ -17235,7 +17403,7 @@ func TestEmitCConstBytesConv(t *testing.T) {
 			"cannot store a conversion of a constant string to a slice"},
 		{"a defined type returned", "type B []byte\n\nfunc f() B { return B(\"xy\") }\n\nfunc main() { println(len(f())) }\n",
 			"cannot return a conversion of a constant string to a slice"},
-		{"a defined type passed to a keeper", "type B []byte\n\nvar g B\n\nfunc keep(b B) { g = b }\n\nfunc main() { keep(B(\"hi\")) }\n",
+		{"a defined type passed to a keeper", "type B []byte\n\nvar g B\n\nfunc keep(b B) { g = b }\n\nfunc run() { keep(B(\"hi\")) }\n\nfunc main() { run() }\n",
 			"cannot pass a conversion of a constant string to a slice"},
 		{"a defined type of a run-time string", "type B []byte\n\nfunc main() {\n\ts := \"hi\"\n\tb := B(s)\n\tprintln(len(b))\n}\n",
 			"a string conversion needs allocation"},
@@ -17843,13 +18011,200 @@ func look(v []int) int { return len(v) }
 				}
 			}
 			t.Run(test.name+"/"+form.name+"/direct", func(t *testing.T) {
-				check(t, decls+"func main() {\n\tok := true\n\tvar a [4]int\n\tvar lc C\n\t_, _, _ = ok, a, lc\n"+
-					strings.Replace(form.text, "%s", test.direct, 1)+"}\n", test.want)
+				// In a function other than main, whose outermost block outlives every
+				// cog (TestEmitCMainOutlivesCogs).
+				check(t, decls+"func run() {\n\tok := true\n\tvar a [4]int\n\tvar lc C\n\t_, _, _ = ok, a, lc\n"+
+					strings.Replace(form.text, "%s", test.direct, 1)+"}\n\nfunc main() {\n\trun()\n}\n", test.want)
 			})
 			t.Run(test.name+"/"+form.name+"/callee", func(t *testing.T) {
 				check(t, decls+"func f("+test.param+") {\n\tok := true\n\t_ = ok\n"+strings.Replace(form.text, "%s", test.callee, 1)+
-					"}\n\nfunc main() {\n\tvar a [4]int\n\tvar lc C\n\t_, _ = a, lc\n\t"+test.call+"\n}\n", test.wantCallee)
+					"}\n\nfunc run() {\n\tvar a [4]int\n\tvar lc C\n\t_, _ = a, lc\n\t"+test.call+"\n}\n\nfunc main() {\n\trun()\n}\n", test.wantCallee)
 			})
 		}
+	}
+}
+
+// TestEmitCMainOutlivesCogs: main's outermost block outlives every cog -- every
+// return from main stops the other cogs inside main's frame, and a panic stops them
+// all -- so a reference to a variable declared there, or to what a statement there
+// makes, may go to a goroutine, a channel or a package variable (outlivesCogs, and
+// the checker's mainOutlivesCogs). Not from an inner block, a loop, a function
+// literal or another function, nor in a program calling its own main or with a
+// goto in main, which runs a declaration again over storage a goroutine may hold.
+func TestEmitCMainOutlivesCogs(t *testing.T) {
+	for _, test := range []struct {
+		name string
+		src  string
+		want string // "" means the program must be accepted
+	}{
+		{"an inner block of main", `var gp *int
+func main() {
+	if true {
+		y := 1
+		gp = &y
+	}
+	println(*gp)
+}
+`, "cannot store the address of local variable y"},
+		{"a loop body of main", `var gp *int
+func main() {
+	for i := 0; i < 2; i++ {
+		y := i
+		gp = &y
+	}
+	println(*gp)
+}
+`, "cannot store the address of local variable y"},
+		{"main with a goto, which may run a declaration again", `var gp *int
+func main() {
+	n := 0
+again:
+	x := n
+	gp = &x
+	n++
+	if n < 2 {
+		goto again
+	}
+	println(*gp)
+}
+`, "cannot store the address of local variable x"},
+		{"a program calling its own main", `var gp *int
+var once bool
+func main() {
+	x := 1
+	gp = &x
+	if !once {
+		once = true
+		main()
+	}
+	println(*gp)
+}
+`, "cannot store the address of local variable x"},
+		{"a function other than main", `var gp *int
+func setup() {
+	x := 1
+	gp = &x
+}
+func main() {
+	setup()
+	println(*gp)
+}
+`, "cannot store the address of local variable x"},
+		{"a function literal written in main", `var gp *int
+func main() {
+	func() {
+		y := 1
+		gp = &y
+	}()
+	println(*gp)
+}
+`, "cannot store the address of local variable y"},
+		{"a local array of an inner block of main to a goroutine", `var done chan int
+func fill(b []byte) { b[0] = 7; done <- 1 }
+func main() {
+	if true {
+		var buf [4]byte
+		go fill(buf[:])
+		<-done
+	}
+}
+`, "cannot pass a slice backed by local buf to a goroutine"},
+		{"a make of an inner block of main stored outward", `var gs []int
+func main() {
+	var s []int
+	if true {
+		s = make([]int, 3)
+	}
+	gs = s
+	println(len(gs))
+}
+`, "cannot store a slice from make"},
+		{"a slice of main's local array to a goroutine", `var done chan int
+func fill(b []byte) { b[0] = 7; done <- 1 }
+func main() {
+	var buf [4]byte
+	go fill(buf[:])
+	<-done
+	println(buf[0])
+}
+`, ""},
+		{"main's local's address in a package variable", `var gp *int
+func main() {
+	x := 5
+	gp = &x
+	x = 6
+	println(*gp)
+}
+`, ""},
+		{"main's local's address to a goroutine and back", `var res chan *int
+func work(p *int) { *p = 9; res <- p }
+func main() {
+	x := 1
+	go work(&x)
+	p := <-res
+	println(*p, x)
+}
+`, ""},
+		{"main's local's address sent on a channel", `var ch chan *int
+func recv() { p := <-ch; *p = 3; ch <- p }
+func main() {
+	x := 1
+	go recv()
+	ch <- &x
+	<-ch
+	println(x)
+}
+`, ""},
+		{"a slice from make and a slice literal of main to a goroutine", `var done chan int
+func sum(s []int) { t := 0; for _, v := range s { t += v }; s[0] = t; done <- 1 }
+func main() {
+	s := make([]int, 4)
+	s[1], s[2] = 2, 3
+	go sum(s)
+	<-done
+	q := []int{4, 5, 6}
+	go sum(q)
+	<-done
+	println(s[0], q[0])
+}
+`, ""},
+		{"main's composite literal's address to a goroutine", `type T struct{ n int }
+var done chan int
+func bump(t *T) { t.n++; done <- 1 }
+func main() {
+	go bump(&T{41})
+	<-done
+	println("ok")
+}
+`, ""},
+		{"main's local's address kept by a callee and in a struct in a package variable", `var kept *int
+func keep(p *int) { kept = p }
+type H struct{ p *int }
+var gh H
+func main() {
+	x := 7
+	keep(&x)
+	h := H{&x}
+	gh = h
+	x = 8
+	println(*kept, *gh.p)
+}
+`, ""},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			fsys := fstest.MapFS{"main.ogo": &fstest.MapFile{Data: []byte(test.src)}}
+			pkg, err := Build(-1, []string{"main.ogo"}, fsys)
+			if err == nil {
+				err = EmitC(pkg, io.Discard, Checked())
+			}
+			switch {
+			case test.want == "" && err != nil:
+				t.Errorf("refused: %v\n%s", err, test.src)
+			case test.want != "" && err == nil:
+				t.Errorf("accepted, want %q\n%s", test.want, test.src)
+			case test.want != "" && !strings.Contains(err.Error(), test.want):
+				t.Errorf("got %v, want %q", err, test.want)
+			}
+		})
 	}
 }

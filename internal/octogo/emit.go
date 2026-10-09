@@ -7327,6 +7327,7 @@ type emitter struct {
 	makeN               int                     // translation-unit counter for make() backing arrays
 	wroteDecl           bool                    // a top-level definition has been emitted (drives blank-line separators)
 	mainRet             bool                    // currently emitting main's body: a bare `return` yields `return 0;`
+	mainOutlives        bool                    // main's outermost block outlives every cog (mainOutlivesCogs): no goto in main, and main not called by the program
 	declInit            bool                    // emitting a static initializer: a string literal must use a brace, not a compound literal
 	usesString          bool                    // an ogo_string type/literal appears: emit stringTypedef
 	usesStringPrint     bool                    // a string is printed: emit stringHelpers
@@ -16413,7 +16414,18 @@ func (e *emitter) mainReferenced() bool {
 	if e.f == nil || e.f.Package == nil {
 		return false
 	}
-	for _, f := range e.f.Package.Files {
+	return e.f.Package.mainReferenced()
+}
+
+// mainReferenced is the emitter's question answered for the package, once: the
+// checker asks it too (mainOutlivesCogs).
+func (p *Package) mainReferenced() bool {
+	p.mainRefOnce.Do(func() { p.mainRef = p.scanMainReferenced() })
+	return p.mainRef
+}
+
+func (p *Package) scanMainReferenced() bool {
+	for _, f := range p.Files {
 		prevFunc := false
 		var walk func(ast []int32) bool
 		walk = func(ast []int32) bool {
@@ -18391,6 +18403,7 @@ func (e *emitter) emitMain(sig, body []int32) {
 	e.localTypes = map[string]string{}
 	e.gotoTargets, e.labelHeads = map[string]bool{}, map[string]loopHead{}
 	e.scanGotoTargets(body)
+	e.mainOutlives = len(e.gotoTargets) == 0 && !e.mainReferenced()
 	e.aliasedLocals = map[string]bool{}
 	e.scanAliasedLocals(body)
 	e.scanBindings(body)
@@ -51919,6 +51932,27 @@ func (r frameRef) returnAdvice() string {
 // on without being one, and following it per field would mean tracking provenance
 // per field, so the variable carries the mark instead.
 func (e *emitter) frameRefOf(ast []int32) (frameRef, bool) {
+	r, ok := e.frameRefAny(ast)
+	if ok && e.outlivesCogs(r) {
+		return frameRef{}, false
+	}
+	return r, ok
+}
+
+// outlivesCogs reports a reference into main's outermost block, which outlives
+// every cog: every return from main stops the other cogs inside main's frame
+// (ogo_end_program), and a panic stops them all or reboots the chip, so nothing a
+// goroutine, a receiver or a package variable keeps can be read after that storage
+// is gone. Only in the run of main the program began with -- a program calling its
+// own main has frames of main that return -- and only where no goto runs a
+// declaration of main again over storage a goroutine may still hold. A minted
+// temporary, which has no name, is the block being emitted's (blockDepthOf).
+func (e *emitter) outlivesCogs(r frameRef) bool {
+	return e.mainRet && e.mainOutlives && e.blockDepthOf(r.name) <= 1
+}
+
+// frameRefAny is frameRefOf before main's outermost block is set apart.
+func (e *emitter) frameRefAny(ast []int32) (frameRef, bool) {
 	// Through any parentheses, which name nothing and hid everything: see
 	// sliceBackingIsFrame. Every sink and every mark asks through here. And through
 	// a conversion to a pointer type, `(*T)(&x)`, which is the address it converts.

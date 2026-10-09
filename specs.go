@@ -119,7 +119,9 @@
 //     local's address or a slice backed by a local, storing either in a package
 //     variable, handing either to another cog, calling a function that hands the
 //     argument on, and calling a pointer method that keeps its receiver on a local.
-//     A struct holding such a reference counts as one.
+//     A struct holding such a reference counts as one. Main's outermost block is
+//     the one frame that outlives every cog, since main's end stops them all, so
+//     what is declared there may go to a goroutine or a package variable.
 //   - A goroutine is a physical cog, of which the P2 has eight. There is no
 //     scheduler and no preemption, so "go" starts a real core, not a task. What
 //     Go calls a data race, a variable one cog writes while another reads it, is
@@ -2084,11 +2086,31 @@
 //
 //	var buf [64]byte
 //
-//	func main() {
-//		var done chan int
+//	func start(done chan int) {
 //		go fill(buf[:], done)   // buf outlives every frame
+//	}
+//
+// MAIN'S OUTERMOST BLOCK is the one frame that need not: it outlives every cog. Every
+// return from main stops the other cogs before main's frame is gone (see Program
+// execution), and a panic stops them all, or reboots the chip in a --release build.
+// So what a variable declared directly in main's body holds, and what a statement
+// there makes -- a slice of a local array, a local's address, a slice from make or a
+// slice literal, a composite literal's address -- may go to a goroutine, be sent on a
+// channel and be stored in a package variable:
+//
+//	func main() {
+//		var buf [64]byte
+//		var done chan int
+//		go fill(buf[:], done)   // main's outermost block outlives every cog
 //		<-done
 //	}
+//
+// Not from a block inside main, a loop's body or a function literal written in main,
+// whose storage is reused or gone while main runs on; not in a program that calls its
+// own main, whose other runs return as any function's do; and not where main has a
+// goto, which may run a declaration again over storage a goroutine still holds.
+// (Until 2026-10-09 main's frame was a frame like any other, and the buffer above had
+// to be declared at package scope.)
 //
 // A parameter may cross: whose storage it is, is the caller's business. The
 // requirement travels there instead. A function that lets one of its parameters reach

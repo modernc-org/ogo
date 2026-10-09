@@ -1659,6 +1659,10 @@ type Package struct {
 	spin2      []*spin2Object
 	spin2Funcs map[string]*spin2Binding
 	spin2Mu    sync.Mutex
+	// mainRef caches whether the package names its func main anywhere but where it
+	// is declared (mainReferenced).
+	mainRefOnce sync.Once
+	mainRef     bool
 }
 
 // fileOf is the file parsed from src, or nil for a source no package of this

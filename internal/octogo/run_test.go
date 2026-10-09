@@ -97,6 +97,68 @@ func main() {
 		want: "torn: 0\n",
 	},
 	{
+		// main's outermost block outlives every cog (outlivesCogs): its local array,
+		// a local's address, a slice from make and a composite literal's address go
+		// to goroutines, a local's address goes on a channel and into a package
+		// variable. Each was refused as storage that does not outlive the function,
+		// which main's does: every return from main stops the other cogs first.
+		name: "main's outermost block outlives every cog",
+		src: `type T struct{ n int }
+
+var done chan int
+var ptrs chan *int
+var gp *int
+var kept *int
+
+func keep(p *int) { kept = p }
+
+func fill(b []byte) {
+	b[0] = 7
+	done <- 1
+}
+
+func work(p *int) {
+	*p = 9
+	ptrs <- p
+}
+
+func sum(s []int) {
+	t := 0
+	for _, v := range s {
+		t += v
+	}
+	s[0] = t
+	done <- 1
+}
+
+func bump(t *T) {
+	t.n++
+	done <- t.n
+}
+
+func main() {
+	var buf [4]byte
+	go fill(buf[:])
+	<-done
+	x := 1
+	go work(&x)
+	p := <-ptrs
+	s := make([]int, 4)
+	s[1], s[2] = 2, 3
+	go sum(s)
+	<-done
+	go bump(&T{41})
+	n := <-done
+	y := 5
+	gp = &y
+	keep(&y)
+	y = 6
+	println(buf[0], *p, x, s[0], n, *gp, *kept)
+}
+`,
+		want: "7 9 9 5 42 6 6\n",
+	},
+	{
 		// %T spells a channel's direction as Go does, at every level, the arrow
 		// after "chan" belonging to the outer channel. The C type has no direction,
 		// so a `chan<- int` printed `chan int`; the checker records each level's

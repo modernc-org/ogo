@@ -35,10 +35,14 @@ func keepp(d *Doc) { lastp = d }
 
 `
 	const tail = `
-func main() {
+func run() {
 	var d Doc
 	Parse(&d)
 	println(d.N, last)
+}
+
+func main() {
+	run()
 }
 `
 	for _, test := range []struct {

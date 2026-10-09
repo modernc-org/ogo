@@ -207,17 +207,19 @@ func start(p *[16]uint32) int
 func main() { println(start(&ps)) }
 `, ""},
 		{"a local's address", `func start(p *[16]uint32) int
-func main() {
+func run() {
 	var ps [16]uint32
 	println(start(&ps))
 }
+func main() { run() }
 `, `cannot pass the address of local variable ps to start: its parameter 1 reaches another cog`},
 		{"through a relay", `func start(p *[16]uint32) int
 func relay(p *[16]uint32) int { return start(p) }
-func main() {
+func run() {
 	var ps [16]uint32
 	println(relay(&ps))
 }
+func main() { run() }
 `, `cannot pass the address of local variable ps to relay`},
 		{"deferred", `func start(p *[16]uint32) int
 func run() {
@@ -227,10 +229,11 @@ func run() {
 func main() { run() }
 `, `cannot pass the address of local variable ps`},
 		{"on a cog", `func start(p *[16]uint32) int
-func main() {
+func run() {
 	var ps [16]uint32
 	go start(&ps)
 }
+func main() { run() }
 `, `cannot pass the address of local variable ps to a goroutine`},
 		{"a float", `func add(a float32, b int) int
 func main() { println(add(1, 2)) }
