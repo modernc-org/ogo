@@ -97,6 +97,208 @@ func main() {
 		want: "torn: 0\n",
 	},
 	{
+		// A type switch case or an assertion naming an INTERFACE tests every type of
+		// the program that implements both interfaces, and the emitter enumerated
+		// them by method NAME: a *T2 whose M returns a Count was taken for an IA,
+		// whose M returns an int, and each of these types for every interface of
+		// another signature -- the case chosen and the assertion true, silent on the
+		// host and the board, and a call through it reading a result of another
+		// type. Asked of the signature since (implementsIface); and a method reached
+		// through an embedded INTERFACE field counts, as it does in the table.
+		name: "an interface case or assertion asks a method's signature, not only its name",
+		src: `type Count int
+
+type Row [3]int
+
+type IA interface{ M(int) int }
+
+type IB interface{ M(int) Count }
+
+type IC interface{ M(...int) int }
+
+type ID interface{ M([3]int) int }
+
+type IE interface{ M(Row) int }
+
+type IF interface{ M(int) (int, bool) }
+
+type IG interface{ M() [2]int }
+
+type IH interface{ M(int) }
+
+type J interface{ M(int) int }
+
+type T1 struct{}
+
+func (*T1) M(n int) int { return n }
+
+type T2 struct{}
+
+func (*T2) M(n int) Count { return Count(n) }
+
+type T3 struct{}
+
+func (*T3) M(ns ...int) int { return len(ns) }
+
+type T4 struct{}
+
+func (*T4) M(a [3]int) int { return a[0] }
+
+type T5 struct{}
+
+func (*T5) M(a Row) int { return a[1] }
+
+type T6 struct{}
+
+func (*T6) M(n int) (int, bool) { return n, true }
+
+type T7 struct{}
+
+func (*T7) M() [2]int { return [2]int{1, 2} }
+
+type T8 struct{}
+
+func (*T8) M(n int) {}
+
+type T9 struct{}
+
+func (*T9) M(a [4]int) int { return a[0] }
+
+// T10 has M by way of an embedded interface field.
+type T10 struct{ J }
+
+func which(v any) {
+	n := 0
+	switch v.(type) {
+	case IA:
+		n += 1
+	}
+	switch v.(type) {
+	case IB:
+		n += 2
+	}
+	switch v.(type) {
+	case IC:
+		n += 4
+	}
+	switch v.(type) {
+	case ID:
+		n += 8
+	}
+	switch v.(type) {
+	case IE:
+		n += 16
+	}
+	switch v.(type) {
+	case IF:
+		n += 32
+	}
+	switch v.(type) {
+	case IG:
+		n += 64
+	}
+	switch v.(type) {
+	case IH:
+		n += 128
+	}
+	_, a := v.(IA)
+	_, b := v.(IB)
+	_, h := v.(IH)
+	println(n, a, b, h)
+}
+
+var t1 T1
+
+var t2 T2
+
+var t3 T3
+
+var t4 T4
+
+var t5 T5
+
+var t6 T6
+
+var t7 T7
+
+var t8 T8
+
+var t9 T9
+
+var t10 = T10{&t1}
+
+func main() {
+	which(&t1)
+	which(&t2)
+	which(&t3)
+	which(&t4)
+	which(&t5)
+	which(&t6)
+	which(&t7)
+	which(&t8)
+	which(&t9)
+	which(&t10)
+	if a, ok := any(&t10).(IA); ok {
+		println(a.M(7))
+	}
+}
+`,
+		want: "1 true false false\n2 false true false\n4 false false false\n8 false false false\n16 false false false\n32 false false false\n64 false false false\n128 false false true\n0 false false false\n1 true false false\n7\n",
+	},
+	{
+		// A pointer to a pointer held in an interface, `any(&p)` for a `p *P` --
+		// what errors.As is handed. Its table was named after the C type, `..._vt_P*`,
+		// which no C compiler takes.
+		name: "a pointer to a pointer held in an interface",
+		src: `type P struct{ n int }
+
+type Stringer interface{ String() string }
+
+func (p *P) String() string { return "P" }
+
+var gp = &P{4}
+
+var gpp = &gp
+
+func set(target any, v *P) bool {
+	if t, ok := target.(**P); ok {
+		*t = v
+		return true
+	}
+	if t, ok := target.(*int); ok {
+		*t = v.n
+		return true
+	}
+	return false
+}
+
+func main() {
+	var p *P
+	var a any = &p
+	println(set(a, gp), p.n)
+	var n int
+	println(set(&n, gp), n)
+	println(set(gp, gp))
+	pp, ok := a.(**P)
+	println(ok, (*pp).n, pp == &p)
+	_, ok = a.(*P)
+	println(ok)
+	printf("%T %T %v\n", a, any(gpp), a == any(&p))
+	var b any = gpp
+	println(b == any(&gp), b != a)
+	var s Stringer = *gpp
+	println(s.String())
+	q := &p
+	var c any = &q
+	if r, ok := c.(***P); ok {
+		println((**r).n)
+	}
+	printf("%T\n", c)
+}
+`,
+		want: "true 4\ntrue 4\nfalse\ntrue 4 true\nfalse\n**main.P **main.P true\ntrue true\nP\n4\n***main.P\n",
+	},
+	{
 		// A buffered channel's size in every spelling Go folds to a constant -- a
 		// typed constant of another integer type, a shift, a constant len, a rune,
 		// unsafe.Sizeof, a float of whole value, a conversion -- and elements of no

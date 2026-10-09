@@ -682,6 +682,16 @@ still design-only.
   interface is an indirect call through a static vtable, always; the WPO pass that
   would make it direct where the concrete type is provable is design-only. Nothing
   is rejected for failing to prove one -- rejection is spent on lifetime.
+  A case or an assertion naming an INTERFACE tests every type of the program that
+  implements both, and the emitter enumerates them (implementsIface): asked by
+  method NAME only until 2026-10-09, a `Unwrap() []error` met `case interface{
+  Unwrap() error }` and the case was chosen, silent on the board, and a method
+  through an embedded interface field did not count. It compares the C signature
+  since (methodHasSig: a defined type is a typedef of its own, an array parameter
+  compared by its extents). **A question the checker answers for an assignment is
+  asked again wherever the emitter enumerates on its own** -- found writing Go's
+  errors.Is by hand, as a probe of whether an errors package could be ordinary
+  source.
 - **Method values bind their receiver at compile time**, which is why they cost
   nothing that other function values pay. Go's representation (a value pointing at a
   struct whose first word is the code pointer) was measured on hardware and declined:

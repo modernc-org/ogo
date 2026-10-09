@@ -8522,6 +8522,10 @@ type ifaceMethod struct {
 	// returns no array. res is then "void". A zero arr: none.
 	arr    arrDim
 	params []string
+	// arrParams is each parameter's array extents (cParamTypes), a zero arrDim for
+	// one that is no array: an array parameter is a pointer to its element in
+	// params, so [3]int and [4]int read alike there.
+	arrParams []arrDim
 	// vararg is 1 + the position of a "...T" parameter, 0 for none: a call through
 	// the slot packs what it wrote there into the []T, as a call of the method
 	// itself does.
@@ -8579,12 +8583,15 @@ func (e *emitter) ifaceVTName(iface string) string { return e.joinName(iface + "
 // ifaceThunkName the function that adapts one of its methods to the slot's
 // signature. Both are keyed by the pair, since the same method may fill a slot in
 // more than one interface and each slot has its own position.
+// ifaceVTVar names the table of (iface, concrete). The concrete type is folded into
+// identifier text (cTypeIdent): what `any(&p)` holds for a `p *T` is a *T, whose C
+// type `T*` named the table `..._vt_T*`, which no C compiler takes.
 func (e *emitter) ifaceVTVar(iface, concrete string) string {
-	return e.joinName(iface + "_vt_" + concrete)
+	return e.joinName(iface + "_vt_" + cTypeIdent(concrete))
 }
 
 func (e *emitter) ifaceThunkName(iface, concrete, method string) string {
-	return e.joinName(iface + "_" + concrete + "_" + userIdent(method))
+	return e.joinName(iface + "_" + cTypeIdent(concrete) + "_" + userIdent(method))
 }
 
 // ifaceAST is an interface's body together with what is needed to READ it: a flat
@@ -8686,9 +8693,9 @@ func (e *emitter) ifaceMethodsSeen(structAST []int32, seen map[string]bool) ([]i
 		// rightly, beside another one -- and said so of this one too: a method
 		// returning [3]int was "cannot return an array beside another result".
 		if a, isArr := e.arrayResultOf(n.ast); isArr {
-			params, _ := e.cParamTypes(n.ast)
+			params, dims := e.cParamTypes(n.ast)
 			_, at := e.variadicElem(n.ast)
-			add(ifaceMethod{name: name, res: "void", arr: a, params: params, vararg: at + 1})
+			add(ifaceMethod{name: name, res: "void", arr: a, params: params, arrParams: dims, vararg: at + 1})
 			continue
 		}
 		_, resTypes := e.cSig(n.ast)
@@ -8700,9 +8707,9 @@ func (e *emitter) ifaceMethodsSeen(structAST []int32, seen map[string]bool) ([]i
 		if len(resTypes) == 1 {
 			res = resTypes[0]
 		}
-		params, _ := e.cParamTypes(n.ast)
+		params, dims := e.cParamTypes(n.ast)
 		_, at := e.variadicElem(n.ast)
-		add(ifaceMethod{name: name, res: res, resList: resTypes, out: out, params: params, vararg: at + 1})
+		add(ifaceMethod{name: name, res: res, resList: resTypes, out: out, params: params, arrParams: dims, vararg: at + 1})
 	}
 	return methods, true
 }
@@ -31768,8 +31775,10 @@ func (e *emitter) ifaceCaseCond(operand, operandIface, caseIface string) (string
 	if len(conds) == 0 {
 		// No type in this program satisfies both, so the clause is dead. Emitted as
 		// an unreachable test rather than refused: a case for an interface nothing
-		// implements YET is a reasonable thing to write, and Go accepts it too.
-		return "0", nil, true
+		// implements YET is a reasonable thing to write, and Go accepts it too. The
+		// operand is read all the same: bound to a temporary for the test, it was a
+		// variable nothing read, which the host's compiler refuses under -Werror.
+		return "((void)" + e.varRef(operand) + ", 0)", nil, true
 	}
 	return strings.Join(conds, " || "), types, true
 }
@@ -31788,9 +31797,21 @@ func (e *emitter) ifaceImplementors(iface string) []string {
 	return out
 }
 
-// implementsIface reports whether concrete has every method iface declares. It is
-// needVTable's question without the emission, for a caller asking about a type it
-// may then decline.
+// implementsIface reports whether concrete has every method iface declares, each
+// of the signature iface declares it with. It is needVTable's question without the
+// emission, for a caller asking about a type it may then decline.
+//
+// The SIGNATURE is asked here because nothing else asks it of the types this
+// decides about: an assignment into an interface is the checker's to match, but
+// the candidates an interface-to-interface assertion or case tests are every type
+// of the program, enumerated here. Asked by name alone, a *Multi whose
+// `Unwrap() []error` met `case interface{ Unwrap() error }:` was taken for one --
+// the case chosen, the assertion true, and a call through it reading a slice
+// header as an error, silent on the host and the board. Compared in C terms, which
+// tell the types apart as Go does: a defined type is a typedef of its own, an
+// interface or a function type one per method set or signature, and an array
+// parameter is compared by its extents (arrParams), its C type being the element's
+// pointer.
 func (e *emitter) implementsIface(concrete, iface string) bool {
 	for _, m := range e.ifaceMethods[iface] {
 		// Resolved through the embedding chain, exactly as needVTable resolves it.
@@ -31800,11 +31821,82 @@ func (e *emitter) implementsIface(concrete, iface string) bool {
 		// interface-to-interface assertion or case tests. With no candidate the test
 		// is emitted as a constant 0, so `r.(N)` on a type whose R-method is
 		// promoted answered FALSE and said nothing about it.
-		if _, _, _, has := e.promotedMethod(concrete, m.name); !has {
+		cname, _, _, has := e.promotedMethod(concrete, m.name)
+		if !has {
+			// In the set by way of an embedded INTERFACE field, whose table the thunk
+			// dispatches through (needVTable): its method is the one to compare.
+			ict, _, dispatched := e.promotedIfaceMethodPath(concrete, m.name)
+			if !dispatched {
+				return false
+			}
+			im, found := e.ifaceMethodNamed(ict, m.name)
+			if !found || !sameIfaceSig(im, m) {
+				return false
+			}
+			continue
+		}
+		if !e.methodHasSig(cname, m) {
 			return false
 		}
 	}
 	return true
+}
+
+// ifaceMethodNamed is iface's method of that name.
+func (e *emitter) ifaceMethodNamed(iface, name string) (ifaceMethod, bool) {
+	for _, m := range e.ifaceMethods[iface] {
+		if m.name == name {
+			return m, true
+		}
+	}
+	return ifaceMethod{}, false
+}
+
+// sameIfaceSig reports whether two interface methods have one signature.
+func sameIfaceSig(a, b ifaceMethod) bool {
+	return a.vararg == b.vararg && sameArrDim(a.arr, b.arr) && slices.Equal(a.params, b.params) &&
+		sameArrDims(a.arrParams, b.arrParams) && slices.Equal(a.resList, b.resList)
+}
+
+// methodHasSig reports whether the method cname, a concrete type's, has the
+// signature the interface method m declares (see implementsIface).
+func (e *emitter) methodHasSig(cname string, m ifaceMethod) bool {
+	at, variadic := e.funcVariadic[cname]
+	if !variadic {
+		at = -1
+	}
+	if at+1 != m.vararg || !slices.Equal(e.funcParams[cname], m.params) || !sameArrDims(e.funcArrayParams[cname], m.arrParams) {
+		return false
+	}
+	if a, isArr := e.funcArrayRet[cname]; isArr || m.arr.bound != "" {
+		return isArr && sameArrDim(a, m.arr)
+	}
+	return slices.Equal(e.funcRet[cname], m.resList)
+}
+
+// sameArrDims compares two lists of parameter extents, a missing list reading as
+// one of no arrays.
+func sameArrDims(a, b []arrDim) bool {
+	for i := range max(len(a), len(b)) {
+		var x, y arrDim
+		if i < len(a) {
+			x = a[i]
+		}
+		if i < len(b) {
+			y = b[i]
+		}
+		if !sameArrDim(x, y) {
+			return false
+		}
+	}
+	return true
+}
+
+// sameArrDim reports whether two arrays are one type: the extents, the element
+// and the defined names, the array's own and its element's.
+func sameArrDim(a, b arrDim) bool {
+	return a.elem == b.elem && a.bound == b.bound && slices.Equal(a.inner, b.inner) &&
+		a.name == b.name && a.elemName == b.elemName && a.elemDims == b.elemDims
 }
 
 func (e *emitter) caseTypeC(ex Node) (concrete string, isNil, ok bool) {

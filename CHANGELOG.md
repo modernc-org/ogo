@@ -16,6 +16,22 @@ same area is a new entry under **Unreleased**, not an edit to the old one. Amend
 shipped section tells a reader on that version that they have behaviour they do not.
 `git show vX.Y.Z:CHANGELOG.md` is the check.
 
+## Unreleased
+
+### Fixed
+
+- **A type switch case or an assertion naming an interface asks each method's
+  signature**, not only its name. The types such a case tests are every type of the
+  program implementing both interfaces, and a type whose `Unwrap() []error` met
+  `case interface{ Unwrap() error }:` was taken for one: the case chosen and
+  `v.(I)` true, silent on the host and the board, and a call through it reading a
+  result of another type. And a method a type has through an embedded interface
+  field counts, as it does when the value is stored: a `struct{ J }` was no `I` to a
+  case or an assertion where `J`'s method was `I`'s, also in silence.
+- **A pointer to a pointer goes into an interface**: `any(&p)` for a `p *T`, what
+  `errors.As` is handed in Go, named its table after the C type and did not compile.
+  It is held, asserted back with `a.(**T)` and printed by `%T` as Go does.
+
 ## v0.54.0
 
 ### Language
