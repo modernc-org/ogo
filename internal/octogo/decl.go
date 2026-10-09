@@ -217,7 +217,12 @@ func init() {
 	f("byte", PredeclaredUint8)
 	f("rune", PredeclaredInt32)
 
-	// Untyped bool constants
+	// Untyped bool constants. Resolved from the start: the universe is one scope
+	// for every build in the process, and a gate left unvisited was opened and
+	// closed by each build that read the constant -- a data race between two
+	// builds at once, the tests' parallel ones, where the second could find it
+	// "resolving", report a definition cycle for true and leave its value unknown
+	// for every build after.
 	f2 := func(nm string, v bool) {
 		tok := names[nm]
 		Universe.Declarations[nm] = &ConstDeclaration{
@@ -225,6 +230,7 @@ func init() {
 			ConstSpec: &ConstSpecNode{
 				Name:  tok,
 				Value: constVal{cv: constant.MakeBool(v)},
+				gate:  resolved,
 			},
 		}
 	}
@@ -238,6 +244,7 @@ func init() {
 		declaration: declaration{token: tok},
 		ConstSpec: &ConstSpecNode{
 			Name: tok,
+			gate: resolved,
 		},
 	}
 
