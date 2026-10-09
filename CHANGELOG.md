@@ -16,6 +16,36 @@ same area is a new entry under **Unreleased**, not an edit to the old one. Amend
 shipped section tells a reader on that version that they have behaviour they do not.
 `git show vX.Y.Z:CHANGELOG.md` is the check.
 
+## Unreleased
+
+### Fixed
+
+- **A program's own lock is no channel's**: every `make(chan T)` site took a
+  hardware lock of its own before the program started, and past the sixteenth the
+  P2 hands out the last lock again, so in a program of many make sites
+  `p2.NewLock()` returned a lock some channels used, and a cog holding it while it
+  sent on one of them spun for ever. The make sites take eight locks at most and
+  share them. In v0.52.0. The host's test shim handed out no lock past the
+  sixteenth where the P2 hands out the last one again, and does as the P2 does now.
+- **`go` and `defer` of a conversion to another package's type are refused**, as
+  of this package's type: `go lib.T(1, 2)` was taken, and the C compiler refused
+  the trampoline calling a type.
+- **A select clause's `=` targets are writes**, as an assignment's are: they were
+  counted as uses of every variable spelled like them, so a later clause's `case v,
+  ok := <-ch:` whose `v` nothing read was never "declared and not used". And a
+  predeclared type as its comma-ok target, `case v, int = <-ch:`, is refused, as
+  in the statement form.
+- **A composite literal of an array type larger than 1 GB is refused**, as a
+  declared type of that size is: `[2147483647]int32{3, 5}` was taken.
+
+### Toolchain
+
+- **The host test shim ends a program where the board does**: as main returns,
+  every goroutine with it. The process ended only after main returned, its other
+  threads running on over main's stack, which goroutines may share since v0.52.0;
+  a program returning while its goroutines waited on main's channels crashed there
+  now and then. Nothing changes on the target.
+
 ## v0.52.0
 
 ### Language

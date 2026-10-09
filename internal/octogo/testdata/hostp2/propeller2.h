@@ -81,6 +81,10 @@ static pthread_mutex_t ogo_host_lock[OGO_HOST_LOCKS];
 static int ogo_host_lock_used[OGO_HOST_LOCKS];
 static pthread_mutex_t ogo_host_lockalloc = PTHREAD_MUTEX_INITIALIZER;
 
+/* Past the sixteenth lock the target's _locknew hands out lock 15 again and again,
+   reporting no exhaustion (doc/locknew-never-fails.c), and so does this: it returned
+   -1, which the target never does, and a program that took more than sixteen ran
+   here as it does on no board. */
 static inline int _locknew(void) {
 	pthread_mutex_lock(&ogo_host_lockalloc);
 	for (int i = 0; i < OGO_HOST_LOCKS; i++) {
@@ -92,7 +96,7 @@ static inline int _locknew(void) {
 		}
 	}
 	pthread_mutex_unlock(&ogo_host_lockalloc);
-	return -1;
+	return OGO_HOST_LOCKS - 1;
 }
 static inline void _lockret(int l) { if (l >= 0) ogo_host_lock_used[l] = 0; }
 /* _locktry returns non-zero when the lock was taken, matching propeller2.h. */

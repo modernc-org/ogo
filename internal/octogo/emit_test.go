@@ -5729,20 +5729,22 @@ func main() {
 // than Hub RAM has bytes is refused in those terms. Padding it to its length with
 // zero elements (padLocalAggregates) ran the compiler out of memory, a mutant's
 // `[2147483647]Named{&a, &b}` asking for 16 GB; Go refuses the type as larger than
-// its address space.
+// its address space. Past 1 GB the checker refuses the type as it refuses a
+// declared one (checkTypeSizeSpan), and below it the emitter refuses what does not
+// fit Hub RAM.
 func TestEmitCHugeArrayLiteralRefused(t *testing.T) {
-	for _, src := range []string{
-		"func main() {\n\tx := [2147483647][2]int{{1, 2}}\n\tprintln(x[0][0])\n}\n",
-		"var g = [1 << 20][2]int{{1, 2}}\n\nfunc main() { println(g[0][1]) }\n",
+	for _, test := range []struct{ src, want string }{
+		{"func main() {\n\tx := [2147483647][2]int{{1, 2}}\n\tprintln(x[0][0])\n}\n", "array type [2147483647][2]int is too large"},
+		{"var g = [1 << 20][2]int{{1, 2}}\n\nfunc main() { println(g[0][1]) }\n", "does not fit the P2's 512 KB of Hub RAM"},
 	} {
-		fsys := fstest.MapFS{"main.ogo": &fstest.MapFile{Data: []byte(src)}}
+		fsys := fstest.MapFS{"main.ogo": &fstest.MapFile{Data: []byte(test.src)}}
 		pkg, err := Build(-1, []string{"main.ogo"}, fsys)
-		if err != nil {
-			t.Fatalf("Build: %v", err)
+		if err == nil {
+			var buf bytes.Buffer
+			err = EmitC(pkg, &buf, Checked())
 		}
-		var buf bytes.Buffer
-		if err := EmitC(pkg, &buf, Checked()); err == nil || !strings.Contains(err.Error(), "does not fit the P2's 512 KB of Hub RAM") {
-			t.Errorf("EmitC error %v, want Hub RAM's refusal, of\n%s", err, src)
+		if err == nil || !strings.Contains(err.Error(), test.want) {
+			t.Errorf("error %v, want %q, of\n%s", err, test.want, test.src)
 		}
 	}
 }

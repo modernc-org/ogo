@@ -10,7 +10,7 @@ It is a test fixture, not part of the compiler or of any shipped program.
 | P2 | host stand-in |
 | --- | --- |
 | cogs (`_cogstart`, 8 of them) | detached pthreads, same limit |
-| hardware locks (`_locknew`, 16) | mutexes, same limit |
+| hardware locks (`_locknew`, 16) | mutexes, same limit; past the sixteenth, lock 15 again, as the target does |
 | `_waitx` (yield the hub bus) | short `nanosleep` |
 | `_waitms` | no-op |
 

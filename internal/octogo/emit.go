@@ -18216,11 +18216,18 @@ func (e *emitter) endProgramC(text []byte, endsCogs bool) []byte {
 // ends every goroutine with main. The startup code the target's compiler writes
 // stops main's own cog after it and no other, so the cogs a program started went on
 // running -- printing, and driving their pins -- where specs.go promised them
-// stopped and the host's process exit stopped them. On the host it is nothing: the
-// process ends with main.
+// stopped and the host's process exit stopped them. On the host the process ends
+// here, its output flushed, and not as main returns: exit runs while the other
+// threads go on, and main's frame, which a goroutine may share since main's
+// outermost block outlives every cog (outlivesCogs), is gone under them -- a
+// channel cell of main's read garbage there, "close of closed channel" on the host
+// where the board stopped every cog first.
 const ogoEndProgram = "static void ogo_end_program(void) {\n" +
 	"#ifdef __FLEXC__\n" +
 	"\tfor (int _ogo_c = 0, _ogo_me = _cogid(); _ogo_c < 8; _ogo_c++) if (_ogo_c != _ogo_me) _cogstop(_ogo_c);\n" +
+	"#else\n" +
+	"\tfflush(stdout);\n" +
+	"\t_Exit(0);\n" +
 	"#endif\n" +
 	"}\n"
 
@@ -54730,6 +54737,11 @@ func (e *emitter) funcSourceName(cname string) string {
 	return cname
 }
 
+// chanSiteLocks is how many hardware locks the make sites of a program take at
+// most (emitMakeChan): eight of the sixteen, the rest left to the cog pool and to the
+// program's own p2.NewLock().
+const chanSiteLocks = 8
+
 // makeChanElem reports whether ast is `make(chan T)` or `make(chan T, 0)`, the
 // builtin's, and answers the element's C type.
 func (e *emitter) makeChanElem(ast []int32) (string, bool) {
@@ -54796,10 +54808,22 @@ func (e *emitter) makeChanSuffixCType(suffix []Node) (string, bool) {
 func (e *emitter) emitMakeChan(elem string) {
 	e.chanInitElems[elem] = true
 	e.needChan(elem)
+	// At most chanSiteLocks sites take a lock of their own; the rest share theirs
+	// in turn. The target's _locknew hands out lock 15 again and again once the
+	// sixteen are gone (doc/locknew-never-fails.c), so a program of many make sites
+	// left the cog pool's lock and every lock of its own, p2.NewLock(), shared with a
+	// channel's -- and a cog holding such a lock while it sent on that channel would
+	// spin on it for ever, _locktry not being reentrant. Sharing among channels
+	// costs contention and nothing else: no operation holds one cell's lock while it
+	// takes another's.
 	lock := fmt.Sprintf("ogo_chan_lock%d", e.chanLockN)
-	e.chanLockN++
 	e.chanCells = append(e.chanCells, "static int "+lock+";")
-	e.chanSiteInit = append(e.chanSiteInit, lock+" = _locknew();")
+	if e.chanLockN < chanSiteLocks {
+		e.chanSiteInit = append(e.chanSiteInit, lock+" = _locknew();")
+	} else {
+		e.chanSiteInit = append(e.chanSiteInit, fmt.Sprintf("%s = ogo_chan_lock%d;", lock, e.chanLockN%chanSiteLocks))
+	}
+	e.chanLockN++
 	cell := fmt.Sprintf("ogo_chan_cell_%d", e.chanCellN)
 	e.chanCellN++
 	if e.pkgScope {

@@ -2785,6 +2785,15 @@ func (f *File) reportNotACall(s *Scope, head, stmt Node, kw string) bool {
 		f.err(id.Position(), "%s discards result of %s", kw, f.sourceSpan(head.Pos(), stmt.End()))
 		return true
 	}
+	// Another package's type, `go lib.T(x)`: a conversion as the local one is. The
+	// selector after the qualifier is no method call, and it was let through, to a
+	// trampoline calling the type.
+	if steps, _ := callSteps(stmt); len(steps) == 2 && steps[0].sym == Selector && steps[1].sym == CallSuffix && f.isImportQualifier(s, id.Src()) {
+		if _, _, isType := f.typeDeclNamed(s, id.Src()+"."+selectorTok(f, steps[0]).Src()); isType {
+			f.err(id.Position(), "%s requires function call, not conversion %s", kw, f.sourceSpan(head.Pos(), stmt.End()))
+			return true
+		}
+	}
 	if hasSelectorChild(stmt) {
 		return false
 	}
@@ -7980,6 +7989,16 @@ func (f *File) checkSelect(s *Scope, results []retResult, n Node) {
 				// `v := <-ch` outside a select gives it; without it v carried
 				// nothing and none of its members were checked.
 				vd := &VarDeclaration{declaration: declaration{token: id}}
+				// A flag target that is no name, `case n, flags[0] := <-ch:`, is
+				// refused where the clause is read, as Go refuses it before anything
+				// else: the name is declared for the body and kept out of the unused
+				// report, which said "declared and not used: n" there instead.
+				badFlag := f.commFlagNotName(c)
+				defer func(vd *VarDeclaration) {
+					if badFlag {
+						f.localVars = slices.DeleteFunc(f.localVars, func(d *VarDeclaration) bool { return d == vd })
+					}
+				}(vd)
 				if ce, hasCe := f.commRecvChanExpr(c); hasCe {
 					if nm, ql, ptr, k, hasK, isCh := f.recvChanExprElemInfo(s, ce); isCh {
 						vd.typeName, vd.typeQual, vd.isPtr = nm, ql, ptr
@@ -8118,6 +8137,32 @@ func (f *File) commRecvVar(commClause Node) (Token, bool) {
 // the comma -- and ok == false for a clause without one or one that assigns rather
 // than declares. commRecvVar has already said the clause is a declaring receive of
 // a plain name; this asks only for the second.
+// commFlagNotName reports a comm clause whose comma-ok flag target is no name,
+// `case v, flags[0] := <-ch:`.
+func (f *File) commFlagNotName(commClause Node) bool {
+	for head := range it(commClause.ast) {
+		if head.sym != CommHead {
+			continue
+		}
+		for op := range it(head.ast) {
+			if op.sym != CommOp {
+				continue
+			}
+			for c := range it(op.ast) {
+				if c.sym != PostfixComm {
+					continue
+				}
+				for pc := range it(c.ast) {
+					if pc.sym == LhsItem {
+						return !f.lhsItemIsName(pc)
+					}
+				}
+			}
+		}
+	}
+	return false
+}
+
 func (f *File) commRecvOkVar(commClause Node) (Token, bool) {
 	if _, isDecl := f.commRecvVar(commClause); !isDecl {
 		return Token{}, false
@@ -8292,7 +8337,7 @@ func (f *File) checkRecvIntoTarget(s *Scope, head, postfixComm, v Node) {
 			}
 		}
 		if ok {
-			f.noteWritten(s, id)
+			f.noteBareWrite(s, id)
 		}
 		if _, hasKind := f.identKind(s, id); ok && !hasKind && id.Src() != "_" {
 			// A target of a Kind is commRecvAssignTarget's.
@@ -8432,14 +8477,31 @@ func (f *File) commRecvOkTarget(s *Scope, okItem Node) {
 		}
 		f.err(id.Position(), "cannot assign to %s", nm)
 		return
-	case *ConstDeclaration, *TypeDeclaration, *PredeclaredFunc:
+	case *ConstDeclaration, *TypeDeclaration, *PredeclaredFunc, *PredeclaredType:
+		// A predeclared type too, `case v, int = <-ch:`, which the statement form
+		// refused and this took.
 		f.err(id.Position(), "cannot assign to %s", nm)
 		return
+	}
+	if whole {
+		f.noteBareWrite(s, id)
 	}
 	if !whole {
 		f.checkIndexExprs(s, okItem)
 	}
 	f.checkOkFlagTarget(s, okItem)
+}
+
+// noteBareWrite records a bare target a select clause assigns, `case v, ok = <-ch:`,
+// as a statement's are recorded: a write, which the unused rule does not count as a
+// use (writeTargets), and a write to what the name resolves to (noteWritten). Not
+// recorded, the name counted as a use of every variable spelled like it, and a later
+// clause's `case v, ok := <-ch2:` was never "declared and not used".
+func (f *File) noteBareWrite(s *Scope, id Token) {
+	if f.writeTargets != nil {
+		f.writeTargets[id.Position().String()] = true
+	}
+	f.noteWritten(s, id)
 }
 
 // lhsItemHead is an LhsItem's AssignHead.
@@ -12980,6 +13042,11 @@ func (f *File) checkCompositeLit(s *Scope, t litType, hasID bool, fac, lit Node)
 		if kids := slices.Collect(it(fac.ast)); len(kids) >= 4 && kids[0].sym == 0 && f.ch(kids[0].tok) == LBRACK &&
 			kids[1].sym == Expression && kids[len(kids)-1].sym == CompositeLit {
 			f.arrayBound(s, kids[1])
+			// And its size, as a declared type's is (checkTypeSize):
+			// `[2147483647]int32{3, 5}`, 8 GB, was taken.
+			if at, ok := f.litOrConvType(s, fac); ok {
+				f.checkTypeSizeSpan(at.s, at.tn, kids[0].Pos(), kids[len(kids)-2].End())
+			}
 		}
 		// A BRACKETED literal, `[]Col{r}` / `[2]int{1, "x"}`, names no type in scope
 		// and so has none of the checks below -- but it does write its element type
@@ -28933,6 +29000,12 @@ const maxTypeBytes = 1 << 30
 // 30]byte)(p)`, and a VALUE of one past the 512 KB of Hub RAM is the build's to
 // refuse, which it is.
 func (f *File) checkTypeSize(s *Scope, tn TypeNode, n Node) {
+	f.checkTypeSizeSpan(s, tn, n.Pos(), n.End())
+}
+
+// checkTypeSizeSpan is checkTypeSize for a type written from the token at from to
+// the one at to, which a literal's bracketed type is, no Type node holding it.
+func (f *File) checkTypeSizeSpan(s *Scope, tn TypeNode, from, to int32) {
 	size := f.typeMinBytes(s, tn, 0)
 	if size <= maxTypeBytes {
 		return
@@ -28940,15 +29013,15 @@ func (f *File) checkTypeSize(s *Scope, tn TypeNode, n Node) {
 	if f.tooLarge == nil {
 		f.tooLarge = map[int32]bool{}
 	}
-	if f.tooLarge[n.Pos()] {
+	if f.tooLarge[from] {
 		return
 	}
-	f.tooLarge[n.Pos()] = true
-	what := "array type " + f.sourceSpan(n.Pos(), n.End())
+	f.tooLarge[from] = true
+	what := "array type " + f.sourceSpan(from, to)
 	if _, ok := tn.(*TypeNodeStruct); ok {
 		what = "struct type" // its source spans lines; the position says which
 	}
-	f.err(f.tok(n.Pos()).Position(), "%s is too large: at least %d bytes, and a type spans at most %d here",
+	f.err(f.tok(from).Position(), "%s is too large: at least %d bytes, and a type spans at most %d here",
 		what, size, maxTypeBytes)
 }
 

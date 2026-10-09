@@ -97,6 +97,100 @@ func main() {
 		want: "torn: 0\n",
 	},
 	{
+		// main returns while goroutines still wait on channels made in its
+		// outermost block, which outlives every cog (outlivesCogs): the program ends
+		// there, every goroutine with it (ogo_end_program). On the host the process
+		// ended only as main returned, the threads running on over main's popped
+		// frame -- a domain program's mutant crashed there now and then under load,
+		// and printed "close of closed channel", where the board stopped every cog
+		// first; the host's end is immediate now.
+		name: "main returns while goroutines wait on its channels",
+		src: `func src(n int, out chan int) {
+	for i := 0; i < n; i++ {
+		out <- i
+	}
+	close(out)
+}
+
+func stage(in, out chan int) {
+	for v := range in {
+		out <- v * 2
+	}
+	close(out)
+}
+
+func main() {
+	a := make(chan int)
+	m := make(chan int)
+	s := make(chan int)
+	go src(3, a)
+	go stage(m, s)
+	go stage(m, s)
+	for {
+		v, ok := <-a
+		if !ok {
+			return
+		}
+		m <- v
+		println(<-s)
+	}
+}
+`,
+		want: "0\n2\n4\n",
+	},
+	{
+		// A program's own lock is no channel's. Every make site took a lock of its
+		// own at package initialization, and past the sixteenth the target's
+		// _locknew hands out lock 15 again (doc/locknew-never-fails.c), so with
+		// twenty sites p2.NewLock() was a lock the last channels used: holding it
+		// while sending on them, this program spun for ever. The sites take eight
+		// locks at most and share them (chanSiteLocks).
+		name: "a program's own lock is no channel's",
+		src: `import "p2"
+
+var (
+	c0 = make(chan int)
+	c1 = make(chan int)
+	c2 = make(chan int)
+	c3 = make(chan int)
+	c4 = make(chan int)
+	c5 = make(chan int)
+	c6 = make(chan int)
+	c7 = make(chan int)
+	c8 = make(chan int)
+	c9 = make(chan int)
+	c10 = make(chan int)
+	c11 = make(chan int)
+	c12 = make(chan int)
+	c13 = make(chan int)
+	c14 = make(chan int)
+	c15 = make(chan int)
+	c16 = make(chan int)
+	c17 = make(chan int)
+	c18 = make(chan int)
+	c19 = make(chan int)
+)
+
+func relay(in, out chan int) { out <- <-in + 1 }
+
+func main() {
+	chs := [20]chan int{c0, c1, c2, c3, c4, c5, c6, c7, c8, c9, c10, c11, c12, c13, c14, c15, c16, c17, c18, c19}
+	l := p2.NewLock()
+	for !p2.TryLock(l) {
+	}
+	total := 0
+	for i := 0; i+1 < len(chs); i++ {
+		go relay(chs[i], chs[i+1])
+		chs[i] <- i
+		total += <-chs[i+1]
+	}
+	p2.Unlock(l)
+	println(total, l >= 0)
+}
+`,
+		want: "190 true\n",
+	},
+	{
 		// A channel is made as Go makes one (emitMakeChan), and a declared one is
 		// nil, as in Go: a select clause on a nil channel is never ready, which is
 		// how a merge turns off the clause of an input that has closed, the

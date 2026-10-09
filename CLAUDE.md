@@ -103,7 +103,19 @@ files lost a diagnostic, `*ress` of a channel among them, the inferred variable
 having no walked type until valueTypeAt answered a make. **A migration that moves
 every program to a new spelling asks the new spelling every question the old one
 was asked** -- the spec tests are that net when they are migrated rather than
-rewritten.
+rewritten. Probing the redesign afterwards (a position sweep of make, a sensor
+pipeline of three packages written as Go writes channel code, matching Go on the
+host and the board, and its 2,700 mutants) found: a lock per make SITE, eagerly,
+let twenty sites hand p2.NewLock() a lock channels used -- self-deadlock for a cog
+holding it while it sent; the sites take eight locks at most (chanSiteLocks) and the
+host shim's _locknew hands out lock 15 again past sixteen, as the target does. The
+host's program end was main returning, its threads running on over main's popped
+frame, which goroutines may share now -- a crash under load; ogo_end_program _Exits
+on the host. And three checker rows: `go lib.T(x)` across packages, a select
+clause's `=` targets not counted as writes (so a later clause's unused `v :=` passed),
+a type as its comma-ok target; and an array literal's size. The nets (6,719 probes,
+5,366 mutants) flipped only programs of the old rule, to "never made", and the
+main-frame rule's 54 acceptances, each a referent of main's outermost block.
 
 **Main's outermost block outlives every cog** (the user's call, 2026-10-09, the
 first step of the channel design): every return from main stops the other cogs

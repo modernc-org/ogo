@@ -1,0 +1,30 @@
+// A select clause's bare "=" targets are writes, as an assignment statement's are:
+// they do not count as uses of every variable spelled like them, so a later
+// clause's own declaration of the name is "declared and not used" where it is.
+// And a predeclared type is no target there, as it is none in a statement. Found
+// mutating a domain program written with channels made by make.
+
+func main() {
+	a := make(chan int)
+	b := make(chan int)
+	go func(c chan int) { close(c) }(a)
+	var r int
+	var ok bool
+	select {
+	case r, ok = <-a:
+		println(ok)
+	// ERROR "declared and not used: r"
+	case r, ok := <-b:
+		println(ok)
+	}
+	println(r, ok)
+	var x int
+	select {
+	// ERROR "cannot assign to int"
+	case x, int = <-a:
+		println(x)
+	}
+	// ERROR "array type \[2147483647\]int32 is too large"
+	big := [2147483647]int32{3, 5}
+	println(len(big))
+}

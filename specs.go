@@ -1308,7 +1308,11 @@
 // Every cell one make makes shares that make's hardware lock, taken once before
 // the program starts, so a make costs no lock of its own however often it runs;
 // the lock serves only the atomicity of the cell, and sharing one costs contention
-// and nothing else. A channel variable declared without a value that nothing
+// and nothing else. The make sites of a program take eight locks at most, a ninth
+// site sharing the first's and so on, so the cog pool and the program's own
+// p2.NewLock() keep the other eight: past sixteen the hardware hands out the last
+// lock again rather than fail, and a lock of the program's own shared with a
+// channel's would deadlock a cog holding it while it sent on that channel. A channel variable declared without a value that nothing
 // assigns, and whose address nothing takes, and that a send, a receive, a close or
 // a range uses, is refused: it is nil, every operation on it blocks for ever, and
 // on the board nothing says so. Go takes such a program. (Until 2026-10-09 a
