@@ -116,6 +116,35 @@ clause's `=` targets not counted as writes (so a later clause's unused `v :=` pa
 a type as its comma-ok target; and an array literal's size. The nets (6,719 probes,
 5,366 mutants) flipped only programs of the old rule, to "never made", and the
 main-frame rule's 54 acceptances, each a referent of main's outermost block.
+**Buffered channels** (the user's call, 2026-10-09, undecided since 2026-07-25):
+`make(chan T, n)` for a constant n declares n slots beside the cell
+(emitMakeChan, chanInitBufCName) and the cell carries a ring -- cap, head, count,
+buf -- only for an element some buffered make uses (chanBufElems), so a program
+with none is the C it was. Each helper branches on ch->cap: ring put and get under
+the lock (ogo_chan_bufput_/bufget_, memcpy whatever the element), a send waiting
+for a slot, a receive for a value or a closed and drained ring; a select's lone
+send clause stands no offer on a buffered channel and is tested in its turn
+(ogo_chan_sendnow_), or a buffer with room would win every round; len and cap of
+any channel (ogo_chan_len_/cap_). The standing offer's readiness check is a helper
+(ogo_chan_ready_), which found the nil receive clause it read at address 0. The
+fuzzer's worker channel is buffered one time in two (chanRand). Measured against Go
+on the host and a P2-EDGE before the run cases were written. A sweep of the size's
+SPELLINGS found the emitter folding it for itself (foldConstInt), which read `3.0`
+and `uint64(2)` as no constant and made those channels unbuffered, the first send
+waiting for ever: the checker records the size it computed (chanSizes, by make's
+second argument) and the emitter reads that, refusing loudly where it finds none.
+**A value the checker computes is handed to the emitter, not computed again** --
+two folds are two answers. An element of no bytes in Go (goZeroSized: struct{},
+[0]T, a struct of such) shares one slot, `make(chan struct{}, 2147483647)` having
+been a buffer of 2 GB; and probing it found two older loud faults, `ch <- [0]int{}`
+(a compound literal of an array of no elements, which the target takes in no
+spelling, is bound to a temporary as an argument is) and `Z{}` of a struct leading
+with such a field written `{0}` (emitCompositeLit asks zeroInitC). The never-made
+rule had a hole of its own: a `:=` target was noted written before its declaration,
+so it marked the OUTER variable of its name, and `var done chan bool` passed
+wherever a function declared a local `done`. A log queue over three cogs (dom39)
+matched Go on the host and the board; of its 2,100 mutants, only the 2 GB buffer
+was ours.
 
 **Main's outermost block outlives every cog** (the user's call, 2026-10-09, the
 first step of the channel design): every return from main stops the other cogs

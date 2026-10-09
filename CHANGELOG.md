@@ -16,6 +16,40 @@ same area is a new entry under **Unreleased**, not an edit to the old one. Amend
 shipped section tells a reader on that version that they have behaviour they do not.
 `git show vX.Y.Z:CHANGELOG.md` is the check.
 
+## Unreleased
+
+### Language
+
+- **Buffered channels, `make(chan T, n)`**, as Go's: a send waits only for a free
+  slot, a receive takes the oldest value, `len` and `cap` say what the buffer holds
+  and can hold, a `close` lets the receivers drain it before they get the zero
+  value, and a `select` takes a buffered clause where it can proceed, in its turn as
+  any clause. `n` must be a constant: the buffer's slots are declared beside the
+  channel's cell where the `make` stands, static at package level and the frame's in
+  a function, with no heap. `len` and `cap` of a channel work for every channel, 0
+  for an unbuffered one and a nil one, as in Go; they were "not supported yet".
+  The size is any constant Go takes, `3.0`, `uint64(2)`, `len(a)` or
+  `unsafe.Sizeof(x)` among them, and a size Go refuses is refused in Go's words. An
+  element of no bytes, `chan struct{}`, takes no buffer, so a capacity of
+  2147483647 costs one slot.
+
+### Fixed
+
+- **A package channel nothing makes is reported however its name is shadowed**: a
+  function declaring a local of its name with `:=` counted as a write of the
+  package's, so `var done chan bool` with a `done := make(...)` elsewhere built,
+  and its first receive waited for ever.
+- **`ch <- [0]int{}` and `ch <- Z{}` of a struct whose first field has no
+  elements build**: the first was written as a compound literal with an element
+  the array does not have, which the target's compiler warned about and `ogo build`
+  refused, and the second named that field's element, which both compilers
+  refused.
+
+- **A receive clause on a nil channel beside a select's lone send clause no longer
+  reads address 0**: deciding whether to take its offer back, the select read each
+  receive clause's cell without asking whether there was one, which crashed on the
+  host and read garbage on the board.
+
 ## v0.53.0
 
 ### Fixed

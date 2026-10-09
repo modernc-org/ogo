@@ -1,7 +1,8 @@
 // A channel is made by make, as in Go, and a declared channel with no value is nil.
 // Its cell is static at package level and the frame's in a function, so make
-// allocates nothing at run time. A buffered channel is not supported yet, and new has
-// no form at all: there is no allocator.
+// allocates nothing at run time. A buffered channel's slots are made beside the
+// cell, so its size must be a constant. new has no form at all: there is no
+// allocator.
 
 type Pipe chan int
 
@@ -27,11 +28,37 @@ func caller() {
 	viaArgument(made)
 }
 
-func buffered() {
-	// ERROR "buffered channels are not supported yet"
+func buffered(n int) {
 	c := make(chan int, 4)
-	println(<-c)
+	c <- 1
+	println(<-c, len(c), cap(c))
+	// ERROR "the size of a buffered channel must be a constant"
+	d := make(chan int, n)
+	println(cap(d))
+	// ERROR "must not be negative"
+	e := make(chan int, -1)
+	println(cap(e))
+	// ERROR "truncated to int"
+	f := make(chan int, 2.5)
+	println(cap(f))
+	// ERROR "cannot convert nil to type int"
+	m := make(chan int, nil)
+	println(cap(m))
+	// ERROR "constant 1099511627776 of type int64\) overflows int"
+	h := make(chan int, int64(1)<<40)
+	println(cap(h))
+	// ERROR "constant 2 of type float64\) must be integer"
+	i := make(chan int, float64(2))
+	println(cap(i))
+	// ERROR "constant -1 of type Sz\) must not be negative"
+	j := make(chan int, Sz(-1))
+	println(cap(j))
+	k := make(chan int, uint64(2))
+	l := make(chan int, 3.0)
+	println(cap(k), cap(l))
 }
+
+type Sz int16
 
 func tooMany() {
 	// ERROR "expects 1 or 2 arguments; found 3"
@@ -64,7 +91,23 @@ var g chan bool
 
 func useG() { <-g }
 
-// Assigned, addressed or nil on purpose, it is no such channel.
+// A local of its name declared elsewhere is another variable: g := make(...) was
+// once taken for a write of the package's g.
+func localG() {
+	g := make(chan int, 1)
+	g <- 1
+	println(<-g)
+}
+
+// Assigned, addressed or nil on purpose, it is no such channel; so is one a ":="
+// in its own scope assigns.
+func redeclared() {
+	var c chan int
+	c, n := make(chan int, 1), 2
+	c <- n
+	println(<-c)
+}
+
 func madeLater() {
 	var c chan int
 	c = make(chan int)
@@ -100,12 +143,14 @@ func viaNew() {
 func main() {
 	viaShortDecl()
 	caller()
-	buffered()
+	buffered(3)
 	tooMany()
 	elemOfMake()
 	neverMade()
 	neverMadeClosed()
 	useG()
+	localG()
+	redeclared()
 	madeLater()
 	addressed()
 	explicitNil()

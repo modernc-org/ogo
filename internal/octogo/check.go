@@ -297,6 +297,7 @@ type File struct {
 	wholeConstToks    map[int32]Kind              // the same for a constant that is one token, by the token
 	chanTDirs         map[*int32][]chanDir        // a format's argument of an unnamed channel type with a direction in it, by its place in the AST, and each channel level's direction (see noteChanTDirs); read by the emitter for %T
 	lenConsts         map[*int32]int64            // the len and cap calls Go makes constants, by their parentheses' place in the AST, and their values (see constLenCap); read by the emitter
+	chanSizes         map[*int32]int64            // a buffered channel's size, by the place of make's second argument in the AST, as the checker computed it (checkChanMake); read by the emitter, which folds no size of its own
 	headerBindings    map[*int32]Node             // the statements headers declare or assign by, `if p := r; ...`, for the passes reading a body's statements by shape (headerBindingsIn)
 	ownCallees        map[int32]bool              // the token indexes of callees named like a builtin and resolving to the program's own declaration (checkCallee)
 	headerStmts       map[*int32]Node             // the statements standing in headers, `if two(); ok`, as the statements they are, by the place of the header's expression in the AST (see headerStmt); read by the emitter
@@ -9256,7 +9257,14 @@ func (f *File) checkAssignment(s *Scope, head, postfix Node) {
 		for i, tok := range lhs {
 			if !lhsSuffixed[i] && tok.IsValid() {
 				f.writeTargets[tok.Position().String()] = true
-				f.noteWritten(s, tok)
+				// A ":=" name not yet declared in this scope is a new variable,
+				// whose declaration comes after this: looked up now, it was the
+				// OUTER one of its name, and a package channel nothing makes
+				// passed as written (neverMade) wherever a function declared a
+				// local of its name.
+				if op == ASSIGN || s.Declarations[tok.Src()] != nil {
+					f.noteWritten(s, tok)
+				}
 			}
 		}
 	}
@@ -25041,9 +25049,9 @@ func (f *File) isChanMake(s *Scope, suffix Node) bool {
 	return ok && f.chanTypeFactor(s, args[0]) != nil
 }
 
-// checkChanMake checks make(chan T) and make(chan T, n). A channel here holds one
-// value in flight, a rendezvous, so the size may only be a constant 0: a buffer of n
-// values is not supported yet.
+// checkChanMake checks make(chan T) and make(chan T, n). A buffered channel's
+// slots are made where the make stands, static or the frame's, with no heap behind
+// them, so n must be a constant, as a slice make's capacity must.
 func (f *File) checkChanMake(s *Scope, suffix Node) {
 	args, _ := f.makeArgsOf(suffix)
 	if fac := unwrapSingle(args[0]); fac.sym == Factor {
@@ -25053,12 +25061,67 @@ func (f *File) checkChanMake(s *Scope, suffix Node) {
 	case len(args) > 2:
 		f.err(f.tok(args[2].Pos()).Position(), "invalid operation: make(%s) expects 1 or 2 arguments; found %d", f.exprSource(args[0]), len(args))
 	case len(args) == 2:
-		if cv, ok := f.constNumeric(s, args[1]); ok {
-			if iv := constant.ToInt(cv); iv.Kind() == constant.Int && constant.Sign(iv) == 0 {
+		size := args[1]
+		at := f.tok(size.Pos()).Position()
+		src := f.exprSource(size)
+		if _, isNil := f.nilOperand(s, size); isNil {
+			f.err(at, "cannot convert nil to type int")
+			return
+		}
+		k, known := f.exprType(s, size)
+		typed := known && !isUntypedKind(k)
+		if known && !isIntegerKind(k) && k != UntypedInt && k != UntypedRune && k != UntypedFloat {
+			if !isFloatKind(k) {
+				f.err(at, "cannot convert %s (%s) to type int", src, kindName(k))
 				return
 			}
 		}
-		f.err(f.tok(args[1].Pos()).Position(), "buffered channels are not supported yet: a channel holds one value in flight here; make(%s) makes one", f.exprSource(args[0]))
+		cv, ok := f.constNumeric(s, size)
+		if !ok {
+			f.err(at, "the size of a buffered channel must be a constant: its slots are made where the make stands, with no heap to make them in")
+			return
+		}
+		// Go's words: a typed constant is named with its type, an untyped one by
+		// its class.
+		typeName := kindName(k)
+		if name, qual, isPtr, ok := f.exprNamedType(s, size); ok && !isPtr && qual.Src() == "" && name.Src() != "" {
+			typeName = name.Src()
+		}
+		if typed && isFloatKind(k) {
+			f.err(at, "invalid argument: index %s (constant %s of type %s) must be integer", src, cv, typeName)
+			return
+		}
+		iv := constant.ToInt(cv)
+		if iv.Kind() != constant.Int {
+			f.err(at, "%s (untyped float constant) truncated to int", src)
+			return
+		}
+		n, exact := constant.Int64Val(iv)
+		switch {
+		case constant.Sign(iv) < 0 && typed:
+			f.err(at, "invalid argument: index %s (constant %s of type %s) must not be negative", src, iv, typeName)
+		case constant.Sign(iv) < 0:
+			f.err(at, "invalid argument: index %s (constant of type int) must not be negative", src)
+		case (!exact || n > math.MaxInt32) && typed:
+			f.err(at, "invalid argument: index %s (constant %s of type %s) overflows int", src, iv, typeName)
+		case !exact || n > math.MaxInt32:
+			f.err(at, "%s (untyped int constant %s) overflows int", src, iv)
+		default:
+			// Its slots are a value of n elements, held to the size a type may span.
+			if ch := f.chanTypeFactor(s, args[0]); ch != nil {
+				if under, _ := f.chanTypeUnder(s, ch); under != nil {
+					if elem := f.typeMinBytes(s, under.TypeNode, 0); elem > 0 && n > maxTypeBytes/elem {
+						f.err(at, "a buffer of %d elements of %d bytes is too large: a value spans at most %d bytes here", n, elem, maxTypeBytes)
+					}
+				}
+			}
+			// The emitter reads the size from here: a fold of its own read `3.0` and
+			// `uint64(2)` as no constant, and made those channels unbuffered.
+			if f.chanSizes == nil {
+				f.chanSizes = map[*int32]int64{}
+			}
+			f.chanSizes[&size.ast[0]] = n
+		}
 	}
 }
 

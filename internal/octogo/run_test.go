@@ -97,6 +97,305 @@ func main() {
 		want: "torn: 0\n",
 	},
 	{
+		// A buffered channel's size in every spelling Go folds to a constant -- a
+		// typed constant of another integer type, a shift, a constant len, a rune,
+		// unsafe.Sizeof, a float of whole value, a conversion -- and elements of no
+		// bytes. The emitter folded the size for itself and read 3.0 and uint64(2)
+		// as no constant, so those channels were made unbuffered and the first send
+		// waited for ever; it reads the checker's value since (chanSizes). An
+		// element of no bytes shares one slot, `make(chan struct{}, 2147483647)`
+		// having been a buffer of 2 GB; and `ch <- [0]int{}` and `ch <- Z{}` of a
+		// struct leading with such a field were refused by both compilers.
+		name: "buffered channel sizes of every spelling, and elements of no bytes",
+		src: `import "unsafe"
+
+const N uint8 = 3
+
+type Sz int16
+
+const K Sz = 2
+
+type E struct{}
+
+type Z struct {
+	a [0]int
+	e E
+}
+
+var words [5]int32
+
+var many = make(chan struct{}, 2147483647)
+
+func fill(c chan int) int {
+	n := 0
+	for {
+		select {
+		case c <- n:
+			n++
+		default:
+			return n
+		}
+	}
+}
+
+func main() {
+	words[0] = 1
+	println(fill(make(chan int, N)), fill(make(chan int, K)), fill(make(chan int, 1<<2)))
+	println(fill(make(chan int, len([4]int{}))), fill(make(chan int, len(words))), fill(make(chan int, 'a')))
+	println(fill(make(chan int, unsafe.Sizeof(words))), fill(make(chan int, 3.0)), fill(make(chan int, uint64(2))))
+	println(fill(make(chan int, N*2+1)), fill(make(chan int, 1e1)), words[0])
+	e := make(chan struct{}, 3)
+	e <- struct{}{}
+	a := make(chan [0]int, 5)
+	a <- [0]int{}
+	a <- [0]int{}
+	z := make(chan Z, 2)
+	z <- Z{}
+	z <- Z{}
+	select {
+	case z <- Z{}:
+		println("sent")
+	default:
+		println("full")
+	}
+	<-z
+	for i := 0; i < 1000; i++ {
+		many <- struct{}{}
+	}
+	<-many
+	v, ok := <-a
+	println(len(e), cap(e), len(a), cap(a), len(z), cap(z), len(v), ok, len(many), cap(many))
+	u := make(chan [0]int)
+	go func(u chan [0]int) { u <- [0]int{} }(u)
+	w := <-u
+	println(len(w))
+}
+`,
+		want: "3 2 4\n4 5 97\n20 3 2\n7 10 1\nfull\n1 3 1 5 1 2 0 true 999 2147483647\n0\n",
+	},
+	{
+		// A receive clause on a NIL channel beside a select's lone send clause: the
+		// select asks whether a receive clause is ready before it takes its standing
+		// offer back, and read the nil channel's cell at address 0 -- a crash on the
+		// host and garbage on the board (ogo_chan_ready_ asks first).
+		name: "a nil receive clause beside a lone send clause",
+		src: `var out = make(chan int)
+var ack = make(chan bool)
+
+func drain() {
+	v := <-out
+	ack <- v == 7
+}
+
+func main() {
+	var in chan int = nil
+	go drain()
+	select {
+	case v := <-in:
+		println("never", v)
+	case out <- 7:
+		println("sent")
+	}
+	println(<-ack)
+}
+`,
+		want: "sent\ntrue\n",
+	},
+	{
+		// A buffered channel, make(chan T, n) for a constant n, as Go's: a send
+		// waits for a free slot and not for a receiver, len and cap say what the
+		// buffer holds and can, a close lets the receivers drain what is left and
+		// then yields the zero, and a select takes a buffered clause where it can
+		// proceed. Its slots are declared beside the cell (emitMakeChan), of any
+		// element -- a struct and an array here. Measured against Go on the host
+		// and on a P2-EDGE before it was written.
+		name: "buffered channels",
+		src: `type P struct {
+	x, y int
+	tag  string
+}
+
+var jobs = make(chan int, 4)
+var done = make(chan bool)
+
+func worker() {
+	sum := 0
+	for j := range jobs {
+		sum += j
+	}
+	println("worker", sum)
+	done <- true
+}
+
+func main() {
+	c := make(chan int, 3)
+	c <- 1
+	c <- 2
+	println(len(c), cap(c))
+	c <- 3
+	println(len(c), <-c, <-c, len(c))
+	close(c)
+	v, ok := <-c
+	println(v, ok)
+	v, ok = <-c
+	println(v, ok, len(c))
+
+	ps := make(chan P, 2)
+	ps <- P{1, 2, "a"}
+	ps <- P{3, 4, "b"}
+	q := <-ps
+	println(q.x, q.y, q.tag, len(ps))
+
+	as := make(chan [3]int, 2)
+	as <- [3]int{7, 8, 9}
+	a := <-as
+	println(a[0], a[2])
+
+	s := make(chan int, 1)
+	for i := 0; i < 4; i++ {
+		select {
+		case s <- i:
+			println("sent", i)
+		default:
+			println("full", i)
+		}
+		if i == 1 {
+			println("got", <-s)
+		}
+	}
+	select {
+	case x := <-s:
+		println("recv", x)
+	default:
+		println("empty")
+	}
+
+	go worker()
+	for i := 1; i <= 10; i++ {
+		jobs <- i
+	}
+	close(jobs)
+	<-done
+
+	var n chan int
+	println(len(n), cap(n), cap(make(chan int)))
+}
+`,
+		want: "2 3\n3 1 2 1\n3 true\n0 false 0\n1 2 a 1\n7 9\nsent 0\nfull 1\ngot 0\nsent 2\nfull 3\nrecv 2\nworker 55\n0 0 0\n",
+	},
+	{
+		// Buffered channels in the shapes programs use them: a select whose send
+		// clause has room beside a receive clause that must still be taken in its
+		// turn (an offer deposited up front would win every round), a semaphore of
+		// struct{} limiting goroutines, a lock built of a channel of one slot, a
+		// package struct holding one, a channel of buffered channels, and a
+		// producer on another cog filling a buffer of three faster than it is read.
+		name: "buffered channels as programs use them",
+		src: `type Msg struct {
+	id   int
+	data [4]uint8
+}
+
+type Bus struct {
+	q    chan Msg
+	name string
+}
+
+var bus = Bus{make(chan Msg, 8), "bus"}
+var sem = make(chan struct{}, 2)
+var results = make(chan int, 16)
+var active, peak int
+var lock = make(chan bool, 1)
+
+func task(id int) {
+	sem <- struct{}{}
+	lock <- true
+	active++
+	if active > peak {
+		peak = active
+	}
+	<-lock
+	s := 0
+	for i := 0; i < 2000; i++ {
+		s += i % (id + 1)
+	}
+	lock <- true
+	active--
+	<-lock
+	<-sem
+	results <- id
+}
+
+func producer(n int, out chan int) {
+	for i := 0; i < n; i++ {
+		out <- i
+	}
+	close(out)
+}
+
+func main() {
+	in := make(chan int)
+	out := make(chan int, 2)
+	go producer(5, in)
+	got, sent := 0, 0
+	for in != nil {
+		select {
+		case v, ok := <-in:
+			if !ok {
+				in = nil
+				continue
+			}
+			got += v
+		case out <- sent:
+			sent++
+			if len(out) == cap(out) {
+				<-out
+				<-out
+			}
+		}
+	}
+	println("got", got, sent > 0)
+
+	for i := 0; i < 3; i++ {
+		bus.q <- Msg{i, [4]uint8{uint8(i), 1, 2, 3}}
+	}
+	println(len(bus.q), cap(bus.q), bus.name)
+	for len(bus.q) > 0 {
+		m := <-bus.q
+		println(m.id, m.data[0], m.data[3])
+	}
+
+	for i := 1; i <= 5; i++ {
+		go task(i)
+	}
+	sum := 0
+	for i := 0; i < 5; i++ {
+		sum += <-results
+	}
+	println("tasks", sum, peak <= 2)
+
+	cc := make(chan chan int, 2)
+	r1 := make(chan int, 1)
+	r2 := make(chan int, 1)
+	cc <- r1
+	cc <- r2
+	(<-cc) <- 10
+	(<-cc) <- 20
+	println(<-r1, <-r2)
+
+	fast := make(chan int, 3)
+	go producer(50, fast)
+	total, n := 0, 0
+	for v := range fast {
+		total += v
+		n++
+	}
+	println("fast", total, n)
+}
+`,
+		want: "got 10 true\n3 8 bus\n0 0 3\n1 1 3\n2 2 3\ntasks 15 true\n10 20\nfast 1225 50\n",
+	},
+	{
 		// main returns while goroutines still wait on channels made in its
 		// outermost block, which outlives every cog (outlivesCogs): the program ends
 		// there, every goroutine with it (ogo_end_program). On the host the process

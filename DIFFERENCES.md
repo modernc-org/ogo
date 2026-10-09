@@ -319,8 +319,8 @@ supported.
   function literal capturing its surrounding scope, runtime string concatenation, and
   `string(b)` of a byte slice variable all need a heap. `Builder` assembles a string
   in storage the program owns.
-- **A buffered channel**, `make(chan T, n)` for an `n` other than 0: a channel holds
-  one value in flight, a rendezvous.
+- **A buffered channel of a size that is no constant**, `make(chan T, n)` for a
+  variable `n`: the buffer's slots are made where the make stands, with no heap.
 - **A value into an interface**: an interface holds a pointer, `var s Shape = &q`,
   never `= q`. Go would copy `q` and this target has nowhere to copy it.
 - **A method value of a local or of a value receiver**: the receiver is bound at

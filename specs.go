@@ -133,10 +133,10 @@
 //     package level and the frame's in a function, so a channel a function makes
 //     is refused where it would outlive the call, as a slice of a local array is
 //     -- returned, kept, or handed to a goroutine -- but for main's outermost
-//     block, which outlives every cog. A channel holds one value in flight: a
-//     buffered one, "make(chan T, n)", is not supported yet. (Until 2026-10-09 a
-//     channel was made by its declaration, a static cell per declaration site,
-//     which Go does not do.)
+//     block, which outlives every cog. A buffered channel, "make(chan T, n)", has
+//     its n slots beside the cell, so n is a constant. (Until 2026-10-09 a channel
+//     was made by its declaration, a static cell per declaration site, which Go
+//     does not do, and held one value in flight only.)
 //   - An interface value holds a POINTER, so a pointer is what goes into one: "&x",
 //     not "x". Go accepts either and copies the value in, allocating for it; there
 //     is no heap here to allocate into, so the value form is refused rather than
@@ -1285,8 +1285,9 @@
 // statically allocated Hub RAM buffers. They facilitate synchronous, lock-step
 // communication without a software scheduler.
 //
-// A channel is made by "make(chan T)", or "make(chan T, 0)", as in Go, and a
-// defined channel type by "make(C)"; a declared channel with no value is nil, and a
+// A channel is made by "make(chan T)", or "make(chan T, n)" for a buffered one, as
+// in Go, and a defined channel type by "make(C)"; a declared channel with no value
+// is nil, and a
 // send, a receive or a range on a nil channel blocks for ever and closing one
 // panics, as in Go. A make in a package variable's initializer makes a static cell.
 // A make in a function makes a cell in the block the make stands in, which the
@@ -2998,9 +2999,17 @@
 //     allocates nothing at run time: its cell is static at package level and the
 //     frame's in a function, and its lock is its make's, taken before the
 //     program starts.
-//   - Unbuffered: A channel holds one value in flight. A send completes only once
-//     a receiver has taken that value, so the two meet in lock step, which is
-//     what makes a buffer unnecessary.
+//   - Unbuffered and buffered: "make(chan T)" holds one value in flight. A send
+//     completes only once a receiver has taken that value, so the two meet in lock
+//     step. "make(chan T, n)" has n slots in a ring beside the cell, made where the
+//     make stands -- so n is a constant, as a slice make's capacity is, of any
+//     spelling Go takes for an int (3.0, uint64(2), len(a)), and an element of no
+//     bytes, struct{}, takes one slot whatever n is -- and is
+//     Go's buffered channel: a send waits only for a free slot, a receive takes
+//     the oldest value, len and cap say what the ring holds and can, and a close
+//     lets the receivers drain it before they get the zero. A select takes a
+//     buffered clause where it can proceed, in its turn as any clause. Measured
+//     against Go on a P2-EDGE (2026-10-09).
 //
 // # Channel Operations (Send and Receive)
 //

@@ -203,6 +203,7 @@ var generatedConstructs = []struct {
 	{"goroutine worker", `\nfunc cog_\d+\(c chan int, p_\d+ int\) \{`},
 	{"channel send from a worker", `\n\s*c <- `},
 	{"go statement", `\n\s*go cog_\d+\(ch_\d+, `},
+	{"buffered channel", `\nvar ch_\d+ = make\(chan int, [1-3]\)`},
 	{"channel receive", `\n\s*r_\d+ := <-ch_\d+`},
 	{"min builtin", `= min\(`},
 	{"max builtin", `= max\(`},

@@ -2624,7 +2624,15 @@ func (f *Fuzzer) genCogWorker() *cogWorker {
 	for i, n := 0, 1+f.Rand.Intn(2); i < n; i++ {
 		w.Sends = append(w.Sends, f.genPureExpr([]string{w.Param}, 0))
 	}
-	fmt.Fprintf(f.Out, "var %s = make(chan int)\n\n", w.Chan)
+	// One time in two the channel is buffered, make(chan int, n) for n of 1 to 3, so
+	// the worker may send ahead of main's receives -- the order main reads them in,
+	// and so the checksum, is the same either way. Drawn from chanRand, so the rest
+	// of a seed's program is what it was.
+	if f.chanRand.Intn(2) == 0 {
+		fmt.Fprintf(f.Out, "var %s = make(chan int, %d)\n\n", w.Chan, 1+f.chanRand.Intn(3))
+	} else {
+		fmt.Fprintf(f.Out, "var %s = make(chan int)\n\n", w.Chan)
+	}
 	fmt.Fprintf(f.Out, "func %s(c chan int, %s int) {\n", w.Name, w.Param)
 	for _, send := range w.Sends {
 		writeIndent(f.Out, 1)
