@@ -15070,6 +15070,23 @@ func (f *File) checkImplements(s *Scope, ifaceName string, value Node, what stri
 					}
 				}
 			}
+			return
+		}
+		// A value of a type WRITTEN OUT that nothing above names -- another package's
+		// variable, `lib.Arr` of a [2]error, or a field or an element of one, `h.arr`,
+		// `xs[0]` of a [2][2]error: an array, a slice, a function, a channel or a
+		// struct has no methods, so no interface asking for some holds it. Asked of
+		// nobody, each reached C as the interface, where a local VARIABLE of such a
+		// type was refused (below); found mutating a program of three packages
+		// passing `dev.Codes` for an error.
+		if _, _, _, named := f.exprNamedType(s, value); !named && len(set) != 0 {
+			if what2, known := f.nonBoolOperand(s, value); known {
+				switch what2 {
+				case "a slice", "an array", "a function", "a channel", "a struct":
+					f.err(f.tok(value.Pos()).Position(), "cannot use %s as %s value in %s: it is %s, which does not implement %s (missing method %s)",
+						f.exprSource(value), ifaceName, what, what2, ifaceName, slices.Sorted(maps.Keys(set))[0])
+				}
+			}
 		}
 		return
 	}

@@ -45,6 +45,11 @@ shipped section tells a reader on that version that they have behaviour they do 
 - **A pointer to a pointer goes into an interface**: `any(&p)` for a `p *T`, what
   `errors.As` is handed in Go, named its table after the C type and did not compile.
   It is held, asserted back with `a.(**T)` and printed by `%T` as Go does.
+- **A value of a type written out is refused where an interface with methods is
+  wanted**: another package's array, slice, function, channel or struct variable,
+  `errors.Is(err, dev.Codes)` for a `var Codes [4]error`, and in one package too a
+  field or an element of such a type, `take(h.arr)`, were taken and reached C as the
+  interface; a local variable of the type was refused already.
 - **A struct literal holding an array of interfaces**, `W{[2]error{&e, nil}}`, was
   refused, "cannot use this value as error in a literal", in a function, a package
   initializer and a return alike.

@@ -1,0 +1,49 @@
+// A value of a type written out -- an array, a slice, a function, a channel or a
+// struct -- has no methods, so no interface asking for some holds it, whatever
+// shape names it: a variable, a field, an element. A field and an element were
+// asked nothing and reached C as the interface.
+
+type E struct{}
+
+func (*E) Error() string { return "e" }
+
+type H struct {
+	arr [2]error
+	f   func()
+	s   []int
+	c   chan int
+	st  struct{ n int }
+}
+
+var h H
+
+var rows [2][2]error
+
+var ge E
+
+func take(e error) {}
+
+func give() error {
+	// ERROR "it is an array, which does not implement error"
+	return h.arr
+}
+
+func main() {
+	// ERROR "it is an array, which does not implement error"
+	take(h.arr)
+	// ERROR "it is a function, which does not implement error"
+	take(h.f)
+	// ERROR "it is a slice, which does not implement error"
+	take(h.s)
+	// ERROR "it is a channel, which does not implement error"
+	take(h.c)
+	// ERROR "it is a struct, which does not implement error"
+	take(h.st)
+	// ERROR "it is an array, which does not implement error"
+	take(rows[0])
+	take(&ge)
+	take(rows[1][0])
+	give()
+	var a any = &h.arr
+	_ = a
+}

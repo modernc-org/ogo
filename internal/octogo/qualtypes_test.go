@@ -505,3 +505,61 @@ func main() {
 		})
 	}
 }
+
+// TestCheckQualifiedIntoInterface: another package's variable of a type written out
+// -- an array, a slice, a function, a channel, a struct -- or a field of one, passed
+// or returned where an interface asking for methods is wanted. It has none, and Go
+// refuses it; named by no type, it was asked nothing and reached C as the interface
+// (found mutating a program of three packages, `errors.Is(err, dev.Codes)` for a
+// `var Codes [4]error`). A pointer of a type with the methods is the control.
+func TestCheckQualifiedIntoInterface(t *testing.T) {
+	const lib = `type T struct{}
+
+func (*T) Error() string { return "t" }
+
+var Arr [2]error
+
+var Sl []error
+
+var F func()
+
+var C = make(chan int)
+
+var S struct{ n int }
+
+var V T
+
+var P = &V
+
+type H struct{ Arr [2]error }
+
+var G H
+`
+	for _, test := range []struct {
+		name, main, want string // want "" for a program that builds
+	}{
+		{"an array", "func main() { take(a.Arr) }", "it is an array, which does not implement error"},
+		{"a slice", "func main() { take(a.Sl) }", "it is a slice, which does not implement error"},
+		{"a function", "func main() { take(a.F) }", "it is a function, which does not implement error"},
+		{"a channel", "func main() { take(a.C) }", "it is a channel, which does not implement error"},
+		{"a struct", "func main() { take(a.S) }", "it is a struct, which does not implement error"},
+		{"a field", "func main() { take(a.G.Arr) }", "it is an array, which does not implement error"},
+		{"a return", "func f() error { return a.Arr }\n\nfunc main() { _ = f() }", "it is an array, which does not implement error"},
+		{"a pointer", "func main() { take(a.P) }", ""},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			src := "import \"a\"\n\nfunc take(e error) {}\n\n" + test.main + "\n"
+			fsys := fstest.MapFS{
+				"main.ogo": &fstest.MapFile{Data: []byte(src)},
+				"a/a.ogo":  &fstest.MapFile{Data: []byte(lib)},
+			}
+			_, err := Build(-1, []string{"main.ogo"}, fsys)
+			switch {
+			case test.want == "" && err != nil:
+				t.Fatalf("refused: %v", err)
+			case test.want != "" && (err == nil || !strings.Contains(err.Error(), test.want)):
+				t.Fatalf("got %v, want an error containing %q", err, test.want)
+			}
+		})
+	}
+}
