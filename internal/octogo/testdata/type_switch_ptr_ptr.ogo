@@ -1,0 +1,71 @@
+// A type switch case of a pointer to a pointer, `case **E:` -- what an interface
+// holds for any(&p) with a p *E, and what the assertion `x.(**E)` names. It parsed
+// and was refused as naming no type. Such a pointer has no methods, and the name the
+// clause binds is the pointer type, read through as one.
+
+type E struct {
+	n int
+}
+
+func (e *E) Error() string { return "e" }
+
+type Row [3]int
+
+func kind(x any) int {
+	switch v := x.(type) {
+	case **E:
+		return (*v).n
+	case **int:
+		return **v
+	case ***E:
+		return (**v).n
+	case **Row:
+		return (**v)[1]
+	case nil:
+		return 0
+	}
+	return -1
+}
+
+func set(src *E, dst any) bool {
+	switch d := dst.(type) {
+	case **E:
+		*d = src
+		return true
+	}
+	return false
+}
+
+func main() {
+	var e E
+	p := &e
+	var q *E
+	_ = kind(&p) + kind(&q)
+	_ = set(&e, &q)
+	var x any
+	switch v := x.(type) {
+	case **int:
+		// ERROR "cannot use \*\*v of type int as type string in variable declaration"
+		var s string = **v
+		_ = s
+	}
+	var err error = p
+	switch err.(type) {
+	// ERROR "impossible type switch case: err.\(type\) case \*\*E: \*\*E does not implement error \(missing method Error\)"
+	case **E:
+	}
+	switch x.(type) {
+	// ERROR "duplicate case \*\*E in type switch"
+	case **E, **E:
+	}
+	switch x.(type) {
+	// ERROR "undefined: Nope"
+	case **Nope:
+	}
+	n := 1
+	switch x.(type) {
+	// ERROR "n \(local variable\) is not a type"
+	case **n:
+	}
+	_ = n
+}

@@ -34,6 +34,40 @@ shipped section tells a reader on that version that they have behaviour they do 
 
 ### Fixed
 
+- **A method storing its receiver through a parameter**, `func (m *M) Reg(p **M) {
+  *p = m }`, kept a local's address where it outlives the function, in silence:
+  `lm.Reg(&gp)` for a local `lm` and a package `gp` built and left gp pointing at a
+  dead frame. Each way to reach the store was the same hole: a relay through a
+  function, a method calling the method, a call through an interface, a method
+  expression, a defer, a promoted method. So was a function storing a parameter
+  through an assertion of an `any` one, `if d, ok := dst.(**E); ok { *d = src }`,
+  which is the shape of `errors.As` and of every `As(any) bool` method; and a
+  method handing its own receiver to a function that stores another parameter in
+  it, `func (b *B) Set(v []int) { setInto(b, v) }`, which let `gb.Set(a[:])` keep a
+  slice of a local array in `gb`. And a method passing its receiver through a call's
+  result, `gp = id(m)`, `gp = m.Self()`, `keep(id(m))`, `return id(m)`, or through a
+  local holding one, kept it with nothing recorded, where a parameter was followed
+  through all of them. All are refused now. With the receiver and the target both
+  local to the function, the call is accepted, and the target holds the receiver's
+  address from then on.
+- **A method called through an interface holding a local's address** was asked
+  whether it keeps its receiver only as a plain statement on a variable. Deferred,
+  `defer s.Save()`, or called on a field or an element, `h.s.Save()` and
+  `ss[0].Save()`, a method storing its receiver in a package variable kept the
+  local's address there; and `go s.Bump()` handed it to another cog, which may
+  outlive the function. All refused now, in silence before.
+- **`go lm.Bump()` on a local of main's outermost block was refused**. That block
+  outlives every cog, and `go bump(&lm)` was taken already.
+- **`n := 5; take(&n)` for a `take(x any)` was refused**, "cannot use &n (value of
+  type int)": the address of a variable with no written type was read as a value
+  of its pointee's type. An interface with methods refuses it as Go does, "*int does
+  not implement Shape".
+- **A type switch case of a pointer to a pointer**, `case **E:`, what an interface
+  holds for `any(&p)` and what the assertion `x.(**E)` asks, was refused as naming
+  no type. It is taken, for another package's type too.
+- **What a pointer to a pointer reaches had no type**: `var s string = **pp` for a
+  `pp **int` was accepted and reached the C compiler, in a declaration, an
+  assignment, an argument and an operation.
 - **A type switch case or an assertion naming an interface asks each method's
   signature**, not only its name. The types such a case tests are every type of the
   program implementing both interfaces, and a type whose `Unwrap() []error` met a

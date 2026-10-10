@@ -1198,9 +1198,10 @@
 // case", reported here as one, as is a case named twice.
 //
 // The pointer may be to any type, as anything's address goes into an interface: a
-// predeclared one, "case *int:", an array, "case *[4]uint32:" or a defined one, and
-// a slice, "case *[]byte:". Such a pointer has no methods, so only an interface
-// asking for none holds one -- "any" above all:
+// predeclared one, "case *int:", an array, "case *[4]uint32:" or a defined one, a
+// slice, "case *[]byte:", and another pointer, "case **T:", which is what "any(&p)"
+// holds for a p *T. Such a pointer has no methods, so only an interface asking for
+// none holds one -- "any" above all:
 //
 //	func show(i any) {
 //		switch v := i.(type) {

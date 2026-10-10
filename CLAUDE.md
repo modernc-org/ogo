@@ -758,13 +758,11 @@ still design-only.
   signature-blind interface case (above), a `**T` table named `..._vt_T*`, a struct
   literal holding an array of interfaces refused (emitLitElement read the array
   field's ELEMENT type as the field's), and `fill(&le, &p)` with both local refused
-  (checkIntoArgsIn looked through `&p` as through a pointer `p`). Two left open: a
-  callee storing through an ASSERTION of an `any` parameter, `if d, ok :=
-  dst.(**E); ok { *d = v }`, is summarised as storing nothing (an interface
-  parameter is no pointer slot, pointerParamSlots), so `fill(&le, &gp)` keeps a
-  local in a package variable in silence -- a program's own `As(any) bool` method
-  is that shape; and a type switch case of an interface WRITTEN OUT, `case
-  interface{ Unwrap() error }:`, is a syntax error (the assertion parses).
+  (checkIntoArgsIn looked through `&p` as through a pointer `p`). One left open: a
+  type switch case of an interface WRITTEN OUT, `case interface{ Unwrap() error
+  }:`, is a syntax error (the assertion parses). The other, a callee storing through
+  an ASSERTION of an `any` parameter, was closed the next day with its row (A
+  RECEIVER STORED THROUGH A PARAMETER, below).
 - **Functions implemented in Spin2** (2026-09-30, `internal/octogo/spin2.go`) are
   OctoGo's .s files, asked for by p2-11's VGA text console (Eric Smith's MIT
   `vga_tile_driver.spin2`, used as it is). A package may carry `.spin2` files; a
@@ -4031,6 +4029,47 @@ there, and is crossed with `defer` and `go`: a deferred call asked the rule only
 receiver one step from its variable (checkDeferLeaks), so `defer h.c.Save()` and
 `defer arr[1].Save()` kept a local's address in silence until 2026-10-04 -- 8756 on
 the board for Go's 7, read after the function returned.
+A RECEIVER STORED THROUGH A PARAMETER was a row with no slot at all (2026-10-10,
+found closing the errors package's open item): crossInto says which parameters a
+parameter is stored through, and nothing said it of the receiver, so `func (m *M)
+Reg(p **M) { *p = m }` was summarised as keeping nothing and `lm.Reg(&gp)` left a
+dead frame's address in gp -- directly, through a relay `reg(m, p)`, a method
+calling it, an interface, a method expression, a defer, a promotion: every shape of
+the row was taken in v0.54.0. `recvInto` is the receiver's slot (storesInto sets
+it, the recvEdges carry it with the arguments' owners, methodExprSummary shifts it
+to parameter 0), and the call site asks it (checkRecvInto, from checkRecvAt and
+checkIfaceRecvKept): a receiver of this frame stored through an argument that
+outlives it, or that nothing here can name, is refused; through a local, the local
+holds the receiver's address from there on. Beside it, an INTERFACE parameter is a
+slot (pointerParamSlots), a store reaching it through an assertion or a type
+switch's name -- errors.As's shape, `if d, ok := dst.(**E); ok { *d = src }` -- and
+the caller's receiver handed on as an argument is an owner of its own, argRecv, so
+`func (b *B) Set(v []int) { setInto(b, v) }` is a store INTO the receiver
+(leakRecv), where it was a store through a local, which dies with the frame. The
+call results were the same omission one level over: derivedEdges, retEdges and
+viaEdges ran from a parameter to a parameter, so `gp = id(m)`, `gp = m.Self()`,
+`keep(id(m))`, `return id(m)` and `x := id(m); gp = x` in a method kept m with
+nothing recorded. An edge's end may be the receiver now, from < 0 for the caller's
+and to < 0 for the callee's (handsBack, gatesHold; valueCallT.recv for a method's
+receiver, recvEdge.via). **A slot a summary has for a parameter, it has for the
+receiver**: the receiver is a parameter in all but name, and each summary written
+for parameters alone left it out. TestEmitCRecvIntoEscape, TestEmitCRecvKeptEscape.
+
+Asking it through an interface found the receiver rule for an interface value asked
+at two statement sites alone: `defer s.Save()`, `h.s.Save()` and `ss[0].Save()`
+kept a local's address for a Save keeping its receiver, and `go s.Bump()` handed it
+to a cog, receiverFrameRef never asked of an interface (checkIfaceRecvKept at the
+defer and chain sites, a chain judged by its root's mark; receiverFrameRef in
+emitGo's interface branch) -- and receiverFrameRef had not heard of main's
+outermost block, refusing `go lm.Bump()` there (outlivesCogs). Found writing the
+probes, each older: `case **E:` was refused as naming no type where the assertion
+`x.(**E)` was taken (casePtrToPtr, casePtrToPtrC); `**pp` of a `pp **int` had no
+type, operandType taking one star and giving up at two, so `var s string = **pp`
+reached C; and `n := 5; take(&n)` for an `any` was refused as "a value of type
+int", the rule refusing a Kind's value going into an interface reading `&n` by its
+pointee's Kind and only a variable with a written type having a name to say
+otherwise.
+
 What `make` allocates in a function is a backing array of the frame wherever the
 slice is bound (`makeRef`, 2026-09-19; `TestEmitCMakeEscape`): only the declaration
 from make was modelled, so a package variable given one from a function -- `main`

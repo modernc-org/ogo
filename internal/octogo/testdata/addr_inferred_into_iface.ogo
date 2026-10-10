@@ -1,0 +1,26 @@
+// The address of a variable whose type nothing wrote, `n := 5`, into an interface:
+// a pointer, which an `any` holds. Read by its pointee's Kind, `take(&n)` was
+// refused as a value of type int, where `var m int` passed; and into an interface
+// asking for methods it is Go's "*int does not implement".
+
+type Shape interface {
+	Area() int
+}
+
+func take(x any) {}
+
+func use(s Shape) {}
+
+func main() {
+	n := 5
+	take(&n)
+	var a any = &n
+	f := 2.5
+	take(&f)
+	_ = a
+	// ERROR "cannot use &n \(value of type \*int\) as Shape value in argument to use: \*int does not implement Shape \(missing method Area\)"
+	use(&n)
+	// ERROR "cannot use &n \(value of type \*int\) as Shape value in variable declaration: \*int does not implement Shape \(missing method Area\)"
+	var s Shape = &n
+	_ = s
+}

@@ -10675,6 +10675,31 @@ func (c *Counter) Self() *Counter { return c }
 
 func (c *Counter) Bump() { c.n++ }
 
+func id(c *Counter) *Counter { return c }
+
+func (c *Counter) ViaId() { g = id(c) }
+
+func (c *Counter) ViaSelf() { g = c.Self() }
+
+func (c *Counter) ViaHeld() {
+	x := id(c)
+	g = x
+}
+
+func (c *Counter) ViaArg() { keep(id(c)) }
+
+func (c *Counter) ViaArgSelf() { keep(c.Self()) }
+
+func (c *Counter) RetId() *Counter { return id(c) }
+
+func (c *Counter) RetSelf() *Counter { return c.Self() }
+
+func (c *Counter) PeekId() int { return id(c).n }
+
+func viaParamSelf(p *Counter) { g = p.Self() }
+
+func retParamSelf(p *Counter) *Counter { return p.Self() }
+
 func (c *Counter) Copied() {
 	w := c
 	g = w
@@ -10731,6 +10756,13 @@ func main() {
 		{"s := arr[:]\n\tdefer s[1].Save()", "cannot call Save on s"},
 		{"var o Outer\n\tdefer o.Counter.Save()", "cannot call Save on o"},
 		{"var sv Saver = &lc\n\tsv.Save()", "cannot call Save on lc"},
+		// Deferred, and on what a chain reaches: asked of a variable alone, both kept
+		// the address in silence.
+		{"var sv Saver = &lc\n\tdefer sv.Save()", "cannot call Save on lc"},
+		{"var sv Saver = &lc\n\tgo sv.Save()", "cannot pass local sv, which holds a pointer into local lc to a goroutine"},
+		{"svs := [1]Saver{&lc}\n\tgo svs[0].Save()", "cannot pass local svs, which holds a pointer into local lc to a goroutine"},
+		{"svs := [1]Saver{&lc}\n\tsvs[0].Save()", "cannot call Save on lc"},
+		{"svs := [1]Saver{&lc}\n\tdefer svs[0].Save()", "cannot call Save on lc"},
 		{"g = lc.Self()", "cannot store the address of local variable lc in package variable g"},
 		{"x := lc.Self()\n\tg = x", "cannot store local x, which holds a pointer into local lc"},
 		{"byParam(&lc)", "cannot pass the address of local variable lc to byParam"},
@@ -10759,6 +10791,18 @@ func main() {
 		{"w := Wrap{&lc}\n\tgo w.Counter.Bump()", "cannot pass local w, which holds a pointer into local lc to a goroutine"},
 		// Kept through a local copy of the receiver.
 		{"lc.Copied()", "cannot call Copied on lc: its receiver is stored where it outlives every frame"},
+		// Kept through a call's RESULT: a function or a method handing it back, stored,
+		// held in a local, passed on or returned. The summaries followed a parameter
+		// through each and the receiver through none.
+		{"lc.ViaId()", "cannot call ViaId on lc: its receiver is stored where it outlives every frame"},
+		{"lc.ViaSelf()", "cannot call ViaSelf on lc"},
+		{"lc.ViaHeld()", "cannot call ViaHeld on lc"},
+		{"lc.ViaArg()", "cannot call ViaArg on lc"},
+		{"lc.ViaArgSelf()", "cannot call ViaArgSelf on lc"},
+		{"g = lc.RetId()", "cannot store the address of local variable lc in package variable g"},
+		{"g = lc.RetSelf()", "cannot store the address of local variable lc in package variable g"},
+		{"viaParamSelf(&lc)", "cannot pass the address of local variable lc to viaParamSelf"},
+		{"g = retParamSelf(&lc)", "cannot store the address of local variable lc in package variable g"},
 		// Through an interface made from a pointer: it points where the pointer does.
 		{"p := &lc\n\tvar sv Saver = p\n\tsv.Save()", "cannot call Save on lc"},
 		{"viaIface(&lc)", "cannot pass the address of local variable lc to viaIface"},
@@ -10795,6 +10839,9 @@ func main() {
 		{"defer h.c.Bump()", ""},
 		{"defer arr[1].Bump()", ""},
 		{"var sv Saver = &gc\n\tsv.Save()", ""},
+		{"var sv Saver = &gc\n\tdefer sv.Save()", ""},
+		{"var sv Saver = &gc\n\tgo sv.Save()", ""},
+		{"svs := [1]Saver{&gc}\n\tsvs[0].Save()", ""},
 		{"g = gc.Self()", ""},
 		{"byParam(&gc)", ""},
 		{"lc.Bump()", ""},
@@ -10813,6 +10860,12 @@ func main() {
 		{"w := Wrap{&gc}\n\tgo w.Bump()", ""},
 		{"w := Wrap{&gc}\n\tgo w.Counter.Bump()", ""},
 		{"gc.Copied()", ""},
+		{"gc.ViaId()", ""},
+		{"gc.ViaArgSelf()", ""},
+		{"g = gc.RetSelf()", ""},
+		{"_ = lc.PeekId()", ""},
+		{"x := lc.RetId()\n\tx.n = 2", ""},
+		{"viaParamSelf(&gc)", ""},
 		{"p := &gc\n\tvar sv Saver = p\n\tsv.Save()", ""},
 		{"viaIface(&gc)", ""},
 		{"(&gc).Save()", ""},
@@ -10826,6 +10879,198 @@ func main() {
 	} {
 		t.Run(test.stmt, func(t *testing.T) {
 			src := head + "\t" + test.stmt + "\n" + tail
+			fsys := fstest.MapFS{"main.ogo": &fstest.MapFile{Data: []byte(src)}}
+			pkg, err := Build(-1, []string{"main.ogo"}, fsys)
+			if err == nil {
+				err = EmitC(pkg, io.Discard, Checked())
+			}
+			switch {
+			case test.want == "" && err != nil:
+				t.Errorf("refused: %v\n%s", err, src)
+			case test.want != "" && err == nil:
+				t.Errorf("accepted, want %q\n%s", test.want, src)
+			case test.want != "" && !strings.Contains(err.Error(), test.want):
+				t.Errorf("got %v, want %q", err, test.want)
+			}
+		})
+	}
+}
+
+// TestEmitCRecvIntoEscape: a method storing its RECEIVER through one of its
+// parameters, `*p = m` -- a registration, an intrusive list's link, an As(any)
+// method of the errors idiom -- directly, through a relay, a method it calls, an
+// interface, a method expression, a defer, a promotion; and a function storing a
+// parameter through an ASSERTION of an `any` one, errors.As's own shape. None was
+// summarised: a parameter's store through another had a slot (crossInto) and a
+// receiver's had none, an interface parameter was no slot, and the caller's
+// receiver handed on as an argument was no owner -- every row below kept a local's
+// address where it outlives the function, in silence. With both sides this frame's,
+// the store is fine, and the target holds the address from there on.
+func TestEmitCRecvIntoEscape(t *testing.T) {
+	const head = `type M struct {
+	n    int
+	next *M
+}
+
+type R interface {
+	Reg(p **M)
+}
+
+type Box struct {
+	m M
+}
+
+type Outer struct {
+	M
+}
+
+type B struct {
+	d []int
+}
+
+type H struct {
+	pp **M
+}
+
+type HR struct {
+	r R
+}
+
+var gp *M
+
+var gm M
+
+var gb B
+
+var ghr HR
+
+func (m *M) Reg(p **M) { *p = m }
+
+func (m *M) Link(prev *M) { prev.next = m }
+
+func (m *M) As(target any) bool {
+	if p, ok := target.(**M); ok {
+		*p = m
+		return true
+	}
+	return false
+}
+
+func (m *M) Via(p **M) { reg(m, p) }
+
+func (m *M) Twice(p **M) { m.Reg(p) }
+
+func (m *M) Bump() { m.n++ }
+
+func (m *M) Self() *M { return m }
+
+func (m *M) RegSelf(p **M) { *p = m.Self() }
+
+func idM(m *M) *M { return m }
+
+func (m *M) RegId(p **M) { *p = idM(m) }
+
+func reg(m *M, p **M) { *p = m }
+
+func regVia(m *M, p **M) { m.Reg(p) }
+
+func fill(src *M, dst any) {
+	if d, ok := dst.(**M); ok {
+		*d = src
+	}
+}
+
+func fillSwitch(src *M, dst any) {
+	switch d := dst.(type) {
+	case **M:
+		*d = src
+	}
+}
+
+func fillPlain(src *M, dst any) {
+	d := dst.(**M)
+	*d = src
+}
+
+func setInto(b *B, v []int) { b.d = v }
+
+func (b *B) Set(v []int) { setInto(b, v) }
+
+func asVia(m *M, t any) bool { return m.As(t) }
+
+func run() {
+	var lm M
+	var lp *M
+	var lo Outer
+	var bx Box
+	var a [4]int
+	_, _, _, _, _ = lm, lp, lo, bx, a
+`
+	const tail = `}
+
+func main() {
+	run()
+}
+`
+	for _, test := range []struct {
+		stmt string
+		want string // "" means the program must be accepted
+	}{
+		{"lm.Reg(&gp)", "cannot call Reg on lm: its receiver is stored through gp, which outlives this function"},
+		{"lm.Link(&gm)", "cannot call Link on lm: its receiver is stored through gm, which outlives this function"},
+		{"lm.As(&gp)", "cannot call As on lm: its receiver is stored through gp"},
+		{"_ = lm.As(&gp)", "cannot call As on lm"},
+		{"lm.Via(&gp)", "cannot call Via on lm"},
+		{"lm.Twice(&gp)", "cannot call Twice on lm"},
+		{"lm.RegSelf(&gp)", "cannot call RegSelf on lm: its receiver is stored through gp"},
+		{"lm.RegId(&gp)", "cannot call RegId on lm: its receiver is stored through gp"},
+		{"defer lm.Reg(&gp)", "cannot call Reg on lm"},
+		{"lo.Reg(&gp)", "cannot call Reg on lo"},
+		{"bx.m.Reg(&gp)", "cannot call Reg on bx"},
+		{"p := &lm\n\tp.Reg(&gp)", "cannot call Reg on lm"},
+		{"var r R = &lm\n\tr.Reg(&gp)", "cannot call Reg (through R) on lm"},
+		{"var r R = &lm\n\tdefer r.Reg(&gp)", "cannot call Reg (through R) on lm"},
+		{"var hr HR\n\thr.r = &lm\n\thr.r.Reg(&gp)", "cannot call Reg (through R) on lm"},
+		{"rs := [1]R{&lm}\n\trs[0].Reg(&gp)", "cannot call Reg (through R) on lm"},
+		{"reg(&lm, &gp)", "cannot pass the address of local variable lm to reg"},
+		{"regVia(&lm, &gp)", "cannot pass the address of local variable lm to regVia"},
+		{"fill(&lm, &gp)", "cannot pass the address of local variable lm to fill"},
+		{"fillSwitch(&lm, &gp)", "cannot pass the address of local variable lm to fillSwitch"},
+		{"fillPlain(&lm, &gp)", "cannot pass the address of local variable lm to fillPlain"},
+		{"asVia(&lm, &gp)", "cannot pass the address of local variable lm to asVia"},
+		{"(*M).Reg(&lm, &gp)", "cannot pass the address of local variable lm to (*M).Reg"},
+		{"f := (*M).Reg\n\tf(&lm, &gp)", "cannot pass the address of local variable lm to (*M).Reg"},
+		{"lm.Reg(&lp)\n\tgp = lp", "cannot store local lp, which holds a pointer into local lm"},
+		{"gb.Set(a[:])", "cannot pass a slice backed by local a to Set: it is stored in the receiver gb"},
+		{"{\n\t\tvar inner M\n\t\tinner.Reg(&lp)\n\t}", "cannot call Reg on inner: its receiver is stored through lp, which outlives the block inner is declared in"},
+		{"h := H{&gp}\n\tlm.Reg(h.pp)", "cannot call Reg on lm"},
+		{"lm.Reg(gm.pps())", "cannot call Reg on lm: its receiver is stored through argument 1, which outlives this function, or may"},
+		// Controls: both this frame's, both package storage, and a method that
+		// stores nothing.
+		{"lm.Reg(&lp)", ""},
+		{"gm.Reg(&gp)", ""},
+		{"gm.Reg(&lp)", ""},
+		{"var r R = &lm\n\tr.Reg(&lp)", ""},
+		{"var r R = &gm\n\tr.Reg(&gp)", ""},
+		{"var r R = &lm\n\tdefer r.Reg(&lp)", ""},
+		{"var hr HR\n\thr.r = &lm\n\thr.r.Reg(&lp)", ""},
+		{"ghr.r = &gm\n\tghr.r.Reg(&gp)", ""},
+		{"rs := [1]R{&gm}\n\trs[0].Reg(&gp)", ""},
+		{"fill(&lm, &lp)", ""},
+		{"fillSwitch(&lm, &lp)", ""},
+		{"fill(&gm, &gp)", ""},
+		{"(*M).Reg(&lm, &lp)", ""},
+		{"_ = lm.As(&lp)", ""},
+		{"_ = asVia(&lm, &lp)", ""},
+		{"var lb B\n\tlb.Set(a[:])", ""},
+		{"var o M\n\tlm.Link(&o)", ""},
+		{"lm.Bump()", ""},
+		{"lo.Reg(&lp)", ""},
+		{"lm.RegSelf(&lp)", ""},
+		{"lm.RegId(&lp)", ""},
+	} {
+		t.Run(test.stmt, func(t *testing.T) {
+			src := head + "\t" + test.stmt + "\n" + tail + "\nfunc (m *M) pps() **M { return &gp }\n"
 			fsys := fstest.MapFS{"main.ogo": &fstest.MapFile{Data: []byte(src)}}
 			pkg, err := Build(-1, []string{"main.ogo"}, fsys)
 			if err == nil {
@@ -14861,11 +15106,16 @@ func main() {
 
 func (w *worker) run(ch chan int) { ch <- w.n }
 
-func main() {
-	var ch = make(chan int)
+var ch = make(chan int)
+
+func start() {
 	var w worker
 	go w.run(ch)
 	println(<-ch)
+}
+
+func main() {
+	start()
 }
 `,
 			want: "cannot pass the address of local variable w to a goroutine",
@@ -18133,6 +18383,36 @@ func main() {
 	println(buf[0])
 }
 `, ""},
+		// A method started on main's local, and through an interface holding it: the
+		// receiver rule had not heard of main's block, and refused the first where
+		// `go bump(&lm)` was taken; the second was asked nothing anywhere.
+		{"a method started on main's local, and through an interface", `type M struct{ n int }
+type S interface{ Bump() }
+var done = make(chan int)
+func (m *M) Bump() { m.n++; done <- 1 }
+func main() {
+	var lm M
+	go lm.Bump()
+	<-done
+	var s S = &lm
+	go s.Bump()
+	<-done
+	println(lm.n)
+}
+`, ""},
+		{"a method started through an interface holding a local of an inner block of main", `type M struct{ n int }
+type S interface{ Bump() }
+var done = make(chan int)
+func (m *M) Bump() { m.n++; done <- 1 }
+func main() {
+	if true {
+		var lm M
+		var s S = &lm
+		go s.Bump()
+		<-done
+	}
+}
+`, "cannot pass local s, which holds a pointer into local lm to a goroutine"},
 		{"main's local's address in a package variable", `var gp *int
 func main() {
 	x := 5

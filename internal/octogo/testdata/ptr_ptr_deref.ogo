@@ -1,0 +1,23 @@
+// Two dereferences, `**pp` of a `pp **int`: what the walk reaches is an int, and was
+// typed by nothing -- a variable's Kind is its pointee's, one level -- so a string
+// took one in every position.
+
+func take(s string) {}
+
+func main() {
+	var n int = 1
+	p := &n
+	var pp **int = &p
+	// ERROR "cannot use \*\*pp of type int as type string in variable declaration"
+	var s string = **pp
+	// ERROR "cannot use \*\*pp of type int as type string in assignment"
+	s = **pp
+	// ERROR "cannot use \*\*pp of type int as type string in argument to take"
+	take(**pp)
+	v := &p
+	// ERROR "operator \+ not defined on int and string"
+	_ = **v + "a"
+	_ = s
+	var ok int = **pp + **v
+	_ = ok
+}

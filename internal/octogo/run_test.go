@@ -333,6 +333,142 @@ func main() {
 		want: "true 4\ntrue 4\nfalse\ntrue 4 true\nfalse\n**main.P **main.P true\ntrue true\nP\n4\n***main.P\n",
 	},
 	{
+		// A method started on a cog on a local of main's outermost block, directly
+		// and through an interface holding its address: that block outlives every
+		// cog, as for go f(&x), and the receiver rule had not heard of it -- the
+		// first was refused, "cannot pass the address of local variable lm to a
+		// goroutine".
+		name: "a method started on a cog on main's own local, and through an interface",
+		src: `type M struct{ n int }
+
+type S interface{ Bump() }
+
+var done = make(chan int)
+
+func (m *M) Bump() {
+	m.n++
+	done <- m.n
+}
+
+func main() {
+	var lm M
+	go lm.Bump()
+	a := <-done
+	var s S = &lm
+	go s.Bump()
+	b := <-done
+	println(a, b, lm.n)
+}
+`,
+		want: "1 2 2\n",
+	},
+	{
+		// A method storing its receiver through a parameter, `*p = m`, and a function
+		// storing a parameter through an assertion of an `any` one, `case **M:` among
+		// them -- with both sides of each store this frame's, which the lifetime
+		// rules take, or package storage: errors.As and an As(any) method of the
+		// idiom, a registration, an intrusive list's link.
+		name: "a receiver stored through a parameter, and an any parameter asserted to a pointer to a pointer",
+		src: `import "errors"
+
+type M struct {
+	n    int
+	next *M
+}
+
+func (m *M) Error() string { return "m" }
+
+func (m *M) As(target any) bool {
+	if p, ok := target.(**M); ok {
+		*p = m
+		return true
+	}
+	return false
+}
+
+func (m *M) Reg(p **M) { *p = m }
+
+func (m *M) Link(prev *M) { prev.next = m }
+
+type W struct{ m *M }
+
+func (w *W) Error() string { return "w" }
+
+func (w *W) Unwrap() error { return w.m }
+
+type R interface{ Reg(p **M) }
+
+func fill(src *M, dst any) bool {
+	switch d := dst.(type) {
+	case **M:
+		*d = src
+		return true
+	case ***M:
+		**d = src
+		return true
+	}
+	return false
+}
+
+func kind(x any) string {
+	switch v := x.(type) {
+	case **M:
+		if *v == nil {
+			return "**M nil"
+		}
+		return "**M"
+	case **int:
+		**v++
+		return "**int"
+	case *M:
+		return "*M"
+	case nil:
+		return "nil"
+	}
+	return "other"
+}
+
+func run() {
+	var a, b M
+	a.n, b.n = 1, 2
+	var lp *M
+	a.Reg(&lp)
+	var r R = &b
+	var lq *M
+	r.Reg(&lq)
+	b.Link(&a)
+	println(lp.n, lq.n, a.next.n)
+	var lr *M
+	println(fill(&b, &lr), lr.n, fill(&a, &lp), lp.n, fill(&a, &a))
+	pp := &lr
+	println(fill(&a, &pp), lr.n)
+	var ls *M
+	println(a.As(&ls), ls.n)
+	w := W{&b}
+	var err error = &w
+	var lt *M
+	println(errors.As(err, &lt), lt.n)
+	n := 5
+	pn := &n
+	println(kind(&lp), kind(&lt), kind(&pn), kind(lp), kind(nil), kind(&n), n)
+}
+
+var gm = M{n: 9}
+
+var gp *M
+
+func main() {
+	run()
+	gm.Reg(&gp)
+	var r R = &gm
+	var gq *M
+	r.Reg(&gq)
+	println(gp.n, gq == gp)
+}
+`,
+		want: "1 2 2\ntrue 2 true 1 false\ntrue 1\ntrue 1\ntrue 2\n**M **M **int *M nil other 6\n9 true\n",
+	},
+	{
 		// A buffered channel's size in every spelling Go folds to a constant -- a
 		// typed constant of another integer type, a shift, a constant len, a rune,
 		// unsafe.Sizeof, a float of whole value, a conversion -- and elements of no
@@ -50048,7 +50184,8 @@ const multiPkgWant = "300\nLOUD\n50\n6\n5\n45\n6 1000\n200\n207\n3 100\n4 9\n" +
 	"true false true true true\ntrue gone busy\ntick true true true false true\nfalse true true\n" +
 	"namer after 2\nnamer after 1\n" +
 	"3 2 2 1\n" +
-	"takeTwo 8 true\n6 false 6 true 6 -6\n"
+	"takeTwo 8 true\n6 false 6 true 6 -6\n" +
+	"6 106 -1\n"
 
 var multiPkgProgram = map[string]string{
 	"main.ogo": `import "chain"
@@ -50243,6 +50380,7 @@ libSentinels()
 libDeferIface()
 libArrayChain()
 libLitCalls()
+libPtrPtr()
 }
 
 // A method on ANOTHER package's call returning an array, lib.IdentMx().T(), as a
@@ -50273,6 +50411,27 @@ func libLitCalls() {
 	var g lib.CGrid
 	g[1][0] = lib.Cnv(6)
 	println(n, ok, m, ok2, (-g[1][0]).Neg(), g[1][0].Neg())
+}
+
+// A type switch case of another package's type behind two stars, case **lib.Port,
+// and three: what any(&p) holds for a p *lib.Port. It was refused as naming no
+// type, where the assertion was taken.
+func libPtrPtrCase(x any) int {
+	switch v := x.(type) {
+	case **lib.Port:
+		return (*v).N
+	case ***lib.Port:
+		return (**v).N + 100
+	}
+	return -1
+}
+
+func libPtrPtr() {
+	var port lib.Port
+	port.N = 6
+	p := &port
+	pp := &p
+	println(libPtrPtrCase(&p), libPtrPtrCase(&pp), libPtrPtrCase(p))
 }
 
 // A deferred call of ANOTHER package's function taking an interface: the pointer is

@@ -5766,6 +5766,17 @@ func (f *File) exprType(s *Scope, n Node) (Kind, bool) {
 				}
 			}
 		}
+		// Two dereferences or more, `**pp` of a `pp **int`: what the walk reaches,
+		// where it is a Kind. The variable's own Kind is its POINTEE's, one level,
+		// so `var s string = **pp` was asked nothing and reached C.
+		if facSet && len(ops) > 1 && !slices.ContainsFunc(ops, func(op Node) bool { return f.unaryOp(s, op) != MUL }) {
+			e := Node{sym: Expression, ast: encodeNode(SimpleExpr, encodeNode(Term, encodeNode(UnaryExpr, n.ast)))}
+			if t, _, ok := f.operandTypeAt(s, e); ok && t.tn != nil && !t.f.isPointerType(t.s, t.tn) {
+				if k, ok := t.f.typeKind(t.s, t.tn); ok {
+					return k, true
+				}
+			}
+		}
 		// And behind the operators that keep a Kind, `-*p` and `^*p`: untyped, so
 		// `-*xp * 0x80000000` multiplied an int by a constant no int holds.
 		if facSet && len(ops) > 1 && f.unaryOp(s, ops[len(ops)-1]) == MUL {
@@ -7013,6 +7024,25 @@ func (f *File) checkTypeCaseClause(cs *Scope, ts typeSwitchGuard, clause Node, s
 			}
 			continue
 		}
+		// `case **E:` -- a pointer to a pointer, which an interface holds as it holds
+		// any pointer, `any(&p)` for a p *E, and the assertion `x.(**E)` names. It
+		// has no methods. Refused as no type, where the assertion was taken.
+		if tn, at, isPP := f.casePtrToPtr(cs, ex); isPP {
+			if tn == nil {
+				continue // reported where the name was resolved
+			}
+			written := f.typeAtMessage(typeAt{tn, cs, f})
+			if seen[written] {
+				f.err(at.Position(), "duplicate case %s in type switch", written)
+			}
+			seen[written] = true
+			base, baseQual, bound = Token{}, Token{}, tn
+			if set, _ := f.interfaceMethodsNamed(cs, iface); len(set) != 0 {
+				f.err(at.Position(), "impossible type switch case: %s.(type) case %s: %s does not implement %s (missing method %s)",
+					ts.src, written, written, iface, slices.Sorted(maps.Keys(set))[0])
+			}
+			continue
+		}
 		// `case *[4]uint32:` and `case *[]byte:` -- a pointer to a type written out,
 		// which an interface holds as it holds any pointer. It has no methods.
 		if lit, isLit := f.starTypeLiteral(cs, ex); isLit {
@@ -7304,6 +7334,44 @@ func (f *File) caseTypeName(s *Scope, ex Node) (name, qual Token, isNil, ok bool
 		return nm, ql, false, true
 	}
 	return name, Token{}, false, false
+}
+
+// casePtrToPtr reads a type-switch case of two stars or more before a type name,
+// `**E`, `**int`, `***lib.T`, as the pointer type it names, and the position of its
+// name. tn is nil where the name is no type, which is reported.
+func (f *File) casePtrToPtr(s *Scope, ex Node) (tn TypeNode, at Token, ok bool) {
+	ue, isUE := f.soleUnaryExpr(ex)
+	if !isUE {
+		return nil, Token{}, false
+	}
+	kids := slices.Collect(it(ue.ast))
+	if len(kids) < 3 || kids[len(kids)-1].sym != Factor {
+		return nil, Token{}, false
+	}
+	for _, k := range kids[:len(kids)-1] {
+		if k.sym != UnaryOp || f.unaryOp(s, k) != MUL {
+			return nil, Token{}, false
+		}
+	}
+	fac := kids[len(kids)-1]
+	if id, isID := f.exprIdent(fac); isID {
+		if !f.caseNameResolved(s, id) {
+			return nil, id, true
+		}
+		tn, at = &TypeNodeIdent{Name: id}, id
+	} else if ql, nm, isQual := f.factorQualifiedIdent(s, fac); isQual {
+		n0 := len(f.errList)
+		if f.checkQualifiedType(ql, nm); len(f.errList) != n0 {
+			return nil, nm, true
+		}
+		tn, at = &TypeNodeIdent{Qualifier: ql, Name: nm}, nm
+	} else {
+		return nil, Token{}, false
+	}
+	for range kids[:len(kids)-1] {
+		tn = &TypeNodePointer{TypeNode: tn}
+	}
+	return tn, at, true
 }
 
 // factorQualifiedIdent reads a Factor spelled "qual.member" -- an import qualifier
@@ -14912,8 +14980,22 @@ func (f *File) checkImplements(s *Scope, ifaceName string, value Node, what stri
 	}
 	// A value of a predeclared Kind and no defined type, `return false` for an
 	// error, `use("")` for a Shape: no methods, and no pointer either. Asked of
-	// nobody, a return of one compiled.
-	if k, known := f.exprType(s, value); known && k != UntypedNil && kindCategory(k) != catUnknown {
+	// nobody, a return of one compiled. Not of an ADDRESS, which exprType answers
+	// with its pointee's Kind: `n := 5; take(&n)` for an `any` was refused as a
+	// value of type int, a variable with no type written having no name to say
+	// otherwise below.
+	k, known := f.exprType(s, value)
+	if known && k != UntypedNil && kindCategory(k) != catUnknown && f.isAddrOperand(s, value) && len(set) != 0 {
+		// A pointer to a value of that Kind has no methods either: `n := 5; use(&n)`
+		// for a Shape was taken by this rule, where `var m int` was refused below by
+		// its name.
+		if _, _, _, named := f.exprNamedType(s, value); !named && !f.unsafePointerValue(s, value) {
+			f.err(f.tok(value.Pos()).Position(), "cannot use %s (value of type *%s) as %s value in %s: *%s does not implement %s (missing method %s)",
+				f.exprSource(value), kindName(defaultKind(k)), ifaceName, what, kindName(defaultKind(k)), ifaceName, slices.Sorted(maps.Keys(set))[0])
+			return
+		}
+	}
+	if known && k != UntypedNil && kindCategory(k) != catUnknown && !f.isAddrOperand(s, value) {
 		// A call's result is named by its written type, `int` for a `three() int`,
 		// which is no defined type and carries no methods: `takeAny(three())` and
 		// `return g.Len()` for an `any` were taken, where `takeAny(n)` was refused.
@@ -31181,6 +31263,24 @@ func (f *File) operandType(s *Scope, n Node, calls bool) (typeAt, bool) {
 				return typeAt{}, false
 			}
 			return typeAt{p.TypeNode, t.s, t.f}, true
+		}
+		// `**pp`, a dereference at a time: what a pointer to a pointer reaches had no
+		// type, so `var s string = **pp` of a `pp **int` was asked nothing.
+		if n.sym == UnaryExpr && len(kids) > 2 && kids[len(kids)-1].sym == Factor && !slices.ContainsFunc(kids[:len(kids)-1], func(k Node) bool {
+			return k.sym != UnaryOp || f.unaryOp(s, k) != MUL
+		}) {
+			t, ok := f.operandType(s, kids[len(kids)-1], calls)
+			for range len(kids) - 1 {
+				if !ok || t.f == nil {
+					return typeAt{}, false
+				}
+				p, isPtr := f.underlyingTypeAt(t).tn.(*TypeNodePointer)
+				if !isPtr {
+					return typeAt{}, false
+				}
+				t = typeAt{p.TypeNode, t.s, t.f}
+			}
+			return t, ok
 		}
 		if len(kids) != 1 {
 			return typeAt{}, false
