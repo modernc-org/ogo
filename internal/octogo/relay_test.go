@@ -30,6 +30,20 @@ func KeepS(v []int) { Gs = v }
 func Pass(p *int) *int { return p }
 
 func Read(p *int) int { return *p }
+
+type Box struct{ D []int }
+
+var GB Box
+
+var GP *Box
+
+func Get() *Box { return &GB }
+
+func Id(b *Box) *Box { return b }
+
+func (b *Box) Save() { GP = b }
+
+func (b *Box) Set(xs []int) { b.D = xs }
 `
 	for _, test := range []struct {
 		name, src string
@@ -127,6 +141,44 @@ var gx int
 func relay(p *int) { lib.Keep(p) }
 
 func main() { relay(&gx) }
+`, false},
+		// A method called on what another package's function returns: its
+		// receiver is what the call hands back (checkOpaqueRecv), the chain's
+		// selector of the function rebuilt (opaqueRecvExpr).
+		{"a method on another package's call result keeping its receiver", `import "lib"
+
+func run() {
+	var lb lib.Box
+	lib.Id(&lb).Save()
+}
+
+func main() { run() }
+`, true},
+		{"the same deferred", `import "lib"
+
+func run() {
+	var lb lib.Box
+	defer lib.Id(&lb).Save()
+}
+
+func main() { run() }
+`, true},
+		{"an argument stored into another package's call result", `import "lib"
+
+func run() {
+	var a [4]int
+	lib.Get().Set(a[:])
+}
+
+func main() { run() }
+`, true},
+		{"package storage through another package's call result", `import "lib"
+
+func main() {
+	lib.Get().Save()
+	lib.Get().Set(nil)
+	lib.Id(&lib.GB).Save()
+}
 `, false},
 		{"a relay's result read", `import "lib"
 

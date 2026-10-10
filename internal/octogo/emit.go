@@ -28754,6 +28754,22 @@ func isAccessChain(steps []Node) bool {
 	return true
 }
 
+// callRecvChain reports a chain of selectors, indexes and calls that calls
+// something: the receiver a method after it is handed is a call's result.
+func callRecvChain(steps []Node) bool {
+	called := false
+	for _, n := range steps {
+		switch n.sym {
+		case CallSuffix:
+			called = true
+		case Index, Selector:
+		default:
+			return false
+		}
+	}
+	return called
+}
+
 // hasIndexStep reports whether a chain indexes anything, which is what puts it out
 // of the reach of the shapes that expect a run of selectors.
 func hasIndexStep(steps []Node) bool {
@@ -33933,7 +33949,11 @@ func (e *emitter) checkDeferLeaks(d *deferredCall, head Node, suffix []Node, arg
 	// it, where the call was refused.
 	if ct, m, isIface := e.ifaceChainMethod(base, suffix); isIface {
 		e.checkIfaceArgs(ct, m.name, args, spread)
-		e.checkIfaceRecvKept(ct, m.name, base, args)
+		if chain := steps[:len(steps)-1]; callRecvChain(chain) {
+			e.checkIfaceOpaqueRecv(ct, m.name, e.opaqueRecvExpr(base, chain), args)
+		} else {
+			e.checkIfaceRecvKept(ct, m.name, base, args)
+		}
 		return
 	}
 	if len(steps) == 1 && steps[0].sym == Selector {
@@ -33958,7 +33978,9 @@ func (e *emitter) checkDeferLeaks(d *deferredCall, head Node, suffix []Node, arg
 	// on an element or a field of a local, left the local's address in a package
 	// variable -- read after the function returned, it held 8756 on the board for
 	// Go's 7.
-	if len(steps) > 1 && steps[len(steps)-1].sym == Selector && d.cname != "" && isAccessChain(steps[:len(steps)-1]) {
+	// And a receiver a CALL hands back, `defer gbAt().set(a[:])`, `defer
+	// id(&lb).Save()`: what the call returns is frameRefOf's (checkOpaqueRecv).
+	if len(steps) > 1 && steps[len(steps)-1].sym == Selector && d.cname != "" && (isAccessChain(steps[:len(steps)-1]) || callRecvChain(steps[:len(steps)-1])) {
 		chain := steps[:len(steps)-1]
 		method := e.soleIdent(steps[len(steps)-1].ast)
 		e.checkRecvAt(d.cname, e.recvStorage(base, chain, e.promotionPath(base, chain, method)), args)
@@ -37025,7 +37047,13 @@ func (e *emitter) chainCText(base string, steps []Node) (text, ctype string, add
 				// value holds -- which the root's mark answers for, conservatively:
 				// `h.s.Save()` and `ss[0].Save()` for a value holding a local's
 				// address kept it, the rule having been asked of a variable alone.
-				e.checkIfaceRecvKept(cur.ctype, field, base, e.callArgExprs(steps[i+1].ast))
+				// A value a CALL hands back, `asSaver(&lb).Save()`, is what frameRefOf
+				// says the call returns.
+				if callRecvChain(steps[:i]) {
+					e.checkIfaceOpaqueRecv(cur.ctype, field, e.opaqueRecvExpr(base, steps[:i]), e.callArgExprs(steps[i+1].ast))
+				} else {
+					e.checkIfaceRecvKept(cur.ctype, field, base, e.callArgExprs(steps[i+1].ast))
+				}
 				// The table and the data are both read off the value, so a value the
 				// chain produced by a CALL -- `p(1).Area()` through a function value,
 				// `hd.Get().Area()` through another interface -- is bound once first.
@@ -53731,12 +53759,15 @@ func (e *emitter) checkRecvLeak(cname, recv string, args []Node) {
 // recvRef is the storage a method's receiver refers to, as far as the lifetime
 // rules can name it (see recvStorage).
 type recvRef struct {
-	root    string // the variable the receiver is reached from, for a message
-	storage string // the storage named: the root's own, or a local it points at
-	local   bool   // storage is this frame's
-	sure    bool   // ... on every path, not only on one: a store INTO it may rely on it (see storageBehind)
-	viaPtr  bool   // a pointer was followed after the root: storage is what it holds
-	opaque  bool   // a step the rules cannot see through, a call's result
+	root    string  // the variable the receiver is reached from, for a message
+	storage string  // the storage named: the root's own, or a local it points at
+	local   bool    // storage is this frame's
+	sure    bool    // ... on every path, not only on one: a store INTO it may rely on it (see storageBehind)
+	viaPtr  bool    // a pointer was followed after the root: storage is what it holds
+	opaque  bool    // a step the rules cannot see through, a call's result
+	expr    []int32 // for an opaque one, the receiver as an Expression of the source's tokens, or nil (see opaqueRecvExpr)
+	ask     []int32 // ... and the expression whose frameRefOf says what storage the receiver is, or nil (see opaqueRecvAsk)
+	askHeld bool    // ... whose contentsRef says it: the receiver is what an embedded pointer holds
 }
 
 // recvStorage names the storage a method's receiver refers to when the method is
@@ -53756,7 +53787,8 @@ func (e *emitter) recvStorage(base string, steps []Node, path []string) recvRef 
 	r := recvRef{root: base}
 	for _, st := range steps {
 		if st.sym != Selector && st.sym != Index {
-			r.storage, r.opaque = base, true
+			r.storage, r.opaque, r.expr = base, true, e.opaqueRecvExpr(base, steps)
+			r.ask, r.askHeld = e.opaqueRecvAsk(base, steps, path)
 			return r
 		}
 	}
@@ -53790,7 +53822,7 @@ func (e *emitter) recvStorage(base string, steps []Node, path []string) recvRef 
 // receiver that outlives it.
 func (e *emitter) checkRecvAt(cname string, r recvRef, args []Node) bool {
 	if r.opaque {
-		return true // what a call returns is storage nothing here can name
+		return e.checkOpaqueRecv(cname, r, args)
 	}
 	if e.recvLeaks[cname]&(leakGlobal|leakCog) != 0 && e.methodPtr[cname] {
 		kept := r.local
@@ -53870,6 +53902,121 @@ func (e *emitter) checkRecvAt(cname string, r recvRef, args []Node) bool {
 	return true
 }
 
+// opaqueRecvExpr rebuilds the receiver a chain reaches through a call -- base and
+// steps, `id(&lb)` of `id(&lb).Save()` -- as an Expression of the source's own
+// tokens, for frameRefOf to say what the call hands back. base is the chain's head
+// as written, the token before the first step -- or, for an import qualifier, the
+// one before the member it selects, which chainCText takes off the steps, `lib.Id`
+// of `lib.Id(&lb).Save()`; nil where the chain does not begin with it as written (a
+// head the emitter renamed or bound).
+func (e *emitter) opaqueRecvExpr(base string, steps []Node) []int32 {
+	if len(steps) == 0 {
+		return nil
+	}
+	at := steps[0].Pos() - 1
+	var sfx []int32
+	if _, isImport := e.importQualifiers[base]; isImport && at >= 2 && e.f.ch(at) == IDENT && e.f.ch(at-1) == PERIOD && e.src(at-2) == base {
+		sfx = encodeNode(Selector, []int32{at - 1, at})
+		at -= 2
+	}
+	if at < 0 || e.f.ch(at) != IDENT || e.src(at) != base {
+		return nil
+	}
+	for _, st := range steps {
+		sfx = append(sfx, encodeNode(st.sym, st.ast)...)
+	}
+	fac := encodeNode(Factor, append([]int32{at}, encodeNode(FactorSuffix, sfx)...))
+	return encodeNode(Expression, encodeNode(SimpleExpr, encodeNode(Term, encodeNode(UnaryExpr, fac))))
+}
+
+// opaqueRecvAsk is the expression whose reference is the storage a pointer method
+// is handed when the chain base and steps reaches its receiver through a call: the
+// chain itself where its value is a pointer, `id(&lb)` of `id(&lb).Save()`; where it
+// is a value the method takes the address of, `mkHB(&lh).inner`, the part of the
+// chain up to the pointer or the slice it is addressed through, `mkHB(&lh)`. held
+// says the receiver is what a pointer embedded in that value holds, the promotion
+// path going through one, which the value's contents answer for.
+func (e *emitter) opaqueRecvAsk(base string, steps []Node, path []string) (ask []int32, held bool) {
+	full := e.opaqueRecvExpr(base, steps)
+	if full == nil {
+		return nil, false
+	}
+	ct, ok := e.inferCType(full)
+	if !ok {
+		return full, false
+	}
+	if e.pathThroughPointer(ct, path) {
+		return full, true
+	}
+	if e.isPointer(ct) {
+		return full, false
+	}
+	for n := len(steps) - 1; n > 0 && (steps[n].sym == Selector || steps[n].sym == Index); n-- {
+		pre := e.opaqueRecvExpr(base, steps[:n])
+		if pct, ok := e.inferCType(pre); ok && (e.isPointer(pct) || e.isSliceCType(pct)) {
+			return pre, false
+		}
+	}
+	return full, false
+}
+
+// checkOpaqueRecv is checkRecvAt for a receiver a call hands back, `gbAt().set(a[:])`,
+// `id(&lb).Save()`, `lb.Self().Reg(&gp)`: storage no name here holds, which every
+// receiver rule let through. What the call hands back is frameRefOf's answer, a MAY
+// -- enough to refuse on: a pointer method keeping its receiver, or storing it
+// through an argument that outlives it, is refused where the receiver may be this
+// frame's. An argument reaching this frame, stored INTO the receiver, is refused
+// whatever the receiver is, nothing here knowing that it dies with the frame (KNOWN
+// MEANS MUST).
+func (e *emitter) checkOpaqueRecv(cname string, r recvRef, args []Node) bool {
+	shown := e.displayName(r.root)
+	if r.expr != nil {
+		shown = e.f.exprSource(Node{sym: Expression, ast: r.expr})
+	}
+	var fr frameRef
+	reaches := false
+	switch {
+	case r.ask == nil:
+	case r.askHeld:
+		fr, reaches = e.contentsRef(r.ask)
+	default:
+		fr, reaches = e.frameRefOf(r.ask)
+	}
+	who := e.funcSourceName(cname)
+	if reaches && e.methodPtr[cname] {
+		if e.recvLeaks[cname]&(leakGlobal|leakCog) != 0 {
+			how := "stored where it outlives every frame"
+			if e.recvLeaks[cname]&leakGlobal == 0 {
+				how = "handed to another cog"
+			}
+			e.fail("%v: cannot call %s on %s, which points into %s: its receiver is %s; %s",
+				e.f.tok(firstIndex(r.expr)).Position(), who, shown, fr.origin, how, fr.advice())
+			return false
+		}
+		if intos := e.recvInto[cname]; intos != 0 && !e.checkRecvIntoRef(intos, who, fr, shown, args) {
+			return false
+		}
+	}
+	crosses := e.crossParams[cname]
+	contents := e.crossContents[cname]
+	for i, a := range args {
+		var ar frameRef
+		ok := false
+		if i < len(crosses) && crosses[i]&leakRecv != 0 {
+			ar, ok = e.frameRefOf(a.ast)
+		}
+		if !ok && i < len(contents) && contents[i]&leakRecv != 0 {
+			ar, ok = e.contentsRef(a.ast)
+		}
+		if ok {
+			e.fail("%v: cannot pass %s to %s: it is stored in the receiver %s, which outlives this function, or may; %s",
+				e.f.tok(a.Pos()).Position(), ar.what, who, shown, ar.advice())
+			return false
+		}
+	}
+	return true
+}
+
 // failRecvKept reports a call of a method that keeps its receiver, on storage of
 // this frame.
 func (e *emitter) failRecvKept(cname, storage string) {
@@ -53888,10 +54035,16 @@ func (e *emitter) failRecvKept(cname, storage string) {
 // as well, it holds storage's address from here on: `lm.Reg(&lp); gp = lp` carried
 // it out. It reports whether the call may go ahead.
 //
-// An argument nothing here can name is refused: checkIntoArgs leaves one alone,
-// a parameter's store through it having been found in a summary, and the receiver
-// is what errors.As's As(any) methods store, through whatever they are handed.
+// An argument nothing here can name is refused, as checkIntoArgs refuses one: the
+// receiver is what errors.As's As(any) methods store, through whatever they are
+// handed.
 func (e *emitter) checkRecvInto(intos uint32, who, storage string, args []Node) bool {
+	return e.checkRecvIntoRef(intos, who, addrRef(storage), e.displayName(storage), args)
+}
+
+// checkRecvIntoRef is checkRecvInto of a receiver that is the reference held, shown
+// as shown: a local's address, or what a call handed back (checkOpaqueRecv).
+func (e *emitter) checkRecvIntoRef(intos uint32, who string, held frameRef, shown string, args []Node) bool {
 	for j := 0; j < len(args) && j < intoBits; j++ {
 		if intos&(1<<j) == 0 {
 			continue
@@ -53910,18 +54063,22 @@ func (e *emitter) checkRecvInto(intos uint32, who, storage string, args []Node) 
 		}
 		switch {
 		case tgt == "" || e.isPackageVar(tgt) || !local || !sure:
-		case e.blockDepthOf(storage) > e.blockDepthOf(target):
-			outlives = "the block " + storage + " is declared in"
+		case e.blockDepthOf(held.name) > e.blockDepthOf(target):
+			in := held.name
+			if in == "" {
+				in = held.origin // a temporary of the block being emitted, which has no name
+			}
+			outlives = "the block " + in + " is declared in"
 		default:
-			e.noteHolderRef(target, addrRef(storage))
+			e.noteHolderRef(target, held)
 			continue
 		}
 		through := fmt.Sprintf("argument %d", j+1)
 		if tgt != "" {
 			through = e.displayName(tgt)
 		}
-		e.fail("%v: cannot call %s on %s: its receiver is stored through %s, which outlives %s; declare %s at package scope",
-			e.f.tok(args[j].Pos()).Position(), who, e.displayName(storage), through, outlives, e.displayName(storage))
+		e.fail("%v: cannot call %s on %s: its receiver is stored through %s, which outlives %s; %s",
+			e.f.tok(args[j].Pos()).Position(), who, shown, through, outlives, held.advice())
 		return false
 	}
 	return true
@@ -53995,6 +54152,42 @@ func (e *emitter) checkIfaceRecvKept(iface, method, recv string, args []Node) {
 	}
 }
 
+// checkIfaceOpaqueRecv is checkIfaceRecvKept for an interface value a call hands
+// back, expr, `asSaver(&lb).Save()`: what the call returns is frameRefOf's answer, as
+// for a pointer a call hands back (checkOpaqueRecv). A nil expr is a chain not
+// rebuilt, and asks nothing.
+func (e *emitter) checkIfaceOpaqueRecv(iface, method string, expr []int32, args []Node) {
+	if expr == nil {
+		return
+	}
+	fr, ok := e.frameRefOf(expr)
+	if !ok {
+		return
+	}
+	shown := e.f.exprSource(Node{sym: Expression, ast: expr})
+	for _, ct := range e.ifaceImplementors(iface) {
+		cname := e.methodCName(methodBaseType(ct), method)
+		if e.methodPtr[cname] && e.recvLeaks[cname]&(leakGlobal|leakCog) != 0 {
+			how := "stored where it outlives every frame"
+			if e.recvLeaks[cname]&leakGlobal == 0 {
+				how = "handed to another cog"
+			}
+			e.fail("%v: cannot call %s on %s, which points into %s: its receiver is %s; %s",
+				e.f.tok(firstIndex(expr)).Position(), e.funcSourceName(cname), shown, fr.origin, how, fr.advice())
+			return
+		}
+	}
+	for _, ct := range e.ifaceImplementors(iface) {
+		cname, path, _, ok := e.promotedMethod(methodBaseType(ct), method)
+		if !ok || !e.methodPtr[cname] || e.recvInto[cname] == 0 || e.pathThroughPointer(ct, path) {
+			continue
+		}
+		if !e.checkRecvIntoRef(e.recvInto[cname], e.funcSourceName(cname)+" (through "+e.goTypeName(iface)+")", fr, shown, args) {
+			return
+		}
+	}
+}
+
 // storageBehind names the storage a callee reaches through a variable it is handed
 // as a receiver or a pointer argument, and whether that storage is a local of this
 // frame. A parameter's is the caller's. A local POINTER's is what it points at: a
@@ -54042,11 +54235,14 @@ func (e *emitter) onceBound(name string) bool {
 // `fill(&g, a[:])` leaves a header over a dead frame in a package variable, and
 // the same call with a local in place of g is fine, the two dying together.
 //
-// Only a target this can positively identify as outliving answers -- a package
-// variable, or a parameter, whose pointee belongs to the caller. An expression it
-// cannot name is left alone rather than refused on suspicion: over-refusal here
-// would fall on ordinary code that keeps nothing, and the shapes worth catching
-// are the ones a reader would write.
+// A target is let through only where this KNOWS it dies with the reference: the
+// address of a local, `&lq`, or a local pointer written once with one. Anything
+// else is refused -- a package variable, a parameter, whose pointee belongs to the
+// caller, and an expression nothing here can name: a call's result, a field or an
+// element read out, a dereference. Those were let through as unknowable, and
+// `fill(&le, pp())` for a pp returning &gp, `fill(&le, h.p)` and `fill(&le, a[0])`
+// left a dead frame's address in gp, in silence; only the callee's store was ever
+// in doubt, and it is the summary's finding, not a guess (KNOWN MEANS MUST).
 func (e *emitter) checkIntoArgs(cname string, args []Node) {
 	e.checkIntoArgsIn(e.crossInto[cname], e.funcSourceName(cname), args)
 }
@@ -54196,26 +54392,29 @@ func (e *emitter) checkIntoArgsIn(intos []uint32, who string, args []Node) {
 				continue
 			}
 			tgt := e.crossRoot(args[j].ast)
-			if tgt == "" {
-				continue
-			}
 			// Outliving the FRAME is the first question, and outliving the block
 			// the reference points into is the second: a callee that stores through
 			// a pointer to an OUTER-block local keeps the reference past the block
 			// it belongs to without the function ever returning.
 			outlives := "this function"
-			storage, local, sure := e.storageBehind(tgt)
+			var storage string
+			local, sure := false, false
 			// An argument that ADDRESSES its root, `&p` or `&x.f`, stores into the
 			// root's own storage, not into what a pointer root points at: read through
 			// storageBehind, `fill(&le, &p)` for a local `p *E` was a store into
 			// whatever p held and refused, though p dies with le -- and errors.As(err,
 			// &p) is that call. addrOfRoot answers only where the address is the
 			// root's own (`&p.f` through a pointer it declines).
-			if _, isAddr := e.addrOfRoot(args[j].ast); isAddr {
+			switch _, isAddr := e.addrOfRoot(args[j].ast); {
+			case tgt == "":
+				outlives = "this function, or may"
+			case isAddr:
 				storage, local, sure = tgt, e.isFrameVar(tgt), true
+			default:
+				storage, local, sure = e.storageBehind(tgt)
 			}
 			switch {
-			case e.isPackageVar(tgt) || !local || !sure:
+			case tgt == "" || e.isPackageVar(tgt) || !local || !sure:
 			case e.blockDepthOf(r.name) > e.blockDepthOf(storage):
 				outlives = "the block " + r.origin + " is declared in"
 			default:
@@ -54225,8 +54424,12 @@ func (e *emitter) checkIntoArgsIn(intos []uint32, who string, args []Node) {
 				e.noteHolderRef(storage, r)
 				continue
 			}
+			through := fmt.Sprintf("argument %d", j+1)
+			if tgt != "" {
+				through = tgt
+			}
 			e.fail("%v: cannot pass %s to %s: it is stored through %s, which outlives %s; %s",
-				e.f.tok(a.Pos()).Position(), r.what, who, tgt, outlives, r.advice())
+				e.f.tok(a.Pos()).Position(), r.what, who, through, outlives, r.advice())
 			return
 		}
 	}

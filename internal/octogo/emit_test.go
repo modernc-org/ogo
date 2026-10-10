@@ -10998,6 +10998,24 @@ func (b *B) Set(v []int) { setInto(b, v) }
 
 func asVia(m *M, t any) bool { return m.As(t) }
 
+var gk *M
+
+func (m *M) Keep() { gk = m }
+
+type K interface{ Keep() }
+
+func asK(m *M) K { return m }
+
+func asR(m *M) R { return m }
+
+func gmAt() *M { return &gm }
+
+func gbAt() *B { return &gb }
+
+func idB(b *B) *B { return b }
+
+func mkBox(b *Box) *Box { return b }
+
 func run() {
 	var lm M
 	var lp *M
@@ -11045,6 +11063,25 @@ func main() {
 		{"{\n\t\tvar inner M\n\t\tinner.Reg(&lp)\n\t}", "cannot call Reg on inner: its receiver is stored through lp, which outlives the block inner is declared in"},
 		{"h := H{&gp}\n\tlm.Reg(h.pp)", "cannot call Reg on lm"},
 		{"lm.Reg(gm.pps())", "cannot call Reg on lm: its receiver is stored through argument 1, which outlives this function, or may"},
+		// A receiver a CALL hands back is what the call returns, which every
+		// receiver rule let through (2026-10-10): directly, deferred, through an
+		// interface, and a value the method takes the address of.
+		{"idM(&lm).Reg(&gp)", "cannot call Reg on idM(&lm): its receiver is stored through gp, which outlives this function"},
+		{"lm.Self().Reg(&gp)", "cannot call Reg on lm.Self(): its receiver is stored through gp"},
+		{"defer idM(&lm).Reg(&gp)", "cannot call Reg on idM(&lm)"},
+		{"asR(&lm).Reg(&gp)", "cannot call Reg (through R) on asR(&lm): its receiver is stored through gp"},
+		{"idM(&lm).Keep()", "cannot call Keep on idM(&lm), which points into local lm: its receiver is stored where it outlives every frame"},
+		{"defer lm.Self().Keep()", "cannot call Keep on lm.Self(), which points into local lm"},
+		{"mkBox(&bx).m.Keep()", "cannot call Keep on mkBox(&bx).m, which points into local bx"},
+		{"asK(&lm).Keep()", "cannot call Keep on asK(&lm), which points into local lm"},
+		{"defer asK(&lm).Keep()", "cannot call Keep on asK(&lm), which points into local lm"},
+		{"gbAt().Set(a[:])", "cannot pass a slice backed by local a to Set: it is stored in the receiver gbAt(), which outlives this function, or may"},
+		{"defer gbAt().Set(a[:])", "it is stored in the receiver gbAt(), which outlives this function, or may"},
+		// The price: what a call hands back is not known to be this frame's on
+		// every path.
+		{"var lb B\n\tidB(&lb).Set(a[:])", "it is stored in the receiver idB(&lb), which outlives this function, or may"},
+		{"gmAt().Reg(&gp)\n\tgmAt().Keep()\n\tasK(&gm).Keep()\n\tgbAt().Set(nil)", ""},
+		{"idM(&lm).Reg(&lp)\n\tlm.Self().Reg(&lp)", ""},
 		// Controls: both this frame's, both package storage, and a method that
 		// stores nothing.
 		{"lm.Reg(&lp)", ""},
@@ -13548,6 +13585,26 @@ type PBox struct {
 
 var gob OuterBox
 
+func gbAt() *Box { return &gb }
+
+type BH struct{ b *Box }
+
+var gbh = BH{&gb}
+
+func fillAny(dst any, xs []int) {
+	if b, ok := dst.(*Box); ok {
+		b.d = xs
+	}
+}
+
+type Filler interface{ Fill(dst *Box, xs []int) }
+
+type BF struct{}
+
+func (f *BF) Fill(dst *Box, xs []int) { dst.d = xs }
+
+var gbf BF
+
 func leak() {
 	var a [4]int
 	x := 1
@@ -13624,6 +13681,23 @@ func main() {
 		// A local pointer to a package variable is that variable.
 		{"p := &gb\n\tp.set(a[:])", "it is stored in the receiver p, which outlives this function"},
 		{"p := &gb\n\tfill(p, a[:])", "it is stored through p, which outlives this function"},
+		// A pointer nothing here can name -- a call's result, a field or an element
+		// read out, a dereference -- may point anywhere: each was let through, and
+		// each of these left a header over a dead frame in gb (2026-10-10).
+		{"fill(gbAt(), a[:])", "cannot pass a slice backed by local a to fill: it is stored through argument 1, which outlives this function, or may"},
+		{"fill((gbAt()), a[:])", "it is stored through argument 1, which outlives this function, or may"},
+		{"defer fill(gbAt(), a[:])", "it is stored through argument 1, which outlives this function, or may"},
+		{"fill(gbh.b, a[:])", "it is stored through argument 1, which outlives this function, or may"},
+		{"bh := BH{&gb}\n\tfill(bh.b, a[:])", "it is stored through argument 1, which outlives this function, or may"},
+		{"bs := [1]*Box{&gb}\n\tfill(bs[0], a[:])", "it is stored through argument 1, which outlives this function, or may"},
+		{"gbp = &gb\n\tpp := &gbp\n\tfill(*pp, a[:])", "it is stored through argument 1, which outlives this function, or may"},
+		{"fillAny(gbAt(), a[:])", "cannot pass a slice backed by local a to fillAny: it is stored through argument 1, which outlives this function, or may"},
+		{"var fl Filler = &gbf\n\tfl.Fill(gbAt(), a[:])", "cannot pass a slice backed by local a to Fill (through Filler): it is stored through argument 1, which outlives this function, or may"},
+		// The price: a field known here to hold a local is not believed, the
+		// field being re-pointable (as for a receiver, above).
+		{"var lb Box\n\tbh := BH{&lb}\n\tfill(bh.b, a[:])\n\tback[0] = len(lb.d)", "it is stored through argument 1, which outlives this function, or may"},
+		{"fill(gbAt(), back[:])\n\tfillAny(gbh.b, back[1:])\n\tvar fl Filler = &gbf\n\tfl.Fill(gbAt(), back[2:])", ""},
+		{"var lb Box\n\tfillAny(&lb, a[:])\n\tvar fl Filler = &gbf\n\tfl.Fill(&lb, a[1:])\n\tback[0] = len(lb.d)", ""},
 		// A callee storing through a WRITTEN dereference of its parameter, which the
 		// summaries read by name alone and so did not see (2026-09-25).
 		{"fillDeref(&gb, a[:])", "cannot pass a slice backed by local a to fillDeref: it is stored through gb, which outlives this function"},

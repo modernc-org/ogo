@@ -34,6 +34,27 @@ shipped section tells a reader on that version that they have behaviour they do 
 
 ### Fixed
 
+- **A callee storing an argument through a pointer the call cannot name** kept a
+  local's address where it outlives the function, in silence: `fill(&le, pp())`,
+  for a `func fill(src *E, dst **E) { *dst = src }` and a `pp` returning `&gp`,
+  built and left gp pointing at a dead frame -- read after another call had reused
+  the stack, it held 1007 on the host for Go's 7. Only a bare name and an address
+  were asked; a call's result, a field or an element read out, `fill(&le, h.p)` and
+  `fill(&le, a[0])`, and a dereference, `fill(&le, *ppp)`, were let through, called
+  directly, deferred, through an interface and through an `any` parameter alike.
+  Such a pointer is refused now, as it is for a receiver stored through one. `fill(&le,
+  &lq)` with both local is accepted, and so is a local pointer written once with a
+  local's address; a field known to hold a local is not believed, the field being
+  re-pointable.
+- **A method called on what a call returns** was asked nothing about its receiver:
+  `id(&lb).Save()`, `lb.Self().Save()` and `asSaver(&lb).Save()`, for a `Save`
+  storing its receiver in a package variable, kept lb's address there, and
+  `lb.Self().Reg(&gp)` stored it through gp; `gbAt().set(a[:])`, for a `set`
+  storing its argument in the receiver, kept a slice of a local array in whatever
+  gbAt returned. Deferred, each was the same. All are refused now. The receiver is
+  what the call returns, and an argument reaching the function's storage is refused
+  as stored into it even where the call returns a local, `idB(&lb).Set(a[:])`,
+  nothing saying it does on every path.
 - **A method storing its receiver through a parameter**, `func (m *M) Reg(p **M) {
   *p = m }`, kept a local's address where it outlives the function, in silence:
   `lm.Reg(&gp)` for a local `lm` and a package `gp` built and left gp pointing at a

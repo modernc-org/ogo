@@ -4069,6 +4069,27 @@ reached C; and `n := 5; take(&n)` for an `any` was refused as "a value of type
 int", the rule refusing a Kind's value going into an interface reading `&n` by its
 pointee's Kind and only a variable with a written type having a name to say
 otherwise.
+The same day, the parameter's rule and the receiver's were found holding the same
+leniency the other way round. checkIntoArgs let through a target it could not NAME
+-- a call's result, a field or an element read out, a dereference -- as "left alone
+rather than refused on suspicion", where only the callee's store is a finding and
+the target's lifetime is the question: `fill(&le, pp())` for a pp returning &gp
+read 1007 on the host for Go's 7. It refuses one now, as checkRecvInto did from the
+start. And a receiver a CALL hands back, `id(&lb).Save()`, `gbAt().set(a[:])`,
+`asSaver(&lb).Save()`, was `opaque` to checkRecvAt and asked nothing at all: what
+the call returns is frameRefOf's answer now, a may (checkOpaqueRecv,
+checkIfaceOpaqueRecv), the receiver rebuilt from the chain's own tokens
+(opaqueRecvExpr: an import qualifier's member, which chainCText takes off the
+steps, put back from the tokens before them -- compared as `e.f.ch(t) == PERIOD`,
+a token's kind being a Symbol: `== '.'` compiles and never matches) and, for a
+value the method takes the address of,
+`mkHB(&lh).inner.Save()`, asked of the pointer it is addressed through
+(opaqueRecvAsk); an argument stored into such a receiver is refused whatever it
+returns. **"Nothing here can name it" is an answer for a refusal, never for a
+permission**: a rule that lets an unknown through is the hole KNOWN MEANS MUST
+names, from the other side. Left: frameRefOf answers nothing for a call's result
+WITH STEPS, `gbp = lh.Self().c`, `gbp = &mkHB(&lh).inner`, nor for a call through a
+call's result, `gbp = pick()(&lb)`, at any sink -- a row of its own.
 
 What `make` allocates in a function is a backing array of the frame wherever the
 slice is bound (`makeRef`, 2026-09-19; `TestEmitCMakeEscape`): only the declaration
