@@ -4087,9 +4087,19 @@ value the method takes the address of,
 (opaqueRecvAsk); an argument stored into such a receiver is refused whatever it
 returns. **"Nothing here can name it" is an answer for a refusal, never for a
 permission**: a rule that lets an unknown through is the hole KNOWN MEANS MUST
-names, from the other side. Left: frameRefOf answers nothing for a call's result
-WITH STEPS, `gbp = lh.Self().c`, `gbp = &mkHB(&lh).inner`, nor for a call through a
-call's result, `gbp = pick()(&lb)`, at any sink -- a row of its own.
+names, from the other side. Next, frameRefOf answered nothing for a call's result
+WITH STEPS, nor for a call through a call's result or an element, at any sink --
+`gbp = idH(&lh).c`, `&idH(&lh).inner`, `mkS(&lb).p`, `idSl(a[:])[1:]`,
+`id(&lb).Self()`, `pick()(&lb)`, `tab[0](&lb)`: 20 of 20 such programs built. It
+answers now (callStepsRef: where the steps reach -- the result itself, what it
+points at, or past a further pointer -- decides between what the call returns and
+what that storage holds, callContentsRef; methodOnCallAt for a method on a call's
+result, which directCall declines; valueCallSummary, the function type's union,
+where callResultInfo types a value callee and names none). What a pointer result
+points at is never the callee's frame, a return of that being refused, so its
+contents are the handed-back arguments' contents and no part analysis is needed.
+The callee's side of the same row, `gbp = idH(h).c` in a function of h, is the
+summaries' and was still open after it.
 
 What `make` allocates in a function is a backing array of the frame wherever the
 slice is bound (`makeRef`, 2026-09-19; `TestEmitCMakeEscape`): only the declaration

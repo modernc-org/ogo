@@ -34,6 +34,17 @@ shipped section tells a reader on that version that they have behaviour they do 
 
 ### Fixed
 
+- **What a call returns, with steps after it,** was asked nothing by the lifetime
+  rules. `gbp = idH(&lh).c`, a pointer field read out of what a call hands back of
+  a local, kept the address the local held where it outlives the function; so did a
+  field or an element of a struct or array result, `mkS(&lb).p` and `mkArr(&lb)[0]`,
+  an element of a slice result, `idPs(ps)[0]`, an address into what a call returns,
+  `&idH(&lh).inner` and `&idSl(a[:])[0]`, and a slice of it, `idSl(a[:])[1:]` --
+  stored, passed to a function keeping its parameter, or returned. So did a method
+  handing back its receiver called on a call's result, `id(&lb).Self()`, and a call
+  through what a call returns or an element holds, `pick()(&lb)` and
+  `tab[0](&lb)`. Each is refused now where the local is declared, as the same value
+  read through a variable is.
 - **A callee storing an argument through a pointer the call cannot name** kept a
   local's address where it outlives the function, in silence: `fill(&le, pp())`,
   for a `func fill(src *E, dst **E) { *dst = src }` and a `pp` returning `&gp`,

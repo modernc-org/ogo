@@ -52561,6 +52561,11 @@ func (e *emitter) frameRefAny(ast []int32) (frameRef, bool) {
 			}
 		}
 	}
+	// A call's result with steps after it, `idH(&lh).c`, `mkS(&lb).p`, `idSl(a[:])[1:]`,
+	// `&idH(&lh).inner`: what is read, sliced or addressed there (callStepsRef).
+	if r, ok, isSteps := e.callStepsRef(ast); isSteps {
+		return r, ok
+	}
 	// A call whose result derives from one of its arguments hands the argument's
 	// provenance back out: `id(&x)` reaches x's storage exactly as `&x` does. Without
 	// this a single call launders a reference past every sink -- `return id(&x)`
@@ -52617,6 +52622,25 @@ func (e *emitter) frameRefAny(ast []int32) (frameRef, bool) {
 			recv, suffix, isCall = e.factorAddrCall(kids)
 		}
 	}
+	// A method called on what a call returns, `id(&lb).Self()`, which directCall
+	// declines: what it hands back of its arguments, and of its receiver what that
+	// call does. It handed back nothing.
+	if mc, ok := e.methodOnCallAt(ast); ok {
+		at := -1
+		if !e.spreadCall(mc.call) {
+			at = e.packAt(mc.cname)
+		}
+		if r, ok := e.callArgsRef(e.funcSourceName(mc.cname), mc.derives, mc.carries, at, e.callArgExprs(mc.call)); ok {
+			return r, true
+		}
+		if mc.retRecv && mc.recv.ask != nil {
+			if mc.recv.askHeld {
+				return e.contentsRef(mc.recv.ask)
+			}
+			return e.frameRefOf(mc.recv.ask)
+		}
+		return frameRef{}, false
+	}
 	if isCall && len(suffix) != 0 && suffix[len(suffix)-1].sym == CallSuffix {
 		// A CONVERSION to a slice type is not a call: it renames the same header
 		// over the same storage, so whatever the operand referred to, the result
@@ -52647,10 +52671,10 @@ func (e *emitter) frameRefAny(ast []int32) (frameRef, bool) {
 		if len(suffix) != 1 {
 			// A method or an imported package's function: the same resolution the
 			// call itself uses, so `return r.id(&x)` follows the receiver's method.
-			if n, _, ok := e.callResultInfo(recv, suffix); ok {
+			if n, _, ok := e.callResultInfo(recv, suffix); ok && n != "" {
 				cname = n
 			} else {
-				cname = ""
+				cname = e.valueCallSummary(recv, suffix) // typed by its value's type, named by nothing
 			}
 		}
 		at := -1
@@ -52662,12 +52686,392 @@ func (e *emitter) frameRefAny(ast []int32) (frameRef, bool) {
 		}
 		// A method returning its RECEIVER hands back the address of what it was
 		// called on: `g = lc.Self()` reaches lc as `g = &lc` does -- or, promoted
-		// through an embedded pointer, what that pointer holds.
+		// through an embedded pointer, what that pointer holds. Called on what a
+		// call returns, `id(&lb).Self()`, it hands back what that call does
+		// (opaqueRecvAsk); it handed back nothing.
 		if cname != "" && e.retRecv[cname] && e.methodPtr[cname] && len(suffix) >= 2 {
 			steps := suffix[:len(suffix)-2]
-			if r := e.recvStorage(recv, steps, e.promotionPath(recv, steps, e.soleIdent(suffix[len(suffix)-2].ast))); r.local {
+			switch r := e.recvStorage(recv, steps, e.promotionPath(recv, steps, e.soleIdent(suffix[len(suffix)-2].ast))); {
+			case r.local:
 				return addrRef(r.storage), true
+			case r.opaque && r.ask != nil && r.askHeld:
+				return e.contentsRef(r.ask)
+			case r.opaque && r.ask != nil:
+				return e.frameRefOf(r.ask)
 			}
+		}
+	}
+	return frameRef{}, false
+}
+
+// methodOnCall is a method called on what a call returns, `id(&lb).Self()`,
+// `mkS(&lb).p.Self()` (methodOnCallAt): the method's summary, its call's arguments,
+// and its receiver (recvStorage: opaque, asked through opaqueRecvAsk).
+type methodOnCall struct {
+	cname            string
+	derives, carries []bool
+	call             []int32 // the CallSuffix
+	retRecv          bool    // the method hands back its receiver, which it takes by pointer
+	recv             recvRef
+}
+
+// methodOnCallAt reads ast as a method called on what a call returns, which
+// directCall declines: a chain of selectors, indexes and calls ending in a selector
+// and a call, a call among the steps before them.
+func (e *emitter) methodOnCallAt(ast []int32) (mc methodOnCall, ok bool) {
+	kids := e.factorKids(e.unparenExpr(ast))
+	if kids == nil {
+		return mc, false
+	}
+	recv, sfx, isCall := e.factorCall(kids)
+	n := len(sfx)
+	if !isCall || n < 3 || sfx[n-1].sym != CallSuffix || sfx[n-2].sym != Selector || selectorAsserts(sfx[n-2]) || !callRecvChain(sfx[:n-2]) {
+		return mc, false
+	}
+	steps := sfx[:n-2]
+	expr := e.opaqueRecvExpr(recv, steps)
+	if expr == nil {
+		return mc, false
+	}
+	ct, typed := e.inferCType(expr)
+	if !typed {
+		return mc, false
+	}
+	method := e.soleIdent(sfx[n-2].ast)
+	mc.call = sfx[n-1].ast
+	if e.isIfaceCType(ct) {
+		mc.derives, mc.carries = e.ifaceRetSummary(ct, method)
+		return mc, true
+	}
+	base := methodBaseType(ct)
+	cname, path := e.methodCName(base, method), []string(nil)
+	if _, declared := e.funcRet[cname]; !declared {
+		cn, p, _, found := e.promotedMethod(base, method)
+		if !found {
+			return mc, false
+		}
+		cname, path = cn, p
+	}
+	mc.cname, mc.derives, mc.carries = cname, e.retParams[cname], e.retContents[cname]
+	mc.retRecv = e.retRecv[cname] && e.methodPtr[cname]
+	mc.recv = e.recvStorage(recv, steps, path)
+	return mc, true
+}
+
+// valueCallSummary names the summary a call through a VALUE nothing names is judged
+// by -- a call's result, `pick()(&lb)`, an element, `tab[0](&lb)`, a field -- the
+// union over every function of its type ("type:", indirectCallee), or "" where the
+// callee is no function value. What such a call handed back was asked of nobody, so
+// `gbp = pick()(&lb)` kept a local's address for an id handing it back.
+func (e *emitter) valueCallSummary(recv string, suffix []Node) string {
+	if len(suffix) < 2 {
+		return ""
+	}
+	if ct, ok := e.calleeValueType(recv, suffix[:len(suffix)-1]); ok {
+		return e.indirectCallee("", ct)
+	}
+	return ""
+}
+
+// callSteps splits a value that is a CALL's result with steps after it, `idH(&lh).c`,
+// `mkArr(&lb)[0]`, `(idH(&lh)).c`, into the call, rebuilt as an Expression of its own
+// tokens, and the steps: selectors and indexes, a slice step last. ok is false for
+// any other shape -- a step that calls, asserts or slices before the last.
+func (e *emitter) callSteps(ast []int32) (call []int32, rest []Node, ok bool) {
+	fac, isFac := e.soleFactorNode(e.unparenExpr(ast))
+	if !isFac {
+		return nil, nil, false
+	}
+	kids := e.unparenKids(slices.Collect(it(fac.ast)))
+	if len(kids) < 2 || kids[len(kids)-1].sym != FactorSuffix {
+		return nil, nil, false
+	}
+	steps := slices.Collect(it(kids[len(kids)-1].ast))
+	k := -1
+	for i, st := range steps {
+		if st.sym == CallSuffix {
+			k = i
+		}
+	}
+	switch {
+	case k >= 0 && k < len(steps)-1:
+		call, rest = factorStepsExpr(kids[:len(kids)-1], steps[:k+1]), steps[k+1:]
+	case k < 0 && len(kids) == 4 && kids[0].sym == 0 && e.f.ch(kids[0].tok) == LPAREN:
+		// `(idH(&lh)).c`: the parentheses hold the call, the steps follow them.
+		inner := kids[1].ast
+		if _, _, isCall := e.callSteps(inner); isCall {
+			return nil, nil, false
+		}
+		if _, sfx, isCall := e.shapeCall(e.unparenExpr(inner)); !isCall || len(sfx) == 0 || sfx[len(sfx)-1].sym != CallSuffix {
+			return nil, nil, false
+		}
+		call, rest = inner, steps
+	default:
+		return nil, nil, false
+	}
+	for i, st := range rest {
+		switch {
+		case st.sym == Selector && !selectorAsserts(st):
+		case st.sym == Index:
+			if _, _, _, isSlice := e.sliceParts(st.ast); isSlice && i != len(rest)-1 {
+				return nil, nil, false
+			}
+		default:
+			return nil, nil, false
+		}
+	}
+	return call, rest, true
+}
+
+// selectorAsserts reports a Selector that is a type assertion, `.(T)`.
+func selectorAsserts(st Node) bool {
+	for c := range it(st.ast) {
+		if c.sym == Type {
+			return true
+		}
+	}
+	return false
+}
+
+// factorStepsExpr is the Expression of a Factor whose children before its suffix are
+// head and whose suffix is steps: a prefix of a chain, rebuilt of its own tokens for
+// a question asked of it alone.
+func factorStepsExpr(head, steps []Node) []int32 {
+	var b []int32
+	for _, k := range head {
+		if k.sym == 0 {
+			b = append(b, k.tok)
+			continue
+		}
+		b = append(b, encodeNode(k.sym, k.ast)...)
+	}
+	if len(steps) != 0 {
+		var sfx []int32
+		for _, st := range steps {
+			sfx = append(sfx, encodeNode(st.sym, st.ast)...)
+		}
+		b = append(b, encodeNode(FactorSuffix, sfx)...)
+	}
+	return encodeNode(Expression, encodeNode(SimpleExpr, encodeNode(Term, encodeNode(UnaryExpr, encodeNode(Factor, b)))))
+}
+
+// callStepsRef is frameRefOf for a call's result with steps after it (callSteps) --
+// read, sliced last, or addressed, `&idH(&lh).inner` -- and whether ast is one. A
+// value read where the steps reach storage the call's result POINTS at, `idH(&lh).c`,
+// `idPs(ps)[0]`, carries what that storage holds (callContentsRef); one read out of
+// a value result, `mkS(&lb).p`, `mkArr(&lb)[0]`, carries what the value does
+// (frameRefOf of the call). An address or a slice of that storage, `&idH(&lh).inner`,
+// `&idSl(a[:])[0]`, `idSl(a[:])[1:]`, is the storage itself. A step through a
+// further pointer or slice reaches storage only that storage's holder knows of, which
+// is answered for, as a variable's holder mark answers for its chains. Asked of
+// nothing, each of these kept a local where it outlives the function, at every sink.
+func (e *emitter) callStepsRef(ast []int32) (frameRef, bool, bool) {
+	addr := false
+	if f, isAddr := e.addrOperandFactor(ast); isAddr && f.sym == Factor {
+		ast, addr = encodeNode(Expression, encodeNode(SimpleExpr, encodeNode(Term, encodeNode(UnaryExpr, encodeNode(Factor, f.ast))))), true
+	}
+	call, rest, ok := e.callSteps(ast)
+	if !ok {
+		return frameRef{}, false, false
+	}
+	src := e.f.exprSource(Node{sym: Expression, ast: ast})
+	if addr {
+		src = "&" + src
+	}
+	// Where the value the steps reach is: in the call's result itself (temp), in the
+	// storage that result points at (pointee), or past a further pointer or slice
+	// (beyond). An ARRAY has no C value type to be asked, a call's result or a field
+	// of one; it is no pointer and no slice, which is all the walk asks.
+	const (
+		temp = iota
+		pointee
+		beyond
+	)
+	loc := temp
+	cur, known := e.inferCType(call)
+	for i, st := range rest {
+		if _, _, _, isSlice := e.sliceParts(st.ast); st.sym == Index && isSlice {
+			break // the last step (callSteps), asked below
+		}
+		through := known && (e.isPointer(cur) || st.sym == Index && e.isSliceCType(e.underlyingCType(cur)))
+		switch {
+		case through && loc == temp && i == 0:
+			loc = pointee
+		case through:
+			loc = beyond
+		}
+		cur, known = e.inferCType(factorStepsExprOf(call, rest[:i+1]))
+	}
+	describe := func(r frameRef, ok bool) (frameRef, bool, bool) {
+		if !ok {
+			return frameRef{}, false, true
+		}
+		r.what = src + ", which reaches " + r.origin
+		return r, true, true
+	}
+	last := rest[len(rest)-1]
+	_, _, _, sliced := e.sliceParts(last.ast)
+	sliced = sliced && last.sym == Index
+	switch {
+	case sliced && known && (e.isSliceCType(e.underlyingCType(cur)) || cur == cString):
+		// A slice of a slice or a string views what that value views: read as a
+		// value at loc.
+	case sliced || addr:
+		// The storage at loc itself: an array sliced, a field or an element
+		// addressed. A call's own result is no storage to address.
+		switch loc {
+		case pointee:
+			return describe(e.frameRefOf(call))
+		case beyond:
+			return describe(e.callContentsRef(call))
+		}
+		return frameRef{}, false, true
+	default:
+		if vt, typed := e.inferCType(ast); typed && !e.carriesRef(vt) {
+			return frameRef{}, false, true
+		}
+	}
+	if loc == temp {
+		// A part of a value result, `mkS(&lb).p`, or a view of what a slice or a
+		// string result views, `idSl(a[:])[1:]`: what the result itself reaches.
+		return describe(e.frameRefOf(call))
+	}
+	return describe(e.callContentsRef(call))
+}
+
+// factorStepsExprOf is factorStepsExpr for a chain that continues the Expression x,
+// a call, by steps: `x.f[i]`.
+func factorStepsExprOf(x []int32, steps []Node) []int32 {
+	fac, _ := soleFactorNodeOf(x)
+	kids := slices.Collect(it(fac.ast))
+	var head, prior []Node
+	if len(kids) != 0 && kids[len(kids)-1].sym == FactorSuffix {
+		head, prior = kids[:len(kids)-1], slices.Collect(it(kids[len(kids)-1].ast))
+	} else {
+		head = kids
+	}
+	return factorStepsExpr(head, append(slices.Clone(prior), steps...))
+}
+
+// soleFactorNodeOf is soleFactorNode without an emitter.
+func soleFactorNodeOf(ast []int32) (Node, bool) {
+	nodes := slices.Collect(it(ast))
+	for len(nodes) == 1 && nodes[0].sym != 0 {
+		if n := nodes[0]; n.sym == Factor {
+			return n, true
+		}
+		nodes = slices.Collect(it(nodes[0].ast))
+	}
+	return Node{}, false
+}
+
+// carriesRef reports whether a value of the C type ct may reach storage: what
+// carriesReference counts, and a string, which views its bytes.
+func (e *emitter) carriesRef(ct string) bool {
+	return ct == cString || e.carriesReference(ct)
+}
+
+// callContentsRef is contentsRef for a CALL's result: what the storage it hands
+// back holds of this frame -- the contents of each argument it hands back (derives)
+// and, one level being what the summaries keep, of each whose contents it hands back
+// (carries); what a method handing back its receiver was called on holds; and the
+// values a call packs, where the pack is handed back. The storage a pointer result
+// points at is never the callee's own frame, which a return of it is refused for, so
+// what it holds of an argument is the argument's contents or was stored there by a
+// rule of its own.
+func (e *emitter) callContentsRef(call []int32) (frameRef, bool) {
+	r, ok := e.callContentsRefOf(e.unparenExpr(call))
+	if ok {
+		r.what = e.f.exprSource(Node{sym: Expression, ast: call}) + ", whose contents hold a pointer into " + r.origin
+	}
+	return r, ok
+}
+
+func (e *emitter) callContentsRefOf(call []int32) (frameRef, bool) {
+	if mc, ok := e.methodOnCallAt(call); ok {
+		args := e.callArgExprs(mc.call)
+		for i, a := range args {
+			if i < len(mc.derives) && mc.derives[i] || i < len(mc.carries) && mc.carries[i] {
+				if r, ok := e.contentsRef(a.ast); ok {
+					return r, true
+				}
+			}
+		}
+		if mc.retRecv && mc.recv.ask != nil && !mc.recv.askHeld {
+			return e.callContentsRef(mc.recv.ask)
+		}
+		return frameRef{}, false
+	}
+	recv, suffix, isCall := e.directCall(call)
+	if !isCall {
+		if kids := e.factorKids(call); kids != nil {
+			recv, suffix, isCall = e.factorAddrCall(kids)
+		}
+	}
+	if !isCall || len(suffix) == 0 || suffix[len(suffix)-1].sym != CallSuffix {
+		return frameRef{}, false
+	}
+	cs := suffix[len(suffix)-1].ast
+	args := e.callArgExprs(cs)
+	if e.convToSliceType(recv, suffix) || e.convToIfaceType(recv, suffix) {
+		if len(args) == 1 {
+			return e.contentsRef(args[0].ast)
+		}
+		return frameRef{}, false
+	}
+	var derives, carries []bool
+	at := -1
+	cname := ""
+	if ict, m, isIface := e.ifaceChainMethod(recv, suffix); isIface {
+		derives, carries = e.ifaceRetSummary(ict, m.name)
+		if !e.spreadCall(cs) {
+			at = m.vararg - 1
+		}
+	} else {
+		cname = e.calleeSummaryName(recv)
+		if len(suffix) != 1 {
+			if n, _, ok := e.callResultInfo(recv, suffix); ok && n != "" {
+				cname = n
+			} else {
+				cname = e.valueCallSummary(recv, suffix) // typed by its value's type, named by nothing
+			}
+		}
+		derives, carries = e.retParams[cname], e.retContents[cname]
+		if !e.spreadCall(cs) {
+			at = e.packAt(cname)
+		}
+	}
+	if at >= 0 && at <= len(args) {
+		for _, a := range args[at:] {
+			if at < len(derives) && derives[at] {
+				if r, ok := e.frameRefOf(a.ast); ok {
+					return r, true
+				}
+			}
+			if at < len(carries) && carries[at] {
+				if r, ok := e.contentsRef(a.ast); ok {
+					return r, true
+				}
+			}
+		}
+		args = args[:at]
+	}
+	for i, a := range args {
+		if i < len(derives) && derives[i] || i < len(carries) && carries[i] {
+			if r, ok := e.contentsRef(a.ast); ok {
+				return r, true
+			}
+		}
+	}
+	if cname != "" && e.retRecv[cname] && e.methodPtr[cname] && len(suffix) >= 2 {
+		steps := suffix[:len(suffix)-2]
+		switch r := e.recvStorage(recv, steps, e.promotionPath(recv, steps, e.soleIdent(suffix[len(suffix)-2].ast))); {
+		case r.local:
+			if origin := e.viewedHolder(r.storage); origin != "" {
+				return originRef(origin, origin), true
+			}
+		case r.opaque && r.ask != nil && !r.askHeld:
+			return e.callContentsRef(r.ask)
 		}
 	}
 	return frameRef{}, false
@@ -55386,6 +55790,11 @@ func (e *emitter) contentsRef(ast []int32) (frameRef, bool) {
 			return ref(origin)
 		}
 		return frameRef{}, false
+	}
+	// What a call hands back holds what its arguments do: `keepC(idH(&lh))` for a
+	// keepC storing h.c kept what lh holds.
+	if r, ok := e.callContentsRef(ast); ok {
+		return r, true
 	}
 	return e.frameRefInLit(ast)
 }
