@@ -4098,8 +4098,27 @@ result, which directCall declines; valueCallSummary, the function type's union,
 where callResultInfo types a value callee and names none). What a pointer result
 points at is never the callee's frame, a return of that being refused, so its
 contents are the handed-back arguments' contents and no part analysis is needed.
-The callee's side of the same row, `gbp = idH(h).c` in a function of h, is the
-summaries' and was still open after it.
+The callee's side of the same row came next, in the summaries, by shape: 15 of 18
+programs a function writes with its parameter -- `gbp = idH(h).c`, `&idH(h).inner`,
+`mkS(b).p`, `id(b).Self()`, `keep(idH(h).c)`, `x := idH(h).c; gbp = x` -- were
+summarised as keeping nothing. A derivedEdge says how its sink reads the result now
+(res: whole, contents, both -- resModeOf, by the callee's declared result type, no
+local's type being needed: read through a pointer, a slice or a string it is what
+the result points at holds, one step into a value a part of it, anything longer
+either), and carries gates as the cross edges do (via), for a method called on
+what a call returns (valueCallT.recvCall, recvCallOf; methodOfResult where
+methodCallOf cannot walk the head, `pick()(b).Self()`). callExprsIn takes a method
+on a call's result as the call it is, viaEdges walks a value with steps by its mode,
+summaryHolds holds one by its whole value, and a return reads it by mode (modeRets),
+the return's own calls no longer saying it of the whole result (precise). Writing
+the controls found the return's over-approximation older than any of it: every call
+in a return statement was taken to be handed back whole (stmtCalls), so
+`func valueAt(list *Node, v int) int { return find(list, v).val }` refused `g =
+valueAt(&a, 2)` as storing a's address in an int, in v0.54.0 -- a function whose
+every result is a number or a bool hands nothing back now (returnsNoRef; a uintptr
+is an address, and counts). **A summary is asked what the value it records can
+hold**: the shape says which parameter a value came from, and only its type says
+whether anything of it can arrive.
 
 What `make` allocates in a function is a backing array of the frame wherever the
 slice is bound (`makeRef`, 2026-09-19; `TestEmitCMakeEscape`): only the declaration

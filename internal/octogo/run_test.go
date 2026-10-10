@@ -363,6 +363,65 @@ func main() {
 		want: "1 2 2\n",
 	},
 	{
+		// A call's result read through, of a local: a function returning an int it
+		// read off one, refused in v0.54.0 as storing the local's address in an int,
+		// and a pointer field read through one holding package storage, which the
+		// lifetime rules take (callStepsRef, returnsNoRef).
+		name: "an int read off a call's result returned, and a field read through one",
+		src: `type Node struct {
+	val  int
+	next *Node
+}
+
+type Box struct {
+	n int
+	d []int
+}
+
+type HB struct {
+	c     *Box
+	inner Box
+}
+
+var gb = Box{n: 40}
+
+var g, h int
+
+var gbp *Box
+
+func find(n *Node, v int) *Node {
+	for ; n != nil; n = n.next {
+		if n.val == v {
+			return n
+		}
+	}
+	return nil
+}
+
+func valueAt(list *Node, v int) int { return find(list, v).val * 10 }
+
+func idH(x *HB) *HB { return x }
+
+func (x *HB) Self() *HB { return x }
+
+func run() {
+	var a, b Node
+	a.val, b.val, a.next = 1, 2, &b
+	g = valueAt(&a, 2)
+	var lh HB
+	lh.c, lh.inner.n = &gb, 5
+	gbp = idH(&lh).c
+	h = idH(&lh).inner.n + lh.Self().c.n
+}
+
+func main() {
+	run()
+	println(g, h, gbp.n)
+}
+`,
+		want: "20 45 40\n",
+	},
+	{
 		// A method storing its receiver through a parameter, `*p = m`, and a function
 		// storing a parameter through an assertion of an `any` one, `case **M:` among
 		// them -- with both sides of each store this frame's, which the lifetime

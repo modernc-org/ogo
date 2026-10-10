@@ -44,7 +44,17 @@ shipped section tells a reader on that version that they have behaviour they do 
   handing back its receiver called on a call's result, `id(&lb).Self()`, and a call
   through what a call returns or an element holds, `pick()(&lb)` and
   `tab[0](&lb)`. Each is refused now where the local is declared, as the same value
-  read through a variable is.
+  read through a variable is -- and inside a function handed the local, `gbp =
+  idH(h).c`, `gbp = &idH(h).inner`, `gbp = id(b).Self()`, `keep(idH(h).c)`, `x :=
+  idH(h).c; gbp = x` and `return h.Self().c` for a parameter h, which kept what the
+  caller passed with nothing recorded.
+- **A function returning only numbers or bools was taken to hand back what it
+  computed from**: `func valueAt(list *Node, v int) int { return find(list,
+  v).val }` made `g = valueAt(&a, 2)` "cannot store the address of local variable a"
+  in an int. Such a function hands nothing back. And a function returning a pointer
+  read through a call's result, `return idH(h).c`, was taken to hand back h itself,
+  refusing a caller whose local held package storage only; it hands back what h
+  holds.
 - **A callee storing an argument through a pointer the call cannot name** kept a
   local's address where it outlives the function, in silence: `fill(&le, pp())`,
   for a `func fill(src *E, dst **E) { *dst = src }` and a `pp` returning `&gp`,

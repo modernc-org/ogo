@@ -12893,6 +12893,11 @@ func (e *emitter) collectFuncCross(fi funcInfo) {
 		callees []string
 		args    []Node
 		recv    []held
+		// recvCall is a method's receiver where it is what a CALL returns,
+		// `id(b).Self()`, which no held name says (recvCallOf); recvSteps counts the
+		// selectors and indexes between the two, `id(b).in.Self()`.
+		recvCall  []int32
+		recvSteps int
 	}
 	recvHeld := func(recv string, suffix []Node) []held {
 		if len(suffix) == 2 {
@@ -12900,22 +12905,54 @@ func (e *emitter) collectFuncCross(fi funcInfo) {
 		}
 		return []held{{recv, heldContents}}
 	}
-	callsOfExpr := func(c []int32) (out []valueCallT) {
+	var callsOfExpr func(c []int32) []valueCallT
+	callsOfExpr = func(c []int32) (out []valueCallT) {
 		if callee, args, ok := e.valueCall(c); ok {
-			return []valueCallT{{[]string{callee}, args, nil}}
+			return []valueCallT{{callees: []string{callee}, args: args}}
 		}
 		if cs, args, ok := valueCallees(c); ok {
-			return []valueCallT{{cs, args, nil}}
+			return []valueCallT{{callees: cs, args: args}}
 		}
 		recv, suffix, ok := e.shapeCall(c)
+		if !ok {
+			// A method on what a call returns, `id(b).Self()`, which shapeCall declines.
+			rc, n, isRC := e.recvCallOf(c)
+			if !isRC {
+				return nil
+			}
+			if recv, suffix, ok = e.factorCall(e.factorKids(e.unparenExpr(c))); !ok || len(suffix) < 2 {
+				return nil
+			}
+			if _, isM := e.methodCallOf(recv, suffix, fi); !isM && n == 0 {
+				// A head methodCallOf cannot walk, `pick()(b).Self()`,
+				// `id(b).Self().Other()`: the method by what the call returns.
+				method := e.soleIdent(suffix[len(suffix)-2].ast)
+				var names []string
+				for _, ic := range callsOfExpr(rc) {
+					for _, callee := range ic.callees {
+						if m := e.methodOfResult(callee, method); m != "" && !slices.Contains(names, m) {
+							names = append(names, m)
+						}
+					}
+				}
+				if len(names) == 0 {
+					return nil
+				}
+				return []valueCallT{{callees: names, args: e.callArgExprs(suffix[len(suffix)-1].ast), recvCall: rc}}
+			}
+		}
 		if !ok || len(suffix) < 2 || suffix[len(suffix)-1].sym != CallSuffix || suffix[len(suffix)-2].sym != Selector {
 			return nil
 		}
 		if m, isM := e.methodCallOf(recv, suffix, fi); isM {
-			return []valueCallT{{[]string{m.callee}, m.args, recvHeld(recv, suffix)}}
+			vc := valueCallT{callees: []string{m.callee}, args: m.args, recv: recvHeld(recv, suffix)}
+			if rc, n, ok := e.recvCallOf(c); ok {
+				vc.recv, vc.recvCall, vc.recvSteps = nil, rc, n
+			}
+			return []valueCallT{vc}
 		}
 		for _, m := range e.ifaceMethodCallsOf(recv, suffix, fi) {
-			out = append(out, valueCallT{[]string{m.callee}, m.args, recvHeld(recv, suffix)})
+			out = append(out, valueCallT{callees: []string{m.callee}, args: m.args, recv: recvHeld(recv, suffix)})
 		}
 		return out
 	}
@@ -12927,10 +12964,26 @@ func (e *emitter) collectFuncCross(fi funcInfo) {
 		}
 		return out
 	}
-	var derivedCall func(c valueCallT, flag leak, slot int)
+	var derivedCall func(c valueCallT, flag leak, slot int, res func(callee string) resMode, via []viaGate)
+	// stepsMode is how a value read, sliced or addressed after a call reaches the
+	// sink, by each callee's result (resModeOf).
+	stepsMode := func(rest []Node, addr bool) func(string) resMode {
+		return func(callee string) resMode { return e.resModeOf(callee, rest, addr) }
+	}
 	derived := func(v []int32, flag leak, slot int) {
 		for _, c := range resultCalls(v) {
-			derivedCall(c, flag, slot)
+			derivedCall(c, flag, slot, nil, nil)
+		}
+		// A call's result with steps after it, written, `gbp = idH(h).c`, or held,
+		// `x := idH(h).c; gbp = x`: what is read, sliced or addressed there. Followed
+		// for a call standing alone only, each kept what the call handed back of the
+		// parameter, unrecorded.
+		for _, x := range append([][]int32{v}, heldCalls(v)...) {
+			if call, rest, addr, ok := e.callStepsShape(x); ok {
+				for _, c := range callsOfExpr(call) {
+					derivedCall(c, flag, slot, stepsMode(rest, addr), nil)
+				}
+			}
 		}
 	}
 	// viaEdges is an argument that is a CALL's result, `keep(pass(v))` or
@@ -12940,8 +12993,74 @@ func (e *emitter) collectFuncCross(fi funcInfo) {
 	// ret says the edges are a return's (retEdges), where the receiver reaching the
 	// argument is an edge from < 0 of its own; elsewhere it is a recvEdge.
 	viaEdges := func(edge crossEdge, a []int32, ret bool) (out []crossEdge) {
-		var walk func(a []int32, via []viaGate, path []*int32)
-		walk = func(a []int32, via []viaGate, path []*int32) {
+		// reached records what reaches the argument through the calls gates: the
+		// caller's parameters, as edges of their own, and its RECEIVER, as a recvEdge
+		// -- `keep(id(m))` in a method kept nothing of m. elem says what reaches it is
+		// read out of the calls' result, its contents (resModeOf).
+		reached := func(hs []held, gates []viaGate, elem bool) {
+			if elem {
+				hs = asElem(hs)
+			}
+			r := reachOf(hs)
+			for _, i := range r.vals {
+				g := edge
+				g.from, g.via = i, gates
+				out = append(out, g)
+			}
+			for _, i := range r.conts {
+				g := edge
+				g.from, g.via, g.contents = i, gates, true
+				out = append(out, g)
+			}
+			if r.recvVal && ret {
+				g := edge
+				g.from, g.via = -1, gates
+				out = append(out, g)
+			} else if r.recvVal {
+				e.recvEdges = append(e.recvEdges, recvEdge{caller: cname, from: -1, callee: edge.callee, to: edge.to, argOwner: edge.argOwner, via: gates})
+			}
+			if r.recvCont && !ret {
+				e.recvEdges = append(e.recvEdges, recvEdge{caller: cname, from: -1, callee: edge.callee, to: edge.to, contents: true, argOwner: edge.argOwner, via: gates})
+			}
+		}
+		var walk func(a []int32, via []viaGate, path []*int32, elem bool)
+		// through is one call c's callees and arguments, with how the value read
+		// after it reaches the argument (m, a resMode per callee; nil for the whole
+		// result): gated by each callee, and on into the arguments' own calls.
+		through := func(c []int32, via []viaGate, inner []*int32, elem bool, m func(string) resMode) {
+			for _, vc := range callsOfExpr(c) {
+				for _, callee := range vc.callees {
+					mode := resWhole
+					if m != nil {
+						mode = m(callee)
+					}
+					for _, el := range [2]bool{false, true} {
+						switch {
+						case el && mode == resWhole, !el && mode == resContents:
+							continue
+						}
+						el = el || elem
+						for jj, ia := range vc.args {
+							gates := append(slices.Clone(via), viaGate{callee, jj})
+							reached(e.summaryReach(ia.ast), gates, el)
+							walk(ia.ast, gates, inner, el) // `keep(trim(pass(v)))`
+						}
+						if vc.recv != nil {
+							reached(vc.recv, append(slices.Clone(via), viaGate{callee, -1}), el) // `keep(m.Self())`
+						}
+						if vc.recvCall != nil {
+							// `keep(id(b).Self())`: the receiver is that call's result.
+							gates := append(slices.Clone(via), viaGate{callee, -1})
+							walk(vc.recvCall, gates, inner, el)
+							if vc.recvSteps != 0 {
+								walk(vc.recvCall, gates, inner, true)
+							}
+						}
+					}
+				}
+			}
+		}
+		walk = func(a []int32, via []viaGate, path []*int32, elem bool) {
 			if len(via) > 8 {
 				return // a nest of calls this deep is not written
 			}
@@ -12955,78 +13074,68 @@ func (e *emitter) collectFuncCross(fi funcInfo) {
 				if len(c) == 0 || slices.Contains(path, &c[0]) {
 					continue
 				}
-				inner := append(slices.Clone(path), &c[0])
-				// What reaches the argument through the call: the caller's parameters,
-				// as edges of their own, and its RECEIVER, as a recvEdge -- `keep(id(m))`
-				// in a method kept nothing of m.
-				reached := func(hs []held, gates []viaGate) {
-					r := reachOf(hs)
-					for _, i := range r.vals {
-						g := edge
-						g.from, g.via = i, gates
-						out = append(out, g)
-					}
-					for _, i := range r.conts {
-						g := edge
-						g.from, g.via, g.contents = i, gates, true
-						out = append(out, g)
-					}
-					if r.recvVal && ret {
-						g := edge
-						g.from, g.via = -1, gates
-						out = append(out, g)
-					} else if r.recvVal {
-						e.recvEdges = append(e.recvEdges, recvEdge{caller: cname, from: -1, callee: edge.callee, to: edge.to, argOwner: edge.argOwner, via: gates})
-					}
-					if r.recvCont && !ret {
-						e.recvEdges = append(e.recvEdges, recvEdge{caller: cname, from: -1, callee: edge.callee, to: edge.to, contents: true, argOwner: edge.argOwner, via: gates})
-					}
+				through(c, via, append(slices.Clone(path), &c[0]), elem, nil)
+			}
+			// A call's result with steps after it, `keep(idH(h).c)`, written or held:
+			// the call, with what a read through its result reaches -- its contents,
+			// where the result points at what was handed back (resModeOf).
+			for _, x := range append([][]int32{a}, heldCalls(a)...) {
+				call, rest, addr, ok := e.callStepsShape(x)
+				if !ok || len(call) == 0 || slices.Contains(path, &call[0]) {
+					continue
 				}
-				for _, vc := range callsOfExpr(c) {
-					for _, callee := range vc.callees {
-						for jj, ia := range vc.args {
-							gates := append(slices.Clone(via), viaGate{callee, jj})
-							reached(e.summaryReach(ia.ast), gates)
-							walk(ia.ast, gates, inner) // `keep(trim(pass(v)))`
-						}
-						if vc.recv != nil {
-							reached(vc.recv, append(slices.Clone(via), viaGate{callee, -1})) // `keep(m.Self())`
-						}
-					}
-				}
+				through(call, via, append(slices.Clone(path), &call[0]), elem, func(callee string) resMode { return e.resModeOf(callee, rest, addr) })
 			}
 		}
-		walk(a, nil, nil)
+		walk(a, nil, nil, false)
 		return out
 	}
 	// derivedCall records, for each callee of c, an edge from what reaches each
 	// argument -- a parameter, or the RECEIVER, from < 0 -- and from what reaches a
 	// method's receiver, to < 0: unrecorded, `gp = id(m)` and `gp = m.Self()` in a
 	// method kept nothing of m.
-	derivedCall = func(c valueCallT, flag leak, slot int) {
-		edges := func(callee string, to int, hs []held) {
+	// res, where not nil, is how the sink reads the call's result (resModeOf), and via
+	// gates the edges: each call there must hand back what it was given.
+	derivedCall = func(c valueCallT, flag leak, slot int, res func(callee string) resMode, via []viaGate) {
+		edges := func(callee string, to int, hs []held, m resMode) {
 			r := reachOf(hs)
 			for _, i := range r.vals {
-				e.derivedEdges = append(e.derivedEdges, derivedEdge{caller: cname, from: i, callee: callee, to: to, sink: flag, slot: slot})
+				e.derivedEdges = append(e.derivedEdges, derivedEdge{caller: cname, from: i, callee: callee, to: to, sink: flag, slot: slot, res: m, via: via})
 			}
 			if r.recvVal {
-				e.derivedEdges = append(e.derivedEdges, derivedEdge{caller: cname, from: -1, callee: callee, to: to, sink: flag, slot: slot})
+				e.derivedEdges = append(e.derivedEdges, derivedEdge{caller: cname, from: -1, callee: callee, to: to, sink: flag, slot: slot, res: m, via: via})
 			}
 			if slot < 0 {
 				for _, i := range r.conts {
-					e.derivedEdges = append(e.derivedEdges, derivedEdge{caller: cname, from: i, callee: callee, to: to, sink: flag, slot: -1, contents: true})
+					e.derivedEdges = append(e.derivedEdges, derivedEdge{caller: cname, from: i, callee: callee, to: to, sink: flag, slot: -1, contents: true, res: m, via: via})
 				}
 				if r.recvCont {
-					e.derivedEdges = append(e.derivedEdges, derivedEdge{caller: cname, from: -1, callee: callee, to: to, sink: flag, slot: -1, contents: true})
+					e.derivedEdges = append(e.derivedEdges, derivedEdge{caller: cname, from: -1, callee: callee, to: to, sink: flag, slot: -1, contents: true, res: m, via: via})
 				}
 			}
 		}
 		for _, callee := range c.callees {
+			m := resWhole
+			if res != nil {
+				m = res(callee)
+			}
 			for j, a := range c.args {
-				edges(callee, j, e.summaryReach(a.ast))
+				edges(callee, j, e.summaryReach(a.ast), m)
 			}
 			if c.recv != nil {
-				edges(callee, -1, c.recv)
+				edges(callee, -1, c.recv, m)
+			}
+			// A method on what a call returns, `id(b).Self()`: where the method hands
+			// back its receiver, it hands back that call's result -- what the call
+			// hands back of its own arguments, gated by the method.
+			if c.recvCall != nil && len(via) < 8 {
+				inner := res
+				if c.recvSteps != 0 && res != nil {
+					inner = func(string) resMode { return resBoth }
+				}
+				for _, ic := range callsOfExpr(c.recvCall) {
+					derivedCall(ic, flag, slot, inner, append(slices.Clone(via), viaGate{callee, -1}))
+				}
 			}
 		}
 	}
@@ -13160,9 +13269,60 @@ func (e *emitter) collectFuncCross(fi funcInfo) {
 			storesInto(pkg, e.throughStores(nodes))
 		}
 		// A return hands the value back to the caller: which parameter it came
-		// from is what lets the caller follow it to the storage it chose.
-		if len(nodes) != 0 && nodes[0].sym == 0 && e.f.ch(nodes[0].tok) == RETURN {
+		// from is what lets the caller follow it to the storage it chose -- unless
+		// what it hands back can hold no reference at all (returnsNoRef).
+		if len(nodes) != 0 && nodes[0].sym == 0 && e.f.ch(nodes[0].tok) == RETURN && !e.returnsNoRef(cname) {
 			var heldRets []stmtCall // `x := id(p); return x` returns what id(p) does
+			// modeRets records what a return hands back through a call whose result it
+			// reads as m says, by callee (resModeOf), gated by via: `return idH(h).c`
+			// hands back what h holds, where idH hands back h. precise lists those
+			// calls, by the first argument's token, for the return's own calls not to
+			// say it again of the whole result (stmtCalls).
+			precise := map[int32]bool{}
+			var modeRets func(vc valueCallT, m func(string) resMode, via []viaGate)
+			modeRets = func(vc valueCallT, m func(string) resMode, via []viaGate) {
+				if len(via) > 8 {
+					return
+				}
+				if len(vc.args) != 0 {
+					precise[vc.args[0].Pos()] = true
+				}
+				edge := func(callee string, to int, hs []held, mode resMode) {
+					r := reachOf(hs)
+					for _, el := range [2]bool{false, true} {
+						if el && mode == resWhole || !el && mode == resContents {
+							continue
+						}
+						for _, i := range r.vals {
+							e.retEdges = append(e.retEdges, crossEdge{caller: cname, from: i, callee: callee, to: to, contents: el, via: via})
+						}
+						for _, i := range r.conts {
+							e.retEdges = append(e.retEdges, crossEdge{caller: cname, from: i, callee: callee, to: to, contents: true, via: via})
+						}
+						if r.recvVal && !el {
+							e.retEdges = append(e.retEdges, crossEdge{caller: cname, from: -1, callee: callee, to: to, via: via})
+						}
+					}
+				}
+				for _, callee := range vc.callees {
+					mode := m(callee)
+					for j, a := range vc.args {
+						edge(callee, j, e.summaryReach(a.ast), mode)
+					}
+					if vc.recv != nil {
+						edge(callee, -1, vc.recv, mode)
+					}
+					if vc.recvCall != nil {
+						inner := m
+						if vc.recvSteps != 0 {
+							inner = func(string) resMode { return resBoth }
+						}
+						for _, ic := range callsOfExpr(vc.recvCall) {
+							modeRets(ic, inner, append(slices.Clone(via), viaGate{callee, -1}))
+						}
+					}
+				}
+			}
 			for _, v := range e.returnedExprs(nodes) {
 				r := reachOf(e.summaryReach(v))
 				for _, i := range r.vals {
@@ -13174,7 +13334,22 @@ func (e *emitter) collectFuncCross(fi funcInfo) {
 				if r.recvVal {
 					e.retRecv[cname] = true
 				}
+				// `return idH(h).c`, `x := idH(h).c; return x`: what is read, sliced or
+				// addressed there (modeRets).
+				for _, x := range append([][]int32{v}, heldCalls(v)...) {
+					if call, rest, addr, ok := e.callStepsShape(x); ok {
+						for _, c := range callsOfExpr(call) {
+							modeRets(c, stepsMode(rest, addr), nil)
+						}
+					}
+				}
 				for _, c := range resultCalls(v) {
+					// `return id(b).Self()`: the method's receiver is that call's
+					// result, handed back where the method hands back its receiver.
+					if c.recvCall != nil {
+						modeRets(c, func(string) resMode { return resWhole }, nil)
+						continue
+					}
 					for _, callee := range c.callees {
 						heldRets = append(heldRets, stmtCall{callee: callee, args: c.args})
 						// `return m.Self()`, `return p.Self()`: what the method hands
@@ -13195,7 +13370,13 @@ func (e *emitter) collectFuncCross(fi funcInfo) {
 			// `return g(p)`: whatever g hands back of its own parameter, this
 			// function hands back of the parameter it passed there -- and through a
 			// function value, whatever each function it may be hands back.
-			rcalls := append(e.stmtCalls(nodes), heldRets...)
+			var rcalls []stmtCall
+			for _, c := range e.stmtCalls(nodes) {
+				if len(c.args) == 0 || !precise[c.args[0].Pos()] {
+					rcalls = append(rcalls, c)
+				}
+			}
+			rcalls = append(rcalls, heldRets...)
 			for _, c := range e.valueCalls(nodes) {
 				resolve([]held{{c.name, heldAlias}}, func(n string, contents bool) {
 					switch _, isFunc := e.userFunc(n); {
@@ -13427,6 +13608,125 @@ type derivedEdge struct {
 	slot   int  // the parameter stored through, for crossInto; -1 otherwise
 	// contents: the argument was the CONTENTS of the caller's parameter from.
 	contents bool
+	// res is how the sink reads the result: whole, or a value read through it, or
+	// both (resModeOf).
+	res resMode
+	// via gates the edge: each call there hands back what it was given, a method
+	// called on the result of this one, `id(b).Self()` (gatesHold).
+	via []viaGate
+}
+
+// resMode is how a sink reads a call's result with steps after it (resModeOf).
+type resMode uint8
+
+const (
+	resWhole    resMode = iota // the result itself, or the storage it points at, addressed or sliced
+	resContents                // a value read through it: what the storage it points at holds
+	resBoth                    // either, where the shape cannot say which
+)
+
+// resModeOf is how a value written with steps after a call of callee -- rest, the
+// selectors and indexes, addr for an address of it -- reaches the sink, by what the
+// callee returns. Read through a pointer, a slice or a string, it is what that
+// storage holds, `idH(h).c` (resContents); addressed or sliced one step in, the
+// storage itself, `&id(b).n`, `idSl(v)[1:]` (resWhole). Read out of a value, one step
+// in, it is a part of the value, `mkS(b).p` (resWhole). Anything longer, or a result
+// whose type is not known here, may be either: steps past a further pointer reach
+// what only its holder knows of.
+func (e *emitter) resModeOf(callee string, rest []Node, addr bool) resMode {
+	var rts []string
+	if ft, isType := strings.CutPrefix(callee, "type:"); isType {
+		rts = e.funcTypeRet[ft]
+	} else {
+		rts = e.funcRet[callee]
+	}
+	if len(rts) != 1 || rts[0] == "" {
+		return resBoth
+	}
+	rt := e.underlyingCType(rts[0])
+	last := rest[len(rest)-1]
+	_, _, _, sliced := e.sliceParts(last.ast)
+	sliced = sliced && last.sym == Index
+	switch {
+	case e.isPointer(rt) || e.isSliceCType(rt) || rt == cString:
+		switch {
+		case !addr && !sliced:
+			return resContents
+		case len(rest) == 1:
+			return resWhole
+		}
+	case len(rest) == 1 && !addr && !sliced:
+		return resWhole
+	}
+	return resBoth
+}
+
+// methodOfResult is the method named that a value callee returns has, by the
+// callee's result type, or "".
+func (e *emitter) methodOfResult(callee, method string) string {
+	var rts []string
+	if ft, isType := strings.CutPrefix(callee, "type:"); isType {
+		rts = e.funcTypeRet[ft]
+	} else {
+		rts = e.funcRet[callee]
+	}
+	if len(rts) != 1 || rts[0] == "" || e.isIfaceCType(rts[0]) {
+		return ""
+	}
+	base := methodBaseType(rts[0])
+	if cname := e.methodCName(base, method); func() bool { _, declared := e.funcRet[cname]; return declared }() {
+		return cname
+	}
+	if cname, _, _, found := e.promotedMethod(base, method); found {
+		return cname
+	}
+	return ""
+}
+
+// callStepsShape is callSteps by shape alone, for the summaries, an address of one
+// too: `idH(h).c`, `&idH(h).inner`.
+func (e *emitter) callStepsShape(v []int32) (call []int32, rest []Node, addr bool, ok bool) {
+	if f, isAddr := e.addrOperandFactor(v); isAddr && f.sym == Factor {
+		v, addr = encodeNode(Expression, encodeNode(SimpleExpr, encodeNode(Term, encodeNode(UnaryExpr, encodeNode(Factor, f.ast))))), true
+	}
+	call, rest, ok = e.callSteps(v)
+	// A field no struct of the program gives a reference, `idH(h).inner.n` of an
+	// int, holds nothing, as summaryReach has it; its address does.
+	if ok && !addr {
+		if last := rest[len(rest)-1]; last.sym == Selector && !e.fieldNameMayCarry(e.soleIdent(last.ast)) {
+			return nil, nil, false, false
+		}
+	}
+	return call, rest, addr, ok
+}
+
+// recvCallOf is the CALL a method's receiver is what it returns, `id(b)` of
+// `id(b).Self()` or `id(b).in.Self()`, rebuilt of its own tokens, with the number of
+// selectors and indexes between the two.
+func (e *emitter) recvCallOf(c []int32) (call []int32, steps int, ok bool) {
+	kids := e.factorKids(e.unparenExpr(c))
+	if len(kids) < 2 || kids[len(kids)-1].sym != FactorSuffix {
+		return nil, 0, false
+	}
+	sfx := slices.Collect(it(kids[len(kids)-1].ast))
+	n := len(sfx)
+	if n < 3 || sfx[n-1].sym != CallSuffix || sfx[n-2].sym != Selector {
+		return nil, 0, false
+	}
+	k := -1
+	for i, st := range sfx[:n-2] {
+		switch st.sym {
+		case CallSuffix:
+			k = i
+		case Selector, Index:
+		default:
+			return nil, 0, false
+		}
+	}
+	if k < 0 {
+		return nil, 0, false
+	}
+	return factorStepsExpr(kids[:len(kids)-1], sfx[:k+1]), n - 2 - (k + 1), true
 }
 
 // recvEdge records that a function hands a POINTER it holds to a callee: its own
@@ -13690,7 +13990,16 @@ func (e *emitter) closeCrossParams() {
 			// The callee's RECEIVER, to < 0, or the caller's, from < 0: a method hands
 			// its receiver back (retRecv), and nothing of its contents is recorded.
 			if g.to < 0 || g.from < 0 {
-				if g.contents || !e.handsBack(g.callee, g.to) {
+				if !e.handsBack(g.callee, g.to) {
+					continue
+				}
+				// What a method's receiver holds, read through what it hands back,
+				// `return h.Self().c`: the caller's parameter's contents.
+				if g.contents {
+					if cc := e.retContents[g.caller]; g.from >= 0 && g.from < len(cc) && !cc[g.from] {
+						cc[g.from] = true
+						changed = true
+					}
 					continue
 				}
 				if g.from < 0 {
@@ -13732,9 +14041,34 @@ func (e *emitter) closeCrossParams() {
 		// A result the callee derived from its parameter, stored or crossed by the
 		// caller: the caller's parameter goes where the result went.
 		for _, g := range e.derivedEdges {
+			// Through a method on the result, `id(b).Self()`: an edge only where each
+			// hands back what it was given.
+			if len(g.via) != 0 {
+				holds, contents := e.gatesHold(g.via, g.contents)
+				if !holds {
+					continue
+				}
+				g.contents = contents
+			}
 			// A result carrying contents of what was passed: where the result goes,
 			// those contents go. The callee's RECEIVER is to < 0, the caller's from < 0.
 			returned := e.handsBack(g.callee, g.to)
+			// A value read through the result, `gbp = idH(h).c`: what the result points
+			// at holds, which is what was handed back holds -- one level, as the
+			// summaries keep.
+			if g.res != resWhole {
+				rc := e.retContents[g.callee]
+				if returned || g.to >= 0 && g.to < len(rc) && rc[g.to] {
+					flags := g.sink
+					if g.slot >= 0 {
+						flags = leakGlobal // through a parameter, where no slot says (as for contents stored through one)
+					}
+					orContents(g.caller, g.from, flags)
+				}
+				if g.res == resContents {
+					continue
+				}
+			}
 			if g.slot < 0 {
 				carries := g.contents && returned
 				if rc := e.retContents[g.callee]; g.to >= 0 && g.to < len(rc) && rc[g.to] {
@@ -15249,6 +15583,10 @@ func (e *emitter) callExprsIn(v []int32) (out [][]int32) {
 		}
 		return [][]int32{v}
 	}
+	// `id(v).Self()`: a method on what a call returns, a call shapeCall declines.
+	if _, _, isRC := e.recvCallOf(v); isRC {
+		return [][]int32{v}
+	}
 	// `pass(v)[1:]`: the base of a slice step is what the slice views.
 	if kids, ok := e.soleFactor(v); ok && len(kids) == 2 && kids[0].sym == 0 && e.f.ch(kids[0].tok) == IDENT && kids[1].sym == FactorSuffix {
 		steps := slices.Collect(it(kids[1].ast))
@@ -15312,6 +15650,13 @@ func (e *emitter) summaryHolds(body []int32) map[string][]held {
 			for _, c := range e.callExprsIn(v) {
 				key := fmt.Sprintf("call@%d", len(e.heldCallValues))
 				e.heldCallValues[key] = c
+				hs = append(hs, held{key, heldAlias})
+			}
+			// `x := idH(h).c`: the value with its steps, which a sink reading x reads
+			// as written (callStepsShape).
+			if _, _, _, ok := e.callStepsShape(v); ok {
+				key := fmt.Sprintf("call@%d", len(e.heldCallValues))
+				e.heldCallValues[key] = v
 				hs = append(hs, held{key, heldAlias})
 			}
 			if i < len(into) && into[i] {
@@ -25354,6 +25699,28 @@ func protoScalar(proto string) bool {
 		p = strings.TrimSpace(p)
 		k := strings.LastIndexAny(p, " *")
 		if k < 0 || !isScalarCType(strings.TrimSpace(p[:k+1])) || strings.HasPrefix(p[k+1:], paramArgPrefix) {
+			return false
+		}
+	}
+	return true
+}
+
+// returnsNoRef reports a function every result of which is a number or a bool, which
+// can hand back no reference whatever it computes it from. Its return statements are
+// no summary's: read by shape, `return find(list, v).val` handed back every call it
+// held, and `g = valueAt(&a, 2)` for an int result was refused as storing a's
+// address. A uintptr is an address as a number, and counts as one.
+func (e *emitter) returnsNoRef(cname string) bool {
+	rts := e.funcRet[cname]
+	if len(rts) == 0 {
+		return false
+	}
+	for _, rt := range rts {
+		switch u := e.underlyingCType(rt); {
+		case u == "uintptr_t":
+			return false
+		case u == cBool, isFloatCType(u), isIntCType(u):
+		default:
 			return false
 		}
 	}
