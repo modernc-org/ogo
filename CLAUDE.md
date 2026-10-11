@@ -2910,7 +2910,9 @@ inlined call, which then ran once more (doc/cordic-reorder-conditional-move.c, d
 A two-line fix in FindBlockForReorderingDownward -- only an unconditional write
 meets a dependency, a conditional one adds its dst as one -- printed 142 on the
 board natively and is carried since the same day (the regeneration of 2026-10-08,
-under Code generation).
+under Code generation). Seeds 7001-7500 on a P2-EDGE with 15fa698 (2026-10-11, the
+generator unchanged): 454 passing (eight on a second load), 46 outgrowing a cog,
+none failing, warned about or refused by the backend.
 A parenthesised head, `(uint64(x)) >> 32`, was the rewrite's first miss
 (unparenExpr). And the family is bounded on the board: a value widened and then
 compared, masked, added, multiplied, or shifted by any other count is right, and so
