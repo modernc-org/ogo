@@ -50,6 +50,11 @@ shipped section tells a reader on that version that they have behaviour they do 
 
 ### Fixed
 
+- **A range over a bool constant**, `for i := range true` or over a `const c =
+  false`, was taken where a range over a bool variable was refused.
+- **A variable ranged out of a channel was typed by name only**: `for b := range
+  blocks` read `b.n`, and nothing past a field, so `for _, s := range b.samples`
+  declared s with no type and `s[0]` of an int16 was taken.
 - **A named untyped constant of the rune class was an integer to the checker**:
   `const H = 'c'; x := H`, `x := W * H` and `x := H << 2` made x a rune, as Go
   has it and as the C had it, and the checker took x for an int, so `x = n` of an

@@ -3855,6 +3855,24 @@ func (f *File) checkRange(s *Scope, kw string, fi forInfo) {
 		// variable is an index, and a channel has none. So the one variable a range
 		// over a channel may declare takes the element's type, not int.
 		declared = f.declareRangeVar(s, fi.keyVar, elem, hasElem, elemName, elemQual, elemPtr)
+		// The element's type whole, for the walks over the variable (varTypeAt), as
+		// an array's range value has it (rangeValueType): `for b := range blocks`
+		// read `b.n` by the name it was given, and nothing past a field, so `range
+		// b.samples` declared no element and `s[0]` of an int16 was taken. Asked of a
+		// channel named here, whose type is written in this file's terms.
+		if id, isName := f.exprSoleIdent(fi.rangeExpr); declared && isName {
+			if _, isVar := s.find(id.Src()).(*VarDeclaration); isVar {
+				if ctn, _ := f.exprChanTypeNode(s, fi.rangeExpr); ctn != nil {
+					if ch, _ := f.chanTypeUnder(s, ctn); ch != nil && ch.TypeNode != nil {
+						if kid, ok := f.exprSoleIdent(fi.keyVar); ok {
+							if vd, ok := s.find(kid.Src()).(*VarDeclaration); ok && vd.declType == nil {
+								vd.inferredType = &typeAt{ch.TypeNode, s, f}
+							}
+						}
+					}
+				}
+			}
+		}
 		if tn := f.recvChanType(s, fi.rangeExpr); declared && tn != nil {
 			if id, ok := f.exprSoleIdent(fi.keyVar); ok {
 				if vd, ok := s.find(id.Src()).(*VarDeclaration); ok {
@@ -3960,6 +3978,18 @@ func (f *File) checkRangeable(s *Scope, expr Node) {
 	if f.isNilOperand(expr) {
 		f.err(f.tok(expr.Pos()).Position(), "cannot range over nil")
 		return
+	}
+	// A bool CONSTANT, `range true`, `range c` for a `const c = false`: a bool
+	// variable was refused below, and a constant of one taken.
+	if k, ok := f.exprType(s, expr); ok && kindCategory(k) == catBool {
+		if _, isConst := f.constValue(s, expr); isConst {
+			desc := "constant of type " + kindName(k)
+			if isUntypedKind(k) {
+				desc = "untyped bool constant"
+			}
+			f.err(f.tok(expr.Pos()).Position(), "cannot range over %s (%s)", f.exprSource(expr), desc)
+			return
+		}
 	}
 	// An address is a pointer, which ranges only where it points at an array:
 	// `range &m.Len` of a uint8 was taken, the address's Kind being its pointee's

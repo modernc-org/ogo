@@ -1,0 +1,45 @@
+// Two rows a synthesizer's mutants found. A range over a bool CONSTANT was taken
+// where one over a bool variable was refused. And a variable ranged out of a
+// channel had its type by name only: its fields read, but nothing past one, so a
+// range over its array field declared no element and `s[0]` of an int16 was taken.
+
+type block struct {
+	n       int
+	samples [4]int16
+}
+
+var gb block
+
+const c = true
+
+func run() {
+	// ERROR "cannot range over true \(untyped bool constant\)"
+	for i := range true {
+		_ = i
+	}
+	// ERROR "cannot range over false \(untyped bool constant\)"
+	for range false {
+	}
+	// ERROR "cannot range over c \(untyped bool constant\)"
+	for i := range c {
+		_ = i
+	}
+	for i := range 'a' {
+		_ = i
+	}
+	ch := make(chan block, 1)
+	ch <- gb
+	close(ch)
+	for b := range ch {
+		for _, s := range b.samples {
+			// ERROR "cannot index s \(variable of type int16\)"
+			_ = s[0]
+			// ERROR "cannot use s of type int16 as type string in variable declaration"
+			var x string = s
+			_ = x
+		}
+		_ = b.n
+	}
+}
+
+func main() { run() }

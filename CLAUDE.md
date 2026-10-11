@@ -3104,6 +3104,17 @@ constants right all along -- `%T` printed int32 -- so only the checker was wrong
 Its 1,065 valid mutants matched Go but for panics alike and races the mutations
 made. Left: `*&x = v` is a syntax error, the target's grammar taking no `&` after a
 star, where Go takes it.
+A synthesizer the round after (dom42: phase-accumulator oscillators behind an
+interface over an embedded base -- a quarter-wave sine table, a square, LFSR noise
+-- ADSR envelopes as a state machine in Q15, saturating int16 mixing, the score
+rendered on another cog into a buffered channel of 64-sample blocks; three
+packages) matched Go on the host and the board once its own race was gone (main
+read the envelopes' states while the cog wrote them; the block carries a snapshot
+now). Its 1,500 mutants had two rows taken: a range over a bool CONSTANT
+(checkRangeable asked a variable's Kind only), and a variable ranged out of a
+channel typed by its element's name alone -- `b.n` read, `range b.samples` declaring
+nothing (inferredType from the channel's written element now, for a channel named
+here). Its 1,039 valid mutants matched Go but for prints of two cogs interleaving.
 
 **A STRUCT HOLDING AN ARRAY IS COPIED, NEVER ASSIGNED** (2026-09-23). The target's C
 compiler copy-initializes and assigns one only at some SIZES -- "Unable to multiply
