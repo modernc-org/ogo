@@ -3081,10 +3081,13 @@ results came the same day: captureForwarded binds g where the defer stands and
 captures each result as the parameter it fills (deferArg.text), the replay passing
 them together (emitCallArgs), a literal's path too; the go statement gives it a slot
 per result and stores them widened. checkCrossArgs routes a forwarded list to
-checkForwardedIn, which checkDeferLeaks reaches. A deferred PRINT of one is
-refused, as the plain `println(two())` is -- a print reads what each argument is,
-and the first capture alone printed half (the host's -Werror caught it as an unused
-capture). And a call of several results beside other arguments is the checker's
+checkForwardedIn, which checkDeferLeaks reaches. A deferred PRINT of one first
+printed the first capture alone (the host's -Werror caught it as an unused one);
+print and println of one came the next day, plain and deferred
+(emitPrintForwarded: the call bound and its fields handed to the printers as the
+hoisted arguments, hoistedArg, which every printer asks before the expression; the
+replay printing the captures), printf of one refused -- its format would be the
+call's first result. And a call of several results beside other arguments is the checker's
 refusal now (checkCallArgs asks multiValueOperandErr), the emitter's own in a
 literal's element, a send or an index carrying a position.
 A maze program the next round (dom41: Kruskal's algorithm over a union-find of

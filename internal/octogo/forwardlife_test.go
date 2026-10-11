@@ -139,18 +139,17 @@ func run() { var b [1]*E; b[0] = &ge; relayS(b[:]) }`, false},
 	}
 }
 
-// TestEmitCForwardedPrintRefused holds the deferred print of a call of several
-// results, `defer println(two())`, refused as the print where it stands is: a print
-// reads what each argument is, and capturing the results for it printed the first.
+// TestEmitCForwardedPrintRefused holds the deferred printf of a call of several
+// results, `defer printf(f())`, refused: its format is the call's first result,
+// which no format check reads. println and print of one are printed (the run case
+// "a call of several results printed whole").
 func TestEmitCForwardedPrintRefused(t *testing.T) {
-	for _, stmt := range []string{"defer println(two())", "defer print(two())"} {
-		src := "func two() (int, string) { return 1, \"a\" }\n\nfunc main() {\n\t" + stmt + "\n}\n"
-		pkg, err := Build(-1, []string{"main.ogo"}, fstest.MapFS{"main.ogo": &fstest.MapFile{Data: []byte(src)}})
-		if err == nil {
-			err = EmitC(pkg, io.Discard, Checked())
-		}
-		if err == nil || !strings.Contains(err.Error(), "not supported yet") {
-			t.Errorf("%s: got %v, want it refused as not supported yet", stmt, err)
-		}
+	src := "func fs() (string, int) { return \"%d\\n\", 4 }\n\nfunc main() {\n\tdefer printf(fs())\n}\n"
+	pkg, err := Build(-1, []string{"main.ogo"}, fstest.MapFS{"main.ogo": &fstest.MapFile{Data: []byte(src)}})
+	if err == nil {
+		err = EmitC(pkg, io.Discard, Checked())
+	}
+	if err == nil || !strings.Contains(err.Error(), "not supported yet") {
+		t.Errorf("got %v, want it refused as not supported yet", err)
 	}
 }

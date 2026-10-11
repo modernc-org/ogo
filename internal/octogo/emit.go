@@ -2565,25 +2565,10 @@ func (e *emitter) emitGo(nodes []Node) {
 	if fwdTypes != nil {
 		// The call bound, and each of its results stored as the parameter it fills,
 		// an interface's widened (widenValC).
-		tmp := e.newTmp()
-		var text string
-		var writes, ok bool
-		_, pro := e.capturePrologue(func() { text, writes, ok = e.forwardedCallIntoAs(args[0], tmp, fwdTypes) })
+		tmp, ok := e.bindForwardedC(args[0], fwdTypes)
 		if !ok {
 			e.failAt(args[0].ast, "unsupported call whose results a goroutine is handed")
 			return
-		}
-		for _, line := range pro {
-			e.ind()
-			e.emit(line)
-		}
-		e.ind()
-		if writes {
-			e.emit(e.retStructNameOf(fwdTypes) + " " + tmp + ";\n")
-			e.ind()
-			e.emit(text + ";\n")
-		} else {
-			e.emit(e.retStructNameOf(fwdTypes) + " " + tmp + " = " + text + ";\n")
 		}
 		for i, from := range fwdTypes {
 			dst := fmt.Sprintf("%s->ogo_a%d", ap, i+first)
@@ -34408,11 +34393,10 @@ func (e *emitter) emitDefer(nodes []Node) {
 	// deferred call argument", whatever the types.
 	if callArgs := e.callArgExprs(call.ast); !e.spreadCall(call.ast) {
 		if resTypes, isFwd := e.forwardedCall(callArgs); isFwd {
-			// A print's arguments are printed by what each is, and a call's several
-			// results are no argument it can read: refused, as the print is where it
-			// stands, rather than printing the first.
-			if base := e.soleIdent(head.ast); len(suffix) == 1 && (base == "println" || base == "print" || base == "printf") && e.universe(base) {
-				e.failAt(callArgs[0].ast, "printing a call's several results, %s, is not supported yet", e.f.exprSource(callArgs[0]))
+			// printf's format would be the call's first result, which no format check
+			// reads: refused, deferred as where it stands.
+			if base := e.soleIdent(head.ast); len(suffix) == 1 && base == "printf" && e.universe(base) {
+				e.failAt(callArgs[0].ast, "printf of a call's several results, %s, is not supported yet", e.f.exprSource(callArgs[0]))
 				return
 			}
 			if !e.captureForwarded(&d, callArgs[0], resTypes, fixedParams, fwdElem, fwdAt) {
@@ -34498,26 +34482,10 @@ func (e *emitter) captureForwarded(d *deferredCall, call Node, resTypes, params 
 			return false
 		}
 	}
-	tmp := e.newTmp()
-	var text string
-	var writes, ok bool
-	_, pro := e.capturePrologue(func() { text, writes, ok = e.forwardedCallIntoAs(call, tmp, resTypes) })
+	tmp, ok := e.bindForwardedC(call, resTypes)
 	if !ok {
 		e.failAt(call.ast, "unsupported call whose results a deferred call is handed")
 		return false
-	}
-	for _, line := range pro {
-		e.ind()
-		e.emit(line)
-	}
-	rt := e.retStructNameOf(resTypes)
-	e.ind()
-	if writes {
-		e.emit(rt + " " + tmp + ";\n")
-		e.ind()
-		e.emit(text + ";\n")
-	} else {
-		e.emit(rt + " " + tmp + " = " + text + ";\n")
 	}
 	for i, from := range resTypes {
 		want := from
@@ -35463,6 +35431,33 @@ func (e *emitter) forwardedCallCAs(ex Node, want []string) (string, bool) {
 	return text, true
 }
 
+// bindForwardedC writes, where the statement stands, a call of several results of
+// C types resTypes bound to a temporary of its result struct -- what its arguments
+// bind written first -- and answers the temporary, whose fields are the results. A
+// call it cannot render is the caller's to report.
+func (e *emitter) bindForwardedC(call Node, resTypes []string) (string, bool) {
+	tmp := e.newTmp()
+	var text string
+	var writes, ok bool
+	_, pro := e.capturePrologue(func() { text, writes, ok = e.forwardedCallIntoAs(call, tmp, resTypes) })
+	if !ok {
+		return "", false
+	}
+	for _, line := range pro {
+		e.ind()
+		e.emit(line)
+	}
+	e.ind()
+	if writes {
+		e.emit(e.retStructNameOf(resTypes) + " " + tmp + ";\n")
+		e.ind()
+		e.emit(text + ";\n")
+	} else {
+		e.emit(e.retStructNameOf(resTypes) + " " + tmp + " = " + text + ";\n")
+	}
+	return tmp, true
+}
+
 // emitWidenedForward is `return f()` for a call whose results are not this
 // function's as they stand but go into them, Go's assignability -- an interface
 // result taking a pointer or another interface's value: `return mk()` of a (*E,
@@ -35484,18 +35479,9 @@ func (e *emitter) emitWidenedForward(ex Node) bool {
 			return false
 		}
 	}
-	src := e.newTmp()
-	text, writes, ok := e.forwardedCallIntoAs(ex, src, resTypes)
+	src, ok := e.bindForwardedC(ex, resTypes)
 	if !ok {
 		return false
-	}
-	e.ind()
-	if writes {
-		e.emit(e.retStructNameOf(resTypes) + " " + src + ";\n")
-		e.ind()
-		e.emit(text + ";\n")
-	} else {
-		e.emit(e.retStructNameOf(resTypes) + " " + src + " = " + text + ";\n")
 	}
 	dst := e.newTmp()
 	e.ind()
@@ -39668,6 +39654,21 @@ func (e *emitter) emitReplayArg(idx int, arg Node) {
 func (e *emitter) emitPrint(newline bool, callSuffix []int32) {
 	args := e.callArgExprs(callSuffix)
 	e.includes["stdio.h"] = true
+	// `println(two())`: a call of several results printed whole, each result an
+	// argument, as Go's builtin takes them -- bound once and its fields handed to the
+	// printers as the arguments a print binds ahead of itself are (hoistedArg); in a
+	// deferred print's replay, the captures of them (captureForwarded). It was "a
+	// multi-value call cannot be used as a single value".
+	if len(args) == 1 && !e.spreadCall(callSuffix) {
+		if e.deferReplay >= 0 && len(e.deferReplayArgs) > 1 && e.deferReplayArgs[0].text != "" {
+			e.emitPrintMulti(newline, slices.Repeat(args, len(e.deferReplayArgs)))
+			return
+		}
+		if resTypes, isFwd := e.forwardedCall(args); isFwd && e.deferReplay < 0 {
+			e.emitPrintForwarded(newline, args[0], resTypes)
+			return
+		}
+	}
 	// The arguments are evaluated BEFORE anything is written, as in Go. A single
 	// argument is already in that order -- there is nothing written before it -- so
 	// only the several-argument form asks, and a call returning an ARRAY, which has
@@ -39691,6 +39692,29 @@ func (e *emitter) emitPrint(newline bool, callSuffix []int32) {
 	default:
 		e.emitPrintMulti(newline, args)
 	}
+}
+
+// emitPrintForwarded prints the results of call, of C types resTypes, as the
+// arguments of a print: the call bound, its fields the hoisted arguments.
+func (e *emitter) emitPrintForwarded(newline bool, call Node, resTypes []string) {
+	for _, rt := range resTypes {
+		if _, isArr := e.isArrayResult(rt); isArr {
+			e.failAt(call.ast, "printing %s, a call of several results one of which is an array, is not supported yet", e.f.exprSource(call))
+			return
+		}
+	}
+	tmp, ok := e.bindForwardedC(call, resTypes)
+	if !ok {
+		e.failAt(call.ast, "unsupported call whose results are printed")
+		return
+	}
+	saved := e.printArgs
+	defer func() { e.printArgs = saved }()
+	e.printArgs = make([]printArg, len(resTypes))
+	for i, rt := range resTypes {
+		e.printArgs[i] = printArg{name: fmt.Sprintf("%s._%d", tmp, i), ctype: rt}
+	}
+	e.emitPrintMulti(newline, slices.Repeat([]Node{call}, len(resTypes)))
 }
 
 // printfItem is one piece of a format string: literal text, or a VERB. The

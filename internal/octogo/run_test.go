@@ -684,6 +684,45 @@ func main() {
 		want: "body 8\nlit 60 s\ntake 50 s 8\nTaker.Take 4000 s\nT.take 130 s\ntakev 3 2 4\ntakeb 2 big 2\ntakee E 2\ntake 20 s 8\ngtake 10010 s\ngtakee E 1001\ngtakev 3 1001\nT.gtake 10120 s\ngtake 10030 s\nglit 10040 s\n14\n",
 	},
 	{
+		// A call of several results printed whole by the builtins, `println(two())`,
+		// each result an argument as Go's println takes them -- print's spaceless
+		// form too -- and deferred, the call run where the defer stands. It was "a
+		// multi-value call cannot be used as a single value".
+		name: "a call of several results printed whole",
+		src: `type E struct{ n int }
+
+func (e *E) Error() string { return "E" }
+
+type P struct{ a, b int }
+
+var ge = E{3}
+var calls int
+
+func two() (int, string) { calls++; return 1, "a" }
+
+func mix() (bool, float32, uint64, rune, int8) { return true, 2.5, 1 << 40, 'z', -3 }
+
+
+
+func run() {
+	println(two())
+	print(two())
+	println()
+	println(mix())
+	defer println(two())
+	defer print(mix())
+	calls = 100
+}
+
+func main() {
+	run()
+	println()
+	println(calls, ge.n)
+}
+`,
+		want: "1 a\n1a\ntrue 2.5 1099511627776 122 -3\ntrue2.51099511627776122-31 a\n\n100 3\n",
+	},
+	{
 		// A method storing its receiver through a parameter, `*p = m`, and a function
 		// storing a parameter through an assertion of an `any` one, `case **M:` among
 		// them -- with both sides of each store this frame's, which the lifetime

@@ -44,8 +44,9 @@ shipped section tells a reader on that version that they have behaviour they do 
   the inner call runs where the statement stands and its results fill the
   parameters -- an interface's widened, a variadic's packed -- for a function, a
   method, an interface's method, a function value and a literal. Both were refused
-  whatever the types. Printing such a call, `println(divmod(17, 5))`, is not
-  supported yet, deferred or not.
+  whatever the types. So may print and println, `println(divmod(17, 5))`, each
+  result printed as an argument, deferred too; printf is not, its format being the
+  call's first result.
 
 ### Fixed
 

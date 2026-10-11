@@ -2281,8 +2281,9 @@
 // into a variadic callee's slice as Go packs it. A deferred call and a goroutine
 // may be handed one too, "defer report(divmod(17, 5))": the inner call runs where
 // the statement stands, as any argument is evaluated there. Beside other arguments
-// such a call is a value in a single-value context, and refused. Printing one,
-// "println(divmod(17, 5))", is not supported yet.
+// such a call is a value in a single-value context, and refused. The builtins
+// print and println take one too, "println(divmod(17, 5))", each result printed as
+// an argument; printf does not, its format being the call's first result.
 //
 // # Built-in functions
 //
