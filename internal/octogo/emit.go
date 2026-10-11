@@ -4531,6 +4531,16 @@ func (e *emitter) anonStructType(structAST []int32) string {
 	return name
 }
 
+// isAnonStructName reports whether a C type name is one anonStructType minted.
+func (e *emitter) isAnonStructName(name string) bool {
+	for _, n := range e.anonStructNames {
+		if n == name {
+			return true
+		}
+	}
+	return false
+}
+
 // aliasAnonStructs makes a struct type written out one C type with a declared struct
 // of the same fields. Go gives the two identical underlying types, so a value of
 // either is assigned, passed and returned where the other is wanted, both ways --
@@ -4602,7 +4612,10 @@ func (e *emitter) typedefDeps(ctypes []string) []string {
 		if name == "" || name == "void" {
 			continue
 		}
-		if _, isStruct := e.structs[name]; isStruct && strings.Contains(ct, "*") {
+		// An anonymous struct's typedef has no tag to forward, and may become a
+		// typedef of a declared struct after it (aliasAnonStructs): a pointer to one
+		// needs the typedef itself.
+		if _, isStruct := e.structs[name]; isStruct && strings.Contains(ct, "*") && !e.isAnonStructName(name) {
 			continue
 		}
 		if !slices.Contains(deps, name) {
@@ -6432,7 +6445,7 @@ func typeNameCollisions(src []byte, names map[string]bool) map[string]bool {
 // emitProgram is EmitC's one pass. rename lists the main-package types spelled
 // ogo_T_<name> in C (see typeMangle).
 func emitProgram(pkg *Package, w io.Writer, opts []EmitOption, rename map[string]bool, seeds loopSeeds) (loopSeeds, error) {
-	e := &emitter{loopSeedsIn: seeds, loopSeedsOut: loopSeeds{}, renameTypes: rename, renamedTypes: map[string]string{}, includes: map[string]bool{}, funcRet: map[string][]string{}, funcSliceParams: map[string][]string{}, funcVariadic: map[string]int{}, nilHelpers: map[string]bool{}, initSkew: map[string]bool{}, arrPtrHelpers: map[string]arrDim{}, usliceHelpers: map[string]bool{}, funcArrayRet: map[string]arrDim{}, funcStructRet: map[string]string{}, funcArrayParams: map[string][]arrDim{}, anonStructNames: map[string]string{}, methodValueTypes: map[string]funcValueType{}, methodValueOf: map[string]string{}, methodExprNames: map[string]string{}, funcParams: map[string][]string{}, methodPtr: map[string]bool{}, recvByRef: map[string]bool{}, globals: map[string]string{}, structs: map[string][]structField{}, namedTypes: map[string]bool{}, typeNames: map[string]bool{}, interfaceTypes: map[string]bool{}, ifaceMethods: map[string][]ifaceMethod{}, anonIfaceNames: map[string]string{}, anonIfaceMinted: map[string]bool{}, ifaceASTs: map[string]ifaceAST{}, ifaceVTables: map[string]bool{}, namedUnderlying: map[string]string{}, namedArrays: map[string]arrDim{}, constInt: map[string]string{}, constVal: map[string]constant.Value{}, constBool: map[string]bool{}, constWide: map[string]string{}, constStr: map[string]string{}, constUntyped: map[string]bool{}, constHuge: map[string]bool{}, arrays: map[string]arrDim{}, globalArrays: map[string]arrDim{}, sliceVars: map[string]string{}, globalSliceVars: map[string]string{}, chanElems: map[string]bool{}, chanInitElems: map[string]bool{}, chanSendElems: map[string]bool{}, chanRecvElems: map[string]bool{}, chanTryRecvElems: map[string]bool{}, chanTrySendElems: map[string]bool{}, chanGatedSendElems: map[string]bool{}, chanSendClosedElems: map[string]bool{}, chanBufElems: map[string]bool{}, chanLenElems: map[string]bool{}, chanReadyElems: map[string]bool{}, aliasOf: map[string]string{}, localTypes: map[string]string{}, gotoTargets: map[string]bool{}, chanCloseElems: map[string]bool{}, chanRecv2Elems: map[string]bool{}, mathWrappers: map[string]bool{}, chanElemByName: map[string]string{}, sliceElems: map[string]bool{}, sliceElemByName: map[string]string{}, appendElems: map[string]bool{}, tryappendElems: map[string]bool{}, appendSliceElems: map[string]bool{}, tryappendSliceEls: map[string]bool{}, appendokStructs: map[string]bool{}, copyElems: map[string]bool{}, resliceElems: map[string]bool{}, reslice3Elems: map[string]bool{}, mkLenHelpers: map[string]bool{}, clearElems: map[string]bool{}, minElems: map[string]bool{}, maxElems: map[string]bool{}, printSliceElems: map[string]bool{}, printStructs: map[string]string{}, printIfaces: map[string]string{}, printlnElems: map[string]bool{}, switchBreakUsed: map[string]bool{}, labelBreak: map[string]string{}, labelContinue: map[string]string{}, labelUsed: map[string]bool{}, eqStructs: map[string]bool{}, eqArrays: map[string]arrDim{}, frameBacked: map[string]bool{}, frameHolder: map[string]string{}, crossParams: map[string][]leak{}, crossContents: map[string][]leak{}, retContents: map[string][]bool{}, recvContents: map[string]leak{}, paramCalls: map[string][]paramCall{}, frameCalls: map[string][]frameCall{}, localConstSpecs: map[string]localConstSpec{}, inheritedTypes: map[string]bool{}, funcValueMembers: map[string][]string{}, methodExprMembers: map[string]emMethodExpr{}, memberShown: map[string]string{}, litLifted: map[string][]string{}, methodNames: map[string]bool{}, recvLeaks: map[string]leak{}, recvInto: map[string]uint32{}, retRecv: map[string]bool{}, crossInto: map[string][]uint32{}, ifaceSummaries: map[string]ifaceSummary{}, retParams: map[string][]bool{}, funcValueOf: map[string]string{}, crossNames: map[string]string{}, initNames: map[string]string{}, funcValueTypes: map[string]funcValueType{}, funcTypeNames: map[string]string{}, funcTypeRet: map[string][]string{}, funcTypeParams: map[string][]string{}, funcTypeVariadic: map[string]int{}, recFuncTypes: map[string]bool{}, recFuncShapes: map[string]string{}, retStructs: map[string]string{}, retStructByKey: map[string]string{}, shiftHelpers: map[string][2]string{}, shiftCTypes: map[*int32]string{}, shiftWalked: map[shiftWalkKey]bool{}, shiftIn: map[*int32]bool{}, divHelpers: map[string][2]string{}, funcValueWrappers: map[string]string{}, deferReplay: -1, iota: -1}
+	e := &emitter{loopSeedsIn: seeds, loopSeedsOut: loopSeeds{}, renameTypes: rename, renamedTypes: map[string]string{}, includes: map[string]bool{}, funcRet: map[string][]string{}, funcSliceParams: map[string][]string{}, funcVariadic: map[string]int{}, nilHelpers: map[string]bool{}, initSkew: map[string]bool{}, arrPtrHelpers: map[string]arrDim{}, usliceHelpers: map[string]bool{}, funcArrayRet: map[string]arrDim{}, funcStructRet: map[string]string{}, funcArrayParams: map[string][]arrDim{}, anonStructNames: map[string]string{}, methodValueTypes: map[string]funcValueType{}, methodValueOf: map[string]string{}, methodExprNames: map[string]string{}, funcParams: map[string][]string{}, methodPtr: map[string]bool{}, recvByRef: map[string]bool{}, globals: map[string]string{}, structs: map[string][]structField{}, namedTypes: map[string]bool{}, typeNames: map[string]bool{}, interfaceTypes: map[string]bool{}, ifaceMethods: map[string][]ifaceMethod{}, anonIfaceNames: map[string]string{}, anonIfaceMinted: map[string]bool{}, ifaceASTs: map[string]ifaceAST{}, ifaceVTables: map[string]bool{}, namedUnderlying: map[string]string{}, namedArrays: map[string]arrDim{}, constInt: map[string]string{}, constVal: map[string]constant.Value{}, constBool: map[string]bool{}, constWide: map[string]string{}, constStr: map[string]string{}, constUntyped: map[string]bool{}, constHuge: map[string]bool{}, arrays: map[string]arrDim{}, globalArrays: map[string]arrDim{}, sliceVars: map[string]string{}, globalSliceVars: map[string]string{}, chanElems: map[string]bool{}, chanInitElems: map[string]bool{}, chanSendElems: map[string]bool{}, chanRecvElems: map[string]bool{}, chanTryRecvElems: map[string]bool{}, chanTrySendElems: map[string]bool{}, chanGatedSendElems: map[string]bool{}, chanSendClosedElems: map[string]bool{}, chanBufElems: map[string]bool{}, chanLenElems: map[string]bool{}, chanReadyElems: map[string]bool{}, aliasOf: map[string]string{}, aliasLits: map[string]bool{}, localTypes: map[string]string{}, gotoTargets: map[string]bool{}, chanCloseElems: map[string]bool{}, chanRecv2Elems: map[string]bool{}, mathWrappers: map[string]bool{}, chanElemByName: map[string]string{}, sliceElems: map[string]bool{}, sliceElemByName: map[string]string{}, appendElems: map[string]bool{}, tryappendElems: map[string]bool{}, appendSliceElems: map[string]bool{}, tryappendSliceEls: map[string]bool{}, appendokStructs: map[string]bool{}, copyElems: map[string]bool{}, resliceElems: map[string]bool{}, reslice3Elems: map[string]bool{}, mkLenHelpers: map[string]bool{}, clearElems: map[string]bool{}, minElems: map[string]bool{}, maxElems: map[string]bool{}, printSliceElems: map[string]bool{}, printStructs: map[string]string{}, printIfaces: map[string]string{}, printlnElems: map[string]bool{}, switchBreakUsed: map[string]bool{}, labelBreak: map[string]string{}, labelContinue: map[string]string{}, labelUsed: map[string]bool{}, eqStructs: map[string]bool{}, eqArrays: map[string]arrDim{}, frameBacked: map[string]bool{}, frameHolder: map[string]string{}, crossParams: map[string][]leak{}, crossContents: map[string][]leak{}, retContents: map[string][]bool{}, recvContents: map[string]leak{}, paramCalls: map[string][]paramCall{}, frameCalls: map[string][]frameCall{}, localConstSpecs: map[string]localConstSpec{}, inheritedTypes: map[string]bool{}, funcValueMembers: map[string][]string{}, methodExprMembers: map[string]emMethodExpr{}, memberShown: map[string]string{}, litLifted: map[string][]string{}, methodNames: map[string]bool{}, recvLeaks: map[string]leak{}, recvInto: map[string]uint32{}, retRecv: map[string]bool{}, crossInto: map[string][]uint32{}, ifaceSummaries: map[string]ifaceSummary{}, retParams: map[string][]bool{}, funcValueOf: map[string]string{}, crossNames: map[string]string{}, initNames: map[string]string{}, funcValueTypes: map[string]funcValueType{}, funcTypeNames: map[string]string{}, funcTypeRet: map[string][]string{}, funcTypeParams: map[string][]string{}, funcTypeVariadic: map[string]int{}, recFuncTypes: map[string]bool{}, recFuncShapes: map[string]string{}, retStructs: map[string]string{}, retStructByKey: map[string]string{}, shiftHelpers: map[string][2]string{}, shiftCTypes: map[*int32]string{}, shiftWalked: map[shiftWalkKey]bool{}, shiftIn: map[*int32]bool{}, divHelpers: map[string][2]string{}, funcValueWrappers: map[string]string{}, deferReplay: -1, iota: -1}
 	for _, opt := range opts {
 		opt(e)
 	}
@@ -7499,6 +7512,7 @@ type emitter struct {
 	chanLenElems        map[string]bool          // element types whose ogo_chan_len_/ogo_chan_cap_ helpers len and cap of a channel call
 	chanReadyElems      map[string]bool          // element types whose ogo_chan_ready_ a standing offer asks of a receive clause (peekReady)
 	aliasOf             map[string]string        // `type A = B`: mangled alias name -> mangled target name
+	aliasLits           map[string]bool          // `type A = [2]int`: mangled names of the aliases of an array written out, which name no defined type
 	localTypes          map[string]string        // a LOCAL type declaration's source name -> its minted C name, per function
 	gotoTargets         map[string]bool          // labels a goto of the CURRENT function names, scanned before its body is emitted
 	labelHeads          map[string]loopHead      // the marks at each goto target of the current function emitted so far, a goto back to which is a loop's end (noteLoopSeeds)
@@ -8098,12 +8112,14 @@ func (e *emitter) collectStructForwards(ast []int32) {
 					}
 					var name string
 					var typeAST []int32
+					alias := false
 					for s := range it(ts.ast) {
 						switch s.sym {
 						case 0:
 							if e.f.ch(s.tok) == IDENT && name == "" {
 								name = e.src(s.tok)
 							}
+							alias = alias || e.f.ch(s.tok) == ASSIGN
 						case Type:
 							typeAST = s.ast
 						}
@@ -8120,6 +8136,12 @@ func (e *emitter) collectStructForwards(ast []int32) {
 						// The probe renames a local or field named like the type as the
 						// real pass will, or it would read as the type's name in use.
 						e.typeNames[plain] = true
+					}
+					if alias {
+						// `type S = struct{ ... }` names the struct written out, whose C
+						// type is the anonymous one's: no tag of its own to forward, and a
+						// forward of one was a second typedef of S.
+						continue
 					}
 					if ifaceASTKids := e.interfaceTypeAST(typeAST); ifaceASTKids != nil {
 						// Recorded so an EMBEDDED name can be resolved wherever it is
@@ -8230,6 +8252,14 @@ func (e *emitter) emitLocalTypeDecl(ast []int32) {
 		e.typeNames[mn] = true
 		e.userTypeNames[mn] = name
 		if alias {
+			if !e.bareTypeName(typeAST) {
+				e.aliasLits[mn] = true // see collectTypeSpec
+				if a, ok := e.arrayDim(typeAST); ok {
+					e.namedArrays[mn] = a
+					e.addTypedef(mn, "typedef "+a.elem+" "+mn+a.declSuffix()+";\n", a.elem)
+					continue
+				}
+			}
 			target := e.cType(typeAST)
 			if target == "" {
 				return
@@ -8330,6 +8360,34 @@ func (e *emitter) collectTypeSpec(n Node) {
 		// already canonicalized every recorded use to B, so what remains is a
 		// C typedef for any spelling that still says A, and the registries
 		// answering for A what they answer for B.
+		if !e.bareTypeName(typeAST) {
+			// `type B = []byte`: an alias of a type written out names no defined
+			// type, so nothing may answer for it as for one -- no method set, no
+			// name of its own under %T. The C type is the literal's, which cType
+			// answers for the name through aliasOf.
+			e.aliasLits[mn] = true
+			if a, ok := e.arrayDim(typeAST); ok {
+				// An array has no C type of its own to alias, and every array site
+				// reads its shape off namedArrays -- under no name.
+				e.namedArrays[mn] = a
+				e.addTypedef(mn, "typedef "+a.elem+" "+mn+a.declSuffix()+";\n", a.elem)
+				return
+			}
+			target := e.cType(typeAST)
+			if target == "" {
+				return // cType has latched the failure
+			}
+			e.aliasOf[mn] = target
+			e.addTypedef(mn, "typedef "+target+" "+mn+";\n", target)
+			if flds, ok := e.structs[target]; ok {
+				e.structs[mn] = flds
+			}
+			if e.interfaceTypes[target] {
+				e.interfaceTypes[mn] = true
+				e.ifaceMethods[mn] = e.ifaceMethods[target]
+			}
+			return
+		}
 		target := e.cType(typeAST)
 		if target == "" {
 			return // cType has latched the failure
@@ -16680,7 +16738,9 @@ func (e *emitter) addrOfRoot(ast []int32) (string, bool) {
 	// either; where its backing came from is what decides that, which
 	// sliceBackingIsFrame asks of a slice and addrOfSliceElem of an address into one.
 	if suffixed {
-		if ct, ok := e.varType(name); ok && (e.isPointer(ct) || e.isSliceCType(ct)) {
+		// A defined slice type's too, `&ps[1]` for a `ps L`: read by its own name, it
+		// was the parameter's slot.
+		if ct, ok := e.varType(name); ok && (e.isPointer(ct) || e.isSliceCType(e.underlyingCType(ct))) {
 			return "", false
 		}
 		// Nor through a pointer or a slice the steps reach, `&h.p.n` for a pointer
@@ -16718,7 +16778,7 @@ func (e *emitter) addrCrossing(ast []int32) (string, bool) {
 		return "", false
 	}
 	root := e.src(fk[0].tok)
-	if ct, ok := e.varType(root); ok && (e.isPointer(ct) || e.isSliceCType(ct)) {
+	if ct, ok := e.varType(root); ok && (e.isPointer(ct) || e.isSliceCType(e.underlyingCType(ct))) {
 		return "", false // a pointer's or a slice's own: addrThroughPointer, addrOfSliceElem
 	}
 	steps := slices.Collect(it(fk[1].ast))
@@ -16741,7 +16801,7 @@ func (e *emitter) addrOfSliceElem(ast []int32) (string, bool) {
 	if !ok || !suffixed {
 		return "", false
 	}
-	if ct, ok := e.varType(name); ok && e.isSliceCType(ct) {
+	if ct, ok := e.varType(name); ok && e.isSliceCType(e.underlyingCType(ct)) {
 		return name, true
 	}
 	return "", false
@@ -24082,6 +24142,14 @@ func (e *emitter) namedSliceType(typeAST []int32) (cname, elem string, ok bool) 
 	default:
 		return "", "", false
 	}
+	// An alias of a slice written out, `type B = []byte`, is that slice: the
+	// header's own C type, which is what a variable of it is declared with.
+	if e.aliasLits[mn] {
+		if t := e.unaliased(mn); e.isSliceCType(t) {
+			return t, sliceElemFromCName(t), true
+		}
+		return "", "", false
+	}
 	// Through a chain of definitions: `type Alias List` over `type List []int` is
 	// still a slice literal's type.
 	u, ok := e.namedUnderlying[mn]
@@ -24753,6 +24821,19 @@ func (e *emitter) cType(ast []int32) string {
 		}
 		if prefix, ok := e.importQualifiers[e.src(toks[0])]; ok {
 			mn := e.mangle(prefix, e.src(toks[2]))
+			// An alias of a type written out, `lib.B` for a `type B = []byte`, is
+			// that type's C type, as a bare one is below; the checker canonicalizes
+			// every alias of a NAMED type, so only these reach here.
+			if t, isAlias := e.aliasOf[mn]; isAlias {
+				for i := 0; i < 16; i++ {
+					next, further := e.aliasOf[t]
+					if !further {
+						break
+					}
+					t = next
+				}
+				return t
+			}
 			if _, ok := e.structs[mn]; ok {
 				return mn
 			}
@@ -24921,6 +25002,13 @@ func (e *emitter) convType(recv string) (string, bool) {
 	if recv == "error" && predeclared {
 		return e.errorIfaceCType(), true
 	}
+	if orig := e.typeCName(recv); e.aliasLits[orig] {
+		// `B(x)` for a `type B = []byte` is `[]byte(x)`: the literal's C type.
+		if _, isArr := e.namedArrays[orig]; isArr {
+			return orig, true
+		}
+		return e.unaliased(orig), true
+	}
 	mn := e.unaliased(e.typeCName(recv))
 	if e.namedTypes[mn] || mn == cUnsafePtr {
 		return mn, true // `type Celsius int` used as Celsius(x), and `type P = unsafe.Pointer` as P(x)
@@ -24960,6 +25048,12 @@ func (e *emitter) qualConvType(qualifier, name string) (string, bool) {
 	}
 	// Through an alias of that package's, `lib.C(0)` for a `type C = Celsius`: the
 	// conversion is to what it names, whose methods are the ones a step calls.
+	if orig := e.mangle(prefix, name); e.aliasLits[orig] {
+		if _, isArr := e.namedArrays[orig]; isArr {
+			return orig, true
+		}
+		return e.unaliased(orig), true // see convType
+	}
 	mn := e.unaliased(e.mangle(prefix, name))
 	if _, isArr := e.namedArrays[mn]; isArr || e.namedTypes[mn] || e.isStruct(mn) || mn == cUnsafePtr {
 		return mn, true
@@ -25936,6 +26030,40 @@ func isScalarCType(ct string) bool {
 // `[N][M]T`, returning its element type and every extent. cType models no array
 // type, so a nested element is resolved by recursing here rather than through it
 // -- which is why `[2][3]int` used to fail as `unsupported type ""`.
+// aliasLitCType is the C type an alias of a type written out stands for, mn its own
+// C name: the literal's, the one a value of it is stored under in an interface and
+// %T spells -- an array's the typedef every [N]T shares, never the alias's typedef,
+// which `case *Row:` for a `type Row = [2]int` compared against in silence.
+func (e *emitter) aliasLitCType(mn string) (string, bool) {
+	if !e.aliasLits[mn] {
+		return "", false
+	}
+	if a, isArr := e.namedArrays[mn]; isArr {
+		return e.arrayTypedef(a), true
+	}
+	return e.unaliased(mn), true
+}
+
+// bareTypeName reports whether a Type is a NAME, bare or qualified, rather than a
+// type written out.
+func (e *emitter) bareTypeName(typeAST []int32) bool {
+	nodes := slices.Collect(it(typeAST))
+	for i, n := range nodes {
+		if n.sym != 0 {
+			return false
+		}
+		if want := Symbol(IDENT); i%2 == 1 {
+			want = PERIOD
+			if e.f.ch(n.tok) != want {
+				return false
+			}
+		} else if e.f.ch(n.tok) != want {
+			return false
+		}
+	}
+	return len(nodes) == 1 || len(nodes) == 3
+}
+
 func (e *emitter) arrayDim(typeAST []int32) (arrDim, bool) {
 	nodes := slices.Collect(it(typeAST))
 	// A named array type stands in for its dimensions: `type Row [3]int` used as
@@ -25947,7 +26075,7 @@ func (e *emitter) arrayDim(typeAST []int32) (arrDim, bool) {
 		// set the shape carries is the TARGET's.
 		nm := e.unaliased(e.typeCName(e.src(nodes[0].tok)))
 		a, ok := e.namedArrays[nm]
-		if ok {
+		if ok && !e.aliasLits[nm] {
 			a.name = nm // resolved away everywhere else; kept here for the method set
 		}
 		return a, ok
@@ -25959,7 +26087,7 @@ func (e *emitter) arrayDim(typeAST []int32) (arrDim, bool) {
 		if prefix, isImport := e.importQualifiers[e.src(nodes[0].tok)]; isImport {
 			nm := e.unaliased(e.mangle(prefix, e.src(nodes[2].tok)))
 			a, ok := e.namedArrays[nm]
-			if ok {
+			if ok && !e.aliasLits[nm] {
 				a.name = nm
 			}
 			return a, ok
@@ -32748,6 +32876,9 @@ func (e *emitter) caseTypeC(ex Node) (concrete string, isNil, ok bool) {
 	// is where its typedef was emitted.
 	if qual, member, isQual := e.qualifiedFactor(kids[1].ast); isQual {
 		if prefix, isImport := e.importQualifiers[qual]; isImport {
+			if ct, isLit := e.aliasLitCType(e.mangle(prefix, member)); isLit {
+				return ct, false, true
+			}
 			concrete = e.unaliased(e.mangle(prefix, member))
 			if !e.isMethodBase(concrete) {
 				return "", false, false
@@ -32768,6 +32899,9 @@ func (e *emitter) caseTypeC(ex Node) (concrete string, isNil, ok bool) {
 	name := e.soleIdent(kids[1].ast)
 	if name == "" {
 		return "", false, false
+	}
+	if ct, isLit := e.aliasLitCType(e.typeCName(name)); isLit {
+		return ct, false, true
 	}
 	// A defined ARRAY type as well, `case *Row:`, whose typedef is its own and not in
 	// the registry the other defined types are in (isMethodBase).
@@ -40324,6 +40458,30 @@ func (e *emitter) typeNameForT(ct string) string {
 	}
 	if name, ok := e.userTypeNames[ct]; ok {
 		return "main." + name
+	}
+	// A struct written out, `struct{ X, Y int }`, is spelled as Go's reflect spells
+	// one, `struct { X int; Y int }`: its C name, `ogo_anon0`, was printed.
+	if e.isAnonStructName(ct) {
+		var fs []string
+		for _, fld := range e.structs[ct] {
+			t := e.typeNameForT(fld.ctype)
+			if fld.dim.bound != "" {
+				b := ""
+				for _, x := range fld.dim.bounds() {
+					b += "[" + x + "]"
+				}
+				t = b + e.typeNameForT(fld.dim.elem)
+			}
+			if fld.embedded {
+				fs = append(fs, t)
+				continue
+			}
+			fs = append(fs, fld.name+" "+t)
+		}
+		if len(fs) == 0 {
+			return "struct {}"
+		}
+		return "struct { " + strings.Join(fs, "; ") + " }"
 	}
 	// A channel, an unnamed array and a function type are spelled around what they
 	// hold, as a pointer and a slice are. Through goTypeName a channel was its C
@@ -49916,6 +50074,11 @@ func (e *emitter) goTypeName(ct string) string {
 // with nil, a function not at all, an array is comparable when its element is, and
 // a struct when every field is.
 func (e *emitter) comparableCType(ct string) (string, bool) {
+	// A pointer compares whatever it points at: `p == q` of two *func(int) int was
+	// refused, the function type's prefix read as the pointer's.
+	if strings.HasSuffix(e.underlyingCType(ct), "*") {
+		return "", true
+	}
 	switch {
 	case e.isSliceCType(ct), e.isFuncCType(ct):
 		return e.goTypeName(ct), false
@@ -57129,6 +57292,11 @@ func (e *emitter) makeChanSuffixCType(suffix []Node) (string, bool) {
 	}
 	if kids := slices.Collect(it(typeAST)); len(kids) == 1 && kids[0].sym == 0 && e.f.ch(kids[0].tok) == IDENT {
 		if ct, ok := e.convType(e.src(kids[0].tok)); ok && e.isChanCType(ct) {
+			return ct, true
+		}
+	} else if len(kids) == 3 && e.bareTypeName(typeAST) {
+		// Another package's, `make(lib.C)`.
+		if ct, ok := e.qualConvType(e.src(kids[0].tok), e.src(kids[2].tok)); ok && e.isChanCType(ct) {
 			return ct, true
 		}
 	}

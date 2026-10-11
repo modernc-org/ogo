@@ -750,6 +750,145 @@ func main() {
 		want: "panic: index out of range",
 	},
 	{
+		// An alias of a type written out, `type Buf = []byte`, is that type: assignable
+		// both ways to the literal, to another alias of it and to a type defined over
+		// it, spelled by %T as the literal, written in a literal, a conversion and a
+		// make, declared in a function too, and stored in an interface under the
+		// literal's table, so `case *Row:` for a `type Row = [2]int` matches a
+		// pointer to a [2]int. Beside it, rows found on the way: the address of an
+		// element of a slice parameter of structs returned (it was refused as the
+		// parameter's own), a received and an appended value of a defined pointer
+		// type, %T of a struct written out (its C name), and two pointers to a
+		// function compared (refused as functions).
+		name: "aliases of types written out",
+		src: `type Buf = []byte
+
+type Row = [3]int
+
+type Pair = struct{ X, Y int }
+
+type Fn = func(int) int
+
+type Ptr = *int
+
+type Ch = chan int
+
+type Buf2 = Buf
+
+type Bytes []byte
+
+func (b Bytes) Len() int { return len(b) }
+
+type Item struct{ id, n int }
+
+type Items = []Item
+
+type D *int
+
+var back [4]byte
+
+var gi = 7
+
+var items [3]Item
+
+func dbl(n int) int { return 2 * n }
+
+func sum(r Row) int { return r[0] + r[1] + r[2] }
+
+func area(p struct{ X, Y int }) int { return p.X * p.Y }
+
+func find(is Items, id int) *Item {
+	for i := range is {
+		if is[i].id == id {
+			return &is[i]
+		}
+	}
+	return nil
+}
+
+func kind(v any) string {
+	switch x := v.(type) {
+	case *Buf:
+		if len(*x) == 2 {
+			return "buf2"
+		}
+		return "buf"
+	case *Pair:
+		return "pair"
+	case *Row:
+		return "row"
+	case *Fn:
+		return "fn"
+	}
+	return "?"
+}
+
+func run() int {
+	type Local = []int
+	var a [3]int
+	var l Local = a[:]
+	l[2] = 4
+	var s []int = l
+	return s[2] + len(Local{1, 2})
+}
+
+func main() {
+	var b Buf = back[:2]
+	var c []byte = b
+	b[1] = 9
+	var d Bytes = b
+	b = d
+	var e Buf2 = Buf{1, 2, 3}
+	f := Buf(back[1:3])
+	g2 := append(b[:1], 5)
+	printf("%d %d %d %d %d %d %T %T\n", len(b), c[1], d.Len(), len(e), f[0], len(g2), b, e)
+
+	var r Row = [3]int{1, 2, 3}
+	var r2 [3]int = r
+	r[0] = 10
+	printf("%d %d %d %v %T %v\n", sum(r), sum(r2), len(Row{}), r2 == [3]int{1, 2, 3}, r, Row{4, 5, 6})
+
+	p := Pair{3, 4}
+	var q struct{ X, Y int } = p
+	q.X = 5
+	printf("%d %d %v %T %T\n", area(p), area(q), p == Pair{3, 4}, p, &q)
+
+	var fn Fn = dbl
+	var g func(int) int = fn
+	tab := [2]Fn{dbl, g}
+	printf("%d %d %T\n", fn(3), tab[1](4), fn)
+
+	var pt Ptr = &gi
+	var pt2 *int = pt
+	*pt2 = 8
+	ch := make(Ch, 2)
+	ch <- 5
+	cc := make(chan D, 1)
+	cc <- &gi
+	dp := <-cc
+	var back2 [2]D
+	ds := append(back2[:0], &gi)
+	printf("%d %d %d %d %d %T\n", *pt, <-ch, cap(ch), *dp, *ds[0], ch)
+
+	items[1] = Item{id: 2}
+	if it := find(items[:], 2); it != nil {
+		it.n = 42
+	}
+	println(items[1].n, run())
+
+	var gr [3]int
+	var gfn func(int) int = dbl
+	println(kind(&b), kind(&p), kind(&gr), kind(&gfn), kind(&gi))
+	var a any = &p
+	pp, ok := a.(*struct{ X, Y int })
+	_, ok2 := a.(*Buf)
+	pf := &fn
+	println(ok, pp.Y, ok2, pf == &fn, pf != nil)
+}
+`,
+		want: "2 5 2 3 5 2 []uint8 []uint8\n15 6 3 true [3]int [4 5 6]\n12 20 true struct { X int; Y int } *struct { X int; Y int }\n6 8 func(int) int\n8 5 2 8 8 chan int\n42 6\nbuf2 pair row fn ?\ntrue 4 false true true\n",
+	},
+	{
 		// A method storing its receiver through a parameter, `*p = m`, and a function
 		// storing a parameter through an assertion of an `any` one, `case **M:` among
 		// them -- with both sides of each store this frame's, which the lifetime
@@ -50559,6 +50698,7 @@ const multiPkgWant = "300\nLOUD\n50\n6\n5\n45\n6 1000\n200\n207\n3 100\n4 9\n" +
 	"3 4\n" +
 	"8 true 0 true 10 busy\n" +
 	"2 true\n" +
+	"9 5 3 7 5 6 2 []uint8 struct { A int; B int }\n" +
 	"1234567891 1 3 8 14 30 39\n" +
 	"2 4 7 4\n" +
 	"4 5 2 3\n" +
@@ -51389,7 +51529,47 @@ func libShapes() {
 		}
 	}
 	println(nerr, held(lib.Held))
+	// Another package's aliases of types written out are those types here.
+	var lb [4]byte
+	lb[1] = 9
+	var lbs lib.Buf = lb[:]
+	var lbt []byte = lbs
+	var lp lib.Pr = struct{ A, B int }{3, 4}
+	lc := make(lib.Chan, 1)
+	lc <- 5
+	var lr lib.Row3 = [3]int{1, 2, 3}
+	printf("%d %d %d %d %d %d %d %T %T\n", lib.SumBuf(lbt), lib.Apply(scale, 4), lib.MkPr(2).B, lp.A+lp.B, <-lc, lib.SumRow3(lr), len(lib.Buf{1, 2}), lbs, lp)
 }
+`,
+	"lib/lits.ogo": `// Buf, Fn, Two, Chan and Row3 are aliases of types written out, which are those
+// types in every package: a []byte is a Buf wherever it is written.
+type Buf = []byte
+
+type Fn = func(int) int
+
+type Pr = struct{ A, B int }
+
+type Chan = chan int
+
+type Row3 = [3]int
+
+// SumBuf adds a Buf's bytes.
+func SumBuf(b Buf) int {
+	s := 0
+	for _, x := range b {
+		s += int(x)
+	}
+	return s
+}
+
+// Apply calls f.
+func Apply(f Fn, n int) int { return f(n) }
+
+// MkPr makes a Pr.
+func MkPr(a int) Pr { return Pr{a, a + 1} }
+
+// SumRow3 adds a Row3.
+func SumRow3(r Row3) int { return r[0] + r[1] + r[2] }
 `,
 	"initord/itrace/itrace.ogo": `var Trace int
 

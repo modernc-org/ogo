@@ -1,0 +1,58 @@
+// An alias of a type written out, `type B = []byte`, is that type: no defined type,
+// so a value of a type defined over it goes in and out of it, and every other
+// question is asked of the literal -- a value of another type, a signature, an
+// array's length, a struct's fields. One that reaches itself names nothing, with no
+// defined type between to break the cycle.
+
+type B = []byte
+
+type F = func(int) int
+
+type A = [3]int
+
+type S = struct{ x, y int }
+
+type D []byte
+
+// ERROR "invalid recursive type: T refers to itself"
+type T = []T
+
+// ERROR "invalid recursive type: N refers to itself"
+type N = struct{ next *N }
+
+type U = []V
+
+// ERROR "invalid recursive type V"
+type V = []U
+
+type Node struct{ kids []Kid }
+
+type Kid = *Node
+
+// ERROR "cannot define new methods on non-local type B"
+func (b B) Len() int { return len(b) }
+
+var back [4]byte
+
+func add(a, b int) int { return a + b }
+
+func run() {
+	var b B = back[:]
+	var d D = b
+	b = d
+	// ERROR "cannot use b as string value in variable declaration: it is a slice"
+	var s string = b
+	// ERROR "cannot use b \(variable of type B\) as \[\]int value in variable declaration"
+	var x []int = b
+	// ERROR "cannot use add \(value of type func\(a int, b int\) int\) as func\(int\) int value in variable declaration"
+	var f F = add
+	// ERROR "cannot use \[4\]int{} \(value of type \[4\]int\) as A value in variable declaration"
+	var a A = [4]int{}
+	sv := S{1, 2}
+	// ERROR "cannot use sv \(variable of type S\) as a struct value in variable declaration"
+	var t struct{ x, z int } = sv
+	var k Kid = &Node{}
+	_, _, _, _, _, _, _ = d, s, x, f, a, t, k
+}
+
+func main() { run() }

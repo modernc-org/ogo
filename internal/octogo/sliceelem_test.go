@@ -131,6 +131,121 @@ func main() { run() }
 
 func main() { println(run()) }
 `, false},
+		// A slice of elements of no Kind was read as a value by the checker, and a
+		// defined slice type and an alias of one by the emitter, so the address of an
+		// element of a parameter's was refused as the parameter's own slot.
+		{"returned, of a parameter of a []P", `type P struct{ a, b int }
+
+type L []P
+
+type IL []int
+
+type AL = []P
+
+var gp [2]P
+
+func first(ps []P) *P { return &ps[1] }
+
+func main() { println(first(gp[:]) == &gp[1]) }
+`, false},
+		// A slice of elements of no Kind was read as a value by the checker, and a
+		// defined slice type and an alias of one by the emitter, so the address of an
+		// element of a parameter's was refused as the parameter's own slot.
+		{"returned, of a parameter of a defined slice type", `type P struct{ a, b int }
+
+type L []P
+
+type IL []int
+
+type AL = []P
+
+var gp [2]P
+
+func first(ps L) *P { return &ps[1] }
+
+func main() { println(first(gp[:]) == &gp[1]) }
+`, false},
+		// A slice of elements of no Kind was read as a value by the checker, and a
+		// defined slice type and an alias of one by the emitter, so the address of an
+		// element of a parameter's was refused as the parameter's own slot.
+		{"returned, of a parameter of an alias of a slice", `type P struct{ a, b int }
+
+type L []P
+
+type IL []int
+
+type AL = []P
+
+var gp [2]P
+
+func first(ps AL) *P { return &ps[1] }
+
+func main() { println(first(gp[:]) == &gp[1]) }
+`, false},
+		{"returned, of a []P viewing a local array", `type P struct{ a, b int }
+
+type L []P
+
+type IL []int
+
+type AL = []P
+
+var gp [2]P
+
+func first() *P {
+	var a [2]P
+	var s []P = a[:]
+	return &s[1]
+}
+
+func main() { println(first() != nil) }
+`, true},
+		{"returned, of a defined slice type viewing a local array", `type P struct{ a, b int }
+
+type L []P
+
+type IL []int
+
+type AL = []P
+
+var gp [2]P
+
+func first() *P {
+	var a [2]P
+	var s L = a[:]
+	return &s[1]
+}
+
+func main() { println(first() != nil) }
+`, true},
+		{"returned, of an alias of a slice viewing a local array", `type P struct{ a, b int }
+
+type L []P
+
+type IL []int
+
+type AL = []P
+
+var gp [2]P
+
+func first() *P {
+	var a [2]P
+	var s AL = a[:]
+	return &s[1]
+}
+
+func main() { println(first() != nil) }
+`, true},
+		{"handed to a keeper, of a defined slice type viewing a local array", keep + `type IL []int
+
+func run() {
+	var xs [4]int
+	var s IL = xs[:]
+	keep(&s[0])
+}
+
+func main() { run() }
+`, true},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			fsys := fstest.MapFS{"main.ogo": &fstest.MapFile{Data: []byte(test.src)}}

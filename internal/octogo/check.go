@@ -9856,7 +9856,10 @@ func (f *File) inferRecvFrom(s *Scope, vd *VarDeclaration, init Node) bool {
 	if !ok && sig == nil {
 		return false
 	}
-	vd.typeName, vd.typeQual, vd.isPtr = name, qual, isPtr
+	// A defined pointer type, or an alias of one written out, `type D *int`, is a
+	// pointer as the element's own spelling `*int` is: `*dst` of a received D was
+	// "cannot indirect dst".
+	vd.typeName, vd.typeQual, vd.isPtr = name, qual, isPtr || (name.IsValid() && f.namedIsPointer(s, name, qual))
 	if hasKind {
 		vd.kind, vd.hasKind = kind, true
 	}
@@ -14790,8 +14793,11 @@ func (f *File) namedTypeIdentity(s *Scope, tn TypeNode) (string, bool) {
 // when it names a DEFINED type, "" when it names a predeclared one, and not-ok when
 // it names neither -- a composite, or nothing resolvable.
 func (f *File) definedName(s *Scope, name string) (string, bool) {
-	switch s.find(name).(type) {
+	switch d := s.find(name).(type) {
 	case *TypeDeclaration:
+		if aliasesLiteral(s, d) {
+			return "", false // `type B = []byte`: B is the composite it names
+		}
 		return name, true
 	case *PredeclaredType:
 		return "", true
@@ -14802,11 +14808,111 @@ func (f *File) definedName(s *Scope, name string) (string, bool) {
 	// of that package (typeDeclNamedIn), and answered as unknown, `var n int =
 	// lib.Room` for a `var Room celsius` went unchecked.
 	if strings.Contains(name, ".") {
-		if _, _, ok := f.typeDeclNamedIn(s, name, true); ok {
+		if td, home, ok := f.typeDeclNamedIn(s, name, true); ok {
+			if aliasesLiteral(home, td) {
+				return "", false
+			}
 			return name, true
 		}
 	}
 	return "", false
+}
+
+// aliasReaches reports whether a type written out reaches the alias named self
+// through nothing but further aliases of types written out -- a defined type is a
+// type of its own, which ends the walk -- answering with the name it reached self
+// from, self itself where the literal names it directly.
+func (f *File) aliasReaches(s *Scope, self string, tn TypeNode, seen map[string]bool) (string, bool) {
+	params := func(l *ParameterListNode) (string, bool) {
+		if l == nil {
+			return "", false
+		}
+		for _, p := range l.List {
+			if via, ok := f.aliasReaches(s, self, p.TypeNode, seen); ok {
+				return via, true
+			}
+		}
+		return "", false
+	}
+	switch x := tn.(type) {
+	case *TypeNodeIdent:
+		if x.Qualifier.IsValid() {
+			return "", false
+		}
+		name := x.Name.Src()
+		if name == self {
+			return self, true
+		}
+		td, ok := s.find(name).(*TypeDeclaration)
+		if !ok || td.TypeSpec == nil || !td.TypeSpec.Alias || seen[name] {
+			return "", false
+		}
+		seen[name] = true
+		if _, ok := f.aliasReaches(s, self, td.TypeSpec.TypeNode, seen); ok {
+			return name, true
+		}
+	case *TypeNodeSlice:
+		return f.aliasReaches(s, self, x.TypeNode, seen)
+	case *TypeNodeArray:
+		return f.aliasReaches(s, self, x.TypeNode, seen)
+	case *TypeNodePointer:
+		return f.aliasReaches(s, self, x.TypeNode, seen)
+	case *TypeNodeChan:
+		return f.aliasReaches(s, self, x.TypeNode, seen)
+	case *TypeNodeStruct:
+		for _, fl := range x.Fields {
+			if via, ok := f.aliasReaches(s, self, fl.TypeNode, seen); ok {
+				return via, true
+			}
+		}
+	case *FunctionType:
+		if x.Signature != nil {
+			if via, ok := params(x.Signature.Params); ok {
+				return via, true
+			}
+			return params(x.Signature.Results)
+		}
+	}
+	return "", false
+}
+
+// namesAliasedLiteral reports whether a type NAME, qualified or not, is an alias of
+// a type written out (aliasesLiteral): a name the identity rules compare must not
+// stand for one, which is no defined type.
+func (f *File) namesAliasedLiteral(s *Scope, name string) bool {
+	if !strings.Contains(name, ".") {
+		td, ok := s.find(name).(*TypeDeclaration)
+		return ok && aliasesLiteral(s, td)
+	}
+	td, home, ok := f.typeDeclNamedIn(s, name, true)
+	return ok && aliasesLiteral(home, td)
+}
+
+// aliasesLiteral reports whether td is an alias, through any further aliases of
+// its package, of a type WRITTEN OUT -- `type B = []byte`, `type S = struct{ ... }`
+// -- which names no defined type: B is []byte, identical to it and to every other
+// alias of it, and assignable to and from a type defined over it as []byte is.
+// The rules asking a type's SHAPE read the literal through the declaration, as they
+// read a defined type's; the rules asking its IDENTITY ask this.
+func aliasesLiteral(s *Scope, td *TypeDeclaration) bool {
+	for range 16 {
+		if td == nil || td.TypeSpec == nil || !td.TypeSpec.Alias {
+			return false
+		}
+		tn, isIdent := td.TypeSpec.TypeNode.(*TypeNodeIdent)
+		if !isIdent {
+			return td.TypeSpec.TypeNode != nil
+		}
+		if tn.Qualifier.IsValid() || s == nil {
+			return false
+		}
+		next, ok := s.find(tn.Name.Src()).(*TypeDeclaration)
+		if !ok {
+			return false
+		}
+		td = next
+	}
+	return false
 }
 
 // checkDefinedType reports a value used where a different DEFINED type is wanted.
@@ -14846,7 +14952,7 @@ func (f *File) definedName(s *Scope, name string) (string, bool) {
 // defined type and the unnamed spelling of it are assignable both ways, as they are
 // in Go -- so identity has to be decided here, where the names are.
 func (f *File) checkDefinedType(s *Scope, wantName string, value Node, what string) {
-	if wantName == "" {
+	if wantName == "" || f.namesAliasedLiteral(s, wantName) {
 		return
 	}
 	var haveKind Kind
@@ -21468,6 +21574,13 @@ func (f *File) escapesFrame(s *Scope, root Token, suffixed bool) bool {
 	if !suffixed {
 		return true
 	}
+	// A slice of an element of no Kind, `&ps[0]` for a `ps []P` -- a parameter's,
+	// `func first(ps []P) *P`, was refused as the parameter's own slot: an element
+	// is in the backing, whose lifetime the emitter decides (addrOfSliceElem), as
+	// it does for a []int.
+	if what, known := f.nonBoolVar(s, vd); known && what == "a slice" {
+		return false
+	}
 	return !vd.isPtr && !vd.hasElemKind && !vd.isChan
 }
 
@@ -25490,7 +25603,9 @@ func (f *File) isChanMake(s *Scope, suffix Node) bool {
 func (f *File) checkChanMake(s *Scope, suffix Node) {
 	args, _ := f.makeArgsOf(suffix)
 	if fac := unwrapSingle(args[0]); fac.sym == Factor {
-		f.typ(s, fac) // the element's names, reported where they are written
+		if _, _, qualified := f.factorQualifiedIdent(s, fac); !qualified {
+			f.typ(s, fac) // the element's names, reported where they are written
+		}
 	}
 	switch {
 	case len(args) > 2:
@@ -25600,6 +25715,16 @@ func (f *File) chanTypeFactor(s *Scope, n Node) TypeNode {
 		return nil
 	}
 	if fac.sym != Factor {
+		return nil
+	}
+	// Another package's, `make(lib.C, 2)` for a `type C chan int` or a `type C =
+	// chan int`: read by the bare name alone, it was "dynamic allocation not
+	// supported", as a slice's was (namesSliceType).
+	if qual, member, ok := f.factorQualifiedIdent(s, fac); ok {
+		tn := &TypeNodeIdent{Qualifier: qual, Name: member}
+		if ch, _ := f.chanTypeUnder(s, tn); ch != nil {
+			return tn
+		}
 		return nil
 	}
 	kids := slices.Collect(it(fac.ast))
@@ -26538,6 +26663,11 @@ func (f *File) checkAppendValues(s *Scope, argList Node, args []Node) {
 			// array, a defined type over either. A value that HAS a kind is none of
 			// those, which is the one thing that can be said without resolving the
 			// element's shape: `append(ps, 5)` for a []P went in unchecked.
+			// An address or a pointer is typed by its pointee's Kind here, and has
+			// none: `append(ds, &gi)` for a `type D *int` is checkRefAssign's.
+			if what, isKindless := f.nonBoolOperand(s, v); isKindless && what == "a pointer" {
+				continue
+			}
 			if k, known := f.exprType(s, v); known && p.name != "" && k != UntypedNil {
 				f.err(f.tok(v.Pos()).Position(), "cannot use %s of type %s as type %s in append",
 					f.exprSource(v), kindName(k), p.name)
@@ -26564,7 +26694,7 @@ func (f *File) checkAppendValues(s *Scope, argList Node, args []Node) {
 		// compiler. Asked only of an unqualified name against a named element, and
 		// through `type A = B` on both sides, so the only thing reported is two
 		// names that are two types.
-		if nm, ql, ptr, ok := f.exprNamedType(s, v); ok && !ptr && !ql.IsValid() && p.name != "" {
+		if nm, ql, ptr, ok := f.exprNamedType(s, v); ok && !ptr && !ql.IsValid() && p.name != "" && !f.namesAliasedLiteral(s, p.name) && !f.namesAliasedLiteral(s, nm.Src()) {
 			have, _ := f.canonicalType(s, nm, ql)
 			if want := f.canonicalName(s, p.name); have.IsValid() && have.Src() != want {
 				f.err(f.tok(v.Pos()).Position(), "cannot use %s (variable of type %s) as %s value in append",
@@ -28592,7 +28722,17 @@ func (f *File) typeSpecBody(s *Scope, n Node, r *TypeSpecNode) {
 func (f *File) checkAliasSpec(s *Scope, r *TypeSpecNode) {
 	tn, isIdent := r.TypeNode.(*TypeNodeIdent)
 	if !isIdent {
-		f.err(r.Name.Position(), "cannot alias a type literal yet: name the type and alias that")
+		// `type B = []byte`: B IS the type written out (aliasesLiteral). One that
+		// reaches itself names nothing, no defined type standing between to break
+		// the cycle as `type N struct{ kids []*N }` has: Go's "invalid recursive
+		// type", which the emitter met as a type it could not spell.
+		if via, ok := f.aliasReaches(s, r.Name.Src(), r.TypeNode, map[string]bool{}); ok {
+			if via == r.Name.Src() {
+				f.err(r.Name.Position(), "invalid recursive type: %s refers to itself", r.Name.Src())
+			} else {
+				f.err(r.Name.Position(), "invalid recursive type %s", r.Name.Src())
+			}
+		}
 		return
 	}
 	if tn.Qualifier.IsValid() {

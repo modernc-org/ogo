@@ -1528,10 +1528,14 @@
 // values pass between the two spellings, B's methods are reachable through A,
 // literals may be written with either name, and the two compare as one type. A
 // method may not be declared ON an alias -- it would be a method on the target
-// through the back door, which is Go's rule too. The target must be a NAMED type
+// through the back door, which is Go's rule too. The target may be a NAMED type
 // -- of this package, of another one ("type T = lib.X", which must be exported),
-// or a predeclared one; a type literal ("type S = struct{...}") is refused until
-// built, and an alias cycle is refused where it is written.
+// or a predeclared one -- or a type WRITTEN OUT, "type Buf = []byte", "type Pair =
+// struct{ X, Y int }", "type Fn = func(int) int": the alias is then that type,
+// identical to every other spelling of it, assignable to and from a type defined
+// over it as the literal is, and printed by %T as the literal. An alias cycle is
+// refused where it is written, and so is an alias of a type written out that
+// reaches itself, "type T = []T": no defined type stands between to break it.
 //
 //	TypeDecl = "type" ( TypeSpec | "(" { TypeSpec ";" } [ TypeSpec ] ")" ) .
 //	TypeSpec = identifier [ "=" ] Type .

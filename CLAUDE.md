@@ -3135,6 +3135,55 @@ differed on the host as well -- races and panics -- and the 99 the loader lost
 matched on a second or third load, none differing on the board alone. What the run
 did find was the panic's order (A program ends as Go's does, above): a doubled
 `close(cmds)` printed its panic and ran on, on the board, and exited 0 on the host.
+A lock-in amplifier the round after (dom43: an NCO over a sine table built by
+integer rotation, a CIC decimator in wrapping uint32 on an "ADC" cog, quadrature
+demodulation, CORDIC atan2 and a bit-by-bit isqrt, sweeping a simulated resonator;
+four packages) matched Go on the host and the board, checked and unchecked, at the
+first build. Its 1,500 mutants had two disagreements, both by design (println of an
+array, a printf argument count); its 184 and 1,069 accepted mutants matched Go but
+for cogs' prints interleaving, races a `break` made and loops the host could not
+finish. **A round that finds nothing ranks the next task**: the checker held for
+this kind of program, so the next was a listed limitation.
+
+**AN ALIAS OF A TYPE WRITTEN OUT IS THAT TYPE** (2026-10-11). `type Buf = []byte`,
+`type Pair = struct{ X, Y int }`, `type Fn = func(int) int`, an array, a pointer, a
+channel -- refused until then, "cannot alias a type literal yet", the README's
+listed limitation. Lifting the refusal alone showed the split: the checker's SHAPE
+rules already read the literal through the alias's declaration, as they read a
+defined type's -- all 21 programs of a rejects batch were refused as Go refuses
+them -- and only its IDENTITY rules were wrong, taking the alias for a defined type:
+`var d D = b` for a `type D []byte` refused. definedName answers "no defined type"
+for one (aliasesLiteral, namesAliasedLiteral; checkDefinedType and append's name
+comparison ask it), and one reaching itself, `type T = []T`, is Go's "invalid
+recursive type" (aliasReaches; a defined type between ends the walk). The emitter
+gives the name the literal's C type: aliasOf for all but an array, which has none
+and goes in namedArrays under no name, aliasLits marking every one, so
+namedSliceType, convType, qualConvType, cType's qualified branch, a make of a
+channel and a type switch case (aliasLitCType) answer the literal; a forward of a
+struct tag is not written for one. Two grids measured it, 290 programs moving a
+value between an alias, a second alias, the literal and a type defined over it in
+ten positions, and 165 naming one in each way a type is named, in a package,
+locally and across a boundary; a third, 18 programs of interface dispatch. The one
+silent fault was in the making: `case *Row:` for a `type Row = [2]int` named the
+alias's table where `&gr` was stored under [2]int's and never matched -- **a type
+that names no defined type is stored under the literal's table, and every place
+naming a table asks the same name**. Rows found older than it, each closed: the
+address of an element of a slice PARAMETER of structs, `func find(items []Item, id
+int) *Item { ... return &items[i] }`, refused as the parameter's own slot --
+escapesFrame took a slice for a pointer only where its element had a Kind, and the
+emitter's address rules read a defined slice type as no slice (underlyingCType); a
+lifetime matrix of six slice spellings by eleven shapes holds both directions
+(TestEmitCSliceElemAddr). %T of a struct written out printed its C name,
+`ogo_anon0`, in silence (typeNameForT). A value of a defined pointer type received
+from a channel was no pointer, and one appended to a slice of such a type was "of
+type int" (the pointee's Kind, WHAT HAS NO KIND IS ASKED NOTHING). `make(lib.C, n)`
+of another package's channel type by name, defined or alias, was "dynamic
+allocation". Two pointers to a function compared, `p == q` of `*func(int) int`, was
+refused, isFuncCType reading the pointer's prefix. And a pointer to an anonymous
+struct took no typedef dependency, so a slice of one could precede its typedef once
+aliasAnonStructs moved it after a declared struct. Left, loud: a type switch case
+of a pointer to a struct or a function WRITTEN OUT, `case *struct{ X int }:` and
+`case *func(int) int:`, is a syntax error, where the assertion parses.
 
 **A STRUCT HOLDING AN ARRAY IS COPIED, NEVER ASSIGNED** (2026-09-23). The target's C
 compiler copy-initializes and assigns one only at some SIZES -- "Unable to multiply

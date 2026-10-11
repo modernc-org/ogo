@@ -47,9 +47,27 @@ shipped section tells a reader on that version that they have behaviour they do 
   whatever the types. So may print and println, `println(divmod(17, 5))`, each
   result printed as an argument, deferred too; printf is not, its format being the
   call's first result.
+- **An alias may name a type written out**, `type Buf = []byte`, `type Pair =
+  struct{ X, Y int }`, `type Fn = func(int) int`, an array, a pointer or a
+  channel, in a package, in a function or from another package: it is that type,
+  assignable to and from the literal, another alias of it and a type defined over
+  it, written in a literal, a conversion or a make, and printed by `%T` as Go
+  prints the literal. It was refused, "cannot alias a type literal yet". One that
+  reaches itself, `type T = []T`, is Go's "invalid recursive type".
 
 ### Fixed
 
+- **The address of an element of a slice parameter of structs, `func find(items
+  []Item, id int) *Item { ... return &items[i] }`, was refused** as the address of
+  the parameter itself, and so was one of a parameter of a defined slice type
+  whatever its element; the element is in the caller's backing, and a slice
+  viewing a local array is refused as before.
+- **`%T` of a struct written out printed its C name**, `ogo_anon0`, where Go
+  prints `struct { X int; Y int }`.
+- **A value of a defined pointer type received from a channel, `d := <-ch`, was
+  no pointer** (`*d` refused), and one appended to a slice of such a type, or
+  `make` of another package's channel type by its name, `make(lib.C, 1)`, was
+  refused.
 - **A goroutine's panic let the rest of the program run on, and on the host could
   end it with status 0**: the other cogs were stopped only after the message's
   ten-millisecond drain, so main went on printing on the board, and on the host a

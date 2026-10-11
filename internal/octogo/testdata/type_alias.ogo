@@ -43,10 +43,14 @@ func useFirst() int32 { return point{x: 3}.first() }
 // ERROR "cannot define new methods on non-local type MyInt"
 func (m MyInt) bad() int32 { return int32(m) }
 
-// ERROR "cannot alias a type literal yet"
+// An alias of a type written out is that type, which is no defined type of this
+// package to declare a method on.
 type lit = struct {
 	n int32
 }
+
+// ERROR "cannot define new methods on non-local type lit"
+func (l lit) n2() int32 { return l.n * 2 }
 
 // ERROR "alias cycle: selfish names itself"
 type selfish = selfish
