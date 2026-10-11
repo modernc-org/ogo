@@ -50,6 +50,13 @@ shipped section tells a reader on that version that they have behaviour they do 
 
 ### Fixed
 
+- **A goroutine's panic let the rest of the program run on, and on the host could
+  end it with status 0**: the other cogs were stopped only after the message's
+  ten-millisecond drain, so main went on printing on the board, and on the host a
+  main returning in that time ended the process cleanly, the panic in the middle
+  of its output. The other cogs are stopped as soon as the message is written,
+  and main's return waits for a panic under way on another cog, which ends the
+  program itself.
 - **A range over a bool constant**, `for i := range true` or over a `const c =
   false`, was taken where a range over a bool variable was refused.
 - **A variable ranged out of a channel was typed by name only**: `for b := range

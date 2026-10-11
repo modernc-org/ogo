@@ -186,6 +186,20 @@ leaves the pins as a reset does. TestOnBoardProgramEnd reads on past the expecte
 text and asks that nothing followed -- the table's board check stops at it, and
 passed the old behaviour. `ogo test` stops reading at a panic's line (loadp2.Capture)
 and says so, where a goroutine's panic left the runner waiting out two minutes.
+The ORDER inside the panic was the next fault (2026-10-11, found running domain
+mutants on the board): the message, then a ten-millisecond drain, then the others
+stopped -- so they ran on for the drain, main printing three more lines on the board,
+and on the host a main returning in that time `_Exit(0)`ed before the panicking
+thread aborted: status 0, the panic in the middle of the output, which a test
+reading the status takes for a clean run. The others are stopped right after the
+message now, the drain kept before the cog stops ITSELF (a stopped cog resets its
+smart pins, the line's among them) and dropped on the host; not before the message,
+the target's stdio taking a lock (__lockio) a stopped cog could hold. And
+ogo_panicking, set first thing in every panic (ogo_panic, ogo_panic_begin ahead of a
+value's or an assertion's message), makes main's return wait for a panic under way
+on another cog (ogo_end_program), which ends the program itself as Go's does once
+begun. **A change to how a program ends is asked which cog wins a race between the
+end and a panic.**
 
 **recover is PLANNED, for after v1** (the user's call, 2026-10-07), and with it
 the deferred calls a panic runs on its way out. Neither needs a heap -- a record of
@@ -3115,6 +3129,12 @@ now). Its 1,500 mutants had two rows taken: a range over a bool CONSTANT
 channel typed by its element's name alone -- `b.n` read, `range b.samples` declaring
 nothing (inferredType from the channel's written element now, for a channel named
 here). Its 1,039 valid mutants matched Go but for prints of two cogs interleaving.
+The valid mutants of dom40 and dom41, 2,042 that built, were run on the board the
+same day (bmut in the scratchpad: prep.sh, brun-bin): 1,908 matched Go, the rest
+differed on the host as well -- races and panics -- and the 99 the loader lost
+matched on a second or third load, none differing on the board alone. What the run
+did find was the panic's order (A program ends as Go's does, above): a doubled
+`close(cmds)` printed its panic and ran on, on the board, and exited 0 on the host.
 
 **A STRUCT HOLDING AN ARRAY IS COPIED, NEVER ASSIGNED** (2026-09-23). The target's C
 compiler copy-initializes and assigns one only at some SIZES -- "Unable to multiply

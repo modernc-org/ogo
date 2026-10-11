@@ -723,6 +723,33 @@ func main() {
 		want: "1 a\n1a\ntrue 2.5 1099511627776 122 -3\ntrue2.51099511627776122-31 a\n\n100 3\n",
 	},
 	{
+		// A goroutine's panic while main runs on: the panic ends the program, as
+		// Go's does once it has begun. The other cogs were stopped only after the
+		// message's ten-millisecond drain, so main ran on -- and on the host main
+		// returned in that time and ended the process with status 0, the panic in
+		// the middle of its output (ogo_panicking: main's return waits for it).
+		name:   "a goroutine's panic ends the program while main runs on",
+		panics: true,
+		src: `import "p2"
+
+var ready = make(chan bool)
+
+var back [3]int
+
+func worker(xs []int, i int) {
+	ready <- true
+	println(xs[i])
+}
+
+func main() {
+	go worker(back[:], 5)
+	<-ready
+	p2.WaitMs(5)
+}
+`,
+		want: "panic: index out of range",
+	},
+	{
 		// A method storing its receiver through a parameter, `*p = m`, and a function
 		// storing a parameter through an assertion of an `any` one, `case **M:` among
 		// them -- with both sides of each store this frame's, which the lifetime

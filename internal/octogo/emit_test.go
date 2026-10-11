@@ -1672,12 +1672,17 @@ func TestEmitCAppend(t *testing.T) {
 		"typedef struct { int* ptr; int len; int cap; } ogo_slice_int;\n" +
 		"typedef struct { ogo_slice_int slice; int ok; } ogo_appendok_int;\n" +
 		"\n" +
+		"#ifndef OGO_PANICKING\n" +
+		"#define OGO_PANICKING\n" +
+		"static volatile int ogo_panicking;\n" +
+		"#endif\n" +
 		"static void ogo_panic(const char* msg) {\n" +
+		"\togo_panicking = 1;\n" +
 		"\tprintf(\"panic: %s\\n\", msg);\n" +
 		"\tfflush(stdout); // abort discards a buffered message; a pipe buffers\n" +
-		"\t_waitms(10); // let the message flush over the serial line first\n" +
 		"#ifdef __FLEXC__\n" +
 		"\tfor (int _ogo_c = 0, _ogo_me = _cogid(); _ogo_c < 8; _ogo_c++) if (_ogo_c != _ogo_me) _cogstop(_ogo_c);\n" +
+		"\t_waitms(10); // let the message flush over the serial line before this cog stops\n" +
 		"#endif\n" +
 		"\tabort(); // -> _Exit -> _cogstop: halt this cog\n" +
 		"}\n" +
@@ -2210,12 +2215,17 @@ func TestEmitCChecks(t *testing.T) {
 		"#include <stdio.h>\n" +
 		"#include <stdlib.h>\n" +
 		"\n" +
+		"#ifndef OGO_PANICKING\n" +
+		"#define OGO_PANICKING\n" +
+		"static volatile int ogo_panicking;\n" +
+		"#endif\n" +
 		"static void ogo_panic(const char* msg) {\n" +
+		"\togo_panicking = 1;\n" +
 		"\tprintf(\"panic: %s\\n\", msg);\n" +
 		"\tfflush(stdout); // abort discards a buffered message; a pipe buffers\n" +
-		"\t_waitms(10); // let the message flush over the serial line first\n" +
 		"#ifdef __FLEXC__\n" +
 		"\tfor (int _ogo_c = 0, _ogo_me = _cogid(); _ogo_c < 8; _ogo_c++) if (_ogo_c != _ogo_me) _cogstop(_ogo_c);\n" +
+		"\t_waitms(10); // let the message flush over the serial line before this cog stops\n" +
 		"#endif\n" +
 		"\tabort(); // -> _Exit -> _cogstop: halt this cog\n" +
 		"}\n" +
@@ -2440,12 +2450,17 @@ func TestEmitCSliceBounds(t *testing.T) {
 		"\n" +
 		"typedef struct { int* ptr; int len; int cap; } ogo_slice_int;\n" +
 		"\n" +
+		"#ifndef OGO_PANICKING\n" +
+		"#define OGO_PANICKING\n" +
+		"static volatile int ogo_panicking;\n" +
+		"#endif\n" +
 		"static void ogo_panic(const char* msg) {\n" +
+		"\togo_panicking = 1;\n" +
 		"\tprintf(\"panic: %s\\n\", msg);\n" +
 		"\tfflush(stdout); // abort discards a buffered message; a pipe buffers\n" +
-		"\t_waitms(10); // let the message flush over the serial line first\n" +
 		"#ifdef __FLEXC__\n" +
 		"\tfor (int _ogo_c = 0, _ogo_me = _cogid(); _ogo_c < 8; _ogo_c++) if (_ogo_c != _ogo_me) _cogstop(_ogo_c);\n" +
+		"\t_waitms(10); // let the message flush over the serial line before this cog stops\n" +
 		"#endif\n" +
 		"\tabort(); // -> _Exit -> _cogstop: halt this cog\n" +
 		"}\n" +
@@ -4649,12 +4664,17 @@ func main() {
 		"typedef struct Buf Buf;\n" +
 		"typedef struct { int* ptr; int len; int cap; } ogo_slice_int;\n" +
 		"struct Buf { ogo_slice_int data; };\n\n" +
+		"#ifndef OGO_PANICKING\n" +
+		"#define OGO_PANICKING\n" +
+		"static volatile int ogo_panicking;\n" +
+		"#endif\n" +
 		"static void ogo_panic(const char* msg) {\n" +
+		"\togo_panicking = 1;\n" +
 		"\tprintf(\"panic: %s\\n\", msg);\n" +
 		"\tfflush(stdout); // abort discards a buffered message; a pipe buffers\n" +
-		"\t_waitms(10); // let the message flush over the serial line first\n" +
 		"#ifdef __FLEXC__\n" +
 		"\tfor (int _ogo_c = 0, _ogo_me = _cogid(); _ogo_c < 8; _ogo_c++) if (_ogo_c != _ogo_me) _cogstop(_ogo_c);\n" +
+		"\t_waitms(10); // let the message flush over the serial line before this cog stops\n" +
 		"#endif\n" +
 		"\tabort(); // -> _Exit -> _cogstop: halt this cog\n" +
 		"}\n" +

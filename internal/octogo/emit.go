@@ -5493,12 +5493,36 @@ func maxCName(ct string) string { return "ogo_max_" + sanitizeElem(ct) }
 func printSliceCName(elem string) string   { return "ogo_print_slice_" + sanitizeElem(elem) }
 func printlnSliceCName(elem string) string { return "ogo_println_slice_" + sanitizeElem(elem) }
 
-// panicHaltC ends a debug build's panic: every other cog stopped, then this one. On
-// the host abort ends the process, every goroutine's thread with it.
+// panicHaltC ends a debug build's panic once its message is written: every other
+// cog stopped, then -- once the message has left on the serial line, which this
+// cog's smart pin shifts out and a stopped cog's resets -- this one. On the host
+// abort ends the process, every goroutine's thread with it, there being no line to
+// wait for.
+//
+// The others were stopped AFTER the wait until 2026-10-11, so they ran on for ten
+// milliseconds past the message, printing and driving their pins -- and on the host
+// main returned in that time and ended the process with status 0, a panic in the
+// middle of its output (ogo_panicking stops that). Not before the message: the
+// target's stdio takes a lock (__lockio), which a cog stopped holding it would keep.
 const panicHaltC = "#ifdef __FLEXC__\n" +
 	"\tfor (int _ogo_c = 0, _ogo_me = _cogid(); _ogo_c < 8; _ogo_c++) if (_ogo_c != _ogo_me) _cogstop(_ogo_c);\n" +
+	"\t_waitms(10); // let the message flush over the serial line before this cog stops\n" +
 	"#endif\n" +
 	"\tabort(); // -> _Exit -> _cogstop: halt this cog\n"
+
+// panicReleaseC ends a release build's panic: the message flushed, the board
+// restarted, so an unattended device self-heals.
+const panicReleaseC = "\t_waitms(10); // let the message flush over the serial line first\n" +
+	"\t_reboot(); // restart the board (release: self-heal)\n"
+
+// panickingDecl declares ogo_panicking, set first thing in a panic: main returning
+// while another cog panics waits for that panic (ogo_end_program), which ends the
+// program itself, as Go's does once it has begun. Written by every helper using
+// it, the first one to come defining it.
+const panickingDecl = "#ifndef OGO_PANICKING\n" +
+	"#define OGO_PANICKING\n" +
+	"static volatile int ogo_panicking;\n" +
+	"#endif\n"
 
 // ogoPanicDef is the runtime panic: a best-effort diagnostic to the serial line, a
 // short drain so it flushes, then a halt or -- in a release build -- a reboot. A
@@ -5516,12 +5540,12 @@ const panicHaltC = "#ifdef __FLEXC__\n" +
 func ogoPanicDef(release bool) string {
 	tail := panicHaltC
 	if release {
-		tail = "\t_reboot(); // restart the board (release: self-heal)\n"
+		tail = panicReleaseC
 	}
-	return "static void ogo_panic(const char* msg) {\n" +
+	return panickingDecl + "static void ogo_panic(const char* msg) {\n" +
+		"\togo_panicking = 1;\n" +
 		"\tprintf(\"panic: %s\\n\", msg);\n" +
 		"\tfflush(stdout); // abort discards a buffered message; a pipe buffers\n" +
-		"\t_waitms(10); // let the message flush over the serial line first\n" +
 		tail +
 		"}\n"
 }
@@ -19186,7 +19210,8 @@ func (e *emitter) endProgramC(text []byte, endsCogs bool) []byte {
 // outermost block outlives every cog (outlivesCogs), is gone under them -- a
 // channel cell of main's read garbage there, "close of closed channel" on the host
 // where the board stopped every cog first.
-const ogoEndProgram = "static void ogo_end_program(void) {\n" +
+const ogoEndProgram = panickingDecl + "static void ogo_end_program(void) {\n" +
+	"\twhile (ogo_panicking) {} // a panic under way on another cog ends the program, and says why\n" +
 	"#ifdef __FLEXC__\n" +
 	"\tfor (int _ogo_c = 0, _ogo_me = _cogid(); _ogo_c < 8; _ogo_c++) if (_ogo_c != _ogo_me) _cogstop(_ogo_c);\n" +
 	"#else\n" +
@@ -33010,7 +33035,7 @@ func (e *emitter) hoistAssert(operand, iface, target string, targetIsIface bool)
 func (e *emitter) assertPanicC(operand, iface, target string) string {
 	e.needPanicEnd()
 	vt := e.varRef(operand) + ".vt"
-	return "{ printf(\"panic: interface conversion: %s is %s, not %s\", " + cQuote(e.assertIfaceName(iface)) + ", " +
+	return "{ ogo_panic_begin(); printf(\"panic: interface conversion: %s is %s, not %s\", " + cQuote(e.assertIfaceName(iface)) + ", " +
 		vt + " ? " + vt + "->" + vtTypeField + " : \"nil\", " + cQuote(e.typeNameForT(target+"*")) + "); ogo_panic_end(); }"
 }
 
@@ -33027,7 +33052,7 @@ func (e *emitter) assertIfacePanicC(operand, iface, target string) string {
 	e.assertMiss[[2]string{iface, target}] = true
 	vt := e.varRef(operand) + ".vt"
 	want := cQuote(e.typeNameForT(target))
-	return "{ if (" + vt + ") { printf(\"panic: interface conversion: %s is not %s: missing method %s\", " +
+	return "{ ogo_panic_begin(); if (" + vt + ") { printf(\"panic: interface conversion: %s is not %s: missing method %s\", " +
 		vt + "->" + vtTypeField + ", " + want + ", " + assertMissName(iface, target) + "(" + vt + ")); } else { " +
 		"printf(\"panic: interface conversion: interface is nil, not %s\", " + want + "); } ogo_panic_end(); }"
 }
@@ -38565,6 +38590,8 @@ func (e *emitter) emitPanicValue(callSuffix []int32) bool {
 	if e.isNilExpr(arg.ast) {
 		e.needPanicEnd()
 		e.ind()
+		e.emit("ogo_panic_begin();\n")
+		e.ind()
 		e.emit("printf(\"panic: runtime error: panic called with nil argument\");\n")
 		e.ind()
 		e.emit("ogo_panic_end();\n")
@@ -38598,7 +38625,7 @@ func (e *emitter) emitPanicValue(callSuffix []int32) bool {
 		}
 		e.panicIfaces[ct] = true
 		e.ind()
-		e.emit("printf(\"panic: \"); " + panicIfaceName(ct) + "(" + value() + ");\n")
+		e.emit("ogo_panic_begin(); printf(\"panic: \"); " + panicIfaceName(ct) + "(" + value() + ");\n")
 		e.ind()
 		e.emit("ogo_panic_end();\n")
 		return true
@@ -38614,7 +38641,7 @@ func (e *emitter) emitPanicValue(callSuffix []int32) bool {
 		}
 		bind := strings.TrimSuffix(strings.Join(e.bindC(ct, tmp, value()), ""), ";\n")
 		e.ind()
-		e.emit("{ " + strings.ReplaceAll(bind, "\n", " ") + "; printf(\"panic: \"); " + print + " }\n")
+		e.emit("{ " + strings.ReplaceAll(bind, "\n", " ") + "; ogo_panic_begin(); printf(\"panic: \"); " + print + " }\n")
 		e.ind()
 		e.emit("ogo_panic_end();\n")
 		return true
@@ -38637,6 +38664,8 @@ func (e *emitter) emitPanicValue(callSuffix []int32) bool {
 	}
 	e.needPanicEnd()
 	e.ind()
+	e.emit("ogo_panic_begin();\n")
+	e.ind()
 	e.emit("printf(" + cQuote("panic: "+head) + ");\n")
 	e.emitPrintOne(false, 0, arg)
 	if tail != "" {
@@ -38658,16 +38687,17 @@ func (e *emitter) needPanicEnd() {
 }
 
 // ogoPanicEndDef is the end of a panic whose message was written by the statements
-// before it: ogo_panic's newline, drain and halt.
+// before it: ogo_panic's newline, drain and halt -- and ogo_panic_begin, which those
+// statements follow, saying a panic is under way (panickingDecl).
 func ogoPanicEndDef(release bool) string {
 	tail := panicHaltC
 	if release {
-		tail = "\t_reboot(); // restart the board (release: self-heal)\n"
+		tail = panicReleaseC
 	}
-	return "static void ogo_panic_end(void) {\n" +
+	return panickingDecl + "static void ogo_panic_begin(void) { ogo_panicking = 1; }\n" +
+		"static void ogo_panic_end(void) {\n" +
 		"\tprintf(\"\\n\");\n" +
 		"\tfflush(stdout); // abort discards a buffered message; a pipe buffers\n" +
-		"\t_waitms(10); // let the message flush over the serial line first\n" +
 		tail +
 		"}\n"
 }
