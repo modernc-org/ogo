@@ -3140,6 +3140,15 @@ differed on the host as well -- races and panics -- and the 99 the loader lost
 matched on a second or third load, none differing on the board alone. What the run
 did find was the panic's order (A program ends as Go's does, above): a doubled
 `close(cmds)` printed its panic and ran on, on the board, and exited 0 on the host.
+A second board run the same evening, the 2,031 run-case token mutants of the
+earlier batches and dom42's 1,039 valid ones with the compiler of 59ceae6: 347
+were the old channel rule's, 3 too large for Hub RAM, and of the 2,720 that built
+2,648 matched Go (43 on a second or third load). The rest were dom42's cog races,
+differing on the host too, and the known kinds -- a print whose later argument
+panics writing the earlier ones first, loops of 2^31 passes past the runner's 15 s
+-- but for one, a 512 KB array result beside a recursive function that built and
+printed nothing: main's stack was asked nothing where a recursion left it unbounded
+(b6f9e9d, A GOROUTINE'S STACK IS READ OFF THE LISTING).
 A lock-in amplifier the round after (dom43: an NCO over a sine table built by
 integer rotation, a CIC decimator in wrapping uint32 on an "ADC" cog, quadrature
 demodulation, CORDIC atan2 and a bit-by-bit isqrt, sweeping a simulated resonator;
