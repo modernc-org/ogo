@@ -6,6 +6,7 @@ package octogo
 
 import (
 	"bytes"
+	"fmt"
 	"io"
 	"os"
 	"os/exec"
@@ -1776,7 +1777,6 @@ func testField(t *testing.T) {
 
 func run(name string, f func(*testing.T)) {
 	var t testing.T
-	println("=== RUN  ", name)
 	testing.RunTest(&t, name, f)
 	println(name, "failed", t.Failed(), "skipped", t.Skipped())
 }
@@ -1791,7 +1791,7 @@ func main() {
 	run("TestGoroutine", testGoroutine)
 }
 `,
-		want: "=== RUN   TestLog\n    main.ogo:28: a 1 true {1 2}\n    main.ogo:29: 7|x|{3 4}\n    main.ogo:30: \nTestLog failed false skipped false\n=== RUN   TestError\n    main.ogo:34: first\n    main.ogo:23: got 1,\n        want 2\n    main.ogo:36: after 2 errors\nTestError failed true skipped false\n=== RUN   TestFatal\n    main.ogo:13: deep: n=0\nTestFatal failed true skipped false\nreached 0\n=== RUN   TestSkip\n    main.ogo:45: skipping: TestSkip\nTestSkip failed false skipped true\n=== RUN   TestField\n    main.ogo:61: via a field: 5\nTestField failed true skipped false\n=== RUN   TestGoroutine\n    main.ogo:51: from a goroutine\nmain goes on\nTestGoroutine failed true skipped false\n",
+		want: "=== RUN   TestLog\n    main.ogo:28: a 1 true {1 2}\n    main.ogo:29: 7|x|{3 4}\n    main.ogo:30: \n--- PASS: TestLog\nTestLog failed false skipped false\n=== RUN   TestError\n    main.ogo:34: first\n    main.ogo:23: got 1,\n        want 2\n    main.ogo:36: after 2 errors\n--- FAIL: TestError\nTestError failed true skipped false\n=== RUN   TestFatal\n    main.ogo:13: deep: n=0\n--- FAIL: TestFatal\nTestFatal failed true skipped false\nreached 0\n=== RUN   TestSkip\n    main.ogo:45: skipping: TestSkip\n--- SKIP: TestSkip\nTestSkip failed false skipped true\n=== RUN   TestField\n    main.ogo:61: via a field: 5\n--- FAIL: TestField\nTestField failed true skipped false\n=== RUN   TestGoroutine\n    main.ogo:51: from a goroutine\nmain goes on\n--- FAIL: TestGoroutine\nTestGoroutine failed true skipped false\n",
 	},
 	{
 		// FailNow and SkipNow leave a test by longjmp, twenty times over, from chains
@@ -1869,7 +1869,164 @@ func main() {
 	println("failed", failed, "skipped", skipped, "after", after, "a1", a1(10))
 }
 `,
-		want: "    main.ogo:47: at 8\n    main.ogo:47: at 8\n    main.ogo:47: at 8\n    main.ogo:47: at 8\n    main.ogo:47: at 8\nfailed 10 skipped 5 after 0 a1 26\n",
+		want: strings.Repeat("=== RUN   T\n--- FAIL: T\n=== RUN   T\n--- SKIP: T\n=== RUN   T\n--- PASS: T\n=== RUN   T\n    main.ogo:47: at 8\n--- FAIL: T\n", 5) + "failed 10 skipped 5 after 0 a1 26\n",
+	},
+	{
+		// Subtests, t.Run, as go test -v prints them (checked against it): the
+		// parent's name, a slash and the name with its spaces as underscores and a
+		// control character escaped, "#01" for a name used again and "#00" for an
+		// empty one; "=== NAME" where output turns back to another test; and the
+		// results under the test's own when it ends, in the order the subtests began.
+		// Fatalf deep in a nested subtest leaves that subtest alone; one that fails
+		// and then skips has failed, as Go asks the failure first; and a subtest that
+		// fails fails its parent, though Run's result is the subtest's.
+		name: "subtests run by t.Run",
+		src: `import "testing"
+
+var trace int
+
+func deep(t *testing.T, n int) {
+	if n == 0 {
+		t.Fatalf("deep at %d", n)
+	} else {
+		deep(t, n-1)
+	}
+	trace++
+}
+
+func named(t *testing.T) {
+	t.Log("named", t.Name())
+}
+
+func testA(t *testing.T) {
+	t.Log("in A")
+	t.Run("one", func(t *testing.T) {
+		t.Log("in one", t.Name())
+	})
+	ok := t.Run("two words", func(t *testing.T) {
+		t.Errorf("bad %d", 2)
+		t.Run("deep", func(t *testing.T) {
+			deep(t, 3)
+			t.Log("not reached")
+		})
+		t.Log("after deep")
+	})
+	ok2 := t.Run("skip", func(t *testing.T) {
+		t.Skip("skipping")
+	})
+	t.Log("after", ok, ok2)
+	t.Run("one", func(t *testing.T) {
+		t.Fail()
+		t.SkipNow()
+	})
+	t.Run("", named)
+	t.Run("", named)
+	t.Run("a\tb\x01", named)
+	t.Log("end of A", t.Failed(), trace)
+}
+
+func testB(t *testing.T) {
+	t.Run("x", func(t *testing.T) {})
+	t.Run("y", named)
+}
+
+func main() {
+	var a, b testing.T
+	testing.RunTest(&a, "TestA", testA)
+	testing.RunTest(&b, "TestB", testB)
+	println(a.Failed(), b.Failed(), a.Name(), b.Name())
+}
+`,
+		want: "=== RUN   TestA\n    main.ogo:19: in A\n=== RUN   TestA/one\n    main.ogo:21: in one TestA/one\n=== RUN   TestA/two_words\n    main.ogo:24: bad 2\n=== RUN   TestA/two_words/deep\n    main.ogo:7: deep at 0\n=== NAME  TestA/two_words\n    main.ogo:29: after deep\n=== RUN   TestA/skip\n    main.ogo:32: skipping\n=== NAME  TestA\n    main.ogo:34: after false true\n=== RUN   TestA/one#01\n=== RUN   TestA/#00\n    main.ogo:15: named TestA/#00\n=== RUN   TestA/#01\n    main.ogo:15: named TestA/#01\n=== RUN   TestA/a_b\\x01\n    main.ogo:15: named TestA/a_b\\x01\n=== NAME  TestA\n    main.ogo:42: end of A true 0\n--- FAIL: TestA\n    --- PASS: TestA/one\n    --- FAIL: TestA/two_words\n        --- FAIL: TestA/two_words/deep\n    --- SKIP: TestA/skip\n    --- FAIL: TestA/one#01\n    --- PASS: TestA/#00\n    --- PASS: TestA/#01\n    --- PASS: TestA/a_b\\x01\n=== RUN   TestB\n=== RUN   TestB/x\n=== RUN   TestB/y\n    main.ogo:15: named TestB/y\n--- PASS: TestB\n    --- PASS: TestB/x\n    --- PASS: TestB/y\ntrue false TestA TestB\n",
+	},
+	{
+		// Subtests at their limits: 256 in a test, the next refused with a line of its
+		// own and the test failed; a count past 99 written whole, "#100", as Go
+		// writes it; and a name past Name's 128 bytes printed whole and cut by Name.
+		name: "subtests at their limits",
+		src: `import "testing"
+
+func leaf(t *testing.T) {}
+
+func long(t *testing.T) {
+	println(len(t.Name()))
+}
+
+func testA(t *testing.T) {
+	for i := 0; i < 257; i++ {
+		if !t.Run("", leaf) {
+			println("refused at", i)
+		}
+	}
+}
+
+func testB(t *testing.T) {
+	t.Run("nnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnn", func(t *testing.T) {
+		t.Run("nnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnn", long)
+	})
+}
+
+func main() {
+	var a, b testing.T
+	testing.RunTest(&a, "TestA", testA)
+	testing.RunTest(&b, "TestB", testB)
+	println(a.Failed(), b.Failed())
+}
+`,
+		want: subtestLimitsWant(),
+	},
+	{
+		// t.Run on another goroutine, which the runtime's jump targets, one stack
+		// on the test's cog, cannot serve: a panic saying so, not a jump to the
+		// wrong frame.
+		name:   "t.Run on another goroutine",
+		panics: true,
+		src: `import (
+	"p2"
+	"testing"
+)
+
+func leaf(t *testing.T) {}
+
+var done = make(chan bool)
+
+func testA(t *testing.T) {
+	go func(t *testing.T) {
+		t.Run("x", leaf)
+		done <- true
+	}(t)
+	<-done
+}
+
+func main() {
+	var a testing.T
+	testing.RunTest(&a, "TestA", testA)
+	p2.WaitMs(10)
+}
+`,
+		want: "panic: testing: t.Run on another goroutine is not supported",
+	},
+	{
+		// Subtests nested past eight levels: a panic saying so.
+		name:   "subtests nested too deep",
+		panics: true,
+		src: `import "testing"
+
+var depth int
+
+func nest(t *testing.T) {
+	depth++
+	if depth < 12 {
+		t.Run("n", nest)
+	}
+}
+
+func main() {
+	var a testing.T
+	testing.RunTest(&a, "TestA", nest)
+}
+`,
+		want: "panic: testing: subtests nested too deep",
 	},
 	{
 		// A printf of ONE argument evaluates it before it writes anything, as one of
@@ -52811,4 +52968,22 @@ func TestCrossFileConsts(t *testing.T) {
 			}
 		})
 	}
+}
+
+// subtestLimitsWant is what the run case "subtests at their limits" prints, built
+// here rather than written out: 256 RUN lines and as many results.
+func subtestLimitsWant() string {
+	var b strings.Builder
+	b.WriteString("=== RUN   TestA\n")
+	for i := 0; i < 256; i++ {
+		fmt.Fprintf(&b, "=== RUN   TestA/#%02d\n", i)
+	}
+	b.WriteString("=== NAME  TestA\n    testing: more than 256 subtests in TestA\nrefused at 256\n--- FAIL: TestA\n")
+	for i := 0; i < 256; i++ {
+		fmt.Fprintf(&b, "    --- PASS: TestA/#%02d\n", i)
+	}
+	long := strings.Repeat("n", 70)
+	fmt.Fprintf(&b, "=== RUN   TestB\n=== RUN   TestB/%s\n=== RUN   TestB/%s/%s\n128\n--- PASS: TestB\n    --- PASS: TestB/%s\n        --- PASS: TestB/%s/%s\n", long, long, long, long, long, long)
+	b.WriteString("true false\n")
+	return b.String()
 }

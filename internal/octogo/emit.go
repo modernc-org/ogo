@@ -25785,6 +25785,13 @@ func (e *emitter) inlineCandidate(name, proto string, body []int32) bool {
 	if !e.inline || !protoScalar(proto) {
 		return false
 	}
+	// Nothing of the testing package: RunTest and t.Run stand on the call chain of
+	// every test, which shares the cog's registers, and an inlined helper of theirs
+	// brought its locals onto it -- p2-11's tests outgrew the cog by three. A test's
+	// own speed is no reason to spend them.
+	if e.curPkgPrefix == "testing" {
+		return false
+	}
 	// Its declaration is one of the places the name is written with a "(".
 	sites := e.calledNames[name] - 1
 	if sites < 1 {
@@ -40071,6 +40078,10 @@ func (e *emitter) emitTestingCall(head Node, postfix []Node) bool {
 		rest = args
 	}
 	pos := e.f.tok(postfix[n-2].Pos()).Position()
+	// go test's "=== NAME" line, where the last line printed was another test's: a
+	// subtest's, or the parent's once a subtest has run.
+	e.ind()
+	e.emit(e.methodCName(base, "named") + "(" + recv + ");\n")
 	e.emitPrintfFormat(method, testingDecorate(path.Base(pos.Filename), pos.Line, msg), rest, postfix[n-1].ast)
 	e.ind()
 	if then == "" {
@@ -40149,14 +40160,19 @@ func (e *emitter) emitTestingIntrinsic(ast []int32, name string, sig, recv []int
 	switch {
 	case recv == nil && name == "run":
 		proto = e.funcSignatureC(e.funcDefCName(name, ast), sig)
-		body = "\togo_test_cog = _cogid();\n\togo_test_armed = 1;\n" +
-			"\tif (!setjmp(ogo_test_jmp)) {\n" + testingHWStackC(true) + "\t\tf(t);\n\t} else {\n" + testingHWStackC(false) + "\t}\n" +
-			"\togo_test_armed = 0;\n"
+		// A subtest's run nests in its test's: each depth has its own jump target
+		// and its own save of the hardware stack, and exit leaves the innermost.
+		body = "\tint d = ogo_test_depth;\n" +
+			"\tif (d != 0 && _cogid() != ogo_test_cog) {\n\t\togo_panic(\"testing: t.Run on another goroutine is not supported\");\n\t}\n" +
+			"\tif (d == OGO_TEST_DEPTH) {\n\t\togo_panic(\"testing: subtests nested too deep\");\n\t}\n" +
+			"\togo_test_cog = _cogid();\n\togo_test_depth = d + 1;\n" +
+			"\tif (!setjmp(ogo_test_jmp[d])) {\n" + testingHWStackC(true) + "\t\tf(t);\n\t} else {\n" + testingHWStackC(false) + "\t}\n" +
+			"\togo_test_depth = d;\n"
 	case recv != nil && name == "exit":
 		rn, rct, _ := e.receiverInfo(recv)
 		proto = e.methodSignatureC(e.methodCName(methodBaseType(rct), name), rn, rct, sig)
 		body = "\t(void)" + rn + ";\n\tint me = _cogid();\n" +
-			"\tif (ogo_test_armed && me == ogo_test_cog) {\n\t\tlongjmp(ogo_test_jmp, 1);\n\t}\n" +
+			"\tif (ogo_test_depth != 0 && me == ogo_test_cog) {\n\t\tlongjmp(ogo_test_jmp[ogo_test_depth - 1], 1);\n\t}\n" +
 			"\togo_test_goexit(me);\n"
 	default:
 		return
@@ -40192,8 +40208,8 @@ func testingHWStackC(save bool) string {
 			fmt.Fprintf(&b, "\t\t\tpop h%d\n", i)
 		}
 	} else {
-		b.WriteString("\t\tunsigned h0 = ogo_test_hw[0], h1 = ogo_test_hw[1], h2 = ogo_test_hw[2], h3 = ogo_test_hw[3];\n" +
-			"\t\tunsigned h4 = ogo_test_hw[4], h5 = ogo_test_hw[5], h6 = ogo_test_hw[6], h7 = ogo_test_hw[7], x;\n\t\t__asm const {\n")
+		b.WriteString("\t\tunsigned h0 = ogo_test_hw[d][0], h1 = ogo_test_hw[d][1], h2 = ogo_test_hw[d][2], h3 = ogo_test_hw[d][3];\n" +
+			"\t\tunsigned h4 = ogo_test_hw[d][4], h5 = ogo_test_hw[d][5], h6 = ogo_test_hw[d][6], h7 = ogo_test_hw[d][7], x;\n\t\t__asm const {\n")
 		for i := 0; i < 8; i++ {
 			b.WriteString("\t\t\tpop x\n")
 		}
@@ -40204,7 +40220,7 @@ func testingHWStackC(save bool) string {
 	b.WriteString("\t\t}\n")
 	if save {
 		for i := 0; i < 8; i++ {
-			fmt.Fprintf(&b, "\t\togo_test_hw[%d] = h%d;\n", i, i)
+			fmt.Fprintf(&b, "\t\togo_test_hw[d][%d] = h%d;\n", i, i)
 		}
 	}
 	b.WriteString("#endif\n")
@@ -40220,8 +40236,8 @@ func testingHWStackC(save bool) string {
 // cog to stop.
 func (e *emitter) testingRuntimeC() string {
 	var b strings.Builder
-	b.WriteString("static jmp_buf ogo_test_jmp;\nstatic int ogo_test_cog = -1, ogo_test_armed;\n")
-	b.WriteString("#ifdef __FLEXC__\nstatic unsigned ogo_test_hw[8];\n#endif\n")
+	b.WriteString("#define OGO_TEST_DEPTH 9\nstatic jmp_buf ogo_test_jmp[OGO_TEST_DEPTH];\nstatic int ogo_test_cog = -1, ogo_test_depth;\n")
+	b.WriteString("#ifdef __FLEXC__\nstatic unsigned ogo_test_hw[OGO_TEST_DEPTH][8];\n#endif\n")
 	b.WriteString("static void ogo_test_goexit(int me) {\n")
 	if len(e.goSites) != 0 {
 		b.WriteString("\tfor (int spin = 0; spin < OGO_STOP_SPINS; spin++) {\n" +

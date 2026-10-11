@@ -40,6 +40,17 @@ func TestTestingRefusals(t *testing.T) {
 	_ = x`, `t.Log("v") (no value) used as value`},
 		{`defer t.Log("x")`, "`defer t.Log(...)` is not supported yet; write `defer func(t *testing.T) { t.Log(...) }(t)`"},
 		{`go t.Errorf("x %d", 1)`, "`go t.Errorf(...)` is not supported yet; write `go func(t *testing.T) { t.Errorf(...) }(t)`"},
+		// A subtest's name is kept to the end of the test: a constant, or what
+		// lives as long; one viewing a local buffer is refused where it is passed.
+		{`t.Run("x", func(t *testing.T) {})`, ""},
+		{`var buf [8]byte
+	b := NewBuilder(buf[:])
+	b.WriteString("x")
+	t.Run(b.String(), func(t *testing.T) {})`, "cannot pass b.String(), which holds a pointer into local buf to Run: its parameter 1 is stored where it outlives every frame"},
+		{`t.Run("x", 5)`, "cannot use 5 (untyped int constant) as func(*testing.T) value in argument to Run"},
+		{`ok := t.Run("x", func(t *testing.T) {})
+	var n int = ok
+	_ = n`, "cannot use ok"},
 	} {
 		t.Run(test.body, func(t *testing.T) {
 			src := "import \"testing\"\n\nvar ff = \"%d\"\n\nfunc test(t *testing.T) {\n\t" + test.body + "\n}\n\nfunc main() {\n\tvar t testing.T\n\ttesting.RunTest(&t, \"T\", test)\n\t_ = ff\n}\n"

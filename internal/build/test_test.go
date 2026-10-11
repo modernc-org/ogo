@@ -227,6 +227,24 @@ func TestOgoTestRunBadPattern(t *testing.T) {
 	}
 }
 
+// TestOgoTestRunSubtestPattern: a -run pattern with a slash selects subtests in go
+// test, by names that exist only as the test runs on the board, which nothing here
+// can match yet -- refused rather than read as a pattern for the tests themselves,
+// which would match none and say nothing.
+func TestOgoTestRunSubtestPattern(t *testing.T) {
+	dir := t.TempDir()
+	write(t, filepath.Join(dir, "ring.ogo"), testPkgSrc)
+
+	var out bytes.Buffer
+	code, err := Test([]string{"-c", "-run", "TestPushPop/one", dir}, nil, &out, &out)
+	if code != 2 || err == nil {
+		t.Fatalf("a subtest pattern was accepted: code=%d err=%v out=%s", code, err, out.String())
+	}
+	if want := "selecting subtests is not supported yet"; !strings.Contains(err.Error(), want) {
+		t.Fatalf("error %q, want one containing %q", err, want)
+	}
+}
+
 // TestOgoTestNoFiles: a package with no _test.ogo is not an error, as in Go.
 func TestOgoTestNoFiles(t *testing.T) {
 	dir := t.TempDir()
@@ -287,34 +305,26 @@ func TestBroken(t *testing.T) { t.Nope() }
 
 // TestRunnerSrc pins the shape of the generated runner: one testing.T per test, so
 // a failure in one does not mark the next, each run through testing.RunTest, which
-// FailNow returns to, and Go's own RUN and result lines -- with the failure asked
-// about BEFORE the skip, as Go asks. The two marks are independent, so a test that
-// fails and then skips has failed; asked the other way round it was reported
-// skipped and the package passed.
+// FailNow returns to and which prints Go's RUN and result lines -- asking about the
+// failure before the skip, as Go asks (the run case "subtests run by t.Run" holds
+// that) -- and every failure counted.
 func TestRunnerSrc(t *testing.T) {
 	got := testRunnerSrc([]string{"TestA", "TestB"})
 	for _, want := range []string{
 		`import "testing"`,
 		"func ogoTestMain() {",
 		"var t0 testing.T",
-		`println("=== RUN   TestA")`,
 		`testing.RunTest(&t0, "TestA", TestA)`,
+		"if t0.Failed() {\n\t\tfailed++",
 		"var t1 testing.T",
 		`testing.RunTest(&t1, "TestB", TestB)`,
-		`println("--- PASS: TestA")`,
-		`println("--- FAIL: TestB")`,
-		`println("--- SKIP: TestB")`,
+		"if t1.Failed() {\n\t\tfailed++",
+		`println("FAIL", failed, "of", 2)`,
 		testDoneLine,
 	} {
 		if !strings.Contains(got, want) {
 			t.Errorf("missing %q in:\n%s", want, got)
 		}
-	}
-	if fail, skip := strings.Index(got, "t1.Failed()"), strings.Index(got, "t1.Skipped()"); fail < 0 || skip < 0 || skip < fail {
-		t.Errorf("the runner must ask Failed() before Skipped(), so a test that fails and then skips is a failure:\n%s", got)
-	}
-	if !strings.Contains(got, "println(\"--- FAIL: TestB\")\n\t\tfailed++") {
-		t.Errorf("a failure must be counted where it is reported:\n%s", got)
 	}
 }
 

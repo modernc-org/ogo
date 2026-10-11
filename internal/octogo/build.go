@@ -505,16 +505,53 @@ const testingSrc = `// Package testing provides the state a test reports its out
 // Fatal and Fatalf print, fail it and stop it; Skip and Skipf print and stop it,
 // marked skipped.
 //
+// Run runs a subtest, named as go test names one -- the parent's name, a slash,
+// the name given with each space written as an underscore, and "#01", "#02" after
+// a name already used beside it -- and prints and reports it as go test -v does.
+// A subtest's name is kept to the end of the test, so it is a constant, or a string
+// that lives as long. Name's answer is cut at 128 bytes, and a subtest's own part of
+// it at 128 where it is printed. A test runs 256 subtests at most, eight deep.
+//
 // FailNow and SkipNow stop the test where they are called, however deep, as Go's
 // do, but run no deferred call on the way out -- as a panic runs none here. Called
 // on another goroutine, they end that goroutine and the test runs on, which is what
 // Go's do too. Helper does nothing: a message names the line it is written on.
 
+const nameMax = 128
+
+const maxSubs = 256
+
+const maxDepth = 8
+
 type T struct {
 	failed  bool
 	skipped bool
 	name    string
+	id      int
+	depth   int
+	slot    int
+	buf     [nameMax]byte
 }
+
+// sub is a subtest's line of the report its test prints when it ends: run in order
+// of their start, which is the order go test prints them in, each under its parent.
+type sub struct {
+	parent  int // the slot of the subtest it was run in, -1 for the test itself
+	name    string
+	dup     int
+	depth   int
+	verdict int
+}
+
+var (
+	subs   [maxSubs]sub
+	nsubs  int
+	ids    int
+	lastID int
+	top    string
+	rewA   [nameMax]byte
+	rewB   [nameMax]byte
+)
 
 // Fail marks the test as failed and lets it keep running.
 func (t *T) Fail() { t.failed = true }
@@ -537,7 +574,7 @@ func (t *T) SkipNow() {
 // Skipped reports whether the test was skipped.
 func (t *T) Skipped() bool { return t.skipped }
 
-// Name is the test's name.
+// Name is the test's name, a subtest's its full one.
 func (t *T) Name() string { return t.name }
 
 // Helper does nothing here.
@@ -567,14 +604,265 @@ func (t *T) Skip(args ...any)
 // Skipf is Logf and SkipNow.
 func (t *T) Skipf(format string, args ...any)
 
+// Run runs f as a subtest of t called name, and reports whether it passed or was
+// skipped. A subtest that fails fails t.
+//
+// Run and RunTest stand on the call chain of every test, and a cog's registers are
+// shared along a chain: what they do besides calling run is in functions of their
+// own, beside it, or a test near the cog's limit no longer builds.
+func (t *T) Run(name string, f func(t *T)) bool {
+	var s T
+	if !t.begin(&s, name) {
+		return false
+	}
+	run(&s, f)
+	return t.end(&s)
+}
+
+// begin sets s up as t's subtest called name and prints its RUN line, or reports
+// that no more fit.
+func (t *T) begin(s *T, name string) bool {
+	if nsubs == maxSubs {
+		t.named()
+		printf("    testing: more than %d subtests in %s\n", maxSubs, top)
+		t.failed = true
+		return false
+	}
+	ids++
+	s.id = ids
+	s.depth = t.depth + 1
+	s.slot = nsubs
+	dup := 0
+	for i := 0; i < nsubs; i++ {
+		if subs[i].parent == t.slot && sameName(subs[i].name, name) {
+			dup++
+		}
+	}
+	subs[nsubs] = sub{parent: t.slot, name: name, dup: dup, depth: s.depth}
+	nsubs++
+	b := NewBuilder(s.buf[:])
+	b.WriteString(t.name)
+	b.WriteByte('/')
+	rewrite(&b, name)
+	if dup != 0 || name == "" {
+		b.WriteByte('#')
+		if dup < 10 {
+			b.WriteByte('0')
+		}
+		writeInt(&b, dup)
+	}
+	s.name = b.String()
+	print("=== RUN   ")
+	s.printName()
+	println()
+	lastID = s.id
+	return true
+}
+
+// end records how s, t's subtest, ended.
+func (t *T) end(s *T) bool {
+	subs[s.slot].verdict = verdict(s)
+	if s.failed {
+		t.failed = true
+	}
+	return !s.failed
+}
+
+// named prints go test's "=== NAME" line ahead of a message where the last line
+// printed was another test's.
+func (t *T) named() {
+	if lastID != t.id {
+		print("=== NAME  ")
+		t.printName()
+		println()
+		lastID = t.id
+	}
+}
+
+// printName prints the test's full name, which Name may have cut.
+func (t *T) printName() {
+	if t.slot >= 0 {
+		printName(t.slot)
+	} else {
+		print(t.name)
+	}
+}
+
 // exit leaves the test: to RunTest on its cog, and on another the goroutine ends.
 func (t *T) exit()
 
-// RunTest runs f as the test name, with t its state. It is what the runner "ogo
+// RunTest runs f as the test name, with t its state, and prints what go test -v
+// prints of it, its subtests' results under its own. It is what the runner "ogo
 // test" generates calls; a test does not call it.
 func RunTest(t *T, name string, f func(*T)) {
-	t.name = name
+	start(t, name)
 	run(t, f)
+	finish(t)
+}
+
+func start(t *T, name string) {
+	ids++
+	t.id = ids
+	t.name = name
+	t.slot = -1
+	top = name
+	nsubs = 0
+	printf("=== RUN   %s\n", name)
+	lastID = t.id
+}
+
+func finish(t *T) {
+	report(verdict(t), 0)
+	println(t.name)
+	for i := 0; i < nsubs; i++ {
+		report(subs[i].verdict, subs[i].depth)
+		printName(i)
+		println()
+	}
+}
+
+func verdict(t *T) int {
+	switch {
+	case t.failed:
+		return 1
+	case t.skipped:
+		return 2
+	}
+	return 0
+}
+
+func report(v, depth int) {
+	for i := 0; i < depth; i++ {
+		print("    ")
+	}
+	switch v {
+	case 1:
+		print("--- FAIL: ")
+	case 2:
+		print("--- SKIP: ")
+	default:
+		print("--- PASS: ")
+	}
+}
+
+// printName prints a subtest's full name, its parents' first. It does not recurse,
+// nor does anything here a goroutine's message may call: a goroutine's stack is
+// bounded by its calls, and a recursion has no bound to read. And what every test
+// runs -- RunTest, the result lines, the NAME line -- uses no Builder, no range over
+// a string and no comparison of two: the backend keeps small helpers in the cog's
+// RAM, which a test near its limit has no room for. Only Run's own setup does, and
+// a program that runs no subtest leaves it out.
+func printName(i int) {
+	var chain [maxDepth]int
+	n := 0
+	for ; i >= 0 && n < maxDepth; i = subs[i].parent {
+		chain[n] = i
+		n++
+	}
+	print(top)
+	for n > 0 {
+		n--
+		j := chain[n]
+		print("/")
+		for k := 0; k < len(subs[j].name); {
+			lit, hx, next := rewriteUnit(subs[j].name, k)
+			print(lit)
+			if hx >= 0 {
+				print(hexDigits[hx>>4:hx>>4+1], hexDigits[hx&15:hx&15+1])
+			}
+			k = next
+		}
+		if d := subs[j].dup; d != 0 || len(subs[j].name) == 0 {
+			print("#")
+			if d < 10 {
+				print(0)
+			}
+			print(d)
+		}
+	}
+}
+
+const hexDigits = "0123456789abcdef"
+
+// rewriteUnit is go test's rewriting of a subtest's name at s[i]: what to write --
+// the byte itself, an underscore for a space, the start of an escape for a control
+// character, whose byte's two hex digits follow where hx is not -1 -- and where the
+// next unit begins. Byte by byte, a space or a control character beyond ASCII told
+// by its UTF-8.
+func rewriteUnit(s string, i int) (lit string, hx, next int) {
+	c := s[i]
+	if n := spaceLen(s, i); n != 0 {
+		return "_", -1, i + n
+	}
+	switch {
+	case c == 7:
+		return "\\a", -1, i + 1
+	case c == 8:
+		return "\\b", -1, i + 1
+	case c < 0x20 || c == 0x7f:
+		return "\\x", int(c), i + 1
+	case c == 0xc2 && i+1 < len(s) && s[i+1] >= 0x80 && s[i+1] < 0xa0:
+		return "\\u00", int(s[i+1]), i + 2
+	}
+	return s[i : i+1], -1, i + 1
+}
+
+// spaceLen is the length in bytes of a space at s[i] as go test's isSpace has one --
+// not the same as Unicode's Z class -- or 0.
+func spaceLen(s string, i int) int {
+	c := s[i]
+	switch {
+	case c == '\t' || c == '\n' || c == '\v' || c == '\f' || c == '\r' || c == ' ':
+		return 1
+	case c == 0xc2 && i+1 < len(s) && (s[i+1] == 0x85 || s[i+1] == 0xa0):
+		return 2
+	case c == 0xe1 && i+2 < len(s) && s[i+1] == 0x9a && s[i+2] == 0x80:
+		return 3
+	case c == 0xe2 && i+2 < len(s) && s[i+1] == 0x80 && (s[i+2] <= 0x8a || s[i+2] == 0xa8 || s[i+2] == 0xa9 || s[i+2] == 0xaf):
+		return 3
+	case c == 0xe2 && i+2 < len(s) && s[i+1] == 0x81 && s[i+2] == 0x9f:
+		return 3
+	case c == 0xe3 && i+2 < len(s) && s[i+1] == 0x80 && s[i+2] == 0x80:
+		return 3
+	}
+	return 0
+}
+
+// sameName reports whether two names are one once rewritten as go test writes them.
+func sameName(a, b string) bool {
+	x, y := NewBuilder(rewA[:]), NewBuilder(rewB[:])
+	rewrite(&x, a)
+	rewrite(&y, b)
+	return x.String() == y.String()
+}
+
+// rewrite writes a subtest's name as go test does (rewriteUnit).
+func rewrite(b *Builder, s string) {
+	for i := 0; i < len(s); {
+		lit, hx, next := rewriteUnit(s, i)
+		b.WriteString(lit)
+		if hx >= 0 {
+			b.WriteByte(hexDigits[hx>>4])
+			b.WriteByte(hexDigits[hx&15])
+		}
+		i = next
+	}
+}
+
+func writeInt(b *Builder, n int) {
+	var digits [10]byte
+	i := len(digits)
+	for {
+		i--
+		digits[i] = byte('0' + n%10)
+		n /= 10
+		if n == 0 {
+			break
+		}
+	}
+	for ; i < len(digits); i++ {
+		b.WriteByte(digits[i])
+	}
 }
 
 // run calls f(t) where exit returns to.

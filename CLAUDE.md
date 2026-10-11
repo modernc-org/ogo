@@ -687,8 +687,28 @@ still design-only.
   own header (emitTestingIntrinsic) -- with the hardware-stack save (see recover
   above); on another cog they end the goroutine as its trampoline does
   (ogo_test_goexit, after the pool, testingRuntimeC). The runner calls each test
-  through testing.RunTest and prints go test -v's `=== RUN` line. The host shim
-  models `_cogid` and a cog stopping itself for it. Not yet: subtests, Cleanup,
+  through testing.RunTest, which prints go test -v's `=== RUN` line and its result.
+  The host shim models `_cogid` and a cog stopping itself for it. SUBTESTS since
+  2026-10-11: t.Run is ordinary source in the testing package (a T per subtest in
+  Run's frame, its full name built in a buffer of its own, a table of 256 subtests a
+  test, printed under the test's result in the order they began, as go test -v
+  prints them, names rewritten and numbered `#01` as Go's), `=== NAME` written ahead
+  of a message where output turns to another test (named, which emitTestingCall
+  calls first), and run nesting -- a jump target and a hardware-stack save per depth,
+  nine, exit taking the innermost, t.Run on another cog a panic. The subtest's name
+  is kept in a package table, so the lifetime rules refuse one viewing a local
+  buffer where it is passed. Measured against go test -v's own output, on the host
+  and the board. **A library function a goroutine may call does not recurse**, met
+  again: the full name printed recursively made every goroutine calling t.Log a
+  recursion to the stack bound. And what EVERY test runs costs what it did: p2-11's
+  tests outgrew the cog by three registers, the Builder's and the rune decoder's
+  leaf temporaries (`_varNN`, ten of them) pulled in by the result lines -- so
+  RunTest, the result and NAME lines print byte by byte (rewriteUnit), only t.Run's
+  setup (begin) uses a Builder, which a program running no subtest leaves out, and
+  nothing of the testing package is inlined (inlineCandidate), its functions
+  standing on every test's call chain (TestBuildTestingFrugal reads the listing).
+  **A runtime shared by every program of a kind is held to its old register count**:
+  p2-11 builds near the cog's limit, and its tests are the measure. Not yet: -run selecting subtests (refused), Cleanup,
   benchmarks, a deferred or started t.Log (refused with the literal that does it),
   the deferred calls FailNow skips, and Helper's attribution of a line to the
   caller.
@@ -2932,7 +2952,9 @@ board natively and is carried since the same day (the regeneration of 2026-10-08
 under Code generation). Seeds 7001-7500 on a P2-EDGE with 15fa698 (2026-10-11, the
 generator unchanged): 454 passing (eight on a second load), 46 outgrowing a cog,
 none failing, warned about or refused by the backend. Seeds 7501-8000 with be2f790
-the same way: 446 passing (four on a second load), 54 outgrowing, none failing.
+the same way: 446 passing (four on a second load), 54 outgrowing, none failing. Seeds
+8001-8500 with 67448ad: 457 passing (four on a second load), 43 outgrowing, none
+failing.
 A parenthesised head, `(uint64(x)) >> 32`, was the rewrite's first miss
 (unparenExpr). And the family is bounded on the board: a value widened and then
 compared, masked, added, multiplied, or shifted by any other count is right, and so

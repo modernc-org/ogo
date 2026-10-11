@@ -47,6 +47,14 @@ shipped section tells a reader on that version that they have behaviour they do 
   whatever the types. So may print and println, `println(divmod(17, 5))`, each
   result printed as an argument, deferred too; printf is not, its format being the
   call's first result.
+- **Subtests, `t.Run`**, named, printed and reported as go test -v does: the
+  parent's name, a slash and the name given with its spaces as underscores, `#01`
+  after a name used again; `=== NAME` where output turns back to another test; the
+  results nested under the test's own when it ends. FailNow and SkipNow in a subtest
+  leave that subtest, and a subtest that fails fails its parent. A test runs 256
+  subtests at most, eight deep; a subtest's name is a constant or lives as long;
+  `t.Run` on another goroutine panics; and `ogo test -run` selects tests, a pattern
+  with a slash refused.
 - **An alias may name a type written out**, `type Buf = []byte`, `type Pair =
   struct{ X, Y int }`, `type Fn = func(int) int`, an array, a pointer or a
   channel, in a package, in a function or from another package: it is that type,

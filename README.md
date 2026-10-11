@@ -338,7 +338,10 @@ broken.
   errors as Go's do. `p2` wraps thirty-three intrinsics
   (pin control, smart pins including the ADC, timing and the clock, the serial line
   in both directions, the hardware locks, the cog's LUT RAM), `testing` is Go's `*testing.T`
-  for logging, failing and skipping (no subtests, `Cleanup` or benchmarks yet), and `unsafe` has `unsafe.Pointer`, `Add`, `Slice` and
+  for logging, failing and skipping, and subtests as `t.Run` runs and go test -v
+  prints them (no `Cleanup` or benchmarks yet; a subtest's name is a constant or lives
+  as long, a test runs 256 at most, eight deep, and `-run` selects tests, not
+  subtests), and `unsafe` has `unsafe.Pointer`, `Add`, `Slice` and
   `Sizeof`, `Alignof` and `Offsetof`, of the P2's layout. That is the whole of it. Your own packages do import and
   build; there is just little else to import yet.
 * **One function's locals live in cog RAM, and there are 480 longs of it** for all

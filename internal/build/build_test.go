@@ -420,6 +420,37 @@ func main() {
 	}
 }
 
+// TestBuildTestingFrugal holds the testing package's part of every test to what it
+// cost before subtests: what RunTest, a result line and a message's NAME line run
+// pulls in no Builder, no decoding of runes and no comparison of strings, whose
+// helpers took ten more of a cog's registers -- p2-11's tests, near the limit, no
+// longer built. Only t.Run's setup may, and a program running no subtest leaves it
+// out; one running one has them.
+func TestBuildTestingFrugal(t *testing.T) {
+	const src = `import "testing"
+
+func test(t *testing.T) {
+	t.Logf("n=%d", 3)
+	t.Error("x")
+}
+
+func main() {
+	var a testing.T
+	testing.RunTest(&a, "TestA", test)
+	println(a.Failed())
+}
+`
+	heavy := regexp.MustCompile(`(?m)^_ogo_(builder_WriteRune|builder_WriteString|decode_rune|string_eq)_\d+$`)
+	_, listing := buildProgram(t, src)
+	if got := heavy.FindAll(listing, -1); len(got) != 0 {
+		t.Errorf("a test running no subtest carries %q", got)
+	}
+	_, listing = buildProgram(t, strings.Replace(src, `t.Error("x")`, `t.Run("sub", func(t *testing.T) {})`, 1))
+	if got := heavy.FindAll(listing, -1); len(got) == 0 {
+		t.Errorf("the premise: a test running a subtest carries none of the helpers this test is about")
+	}
+}
+
 // TestBuildInlineFallback holds a build to not failing for having been made
 // faster. Every copy of an inlined function brings the registers of its locals to
 // where it lands, the backend gives none back between the arms of a switch, and a
