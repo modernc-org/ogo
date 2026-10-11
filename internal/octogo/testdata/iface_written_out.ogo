@@ -1,0 +1,104 @@
+// An interface WRITTEN OUT, `interface{ Code() int }`, is a type as a declared one
+// is: a value going into one is asked its method set, a value of one is asked its
+// methods, and a type switch on one asks its cases. The interface rules asked by
+// NAME, and such a type has none, so every row below was taken -- a method of
+// another signature among them, `var v interface{ Code() uint32 } = &e`, which
+// built for the target in silence.
+
+type E struct{ n int }
+
+func (e *E) Code() int { return e.n }
+
+func (e *E) Error() string { return "E" }
+
+type B struct{ n int }
+
+func (b *B) Code() uint32 { return uint32(b.n) }
+
+type N struct{ n int }
+
+func (n *N) Name() string { return "n" }
+
+var ge = E{3}
+var gb = B{4}
+var gn = N{5}
+
+type H struct{ c interface{ Code() int } }
+
+func take(v interface{ Code() int }) {}
+
+func give() interface{ Code() int } {
+	// ERROR "cannot use &gn \(variable of type \*N\) as interface{Code\(\) int} value in return statement: N does not implement interface{Code\(\) int} \(missing method Code\)"
+	return &gn
+}
+
+var gh = H{&ge}
+
+func run() {
+	// ERROR "B does not implement interface{Code\(\) int} \(wrong type for method Code\)"
+	var a interface{ Code() int } = &gb
+	// ERROR "N does not implement interface{Code\(\) int} \(missing method Code\)"
+	var b interface{ Code() int } = &gn
+	// ERROR "cannot use ge \(variable of type E\) as interface{Code\(\) int} value in variable declaration: an interface holds a pointer here; write &ge"
+	var c interface{ Code() int } = ge
+	// ERROR "in argument to take: B does not implement interface{Code\(\) int} \(wrong type for method Code\)"
+	take(&gb)
+	// ERROR "in struct literal: B does not implement"
+	h := H{c: &gb}
+	// ERROR "in array or slice literal: N does not implement"
+	xs := []interface{ Code() int }{&gn}
+	// ERROR "in append: B does not implement"
+	xs = append(xs, &gb)
+	ch := make(chan interface{ Code() int }, 1)
+	// ERROR "in send: B does not implement"
+	ch <- &gb
+	// ERROR "in comparison: N does not implement"
+	_ = a == &gn
+	// ERROR "in assignment: B does not implement"
+	c = &gb
+	var err error = &ge
+	// ERROR "cannot use err \(variable of type error\) as interface{Code\(\) int} value in assignment: error does not implement interface{Code\(\) int} \(missing method Code\)"
+	c = err
+	// ERROR "cannot use c \(variable of type interface{Code\(\) int}\) as error value in assignment: interface{Code\(\) int} does not implement error \(missing method Error\)"
+	err = c
+	switch x := c.(type) {
+	case *E:
+		_ = x
+	// ERROR "impossible type switch case: c.\(type\) case \*B: \*B does not implement interface{Code\(\) int} \(wrong type for method Code\)"
+	case *B:
+	// ERROR "impossible type switch case: c.\(type\) case \*N: \*N does not implement interface{Code\(\) int} \(missing method Code\)"
+	case *N:
+	}
+	switch x := err.(type) {
+	case interface{ Code() int }:
+		_ = x.Code()
+	// ERROR "duplicate case interface{Code\(\) int} in type switch"
+	case interface{ Code() int }:
+		// ERROR "interface{Code\(\) int} has no (field or )?method Nope"
+		_ = x.Nope()
+	}
+	// ERROR "too many arguments in call to Code"
+	_ = c.Code(1)
+	// ERROR "cannot use c.Code\(\) of type int as type string in variable declaration"
+	var s string = c.Code()
+	// ERROR "type interface{Code\(\) int} has no method Nope"
+	_ = h.c.Nope()
+	// ERROR "type interface{Code\(\) int} has no method Nope"
+	_ = give().Nope()
+	if u, ok := err.(interface{ Code() int }); ok {
+		// ERROR "too many arguments in call to Code"
+		_ = u.Code(2)
+	}
+	// ERROR "a conversion to an interface written out, interface{Code\(\) int}, is not supported yet"
+	_ = interface{ Code() int }(&ge)
+	// ERROR "a conversion to an interface written out, interface{}, is not supported yet; write any"
+	_ = interface{}(&ge)
+	// ERROR "cannot use type interface{} as a value"
+	_ = interface{}
+	_, _, _ = b, s, ch
+}
+
+func main() {
+	run()
+	_, _, _ = ge, gb, gn
+}

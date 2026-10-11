@@ -758,11 +758,11 @@ still design-only.
   signature-blind interface case (above), a `**T` table named `..._vt_T*`, a struct
   literal holding an array of interfaces refused (emitLitElement read the array
   field's ELEMENT type as the field's), and `fill(&le, &p)` with both local refused
-  (checkIntoArgsIn looked through `&p` as through a pointer `p`). One left open: a
-  type switch case of an interface WRITTEN OUT, `case interface{ Unwrap() error
-  }:`, is a syntax error (the assertion parses). The other, a callee storing through
-  an ASSERTION of an `any` parameter, was closed the next day with its row (A
-  RECEIVER STORED THROUGH A PARAMETER, below).
+  (checkIntoArgsIn looked through `&p` as through a pointer `p`). Two were left
+  open, each closed with its row: a callee storing through an ASSERTION of an `any`
+  parameter (A RECEIVER STORED THROUGH A PARAMETER, below), and a type switch case
+  of an interface WRITTEN OUT, `case interface{ Unwrap() error }:`, a syntax error
+  where the assertion parsed (AN INTERFACE WRITTEN OUT IS A TYPE, below).
 - **Functions implemented in Spin2** (2026-09-30, `internal/octogo/spin2.go`) are
   OctoGo's .s files, asked for by p2-11's VGA text console (Eric Smith's MIT
   `vga_tile_driver.spin2`, used as it is). A package may carry `.spin2` files; a
@@ -1439,7 +1439,8 @@ implementation restriction Go allows) -- and found one CRASH on a valid program:
 receive target asked nothing, and a type switch on the empty interface WRITTEN OUT,
 `var e interface{}`, had no interface name for its cases to be asked against
 (typeSwitchIface reads it as any). A non-empty interface written out as an
-operand's type is still asked nothing there. Sweeping the crash's row -- a constant
+operand's type was asked nothing there until 2026-10-11 (AN INTERFACE WRITTEN OUT
+IS A TYPE). Sweeping the crash's row -- a constant
 whose value is of another class than its type, or an untyped whole float, in every
 position wanting an integer (91 programs) -- found no more crashes and three rows:
 a literal KEY and an array LENGTH from `const K = 2.0` were refused (the emitter's
@@ -3012,6 +3013,36 @@ panicked on entering the select whatever else was ready, its offer asking on the
 way in, where Go's is a ready clause, chosen among the others -- 504 of 1000 Go runs
 panicked beside a ready receive: the standing offer's clause asks in its turn now
 (ogo_chan_sendclosed), as the gated one's trysend already did.
+
+**AN INTERFACE WRITTEN OUT IS A TYPE** (2026-10-11). `case interface{ Unwrap()
+error }:`, Go's errors.Is spelling, was a syntax error: a case is an Expression and
+Factor had no InterfaceType. Factor and HeaderFactor take `InterfaceType [
+CallSuffix [ FactorSuffix ] ]` now (egg's ambiguities still 10); the checker reads
+the case (caseIfaceLit, bound at the type written by typedVar) and the emitter
+mints its anonymous type (caseIfaceC, anonInterfaceType), so the case was an
+afternoon. The row behind it was not: every interface rule asks by NAME --
+interfaceMethodsNamed, implements, checkImplements -- and a type written out has
+none, so a value going into one was asked nothing in any position, a value OF one
+was asked nothing either, nor were its methods' calls or a type switch's cases on
+one. `var v interface{ Code() uint32 } = &e` for a `Code() int` built for the target
+in silence, as did `interface{ Code() }`; a missing method and a value where a
+pointer is held were the emitter's, in C's names. A written-out interface has a
+name now, Go's spelling, `interface{Code() int; Error() string}` (ifaceLitName),
+recorded with its type and scope where it is spelled (File.ifaceLits) and resolved
+by interfaceMethodsNamed, so each rule asking by name asks it -- handed over at the
+store sites only (ifaceTypeName, varIfaceLit: a declaration, an assignment, an
+argument, a return, a field, an element, an append, a send, a comparison) and NOT by
+typeNodeString, which every comparison of two types asks, so no other rule's verdict
+moved. Method calls on one (checkMethodCall, callResults, the walk's method step,
+checkCallResultMethod), a comma-ok variable of one (assertedLit) and a type switch
+on one (typeSwitchIface, the default clause's binding). Three grids against Go, 238
+programs, agree: 132 values into one (37 taken before), 66 type switches on one (12
+taken and 12 valid refused), 40 method calls (12 taken). The conversion
+`interface{ M() }(x)` parses with the case and is refused by the checker as not
+supported yet (reportIfaceLitValue): every reader of a conversion finds one by its
+callee's NAME (directCall, convChainHead, the lifetime readers), which this has
+none of; it crashed the constant folder until the folder took InterfaceType.
+**A rule asked by name is a row of every type that has none.**
 
 **A STRUCT HOLDING AN ARRAY IS COPIED, NEVER ASSIGNED** (2026-09-23). The target's C
 compiler copy-initializes and assigns one only at some SIZES -- "Unable to multiply

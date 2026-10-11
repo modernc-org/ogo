@@ -1229,6 +1229,19 @@
 // listing the types that do -- there is no run-time method lookup, only the same
 // table comparison a concrete case makes, once per type that qualifies.
 //
+// The interface may be written out, as Go's own errors.Is asks for a wrapper:
+//
+//	switch x := err.(type) {
+//	case interface{ Unwrap() error }: // x is of that type
+//		err = x.Unwrap()
+//	}
+//
+// An interface written out is a type wherever one is, a variable's, a field's or a
+// parameter's, and a value going into one is asked its method set as for a
+// declared one. A conversion to one, "interface{ M() }(x)", is not supported yet:
+// "any(x)" is the empty one's spelling, and a variable of the type, or the type
+// declared and named, the others'.
+//
 // An assertion is a value, so a suffix may be applied to it where it stands --
 // "e.(*P).foo()", "e.(*P).n", "e.(*P).xs[i]" -- and each is checked against the
 // ASSERTED type. That includes an assignment target, "e.(*P).n = 1", the assertion
@@ -1632,6 +1645,7 @@
 //		| "[" [ Expression | "..." ] "]" Type [ CompositeLit [ FactorSuffix ] | CallSuffix [ FactorSuffix ] ]
 //		| "chan" ( "<-" ArrowElemType | ChanElemType )
 //		| StructType CompositeLit [ FactorSuffix ]
+//		| InterfaceType [ CallSuffix [ FactorSuffix ] ]
 //		| FuncLiteral [ FactorSuffix ] .
 //	CompositeLit = "{" [ ElementList ] "}" .
 //	ElementList  = Element { "," Element } [ "," ] .
@@ -1794,6 +1808,7 @@
 //		| "[" [ Expression | "..." ] "]" Type [ CompositeLit [ FactorSuffix ] | CallSuffix [ FactorSuffix ] ]
 //		| "chan" ( "<-" ArrowElemType | ChanElemType )
 //		| StructType CompositeLit [ FactorSuffix ]
+//		| InterfaceType [ CallSuffix [ FactorSuffix ] ]
 //		| FuncLiteral [ FactorSuffix ] .
 //
 // A slice or array type may appear as a Factor so that the type argument such as

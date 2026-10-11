@@ -32337,6 +32337,12 @@ func (e *emitter) caseIfaceC(ex Node) (string, bool) {
 	if !isFac {
 		return "", false
 	}
+	// `case interface{ Unwrap() error }:` -- an interface written out, the
+	// anonymous type its method set names, as a variable declared of it has.
+	if kids := slices.Collect(it(fac.ast)); len(kids) == 1 && kids[0].sym == InterfaceType {
+		mn := e.anonInterfaceType(kids[0].ast)
+		return mn, mn != ""
+	}
 	qual, member, isQual := e.qualifiedFactor(fac.ast)
 	if !isQual {
 		return "", false

@@ -422,6 +422,86 @@ func main() {
 		want: "20 45 40\n",
 	},
 	{
+		// An interface written out: a type switch's case, `case interface{ Unwrap()
+		// error }:`, Go's errors.Is spelling and a syntax error until it was a
+		// Factor -- alone, binding the name at it, and beside nil -- and a variable,
+		// a field, an element and a call's result of one, their methods called.
+		name: "an interface written out as a type switch's case and as a type",
+		src: `type wrapped struct {
+	msg   string
+	inner error
+}
+
+func (w *wrapped) Error() string { return w.msg }
+
+func (w *wrapped) Unwrap() error { return w.inner }
+
+type leaf struct{ code int }
+
+func (l *leaf) Error() string { return "leaf" }
+
+func (l *leaf) Code() int { return l.code }
+
+var base = leaf{7}
+var mid = wrapped{"mid", &base}
+var top = wrapped{"top", &mid}
+
+// depth walks a chain of wrappers as Go's errors.Is does, by the method set.
+func depth(err error) int {
+	n := 0
+	for err != nil {
+		n++
+		switch x := err.(type) {
+		case interface{ Unwrap() error }:
+			err = x.Unwrap()
+		default:
+			err = nil
+		}
+	}
+	return n
+}
+
+// code finds the first error in the chain with a code.
+func code(err error) int {
+	for err != nil {
+		switch x := err.(type) {
+		case interface{ Code() int }:
+			return x.Code()
+		case interface{ Unwrap() error }, nil:
+			if x == nil {
+				return -1
+			}
+			err = x.(interface{ Unwrap() error }).Unwrap()
+		}
+	}
+	return -2
+}
+
+type holder struct {
+	c interface{ Code() int }
+}
+
+func give() interface{ Code() int } { return &base }
+
+var gh = holder{&base}
+
+func main() {
+	println(depth(&top), depth(&base), depth(nil))
+	println(code(&top), code(&mid), code(nil))
+	var v interface{ Code() int } = &base
+	xs := [2]interface{ Code() int }{&base, v}
+	println(v.Code(), xs[1].Code(), gh.c.Code(), give().Code())
+	var err error = &mid
+	if u, ok := err.(interface{ Unwrap() error }); ok {
+		println(u.Unwrap().Error())
+	}
+	var c interface{ Code() int } = v
+	println(c == v, c != nil)
+}
+`,
+		want: "3 1 0\n7 7 -2\n7 7 7 7\nleaf\ntrue true\n",
+	},
+	{
 		// A method storing its receiver through a parameter, `*p = m`, and a function
 		// storing a parameter through an assertion of an `any` one, `case **M:` among
 		// them -- with both sides of each store this frame's, which the lifetime

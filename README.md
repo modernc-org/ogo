@@ -463,8 +463,10 @@ something Go does not; any expression already of pointer type goes in as it stan
 so a constructor's result does, `var s Shape = New()`. One may be written where a type is wanted rather than
 declared with a name, `func measure(s interface{ area() int })`, and the empty one
 is spelled `any` as well; identity is by method set, so `any` and `interface{}` are
-one type. A conversion names the interface where the position does not, `Shape(&q)`
-or `any(&q)`, and builds the same two words the assignment does. A method may
+one type, and a type switch's case may be one written out, `case interface{ Unwrap()
+error }:`. A conversion names the interface where the position does not, `Shape(&q)`
+or `any(&q)`, and builds the same two words the assignment does; a conversion to one
+written out, `interface{ M() }(x)`, is not supported yet. A method may
 return several values, `Next() (int32, bool)`. A struct may hold one in a field, or
 embed one -- `struct{ error }` wraps a cause and passes as an `error` itself, the
 promoted call dispatching through whatever the field holds -- and a call through a

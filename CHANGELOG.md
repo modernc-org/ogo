@@ -31,9 +31,29 @@ shipped section tells a reader on that version that they have behaviour they do 
   interface, to `error`, to `any` or to a type implementing `error`, and a target
   `go vet` would refuse is refused where it is written. `Join` and `fmt.Errorf` are
   not provided, and `Unwrap() []error` may nest eight deep (DIFFERENCES.md).
+- **A type switch case may be an interface written out**, `case interface{ Unwrap()
+  error }:`, which is how Go's own errors.Is asks for a wrapper: it was a syntax
+  error, where the assertion `err.(interface{ Unwrap() error })` was taken. It
+  matches by method set as a case of a declared interface does, and a clause naming
+  it alone binds its name at that type. A conversion to an interface written out,
+  `interface{ M() }(x)`, parses with it and is refused as not supported yet;
+  `any(x)` is the empty one's spelling, and a variable of the type or a declared
+  interface the others'.
 
 ### Fixed
 
+- **A value going into an interface written out was asked nothing**, and neither
+  was a value of one: `var v interface{ Code() uint32 } = &e` for a `Code() int`
+  built for the target in silence, and so did `interface{ Code() }` for it, where Go
+  refuses both, "wrong type for method Code". A missing method, a value where an
+  interface holds a pointer, an `error` with no Code and a value of the interface
+  into an `error` reached the emitter, refused there in C's names. Each is Go's
+  refusal now, in a declaration, an assignment, an argument, a return, a field, an
+  element, an append, a send and a comparison. A method called on a variable, a
+  field, an element, a call's result or a comma-ok variable of one was asked
+  nothing either -- `v.Name(1)`, `var n int = v.Name()`, `v.Nope()` -- and a type
+  switch on one asked nothing of its cases, `case *B:` for a B whose Code is
+  another.
 - **What a call returns, with steps after it,** was asked nothing by the lifetime
   rules. `gbp = idH(&lh).c`, a pointer field read out of what a call hands back of
   a local, kept the address the local held where it outlives the function; so did a

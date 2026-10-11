@@ -185,11 +185,11 @@ func (s Symbol) String() string {
 var errorSets = [...][]Symbol{
 	{},
 	{TOK_003e, TOK_003c, TOK_007c007c, TOK_003e003d, TOK_003d003d, TOK_003c003d, TOK_00260026, TOK_0021003d},
+	{UnaryOp, FuncLiteral, Factor, UnaryExpr, Term, SimpleExpr, InterfaceType, StructType, string_lit, rune_lit, int_lit, identifier, float_lit, TOK_007e, TOK_005e, TOK_005d, TOK_005b, TOK_002d, TOK_002b, TOK_002a, TOK_0028, TOK_0026, TOK_0021, TOK_struct, TOK_interface, TOK_func, TOK_chan, TOK_003c002d, TOK_002e002e002e},
 	{ParamDecl, InterfaceType, StructType, Type, identifier, TOK_005b, TOK_002a, TOK_0029, TOK_struct, TOK_interface, TOK_func, TOK_chan, TOK_003c002d, TOK_002e002e002e},
 	{ParamDecl, InterfaceType, StructType, Type, identifier, TOK_005b, TOK_002a, TOK_struct, TOK_interface, TOK_func, TOK_chan, TOK_003c002d, TOK_002e002e002e},
 	{InterfaceType, StructType, Type, identifier, TOK_005b, TOK_002a, TOK_struct, TOK_interface, TOK_func, TOK_chan, TOK_003c002d, TOK_002e002e002e},
 	{InterfaceType, StructType, identifier, TOK_005b, TOK_002a, TOK_struct, TOK_interface, TOK_func, TOK_chan, TOK_003c002d, TOK_002e002e002e},
-	{UnaryOp, FuncLiteral, Factor, UnaryExpr, Term, SimpleExpr, StructType, string_lit, rune_lit, int_lit, identifier, float_lit, TOK_007e, TOK_005e, TOK_005d, TOK_005b, TOK_002d, TOK_002b, TOK_002a, TOK_0028, TOK_0026, TOK_0021, TOK_struct, TOK_func, TOK_chan, TOK_003c002d, TOK_002e002e002e},
 	{TOK_002c, TOK_002e002e002e},
 	{CallSuffix, Index, Selector, TOK_005b, TOK_003d, TOK_002e, TOK_002c, TOK_0028, TOK_003c002d, TOK_003a003d},
 	{TOK_005b, TOK_003d, TOK_002e, TOK_002c, TOK_0028, TOK_003c002d, TOK_003a003d},
@@ -200,7 +200,31 @@ var errorSets = [...][]Symbol{
 	{SelectStmt, SwitchStmt, IfStmt, AssignHead, EmptyStatement, FuncLiteral, TypeDecl, ConstDecl, VarDecl, Block, identifier, TOK_007b, TOK_003b, TOK_002a, TOK_0028, TOK_var, TOK_type, TOK_switch, TOK_select, TOK_return, TOK_if, TOK_goto, TOK_go, TOK_func, TOK_for, TOK_fallthrough, TOK_defer, TOK_continue, TOK_const, TOK_break, TOK_003c002d},
 	{SelectStmt, SwitchStmt, IfStmt, AssignHead, EmptyStatement, FuncLiteral, TypeDecl, ConstDecl, VarDecl, Block, identifier, TOK_007b, TOK_002a, TOK_0028, TOK_var, TOK_type, TOK_switch, TOK_select, TOK_return, TOK_if, TOK_goto, TOK_go, TOK_func, TOK_for, TOK_fallthrough, TOK_defer, TOK_continue, TOK_const, TOK_break, TOK_003c002d},
 	{identifier, TOK_007b, TOK_002a, TOK_0028, TOK_var, TOK_type, TOK_switch, TOK_select, TOK_return, TOK_if, TOK_goto, TOK_go, TOK_func, TOK_for, TOK_fallthrough, TOK_defer, TOK_continue, TOK_const, TOK_break, TOK_003c002d},
+	{UnaryOp, FuncLiteral, HeaderFactor, HeaderUnaryExpr, HeaderTerm, HeaderSimpleExpr, HeaderExpression, InterfaceType, StructType, string_lit, rune_lit, int_lit, identifier, float_lit, TOK_007e, TOK_007b, TOK_005e, TOK_005b, TOK_003b, TOK_002d, TOK_002b, TOK_002a, TOK_0028, TOK_0026, TOK_0021, TOK_struct, TOK_range, TOK_interface, TOK_func, TOK_chan, TOK_003c002d},
+	{UnaryOp, FuncLiteral, HeaderFactor, HeaderUnaryExpr, HeaderTerm, HeaderSimpleExpr, InterfaceType, StructType, string_lit, rune_lit, int_lit, identifier, float_lit, TOK_007e, TOK_005e, TOK_005b, TOK_003b, TOK_002d, TOK_002b, TOK_002a, TOK_0028, TOK_0026, TOK_0021, TOK_struct, TOK_range, TOK_interface, TOK_func, TOK_chan, TOK_003c002d},
+	{UnaryOp, FuncLiteral, HeaderFactor, HeaderUnaryExpr, HeaderTerm, HeaderSimpleExpr, HeaderExpression, InterfaceType, StructType, string_lit, rune_lit, int_lit, identifier, float_lit, TOK_007e, TOK_005e, TOK_005b, TOK_002d, TOK_002b, TOK_002a, TOK_0028, TOK_0026, TOK_0021, TOK_struct, TOK_range, TOK_interface, TOK_func, TOK_chan, TOK_003c002d},
+	{UnaryOp, FuncLiteral, HeaderFactor, HeaderUnaryExpr, HeaderTerm, HeaderSimpleExpr, InterfaceType, StructType, string_lit, rune_lit, int_lit, identifier, float_lit, TOK_007e, TOK_005e, TOK_005b, TOK_002d, TOK_002b, TOK_002a, TOK_0028, TOK_0026, TOK_0021, TOK_struct, TOK_range, TOK_interface, TOK_func, TOK_chan, TOK_003c002d},
 	{InterfaceType, StructType, identifier, TOK_005b, TOK_002a, TOK_type, TOK_struct, TOK_interface, TOK_func, TOK_chan, TOK_003c002d},
+	{UnaryOp, FuncLiteral, Factor, UnaryExpr, Term, SimpleExpr, Expression, InterfaceType, StructType, string_lit, rune_lit, int_lit, identifier, float_lit, TOK_007e, TOK_005e, TOK_005b, TOK_002d, TOK_002b, TOK_002a, TOK_0029, TOK_0028, TOK_0026, TOK_0021, TOK_struct, TOK_interface, TOK_func, TOK_chan, TOK_003c002d},
+	{UnaryOp, FuncLiteral, Factor, UnaryExpr, Term, SimpleExpr, InterfaceType, StructType, string_lit, rune_lit, int_lit, identifier, float_lit, TOK_007e, TOK_005e, TOK_005d, TOK_005b, TOK_003a, TOK_002d, TOK_002b, TOK_002a, TOK_0028, TOK_0026, TOK_0021, TOK_struct, TOK_interface, TOK_func, TOK_chan, TOK_003c002d},
+	{UnaryOp, FuncLiteral, Factor, UnaryExpr, Term, SimpleExpr, InterfaceType, StructType, string_lit, rune_lit, int_lit, identifier, float_lit, TOK_007e, TOK_005e, TOK_005b, TOK_003a, TOK_002d, TOK_002b, TOK_002a, TOK_0028, TOK_0026, TOK_0021, TOK_struct, TOK_interface, TOK_func, TOK_chan, TOK_003c002d},
+	{SwitchTag, UnaryOp, FuncLiteral, HeaderFactor, HeaderUnaryExpr, HeaderTerm, HeaderSimpleExpr, HeaderExpression, InterfaceType, StructType, string_lit, rune_lit, int_lit, identifier, float_lit, TOK_007e, TOK_007b, TOK_005e, TOK_005b, TOK_003b, TOK_002d, TOK_002b, TOK_002a, TOK_0028, TOK_0026, TOK_0021, TOK_struct, TOK_interface, TOK_func, TOK_chan, TOK_003c002d},
+	{UnaryOp, FuncLiteral, HeaderFactor, HeaderUnaryExpr, HeaderTerm, HeaderSimpleExpr, InterfaceType, StructType, string_lit, rune_lit, int_lit, identifier, float_lit, TOK_007e, TOK_005e, TOK_005b, TOK_003b, TOK_002d, TOK_002b, TOK_002a, TOK_0028, TOK_0026, TOK_0021, TOK_struct, TOK_interface, TOK_func, TOK_chan, TOK_003c002d},
+	{UnaryOp, FuncLiteral, Factor, UnaryExpr, Term, SimpleExpr, InterfaceType, StructType, string_lit, rune_lit, int_lit, identifier, float_lit, TOK_007e, TOK_005e, TOK_005d, TOK_005b, TOK_002d, TOK_002b, TOK_002a, TOK_0028, TOK_0026, TOK_0021, TOK_struct, TOK_interface, TOK_func, TOK_chan, TOK_003c002d},
+	{UnaryOp, FuncLiteral, Element, CompositeLit, Factor, UnaryExpr, Term, SimpleExpr, Expression, InterfaceType, StructType, string_lit, rune_lit, int_lit, identifier, float_lit, TOK_007e, TOK_007d, TOK_007b, TOK_005e, TOK_005b, TOK_002d, TOK_002b, TOK_002a, TOK_0028, TOK_0026, TOK_0021, TOK_struct, TOK_interface, TOK_func, TOK_chan, TOK_003c002d},
+	{UnaryOp, FuncLiteral, CompositeLit, Factor, UnaryExpr, Term, SimpleExpr, Expression, InterfaceType, StructType, string_lit, rune_lit, int_lit, identifier, float_lit, TOK_007e, TOK_007b, TOK_005e, TOK_005b, TOK_002d, TOK_002b, TOK_002a, TOK_0028, TOK_0026, TOK_0021, TOK_struct, TOK_interface, TOK_func, TOK_chan, TOK_003c002d},
+	{UnaryOp, FuncLiteral, Factor, UnaryExpr, Term, SimpleExpr, InterfaceType, StructType, string_lit, rune_lit, int_lit, identifier, float_lit, TOK_007e, TOK_007b, TOK_005e, TOK_005b, TOK_002d, TOK_002b, TOK_002a, TOK_0028, TOK_0026, TOK_0021, TOK_struct, TOK_interface, TOK_func, TOK_chan, TOK_003c002d},
+	{UnaryOp, FuncLiteral, Factor, UnaryExpr, Term, SimpleExpr, Expression, InterfaceType, StructType, string_lit, rune_lit, int_lit, identifier, float_lit, TOK_007e, TOK_005e, TOK_005b, TOK_002d, TOK_002b, TOK_002a, TOK_0028, TOK_0026, TOK_0021, TOK_struct, TOK_interface, TOK_func, TOK_chan, TOK_003c002d},
+	{UnaryOp, FuncLiteral, Factor, UnaryExpr, Term, SimpleExpr, InterfaceType, StructType, string_lit, rune_lit, int_lit, identifier, float_lit, TOK_007e, TOK_005e, TOK_005b, TOK_002d, TOK_002b, TOK_002a, TOK_0028, TOK_0026, TOK_0021, TOK_struct, TOK_interface, TOK_func, TOK_chan, TOK_003c002d},
+	{UnaryOp, FuncLiteral, Factor, UnaryExpr, Term, InterfaceType, StructType, string_lit, rune_lit, int_lit, identifier, float_lit, TOK_007e, TOK_005e, TOK_005b, TOK_002d, TOK_002b, TOK_002a, TOK_0028, TOK_0026, TOK_0021, TOK_struct, TOK_interface, TOK_func, TOK_chan, TOK_003c002d},
+	{UnaryOp, FuncLiteral, Factor, UnaryExpr, InterfaceType, StructType, string_lit, rune_lit, int_lit, identifier, float_lit, TOK_007e, TOK_005e, TOK_005b, TOK_002d, TOK_002b, TOK_002a, TOK_0028, TOK_0026, TOK_0021, TOK_struct, TOK_interface, TOK_func, TOK_chan, TOK_003c002d},
+	{UnaryOp, FuncLiteral, Factor, InterfaceType, StructType, string_lit, rune_lit, int_lit, identifier, float_lit, TOK_007e, TOK_005e, TOK_005b, TOK_002d, TOK_002b, TOK_002a, TOK_0028, TOK_0026, TOK_0021, TOK_struct, TOK_interface, TOK_func, TOK_chan, TOK_003c002d},
+	{UnaryOp, FuncLiteral, HeaderFactor, HeaderUnaryExpr, HeaderTerm, HeaderSimpleExpr, HeaderExpression, InterfaceType, StructType, string_lit, rune_lit, int_lit, identifier, float_lit, TOK_007e, TOK_005e, TOK_005b, TOK_002d, TOK_002b, TOK_002a, TOK_0028, TOK_0026, TOK_0021, TOK_struct, TOK_interface, TOK_func, TOK_chan, TOK_003c002d},
+	{UnaryOp, FuncLiteral, HeaderFactor, HeaderUnaryExpr, HeaderTerm, HeaderSimpleExpr, InterfaceType, StructType, string_lit, rune_lit, int_lit, identifier, float_lit, TOK_007e, TOK_005e, TOK_005b, TOK_002d, TOK_002b, TOK_002a, TOK_0028, TOK_0026, TOK_0021, TOK_struct, TOK_interface, TOK_func, TOK_chan, TOK_003c002d},
+	{UnaryOp, FuncLiteral, HeaderFactor, HeaderUnaryExpr, HeaderTerm, InterfaceType, StructType, string_lit, rune_lit, int_lit, identifier, float_lit, TOK_007e, TOK_005e, TOK_005b, TOK_002d, TOK_002b, TOK_002a, TOK_0028, TOK_0026, TOK_0021, TOK_struct, TOK_interface, TOK_func, TOK_chan, TOK_003c002d},
+	{UnaryOp, FuncLiteral, HeaderFactor, HeaderUnaryExpr, InterfaceType, StructType, string_lit, rune_lit, int_lit, identifier, float_lit, TOK_007e, TOK_005e, TOK_005b, TOK_002d, TOK_002b, TOK_002a, TOK_0028, TOK_0026, TOK_0021, TOK_struct, TOK_interface, TOK_func, TOK_chan, TOK_003c002d},
+	{UnaryOp, FuncLiteral, HeaderFactor, InterfaceType, StructType, string_lit, rune_lit, int_lit, identifier, float_lit, TOK_007e, TOK_005e, TOK_005b, TOK_002d, TOK_002b, TOK_002a, TOK_0028, TOK_0026, TOK_0021, TOK_struct, TOK_interface, TOK_func, TOK_chan, TOK_003c002d},
+	{FuncLiteral, InterfaceType, StructType, string_lit, rune_lit, int_lit, identifier, float_lit, TOK_007e, TOK_005e, TOK_005b, TOK_002d, TOK_002b, TOK_002a, TOK_0028, TOK_0026, TOK_0021, TOK_struct, TOK_interface, TOK_func, TOK_chan, TOK_003c002d},
 	{InterfaceType, StructType, identifier, TOK_005b, TOK_002a, TOK_0028, TOK_struct, TOK_interface, TOK_func, TOK_chan, TOK_003c002d},
 	{identifier, TOK_005b, TOK_002a, TOK_0028, TOK_struct, TOK_interface, TOK_func, TOK_chan, TOK_003c002d},
 	{InterfaceType, StructType, identifier, TOK_005b, TOK_002e, TOK_002c, TOK_002a, TOK_struct, TOK_interface, TOK_func, TOK_chan, TOK_003c002d},
@@ -208,30 +232,6 @@ var errorSets = [...][]Symbol{
 	{InterfaceType, StructType, identifier, TOK_005b, TOK_003d, TOK_002a, TOK_struct, TOK_interface, TOK_func, TOK_chan, TOK_003c002d},
 	{InterfaceType, StructType, identifier, TOK_005b, TOK_002a, TOK_struct, TOK_interface, TOK_func, TOK_chan, TOK_003c002d},
 	{identifier, TOK_005b, TOK_002a, TOK_struct, TOK_interface, TOK_func, TOK_chan, TOK_003c002d},
-	{UnaryOp, FuncLiteral, HeaderFactor, HeaderUnaryExpr, HeaderTerm, HeaderSimpleExpr, HeaderExpression, StructType, string_lit, rune_lit, int_lit, identifier, float_lit, TOK_007e, TOK_007b, TOK_005e, TOK_005b, TOK_003b, TOK_002d, TOK_002b, TOK_002a, TOK_0028, TOK_0026, TOK_0021, TOK_struct, TOK_range, TOK_func, TOK_chan, TOK_003c002d},
-	{UnaryOp, FuncLiteral, HeaderFactor, HeaderUnaryExpr, HeaderTerm, HeaderSimpleExpr, StructType, string_lit, rune_lit, int_lit, identifier, float_lit, TOK_007e, TOK_005e, TOK_005b, TOK_003b, TOK_002d, TOK_002b, TOK_002a, TOK_0028, TOK_0026, TOK_0021, TOK_struct, TOK_range, TOK_func, TOK_chan, TOK_003c002d},
-	{UnaryOp, FuncLiteral, HeaderFactor, HeaderUnaryExpr, HeaderTerm, HeaderSimpleExpr, HeaderExpression, StructType, string_lit, rune_lit, int_lit, identifier, float_lit, TOK_007e, TOK_005e, TOK_005b, TOK_002d, TOK_002b, TOK_002a, TOK_0028, TOK_0026, TOK_0021, TOK_struct, TOK_range, TOK_func, TOK_chan, TOK_003c002d},
-	{UnaryOp, FuncLiteral, HeaderFactor, HeaderUnaryExpr, HeaderTerm, HeaderSimpleExpr, StructType, string_lit, rune_lit, int_lit, identifier, float_lit, TOK_007e, TOK_005e, TOK_005b, TOK_002d, TOK_002b, TOK_002a, TOK_0028, TOK_0026, TOK_0021, TOK_struct, TOK_range, TOK_func, TOK_chan, TOK_003c002d},
-	{UnaryOp, FuncLiteral, Factor, UnaryExpr, Term, SimpleExpr, Expression, StructType, string_lit, rune_lit, int_lit, identifier, float_lit, TOK_007e, TOK_005e, TOK_005b, TOK_002d, TOK_002b, TOK_002a, TOK_0029, TOK_0028, TOK_0026, TOK_0021, TOK_struct, TOK_func, TOK_chan, TOK_003c002d},
-	{UnaryOp, FuncLiteral, Factor, UnaryExpr, Term, SimpleExpr, StructType, string_lit, rune_lit, int_lit, identifier, float_lit, TOK_007e, TOK_005e, TOK_005d, TOK_005b, TOK_003a, TOK_002d, TOK_002b, TOK_002a, TOK_0028, TOK_0026, TOK_0021, TOK_struct, TOK_func, TOK_chan, TOK_003c002d},
-	{UnaryOp, FuncLiteral, Factor, UnaryExpr, Term, SimpleExpr, StructType, string_lit, rune_lit, int_lit, identifier, float_lit, TOK_007e, TOK_005e, TOK_005b, TOK_003a, TOK_002d, TOK_002b, TOK_002a, TOK_0028, TOK_0026, TOK_0021, TOK_struct, TOK_func, TOK_chan, TOK_003c002d},
-	{SwitchTag, UnaryOp, FuncLiteral, HeaderFactor, HeaderUnaryExpr, HeaderTerm, HeaderSimpleExpr, HeaderExpression, StructType, string_lit, rune_lit, int_lit, identifier, float_lit, TOK_007e, TOK_007b, TOK_005e, TOK_005b, TOK_003b, TOK_002d, TOK_002b, TOK_002a, TOK_0028, TOK_0026, TOK_0021, TOK_struct, TOK_func, TOK_chan, TOK_003c002d},
-	{UnaryOp, FuncLiteral, HeaderFactor, HeaderUnaryExpr, HeaderTerm, HeaderSimpleExpr, StructType, string_lit, rune_lit, int_lit, identifier, float_lit, TOK_007e, TOK_005e, TOK_005b, TOK_003b, TOK_002d, TOK_002b, TOK_002a, TOK_0028, TOK_0026, TOK_0021, TOK_struct, TOK_func, TOK_chan, TOK_003c002d},
-	{UnaryOp, FuncLiteral, Factor, UnaryExpr, Term, SimpleExpr, StructType, string_lit, rune_lit, int_lit, identifier, float_lit, TOK_007e, TOK_005e, TOK_005d, TOK_005b, TOK_002d, TOK_002b, TOK_002a, TOK_0028, TOK_0026, TOK_0021, TOK_struct, TOK_func, TOK_chan, TOK_003c002d},
-	{UnaryOp, FuncLiteral, Element, CompositeLit, Factor, UnaryExpr, Term, SimpleExpr, Expression, StructType, string_lit, rune_lit, int_lit, identifier, float_lit, TOK_007e, TOK_007d, TOK_007b, TOK_005e, TOK_005b, TOK_002d, TOK_002b, TOK_002a, TOK_0028, TOK_0026, TOK_0021, TOK_struct, TOK_func, TOK_chan, TOK_003c002d},
-	{UnaryOp, FuncLiteral, CompositeLit, Factor, UnaryExpr, Term, SimpleExpr, Expression, StructType, string_lit, rune_lit, int_lit, identifier, float_lit, TOK_007e, TOK_007b, TOK_005e, TOK_005b, TOK_002d, TOK_002b, TOK_002a, TOK_0028, TOK_0026, TOK_0021, TOK_struct, TOK_func, TOK_chan, TOK_003c002d},
-	{UnaryOp, FuncLiteral, Factor, UnaryExpr, Term, SimpleExpr, StructType, string_lit, rune_lit, int_lit, identifier, float_lit, TOK_007e, TOK_007b, TOK_005e, TOK_005b, TOK_002d, TOK_002b, TOK_002a, TOK_0028, TOK_0026, TOK_0021, TOK_struct, TOK_func, TOK_chan, TOK_003c002d},
-	{UnaryOp, FuncLiteral, Factor, UnaryExpr, Term, SimpleExpr, Expression, StructType, string_lit, rune_lit, int_lit, identifier, float_lit, TOK_007e, TOK_005e, TOK_005b, TOK_002d, TOK_002b, TOK_002a, TOK_0028, TOK_0026, TOK_0021, TOK_struct, TOK_func, TOK_chan, TOK_003c002d},
-	{UnaryOp, FuncLiteral, Factor, UnaryExpr, Term, SimpleExpr, StructType, string_lit, rune_lit, int_lit, identifier, float_lit, TOK_007e, TOK_005e, TOK_005b, TOK_002d, TOK_002b, TOK_002a, TOK_0028, TOK_0026, TOK_0021, TOK_struct, TOK_func, TOK_chan, TOK_003c002d},
-	{UnaryOp, FuncLiteral, Factor, UnaryExpr, Term, StructType, string_lit, rune_lit, int_lit, identifier, float_lit, TOK_007e, TOK_005e, TOK_005b, TOK_002d, TOK_002b, TOK_002a, TOK_0028, TOK_0026, TOK_0021, TOK_struct, TOK_func, TOK_chan, TOK_003c002d},
-	{UnaryOp, FuncLiteral, Factor, UnaryExpr, StructType, string_lit, rune_lit, int_lit, identifier, float_lit, TOK_007e, TOK_005e, TOK_005b, TOK_002d, TOK_002b, TOK_002a, TOK_0028, TOK_0026, TOK_0021, TOK_struct, TOK_func, TOK_chan, TOK_003c002d},
-	{UnaryOp, FuncLiteral, Factor, StructType, string_lit, rune_lit, int_lit, identifier, float_lit, TOK_007e, TOK_005e, TOK_005b, TOK_002d, TOK_002b, TOK_002a, TOK_0028, TOK_0026, TOK_0021, TOK_struct, TOK_func, TOK_chan, TOK_003c002d},
-	{UnaryOp, FuncLiteral, HeaderFactor, HeaderUnaryExpr, HeaderTerm, HeaderSimpleExpr, HeaderExpression, StructType, string_lit, rune_lit, int_lit, identifier, float_lit, TOK_007e, TOK_005e, TOK_005b, TOK_002d, TOK_002b, TOK_002a, TOK_0028, TOK_0026, TOK_0021, TOK_struct, TOK_func, TOK_chan, TOK_003c002d},
-	{UnaryOp, FuncLiteral, HeaderFactor, HeaderUnaryExpr, HeaderTerm, HeaderSimpleExpr, StructType, string_lit, rune_lit, int_lit, identifier, float_lit, TOK_007e, TOK_005e, TOK_005b, TOK_002d, TOK_002b, TOK_002a, TOK_0028, TOK_0026, TOK_0021, TOK_struct, TOK_func, TOK_chan, TOK_003c002d},
-	{UnaryOp, FuncLiteral, HeaderFactor, HeaderUnaryExpr, HeaderTerm, StructType, string_lit, rune_lit, int_lit, identifier, float_lit, TOK_007e, TOK_005e, TOK_005b, TOK_002d, TOK_002b, TOK_002a, TOK_0028, TOK_0026, TOK_0021, TOK_struct, TOK_func, TOK_chan, TOK_003c002d},
-	{UnaryOp, FuncLiteral, HeaderFactor, HeaderUnaryExpr, StructType, string_lit, rune_lit, int_lit, identifier, float_lit, TOK_007e, TOK_005e, TOK_005b, TOK_002d, TOK_002b, TOK_002a, TOK_0028, TOK_0026, TOK_0021, TOK_struct, TOK_func, TOK_chan, TOK_003c002d},
-	{UnaryOp, FuncLiteral, HeaderFactor, StructType, string_lit, rune_lit, int_lit, identifier, float_lit, TOK_007e, TOK_005e, TOK_005b, TOK_002d, TOK_002b, TOK_002a, TOK_0028, TOK_0026, TOK_0021, TOK_struct, TOK_func, TOK_chan, TOK_003c002d},
-	{FuncLiteral, StructType, string_lit, rune_lit, int_lit, identifier, float_lit, TOK_007e, TOK_005e, TOK_005b, TOK_002d, TOK_002b, TOK_002a, TOK_0028, TOK_0026, TOK_0021, TOK_struct, TOK_func, TOK_chan, TOK_003c002d},
 	{TOK_007e, TOK_005e, TOK_002d, TOK_002b, TOK_002a, TOK_0026, TOK_0021, TOK_003c002d},
 	{AssignHead, identifier, TOK_002a, TOK_0028, TOK_003c002d},
 	{identifier, TOK_002a, TOK_0028, TOK_003c002d},
@@ -248,7 +248,7 @@ var errorSets = [...][]Symbol{
 	{CommHead, TOK_007d, TOK_default, TOK_case},
 	{TOK_default, TOK_case},
 	{identifier, TOK_005b, TOK_002a, TOK_0028, TOK_struct, TOK_interface, TOK_func, TOK_chan},
-	{string_lit, rune_lit, int_lit, identifier, float_lit, TOK_005b, TOK_0028, TOK_struct, TOK_func, TOK_chan},
+	{string_lit, rune_lit, int_lit, identifier, float_lit, TOK_005b, TOK_0028, TOK_struct, TOK_interface, TOK_func, TOK_chan},
 	{TOK_chan},
 	{FuncDecl, TypeDecl, ConstDecl, VarDecl, TOK_var, TOK_type, TOK_import, TOK_func, TOK_const},
 	{FuncDecl, TypeDecl, ConstDecl, VarDecl, TOK_var, TOK_type, TOK_func, TOK_const},
@@ -5421,7 +5421,7 @@ state1:
 //	ArgumentList = Expression { "," Expression } [ "..." ] [ "," ] .
 //
 //	State 0
-//		on  "<-", "chan", "func", "struct", '!', '&', '(', '*', '+', '-', '[', '^', '~', float_lit, identifier, int_lit, rune_lit, string_lit
+//		on  "<-", "chan", "func", "interface", "struct", '!', '&', '(', '*', '+', '-', '[', '^', '~', float_lit, identifier, int_lit, rune_lit, string_lit
 //			call Expression and goto state 1
 //	State 1
 //		Accept
@@ -5437,7 +5437,7 @@ state1:
 //		Accept
 //	State 4
 //		Accept
-//		on  "<-", "chan", "func", "struct", '!', '&', '(', '*', '+', '-', '[', '^', '~', float_lit, identifier, int_lit, rune_lit, string_lit
+//		on  "<-", "chan", "func", "interface", "struct", '!', '&', '(', '*', '+', '-', '[', '^', '~', float_lit, identifier, int_lit, rune_lit, string_lit
 //			call Expression and goto state 1
 //
 // ArgumentList is used internally from Parse.
@@ -5445,9 +5445,9 @@ func (p *Parser) ArgumentList() (r []int32) {
 	accept, errorSet := false, 0
 	r = append(p.get(), -int32(ArgumentList), 0)
 	// state0:
-	accept, errorSet = false, 39
+	accept, errorSet = false, 32
 	switch Symbol(p.tok.Ch) {
-	case TOK_003c002d, TOK_chan, TOK_func, TOK_struct, TOK_0021, TOK_0026, TOK_0028, TOK_002a, TOK_002b, TOK_002d, TOK_005b, TOK_005e, TOK_007e, float_lit, identifier, int_lit, rune_lit, string_lit:
+	case TOK_003c002d, TOK_chan, TOK_func, TOK_interface, TOK_struct, TOK_0021, TOK_0026, TOK_0028, TOK_002a, TOK_002b, TOK_002d, TOK_005b, TOK_005e, TOK_007e, float_lit, identifier, int_lit, rune_lit, string_lit:
 		r = p.add(r, p.Expression())
 		goto state1
 	}
@@ -5475,9 +5475,9 @@ state3:
 	accept, errorSet = true, 0
 	return p.stop(r, accept, errorSet)
 state4:
-	accept, errorSet = true, 39
+	accept, errorSet = true, 32
 	switch Symbol(p.tok.Ch) {
-	case TOK_003c002d, TOK_chan, TOK_func, TOK_struct, TOK_0021, TOK_0026, TOK_0028, TOK_002a, TOK_002b, TOK_002d, TOK_005b, TOK_005e, TOK_007e, float_lit, identifier, int_lit, rune_lit, string_lit:
+	case TOK_003c002d, TOK_chan, TOK_func, TOK_interface, TOK_struct, TOK_0021, TOK_0026, TOK_0028, TOK_002a, TOK_002b, TOK_002d, TOK_005b, TOK_005e, TOK_007e, float_lit, identifier, int_lit, rune_lit, string_lit:
 		r = p.add(r, p.Expression())
 		goto state1
 	}
@@ -5543,7 +5543,7 @@ state4:
 //	State 9
 //		on  ']'
 //			shift and goto state 8
-//		on  "<-", "chan", "func", "struct", '!', '&', '(', '*', '+', '-', '[', '^', '~', float_lit, identifier, int_lit, rune_lit, string_lit
+//		on  "<-", "chan", "func", "interface", "struct", '!', '&', '(', '*', '+', '-', '[', '^', '~', float_lit, identifier, int_lit, rune_lit, string_lit
 //			call Expression and goto state 10
 //	State 10
 //		on  ']'
@@ -5561,7 +5561,7 @@ func (p *Parser) ArrowElemType() (r []int32) {
 	accept, errorSet := false, 0
 	r = append(p.get(), -int32(ArrowElemType), 0)
 	// state0:
-	accept, errorSet = false, 19
+	accept, errorSet = false, 43
 	switch Symbol(p.tok.Ch) {
 	case identifier:
 		r = append(r, p.shift())
@@ -5601,7 +5601,7 @@ state1:
 	}
 	return p.stop(r, accept, errorSet)
 state2:
-	accept, errorSet = false, 18
+	accept, errorSet = false, 42
 	switch Symbol(p.tok.Ch) {
 	case TOK_003c002d, TOK_chan, TOK_func, TOK_interface, TOK_struct, TOK_0028, TOK_002a, TOK_005b, identifier:
 		r = p.add(r, p.ArrowElemType())
@@ -5612,7 +5612,7 @@ state3:
 	accept, errorSet = true, 0
 	return p.stop(r, accept, errorSet)
 state4:
-	accept, errorSet = false, 18
+	accept, errorSet = false, 42
 	switch Symbol(p.tok.Ch) {
 	case TOK_003c002d:
 		r = append(r, p.shift())
@@ -5631,7 +5631,7 @@ state5:
 	}
 	return p.stop(r, accept, errorSet)
 state6:
-	accept, errorSet = false, 23
+	accept, errorSet = false, 47
 	switch Symbol(p.tok.Ch) {
 	case TOK_003c002d, TOK_chan, TOK_func, TOK_interface, TOK_struct, TOK_002a, TOK_005b, identifier:
 		r = p.add(r, p.Type())
@@ -5647,7 +5647,7 @@ state7:
 	}
 	return p.stop(r, accept, errorSet)
 state8:
-	accept, errorSet = false, 23
+	accept, errorSet = false, 47
 	switch Symbol(p.tok.Ch) {
 	case TOK_003c002d, TOK_chan, TOK_func, TOK_interface, TOK_struct, TOK_002a, TOK_005b, identifier:
 		r = p.add(r, p.Type())
@@ -5655,12 +5655,12 @@ state8:
 	}
 	return p.stop(r, accept, errorSet)
 state9:
-	accept, errorSet = false, 34
+	accept, errorSet = false, 27
 	switch Symbol(p.tok.Ch) {
 	case TOK_005d:
 		r = append(r, p.shift())
 		goto state8
-	case TOK_003c002d, TOK_chan, TOK_func, TOK_struct, TOK_0021, TOK_0026, TOK_0028, TOK_002a, TOK_002b, TOK_002d, TOK_005b, TOK_005e, TOK_007e, float_lit, identifier, int_lit, rune_lit, string_lit:
+	case TOK_003c002d, TOK_chan, TOK_func, TOK_interface, TOK_struct, TOK_0021, TOK_0026, TOK_0028, TOK_002a, TOK_002b, TOK_002d, TOK_005b, TOK_005e, TOK_007e, float_lit, identifier, int_lit, rune_lit, string_lit:
 		r = p.add(r, p.Expression())
 		goto state10
 	}
@@ -5703,7 +5703,7 @@ state12:
 //		on  '*'
 //			shift and goto state 4
 //	State 1
-//		on  "<-", "chan", "func", "struct", '!', '&', '(', '*', '+', '-', '[', '^', '~', float_lit, identifier, int_lit, rune_lit, string_lit
+//		on  "<-", "chan", "func", "interface", "struct", '!', '&', '(', '*', '+', '-', '[', '^', '~', float_lit, identifier, int_lit, rune_lit, string_lit
 //			call Expression and goto state 2
 //	State 2
 //		on  ')'
@@ -5737,9 +5737,9 @@ func (p *Parser) AssignHead() (r []int32) {
 	}
 	return p.stop(r, accept, errorSet)
 state1:
-	accept, errorSet = false, 39
+	accept, errorSet = false, 32
 	switch Symbol(p.tok.Ch) {
-	case TOK_003c002d, TOK_chan, TOK_func, TOK_struct, TOK_0021, TOK_0026, TOK_0028, TOK_002a, TOK_002b, TOK_002d, TOK_005b, TOK_005e, TOK_007e, float_lit, identifier, int_lit, rune_lit, string_lit:
+	case TOK_003c002d, TOK_chan, TOK_func, TOK_interface, TOK_struct, TOK_0021, TOK_0026, TOK_0028, TOK_002a, TOK_002b, TOK_002d, TOK_005b, TOK_005e, TOK_007e, float_lit, identifier, int_lit, rune_lit, string_lit:
 		r = p.add(r, p.Expression())
 		goto state2
 	}
@@ -5874,7 +5874,7 @@ state3:
 //	State 1
 //		on  ')'
 //			shift and goto state 2
-//		on  "<-", "chan", "func", "struct", '!', '&', '(', '*', '+', '-', '[', '^', '~', float_lit, identifier, int_lit, rune_lit, string_lit
+//		on  "<-", "chan", "func", "interface", "struct", '!', '&', '(', '*', '+', '-', '[', '^', '~', float_lit, identifier, int_lit, rune_lit, string_lit
 //			call ArgumentList and goto state 3
 //	State 2
 //		Accept
@@ -5895,12 +5895,12 @@ func (p *Parser) CallSuffix() (r []int32) {
 	}
 	return p.stop(r, accept, errorSet)
 state1:
-	accept, errorSet = false, 29
+	accept, errorSet = false, 22
 	switch Symbol(p.tok.Ch) {
 	case TOK_0029:
 		r = append(r, p.shift())
 		goto state2
-	case TOK_003c002d, TOK_chan, TOK_func, TOK_struct, TOK_0021, TOK_0026, TOK_0028, TOK_002a, TOK_002b, TOK_002d, TOK_005b, TOK_005e, TOK_007e, float_lit, identifier, int_lit, rune_lit, string_lit:
+	case TOK_003c002d, TOK_chan, TOK_func, TOK_interface, TOK_struct, TOK_0021, TOK_0026, TOK_0028, TOK_002a, TOK_002b, TOK_002d, TOK_005b, TOK_005e, TOK_007e, float_lit, identifier, int_lit, rune_lit, string_lit:
 		r = p.add(r, p.ArgumentList())
 		goto state3
 	}
@@ -5990,7 +5990,7 @@ state3:
 //		on  "default"
 //			shift and goto state 2
 //	State 1
-//		on  "<-", "chan", "func", "struct", '!', '&', '(', '*', '+', '-', '[', '^', '~', float_lit, identifier, int_lit, rune_lit, string_lit
+//		on  "<-", "chan", "func", "interface", "struct", '!', '&', '(', '*', '+', '-', '[', '^', '~', float_lit, identifier, int_lit, rune_lit, string_lit
 //			call ExpressionList and goto state 2
 //	State 2
 //		Accept
@@ -6011,9 +6011,9 @@ func (p *Parser) CaseHead() (r []int32) {
 	}
 	return p.stop(r, accept, errorSet)
 state1:
-	accept, errorSet = false, 38
+	accept, errorSet = false, 31
 	switch Symbol(p.tok.Ch) {
-	case TOK_003c002d, TOK_chan, TOK_func, TOK_struct, TOK_0021, TOK_0026, TOK_0028, TOK_002a, TOK_002b, TOK_002d, TOK_005b, TOK_005e, TOK_007e, float_lit, identifier, int_lit, rune_lit, string_lit:
+	case TOK_003c002d, TOK_chan, TOK_func, TOK_interface, TOK_struct, TOK_0021, TOK_0026, TOK_0028, TOK_002a, TOK_002b, TOK_002d, TOK_005b, TOK_005e, TOK_007e, float_lit, identifier, int_lit, rune_lit, string_lit:
 		r = p.add(r, p.ExpressionList())
 		goto state2
 	}
@@ -6076,7 +6076,7 @@ state2:
 //	State 8
 //		on  ']'
 //			shift and goto state 7
-//		on  "<-", "chan", "func", "struct", '!', '&', '(', '*', '+', '-', '[', '^', '~', float_lit, identifier, int_lit, rune_lit, string_lit
+//		on  "<-", "chan", "func", "interface", "struct", '!', '&', '(', '*', '+', '-', '[', '^', '~', float_lit, identifier, int_lit, rune_lit, string_lit
 //			call Expression and goto state 9
 //	State 9
 //		on  ']'
@@ -6123,7 +6123,7 @@ func (p *Parser) ChanElemType() (r []int32) {
 	}
 	return p.stop(r, accept, errorSet)
 state1:
-	accept, errorSet = false, 18
+	accept, errorSet = false, 42
 	switch Symbol(p.tok.Ch) {
 	case TOK_003c002d:
 		r = append(r, p.shift())
@@ -6134,7 +6134,7 @@ state1:
 	}
 	return p.stop(r, accept, errorSet)
 state2:
-	accept, errorSet = false, 18
+	accept, errorSet = false, 42
 	switch Symbol(p.tok.Ch) {
 	case TOK_003c002d, TOK_chan, TOK_func, TOK_interface, TOK_struct, TOK_0028, TOK_002a, TOK_005b, identifier:
 		r = p.add(r, p.ArrowElemType())
@@ -6153,7 +6153,7 @@ state4:
 	}
 	return p.stop(r, accept, errorSet)
 state5:
-	accept, errorSet = false, 23
+	accept, errorSet = false, 47
 	switch Symbol(p.tok.Ch) {
 	case TOK_003c002d, TOK_chan, TOK_func, TOK_interface, TOK_struct, TOK_002a, TOK_005b, identifier:
 		r = p.add(r, p.Type())
@@ -6169,7 +6169,7 @@ state6:
 	}
 	return p.stop(r, accept, errorSet)
 state7:
-	accept, errorSet = false, 23
+	accept, errorSet = false, 47
 	switch Symbol(p.tok.Ch) {
 	case TOK_003c002d, TOK_chan, TOK_func, TOK_interface, TOK_struct, TOK_002a, TOK_005b, identifier:
 		r = p.add(r, p.Type())
@@ -6177,12 +6177,12 @@ state7:
 	}
 	return p.stop(r, accept, errorSet)
 state8:
-	accept, errorSet = false, 34
+	accept, errorSet = false, 27
 	switch Symbol(p.tok.Ch) {
 	case TOK_005d:
 		r = append(r, p.shift())
 		goto state7
-	case TOK_003c002d, TOK_chan, TOK_func, TOK_struct, TOK_0021, TOK_0026, TOK_0028, TOK_002a, TOK_002b, TOK_002d, TOK_005b, TOK_005e, TOK_007e, float_lit, identifier, int_lit, rune_lit, string_lit:
+	case TOK_003c002d, TOK_chan, TOK_func, TOK_interface, TOK_struct, TOK_0021, TOK_0026, TOK_0028, TOK_002a, TOK_002b, TOK_002d, TOK_005b, TOK_005e, TOK_007e, float_lit, identifier, int_lit, rune_lit, string_lit:
 		r = p.add(r, p.Expression())
 		goto state9
 	}
@@ -6329,7 +6329,7 @@ state2:
 //		on  '(', '*', identifier
 //			call AssignHead and goto state 3
 //	State 1
-//		on  "<-", "chan", "func", "struct", '!', '&', '(', '*', '+', '-', '[', '^', '~', float_lit, identifier, int_lit, rune_lit, string_lit
+//		on  "<-", "chan", "func", "interface", "struct", '!', '&', '(', '*', '+', '-', '[', '^', '~', float_lit, identifier, int_lit, rune_lit, string_lit
 //			call Expression and goto state 2
 //	State 2
 //		Accept
@@ -6353,9 +6353,9 @@ func (p *Parser) CommOp() (r []int32) {
 	}
 	return p.stop(r, accept, errorSet)
 state1:
-	accept, errorSet = false, 39
+	accept, errorSet = false, 32
 	switch Symbol(p.tok.Ch) {
-	case TOK_003c002d, TOK_chan, TOK_func, TOK_struct, TOK_0021, TOK_0026, TOK_0028, TOK_002a, TOK_002b, TOK_002d, TOK_005b, TOK_005e, TOK_007e, float_lit, identifier, int_lit, rune_lit, string_lit:
+	case TOK_003c002d, TOK_chan, TOK_func, TOK_interface, TOK_struct, TOK_0021, TOK_0026, TOK_0028, TOK_002a, TOK_002b, TOK_002d, TOK_005b, TOK_005e, TOK_007e, float_lit, identifier, int_lit, rune_lit, string_lit:
 		r = p.add(r, p.Expression())
 		goto state2
 	}
@@ -6383,7 +6383,7 @@ state3:
 //	State 1
 //		on  '}'
 //			shift and goto state 2
-//		on  "<-", "chan", "func", "struct", '!', '&', '(', '*', '+', '-', '[', '^', '{', '~', float_lit, identifier, int_lit, rune_lit, string_lit
+//		on  "<-", "chan", "func", "interface", "struct", '!', '&', '(', '*', '+', '-', '[', '^', '{', '~', float_lit, identifier, int_lit, rune_lit, string_lit
 //			call ElementList and goto state 3
 //	State 2
 //		Accept
@@ -6404,12 +6404,12 @@ func (p *Parser) CompositeLit() (r []int32) {
 	}
 	return p.stop(r, accept, errorSet)
 state1:
-	accept, errorSet = false, 35
+	accept, errorSet = false, 28
 	switch Symbol(p.tok.Ch) {
 	case TOK_007d:
 		r = append(r, p.shift())
 		goto state2
-	case TOK_003c002d, TOK_chan, TOK_func, TOK_struct, TOK_0021, TOK_0026, TOK_0028, TOK_002a, TOK_002b, TOK_002d, TOK_005b, TOK_005e, TOK_007b, TOK_007e, float_lit, identifier, int_lit, rune_lit, string_lit:
+	case TOK_003c002d, TOK_chan, TOK_func, TOK_interface, TOK_struct, TOK_0021, TOK_0026, TOK_0028, TOK_002a, TOK_002b, TOK_002d, TOK_005b, TOK_005e, TOK_007b, TOK_007e, float_lit, identifier, int_lit, rune_lit, string_lit:
 		r = p.add(r, p.ElementList())
 		goto state3
 	}
@@ -6516,7 +6516,7 @@ state4:
 //		on  "<-", "chan", "func", "interface", "struct", '*', '[', identifier
 //			call Type and goto state 4
 //	State 2
-//		on  "<-", "chan", "func", "struct", '!', '&', '(', '*', '+', '-', '[', '^', '~', float_lit, identifier, int_lit, rune_lit, string_lit
+//		on  "<-", "chan", "func", "interface", "struct", '!', '&', '(', '*', '+', '-', '[', '^', '~', float_lit, identifier, int_lit, rune_lit, string_lit
 //			call ExpressionList and goto state 3
 //	State 3
 //		Accept
@@ -6538,7 +6538,7 @@ func (p *Parser) ConstSpec() (r []int32) {
 	}
 	return p.stop(r, accept, errorSet)
 state1:
-	accept, errorSet = true, 22
+	accept, errorSet = true, 46
 	switch Symbol(p.tok.Ch) {
 	case TOK_003d:
 		r = append(r, p.shift())
@@ -6549,9 +6549,9 @@ state1:
 	}
 	return p.stop(r, accept, errorSet)
 state2:
-	accept, errorSet = false, 38
+	accept, errorSet = false, 31
 	switch Symbol(p.tok.Ch) {
-	case TOK_003c002d, TOK_chan, TOK_func, TOK_struct, TOK_0021, TOK_0026, TOK_0028, TOK_002a, TOK_002b, TOK_002d, TOK_005b, TOK_005e, TOK_007e, float_lit, identifier, int_lit, rune_lit, string_lit:
+	case TOK_003c002d, TOK_chan, TOK_func, TOK_interface, TOK_struct, TOK_0021, TOK_0026, TOK_0028, TOK_002a, TOK_002b, TOK_002d, TOK_005b, TOK_005e, TOK_007e, float_lit, identifier, int_lit, rune_lit, string_lit:
 		r = p.add(r, p.ExpressionList())
 		goto state3
 	}
@@ -6574,7 +6574,7 @@ state4:
 //	Element      = CompositeLit | Expression [ ":" ElementValue ] .
 //
 //	State 0
-//		on  "<-", "chan", "func", "struct", '!', '&', '(', '*', '+', '-', '[', '^', '~', float_lit, identifier, int_lit, rune_lit, string_lit
+//		on  "<-", "chan", "func", "interface", "struct", '!', '&', '(', '*', '+', '-', '[', '^', '~', float_lit, identifier, int_lit, rune_lit, string_lit
 //			call Expression and goto state 1
 //		on  '{'
 //			call CompositeLit and goto state 3
@@ -6583,7 +6583,7 @@ state4:
 //		on  ':'
 //			shift and goto state 2
 //	State 2
-//		on  "<-", "chan", "func", "struct", '!', '&', '(', '*', '+', '-', '[', '^', '{', '~', float_lit, identifier, int_lit, rune_lit, string_lit
+//		on  "<-", "chan", "func", "interface", "struct", '!', '&', '(', '*', '+', '-', '[', '^', '{', '~', float_lit, identifier, int_lit, rune_lit, string_lit
 //			call ElementValue and goto state 3
 //	State 3
 //		Accept
@@ -6593,9 +6593,9 @@ func (p *Parser) Element() (r []int32) {
 	accept, errorSet := false, 0
 	r = append(p.get(), -int32(Element), 0)
 	// state0:
-	accept, errorSet = false, 37
+	accept, errorSet = false, 30
 	switch Symbol(p.tok.Ch) {
-	case TOK_003c002d, TOK_chan, TOK_func, TOK_struct, TOK_0021, TOK_0026, TOK_0028, TOK_002a, TOK_002b, TOK_002d, TOK_005b, TOK_005e, TOK_007e, float_lit, identifier, int_lit, rune_lit, string_lit:
+	case TOK_003c002d, TOK_chan, TOK_func, TOK_interface, TOK_struct, TOK_0021, TOK_0026, TOK_0028, TOK_002a, TOK_002b, TOK_002d, TOK_005b, TOK_005e, TOK_007e, float_lit, identifier, int_lit, rune_lit, string_lit:
 		r = p.add(r, p.Expression())
 		goto state1
 	case TOK_007b:
@@ -6612,9 +6612,9 @@ state1:
 	}
 	return p.stop(r, accept, errorSet)
 state2:
-	accept, errorSet = false, 36
+	accept, errorSet = false, 29
 	switch Symbol(p.tok.Ch) {
-	case TOK_003c002d, TOK_chan, TOK_func, TOK_struct, TOK_0021, TOK_0026, TOK_0028, TOK_002a, TOK_002b, TOK_002d, TOK_005b, TOK_005e, TOK_007b, TOK_007e, float_lit, identifier, int_lit, rune_lit, string_lit:
+	case TOK_003c002d, TOK_chan, TOK_func, TOK_interface, TOK_struct, TOK_0021, TOK_0026, TOK_0028, TOK_002a, TOK_002b, TOK_002d, TOK_005b, TOK_005e, TOK_007b, TOK_007e, float_lit, identifier, int_lit, rune_lit, string_lit:
 		r = p.add(r, p.ElementValue())
 		goto state3
 	}
@@ -6629,7 +6629,7 @@ state3:
 //	ElementList  = Element { "," Element } [ "," ] .
 //
 //	State 0
-//		on  "<-", "chan", "func", "struct", '!', '&', '(', '*', '+', '-', '[', '^', '{', '~', float_lit, identifier, int_lit, rune_lit, string_lit
+//		on  "<-", "chan", "func", "interface", "struct", '!', '&', '(', '*', '+', '-', '[', '^', '{', '~', float_lit, identifier, int_lit, rune_lit, string_lit
 //			call Element and goto state 1
 //	State 1
 //		Accept
@@ -6637,7 +6637,7 @@ state3:
 //			shift and goto state 2
 //	State 2
 //		Accept
-//		on  "<-", "chan", "func", "struct", '!', '&', '(', '*', '+', '-', '[', '^', '{', '~', float_lit, identifier, int_lit, rune_lit, string_lit
+//		on  "<-", "chan", "func", "interface", "struct", '!', '&', '(', '*', '+', '-', '[', '^', '{', '~', float_lit, identifier, int_lit, rune_lit, string_lit
 //			call Element and goto state 1
 //
 // ElementList is used internally from Parse.
@@ -6645,9 +6645,9 @@ func (p *Parser) ElementList() (r []int32) {
 	accept, errorSet := false, 0
 	r = append(p.get(), -int32(ElementList), 0)
 	// state0:
-	accept, errorSet = false, 36
+	accept, errorSet = false, 29
 	switch Symbol(p.tok.Ch) {
-	case TOK_003c002d, TOK_chan, TOK_func, TOK_struct, TOK_0021, TOK_0026, TOK_0028, TOK_002a, TOK_002b, TOK_002d, TOK_005b, TOK_005e, TOK_007b, TOK_007e, float_lit, identifier, int_lit, rune_lit, string_lit:
+	case TOK_003c002d, TOK_chan, TOK_func, TOK_interface, TOK_struct, TOK_0021, TOK_0026, TOK_0028, TOK_002a, TOK_002b, TOK_002d, TOK_005b, TOK_005e, TOK_007b, TOK_007e, float_lit, identifier, int_lit, rune_lit, string_lit:
 		r = p.add(r, p.Element())
 		goto state1
 	}
@@ -6661,9 +6661,9 @@ state1:
 	}
 	return p.stop(r, accept, errorSet)
 state2:
-	accept, errorSet = true, 36
+	accept, errorSet = true, 29
 	switch Symbol(p.tok.Ch) {
-	case TOK_003c002d, TOK_chan, TOK_func, TOK_struct, TOK_0021, TOK_0026, TOK_0028, TOK_002a, TOK_002b, TOK_002d, TOK_005b, TOK_005e, TOK_007b, TOK_007e, float_lit, identifier, int_lit, rune_lit, string_lit:
+	case TOK_003c002d, TOK_chan, TOK_func, TOK_interface, TOK_struct, TOK_0021, TOK_0026, TOK_0028, TOK_002a, TOK_002b, TOK_002d, TOK_005b, TOK_005e, TOK_007b, TOK_007e, float_lit, identifier, int_lit, rune_lit, string_lit:
 		r = p.add(r, p.Element())
 		goto state1
 	}
@@ -6675,7 +6675,7 @@ state2:
 //	ElementValue = CompositeLit | Expression .
 //
 //	State 0
-//		on  "<-", "chan", "func", "struct", '!', '&', '(', '*', '+', '-', '[', '^', '~', float_lit, identifier, int_lit, rune_lit, string_lit
+//		on  "<-", "chan", "func", "interface", "struct", '!', '&', '(', '*', '+', '-', '[', '^', '~', float_lit, identifier, int_lit, rune_lit, string_lit
 //			call Expression and goto state 1
 //		on  '{'
 //			call CompositeLit and goto state 1
@@ -6687,9 +6687,9 @@ func (p *Parser) ElementValue() (r []int32) {
 	accept, errorSet := false, 0
 	r = append(p.get(), -int32(ElementValue), 0)
 	// state0:
-	accept, errorSet = false, 37
+	accept, errorSet = false, 30
 	switch Symbol(p.tok.Ch) {
-	case TOK_003c002d, TOK_chan, TOK_func, TOK_struct, TOK_0021, TOK_0026, TOK_0028, TOK_002a, TOK_002b, TOK_002d, TOK_005b, TOK_005e, TOK_007e, float_lit, identifier, int_lit, rune_lit, string_lit:
+	case TOK_003c002d, TOK_chan, TOK_func, TOK_interface, TOK_struct, TOK_0021, TOK_0026, TOK_0028, TOK_002a, TOK_002b, TOK_002d, TOK_005b, TOK_005e, TOK_007e, float_lit, identifier, int_lit, rune_lit, string_lit:
 		r = p.add(r, p.Expression())
 		goto state1
 	case TOK_007b:
@@ -6723,7 +6723,7 @@ func (p *Parser) EmptyStatement() (r []int32) {
 //	Expression     = SimpleExpr { RelOp SimpleExpr } .
 //
 //	State 0
-//		on  "<-", "chan", "func", "struct", '!', '&', '(', '*', '+', '-', '[', '^', '~', float_lit, identifier, int_lit, rune_lit, string_lit
+//		on  "<-", "chan", "func", "interface", "struct", '!', '&', '(', '*', '+', '-', '[', '^', '~', float_lit, identifier, int_lit, rune_lit, string_lit
 //			call SimpleExpr and goto state 1
 //	State 1
 //		Accept
@@ -6735,9 +6735,9 @@ func (p *Parser) Expression() (r []int32) {
 	accept, errorSet := false, 0
 	r = append(p.get(), -int32(Expression), 0)
 state0:
-	accept, errorSet = false, 40
+	accept, errorSet = false, 33
 	switch Symbol(p.tok.Ch) {
-	case TOK_003c002d, TOK_chan, TOK_func, TOK_struct, TOK_0021, TOK_0026, TOK_0028, TOK_002a, TOK_002b, TOK_002d, TOK_005b, TOK_005e, TOK_007e, float_lit, identifier, int_lit, rune_lit, string_lit:
+	case TOK_003c002d, TOK_chan, TOK_func, TOK_interface, TOK_struct, TOK_0021, TOK_0026, TOK_0028, TOK_002a, TOK_002b, TOK_002d, TOK_005b, TOK_005e, TOK_007e, float_lit, identifier, int_lit, rune_lit, string_lit:
 		r = p.add(r, p.SimpleExpr())
 		goto state1
 	}
@@ -6757,7 +6757,7 @@ state1:
 //	ExpressionList = Expression { "," Expression } .
 //
 //	State 0
-//		on  "<-", "chan", "func", "struct", '!', '&', '(', '*', '+', '-', '[', '^', '~', float_lit, identifier, int_lit, rune_lit, string_lit
+//		on  "<-", "chan", "func", "interface", "struct", '!', '&', '(', '*', '+', '-', '[', '^', '~', float_lit, identifier, int_lit, rune_lit, string_lit
 //			call Expression and goto state 1
 //	State 1
 //		Accept
@@ -6769,9 +6769,9 @@ func (p *Parser) ExpressionList() (r []int32) {
 	accept, errorSet := false, 0
 	r = append(p.get(), -int32(ExpressionList), 0)
 state0:
-	accept, errorSet = false, 39
+	accept, errorSet = false, 32
 	switch Symbol(p.tok.Ch) {
-	case TOK_003c002d, TOK_chan, TOK_func, TOK_struct, TOK_0021, TOK_0026, TOK_0028, TOK_002a, TOK_002b, TOK_002d, TOK_005b, TOK_005e, TOK_007e, float_lit, identifier, int_lit, rune_lit, string_lit:
+	case TOK_003c002d, TOK_chan, TOK_func, TOK_interface, TOK_struct, TOK_0021, TOK_0026, TOK_0028, TOK_002a, TOK_002b, TOK_002d, TOK_005b, TOK_005e, TOK_007e, float_lit, identifier, int_lit, rune_lit, string_lit:
 		r = p.add(r, p.Expression())
 		goto state1
 	}
@@ -6797,6 +6797,7 @@ state1:
 //		| "[" [ Expression | "..." ] "]" Type [ CompositeLit [ FactorSuffix ] | CallSuffix [ FactorSuffix ] ]
 //		| "chan" ( "<-" ArrowElemType | ChanElemType )
 //		| StructType CompositeLit [ FactorSuffix ]
+//		| InterfaceType [ CallSuffix [ FactorSuffix ] ]
 //		| FuncLiteral [ FactorSuffix ] .
 //
 //	State 0
@@ -6816,6 +6817,8 @@ state1:
 //			call FuncLiteral and goto state 6
 //		on  "struct"
 //			call StructType and goto state 13
+//		on  "interface"
+//			call InterfaceType and goto state 14
 //	State 1
 //		on  "<-"
 //			shift and goto state 2
@@ -6827,7 +6830,7 @@ state1:
 //	State 3
 //		Accept
 //	State 4
-//		on  "<-", "chan", "func", "struct", '!', '&', '(', '*', '+', '-', '[', '^', '~', float_lit, identifier, int_lit, rune_lit, string_lit
+//		on  "<-", "chan", "func", "interface", "struct", '!', '&', '(', '*', '+', '-', '[', '^', '~', float_lit, identifier, int_lit, rune_lit, string_lit
 //			call Expression and goto state 5
 //	State 5
 //		on  ')'
@@ -6841,7 +6844,7 @@ state1:
 //			shift and goto state 8
 //		on  ']'
 //			shift and goto state 9
-//		on  "<-", "chan", "func", "struct", '!', '&', '(', '*', '+', '-', '[', '^', '~', float_lit, identifier, int_lit, rune_lit, string_lit
+//		on  "<-", "chan", "func", "interface", "struct", '!', '&', '(', '*', '+', '-', '[', '^', '~', float_lit, identifier, int_lit, rune_lit, string_lit
 //			call Expression and goto state 8
 //	State 8
 //		on  ']'
@@ -6868,6 +6871,10 @@ state1:
 //	State 13
 //		on  '{'
 //			call CompositeLit and goto state 6
+//	State 14
+//		Accept
+//		on  '('
+//			call CallSuffix and goto state 6
 //
 // Factor is used internally from Parse.
 func (p *Parser) Factor() (r []int32) {
@@ -6900,10 +6907,13 @@ func (p *Parser) Factor() (r []int32) {
 	case TOK_struct:
 		r = p.add(r, p.StructType())
 		goto state13
+	case TOK_interface:
+		r = p.add(r, p.InterfaceType())
+		goto state14
 	}
 	return p.stop(r, accept, errorSet)
 state1:
-	accept, errorSet = false, 18
+	accept, errorSet = false, 42
 	switch Symbol(p.tok.Ch) {
 	case TOK_003c002d:
 		r = append(r, p.shift())
@@ -6914,7 +6924,7 @@ state1:
 	}
 	return p.stop(r, accept, errorSet)
 state2:
-	accept, errorSet = false, 18
+	accept, errorSet = false, 42
 	switch Symbol(p.tok.Ch) {
 	case TOK_003c002d, TOK_chan, TOK_func, TOK_interface, TOK_struct, TOK_0028, TOK_002a, TOK_005b, identifier:
 		r = p.add(r, p.ArrowElemType())
@@ -6925,9 +6935,9 @@ state3:
 	accept, errorSet = true, 0
 	return p.stop(r, accept, errorSet)
 state4:
-	accept, errorSet = false, 39
+	accept, errorSet = false, 32
 	switch Symbol(p.tok.Ch) {
-	case TOK_003c002d, TOK_chan, TOK_func, TOK_struct, TOK_0021, TOK_0026, TOK_0028, TOK_002a, TOK_002b, TOK_002d, TOK_005b, TOK_005e, TOK_007e, float_lit, identifier, int_lit, rune_lit, string_lit:
+	case TOK_003c002d, TOK_chan, TOK_func, TOK_interface, TOK_struct, TOK_0021, TOK_0026, TOK_0028, TOK_002a, TOK_002b, TOK_002d, TOK_005b, TOK_005e, TOK_007e, float_lit, identifier, int_lit, rune_lit, string_lit:
 		r = p.add(r, p.Expression())
 		goto state5
 	}
@@ -6949,7 +6959,7 @@ state6:
 	}
 	return p.stop(r, accept, errorSet)
 state7:
-	accept, errorSet = false, 6
+	accept, errorSet = false, 2
 	switch Symbol(p.tok.Ch) {
 	case TOK_002e002e002e:
 		r = append(r, p.shift())
@@ -6957,7 +6967,7 @@ state7:
 	case TOK_005d:
 		r = append(r, p.shift())
 		goto state9
-	case TOK_003c002d, TOK_chan, TOK_func, TOK_struct, TOK_0021, TOK_0026, TOK_0028, TOK_002a, TOK_002b, TOK_002d, TOK_005b, TOK_005e, TOK_007e, float_lit, identifier, int_lit, rune_lit, string_lit:
+	case TOK_003c002d, TOK_chan, TOK_func, TOK_interface, TOK_struct, TOK_0021, TOK_0026, TOK_0028, TOK_002a, TOK_002b, TOK_002d, TOK_005b, TOK_005e, TOK_007e, float_lit, identifier, int_lit, rune_lit, string_lit:
 		r = p.add(r, p.Expression())
 		goto state8
 	}
@@ -6971,7 +6981,7 @@ state8:
 	}
 	return p.stop(r, accept, errorSet)
 state9:
-	accept, errorSet = false, 23
+	accept, errorSet = false, 47
 	switch Symbol(p.tok.Ch) {
 	case TOK_003c002d, TOK_chan, TOK_func, TOK_interface, TOK_struct, TOK_002a, TOK_005b, identifier:
 		r = p.add(r, p.Type())
@@ -7013,6 +7023,14 @@ state13:
 	switch Symbol(p.tok.Ch) {
 	case TOK_007b:
 		r = p.add(r, p.CompositeLit())
+		goto state6
+	}
+	return p.stop(r, accept, errorSet)
+state14:
+	accept, errorSet = true, 94
+	switch Symbol(p.tok.Ch) {
+	case TOK_0028:
+		r = p.add(r, p.CallSuffix())
 		goto state6
 	}
 	return p.stop(r, accept, errorSet)
@@ -7155,7 +7173,7 @@ state4:
 	accept, errorSet = true, 0
 	return p.stop(r, accept, errorSet)
 state5:
-	accept, errorSet = true, 20
+	accept, errorSet = true, 44
 	switch Symbol(p.tok.Ch) {
 	case TOK_002e:
 		r = append(r, p.shift())
@@ -7177,7 +7195,7 @@ state6:
 	}
 	return p.stop(r, accept, errorSet)
 state7:
-	accept, errorSet = false, 21
+	accept, errorSet = false, 45
 	switch Symbol(p.tok.Ch) {
 	case TOK_002c:
 		r = append(r, p.shift())
@@ -7197,10 +7215,10 @@ state7:
 //	State 0
 //		on  "range"
 //			shift and goto state 1
-//		on  "<-", "chan", "func", "struct", '!', '&', '(', '*', '+', '-', '[', '^', '~', float_lit, identifier, int_lit, rune_lit, string_lit
+//		on  "<-", "chan", "func", "interface", "struct", '!', '&', '(', '*', '+', '-', '[', '^', '~', float_lit, identifier, int_lit, rune_lit, string_lit
 //			call HeaderExpression and goto state 3
 //	State 1
-//		on  "<-", "chan", "func", "struct", '!', '&', '(', '*', '+', '-', '[', '^', '~', float_lit, identifier, int_lit, rune_lit, string_lit
+//		on  "<-", "chan", "func", "interface", "struct", '!', '&', '(', '*', '+', '-', '[', '^', '~', float_lit, identifier, int_lit, rune_lit, string_lit
 //			call HeaderExpression and goto state 2
 //	State 2
 //		Accept
@@ -7210,11 +7228,11 @@ state7:
 //	State 4
 //		on  ';'
 //			shift and goto state 5
-//		on  "<-", "chan", "func", "struct", '!', '&', '(', '*', '+', '-', '[', '^', '~', float_lit, identifier, int_lit, rune_lit, string_lit
+//		on  "<-", "chan", "func", "interface", "struct", '!', '&', '(', '*', '+', '-', '[', '^', '~', float_lit, identifier, int_lit, rune_lit, string_lit
 //			call HeaderExpression and goto state 6
 //	State 5
 //		Accept
-//		on  "<-", "chan", "func", "struct", '!', '&', '(', '*', '+', '-', '[', '^', '~', float_lit, identifier, int_lit, rune_lit, string_lit
+//		on  "<-", "chan", "func", "interface", "struct", '!', '&', '(', '*', '+', '-', '[', '^', '~', float_lit, identifier, int_lit, rune_lit, string_lit
 //			call ForPost and goto state 2
 //	State 6
 //		on  ';'
@@ -7225,20 +7243,20 @@ func (p *Parser) ForAssignRest() (r []int32) {
 	accept, errorSet := false, 0
 	r = append(p.get(), -int32(ForAssignRest), 0)
 	// state0:
-	accept, errorSet = false, 28
+	accept, errorSet = false, 20
 	switch Symbol(p.tok.Ch) {
 	case TOK_range:
 		r = append(r, p.shift())
 		goto state1
-	case TOK_003c002d, TOK_chan, TOK_func, TOK_struct, TOK_0021, TOK_0026, TOK_0028, TOK_002a, TOK_002b, TOK_002d, TOK_005b, TOK_005e, TOK_007e, float_lit, identifier, int_lit, rune_lit, string_lit:
+	case TOK_003c002d, TOK_chan, TOK_func, TOK_interface, TOK_struct, TOK_0021, TOK_0026, TOK_0028, TOK_002a, TOK_002b, TOK_002d, TOK_005b, TOK_005e, TOK_007e, float_lit, identifier, int_lit, rune_lit, string_lit:
 		r = p.add(r, p.HeaderExpression())
 		goto state3
 	}
 	return p.stop(r, accept, errorSet)
 state1:
-	accept, errorSet = false, 44
+	accept, errorSet = false, 37
 	switch Symbol(p.tok.Ch) {
-	case TOK_003c002d, TOK_chan, TOK_func, TOK_struct, TOK_0021, TOK_0026, TOK_0028, TOK_002a, TOK_002b, TOK_002d, TOK_005b, TOK_005e, TOK_007e, float_lit, identifier, int_lit, rune_lit, string_lit:
+	case TOK_003c002d, TOK_chan, TOK_func, TOK_interface, TOK_struct, TOK_0021, TOK_0026, TOK_0028, TOK_002a, TOK_002b, TOK_002d, TOK_005b, TOK_005e, TOK_007e, float_lit, identifier, int_lit, rune_lit, string_lit:
 		r = p.add(r, p.HeaderExpression())
 		goto state2
 	}
@@ -7255,20 +7273,20 @@ state3:
 	}
 	return p.stop(r, accept, errorSet)
 state4:
-	accept, errorSet = false, 33
+	accept, errorSet = false, 26
 	switch Symbol(p.tok.Ch) {
 	case TOK_003b:
 		r = append(r, p.shift())
 		goto state5
-	case TOK_003c002d, TOK_chan, TOK_func, TOK_struct, TOK_0021, TOK_0026, TOK_0028, TOK_002a, TOK_002b, TOK_002d, TOK_005b, TOK_005e, TOK_007e, float_lit, identifier, int_lit, rune_lit, string_lit:
+	case TOK_003c002d, TOK_chan, TOK_func, TOK_interface, TOK_struct, TOK_0021, TOK_0026, TOK_0028, TOK_002a, TOK_002b, TOK_002d, TOK_005b, TOK_005e, TOK_007e, float_lit, identifier, int_lit, rune_lit, string_lit:
 		r = p.add(r, p.HeaderExpression())
 		goto state6
 	}
 	return p.stop(r, accept, errorSet)
 state5:
-	accept, errorSet = true, 43
+	accept, errorSet = true, 36
 	switch Symbol(p.tok.Ch) {
-	case TOK_003c002d, TOK_chan, TOK_func, TOK_struct, TOK_0021, TOK_0026, TOK_0028, TOK_002a, TOK_002b, TOK_002d, TOK_005b, TOK_005e, TOK_007e, float_lit, identifier, int_lit, rune_lit, string_lit:
+	case TOK_003c002d, TOK_chan, TOK_func, TOK_interface, TOK_struct, TOK_0021, TOK_0026, TOK_0028, TOK_002a, TOK_002b, TOK_002d, TOK_005b, TOK_005e, TOK_007e, float_lit, identifier, int_lit, rune_lit, string_lit:
 		r = p.add(r, p.ForPost())
 		goto state2
 	}
@@ -7294,21 +7312,21 @@ state6:
 //			shift and goto state 1
 //		on  ';'
 //			shift and goto state 3
-//		on  "<-", "chan", "func", "struct", '!', '&', '(', '*', '+', '-', '[', '^', '~', float_lit, identifier, int_lit, rune_lit, string_lit
+//		on  "<-", "chan", "func", "interface", "struct", '!', '&', '(', '*', '+', '-', '[', '^', '~', float_lit, identifier, int_lit, rune_lit, string_lit
 //			call HeaderExpression and goto state 6
 //	State 1
-//		on  "<-", "chan", "func", "struct", '!', '&', '(', '*', '+', '-', '[', '^', '~', float_lit, identifier, int_lit, rune_lit, string_lit
+//		on  "<-", "chan", "func", "interface", "struct", '!', '&', '(', '*', '+', '-', '[', '^', '~', float_lit, identifier, int_lit, rune_lit, string_lit
 //			call HeaderExpression and goto state 2
 //	State 2
 //		Accept
 //	State 3
 //		on  ';'
 //			shift and goto state 4
-//		on  "<-", "chan", "func", "struct", '!', '&', '(', '*', '+', '-', '[', '^', '~', float_lit, identifier, int_lit, rune_lit, string_lit
+//		on  "<-", "chan", "func", "interface", "struct", '!', '&', '(', '*', '+', '-', '[', '^', '~', float_lit, identifier, int_lit, rune_lit, string_lit
 //			call HeaderExpression and goto state 5
 //	State 4
 //		Accept
-//		on  "<-", "chan", "func", "struct", '!', '&', '(', '*', '+', '-', '[', '^', '~', float_lit, identifier, int_lit, rune_lit, string_lit
+//		on  "<-", "chan", "func", "interface", "struct", '!', '&', '(', '*', '+', '-', '[', '^', '~', float_lit, identifier, int_lit, rune_lit, string_lit
 //			call ForPost and goto state 2
 //	State 5
 //		on  ';'
@@ -7323,7 +7341,7 @@ func (p *Parser) ForHeader() (r []int32) {
 	accept, errorSet := false, 0
 	r = append(p.get(), -int32(ForHeader), 0)
 	// state0:
-	accept, errorSet = false, 26
+	accept, errorSet = false, 18
 	switch Symbol(p.tok.Ch) {
 	case TOK_range:
 		r = append(r, p.shift())
@@ -7331,15 +7349,15 @@ func (p *Parser) ForHeader() (r []int32) {
 	case TOK_003b:
 		r = append(r, p.shift())
 		goto state3
-	case TOK_003c002d, TOK_chan, TOK_func, TOK_struct, TOK_0021, TOK_0026, TOK_0028, TOK_002a, TOK_002b, TOK_002d, TOK_005b, TOK_005e, TOK_007e, float_lit, identifier, int_lit, rune_lit, string_lit:
+	case TOK_003c002d, TOK_chan, TOK_func, TOK_interface, TOK_struct, TOK_0021, TOK_0026, TOK_0028, TOK_002a, TOK_002b, TOK_002d, TOK_005b, TOK_005e, TOK_007e, float_lit, identifier, int_lit, rune_lit, string_lit:
 		r = p.add(r, p.HeaderExpression())
 		goto state6
 	}
 	return p.stop(r, accept, errorSet)
 state1:
-	accept, errorSet = false, 44
+	accept, errorSet = false, 37
 	switch Symbol(p.tok.Ch) {
-	case TOK_003c002d, TOK_chan, TOK_func, TOK_struct, TOK_0021, TOK_0026, TOK_0028, TOK_002a, TOK_002b, TOK_002d, TOK_005b, TOK_005e, TOK_007e, float_lit, identifier, int_lit, rune_lit, string_lit:
+	case TOK_003c002d, TOK_chan, TOK_func, TOK_interface, TOK_struct, TOK_0021, TOK_0026, TOK_0028, TOK_002a, TOK_002b, TOK_002d, TOK_005b, TOK_005e, TOK_007e, float_lit, identifier, int_lit, rune_lit, string_lit:
 		r = p.add(r, p.HeaderExpression())
 		goto state2
 	}
@@ -7348,20 +7366,20 @@ state2:
 	accept, errorSet = true, 0
 	return p.stop(r, accept, errorSet)
 state3:
-	accept, errorSet = false, 33
+	accept, errorSet = false, 26
 	switch Symbol(p.tok.Ch) {
 	case TOK_003b:
 		r = append(r, p.shift())
 		goto state4
-	case TOK_003c002d, TOK_chan, TOK_func, TOK_struct, TOK_0021, TOK_0026, TOK_0028, TOK_002a, TOK_002b, TOK_002d, TOK_005b, TOK_005e, TOK_007e, float_lit, identifier, int_lit, rune_lit, string_lit:
+	case TOK_003c002d, TOK_chan, TOK_func, TOK_interface, TOK_struct, TOK_0021, TOK_0026, TOK_0028, TOK_002a, TOK_002b, TOK_002d, TOK_005b, TOK_005e, TOK_007e, float_lit, identifier, int_lit, rune_lit, string_lit:
 		r = p.add(r, p.HeaderExpression())
 		goto state5
 	}
 	return p.stop(r, accept, errorSet)
 state4:
-	accept, errorSet = true, 43
+	accept, errorSet = true, 36
 	switch Symbol(p.tok.Ch) {
-	case TOK_003c002d, TOK_chan, TOK_func, TOK_struct, TOK_0021, TOK_0026, TOK_0028, TOK_002a, TOK_002b, TOK_002d, TOK_005b, TOK_005e, TOK_007e, float_lit, identifier, int_lit, rune_lit, string_lit:
+	case TOK_003c002d, TOK_chan, TOK_func, TOK_interface, TOK_struct, TOK_0021, TOK_0026, TOK_0028, TOK_002a, TOK_002b, TOK_002d, TOK_005b, TOK_005e, TOK_007e, float_lit, identifier, int_lit, rune_lit, string_lit:
 		r = p.add(r, p.ForPost())
 		goto state2
 	}
@@ -7391,7 +7409,7 @@ state6:
 //		| AssignOp HeaderExpression | "<-" HeaderExpression ] .
 //
 //	State 0
-//		on  "<-", "chan", "func", "struct", '!', '&', '(', '*', '+', '-', '[', '^', '~', float_lit, identifier, int_lit, rune_lit, string_lit
+//		on  "<-", "chan", "func", "interface", "struct", '!', '&', '(', '*', '+', '-', '[', '^', '~', float_lit, identifier, int_lit, rune_lit, string_lit
 //			call HeaderExpression and goto state 1
 //	State 1
 //		Accept
@@ -7408,17 +7426,17 @@ state6:
 //	State 2
 //		Accept
 //	State 3
-//		on  "<-", "chan", "func", "struct", '!', '&', '(', '*', '+', '-', '[', '^', '~', float_lit, identifier, int_lit, rune_lit, string_lit
+//		on  "<-", "chan", "func", "interface", "struct", '!', '&', '(', '*', '+', '-', '[', '^', '~', float_lit, identifier, int_lit, rune_lit, string_lit
 //			call HeaderExpression and goto state 4
 //	State 4
 //		Accept
 //		on  ','
 //			shift and goto state 3
 //	State 5
-//		on  "<-", "chan", "func", "struct", '!', '&', '(', '*', '+', '-', '[', '^', '~', float_lit, identifier, int_lit, rune_lit, string_lit
+//		on  "<-", "chan", "func", "interface", "struct", '!', '&', '(', '*', '+', '-', '[', '^', '~', float_lit, identifier, int_lit, rune_lit, string_lit
 //			call HeaderExpression and goto state 2
 //	State 6
-//		on  "<-", "chan", "func", "struct", '!', '&', '(', '*', '+', '-', '[', '^', '~', float_lit, identifier, int_lit, rune_lit, string_lit
+//		on  "<-", "chan", "func", "interface", "struct", '!', '&', '(', '*', '+', '-', '[', '^', '~', float_lit, identifier, int_lit, rune_lit, string_lit
 //			call HeaderExpression and goto state 1
 //
 // ForPost is used internally from Parse.
@@ -7426,9 +7444,9 @@ func (p *Parser) ForPost() (r []int32) {
 	accept, errorSet := false, 0
 	r = append(p.get(), -int32(ForPost), 0)
 	// state0:
-	accept, errorSet = false, 44
+	accept, errorSet = false, 37
 	switch Symbol(p.tok.Ch) {
-	case TOK_003c002d, TOK_chan, TOK_func, TOK_struct, TOK_0021, TOK_0026, TOK_0028, TOK_002a, TOK_002b, TOK_002d, TOK_005b, TOK_005e, TOK_007e, float_lit, identifier, int_lit, rune_lit, string_lit:
+	case TOK_003c002d, TOK_chan, TOK_func, TOK_interface, TOK_struct, TOK_0021, TOK_0026, TOK_0028, TOK_002a, TOK_002b, TOK_002d, TOK_005b, TOK_005e, TOK_007e, float_lit, identifier, int_lit, rune_lit, string_lit:
 		r = p.add(r, p.HeaderExpression())
 		goto state1
 	}
@@ -7457,9 +7475,9 @@ state2:
 	accept, errorSet = true, 0
 	return p.stop(r, accept, errorSet)
 state3:
-	accept, errorSet = false, 44
+	accept, errorSet = false, 37
 	switch Symbol(p.tok.Ch) {
-	case TOK_003c002d, TOK_chan, TOK_func, TOK_struct, TOK_0021, TOK_0026, TOK_0028, TOK_002a, TOK_002b, TOK_002d, TOK_005b, TOK_005e, TOK_007e, float_lit, identifier, int_lit, rune_lit, string_lit:
+	case TOK_003c002d, TOK_chan, TOK_func, TOK_interface, TOK_struct, TOK_0021, TOK_0026, TOK_0028, TOK_002a, TOK_002b, TOK_002d, TOK_005b, TOK_005e, TOK_007e, float_lit, identifier, int_lit, rune_lit, string_lit:
 		r = p.add(r, p.HeaderExpression())
 		goto state4
 	}
@@ -7473,17 +7491,17 @@ state4:
 	}
 	return p.stop(r, accept, errorSet)
 state5:
-	accept, errorSet = false, 44
+	accept, errorSet = false, 37
 	switch Symbol(p.tok.Ch) {
-	case TOK_003c002d, TOK_chan, TOK_func, TOK_struct, TOK_0021, TOK_0026, TOK_0028, TOK_002a, TOK_002b, TOK_002d, TOK_005b, TOK_005e, TOK_007e, float_lit, identifier, int_lit, rune_lit, string_lit:
+	case TOK_003c002d, TOK_chan, TOK_func, TOK_interface, TOK_struct, TOK_0021, TOK_0026, TOK_0028, TOK_002a, TOK_002b, TOK_002d, TOK_005b, TOK_005e, TOK_007e, float_lit, identifier, int_lit, rune_lit, string_lit:
 		r = p.add(r, p.HeaderExpression())
 		goto state2
 	}
 	return p.stop(r, accept, errorSet)
 state6:
-	accept, errorSet = false, 44
+	accept, errorSet = false, 37
 	switch Symbol(p.tok.Ch) {
-	case TOK_003c002d, TOK_chan, TOK_func, TOK_struct, TOK_0021, TOK_0026, TOK_0028, TOK_002a, TOK_002b, TOK_002d, TOK_005b, TOK_005e, TOK_007e, float_lit, identifier, int_lit, rune_lit, string_lit:
+	case TOK_003c002d, TOK_chan, TOK_func, TOK_interface, TOK_struct, TOK_0021, TOK_0026, TOK_0028, TOK_002a, TOK_002b, TOK_002d, TOK_005b, TOK_005e, TOK_007e, float_lit, identifier, int_lit, rune_lit, string_lit:
 		r = p.add(r, p.HeaderExpression())
 		goto state1
 	}
@@ -7518,11 +7536,11 @@ state6:
 //	State 2
 //		on  ';'
 //			shift and goto state 3
-//		on  "<-", "chan", "func", "struct", '!', '&', '(', '*', '+', '-', '[', '^', '~', float_lit, identifier, int_lit, rune_lit, string_lit
+//		on  "<-", "chan", "func", "interface", "struct", '!', '&', '(', '*', '+', '-', '[', '^', '~', float_lit, identifier, int_lit, rune_lit, string_lit
 //			call HeaderExpression and goto state 5
 //	State 3
 //		Accept
-//		on  "<-", "chan", "func", "struct", '!', '&', '(', '*', '+', '-', '[', '^', '~', float_lit, identifier, int_lit, rune_lit, string_lit
+//		on  "<-", "chan", "func", "interface", "struct", '!', '&', '(', '*', '+', '-', '[', '^', '~', float_lit, identifier, int_lit, rune_lit, string_lit
 //			call ForPost and goto state 4
 //	State 4
 //		Accept
@@ -7530,13 +7548,13 @@ state6:
 //		on  ';'
 //			shift and goto state 3
 //	State 6
-//		on  "<-", "chan", "func", "range", "struct", '!', '&', '(', '*', '+', '-', '[', '^', '~', float_lit, identifier, int_lit, rune_lit, string_lit
+//		on  "<-", "chan", "func", "interface", "range", "struct", '!', '&', '(', '*', '+', '-', '[', '^', '~', float_lit, identifier, int_lit, rune_lit, string_lit
 //			call ForAssignRest and goto state 4
 //	State 7
-//		on  "<-", "chan", "func", "struct", '!', '&', '(', '*', '+', '-', '[', '^', '~', float_lit, identifier, int_lit, rune_lit, string_lit
+//		on  "<-", "chan", "func", "interface", "struct", '!', '&', '(', '*', '+', '-', '[', '^', '~', float_lit, identifier, int_lit, rune_lit, string_lit
 //			call HeaderExpression and goto state 1
 //	State 8
-//		on  "<-", "chan", "func", "struct", '!', '&', '(', '*', '+', '-', '[', '^', '~', float_lit, identifier, int_lit, rune_lit, string_lit
+//		on  "<-", "chan", "func", "interface", "struct", '!', '&', '(', '*', '+', '-', '[', '^', '~', float_lit, identifier, int_lit, rune_lit, string_lit
 //			call HeaderExpression and goto state 9
 //	State 9
 //		on  ":=", '='
@@ -7546,10 +7564,10 @@ state6:
 //	State 10
 //		on  "range"
 //			shift and goto state 11
-//		on  "<-", "chan", "func", "struct", '!', '&', '(', '*', '+', '-', '[', '^', '~', float_lit, identifier, int_lit, rune_lit, string_lit
+//		on  "<-", "chan", "func", "interface", "struct", '!', '&', '(', '*', '+', '-', '[', '^', '~', float_lit, identifier, int_lit, rune_lit, string_lit
 //			call HeaderExpression and goto state 12
 //	State 11
-//		on  "<-", "chan", "func", "struct", '!', '&', '(', '*', '+', '-', '[', '^', '~', float_lit, identifier, int_lit, rune_lit, string_lit
+//		on  "<-", "chan", "func", "interface", "struct", '!', '&', '(', '*', '+', '-', '[', '^', '~', float_lit, identifier, int_lit, rune_lit, string_lit
 //			call HeaderExpression and goto state 4
 //	State 12
 //		on  ','
@@ -7557,7 +7575,7 @@ state6:
 //		on  ';'
 //			shift and goto state 2
 //	State 13
-//		on  "<-", "chan", "func", "struct", '!', '&', '(', '*', '+', '-', '[', '^', '~', float_lit, identifier, int_lit, rune_lit, string_lit
+//		on  "<-", "chan", "func", "interface", "struct", '!', '&', '(', '*', '+', '-', '[', '^', '~', float_lit, identifier, int_lit, rune_lit, string_lit
 //			call HeaderExpression and goto state 12
 //
 // ForRest is used internally from Parse.
@@ -7596,20 +7614,20 @@ state1:
 	}
 	return p.stop(r, accept, errorSet)
 state2:
-	accept, errorSet = false, 33
+	accept, errorSet = false, 26
 	switch Symbol(p.tok.Ch) {
 	case TOK_003b:
 		r = append(r, p.shift())
 		goto state3
-	case TOK_003c002d, TOK_chan, TOK_func, TOK_struct, TOK_0021, TOK_0026, TOK_0028, TOK_002a, TOK_002b, TOK_002d, TOK_005b, TOK_005e, TOK_007e, float_lit, identifier, int_lit, rune_lit, string_lit:
+	case TOK_003c002d, TOK_chan, TOK_func, TOK_interface, TOK_struct, TOK_0021, TOK_0026, TOK_0028, TOK_002a, TOK_002b, TOK_002d, TOK_005b, TOK_005e, TOK_007e, float_lit, identifier, int_lit, rune_lit, string_lit:
 		r = p.add(r, p.HeaderExpression())
 		goto state5
 	}
 	return p.stop(r, accept, errorSet)
 state3:
-	accept, errorSet = true, 43
+	accept, errorSet = true, 36
 	switch Symbol(p.tok.Ch) {
-	case TOK_003c002d, TOK_chan, TOK_func, TOK_struct, TOK_0021, TOK_0026, TOK_0028, TOK_002a, TOK_002b, TOK_002d, TOK_005b, TOK_005e, TOK_007e, float_lit, identifier, int_lit, rune_lit, string_lit:
+	case TOK_003c002d, TOK_chan, TOK_func, TOK_interface, TOK_struct, TOK_0021, TOK_0026, TOK_0028, TOK_002a, TOK_002b, TOK_002d, TOK_005b, TOK_005e, TOK_007e, float_lit, identifier, int_lit, rune_lit, string_lit:
 		r = p.add(r, p.ForPost())
 		goto state4
 	}
@@ -7626,25 +7644,25 @@ state5:
 	}
 	return p.stop(r, accept, errorSet)
 state6:
-	accept, errorSet = false, 27
+	accept, errorSet = false, 19
 	switch Symbol(p.tok.Ch) {
-	case TOK_003c002d, TOK_chan, TOK_func, TOK_range, TOK_struct, TOK_0021, TOK_0026, TOK_0028, TOK_002a, TOK_002b, TOK_002d, TOK_005b, TOK_005e, TOK_007e, float_lit, identifier, int_lit, rune_lit, string_lit:
+	case TOK_003c002d, TOK_chan, TOK_func, TOK_interface, TOK_range, TOK_struct, TOK_0021, TOK_0026, TOK_0028, TOK_002a, TOK_002b, TOK_002d, TOK_005b, TOK_005e, TOK_007e, float_lit, identifier, int_lit, rune_lit, string_lit:
 		r = p.add(r, p.ForAssignRest())
 		goto state4
 	}
 	return p.stop(r, accept, errorSet)
 state7:
-	accept, errorSet = false, 44
+	accept, errorSet = false, 37
 	switch Symbol(p.tok.Ch) {
-	case TOK_003c002d, TOK_chan, TOK_func, TOK_struct, TOK_0021, TOK_0026, TOK_0028, TOK_002a, TOK_002b, TOK_002d, TOK_005b, TOK_005e, TOK_007e, float_lit, identifier, int_lit, rune_lit, string_lit:
+	case TOK_003c002d, TOK_chan, TOK_func, TOK_interface, TOK_struct, TOK_0021, TOK_0026, TOK_0028, TOK_002a, TOK_002b, TOK_002d, TOK_005b, TOK_005e, TOK_007e, float_lit, identifier, int_lit, rune_lit, string_lit:
 		r = p.add(r, p.HeaderExpression())
 		goto state1
 	}
 	return p.stop(r, accept, errorSet)
 state8:
-	accept, errorSet = false, 44
+	accept, errorSet = false, 37
 	switch Symbol(p.tok.Ch) {
-	case TOK_003c002d, TOK_chan, TOK_func, TOK_struct, TOK_0021, TOK_0026, TOK_0028, TOK_002a, TOK_002b, TOK_002d, TOK_005b, TOK_005e, TOK_007e, float_lit, identifier, int_lit, rune_lit, string_lit:
+	case TOK_003c002d, TOK_chan, TOK_func, TOK_interface, TOK_struct, TOK_0021, TOK_0026, TOK_0028, TOK_002a, TOK_002b, TOK_002d, TOK_005b, TOK_005e, TOK_007e, float_lit, identifier, int_lit, rune_lit, string_lit:
 		r = p.add(r, p.HeaderExpression())
 		goto state9
 	}
@@ -7661,20 +7679,20 @@ state9:
 	}
 	return p.stop(r, accept, errorSet)
 state10:
-	accept, errorSet = false, 28
+	accept, errorSet = false, 20
 	switch Symbol(p.tok.Ch) {
 	case TOK_range:
 		r = append(r, p.shift())
 		goto state11
-	case TOK_003c002d, TOK_chan, TOK_func, TOK_struct, TOK_0021, TOK_0026, TOK_0028, TOK_002a, TOK_002b, TOK_002d, TOK_005b, TOK_005e, TOK_007e, float_lit, identifier, int_lit, rune_lit, string_lit:
+	case TOK_003c002d, TOK_chan, TOK_func, TOK_interface, TOK_struct, TOK_0021, TOK_0026, TOK_0028, TOK_002a, TOK_002b, TOK_002d, TOK_005b, TOK_005e, TOK_007e, float_lit, identifier, int_lit, rune_lit, string_lit:
 		r = p.add(r, p.HeaderExpression())
 		goto state12
 	}
 	return p.stop(r, accept, errorSet)
 state11:
-	accept, errorSet = false, 44
+	accept, errorSet = false, 37
 	switch Symbol(p.tok.Ch) {
-	case TOK_003c002d, TOK_chan, TOK_func, TOK_struct, TOK_0021, TOK_0026, TOK_0028, TOK_002a, TOK_002b, TOK_002d, TOK_005b, TOK_005e, TOK_007e, float_lit, identifier, int_lit, rune_lit, string_lit:
+	case TOK_003c002d, TOK_chan, TOK_func, TOK_interface, TOK_struct, TOK_0021, TOK_0026, TOK_0028, TOK_002a, TOK_002b, TOK_002d, TOK_005b, TOK_005e, TOK_007e, float_lit, identifier, int_lit, rune_lit, string_lit:
 		r = p.add(r, p.HeaderExpression())
 		goto state4
 	}
@@ -7691,9 +7709,9 @@ state12:
 	}
 	return p.stop(r, accept, errorSet)
 state13:
-	accept, errorSet = false, 44
+	accept, errorSet = false, 37
 	switch Symbol(p.tok.Ch) {
-	case TOK_003c002d, TOK_chan, TOK_func, TOK_struct, TOK_0021, TOK_0026, TOK_0028, TOK_002a, TOK_002b, TOK_002d, TOK_005b, TOK_005e, TOK_007e, float_lit, identifier, int_lit, rune_lit, string_lit:
+	case TOK_003c002d, TOK_chan, TOK_func, TOK_interface, TOK_struct, TOK_0021, TOK_0026, TOK_0028, TOK_002a, TOK_002b, TOK_002d, TOK_005b, TOK_005e, TOK_007e, float_lit, identifier, int_lit, rune_lit, string_lit:
 		r = p.add(r, p.HeaderExpression())
 		goto state12
 	}
@@ -7831,7 +7849,7 @@ state3:
 //	HeaderExpression = HeaderSimpleExpr { RelOp HeaderSimpleExpr } .
 //
 //	State 0
-//		on  "<-", "chan", "func", "struct", '!', '&', '(', '*', '+', '-', '[', '^', '~', float_lit, identifier, int_lit, rune_lit, string_lit
+//		on  "<-", "chan", "func", "interface", "struct", '!', '&', '(', '*', '+', '-', '[', '^', '~', float_lit, identifier, int_lit, rune_lit, string_lit
 //			call HeaderSimpleExpr and goto state 1
 //	State 1
 //		Accept
@@ -7843,9 +7861,9 @@ func (p *Parser) HeaderExpression() (r []int32) {
 	accept, errorSet := false, 0
 	r = append(p.get(), -int32(HeaderExpression), 0)
 state0:
-	accept, errorSet = false, 45
+	accept, errorSet = false, 38
 	switch Symbol(p.tok.Ch) {
-	case TOK_003c002d, TOK_chan, TOK_func, TOK_struct, TOK_0021, TOK_0026, TOK_0028, TOK_002a, TOK_002b, TOK_002d, TOK_005b, TOK_005e, TOK_007e, float_lit, identifier, int_lit, rune_lit, string_lit:
+	case TOK_003c002d, TOK_chan, TOK_func, TOK_interface, TOK_struct, TOK_0021, TOK_0026, TOK_0028, TOK_002a, TOK_002b, TOK_002d, TOK_005b, TOK_005e, TOK_007e, float_lit, identifier, int_lit, rune_lit, string_lit:
 		r = p.add(r, p.HeaderSimpleExpr())
 		goto state1
 	}
@@ -7871,6 +7889,7 @@ state1:
 //		| "[" [ Expression | "..." ] "]" Type [ CompositeLit [ FactorSuffix ] | CallSuffix [ FactorSuffix ] ]
 //		| "chan" ( "<-" ArrowElemType | ChanElemType )
 //		| StructType CompositeLit [ FactorSuffix ]
+//		| InterfaceType [ CallSuffix [ FactorSuffix ] ]
 //		| FuncLiteral [ FactorSuffix ] .
 //
 //	State 0
@@ -7888,6 +7907,8 @@ state1:
 //			call FuncLiteral and goto state 6
 //		on  "struct"
 //			call StructType and goto state 11
+//		on  "interface"
+//			call InterfaceType and goto state 12
 //	State 1
 //		on  "<-"
 //			shift and goto state 2
@@ -7899,7 +7920,7 @@ state1:
 //	State 3
 //		Accept
 //	State 4
-//		on  "<-", "chan", "func", "struct", '!', '&', '(', '*', '+', '-', '[', '^', '~', float_lit, identifier, int_lit, rune_lit, string_lit
+//		on  "<-", "chan", "func", "interface", "struct", '!', '&', '(', '*', '+', '-', '[', '^', '~', float_lit, identifier, int_lit, rune_lit, string_lit
 //			call Expression and goto state 5
 //	State 5
 //		on  ')'
@@ -7913,7 +7934,7 @@ state1:
 //			shift and goto state 8
 //		on  ']'
 //			shift and goto state 9
-//		on  "<-", "chan", "func", "struct", '!', '&', '(', '*', '+', '-', '[', '^', '~', float_lit, identifier, int_lit, rune_lit, string_lit
+//		on  "<-", "chan", "func", "interface", "struct", '!', '&', '(', '*', '+', '-', '[', '^', '~', float_lit, identifier, int_lit, rune_lit, string_lit
 //			call Expression and goto state 8
 //	State 8
 //		on  ']'
@@ -7930,6 +7951,10 @@ state1:
 //	State 11
 //		on  '{'
 //			call CompositeLit and goto state 6
+//	State 12
+//		Accept
+//		on  '('
+//			call CallSuffix and goto state 6
 //
 // HeaderFactor is used internally from Parse.
 func (p *Parser) HeaderFactor() (r []int32) {
@@ -7959,10 +7984,13 @@ func (p *Parser) HeaderFactor() (r []int32) {
 	case TOK_struct:
 		r = p.add(r, p.StructType())
 		goto state11
+	case TOK_interface:
+		r = p.add(r, p.InterfaceType())
+		goto state12
 	}
 	return p.stop(r, accept, errorSet)
 state1:
-	accept, errorSet = false, 18
+	accept, errorSet = false, 42
 	switch Symbol(p.tok.Ch) {
 	case TOK_003c002d:
 		r = append(r, p.shift())
@@ -7973,7 +8001,7 @@ state1:
 	}
 	return p.stop(r, accept, errorSet)
 state2:
-	accept, errorSet = false, 18
+	accept, errorSet = false, 42
 	switch Symbol(p.tok.Ch) {
 	case TOK_003c002d, TOK_chan, TOK_func, TOK_interface, TOK_struct, TOK_0028, TOK_002a, TOK_005b, identifier:
 		r = p.add(r, p.ArrowElemType())
@@ -7984,9 +8012,9 @@ state3:
 	accept, errorSet = true, 0
 	return p.stop(r, accept, errorSet)
 state4:
-	accept, errorSet = false, 39
+	accept, errorSet = false, 32
 	switch Symbol(p.tok.Ch) {
-	case TOK_003c002d, TOK_chan, TOK_func, TOK_struct, TOK_0021, TOK_0026, TOK_0028, TOK_002a, TOK_002b, TOK_002d, TOK_005b, TOK_005e, TOK_007e, float_lit, identifier, int_lit, rune_lit, string_lit:
+	case TOK_003c002d, TOK_chan, TOK_func, TOK_interface, TOK_struct, TOK_0021, TOK_0026, TOK_0028, TOK_002a, TOK_002b, TOK_002d, TOK_005b, TOK_005e, TOK_007e, float_lit, identifier, int_lit, rune_lit, string_lit:
 		r = p.add(r, p.Expression())
 		goto state5
 	}
@@ -8008,7 +8036,7 @@ state6:
 	}
 	return p.stop(r, accept, errorSet)
 state7:
-	accept, errorSet = false, 6
+	accept, errorSet = false, 2
 	switch Symbol(p.tok.Ch) {
 	case TOK_002e002e002e:
 		r = append(r, p.shift())
@@ -8016,7 +8044,7 @@ state7:
 	case TOK_005d:
 		r = append(r, p.shift())
 		goto state9
-	case TOK_003c002d, TOK_chan, TOK_func, TOK_struct, TOK_0021, TOK_0026, TOK_0028, TOK_002a, TOK_002b, TOK_002d, TOK_005b, TOK_005e, TOK_007e, float_lit, identifier, int_lit, rune_lit, string_lit:
+	case TOK_003c002d, TOK_chan, TOK_func, TOK_interface, TOK_struct, TOK_0021, TOK_0026, TOK_0028, TOK_002a, TOK_002b, TOK_002d, TOK_005b, TOK_005e, TOK_007e, float_lit, identifier, int_lit, rune_lit, string_lit:
 		r = p.add(r, p.Expression())
 		goto state8
 	}
@@ -8030,7 +8058,7 @@ state8:
 	}
 	return p.stop(r, accept, errorSet)
 state9:
-	accept, errorSet = false, 23
+	accept, errorSet = false, 47
 	switch Symbol(p.tok.Ch) {
 	case TOK_003c002d, TOK_chan, TOK_func, TOK_interface, TOK_struct, TOK_002a, TOK_005b, identifier:
 		r = p.add(r, p.Type())
@@ -8056,6 +8084,14 @@ state11:
 		goto state6
 	}
 	return p.stop(r, accept, errorSet)
+state12:
+	accept, errorSet = true, 94
+	switch Symbol(p.tok.Ch) {
+	case TOK_0028:
+		r = p.add(r, p.CallSuffix())
+		goto state6
+	}
+	return p.stop(r, accept, errorSet)
 }
 
 // HeaderSimpleExpr grammar:
@@ -8063,7 +8099,7 @@ state11:
 //	HeaderSimpleExpr = HeaderTerm { AddOp HeaderTerm } .
 //
 //	State 0
-//		on  "<-", "chan", "func", "struct", '!', '&', '(', '*', '+', '-', '[', '^', '~', float_lit, identifier, int_lit, rune_lit, string_lit
+//		on  "<-", "chan", "func", "interface", "struct", '!', '&', '(', '*', '+', '-', '[', '^', '~', float_lit, identifier, int_lit, rune_lit, string_lit
 //			call HeaderTerm and goto state 1
 //	State 1
 //		Accept
@@ -8075,9 +8111,9 @@ func (p *Parser) HeaderSimpleExpr() (r []int32) {
 	accept, errorSet := false, 0
 	r = append(p.get(), -int32(HeaderSimpleExpr), 0)
 state0:
-	accept, errorSet = false, 46
+	accept, errorSet = false, 39
 	switch Symbol(p.tok.Ch) {
-	case TOK_003c002d, TOK_chan, TOK_func, TOK_struct, TOK_0021, TOK_0026, TOK_0028, TOK_002a, TOK_002b, TOK_002d, TOK_005b, TOK_005e, TOK_007e, float_lit, identifier, int_lit, rune_lit, string_lit:
+	case TOK_003c002d, TOK_chan, TOK_func, TOK_interface, TOK_struct, TOK_0021, TOK_0026, TOK_0028, TOK_002a, TOK_002b, TOK_002d, TOK_005b, TOK_005e, TOK_007e, float_lit, identifier, int_lit, rune_lit, string_lit:
 		r = p.add(r, p.HeaderTerm())
 		goto state1
 	}
@@ -8097,7 +8133,7 @@ state1:
 //	HeaderTerm       = HeaderUnaryExpr { MulOp HeaderUnaryExpr } .
 //
 //	State 0
-//		on  "<-", "chan", "func", "struct", '!', '&', '(', '*', '+', '-', '[', '^', '~', float_lit, identifier, int_lit, rune_lit, string_lit
+//		on  "<-", "chan", "func", "interface", "struct", '!', '&', '(', '*', '+', '-', '[', '^', '~', float_lit, identifier, int_lit, rune_lit, string_lit
 //			call HeaderUnaryExpr and goto state 1
 //	State 1
 //		Accept
@@ -8109,9 +8145,9 @@ func (p *Parser) HeaderTerm() (r []int32) {
 	accept, errorSet := false, 0
 	r = append(p.get(), -int32(HeaderTerm), 0)
 state0:
-	accept, errorSet = false, 47
+	accept, errorSet = false, 40
 	switch Symbol(p.tok.Ch) {
-	case TOK_003c002d, TOK_chan, TOK_func, TOK_struct, TOK_0021, TOK_0026, TOK_0028, TOK_002a, TOK_002b, TOK_002d, TOK_005b, TOK_005e, TOK_007e, float_lit, identifier, int_lit, rune_lit, string_lit:
+	case TOK_003c002d, TOK_chan, TOK_func, TOK_interface, TOK_struct, TOK_0021, TOK_0026, TOK_0028, TOK_002a, TOK_002b, TOK_002d, TOK_005b, TOK_005e, TOK_007e, float_lit, identifier, int_lit, rune_lit, string_lit:
 		r = p.add(r, p.HeaderUnaryExpr())
 		goto state1
 	}
@@ -8131,14 +8167,14 @@ state1:
 //	HeaderUnaryExpr  = { UnaryOp } HeaderFactor .
 //
 //	State 0
-//		on  "chan", "func", "struct", '(', '[', float_lit, identifier, int_lit, rune_lit, string_lit
+//		on  "chan", "func", "interface", "struct", '(', '[', float_lit, identifier, int_lit, rune_lit, string_lit
 //			call HeaderFactor and goto state 1
 //		on  "<-", '!', '&', '*', '+', '-', '^', '~'
 //			call UnaryOp and goto state 2
 //	State 1
 //		Accept
 //	State 2
-//		on  "chan", "func", "struct", '(', '[', float_lit, identifier, int_lit, rune_lit, string_lit
+//		on  "chan", "func", "interface", "struct", '(', '[', float_lit, identifier, int_lit, rune_lit, string_lit
 //			call HeaderFactor and goto state 1
 //		on  "<-", '!', '&', '*', '+', '-', '^', '~'
 //			call UnaryOp and goto state 2
@@ -8148,9 +8184,9 @@ func (p *Parser) HeaderUnaryExpr() (r []int32) {
 	accept, errorSet := false, 0
 	r = append(p.get(), -int32(HeaderUnaryExpr), 0)
 	// state0:
-	accept, errorSet = false, 48
+	accept, errorSet = false, 41
 	switch Symbol(p.tok.Ch) {
-	case TOK_chan, TOK_func, TOK_struct, TOK_0028, TOK_005b, float_lit, identifier, int_lit, rune_lit, string_lit:
+	case TOK_chan, TOK_func, TOK_interface, TOK_struct, TOK_0028, TOK_005b, float_lit, identifier, int_lit, rune_lit, string_lit:
 		r = p.add(r, p.HeaderFactor())
 		goto state1
 	case TOK_003c002d, TOK_0021, TOK_0026, TOK_002a, TOK_002b, TOK_002d, TOK_005e, TOK_007e:
@@ -8162,9 +8198,9 @@ state1:
 	accept, errorSet = true, 0
 	return p.stop(r, accept, errorSet)
 state2:
-	accept, errorSet = false, 48
+	accept, errorSet = false, 41
 	switch Symbol(p.tok.Ch) {
-	case TOK_chan, TOK_func, TOK_struct, TOK_0028, TOK_005b, float_lit, identifier, int_lit, rune_lit, string_lit:
+	case TOK_chan, TOK_func, TOK_interface, TOK_struct, TOK_0028, TOK_005b, float_lit, identifier, int_lit, rune_lit, string_lit:
 		r = p.add(r, p.HeaderFactor())
 		goto state1
 	case TOK_003c002d, TOK_0021, TOK_0026, TOK_002a, TOK_002b, TOK_002d, TOK_005e, TOK_007e:
@@ -8231,12 +8267,12 @@ state1:
 //		on  ';'
 //			shift and goto state 2
 //	State 2
-//		on  "<-", "chan", "func", "struct", '!', '&', '(', '*', '+', '-', '[', '^', '~', float_lit, identifier, int_lit, rune_lit, string_lit
+//		on  "<-", "chan", "func", "interface", "struct", '!', '&', '(', '*', '+', '-', '[', '^', '~', float_lit, identifier, int_lit, rune_lit, string_lit
 //			call HeaderExpression and goto state 3
 //	State 3
 //		Accept
 //	State 4
-//		on  "<-", "chan", "func", "struct", '!', '&', '(', '*', '+', '-', '[', '^', '~', float_lit, identifier, int_lit, rune_lit, string_lit
+//		on  "<-", "chan", "func", "interface", "struct", '!', '&', '(', '*', '+', '-', '[', '^', '~', float_lit, identifier, int_lit, rune_lit, string_lit
 //			call HeaderExpression and goto state 5
 //	State 5
 //		on  ';'
@@ -8244,7 +8280,7 @@ state1:
 //		on  ','
 //			shift and goto state 4
 //	State 6
-//		on  "<-", "chan", "func", "struct", '!', '&', '(', '*', '+', '-', '[', '^', '~', float_lit, identifier, int_lit, rune_lit, string_lit
+//		on  "<-", "chan", "func", "interface", "struct", '!', '&', '(', '*', '+', '-', '[', '^', '~', float_lit, identifier, int_lit, rune_lit, string_lit
 //			call HeaderExpression and goto state 1
 //	State 7
 //		on  '(', '*', identifier
@@ -8291,9 +8327,9 @@ state1:
 	}
 	return p.stop(r, accept, errorSet)
 state2:
-	accept, errorSet = false, 44
+	accept, errorSet = false, 37
 	switch Symbol(p.tok.Ch) {
-	case TOK_003c002d, TOK_chan, TOK_func, TOK_struct, TOK_0021, TOK_0026, TOK_0028, TOK_002a, TOK_002b, TOK_002d, TOK_005b, TOK_005e, TOK_007e, float_lit, identifier, int_lit, rune_lit, string_lit:
+	case TOK_003c002d, TOK_chan, TOK_func, TOK_interface, TOK_struct, TOK_0021, TOK_0026, TOK_0028, TOK_002a, TOK_002b, TOK_002d, TOK_005b, TOK_005e, TOK_007e, float_lit, identifier, int_lit, rune_lit, string_lit:
 		r = p.add(r, p.HeaderExpression())
 		goto state3
 	}
@@ -8302,9 +8338,9 @@ state3:
 	accept, errorSet = true, 0
 	return p.stop(r, accept, errorSet)
 state4:
-	accept, errorSet = false, 44
+	accept, errorSet = false, 37
 	switch Symbol(p.tok.Ch) {
-	case TOK_003c002d, TOK_chan, TOK_func, TOK_struct, TOK_0021, TOK_0026, TOK_0028, TOK_002a, TOK_002b, TOK_002d, TOK_005b, TOK_005e, TOK_007e, float_lit, identifier, int_lit, rune_lit, string_lit:
+	case TOK_003c002d, TOK_chan, TOK_func, TOK_interface, TOK_struct, TOK_0021, TOK_0026, TOK_0028, TOK_002a, TOK_002b, TOK_002d, TOK_005b, TOK_005e, TOK_007e, float_lit, identifier, int_lit, rune_lit, string_lit:
 		r = p.add(r, p.HeaderExpression())
 		goto state5
 	}
@@ -8321,9 +8357,9 @@ state5:
 	}
 	return p.stop(r, accept, errorSet)
 state6:
-	accept, errorSet = false, 44
+	accept, errorSet = false, 37
 	switch Symbol(p.tok.Ch) {
-	case TOK_003c002d, TOK_chan, TOK_func, TOK_struct, TOK_0021, TOK_0026, TOK_0028, TOK_002a, TOK_002b, TOK_002d, TOK_005b, TOK_005e, TOK_007e, float_lit, identifier, int_lit, rune_lit, string_lit:
+	case TOK_003c002d, TOK_chan, TOK_func, TOK_interface, TOK_struct, TOK_0021, TOK_0026, TOK_0028, TOK_002a, TOK_002b, TOK_002d, TOK_005b, TOK_005e, TOK_007e, float_lit, identifier, int_lit, rune_lit, string_lit:
 		r = p.add(r, p.HeaderExpression())
 		goto state1
 	}
@@ -8360,10 +8396,10 @@ state8:
 //	State 1
 //		on  ';'
 //			shift and goto state 2
-//		on  "<-", "chan", "func", "struct", '!', '&', '(', '*', '+', '-', '[', '^', '~', float_lit, identifier, int_lit, rune_lit, string_lit
+//		on  "<-", "chan", "func", "interface", "struct", '!', '&', '(', '*', '+', '-', '[', '^', '~', float_lit, identifier, int_lit, rune_lit, string_lit
 //			call HeaderExpression and goto state 7
 //	State 2
-//		on  "<-", "chan", "func", "struct", '!', '&', '(', '*', '+', '-', '[', '^', '~', float_lit, identifier, int_lit, rune_lit, string_lit
+//		on  "<-", "chan", "func", "interface", "struct", '!', '&', '(', '*', '+', '-', '[', '^', '~', float_lit, identifier, int_lit, rune_lit, string_lit
 //			call HeaderExpression and goto state 3
 //	State 3
 //		on  '{'
@@ -8398,20 +8434,20 @@ func (p *Parser) IfStmt() (r []int32) {
 	}
 	return p.stop(r, accept, errorSet)
 state1:
-	accept, errorSet = false, 33
+	accept, errorSet = false, 26
 	switch Symbol(p.tok.Ch) {
 	case TOK_003b:
 		r = append(r, p.shift())
 		goto state2
-	case TOK_003c002d, TOK_chan, TOK_func, TOK_struct, TOK_0021, TOK_0026, TOK_0028, TOK_002a, TOK_002b, TOK_002d, TOK_005b, TOK_005e, TOK_007e, float_lit, identifier, int_lit, rune_lit, string_lit:
+	case TOK_003c002d, TOK_chan, TOK_func, TOK_interface, TOK_struct, TOK_0021, TOK_0026, TOK_0028, TOK_002a, TOK_002b, TOK_002d, TOK_005b, TOK_005e, TOK_007e, float_lit, identifier, int_lit, rune_lit, string_lit:
 		r = p.add(r, p.HeaderExpression())
 		goto state7
 	}
 	return p.stop(r, accept, errorSet)
 state2:
-	accept, errorSet = false, 44
+	accept, errorSet = false, 37
 	switch Symbol(p.tok.Ch) {
-	case TOK_003c002d, TOK_chan, TOK_func, TOK_struct, TOK_0021, TOK_0026, TOK_0028, TOK_002a, TOK_002b, TOK_002d, TOK_005b, TOK_005e, TOK_007e, float_lit, identifier, int_lit, rune_lit, string_lit:
+	case TOK_003c002d, TOK_chan, TOK_func, TOK_interface, TOK_struct, TOK_0021, TOK_0026, TOK_0028, TOK_002a, TOK_002b, TOK_002d, TOK_005b, TOK_005e, TOK_007e, float_lit, identifier, int_lit, rune_lit, string_lit:
 		r = p.add(r, p.HeaderExpression())
 		goto state3
 	}
@@ -8588,19 +8624,19 @@ state2:
 //	State 1
 //		on  ':'
 //			shift and goto state 2
-//		on  "<-", "chan", "func", "struct", '!', '&', '(', '*', '+', '-', '[', '^', '~', float_lit, identifier, int_lit, rune_lit, string_lit
+//		on  "<-", "chan", "func", "interface", "struct", '!', '&', '(', '*', '+', '-', '[', '^', '~', float_lit, identifier, int_lit, rune_lit, string_lit
 //			call Expression and goto state 7
 //	State 2
 //		on  ':'
 //			shift and goto state 3
 //		on  ']'
 //			shift and goto state 4
-//		on  "<-", "chan", "func", "struct", '!', '&', '(', '*', '+', '-', '[', '^', '~', float_lit, identifier, int_lit, rune_lit, string_lit
+//		on  "<-", "chan", "func", "interface", "struct", '!', '&', '(', '*', '+', '-', '[', '^', '~', float_lit, identifier, int_lit, rune_lit, string_lit
 //			call Expression and goto state 6
 //	State 3
 //		on  ']'
 //			shift and goto state 4
-//		on  "<-", "chan", "func", "struct", '!', '&', '(', '*', '+', '-', '[', '^', '~', float_lit, identifier, int_lit, rune_lit, string_lit
+//		on  "<-", "chan", "func", "interface", "struct", '!', '&', '(', '*', '+', '-', '[', '^', '~', float_lit, identifier, int_lit, rune_lit, string_lit
 //			call Expression and goto state 5
 //	State 4
 //		Accept
@@ -8631,18 +8667,18 @@ func (p *Parser) Index() (r []int32) {
 	}
 	return p.stop(r, accept, errorSet)
 state1:
-	accept, errorSet = false, 31
+	accept, errorSet = false, 24
 	switch Symbol(p.tok.Ch) {
 	case TOK_003a:
 		r = append(r, p.shift())
 		goto state2
-	case TOK_003c002d, TOK_chan, TOK_func, TOK_struct, TOK_0021, TOK_0026, TOK_0028, TOK_002a, TOK_002b, TOK_002d, TOK_005b, TOK_005e, TOK_007e, float_lit, identifier, int_lit, rune_lit, string_lit:
+	case TOK_003c002d, TOK_chan, TOK_func, TOK_interface, TOK_struct, TOK_0021, TOK_0026, TOK_0028, TOK_002a, TOK_002b, TOK_002d, TOK_005b, TOK_005e, TOK_007e, float_lit, identifier, int_lit, rune_lit, string_lit:
 		r = p.add(r, p.Expression())
 		goto state7
 	}
 	return p.stop(r, accept, errorSet)
 state2:
-	accept, errorSet = false, 30
+	accept, errorSet = false, 23
 	switch Symbol(p.tok.Ch) {
 	case TOK_003a:
 		r = append(r, p.shift())
@@ -8650,18 +8686,18 @@ state2:
 	case TOK_005d:
 		r = append(r, p.shift())
 		goto state4
-	case TOK_003c002d, TOK_chan, TOK_func, TOK_struct, TOK_0021, TOK_0026, TOK_0028, TOK_002a, TOK_002b, TOK_002d, TOK_005b, TOK_005e, TOK_007e, float_lit, identifier, int_lit, rune_lit, string_lit:
+	case TOK_003c002d, TOK_chan, TOK_func, TOK_interface, TOK_struct, TOK_0021, TOK_0026, TOK_0028, TOK_002a, TOK_002b, TOK_002d, TOK_005b, TOK_005e, TOK_007e, float_lit, identifier, int_lit, rune_lit, string_lit:
 		r = p.add(r, p.Expression())
 		goto state6
 	}
 	return p.stop(r, accept, errorSet)
 state3:
-	accept, errorSet = false, 34
+	accept, errorSet = false, 27
 	switch Symbol(p.tok.Ch) {
 	case TOK_005d:
 		r = append(r, p.shift())
 		goto state4
-	case TOK_003c002d, TOK_chan, TOK_func, TOK_struct, TOK_0021, TOK_0026, TOK_0028, TOK_002a, TOK_002b, TOK_002d, TOK_005b, TOK_005e, TOK_007e, float_lit, identifier, int_lit, rune_lit, string_lit:
+	case TOK_003c002d, TOK_chan, TOK_func, TOK_interface, TOK_struct, TOK_0021, TOK_0026, TOK_0028, TOK_002a, TOK_002b, TOK_002d, TOK_005b, TOK_005e, TOK_007e, float_lit, identifier, int_lit, rune_lit, string_lit:
 		r = p.add(r, p.Expression())
 		goto state5
 	}
@@ -8878,7 +8914,7 @@ state1:
 	}
 	return p.stop(r, accept, errorSet)
 state2:
-	accept, errorSet = false, 2
+	accept, errorSet = false, 3
 	switch Symbol(p.tok.Ch) {
 	case TOK_0029:
 		r = append(r, p.shift())
@@ -8889,7 +8925,7 @@ state2:
 	}
 	return p.stop(r, accept, errorSet)
 state3:
-	accept, errorSet = true, 18
+	accept, errorSet = true, 42
 	switch Symbol(p.tok.Ch) {
 	case TOK_0028:
 		r = append(r, p.shift())
@@ -8900,7 +8936,7 @@ state3:
 	}
 	return p.stop(r, accept, errorSet)
 state4:
-	accept, errorSet = false, 3
+	accept, errorSet = false, 4
 	switch Symbol(p.tok.Ch) {
 	case TOK_002e002e002e, TOK_003c002d, TOK_chan, TOK_func, TOK_interface, TOK_struct, TOK_002a, TOK_005b, identifier:
 		r = p.add(r, p.ResultList())
@@ -8993,7 +9029,7 @@ func (p *Parser) ParamDecl() (r []int32) {
 	accept, errorSet := false, 0
 	r = append(p.get(), -int32(ParamDecl), 0)
 	// state0:
-	accept, errorSet = false, 5
+	accept, errorSet = false, 6
 	switch Symbol(p.tok.Ch) {
 	case TOK_002e002e002e:
 		r = append(r, p.shift())
@@ -9004,7 +9040,7 @@ func (p *Parser) ParamDecl() (r []int32) {
 	}
 	return p.stop(r, accept, errorSet)
 state1:
-	accept, errorSet = false, 23
+	accept, errorSet = false, 47
 	switch Symbol(p.tok.Ch) {
 	case TOK_003c002d, TOK_chan, TOK_func, TOK_interface, TOK_struct, TOK_002a, TOK_005b, identifier:
 		r = p.add(r, p.Type())
@@ -9015,7 +9051,7 @@ state2:
 	accept, errorSet = true, 0
 	return p.stop(r, accept, errorSet)
 state3:
-	accept, errorSet = true, 5
+	accept, errorSet = true, 6
 	switch Symbol(p.tok.Ch) {
 	case TOK_002e002e002e:
 		r = append(r, p.shift())
@@ -9026,7 +9062,7 @@ state3:
 	}
 	return p.stop(r, accept, errorSet)
 state4:
-	accept, errorSet = true, 23
+	accept, errorSet = true, 47
 	switch Symbol(p.tok.Ch) {
 	case TOK_003c002d, TOK_chan, TOK_func, TOK_interface, TOK_struct, TOK_002a, TOK_005b, identifier:
 		r = p.add(r, p.Type())
@@ -9056,7 +9092,7 @@ func (p *Parser) ParameterList() (r []int32) {
 	accept, errorSet := false, 0
 	r = append(p.get(), -int32(ParameterList), 0)
 	// state0:
-	accept, errorSet = false, 4
+	accept, errorSet = false, 5
 	switch Symbol(p.tok.Ch) {
 	case TOK_002e002e002e, TOK_003c002d, TOK_chan, TOK_func, TOK_interface, TOK_struct, TOK_002a, TOK_005b, identifier:
 		r = p.add(r, p.ParamDecl())
@@ -9072,7 +9108,7 @@ state1:
 	}
 	return p.stop(r, accept, errorSet)
 state2:
-	accept, errorSet = true, 4
+	accept, errorSet = true, 5
 	switch Symbol(p.tok.Ch) {
 	case TOK_002e002e002e, TOK_003c002d, TOK_chan, TOK_func, TOK_interface, TOK_struct, TOK_002a, TOK_005b, identifier:
 		r = p.add(r, p.ParamDecl())
@@ -9172,7 +9208,7 @@ state2:
 //		on  "<-"
 //			shift and goto state 2
 //	State 2
-//		on  "<-", "chan", "func", "struct", '!', '&', '(', '*', '+', '-', '[', '^', '~', float_lit, identifier, int_lit, rune_lit, string_lit
+//		on  "<-", "chan", "func", "interface", "struct", '!', '&', '(', '*', '+', '-', '[', '^', '~', float_lit, identifier, int_lit, rune_lit, string_lit
 //			call Expression and goto state 3
 //	State 3
 //		Accept
@@ -9232,9 +9268,9 @@ state1:
 	}
 	return p.stop(r, accept, errorSet)
 state2:
-	accept, errorSet = false, 39
+	accept, errorSet = false, 32
 	switch Symbol(p.tok.Ch) {
-	case TOK_003c002d, TOK_chan, TOK_func, TOK_struct, TOK_0021, TOK_0026, TOK_0028, TOK_002a, TOK_002b, TOK_002d, TOK_005b, TOK_005e, TOK_007e, float_lit, identifier, int_lit, rune_lit, string_lit:
+	case TOK_003c002d, TOK_chan, TOK_func, TOK_interface, TOK_struct, TOK_0021, TOK_0026, TOK_0028, TOK_002a, TOK_002b, TOK_002d, TOK_005b, TOK_005e, TOK_007e, float_lit, identifier, int_lit, rune_lit, string_lit:
 		r = p.add(r, p.Expression())
 		goto state3
 	}
@@ -9308,10 +9344,10 @@ state6:
 //	State 1
 //		Accept
 //	State 2
-//		on  "<-", "chan", "func", "struct", '!', '&', '(', '*', '+', '-', '[', '^', '~', float_lit, identifier, int_lit, rune_lit, string_lit
+//		on  "<-", "chan", "func", "interface", "struct", '!', '&', '(', '*', '+', '-', '[', '^', '~', float_lit, identifier, int_lit, rune_lit, string_lit
 //			call ExpressionList and goto state 1
 //	State 3
-//		on  "<-", "chan", "func", "struct", '!', '&', '(', '*', '+', '-', '[', '^', '~', float_lit, identifier, int_lit, rune_lit, string_lit
+//		on  "<-", "chan", "func", "interface", "struct", '!', '&', '(', '*', '+', '-', '[', '^', '~', float_lit, identifier, int_lit, rune_lit, string_lit
 //			call Expression and goto state 1
 //	State 4
 //		on  '(', '*', identifier
@@ -9357,17 +9393,17 @@ state1:
 	accept, errorSet = true, 0
 	return p.stop(r, accept, errorSet)
 state2:
-	accept, errorSet = false, 38
+	accept, errorSet = false, 31
 	switch Symbol(p.tok.Ch) {
-	case TOK_003c002d, TOK_chan, TOK_func, TOK_struct, TOK_0021, TOK_0026, TOK_0028, TOK_002a, TOK_002b, TOK_002d, TOK_005b, TOK_005e, TOK_007e, float_lit, identifier, int_lit, rune_lit, string_lit:
+	case TOK_003c002d, TOK_chan, TOK_func, TOK_interface, TOK_struct, TOK_0021, TOK_0026, TOK_0028, TOK_002a, TOK_002b, TOK_002d, TOK_005b, TOK_005e, TOK_007e, float_lit, identifier, int_lit, rune_lit, string_lit:
 		r = p.add(r, p.ExpressionList())
 		goto state1
 	}
 	return p.stop(r, accept, errorSet)
 state3:
-	accept, errorSet = false, 39
+	accept, errorSet = false, 32
 	switch Symbol(p.tok.Ch) {
-	case TOK_003c002d, TOK_chan, TOK_func, TOK_struct, TOK_0021, TOK_0026, TOK_0028, TOK_002a, TOK_002b, TOK_002d, TOK_005b, TOK_005e, TOK_007e, float_lit, identifier, int_lit, rune_lit, string_lit:
+	case TOK_003c002d, TOK_chan, TOK_func, TOK_interface, TOK_struct, TOK_0021, TOK_0026, TOK_0028, TOK_002a, TOK_002b, TOK_002d, TOK_005b, TOK_005e, TOK_007e, float_lit, identifier, int_lit, rune_lit, string_lit:
 		r = p.add(r, p.Expression())
 		goto state1
 	}
@@ -9430,7 +9466,7 @@ func (p *Parser) Receiver() (r []int32) {
 	}
 	return p.stop(r, accept, errorSet)
 state1:
-	accept, errorSet = false, 4
+	accept, errorSet = false, 5
 	switch Symbol(p.tok.Ch) {
 	case TOK_002e002e002e, TOK_003c002d, TOK_chan, TOK_func, TOK_interface, TOK_struct, TOK_002a, TOK_005b, identifier:
 		r = p.add(r, p.ParamDecl())
@@ -9498,7 +9534,7 @@ func (p *Parser) ResultList() (r []int32) {
 	accept, errorSet := false, 0
 	r = append(p.get(), -int32(ResultList), 0)
 	// state0:
-	accept, errorSet = false, 4
+	accept, errorSet = false, 5
 	switch Symbol(p.tok.Ch) {
 	case TOK_002e002e002e, TOK_003c002d, TOK_chan, TOK_func, TOK_interface, TOK_struct, TOK_002a, TOK_005b, identifier:
 		r = p.add(r, p.ParamDecl())
@@ -9514,7 +9550,7 @@ state1:
 	}
 	return p.stop(r, accept, errorSet)
 state2:
-	accept, errorSet = true, 4
+	accept, errorSet = true, 5
 	switch Symbol(p.tok.Ch) {
 	case TOK_002e002e002e, TOK_003c002d, TOK_chan, TOK_func, TOK_interface, TOK_struct, TOK_002a, TOK_005b, identifier:
 		r = p.add(r, p.ParamDecl())
@@ -9624,7 +9660,7 @@ state1:
 	}
 	return p.stop(r, accept, errorSet)
 state2:
-	accept, errorSet = false, 17
+	accept, errorSet = false, 21
 	switch Symbol(p.tok.Ch) {
 	case TOK_type:
 		r = append(r, p.shift())
@@ -9690,7 +9726,7 @@ func (p *Parser) Signature() (r []int32) {
 	}
 	return p.stop(r, accept, errorSet)
 state1:
-	accept, errorSet = false, 2
+	accept, errorSet = false, 3
 	switch Symbol(p.tok.Ch) {
 	case TOK_0029:
 		r = append(r, p.shift())
@@ -9701,7 +9737,7 @@ state1:
 	}
 	return p.stop(r, accept, errorSet)
 state2:
-	accept, errorSet = true, 18
+	accept, errorSet = true, 42
 	switch Symbol(p.tok.Ch) {
 	case TOK_0028:
 		r = append(r, p.shift())
@@ -9712,7 +9748,7 @@ state2:
 	}
 	return p.stop(r, accept, errorSet)
 state3:
-	accept, errorSet = false, 3
+	accept, errorSet = false, 4
 	switch Symbol(p.tok.Ch) {
 	case TOK_002e002e002e, TOK_003c002d, TOK_chan, TOK_func, TOK_interface, TOK_struct, TOK_002a, TOK_005b, identifier:
 		r = p.add(r, p.ResultList())
@@ -9745,7 +9781,7 @@ state6:
 //	SimpleExpr     = Term { AddOp Term } .
 //
 //	State 0
-//		on  "<-", "chan", "func", "struct", '!', '&', '(', '*', '+', '-', '[', '^', '~', float_lit, identifier, int_lit, rune_lit, string_lit
+//		on  "<-", "chan", "func", "interface", "struct", '!', '&', '(', '*', '+', '-', '[', '^', '~', float_lit, identifier, int_lit, rune_lit, string_lit
 //			call Term and goto state 1
 //	State 1
 //		Accept
@@ -9757,9 +9793,9 @@ func (p *Parser) SimpleExpr() (r []int32) {
 	accept, errorSet := false, 0
 	r = append(p.get(), -int32(SimpleExpr), 0)
 state0:
-	accept, errorSet = false, 41
+	accept, errorSet = false, 34
 	switch Symbol(p.tok.Ch) {
-	case TOK_003c002d, TOK_chan, TOK_func, TOK_struct, TOK_0021, TOK_0026, TOK_0028, TOK_002a, TOK_002b, TOK_002d, TOK_005b, TOK_005e, TOK_007e, float_lit, identifier, int_lit, rune_lit, string_lit:
+	case TOK_003c002d, TOK_chan, TOK_func, TOK_interface, TOK_struct, TOK_0021, TOK_0026, TOK_0028, TOK_002a, TOK_002b, TOK_002d, TOK_005b, TOK_005e, TOK_007e, float_lit, identifier, int_lit, rune_lit, string_lit:
 		r = p.add(r, p.Term())
 		goto state1
 	}
@@ -9928,7 +9964,7 @@ stop:
 //		on  "type"
 //			call TypeDecl and goto state 2
 //	State 1
-//		on  "<-", "chan", "func", "struct", '!', '&', '(', '*', '+', '-', '[', '^', '~', float_lit, identifier, int_lit, rune_lit, string_lit
+//		on  "<-", "chan", "func", "interface", "struct", '!', '&', '(', '*', '+', '-', '[', '^', '~', float_lit, identifier, int_lit, rune_lit, string_lit
 //			call Expression and goto state 2
 //	State 2
 //		Accept
@@ -9950,7 +9986,7 @@ stop:
 //		on  '('
 //			call CallSuffix and goto state 5
 //	State 6
-//		on  "<-", "chan", "func", "range", "struct", '!', '&', '(', '*', '+', '-', ';', '[', '^', '~', float_lit, identifier, int_lit, rune_lit, string_lit
+//		on  "<-", "chan", "func", "interface", "range", "struct", '!', '&', '(', '*', '+', '-', ';', '[', '^', '~', float_lit, identifier, int_lit, rune_lit, string_lit
 //			call ForHeader and goto state 7
 //		on  '{'
 //			call Block and goto state 2
@@ -9962,7 +9998,7 @@ stop:
 //			shift and goto state 2
 //	State 9
 //		Accept
-//		on  "<-", "chan", "func", "struct", '!', '&', '(', '*', '+', '-', '[', '^', '~', float_lit, identifier, int_lit, rune_lit, string_lit
+//		on  "<-", "chan", "func", "interface", "struct", '!', '&', '(', '*', '+', '-', '[', '^', '~', float_lit, identifier, int_lit, rune_lit, string_lit
 //			call ExpressionList and goto state 2
 //	State 10
 //		Accept
@@ -10027,9 +10063,9 @@ func (p *Parser) Statement() (r []int32) {
 	}
 	return p.stop(r, accept, errorSet)
 state1:
-	accept, errorSet = false, 39
+	accept, errorSet = false, 32
 	switch Symbol(p.tok.Ch) {
-	case TOK_003c002d, TOK_chan, TOK_func, TOK_struct, TOK_0021, TOK_0026, TOK_0028, TOK_002a, TOK_002b, TOK_002d, TOK_005b, TOK_005e, TOK_007e, float_lit, identifier, int_lit, rune_lit, string_lit:
+	case TOK_003c002d, TOK_chan, TOK_func, TOK_interface, TOK_struct, TOK_0021, TOK_0026, TOK_0028, TOK_002a, TOK_002b, TOK_002d, TOK_005b, TOK_005e, TOK_007e, float_lit, identifier, int_lit, rune_lit, string_lit:
 		r = p.add(r, p.Expression())
 		goto state2
 	}
@@ -10071,9 +10107,9 @@ state5:
 	}
 	return p.stop(r, accept, errorSet)
 state6:
-	accept, errorSet = false, 25
+	accept, errorSet = false, 17
 	switch Symbol(p.tok.Ch) {
-	case TOK_003c002d, TOK_chan, TOK_func, TOK_range, TOK_struct, TOK_0021, TOK_0026, TOK_0028, TOK_002a, TOK_002b, TOK_002d, TOK_003b, TOK_005b, TOK_005e, TOK_007e, float_lit, identifier, int_lit, rune_lit, string_lit:
+	case TOK_003c002d, TOK_chan, TOK_func, TOK_interface, TOK_range, TOK_struct, TOK_0021, TOK_0026, TOK_0028, TOK_002a, TOK_002b, TOK_002d, TOK_003b, TOK_005b, TOK_005e, TOK_007e, float_lit, identifier, int_lit, rune_lit, string_lit:
 		r = p.add(r, p.ForHeader())
 		goto state7
 	case TOK_007b:
@@ -10098,9 +10134,9 @@ state8:
 	}
 	return p.stop(r, accept, errorSet)
 state9:
-	accept, errorSet = true, 38
+	accept, errorSet = true, 31
 	switch Symbol(p.tok.Ch) {
-	case TOK_003c002d, TOK_chan, TOK_func, TOK_struct, TOK_0021, TOK_0026, TOK_0028, TOK_002a, TOK_002b, TOK_002d, TOK_005b, TOK_005e, TOK_007e, float_lit, identifier, int_lit, rune_lit, string_lit:
+	case TOK_003c002d, TOK_chan, TOK_func, TOK_interface, TOK_struct, TOK_0021, TOK_0026, TOK_0028, TOK_002a, TOK_002b, TOK_002d, TOK_005b, TOK_005e, TOK_007e, float_lit, identifier, int_lit, rune_lit, string_lit:
 		r = p.add(r, p.ExpressionList())
 		goto state2
 	}
@@ -10192,7 +10228,7 @@ state4:
 //		| SwitchTag .
 //
 //	State 0
-//		on  "<-", "chan", "func", "struct", '!', '&', '(', '*', '+', '-', '[', '^', '~', float_lit, identifier, int_lit, rune_lit, string_lit
+//		on  "<-", "chan", "func", "interface", "struct", '!', '&', '(', '*', '+', '-', '[', '^', '~', float_lit, identifier, int_lit, rune_lit, string_lit
 //			call HeaderExpression and goto state 1
 //		on  ';'
 //			call SwitchTag and goto state 3
@@ -10217,7 +10253,7 @@ state4:
 //	State 3
 //		Accept
 //	State 4
-//		on  "<-", "chan", "func", "struct", '!', '&', '(', '*', '+', '-', '[', '^', '~', float_lit, identifier, int_lit, rune_lit, string_lit
+//		on  "<-", "chan", "func", "interface", "struct", '!', '&', '(', '*', '+', '-', '[', '^', '~', float_lit, identifier, int_lit, rune_lit, string_lit
 //			call HeaderExpression and goto state 5
 //	State 5
 //		Accept
@@ -10226,7 +10262,7 @@ state4:
 //		on  ';'
 //			call SwitchTag and goto state 3
 //	State 6
-//		on  "<-", "chan", "func", "struct", '!', '&', '(', '*', '+', '-', '[', '^', '~', float_lit, identifier, int_lit, rune_lit, string_lit
+//		on  "<-", "chan", "func", "interface", "struct", '!', '&', '(', '*', '+', '-', '[', '^', '~', float_lit, identifier, int_lit, rune_lit, string_lit
 //			call HeaderExpression and goto state 2
 //	State 7
 //		on  '(', '*', identifier
@@ -10242,9 +10278,9 @@ func (p *Parser) SwitchGuard() (r []int32) {
 	accept, errorSet := false, 0
 	r = append(p.get(), -int32(SwitchGuard), 0)
 	// state0:
-	accept, errorSet = false, 33
+	accept, errorSet = false, 26
 	switch Symbol(p.tok.Ch) {
-	case TOK_003c002d, TOK_chan, TOK_func, TOK_struct, TOK_0021, TOK_0026, TOK_0028, TOK_002a, TOK_002b, TOK_002d, TOK_005b, TOK_005e, TOK_007e, float_lit, identifier, int_lit, rune_lit, string_lit:
+	case TOK_003c002d, TOK_chan, TOK_func, TOK_interface, TOK_struct, TOK_0021, TOK_0026, TOK_0028, TOK_002a, TOK_002b, TOK_002d, TOK_005b, TOK_005e, TOK_007e, float_lit, identifier, int_lit, rune_lit, string_lit:
 		r = p.add(r, p.HeaderExpression())
 		goto state1
 	case TOK_003b:
@@ -10287,9 +10323,9 @@ state3:
 	accept, errorSet = true, 0
 	return p.stop(r, accept, errorSet)
 state4:
-	accept, errorSet = false, 44
+	accept, errorSet = false, 37
 	switch Symbol(p.tok.Ch) {
-	case TOK_003c002d, TOK_chan, TOK_func, TOK_struct, TOK_0021, TOK_0026, TOK_0028, TOK_002a, TOK_002b, TOK_002d, TOK_005b, TOK_005e, TOK_007e, float_lit, identifier, int_lit, rune_lit, string_lit:
+	case TOK_003c002d, TOK_chan, TOK_func, TOK_interface, TOK_struct, TOK_0021, TOK_0026, TOK_0028, TOK_002a, TOK_002b, TOK_002d, TOK_005b, TOK_005e, TOK_007e, float_lit, identifier, int_lit, rune_lit, string_lit:
 		r = p.add(r, p.HeaderExpression())
 		goto state5
 	}
@@ -10306,9 +10342,9 @@ state5:
 	}
 	return p.stop(r, accept, errorSet)
 state6:
-	accept, errorSet = false, 44
+	accept, errorSet = false, 37
 	switch Symbol(p.tok.Ch) {
-	case TOK_003c002d, TOK_chan, TOK_func, TOK_struct, TOK_0021, TOK_0026, TOK_0028, TOK_002a, TOK_002b, TOK_002d, TOK_005b, TOK_005e, TOK_007e, float_lit, identifier, int_lit, rune_lit, string_lit:
+	case TOK_003c002d, TOK_chan, TOK_func, TOK_interface, TOK_struct, TOK_0021, TOK_0026, TOK_0028, TOK_002a, TOK_002b, TOK_002d, TOK_005b, TOK_005e, TOK_007e, float_lit, identifier, int_lit, rune_lit, string_lit:
 		r = p.add(r, p.HeaderExpression())
 		goto state2
 	}
@@ -10344,7 +10380,7 @@ state8:
 //	State 1
 //		on  '{'
 //			shift and goto state 2
-//		on  "<-", "chan", "func", "struct", '!', '&', '(', '*', '+', '-', ';', '[', '^', '~', float_lit, identifier, int_lit, rune_lit, string_lit
+//		on  "<-", "chan", "func", "interface", "struct", '!', '&', '(', '*', '+', '-', ';', '[', '^', '~', float_lit, identifier, int_lit, rune_lit, string_lit
 //			call SwitchGuard and goto state 4
 //	State 2
 //		on  '}'
@@ -10370,12 +10406,12 @@ func (p *Parser) SwitchStmt() (r []int32) {
 	}
 	return p.stop(r, accept, errorSet)
 state1:
-	accept, errorSet = false, 32
+	accept, errorSet = false, 25
 	switch Symbol(p.tok.Ch) {
 	case TOK_007b:
 		r = append(r, p.shift())
 		goto state2
-	case TOK_003c002d, TOK_chan, TOK_func, TOK_struct, TOK_0021, TOK_0026, TOK_0028, TOK_002a, TOK_002b, TOK_002d, TOK_003b, TOK_005b, TOK_005e, TOK_007e, float_lit, identifier, int_lit, rune_lit, string_lit:
+	case TOK_003c002d, TOK_chan, TOK_func, TOK_interface, TOK_struct, TOK_0021, TOK_0026, TOK_0028, TOK_002a, TOK_002b, TOK_002d, TOK_003b, TOK_005b, TOK_005e, TOK_007e, float_lit, identifier, int_lit, rune_lit, string_lit:
 		r = p.add(r, p.SwitchGuard())
 		goto state4
 	}
@@ -10413,14 +10449,14 @@ state4:
 //			shift and goto state 1
 //	State 1
 //		Accept
-//		on  "<-", "chan", "func", "struct", '!', '&', '(', '*', '+', '-', '[', '^', '~', float_lit, identifier, int_lit, rune_lit, string_lit
+//		on  "<-", "chan", "func", "interface", "struct", '!', '&', '(', '*', '+', '-', '[', '^', '~', float_lit, identifier, int_lit, rune_lit, string_lit
 //			call HeaderExpression and goto state 2
 //	State 2
 //		Accept
 //		on  ":="
 //			shift and goto state 3
 //	State 3
-//		on  "<-", "chan", "func", "struct", '!', '&', '(', '*', '+', '-', '[', '^', '~', float_lit, identifier, int_lit, rune_lit, string_lit
+//		on  "<-", "chan", "func", "interface", "struct", '!', '&', '(', '*', '+', '-', '[', '^', '~', float_lit, identifier, int_lit, rune_lit, string_lit
 //			call HeaderExpression and goto state 4
 //	State 4
 //		Accept
@@ -10438,9 +10474,9 @@ func (p *Parser) SwitchTag() (r []int32) {
 	}
 	return p.stop(r, accept, errorSet)
 state1:
-	accept, errorSet = true, 44
+	accept, errorSet = true, 37
 	switch Symbol(p.tok.Ch) {
-	case TOK_003c002d, TOK_chan, TOK_func, TOK_struct, TOK_0021, TOK_0026, TOK_0028, TOK_002a, TOK_002b, TOK_002d, TOK_005b, TOK_005e, TOK_007e, float_lit, identifier, int_lit, rune_lit, string_lit:
+	case TOK_003c002d, TOK_chan, TOK_func, TOK_interface, TOK_struct, TOK_0021, TOK_0026, TOK_0028, TOK_002a, TOK_002b, TOK_002d, TOK_005b, TOK_005e, TOK_007e, float_lit, identifier, int_lit, rune_lit, string_lit:
 		r = p.add(r, p.HeaderExpression())
 		goto state2
 	}
@@ -10454,9 +10490,9 @@ state2:
 	}
 	return p.stop(r, accept, errorSet)
 state3:
-	accept, errorSet = false, 44
+	accept, errorSet = false, 37
 	switch Symbol(p.tok.Ch) {
-	case TOK_003c002d, TOK_chan, TOK_func, TOK_struct, TOK_0021, TOK_0026, TOK_0028, TOK_002a, TOK_002b, TOK_002d, TOK_005b, TOK_005e, TOK_007e, float_lit, identifier, int_lit, rune_lit, string_lit:
+	case TOK_003c002d, TOK_chan, TOK_func, TOK_interface, TOK_struct, TOK_0021, TOK_0026, TOK_0028, TOK_002a, TOK_002b, TOK_002d, TOK_005b, TOK_005e, TOK_007e, float_lit, identifier, int_lit, rune_lit, string_lit:
 		r = p.add(r, p.HeaderExpression())
 		goto state4
 	}
@@ -10471,7 +10507,7 @@ state4:
 //	Term           = UnaryExpr { MulOp UnaryExpr } .
 //
 //	State 0
-//		on  "<-", "chan", "func", "struct", '!', '&', '(', '*', '+', '-', '[', '^', '~', float_lit, identifier, int_lit, rune_lit, string_lit
+//		on  "<-", "chan", "func", "interface", "struct", '!', '&', '(', '*', '+', '-', '[', '^', '~', float_lit, identifier, int_lit, rune_lit, string_lit
 //			call UnaryExpr and goto state 1
 //	State 1
 //		Accept
@@ -10483,9 +10519,9 @@ func (p *Parser) Term() (r []int32) {
 	accept, errorSet := false, 0
 	r = append(p.get(), -int32(Term), 0)
 state0:
-	accept, errorSet = false, 42
+	accept, errorSet = false, 35
 	switch Symbol(p.tok.Ch) {
-	case TOK_003c002d, TOK_chan, TOK_func, TOK_struct, TOK_0021, TOK_0026, TOK_0028, TOK_002a, TOK_002b, TOK_002d, TOK_005b, TOK_005e, TOK_007e, float_lit, identifier, int_lit, rune_lit, string_lit:
+	case TOK_003c002d, TOK_chan, TOK_func, TOK_interface, TOK_struct, TOK_0021, TOK_0026, TOK_0028, TOK_002a, TOK_002b, TOK_002d, TOK_005b, TOK_005e, TOK_007e, float_lit, identifier, int_lit, rune_lit, string_lit:
 		r = p.add(r, p.UnaryExpr())
 		goto state1
 	}
@@ -10592,7 +10628,7 @@ state1:
 //	State 7
 //		on  ']'
 //			shift and goto state 6
-//		on  "<-", "chan", "func", "struct", '!', '&', '(', '*', '+', '-', '[', '^', '~', float_lit, identifier, int_lit, rune_lit, string_lit
+//		on  "<-", "chan", "func", "interface", "struct", '!', '&', '(', '*', '+', '-', '[', '^', '~', float_lit, identifier, int_lit, rune_lit, string_lit
 //			call Expression and goto state 8
 //	State 8
 //		on  ']'
@@ -10610,7 +10646,7 @@ func (p *Parser) Type() (r []int32) {
 	accept, errorSet := false, 0
 	r = append(p.get(), -int32(Type), 0)
 	// state0:
-	accept, errorSet = false, 24
+	accept, errorSet = false, 48
 	switch Symbol(p.tok.Ch) {
 	case TOK_003c002d:
 		r = append(r, p.shift())
@@ -10647,7 +10683,7 @@ state1:
 	}
 	return p.stop(r, accept, errorSet)
 state2:
-	accept, errorSet = false, 18
+	accept, errorSet = false, 42
 	switch Symbol(p.tok.Ch) {
 	case TOK_003c002d, TOK_chan, TOK_func, TOK_interface, TOK_struct, TOK_0028, TOK_002a, TOK_005b, identifier:
 		r = p.add(r, p.ArrowElemType())
@@ -10658,7 +10694,7 @@ state3:
 	accept, errorSet = true, 0
 	return p.stop(r, accept, errorSet)
 state4:
-	accept, errorSet = false, 18
+	accept, errorSet = false, 42
 	switch Symbol(p.tok.Ch) {
 	case TOK_003c002d:
 		r = append(r, p.shift())
@@ -10677,7 +10713,7 @@ state5:
 	}
 	return p.stop(r, accept, errorSet)
 state6:
-	accept, errorSet = false, 23
+	accept, errorSet = false, 47
 	switch Symbol(p.tok.Ch) {
 	case TOK_003c002d, TOK_chan, TOK_func, TOK_interface, TOK_struct, TOK_002a, TOK_005b, identifier:
 		r = p.add(r, p.Type())
@@ -10685,12 +10721,12 @@ state6:
 	}
 	return p.stop(r, accept, errorSet)
 state7:
-	accept, errorSet = false, 34
+	accept, errorSet = false, 27
 	switch Symbol(p.tok.Ch) {
 	case TOK_005d:
 		r = append(r, p.shift())
 		goto state6
-	case TOK_003c002d, TOK_chan, TOK_func, TOK_struct, TOK_0021, TOK_0026, TOK_0028, TOK_002a, TOK_002b, TOK_002d, TOK_005b, TOK_005e, TOK_007e, float_lit, identifier, int_lit, rune_lit, string_lit:
+	case TOK_003c002d, TOK_chan, TOK_func, TOK_interface, TOK_struct, TOK_0021, TOK_0026, TOK_0028, TOK_002a, TOK_002b, TOK_002d, TOK_005b, TOK_005e, TOK_007e, float_lit, identifier, int_lit, rune_lit, string_lit:
 		r = p.add(r, p.Expression())
 		goto state8
 	}
@@ -10827,7 +10863,7 @@ func (p *Parser) TypeSpec() (r []int32) {
 	}
 	return p.stop(r, accept, errorSet)
 state1:
-	accept, errorSet = false, 22
+	accept, errorSet = false, 46
 	switch Symbol(p.tok.Ch) {
 	case TOK_003d:
 		r = append(r, p.shift())
@@ -10838,7 +10874,7 @@ state1:
 	}
 	return p.stop(r, accept, errorSet)
 state2:
-	accept, errorSet = false, 23
+	accept, errorSet = false, 47
 	switch Symbol(p.tok.Ch) {
 	case TOK_003c002d, TOK_chan, TOK_func, TOK_interface, TOK_struct, TOK_002a, TOK_005b, identifier:
 		r = p.add(r, p.Type())
@@ -10855,14 +10891,14 @@ state3:
 //	UnaryExpr  = { UnaryOp } Factor .
 //
 //	State 0
-//		on  "chan", "func", "struct", '(', '[', float_lit, identifier, int_lit, rune_lit, string_lit
+//		on  "chan", "func", "interface", "struct", '(', '[', float_lit, identifier, int_lit, rune_lit, string_lit
 //			call Factor and goto state 1
 //		on  "<-", '!', '&', '*', '+', '-', '^', '~'
 //			call UnaryOp and goto state 2
 //	State 1
 //		Accept
 //	State 2
-//		on  "chan", "func", "struct", '(', '[', float_lit, identifier, int_lit, rune_lit, string_lit
+//		on  "chan", "func", "interface", "struct", '(', '[', float_lit, identifier, int_lit, rune_lit, string_lit
 //			call Factor and goto state 1
 //		on  "<-", '!', '&', '*', '+', '-', '^', '~'
 //			call UnaryOp and goto state 2
@@ -10872,9 +10908,9 @@ func (p *Parser) UnaryExpr() (r []int32) {
 	accept, errorSet := false, 0
 	r = append(p.get(), -int32(UnaryExpr), 0)
 	// state0:
-	accept, errorSet = false, 48
+	accept, errorSet = false, 41
 	switch Symbol(p.tok.Ch) {
-	case TOK_chan, TOK_func, TOK_struct, TOK_0028, TOK_005b, float_lit, identifier, int_lit, rune_lit, string_lit:
+	case TOK_chan, TOK_func, TOK_interface, TOK_struct, TOK_0028, TOK_005b, float_lit, identifier, int_lit, rune_lit, string_lit:
 		r = p.add(r, p.Factor())
 		goto state1
 	case TOK_003c002d, TOK_0021, TOK_0026, TOK_002a, TOK_002b, TOK_002d, TOK_005e, TOK_007e:
@@ -10886,9 +10922,9 @@ state1:
 	accept, errorSet = true, 0
 	return p.stop(r, accept, errorSet)
 state2:
-	accept, errorSet = false, 48
+	accept, errorSet = false, 41
 	switch Symbol(p.tok.Ch) {
-	case TOK_chan, TOK_func, TOK_struct, TOK_0028, TOK_005b, float_lit, identifier, int_lit, rune_lit, string_lit:
+	case TOK_chan, TOK_func, TOK_interface, TOK_struct, TOK_0028, TOK_005b, float_lit, identifier, int_lit, rune_lit, string_lit:
 		r = p.add(r, p.Factor())
 		goto state1
 	case TOK_003c002d, TOK_0021, TOK_0026, TOK_002a, TOK_002b, TOK_002d, TOK_005e, TOK_007e:
@@ -11013,7 +11049,7 @@ state4:
 //		on  "<-", "chan", "func", "interface", "struct", '*', '[', identifier
 //			call Type and goto state 4
 //	State 2
-//		on  "<-", "chan", "func", "struct", '!', '&', '(', '*', '+', '-', '[', '^', '~', float_lit, identifier, int_lit, rune_lit, string_lit
+//		on  "<-", "chan", "func", "interface", "struct", '!', '&', '(', '*', '+', '-', '[', '^', '~', float_lit, identifier, int_lit, rune_lit, string_lit
 //			call ExpressionList and goto state 3
 //	State 3
 //		Accept
@@ -11035,7 +11071,7 @@ func (p *Parser) VarSpec() (r []int32) {
 	}
 	return p.stop(r, accept, errorSet)
 state1:
-	accept, errorSet = false, 22
+	accept, errorSet = false, 46
 	switch Symbol(p.tok.Ch) {
 	case TOK_003d:
 		r = append(r, p.shift())
@@ -11046,9 +11082,9 @@ state1:
 	}
 	return p.stop(r, accept, errorSet)
 state2:
-	accept, errorSet = false, 38
+	accept, errorSet = false, 31
 	switch Symbol(p.tok.Ch) {
-	case TOK_003c002d, TOK_chan, TOK_func, TOK_struct, TOK_0021, TOK_0026, TOK_0028, TOK_002a, TOK_002b, TOK_002d, TOK_005b, TOK_005e, TOK_007e, float_lit, identifier, int_lit, rune_lit, string_lit:
+	case TOK_003c002d, TOK_chan, TOK_func, TOK_interface, TOK_struct, TOK_0021, TOK_0026, TOK_0028, TOK_002a, TOK_002b, TOK_002d, TOK_005b, TOK_005e, TOK_007e, float_lit, identifier, int_lit, rune_lit, string_lit:
 		r = p.add(r, p.ExpressionList())
 		goto state3
 	}

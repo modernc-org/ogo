@@ -288,6 +288,7 @@ type File struct {
 	localVars         []*VarDeclaration           // local variables of the function body being checked, for the unused-variable report
 	mainScope         *Scope                      // the scope of main's outermost block where it outlives every cog (mainOutlivesCogs), or nil
 	ifaceInits        []ifaceInit                 // package variables' initializers of an interface type, checked once every method is known
+	ifaceLits         map[string]ifaceLit         // interfaces written out, by the name ifaceLitName gives each, which interfaceMethodsNamed resolves
 	writeTargets      map[string]bool             // positions of bare "="/":=" assignment-target identifiers in the body: writes, which do not count as uses
 	clauseFallthrough map[string]bool             // positions of "fallthrough" keywords checkSwitch has accounted for, so the statement walk reports only the misplaced ones
 	makeTypeArgs      map[string]bool             // positions of identifiers standing as make's first argument, which is a TYPE and not a value: "make(List, n)" over "type List []int" names one, and the bare-type-name check would otherwise report it as "cannot use type List as a value"
@@ -3007,7 +3008,7 @@ func (f *File) checkReturnValue(s *Scope, rt retResult, e Node) {
 	f.checkFuncAssign(s, f.funcSig(s, rt.typeNode), e, "return statement")
 	f.checkRefAssign(s, s, rt.typeNode, e, "return statement")
 	f.checkPointerValue(s, wantPtr, f.typeNodeString(rt.typeNode, false), e, "return statement")
-	f.checkImplements(s, f.typeNodeString(rt.typeNode, false), e, "return statement")
+	f.checkImplements(s, f.ifaceTypeName(s, rt.typeNode), e, "return statement")
 	f.checkDefinedType(s, f.typeNodeString(rt.typeNode, false), e, "return statement")
 	if !rt.known {
 		f.checkNilValue(s, s, rt.typeNode, e, "return statement")
@@ -6206,7 +6207,7 @@ func (f *File) inferVarFrom(s *Scope, vd *VarDeclaration, init Node) {
 		}
 	}
 	// `p := x.(*[4]uint32)`, `p := x.(*int)`: the asserted pointer type, whole.
-	if tn, ok := f.assertedPtrLit(s, init); ok {
+	if tn, ok := f.assertedLit(s, init); ok {
 		vd.takeType(f.typedVar(s, vd.token, tn))
 		return
 	}
@@ -6922,6 +6923,13 @@ func (f *File) typeSwitchIface(s *Scope, ts typeSwitchGuard) (string, bool) {
 		// duplicate and `case int:` alike.
 		return "any", true
 	}
+	if isVar && !d.typeName.IsValid() {
+		// `var v interface{ Code() int }`: by the name ifaceLitName gives it, and
+		// asked nothing before, `case *B:` for a B whose Code is another was taken.
+		if lit := f.varIfaceLitNamed(s, ts.operand.Src()); lit != "" {
+			return lit, true
+		}
+	}
 	if !isVar || !d.typeName.IsValid() {
 		return "", false // an unresolved operand: its own check reports it
 	}
@@ -6939,9 +6947,12 @@ func (f *File) typeSwitchIfaceName(s *Scope, ts typeSwitchGuard) (written string
 	nm, ql, isPtr, named := f.exprNamedType(s, ts.expr)
 	if !named {
 		// An operand of the empty interface written out, `h.e.(type)` for a field
-		// `e interface{}`: any's.
+		// `e interface{}`: any's; of another written out, the name ifaceLitName
+		// gives it.
 		if t, ok := f.valueTypeAt(s, ts.expr); ok && isEmptyIfaceNode(t.tn) {
 			return "any", Token{}, Token{}, true
+		} else if x, isLit := t.tn.(*TypeNodeInterface); ok && isLit && t.s != nil {
+			return f.ifaceLitName(t.s, x), Token{}, Token{}, true
 		}
 	}
 	if !named || isPtr {
@@ -7000,6 +7011,31 @@ func (f *File) checkTypeCaseClause(cs *Scope, ts typeSwitchGuard, clause Node, s
 		return nm.Src()
 	}
 	for _, ex := range exprs {
+		// An interface WRITTEN OUT, `case interface{ Unwrap() error }:`, which is
+		// how Go's own errors.Is asks for a wrapper. It matches on its method set as
+		// a named one does, and a clause naming it alone binds its name at the type
+		// written, as an assertion to it declares one.
+		if fac, isLit := f.caseIfaceLit(ex); isLit {
+			n0 := len(f.errList)
+			tn := f.typ(cs, fac)
+			if tn == nil || len(f.errList) != n0 {
+				continue // reported where the type was resolved
+			}
+			// Keyed by its method set as Go spells it, so the same set written in
+			// another order is the same case.
+			written := strings.Join(strings.Fields(f.exprSource(ex)), "")
+			if x, ok := tn.(*TypeNodeInterface); ok {
+				if name := f.ifaceLitName(cs, x); name != "" {
+					written = name
+				}
+			}
+			if seen[written] {
+				f.err(f.tok(ex.Pos()).Position(), "duplicate case %s in type switch", written)
+			}
+			seen[written] = true
+			base, baseQual, bound = Token{}, Token{}, tn
+			continue
+		}
 		// An INTERFACE named bare, `case T:`. It matches on the method set, so it
 		// needs no implements check of its own: what may be asked of the name is
 		// only that it be an interface, which is what recognised it.
@@ -7138,15 +7174,28 @@ func (f *File) checkTypeCaseClause(cs *Scope, ts typeSwitchGuard, clause Node, s
 	default:
 		vd.typeName = f.tok(0)
 		if ts.isExpr {
-			// The interface the expression has, as typeSwitchIfaceName named it.
-			if _, nm, ql, ok := f.typeSwitchIfaceName(cs, ts); ok {
+			// The interface the expression has, as typeSwitchIfaceName named it --
+			// or as it is written out, `h.c.(type)` for a field of one.
+			if _, nm, ql, ok := f.typeSwitchIfaceName(cs, ts); ok && nm.IsValid() {
 				vd.typeName, vd.typeQual = nm, ql
+			} else if t, ok := f.valueTypeAt(cs, ts.expr); ok && t.s != nil {
+				if _, isLit := t.tn.(*TypeNodeInterface); isLit {
+					vd = f.typedVar(t.s, ts.name, t.tn)
+				}
 			}
 		} else if d, isVar := cs.find(ts.operand.Src()).(*VarDeclaration); isVar {
 			// Bound at the operand's own type, qualifier and all: several types named
 			// (or none) leaves it the interface, and an imported one is only an
-			// interface under the name that says which package it is from.
+			// interface under the name that says which package it is from -- and
+			// one written out is that type, `var v interface{ M() }`.
 			vd.typeName, vd.typeQual = d.typeName, d.typeQual
+			if _, isLit := d.declType.(*TypeNodeInterface); isLit && !d.typeName.IsValid() {
+				in := d.declScope
+				if in == nil {
+					in = cs
+				}
+				vd = f.typedVar(in, ts.name, d.declType)
+			}
 		}
 	}
 	// The clause scope is fresh, so this shadows the statement-scope declaration
@@ -7194,11 +7243,12 @@ func (vd *VarDeclaration) takeType(t *VarDeclaration) {
 	vd.declType, vd.declScope = t.declType, t.declScope
 }
 
-// assertedPtrLit is the type of an assertion to a pointer whose base type has no
-// name of the program's -- `x.(*int)`, `x.(*[4]uint32)`, `x.(*[]byte)` -- which a
-// variable declared from it takes whole: bound by the base's name alone, as a
-// `*T`'s is, `*p` and `p[i]` had no type, and `p` none at all for a type written out.
-func (f *File) assertedPtrLit(s *Scope, n Node) (TypeNode, bool) {
+// assertedLit is the type of an assertion to a pointer whose base type has no
+// name of the program's -- `x.(*int)`, `x.(*[4]uint32)`, `x.(*[]byte)` -- or to an
+// interface written out, which a variable declared from it takes whole: bound by
+// the base's name alone, as a `*T`'s is, `*p` and `p[i]` had no type, and `p` none
+// at all for a type written out.
+func (f *File) assertedLit(s *Scope, n Node) (TypeNode, bool) {
 	// Read by shape, so the operand may be anything -- `lib.B.(*int)`, `xs[i].(*int)`,
 	// `f().(*[4]byte)` -- and resolved quietly: the assertion's own check reports
 	// what is wrong with the type, and this is the same question asked again.
@@ -7209,7 +7259,9 @@ func (f *File) assertedPtrLit(s *Scope, n Node) (TypeNode, bool) {
 	n0 := len(f.errList)
 	tn := f.typ(s, typ)
 	f.errList = f.errList[:n0]
-	if !f.ptrToUnnamed(s, tn) {
+	// An interface written out too, `v, ok := x.(interface{ M() })`, which has no
+	// name to be bound by and was bound by none: `v.M(1)` was asked nothing.
+	if _, isLit := tn.(*TypeNodeInterface); !isLit && !f.ptrToUnnamed(s, tn) {
 		return nil, false
 	}
 	return tn, true
@@ -7397,6 +7449,50 @@ func (f *File) factorQualifiedIdent(s *Scope, n Node) (qual, member Token, ok bo
 		return Token{}, Token{}, false
 	}
 	return qual, member, true
+}
+
+// reportIfaceLitValue refuses an interface written out standing as a value, a
+// Factor whose first child is its InterfaceType: a type is no value, and a
+// conversion to one is not lowered yet -- a variable declared of the type, or the
+// type named, is the spelling that is, and `any(x)` for the empty one.
+func (f *File) reportIfaceLitValue(s *Scope, n Node, kids []Node) {
+	n0 := len(f.errList)
+	tn := f.interfaceType(s, kids[0])
+	if len(f.errList) != n0 {
+		return // reported where the type was resolved
+	}
+	name := ""
+	if tn != nil {
+		name = f.ifaceLitName(s, tn)
+	}
+	if name == "" {
+		name = f.sourceSpan(kids[0].Pos(), kids[0].End())
+	}
+	pos := f.tok(n.Pos()).Position()
+	if len(kids) < 2 || kids[1].sym != CallSuffix {
+		f.err(pos, "cannot use type %s as a value", name)
+		return
+	}
+	if isEmptyIfaceNode(tn) {
+		f.err(pos, "a conversion to an interface written out, %s, is not supported yet; write any(...)", name)
+		return
+	}
+	f.err(pos, "a conversion to an interface written out, %s, is not supported yet; declare a variable of the type, or name the type", name)
+}
+
+// caseIfaceLit reads a type switch case that is an interface WRITTEN OUT, `case
+// interface{ Unwrap() error }:`, and answers its Factor, whose one child is the
+// InterfaceType typ reads.
+func (f *File) caseIfaceLit(ex Node) (Node, bool) {
+	fac, ok := f.soleFactor(ex)
+	if !ok {
+		return Node{}, false
+	}
+	kids := slices.Collect(it(fac.ast))
+	if len(kids) != 1 || kids[0].sym != InterfaceType {
+		return Node{}, false
+	}
+	return fac, true
 }
 
 // caseInterfaceName recognises a case naming an INTERFACE type, written bare:
@@ -8789,7 +8885,7 @@ func (f *File) declareLocalVar(s *Scope, n Node) {
 				f.checkChanAssign(s, s, declType, e, "variable declaration")
 				f.checkRefAssign(s, s, declType, e, "variable declaration")
 				f.checkPointerValue(s, isPtr, f.typeNodeString(declType, false), e, "variable declaration")
-				f.checkImplements(s, f.typeNodeString(declType, false), e, "variable declaration")
+				f.checkImplements(s, f.ifaceTypeName(s, declType), e, "variable declaration")
 				f.checkDefinedType(s, f.typeNodeString(declType, false), e, "variable declaration")
 				// One initializer per name; a multi-result call feeding several
 				// names pairs up with none of them and is left alone.
@@ -9522,14 +9618,14 @@ func (f *File) checkAssignment(s *Scope, head, postfix Node) {
 	// "v, ok := x.(T)" is two names from one expression, which inferKinds does not
 	// cover: v carries the asserted type and ok is a bool.
 	assertBase, assertQual, assertOK := Token{}, Token{}, false
-	var assertLit TypeNode // `p, ok := x.(*[4]uint32)`: the type p takes whole (assertedPtrLit)
+	var assertLit TypeNode // `p, ok := x.(*[4]uint32)`: the type p takes whole (assertedLit)
 	// An assertion to an INTERFACE, `n, ok := r.(Namer)`: n is a Namer and ok a
 	// bool. Only an assertion to a pointer was typed, so `ok == nil` and
 	// `n.Name(1)` were asked nothing.
 	assertFlag, assertIface := false, false
 	var assertTN TypeNode // the asserted type whole, for the walks over v (varTypeAt)
 	if len(rhs) == 1 && len(lhs) == 2 {
-		if tn, isLit := f.assertedPtrLit(s, rhs[0]); isLit {
+		if tn, isLit := f.assertedLit(s, rhs[0]); isLit {
 			assertLit, assertOK = tn, true
 		} else if typN, isAssert := f.assertionTypeNode(rhs[0]); isAssert {
 			assertFlag = true
@@ -11551,6 +11647,10 @@ func (f *File) checkSentValue(s *Scope, chanTN TypeNode, elem Kind, hasElem bool
 	if elemName.IsValid() {
 		f.checkImplements(s, elemName.Src(), valNode, "send")
 		f.checkDefinedType(s, elemName.Src(), valNode, "send")
+	} else if ct, ok := chanTN.(*TypeNodeChan); ok {
+		if x, isLit := ct.TypeNode.(*TypeNodeInterface); isLit {
+			f.checkImplements(s, f.ifaceLitName(s, x), valNode, "send") // `chan interface{ M() }`
+		}
 	}
 	// A constant sent must fit the element type, as one must fit a variable it is
 	// assigned to or a parameter it is passed to. The send was the position that
@@ -13275,7 +13375,7 @@ func (f *File) checkStructLit(s *Scope, t litType, st *TypeNodeStruct, at Token,
 	// asks the same question of it that an assignment to that field would.
 	for i, el := range elements {
 		if i < len(types) {
-			f.checkImplements(s, f.typeNodeString(types[i], false), el.value, "struct literal")
+			f.checkImplements(s, f.ifaceTypeName(s, types[i]), el.value, "struct literal")
 			f.checkDefinedType(s, f.typeNodeString(types[i], false), el.value, "struct literal")
 			f.checkLitValue(s, t, types[i], el.value, "struct literal")
 			// A FIELD's value whose own type is elided, `Outer{"t", {1, 2}}`: the
@@ -13430,7 +13530,7 @@ func (f *File) checkKeyedLit(s *Scope, t litType, names []Token, types []TypeNod
 			continue
 		}
 		seen[name] = true
-		f.checkImplements(s, f.typeNodeString(fieldType(name), false), el.value, "struct literal")
+		f.checkImplements(s, f.ifaceTypeName(s, fieldType(name)), el.value, "struct literal")
 		f.checkDefinedType(s, f.typeNodeString(fieldType(name), false), el.value, "struct literal")
 		f.checkLitValue(s, t, fieldType(name), el.value, "struct literal")
 		f.checkElidedStructLit(s, t, fieldType(name), el.value)
@@ -13552,7 +13652,7 @@ func (f *File) checkElemLit(s *Scope, t litType, elem TypeNode, lit Node) {
 	if elem == nil {
 		return
 	}
-	name := f.typeNodeString(elem, false)
+	name := f.ifaceTypeName(s, elem)
 	for _, el := range compositeLitElements(lit) {
 		f.checkImplements(s, name, el.value, "array or slice literal")
 		f.checkDefinedType(s, name, el.value, "array or slice literal")
@@ -13702,7 +13802,7 @@ func (f *File) checkElidedStructLit(s *Scope, outer litType, elem TypeNode, valu
 // was looked into, so `[2][2]int{{1, 2}, {"s", 4}}` and a nil there went through,
 // and built.
 func (f *File) checkElidedElems(s *Scope, outer litType, elem TypeNode, value Node) {
-	name := f.typeNodeString(elem, false)
+	name := f.ifaceTypeName(s, elem)
 	for _, el := range compositeLitElements(value) {
 		f.checkNames(s, el.value)
 		if el.value.sym != CompositeLit {
@@ -14085,6 +14185,11 @@ func (f *File) interfaceMethods(s *Scope, typeName Token) (map[string]*MethodSpe
 // interfaceMethodsNamed is interfaceMethods keyed by the name alone, for the
 // positions that have a written type rather than a variable's declaration.
 func (f *File) interfaceMethodsNamed(s *Scope, name string) (map[string]*MethodSpecNode, bool) {
+	if lit, ok := f.ifaceLits[name]; ok {
+		set := map[string]*MethodSpecNode{}
+		f.collectIfaceMethods(lit.s, lit.tn, set, map[string]bool{})
+		return set, true
+	}
 	td, home, ok := f.typeDeclNamed(s, name)
 	if !ok || td.TypeSpec == nil {
 		return nil, false
@@ -14117,6 +14222,82 @@ func (f *File) interfaceMethodsNamed(s *Scope, name string) (map[string]*MethodS
 	// package's name, and this scope may have no such name or a different one.
 	f.collectIfaceMethods(home, it, set, map[string]bool{name: true})
 	return set, true
+}
+
+// ifaceLit is an interface type WRITTEN OUT, `interface{ Code() int }`, as the
+// interface rules find it under the name ifaceLitName gives it: the type, and the
+// scope it was written in, where what it embeds is resolved.
+type ifaceLit struct {
+	tn *TypeNodeInterface
+	s  *Scope
+}
+
+// ifaceLitName names an interface written out as Go prints it, `interface{Code()
+// int; Error() string}`, its methods in the order of their names, and records it
+// under that name, so every rule asking interfaceMethodsNamed -- implements, the
+// type switch's cases, a pointer's -- asks it as it asks a declared one. The
+// interface rules ask by NAME, and such a type has none: given a value, they said
+// nothing, and `var v interface{ Code() uint32 } = &e` for a Code returning an int
+// built, as did a missing method, the emitter refusing that in its own words.
+//
+// A name written twice for two types -- a `T` of each of two packages -- records
+// the one asked last, which is the one the rule about to run means.
+func (f *File) ifaceLitName(s *Scope, x *TypeNodeInterface) string {
+	set := map[string]*MethodSpecNode{}
+	f.collectIfaceMethods(s, x, set, map[string]bool{})
+	var parts []string
+	for _, name := range sortedNames(set) {
+		sig := f.sigString(methodSpecSig(set[name]), false)
+		if sig == "" {
+			return "" // a type the renderer does not model: no rule asks
+		}
+		parts = append(parts, name+strings.TrimPrefix(sig, "func"))
+	}
+	name := "interface{" + strings.Join(parts, "; ") + "}"
+	if f.ifaceLits == nil {
+		f.ifaceLits = map[string]ifaceLit{}
+	}
+	f.ifaceLits[name] = ifaceLit{x, s}
+	return name
+}
+
+// varIfaceLit is the name ifaceLitName gives the type of a variable declared of an
+// interface written out, `var v interface{ M() }`, where value is that variable,
+// and "" for any other value.
+func (f *File) varIfaceLit(s *Scope, value Node) string {
+	id, ok := f.exprIdent(value)
+	if !ok {
+		return ""
+	}
+	return f.varIfaceLitNamed(s, id.Src())
+}
+
+// varIfaceLitNamed is varIfaceLit of the variable a name resolves to.
+func (f *File) varIfaceLitNamed(s *Scope, name string) string {
+	d, ok := s.find(name).(*VarDeclaration)
+	if !ok || d.typeName.IsValid() {
+		return ""
+	}
+	x, isLit := d.declType.(*TypeNodeInterface)
+	if !isLit {
+		return ""
+	}
+	in := d.declScope
+	if in == nil {
+		in = s
+	}
+	return f.ifaceLitName(in, x)
+}
+
+// ifaceTypeName is typeNodeString for the interface rules: a type as it is written,
+// and an interface written out by the name ifaceLitName gives it, which
+// typeNodeString does not render -- a comparison of two types asks that, and an
+// interface literal is compared with nothing.
+func (f *File) ifaceTypeName(s *Scope, tn TypeNode) string {
+	if x, ok := tn.(*TypeNodeInterface); ok {
+		return f.ifaceLitName(s, x)
+	}
+	return f.typeNodeString(tn, false)
 }
 
 // typeDeclNamed resolves a type name as WRITTEN -- "Shape", or the qualified
@@ -14779,6 +14960,9 @@ func (f *File) chanOperandMismatch(s *Scope, a, b Node) (an, bn string, mismatch
 func (f *File) ifaceComparisonOperands(s *Scope, a, b Node) (iface string, other Node, ok bool) {
 	for _, pair := range [][2]Node{{a, b}, {b, a}} {
 		nm, named := f.typeIdentity(s, pair[0])
+		if lit := f.varIfaceLit(s, pair[0]); lit != "" {
+			nm, named = lit, true
+		}
 		if !named || nm == "" {
 			continue
 		}
@@ -14792,6 +14976,9 @@ func (f *File) ifaceComparisonOperands(s *Scope, a, b Node) (iface string, other
 			if _, otherIface := f.interfaceMethodsNamed(s, on); otherIface {
 				continue
 			}
+		}
+		if f.varIfaceLit(s, pair[1]) != "" {
+			continue
 		}
 		return nm, pair[1], true
 	}
@@ -15173,7 +15360,14 @@ func (f *File) checkImplements(s *Scope, ifaceName string, value Node, what stri
 		return
 	}
 	d, ok := s.find(id.Src()).(*VarDeclaration)
-	if ok && !d.typeName.IsValid() && len(set) != 0 {
+	// A variable of an interface written out, `var v interface{ M() }`, has no type
+	// name, and is asked under the one ifaceLitName gives it what a variable of a
+	// declared interface is: `var e error = v` was the emitter's to refuse.
+	litFrom := ""
+	if ok && !valueIsPtr {
+		litFrom = f.varIfaceLit(s, value)
+	}
+	if ok && litFrom == "" && !d.typeName.IsValid() && len(set) != 0 {
 		// A pointer to a type written out, `&a` of a [3]int a or a `p := &a`: no
 		// methods, so no interface asking for some holds it. Asked of nobody here,
 		// it reached the emitter, which said so in C's names.
@@ -15199,7 +15393,7 @@ func (f *File) checkImplements(s *Scope, ifaceName string, value Node, what stri
 		}
 		return
 	}
-	if !ok || !d.typeName.IsValid() {
+	if !ok || !d.typeName.IsValid() && litFrom == "" {
 		return
 	}
 	// The type as WRITTEN, qualifier included. Reading the bare name asked the
@@ -15207,6 +15401,9 @@ func (f *File) checkImplements(s *Scope, ifaceName string, value Node, what stri
 	// type was reported as implementing nothing -- "Quad does not implement
 	// geo.Shape (missing method Area)" of a type whose Area is right there.
 	from := d.declaredTypeName()
+	if litFrom != "" {
+		from = litFrom
+	}
 	if from == ifaceName {
 		return
 	}
@@ -16092,6 +16289,15 @@ func (f *File) checkCallResultMethod(s *Scope, head, member Token) {
 		return
 	}
 	tn := sig.Results.List[0].TypeNode
+	// An interface written out, `give().Nope()` for a `give() interface{ Code()
+	// int }`: its spec's methods.
+	if lit, isLit := tn.(*TypeNodeInterface); isLit {
+		name := f.ifaceLitName(s, lit)
+		if set, _ := f.interfaceMethodsNamed(s, name); set[member.Src()] == nil {
+			f.err(member.Position(), "type %s has no method %s", name, member.Src())
+		}
+		return
+	}
 	if p, isPtr := tn.(*TypeNodePointer); isPtr {
 		tn = p.TypeNode
 	}
@@ -16287,6 +16493,19 @@ func (f *File) checkMethodCall(s *Scope, head, member Token, argList, suffix Nod
 			return // an unnamed asserted type: nothing to look a method up on
 		}
 		d = &VarDeclaration{typeName: nm, typeQual: namedTypeQual(tn)}
+	}
+	// A variable of an interface written out, `var v interface{ Name() string }`,
+	// has no type name, and its methods are its spec's. Asked nothing, `v.Name(1)`
+	// and `v.Nope()` reached the emitter, or the C compiler.
+	if lit := f.varIfaceLitNamed(s, head.Src()); lit != "" && !d.typeName.IsValid() {
+		set, _ := f.interfaceMethodsNamed(s, lit)
+		m, has := set[member.Src()]
+		if !has {
+			f.err(member.Position(), "%s.%s undefined (type %s has no field or method %s)", head.Src(), member.Src(), lit, member.Src())
+			return
+		}
+		f.checkArgs(s, member, methodSpecSig(m), argNodes(argList))
+		return
 	}
 	if !d.builderVar && !d.typeName.IsValid() {
 		if f.shadowedImportMember(d, head) {
@@ -17118,6 +17337,25 @@ func (f *File) walkSteps(t typeAt, addr bool, steps []Node, i, reportFrom int, w
 					}
 				}
 				w.home, w.qual, ts = home, qual, home
+			}
+			// An interface written out, `h.c.Code(2)` for a field `c interface{
+			// Code(int) int }`: its spec, as a declared interface's (below).
+			if lit, isLit := tn.(*TypeNodeInterface); isLit && ts != nil {
+				set := map[string]*MethodSpecNode{}
+				f.collectIfaceMethods(ts, lit, set, map[string]bool{})
+				spec, has := set[m.Src()]
+				if !has && !isPtr && w.missingAt < 0 {
+					w.missingAt, w.missingType = i, f.ifaceLitName(ts, lit)
+				}
+				if isPtr || !has {
+					return w
+				}
+				w.calls = append(w.calls, chainCall{i, methodSpecSig(spec), ts, spec.Name, w.home, w.qual})
+				if !one(f.flattenResults(ts, methodSpecSig(spec)), true, ts) {
+					return w
+				}
+				i++
+				continue
 			}
 			if isID && !id.Qualifier.IsValid() && id.Name.Src() == "Builder" && isPredeclaredBuilder(ts, "Builder") {
 				// `l.sb.WriteByte(c)`: the Builder reached through a field. Its
@@ -18938,6 +19176,13 @@ func (f *File) checkAssignType(s *Scope, lhsTok Token, rhsNode Node, plainTarget
 			// Qualified too: `var u lib.T` is a lib.T, and the bare "T" names this
 			// package's T, if it has one.
 			f.checkDefinedType(s, d.declaredTypeName(), rhsNode, "assignment")
+		} else if x, isLit := d.declType.(*TypeNodeInterface); plainTarget && isLit {
+			// An interface written out, `var v interface{ M() }`, which has no name.
+			in := d.declScope
+			if in == nil {
+				in = s
+			}
+			f.checkImplements(s, f.ifaceLitName(in, x), rhsNode, "assignment")
 		}
 		// A pointer to a Kind with no type written, `px := &x` for an int x: no name
 		// to ask by, and `px = "a"` was taken.
@@ -19022,7 +19267,7 @@ func (f *File) checkFieldAssign(s *Scope, head, field Token, rhsNode Node) {
 	f.checkChanAssign(s, s, f.fieldTypeNode(s, head, field), rhsNode, "assignment")
 	f.checkFuncAssign(s, f.funcSig(s, f.fieldTypeNode(s, head, field)), rhsNode, "assignment")
 	f.checkRefAssign(s, s, f.fieldTypeNode(s, head, field), rhsNode, "assignment")
-	f.checkImplements(s, f.typeNodeString(f.fieldTypeNode(s, head, field), false), rhsNode, "assignment")
+	f.checkImplements(s, f.ifaceTypeName(s, f.fieldTypeNode(s, head, field)), rhsNode, "assignment")
 	f.checkDefinedType(s, f.typeNodeString(f.fieldTypeNode(s, head, field), false), rhsNode, "assignment")
 	lk, lok := f.fieldKind(s, head, field)
 	rk, rok := f.exprType(s, rhsNode)
@@ -19678,7 +19923,7 @@ func (f *File) checkStoreInto(s, in *Scope, tn TypeNode, value Node, what string
 	if f.checkNilValue(s, in, tn, value, what) {
 		return
 	}
-	name := f.typeNodeString(tn, false)
+	name := f.ifaceTypeName(in, tn)
 	f.checkImplements(s, name, value, what)
 	f.checkDefinedType(s, name, value, what)
 	rt := f.resultType(in, tn)
@@ -24014,6 +24259,13 @@ func (f *File) checkFactorNames(s *Scope, n Node) {
 			return
 		}
 	}
+	// An interface written out standing as a value: a type, `x := interface{}`,
+	// or a conversion to one, `interface{ M() }(x)`, which the grammar takes for a
+	// type switch's case and which is not lowered yet.
+	if kids := slices.Collect(it(n.ast)); len(kids) != 0 && kids[0].sym == InterfaceType {
+		f.reportIfaceLitValue(s, n, kids)
+		return
+	}
 	// `T.M` and `(*T).M`: a method as a function taking its receiver first.
 	if me, rest, ok := f.methodExprOf(s, n); ok {
 		f.checkMethodExpr(s, me, rest)
@@ -24736,6 +24988,20 @@ func (f *File) callResults(s *Scope, callee, member Token) ([]retResult, bool) {
 	d, ok := s.find(callee.Src()).(*VarDeclaration)
 	if ok && (d.builderVar || d.typeName.Src() == "Builder" && !d.typeQual.IsValid() && isPredeclaredBuilder(s, "Builder")) {
 		return builderResults(member.Src())
+	}
+	// A variable of an interface written out, `var v interface{ Name() string }`:
+	// its method spec's results, as a declared interface's are.
+	if lit := f.varIfaceLitNamed(s, callee.Src()); ok && lit != "" {
+		set, _ := f.interfaceMethodsNamed(s, lit)
+		m, has := set[member.Src()]
+		if !has {
+			return nil, false
+		}
+		home := d.declScope
+		if home == nil {
+			home = s
+		}
+		return f.flattenResults(home, methodSpecSig(m)), true
 	}
 	if !ok || !d.typeName.IsValid() {
 		return nil, false
@@ -26170,6 +26436,9 @@ func (f *File) checkAppendValues(s *Scope, argList Node, args []Node) {
 	default:
 		return
 	}
+	if x, isLit := elemTN.(*TypeNodeInterface); isLit {
+		p.name = f.ifaceLitName(elemIn, x) // `[]interface{ M() }`: named for the rules
+	}
 	_, elemIsIface := f.interfaceMethodsNamed(s, p.name)
 	for _, v := range args[1:] {
 		// An INTERFACE element: the same question an assignment asks, which
@@ -26922,6 +27191,9 @@ func (f *File) checkPointerArg(s, paramScope *Scope, p retResult, arg Node, call
 	// it. The ARGUMENT keeps the caller's scope, which is where it is written.
 	want := f.isPointerType(paramScope, p.typeNode)
 	wantName := f.qualifiedTypeName(paramScope, f.typeNodeString(p.typeNode, false))
+	if x, isLit := p.typeNode.(*TypeNodeInterface); isLit {
+		wantName = f.ifaceLitName(paramScope, x)
+	}
 	f.checkPointerValue(s, want, wantName, arg, "argument to "+callee)
 	f.checkImplements(s, wantName, arg, "argument to "+callee)
 	f.checkDefinedType(s, wantName, arg, "argument to "+callee)
@@ -28818,7 +29090,7 @@ func (f *File) varSpec(s *Scope, n Node) {
 					f.checkPointerValue(s, typIsPtr, f.typeNodeString(typ, false), e, "variable declaration")
 					f.checkDeclType(s, kind, hasKind, typeName, e)
 					if typ != nil {
-						f.ifaceInits = append(f.ifaceInits, ifaceInit{f.typeNodeString(typ, false), e})
+						f.ifaceInits = append(f.ifaceInits, ifaceInit{f.ifaceTypeName(s, typ), e})
 					}
 				}
 				if hasKind {
@@ -32132,7 +32404,7 @@ func (f *File) factor(s *Scope, n Node) (r ExpressionNode) {
 	// one. They reached the walk below and panicked the checker ("TODO ...
 	// CompositeLit") until 2026-09-18 -- `case Pkt{}:` crashed the compiler.
 	for c := range it(n.ast) {
-		if c.sym == CompositeLit || c.sym == FuncLiteral || c.sym == Type || c.sym == 0 && f.ch(c.tok) == LBRACK {
+		if c.sym == CompositeLit || c.sym == FuncLiteral || c.sym == Type || c.sym == InterfaceType || c.sym == 0 && f.ch(c.tok) == LBRACK {
 			if !f.inArrayBound && !f.inCaseExpr {
 				f.err(f.tok(n.Pos()).Position(), "%s is not constant", f.exprSource(n))
 			}

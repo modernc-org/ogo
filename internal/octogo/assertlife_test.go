@@ -27,6 +27,8 @@ type G interface{ get() int }
 
 var keepT *T
 
+var keepG interface{ get() int }
+
 var gt T
 
 func use(p *T) int { return p.n }
@@ -77,6 +79,20 @@ func run() { t := T{7}; keep(&t) }`, false},
 
 func run() { t := T{7}; keep(&t) }`, false},
 		{"control package", `func run() { var r G = &gt; keepT = r.(*T) }`, false},
+		// An interface written out: a type switch's case of one binds the name at it,
+		// holding the operand's pointer as any clause's name does, and so do an
+		// assertion to one and a variable of one.
+		{"type switch case written out", `func run() { t := T{7}; var r any = &t; switch v := r.(type) { case interface{ get() int }: keepG = v } }`, true},
+		{"assert ok written out", `func run() { t := T{7}; var r any = &t; if v, ok := r.(interface{ get() int }); ok { keepG = v } }`, true},
+		{"variable written out", `func run() { t := T{7}; var v interface{ get() int } = &t; keepG = v }`, true},
+		{"callee type switch case written out", `func keep(r any) { switch v := r.(type) { case interface{ get() int }: keepG = v } }
+
+func run() { t := T{7}; keep(&t) }`, true},
+		{"callee parameter written out", `func keep(r interface{ get() int }) { var w interface{ get() int } = r; keepG = w }
+
+func run() { t := T{7}; keep(&t) }`, true},
+		{"control type switch case written out", `func run() { t := T{7}; var r any = &t; switch v := r.(type) { case interface{ get() int }: println(v.get()) } }`, false},
+		{"control package written out", `func run() { var r any = &gt; switch v := r.(type) { case interface{ get() int }: keepG = v } }`, false},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			src := head + test.src + "\n\nfunc main() {\n\trun()\n\tprintln(keepT != nil)\n}\n"
