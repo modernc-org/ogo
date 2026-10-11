@@ -3617,6 +3617,9 @@ func (f *File) checkHeaderAssign(s *Scope, targets, values []Node) {
 		return
 	}
 	for i, t := range targets {
+		if f.addrTargetErr(s, t) {
+			continue
+		}
 		base, steps, stars, ok := f.exprTarget(t)
 		if !ok {
 			continue
@@ -3643,6 +3646,16 @@ func (f *File) checkHeaderAssign(s *Scope, targets, values []Node) {
 	}
 }
 
+// addrTargetErr refuses an assignment target in a header that is an address, `for
+// &x = 1; ...`, which is a value and no place, as on a line of its own.
+func (f *File) addrTargetErr(s *Scope, t Node) bool {
+	if !f.isAddrOperand(s, t) {
+		return false
+	}
+	f.err(f.tok(t.Pos()).Position(), "cannot assign to %s (neither addressable nor a map index expression)", f.exprSource(t))
+	return true
+}
+
 // checkHeaderAssignList is checkHeaderAssign for the init statement of an if or a
 // switch, `if err = f(); ...` and `switch a, b = x, y; ...`, whose first target is
 // written as an expression and the rest as LhsItems: the names resolved, the count
@@ -3654,6 +3667,9 @@ func (f *File) checkHeaderAssignList(s *Scope, head Node, items, values []Node) 
 	var bases []Token
 	var suffixed []bool
 	for _, t := range targets {
+		if f.addrTargetErr(s, t) {
+			return
+		}
 		base, steps, stars, ok := f.exprTarget(t)
 		if ok && base.Src() == "_" && len(steps) == 0 && stars == 0 {
 			bases, suffixed = append(bases, base), append(suffixed, false)
@@ -4906,6 +4922,12 @@ func (f *File) checkForPost(s *Scope, results []retResult, n Node) {
 	}
 	for _, l := range lhs {
 		if f.conversionTarget(s, l) {
+			return
+		}
+		// An address, `&x = i`, is a value and no place either, as on a line of its
+		// own; taken here, the post wrote to C's `&x`.
+		if f.isAddrOperand(s, l) {
+			f.err(f.tok(l.Pos()).Position(), "cannot assign to %s (neither addressable nor a map index expression)", f.exprSource(l))
 			return
 		}
 		// A constant, `"s"++` and `5 += 1`: no place. The C incremented a literal.
@@ -32517,7 +32539,7 @@ func (f *File) factor(s *Scope, n Node) (r ExpressionNode) {
 					f.err(tok.Position(), "invalid floating-point literal: %s", tok.Src())
 				}
 			case CHAR:
-				if r = (constVal{cv: constant.MakeFromLiteral(tok.Src(), token.CHAR, 0)}); r.Type() == nil {
+				if r = (constVal{cv: constant.MakeFromLiteral(tok.Src(), token.CHAR, 0), isRune: true}); r.Type() == nil {
 					f.err(tok.Position(), "invalid rune literal: %s", tok.Src())
 				}
 			case STRING:

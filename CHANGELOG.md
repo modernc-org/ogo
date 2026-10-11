@@ -49,6 +49,15 @@ shipped section tells a reader on that version that they have behaviour they do 
 
 ### Fixed
 
+- **A named untyped constant of the rune class was an integer to the checker**:
+  `const H = 'c'; x := H`, `x := W * H` and `x := H << 2` made x a rune, as Go
+  has it and as the C had it, and the checker took x for an int, so `x = n` of an
+  int and `var y int = x` were taken where Go refuses both. A rune literal named,
+  or an operation one took part in, is of the rune class now (an integer beside a
+  rune is a rune; a shift is its left operand's).
+- **An address as an assignment target in a statement header**, `for ...; &x = i`,
+  `for &x = 1; ...`, `if &x = 5; ...`, was taken or refused by the emitter in its
+  own words; it is Go's "cannot assign to &x", as on a line of its own.
 - **A call of several results beside other arguments**, `take(1, two())`, is
   refused by the checker in Go's words; the emitter refused it in its own, with no
   position, and the same where one value is wanted -- a literal's element, a send,

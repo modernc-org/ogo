@@ -43,6 +43,12 @@ type constVal struct {
 	// than using a zero Kind as "none", since Kind's zero is a real type (bool).
 	typ   Kind
 	typed bool
+	// isRune is an untyped integer constant of the RUNE class: a rune literal, or
+	// an operation one took part in that Go's rule gives its class -- an integer
+	// beside a rune is a rune, and a shift is its left operand's. Its default type
+	// is rune where an integer's is int: `const H = 'c'; x := H` makes x a rune,
+	// and the named constant was an integer, so `x = n` of an int was taken.
+	isRune bool
 }
 
 // typedAs returns l with the type k, for the conversion that gives a constant one.
@@ -62,6 +68,7 @@ func (l constVal) sameTypeAs(a, b constVal) constVal {
 	case b.typed:
 		return l.typedAs(b.typ)
 	}
+	l.isRune = a.isRune || b.isRune
 	return l
 }
 
@@ -79,6 +86,9 @@ func (l constVal) Type() Typ {
 	case constant.String:
 		return UntypedString
 	case constant.Int:
+		if l.isRune {
+			return UntypedRune
+		}
 		return UntypedInt
 	case constant.Float:
 		return UntypedFloat

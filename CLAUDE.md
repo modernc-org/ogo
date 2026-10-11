@@ -3086,6 +3086,20 @@ and the first capture alone printed half (the host's -Werror caught it as an unu
 capture). And a call of several results beside other arguments is the checker's
 refusal now (checkCallArgs asks multiValueOperandErr), the emitter's own in a
 literal's element, a send or an index carrying a position.
+A maze program the next round (dom41: Kruskal's algorithm over a union-find of
+int16 parents, walls as Dir bits of an iota group, A* over a binary heap of structs
+in a fixed array with sentinel errors, BFS on another cog; three packages) matched
+Go on the host and the board at the first try. Its 1,500 mutants had two taken,
+each a row: a NAMED untyped rune constant was an integer to the checker -- constVal
+carried no class, a constant.Int being UntypedInt -- so `const H = 'c'; x := H`,
+`x := W * H` and `x := H << 2` were ints and took one (constVal.isRune: a rune
+literal sets it and sameTypeAs carries it, Go's integer-beside-rune and the shift's
+left operand); and an address as a header's assignment target, `for ...; &x = i`
+and the for, if and switch inits (checkForPost, addrTargetErr). The C had typed the
+constants right all along -- `%T` printed int32 -- so only the checker was wrong.
+Its 1,065 valid mutants matched Go but for panics alike and races the mutations
+made. Left: `*&x = v` is a syntax error, the target's grammar taking no `&` after a
+star, where Go takes it.
 
 **A STRUCT HOLDING AN ARRAY IS COPIED, NEVER ASSIGNED** (2026-09-23). The target's C
 compiler copy-initializes and assigns one only at some SIZES -- "Unable to multiply

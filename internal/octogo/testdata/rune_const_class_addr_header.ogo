@@ -1,0 +1,51 @@
+// Two rows a domain program's mutants found. An untyped constant of the RUNE class
+// -- a rune literal named, or an operation one took part in -- defaults to rune
+// where an integer constant defaults to int, and the named constant was an integer
+// to the checker, so `x := H` for a `const H = 'c'` was an int and took one. And an
+// address as an assignment target in a header, `for ...; &x = i`, was taken where
+// the same statement on a line of its own is refused.
+
+const W = 12
+
+const H = 'c'
+
+const N = W * H
+
+const S = H << 2
+
+var gi int = 5
+
+func run() {
+	a := H
+	// ERROR "cannot use gi of type int as type int32 in assignment"
+	a = gi
+	b := N - 1
+	// ERROR "cannot use gi of type int as type int32 in assignment"
+	b = gi
+	c := W * H
+	// ERROR "cannot use c of type int32 as type int in variable declaration"
+	var y int = c
+	d := S
+	// ERROR "cannot use gi of type int as type int32 in assignment"
+	d = gi
+	var ok int = N
+	e := W * 2
+	e = gi
+	var x int
+	// ERROR "cannot assign to &x \(neither addressable nor a map index expression\)"
+	for i := 0; i < 1; &x = i {
+		i++
+	}
+	// ERROR "cannot assign to &x \(neither addressable nor a map index expression\)"
+	for &x = 1; x < 2; x++ {
+	}
+	// ERROR "cannot assign to &x \(neither addressable nor a map index expression\)"
+	if &x = 5; x > 0 {
+	}
+	// ERROR "cannot assign to &x \(neither addressable nor a map index expression\)"
+	switch &x = 5; x {
+	}
+	_, _, _, _, _, _, _ = a, b, y, d, ok, e, x
+}
+
+func main() { run() }
