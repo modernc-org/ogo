@@ -222,10 +222,16 @@ func compileSized(c []byte, unmarked func() ([]byte, error), cFile, out, inc, ke
 			return code, err
 		}
 	}
-	if needs.mainNeed > 0 {
-		if fi, err := os.Stat(out); err == nil && fi.Size()+int64(needs.mainNeed) > hubRAMBytes {
+	mainNeed, atLeast := needs.mainNeed, ""
+	if mainNeed < 0 {
+		// Recursion leaves the need unbounded; what it needs at the least still
+		// fits or does not.
+		mainNeed, atLeast = needs.mainAtLeast, " at least"
+	}
+	if mainNeed > 0 {
+		if fi, err := os.Stat(out); err == nil && fi.Size()+int64(mainNeed) > hubRAMBytes {
 			os.Remove(out)
-			return 1, fmt.Errorf("ogo: the program does not fit the P2's 512 KB of Hub RAM: main's stack needs %d bytes beside its %d of code and data", needs.mainNeed, fi.Size())
+			return 1, fmt.Errorf("ogo: the program does not fit the P2's 512 KB of Hub RAM: main's stack needs%s %d bytes beside its %d of code and data", atLeast, mainNeed, fi.Size())
 		}
 	}
 	return 0, nil

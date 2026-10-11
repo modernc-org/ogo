@@ -1655,7 +1655,12 @@ Of 478 run cases starting goroutines the median need is 158 longs and 5 exceed 2
 p2-11's is 809, 15 KB more Hub RAM for its seven slots. The same reading bounds the
 MAIN cog, whose stack is the rest of Hub RAM: a program whose image and deepest main
 stack exceed 512 KB is refused (the corpus's largest is 471 KB; main needs 5 KB at
-most there). p2-11's 809 was 432 with each interface call resolved to its
+most there). Where main reaches a recursion its need has no bound, and it was asked
+nothing (2026-10-11, the board run of mutants: a 512 KB array result beside a
+recursive function built and printed nothing); the deepest chain of DIRECT calls,
+entering each component once, is a bound from below and is asked there
+(mainAtLeast) -- **a bound with no answer still has a floor**. p2-11's 809 was 432
+with each interface call resolved to its
 implementations by hand (the startup path turn, find, fat.Volume.Find of 708 bytes,
 file, next, hold and the card's read; Serve's transfers need 206), and the old
 256-long slot was overrun on every boot that mounted a card, into an unclaimed

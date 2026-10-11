@@ -57,6 +57,11 @@ shipped section tells a reader on that version that they have behaviour they do 
 
 ### Fixed
 
+- **A program whose main cog reaches a recursion was not asked whether its stack
+  fits**: the need has no bound there, and a frame past Hub RAM on the way to it,
+  a 512 KB array result beside a recursive function, built and printed nothing on
+  the board. What main needs at the least, the deepest chain of direct calls, is
+  asked instead, and such a program is refused.
 - **The address of an element of a slice parameter of structs, `func find(items
   []Item, id int) *Item { ... return &items[i] }`, was refused** as the address of
   the parameter itself, and so was one of a parameter of a defined slice type

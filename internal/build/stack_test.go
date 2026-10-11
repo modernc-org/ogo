@@ -299,6 +299,48 @@ func main() {
 			t.Fatalf("err=%v, want main's stack not fitting", err)
 		}
 	})
+	// A recursion beside the frame leaves main's need unbounded, and the frame was
+	// asked nothing: the program built and printed nothing on the board.
+	t.Run("main with a recursion", func(t *testing.T) {
+		_, err := compile(t, `func depth(n int) int {
+	if n == 0 {
+		return 0
+	}
+	return 1 + depth(n-1)
+}
+
+func big() int {
+	var b [140000]int
+	for i := range b {
+		b[i] = i
+	}
+	return b[139999]
+}
+
+func main() { println(depth(3), big()) }
+`, false)
+		if err == nil || !strings.Contains(err.Error(), "main's stack needs at least") {
+			t.Fatalf("err=%v, want main's stack not fitting at the least", err)
+		}
+	})
+}
+
+// TestStackNeedsMainAtLeast reads what main's stack needs at the least where a
+// recursion leaves its need unbounded: the deepest chain of direct calls entering
+// each component once, the recursive one included, and no call through a register.
+func TestStackNeedsMainAtLeast(t *testing.T) {
+	c := []byte("int main(void) {\nint first(void) {\nint rec(int n) {\nint other(int n) {\n")
+	listing := listingOf(fnListing("_main", 1, 0, "call\t#_rec", "call\t#_first", "call\tlocal01"),
+		fnListing("_first", 1, 600000),
+		fnListing("_rec", 1, 40, "call\t#_rec", "call\t#_leaf"),
+		fnListing("_leaf", 1, 8),
+		fnListing("_other", 1, 900000),
+		"ptr_a\n\tlong\t@_other")
+	r := readStackNeeds(listing, c)
+	// main 4*(1+3), first 4*(1+3)+600000; other is reached through a register only.
+	if want := 16 + 16 + 600000; r.mainNeed != -1 || r.mainAtLeast != want {
+		t.Fatalf("main needs %d, at least %d; want -1, %d\n%s", r.mainNeed, r.mainAtLeast, want, listing)
+	}
 }
 
 // TestStackNeedsWrappedFrame reads a frame past 2 GB, which the backend's 32-bit
