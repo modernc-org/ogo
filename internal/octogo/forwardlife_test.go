@@ -109,6 +109,16 @@ func run() { var l E; l.n = 3; relayN(&l) }`, false},
 		{"control a relay's result read", `func relayR(p *E) *E { return first(id2(p)) }
 
 func run() { var l E; println(relayR(&l).n) }`, false},
+		{"deferred into a kept parameter", "func run() { var l E; defer keepP(id2(&l)) }", true},
+		{"deferred into a method's", "func run() { var l E; defer gt.keepM(id2(&l)) }", true},
+		{"deferred into an interface method's", "func run() { var l E; var k Keeper = &gt; defer k.Keep(id2(&l)) }", true},
+		{"deferred packed into a variadic", "func run() { var l E; defer keepV(idpp(&l)) }", true},
+		{"deferred into a literal keeping it", "func run() { var l E; defer func(p *E, n int) { gp = p }(id2(&l)) }", true},
+		{"started on a cog", "var done = make(chan bool)\n\nfunc glook(p *E, n int) { println(p.n, n); done <- true }\n\nfunc run() { var l E; go glook(id2(&l)); <-done }", true},
+		{"a relay deferring a forwarded call", "func relayD(p *E) { defer keep2(id2r(p)) }\n\nfunc run() { var l E; relayD(&l) }", true},
+		{"a relay starting a forwarded call", "var done = make(chan bool)\n\nfunc glook(p *E, n int) { println(p.n, n); done <- true }\n\nfunc relayG(p *E) { go glook(id2(p)); <-done }\n\nfunc run() { var l E; relayG(&l) }", true},
+		{"control deferred into a reader", "func run() { var l E; l.n = 4; defer look(id2(&l)) }", false},
+		{"control deferred and started package storage", "var done = make(chan bool)\n\nfunc glook(p *E, n int) { println(p.n, n); done <- true }\n\nfunc run() { defer keepP(id2(&ge)); go glook(id2(&ge)); <-done }", false},
 		{"control a spread variadic", `func relayS(ps []*E) { keepV(ps...) }
 
 func run() { var b [1]*E; b[0] = &ge; relayS(b[:]) }`, false},
@@ -126,5 +136,21 @@ func run() { var b [1]*E; b[0] = &ge; relayS(b[:]) }`, false},
 				t.Fatalf("refused: %v", err)
 			}
 		})
+	}
+}
+
+// TestEmitCForwardedPrintRefused holds the deferred print of a call of several
+// results, `defer println(two())`, refused as the print where it stands is: a print
+// reads what each argument is, and capturing the results for it printed the first.
+func TestEmitCForwardedPrintRefused(t *testing.T) {
+	for _, stmt := range []string{"defer println(two())", "defer print(two())"} {
+		src := "func two() (int, string) { return 1, \"a\" }\n\nfunc main() {\n\t" + stmt + "\n}\n"
+		pkg, err := Build(-1, []string{"main.ogo"}, fstest.MapFS{"main.ogo": &fstest.MapFile{Data: []byte(src)}})
+		if err == nil {
+			err = EmitC(pkg, io.Discard, Checked())
+		}
+		if err == nil || !strings.Contains(err.Error(), "not supported yet") {
+			t.Errorf("%s: got %v, want it refused as not supported yet", stmt, err)
+		}
 	}
 }

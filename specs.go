@@ -2277,8 +2277,12 @@
 //
 // As a special case, if the argument list is a single call returning several
 // values, those values are the arguments -- "sum(divmod(17, 5))" -- counted
-// against the parameters and checked as written arguments are. Not for a
-// variadic callee yet, where Go would pack the surplus into the slice.
+// against the parameters and checked as written arguments are, the surplus packed
+// into a variadic callee's slice as Go packs it. A deferred call and a goroutine
+// may be handed one too, "defer report(divmod(17, 5))": the inner call runs where
+// the statement stands, as any argument is evaluated there. Beside other arguments
+// such a call is a value in a single-value context, and refused. Printing one,
+// "println(divmod(17, 5))", is not supported yet.
 //
 // # Built-in functions
 //

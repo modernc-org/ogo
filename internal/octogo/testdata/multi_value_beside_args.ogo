@@ -1,0 +1,45 @@
+// A call of several results is an argument list only standing alone, `take(two())`;
+// beside other arguments it is a value in a single-value context, which Go refuses.
+// The emitter refused it in its own words with no position, deferred or started
+// on a cog too, and a deferred print of one -- which Go takes -- is the emitter's
+// to refuse, as the print itself is.
+
+type T struct{}
+
+func (t *T) take(n int, s string) {}
+
+type K interface{ Take(n int, s string) }
+
+func (t *T) Take(n int, s string) {}
+
+var gt T
+
+func two() (int, string) { return 1, "a" }
+
+func take(n int, s string) {}
+
+func takeN(n, m int, s string) {}
+
+func run() {
+	// ERROR "multiple-value two\(\) \(value of type \(2 values\)\) in single-value context"
+	takeN(1, two())
+	// ERROR "multiple-value two\(\) \(value of type \(2 values\)\) in single-value context"
+	gt.take(1, two())
+	f := take
+	// ERROR "multiple-value two\(\) \(value of type \(2 values\)\) in single-value context"
+	f(1, two())
+	var k K = &gt
+	// ERROR "multiple-value two\(\) \(value of type \(2 values\)\) in single-value context"
+	k.Take(1, two())
+	// ERROR "multiple-value two\(\) \(value of type \(2 values\)\) in single-value context"
+	println(1, two())
+	// ERROR "multiple-value two\(\) \(value of type \(2 values\)\) in single-value context"
+	defer takeN(1, two())
+	// ERROR "multiple-value two\(\) \(value of type \(2 values\)\) in single-value context"
+	go takeN(1, two())
+	take(two())
+	defer take(two())
+	go take(two())
+}
+
+func main() { run() }

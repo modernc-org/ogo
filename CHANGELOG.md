@@ -39,8 +39,20 @@ shipped section tells a reader on that version that they have behaviour they do 
   `interface{ M() }(x)`, parses with it and is refused as not supported yet;
   `any(x)` is the empty one's spelling, and a variable of the type or a declared
   interface the others'.
+- **A deferred call and a goroutine may be handed a call of several results
+  whole**, `defer report(divmod(17, 5))` and `go worker(open(3))`, as Go allows:
+  the inner call runs where the statement stands and its results fill the
+  parameters -- an interface's widened, a variadic's packed -- for a function, a
+  method, an interface's method, a function value and a literal. Both were refused
+  whatever the types. Printing such a call, `println(divmod(17, 5))`, is not
+  supported yet, deferred or not.
 
 ### Fixed
+
+- **A call of several results beside other arguments**, `take(1, two())`, is
+  refused by the checker in Go's words; the emitter refused it in its own, with no
+  position, and the same where one value is wanted -- a literal's element, a send,
+  an index -- says where now.
 
 - **A call of several results passed whole as another call's arguments,
   `keepP(id2(&l))`, was asked nothing by the lifetime rules**: a callee keeping the

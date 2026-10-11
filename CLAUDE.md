@@ -3075,9 +3075,17 @@ keeping its parameter's CONTENTS kept nothing of the caller's; crossEdge.part ma
 those contents onto the caller's parameter (partEdges; a spread, `keepV(xs...)`,
 is told by the token after the last argument). Both in v0.54.0. **A shape that
 newly compiles is asked every lifetime question**: the C compiler's refusal had
-been hiding that none was asked. Left, loud: `defer f(g())` and `go f(g())` of a
-g of several results ("cannot infer the type of a deferred call argument", "a
-multi-value call cannot be used as a single value"), with matching types too.
+been hiding that none was asked. `defer f(g())` and `go f(g())` of a g of several
+results came the same day: captureForwarded binds g where the defer stands and
+captures each result as the parameter it fills (deferArg.text), the replay passing
+them together (emitCallArgs), a literal's path too; the go statement gives it a slot
+per result and stores them widened. checkCrossArgs routes a forwarded list to
+checkForwardedIn, which checkDeferLeaks reaches. A deferred PRINT of one is
+refused, as the plain `println(two())` is -- a print reads what each argument is,
+and the first capture alone printed half (the host's -Werror caught it as an unused
+capture). And a call of several results beside other arguments is the checker's
+refusal now (checkCallArgs asks multiValueOperandErr), the emitter's own in a
+literal's element, a send or an index carrying a position.
 
 **A STRUCT HOLDING AN ARRAY IS COPIED, NEVER ASSIGNED** (2026-09-23). The target's C
 compiler copy-initializes and assigns one only at some SIZES -- "Unable to multiply

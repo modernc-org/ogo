@@ -586,6 +586,104 @@ func main() {
 		want: "take E 4\ntake E 3\nT.take E 14\nTaker E 40\ntake E 4\nE 3\nE 4\nE 3\ntrue 2\ntrue 2\ncog E 4\n",
 	},
 	{
+		// A call of several results deferred or started whole, `defer f(g())` and
+		// `go f(g())`: g run where the statement stands, its results captured one
+		// each as the parameter it fills -- an interface's widened, a struct holding
+		// an array copied, a variadic's packed -- for a function, a method, an
+		// interface's method, a function value and a literal. Both were refused
+		// whatever the types.
+		name: "a call of several results deferred and started whole",
+		src: `type E struct{ n int }
+
+func (e *E) Error() string { return "E" }
+
+type T struct{ k int }
+
+func (t *T) take(n int, s string) { println("T.take", n+t.k, s) }
+
+type Taker interface{ Take(n int, s string) }
+
+func (t *T) Take(n int, s string) { println("Taker.Take", n*t.k, s) }
+
+type Big struct {
+	a [3]int
+	s string
+}
+
+var calls int
+var g = 1
+var ge = E{5}
+var gt = T{100}
+var done = make(chan bool, 8)
+
+func two() (int, string) {
+	calls++
+	g++
+	return g * 10, "s"
+}
+
+func twoe() (*E, int) { calls++; return &ge, g }
+
+func twob() (Big, int) { calls++; return Big{[3]int{g, 2, 3}, "big"}, g }
+
+func take(n int, s string) { println("take", n, s, calls) }
+
+func takee(e error, n int) { println("takee", e.Error(), n) }
+
+func takeb(b Big, n int) { println("takeb", b.a[0], b.s, n) }
+
+func takev(xs ...int) { println("takev", len(xs), xs[0], xs[len(xs)-1]) }
+
+func ints() (int, int, int) { calls++; return g, g + 1, g + 2 }
+
+func gtake(n int, s string) { println("gtake", n, s); done <- true }
+
+func gtakee(e error, n int) { println("gtakee", e.Error(), n); done <- true }
+
+func gtakev(xs ...int) { println("gtakev", len(xs), xs[0]); done <- true }
+
+func (t *T) gtake(n int, s string) { println("T.gtake", n+t.k, s); done <- true }
+
+func run() {
+	defer take(two())
+	defer takee(twoe())
+	defer takeb(twob())
+	defer takev(ints())
+	defer gt.take(two())
+	var tk Taker = &gt
+	defer tk.Take(two())
+	f := take
+	defer f(two())
+	defer func(n int, s string) { println("lit", n, s) }(two())
+	g = 1000
+	println("body", calls)
+}
+
+func spawn() {
+	go gtake(two())
+	<-done
+	go gtakee(twoe())
+	<-done
+	go gtakev(ints())
+	<-done
+	go gt.gtake(two())
+	<-done
+	h := gtake
+	go h(two())
+	<-done
+	go func(n int, s string) { println("glit", n, s); done <- true }(two())
+	<-done
+}
+
+func main() {
+	run()
+	spawn()
+	println(calls)
+}
+`,
+		want: "body 8\nlit 60 s\ntake 50 s 8\nTaker.Take 4000 s\nT.take 130 s\ntakev 3 2 4\ntakeb 2 big 2\ntakee E 2\ntake 20 s 8\ngtake 10010 s\ngtakee E 1001\ngtakev 3 1001\nT.gtake 10120 s\ngtake 10030 s\nglit 10040 s\n14\n",
+	},
+	{
 		// A method storing its receiver through a parameter, `*p = m`, and a function
 		// storing a parameter through an assertion of an `any` one, `case **M:` among
 		// them -- with both sides of each store this frame's, which the lifetime

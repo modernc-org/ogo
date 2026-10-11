@@ -26739,6 +26739,17 @@ func (f *File) spreadArgs(args []Node) bool {
 // reported at the method's name.
 func (f *File) checkCallArgs(s, paramScope *Scope, at Token, callee string, sig *SignatureNode, args []Node) {
 	params := f.flattenParams(paramScope, sig)
+	// A call of several results beside other arguments, `take(1, two())`, is no
+	// argument at all: Go's special case is the call standing alone. The emitter
+	// refused it in its own words, "a multi-value call cannot be used as a single
+	// value", with no position.
+	if len(args) > 1 {
+		for _, a := range args {
+			if f.multiValueOperandErr(s, a) {
+				return
+			}
+		}
+	}
 	// `f(g())`: a call of several results as the whole argument list, Go's special
 	// case. The results stand in for the arguments -- counted against the
 	// parameters and checked pairwise, as written arguments are; for a VARIADIC

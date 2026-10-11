@@ -2371,6 +2371,23 @@ func (e *emitter) emitGo(nodes []Node) {
 		crossed(r.what, r.advice(), x)
 		return
 	}
+	// `go f(g())`: g runs at the go statement, as Go evaluates a goroutine's
+	// arguments there, and its results fill the parameters, one slot each. It was "a
+	// multi-value call cannot be used as a single value".
+	var fwdTypes []string
+	if rts, isFwd := e.forwardedCall(args); isFwd && !e.spreadCall(callSuffix.ast) {
+		for _, rt := range rts {
+			if _, isArr := e.isArrayResult(rt); isArr {
+				e.failAt(args[0].ast, "a goroutine handed an array result of %s is not supported yet", e.f.exprSource(args[0]))
+				return
+			}
+		}
+		fwdTypes = rts
+	}
+	nargs := len(args)
+	if fwdTypes != nil {
+		nargs = len(fwdTypes)
+	}
 	// The argument block holds each value as its PARAMETER's type, not as the type
 	// the argument expression happens to have. A goroutine argument is assigned to
 	// the parameter, and Go converts there: storing 1234567890123 as the "int" its
@@ -2406,7 +2423,7 @@ func (e *emitter) emitGo(nodes []Node) {
 			}
 		}
 		if at >= 0 {
-			if len(args) < at {
+			if nargs < at {
 				e.fail("not enough arguments in call to %s", e.funcSourceName(site.callee))
 				return
 			}
@@ -2425,7 +2442,7 @@ func (e *emitter) emitGo(nodes []Node) {
 			}
 			// Nothing packed is the nil slice, no storage of the trampoline's: `go
 			// keep()` was refused for a pack it never builds.
-			if len(args) > at && at < len(crosses) && crosses[at]&(leakCog|leakGlobal) != 0 {
+			if nargs > at && at < len(crosses) && crosses[at]&(leakCog|leakGlobal) != 0 {
 				e.fail("cannot pass these values to a goroutine's %s: they are packed for the call, and its parameter %d outlives it; pack them into a package array and pass a slice of it",
 					e.funcSourceName(summary), at+1)
 				return
@@ -2435,7 +2452,7 @@ func (e *emitter) emitGo(nodes []Node) {
 			e.needSlice(elem)
 		}
 	}
-	for i, a := range args {
+	for i := range nargs {
 		ct := ""
 		if i < len(params) {
 			ct = params[i]
@@ -2446,14 +2463,21 @@ func (e *emitter) emitGo(nodes []Node) {
 			}
 			ct = site.packElem
 		}
+		if ct == "" && fwdTypes != nil {
+			ct = fwdTypes[i]
+		}
 		if ct == "" {
 			var ok bool
-			if ct, ok = e.inferCType(a.ast); !ok {
+			if ct, ok = e.inferCType(args[i].ast); !ok {
 				e.fail("cannot infer the type of a go argument")
 				return
 			}
 		}
 		if dims := e.funcArrayParams[site.callee]; site.fnCType == "" && i < len(dims) && dims[i].bound != "" {
+			if fwdTypes != nil {
+				e.failAt(args[0].ast, "a goroutine's array parameter handed a result of %s is not supported yet", e.f.exprSource(args[0]))
+				return
+			}
 			if site.arrays == nil {
 				site.arrays = map[int]arrDim{}
 			}
@@ -2472,7 +2496,7 @@ func (e *emitter) emitGo(nodes []Node) {
 		}
 		site.args = append(site.args, ct)
 	}
-	if site.pack && packAt >= len(args) {
+	if site.pack && packAt >= nargs {
 		site.packFrom = len(site.args) // nothing written for the variadic parameter
 	}
 	// A callee returning an ARRAY writes it through an out parameter, which the
@@ -2537,6 +2561,49 @@ func (e *emitter) emitGo(nodes []Node) {
 			e.emit(ap + "->ogo_a0 = " + recvText + ";\n")
 		}
 		first = 1
+	}
+	if fwdTypes != nil {
+		// The call bound, and each of its results stored as the parameter it fills,
+		// an interface's widened (widenValC).
+		tmp := e.newTmp()
+		var text string
+		var writes, ok bool
+		_, pro := e.capturePrologue(func() { text, writes, ok = e.forwardedCallIntoAs(args[0], tmp, fwdTypes) })
+		if !ok {
+			e.failAt(args[0].ast, "unsupported call whose results a goroutine is handed")
+			return
+		}
+		for _, line := range pro {
+			e.ind()
+			e.emit(line)
+		}
+		e.ind()
+		if writes {
+			e.emit(e.retStructNameOf(fwdTypes) + " " + tmp + ";\n")
+			e.ind()
+			e.emit(text + ";\n")
+		} else {
+			e.emit(e.retStructNameOf(fwdTypes) + " " + tmp + " = " + text + ";\n")
+		}
+		for i, from := range fwdTypes {
+			dst := fmt.Sprintf("%s->ogo_a%d", ap, i+first)
+			pre, v, ok := e.widenValC(site.args[i+first], from, fmt.Sprintf("%s._%d", tmp, i))
+			if !ok {
+				return
+			}
+			for _, line := range pre {
+				e.ind()
+				e.emit(line)
+			}
+			e.ind()
+			if e.holdsArray(site.args[i+first]) {
+				e.includes["string.h"] = true
+				e.emit("memcpy(&" + dst + ", &(" + v + "), sizeof(" + dst + "));\n")
+				continue
+			}
+			e.emit(dst + " = " + v + ";\n")
+		}
+		args = nil // stored
 	}
 	for i, a := range args {
 		// A concrete value crossing to a cog as an INTERFACE parameter is wrapped
@@ -7868,6 +7935,10 @@ type deferArg struct {
 	// as the pointer it decays to at the replay -- an array parameter is a pointer
 	// the callee copies from.
 	arr arrDim
+	// text and from are a result of a call of several passed whole, `defer f(g())`,
+	// bound where the defer stands: its C text, a field of the binding, and its C
+	// type, captured as ctype, the parameter's (captureForwarded).
+	text, from string
 }
 
 // deferFlagName and deferArgName name the temporaries backing a defer slot.
@@ -34161,6 +34232,27 @@ func (e *emitter) emitDefer(nodes []Node) {
 		}
 		d := deferredCall{litName: cname, cond: e.deferConditional(), slot: len(e.defers)}
 		args, params := e.callArgExprs(suffix[0].ast), e.funcParams[cname]
+		// `defer func(n int, s string) { ... }(two())`: two's results captured one
+		// each, as a named callee's are (captureForwarded).
+		if resTypes, isFwd := e.forwardedCall(args); isFwd && !e.spreadCall(suffix[0].ast) {
+			elem, at := e.variadicPack(cname)
+			fixed := params
+			if at >= 0 {
+				d.packAt, d.packElem = at+1, elem
+				fixed = params[:at]
+			}
+			if !e.captureForwarded(&d, args[0], resTypes, fixed, elem, at) {
+				return
+			}
+			e.checkDeferLeaks(&d, head, suffix, args)
+			e.emitDeferCaptures(&d)
+			if d.cond {
+				e.ind()
+				e.emit(deferFlagName(d.slot) + " = 1;\n")
+			}
+			e.defers = append(e.defers, d)
+			return
+		}
 		// A VARIADIC literal takes its packed arguments as its element's, each
 		// captured on its own and packed at the replay, as a named callee's are.
 		if elem, at := e.variadicPack(cname); at >= 0 && !e.spreadCall(suffix[0].ast) {
@@ -34290,6 +34382,7 @@ func (e *emitter) emitDefer(nodes []Node) {
 	// A VARIADIC callee's packed arguments are captured as its element: an
 	// interface element is wrapped here, a constant spelled as one. The replay packs
 	// the captures (see emitCallArgs).
+	fixedParams, fwdElem, fwdAt := paramTypes, "", -1
 	if !e.spreadCall(call.ast) {
 		cname, ftype := d.cname, ""
 		if cname == "" && len(suffix) == 1 {
@@ -34301,11 +34394,38 @@ func (e *emitter) emitDefer(nodes []Node) {
 			ftype = d.recvCType
 		}
 		if elem, at := e.callVariadic(cname, ftype, paramTypes); at >= 0 {
+			fwdElem, fwdAt = elem, at
 			packed := slices.Clone(paramTypes[:at])
 			for range e.callArgExprs(call.ast)[min(at, len(e.callArgExprs(call.ast))):] {
 				packed = append(packed, elem)
 			}
 			paramTypes = packed
+		}
+	}
+	// `defer f(g())`: g runs here, where Go evaluates a deferred call's arguments,
+	// and its results are captured one each as the parameter it fills, which the
+	// replay passes together (emitCallArgs). It was "cannot infer the type of a
+	// deferred call argument", whatever the types.
+	if callArgs := e.callArgExprs(call.ast); !e.spreadCall(call.ast) {
+		if resTypes, isFwd := e.forwardedCall(callArgs); isFwd {
+			// A print's arguments are printed by what each is, and a call's several
+			// results are no argument it can read: refused, as the print is where it
+			// stands, rather than printing the first.
+			if base := e.soleIdent(head.ast); len(suffix) == 1 && (base == "println" || base == "print" || base == "printf") && e.universe(base) {
+				e.failAt(callArgs[0].ast, "printing a call's several results, %s, is not supported yet", e.f.exprSource(callArgs[0]))
+				return
+			}
+			if !e.captureForwarded(&d, callArgs[0], resTypes, fixedParams, fwdElem, fwdAt) {
+				return
+			}
+			e.checkDeferLeaks(&d, head, suffix, callArgs)
+			e.emitDeferCaptures(&d)
+			if d.cond {
+				e.ind()
+				e.emit(deferFlagName(d.slot) + " = 1;\n")
+			}
+			e.defers = append(e.defers, d)
+			return
 		}
 	}
 	// printf's format is a constant the replay reads from the source again, so a
@@ -34365,6 +34485,51 @@ func (e *emitter) emitDefer(nodes []Node) {
 		e.emit(deferFlagName(d.slot) + " = 1;\n")
 	}
 	e.defers = append(e.defers, d)
+}
+
+// captureForwarded binds the call of several results a deferred call is handed
+// whole, `defer f(g())`, where the defer stands, and records each result as a
+// capture of the parameter it fills -- params the callee's fixed ones, elem the
+// element its variadic parameter at packs (at < 0 for none).
+func (e *emitter) captureForwarded(d *deferredCall, call Node, resTypes, params []string, elem string, at int) bool {
+	for _, rt := range resTypes {
+		if _, isArr := e.isArrayResult(rt); isArr {
+			e.failAt(call.ast, "a deferred call handed an array result of %s is not supported yet", e.f.exprSource(call))
+			return false
+		}
+	}
+	tmp := e.newTmp()
+	var text string
+	var writes, ok bool
+	_, pro := e.capturePrologue(func() { text, writes, ok = e.forwardedCallIntoAs(call, tmp, resTypes) })
+	if !ok {
+		e.failAt(call.ast, "unsupported call whose results a deferred call is handed")
+		return false
+	}
+	for _, line := range pro {
+		e.ind()
+		e.emit(line)
+	}
+	rt := e.retStructNameOf(resTypes)
+	e.ind()
+	if writes {
+		e.emit(rt + " " + tmp + ";\n")
+		e.ind()
+		e.emit(text + ";\n")
+	} else {
+		e.emit(rt + " " + tmp + " = " + text + ";\n")
+	}
+	for i, from := range resTypes {
+		want := from
+		switch {
+		case at >= 0 && i >= at:
+			want = elem
+		case i < len(params) && params[i] != "":
+			want = params[i]
+		}
+		d.args = append(d.args, deferArg{ctype: want, text: fmt.Sprintf("%s._%d", tmp, i), from: from})
+	}
+	return true
 }
 
 // checkDeferLeaks asks of a deferred call's arguments what a direct call's are asked
@@ -34520,6 +34685,24 @@ func (e *emitter) emitDeferCaptures(d *deferredCall) {
 			continue
 		}
 		name := deferArgName(d.slot, i)
+		if a.text != "" {
+			pre, v, ok := e.widenValC(a.ctype, a.from, a.text)
+			if !ok {
+				return
+			}
+			for _, line := range pre {
+				e.ind()
+				e.emit(line)
+			}
+			e.ind()
+			if e.holdsArray(a.ctype) {
+				e.includes["string.h"] = true
+				e.emit("memcpy(&" + name + ", &(" + v + "), sizeof(" + name + "));\n")
+				continue
+			}
+			e.emit(name + " = " + v + ";\n")
+			continue
+		}
 		// A capture of an INTERFACE type is the interface value, built here from a
 		// pointer or from another interface's value: the replay passes the two
 		// words its parameter takes. Captured as written, `defer show(&q)` replayed
@@ -47192,6 +47375,22 @@ func (e *emitter) emitCallArgs(cname string, callSuffix []int32) {
 			}
 		}
 	}
+	// The replay of `defer f(g())`: the captures of g's results, one each, which
+	// the defer statement bound (captureForwarded).
+	if e.deferReplay >= 0 && len(args) == 1 && len(e.deferReplayArgs) > 1 && e.deferReplayArgs[0].text != "" {
+		names := make([]string, len(e.deferReplayArgs))
+		for i := range names {
+			names[i] = deferArgName(e.deferReplay, i)
+		}
+		names = e.packForwarded(names, varElem, varAt)
+		for i := range names {
+			if i < len(params) && e.byRefParam(params[i]) && (varAt < 0 || i < varAt) {
+				names[i] = "&(" + names[i] + ")"
+			}
+		}
+		e.emit(strings.Join(names, ", "))
+		return
+	}
 	// `f(g())`: a call of SEVERAL results as the whole argument list, Go's special
 	// case. The inner call is bound to its result struct ahead of the statement,
 	// and its fields are the arguments.
@@ -51379,7 +51578,7 @@ func (e *emitter) emitExprNode(n Node) {
 				// A multi-result call yields no single value; it is only valid in a
 				// destructuring assignment (emitMultiAssign), not as an operand.
 				if rts, _ := e.userFunc(recv); len(suffix) == 1 && suffix[0].sym == CallSuffix && len(rts) > 1 {
-					e.fail("a multi-value call cannot be used as a single value")
+					e.failAt(n.ast, "multiple-value %s (value of type (%d values)) in single-value context", e.f.exprSource(n), len(rts))
 					return
 				}
 				if !e.emitCallExpr(recv, suffix) {
@@ -55297,6 +55496,9 @@ func (e *emitter) onceBound(name string) bool {
 // left a dead frame's address in gp, in silence; only the callee's store was ever
 // in doubt, and it is the summary's finding, not a guess (KNOWN MEANS MUST).
 func (e *emitter) checkIntoArgs(cname string, args []Node) {
+	if _, isFwd := e.forwardedCall(args); isFwd {
+		return // checkCrossArgs asked it of each result (checkForwardedIn)
+	}
 	e.checkIntoArgsIn(e.crossInto[cname], e.funcSourceName(cname), args)
 }
 
@@ -55497,6 +55699,12 @@ func (e *emitter) checkCrossArgs(cname string, args []Node, spread bool) {
 		e.typeSummary(cname)
 	}
 	crosses := e.crossParams[cname]
+	// A call of several results passed whole, `keep(two(&x))`: each result as the
+	// argument in its position, intos and contents included (checkForwardedIn).
+	if _, isFwd := e.forwardedCall(args); isFwd && !spread {
+		e.checkForwardedIn(crosses, e.crossContents[cname], e.crossInto[cname], e.funcSourceName(cname), args[0], e.packAt(cname))
+		return
+	}
 	// The pack a variadic call builds is an array of THIS frame, so a callee that
 	// lets its variadic parameter outlive the call is handed a reference that does
 	// not. Go allocates the pack and has no such problem; here it is the rule a
