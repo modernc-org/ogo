@@ -3044,6 +3044,39 @@ callee's NAME (directCall, convChainHead, the lifetime readers), which this has
 none of; it crashed the constant folder until the folder took InterfaceType.
 **A rule asked by name is a row of every type that has none.**
 
+**A CALL'S RESULTS FORWARDED WHOLE ARE A ROW** (2026-10-11, found by a domain
+program -- a record store of CRC-checked pages with typed errors, a command parser
+and the two on cogs behind buffered channels, classified by errors.Is, errors.As and
+written-out interface cases, three packages, matching Go on the host and the board).
+Its 1,500 mutants had two taken: a type switch's operand named bare was noted by no
+read (checkTypeSwitchOperand asks noteRef now), so a clause declaring that name had
+its unused variable counted used by NAME, the fallback for a token nothing resolved;
+and a call's result of a Kind into an interface target of a destructuring
+assignment was asked nothing in any target shape (checkResultIntoIface, from
+checkResultInto and the bare-variable branch of checkResultsAssign). Its 985 valid
+mutants matched Go but for prints of two cogs interleaving. Running the valid twin
+of the second row found the emitter storing a pointer result into an interface's two
+words, `e = _ogo_t0._0`, for every target, `take(mk())` and `return mk()` alike --
+loud, and valid Go: widenValC builds the value, a concrete pointer beside its table
+or another interface rebound, for emitStore (storeTargetCType), widenForwarded and
+emitWidenedForward. And probing what the widening newly let compile showed a
+SILENT hole older than all of it: the forwarded-argument path in emitCallArgs
+returned before checkCrossArgs and checkIntoArgs, so `keepP(id2(&l))` kept the
+local's address in a package variable with no word -- checkForwardedIn asks each
+result that can carry a reference against the parameter it fills (which carries what
+the call hands back is unknown, so each may). The summaries mapped the forwarded
+call to parameter 0 (fwdArgs spreads it over the positions, owned by nothing
+nameable). And beside it a model gap: a parameter held as a PART of an argument --
+a literal's element, `keepC([]*E{p})`, a value packed into a variadic parameter,
+`keepV(p)` -- went to the callee's parameter as the parameter itself, so a callee
+keeping its parameter's CONTENTS kept nothing of the caller's; crossEdge.part maps
+those contents onto the caller's parameter (partEdges; a spread, `keepV(xs...)`,
+is told by the token after the last argument). Both in v0.54.0. **A shape that
+newly compiles is asked every lifetime question**: the C compiler's refusal had
+been hiding that none was asked. Left, loud: `defer f(g())` and `go f(g())` of a
+g of several results ("cannot infer the type of a deferred call argument", "a
+multi-value call cannot be used as a single value"), with matching types too.
+
 **A STRUCT HOLDING AN ARRAY IS COPIED, NEVER ASSIGNED** (2026-09-23). The target's C
 compiler copy-initializes and assigns one only at some SIZES -- "Unable to multiply
 assign this target" at 12 and 16 bytes, where 3, 8 and 20 build -- so a test struct

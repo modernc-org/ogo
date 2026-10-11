@@ -11949,6 +11949,13 @@ type crossEdge struct {
 	// edge holds only where every one hands that parameter back (retParams), or its
 	// contents (retContents, the edge then carrying contents).
 	via []viaGate
+	// part says the argument holds the caller's parameter from as a PART of it --
+	// an element of a literal, `keepC([]*E{p})`, a value the call packs into its
+	// variadic parameter, `keepV(p)` -- so what the callee lets its parameter's
+	// CONTENTS reach, the caller lets that parameter reach. Read as the parameter
+	// itself, the callee's contents went to the caller's contents, and a relay of
+	// either shape was summarised as keeping nothing.
+	part bool
 }
 
 // viaGate is one call an argument's value went through, and the parameter of it.
@@ -12956,6 +12963,59 @@ func (e *emitter) collectFuncCross(fi funcInfo) {
 		}
 		return out
 	}
+	// fwdArgs is a call's argument list where one call of several results is the
+	// whole of it, `keep(two(v))`, spread over the positions its results fill: the
+	// one argument once per result, which of them carries what the inner call hands
+	// back being unknown here. Read as the one argument it is, its edges went to the
+	// first parameter alone, and a callee keeping its second, `keep2(id2r(p))`, was
+	// summarised as keeping nothing of p. spread says the list was.
+	fwdArgs := func(args []Node) ([]Node, bool) {
+		if len(args) != 1 {
+			return args, false
+		}
+		n := 0
+		for _, vc := range callsOfExpr(args[0].ast) {
+			for _, callee := range vc.callees {
+				res := e.funcRet[callee]
+				if ft, isType := strings.CutPrefix(callee, "type:"); isType {
+					res = e.funcTypeRet[ft]
+				}
+				n = max(n, len(res))
+			}
+		}
+		if n < 2 {
+			return args, false
+		}
+		out := make([]Node, n)
+		for j := range out {
+			out[j] = args[0]
+		}
+		return out, true
+	}
+	// partEdges is the part edges (crossEdge.part) of argument j of a call of
+	// callee, which reaches hs: each parameter of this function it holds as a part,
+	// `[]*E{p}`, and -- packed into callee's variadic parameter, not spread -- each
+	// it holds at all, by value, the pack holding it as its element. Each is a pair
+	// of this function's parameter and the callee's.
+	partEdges := func(callee string, args []Node, j int, hs []held) (out [][2]int, to int, packed bool) {
+		to = j
+		if at := e.packAt(callee); at >= 0 && j >= at {
+			last := args[len(args)-1]
+			if spread := e.f.ch(last.End()+1) == ELLIPSIS; !spread {
+				to, packed = at, true
+			}
+		}
+		var parts []held
+		for _, h := range hs {
+			if h.kind == heldPart || packed && h.kind == heldAlias {
+				parts = append(parts, held{h.name, heldAlias})
+			}
+		}
+		for _, i := range reachOf(parts).vals {
+			out = append(out, [2]int{i, to})
+		}
+		return out, to, packed
+	}
 	// resultCalls is every call whose result a value may carry: in its own shape
 	// (callExprsIn) and by way of the names it reaches (heldCalls).
 	resultCalls := func(v []int32) (out []valueCallT) {
@@ -13393,7 +13453,8 @@ func (e *emitter) collectFuncCross(fi funcInfo) {
 			}
 			rcalls = append(rcalls, chainCalls(nodes)...)
 			for _, c := range rcalls {
-				for j, a := range c.args {
+				args, _ := fwdArgs(c.args)
+				for j, a := range args {
 					e.retEdges = append(e.retEdges, viaEdges(crossEdge{caller: cname, callee: c.callee, to: j}, a.ast, true)...)
 					r := reachOf(e.summaryReach(a.ast))
 					for _, i := range r.vals {
@@ -13430,14 +13491,35 @@ func (e *emitter) collectFuncCross(fi funcInfo) {
 				})
 			}
 		}
+		// A forwarded call's results are owned by nothing this can name, so a store
+		// through one outlives every frame (storedThroughUnnamed's rule).
+		fwdOwners := func(args []Node) ([]Node, []int) {
+			args, spread := fwdArgs(args)
+			owner := owners(args)
+			if spread {
+				for j := range owner {
+					owner[j] = argOutlives
+				}
+			}
+			return args, owner
+		}
 		for _, c := range append(e.stmtCalls(nodes), chainCalls(nodes)...) {
-			owner := owners(c.args)
+			args, owner := fwdOwners(c.args)
 			site := e.siteSeq
 			e.siteSeq++
 			funcArgs(site, c.callee, c.args)
-			for j, a := range c.args {
+			for j, a := range args {
 				e.crossEdges = append(e.crossEdges, viaEdges(crossEdge{caller: cname, callee: c.callee, to: j, recvAt: argLocal, argOwner: owner, site: site}, a.ast, false)...)
-				r := reachOf(e.summaryReach(a.ast))
+				hs := e.summaryReach(a.ast)
+				pes, pto, packed := partEdges(c.callee, args, j, hs)
+				for _, pe := range pes {
+					e.crossEdges = append(e.crossEdges, crossEdge{caller: cname, from: pe[0], callee: c.callee, to: pe[1], recvAt: argLocal, argOwner: owner, site: site, part: true})
+				}
+				if packed {
+					// A call's result packed, `keepV(idpp(p))`: through its gates.
+					e.crossEdges = append(e.crossEdges, viaEdges(crossEdge{caller: cname, callee: c.callee, to: pto, recvAt: argLocal, argOwner: owner, site: site, part: true}, a.ast, false)...)
+				}
+				r := reachOf(hs)
 				for _, i := range r.vals {
 					e.crossEdges = append(e.crossEdges,
 						crossEdge{caller: cname, from: i, callee: c.callee, to: j, recvAt: argLocal, argOwner: owner, site: site})
@@ -13458,12 +13540,20 @@ func (e *emitter) collectFuncCross(fi funcInfo) {
 		// carries whose receiver it is, because that is what says whether the
 		// callee's leakRecv is a leak here too or the end of the matter.
 		for _, c := range e.stmtMethodCalls(nodes, fi) {
-			owner := owners(c.args)
+			args, owner := fwdOwners(c.args)
 			site := e.siteSeq
 			e.siteSeq++
-			for j, a := range c.args {
+			for j, a := range args {
 				e.crossEdges = append(e.crossEdges, viaEdges(crossEdge{caller: cname, callee: c.callee, to: j, recv: c.recv, recvAt: c.recvAt, argOwner: owner, site: site}, a.ast, false)...)
-				r := reachOf(e.summaryReach(a.ast))
+				hs := e.summaryReach(a.ast)
+				pes, pto, packed := partEdges(c.callee, args, j, hs)
+				for _, pe := range pes {
+					e.crossEdges = append(e.crossEdges, crossEdge{caller: cname, from: pe[0], callee: c.callee, to: pe[1], recv: c.recv, recvAt: c.recvAt, argOwner: owner, site: site, part: true})
+				}
+				if packed {
+					e.crossEdges = append(e.crossEdges, viaEdges(crossEdge{caller: cname, callee: c.callee, to: pto, recv: c.recv, recvAt: c.recvAt, argOwner: owner, site: site, part: true}, a.ast, false)...)
+				}
+				r := reachOf(hs)
 				for _, i := range r.vals {
 					e.crossEdges = append(e.crossEdges, crossEdge{caller: cname, from: i,
 						callee: c.callee, to: j, recv: c.recv, recvAt: c.recvAt, argOwner: owner, site: site})
@@ -13908,6 +13998,25 @@ func (e *emitter) closeCrossParams() {
 			g.contents = contents
 			calleeC := e.crossContents[g.callee]
 			calleeV := e.crossParams[g.callee]
+			if g.part {
+				// The argument held the caller's parameter as a part: what the callee
+				// lets its parameter's contents reach, the caller lets it reach -- or,
+				// where a call between hands back only its contents, those contents.
+				if contents {
+					if g.to < len(calleeC) {
+						orContents(g.caller, g.from, outlives(calleeC[g.to], g.recv, 0))
+					}
+					continue
+				}
+				if caller := e.crossParams[g.caller]; g.to < len(calleeC) && g.from < len(caller) {
+					f := outlives(calleeC[g.to], g.recv, 0) & (leakGlobal | leakCog)
+					if caller[g.from]&f != f {
+						caller[g.from] |= f
+						changed = true
+					}
+				}
+				continue
+			}
 			var intos uint32
 			if ci := e.crossInto[g.callee]; g.to < len(ci) {
 				intos = ci[g.to]
@@ -35011,10 +35120,6 @@ func (e *emitter) emitReplayedCall(d deferredCall) {
 	e.emit(b.String())
 }
 
-// forwardedCallC renders `f()` in `return f()`, where the one call supplies every
-// result. It answers only when the callee's results are exactly this function's --
-// two functions of one result list share a result struct, and nothing else can be
-// returned as one.
 // valueOutCallC renders a call through a function VALUE of several results --
 // held in a variable or in a struct field -- writing them into out. Such a value
 // points at a void wrapper taking the result struct's address ahead of the
@@ -35117,16 +35222,21 @@ func (e *emitter) resultCallOf(ast []int32) (callee string, suffix []Node, ok bo
 	return callee, suffix, ok
 }
 
-// forwardedCallInto is forwardedCallC for a call that WRITES its results rather
-// than returning them -- one through a function value (see valueOutCallC). It
+// forwardedCallInto is forwardedCallCAs, of this function's results, for a call
+// that WRITES its results rather than returning them -- one through a function value (see valueOutCallC). It
 // reports which of the two it rendered: a written call is a statement of its own,
 // where a returned one is the initializer of the temporary.
 func (e *emitter) forwardedCallInto(ex Node, out string) (text string, writes, ok bool) {
+	return e.forwardedCallIntoAs(ex, out, e.curResultTypes)
+}
+
+// forwardedCallIntoAs is forwardedCallInto for a call whose results are want.
+func (e *emitter) forwardedCallIntoAs(ex Node, out string, want []string) (text string, writes, ok bool) {
 	callee, suffix, isCall := e.resultCallOf(ex.ast)
 	if !isCall {
 		return "", false, false
 	}
-	if _, resTypes, okRes := e.callResultInfo(callee, suffix); !okRes || !slices.Equal(resTypes, e.curResultTypes) {
+	if _, resTypes, okRes := e.callResultInfo(callee, suffix); !okRes || !slices.Equal(resTypes, want) {
 		return "", false, false
 	}
 	if t, isOut := e.valueOutCallC(callee, suffix, out); isOut {
@@ -35141,17 +35251,21 @@ func (e *emitter) forwardedCallInto(ex Node, out string) (text string, writes, o
 		e.checkIfaceArgs(ct, method, e.callArgExprs(call), e.spreadCall(call))
 		return e.ifaceCallC(ct, recvText, method, call, out), true, true
 	}
-	t, okPlain := e.forwardedCallC(ex)
+	t, okPlain := e.forwardedCallCAs(ex, want)
 	return t, false, okPlain
 }
 
-func (e *emitter) forwardedCallC(ex Node) (string, bool) {
+// forwardedCallCAs renders `f()` in `return f()`, where the one call supplies every
+// result, or binds the call for one whose results go into them (emitWidenedForward).
+// It answers only when the callee's results are exactly want -- two functions of one
+// result list share a result struct, and nothing else is the value as it stands.
+func (e *emitter) forwardedCallCAs(ex Node, want []string) (string, bool) {
 	callee, suffix, ok := e.resultCallOf(ex.ast)
 	if !ok {
 		return "", false
 	}
 	_, resTypes, ok := e.callResultInfo(callee, suffix)
-	if !ok || !slices.Equal(resTypes, e.curResultTypes) {
+	if !ok || !slices.Equal(resTypes, want) {
 		return "", false
 	}
 	if len(suffix) > 2 {
@@ -35164,6 +35278,61 @@ func (e *emitter) forwardedCallC(ex Node) (string, bool) {
 		return "", false
 	}
 	return text, true
+}
+
+// emitWidenedForward is `return f()` for a call whose results are not this
+// function's as they stand but go into them, Go's assignability -- an interface
+// result taking a pointer or another interface's value: `return mk()` of a (*E,
+// int) mk from a function of (error, int). The call is bound in its own result
+// struct and each result widened into this function's, which is returned once the
+// defers have run, as the plain forwarding is. It reports false, having emitted
+// nothing, for any other call.
+func (e *emitter) emitWidenedForward(ex Node) bool {
+	callee, suffix, isCall := e.resultCallOf(ex.ast)
+	if !isCall {
+		return false
+	}
+	_, resTypes, ok := e.callResultInfo(callee, suffix)
+	if !ok || len(resTypes) != len(e.curResultTypes) {
+		return false
+	}
+	for i, rt := range resTypes {
+		if want := e.curResultTypes[i]; rt != want && !e.isIfaceCType(want) {
+			return false
+		}
+	}
+	src := e.newTmp()
+	text, writes, ok := e.forwardedCallIntoAs(ex, src, resTypes)
+	if !ok {
+		return false
+	}
+	e.ind()
+	if writes {
+		e.emit(e.retStructNameOf(resTypes) + " " + src + ";\n")
+		e.ind()
+		e.emit(text + ";\n")
+	} else {
+		e.emit(e.retStructNameOf(resTypes) + " " + src + " = " + text + ";\n")
+	}
+	dst := e.newTmp()
+	e.ind()
+	e.emit(e.retStructNameOf(e.curResultTypes) + " " + dst + ";\n")
+	for i := range resTypes {
+		pre, v, ok := e.widenValC(e.curResultTypes[i], resTypes[i], fmt.Sprintf("%s._%d", src, i))
+		if !ok {
+			return true // refused, and said so
+		}
+		for _, line := range pre {
+			e.ind()
+			e.emit(line)
+		}
+		e.ind()
+		e.emit(fmt.Sprintf("%s._%d = %s;\n", dst, i, v))
+	}
+	e.emitDeferred()
+	e.ind()
+	e.emit("return " + dst + ";\n")
+	return true
 }
 
 // soleResultCType is the C type of a function with exactly one result, or "".
@@ -35300,6 +35469,9 @@ func (e *emitter) emitReturn(nodes []Node) {
 		tmp := e.newTmp()
 		text, writes, ok := e.forwardedCallInto(exprs[0], tmp)
 		if !ok {
+			if e.emitWidenedForward(exprs[0]) {
+				return
+			}
 			e.fail("a return supplying every result needs a call whose results are exactly %s",
 				strings.Join(e.curResultTypes, ", "))
 			return
@@ -45239,6 +45411,17 @@ func (e *emitter) emitStore(t assignTarget, declare bool, ctype, val string) {
 		e.emitStructStore(t, declare, ctype, val)
 		return
 	}
+	if !declare {
+		pre, v, ok := e.widenValC(e.storeTargetCType(t), ctype, val)
+		if !ok {
+			return
+		}
+		for _, line := range pre {
+			e.ind()
+			e.emit(line)
+		}
+		val = v
+	}
 	if t.plain() {
 		e.ind()
 		if declare {
@@ -45282,6 +45465,71 @@ func (e *emitter) emitStore(t assignTarget, declare bool, ctype, val string) {
 		e.emitAccessChain(t.name, t.chain)
 	}
 	e.emit(" = " + val + ";\n")
+}
+
+// storeTargetCType is the C type of the place a target of a multiple assignment
+// names, read off the target as written, "" where that cannot be told without
+// emitting.
+func (e *emitter) storeTargetCType(t assignTarget) string {
+	if len(t.chain) != 0 {
+		if t.stars != "" {
+			return ""
+		}
+		cur, ok := e.accessChainType(t.name, t.chain)
+		if !ok {
+			return ""
+		}
+		return cur.ctype
+	}
+	ct, ok := e.varType(t.name)
+	switch {
+	case !ok:
+		return ""
+	case t.stars == "":
+		return ct
+	case t.stars == "*" && strings.HasSuffix(ct, "*"):
+		return strings.TrimSuffix(ct, "*")
+	}
+	return ""
+}
+
+// widenValC is val, a value of C type ctype, as a value of the interface tct it is
+// stored in, passed as or returned as -- a concrete pointer beside the table of its
+// type for that interface, and another interface's value rebound to it, the data
+// word kept and the table chosen by the type it holds -- with the statements that
+// build it, which the caller places ahead of where the value stands. A value that
+// needs no widening comes back as it is. Unwidened, a call's result of several
+// went into an interface target, argument or result as the pointer it was: `e, n =
+// mk()` for an error e and a *E result assigned the pointer to the interface's two
+// words, which no C compiler takes -- in every target shape, for every interface.
+func (e *emitter) widenValC(tct, ctype, val string) (pre []string, v string, ok bool) {
+	if tct == "" || ctype == "" || tct == ctype || !e.isIfaceCType(tct) {
+		return nil, val, true
+	}
+	if e.isIfaceCType(ctype) {
+		src, dst := e.newTmp(), e.newTmp()
+		e.locals[src], e.locals[dst] = ctype, tct
+		text := e.ifaceWidenC(dst, tct, src, ctype)
+		if text == "" {
+			if e.err == nil {
+				e.fail("cannot use %s as %s", e.goTypeName(ctype), e.goTypeName(tct))
+			}
+			return nil, "", false
+		}
+		pre = append(pre, ctype+" "+src+" = "+val+";\n", tct+" "+dst+" = {0};\n")
+		for line := range strings.SplitSeq(strings.TrimSuffix(text, "\n"), "\n") {
+			pre = append(pre, line+"\n")
+		}
+		return pre, dst, true
+	}
+	concrete, isPtr := strings.CutSuffix(ctype, "*")
+	if !isPtr || !e.needVTable(tct, concrete) {
+		if e.err == nil {
+			e.fail("cannot use %s as %s: an interface holds a pointer here", e.goTypeName(ctype), e.goTypeName(tct))
+		}
+		return nil, "", false
+	}
+	return nil, "(" + tct + "){" + val + ", &" + e.ifaceVTVar(tct, concrete) + "}", true
 }
 
 // emitStructStore is emitStore for a value of a struct type holding an array, held
@@ -46949,6 +47197,7 @@ func (e *emitter) emitCallArgs(cname string, callSuffix []int32) {
 	// and its fields are the arguments.
 	if len(args) == 1 && e.deferReplay < 0 {
 		if names, ok := e.forwardedResults(cname, params, varElem, varAt, args[0]); ok {
+			e.checkForwardedIn(e.crossParams[cname], e.crossContents[cname], e.crossInto[cname], e.funcSourceName(cname), args[0], e.packAt(cname))
 			// A parameter received by pointer (byRefParam) is handed the result's
 			// address, as any argument to one is; the packed tail of a variadic call is
 			// a slice already. `use(two())` passed a struct holding an array as the
@@ -47251,7 +47500,7 @@ func (e *emitter) forwardedResults(cname string, params []string, elem string, a
 		for i := range names {
 			names[i] = fmt.Sprintf("%s._%d", tmp, i)
 		}
-		return e.packForwarded(names, elem, at), true
+		return e.packForwarded(e.widenForwarded(names, resTypes, params, elem, at), elem, at), true
 	}
 	// A result struct holding an array is written through the callee's out
 	// parameter (funcStructRet), into the temporary whose fields are passed on.
@@ -47266,7 +47515,7 @@ func (e *emitter) forwardedResults(cname string, params []string, elem string, a
 		for i := range names {
 			names[i] = fmt.Sprintf("%s._%d", tmp, i)
 		}
-		return e.packForwarded(names, elem, at), true
+		return e.packForwarded(e.widenForwarded(names, resTypes, params, elem, at), elem, at), true
 	}
 	// Through a function VALUE the call writes them through the value's out
 	// parameter (valueOutCallC): rendered as a call returning them, `take(f())`
@@ -47279,7 +47528,7 @@ func (e *emitter) forwardedResults(cname string, params []string, elem string, a
 		for i := range names {
 			names[i] = fmt.Sprintf("%s._%d", tmp, i)
 		}
-		return e.packForwarded(names, elem, at), true
+		return e.packForwarded(e.widenForwarded(names, resTypes, params, elem, at), elem, at), true
 	}
 	tmp := e.hoist(e.retStructNameOf(resTypes), func() {
 		if !e.emitCallExpr(callee, suffix) {
@@ -47290,7 +47539,34 @@ func (e *emitter) forwardedResults(cname string, params []string, elem string, a
 	for i := range names {
 		names[i] = fmt.Sprintf("%s._%d", tmp, i)
 	}
-	return e.packForwarded(names, elem, at), true
+	return e.packForwarded(e.widenForwarded(names, resTypes, params, elem, at), elem, at), true
+}
+
+// widenForwarded is a forwarded call's result names, each widened to the parameter
+// it is passed as where that is an interface and the result no value of it -- the
+// pointer a `take(mk())` hands an error parameter -- the statements that build them
+// put ahead of the statement. A packed variadic result is widened to the element.
+func (e *emitter) widenForwarded(names, resTypes, params []string, elem string, at int) []string {
+	out := slices.Clone(names)
+	for i := range out {
+		want := ""
+		switch {
+		case at >= 0 && i >= at:
+			want = elem
+		case i < len(params):
+			want = params[i]
+		}
+		if i >= len(resTypes) {
+			break
+		}
+		pre, v, ok := e.widenValC(want, resTypes[i], out[i])
+		if !ok {
+			return names
+		}
+		e.prologue = append(e.prologue, pre...)
+		out[i] = v
+	}
+	return out
 }
 
 // packForwarded folds a forwarded call's result names for a VARIADIC callee: the
@@ -55065,6 +55341,10 @@ func (e *emitter) checkIfaceArgs(iface, method string, args []Node, spread bool)
 		return
 	}
 	contents := e.ifaceSummaries[iface+"."+method].contents
+	if _, isFwd := e.forwardedCall(args); isFwd && !spread {
+		e.checkForwardedIn(crosses, contents, intos, who, args[0], e.ifaceMethodVararg(iface, method)-1)
+		return
+	}
 	fixed := args
 	if at := e.ifaceMethodVararg(iface, method) - 1; !spread && at >= 0 && at <= len(args) {
 		// The values packed are the pack's contents, as a direct call's are
@@ -56081,6 +56361,91 @@ func (e *emitter) callbackSummaryName(ast []int32) (cname, shown string) {
 // callee storing an element or a field of its parameter, `gp = v[0]`, keeps what the
 // caller's slice holds, and `keep(s)` for an `s := []*int{&x}` left x's address in a
 // package variable, in silence, while the slice itself was the caller's to keep.
+// forwardedCall reports an argument list that is one call of several results,
+// `f(g())`, and the C types of those results.
+func (e *emitter) forwardedCall(args []Node) ([]string, bool) {
+	if len(args) != 1 {
+		return nil, false
+	}
+	callee, suffix, ok := e.resultCallOf(args[0].ast)
+	if !ok {
+		return nil, false
+	}
+	_, resTypes, ok := e.callResultInfo(callee, suffix)
+	if !ok || len(resTypes) < 2 {
+		return nil, false
+	}
+	return resTypes, true
+}
+
+// checkForwardedIn asks a call of several results passed as the whole argument
+// list, `keep(two(&x))`, what checkCrossArgsIn, checkContentArgsIn and
+// checkIntoArgsIn ask of arguments written out, of each result as the argument in
+// its position: what the call hands back of this frame, through any result of a type
+// that can carry it, against what the callee lets the parameter in that position
+// reach -- or, past at, the variadic parameter the result is packed into. Which
+// result carries what the call hands back is not known, so every one that can carry
+// it is taken to (a refusal may believe a may). The forwarded path returned before
+// any of the three was asked, and `keepP(id2(&l))` kept the local's address in a
+// package variable in silence, in v0.54.0.
+func (e *emitter) checkForwardedIn(crosses, contents []leak, intos []uint32, who string, call Node, at int) {
+	resTypes, ok := e.forwardedCall([]Node{call})
+	if !ok {
+		return
+	}
+	r, hasRef := e.frameRefOf(call.ast)
+	rc, hasCont := e.contentsRef(call.ast)
+	if !hasRef && !hasCont {
+		return
+	}
+	pos := e.f.tok(call.Pos()).Position()
+	src := e.f.exprSource(call)
+	leaks := func(l []leak, i int) (string, bool) {
+		if i >= len(l) || l[i]&(leakCog|leakGlobal) == 0 {
+			return "", false
+		}
+		if l[i]&leakCog != 0 {
+			return "reaches another cog, which may outlive this function", true
+		}
+		return "is stored where it outlives every frame", true
+	}
+	for i, rt := range resTypes {
+		if !e.carriesRef(rt) {
+			continue
+		}
+		j := i
+		if at >= 0 && i >= at {
+			j = at
+			if why, ok := leaks(crosses, at); ok {
+				e.fail("%v: cannot pass the results of %s to %s: they are packed into an array of this function, and its parameter %d %s; pack them into a package array and pass a slice of it",
+					pos, src, who, at+1, why)
+				return
+			}
+			if why, ok := leaks(contents, at); ok && hasRef {
+				e.fail("%v: cannot pass %s to %s as result %d of %s: what its parameter %d holds %s; %s",
+					pos, r.what, who, i+1, src, at+1, why, r.advice())
+				return
+			}
+			continue
+		}
+		if why, ok := leaks(crosses, j); ok && hasRef {
+			e.fail("%v: cannot pass %s to %s as result %d of %s: its parameter %d %s; %s",
+				pos, r.what, who, i+1, src, j+1, why, r.advice())
+			return
+		}
+		if why, ok := leaks(contents, j); ok && hasCont {
+			e.fail("%v: cannot pass %s to %s as result %d of %s: its parameter %d's contents %s; %s",
+				pos, rc.what, who, i+1, src, j+1, strings.Replace(strings.Replace(why, "is stored", "are stored", 1), "reaches", "reach", 1), rc.advice())
+			return
+		}
+		if j < len(intos) && intos[j] != 0 && hasRef {
+			e.fail("%v: cannot pass %s to %s as result %d of %s: its parameter %d is stored through another of the results, which nothing here can name; %s",
+				pos, r.what, who, i+1, src, j+1, r.advice())
+			return
+		}
+	}
+}
+
 func (e *emitter) checkContentArgsIn(contents []leak, who string, args []Node) {
 	for i, a := range args {
 		if i >= len(contents) || contents[i]&(leakCog|leakGlobal) == 0 {

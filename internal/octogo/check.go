@@ -6865,6 +6865,11 @@ func (f *File) typeSwitchShaped(guard Node) bool {
 // which is what registering it once, rather than per clause, asks.
 func (f *File) checkTypeSwitchOperand(s, ss *Scope, ts typeSwitchGuard) {
 	if !ts.isExpr {
+		// The read of the bare name counts for the variable it resolves to HERE:
+		// unrecorded, it counted by name, so a clause declaring that name,
+		// `switch x := err.(type) { case U: err := x.Unwrap() }`, had its unused
+		// `err` taken for used.
+		f.noteRef(s, ts.operand)
 		// A bare name of a Kind, `switch v := 1; v.(type)`, is no interface: the
 		// emitter said so in its own words.
 		if k, known := f.exprType(s, ts.expr); known && kindCategory(k) != catUnknown {
@@ -27064,6 +27069,17 @@ func (f *File) checkResultsAssign(s *Scope, lhs []Token, suffixed []bool, call N
 						i+1, f.exprSource(call), res[i].name, tg.want)
 					continue
 				}
+				// Or into a variable of an interface, `e, n = get()` for an error e
+				// and an int first result.
+				if d, isVar := s.find(tok.Src()).(*VarDeclaration); isVar {
+					if t, ok := f.varTypeAt(d); ok && t.s != nil {
+						n0 := len(f.errList)
+						f.checkResultIntoIface(s, call, i, res[i], t.s, f.ifaceTypeName(t.s, t.tn))
+						if len(f.errList) != n0 {
+							continue
+						}
+					}
+				}
 			}
 		}
 		if !res[i].known {
@@ -27138,6 +27154,8 @@ func (f *File) checkResultInto(s *Scope, call Node, i int, r retResult, t typeAt
 	case r.known:
 		if tg.have != "" {
 			report()
+		} else if t.s != nil {
+			f.checkResultIntoIface(s, call, i, r, t.s, f.ifaceTypeName(t.s, t.tn))
 		}
 	case want.known:
 		if f.kindlessResult(s, r) != "" || f.ifaceResult(s, r) {
@@ -27152,6 +27170,37 @@ func (f *File) checkResultInto(s *Scope, call Node, i int, r retResult, t typeAt
 			report() // `v.err` of a chan error taking an error
 		}
 	}
+}
+
+// checkResultIntoIface refuses a call's result of a Kind going into an interface
+// target of a destructuring assignment, `n.err, n.s = two()` for a two returning
+// an int first: a value goes into no interface here, an interface holding a
+// pointer, and none asking for a method a Kind has none of. Asked of nobody, every
+// target shape took it -- a variable, a field, an element, a pointee.
+func (f *File) checkResultIntoIface(s *Scope, call Node, i int, r retResult, in *Scope, iface string) {
+	if iface == "" {
+		return
+	}
+	set, isIface := f.interfaceMethodsNamed(in, iface)
+	if !isIface || r.kind == PredeclaredUnsafePointer && len(set) == 0 {
+		return
+	}
+	have := f.resultName(r)
+	head := fmt.Sprintf("cannot use result %d of %s (type %s) as %s value in assignment", i+1, f.exprSource(call), have, iface)
+	missing := ""
+	if len(set) != 0 {
+		missing = sortedNames(set)[0]
+		if m, _, _, _, _, ok := f.implements(s, have, false, iface); ok {
+			missing = ""
+		} else if m != "" {
+			missing = m
+		}
+	}
+	if missing != "" {
+		f.err(f.tok(call.Pos()).Position(), "%s: %s does not implement %s (missing method %s)", head, have, iface, missing)
+		return
+	}
+	f.err(f.tok(call.Pos()).Position(), "%s: an interface holds a pointer here", head)
 }
 
 // ifaceResult reports a result of an interface type, the predeclared error among

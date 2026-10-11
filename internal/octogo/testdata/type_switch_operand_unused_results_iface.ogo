@@ -1,0 +1,96 @@
+// Two rows a domain program's mutants found. A type switch's operand named bare was
+// read by no rule but its name, so a clause declaring that name, `err :=
+// x.Unwrap()` in `switch x := err.(type)`, had its unused variable counted used.
+// And a call's result of a Kind going into an interface target of a destructuring
+// assignment was asked nothing in any target shape: `r.err, r.n = get()` with get's
+// int first.
+
+type E struct{ n int }
+
+func (e *E) Error() string { return "E" }
+
+type W struct{ inner error }
+
+func (w *W) Error() string { return "W" }
+
+func (w *W) Unwrap() error { return w.inner }
+
+type U interface{ Unwrap() error }
+
+type Sh interface{ Area() int }
+
+type R struct {
+	n   int
+	err error
+	s   string
+}
+
+func get() (int, error) { return 1, nil }
+
+func two() (int, string) { return 1, "a" }
+
+var gr R
+var ge error
+var gs Sh
+var arr [2]error
+var pe = &ge
+
+func depth(err error) int {
+	n := 0
+	for err != nil {
+		n++
+		switch x := err.(type) {
+		case U:
+			// ERROR "declared and not used: err"
+			err := x.Unwrap()
+		default:
+			err = nil
+		}
+	}
+	return n
+}
+
+func depth2(err error) int {
+	switch x := err.(type) {
+	case interface{ Unwrap() error }:
+		// ERROR "declared and not used: err"
+		err := x.Unwrap()
+	}
+	return 0
+}
+
+func shadow(v any) {
+	switch v.(type) {
+	case *E:
+		// ERROR "declared and not used: v"
+		v := 5
+	}
+}
+
+func run() {
+	// ERROR "cannot use result 1 of get\(\) \(type int\) as error value in assignment: int does not implement error \(missing method Error\)"
+	gr.err, gr.err = get()
+	var e error
+	var n int
+	// ERROR "cannot use result 1 of get\(\) \(type int\) as error value in assignment"
+	e, n = get()
+	// ERROR "cannot use result 1 of get\(\) \(type int\) as error value in assignment"
+	arr[0], arr[1] = get()
+	// ERROR "cannot use result 1 of get\(\) \(type int\) as error value in assignment"
+	*pe, ge = get()
+	// ERROR "cannot use result 1 of two\(\) \(type int\) as error value in assignment"
+	gr.err, gr.s = two()
+	// ERROR "cannot use result 1 of two\(\) \(type int\) as Sh value in assignment: int does not implement Sh \(missing method Area\)"
+	gs, gr.s = two()
+	var a any
+	// ERROR "cannot use result 1 of two\(\) \(type int\) as any value in assignment: an interface holds a pointer here"
+	a, gr.s = two()
+	gr.n, gr.err = get()
+	_, _, _ = e, n, a
+}
+
+func main() {
+	run()
+	println(depth(nil), depth2(nil))
+	shadow(nil)
+}

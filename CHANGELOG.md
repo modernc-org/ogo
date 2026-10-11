@@ -42,6 +42,32 @@ shipped section tells a reader on that version that they have behaviour they do 
 
 ### Fixed
 
+- **A call of several results passed whole as another call's arguments,
+  `keepP(id2(&l))`, was asked nothing by the lifetime rules**: a callee keeping the
+  parameter a result went in at kept the local's address where it outlives the
+  function, in silence -- through a function, a method, an interface's method or a
+  function value, packed into a variadic parameter, its contents kept, or stored
+  through another of the results. Each is refused now, and so is a function doing
+  it with its parameter, `func relay(p *E) { keep2(id2r(p)) }`, which the summaries
+  had read as handing p to the first parameter alone.
+- **A function handing its parameter to a callee inside an argument's contents --
+  a literal's element, `keepC([]*E{p})`, or a value packed into a variadic
+  parameter, `keepV(p)` -- was summarised as keeping nothing** where the callee
+  kept those contents, and `relayV(&l)` left the local's address in a package
+  variable in silence. The callee's contents are the caller's parameter there.
+- **A call's results of several went into interfaces as the values they were**: `e,
+  n = mk()` for an error e and a `*E` result, a field, an element or a pointee of an
+  interface type, `take(mk())` for a take of an error parameter and `return mk()`
+  from a function of an error result each reached C as a pointer stored in the
+  interface's two words, which no C compiler takes, or was refused. A concrete
+  pointer is given its table now and another interface's value rebound, a nil
+  pointer making a non-nil interface, as in Go.
+- **A call's result of a number, a string or a bool going into an interface target
+  of a destructuring assignment** was asked nothing, `r.err, r.n = get()` with
+  get's int first, and reached C; it is Go's refusal now, in every target shape.
+- **A type switch's operand named bare was read by no rule but its name**, so a
+  clause declaring that name, `err := x.Unwrap()` in `switch x := err.(type)`,
+  had its unused variable taken for used.
 - **A value going into an interface written out was asked nothing**, and neither
   was a value of one: `var v interface{ Code() uint32 } = &e` for a `Code() int`
   built for the target in silence, and so did `interface{ Code() }` for it, where Go

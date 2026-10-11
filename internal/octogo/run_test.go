@@ -502,6 +502,90 @@ func main() {
 		want: "3 1 0\n7 7 -2\n7 7 7 7\nleaf\ntrue true\n",
 	},
 	{
+		// A call's results of several going into interfaces: stored into an error
+		// target, passed on whole to a function, a method, an interface's method and
+		// a function value taking an error, and returned whole from a function of an
+		// error result -- a concrete pointer given its table, another interface's
+		// value rebound, and a nil pointer a non-nil interface, as Go has it. Each
+		// went to C as the pointer it was, which no C compiler takes, and the
+		// return was refused.
+		name: "a call's results widened into interfaces where they are stored, passed and returned",
+		src: `type E struct{ n int }
+
+func (e *E) Error() string { return "E" }
+
+func (e *E) Code() int { return e.n }
+
+type C interface {
+	Error() string
+	Code() int
+}
+
+var ge = E{5}
+var gf = E{6}
+
+func mk() (*E, int) { return &ge, 4 }
+
+func mkc() (C, int) { return &gf, 3 }
+
+func mknil() (*E, int) { return nil, 2 }
+
+func take(e error, n int) { println("take", e.Error(), n) }
+
+type T struct{ k int }
+
+func (t *T) take(e error, n int) { println("T.take", e.Error(), n+t.k) }
+
+type Taker interface{ Take(e error, n int) }
+
+func (t *T) Take(e error, n int) { println("Taker", e.Error(), n*t.k) }
+
+var gt = T{10}
+
+func fwd() (error, int) { return mk() }
+
+func fwdc() (error, int) { return mkc() }
+
+func fwdnil() (error, int) { return mknil() }
+
+var done = make(chan bool)
+
+func cog(e error, n int) {
+	println("cog", e.Error(), n)
+	done <- true
+}
+
+func run() {
+	take(mk())
+	take(mkc())
+	gt.take(mk())
+	var tk Taker = &gt
+	tk.Take(mk())
+	f := take
+	f(mk())
+	var e error
+	var n int
+	e, n = mkc()
+	println(e.Error(), n)
+	e, n = fwd()
+	println(e.Error(), n)
+	e, n = fwdc()
+	println(e.Error(), n)
+	e, n = fwdnil()
+	println(e != nil, n)
+	e, n = mknil()
+	println(e != nil, n)
+	go cog(&ge, 4)
+	<-done
+}
+
+func main() {
+	run()
+}
+`,
+		want: "take E 4\ntake E 3\nT.take E 14\nTaker E 40\ntake E 4\nE 3\nE 4\nE 3\ntrue 2\ntrue 2\ncog E 4\n",
+	},
+	{
 		// A method storing its receiver through a parameter, `*p = m`, and a function
 		// storing a parameter through an assertion of an `any` one, `case **M:` among
 		// them -- with both sides of each store this frame's, which the lifetime
