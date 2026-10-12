@@ -168,7 +168,9 @@ var (
 	// a definition of its register (FindBlockForReorderingDownward), which moved a
 	// maximum's conditional move below a QMUL past code overwriting the register it
 	// keeps where it does not run (doc/cordic-reorder-conditional-move.c; found by
-	// fuzzer seed 6978).
+	// fuzzer seed 6978). The first of those two hunks is upstream since 2026-10-11,
+	// our commit merged unchanged by spin2cpp 63ef4515 (PR #516): a spin2cppRef at
+	// or past it takes optimize_ir.c.diff without that hunk.
 	spin2cppDiffs = []string{"mcpp_main.c.diff", "optimize_ir.c.diff"}
 	target        = fmt.Sprintf("%s/%s", goos, goarch)
 )

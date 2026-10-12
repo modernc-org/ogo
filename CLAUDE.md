@@ -386,7 +386,9 @@ inputs, and never hand-edit the outputs.
    > definition that meets a dependency, so a max's `if_be mov result1, #69 ; mov t,
    > result1` moved below a QMUL past code overwriting result1, silently
    > (doc/cordic-reorder-conditional-move.c; fuzzer seed 6978, see the smith notes).
-   > The pin carries upstream's fixes of #114 (bf72f733) and #115 (639a8c8e); the
+   > #118's hunk went upstream as our PR, spin2cpp#516, merged unchanged on
+   > 2026-10-11 (63ef4515), so a pin at or past it drops that hunk; the CORDIC
+   > one is not filed yet. The pin carries upstream's fixes of #114 (bf72f733) and #115 (639a8c8e); the
    > emitter's workarounds for both stay, costing nothing, and so does widenU32, whose
    > fault (doc/widen-zero-plus-unsigned.c) bf72f733 fixed too. Measured before
    > adoption, natively: test_offline 588/588; of 1366 programs (the run cases and
