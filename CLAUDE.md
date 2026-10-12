@@ -708,10 +708,30 @@ still design-only.
   nothing of the testing package is inlined (inlineCandidate), its functions
   standing on every test's call chain (TestBuildTestingFrugal reads the listing).
   **A runtime shared by every program of a kind is held to its old register count**:
-  p2-11 builds near the cog's limit, and its tests are the measure. Not yet: -run selecting subtests (refused), Cleanup,
-  benchmarks, a deferred or started t.Log (refused with the literal that does it),
-  the deferred calls FailNow skips, and Helper's attribution of a line to the
-  caller.
+  p2-11 builds near the cog's limit, and its tests are the measure. BENCHMARKS
+  since 2026-10-12: a *testing.B of the same package source (its Log to Skipf
+  written at each call as T's are, testingCallOf taking either base), BenchFuncs
+  beside TestFuncs (testingFuncs, vet's message), `ogo test -bench`, `-benchtime`
+  (a duration or `Nx`) and `-benchmem`, the runner calling StartBenchmarks (the
+  labels: `pkg:` the import path, `cpu: Propeller 2 at 160 MHz` the clock built)
+  and RunBenchmark per benchmark after the tests -- run1, then go test's predictN
+  ramp, through runB, a second jump target user of run's -- and the capture's
+  timeout grown with them. The time is clock(), the 64-bit counter (`_cnthl`, words
+  joined in a variable), turned to nanoseconds only when printed, and ns/op is
+  computed in integers (printNsPerOp), a float64 being 32 bits here; MB/s and a
+  metric are printed by prettyPrint's own formats. The host shim's OGO_FAKE_CLOCK
+  makes time move only where a program waits, by what it asked, which is what lets
+  TestBenchmarkFakeClock expect the ramp and hold every result line to what Go's
+  own testing.BenchmarkResult prints for the same N and time; on the board,
+  TestOnBoardOgoTestBench times waits of known length, at 160 and 200 MHz. Measuring
+  the counter in C first found the cast fault in two printf verbs (89b9dbe):
+  **a workaround is a row of every site writing its shape** -- emitConversion and
+  the integer verbs routed around a cast to a 64-bit type of a 64-bit expression,
+  and %q and %U, written later, did not (emitWideArg;
+  doc/cast-of-64bit-expression.c, the fault cut out of shift64-by-variable.c's). Not yet: -run selecting
+  subtests (refused), Cleanup, sub-benchmarks, b.Loop, RunParallel, a deferred or
+  started t.Log (refused with the literal that does it), the deferred calls FailNow
+  skips, and Helper's attribution of a line to the caller.
 - **Interfaces are done and devirtualization is not.** A method call through an
   interface is an indirect call through a static vtable, always; the WPO pass that
   would make it direct where the concrete type is provable is design-only. Nothing

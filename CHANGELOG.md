@@ -20,6 +20,18 @@ shipped section tells a reader on that version that they have behaviour they do 
 
 ### Language
 
+- **Benchmarks**, `func BenchmarkSum(b *testing.B)`, which `ogo test -bench .`
+  runs after the tests as go test does -- once with `b.N` 1, then with `b.N` grown
+  until a run takes `-benchtime`, a second by default, or a count written `100x`
+  -- and prints as `go test -v -bench` prints them: the labels, each name, what it
+  logs, and its line of `b.N`, ns/op, MB/s, its metrics and its allocations, or
+  `--- FAIL` or `--- SKIP`. The time is the P2's 64-bit system counter's, at the
+  clock the `cpu:` label names, and ns/op is computed from it exactly. `ResetTimer`,
+  `StopTimer`, `StartTimer`, `SetBytes`, `ReportAllocs` (no allocation is ever
+  reported), `ReportMetric` and the methods a `B` shares with a `T` are Go's;
+  `-benchmem` reports the allocations of every benchmark. Not provided yet:
+  sub-benchmarks (`b.Run`), `b.Loop` and `RunParallel`. A file declaring a benchmark
+  did not build before, there being no `testing.B`.
 - **The `errors` package**: `New`, `Is`, `As`, `Unwrap` and `ErrUnsupported`, each
   meaning what Go's does, checked by running the same program under Go and on the
   board. `New` makes its error where the call stands, there being no heap: a
@@ -65,6 +77,8 @@ shipped section tells a reader on that version that they have behaviour they do 
 
 ### Fixed
 
+- **`ogo help test` said a test has no `Errorf`** and prints with `println`, which
+  stopped being so when the testing package's formatting methods came.
 - **`%q` and `%U` of a 64-bit expression printed garbage on the board**:
   `printf("%q %U", x-y+64, x-y+64)` of two uint64s printed `'�'
   U+F546C60800000042` where Go prints `'B' U+0042`, the host right. The value was

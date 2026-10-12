@@ -6155,6 +6155,20 @@ func isMainFunc(f *File, decl Node) bool {
 // whose signature does not is an ERROR, in vet's words, rather than a function
 // quietly never run: that is what "go test" does, vet being part of it.
 func TestFuncs(p *Package) (out []string, err error) {
+	return testingFuncs(p, testKind{"Test", "t", "*testing.T"})
+}
+
+// BenchFuncs names the benchmarks of a package by the same rules: a function called
+// Benchmark<Name> taking a *testing.B and nothing else.
+func BenchFuncs(p *Package) (out []string, err error) {
+	return testingFuncs(p, testKind{"Benchmark", "b", "*testing.B"})
+}
+
+// testKind is what makes a function a test or a benchmark: the prefix of its name,
+// and its one parameter, whose name only vet's message spells.
+type testKind struct{ prefix, param, typ string }
+
+func testingFuncs(p *Package, k testKind) (out []string, err error) {
 	for _, f := range p.Files {
 		if f == nil {
 			continue
@@ -6171,7 +6185,7 @@ func TestFuncs(p *Package) (out []string, err error) {
 					if d.sym != FuncDecl {
 						continue
 					}
-					nm, ok, err := testFuncName(f, d)
+					nm, ok, err := testFuncName(f, d, k)
 					if err != nil {
 						return nil, err
 					}
@@ -6185,13 +6199,13 @@ func TestFuncs(p *Package) (out []string, err error) {
 	return out, nil
 }
 
-// isTestName reports whether name is a test function's, by Go's rule (see
-// TestFuncs).
-func isTestName(name string) bool {
-	if !strings.HasPrefix(name, "Test") {
+// isTestName reports whether name is one of a test function's kind, by Go's rule
+// (see TestFuncs).
+func isTestName(name, prefix string) bool {
+	if !strings.HasPrefix(name, prefix) {
 		return false
 	}
-	rest := name[len("Test"):]
+	rest := name[len(prefix):]
 	if rest == "" {
 		return true
 	}
@@ -6199,11 +6213,11 @@ func isTestName(name string) bool {
 	return !unicode.IsLower(r)
 }
 
-// testFuncName reports whether a FuncDecl is a test function, and its name. A
-// method is never one, and a function is one if its name says so and its signature
-// is exactly `(t *testing.T)`; a name that says so over any other signature is
-// reported as an error, positioned at the name.
-func testFuncName(f *File, decl Node) (string, bool, error) {
+// testFuncName reports whether a FuncDecl is a test function of kind k, and its
+// name. A method is never one, and a function is one if its name says so and its
+// signature is exactly `(t *testing.T)`, or `(b *testing.B)`; a name that says so
+// over any other signature is reported as an error, positioned at the name.
+func testFuncName(f *File, decl Node, k testKind) (string, bool, error) {
 	name := ""
 	var nameTok int32 = -1
 	var sig Node
@@ -6217,7 +6231,7 @@ func testFuncName(f *File, decl Node) (string, bool, error) {
 			name, nameTok = f.tok(c.tok).Src(), c.tok
 		}
 	}
-	if !isTestName(name) || sig.sym != Signature {
+	if !isTestName(name, k.prefix) || sig.sym != Signature {
 		return "", false, nil
 	}
 	params, results := 0, false
@@ -6235,8 +6249,8 @@ func testFuncName(f *File, decl Node) (string, bool, error) {
 			results = true
 		}
 	}
-	if params != 1 || results || paramType != "*testing.T" {
-		return "", false, fmt.Errorf("%v: wrong signature for %s, must be: func %s(t *testing.T)", f.tok(nameTok).Position(), name, name)
+	if params != 1 || results || paramType != k.typ {
+		return "", false, fmt.Errorf("%v: wrong signature for %s, must be: func %s(%s %s)", f.tok(nameTok).Position(), name, name, k.param, k.typ)
 	}
 	return name, true, nil
 }
@@ -40118,7 +40132,7 @@ func (e *emitter) testingCallOf(head Node, postfix []Node) (method, text, ct str
 	} else if text, ct, _, ok = e.chainCText(name, postfix[:n-2]); !ok {
 		return "", "", "", false
 	}
-	if methodBaseType(e.underlyingCType(ct)) != e.mangle("testing", "T") {
+	if base := methodBaseType(e.underlyingCType(ct)); base != e.mangle("testing", "T") && base != e.mangle("testing", "B") {
 		return "", "", "", false
 	}
 	return method, text, ct, true
@@ -40129,11 +40143,15 @@ func (e *emitter) testingCallOf(head Node, postfix []Node) (method, text, ct str
 // would have to be written where it runs, with its arguments captured, which is not
 // done yet. A function literal calling it is the way round.
 func (e *emitter) refuseDeferredTestingCall(head Node, postfix []Node, stmt string) bool {
-	method, _, _, isCall := e.testingCallOf(head, postfix)
+	method, _, ct, isCall := e.testingCallOf(head, postfix)
 	if !isCall {
 		return false
 	}
-	e.failAt(postfix[len(postfix)-1].ast, "`%s t.%s(...)` is not supported yet; write `%s func(t *testing.T) { t.%s(...) }(t)`", stmt, method, stmt, method)
+	v, typ := "t", "T"
+	if methodBaseType(e.underlyingCType(ct)) == e.mangle("testing", "B") {
+		v, typ = "b", "B"
+	}
+	e.failAt(postfix[len(postfix)-1].ast, "`%s %s.%s(...)` is not supported yet; write `%s func(%s *testing.%s) { %s.%s(...) }(%s)`", stmt, v, method, stmt, v, typ, v, method, v)
 	return true
 }
 
@@ -40149,16 +40167,39 @@ func testingDecorate(file string, line int, msg string) string {
 	return "    " + strings.ReplaceAll(file, "%", "%%") + ":" + strconv.Itoa(line) + ": " + strings.Join(lines, "\n        ") + "\n"
 }
 
-// emitTestingIntrinsic writes the C of the testing package's run and exit, which
-// leave a test from any depth: run calls the test where a setjmp keeps its frame,
-// and exit longjmps back to it -- on run's cog. On another, the goroutine calling it
-// ends as its trampoline would end it (testingRuntimeC), which is Go's runtime.Goexit;
-// outside a test, it panics. Neither runs a deferred call on the way out, as a panic
-// runs none.
+// emitTestingIntrinsic writes the C of the testing package's run, runB and exit,
+// which leave a test or a benchmark from any depth: run calls the test where a
+// setjmp keeps its frame, runB the benchmark, and exit longjmps back to it -- on
+// run's cog. On another, the goroutine calling it ends as its trampoline would end
+// it (testingRuntimeC), which is Go's runtime.Goexit; outside a test, it panics.
+// Neither runs a deferred call on the way out, as a panic runs none. And of clock
+// and clockHz, which a benchmark is timed by: the system counter and its rate.
 func (e *emitter) emitTestingIntrinsic(ast []int32, name string, sig, recv []int32) {
 	var proto, body string
 	switch {
-	case recv == nil && name == "run":
+	case recv == nil && name == "clock":
+		// The 64-bit system counter, its two words read together. The words are
+		// joined in a variable: a 64-bit expression returned whole is one the
+		// target's compiler gets wrong (doc/return-widening-cast.c).
+		proto = e.funcSignatureC(e.funcDefCName(name, ast), sig)
+		e.includes["propeller2.h"] = true
+		e.includes["stdint.h"] = true
+		if e.wroteDecl {
+			e.emit("\n")
+		}
+		e.wroteDecl = true
+		e.emit(proto + " {\n\tcounter64_t c = _cnthl();\n\tuint64_t r = c.high;\n\tr = r << 32 | c.low;\n\treturn r;\n}\n")
+		return
+	case recv == nil && name == "clockHz":
+		proto = e.funcSignatureC(e.funcDefCName(name, ast), sig)
+		e.includes["propeller2.h"] = true
+		if e.wroteDecl {
+			e.emit("\n")
+		}
+		e.wroteDecl = true
+		e.emit(proto + " {\n\treturn _clockfreq();\n}\n")
+		return
+	case recv == nil && (name == "run" || name == "runB"):
 		proto = e.funcSignatureC(e.funcDefCName(name, ast), sig)
 		// A subtest's run nests in its test's: each depth has its own jump target
 		// and its own save of the hardware stack, and exit leaves the innermost.

@@ -482,13 +482,14 @@ func p2ConstDecls() string {
 	return b.String()
 }
 
-// testingSrc is the testing package: what a test needs, and no more than this
-// target can provide. Its formatting methods -- Log, Logf, Error, Errorf, Fatal,
-// Fatalf, Skip, Skipf -- are declared without bodies and written at each call by the
-// emitter as printf writes its builtin (emitTestingCall): a format here is a
-// constant, and nothing is formatted into memory. So are run and exit, the C that
-// leaves a test from any depth (testingRunC, testingExitC), which is what FailNow
-// and SkipNow need.
+// testingSrc is the testing package: what a test and a benchmark need, and no more
+// than this target can provide. Its formatting methods -- Log, Logf, Error, Errorf,
+// Fatal, Fatalf, Skip, Skipf, of T and of B alike -- are declared without bodies and
+// written at each call by the emitter as printf writes its builtin
+// (emitTestingCall): a format here is a constant, and nothing is formatted into
+// memory. So are run, runB and exit, the C that leaves a test or a benchmark from
+// any depth, which is what FailNow and SkipNow need, and clock and clockHz, the
+// system counter's 64 bits and its rate (emitTestingIntrinsic).
 const testingSrc = `// Package testing provides the state a test reports its outcome through. A test is
 // a function named Test<Something> taking a *testing.T, in a file whose name ends
 // _test.ogo; "ogo test" builds them into a program of their own and runs it.
@@ -516,6 +517,25 @@ const testingSrc = `// Package testing provides the state a test reports its out
 // do, but run no deferred call on the way out -- as a panic runs none here. Called
 // on another goroutine, they end that goroutine and the test runs on, which is what
 // Go's do too. Helper does nothing: a message names the line it is written on.
+//
+// A benchmark is a function named Benchmark<Something> taking a *testing.B, which
+// "ogo test -bench" runs as go test does: once with b.N 1, then with b.N grown
+// until a run takes -benchtime, a second unless asked otherwise, and prints its
+// line as go test -v -bench prints it. The time is the system clock's, read in all
+// its 64 bits, and the time an operation took is computed from it exactly.
+//
+//	func BenchmarkPop(b *testing.B) {
+//		for i := 0; i < b.N; i++ {
+//			push(3)
+//			pop()
+//		}
+//	}
+//
+// ResetTimer, StopTimer, StartTimer, SetBytes, ReportAllocs -- nothing allocates,
+// so it reports none -- and ReportMetric are Go's, and so are the methods it shares
+// with T, Log to Skipf, FailNow, SkipNow, Name and Helper. A benchmark reports 16
+// metrics at most, a metric's unit is a constant or lives as long, and Run, Loop
+// and RunParallel are not provided.
 
 const nameMax = 128
 
@@ -867,6 +887,378 @@ func writeInt(b *Builder, n int) {
 
 // run calls f(t) where exit returns to.
 func run(t *T, f func(*T))
+
+// B is a benchmark's state: N, how many times the benchmark is to do what it
+// measures, the timer, and its outcome, which it reports as a test reports one.
+type B struct {
+	N       int
+	failed  bool
+	skipped bool
+	name    string
+	timerOn bool
+	start   uint64 // the clock where the timer last started
+	clocks  uint64 // the clocks timed in this run of the benchmark
+	bytes   int64
+	allocs  bool
+	nextra  int
+	units   [maxMetrics]string
+	values  [maxMetrics]float64
+}
+
+const maxMetrics = 16
+
+var (
+	benchWidth int
+	benchTime  int64 // in nanoseconds, where benchCount is 0
+	benchCount int
+	benchMem   bool
+)
+
+// Fail marks the benchmark as failed and lets it keep running.
+func (b *B) Fail() { b.failed = true }
+
+// Failed reports whether the benchmark has failed.
+func (b *B) Failed() bool { return b.failed }
+
+// FailNow marks the benchmark as failed and stops it.
+func (b *B) FailNow() {
+	b.failed = true
+	b.exit()
+}
+
+// SkipNow marks the benchmark as skipped and stops it.
+func (b *B) SkipNow() {
+	b.skipped = true
+	b.exit()
+}
+
+// Skipped reports whether the benchmark was skipped.
+func (b *B) Skipped() bool { return b.skipped }
+
+// Name is the benchmark's name.
+func (b *B) Name() string { return b.name }
+
+// Helper does nothing here.
+func (b *B) Helper() {}
+
+// Log prints its operands, separated by spaces.
+func (b *B) Log(args ...any)
+
+// Logf prints by a constant format.
+func (b *B) Logf(format string, args ...any)
+
+// Error is Log and Fail.
+func (b *B) Error(args ...any)
+
+// Errorf is Logf and Fail.
+func (b *B) Errorf(format string, args ...any)
+
+// Fatal is Log and FailNow.
+func (b *B) Fatal(args ...any)
+
+// Fatalf is Logf and FailNow.
+func (b *B) Fatalf(format string, args ...any)
+
+// Skip is Log and SkipNow.
+func (b *B) Skip(args ...any)
+
+// Skipf is Logf and SkipNow.
+func (b *B) Skipf(format string, args ...any)
+
+// named does nothing: go test -v names no benchmark ahead of what it logs.
+func (b *B) named() {}
+
+// exit leaves the benchmark: to RunBenchmark on its cog, and on another the
+// goroutine ends.
+func (b *B) exit()
+
+// StartTimer starts timing, as the benchmark begins with it started. It resumes
+// what StopTimer stopped.
+func (b *B) StartTimer() {
+	if !b.timerOn {
+		b.start = clock()
+		b.timerOn = true
+	}
+}
+
+// StopTimer stops timing, so what follows is not measured.
+func (b *B) StopTimer() {
+	if b.timerOn {
+		b.clocks += clock() - b.start
+		b.timerOn = false
+	}
+}
+
+// ResetTimer zeroes the time measured and forgets the metrics ReportMetric reported.
+// It does not start or stop the timer.
+func (b *B) ResetTimer() {
+	if b.timerOn {
+		b.start = clock()
+	}
+	b.clocks = 0
+	b.nextra = 0
+}
+
+// SetBytes records the bytes one operation processes, which reports MB/s too.
+func (b *B) SetBytes(n int64) { b.bytes = n }
+
+// ReportAllocs reports the allocations of each operation, which are none: nothing
+// allocates.
+func (b *B) ReportAllocs() { b.allocs = true }
+
+// ReportMetric adds "n unit" to what the benchmark reports, replacing what was
+// reported for unit before; "ns/op", "MB/s", "B/op" and "allocs/op" replace the
+// measured values, and an "ns/op" of 0 leaves the time out. A benchmark reports 16
+// metrics at most.
+func (b *B) ReportMetric(n float64, unit string) {
+	if unit == "" {
+		panic("metric unit must not be empty")
+	}
+	for i := 0; i < len(unit); i++ {
+		if spaceLen(unit, i) != 0 {
+			panic("metric unit must not contain whitespace")
+		}
+	}
+	k := b.metric(unit)
+	if k < 0 {
+		if b.nextra == maxMetrics {
+			panic("testing: more than 16 metrics reported")
+		}
+		k = b.nextra
+		b.nextra++
+		b.units[k] = unit
+	}
+	b.values[k] = n
+}
+
+func (b *B) metric(unit string) int {
+	for i := 0; i < b.nextra; i++ {
+		if b.units[i] == unit {
+			return i
+		}
+	}
+	return -1
+}
+
+// StartBenchmarks prints what go test prints ahead of the first benchmark, the
+// labels, and sets how the benchmarks after it run: each until it has run for d
+// nanoseconds, or n times where n is not 0, its result's name padded to width, its
+// allocations reported where mem says so. It is what the runner "ogo test"
+// generates calls; a benchmark does not call it.
+func StartBenchmarks(labels string, width int, d int64, n int, mem bool) {
+	print(labels)
+	benchWidth, benchTime, benchCount, benchMem = width, d, n, mem
+}
+
+// RunBenchmark runs f as the benchmark name, with b its state, as go test does:
+// once with b.N 1, and then with b.N grown until a run takes the time StartBenchmarks
+// set, or once more with the count it set, and prints what go test -v prints of it.
+// It is what the runner "ogo test" generates calls; a benchmark does not call it.
+func RunBenchmark(b *B, name string, f func(*B)) {
+	b.name = name
+	println(name)
+	b.runN(f, 1)
+	switch {
+	case b.failed || b.skipped:
+	case benchCount > 1:
+		b.runN(f, benchCount)
+	case benchCount == 0:
+		for n := int64(1); !b.failed && !b.skipped && int64(nanos(b.clocks)) < benchTime && n < 1000000000; {
+			last := n
+			n = predictN(benchTime, int64(b.N), int64(nanos(b.clocks)), last)
+			b.runN(f, int(n))
+		}
+	}
+	switch {
+	case b.failed:
+		print("--- FAIL: ")
+		println(name)
+	case b.skipped:
+		print("--- SKIP: ")
+		println(name)
+	default:
+		b.result()
+	}
+}
+
+func (b *B) runN(f func(*B), n int) {
+	b.N = n
+	b.ResetTimer()
+	b.StartTimer()
+	runB(b, f)
+	b.StopTimer()
+}
+
+// predictN is go test's: the next b.N, 1.2 times what the last run says reaches
+// goalns, growing at most a hundredfold and at least by one, and 1e9 at most.
+func predictN(goalns, prevIters, prevns, last int64) int64 {
+	if prevns == 0 {
+		prevns = 1
+	}
+	n := goalns * prevIters / prevns
+	n += n / 5
+	if n > 100*last {
+		n = 100 * last
+	}
+	if n < last+1 {
+		n = last + 1
+	}
+	if n > 1000000000 {
+		n = 1000000000
+	}
+	return n
+}
+
+// nanos is clocks of the system clock in nanoseconds, truncated as Go's clock is.
+func nanos(clocks uint64) uint64 {
+	hz := uint64(clockHz())
+	return clocks/hz*1000000000 + clocks%hz*1000000000/hz
+}
+
+// result prints a benchmark's line as go test does: the name, b.N, the time an
+// operation took, MB/s where SetBytes said what one processes, the metrics
+// ReportMetric reported in the order of their units, and the allocations where
+// asked for.
+func (b *B) result() {
+	print(b.name)
+	for i := len(b.name); i < benchWidth; i++ {
+		print(" ")
+	}
+	printf("\t%8d", b.N)
+	ns := nanos(b.clocks)
+	if k := b.metric("ns/op"); k >= 0 {
+		if b.values[k] != 0 {
+			print("\t")
+			prettyPrint(b.values[k], "ns/op")
+		}
+	} else if ns != 0 {
+		print("\t")
+		printNsPerOp(ns, uint64(b.N))
+	}
+	var mbs float64
+	if k := b.metric("MB/s"); k >= 0 {
+		mbs = b.values[k]
+	} else if b.bytes > 0 && ns > 0 && b.N > 0 {
+		mbs = float64(b.bytes) * float64(b.N) / 1e6 / (float64(ns) / 1e9)
+	}
+	if mbs != 0 {
+		printf("\t%7.2f MB/s", mbs)
+	}
+	var order [maxMetrics]int
+	n := 0
+	for i := 0; i < b.nextra; i++ {
+		switch b.units[i] {
+		case "ns/op", "MB/s", "B/op", "allocs/op":
+			continue
+		}
+		j := n
+		for ; j > 0 && b.units[i] < b.units[order[j-1]]; j-- {
+			order[j] = order[j-1]
+		}
+		order[j] = i
+		n++
+	}
+	for i := 0; i < n; i++ {
+		print("\t")
+		prettyPrint(b.values[order[i]], b.units[order[i]])
+	}
+	if benchMem || b.allocs {
+		var bop, aop int64
+		if k := b.metric("B/op"); k >= 0 {
+			bop = int64(b.values[k])
+		}
+		if k := b.metric("allocs/op"); k >= 0 {
+			aop = int64(b.values[k])
+		}
+		printf("\t%8d B/op\t%8d allocs/op", bop, aop)
+	}
+	println()
+}
+
+// prettyPrint is go test's: ten places before the point, and four significant
+// digits for a number below 1000.
+func prettyPrint(x float64, unit string) {
+	y := x
+	if y < 0 {
+		y = -y
+	}
+	switch {
+	case y == 0 || y >= 999.95:
+		printf("%10.0f %s", x, unit)
+	case y >= 99.995:
+		printf("%12.1f %s", x, unit)
+	case y >= 9.9995:
+		printf("%13.2f %s", x, unit)
+	case y >= 0.99995:
+		printf("%14.3f %s", x, unit)
+	case y >= 0.099995:
+		printf("%15.4f %s", x, unit)
+	case y >= 0.0099995:
+		printf("%16.5f %s", x, unit)
+	case y >= 0.00099995:
+		printf("%17.6f %s", x, unit)
+	default:
+		printf("%18.7f %s", x, unit)
+	}
+}
+
+// printNsPerOp prints ns/n as prettyPrint lays it out, " ns/op" after it. It is
+// computed exactly in integers, where a float64 is 32 bits and its seven digits
+// would round a long benchmark's time: the places prettyPrint's bounds choose,
+// rounded half to even as Go rounds a float it prints.
+func printNsPerOp(ns, n uint64) {
+	digits := 7
+	for k, scale := 0, uint64(100); k < 7; k, scale = k+1, scale*10 {
+		if ns*scale >= n*99995 {
+			digits = k
+			break
+		}
+	}
+	scale := uint64(1)
+	for i := 0; i < digits; i++ {
+		scale *= 10
+	}
+	v, r := ns*scale/n, ns*scale%n
+	if r*2 > n || r*2 == n && v%2 == 1 {
+		v++
+	}
+	whole, frac := v/scale, v%scale
+	width := 10
+	if digits > 0 {
+		width = 11 + digits
+	}
+	w := digits
+	if digits > 0 {
+		w++
+	}
+	for q := whole; ; q /= 10 {
+		w++
+		if q < 10 {
+			break
+		}
+	}
+	for ; w < width; w++ {
+		print(" ")
+	}
+	print(whole)
+	if digits > 0 {
+		print(".")
+		for p := scale / 10; p > 1 && frac < p; p /= 10 {
+			print(0)
+		}
+		print(frac)
+	}
+	print(" ns/op")
+}
+
+// runB calls f(b) where exit returns to.
+func runB(t *B, f func(*B))
+
+// clock is the system clock's count of all 64 bits.
+func clock() uint64
+
+// clockHz is the rate the system clock counts at.
+func clockHz() uint32
 `
 
 // errorsSrc is the errors package: Go's, but for Join. Two of its functions are

@@ -130,6 +130,14 @@ tests whose name matches, and compiles only those, which is what makes iterating
 one of them worth the board's ten seconds. `ogo test -c` builds
 the tests without running them, for a machine with no board attached.
 
+A benchmark, `func BenchmarkSum(b *testing.B)`, runs where `ogo test -bench .` asks,
+after the tests, as `go test` runs one: `b.N` grown until a run takes `-benchtime`,
+a second by default or a count written `100x`, and the result printed as
+`go test -v -bench` prints it, its time measured by the P2's 64-bit system counter
+at the clock the `cpu:` label names. `b.ResetTimer`, `StopTimer`, `StartTimer`,
+`SetBytes`, `ReportAllocs` (no allocation is ever reported) and `ReportMetric` are
+Go's; sub-benchmarks, `b.Loop` and `RunParallel` are not provided yet.
+
 > **Seeing garbled serial output?** `ogo run` reads at 230400 baud, which is what a
 > compiled program writes at, so `println` output is readable out of the box. The raw
 > `ogo loadp2` passthrough uses loadp2's own defaults instead, and it reads at 115200
@@ -338,8 +346,9 @@ broken.
   errors as Go's do. `p2` wraps thirty-three intrinsics
   (pin control, smart pins including the ADC, timing and the clock, the serial line
   in both directions, the hardware locks, the cog's LUT RAM), `testing` is Go's `*testing.T`
-  for logging, failing and skipping, and subtests as `t.Run` runs and go test -v
-  prints them (no `Cleanup` or benchmarks yet; a subtest's name is a constant or lives
+  for logging, failing and skipping, subtests as `t.Run` runs and go test -v
+  prints them, and `*testing.B` for benchmarks as `ogo test -bench` runs them (no
+  `Cleanup`, sub-benchmarks or `b.Loop` yet; a subtest's name is a constant or lives
   as long, a test runs 256 at most, eight deep, and `-run` selects tests, not
   subtests), and `unsafe` has `unsafe.Pointer`, `Add`, `Slice` and
   `Sizeof`, `Alignof` and `Offsetof`, of the P2's layout. That is the whole of it. Your own packages do import and

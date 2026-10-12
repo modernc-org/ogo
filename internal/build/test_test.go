@@ -10,6 +10,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 )
 
 const (
@@ -211,6 +212,56 @@ func TestOgoTestRunMatchesNothing(t *testing.T) {
 	}
 }
 
+// TestOgoTestBenchSelection: a benchmark is built and run only where -bench asks
+// for it, as go test runs one -- a package of benchmarks alone has nothing to run
+// without it -- and -bench selects by an unanchored regular expression, as -run
+// does. A benchmark of the wrong signature is refused whether or not -bench asks.
+func TestOgoTestBenchSelection(t *testing.T) {
+	dir := t.TempDir()
+	write(t, filepath.Join(dir, "ring.ogo"), testPkgSrc)
+	write(t, filepath.Join(dir, "ring_test.ogo"), testPkgTestSrc+`
+func BenchmarkPush(b *testing.B) {
+	var r Ring
+	for i := 0; i < b.N; i++ {
+		r.Push(i)
+	}
+}
+
+func BenchmarkOther(b *testing.B) {}
+`)
+	only := filepath.Join(t.TempDir(), "only")
+	write(t, filepath.Join(only, "ring.ogo"), testPkgSrc)
+	write(t, filepath.Join(only, "ring_test.ogo"), "import \"testing\"\n\nfunc BenchmarkNop(b *testing.B) {}\n")
+	bad := filepath.Join(t.TempDir(), "bad")
+	write(t, filepath.Join(bad, "ring.ogo"), testPkgSrc)
+	write(t, filepath.Join(bad, "ring_test.ogo"), "import \"testing\"\n\nfunc BenchmarkBad(t *testing.T) {}\n")
+	for _, tc := range []struct {
+		args []string
+		want string
+	}{
+		{[]string{"-c", dir}, "[built 2 tests, not run]"},
+		{[]string{"-c", "-bench", ".", dir}, "[built 2 tests and 2 benchmarks, not run]"},
+		{[]string{"-c", "-bench=Push", dir}, "[built 2 tests and 1 benchmark, not run]"},
+		{[]string{"-c", "-bench", "Nope", dir}, "[built 2 tests, not run]"},
+		{[]string{"-c", "-run", "^$", "-bench", "Push", dir}, "[built 0 tests and 1 benchmark, not run]"},
+		{[]string{"-c", only}, "[no tests to run]"},
+		{[]string{"-c", "-bench", ".", only}, "[built 0 tests and 1 benchmark, not run]"},
+	} {
+		var out, errb bytes.Buffer
+		code, err := Test(tc.args, nil, &out, &errb)
+		if err != nil || code != 0 || !strings.Contains(out.String(), tc.want) {
+			t.Errorf("%v: code=%d err=%v\n%s%s\nwant %q", tc.args, code, err, out.String(), errb.String(), tc.want)
+		}
+	}
+	var out bytes.Buffer
+	if code, err := Test([]string{"-c", bad}, nil, &out, &out); code != 1 || err == nil || !strings.Contains(err.Error(), "wrong signature for BenchmarkBad, must be: func BenchmarkBad(b *testing.B)") {
+		t.Errorf("a malformed benchmark: code=%d err=%v", code, err)
+	}
+	if code, err := Test([]string{"-c", "-bench", "[", dir}, nil, &out, &out); code != 2 || err == nil || !strings.Contains(err.Error(), "bad -bench pattern") {
+		t.Errorf("a bad -bench pattern: code=%d err=%v", code, err)
+	}
+}
+
 // TestOgoTestRunBadPattern: the pattern is a regular expression, and one that does
 // not compile is reported as the usage error it is rather than matching nothing.
 func TestOgoTestRunBadPattern(t *testing.T) {
@@ -309,7 +360,10 @@ func TestBroken(t *testing.T) { t.Nope() }
 // failure before the skip, as Go asks (the run case "subtests run by t.Run" holds
 // that) -- and every failure counted.
 func TestRunnerSrc(t *testing.T) {
-	got := testRunnerSrc([]string{"TestA", "TestB"})
+	got := testRunnerSrc([]string{"TestA", "TestB"}, nil, benchRun{})
+	if strings.Contains(got, "Benchmark") {
+		t.Errorf("benchmarks in a runner without any:\n%s", got)
+	}
 	for _, want := range []string{
 		`import "testing"`,
 		"func ogoTestMain() {",
@@ -324,6 +378,72 @@ func TestRunnerSrc(t *testing.T) {
 	} {
 		if !strings.Contains(got, want) {
 			t.Errorf("missing %q in:\n%s", want, got)
+		}
+	}
+}
+
+// TestRunnerSrcBenchmarks pins the benchmarks' part of the runner: the labels and
+// how they run set once, ahead of them and after the tests, the names padded to one
+// more than the longest, one testing.B each, and each failure counted with the
+// tests'.
+func TestRunnerSrcBenchmarks(t *testing.T) {
+	got := testRunnerSrc([]string{"TestA"}, []string{"BenchmarkA", "BenchmarkLonger"}, benchRun{
+		labels: benchLabels("pkg/x", 180000000),
+		time:   2 * time.Second,
+		mem:    true,
+	})
+	for _, want := range []string{
+		`testing.RunTest(&t0, "TestA", TestA)`,
+		`testing.StartBenchmarks("pkg: pkg/x\ncpu: Propeller 2 at 180 MHz\n", 16, 2000000000, 0, true)`,
+		"var b0 testing.B",
+		`testing.RunBenchmark(&b0, "BenchmarkA", BenchmarkA)`,
+		"if b0.Failed() {\n\t\tfailed++",
+		`testing.RunBenchmark(&b1, "BenchmarkLonger", BenchmarkLonger)`,
+		`println("FAIL", failed, "of", 3)`,
+	} {
+		if !strings.Contains(got, want) {
+			t.Errorf("missing %q in:\n%s", want, got)
+		}
+	}
+	if strings.Index(got, "RunTest") > strings.Index(got, "StartBenchmarks") {
+		t.Errorf("the benchmarks run before the tests:\n%s", got)
+	}
+	if got := benchLabels("d", 160000500); got != "pkg: d\ncpu: Propeller 2 at 160000500 Hz\n" {
+		t.Errorf("labels %q", got)
+	}
+	if got := benchPkg("x/sensor", "sensor", "example.com/proj"); got != "example.com/proj/sensor" {
+		t.Errorf("module package %q", got)
+	}
+	if got := benchPkg("../a/b", ".", ""); got != "b" {
+		t.Errorf("package outside a module %q", got)
+	}
+}
+
+// TestParseBenchTime pins -benchtime as go test reads it: a duration, or a count
+// of runs with an x after it, and neither zero nor negative.
+func TestParseBenchTime(t *testing.T) {
+	for _, c := range []struct {
+		in    string
+		d     time.Duration
+		n     int
+		valid bool
+	}{
+		{"1s", time.Second, 0, true},
+		{"250ms", 250 * time.Millisecond, 0, true},
+		{"2m", 2 * time.Minute, 0, true},
+		{"100x", 0, 100, true},
+		{"1x", 0, 1, true},
+		{"0x", 0, 0, false},
+		{"-1x", 0, 0, false},
+		{"0s", 0, 0, false},
+		{"-1s", 0, 0, false},
+		{"x", 0, 0, false},
+		{"fast", 0, 0, false},
+		{"2000000000x", 0, 0, false},
+	} {
+		d, n, err := parseBenchTime(c.in)
+		if (err == nil) != c.valid || d != c.d || n != c.n {
+			t.Errorf("%q: %v %v %v", c.in, d, n, err)
 		}
 	}
 }

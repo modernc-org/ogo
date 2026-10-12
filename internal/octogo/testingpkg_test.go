@@ -5,10 +5,13 @@
 package octogo
 
 import (
+	"fmt"
 	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"regexp"
+	"strconv"
 	"strings"
 	"testing"
 	"testing/fstest"
@@ -54,6 +57,56 @@ func TestTestingRefusals(t *testing.T) {
 	} {
 		t.Run(test.body, func(t *testing.T) {
 			src := "import \"testing\"\n\nvar ff = \"%d\"\n\nfunc test(t *testing.T) {\n\t" + test.body + "\n}\n\nfunc main() {\n\tvar t testing.T\n\ttesting.RunTest(&t, \"T\", test)\n\t_ = ff\n}\n"
+			fsys := fstest.MapFS{"main.ogo": &fstest.MapFile{Data: []byte(src)}}
+			pkg, err := Build(-1, []string{"main.ogo"}, fsys)
+			if err == nil {
+				err = EmitC(pkg, io.Discard, Checked(), Inline())
+			}
+			switch {
+			case test.want == "" && err != nil:
+				t.Fatalf("refused: %v", err)
+			case test.want != "" && (err == nil || !strings.Contains(err.Error(), test.want)):
+				t.Fatalf("got %v, want an error containing %q", err, test.want)
+			}
+		})
+	}
+}
+
+// TestBenchmarkRefusals: the testing package's rules as a benchmark meets them --
+// a *testing.B's formatting methods are a print's as a T's are, deferred or started
+// they are refused with the literal that does it, a metric's unit is kept to the end
+// of the benchmark as a subtest's name is, and a method Go's B has and this one
+// does not yet, Run, is missing as any method is.
+func TestBenchmarkRefusals(t *testing.T) {
+	for _, test := range []struct {
+		body, want string // want "" for a body that builds
+	}{
+		{`b.Errorf("got %d, want %d", 1, 2)`, ""},
+		{`b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		b.StopTimer()
+		b.StartTimer()
+	}
+	b.SetBytes(64)
+	b.ReportAllocs()
+	b.ReportMetric(1.5, "clk/op")
+	b.Log(b.Name(), b.Failed(), b.Skipped())`, ""},
+		{`defer func(b *testing.B) { b.Log("x") }(b)`, ""},
+		{`b.Logf(ff, 1)`, "Logf's format must be a constant string, as printf's is"},
+		{`b.Fatalf("%d")`, "Fatalf: the format has 1 verb but 0 arguments given"},
+		{`defer b.Log("x")`, "`defer b.Log(...)` is not supported yet; write `defer func(b *testing.B) { b.Log(...) }(b)`"},
+		{`go b.Errorf("x %d", 1)`, "`go b.Errorf(...)` is not supported yet; write `go func(b *testing.B) { b.Errorf(...) }(b)`"},
+		{`var buf [8]byte
+	s := NewBuilder(buf[:])
+	s.WriteString("u/op")
+	b.ReportMetric(1, s.String())`, "cannot pass s.String(), which holds a pointer into local buf to ReportMetric"},
+		{`b.Run("x", func(b *testing.B) {})`, "type testing.B has no method Run"},
+		{`var s string = b.N
+	_ = s`, "cannot use b.N"},
+		{`b.SetBytes(1.5)`, "1.5"},
+	} {
+		t.Run(test.body, func(t *testing.T) {
+			src := "import \"testing\"\n\nvar ff = \"%d\"\n\nfunc bench(b *testing.B) {\n\t" + test.body + "\n}\n\nfunc main() {\n\tvar b testing.B\n\ttesting.StartBenchmarks(\"\", 2, 0, 1, false)\n\ttesting.RunBenchmark(&b, \"B\", bench)\n\t_ = ff\n}\n"
 			fsys := fstest.MapFS{"main.ogo": &fstest.MapFile{Data: []byte(src)}}
 			pkg, err := Build(-1, []string{"main.ogo"}, fsys)
 			if err == nil {
@@ -174,4 +227,102 @@ FAIL 1 of 3
 		}
 		t.Logf("retry %d/%d (transient serial flake)", attempt, boardAttempts-1)
 	}
+}
+
+// TestOnBoardOgoTestBench runs `ogo test -bench` on the board over benchmarks whose
+// operation takes a known time, a wait: each result line is go test's, its ns/op
+// the wait's within what the loop around it costs, and its last run as long as
+// -benchtime asked at least. And with a count of runs at another clock, b.N is the
+// count, the label says the clock built, and the time is still the wait's -- the
+// clocks are converted at the rate the program runs at.
+func TestOnBoardOgoTestBench(t *testing.T) {
+	port := os.Getenv("OGO_BOARD_PORT")
+	if port == "" {
+		t.Skip("set OGO_BOARD_PORT (e.g. /dev/ttyUSB0) to run the on-board tests")
+	}
+	ogo := buildOgoCLI(t)
+	dir := filepath.Join(t.TempDir(), "waits")
+	if err := os.Mkdir(dir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	for name, src := range map[string]string{
+		"wait.ogo": "func Nop() {}\n",
+		"wait_test.ogo": `import (
+	"p2"
+	"testing"
+)
+
+func TestNop(t *testing.T) { Nop() }
+
+func BenchmarkWait1ms(b *testing.B) {
+	for i := 0; i < b.N; i++ {
+		p2.WaitMs(1)
+	}
+}
+
+func BenchmarkWait10us(b *testing.B) {
+	for i := 0; i < b.N; i++ {
+		p2.WaitUs(10)
+	}
+}
+`,
+	} {
+		if err := os.WriteFile(filepath.Join(dir, name), []byte(src), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	line := regexp.MustCompile(`(?m)^(Benchmark\w+)( *)\t( *\d+)\t( *[\d.]+) ns/op$`)
+	check := func(args []string, mhz, count int) {
+		for attempt := 1; ; attempt++ {
+			cmd := exec.Command(ogo, append([]string{"test", "-p", port, "-run", "^$"}, args...)...)
+			cmd.Dir = dir
+			out, err := cmd.CombinedOutput()
+			got := strings.ReplaceAll(string(out), "\r", "")
+			bad := func(format string, v ...any) {
+				if attempt == boardAttempts {
+					t.Fatalf("ogo test %v: %v\n%s\n%s", args, err, fmt.Sprintf(format, v...), got)
+				}
+				t.Logf("retry %d/%d: %s", attempt, boardAttempts-1, fmt.Sprintf(format, v...))
+			}
+			if err != nil {
+				bad("failed")
+				continue
+			}
+			if want := fmt.Sprintf("pkg: waits\ncpu: Propeller 2 at %d MHz\nBenchmarkWait1ms\n", mhz); !strings.Contains(got, want) {
+				bad("no labels %q", want)
+				continue
+			}
+			ms := line.FindAllStringSubmatch(got, -1)
+			if len(ms) != 2 {
+				bad("%d result lines", len(ms))
+				continue
+			}
+			ok := true
+			for i, m := range ms {
+				name, want := m[1], []float64{1e6, 1e4}[i]
+				n, _ := strconv.Atoi(strings.TrimSpace(m[3]))
+				ns, _ := strconv.ParseFloat(strings.TrimSpace(m[4]), 64)
+				// go test pads the name to one more than the longest, b.N to 8
+				// places, and a time of 1000 ns or more to 10.
+				if len(name)+len(m[2]) != len("BenchmarkWait10us")+1 || len(m[3]) != 8 || len(m[4]) != 10 {
+					ok = false
+				}
+				switch {
+				case ns < want || ns > want*1.01+1500: // the loop and the call cost ~100 clocks
+					ok = false
+				case count != 0 && n != count:
+					ok = false
+				case count == 0 && float64(n)*ns < 1e9:
+					ok = false
+				}
+			}
+			if !ok {
+				bad("results out of bounds")
+				continue
+			}
+			return
+		}
+	}
+	check([]string{"-bench", "."}, 160, 0)
+	check([]string{"-bench", "Wait", "-benchtime", "7x", "--clock", "200MHz"}, 200, 7)
 }

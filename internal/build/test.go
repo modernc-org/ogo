@@ -48,8 +48,9 @@ const testDoneLine = "ogo-test-done"
 // -c compiles the tests and does not run them, which is what CI without a board
 // can honestly do.
 func Test(args []string, stdin io.Reader, stdout, stderr io.Writer) (int, error) {
-	var compileOnly, allowWarnings bool
-	var port, runPat string
+	var compileOnly, allowWarnings, benchMem bool
+	var port, runPat, benchPat string
+	benchTime := "1s"
 	var rest []string
 	// A test binary takes the same clock as the program it tests. Running the tests
 	// at a different speed than the thing ships at is how a timing bug hides.
@@ -77,6 +78,20 @@ func Test(args []string, stdin io.Reader, stdout, stderr io.Writer) (int, error)
 				pat = args[i]
 			}
 			runPat = pat
+		case a == "-bench" || strings.HasPrefix(a, "-bench="):
+			pat, err := flagValue("-bench", a, args, &i)
+			if err != nil {
+				return 2, err
+			}
+			benchPat = pat
+		case a == "-benchtime" || strings.HasPrefix(a, "-benchtime="):
+			v, err := flagValue("-benchtime", a, args, &i)
+			if err != nil {
+				return 2, err
+			}
+			benchTime = v
+		case a == "-benchmem":
+			benchMem = true
 		case a == "--clock" || a == "-clock":
 			if clock, err = parseHz("test", a, args, &i); err != nil {
 				return 2, err
@@ -115,7 +130,21 @@ func Test(args []string, stdin io.Reader, stdout, stderr io.Writer) (int, error)
 		clockOpts = append(clockOpts, octogo.GoStack(goStack))
 	}
 
-	opts := testOptions{compileOnly: compileOnly, allowWarnings: allowWarnings, stackAsked: goStack != 0, port: port, runPat: runPat, clockOpts: clockOpts}
+	opts := testOptions{compileOnly: compileOnly, allowWarnings: allowWarnings, stackAsked: goStack != 0, port: port, runPat: runPat, clockOpts: clockOpts, benchMem: benchMem}
+	if opts.clockHz = clock; clock == 0 {
+		opts.clockHz = octogo.DefaultClock
+	}
+	if opts.benchTime, opts.benchCount, err = parseBenchTime(benchTime); err != nil {
+		return 2, err
+	}
+	if benchPat != "" {
+		if opts.bench, err = regexp.Compile(benchPat); err != nil {
+			return 2, fmt.Errorf("test: bad -bench pattern %q: %v", benchPat, err)
+		}
+		if strings.Contains(benchPat, "/") {
+			return 2, fmt.Errorf("test: -bench %q: selecting sub-benchmarks is not supported yet; select the benchmark", benchPat)
+		}
+	}
 	if runPat != "" {
 		if opts.run, err = regexp.Compile(runPat); err != nil {
 			return 2, fmt.Errorf("test: bad -run pattern %q: %v", runPat, err)
@@ -181,6 +210,44 @@ type testOptions struct {
 	run       *regexp.Regexp
 	runPat    string
 	clockOpts []octogo.EmitOption
+	clockHz   int
+	// bench selects the benchmarks to run, as `go test -bench` does; none run
+	// where it is nil. Each runs for benchTime, or benchCount times where that is
+	// not 0 (-benchtime), its allocations reported where benchMem says so.
+	bench      *regexp.Regexp
+	benchTime  time.Duration
+	benchCount int
+	benchMem   bool
+}
+
+// flagValue is the value of the flag name at args[*i], written `-name=value` or
+// `-name value`.
+func flagValue(name, a string, args []string, i *int) (string, error) {
+	if v, ok := strings.CutPrefix(a, name+"="); ok {
+		return v, nil
+	}
+	*i++
+	if *i >= len(args) {
+		return "", fmt.Errorf("test: %s requires an argument", name)
+	}
+	return args[*i], nil
+}
+
+// parseBenchTime reads -benchtime as go test does: a duration, or a count of runs
+// written with an x after it, "100x".
+func parseBenchTime(s string) (time.Duration, int, error) {
+	if n, ok := strings.CutSuffix(s, "x"); ok {
+		v, err := strconv.ParseInt(n, 10, 0)
+		if err != nil || v <= 0 || v > 1e9 {
+			return 0, 0, fmt.Errorf("test: invalid -benchtime %q: a count is from 1x to 1000000000x", s)
+		}
+		return 0, int(v), nil
+	}
+	d, err := time.ParseDuration(s)
+	if err != nil || d <= 0 {
+		return 0, 0, fmt.Errorf("test: invalid -benchtime %q: want a duration, or a count such as 100x", s)
+	}
+	return d, 0, nil
 }
 
 // packageDirs expands a `.../...` pattern to the package directories under its
@@ -272,21 +339,27 @@ func testPackage(dir string, opts testOptions, stdout, stderr io.Writer) (int, e
 	if err != nil {
 		return 1, err
 	}
+	// Benchmarks are found whether or not any is run, so a malformed one is
+	// reported as vet reports it under go test.
+	benches, err := octogo.BenchFuncs(pkg)
+	if err != nil {
+		return 1, err
+	}
+	if opts.bench == nil {
+		benches = nil // go test runs a benchmark only where -bench asks for it
+	} else {
+		benches = selected(benches, opts.bench)
+	}
 	if opts.run != nil {
-		kept := names[:0:0]
-		for _, nm := range names {
-			if opts.run.MatchString(nm) {
-				kept = append(kept, nm)
-			}
-		}
-		if len(kept) == 0 && len(names) != 0 {
+		kept := selected(names, opts.run)
+		if len(kept) == 0 && len(names) != 0 && len(benches) == 0 {
 			// Said out loud, as `go test` says it: a pattern that matches nothing
 			// otherwise reports a green package that ran no test at all.
 			fmt.Fprintf(stderr, "testing: warning: no tests to run\n")
 		}
 		names = kept
 	}
-	if len(names) == 0 {
+	if len(names) == 0 && len(benches) == 0 {
 		fmt.Fprintf(stdout, "ok  \t%s\t[no tests to run]\n", dir)
 		return 0, nil
 	}
@@ -296,9 +369,15 @@ func testPackage(dir string, opts testOptions, stdout, stderr io.Writer) (int, e
 	// The runner joins the package, so it is layered where the package lives: at the
 	// module root that is the top of fsys, in a module it is the package's directory.
 	runner := path.Join(rel, testRunnerFile)
+	src := testRunnerSrc(names, benches, benchRun{
+		labels: benchLabels(benchPkg(dir, rel, modulePath), opts.clockHz),
+		time:   opts.benchTime,
+		count:  opts.benchCount,
+		mem:    opts.benchMem,
+	})
 	overlay := overlayFS{
 		FS:    fsys,
-		extra: fstest.MapFS{runner: &fstest.MapFile{Data: []byte(testRunnerSrc(names))}},
+		extra: fstest.MapFS{runner: &fstest.MapFile{Data: []byte(src)}},
 	}
 	all = append(all, testRunnerFile)
 	pkg, err = octogo.BuildModule(-1, modulePath, rel, all, overlay)
@@ -343,11 +422,15 @@ func testPackage(dir string, opts testOptions, stdout, stderr io.Writer) (int, e
 		if err := copyFile(binary, out); err != nil {
 			return 1, err
 		}
-		fmt.Fprintf(stdout, "ok  \t%s\t[built %d test%s, not run]\n", dir, len(names), plural(len(names)))
+		built := fmt.Sprintf("%d test%s", len(names), plural(len(names)))
+		if len(benches) != 0 {
+			built += fmt.Sprintf(" and %d benchmark%s", len(benches), plural(len(benches)))
+		}
+		fmt.Fprintf(stdout, "ok  \t%s\t[built %s, not run]\n", dir, built)
 		return 0, nil
 	}
 
-	out, ok := loadp2.Capture(loadp2.Options{Binary: binary, Port: port}, testDoneLine, 2*time.Minute)
+	out, ok := loadp2.Capture(loadp2.Options{Binary: binary, Port: port}, testDoneLine, captureTimeout(len(benches), opts))
 	for _, line := range strings.Split(out, "\n") {
 		line = strings.TrimRight(line, "\r ")
 		switch {
@@ -374,6 +457,34 @@ func testPackage(dir string, opts testOptions, stdout, stderr io.Writer) (int, e
 	return 0, nil
 }
 
+// selected is the names re matches, or all of them where re is nil.
+func selected(names []string, re *regexp.Regexp) []string {
+	if re == nil {
+		return names
+	}
+	var kept []string
+	for _, nm := range names {
+		if re.MatchString(nm) {
+			kept = append(kept, nm)
+		}
+	}
+	return kept
+}
+
+// captureTimeout is how long the board is given to say it is done: two minutes for
+// the tests, and for each benchmark what go test's growing runs take at most to
+// reach its time -- the last run up to 1.2 times longer than asked and the runs
+// before it as long together -- three times over, and a minute more. A count of
+// runs has no time to be read from, and is given ten minutes a benchmark, the
+// time go test gives a whole package.
+func captureTimeout(benches int, opts testOptions) time.Duration {
+	per := 3*opts.benchTime + time.Minute
+	if opts.benchCount != 0 {
+		per = 10 * time.Minute
+	}
+	return 2*time.Minute + time.Duration(benches)*per
+}
+
 func plural(n int) string {
 	if n == 1 {
 		return ""
@@ -385,13 +496,15 @@ func plural(n int) string {
 // does not mark the next, each run through testing.RunTest, which prints go test
 // -v's === RUN line and, when the test ends, its --- PASS, --- FAIL or --- SKIP line
 // with its subtests' under it -- what a test logs standing between them. RunTest is
-// also what FailNow and SkipNow return to.
+// also what FailNow and SkipNow return to. The benchmarks after them, where -bench
+// selected any, each through testing.RunBenchmark with a testing.B of its own,
+// after testing.StartBenchmarks has printed go test's labels and set how they run.
 //
 // A failure is asked about BEFORE a skip, as Go's runner asks: the two marks are
 // independent, and a test that fails and then skips has failed. Asked the other
 // way round, such a test was reported skipped, counted in no failure, and the
 // package passed.
-func testRunnerSrc(names []string) string {
+func testRunnerSrc(names, benches []string, br benchRun) string {
 	var b strings.Builder
 	b.WriteString("// Code generated by ogo test. DO NOT EDIT.\n\nimport \"testing\"\n\nfunc ogoTestMain() {\n\tfailed := 0\n")
 	for i, nm := range names {
@@ -399,8 +512,51 @@ func testRunnerSrc(names []string) string {
 		fmt.Fprintf(&b, "\ttesting.RunTest(&t%d, %q, %s)\n", i, nm, nm)
 		fmt.Fprintf(&b, "\tif t%d.Failed() {\n\t\tfailed++\n\t}\n", i)
 	}
-	fmt.Fprintf(&b, "\n\tif failed != 0 {\n\t\tprintln(\"FAIL\", failed, \"of\", %d)\n\t}\n\tprintln(%q)\n}\n", len(names), testDoneLine)
+	if len(benches) != 0 {
+		// go test pads a result's name to one more than the longest name's length.
+		width := 0
+		for _, nm := range benches {
+			width = max(width, len(nm)+1)
+		}
+		fmt.Fprintf(&b, "\n\ttesting.StartBenchmarks(%q, %d, %d, %d, %v)\n", br.labels, width, br.time.Nanoseconds(), br.count, br.mem)
+		for i, nm := range benches {
+			fmt.Fprintf(&b, "\n\tvar b%d testing.B\n", i)
+			fmt.Fprintf(&b, "\ttesting.RunBenchmark(&b%d, %q, %s)\n", i, nm, nm)
+			fmt.Fprintf(&b, "\tif b%d.Failed() {\n\t\tfailed++\n\t}\n", i)
+		}
+	}
+	fmt.Fprintf(&b, "\n\tif failed != 0 {\n\t\tprintln(\"FAIL\", failed, \"of\", %d)\n\t}\n\tprintln(%q)\n}\n", len(names)+len(benches), testDoneLine)
 	return b.String()
+}
+
+// benchRun is how the benchmarks of a run are run (testing.StartBenchmarks).
+type benchRun struct {
+	labels string
+	time   time.Duration
+	count  int
+	mem    bool
+}
+
+// benchLabels is what go test prints ahead of the first benchmark, as the lines
+// benchstat reads it by: the package, and the cpu, which here says the clock it
+// runs at -- the measure of every time a benchmark reports. goos and goarch, which
+// would be names Go does not have, are left out.
+func benchLabels(pkg string, hz int) string {
+	clock := fmt.Sprintf("%d Hz", hz)
+	if hz%1000000 == 0 {
+		clock = fmt.Sprintf("%d MHz", hz/1000000)
+	}
+	return fmt.Sprintf("pkg: %s\ncpu: Propeller 2 at %s\n", pkg, clock)
+}
+
+// benchPkg names the package a benchmark label names: its import path in a module,
+// and outside one, where the directory built is the root and has none, the
+// directory's own name.
+func benchPkg(dir, rel, modulePath string) string {
+	if modulePath == "" {
+		return dirPkgName(dir)
+	}
+	return path.Join(modulePath, rel)
 }
 
 // testPackageFiles splits a directory's sources into the package's own and its

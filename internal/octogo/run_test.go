@@ -1940,6 +1940,87 @@ func main() {
 		want: "=== RUN   TestA\n    main.ogo:19: in A\n=== RUN   TestA/one\n    main.ogo:21: in one TestA/one\n=== RUN   TestA/two_words\n    main.ogo:24: bad 2\n=== RUN   TestA/two_words/deep\n    main.ogo:7: deep at 0\n=== NAME  TestA/two_words\n    main.ogo:29: after deep\n=== RUN   TestA/skip\n    main.ogo:32: skipping\n=== NAME  TestA\n    main.ogo:34: after false true\n=== RUN   TestA/one#01\n=== RUN   TestA/#00\n    main.ogo:15: named TestA/#00\n=== RUN   TestA/#01\n    main.ogo:15: named TestA/#01\n=== RUN   TestA/a_b\\x01\n    main.ogo:15: named TestA/a_b\\x01\n=== NAME  TestA\n    main.ogo:42: end of A true 0\n--- FAIL: TestA\n    --- PASS: TestA/one\n    --- FAIL: TestA/two_words\n        --- FAIL: TestA/two_words/deep\n    --- SKIP: TestA/skip\n    --- FAIL: TestA/one#01\n    --- PASS: TestA/#00\n    --- PASS: TestA/#01\n    --- PASS: TestA/a_b\\x01\n=== RUN   TestB\n=== RUN   TestB/x\n=== RUN   TestB/y\n    main.ogo:15: named TestB/y\n--- PASS: TestB\n    --- PASS: TestB/x\n    --- PASS: TestB/y\ntrue false TestA TestB\n",
 	},
 	{
+		// Benchmarks as go test -v -bench prints them, run a count of times so the
+		// output is known (TestBenchmarkFakeClock holds the timed runs): the labels
+		// once ahead of the first, each name on a line of its own before it runs, what
+		// it logs at every run, and its result line padded as go test pads it -- here
+		// without the time, which ReportMetric leaves out, and with its metrics in the
+		// order of their units and the allocations where asked for. A benchmark that
+		// fails or skips says so instead, a FailNow in a helper on the second run
+		// included.
+		name: "benchmarks run a count of times",
+		src: `import "testing"
+
+var sink int
+
+func sum(b *testing.B) {
+	for i := 0; i < b.N; i++ {
+		sink += i
+	}
+	b.ReportMetric(0, "ns/op")
+	b.ReportMetric(float64(b.N)*1.5, "x/op")
+	b.ReportMetric(0.25, "a/op")
+}
+
+func logs(b *testing.B) {
+	b.Logf("N=%d %s", b.N, b.Name())
+	b.ReportMetric(0, "ns/op")
+	b.ReportAllocs()
+}
+
+func fails(b *testing.B) { b.Error("bad", 1) }
+
+func skips(b *testing.B) { b.Skipf("later %d", 2) }
+
+func fatal(b *testing.B) {
+	if b.N > 1 {
+		b.Fatal("at", b.N)
+	}
+	b.ReportMetric(0, "ns/op")
+}
+
+func helper(b *testing.B, n int) {
+	b.Helper()
+	if n > 2 {
+		b.FailNow()
+	}
+}
+
+func deep(b *testing.B) {
+	helper(b, b.N)
+	b.Log("reached", b.N)
+	b.ReportMetric(0, "ns/op")
+}
+
+func first(t *testing.T) { t.Log("a test first") }
+
+func main() {
+	var t testing.T
+	testing.RunTest(&t, "TestFirst", first)
+	testing.StartBenchmarks("pkg: p\ncpu: c\n", 15, 0, 5, false)
+	var b [6]testing.B
+	testing.RunBenchmark(&b[0], "BenchmarkSum", sum)
+	testing.RunBenchmark(&b[1], "BenchmarkLogs", logs)
+	testing.RunBenchmark(&b[2], "BenchmarkFails", fails)
+	testing.RunBenchmark(&b[3], "BenchmarkSkips", skips)
+	testing.RunBenchmark(&b[4], "BenchmarkFatal", fatal)
+	testing.RunBenchmark(&b[5], "BenchmarkDeep", deep)
+	for i := range b {
+		print(b[i].Failed(), b[i].Skipped(), " ")
+	}
+	println(b[5].N, sink)
+}
+`,
+		want: "=== RUN   TestFirst\n    main.ogo:44: a test first\n--- PASS: TestFirst\npkg: p\ncpu: c\n" +
+			"BenchmarkSum\nBenchmarkSum   \t       5\t         0.2500 a/op\t         7.500 x/op\n" +
+			"BenchmarkLogs\n    main.ogo:15: N=1 BenchmarkLogs\n    main.ogo:15: N=5 BenchmarkLogs\nBenchmarkLogs  \t       5\t       0 B/op\t       0 allocs/op\n" +
+			"BenchmarkFails\n    main.ogo:20: bad 1\n--- FAIL: BenchmarkFails\n" +
+			"BenchmarkSkips\n    main.ogo:22: later 2\n--- SKIP: BenchmarkSkips\n" +
+			"BenchmarkFatal\n    main.ogo:26: at 5\n--- FAIL: BenchmarkFatal\n" +
+			"BenchmarkDeep\n    main.ogo:40: reached 1\n--- FAIL: BenchmarkDeep\n" +
+			"falsefalse falsefalse truefalse falsetrue truefalse truefalse 5 10\n",
+	},
+	{
 		// Subtests at their limits: 256 in a test, the next refused with a line of its
 		// own and the test failed; a count past 99 written whole, "#100", as Go
 		// writes it; and a name past Name's 128 bytes printed whole and cut by Name.

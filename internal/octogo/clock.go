@@ -113,3 +113,7 @@ func ClockFor(xtal, freq int) (clockSetting, error) { return clockMode(xtal, fre
 
 // DefaultXtal is the crystal frequency assumed when none is given.
 const DefaultXtal = defaultXtal
+
+// DefaultClock is the system clock a program runs at when it asks for none: the
+// backend's own, a 20 MHz crystal times eight.
+const DefaultClock = 160000000

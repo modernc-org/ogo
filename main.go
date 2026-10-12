@@ -312,7 +312,7 @@ the clock instead.
 
 	-seed n       seed the generator (0 uses the current time)
 `,
-	"test": `usage: ogo test [-c] [-p port] [-run pattern] [--clock hz] [--gostack longs] [--allow-backend-warnings] [package]
+	"test": `usage: ogo test [-c] [-p port] [-run pattern] [-bench pattern] [-benchtime t] [-benchmem] [--clock hz] [--gostack longs] [--allow-backend-warnings] [package]
 
 Test builds the package together with its _test.ogo files and a generated runner,
 loads the result on a connected Propeller 2, and reports what the tests printed.
@@ -325,15 +325,26 @@ compiled anyway, so a tree that does not build cannot report itself green.
 
 A test is a function named Test<Something> taking a *testing.T, in a file whose
 name ends _test.ogo. The testing package is imported by name and needs nothing on
-disk. There is no Errorf -- formatting needs allocation this target does not have
--- so a test prints with the builtin println and calls t.Fail():
+disk. Its Log, Logf, Error, Errorf, Fatal, Fatalf, Skip and Skipf print as go test
+prints them, a format being a constant string, as the builtin printf's is, and the
+output reads as go test -v's does:
 
 	import "testing"
 
 	func TestPop(t *testing.T) {
 		if got, ok := pop(); !ok || got != 3 {
-			println("pop:", got, ok, "want 3 true")
-			t.Fail()
+			t.Errorf("pop: got %d, %v; want 3, true", got, ok)
+		}
+	}
+
+A benchmark is a function named Benchmark<Something> taking a *testing.B. Those
+-bench selects run after the tests, as go test runs them -- b.N grown until a run
+takes -benchtime -- and print what go test -v -bench prints, the time an operation
+takes measured by the system clock, at the rate the "cpu:" label names:
+
+	func BenchmarkSum(b *testing.B) {
+		for i := 0; i < b.N; i++ {
+			sink += sum(data[:])
 		}
 	}
 
@@ -350,6 +361,13 @@ run is worse than a test that did not run.
 	            the runner is generated, so what is not selected is not compiled
 	            either -- which is what makes iterating on one failing test worth
 	            the board's ten seconds. A pattern matching nothing says so.
+	-bench pat  run the benchmarks whose name matches the regular expression pat
+	            too, after the tests: -bench . runs them all, and -run '^$' beside
+	            it runs no test. No benchmark runs without it.
+	-benchtime t
+	            run each benchmark until a run takes t, a duration such as 1s (the
+	            default) or 250ms, or exactly n times, written nx: 100x.
+	-benchmem   report each benchmark's allocations, which are none.
 	--clock hz  the system clock to run the tests at, as for ogo build. A test
 	            binary should take the clock the program it tests ships with:
 	            running them at a different speed is how a timing bug hides.
@@ -360,7 +378,7 @@ run is worse than a test that did not run.
 	            build tests the C backend warned about, as for ogo build; the C
 	            of one it refuses is kept as <pkg>.test.c beside the package
 
-Exit status is 0 when every test passed and 1 when any failed.
+Exit status is 0 when every test and benchmark passed and 1 when any failed.
 `,
 	"version": `usage: ogo version
 

@@ -15,6 +15,18 @@
    another on the board: _getms is a real clock in both, so "wait 2ms, then check the
    clock moved" was true on hardware and false here. Waiting for real is what makes
    the shim answer the same question the board does. */
+#ifdef OGO_FAKE_CLOCK
+/* OGO_FAKE_CLOCK makes time a simulation: the clock stands still but where a program
+   waits, and a wait advances it by exactly what was asked, at the 200 MHz _cnt
+   counts. A benchmark of p2.WaitCycles(200) then takes 1000 ns an operation every
+   run, which is what lets a test of the testing package's benchmarks expect their
+   output (TestBenchmarkFakeClock). A program of one cog only: the clock is
+   shared and unlocked. */
+static uint64_t ogo_fake_nanos;
+static inline void _waitms(int ms) { if (ms > 0) { ogo_fake_nanos += (uint64_t)ms * 1000000; } }
+static inline void _waitus(uint32_t us) { ogo_fake_nanos += (uint64_t)us * 1000; }
+static inline void _waitx(int cycles) { if (cycles > 0) { ogo_fake_nanos += (uint64_t)cycles * 5; } }
+#else
 static inline void _waitms(int ms) {
 	if (ms <= 0) { return; }
 	struct timespec t = {ms / 1000, (long)(ms % 1000) * 1000000};
@@ -26,6 +38,7 @@ static inline void _waitus(uint32_t us) {
 	nanosleep(&t, 0);
 }
 static inline void _waitx(int cycles) { (void)cycles; struct timespec t = {0, 1000}; nanosleep(&t, 0); }
+#endif
 
 /* Pin and misc intrinsics. Off-target there is no hardware, so the pin ops are
    no-ops and the read / counter / random ones return host stand-ins; only _rev is
@@ -46,13 +59,26 @@ static inline void _wypin(int pin, uint32_t val) { (void)pin; (void)val; }
    none, so "wait, then check the clock moved" was true on the board and false here.
    A monotonic wall clock answers the same question the hardware does. */
 static inline uint64_t _ogo_host_nanos(void) {
+#ifdef OGO_FAKE_CLOCK
+	return ogo_fake_nanos;
+#else
 	struct timespec t;
 	clock_gettime(CLOCK_MONOTONIC, &t);
 	return (uint64_t)t.tv_sec * 1000000000 + (uint64_t)t.tv_nsec;
+#endif
 }
 /* _cnt is the P2's 200 MHz system counter; the same rate here keeps a cycle count
    meaning roughly what it means there. */
 static inline uint32_t _cnt(void) { return (uint32_t)(_ogo_host_nanos() / 5); }
+/* _cnthl is all 64 bits of it, which the testing package's benchmarks time by. */
+typedef struct _counter64 {
+	uint32_t low, high;
+} counter64_t;
+static inline counter64_t _cnthl(void) {
+	uint64_t c = _ogo_host_nanos() / 5;
+	counter64_t r = {(uint32_t)c, (uint32_t)(c >> 32)};
+	return r;
+}
 /* _clockfreq is the rate _cnt counts at, which is what a program asks it for. */
 static inline uint32_t _clockfreq(void) { return 200000000; }
 static inline uint32_t _getms(void) { return (uint32_t)(_ogo_host_nanos() / 1000000); }
@@ -63,10 +89,16 @@ static inline uint32_t _getus(void) { return (uint32_t)(_ogo_host_nanos() / 1000
    than waiting the whole way round. Spun rather than slept, the remaining time being
    a cycle count this shim measures in the same units _cnt reports. */
 static inline void _waitcnt(uint32_t t) {
+#ifdef OGO_FAKE_CLOCK
+	if ((int32_t)(t - _cnt()) > 0) {
+		ogo_fake_nanos += (uint64_t)(uint32_t)(t - _cnt()) * 5;
+	}
+#else
 	while ((int32_t)(t - _cnt()) > 0) {
 		struct timespec s = {0, 1000};
 		nanosleep(&s, 0);
 	}
+#endif
 }
 static inline uint32_t _rnd(void) { return (uint32_t)rand(); }
 static inline uint32_t _rev(uint32_t v) {
