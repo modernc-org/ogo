@@ -29,9 +29,15 @@ shipped section tells a reader on that version that they have behaviour they do 
   clock the `cpu:` label names, and ns/op is computed from it exactly. `ResetTimer`,
   `StopTimer`, `StartTimer`, `SetBytes`, `ReportAllocs` (no allocation is ever
   reported), `ReportMetric` and the methods a `B` shares with a `T` are Go's;
-  `-benchmem` reports the allocations of every benchmark. Not provided yet:
-  sub-benchmarks (`b.Run`), `b.Loop` and `RunParallel`. A file declaring a benchmark
-  did not build before, there being no `testing.B`.
+  `-benchmem` reports the allocations of every benchmark. So are `b.Loop`, the loop
+  of Go 1.24's benchmarks, which times only its own body and grows its count within
+  one call of the benchmark, its fast path inlined (88 clocks a pass, an empty loop
+  to `b.N` 48), and sub-benchmarks, `b.Run`, named, run and printed as go test's
+  are, the parent run once and printing no line of its own. Each was held to go
+  test's own output, byte for byte, for the same programs run with one CPU. Not
+  provided yet: `RunParallel`, `b.Elapsed` (there is no `time` package) and
+  selecting a sub-benchmark with `-bench`. A file declaring a benchmark did not
+  build before, there being no `testing.B`.
 - **The `errors` package**: `New`, `Is`, `As`, `Unwrap` and `ErrUnsupported`, each
   meaning what Go's does, checked by running the same program under Go and on the
   board. `New` makes its error where the call stands, there being no heap: a
@@ -74,6 +80,13 @@ shipped section tells a reader on that version that they have behaviour they do 
   it, written in a literal, a conversion or a make, and printed by `%T` as Go
   prints the literal. It was refused, "cannot alias a type literal yet". One that
   reaches itself, `type T = []T`, is Go's "invalid recursive type".
+
+### Toolchain
+
+- **`ogo test -timeout d`**, as go test's: how long the board is given to finish, 0
+  for no limit. The default stays what it was, two minutes and for each benchmark
+  three times `-benchtime` and a minute; a benchmark's sub-benchmarks share its
+  minute, there being no counting them before they run.
 
 ### Fixed
 

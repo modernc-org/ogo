@@ -6,6 +6,7 @@ package build
 
 import (
 	"bytes"
+	"math"
 	"os"
 	"path/filepath"
 	"strings"
@@ -445,6 +446,38 @@ func TestParseBenchTime(t *testing.T) {
 		if (err == nil) != c.valid || d != c.d || n != c.n {
 			t.Errorf("%q: %v %v %v", c.in, d, n, err)
 		}
+	}
+}
+
+// TestCaptureTimeout pins how long the board is given: two minutes and, for each
+// benchmark, three times its time and a minute -- ten minutes for a count of runs --
+// unless -timeout says, 0 there being no limit; and -timeout is go test's duration.
+func TestCaptureTimeout(t *testing.T) {
+	for _, c := range []struct {
+		benches int
+		opts    testOptions
+		want    time.Duration
+	}{
+		{0, testOptions{benchTime: time.Second}, 2 * time.Minute},
+		{2, testOptions{benchTime: time.Second}, 2*time.Minute + 2*(3*time.Second+time.Minute)},
+		{3, testOptions{benchCount: 5}, 32 * time.Minute},
+		{3, testOptions{benchTime: time.Second, timeout: 90 * time.Second, timeoutSet: true}, 90 * time.Second},
+		{3, testOptions{benchTime: time.Second, timeoutSet: true}, math.MaxInt64},
+	} {
+		if got := captureTimeout(c.benches, c.opts); got != c.want {
+			t.Errorf("%d %+v: %v, want %v", c.benches, c.opts, got, c.want)
+		}
+	}
+	dir := t.TempDir()
+	for _, arg := range []string{"-timeout=-1s", "-timeout=soon"} {
+		var out bytes.Buffer
+		if code, err := Test([]string{"-c", arg, dir}, nil, &out, &out); code != 2 || err == nil || !strings.Contains(err.Error(), "invalid -timeout") {
+			t.Errorf("%s: %d %v", arg, code, err)
+		}
+	}
+	var out bytes.Buffer
+	if code, err := Test([]string{"-c", "-timeout"}, nil, &out, &out); code != 2 || err == nil || !strings.Contains(err.Error(), "-timeout requires an argument") {
+		t.Errorf("-timeout alone: %d %v", code, err)
 	}
 }
 

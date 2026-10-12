@@ -531,11 +531,27 @@ const testingSrc = `// Package testing provides the state a test reports its out
 //		}
 //	}
 //
+// Loop is Go's too, the loop a benchmark of Go 1.24 on is written with, which
+// times only what it runs and grows its own count, calling the benchmark once:
+//
+//	func BenchmarkPop(b *testing.B) {
+//		fill()
+//		for b.Loop() {
+//			push(3)
+//			pop()
+//		}
+//	}
+//
+// Run runs a sub-benchmark, named as a subtest is and run and printed as go test
+// runs and prints one; a benchmark that calls Run is run once, with b.N 1, and
+// prints no line of its own. A benchmark runs 256 sub-benchmarks at most, eight
+// deep, as a test runs subtests.
+//
 // ResetTimer, StopTimer, StartTimer, SetBytes, ReportAllocs -- nothing allocates,
 // so it reports none -- and ReportMetric are Go's, and so are the methods it shares
 // with T, Log to Skipf, FailNow, SkipNow, Name and Helper. A benchmark reports 16
-// metrics at most, a metric's unit is a constant or lives as long, and Run, Loop
-// and RunParallel are not provided.
+// metrics at most, a metric's unit is a constant or lives as long, and RunParallel
+// and Elapsed are not provided.
 
 const nameMax = 128
 
@@ -891,21 +907,31 @@ func run(t *T, f func(*T))
 // B is a benchmark's state: N, how many times the benchmark is to do what it
 // measures, the timer, and its outcome, which it reports as a test reports one.
 type B struct {
-	N       int
-	failed  bool
-	skipped bool
-	name    string
-	timerOn bool
-	start   uint64 // the clock where the timer last started
-	clocks  uint64 // the clocks timed in this run of the benchmark
-	bytes   int64
-	allocs  bool
-	nextra  int
-	units   [maxMetrics]string
-	values  [maxMetrics]float64
+	N        int
+	loopI    int // the count Loop has run, loopPoison set while the timer is stopped
+	loopN    int // the count Loop runs to, 0 before its first call
+	failed   bool
+	skipped  bool
+	hasSub   bool // it called Run, and is not measured itself
+	name     string
+	slot     int // its line in subs, -1 for a benchmark the runner runs
+	timerOn  bool
+	start    uint64 // the clock where the timer last started
+	clocks   uint64 // the clocks timed in this run of the benchmark
+	bytes    int64
+	allocs   bool
+	nextra   int
+	units    [maxMetrics]string
+	values   [maxMetrics]float64
+	loopDone bool // Loop has returned false
+	buf      [nameMax]byte
 }
 
 const maxMetrics = 16
+
+// loopPoison is set in loopI while the timer is stopped, so that Loop leaves its
+// fast path, where it finds the timer stopped and fails: a count is 1e9 at most.
+const loopPoison = 1 << 30
 
 var (
 	benchWidth int
@@ -978,6 +1004,7 @@ func (b *B) StartTimer() {
 	if !b.timerOn {
 		b.start = clock()
 		b.timerOn = true
+		b.loopI &^= loopPoison
 	}
 }
 
@@ -986,6 +1013,7 @@ func (b *B) StopTimer() {
 	if b.timerOn {
 		b.clocks += clock() - b.start
 		b.timerOn = false
+		b.loopI |= loopPoison
 	}
 }
 
@@ -1040,6 +1068,112 @@ func (b *B) metric(unit string) int {
 	return -1
 }
 
+// Loop reports whether the benchmark is to run its loop's body once more. Its
+// first call resets the timer and the one that returns false stops it, setting b.N
+// to the count it ran; until then it grows the count as go test grows b.N, until
+// the time its loop took reaches -benchtime, or runs the count -benchtime gave.
+//
+// Its fast path is what a benchmark's loop costs each time round, and is inlined:
+// the fields it reads follow N, which a loop to b.N reads, at the head of the
+// struct, and its first statement reads one, which is what checks b, once.
+func (b *B) Loop() bool {
+	i := b.loopI
+	if i < b.loopN {
+		b.loopI = i + 1
+		return true
+	}
+	return b.loopNext()
+}
+
+// loopNext is Loop where its count has run out, where it begins, and where the
+// timer was stopped, which is a failure: go test's loopSlowPath.
+func (b *B) loopNext() bool {
+	if !b.timerOn {
+		b.Fatalf("B.Loop called with timer stopped")
+	}
+	if b.loopN == 0 {
+		b.loopN = 1
+		if benchCount != 0 {
+			b.loopN = benchCount
+		}
+		b.N = 0
+		b.ResetTimer()
+		b.loopI++
+		return true
+	}
+	if benchCount == 0 && b.loopMore() {
+		b.loopI++
+		return true
+	}
+	b.StopTimer()
+	b.N = b.loopN
+	b.loopDone = true
+	return false
+}
+
+// loopMore reports whether Loop is to run on, the count grown, where the time its
+// loop took has not reached -benchtime: go test's stopOrScaleBLoop.
+func (b *B) loopMore() bool {
+	c := b.clocks + clock() - b.start
+	ns := int64(nanos(c))
+	if ns >= benchTime {
+		return false
+	}
+	prev := b.loopN
+	b.loopN = int(predictN(benchTime, int64(prev), ns, int64(prev)))
+	return prev < b.loopN
+}
+
+// Run runs f as a sub-benchmark of b called name, as go test runs a benchmark, and
+// reports whether it did not fail. A sub-benchmark that fails fails b, and b, having
+// one, is not measured: run once with b.N 1, it prints no line of its own.
+func (b *B) Run(name string, f func(b *B)) bool {
+	b.hasSub = true
+	var s B
+	if !b.begin(&s, name) {
+		return false
+	}
+	s.bench(f)
+	if s.failed {
+		b.failed = true
+	}
+	return !s.failed
+}
+
+// begin sets s up as b's sub-benchmark called name, named as a subtest is, and
+// prints its name, or reports that no more fit.
+func (b *B) begin(s *B, name string) bool {
+	if nsubs == maxSubs {
+		printf("    testing: more than %d sub-benchmarks in %s\n", maxSubs, top)
+		b.failed = true
+		return false
+	}
+	s.slot = nsubs
+	dup := 0
+	for i := 0; i < nsubs; i++ {
+		if subs[i].parent == b.slot && sameName(subs[i].name, name) {
+			dup++
+		}
+	}
+	subs[nsubs] = sub{parent: b.slot, name: name, dup: dup}
+	nsubs++
+	w := NewBuilder(s.buf[:])
+	w.WriteString(b.name)
+	w.WriteByte('/')
+	rewrite(&w, name)
+	if dup != 0 || name == "" {
+		w.WriteByte('#')
+		if dup < 10 {
+			w.WriteByte('0')
+		}
+		writeInt(&w, dup)
+	}
+	s.name = w.String()
+	printName(s.slot)
+	println()
+	return true
+}
+
 // StartBenchmarks prints what go test prints ahead of the first benchmark, the
 // labels, and sets how the benchmarks after it run: each until it has run for d
 // nanoseconds, or n times where n is not 0, its result's name padded to width, its
@@ -1050,16 +1184,39 @@ func StartBenchmarks(labels string, width int, d int64, n int, mem bool) {
 	benchWidth, benchTime, benchCount, benchMem = width, d, n, mem
 }
 
-// RunBenchmark runs f as the benchmark name, with b its state, as go test does:
-// once with b.N 1, and then with b.N grown until a run takes the time StartBenchmarks
-// set, or once more with the count it set, and prints what go test -v prints of it.
-// It is what the runner "ogo test" generates calls; a benchmark does not call it.
+// RunBenchmark runs f as the benchmark name, with b its state, as go test does, and
+// prints what go test -v prints of it (bench). It is what the runner "ogo test"
+// generates calls; a benchmark does not call it.
 func RunBenchmark(b *B, name string, f func(*B)) {
 	b.name = name
+	b.slot = -1
+	top = name
+	nsubs = 0
 	println(name)
+	b.bench(f)
+}
+
+// bench runs f with b its state as go test runs a benchmark: once with b.N 1, and
+// where that run neither failed, stopped nor ran a sub-benchmark, again with b.N
+// grown until a run takes the time StartBenchmarks set, or once more with the count
+// it set -- unless the first run's Loop grew its own -- and prints the result. A run
+// after the first that stops the benchmark with SkipNow prints the result of none,
+// as go test's does.
+func (b *B) bench(f func(*B)) {
+	if n := nameLen(b.slot) + 1; n > benchWidth {
+		benchWidth = n + 8
+	}
 	b.runN(f, 1)
 	switch {
-	case b.failed || b.skipped:
+	case b.failed:
+		b.verdict("--- FAIL: ")
+		return
+	case b.skipped:
+		b.verdict("--- SKIP: ")
+		return
+	case b.hasSub:
+		return
+	case b.loopN != 0:
 	case benchCount > 1:
 		b.runN(f, benchCount)
 	case benchCount == 0:
@@ -1071,22 +1228,30 @@ func RunBenchmark(b *B, name string, f func(*B)) {
 	}
 	switch {
 	case b.failed:
-		print("--- FAIL: ")
-		println(name)
+		b.verdict("--- FAIL: ")
 	case b.skipped:
-		print("--- SKIP: ")
-		println(name)
+		b.none()
 	default:
 		b.result()
 	}
 }
 
+func (b *B) verdict(v string) {
+	print(v)
+	printName(b.slot)
+	println()
+}
+
 func (b *B) runN(f func(*B), n int) {
 	b.N = n
+	b.loopN, b.loopI, b.loopDone = 0, 0, false
 	b.ResetTimer()
 	b.StartTimer()
 	runB(b, f)
 	b.StopTimer()
+	if b.loopN != 0 && !b.loopDone && !b.failed && !b.skipped {
+		b.Errorf("benchmark function returned without B.Loop() == false (break or return in loop?)")
+	}
 }
 
 // predictN is go test's: the next b.N, 1.2 times what the last run says reaches
@@ -1120,10 +1285,7 @@ func nanos(clocks uint64) uint64 {
 // ReportMetric reported in the order of their units, and the allocations where
 // asked for.
 func (b *B) result() {
-	print(b.name)
-	for i := len(b.name); i < benchWidth; i++ {
-		print(" ")
-	}
+	b.printPadded()
 	printf("\t%8d", b.N)
 	ns := nanos(b.clocks)
 	if k := b.metric("ns/op"); k >= 0 {
@@ -1173,6 +1335,47 @@ func (b *B) result() {
 		printf("\t%8d B/op\t%8d allocs/op", bop, aop)
 	}
 	println()
+}
+
+// none prints go test's line for a benchmark stopped by SkipNow after its first run,
+// which reports no result at all: b.N 0 and an ns/op of 0/0.
+func (b *B) none() {
+	b.printPadded()
+	printf("\t       0\t               NaN ns/op")
+	if benchMem || b.allocs {
+		printf("\t       0 B/op\t       0 allocs/op")
+	}
+	println()
+}
+
+// printPadded prints the benchmark's full name, padded to its column.
+func (b *B) printPadded() {
+	printName(b.slot)
+	for i := nameLen(b.slot); i < benchWidth; i++ {
+		print(" ")
+	}
+}
+
+// nameLen is the length of what printName(i) prints.
+func nameLen(i int) int {
+	n := len(top)
+	for d := 0; i >= 0 && d < maxDepth; i, d = subs[i].parent, d+1 {
+		n++
+		for k := 0; k < len(subs[i].name); {
+			lit, hx, next := rewriteUnit(subs[i].name, k)
+			n += len(lit)
+			if hx >= 0 {
+				n += 2
+			}
+			k = next
+		}
+		if dup := subs[i].dup; dup >= 100 {
+			n += 4
+		} else if dup != 0 || len(subs[i].name) == 0 {
+			n += 3
+		}
+	}
+	return n
 }
 
 // prettyPrint is go test's: ten places before the point, and four significant

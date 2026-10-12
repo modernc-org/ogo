@@ -312,7 +312,7 @@ the clock instead.
 
 	-seed n       seed the generator (0 uses the current time)
 `,
-	"test": `usage: ogo test [-c] [-p port] [-run pattern] [-bench pattern] [-benchtime t] [-benchmem] [--clock hz] [--gostack longs] [--allow-backend-warnings] [package]
+	"test": `usage: ogo test [-c] [-p port] [-run pattern] [-bench pattern] [-benchtime t] [-benchmem] [-timeout d] [--clock hz] [--gostack longs] [--allow-backend-warnings] [package]
 
 Test builds the package together with its _test.ogo files and a generated runner,
 loads the result on a connected Propeller 2, and reports what the tests printed.
@@ -348,6 +348,9 @@ takes measured by the system clock, at the rate the "cpu:" label names:
 		}
 	}
 
+A benchmark may loop with b.Loop instead, as Go 1.24's do, and run sub-benchmarks
+with b.Run, each run and printed as go test runs and prints one.
+
 Tests run ON THE BOARD and nowhere else. A host emulation would be faster and
 would sometimes be wrong -- the two C compilers disagree about semantics, not only
 about warnings -- and a test reporting "ok" from somewhere the program will never
@@ -368,6 +371,10 @@ run is worse than a test that did not run.
 	            run each benchmark until a run takes t, a duration such as 1s (the
 	            default) or 250ms, or exactly n times, written nx: 100x.
 	-benchmem   report each benchmark's allocations, which are none.
+	-timeout d  give the board d to finish, a duration such as 10m, 0 for no
+	            limit. The default is two minutes, and for each benchmark three
+	            times -benchtime and a minute more, its sub-benchmarks included;
+	            ten minutes a benchmark where -benchtime is a count.
 	--clock hz  the system clock to run the tests at, as for ogo build. A test
 	            binary should take the clock the program it tests ships with:
 	            running them at a different speed is how a timing bug hides.

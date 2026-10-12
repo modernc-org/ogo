@@ -728,10 +728,26 @@ still design-only.
   **a workaround is a row of every site writing its shape** -- emitConversion and
   the integer verbs routed around a cast to a 64-bit type of a 64-bit expression,
   and %q and %U, written later, did not (emitWideArg;
-  doc/cast-of-64bit-expression.c, the fault cut out of shift64-by-variable.c's). Not yet: -run selecting
-  subtests (refused), Cleanup, sub-benchmarks, b.Loop, RunParallel, a deferred or
-  started t.Log (refused with the literal that does it), the deferred calls FailNow
-  skips, and Helper's attribution of a line to the caller.
+  doc/cast-of-64bit-expression.c, the fault cut out of shift64-by-variable.c's).
+  b.Loop and b.Run came the same day, each go test's algorithm transcribed --
+  loopSlowPath's ramp inside one call, its poison bit in loopI while the timer is
+  stopped, run1's "a benchmark with subs prints no line", the width's slack of 8,
+  the subtest table reused for the names -- and held byte for byte to go test -v
+  -cpu 1's output for the same programs (a run case; TestBenchmarkFakeClock for
+  the timed ramps). Transcribing found go test's quirk, kept: a SkipNow in a run
+  after the first prints `0  NaN ns/op`, the Goexit killing launch before it records
+  a result. The testing package calls its own Fatal and Error now, the checker
+  asking a print's arguments there too (checkMethodCallOn). Loop alone of the
+  package is marked for inlining (inlineCandidate), its fields after N and its first
+  statement a read, so the receiver is checked once: 88 clocks a pass on the board,
+  144 called with four checks, a loop to b.N 48 -- moving N off offset 0 cost that
+  one 8 (TestBuildBenchLoopInlined). A table-driven benchmark or subtest cannot
+  capture its case in a literal (no closures); it goes through a package variable.
+  `ogo test -timeout` came with them, sub-benchmarks being uncountable ahead.
+  Not yet: -run and -bench selecting subtests and sub-benchmarks (refused), Cleanup,
+  RunParallel, Elapsed, a deferred or started t.Log (refused with the literal that
+  does it), the deferred calls FailNow skips, and Helper's attribution of a line to
+  the caller.
 - **Interfaces are done and devirtualization is not.** A method call through an
   interface is an indirect call through a static vtable, always; the WPO pass that
   would make it direct where the concrete type is provable is design-only. Nothing

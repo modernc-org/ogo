@@ -25803,7 +25803,9 @@ func (e *emitter) inlineCandidate(name, proto string, body []int32) bool {
 	// every test, which shares the cog's registers, and an inlined helper of theirs
 	// brought its locals onto it -- p2-11's tests outgrew the cog by three. A test's
 	// own speed is no reason to spend them.
-	if e.curPkgPrefix == "testing" {
+	// But for Loop, which a benchmark calls each time round what it measures, and
+	// which only a benchmark's program has.
+	if e.curPkgPrefix == "testing" && name != "Loop" {
 		return false
 	}
 	// Its declaration is one of the places the name is written with a "(".
@@ -40201,11 +40203,16 @@ func (e *emitter) emitTestingIntrinsic(ast []int32, name string, sig, recv []int
 		return
 	case recv == nil && (name == "run" || name == "runB"):
 		proto = e.funcSignatureC(e.funcDefCName(name, ast), sig)
-		// A subtest's run nests in its test's: each depth has its own jump target
-		// and its own save of the hardware stack, and exit leaves the innermost.
+		// A subtest's run nests in its test's, and a sub-benchmark's runB in its
+		// benchmark's: each depth has its own jump target and its own save of the
+		// hardware stack, and exit leaves the innermost.
+		call, subs := "t.Run", "subtests"
+		if name == "runB" {
+			call, subs = "b.Run", "sub-benchmarks"
+		}
 		body = "\tint d = ogo_test_depth;\n" +
-			"\tif (d != 0 && _cogid() != ogo_test_cog) {\n\t\togo_panic(\"testing: t.Run on another goroutine is not supported\");\n\t}\n" +
-			"\tif (d == OGO_TEST_DEPTH) {\n\t\togo_panic(\"testing: subtests nested too deep\");\n\t}\n" +
+			"\tif (d != 0 && _cogid() != ogo_test_cog) {\n\t\togo_panic(\"testing: " + call + " on another goroutine is not supported\");\n\t}\n" +
+			"\tif (d == OGO_TEST_DEPTH) {\n\t\togo_panic(\"testing: " + subs + " nested too deep\");\n\t}\n" +
 			"\togo_test_cog = _cogid();\n\togo_test_depth = d + 1;\n" +
 			"\tif (!setjmp(ogo_test_jmp[d])) {\n" + testingHWStackC(true) + "\t\tf(t);\n\t} else {\n" + testingHWStackC(false) + "\t}\n" +
 			"\togo_test_depth = d;\n"

@@ -24,7 +24,9 @@ import (
 // predictN, copied below, and each result line is what Go's own
 // testing.BenchmarkResult prints for the same N, time, bytes and metrics -- so the
 // ns/op the testing package computes in integers, prettyPrint's places and widths,
-// MB/s, the metrics' order and the allocation columns are all held to Go's.
+// MB/s, the metrics' order and the allocation columns are all held to Go's. So is
+// the ramp Loop makes inside one call of a benchmark, go test's loopSlowPath, and a
+// sub-benchmark's, named, laid out and run as go test's are.
 func TestBenchmarkFakeClock(t *testing.T) {
 	type bench struct {
 		name  string
@@ -96,9 +98,120 @@ func TestBenchmarkFakeClock(t *testing.T) {
 		}
 		fmt.Fprintf(&want, "%s\n%-*s\t%s\n", b.name, width, b.name, line)
 	}
+	// Loop, sub-benchmarks and a skip after the first run, under one StartBenchmarks
+	// as the runner calls it: a sub-benchmark's name past the column widens it for
+	// every line after it, by go test's slack of 8.
+	type sub struct {
+		name string
+		per  int64 // the nanoseconds one op takes
+		loop bool  // timed by Loop rather than b.N
+	}
+	const goal = 1_000_000
+	topWidth := len("BenchmarkLoopTimer") + 1
+	width = topWidth
+	line := func(name string, n, d int64) {
+		if len(name)+1 > width {
+			width = len(name) + 9
+		}
+		r := testing.BenchmarkResult{N: int(n), T: time.Duration(d)}
+		fmt.Fprintf(&want, "%-*s\t%s\n", width, name, r.String())
+	}
+	// ramp is go test's runs of a b.N benchmark; loopRamp is Loop's, whose time
+	// is that of every op it has run since its first call.
+	ramp := func(per int64) (n, d int64) {
+		n, d = 1, per
+		for n < 1e9 && d < goal {
+			n = predictN(goal, n, d, n)
+			d = n * per
+		}
+		return n, d
+	}
+	loopRamp := func(per int64) (n, d int64) {
+		n, d = 1, per
+		for d < goal {
+			next := predictN(goal, n, d, n)
+			if next <= n {
+				break
+			}
+			n, d = next, next*per
+		}
+		return n, d
+	}
+	fmt.Fprintf(&src, "\ttesting.StartBenchmarks(\"\", %d, %d, 0, false)\n", topWidth, goal)
+	src.WriteString(`	var l0, l1, l2, l3, l4 testing.B
+	testing.RunBenchmark(&l0, "BenchmarkLoop", func(b *testing.B) {
+		p2.WaitCycles(1000000)
+		for b.Loop() {
+			p2.WaitCycles(7)
+		}
+		p2.WaitCycles(1000000)
+		b.Logf("N=%d", b.N)
+	})
+	testing.RunBenchmark(&l1, "BenchmarkLoopTimer", func(b *testing.B) {
+		for b.Loop() {
+			b.StopTimer()
+			p2.WaitCycles(100)
+			b.StartTimer()
+			p2.WaitCycles(3)
+		}
+	})
+	testing.RunBenchmark(&l2, "BenchmarkParent", func(b *testing.B) {
+		b.Run("fast", func(b *testing.B) {
+			for i := 0; i < b.N; i++ {
+				p2.WaitCycles(1)
+			}
+		})
+		b.Run("a sub-benchmark named long enough to widen", func(b *testing.B) {
+			for i := 0; i < b.N; i++ {
+				p2.WaitCycles(40)
+			}
+		})
+		b.Run("loop", func(b *testing.B) {
+			for b.Loop() {
+				p2.WaitCycles(9)
+			}
+		})
+	})
+	testing.RunBenchmark(&l3, "BenchmarkAfter", func(b *testing.B) {
+		for i := 0; i < b.N; i++ {
+			p2.WaitCycles(20)
+		}
+	})
+	testing.RunBenchmark(&l4, "BenchmarkSkipLater", func(b *testing.B) {
+		if b.N > 1 {
+			b.Skip("late")
+		}
+		for i := 0; i < b.N; i++ {
+			p2.WaitCycles(1)
+		}
+	})
+	println(l2.Failed(), l4.Skipped())
+`)
+	n, d := loopRamp(35)
+	fmt.Fprintf(&want, "BenchmarkLoop\n    main.ogo:LINE: N=%d\n", n)
+	line("BenchmarkLoop", n, d)
+	n, d = loopRamp(15)
+	want.WriteString("BenchmarkLoopTimer\n")
+	line("BenchmarkLoopTimer", n, d)
+	want.WriteString("BenchmarkParent\n")
+	for _, s := range []sub{{"fast", 5, false}, {"a_sub-benchmark_named_long_enough_to_widen", 200, false}, {"loop", 45, true}} {
+		full := "BenchmarkParent/" + s.name
+		want.WriteString(full + "\n")
+		if s.loop {
+			n, d = loopRamp(s.per)
+		} else {
+			n, d = ramp(s.per)
+		}
+		line(full, n, d)
+	}
+	n, d = ramp(100)
+	want.WriteString("BenchmarkAfter\n")
+	line("BenchmarkAfter", n, d)
+	fmt.Fprintf(&want, "BenchmarkSkipLater\n    main.ogo:LINE: late\n%-*s\t       0\t               NaN ns/op\nfalse true\n", width, "BenchmarkSkipLater")
+
 	// A count of runs, and what a benchmark logs, fails or skips.
 	src.WriteString(`	testing.StartBenchmarks("", 16, 0, 5, true)
-	var c0, c1, c2, c3, c4 testing.B
+	var c0, c1, c2, c3, c4, c5, c6, c7, c8 testing.B
 	testing.RunBenchmark(&c0, "BenchmarkCount", func(b *testing.B) {
 		b.Logf("N=%d", b.N)
 		for i := 0; i < b.N; i++ {
@@ -119,7 +232,29 @@ func TestBenchmarkFakeClock(t *testing.T) {
 	testing.RunBenchmark(&c4, "BenchmarkOnce", func(b *testing.B) {
 		b.Log(b.Name(), b.Failed(), b.Skipped())
 	})
-	println(c0.Failed(), c1.Failed(), c2.Skipped(), c3.Failed(), c4.Failed())
+	testing.RunBenchmark(&c5, "BenchmarkLoopN", func(b *testing.B) {
+		for b.Loop() {
+			p2.WaitCycles(2)
+		}
+		b.Logf("N=%d", b.N)
+	})
+	testing.RunBenchmark(&c6, "BenchmarkSubN", func(b *testing.B) {
+		b.Logf("N=%d", b.N)
+		b.Run("x", func(b *testing.B) {
+			b.Logf("N=%d %s", b.N, b.Name())
+		})
+	})
+	testing.RunBenchmark(&c7, "BenchmarkStops", func(b *testing.B) {
+		b.StopTimer()
+		for b.Loop() {
+		}
+	})
+	testing.RunBenchmark(&c8, "BenchmarkBreaks", func(b *testing.B) {
+		for b.Loop() {
+			break
+		}
+	})
+	println(c0.Failed(), c1.Failed(), c2.Skipped(), c3.Failed(), c4.Failed(), c5.Failed(), c6.Failed(), c7.Failed(), c8.Failed())
 }
 `)
 	want.WriteString("BenchmarkCount\n    main.ogo:LINE: N=1\n    main.ogo:LINE: N=5\nBenchmarkCount  \t       5\t        10.00 ns/op\t       0 B/op\t       0 allocs/op\n")
@@ -127,17 +262,21 @@ func TestBenchmarkFakeClock(t *testing.T) {
 	want.WriteString("BenchmarkSkips\n    main.ogo:LINE: later\n--- SKIP: BenchmarkSkips\n")
 	want.WriteString("BenchmarkFatal\n    main.ogo:LINE: N=5\n--- FAIL: BenchmarkFatal\n")
 	want.WriteString("BenchmarkOnce\n    main.ogo:LINE: BenchmarkOnce false false\n    main.ogo:LINE: BenchmarkOnce false false\nBenchmarkOnce   \t       5\t       0 B/op\t       0 allocs/op\n")
-	want.WriteString("false true true true false\n")
+	want.WriteString("BenchmarkLoopN\n    main.ogo:LINE: N=5\nBenchmarkLoopN  \t       5\t        10.00 ns/op\t       0 B/op\t       0 allocs/op\n")
+	want.WriteString("BenchmarkSubN\n    main.ogo:LINE: N=1\nBenchmarkSubN/x\n    main.ogo:LINE: N=1 BenchmarkSubN/x\n    main.ogo:LINE: N=5 BenchmarkSubN/x\nBenchmarkSubN/x \t       5\t       0 B/op\t       0 allocs/op\n")
+	want.WriteString("BenchmarkStops\n    testing.ogo:LINE: B.Loop called with timer stopped\n--- FAIL: BenchmarkStops\n")
+	want.WriteString("BenchmarkBreaks\n    testing.ogo:LINE: benchmark function returned without B.Loop() == false (break or return in loop?)\n--- FAIL: BenchmarkBreaks\n")
+	want.WriteString("false true true true false false false true true\n")
 
 	got := runFakeClock(t, src.String())
-	got = fakeLineRE.ReplaceAllString(got, "main.ogo:LINE:")
+	got = fakeLineRE.ReplaceAllString(got, "$1.ogo:LINE:")
 	if got != want.String() {
 		t.Errorf("got\n%s\nwant\n%s", got, want.String())
 	}
 }
 
 // fakeLineRE is the line of a message, which TestBenchmarkFakeClock does not pin.
-var fakeLineRE = regexp.MustCompile(`main\.ogo:\d+:`)
+var fakeLineRE = regexp.MustCompile(`(main|testing)\.ogo:\d+:`)
 
 // predictN is go test's, from testing/benchmark.go.
 func predictN(goalns int64, prevIters int64, prevns int64, last int64) int64 {

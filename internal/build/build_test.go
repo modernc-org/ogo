@@ -451,6 +451,41 @@ func main() {
 	}
 }
 
+// TestBuildBenchLoopInlined holds b.Loop to what go test's costs a benchmark: its
+// fast path, a compare and an increment, inlined into the loop it drives, where
+// the rest of the testing package is called -- measured on a P2-EDGE at 160 MHz, an
+// empty loop of it 88 clocks a pass inlined, as its receiver is checked once, and
+// 144 called; a loop to b.N 48.
+func TestBuildBenchLoopInlined(t *testing.T) {
+	const src = `import "testing"
+
+var sink int
+
+func bench(b *testing.B) {
+	for b.Loop() {
+		sink++
+	}
+}
+
+func main() {
+	testing.StartBenchmarks("", 10, 1000000, 0, false)
+	var b testing.B
+	testing.RunBenchmark(&b, "BenchmarkSink", bench)
+}
+`
+	loop := regexp.MustCompile(`(?m)^\s*(if_\w+\s+)?call\w*\s+#_testing_B_Loop\s*$`)
+	_, listing := buildProgram(t, src)
+	if n := len(loop.FindAll(listing, -1)); n != 0 {
+		t.Errorf("%d calls of b.Loop are left, want none", n)
+	}
+	if !regexp.MustCompile(`(?m)^\s*(if_\w+\s+)?call\w*\s+#_testing_B_loopNext\s*$`).Match(listing) {
+		t.Errorf("the premise: Loop's slow path is a call")
+	}
+	if _, listing = buildProgram(t, src, "--no-inline"); len(loop.FindAll(listing, -1)) != 1 {
+		t.Errorf("--no-inline: want b.Loop called: the backend inlines by itself what this test is about")
+	}
+}
+
 // TestBuildInlineFallback holds a build to not failing for having been made
 // faster. Every copy of an inlined function brings the registers of its locals to
 // where it lands, the backend gives none back between the arms of a switch, and a

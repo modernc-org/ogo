@@ -100,7 +100,28 @@ func TestBenchmarkRefusals(t *testing.T) {
 	s := NewBuilder(buf[:])
 	s.WriteString("u/op")
 	b.ReportMetric(1, s.String())`, "cannot pass s.String(), which holds a pointer into local buf to ReportMetric"},
-		{`b.Run("x", func(b *testing.B) {})`, "type testing.B has no method Run"},
+		{`b.Run("x", func(b *testing.B) {
+		for b.Loop() {
+		}
+	})`, ""},
+		{`b.Run(ff, func(b *testing.B) {})`, ""},
+		{`var buf [8]byte
+	s := NewBuilder(buf[:])
+	s.WriteString("x")
+	b.Run(s.String(), func(b *testing.B) {})`, "cannot pass s.String(), which holds a pointer into local buf to Run"},
+		{`b.Run("x", nil)`, ""},
+		{`b.Run("x", func(t *testing.T) {})`, "cannot use"},
+		{`b.Run(1, func(b *testing.B) {})`, "cannot use"},
+		{`for b.Loop() {
+		b.Loop()
+	}
+	n := b.Loop()
+	_ = n`, ""},
+		{`b.Loop(1)`, "too many arguments"},
+		{`var s string = b.Loop()
+	_ = s`, "cannot use"},
+		{`b.RunParallel(nil)`, "type testing.B has no method RunParallel"},
+		{`b.Elapsed()`, "type testing.B has no method Elapsed"},
 		{`var s string = b.N
 	_ = s`, "cannot use b.N"},
 		{`b.SetBytes(1.5)`, "1.5"},
@@ -232,9 +253,10 @@ FAIL 1 of 3
 // TestOnBoardOgoTestBench runs `ogo test -bench` on the board over benchmarks whose
 // operation takes a known time, a wait: each result line is go test's, its ns/op
 // the wait's within what the loop around it costs, and its last run as long as
-// -benchtime asked at least. And with a count of runs at another clock, b.N is the
-// count, the label says the clock built, and the time is still the wait's -- the
-// clocks are converted at the rate the program runs at.
+// -benchtime asked at least -- a b.N loop's, Loop's with its setup and cleanup
+// untimed, and a sub-benchmark's either way. And with a count of runs at another
+// clock, b.N is the count, the label says the clock built, and the time is still
+// the wait's -- the clocks are converted at the rate the program runs at.
 func TestOnBoardOgoTestBench(t *testing.T) {
 	port := os.Getenv("OGO_BOARD_PORT")
 	if port == "" {
@@ -265,14 +287,35 @@ func BenchmarkWait10us(b *testing.B) {
 		p2.WaitUs(10)
 	}
 }
+
+func BenchmarkLoop1ms(b *testing.B) {
+	p2.WaitMs(100)
+	for b.Loop() {
+		p2.WaitMs(1)
+	}
+	p2.WaitMs(100)
+}
+
+func BenchmarkSub(b *testing.B) {
+	b.Run("10us", func(b *testing.B) {
+		for i := 0; i < b.N; i++ {
+			p2.WaitUs(10)
+		}
+	})
+	b.Run("loop", func(b *testing.B) {
+		for b.Loop() {
+			p2.WaitUs(10)
+		}
+	})
+}
 `,
 	} {
 		if err := os.WriteFile(filepath.Join(dir, name), []byte(src), 0o644); err != nil {
 			t.Fatal(err)
 		}
 	}
-	line := regexp.MustCompile(`(?m)^(Benchmark\w+)( *)\t( *\d+)\t( *[\d.]+) ns/op$`)
-	check := func(args []string, mhz, count int) {
+	line := regexp.MustCompile(`(?m)^(Benchmark[\w/]+)( *)\t( *\d+)\t( *[\d.]+) ns/op$`)
+	check := func(args []string, mhz, count int, wants ...float64) {
 		for attempt := 1; ; attempt++ {
 			cmd := exec.Command(ogo, append([]string{"test", "-p", port, "-run", "^$"}, args...)...)
 			cmd.Dir = dir
@@ -293,13 +336,13 @@ func BenchmarkWait10us(b *testing.B) {
 				continue
 			}
 			ms := line.FindAllStringSubmatch(got, -1)
-			if len(ms) != 2 {
+			if len(ms) != len(wants) {
 				bad("%d result lines", len(ms))
 				continue
 			}
 			ok := true
 			for i, m := range ms {
-				name, want := m[1], []float64{1e6, 1e4}[i]
+				name, want := m[1], wants[i]
 				n, _ := strconv.Atoi(strings.TrimSpace(m[3]))
 				ns, _ := strconv.ParseFloat(strings.TrimSpace(m[4]), 64)
 				// go test pads the name to one more than the longest, b.N to 8
@@ -323,6 +366,8 @@ func BenchmarkWait10us(b *testing.B) {
 			return
 		}
 	}
-	check([]string{"-bench", "."}, 160, 0)
-	check([]string{"-bench", "Wait", "-benchtime", "7x", "--clock", "200MHz"}, 200, 7)
+	// Loop's setup and cleanup, 100 ms each, are not timed, and a sub-benchmark is
+	// timed as any benchmark is, whichever way it loops.
+	check([]string{"-bench", "."}, 160, 0, 1e6, 1e4, 1e6, 1e4, 1e4)
+	check([]string{"-bench", "Wait|Sub", "-benchtime", "7x", "--clock", "200MHz"}, 200, 7, 1e6, 1e4, 1e4, 1e4)
 }

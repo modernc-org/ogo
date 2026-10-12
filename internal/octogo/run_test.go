@@ -2021,6 +2021,119 @@ func main() {
 			"falsefalse falsefalse truefalse falsetrue truefalse truefalse 5 10\n",
 	},
 	{
+		// Sub-benchmarks and Loop, each as go test -v -bench . -benchtime 5x runs and
+		// prints them with one CPU (held to it byte for byte): a sub-benchmark named as
+		// a subtest is, a duplicate and an empty name numbered, a name past the column
+		// widening it by go test's slack of 8 for every line after; a benchmark that
+		// runs one printing no line of its own, failed by a sub that fails; Loop
+		// running the count in one call of its benchmark, b.N the count after it; and
+		// a SkipNow after the first run printing go test's line of no result.
+		name: "sub-benchmarks and Loop run a count of times",
+		src: `import "testing"
+
+var sink int
+
+func count(b *testing.B) {
+	for i := 0; i < b.N; i++ {
+		sink += i
+	}
+	b.ReportMetric(0, "ns/op")
+}
+
+func subs(b *testing.B) {
+	b.Logf("N=%d", b.N)
+	b.Run("small", count)
+	b.Run("small", count)
+	b.Run("", count)
+	b.Run("tab\there", func(b *testing.B) {
+		b.Run("y", count)
+		b.Logf("%s", b.Name())
+	})
+	b.Run("a name long enough to widen the column", count)
+}
+
+func fails(b *testing.B) {
+	ok := b.Run("bad", func(b *testing.B) {
+		if b.N > 1 {
+			b.Error("bad at", b.N)
+		}
+		b.ReportMetric(0, "ns/op")
+	})
+	println(ok, b.Failed())
+	b.Run("good", count)
+}
+
+func loop(b *testing.B) {
+	sink = 0
+	for b.Loop() {
+		sink++
+	}
+	b.ReportMetric(0, "ns/op")
+	b.ReportMetric(float64(b.N), "n/op")
+	b.ReportMetric(float64(sink), "sink/op")
+}
+
+func late(b *testing.B) {
+	if b.N > 1 {
+		b.Skip("late")
+	}
+	b.ReportMetric(0, "ns/op")
+}
+
+func skipSub(b *testing.B) {
+	b.Run("s", func(b *testing.B) { b.SkipNow() })
+	b.Run("t", count)
+}
+
+func main() {
+	testing.StartBenchmarks("", 17, 0, 5, false)
+	var b [5]testing.B
+	testing.RunBenchmark(&b[0], "BenchmarkSubs", subs)
+	testing.RunBenchmark(&b[1], "BenchmarkFails", fails)
+	testing.RunBenchmark(&b[2], "BenchmarkLoop", loop)
+	testing.RunBenchmark(&b[3], "BenchmarkLate", late)
+	testing.RunBenchmark(&b[4], "BenchmarkSkipSub", skipSub)
+	for i := range b {
+		print(b[i].Failed(), b[i].Skipped(), " ")
+	}
+	println(b[2].N, sink)
+}
+`,
+		want: "BenchmarkSubs\n" +
+			"    main.ogo:13: N=1\n" +
+			"BenchmarkSubs/small\n" +
+			"BenchmarkSubs/small         \t       5\n" +
+			"BenchmarkSubs/small#01\n" +
+			"BenchmarkSubs/small#01      \t       5\n" +
+			"BenchmarkSubs/#00\n" +
+			"BenchmarkSubs/#00           \t       5\n" +
+			"BenchmarkSubs/tab_here\n" +
+			"BenchmarkSubs/tab_here/y\n" +
+			"BenchmarkSubs/tab_here/y    \t       5\n" +
+			"    main.ogo:19: BenchmarkSubs/tab_here\n" +
+			"BenchmarkSubs/a_name_long_enough_to_widen_the_column\n" +
+			"BenchmarkSubs/a_name_long_enough_to_widen_the_column         \t       5\n" +
+			"BenchmarkFails\n" +
+			"BenchmarkFails/bad\n" +
+			"    main.ogo:27: bad at 5\n" +
+			"--- FAIL: BenchmarkFails/bad\n" +
+			"false true\n" +
+			"BenchmarkFails/good\n" +
+			"BenchmarkFails/good                                          \t       5\n" +
+			"--- FAIL: BenchmarkFails\n" +
+			"BenchmarkLoop\n" +
+			"BenchmarkLoop                                                \t       5\t         5.000 n/op\t         5.000 sink/op\n" +
+			"BenchmarkLate\n" +
+			"    main.ogo:47: late\n" +
+			"BenchmarkLate                                                \t       0\t               NaN ns/op\n" +
+			"BenchmarkSkipSub\n" +
+			"BenchmarkSkipSub/s\n" +
+			"--- SKIP: BenchmarkSkipSub/s\n" +
+			"BenchmarkSkipSub/t\n" +
+			"BenchmarkSkipSub/t                                           \t       5\n" +
+			"falsefalse truefalse falsefalse falsetrue falsefalse 5 15\n",
+	},
+	{
 		// Subtests at their limits: 256 in a test, the next refused with a line of its
 		// own and the test failed; a count past 99 written whole, "#100", as Go
 		// writes it; and a name past Name's 128 bytes printed whole and cut by Name.
@@ -2108,6 +2221,59 @@ func main() {
 }
 `,
 		want: "panic: testing: subtests nested too deep",
+	},
+	{
+		// b.Run on another goroutine, as t.Run is: a panic saying so.
+		name:   "b.Run on another goroutine",
+		panics: true,
+		src: `import (
+	"p2"
+	"testing"
+)
+
+func leaf(b *testing.B) {}
+
+var done = make(chan bool)
+
+func bench(b *testing.B) {
+	go func(b *testing.B) {
+		b.Run("x", leaf)
+		done <- true
+	}(b)
+	<-done
+}
+
+func main() {
+	testing.StartBenchmarks("", 10, 0, 1, false)
+	var b testing.B
+	testing.RunBenchmark(&b, "BenchmarkA", bench)
+	p2.WaitMs(10)
+}
+`,
+		want: "panic: testing: b.Run on another goroutine is not supported",
+	},
+	{
+		// Sub-benchmarks nested past eight levels, as subtests are: a panic saying so.
+		name:   "sub-benchmarks nested too deep",
+		panics: true,
+		src: `import "testing"
+
+var depth int
+
+func nest(b *testing.B) {
+	depth++
+	if depth < 12 {
+		b.Run("n", nest)
+	}
+}
+
+func main() {
+	testing.StartBenchmarks("", 10, 0, 1, false)
+	var b testing.B
+	testing.RunBenchmark(&b, "BenchmarkA", nest)
+}
+`,
+		want: "panic: testing: sub-benchmarks nested too deep",
 	},
 	{
 		// A printf of ONE argument evaluates it before it writes anything, as one of

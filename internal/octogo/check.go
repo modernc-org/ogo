@@ -16916,6 +16916,12 @@ func (f *File) checkMethodCallOn(s *Scope, d *VarDeclaration, base string, membe
 			args = append(args, a)
 		}
 	}
+	// The testing package's own call of its Fatal or Error, a print's arguments as
+	// another package's is (checkArgsDeclaredIn).
+	if f.Package != nil && f.Package.ImportPath == "testing" && testingFormatMethods[member.Src()] != "" {
+		f.checkTestingFormatArgs(s, member.Src(), member, args)
+		return
+	}
 	f.checkArgs(s, member, fd.Type.Signature, args)
 }
 

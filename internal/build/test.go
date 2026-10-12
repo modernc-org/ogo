@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"io"
 	"io/fs"
+	"math"
 	"os"
 	"path"
 	"path/filepath"
@@ -49,7 +50,7 @@ const testDoneLine = "ogo-test-done"
 // can honestly do.
 func Test(args []string, stdin io.Reader, stdout, stderr io.Writer) (int, error) {
 	var compileOnly, allowWarnings, benchMem bool
-	var port, runPat, benchPat string
+	var port, runPat, benchPat, timeout string
 	benchTime := "1s"
 	var rest []string
 	// A test binary takes the same clock as the program it tests. Running the tests
@@ -92,6 +93,12 @@ func Test(args []string, stdin io.Reader, stdout, stderr io.Writer) (int, error)
 			benchTime = v
 		case a == "-benchmem":
 			benchMem = true
+		case a == "-timeout" || strings.HasPrefix(a, "-timeout="):
+			v, err := flagValue("-timeout", a, args, &i)
+			if err != nil {
+				return 2, err
+			}
+			timeout = v
 		case a == "--clock" || a == "-clock":
 			if clock, err = parseHz("test", a, args, &i); err != nil {
 				return 2, err
@@ -136,6 +143,13 @@ func Test(args []string, stdin io.Reader, stdout, stderr io.Writer) (int, error)
 	}
 	if opts.benchTime, opts.benchCount, err = parseBenchTime(benchTime); err != nil {
 		return 2, err
+	}
+	if timeout != "" {
+		d, err := time.ParseDuration(timeout)
+		if err != nil || d < 0 {
+			return 2, fmt.Errorf("test: invalid -timeout %q: want a duration, or 0 for no limit", timeout)
+		}
+		opts.timeout, opts.timeoutSet = d, true
 	}
 	if benchPat != "" {
 		if opts.bench, err = regexp.Compile(benchPat); err != nil {
@@ -218,6 +232,10 @@ type testOptions struct {
 	benchTime  time.Duration
 	benchCount int
 	benchMem   bool
+	// timeout, where timeoutSet, is how long the board is given in place of what
+	// captureTimeout computes (-timeout), 0 for no limit.
+	timeout    time.Duration
+	timeoutSet bool
 }
 
 // flagValue is the value of the flag name at args[*i], written `-name=value` or
@@ -474,10 +492,18 @@ func selected(names []string, re *regexp.Regexp) []string {
 // captureTimeout is how long the board is given to say it is done: two minutes for
 // the tests, and for each benchmark what go test's growing runs take at most to
 // reach its time -- the last run up to 1.2 times longer than asked and the runs
-// before it as long together -- three times over, and a minute more. A count of
-// runs has no time to be read from, and is given ten minutes a benchmark, the
-// time go test gives a whole package.
+// before it as long together -- three times over, and a minute more, which is what
+// its sub-benchmarks, if any, have between them, there being no counting them
+// before they run. A count of runs has no time to be read from, and is given ten
+// minutes a benchmark, the time go test gives a whole package. -timeout replaces
+// it all, and 0 there is no limit.
 func captureTimeout(benches int, opts testOptions) time.Duration {
+	if opts.timeoutSet {
+		if opts.timeout == 0 {
+			return math.MaxInt64
+		}
+		return opts.timeout
+	}
 	per := 3*opts.benchTime + time.Minute
 	if opts.benchCount != 0 {
 		per = 10 * time.Minute
