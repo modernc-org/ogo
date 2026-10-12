@@ -65,6 +65,12 @@ shipped section tells a reader on that version that they have behaviour they do 
 
 ### Fixed
 
+- **`%q` and `%U` of a 64-bit expression printed garbage on the board**:
+  `printf("%q %U", x-y+64, x-y+64)` of two uint64s printed `'�'
+  U+F546C60800000042` where Go prints `'B' U+0042`, the host right. The value was
+  cast to a 64-bit type on its way to the printer, and the target's C compiler
+  writes a garbage high word for such a cast of a 64-bit expression; it is handed
+  over uncast, as the integer verbs already hand one over.
 - **A program whose main cog reaches a recursion was not asked whether its stack
   fits**: the need has no bound there, and a frame past Hub RAM on the way to it,
   a 512 KB array result beside a recursive function, built and printed nothing on

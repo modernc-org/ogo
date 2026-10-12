@@ -48956,6 +48956,26 @@ func main() {
 		want: "[  U+0078] [U+0078  |] [  U+0078] [U+000078] [U+000078] [U+0078] [U+0078] [U+0078]\n[  U+00E9] [U+00E9  |] [  U+00E9] [U+0000E9] [U+0000E9] [U+00E9] [U+00E9] [U+00E9]\n[ U+1F600] [U+1F600 |] [ U+1F600] [U+01F600] [U+01F600] [U+1F600] [U+1F600] [U+1F600]\n[  U+007F] [U+007F  |] [  U+007F] [U+00007F] [U+00007F] [U+007F] [U+007F] [U+007F]\n[  U+0000] [U+0000  |] [  U+0000] [U+000000] [U+000000] [U+0000] [U+0000] [U+0000]\n[U+FFFFFFFFFFFFFFFF] [U+FFFFFFFFFFFFFFFF|] [U+FFFFFFFFFFFFFFFF] [U+FFFFFFFFFFFFFFFF] [U+FFFFFFFFFFFFFFFF] [U+FFFFFFFFFFFFFFFF] [U+FFFFFFFFFFFFFFFF] [U+FFFFFFFFFFFFFFFF]\n[U+110000] [U+110000|] [U+110000] [U+110000] [U+110000] [U+110000] [U+110000] [U+110000]\n[  U+000A] [U+000A  |] [  U+000A] [U+00000A] [U+00000A] [U+000A] [U+000A] [U+000A]\n[U+FFFFFFFFFFFFFFFF] [U+00C8   |] [U+FFFFFFFFFFFFFFFF]\n[ab] [\xc3\xa9] [true] [       x] [y   |] [0x5]\n",
 	},
 	{
+		// %q, %c and %U of a 64-bit EXPRESSION. The value was cast to long long for
+		// the helper, or to unsigned long long for %U, and the target's compiler
+		// writes a garbage high word for a cast to a 64-bit type of a 64-bit
+		// expression: '�' for 'B' and U+F546C60800000042 for U+0042 on the
+		// board, the host right. A 64-bit value is handed over bare (emitWideArg).
+		name: "%q, %c and %U of a 64-bit expression",
+		src: `type U uint64
+
+var x, y uint64 = 1<<40 + 5, 1<<40 + 3
+
+var i, j int64 = 1<<40 + 5, 1<<40 + 3
+
+func main() {
+	printf("%q %U %c %q %U %c\n", x-y+64, x-y+64, x-y+64, i-j+64, i-j+64, i-j+64)
+	printf("%5q|%-5q|%8U|%U|%q|%U\n", x-y+64, i-j+64, x-y+64, i-j+0x263a, int64(x-y)+65, U(x-y+64))
+}
+`,
+		want: "'B' U+0042 B 'B' U+0042 B\n  'B'|'B'  |  U+0042|U+263C|'C'|U+0042\n",
+	},
+	{
 		// A command dispatcher: a string constant in every call, a hundred of them in
 		// two functions. A constant string was the compound literal (ogo_string){"s",
 		// n} wherever it stood, which the target's compiler builds at every call

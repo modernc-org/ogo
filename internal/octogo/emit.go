@@ -42098,9 +42098,9 @@ func (e *emitter) emitScalarVerb(item printfItem, ct string, value func(), wrong
 			case isIntCType(ct):
 				e.useQuoteFmt()
 				e.ind()
-				e.emit("ogo_print_qrune_fmt((long long)(")
-				value()
-				e.emit(")" + quoteSpec(item, false) + ");\n")
+				e.emit("ogo_print_qrune_fmt(")
+				e.emitWideArg(ct, "long long", value)
+				e.emit(quoteSpec(item, false) + ");\n")
 			default:
 				return wrong("a string, a byte slice or an integer, or a slice of either")
 			}
@@ -42113,9 +42113,9 @@ func (e *emitter) emitScalarVerb(item printfItem, ct string, value func(), wrong
 			e.usesRuneQuote = true
 			e.usesRunePrint = true
 			e.ind()
-			e.emit("ogo_print_qrune((long long)(")
-			value()
-			e.emit("));\n")
+			e.emit("ogo_print_qrune(")
+			e.emitWideArg(ct, "long long", value)
+			e.emit(");\n")
 		default:
 			return wrong("a string, a byte slice or an integer, or a slice of either")
 		}
@@ -42132,23 +42132,15 @@ func (e *emitter) emitScalarVerb(item printfItem, ct string, value func(), wrong
 			}
 			e.usesUnicodePrint = true
 			e.ind()
-			// A 64-bit value is handed over as it is, the parameter's type
-			// converting it, as emitIntVerb hands one over.
-			if cIntWidths[e.underlyingCType(ct)] == 64 {
-				e.emit("ogo_print_unicode(")
-				value()
-			} else {
-				e.emit("ogo_print_unicode((long long)(")
-				value()
-				e.emit(")")
-			}
+			e.emit("ogo_print_unicode(")
+			e.emitWideArg(ct, "long long", value)
 			e.emit(fmt.Sprintf(", %d, %d, %d);\n", w, p, boolToInt(item.leftAlign())))
 			return true
 		}
 		e.ind()
-		e.emit("printf(\"U+%04llX\", (unsigned long long)(")
-		value()
-		e.emit("));\n")
+		e.emit("printf(\"U+%04llX\", ")
+		e.emitWideArg(ct, "unsigned long long", value)
+		e.emit(");\n")
 		return true
 	case 's':
 		// A byte slice printed as the text it holds, `%s` of a []byte in Go.
@@ -42372,21 +42364,27 @@ func (e *emitter) emitIntVerb(item printfItem, ct string, value func()) bool {
 	}
 	e.usesIntPrint = true
 	e.ind()
-	// A 64-bit value is handed over as it is, the parameter's type converting it: a
-	// cast to a 64-bit type of a 64-bit EXPRESSION is one the target's compiler gets
-	// wrong (see emitConversion), and `(long long)((-123456789012LL))` arrived with a
-	// garbage high word. A narrower value is widened, which it gets right.
-	if cIntWidths[e.underlyingCType(ct)] == 64 {
-		e.emit("ogo_print_int(")
-		value()
-		e.emit(", ")
-	} else {
-		e.emit("ogo_print_int((long long)(")
-		value()
-		e.emit("), ")
-	}
-	e.emit(fmt.Sprintf("%d, %d, %d, %d, %d, %d);\n", boolToInt(signed), base, boolToInt(verb == 'X'), w, p, fl))
+	e.emit("ogo_print_int(")
+	e.emitWideArg(ct, "long long", value)
+	e.emit(fmt.Sprintf(", %d, %d, %d, %d, %d, %d);\n", boolToInt(signed), base, boolToInt(verb == 'X'), w, p, fl))
 	return true
+}
+
+// emitWideArg writes an integer value of C type ct as an argument of a 64-bit
+// parameter, or of a 64-bit variadic one, of C type to. A 64-bit value is handed
+// over as it is, the parameter's type converting it: a cast to a 64-bit type of a
+// 64-bit EXPRESSION is one the target's compiler gets wrong (see emitConversion) --
+// `(long long)((-123456789012LL))` arrived with a garbage high word, and so did
+// `%q` and `%U` of `x - y + 64` for uint64 operands, 'B' and U+0042 in Go. A
+// narrower value is widened by the cast, which it gets right.
+func (e *emitter) emitWideArg(ct, to string, value func()) {
+	if cIntWidths[e.underlyingCType(ct)] == 64 {
+		value()
+		return
+	}
+	e.emit("(" + to + ")(")
+	value()
+	e.emit(")")
 }
 
 // boolToInt renders a flag as the 0 or 1 a C helper takes.
