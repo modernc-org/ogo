@@ -741,7 +741,14 @@ still design-only.
   package is marked for inlining (inlineCandidate), its fields after N and its first
   statement a read, so the receiver is checked once: 88 clocks a pass on the board,
   144 called with four checks, a loop to b.N 48 -- moving N off offset 0 cost that
-  one 8 (TestBuildBenchLoopInlined). A table-driven benchmark or subtest cannot
+  one 8 (TestBuildBenchLoopInlined). The whole testing package's C is in every
+  test program and the backend drops the functions nothing reaches, but not a
+  constant string's file-scope header (stringLitName): the first version grew each
+  of p2-11's test binaries by 240 bytes for strings only benchmarks print. A string
+  only a benchmark's code prints is a printf FORMAT, a C literal inside the
+  function, and goes with it -- p2-11's tests are the size they were. **What a
+  library adds for one kind of program is measured in a program of the other kind,
+  by its binary.** A table-driven benchmark or subtest cannot
   capture its case in a literal (no closures); it goes through a package variable.
   `ogo test -timeout` came with them, sub-benchmarks being uncountable ahead.
   Not yet: -run and -bench selecting subtests and sub-benchmarks (refused), Cleanup,
