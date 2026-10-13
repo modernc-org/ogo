@@ -250,6 +250,120 @@ FAIL 1 of 3
 	}
 }
 
+// TestOnBoardOgoTestFilter runs `ogo test` on the board with a -run pattern naming
+// subtests and a -bench pattern naming sub-benchmarks, the levels below a test's own
+// matched by the testing package's regular expression machine on the board: what
+// runs and what it prints is what go test -v prints for the same package as Go,
+// but for the times go test adds to a result line and its labels. A benchmark
+// -bench matches only in part runs only its sub-benchmarks, printing its name and
+// no result.
+func TestOnBoardOgoTestFilter(t *testing.T) {
+	port := os.Getenv("OGO_BOARD_PORT")
+	if port == "" {
+		t.Skip("set OGO_BOARD_PORT (e.g. /dev/ttyUSB0) to run the on-board tests")
+	}
+	ogo := buildOgoCLI(t)
+	dir := filepath.Join(t.TempDir(), "filters")
+	if err := os.Mkdir(dir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	for name, src := range map[string]string{
+		"sel.ogo": "func Nop() {}\n",
+		"sel_test.ogo": `import "testing"
+
+func leaf(t *testing.T) { t.Log("in", t.Name()) }
+
+func TestA(t *testing.T) {
+	t.Run("a", leaf)
+	t.Run("b", leaf)
+	t.Run("b", leaf)
+	t.Run("a b", leaf)
+	t.Run("a/b", func(t *testing.T) {
+		t.Run("deep", leaf)
+	})
+}
+
+func TestB(t *testing.T) {
+	t.Run("x", func(t *testing.T) {
+		t.Run("y", leaf)
+		t.Run("z", leaf)
+	})
+	t.Run("y", leaf)
+}
+
+func bleaf(b *testing.B) {
+	for i := 0; i < b.N; i++ {
+	}
+}
+
+func BenchmarkS(b *testing.B) {
+	b.Run("x", bleaf)
+	b.Run("y", bleaf)
+	b.Run("y", bleaf)
+}
+
+func BenchmarkP(b *testing.B) {
+	for i := 0; i < b.N; i++ {
+	}
+}
+`,
+	} {
+		if err := os.WriteFile(filepath.Join(dir, name), []byte(src), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	// go test -v -run 'TestA/^b$|TestB/x/|/deep', its times dropped.
+	const wantTests = `=== RUN   TestA
+=== RUN   TestA/b
+    sel_test.ogo:3: in TestA/b
+--- PASS: TestA
+    --- PASS: TestA/b
+=== RUN   TestB
+=== RUN   TestB/x
+=== RUN   TestB/x/y
+    sel_test.ogo:3: in TestB/x/y
+=== RUN   TestB/x/z
+    sel_test.ogo:3: in TestB/x/z
+--- PASS: TestB
+    --- PASS: TestB/x
+        --- PASS: TestB/x/y
+        --- PASS: TestB/x/z
+ok  	.
+`
+	// go test -v -cpu 1 -run '^$' -bench 'BenchmarkS/y|BenchmarkP/z' -benchtime 1x.
+	wantBench := regexp.MustCompile(`^pkg: filters
+cpu: Propeller 2 at 160 MHz
+BenchmarkS
+BenchmarkS/y
+BenchmarkS/y         \t       1\t +[\d.]+ ns/op
+BenchmarkS/y#01
+BenchmarkS/y#01      \t       1\t +[\d.]+ ns/op
+BenchmarkP
+ok  \t\.
+$`)
+	for _, c := range []struct {
+		args []string
+		ok   func(string) bool
+	}{
+		{[]string{"-run", "TestA/^b$|TestB/x/|/deep"}, func(s string) bool { return s == wantTests }},
+		{[]string{"-run", "^$", "-bench", "BenchmarkS/y|BenchmarkP/z", "-benchtime", "1x"}, wantBench.MatchString},
+	} {
+		for attempt := 1; ; attempt++ {
+			cmd := exec.Command(ogo, append([]string{"test", "-p", port}, c.args...)...)
+			cmd.Dir = dir
+			out, err := cmd.CombinedOutput()
+			got := strings.ReplaceAll(string(out), "\r", "")
+			if err == nil && c.ok(got) {
+				break
+			}
+			if attempt == boardAttempts {
+				t.Fatalf("ogo test %q: %v\ngot:\n%s", c.args, err, got)
+			}
+			t.Logf("retry %d/%d (transient serial flake)", attempt, boardAttempts-1)
+		}
+	}
+}
+
 // TestOnBoardOgoTestBench runs `ogo test -bench` on the board over benchmarks whose
 // operation takes a known time, a wait: each result line is go test's, its ns/op
 // the wait's within what the loop around it costs, and its last run as long as

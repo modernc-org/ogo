@@ -753,10 +753,31 @@ still design-only.
   by its binary.** A table-driven benchmark or subtest cannot
   capture its case in a literal (no closures); it goes through a package variable.
   `ogo test -timeout` came with them, sub-benchmarks being uncountable ahead.
-  Not yet: -run and -bench selecting subtests and sub-benchmarks (refused), Cleanup,
-  RunParallel, Elapsed, a deferred or started t.Log (refused with the literal that
-  does it), the deferred calls FailNow skips, and Helper's attribution of a line to
-  the caller.
+  -run and -bench SELECT SUBTESTS since 2026-10-13, as go test's match.go does: the
+  pattern split at each slash and bar outside brackets and parentheses
+  (splitTestPattern, octogo/testfilter.go), its levels rewritten, the test's own
+  level matched where the runner is generated (TestFilter.Top, which also says a
+  benchmark matches only in part, testing.OnlySubs), and the levels below on the
+  board by a Pike machine in the testing package over a table regexp/syntax
+  compiled (CompileTestFilter: a literal folding case spelled out as its orbit, so
+  the board needs no Unicode tables). A subtest not selected takes its slot, counted
+  toward a name used again (verdict notRun, skipped by finish). The runner HANDS
+  the machine in, `testing.SetFilter(prog, state, alive, testing.MatchSub)`, its
+  tables its own package arrays: flexcc keeps every function whose address is taken
+  anywhere, even in a function nothing calls, and every global such a function
+  touches, so a machine called from begin would be in every program running
+  subtests, and one assigned inside the testing package in every test program.
+  Measured: a test running no subtest grew 40 bytes (the four variables, finish's
+  skip), one running subtests 252 (the checked indirect call in begin), cog
+  registers unchanged (TestBuildTestingFrugal reads the listing for the machine).
+  **What only some runs use is handed in by the code those runs generate.** Held to
+  go test by TestFilterMatchesGoTest -- 61 patterns, each through go test's own
+  binary and through the runner on the host shim -- whose first list passed a
+  planted fault in the in-part answer until a LEAF sub-benchmark matched in part
+  was on it (**an oracle comparison is asked to fail before it is believed**), and
+  on the board by TestOnBoardOgoTestFilter. Not yet: Cleanup, RunParallel, Elapsed,
+  a deferred or started t.Log (refused with the literal that does it), the deferred
+  calls FailNow skips, and Helper's attribution of a line to the caller.
 - **Interfaces are done and devirtualization is not.** A method call through an
   interface is an indirect call through a static vtable, always; the WPO pass that
   would make it direct where the concrete type is provable is design-only. Nothing

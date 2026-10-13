@@ -445,9 +445,29 @@ func main() {
 	if got := heavy.FindAll(listing, -1); len(got) != 0 {
 		t.Errorf("a test running no subtest carries %q", got)
 	}
-	_, listing = buildProgram(t, strings.Replace(src, `t.Error("x")`, `t.Run("sub", func(t *testing.T) {})`, 1))
+	subs := strings.Replace(src, `t.Error("x")`, `t.Run("sub", func(t *testing.T) {})`, 1)
+	_, listing = buildProgram(t, subs)
 	if got := heavy.FindAll(listing, -1); len(got) == 0 {
 		t.Errorf("the premise: a test running a subtest carries none of the helpers this test is about")
+	}
+
+	// The machine matching subtests' names is handed in by the runner of a -run
+	// naming them (testing.SetFilter): a test running subtests under no such
+	// pattern carries none of it, nor its tables, which the backend would keep.
+	machine := regexp.MustCompile(`(?m)^_testing_(MatchSub|match|closure|matchLevel)(_\d+)?$`)
+	if got := machine.FindAll(listing, -1); len(got) != 0 {
+		t.Errorf("a test running subtests under no pattern carries %q", got)
+	}
+	f, err := octogo.CompileTestFilter("-run", "TestA/sub")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var tables strings.Builder
+	writeFilterProg(&tables, "prog", f.Prog())
+	tables.WriteString("var state [512]int32\n")
+	filtered := strings.Replace(subs, "\tvar a testing.T\n", "\tvar a testing.T\n\ttesting.SetFilter(prog[:], state[:], 1, testing.MatchSub)\n", 1) + "\n" + tables.String()
+	if _, listing = buildProgram(t, filtered); len(machine.FindAll(listing, -1)) < 4 {
+		t.Errorf("the premise: a runner handing the machine in carries it")
 	}
 }
 

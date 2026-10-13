@@ -12,6 +12,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"modernc.org/ogo/internal/octogo"
 )
 
 const (
@@ -279,21 +281,75 @@ func TestOgoTestRunBadPattern(t *testing.T) {
 	}
 }
 
-// TestOgoTestRunSubtestPattern: a -run pattern with a slash selects subtests in go
-// test, by names that exist only as the test runs on the board, which nothing here
-// can match yet -- refused rather than read as a pattern for the tests themselves,
-// which would match none and say nothing.
+// TestOgoTestRunSubtestPattern: a -run pattern with a slash selects subtests, as in
+// go test -- the test by the level before the slash, here, and its subtests by the
+// rest, on the board -- and builds; a level that is no regular expression, or one
+// past what the board's machine runs, is refused naming the level.
 func TestOgoTestRunSubtestPattern(t *testing.T) {
 	dir := t.TempDir()
 	write(t, filepath.Join(dir, "ring.ogo"), testPkgSrc)
+	write(t, filepath.Join(dir, "ring_test.ogo"), testPkgTestSrc)
 
 	var out bytes.Buffer
 	code, err := Test([]string{"-c", "-run", "TestPushPop/one", dir}, nil, &out, &out)
-	if code != 2 || err == nil {
-		t.Fatalf("a subtest pattern was accepted: code=%d err=%v out=%s", code, err, out.String())
+	if err != nil || code != 0 {
+		t.Fatalf("ogo test -c -run TestPushPop/one: code=%d err=%v\n%s", code, err, out.String())
 	}
-	if want := "selecting subtests is not supported yet"; !strings.Contains(err.Error(), want) {
-		t.Fatalf("error %q, want one containing %q", err, want)
+	if got := out.String(); !strings.Contains(got, "built 1 test,") {
+		t.Fatalf("expected 1 test, got:\n%s", got)
+	}
+	for _, c := range []struct{ pat, want string }{
+		{"TestPushPop/(", `bad -run pattern "TestPushPop/(": element 1 ("("): error parsing regexp: missing closing )`},
+		{"x|TestPushPop/(", `bad -run pattern "x|TestPushPop/(": alternative 1, element 1 ("(")`},
+		{"TestPushPop/a{300}", `element 1 ("a{300}"): compiles to 302 instructions, more than the 256 the board's matcher runs`},
+		{strings.Repeat("a|", 32) + "a", "more than 32 alternatives"},
+	} {
+		out.Reset()
+		code, err := Test([]string{"-c", "-run", c.pat, dir}, nil, &out, &out)
+		if code != 2 || err == nil || !strings.Contains(err.Error(), c.want) {
+			t.Errorf("-run %q: code=%d err=%v, want one containing %q", c.pat, code, err, c.want)
+		}
+	}
+}
+
+// TestRunnerSrcFilters pins the runner a pattern naming subtests or sub-benchmarks
+// makes: its program in a package array, SetFilter ahead of each test and
+// benchmark with the alternatives its name matched, a benchmark matched only in
+// part run for its sub-benchmarks alone, and the tests' filter taken back before
+// benchmarks run under no such pattern. A pattern of one level makes the runner it
+// made before.
+func TestRunnerSrcFilters(t *testing.T) {
+	mk := func(flag, pat string) *octogo.TestFilter {
+		f, err := octogo.CompileTestFilter(flag, pat)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return f
+	}
+	plain := testRunnerSrc([]string{"TestA"}, []string{"BenchmarkA"}, benchRun{}, nil, nil)
+	if got := testRunnerSrc([]string{"TestA"}, []string{"BenchmarkA"}, benchRun{}, mk("-run", "TestA|TestB"), mk("-bench", "A")); got != plain {
+		t.Errorf("patterns of one level changed the runner:\n%s", got)
+	}
+	got := testRunnerSrc([]string{"TestA", "TestB"}, []string{"BenchmarkA"}, benchRun{}, mk("-run", "TestA/x|TestB"), nil)
+	for _, want := range []string{
+		"var ogoRunFilter = [...]int32{\n\t2, ",
+		"var ogoFilterState [512]int32\n",
+		"\ttesting.SetFilter(ogoRunFilter[:], ogoFilterState[:], 1, testing.MatchSub)\n\ttesting.RunTest(&t0, \"TestA\", TestA)\n",
+		"\ttesting.SetFilter(ogoRunFilter[:], ogoFilterState[:], 2, testing.MatchSub)\n\ttesting.RunTest(&t1, \"TestB\", TestB)\n",
+		"\ttesting.SetFilter(nil, nil, 0, nil)\n",
+	} {
+		if !strings.Contains(got, want) {
+			t.Errorf("the runner lacks %q:\n%s", want, got)
+		}
+	}
+	got = testRunnerSrc(nil, []string{"BenchmarkA", "BenchmarkB"}, benchRun{}, nil, mk("-bench", "A$/x|B$"))
+	for _, want := range []string{
+		"\ttesting.SetFilter(ogoBenchFilter[:], ogoFilterState[:], 1, testing.MatchSub)\n\ttesting.OnlySubs(&b0)\n\ttesting.RunBenchmark(&b0, ",
+		"\ttesting.SetFilter(ogoBenchFilter[:], ogoFilterState[:], 2, testing.MatchSub)\n\ttesting.RunBenchmark(&b1, ",
+	} {
+		if !strings.Contains(got, want) {
+			t.Errorf("the runner lacks %q:\n%s", want, got)
+		}
 	}
 }
 
@@ -361,7 +417,7 @@ func TestBroken(t *testing.T) { t.Nope() }
 // failure before the skip, as Go asks (the run case "subtests run by t.Run" holds
 // that) -- and every failure counted.
 func TestRunnerSrc(t *testing.T) {
-	got := testRunnerSrc([]string{"TestA", "TestB"}, nil, benchRun{})
+	got := testRunnerSrc([]string{"TestA", "TestB"}, nil, benchRun{}, nil, nil)
 	if strings.Contains(got, "Benchmark") {
 		t.Errorf("benchmarks in a runner without any:\n%s", got)
 	}
@@ -392,7 +448,7 @@ func TestRunnerSrcBenchmarks(t *testing.T) {
 		labels: benchLabels("pkg/x", 180000000),
 		time:   2 * time.Second,
 		mem:    true,
-	})
+	}, nil, nil)
 	for _, want := range []string{
 		`testing.RunTest(&t0, "TestA", TestA)`,
 		`testing.StartBenchmarks("pkg: pkg/x\ncpu: Propeller 2 at 180 MHz\n", 16, 2000000000, 0, true)`,

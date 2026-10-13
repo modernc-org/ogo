@@ -34,10 +34,12 @@ shipped section tells a reader on that version that they have behaviour they do 
   one call of the benchmark, its fast path inlined (88 clocks a pass, an empty loop
   to `b.N` 48), and sub-benchmarks, `b.Run`, named, run and printed as go test's
   are, the parent run once and printing no line of its own. Each was held to go
-  test's own output, byte for byte, for the same programs run with one CPU. Not
-  provided yet: `RunParallel`, `b.Elapsed` (there is no `time` package) and
-  selecting a sub-benchmark with `-bench`. A file declaring a benchmark did not
-  build before, there being no `testing.B`.
+  test's own output, byte for byte, for the same programs run with one CPU.
+  `-bench` selects sub-benchmarks as `-run` selects subtests, and a benchmark it
+  matches only in part runs once for its sub-benchmarks alone, as go test runs
+  one. Not provided yet: `RunParallel` and `b.Elapsed` (there is no `time`
+  package). A file declaring a benchmark did not build before, there being no
+  `testing.B`.
 - **The `errors` package**: `New`, `Is`, `As`, `Unwrap` and `ErrUnsupported`, each
   meaning what Go's does, checked by running the same program under Go and on the
   board. `New` makes its error where the call stands, there being no heap: a
@@ -71,8 +73,13 @@ shipped section tells a reader on that version that they have behaviour they do 
   results nested under the test's own when it ends. FailNow and SkipNow in a subtest
   leave that subtest, and a subtest that fails fails its parent. A test runs 256
   subtests at most, eight deep; a subtest's name is a constant or lives as long;
-  `t.Run` on another goroutine panics; and `ogo test -run` selects tests, a pattern
-  with a slash refused.
+  `t.Run` on another goroutine panics. `ogo test -run` selects them as go test
+  does, `-run 'TestParse/^empty$'`: the pattern split at each slash and bar outside
+  brackets and parentheses, each level after the test's own matched, unanchored,
+  against that level of a subtest's name. The board matches it, by Go's regular
+  expressions compiled into a table its matcher runs, and the selection was held
+  to go test's own over 61 patterns; a program run with no such pattern carries
+  none of it.
 - **An alias may name a type written out**, `type Buf = []byte`, `type Pair =
   struct{ X, Y int }`, `type Fn = func(int) int`, an array, a pointer or a
   channel, in a package, in a function or from another package: it is that type,

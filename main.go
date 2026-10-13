@@ -363,10 +363,14 @@ run is worse than a test that did not run.
 	            unanchored, as "go test -run" matches. The selection is made where
 	            the runner is generated, so what is not selected is not compiled
 	            either -- which is what makes iterating on one failing test worth
-	            the board's ten seconds. A pattern matching nothing says so.
+	            the board's ten seconds. A pattern matching nothing says so. As in
+	            go test, a slash separates levels, -run 'TestParse/^empty$' running
+	            TestParse's subtest "empty" alone: the levels after the test's own
+	            are matched against its subtests' names on the board.
 	-bench pat  run the benchmarks whose name matches the regular expression pat
 	            too, after the tests: -bench . runs them all, and -run '^$' beside
-	            it runs no test. No benchmark runs without it.
+	            it runs no test. No benchmark runs without it. A slash selects
+	            sub-benchmarks, as -run's selects subtests.
 	-benchtime t
 	            run each benchmark until a run takes t, a duration such as 1s (the
 	            default) or 250ms, or exactly n times, written nx: 100x.

@@ -352,8 +352,8 @@ broken.
   for logging, failing and skipping, subtests as `t.Run` runs and go test -v
   prints them, and `*testing.B` for benchmarks as `ogo test -bench` runs them,
   `b.Loop` and `b.Run` too (no `Cleanup` or `RunParallel` yet; a subtest's name is a constant or lives
-  as long, a test runs 256 at most, eight deep, and `-run` selects tests, not
-  subtests), and `unsafe` has `unsafe.Pointer`, `Add`, `Slice` and
+  as long, and a test runs 256 at most, eight deep), `-run` and `-bench` selecting
+  subtests and sub-benchmarks as go test's do, and `unsafe` has `unsafe.Pointer`, `Add`, `Slice` and
   `Sizeof`, `Alignof` and `Offsetof`, of the P2's layout. That is the whole of it. Your own packages do import and
   build; there is just little else to import yet.
 * **One function's locals live in cog RAM, and there are 480 longs of it** for all

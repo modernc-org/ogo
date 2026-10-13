@@ -512,6 +512,10 @@ const testingSrc = `// Package testing provides the state a test reports its out
 // A subtest's name is kept to the end of the test, so it is a constant, or a string
 // that lives as long. Name's answer is cut at 128 bytes, and a subtest's own part of
 // it at 128 where it is printed. A test runs 256 subtests at most, eight deep.
+// "ogo test -run" selects subtests as go test's does, each level of the pattern
+// after a slash matched against that level of a subtest's name, its own part
+// within its first 128 bytes; a subtest not selected is not run, and counts toward
+// the 256 and toward a name used again beside it, as go test counts it.
 //
 // FailNow and SkipNow stop the test where they are called, however deep, as Go's
 // do, but run no deferred call on the way out -- as a panic runs none here. Called
@@ -545,7 +549,8 @@ const testingSrc = `// Package testing provides the state a test reports its out
 // Run runs a sub-benchmark, named as a subtest is and run and printed as go test
 // runs and prints one; a benchmark that calls Run is run once, with b.N 1, and
 // prints no line of its own. A benchmark runs 256 sub-benchmarks at most, eight
-// deep, as a test runs subtests.
+// deep, as a test runs subtests, and "ogo test -bench" selects them as -run selects
+// subtests: one it matches only in part runs once, for its sub-benchmarks alone.
 //
 // ResetTimer, StopTimer, StartTimer, SetBytes, ReportAllocs -- nothing allocates,
 // so it reports none -- and ReportMetric are Go's, and so are the methods it shares
@@ -649,14 +654,14 @@ func (t *T) Skipf(format string, args ...any)
 func (t *T) Run(name string, f func(t *T)) bool {
 	var s T
 	if !t.begin(&s, name) {
-		return false
+		return s.skipped
 	}
 	run(&s, f)
 	return t.end(&s)
 }
 
 // begin sets s up as t's subtest called name and prints its RUN line, or reports
-// that no more fit.
+// that it does not run: no more fit, or, s marked skipped, -run does not select it.
 func (t *T) begin(s *T, name string) bool {
 	if nsubs == maxSubs {
 		t.named()
@@ -664,8 +669,6 @@ func (t *T) begin(s *T, name string) bool {
 		t.failed = true
 		return false
 	}
-	ids++
-	s.id = ids
 	s.depth = t.depth + 1
 	s.slot = nsubs
 	dup := 0
@@ -676,6 +679,13 @@ func (t *T) begin(s *T, name string) bool {
 	}
 	subs[nsubs] = sub{parent: t.slot, name: name, dup: dup, depth: s.depth}
 	nsubs++
+	if m := matcher; m != nil && m(t.slot, s.slot, name, dup) == 0 {
+		subs[s.slot].verdict = notRun
+		s.skipped = true
+		return false
+	}
+	ids++
+	s.id = ids
 	b := NewBuilder(s.buf[:])
 	b.WriteString(t.name)
 	b.WriteByte('/')
@@ -751,9 +761,11 @@ func finish(t *T) {
 	report(verdict(t), 0)
 	println(t.name)
 	for i := 0; i < nsubs; i++ {
-		report(subs[i].verdict, subs[i].depth)
-		printName(i)
-		println()
+		if v := subs[i].verdict; v != notRun {
+			report(v, subs[i].depth)
+			printName(i)
+			println()
+		}
 	}
 }
 
@@ -899,6 +911,238 @@ func writeInt(b *Builder, n int) {
 	for ; i < len(digits); i++ {
 		b.WriteByte(digits[i])
 	}
+}
+
+// notRun is the verdict of a subtest -run does not select, which takes its slot,
+// counting toward a name used again beside it as go test counts it, and prints no
+// line.
+const notRun = 3
+
+// The subtest filter: -run's pattern, or -bench's, where it names a level below a
+// test's own (SetFilter). matcher is MatchSub where one is set and nil otherwise.
+var (
+	matcher     func(parent, slot int, name string, dup int) int
+	filterProg  []int32
+	filterState []int32
+	filterAlive uint32
+)
+
+// SetFilter has prog choose the subtests, or sub-benchmarks, of the test or
+// benchmark the runner runs next: -run's pattern, or -bench's, compiled by ogo test
+// as go test reads one -- split at each slash and each bar outside brackets and
+// parentheses into alternatives of one regular expression for each level of a
+// name, each compiled to a program of Go's regexp machine. alive is the
+// alternatives the test's own name matched, a bit each; state is the runner's room
+// for what each subtest's levels matched, two words a slot; and m is MatchSub, a
+// value the runner gives, so a program run with no such pattern carries none of
+// it. It is what the runner "ogo test" generates calls; a test does not call it.
+func SetFilter(prog, state []int32, alive uint32, m func(parent, slot int, name string, dup int) int) {
+	filterProg, filterState, filterAlive, matcher = prog, state, alive, m
+}
+
+// OnlySubs has b run only to run its sub-benchmarks, as go test runs a benchmark
+// -bench matches only in part: once, with b.N 1, printing no line of its own. It is
+// what the runner "ogo test" generates calls; a benchmark does not call it.
+func OnlySubs(b *B) { b.hasSub = true }
+
+// MatchSub is what SetFilter's m is: 0 where the subtest, or sub-benchmark, name
+// of the one in slot parent -- -1 for the test -- does not run; 2 where it runs only
+// to run its own, the first alternative it matches naming a level below it; and 1
+// where it runs. What its levels matched is kept in slot, for its own. Its levels
+// are its part of its full name as go test writes it, cut at 128 bytes, split at
+// each slash, as go test splits a full name: a slash in name is a level of its own.
+func MatchSub(parent, slot int, name string, dup int) int {
+	alive, n := filterAlive, int32(1)
+	if parent >= 0 {
+		alive, n = uint32(filterState[2*parent]), filterState[2*parent+1]
+	}
+	w := NewBuilder(rewA[:])
+	rewrite(&w, name)
+	if dup != 0 || name == "" {
+		w.WriteByte('#')
+		if dup < 10 {
+			w.WriteByte('0')
+		}
+		writeInt(&w, dup)
+	}
+	own := w.String()
+	for i := 0; ; {
+		j := i
+		for j < len(own) && own[j] != '/' {
+			j++
+		}
+		alive = matchLevel(alive, int(n), own[i:j])
+		n++
+		if j == len(own) {
+			break
+		}
+		i = j + 1
+	}
+	filterState[2*slot], filterState[2*slot+1] = int32(alive), n
+	if alive == 0 {
+		return 0
+	}
+	a := 0
+	for alive&(uint32(1)<<uint(a)) == 0 {
+		a++
+	}
+	if n < filterProg[filterProg[1+a]] {
+		return 2
+	}
+	return 1
+}
+
+// matchLevel is alive less the alternatives whose level k does not match s.
+func matchLevel(alive uint32, k int, s string) uint32 {
+	for a := 0; a < int(filterProg[0]); a++ {
+		bit := uint32(1) << uint(a)
+		if alive&bit == 0 {
+			continue
+		}
+		at := int(filterProg[1+a])
+		if k < int(filterProg[at]) && !match(int(filterProg[at+1+k]), s) {
+			alive &^= bit
+		}
+	}
+	return alive
+}
+
+// The regular expression machine's operations: Go's regexp/syntax instructions, a
+// capture and a no-op one, and every one matching a rune a list of ranges.
+const (
+	opMatch = iota
+	opAlt
+	opNop
+	opEmpty
+	opRune
+	opFail
+)
+
+// The machine runs 256 instructions at most, its sets of threads a bit each.
+const (
+	maxInsts = 256
+	setWords = maxInsts / 32
+)
+
+// The empty-width conditions, syntax.EmptyOp's.
+const (
+	emptyBeginLine      = 1
+	emptyEndLine        = 2
+	emptyBeginText      = 4
+	emptyEndText        = 8
+	emptyWordBoundary   = 16
+	emptyNoWordBoundary = 32
+)
+
+// match reports whether the program at filterProg[p] matches somewhere in s, as
+// regexp.MatchString does: a Pike machine over the runes of s, a thread started at
+// each of them and at its end.
+func match(p int, s string) bool {
+	var pend, seen [setWords]uint32
+	prev := rune(-1)
+	for _, r := range s {
+		if closure(p, &pend, &seen, emptyContext(prev, r)) {
+			return true
+		}
+		pend = [setWords]uint32{}
+		for i := 0; i < int(filterProg[p]); i++ {
+			if seen[i>>5]&(uint32(1)<<uint(i&31)) == 0 {
+				continue
+			}
+			at := p + 2 + 4*i
+			if filterProg[at] == opRune && inRanges(at, r) {
+				out := int(filterProg[at+1])
+				pend[out>>5] |= uint32(1) << uint(out&31)
+			}
+		}
+		prev = r
+	}
+	return closure(p, &pend, &seen, emptyContext(prev, -1))
+}
+
+// closure collects in seen what the threads in pend and one starting reach without
+// reading a rune, at a position where ctx holds, and reports whether one matches.
+func closure(p int, pend, seen *[setWords]uint32, ctx int32) bool {
+	var stack [2*maxInsts + 1]int16
+	*seen = [setWords]uint32{}
+	stack[0] = int16(filterProg[p+1])
+	top := 1
+	for i := 0; i < int(filterProg[p]); i++ {
+		if pend[i>>5]&(uint32(1)<<uint(i&31)) != 0 {
+			stack[top] = int16(i)
+			top++
+		}
+	}
+	for top > 0 {
+		top--
+		i := int(stack[top])
+		bit := uint32(1) << uint(i&31)
+		if seen[i>>5]&bit != 0 {
+			continue
+		}
+		seen[i>>5] |= bit
+		at := p + 2 + 4*i
+		switch filterProg[at] {
+		case opMatch:
+			return true
+		case opAlt:
+			stack[top] = int16(filterProg[at+1])
+			stack[top+1] = int16(filterProg[at+2])
+			top += 2
+		case opNop:
+			stack[top] = int16(filterProg[at+1])
+			top++
+		case opEmpty:
+			if filterProg[at+2]&^ctx == 0 {
+				stack[top] = int16(filterProg[at+1])
+				top++
+			}
+		}
+	}
+	return false
+}
+
+// inRanges reports whether r is in a range of the rune instruction at filterProg[at].
+func inRanges(at int, r rune) bool {
+	k := int(filterProg[at+2])
+	for end := k + 2*int(filterProg[at+3]); k < end; k += 2 {
+		if int32(r) >= filterProg[k] && int32(r) <= filterProg[k+1] {
+			return true
+		}
+	}
+	return false
+}
+
+// emptyContext is syntax.EmptyOpContext: the empty-width conditions holding
+// between r1 and r2, -1 for the text's start or end.
+func emptyContext(r1, r2 rune) int32 {
+	op := int32(emptyNoWordBoundary)
+	boundary := false
+	switch {
+	case isWordChar(r1):
+		boundary = true
+	case r1 == '\n':
+		op |= emptyBeginLine
+	case r1 < 0:
+		op |= emptyBeginText | emptyBeginLine
+	}
+	switch {
+	case isWordChar(r2):
+		boundary = !boundary
+	case r2 == '\n':
+		op |= emptyEndLine
+	case r2 < 0:
+		op |= emptyEndText | emptyEndLine
+	}
+	if boundary {
+		op ^= emptyWordBoundary | emptyNoWordBoundary
+	}
+	return op
+}
+
+// isWordChar is syntax.IsWordChar: an ASCII letter, digit or underscore.
+func isWordChar(r rune) bool {
+	return 'a' <= r && r <= 'z' || 'A' <= r && r <= 'Z' || '0' <= r && r <= '9' || r == '_'
 }
 
 // run calls f(t) where exit returns to.
@@ -1131,7 +1375,7 @@ func (b *B) Run(name string, f func(b *B)) bool {
 	b.hasSub = true
 	var s B
 	if !b.begin(&s, name) {
-		return false
+		return s.skipped
 	}
 	s.bench(f)
 	if s.failed {
@@ -1141,7 +1385,9 @@ func (b *B) Run(name string, f func(b *B)) bool {
 }
 
 // begin sets s up as b's sub-benchmark called name, named as a subtest is, and
-// prints its name, or reports that no more fit.
+// prints its name, or reports that it does not run: no more fit, or, s marked
+// skipped, -bench does not select it. One -bench selects only in part runs only to
+// run its own.
 func (b *B) begin(s *B, name string) bool {
 	if nsubs == maxSubs {
 		printf("    testing: more than %d sub-benchmarks in %s\n", maxSubs, top)
@@ -1157,6 +1403,15 @@ func (b *B) begin(s *B, name string) bool {
 	}
 	subs[nsubs] = sub{parent: b.slot, name: name, dup: dup}
 	nsubs++
+	if m := matcher; m != nil {
+		switch m(b.slot, s.slot, name, dup) {
+		case 0:
+			s.skipped = true
+			return false
+		case 2:
+			s.hasSub = true
+		}
+	}
 	w := NewBuilder(s.buf[:])
 	w.WriteString(b.name)
 	w.WriteByte('/')
