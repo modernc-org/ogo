@@ -4065,6 +4065,15 @@ before the fix. Its first draft found the neighbour Go REFUSES: an untyped
 constant shifted by a variable count takes the type it would have alone and must
 fit it, and `x := 408166956050 >> n`, `var y uint8 = 300 >> n` were taken --
 18132866 and 5 on the board (typeShiftOperands asks intKindRange since).
+A constant passing 64 bits on the way, `var a uint64 = 1<<64 - 1`, was the row's
+POSITION cell (2026-10-13, found checking flexprop#122's fix): a local declared
+64-bit took the one literal of its value (emitVarDeclInit), and a package variable
+(emitGlobalInit) and a literal's element (emitLitElement) rendered the untyped
+level, which has no type to fold at -- the shift helper in a static initializer, a
+literal no C type holds, a negated long long in an aggregate, each a build the
+target refused. Both fold at the declared type now (staticWideLit). **A step one
+declaration form takes is asked of the others**: a local, a package variable and
+an element are three writers of one initializer.
 
 **WHAT A CALL HANDS BACK IS ASKED ONCE** (2026-09-28). p2-11 could not return an
 error that came of a call given a local buffer, `if err := fill(buf[:]); err != nil

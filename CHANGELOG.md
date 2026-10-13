@@ -103,6 +103,15 @@ shipped section tells a reader on that version that they have behaviour they do 
 
 ### Fixed
 
+- **A 64-bit constant that passes 64 bits on the way, `var a uint64 = 1<<64 - 1`,
+  did not build in a package variable or in a literal's element.** A local
+  declared 64-bit took the one literal of its value; a package variable and an
+  element were written as the expression, and the target refused it -- a call of
+  the shift helper in a static initializer, `18446744073709551616 - 1`, or a
+  negated long long in an aggregate. Each is the literal of its value now, as Go
+  computes it. None built wrong: on a P2-EDGE, those the target took printed what
+  Go prints.
+
 - **A call returning `(T, bool)`, `(T, error)` or a struct the target does not
   return in registers allocated memory, on a heap OctoGo does not have.** The
   target's C compiler returns a struct of more than 16 bytes, or with a member

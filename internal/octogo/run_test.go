@@ -28780,6 +28780,57 @@ func main() {
 		want: "1099511627776 6000000000 9223372036854775808 1099511627776 9223372036854775808\n-4611686018427387904\n1099511627776 6000000000\n1099511627776\n2199023255552 1099511627776\n-1099511627776 -6000000000 -68719476736 1099511627776\n1073741824 536870912\n-9223372036854775808 -9223372036854775807 -9223372036854775808 true true 9223372036854775808 1 9223372036854775809\n",
 	},
 	{
+		// A 64-bit constant whose value passes 64 bits on the way, `1<<64 - 1`, in a
+		// package variable and in a literal's element. A local declared 64-bit took
+		// the one literal of its value; a package variable and an element rendered
+		// the untyped level, which has no type to fold at -- a call of the shift
+		// helper, which no static initializer takes, `18446744073709551616 - 1`, a
+		// literal no C type holds, and `-(9223372036854775807LL)` in an aggregate,
+		// where the target takes no unary minus on a long long. Each was a build
+		// the target refused.
+		name: "a constant past 64 bits on the way to a 64-bit initializer",
+		src: `type P struct {
+	n uint64
+	m int64
+	k uint32
+}
+
+const big uint64 = 1<<64 - 1
+const half = 1 << 63
+
+var a uint64 = 1<<64 - 1
+var b = uint64(1<<64 - 2)
+var c int64 = 1<<64>>2 - 1
+var d uint64 = 18446744073709551616 - 3
+var e uint64 = 1<<63<<1 - 4
+var f = [2]uint64{1<<64 - 5, 7}
+var g = P{1<<64 - 6, 1<<64>>2 - 2, 1<<33 - 1<<32 - 1}
+var h = []uint64{1<<64 - 7, half<<1 - 8}
+var i = big
+var j uint64 = big - 9
+var k = [2]P{{n: 1<<64 - 10}, {m: -(1<<64>>1 - 1)}}
+var l int64 = -1<<64>>1
+var m uint32 = 1<<64>>32 - 1
+var n int = 1<<64>>40
+
+func main() {
+	println(a, b, c, d, e)
+	println(f[0], f[1], g.n, g.m, g.k, h[0], h[1], i, j)
+	println(k[0].n, k[1].m, l, m, n)
+	var la uint64 = 1<<64 - 1
+	lf := [2]uint64{1<<64 - 5, 7}
+	lg := P{1<<64 - 6, 1<<64>>2 - 2, 1<<33 - 1<<32 - 1}
+	lh := []uint64{1<<64 - 7, half<<1 - 8}
+	lk := [2]P{{n: 1<<64 - 10}, {m: -(1<<64>>1 - 1)}}
+	println(la, lf[0], lg.n, lg.m, lg.k, lh[0], lh[1], lk[0].n, lk[1].m)
+}
+`,
+		want: "18446744073709551615 18446744073709551614 4611686018427387903 18446744073709551613 18446744073709551612\n" +
+			"18446744073709551611 7 18446744073709551610 4611686018427387902 4294967295 18446744073709551609 18446744073709551608 18446744073709551615 18446744073709551606\n" +
+			"18446744073709551606 -9223372036854775807 -9223372036854775808 4294967295 16777216\n" +
+			"18446744073709551615 18446744073709551611 18446744073709551610 4611686018427387902 4294967295 18446744073709551609 18446744073709551608 18446744073709551606 -9223372036854775807\n",
+	},
+	{
 		// A defined type is checked as the type it is defined over -- following a
 		// chain of definitions to reach it -- so its values are bounded, converted
 		// and compared like that type's, while its own name is what a diagnostic

@@ -10932,6 +10932,16 @@ func (e *emitter) emitGlobalInit(ctype string, initExpr []int32) {
 			return
 		}
 	}
+	// A 64-bit variable takes the one literal of its value, as a local does (see
+	// emitVarDeclInit). Rendered, a constant passing 64 bits on the way, `1<<64 - 1`,
+	// was a call of the shift helper, which no static initializer takes, and
+	// `18446744073709551616 - 1` a literal no C type holds.
+	if ut := e.underlyingCType(ctype); cIntWidths[ut] == 64 {
+		if v, ok := e.wideConstValue(initExpr, isUnsignedCType(ut)); ok {
+			e.emit(staticWideLit(v, ut))
+			return
+		}
+	}
 	// A constant of an imported package, `geo.MaxPoints`, folds to its value like a
 	// constant of this one. It has to: C evaluates a file-scope initializer at
 	// compile time, and the other package's `static const` is a symbol, not a
@@ -22634,6 +22644,19 @@ func (e *emitter) emitLitElement(v Node, expect structField, brace bool) {
 		e.emit(lit) // a wide integer standing for a float; see floatConstC
 		return
 	}
+	// A 64-bit element takes the one literal of its value, as a 64-bit variable
+	// does (emitVarDeclInit, emitGlobalInit): its untyped level has no type to fold
+	// at, so `[2]uint64{1<<64 - 5, 7}` was rendered -- a call of the shift helper,
+	// refused in a package variable, and `1<<64>>2 - 2` a 64-bit constant
+	// expression, which the target folds wrongly in a function.
+	if ut := e.underlyingCType(expectType); cIntWidths[ut] == 64 {
+		if _, sole := e.soleToken(v.ast); !sole {
+			if c, ok := e.wideConstValue(v.ast, isUnsignedCType(ut)); ok {
+				e.emit(staticWideLit(c, ut))
+				return
+			}
+		}
+	}
 	e.notLitOwner(v, func() { e.emitExpr(v.ast) })
 }
 
@@ -26768,6 +26791,17 @@ func (e *emitter) constSpelling(v int64, ctype string) string {
 		return "(-2147483647 - 1)"
 	case v < math.MinInt32:
 		return signed64Lit(v)
+	}
+	return intCLit(v)
+}
+
+// staticWideLit spells the value v of the 64-bit C type ut for an initializer of
+// static or aggregate storage: as a declaration spells it (intCLit), with no unary
+// minus on a long long -- the target refuses `-1LL` there and takes `-1` -- and a
+// uint64 past the int64s as its unsigned decimal, not as a negative.
+func staticWideLit(v int64, ut string) string {
+	if ut == "uint64_t" && v < 0 {
+		return strconv.FormatUint(uint64(v), 10) + "ULL"
 	}
 	return intCLit(v)
 }
