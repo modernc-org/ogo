@@ -74,7 +74,7 @@ func TestBenchmarkFakeClock(t *testing.T) {
 	for _, b := range benches {
 		fmt.Fprintf(&src, "func %s(b *testing.B) {\n%s}\n\n", b.name, b.body)
 	}
-	src.WriteString("func main() {\n")
+	src.WriteString("func main() {\n\ttesting.SetSubtests(nil, testing.FullName)\n")
 	want.WriteString("pkg: fake\ncpu: simulated\n")
 	for i, b := range benches {
 		labels := ""

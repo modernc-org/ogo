@@ -68,17 +68,23 @@ shipped section tells a reader on that version that they have behaviour they do 
   result printed as an argument, deferred too; printf is not, its format being the
   call's first result.
 - **Subtests, `t.Run`**, named, printed and reported as go test -v does: the
-  parent's name, a slash and the name given with its spaces as underscores, `#01`
-  after a name used again; `=== NAME` where output turns back to another test; the
-  results nested under the test's own when it ends. FailNow and SkipNow in a subtest
-  leave that subtest, and a subtest that fails fails its parent. A test runs 256
+  parent's name, a slash and the name given with its spaces as underscores and
+  every rune that does not print escaped as Go quotes it, a byte of no UTF-8 as
+  U+FFFD, and `#01` after a name used again -- counted as Go 1.27's go test counts,
+  so a name written as one a count made, `b#01` after two `b`, is told apart again,
+  and so is one a slash in a name makes the same as another level's; `=== NAME`
+  where output turns back to another test; the results nested under the test's own
+  when it ends. Which runes print is Go's table, which `ogo test` hands to a
+  program that runs a subtest; one that runs none carries no part of the naming.
+  FailNow and SkipNow in a subtest leave that subtest, and a subtest that fails
+  fails its parent. A test runs 256
   subtests at most, eight deep; a subtest's name is a constant or lives as long;
   `t.Run` on another goroutine panics. `ogo test -run` selects them as go test
   does, `-run 'TestParse/^empty$'`: the pattern split at each slash and bar outside
   brackets and parentheses, each level after the test's own matched, unanchored,
   against that level of a subtest's name. The board matches it, by Go's regular
   expressions compiled into a table its matcher runs, and the selection was held
-  to go test's own over 61 patterns; a program run with no such pattern carries
+  to go test's own over 73 patterns; a program run with no such pattern carries
   none of it.
 - **An alias may name a type written out**, `type Buf = []byte`, `type Pair =
   struct{ X, Y int }`, `type Fn = func(int) int`, an array, a pointer or a

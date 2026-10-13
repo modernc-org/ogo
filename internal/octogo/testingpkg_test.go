@@ -15,6 +15,7 @@ import (
 	"strings"
 	"testing"
 	"testing/fstest"
+	"unicode"
 )
 
 // TestTestingRefusals: what the testing package's formatting methods refuse, each
@@ -484,4 +485,151 @@ func BenchmarkSub(b *testing.B) {
 	// timed as any benchmark is, whichever way it loops.
 	check([]string{"-bench", "."}, 160, 0, 1e6, 1e4, 1e6, 1e4, 1e4)
 	check([]string{"-bench", "Wait|Sub", "-benchtime", "7x", "--clock", "200MHz"}, 200, 7, 1e6, 1e4, 1e4, 1e4)
+}
+
+// TestOnBoardOgoTestNames runs, by ogo test on the board and by go test, a package
+// whose subtests are named by the runes on both sides of every change from
+// printing to not, as strconv.IsPrint has them, by bytes of no UTF-8, by names
+// longer than the board compares at a time, and by names go test's unique tells
+// apart by its counts, and holds the RUN and result lines of the two alike: the
+// table the runner hands in, read by the target's code, and the counts kept there.
+func TestOnBoardOgoTestNames(t *testing.T) {
+	port := os.Getenv("OGO_BOARD_PORT")
+	if port == "" {
+		t.Skip("set OGO_BOARD_PORT (e.g. /dev/ttyUSB0) to run the on-board tests")
+	}
+	goTool, err := exec.LookPath("go")
+	if err != nil {
+		t.Skip("no go tool")
+	}
+	src := subtestNamesSrc()
+	twin := t.TempDir()
+	for name, text := range map[string]string{"go.mod": "module x\n\ngo 1.24\n", "x_test.go": "package x\n\n" + src} {
+		if err := os.WriteFile(filepath.Join(twin, name), []byte(text), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	cmd := exec.Command(goTool, "test", "-c", "-o", "x.test", ".")
+	cmd.Dir = twin
+	if out, err := cmd.CombinedOutput(); err != nil {
+		t.Fatalf("go test -c: %v\n%s", err, out)
+	}
+	out, _ := exec.Command(filepath.Join(twin, "x.test"), "-test.v", "-test.count=1", "-test.run=Test").CombinedOutput()
+	want := runAndResultLines(string(out))
+
+	ogo := buildOgoCLI(t)
+	dir := filepath.Join(t.TempDir(), "names")
+	if err := os.Mkdir(dir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "names_test.ogo"), []byte(src), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	for attempt := 1; ; attempt++ {
+		cmd := exec.Command(ogo, "test", "-p", port, "-run", "Test")
+		cmd.Dir = dir
+		out, err := cmd.CombinedOutput()
+		got := runAndResultLines(string(out))
+		if err == nil && got == want {
+			break
+		}
+		if attempt == boardAttempts {
+			t.Fatalf("ogo test: %v\ngot:\n%s\nwant (go test):\n%s", err, got, want)
+		}
+		t.Logf("retry %d/%d (transient serial flake)", attempt, boardAttempts-1)
+	}
+}
+
+// subtestNamesSrc is TestOnBoardOgoTestNames' package, OctoGo and Go alike.
+func subtestNamesSrc() string {
+	runes := []rune{1, 7, 8, 9, 0x1b, ' ', '_', 0x7e, 0x7f, 0x80, 0x84, 0x85, 0x9f, 0xa0, 0xa1, 0xac, 0xad, 0xae, 0xff,
+		0x1680, 0x2000, 0x200a, 0x200b, 0x2028, 0x2029, 0x202f, 0x205f, 0x3000, 0xfeff, 0xfffd, 0xffff, unicode.MaxRune}
+	prints := true
+	for r := rune(0x100); r <= unicode.MaxRune; r++ {
+		if p := strconv.IsPrint(r); p != prints {
+			runes = append(runes, r-1, r)
+			prints = p
+		}
+	}
+	var names []string
+	for len(runes) != 0 {
+		n := min(8, len(runes))
+		names = append(names, string(runes[:n]))
+		runes = runes[n:]
+	}
+	names = append(names, "\xff", "a\xc3", "\xc3a", "\xed\xa0\x80", "\xf4\x90\x80\x80", "\xc0\x80", "\xe2\x82", "\xf0\x9f\x98",
+		"\xe0\x80\x80", "\xf0\x80\x80\x80", "\xf4\x8f\xbf\xbf", "\xed\x9f\xbf")
+	var b strings.Builder
+	b.WriteString("import \"testing\"\n\nfunc leaf(t *testing.T) {}\n")
+	for i, nm := range names {
+		if i%200 == 0 {
+			if i != 0 {
+				b.WriteString("}\n")
+			}
+			fmt.Fprintf(&b, "\nfunc TestN%d(t *testing.T) {\n", i/200)
+		}
+		fmt.Fprintf(&b, "\tt.Run(%s, leaf)\n", strconv.QuoteToASCII(nm))
+	}
+	long := strings.Repeat("n", 150)
+	fmt.Fprintf(&b, `}
+
+func longer(t *testing.T) { t.Run(%[1]q, leaf) }
+
+func TestLong(t *testing.T) {
+	t.Run(%[1]q, leaf)
+	t.Run(%[1]q, leaf)
+	t.Run(%[2]q, leaf)
+	t.Run(%[3]q, leaf)
+	t.Run(%[1]q, longer)
+	t.Run(%[4]q, leaf)
+	t.Run(%[4]q, leaf)
+}
+
+func TestCounts(t *testing.T) {
+	t.Run("b", leaf)
+	t.Run("b", leaf)
+	t.Run("b#01", leaf)
+	t.Run("b", leaf)
+	t.Run("b#02", leaf)
+	t.Run("b#01#01", leaf)
+	t.Run("", leaf)
+	t.Run("#00", leaf)
+	t.Run("", leaf)
+	t.Run("a", func(t *testing.T) {
+		t.Run("b", leaf)
+		t.Run("", leaf)
+	})
+	t.Run("a/b", leaf)
+	t.Run("a/", leaf)
+	t.Run("x/b#01", leaf)
+	t.Run("x", func(t *testing.T) {
+		t.Run("b", leaf)
+		t.Run("b", leaf)
+		t.Run("b#01", leaf)
+	})
+	t.Run("b#+1", leaf)
+	t.Run("b#-0", leaf)
+	t.Run("b#001", leaf)
+}
+`, long, long[:149]+"m", long+"#01", long+"#02/"+long)
+	return b.String()
+}
+
+// runAndResultLines is the RUN and result lines of go test -v's output, or ogo
+// test's, without go test's times.
+func runAndResultLines(out string) string {
+	var b strings.Builder
+	for _, line := range strings.Split(out, "\n") {
+		line = strings.TrimRight(line, "\r")
+		switch trimmed := strings.TrimLeft(line, " "); {
+		case strings.HasPrefix(line, "=== RUN"):
+			b.WriteString(line + "\n")
+		case strings.HasPrefix(trimmed, "--- PASS:"), strings.HasPrefix(trimmed, "--- FAIL:"), strings.HasPrefix(trimmed, "--- SKIP:"):
+			if i := strings.LastIndex(line, " ("); i > 0 && strings.HasSuffix(line, "s)") {
+				line = line[:i]
+			}
+			b.WriteString(line + "\n")
+		}
+	}
+	return b.String()
 }

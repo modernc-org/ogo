@@ -705,8 +705,9 @@ still design-only.
   recursion to the stack bound. And what EVERY test runs costs what it did: p2-11's
   tests outgrew the cog by three registers, the Builder's and the rune decoder's
   leaf temporaries (`_varNN`, ten of them) pulled in by the result lines -- so
-  RunTest, the result and NAME lines print byte by byte (rewriteUnit), only t.Run's
-  setup (begin) uses a Builder, which a program running no subtest leaves out, and
+  RunTest, the result and NAME lines reach a subtest's name only through a function
+  the runner hands in (names, below), only t.Run's setup (begin) uses a Builder,
+  which a program running no subtest leaves out, and
   nothing of the testing package is inlined (inlineCandidate), its functions
   standing on every test's call chain (TestBuildTestingFrugal reads the listing).
   **A runtime shared by every program of a kind is held to its old register count**:
@@ -771,11 +772,56 @@ still design-only.
   skip), one running subtests 252 (the checked indirect call in begin), cog
   registers unchanged (TestBuildTestingFrugal reads the listing for the machine).
   **What only some runs use is handed in by the code those runs generate.** Held to
-  go test by TestFilterMatchesGoTest -- 61 patterns, each through go test's own
-  binary and through the runner on the host shim -- whose first list passed a
+  go test by TestFilterMatchesGoTest -- 73 patterns since, each through go test's
+  own binary and through the runner on the host shim -- whose first list passed a
   planted fault in the in-part answer until a LEAF sub-benchmark matched in part
   was on it (**an oracle comparison is asked to fail before it is believed**), and
-  on the board by TestOnBoardOgoTestFilter. Not yet: Cleanup, RunParallel, Elapsed,
+  on the board by TestOnBoardOgoTestFilter.
+  A SUBTEST'S NAME is go test's since 2026-10-13, both halves its matcher's. Its
+  count is Go 1.27's unique, which keeps a count per BASE -- the parent's full name,
+  a slash, the name rewritten -- and skips a count a name was written with, `b#01`
+  after two `b` being `b#01#01`, `b` after an explicit `b#01` `b#02`: the first
+  version was the unique remembered from an older Go, a chain of counts, and
+  TestD's oracle cases showed it (**the oracle's source is read, not remembered**:
+  $(go env GOROOT)/src/testing/match.go). No table of counts is kept -- every array
+  the testing package declares is in every test program -- so unique scans the
+  slots before (baseTries: the latest of a base says its count; isBase compares two
+  bases rendered past the full name both begin with, common, in windows of 128
+  bytes, the candidate's first window cached). And its rewrite is exact: every rune
+  strconv.IsPrint says does not print escaped as QuoteRune writes it, a byte of no
+  UTF-8 U+FFFD (decodeRune, Go's validity rules: a range's own decoder spent 17 leaf
+  temporaries where the whole old printer spent 9). Past Latin-1 which runes print
+  is a table, octogo.NotPrintTable, made from the strconv of the Go that built ogo
+  (1477 changes, 1750 bytes: blocks of 32 uvarint distances under a binary-searched
+  index), which the RUNNER hands in with the function every test's result lines
+  reach a name through, `testing.SetSubtests(ogoNotPrint[:], testing.FullName)`:
+  finish, NAME and a benchmark's line call `names`, nil in a program running no
+  subtest, so such a program carries none of the naming. The runner hands them in
+  where the source names Run (MayRunSubtests, sound: every way to reach T.Run or
+  B.Run spells it) and the emitted C reaches testing_T_Run or testing_B_Run
+  (RunsSubtests); p2-11's emulator has a Run of its own, and emitting again without
+  is cheaper than its pdp11 tests' second flexcc build, 10.8 s. Run cases calling
+  RunTest themselves hand in no table, `testing.SetSubtests(nil, testing.FullName)`,
+  and print a rune past U+00FF as itself. The old printer had brought the BACKEND'S
+  HEAP into every test program: flexcc returns a 12-byte struct, Builder.WriteString's
+  (int, error), in a copy it allocates from a garbage-collected heap
+  (`_gc_alloc_managed` in the listing, `__system___gc_*` and `__heap_base` with
+  it), and rewriteUnit reached it -- so the naming writes byte by byte. Measured by
+  binaries: a test running no subtest 30832 bytes before and 19700 after, cog
+  registers 38 and 23; one running a subtest 33864 and 28452 plus the table, 43 and
+  41; each of p2-11's ten test binaries 3 KB smaller, 11 KB where nothing else
+  needed the heap. **A function a program calls may bring the backend's heap: the
+  listing says, `__system___gc_`.** Held to go test by TestSubtestNamesMatchGoTest
+  (the runes on both sides of every change, the corners of Latin-1, invalid UTF-8,
+  names past a window), TestD's counts and TestOnBoardOgoTestNames, each failing
+  on its planted fault -- a block search off by one, a count's check skipped, a
+  window compared alone (a loop, every count looking taken). Met on the way: a
+  static cycle render -> writeBase -> render, never taken at run time, is a
+  recursion to the stack reader, and a goroutine calling t.Log would have been
+  refused for it; and the emitter joins a tagless switch's comma cases with `||`
+  leaving an `&&` operand unparenthesized, which C reads right and gcc -Wall warns
+  about, so no run case can hold the shape (open). Not yet: Cleanup, RunParallel,
+  Elapsed,
   a deferred or started t.Log (refused with the literal that does it), the deferred
   calls FailNow skips, and Helper's attribution of a line to the caller.
 - **Interfaces are done and devirtualization is not.** A method call through an

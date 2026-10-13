@@ -441,14 +441,24 @@ func main() {
 }
 `
 	heavy := regexp.MustCompile(`(?m)^_ogo_(builder_WriteRune|builder_WriteString|decode_rune|string_eq)_\d+$`)
+	// What names a subtest -- go test's unique and rewrite, the table of the runes
+	// that do not print -- is handed in by the runner where the program names Run
+	// (testing.SetSubtests): a test running no subtest carries none of it.
+	naming := regexp.MustCompile(`(?m)^_testing_(FullName|unique|isBase|render|writeRewritten|widePrint)(_\d+)?$`)
 	_, listing := buildProgram(t, src)
 	if got := heavy.FindAll(listing, -1); len(got) != 0 {
+		t.Errorf("a test running no subtest carries %q", got)
+	}
+	if got := naming.FindAll(listing, -1); len(got) != 0 {
 		t.Errorf("a test running no subtest carries %q", got)
 	}
 	subs := strings.Replace(src, `t.Error("x")`, `t.Run("sub", func(t *testing.T) {})`, 1)
 	_, listing = buildProgram(t, subs)
 	if got := heavy.FindAll(listing, -1); len(got) == 0 {
 		t.Errorf("the premise: a test running a subtest carries none of the helpers this test is about")
+	}
+	if got := naming.FindAll(listing, -1); len(got) < 6 {
+		t.Errorf("the premise: a test running a subtest carries only %q of its naming", got)
 	}
 
 	// The machine matching subtests' names is handed in by the runner of a -run

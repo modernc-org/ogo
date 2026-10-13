@@ -1931,6 +1931,7 @@ func testB(t *testing.T) {
 }
 
 func main() {
+	testing.SetSubtests(nil, testing.FullName)
 	var a, b testing.T
 	testing.RunTest(&a, "TestA", testA)
 	testing.RunTest(&b, "TestB", testB)
@@ -2086,6 +2087,7 @@ func skipSub(b *testing.B) {
 }
 
 func main() {
+	testing.SetSubtests(nil, testing.FullName)
 	testing.StartBenchmarks("", 17, 0, 5, false)
 	var b [5]testing.B
 	testing.RunBenchmark(&b[0], "BenchmarkSubs", subs)
@@ -2161,6 +2163,7 @@ func testB(t *testing.T) {
 }
 
 func main() {
+	testing.SetSubtests(nil, testing.FullName)
 	var a, b testing.T
 	testing.RunTest(&a, "TestA", testA)
 	testing.RunTest(&b, "TestB", testB)
@@ -2193,6 +2196,7 @@ func testA(t *testing.T) {
 }
 
 func main() {
+	testing.SetSubtests(nil, testing.FullName)
 	var a testing.T
 	testing.RunTest(&a, "TestA", testA)
 	p2.WaitMs(10)
@@ -2216,6 +2220,7 @@ func nest(t *testing.T) {
 }
 
 func main() {
+	testing.SetSubtests(nil, testing.FullName)
 	var a testing.T
 	testing.RunTest(&a, "TestA", nest)
 }
@@ -2244,6 +2249,7 @@ func bench(b *testing.B) {
 }
 
 func main() {
+	testing.SetSubtests(nil, testing.FullName)
 	testing.StartBenchmarks("", 10, 0, 1, false)
 	var b testing.B
 	testing.RunBenchmark(&b, "BenchmarkA", bench)
@@ -2268,6 +2274,7 @@ func nest(b *testing.B) {
 }
 
 func main() {
+	testing.SetSubtests(nil, testing.FullName)
 	testing.StartBenchmarks("", 10, 0, 1, false)
 	var b testing.B
 	testing.RunBenchmark(&b, "BenchmarkA", nest)

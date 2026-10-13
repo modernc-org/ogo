@@ -579,7 +579,7 @@ type T struct {
 type sub struct {
 	parent  int // the slot of the subtest it was run in, -1 for the test itself
 	name    string
-	dup     int
+	sfx     int // the count after its name plus one, 0 for none (unique)
 	depth   int
 	verdict int
 }
@@ -591,7 +591,6 @@ var (
 	lastID int
 	top    string
 	rewA   [nameMax]byte
-	rewB   [nameMax]byte
 )
 
 // Fail marks the test as failed and lets it keep running.
@@ -671,15 +670,10 @@ func (t *T) begin(s *T, name string) bool {
 	}
 	s.depth = t.depth + 1
 	s.slot = nsubs
-	dup := 0
-	for i := 0; i < nsubs; i++ {
-		if subs[i].parent == t.slot && sameName(subs[i].name, name) {
-			dup++
-		}
-	}
-	subs[nsubs] = sub{parent: t.slot, name: name, dup: dup, depth: s.depth}
+	subs[nsubs] = sub{parent: t.slot, name: name, depth: s.depth}
 	nsubs++
-	if m := matcher; m != nil && m(t.slot, s.slot, name, dup) == 0 {
+	unique(s.slot)
+	if m := matcher; m != nil && m(t.slot, s.slot, ownName(s.slot)) == 0 {
 		subs[s.slot].verdict = notRun
 		s.skipped = true
 		return false
@@ -687,19 +681,11 @@ func (t *T) begin(s *T, name string) bool {
 	ids++
 	s.id = ids
 	b := NewBuilder(s.buf[:])
-	b.WriteString(t.name)
-	b.WriteByte('/')
-	rewrite(&b, name)
-	if dup != 0 || name == "" {
-		b.WriteByte('#')
-		if dup < 10 {
-			b.WriteByte('0')
-		}
-		writeInt(&b, dup)
-	}
+	w := nameWriter{mode: nameWrite, b: &b}
+	writeName(&w, s.slot)
 	s.name = b.String()
 	print("=== RUN   ")
-	s.printName()
+	FullName(s.slot, true)
 	println()
 	lastID = s.id
 	return true
@@ -728,7 +714,7 @@ func (t *T) named() {
 // printName prints the test's full name, which Name may have cut.
 func (t *T) printName() {
 	if t.slot >= 0 {
-		printName(t.slot)
+		names(t.slot, true)
 	} else {
 		print(t.name)
 	}
@@ -763,7 +749,7 @@ func finish(t *T) {
 	for i := 0; i < nsubs; i++ {
 		if v := subs[i].verdict; v != notRun {
 			report(v, subs[i].depth)
-			printName(i)
+			names(i, true)
 			println()
 		}
 	}
@@ -793,66 +779,459 @@ func report(v, depth int) {
 	}
 }
 
-// printName prints a subtest's full name, its parents' first. It does not recurse,
-// nor does anything here a goroutine's message may call: a goroutine's stack is
-// bounded by its calls, and a recursion has no bound to read. And what every test
-// runs -- RunTest, the result lines, the NAME line -- uses no Builder, no range over
-// a string and no comparison of two: the backend keeps small helpers in the cog's
-// RAM, which a test near its limit has no room for. Only Run's own setup does, and
-// a program that runs no subtest leaves it out.
-func printName(i int) {
-	var chain [maxDepth]int
-	n := 0
-	for ; i >= 0 && n < maxDepth; i = subs[i].parent {
-		chain[n] = i
-		n++
+// The names of subtests and sub-benchmarks are go test's, which its matcher's
+// unique and rewrite give (testing/match.go). Only a program running one carries
+// what makes them: what every test runs reaches it through names, which the runner
+// "ogo test" sets where the program names Run (SetSubtests), and the table of the
+// runes that do not print is the runner's too -- the backend keeps every package
+// array, used or not. Nothing here recurses: a goroutine's message prints a name,
+// and a goroutine's stack is bounded by its calls, a recursion having no bound to
+// read.
+
+// names is FullName where the runner set it (SetSubtests), nil in a program that
+// runs no subtest; notPrint is the table it was handed.
+var (
+	names    func(slot int, out bool) int
+	notPrint []uint8
+)
+
+// SetSubtests hands in what naming a subtest or a sub-benchmark takes: tab, where
+// the runes past U+00FF change from printing to not and back, as ogo test lays it
+// out -- none where tab is empty -- and f, which is FullName. It is what the runner
+// "ogo test" generates calls where the program may run one; a test does not call
+// it.
+func SetSubtests(tab []uint8, f func(slot int, out bool) int) {
+	notPrint, names = tab, f
+}
+
+// FullName prints the full name of the subtest, or sub-benchmark, in slot -- -1 for
+// the test -- where out says so, and returns its length. It is what SetSubtests is
+// handed; a test does not call it.
+func FullName(slot int, out bool) int {
+	w := nameWriter{}
+	if out {
+		w.mode = namePrint
 	}
-	print(top)
-	for n > 0 {
-		n--
-		j := chain[n]
-		print("/")
-		for k := 0; k < len(subs[j].name); {
-			lit, hx, next := rewriteUnit(subs[j].name, k)
-			print(lit)
-			if hx >= 0 {
-				print(hexDigits[hx>>4:hx>>4+1], hexDigits[hx&15:hx&15+1])
+	writeName(&w, slot)
+	return w.n
+}
+
+// unique gives the subtest in slot j, its parent and its name set, the full name go
+// test's unique gives it: its base -- its parent's full name, a slash and its own
+// name rewritten -- or, where that was tried before or its name is empty, the base
+// and a count, "#%02d". go test counts the times each base was tried, and the first
+// count it tries is that, the next one up where a name was written as a base and a
+// count, or where the base itself was so written with a count that was taken
+// already. The count a base was left at is the latest subtest of that base's
+// (baseTries), so no table of counts is kept, which every test program would carry.
+func unique(j int) {
+	p, s := subs[j].parent, subs[j].name
+	base := baseKey{p: p, s: s, n: -1, c: -2}
+	n := baseTries(j, &base)
+	for ; ; n++ {
+		if n == 0 && s != "" {
+			at, nn := countAfter(s)
+			if at < 0 {
+				return
 			}
-			k = next
+			pre := baseKey{p: p, s: s[:at], n: -1, c: -2}
+			if nn >= baseTries(j, &pre) {
+				return
+			}
+			continue
 		}
-		if d := subs[j].dup; d != 0 || len(subs[j].name) == 0 {
-			print("#")
-			if d < 10 {
-				print(0)
+		next := baseKey{p: p, s: s, n: n, c: -2}
+		taken := false
+		for i := 0; i < j && !taken; i++ {
+			taken = isBase(i, &next)
+		}
+		if !taken {
+			subs[j].sfx = n + 1
+			return
+		}
+	}
+}
+
+// baseTries is how many times the base k names was tried by the subtests before
+// slot j: as many as the count the latest of that base took, plus one.
+func baseTries(j int, k *baseKey) int {
+	for i := j - 1; i >= 0; i-- {
+		if isBase(i, k) {
+			if n := subs[i].sfx; n != 0 {
+				return n
 			}
-			print(d)
+			return 1
+		}
+	}
+	return 0
+}
+
+// A baseKey is a base a subtest's is compared with (isBase): the full name of p, a
+// slash, s rewritten and the count n after it, -1 for none. ref is the first bytes
+// of it past the full name of c, kept for the next comparison past the same, and n
+// how long it is.
+type baseKey struct {
+	p, n, c int
+	s       string
+	buf     [nameMax]byte
+	ref     string
+	len     int
+}
+
+// countAfter is go test's parseSubtestNumber of a base whose name is s: where in s
+// a count "#%02d" could have made begins, and the count, k -1 where none could.
+func countAfter(s string) (k, n int) {
+	for k = len(s) - 1; k >= 0 && s[k] != '#'; k-- {
+	}
+	i := k + 1
+	switch {
+	case k < 0 || len(s)-i < 2:
+		return -1, 0
+	case s[i] == '0' && (len(s)-i > 2 || s[i+1] == '0' && k != 0):
+		return -1, 0
+	}
+	neg := s[i] == '-'
+	if neg || s[i] == '+' {
+		i++
+	}
+	for ; i < len(s); i++ {
+		c := int(s[i]) - '0'
+		if c < 0 || c > 9 || n > 214748364 || (n == 214748364 && c > 7) {
+			return -1, 0
+		}
+		n = 10*n + c
+	}
+	if neg && n != 0 {
+		return -1, 0
+	}
+	return k, n
+}
+
+// isBase reports whether the base of the subtest in slot i is the one k names.
+// What the two begin with (common) is not compared.
+func isBase(i int, k *baseKey) bool {
+	c := common(subs[i].parent, k.p)
+	if c != k.c {
+		b := NewBuilder(k.buf[:])
+		w := nameWriter{mode: nameWrite, b: &b}
+		writeBase(&w, k.p, k.s, k.n, c)
+		k.c, k.ref, k.len = c, b.String(), w.n
+	}
+	var buf [nameMax]byte
+	for off := 0; ; off += nameMax {
+		ref := k.ref
+		if off != 0 {
+			b := NewBuilder(buf[:])
+			w := nameWriter{mode: nameWrite, b: &b, skip: off}
+			writeBase(&w, k.p, k.s, k.n, c)
+			ref = b.String()
+		}
+		w := nameWriter{mode: nameCompare, ref: ref, skip: off, next: -1}
+		writeBase(&w, subs[i].parent, subs[i].name, -1, c)
+		if w.diff || w.n < off+len(ref) {
+			return false
+		}
+		if k.len <= off+nameMax {
+			return w.next < 0
+		}
+	}
+}
+
+// common is the subtest nearest both whose full name is that of the one in slot a's
+// and b's, or of their parent's, -1 for the test's: what the two begin with.
+func common(a, b int) int {
+	for x := a; x >= 0; x = subs[x].parent {
+		for y := b; y >= 0; y = subs[y].parent {
+			if x == y {
+				return x
+			}
+		}
+	}
+	return -1
+}
+
+// ownName is the subtest in slot j's part of its full name, past its parent's and
+// the slash, cut at 128 bytes: what -run matches below its parent's levels.
+func ownName(j int) string {
+	b := NewBuilder(rewA[:])
+	w := nameWriter{mode: nameWrite, b: &b, skip: FullName(subs[j].parent, false) + 1}
+	writeName(&w, j)
+	return b.String()
+}
+
+// A nameWriter is given a name a piece at a time and does with it what its mode
+// says: counts its bytes, prints them, writes those from skip on into b, or compares
+// those from skip on with ref's, stopping at one that differs (diff) or at the one
+// after ref's last (next).
+type nameWriter struct {
+	mode int
+	b    *Builder
+	ref  string
+	skip int
+	n    int  // the bytes given
+	stop bool // compared: one differed, or the one after ref's was given
+	diff bool
+	next int // compared: the byte after ref's last, -1 where none was given
+}
+
+// The nameWriter's modes.
+const (
+	nameCount = iota
+	namePrint
+	nameWrite
+	nameCompare
+)
+
+func (w *nameWriter) put(s string) {
+	from := w.n
+	w.n += len(s)
+	switch w.mode {
+	case namePrint:
+		print(s)
+	case nameWrite:
+		// Byte by byte: the backend returns WriteString's (int, error) in a
+		// copy it allocates, which brings its collector and heap along.
+		for k := max(w.skip-from, 0); k < len(s); k++ {
+			w.b.WriteByte(s[k])
+		}
+	case nameCompare:
+		for k := 0; k < len(s) && !w.stop; k++ {
+			p := from + k - w.skip
+			switch {
+			case p < 0:
+			case p < len(w.ref):
+				if s[k] != w.ref[p] {
+					w.diff, w.stop = true, true
+				}
+			default:
+				w.next, w.stop = int(s[k]), true
+			}
+		}
+	}
+}
+
+// writeName gives w the full name of the subtest in slot i, -1 for the test.
+func writeName(w *nameWriter, i int) {
+	w.put(top)
+	render(w, i, -1)
+}
+
+// render gives w the full name of the subtest in slot i past that of c, i itself or
+// a subtest it runs in, -1 for the test: how the name of each subtest between ends,
+// outermost first.
+func render(w *nameWriter, i, c int) {
+	for last := c; last != i && !w.stop; {
+		x := i
+		for subs[x].parent != last {
+			x = subs[x].parent
+		}
+		writeTail(w, subs[x].name, subs[x].sfx-1)
+		last = x
+	}
+}
+
+// writeBase gives w the full name of p past that of c, a slash, s rewritten, and the
+// count n after it where n is not -1.
+func writeBase(w *nameWriter, p int, s string, n, c int) {
+	render(w, p, c)
+	writeTail(w, s, n)
+}
+
+// writeTail gives w a slash, s rewritten, and the count n after it where n is not
+// -1.
+func writeTail(w *nameWriter, s string, n int) {
+	w.put("/")
+	writeRewritten(w, s)
+	if n >= 0 {
+		w.put("#")
+		if n < 10 {
+			w.put("0")
+		}
+		d := 1
+		for d*10 <= n {
+			d *= 10
+		}
+		for ; d > 0; d /= 10 {
+			k := n / d % 10
+			w.put(hexDigits[k : k+1])
 		}
 	}
 }
 
 const hexDigits = "0123456789abcdef"
 
-// rewriteUnit is go test's rewriting of a subtest's name at s[i]: what to write --
-// the byte itself, an underscore for a space, the start of an escape for a control
-// character, whose byte's two hex digits follow where hx is not -1 -- and where the
-// next unit begins. Byte by byte, a space or a control character beyond ASCII told
-// by its UTF-8.
-func rewriteUnit(s string, i int) (lit string, hx, next int) {
-	c := s[i]
-	if n := spaceLen(s, i); n != 0 {
-		return "_", -1, i + n
+// writeRewritten gives w the name s as go test's rewrite writes it: each space an
+// underscore and each rune that does not print escaped as Go quotes it, a byte of
+// no UTF-8 read as U+FFFD, as a range reads it.
+func writeRewritten(w *nameWriter, s string) {
+	for i := 0; i < len(s) && !w.stop; {
+		r, n := decodeRune(s, i)
+		switch {
+		case isSpace(r):
+			w.put("_")
+		case r == 0xfffd:
+			w.put("\ufffd")
+		case !isPrint(r):
+			writeEscape(w, r)
+		default:
+			w.put(s[i : i+n])
+		}
+		i += n
 	}
+}
+
+// decodeRune is the rune at s[i] and its length in bytes, as a range over s reads
+// them: U+FFFD and 1 where no UTF-8 begins there. A range's own decoder costs a
+// test program more of the cog's registers.
+func decodeRune(s string, i int) (rune, int) {
+	r := rune(s[i])
 	switch {
-	case c == 7:
-		return "\\a", -1, i + 1
-	case c == 8:
-		return "\\b", -1, i + 1
-	case c < 0x20 || c == 0x7f:
-		return "\\x", int(c), i + 1
-	case c == 0xc2 && i+1 < len(s) && s[i+1] >= 0x80 && s[i+1] < 0xa0:
-		return "\\u00", int(s[i+1]), i + 2
+	case r < 0x80:
+		return r, 1
+	case r < 0xc2 || r > 0xf4:
+		return 0xfffd, 1
 	}
-	return s[i : i+1], -1, i + 1
+	n, lo, hi := 2, rune(0x80), rune(0xbf)
+	switch {
+	case r >= 0xf0:
+		n, r = 4, r&7
+		if r == 0 {
+			lo = 0x90
+		} else if r == 4 {
+			hi = 0x8f
+		}
+	case r >= 0xe0:
+		n, r = 3, r&15
+		if r == 0 {
+			lo = 0xa0
+		} else if r == 13 {
+			hi = 0x9f
+		}
+	default:
+		r &= 0x1f
+	}
+	for k := 1; k < n; k++ {
+		if i+k >= len(s) {
+			return 0xfffd, 1
+		}
+		c := rune(s[i+k])
+		if c < lo || c > hi {
+			return 0xfffd, 1
+		}
+		r, lo, hi = r<<6|c&0x3f, 0x80, 0xbf
+	}
+	return r, n
+}
+
+// writeEscape gives w the rune r, which does not print, as strconv.QuoteRune writes
+// it between its quotes; the ones it writes otherwise are spaces to rewrite.
+func writeEscape(w *nameWriter, r rune) {
+	n := 8
+	switch {
+	case r == 7:
+		w.put("\\a")
+		return
+	case r == 8:
+		w.put("\\b")
+		return
+	case r < 0x20 || r == 0x7f:
+		w.put("\\x")
+		n = 2
+	case r < 0x10000:
+		w.put("\\u")
+		n = 4
+	default:
+		w.put("\\U")
+	}
+	for k := n - 1; k >= 0; k-- {
+		d := int(r>>uint(4*k)) & 15
+		w.put(hexDigits[d : d+1])
+	}
+}
+
+// isSpace is go test's: not the same as Unicode's Z class.
+func isSpace(r rune) bool {
+	if r < 0x2000 {
+		switch r {
+		case '\t', '\n', '\v', '\f', '\r', ' ', 0x85, 0xa0, 0x1680:
+			return true
+		}
+		return false
+	}
+	if r <= 0x200a {
+		return true
+	}
+	switch r {
+	case 0x2028, 0x2029, 0x202f, 0x205f, 0x3000:
+		return true
+	}
+	return false
+}
+
+// isPrint is strconv.IsPrint: Latin-1 here, and past it by the table (widePrint).
+func isPrint(r rune) bool {
+	switch {
+	case r < 0x20:
+		return false
+	case r < 0x7f:
+		return true
+	case r < 0xa1:
+		return false
+	case r < 0x100:
+		return r != 0xad
+	}
+	return widePrint(r)
+}
+
+// widePrint reports whether r, past U+00FF, prints, by the table SetSubtests was
+// handed, or, with none, says it does: the runes where printing changes, from
+// U+0100 on, which prints, so a rune that has passed an even number prints. The
+// table is a count of blocks of an even number of changes, two bytes; for each, its
+// first change, three bytes, and where the rest of it is, two; and the rest, each
+// change its distance from the one before, seven bits a byte from the lowest, the
+// last byte's high bit clear.
+func widePrint(r rune) bool {
+	t := notPrint
+	if len(t) == 0 {
+		return true
+	}
+	nb := int(t[0]) | int(t[1])<<8
+	lo, hi := 0, nb // the first block whose first change r has not passed
+	for lo < hi {
+		m := (lo + hi) / 2
+		if k := 2 + 5*m; rune(t[k])|rune(t[k+1])<<8|rune(t[k+2])<<16 <= r {
+			lo = m + 1
+		} else {
+			hi = m
+		}
+	}
+	if lo == 0 {
+		return true
+	}
+	k := 2 + 5*(lo-1)
+	at := rune(t[k]) | rune(t[k+1])<<8 | rune(t[k+2])<<16
+	p, end := int(t[k+3])|int(t[k+4])<<8, len(t)
+	if lo < nb {
+		end = int(t[k+8]) | int(t[k+9])<<8
+	}
+	odd := true // passed the block's first change, after an even number
+	for p < end {
+		var d rune
+		for shift := uint(0); ; shift += 7 {
+			c := t[p]
+			p++
+			d |= rune(c&0x7f) << shift
+			if c < 0x80 {
+				break
+			}
+		}
+		if at+d > r {
+			break
+		}
+		at += d
+		odd = !odd
+	}
+	return !odd
 }
 
 // spaceLen is the length in bytes of a space at s[i] as go test's isSpace has one --
@@ -876,43 +1255,6 @@ func spaceLen(s string, i int) int {
 	return 0
 }
 
-// sameName reports whether two names are one once rewritten as go test writes them.
-func sameName(a, b string) bool {
-	x, y := NewBuilder(rewA[:]), NewBuilder(rewB[:])
-	rewrite(&x, a)
-	rewrite(&y, b)
-	return x.String() == y.String()
-}
-
-// rewrite writes a subtest's name as go test does (rewriteUnit).
-func rewrite(b *Builder, s string) {
-	for i := 0; i < len(s); {
-		lit, hx, next := rewriteUnit(s, i)
-		b.WriteString(lit)
-		if hx >= 0 {
-			b.WriteByte(hexDigits[hx>>4])
-			b.WriteByte(hexDigits[hx&15])
-		}
-		i = next
-	}
-}
-
-func writeInt(b *Builder, n int) {
-	var digits [10]byte
-	i := len(digits)
-	for {
-		i--
-		digits[i] = byte('0' + n%10)
-		n /= 10
-		if n == 0 {
-			break
-		}
-	}
-	for ; i < len(digits); i++ {
-		b.WriteByte(digits[i])
-	}
-}
-
 // notRun is the verdict of a subtest -run does not select, which takes its slot,
 // counting toward a name used again beside it as go test counts it, and prints no
 // line.
@@ -921,7 +1263,7 @@ const notRun = 3
 // The subtest filter: -run's pattern, or -bench's, where it names a level below a
 // test's own (SetFilter). matcher is MatchSub where one is set and nil otherwise.
 var (
-	matcher     func(parent, slot int, name string, dup int) int
+	matcher     func(parent, slot int, own string) int
 	filterProg  []int32
 	filterState []int32
 	filterAlive uint32
@@ -936,7 +1278,7 @@ var (
 // for what each subtest's levels matched, two words a slot; and m is MatchSub, a
 // value the runner gives, so a program run with no such pattern carries none of
 // it. It is what the runner "ogo test" generates calls; a test does not call it.
-func SetFilter(prog, state []int32, alive uint32, m func(parent, slot int, name string, dup int) int) {
+func SetFilter(prog, state []int32, alive uint32, m func(parent, slot int, own string) int) {
 	filterProg, filterState, filterAlive, matcher = prog, state, alive, m
 }
 
@@ -945,27 +1287,18 @@ func SetFilter(prog, state []int32, alive uint32, m func(parent, slot int, name 
 // what the runner "ogo test" generates calls; a benchmark does not call it.
 func OnlySubs(b *B) { b.hasSub = true }
 
-// MatchSub is what SetFilter's m is: 0 where the subtest, or sub-benchmark, name
-// of the one in slot parent -- -1 for the test -- does not run; 2 where it runs only
-// to run its own, the first alternative it matches naming a level below it; and 1
-// where it runs. What its levels matched is kept in slot, for its own. Its levels
-// are its part of its full name as go test writes it, cut at 128 bytes, split at
-// each slash, as go test splits a full name: a slash in name is a level of its own.
-func MatchSub(parent, slot int, name string, dup int) int {
+// MatchSub is what SetFilter's m is: 0 where the subtest, or sub-benchmark, in
+// slot, of the one in slot parent -- -1 for the test -- does not run; 2 where it runs
+// only to run its own, the first alternative it matches naming a level below it;
+// and 1 where it runs. What its levels matched is kept in slot, for its own. Its
+// levels are own, its part of its full name as go test writes it (ownName), split
+// at each slash, as go test splits a full name: a slash in its name is a level of
+// its own.
+func MatchSub(parent, slot int, own string) int {
 	alive, n := filterAlive, int32(1)
 	if parent >= 0 {
 		alive, n = uint32(filterState[2*parent]), filterState[2*parent+1]
 	}
-	w := NewBuilder(rewA[:])
-	rewrite(&w, name)
-	if dup != 0 || name == "" {
-		w.WriteByte('#')
-		if dup < 10 {
-			w.WriteByte('0')
-		}
-		writeInt(&w, dup)
-	}
-	own := w.String()
 	for i := 0; ; {
 		j := i
 		for j < len(own) && own[j] != '/' {
@@ -1395,16 +1728,11 @@ func (b *B) begin(s *B, name string) bool {
 		return false
 	}
 	s.slot = nsubs
-	dup := 0
-	for i := 0; i < nsubs; i++ {
-		if subs[i].parent == b.slot && sameName(subs[i].name, name) {
-			dup++
-		}
-	}
-	subs[nsubs] = sub{parent: b.slot, name: name, dup: dup}
+	subs[nsubs] = sub{parent: b.slot, name: name}
 	nsubs++
+	unique(s.slot)
 	if m := matcher; m != nil {
-		switch m(b.slot, s.slot, name, dup) {
+		switch m(b.slot, s.slot, ownName(s.slot)) {
 		case 0:
 			s.skipped = true
 			return false
@@ -1413,18 +1741,10 @@ func (b *B) begin(s *B, name string) bool {
 		}
 	}
 	w := NewBuilder(s.buf[:])
-	w.WriteString(b.name)
-	w.WriteByte('/')
-	rewrite(&w, name)
-	if dup != 0 || name == "" {
-		w.WriteByte('#')
-		if dup < 10 {
-			w.WriteByte('0')
-		}
-		writeInt(&w, dup)
-	}
+	nw := nameWriter{mode: nameWrite, b: &w}
+	writeName(&nw, s.slot)
 	s.name = w.String()
-	printName(s.slot)
+	FullName(s.slot, true)
 	println()
 	return true
 }
@@ -1458,7 +1778,7 @@ func RunBenchmark(b *B, name string, f func(*B)) {
 // after the first that stops the benchmark with SkipNow prints the result of none,
 // as go test's does.
 func (b *B) bench(f func(*B)) {
-	if n := nameLen(b.slot) + 1; n > benchWidth {
+	if n := fullLen(b.slot) + 1; n > benchWidth {
 		benchWidth = n + 8
 	}
 	b.runN(f, 1)
@@ -1493,7 +1813,7 @@ func (b *B) bench(f func(*B)) {
 
 func (b *B) verdict(v string) {
 	print(v)
-	printName(b.slot)
+	printFull(b.slot)
 	println()
 }
 
@@ -1605,32 +1925,29 @@ func (b *B) none() {
 
 // printPadded prints the benchmark's full name, padded to its column.
 func (b *B) printPadded() {
-	printName(b.slot)
-	for i := nameLen(b.slot); i < benchWidth; i++ {
+	printFull(b.slot)
+	for i := fullLen(b.slot); i < benchWidth; i++ {
 		print(" ")
 	}
 }
 
-// nameLen is the length of what printName(i) prints.
-func nameLen(i int) int {
-	n := len(top)
-	for d := 0; i >= 0 && d < maxDepth; i, d = subs[i].parent, d+1 {
-		n++
-		for k := 0; k < len(subs[i].name); {
-			lit, hx, next := rewriteUnit(subs[i].name, k)
-			n += len(lit)
-			if hx >= 0 {
-				n += 2
-			}
-			k = next
-		}
-		if dup := subs[i].dup; dup >= 100 {
-			n += 4
-		} else if dup != 0 || len(subs[i].name) == 0 {
-			n += 3
-		}
+// printFull prints the full name of the benchmark in slot, -1 for the one the
+// runner runs, which every benchmark program prints and only one running a
+// sub-benchmark prints through names.
+func printFull(slot int) {
+	if slot < 0 {
+		print(top)
+	} else {
+		names(slot, true)
 	}
-	return n
+}
+
+// fullLen is the length of what printFull(slot) prints.
+func fullLen(slot int) int {
+	if slot < 0 {
+		return len(top)
+	}
+	return names(slot, false)
 }
 
 // prettyPrint is go test's: ten places before the point, and four significant
