@@ -379,6 +379,29 @@ inputs, and never hand-edit the outputs.
    `freopen`, and the `ungetc`/`abort` todo-stub redirects — that libc lacks or
    stubs for both darwin arches).
 
+   > **Backend regenerated 2026-10-13 at spin2cpp `b5993a84`** (upstream's master of
+   > that day, 7.8.0-beta, inside flexprop `v7.7.0`; ccgo v4.36.1, libc v1.77.1),
+   > `internal/optimize_ir.c.diff` carrying the CORDIC hunk alone: #118's went
+   > upstream as our PR #516 (63ef4515), and upstream's optimize_ir.c with the
+   > CORDIC hunk is the very file the old pin and both hunks made (blob c28ff3bc).
+   > Adopted for upstream's fix of flexprop#122 (`(z << 32) >> 32` of an unsigned
+   > long long refused, doc/uint64-shift-32-pair.c), which also carries our PR #517
+   > (-Oinline-pushregs, off unless asked for; `ogo build` does not) and a BASIC
+   > comparison change (708d178b) that leaves C as it was. Nothing under include/,
+   > sys/ or Lib/ changed, so cnames.go needed nothing. Measured natively before
+   > adoption, old pin plus both hunks against the new plus the CORDIC one, over
+   > 1419 programs (the run cases, seeds 1-400, doc/): five run cases build
+   > differently and print on a P2-EDGE what they printed before, and the reproducer
+   > and seed 359 build and pass where they were refused (seed 852 likewise). The
+   > fix is narrow: #8 and #12 of the held faults (doc/uint64-widened-shift-32.c,
+   > doc/cast-of-64bit-expression.c) build to the same binaries. Each builder's turn
+   > changed its own target only (the fold expanded and hashed after each), and the
+   > five scripts/flexcc lists are a native build's of the same tree but for
+   > doc/register-limit-crash.c, a crash both ways. TestBuildBackendRefusal's
+   > program built from then on; it is a name past mcpp's 64 KB line buffer since.
+   > Host suite and `make board` (997 passing, seed 6 outgrowing a cog as before)
+   > green, the run case "a uint64 shifted left by 32 and back" among them.
+   >
    > **Backend regenerated 2026-10-08 at spin2cpp `1d709b25`** (upstream's master of
    > 2026-10-05, 7.8.0-beta, inside flexprop `v7.7.0`; ccgo v4.36.1, libc v1.77.1),
    > with `internal/optimize_ir.c.diff` carrying a SECOND hunk beside #118's: the

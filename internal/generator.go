@@ -39,16 +39,16 @@ const (
 	// sit on spin2cpp's master for longer than that -- which is what spin2cppRef,
 	// below, is for.
 	//
-	// All five committed backends were regenerated against this pair on 2026-10-08
+	// All five committed backends were regenerated against this pair on 2026-10-13
 	// with ccgo v4.36.1 and libc v1.77.1, go.mod's (flexprop at v7.7.0, spin2cpp at
 	// spin2cppRef, mcpp_main.c.diff and optimize_ir.c.diff applied).
 	// scripts/flexcc built for each of the five platforms compiles the doc/
 	// reproducers and a scripts/dumpcorpus.sh dump of the run cases and fuzzer seeds
 	// 1-400 to one and the same scripts/cccorpus.sh list -- windows/amd64's taken
 	// under wine -- and that list is a native build's of the same tree. The
-	// regeneration before, 2026-10-02, was at eb263961 with optimize_ir.c.diff's
-	// first hunk alone, and the one before that, 2026-09-21, ccgo v4.34.6's, with no
-	// fix carried.
+	// regeneration before, 2026-10-08, was at 1d709b25 with optimize_ir.c.diff's two
+	// hunks; the one before that, 2026-10-02, at eb263961 with its first hunk alone;
+	// and 2026-09-21's, ccgo v4.34.6's, with no fix carried.
 	//
 	// The first generation, 2026-07-20, had both at v7.7.0; the second, 2026-08-29,
 	// had spin2cpp at 2bd01c4c; the third, 2026-09-15, had it at 3840014f plus
@@ -123,12 +123,18 @@ const (
 	// spin2cppRef pins the COMPILER inside that wrapper: flexprop is the GUI and the
 	// packaging around spin2cpp, which it carries as a submodule, and a fix lands in
 	// spin2cpp weeks before a flexprop release carries it. This commit is spin2cpp's
-	// master of 2026-10-05, adopted 2026-10-08 for upstream's fixes of flexprop#114
+	// master of 2026-10-13, adopted the same day for upstream's fix of flexprop#122
+	// (b5993a84: `(z << 32) >> 32` of an unsigned long long, which the code
+	// generator refused, doc/uint64-shift-32-pair.c), and carrying our two merged
+	// pull requests: #516 (63ef4515), the TransformConstDst fix optimize_ir.c.diff
+	// carried as its first hunk until then, and #517 (05730c47), -Oinline-pushregs,
+	// an optimization `ogo build` does not ask for. The pin before it, 1d709b25 of
+	// 2026-10-05, was adopted 2026-10-08 for upstream's fixes of flexprop#114
 	// (bf72f733: C's mixed-sign comparison and division typed as C types them,
 	// doc/mixed-sign-operands.c) and #115 (639a8c8e: an octal escape of three
 	// digits at most, doc/octal-escape-past-three-digits.c), both written from the
 	// changes reported with them; the regeneration that adopted it was for
-	// optimize_ir.c.diff's second hunk. The pin before it was the tag v7.7.3
+	// optimize_ir.c.diff's second hunk. The pin before that was the tag v7.7.3
 	// (eb263961, 2026-09-20), the commit flexprop's master points at, adopted
 	// 2026-09-21 for upstream's own fixes of flexprop#109, #110 and #111, three
 	// silent optimizer faults (doc/add-immediate-carry.c,
@@ -141,7 +147,7 @@ const (
 	// doc/optimizer-dangling-label.c). flexprop master differs from v7.7.0 only by
 	// its Changelog and this pointer, so the wrapper stays at its tag. Empty means
 	// the submodule commit flexpropRef itself pins.
-	spin2cppRef = "1d709b2596151ed33ecd49d8c98972b9b312f7c9"
+	spin2cppRef = "b5993a84a8076854375f58883e783d33729a3868"
 	installDir  = "flexprop_install"
 )
 
@@ -159,18 +165,16 @@ var (
 	// spin2cppRef that carries upstream's own fix -- once its reproducer prints
 	// gcc's values under a native build of that commit without the diff. A first
 	// optimize_ir.c.diff was carried from 2026-09-15 to 2026-09-21 (flexprop#109,
-	// #110, #111); the one carried since 2026-10-02 keeps the optimizer from
-	// folding the flags of a CONDITIONAL instruction whose operands became
-	// constants as though it always ran (TransformConstDst), which made a jump
-	// unconditional and `(12 != g) || f` false for a stored `f = (v < v)`
-	// (doc/conditional-compare-fold.c, flexprop#118; found by fuzzer seed 1284);
-	// and since 2026-10-08 the CORDIC reordering from taking a CONDITIONAL write for
-	// a definition of its register (FindBlockForReorderingDownward), which moved a
-	// maximum's conditional move below a QMUL past code overwriting the register it
-	// keeps where it does not run (doc/cordic-reorder-conditional-move.c; found by
-	// fuzzer seed 6978). The first of those two hunks is upstream since 2026-10-11,
-	// our commit merged unchanged by spin2cpp 63ef4515 (PR #516): a spin2cppRef at
-	// or past it takes optimize_ir.c.diff without that hunk.
+	// #110, #111). The one carried since 2026-10-08 keeps the CORDIC reordering from
+	// taking a CONDITIONAL write for a definition of its register
+	// (FindBlockForReorderingDownward), which moved a maximum's conditional move
+	// below a QMUL past code overwriting the register it keeps where it does not run
+	// (doc/cordic-reorder-conditional-move.c; found by fuzzer seed 6978). From
+	// 2026-10-02 to 2026-10-13 it carried a first hunk too, keeping the optimizer
+	// from folding the flags of a CONDITIONAL instruction whose operands became
+	// constants as though it always ran (TransformConstDst; flexprop#118,
+	// doc/conditional-compare-fold.c), until the pin reached spin2cpp 63ef4515,
+	// which merged that hunk unchanged as our PR #516.
 	spin2cppDiffs = []string{"mcpp_main.c.diff", "optimize_ir.c.diff"}
 	target        = fmt.Sprintf("%s/%s", goos, goarch)
 )

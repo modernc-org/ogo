@@ -1102,17 +1102,21 @@ func TestBackendRefusal(t *testing.T) {
 	}
 }
 
-// TestBuildBackendRefusal builds a program the backend refuses, `x << 32 >> 32` of
-// a uint64 (doc/uint64-shift-32-pair.c, flexprop#122), and asks for the C to be kept
-// and named. The day the backend builds it, the test says so and stops.
+// TestBuildBackendRefusal builds a program the backend refuses and asks for the C to
+// be kept and named. The program was `x << 32 >> 32` of a uint64 until the backend
+// built it (doc/uint64-shift-32-pair.c, flexprop#122, fixed by spin2cpp b5993a84);
+// it is a name longer than the preprocessor's line buffer of 64 KB since, which no
+// wrapping of lines can split (wrapLongLines). The day the backend builds that too,
+// the test says so and stops.
 func TestBuildBackendRefusal(t *testing.T) {
 	dir := t.TempDir()
-	write(t, filepath.Join(dir, "prog", "main.ogo"), "var x uint64 = 0x123456789\n\nfunc main() { println(x << 32 >> 32) }\n")
+	name := "v" + strings.Repeat("x", 70000)
+	write(t, filepath.Join(dir, "prog", "main.ogo"), "var "+name+" int = 3\n\nfunc main() { println("+name+") }\n")
 	out := filepath.Join(dir, "prog.binary")
 	var buf bytes.Buffer
 	code, err := Build([]string{"-o", out, filepath.Join(dir, "prog")}, nil, &buf, &buf)
 	if err == nil && code == 0 {
-		t.Skip("the backend builds it now: flexprop#122 is fixed, and doc/uint64-shift-32-pair.c says so")
+		t.Skip("the backend builds a name of 70000 bytes now: find another program it refuses")
 	}
 	keep := filepath.Join(dir, "prog.c")
 	if _, kerr := os.Stat(keep); kerr != nil || err == nil || !strings.Contains(err.Error(), keep) || !strings.Contains(err.Error(), "fault of ogo's") {

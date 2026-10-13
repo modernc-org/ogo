@@ -28831,6 +28831,29 @@ func main() {
 			"18446744073709551615 18446744073709551611 18446744073709551610 4611686018427387902 4294967295 18446744073709551609 18446744073709551608 18446744073709551606 -9223372036854775807\n",
 	},
 	{
+		// `x << 32 >> 32` of a uint64, its low half: the target's C compiler refused
+		// the pair of shifts, "Cannot handle expression yet" (flexprop#122,
+		// doc/uint64-shift-32-pair.c), until the backend's regeneration at spin2cpp
+		// b5993a84. Fuzzer seeds 359 and 852 had met it.
+		name: "a uint64 shifted left by 32 and back",
+		src: `var g uint64 = 0x0123456789abcdef
+var gs = [2]uint64{0xfedcba9876543210, 0x8000000180000001}
+
+func id(v uint64) uint64 { return v }
+
+func low(v uint64) uint64 { return v << 32 >> 32 }
+
+func main() {
+	x := g
+	println(x<<32>>32, x>>32<<32, low(g), id(g)<<32>>32, gs[1]<<32>>32)
+	println(low(gs[0])+low(gs[1]), (x+1)<<32>>32, uint32(x<<32>>32))
+	var s int64 = -0x0123456789abcdef
+	println(s<<32>>32, s>>32)
+}
+`,
+		want: "2309737967 81985526906748928 2309737967 2309737967 2147483649\n4132712977 2309737968 2309737967\n1985229329 -19088744\n",
+	},
+	{
 		// A defined type is checked as the type it is defined over -- following a
 		// chain of definitions to reach it -- so its values are bounded, converted
 		// and compared like that type's, while its own name is what a diagnostic

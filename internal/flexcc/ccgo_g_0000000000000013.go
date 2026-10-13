@@ -122,6 +122,8 @@ const m_OPT_EXTRASMALL = 32768
 
 const m_OPT_FLAGS_ALL = 4294967295
 
+const m_OPT_INLINE_PUSHREGS = 134217728
+
 const m_OPT_INLINE_SINGLEUSE = 32
 
 const m_OPT_MERGE_DUPLICATES = 8388608
@@ -547,9 +549,9 @@ func s__CompileToIR_internal(tls *libc.TLS, cc *CC, vptr uintptr, P uintptr) (r 
 }
 
 func s__EmitFunctionFooter(tls *libc.TLS, cc *CC, irl uintptr, func1 uintptr) {
-	var fl, ir, linenum, subf, v3 uintptr
+	var fl, ir, ir1, linenum, subf, v3 uintptr
 	var i, n, needFrame, v1 int32
-	_, _, _, _, _, _, _, _, _ = fl, i, ir, linenum, n, needFrame, subf, v1, v3
+	_, _, _, _, _, _, _, _, _, _ = fl, i, ir, ir1, linenum, n, needFrame, subf, v1, v3
 	linenum = (*_Function)(unsafe.Pointer(func1)).Fbody
 	needFrame = s__NeedFramePointer(tls, cc, func1)
 	n = (*_IRFuncData)(unsafe.Pointer((*_Function)(unsafe.Pointer(func1)).Fbedata)).Fnumsavedregs
@@ -566,22 +568,37 @@ func s__EmitFunctionFooter(tls *libc.TLS, cc *CC, irl uintptr, func1 uintptr) {
 		if !((*_Function)(unsafe.Pointer(func1)).Fclosure != 0) {
 			x__EmitMove(tls, cc, irl, cc.x__stackptr, cc.x__frameptr, linenum)
 		}
-		if !(cc.x__gl_outputflags&libc.Int32FromInt32(m_OUTFLAG_COG_CODE) != 0) {
-			// pop registers off stack
+		if !(cc.x__gl_outputflags&libc.Int32FromInt32(m_OUTFLAG_COG_CODE) != 0) && cc.x__gl_p2 != 0 && !(s__InCog(tls, cc, func1) != 0) && (*_Function)(unsafe.Pointer(func1)).Foptimize_flags&int32(m_OPT_INLINE_PUSHREGS) != 0 {
 			s__ValidatePushregs(tls, cc)
-			x__EmitOp1(tls, cc, irl, int32(_OPC_CALL), cc.s__popregs_)
-		} else {
-			s__EmitPop(tls, cc, irl, cc.x__frameptr, linenum)
-			i = n - int32(1)
-			for {
-				if !(i >= 0) {
-					break
+			x__EmitOp1(tls, cc, irl, int32(_OPC_SETQ), x__NewImmediate(tls, cc, int32(2)))
+			ir = x__EmitOp2(tls, cc, irl, int32(_OPC_RDLONG), cc.s__count_, cc.x__stackptr)
+			(*_IR)(unsafe.Pointer(ir)).Fsrceffect = uint32(_OPEFFECT_PREDEC)
+			if n > 0 {
+				if n > int32(1) {
+					x__EmitOp1(tls, cc, irl, int32(_OPC_SETQ), x__NewImmediate(tls, cc, n-int32(1)))
 				}
-				s__EmitPop(tls, cc, irl, x__GetLocalReg(tls, cc, i, 0), linenum)
-				goto _2
-			_2:
-				;
-				i = i - 1
+				ir = x__EmitOp2(tls, cc, irl, int32(_OPC_RDLONG), x__GetLocalReg(tls, cc, 0, 0), cc.x__stackptr)
+				(*_IR)(unsafe.Pointer(ir)).Fsrceffect = uint32(_OPEFFECT_PREDEC)
+			}
+			x__EmitOp1(tls, cc, irl, int32(_OPC_PUSH), cc.s__retaddr_)
+		} else {
+			if !(cc.x__gl_outputflags&libc.Int32FromInt32(m_OUTFLAG_COG_CODE) != 0) {
+				// pop registers off stack
+				s__ValidatePushregs(tls, cc)
+				x__EmitOp1(tls, cc, irl, int32(_OPC_CALL), cc.s__popregs_)
+			} else {
+				s__EmitPop(tls, cc, irl, cc.x__frameptr, linenum)
+				i = n - int32(1)
+				for {
+					if !(i >= 0) {
+						break
+					}
+					s__EmitPop(tls, cc, irl, x__GetLocalReg(tls, cc, i, 0), linenum)
+					goto _2
+				_2:
+					;
+					i = i - 1
+				}
 			}
 		}
 	}
@@ -597,8 +614,8 @@ func s__EmitFunctionFooter(tls *libc.TLS, cc *CC, irl uintptr, func1 uintptr) {
 		// WARNING:
 		// we need at least 1 instruction between the pop
 		// and the actual return
-		ir = x__EmitOp1(tls, cc, irl, int32(_OPC_NOP), libc.UintptrFromInt32(0))
-		v3 = ir + 48
+		ir1 = x__EmitOp1(tls, cc, irl, int32(_OPC_NOP), libc.UintptrFromInt32(0))
+		v3 = ir1 + 48
 		*(*int32)(unsafe.Pointer(v3)) = int32(uint32(*(*int32)(unsafe.Pointer(v3))) | uint32(_FLAG_KEEP_INSTR))
 	}
 	x__EmitLabel(tls, cc, irl, (*_IRFuncData)(unsafe.Pointer((*_Function)(unsafe.Pointer(func1)).Fbedata)).Fasmretname)
@@ -627,9 +644,9 @@ func s__EmitFunctionFooter(tls *libc.TLS, cc *CC, irl uintptr, func1 uintptr) {
 //	// ret instruction, for example
 //	//
 func s__EmitFunctionHeader(tls *libc.TLS, cc *CC, irl uintptr, func1 uintptr) {
-	var fl, linenum, subf uintptr
+	var fl, ir, linenum, subf uintptr
 	var i, localsize, n, needFrame, v2 int32
-	_, _, _, _, _, _, _, _ = fl, i, linenum, localsize, n, needFrame, subf, v2
+	_, _, _, _, _, _, _, _, _ = fl, i, ir, linenum, localsize, n, needFrame, subf, v2
 	needFrame = 0
 	linenum = (*_Function)(unsafe.Pointer(func1)).Fbody
 	// earlier we put the appropriate comments into func->irheader
@@ -697,24 +714,42 @@ func s__EmitFunctionHeader(tls *libc.TLS, cc *CC, irl uintptr, func1 uintptr) {
 	(*_IRFuncData)(unsafe.Pointer((*_Function)(unsafe.Pointer(func1)).Fbedata)).Fnumsavedregs = n
 	if needFrame != 0 {
 		x__ValidateFrameptr(tls, cc)
-		if !(cc.x__gl_outputflags&libc.Int32FromInt32(m_OUTFLAG_COG_CODE) != 0) {
+		if !(cc.x__gl_outputflags&libc.Int32FromInt32(m_OUTFLAG_COG_CODE) != 0) && cc.x__gl_p2 != 0 && !(s__InCog(tls, cc, func1) != 0) && (*_Function)(unsafe.Pointer(func1)).Foptimize_flags&int32(m_OPT_INLINE_PUSHREGS) != 0 {
 			s__ValidatePushregs(tls, cc)
 			x__EmitMove(tls, cc, irl, cc.s__count_, x__NewImmediate(tls, cc, n), linenum)
-			x__EmitOp1(tls, cc, irl, int32(_OPC_CALL), cc.s__pushregs_)
-		} else {
-			i = 0
-			for {
-				if !(i < n) {
-					break
+			x__EmitOp1(tls, cc, irl, int32(_OPC_POP), cc.s__retaddr_)
+			if n > 0 {
+				if n > int32(1) {
+					x__EmitOp1(tls, cc, irl, int32(_OPC_SETQ), x__NewImmediate(tls, cc, n-int32(1)))
 				}
-				s__EmitPush(tls, cc, irl, x__GetLocalReg(tls, cc, i, 0), linenum)
-				goto _3
-			_3:
-				;
-				i = i + 1
+				ir = x__EmitOp2(tls, cc, irl, int32(_OPC_WRLONG), x__GetLocalReg(tls, cc, 0, 0), cc.x__stackptr)
+				(*_IR)(unsafe.Pointer(ir)).Fsrceffect = uint32(_OPEFFECT_POSTINC)
 			}
-			s__EmitPush(tls, cc, irl, cc.x__frameptr, linenum)
+			// COUNT_, RETADDR_ and fp are consecutive registers
+			x__EmitOp1(tls, cc, irl, int32(_OPC_SETQ), x__NewImmediate(tls, cc, int32(2)))
+			ir = x__EmitOp2(tls, cc, irl, int32(_OPC_WRLONG), cc.s__count_, cc.x__stackptr)
+			(*_IR)(unsafe.Pointer(ir)).Fsrceffect = uint32(_OPEFFECT_POSTINC)
 			x__EmitMove(tls, cc, irl, cc.x__frameptr, cc.x__stackptr, linenum)
+		} else {
+			if !(cc.x__gl_outputflags&libc.Int32FromInt32(m_OUTFLAG_COG_CODE) != 0) {
+				s__ValidatePushregs(tls, cc)
+				x__EmitMove(tls, cc, irl, cc.s__count_, x__NewImmediate(tls, cc, n), linenum)
+				x__EmitOp1(tls, cc, irl, int32(_OPC_CALL), cc.s__pushregs_)
+			} else {
+				i = 0
+				for {
+					if !(i < n) {
+						break
+					}
+					s__EmitPush(tls, cc, irl, x__GetLocalReg(tls, cc, i, 0), linenum)
+					goto _3
+				_3:
+					;
+					i = i + 1
+				}
+				s__EmitPush(tls, cc, irl, cc.x__frameptr, linenum)
+				x__EmitMove(tls, cc, irl, cc.x__frameptr, cc.x__stackptr, linenum)
+			}
 		}
 	}
 	if cc.x__gl_compress == 0 && (int32(*(*uint32)(unsafe.Pointer(func1 + 1248))&0x4000>>14) != 0 || (*_Function)(unsafe.Pointer(func1)).Fbedata != 0 && (*_IRFuncData)(unsafe.Pointer((*_Function)(unsafe.Pointer(func1)).Fbedata)).FeffectivelyLeaf != 0) {
@@ -1516,7 +1551,7 @@ func s__is_macro_call(tls *libc.TLS, cc *CC, defp uintptr, cp uintptr, endf uint
 	if int32((*_DEFBUF)(unsafe.Pointer(defp)).Fnargs) >= 0 || int32((*_DEFBUF)(unsafe.Pointer(defp)).Fnargs) == -libc.Int32FromInt32(1)-(libc.Int32FromInt32(m___SCHAR_MAX__)*libc.Int32FromInt32(2)+libc.Int32FromInt32(1)+libc.Int32FromInt32(1)|(libc.Int32FromInt32(m___SCHAR_MAX__)*libc.Int32FromInt32(2)+libc.Int32FromInt32(1)+libc.Int32FromInt32(1))*libc.Int32FromInt32(2)) { /* _Pragma() pseudo-macro       */
 		c = s__squeeze_ws(tls, cc, cp, endf, mgc_seq) /* See the next char.   */
 		if c == m_CHAR_EOF {                          /* End of file          */
-			x__unget_string(tls, cc, __ccgo_ts+4267, libc.UintptrFromInt32(0))
+			x__unget_string(tls, cc, __ccgo_ts+4283, libc.UintptrFromInt32(0))
 		} else {
 			if c != int32(m_RT_END) {
 				/* Still in the file and rescan boundary ?  */

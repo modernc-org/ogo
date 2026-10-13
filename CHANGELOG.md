@@ -96,12 +96,28 @@ shipped section tells a reader on that version that they have behaviour they do 
 
 ### Toolchain
 
+- **The C backend is regenerated at spin2cpp's master of 2026-10-13**, which
+  carries upstream's fix of `x << 32 >> 32` for a `uint64` (below) and the two
+  changes of ours upstream merged: the conditional-flags fix the backend had
+  carried since 2026-10-02 (spin2cpp#516), and `-Oinline-pushregs`
+  (spin2cpp#517), an optimization `ogo build` does not ask for. The CORDIC fix of
+  the last regeneration is still carried. Of 1419 programs -- the run cases, 400
+  fuzzer programs and the reproducers -- five run cases build differently, each
+  printing on a P2-EDGE what it printed before, and two that were refused build
+  and pass. The five platforms' backends compile them exactly as a native build of
+  the same backend does.
 - **`ogo test -timeout d`**, as go test's: how long the board is given to finish, 0
   for no limit. The default stays what it was, two minutes and for each benchmark
   three times `-benchtime` and a minute; a benchmark's sub-benchmarks share its
   minute, there being no counting them before they run.
 
 ### Fixed
+
+- **`x << 32 >> 32` of a `uint64` did not build**: the target's C compiler
+  refused the pair of shifts, "Cannot handle expression yet", about the C written
+  for it. Fixed upstream (flexprop#122) and taken with the backend's
+  regeneration: it prints the low half, as Go does, on a P2-EDGE. `x & 0xFFFFFFFF`
+  had been the spelling that built.
 
 - **A 64-bit constant that passes 64 bits on the way, `var a uint64 = 1<<64 - 1`,
   did not build in a package variable or in a literal's element.** A local

@@ -15,7 +15,16 @@
 // of seeds 201-1000. Not worked around; `x & 0xFFFFFFFF` is the spelling that
 // builds. REPORTED 2026-10-03 as flexprop issue 122.
 //
-// To check, build for the P2 with -2: the build is refused.
+// FIXED upstream by spin2cpp b5993a84 (2026-10-13: fetching the low or high word of
+// a 64-bit value built from two words takes that word), the pin the backend was
+// regenerated at the same day. Measured natively before adoption: this file and
+// nine unsigned neighbours -- through a function, an array element, a call's
+// result, `>> 31`, `<< 31`, narrowed -- build and print gcc's values on a P2-EDGE.
+// The fix is narrow: doc/uint64-widened-shift-32.c and
+// doc/cast-of-64bit-expression.c build to the same binaries as before it.
+//
+// To check, build for the P2 with -2: it prints 89abcdef; before the fix the build
+// was refused.
 
 #include <stdio.h>
 
