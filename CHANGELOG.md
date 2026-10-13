@@ -103,6 +103,19 @@ shipped section tells a reader on that version that they have behaviour they do 
 
 ### Fixed
 
+- **A call returning `(T, bool)`, `(T, error)` or a struct the target does not
+  return in registers allocated memory, on a heap OctoGo does not have.** The
+  target's C compiler returns a struct of more than 16 bytes, or with a member
+  that is not 32 bits -- a byte, a bool, an `int64`, a string, an interface -- in
+  a copy it allocates from a garbage-collected heap of 1 KB, at every return, and
+  when the heap fills the cog stops to scan Hub RAM. On a P2-EDGE at 160 MHz a
+  call returning `(int, bool)` took 1689 clocks at least, and about one call in
+  sixty paused for 5.5 ms -- 71 ms in a program the size of p2-11. Such results
+  are written through an out parameter now, as a struct holding an array already
+  was: the same call takes 141 clocks, every time, in either program. So are the
+  `Builder`'s writes, the ok form of `append` and a channel's struct elements. A
+  program that used the heap is about 8 KB smaller without the collector. Of the
+  compiler's run cases, 87 had used it.
 - **`ogo help test` said a test has no `Errorf`** and prints with `println`, which
   stopped being so when the testing package's formatting methods came.
 - **`%q` and `%U` of a 64-bit expression printed garbage on the board**:

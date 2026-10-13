@@ -468,7 +468,51 @@ func boardBuildPaths(ogo, out, allowWarning string, flags []string, src string) 
 			"A backend diagnostic means the emitted C is suspect even though the build passed. "+
 			"Fix the emitter, or record it in the case's backendWarning field with the reason it is harmless.", chatter)
 	}
+	return heapFree(out)
+}
+
+// heapFree holds a target build to no call of the backend's heap. The language
+// has none, and the target's compiler keeps one all the same: a struct it does not
+// return in registers it returns in a copy allocated from a garbage-collected heap
+// of 1 KB, at every return, the collector scanning Hub RAM when it fills -- 71 ms
+// for one call in a program of p2-11's size (heapReturned, emit.go). The emitter
+// writes every such result through an out parameter, and this is what says none
+// was missed: every program a test builds for the target, the run cases among
+// them, is read for a call of the allocator in its listing, written beside the
+// binary.
+func heapFree(out string) error {
+	listing, err := os.ReadFile(strings.TrimSuffix(out, filepath.Ext(out)) + ".p2asm")
+	if err != nil {
+		return fmt.Errorf("reading the listing to check for the backend's heap: %v", err)
+	}
+	var fn string
+	var in []string
+	for _, line := range strings.Split(string(listing), "\n") {
+		switch {
+		case listingFunc(line):
+			fn = line
+		case strings.Contains(line, "#__system___gc_alloc_managed"): // a call, conditional or not
+			in = append(in, fn)
+		}
+	}
+	if len(in) != 0 {
+		return fmt.Errorf("the backend allocates on its heap, in %s: a result the emitter returns by value that the target's compiler returns in a heap copy (see heapReturned)", strings.Join(in, ", "))
+	}
 	return nil
+}
+
+// listingFunc reports whether a line of the backend's listing is a label of a
+// function: a name alone on its line, not one of the labels inside a body (LR__).
+func listingFunc(line string) bool {
+	if line == "" || strings.HasPrefix(line, "LR__") {
+		return false
+	}
+	for i, c := range line {
+		if !(c == '_' || 'a' <= c && c <= 'z' || 'A' <= c && c <= 'Z' || i > 0 && '0' <= c && c <= '9') {
+			return false
+		}
+	}
+	return true
 }
 
 // boardLoad loads binary with `ogo loadp2 -t` and reads the board's serial output

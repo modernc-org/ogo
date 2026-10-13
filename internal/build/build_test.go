@@ -481,6 +481,128 @@ func main() {
 	}
 }
 
+// TestBuildNoBackendHeap holds the emitter to the target's rule for returning a
+// struct (heapReturned): one it does not hold in registers -- over 16 bytes, or
+// with a member that is not one long -- is returned in a copy the backend
+// allocates from a garbage-collected heap, at every return. Such results are
+// written through an out parameter, the Builder's writes and append's ok form
+// among them, and the program carries no heap, its collector or its allocator.
+// And a result the backend does return in registers is still returned so: no
+// out parameter is written where none is wanted.
+func TestBuildNoBackendHeap(t *testing.T) {
+	const src = `import "errors"
+
+var errX = errors.New("x")
+
+type Small struct {
+	b uint8
+	n int
+}
+
+type Big struct{ a, b, c, d, e int }
+
+type Four struct{ a, b, c, d int }
+
+type Named struct{ s string }
+
+var arr [4]int
+
+func pairOK(x int) (int, bool) { return x, x > 0 }
+
+func valErr(x int) (int, error) {
+	if x < 0 {
+		return 0, errX
+	}
+	return x, nil
+}
+
+func strOK(x int) (string, bool) { return "s", x > 0 }
+
+func wideOK(x int) (int64, bool) { return int64(x), x > 0 }
+
+func sliceOK(x int) ([]int, bool) { return arr[:x], x > 0 }
+
+func mkSmall(x int) Small { return Small{uint8(x), x} }
+
+func mkBig(x int) Big { return Big{x, x, x, x, x} }
+
+func mkNamed(x int) Named { return Named{"n"} }
+
+func twoInts(x int) (int, int) { return x, x + 1 }
+
+func oneWide(x int) int64 { return int64(x) << 33 }
+
+func oneStr(x int) string { return "s" }
+
+func oneErr(x int) error {
+	if x < 0 {
+		return errX
+	}
+	return nil
+}
+
+func mkFour(x int) Four { return Four{x, x, x, x} }
+
+func oneSlice(x int) []int { return arr[:x] }
+
+func main() {
+	a, ok := pairOK(1)
+	b, err := valErr(2)
+	s, ok2 := strOK(3)
+	w, ok3 := wideOK(4)
+	sl, ok4 := sliceOK(2)
+	println(a, ok, b, err == nil, s, ok2, w, ok3, len(sl), ok4)
+	println(mkSmall(5).n, mkBig(6).e, mkNamed(7).s)
+	c, d := twoInts(8)
+	println(c, d, oneWide(9), oneStr(10), oneErr(11) == nil, mkFour(12).d, len(oneSlice(3)))
+	var back [8]byte
+	bld := NewBuilder(back[:])
+	n1, e1 := bld.WriteString("ab")
+	n2, e2 := bld.WriteRune('x')
+	n3, e3 := bld.Write(back[:1])
+	println(n1, e1 == nil, n2, e2 == nil, n3, e3 == nil)
+	xs := arr[:0]
+	xs, ok5 := append(xs, 1)
+	xs, ok6 := append(xs, arr[:2]...)
+	var bb [4]byte
+	bs := bb[:0]
+	bs, ok7 := append(bs, "hi"...)
+	println(len(xs), ok5, ok6, len(bs), ok7)
+}
+`
+	_, listing := buildProgram(t, src)
+	if got := regexp.MustCompile(`(?m)^.*__system___gc_\w+.*$`).FindAll(listing, 5); len(got) != 0 {
+		t.Errorf("the program carries the backend's heap: %q", got)
+	}
+	dir := t.TempDir()
+	write(t, filepath.Join(dir, "main.ogo"), src)
+	pkg, err := octogo.Build(-1, []string{"main.ogo"}, os.DirFS(dir))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var c bytes.Buffer
+	if err := octogo.EmitC(pkg, &c, octogo.Checked(), octogo.Inline()); err != nil {
+		t.Fatal(err)
+	}
+	signature := func(name string) string {
+		m := regexp.MustCompile(`(?m)^[A-Za-z_][A-Za-z0-9_ *]* ` + name + `\(.*\)`).Find(c.Bytes())
+		if m == nil {
+			t.Fatalf("the C declares no %s", name)
+		}
+		return string(m)
+	}
+	for _, name := range []string{"pairOK", "valErr", "strOK", "wideOK", "sliceOK", "mkSmall", "mkBig", "mkNamed"} {
+		if sig := signature(name); !strings.HasPrefix(sig, "void ") || !strings.Contains(sig, "_ogo_ret") {
+			t.Errorf("%s returns what the target would copy to its heap: %s", name, sig)
+		}
+	}
+	for _, name := range []string{"twoInts", "oneWide", "oneStr", "oneErr", "mkFour", "oneSlice"} {
+		if sig := signature(name); strings.Contains(sig, "_ogo_ret") {
+			t.Errorf("%s returns in registers on the target and takes an out parameter: %s", name, sig)
+		}
+	}
+}
+
 // TestBuildBenchLoopInlined holds b.Loop to what go test's costs a benchmark: its
 // fast path, a compare and an increment, inlined into the loop it drives, where
 // the rest of the testing package is called -- measured on a P2-EDGE at 160 MHz, an

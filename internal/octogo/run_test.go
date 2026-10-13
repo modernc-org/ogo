@@ -36876,6 +36876,155 @@ func main() {
 		want: "6 true\n9 true\n5 false\n7\n12\n-7\n",
 	},
 	{
+		// Every result the target's compiler would return in a copy on its heap
+		// (heapReturned) -- (int, bool), (T, error), (string, bool), (int64, bool),
+		// a struct with a byte member, one over 16 bytes, one holding a string --
+		// returned, destructured, forwarded and widened, through a method, a
+		// promoted one, an interface, a function value, a literal, a literal's
+		// method, a defer and a goroutine. Each is written through an out parameter
+		// now, and TestTargetBuild holds the listing to no call of the heap's
+		// allocator. Every line prints what Go prints.
+		name: "results the target would return on its heap",
+		src: `import "errors"
+
+var errOdd = errors.New("odd")
+
+type Small struct {
+	b uint8
+	n int
+}
+
+type Big struct{ a, b, c, d, e int }
+
+type Named struct{ s string }
+
+type Outer struct {
+	*Small
+	id int
+}
+
+type Getter interface{ Get() (int, bool) }
+
+type E struct{ code int }
+
+func (e *E) Error() string { return "E" }
+
+var calls int
+
+func pair(x int) (int, bool) {
+	calls++
+	return x * 2, x > 0
+}
+
+func withErr(x int) (int, error) {
+	if x%2 != 0 {
+		return 0, errOdd
+	}
+	return x / 2, nil
+}
+
+func strOK(x int) (string, bool) {
+	if x > 1 {
+		return "many", true
+	}
+	return "few", false
+}
+
+func wide(x int) (int64, bool) { return int64(x) << 40, x != 0 }
+
+func mkSmall(x int) Small { return Small{uint8(x), x + 1} }
+
+func mkBig(x int) Big { return Big{x, x + 1, x + 2, x + 3, x + 4} }
+
+func mkNamed(s string) Named { return Named{s} }
+
+func (s *Small) Get() (int, bool) { return s.n, s.b != 0 }
+
+func (s Small) Pair() (uint8, int) { return s.b, s.n }
+
+func fwd(x int) (int, bool) { return pair(x) }
+
+func asE(x int) (*E, int) { return &gE, x }
+
+var gE = E{7}
+
+func viaErr(x int) (error, int) { return asE(x) }
+
+func bump(p *int) { *p++ }
+
+func scale(v *Small) { v.n *= 10 }
+
+func named(x int) (n int, ok bool) {
+	defer bump(&n)
+	n, ok = pair(x)
+	return
+}
+
+func held(x int) (v Small) {
+	defer scale(&v)
+	return mkSmall(x)
+}
+
+var gs = Small{3, 4}
+
+var o = Outer{&gs, 1}
+
+func outer() *Outer { return &o }
+
+func work(x int, done chan bool) {
+	pair(x)
+	done <- true
+}
+
+func main() {
+	a, ok := pair(3)
+	println(a, ok)
+	n, err := withErr(4)
+	println(n, err == nil)
+	_, err = withErr(3)
+	println(err == errOdd)
+	s, ok2 := strOK(2)
+	println(s, ok2)
+	w, ok3 := wide(1)
+	println(w, ok3)
+	sm := mkSmall(5)
+	println(sm.b, sm.n, mkSmall(6).n)
+	bg := mkBig(1)
+	println(bg.a, bg.e, mkBig(2).c)
+	println(mkNamed("hi").s)
+	g, gok := gs.Get()
+	println(g, gok)
+	var gt Getter = &gs
+	g2, gok2 := gt.Get()
+	println(g2, gok2)
+	f := pair
+	fa, fok := f(-1)
+	println(fa, fok)
+	la, lok := func(k int) (int, bool) { return k + 100, true }(1)
+	println(la, lok)
+	func() (int, bool) { return 1, false }()
+	p1, p2 := o.Get()
+	println(p1, p2)
+	q1, q2 := outer().Get()
+	println(q1, q2)
+	b1, b2 := Small{9, 8}.Pair()
+	println(b1, b2)
+	println(fwd(4))
+	ve, vn := viaErr(5)
+	println(ve.Error(), vn)
+	println(named(2))
+	println(held(2).n)
+	pair(1)
+	defer pair(2)
+	done := make(chan bool)
+	go work(3, done)
+	<-done
+	println(calls)
+}
+`,
+		want: "6 true\n2 true\ntrue\nmany true\n1099511627776 true\n5 6 7\n1 5 4\nhi\n4 true\n4 true\n-2 false\n101 true\n4 true\n4 true\n9 8\n8 true\nE 5\n5 true\n30\n6\n",
+	},
+	{
 		// A function literal of several results called where it stands:
 		// destructured, and as a statement whose results are dropped. The first
 		// was "multiple assignment requires a single function call on the

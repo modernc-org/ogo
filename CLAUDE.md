@@ -811,7 +811,10 @@ still design-only.
   registers 38 and 23; one running a subtest 33864 and 28452 plus the table, 43 and
   41; each of p2-11's ten test binaries 3 KB smaller, 11 KB where nothing else
   needed the heap. **A function a program calls may bring the backend's heap: the
-  listing says, `__system___gc_`.** Held to go test by TestSubtestNamesMatchGoTest
+  listing says, `__system___gc_`.** (Not only the Builder's: every struct the
+  backend does not return in registers, which an out parameter carries since the
+  same day -- A STRUCT THE BACKEND DOES NOT RETURN IN REGISTERS, below.) Held to go
+  test by TestSubtestNamesMatchGoTest
   (the runes on both sides of every change, the corners of Latin-1, invalid UTF-8,
   names past a window), TestD's counts and TestOnBoardOgoTestNames, each failing
   on its planted fault -- a block search off by one, a count's check skipped, a
@@ -3832,6 +3835,53 @@ plain C they pin. **Whatever emits what a build emits passes both** -- `ogo buil
 and `ogo test`, the run tests, the fuzzer's oracle, `scripts/dumpc`, dumpcorpus.sh's
 test -- and a new such place that passes only `Checked()` tests a program nobody
 builds.
+
+**A STRUCT THE BACKEND DOES NOT RETURN IN REGISTERS IT RETURNS ON A HEAP**
+(2026-10-13, found sizing the testing package's subtest naming). spin2cpp's
+functions.c gives a function whose result TypeGoesOnStack (frontends/common.c: over
+16 bytes, an array of non-longs, or a struct not longOnly -- a member that is not one
+long, a nested struct of more than one long included) a COPYREFTYPE result and
+no_inline, and CoerceAssignTypes (frontends/types.c) makes EVERY `return` of one copy
+the value into `_gc_alloc_managed(size)`, "to persist beyond this function": a block
+of a garbage-collected heap of 1 KB a call, the collector (sys/gcalloc.spin) scanning
+Hub RAM from 0 to the stack pointer when it fills, and a failed allocation answering
+0, which the copy then writes over. Parameters are not so, a by-value struct argument
+going to a stack temporary. Measured on a P2-EDGE at 160 MHz, a function of (int,
+bool): 1689 clocks a call at least, one call in sixty-odd 883,401 (5.5 ms), and 11.3
+million (71 ms) in a program padded to p2-11's 378 KB; written through an out
+parameter, 141 every call in both, the small program 17848 bytes before and 9532
+after. It was Go's commonest results -- (int, bool), (T, error),
+(string, bool), (int64, bool), ([]T, bool) -- any struct with a byte or a bool, the
+Builder's writes, append's ok form and a channel's struct element: 87 run cases,
+none of the 321 fuzzer seeds counted (the generator's aggregates hold arrays, which
+took the out parameter already), and p2-11 in 26 places (fat's (File, error), rk11's
+report, dl11's control), each program carrying some 8 KB of collector besides. Every
+such result is written through the out parameter a struct holding an array already
+took (structOutOf asks heapReturned, which mirrors the rule over cLayout's layout,
+longsOfFields), the runtime helpers write theirs through a pointer, and
+chanStructByPtr takes such an element. The out path had been walked by structs
+holding arrays alone, and widening it met four rows none had: `return f()`
+forwarding a call it could not name (forwardedOutCallC assigns the value) or
+widening the results into interfaces (widenForwardInto), a literal of several
+results called as a statement, and a PROMOTED method -- declaredCalleeC named the
+outer type's, and outCallC handed the outer receiver (outRecvC). And `make board`
+found a fifth the host could not: a VALUE receiver read through a call,
+`bus.ch(1).which()`, went to the out-parameter call as `*ogo_nil_Chan_ptr(ch(...))`,
+and the target's compiler passes a struct of N longs by value from such an
+expression evaluating it N times -- the call ran twice, once under gcc. outCallC
+binds what a call answers first, as the by-value path did. The same backend fault
+is OPEN in the emitter for a by-value ARGUMENT, `take(*getp())`, a call through a
+function value and a send: N calls for N longs, 2 to 4, measured on a P2-EDGE; a
+return, a literal's element, a field store and a struct with a sub-word member are
+right (the held list of backend faults, 13). Held:
+TestTargetBuild reads every run case's listing for the allocator (heapFree in
+board_test.go, so every test building for the target does), and
+TestBuildNoBackendHeap holds the rule both ways, no heap for the shapes the backend
+puts there and no out parameter for those it returns in registers -- each failing
+on its planted fault, the guard on HEAD's Builder. p2-11's binary 11 KB smaller, its
+test binaries 8 KB where they had a site, its registers and build time unchanged.
+**A promise the language makes about the hardware is checked in the listing**: "no
+heap" was true of OctoGo's C and not of the binary.
 
 **A CHECK THE PROGRAM PROVES IS NOT WRITTEN** (2026-10-02). p2-11's profile (its
 OCTOGO.md, 3) put a checked build 14% behind an unchecked one, and two of the

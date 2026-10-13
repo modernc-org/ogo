@@ -1695,18 +1695,16 @@ func TestEmitCAppend(t *testing.T) {
 		"\t}\n" +
 		"\treturn s;\n" +
 		"}\n" +
-		"static ogo_appendok_int ogo_tryappend_int(ogo_slice_int s, int v) {\n" +
-		"\togo_appendok_int r;\n" +
+		"static void ogo_tryappend_int(ogo_appendok_int* r, ogo_slice_int s, int v) {\n" +
 		"\tif (s.len >= s.cap) {\n" +
-		"\t\tr.slice = s;\n" +
-		"\t\tr.ok = 0;\n" +
+		"\t\tr->slice = s;\n" +
+		"\t\tr->ok = 0;\n" +
 		"\t} else {\n" +
 		"\t\ts.ptr[s.len] = v;\n" +
 		"\t\ts.len++;\n" +
-		"\t\tr.slice = s;\n" +
-		"\t\tr.ok = 1;\n" +
+		"\t\tr->slice = s;\n" +
+		"\t\tr->ok = 1;\n" +
 		"\t}\n" +
-		"\treturn r;\n" +
 		"}\n" +
 		"\n" +
 		"int main(void) {\n" +
@@ -1715,10 +1713,12 @@ func TestEmitCAppend(t *testing.T) {
 		"\ts = ogo_append_int(s, 10);\n" +
 		"\ts = ogo_append_int(s, 20);\n" +
 		"\tint ok = 0;\n" +
-		"\togo_appendok_int _ogo_t0 = ogo_tryappend_int(s, 30);\n" +
+		"\togo_appendok_int _ogo_t0;\n" +
+		"\togo_tryappend_int(&_ogo_t0, s, 30);\n" +
 		"\ts = _ogo_t0.slice;\n" +
 		"\tok = _ogo_t0.ok;\n" +
-		"\togo_appendok_int _ogo_t1 = ogo_tryappend_int(s, 40);\n" +
+		"\togo_appendok_int _ogo_t1;\n" +
+		"\togo_tryappend_int(&_ogo_t1, s, 40);\n" +
 		"\ts = _ogo_t1.slice;\n" +
 		"\tok = _ogo_t1.ok;\n" +
 		"\tprintf(\"%d\\n\", (s).len);\n" +
@@ -5549,7 +5549,12 @@ func main() {
 		"typedef struct { int _0; _Bool _1; } ogo_ret_int__Bool;\n",
 		"ogo_ret_int_int divmod(int a, int b) {\n",
 		"return (ogo_ret_int_int){ogo_div_int(a, b), ogo_mod_int(a, b)};\n",
-		"return (ogo_ret_int__Bool){n, n > 0};\n",
+		// A result struct with a member narrower than a long is one the target
+		// would return in a copy on its heap (heapReturned): written through the
+		// out parameter instead, where two ints are returned in registers.
+		"void flags(ogo_ret_int__Bool* _ogo_ret, int n) {\n",
+		"\t_ogo_ret->_0 = n;\n\t_ogo_ret->_1 = n > 0;\n\treturn;\n",
+		"\togo_ret_int__Bool _ogo_t1;\n\tflags(&_ogo_t1, 3);\n",
 	} {
 		if got := buf.String(); !strings.Contains(got, want) {
 			t.Errorf("EmitC unnamed results: missing %q in\n%s", want, got)

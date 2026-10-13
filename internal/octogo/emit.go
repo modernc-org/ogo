@@ -915,25 +915,25 @@ func (e *emitter) builderHelpersC() string {
 		"static const " + vt + " ogo_builder_short_vt = { \"*errors.errorString\", ogo_builder_short_Error };\n" +
 		"static char ogo_builder_short;\n" +
 		"static " + errC + " ogo_builder_err(int full) { " + errC + " r; r.data = 0; r.vt = 0; if (!full) { r.data = &ogo_builder_short; r.vt = &ogo_builder_short_vt; } return r; }\n" +
-		// The pair is built in a local and the local returned: a return of a call
-		// yielding a struct is what the target's compiler copies wrong
-		// (flexprop#113), warning "incompatible pointer types in return".
-		"static " + ret + " ogo_builder_WriteString(ogo_builder* b, ogo_string s) { " + ret + " r; int n = s.len; if (n > b->cap - b->len) n = b->cap - b->len; if (n > 0) { memcpy(b->ptr + b->len, s.str, (unsigned)n); b->len += n; } else { n = 0; } r._0 = n; r._1 = ogo_builder_err(n == s.len); return r; }\n" +
-		"static " + ret + " ogo_builder_Write(ogo_builder* b, ogo_slice_uint8_t p) { " + ret + " r; int n = p.len; if (n > b->cap - b->len) n = b->cap - b->len; if (n > 0) { memcpy(b->ptr + b->len, p.ptr, (unsigned)n); b->len += n; } else { n = 0; } r._0 = n; r._1 = ogo_builder_err(n == p.len); return r; }\n" +
+		// The pair is written through an out parameter after the receiver, as a
+		// method's result struct the target's compiler would return on its heap is
+		// (heapReturned): returned, every write allocated.
+		"static void ogo_builder_WriteString(ogo_builder* b, " + ret + "* " + arrayResultParam + ", ogo_string s) { int n = s.len; if (n > b->cap - b->len) n = b->cap - b->len; if (n > 0) { memcpy(b->ptr + b->len, s.str, (unsigned)n); b->len += n; } else { n = 0; } " + arrayResultParam + "->_0 = n; " + arrayResultParam + "->_1 = ogo_builder_err(n == s.len); }\n" +
+		"static void ogo_builder_Write(ogo_builder* b, " + ret + "* " + arrayResultParam + ", ogo_slice_uint8_t p) { int n = p.len; if (n > b->cap - b->len) n = b->cap - b->len; if (n > 0) { memcpy(b->ptr + b->len, p.ptr, (unsigned)n); b->len += n; } else { n = 0; } " + arrayResultParam + "->_0 = n; " + arrayResultParam + "->_1 = ogo_builder_err(n == p.len); }\n" +
 		"static " + errC + " ogo_builder_WriteByte(ogo_builder* b, uint8_t c) { if (b->len < b->cap) { b->ptr[b->len++] = c; return ogo_builder_err(1); } return ogo_builder_err(0); }\n" +
 		// WriteRune encodes a rune as UTF-8. An out-of-range or surrogate value is
 		// written as U+FFFD, as Go's WriteRune does. It writes nothing if the encoding
 		// does not fit whole.
-		"static " + ret + " ogo_builder_WriteRune(ogo_builder* b, int32_t r) {\n" +
-		"\tunsigned int c = (unsigned int)r; uint8_t t[4]; int n; " + ret + " res;\n" +
+		"static void ogo_builder_WriteRune(ogo_builder* b, " + ret + "* res, int32_t r) {\n" +
+		"\tunsigned int c = (unsigned int)r; uint8_t t[4]; int n;\n" +
 		"\tif (r < 0 || c > 0x10FFFF || (c >= 0xD800 && c <= 0xDFFF)) c = 0xFFFD;\n" +
 		"\tif (c < 0x80) { t[0] = (uint8_t)c; n = 1; }\n" +
 		"\telse if (c < 0x800) { t[0] = (uint8_t)(0xC0 | (c >> 6)); t[1] = (uint8_t)(0x80 | (c & 0x3F)); n = 2; }\n" +
 		"\telse if (c < 0x10000) { t[0] = (uint8_t)(0xE0 | (c >> 12)); t[1] = (uint8_t)(0x80 | ((c >> 6) & 0x3F)); t[2] = (uint8_t)(0x80 | (c & 0x3F)); n = 3; }\n" +
 		"\telse { t[0] = (uint8_t)(0xF0 | (c >> 18)); t[1] = (uint8_t)(0x80 | ((c >> 12) & 0x3F)); t[2] = (uint8_t)(0x80 | ((c >> 6) & 0x3F)); t[3] = (uint8_t)(0x80 | (c & 0x3F)); n = 4; }\n" +
-		"\tres._0 = 0; res._1 = ogo_builder_err(0);\n" +
-		"\tif (n > b->cap - b->len) return res;\n" +
-		"\tfor (int i = 0; i < n; i++) b->ptr[b->len++] = t[i];\n\tres._0 = n; res._1 = ogo_builder_err(1);\n\treturn res;\n}\n" +
+		"\tres->_0 = 0; res->_1 = ogo_builder_err(0);\n" +
+		"\tif (n > b->cap - b->len) return;\n" +
+		"\tfor (int i = 0; i < n; i++) b->ptr[b->len++] = t[i];\n\tres->_0 = n; res->_1 = ogo_builder_err(1);\n}\n" +
 		"static ogo_string ogo_builder_String(ogo_builder* b) { ogo_string s; s.str = (const char*)b->ptr; s.len = b->len; return s; }\n" +
 		"static int ogo_builder_Len(ogo_builder* b) { return b->len; }\n" +
 		"static void ogo_builder_Reset(ogo_builder* b) { b->len = 0; }\n"
@@ -4745,12 +4745,14 @@ func (e *emitter) needChan(elem string) {
 // its argument slot, "couldn't find object variable with offset 4" -- so it crosses
 // the helpers by POINTER, as an array element does, and is copied with memcpy on
 // either side (chanRuntimeDefs). It was refused as a channel's element outright,
-// which is the natural shape of a message with a payload between two cogs.
+// which is the natural shape of a message with a payload between two cogs. So does
+// a struct the target would return in a copy on its heap (heapReturned): a receive
+// helper returning one allocated at every receive.
 func (e *emitter) chanStructByPtr(elem string) bool {
 	if _, isArr := e.namedArrays[elem]; isArr {
 		return false
 	}
-	return e.hasArrayField(elem)
+	return e.hasArrayField(elem) || e.heapReturned(elem)
 }
 
 // chanSendArg is what a send helper takes for a value held in the temporary or
@@ -7069,27 +7071,29 @@ func emitProgram(pkg *Package, w io.Writer, opts []EmitOption, rename map[string
 			e.includes["string.h"] = true
 			param, store = "const "+a.elem+"* v", "memcpy(s.ptr[s.len], v, sizeof(s.ptr[s.len]));"
 		}
-		fmt.Fprintf(&helperDefs, "static %s %s(%s s, %s) {\n\t%s r;\n"+
-			"\tif (s.len >= s.cap) {\n\t\tr.slice = s;\n\t\tr.ok = 0;\n\t} else {\n"+
-			"\t\t%s\n\t\ts.len++;\n\t\tr.slice = s;\n\t\tr.ok = 1;\n\t}\n\treturn r;\n}\n",
-			appendokCName(el), tryappendCName(el), sliceCName(el), param, appendokCName(el), store)
+		// The { slice, ok } pair is written through r: returned, it is a struct the
+		// target's compiler returns in a copy on its heap (heapReturned).
+		fmt.Fprintf(&helperDefs, "static void %s(%s* r, %s s, %s) {\n"+
+			"\tif (s.len >= s.cap) {\n\t\tr->slice = s;\n\t\tr->ok = 0;\n\t} else {\n"+
+			"\t\t%s\n\t\ts.len++;\n\t\tr->slice = s;\n\t\tr->ok = 1;\n\t}\n}\n",
+			tryappendCName(el), appendokCName(el), sliceCName(el), param, store)
 	}
 	// The ok forms of the spread. Either the whole spread fits or nothing is
 	// appended: a partial append would leave the caller with no way to say what
 	// happened, ok being one bool for the call.
 	for _, el := range sortedKeys(e.tryappendSliceEls) {
-		fmt.Fprintf(&helperDefs, "static %s %s(%s s, %s v) {\n\t%s r;\n"+
-			"\tif (v.len > s.cap - s.len) {\n\t\tr.slice = s;\n\t\tr.ok = 0;\n\t} else {\n"+
+		fmt.Fprintf(&helperDefs, "static void %s(%s* r, %s s, %s v) {\n"+
+			"\tif (v.len > s.cap - s.len) {\n\t\tr->slice = s;\n\t\tr->ok = 0;\n\t} else {\n"+
 			"\t\tmemmove(s.ptr + s.len, v.ptr, (unsigned)v.len * sizeof(*s.ptr));\n"+
-			"\t\ts.len += v.len;\n\t\tr.slice = s;\n\t\tr.ok = 1;\n\t}\n\treturn r;\n}\n",
-			appendokCName(el), tryappendSliceCName(el), sliceCName(el), sliceCName(el), appendokCName(el))
+			"\t\ts.len += v.len;\n\t\tr->slice = s;\n\t\tr->ok = 1;\n\t}\n}\n",
+			tryappendSliceCName(el), appendokCName(el), sliceCName(el), sliceCName(el))
 	}
 	if e.usesTryAppendStr {
-		fmt.Fprintf(&helperDefs, "static %s %s(%s s, %s v) {\n\t%s r;\n"+
-			"\tif (v.len > s.cap - s.len) {\n\t\tr.slice = s;\n\t\tr.ok = 0;\n\t} else {\n"+
+		fmt.Fprintf(&helperDefs, "static void %s(%s* r, %s s, %s v) {\n"+
+			"\tif (v.len > s.cap - s.len) {\n\t\tr->slice = s;\n\t\tr->ok = 0;\n\t} else {\n"+
 			"\t\tmemmove(s.ptr + s.len, v.str, (unsigned)v.len);\n"+
-			"\t\ts.len += v.len;\n\t\tr.slice = s;\n\t\tr.ok = 1;\n\t}\n\treturn r;\n}\n",
-			appendokCName("uint8_t"), tryappendStrCName, sliceCName("uint8_t"), cString, appendokCName("uint8_t"))
+			"\t\ts.len += v.len;\n\t\tr->slice = s;\n\t\tr->ok = 1;\n\t}\n}\n",
+			tryappendStrCName, appendokCName("uint8_t"), sliceCName("uint8_t"), cString)
 	}
 	// The per-element slice printers render "[e0 e1 ...]"; the newline form defers
 	// to the plain one and adds a trailing '\n'. They reference the slice typedef
@@ -7449,7 +7453,7 @@ type emitter struct {
 	funcSliceParams map[string][]string // same key -> per parameter, its C slice type or "", so a bare nil argument knows it is a slice header
 	funcVariadic    map[string]int      // same key -> the position of a "...T" parameter, for the pack a call has to build
 	funcArrayRet    map[string]arrDim   // same key -> the extents of an ARRAY result, handed back through a leading out parameter
-	funcStructRet   map[string]string   // same key -> the type of a single result that is a struct holding an array, handed back through a leading out parameter as an array result is
+	funcStructRet   map[string]string   // same key -> the struct its results are written through, by a leading out parameter as an array result is: one holding an array, or one the target would return on its heap (structOutOf)
 	funcArrayParams map[string][]arrDim // same key -> the extents of each ARRAY parameter, which its C type cannot carry: arrayParamCType is a pointer to the element, so a [3]int and a [2]int parameter are the same `int*`
 	// A function literal has no name, and C has no nested functions, so each one is
 	// LIFTED to a file-scope function of a minted name and the expression becomes
@@ -18916,6 +18920,21 @@ func (e *emitter) emitFuncLitStmt(nodes []Node) {
 	if !ok {
 		return
 	}
+	if rt, isOut := e.funcStructRet[cname]; isOut {
+		// Results written through an out parameter (funcStructRet) are written into
+		// a temporary nothing reads: called without one, `func() (int, bool) { ...
+		// }()` handed the literal no storage at all.
+		args := e.captureC(func() { e.emitCallArgs(cname, suffix[0].ast) })
+		tmp := e.newTmp()
+		if args != "" {
+			args = ", " + args
+		}
+		e.ind()
+		e.emit(rt + " " + tmp + ";\n")
+		e.ind()
+		e.emit(cname + "(&" + tmp + args + ");\n")
+		return
+	}
 	e.ind()
 	e.emit(cname + "(")
 	e.emitCallArgs(cname, suffix[0].ast)
@@ -19298,9 +19317,10 @@ const ogoEndProgram = panickingDecl + "static void ogo_end_program(void) {\n" +
 // e.g. `int add(int a, int b)`, `void run(void)`, or -- for more than one result
 // -- `ogo_ret_divmod divmod(int a, int b)`.
 func (e *emitter) funcSignatureC(name string, sig []int32) string {
-	// A single result that is a struct holding an array is handed back through an
-	// out parameter as an array result is: the target's C compiler returns no such
-	// struct by value ("Unable to multiply assign this target").
+	// Results the target's C compiler returns no struct of by value are written
+	// through an out parameter, as an array result is: a struct holding an array
+	// ("Unable to multiply assign this target"), and one it would return in a copy
+	// on its heap (heapReturned), a single result or the struct of several.
 	if rt, ok := e.structResultOf(sig); ok {
 		e.funcStructRet[name] = rt
 		out := rt + "* " + arrayResultParam
@@ -19340,8 +19360,8 @@ func (e *emitter) cParams(sig []int32) (string, bool) {
 	return "", false
 }
 
-// structResultOf reports whether a signature's single result is a struct holding an
-// array (holdsArray), and its C type.
+// structResultOf reports whether a signature's results are written through an out
+// parameter (structOutOf), and the C type of the struct written.
 func (e *emitter) structResultOf(sig []int32) (string, bool) {
 	_, resTypes := e.resultInfo(sig)
 	return e.structOutOf(resTypes)
@@ -19350,18 +19370,33 @@ func (e *emitter) structResultOf(sig []int32) (string, bool) {
 // structOutOf is the type written through the out parameter of a function whose
 // results are resTypes, when one is (funcStructRet): a single struct holding an
 // array, or the result struct of several results one of which holds one -- which
-// holds it then as well, and is returned by value no more than it is.
+// holds it then as well, and is returned by value no more than it is -- and a
+// struct, single or of several results, the target's compiler would return in a
+// copy on its heap (heapReturned): `(int, bool)` and `(T, error)` among them.
 func (e *emitter) structOutOf(resTypes []string) (string, bool) {
 	switch {
-	case len(resTypes) == 1 && e.holdsArray(resTypes[0]):
+	case len(resTypes) == 1 && (e.holdsArray(resTypes[0]) || e.heapReturned(resTypes[0])):
 		return resTypes[0], true
 	case len(resTypes) > 1 && slices.ContainsFunc(resTypes, func(ct string) bool {
 		_, isArr := e.isArrayResult(ct)
 		return isArr || e.holdsArray(ct)
 	}):
 		return e.retStructNameOf(resTypes), true
+	case len(resTypes) > 1 && e.heapReturnedResults(resTypes):
+		return e.retStructNameOf(resTypes), true
 	}
 	return "", false
+}
+
+// heapReturnedResults is heapReturned of the result struct of several results,
+// asked of the results themselves, before the struct is minted.
+func (e *emitter) heapReturnedResults(resTypes []string) bool {
+	fields := make([]structField, len(resTypes))
+	for i, ct := range resTypes {
+		fields[i] = structField{ctype: ct}
+	}
+	size, longs, ok := e.longsOfFields(fields, 0)
+	return !ok || size > 16 || !longs
 }
 
 // arrayResultOf reports whether a signature's single result is a fixed array, and
@@ -19631,6 +19666,107 @@ func (e *emitter) holdsArray(ct string) bool {
 	return ct != "" && !strings.HasSuffix(ct, "*") && e.hasArrayField(ct)
 }
 
+// heapReturned reports whether the target's compiler returns a value of the
+// struct type ct from a function in a copy it ALLOCATES: a struct it does not hold
+// in registers -- over 16 bytes, or with a member that is not one long
+// (TypeGoesOnStack, spin2cpp's frontends/common.c) -- is returned as a pointer to a
+// copy of it, which a `return` makes in `_gc_alloc_managed(size)`, so that it
+// persists past the frame (CoerceAssignTypes, frontends/types.c). That is a block
+// of a garbage-collected heap of 1 KB at every return, and the collector it brings
+// into the program scans Hub RAM from 0 to the stack pointer: on a P2-EDGE at 160
+// MHz a call returning (int, bool) took 1689 clocks at least, 202 through an out
+// parameter, and every sixty-odd calls one took 5.5 ms, 71 ms in a program of
+// p2-11's size. Such a result is written through an out parameter (structOutOf),
+// and no C function the emitter writes returns one. A value of no struct type --
+// an int64 too, which is two registers -- is returned in registers.
+func (e *emitter) heapReturned(ct string) bool {
+	fields, ok := e.structFieldsC(ct)
+	if !ok {
+		return false
+	}
+	size, longs, ok := e.longsOfFields(fields, 0)
+	return !ok || size > 16 || !longs
+}
+
+// structFieldsC is the members of a struct the emitter declares: a declared
+// struct's fields, the result struct of several results' (retStructNameOf), and the
+// two words of a string, the three of a slice and the two of an interface.
+func (e *emitter) structFieldsC(ct string) ([]structField, bool) {
+	u := e.underlyingCType(e.unaliased(ct))
+	switch {
+	case u == "" || strings.HasSuffix(u, "*"):
+		return nil, false
+	case u == cString || e.isIfaceCType(u):
+		return []structField{{ctype: "uint32_t"}, {ctype: "uint32_t"}}, true
+	case e.isSliceCType(u):
+		return []structField{{ctype: "uint32_t"}, {ctype: "uint32_t"}, {ctype: "uint32_t"}}, true
+	}
+	if fields, ok := e.structs[u]; ok {
+		return fields, true
+	}
+	if key, isRet := e.retStructs[u]; isRet {
+		var fields []structField
+		for _, ct := range strings.Split(key, ",") {
+			fields = append(fields, structField{ctype: ct})
+		}
+		return fields, true
+	}
+	return nil, false
+}
+
+// longsOfFields is the size of a struct of the given members as the target lays it
+// out, and whether it is made of longs only, as the target's compiler decides it
+// (longOnly, DeclareMemberVariablesOfSizeFlag in frontends/common.c): every member
+// of 4 bytes, an array of 4-byte elements or a struct of one long, a member of no
+// bytes aside. ok is false where a member's layout is not known.
+func (e *emitter) longsOfFields(fields []structField, depth int) (size int64, longs, ok bool) {
+	if depth > 16 {
+		return 0, false, false
+	}
+	var end1, end2 int64
+	longs = true
+	for _, fld := range fields {
+		fs, align, ok := e.fieldLayoutC(fld)
+		if !ok {
+			return 0, false, false
+		}
+		switch inner, isStruct := e.structFieldsC(fld.ctype); {
+		case fld.dim.bound != "":
+			es, _, ok := e.cLayout(fld.dim.elem, depth+1)
+			longs = longs && ok && es == 4
+		case isStruct:
+			_, l, ok := e.longsOfFields(inner, depth+1)
+			longs = longs && ok && l && fs == 4
+		case fs != 0 && fs != 4:
+			longs = false
+		}
+		// The two passes of the target's layout, as cLayout reads them.
+		if fs != 0 {
+			a := align
+			if fs >= 4 {
+				a = 4
+			}
+			end2 = (end2+a-1)/a*a + fs
+		}
+		switch {
+		case fs == 2:
+			end1 = (end1 + 1) &^ 1
+		case fs >= 4:
+			end1 = (end1 + 3) &^ 3
+		}
+		end1 += fs
+	}
+	if end1 == 0 {
+		end1 = 1 // char _ogo_empty
+		longs = false
+	}
+	size = (end1 + 3) &^ 3
+	if end2 > size {
+		size = end2
+	}
+	return size, longs, true
+}
+
 // byRefParam reports whether a parameter of the C type ct crosses a call as a
 // POINTER to storage the callee copies on entry, rather than as the value: a struct
 // holding an array (holdsArray), which the target's C compiler passes by value
@@ -19873,7 +20009,14 @@ func (e *emitter) declaredCalleeC(recv string, suffix []Node) (string, bool) {
 			}
 			return "", false
 		}
-		cname = e.methodCName(methodBaseType(rct), e.soleIdent(suffix[0].ast))
+		method := e.soleIdent(suffix[0].ast)
+		cname = e.methodCName(methodBaseType(rct), method)
+		// A method PROMOTED from an embedded member, `port.Read()` for the Read of
+		// the *Regs embedded in Port, is declared under the member's type, as
+		// chainMethodCName answers it on a chain; outCallC hands it the member.
+		if cn, path, _, ok := e.promotedMethod(rct, method); ok && len(path) != 0 {
+			cname = cn
+		}
 	} else if len(suffix) != 1 {
 		return "", false
 	}
@@ -19932,10 +20075,15 @@ func (e *emitter) outCallC(outArg, cname, recv string, suffix []Node) (string, b
 			e.fail("cannot reach the receiver of %s", cname)
 			return "", false
 		}
-		r, ok := e.chainReceiver(text, ctype, addr, e.methodPtr[cname])
-		if e.recvByRef[cname] {
-			r, ok = e.byRefRecvC(text, ctype, addr)
+		if !addr && !isCIdent(text) && strings.Contains(text, "(") {
+			// What a call answers is bound before it is handed on: a VALUE
+			// receiver read through it, `bus.ch(1).which()`, is a struct passed by
+			// value from `*ch(...)`, which the target's compiler evaluates once a
+			// word -- the call ran twice on a P2-EDGE, and once under gcc.
+			bound := text
+			text = e.hoist(ctype, func() { e.emit(bound) })
 		}
+		r, ok := e.outRecvC(text, ctype, addr, cname, e.soleIdent(suffix[len(suffix)-2].ast))
 		if !ok {
 			e.fail("cannot take the address of %s for a pointer-receiver method", text)
 			return "", false
@@ -19952,10 +20100,7 @@ func (e *emitter) outCallC(outArg, cname, recv string, suffix []Node) (string, b
 		if lit, isConst := e.inlinedConstRef(recv); isConst {
 			recvText, addr = lit, false // a constant receiver is its literal (see emitCallExpr)
 		}
-		r, ok := e.chainReceiver(recvText, rct, addr, e.methodPtr[cname])
-		if e.recvByRef[cname] {
-			r, ok = e.byRefRecvC(recvText, rct, addr)
-		}
+		r, ok := e.outRecvC(recvText, rct, addr, cname, e.soleIdent(suffix[0].ast))
 		if !ok {
 			e.fail("cannot take the address of %s for a pointer-receiver method", recv)
 			return "", false
@@ -19968,6 +20113,24 @@ func (e *emitter) outCallC(outArg, cname, recv string, suffix []Node) (string, b
 	}
 	b.WriteString(")")
 	return b.String(), true
+}
+
+// outRecvC is the receiver outCallC hands a method, from the C text of what the
+// call reaches: through the member path of a method PROMOTED from an embedded
+// field (promotedRecvC), `bus.ch(1).pop()` for a pop of the *Regs embedded in
+// Chan, as the call returning its results does; by pointer for a value receiver
+// taken so (recvByRef); and as chainReceiver hands any other.
+func (e *emitter) outRecvC(text, ctype string, addr bool, cname, method string) (string, bool) {
+	if _, path, _, ok := e.promotedMethod(ctype, method); ok && len(path) != 0 {
+		if e.recvByRef[cname] {
+			return e.promotedByRefRecvC(text, ctype, path, addr)
+		}
+		return e.promotedRecvC(text, ctype, path, e.methodPtr[cname], addr)
+	}
+	if e.recvByRef[cname] {
+		return e.byRefRecvC(text, ctype, addr)
+	}
+	return e.chainReceiver(text, ctype, addr, e.methodPtr[cname])
 }
 
 // arrayReturnOperand names an expression that IS an array -- today a variable --
@@ -35661,13 +35824,44 @@ func (e *emitter) emitWidenedForward(ex Node) bool {
 			return false
 		}
 	}
+	var dst string
+	if !e.widenForwardInto(ex, func() string {
+		dst = e.newTmp()
+		e.ind()
+		e.emit(e.retStructNameOf(e.curResultTypes) + " " + dst + ";\n")
+		return dst
+	}) {
+		return false
+	}
+	e.emitDeferred()
+	e.ind()
+	e.emit("return " + dst + ";\n")
+	return true
+}
+
+// widenForwardInto binds the call of emitWidenedForward and writes each of its
+// results, widened, into the result struct dst answers -- a C lvalue, which dst may
+// declare, asked once the call is bound. It reports false, having emitted nothing,
+// for a call whose results do not go into this function's.
+func (e *emitter) widenForwardInto(ex Node, dst func() string) bool {
+	callee, suffix, isCall := e.resultCallOf(ex.ast)
+	if !isCall {
+		return false
+	}
+	_, resTypes, ok := e.callResultInfo(callee, suffix)
+	if !ok || len(resTypes) != len(e.curResultTypes) {
+		return false
+	}
+	for i, rt := range resTypes {
+		if want := e.curResultTypes[i]; rt != want && !e.isIfaceCType(want) {
+			return false
+		}
+	}
 	src, ok := e.bindForwardedC(ex, resTypes)
 	if !ok {
 		return false
 	}
-	dst := e.newTmp()
-	e.ind()
-	e.emit(e.retStructNameOf(e.curResultTypes) + " " + dst + ";\n")
+	to := dst()
 	for i := range resTypes {
 		pre, v, ok := e.widenValC(e.curResultTypes[i], resTypes[i], fmt.Sprintf("%s._%d", src, i))
 		if !ok {
@@ -35678,11 +35872,8 @@ func (e *emitter) emitWidenedForward(ex Node) bool {
 			e.emit(line)
 		}
 		e.ind()
-		e.emit(fmt.Sprintf("%s._%d = %s;\n", dst, i, v))
+		e.emit(fmt.Sprintf("%s._%d = %s;\n", to, i, v))
 	}
-	e.emitDeferred()
-	e.ind()
-	e.emit("return " + dst + ";\n")
 	return true
 }
 
@@ -36035,8 +36226,9 @@ func (e *emitter) resultC(name string) string {
 }
 
 // emitStructOutReturn writes a return of a function whose single result is a
-// struct holding an array (funcStructRet): the value copied through the out
-// parameter, or -- a call of another such function -- written there by the call.
+// struct written through the out parameter (funcStructRet): the value copied or,
+// holding no array, assigned through it, or -- a call of another such function --
+// written there by the call.
 // Where there are defers the value is held first, in the named result or in a
 // temporary, and copied out after them, Go evaluating the operand before the defers
 // run and a defer being able to change a named result (see the array branch of
@@ -36086,7 +36278,7 @@ func (e *emitter) emitStructOutReturn(rt string, exprs []Node) {
 		}
 		e.ind()
 		e.emit(text + ";\n")
-	} else if _, _, isLit := e.soleCompositeLit(exprs[0].ast); isLit {
+	} else if _, _, isLit := e.soleCompositeLit(exprs[0].ast); isLit && e.holdsArray(rt) {
 		// A literal is built in place, with the copies of any array value it holds
 		// (emitStructCopy): rendered as a value it had nowhere to copy one in, and
 		// `return Buf{n, b.arr}` was refused.
@@ -36095,6 +36287,17 @@ func (e *emitter) emitStructOutReturn(rt string, exprs []Node) {
 			lv = hold
 		}
 		e.emitStructCopy(lv, rt, exprs[0].ast)
+	} else if !e.holdsArray(rt) {
+		// A struct holding no array, written through the out parameter for being
+		// one the target would return on its heap (heapReturned), is assigned as
+		// any struct is.
+		lv := "(*" + arrayResultParam + ")"
+		if hold != "" {
+			lv = hold
+		}
+		text := e.captureC(func() { e.emitReturnValue(0, exprs[0]) })
+		e.ind()
+		e.emit(lv + " = " + text + ";\n")
 	} else {
 		text := e.captureC(func() { e.emitReturnValue(0, exprs[0]) })
 		decl, addr := e.byRefSource(rt, text)
@@ -36227,13 +36430,17 @@ func (e *emitter) emitTupleOutReturn(rt string, exprs []Node) {
 			e.emit(rt + " " + hold + ";\n")
 		}
 		text, ok := e.forwardedOutCallC(exprs[0], hold)
-		if !ok {
+		switch {
+		case ok:
+			e.ind()
+			e.emit(text + ";\n")
+		case e.widenForwardInto(exprs[0], func() string { return hold }):
+			// Results that go into this function's, widened (emitWidenedForward).
+		default:
 			e.fail("a return supplying every result needs a call whose results are exactly %s",
 				strings.Join(types, ", "))
 			return
 		}
-		e.ind()
-		e.emit(text + ";\n")
 		if defers {
 			e.emitDeferred()
 			e.includes["string.h"] = true
@@ -36346,6 +36553,14 @@ func (e *emitter) forwardedOutCallC(ex Node, out string) (string, bool) {
 		return e.outCallC("&"+out, cname, callee, suffix)
 	}
 	text, writes, ok := e.forwardedCallInto(ex, out)
+	if ok && !writes {
+		// A call yielding the struct, rendered as a value -- a method on a literal,
+		// a promoted one -- which the result struct is assigned from: this
+		// function's results travel through the out parameter for being a struct
+		// the target would return on its heap (heapReturned), and the callee's
+		// call is rendered as any call of its shape is.
+		return out + " = " + text, true
+	}
 	return text, ok && writes
 }
 
@@ -39201,6 +39416,7 @@ func (e *emitter) needBuilder() {
 		e.builderRet = e.retStructNameOf([]string{"int", e.builderErrC})
 		for _, m := range []string{"WriteString", "WriteRune", "Write"} {
 			e.funcRet["ogo_builder_"+m] = []string{"int", e.builderErrC}
+			e.funcStructRet["ogo_builder_"+m] = e.builderRet // see builderHelpersC
 		}
 		e.funcRet["ogo_builder_WriteByte"] = []string{e.builderErrC}
 	}
@@ -39428,7 +39644,7 @@ func (e *emitter) emitMinMax(recv string, callSuffix []int32) {
 }
 
 // emitTryAppend emits the two-result append `s, ok = append(s, x)` (or `:=`): it
-// binds the ok-form helper's { slice, ok } result to a temporary, then assigns (or,
+// has the ok-form helper write its { slice, ok } into a temporary, then assigns (or,
 // for `:=`, declares) the slice and ok targets. A blank target is skipped. This
 // form never traps -- an overflow leaves the slice unchanged and reports ok == 0.
 func (e *emitter) emitTryAppend(targets []assignTarget, declare []bool, callSuffix []int32) {
@@ -39477,7 +39693,9 @@ func (e *emitter) emitTryAppend(targets []assignTarget, declare []bool, callSuff
 	}
 	tmp := e.newTmp()
 	e.ind()
-	e.emit(appendokCName(elem) + " " + tmp + " = " + call + "(" + slice + ", " + value + ");\n")
+	e.emit(appendokCName(elem) + " " + tmp + ";\n")
+	e.ind()
+	e.emit(call + "(&" + tmp + ", " + slice + ", " + value + ");\n")
 	// The slice target, then the ok target (int).
 	if declare[0] && targets[0].plain() {
 		e.sliceVars[targets[0].name] = elem
