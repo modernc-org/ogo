@@ -711,7 +711,7 @@ var p2Constants = map[string]string{
 }
 
 // p2Intrinsics maps the p2 package's exported functions to their intrinsics (the
-// mapping documented in CLAUDE.md's appendix). The call `p2.PinHigh(56)` emits
+// mapping documented in CLAUDE.md's p2 package section). The call `p2.PinHigh(56)` emits
 // `_pinh(56)`; `p2.Rnd()` emits `_rnd()` and types as unsigned.
 var p2Intrinsics = map[string]p2Intrinsic{
 	"PinHigh":      {"_pinh", ""},
@@ -25941,9 +25941,9 @@ func (e *emitter) sameStructLayout(a, b string) bool {
 // everything, and a function of a program of size that calls a helper in three
 // hundred places is where they run out -- p2-11 builds with a budget of six and
 // not of eight. A parameter that is no scalar is a register or several at every
-// call whatever the body does (see "A TEMPORARY IS A COG REGISTER" in CLAUDE.md),
-// so a function with one is not marked: marking EVERY function failed four of the
-// run cases and p2-11 itself. Nor is one whose RESULT is none, two results being
+// call whatever the body does (see "A TEMPORARY IS A COG REGISTER" in
+// doc/LESSONS.md), so a function with one is not marked: marking EVERY function
+// failed four of the run cases and p2-11 itself. Nor is one whose RESULT is none, two results being
 // a struct of the C: a switch of twelve cases calling a helper of two ints spent
 // 84 registers with it marked and 36 without, four a copy that nothing gives back.
 // And an array or a struct holding one, which is received and returned through a

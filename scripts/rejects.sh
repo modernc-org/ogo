@@ -27,8 +27,9 @@
 # program that froze the machine it ran on was counted as one more agreement.
 #
 # A row is not yet a bug: `new`, maps, len/cap of a channel and a VALUE stored in an
-# interface differ BY DESIGN (CLAUDE.md has the list). A FAULT always is one, and
-# the exit status is 1 when there is any.
+# interface differ BY DESIGN (doc/LESSONS.md has the list, under A PROGRAM GO
+# REJECTS IS A ROW). A FAULT always is one, and the exit status is 1 when there is
+# any.
 set -u
 unset CDPATH # a set CDPATH makes cd echo the directory, doubling every $(cd ... && pwd)
 root=$(cd "$(dirname "$0")/.." && pwd)
