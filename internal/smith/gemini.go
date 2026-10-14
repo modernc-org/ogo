@@ -223,38 +223,18 @@ func (f *Fuzzer) GenerateProgram(vm Machine, mem Memory) error {
 	fmt.Fprintf(f.Out, "%s = 0\n", f.CallsName)
 	f.calls = 0
 
-	// Fold the cluster into the checksum first thing: a compiler that ran the
-	// initializers in written order rather than dependency order computes
-	// different values, and the assertion at the end convicts it.
+	// Check the cluster first thing: a compiler that ran the initializers in
+	// written order rather than dependency order computes different values.
 	for _, g := range cluster {
-		nv, err := vm.Eval("^", mem.Load(f.ChecksumName), g.val)
-		if err != nil {
-			panic(err)
-		}
-		mem.Store(f.ChecksumName, nv)
-		writeIndent(f.Out, 1)
-		fmt.Fprintf(f.Out, "%s = %s ^ %s\n", f.ChecksumName, f.ChecksumName, g.name)
+		f.checkAtTop("init order", g.name, g.val)
 	}
 	// And the tables, every field and element of each.
 	for _, t := range tables {
-		nv, err := vm.Eval("^", mem.Load(f.ChecksumName), t.want)
-		if err != nil {
-			panic(err)
-		}
-		mem.Store(f.ChecksumName, nv)
-		writeIndent(f.Out, 1)
-		fmt.Fprintf(f.Out, "%s = %s ^ (%s)\n", f.ChecksumName, f.ChecksumName, t.sum)
+		f.checkAtTop("tables", t.sum, t.want)
 	}
-
 	// And the aggregates' procedure, whose value the generator computed itself.
 	if agOK {
-		nv, err := vm.Eval("^", mem.Load(f.ChecksumName), agWant)
-		if err != nil {
-			panic(err)
-		}
-		mem.Store(f.ChecksumName, nv)
-		writeIndent(f.Out, 1)
-		fmt.Fprintf(f.Out, "%s = %s ^ %s\n", f.ChecksumName, f.ChecksumName, agCall)
+		f.checkAtTop("aggregates", agCall, agWant)
 	}
 
 	// Generate 20 sequential statements to mutate the checksum
@@ -4534,4 +4514,20 @@ func (n *GotoStmtNode) Write(w io.Writer, indent int) {
 	fmt.Fprintf(w, "%s:\n", n.Label)
 	writeIndent(w, indent)
 	fmt.Fprintf(w, "%s = %s ^ %s", n.Checksum, n.Checksum, n.K2)
+}
+
+// checkAtTop writes a test of a value main computes before its statements, expr,
+// against want, the value the generator computed, which panics naming what when
+// they differ. The values were folded into the checksum until 2026-10-14, and a
+// statement after them that loses the checksum's bits -- `octosmith_checksum =
+// octosmith_checksum ^ octosmith_checksum` is one a generated expression may be --
+// lost them too: an aggregates' procedure returning one more than it should passed
+// in 41 of the 72 seeds of 1-100 that have one.
+func (f *Fuzzer) checkAtTop(what, expr string, want Int32) {
+	writeIndent(f.Out, 1)
+	fmt.Fprintf(f.Out, "if %s != %s {\n", expr, want.Literal())
+	writeIndent(f.Out, 2)
+	fmt.Fprintf(f.Out, "panic(\"OctoSmith Checksum Failure: %s\")\n", what)
+	writeIndent(f.Out, 1)
+	fmt.Fprint(f.Out, "}\n")
 }

@@ -98,7 +98,7 @@ var generatedConstructs = []struct {
 	// The initialization-order cluster: package variables whose initializers
 	// depend on one another, emitted SHUFFLED (genPkgVarCluster). The reader
 	// function is what routes a dependency through a function's BODY, and the
-	// two-name group through a multi-value call; the fold is what makes any
+	// two-name group through a multi-value call; the check is what makes any
 	// mis-ordering fail the oracle rather than pass unobserved.
 	// A package table of a struct holding a small-element array (genStaticTables),
 	// which the target's compiler initialized statically in another layout than it
@@ -107,13 +107,13 @@ var generatedConstructs = []struct {
 	{"static table", `\nvar tb_\d+ = ST_\d+\{`},
 	{"static table array", `\nvar tbs_\d+ = \[\d\]ST_\d+\{\{`},
 	{"static table slice", `\nvar tsl_\d+ = \[\]ST_\d+\{\{`},
-	{"static table fold", `\n\s*\w+ = \w+ \^ \(int\(tb_\d+\.h\)`},
+	{"static table checked", `\n\tif int\(tb_\d+\.h\)[^\n]* != -?\d+ \{\n\t\tpanic\("OctoSmith Checksum Failure: tables"\)`},
 	{"package var cluster", `\nvar gv_\d+ = `},
 	{"cluster arithmetic initializer", `\nvar gv_\d+ = \S+ (&\^?|\||\^) `},
 	{"cluster reader function", `\nfunc gr_\d+\(p_\d+ int\) int `},
 	{"cluster reader call initializer", `\nvar gv_\d+ = gr_\d+\(`},
 	{"cluster destructuring initializer", `\nvar gv_\d+, gv_\d+ = fn_\d+\(`},
-	{"cluster checksum fold", `\n\s*octosmith_checksum = octosmith_checksum \^ gv_\d+`},
+	{"cluster checked", `\n\tif gv_\d+ != -?\d+ \{\n\t\tpanic\("OctoSmith Checksum Failure: init order"\)`},
 	{"method declaration, value receiver", `\nfunc \(r S_\d+\) `},
 	{"method declaration, pointer receiver", `\nfunc \(r \*S_\d+\) `},
 	{"method call, value-receiver getter", `\.get_\d+\(\)`},
@@ -326,7 +326,7 @@ var generatedConstructs = []struct {
 	{"aggregate field of a call's result", `int\(agMk_\d+\(-?\d+\)\.\w+`},
 	{"aggregate pointer method through a slice", `\n\ts\[2\]\.bump\(`},
 	{"aggregate equality", `\n\tif e == v \{`},
-	{"aggregate folded", `\n\toctosmith_checksum = octosmith_checksum \^ agRun_\d+\(\)`},
+	{"aggregate checked", `\n\tif agRun_\d+\(\) != -?\d+ \{\n\t\tpanic\("OctoSmith Checksum Failure: aggregates"\)`},
 	{"aggregate over a channel to a cog", `\n\tgo agCog_\d+\(2\)\n\tagIn_\d+ <- v\n`},
 	{"aggregate nested in a struct", `\ntype AN_\d+ struct \{\n\tn u?int(8|16)\n\tg AG_\d+\n\ts \[2\]AG_\d+\n`},
 	{"nested aggregate literal", `\treturn AN_\d+\{n: `},

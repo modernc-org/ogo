@@ -28,6 +28,15 @@ shipped section tells a reader on that version that they have behaviour they do 
   1423 programs -- the run cases, 400 fuzzer programs and the reproducers -- 192
   build differently, every one printing on a P2-EDGE what it printed before, most
   of them now checking a pointer for nil once where they checked it once per word.
+- **`ogo smith` checks what main computes before its statements where main
+  computes it**: the package variables initialized in dependency order, the static
+  tables and the aggregates' procedure were folded into the checksum, and a
+  statement after them that loses the checksum's bits --
+  `octosmith_checksum ^ octosmith_checksum` is one a generated expression may be --
+  lost them too. The aggregates' procedure returning one more than it should
+  passed in 41 of the 72 seeds of 1-100 that have one. Each value is now compared
+  with the generator's where main computes it, and a difference panics naming the
+  part.
 
 ### Fixed
 
