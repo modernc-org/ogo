@@ -16,7 +16,7 @@ same area is a new entry under **Unreleased**, not an edit to the old one. Amend
 shipped section tells a reader on that version that they have behaviour they do not.
 `git show vX.Y.Z:CHANGELOG.md` is the check.
 
-## Unreleased
+## v0.55.0
 
 ### Language
 
@@ -94,77 +94,13 @@ shipped section tells a reader on that version that they have behaviour they do 
   prints the literal. It was refused, "cannot alias a type literal yet". One that
   reaches itself, `type T = []T`, is Go's "invalid recursive type".
 
-### Toolchain
+### Behaviour changes
 
-- **The C backend is regenerated at spin2cpp's master of 2026-10-13**, which
-  carries upstream's fix of `x << 32 >> 32` for a `uint64` (below) and the two
-  changes of ours upstream merged: the conditional-flags fix the backend had
-  carried since 2026-10-02 (spin2cpp#516), and `-Oinline-pushregs`
-  (spin2cpp#517), an optimization `ogo build` does not ask for. The CORDIC fix of
-  the last regeneration is still carried. Of 1419 programs -- the run cases, 400
-  fuzzer programs and the reproducers -- five run cases build differently, each
-  printing on a P2-EDGE what it printed before, and two that were refused build
-  and pass. The five platforms' backends compile them exactly as a native build of
-  the same backend does.
-- **`ogo test -timeout d`**, as go test's: how long the board is given to finish, 0
-  for no limit. The default stays what it was, two minutes and for each benchmark
-  three times `-benchtime` and a minute; a benchmark's sub-benchmarks share its
-  minute, there being no counting them before they run.
-
-### Fixed
-
-- **`x << 32 >> 32` of a `uint64` did not build**: the target's C compiler
-  refused the pair of shifts, "Cannot handle expression yet", about the C written
-  for it. Fixed upstream (flexprop#122) and taken with the backend's
-  regeneration: it prints the low half, as Go does, on a P2-EDGE. `x & 0xFFFFFFFF`
-  had been the spelling that built.
-
-- **A 64-bit constant that passes 64 bits on the way, `var a uint64 = 1<<64 - 1`,
-  did not build in a package variable or in a literal's element.** A local
-  declared 64-bit took the one literal of its value; a package variable and an
-  element were written as the expression, and the target refused it -- a call of
-  the shift helper in a static initializer, `18446744073709551616 - 1`, or a
-  negated long long in an aggregate. Each is the literal of its value now, as Go
-  computes it. None built wrong: on a P2-EDGE, those the target took printed what
-  Go prints.
-
-- **A call returning `(T, bool)`, `(T, error)` or a struct the target does not
-  return in registers allocated memory, on a heap OctoGo does not have.** The
-  target's C compiler returns a struct of more than 16 bytes, or with a member
-  that is not 32 bits -- a byte, a bool, an `int64`, a string, an interface -- in
-  a copy it allocates from a garbage-collected heap of 1 KB, at every return, and
-  when the heap fills the cog stops to scan Hub RAM. On a P2-EDGE at 160 MHz a
-  call returning `(int, bool)` took 1689 clocks at least, and about one call in
-  sixty paused for 5.5 ms -- 71 ms in a program the size of p2-11. Such results
-  are written through an out parameter now, as a struct holding an array already
-  was: the same call takes 141 clocks, every time, in either program. So are the
-  `Builder`'s writes, the ok form of `append` and a channel's struct elements. A
-  program that used the heap is about 8 KB smaller without the collector. Of the
-  compiler's run cases, 87 had used it.
-- **`ogo help test` said a test has no `Errorf`** and prints with `println`, which
-  stopped being so when the testing package's formatting methods came.
-- **`%q` and `%U` of a 64-bit expression printed garbage on the board**:
-  `printf("%q %U", x-y+64, x-y+64)` of two uint64s printed `'�'
-  U+F546C60800000042` where Go prints `'B' U+0042`, the host right. The value was
-  cast to a 64-bit type on its way to the printer, and the target's C compiler
-  writes a garbage high word for such a cast of a 64-bit expression; it is handed
-  over uncast, as the integer verbs already hand one over.
 - **A program whose main cog reaches a recursion was not asked whether its stack
   fits**: the need has no bound there, and a frame past Hub RAM on the way to it,
   a 512 KB array result beside a recursive function, built and printed nothing on
   the board. What main needs at the least, the deepest chain of direct calls, is
   asked instead, and such a program is refused.
-- **The address of an element of a slice parameter of structs, `func find(items
-  []Item, id int) *Item { ... return &items[i] }`, was refused** as the address of
-  the parameter itself, and so was one of a parameter of a defined slice type
-  whatever its element; the element is in the caller's backing, and a slice
-  viewing a local array is refused as before.
-- **`%T` of a struct written out printed its C name**, `ogo_anon0`, where Go
-  prints `struct { X int; Y int }`.
-- **A value of a defined pointer type received from a channel, `d := <-ch`, was
-  no pointer** (`*d` refused), and one appended to a slice of such a type, or
-  `make` of another package's channel type by its name, `make(lib.C, 1)`, was
-  refused.
 - **A goroutine's panic let the rest of the program run on, and on the host could
   end it with status 0**: the other cogs were stopped only after the message's
   ten-millisecond drain, so main went on printing on the board, and on the host a
@@ -173,10 +109,12 @@ shipped section tells a reader on that version that they have behaviour they do 
   and main's return waits for a panic under way on another cog, which ends the
   program itself.
 - **A range over a bool constant**, `for i := range true` or over a `const c =
-  false`, was taken where a range over a bool variable was refused.
+  false`, was taken where a range over a bool variable was refused; it is refused
+  now.
 - **A variable ranged out of a channel was typed by name only**: `for b := range
   blocks` read `b.n`, and nothing past a field, so `for _, s := range b.samples`
-  declared s with no type and `s[0]` of an int16 was taken.
+  declared s with no type and `s[0]` of an int16 was taken; s has the element's
+  type now, and `s[0]` is refused as Go refuses it.
 - **A named untyped constant of the rune class was an integer to the checker**:
   `const H = 'c'; x := H`, `x := W * H` and `x := H << 2` made x a rune, as Go
   has it and as the C had it, and the checker took x for an int, so `x = n` of an
@@ -186,11 +124,6 @@ shipped section tells a reader on that version that they have behaviour they do 
 - **An address as an assignment target in a statement header**, `for ...; &x = i`,
   `for &x = 1; ...`, `if &x = 5; ...`, was taken or refused by the emitter in its
   own words; it is Go's "cannot assign to &x", as on a line of its own.
-- **A call of several results beside other arguments**, `take(1, two())`, is
-  refused by the checker in Go's words; the emitter refused it in its own, with no
-  position, and the same where one value is wanted -- a literal's element, a send,
-  an index -- says where now.
-
 - **A call of several results passed whole as another call's arguments,
   `keepP(id2(&l))`, was asked nothing by the lifetime rules**: a callee keeping the
   parameter a result went in at kept the local's address where it outlives the
@@ -203,20 +136,15 @@ shipped section tells a reader on that version that they have behaviour they do 
   a literal's element, `keepC([]*E{p})`, or a value packed into a variadic
   parameter, `keepV(p)` -- was summarised as keeping nothing** where the callee
   kept those contents, and `relayV(&l)` left the local's address in a package
-  variable in silence. The callee's contents are the caller's parameter there.
-- **A call's results of several went into interfaces as the values they were**: `e,
-  n = mk()` for an error e and a `*E` result, a field, an element or a pointee of an
-  interface type, `take(mk())` for a take of an error parameter and `return mk()`
-  from a function of an error result each reached C as a pointer stored in the
-  interface's two words, which no C compiler takes, or was refused. A concrete
-  pointer is given its table now and another interface's value rebound, a nil
-  pointer making a non-nil interface, as in Go.
+  variable in silence. The callee's contents are the caller's parameter there, and
+  `relayV(&l)` is refused.
 - **A call's result of a number, a string or a bool going into an interface target
   of a destructuring assignment** was asked nothing, `r.err, r.n = get()` with
   get's int first, and reached C; it is Go's refusal now, in every target shape.
 - **A type switch's operand named bare was read by no rule but its name**, so a
   clause declaring that name, `err := x.Unwrap()` in `switch x := err.(type)`,
-  had its unused variable taken for used.
+  had its unused variable taken for used; it is Go's "declared and not used"
+  now.
 - **A value going into an interface written out was asked nothing**, and neither
   was a value of one: `var v interface{ Code() uint32 } = &e` for a `Code() int`
   built for the target in silence, and so did `interface{ Code() }` for it, where Go
@@ -243,13 +171,6 @@ shipped section tells a reader on that version that they have behaviour they do 
   idH(h).c`, `gbp = &idH(h).inner`, `gbp = id(b).Self()`, `keep(idH(h).c)`, `x :=
   idH(h).c; gbp = x` and `return h.Self().c` for a parameter h, which kept what the
   caller passed with nothing recorded.
-- **A function returning only numbers or bools was taken to hand back what it
-  computed from**: `func valueAt(list *Node, v int) int { return find(list,
-  v).val }` made `g = valueAt(&a, 2)` "cannot store the address of local variable a"
-  in an int. Such a function hands nothing back. And a function returning a pointer
-  read through a call's result, `return idH(h).c`, was taken to hand back h itself,
-  refusing a caller whose local held package storage only; it hands back what h
-  holds.
 - **A callee storing an argument through a pointer the call cannot name** kept a
   local's address where it outlives the function, in silence: `fill(&le, pp())`,
   for a `func fill(src *E, dst **E) { *dst = src }` and a `pp` returning `&gp`,
@@ -293,6 +214,97 @@ shipped section tells a reader on that version that they have behaviour they do 
   `ss[0].Save()`, a method storing its receiver in a package variable kept the
   local's address there; and `go s.Bump()` handed it to another cog, which may
   outlive the function. All refused now, in silence before.
+- **What a pointer to a pointer reaches had no type**: `var s string = **pp` for a
+  `pp **int` was accepted and reached the C compiler, in a declaration, an
+  assignment, an argument and an operation; it is refused as Go refuses it.
+- **A value of a type written out is refused where an interface with methods is
+  wanted**: another package's array, slice, function, channel or struct variable,
+  `errors.Is(err, dev.Codes)` for a `var Codes [4]error`, and in one package too a
+  field or an element of such a type, `take(h.arr)`, were taken and reached C as the
+  interface; a local variable of the type was refused already.
+
+### Toolchain
+
+- **The C backend is regenerated at spin2cpp's master of 2026-10-13**, which
+  carries upstream's fix of `x << 32 >> 32` for a `uint64` (below) and the two
+  changes of ours upstream merged: the conditional-flags fix the backend had
+  carried since 2026-10-02 (spin2cpp#516), and `-Oinline-pushregs`
+  (spin2cpp#517), an optimization `ogo build` does not ask for. The CORDIC fix of
+  the last regeneration is still carried. Of 1419 programs -- the run cases, 400
+  fuzzer programs and the reproducers -- five run cases build differently, each
+  printing on a P2-EDGE what it printed before, and two that were refused build
+  and pass. The five platforms' backends compile them exactly as a native build of
+  the same backend does.
+- **`ogo test -timeout d`**, as go test's: how long the board is given to finish, 0
+  for no limit. The default stays what it was, two minutes and for each benchmark
+  three times `-benchtime` and a minute; a benchmark's sub-benchmarks share its
+  minute, there being no counting them before they run.
+
+### Fixed
+
+- **`x << 32 >> 32` of a `uint64` did not build**: the target's C compiler
+  refused the pair of shifts, "Cannot handle expression yet", about the C written
+  for it. Fixed upstream (flexprop#122) and taken with the backend's
+  regeneration: it prints the low half, as Go does, on a P2-EDGE. `x & 0xFFFFFFFF`
+  had been the spelling that built.
+- **A 64-bit constant that passes 64 bits on the way, `var a uint64 = 1<<64 - 1`,
+  did not build in a package variable or in a literal's element.** A local
+  declared 64-bit took the one literal of its value; a package variable and an
+  element were written as the expression, and the target refused it -- a call of
+  the shift helper in a static initializer, `18446744073709551616 - 1`, or a
+  negated long long in an aggregate. Each is the literal of its value now, as Go
+  computes it. None built wrong: on a P2-EDGE, those the target took printed what
+  Go prints.
+- **A call returning `(T, bool)`, `(T, error)` or a struct the target does not
+  return in registers allocated memory, on a heap OctoGo does not have.** The
+  target's C compiler returns a struct of more than 16 bytes, or with a member
+  that is not 32 bits -- a byte, a bool, an `int64`, a string, an interface -- in
+  a copy it allocates from a garbage-collected heap of 1 KB, at every return, and
+  when the heap fills the cog stops to scan Hub RAM. On a P2-EDGE at 160 MHz a
+  call returning `(int, bool)` took 1689 clocks at least, and about one call in
+  sixty paused for 5.5 ms -- 71 ms in a program the size of p2-11. Such results
+  are written through an out parameter now, as a struct holding an array already
+  was: the same call takes 141 clocks, every time, in either program. So are the
+  `Builder`'s writes, the ok form of `append` and a channel's struct elements. A
+  program that used the heap is about 8 KB smaller without the collector. Of the
+  compiler's run cases, 87 had used it.
+- **`ogo help test` said a test has no `Errorf`** and prints with `println`, which
+  stopped being so when the testing package's formatting methods came.
+- **`%q` and `%U` of a 64-bit expression printed garbage on the board**:
+  `printf("%q %U", x-y+64, x-y+64)` of two uint64s printed `'�'
+  U+F546C60800000042` where Go prints `'B' U+0042`, the host right. The value was
+  cast to a 64-bit type on its way to the printer, and the target's C compiler
+  writes a garbage high word for such a cast of a 64-bit expression; it is handed
+  over uncast, as the integer verbs already hand one over.
+- **The address of an element of a slice parameter of structs, `func find(items
+  []Item, id int) *Item { ... return &items[i] }`, was refused** as the address of
+  the parameter itself, and so was one of a parameter of a defined slice type
+  whatever its element; the element is in the caller's backing, and a slice
+  viewing a local array is refused as before.
+- **`%T` of a struct written out printed its C name**, `ogo_anon0`, where Go
+  prints `struct { X int; Y int }`.
+- **A value of a defined pointer type received from a channel, `d := <-ch`, was
+  no pointer** (`*d` refused), and one appended to a slice of such a type, or
+  `make` of another package's channel type by its name, `make(lib.C, 1)`, was
+  refused.
+- **A call of several results beside other arguments**, `take(1, two())`, is
+  refused by the checker in Go's words; the emitter refused it in its own, with no
+  position, and the same where one value is wanted -- a literal's element, a send,
+  an index -- says where now.
+- **A call's results of several went into interfaces as the values they were**: `e,
+  n = mk()` for an error e and a `*E` result, a field, an element or a pointee of an
+  interface type, `take(mk())` for a take of an error parameter and `return mk()`
+  from a function of an error result each reached C as a pointer stored in the
+  interface's two words, which no C compiler takes, or was refused. A concrete
+  pointer is given its table now and another interface's value rebound, a nil
+  pointer making a non-nil interface, as in Go.
+- **A function returning only numbers or bools was taken to hand back what it
+  computed from**: `func valueAt(list *Node, v int) int { return find(list,
+  v).val }` made `g = valueAt(&a, 2)` "cannot store the address of local variable a"
+  in an int. Such a function hands nothing back. And a function returning a pointer
+  read through a call's result, `return idH(h).c`, was taken to hand back h itself,
+  refusing a caller whose local held package storage only; it hands back what h
+  holds.
 - **`go lm.Bump()` on a local of main's outermost block was refused**. That block
   outlives every cog, and `go bump(&lm)` was taken already.
 - **`n := 5; take(&n)` for a `take(x any)` was refused**, "cannot use &n (value of
@@ -302,9 +314,6 @@ shipped section tells a reader on that version that they have behaviour they do 
 - **A type switch case of a pointer to a pointer**, `case **E:`, what an interface
   holds for `any(&p)` and what the assertion `x.(**E)` asks, was refused as naming
   no type. It is taken, for another package's type too.
-- **What a pointer to a pointer reaches had no type**: `var s string = **pp` for a
-  `pp **int` was accepted and reached the C compiler, in a declaration, an
-  assignment, an argument and an operation.
 - **A type switch case or an assertion naming an interface asks each method's
   signature**, not only its name. The types such a case tests are every type of the
   program implementing both interfaces, and a type whose `Unwrap() []error` met a
@@ -316,11 +325,6 @@ shipped section tells a reader on that version that they have behaviour they do 
 - **A pointer to a pointer goes into an interface**: `any(&p)` for a `p *T`, what
   `errors.As` is handed in Go, named its table after the C type and did not compile.
   It is held, asserted back with `a.(**T)` and printed by `%T` as Go does.
-- **A value of a type written out is refused where an interface with methods is
-  wanted**: another package's array, slice, function, channel or struct variable,
-  `errors.Is(err, dev.Codes)` for a `var Codes [4]error`, and in one package too a
-  field or an element of such a type, `take(h.arr)`, were taken and reached C as the
-  interface; a local variable of the type was refused already.
 - **A struct literal holding an array of interfaces**, `W{[2]error{&e, nil}}`, was
   refused, "cannot use this value as error in a literal", in a function, a package
   initializer and a return alike.
