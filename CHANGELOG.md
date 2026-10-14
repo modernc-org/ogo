@@ -16,6 +16,17 @@ same area is a new entry under **Unreleased**, not an edit to the old one. Amend
 shipped section tells a reader on that version that they have behaviour they do not.
 `git show vX.Y.Z:CHANGELOG.md` is the check.
 
+## Unreleased
+
+### Fixed
+
+- **`len(<-ch)` of a string channel, and `len` or `cap` of a slice received,
+  printed garbage on the board**: 1569718284 for Go's 5, buffered or not, the host
+  right. The receive is a call of a helper in the C, and the target's C compiler
+  reads a field past the first word of a struct a call returns from a register
+  nothing wrote; a field of any other call's result was read through a temporary
+  already, and the receive is now too (doc/member-of-struct-result.c).
+
 ## v0.55.0
 
 ### Language

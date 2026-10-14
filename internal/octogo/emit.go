@@ -39167,11 +39167,13 @@ func (e *emitter) emitHeaderField(arg []int32, ctype, field string) {
 	e.emit(e.hoist(ctype, func() { e.emit(text) }) + "." + field)
 }
 
-// exprHasCall reports whether an expression contains a call anywhere. A field read
-// off one has to go through a temporary; see emitHeaderField.
+// exprHasCall reports whether an expression contains a call anywhere, a receive
+// among them: the C of `<-ch` is a call of the receive helper, and `len(<-ch)` of a
+// string channel printed 1569718284 on the board for Go's 5. A field read off one
+// has to go through a temporary; see emitHeaderField.
 func (e *emitter) exprHasCall(ast []int32) bool {
 	for n := range it(ast) {
-		if n.sym == CallSuffix {
+		if n.sym == CallSuffix || n.sym == 0 && e.f.ch(n.tok) == ARROW {
 			return true
 		}
 		if n.sym != 0 && e.exprHasCall(n.ast) {

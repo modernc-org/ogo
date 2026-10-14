@@ -1183,6 +1183,43 @@ func main() {
 		want: "2 3\n3 1 2 1\n3 true\n0 false 0\n1 2 a 1\n7 9\nsent 0\nfull 1\ngot 0\nsent 2\nfull 3\nrecv 2\nworker 55\n0 0 0\n",
 	},
 	{
+		// len and cap of a value received, `len(<-ch)` of a string or a slice
+		// channel. The receive is a call of the helper in the C, and the target's C
+		// compiler reads a field past the first word of a struct a call returns as
+		// garbage: every value here printed garbage on a P2-EDGE, the host right,
+		// until the receive was bound as a call's result is (emitHeaderField).
+		name: "len and cap of a value received",
+		src: `var gx = [4]int{1, 2, 3, 4}
+
+func feed(u chan string, s string) {
+	u <- s
+	u <- s[1:]
+}
+
+func feedx(u chan []int) {
+	u <- gx[:3]
+}
+
+func main() {
+	cs := make(chan string, 2)
+	cs <- "hello"
+	cs <- "hi"
+	println(len(<-cs), len(<-cs))
+	cx := make(chan []int, 2)
+	cx <- gx[:2]
+	cx <- gx[1:3]
+	println(cap(<-cx), len(<-cx))
+	u := make(chan string)
+	go feed(u, "seven")
+	println(len(<-u), len(<-u)+1)
+	ux := make(chan []int)
+	go feedx(ux)
+	println(cap(<-ux))
+}
+`,
+		want: "5 2\n4 2\n5 5\n4\n",
+	},
+	{
 		// Buffered channels in the shapes programs use them: a select whose send
 		// clause has room beside a receive clause that must still be taken in its
 		// turn (an offer deposited up front would win every round), a semaphore of
