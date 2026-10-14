@@ -18,8 +18,28 @@ shipped section tells a reader on that version that they have behaviour they do 
 
 ## Unreleased
 
+### Toolchain
+
+- **The C backend carries two fixes of its own**, regenerated the same day at the
+  same spin2cpp master: an argument of several words whose expression does
+  something is evaluated once (functions.c.diff), and a field of a struct a call
+  returns is read where the call left it (outasm.c.diff); both below and in doc/.
+  Measured natively before adoption: spin2cpp's own tests pass as without, and of
+  1423 programs -- the run cases, 400 fuzzer programs and the reproducers -- 192
+  build differently, every one printing on a P2-EDGE what it printed before, most
+  of them now checking a pointer for nil once where they checked it once per word.
+
 ### Fixed
 
+- **A value of several words passed where its expression calls was evaluated once
+  per word on the board**, in silence, the host right: `takeS(strs[idx()])` called
+  idx twice, `sum(rows[next()])` three times, and so did `take64(a64[i()])`, a
+  struct indexed by a call or read through `*getp()`, a value receiver
+  `ps[idx()].sum()`, a call through a function value, a send and a string
+  comparison. The target passes a string, a slice, an interface value, an int64 or
+  a struct of two to four words in registers, and split such an expression into
+  one read per word, each evaluating it again. Fixed in the backend
+  (doc/multi-long-arg-evaluated-per-long.c).
 - **`len(<-ch)` of a string channel, and `len` or `cap` of a slice received,
   printed garbage on the board**: 1569718284 for Go's 5, buffered or not, the host
   right. The receive is a call of a helper in the C, and the target's C compiler

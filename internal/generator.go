@@ -39,16 +39,17 @@ const (
 	// sit on spin2cpp's master for longer than that -- which is what spin2cppRef,
 	// below, is for.
 	//
-	// All five committed backends were regenerated against this pair on 2026-10-13
+	// All five committed backends were regenerated against this pair on 2026-10-14
 	// with ccgo v4.36.1 and libc v1.77.1, go.mod's (flexprop at v7.7.0, spin2cpp at
-	// spin2cppRef, mcpp_main.c.diff and optimize_ir.c.diff applied).
-	// scripts/flexcc built for each of the five platforms compiles the doc/
-	// reproducers and a scripts/dumpcorpus.sh dump of the run cases and fuzzer seeds
-	// 1-400 to one and the same scripts/cccorpus.sh list -- windows/amd64's taken
-	// under wine -- and that list is a native build's of the same tree. The
-	// regeneration before, 2026-10-08, was at 1d709b25 with optimize_ir.c.diff's two
-	// hunks; the one before that, 2026-10-02, at eb263961 with its first hunk alone;
-	// and 2026-09-21's, ccgo v4.34.6's, with no fix carried.
+	// spin2cppRef, the four spin2cppDiffs applied). scripts/flexcc built for each of
+	// the five platforms compiles the doc/ reproducers and a scripts/dumpcorpus.sh
+	// dump of the run cases and fuzzer seeds 1-400 to one and the same
+	// scripts/cccorpus.sh list -- windows/amd64's taken under wine -- and that list
+	// is a native build's of the same tree. The regeneration before, 2026-10-13, was
+	// at the same pin without functions.c.diff and outasm.c.diff; the one before it,
+	// 2026-10-08, at 1d709b25 with optimize_ir.c.diff's two hunks; 2026-10-02's at
+	// eb263961 with its first hunk alone; and 2026-09-21's, ccgo v4.34.6's, with no
+	// fix carried.
 	//
 	// The first generation, 2026-07-20, had both at v7.7.0; the second, 2026-08-29,
 	// had spin2cpp at 2bd01c4c; the third, 2026-09-15, had it at 3840014f plus
@@ -174,8 +175,16 @@ var (
 	// from folding the flags of a CONDITIONAL instruction whose operands became
 	// constants as though it always ran (TransformConstDst; flexprop#118,
 	// doc/conditional-compare-fold.c), until the pin reached spin2cpp 63ef4515,
-	// which merged that hunk unchanged as our PR #516.
-	spin2cppDiffs = []string{"mcpp_main.c.diff", "optimize_ir.c.diff"}
+	// which merged that hunk unchanged as our PR #516. functions.c.diff and
+	// outasm.c.diff, carried since 2026-10-14, are two silent faults of a value of
+	// two to four longs, which the target passes and returns in registers: an
+	// ARGUMENT of one whose expression has a side effect was evaluated once per
+	// long, `take(*get())` calling get twice for a struct of two ints and
+	// `takeS(strs[idx()])` idx twice for an OctoGo string (the split into longs
+	// repeated the expression; doc/multi-long-arg-evaluated-per-long.c), and a
+	// MEMBER past the first long of one a call returns was read from a register
+	// nothing wrote (doc/member-of-struct-result.c).
+	spin2cppDiffs = []string{"mcpp_main.c.diff", "optimize_ir.c.diff", "functions.c.diff", "outasm.c.diff"}
 	target        = fmt.Sprintf("%s/%s", goos, goarch)
 )
 

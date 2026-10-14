@@ -32,7 +32,9 @@
 // A fix, tested natively: in outasm.c's AST_METHODREF, a member of a call whose
 // struct comes back in registers is the call's result of that index. Every line
 // below then prints gcc's value on the board, and spin2cpp's `make test_offline`
-// passes 588 of 588 with it as without.
+// passes 588 of 588 with it as without. CARRIED since 2026-10-14 as
+// internal/outasm.c.diff, the backend regenerated with it the same day. Not
+// reported upstream yet.
 //
 // To check, build for the P2 with -2: each line should print gcc's value.
 

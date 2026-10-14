@@ -1220,6 +1220,96 @@ func main() {
 		want: "5 2\n4 2\n5 5\n4\n",
 	},
 	{
+		// A value of several words -- a string, a slice, an int64, a struct of
+		// ints -- passed by value where its expression calls: an element indexed by
+		// a call, a dereference of one, a value receiver, a send, a comparison. The
+		// target passes such a value in registers and split the expression into
+		// one read per word, each evaluating it again, so idx ran once per word, in
+		// silence, the host right (doc/multi-long-arg-evaluated-per-long.c, carried
+		// as internal/functions.c.diff since the backend's 2026-10-14
+		// regeneration).
+		name: "a value of several words passed where its expression calls",
+		src: `type P struct{ a, b int }
+
+func (p P) sum() int { return p.a + p.b }
+
+type W struct {
+	n int
+	p P
+}
+
+var calls int
+
+var strs = [3]string{"a", "bb", "ccc"}
+
+var rows = [3][]int{{1}, {2, 3}, {4, 5, 6}}
+
+var a64 = [3]int64{1 << 33, 1 << 34, 1 << 35}
+
+var ps = [3]P{{1, 2}, {3, 4}, {5, 6}}
+
+var gw = W{7, P{8, 9}}
+
+var gp = P{10, 11}
+
+func idx() int {
+	calls++
+	return 1
+}
+
+func getw() *W {
+	calls++
+	return &gw
+}
+
+func getp() *P {
+	calls++
+	return &gp
+}
+
+func takeS(s string) int { return len(s) }
+
+func takeX(xs []int) int { return len(xs) }
+
+func take64(n int64) int64 { return n >> 32 }
+
+func takeP(p P) int { return p.b }
+
+func takeNP(n int, p P) int { return n + p.b }
+
+func show(name string, v int) {
+	println(name, v, calls)
+	calls = 0
+}
+
+func main() {
+	show("string", takeS(strs[idx()]))
+	show("slice", takeX(rows[idx()]))
+	show("int64", int(take64(a64[idx()])))
+	show("struct", takeP(ps[idx()]))
+	show("deref", takeP(*getp()))
+	show("field", takeP(getw().p))
+	show("second", takeNP(1, ps[idx()]))
+	show("receiver", ps[idx()].sum())
+	f := takeP
+	show("value", f(ps[idx()]))
+	show("compare", len(strs[idx()])+boolInt(strs[idx()] == "bb"))
+	ch := make(chan P, 1)
+	ch <- ps[idx()]
+	show("send", (<-ch).b)
+	println("print", strs[idx()], calls)
+}
+
+func boolInt(b bool) int {
+	if b {
+		return 1
+	}
+	return 0
+}
+`,
+		want: "string 2 1\nslice 2 1\nint64 4 1\nstruct 4 1\nderef 11 1\nfield 9 1\nsecond 5 1\nreceiver 7 1\nvalue 4 1\ncompare 3 2\nsend 4 1\nprint bb 1\n",
+	},
+	{
 		// Buffered channels in the shapes programs use them: a select whose send
 		// clause has room beside a receive clause that must still be taken in its
 		// turn (an offer deposited up front would win every round), a semaphore of

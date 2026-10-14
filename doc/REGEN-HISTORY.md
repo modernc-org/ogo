@@ -7,6 +7,43 @@ adoption and on the board, and the faults each cleared or carried. CLAUDE.md kee
 the procedure, the latest entry and the facts that still stand; the next
 regeneration's record goes here, at the top, and replaces the entry CLAUDE.md keeps.
 
+**Backend regenerated 2026-10-14 at the same pin, spin2cpp `b5993a84`, with two
+fixes of its own** (inside flexprop `v7.7.0`; ccgo v4.36.1, libc v1.77.1):
+`internal/functions.c.diff` and `internal/outasm.c.diff` beside optimize_ir.c.diff's
+CORDIC hunk, both for a value of two to four longs, which the target passes and
+returns in registers. An ARGUMENT of one whose expression has a side effect was
+evaluated once per long -- `take2(*get2())` called get2 twice, OctoGo's
+`takeS(strs[idx()])` idx twice and `takeX(rows[idx()])` three times, a value
+receiver, a send and a string comparison alike -- because CheckFunctionCalls passes
+such an argument through `_parm_` temporaries by a multiple assignment and
+BuildExprlistFromObject splits a non-call right side into one member reference per
+long, each evaluating it again (doc/multi-long-arg-evaluated-per-long.c, the held
+fault #13 widened); the fix evaluates the side effects of what the argument reads
+through, an index and a pointer, into temporaries of one long first
+(ExtractArgSideEffects), and splits the 64-bit branch's identifier rather than the
+original expression. A MEMBER past the first long of one a call returns was read
+from a register nothing wrote, AST_METHODREF offsetting the call's first result
+(doc/member-of-struct-result.c); the fix takes the call's result of that index. The
+emitter had bound a call before reading such a field everywhere but `len(<-ch)` and
+`cap(<-ch)`, fixed the same day in the emitter as well. Both faults are old: the
+backend before built the reproducers to the same binaries. Measured natively before
+adoption, b5993a84 with the CORDIC hunk against the same with both fixes: spin2cpp's
+`make test_offline` 588 of 588 under both; of 1423 programs (the run cases, seeds
+1-400, doc/) 192 build differently, and every one prints on a P2-EDGE what it
+printed before (ten loads lost to the loader and rerun) -- most of them a nil check
+of the pointer an argument is read through, run once where it ran once per long --
+while the two reproducers, an OctoGo probe and the new run case print gcc's and Go's
+values. A first version of the functions.c fix handed the argument to
+ExtractSideEffects, the assignment's helper, which copies an array whose base has a
+side effect into a temporary of the array's type: the run case "probe round 20:
+bit-packed telemetry" printed 23 mismatches on the board, and the narrower
+extraction replaced it. Each builder's turn changed its own target only (the fold
+expanded and hashed after each), and the five scripts/flexcc lists are a native
+build's of the same tree but for doc/register-limit-crash.c, a crash both ways. Not
+reported upstream yet. Host suite and `make board` (999 passing, seed 6 outgrowing a
+cog as before) green, the run cases "a value of several words passed where its
+expression calls" and "len and cap of a value received" among them.
+
 **Backend regenerated 2026-10-13 at spin2cpp `b5993a84`** (upstream's master of
 that day, 7.8.0-beta, inside flexprop `v7.7.0`; ccgo v4.36.1, libc v1.77.1),
 `internal/optimize_ir.c.diff` carrying the CORDIC hunk alone: #118's went
