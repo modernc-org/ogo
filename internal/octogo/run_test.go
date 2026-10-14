@@ -1310,6 +1310,29 @@ func boolInt(b bool) int {
 		want: "string 2 1\nslice 2 1\nint64 4 1\nstruct 4 1\nderef 11 1\nfield 9 1\nsecond 5 1\nreceiver 7 1\nvalue 4 1\ncompare 3 2\nsend 4 1\nprint bb 1\n",
 	},
 	{
+		// A product of a value the backend propagates to a constant, computed
+		// twice. The backend merges the two into one CORDIC multiply read twice,
+		// and its fold of a constant CORDIC command writes the product into both
+		// reads, as it should, warning that it found two. `ogo build` refused the
+		// program as a fault of its own until the warning was examined
+		// (harmlessWarnings in internal/build); found by the fuzzer's seed 729.
+		name: "a product of a constant value computed twice",
+		src: `func main() {
+	n := 1000
+	a := n * 1000
+	b := n * 1000
+	println(a, b)
+	var w uint32 = 12
+	w = 3600000000 / w
+	c := int32(w * 36621)
+	d := int32(int64(uint32(0+w*36621)) >> 32)
+	println(c, d)
+}
+`,
+		want:           "1000000 1000000\n-226343168 0\n",
+		backendWarning: "found two GETQX during constant propagate",
+	},
+	{
 		// Buffered channels in the shapes programs use them: a select whose send
 		// clause has room beside a receive clause that must still be taken in its
 		// turn (an offer deposited up front would win every round), a semaphore of

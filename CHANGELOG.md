@@ -79,6 +79,12 @@ shipped section tells a reader on that version that they have behaviour they do 
   reads a field past the first word of a struct a call returns from a register
   nothing wrote; a field of any other call's result was read through a temporary
   already, and the receive is now too (doc/member-of-struct-result.c).
+- **A product of a value known to be constant, computed twice, failed `ogo build`
+  as a fault of ogo's**: `n := 1000; a := n * 1000; b := n * 1000`. The backend
+  merges the two into one CORDIC multiply read twice, and its fold of the constant
+  command warns that it found two reads; the fold is right, measured on a P2-EDGE,
+  and the warning is passed over as harmless now. Found by the fuzzer's board sweep
+  (seed 729 of 201-1000, none of which failed its checks).
 
 ## v0.55.0
 

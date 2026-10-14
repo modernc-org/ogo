@@ -385,6 +385,14 @@ var harmlessWarnings = []string{
 	// result of a function started on a cog being discarded -- is deleted. Nothing
 	// read it, so nothing changes.
 	"Deleting apparently unused cordic instruction",
+	// A product of a value the backend has propagated to a constant, computed
+	// twice -- `n := 1000; a := n * 1000; b := n * 1000` -- is merged into one
+	// CORDIC multiply read twice, and the fold of a constant CORDIC command
+	// writes the product into both reads, which is what each asks for, saying
+	// it found two. Measured on a P2-EDGE (the run case "a product of a constant
+	// value computed twice"). The GETQY twin of the line is the same code and
+	// has not been seen, so it is a fault until it is examined.
+	"found two GETQX during constant propagate",
 }
 
 // spin2Diag is a backend diagnostic about a Spin2 source, "path/obj.spin2:12: ...".

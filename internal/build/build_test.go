@@ -1030,6 +1030,8 @@ func TestBackendFault(t *testing.T) {
 		{"silent", "", false},
 		{"blank lines", "\n\n", false},
 		{"harmless", "_platform_:23: warning: Deleting apparently unused cordic instruction qsqrt\n", false},
+		{"one product read twice", "warning: Internal warning, found two GETQX during constant propagate??\n", false},
+		{"its GETQY twin", "warning: Internal warning, found two GETQY during constant propagate??\n", true},
 		{"the program's own Spin2", "/home/u/proj/drv/obj.spin2:2: warning: Applying @ to RES memory `buf' is not supported in standard Spin\n", false},
 		{"warning", "/tmp/ogo-build-1/p.c:76: warning: incompatible types in comparison\n", true},
 		{"warning beside a harmless one", "_platform_:23: warning: Deleting apparently unused cordic instruction qsqrt\n" +
