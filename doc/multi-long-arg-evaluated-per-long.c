@@ -53,7 +53,9 @@
 //
 // CARRIED since 2026-10-14 as internal/functions.c.diff, the backend regenerated
 // with it the same day; the run case "a value of several words passed where its
-// expression calls" holds it on the board. Not reported upstream yet.
+// expression calls" holds it on the board. Sent upstream the same day as
+// spin2cpp#519, with Test/cexec08.c; the P1 bytecode backend, which passes such an
+// argument its own way, evaluates it once per long too and is not changed by it.
 //
 // To check, build for the P2 with -2 and count: every line should end in the count
 // gcc prints.

@@ -403,9 +403,10 @@ inputs, and never hand-edit the outputs.
    > extraction replaced it. Each builder's turn changed its own target only (the fold
    > expanded and hashed after each), and the five scripts/flexcc lists are a native
    > build's of the same tree but for doc/register-limit-crash.c, a crash both ways.
-   > Not reported upstream yet. Host suite and `make board` (999 passing, seed 6
-   > outgrowing a cog as before) green, the run cases "a value of several words passed
-   > where its expression calls" and "len and cap of a value received" among them.
+   > Sent upstream the same day as spin2cpp#519. Host suite and `make board` (999
+   > passing, seed 6 outgrowing a cog as before) green, the run cases "a value of
+   > several words passed where its expression calls" and "len and cap of a value
+   > received" among them.
    >
    > Every regeneration's record, this one included, is in `doc/REGEN-HISTORY.md`,
    > newest first; the next one goes there and replaces the entry above. What still

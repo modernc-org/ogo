@@ -39,10 +39,10 @@ side effect into a temporary of the array's type: the run case "probe round 20:
 bit-packed telemetry" printed 23 mismatches on the board, and the narrower
 extraction replaced it. Each builder's turn changed its own target only (the fold
 expanded and hashed after each), and the five scripts/flexcc lists are a native
-build's of the same tree but for doc/register-limit-crash.c, a crash both ways. Not
-reported upstream yet. Host suite and `make board` (999 passing, seed 6 outgrowing a
-cog as before) green, the run cases "a value of several words passed where its
-expression calls" and "len and cap of a value received" among them.
+build's of the same tree but for doc/register-limit-crash.c, a crash both ways. Sent
+upstream the same day as spin2cpp#519. Host suite and `make board` (999 passing, seed
+6 outgrowing a cog as before) green, the run cases "a value of several words passed
+where its expression calls" and "len and cap of a value received" among them.
 
 **Backend regenerated 2026-10-13 at spin2cpp `b5993a84`** (upstream's master of
 that day, 7.8.0-beta, inside flexprop `v7.7.0`; ccgo v4.36.1, libc v1.77.1),
