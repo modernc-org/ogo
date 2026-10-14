@@ -37,6 +37,21 @@ shipped section tells a reader on that version that they have behaviour they do 
   passed in 41 of the 72 seeds of 1-100 that have one. Each value is now compared
   with the generator's where main computes it, and a difference panics naming the
   part.
+- **`ogo smith` passes values of several words where a call stands**: three
+  programs in four declare a struct of two to four 32-bit fields, an int64, a
+  string, a slice and an interface value, and a procedure handing each by value
+  where the expression computing it calls a function that counts its calls -- an
+  element indexed by a call, a dereference and a field read through a pointer a
+  call returns, a value receiver, a function value, a later argument, a string
+  comparison and a send -- and reading `len(<-ch)`, `cap(<-ch)` and a field past
+  the first word of a struct a call returns. No generated program had passed such
+  a value where a call stands, the shape the backend evaluated once per word until
+  the fix below. Built by v0.55.0's compiler, 15 of the 24 seeds the board test
+  runs fail on a P2-EDGE, every one that carries it and fits a cog. With this
+  backend, seeds 1-2000 pass on the host (1480 carry it), and of seeds 1-200 on a
+  P2-EDGE 189 pass and 11 outgrow a cog -- two of them for its registers -- none
+  failing. It draws from a source of its own, so the rest of each seed's program is
+  what it was.
 
 ### Fixed
 

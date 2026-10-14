@@ -348,6 +348,26 @@ var generatedConstructs = []struct {
 	{"slice bounds of 64 bits", `\n\ts := v\.\w+\[w:\]\n`},
 	{"make length of 64 bits", `\n\tm := make\(\[\]int64, w, \d+\)\n`},
 	{"table of 64 bits indexed by a call", `\n\t\t\tt\[agRow_\d+\(i\)\]\[j\] \+= t\[i\]\[1 ?- ?j\] >> 3\n`},
+	// Values of two to four words (genMultiWord) handed by value where the
+	// expression computing them calls a function, and read where a call stands.
+	{"struct of several words", `\ntype MW_\d+ struct \{\n\tf0 u?int32\n\tf1 u?int32\n`},
+	{"struct of several words indexed by a call", `mwSum_\d+\(mwT_\d+\[mwAt_\d+\(\d\)\]\)`},
+	{"struct of several words a call points to", `mwSum_\d+\(\*mwPtr_\d+\(\)\)`},
+	{"field of several words a call points to", `mwSum_\d+\(mwHold_\d+\(\)\.m\)`},
+	{"value receiver indexed by a call", `mwT_\d+\[mwAt_\d+\(\d\)\]\.mix\(\)`},
+	{"value receiver a call points to", `mwPtr_\d+\(\)\.mix\(\)`},
+	{"function value given a value indexed by a call", `\n\tfv := mwSum_\d+\n\tr = r ?\* ?31 ?\+ ?fv\(mwT_\d+\[mwAt_`},
+	{"later argument indexed by a call", `mwPair_\d+\(k, mwT_\d+\[mwAt_\d+\(\d\)\]\)`},
+	{"string indexed by a call", `mwStr_\d+\(mwS_\d+\[mwAt_\d+\(\d\)\]\)`},
+	{"string comparison indexed by a call", `\n\tif mwS_\d+\[mwAt_\d+\(\d\)\] == mwS_\d+\[\d\] \{`},
+	{"int64 indexed by a call", `mwWide_\d+\(mwW_\d+\[mwAt_\d+\(\d\)\]\)`},
+	{"slice indexed by a call", `mwSl_\d+\(mwL_\d+\[mwAt_\d+\(\d\)\]\)`},
+	{"interface value indexed by a call", `mwIf_\d+\(is\[mwAt_\d+\(\d\)\]\)`},
+	{"send of a value indexed by a call", `\n\tc <- mwT_\d+\[mwAt_\d+\(\d\)\]\n`},
+	{"length of a string received", `len\(<-cs\)`},
+	{"capacity of a slice received", `cap\(<-cl\)`},
+	{"member past the first word of a call's result", `int\(mwMk_\d+\(k\)\.f[1-3]\)`},
+	{"several words checked", `\n\tif mwRun_\d+\(-?\d+\) != -?\d+ \{\n\t\tpanic\("OctoSmith Checksum Failure: several words"\)`},
 	// A name C has spoken for, which newVarName draws now and then (cNames): the
 	// emitter renames each in every position, and a position it missed was a C
 	// error no generated program could show while every name was a counter's.

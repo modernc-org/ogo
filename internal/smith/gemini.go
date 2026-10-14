@@ -208,6 +208,11 @@ func (f *Fuzzer) GenerateProgram(vm Machine, mem Memory) error {
 	// genAggregates).
 	agCall, agWant, agOK := f.genAggregates()
 
+	// 4.10. Values of two to four words handed by value where the expression
+	// computing them calls a function, and a procedure counting the calls (see
+	// genMultiWord).
+	mwCall, mwWant, mwOK := f.genMultiWord()
+
 	// 5. Generate the main function
 	// FuncDecl = "func" identifier "(" ")" Block
 	fmt.Fprint(f.Out, "func main() {\n")
@@ -235,6 +240,10 @@ func (f *Fuzzer) GenerateProgram(vm Machine, mem Memory) error {
 	// And the aggregates' procedure, whose value the generator computed itself.
 	if agOK {
 		f.checkAtTop("aggregates", agCall, agWant)
+	}
+	// And the procedure of values of several words.
+	if mwOK {
+		f.checkAtTop("several words", mwCall, mwWant)
 	}
 
 	// Generate 20 sequential statements to mutate the checksum

@@ -198,6 +198,8 @@ type Fuzzer struct {
 	wideRand *rand.Rand
 	convRand *rand.Rand
 	chanRand *rand.Rand
+	// mwRand is genMultiWord's.
+	mwRand *rand.Rand
 }
 
 func NewFuzzer(seed int64, out io.Writer) *Fuzzer {
@@ -209,6 +211,7 @@ func NewFuzzer(seed int64, out io.Writer) *Fuzzer {
 		wideRand:     rand.New(rand.NewSource(seed ^ 0x3c1de64)),
 		convRand:     rand.New(rand.NewSource(seed ^ 0x6b17c0e5)),
 		chanRand:     rand.New(rand.NewSource(seed ^ 0x2c4a7d31)),
+		mwRand:       rand.New(rand.NewSource(seed ^ 0x4d570a3b)),
 		Rand:         rng,
 		Out:          out,
 		GlobalEnv:    global,
