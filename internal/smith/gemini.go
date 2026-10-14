@@ -93,9 +93,12 @@ func (f *Fuzzer) GenerateProgram(vm Machine, mem Memory) error {
 	checksumVal, _ := vm.Eval("int_lit", "0")
 	mem.Store(f.ChecksumName, checksumVal)
 
-	// Register the checksum in the global environment so we don't accidentally flush it
-	f.CurrentEnv.Declare(f.ChecksumName, BasicType{Kind: KindInt}, false)
-	f.CurrentEnv.Lookup(f.ChecksumName).Used = true
+	// The checksum is kept out of the environment, so no expression reads it and no
+	// statement assigns it but a fold, `checksum = checksum ^ x` with x independent
+	// of it: a fold is then one-to-one, and a value gone wrong anywhere reaches the
+	// assertion at the end. Drawn as an operand, as it was until 2026-10-14, it made
+	// `checksum = checksum ^ checksum` and `checksum <<= e`, and a value planted
+	// wrong at the start of main went unseen in 110 of seeds 1-200.
 
 	fmt.Fprintf(f.Out, "var %s int = 0\n\n", f.ChecksumName)
 	// Not declared in the environment: no expression may read it. Its value moves
@@ -863,7 +866,7 @@ func (f *Fuzzer) genCall(vm Machine, mem Memory, depth int) (Node, Value) {
 func (f *Fuzzer) flushUnused(vm Machine, mem Memory) []Node {
 	var unusedNames []string
 	for name, sym := range f.CurrentEnv.Symbols {
-		if !sym.Used && name != f.ChecksumName {
+		if !sym.Used {
 			unusedNames = append(unusedNames, name)
 		}
 	}
@@ -4528,10 +4531,11 @@ func (n *GotoStmtNode) Write(w io.Writer, indent int) {
 // checkAtTop writes a test of a value main computes before its statements, expr,
 // against want, the value the generator computed, which panics naming what when
 // they differ. The values were folded into the checksum until 2026-10-14, and a
-// statement after them that loses the checksum's bits -- `octosmith_checksum =
-// octosmith_checksum ^ octosmith_checksum` is one a generated expression may be --
-// lost them too: an aggregates' procedure returning one more than it should passed
-// in 41 of the 72 seeds of 1-100 that have one.
+// statement after them that lost the checksum's bits -- `octosmith_checksum =
+// octosmith_checksum ^ octosmith_checksum` was one a generated expression could be
+// while the checksum was an operand -- lost them too: an aggregates' procedure
+// returning one more than it should passed in 41 of the 72 seeds of 1-100 that have
+// one. A check where the value stands also names the part that went wrong.
 func (f *Fuzzer) checkAtTop(what, expr string, want Int32) {
 	writeIndent(f.Out, 1)
 	fmt.Fprintf(f.Out, "if %s != %s {\n", expr, want.Literal())

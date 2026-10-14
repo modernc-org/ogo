@@ -32,11 +32,20 @@ shipped section tells a reader on that version that they have behaviour they do 
   computes it**: the package variables initialized in dependency order, the static
   tables and the aggregates' procedure were folded into the checksum, and a
   statement after them that loses the checksum's bits --
-  `octosmith_checksum ^ octosmith_checksum` is one a generated expression may be --
+  `octosmith_checksum ^ octosmith_checksum` was one a generated expression could be --
   lost them too. The aggregates' procedure returning one more than it should
   passed in 41 of the 72 seeds of 1-100 that have one. Each value is now compared
   with the generator's where main computes it, and a difference panics naming the
   part.
+- **`ogo smith` reads its checksum nowhere but where it folds a value into it.** A
+  generated expression could draw the checksum as an operand and a compound
+  assignment take it as a target -- `octosmith_checksum ^ octosmith_checksum`,
+  `octosmith_checksum <<= e` -- and either lost whatever had been folded before: a
+  value planted wrong at the start of main went unseen in 110 of seeds 1-200, the
+  statements before such a one checked by the call count alone. Every fold is now
+  one to one, and all 200 catch it. Every seed's program changes with it: seeds
+  1-2000 pass on the host, and of seeds 1-200 on a P2-EDGE 191 pass and 9 outgrow
+  a cog, none failing.
 - **`ogo smith` passes values of several words where a call stands**: three
   programs in four declare a struct of two to four 32-bit fields, an int64, a
   string, a slice and an interface value, and a procedure handing each by value
