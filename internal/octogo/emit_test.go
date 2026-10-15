@@ -13622,6 +13622,8 @@ type PBox struct {
 
 var gob OuterBox
 
+var gbs [2]Box
+
 func gbAt() *Box { return &gb }
 
 type BH struct{ b *Box }
@@ -13676,6 +13678,11 @@ func main() {
 		// bound by a list assignment -- called and deferred.
 		{"f := gb.set\n\tf(a[:])", "cannot pass a slice backed by local a to set"},
 		{"f := gb.set\n\tdefer f(a[:])", "cannot pass a slice backed by local a to set"},
+		// A method value of a receiver reached through a field or a constant index,
+		// bound like one named alone (methodValueRecv), and its store judged the same.
+		{"f := gob.Box.set\n\tf(a[:])", "cannot pass a slice backed by local a to set"},
+		{"f := gbs[1].set\n\tdefer f(a[:])", "cannot pass a slice backed by local a to set"},
+		{"fs := [1]func([]int){gbs[0].set}\n\tfs[0](a[:])", "cannot pass a slice backed by local a to a func([]int) value"},
 		{"bus.dev.Keep(a[:])", "cannot pass a slice backed by local a to Keep (through Keeper)"},
 		{"bus.devs[0].Keep(a[:])", "cannot pass a slice backed by local a to Keep (through Keeper)"},
 		{"defer bus.dev.Keep(a[:])", "cannot pass a slice backed by local a to Keep (through Keeper)"},
@@ -13787,6 +13794,7 @@ func main() {
 		{"p := &gb\n\tp.set(back[:])\n\tfill(p, back[1:])", ""},
 		{"p := &gb\n\tgp = &p.d[0]\n\tq := *p\n\tgb = q", ""},
 		{"bus.dev.Keep(back[:])\n\tdefer bus.fn(back[1:])\n\tf := gb.set\n\tf(back[2:])", ""},
+		{"f := gbs[1].set\n\tf(back[:])\n\th := gob.Box.set\n\th(back[1:])\n\tback[0] = len(gbs[1].d) + len(gob.d)", ""},
 		{"id := func(xs []int) []int { return xs }\n\tback[0] = len(id(a[:]))", ""},
 		{"g = func(xs []int) []int { return xs }(back[:])", ""},
 		{"back[0] = len(func(xs []int) []int { return xs }(a[:]))", ""},

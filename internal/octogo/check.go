@@ -10700,12 +10700,16 @@ func (f *File) reportUnsupportedFuncValue(s *Scope, n Node) bool {
 }
 
 // reportChainMethodValue refuses a method value whose receiver is reached through
-// steps rather than named -- an element, `rs[2].get`, or a field, `dev.Reg.get`:
-// what the lifted function binds is the address of a package-level variable named
-// alone (methodValueParts), and the emitter knew no other, saying "rs[2] has no
-// field get" or "cannot infer a type". A value-receiver method copies its receiver,
-// refused as one of a named variable is. Another package's variable, `lib.V.get`,
-// is named alone.
+// steps rather than named -- an element, `rs[2].get`, or a field, `dev.Reg.get` --
+// where the address the lifted function binds would not be fixed when the program
+// is built. It is fixed for a package-level variable followed by fields of struct
+// values and constant indexes into arrays (chainRecvUnfixed), which the emitter
+// binds as it binds the variable named alone (methodValueRecv): Go takes the same
+// address when the value is taken, `&dev.Reg`, and nothing can move it. It was
+// refused whatever the steps until 2026-10-16, when a domain program's table of
+// switches, `[...]func(bool){inst.motor.Enable, inst.heater.Enable}`, met it. A
+// value-receiver method copies its receiver, refused as one of a named variable is.
+// Another package's variable, `lib.V.get`, is named alone.
 func (f *File) reportChainMethodValue(s *Scope, n Node) bool {
 	fac, ok := f.soleFactor(n)
 	if !ok {
@@ -10724,7 +10728,7 @@ func (f *File) reportChainMethodValue(s *Scope, n Node) bool {
 			}
 		}
 	}
-	if len(reached) < 2 || slices.ContainsFunc(steps, func(n Node) bool { return n.sym == CallSuffix }) {
+	if len(reached) < 1 || slices.ContainsFunc(steps, func(n Node) bool { return n.sym == CallSuffix }) {
 		return false
 	}
 	last := steps[len(steps)-1]
@@ -10739,13 +10743,60 @@ func (f *File) reportChainMethodValue(s *Scope, n Node) bool {
 	if !ok || t.f == nil || t.tn == nil {
 		return false
 	}
-	id, isID := t.tn.(*TypeNodeIdent)
-	if !isID || id.Qualifier.IsValid() {
+	// The receiver a POINTER, `inst.pm.Enable` of a `pm *Motor`: Go saves the
+	// pointer, as it does a pointer variable's (methodValueSavesPtr).
+	recvPtr := false
+	if p, isPtr := t.tn.(*TypeNodePointer); isPtr {
+		t, recvPtr = typeAt{p.TypeNode, t.s, t.f}, true
+	}
+	var td *TypeDeclaration
+	viaPtr := false
+	switch x := t.tn.(type) {
+	case *TypeNodeIdent:
+		if len(reached) < 2 {
+			return false // a variable named alone: methodValueParts
+		}
+		home := t.s
+		if x.Qualifier.IsValid() {
+			// A field of another package's type, `s.q.Inc` of a `q lib.Q`: the method
+			// is that package's, found where it is declared. It was let through here
+			// and was the emitter's "cannot infer a type", with no position.
+			if !token.IsExported(m.Src()) {
+				return false
+			}
+			if home, ok = t.f.importedPkgScope(x.Qualifier); !ok {
+				return false
+			}
+		}
+		if td, _, viaPtr, ok = t.f.methodOwnerPath(home, x.Name.Src(), m.Src()); !ok {
+			return false
+		}
+	case *TypeNodeStruct:
+		// An UNNAMED struct embedding the method's type, `hold.e.get` of an `e
+		// struct{ *Reg }`, and a variable of one named alone, which methodValueParts
+		// does not resolve: asked nothing, they reached the emitter, which bound what
+		// it could and refused the rest with no position.
+		if td, viaPtr, ok = t.f.unnamedStructMethod(t, x, m.Src()); !ok {
+			return false
+		}
+	default:
 		return false
 	}
-	td, _, _, isMethod := t.f.methodOwnerPath(t.s, id.Name.Src(), m.Src())
-	if !isMethod {
-		return false
+	shown := f.exprSource(n)
+	why, reported := "", false
+	switch {
+	case !td.ptrRecv[m.Src()]:
+		why = fmt.Sprintf("cannot take %s as a value: a method value copies its receiver, and only a pointer-receiver method may be taken here", shown)
+	default:
+		if why, reported = f.chainRecvUnfixed(s, f.tok(kids[0].tok), steps[:len(steps)-1], len(steps)-len(reached)); why == "" && !reported && (recvPtr || viaPtr) {
+			why = "its receiver is a pointer, whose value Go saves when the method value is taken and one bound at compile time cannot; a function literal calling %s reads it at each call instead"
+		}
+		if why != "" {
+			why = fmt.Sprintf("cannot take %s as a value: "+why, shown, shown)
+		}
+	}
+	if why == "" && !reported {
+		return false // bound at compile time, as a variable named alone is
 	}
 	at := m.Position().String()
 	if f.mvReported[at] {
@@ -10755,13 +10806,105 @@ func (f *File) reportChainMethodValue(s *Scope, n Node) bool {
 		f.mvReported = map[string]bool{}
 	}
 	f.mvReported[at] = true
-	shown := f.exprSource(n)
-	if !td.ptrRecv[m.Src()] {
-		f.err(m.Position(), "cannot take %s as a value: a method value copies its receiver, and only a pointer-receiver method may be taken here", shown)
-		return true
+	if why != "" {
+		f.err(m.Position(), "%s", why)
 	}
-	f.err(m.Position(), "cannot take %s as a value: a method value binds the address of a package-level variable named alone, and this receiver is an element or a field; a function literal calling %s is the way round", shown, shown)
 	return true
+}
+
+// unnamedStructMethod finds the method an unnamed struct st, written at t, promotes
+// from the types it embeds: the declaration that has it, and whether the way there
+// passes through a pointer. A method found through two of them answers nothing, Go
+// selecting the shallowest and refusing a tie, which is not worked out here.
+func (f *File) unnamedStructMethod(t typeAt, st *TypeNodeStruct, method string) (*TypeDeclaration, bool, bool) {
+	var td *TypeDeclaration
+	viaPtr, found := false, 0
+	for _, fld := range st.Fields {
+		name, isEmb := embeddedTypeName(fld)
+		if !isEmb {
+			continue
+		}
+		if d, _, vp, ok := f.methodOwnerPath(t.s, name, method); ok {
+			td, viaPtr, found = d, vp || fld.EmbeddedPtr, found+1
+		}
+	}
+	return td, viaPtr, found == 1
+}
+
+// chainRecvUnfixed says why the receiver steps reach from head is not at an address
+// fixed when the program is built -- a format whose one verb is the expression, in
+// the way round it names -- or "" when it is: a package-level variable --
+// this package's, or another's when first is 1 and steps[0] names it -- followed by
+// fields of struct values and constant indexes into arrays. What Go evaluates when
+// the method value is taken, a binding made at compile time cannot: a pointer on the
+// way, read then and saved; a slice's header, read then; an index that is not a
+// constant, evaluated then. A constant index past the array is Go's compile error,
+// reported here as it is said there, and answers reported.
+func (f *File) chainRecvUnfixed(s *Scope, head Token, steps []Node, first int) (why string, reported bool) {
+	const unknown = "a method value binds the address of its receiver when the program is built, and this one's is not known to be fixed; a function literal calling %s is the way round"
+	if first == 0 {
+		_, isVar := s.find(head.Src()).(*VarDeclaration)
+		if sc, _ := s.find2(head.Src()); !isVar || sc == nil || sc.Kind != PackageScope {
+			return "a method value binds the address of its receiver, so the receiver must be reached from a package-level variable; a function literal calling %s is the way round", false
+		}
+	}
+	for i := first; i < len(steps); i++ {
+		t, ok := f.headStepsType(s, head, steps[:i], false)
+		if !ok || t.f == nil || t.tn == nil {
+			return unknown, false
+		}
+		u := t.f.underlyingTypeAt(t)
+		if _, isPtr := u.tn.(*TypeNodePointer); isPtr {
+			return "its receiver is reached through a pointer, whose value Go saves when the method value is taken and one bound at compile time cannot; a function literal calling %s reads it at each call instead", false
+		}
+		switch st := steps[i]; st.sym {
+		case Selector:
+			stn, isStruct := u.tn.(*TypeNodeStruct)
+			if !isStruct {
+				return unknown, false
+			}
+			_, _, viaPtr, ok := f.fieldLookup(u, stn, selectorIdent(f, st))
+			switch {
+			case !ok:
+				return unknown, false
+			case viaPtr:
+				return "its receiver is reached through an embedded pointer, whose value Go saves when the method value is taken and one bound at compile time cannot; a function literal calling %s reads it at each call instead", false
+			}
+		case Index:
+			if f.indexIsSlice(st) {
+				return "its receiver is reached through a slice expression, whose header Go makes when the method value is taken and one bound at compile time cannot; a function literal calling %s makes it at each call instead", false
+			}
+			switch u.tn.(type) {
+			case *TypeNodeArray:
+			case *TypeNodeSlice:
+				return "its receiver is an element of a slice, whose header Go reads when the method value is taken and one bound at compile time cannot; a function literal calling %s reads it at each call instead", false
+			default:
+				return unknown, false
+			}
+			var idx Node
+			for c := range it(st.ast) {
+				if c.sym == Expression {
+					idx = c
+				}
+			}
+			cv, isConst := f.constNumeric(s, idx)
+			if idx.sym == 0 || !isConst {
+				return "its receiver's index is not a constant, and Go evaluates it when the method value is taken where one bound at compile time cannot; a function literal calling %s evaluates it at each call instead", false
+			}
+			length, okLen := u.f.arrayTypeLen(u, false)
+			c, exact := constant.Int64Val(constant.ToInt(cv))
+			switch {
+			case !okLen || !exact:
+				return unknown, false
+			case c < 0 || c >= length:
+				f.err(f.tok(idx.Pos()).Position(), "invalid argument: index %d out of bounds [0:%d]", c, length)
+				return "", true
+			}
+		default:
+			return unknown, false
+		}
+	}
+	return "", false
 }
 
 // reportIfaceMethodValue refuses a method value whose receiver is an INTERFACE
@@ -16255,10 +16398,18 @@ func (f *File) fieldTypeAt(u typeAt, st *TypeNodeStruct, name string) (typeAt, b
 // from there is spelled with in u's file. It is no token where the field is u's
 // package's own, or where a second embedding left for a third package.
 func (f *File) fieldTypeVia(u typeAt, st *TypeNodeStruct, name string) (typeAt, Token, bool) {
+	t, via, _, ok := f.fieldLookup(u, st, name)
+	return t, via, ok
+}
+
+// fieldLookup is fieldTypeVia reporting too whether the field is reached through an
+// embedded POINTER, which a method value's receiver may not be (chainRecvUnfixed).
+func (f *File) fieldLookup(u typeAt, st *TypeNodeStruct, name string) (typeAt, Token, bool, bool) {
 	type level struct {
 		u   typeAt
 		st  *TypeNodeStruct
 		via Token
+		ptr bool // reached through an embedded pointer
 	}
 	cur := []level{{u: u, st: st}}
 	seen := map[*TypeNodeStruct]int{}
@@ -16278,7 +16429,7 @@ func (f *File) fieldTypeVia(u typeAt, st *TypeNodeStruct, name string) (typeAt, 
 						if fld.EmbeddedPtr {
 							tn = &TypeNodePointer{TypeNode: id}
 						}
-						found = append(found, level{u: typeAt{tn, l.u.s, l.u.f}, via: l.via})
+						found = append(found, level{u: typeAt{tn, l.u.s, l.u.f}, via: l.via, ptr: l.ptr})
 						continue
 					}
 					eu := f.underlyingTypeAt(typeAt{id, l.u.s, l.u.f})
@@ -16295,11 +16446,11 @@ func (f *File) fieldTypeVia(u typeAt, st *TypeNodeStruct, name string) (typeAt, 
 					default:
 						via = Token{}
 					}
-					next = append(next, level{u: eu, st: est, via: via})
+					next = append(next, level{u: eu, st: est, via: via, ptr: l.ptr || fld.EmbeddedPtr})
 					continue
 				}
 				if fld.TypeNode != nil && slices.ContainsFunc(fld.Names, func(nm Token) bool { return nm.Src() == name }) {
-					found = append(found, level{u: typeAt{fld.TypeNode, l.u.s, l.u.f}, via: l.via})
+					found = append(found, level{u: typeAt{fld.TypeNode, l.u.s, l.u.f}, via: l.via, ptr: l.ptr})
 				}
 			}
 		}
@@ -16307,12 +16458,12 @@ func (f *File) fieldTypeVia(u typeAt, st *TypeNodeStruct, name string) (typeAt, 
 		case 0:
 			cur = next
 		case 1:
-			return found[0].u, found[0].via, true
+			return found[0].u, found[0].via, found[0].ptr, true
 		default:
-			return typeAt{}, Token{}, false
+			return typeAt{}, Token{}, false, false
 		}
 	}
-	return typeAt{}, Token{}, false
+	return typeAt{}, Token{}, false, false
 }
 
 // structFieldType is the written type of the field named like field of the struct

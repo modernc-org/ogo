@@ -1983,25 +1983,33 @@
 // value pays. A method of several results is taken the same way, its lifted
 // function writing them through the caller's pointer as above.
 //
-// Three forms are refused by design, and a fourth for now:
+// The receiver may be reached through fields of struct values and constant
+// indexes into arrays, "dev.Reg.get" and "rs[2].get", another package's variable's
+// too, "lib.Bus.Ports[1].Send": its address is fixed when the program is built,
+// and Go takes the same address when the value is made.
+//
+//	var switches = [...]func(bool){inst.motor.Enable, inst.heater.Enable}
+//
+// Three forms are refused by design:
 //
 //   - a VALUE-receiver method. Go copies the receiver at the moment the value is
 //     made, and there is no heap to copy into; binding the address instead would
 //     alias the variable, so the program would answer differently the moment
 //     anything wrote to it.
-//   - a receiver that is not a package-level variable, whose address does not
-//     outlive the value.
-//   - a receiver that is a POINTER: a variable of a pointer type, or an embedded
+//   - a receiver whose address is not fixed when the program is built: one not
+//     reached from a package-level variable, a local's address not outliving the
+//     value; an element of a slice, "sl[1].get", whose header Go reads when the
+//     value is made; and an element indexed by a variable, "rs[i].get", whose
+//     index Go evaluates then.
+//   - a receiver that is a POINTER, or is reached through one: a variable of a
+//     pointer type, a pointer field on the way, "dev.p.get", or an embedded
 //     pointer the method is promoted through. Go saves the pointer's value when
 //     the value is made; a binding made at compile time could only read it at each
-//     call, and would answer differently once the pointer changed in between. A
-//     function literal calling the method, "func(k int) { gp.Set(k) }", reads the
-//     pointer at each call, as it is written to.
-//   - (not yet) a receiver reached through an element or a field, "rs[2].get" or
-//     "dev.Reg.get". Its address is a package variable's, and binding it is work
-//     not done; an element indexed by a variable, "rs[i].get", would have to save
-//     the index, and stays refused. A function literal calling the method,
-//     "func() int32 { return rs[2].get() }", is the way round for both.
+//     call, and would answer differently once the pointer changed in between.
+//
+// A function literal calling the method, "func(k int) { gp.Set(k) }" or "func()
+// int32 { return rs[i].get() }", reads the pointer and evaluates the index at each
+// call, as it is written to, and is the way round all three.
 //
 // Go carries the receiver IN the value instead, which handles any receiver. The
 // representation that would do that here -- a function value pointing at a struct

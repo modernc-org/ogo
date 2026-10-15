@@ -11853,6 +11853,111 @@ func main() {
 		want: "2 5 5\n15\n16 100 16 100\n0\n",
 	},
 	{
+		// A method value whose receiver is reached through fields and constant
+		// indexes from a package-level variable: its address is fixed when the
+		// program is built, Go takes the same one when the value is taken, and it is
+		// bound as a variable named alone is (methodValueRecv). Refused whatever the
+		// steps until a domain program's table of switches over an instrument's
+		// parts met it; a pointer on the way, a slice and an index that is not a
+		// constant, which Go reads when the value is taken, still are.
+		name: "a method value of a field or an element",
+		src: `type Actuator struct {
+	name   string
+	on     bool
+	starts int
+}
+
+func (a *Actuator) Enable(on bool) {
+	if on && !a.on {
+		a.starts++
+	}
+	a.on = on
+}
+
+type Motor struct {
+	Actuator
+	rpm int
+}
+
+type Heater struct {
+	Actuator
+	temp int
+}
+
+type Reg struct{ id, n int32 }
+
+func (r *Reg) Next() int32 {
+	r.n++
+	return r.id*100 + r.n
+}
+
+func (r *Reg) Pair(k int32) (int32, bool) {
+	r.n += k
+	return r.n, r.n%2 == 0
+}
+
+type Row [4]int
+
+func (r *Row) Bump() int {
+	r[1]++
+	return r[0] + r[1]
+}
+
+type Bank struct {
+	regs [3]Reg
+	io   struct{ rx, tx Reg }
+}
+
+var (
+	motor  Motor
+	heater Heater
+	bank   Bank
+	grid   [2][3]Reg
+	rows   [2]Row
+	// A table of switches over fields, the receivers bound where they stand.
+	switches = [...]func(bool){motor.Enable, heater.Enable, motor.Actuator.Enable}
+	done     = make(chan bool)
+)
+
+func take(f func() int32) int32 { return f() }
+
+func pick() func() int32 { return bank.regs[2].Next }
+
+func run(f func(bool), on bool) {
+	f(on)
+	done <- true
+}
+
+func main() {
+	for i := range bank.regs {
+		bank.regs[i].id = int32(i + 1)
+	}
+	grid[1][2].id, bank.io.tx.id, rows[1][0] = 12, 9, 40
+	for i, sw := range switches {
+		sw(i != 2)
+	}
+	println(motor.on, motor.starts, heater.on, heater.starts)
+
+	// An element, a field of an element, an element of a field, two indexes.
+	a := bank.regs[1].Next
+	var b func() int32 = grid[1][2].Next
+	tx := bank.io.tx.Next
+	println(a(), a(), b(), tx(), take(bank.regs[0].Next), pick()(), pick()())
+
+	// Several results, a defined array type, a cog and a deferred call.
+	p := grid[0][1].Pair
+	v, even := p(3)
+	bump := rows[1].Bump
+	println(v, even, bump(), bump(), rows[1][1])
+	go run(heater.Enable, false)
+	<-done
+	defer println("deferred", take(bank.regs[1].Next))
+	println(heater.on, heater.starts, bank.regs[1].n)
+}
+`,
+		want: "false 1 true 1\n201 202 1201 901 101 301 302\n3 false 41 42 2\nfalse 1 3\ndeferred 203\n",
+	},
+	{
 		// A METHOD EXPRESSION, T.M or (*T).M: the method as a function whose first
 		// parameter is the receiver. It is lifted to a C function of its own that
 		// calls the method, so a call of the expression and its use as a value go

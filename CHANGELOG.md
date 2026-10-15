@@ -41,11 +41,21 @@ shipped section tells a reader on that version that they have behaviour they do 
   block away**: a channel made there, or a local's address, may go to a goroutine
   in a main that ends with `goto fail` too. Only a goto back can run a declaration
   again, and only that one is refused now; any goto had been.
-- **A method value of an element or a field, `rs[2].get` or `dev.Reg.get`, is
-  refused by the checker, saying so**, in every position, with a function literal
-  calling the method as the way round. The emitter refused it as "rs[2] has no
-  field get" or "cannot infer a type for the declaration". Binding such a receiver
-  is not written yet.
+- **A method value of a field or an element, `dev.Reg.get` or `rs[2].get`, binds
+  its receiver as one of a variable named alone does**, wherever the receiver's
+  address is fixed when the program is built: a package-level variable followed by
+  fields of struct values and constant indexes into arrays, another package's
+  included. A table of switches over an instrument's parts, `[...]func(bool){
+  inst.motor.Enable, inst.heater.Enable}`, did not build. What Go reads when the
+  value is taken -- a pointer on the way, a slice's header, an index that is not a
+  constant -- is refused by the checker, which says which, with a function literal
+  calling the method as the way round; every such form had been refused with one
+  message, and the emitter's "rs[2] has no field get" before that. Two forms the
+  checker passed and the emitter refused with no position, "cannot infer a type",
+  work too: a method value of a variable of a defined array type, `row.bump`, and
+  of a field of another package's type, `s.q.Inc`. A method promoted through an
+  unnamed struct's embedded pointer, `x.get` of an `x struct{ *Reg }`, is refused by
+  the checker, as one through a defined struct's is.
 - **A message naming a channel's type says `chan bool`**, where it said the C
   type's name, "%d wants an integer, not ogo_chan__Bool".
 

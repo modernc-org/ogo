@@ -12272,9 +12272,9 @@ func (e *emitter) noteFuncValue(kids []Node) {
 		add(e.cFuncValueType(fv.res, append([]string{recvCT}, fv.params...)), key, spelled)
 		return
 	}
-	if base, method, isMV := e.factorMethodValue(kids); isMV {
-		if mcname, _, fv, ok := e.methodValueBinding(base, method); ok && mcname != "" {
-			add(fv, mcname, e.displayName(base)+"."+method)
+	if r, method, isMV := e.factorMethodValue(kids); isMV {
+		if mcname, _, fv, ok := e.methodValueBinding(r, method); ok && mcname != "" {
+			add(fv, mcname, r.shown+"."+method)
 		}
 		return
 	}
@@ -17692,14 +17692,17 @@ func (e *emitter) liftFuncLit(lit Node) (string, bool) {
 }
 
 // factorMethodValue recognises "x.M" standing as a VALUE: an identifier and a
-// single Selector, with no call after it. A call is factorCall's, and a field read
-// resolves to a field rather than to a method, so neither reaches here.
+// Selector, with no call after it. A call is factorCall's, and a field read
+// resolves to a field rather than to a method, so neither reaches here. Between
+// the two may stand fields and constant indexes into arrays, `dev.Reg.M` and
+// `rs[2].M`, whose receiver is at an address fixed when the program is built
+// (methodValueRecv).
 //
 // Another package's variable, `lib.V.M`, is the same shape one selector deeper. The
 // qualifier is folded away first, leaving the receiver's already-mangled C name as
 // the base -- which is what varType and varRef read an imported global by, so
 // nothing below this line knows the difference.
-func (e *emitter) factorMethodValue(kids []Node) (base, method string, ok bool) {
+func (e *emitter) factorMethodValue(kids []Node) (r mvRecv, method string, ok bool) {
 	// `(v).m` and `(&v).m` are `v.m`: the receiver in parentheses, its address or not
 	// -- the binding is an address either way -- was "cannot infer a type".
 	if len(kids) == 4 && kids[0].sym == 0 && e.f.ch(kids[0].tok) == LPAREN && kids[1].sym == Expression &&
@@ -17711,33 +17714,134 @@ func (e *emitter) factorMethodValue(kids []Node) (base, method string, ok bool) 
 		}
 		tok, hasTok := e.firstIdentTok(inner)
 		if !isName || !hasTok {
-			return "", "", false
+			return mvRecv{}, "", false
 		}
 		kids = []Node{{tok: tok}, kids[3]}
 	}
 	if len(kids) != 2 || kids[0].sym != 0 || e.f.ch(kids[0].tok) != IDENT || kids[1].sym != FactorSuffix {
-		return "", "", false
+		return mvRecv{}, "", false
 	}
 	steps := slices.Collect(it(kids[1].ast))
-	base = e.src(kids[0].tok)
+	base := e.src(kids[0].tok)
 	if folded, rest, isQual := e.qualifiedChainBase(base, steps); isQual {
 		base, steps = folded, rest
 	}
-	if len(steps) != 1 || steps[0].sym != Selector {
-		return "", "", false
+	if len(steps) == 0 || steps[len(steps)-1].sym != Selector {
+		return mvRecv{}, "", false
 	}
-	method = e.soleIdent(steps[0].ast)
+	method = e.soleIdent(steps[len(steps)-1].ast)
 	if base == "" || method == "" {
-		return "", "", false
+		return mvRecv{}, "", false
 	}
-	rct, isVar := e.varType(base)
-	if !isVar || !e.isUserType(methodBaseType(rct)) {
-		return "", "", false
+	if r, ok = e.methodValueRecv(base, steps[:len(steps)-1]); !ok || !e.isMethodBase(methodBaseType(r.ct)) {
+		return mvRecv{}, "", false
 	}
-	if _, _, _, isMethod := e.methodValueBinding(base, method); !isMethod {
-		return "", "", false
+	if _, _, _, isMethod := e.methodValueBinding(r, method); !isMethod {
+		return mvRecv{}, "", false
 	}
-	return base, method, true
+	return r, method, true
+}
+
+// mvRecv is the receiver a method value binds: a variable named alone, or a
+// package-level one followed by steps that keep its address fixed.
+type mvRecv struct {
+	ref   string // the receiver's C lvalue
+	ct    string // its C type
+	shown string // as the source writes it, for a diagnostic
+}
+
+// methodValueRecv resolves the receiver steps reach from base for a method value.
+// With no steps it is the variable, whatever the checker let through. With steps it
+// is what they reach from a package-level variable through fields of struct values
+// and constant indexes into arrays, each at an address fixed when the program is
+// built: Go takes `&dev.Reg` when `dev.Reg.M` is taken, and nothing can move it,
+// so binding it then is binding what Go binds (reportChainMethodValue). A pointer
+// on the way, a slice or an index that is not a constant answers nothing: what Go
+// reads of them when the value is taken, a binding made now cannot.
+func (e *emitter) methodValueRecv(base string, steps []Node) (mvRecv, bool) {
+	r := mvRecv{shown: e.displayName(base)}
+	if len(steps) == 0 {
+		if ct, isVar := e.varType(base); isVar {
+			r.ref, r.ct = e.varRef(base), ct
+			return r, true
+		}
+		// A variable of a defined ARRAY type, `row.bump` of a `type Row [4]int`,
+		// which varType does not answer for, an array being kept out of the table it
+		// reads: the checker took it, and the emitter said "cannot infer a type".
+		if _, isPtr := e.arrayPtrVar(base); !isPtr {
+			if _, a, ok := e.arrayBase(base); ok && a.name != "" {
+				r.ref, r.ct = e.accessBaseText(base), a.name
+				return r, true
+			}
+		}
+		return mvRecv{}, false
+	}
+	if !e.isPackageVar(base) {
+		// Another package's variable arrives already mangled (qualifiedChainBase).
+		_, isGlobal := e.globals[base]
+		_, isArr := e.globalArrays[base]
+		if e.localName(base) || !e.bareGlobal(base) || !isGlobal && !isArr {
+			return mvRecv{}, false
+		}
+	}
+	if _, isPtr := e.arrayPtrVar(base); isPtr {
+		return mvRecv{}, false
+	}
+	cur, ok := e.accessBase(base)
+	if !ok || cur.slice {
+		return mvRecv{}, false
+	}
+	ref := e.accessBaseText(base)
+	for _, st := range steps {
+		switch st.sym {
+		case Selector:
+			f := e.soleIdent(st.ast)
+			if f == "" || len(cur.dims) != 0 || cur.ctype == "" || e.isPointer(cur.ctype) {
+				return mvRecv{}, false
+			}
+			path, ok := e.fieldPath(cur.ctype, f)
+			if !ok || e.pathThroughPointer(cur.ctype, path[:len(path)-1]) {
+				return mvRecv{}, false
+			}
+			next, ok := e.accessSelect(cur, f)
+			if !ok {
+				return mvRecv{}, false
+			}
+			text, ok := e.selectThroughC(ref, cur.ctype, f, false)
+			if !ok {
+				return mvRecv{}, false
+			}
+			ref, cur, r.shown = text, next, r.shown+"."+f
+		case Index:
+			low, _, _, isSlice := e.sliceParts(st.ast)
+			if isSlice || low == nil || len(cur.dims) == 0 {
+				return mvRecv{}, false
+			}
+			k, isConst := e.foldIndexConst(low)
+			bound, err := strconv.ParseInt(cur.dims[0], 10, 64)
+			if !isConst || err != nil || k < 0 || k >= bound {
+				return mvRecv{}, false
+			}
+			next, _, ok := e.accessIndex(cur, ref)
+			if !ok {
+				return mvRecv{}, false
+			}
+			idx := strconv.FormatInt(k, 10)
+			ref, cur, r.shown = ref+"["+idx+"]", next, r.shown+"["+idx+"]"
+		default:
+			return mvRecv{}, false
+		}
+	}
+	switch {
+	case len(cur.dims) != 0 && cur.name != "":
+		r.ct = cur.name // a defined array type, its methods taking it by address
+	case cur.slice || len(cur.dims) != 0 || cur.ctype == "":
+		return mvRecv{}, false
+	default:
+		r.ct = cur.ctype
+	}
+	r.ref = ref
+	return r, true
 }
 
 // methodValueBinding resolves "x.M" taken as a VALUE: the method's C name, the
@@ -17750,14 +17854,14 @@ func (e *emitter) factorMethodValue(kids []Node) (base, method string, ok bool) 
 // sub-object the lifted function binds. Every site that reads a method value asks
 // here, so recognising it, typing its declaration and lifting it cannot disagree
 // about which of the two it is.
-func (e *emitter) methodValueBinding(base, method string) (cname, recvArg string, fv funcValueType, ok bool) {
-	rct, isVar := e.varType(base)
-	if !isVar {
+func (e *emitter) methodValueBinding(r mvRecv, method string) (cname, recvArg string, fv funcValueType, ok bool) {
+	rct := r.ct
+	if rct == "" {
 		return "", "", funcValueType{}, false
 	}
 	cname = e.methodCName(methodBaseType(rct), method)
 	if fv, ok = e.methodValueTypes[cname]; ok {
-		return cname, "&" + e.varRef(base), fv, true
+		return cname, "&" + r.ref, fv, true
 	}
 	cn, path, _, okp := e.promotedMethod(rct, method)
 	if !okp || len(path) == 0 {
@@ -17768,7 +17872,7 @@ func (e *emitter) methodValueBinding(base, method string) (cname, recvArg string
 	}
 	// The embedded member the receiver is, as the pointer the method takes: a
 	// member embedded as a pointer is passed as it is (promotedRecvC).
-	recvArg, ok = e.promotedRecvC(e.varRef(base), rct, path, true, true)
+	recvArg, ok = e.promotedRecvC(r.ref, rct, path, true, true)
 	return cn, recvArg, fv, ok
 }
 
@@ -17778,9 +17882,9 @@ func (e *emitter) methodValueBinding(base, method string) (cname, recvArg string
 // or an embedded field M is promoted through -- would have to be saved when the
 // value is taken, which Go does and nothing here can. `take(gp.Get)` for a `gp *P`
 // bound &gp, the pointer's own address, and ran the method on it.
-func (e *emitter) methodValueSavesPtr(base, method string) bool {
-	rct, isVar := e.varType(base)
-	if !isVar {
+func (e *emitter) methodValueSavesPtr(r mvRecv, method string) bool {
+	rct := r.ct
+	if rct == "" {
 		return false
 	}
 	if e.isPointer(rct) {
@@ -18821,21 +18925,21 @@ func (e *emitter) methodExprCType(me emMethodExpr) (string, bool) {
 // the time of every call through a function value on this part
 // (doc/funcval-cost.c). Binding the receiver at compile time instead needs no
 // representation at all, and the checker refuses what it cannot bind.
-func (e *emitter) liftMethodValue(base, method string) (string, bool) {
-	if e.methodValueSavesPtr(base, method) {
+func (e *emitter) liftMethodValue(r mvRecv, method string) (string, bool) {
+	if e.methodValueSavesPtr(r, method) {
 		e.fail("cannot take %s.%s as a value: its receiver is a pointer, whose value Go saves when the method value is taken and one bound at compile time cannot; a function literal calling %s.%s reads it at each call instead",
-			e.displayName(base), method, e.displayName(base), method)
+			r.shown, method, r.shown, method)
 		return "", false
 	}
 	// A PROMOTED method is bound to the embedded sub-object the source did not name
 	// and C requires: `V.Base2` binds `&V.Base`, exactly as the call form does.
-	mcname, recvArg, fv, _ := e.methodValueBinding(base, method)
+	mcname, recvArg, fv, _ := e.methodValueBinding(r, method)
 	if mcname == "" {
-		mcname = e.methodCName(methodBaseType(e.mustVarType(base)), method)
-		recvArg = "&" + e.varRef(base)
+		mcname = e.methodCName(methodBaseType(r.ct), method)
+		recvArg = "&" + r.ref
 	}
 	if !e.methodPtr[mcname] {
-		e.fail("cannot take %s.%s as a value: only a pointer-receiver method may be taken here", e.displayName(base), method)
+		e.fail("cannot take %s.%s as a value: only a pointer-receiver method may be taken here", r.shown, method)
 		return "", false
 	}
 	key := recvArg + "." + method
@@ -49876,8 +49980,8 @@ func (e *emitter) inferNode(n Node) (string, bool) {
 			// A function literal has the type its signature mints, the same typedef
 			// a named function used as a value gets.
 			// "gq.Bump" has the method's type without its receiver.
-			if base, method, ok := e.factorMethodValue(kids); ok {
-				_, _, fv, _ := e.methodValueBinding(base, method)
+			if r, method, ok := e.factorMethodValue(kids); ok {
+				_, _, fv, _ := e.methodValueBinding(r, method)
 				return e.funcTypeFor(fv), true
 			}
 			if lit, suffix, ok := e.factorFuncLit(kids); ok {
@@ -52128,8 +52232,8 @@ func (e *emitter) emitExprNode(n Node) {
 			// named here as any function used as a value is.
 			// "gq.Bump" standing as a value: the function lifted for it, named here
 			// as any function used as a value is.
-			if base, method, ok := e.factorMethodValue(kids); ok {
-				if cname, ok := e.liftMethodValue(base, method); ok {
+			if r, method, ok := e.factorMethodValue(kids); ok {
+				if cname, ok := e.liftMethodValue(r, method); ok {
 					e.emit(e.recFuncValue(cname))
 				}
 				return
@@ -57689,8 +57793,8 @@ func (e *emitter) bindFuncValue(name string, initExpr []int32) {
 		// `f := gb.set`: the lifted method value, which carries the method's
 		// summary (liftMethodValue). Lifting is memoised, so asking here lifts
 		// nothing twice.
-		if base, method, isMethod := e.factorMethodValue(kids); isMethod {
-			if cn, ok := e.liftMethodValue(base, method); ok {
+		if r, method, isMethod := e.factorMethodValue(kids); isMethod {
+			if cn, ok := e.liftMethodValue(r, method); ok {
 				e.funcValueOf[name] = cn
 				return
 			}

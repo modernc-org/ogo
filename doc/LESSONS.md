@@ -1665,6 +1665,29 @@ read the string where it is now (stringSliceConvOf), and so does a range over
 `[]rune(s)`, which Go copies past 32 runes and which needs no copy: its elements are
 the string's runes, decoded in turn. **What Go's compiler copies is asked of it,
 `-gcflags=-m`, not remembered.**
+A rheometer's command interpreter on 2026-10-16 -- SCPI lines from a receiving cog,
+a parser of views into the line in one package, fixed-point quantities with units in
+another, a table of handlers holding function values and a method expression, a
+queue of typed errors read back through errors.As and errors.Is, a heater cog on a
+buffered channel -- met the method value left for later at its first build: a table
+of switches over the instrument's parts, `[...]func(bool){inst.motor.Enable,
+inst.heater.Enable}`. With a function literal in its place everything else matched
+Go on the host and the board, `range []byte(s)` and a `switch string(buf[:n])` among
+it. A receiver reached from a package-level variable through fields of struct values
+and constant indexes into arrays is bound now as the variable is (methodValueRecv):
+Go takes the same address when the value is taken, and nothing moves it. What Go
+reads then -- a pointer on the way, a slice's header, an index -- the checker refuses
+by name (chainRecvUnfixed). Sweeping the receivers found three the checker had
+passed to the emitter, "cannot infer a type" with no position, each a type the
+method value rule did not resolve because it asked by name: a variable of a
+defined array type, `row.bump`, which varType does not answer for; a field of
+another package's type, `s.q.Inc`; and a method promoted through an unnamed struct,
+`x.get` of an `x struct{ *Reg }`, taken where its way passed a pointer. **A rule
+asked by name is a row of every type that has none**, again. A method value in
+another package's own initializer, `var Fns = [2]func(){V.In.Inc}`, was found by the
+same sweep as the binding's first version refused it: a chain's base is asked
+whether it is a package variable by the name it is registered under
+(isPackageVar), not the one written.
 **AN ARRAY RESULT IS A ROW** (2026-09-23). A call returning an array is a STATEMENT in
 C -- the caller hands the callee storage to write -- so every position one stands in
 has to supply that storage, and one probe after another the same afternoon found

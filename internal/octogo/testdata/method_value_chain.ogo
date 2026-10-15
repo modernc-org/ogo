@@ -1,7 +1,11 @@
-// A method value binds the address of a package-level variable named alone, so a
-// receiver reached through an element or a field is refused -- in every position a
-// value stands, which the emitter had answered with "rs[2] has no field get" (see
-// reportChainMethodValue). A function literal calling the method is the way round.
+// A method value binds the address of its receiver when the program is built, so a
+// receiver reached through steps is taken where that address is fixed: a
+// package-level variable followed by fields of struct values and constant indexes
+// into arrays, `rs[2].get` and `dev.Reg.get` (reportChainMethodValue). What Go
+// reads when the value is taken -- a pointer on the way, a slice's header, an index
+// that is not a constant -- is refused, in every position a value stands, and so
+// is a local's address, which dies with its frame. A function literal calling the
+// method is the way round.
 
 type Reg struct{ val int32 }
 
@@ -11,35 +15,75 @@ func (r Reg) copy() int32 { return r.val }
 type Device struct {
 	Reg
 	name string
+	p    *Reg
+	sl   []Reg
+	regs [2]Reg
 }
+
+type Inner struct{ r Reg }
+
+type Outer struct{ *Inner }
+
+type Hold struct {
+	d Device
+	o Outer
+	e struct{ *Reg }
+}
+
+const last = 3
 
 var rs [4]Reg
 var dev Device
 var regs [2]Device
+var grid [2][3]Reg
+var hold Hold
+var sl = []Reg{{1}, {2}}
+var pa = &rs
 var fv func() int32
+var table = [...]func() int32{rs[0].get, dev.Reg.get, regs[1].regs[0].get, hold.d.get}
 
 type H struct{ f func() int32 }
 
 func take(f func() int32) int32 { return f() }
 
 func give() func() int32 {
-	// ERROR cannot take rs\[2\]\.get as a value: a method value binds the address of a package-level variable named alone, and this receiver is an element or a field
-	return rs[2].get
+	return rs[last-1].get
+}
+
+func run(i int) {
+	var local [2]Reg
+	// ERROR cannot take local\[1\]\.get as a value: a method value binds the address of its receiver, so the receiver must be reached from a package-level variable; a function literal calling local\[1\]\.get is the way round
+	l := local[1].get
+	// ERROR cannot take rs\[i\]\.get as a value: its receiver's index is not a constant, and Go evaluates it when the method value is taken where one bound at compile time cannot; a function literal calling rs\[i\]\.get evaluates it at each call instead
+	v := rs[i].get
+	println(l(), v())
 }
 
 func main() {
 	ok := dev.get
-	way := func() int32 { return rs[2].get() }
-	println(ok(), way(), give()())
-	// ERROR cannot take rs\[1\]\.get as a value
 	a := rs[1].get
-	// ERROR cannot take dev\.Reg\.get as a value
-	println(take(dev.Reg.get))
-	// ERROR cannot take regs\[0\]\.get as a value
 	fv = regs[0].get
-	// ERROR cannot take rs\[0\]\.get as a value
-	h := H{rs[0].get}
+	h := H{grid[1][2].get}
+	way := func() int32 { return rs[2].get() }
+	println(ok(), a(), fv(), h.f(), way(), give()(), take(dev.Reg.get), take(hold.d.regs[1].get), table[0]())
+	// ERROR cannot take dev\.p\.get as a value: its receiver is a pointer, whose value Go saves when the method value is taken and one bound at compile time cannot; a function literal calling dev\.p\.get reads it at each call instead
+	p := dev.p.get
+	// ERROR cannot take hold\.e\.get as a value: its receiver is a pointer
+	e := hold.e.get
+	// ERROR cannot take hold\.o\.r\.get as a value: its receiver is reached through an embedded pointer, whose value Go saves when the method value is taken and one bound at compile time cannot; a function literal calling hold\.o\.r\.get reads it at each call instead
+	o := hold.o.r.get
+	// ERROR cannot take sl\[1\]\.get as a value: its receiver is an element of a slice, whose header Go reads when the method value is taken and one bound at compile time cannot; a function literal calling sl\[1\]\.get reads it at each call instead
+	s := sl[1].get
+	// ERROR cannot take dev\.sl\[0\]\.get as a value: its receiver is an element of a slice
+	ds := dev.sl[0].get
+	// ERROR cannot take pa\[1\]\.get as a value: its receiver is reached through a pointer
+	pp := pa[1].get
+	// ERROR cannot take rs\[1:\]\[0\]\.get as a value: its receiver is reached through a slice expression
+	rr := rs[1:][0].get
+	// ERROR invalid argument: index 7 out of bounds \[0:4\]
+	far := rs[7].get
 	// ERROR cannot take rs\[3\]\.copy as a value: a method value copies its receiver
 	c := rs[3].copy
-	println(a(), h.f(), c())
+	println(p(), e(), o(), s(), ds(), pp(), rr(), far(), c())
+	run(1)
 }
