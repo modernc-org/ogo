@@ -1602,6 +1602,19 @@ type, "%d wants an integer, not ogo_chan__Bool" (goTypeName). Of the 2,455 both 
 234 printed otherwise than Go and every one was the noise the method knows: a pointer
 printed, the panic's wording, the motor's loop timed against its sampler cog, a loop
 run away; none silent. The false-refusal nets (12,085 programs) refused nothing new.
+A round of size followed the same day: a module of five packages written as firmware
+is -- Q16.16 fixed point formatting itself through the predeclared Builder, sample
+sources behind an interface, filters chained through an interface array with a
+decimator embedding a moving average, a protocol parser of typed errors answered
+through a Builder, and a main filtering what a cog produces through a buffered
+channel -- with a test file in each package. It matched Go on the host and the board,
+`ogo test` of every package against `go test -v` line for line (the times aside: the
+runner prints none). Of its 1,600 mutants, one was silent where Go panics: a nil
+*Builder handed to the formatter crashed the host and wrote into the first longs of
+Hub RAM on the board. The Builder's methods are C helpers, and a checked build's nil
+check lives where a body dereferences: they had none. **A method the compiler
+writes in C asks of its receiver what a body's dereference would** -- the helpers
+begin with the check now, in a checked build.
 **AN ARRAY RESULT IS A ROW** (2026-09-23). A call returning an array is a STATEMENT in
 C -- the caller hands the callee storage to write -- so every position one stands in
 has to supply that storage, and one probe after another the same afternoon found

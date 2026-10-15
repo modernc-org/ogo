@@ -968,6 +968,8 @@ section. A new finding goes there; the rule it leaves goes here too.
 - **A rule that dispatches on a table asks for the table it compares with, not only
   the one it stores.** **A type the emitter writes after the globals names its
   members with the `ogo_` prefix**.
+- **A method the compiler writes in C asks of its receiver what a body's dereference
+  would** (the Builder's helpers and a nil *Builder).
 - **A STRUCT HOLDING AN ARRAY IS COPIED, NEVER ASSIGNED**. **A STRUCT OF MORE THAN
   FOUR WORDS PASSED WHERE A CALL STANDS**: **A new place a struct-valued call is
   handed on binds it first**.

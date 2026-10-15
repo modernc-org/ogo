@@ -1393,6 +1393,31 @@ func main() {
 		want: "store false 3 false\nload true false\nstore true 3 true\nhigh true false true\nunknown 3 false false\ntrue true true 3\nkset\ntrue 0 true true 8\n",
 	},
 	{
+		// A method of the predeclared Builder called through a nil *Builder panics,
+		// as Go's does. The methods are C helpers with no body for a dereference to
+		// be checked in: the write was a crash on the host and, on the target, a
+		// write into the first longs of Hub RAM, in silence -- found by a mutant of
+		// the module-sized domain program of 2026-10-15 handing nil to a formatter.
+		name:   "a Builder method through a nil pointer panics",
+		panics: true,
+		src: `func fill(b *Builder, s string) int {
+	n, _ := b.WriteString(s)
+	b.WriteByte('!')
+	return n + b.Len()
+}
+
+func main() {
+	var back [8]byte
+	sb := NewBuilder(back[:])
+	println(fill(&sb, "hi"), sb.String())
+	var nb *Builder
+	println(fill(nb, "no"))
+	println("unreachable")
+}
+`,
+		want: "5 hi!\npanic: nil pointer dereference\n",
+	},
+	{
 		// Buffered channels in the shapes programs use them: a select whose send
 		// clause has room beside a receive clause that must still be taken in its
 		// turn (an offer deposited up front would win every round), a semaphore of

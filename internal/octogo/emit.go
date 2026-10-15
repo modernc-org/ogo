@@ -910,6 +910,14 @@ const builderTypedef = "typedef struct { uint8_t* ptr; int cap; int len; } ogo_b
 func (e *emitter) builderHelpersC() string {
 	errC, ret := e.builderErrC, e.builderRet
 	vt := e.ifaceVTName(errC)
+	// A checked build panics where a method is called through a nil *Builder, as
+	// Go's does. The methods have no body for a dereference to be checked in, and a
+	// write through one was a crash on the host and, on the target, a write into
+	// the first longs of Hub RAM, in silence.
+	nb := ""
+	if e.checks {
+		nb = "if (!b) ogo_panic(\"nil pointer dereference\"); "
+	}
 	return "static ogo_builder ogo_builder_new(ogo_slice_uint8_t back) { ogo_builder b; b.ptr = back.ptr; b.cap = back.len; b.len = 0; return b; }\n" +
 		"static ogo_string ogo_builder_short_Error(void* p) { ogo_string s; (void)p; s.str = \"short write\"; s.len = 11; return s; }\n" +
 		"static const " + vt + " ogo_builder_short_vt = { \"*errors.errorString\", ogo_builder_short_Error };\n" +
@@ -918,13 +926,14 @@ func (e *emitter) builderHelpersC() string {
 		// The pair is written through an out parameter after the receiver, as a
 		// method's result struct the target's compiler would return on its heap is
 		// (heapReturned): returned, every write allocated.
-		"static void ogo_builder_WriteString(ogo_builder* b, " + ret + "* " + arrayResultParam + ", ogo_string s) { int n = s.len; if (n > b->cap - b->len) n = b->cap - b->len; if (n > 0) { memcpy(b->ptr + b->len, s.str, (unsigned)n); b->len += n; } else { n = 0; } " + arrayResultParam + "->_0 = n; " + arrayResultParam + "->_1 = ogo_builder_err(n == s.len); }\n" +
-		"static void ogo_builder_Write(ogo_builder* b, " + ret + "* " + arrayResultParam + ", ogo_slice_uint8_t p) { int n = p.len; if (n > b->cap - b->len) n = b->cap - b->len; if (n > 0) { memcpy(b->ptr + b->len, p.ptr, (unsigned)n); b->len += n; } else { n = 0; } " + arrayResultParam + "->_0 = n; " + arrayResultParam + "->_1 = ogo_builder_err(n == p.len); }\n" +
-		"static " + errC + " ogo_builder_WriteByte(ogo_builder* b, uint8_t c) { if (b->len < b->cap) { b->ptr[b->len++] = c; return ogo_builder_err(1); } return ogo_builder_err(0); }\n" +
+		"static void ogo_builder_WriteString(ogo_builder* b, " + ret + "* " + arrayResultParam + ", ogo_string s) { " + nb + "int n = s.len; if (n > b->cap - b->len) n = b->cap - b->len; if (n > 0) { memcpy(b->ptr + b->len, s.str, (unsigned)n); b->len += n; } else { n = 0; } " + arrayResultParam + "->_0 = n; " + arrayResultParam + "->_1 = ogo_builder_err(n == s.len); }\n" +
+		"static void ogo_builder_Write(ogo_builder* b, " + ret + "* " + arrayResultParam + ", ogo_slice_uint8_t p) { " + nb + "int n = p.len; if (n > b->cap - b->len) n = b->cap - b->len; if (n > 0) { memcpy(b->ptr + b->len, p.ptr, (unsigned)n); b->len += n; } else { n = 0; } " + arrayResultParam + "->_0 = n; " + arrayResultParam + "->_1 = ogo_builder_err(n == p.len); }\n" +
+		"static " + errC + " ogo_builder_WriteByte(ogo_builder* b, uint8_t c) { " + nb + "if (b->len < b->cap) { b->ptr[b->len++] = c; return ogo_builder_err(1); } return ogo_builder_err(0); }\n" +
 		// WriteRune encodes a rune as UTF-8. An out-of-range or surrogate value is
 		// written as U+FFFD, as Go's WriteRune does. It writes nothing if the encoding
 		// does not fit whole.
 		"static void ogo_builder_WriteRune(ogo_builder* b, " + ret + "* res, int32_t r) {\n" +
+		"\t" + nb + "\n" +
 		"\tunsigned int c = (unsigned int)r; uint8_t t[4]; int n;\n" +
 		"\tif (r < 0 || c > 0x10FFFF || (c >= 0xD800 && c <= 0xDFFF)) c = 0xFFFD;\n" +
 		"\tif (c < 0x80) { t[0] = (uint8_t)c; n = 1; }\n" +
@@ -934,9 +943,9 @@ func (e *emitter) builderHelpersC() string {
 		"\tres->_0 = 0; res->_1 = ogo_builder_err(0);\n" +
 		"\tif (n > b->cap - b->len) return;\n" +
 		"\tfor (int i = 0; i < n; i++) b->ptr[b->len++] = t[i];\n\tres->_0 = n; res->_1 = ogo_builder_err(1);\n}\n" +
-		"static ogo_string ogo_builder_String(ogo_builder* b) { ogo_string s; s.str = (const char*)b->ptr; s.len = b->len; return s; }\n" +
-		"static int ogo_builder_Len(ogo_builder* b) { return b->len; }\n" +
-		"static void ogo_builder_Reset(ogo_builder* b) { b->len = 0; }\n"
+		"static ogo_string ogo_builder_String(ogo_builder* b) { " + nb + "ogo_string s; s.str = (const char*)b->ptr; s.len = b->len; return s; }\n" +
+		"static int ogo_builder_Len(ogo_builder* b) { " + nb + "return b->len; }\n" +
+		"static void ogo_builder_Reset(ogo_builder* b) { " + nb + "b->len = 0; }\n"
 }
 
 // runeStringHelper is `string(r)` for a RUNE the program computes rather than
@@ -39513,6 +39522,9 @@ func (e *emitter) needBuilder() {
 		e.funcRet["ogo_builder_WriteByte"] = []string{e.builderErrC}
 	}
 	e.usesBuilder = true
+	if e.checks {
+		e.needPanic() // the helpers' nil check (builderHelpersC)
+	}
 	e.needSlice("uint8_t")
 	e.usesString = true
 	e.includes["stdint.h"] = true

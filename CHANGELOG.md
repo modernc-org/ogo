@@ -107,6 +107,12 @@ shipped section tells a reader on that version that they have behaviour they do 
 
 ### Fixed
 
+- **A method of the predeclared Builder called through a nil `*Builder` panics**,
+  "nil pointer dereference", as Go's does. The methods are written by the compiler
+  with no body for a checked build's dereference to check: the call was a crash on
+  the host and, on the board, a write into the first longs of Hub RAM, where the
+  program is, in silence.
+
 - **A value of several words passed where its expression calls was evaluated once
   per word on the board**, in silence, the host right: `takeS(strs[idx()])` called
   idx twice, `sum(rows[next()])` three times, and so did `take64(a64[i()])`, a
