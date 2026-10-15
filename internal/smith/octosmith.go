@@ -11,6 +11,7 @@ import (
 	"io"
 	"math/rand"
 	"os"
+	"path/filepath"
 	"strings"
 	"time"
 
@@ -29,6 +30,7 @@ func SubCommand(args []string, stdin io.Reader, stdout, stderr io.Writer) (rc in
 	set := opt.NewSet()
 	var args2 []string
 	set.Arg("seed", false, func(opt, arg string) error { args2 = append(args2, "-seed", arg); return nil })
+	set.Arg("o", false, func(opt, arg string) error { args2 = append(args2, "-o", arg); return nil })
 	if err := set.Parse(args, func(arg string) error {
 		switch {
 		case strings.HasPrefix(arg, "-"):
@@ -62,6 +64,8 @@ func Main(args []string, stdout, stderr io.Writer) error {
 
 	var seed int64
 	fs.Int64Var(&seed, "seed", 0, "Seed for the random number generator (0 = use current time)")
+	var dir string
+	fs.StringVar(&dir, "o", "", "Write the program, with packages of its own, into this directory")
 
 	if err := fs.Parse(args); err != nil {
 		return err
@@ -71,11 +75,44 @@ func Main(args []string, stdout, stderr io.Writer) error {
 		seed = time.Now().UnixNano()
 	}
 
+	if dir == "" {
+		files, err := generate(seed, false)
+		if err != nil {
+			return err
+		}
+		_, err = stdout.Write(files["main.ogo"])
+		return err
+	}
+	files, err := generate(seed, true)
+	if err != nil {
+		return err
+	}
+	for name, data := range files {
+		path := filepath.Join(dir, filepath.FromSlash(name))
+		if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+			return err
+		}
+		if err := os.WriteFile(path, data, 0o644); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// Files is seed's program as "ogo smith -o" writes it: with packages of its own
+// beside main where it draws them (genPkg), each file by its path from the
+// program's directory. It is what a test builds and runs the form by.
+func Files(seed int64) (map[string][]byte, error) { return generate(seed, true) }
+
+// generate writes seed's program, main.ogo and, where withPackages lets it draw
+// one, the package it imports (pkx/pkx.ogo), each formatted.
+func generate(seed int64, withPackages bool) (map[string][]byte, error) {
 	b := bytes.NewBuffer(nil)
 
 	// Initialize the fuzzer state
 	f := NewFuzzer(seed, b)
 	f.Trace = os.Getenv("OGO_SMITH_TRACE") != ""
+	f.pkMode = withPackages
 
 	// Output the package and import declarations (OctoGo omits 'package' clause)
 	// SourceFile = { ImportDecl ";" } { TopLevelDecl ";" } .
@@ -83,12 +120,24 @@ func Main(args []string, stdout, stderr io.Writer) error {
 
 	// This function will be defined in gemini.go
 	// It drives the TopLevelDecl generation.
-	err := f.GenerateProgram(NewMachine(), NewMemory())
-	if err != nil {
-		return fmt.Errorf("generation failed: %w", err)
+	if err := f.GenerateProgram(NewMachine(), NewMemory()); err != nil {
+		return nil, fmt.Errorf("generation failed: %w", err)
 	}
 
-	return octogo.FormatFile("octosmith.ogo", b.Bytes(), stdout)
+	files := map[string][]byte{}
+	var out bytes.Buffer
+	if err := octogo.FormatFile("octosmith.ogo", b.Bytes(), &out); err != nil {
+		return nil, err
+	}
+	files["main.ogo"] = out.Bytes()
+	if f.pkOn {
+		var pk bytes.Buffer
+		if err := octogo.FormatFile("pkx.ogo", []byte(f.pkOut.String()), &pk); err != nil {
+			return nil, err
+		}
+		files["pkx/pkx.ogo"] = pk.Bytes()
+	}
+	return files, nil
 }
 
 // Fuzzer holds the global state for the generation process.
@@ -198,12 +247,18 @@ type Fuzzer struct {
 	wideRand *rand.Rand
 	convRand *rand.Rand
 	chanRand *rand.Rand
-	// mwRand is genMultiWord's, emRand genEmbed's, lbRand genLib's; lbOn is
-	// whether the program has genLib's part, drawn first (drawLib).
+	// mwRand is genMultiWord's, emRand genEmbed's, lbRand genLib's and pkRand
+	// genPkg's; lbOn and pkOn are whether the program has genLib's part and
+	// genPkg's, drawn first (drawImports), and pkMode whether it may have packages
+	// of its own at all (ogo smith -o, Files). pkOut is the package genPkg writes.
 	mwRand *rand.Rand
 	emRand *rand.Rand
 	lbRand *rand.Rand
+	pkRand *rand.Rand
 	lbOn   bool
+	pkOn   bool
+	pkMode bool
+	pkOut  strings.Builder
 }
 
 func NewFuzzer(seed int64, out io.Writer) *Fuzzer {
@@ -218,6 +273,7 @@ func NewFuzzer(seed int64, out io.Writer) *Fuzzer {
 		mwRand:       rand.New(rand.NewSource(seed ^ 0x4d570a3b)),
 		emRand:       rand.New(rand.NewSource(seed ^ 0x656d6264)),
 		lbRand:       rand.New(rand.NewSource(seed ^ 0x6c696273)),
+		pkRand:       rand.New(rand.NewSource(seed ^ 0x706b7820)),
 		Rand:         rng,
 		Out:          out,
 		GlobalEnv:    global,

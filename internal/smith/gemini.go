@@ -84,9 +84,9 @@ func (f *Fuzzer) cName() string {
 // GenerateProgram builds the AST and computes the final expected state.
 // It directly outputs the generated source code to f.Out.
 func (f *Fuzzer) GenerateProgram(vm Machine, mem Memory) error {
-	// Whether the program calls into the library packages, which its imports say
-	// ahead of everything else (drawLib, genLib).
-	f.drawLib()
+	// Whether the program calls into the library packages and into a package of its
+	// own, which its imports say ahead of everything else (drawImports).
+	f.drawImports()
 
 	// 1. Initialize the global environment
 	mem.PushScope()
@@ -229,6 +229,10 @@ func (f *Fuzzer) GenerateProgram(vm Machine, mem Memory) error {
 	// answer (see genLib).
 	lbCall, lbWant, lbOK := f.genLib()
 
+	// 4.13. A package of the program's own, where it may have one, reached through
+	// its qualified names (see genPkg).
+	pkCall, pkWant, pkOK := f.genPkg()
+
 	// 5. Generate the main function
 	// FuncDecl = "func" identifier "(" ")" Block
 	fmt.Fprint(f.Out, "func main() {\n")
@@ -268,6 +272,10 @@ func (f *Fuzzer) GenerateProgram(vm Machine, mem Memory) error {
 	// And the procedure of the library packages.
 	if lbOK {
 		f.checkAtTop("library", lbCall, lbWant)
+	}
+	// And the procedure reaching into the program's package.
+	if pkOK {
+		f.checkAtTop("package", pkCall, pkWant)
 	}
 
 	// Generate 20 sequential statements to mutate the checksum

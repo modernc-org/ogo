@@ -412,6 +412,27 @@ var generatedConstructs = []struct {
 	{"errors.Unwrap", `errors\.Unwrap\(e\) == lbW\d_\d+\.e`},
 	{"Builder written past its end", `\n\tn3, e3 := sb\.Write\(lbB_\d+\[\d\]\)\n`},
 	{"library checked", `\n\tif lbRun_\d+\(\) != -?\d+ \{\n\t\tpanic\("OctoSmith Checksum Failure: library"\)`},
+	// A package of the program's own (genPkg), in the programs "ogo smith -o"
+	// writes, whose files the corpus holds after the standard output's.
+	{"a package of the program's own imported", `\nimport \(\n(\t"\w+"\n)*\t"pkx"\n`},
+	{"an init function in the program's package", `\nfunc init\(\) \{\n\tCount \+= 100\n\}`},
+	{"another package's struct embedded", `\ntype PKO_\d+ struct \{\n\tpkx\.Base\n`},
+	{"another package's variable's field written", `\n\tpkx\.V\.A \+= -?\d+\n`},
+	{"another package's method reading an unexported field", `int\(pkx\.V\.Hidden\(\)\)`},
+	{"another package's variable's method value", `\n\tmv := pkx\.V\.Bump\n`},
+	{"another package's method expressions", `int\(\(\*pkx\.Base\)\.Bump\(&pkx\.V, -?\d+\)\)`},
+	{"another package's array written", `\n\tpkx\.Arr\[\d\] \+= -?\d+\n`},
+	{"another package's slice", `len\(pkx\.Sl\) ?\+ ?int\(pkx\.Sl\[\d\]\)`},
+	{"a value receiver on another package's element", `int\(pkx\.Tab\[\d\]\.Sum\(\)\)`},
+	{"more than four words another package returns", `pkx\.MkWide\(int32\(k\)\)\.Total\(\)`},
+	{"another package's constants", `int\(pkx\.KB\) ?\+ ?int\(pkx\.Scale\) ?\+ ?pkx\.Big ?>> ?35`},
+	{"three results of another package", `\n\tq, rem, ok := pkx\.Div\(`},
+	{"another package's variadic function, a slice spread", `pkx\.Add\(-?\d+, pkx\.Arr\[\d:\d\]\.\.\.\)`},
+	{"another package's table of unexported functions", `int\(pkx\.Ops\[\d\]\(-?\d+, -?\d+\)\)`},
+	{"another package's initialization read", `pkx\.Count ?\+ ?int\(pkx\.Seed\)`},
+	{"promoted across the package boundary", `int\(pkO_\d+\.Bump\(-?\d+\)\)`},
+	{"main's type through another package's interface", `pkx\.Measure\(&pkO_\d+, -?\d+\)`},
+	{"package checked", `\n\tif pkRun_\d+\(-?\d+\) != -?\d+ \{\n\t\tpanic\("OctoSmith Checksum Failure: package"\)`},
 	// A name C has spoken for, which newVarName draws now and then (cNames): the
 	// emitter renames each in every position, and a position it missed was a C
 	// error no generated program could show while every name was a counter's.
@@ -441,6 +462,16 @@ func TestGeneratorCoverage(t *testing.T) {
 	for seed := 1; seed <= seeds; seed++ {
 		if err := Main([]string{"-seed", strconv.Itoa(seed)}, &b, io.Discard); err != nil {
 			t.Fatalf("seed %d: %v", seed, err)
+		}
+	}
+	// And the programs "ogo smith -o" writes, packages of their own included.
+	for seed := 1; seed <= seeds; seed++ {
+		files, err := Files(int64(seed))
+		if err != nil {
+			t.Fatalf("seed %d: %v", seed, err)
+		}
+		for _, name := range []string{"main.ogo", "pkx/pkx.ogo"} {
+			b.Write(files[name])
 		}
 	}
 	src := b.String()

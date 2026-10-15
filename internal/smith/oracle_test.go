@@ -90,3 +90,66 @@ func TestOracle(t *testing.T) {
 		})
 	}
 }
+
+// TestOraclePackages is TestOracle of the programs "ogo smith -o" writes, which
+// have a package of their own beside main where they draw one (genPkg): built from
+// their files as a directory is, run on the host shim, and each required to pass
+// its own assertions.
+func TestOraclePackages(t *testing.T) {
+	const oracleSeeds = 50
+	cc := ""
+	for _, c := range []string{"cc", "gcc", "clang"} {
+		if p, err := exec.LookPath(c); err == nil {
+			cc = p
+			break
+		}
+	}
+	if cc == "" {
+		t.Skip("no C compiler found; skipping the smith oracle run")
+	}
+	shim, err := filepath.Abs(filepath.Join("..", "octogo", "testdata", "hostp2"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	withPkg := 0
+	for seed := 1; seed <= oracleSeeds; seed++ {
+		t.Run(strconv.Itoa(seed), func(t *testing.T) {
+			files, err := Files(int64(seed))
+			if err != nil {
+				t.Fatalf("generate: %v", err)
+			}
+			fsys := fstest.MapFS{}
+			var all bytes.Buffer
+			for name, data := range files {
+				fsys[name] = &fstest.MapFile{Data: data}
+				all.WriteString("--- " + name + "\n")
+				all.Write(data)
+			}
+			if _, ok := files["pkx/pkx.ogo"]; ok {
+				withPkg++
+			}
+			pkg, err := octogo.Build(-1, []string{"main.ogo"}, fsys)
+			if err != nil {
+				t.Fatalf("Build (generator bug?): %v\n%s", err, all.String())
+			}
+			var c bytes.Buffer
+			if err := octogo.EmitC(pkg, &c, octogo.Checked(), octogo.Inline()); err != nil {
+				t.Fatalf("EmitC (generator bug?): %v\n%s", err, all.String())
+			}
+			dir := t.TempDir()
+			csrc, bin := filepath.Join(dir, "main.c"), filepath.Join(dir, "prog")
+			if err := os.WriteFile(csrc, c.Bytes(), 0o644); err != nil {
+				t.Fatal(err)
+			}
+			if out, err := exec.Command(cc, "-std=gnu11", "-fwrapv", "-I", shim, "-o", bin, csrc, "-lpthread", "-lm").CombinedOutput(); err != nil {
+				t.Fatalf("cc: %v\n%s\n--- program ---\n%s", err, out, all.String())
+			}
+			if got, err := exec.Command(bin).CombinedOutput(); err != nil || !bytes.Contains(got, []byte(OKMarker)) {
+				t.Fatalf("oracle failure (compiler bug?): %v\n%s\n--- program ---\n%s", err, got, all.String())
+			}
+		})
+	}
+	if !t.Failed() && withPkg < oracleSeeds/2 {
+		t.Errorf("a package of its own in %d of %d programs: genPkg is drawn in three of four", withPkg, oracleSeeds)
+	}
+}

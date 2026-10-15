@@ -124,6 +124,16 @@ shipped section tells a reader on that version that they have behaviour they do 
   generator asks Go's own packages what each call comes to. No generated program had
   called a library function.
 
+- **`ogo smith -o dir` writes a program with a package of its own**: three in four
+  have a package `pkx` beside `main.ogo`, and main reaches into it by qualified
+  names -- a struct of pkx's embedded in main's type with an unexported field behind
+  its methods, pkx's variables read and written, method values and method
+  expressions of its type, a struct of more than four words it returns, a defined
+  type's constants and untyped and typed ones, a function of three results, a
+  variadic one and a table of unexported ones, its initialization through a function
+  and `init`, and main's type implementing pkx's interface. Every program generated
+  before was one package. Without `-o` every seed's program is what it was.
+
 ### Fixed
 
 - **A method of the predeclared Builder called through a nil `*Builder` panics**,

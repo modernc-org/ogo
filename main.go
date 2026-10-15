@@ -299,7 +299,7 @@ On Windows, run this from cmd.exe or PowerShell, not a Unix-emulation shell
 (git-bash, MSYS2, Cygwin): the serial handshake is flaky there and the terminal's
 exit key may not respond (use Ctrl-C).
 `,
-	"smith": `usage: ogo smith [-seed n]
+	"smith": `usage: ogo smith [-seed n] [-o dir]
 
 Smith writes a random OctoGo program to standard output, for testing the compiler
 against itself: it interprets the program as it generates it, so the program
@@ -310,7 +310,13 @@ A seed is reproducible: the same -seed writes the same program every time, which
 is what makes a failing one worth reporting. Omitting it, or passing 0, seeds from
 the clock instead.
 
+With -o, the program is written into a directory instead, and may have a package
+of its own beside main.ogo, which it imports and reaches into by qualified names:
+"ogo build dir" builds it. Without -o the seed's program is one file, as it always
+was; with it, the same program but for that package and what reaches into it.
+
 	-seed n       seed the generator (0 uses the current time)
+	-o dir        write the program into dir, with packages of its own
 `,
 	"test": `usage: ogo test [-c] [-p port] [-run pattern] [-bench pattern] [-benchtime t] [-benchmem] [-timeout d] [--clock hz] [--gostack longs] [--allow-backend-warnings] [package]
 

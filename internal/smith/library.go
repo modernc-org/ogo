@@ -64,8 +64,8 @@ func lbBool(b bool) int32 {
 // argument, a rune that is none, invalid UTF-8 -- which a program calling each one
 // once had asked of a few arguments; the generator asks Go's own strings and bytes
 // what each call comes to. Whether a seed has it is drawn first, from its own
-// source (lbRand), so the imports can lead the program; the rest of the seed's
-// program is what it was.
+// source (lbRand), so the imports can lead the program (drawImports); the rest of
+// the seed's program is what it was.
 func (f *Fuzzer) genLib() (call string, want Int32, ok bool) {
 	if !f.lbOn {
 		return "", 0, false
@@ -79,13 +79,30 @@ func (f *Fuzzer) genLib() (call string, want Int32, ok bool) {
 	return m.run(f)
 }
 
-// drawLib draws whether the program has genLib's part, and writes the imports it
-// needs if it does: it is asked before anything else is written.
-func (f *Fuzzer) drawLib() {
+// drawImports draws whether the program has genLib's part and, where it may have
+// packages of its own, genPkg's, and writes the imports they need: it is asked
+// before anything else is written.
+func (f *Fuzzer) drawImports() {
 	f.lbOn = f.lbRand.Intn(2) == 0
+	f.pkOn = f.pkMode && f.pkRand.Intn(4) != 0
+	var imps []string
 	if f.lbOn {
-		fmt.Fprint(f.Out, "import (\n\t\"bytes\"\n\t\"errors\"\n\t\"strings\"\n)\n\n")
+		imps = append(imps, "bytes", "errors")
 	}
+	if f.pkOn {
+		imps = append(imps, "pkx")
+	}
+	if f.lbOn {
+		imps = append(imps, "strings")
+	}
+	if len(imps) == 0 {
+		return
+	}
+	fmt.Fprint(f.Out, "import (\n")
+	for _, s := range imps {
+		fmt.Fprintf(f.Out, "\t%q\n", s)
+	}
+	fmt.Fprint(f.Out, ")\n\n")
 }
 
 func (m *library) write(f *Fuzzer) {
