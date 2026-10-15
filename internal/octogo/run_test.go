@@ -1333,6 +1333,66 @@ func boolInt(b bool) int {
 		backendWarning: "found two GETQX during constant propagate",
 	},
 	{
+		// string(b) where Go's compiler makes it a view of b's bytes rather than a
+		// copy (OBYTES2STRTMP, isByteCount): compared, measured by len, switched on
+		// with constant cases -- a command word dispatched as a serial command
+		// interpreter dispatches it. Every one was refused as "a string conversion
+		// needs allocation" until the domain-program probe of 2026-10-15 wrote one,
+		// and a defined type over []byte, `string(nb)`, "cannot convert".
+		name: "a byte slice compared, measured and switched on as a string",
+		src: `type Bytes []byte
+
+type Name string
+
+const kSet Name = "SET"
+
+var line = []byte("SET 7\nGET\nPUT 3\n\x80\xff\nset\n")
+
+var calls int
+
+var pkgOK = string(line[:3]) == "SET"
+
+func word(b []byte) []byte {
+	calls++
+	i := 0
+	for i < len(b) && b[i] != ' ' && b[i] != '\n' {
+		i++
+	}
+	return b[:i]
+}
+
+func main() {
+	rest := line
+	for len(rest) > 0 {
+		w := word(rest)
+		switch string(w) {
+		case "SET", "PUT":
+			println("store", string(w) == "PUT", len(string(w)), string(w) <= "PUT")
+		case "GET":
+			println("load", "GET" == string(w), string(w) != "GET")
+		case "\x80\xff":
+			println("high", string(w) > "\x7f", string(w) < "\x80", string(w) >= "\x80\xff")
+		default:
+			println("unknown", len(w), string(w) < "SET", "SET" > string(w))
+		}
+		for len(rest) > 0 && rest[0] != '\n' {
+			rest = rest[1:]
+		}
+		rest = rest[1:]
+	}
+	nb := Bytes("SET")
+	var nilb []byte
+	println(string(nb) == "SET", Name(nb) == kSet, string(word(line)) == "SET", len(string(word(line))))
+	switch Name(word(line)) {
+	case kSet:
+		println("kset")
+	}
+	println(string(nilb) == "", len(string(nilb)), string(nilb) < "a", pkgOK, calls)
+}
+`,
+		want: "store false 3 false\nload true false\nstore true 3 true\nhigh true false true\nunknown 3 false false\ntrue true true 3\nkset\ntrue 0 true true 8\n",
+	},
+	{
 		// Buffered channels in the shapes programs use them: a select whose send
 		// clause has room beside a receive clause that must still be taken in its
 		// turn (an offer deposited up front would win every round), a semaphore of

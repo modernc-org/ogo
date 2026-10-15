@@ -719,6 +719,33 @@ func TestOutgrewCog(t *testing.T) {
 	}
 }
 
+// TestBuildByteViewFrugal holds string(b) read where it stands (a comparison, a
+// switch, len) to what a string costs in the same place: twenty comparisons of a
+// command word as string(w) take no more of the cog's registers than twenty of a
+// string do. The helper making the view is a call: inlined, as the backend inlines
+// a function that small by itself, each copy brought five registers of its own,
+// and twenty took 120 of the ~480 where the string took 27.
+func TestBuildByteViewFrugal(t *testing.T) {
+	var b strings.Builder
+	b.WriteString("var line = []byte(\"K7 x\")\n\nvar src = \"K7 x\"\n\nvar n int\n\nfunc main() {\n\tw := line[:2]\n\ts := src[:2]\n")
+	for i := 1; i <= 20; i++ {
+		fmt.Fprintf(&b, "\tif OPERAND == \"K%d\" {\n\t\tn += %d\n\t}\n", i, i)
+	}
+	b.WriteString("\tprintln(n, len(w), len(s))\n}\n")
+	res := regexp.MustCompile(`(?m)^\s*\S+\s+res\s+1\s*$`)
+	for _, flags := range [][]string{nil, {"--unchecked"}, {"--no-inline"}} {
+		_, viewL := buildProgram(t, strings.ReplaceAll(b.String(), "OPERAND", "string(w)"), flags...)
+		_, strL := buildProgram(t, strings.ReplaceAll(b.String(), "OPERAND", "s"), flags...)
+		view, str := len(res.FindAll(viewL, -1)), len(res.FindAll(strL, -1))
+		if view > str+2 {
+			t.Errorf("%v: twenty comparisons of string(w) take %d registers, of a string %d", flags, view, str)
+		}
+		if calls := strings.Count(string(viewL), "#_ogo_bytes_view"); calls < 20 {
+			t.Errorf("%v: %d calls of ogo_bytes_view, want one a comparison", flags, calls)
+		}
+	}
+}
+
 // TestBuildSharedVariables holds specs.go's "Memory shared between cogs" to the
 // backend, which is where it could break: a read of hub RAM that a loop makes is
 // made on every pass. Each loop of the program -- the spins and the loops holding

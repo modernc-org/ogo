@@ -681,9 +681,13 @@
 // rejected, since building a new string at run time needs allocation and the
 // target has no heap. A conversion whose result is of UNBOUNDED length is rejected
 // for the same reason: string(b) from a byte slice needs as many bytes as the slice
-// is long, and there is nowhere to put them. A conversion that builds nothing is
-// free and is allowed: string(s) of a string, and one to or from a defined type over
-// string, are the same bytes.
+// is long, and there is nowhere to put them. Where nothing keeps the string it is
+// not built, as Go's compiler does not build it either: compared with an operand
+// that calls nothing, measured by len, or switched on with a constant in every
+// case, string(b) reads the bytes where they are, so a command word is dispatched
+// with `switch string(word) { case "SET": ... }` at no cost. A conversion that
+// builds nothing is free and is allowed: string(s) of a string, and one to or from
+// a defined type over string, are the same bytes.
 //
 // The other direction is the same rule: []byte(s) and []rune(s) copy a string into
 // a new slice, as long as s is, so for a variable s they are rejected. Of a CONSTANT
@@ -3275,7 +3279,8 @@
 // ToUpper want bytes that did not exist before, and there is no heap here for
 // either; Builder is how a program builds a string, over memory it owns. bytes is
 // what a program reading a device reaches for, what arrives being bytes and
-// string(b) a copy the target cannot make. Each function means exactly what Go's of
+// string(b) a copy the target cannot make -- but compared, measured by len or
+// switched on, where it reads the bytes in place. Each function means exactly what Go's of
 // the same name means, including for an empty argument, a nil one and invalid
 // UTF-8; what says so is a program calling every one of them, run under this
 // compiler and under Go, and required to print the same bytes.

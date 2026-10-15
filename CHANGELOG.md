@@ -18,6 +18,18 @@ shipped section tells a reader on that version that they have behaviour they do 
 
 ## Unreleased
 
+### Language
+
+- **`string(b)` of a byte slice where nothing keeps the string reads the bytes
+  where they are**, as Go's compiler does: compared, `string(word) == "SET"`,
+  switched on with a constant in every case, `switch string(word) { case "SET":
+  ... }`, and measured, `len(string(b))`. Each was refused as needing allocation,
+  which is how a command word read from a device is dispatched. Anywhere else --
+  stored, passed, concatenated, or compared with an operand that calls a function,
+  which could change the bytes first -- the conversion is still refused, and the
+  message says where it is not. A defined type over `[]byte` converts too,
+  `string(raw)`, which the checker refused as "cannot convert".
+
 ### Toolchain
 
 - **The C backend carries two fixes of its own**, regenerated the same day at the

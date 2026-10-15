@@ -26299,6 +26299,13 @@ func (f *File) checkConversion(s *Scope, callee Token, arg Node) bool {
 		// must not be read as "no basic kind".
 		if td, isType := s.find(nm.Src()).(*TypeDeclaration); isType && td.TypeSpec != nil {
 			if _, hasKind := f.typeKind(s, td.TypeSpec.TypeNode); !hasKind {
+				// A slice of bytes or of runes by a name of its own, `type Bytes
+				// []byte`, is made a string as one written out is, which Go
+				// takes (`string(raw)` of a json.RawMessage) and the emitter
+				// prices: a view where nothing keeps it, refused elsewhere.
+				if kindCategory(tk) == catString && f.byteOrRuneSlice(s, td.TypeSpec.TypeNode) {
+					return true
+				}
 				f.err(pos, "cannot convert %s (variable of type %s) to type %s", src, nm.Src(), callee.Src())
 				return false
 			}
@@ -26335,6 +26342,18 @@ func (f *File) checkConversion(s *Scope, callee Token, arg Node) bool {
 		return false
 	}
 	return true
+}
+
+// byteOrRuneSlice reports whether type tn is, underneath, a slice whose element is
+// a byte or a rune: what Go makes a string from by conversion.
+func (f *File) byteOrRuneSlice(s *Scope, tn TypeNode) bool {
+	u, _ := f.refTypeUnder(s, tn)
+	sl, isSlice := u.(*TypeNodeSlice)
+	if !isSlice {
+		return false
+	}
+	ek, ok := f.typeKind(s, sl.TypeNode)
+	return ok && (ek == PredeclaredUint8 || ek == PredeclaredInt32)
 }
 
 // checkConversionToKind asks a conversion's operand what checkConversion asks of

@@ -1548,6 +1548,38 @@ bodies (methodDecls), as the bodies did on 2026-09-19 (typeBodies). **Package
 declarations are in no order, and every pass that resolves them in source order is
 a row of it.**
 
+A round of 2026-10-15, the first since the language took the errors package, Go's
+make for channels, buffered channels and out parameters for the results the backend
+returned on a heap -- a rheometer pipeline (a Q32.32 viscosity, a float32 IIR filter,
+samples through a buffered channel from a cog, wrapped errors examined by errors.Is
+and errors.As), a command interpreter (parse errors through errors.As, a struct
+holding an array returned beside an error, embedded registers behind an interface,
+variadic calls) and a motor controller (a type switch over events, a deferred note,
+a ring from a cog, a biquad printed by %g, %e and %v) -- matched Go on the host and
+the board but for the coefficients a float64 computes (a float32 today,
+DIFFERENCES.md) and three loud refusals. The first was the interpreter's first line,
+a command word dispatched by `switch string(word)`: "a string conversion needs
+allocation", in every position, `string(w) == "SET"` and `len(string(w))` too, where
+Go's compiler builds no string but reads the bytes where they are (order.go's
+OBYTES2STRTMP for a comparison, walk/switch.go's for a switch whose cases are
+constants, isByteCount for len). Those positions take a view now (byteStringView,
+ogo_bytes_view), a comparison only where the other operand calls nothing, which
+could change the bytes before they are compared; anywhere else the conversion is the
+allocation it is, and the refusal says where it is not. Sweeping the spellings found
+the checker refusing `string(nb)` of a `type Bytes []byte` as "cannot convert", a
+conversion Go takes (byteOrRuneSlice). The view's first version failed the run case
+built --unchecked, "fit 480 failed": the backend inlines a function as small as the
+helper by itself, untold, and every inlined copy brought five registers of its own
+to where it landed -- twenty comparisons took 120 registers where twenty of a string
+took 27. Kept a call (noinline) they take 27 (TestBuildByteViewFrugal reads the
+listing). **A refusal for what a construct costs asks
+what Go's compiler pays for it where it stands: an allocation Go does not make is
+not one.** Left, loud: a method value of an element or a field, `regs[3].get` or
+`dev.Reg.get`, whose receiver's address is a constant, is taken by the checker and
+is "cannot infer a type for the declaration" to the emitter; and a goto anywhere in
+main, a forward one too, which can run no declaration again, takes from main's
+outermost block the lifetime that lets a channel made there go to a goroutine, the
+refusal advising to make the channel "in main", where it is made.
 **AN ARRAY RESULT IS A ROW** (2026-09-23). A call returning an array is a STATEMENT in
 C -- the caller hands the callee storage to write -- so every position one stands in
 has to supply that storage, and one probe after another the same afternoon found

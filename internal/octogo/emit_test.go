@@ -6208,19 +6208,15 @@ func main() {
 	}
 }
 
-// TestEmitCStringConvRefused pins the string conversions the emitter refuses: the
-// ones that would have to BUILD a string, whose bytes need somewhere to go. The
-// checker reports string(rune) early (see string_conversion.ogo) but carries no
-// slice type, so string([]byte) is refused here, where the representation is known.
-//
-// The free ones are in the same file's `free`: a conversion between two types of the
-// one representation is the operand itself, and emits no cast at all -- C has no
-// cast to a non-scalar type, which is what `(Name)(s)` on a string was.
 // TestEmitCStringConvRefused pins the string conversion that is still refused: the
 // one from a byte SLICE, whose bytes are as many as the slice is long and so cannot
 // be given storage the compiler chooses. The conversion from a RUNE is no longer
 // among them -- its UTF-8 is at most four bytes, taken from the frame and policed by
-// the lifetime rules -- which is why this table has one entry where it had two.
+// the lifetime rules. Nor is string(b) where Go's compiler reads the bytes where
+// they are (byteStringView): compared with an operand that calls nothing, measured
+// by len, switched on with constant cases -- the run case "a byte slice compared,
+// measured and switched on as a string". Everywhere else it is refused, and these
+// are the neighbours of those positions.
 func TestEmitCStringConvRefused(t *testing.T) {
 	for _, test := range []struct{ name, src string }{
 		{
@@ -6233,6 +6229,16 @@ func main() {
 }
 `,
 		},
+		{"stored", "var back [2]uint8\n\nfunc main() {\n\ts := string(back[:])\n\tprintln(s)\n}\n"},
+		{"passed", "var back [2]uint8\n\nfunc take(s string) int { return len(s) }\n\nfunc main() { println(take(string(back[:]))) }\n"},
+		{"of a defined type over []byte, stored", "type B []byte\n\nvar bb = B(\"xy\")\n\nfunc main() {\n\ts := string(bb)\n\tprintln(s)\n}\n"},
+		// The other operand runs before the bytes are compared, and could change
+		// them or the slice: Go's view would see that, a copy would not.
+		{"compared with an operand that calls", "var back [2]uint8\n\nfunc f() string { return \"x\" }\n\nfunc main() { println(string(back[:]) == f()) }\n"},
+		{"compared with an operand that calls, on the right", "var back [2]uint8\n\nfunc f() string { return \"x\" }\n\nfunc main() { println(f() < string(back[:])) }\n"},
+		// Go copies the tag when a case is no constant (walk/switch.go).
+		{"switched on with a case that is no constant", "var back [2]uint8\n\nfunc f() string { return \"x\" }\n\nfunc main() {\n\tswitch string(back[:]) {\n\tcase \"a\", f():\n\t\tprintln(1)\n\t}\n}\n"},
+		{"concatenated", "var back [2]uint8\n\nfunc main() { println(string(back[:]) + \"x\" == \"ab\") }\n"},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			fsys := fstest.MapFS{"main.ogo": &fstest.MapFile{Data: []byte(test.src)}}

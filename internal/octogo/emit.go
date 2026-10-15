@@ -955,6 +955,14 @@ const runeStringHelper = "static ogo_string ogo_rune_string(int32_t r, uint8_t* 
 	"\telse { t[0] = (uint8_t)(0xF0 | (c >> 18)); t[1] = (uint8_t)(0x80 | ((c >> 12) & 0x3F)); t[2] = (uint8_t)(0x80 | ((c >> 6) & 0x3F)); t[3] = (uint8_t)(0x80 | (c & 0x3F)); n = 4; }\n" +
 	"\ts.str = (const char*)t; s.len = n; return s;\n}\n"
 
+// bytesViewHelper makes a string of a byte slice's bytes where they are, for
+// string(b) standing where nothing keeps the string (byteStringView). It is kept a
+// call: the backend inlines a function this small by itself, and every inlined
+// copy brought five registers of its own to where it landed -- twenty comparisons
+// of a command word took 120 of a cog's ~480 where twenty of a string took 27, the
+// same as this does called.
+var bytesViewHelper = "static __attribute__((noinline)) ogo_string ogo_bytes_view(" + sliceCName("uint8_t") + " b) { ogo_string s; s.str = (const char*)b.ptr; s.len = b.len; return s; }\n"
+
 // runePrintHelper prints a rune as its UTF-8 bytes, which is what Go's %c does --
 // a rune is not a byte, and putchar of one above 127 would emit a single wrong
 // byte silently. Out-of-range and surrogate values print U+FFFD, as a string(rune)
@@ -7020,6 +7028,9 @@ func emitProgram(pkg *Package, w io.Writer, opts []EmitOption, rename map[string
 	if e.usesRuneString {
 		helperDefs.WriteString(runeStringHelper)
 	}
+	if e.usesBytesView {
+		helperDefs.WriteString(bytesViewHelper)
+	}
 	if e.usesBuilder {
 		helperDefs.WriteString(e.builderHelpersC())
 	}
@@ -7567,6 +7578,7 @@ type emitter struct {
 	resliceCalled       bool                    // a reslice helper call was just emitted, so a field read off it needs a temporary (see emitHeaderField)
 	usesCopyStr         bool                    // copy(dst []byte, src string) is used: emit the ogo_copystr helper
 	usesRuneString      bool                    // string(r) for a run-time rune is used: emit the ogo_rune_string helper
+	usesBytesView       bool                    // string(b) is read where it stands (byteStringView): emit the ogo_bytes_view helper
 	usesBuilder         bool                    // the Builder type is used: emit its typedef and method helpers
 	builderErrC         string                  // the C type of `error`, minted with the Builder (needBuilder)
 	builderRet          string                  // the C type of the Builder's (int, error) results
@@ -25820,6 +25832,10 @@ func (e *emitter) emitConversion(ct string, arg Node) {
 				e.emit(", " + buf + ")")
 				return
 			}
+			if ok && e.underlyingCType(src) == sliceCName("uint8_t") {
+				e.failAt(arg.ast, "a string conversion needs allocation, which the target does not have; string(b) reads the bytes where they are only compared with an operand that calls nothing, measured by len, or switched on with constant cases")
+				return
+			}
 			e.failAt(arg.ast, "a string conversion needs allocation, which the target does not have")
 			return
 		}
@@ -32551,7 +32567,7 @@ func (e *emitter) emitSwitch(ast []int32) {
 	guardVar, block := "", false
 	if guardAST != nil {
 		var ok bool
-		guardVar, block, ok = e.emitSwitchGuard(guardAST)
+		guardVar, block, ok = e.emitSwitchGuard(guardAST, cases)
 		if !ok {
 			return
 		}
@@ -33615,7 +33631,7 @@ func (e *emitter) guardNames(g switchGuard) ([]string, bool) {
 	return names, true
 }
 
-func (e *emitter) emitSwitchGuard(guardAST []int32) (guardVar string, block, ok bool) {
+func (e *emitter) emitSwitchGuard(guardAST []int32, cases []Node) (guardVar string, block, ok bool) {
 	g, ok := e.f.switchGuardParts(guardAST)
 	if !ok {
 		e.fail("malformed switch guard")
@@ -33632,7 +33648,7 @@ func (e *emitter) emitSwitchGuard(guardAST []int32) (guardVar string, block, ok 
 	if !e.emitSwitchInit(g, openBlock) {
 		return "", false, false
 	}
-	guardVar, ok = e.emitSwitchTag(g, &block, openBlock)
+	guardVar, ok = e.emitSwitchTag(g, cases, &block, openBlock)
 	return guardVar, block, ok
 }
 
@@ -33703,9 +33719,30 @@ func (e *emitter) emitSwitchInit(g switchGuard, openBlock func()) bool {
 // emitSwitchTag writes the expression a switch switches on where it needs a name
 // of its own, answering what the cases compare with; block says the header has
 // opened its block already.
-func (e *emitter) emitSwitchTag(g switchGuard, block *bool, openBlock func()) (guardVar string, ok bool) {
+func (e *emitter) emitSwitchTag(g switchGuard, cases []Node, block *bool, openBlock func()) (guardVar string, ok bool) {
 	if !g.hasTag { // `switch v := e; {` -- an expression switch with v in scope
 		return "", true
+	}
+	// `switch string(b)` with a constant in every case is a view of b's bytes, as
+	// Go's compiler makes it (walk/switch.go, allCaseExprsAreSideEffectFree): no
+	// case can change the bytes before it is compared, and nothing keeps the
+	// string. A case that is no constant leaves it the allocation it is.
+	if b, isView := e.byteStringView(g.tag.ast); isView && e.casesConstStrings(cases) {
+		tmp := e.newTmp()
+		declare := func() {
+			e.ind()
+			e.emit(cString + " " + tmp + " = ")
+			e.emitByteView(b)
+			e.emit(";\n")
+			e.locals[tmp] = cString
+		}
+		if *block {
+			e.emitStatementsHere(declare)
+			return tmp, true
+		}
+		openBlock()
+		declare()
+		return tmp, true
 	}
 	// A tag of an integer type narrower than int is held in an int: C keeps such a
 	// variable at its width, and the target's compiler reads it so, extending it
@@ -33773,6 +33810,20 @@ func (e *emitter) emitStatementsHere(emit func()) {
 	e.prologue, e.w = saved, savedW
 	e.emitLines(pro)
 	e.w.Write(b.Bytes())
+}
+
+// casesConstStrings reports whether every case of a switch's clauses is a constant
+// string.
+func (e *emitter) casesConstStrings(cases []Node) bool {
+	for _, cc := range cases {
+		exprs, _ := e.caseHead(cc.ast)
+		for _, ex := range exprs {
+			if _, ok := e.foldConstString(ex.ast); !ok {
+				return false
+			}
+		}
+	}
+	return true
 }
 
 // caseHead returns a case clause's case expressions and whether it is the default.
@@ -38761,6 +38812,11 @@ func (e *emitter) emitLenCap(fn string, callSuffix []int32) {
 	// `len(Row(a))` / `cap(Row(a))`: a conversion to a defined array type is a no-op
 	// on the representation, so the operand is what is measured.
 	if operand, ok := e.arrayConvOperand(arg); ok {
+		arg = operand
+	}
+	// `len(string(b))` is len(b): Go's compiler measures the slice and makes no
+	// string (walk/builtin.go, isByteCount).
+	if operand, ok := e.byteStringView(arg); ok && fn == "len" {
 		arg = operand
 	}
 	if bound, ok := e.arrayOperandExtent(callSuffix, arg); ok {
@@ -50928,18 +50984,69 @@ func (e *emitter) emitStringCompareTriple(l, r Node, op string) {
 			e.emit("!")
 		}
 		e.emit("ogo_string_eq(")
-		e.emitExprNode(l)
+		e.emitStringOperand(l, r)
 		e.emit(", ")
-		e.emitExprNode(r)
+		e.emitStringOperand(r, l)
 		e.emit(")")
 	default: // < <= > >=
 		e.usesStringCmp = true
 		e.emit("(ogo_string_cmp(")
-		e.emitExprNode(l)
+		e.emitStringOperand(l, r)
 		e.emit(", ")
-		e.emitExprNode(r)
+		e.emitStringOperand(r, l)
 		e.emit(") " + op + " 0)")
 	}
+}
+
+// emitStringOperand emits operand n of a string comparison whose other operand is
+// other. A conversion of a byte slice, `string(b) == "SET"`, is a view of b's bytes,
+// as Go's compiler makes it (cmd/compile's order.go, OBYTES2STRTMP): a comparison
+// keeps neither string. Only where the other operand has no effect, which could
+// change the bytes or the slice before the bytes are compared; there it is refused
+// as before, as the allocation a copy would be.
+func (e *emitter) emitStringOperand(n, other Node) {
+	if !e.nodeHasEffect(other) {
+		if b, ok := e.byteStringView(n.ast); ok {
+			e.emitByteView(b)
+			return
+		}
+	}
+	e.emitExprNode(n)
+}
+
+// byteStringView recognises `string(b)`, b a slice of bytes by any name and the
+// target string or a type defined over it, and answers b. Go makes such a
+// conversion a view of b's bytes, not a copy, where nothing keeps the string --
+// an operand of a comparison, the argument of len, the tag of a switch whose cases
+// are constants -- and the callers are those positions, which ask it of what stands
+// there. Anywhere else the conversion is the allocation emitConversion refuses.
+func (e *emitter) byteStringView(ast []int32) ([]int32, bool) {
+	recv, suffix, ok := e.directCall(e.unparenExpr(ast))
+	if !ok {
+		return nil, false
+	}
+	ct, used, isConv := e.convChainHead(recv, suffix)
+	if !isConv || used != len(suffix) || e.underlyingCType(ct) != cString {
+		return nil, false
+	}
+	args := e.callArgExprs(suffix[used-1].ast)
+	if len(args) != 1 {
+		return nil, false
+	}
+	if src, ok := e.inferCType(args[0].ast); !ok || e.underlyingCType(src) != sliceCName("uint8_t") {
+		return nil, false
+	}
+	return args[0].ast, true
+}
+
+// emitByteView emits a string of byte slice b's bytes where they are.
+func (e *emitter) emitByteView(b []int32) {
+	e.usesString = true
+	e.usesBytesView = true
+	e.needSlice("uint8_t")
+	e.emit("ogo_bytes_view(")
+	e.emitExpr(b)
+	e.emit(")")
 }
 
 // emitStringCompare lowers a standalone string comparison -- kids being exactly
