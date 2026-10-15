@@ -145,8 +145,8 @@ there makes, may go to a goroutine, a send or a package variable -- `var buf
 [64]byte; go fill(buf[:])` and `ch := make(chan int); go worker(ch)` in main. The emitter's frameRefOf answers no reference for it
 (outlivesCogs: main's own body, blockDepthOf <= 1) and the checker's escapesFrame
 the same (mainOutlivesCogs, File.mainScope); neither where the program references
-its own main (Package.mainReferenced, cached) or main has a goto, which can run a
-declaration again over storage a goroutine holds. 108 subtests of twelve lifetime
+its own main (Package.mainReferenced, cached) or main has a goto back
+(backwardGoto), which can run a declaration again over storage a goroutine holds. 108 subtests of twelve lifetime
 tests had written their refused shape in main and were moved into a `run()` main
 calls: **a lifetime test writes its refused shape in a function other than main**.
 

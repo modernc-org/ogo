@@ -29,6 +29,10 @@ shipped section tells a reader on that version that they have behaviour they do 
   which could change the bytes first -- the conversion is still refused, and the
   message says where it is not. A defined type over `[]byte` converts too,
   `string(raw)`, which the checker refused as "cannot convert".
+- **A forward `goto` in main no longer takes the lifetime of main's outermost
+  block away**: a channel made there, or a local's address, may go to a goroutine
+  in a main that ends with `goto fail` too. Only a goto back can run a declaration
+  again, and only that one is refused now; any goto had been.
 
 ### Toolchain
 

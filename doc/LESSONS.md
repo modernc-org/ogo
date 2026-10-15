@@ -1574,12 +1574,15 @@ to where it landed -- twenty comparisons took 120 registers where twenty of a st
 took 27. Kept a call (noinline) they take 27 (TestBuildByteViewFrugal reads the
 listing). **A refusal for what a construct costs asks
 what Go's compiler pays for it where it stands: an allocation Go does not make is
-not one.** Left, loud: a method value of an element or a field, `regs[3].get` or
-`dev.Reg.get`, whose receiver's address is a constant, is taken by the checker and
-is "cannot infer a type for the declaration" to the emitter; and a goto anywhere in
-main, a forward one too, which can run no declaration again, takes from main's
+not one.** The third: a goto anywhere in main, a forward one too, took from main's
 outermost block the lifetime that lets a channel made there go to a goroutine, the
-refusal advising to make the channel "in main", where it is made.
+refusal advising to make the channel "in main", where it was made. Only a goto back
+can run a declaration again, Go refusing a forward one that jumps over a
+declaration into its scope, and only that one is asked now (backwardGoto, one
+helper for the checker and the emitter); the advice says "main's outermost block".
+Left, loud: a method value of an element or a field, `regs[3].get` or `dev.Reg.get`,
+whose receiver's address is a constant, is taken by the checker and refused by the
+emitter as "rs[2] has no field get" or "cannot infer a type for the declaration".
 **AN ARRAY RESULT IS A ROW** (2026-09-23). A call returning an array is a STATEMENT in
 C -- the caller hands the callee storage to write -- so every position one stands in
 has to supply that storage, and one probe after another the same afternoon found

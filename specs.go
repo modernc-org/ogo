@@ -2162,7 +2162,8 @@
 // Not from a block inside main, a loop's body or a function literal written in main,
 // whose storage is reused or gone while main runs on; not in a program that calls its
 // own main, whose other runs return as any function's do; and not where main has a
-// goto, which may run a declaration again over storage a goroutine still holds.
+// goto back, to a label above it, which may run a declaration again over storage a
+// goroutine still holds -- a forward goto runs nothing twice.
 // (Until 2026-10-09 main's frame was a frame like any other, and the buffer above had
 // to be declared at package scope.)
 //

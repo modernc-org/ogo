@@ -18390,7 +18390,8 @@ func look(v []int) int { return len(v) }
 // makes, may go to a goroutine, a channel or a package variable (outlivesCogs, and
 // the checker's mainOutlivesCogs). Not from an inner block, a loop, a function
 // literal or another function, nor in a program calling its own main or with a
-// goto in main, which runs a declaration again over storage a goroutine may hold.
+// goto back in main, which runs a declaration again over storage a goroutine may
+// hold.
 func TestEmitCMainOutlivesCogs(t *testing.T) {
 	for _, test := range []struct {
 		name string
@@ -18428,6 +18429,35 @@ again:
 	println(*gp)
 }
 `, "cannot store the address of local variable x"},
+		// A forward goto runs nothing again, Go refusing one that jumps over a
+		// declaration into its scope (backwardGoto); any goto had been refused.
+		{"main with a forward goto out of a loop", `var gp *int
+func main() {
+	x := 1
+	gp = &x
+	for i := 0; ; i++ {
+		if i == 3 {
+			goto done
+		}
+	}
+done:
+	println(*gp)
+}
+`, ""},
+		{"main with a forward goto, a channel made there to a goroutine", `func worker(ch chan int) { ch <- 7 }
+func main() {
+	ch := make(chan int)
+	go worker(ch)
+	v := <-ch
+	if v != 7 {
+		goto bad
+	}
+	println(v)
+	return
+bad:
+	println("bad")
+}
+`, ""},
 		{"a program calling its own main", `var gp *int
 var once bool
 func main() {

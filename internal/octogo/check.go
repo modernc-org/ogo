@@ -2219,6 +2219,54 @@ func (f *File) scanGotoLabels(ast []int32) {
 	}
 }
 
+// backwardGoto reports a goto in ast whose label stands before it, which can run
+// what lies between the two again -- a declaration among it, over storage a
+// goroutine may still hold. A forward goto runs nothing twice: Go refuses one that
+// jumps over a declaration into its scope. Asked by the checker and the emitter
+// alike of main (mainOutlivesCogs, outlivesCogs), where any goto at all had taken
+// the outermost block's lifetime away.
+func (f *File) backwardGoto(ast []int32) bool {
+	labels := map[string]int32{}
+	type gotoAt struct {
+		label string
+		at    int32
+	}
+	var gotos []gotoAt
+	var walk func(ast []int32)
+	walk = func(ast []int32) {
+		var head, postfix Node
+		hasHead, hasPostfix := false, false
+		for c := range it(ast) {
+			switch c.sym {
+			case 0:
+				if f.ch(c.tok) == GOTO && f.ch(c.tok+1) == IDENT {
+					gotos = append(gotos, gotoAt{f.tok(c.tok + 1).Src(), c.tok})
+				}
+				continue
+			case AssignHead:
+				head, hasHead = c, true
+			case Postfix:
+				postfix, hasPostfix = c, true
+			}
+			walk(c.ast)
+		}
+		if hasHead && hasPostfix {
+			if _, _, isLbl := f.postfixLabel(postfix); isLbl {
+				if name, ok := f.assignHeadIdent(head); ok {
+					labels[name.Src()] = head.Pos()
+				}
+			}
+		}
+	}
+	walk(ast)
+	for _, g := range gotos {
+		if at, ok := labels[g.label]; ok && at < g.at {
+			return true
+		}
+	}
+	return false
+}
+
 // labelSite is where a label stands: the scope of the statement it labels and
 // its source offset -- what goto's two safety rules compare against.
 type labelSite struct {
@@ -21597,10 +21645,11 @@ func (f *File) escapesFrame(s *Scope, root Token, suffixed bool) bool {
 // channel or a package variable (escapesFrame) -- `ch := make(chan int); go
 // worker(ch)` and `var buf [64]byte; go fill(buf[:])` in main. Not where the program
 // calls its own main, whose other runs return as any function does, nor where a
-// goto may run a declaration of main again over storage a goroutine still holds.
+// goto back may run a declaration of main again over storage a goroutine still
+// holds (backwardGoto).
 // The emitter asks the same of its references (outlivesCogs).
 func (f *File) mainOutlivesCogs(fn Node, isMethod bool) bool {
-	if isMethod || f.Package == nil || f.Package.ImportPath != "" || len(f.gotoLabels) != 0 {
+	if isMethod || f.Package == nil || f.Package.ImportPath != "" || f.backwardGoto(fn.ast) {
 		return false
 	}
 	name := ""

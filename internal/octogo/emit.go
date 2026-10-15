@@ -7677,7 +7677,7 @@ type emitter struct {
 	makeN               int                     // translation-unit counter for make() backing arrays
 	wroteDecl           bool                    // a top-level definition has been emitted (drives blank-line separators)
 	mainRet             bool                    // currently emitting main's body: a bare `return` yields `return 0;`
-	mainOutlives        bool                    // main's outermost block outlives every cog (mainOutlivesCogs): no goto in main, and main not called by the program
+	mainOutlives        bool                    // main's outermost block outlives every cog (mainOutlivesCogs): no goto back in main (backwardGoto), and main not called by the program
 	declInit            bool                    // emitting a static initializer: a string literal must use a brace, not a compound literal
 	usesString          bool                    // an ogo_string type/literal appears: emit stringTypedef
 	usesStringPrint     bool                    // a string is printed: emit stringHelpers
@@ -19210,7 +19210,7 @@ func (e *emitter) emitMain(sig, body []int32) {
 	e.localTypes = map[string]string{}
 	e.gotoTargets, e.labelHeads = map[string]bool{}, map[string]loopHead{}
 	e.scanGotoTargets(body)
-	e.mainOutlives = len(e.gotoTargets) == 0 && !e.mainReferenced()
+	e.mainOutlives = !e.f.backwardGoto(body) && !e.mainReferenced()
 	e.aliasedLocals = map[string]bool{}
 	e.scanAliasedLocals(body)
 	e.scanBindings(body)
@@ -53759,7 +53759,7 @@ func (r frameRef) advice() string {
 	case r.view || r.backing:
 		return "declare the backing array at package scope"
 	case r.origin == chanCellOrigin:
-		return "make the channel in a package variable's declaration, var ch = make(chan T), or in main"
+		return "make the channel in a package variable's declaration, var ch = make(chan T), or in main's outermost block"
 	case r.origin == errorsNewOrigin:
 		return "declare the error in a package variable, var errX = errors.New(...), and use that"
 	case r.origin == tempOrigin:
@@ -53804,8 +53804,8 @@ func (e *emitter) frameRefOf(ast []int32) (frameRef, bool) {
 // (ogo_end_program), and a panic stops them all or reboots the chip, so nothing a
 // goroutine, a receiver or a package variable keeps can be read after that storage
 // is gone. Only in the run of main the program began with -- a program calling its
-// own main has frames of main that return -- and only where no goto runs a
-// declaration of main again over storage a goroutine may still hold. A minted
+// own main has frames of main that return -- and only where no goto back runs a
+// declaration of main again over storage a goroutine may still hold (backwardGoto). A minted
 // temporary, which has no name, is the block being emitted's (blockDepthOf).
 func (e *emitter) outlivesCogs(r frameRef) bool {
 	return e.mainRet && e.mainOutlives && e.blockDepthOf(r.name) <= 1
