@@ -51361,7 +51361,7 @@ func runCorpus(t *testing.T, checked bool, opts []EmitOption, keep func(emitRunC
 				// for as long as ogo_panic did not flush stdout before abort --
 				// through a pipe, every buffered byte, the panic line included, was
 				// discarded.
-				if w := test.want; w != "" && !strings.Contains(strings.ReplaceAll(string(got), "\r\n", "\n"), w) {
+				if w := test.want; w != "" && !strings.Contains(stripTestTimes(strings.ReplaceAll(string(got), "\r\n", "\n")), w) {
 					t.Errorf("panic output:\n got %q\nwant it to contain %q", got, w)
 				}
 				return
@@ -51369,7 +51369,7 @@ func runCorpus(t *testing.T, checked bool, opts []EmitOption, keep func(emitRunC
 			if runErr != nil {
 				t.Fatalf("run: %v\n%s", runErr, got)
 			}
-			if g := strings.ReplaceAll(string(got), "\r\n", "\n"); g != test.want {
+			if g := stripTestTimes(strings.ReplaceAll(string(got), "\r\n", "\n")); g != test.want {
 				t.Errorf("output:\n got %q\nwant %q\n--- emitted ---\n%s", g, test.want, buf.String())
 			}
 		})
@@ -53695,7 +53695,7 @@ func TestCrossFileConsts(t *testing.T) {
 			if runErr != nil {
 				t.Fatalf("run: %v\n%s", runErr, got)
 			}
-			if g := strings.ReplaceAll(string(got), "\r\n", "\n"); g != test.want {
+			if g := stripTestTimes(strings.ReplaceAll(string(got), "\r\n", "\n")); g != test.want {
 				t.Errorf("output:\n got %q\nwant %q\n--- emitted ---\n%s", g, test.want, buf.String())
 			}
 		})

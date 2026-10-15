@@ -51,6 +51,16 @@ shipped section tells a reader on that version that they have behaviour they do 
 
 ### Toolchain
 
+- **`ogo test` prints what `go test -v` prints where tools read it**: each result
+  line ends with the time the test took, `--- PASS: TestX (0.01s)`, measured on the
+  board; `PASS` follows the last test where none failed; and the package's line
+  names it by its import path where an `ogo.mod` says what the module is, ending
+  with the time the run took on the board, the load left out:
+  `ok  example.com/rheo/src 0.016s`. A package without test files is
+  `? example.com/rheo/x [no test files]`, as go test says it. A reader of go
+  test's output -- go-junit-report, an editor's test view -- reads ogo test's as it
+  reads go test's; it read no times and no package line it knew.
+
 - **The C backend carries two fixes of its own**, regenerated the same day at the
   same spin2cpp master: an argument of several words whose expression does
   something is evaluated once (functions.c.diff), and a field of a struct a call

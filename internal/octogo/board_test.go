@@ -10,6 +10,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"regexp"
 	"strconv"
 	"strings"
 	"testing"
@@ -618,8 +619,31 @@ func cleanBoardOutput(s string) string {
 		if strings.Contains(line, "Entering terminal mode") {
 			continue
 		}
-		b.WriteString(line)
+		b.WriteString(stripTestTime(line))
 		b.WriteByte('\n')
 	}
 	return b.String()
+}
+
+// stripTestTime drops the time a result line of the testing package ends with, "---
+// PASS: TestX (0.01s)", as go test -v ends it: it is how long the test took, which
+// varies from run to run -- on the board a test's log goes out over the serial line
+// in it -- and the run cases' expectations leave it out. TestTestTimes holds its
+// form.
+func stripTestTime(line string) string {
+	if m := testTimeRE.FindStringSubmatchIndex(line); m != nil {
+		return line[:m[2]]
+	}
+	return line
+}
+
+var testTimeRE = regexp.MustCompile(`^\s*--- (?:PASS|FAIL|SKIP): .*?( \(\d+\.\d\ds\))$`)
+
+// stripTestTimes is stripTestTime of every line of s.
+func stripTestTimes(s string) string {
+	lines := strings.Split(s, "\n")
+	for i, line := range lines {
+		lines[i] = stripTestTime(line)
+	}
+	return strings.Join(lines, "\n")
 }

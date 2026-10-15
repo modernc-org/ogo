@@ -239,9 +239,10 @@ FAIL 1 of 3
 		cmd := exec.Command(ogo, "test", "-p", port, ".")
 		cmd.Dir = dir
 		out, err := cmd.CombinedOutput()
-		got := strings.ReplaceAll(string(out), "\r", "")
+		got := stripTestTimes(strings.ReplaceAll(string(out), "\r", ""))
 		exitErr, failed := err.(*exec.ExitError)
-		if strings.Contains(got, want) && failed && exitErr.ExitCode() == 1 {
+		// The package's line ends with the time the run took, as go test's does.
+		if strings.Contains(got, want) && failed && exitErr.ExitCode() == 1 && pkgFailLine.MatchString(got) {
 			return
 		}
 		if attempt == boardAttempts {
@@ -329,7 +330,8 @@ func BenchmarkP(b *testing.B) {
     --- PASS: TestB/x
         --- PASS: TestB/x/y
         --- PASS: TestB/x/z
-ok  	.
+PASS
+ok  	.	T
 `
 	// go test -v -cpu 1 -run '^$' -bench 'BenchmarkS/y|BenchmarkP/z' -benchtime 1x.
 	wantBench := regexp.MustCompile(`^pkg: filters
@@ -340,7 +342,8 @@ BenchmarkS/y         \t       1\t +[\d.]+ ns/op
 BenchmarkS/y#01
 BenchmarkS/y#01      \t       1\t +[\d.]+ ns/op
 BenchmarkP
-ok  \t\.
+PASS
+ok  \t\.\tT
 $`)
 	for _, c := range []struct {
 		args []string
@@ -353,7 +356,9 @@ $`)
 			cmd := exec.Command(ogo, append([]string{"test", "-p", port}, c.args...)...)
 			cmd.Dir = dir
 			out, err := cmd.CombinedOutput()
-			got := strings.ReplaceAll(string(out), "\r", "")
+			// Each time a test took and the run's are what go test's are, numbers
+			// that vary: the comparison takes the form of the package's, T.
+			got := pkgOkTime.ReplaceAllString(stripTestTimes(strings.ReplaceAll(string(out), "\r", "")), "$1\tT")
 			if err == nil && c.ok(got) {
 				break
 			}
@@ -617,6 +622,13 @@ func TestCounts(t *testing.T) {
 
 // runAndResultLines is the RUN and result lines of go test -v's output, or ogo
 // test's, without go test's times.
+// pkgFailLine and pkgOkTime are the package's line of a run that failed and of one
+// that passed, as go test prints them: the import path, then the time the run took.
+var (
+	pkgFailLine = regexp.MustCompile(`(?m)^FAIL\t\S+\t\d+\.\d{3}s$`)
+	pkgOkTime   = regexp.MustCompile(`(?m)^(ok  \t\S+)\t\d+\.\d{3}s$`)
+)
+
 func runAndResultLines(out string) string {
 	var b strings.Builder
 	for _, line := range strings.Split(out, "\n") {

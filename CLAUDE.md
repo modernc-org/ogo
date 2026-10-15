@@ -551,7 +551,9 @@ had it on 2026-10-13"; the sections named in capitals below are its journal's.
   restores the cog's hardware return stack (testingHWStackC; see recover above). A
   subtest is named and numbered as go test names it (Go 1.27's unique, every rune
   strconv.IsPrint says does not print escaped). Output, names, counts and
-  benchmark lines are held byte for byte to go test -v's on the host
+  benchmark lines -- and since 2026-10-15 each result's time, `PASS` and the
+  package's line by import path with the run's time (testTimeLine, TestTestTimes)
+  -- are held byte for byte to go test -v's on the host
   (TestFilterMatchesGoTest, TestSubtestNamesMatchGoTest, TestD,
   TestBenchmarkFakeClock under the shim's OGO_FAKE_CLOCK) and on the board
   (TestOnBoardOgoTest, ...Filter, ...Bench, ...Names). Not yet: Cleanup,

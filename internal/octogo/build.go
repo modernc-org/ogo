@@ -571,6 +571,7 @@ type T struct {
 	id      int
 	depth   int
 	slot    int
+	began   uint64 // the system clock where the test began, for its time
 	buf     [nameMax]byte
 }
 
@@ -582,6 +583,7 @@ type sub struct {
 	sfx     int // the count after its name plus one, 0 for none (unique)
 	depth   int
 	verdict int
+	took    int32 // the time it took, in hundredths of a second
 }
 
 var (
@@ -688,11 +690,13 @@ func (t *T) begin(s *T, name string) bool {
 	FullName(s.slot, true)
 	println()
 	lastID = s.id
+	s.began = clock()
 	return true
 }
 
 // end records how s, t's subtest, ended.
 func (t *T) end(s *T) bool {
+	subs[s.slot].took = hundredths(clock() - s.began)
 	subs[s.slot].verdict = verdict(s)
 	if s.failed {
 		t.failed = true
@@ -741,18 +745,32 @@ func start(t *T, name string) {
 	nsubs = 0
 	printf("=== RUN   %s\n", name)
 	lastID = t.id
+	t.began = clock()
 }
 
 func finish(t *T) {
+	h := hundredths(clock() - t.began)
 	report(verdict(t), 0)
-	println(t.name)
+	print(t.name)
+	took(h)
 	for i := 0; i < nsubs; i++ {
 		if v := subs[i].verdict; v != notRun {
 			report(v, subs[i].depth)
 			names(i, true)
-			println()
+			took(subs[i].took)
 		}
 	}
+}
+
+// hundredths is a count of the system clock in hundredths of a second, rounded.
+func hundredths(c uint64) int32 {
+	hz := uint64(clockHz())
+	return int32((c*100 + hz/2) / hz)
+}
+
+// took ends a result line with the time a test took, as go test -v ends it.
+func took(h int32) {
+	printf(" (%d.%02ds)\n", h/100, h%100)
 }
 
 func verdict(t *T) int {
