@@ -1,0 +1,50 @@
+// A byte of a string reached through a field, a call or parentheses -- `c :=
+// l.src[l.pos]` -- is a byte, as one of a string variable is (indexesString). It had
+// no type, and every use of a variable declared from one, or of the expression,
+// went unchecked: indexed, called, an operand of ||, assigned a string.
+
+type lexer struct {
+	src string
+	pos int
+}
+
+var gl = lexer{"ab", 0}
+
+func get() *lexer { return &gl }
+
+func f(l *lexer) {
+	c := l.src[l.pos]
+	// ERROR cannot index c \(variable of type uint8\)
+	println(c[0])
+	// ERROR cannot call non-function c
+	println(c())
+	// ERROR operand of a logical operator must be bool, got uint8
+	println(c - '=' || true)
+	// ERROR cannot use "x" of type string as type uint8 in assignment
+	c = "x"
+	var d = gl.src[0]
+	// ERROR cannot index d \(variable of type uint8\)
+	println(d[0])
+	e := (*l).src[1]
+	// ERROR cannot index e \(variable of type uint8\)
+	println(e[0])
+	g := get().src[0]
+	// ERROR cannot index g \(variable of type uint8\)
+	println(g[0])
+	h := l.src[0] + 1
+	// ERROR cannot use "x" of type string as type uint8 in assignment
+	h = "x"
+	// ERROR cannot use l.src\[0\] of type uint8 as type string in variable declaration
+	var s string = l.src[0]
+	if i := l.src[0]; i > 'a' {
+		// ERROR cannot index i \(variable of type uint8\)
+		println(i[0])
+	}
+	println(c, d, e, g, h, s)
+}
+
+func main() {
+	f(&gl)
+	ok := gl.src[0] - 'a'
+	println(ok + 1)
+}

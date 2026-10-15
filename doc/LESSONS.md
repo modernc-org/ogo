@@ -1615,6 +1615,22 @@ Hub RAM on the board. The Builder's methods are C helpers, and a checked build's
 check lives where a body dereferences: they had none. **A method the compiler
 writes in C asks of its receiver what a body's dereference would** -- the helpers
 begin with the check now, in a checked build.
+A round the same evening wrote what the others had not: a pipeline of three cogs
+over channels -- `defer close(out)`, `for range` of the closed channel, an ARRAY of
+channels a select drains, each set to nil when it closes, a labeled break out of
+the loop around the select -- set up from a configuration a stateFn lexer reads,
+and reports dispatched by a type switch. It matched Go on the host and the board
+once its four channels were made in main's block (made in a loop, `outs[k] =
+make(...)`, one make site is one cell, refused as such), and a probe of select's
+evaluation (every case's channel and sent value once, in source order, a nil
+channel never ready) matched too. Its 1,600 mutants found the checker's hole:
+`c := l.src[l.pos]`, a byte of a string reached through a field, had no type --
+indexedStringKind typed the SLICE of such a string and not the index -- so `c[0]`,
+`c()`, `c - '=' || x` and `c = "x"` were taken, where the same of `s[0]` were
+refused; and `l.src[i] + 1` was nothing where it stood (exprType). One helper,
+indexesString, answers both now, through parentheses too. **A value nothing typed
+hides every misreading of it**, again: the shape that typed was the variable, and
+its field was the row.
 **AN ARRAY RESULT IS A ROW** (2026-09-23). A call returning an array is a STATEMENT in
 C -- the caller hands the callee storage to write -- so every position one stands in
 has to supply that storage, and one probe after another the same afternoon found

@@ -43,6 +43,12 @@ shipped section tells a reader on that version that they have behaviour they do 
 
 ### Behaviour changes
 
+- **A byte of a string reached through a field, a call or parentheses has the type
+  byte**: `c := l.src[l.pos]`, `gl.src[0]`, `(*l).src[0]`, and `l.src[i] + 1`
+  where it stands. It had no type, so a variable declared from one could be
+  indexed, called, used with `||` and assigned a string, all of which Go refuses
+  and which are refused now. Found by the mutants of a lexer.
+
 - **The arguments of a method called on a name and followed by more steps are
   checked in a statement**, `p.Add(1).Show()` standing alone or under `defer` or
   `go`, as they were in a value: a string handed to an int32, an argument too many

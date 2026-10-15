@@ -6099,6 +6099,11 @@ func (f *File) factorType(s *Scope, n Node) (Kind, bool) {
 					return k, true
 				}
 			}
+			// A byte of a string reached through a field or a call, `l.src[i]`,
+			// which the walk has no type node for: `l.src[i] + 1` was nothing.
+			if fac, ok := f.soleFactor(n); ok && f.indexesString(s, fac) {
+				return PredeclaredUint8, true
+			}
 		}
 		return 0, false
 	case hasParen:
@@ -6475,6 +6480,10 @@ func (f *File) indexedStringKind(s *Scope, n Node) (Kind, bool) {
 	}
 	root, suffixed, ok := f.factorRoot(fac)
 	if !ok || !suffixed {
+		// `c := (*l).src[0]`, through parentheses: no root to name.
+		if f.indexesString(s, fac) {
+			return PredeclaredUint8, true
+		}
 		return 0, false
 	}
 	if k, known := f.identKind(s, root); !known || k != PredeclaredString {
@@ -6486,6 +6495,9 @@ func (f *File) indexedStringKind(s *Scope, n Node) (Kind, bool) {
 			if k, ok := t.f.typeKind(t.s, t.tn); ok && k == PredeclaredString {
 				return PredeclaredString, true
 			}
+		}
+		if f.indexesString(s, fac) {
+			return PredeclaredUint8, true
 		}
 		return 0, false
 	}
@@ -6517,6 +6529,28 @@ func (f *File) indexedStringKind(s *Scope, n Node) (Kind, bool) {
 		return PredeclaredString, true
 	}
 	return PredeclaredUint8, true
+}
+
+// indexesString reports a Factor whose last step INDEXES a string reached through
+// a field, a call or parentheses, `c := l.src[l.pos]`: a byte. It was nothing,
+// and every use of a variable declared from one went unchecked -- indexed, called,
+// an operand of ||, assigned to a string -- where the same index of a string
+// variable, `s[0]`, was checked (a lexer's mutants found it).
+func (f *File) indexesString(s *Scope, fac Node) bool {
+	kids := slices.Collect(it(fac.ast))
+	if len(kids) < 2 || kids[len(kids)-1].sym != FactorSuffix || f.lastStepIsSlice(fac) {
+		return false
+	}
+	steps := slices.Collect(it(kids[len(kids)-1].ast))
+	if len(steps) == 0 || steps[len(steps)-1].sym != Index {
+		return false
+	}
+	t, ok := f.valueTypeAt(s, factorWithoutLastStep(kids, steps))
+	if !ok || t.f == nil || t.tn == nil {
+		return false
+	}
+	k, ok := t.f.typeKind(t.s, t.tn)
+	return ok && k == PredeclaredString
 }
 
 // lastStepIsSlice reports whether a Factor's last step is a slice expression.
