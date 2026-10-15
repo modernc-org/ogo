@@ -1418,6 +1418,59 @@ func main() {
 		want: "5 hi!\npanic: nil pointer dereference\n",
 	},
 	{
+		// ++ and -- of an element of an array of two or three dimensions whose index
+		// before the last holds a call -- a field read through a pointer, the nil
+		// check a call, or a function's result. They are written `x += 1`
+		// (incDecC), and the target's C compiler stored nothing for that compound
+		// form of such an element of 16 or 32 bits and refused it of 8 and 64:
+		// a data logger's histogram printed zeros on the board, and a byte table's
+		// did not build. Bound to the element's address first (hoistCompoundTarget,
+		// rowIndexCalls; doc/row-call-compound.c).
+		name: "++ and -- of an element whose row index calls",
+		src: `type R struct{ ch uint8 }
+
+var m [4][4]int
+
+var m8 [3][4]uint8
+
+var m16 [3][4]uint16
+
+var m64 [3][4]int64
+
+var t3 [2][3][4]int32
+
+var calls int
+
+func k(i int) int {
+	calls++
+	return i
+}
+
+func run(r *R) {
+	m[r.ch][0]++
+	m[r.ch][1] += 1
+	m[k(2)][0]++
+	m[k(3)][2]--
+	m8[r.ch][1]++
+	m16[k(2)][3]++
+	m64[r.ch][2]++
+	m64[k(0)][2]--
+	t3[k(1)][r.ch][1]++
+	t3[1][k(2)][3]--
+}
+
+func main() {
+	run(&R{1})
+	run(&R{2})
+	for i := range 4 {
+		println(m[i][0], m[i][1], m[i][2], m[i][3])
+	}
+	println(m8[1][1], m8[2][1], m16[2][3], m64[1][2], m64[2][2], m64[0][2], t3[1][1][1], t3[1][2][1], t3[1][2][3], calls)
+}
+`,
+		want: "0 0 0 0\n1 1 0 0\n3 1 0 0\n0 0 -2 0\n1 1 2 1 1 -2 1 1 -2 12\n",
+	},
+	{
 		// Buffered channels in the shapes programs use them: a select whose send
 		// clause has room beside a receive clause that must still be taken in its
 		// turn (an offer deposited up front would win every round), a semaphore of

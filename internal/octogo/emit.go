@@ -45682,10 +45682,15 @@ func incDecC(lhs, op string) string {
 // on hardware -- so this goes when the pin reaches a release that carries it, and
 // not before.
 //
-// A ++ or -- (rhs == nil) is left alone: the backend gets those right, and they
-// have no operand to go wrong.
+// A ++ or -- is hoisted where its target is an element whose index before the
+// last holds a call (rowIndexCalls). It is written `x += 1` where its target is no
+// plain name (incDecC), and that compound form of `m[r.ch][0]++` -- `r.ch` read
+// through the nil check, a call -- or `m[k(2)][0]++` stored nothing on the target,
+// where `+= v`, hoisted here, was right: a histogram's bins printed zeros on a
+// P2-EDGE. A call in the only index or in the last one is right, so those are left
+// as they were, a temporary costing a register (doc/row-call-compound.c).
 func (e *emitter) hoistCompoundTarget(target func(), t assignTail) (string, bool) {
-	if t.rhs == nil || t.op == "=" || t.targetCType == "" || t.clause {
+	if t.op == "=" || t.targetCType == "" || t.clause {
 		return "", false
 	}
 
@@ -45693,10 +45698,44 @@ func (e *emitter) hoistCompoundTarget(target func(), t assignTail) (string, bool
 	if !strings.Contains(text, "[") || !strings.Contains(text, "(") {
 		return "", false
 	}
+	if t.rhs == nil && !rowIndexCalls(text) {
+		return "", false
+	}
 
 	tmp := e.newTmp()
 	e.emit(t.targetCType + "* " + tmp + " = &" + text + ";\n")
 	return tmp, true
+}
+
+// rowIndexCalls reports a C target of two or more index steps whose indexes but the
+// last hold a call, `m[ogo_bound(k(2), 4)][0]`, read off the text: the index steps
+// at the outermost level, their brackets' own contents nested any depth.
+func rowIndexCalls(text string) bool {
+	var segs []string
+	depth, start := 0, 0
+	for i, c := range text {
+		switch c {
+		case '[':
+			if depth == 0 {
+				start = i + 1
+			}
+			depth++
+		case ']':
+			depth--
+			if depth == 0 {
+				segs = append(segs, text[start:i])
+			}
+		}
+	}
+	if len(segs) < 2 {
+		return false
+	}
+	for _, seg := range segs[:len(segs)-1] {
+		if strings.Contains(seg, "(") {
+			return true
+		}
+	}
+	return false
 }
 
 // emitHoistedCompound works around a backend miscompile: flexcc gets a COMPOUND

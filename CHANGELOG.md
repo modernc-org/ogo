@@ -142,6 +142,14 @@ shipped section tells a reader on that version that they have behaviour they do 
 
 ### Fixed
 
+- **`++` and `--` of an element of an array of two or more dimensions, an index of
+  which before the last calls, stored nothing on the board**, in silence, the host
+  right: `hist[r.ch][k]++` with `r.ch` read through a pointer (the nil check is a
+  call), `m[f(i)][0]--`. The target's C compiler loses the compound form the
+  increment is written in for 16- and 32-bit elements and refused it for 8- and
+  64-bit ones, so a byte table's `++` did not build. The element's address is bound
+  first now (doc/row-call-compound.c).
+
 - **A method of the predeclared Builder called through a nil `*Builder` panics**,
   "nil pointer dereference", as Go's does. The methods are written by the compiler
   with no body for a checked build's dereference to check: the call was a crash on

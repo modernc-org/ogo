@@ -1010,6 +1010,8 @@ section. A new finding goes there; the rule it leaves goes here too.
   is no witness for an initializer's layout**. **A ROW OF 64-BIT ELEMENTS INDEXED BY
   A CALL IS LOST ON THE TARGET**. **A float literal the emitter writes is one the
   target reads exactly**.
+- **A fault measured in one statement form is measured in the others: a plain store
+  right says nothing of its compound form** (doc/row-call-compound.c).
 - **A warning the backend gives a user's build is a fault until shown harmless**.
   **A run that reads a register nothing wrote can look right by luck: the listing is
   the measure, and a C harness passing a constant after a 64-bit argument is a

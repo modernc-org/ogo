@@ -1631,6 +1631,21 @@ refused; and `l.src[i] + 1` was nothing where it stood (exprType). One helper,
 indexesString, answers both now, through parentheses too. **A value nothing typed
 hides every misreading of it**, again: the shape that typed was the variable, and
 its field was the row.
+A data logger the same night -- records packed into bytes with a CRC-32 table its
+init computes, `1 << iota` flags with a String method, a log that is an array type
+with methods, an insertion sort through a function value, a binary search,
+fallthrough, a labeled continue, a goto -- matched Go on the host and not on the
+board: its histogram, `hist[r.Ch][k]++`, printed zeros. The C was right; the target's
+C compiler loses `m[f(i)][j] += 1` -- a compound assignment to an element of two or
+more dimensions whose index before the last calls -- for 16- and 32-bit elements,
+and refuses it for 8 and 64 (doc/row-call-compound.c). An increment is written that
+way where its target is no plain name (incDecC), and `r.Ch` through a pointer is a
+call, the nil check's. hoistCompoundTarget had bound such a target's address for a
+`+= v` and left `++` alone, "the backend gets those right"; doc/wide-row-call-index.c
+had measured the 32-bit element right -- for a PLAIN store. **A fault measured in one
+statement form is measured in the others: a plain store right says nothing of its
+compound form.** Binding the address for an increment whose index before the last
+calls (rowIndexCalls) fixes it; a byte table's `++`, refused before, builds.
 **AN ARRAY RESULT IS A ROW** (2026-09-23). A call returning an array is a STATEMENT in
 C -- the caller hands the callee storage to write -- so every position one stands in
 has to supply that storage, and one probe after another the same afternoon found
