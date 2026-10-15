@@ -216,6 +216,11 @@ func (f *Fuzzer) GenerateProgram(vm Machine, mem Memory) error {
 	// genMultiWord).
 	mwCall, mwWant, mwOK := f.genMultiWord()
 
+	// 4.11. Structs embedded by value and by pointer, promoted fields and methods,
+	// an interface implemented through them, variadic calls and string(b) where it
+	// stands, and a procedure exercising them (see genEmbed).
+	emCall, emWant, emOK := f.genEmbed()
+
 	// 5. Generate the main function
 	// FuncDecl = "func" identifier "(" ")" Block
 	fmt.Fprint(f.Out, "func main() {\n")
@@ -247,6 +252,10 @@ func (f *Fuzzer) GenerateProgram(vm Machine, mem Memory) error {
 	// And the procedure of values of several words.
 	if mwOK {
 		f.checkAtTop("several words", mwCall, mwWant)
+	}
+	// And the procedure of embedded structs and variadic calls.
+	if emOK {
+		f.checkAtTop("embedding", emCall, emWant)
 	}
 
 	// Generate 20 sequential statements to mutate the checksum

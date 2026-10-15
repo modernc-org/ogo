@@ -93,6 +93,18 @@ shipped section tells a reader on that version that they have behaviour they do 
   failing. It draws from a source of its own, so the rest of each seed's program is
   what it was.
 
+- **`ogo smith` writes embedded structs, variadic calls and `string(b)` where it
+  stands**: one program in two declares a struct embedded by value and one by
+  pointer in an outer struct whose own field shadows the inner one's, an interface
+  the outer type implements through promoted methods, a variadic function and a byte
+  buffer, and a procedure reading, writing and shadowing promoted fields, calling
+  promoted methods through either embedding, the interface, a method value and a
+  pointer to the outer value, copying the outer value with its embedded pointer
+  shared, calling the variadic function with no argument, several and a slice
+  spread, and comparing, switching on and measuring `string(b)`. No generated
+  program had embedding, a variadic call or a method value. It draws from a source
+  of its own, so the rest of each seed's program is what it was.
+
 ### Fixed
 
 - **A value of several words passed where its expression calls was evaluated once

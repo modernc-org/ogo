@@ -368,6 +368,28 @@ var generatedConstructs = []struct {
 	{"capacity of a slice received", `cap\(<-cl\)`},
 	{"member past the first word of a call's result", `int\(mwMk_\d+\(k\)\.f[1-3]\)`},
 	{"several words checked", `\n\tif mwRun_\d+\(-?\d+\) != -?\d+ \{\n\t\tpanic\("OctoSmith Checksum Failure: several words"\)`},
+	// Structs embedded by value and by pointer, variadic calls and string(b) where
+	// it stands (genEmbed).
+	{"struct embedded by value and by pointer", `\ntype EMO_\d+ struct \{\n\tEMB_\d+\n\t\*EMP_\d+\n`},
+	{"promoted field read", `\+ ?int\(emO_\d+\.a\)\n`},
+	{"promoted field written", `\n\temO_\d+\.a \+= -?\d+\n`},
+	{"promoted pointer method", `int\(emO_\d+\.bump\(-?\d+\)\)`},
+	{"promoted value method", `int\(emO_\d+\.sumb\(\)\)`},
+	{"method promoted through an embedded pointer", `int\(emO_\d+\.inc\(-?\d+\)\)`},
+	{"field shadowing a promoted one", `int\(emO_\d+\.b\) ?\+ ?int\(emO_\d+\.EMB_\d+\.b\) ?\* ?3`},
+	{"promoted methods through an interface", `\n\tvar ei EMI_\d+ = &emO_\d+\n`},
+	{"promoted method taken as a value", `\n\tmv := emO_\d+\.bump\n`},
+	{"outer method reading its shadowing field", `int\(emO_\d+\.own\(\)\)`},
+	{"variadic call with no variadic argument", `emSum_\d+\(int32\(k\)\)`},
+	{"variadic call with several", `emSum_\d+\(int32\(k\), -?\d+`},
+	{"slice spread into a variadic call", `emSum_\d+\(-?\d+, emArr_\d+\[\d:\d\]\.\.\.\)`},
+	{"struct with an embedded pointer copied", `\n\tcp := emO_\d+\n\tcp\.a \+= -?\d+\n\tcp\.inc\(`},
+	{"promoted through a pointer to the outer value", `\n\tpo := &emO_\d+\n`},
+	{"string(b) compared", `\n\tif string\(emBuf_\d+\[\d+:\d+\]\) == "`},
+	{"string(b) ordered", ` < string\(emBuf_\d+\[\d+:\d+\]\) \{`},
+	{"string(b) switched on", `\n\tswitch string\(emBuf_\d+\[\d+:\d+\]\) \{`},
+	{"string(b) measured", `len\(string\(emBuf_\d+\[\d+:\]\)\)`},
+	{"embedding checked", `\n\tif emRun_\d+\(-?\d+\) != -?\d+ \{\n\t\tpanic\("OctoSmith Checksum Failure: embedding"\)`},
 	// A name C has spoken for, which newVarName draws now and then (cNames): the
 	// emitter renames each in every position, and a position it missed was a C
 	// error no generated program could show while every name was a counter's.
