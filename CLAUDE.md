@@ -974,7 +974,8 @@ section. A new finding goes there; the rule it leaves goes here too.
   statement that renders parts of itself asks where each part's hoisted statements
   land**; **a lowering with two branches asks the ordering discipline of both**; **A
   head the emitter writes as text is asked where its effects land against the
-  arguments'**.
+  arguments'**. **A call is asked of every head a call can follow: a name, a
+  parenthesis, a dereference, a conversion, a call** (nodeHasEffect).
 - **A rule that dispatches on a table asks for the table it compares with, not only
   the one it stores.** **A type the emitter writes after the globals names its
   members with the `ogo_` prefix**.

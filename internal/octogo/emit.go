@@ -21472,8 +21472,32 @@ func (e *emitter) nodeHasEffect(n Node) bool {
 		if _, steps, isDeref := e.factorDerefChain(slices.Collect(it(n.ast))); isDeref && derefCallSteps(steps) {
 			return true
 		}
+		// A function VALUE in parentheses called, `(fn)()`, `(next)()`, `(gr.get)()`,
+		// likewise: its base is no bare name for factorCall, nor a method's receiver
+		// for parenMethodSteps, and `println((fn)(), (fn)())` printed `2 1` on the
+		// host where Go prints `1 2`.
+		if e.parenValueCalled(slices.Collect(it(n.ast))) {
+			return true
+		}
 	}
 	return e.exprHasEffect(n.ast) // an argument or an operand may still have one
+}
+
+// parenValueCalled reports whether a factor is a parenthesised value of a function
+// type called right after the parenthesis, `(f)(x)`. A conversion, `(T)(x)` or
+// `(*T)(p)`, is spelled the same way, and its parenthesis holds a type, which has no
+// function type as a value.
+func (e *emitter) parenValueCalled(kids []Node) bool {
+	if len(kids) != 4 || kids[0].sym != 0 || e.f.ch(kids[0].tok) != LPAREN || kids[1].sym != Expression ||
+		kids[2].sym != 0 || e.f.ch(kids[2].tok) != RPAREN || kids[3].sym != FactorSuffix {
+		return false
+	}
+	if steps := slices.Collect(it(kids[3].ast)); len(steps) == 0 || steps[0].sym != CallSuffix {
+		return false
+	}
+	ct, ok := "", false
+	e.capturePrologue(func() { ct, ok = e.inferNode(kids[1]) })
+	return ok && e.isFuncCType(ct)
 }
 
 // boundOperand is an operand of a level bound to a temporary ahead of the statement

@@ -17756,6 +17756,86 @@ func main() {
 		want: "4\n",
 	},
 	{
+		// A function VALUE in parentheses called where it stands, `(fn)()`, a name's,
+		// an element's or a method value's: a call, which the walk asking whether an
+		// operand calls did not know (nodeHasEffect, parenValueCalled), so two in one
+		// print, one call's arguments or one level were left to C's order -- right to
+		// left on the host, `2 1` where Go prints `1 2`. Each line records the order
+		// the calls ran in; a conversion in parentheses, `(int)(c)`, stays pure.
+		name: "a function value called in parentheses keeps its order",
+		src: `type Celsius int
+
+var calls int
+
+func f(k int) int {
+	calls = calls*10 + k
+	return k
+}
+
+var fv = f
+
+type R struct{ n int }
+
+func (r *R) m(k int) int {
+	calls = calls*10 + k
+	return k
+}
+
+var r R
+
+var fs = [2]func(int) int{f, f}
+
+func g(a, b int) int { return a*10 + b }
+
+func two() (int, int) { return (f)(1), (f)(2) }
+
+func show(tag string) {
+	println(tag, calls)
+	calls = 0
+}
+
+func main() {
+	println((f)(1), (f)(2))
+	show("print")
+	x := (fv)(1) - (fv)(2)*10
+	println(x)
+	show("binary")
+	y := g((f)(1), (f)(2))
+	println(y)
+	show("args")
+	arr := [2]int{(fv)(1), (fv)(2)}
+	println(arr[0], arr[1])
+	show("literal")
+	var t [3]int
+	t[(f)(1)] = (f)(2)
+	println(t[1])
+	show("store")
+	a, b := (r.m)(1), (r.m)(2)
+	println(a, b)
+	show("list")
+	println(f(1), (fv)(2), f(3))
+	show("mixed")
+	s := (fv)(1) + f(2) + (fv)(3)
+	println(s)
+	show("sum")
+	p, q := two()
+	println(p, q)
+	show("return")
+	c := Celsius(3)
+	println((Celsius)(c), (int)(c)+(f)(4), (fs[1])(5), (fs[0])(6))
+	show("conv")
+	if (f)(1) < (f)(2) {
+		println("lt")
+	}
+	show("cond")
+	z := (f)(1)<<uint((f)(2)) + (f)(3)%(f)(4)
+	println(z)
+	show("shift")
+}
+`,
+		want: "1 2\nprint 12\n-19\nbinary 12\n12\nargs 12\n1 2\nliteral 12\n2\nstore 12\n1 2\nlist 12\n1 2 3\nmixed 123\n6\nsum 123\n1 2\nreturn 12\n3 7 5 6\nconv 456\nlt\ncond 12\n7\nshift 1234\n",
+	},
+	{
 		// A call returning an ARRAY, in parentheses and read on through a method or
 		// an index -- `(mk(5)).Len()`, `(mk(3))[1]` -- was "this form is not supported
 		// yet": an array result has no value the parenthesised form could be bound

@@ -160,6 +160,13 @@ shipped section tells a reader on that version that they have behaviour they do 
 
 ### Fixed
 
+- **Calls of a function value written in parentheses ran in C's order, not Go's**,
+  in silence: `(f)(1) << uint((f)(2))` evaluated the count first on the board,
+  and `println((fn)(), (fn)())` printed `2 1` on the host where Go prints `1 2`
+  -- a name, an element, `(fs[1])(5)`, or a method value, `(r.get)()`, in a
+  print, a call's arguments or an operator's operands. Such a call is known to be
+  one now, and bound in order like every other.
+
 - **`++` and `--` of an element of an array of two or more dimensions, an index of
   which before the last calls, stored nothing on the board**, in silence, the host
   right: `hist[r.ch][k]++` with `r.ch` read through a pointer (the nil check is a

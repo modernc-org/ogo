@@ -1688,6 +1688,20 @@ another package's own initializer, `var Fns = [2]func(){V.In.Inc}`, was found by
 same sweep as the binding's first version refused it: a chain's base is asked
 whether it is a package variable by the name it is registered under
 (isPackageVar), not the one written.
+The sweep's positions found a silent fault older than all of it: a print of two
+calls of a parenthesised method value, `println((rs[2].get)(), (rs[2].get)())`,
+printed `2 1` on the host. Any function value called in parentheses, `(fn)()`,
+`(next)()`, `(fs[1])(5)`, was no call to the walk asking whether an operand calls
+(nodeHasEffect), which knew a bare name's call, a method on a parenthesised receiver
+and a call through a written-out dereference, so two of them in a print, in one
+call's arguments or in one level were left to C's order: right to left in gcc's
+arguments, and the count first in the target's shift, `(f)(1) << uint((f)(2))`, on
+the board. A parenthesised value of a function type called right after the
+parenthesis is a call now (parenValueCalled), a conversion's parenthesis holding a
+type. It is the fifth shape of the one question that walk answers, each found by a
+probe after the walk was believed whole -- `T.M(x)`, `T(3).bump()`, `(&v).Sum()`,
+`(*pf)(x)`, and now this one. **A call is asked of every head a call can follow: a name, a
+parenthesis, a dereference, a conversion, a call.**
 **AN ARRAY RESULT IS A ROW** (2026-09-23). A call returning an array is a STATEMENT in
 C -- the caller hands the callee storage to write -- so every position one stands in
 has to supply that storage, and one probe after another the same afternoon found
