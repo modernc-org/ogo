@@ -1971,7 +1971,7 @@
 // value pays. A method of several results is taken the same way, its lifted
 // function writing them through the caller's pointer as above.
 //
-// Three forms are refused, and none is an omission:
+// Three forms are refused by design, and a fourth for now:
 //
 //   - a VALUE-receiver method. Go copies the receiver at the moment the value is
 //     made, and there is no heap to copy into; binding the address instead would
@@ -1985,6 +1985,11 @@
 //     call, and would answer differently once the pointer changed in between. A
 //     function literal calling the method, "func(k int) { gp.Set(k) }", reads the
 //     pointer at each call, as it is written to.
+//   - (not yet) a receiver reached through an element or a field, "rs[2].get" or
+//     "dev.Reg.get". Its address is a package variable's, and binding it is work
+//     not done; an element indexed by a variable, "rs[i].get", would have to save
+//     the index, and stays refused. A function literal calling the method,
+//     "func() int32 { return rs[2].get() }", is the way round for both.
 //
 // Go carries the receiver IN the value instead, which handles any receiver. The
 // representation that would do that here -- a function value pointing at a struct

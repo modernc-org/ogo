@@ -1,0 +1,45 @@
+// A method value binds the address of a package-level variable named alone, so a
+// receiver reached through an element or a field is refused -- in every position a
+// value stands, which the emitter had answered with "rs[2] has no field get" (see
+// reportChainMethodValue). A function literal calling the method is the way round.
+
+type Reg struct{ val int32 }
+
+func (r *Reg) get() int32 { return r.val }
+func (r Reg) copy() int32 { return r.val }
+
+type Device struct {
+	Reg
+	name string
+}
+
+var rs [4]Reg
+var dev Device
+var regs [2]Device
+var fv func() int32
+
+type H struct{ f func() int32 }
+
+func take(f func() int32) int32 { return f() }
+
+func give() func() int32 {
+	// ERROR cannot take rs\[2\]\.get as a value: a method value binds the address of a package-level variable named alone, and this receiver is an element or a field
+	return rs[2].get
+}
+
+func main() {
+	ok := dev.get
+	way := func() int32 { return rs[2].get() }
+	println(ok(), way(), give()())
+	// ERROR cannot take rs\[1\]\.get as a value
+	a := rs[1].get
+	// ERROR cannot take dev\.Reg\.get as a value
+	println(take(dev.Reg.get))
+	// ERROR cannot take regs\[0\]\.get as a value
+	fv = regs[0].get
+	// ERROR cannot take rs\[0\]\.get as a value
+	h := H{rs[0].get}
+	// ERROR cannot take rs\[3\]\.copy as a value: a method value copies its receiver
+	c := rs[3].copy
+	println(a(), h.f(), c())
+}

@@ -2735,7 +2735,12 @@ func (f *File) checkCallStmt(s *Scope, head, stmt Node, kw string, kwTok Token, 
 			f.reportCallChainWalk(s, steps, f.callChainWalk(s, id, steps))
 		}
 		f.checkCallBase(s, id, hasSelectorChild(stmt))
+		steps, _ := callSteps(stmt)
 		if m, has := f.methodCallMember(stmt); has {
+			f.checkMethodCall(s, id, m, argList, stmt)
+		} else if m, has := f.leadingMethodCallOf(steps); has {
+			// `defer p.Add("x").Show()`: the method called first is p's, as in a
+			// statement standing alone and in a value.
 			f.checkMethodCall(s, id, m, argList, stmt)
 		} else if m, has := f.callResultMethodMember(stmt); has {
 			f.checkCallResultMethod(s, id, m)
@@ -9225,6 +9230,12 @@ func (f *File) checkAssignment(s *Scope, head, postfix Node) {
 			f.checkCallBase(s, id, hasSelectorChild(postfix))
 			if m, has := f.methodCallMember(postfix); has {
 				f.checkMethodCall(s, id, m, argList, postfix)
+			} else if m, has := f.leadingMethodCall(postfix); has {
+				// `p.Add("x").Show()` as a statement: the method called first is p's,
+				// whatever follows, as checkFactorNames asks of the same chain as a
+				// value. Its arguments were asked nothing here -- a string handed to
+				// an int32, an argument too many.
+				f.checkMethodCall(s, id, m, argList, postfix)
 			} else if m, has := f.callResultMethodMember(postfix); has {
 				f.checkCallResultMethod(s, id, m)
 			}
@@ -10617,6 +10628,9 @@ func (f *File) reportUnsupportedFuncValue(s *Scope, n Node) bool {
 	if f.reportIfaceMethodValue(s, n) {
 		return true
 	}
+	if f.reportChainMethodValue(s, n) {
+		return true
+	}
 	head, field, ok := f.exprFieldRead(n)
 	if !ok {
 		return false
@@ -10648,6 +10662,71 @@ func (f *File) reportUnsupportedFuncValue(s *Scope, n Node) bool {
 	default:
 		return false // supported: lifted with the receiver bound
 	}
+	return true
+}
+
+// reportChainMethodValue refuses a method value whose receiver is reached through
+// steps rather than named -- an element, `rs[2].get`, or a field, `dev.Reg.get`:
+// what the lifted function binds is the address of a package-level variable named
+// alone (methodValueParts), and the emitter knew no other, saying "rs[2] has no
+// field get" or "cannot infer a type". A value-receiver method copies its receiver,
+// refused as one of a named variable is. Another package's variable, `lib.V.get`,
+// is named alone.
+func (f *File) reportChainMethodValue(s *Scope, n Node) bool {
+	fac, ok := f.soleFactor(n)
+	if !ok {
+		return false
+	}
+	kids := slices.Collect(it(fac.ast))
+	if len(kids) != 2 || kids[0].sym != 0 || f.ch(kids[0].tok) != IDENT || kids[1].sym != FactorSuffix {
+		return false
+	}
+	steps := slices.Collect(it(kids[1].ast))
+	reached := steps
+	if name := f.tok(kids[0].tok).Src(); len(reached) != 0 {
+		if _, isImport := f.Scope.Declarations[name].(*ImportDeclaration); isImport {
+			if _, shadowed := s.find(name).(*VarDeclaration); !shadowed {
+				reached = reached[1:]
+			}
+		}
+	}
+	if len(reached) < 2 || slices.ContainsFunc(steps, func(n Node) bool { return n.sym == CallSuffix }) {
+		return false
+	}
+	last := steps[len(steps)-1]
+	if last.sym != Selector {
+		return false
+	}
+	m, ok := f.selectorMember(last)
+	if !ok {
+		return false
+	}
+	t, ok := f.valueTypeAt(s, factorWithoutLastStep(kids, steps))
+	if !ok || t.f == nil || t.tn == nil {
+		return false
+	}
+	id, isID := t.tn.(*TypeNodeIdent)
+	if !isID || id.Qualifier.IsValid() {
+		return false
+	}
+	td, _, _, isMethod := t.f.methodOwnerPath(t.s, id.Name.Src(), m.Src())
+	if !isMethod {
+		return false
+	}
+	at := m.Position().String()
+	if f.mvReported[at] {
+		return true
+	}
+	if f.mvReported == nil {
+		f.mvReported = map[string]bool{}
+	}
+	f.mvReported[at] = true
+	shown := f.exprSource(n)
+	if !td.ptrRecv[m.Src()] {
+		f.err(m.Position(), "cannot take %s as a value: a method value copies its receiver, and only a pointer-receiver method may be taken here", shown)
+		return true
+	}
+	f.err(m.Position(), "cannot take %s as a value: a method value binds the address of a package-level variable named alone, and this receiver is an element or a field; a function literal calling %s is the way round", shown, shown)
 	return true
 }
 
@@ -24685,8 +24764,11 @@ func (f *File) checkFactorNames(s *Scope, n Node) {
 		// c.Add}`: asked what a declaration from one is (reportUnsupportedFuncValue).
 		// Only the declaration asked, and the method value of a local went to the
 		// emitter, whose lifted function named the local where it is no name.
+		// And one whose receiver is an element or a field, `rs[2].get`, which the
+		// emitter refused as no field (reportChainMethodValue).
 		if hasID {
-			if steps := slices.Collect(it(suffix.ast)); len(steps) == 1 && steps[0].sym == Selector {
+			if steps := slices.Collect(it(suffix.ast)); len(steps) != 0 && steps[len(steps)-1].sym == Selector &&
+				!slices.ContainsFunc(steps, func(n Node) bool { return n.sym == CallSuffix }) {
 				f.reportUnsupportedFuncValue(s, n)
 			}
 		}
@@ -25442,7 +25524,12 @@ func (f *File) callInfo(n Node) (argList Node, direct, isCall bool) {
 // leadingMethodCall reports a suffix that BEGINS with a method call on the name,
 // `x.m(args)` followed by more steps, and the method.
 func (f *File) leadingMethodCall(suffix Node) (Token, bool) {
-	steps := slices.Collect(it(suffix.ast))
+	return f.leadingMethodCallOf(slices.Collect(it(suffix.ast)))
+}
+
+// leadingMethodCallOf is leadingMethodCall of the steps themselves, for a statement
+// whose node begins with its keyword, `defer p.Add(1).Show()` (callSteps).
+func (f *File) leadingMethodCallOf(steps []Node) (Token, bool) {
 	if len(steps) < 3 || steps[0].sym != Selector || steps[1].sym != CallSuffix {
 		return Token{}, false
 	}

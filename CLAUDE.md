@@ -589,6 +589,10 @@ had it on 2026-10-13"; the sections named in capitals below are its journal's.
   variable's bound the pointer's own address and printed garbage on the board, and an
   embedded one was read at each call rather than when the value was taken. A function
   literal calling the method is the spelling that reads the pointer at each call.
+  A receiver reached through an element or a field, `rs[2].get`, `dev.Reg.get`, is
+  refused by the checker (reportChainMethodValue, in every position a value
+  stands): binding a constant one's address is work not done, a variable index
+  would have to be saved.
 - Composite literals cover positional and keyed structs (`P{1, 2}`, `P{x: 1}`),
   positional array/slice literals (`[3]int{1, 2, 3}`, `[]int{1, 2, 3}`), and
   indexed array/slice literals (`[]int{2: 5}`, `[5]int{0: 1, 4: 9}`, mixed

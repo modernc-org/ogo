@@ -1,0 +1,44 @@
+// The arguments of a method called on a name and followed by more steps,
+// `p.Add(1).Show()`, are asked what any call's are -- in a value, in a statement
+// standing alone and under defer and go (leadingMethodCall). The statement forms
+// asked nothing: a string handed to an int32, an argument too many and an int64
+// where a defined type is wanted compiled, found by the mutants of a domain program.
+
+type Q int64
+
+func (a Q) Mul(b Q) Q { return a * b }
+func (a Q) show()     { println(int64(a)) }
+
+type P struct{ v int32 }
+
+func (p P) Add(n int32) P   { return P{p.v + n} }
+func (p *P) Ptr(n int32) *P { p.v += n; return p }
+func (p P) Show()           { println(p.v) }
+
+var gp P
+
+func run() {
+	k := Q(3)
+	p := P{1}
+	k.Mul(k).show()
+	p.Add(1).Show()
+	gp.Ptr(2).Ptr(3).Show()
+	defer k.Mul(k).show()
+	go p.Add(1).Show()
+	// ERROR cannot use int64\(k\) of type int64 as type Q in argument to Mul
+	k.Mul(int64(k)).show()
+	// ERROR cannot use "x" of type string as type int32 in argument to Add
+	p.Add("x").Show()
+	// ERROR too many arguments in call to Add
+	p.Add(1, 2).Show()
+	// ERROR cannot use "z" of type string as type int32 in argument to Ptr
+	gp.Ptr("z").Show()
+	// ERROR cannot use int64\(k\) of type int64 as type Q in argument to Mul
+	defer k.Mul(int64(k)).show()
+	// ERROR too many arguments in call to Add
+	go p.Add(1, 2).Show()
+}
+
+func main() {
+	run()
+}

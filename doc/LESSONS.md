@@ -1580,9 +1580,28 @@ refusal advising to make the channel "in main", where it was made. Only a goto b
 can run a declaration again, Go refusing a forward one that jumps over a
 declaration into its scope, and only that one is asked now (backwardGoto, one
 helper for the checker and the emitter); the advice says "main's outermost block".
-Left, loud: a method value of an element or a field, `regs[3].get` or `dev.Reg.get`,
-whose receiver's address is a constant, is taken by the checker and refused by the
-emitter as "rs[2] has no field get" or "cannot infer a type for the declaration".
+And a method value of an element or a field, `regs[3].get` or `dev.Reg.get`, was
+taken by the checker and refused by the emitter as "rs[2] has no field get" or
+"cannot infer a type for the declaration" -- the checker asked a method value's
+rules of `head.field` alone, at a declaration and, in any other position, only of a
+suffix of one selector. It refuses the chain in every position now, naming a
+function literal as the way round (reportChainMethodValue); binding a constant
+element's or a field's address, which the rule's reason allows, is left for later.
+Its 4,800 mutants (gendom and genvdom, 800 of each per program) found one hole: of
+the three Go refused and ogo took, all were the checker of each statement form, the
+arguments of a method called on a name and
+followed by more steps, `p.Add("x").Show()` or `k.Mul(int64(k)).show()`, were
+checked in a value (leadingMethodCall, added for `gt.bump(1.5).n`) and asked nothing
+standing alone or under defer and go -- three copies of the same arms, and two
+lacked the one the third had learned. **One question, one helper**, and the
+statement forms ask it now (leadingMethodCallOf for a node that begins with its
+keyword). The 110 Go took and ogo refused were the rules as written -- unreachable
+code (62), printf's arguments, a defer in a loop, a local's address kept, a non-pointer
+errors.As target, `go println(...)` -- but for one message naming a channel by its C
+type, "%d wants an integer, not ogo_chan__Bool" (goTypeName). Of the 2,455 both took,
+234 printed otherwise than Go and every one was the noise the method knows: a pointer
+printed, the panic's wording, the motor's loop timed against its sampler cog, a loop
+run away; none silent. The false-refusal nets (12,085 programs) refused nothing new.
 **AN ARRAY RESULT IS A ROW** (2026-09-23). A call returning an array is a STATEMENT in
 C -- the caller hands the callee storage to write -- so every position one stands in
 has to supply that storage, and one probe after another the same afternoon found

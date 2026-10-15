@@ -33,6 +33,21 @@ shipped section tells a reader on that version that they have behaviour they do 
   block away**: a channel made there, or a local's address, may go to a goroutine
   in a main that ends with `goto fail` too. Only a goto back can run a declaration
   again, and only that one is refused now; any goto had been.
+- **A method value of an element or a field, `rs[2].get` or `dev.Reg.get`, is
+  refused by the checker, saying so**, in every position, with a function literal
+  calling the method as the way round. The emitter refused it as "rs[2] has no
+  field get" or "cannot infer a type for the declaration". Binding such a receiver
+  is not written yet.
+- **A message naming a channel's type says `chan bool`**, where it said the C
+  type's name, "%d wants an integer, not ogo_chan__Bool".
+
+### Behaviour changes
+
+- **The arguments of a method called on a name and followed by more steps are
+  checked in a statement**, `p.Add(1).Show()` standing alone or under `defer` or
+  `go`, as they were in a value: a string handed to an int32, an argument too many
+  and an int64 where a defined type over it is wanted compiled there, and are
+  refused now. Found by the mutants of a domain program.
 
 ### Toolchain
 

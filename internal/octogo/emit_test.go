@@ -5886,6 +5886,12 @@ func TestEmitCPrintfRefusals(t *testing.T) {
 			want: "printf: %d wants an integer, not string",
 		},
 		{
+			// A channel was named by its C type, "not ogo_chan__Bool" (goTypeName).
+			name: "%d of a channel",
+			src:  "func main() {\n\tc := make(chan bool)\n\tprintf(\"%d\\n\", c)\n}\n",
+			want: "printf: %d wants an integer, not chan bool",
+		},
+		{
 			// The flag the target's printf drops on the floor, refused where no
 			// layout of the emitter's own writes it: everywhere but the integer
 			// verbs, which intPrintHelper lays out. doc/printf-flags-ignored.c has

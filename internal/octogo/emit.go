@@ -50382,6 +50382,11 @@ func (e *emitter) goTypeName(ct string) string {
 	if name, ok := goCTypeNames[ct]; ok {
 		return name
 	}
+	// A channel, whose C name a message gave as it is: "%d wants an integer, not
+	// ogo_chan__Bool". Its direction is the checker's and is not in the C.
+	if e.isChanCType(ct) {
+		return "chan " + e.goTypeName(e.chanElemOfCType(ct))
+	}
 	if a, ok := e.namedArrays[ct]; ok {
 		return e.goArrayTypeName(a)
 	}
