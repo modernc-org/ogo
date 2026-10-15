@@ -29,6 +29,14 @@ shipped section tells a reader on that version that they have behaviour they do 
   which could change the bytes first -- the conversion is still refused, and the
   message says where it is not. A defined type over `[]byte` converts too,
   `string(raw)`, which the checker refused as "cannot convert".
+- **`[]byte(s)` and `[]rune(s)` of a string variable where nothing keeps the slice
+  read the string where it is**, as Go's compiler does: ranged over, `for _, c :=
+  range []byte(line)`, measured, `len([]rune(name))` counting the runes, and
+  `[]byte(s)` as the source of a copy or an append, `copy(buf, []byte(s))`. Each was
+  refused as needing allocation, and a checksum over a line written the Go way did
+  not build. A range over `[]rune(s)` decodes the runes in turn, its key counting
+  them as Go's does. Kept anywhere -- declared, passed, resliced, deferred -- the
+  copy is still refused, and the message says where the conversion works.
 - **A forward `goto` in main no longer takes the lifetime of main's outermost
   block away**: a channel made there, or a local's address, may go to a goroutine
   in a main that ends with `goto fail` too. Only a goto back can run a declaration

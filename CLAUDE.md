@@ -838,6 +838,8 @@ section. A new finding goes there; the rule it leaves goes here too.
   **a line's length is a limit of the backend**.
 - **A refusal for what a construct costs asks what Go's compiler pays for it where
   it stands: an allocation Go does not make is not one** (`switch string(word)`).
+  **What Go's compiler copies is asked of it, `-gcflags=-m`, not remembered**
+  (`range []byte(s)`).
 - **A REVIEW IS A PROBE FROM OUTSIDE THE SWEEPS**. **A review's claim about the
   compiler is probed before it is answered: a note it read may be months behind the
   code.** **A note calling a row "by design" is checked against specs.go before it

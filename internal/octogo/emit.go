@@ -1550,6 +1550,16 @@ const runeDecodeHelper = `static inline int ogo_decode_rune(ogo_string s, int i,
 }
 `
 
+// runeCountHelper is `len([]rune(s))`: the runes of s counted as a range over it
+// steps through them, a byte that starts no valid sequence counting as one, as Go's
+// countrunes counts it -- the call Go's compiler makes of it rather than the slice.
+const runeCountHelper = `static int ogo_rune_count(ogo_string s) {
+	int n = 0;
+	for (int i = 0, w = 0; i < s.len; i += w, n++) ogo_decode_rune(s, i, &w);
+	return n;
+}
+`
+
 // sliceTypePrefix leads the C typedef name of an OctoGo slice `[]T`: a { pointer,
 // length, capacity } header (`T* ptr; int len; int cap`) named per element type,
 // e.g. []int -> ogo_slice_int, []*Point -> ogo_slice_Point_ptr. Like ogo_string it
@@ -6803,6 +6813,11 @@ func emitProgram(pkg *Package, w io.Writer, opts []EmitOption, rename map[string
 		out.WriteByte('\n')
 	}
 	// After the decoder, which it calls.
+	if e.usesRuneCount {
+		out.WriteString(runeCountHelper)
+		out.WriteByte('\n')
+	}
+	// After the decoder, which it calls.
 	if e.usesStringPad {
 		out.WriteString(stringPadHelper)
 		out.WriteByte('\n')
@@ -7767,6 +7782,7 @@ type emitter struct {
 	chanLockN           int                     // counter minting the make sites' lock variables
 	usesStringCmp       bool                    // a string < <= > >= appears: emit ogo_string_cmp
 	usesRuneDecode      bool                    // `for i, c := range s` appears: emit ogo_decode_rune
+	usesRuneCount       bool                    // `len([]rune(s))` appears: emit ogo_rune_count
 	err                 error
 }
 
@@ -25364,6 +25380,62 @@ func (e *emitter) stringSliceConv(typeAST, arg []int32) bool {
 	return ok && e.underlyingCType(ct) == cString
 }
 
+// stringSliceConvRefused is what is said of `[]byte(s)` and `[]rune(s)` of a run-time
+// string where the copy would be kept, naming where the conversion is read in place
+// instead (stringSliceConvOf).
+const stringSliceConvRefused = "a string conversion needs allocation, which the target does not have; " +
+	"[]byte(s) and []rune(s) read the string where they are ranged over or measured by len, and []byte(s) where it is copied or appended from"
+
+// stringSliceConvOf recognises an expression that is exactly a conversion of a
+// RUN-TIME string to a byte or rune slice -- `[]byte(s)`, `([]rune)(s)`, `B(s)` for a
+// defined type over either, parenthesised or not -- answering with the string
+// operand and the slice's element, "uint8_t" or "int32_t". It is the conversion
+// read where it stands by what reads it once and keeps nothing of it: ranged,
+// measured, or the source of a copy or an append. There Go copies nothing (its
+// compiler's "zero-copy string->[]byte conversion", and a rune count for
+// `len([]rune(s))`), and the string's own bytes are what is read here; a `range
+// []rune(s)` decodes them in turn. Anywhere else the copy is refused as needing
+// allocation. A constant string's conversion is a slice literal (constBytesConv).
+func (e *emitter) stringSliceConvOf(ast []int32) (arg []int32, elem string, ok bool) {
+	inner := e.unparenExpr(ast)
+	fac, isFac := e.soleFactorNode(inner)
+	if !isFac {
+		return nil, "", false
+	}
+	if typeAST, a, steps, isConv := e.factorBracketConv(fac); isConv {
+		if len(steps) != 0 || !e.stringSliceConv(typeAST, a) {
+			return nil, "", false
+		}
+		arg = a
+		elem, _ = e.litSliceType(typeAST)
+	} else {
+		recv, suffix, isCall := e.directCall(inner)
+		if !isCall {
+			return nil, "", false
+		}
+		ct, used, isNamed := e.convChainHead(recv, suffix)
+		if !isNamed || used != len(suffix) {
+			return nil, "", false
+		}
+		var isBytes bool
+		if elem, isBytes = e.byteSliceTypeElem(ct); !isBytes {
+			return nil, "", false
+		}
+		args := e.callArgExprs(suffix[used-1].ast)
+		if len(args) != 1 {
+			return nil, "", false
+		}
+		if src, typed := e.inferCType(args[0].ast); !typed || e.underlyingCType(src) != cString {
+			return nil, "", false
+		}
+		arg = args[0].ast
+	}
+	if _, isConst := e.foldConstString(arg); isConst {
+		return nil, "", false
+	}
+	return arg, elem, true
+}
+
 // constBytesConv recognises `[]byte("...")` and `[]rune("...")` of a CONSTANT
 // string, answering with the slice's element C type and its elements as C
 // literals: the bytes, or the runes a range over the string yields. Go copies the
@@ -25671,7 +25743,7 @@ func (e *emitter) emitConversion(ct string, arg Node) {
 			return
 		}
 		if src, ok := e.inferCType(arg.ast); ok && e.underlyingCType(src) == cString {
-			e.failAt(arg.ast, "a string conversion needs allocation, which the target does not have")
+			e.failAt(arg.ast, stringSliceConvRefused)
 			return
 		}
 	}
@@ -31925,9 +31997,16 @@ func (e *emitter) emitRange(h *forHeader, body []int32) {
 	if operand, ok := e.arrayConvOperand(h.rangeExpr); ok {
 		h.rangeExpr = operand
 	}
+	// `range []byte(s)` and `range []rune(s)` of a run-time string range the string
+	// (emitRangeStringConv), and are asked first: typing the operand is what refuses
+	// the copy.
+	convArg, convElem, isStrConv := e.stringSliceConvOf(h.rangeExpr)
 	// The representation decides what ranging means -- a value of `type Name string`
 	// is a string and yields its runes -- so the name is resolved away here.
-	ct, _ := e.exprReprCType(h.rangeExpr)
+	var ct string
+	if !isStrConv {
+		ct, _ = e.exprReprCType(h.rangeExpr)
+	}
 	// An assigning clause, `for i, v = range xs`, writes variables that already
 	// exist rather than declaring new ones. Only a variable can be one: rendering an
 	// element or a field as an assignment target is what the assignment paths do,
@@ -31974,6 +32053,10 @@ func (e *emitter) emitRange(h *forHeader, body []int32) {
 	// backing array comes from -- and range over that. Nothing escapes: the loop
 	// reads elements, and the value variable is a copy. Bound before the switch, so
 	// the binding happens once however the operand turns out to be shaped.
+	if isStrConv {
+		e.emitRangeStringConv(h, body, key, convArg, convElem)
+		return
+	}
 	name := e.rangeLitVar(h.rangeExpr)
 	if name == "" {
 		// `range mk()` for a function returning an ARRAY: the result travels through
@@ -32330,6 +32413,47 @@ func (e *emitter) rangeValueInject(h *forHeader, key, elem, access string) func(
 			line()
 		}
 	}
+}
+
+// emitRangeStringConv ranges `[]byte(s)` or `[]rune(s)` of a run-time string over
+// the string itself (stringSliceConvOf): the slice Go would make holds the string's
+// bytes, or its runes, and nothing but the loop can reach it, so its elements are
+// read where they are. The bytes are counted as a slice's elements are; the runes
+// are decoded in turn as a range over the string decodes them, the key counting
+// them rather than the bytes. The string is bound once, as Go evaluates the range
+// expression once: a body assigning the variable ranges on over what it held.
+func (e *emitter) emitRangeStringConv(h *forHeader, body []int32, key string, arg []int32, elem string) {
+	hdr := e.newTmp()
+	e.ind()
+	e.emit("ogo_string " + hdr + " = " + e.exprC(arg) + ";\n")
+	e.shadow(key)
+	e.locals[key] = "int"
+	if elem == "uint8_t" {
+		e.ind()
+		e.emit("for (int " + key + " = 0; " + key + " < " + hdr + ".len; " + key + "++) {\n")
+		e.emitLoopBody(body, e.rangeValueInject(h, key, elem, e.byteReadOpen()+hdr+".str["+key+"])"))
+		return
+	}
+	e.usesRuneDecode = true
+	pos, width := e.newTmp(), e.newTmp()
+	e.ind()
+	e.emit("int " + width + " = 0;\n")
+	e.ind()
+	e.emit("for (int " + key + " = 0, " + pos + " = 0; " + pos + " < " + hdr + ".len; " + key + "++, " + pos + " += " + width + ") {\n")
+	decode := "ogo_decode_rune(" + hdr + ", " + pos + ", &" + width + ")"
+	inject := e.rangeValueInject(h, key, elem, decode)
+	if h.valVar == nil || e.exprC(h.valVar) == "_" {
+		// No rune variable: the rune is decoded all the same, for its width.
+		keyed := inject
+		inject = func() {
+			if keyed != nil {
+				keyed()
+			}
+			e.ind()
+			e.emit(decode + ";\n")
+		}
+	}
+	e.emitLoopBody(body, inject)
 }
 
 // emitRangeSlice emits the counting loop over a slice named by hdr, whose header
@@ -38828,6 +38952,17 @@ func (e *emitter) emitLenCap(fn string, callSuffix []int32) {
 	if operand, ok := e.byteStringView(arg); ok && fn == "len" {
 		arg = operand
 	}
+	// `len([]byte(s))` is len(s), and `len([]rune(s))` the count of s's runes: Go's
+	// compiler makes neither slice (walk/builtin.go, isRuneCount). A capacity is
+	// the slice's, which there is none of here, and stays refused with the copy.
+	if operand, elem, ok := e.stringSliceConvOf(arg); ok && fn == "len" {
+		if elem == "int32_t" {
+			e.usesRuneDecode, e.usesRuneCount = true, true
+			e.emit("ogo_rune_count(" + e.exprC(operand) + ")")
+			return
+		}
+		arg = operand
+	}
 	if bound, ok := e.arrayOperandExtent(callSuffix, arg); ok {
 		e.emit(bound)
 		return
@@ -39272,6 +39407,13 @@ func (e *emitter) appendParts(callSuffix []int32) (elem string, args []Node, ok 
 	}
 	elem = sliceElemFromCName(u)
 	e.needSlice(elem)
+	// `append(b, []byte(s)...)` is `append(b, s...)`: the conversion's bytes are the
+	// string's, and Go's compiler makes no slice of them (stringSliceConvOf).
+	if len(args) == 2 && elem == "uint8_t" && e.spreadCall(callSuffix) {
+		if operand, convElem, isConv := e.stringSliceConvOf(args[1].ast); isConv && convElem == "uint8_t" {
+			args[1] = Node{sym: Expression, ast: operand}
+		}
+	}
 	return elem, args, true
 }
 
@@ -39559,6 +39701,11 @@ func (e *emitter) emitCopy(callSuffix []int32) {
 	if len(args) != 2 {
 		e.fail("copy takes exactly two arguments -- copy(dst, src)")
 		return
+	}
+	// copy(dst, []byte(s)) is copy(dst, s), below: the conversion's bytes are the
+	// string's, and Go's compiler makes no slice of them (stringSliceConvOf).
+	if operand, elem, ok := e.stringSliceConvOf(args[1].ast); ok && elem == "uint8_t" {
+		args[1] = Node{sym: Expression, ast: operand}
 	}
 	dstCT, dok := e.replayOrInferCType(0, args[0])
 	srcCT, sok := e.replayOrInferCType(1, args[1])
@@ -49806,7 +49953,7 @@ func (e *emitter) inferNode(n Node) (string, bool) {
 					return sliceCName(elem), true
 				}
 				if e.stringSliceConv(typeAST, arg) {
-					e.failAt(n.ast, "a string conversion needs allocation, which the target does not have")
+					e.failAt(n.ast, stringSliceConvRefused)
 					return "", false
 				}
 				if _, isID := e.bracketConvOperand(typeAST, arg); !isID || len(steps) != 0 {
@@ -52086,7 +52233,7 @@ func (e *emitter) emitExprNode(n Node) {
 					return
 				}
 				if e.stringSliceConv(typeAST, arg) {
-					e.failAt(n.ast, "a string conversion needs allocation, which the target does not have")
+					e.failAt(n.ast, stringSliceConvRefused)
 					return
 				}
 				if dim, isArray := e.arrayDim(typeAST); isArray && len(steps) == 0 && e.isSliceOperand(arg) {
@@ -53642,9 +53789,15 @@ func originRef(what, origin string) frameRef {
 // = range ps`, was asked nothing at all -- g kept the address of a local after the
 // function returned.
 func (e *emitter) noteRangeValue(h *forHeader, val, elem string) {
-	r, reaches := e.rangeElemRef(h.rangeExpr)
+	// What the element is asked first: an element carrying no reference -- a byte
+	// of `range []byte(s)` among them, whose operand has no type of its own to ask
+	// about (stringSliceConvOf) -- needs nothing of the operand.
 	isSlice := e.isSliceCType(e.underlyingCType(elem))
-	if !reaches || !isSlice && !e.carriesReference(elem) {
+	if !isSlice && !e.carriesReference(elem) {
+		return
+	}
+	r, reaches := e.rangeElemRef(h.rangeExpr)
+	if !reaches {
 		return
 	}
 	root, whole := val, true

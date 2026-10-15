@@ -17794,6 +17794,54 @@ func TestEmitCConstBytesConv(t *testing.T) {
 	}
 }
 
+// TestEmitCStringSliceConvRead pins where `[]byte(s)` and `[]rune(s)` of a RUN-TIME
+// string build: where the conversion is read where it stands and nothing keeps it --
+// ranged over, measured by len, or, the bytes, the source of a copy or an append --
+// Go's compiler makes no slice (its "zero-copy string->[]byte conversion", and
+// countrunes for `len([]rune(s))`), and the string itself is read here
+// (stringSliceConvOf). Everywhere else the copy would be kept, and it stays refused
+// with a message naming the places it is not. They were all refused.
+func TestEmitCStringSliceConvRead(t *testing.T) {
+	const pre = "type B []byte\n\ntype R []rune\n\nvar dst [8]byte\n\nvar rs [4]rune\n\nfunc keep(b []byte) int { return len(b) }\n\n"
+	for _, test := range []struct{ name, body, want string }{
+		{"range bytes", "n := 0\n\tfor i, c := range []byte(s) {\n\t\tn += i * int(c)\n\t}\n\tprintln(n)", ""},
+		{"range runes", "for i, r := range []rune(s) {\n\t\tprintln(i, r)\n\t}", ""},
+		{"range runes, key only", "for i := range []rune(s) {\n\t\tprintln(i)\n\t}", ""},
+		{"range runes, nothing", "n := 0\n\tfor range []rune(s) {\n\t\tn++\n\t}\n\tprintln(n)", ""},
+		{"range a defined type", "for _, c := range B(s) {\n\t\tprintln(c)\n\t}", ""},
+		{"range parenthesised", "for _, c := range ([]byte)(s) {\n\t\tprintln(c)\n\t}", ""},
+		{"len", "println(len([]byte(s)), len([]rune(s)), len(R(s)))", ""},
+		{"copy", "println(copy(dst[:], []byte(s)))", ""},
+		{"append", "b := append(dst[:0], B(s)...)\n\tprintln(len(b))", ""},
+		{"declared", "b := []byte(s)\n\tprintln(len(b))", stringSliceConvRefused},
+		{"cap", "println(cap([]byte(s)))", stringSliceConvRefused},
+		{"passed", "println(keep([]byte(s)))", stringSliceConvRefused},
+		{"resliced and ranged", "for _, c := range []byte(s)[1:] {\n\t\tprintln(c)\n\t}", stringSliceConvRefused},
+		{"runes copied", "println(copy(rs[:], []rune(s)))", stringSliceConvRefused},
+		{"runes appended", "r := append(rs[:0], []rune(s)...)\n\tprintln(len(r))", stringSliceConvRefused},
+		{"copied when deferred", "defer copy(dst[:], []byte(s))", "a string conversion needs allocation"},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			src := pre + "func main() {\n\ts := \"héllo\"\n\t" + test.body + "\n}\n"
+			fsys := fstest.MapFS{"main.ogo": &fstest.MapFile{Data: []byte(src)}}
+			pkg, err := Build(-1, []string{"main.ogo"}, fsys)
+			if err != nil {
+				t.Fatalf("Build: %v\n%s", err, src)
+			}
+			var buf bytes.Buffer
+			err = EmitC(pkg, &buf, Checked(), Inline())
+			switch {
+			case test.want == "" && err != nil:
+				t.Fatalf("EmitC: %v\n%s", err, src)
+			case test.want != "" && err == nil:
+				t.Fatalf("EmitC accepted it:\n%s", buf.String())
+			case test.want != "" && !strings.Contains(err.Error(), test.want):
+				t.Errorf("EmitC error %q does not say %q", err, test.want)
+			}
+		})
+	}
+}
+
 // TestEmitCParenRange: a range over an operand in parentheses, `range (arr)`, is the
 // range written without them, an array iterating the copy it takes when the loop
 // begins. An array's paths read a name, and this one was "cannot range over this

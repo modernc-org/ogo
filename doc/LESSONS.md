@@ -1655,6 +1655,16 @@ the compiler refused were unreachable code and printf's argument counts. Nine mo
 the host harness refused: `c&1 != 256` is a comparison gcc calls always true, an
 error under -Werror and a warning TestEmitCRun fails on, while the target builds it
 silently -- another valid program that cannot be a run case as it stands.
+The rule's other direction was asked the same night: `[]byte(s)` and `[]rune(s)` of
+a string variable were refused wherever they stood, and `go build -gcflags=-m` calls
+the first a "zero-copy string->[]byte conversion" ranged over, measured, copied and
+appended from -- and passed to a function whose parameter neither escapes nor is
+written, a judgement across calls the summaries here do not make, so that one stays
+refused -- while `len([]rune(s))` is countrunes (walk/builtin.go, isRuneCount). Those
+read the string where it is now (stringSliceConvOf), and so does a range over
+`[]rune(s)`, which Go copies past 32 runes and which needs no copy: its elements are
+the string's runes, decoded in turn. **What Go's compiler copies is asked of it,
+`-gcflags=-m`, not remembered.**
 **AN ARRAY RESULT IS A ROW** (2026-09-23). A call returning an array is a STATEMENT in
 C -- the caller hands the callee storage to write -- so every position one stands in
 has to supply that storage, and one probe after another the same afternoon found
@@ -3022,9 +3032,10 @@ field a BRACKETED literal lacks, `[]P{gp}[0].in.nosuch`,
 form works (a call's result, a parenthesised value and a named literal are checked at
 any depth since 2026-09-25, `getp().in.nosuch` and `(&gp).in.nosuch` being "type Q
 has no field nosuch": walkSteps' missingAt); `[]byte(s)`
-and `[]rune(s)` of a string VARIABLE (a copy of a length known at run time; a
-constant's converts since
-2026-09-23, constBytesConv); a parenthesised function value started on a cog,
+and `[]rune(s)` of a string VARIABLE where the copy is kept (a copy of a length
+known at run time; a constant's converts since 2026-09-23, constBytesConv, and one
+ranged over, measured by len or, the bytes, copied or appended from reads the
+string where it is since 2026-10-15, stringSliceConvOf); a parenthesised function value started on a cog,
 `go (h.f)(2)`, which works as a value, a statement and deferred; a deferred or
 started call through a dereference with an index, `defer (*ps)[0](x)` and `go
 (*pa)[0](x)` ("unsupported call target", and go's "only `go f(args)` ..."), where

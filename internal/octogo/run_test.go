@@ -1471,6 +1471,146 @@ func main() {
 		want: "0 0 0 0\n1 1 0 0\n3 1 0 0\n0 0 -2 0\n1 1 2 1 1 -2 1 1 -2 12\n",
 	},
 	{
+		// []byte(s) and []rune(s) of a RUN-TIME string where the conversion is read
+		// where it stands and nothing keeps it: ranged over -- with a key, a value,
+		// both or neither, assigning or declaring, under labels -- measured by len, and
+		// the bytes as the source of a copy or an append, the operand a call evaluated
+		// once and a variable the body assigns. Go's compiler makes no slice there
+		// ("zero-copy string->[]byte conversion", countrunes for len([]rune(s))), and
+		// the string is read in place (stringSliceConvOf); every one was refused as
+		// needing allocation, and a checksum over a line written the Go way did not
+		// build.
+		name: "[]byte(s) and []rune(s) read where they stand",
+		src: `type Bytes []byte
+type Runes []rune
+
+type Line struct {
+	text string
+	n    int
+}
+
+var calls int
+
+func get(s string) string {
+	calls = calls*10 + 1
+	return s
+}
+
+var lines = [2]Line{{"$GPGGA,1*", 1}, {"héllo wörld", 2}}
+
+func cksum(s string) byte {
+	var x byte
+	for _, c := range []byte(s) {
+		x ^= c
+	}
+	return x
+}
+
+func main() {
+	s := "héllo, 世界"
+	n := 0
+	for i, c := range []byte(s) {
+		n += i * int(c)
+	}
+	println("bytes", n)
+	for i := range []byte(s) {
+		n -= i
+	}
+	println("keys", n)
+	for range []byte(s) {
+		n++
+	}
+	println("none", n)
+	for i, r := range []rune(s) {
+		println(i, r)
+	}
+	k := 0
+	for i := range []rune(s) {
+		k += i
+	}
+	println("rkeys", k)
+	for range []rune(s) {
+		k++
+	}
+	println("rnone", k)
+	for _, r := range []rune(get(s)) {
+		k += int(r)
+	}
+	println("rget", k, calls)
+	for _, c := range []byte(get(s[1:])) {
+		k += int(c)
+	}
+	println("bget", k, calls)
+	for i, c := range Bytes(lines[1].text) {
+		k += i ^ int(c)
+	}
+	println("named", k)
+	for i, r := range Runes(lines[1].text) {
+		k += i ^ int(r)
+	}
+	println("rnamed", k)
+	for _, c := range []uint8(s) {
+		k += int(c)
+	}
+	for _, r := range []int32(s) {
+		k += int(r)
+	}
+	println("spelled", k)
+	for _, c := range ([]byte)(s) {
+		k += int(c)
+	}
+	for _, c := range ([]uint8)(s) {
+		k += int(c)
+	}
+	println("paren", k)
+	// the body changes s: the loop ranges what s was
+	t := "abc"
+	for i, c := range []byte(t) {
+		t = "zz"
+		println(i, c, t)
+	}
+	for i, r := range []rune(s[7:]) {
+		println(i, r)
+	}
+	// assigning clauses
+	var ai int
+	var ac byte
+	var ar rune
+	for ai, ac = range []byte(s[:5]) {
+	}
+	println(ai, ac)
+	for ai, ar = range []rune(s) {
+	}
+	println(ai, ar)
+	// labeled continue and break
+	cnt := 0
+outer:
+	for _, r := range []rune(s) {
+		for _, c := range []byte(s) {
+			if c == ',' {
+				continue outer
+			}
+			if r == '界' {
+				break outer
+			}
+			cnt++
+		}
+	}
+	println("labels", cnt)
+	println(cksum(lines[0].text), cksum(""))
+	println(len([]byte(s)), len([]rune(s)), len([]rune(get(s))), calls, len(Runes(s)), len([]rune("")))
+	var dst [16]byte
+	m := copy(dst[:], []byte(s))
+	println(m, dst[0], dst[15])
+	b := append(dst[:2], []byte(s[:3])...)
+	println(len(b), b[2], b[4])
+	m = copy(dst[3:], Bytes(get("xyz")))
+	println(m, dst[3], dst[5], calls)
+}
+`,
+		want: "bytes 13461\nkeys 13370\nnone 13384\n0 104\n1 233\n2 108\n3 108\n4 111\n5 44\n6 32\n7 19990\n8 30028\nrkeys 36\nrnone 45\nrget 50803 1\nbget 52652 11\nnamed 54313\nrnamed 55701\nspelled 108412\nparen 112318\n0 97 zz\n1 98 zz\n2 99 zz\n0 32\n1 19990\n2 30028\n4 108\n8 30028\nlabels 48\n69 0\n14 9 9 111 9 0\n14 104 0\n5 104 169\n3 120 122 1111\n",
+	},
+	{
 		// Buffered channels in the shapes programs use them: a select whose send
 		// clause has room beside a receive clause that must still be taken in its
 		// turn (an offer deposited up front would win every round), a semaphore of

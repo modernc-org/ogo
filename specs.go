@@ -690,8 +690,20 @@
 // a defined type over string, are the same bytes.
 //
 // The other direction is the same rule: []byte(s) and []rune(s) copy a string into
-// a new slice, as long as s is, so for a variable s they are rejected. Of a CONSTANT
-// string the length is known, and the conversion is allowed -- its slice is a slice
+// a new slice, as long as s is, so for a variable s they are rejected where the copy
+// would be kept -- declared, passed, stored or resliced. Where nothing keeps it, Go's
+// compiler makes no copy, and neither does this one: ranged over, measured by len,
+// and for []byte(s) the source of a copy or an append, the conversion reads the
+// string where it is. A range over []rune(s) decodes the runes in turn, its key
+// counting them, and len([]rune(s)) counts them:
+//
+//	for _, c := range []byte(line) {    // fine: the line's own bytes
+//		sum ^= c
+//	}
+//	n := len([]rune(name))              // fine: the runes counted
+//	b := []byte(line)                   // rejected: the copy is kept
+//
+// Of a CONSTANT string the length is known, and the conversion is allowed -- its slice is a slice
 // literal's by another spelling, a backing array of the block it is written in
 // (fresh each time it is evaluated) or a static one in a package variable's
 // initializer, and the lifetime rules govern it as they govern a literal's. So is a
