@@ -84,6 +84,10 @@ func (f *Fuzzer) cName() string {
 // GenerateProgram builds the AST and computes the final expected state.
 // It directly outputs the generated source code to f.Out.
 func (f *Fuzzer) GenerateProgram(vm Machine, mem Memory) error {
+	// Whether the program calls into the library packages, which its imports say
+	// ahead of everything else (drawLib, genLib).
+	f.drawLib()
+
 	// 1. Initialize the global environment
 	mem.PushScope()
 	defer mem.PopScope()
@@ -221,6 +225,10 @@ func (f *Fuzzer) GenerateProgram(vm Machine, mem Memory) error {
 	// stands, and a procedure exercising them (see genEmbed).
 	emCall, emWant, emOK := f.genEmbed()
 
+	// 4.12. The strings, bytes and errors packages and a Builder, asked what Go's
+	// answer (see genLib).
+	lbCall, lbWant, lbOK := f.genLib()
+
 	// 5. Generate the main function
 	// FuncDecl = "func" identifier "(" ")" Block
 	fmt.Fprint(f.Out, "func main() {\n")
@@ -256,6 +264,10 @@ func (f *Fuzzer) GenerateProgram(vm Machine, mem Memory) error {
 	// And the procedure of embedded structs and variadic calls.
 	if emOK {
 		f.checkAtTop("embedding", emCall, emWant)
+	}
+	// And the procedure of the library packages.
+	if lbOK {
+		f.checkAtTop("library", lbCall, lbWant)
 	}
 
 	// Generate 20 sequential statements to mutate the checksum

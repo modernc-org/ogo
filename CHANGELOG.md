@@ -115,6 +115,15 @@ shipped section tells a reader on that version that they have behaviour they do 
   program had embedding, a variadic call or a method value. It draws from a source
   of its own, so the rest of each seed's program is what it was.
 
+- **`ogo smith` calls into the strings, bytes and errors packages and a Builder**:
+  one program in two imports them and hands strings and byte slices drawn from
+  letters, white space of one byte and of two, runes of two and three bytes and
+  invalid UTF-8 to every function of strings and of bytes, with runes that are none
+  among the ones asked for; writes a Builder over a backing of 0 to 12 bytes past
+  its end; and walks a chain of three wrapped errors with Is, As and Unwrap. The
+  generator asks Go's own packages what each call comes to. No generated program had
+  called a library function.
+
 ### Fixed
 
 - **A method of the predeclared Builder called through a nil `*Builder` panics**,

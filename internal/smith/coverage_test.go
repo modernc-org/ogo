@@ -390,6 +390,28 @@ var generatedConstructs = []struct {
 	{"string(b) switched on", `\n\tswitch string\(emBuf_\d+\[\d+:\d+\]\) \{`},
 	{"string(b) measured", `len\(string\(emBuf_\d+\[\d+:\]\)\)`},
 	{"embedding checked", `\n\tif emRun_\d+\(-?\d+\) != -?\d+ \{\n\t\tpanic\("OctoSmith Checksum Failure: embedding"\)`},
+	// The strings, bytes and errors packages and a Builder (genLib).
+	{"imports of the library packages", `// OctoSmith generated program\. Seed: \d+\nimport \(\n\t"bytes"\n\t"errors"\n\t"strings"\n\)`},
+	{"strings.Index and bytes.Index", `strings\.Index\(lbS_\d+\[\d\], lbS_\d+\[\d\]\)\n\tr = r ?\* ?31 ?\+ ?bytes\.Index\(`},
+	{"LastIndex", `bytes\.LastIndex\(lbB_\d+\[\d\], lbB_\d+\[\d\]\)`},
+	{"Contains", `bytes\.Contains\(lbB_\d+\[\d\], lbB_\d+\[\d\]\)`},
+	{"ContainsAny", `bytes\.ContainsAny\(lbB_\d+\[\d\], lbS_\d+\[\d\]\)`},
+	{"ContainsRune of no rune", `strings\.ContainsRune\(lbS_\d+\[\d\], (-1|55296|1114112)\)`},
+	{"Count", `strings\.Count\(lbS_\d+\[\d\], lbS_\d+\[\d\]\)`},
+	{"Cut", `\n\tbb, ab, foundb := bytes\.Cut\(`},
+	{"CutPrefix and CutSuffix", `\n\tcsb, oksb := bytes\.CutSuffix\(`},
+	{"HasPrefix and HasSuffix", `bytes\.HasSuffix\(lbB_\d+\[\d\], lbB_\d+\[\d\]\)`},
+	{"IndexAny", `strings\.IndexAny\(lbS_\d+\[\d\], lbS_\d+\[\d\]\)`},
+	{"IndexByte and LastIndexByte", `bytes\.LastIndexByte\(lbB_\d+\[\d\], \d+\)`},
+	{"IndexRune of the replacement rune", `strings\.IndexRune\(lbS_\d+\[\d\], 65533\)`},
+	{"TrimPrefix and TrimSuffix", `lbHB_\d+\(bytes\.TrimSuffix\(`},
+	{"TrimSpace", `lbH_\d+\(strings\.TrimSpace\(lbS_\d+\[\d\]\)\)`},
+	{"Compare and Equal", `lbI_\d+\(bytes\.Equal\(lbB_\d+\[\d\], lbB_\d+\[\d\]\)\)`},
+	{"errors.Is along a chain", `lbI_\d+\(errors\.Is\(&lbW2_\d+, &lbW\d_\d+\)\)`},
+	{"errors.As", `\n\tif errors\.As\(e, &p\) \{\n\t\tr = r ?\* ?31 ?\+ ?p\.c\n`},
+	{"errors.Unwrap", `errors\.Unwrap\(e\) == lbW\d_\d+\.e`},
+	{"Builder written past its end", `\n\tn3, e3 := sb\.Write\(lbB_\d+\[\d\]\)\n`},
+	{"library checked", `\n\tif lbRun_\d+\(\) != -?\d+ \{\n\t\tpanic\("OctoSmith Checksum Failure: library"\)`},
 	// A name C has spoken for, which newVarName draws now and then (cNames): the
 	// emitter renames each in every position, and a position it missed was a C
 	// error no generated program could show while every name was a counter's.

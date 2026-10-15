@@ -198,9 +198,12 @@ type Fuzzer struct {
 	wideRand *rand.Rand
 	convRand *rand.Rand
 	chanRand *rand.Rand
-	// mwRand is genMultiWord's, emRand genEmbed's.
+	// mwRand is genMultiWord's, emRand genEmbed's, lbRand genLib's; lbOn is
+	// whether the program has genLib's part, drawn first (drawLib).
 	mwRand *rand.Rand
 	emRand *rand.Rand
+	lbRand *rand.Rand
+	lbOn   bool
 }
 
 func NewFuzzer(seed int64, out io.Writer) *Fuzzer {
@@ -214,6 +217,7 @@ func NewFuzzer(seed int64, out io.Writer) *Fuzzer {
 		chanRand:     rand.New(rand.NewSource(seed ^ 0x2c4a7d31)),
 		mwRand:       rand.New(rand.NewSource(seed ^ 0x4d570a3b)),
 		emRand:       rand.New(rand.NewSource(seed ^ 0x656d6264)),
+		lbRand:       rand.New(rand.NewSource(seed ^ 0x6c696273)),
 		Rand:         rng,
 		Out:          out,
 		GlobalEnv:    global,
