@@ -56,6 +56,11 @@ shipped section tells a reader on that version that they have behaviour they do 
   of a field of another package's type, `s.q.Inc`. A method promoted through an
   unnamed struct's embedded pointer, `x.get` of an `x struct{ *Reg }`, is refused by
   the checker, as one through a defined struct's is.
+- **A call statement of no result, or of several it discards, through another
+  package's element, field or call works**: `lib.Handlers[0]()`, `lib.Dev.OnTick()`,
+  `lib.Pick(1)()`. Each was "only <pkg>.<Func>(args) or builtin(args) call
+  statements are supported yet", where the same through this package's variables,
+  deferred or started on a cog, worked.
 - **A message naming a channel's type says `chan bool`**, where it said the C
   type's name, "%d wants an integer, not ogo_chan__Bool".
 

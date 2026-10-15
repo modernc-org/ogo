@@ -37632,12 +37632,15 @@ func (e *emitter) emitCallExpr(recv string, suffix []Node) bool {
 		// it walks, and a speculative walk that then declines leaves its
 		// temporaries behind, unused.
 		cur, okt := e.accessChainType(recv, suffix[:len(suffix)-1])
-		if !okt && suffix[0].sym == CallSuffix {
+		_, isImport := e.importQualifiers[recv]
+		if !okt && (suffix[0].sym == CallSuffix || isImport) {
 			// `pick()(x)`: a function's result called. A function name is no head
 			// the chain typer starts from, so the chain before the last call is
 			// typed by rendering it -- which left a result of NO results refused as
 			// a call statement, "only <pkg>.<Func>(args) ... supported yet", where
-			// one with a result went through the fallback below.
+			// one with a result went through the fallback below. An import
+			// qualifier is no such head either: `lib.Fns[0]()` and `lib.Pick(1)()`
+			// were refused so where `fns[0]()` and `pick(1)()` were not.
 			cur, okt = e.renderedChainType(recv, suffix[:len(suffix)-1])
 		}
 		if !okt || !e.isFuncCType(cur.ctype) || len(e.funcTypeRet[e.underlyingCType(cur.ctype)]) == 1 {

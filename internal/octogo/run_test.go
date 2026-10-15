@@ -51966,6 +51966,7 @@ const multiPkgWant = "300\nLOUD\n50\n6\n5\n45\n6 1000\n200\n207\n3 100\n4 9\n" +
 	"8 true 0 true 10 busy\n" +
 	"2 true\n" +
 	"9 5 3 7 5 6 2 []uint8 struct { A int; B int }\n" +
+	"342\n" +
 	"1234567891 1 3 8 14 30 39\n" +
 	"2 4 7 4\n" +
 	"4 5 2 3\n" +
@@ -52806,7 +52807,53 @@ func libShapes() {
 	lc <- 5
 	var lr lib.Row3 = [3]int{1, 2, 3}
 	printf("%d %d %d %d %d %d %d %T %T\n", lib.SumBuf(lbt), lib.Apply(scale, 4), lib.MkPr(2).B, lp.A+lp.B, <-lc, lib.SumRow3(lr), len(lib.Buf{1, 2}), lbs, lp)
+	// A call STATEMENT of no result, or of several it discards, through another
+	// package's element, field or call: "only <pkg>.<Func>(args) ... supported yet",
+	// where the same through this package's, deferred or started worked.
+	lib.VcFns[0]()
+	lib.VcFns[1]()
+	lib.VcPick(1)()
+	lib.VcV.F()
+	lib.VcV.Fs[0]()
+	lib.VcV.C(1)
+	lib.VcMany()(2)
+	lib.VcPs[0].Fs[1]()
+	println(lib.VcN)
 }
+`,
+	"lib/calls.ogo": `// The function tables and fields main calls as statements across the boundary.
+
+var VcN int
+
+func vcA() { VcN++ }
+
+func vcB() { VcN += 10 }
+
+func vcC(k int) (int, bool) {
+	VcN += 100 * k
+	return VcN, true
+}
+
+var VcFns = [2]func(){vcA, vcB}
+
+type VcT struct {
+	F  func()
+	Fs [2]func()
+	C  func(int) (int, bool)
+}
+
+var VcV = VcT{F: vcB, Fs: [2]func(){vcB, vcA}, C: vcC}
+
+var VcPs = [1]*VcT{&VcV}
+
+func VcPick(i int) func() {
+	if i == 0 {
+		return vcA
+	}
+	return vcB
+}
+
+func VcMany() func(int) (int, bool) { return vcC }
 `,
 	"lib/lits.ogo": `// Buf, Fn, Two, Chan and Row3 are aliases of types written out, which are those
 // types in every package: a []byte is a Buf wherever it is written.

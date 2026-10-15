@@ -1702,6 +1702,15 @@ type. It is the fifth shape of the one question that walk answers, each found by
 probe after the walk was believed whole -- `T.M(x)`, `T(3).bump()`, `(&v).Sum()`,
 `(*pf)(x)`, and now this one. **A call is asked of every head a call can follow: a name, a
 parenthesis, a dereference, a conversion, a call.**
+Rewriting the probe's statements into another package found a third: a call
+STATEMENT through another package's function table, field or call, `lib.Fns[0]()`,
+`lib.V.F()`, `lib.Pick(1)()`, of no result or of several, was "only <pkg>.<Func>(args)
+... call statements are supported yet" -- the in-package forms and the deferred and
+started ones all worked. The statement's path types the callee by the chain typer,
+which starts from no import qualifier, and fell back to rendering it only for a chain
+that begins with a call; it falls back for a qualified one too now. **Every row swept
+in one package is swept across the boundary too, with the qualified spelling in
+every position**, again, and the statement is a position.
 **AN ARRAY RESULT IS A ROW** (2026-09-23). A call returning an array is a STATEMENT in
 C -- the caller hands the callee storage to write -- so every position one stands in
 has to supply that storage, and one probe after another the same afternoon found
