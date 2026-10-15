@@ -1645,7 +1645,16 @@ call, the nil check's. hoistCompoundTarget had bound such a target's address for
 had measured the 32-bit element right -- for a PLAIN store. **A fault measured in one
 statement form is measured in the others: a plain store right says nothing of its
 compound form.** Binding the address for an increment whose index before the last
-calls (rowIndexCalls) fixes it; a byte table's `++`, refused before, builds.
+calls (rowIndexCalls) fixes it; a byte table's `++`, refused before, builds. Its
+1,600 mutants found nothing more: the 828 both took, 427 distinct, matched Go on the
+host and the board but for what the method knows -- a panic's wording, a line
+printed in part before an argument panics, a String method printing into printf's
+line, a race a mutant wrote (`go put32(b[16:], ...)` over main's buffer), and a
+table grown past Hub RAM, refused as the program's size -- and the 12 Go took and
+the compiler refused were unreachable code and printf's argument counts. Nine more
+the host harness refused: `c&1 != 256` is a comparison gcc calls always true, an
+error under -Werror and a warning TestEmitCRun fails on, while the target builds it
+silently -- another valid program that cannot be a run case as it stands.
 **AN ARRAY RESULT IS A ROW** (2026-09-23). A call returning an array is a STATEMENT in
 C -- the caller hands the callee storage to write -- so every position one stands in
 has to supply that storage, and one probe after another the same afternoon found
