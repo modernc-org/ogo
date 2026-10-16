@@ -1731,7 +1731,11 @@ written: unreachable code (53), a printf verb its argument does not fit, a value
 receiver's field's address returned. Of the 782 both took, 83 printed otherwise
 than Go: 78 a panic's wording, three a deadlock Go detects and the host waits out,
 and two a deferred println -- in the receiving cog, racing main's line, and in the
-String method printf calls, printing mid-line as DIFFERENCES.md says.
+String method printf calls, printing mid-line as DIFFERENCES.md says. On a P2-EDGE
+the 505 distinct ones both took, but two deadlocks Go reports, printed what Go
+prints: 489 at the first load and the ten the loader lost at the second, the other
+four the same noise -- a deferred println in a cog and in a String method, and two
+loops grown to 2^31 passes that the board had not finished when the capture ended.
 **AN ARRAY RESULT IS A ROW** (2026-09-23). A call returning an array is a STATEMENT in
 C -- the caller hands the callee storage to write -- so every position one stands in
 has to supply that storage, and one probe after another the same afternoon found
