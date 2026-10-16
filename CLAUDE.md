@@ -909,6 +909,8 @@ section. A new finding goes there; the rule it leaves goes here too.
 
 - **One question, one helper**. **Two answers to one question are a false refusal or
   a hole, and the second answer hides what the first lacks**.
+- **A table read by its value is asked by its key, and asked what else it holds: an
+  empty struct's fields are nil, and so are an interface's** (isStruct, fieldEqCmp).
 - **A rule that refuses on failing to resolve is a false refusal waiting for a shape
   it does not know**; **A rule that refuses by failing to resolve is found by
   widening the resolver and running the rejects again**; **A rule refused by

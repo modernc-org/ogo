@@ -39,6 +39,14 @@ shipped section tells a reader on that version that they have behaviour they do 
   "Unable to widen function result" about it, though it passed it right, and `ogo
   build` refused the program as a fault of its own.
 
+- **A struct holding an empty struct or an interface compares, and so does an
+  array of either**, as Go compares them: `w1 == w2` for a `struct{ n int; e E }`
+  with `type E struct{}`, `[2]E{} == [2]E{}`, and a struct with a `Shape` field
+  equal where the two interfaces hold the same pointer. Each went to the C compiler
+  as C's `==` of two structs, which it refused. A method called on a literal of an
+  empty struct type, `E{}.Two()`, builds; it was "cannot infer a type" with no
+  position.
+
 ## v0.56.0
 
 ### Language

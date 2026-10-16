@@ -9711,6 +9711,53 @@ func main() {
 		want: "42\n42\n3\n7\n",
 	},
 	{
+		// An empty struct asked whether it is a struct by its fields, which are nil:
+		// a method on its literal, `E{}.Two()`, was "cannot infer a type" with no
+		// position, and a struct holding one or an array of them compared with C's ==,
+		// which C refuses for a struct. An interface field and an array of interfaces
+		// were compared the same way; they compare by table and data, as two
+		// interface values do.
+		name: "an empty struct's literal read and compared inside another",
+		src: `type E struct{}
+
+func (E) Name() string { return "e" }
+
+func (e E) Two() int { return 2 }
+
+type W struct {
+	n int
+	e E
+}
+
+type Shape interface{ Area() int }
+
+type Sq struct{ s int }
+
+func (q *Sq) Area() int { return q.s * q.s }
+
+type H struct {
+	n  int
+	sh Shape
+}
+
+var a, b Sq
+
+func main() {
+	println(E{}.Name(), E{}.Two())
+	v := E{}.Two()
+	w1, w2 := W{1, E{}}, W{1, E{}}
+	println(v, w1 == w2, w1 != W{2, E{}})
+	x, y := [2]E{}, [2]E{}
+	println(x == y, [2]W{} == [2]W{{0, E{}}, {}})
+	h1, h2, h3 := H{1, &a}, H{1, &a}, H{1, &b}
+	println(h1 == h2, h1 == h3, h1 != H{1, nil}, H{} == H{0, nil})
+	arr1, arr2 := [2]Shape{&a, &b}, [2]Shape{&a, &a}
+	println(arr1 == arr2, arr1 == [2]Shape{&a, &b})
+}
+`,
+		want: "e 2\n2 true true\ntrue true\ntrue false true true\nfalse true\n",
+	},
+	{
 		// A method may leave its receiver unnamed -- "(T)" or "(*T)" -- when the
 		// body does not use it, matching Go and reading naturally for a method on a
 		// stateless type. The emitter still gives the C parameter a name (flexcc

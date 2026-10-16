@@ -1768,6 +1768,18 @@ measured right. **A workaround written from a symptom covers the symptom: the
 backend's source is read for the cause before the workaround is called whole**, and
 **a row measured last in its argument list says nothing of the same argument with
 another after it**.
+The program's first build had met something smaller: a method on a literal of an
+empty struct, `Soft{}.High(a, b)`, a stateless implementation of an interface, was
+"cannot infer a type" with no position. The literal's path asked whether its type was
+a struct by the struct's field list, which for an empty struct is nil; four more
+places asked the same way, and a struct holding an empty one, an array of them and an
+array of such structs were compared with C's ==, which C refuses for a struct. Asked
+by presence, they had a second answer to give: an interface is in the same table with
+no fields, and its helper would have called any two equal -- a struct holding an
+interface, and an array of interfaces, had been refused by C the same way, and compare
+by table and data now, as two interface values do. **A table read by its value is
+asked by its key, and asked what else it holds: an empty struct's fields are nil,
+and so are an interface's.**
 **AN ARRAY RESULT IS A ROW** (2026-09-23). A call returning an array is a STATEMENT in
 C -- the caller hands the callee storage to write -- so every position one stands in
 has to supply that storage, and one probe after another the same afternoon found

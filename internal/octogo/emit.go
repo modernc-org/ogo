@@ -22131,7 +22131,7 @@ func (e *emitter) factorStructLitChain(kids []Node) (ctype string, lit Node, ste
 		return "", Node{}, nil, false
 	}
 	ctype, lit, ok = e.factorCompositeLit(kids[:len(kids)-1])
-	if !ok || e.structs[ctype] == nil || e.isIfaceCType(ctype) {
+	if !ok || !e.isStruct(ctype) || e.isIfaceCType(ctype) {
 		return "", Node{}, nil, false
 	}
 	steps = slices.Collect(it(kids[len(kids)-1].ast))
@@ -51420,22 +51420,33 @@ func (e *emitter) needStructEq(ctype string) {
 			e.usesStringEq = true
 		case e.isSliceCType(fld.ctype):
 			e.fail("struct comparison with a slice field (%s) is not supported: slices are not comparable", fld.name)
-		case e.structs[fld.ctype] != nil:
+		case e.isIfaceCType(fld.ctype):
+			// An interface compares by its table and its data (fieldEqCmp).
+		case e.isStruct(fld.ctype):
 			e.needStructEq(fld.ctype) // a nested struct field compares through its own helper
 		}
 	}
 }
 
 // fieldEqCmp returns a boolean C expression comparing operands l and r of C type
-// ct: ogo_string_eq for a string, the struct's helper for a struct, C == otherwise
+// ct: ogo_string_eq for a string, its table and its data for an interface, as
+// emitIfaceCompareC compares two, the struct's helper for a struct, C == otherwise
 // (a scalar or pointer).
+//
+// A struct is one by being in the table, not by its fields: an empty struct's are
+// nil, and asked by them, a struct holding one, `struct{ n int; e E }`, and an
+// array of them were compared with C's ==, which C refuses for a struct. An
+// interface is in the table too, with no fields, and is no struct here: its
+// helper would answer that any two are equal.
 func (e *emitter) fieldEqCmp(ct, l, r string) string {
 	switch {
 	case ct == cString:
 		return "ogo_string_eq(" + l + ", " + r + ")"
-	case e.structs[ct] != nil && e.structEqByPtr(ct):
+	case e.isIfaceCType(ct):
+		return "(" + l + ".vt == " + r + ".vt && " + l + ".data == " + r + ".data)"
+	case e.isStruct(ct) && e.structEqByPtr(ct):
 		return structEqName(ct) + "(&(" + l + "), &(" + r + "))"
-	case e.structs[ct] != nil:
+	case e.isStruct(ct):
 		return structEqName(ct) + "(" + l + ", " + r + ")"
 	default:
 		return l + " == " + r
@@ -51451,14 +51462,18 @@ func (e *emitter) structEqDef(ctype string) string {
 	// The parameters use the emitter's reserved _ogo_ prefix so they cannot collide
 	// with any struct field name -- `a`/`b` would clash with a field named a or b
 	// (and flexcc then mishandles the resulting `b.b`).
-	b.WriteString(e.structEqSig(ctype) + " {\n\treturn ")
+	b.WriteString(e.structEqSig(ctype) + " {\n\t")
 	sel := "."
 	if e.structEqByPtr(ctype) {
 		sel = "->"
 	}
 	fields := e.structs[ctype]
 	if len(fields) == 0 {
-		b.WriteString("1") // an empty struct (its C form's hidden byte is not compared) is always equal
+		// An empty struct (its C form's hidden byte is not compared) is always
+		// equal, and reads neither operand.
+		b.WriteString("(void)_ogo_l;\n\t(void)_ogo_r;\n\treturn 1")
+	} else {
+		b.WriteString("return ")
 	}
 	for i, fld := range fields {
 		if i > 0 {
@@ -53603,7 +53618,9 @@ func (e *emitter) needArrayEq(a arrDim) {
 		e.needArrayEq(a.row())
 	case a.elem == cString:
 		e.usesStringEq = true
-	case e.structs[a.elem] != nil:
+	case e.isIfaceCType(a.elem):
+		// An interface compares by its table and its data (fieldEqCmp).
+	case e.isStruct(a.elem):
 		e.needStructEq(a.elem)
 	}
 }
