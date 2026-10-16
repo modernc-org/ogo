@@ -247,14 +247,15 @@ type Fuzzer struct {
 	wideRand *rand.Rand
 	convRand *rand.Rand
 	chanRand *rand.Rand
-	// mwRand is genMultiWord's, emRand genEmbed's, lbRand genLib's and pkRand
-	// genPkg's; lbOn and pkOn are whether the program has genLib's part and
+	// mwRand is genMultiWord's, emRand genEmbed's, lbRand genLib's, pkRand
+	// genPkg's and paRand genPairs'; lbOn and pkOn are whether the program has genLib's part and
 	// genPkg's, drawn first (drawImports), and pkMode whether it may have packages
 	// of its own at all (ogo smith -o, Files). pkOut is the package genPkg writes.
 	mwRand *rand.Rand
 	emRand *rand.Rand
 	lbRand *rand.Rand
 	pkRand *rand.Rand
+	paRand *rand.Rand
 	lbOn   bool
 	pkOn   bool
 	pkMode bool
@@ -274,6 +275,7 @@ func NewFuzzer(seed int64, out io.Writer) *Fuzzer {
 		emRand:       rand.New(rand.NewSource(seed ^ 0x656d6264)),
 		lbRand:       rand.New(rand.NewSource(seed ^ 0x6c696273)),
 		pkRand:       rand.New(rand.NewSource(seed ^ 0x706b7820)),
+		paRand:       rand.New(rand.NewSource(seed ^ 0x70616972)),
 		Rand:         rng,
 		Out:          out,
 		GlobalEnv:    global,

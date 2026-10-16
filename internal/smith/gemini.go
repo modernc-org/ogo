@@ -233,6 +233,10 @@ func (f *Fuzzer) GenerateProgram(vm Machine, mem Memory) error {
 	// its qualified names (see genPkg).
 	pkCall, pkWant, pkOK := f.genPkg()
 
+	// 4.14. Functions taking a 64-bit value and then values of other types, handed
+	// a 64-bit operation first (see genPairs).
+	paCall, paWant, paOK := f.genPairs()
+
 	// 5. Generate the main function
 	// FuncDecl = "func" identifier "(" ")" Block
 	fmt.Fprint(f.Out, "func main() {\n")
@@ -276,6 +280,10 @@ func (f *Fuzzer) GenerateProgram(vm Machine, mem Memory) error {
 	// And the procedure reaching into the program's package.
 	if pkOK {
 		f.checkAtTop("package", pkCall, pkWant)
+	}
+	// And the procedure of 64-bit operations handed on before other arguments.
+	if paOK {
+		f.checkAtTop("pairs", paCall, paWant)
 	}
 
 	// Generate 20 sequential statements to mutate the checksum

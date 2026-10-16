@@ -44,6 +44,22 @@ shipped section tells a reader on that version that they have behaviour they do 
   expression of its own, wherever the literal stands. Found in p2-11's sources,
   every one of which now lays out as gofmt lays it out.
 
+- **`ogo smith` hands a 64-bit operation on before arguments of other types**:
+  three programs in four declare functions taking an int64 or a uint64 and then
+  floats, narrow integers, 64-bit values and bools, and a procedure calling them
+  with a negation, a negative constant, each binary operator or a shift -- by
+  exactly 32 either way among them -- for the first argument, and constants,
+  variables and expressions of each type after it: directly, through a function
+  value, through an interface's method, as a variadic call, and as a method of a
+  64-bit defined type whose receiver is the operation. No generated program had
+  passed an operation before an argument of another type, the shape the backend
+  misconverted (below). Built by the compiler before that fix, every one of the
+  first 24 seeds carrying it is refused or fails on a P2-EDGE; its first board
+  sweep with the fix found the function-value member of the same fault (below).
+  With this compiler seeds 1-2000 pass on the host (1514 carry it), and of seeds
+  1-200 on a P2-EDGE 187 pass and 13 outgrow a cog, none failing. It draws from a
+  source of its own, so the rest of each seed's program is what it was.
+
 ### Fixed
 
 - **An argument after a 64-bit operation reached the callee converted to the

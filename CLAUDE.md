@@ -708,8 +708,9 @@ had it on 2026-10-13"; the sections named in capitals below are its journal's.
   the checksum -- so **a new call site in the generator calls `noteCall`**, once for
   each time the program runs the call, and **a new call site by name counts
   `fn.Sites`**. A part added since 2026-10-06 draws from its own source (`aggRand`,
-  `wideRand`, `convRand`, `mwRand`, `emRand`, `lbRand`, `pkRand`; the aggregates mint no name from
-  VarSeq either), so every other part of a seed's program stays what it was.
+  `wideRand`, `convRand`, `mwRand`, `emRand`, `lbRand`, `pkRand`, `paRand`; the
+  aggregates mint no name from VarSeq either), so every other part of a seed's
+  program stays what it was.
   Beyond plain statements it
   writes constants in every spelling (consts.go), static tables (tables.go), structs
   and arrays passed
@@ -718,7 +719,8 @@ had it on 2026-10-13"; the sections named in capitals below are its journal's.
   string(b) views (embed.go), the strings, bytes and errors packages and a Builder,
   their answers Go's own (library.go, its imports drawn first, drawImports), a
   package of the program's own reached by qualified names (pkg.go, only with
-  `ogo smith -o`/Files; TestOraclePackages), names C has spoken for and names of the
+  `ogo smith -o`/Files; TestOraclePackages), a 64-bit operation handed on before
+  arguments of other types (pairs.go), names C has spoken for and names of the
   universe (`cNames`, `universeNames`), calls in headers, a function of several
   returns for the inliner's single-exit rewrite, and widened and cross-converted
   folds. **What was swept is swept FOR A GENERATOR**: a change to it makes every

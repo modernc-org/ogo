@@ -368,6 +368,21 @@ var generatedConstructs = []struct {
 	{"capacity of a slice received", `cap\(<-cl\)`},
 	{"member past the first word of a call's result", `int\(mwMk_\d+\(k\)\.f[1-3]\)`},
 	{"several words checked", `\n\tif mwRun_\d+\(-?\d+\) != -?\d+ \{\n\t\tpanic\("OctoSmith Checksum Failure: several words"\)`},
+	// A 64-bit operation handed on before arguments of other types (genPairs).
+	{"pairs: 64 bits and then a float", `\nfunc paFn_\d+_\d+\(a u?int64, b float(32|64)`},
+	{"pairs: 64 bits and then a narrow integer", `\nfunc paFn_\d+_\d+\(a u?int64, b u?int(8|16)\b`},
+	{"pairs: 64 bits and then 64 bits", `\nfunc paFn_\d+_\d+\(a u?int64, b u?int64`},
+	{"pairs: an integer constant to a float after an operation", `(s\.sc|paVa_\d+)\([^,\n]*pa[VU]_\d+[^,\n]*, -?\d+[,)]`},
+	{"pairs: a shift left by 32 handed on", `\(pa[VU]_\d+ ?<< ?32, `},
+	{"pairs: a shift right by 32 handed on", `\(pa[VU]_\d+ ?>> ?32, `},
+	{"pairs: a negative constant handed on", `(paFn_\d+_\d+|s\.sc|paVa_\d+)\(-\d+, `},
+	{"pairs: a negation handed on", `\(-pa[VU]_\d+, `},
+	{"pairs: through a function value", `\n\t\tfv := paFn_\d+_\d+\n\t\tr = r ?\* ?31 ?\+ ?fv\(`},
+	{"pairs: through an interface", `\n\t\tvar s PaS_\d+ = &paR_\d+\n\t\tr = r ?\* ?31 ?\+ ?s\.sc\(`},
+	{"pairs: variadic", `paVa_\d+\([^\n]+, [^\n]+, [^\n]+\)\n`},
+	{"pairs: an operation received", `\((q ?[*+] ?\d+|-q|q ?<< ?32)\)\.mix\(`},
+	{"pairs: a negative constant received", `PaQ_\d+\(-\d+\)\.mix\(`},
+	{"pairs checked", `\n\tif paRun_\d+\(\) != -?\d+ \{\n\t\tpanic\("OctoSmith Checksum Failure: pairs"\)`},
 	// Structs embedded by value and by pointer, variadic calls and string(b) where
 	// it stands (genEmbed).
 	{"struct embedded by value and by pointer", `\ntype EMO_\d+ struct \{\n\tEMB_\d+\n\t\*EMP_\d+\n`},
