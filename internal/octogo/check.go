@@ -3677,6 +3677,10 @@ func (f *File) checkHeaderAssign(s *Scope, targets, values []Node) {
 		if !ok {
 			continue
 		}
+		// An element of a string, `if s[0] = 'x'; ...`, as the statement refuses it.
+		if f.stringElemTarget(s, t, base, stars, steps, false) {
+			continue
+		}
 		bare := len(steps) == 0 && stars == 0
 		switch s.find(base.Src()).(type) {
 		case *ConstDeclaration, *FuncDeclaration, *TypeDeclaration, *PredeclaredFunc, *PredeclaredType:
@@ -3747,7 +3751,13 @@ func (f *File) checkHeaderAssignList(s *Scope, head Node, items, values []Node) 
 	}
 	if len(values) == 1 && len(targets) > 1 {
 		// One call's several results, each asked of its target as the statement
-		// `a, b = f()` asks them.
+		// `a, b = f()` asks them: an element of a string first, which is no storage
+		// (stringElemTarget).
+		for _, t := range targets {
+			if base, steps, stars, ok := f.exprTarget(t); ok && f.stringElemTarget(s, t, base, stars, steps, false) {
+				return
+			}
+		}
 		var walked []typeAt
 		for _, t := range targets {
 			var at typeAt
@@ -5016,6 +5026,10 @@ func (f *File) checkForPost(s *Scope, results []retResult, n Node) {
 		// A constant, `"s"++` and `5 += 1`: no place. The C incremented a literal.
 		if _, isConst := f.constValue(s, l); isConst {
 			f.err(f.tok(l.Pos()).Position(), "cannot assign to %s (neither addressable nor a map index expression)", f.exprSource(l))
+			return
+		}
+		// An element of a string, `s[0]++` and `s[0], n = f()`: no place either.
+		if base, steps, stars, ok := f.exprTarget(l); ok && f.stringElemTarget(s, l, base, stars, steps, false) {
 			return
 		}
 		// A post's targets as a statement's: a bare `j = v` is a write and no
@@ -19802,7 +19816,15 @@ func (f *File) checkWalkedTargets(s *Scope, head, postfix Node, rhs []Node, lhsI
 		}
 	}
 	if len(rhs) != 1+lhsItems {
-		return // one call's several results, which checkResultsAssign takes
+		// One call's several results, which checkResultsAssign takes -- but for an
+		// element of a string, which is no storage whatever is stored there:
+		// `part[0], line, more = scpi.Next(line)` was taken, a mutant of a domain
+		// program's, and wrote into the string's bytes.
+		f.eachListTarget(head, steps, postfix, func(ah Node, steps []Node) bool {
+			base, stars, ok := f.targetHead(ah)
+			return ok && f.stringElemTarget(s, ah, base, stars, steps, false)
+		})
+		return
 	}
 	f.checkWalkedTarget(s, head, steps, rhs[0], lhsItems == 0)
 	i := 1
@@ -19982,6 +20004,61 @@ func (f *File) headerCallTarget(t Node) (id Token, steps []Node, ok bool) {
 	return id, steps, slices.ContainsFunc(steps, func(n Node) bool { return n.sym == CallSuffix })
 }
 
+// stringElemTarget refuses a target that is an element of a STRING, which is no
+// storage: `b, s[0] = true, "x"`, `h.name[1] = 'x'`, `s[0], n = two()`. A sole
+// target of one step is left to "cannot index", which says it of a name.
+func (f *File) stringElemTarget(s *Scope, ah Node, base Token, stars int, steps []Node, sole bool) bool {
+	for i, st := range steps {
+		if st.sym != Index || f.indexIsSlice(st) || sole && stars == 0 && len(steps) == 1 {
+			continue
+		}
+		var k Kind
+		known := false
+		if i == 0 && stars == 0 {
+			k, known = f.identKind(s, base)
+		} else if tn, in := f.targetTypeNode(s, base, steps[:i], stars); tn != nil {
+			rt := f.resultType(in, tn)
+			k, known = rt.kind, rt.known
+		}
+		if known && kindCategory(k) == catString {
+			f.err(f.tok(ah.Pos()).Position(), "cannot assign to %s (neither addressable nor a map index expression)", f.sourceSpan(ah.Pos(), st.End()))
+			return true
+		}
+	}
+	return false
+}
+
+// eachListTarget calls fn with each target of an assignment statement -- the head
+// and its steps, then every LhsItem of the postfix -- until fn says stop.
+func (f *File) eachListTarget(head Node, steps []Node, postfix Node, fn func(ah Node, steps []Node) bool) {
+	if fn(head, steps) {
+		return
+	}
+	for n := range it(postfix.ast) {
+		if n.sym != PostfixOp {
+			continue
+		}
+		for item := range it(n.ast) {
+			if item.sym != LhsItem {
+				continue
+			}
+			var ah Node
+			var isteps []Node
+			for c := range it(item.ast) {
+				switch c.sym {
+				case AssignHead:
+					ah = c
+				case Selector, Index, CallSuffix:
+					isteps = append(isteps, c)
+				}
+			}
+			if ah.sym != 0 && fn(ah, isteps) {
+				return
+			}
+		}
+	}
+}
+
 // checkWalkedTarget is checkWalkedTargets for one target: the AssignHead ah, the
 // steps written after it and the value stored. sole says the target is the only
 // one, which is when the one-step shapes are the other checks' to judge.
@@ -19997,24 +20074,8 @@ func (f *File) checkWalkedTarget(s *Scope, ah Node, steps []Node, value Node, so
 	if len(steps) == 0 && stars == 0 {
 		return
 	}
-	// An element of a STRING is no storage, `b, s[0] = true, "x"`, `h.name[1] = 'x'`:
-	// asked of a sole name only, as "cannot index".
-	for i, st := range steps {
-		if st.sym != Index || f.indexIsSlice(st) || sole && stars == 0 && len(steps) == 1 {
-			continue
-		}
-		var k Kind
-		known := false
-		if i == 0 && stars == 0 {
-			k, known = f.identKind(s, base)
-		} else if tn, in := f.targetTypeNode(s, base, steps[:i], stars); tn != nil {
-			rt := f.resultType(in, tn)
-			k, known = rt.kind, rt.known
-		}
-		if known && kindCategory(k) == catString {
-			f.err(f.tok(ah.Pos()).Position(), "cannot assign to %s (neither addressable nor a map index expression)", f.sourceSpan(ah.Pos(), st.End()))
-			return
-		}
+	if f.stringElemTarget(s, ah, base, stars, steps, sole) {
+		return
 	}
 	if sole && stars == 0 && len(steps) == 1 {
 		// checkFieldAssign's or checkIndexAssign's -- but for another package's

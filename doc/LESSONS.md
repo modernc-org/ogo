@@ -1718,6 +1718,20 @@ named alone, the C compiler refusing the void (zeroResultCall, which asked a
 method's results by name and answered false for whatever else it met). The callee is
 typed through whatever steps reach it now (calleeSig), and the sweep of thirteen
 callees by eight positions is refused in every cell, in Go's words.
+The program's 1,600 mutants (gendom and genvdom, 800 each) found one hole: of the
+one Go refused and the compiler took, `part[0], line, more = scpi.Next(line)` stored
+a call's results into a byte of a string, which the statement's rule asked of a list
+of values and not of a call's results (checkWalkedTargets left those to
+checkResultsAssign, which asks types); the rule asked of each target there now, and
+the sweep of its row found every header and a for's post statement taking one too,
+`if s[0] = 'x'; ...` and `for ...; s[0]++ {` -- separate checks again, none asking
+it (stringElemTarget, one helper for all of them). **A STATEMENT IN A HEADER IS THE
+STATEMENT**, again. The 56 Go took and the compiler refused were the rules as
+written: unreachable code (53), a printf verb its argument does not fit, a value
+receiver's field's address returned. Of the 782 both took, 83 printed otherwise
+than Go: 78 a panic's wording, three a deadlock Go detects and the host waits out,
+and two a deferred println -- in the receiving cog, racing main's line, and in the
+String method printf calls, printing mid-line as DIFFERENCES.md says.
 **AN ARRAY RESULT IS A ROW** (2026-09-23). A call returning an array is a STATEMENT in
 C -- the caller hands the callee storage to write -- so every position one stands in
 has to supply that storage, and one probe after another the same afternoon found

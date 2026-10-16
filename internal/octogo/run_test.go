@@ -53642,6 +53642,22 @@ func TestMultiPkgRefusals(t *testing.T) {
 		want  string
 	}{
 		{
+			name: "an element of a string stored into from another package's call",
+			files: map[string]string{
+				"geo/geo.ogo": `func Next(line string) (string, string, bool) { return line, "", false }
+`,
+				"main.ogo": `import "geo"
+
+func main() {
+	part, line, more := "ab", "cd", true
+	part[0], line, more = geo.Next(line)
+	println(part, line, more)
+}
+`,
+			},
+			want: "cannot assign to part[0] (neither addressable nor a map index expression)",
+		},
+		{
 			name: "another package's void function used as a value",
 			files: map[string]string{
 				"geo/geo.ogo": `var N int

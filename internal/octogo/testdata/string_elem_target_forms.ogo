@@ -1,0 +1,56 @@
+// An element of a string is no storage, in every form a target is written in: a
+// list a call's results are stored into, `s[0], n = two()` -- a mutant of a domain
+// program's, `part[0], line, more = scpi.Next(line)` -- and every assignment a
+// header or a for's post holds (stringElemTarget). Each went to the C compiler,
+// which refused the cast it was written as. A byte slice's element is storage.
+
+type H struct{ s string }
+
+var gs = "go"
+
+var ss = []string{"a", "b"}
+
+func two() (byte, int) { return 66, 2 }
+
+func main() {
+	s := "abc"
+	var h H
+	ps := &h
+	bs := []byte("xy")
+	n := 0
+	bs[0], n = two()
+	if bs[1], n = two(); n > 0 {
+	}
+	for n = 0; n < 1; bs[0]++ {
+		n++
+	}
+	// ERROR cannot assign to s\[0\] \(neither addressable nor a map index expression\)
+	s[0], n = two()
+	// ERROR cannot assign to h\.s\[1\] \(neither addressable nor a map index expression\)
+	n, h.s[1] = 2, 66
+	// ERROR cannot assign to ps\.s\[1\] \(neither addressable nor a map index expression\)
+	ps.s[1], n = two()
+	// ERROR cannot assign to gs\[0\] \(neither addressable nor a map index expression\)
+	gs[0], n = two()
+	// ERROR cannot assign to ss\[1\]\[0\] \(neither addressable nor a map index expression\)
+	ss[1][0], n = two()
+	// ERROR cannot assign to s\[0\] \(neither addressable nor a map index expression\)
+	if s[0], n = two(); n > 0 {
+	}
+	// ERROR cannot assign to s\[1\] \(neither addressable nor a map index expression\)
+	if s[1] = 65; n > 0 {
+	}
+	// ERROR cannot assign to s\[0\] \(neither addressable nor a map index expression\)
+	switch s[0], n = 65, 2; n {
+	}
+	// ERROR cannot assign to s\[0\] \(neither addressable nor a map index expression\)
+	for s[0] = 65; n < 0; {
+	}
+	// ERROR cannot assign to s\[0\] \(neither addressable nor a map index expression\)
+	for n = 0; n < 1; s[0]++ {
+	}
+	// ERROR cannot assign to s\[0\] \(neither addressable nor a map index expression\)
+	for n = 0; n < 1; s[0], n = two() {
+	}
+	println(s, h.s, ps.s, gs, ss[1], n, len(bs))
+}

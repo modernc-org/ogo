@@ -165,6 +165,12 @@ shipped section tells a reader on that version that they have behaviour they do 
 
 ### Fixed
 
+- **A byte of a string is refused as a target in every form an assignment takes**,
+  "cannot assign to s[0] (neither addressable nor a map index expression)": stored
+  into from a call's several results, `part[0], line, more = next(line)`, and in an
+  `if`, `switch` or `for` header and a `for` post statement, `for ...; s[0]++ {`.
+  Each went to the C compiler, which refused what ogo wrote.
+
 - **A call of nothing standing where a value is wanted is refused as Go refuses
   it**, "fns[1]() (no value) used as value", whatever reaches the function: an
   element, a field, a pointer, a call's result, `pick()()`, or another package's
