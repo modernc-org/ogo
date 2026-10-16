@@ -1736,6 +1736,38 @@ the 505 distinct ones both took, but two deadlocks Go reports, printed what Go
 prints: 489 at the first load and the ten the loader lost at the second, the other
 four the same noise -- a deferred println in a cog and in a String method, and two
 loops grown to 2^31 passes that the board had not finished when the capture ended.
+A firmware over Spin2 drivers on 2026-10-16 -- the first domain program carrying
+objects of its own: a package whose bodyless functions bind to PUB methods of inline
+PASM driving the CORDIC (QMUL, QDIV after a SETQ, QSQRT), one of Spin2 byte routines
+with a pointer result into its DAT, a generator whose PASM runs on a cog of its own
+serving a mailbox the OctoGo side spins on, a child object beside it, and two
+packages carrying the same counter object, each its own instance; a controller
+computing the generator's increments through the CORDIC package, an interface over
+the counters, a driver goroutine fed from a profile and read over a channel. Built,
+it printed on the board what its Go twin prints, Go functions standing in for the
+objects. Building it found a wall and a fault. The wall: a CRC over a function's
+local buffer was refused, a function a Spin2 object implements being taken to keep
+every pointer it is handed -- right for a driver, wrong for a routine that reads the
+buffer and returns, and Go's own answer for a function without a body is
+`//go:noescape`. The fault: `cordic.DivMod(uint64(rpm*Poles)<<32, d)` was refused
+for a backend warning, "Unable to widen function result", and the warning, read in
+the backend's source (FixupFunccallTypes), was the cause of doc/call-arg-after-expr.c
+a month after its workaround: an argument the compiler computes as a pair of words
+-- every 64-bit operation, a negative constant, a shift by 32 -- is matched word by
+word against the parameters, and every argument after it is converted to the type of
+the parameter after its own. Silent on the board, the host right: a float after `-m`
+arrived converted to an int64, 0 for 2.5; an int32 as the bits of a float; an
+integer constant to a float parameter unconverted -- through a method, an interface,
+a function value and a variadic call, and a 64-bit value receiver is the first
+argument too. The workaround of 2026-08-30 had been written from the symptom it was
+found by, a constant to a 64-bit parameter losing its width, and its table measured
+a float after the expression LAST in its call, where nothing follows to be misread:
+it covered one row of the fault. An operation passed where an argument follows it is
+bound to a variable now (pairArg), as the table's own `t = (0 - m); mix(t, 3)` row
+measured right. **A workaround written from a symptom covers the symptom: the
+backend's source is read for the cause before the workaround is called whole**, and
+**a row measured last in its argument list says nothing of the same argument with
+another after it**.
 **AN ARRAY RESULT IS A ROW** (2026-09-23). A call returning an array is a STATEMENT in
 C -- the caller hands the callee storage to write -- so every position one stands in
 has to supply that storage, and one probe after another the same afternoon found

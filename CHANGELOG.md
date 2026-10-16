@@ -16,6 +16,29 @@ same area is a new entry under **Unreleased**, not an edit to the old one. Amend
 shipped section tells a reader on that version that they have behaviour they do not.
 `git show vX.Y.Z:CHANGELOG.md` is the check.
 
+## Unreleased
+
+### Fixed
+
+- **An argument after a 64-bit operation reached the callee converted to the
+  wrong type, or not at all**, on the board and in silence, the host right: for a
+  `scale(a int64, gain float32, k int64)`, `scale(-m, gain, k)` handed the gain
+  over converted to an integer, 0 for 2.5; `mix(m*2, i, 2.5)` handed the int32 i
+  over as the bits of a float; `kf(m>>1, 3)` the constant 3 unconverted. A 64-bit
+  operation -- a negation, any binary operator, a shift, a negative constant --
+  followed by another argument did this, and so did one where a value receiver of
+  a 64-bit type stands, `(q * 2).Mix(gain, k)` and `Q(-5).Mix(gain, k)`, through a
+  method, an interface, a function value and a variadic call alike. The target's
+  C compiler passes such an operation as a pair of words and then misreads every
+  argument after it; the operation is bound to a variable first now
+  (doc/call-arg-after-expr.c). A constant to a 64-bit parameter, the one form
+  that had been routed around, was right already.
+
+- **A 64-bit value shifted left by 32 passed to a function builds**,
+  `cordic.DivMod(uint64(rpm*poles)<<32, d)`: the target's C compiler warned
+  "Unable to widen function result" about it, though it passed it right, and `ogo
+  build` refused the program as a fault of its own.
+
 ## v0.56.0
 
 ### Language

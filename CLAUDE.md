@@ -1017,6 +1017,10 @@ section. A new finding goes there; the rule it leaves goes here too.
   target reads exactly**.
 - **A fault measured in one statement form is measured in the others: a plain store
   right says nothing of its compound form** (doc/row-call-compound.c).
+- **A workaround written from a symptom covers the symptom: the backend's source is
+  read for the cause before the workaround is called whole**; **a row measured last
+  in its argument list says nothing of the same argument with another after it**
+  (doc/call-arg-after-expr.c).
 - **A warning the backend gives a user's build is a fault until shown harmless**.
   **A run that reads a register nothing wrote can look right by luck: the listing is
   the measure, and a C harness passing a constant after a 64-bit argument is a

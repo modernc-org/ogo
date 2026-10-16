@@ -58,13 +58,65 @@
 // 512, 65535, INT_MAX, 2^31, 2^32 - 1, INT64_MIN -- does this. wideConstArg spells a
 // zero to a 64-bit parameter as the cast.
 //
-// To check, build for the P2 and read the second number: -214 is right.
+// THE CAUSE, read 2026-10-16 in spin2cpp's frontends/types.c (FixupFunccallTypes)
+// after a domain program over Spin2 drivers met a wider form of the fault: an
+// argument the compiler computes as a PAIR of words -- every 64-bit operation, the
+// helper calls int64_add and the rest returning two results, and a shift by 32,
+// which HandleTwoNumerics rewrites into the pair itself -- is typed as a tuple,
+// and the walk over the arguments matches a tuple word by word against the
+// parameters: the pair fills the 64-bit parameter, and the walk then moves on to
+// the parameter after the next one while the next ARGUMENT is still unread. Every
+// argument after the pair is converted to the type of the parameter after its own,
+// or, past the last parameter, to none. The constant above lost its width that
+// way, and every other conversion is lost the same way:
+//
+//	                                    gcc      flexcc -2
+//	f3((0 - m), 2.5f, k)                30493    29993       the float converted to an int64: 2.5 -> 2
+//	f3((0 - m), fl, k)                  30493    29993       a float VARIABLE the same
+//	f4((0 - m), 2.5f, i)                40493    39993
+//	f5((0 - m), i, 2.5f)                50393    838910793   i converted to a float
+//	f7((0 - m), k, fl)                  50293    419430393   <- warned: "expected 5 found 4"
+//	kf((0 - m), 3)                      255      249         3 passed as its bits
+//	f3(m, fl, k)                        30507    30507       a variable is no pair
+//
+// for f3(int64_t a, float b, int64_t c), f4 the same with an int32_t c, f5(int64_t
+// a, int32_t b, float c), f7(int64_t a, int64_t b, float c) and kf(int64_t a,
+// float b), each summing what it is handed in its own decimal digits. Over thirty
+// shapes of the first argument, each followed by a float variable and an int64_t
+// one: a pair is every binary operator, `-m`, and a NEGATIVE constant, `(-5LL)`,
+// which is a negation, `(int64_t)(-5LL)` with it; no pair is a variable, `~m`, a
+// cast of a 32-bit value or of an operation, `(int64_t)(m + 1)`, a dereference, a
+// field, an element, a call, a constant that is not negative, `(int64_t)-5`, a
+// conditional. The shift by 32, `(uint64_t)x << 32`, also warns where nothing
+// follows it, "Unable to widen function result" -- the pair's first word is the
+// literal 0, a long -- and is passed right there.
+//
+// It reached OctoGo as `scale(-m, 3)` and `f(-m, gain, k)` for a float32 gain,
+// every one silent, and as `f(uint64(rpm)<<32, d)`, which the warning refused.
+// WORKED AROUND 2026-10-16 in emitCallArgs and at the receivers (pairArg): an
+// argument to a 64-bit parameter that is an operation, a negative constant
+// included, is bound to a temporary first wherever an argument follows it, and a
+// shift by 32 wherever it stands; so is a 64-bit value receiver, which is the
+// first argument. wideConstArg's spellings stay: through a function pointer a
+// constant is refused without them. Unreported upstream as of this writing.
+//
+// Re-measured the same day at spin2cpp b5993a84 with the carried diffs: the
+// second number is 220, the negation lost, where the table above has garbage --
+// wrong still, and 3LL still right.
+//
+// To check, build for the P2 and read the second number: -214 is right. Each line
+// after the third prints 1 where the call is right; the first, third, fourth and
+// fifth print 0 on the board today, the second 1.
 
 #include <stdio.h>
 #include <stdint.h>
 
 __attribute__((noinline)) int64_t id64(int64_t v) { return v; }
 __attribute__((noinline)) int64_t mix(int64_t a, int64_t b) { return a * 31 + b; }
+__attribute__((noinline)) float idf(float v) { return v; }
+__attribute__((noinline)) int32_t f3(int64_t a, float b, int64_t c) { return (int32_t)a + (int32_t)(b * 2.0f) * 100 + (int32_t)c * 10000; }
+__attribute__((noinline)) int32_t f5(int64_t a, int32_t b, float c) { return (int32_t)a + b * 100 + (int32_t)(c * 2.0f) * 10000; }
+__attribute__((noinline)) int32_t kf(int64_t a, float b) { return (int32_t)(a & 0xff) + (int32_t)(b * 2.0f); }
 
 int main(void) {
 	int64_t m = id64(7);
@@ -74,5 +126,14 @@ int main(void) {
 	printf("%lld\n", a);
 	printf("%lld\n", b);
 	printf("%lld\n", c);
+	int64_t k = id64(3);
+	int32_t i = (int32_t)id64(4);
+	float fl = idf(2.5f);
+	int64_t t = 0 - m;
+	printf("%d f3((0 - m), fl, k)\n", f3((0 - m), fl, k) == 30493);
+	printf("%d f3(t, fl, k)\n", f3(t, fl, k) == 30493);
+	printf("%d f5((0 - m), i, 2.5f)\n", f5((0 - m), i, 2.5f) == 50393);
+	printf("%d f3((-5LL), fl, k)\n", f3((-5LL), fl, k) == 30495);
+	printf("%d kf((0 - m), 3)\n", kf((0 - m), 3) == 255);
 	return 0;
 }

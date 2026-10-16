@@ -1310,6 +1310,76 @@ func boolInt(b bool) int {
 		want: "string 2 1\nslice 2 1\nint64 4 1\nstruct 4 1\nderef 11 1\nfield 9 1\nsecond 5 1\nreceiver 7 1\nvalue 4 1\ncompare 3 2\nsend 4 1\nprint bb 1\n",
 	},
 	{
+		// A 64-bit operation passed where another argument follows it. The
+		// target's C compiler passes the operation as a pair of words and then
+		// converts each later argument to the type of the parameter after its own:
+		// f3(-m, fl, k) handed fl over as an int64, f5(-m, i, fl) i as a float's
+		// bits, kf(-m, 3) the 3 unconverted, a negative constant first, Q(-5).Mix
+		// and (q*2).Mix their receivers alike, each wrong on a P2-EDGE in silence,
+		// the host right; and a shift by 32 anywhere, ku(u<<32, 21) and hi(u<<32),
+		// was a warning ogo build refused (pairArg, doc/call-arg-after-expr.c).
+		name: "an argument after a 64-bit operation",
+		src: `func f3(a int64, b float32, c int64) int32 { return int32(a) + int32(b*2)*100 + int32(c)*10000 }
+
+func f5(a int64, b int32, c float32) int32 { return int32(a) + b*100 + int32(c*2)*10000 }
+
+func kf(a int64, b float32) int32 { return int32(a&0xff) + int32(b*2) }
+
+func kd(a int64, b float64) int32 { return int32(a&0xff) + int32(b*2) }
+
+func ku(a uint64, b float32) int32 { return int32(a>>32) + int32(a&0xff) + int32(b*2) }
+
+func hi(a uint64) uint32 { return uint32(a >> 32) }
+
+type Q int64
+
+func (q Q) Mix(b float32, c Q) int32 { return int32(q) + int32(b*2)*100 + int32(c)*10000 }
+
+type R struct{ n int32 }
+
+func (r *R) Add(a uint64, b float32) int32 { return r.n + int32(a>>32) + int32(b) }
+
+func (r *R) Scale(a int64, b float32) int32 { return r.n + int32(a&0xff) + int32(b*4) }
+
+type Scaler interface {
+	Scale(a int64, b float32) int32
+}
+
+func vsum(a int64, b float32, rest ...float32) int32 {
+	t := int32(a&0xff) + int32(b)
+	for _, r := range rest {
+		t += int32(r)
+	}
+	return t
+}
+
+var m int64 = 7
+
+var u uint64 = 3 << 32
+
+var rr = R{100}
+
+var fn = kd
+
+func main() {
+	k := int64(3)
+	fl := float32(2.5)
+	i := int32(4)
+	println(f3(-m, fl, k), f3(m+1, 2.5, k), f3(-5, fl, -k), f3(m<<32>>32, fl, 8))
+	println(f5(-m, i, fl), f5(m*2, i, 2.5), f5(-1<<40, -i, -fl))
+	println(kf(-m, 3), kf(m>>1, 3), kd(m|1, 5), kd(m^2, 6), fn(m>>1, 5))
+	println(ku(u>>32, 21), ku(u<<32, 21), ku(u>>32<<32, 4), hi(u<<32), hi(uint64(uint32(m))<<32))
+	q := Q(m)
+	q2 := (q * 2).Mix(fl, Q(k))
+	println(q2, Q(-5).Mix(fl, q+1), q.Mix(2.5, -q))
+	var s Scaler = &rr
+	println(rr.Add(u>>32<<32, 4), rr.Add(u>>32, 4), s.Scale(-m, 3), s.Scale(m>>2, 1))
+	println(vsum(-m, 2, 3, 4), vsum(m*3, 5))
+}
+`,
+		want: "30493 30508 -29505 80507\n50393 50414 -50400\n255 9 17 17 13\n45 42 11 0 7\n30514 80495 -69493\n107 104 361 105\n258 26\n",
+	},
+	{
 		// A product of a value the backend propagates to a constant, computed
 		// twice. The backend merges the two into one CORDIC multiply read twice,
 		// and its fold of a constant CORDIC command writes the product into both

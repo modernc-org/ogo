@@ -29584,6 +29584,12 @@ func (e *emitter) emitParenMethod(kids []Node) bool {
 			}
 		case isPtr:
 			recv = "(*" + text + ")"
+		default:
+			// A 64-bit value received is the first argument, and an operation
+			// passed there misleads the C compiler about every argument after it
+			// (pairArg): `(q * 2).Mix(f, k)`. Bound before the arguments are, which
+			// is Go's order.
+			recv = e.pairArg([]string{ct}, 0, len(e.callArgExprs(steps[i+1].ast)) == 0, recv)
 		}
 		args := e.argsCText(cname, steps[i+1].ast)
 		if args != "" {
@@ -38144,7 +38150,10 @@ func (e *emitter) chainReceiver(text, ctype string, addr, wantPtr bool) (string,
 		e.prologue = append(e.prologue, ctype+" "+tmp+" = "+text+";\n")
 		return tmp, true
 	default:
-		return text, true
+		// A 64-bit value received is the first argument, and an operation there,
+		// `Q(-5).Mix(f, k)` passing `(-5LL)`, misleads the C compiler about every
+		// argument after it (pairArg).
+		return e.pairArg([]string{ctype}, 0, false, text), true
 	}
 }
 
@@ -48360,11 +48369,12 @@ func (e *emitter) emitCallArgs(cname string, callSuffix []int32) {
 				e.emit(replayed(i))
 				continue
 			}
+			// A packed slice follows every fixed argument.
 			if lit, ok := e.wideConstArg(params, i, arg); ok {
-				e.emit(lit)
+				e.emit(e.pairArg(params, i, false, lit))
 				continue
 			}
-			e.emitExpr(arg.ast)
+			e.emit(e.pairArg(params, i, false, e.captureC(func() { e.emitExpr(arg.ast) })))
 		}
 		if at != 0 {
 			e.emit(", ")
@@ -48488,7 +48498,7 @@ func (e *emitter) emitCallArgs(cname string, callSuffix []int32) {
 		// temporary is replayed from it, a variable being passed right.
 		if e.deferReplay < 0 || e.deferReplayArgs[i].inline {
 			if lit, ok := e.wideConstArg(params, i, arg); ok {
-				e.emit(lit)
+				e.emit(e.pairArg(params, i, i == len(args)-1, lit))
 				continue
 			}
 		}
@@ -48503,8 +48513,175 @@ func (e *emitter) emitCallArgs(cname string, callSuffix []int32) {
 			}
 			continue
 		}
-		e.emitExpr(arg.ast)
+		e.emit(e.pairArg(params, i, i == len(args)-1, e.captureC(func() { e.emitExpr(arg.ast) })))
 	}
+}
+
+// pairArg is the C of an argument to the parameter i of params, whose C text is
+// text: bound to a temporary first where the target's C compiler would pass it as
+// a pair of words that misleads it, the text itself otherwise.
+//
+// The target's C compiler computes a 64-bit operation -- `-m`, `m + 1`, `m * 2`, a
+// shift, `m & 0xff`, and a negative constant, `(-5LL)`, which is a negation -- as a
+// pair of words, and an argument that is such a pair it matches word by word
+// against the parameters: the pair takes the 64-bit parameter's two words, and the
+// parameters move past the NEXT argument, which is then converted to the type of
+// the parameter after it, or to none. `f(-m, x, k)` for an `f(a int64, b float32,
+// c int64)` handed x over converted to an int64, and the callee read 0 for 2.5;
+// `g(-m, i, 2.5)` for a `g(a int64, b int32, c float32)` handed i over as a float's
+// bits. Measured on a P2-EDGE, nothing warning. A variable, a field, an element, a
+// dereference, a call, a cast and a constant that is not negative are passed as
+// what they are, and so is the pair assigned to a variable, which is what this
+// writes: only where an argument follows, there being nothing after the last to
+// misread. See doc/call-arg-after-expr.c.
+//
+// A shift left by 32 is bound in every position. The compiler rewrites it as the
+// pair it is, the low word zero and the high one the operand's low word, and types
+// that pair by its first word, which against a 64-bit parameter is "Unable to
+// widen function result": code that is right, and a warning ogo build takes for a
+// fault in the C it wrote (backendFault).
+//
+// A call that has more than one argument and an argument that changes anything
+// binds every argument in order (hoistArgs), so a binding here moves nothing ahead
+// of an argument that could change what it reads. The replay of a deferred call
+// reads temporaries and literals that are not negative, and is left as it is.
+func (e *emitter) pairArg(params []string, i int, last bool, text string) string {
+	if i >= len(params) || e.declInit || e.deferReplay >= 0 {
+		return text
+	}
+	if ut := e.underlyingCType(params[i]); ut != "int64_t" && ut != "uint64_t" {
+		return text
+	}
+	if !cShiftLeft32(text) && (last || !cOperatorTop(text)) {
+		return text
+	}
+	return e.hoist(params[i], func() { e.emit(text) })
+}
+
+// cOperatorTop reports whether the C expression text, however parenthesised, is
+// an operation at its top -- a unary minus or a binary operator outside every
+// parenthesis -- rather than an operand: a name, a literal, a field, an element, a
+// dereference, a call or a cast of one. It errs towards saying yes, `(T)-x`
+// included.
+func cOperatorTop(text string) bool {
+	s := cStripParens(text)
+	operand := false // whether what precedes is an operand, making an operator binary
+	for i := 0; i < len(s); i++ {
+		c := s[i]
+		switch {
+		case c == ' ' || c == '\t':
+		case c == '"' || c == '\'':
+			for i++; i < len(s) && s[i] != c; i++ {
+				if s[i] == '\\' {
+					i++
+				}
+			}
+			operand = true
+		case c == '(' || c == '[':
+			// A group: a cast or a parenthesis before an operand, the arguments of
+			// a call or an index after one. Either way an operand ends it.
+			depth := 0
+			for ; i < len(s); i++ {
+				switch s[i] {
+				case '(', '[':
+					depth++
+				case ')', ']':
+					depth--
+				}
+				if depth == 0 {
+					break
+				}
+			}
+			operand = true
+		case strings.HasPrefix(s[i:], "->") || c == '.':
+			if c == '-' {
+				i++
+			}
+			operand = false
+		case c == '-' || c == '+':
+			return true // binary, or a unary minus: an operation either way
+		case strings.IndexByte("*/%<>&|^?!=:~", c) >= 0:
+			if operand || c == '?' || c == '!' {
+				return true
+			}
+			// A unary * or & -- a dereference, an address -- or ~, an operand.
+		default:
+			operand = true
+		}
+	}
+	return false
+}
+
+// cStripParens is the C expression text without the parentheses that enclose all
+// of it.
+func cStripParens(text string) string {
+	s := strings.TrimSpace(text)
+	for len(s) >= 2 && s[0] == '(' && cClosingParen(s) == len(s)-1 {
+		s = strings.TrimSpace(s[1 : len(s)-1])
+	}
+	return s
+}
+
+// cShiftLeft32 reports whether the C expression text is a shift left by the
+// constant 32 at its top, however parenthesised: `(x << 32)`, `((uint64_t)(y) <<
+// 32)`. A looser operator outside every parenthesis -- a comparison, a bitwise or
+// a conditional -- is the top instead, and a later shift is: `x << 32 >> 3` is a
+// shift right.
+func cShiftLeft32(text string) bool {
+	s := cStripParens(text)
+	depth, last := 0, -1
+	for i := 0; i < len(s); i++ {
+		switch c := s[i]; {
+		case c == '(' || c == '[' || c == '{':
+			depth++
+		case c == ')' || c == ']' || c == '}':
+			depth--
+		case c == '"' || c == '\'':
+			for i++; i < len(s) && s[i] != c; i++ {
+				if s[i] == '\\' {
+					i++
+				}
+			}
+		case depth != 0:
+		case strings.HasPrefix(s[i:], "<<=") || strings.HasPrefix(s[i:], ">>="):
+			return false
+		case strings.HasPrefix(s[i:], "<<"):
+			last = i
+			i++
+		case strings.HasPrefix(s[i:], ">>"):
+			last = -1
+			i++
+		case strings.IndexByte("<>=!&|^?:,", c) >= 0:
+			return false
+		}
+	}
+	if last < 0 {
+		return false
+	}
+	return strings.TrimRight(cStripParens(s[last+2:]), "uUlL") == "32"
+}
+
+// cClosingParen is the index of the parenthesis closing the one s begins with, or
+// -1.
+func cClosingParen(s string) int {
+	depth := 0
+	for i := 0; i < len(s); i++ {
+		switch c := s[i]; c {
+		case '(':
+			depth++
+		case ')':
+			if depth--; depth == 0 {
+				return i
+			}
+		case '"', '\'':
+			for i++; i < len(s) && s[i] != c; i++ {
+				if s[i] == '\\' {
+					i++
+				}
+			}
+		}
+	}
+	return -1
 }
 
 // wideConstArg spells a CONSTANT argument to a 64-bit parameter at the parameter's
