@@ -973,6 +973,49 @@ func main() {
 	gofmtCheck(t, want)
 }
 
+// TestFormatArrayLengthSpacing pins the blanks of an array type's length where a
+// composite literal or a conversion begins with the type, `[n + 1]T{...}`: the
+// length is no subscript, and go/printer prints it at depth 1 whatever surrounds
+// the literal -- spaced at the top of a statement and inside a call's arguments
+// alike -- where `ogo fmt` took a subscript's depth and printed p2-11's `[Rows +
+// 1]string{...}` tight. An index beside it keeps its own rule, `x[n+1]`.
+func TestFormatArrayLengthSpacing(t *testing.T) {
+	const in = `const N = 3
+
+var lines = [N+1]string{"a"}
+
+var grid [N+1]int
+
+func f(a, b int) {}
+
+func main() {
+	f(1, len([N + 1]int{}))
+	x := [N*2+1]int{}
+	f(len([N+1]int{}), x[N + 1])
+	y := [N+1]int(x[:N+1])
+	println(lines[0], grid[0], y[0])
+}
+`
+	const want = `const N = 3
+
+var lines = [N + 1]string{"a"}
+
+var grid [N + 1]int
+
+func f(a, b int) {}
+
+func main() {
+	f(1, len([N + 1]int{}))
+	x := [N*2 + 1]int{}
+	f(len([N + 1]int{}), x[N+1])
+	y := [N + 1]int(x[:N+1])
+	println(lines[0], grid[0], y[0])
+}
+`
+	formatCheck(t, in, want)
+	gofmtCheck(t, want)
+}
+
 // TestFormatDocComments pins the doc comments gofmt rewrites: an unindented comment
 // abutting the declaration below it is go/printer's doc comment, its text written
 // as go/doc/comment writes it, a directive such as //go:noescape moved to its end

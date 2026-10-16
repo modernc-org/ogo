@@ -1796,6 +1796,11 @@ The port's condition was read off go/printer's source, and read wrong once: "not
 after an import", where `lastTok` is set to the token ABOUT to be printed before it
 is asked, so the comment left alone is the one above an import. **A variable the
 oracle's source asks is read where it is set, not by its name.**
+Running every source of the tree and of p2-11 through both formatters after the
+port left one difference, p2-11's `[Rows + 1]string{...}`: the formatter gave an
+array type's length a subscript's depth where go/printer prints it with `p.expr`,
+at depth 1, a comment in the code calling it "a subscript position". The sources a
+user keeps are the formatter's corpus as much as the run cases are.
 **AN ARRAY RESULT IS A ROW** (2026-09-23). A call returning an array is a STATEMENT in
 C -- the caller hands the callee storage to write -- so every position one stands in
 has to supply that storage, and one probe after another the same afternoon found

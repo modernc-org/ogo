@@ -38,6 +38,12 @@ shipped section tells a reader on that version that they have behaviour they do 
   taken out. Each had been written as it stood. A comment above an `import` is
   left alone, as gofmt leaves it.
 
+- **`ogo fmt` spaces the length of an array type a composite literal or a
+  conversion begins with as gofmt does**, `[Rows + 1]string{...}`, where it wrote
+  `[Rows+1]` as it writes a subscript: go/printer prints a type's length as an
+  expression of its own, wherever the literal stands. Found in p2-11's sources,
+  every one of which now lays out as gofmt lays it out.
+
 ### Fixed
 
 - **An argument after a 64-bit operation reached the callee converted to the

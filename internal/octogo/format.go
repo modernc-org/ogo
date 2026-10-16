@@ -1877,8 +1877,11 @@ func (f *formatter) tightFactor(n Node, depth int) {
 		switch c.sym {
 		case 0:
 		case Expression:
-			// an array type's length between "[" and "]" -- a subscript position
-			f.tightExpr(c, depth+1)
+			// An array type's length between "[" and "]", `[n + 1]T{...}`: no
+			// subscript but a type's, which go/printer prints with p.expr(x.Len),
+			// at depth 1 whatever surrounds it. Written at a subscript's depth,
+			// p2-11's `[Rows + 1]string{...}` printed tight.
+			f.tightExpr(c, 1)
 		default:
 			f.computeTightOps(c.ast, depth)
 		}
