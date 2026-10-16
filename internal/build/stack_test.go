@@ -6,7 +6,6 @@ package build
 
 import (
 	"bytes"
-	"errors"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -213,8 +212,7 @@ func main() {
 			t.Fatal(err)
 		}
 		cFile := filepath.Join(dir, "prog.c")
-		unmarked := func() ([]byte, error) { return nil, errors.New("not expected to outgrow the cog") }
-		if _, err := compileSized(c.Bytes(), unmarked, cFile, filepath.Join(dir, "prog.binary"), "", filepath.Join(dir, "kept.c"), false, stackAsked, &said, &said); err != nil {
+		if _, err := compileSized(c.Bytes(), nil, cFile, filepath.Join(dir, "prog.binary"), "", filepath.Join(dir, "kept.c"), false, stackAsked, &said, &said); err != nil {
 			return 0, err
 		}
 		built, rerr := os.ReadFile(cFile)

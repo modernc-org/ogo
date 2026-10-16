@@ -1038,6 +1038,13 @@ section. A new finding goes there; the rule it leaves goes here too.
   helpers among them**; **where the backend misreads a spelling everywhere it
   stands, the spelling is changed where it is written, not bound where it is used**
   (shl32C).
+- **A speedup is measured shape by shape on the program that asked for it: a mean
+  hides who pays**; **a source ordered for one lowering is a measure of that
+  lowering, not of the one replacing it**; **a cost written down as the backend's
+  is checked against the C the emitter writes** (switchCaseLabels).
+- **A change that saves registers in one function is asked what it costs in another,
+  and a fallback with one step is asked what a second change needs of it**
+  (compileMarked, plainerC).
 - **A warning the backend gives a user's build is a fault until shown harmless**.
   **A run that reads a register nothing wrote can look right by luck: the listing is
   the measure, and a C harness passing a constant after a 64-bit argument is a

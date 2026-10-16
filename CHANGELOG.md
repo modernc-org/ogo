@@ -28,6 +28,22 @@ shipped section tells a reader on that version that they have behaviour they do 
   assigned. Built past the warning, those programs printed Go's values on a
   P2-EDGE. Found writing fixed-point filters.
 
+### Toolchain
+
+- **A switch on an integer of 32 bits or fewer whose every case is a constant is a
+  C switch**, which the target's C compiler dispatches through a table of jumps
+  where the cases are dense. A case costs the same wherever it is written, as in Go,
+  whose compiler sorts such cases too, and a `fallthrough` no longer writes the next
+  clause's body out again. Measured on a P2-EDGE in p2-11's emulator, whose cases
+  are ordered by a profile: a case that was deep in a chain is up to 18% faster, one
+  written first 2 to 5% slower, and the mean of 51 instruction shapes is unchanged.
+  Any other switch is still a chain of compares, a 64-bit tag among them: the
+  target's C compiler hangs on a switch on a 64-bit value. A program that outgrows
+  a cog's registers is built again with its switches chains, and then without its
+  functions inlined either, so nothing that built before fails to build: the
+  target's compiler gives registers back between a C switch's arms in some
+  functions and fewer in others.
+
 ## v0.56.2
 
 ### Toolchain

@@ -640,10 +640,13 @@ func main() {
 
 // TestBuildInlineFallback holds a build to not failing for having been made
 // faster. Every copy of an inlined function brings the registers of its locals to
-// where it lands, the backend gives none back between the arms of a switch, and a
-// cog has 480 for everything: a program of many small helpers, all called from one
-// function, outgrows them with the helpers marked and fits without. It is built
-// without then, and nothing is said of the first attempt.
+// where it lands, the backend gives none back between the arms of a chain of
+// compares, and a cog has 480 for everything: a program of many small helpers, all
+// called from one function, outgrows them with the helpers marked and fits
+// without. It is built without then, and nothing is said of the first attempt. The
+// arms are a switch with no tag, which is such a chain: a switch of constant cases
+// is a C switch, whose arms the backend does give registers back between, and the
+// same program fits a cog with its helpers marked.
 func TestBuildInlineFallback(t *testing.T) {
 	const helpers = 32
 	var b strings.Builder
@@ -661,9 +664,9 @@ func TestBuildInlineFallback(t *testing.T) {
 
 `, i)
 	}
-	b.WriteString("func step(k, n int) int {\n\tswitch k {\n")
+	b.WriteString("func step(k, n int) int {\n\tswitch {\n")
 	for i := range helpers {
-		fmt.Fprintf(&b, "\tcase %d:\n\t\tn += mix%[1]d(&v[%d], n, %d)\n\t\tn ^= mix%[1]d(&v[%d], k, n)\n", i, i%8, i+1, (i+3)%8)
+		fmt.Fprintf(&b, "\tcase k == %d:\n\t\tn += mix%[1]d(&v[%d], n, %d)\n\t\tn ^= mix%[1]d(&v[%d], k, n)\n", i, i%8, i+1, (i+3)%8)
 	}
 	fmt.Fprintf(&b, "\t}\n\treturn n\n}\n\nfunc main() {\n\tn := int(p2.GetCt() & 1)\n\tfor k := 0; k < %d; k++ {\n"+
 		"\t\tn = step(k, n)\n\t}\n\tprintln(n != 0)\n}\n", helpers)
@@ -697,6 +700,70 @@ func TestBuildInlineFallback(t *testing.T) {
 	unmarked, _ := buildProgram(t, src, "--no-inline")
 	if !bytes.Equal(binary, unmarked) {
 		t.Errorf("the program built is not the one --no-inline builds")
+	}
+}
+
+// TestBuildSwitchFallback holds a build to not failing for its switches either. A
+// switch of constant cases on an integer is a C switch, and the backend gives
+// registers back between a C switch's arms in some functions and fewer in others
+// than between a chain's: testdata/switchfallback is the fuzzer's seed 73 of
+// 2026-10-16, whose main outgrows the cog with its functions marked whatever its
+// switches are, and without the marks still outgrows it with C switches and fits
+// with chains. It is built without the marks and with chains then, as it was built
+// before its switches were C switches, and nothing is said of the attempts.
+func TestBuildSwitchFallback(t *testing.T) {
+	src, err := os.ReadFile(filepath.Join("testdata", "switchfallback", "main.ogo"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	emit := func(opts ...octogo.EmitOption) []byte {
+		dir := t.TempDir()
+		write(t, filepath.Join(dir, "main.ogo"), string(src))
+		pkg, err := octogo.Build(-1, []string{"main.ogo"}, os.DirFS(dir))
+		if err != nil {
+			t.Fatal(err)
+		}
+		var c bytes.Buffer
+		if err := octogo.EmitC(pkg, &c, opts...); err != nil {
+			t.Fatal(err)
+		}
+		return c.Bytes()
+	}
+	compile := func(c []byte) ([]byte, error) {
+		dir := t.TempDir()
+		cFile := filepath.Join(dir, "prog.c")
+		write(t, cFile, string(c))
+		var said bytes.Buffer
+		if _, err := compileC(cFile, filepath.Join(dir, "prog.binary"), "", &said, &said); err != nil {
+			return said.Bytes(), err
+		}
+		b, err := os.ReadFile(filepath.Join(dir, "prog.binary"))
+		if err != nil {
+			t.Fatal(err)
+		}
+		return b, nil
+	}
+
+	// The premise: unmarked, the program outgrows the cog with its C switches, and
+	// it is the switches that do it.
+	switched := emit(octogo.Checked())
+	chained := emit(octogo.Checked(), octogo.SwitchChains())
+	if bytes.Equal(switched, chained) {
+		t.Fatalf("the program has no C switch to fall back from")
+	}
+	if said, err := compile(switched); err == nil {
+		t.Fatalf("the program builds unmarked with its C switches: the fallback to chains is not what built it, and the test needs another program")
+	} else if !outgrewCog(said) {
+		t.Fatalf("the program unmarked with its C switches fails for something else:\n%s", said)
+	}
+	want, err := compile(chained)
+	if err != nil {
+		t.Fatalf("the program unmarked with chains does not build:\n%s", want)
+	}
+
+	binary, _ := buildProgram(t, string(src))
+	if !bytes.Equal(binary, want) {
+		t.Errorf("the program built is not the one unmarked with chains")
 	}
 }
 

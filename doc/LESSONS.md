@@ -1859,6 +1859,44 @@ deferred and started calls, sends, multi-results, `MinInt64 / -1`, shifts past 6
 matching Go, the fixes of the day holding. Printing `string(b)` of a byte slice is
 refused as documented; `%s` of the slice itself is the spelling that needs no
 copy, in Go as here.
+The same night a switch on an integer whose every case is a constant became a C
+switch (switchCaseLabels), asked for by another project that had seen the chain of
+compares in the C and measured on p2-11's emulator, whose decoding is such switches.
+The backend dispatches a dense one through a table, `fle` to bound the index and
+`jmprel` into a row of jumps, and a sparse one through compares; its switch on a
+64-bit value is unbounded and hangs the board (doc/switch-64-bit-tag.c), so those
+stay chains. The emulator came out where it was: its benchmark 0.3% faster, the
+mean of its 51 instruction shapes 0.2%, and the shapes spread from 18% faster
+(`BCS` not taken, deep in its chain) to 5.5% slower (`SOB`, first in its own) --
+the table's two taken jumps, each a refill of the FIFO in hub execution, against a
+first case's one compare. The emulator's switches were ordered by a profile, "the
+ones that come most often are asked for first", which is a measure of the chain and
+not of the table; a hybrid testing the first clause before the table won the first
+cases back and lost the rest, its mean -0.3%. The plain switch stayed for what Go's
+own compiler does (cmd/compile/internal/walk/switch.go sorts constant cases and
+dispatches through a table or a binary search), which makes order no cost, and for
+the fallthrough it no longer copies. The suite found a gain nobody measured for:
+TestBuildInlineFallback's program, thirty-two marked helpers called from the arms
+of one switch, outgrew a cog because the backend gives no register back between the
+arms of a chain, and fits as a C switch, whose arms it does give them back between;
+the test writes its arms as a switch with no tag now, a chain still. And the board
+sweep of the changed seeds found the gain run the other way: seeds 26, 72 and 73
+fitted a cog before and outgrew it with C switches, main holding fifteen locals more
+than it had as chains. The fallback that keeps a program from failing to build for
+having been made faster had one step, the marks; it is a list now (compileMarked,
+plainerC), the switches as chains first and then without the marks, each tried only
+where the one before outgrew and skipped where its C is the C tried, and the three
+seeds build to the binaries they built to before. Seed 73 is the fallback's test:
+it outgrew with its marks before, and the one step left it unmarked and still
+switched, over the limit. **A change that saves registers in one function is asked
+what it costs in another, and a fallback with one step is asked what a second
+change needs of it.** And the journal had it the other way round:
+item (3) of A PROGRAM OF SIZE (2026-09-27) calls a switch's chain of compares the
+backend's, a fact programs are written against -- it was the emitter's, and the
+emulator had been written against it. **A speedup is measured shape by shape on the
+program that asked for it: a mean hides who pays**; **a source ordered for one
+lowering is a measure of that lowering, not of the one replacing it**; **a cost
+written down as the backend's is checked against the C the emitter writes**.
 **AN ARRAY RESULT IS A ROW** (2026-09-23). A call returning an array is a STATEMENT in
 C -- the caller hands the callee storage to write -- so every position one stands in
 has to supply that storage, and one probe after another the same afternoon found

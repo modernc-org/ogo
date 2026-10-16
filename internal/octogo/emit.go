@@ -6124,6 +6124,13 @@ const InlineMark = "OGO_INLINE"
 // the cog's registers.
 func Inline() EmitOption { return func(e *emitter) { e.inline = true } }
 
+// SwitchChains writes every switch as a chain of compares, a switch of constant
+// cases on an integer too, which is otherwise a C switch (switchCaseLabels). The
+// backend gives registers back between a C switch's arms in some functions and
+// fewer in others, so a program can outgrow the cog's registers for its switches,
+// and `ogo build` falls back to the program with chains first.
+func SwitchChains() EmitOption { return func(e *emitter) { e.switchChains = true } }
+
 // TestEntry makes the named function the program's entry point instead of main,
 // which is what a test binary is: the tests and the code under test, entered
 // through a generated runner. A "main" the package under test declares is not
@@ -7692,6 +7699,7 @@ type emitter struct {
 	clock               *clockSetting           // a clock the program asks for, instead of the backend's 160 MHz default
 	release             bool                    // release build: a panic reboots (_reboot) instead of stopping every cog
 	inline              bool                    // mark the small functions for the backend to inline (set by Inline)
+	switchChains        bool                    // write every switch as a chain of compares (set by SwitchChains)
 	calledNames         map[string]int          // how many times each name is written with a "(" after it, in the whole program: its calls and its declarations (see inlineCandidate)
 	usesInline          bool                    // a function was marked, so the C defines the mark (inlineMacro)
 	checks              bool                    // emit runtime bounds / divide-by-zero checks (set by Checked; ogo build enables it by default)
@@ -21671,10 +21679,10 @@ func (e *emitter) emitStatementInner(nodes []Node, ast []int32) {
 		e.emitGo(nodes)
 	case first.sym == 0 && e.f.ch(first.tok) == BREAK:
 		// A labeled break jumps to the named loop's or switch's break-target label.
-		// An unlabeled break in a switch -- lowered to a chain of conditionals, not
-		// a C switch -- jumps past the chain to the switch's end label (a C break
-		// would leave an enclosing loop); in a loop, where switchBreak is "" (cleared
-		// by emitLoopBody), it stays a plain C break. Each end label is emitted only
+		// An unlabeled break in a switch -- lowered to a chain of conditionals, where
+		// a C break would leave an enclosing loop, or to a C switch -- jumps past it
+		// to the switch's end label; in a loop, where switchBreak is "" (cleared by
+		// emitLoopBody), it stays a plain C break. Each end label is emitted only
 		// once a break has referenced it.
 		e.ind()
 		if lbl, ok := e.stmtLabelOperand(nodes); ok {
@@ -26188,8 +26196,9 @@ func (e *emitter) sameStructLayout(a, b string) bool {
 // than a hundred instructions stays a call, and so does a recursive one, and one
 // that leaves through more than one jump to its end, which two early returns are
 // (singleExit writes such a function with one). And `ogo build` falls back to the
-// program without the marks when it outgrows the registers with them, so that no
-// program fails to build for having been made faster.
+// program without the marks when it outgrows the registers with them, its switches
+// chains of compares first (SwitchChains), so that no program fails to build for
+// having been made faster.
 const (
 	inlineBudget = 6
 	inlineCopies = 96
@@ -32775,9 +32784,11 @@ func (e *emitter) rangePtrArrayBase(expr []int32, readsElements bool) (string, a
 	return e.arrayPtrDeref(name), a, true
 }
 
-// emitSwitch emits a switch statement as an if / else-if chain. Case bodies are
-// independent, a fallthrough repeating the next one, and Go case expressions may
-// be non-constant, which a C switch could not express. The shapes handled are:
+// emitSwitch emits a switch statement as an if / else-if chain, or as a C switch
+// where the tag is an integer of 32 bits or fewer and every case a constant
+// (switchCaseLabels). In the chain case bodies are independent, a fallthrough
+// repeating the next one, and Go case expressions may be non-constant, which a C
+// switch could not express. The shapes handled are:
 //
 //	switch x { case a, b: ... }        // value switch:      _t = x;  (_t == a || _t == b)
 //	switch { case cond: ... }          // expression switch: (cond)
@@ -32856,6 +32867,32 @@ func (e *emitter) emitSwitch(ast []int32) {
 		e.labelBreak[srcLabel] = label
 	}
 
+	if labels, ok := e.switchCaseLabels(guardVar, cases); ok {
+		e.emitCSwitch(guardVar, cases, labels)
+	} else {
+		e.emitSwitchChain(guardVar, block, cases)
+	}
+
+	e.switchBreak = savedBreak
+	if e.switchBreakUsed[label] || e.labelUsed[label] {
+		e.ind()
+		e.emit(label + ":;\n")
+	}
+	if srcLabel != "" {
+		delete(e.labelBreak, srcLabel)
+	}
+
+	if block {
+		e.indent--
+		e.ind()
+		e.emit("}\n")
+	}
+}
+
+// emitSwitchChain writes the clauses of a switch on guardVar ("" for an
+// expression switch) as an if / else-if chain, the default clause the trailing
+// else; block says the header opened a block of the statement's own.
+func (e *emitter) emitSwitchChain(guardVar string, block bool, cases []Node) {
 	defaultIdx := -1
 	wrote := false
 	// A case is tested only when every case before it failed, so what its test needs
@@ -32924,21 +32961,88 @@ func (e *emitter) emitSwitch(ast []int32) {
 		e.ind()
 		e.emit("}\n")
 	}
+}
 
-	e.switchBreak = savedBreak
-	if e.switchBreakUsed[label] || e.labelUsed[label] {
+// switchCaseLabels answers the C case labels of a switch on guardVar written as a C
+// switch (emitCSwitch), a list for each clause and none for the default, or false
+// where it is written as a chain: an expression switch, a tag that is no integer of
+// 32 bits or fewer, a case that is no constant, or no case but the default. The
+// target's compiler dispatches a C switch through a table of jumps where its cases
+// are dense, and through compares in their order where they are not, where the
+// chain compares one case after another always: p2-11's decoding of an instruction
+// is switches of eight to sixty-four constant cases on a field of it. Its switch on
+// a 64-bit value jumps through a table it never bounds, by a register nothing
+// wrote, and hangs the board (doc/switch-64-bit-tag.c), so such a tag stays a
+// chain. The labels are the constants folded, which the checker has refused to
+// repeat in one switch. Under SwitchChains every switch is a chain.
+func (e *emitter) switchCaseLabels(guardVar string, cases []Node) ([][]string, bool) {
+	if guardVar == "" || e.switchChains {
+		return nil, false
+	}
+	ct, ok := e.varType(guardVar)
+	if !ok {
+		return nil, false
+	}
+	if w, isInt := cIntWidths[e.underlyingCType(ct)]; !isInt || w > 32 {
+		return nil, false
+	}
+	labels := make([][]string, len(cases))
+	n := 0
+	for i, cc := range cases {
+		exprs, isDefault := e.caseHead(cc.ast)
+		if isDefault {
+			continue
+		}
+		for _, ex := range exprs {
+			v, ok := e.foldConstInt(ex.ast)
+			if !ok {
+				return nil, false
+			}
+			labels[i] = append(labels[i], e.constSpelling(v, ""))
+			n++
+		}
+	}
+	return labels, n != 0
+}
+
+// emitCSwitch writes the clauses of a switch on guardVar as a C switch of the case
+// labels switchCaseLabels answered: each clause where the source has it, the
+// default included, its body a block of its own -- a clause is a scope, and a
+// declaration may not follow a label in C -- and a break after it but where the
+// clause falls through, which C does into the clause written next, as Go's
+// fallthrough does, so the body is not repeated as the chain repeats it. A break in
+// a body is the goto to the switch's end label the chain's is (see emitStatement).
+func (e *emitter) emitCSwitch(guardVar string, cases []Node, labels [][]string) {
+	e.ind()
+	e.emit("switch (" + e.varRef(guardVar) + ") {\n")
+	for i, cc := range cases {
 		e.ind()
-		e.emit(label + ":;\n")
-	}
-	if srcLabel != "" {
-		delete(e.labelBreak, srcLabel)
-	}
-
-	if block {
+		if labels[i] == nil {
+			e.emit("default:")
+		}
+		for j, l := range labels[i] {
+			if j != 0 {
+				e.emit(" ")
+			}
+			e.emit("case " + l + ":")
+		}
+		e.emit(" {\n")
+		e.indent++
+		e.emitCaseBody(cc.ast)
 		e.indent--
 		e.ind()
 		e.emit("}\n")
+		e.ind()
+		if e.clauseFallsThrough(cc.ast) {
+			// What tells the host's compiler the fall is meant, which warns of
+			// every other (-Wimplicit-fallthrough).
+			e.emit("/* fallthrough */\n")
+		} else {
+			e.emit("break;\n")
+		}
 	}
+	e.ind()
+	e.emit("}\n")
 }
 
 // emitTypeSwitchStmt writes a type switch whose guard is guardAST, reporting false

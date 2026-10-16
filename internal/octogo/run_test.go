@@ -1608,6 +1608,312 @@ func main() {
 		want: "1431655765 -15032385536 5 402653184 412316860416 1840700269\n-1840700269 0 54043195528445952 1840700270\n12884901888 7 1.2884902e+10 12884901888 false\n12884901888|30064771072|700000000\n12884901888 12884901888 30064771072 357913941 30064771072 12884901891 12884901887 4\n",
 	},
 	{
+		// A switch on an integer of 32 bits or fewer whose every case is a constant is
+		// a C switch (switchCaseLabels), which the target dispatches through a table of
+		// jumps where the cases are dense: each clause in source order, a fallthrough
+		// into the next label and out of a default that is not last, a break the goto
+		// to the end label, the labels of a narrow, a signed, an unsigned and a defined
+		// tag, the most negative int32, a tag evaluated once, and beside them the shapes
+		// that stay a chain: a case that is no constant, a 64-bit tag, only a default.
+		name: "a switch of constant cases on an integer",
+		src: `type Op uint8
+
+const (
+	OpNop Op = iota
+	OpAdd
+	OpSub
+	OpMul
+	OpHalt = 9
+)
+
+const K = 5
+
+var calls int
+
+func next(v int) int {
+	calls = calls*10 + 1
+	return v
+}
+
+func narrow(v uint16) int {
+	switch v >> 12 {
+	case 0o01, 0o02, 0o06:
+		return 1
+	case 0o00:
+		return 0
+	case 0o07:
+		return 7
+	default:
+		return -1
+	case 0o17:
+		return 15
+	}
+}
+
+func signed(v int8) int {
+	switch v {
+	case -128:
+		return 1
+	case -1, -2:
+		return 2
+	case 127:
+		return 3
+	}
+	return 0
+}
+
+func wide32(v uint32) int {
+	switch v {
+	case 0xFFFFFFFF:
+		return 1
+	case 0x80000000:
+		return 2
+	case 0:
+		return 3
+	}
+	return 4
+}
+
+func min32(v int32) int {
+	switch v {
+	case -2147483648:
+		return 1
+	case 2147483647:
+		return 2
+	}
+	return 3
+}
+
+func op(o Op) int {
+	switch o {
+	case OpNop:
+		return 10
+	case OpAdd, OpSub:
+		return 20
+	case OpMul:
+		return 30
+	case OpHalt:
+		return 90
+	}
+	return -1
+}
+
+func falls(n int) int {
+	r := 0
+	switch n {
+	case 0:
+		r += 1
+		fallthrough
+	case 1:
+		x := 10
+		r += x
+		fallthrough
+	default:
+		x := 100
+		r += x
+		if n == 7 {
+			break
+		}
+		fallthrough
+	case 3:
+		r += 1000
+	case 4:
+		r += 10000
+	}
+	return r
+}
+
+func defaultFirst(n int) int {
+	switch n {
+	default:
+		return 1
+	case 1:
+		return 2
+	case 2:
+	case 3:
+		return 4
+	}
+	return 3
+}
+
+func loops() int {
+	r := 0
+outer:
+	for i := 0; i < 8; i++ {
+		switch i & 3 {
+		case 0:
+			continue
+		case 1:
+			for j := 0; j < 5; j++ {
+				if j == 2 {
+					break
+				}
+				r += 100
+			}
+		case 2:
+			switch i {
+			case 2:
+				r += 7
+				break
+			case 6:
+				break outer
+			}
+			r += 1000
+		case 3:
+			if i == 7 {
+				continue outer
+			}
+			r += 1
+		}
+		r += 10000
+	}
+	return r
+}
+
+func gotos(n int) int {
+	switch n {
+	case 1:
+		goto out
+	case 2:
+		return 2
+	}
+	return 0
+out:
+	return 1
+}
+
+func initTag() int {
+	s := 0
+	switch x := next(3); x {
+	case 1, 2:
+		s = 1
+	case 3:
+		s = x * 11
+	}
+	switch v := next(14); v & 7 {
+	case 6:
+		s += v
+	case 7:
+		s += 1000
+	}
+	return s
+}
+
+func once() int {
+	switch next(K) {
+	case 1:
+		return 1
+	case K:
+		return 5
+	case K + 1, 1 << 3:
+		return 6
+	}
+	return 0
+}
+
+func sparse(n int) int {
+	switch n {
+	case 1:
+		return 1
+	case 1000:
+		return 2
+	case 100000:
+		return 3
+	case -70000:
+		return 4
+	}
+	return 0
+}
+
+func runes(r rune) int {
+	switch r {
+	case 'a', 'e', 'i', 'o', 'u':
+		return 1
+	case 'ž':
+		return 2
+	}
+	return 0
+}
+
+func bytes(s string) int {
+	n := 0
+	for i := 0; i < len(s); i++ {
+		switch s[i] {
+		case ' ':
+		case 'x', 'X':
+			n += 10
+		default:
+			n++
+		}
+	}
+	return n
+}
+
+func nonConst(n, m int) int {
+	switch n {
+	case m:
+		return 1
+	case 2:
+		return 2
+	}
+	return 0
+}
+
+func wide64(v int64) int {
+	switch v {
+	case 0:
+		return 1
+	case 1:
+		return 2
+	case 2:
+		return 3
+	case 3:
+		return 4
+	case 1 << 40:
+		return 5
+	}
+	return 0
+}
+
+func onlyDefault(n int) int {
+	switch n {
+	default:
+		return n + 1
+	}
+}
+
+func twice(p *int) { *p *= 2 }
+
+func deferred(n int) (r int) {
+	switch n {
+	case 1:
+		defer twice(&r)
+		r = 5
+	case 2:
+		r = 7
+	}
+	return r
+}
+
+func main() {
+	println(narrow(0x1000), narrow(0x2abc), narrow(0x0fff), narrow(0x7000), narrow(0xf123), narrow(0x9000), narrow(0x6000))
+	println(signed(-128), signed(-1), signed(-2), signed(127), signed(0))
+	println(wide32(0xFFFFFFFF), wide32(0x80000000), wide32(0), wide32(5))
+	println(min32(-2147483648), min32(2147483647), min32(0))
+	println(op(OpNop), op(OpAdd), op(OpSub), op(OpMul), op(OpHalt), op(4))
+	println(falls(0), falls(1), falls(2), falls(3), falls(4), falls(7))
+	println(defaultFirst(0), defaultFirst(1), defaultFirst(2), defaultFirst(3))
+	println(loops(), gotos(1), gotos(2), gotos(3))
+	println(initTag(), once(), calls)
+	println(sparse(1), sparse(1000), sparse(100000), sparse(-70000), sparse(2))
+	println(runes('a'), runes('u'), runes('ž'), runes('b'), bytes("a xX b"))
+	println(nonConst(3, 3), nonConst(2, 3), nonConst(4, 3), wide64(0), wide64(3), wide64(1<<40), wide64(7))
+	println(onlyDefault(4), deferred(1), deferred(2), deferred(3))
+}
+`,
+		want: "1 1 0 7 15 -1 1\n1 2 2 3 0\n1 2 3 4\n1 2 3\n10 20 20 30 90 -1\n1111 1110 1100 1000 10000 100\n1 2 3 4\n41408 1 2 0\n47 5 111\n1 2 3 4 0\n1 1 2 0 22\n1 2 0 1 4 5 0\n5 10 7 0\n",
+	},
+	{
 		// A product of a value the backend propagates to a constant, computed
 		// twice. The backend merges the two into one CORDIC multiply read twice,
 		// and its fold of a constant CORDIC command writes the product into both

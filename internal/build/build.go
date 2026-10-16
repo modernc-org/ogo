@@ -125,19 +125,26 @@ func compile(args []string, stdout, stderr io.Writer) (binary string, code int, 
 	if err := octogo.EmitC(pkg, &cbuf, markedOpts...); err != nil {
 		return "", 1, err
 	}
-	// The same program with no function marked, should this one outgrow the cog
-	// with them (compileMarked). The package is made again: what emitting it left
-	// in it is the first emission's.
-	unmarked := func() ([]byte, error) {
-		pkg, err := octogo.BuildModule(-1, modulePath, rel, files, fsys)
-		if err != nil {
-			return nil, err
+	// The same program plainer, should this one outgrow the cog (compileMarked):
+	// its switches chains of compares, and then no function marked either. The
+	// package is made again for each: what emitting it left in it is the first
+	// emission's.
+	emitAgain := func(opts ...octogo.EmitOption) func() ([]byte, error) {
+		return func() ([]byte, error) {
+			pkg, err := octogo.BuildModule(-1, modulePath, rel, files, fsys)
+			if err != nil {
+				return nil, err
+			}
+			var c bytes.Buffer
+			if err := octogo.EmitC(pkg, &c, opts...); err != nil {
+				return nil, err
+			}
+			return c.Bytes(), nil
 		}
-		var c bytes.Buffer
-		if err := octogo.EmitC(pkg, &c, emitOpts...); err != nil {
-			return nil, err
-		}
-		return c.Bytes(), nil
+	}
+	plainer := []func() ([]byte, error){
+		emitAgain(append(markedOpts[:len(markedOpts):len(markedOpts)], octogo.SwitchChains())...),
+		emitAgain(append(emitOpts[:len(emitOpts):len(emitOpts)], octogo.SwitchChains())...),
 	}
 
 	if library {
@@ -165,7 +172,7 @@ func compile(args []string, stdout, stderr io.Writer) (binary string, code int, 
 		return "", 2, err
 	}
 	keepC := strings.TrimSuffix(out, filepath.Ext(out)) + ".c"
-	if code, err := compileSized(cbuf.Bytes(), unmarked, cFile, out, root, keepC, flags.allowWarnings, flags.goStack != 0, stdout, stderr); err != nil {
+	if code, err := compileSized(cbuf.Bytes(), plainer, cFile, out, root, keepC, flags.allowWarnings, flags.goStack != 0, stdout, stderr); err != nil {
 		return "", code, err
 	}
 	return out, 0, nil
@@ -180,8 +187,8 @@ func compile(args []string, stdout, stderr io.Writer) (binary string, code int, 
 // cog's deepest stack does not fit in Hub RAM beside its code and data is told so,
 // the binary removed: the stack grows into whatever lies past the top, without a
 // word.
-func compileSized(c []byte, unmarked func() ([]byte, error), cFile, out, inc, keepC string, allowWarnings, stackAsked bool, stdout, stderr io.Writer) (int, error) {
-	if code, err := compileMarked(c, unmarked, cFile, out, inc, keepC, allowWarnings, stdout, stderr); err != nil {
+func compileSized(c []byte, plainer []func() ([]byte, error), cFile, out, inc, keepC string, allowWarnings, stackAsked bool, stdout, stderr io.Writer) (int, error) {
+	if code, err := compileMarked(c, plainer, cFile, out, inc, keepC, allowWarnings, stdout, stderr); err != nil {
 		return code, err
 	}
 	built, err := os.ReadFile(cFile)
@@ -218,7 +225,17 @@ func compileSized(c []byte, unmarked func() ([]byte, error), cFile, out, inc, ke
 			return 1, fmt.Errorf("ogo: %s needs a stack of %d longs by the backend's listing, and a goroutine's slot holds %d at most", who, needs.goLongs, hi)
 		}
 		longs := (needs.goLongs + 15) &^ 15
-		if code, err := compileMarked(octogo.WithGoStack(built, longs), unmarked, cFile, out, inc, keepC, allowWarnings, stdout, stderr); err != nil {
+		restacked := make([]func() ([]byte, error), len(plainer))
+		for i, f := range plainer {
+			restacked[i] = func() ([]byte, error) {
+				p, err := f()
+				if err != nil {
+					return nil, err
+				}
+				return octogo.WithGoStack(p, longs), nil
+			}
+		}
+		if code, err := compileMarked(octogo.WithGoStack(built, longs), restacked, cFile, out, inc, keepC, allowWarnings, stdout, stderr); err != nil {
 			return code, err
 		}
 	}
@@ -238,53 +255,67 @@ func compileSized(c []byte, unmarked func() ([]byte, error), cFile, out, inc, ke
 }
 
 // compileMarked writes the C of a program to cFile and compiles it into out. Where
-// the C marks functions for the backend to inline and the program outgrows the
-// cog's registers, it compiles what unmarked answers with instead, the same program
-// with none marked: every copy of an inlined function brings the registers of its
-// locals to where it lands, a cog has 480 for everything, and a program that fits
-// without the marks is not to fail for having been made faster. Nothing is said of
-// the first attempt then; a program that fits neither way is told what the second
-// said, and which of its functions hold the registers (cogHint).
-func compileMarked(c []byte, unmarked func() ([]byte, error), cFile, out, inc, keepC string, allowWarnings bool, stdout, stderr io.Writer) (int, error) {
-	if err := os.WriteFile(cFile, c, 0o644); err != nil {
-		return 1, err
-	}
-	if bytes.Contains(c, []byte(octogo.InlineMark)) {
-		var said, saidErr bytes.Buffer
-		code, err := compileC(cFile, out, inc, &said, &saidErr)
-		if err == nil || !outgrewCog(saidErr.Bytes()) {
-			stdout.Write(said.Bytes())
-			stderr.Write(saidErr.Bytes())
-			if err == nil && !allowWarnings {
-				return backendFault(c, out, keepC, append(said.Bytes(), saidErr.Bytes()...))
-			}
-			if err != nil {
-				return backendRefusal(c, keepC, append(said.Bytes(), saidErr.Bytes()...), code, err)
-			}
-			return code, err
-		}
-		if c, err = unmarked(); err != nil {
-			return 1, err
-		}
+// the program outgrows the cog's registers, it compiles the programs plainer
+// answers instead, in turn, each the same program with less of it made faster: its
+// switches chains of compares, and then none of its functions marked for the
+// backend to inline either. Every copy of an inlined function brings the registers
+// of its locals to where it lands, the backend gives registers back between a C
+// switch's arms in some functions and fewer in others, a cog has 480 for
+// everything, and a program that fits a plainer way is not to fail for having been
+// made faster. A plainer program whose C is the C tried already is not compiled
+// again. Nothing is said of an attempt that outgrew the cog; a program that fits no
+// way is told what the last attempt said, and which of its functions hold the
+// registers (cogHint).
+func compileMarked(c []byte, plainer []func() ([]byte, error), cFile, out, inc, keepC string, allowWarnings bool, stdout, stderr io.Writer) (int, error) {
+	listing := strings.TrimSuffix(out, filepath.Ext(out)) + ".p2asm"
+	for {
 		if err := os.WriteFile(cFile, c, 0o644); err != nil {
 			return 1, err
 		}
-	}
-	listing := strings.TrimSuffix(out, filepath.Ext(out)) + ".p2asm"
-	start := time.Now()
-	var said bytes.Buffer
-	code, err := compileC(cFile, out, inc, io.MultiWriter(stdout, &said), io.MultiWriter(stderr, &said))
-	if err != nil && outgrewCog(said.Bytes()) {
-		fmt.Fprintln(stderr, cogHint(listing, start, programFuncs(c)))
+		start := time.Now()
+		var said, saidErr bytes.Buffer
+		code, err := compileC(cFile, out, inc, &said, &saidErr)
+		all := append(said.Bytes(), saidErr.Bytes()...)
+		if err != nil && outgrewCog(all) {
+			next, nerr := plainerC(c, &plainer)
+			if nerr != nil {
+				return 1, nerr
+			}
+			if next != nil {
+				c = next
+				continue
+			}
+		}
+		stdout.Write(said.Bytes())
+		stderr.Write(saidErr.Bytes())
+		switch {
+		case err != nil && outgrewCog(all):
+			fmt.Fprintln(stderr, cogHint(listing, start, programFuncs(c)))
+			return code, err
+		case err != nil:
+			return backendRefusal(c, keepC, all, code, err)
+		case !allowWarnings:
+			return backendFault(c, out, keepC, all)
+		}
 		return code, err
 	}
-	if err != nil {
-		return backendRefusal(c, keepC, said.Bytes(), code, err)
+}
+
+// plainerC answers the first program of plainer whose C is not c, taking the ones
+// it tried off the list, or nil where none is left.
+func plainerC(c []byte, plainer *[]func() ([]byte, error)) ([]byte, error) {
+	for len(*plainer) != 0 {
+		next := (*plainer)[0]
+		*plainer = (*plainer)[1:]
+		p, err := next()
+		if err != nil {
+			return nil, err
+		}
+		if !bytes.Equal(p, c) {
+			return p, nil
+		}
 	}
-	if !allowWarnings {
-		return backendFault(c, out, keepC, said.Bytes())
-	}
-	return code, err
+	return nil, nil
 }
 
 // backendRefusal is backendFault for a build the backend REFUSED: the C ogo wrote

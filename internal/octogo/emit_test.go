@@ -1104,9 +1104,9 @@ func main() {
 	}
 }
 
-// TestEmitCSwitch pins a value switch: it lowers to an if / else-if chain (OctoGo
-// has no fallthrough), a case list becomes an OR of equality tests, and default
-// becomes the trailing else.
+// TestEmitCSwitch pins a value switch of constant cases on an int: it lowers to a C
+// switch, a case list to labels in a row, each clause a block and a break after
+// it, and default where it is written.
 func TestEmitCSwitch(t *testing.T) {
 	src := `func main() {
 	var x int = 2
@@ -1135,12 +1135,19 @@ func TestEmitCSwitch(t *testing.T) {
 		"#include <stdio.h>\n\n" +
 		"int main(void) {\n" +
 		"\tint x = 2;\n" +
-		"\tif (x == 1 || x == 2) {\n" +
+		"\tswitch (x) {\n" +
+		"\tcase 1: case 2: {\n" +
 		"\t\tprintf(\"%d\\n\", 10);\n" +
-		"\t} else if (x == 3) {\n" +
+		"\t}\n" +
+		"\tbreak;\n" +
+		"\tcase 3: {\n" +
 		"\t\tprintf(\"%d\\n\", 30);\n" +
-		"\t} else {\n" +
+		"\t}\n" +
+		"\tbreak;\n" +
+		"\tdefault: {\n" +
 		"\t\tprintf(\"%d\\n\", 0);\n" +
+		"\t}\n" +
+		"\tbreak;\n" +
 		"\t}\n" +
 		"\treturn 0;\n" +
 		"}\n"
@@ -1183,8 +1190,11 @@ func TestEmitCSwitchGuard(t *testing.T) {
 		"\tint n = 7;\n" +
 		"\t{\n" +
 		"\t\tint v = n;\n" +
-		"\t\tif (v == 7) {\n" +
+		"\t\tswitch (v) {\n" +
+		"\t\tcase 7: {\n" +
 		"\t\t\tprintf(\"%d\\n\", v);\n" +
+		"\t\t}\n" +
+		"\t\tbreak;\n" +
 		"\t\t}\n" +
 		"\t}\n" +
 		"\tif (n < 3) {\n" +

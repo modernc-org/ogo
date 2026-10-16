@@ -219,8 +219,10 @@ statements at most -- six in sixteen places, one in ninety-six. A call costs wha
 forty or fifty instructions do on this target, so a one-line method is several
 times faster for it, and the program a copy larger at each call. --no-inline
 leaves it to the C backend, which inlines what is smaller still and nothing with
-a runtime check in it. A program that outgrows a cog's registers with its
-functions inlined is built without, and nothing is said.
+a runtime check in it. A switch of constant cases on an integer is a C switch,
+which the C backend dispatches through a table of jumps where the cases are dense.
+A program that outgrows a cog's registers is built again with its switches chains
+of compares, and then without its functions inlined either, and nothing is said.
 
 The C ogo writes is meant to build without a word from the C backend, so a
 warning about it is a fault of ogo's, and so far every kind that reached a build

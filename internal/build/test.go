@@ -443,23 +443,32 @@ func testPackage(dir string, opts testOptions, stdout, stderr io.Writer) (int, e
 	defer os.RemoveAll(tmp)
 	cFile := filepath.Join(tmp, "ogo_test.c")
 	binary := filepath.Join(tmp, dirPkgName(dir)+".test.binary")
-	unmarked := func() ([]byte, error) {
-		pkg, err := octogo.BuildModule(-1, modulePath, rel, all, overlay)
-		if err != nil {
-			return nil, err
+	// The same program plainer, should it outgrow the cog (compileMarked): its
+	// switches chains of compares, and then no function marked either.
+	emitAgain := func(opts ...octogo.EmitOption) func() ([]byte, error) {
+		return func() ([]byte, error) {
+			pkg, err := octogo.BuildModule(-1, modulePath, rel, all, overlay)
+			if err != nil {
+				return nil, err
+			}
+			var c bytes.Buffer
+			if err := octogo.EmitC(pkg, &c, opts...); err != nil {
+				return nil, err
+			}
+			return c.Bytes(), nil
 		}
-		var c bytes.Buffer
-		if err := octogo.EmitC(pkg, &c, emitOpts...); err != nil {
-			return nil, err
-		}
-		return c.Bytes(), nil
+	}
+	chains := append(emitOpts[:len(emitOpts):len(emitOpts)], octogo.SwitchChains())
+	plainer := []func() ([]byte, error){
+		emitAgain(append(chains[:len(chains):len(chains)], octogo.Inline())...),
+		emitAgain(chains...),
 	}
 	root, err := buildRoot(dir)
 	if err != nil {
 		return 2, err
 	}
 	keepC := filepath.Join(dir, dirPkgName(dir)+".test.c")
-	if code, err := compileSized(cbuf.Bytes(), unmarked, cFile, binary, root, keepC, opts.allowWarnings, opts.stackAsked, stdout, stderr); err != nil {
+	if code, err := compileSized(cbuf.Bytes(), plainer, cFile, binary, root, keepC, opts.allowWarnings, opts.stackAsked, stdout, stderr); err != nil {
 		return code, err
 	}
 	if compileOnly {
