@@ -16,7 +16,7 @@ same area is a new entry under **Unreleased**, not an edit to the old one. Amend
 shipped section tells a reader on that version that they have behaviour they do not.
 `git show vX.Y.Z:CHANGELOG.md` is the check.
 
-## Unreleased
+## v0.56.1
 
 ### Language
 
@@ -29,6 +29,15 @@ shipped section tells a reader on that version that they have behaviour they do 
   compiler directive", and above a function with a body "can only use
   //go:noescape with external func implementations". With a space, `//
   go:noescape`, it is a comment.
+
+### Behaviour changes
+
+- **A `//go:noescape` that stands where gc refuses one is refused**, in gc's
+  words: above a declaration other than a function's, inside a body or after code
+  on its line, "misplaced compiler directive", and above a function with a body,
+  "can only use //go:noescape with external func implementations". The comment
+  had meant nothing before, so a program carrying one out of place, which Go would
+  not build, built.
 
 ### Toolchain
 
