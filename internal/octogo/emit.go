@@ -17950,13 +17950,6 @@ func (e *emitter) funcValueWrapper(cname string) (string, bool) {
 	return wrapper, true
 }
 
-// mustVarType is varType for a name already known to be a variable, for the one
-// place that needs the type only to name what it is refusing.
-func (e *emitter) mustVarType(name string) string {
-	ct, _ := e.varType(name)
-	return ct
-}
-
 // emMethodExpr is a METHOD EXPRESSION as the emitter reads it, `T.M` or `(*T).M`:
 // the method member of the type whose C name is typeC, its receiver a *typeC with
 // ptr, and the steps written after the method's name.
