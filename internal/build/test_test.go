@@ -148,6 +148,21 @@ func TestOgoTestPattern(t *testing.T) {
 	if i, j := strings.Index(got, "plain"), strings.Index(got, "ring"); i > j {
 		t.Errorf("output:\n%s\nwant plain before ring", got)
 	}
+
+	// Under an ogo.mod every package's line names it by its import path, the
+	// built one's as the one without tests.
+	write(t, filepath.Join(root, "ogo.mod"), "module example.com/proj\n")
+	out.Reset()
+	errb.Reset()
+	if code, err := Test([]string{"-c", filepath.Join(root, "...")}, nil, &out, &errb); err != nil || code != 0 {
+		t.Fatalf("ogo test -c ./... in a module: code=%d err=%v\nstdout:\n%s\nstderr:\n%s", code, err, out.String(), errb.String())
+	}
+	got = out.String()
+	for _, want := range []string{"?   \texample.com/proj/plain\t[no test files]", "ok  \texample.com/proj/ring\t[built 2 tests, not run]"} {
+		if !strings.Contains(got, want) {
+			t.Errorf("output:\n%s\nwant a line containing %q", got, want)
+		}
+	}
 }
 
 // TestOgoTestPatternMatchesNothing: a pattern that matches no package is an error,

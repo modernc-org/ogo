@@ -86,8 +86,8 @@ shipped section tells a reader on that version that they have behaviour they do 
   names it by its import path where an `ogo.mod` says what the module is, ending
   with the time the run took on the board, the load left out:
   `ok  example.com/rheo/src 0.016s`. A package without test files is
-  `? example.com/rheo/x [no test files]`, as go test says it. A reader of go
-  test's output -- go-junit-report, an editor's test view -- reads ogo test's as it
+  `? example.com/rheo/x [no test files]`, as go test says it, and one built
+  with `-c` is named so too. A reader of go test's output -- go-junit-report, an editor's test view -- reads ogo test's as it
   reads go test's; it read no times and no package line it knew.
 
 - **The C backend carries two fixes of its own**, regenerated the same day at the

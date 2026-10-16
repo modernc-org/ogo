@@ -471,7 +471,7 @@ func testPackage(dir string, opts testOptions, stdout, stderr io.Writer) (int, e
 		if len(benches) != 0 {
 			built += fmt.Sprintf(" and %d benchmark%s", len(benches), plural(len(benches)))
 		}
-		fmt.Fprintf(stdout, "ok  \t%s\t[built %s, not run]\n", dir, built)
+		fmt.Fprintf(stdout, "ok  \t%s\t[built %s, not run]\n", importPath(dir, rel, modulePath), built)
 		return 0, nil
 	}
 
