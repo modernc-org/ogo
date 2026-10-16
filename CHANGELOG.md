@@ -18,6 +18,26 @@ shipped section tells a reader on that version that they have behaviour they do 
 
 ## Unreleased
 
+### Language
+
+- **`//go:noescape` above a function a Spin2 object implements says its method
+  keeps nothing it is handed**, as Go's directive says it of a function its
+  assembly implements: a local buffer may go to a checksum or a copy written in
+  PASM, `crc8(&buf[0], n)`, which was refused as kept by a driver's cog. The
+  compiler takes the directive's word, as gc does; what a goroutine is handed is
+  asked as before. Anywhere else the directive is refused in gc's words, "misplaced
+  compiler directive", and above a function with a body "can only use
+  //go:noescape with external func implementations". With a space, `//
+  go:noescape`, it is a comment.
+
+### Toolchain
+
+- **`ogo fmt` writes a doc comment as gofmt does**: its text as go/doc/comment
+  writes it -- an indented line set off as code, a list's items -- a directive
+  moved to its end behind a `//` line, and a doc comment of nothing but `//` lines
+  taken out. Each had been written as it stood. A comment above an `import` is
+  left alone, as gofmt leaves it.
+
 ### Fixed
 
 - **An argument after a 64-bit operation reached the callee converted to the

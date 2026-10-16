@@ -1391,6 +1391,14 @@ func formatFile(fn string, b []byte, broken map[int32]bool) (out []byte, long []
 					syntheticSep = syntheticSep[:0]
 				}
 
+				// A doc comment is written as gofmt writes one, ahead of a token
+				// that is no identifier and no `import` (go/printer's
+				// intersperseComments, whose lastTok is the token about to be
+				// printed when it asks; docCommentSep).
+				if t := Symbol(tok.Ch); t != IDENT && t != IMPORT && t != EOF && t != SEMICOLON {
+					sep = docCommentSep(sep, f.prevTok == 0)
+				}
+
 				seps = f.parseSep(sep, seps)
 				if len(seps) == 0 {
 					seps = append(seps, whiteSpace(0))

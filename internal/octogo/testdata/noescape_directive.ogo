@@ -1,0 +1,40 @@
+// The //go:noescape directive belongs on a line of its own above a function
+// declared without a body, implemented by a .spin2 file of its package. gc
+// refuses it, in these words, wherever else it stands, and so does the checker.
+
+// Doc comments may stand around it.
+//go:noescape
+// ERROR "can only use //go:noescape with external func implementations"
+func withBody(p *int) {}
+
+type T int
+
+//go:noescape
+
+// ERROR "can only use //go:noescape with external func implementations"
+func (T) method(p *int) {}
+
+// ERROR "misplaced compiler directive"
+//go:noescape
+var v int
+
+// ERROR "misplaced compiler directive"
+var w int //go:noescape
+
+// go:noescape, with a space, is a comment and no directive.
+func spaced(p *int) {}
+
+/* //go:noescape in a block comment is none either */
+func blocked(p *int) {}
+
+func main() {
+	x := 1
+	// ERROR "misplaced compiler directive"
+	//go:noescape
+	withBody(&x)
+	spaced(&x)
+	blocked(&x)
+	var t T
+	t.method(&x)
+	println(v + w)
+}

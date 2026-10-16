@@ -1917,6 +1917,24 @@
 // refused, as it is by a function storing its parameter in a package variable; a
 // package variable's address is not.
 //
+// A function whose method keeps nothing it is handed past the call -- a routine
+// that reads a buffer and returns, a checksum, a copy -- says so as a Go function
+// its assembly implements says it, with the directive //go:noescape on a line of
+// its own among the comments above the declaration:
+//
+//	//go:noescape
+//	func crc8(p *byte, n int32) uint8
+//
+// and a local's address may be handed to it, directly or through a function
+// passing it on. The compiler takes the directive's word, as Go's does: a method
+// that keeps the pointer after all -- a driver's cog reading it once the function
+// has returned -- reads storage that is no longer the local's. What a goroutine is
+// handed is asked as it always is, "go crc8(&buf[0], n)" refused for a local buf.
+// The directive anywhere else is refused in gc's words: above a function with a
+// body, "can only use //go:noescape with external func implementations", and above
+// another declaration, inside a body or after code on its line, "misplaced compiler
+// directive". `// go:noescape`, with a space, is a comment.
+//
 // The object is compiled by the P2's C compiler, which imports it into the C of the
 // program, one instance for the whole program. `ogo build` has it read the object,
 // and whatever the object names in turn, from the directory the build reads its

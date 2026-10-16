@@ -325,6 +325,28 @@ func (t Token) Sep() string {
 	return string(s.buf[s.toks[t.index].sep:s.toks[t.index].src])
 }
 
+// sepPosition reports the position of the byte off bytes into t's separator.
+func (t Token) sepPosition(off int) (r token.Position) {
+	s := t.source
+	if s == nil {
+		return r
+	}
+
+	return token.Position(s.file.PositionFor(mtoken.Pos(s.toks[t.index].sep+int32(off)+int32(s.file.Base())), true))
+}
+
+// sepBeginsLine reports whether a line begins where t's separator does: at the
+// start of the source, or after a newline the token before it ended with.
+func (t Token) sepBeginsLine() bool {
+	s := t.source
+	if s == nil {
+		return false
+	}
+
+	o := s.toks[t.index].sep
+	return o == 0 || s.buf[o-1] == '\n'
+}
+
 // SepBytes returns the separator preceding t. The
 // result must not be mutated.
 func (t Token) SepBytes() []byte {

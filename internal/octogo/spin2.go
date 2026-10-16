@@ -39,8 +39,118 @@ type spin2Method struct {
 // spin2Binding is a function declared without a body, bound to the Spin2 method
 // implementing it.
 type spin2Binding struct {
-	obj    *spin2Object
-	method *spin2Method
+	obj      *spin2Object
+	method   *spin2Method
+	noescape bool // declared under //go:noescape: the method keeps nothing it is handed past the call
+}
+
+// noescapeDirective is Go's word for a function its assembly implements that keeps
+// nothing it is handed: none of the pointers passed to it escapes into the heap or
+// into its results (cmd/compile, "Compiler Directives"). Here it says of a function
+// a Spin2 object implements that the method keeps no pointer past the call -- a
+// routine that reads a buffer and returns, where a driver's cog would keep it -- so
+// a local's address may be handed to it (seedSpin2Cross). It is written as Go
+// writes it, on a line of its own among the comments above the declaration.
+const noescapeDirective = "//go:noescape"
+
+// noescapes reads the //go:noescape directives of a token's separator, sep: the
+// offset of each in it, and whether it begins a line -- nothing but blanks before
+// it since a newline, or since the separator's start where begins says a line
+// begins there. A directive after code on its line belongs to that line's
+// declaration, as gc reads one. Comments are read as comments: a block comment
+// holds no directive, and `// go:noescape`, with a space, is no directive at all.
+func noescapes(sep string, begins bool) (offs []int, lineStart []bool) {
+	atLine := begins
+	for i := 0; i < len(sep); {
+		switch c := sep[i]; {
+		case c == '\n':
+			atLine = true
+			i++
+		case c == ' ' || c == '\t' || c == '\r':
+			i++
+		case strings.HasPrefix(sep[i:], "/*"):
+			end := strings.Index(sep[i+2:], "*/")
+			if end < 0 {
+				return offs, lineStart
+			}
+			i += end + 4
+			atLine = false
+		case strings.HasPrefix(sep[i:], "//"):
+			end := strings.IndexByte(sep[i:], '\n')
+			if end < 0 {
+				end = len(sep) - i
+			}
+			if text := sep[i : i+end]; text == noescapeDirective || strings.HasPrefix(text, noescapeDirective) && strings.ContainsRune(" \t\r", rune(text[len(noescapeDirective)])) {
+				offs = append(offs, i)
+				lineStart = append(lineStart, atLine)
+			}
+			i += end
+		default:
+			i++
+			atLine = false
+		}
+	}
+	return offs, lineStart
+}
+
+// funcKeyword is the `func` token beginning a function's or a method's
+// declaration, decl.
+func (f *File) funcKeyword(decl Node) (Token, bool) {
+	for c := range it(decl.ast) {
+		if c.sym == 0 {
+			return f.tok(c.tok), f.ch(c.tok) == FUNC
+		}
+	}
+	return Token{}, false
+}
+
+// noescapeOf reports whether a function's or a method's declaration, decl, stands
+// under the //go:noescape directive.
+func (f *File) noescapeOf(decl Node) bool {
+	tok, ok := f.funcKeyword(decl)
+	if !ok {
+		return false
+	}
+	_, starts := noescapes(tok.Sep(), tok.sepBeginsLine())
+	return slices.Contains(starts, true)
+}
+
+// checkDirectives refuses a //go:noescape standing anywhere but on a line of its
+// own above a function's or a method's declaration -- before another declaration,
+// in a body, after code on its line -- in gc's words, "misplaced compiler
+// directive", at the directive's name, where gc reports it. root is the file's
+// SourceFile.
+func (f *File) checkDirectives(root Node) {
+	funcToks := map[int]bool{}
+	for n := range it(root.ast) {
+		if n.sym != TopLevelDecl {
+			continue
+		}
+		for d := range it(n.ast) {
+			if d.sym != FuncDecl {
+				continue
+			}
+			for c := range it(d.ast) {
+				if c.sym == 0 {
+					funcToks[int(c.tok)] = true
+					break
+				}
+			}
+		}
+	}
+	for i := 0; i < f.parser.sc.Len(); i++ {
+		tok := f.parser.sc.Token(i)
+		sep := tok.Sep()
+		if !strings.Contains(sep, noescapeDirective) {
+			continue
+		}
+		offs, starts := noescapes(sep, tok.sepBeginsLine())
+		for j, off := range offs {
+			if !starts[j] || !funcToks[i] {
+				f.err(tok.sepPosition(off+2), "misplaced compiler directive")
+			}
+		}
+	}
 }
 
 // spin2Pub matches a PUB method's declaration on a line cleared of comments and
@@ -122,8 +232,9 @@ func spin2Count(list string) int {
 // method takes and returns 32-bit longs, so a variadic parameter and a second
 // result are refused; which types a long may carry is the emitter's to say, where
 // the C of the function's prototype is known. The embedded packages' bodyless
-// functions are the emitter's intrinsics, and are left alone.
-func (f *File) bindSpin2(n Node, isMethod bool, sig *SignatureNode) {
+// functions are the emitter's intrinsics, and are left alone. noescape says the
+// declaration stands under //go:noescape (noescapeDirective).
+func (f *File) bindSpin2(n Node, isMethod bool, sig *SignatureNode, noescape bool) {
 	p := f.Package
 	if p == nil || sig == nil {
 		return
@@ -165,6 +276,7 @@ func (f *File) bindSpin2(n Node, isMethod bool, sig *SignatureNode) {
 		return
 	}
 	b := found[0]
+	b.noescape = noescape
 	params, results, variadic := 0, 0, false
 	if sig.Params != nil {
 		for _, d := range sig.Params.List {
@@ -295,19 +407,29 @@ func (e *emitter) emitSpin2Func(ast []int32, name string, sig []int32, b *spin2B
 // stores its parameter in a package variable; a package variable's address is not:
 // it is a local that dangles. The summary is seeded before the fixed point
 // (closeCrossParams) and has no edges of its own, there being no body to read.
+//
+// A function declared under //go:noescape keeps nothing, on the declaration's word,
+// as gc takes it of a function its assembly implements: a checksum over a local
+// buffer, `crc8(&buf[0], n)`, was refused for a driver's reason. Its call ends
+// where the method returns, so the rules about what a goroutine is handed still
+// ask `go crc8(&buf[0], n)` themselves.
 func (e *emitter) seedSpin2Cross(d []int32) {
 	name, sig, body, recv, ok := e.funcParts(d)
 	if !ok || body != nil || recv != nil || e.f.Package.spin2Funcs[name] == nil {
 		return
 	}
 	cname := e.mangle(e.curPkgPrefix, name)
+	keeps := leakCog | leakGlobal
+	if e.f.Package.spin2Funcs[name].noescape {
+		keeps = 0
+	}
 	var kept []leak
 	for n := range it(sig) {
 		if n.sym != ParameterList {
 			continue
 		}
 		e.forEachParam(n.ast, func(string, []int32, bool) {
-			kept = append(kept, leakCog|leakGlobal)
+			kept = append(kept, keeps)
 		})
 	}
 	e.crossParams[cname] = kept

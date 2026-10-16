@@ -235,6 +235,66 @@ func run() {
 }
 func main() { run() }
 `, `cannot pass the address of local variable ps to a goroutine`},
+		{"noescape: a local's address", `//go:noescape
+func start(p *[16]uint32) int
+func run() {
+	var ps [16]uint32
+	println(start(&ps))
+}
+func main() { run() }
+`, ""},
+		{"noescape: through a relay, deferred, a slice's element", `// start reads p and returns.
+//go:noescape
+
+// It keeps nothing.
+func start(p *[16]uint32) int
+func relay(p *[16]uint32) int { return start(p) }
+func first(b []uint32) int { return start((*[16]uint32)(b[:16])) }
+func run() {
+	var ps [16]uint32
+	println(relay(&ps), first(ps[:]))
+	defer start(&ps)
+}
+func main() { run() }
+`, ""},
+		{"noescape: on a cog still", `//go:noescape
+func start(p *[16]uint32) int
+func run() {
+	var ps [16]uint32
+	go start(&ps)
+}
+func main() { run() }
+`, `cannot pass the address of local variable ps to a goroutine`},
+		{"noescape: stored by its caller still", `//go:noescape
+func start(p *[16]uint32) int
+var kept *[16]uint32
+func keep(p *[16]uint32) int {
+	kept = p
+	return start(p)
+}
+func run() {
+	var ps [16]uint32
+	println(keep(&ps))
+}
+func main() { run() }
+`, `cannot pass the address of local variable ps to keep`},
+		{"noescape: with a space, no directive", `// go:noescape
+func start(p *[16]uint32) int
+func run() {
+	var ps [16]uint32
+	println(start(&ps))
+}
+func main() { run() }
+`, `cannot pass the address of local variable ps to start: its parameter 1 reaches another cog`},
+		{"noescape: on another function", `//go:noescape
+func add(a, b int) int
+func start(p *[16]uint32) int
+func run() {
+	var ps [16]uint32
+	println(start(&ps), add(1, 2))
+}
+func main() { run() }
+`, `cannot pass the address of local variable ps to start`},
 		{"a float", `func add(a float32, b int) int
 func main() { println(add(1, 2)) }
 `, `add: a parameter of type float32 does not cross into Spin2`},
@@ -270,8 +330,9 @@ func main() { println(add(true, 2)) }
 }
 
 // spin2Board is a Spin2 object for the board: a method starting PASM on a cog of
-// its own, which increments the long it is handed, and one whose inline PASM runs
-// in the cog calling it.
+// its own, which increments the long it is handed, one whose inline PASM runs in
+// the cog calling it, and one summing the longs it is pointed at and keeping
+// nothing.
 const spin2Board = `VAR
   long cog
 
@@ -288,6 +349,11 @@ PUB popcount(x) : n
         ones    n, x
   end
 
+PUB sum(p, n) : s
+  repeat n
+    s += long[p]
+    p += 4
+
 DAT
         org     0
 entry   rdlong  val, ptra
@@ -299,9 +365,10 @@ val     long    0
 `
 
 // TestOnBoardSpin2 runs a program whose functions a Spin2 object implements, on the
-// board: a cog of PASM incrementing a package variable the program hands it, and
-// inline PASM counting bits in the calling cog. The host's C compiler has no import
-// of a Spin2 object, so this is the one place such a program runs.
+// board: a cog of PASM incrementing a package variable the program hands it,
+// inline PASM counting bits in the calling cog, and a method declared under
+// //go:noescape summing a local array. The host's C compiler has no import of a
+// Spin2 object, so this is the one place such a program runs.
 func TestOnBoardSpin2(t *testing.T) {
 	port := os.Getenv("OGO_BOARD_PORT")
 	if port == "" {
@@ -318,20 +385,28 @@ func start(p *int32) int
 func stop()
 func popcount(x uint32) int
 
+//go:noescape
+func sum(p *int32, n int32) int32
+
+func local() int32 {
+	xs := [4]int32{1, 20, 300, -4000}
+	return sum(&xs[0], 4)
+}
+
 func main() {
 	ok := start(&cell)
 	p2.WaitMs(10)
 	println("started", ok, "cell", cell)
 	stop()
-	println(popcount(0), popcount(1), popcount(0xFF), popcount(0xFFFFFFFF), popcount(0x80000001))
+	println(popcount(0), popcount(1), popcount(0xFF), popcount(0xFFFFFFFF), popcount(0x80000001), local())
 }
 `
 	if err := boardBuildTree(ogo, dir, map[string]string{"main.ogo": src, "drv.spin2": spin2Board}, bin, ""); err != nil {
 		t.Fatal(err)
 	}
-	const want = "started 2 cell 42\n0 1 8 32 2"
+	const want = "started 2 cell 42\n0 1 8 32 2 -3679"
 	for attempt := 1; ; attempt++ {
-		out, matched := boardLoad(ogo, port, bin, "0 1 8 32 2")
+		out, matched := boardLoad(ogo, port, bin, "0 1 8 32 2 -3679")
 		if matched && strings.Contains(strings.ReplaceAll(out, "\r", ""), want) {
 			return
 		}

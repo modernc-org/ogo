@@ -714,6 +714,7 @@ func (f *File) checkBodies(pkg *Scope, n Node) {
 	for _, x := range f.ifaceInits {
 		f.checkImplements(pkg, x.iface, x.value, "variable declaration")
 	}
+	f.checkDirectives(n)
 	for n := range it(n.ast) {
 		if n.sym != TopLevelDecl {
 			continue
@@ -778,13 +779,20 @@ func (f *File) checkFuncBody(pkg *Scope, n Node) {
 	}
 	f.checkGotos(fs)
 	f.reportUnusedLabels()
+	noescape := f.noescapeOf(decl)
 	if !hasBody {
 		// A signature the checker has refused is bound to nothing: what is wrong
 		// with the declaration is said once, where it is.
 		if !sigErrs {
-			f.bindSpin2(n, isMethod, sig)
+			f.bindSpin2(n, isMethod, sig, noescape)
 		}
 		return
+	}
+	if noescape {
+		// gc's words, at the token after `func`, where gc reports them.
+		if tok, ok := f.funcKeyword(decl); ok {
+			f.err(tok.Next().Position(), "can only use %s with external func implementations", noescapeDirective)
+		}
 	}
 	// A function that declares one or more results must not be able to reach the
 	// end of its body without returning a value: the body must end in a

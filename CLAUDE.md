@@ -151,15 +151,13 @@ tests had written their refused shape in main and were moved into a `run()` main
 calls: **a lifetime test writes its refused shape in a function other than main**.
 
 **Later, from the same review** (recorded at the user's request, not scheduled): a
-`go` that reports a cog it could not start instead of panicking; contracts on a
-bodyless Spin2 function's pointer parameters, borrowed for the call or kept, so a
-local buffer may go to a synchronous method; a resource report from `ogo build`
-(Hub RAM by globals, backings, channel cells and stacks; cog stacks and their
-bounds; locks; per-function code size); explicit Load/Store operations beside the
-defined plain accesses; a `tryAppend` name for the ok form of append; stack slots
-sized per goroutine rather than all at the deepest one's; a check at a goroutine
-function's entry that stops an overrun before it writes; and splitting specs.go into
-the rules, the implementation status and the rationale.
+`go` that reports a cog it could not start instead of panicking; a resource report
+from `ogo build` (Hub RAM by globals, backings, channel cells and stacks; cog stacks
+and their bounds; locks; per-function code size); explicit Load/Store operations
+beside the defined plain accesses; a `tryAppend` name for the ok form of append;
+stack slots sized per goroutine rather than all at the deepest one's; a check at a
+goroutine function's entry that stops an overrun before it writes; and splitting
+specs.go into the rules, the implementation status and the rationale.
 
 **A program ends as Go's does, every cog with it** (the user's call, 2026-10-07): a
 debug build's panic stops every other cog and then its own (panicHaltC), and a return
@@ -485,7 +483,8 @@ subcommands to `internal/*` packages.
   Go-style automatic semicolon insertion), `check.go` (semantic analysis, the
   largest file), `decl.go`/`type.go`/`value.go`/`const.go` (declarations, the type
   and value model), `format.go` (the `.ogo` pretty-printer behind `ogo fmt`) with
-  `format_table.go` (its alignment: gofmt's tabwriter, emulated).
+  `format_table.go` (its alignment: gofmt's tabwriter, emulated) and
+  `format_doc.go` (a doc comment as go/printer's formatDocComment writes it).
 
 - **`internal/format`** — thin `ogo fmt` subcommand wrapper: walks paths, runs
   files through `octogo.FormatFile` concurrently, handles `-l`/`-w`/`-exclude`.
@@ -643,11 +642,15 @@ had it on 2026-10-13"; the sections named in capitals below are its journal's.
   `#error` for the host (`emitSpin2Objects`), and a bound function forwards to the
   method (`emitSpin2Func`); what crosses is an integer of 32 bits or fewer, a bool
   or a pointer (`spin2Crosses`). The method is out of sight and taken to keep what
-  it is handed (`seedSpin2Cross`). `ogo build` and `ogo test` pass the build's root
-  to the backend as `-I`. Tests: TestScanSpin2, TestSpin2Binding, TestSpin2Emit,
-  TestSpin2Refusals (host), TestBuildSpin2 and TestTestSpin2 (the backend),
-  TestOnBoardSpin2. A new way a value reaches the frame is a row of the lifetime
-  matrices, and so is a new way to name a callee.
+  it is handed (`seedSpin2Cross`) -- but under Go's `//go:noescape` (the user's
+  call, 2026-10-16, the review's "contracts" item), which says it keeps nothing, so
+  a local buffer may go to a checksum in PASM: the directive is read off the `func`
+  token's separator (`noescapeOf`) and refused anywhere else in gc's words
+  (`checkDirectives`, `testdata/noescape_directive.ogo`). `ogo build` and `ogo
+  test` pass the build's root to the backend as `-I`. Tests: TestScanSpin2,
+  TestSpin2Binding, TestSpin2Emit, TestSpin2Refusals (host), TestBuildSpin2 and
+  TestTestSpin2 (the backend), TestOnBoardSpin2. A new way a value reaches the frame
+  is a row of the lifetime matrices, and so is a new way to name a callee.
 - **`unsafe.Pointer`** (2026-10-01, asked for by p2-11): `unsafe` is an embedded,
   intrinsic package (`unsafeSrc`) whose `Pointer` is the Kind
   `PredeclaredUnsafePointer` (`unsafePointerDecl`), mixing with nothing but itself
@@ -1035,6 +1038,8 @@ section. A new finding goes there; the rule it leaves goes here too.
   go/printer's and is copied, not derived**; **A formatter test holds its
   expectation against gofmt where there is one**; **a domain program's source
   through both formatters is the formatter's probe**.
+- **A variable the oracle's source asks is read where it is set, not by its name**
+  (go/printer's lastTok, format_doc.go).
 
 ## Notes
 

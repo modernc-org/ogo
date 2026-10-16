@@ -1780,6 +1780,22 @@ interface, and an array of interfaces, had been refused by C the same way, and c
 by table and data now, as two interface values do. **A table read by its value is
 asked by its key, and asked what else it holds: an empty struct's fields are nil,
 and so are an interface's.**
+The wall became the directive the same day, Go's own, `//go:noescape`, on the
+user's call: a function a Spin2 object implements keeps nothing under it, and the
+CRC of the program's local buffer builds and matches Go on the board. Its placement
+is held to gc's, measured case by case -- a blank line between it and the
+declaration, other comments around it and an indented one apply; above another
+declaration, in a body and after code on its line it is "misplaced compiler
+directive"; above a body, "can only use //go:noescape with external func
+implementations"; with a space it is a comment. And it was the formatter's next
+probe: gofmt rewrites every doc comment (go/printer's formatDocComment, its text
+through go/doc/comment and its directives moved last behind a `//` line), which no
+program had shown, their doc comments being canonical prose already -- a golden had
+pinned `//   This is a worker function` as written, where gofmt writes one space.
+The port's condition was read off go/printer's source, and read wrong once: "not
+after an import", where `lastTok` is set to the token ABOUT to be printed before it
+is asked, so the comment left alone is the one above an import. **A variable the
+oracle's source asks is read where it is set, not by its name.**
 **AN ARRAY RESULT IS A ROW** (2026-09-23). A call returning an array is a STATEMENT in
 C -- the caller hands the callee storage to write -- so every position one stands in
 has to supply that storage, and one probe after another the same afternoon found

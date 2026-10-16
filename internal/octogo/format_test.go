@@ -973,6 +973,99 @@ func main() {
 	gofmtCheck(t, want)
 }
 
+// TestFormatDocComments pins the doc comments gofmt rewrites: an unindented comment
+// abutting the declaration below it is go/printer's doc comment, its text written
+// as go/doc/comment writes it, a directive such as //go:noescape moved to its end
+// behind a "//" line, and one of nothing but "//" lines taken out (docCommentSep).
+// `ogo fmt` had written each as it stood, which a program put no differently until
+// the directive came in. A comment trailing the line before is none, nor is one a
+// blank line separates, nor one above an import, which gofmt leaves for cgo.
+func TestFormatDocComments(t *testing.T) {
+	const in = `// Above an import, a cgo preamble's place.
+//
+import "p2"
+
+// Bound to a .spin2 method.
+//go:noescape
+// Keeps nothing.
+func sum(p *int32, n int32) int32
+
+//go:noescape
+func only(p *int32) int32
+
+//
+func a() {}
+
+/* block
+   text */
+func b() {}
+
+// Heading
+//   code
+// - item
+func c() {}
+
+var z int // t
+// w
+//go:noinline
+func e() {}
+
+// x
+//go:noinline
+
+// y
+func f() {}
+
+func main() { println(p2.GetCt() != 0, z) }
+`
+	const want = `// Above an import, a cgo preamble's place.
+//
+import "p2"
+
+// Bound to a .spin2 method.
+// Keeps nothing.
+//
+//go:noescape
+func sum(p *int32, n int32) int32
+
+//go:noescape
+func only(p *int32) int32
+
+func a() {}
+
+/*
+block
+
+	text
+*/
+func b() {}
+
+// Heading
+//
+//	code
+//
+// - item
+func c() {}
+
+var z int // t
+// w
+//
+//go:noinline
+func e() {}
+
+// x
+//go:noinline
+
+// y
+func f() {}
+
+func main() { println(p2.GetCt() != 0, z) }
+`
+	formatCheck(t, in, want)
+	formatCheck(t, want, want)
+	gofmtCheck(t, want)
+}
+
 // gofmtCheck fails where src is not what gofmt makes of it. It checks nothing on
 // a machine with no gofmt.
 func gofmtCheck(t *testing.T, src string) {

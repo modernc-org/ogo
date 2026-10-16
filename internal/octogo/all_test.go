@@ -261,7 +261,7 @@ const testExpected = `import "p2"
 
 var globalCount int = 1 + 2
 
-//   This is a worker function
+// This is a worker function
 func blinkWorker(rateChan chan int) {
 	delay := <-rateChan
 	for {
