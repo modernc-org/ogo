@@ -1417,6 +1417,155 @@ func main() {
 		want: "868 829 847 1463733303 3663\n85 91 14 98\n140 140\n",
 	},
 	{
+		// A function value's 64-bit result read in an operation, `w(x) + 1`,
+		// `w(x) >> 32`, `u(x) % 7`, `hh.f(x) >> 32`, `pick()(x) + 2`: the target's C
+		// compiler reads such a result as one word where the callee is a pointer a
+		// call returns, as a checked build's nil check is, and refused the C, "Bad
+		// number of parameters in call to _int64_add" (valueResultC).
+		name: "a function value's 64-bit result read in an operation",
+		src: `type P struct{ a, b int }
+
+type Q struct{ a, b, c, d int }
+
+func gw(x int32) int64 { return int64(x)*0x100000001 - 3 }
+
+func gu(x uint64) uint64 { return x * 0x100000003 }
+
+func gf(x int32) float32 { return float32(x) * 1.5 }
+
+func gp(x int32) P { return P{int(x), int(x) * 7} }
+
+func gq(x int32) Q { return Q{int(x), int(x) * 7, int(x) * 11, int(x) * 13} }
+
+func gs(x int32) string { return "hello"[:x] }
+
+func take(v int64, k int) int64 { return v * int64(k) }
+
+var w = gw
+
+var u = gu
+
+var f = gf
+
+var p = gp
+
+var q = gq
+
+var s = gs
+
+var x int32 = 5
+
+func ret() int64 { return w(x) >> 3 }
+
+func main() {
+	w1 := w(x)
+	println(w1, w(x)+1, w(x)>>32, take(w(x), 3), w(x) == gw(x), ret())
+	println(u(uint64(x)<<33), u(uint64(x))%7, f(x)*2, f(x) > 7)
+	p1 := p(x)
+	println(p1.b, p(x).b, q(x).d, q(x) == gq(x), s(x), len(s(x)), s(x)[1])
+	var acc int64
+	acc += w(x)
+	acc = acc*w(x) + w(2)
+	println(acc, -w(x), ^w(x), uint32(w(x)), int32(w(x)>>32))
+}
+
+type H struct{ f func(int32) int64 }
+
+var hh = H{gw}
+
+var tab = [2]func(int32) int64{gw, gw}
+
+func pick() func(int32) int64 { return gw }
+
+func init() {
+	println((w)(x)+1, hh.f(x)>>32, tab[1](x)%9, pick()(x)+2)
+	w(x)
+	hh.f(x)
+	tab[0](x)
+	pick()(x)
+}
+`,
+		want: "21474836483 5 4 21474836484\n21474836482 21474836483 5 64424509446 true 2684354560\n128849018880 0 15 true\n35 35 65 true hello 5 101\n94489280515 -21474836482 -21474836483 2 5\n",
+	},
+	{
+		// The 64-bit arguments the first fix of a function value's call left
+		// alone, a widening conversion, `cv(int64(i32))`, `u(uint64(x))`, and a
+		// call's result, `cv(id(3))`: passed with a garbage high word on a P2-EDGE,
+		// in silence, in v0.56.1 too (valueCallArgC binds every 64-bit argument but
+		// a name).
+		name: "a widening conversion or a call handed to a function value",
+		src: `func id(v int64) int64 { return v + 1 }
+
+type H struct{ v int64 }
+
+var hv = H{0x700000005}
+
+var cv = func(c int64) int { return int(c>>32)*11 + int(c) }
+
+func gu(x uint64) uint64 { return x * 0x100000003 }
+
+var u = gu
+
+func main() {
+	var i32 int32 = 9
+	var x int32 = 5
+	uu := u(uint64(x))
+	println(cv(int64(i32)), cv(id(3)), cv(hv.v), cv(int64(uint32(i32))), uu)
+}
+`,
+		want: "9 4 82 9 21474836495\n",
+	},
+	{
+		// A constant of 64 bits beside an argument that does something: the call
+		// binds its arguments in order then, and bound the constant at the type it
+		// would default to, `int _t = 1099511627776LL`, cutting it to its low word
+		// -- `take(1<<40, side())` printed 1 on a P2-EDGE and on the host for Go's
+		// 1099511627777, through a method, an interface and a deferred call alike,
+		// in v0.56.1 and before (hoistArgs). Found by the fuzzer's host oracle
+		// (genPairs).
+		name: "a 64-bit constant beside an argument that does something",
+		src: `var n int
+
+func side() int64 {
+	n++
+	return int64(n)
+}
+
+func take(a int64, b int64) int64 { return a + b }
+
+type T struct{}
+
+func (t *T) m(a int64, b int64) int64 { return a - b }
+
+type I interface{ m(a int64, b int64) int64 }
+
+var t T
+
+func main() {
+	var i I = &t
+	println(take(1<<40, side()), take(-8284870267009414, side()), i.m(1<<41, side()), t.m(-3000000000, side()))
+}
+
+func show(v int64) { println("deferred", v) }
+
+var done = make(chan int64)
+
+func relay(a int64, b int64) { done <- take(a, b) }
+
+func run() {
+	defer show(take(1<<40, side()))
+	defer println(take(-5000000000, 3), t.m(1<<33, side()))
+	go relay(1<<42, side())
+	println(<-done)
+}
+
+func init() {
+	run()
+}
+`,
+		want: "4398046511107\n-4999999997 8589934590\ndeferred 1099511627777\n1099511627780 -8284870267009409 2199023255546 -3000000007\n",
+	},
+	{
 		// A product of a value the backend propagates to a constant, computed
 		// twice. The backend merges the two into one CORDIC multiply read twice,
 		// and its fold of a constant CORDIC command writes the product into both

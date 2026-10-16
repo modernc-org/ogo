@@ -7715,6 +7715,7 @@ type emitter struct {
 	eqArrays            map[string]arrDim       // array types compared with == / !=, keyed by helper name: emit an ogo_eq_arr_<...> helper
 	prologue            []string                // lines to emit before the statement being emitted, for a temporary an expression needs hoisted out of itself (see emitStatement)
 	discardCall         bool                    // the call about to be emitted is a statement that throws its value away (see emitCallStmtExpr)
+	chainDiscard        bool                    // the chain chainCText renders next is a statement's whose value is thrown away (chainFallback)
 	printArgs           []printArg              // a print's arguments already bound to temporaries, so nothing the print itself emits can change state (see hoistPrintArgs)
 	scopeNames          []map[string]bool       // per open block, the local names visible entering it, so blockDepthOf can say which block declares a name
 	curParams           map[string]bool         // the parameter names of the function being emitted. A parameter's own storage is this frame's, but what it POINTS AT is the caller's, which isFrameVar deliberately does not distinguish and the receiver-leak rule must (see checkRecvLeak).
@@ -29500,7 +29501,8 @@ func (e *emitter) emitParenFuncCall(kids []Node) bool {
 		return false
 	}
 	callee := e.hoist(ct, func() { e.emitExprNode(kids[1]) })
-	e.emit(e.recFuncCallee(ct, callee) + "(" + e.valueArgsCText(e.indirectCallee("", ct), ct, call.ast) + ")")
+	fn := e.recFuncCallee(ct, callee)
+	e.emit(e.valueResultC(ct, fn, fn+"("+e.valueArgsCText(e.indirectCallee("", ct), ct, call.ast)+")"))
 	return true
 }
 
@@ -37390,7 +37392,12 @@ func (e *emitter) emitCallExpr(recv string, suffix []Node) bool {
 			}
 			e.noteFrameCalls(recv, suffix[0].ast)
 			args := e.valueArgsCText(e.valueCallee(recv, ct), ct, suffix[0].ast)
-			e.emit(e.recFuncCallee(ct, e.varRef(recv)) + "(" + args + ")")
+			fn := e.recFuncCallee(ct, e.varRef(recv))
+			call := fn + "(" + args + ")"
+			if !discard {
+				call = e.valueResultC(ct, fn, call)
+			}
+			e.emit(call)
 			return true
 		}
 		cname := e.funcCallC(recv)
@@ -37451,7 +37458,12 @@ func (e *emitter) emitCallExpr(recv string, suffix []Node) bool {
 			// yields "", which consults nothing and accepts, as the rest of the
 			// analysis does with a callee it cannot name.
 			args := e.valueArgsCText(e.fieldCallee(recv, method, ft), ft, suffix[1].ast)
-			e.emit(e.recFuncCallee(ft, e.fieldAccessC(recv, []string{method})) + "(" + args + ")")
+			fn := e.recFuncCallee(ft, e.fieldAccessC(recv, []string{method}))
+			call := fn + "(" + args + ")"
+			if !discard {
+				call = e.valueResultC(ft, fn, call)
+			}
+			e.emit(call)
 			return true
 		}
 		if rct, ok := e.methodRecvCType(recv); ok {
@@ -37678,6 +37690,7 @@ chainFallback:
 	// called further (`mk().n`, `t.self().n`, `a[i].get()`). chainCText types and
 	// lowers it, or reports it cannot (an unsupported step, or a pointer method on a
 	// non-addressable value).
+	e.chainDiscard = discard
 	if text, _, _, ok := e.chainCText(recv, suffix); ok {
 		e.emit(text)
 		return true
@@ -38210,6 +38223,10 @@ func stepsHaveEffect(e *emitter, steps []Node) bool {
 // (ok=false) rather than miscompiled -- a temporary would be needed and is not yet
 // synthesised here.
 func (e *emitter) chainCText(base string, steps []Node) (text, ctype string, addr, ok bool) {
+	// Whether the statement throws the chain's value away (chainDiscard), asked of
+	// this chain only: one rendered on the way, an argument's, has a value.
+	discardLast := e.chainDiscard
+	e.chainDiscard = false
 	var cur accessCur
 	pendingFn := false
 	effect := false // an index consumed so far does something when evaluated
@@ -38365,7 +38382,11 @@ func (e *emitter) chainCText(base string, steps []Node) (text, ctype string, add
 				// what is emitted. gcc compiles the direct form correctly, which is
 				// why this needed the board to find.
 				callee := e.hoist(cur.ctype, func() { e.emit(text) })
-				text = e.recFuncCallee(cur.ctype, callee) + "(" + e.valueArgsCText(e.indirectCallee("", cur.ctype), cur.ctype, n.ast) + ")"
+				fn := e.recFuncCallee(cur.ctype, callee)
+				text = fn + "(" + e.valueArgsCText(e.indirectCallee("", cur.ctype), cur.ctype, n.ast) + ")"
+				if !discardLast || i != len(steps)-1 {
+					text = e.valueResultC(cur.ctype, fn, text)
+				}
 				cur, addr = e.plainOrSlice(rts[0]), false
 				resultTok = n.Pos()
 				continue
@@ -48377,7 +48398,7 @@ func (e *emitter) emitCallArgs(cname string, callSuffix []int32) {
 				e.emit(e.pairArg(params, i, false, e.valueCallArgC(throughValue, params, i, lit)))
 				continue
 			}
-			e.emit(e.pairArg(params, i, false, e.captureC(func() { e.emitExpr(arg.ast) })))
+			e.emit(e.pairArg(params, i, false, e.valueCallArgC(throughValue, params, i, e.captureC(func() { e.emitExpr(arg.ast) }))))
 		}
 		if at != 0 {
 			e.emit(", ")
@@ -48516,7 +48537,7 @@ func (e *emitter) emitCallArgs(cname string, callSuffix []int32) {
 			}
 			continue
 		}
-		e.emit(e.pairArg(params, i, i == len(args)-1 && !throughValue, e.captureC(func() { e.emitExpr(arg.ast) })))
+		e.emit(e.pairArg(params, i, i == len(args)-1 && !throughValue, e.valueCallArgC(throughValue, params, i, e.captureC(func() { e.emitExpr(arg.ast) }))))
 	}
 }
 
@@ -48563,28 +48584,56 @@ func (e *emitter) pairArg(params []string, i int, last bool, text string) string
 	return e.hoist(params[i], func() { e.emit(text) })
 }
 
-// valueCallArgC is the C of a constant argument lit to the parameter i of params
-// in a call through a function value (throughValue): bound to a temporary where
-// the parameter is of 64 bits, lit itself otherwise. A checked build calls a value
-// through its nil check, a function pointer that a CALL returns,
-// `ogo_nil_..(cb)(...)`, as it calls a value a call returns, `pick()(...)`, and the
-// target's C compiler mishandles every argument of 64 bits there but a variable: a
-// constant fails to build, "internal error: pointer does not reference memory" --
-// `cb(3, 1<<40)` did not -- and a negative constant, which is a negation, and every
-// other 64-bit operation in the last place are passed wrong in silence, measured
-// on a P2-EDGE (doc/call-arg-after-expr.c; pairArg binds the operations, in the
-// last place too for such a call). A slot of an interface's table, a call's
-// result's member, is called right, and so is a variable's pointer called
-// directly. A constant changes nothing, so binding it ahead of the call moves
-// nothing any argument does.
-func (e *emitter) valueCallArgC(throughValue bool, params []string, i int, lit string) string {
-	if !throughValue || i >= len(params) || e.declInit || e.deferReplay >= 0 {
-		return lit
+// valueCallArgC is the C of an argument, whose C text is text, to the parameter i
+// of params in a call through a function value (throughValue): bound to a
+// temporary where the parameter is of 64 bits and text names no variable, text
+// itself otherwise. A checked build calls a value through its nil check, a
+// function pointer that a CALL returns, `ogo_nil_..(cb)(...)`, as it calls a value
+// a call returns, `pick()(...)`, and the target's C compiler passes the high word
+// of a 64-bit argument there wrong unless it reads the value from storage --
+// measured on a P2-EDGE, in silence: an operation, a negative constant, which is a
+// negation, a widening conversion, `u(uint64(x))`, and a call's result, `cb(id(m))`,
+// in any place, the last included; a constant failed to build instead, "internal
+// error: pointer does not reference memory", `cb(3, 1<<40)`. A variable, a field,
+// an element and a dereference are passed right, and so is anything through an
+// interface's slot or a variable's pointer called directly
+// (doc/call-arg-after-expr.c). The argument is bound in its turn, after the
+// arguments before it.
+func (e *emitter) valueCallArgC(throughValue bool, params []string, i int, text string) string {
+	if !throughValue || i >= len(params) || e.declInit || e.deferReplay >= 0 || isCIdent(strings.TrimSpace(text)) {
+		return text
 	}
 	if ut := e.underlyingCType(params[i]); ut != "int64_t" && ut != "uint64_t" {
-		return lit
+		return text
 	}
-	return e.hoist(params[i], func() { e.emit(lit) })
+	return e.hoist(params[i], func() { e.emit(text) })
+}
+
+// valueResultC is the C of call, a call through a function value of the C type ct
+// whose result is used: bound to a temporary first where the result is of 64 bits,
+// call itself otherwise. Its callee is a pointer a call returns where a checked
+// build checks it (valueCallArgC), and the target's C compiler reads a 64-bit
+// result of such a call as one word in an operation: `w(x) + 1`, `w(x) >> 32` and
+// `u(x) % 7` were "Bad number of parameters in call to _int64_add" and the like,
+// and an argument, `take(w(x), 3)`, a warning about code that passes it wrong. A
+// variable holding the result is read right, and so is the result of a call
+// through a LOCAL variable's pointer, a callee fn naming one -- a package
+// variable's is read as one word too, and an --unchecked build, which checks no
+// callee, calls through it: `w(x) >> 3` was refused there. The call is bound where
+// it stands in Go's order: an operand before it that does something is bound
+// before it.
+func (e *emitter) valueResultC(ct, fn, call string) string {
+	if _, global := e.globals[fn]; e.declInit || e.deferReplay >= 0 || isCIdent(fn) && !global {
+		return call
+	}
+	rets := e.funcTypeRet[e.underlyingCType(ct)]
+	if len(rets) != 1 {
+		return call
+	}
+	if ut := e.underlyingCType(rets[0]); ut != "int64_t" && ut != "uint64_t" {
+		return call
+	}
+	return e.hoist(rets[0], func() { e.emit(call) })
 }
 
 // cOperatorTop reports whether the C expression text, however parenthesised, is
@@ -53854,6 +53903,15 @@ func (e *emitter) hoistArgs(cname string, params []string, args []Node) ([]strin
 				return fail()
 			}
 			names = append(names, e.hoist(params[i], func() { e.emit(text) }))
+			continue
+		}
+		// A constant of 64 bits, or one a float parameter is given, is spelled at
+		// the parameter's width and bound at its type (wideConstArg). Bound at the
+		// type it would default to, `int _t = 1099511627776LL`, it was cut to its
+		// low word: `take(1<<40, side())` printed 1 on a P2-EDGE and on the host
+		// where Go prints 1099511627777, whenever another argument did something.
+		if lit, ok := e.wideConstArg(params, i, a); ok {
+			names = append(names, e.hoist(params[i], func() { e.emit(lit) }))
 			continue
 		}
 		ct, ok := e.inferCType(a.ast)

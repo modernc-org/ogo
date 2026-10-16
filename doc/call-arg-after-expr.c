@@ -116,10 +116,25 @@
 //
 // for an f(int64_t a, float b, int64_t c) reading every word of its parameters and
 // m of 7, measured on a P2-EDGE, none warned about: the HIGH word of the operation
-// is what arrives wrong, so a callee reading only the low one sees nothing. It reached v0.56.0 as `cb(m, 30, m*3)` through a package function
-// value, 110104252 for 868, and `c1(m*3)` with one parameter. WORKED AROUND: a call
-// through a function value binds every 64-bit operation, the last included, and
-// every 64-bit constant (pairArg, valueCallArgC).
+// is what arrives wrong, so a callee reading only the low one sees nothing. It
+// reached v0.56.0 as `cb(m, 30, m*3)` through a package function value, 110104252
+// for 868, and `c1(m*3)` with one parameter. Measured the same evening over the
+// other shapes of a single 64-bit argument there:
+//
+//	nilck(fv)((int64_t)(i)), nilck(fv)((int64_t)(uint32_t)(i))   wrong: a widening conversion
+//	nilck(fv)(id(m))                    wrong: a call's result
+//	nilck(fv)(m), s.a, ps->a, arr[1], *pp, (m), c ? m : k        right: read from storage
+//
+// which v0.56.1's first workaround left alone: `cv(int64(i32))` 1623844961 for 9,
+// `u(uint64(x))` a garbage high word. And the RESULT of such a call, of 64 bits, is
+// read as one word in an operation: `nilck(fw)(x) + 1`, `>> 32`, a comparison, a
+// modulus are "Bad number of parameters in call to _int64_add" and the like, and
+// one handed to another call a warning; assigned to a variable it is right, and so
+// is the result of a call through a variable's pointer, `fv(x) + 1`; a conditional
+// callee, `(w ? w : f())(x) + 1`, fails as a call does. WORKED AROUND: a call
+// through a function value binds every 64-bit argument that is not a name (pairArg,
+// valueCallArgC) and a 64-bit result it is not handed straight to a variable
+// (valueResultC).
 //
 // Re-measured the same day at spin2cpp b5993a84 with the carried diffs: the
 // second number is 220, the negation lost, where the table above has garbage --

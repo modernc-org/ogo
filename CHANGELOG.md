@@ -16,6 +16,31 @@ same area is a new entry under **Unreleased**, not an edit to the old one. Amend
 shipped section tells a reader on that version that they have behaviour they do not.
 `git show vX.Y.Z:CHANGELOG.md` is the check.
 
+## Unreleased
+
+### Fixed
+
+- **A 64-bit constant beside an argument that does something arrived cut to its
+  low word**, in silence, on the board and on the host alike: `take(1<<40,
+  side())` printed 1 for Go's 1099511627777, and so did the same through a method,
+  an interface and a deferred call. When an argument of a call does something,
+  every argument is bound to a variable in order, and a wide constant was bound at
+  the type it would default to, an `int`. In every release; found by the fuzzer's
+  host oracle.
+
+- **A widening conversion or a call's result handed to a function value as a
+  64-bit argument arrived wrong**, on the board and in silence, the host right,
+  in v0.56.1 too: `cv(int64(i32))` printed 1623844961 for 9, and `cv(id(3))` and
+  `u(uint64(x))` arrived with garbage in their high word. v0.56.1 bound the
+  operations and the constants handed to a function value; every 64-bit argument
+  there that is not a name is bound now (doc/call-arg-after-expr.c).
+
+- **A function value's 64-bit result reads in an operation**: `w(x) + 1`, `w(x)
+  >> 32`, `u(x) % 7` and `pick()(x) + 2` were refused by the target's C compiler,
+  "Bad number of parameters in call to _int64_add", and `take(w(x), 3)` warned
+  about code that passes the value wrong, so `ogo build` refused it too. Such a
+  result is bound to a variable first.
+
 ## v0.56.1
 
 ### Language

@@ -1031,6 +1031,9 @@ section. A new finding goes there; the rule it leaves goes here too.
 - **A callee in a reproducer reads every word of what it is handed**; **a fuzzer
   part written for one fault is run on the board before its fix is called whole**
   (genPairs, valueCallArgC).
+- **A row is swept on both sides, what goes in and what comes back, before its fix
+  is released**; **a fuzzer part widened to the shapes next to the fault finds the
+  faults next to it** (valueResultC, hoistArgs).
 - **A warning the backend gives a user's build is a fault until shown harmless**.
   **A run that reads a register nothing wrote can look right by luck: the listing is
   the measure, and a C harness passing a constant after a 64-bit argument is a

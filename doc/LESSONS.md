@@ -1820,6 +1820,22 @@ the compiler before the first fix it failed or was refused on every seed carryin
 it -- which says it can see the fault it was written for and nothing of what else
 it can see: **a fuzzer part written for one fault is run on the board before its
 fix is called whole**.
+The same evening the row was swept on its other side, and the fix was not whole
+after all. Through a pointer a call returns, a 64-bit argument arrives wrong
+unless it is READ from storage -- a widening conversion, `cv(int64(i32))`, and a
+call's result, `cv(id(3))`, as well as an operation, measured on the board, where
+v0.56.1, released that afternoon, had bound only operations and constants -- and a
+64-bit RESULT of such a call is read as one word in an operation, `w(x) + 1`, a
+refusal. Every 64-bit argument there that is no name is bound now
+(valueCallArgC), and so is a result read in an operation (valueResultC). The fuzzer
+part, extended to those shapes, failed on its first host run, and not for them: a
+wide constant beside an argument that does something, `take(1<<40, side())`, was
+bound at the type it defaults to, `int`, when the call bound its arguments in order
+-- 1 for 1099511627777, in every release, on the host as on the board (hoistArgs).
+The one path that binds every argument had never been handed a constant wider than
+an int beside an effect. **A row is swept on both sides, what goes in and what
+comes back, before its fix is released**; **a fuzzer part widened to the shapes
+next to the fault finds the faults next to it**.
 **AN ARRAY RESULT IS A ROW** (2026-09-23). A call returning an array is a STATEMENT in
 C -- the caller hands the callee storage to write -- so every position one stands in
 has to supply that storage, and one probe after another the same afternoon found
