@@ -165,6 +165,13 @@ shipped section tells a reader on that version that they have behaviour they do 
 
 ### Fixed
 
+- **A call of nothing standing where a value is wanted is refused as Go refuses
+  it**, "fns[1]() (no value) used as value", whatever reaches the function: an
+  element, a field, a pointer, a call's result, `pick()()`, or another package's
+  function, `take(lib.Void())`. Only a function and a function variable named
+  alone were asked; every other callee went to the C compiler, which refused the
+  void, or the emitter's "cannot infer a type".
+
 - **Calls of a function value written in parentheses ran in C's order, not Go's**,
   in silence: `(f)(1) << uint((f)(2))` evaluated the count first on the board,
   and `println((fn)(), (fn)())` printed `2 1` on the host where Go prints `1 2`

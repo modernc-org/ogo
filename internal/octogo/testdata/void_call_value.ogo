@@ -1,0 +1,54 @@
+// A call yielding nothing stands where a value is wanted: Go says "(no value) used
+// as value" of every callee, and a function VALUE reached through an element, a
+// field, a pointer or a call's result was asked nothing (zeroResultCall, calleeSig)
+// -- a declaration from one was the emitter's "cannot infer a type", and every other
+// position reached the C compiler, which refused the void. Called as a statement,
+// deferred or started on a cog, each is a call like any other.
+
+type H struct{ cb func() }
+
+type Fn func()
+
+func f0() {}
+
+func pick() func() { return f0 }
+
+func take(n int) {}
+
+var (
+	fns = [2]func(){f0, f0}
+	h   = H{f0}
+	gp  = &h
+	hs  = [1]H{{f0}}
+	dfs = [1]Fn{f0}
+	ch  = make(chan int, 1)
+)
+
+func main() {
+	fns[1]()
+	h.cb()
+	gp.cb()
+	hs[0].cb()
+	dfs[0]()
+	pick()()
+	defer fns[0]()
+	go h.cb()
+	// ERROR fns\[1\]\(\) \(no value\) used as value
+	a := fns[1]()
+	// ERROR h\.cb\(\) \(no value\) used as value
+	var b int = h.cb()
+	// ERROR gp\.cb\(\) \(no value\) used as value
+	println(gp.cb())
+	// ERROR hs\[0\]\.cb\(\) \(no value\) used as value
+	take(hs[0].cb())
+	// ERROR dfs\[0\]\(\) \(no value\) used as value
+	if dfs[0]() == 0 {
+	}
+	// ERROR fns\[0\]\(\) \(no value\) used as value
+	ch <- fns[0]()
+	// ERROR h\.cb\(\) \(no value\) used as value
+	c := [1]int{h.cb()}
+	// ERROR pick\(\)\(\) \(no value\) used as value
+	println(pick()())
+	println(a, b, c[0])
+}

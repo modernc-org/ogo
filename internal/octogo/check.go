@@ -25217,10 +25217,11 @@ func (f *File) zeroResultCall(s *Scope, id Token, suffix Node) bool {
 			return false
 		}
 		// A VariableDeclaration is what tells a method call from a package one: an
-		// import qualifier resolves to no variable, so `pkg.F()` is left alone.
+		// import qualifier resolves to no variable, so `pkg.F()` is the package's
+		// function or variable, asked below.
 		d, ok := s.find(id.Src()).(*VarDeclaration)
 		if !ok {
-			return false
+			break
 		}
 		// The predeclared Builder's Reset yields nothing: `sb.Reset() == "OK"` was
 		// taken.
@@ -25229,13 +25230,14 @@ func (f *File) zeroResultCall(s *Scope, id Token, suffix Node) bool {
 			return isMethod && len(r) == 0
 		}
 		if !d.typeName.IsValid() {
-			return false
+			break
 		}
 		// The method's results as callResults reads them: an INTERFACE's too, whose
 		// methods no type declaration holds -- `if data.Swap(i, j) {` was taken --
 		// and a promoted one's.
-		r, ok := f.callResults(s, id, member)
-		return ok && len(r) == 0
+		if r, ok := f.callResults(s, id, member); ok {
+			return len(r) == 0
+		}
 	case len(ops) > 2 && ops[len(ops)-1].sym == CallSuffix && ops[len(ops)-2].sym == Selector:
 		// A method at the end of a chain, `h.rows[1].Show()`: the walk names it.
 		for _, c := range f.callChainWalk(s, id, ops).calls {
@@ -25244,7 +25246,42 @@ func (f *File) zeroResultCall(s *Scope, id Token, suffix Node) bool {
 			}
 		}
 	}
+	if n := len(ops); n >= 2 && ops[n-1].sym == CallSuffix {
+		if sig, in, ok := f.calleeSig(s, id, ops[:n-1]); ok {
+			return len(f.flattenResults(in, sig)) == 0
+		}
+	}
 	return false
+}
+
+// calleeSig is the signature of what a call's steps reach from id before the call:
+// another package's function, `lib.Void`, or a function VALUE reached through an
+// element, `fns[1]`, a field, `h.cb`, another package's variable, `lib.Fns[0]`, or a
+// call's result, `pick()`, by its type. Each was asked nothing by zeroResultCall,
+// and a call of none yielding nothing stood as a value -- `var x int = fns[0]()`
+// and `take(lib.Void())` reached the C compiler, which refused the void.
+func (f *File) calleeSig(s *Scope, id Token, steps []Node) (*SignatureNode, *Scope, bool) {
+	if len(steps) == 1 && steps[0].sym == Selector && f.isImportQualifier(s, id.Src()) {
+		home, ok := f.importedPkgScope(id)
+		if !ok {
+			return nil, nil, false
+		}
+		if fd, isFunc := home.Declarations[selectorIdent(f, steps[0])].(*FuncDeclaration); isFunc {
+			if fd.FuncDecl == nil || fd.FuncDecl.Type == nil || fd.FuncDecl.Type.Signature == nil {
+				return nil, nil, false
+			}
+			return fd.FuncDecl.Type.Signature, home, true
+		}
+	}
+	t, ok := f.headStepsType(s, id, steps, true)
+	if !ok || t.f == nil || t.tn == nil {
+		return nil, nil, false
+	}
+	u := t.f.underlyingTypeAt(t)
+	if fn, isFunc := u.tn.(*FunctionType); isFunc && fn.Signature != nil && u.s != nil {
+		return fn.Signature, u.s, true
+	}
+	return nil, nil, false
 }
 
 // checkFieldSuffix reports an index, selection or call applied to a FIELD whose type

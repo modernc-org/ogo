@@ -53642,6 +53642,124 @@ func TestMultiPkgRefusals(t *testing.T) {
 		want  string
 	}{
 		{
+			name: "another package's void function used as a value",
+			files: map[string]string{
+				"geo/geo.ogo": `var N int
+
+func a() { N++ }
+
+func Void() { N += 2 }
+
+var Fns = [2]func(){a, a}
+
+type T struct{ F func() }
+
+var V = T{a}
+
+func Pick(i int) func() { return a }
+`,
+				"main.ogo": `import "geo"
+
+func take(n int) {}
+
+func main() {
+	take(geo.Void())
+	take(geo.N)
+}
+`,
+			},
+			want: "geo.Void() (no value) used as value",
+		},
+		{
+			name: "another package's void element used as a value",
+			files: map[string]string{
+				"geo/geo.ogo": `var N int
+
+func a() { N++ }
+
+func Void() { N += 2 }
+
+var Fns = [2]func(){a, a}
+
+type T struct{ F func() }
+
+var V = T{a}
+
+func Pick(i int) func() { return a }
+`,
+				"main.ogo": `import "geo"
+
+func take(n int) {}
+
+func main() {
+	println(geo.Fns[1]())
+	take(geo.N)
+}
+`,
+			},
+			want: "geo.Fns[1]() (no value) used as value",
+		},
+		{
+			name: "another package's void field used as a value",
+			files: map[string]string{
+				"geo/geo.ogo": `var N int
+
+func a() { N++ }
+
+func Void() { N += 2 }
+
+var Fns = [2]func(){a, a}
+
+type T struct{ F func() }
+
+var V = T{a}
+
+func Pick(i int) func() { return a }
+`,
+				"main.ogo": `import "geo"
+
+func take(n int) {}
+
+func main() {
+	x := geo.V.F()
+	println(x)
+	take(geo.N)
+}
+`,
+			},
+			want: "geo.V.F() (no value) used as value",
+		},
+		{
+			name: "another package's void call result used as a value",
+			files: map[string]string{
+				"geo/geo.ogo": `var N int
+
+func a() { N++ }
+
+func Void() { N += 2 }
+
+var Fns = [2]func(){a, a}
+
+type T struct{ F func() }
+
+var V = T{a}
+
+func Pick(i int) func() { return a }
+`,
+				"main.ogo": `import "geo"
+
+func take(n int) {}
+
+func main() {
+	var x int = geo.Pick(1)()
+	println(x)
+	take(geo.N)
+}
+`,
+			},
+			want: "geo.Pick(1)() (no value) used as value",
+		},
+		{
 			name: "a frame-backed slice stored in another package's variable",
 			files: map[string]string{
 				"geo/geo.ogo": "var Sl []int\n",

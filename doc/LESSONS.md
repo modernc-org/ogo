@@ -1711,6 +1711,13 @@ which starts from no import qualifier, and fell back to rendering it only for a 
 that begins with a call; it falls back for a qualified one too now. **Every row swept
 in one package is swept across the boundary too, with the qualified spelling in
 every position**, again, and the statement is a position.
+Its mirror was the checker's: a call of NO result where a value is wanted --
+`var x int = fns[0]()`, `println(h.cb())`, `take(lib.Void())` -- was refused by Go
+and passed by the checker for every callee but a function and a function variable
+named alone, the C compiler refusing the void (zeroResultCall, which asked a
+method's results by name and answered false for whatever else it met). The callee is
+typed through whatever steps reach it now (calleeSig), and the sweep of thirteen
+callees by eight positions is refused in every cell, in Go's words.
 **AN ARRAY RESULT IS A ROW** (2026-09-23). A call returning an array is a STATEMENT in
 C -- the caller hands the callee storage to write -- so every position one stands in
 has to supply that storage, and one probe after another the same afternoon found
