@@ -1034,6 +1034,10 @@ section. A new finding goes there; the rule it leaves goes here too.
 - **A row is swept on both sides, what goes in and what comes back, before its fix
   is released**; **a fuzzer part widened to the shapes next to the fault finds the
   faults next to it** (valueResultC, hoistArgs).
+- **A backend fault in a call is a row of every call the C makes, the emitter's own
+  helpers among them**; **where the backend misreads a spelling everywhere it
+  stands, the spelling is changed where it is written, not bound where it is used**
+  (shl32C).
 - **A warning the backend gives a user's build is a fault until shown harmless**.
   **A run that reads a register nothing wrote can look right by luck: the listing is
   the measure, and a C harness passing a constant after a 64-bit argument is a

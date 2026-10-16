@@ -6931,6 +6931,9 @@ func emitProgram(pkg *Package, w io.Writer, opts []EmitOption, rename map[string
 	if e.usesI2f {
 		helperDefs.WriteString(ogoI2f)
 	}
+	for _, ct := range sortedKeys(e.shl32Types) {
+		helperDefs.WriteString(shl32HelperDef(ct))
+	}
 	shiftNames := make([]string, 0, len(e.shiftHelpers))
 	for name := range e.shiftHelpers {
 		shiftNames = append(shiftNames, name)
@@ -7680,6 +7683,7 @@ type emitter struct {
 	usesU2f             bool                    // ogo_u2f is called: an integer converts to a float (needs ogo_fprec)
 	usesI2f             bool                    // ogo_i2f is called: a signed integer converts to a float (needs ogo_u2f)
 	shiftHelpers        map[string][2]string    // guarded shift helper name -> {operator, value C type}
+	shl32Types          map[string]bool         // the 64-bit C types a shift left by 32 is written for through its helper (shl32C)
 	storeCarries        *carriedRef             // what the value emitStore is about to write carries of this frame, for the list forms (see carryInto)
 	shiftCTypes         map[*int32]string       // a shift operator, by its place in the AST -> the C type its untyped constant operand takes, where the emitter typed the context (see typeUntypedShifts)
 	shiftWalked         map[shiftWalkKey]bool   // the nodes typeUntypedShiftsNode has walked, each for a context
@@ -37802,6 +37806,8 @@ func (e *emitter) shiftChainC(kids []Node) (string, bool) {
 				rhsText = e.constSpelling(v, e.underlyingCType(ctype))
 			}
 			text = fn + "(" + text + ", " + rhsText + ")"
+		case haveType && e.shl32At(levelType, op, rhs):
+			text = e.shl32C(levelType, text)
 		case e.opText(op.ast) == "&^":
 			// C has no "&^": an AND with the complement, as the streaming path
 			// writes it. Written verbatim here, `a &^ b << d` was "expected
@@ -37917,6 +37923,46 @@ func (e *emitter) wideShift32C(kids []Node, levelType string) (string, bool) {
 		return "(uint64_t)(uint32_t)(((uint32_t)(" + x + ") >> 31) >> 1)", true
 	}
 	return "(uint64_t)(uint32_t)((int32_t)(" + x + ") >> 31)", true
+}
+
+// shl32At reports whether the operator op and its operand count, in a level of the
+// C type ct, shift a value of 64 bits left by the constant 32 (shl32C).
+func (e *emitter) shl32At(ct string, op, count Node) bool {
+	if ct != "int64_t" && ct != "uint64_t" || op.sym != MulOp || e.opText(op.ast) != "<<" {
+		return false
+	}
+	v, ok := e.foldIntegral(count.ast)
+	return ok && v == 32
+}
+
+// shl32C is the C of text, a value of the 64-bit C type ct, shifted left by the
+// constant 32: a call of an inline helper, ogo_shl32_int64_t(text), not `(text <<
+// 32)`. The target's C compiler writes that shift as the pair of words it makes,
+// the low one zero and the high one the operand's low word, and types the pair by
+// its first word, a long: handed to a function taking 64 bits it says "Unable to
+// widen function result" -- and passes it right -- and ogo build takes the warning
+// for a fault in the C it wrote (backendFault). Every helper the emitter calls was
+// such a function, a division, a remainder, a guarded shift, min and max, a
+// conversion to a float, a print, a send, an append, so `(int64(n) << 32) /
+// int64(d)`, a Q32.32 division as Go programs write it, failed to build. The
+// helper's result is a call's, and the backend inlines it to the same two moves
+// the shift was, with no register more (doc/call-arg-after-expr.c).
+func (e *emitter) shl32C(ct, text string) string {
+	if e.shl32Types == nil {
+		e.shl32Types = map[string]bool{}
+	}
+	e.shl32Types[ct] = true
+	e.includes["stdint.h"] = true
+	return "ogo_shl32_" + ct + "(" + text + ")"
+}
+
+// shl32HelperDef is the helper shl32C calls for the 64-bit C type ct, marked for
+// the target's compiler to inline; the host's knows no such attribute after a
+// declarator.
+func shl32HelperDef(ct string) string {
+	name, body := "ogo_shl32_"+ct, " {\n\treturn x << 32;\n}\n"
+	return "#ifdef __FLEXC__\nstatic " + ct + " " + name + "(" + ct + " x) __attribute__((inline))" + body +
+		"#else\nstatic inline " + ct + " " + name + "(" + ct + " x)" + body + "#endif\n"
 }
 
 // isShiftOp and isDivOp name the operators whose C and Go answers can differ.
@@ -48565,7 +48611,9 @@ func (e *emitter) emitCallArgs(cname string, callSuffix []int32) {
 // pair it is, the low word zero and the high one the operand's low word, and types
 // that pair by its first word, which against a 64-bit parameter is "Unable to
 // widen function result": code that is right, and a warning ogo build takes for a
-// fault in the C it wrote (backendFault).
+// fault in the C it wrote (backendFault). An expression of Go's comes here as the
+// call of its helper (shl32C), which every helper of the emitter's needed too, and
+// is passed as a call's result is; the binding is for a shift written as text.
 //
 // A call that has more than one argument and an argument that changes anything
 // binds every argument in order (hoistArgs), so a binding here moves nothing ahead
@@ -52386,9 +52434,19 @@ func (e *emitter) emitExprNode(n Node) {
 				}
 			}))
 		}
-		if e.cPrecMixed(kids) {
+		last := len(kids) - 2
+		switch {
+		case len(pieces) > 2 && e.shl32At(termType, kids[last], kids[last+1]):
+			// The level's last step is a shift left by 32, written through its
+			// helper with the steps before it as the operand.
+			head := strings.Join(pieces[:len(pieces)-2], "")
+			if e.cPrecMixed(kids[:last]) {
+				head = leftNested(pieces[:len(pieces)-2])
+			}
+			e.emit(e.shl32C(termType, head))
+		case e.cPrecMixed(kids):
 			e.emit("(" + leftNested(pieces) + ")")
-		} else {
+		default:
 			e.emit("(" + strings.Join(pieces, "") + ")")
 		}
 	case UnaryExpr, Factor:

@@ -1836,6 +1836,29 @@ The one path that binds every argument had never been handed a constant wider th
 an int beside an effect. **A row is swept on both sides, what goes in and what
 comes back, before its fix is released**; **a fuzzer part widened to the shapes
 next to the fault finds the faults next to it**.
+That night a domain program of fixed-point signal processing (dom51: a Q32.32
+type, a biquad, a CIC decimator, Goertzel detectors, a PID loop over a plant, a
+statistics accumulator, every intermediate an int64) met the fault's last member
+on its first build for the target: `(int64(num) << 32) / int64(den)`, a Q32.32
+division as Go programs write it, refused by `ogo build` over the backend's
+"Unable to widen function result". pairArg binds a shift by 32 handed to a call of
+the PROGRAM's; this one was handed to `ogo_div_int64_t`, the emitter's own, and a
+sweep of the shift through the helpers found every one of them warning -- a
+remainder, a guarded shift, min and max, a conversion to a float, a print, a send,
+an append, a division assigned -- in any place, alone included. The code was
+right (the program built past the warning printed Go's values on a P2-EDGE), so
+the fault was loud; the cure was to stop writing the shape the backend misreads
+at all, the shift spelled as the call of an inline helper that the backend
+reduces to the same two moves (shl32C), rather than to bind it at a dozen sites.
+**A backend fault in a call is a row of every call the C makes, the emitter's own
+helpers among them**; **where the backend misreads a spelling everywhere it
+stands, the spelling is changed where it is written, not bound where it is
+used**. The program was otherwise right on the board the first time, its 64-bit
+rows (operations before floats, through function values, interfaces, variadic,
+deferred and started calls, sends, multi-results, `MinInt64 / -1`, shifts past 64)
+matching Go, the fixes of the day holding. Printing `string(b)` of a byte slice is
+refused as documented; `%s` of the slice itself is the spelling that needs no
+copy, in Go as here.
 **AN ARRAY RESULT IS A ROW** (2026-09-23). A call returning an array is a STATEMENT in
 C -- the caller hands the callee storage to write -- so every position one stands in
 has to supply that storage, and one probe after another the same afternoon found

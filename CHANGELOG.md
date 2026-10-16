@@ -16,6 +16,18 @@ same area is a new entry under **Unreleased**, not an edit to the old one. Amend
 shipped section tells a reader on that version that they have behaviour they do not.
 `git show vX.Y.Z:CHANGELOG.md` is the check.
 
+## Unreleased
+
+### Fixed
+
+- **A 64-bit value shifted left by 32 builds wherever it stands**: `ogo build`
+  refused `(int64(num) << 32) / int64(den)`, the first line of a Q32.32 division,
+  over a warning of the target's C compiler about code that was right, and so it
+  refused the shift as the operand of a remainder, a shift by a variable, `min`,
+  `max`, a conversion to a float, a print, a send, an append and a division
+  assigned. Built past the warning, those programs printed Go's values on a
+  P2-EDGE. Found writing fixed-point filters.
+
 ## v0.56.2
 
 ### Toolchain

@@ -140,6 +140,22 @@
 // second number is 220, the negation lost, where the table above has garbage --
 // wrong still, and 3LL still right.
 //
+// THE EMITTER'S OWN CALLS meet the shift by 32 too, found the same day by a domain
+// program of Q32.32 filters: `(int64(num) << 32) / int64(den)` was
+// `ogo_div_int64_t(((int64_t)(num) << 32), (int64_t)(den))`, which warned "Unable
+// to widen function result", and so did the shift handed to every other helper --
+// a remainder, a guarded shift, min and max, a conversion to a float, a print, a
+// send, an append, a division assigned -- in the first place, the last and alone.
+// The code was right: the program built past the warning printed Go's values on a
+// P2-EDGE. But ogo build refuses a program the backend warned about, and pairArg
+// binds only what a program's own calls are handed. FIXED by writing the shift
+// as an inline function's call, `ogo_shl32_int64_t(x)`, whose result is a call's:
+// the backend builds it without a word and inlines it to the two moves the shift
+// was, `mov arg01, #0` and `mov arg02, x`, where a temporary holding it costs two
+// registers (shl32C). The other helper arguments after such a pair are of the
+// helper's parameter type already -- a divisor of the level's, a count cast to
+// int64_t (shiftCountC) -- and are passed right.
+//
 // To check, build for the P2 and read the second number: -214 is right. Each line
 // after the third prints 1 where the call is right; the first, third, fourth,
 // fifth, sixth and eighth print 0 on the board today, the second and the seventh

@@ -1566,6 +1566,48 @@ func init() {
 		want: "4398046511107\n-4999999997 8589934590\ndeferred 1099511627777\n1099511627780 -8284870267009409 2199023255546 -3000000007\n",
 	},
 	{
+		// A 64-bit value shifted left by 32 handed to every helper the emitter
+		// calls: the target's compiler warned "Unable to widen function result" at
+		// each, and ogo build refused a Q32.32 division, `(int64(num) << 32) /
+		// int64(den)`, as a fault of its own, until the shift was written through
+		// an inline helper (shl32C). Found by a domain program of fixed-point
+		// filters.
+		name: "a value shifted left by 32 handed to a helper",
+		src: `var calls int
+
+func id(v int64) int64 {
+	calls++
+	return v
+}
+
+func take(a int64, b int32) int64 { return a + int64(b) }
+
+type Q int64
+
+func ratio(num, den int32) Q { return Q((int64(num) << 32) / int64(den)) }
+
+var arr [3]int64
+
+func main() {
+	x, b := id(3), id(7)
+	s := uint(id(5))
+	println(ratio(1, 3), ratio(-7, 2), (x<<32)%b, (x<<32)>>s, (x<<32)<<s, (uint64(x)<<32)/uint64(b))
+	println(x<<32/-b, x*b<<32%b, x<<32>>s<<32>>s, x&b<<32/b+1)
+	println(max(x<<32, b), min(b, x<<32), float32(x<<32), x<<32, x<<32 == b)
+	printf("%d|%5d|%x\n", x<<32, b<<32, uint64(b)<<32)
+	ch := make(chan int64, 1)
+	ch <- x << 32
+	sl := make([]int64, 0, 2)
+	sl = append(sl, x<<32, b<<32)
+	v := int64(1) << 62
+	v /= x << 32
+	arr[calls%3] += b << 32
+	println(<-ch, sl[0], sl[1], v, arr[0], take(x<<32, 3), take(id(x)<<32, -1), calls)
+}
+`,
+		want: "1431655765 -15032385536 5 402653184 412316860416 1840700269\n-1840700269 0 54043195528445952 1840700270\n12884901888 7 1.2884902e+10 12884901888 false\n12884901888|30064771072|700000000\n12884901888 12884901888 30064771072 357913941 30064771072 12884901891 12884901887 4\n",
+	},
+	{
 		// A product of a value the backend propagates to a constant, computed
 		// twice. The backend merges the two into one CORDIC multiply read twice,
 		// and its fold of a constant CORDIC command writes the product into both
