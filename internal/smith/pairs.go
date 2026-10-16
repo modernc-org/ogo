@@ -80,7 +80,10 @@ func paHash(params []string, args []paVal) (r int32) {
 // of the first 400 seeds had one followed by 64-bit arguments, which the compiler
 // passed right. The procedure calls them directly, through a function value,
 // through an interface's method, as a variadic call, and as a method of a 64-bit
-// defined type whose receiver is the operation. Like the aggregates
+// defined type whose receiver is the operation; after the first argument a 64-bit
+// one may be a widening conversion or a call's result too, and a function value's
+// 64-bit result is read in operations -- through a function value each of those
+// was wrong or refused until 2026-10-16 as well (valueCallArgC, valueResultC). Like the aggregates
 // (genAggregates), what it comes to is computed here, in Go, and it draws from its
 // own source (paRand), so the rest of a seed's program is what it was.
 func (f *Fuzzer) genPairs() (call string, want Int32, ok bool) {
@@ -164,6 +167,18 @@ func (p *pairs) write(f *Fuzzer) {
 	fmt.Fprintf(w, "var paR_1 = PaR_1{%d}\n\n", p.rn)
 	fmt.Fprintf(w, "func (s *PaR_1) sc(a int64, b float32, c int64) int {\n%s}\n\n",
 		body("s.n", []string{"int64", "float32", "int64"}, names(3)))
+	// Functions handing a 64-bit value on, and one returning one, for a function
+	// value whose result is read in an operation.
+	fmt.Fprint(w, "func paId_1(v int64) int64 { return v + 5 }\n\n")
+	fmt.Fprint(w, "func paIdU_1(v uint64) uint64 { return v ^ 0x5555 }\n\n")
+	fmt.Fprint(w, "func paR64_1(a int64) int64 { return a*3 + 1 }\n\n")
+	// Package variables holding functions: a checked build calls one through its
+	// nil check, the pointer a call returns, every time. A local bound to one
+	// declared function is called directly, and asked nothing of it.
+	fmt.Fprint(w, "var paFw_1 = paR64_1\n\n")
+	fmt.Fprint(w, "func paOne_1(c int64) int { return int(c>>32)*11 + int(c) }\n\n")
+	fmt.Fprint(w, "var paOneV_1 = paOne_1\n\n")
+	fmt.Fprint(w, "var paFnV_1 = paFn_1_0\n\n")
 	// A variadic function.
 	fmt.Fprintf(w, "func paVa_1(a int64, b float32, rest ...float32) int {\n%s}\n\n",
 		strings.Replace(body("0", []string{"int64", "float32"}, names(2)), "\treturn r\n",
@@ -337,7 +352,10 @@ func (p *pairs) arg(typ string) (string, paVal) {
 			return "paW_1 * 3", paVal{n: int64(p.w * 3)}
 		}
 	case "int64":
-		switch pick {
+		// A widening conversion and a call's result besides: through a function
+		// value both arrived with a garbage high word until 2026-10-16
+		// (valueCallArgC), which no shape here had asked.
+		switch pick = r.Intn(5); pick {
 		case 0:
 			k := int64(r.Uint64() >> uint(r.Intn(64)))
 			if r.Intn(2) == 0 {
@@ -346,16 +364,24 @@ func (p *pairs) arg(typ string) (string, paVal) {
 			return strconv.FormatInt(k, 10), paVal{n: k}
 		case 1:
 			return "paV_1", paVal{n: p.v}
+		case 2:
+			return "int64(paI_1)", paVal{n: int64(p.i)}
+		case 3:
+			return "paId_1(paV_1)", paVal{n: p.v + 5}
 		default:
 			return p.op("int64")
 		}
 	case "uint64":
-		switch pick {
+		switch pick = r.Intn(5); pick {
 		case 0:
 			k := r.Uint64() >> uint(r.Intn(64))
 			return strconv.FormatUint(k, 10), paVal{u: k}
 		case 1:
 			return "paU_1", paVal{u: p.u}
+		case 2:
+			return "uint64(paW_1)", paVal{u: uint64(p.w)}
+		case 3:
+			return "paIdU_1(paU_1)", paVal{u: p.u ^ 0x5555}
 		default:
 			return p.op("uint64")
 		}
@@ -422,6 +448,21 @@ func (p *pairs) run(f *Fuzzer) (string, Int32, bool) {
 			}
 			fmt.Fprintf(&b, "\tr = r*31 + paVa_1(%s)\n", a)
 			step(v)
+		},
+		func() { // a function value's 64-bit result read in operations
+			a, v := p.arg("int64")
+			fmt.Fprintf(&b, "\tr = r*31 + int(paFw_1(paV_1)>>7) + int(paFw_1(%s)%%1000)\n", a)
+			step(int32((p.v*3+1)>>7) + int32((v.n*3+1)%1000))
+		},
+		func() { // a single 64-bit argument to a package function value
+			a, v := p.arg("int64")
+			fmt.Fprintf(&b, "\tr = r*31 + paOneV_1(%s)\n", a)
+			step(int32(v.n>>32)*11 + int32(v.n))
+		},
+		func() { // a call through a package function value
+			a, vals := args(p.funcs[0])
+			fmt.Fprintf(&b, "\tr = r*31 + paFnV_1(%s)\n", a)
+			step(paHash(p.funcs[0], vals))
 		},
 		func() { // a method whose 64-bit receiver is the operation
 			k := int64(1 + r.Intn(100))

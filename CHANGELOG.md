@@ -18,6 +18,17 @@ shipped section tells a reader on that version that they have behaviour they do 
 
 ## Unreleased
 
+### Toolchain
+
+- **`ogo smith` reaches a function value through a package variable**, which a
+  checked build calls through its nil check, and hands it a single 64-bit argument
+  -- a widening conversion and a call's result among the shapes drawn -- and reads
+  a 64-bit result of one in operations. The part's function values had been locals
+  bound to one function, which are called directly and never met the fault fixed
+  below. Built by v0.56.1, seven of seven seeds carrying the new shapes fail on a
+  P2-EDGE, each built in silence; with this compiler seeds 1-2000 pass on the host
+  and of seeds 1-200 on the board 187 pass and 13 outgrow a cog, none failing.
+
 ### Fixed
 
 - **A 64-bit constant beside an argument that does something arrived cut to its

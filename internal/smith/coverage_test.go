@@ -382,6 +382,11 @@ var generatedConstructs = []struct {
 	{"pairs: variadic", `paVa_\d+\([^\n]+, [^\n]+, [^\n]+\)\n`},
 	{"pairs: an operation received", `\((q ?[*+] ?\d+|-q|q ?<< ?32)\)\.mix\(`},
 	{"pairs: a negative constant received", `PaQ_\d+\(-\d+\)\.mix\(`},
+	{"pairs: a widening conversion handed on", `, u?int64\(pa[IW]_\d+\)[,)]`},
+	{"pairs: a call's result handed on", `, paIdU?_\d+\(pa[VU]_\d+\)[,)]`},
+	{"pairs: a function value's 64-bit result in operations", `\+ ?int\(paFw_\d+\(paV_\d+\) ?>> ?7\)`},
+	{"pairs: one 64-bit argument to a package function value", `\+ ?paOneV_\d+\([^\n]+\)\n`},
+	{"pairs: through a package function value", `\+ ?paFnV_\d+\([^\n]+\)\n`},
 	{"pairs checked", `\n\tif paRun_\d+\(\) != -?\d+ \{\n\t\tpanic\("OctoSmith Checksum Failure: pairs"\)`},
 	// Structs embedded by value and by pointer, variadic calls and string(b) where
 	// it stands (genEmbed).
