@@ -1380,6 +1380,43 @@ func main() {
 		want: "30493 30508 -29505 80507\n50393 50414 -50400\n255 9 17 17 13\n45 42 11 0 7\n30514 80495 -69493\n107 104 361 105\n258 26\n",
 	},
 	{
+		// A value of 64 bits handed to a function VALUE, which a checked build calls
+		// through its nil check -- a pointer a call returns, as `pick()(...)` is. The
+		// target's C compiler passed every 64-bit operation there wrong but a
+		// variable's, in the last place too, `cb(m, 30, m*3)` 110104252 for 868 on a
+		// P2-EDGE, and failed on a constant, "internal error: pointer does not
+		// reference memory" (valueCallArgC, doc/call-arg-after-expr.c). Found by the
+		// fuzzer's board sweep (genPairs).
+		name: "a value of 64 bits handed to a function value",
+		src: `func g(a int64, b float32, c int64) int {
+	return int(a>>32)*3 + int(a) + int(b*4)*7 + int(c>>32)*11 + int(c)
+}
+
+var cb = g
+
+type T struct{ f func(int64, float32, int64) int }
+
+var tt = T{g}
+
+func pick() func(int64, float32, int64) int { return g }
+
+var m int64 = 7
+
+func run() {
+	fv := g
+	println(cb(m, 30, m*3), cb(m, 30, -m), cb(m, 30, m>>32), cb(m, 30, -2119779639779294), cb(m, 30, 1<<40))
+	println(tt.f(m, 2.5, m+1), pick()(m, 1, m<<3), fv(m, 0, m&255), pick()(m*5, 2, m))
+	var s = [2]func(int64, float32, int64) int{g, g}
+	println(s[1](m, 3, m*m), cb(m<<32, 4, m))
+}
+
+func main() {
+	run()
+}
+`,
+		want: "868 829 847 1463733303 3663\n85 91 14 98\n140 140\n",
+	},
+	{
 		// A product of a value the backend propagates to a constant, computed
 		// twice. The backend merges the two into one CORDIC multiply read twice,
 		// and its fold of a constant CORDIC command writes the product into both

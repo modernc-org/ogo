@@ -60,6 +60,18 @@ shipped section tells a reader on that version that they have behaviour they do 
   (doc/call-arg-after-expr.c). A constant to a 64-bit parameter, the one form
   that had been routed around, was right already.
 
+- **A 64-bit value handed to a function value arrived wrong, or did not build**,
+  on the board and in silence, the host right: through a package variable, a field,
+  a local in an inner block or a call's result, `cb(m, 30, m*3)` printed 110104252
+  for 868, `c1(m*3)` and `cb(x, -5)` the same -- every 64-bit operation and
+  negative constant, in any place, the last included -- and a positive constant,
+  `cb(3, 1<<40)`, was refused by the C compiler, "internal error: pointer does not
+  reference memory". A checked build calls a function value through its nil check,
+  a pointer a call returns, and the target's C compiler passes the high word of
+  such an argument wrong there; such an argument is bound to a variable first now
+  (doc/call-arg-after-expr.c). In every release; found by the fuzzer's board
+  sweep of the part written for the fix above.
+
 - **A 64-bit value shifted left by 32 passed to a function builds**,
   `cordic.DivMod(uint64(rpm*poles)<<32, d)`: the target's C compiler warned
   "Unable to widen function result" about it, though it passed it right, and `ogo

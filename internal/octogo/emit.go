@@ -48267,6 +48267,9 @@ func (e *emitter) emitCallArgs(cname string, callSuffix []int32) {
 	}
 	ftype := e.callFuncType
 	e.callFuncType = ""
+	// A call through a function VALUE, which a checked build makes through its nil
+	// check, a pointer a call returns (valueCallArgC).
+	throughValue := ftype != ""
 	varElem, varAt := e.callVariadic(cname, ftype, params)
 	// A call through an interface slot: the method's own variadic parameter, which
 	// neither a callee name nor a function type says. Unread, `sm.Sum(1, 2)` for a
@@ -48371,7 +48374,7 @@ func (e *emitter) emitCallArgs(cname string, callSuffix []int32) {
 			}
 			// A packed slice follows every fixed argument.
 			if lit, ok := e.wideConstArg(params, i, arg); ok {
-				e.emit(e.pairArg(params, i, false, lit))
+				e.emit(e.pairArg(params, i, false, e.valueCallArgC(throughValue, params, i, lit)))
 				continue
 			}
 			e.emit(e.pairArg(params, i, false, e.captureC(func() { e.emitExpr(arg.ast) })))
@@ -48498,7 +48501,7 @@ func (e *emitter) emitCallArgs(cname string, callSuffix []int32) {
 		// temporary is replayed from it, a variable being passed right.
 		if e.deferReplay < 0 || e.deferReplayArgs[i].inline {
 			if lit, ok := e.wideConstArg(params, i, arg); ok {
-				e.emit(e.pairArg(params, i, i == len(args)-1, lit))
+				e.emit(e.pairArg(params, i, i == len(args)-1 && !throughValue, e.valueCallArgC(throughValue, params, i, lit)))
 				continue
 			}
 		}
@@ -48513,7 +48516,7 @@ func (e *emitter) emitCallArgs(cname string, callSuffix []int32) {
 			}
 			continue
 		}
-		e.emit(e.pairArg(params, i, i == len(args)-1, e.captureC(func() { e.emitExpr(arg.ast) })))
+		e.emit(e.pairArg(params, i, i == len(args)-1 && !throughValue, e.captureC(func() { e.emitExpr(arg.ast) })))
 	}
 }
 
@@ -48532,8 +48535,10 @@ func (e *emitter) emitCallArgs(cname string, callSuffix []int32) {
 // bits. Measured on a P2-EDGE, nothing warning. A variable, a field, an element, a
 // dereference, a call, a cast and a constant that is not negative are passed as
 // what they are, and so is the pair assigned to a variable, which is what this
-// writes: only where an argument follows, there being nothing after the last to
-// misread. See doc/call-arg-after-expr.c.
+// writes: only where an argument follows (last is false), there being nothing
+// after the last to misread -- but for a call through a function value, which
+// passes a pair wrong in the last place too (valueCallArgC). See
+// doc/call-arg-after-expr.c.
 //
 // A shift left by 32 is bound in every position. The compiler rewrites it as the
 // pair it is, the low word zero and the high one the operand's low word, and types
@@ -48556,6 +48561,30 @@ func (e *emitter) pairArg(params []string, i int, last bool, text string) string
 		return text
 	}
 	return e.hoist(params[i], func() { e.emit(text) })
+}
+
+// valueCallArgC is the C of a constant argument lit to the parameter i of params
+// in a call through a function value (throughValue): bound to a temporary where
+// the parameter is of 64 bits, lit itself otherwise. A checked build calls a value
+// through its nil check, a function pointer that a CALL returns,
+// `ogo_nil_..(cb)(...)`, as it calls a value a call returns, `pick()(...)`, and the
+// target's C compiler mishandles every argument of 64 bits there but a variable: a
+// constant fails to build, "internal error: pointer does not reference memory" --
+// `cb(3, 1<<40)` did not -- and a negative constant, which is a negation, and every
+// other 64-bit operation in the last place are passed wrong in silence, measured
+// on a P2-EDGE (doc/call-arg-after-expr.c; pairArg binds the operations, in the
+// last place too for such a call). A slot of an interface's table, a call's
+// result's member, is called right, and so is a variable's pointer called
+// directly. A constant changes nothing, so binding it ahead of the call moves
+// nothing any argument does.
+func (e *emitter) valueCallArgC(throughValue bool, params []string, i int, lit string) string {
+	if !throughValue || i >= len(params) || e.declInit || e.deferReplay >= 0 {
+		return lit
+	}
+	if ut := e.underlyingCType(params[i]); ut != "int64_t" && ut != "uint64_t" {
+		return lit
+	}
+	return e.hoist(params[i], func() { e.emit(lit) })
 }
 
 // cOperatorTop reports whether the C expression text, however parenthesised, is

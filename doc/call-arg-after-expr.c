@@ -100,13 +100,35 @@
 // first argument. wideConstArg's spellings stay: through a function pointer a
 // constant is refused without them. Unreported upstream as of this writing.
 //
+// A FUNCTION POINTER A CALL RETURNS is worse, found the same day by the fuzzer's
+// board sweep of the part written for the above (genPairs). A checked build calls
+// a function value through its nil check, `ogo_nil_..(cb)(...)`, which is such a
+// pointer, as `pick()(...)` is; there every argument of 64 bits but a variable is
+// mishandled, in the LAST place too:
+//
+//	nilck(fv)(m, 30, m * 3)             wrong, and (0 - m), m + 1, m << 3, m >> 32, m & 0xff the same
+//	nilck(fv)(m, 30, (-2119779639779294LL))   802112035 for 1463733303
+//	nilck(fv)(m, 30, k)                 right: a variable
+//	nilck(fv)(5ULL), pick()(5ULL)       "internal error: pointer does not reference memory"
+//	nilck(fv)(m, 30, m << 32)           "Cannot handle expression yet"
+//	fv(m, 30, (-2119779639779294LL))    right: the pointer a variable's
+//	slot-of-a-table(s.data, m, 30, m * 3)  right: an interface's
+//
+// for an f(int64_t a, float b, int64_t c) reading every word of its parameters and
+// m of 7, measured on a P2-EDGE, none warned about: the HIGH word of the operation
+// is what arrives wrong, so a callee reading only the low one sees nothing. It reached v0.56.0 as `cb(m, 30, m*3)` through a package function
+// value, 110104252 for 868, and `c1(m*3)` with one parameter. WORKED AROUND: a call
+// through a function value binds every 64-bit operation, the last included, and
+// every 64-bit constant (pairArg, valueCallArgC).
+//
 // Re-measured the same day at spin2cpp b5993a84 with the carried diffs: the
 // second number is 220, the negation lost, where the table above has garbage --
 // wrong still, and 3LL still right.
 //
 // To check, build for the P2 and read the second number: -214 is right. Each line
-// after the third prints 1 where the call is right; the first, third, fourth and
-// fifth print 0 on the board today, the second 1.
+// after the third prints 1 where the call is right; the first, third, fourth,
+// fifth, sixth and eighth print 0 on the board today, the second and the seventh
+// 1.
 
 #include <stdio.h>
 #include <stdint.h>
@@ -117,6 +139,9 @@ __attribute__((noinline)) float idf(float v) { return v; }
 __attribute__((noinline)) int32_t f3(int64_t a, float b, int64_t c) { return (int32_t)a + (int32_t)(b * 2.0f) * 100 + (int32_t)c * 10000; }
 __attribute__((noinline)) int32_t f5(int64_t a, int32_t b, float c) { return (int32_t)a + b * 100 + (int32_t)(c * 2.0f) * 10000; }
 __attribute__((noinline)) int32_t kf(int64_t a, float b) { return (int32_t)(a & 0xff) + (int32_t)(b * 2.0f); }
+__attribute__((noinline)) int32_t f6(int64_t a, float b, int64_t c) { return (int32_t)a + (int32_t)(b * 2.0f) * 100 + (int32_t)(c >> 32) * 7 + (int32_t)c * 10000; }
+typedef int32_t (*ft6)(int64_t a, float b, int64_t c);
+__attribute__((noinline)) ft6 pick(void) { return f6; }
 
 int main(void) {
 	int64_t m = id64(7);
@@ -135,5 +160,10 @@ int main(void) {
 	printf("%d f5((0 - m), i, 2.5f)\n", f5((0 - m), i, 2.5f) == 50393);
 	printf("%d f3((-5LL), fl, k)\n", f3((-5LL), fl, k) == 30495);
 	printf("%d kf((0 - m), 3)\n", kf((0 - m), 3) == 255);
+	int64_t t3 = m * 3;
+	printf("%d pick()(m, fl, m * 3)\n", pick()(m, fl, m * 3) == 7 + 500 + 21 * 10000);
+	printf("%d pick()(m, fl, t3)\n", pick()(m, fl, t3) == 7 + 500 + 21 * 10000);
+	t3 = 0 - m;
+	printf("%d pick()(m, fl, 0 - m)\n", pick()(m, fl, 0 - m) == 7 + 500 - 7 - 7 * 10000);
 	return 0;
 }

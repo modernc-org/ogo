@@ -1026,6 +1026,9 @@ section. A new finding goes there; the rule it leaves goes here too.
   read for the cause before the workaround is called whole**; **a row measured last
   in its argument list says nothing of the same argument with another after it**
   (doc/call-arg-after-expr.c).
+- **A callee in a reproducer reads every word of what it is handed**; **a fuzzer
+  part written for one fault is run on the board before its fix is called whole**
+  (genPairs, valueCallArgC).
 - **A warning the backend gives a user's build is a fault until shown harmless**.
   **A run that reads a register nothing wrote can look right by luck: the listing is
   the measure, and a C harness passing a constant after a 64-bit argument is a

@@ -1801,6 +1801,25 @@ port left one difference, p2-11's `[Rows + 1]string{...}`: the formatter gave an
 array type's length a subscript's depth where go/printer prints it with `p.expr`,
 at depth 1, a comment in the code calling it "a subscript position". The sources a
 user keeps are the formatter's corpus as much as the run cases are.
+The fault had a second member the fix did not reach, and the fuzzer found it on
+its first board sweep: a part written for the shape (genPairs: functions of a
+64-bit parameter and then others, handed an operation first, directly, through a
+function value, an interface, a variadic call and a receiver) failed `pairs` on
+seven of the first ninety-three seeds and was refused by the backend on seven
+more, every one passing on the host. A checked build calls a function value
+through its nil check, `ogo_nil_..(cb)(...)`, a pointer a CALL returns, and there
+the target's C compiler passes the HIGH word of every 64-bit operation wrong -- in
+the last place too, where the first fix left it, and with a single parameter,
+`c1(m*3)` -- and refuses a 64-bit constant outright. In every release:
+`cb(m, 30, m*3)` was 110104252 for 868 under v0.56.0. A call through a function
+value binds every 64-bit operation and constant now (valueCallArgC). The reproducer
+written for it first printed right, its callee reading only the low word of the
+argument the fault garbles: **a callee in a reproducer reads every word of what it
+is handed**. And the part had been asked to fail before it was believed -- built by
+the compiler before the first fix it failed or was refused on every seed carrying
+it -- which says it can see the fault it was written for and nothing of what else
+it can see: **a fuzzer part written for one fault is run on the board before its
+fix is called whole**.
 **AN ARRAY RESULT IS A ROW** (2026-09-23). A call returning an array is a STATEMENT in
 C -- the caller hands the callee storage to write -- so every position one stands in
 has to supply that storage, and one probe after another the same afternoon found
