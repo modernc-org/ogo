@@ -154,10 +154,12 @@ calls: **a lifetime test writes its refused shape in a function other than main*
 `go` that reports a cog it could not start instead of panicking; a resource report
 from `ogo build` (Hub RAM by globals, backings, channel cells and stacks; cog stacks
 and their bounds; locks; per-function code size); explicit Load/Store operations
-beside the defined plain accesses; a `tryAppend` name for the ok form of append;
-stack slots sized per goroutine rather than all at the deepest one's; a check at a
-goroutine function's entry that stops an overrun before it writes; and splitting
-specs.go into the rules, the implementation status and the rationale.
+beside the defined plain accesses; a `tryAppend` name for the ok form of append; a
+check at a goroutine function's entry that stops an overrun before it writes; and splitting
+specs.go into the rules, the implementation status and the rationale. Done since:
+stack slots sized per goroutine (2026-10-17, goslots.go): a go statement that runs
+at most once has a slot of its own, sized for its goroutine, where every one of the
+program's does; any other program keeps seven slots of the deepest one's size.
 
 **A program ends as Go's does, every cog with it** (the user's call, 2026-10-07): a
 debug build's panic stops every other cog and then its own (panicHaltC), and a return
@@ -1019,7 +1021,10 @@ section. A new finding goes there; the rule it leaves goes here too.
 - **A GOROUTINE'S STACK IS READ OFF THE LISTING**: **A listing is a probe of what
   the C costs**; **a bound with no answer still has a floor**; **A bound that is
   capped is a bound that is not kept**; **The decision a precise bound rests on is
-  made where it is verifiable**.
+  made where it is verifiable**; **A floor a measured bound replaces is asked, with
+  a moat past the bound, what it was hiding**; **A runtime made general for a new
+  shape keeps the old shape's C: a program at its limit pays for a generality it
+  does not use** (goslots.go).
 - **Two programs that should cost the same are compared by their BINARIES**.
 - **A STATIC INITIALIZER IS LAID OUT BY ANOTHER RULE THAN ITS TYPE**: **A rule about
   the target's layout is measured on the board in C first**; **The host's compiler

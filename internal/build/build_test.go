@@ -756,9 +756,19 @@ func TestBuildSwitchFallback(t *testing.T) {
 	} else if !outgrewCog(said) {
 		t.Fatalf("the program unmarked with its C switches fails for something else:\n%s", said)
 	}
-	want, err := compile(chained)
+	if said, err := compile(chained); err != nil {
+		t.Fatalf("the program unmarked with chains does not build:\n%s", said)
+	}
+	// What a build makes of the C, its goroutine slots sized off the listing as
+	// every build sizes them.
+	dir := t.TempDir()
+	var said bytes.Buffer
+	if _, err := compileSized(chained, nil, filepath.Join(dir, "prog.c"), filepath.Join(dir, "prog.binary"), "", filepath.Join(dir, "kept.c"), false, false, &said, &said); err != nil {
+		t.Fatalf("the program unmarked with chains does not build sized:\n%s", said.Bytes())
+	}
+	want, err := os.ReadFile(filepath.Join(dir, "prog.binary"))
 	if err != nil {
-		t.Fatalf("the program unmarked with chains does not build:\n%s", want)
+		t.Fatal(err)
 	}
 
 	binary, _ := buildProgram(t, string(src))

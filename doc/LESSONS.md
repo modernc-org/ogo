@@ -474,6 +474,30 @@ its slot, the pool and what followed, and printed nothing at all. Such a program
 refused now, the goroutine named (goroutineName: the trampoline's deepest direct
 callee), `--gostack` the way past. **A bound that is capped is a bound that is not
 kept**: where a size is clamped to a limit, the clamp is a refusal.
+A SLOT OF ITS OWN (2026-10-17, the review's "separate worker classes"): every slot
+had the deepest goroutine's size, 256 longs at least, seven of them whatever the
+program started -- p2-11's four goroutines, started once each, kept seven slots of
+512 longs, 14 KB. A go statement that runs at most once has a slot of its own now,
+sized for its goroutine, where every one of the program's does (goslots.go), and
+the shared pool's slots have no least size: p2-11 keeps 512 + 3 x 160 longs, its
+binary 10,400 bytes smaller, and 486 of the 507 corpus programs starting goroutines
+take slots of their own. Below 256 the bound had never been what a slot held, so
+it was asked: the 191 goroutine run cases and seeds 1-200 on a P2-EDGE, each slot
+followed by 512 painted longs checked as its goroutine ended and as main returned,
+none touched -- and, asked to fail first, every slot at half its bound, the case
+whose locals outgrow the default stack wrote into its moat. **A floor a measured
+bound replaces is asked, with a moat past the bound, what it was hiding.** The
+pool was first rewritten in the new slots' form, each stack an array behind a table
+of pointers, and obeam's VM -- seven schedulers started in a loop, 1-2 KB short of
+the 496 KB the P2 ROM boots from an SD card -- grew by 244 bytes: the slot's struct
+shrank, and its guards were indexed apart from it. Kept in its old form for the
+shared pool, the VM built to the same bytes. **A runtime made general for a new
+shape keeps the old shape's C: a program at its limit pays for a generality it does
+not use.** Two smaller finds: the target's compiler takes no `long *const` for a
+cog's stack ("Expected pointer to stack as last parameter to coginit/cogid"); and a
+function counted as named once by its SPELLING across the program was not, p2-11's
+`drives()` beside rk11's constant `drives` -- a name is resolved where it is
+written, bare in its own package and `q.drives` through an import of it.
 
 **A TYPE SWITCH BEHIND AN INIT STATEMENT** (2026-10-07), `switch s := pick(); v :=
 s.(type)`, the last header shape on the open list: the grammar's SwitchTag takes `[

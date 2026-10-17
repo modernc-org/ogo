@@ -5217,14 +5217,17 @@ func main() {
 	}
 
 	for _, want := range []string{
-		"static ogo_cog_slot ogo_cog_pool[OGO_COGS - 1];\n",
+		// One go statement, run once: one slot, its own (goslots.go).
+		"#define OGO_SLOTS 1\n#define OGO_STACK_LONGS_0 256 // ogo_go0\n",
+		"static ogo_cog_slot ogo_cog_pool[OGO_SLOTS];\n",
 		"typedef struct { int ogo_slot; ogo_chan_int ogo_a0; int ogo_a1; } ogo_go_args0;\n",
 		"\tworker(a->ogo_a0, a->ogo_a1);\n",
 		// The trampoline must not release the slot: reclamation is _cogchk's
 		// job in ogo_cog_claim, once the cog has actually stopped.
 		"\t\tif (_ogo_t0 < 0) { ogo_panic(\"out of cogs\"); }\n",
 		"\t\t_ogo_t1->ogo_a1 = 42;\n",
-		"\t\togo_cog_pool[_ogo_t0].ogo_cog = _cogstart_C(ogo_go0, _ogo_t1, ogo_cog_pool[_ogo_t0].ogo_stack, sizeof ogo_cog_pool[_ogo_t0].ogo_stack);\n",
+		"\t\tint _ogo_t0 = ogo_cog_claim(0, 1);\n",
+		"\t\togo_cog_pool[_ogo_t0].ogo_cog = _cogstart_C(ogo_go0, _ogo_t1, ogo_cog_stack_of[_ogo_t0] + 1, ogo_cog_longs_of[_ogo_t0] * sizeof(long));\n",
 		"\t\tif (ogo_cog_pool[_ogo_t0].ogo_cog < 0) {\n",
 	} {
 		if got := buf.String(); !strings.Contains(got, want) {

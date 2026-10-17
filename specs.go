@@ -13,20 +13,20 @@
 // and several send clauses both work, gated on the cell's parked-receiver count;
 // smart-pin clauses were decided out the same day -- the default-arm polling
 // idiom is the supported form.)
-// TODO 20260719 Go statements: per-goroutine stack size. Every goroutine gets the
-// same stack in its pool slot. Since 2026-10-07 the build sizes it: the backend's
-// listing has every function's frame and every call, and each slot gets what the
-// program's deepest goroutine needs, 256 longs at least (`ogo build --gostack N`
-// sets it outright). What is left: a goroutine RECURSING through its own calls has
-// no depth a listing bounds and gets the 256, which a deep enough recursion overruns
-// -- measured on a P2-EDGE, one recursing 2000 deep printed nothing at all; a call
-// through a function value is taken to reach any function whose address the program
-// takes, so a slot can be larger than it needs (a call through an interface reaches
-// what its table's slot holds, since 2026-10-07); and every slot
-// is the deepest goroutine's size, where a stack the "go" statement chooses would
-// size each. The slot is fenced (since 2026-08-20; this note said otherwise until
-// 2026-10-07): a goroutine that overruns it and still ends panics "goroutine stack
-// overflow". A depth check at function entry would catch the recursion.
+// TODO 20260719 Go statements: per-goroutine stack size. Since 2026-10-07 the build
+// sizes the stacks from the backend's listing, which has every function's frame and
+// every call (`ogo build --gostack N` sets them outright), and since 2026-10-17 a go
+// statement that runs at most once has a slot of its own, sized for its goroutine,
+// where every go statement of the program does. What is left: a goroutine
+// RECURSING through its own calls has no depth a listing bounds, and a program
+// starting one is refused unless --gostack gives the size; a call through a
+// function value is taken to reach any function whose address the program takes,
+// so a slot can be larger than it needs (a call through an interface reaches what
+// its table's slot holds, since 2026-10-07); and a program with a go statement that
+// may run more than once keeps the shared pool, seven slots of the deepest
+// goroutine's size. The slot is fenced (since 2026-08-20): a goroutine that overruns
+// it and still ends panics "goroutine stack overflow". A depth check at function
+// entry would catch an overrun before it writes.
 // (The array TODO of 20260806 is DONE 2026-09-24: an array result may stand beside
 // another, `func f() ([3]int, int)`, held in the result struct and written through
 // an out parameter, which is copied with memcpy.)
@@ -2985,11 +2985,17 @@
 //     holds the goroutine's stack as well as its arguments, because the launched
 //     Cog reads both after the go statement has returned, so neither can live in
 //     the launching function's frame. The pool holds one slot per available Cog,
-//     which makes running out of slots and running out of Cogs one condition.
-//   - Stack: every slot's stack is what the program's deepest goroutine needs,
-//     read by the build off the compiled program's frames and calls, 256 longs at
-//     least, and a program whose goroutine needs more than a slot's largest, 8192
-//     longs, is refused by the build; "ogo build --gostack N" sets it outright. A
+//     which makes running out of slots and running out of Cogs one condition --
+//     or, where every go statement of the program runs at most once, a slot for
+//     each of them and no more: one in no loop and no function literal, in main,
+//     an init or a function the program calls once from such a place, its slot
+//     its own.
+//   - Stack: a slot's stack is what the goroutines that may run on it need, read
+//     by the build off the compiled program's frames and calls: a go statement's
+//     own slot what its goroutine needs, and each of the pool's seven what the
+//     deepest goroutine does. A program whose goroutine needs more than a slot's
+//     largest, 8192 longs, is refused by the build; "ogo build --gostack N" sets
+//     every slot's size outright. A
 //     goroutine recursing through its own calls has no depth the build can read,
 //     and a program starting one is refused unless --gostack gives the size. One
 //     that overruns its slot and then ends panics "goroutine stack overflow"; one

@@ -1804,7 +1804,12 @@ func goTrampolineCName(id int) string { return fmt.Sprintf("ogo_go%d", id) }
 // "out of slots" and "out of cogs" the same condition, and bounds the whole thing
 // statically, with no allocator. It also makes `go` inside a loop safe, which is
 // why it need not be rejected the way `defer` in a loop is: defer's problem was
-// unbounded storage in the current frame, while this is bounded by the silicon.
+// unbounded storage in the current frame, while this is bounded by the silicon. A
+// program whose every go statement runs at most once has a slot for each instead,
+// and no more (goslots.go): its goroutines are never more than its slots. A slot's
+// stack is sized for the goroutines that may run on it (cogPoolC), and a go
+// statement claims a slot of the ones it may take: any of the shared pool's, or its
+// own.
 //
 // A slot is freed on two signals together: the goroutine reached the end of the
 // trampoline (done), and its cog has stopped. Neither alone is enough. done cannot
@@ -1827,9 +1832,7 @@ func goTrampolineCName(id int) string { return fmt.Sprintf("ogo_go%d", id) }
 // _cogchk would answer about the id's new occupant, and a slot whose goroutine ended
 // long ago would read as forever-finishing. The sweep also catches that case
 // directly, in the rare order where the reissue happens between two claims.
-const ogoCogPool = `#define OGO_COGS 8
-#define OGO_STACK_LONGS %d
-// The argument block is a union of every go site's arguments (see goDefs), so it is
+const ogoCogPool = `// The argument block is a union of every go site's arguments (see goDefs), so it is
 // exactly as wide and as aligned as the widest of them.
 // A backstop, not a timeout: a goroutine reaches its epilogue and its cog stops
 // within a few instructions of the body ending, so this many spins cannot elapse
@@ -1846,17 +1849,16 @@ const ogoCogPool = `#define OGO_COGS 8
 // exhaustion and a stalled stop both have one. Which side an overrun reaches depends
 // on the direction the target's stack grows, so both are watched and the panic says
 // which; the guards cost one long apiece and a comparison when the goroutine ends.
+// They are OGO_GUARD_LO and OGO_GUARD_HI of a slot (cogPoolC).
 #define OGO_STACK_GUARD 0x6f676f67L
-typedef struct { int ogo_used; int ogo_done; int ogo_cog; ogo_go_args ogo_args; long ogo_guard_lo; long ogo_stack[OGO_STACK_LONGS]; long ogo_guard_hi; } ogo_cog_slot;
-static ogo_cog_slot ogo_cog_pool[OGO_COGS - 1];
 static int ogo_cog_lock = -1;
 static void ogo_cog_sweep(void) { // frees every finished slot; caller holds ogo_cog_lock
-	for (int i = 0; i < OGO_COGS - 1; i++) {
+	for (int i = 0; i < OGO_SLOTS; i++) {
 		if (!ogo_cog_pool[i].ogo_used || !ogo_cog_pool[i].ogo_done || ogo_cog_pool[i].ogo_cog < 0) {
 			continue;
 		}
 		int stopped = !_cogchk(ogo_cog_pool[i].ogo_cog);
-		for (int j = 0; !stopped && j < OGO_COGS - 1; j++) {
+		for (int j = 0; !stopped && j < OGO_SLOTS; j++) {
 			// The id is running another slot's goroutine, so this slot's own cog
 			// stopped and the id was handed out again: _cogchk is answering about
 			// the new occupant. Only a slot that has not finished proves that,
@@ -1873,7 +1875,7 @@ static void ogo_cog_sweep(void) { // frees every finished slot; caller holds ogo
 		}
 	}
 }
-static int ogo_cog_claim(void) {
+static int ogo_cog_claim(@CLAIMPARAMS@) { // a free slot@CLAIMRANGE@
 	if (ogo_cog_lock < 0) {
 		// The first claim is always main's: another cog can only be running
 		// because a spawn already came through here, so this races nothing.
@@ -1889,7 +1891,7 @@ static int ogo_cog_claim(void) {
 			_waitx(1);
 		}
 		ogo_cog_sweep();
-		for (int i = 0; i < OGO_COGS - 1; i++) {
+		for (int i = @CLAIMLO@; i < @CLAIMHI@; i++) {
 			if (!ogo_cog_pool[i].ogo_used) {
 				got = i;
 				break;
@@ -1898,8 +1900,8 @@ static int ogo_cog_claim(void) {
 		}
 		if (got >= 0) {
 			ogo_cog_pool[got].ogo_used = 1;
-			ogo_cog_pool[got].ogo_guard_lo = OGO_STACK_GUARD;
-			ogo_cog_pool[got].ogo_guard_hi = OGO_STACK_GUARD;
+			OGO_GUARD_LO(got) = OGO_STACK_GUARD;
+			OGO_GUARD_HI(got) = OGO_STACK_GUARD;
 			ogo_cog_pool[got].ogo_done = 0;
 			ogo_cog_pool[got].ogo_cog = -1;
 		}
@@ -1927,7 +1929,7 @@ static void ogo_cog_release(int slot) { ogo_cog_pool[slot].ogo_used = 0; }
 static void ogo_cog_done(int slot) {
 	// Checked HERE, by the goroutine itself as it ends: the slot is still its own,
 	// and this is the last moment anything of it is trustworthy.
-	if (ogo_cog_pool[slot].ogo_guard_lo != OGO_STACK_GUARD || ogo_cog_pool[slot].ogo_guard_hi != OGO_STACK_GUARD) {
+	if (OGO_GUARD_LO(slot) != OGO_STACK_GUARD || OGO_GUARD_HI(slot) != OGO_STACK_GUARD) {
 		ogo_panic("goroutine stack overflow");
 	}
 	ogo_cog_pool[slot].ogo_done = 1;
@@ -2553,7 +2555,7 @@ func (e *emitter) emitGo(nodes []Node) {
 	e.emit("{\n")
 	e.indent++
 	e.ind()
-	e.emit("int " + slot + " = ogo_cog_claim();\n")
+	e.emit("int " + slot + " = " + e.goClaimC(nodes[0], site.id) + ";\n")
 	e.ind()
 	e.emit("if (" + slot + " < 0) { ogo_panic(\"out of cogs\"); }\n")
 	e.ind()
@@ -2698,7 +2700,7 @@ func (e *emitter) emitGo(nodes []Node) {
 	}
 	e.ind()
 	e.emit("ogo_cog_pool[" + slot + "].ogo_cog = _cogstart_C(" + goTrampolineCName(site.id) + ", " + ap +
-		", ogo_cog_pool[" + slot + "].ogo_stack, sizeof ogo_cog_pool[" + slot + "].ogo_stack);\n")
+		", " + e.goStackArgsC(slot) + ");\n")
 	e.ind()
 	e.emit("if (ogo_cog_pool[" + slot + "].ogo_cog < 0) {\n")
 	e.indent++
@@ -2835,8 +2837,86 @@ func (e *emitter) goDefs() string {
 	}
 	// The argument structs come before the pool that embeds them, the trampolines
 	// after it: they call ogo_cog_done.
-	return b.String() + fmt.Sprintf(ogoCogPool, e.goStackLongs()) + tramps.String()
+	claim := strings.NewReplacer("@CLAIMPARAMS@", "void", "@CLAIMRANGE@", "", "@CLAIMLO@", "0", "@CLAIMHI@", "OGO_SLOTS")
+	if e.goOnce != nil {
+		claim = strings.NewReplacer("@CLAIMPARAMS@", "int lo, int hi", "@CLAIMRANGE@", " of lo to hi - 1", "@CLAIMLO@", "lo", "@CLAIMHI@", "hi")
+	}
+	return b.String() + e.cogPoolC() + claim.Replace(ogoCogPool) + tramps.String()
 }
+
+// goStackArgsC is the stack _cogstart_C is handed for a goroutine on the slot the
+// C variable slot holds, and its size in bytes.
+func (e *emitter) goStackArgsC(slot string) string {
+	if e.goOnce == nil {
+		return "ogo_cog_pool[" + slot + "].ogo_stack, sizeof ogo_cog_pool[" + slot + "].ogo_stack"
+	}
+	return "ogo_cog_stack_of[" + slot + "] + 1, ogo_cog_longs_of[" + slot + "] * sizeof(long)"
+}
+
+// goClaimC is the claim of a slot for the go statement whose keyword is at, site
+// its site: a slot of the shared pool, or the statement's own (goslots.go).
+func (e *emitter) goClaimC(at Node, site int) string {
+	if e.goOnce == nil {
+		return "ogo_cog_claim()"
+	}
+	key := goSlotKey{e.f, at.tok}
+	if !e.goOnce[key] {
+		// Every go statement of such a program was found by onceGoStatements, and
+		// a slot of the pool is sized for its own goroutines only.
+		e.fail("%v: internal error: a go statement the goroutine slots were not counted for", e.f.tok(at.tok).Position())
+		return "-1"
+	}
+	s, ok := e.goSlotOf[key]
+	if !ok {
+		s = len(e.goSlotSites)
+		e.goSlotOf[key] = s
+		e.goSlotSites = append(e.goSlotSites, nil)
+	}
+	e.goSlotSites[s] = append(e.goSlotSites[s], site)
+	return fmt.Sprintf("ogo_cog_claim(%d, %d)", s, s+1)
+}
+
+// cogPoolC declares the goroutine pool's slots and their stacks, each with a guard
+// at either end. The shared pool is seven slots of one size, OGO_STACK_LONGS, a
+// slot's stack between its guards in the slot itself, as the pool was before
+// slots had sizes of their own. Where every go statement runs at most once, there
+// is a slot for each, slot n's stack an array of OGO_STACK_LONGS_n longs and the
+// guards, its first and last long; the comment after the size names the
+// trampolines that run on it, which is what the build sizes it by (GoSlots,
+// WithGoSlots).
+func (e *emitter) cogPoolC() string {
+	var b strings.Builder
+	b.WriteString("#define OGO_COGS 8\n")
+	if e.goOnce == nil {
+		fmt.Fprintf(&b, "#define OGO_SLOTS (OGO_COGS - 1)\n#define OGO_STACK_LONGS %d\n", e.goStackLongs())
+		b.WriteString("typedef struct { int ogo_used; int ogo_done; int ogo_cog; ogo_go_args ogo_args; long ogo_guard_lo; long ogo_stack[OGO_STACK_LONGS]; long ogo_guard_hi; } ogo_cog_slot;\n")
+		b.WriteString("static ogo_cog_slot ogo_cog_pool[OGO_SLOTS];\n")
+		b.WriteString("#define OGO_GUARD_LO(n) ogo_cog_pool[n].ogo_guard_lo\n#define OGO_GUARD_HI(n) ogo_cog_pool[n].ogo_guard_hi\n")
+		return b.String()
+	}
+	fmt.Fprintf(&b, "#define OGO_SLOTS %d\n", len(e.goSlotSites))
+	var stacks, longs []string
+	for i, sites := range e.goSlotSites {
+		fmt.Fprintf(&b, "#define OGO_STACK_LONGS_%d %d //", i, e.goStackLongs())
+		for _, id := range sites {
+			b.WriteString(" " + goTrampolineCName(id))
+		}
+		fmt.Fprintf(&b, "\nstatic long ogo_cog_stack%d[OGO_STACK_LONGS_%d + 2];\n", i, i)
+		stacks = append(stacks, fmt.Sprintf("ogo_cog_stack%d", i))
+		longs = append(longs, fmt.Sprintf("OGO_STACK_LONGS_%d", i))
+	}
+	b.WriteString("typedef struct { int ogo_used; int ogo_done; int ogo_cog; ogo_go_args ogo_args; } ogo_cog_slot;\n")
+	b.WriteString("static ogo_cog_slot ogo_cog_pool[OGO_SLOTS];\n")
+	// Not `long *const`: the target's compiler takes no const pointer for a cog's
+	// stack, "Expected pointer to stack as last parameter to coginit/cogid".
+	fmt.Fprintf(&b, "static long *ogo_cog_stack_of[OGO_SLOTS] = {%s};\n", strings.Join(stacks, ", "))
+	fmt.Fprintf(&b, "static const int ogo_cog_longs_of[OGO_SLOTS] = {%s};\n", strings.Join(longs, ", "))
+	b.WriteString("#define OGO_GUARD_LO(n) ogo_cog_stack_of[n][0]\n#define OGO_GUARD_HI(n) ogo_cog_stack_of[n][ogo_cog_longs_of[n] + 1]\n")
+	return b.String()
+}
+
+// ogoCogs is the P2's cogs, main's among them.
+const ogoCogs = 8
 
 // selectCase is one CommClause of a select: the channel polled, where its value
 // lands, and the statements to run. def marks the default clause, which has no
@@ -6680,6 +6760,19 @@ func emitProgram(pkg *Package, w io.Writer, opts []EmitOption, rename map[string
 	e.emitSpin2Objects(pkgs)
 	forEachFile(func() { e.emitPrototypes(e.f.AST) })
 
+	// Which go statements have a slot of their own (goslots.go), asked before any
+	// is emitted: a slot of the shared pool is any goroutine's.
+	entry := "main"
+	if e.testEntry != "" {
+		entry = e.testEntry
+	}
+	if gos, ok := onceGoStatements(pkgs, pkg, entry, ogoCogs-1); ok {
+		e.goOnce, e.goSlotOf = map[goSlotKey]bool{}, map[goSlotKey]int{}
+		for _, g := range gos {
+			e.goOnce[g] = true
+		}
+	}
+
 	// Pass 2: the function definitions themselves.
 	var body bytes.Buffer
 	e.w = &body
@@ -7594,6 +7687,9 @@ type emitter struct {
 	methodsByName     map[string][]string       // method source name -> C names of every method so named
 	initNames         map[string]string         // init declaration position -> its numbered C name, so both passes agree
 	goSites           []goSite                  // launched goroutines, one per `go` statement: each needs an argument struct and a trampoline
+	goOnce            map[goSlotKey]bool        // where every go statement runs at most once (onceGoStatements), each of them; nil: the shared pool
+	goSlotOf          map[goSlotKey]int         // the slot of its own each go statement emitted so far was given (goClaimC)
+	goSlotSites       [][]int                   // the sites of each slot of its own, by slot
 	chanElems         map[string]bool           // element C types that need an ogo_chan_<T> cell and helpers
 	chanInitElems     map[string]bool           // element types whose channel init helper is reached
 	chanSendElems     map[string]bool           // element types whose channel send helper is reached
@@ -12119,24 +12215,6 @@ func (e *emitter) goStackLongs() int {
 // is how the limit moves.
 func GoStack(longs int) EmitOption {
 	return func(e *emitter) { e.goStack = longs }
-}
-
-// WithGoStack answers c, C that EmitC wrote, with every goroutine slot holding longs
-// of stack: what GoStack would have asked for, applied to C already written. The
-// build sizes the slots from the listing of a first compile (internal/build), and
-// the size changes nothing else the backend makes of the program.
-func WithGoStack(c []byte, longs int) []byte {
-	const def = "\n#define OGO_STACK_LONGS " // the line of ogoCogPool sizing a slot's stack
-	i := bytes.Index(c, []byte(def))
-	if i < 0 {
-		return c
-	}
-	i += len(def)
-	n := bytes.IndexByte(c[i:], '\n')
-	if n < 0 {
-		return c
-	}
-	return slices.Concat(c[:i], []byte(strconv.Itoa(longs)), c[i+n:])
 }
 
 // GoStackRange is what a caller may ask for, for a diagnostic that names the bounds
@@ -41151,7 +41229,7 @@ func (e *emitter) testingRuntimeC() string {
 	b.WriteString("static void ogo_test_goexit(int me) {\n")
 	if len(e.goSites) != 0 {
 		b.WriteString("\tfor (int spin = 0; spin < OGO_STOP_SPINS; spin++) {\n" +
-			"\t\tfor (int i = 0; i < OGO_COGS - 1; i++) {\n" +
+			"\t\tfor (int i = 0; i < OGO_SLOTS; i++) {\n" +
 			"\t\t\tif (ogo_cog_pool[i].ogo_used && !ogo_cog_pool[i].ogo_done && ogo_cog_pool[i].ogo_cog == me) {\n" +
 			"\t\t\t\togo_cog_done(i);\n\t\t\t\t_cogstop(me);\n\t\t\t}\n\t\t}\n\t\t_waitx(1);\n\t}\n")
 	} else {

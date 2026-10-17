@@ -8,7 +8,6 @@ import (
 	"bytes"
 	"os"
 	"path/filepath"
-	"regexp"
 	"strconv"
 	"strings"
 	"testing"
@@ -177,8 +176,10 @@ static void ogo_go0(void* p) {
 // TestBuildSizesGoroutineStacks builds a program whose goroutine holds 2400 bytes
 // of locals, which a slot of the default 256 longs cannot: the build compiles it
 // with slots that fit, read off its listing, unless --gostack asked for a size. A
-// goroutine needing more than the largest slot, and a main cog holding more than
-// Hub RAM, are told they do not fit.
+// slot is what its goroutines need, a go statement's own slot what its goroutine
+// does and every slot of the shared pool what the deepest does. A goroutine
+// needing more than the largest slot, and a main cog holding more than Hub RAM,
+// are told they do not fit.
 func TestBuildSizesGoroutineStacks(t *testing.T) {
 	const deep = `var out = make(chan int)
 
@@ -199,8 +200,7 @@ func main() {
 	println(<-out)
 }
 `
-	slot := regexp.MustCompile(`(?m)^#define OGO_STACK_LONGS (\d+)$`)
-	compile := func(t *testing.T, src string, stackAsked bool) (longs int, err error) {
+	compiles := func(t *testing.T, src string, stackAsked bool) (slots []octogo.GoSlot, err error) {
 		dir := t.TempDir()
 		write(t, filepath.Join(dir, "main.ogo"), src)
 		pkg, err := octogo.Build(-1, []string{"main.ogo"}, os.DirFS(dir))
@@ -213,18 +213,20 @@ func main() {
 		}
 		cFile := filepath.Join(dir, "prog.c")
 		if _, err := compileSized(c.Bytes(), nil, cFile, filepath.Join(dir, "prog.binary"), "", filepath.Join(dir, "kept.c"), false, stackAsked, &said, &said); err != nil {
-			return 0, err
+			return nil, err
 		}
 		built, rerr := os.ReadFile(cFile)
 		if rerr != nil {
 			t.Fatal(rerr)
 		}
-		m := slot.FindSubmatch(built)
-		if m == nil {
-			return 0, nil // a program starting no goroutine has no slots
+		return octogo.GoSlots(built), nil // none for a program starting no goroutine
+	}
+	compile := func(t *testing.T, src string, stackAsked bool) (longs int, err error) {
+		slots, err := compiles(t, src, stackAsked)
+		if err != nil || len(slots) == 0 {
+			return 0, err
 		}
-		longs, _ = strconv.Atoi(string(m[1]))
-		return longs, nil
+		return slots[0].Longs, nil
 	}
 	_, _, def := octogo.GoStackRange()
 	t.Run("sized", func(t *testing.T) {
@@ -234,6 +236,28 @@ func main() {
 		}
 		if longs < 600+16 || longs%16 != 0 {
 			t.Fatalf("slots of %d longs, want at least the 616 the goroutine's locals and frames take, in sixteens", longs)
+		}
+	})
+	t.Run("each its own", func(t *testing.T) {
+		// Two go statements run once each: a slot of its own for each, the
+		// shallow goroutine's what it needs and no more.
+		two := strings.Replace(deep, "func main() {\n\tgo work(2)\n\tprintln(<-out)", "func shallow() {\n\tout <- 1\n}\n\nfunc main() {\n\tgo work(2)\n\tgo shallow()\n\tprintln(<-out + <-out)", 1)
+		slots, err := compiles(t, two, false)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if len(slots) != 2 || slots[0].Longs < 600+16 || slots[1].Longs >= def || slots[1].Longs < 16 || slots[1].Longs%16 != 0 {
+			t.Fatalf("slots %v, want work's of at least 616 longs and shallow's of less than %d, in sixteens", slots, def)
+		}
+		// Started in a loop, any goroutine may run on any slot: every slot the
+		// deepest's size.
+		loop := strings.Replace(two, "\tgo work(2)\n\tgo shallow()\n", "\tfor i := 0; i < 2; i++ {\n\t\tgo work(i)\n\t}\n\tgo shallow()\n", 1)
+		loop = strings.Replace(loop, "<-out + <-out", "<-out + <-out + <-out", 1)
+		if slots, err = compiles(t, loop, false); err != nil {
+			t.Fatal(err)
+		}
+		if len(slots) != 1 || slots[0].Tramps != nil || slots[0].Longs < 600+16 {
+			t.Fatalf("slots %v, want the shared pool's, of at least 616 longs", slots)
 		}
 	})
 	t.Run("asked", func(t *testing.T) {

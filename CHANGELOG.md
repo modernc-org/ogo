@@ -16,6 +16,23 @@ same area is a new entry under **Unreleased**, not an edit to the old one. Amend
 shipped section tells a reader on that version that they have behaviour they do not.
 `git show vX.Y.Z:CHANGELOG.md` is the check.
 
+## Unreleased
+
+### Toolchain
+
+- **A go statement that runs once has a stack of its own, sized for its
+  goroutine**: the goroutine pool had seven slots, one for each cog but main's,
+  each the size the deepest goroutine needs, 256 longs at least. Where every go
+  statement of a program runs at most once in its run -- in no loop and no function
+  literal, in `main`, an `init` or a function the program calls once from such a
+  place, which is how drivers are started -- each has a slot of its own and there
+  are no others, its stack what the backend's listing says its goroutine needs. A
+  program with a go statement that may run again keeps the seven slots, now each
+  what the deepest goroutine needs with no least size. p2-11, four goroutines started
+  once, kept 14 KB of stacks and keeps 4 KB; a goroutine that sends on a channel
+  needs 160 longs, most of it the panic path's formatting. obeam, whose seven
+  schedulers start in a loop, builds to the same bytes as before.
+
 ## v0.57.0
 
 ### Fixed

@@ -19,9 +19,13 @@ import (
 // ran past it, and the fence the runtime keeps at the slot's end said so only when
 // the goroutine ENDED -- having written over whatever lay beyond, a running
 // goroutine's slot among them. The backend's listing has every function's frame and
-// every call, so the build reads the stack each goroutine needs off it and, where
-// that is more than its slots hold, compiles the same C again with slots that fit
-// (compileSized). Nothing is asked of the program.
+// every call, so the build reads the stack each goroutine needs off it and compiles
+// the same C again with each slot what its goroutines need (compileSized): a slot a
+// go statement has to itself what that goroutine needs, every slot of the shared
+// pool what the deepest does (octogo.GoSlots). Nothing is asked of the program.
+// Until 2026-10-17 a slot was only ever made larger, 256 longs being the least
+// any had; a goroutine of the run cases needs about 160, the most of it the panic
+// path's formatting.
 //
 // A frame is what pushregs_ saves, a long for each register it is told to (COUNT_)
 // and three of its own, and what `add ptra` reserves past them; a function calling
@@ -93,20 +97,31 @@ type stackFunc struct {
 	indirect int // calls through a register
 }
 
+// goNeed is what one go statement's goroutine needs: the longs of its stack, -1
+// where it recurses, and the function it runs, or where it recurses, as the C
+// names it.
+type goNeed struct {
+	longs int
+	name  string
+}
+
 type stackEdge struct {
 	to       string
 	indirect bool
 }
 
 // stackNeeds is what a program's stacks need, read from the backend's listing of
-// it: the deepest goroutine's in longs, 0 for a program that starts none, and the
-// main cog's in bytes, -1 where recursion through direct calls leaves it unbounded.
+// it: the deepest goroutine's in longs, 0 for a program that starts none, each
+// goroutine's, and the main cog's in bytes, -1 where recursion through direct calls
+// leaves it unbounded.
 type stackNeeds struct {
 	goLongs   int
 	goKnown   bool   // every goroutine's need is bounded
 	goName    string // the deepest goroutine's function, as the C names it
 	goRecurse string // where the first goroutine of unbounded need recurses, as the C names it
-	mainNeed  int
+	// goTramps is each goroutine's need by its trampoline, as the C names that.
+	goTramps map[string]goNeed
+	mainNeed int
 	// mainAtLeast is what main's stack needs at the least, in bytes, recursion or
 	// not: the deepest chain of direct calls entering each component of them once.
 	mainAtLeast int
@@ -345,18 +360,23 @@ func readStackNeeds(listing, c []byte) (r stackNeeds) {
 	}
 
 	r.goKnown = true
+	r.goTramps = map[string]goNeed{}
 	sort.Strings(tramps)
 	for _, t := range tramps {
 		v := need(t)
 		if v < 0 {
+			name := recursingName(fns[t].calls, need)
 			if r.goKnown {
-				r.goRecurse = recursingName(fns[t].calls, need)
+				r.goRecurse = name
 			}
 			r.goKnown = false
+			r.goTramps[stackCName(t)] = goNeed{-1, name}
 			continue
 		}
-		if longs := cogStartLongs + (v+3)/4; longs > r.goLongs {
-			r.goLongs, r.goName = longs, goroutineName(fns[t].calls, need)
+		longs, name := cogStartLongs+(v+3)/4, goroutineName(fns[t].calls, need)
+		r.goTramps[stackCName(t)] = goNeed{longs, name}
+		if longs > r.goLongs {
+			r.goLongs, r.goName = longs, name
 		}
 	}
 	r.mainNeed = need("_main")

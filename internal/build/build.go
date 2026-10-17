@@ -14,6 +14,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"maps"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -179,14 +180,15 @@ func compile(args []string, stdout, stderr io.Writer) (binary string, code int, 
 }
 
 // compileSized is compileMarked, and then the program's stacks held to what its
-// listing says they need (readStackNeeds). Where a goroutine needs more than a slot
-// holds and --gostack asked for no size, the same C is compiled again with slots
-// that fit, every slot the size of the deepest goroutine's need; an explicit
-// --gostack is the program's to choose, and a goroutine that recurses, whose need
-// the listing cannot bound, is refused without one. And a program whose main
-// cog's deepest stack does not fit in Hub RAM beside its code and data is told so,
-// the binary removed: the stack grows into whatever lies past the top, without a
-// word.
+// listing says they need (readStackNeeds). Unless --gostack asked for a size, the
+// same C is compiled again with each slot of the goroutine pool holding what its
+// goroutines need (octogo.GoSlots): every slot of the shared pool what the deepest
+// goroutine needs, and a slot a go statement has to itself what that goroutine
+// needs. An explicit --gostack is the program's to choose, and a goroutine that
+// recurses, whose need the listing cannot bound, is refused without one. And a
+// program whose main cog's deepest stack does not fit in Hub RAM beside its code
+// and data is told so, the binary removed: the stack grows into whatever lies past
+// the top, without a word.
 func compileSized(c []byte, plainer []func() ([]byte, error), cFile, out, inc, keepC string, allowWarnings, stackAsked bool, stdout, stderr io.Writer) (int, error) {
 	if code, err := compileMarked(c, plainer, cFile, out, inc, keepC, allowWarnings, stdout, stderr); err != nil {
 		return code, err
@@ -211,32 +213,55 @@ func compileSized(c []byte, plainer []func() ([]byte, error), cFile, out, inc, k
 		}
 		return 1, fmt.Errorf("ogo: a goroutine recurses%s, so its stack has no bound the backend's listing can read; give the goroutine stacks a size with --gostack longs", through)
 	}
-	if _, hi, def := octogo.GoStackRange(); !stackAsked && needs.goLongs > def {
-		if needs.goLongs > hi {
-			// Capped at the largest slot, the goroutine ran on past it, over
-			// the slots after it and whatever followed the pool, in silence
-			// until it ended: a mutant's `var seen [65535]uint32` printed
-			// nothing on the board. --gostack takes it as asked, unmeasured.
-			os.Remove(out)
-			who := "a goroutine"
-			if needs.goName != "" {
-				who = "goroutine " + needs.goName
+	if slots := octogo.GoSlots(built); !stackAsked && len(slots) != 0 {
+		_, hi, _ := octogo.GoStackRange()
+		longs := make([]int, len(slots))
+		changed := false
+		for i, s := range slots {
+			longs[i] = s.Longs // a slot none of whose goroutines the listing has keeps its size
+			tramps := s.Tramps
+			if tramps == nil {
+				tramps = slices.Sorted(maps.Keys(needs.goTramps)) // the shared pool's slots are every goroutine's
 			}
-			return 1, fmt.Errorf("ogo: %s needs a stack of %d longs by the backend's listing, and a goroutine's slot holds %d at most", who, needs.goLongs, hi)
-		}
-		longs := (needs.goLongs + 15) &^ 15
-		restacked := make([]func() ([]byte, error), len(plainer))
-		for i, f := range plainer {
-			restacked[i] = func() ([]byte, error) {
-				p, err := f()
-				if err != nil {
-					return nil, err
+			deep, who := 0, ""
+			for _, t := range tramps {
+				if g, ok := needs.goTramps[t]; ok && g.longs > deep {
+					deep, who = g.longs, g.name
 				}
-				return octogo.WithGoStack(p, longs), nil
 			}
+			if deep == 0 {
+				continue
+			}
+			if deep > hi {
+				// Capped at the largest slot, the goroutine ran on past it, over
+				// the slots after it and whatever followed the pool, in silence
+				// until it ended: a mutant's `var seen [65535]uint32` printed
+				// nothing on the board. --gostack takes it as asked, unmeasured.
+				os.Remove(out)
+				if who != "" {
+					who = "goroutine " + who
+				} else {
+					who = "a goroutine"
+				}
+				return 1, fmt.Errorf("ogo: %s needs a stack of %d longs by the backend's listing, and a goroutine's slot holds %d at most", who, deep, hi)
+			}
+			longs[i] = (deep + 15) &^ 15
+			changed = changed || longs[i] != s.Longs
 		}
-		if code, err := compileMarked(octogo.WithGoStack(built, longs), restacked, cFile, out, inc, keepC, allowWarnings, stdout, stderr); err != nil {
-			return code, err
+		if changed {
+			restacked := make([]func() ([]byte, error), len(plainer))
+			for i, f := range plainer {
+				restacked[i] = func() ([]byte, error) {
+					p, err := f()
+					if err != nil {
+						return nil, err
+					}
+					return octogo.WithGoSlots(p, longs), nil
+				}
+			}
+			if code, err := compileMarked(octogo.WithGoSlots(built, longs), restacked, cFile, out, inc, keepC, allowWarnings, stdout, stderr); err != nil {
+				return code, err
+			}
 		}
 	}
 	mainNeed, atLeast := needs.mainNeed, ""

@@ -237,12 +237,15 @@ where the binary would be, to be reported with the program.
 	--clock hz    the system clock to ask for, e.g. 200MHz (default 160 MHz)
 	--gostack longs
 	              stack per goroutine, in longs (64..8192). Without it the
-	              build gives every slot what the program's deepest goroutine
-	              needs by the backend's listing, 256 at least, and refuses a
-	              program whose goroutine needs more than 8192, or recurses
-	              through its own calls, which the listing cannot measure; one
-	              that outruns its slot panics "goroutine stack overflow".
-	              Seven slots of it sit in hub RAM for the whole run.
+	              build gives each slot what the goroutines that may run on it
+	              need by the backend's listing -- a go statement that runs at
+	              most once a slot of its own, where every one of the program's
+	              does, and seven slots of the deepest goroutine's size
+	              otherwise -- and refuses a program whose goroutine needs more
+	              than 8192, or recurses through its own calls, which the
+	              listing cannot measure; one that outruns its slot panics
+	              "goroutine stack overflow". The slots sit in hub RAM for the
+	              whole run.
 	--xtal hz     the board's crystal (default 20MHz)
 	--allow-backend-warnings
 	              build a program the C backend warned about
