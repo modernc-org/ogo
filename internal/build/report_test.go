@@ -12,6 +12,8 @@ import (
 	"strconv"
 	"strings"
 	"testing"
+
+	"modernc.org/ogo/internal/octogo"
 )
 
 // TestReadImage reads a listing of addresses as the backend writes one: the parts
@@ -133,6 +135,30 @@ func main() {
 	} {
 		if !regexp.MustCompile(re).MatchString(got) {
 			t.Errorf("no line matching %s in\n%s", re, got)
+		}
+	}
+}
+
+// TestFuncLabel names functions as the report lists them: by their Go names, an
+// interface's table entry by its method's, and the rest by whose they are.
+func TestFuncLabel(t *testing.T) {
+	c := []byte(`struct I_vt { const char* _ogo_type; int (*ogo_m_M)(void*); };
+int T_M(T* t) { return t->n; }
+static int I_T_M(void* p) { return T_M((T*)p); }
+static const I_vt I_vt_T = { "*main.T", I_T_M };
+int work(int n) { return n; }
+`)
+	rep := &octogo.Report{Funcs: map[string]string{"T_M": "(*T).M", "work": "work"}}
+	scan := octogo.ScanCalls(c)
+	for _, tc := range []struct{ cn, want string }{
+		{"work", "work"},
+		{"I_T_M", "(*T).M (its interface table's entry)"},
+		{"led_spin2_blink", "led.spin2's blink"},
+		{"ogo_panic", "ogo_panic (the runtime)"},
+		{"_system___fmtnum", "_system___fmtnum (the C library)"},
+	} {
+		if got := funcLabel(tc.cn, rep, scan); got != tc.want {
+			t.Errorf("%s: got %q, want %q", tc.cn, got, tc.want)
 		}
 	}
 }

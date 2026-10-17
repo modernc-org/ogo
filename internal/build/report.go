@@ -60,19 +60,8 @@ func report(w io.Writer, rep *octogo.Report, cFile, out, inc string, stackAsked 
 		return fmt.Errorf("report: the backend's listing is not laid out as expected")
 	}
 	needs := readStackNeeds(listing, c)
-	goName := func(listed string) string {
-		cn := stackCName(listed)
-		if n, ok := rep.Funcs[cn]; ok {
-			return n
-		}
-		if m := spin2Method.FindStringSubmatch(cn); m != nil {
-			return fmt.Sprintf("%s.spin2's %s", m[1], m[2])
-		}
-		if strings.HasPrefix(cn, "ogo_") {
-			return cn + " (the runtime)"
-		}
-		return cn + " (the C library)"
-	}
+	scan := octogo.ScanCalls(c)
+	goName := func(listed string) string { return funcLabel(stackCName(listed), rep, scan) }
 
 	// Hub RAM.
 	mainNeed, mainLeast := needs.mainNeed, ""
@@ -259,6 +248,27 @@ func report(w io.Writer, rep *octogo.Report, cFile, out, inc string, stackAsked 
 		fmt.Fprintf(w, "  %7d  %s\n", f.size, goName(f.name))
 	}
 	return nil
+}
+
+// funcLabel is what the report calls the function the C names cn: its Go name, or
+// for an interface's table entry its method's, inlined into it or called, or the
+// Spin2 object's, the runtime's or the C library's it is.
+func funcLabel(cn string, rep *octogo.Report, scan *octogo.CallScan) string {
+	if n, ok := rep.Funcs[cn]; ok {
+		return n
+	}
+	if fc := scan.Funcs[cn]; fc != nil && scan.InTable(cn) && len(fc.Direct) == 1 {
+		if n, ok := rep.Funcs[fc.Direct[0]]; ok {
+			return n + " (its interface table's entry)"
+		}
+	}
+	if m := spin2Method.FindStringSubmatch(cn); m != nil {
+		return fmt.Sprintf("%s.spin2's %s", m[1], m[2])
+	}
+	if strings.HasPrefix(cn, "ogo_") {
+		return cn + " (the runtime)"
+	}
+	return cn + " (the C library)"
 }
 
 // probeSizes answers the size the target's compiler gives each of the objects names
