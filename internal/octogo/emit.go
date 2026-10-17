@@ -2546,6 +2546,7 @@ func (e *emitter) emitGo(nodes []Node) {
 		}
 	}
 	e.goSites = append(e.goSites, site)
+	e.noteReportGo(site.id, nodes)
 	e.needPanic()
 	e.includes["propeller2.h"] = true
 
@@ -7431,8 +7432,11 @@ func emitProgram(pkg *Package, w io.Writer, opts []EmitOption, rename map[string
 	if len(e.layoutChecks) != 0 {
 		out.WriteString("\n#ifdef __FLEXC__\nstatic char ogo_layout_check[(" + strings.Join(e.layoutChecks, " && ") + ") ? 1 : -1];\n#endif\n")
 	}
-	text := e.endProgramC(out.Bytes(), endsCogs)
-	_, err := w.Write(wrapLongLines(ensureStdint(insertStringLits(text, e.stringLitDecls))))
+	text := wrapLongLines(ensureStdint(insertStringLits(e.endProgramC(out.Bytes(), endsCogs), e.stringLitDecls)))
+	if e.report != nil {
+		e.fillReport(text, pkgs)
+	}
+	_, err := w.Write(text)
 	return e.loopSeedsOut, err
 }
 
@@ -7690,6 +7694,9 @@ type emitter struct {
 	goOnce            map[goSlotKey]bool        // where every go statement runs at most once (onceGoStatements), each of them; nil: the shared pool
 	goSlotOf          map[goSlotKey]int         // the slot of its own each go statement emitted so far was given (goClaimC)
 	goSlotSites       [][]int                   // the sites of each slot of its own, by slot
+	report            *Report                   // filled from the C this pass writes, for ogo build --report (WithReport)
+	reportFuncs       map[string]string         // the Go name of each function the C defines, by its C name (noteReportFunc)
+	reportGos         map[string]string         // each go statement, by its trampoline's C name (noteReportGo)
 	chanElems         map[string]bool           // element C types that need an ogo_chan_<T> cell and helpers
 	chanInitElems     map[string]bool           // element types whose channel init helper is reached
 	chanSendElems     map[string]bool           // element types whose channel send helper is reached
@@ -17475,12 +17482,14 @@ func (e *emitter) emitFuncDecl(ast []int32) {
 		cname := e.funcDefCName(name, ast)
 		proto = e.funcSignatureC(cname, sig)
 		e.curFunc = cname
+		e.noteReportFunc(cname, name, "")
 	} else {
 		var recvNamed bool
 		recvName, recvCType, recvNamed = e.receiverInfo(recv)
 		cname := e.methodCName(methodBaseType(recvCType), name)
 		proto = e.methodSignatureC(cname, recvName, recvCType, sig)
 		e.curFunc = cname
+		e.noteReportFunc(cname, name, recvCType)
 		if a, isArr := e.namedArrays[recvCType]; isArr {
 			// Recorded as an ARRAY, not a plain local: that is what makes `r[i]`
 			// index it, `len(r)` fold to its extent and a bounds check apply.
@@ -17620,6 +17629,7 @@ func (e *emitter) liftFuncLit(lit Node) (string, bool) {
 	// function taking it produced a binary the loader would not accept.
 	cname := e.mangle(e.curPkgPrefix, fmt.Sprintf("ogo_lit%d", e.liftSeq))
 	e.liftSeq++
+	e.noteReportLit(cname, lit)
 	// The escape summary collected under the literal's place (see collectCrossParams)
 	// is the lifted function's: a call by the C name, which is what a statement's
 	// literal and a deferred one make, is judged by it.
@@ -19453,6 +19463,7 @@ func (e *emitter) methodCName(baseType, method string) string {
 // emitMain emits `func main()` as `int main(void)`; main takes no parameters or
 // results.
 func (e *emitter) emitMain(sig, body []int32) {
+	e.noteReportFunc("main", "main", "")
 	params, resTypes := e.cSig(sig)
 	if params != "" || len(resTypes) != 0 {
 		e.fail("func main must have no parameters or results")

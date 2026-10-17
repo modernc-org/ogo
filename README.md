@@ -141,6 +141,35 @@ sub-benchmarks, `b.Run`; `RunParallel` is not provided yet. A function literal
 capturing a variable is refused here as everywhere, so a table-driven benchmark
 hands each case to its sub-benchmark through a package variable.
 
+`ogo build --report` says what a binary takes of the P2 once it is built: Hub RAM
+by its parts and what `main`'s stack needs beside them, each goroutine's stack and
+the `go` statement it is for, the hardware locks the runtime takes, the program's
+data by package variable, each with what its value is made of (a slice's backing,
+a channel's cell and buffer), and its largest functions by their Go names. Every
+size is the C backend's own, read off its listing and its binary. For p2-11:
+
+```
+Hub RAM: 357544 of 524288 bytes in the binary; main's stack needs 2572 more, 164176 to spare
+  header              1028  the loader's and the clock's
+  cog runtime         1364  the code each cog loads into its registers
+  code               79872  219 functions as the backend laid them out, the largest below
+  ...
+Goroutines: 4 go statements, each run once, on a slot of its own
+   longs  needs  go statement
+     512    509  disk.ogo:113 turn
+     160    156  main.ogo:137 receive
+  ...
+Data: the largest of the program's 269260 bytes
+   253952  memory [126976]uint16
+     4816  machine pdp11.Machine
+     4100  the goroutine slots: stacks, arguments, bookkeeping
+  ...
+Code: the largest of 219 functions
+     3992  (*fat.Volume).Mount
+     2924  (*rk11.Controller).begin
+  ...
+```
+
 > **Seeing garbled serial output?** `ogo run` reads at 230400 baud, which is what a
 > compiled program writes at, so `println` output is readable out of the box. The raw
 > `ogo loadp2` passthrough uses loadp2's own defaults instead, and it reads at 115200

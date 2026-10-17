@@ -151,15 +151,21 @@ tests had written their refused shape in main and were moved into a `run()` main
 calls: **a lifetime test writes its refused shape in a function other than main**.
 
 **Later, from the same review** (recorded at the user's request, not scheduled): a
-`go` that reports a cog it could not start instead of panicking; a resource report
-from `ogo build` (Hub RAM by globals, backings, channel cells and stacks; cog stacks
-and their bounds; locks; per-function code size); explicit Load/Store operations
+`go` that reports a cog it could not start instead of panicking; explicit Load/Store operations
 beside the defined plain accesses; a `tryAppend` name for the ok form of append; a
 check at a goroutine function's entry that stops an overrun before it writes; and splitting
 specs.go into the rules, the implementation status and the rationale. Done since:
 stack slots sized per goroutine (2026-10-17, goslots.go): a go statement that runs
 at most once has a slot of its own, sized for its goroutine, where every one of the
-program's does; any other program keeps seven slots of the deepest one's size.
+program's does; any other program keeps seven slots of the deepest one's size. And
+a resource report, `ogo build --report` (2026-10-17, internal/build/report.go): Hub
+RAM by its parts, goroutine slots and their needs, locks, data by package variable
+and the largest functions, every size the backend's -- the layout off a listing of
+the binary's own assembly assembled again (or, where the assembler will not take
+it back, of the C compiled with a listing, which the backend optimizes a little
+differently and the report says so), each object's size off a `sizeof` table built
+into a second compile and read out of its binary (octogo.SizeProbe), the names off
+the emitter (octogo.WithReport).
 
 **A program ends as Go's does, every cog with it** (the user's call, 2026-10-07): a
 debug build's panic stops every other cog and then its own (panicHaltC), and a return
@@ -239,6 +245,7 @@ ogo smith -seed 12345                      # emit a random OctoGo program to std
 ogo smith -seed 12345 -o DIR               # the same into DIR, with a package of its own (pkx) where drawn
 ogo build --clock 200MHz .                 # ask for a system clock; default is 160 MHz
 ogo build --no-inline .                    # leave inlining to the C backend, as before 2026-09-29
+ogo build --report .                       # what the binary takes: Hub RAM, stacks, locks, data, code
 ```
 
 The run cases -- `emitRunCases` in `internal/octogo/run_test.go`, the programs most
@@ -1024,7 +1031,9 @@ section. A new finding goes there; the rule it leaves goes here too.
   made where it is verifiable**; **A floor a measured bound replaces is asked, with
   a moat past the bound, what it was hiding**; **A runtime made general for a new
   shape keeps the old shape's C: a program at its limit pays for a generality it
-  does not use** (goslots.go).
+  does not use** (goslots.go); **A listing asked for to look at a program is a
+  different build: its binary is compared with the one shipped**; **a size the
+  backend gives is asked of the backend** (`ogo build --report`).
 - **Two programs that should cost the same are compared by their BINARIES**.
 - **A STATIC INITIALIZER IS LAID OUT BY ANOTHER RULE THAN ITS TYPE**: **A rule about
   the target's layout is measured on the board in C first**; **The host's compiler

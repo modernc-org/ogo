@@ -20,6 +20,16 @@ shipped section tells a reader on that version that they have behaviour they do 
 
 ### Toolchain
 
+- **`ogo build --report` says what a binary takes of the P2**: Hub RAM by its parts
+  (the cog runtime, code, string literals, the program's data, each Spin2 object's
+  DAT, the library's) and what `main`'s stack needs beside them; each goroutine's
+  slot, what its goroutine needs and the `go` statement it is for; the hardware
+  locks; the program's data by package variable, each with what its value is made
+  of -- a slice's backing, a channel's cell, buffer and lock, what `&T{}` and
+  `errors.New` made -- and its largest functions by their Go names. The sizes are
+  the backend's own: the layout read off a listing of the binary's addresses, the
+  data measured by building the program again with a table of each object's size.
+
 - **A go statement that runs once has a stack of its own, sized for its
   goroutine**: the goroutine pool had seven slots, one for each cog but main's,
   each the size the deepest goroutine needs, 256 longs at least. Where every go

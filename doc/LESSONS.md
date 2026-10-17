@@ -498,6 +498,23 @@ cog's stack ("Expected pointer to stack as last parameter to coginit/cogid"); an
 function counted as named once by its SPELLING across the program was not, p2-11's
 `drives()` beside rk11's constant `drives` -- a name is resolved where it is
 written, bare in its own package and `q.drives` through an import of it.
+The report the same review asked for, `ogo build --report`, reads what a binary
+takes off the backend, and two of its first answers were the backend's. Its
+listing of addresses (`--listing`) writes the C's lines into the assembly as
+comments and the optimizer works around them -- an FCACHE load gone, registers
+chosen otherwise -- so obeam's VM built with one is 4 bytes smaller than the VM
+shipped, every address after the first change moved. The build's own assembly
+assembled again with a listing is the shipped binary byte for byte, for obeam;
+p2-11's the assembler refuses, "Changing hub value for symbol
+_rk11_Controller_read", and its report reads the listed build and says by how many
+bytes it differs. **A listing asked for to look at a program is a different build:
+its binary is compared with the one shipped.** And the emitter's model of the
+target's layout, written for unsafe.Sizeof, sized a channel's cell as a pointer
+and knew nothing of the runtime's structs; a second compile carries a table of
+`sizeof` of every object at file scope behind a mark, read out of its binary, and
+all of p2-11's 269,260 bytes of data but 1,273 are attributed -- those the C
+library's stdio state and the bytes of strings its tables point at. **A size the backend gives is asked of
+the backend.**
 
 **A TYPE SWITCH BEHIND AN INIT STATEMENT** (2026-10-07), `switch s := pick(); v :=
 s.(type)`, the last header shape on the open list: the grammar's SwitchTag takes `[

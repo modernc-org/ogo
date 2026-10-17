@@ -118,6 +118,10 @@ func compile(args []string, stdout, stderr io.Writer) (binary string, code int, 
 	}
 	// The small functions are marked for the backend to inline, unless
 	// --no-inline asks for the program without.
+	var rep octogo.Report
+	if flags.report {
+		emitOpts = append(emitOpts, octogo.WithReport(&rep))
+	}
 	markedOpts := emitOpts
 	if !flags.noInline {
 		markedOpts = append(emitOpts[:len(emitOpts):len(emitOpts)], octogo.Inline())
@@ -175,6 +179,11 @@ func compile(args []string, stdout, stderr io.Writer) (binary string, code int, 
 	keepC := strings.TrimSuffix(out, filepath.Ext(out)) + ".c"
 	if code, err := compileSized(cbuf.Bytes(), plainer, cFile, out, root, keepC, flags.allowWarnings, flags.goStack != 0, stdout, stderr); err != nil {
 		return "", code, err
+	}
+	if flags.report {
+		if err := report(stdout, &rep, cFile, out, root, flags.goStack != 0); err != nil {
+			return "", 1, err
+		}
 	}
 	return out, 0, nil
 }
@@ -579,6 +588,9 @@ type buildFlags struct {
 	// A goroutine that outruns its slot panics rather than corrupting the pool, so
 	// this is the knob that diagnostic points at.
 	goStack int
+	// report prints what the program takes of the P2 after it is built
+	// (report).
+	report bool
 }
 
 // parseHz reads a flag's frequency argument, advancing i past it. It takes plain Hz
@@ -642,6 +654,8 @@ func parseArgs(args []string) (srcs []string, f buildFlags, err error) {
 			f.noInline = true
 		case a == "--allow-backend-warnings" || a == "-allow-backend-warnings":
 			f.allowWarnings = true
+		case a == "--report" || a == "-report":
+			f.report = true
 		case a == "--clock" || a == "-clock":
 			if f.clock, err = hz(a, &i); err != nil {
 				return nil, buildFlags{}, err
@@ -872,7 +886,7 @@ func isDir(path string) bool {
 // handed the backend as an include directory, or "" for none: the emitted C names
 // each by its path from there, `struct __using("vga/drv.spin2")`, so what the object
 // itself names is found beside it.
-func compileC(cFile, out, inc string, stdout, stderr io.Writer) (rc int, err error) {
+func compileC(cFile, out, inc string, stdout, stderr io.Writer, extra ...string) (rc int, err error) {
 	// The backend is a C program transpiled to Go, and it can crash as one: having
 	// said "exceeded local register limit" about a function too big for it,
 	// spin2cpp goes on to rename a register it never allocated, which in the
@@ -885,7 +899,7 @@ func compileC(cFile, out, inc string, stdout, stderr io.Writer) (rc int, err err
 			rc, err = 1, fmt.Errorf("flexcc crashed: %v", r)
 		}
 	}()
-	args := []string{"-2"}
+	args := append([]string{"-2"}, extra...)
 	if inc != "" {
 		args = append(args, "-I", inc)
 	}

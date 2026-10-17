@@ -179,7 +179,7 @@ Use "%s help <command>" for more information about a command.
 
 // commandHelp is the per-command detail behind "ogo help <command>".
 var commandHelp = map[string]string{
-	"build": `usage: ogo build [-o output] [--release] [--unchecked] [--no-inline] [--clock hz] [--gostack longs] [--allow-backend-warnings] [package | file.ogo ...]
+	"build": `usage: ogo build [-o output] [--release] [--unchecked] [--no-inline] [--clock hz] [--gostack longs] [--allow-backend-warnings] [--report] [package | file.ogo ...]
 
 Build compiles a package to a Propeller 2 binary.
 
@@ -230,6 +230,16 @@ was wrong code: the build fails then, writes no binary, and keeps the C beside
 where the binary would be, to be reported with the program.
 --allow-backend-warnings builds it anyway.
 
+--report says, once the binary is built, what it takes of the P2: Hub RAM by its
+parts and what main's stack needs beside them; each goroutine's stack, what the
+backend's listing says it needs and the go statement it is for; the hardware
+locks the program takes; its data, a package variable with everything its value
+is made of, at the size the C backend gives each; and its largest functions. The
+sizes are the backend's own: the code and the parts of Hub RAM read off a listing
+of the binary's addresses, its assembly assembled again with one, and the data
+measured by building the program again with a table of each object's size, so a
+report costs about a compile more than the build.
+
 	-o output     write the binary here
 	--unchecked   omit the runtime checks
 	--no-inline   inline no more than the C backend does by itself
@@ -249,6 +259,7 @@ where the binary would be, to be reported with the program.
 	--xtal hz     the board's crystal (default 20MHz)
 	--allow-backend-warnings
 	              build a program the C backend warned about
+	--report      say what the binary takes of Hub RAM, cogs and locks
 `,
 	"run": `usage: ogo run [--release] [--unchecked] [--no-inline] [--clock hz] [--gostack longs] [--allow-backend-warnings] [package | file.ogo ...]
 
