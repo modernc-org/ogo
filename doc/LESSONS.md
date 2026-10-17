@@ -1926,6 +1926,52 @@ backend builds next reads the first case and the last as the least and the
 greatest, so a native build, whose sort may return, could build a wrong table from
 the same switch. **A build the sweep's cap killed is built by the compiler before
 the change before it is called slow.**
+The fuzzer's arithmetic had a rule nobody had written down as one: the VM's
+operators refuse what C leaves undefined -- an int that overflows, the most negative
+value over -1, a shift by a count outside the width, a negative value shifted left
+-- and fall back to XOR, each with a comment that the emitter never emits such a
+form. Emitting exactly those is the emitter's business, Go defining every one, and
+so the guards it writes for them -- ogo_shl_T, ogo_div_T, ogo_nonzero -- had never
+been reached by a generated program. A part of its own (genWraps, wrRand,
+2026-10-17) writes them: overflow at every integer type and int among them, the
+most negative value over -1 through variables, constants and calls, shifts by
+counts of every integer type at the width and past it, truncating and extending
+conversions, each assigned through a local, a package variable, an element at a
+constant index and at a calling one and a pointer, and the comparisons that test
+for an overflow. What it computes is Go's own arithmetic in Go, held to Go first:
+the 150 seeds of 1-300 that carry it and that Go builds print OctoSmith OK under Go.
+Asked to fail, it did: a compiler whose shift helpers ignore the width fails 33 of
+the 64 seeds of 1-100 carrying the part, one whose division forgets the most
+negative value over -1 traps in 33, and none of the 36 without the part fails under
+either.
+On the host oracle 11 of the 255 seeds of 1-400 carrying it failed, every one at a
+shift assigned through a pointer, `*wp1 <<= wrKU16b_1`: the statement writing `*p
+op= v` set the target's type only for a target without a star, and the guarded
+form, given no type to name a helper by, fell back to C's own `<<=` -- on the board
+a count of 32 or more taken modulo 32. Through a field of the pointee the type was
+known, as it was in every other target form. Two probes of the same row, written by
+hand beside the part, found two more: a uint64 count of 2^63 or more was handed to
+the helper's int64_t and panicked as negative, and a division assigned to an
+unsigned integer had no check of its divisor at all -- a signed one's lives in its
+helper, an unsigned one has no helper, and `z /= d` went out as written: 255 on the
+board for a uint8 divided by zero, where `z / d` panicked. **A fuzzer that keeps to
+what C defines never reaches a guard the emitter writes for what C does not: the
+oracle's arithmetic is the language's.**
+On the board the part found what the host could not: of 201 seeds carrying it, 179
+passed, 17 outgrew a cog, and five failed its checksum, each at a uint32 or a uint
+divided by 4294967295 or 4294967294 -- `wrAUn_1[wrIdx_1(0)] /= WrMaxUn_1`, `(wrU32b_1
+/ 4294967295)` -- found by printing the running value after each statement on the
+board beside the generator's. In C alone the board printed 4294967291 for `5 /
+0xffffffff` and 2 for `5 / 0xfffffffe`, and CompileDiv in outasm.c says why: its
+fast path takes an immediate that is a power of two or the negative of one before
+it asks whether the division is signed, and an immediate is an int32_t, so every
+unsigned divisor 2^32 - 2^k is -2^k to it -- a NEG, a shift right by k, an AND with
+2^k - 1 (doc/udiv-negative-power.c). It is the backend's second misreading of an
+unsigned constant in a day: the case sort of switch-case-span-overflow.c holds a
+case past MaxInt32 as the same int32_t. Such a division is written as the compare
+it comes to, a quotient by a divisor of 2^31 or more being 0 or 1. **An unsigned
+constant past INT32_MAX is a negative number to the backend: every place it reads a
+constant's value is asked of one.**
 **AN ARRAY RESULT IS A ROW** (2026-09-23). A call returning an array is a STATEMENT in
 C -- the caller hands the callee storage to write -- so every position one stands in
 has to supply that storage, and one probe after another the same afternoon found

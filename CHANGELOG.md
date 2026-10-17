@@ -27,6 +27,23 @@ shipped section tells a reader on that version that they have behaviour they do 
   `max`, a conversion to a float, a print, a send, an append and a division
   assigned. Built past the warning, those programs printed Go's values on a
   P2-EDGE. Found writing fixed-point filters.
+- **A shift assigned through a pointer shifts every bit out at the width**: `*p <<=
+  n` and `*p >>= n`, and the same through `**pp`, were C's own operators, so on a
+  P2-EDGE a count of 32 or more was taken modulo 32 -- a uint16 shifted by 192 kept
+  its value -- where Go gives 0, or -1 for a negative value shifted right. A
+  division assigned the same way, `*p /= d` of a signed value, took no check of
+  its divisor either. Through a variable, a field or an element they were right.
+- **A division assigned to an unsigned integer panics on a zero divisor**: `z /= d`
+  and `z %= d` of an unsigned z, wherever z stands, gave a value on a P2-EDGE --
+  255 for a uint8 -- where Go panics "integer divide by zero". `z / d` was right.
+- **A shift by a uint64 count of 2^63 or more shifts every bit out**: a checked
+  build panicked "negative shift amount", reading the count as a signed number.
+- **An unsigned division by a constant just below 2^32 divides**: `x / 0xffffffff`
+  of a uint32, a uint or a uintptr was -x on a P2-EDGE, `x / 0xfffffffe` was x >> 1
+  and `x % 0xfffffffe` x & 1 -- each divisor 2^32 - 2^k that the target's C
+  compiler reads as the negative power of two its bits make. Such a division is
+  written as the comparison it comes to. Found on the board, where the host's
+  compiler had it right.
 
 ### Toolchain
 
@@ -54,6 +71,17 @@ shipped section tells a reader on that version that they have behaviour they do 
   the tag and nothing falling through. A compiler that dropped the fallthrough, or
   wrote the default last, fails a quarter to a half of the seeds carrying the part,
   which the rest of the fuzzer passed.
+- **`ogo smith` writes what Go defines and C does not**: arithmetic that overflows
+  at every integer type, int among them, the most negative value divided by -1 and
+  its remainder, shifts by counts of every integer type at the width and past it, a
+  uint64's past 2^63 among them, a negative value shifted left, conversions that
+  truncate and extend, each assigned through a local, a package variable, an
+  element at a constant index and at one a call returns and a pointer, increments
+  past the end, and the test a program writes for an overflow, `(x + 1) > x`. Its
+  arithmetic had kept to what C defines, so none of this was generated, and the
+  first sweeps found the four faults above. A compiler whose shifts ignore the
+  width, or whose division forgets the most negative value over -1, fails half the
+  seeds carrying the part, which the rest of the fuzzer passed.
 
 ## v0.56.2
 

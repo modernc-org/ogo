@@ -1156,6 +1156,55 @@ func TestEmitCSwitch(t *testing.T) {
 	}
 }
 
+// TestEmitCQualifiedCompound holds a shift and a division assigned to another
+// package's variable to the guarded forms a variable of the program's own takes. The
+// target's base is the import qualifier, which no variable is, and the compound path
+// asked the base for the target's type: `a.Z /= d` of an unsigned Z went out with no
+// check of its divisor. The run cases are of one package, so they cannot ask this.
+func TestEmitCQualifiedCompound(t *testing.T) {
+	lib := "var V uint32 = 7\n\nvar W int32 = -2147483648\n\nvar Z uint8 = 200\n"
+	src := `import "a"
+
+var n uint = 40
+var m1 int32 = -1
+var d uint8 = 3
+
+func main() {
+	a.V <<= n
+	a.W /= m1
+	a.Z /= d
+	a.Z %= d
+	println(a.V, a.W, a.Z)
+}
+`
+	fsys := fstest.MapFS{
+		"main.ogo": &fstest.MapFile{Data: []byte(src)},
+		"a/a.ogo":  &fstest.MapFile{Data: []byte(lib)},
+	}
+	pkg, err := Build(-1, []string{"main.ogo"}, fsys)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var b bytes.Buffer
+	if err := EmitC(pkg, &b, Checked()); err != nil {
+		t.Fatal(err)
+	}
+	c := b.String()
+	for _, want := range []string{
+		"a_V = ogo_shl_uint32_t(a_V, (int64_t)((n)));",
+		"a_W = ogo_div_int32_t(a_W, m1);",
+		"a_Z /= ogo_nonzero(d);",
+		"a_Z %= ogo_nonzero(d);",
+	} {
+		if !strings.Contains(c, want) {
+			t.Errorf("the C lacks %q", want)
+		}
+	}
+	if t.Failed() {
+		t.Logf("C:\n%s", c)
+	}
+}
+
 // TestEmitCSwitchSpan pins which constant switches are C switches by the span of
 // their cases: the backend sorts them by an int32_t difference, which overflows for
 // two further apart than MaxInt32 and builds without end

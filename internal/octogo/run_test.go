@@ -26394,6 +26394,117 @@ func main() {
 		want: "0 0 -1 -1\n0 0 0\n0 -1 0\n-2147483648 0\n-9223372036854775808 0\n",
 	},
 	{
+		// The same through a pointer, `*p <<= n`, which knew no type to name the
+		// guarded helper by and was written as C's own operator: a count at or past
+		// the width kept the value on the board, the count taken modulo 32, where Go
+		// shifts every bit out, and the most negative value over -1 trapped on the
+		// host. Found by the fuzzer's genWraps, eleven seeds of 400.
+		name: "a compound shift or division through a pointer",
+		src: `var a = [2]uint16{0xbeef, 7}
+var n uint8 = 192
+var forty uint = 40
+var m1 int32 = -1
+
+func main() {
+	p := &a[0]
+	*p <<= n
+	q := &a[1]
+	*q >>= forty
+	var x int32 = -77
+	px := &x
+	*px >>= forty
+	println(a[0], a[1], x)
+	x = -2147483648
+	*px /= m1
+	println(x)
+	x = 13
+	*px %= m1
+	println(x)
+	var y int64 = -5
+	py := &y
+	ppy := &py
+	**ppy <<= n
+	println(y)
+	y = -5
+	**ppy >>= forty
+	println(y)
+}
+`,
+		want: "0 0 -1\n-2147483648\n0\n0\n-1\n",
+	},
+	{
+		// A count of 64 unsigned bits is never negative, but the helpers took it as
+		// an int64_t, and one of 2^63 or more panicked "negative shift amount" in a
+		// checked build where Go shifts every bit out. Such a count has a helper of
+		// its own, taking it as the uint64_t it is (shiftHelperDef).
+		name: "a shift count of 64 unsigned bits past 2^63",
+		src: `type Count uint64
+
+var calls int
+
+func big() uint64 {
+	calls++
+	return 0x8000000000000001
+}
+
+func main() {
+	var n uint64 = 1 << 63
+	var c Count = 0xffffffffffffffff
+	var x int32 = -5
+	var y uint64 = 0x123456789abcdef0
+	var z int64 = -1
+	println(x<<n, x>>n, y<<c, y>>c, z>>n, z<<c)
+	println(x>>big(), y<<big(), calls)
+	x <<= c
+	z >>= big()
+	println(x, z, calls)
+	var small uint64 = 3
+	println(y>>small, z<<small)
+}
+`,
+		want: "0 -1 0 0 -1 0\n-1 0 2\n0 -1 3\n163971058432973790 -8\n",
+	},
+	{
+		// An unsigned division or remainder by a constant of 2^32 - 2^k, k below 31,
+		// which the target's C compiler reads as the negative power of two its bits
+		// are: `a / 0xffffffff` was -a on the board, `a / 0xfffffffe` a >> 1 and
+		// `a % 0xfffffffe` a & 1 (doc/udiv-negative-power.c). Every line this prints
+		// was wrong there. Written as the compare it comes to (udivHighConst); the
+		// divisors 0x80000000 and 3000000000 are the backend's own and were right.
+		// Found by the fuzzer's genWraps, five seeds of 201 on a P2-EDGE.
+		name: "an unsigned division by a constant the target reads as negative",
+		src: `const Big uint = 4294967295
+
+var vs = [4]uint32{5, 0xfffffffd, 0xc0000001, 0xffffffff}
+
+var calls int
+
+func id(x uint32) uint32 {
+	calls++
+	return x
+}
+
+func main() {
+	for i := 0; i < 4; i++ {
+		a := vs[i]
+		println(a/0xffffffff, a/0xfffffffe, a/0xfffffff0, a/0xc0000000, a/0x80000000, a/3000000000)
+		println(a%0xffffffff, a%0xfffffffe, a%0xfffffff0, a%0xc0000000, a%0x80000000, a%3000000000)
+		println(id(a)/0xfffffffe*7+1, (a+1)%0xffffffff%5, calls)
+		u := uint(a)
+		p := uintptr(a)
+		println(u/Big, u%Big, p/0xfffffffc, p%0xfffffffc)
+		b, c := a, a
+		b /= 0xfffffffe
+		c %= 0xfffffff0
+		q := &vs[i]
+		*q %= 0xffffffff
+		println(b, c, vs[i])
+	}
+}
+`,
+		want: "0 0 0 0 0 0\n5 5 5 5 5 5\n1 1 1\n0 5 0 5\n0 5 5\n0 0 1 1 1 1\n4294967293 4294967293 13 1073741821 2147483645 1294967293\n1 4 2\n0 4294967293 1 1\n0 13 4294967293\n0 0 0 1 1 1\n3221225473 3221225473 3221225473 1 1073741825 221225473\n1 4 3\n0 3221225473 0 3221225473\n0 3221225473 3221225473\n1 1 1 1 1 1\n0 1 15 1073741823 2147483647 1294967295\n8 0 4\n1 0 1 3\n1 15 0\n",
+	},
+	{
 		// An untyped constant shifted by a count that is not constant takes the type
 		// of where the shift stands -- a declaration, a store through a field, an
 		// element or a chain, an argument, a variadic pack, an append, a result, a
@@ -33464,6 +33575,38 @@ func main() {
 `,
 		panics: true,
 		want:   "panic: negative shift amount\n",
+	},
+	{
+		// A compound division of an UNSIGNED target has no helper -- it cannot
+		// overflow -- and its divisor went to C bare, `z %= d`: a zero was the host's
+		// to trap on and the board's to answer, 255 for a uint8, where Go panics. It
+		// takes the check the expression `z % d` takes (compoundDivisorGuard).
+		name: "an unsigned compound division by zero traps",
+		src: `var d uint32 = 0
+
+func main() {
+	var z uint32 = 200
+	z %= d
+	println(z)
+}
+`,
+		panics: true,
+		want:   "panic: integer divide by zero\n",
+	},
+	{
+		// The same through a pointer.
+		name: "an unsigned compound division by zero through a pointer traps",
+		src: `var d uint8 = 0
+
+func main() {
+	var z uint8 = 200
+	p := &z
+	*p /= d
+	println(z)
+}
+`,
+		panics: true,
+		want:   "panic: integer divide by zero\n",
 	},
 	{
 		// panic("msg") aborts through ogo_panic. smith's oracle relies on this: a

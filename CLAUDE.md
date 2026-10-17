@@ -709,7 +709,7 @@ had it on 2026-10-13"; the sections named in capitals below are its journal's.
   each time the program runs the call, and **a new call site by name counts
   `fn.Sites`**. A part added since 2026-10-06 draws from its own source (`aggRand`,
   `wideRand`, `convRand`, `mwRand`, `emRand`, `lbRand`, `pkRand`, `paRand`,
-  `swRand`; the
+  `swRand`, `wrRand`; the
   aggregates mint no name from VarSeq either), so every other part of a seed's
   program stays what it was.
   Beyond plain statements it
@@ -722,7 +722,9 @@ had it on 2026-10-13"; the sections named in capitals below are its journal's.
   package of the program's own reached by qualified names (pkg.go, only with
   `ogo smith -o`/Files; TestOraclePackages), a 64-bit operation handed on before
   arguments of other types (pairs.go), switches of constant cases on every integer
-  type (switches.go), names C has spoken for and names of the
+  type (switches.go), what Go defines and C does not -- overflow, the most negative
+  value over -1, shifts at and past the width -- in every target form (wrap.go; the
+  VM's own arithmetic keeps to what C defines), names C has spoken for and names of the
   universe (`cNames`, `universeNames`), calls in headers, a function of several
   returns for the inliner's single-exit rewrite, and widened and cross-converted
   folds. **What was swept is swept FOR A GENERATOR**: a change to it makes every
@@ -1051,6 +1053,11 @@ section. A new finding goes there; the rule it leaves goes here too.
   compiler** (genSwitches).
 - **A build the sweep's cap killed is built by the compiler before the change before
   it is called slow** (doc/switch-case-span-overflow.c).
+- **A fuzzer that keeps to what C defines never reaches a guard the emitter writes
+  for what C does not: the oracle's arithmetic is the language's** (genWraps).
+- **An unsigned constant past INT32_MAX is a negative number to the backend: every
+  place it reads a constant's value is asked of one** (doc/udiv-negative-power.c,
+  doc/switch-case-span-overflow.c).
 - **A warning the backend gives a user's build is a fault until shown harmless**.
   **A run that reads a register nothing wrote can look right by luck: the listing is
   the measure, and a C harness passing a constant after a 64-bit argument is a

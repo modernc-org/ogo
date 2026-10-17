@@ -240,6 +240,10 @@ func (f *Fuzzer) GenerateProgram(vm Machine, mem Memory) error {
 	// 4.15. Switches of constant cases on every integer type (see genSwitches).
 	swCall, swWant, swOK := f.genSwitches()
 
+	// 4.16. What Go defines and C does not: overflow, the most negative value over
+	// -1, shifts at and past the width (see genWraps).
+	wrCall, wrWant, wrOK := f.genWraps()
+
 	// 5. Generate the main function
 	// FuncDecl = "func" identifier "(" ")" Block
 	fmt.Fprint(f.Out, "func main() {\n")
@@ -291,6 +295,10 @@ func (f *Fuzzer) GenerateProgram(vm Machine, mem Memory) error {
 	// And the procedure of switches.
 	if swOK {
 		f.checkAtTop("switches", swCall, swWant)
+	}
+	// And the procedure of what Go defines and C does not.
+	if wrOK {
+		f.checkAtTop("wraps", wrCall, wrWant)
 	}
 
 	// Generate 20 sequential statements to mutate the checksum

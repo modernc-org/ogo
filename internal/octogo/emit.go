@@ -5962,13 +5962,24 @@ var cUnsignedOf = map[string]string{
 	"int32_t": "uint32_t", "int64_t": "uint64_t",
 }
 
-// shiftHelperName is the C name of the guarded shift helper for a value type.
-func shiftHelperName(op, ctype string) string {
+// shiftHelperName is the C name of the guarded shift helper for a value type, and
+// for a count of 64 unsigned bits (u64Count) the helper of its own that it takes.
+func shiftHelperName(op, ctype string, u64Count bool) string {
 	dir := "shl"
 	if op == ">>" {
 		dir = "shr"
 	}
-	return "ogo_" + dir + "_" + cIdent(ctype)
+	name := "ogo_" + dir + "_" + cIdent(ctype)
+	if u64Count {
+		name += "_by_u64"
+	}
+	return name
+}
+
+// shiftHelper is what a guarded shift helper is defined from.
+type shiftHelper struct {
+	op, ctype string
+	u64Count  bool
 }
 
 // shiftHelperDef defines a guarded shift, which is what makes a shift mean in the
@@ -5982,17 +5993,24 @@ func shiftHelperName(op, ctype string) string {
 //
 // A left shift is performed in the unsigned counterpart: Go defines the overflow to
 // wrap, and C does not define a signed one at all.
-func shiftHelperDef(op, ctype string, checks bool) string {
+//
+// A count of 64 unsigned bits is taken as the uint64_t it is. Converted to the
+// int64_t the other helpers take, a count of 2^63 or more was negative, and a
+// checked build panicked "negative shift amount" where Go shifts every bit out.
+func shiftHelperDef(op, ctype string, u64Count, checks bool) string {
 	bits := cIntWidths[ctype]
-	name := shiftHelperName(op, ctype)
+	name := shiftHelperName(op, ctype, u64Count)
 	// A negative count is a run-time panic in Go, so a checked build says so. An
 	// unchecked one has no panic to raise and must still not shift by a negative
 	// count, which C leaves undefined: comparing unsigned puts every negative count
 	// past the width, so it yields what an enormous one does.
-	body, cmp := "", fmt.Sprintf("n >= %d", bits)
-	if checks {
+	body, cmp, countType := "", fmt.Sprintf("n >= %d", bits), "int64_t"
+	switch {
+	case u64Count:
+		countType = "uint64_t"
+	case checks:
 		body = "\tif (n < 0) ogo_panic(\"negative shift amount\");\n"
-	} else {
+	default:
 		cmp = fmt.Sprintf("(uint64_t)n >= %d", bits)
 	}
 	switch {
@@ -6014,7 +6032,7 @@ func shiftHelperDef(op, ctype string, checks bool) string {
 	default:
 		body += fmt.Sprintf("\tif (%s) return 0;\n\treturn v >> n;\n", cmp)
 	}
-	return fmt.Sprintf("static %s %s(%s v, int64_t n) {\n%s}\n", ctype, name, ctype, body)
+	return fmt.Sprintf("static %s %s(%s v, %s n) {\n%s}\n", ctype, name, ctype, countType, body)
 }
 
 // divHelperName is the C name of the guarded division helper for a value type.
@@ -6066,14 +6084,27 @@ func (e *emitter) needDiv(op, ctype string) string {
 	return divHelperName(op, ctype)
 }
 
-// needShift records that a guarded shift helper is used, so it is defined.
-func (e *emitter) needShift(op, ctype string) string {
-	e.shiftHelpers[shiftHelperName(op, ctype)] = [2]string{op, ctype}
-	if e.checks {
+// needShift records that a guarded shift helper is used, so it is defined, and
+// names the one for the count, count the AST of the count.
+func (e *emitter) needShift(op, ctype string, count []int32) string {
+	u64 := e.shiftCountU64(count)
+	name := shiftHelperName(op, ctype, u64)
+	e.shiftHelpers[name] = shiftHelper{op, ctype, u64}
+	if e.checks && !u64 {
 		e.needPanic()
 	}
 	e.includes["stdint.h"] = true
-	return shiftHelperName(op, ctype)
+	return name
+}
+
+// shiftCountU64 reports whether a shift's count is an unsigned integer of 64 bits
+// that is not a constant, which the guarded helper takes as it is (shiftHelperDef).
+func (e *emitter) shiftCountU64(count []int32) bool {
+	if _, ok := e.foldIntegral(count); ok {
+		return false
+	}
+	ct, ok := e.inferCType(count)
+	return ok && e.underlyingCType(ct) == "uint64_t"
 }
 
 // sortedKeys returns the keys of a set in deterministic (sorted) order, for stable
@@ -6495,7 +6526,7 @@ func typeNameCollisions(src []byte, names map[string]bool) map[string]bool {
 // emitProgram is EmitC's one pass. rename lists the main-package types spelled
 // ogo_T_<name> in C (see typeMangle).
 func emitProgram(pkg *Package, w io.Writer, opts []EmitOption, rename map[string]bool, seeds loopSeeds) (loopSeeds, error) {
-	e := &emitter{loopSeedsIn: seeds, loopSeedsOut: loopSeeds{}, renameTypes: rename, renamedTypes: map[string]string{}, includes: map[string]bool{}, funcRet: map[string][]string{}, funcSliceParams: map[string][]string{}, funcVariadic: map[string]int{}, nilHelpers: map[string]bool{}, initSkew: map[string]bool{}, arrPtrHelpers: map[string]arrDim{}, usliceHelpers: map[string]bool{}, funcArrayRet: map[string]arrDim{}, funcStructRet: map[string]string{}, funcArrayParams: map[string][]arrDim{}, anonStructNames: map[string]string{}, methodValueTypes: map[string]funcValueType{}, methodValueOf: map[string]string{}, methodExprNames: map[string]string{}, funcParams: map[string][]string{}, methodPtr: map[string]bool{}, recvByRef: map[string]bool{}, globals: map[string]string{}, structs: map[string][]structField{}, namedTypes: map[string]bool{}, typeNames: map[string]bool{}, interfaceTypes: map[string]bool{}, ifaceMethods: map[string][]ifaceMethod{}, anonIfaceNames: map[string]string{}, anonIfaceMinted: map[string]bool{}, ifaceASTs: map[string]ifaceAST{}, ifaceVTables: map[string]bool{}, namedUnderlying: map[string]string{}, namedArrays: map[string]arrDim{}, constInt: map[string]string{}, constVal: map[string]constant.Value{}, constBool: map[string]bool{}, constWide: map[string]string{}, constStr: map[string]string{}, constUntyped: map[string]bool{}, constHuge: map[string]bool{}, arrays: map[string]arrDim{}, globalArrays: map[string]arrDim{}, sliceVars: map[string]string{}, globalSliceVars: map[string]string{}, chanElems: map[string]bool{}, chanInitElems: map[string]bool{}, chanSendElems: map[string]bool{}, chanRecvElems: map[string]bool{}, chanTryRecvElems: map[string]bool{}, chanTrySendElems: map[string]bool{}, chanGatedSendElems: map[string]bool{}, chanSendClosedElems: map[string]bool{}, chanBufElems: map[string]bool{}, chanLenElems: map[string]bool{}, chanReadyElems: map[string]bool{}, aliasOf: map[string]string{}, aliasLits: map[string]bool{}, localTypes: map[string]string{}, gotoTargets: map[string]bool{}, chanCloseElems: map[string]bool{}, chanRecv2Elems: map[string]bool{}, mathWrappers: map[string]bool{}, chanElemByName: map[string]string{}, sliceElems: map[string]bool{}, sliceElemByName: map[string]string{}, appendElems: map[string]bool{}, tryappendElems: map[string]bool{}, appendSliceElems: map[string]bool{}, tryappendSliceEls: map[string]bool{}, appendokStructs: map[string]bool{}, copyElems: map[string]bool{}, resliceElems: map[string]bool{}, reslice3Elems: map[string]bool{}, mkLenHelpers: map[string]bool{}, clearElems: map[string]bool{}, minElems: map[string]bool{}, maxElems: map[string]bool{}, printSliceElems: map[string]bool{}, printStructs: map[string]string{}, printIfaces: map[string]string{}, printlnElems: map[string]bool{}, switchBreakUsed: map[string]bool{}, labelBreak: map[string]string{}, labelContinue: map[string]string{}, labelUsed: map[string]bool{}, eqStructs: map[string]bool{}, eqArrays: map[string]arrDim{}, frameBacked: map[string]bool{}, frameHolder: map[string]string{}, crossParams: map[string][]leak{}, crossContents: map[string][]leak{}, retContents: map[string][]bool{}, recvContents: map[string]leak{}, paramCalls: map[string][]paramCall{}, frameCalls: map[string][]frameCall{}, localConstSpecs: map[string]localConstSpec{}, inheritedTypes: map[string]bool{}, funcValueMembers: map[string][]string{}, methodExprMembers: map[string]emMethodExpr{}, memberShown: map[string]string{}, litLifted: map[string][]string{}, methodNames: map[string]bool{}, recvLeaks: map[string]leak{}, recvInto: map[string]uint32{}, retRecv: map[string]bool{}, crossInto: map[string][]uint32{}, ifaceSummaries: map[string]ifaceSummary{}, retParams: map[string][]bool{}, funcValueOf: map[string]string{}, crossNames: map[string]string{}, initNames: map[string]string{}, funcValueTypes: map[string]funcValueType{}, funcTypeNames: map[string]string{}, funcTypeRet: map[string][]string{}, funcTypeParams: map[string][]string{}, funcTypeVariadic: map[string]int{}, recFuncTypes: map[string]bool{}, recFuncShapes: map[string]string{}, retStructs: map[string]string{}, retStructByKey: map[string]string{}, shiftHelpers: map[string][2]string{}, shiftCTypes: map[*int32]string{}, shiftWalked: map[shiftWalkKey]bool{}, shiftIn: map[*int32]bool{}, divHelpers: map[string][2]string{}, funcValueWrappers: map[string]string{}, deferReplay: -1, iota: -1}
+	e := &emitter{loopSeedsIn: seeds, loopSeedsOut: loopSeeds{}, renameTypes: rename, renamedTypes: map[string]string{}, includes: map[string]bool{}, funcRet: map[string][]string{}, funcSliceParams: map[string][]string{}, funcVariadic: map[string]int{}, nilHelpers: map[string]bool{}, initSkew: map[string]bool{}, arrPtrHelpers: map[string]arrDim{}, usliceHelpers: map[string]bool{}, funcArrayRet: map[string]arrDim{}, funcStructRet: map[string]string{}, funcArrayParams: map[string][]arrDim{}, anonStructNames: map[string]string{}, methodValueTypes: map[string]funcValueType{}, methodValueOf: map[string]string{}, methodExprNames: map[string]string{}, funcParams: map[string][]string{}, methodPtr: map[string]bool{}, recvByRef: map[string]bool{}, globals: map[string]string{}, structs: map[string][]structField{}, namedTypes: map[string]bool{}, typeNames: map[string]bool{}, interfaceTypes: map[string]bool{}, ifaceMethods: map[string][]ifaceMethod{}, anonIfaceNames: map[string]string{}, anonIfaceMinted: map[string]bool{}, ifaceASTs: map[string]ifaceAST{}, ifaceVTables: map[string]bool{}, namedUnderlying: map[string]string{}, namedArrays: map[string]arrDim{}, constInt: map[string]string{}, constVal: map[string]constant.Value{}, constBool: map[string]bool{}, constWide: map[string]string{}, constStr: map[string]string{}, constUntyped: map[string]bool{}, constHuge: map[string]bool{}, arrays: map[string]arrDim{}, globalArrays: map[string]arrDim{}, sliceVars: map[string]string{}, globalSliceVars: map[string]string{}, chanElems: map[string]bool{}, chanInitElems: map[string]bool{}, chanSendElems: map[string]bool{}, chanRecvElems: map[string]bool{}, chanTryRecvElems: map[string]bool{}, chanTrySendElems: map[string]bool{}, chanGatedSendElems: map[string]bool{}, chanSendClosedElems: map[string]bool{}, chanBufElems: map[string]bool{}, chanLenElems: map[string]bool{}, chanReadyElems: map[string]bool{}, aliasOf: map[string]string{}, aliasLits: map[string]bool{}, localTypes: map[string]string{}, gotoTargets: map[string]bool{}, chanCloseElems: map[string]bool{}, chanRecv2Elems: map[string]bool{}, mathWrappers: map[string]bool{}, chanElemByName: map[string]string{}, sliceElems: map[string]bool{}, sliceElemByName: map[string]string{}, appendElems: map[string]bool{}, tryappendElems: map[string]bool{}, appendSliceElems: map[string]bool{}, tryappendSliceEls: map[string]bool{}, appendokStructs: map[string]bool{}, copyElems: map[string]bool{}, resliceElems: map[string]bool{}, reslice3Elems: map[string]bool{}, mkLenHelpers: map[string]bool{}, clearElems: map[string]bool{}, minElems: map[string]bool{}, maxElems: map[string]bool{}, printSliceElems: map[string]bool{}, printStructs: map[string]string{}, printIfaces: map[string]string{}, printlnElems: map[string]bool{}, switchBreakUsed: map[string]bool{}, labelBreak: map[string]string{}, labelContinue: map[string]string{}, labelUsed: map[string]bool{}, eqStructs: map[string]bool{}, eqArrays: map[string]arrDim{}, frameBacked: map[string]bool{}, frameHolder: map[string]string{}, crossParams: map[string][]leak{}, crossContents: map[string][]leak{}, retContents: map[string][]bool{}, recvContents: map[string]leak{}, paramCalls: map[string][]paramCall{}, frameCalls: map[string][]frameCall{}, localConstSpecs: map[string]localConstSpec{}, inheritedTypes: map[string]bool{}, funcValueMembers: map[string][]string{}, methodExprMembers: map[string]emMethodExpr{}, memberShown: map[string]string{}, litLifted: map[string][]string{}, methodNames: map[string]bool{}, recvLeaks: map[string]leak{}, recvInto: map[string]uint32{}, retRecv: map[string]bool{}, crossInto: map[string][]uint32{}, ifaceSummaries: map[string]ifaceSummary{}, retParams: map[string][]bool{}, funcValueOf: map[string]string{}, crossNames: map[string]string{}, initNames: map[string]string{}, funcValueTypes: map[string]funcValueType{}, funcTypeNames: map[string]string{}, funcTypeRet: map[string][]string{}, funcTypeParams: map[string][]string{}, funcTypeVariadic: map[string]int{}, recFuncTypes: map[string]bool{}, recFuncShapes: map[string]string{}, retStructs: map[string]string{}, retStructByKey: map[string]string{}, shiftHelpers: map[string]shiftHelper{}, shiftCTypes: map[*int32]string{}, shiftWalked: map[shiftWalkKey]bool{}, shiftIn: map[*int32]bool{}, divHelpers: map[string][2]string{}, funcValueWrappers: map[string]string{}, deferReplay: -1, iota: -1}
 	for _, opt := range opts {
 		opt(e)
 	}
@@ -6947,8 +6978,8 @@ func emitProgram(pkg *Package, w io.Writer, opts []EmitOption, rename map[string
 	}
 	slices.Sort(shiftNames)
 	for _, name := range shiftNames {
-		oc := e.shiftHelpers[name]
-		helperDefs.WriteString(shiftHelperDef(oc[0], oc[1], e.checks))
+		h := e.shiftHelpers[name]
+		helperDefs.WriteString(shiftHelperDef(h.op, h.ctype, h.u64Count, e.checks))
 	}
 	divNames := make([]string, 0, len(e.divHelpers))
 	for name := range e.divHelpers {
@@ -6958,6 +6989,12 @@ func emitProgram(pkg *Package, w io.Writer, opts []EmitOption, rename map[string
 	for _, name := range divNames {
 		oc := e.divHelpers[name]
 		helperDefs.WriteString(divHelperDef(oc[0], oc[1], e.checks))
+	}
+	if e.usesUDivHi {
+		helperDefs.WriteString("static unsigned ogo_udivhi(unsigned a, unsigned d) {\n\treturn a >= d;\n}\n")
+	}
+	if e.usesUModHi {
+		helperDefs.WriteString("static unsigned ogo_umodhi(unsigned a, unsigned d) {\n\treturn a >= d ? a - d : a;\n}\n")
 	}
 	// A channel's helpers call ogo_panic (out of locks) and the P2 lock and wait
 	// intrinsics, so they follow the panic definition and pull in propeller2.h.
@@ -7681,6 +7718,8 @@ type emitter struct {
 	usesIfaceNil        bool                    // ogo_iface_vt (nil-interface call guard) is called
 	usesNonzero64       bool                    // ogo_nonzero64 (64-bit divisor guard) is called
 	usesNonzero64u      bool                    // ogo_nonzero64u (the uint64 divisor's guard) is called
+	usesUDivHi          bool                    // ogo_udivhi is called: an unsigned division the target computes wrongly (udivHighConst)
+	usesUModHi          bool                    // ogo_umodhi is called: its remainder
 	litDepth            int                     // aggregate initializers being emitted: a constant inside one is spelled for an initializer (see constSpelling)
 	constWide           map[string]string       // 64-bit integer constants, by C name, to their underlying C type: inlined at each use, never declared (see emitConstSpecName)
 	foldUnsigned        bool                    // the fold computes as a uint64: the level being folded is unsigned (see wideConstValue)
@@ -7689,7 +7728,7 @@ type emitter struct {
 	usesF2u64           bool                    // ogo_f2u64 is called: a float converts to a uint64 (needs both)
 	usesU2f             bool                    // ogo_u2f is called: an integer converts to a float (needs ogo_fprec)
 	usesI2f             bool                    // ogo_i2f is called: a signed integer converts to a float (needs ogo_u2f)
-	shiftHelpers        map[string][2]string    // guarded shift helper name -> {operator, value C type}
+	shiftHelpers        map[string]shiftHelper  // guarded shift helper name -> what it is defined from
 	shl32Types          map[string]bool         // the 64-bit C types a shift left by 32 is written for through its helper (shl32C)
 	storeCarries        *carriedRef             // what the value emitStore is about to write carries of this frame, for the list forms (see carryInto)
 	shiftCTypes         map[*int32]string       // a shift operator, by its place in the AST -> the C type its untyped constant operand takes, where the emitter typed the context (see typeUntypedShifts)
@@ -37913,8 +37952,10 @@ func (e *emitter) shiftChainC(kids []Node) (string, bool) {
 		}
 		switch {
 		case haveType && e.isShiftOp(op) && e.shiftNeedsGuard1(ctype, rhs.ast):
-			fn := e.needShift(e.opText(op.ast), e.underlyingCType(ctype))
+			fn := e.needShift(e.opText(op.ast), e.underlyingCType(ctype), rhs.ast)
 			text = fn + "(" + text + ", " + e.shiftCountC(rhsText, rhs.ast) + ")"
+		case haveType && e.isDivOp(op) && e.udivHighConst(ctype, rhs.ast):
+			text = e.udivHighC(e.opText(op.ast), text, rhsText)
 		case haveType && e.isDivOp(op) && e.divNeedsGuard1(ctype, rhs.ast):
 			fn := e.needDiv(e.opText(op.ast), e.underlyingCType(ctype))
 			// A constant divisor of a 64-bit level at its width, `-1LL`: a plain
@@ -38101,9 +38142,43 @@ func (e *emitter) guardedMulOp(ctype string, op, rhs Node) bool {
 	case e.isShiftOp(op):
 		return e.shiftNeedsGuard1(ctype, rhs.ast)
 	case e.isDivOp(op):
-		return e.divNeedsGuard1(ctype, rhs.ast)
+		return e.divNeedsGuard1(ctype, rhs.ast) || e.udivHighConst(ctype, rhs.ast)
 	}
 	return false
+}
+
+// udivHighConst reports whether a division or remainder of a level of the C type
+// ctype by rhs is one the target's C compiler computes wrongly: a level of 32
+// unsigned bits and a constant divisor of 2^32 - 2^k for k below 31, which its path
+// for a power of two reads as -2^k -- `x / 0xffffffff` came out -x, `x / 0xfffffffe`
+// x >> 1 and `x % 0xfffffffe` x & 1 (doc/udiv-negative-power.c). Such a division is
+// written as the compare it comes to (udivHighC). A narrower unsigned value is
+// divided in int, by a positive divisor, and is right.
+func (e *emitter) udivHighConst(ctype string, rhs []int32) bool {
+	switch e.underlyingCType(ctype) {
+	case "unsigned", "uint32_t", "uintptr_t":
+	default:
+		return false
+	}
+	v, ok := e.foldIntegral(rhs)
+	if !ok || v <= 1<<31 || v >= 1<<32 {
+		return false
+	}
+	n := 1<<32 - v
+	return n&(n-1) == 0
+}
+
+// udivHighC is text divided by divisor, or its remainder, for a divisor
+// udivHighConst took. A quotient by a divisor of 2^31 or more is 0 or 1, so the
+// helpers compare and subtract, and divide nothing for the target's compiler to
+// read wrongly.
+func (e *emitter) udivHighC(op, text, divisor string) string {
+	if op == "%" {
+		e.usesUModHi = true
+		return "ogo_umodhi(" + text + ", " + divisor + ")"
+	}
+	e.usesUDivHi = true
+	return "ogo_udivhi(" + text + ", " + divisor + ")"
 }
 
 // emitMethodReceiver emits a method call's receiver argument, bridging the receiver
@@ -45162,10 +45237,26 @@ func (e *emitter) emitAssignment(head Node, postfix []Node) {
 		// says nothing about how wide the complement is. Only the paths that reach
 		// through a chain used to fill this in, so a plain variable left the tail
 		// guessing from the operand.
-		if t.targetCType == "" && stars == "" {
-			if ct, isVar := e.varType(base); isVar {
-				t.targetCType = ct
+		//
+		// Through a pointer, `*p <<= n`, it is the pointee's, one level per star.
+		// Without it the guarded form (guardedAssignC) had no type to name a helper
+		// by and C's own operator was written: `*p <<= n` by a count at or past the
+		// width kept the value, the count taken modulo 32, where Go shifts every bit
+		// out, and `*p /= d` of the most negative value by -1 was C's to trap on.
+		if ct, isVar := e.varType(base); t.targetCType == "" && isVar {
+			for range len(stars) {
+				if !e.isPointer(ct) {
+					ct = ""
+					break
+				}
+				ct = e.elemType(ct)
 			}
+			t.targetCType = ct
+		}
+		// Another package's variable, `pkx.Z /= d`, whose base is the qualifier and
+		// no variable: its type is the one its read was given (qualifiedGlobalRead).
+		if t.targetCType == "" {
+			t.targetCType = lhsCType
 		}
 		// Routed through emitAssignTailOrCopy so a string "+=" is refused there,
 		// centrally, the same as the field and access-chain compound targets.
@@ -46251,6 +46342,10 @@ func (e *emitter) emitHoistedCompound(target func(), t assignTail) bool {
 	e.emit(";\n")
 	e.ind()
 	target()
+	if fn := e.compoundDivisorGuard(t); fn != "" {
+		e.emit(" " + t.op + " " + fn + "(" + tmp + ");\n")
+		return true
+	}
 	e.emit(" " + t.op + " " + tmp + ";\n")
 	return true
 }
@@ -46295,11 +46390,14 @@ func (e *emitter) guardedAssignC(target func(), t assignTail) (string, bool) {
 		}
 	}
 	var fn string
+	udivHigh := false
 	switch {
 	case isShift && e.shiftNeedsGuard1(ctype, t.rhs):
-		fn = shiftHelperName(op, e.underlyingCType(ctype))
+		fn = shiftHelperName(op, e.underlyingCType(ctype), e.shiftCountU64(t.rhs))
 	case isDiv && e.divNeedsGuard1(ctype, t.rhs):
 		fn = divHelperName(op, e.underlyingCType(ctype))
+	case isDiv && e.udivHighConst(ctype, t.rhs):
+		udivHigh = true // written as the compare it comes to (udivHighC)
 	default:
 		return "", false
 	}
@@ -46321,8 +46419,11 @@ func (e *emitter) guardedAssignC(target func(), t assignTail) (string, bool) {
 		// reason, and nothing that does not panic can tell the two apart.
 		text = "*" + e.hoist(ctype+"*", func() { e.emit("&" + text) })
 	}
+	if udivHigh {
+		return text + " = " + e.udivHighC(op, text, e.captureC(func() { e.emitExpr(t.rhs) })), true
+	}
 	if isShift {
-		e.needShift(op, e.underlyingCType(ctype))
+		e.needShift(op, e.underlyingCType(ctype), t.rhs)
 	} else {
 		e.needDiv(op, e.underlyingCType(ctype))
 	}
@@ -46479,9 +46580,48 @@ func (e *emitter) emitAssignTail(t assignTail) {
 		}
 		e.emitComplement(t.rhs, ct, func() { e.emitExpr(t.rhs) })
 	default:
+		if fn := e.compoundDivisorGuard(t); fn != "" {
+			e.emit(fn + "(")
+			e.emitExpr(t.rhs)
+			e.emit(")")
+			break
+		}
 		e.emitExpr(t.rhs)
 	}
 	e.emit(";\n")
+}
+
+// compoundDivisorGuard names the check a compound division's divisor is handed
+// through in a checked build, `x /= ogo_nonzero(d)`, or answers "" where it needs
+// none: an unchecked build, a divisor that folds to a constant that is not zero, a
+// target that is not an integer or whose type is not known. The expression path
+// makes the same choice for `x / d` (the Term case of emitExprNode). A signed
+// target is written through its helper instead where its type is known
+// (guardedAssignC), whose check is its own; an unsigned one has no helper, and its
+// `x /= d` was written as C's own until 2026-10-17, so a divisor of zero was the
+// host's to trap on and the target's to answer anything at all, where Go panics.
+func (e *emitter) compoundDivisorGuard(t assignTail) string {
+	if !e.checks || t.rhs == nil || (t.op != "/=" && t.op != "%=") {
+		return ""
+	}
+	if v, ok := e.foldIntegral(t.rhs); ok && v != 0 {
+		return ""
+	}
+	ct := e.underlyingCType(t.targetCType)
+	if _, isInt := cIntWidths[ct]; !isInt {
+		return ""
+	}
+	e.needPanic()
+	switch ct {
+	case "uint64_t":
+		e.usesNonzero64u = true
+		return "ogo_nonzero64u"
+	case "int64_t":
+		e.usesNonzero64 = true
+		return "ogo_nonzero64"
+	}
+	e.usesNonzero = true
+	return "ogo_nonzero"
 }
 
 // emitFieldIndexAssign emits a write to a slice-field element `b.data[i] = v`,
