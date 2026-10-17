@@ -401,7 +401,10 @@ broken.
   deepest goroutine needs. A program whose goroutine needs more than the largest
   slot, 8192 longs, is refused, and `ogo build --gostack N` sets every slot's size
   outright (64 to 8192 longs; the slots sit in hub RAM for the run). The listing cannot bound a goroutine RECURSING through its
-  own calls, so a program starting one is refused unless `--gostack` gives the size.
+  own calls or through an interface's, so a program starting one is refused unless
+  `--gostack` gives the size; one recursing through a call of a function value is not
+  yet seen, such a call being taken to reach every function the program takes the
+  address of, and its cycle is sized for one pass.
   Recursion works — `main` runs on the cog's own stack and a goroutine on its pool
   slot's — but a deep enough call chain in a goroutine overruns that slot, this part
   having no memory protection. The slot is fenced, so a goroutine that

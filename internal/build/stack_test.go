@@ -40,8 +40,8 @@ func fnListing(name string, count, reserve int, body ...string) string {
 
 // TestStackNeeds reads stacks off listings in the backend's shape: frames summed
 // along the deepest path, recursion through direct calls left unbounded, an
-// indirect call kept to its own side, and a cycle through one taken as its deepest
-// simple path.
+// indirect call kept to its own side, a cycle through one taken as its deepest
+// simple path, and such a cycle holding a recursion left unbounded.
 func TestStackNeeds(t *testing.T) {
 	c := []byte("static void ogo_go0(void* p) {\nint work(int n) {\nint leaf(int n) { return n; }\nint other(int n) {\n")
 	for _, tc := range []struct {
@@ -96,6 +96,28 @@ func TestStackNeeds(t *testing.T) {
 				"ptr_a\n\tlong\t@___handler\nptr_b\n\tlong\t@___flush"),
 			1 + (16+56+76+3)/4, true, "__flush",
 		},
+		{
+			// flush calls a helper that also calls itself, and the helper calls
+			// through a pointer back to flush: flush reaches the recursion by a
+			// call it makes, cycle or not.
+			"a recursion in a cycle through an indirect call",
+			listingOf(fnListing("_ogo_go0_0001", 1, 0, "call\t#___flush"),
+				fnListing("___flush", 1, 40, "call\t#___helper"),
+				fnListing("___helper", 1, 60, "call\tlocal02", "if_z\tcall\t#___helper"),
+				"ptr_a\n\tlong\t@___helper\nptr_b\n\tlong\t@___flush"),
+			0, false, "__helper",
+		},
+		{
+			// The same recursion, reached only through the pointer: a call
+			// through a pointer is taken to reach every function whose address
+			// is taken, most of them never there, and its cycle is walked once.
+			"a recursion only a cycle's indirect call reaches",
+			listingOf(fnListing("_ogo_go0_0001", 1, 0, "call\t#___flush"),
+				fnListing("___flush", 1, 40, "call\tlocal02"),
+				fnListing("___handler", 1, 60, "call\t#___flush", "if_z\tcall\t#___handler"),
+				"ptr_a\n\tlong\t@___handler\nptr_b\n\tlong\t@___flush"),
+			1 + (16+56+76+3)/4, true, "__flush",
+		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			r := readStackNeeds(tc.listing, c)
@@ -114,7 +136,8 @@ func TestStackNeeds(t *testing.T) {
 // is an interface call: it reaches the two functions its table's slot holds and not
 // the deep taken function beside them, which a call through a function value, or a
 // listing making more calls through a register than the C makes through tables,
-// still reaches.
+// still reaches. A method its slot holds calling the interface again recurses, as a
+// direct call of itself would: the depth is the values', which no listing has.
 func TestStackNeedsInterfaceCalls(t *testing.T) {
 	const decls = `#define ogo_iface_vt(v) (v)
 struct I_vt { const char* _ogo_type; int (*ogo_m_M)(void*); };
@@ -171,6 +194,19 @@ static void ogo_go0(void* p) {
 			}
 		})
 	}
+	t.Run("a method calling its interface recurses", func(t *testing.T) {
+		c := strings.Replace(viaTable, "static int I_B_M(void* p) { return 2; }",
+			"static int I_B_M(void* p) { I x = *(I*)p; return ((const I_vt*)ogo_iface_vt(x.vt))->ogo_m_M(x.data); }", 1)
+		l := listingOf(fnListing("_ogo_go0_0001", 1, 0, "call\t#_use"),
+			fnListing("_use", 2, 0, "call\tlocal01"),
+			fnListing("_I_A_M_0002", 1, 40),
+			fnListing("_I_B_M_0003", 1, 80, "call\tlocal02"),
+			fnListing("_big_0004", 1, 4000),
+			"ptr_a\n\tlong\t@_I_A_M_0002\nptr_b\n\tlong\t@_I_B_M_0003\nptr_c\n\tlong\t@_big_0004")
+		if r := readStackNeeds(l, []byte(c)); r.goKnown || r.goRecurse != "I_B_M" {
+			t.Fatalf("known %v, recursing %q; want unknown, through I_B_M", r.goKnown, r.goRecurse)
+		}
+	})
 }
 
 // TestBuildSizesGoroutineStacks builds a program whose goroutine holds 2400 bytes
@@ -308,6 +344,45 @@ func main() {
 			t.Fatalf("err=%v, want the goroutine's recursion through depth refused", err)
 		}
 		if _, err := compile(t, rec, true); err != nil {
+			t.Fatalf("with the stack asked for: %v", err)
+		}
+		// Through an interface's table, as an expression tree is evaluated: 200
+		// levels ran past the slot sized for one and hung the board in silence.
+		tree := `var out = make(chan int)
+
+type Expr interface{ Eval() int }
+
+type Num struct{ v int }
+
+func (n *Num) Eval() int { return n.v }
+
+type Add struct{ l, r Expr }
+
+func (a *Add) Eval() int { return a.l.Eval() + a.r.Eval() }
+
+var nodes [200]Add
+var leaf = Num{1}
+
+func work(n int) {
+	var e Expr = &leaf
+	for i := 0; i < n; i++ {
+		nodes[i].l = e
+		nodes[i].r = &leaf
+		e = &nodes[i]
+	}
+	out <- e.Eval()
+}
+
+func main() {
+	go work(200)
+	println(<-out)
+}
+`
+		_, err = compile(t, tree, false)
+		if err == nil || !strings.Contains(err.Error(), "a goroutine recurses through Add_Eval") {
+			t.Fatalf("err=%v, want the goroutine's recursion through Add_Eval refused", err)
+		}
+		if _, err := compile(t, tree, true); err != nil {
 			t.Fatalf("with the stack asked for: %v", err)
 		}
 		// A recursion on main's cog is main's stack, the rest of Hub RAM.

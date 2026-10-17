@@ -5,6 +5,7 @@
 package octogo
 
 import (
+	"slices"
 	"strings"
 )
 
@@ -63,6 +64,17 @@ func (s *CallScan) Targets(site IfaceSite) (fns []string, ok bool) {
 		fns = s.members[site.Member]
 	}
 	return fns, len(fns) != 0
+}
+
+// InTable reports whether a table holds the function the C names name: an
+// interface's thunk, which calls the method.
+func (s *CallScan) InTable(name string) bool {
+	for _, fns := range s.members {
+		if slices.Contains(fns, name) {
+			return true
+		}
+	}
+	return false
 }
 
 // cKeywordCall is what may stand before "(" without being a call.

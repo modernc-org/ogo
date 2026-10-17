@@ -37,12 +37,22 @@ import (
 // into a register formats into the memory past it unreserved (the number printer
 // does), which is given 256 bytes.
 //
-// Recursion through direct calls has no depth a listing can bound, and a build
-// starting such a goroutine is refused unless --gostack gives the slots a size: left
-// to the 256 longs a slot holds by default, it ran past them in silence, the fence
-// saying so only when it ended. A cycle through an indirect
-// call is the library's -- a flush calling a FILE's function that can reach flush
-// again -- and is taken as the deepest simple path through it.
+// Recursion has no depth a listing can bound, and a build starting such a goroutine
+// is refused unless --gostack gives the slots a size: left to the 256 longs a slot
+// held by default, it ran past them in silence, the fence saying so only when it
+// ended. A recursion is a cycle of direct calls and interface calls, which reach
+// what their tables' slots hold (below): an expression tree evaluated through an
+// interface on a goroutine, 200 deep, was given what one pass through the cycle
+// needs, and a P2-EDGE printed nothing at all. A cycle through any other call
+// through a register is walked once, the deepest simple path through it: such a
+// call is WIDE, taken to reach every function whose address its side takes, so it
+// closes cycles no run makes -- the library's flush calling a FILE's function that
+// can reach flush again, and the program's: obeam's interpreter calls its BIFs and
+// its instruction handlers through two tables of one signature, each taken to reach
+// the other's functions. Telling them apart needs the function values' flow by
+// their defined types, which nothing records; until then a recursion only a wide
+// call closes goes unseen. A recursion a function reaches by the calls it is known
+// to make is one, cycle or not.
 //
 // The program's side was as wide as the program: p2-11's disk cog, whose FAT code
 // calls the card through an interface, was charged the deepest path through every
@@ -108,6 +118,10 @@ type goNeed struct {
 type stackEdge struct {
 	to       string
 	indirect bool
+	// wide is an indirect call taken to reach every function whose address its
+	// side takes, which closes cycles no run makes; an interface call reaches
+	// what its table's slot holds, and is not wide.
+	wide bool
 }
 
 // stackNeeds is what a program's stacks need, read from the backend's listing of
@@ -242,36 +256,38 @@ func readStackNeeds(listing, c []byte) (r stackNeeds) {
 		}
 		frame[n] = fr
 		for _, c := range f.calls {
-			succ[n] = append(succ[n], stackEdge{c, false})
+			succ[n] = append(succ[n], stackEdge{to: c})
 		}
 		if f.indirect != 0 {
-			targets := libTaken
+			targets, wide := libTaken, true
 			if isOwn(n) {
 				targets = ownTaken
 				if t, ok := narrowTargets(n, fns, scan, byCName); ok {
-					targets = t
+					targets, wide = t, false
 				}
 			}
 			for _, c := range targets {
-				succ[n] = append(succ[n], stackEdge{c, true})
+				succ[n] = append(succ[n], stackEdge{to: c, indirect: true, wide: wide})
 			}
 		}
 	}
 
-	all, direct := stackComponents(names, succ, false), stackComponents(names, succ, true)
+	all := stackComponents(names, succ, func(stackEdge) bool { return true })
+	direct := stackComponents(names, succ, func(e stackEdge) bool { return !e.indirect })
+	precise := stackComponents(names, succ, func(e stackEdge) bool { return !e.wide })
 	members := map[int][]string{}
-	directSize := map[int]int{}
+	preciseSize := map[int]int{}
 	for _, n := range names {
 		members[all[n]] = append(members[all[n]], n)
-		directSize[direct[n]]++
+		preciseSize[precise[n]]++
 	}
 	recursive := map[string]bool{}
 	for _, n := range names {
-		if directSize[direct[n]] > 1 {
+		if preciseSize[precise[n]] > 1 {
 			recursive[n] = true
 		}
 		for _, e := range succ[n] {
-			if !e.indirect && e.to == n {
+			if !e.wide && e.to == n {
 				recursive[n] = true
 			}
 		}
@@ -295,6 +311,23 @@ func readStackNeeds(listing, c []byte) (r stackNeeds) {
 		return deep
 	}
 	within := func(n string) int {
+		// A recursion n reaches by the calls it is known to make is a recursion,
+		// cycle or not; one it reaches only through a wide call is walked once,
+		// as the cycle is.
+		reach, seen := []string{n}, map[string]bool{n: true}
+		for len(reach) != 0 {
+			u := reach[len(reach)-1]
+			reach = reach[:len(reach)-1]
+			if recursive[u] {
+				return -1
+			}
+			for _, e := range succ[u] {
+				if !e.wide && all[e.to] == all[n] && !seen[e.to] {
+					seen[e.to] = true
+					reach = append(reach, e.to)
+				}
+			}
+		}
 		m := members[all[n]]
 		ext := map[string]int{}
 		for _, u := range m {
@@ -365,7 +398,10 @@ func readStackNeeds(listing, c []byte) (r stackNeeds) {
 	for _, t := range tramps {
 		v := need(t)
 		if v < 0 {
-			name := recursingName(fns[t].calls, need)
+			name := recursingName(t, succ, recursive, need)
+			if fc := scan.Funcs[name]; fc != nil && scan.InTable(name) && len(fc.Direct) == 1 {
+				name = fc.Direct[0] // the method an interface's thunk calls
+			}
 			if r.goKnown {
 				r.goRecurse = name
 			}
@@ -496,20 +532,30 @@ func goroutineName(calls []string, need func(string) int) string {
 }
 
 // recursingName names where a goroutine whose need is unbounded recurses: the
-// function its trampoline calls that reaches the recursion, the goroutine's own
-// unless the backend inlined that.
-func recursingName(calls []string, need func(string) int) string {
-	for _, c := range calls {
-		if !strings.HasPrefix(c, "_ogo_cog_done") && need(c) < 0 {
-			return stackStatic.ReplaceAllString(strings.TrimPrefix(c, "_"), "")
+// first recursive function on a way from its trampoline, tramp, to one.
+func recursingName(tramp string, succ map[string][]stackEdge, recursive map[string]bool, need func(string) int) string {
+	seen := map[string]bool{}
+	var walk func(string) string
+	walk = func(n string) string {
+		if recursive[n] {
+			return stackStatic.ReplaceAllString(strings.TrimPrefix(n, "_"), "")
 		}
+		seen[n] = true
+		for _, e := range succ[n] {
+			if !seen[e.to] && need(e.to) < 0 {
+				if r := walk(e.to); r != "" {
+					return r
+				}
+			}
+		}
+		return ""
 	}
-	return ""
+	return walk(tramp)
 }
 
 // stackComponents numbers the strongly connected components of the call graph,
-// over every edge or over the direct calls alone (Tarjan's algorithm).
-func stackComponents(names []string, succ map[string][]stackEdge, directOnly bool) map[string]int {
+// over the edges it is asked to follow (Tarjan's algorithm).
+func stackComponents(names []string, succ map[string][]stackEdge, follow func(stackEdge) bool) map[string]int {
 	index, low := map[string]int{}, map[string]int{}
 	on := map[string]bool{}
 	var stack []string
@@ -522,7 +568,7 @@ func stackComponents(names []string, succ map[string][]stackEdge, directOnly boo
 		stack = append(stack, v)
 		on[v] = true
 		for _, e := range succ[v] {
-			if directOnly && e.indirect {
+			if !follow(e) {
 				continue
 			}
 			if _, seen := index[e.to]; !seen {

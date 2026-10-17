@@ -515,6 +515,37 @@ and knew nothing of the runtime's structs; a second compile carries a table of
 all of p2-11's 269,260 bytes of data but 1,273 are attributed -- those the C
 library's stdio state and the bytes of strings its tables point at. **A size the backend gives is asked of
 the backend.**
+ONE PASS THROUGH AN INTERFACE (2026-10-17, the same evening, reading the stack
+reader again for the review's entry check): with the floor gone a slot is what the
+listing says, and the listing's reading of a cycle had been written for the
+library. Recursion was a cycle of DIRECT calls; any cycle through a call through a
+register was "the library's", flush reaching a FILE function reaching flush, and
+walked once -- and the program's interface calls had been resolved to their tables'
+slots (narrowTargets) without the rule being asked of them. An expression tree
+evaluated through an interface on a goroutine, `a.l.Eval() + a.r.Eval()`, was given
+176 longs, one pass's need; 200 deep, the P2-EDGE printed nothing at all, 5 deep it
+printed 6, and in the 256 longs v0.57.0 gave every slot 20 deep printed 21 and 60
+deep nothing. The moat sweep that let the floor go had found nothing because no
+program swept recursed through an interface on a goroutine. A cycle of direct and
+interface calls is a recursion now, refused unless --gostack sizes the slots, the
+error naming the method, not its table's thunk. A cycle a call through a FUNCTION
+VALUE closes is not, and that is the open part: such a call is taken to reach every
+function whose address the program takes, so it closes cycles no run makes --
+obeam's interpreter calls its BIFs through `bifs[b].f` and its handlers through
+`handlers[op]`, two tables of one signature each taken to reach the other's
+functions, a cycle through `apply` that obeam's `bifJump` trampoline exists to
+avoid; the corpus's two (a state machine's call reaching an interface's thunk,
+testing's name table reaching the tests) are as spurious. Refusing them refused the
+VM; telling a `bif` from a `handler` needs the function values' flow by their
+defined types, which nothing records. A second hole came with it: a component
+such a call joins that held a DIRECT recursion was walked as a cycle, the recursion
+inside ignored, where the same recursion reached outside a cycle was "unknown" --
+case 39's main, whose test runner calls a test calling the recursive `deeper`. A
+recursion a function reaches by the calls it is known to make is one, cycle or not.
+**A rule a call graph's bound rests on is asked of every kind of edge the graph
+has: one written for direct calls is a row of the interface's and the function
+value's.** **A moat sweep measures the programs it sweeps: each rule the bound
+rests on is asked by a program written to break it.**
 
 **A TYPE SWITCH BEHIND AN INIT STATEMENT** (2026-10-07), `switch s := pick(); v :=
 s.(type)`, the last header shape on the open list: the grammar's SwitchTag takes `[

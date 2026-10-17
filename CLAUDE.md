@@ -1033,7 +1033,11 @@ section. A new finding goes there; the rule it leaves goes here too.
   shape keeps the old shape's C: a program at its limit pays for a generality it
   does not use** (goslots.go); **A listing asked for to look at a program is a
   different build: its binary is compared with the one shipped**; **a size the
-  backend gives is asked of the backend** (`ogo build --report`).
+  backend gives is asked of the backend** (`ogo build --report`); **A rule a call
+  graph's bound rests on is asked of every kind of edge the graph has: one written
+  for direct calls is a row of the interface's and the function value's**; **A moat
+  sweep measures the programs it sweeps: each rule the bound rests on is asked by a
+  program written to break it** (ONE PASS THROUGH AN INTERFACE).
 - **Two programs that should cost the same are compared by their BINARIES**.
 - **A STATIC INITIALIZER IS LAID OUT BY ANOTHER RULE THAN ITS TYPE**: **A rule about
   the target's layout is measured on the board in C first**; **The host's compiler

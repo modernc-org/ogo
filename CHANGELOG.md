@@ -18,6 +18,22 @@ shipped section tells a reader on that version that they have behaviour they do 
 
 ## Unreleased
 
+### Behaviour changes
+
+- **A goroutine recursing through an interface is refused unless `--gostack` sizes
+  the stacks**, as one recursing through direct calls has been since v0.51.0: the
+  build sized a cycle through an interface call for one pass, so an expression tree
+  evaluated on a goroutine through `Expr.Eval`, `a.l.Eval() + a.r.Eval()`, was
+  given 176 longs, and 200 deep it printed nothing at all on a P2-EDGE; in the 256
+  longs v0.57.0 gave every slot, 20 deep printed its answer and 60 deep nothing.
+  The error names the method. A recursion through a call of a function value is not
+  seen yet: such a call is taken to reach every function whose address the program
+  takes, which closes cycles no run makes -- obeam's BIF and instruction-handler
+  tables, of one signature, each reach the other's functions -- and such a cycle is
+  still sized for one pass. A recursion a function reaches by its own calls inside
+  such a cycle is one now, so `main`'s stack, reaching one through a test runner,
+  is reported as what it needs at the least.
+
 ### Toolchain
 
 - **`ogo build --report` says what a binary takes of the P2**: Hub RAM by its parts

@@ -252,8 +252,8 @@ report costs about a compile more than the build.
 	              most once a slot of its own, where every one of the program's
 	              does, and seven slots of the deepest goroutine's size
 	              otherwise -- and refuses a program whose goroutine needs more
-	              than 8192, or recurses through its own calls, which the
-	              listing cannot measure; one that outruns its slot panics
+	              than 8192, or recurses through its own calls or an
+	              interface's, which the listing cannot measure; one that outruns its slot panics
 	              "goroutine stack overflow". The slots sit in hub RAM for the
 	              whole run.
 	--xtal hz     the board's crystal (default 20MHz)
