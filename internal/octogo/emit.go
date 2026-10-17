@@ -32988,6 +32988,7 @@ func (e *emitter) switchCaseLabels(guardVar string, cases []Node) ([][]string, b
 	}
 	labels := make([][]string, len(cases))
 	n := 0
+	lo, hi := int64(math.MaxInt32), int64(math.MinInt32)
 	for i, cc := range cases {
 		exprs, isDefault := e.caseHead(cc.ast)
 		if isDefault {
@@ -33000,7 +33001,20 @@ func (e *emitter) switchCaseLabels(guardVar string, cases []Node) ([][]string, b
 			}
 			labels[i] = append(labels[i], e.constSpelling(v, ""))
 			n++
+			// The backend holds a case as an int32_t, an unsigned one past
+			// MaxInt32 negative.
+			lo, hi = min(lo, int64(int32(v))), max(hi, int64(int32(v)))
 		}
+	}
+	// The backend sorts the cases by `a->val - b->val` (frontends/case.c,
+	// caseCmp), which overflows for two of them further apart than MaxInt32: the
+	// sort is handed an order that contradicts itself, and the transpiled one never
+	// ends -- a fuzzer's program with a switch of cases near 152696, 2147483647 and
+	// -1585330326 among them had built for 28 minutes when it was stopped, and builds
+	// as chains in a second (doc/switch-case-span-overflow.c). Such a switch is a
+	// chain.
+	if hi-lo > math.MaxInt32 {
+		return nil, false
 	}
 	return labels, n != 0
 }

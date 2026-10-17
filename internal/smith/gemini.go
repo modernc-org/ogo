@@ -237,6 +237,9 @@ func (f *Fuzzer) GenerateProgram(vm Machine, mem Memory) error {
 	// a 64-bit operation first (see genPairs).
 	paCall, paWant, paOK := f.genPairs()
 
+	// 4.15. Switches of constant cases on every integer type (see genSwitches).
+	swCall, swWant, swOK := f.genSwitches()
+
 	// 5. Generate the main function
 	// FuncDecl = "func" identifier "(" ")" Block
 	fmt.Fprint(f.Out, "func main() {\n")
@@ -284,6 +287,10 @@ func (f *Fuzzer) GenerateProgram(vm Machine, mem Memory) error {
 	// And the procedure of 64-bit operations handed on before other arguments.
 	if paOK {
 		f.checkAtTop("pairs", paCall, paWant)
+	}
+	// And the procedure of switches.
+	if swOK {
+		f.checkAtTop("switches", swCall, swWant)
 	}
 
 	// Generate 20 sequential statements to mutate the checksum

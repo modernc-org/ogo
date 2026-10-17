@@ -1875,7 +1875,14 @@ not of the table; a hybrid testing the first clause before the table won the fir
 cases back and lost the rest, its mean -0.3%. The plain switch stayed for what Go's
 own compiler does (cmd/compile/internal/walk/switch.go sorts constant cases and
 dispatches through a table or a binary search), which makes order no cost, and for
-the fallthrough it no longer copies. The suite found a gain nobody measured for:
+the fallthrough it no longer copies. And the journal had it the other way round:
+item (3) of A PROGRAM OF SIZE (2026-09-27) calls a switch's chain of compares the
+backend's, a fact programs are written against -- it was the emitter's, and the
+emulator had been written against it. **A speedup is measured shape by shape on the
+program that asked for it: a mean hides who pays**; **a source ordered for one
+lowering is a measure of that lowering, not of the one replacing it**; **a cost
+written down as the backend's is checked against the C the emitter writes**.
+The suite found a gain nobody measured for:
 TestBuildInlineFallback's program, thirty-two marked helpers called from the arms
 of one switch, outgrew a cog because the backend gives no register back between the
 arms of a chain, and fits as a C switch, whose arms it does give them back between;
@@ -1890,13 +1897,35 @@ seeds build to the binaries they built to before. Seed 73 is the fallback's test
 it outgrew with its marks before, and the one step left it unmarked and still
 switched, over the limit. **A change that saves registers in one function is asked
 what it costs in another, and a fallback with one step is asked what a second
-change needs of it.** And the journal had it the other way round:
-item (3) of A PROGRAM OF SIZE (2026-09-27) calls a switch's chain of compares the
-backend's, a fact programs are written against -- it was the emitter's, and the
-emulator had been written against it. **A speedup is measured shape by shape on the
-program that asked for it: a mean hides who pays**; **a source ordered for one
-lowering is a measure of that lowering, not of the one replacing it**; **a cost
-written down as the backend's is checked against the C the emitter writes**.
+change needs of it.**
+The fuzzer had been asked nothing the new lowering changed: genSwitchStmt's switch
+is on an int, its cases the tag and the three values after it, one clause with a
+body and none falling through -- the C switch's smallest table and none of its
+labels, falls or placements. A part of its own was written the next morning
+(genSwitches, swRand): tags of every integer width and both signs, a defined type's
+constants, a tag shifted, masked, xored or calling, cases next to the tag, far from
+it and at the ends of the type, a default first, between and last, fallthrough into
+the clause written next and out of a default, a break inside a clause, a switch in
+one, a switch in a loop continued and broken out of by its label. What it computes
+was run as Go first -- the generated programs are Go but for a Builder, and all 50
+of seeds 1-80 that Go builds and that carry the part print OctoSmith OK under Go --
+and then asked to fail: a compiler that writes a break where a clause falls through
+fails 24 of the 47 seeds of 1-60 carrying it, one that writes the default last 12,
+and no seed without the part fails under either. **A generator's model of a
+statement is held to Go before it is held to the compiler.** On the board the part found what
+the host could not: of the 140 seeds of 1-200 carrying it, 127 passed, 10 outgrew a
+cog as they had before, and three were killed by the sweep's cap of fifteen minutes,
+where the compiler before the C switch built the same programs in one to five
+seconds. Each came down to one switch of an int32 whose cases lay further apart
+than MaxInt32 -- a cluster near 152696 with 2147483647 and -1585330326 among them --
+and that to the backend's sort of the cases, `return a->val - b->val` in
+frontends/case.c, a difference that overflows, so the order the sort is handed
+contradicts itself and the transpiled qsort runs on without end
+(doc/switch-case-span-overflow.c). Such a switch is a chain now. The table the
+backend builds next reads the first case and the last as the least and the
+greatest, so a native build, whose sort may return, could build a wrong table from
+the same switch. **A build the sweep's cap killed is built by the compiler before
+the change before it is called slow.**
 **AN ARRAY RESULT IS A ROW** (2026-09-23). A call returning an array is a STATEMENT in
 C -- the caller hands the callee storage to write -- so every position one stands in
 has to supply that storage, and one probe after another the same afternoon found

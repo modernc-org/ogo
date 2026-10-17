@@ -708,7 +708,8 @@ had it on 2026-10-13"; the sections named in capitals below are its journal's.
   the checksum -- so **a new call site in the generator calls `noteCall`**, once for
   each time the program runs the call, and **a new call site by name counts
   `fn.Sites`**. A part added since 2026-10-06 draws from its own source (`aggRand`,
-  `wideRand`, `convRand`, `mwRand`, `emRand`, `lbRand`, `pkRand`, `paRand`; the
+  `wideRand`, `convRand`, `mwRand`, `emRand`, `lbRand`, `pkRand`, `paRand`,
+  `swRand`; the
   aggregates mint no name from VarSeq either), so every other part of a seed's
   program stays what it was.
   Beyond plain statements it
@@ -720,7 +721,8 @@ had it on 2026-10-13"; the sections named in capitals below are its journal's.
   their answers Go's own (library.go, its imports drawn first, drawImports), a
   package of the program's own reached by qualified names (pkg.go, only with
   `ogo smith -o`/Files; TestOraclePackages), a 64-bit operation handed on before
-  arguments of other types (pairs.go), names C has spoken for and names of the
+  arguments of other types (pairs.go), switches of constant cases on every integer
+  type (switches.go), names C has spoken for and names of the
   universe (`cNames`, `universeNames`), calls in headers, a function of several
   returns for the inliner's single-exit rewrite, and widened and cross-converted
   folds. **What was swept is swept FOR A GENERATOR**: a change to it makes every
@@ -1045,6 +1047,10 @@ section. A new finding goes there; the rule it leaves goes here too.
 - **A change that saves registers in one function is asked what it costs in another,
   and a fallback with one step is asked what a second change needs of it**
   (compileMarked, plainerC).
+- **A generator's model of a statement is held to Go before it is held to the
+  compiler** (genSwitches).
+- **A build the sweep's cap killed is built by the compiler before the change before
+  it is called slow** (doc/switch-case-span-overflow.c).
 - **A warning the backend gives a user's build is a fault until shown harmless**.
   **A run that reads a register nothing wrote can look right by luck: the listing is
   the measure, and a C harness passing a constant after a 64-bit argument is a

@@ -1156,6 +1156,48 @@ func TestEmitCSwitch(t *testing.T) {
 	}
 }
 
+// TestEmitCSwitchSpan pins which constant switches are C switches by the span of
+// their cases: the backend sorts them by an int32_t difference, which overflows for
+// two further apart than MaxInt32 and builds without end
+// (doc/switch-case-span-overflow.c), so such a switch is a chain -- an unsigned case
+// past MaxInt32 counting as the negative int32_t the backend holds it as -- and the
+// others C switches.
+func TestEmitCSwitchSpan(t *testing.T) {
+	for _, test := range []struct {
+		cases string
+		typ   string
+		want  bool
+	}{
+		{"2147483647, -1585330326, 1, 2, 3, 4, 5", "int32", false},
+		{"2147483647, -2147483648", "int32", false},
+		{"2147483647, 0, 1", "int32", true},
+		{"-2147483648, 0", "int32", false}, // 0 - -2147483648 overflows
+		{"-2147483647, 0", "int32", true},
+		{"-2147483648, 1", "int32", false},
+		{"4294967295, 1", "uint32", true},
+		{"2147483648, 1", "uint32", false},
+		{"2147483648, 0", "uint32", false},
+		{"2147483649, 0", "uint32", true},
+		{"2147483647, 2147483648", "uint32", false},
+		{"0, 4294967295, 2147483647", "uint32", false},
+		{"-128, 127", "int8", true},
+	} {
+		src := "var x " + test.typ + "\n\nfunc main() {\n\tswitch x {\n\tcase " + test.cases + ":\n\t\tprintln(1)\n\t}\n}\n"
+		fsys := fstest.MapFS{"main.ogo": &fstest.MapFile{Data: []byte(src)}}
+		pkg, err := Build(-1, []string{"main.ogo"}, fsys)
+		if err != nil {
+			t.Fatalf("%s: Build: %v", test.cases, err)
+		}
+		var buf bytes.Buffer
+		if err := EmitC(pkg, &buf); err != nil {
+			t.Fatalf("%s: EmitC: %v", test.cases, err)
+		}
+		if got := strings.Contains(buf.String(), "switch ("); got != test.want {
+			t.Errorf("%s %s: a C switch is %v, want %v", test.typ, test.cases, got, test.want)
+		}
+	}
+}
+
 // TestEmitCSwitchGuard pins the `switch v := expr` form (the guard is evaluated
 // once into a scoped variable) and an expressionless switch's boolean cases.
 func TestEmitCSwitchGuard(t *testing.T) {

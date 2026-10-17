@@ -38,11 +38,22 @@ shipped section tells a reader on that version that they have behaviour they do 
   are ordered by a profile: a case that was deep in a chain is up to 18% faster, one
   written first 2 to 5% slower, and the mean of 51 instruction shapes is unchanged.
   Any other switch is still a chain of compares, a 64-bit tag among them: the
-  target's C compiler hangs on a switch on a 64-bit value. A program that outgrows
+  target's C compiler hangs on a switch on a 64-bit value, and builds without end
+  one whose cases are further apart than 2147483647, which it cannot sort, so such
+  a switch is a chain too. A program that outgrows
   a cog's registers is built again with its switches chains, and then without its
   functions inlined either, so nothing that built before fails to build: the
   target's compiler gives registers back between a C switch's arms in some
   functions and fewer in others.
+- **`ogo smith` writes switches of constant cases on every integer type**: tags of
+  8, 16, 32 and 64 bits, signed and unsigned, a defined type's constants, a tag
+  shifted, masked or calling, cases near the tag, far from it and at the ends of its
+  type, a default anywhere, fallthrough into the next clause and out of a default, a
+  break inside a clause, a switch inside one, and a switch in a loop continued and
+  broken out of by its label. Its switches had been on an int, every case next to
+  the tag and nothing falling through. A compiler that dropped the fallthrough, or
+  wrote the default last, fails a quarter to a half of the seeds carrying the part,
+  which the rest of the fuzzer passed.
 
 ## v0.56.2
 

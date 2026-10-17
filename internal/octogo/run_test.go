@@ -1614,7 +1614,8 @@ func main() {
 		// into the next label and out of a default that is not last, a break the goto
 		// to the end label, the labels of a narrow, a signed, an unsigned and a defined
 		// tag, the most negative int32, a tag evaluated once, and beside them the shapes
-		// that stay a chain: a case that is no constant, a 64-bit tag, only a default.
+		// that stay a chain: a case that is no constant, a 64-bit tag, only a default,
+		// and cases further apart than MaxInt32, which the backend cannot sort.
 		name: "a switch of constant cases on an integer",
 		src: `type Op uint8
 
@@ -1875,6 +1876,20 @@ func wide64(v int64) int {
 	return 0
 }
 
+func spanWide(v int32) int {
+	switch v {
+	case 2147483647:
+		return 1
+	case -1585330326:
+		return 2
+	case 1, 2, 3:
+		return 3
+	case 4, 5:
+		return 4
+	}
+	return 0
+}
+
 func onlyDefault(n int) int {
 	switch n {
 	default:
@@ -1909,9 +1924,10 @@ func main() {
 	println(runes('a'), runes('u'), runes('ž'), runes('b'), bytes("a xX b"))
 	println(nonConst(3, 3), nonConst(2, 3), nonConst(4, 3), wide64(0), wide64(3), wide64(1<<40), wide64(7))
 	println(onlyDefault(4), deferred(1), deferred(2), deferred(3))
+	println(spanWide(2147483647), spanWide(-1585330326), spanWide(2), spanWide(5), spanWide(6))
 }
 `,
-		want: "1 1 0 7 15 -1 1\n1 2 2 3 0\n1 2 3 4\n1 2 3\n10 20 20 30 90 -1\n1111 1110 1100 1000 10000 100\n1 2 3 4\n41408 1 2 0\n47 5 111\n1 2 3 4 0\n1 1 2 0 22\n1 2 0 1 4 5 0\n5 10 7 0\n",
+		want: "1 1 0 7 15 -1 1\n1 2 2 3 0\n1 2 3 4\n1 2 3\n10 20 20 30 90 -1\n1111 1110 1100 1000 10000 100\n1 2 3 4\n41408 1 2 0\n47 5 111\n1 2 3 4 0\n1 1 2 0 22\n1 2 0 1 4 5 0\n5 10 7 0\n1 2 3 4 0\n",
 	},
 	{
 		// A product of a value the backend propagates to a constant, computed
