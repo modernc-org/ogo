@@ -47,6 +47,11 @@ shipped section tells a reader on that version that they have behaviour they do 
 
 ### Toolchain
 
+- **The loader is a package other programs can import**: `modernc.org/ogo/loadp2`,
+  until now `internal/loadp2` -- Load, Capture and SubCommand, the transpiled
+  loadp2 with the read baud and clock a program built by OctoGo is loaded with.
+  Capture runs the calling program again as `loadp2 ...`, which its main hands to
+  SubCommand, as ogo's does.
 - **A switch on an integer of 32 bits or fewer whose every case is a constant is a
   C switch**, which the target's C compiler dispatches through a table of jumps
   where the cases are dense. A case costs the same wherever it is written, as in Go,

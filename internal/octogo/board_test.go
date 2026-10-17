@@ -18,7 +18,7 @@ import (
 )
 
 // boardBaud is the user baud rate of flexcc-emitted P2 programs (loadp2's default
-// 115200 garbles them). It mirrors internal/loadp2.DefaultUserBaud, duplicated
+// 115200 garbles them). It mirrors loadp2.DefaultUserBaud, duplicated
 // here to avoid importing that package (which pulls in the large transpiled
 // loader) into the checker's test binary.
 const boardBaud = 230400

@@ -20,8 +20,8 @@ import (
 	"testing/fstest"
 	"time"
 
-	"modernc.org/ogo/internal/loadp2"
 	"modernc.org/ogo/internal/octogo"
+	"modernc.org/ogo/loadp2"
 )
 
 // testRunnerFile is the name the generated runner is compiled under. It is not

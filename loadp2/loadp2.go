@@ -2,13 +2,14 @@
 // Use of this source code is governed by a BSD-style
 // license that can be found in the LICENSE file.
 
-// Package loadp2 integrates the Parallax Propeller 2 loader
-// (modernc.org/loadp2/lib, the original loadp2 C program transpiled to Go) into
-// ogo, so a developer needs no separate loadp2 binary. It backs two things:
+// Package loadp2 is the Parallax Propeller 2 loader as a library: the original
+// loadp2 C program transpiled to Go (modernc.org/loadp2/lib), with the defaults
+// a program built by OctoGo is loaded with, so no separate loadp2 binary is
+// needed. ogo uses it for
 //
-//   - the `ogo loadp2 <args>` verbatim passthrough (SubCommand), and
-//   - the loader behind `ogo run` / `ogo test` (Load), once the emitter and
-//     `ogo build` produce .binary files.
+//   - the `ogo loadp2 <args>` verbatim passthrough (SubCommand),
+//   - the loader behind `ogo run` (Load), and
+//   - the capture of a test run's output behind `ogo test` (Capture).
 //
 // loadp2 drives the process's real stdio, serial ports and controlling terminal
 // and keeps global state; lib.Main locks the OS thread for the call and is not
@@ -71,6 +72,8 @@ const DefaultUserBaud = 230400
 // crystal overrides via Options.ClockHz.
 const DefaultClockHz = 200_000_000
 
+// Options describes one load: the binary and the loader's flags a program built by
+// OctoGo is loaded with.
 type Options struct {
 	Binary   string   // path to the .binary to load (required)
 	Port     string   // -p serial port; empty lets loadp2 auto-detect
@@ -83,8 +86,8 @@ type Options struct {
 }
 
 // Load builds the loadp2 argument list from o and runs the loader, returning
-// loadp2's exit status. It is the single internal entry point for flashing a
-// compiled program onto the board.
+// loadp2's exit status. It is how `ogo run` loads a compiled program onto the
+// board.
 func Load(o Options) int {
 	return loadp2lib.Main(buildArgs(o))
 }
@@ -125,6 +128,9 @@ func buildArgs(o Options) []string {
 	return append(args, o.Extra...)
 }
 
+// panicLine is a whole line of a panic's message, which ends a program's output.
+var panicLine = regexp.MustCompile(`(?m)^panic: [^\n]*\n`)
+
 // Capture loads a program, reads what it prints over the serial line until the
 // output contains stop, and returns it. It is what `ogo test` reports: the board
 // returns no exit status, so the verdict travels back as text. A panic's line ends
@@ -137,9 +143,14 @@ func buildArgs(o Options) []string {
 // stdin this program can write to. Killing it instead leaves the port in a state
 // that wedges the board until it is physically reset, so SIGKILL is a last resort
 // and not the mechanism.
-// panicLine is a whole line of a panic's message, which ends a program's output.
-var panicLine = regexp.MustCompile(`(?m)^panic: [^\n]*\n`)
-
+//
+// The subprocess is os.Executable() given the arguments "loadp2 -t -NOEOF" and
+// the loader's flags, so a program calling Capture hands such a command line to
+// SubCommand, first thing in its main, as ogo's does:
+//
+//	if len(os.Args) >= 2 && os.Args[1] == "loadp2" {
+//		os.Exit(loadp2.SubCommand(os.Args[2:]))
+//	}
 func Capture(o Options, stop string, timeout time.Duration) (out string, ok bool) {
 	self, err := os.Executable()
 	if err != nil {

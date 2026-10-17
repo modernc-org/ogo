@@ -25,8 +25,8 @@ import (
 
 	"modernc.org/ogo/internal/build"
 	"modernc.org/ogo/internal/format"
-	"modernc.org/ogo/internal/loadp2"
 	"modernc.org/ogo/internal/smith"
+	"modernc.org/ogo/loadp2"
 	"modernc.org/opt"
 )
 

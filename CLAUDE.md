@@ -504,7 +504,7 @@ subcommands to `internal/*` packages.
   standalone too.
 
 Data flow: `.ogo` sources → scanner/parser (`internal/octogo`) → flat AST →
-semantic checks → emitted C → `internal/flexcc` → P2 binary → `internal/loadp2` →
+semantic checks → emitted C → `internal/flexcc` → P2 binary → `loadp2` →
 board. That whole path runs today (`ogo build`, `ogo run`); WPO is the one stage
 still design-only.
 

@@ -5,7 +5,7 @@
 // Package build wires the OctoGo compile-and-load pipeline behind the `ogo
 // build` and `ogo run` subcommands: check + emit C (internal/octogo), compile
 // to a P2 binary (internal/flexcc), and — for run — load it onto a connected
-// board (internal/loadp2). It is the walking skeleton of the toolchain's back
+// board (loadp2). It is the walking skeleton of the toolchain's back
 // half; the emitter it drives currently handles only a trivial program.
 package build
 
@@ -23,8 +23,8 @@ import (
 	"time"
 
 	"modernc.org/ogo/internal/flexcc"
-	"modernc.org/ogo/internal/loadp2"
 	"modernc.org/ogo/internal/octogo"
+	"modernc.org/ogo/loadp2"
 )
 
 // Build implements `ogo build <file.ogo>`: it produces a P2 <file>.binary (or
@@ -38,7 +38,7 @@ func Build(args []string, stdin io.Reader, stdout, stderr io.Writer) (int, error
 // Run implements `ogo run <file.ogo>`: build, then load and run on a connected
 // P2 board with an interactive terminal. It loads with a precise crystal clock
 // (loadp2 -f, 200 MHz) and a matching 230400 read baud so the program's serial
-// output is readable out of the box — see internal/loadp2.DefaultClockHz for why
+// output is readable out of the box — see loadp2.DefaultClockHz for why
 // the clock, not just the baud, is the load-bearing setting. A board with a
 // non-standard crystal, or a program that reconfigures its serial, needs the raw
 // `ogo loadp2` passthrough with explicit -f/-b instead.
