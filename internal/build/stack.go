@@ -88,6 +88,10 @@ const stackScratch = 256
 // the entry reads them and starts the call one long in.
 const cogStartLongs = 1
 
+// maxInlineVisits bounds the copies of the functions inlined into one that are read
+// for its calls (narrowTargets); past it the function is every taken function's.
+const maxInlineVisits = 4096
+
 // maxWalkComponent is the largest component of functions joined by indirect calls
 // that is searched path by path, its visited set a bit mask; a larger one is taken
 // to need every frame it holds, which no path through it exceeds.
@@ -133,6 +137,10 @@ type stackEdge struct {
 	// side takes, which closes cycles no run makes; an interface call reaches
 	// what its table's slot holds, and is not wide.
 	wide bool
+	// recursion is a call through a function value to what the value's type may
+	// hold, read for a recursion alone: the stack it takes is read off the wide
+	// edges beside it, as before such calls were narrowed.
+	recursion bool
 }
 
 // stackNeeds is what a program's stacks need, read from the backend's listing of
@@ -299,7 +307,7 @@ func readStackNeeds(listing, c []byte) (r stackNeeds) {
 				succ[n] = append(succ[n], stackEdge{to: c, indirect: true, wide: wide})
 			}
 			for _, c := range recursion {
-				succ[n] = append(succ[n], stackEdge{to: c, indirect: true})
+				succ[n] = append(succ[n], stackEdge{to: c, indirect: true, recursion: true})
 			}
 		}
 	}
@@ -312,8 +320,19 @@ func readStackNeeds(listing, c []byte) (r stackNeeds) {
 	sort.Strings(tramps)
 	for _, t := range tramps {
 		v := need(t)
+		// A recursion the goroutine reaches by the calls it is known to make, a
+		// function value's to what its type may hold among them.
+		through := ""
+		if v >= 0 {
+			if through = g.recurses(t); through != "" {
+				v = -1
+			}
+		}
 		if v < 0 {
-			name := recursingName(t, succ, recursive, need)
+			name := through
+			if name == "" {
+				name = recursingName(t, succ, recursive, need)
+			}
 			if fc := scan.Funcs[name]; fc != nil && scan.InTable(name) && len(fc.Direct) == 1 {
 				name = fc.Direct[0] // the method an interface's thunk calls
 			}
@@ -331,6 +350,9 @@ func readStackNeeds(listing, c []byte) (r stackNeeds) {
 		}
 	}
 	r.mainNeed = need("_main")
+	if g.recurses("_main") != "" {
+		r.mainNeed = -1
+	}
 	// Where main reaches a recursion, need has no answer, and a frame past Hub RAM
 	// on the way to it went unasked: a mutant's 512 KB array result, beside a
 	// recursive function, built and printed nothing at all. Any chain of direct
@@ -411,9 +433,16 @@ func readStackNeeds(listing, c []byte) (r stackNeeds) {
 			if e.to == panicFn {
 				continue
 			}
+			if !e.wide && cg.recurses(e.to) != "" {
+				deep = -1 // a recursion no check covers: a function to check, below
+				break
+			}
+			if e.recursion {
+				continue
+			}
 			v := cg.need(e.to)
 			if v < 0 {
-				deep = -1 // a recursion no check covers: a function to check, below
+				deep = -1
 				break
 			}
 			deep = max(deep, v)
@@ -426,35 +455,45 @@ func readStackNeeds(listing, c []byte) (r stackNeeds) {
 		r.reserve = max(need(panicFn), 0)
 	}
 	r.mainCut = -1
-	if fns["_main"] != nil {
+	if fns["_main"] != nil && cg.recurses("_main") == "" {
 		r.mainCut = cg.need("_main")
 	}
 	// The recursions no check covers, reached from main's cog and from the
 	// goroutines', by the functions to check: the program's own, an interface's
 	// thunk by the method inlined into it.
+	// A recursion of the calls known to make, a function value's included, is
+	// asked of the calls known to be made; one of direct and interface calls is
+	// asked of every call, as before.
 	uncovered := func(roots []string) (to []string) {
-		seen := map[string]bool{}
-		var walk func(string)
-		walk = func(n string) {
-			if seen[n] || fns[n] == nil {
-				return
+		add := func(n string) {
+			cn := stackCName(n)
+			if d := inlinedInto(cn); d != "" {
+				cn = d
 			}
-			seen[n] = true
-			if cg.recursive[n] && isOwn(n) {
-				cn := stackCName(n)
-				if d := inlinedInto(cn); d != "" {
-					cn = d
-				}
-				if !slices.Contains(to, cn) {
-					to = append(to, cn)
-				}
-			}
-			for _, e := range succ[n] {
-				walk(e.to)
+			if !slices.Contains(to, cn) {
+				to = append(to, cn)
 			}
 		}
-		for _, n := range roots {
-			walk(n)
+		for _, known := range []bool{false, true} {
+			seen := map[string]bool{}
+			var walk func(string)
+			walk = func(n string) {
+				if seen[n] || fns[n] == nil {
+					return
+				}
+				seen[n] = true
+				if (known && cg.recursion[n] || !known && cg.recursive[n]) && isOwn(n) {
+					add(n)
+				}
+				for _, e := range succ[n] {
+					if known && !e.wide || !known && !e.recursion {
+						walk(e.to)
+					}
+				}
+			}
+			for _, n := range roots {
+				walk(n)
+			}
 		}
 		sort.Strings(to)
 		return to
@@ -472,14 +511,22 @@ type stackGraph struct {
 	members     map[int][]string
 	recursive   map[string]bool // on a cycle of direct and interface calls
 	need        func(string) int
+	// recursion is a function on a cycle of the calls known to be made: direct,
+	// interface and function value calls (stackEdge.recursion). recurses names, as
+	// the C does, the first such function a function reaches by those calls, ""
+	// for none.
+	recursion map[string]bool
+	recurses  func(string) string
 }
 
 // stackGraphOf is the stacks the functions names, of the listing fns, need, by the
 // calls succ and the frames frame.
 func stackGraphOf(names []string, fns map[string]*stackFunc, succ map[string][]stackEdge, frame map[string]int) stackGraph {
-	all := stackComponents(names, succ, func(stackEdge) bool { return true })
+	// A stack is sized by the calls a recursion edge is beside (stackEdge.recursion),
+	// so everything but recursion and recurses reads without them.
+	all := stackComponents(names, succ, func(e stackEdge) bool { return !e.recursion })
 	direct := stackComponents(names, succ, func(e stackEdge) bool { return !e.indirect })
-	precise := stackComponents(names, succ, func(e stackEdge) bool { return !e.wide })
+	precise := stackComponents(names, succ, func(e stackEdge) bool { return !e.wide && !e.recursion })
 	members := map[int][]string{}
 	preciseSize := map[int]int{}
 	for _, n := range names {
@@ -492,10 +539,48 @@ func stackGraphOf(names []string, fns map[string]*stackFunc, succ map[string][]s
 			recursive[n] = true
 		}
 		for _, e := range succ[n] {
-			if !e.wide && e.to == n {
+			if !e.wide && !e.recursion && e.to == n {
 				recursive[n] = true
 			}
 		}
+	}
+	known := stackComponents(names, succ, func(e stackEdge) bool { return !e.wide })
+	knownSize := map[int]int{}
+	for _, n := range names {
+		knownSize[known[n]]++
+	}
+	recursion := map[string]bool{}
+	for _, n := range names {
+		if knownSize[known[n]] > 1 {
+			recursion[n] = true
+		}
+		for _, e := range succ[n] {
+			if !e.wide && e.to == n {
+				recursion[n] = true
+			}
+		}
+	}
+	reaches := map[string]string{}
+	var recurses func(string) string
+	recurses = func(n string) string {
+		if r, ok := reaches[n]; ok {
+			return r
+		}
+		reaches[n] = "" // a cycle met again is answered where it began
+		r := ""
+		if recursion[n] {
+			r = stackStatic.ReplaceAllString(strings.TrimPrefix(n, "_"), "")
+		}
+		for _, e := range succ[n] {
+			if r != "" {
+				break
+			}
+			if !e.wide {
+				r = recurses(e.to)
+			}
+		}
+		reaches[n] = r
+		return r
 	}
 
 	memo := map[string]int{}
@@ -504,7 +589,7 @@ func stackGraphOf(names []string, fns map[string]*stackFunc, succ map[string][]s
 	external := func(u string) int {
 		deep := 0
 		for _, e := range succ[u] {
-			if all[e.to] == all[u] {
+			if e.recursion || all[e.to] == all[u] {
 				continue
 			}
 			v := need(e.to)
@@ -527,7 +612,7 @@ func stackGraphOf(names []string, fns map[string]*stackFunc, succ map[string][]s
 				return -1
 			}
 			for _, e := range succ[u] {
-				if !e.wide && all[e.to] == all[n] && !seen[e.to] {
+				if !e.wide && !e.recursion && all[e.to] == all[n] && !seen[e.to] {
 					seen[e.to] = true
 					reach = append(reach, e.to)
 				}
@@ -567,7 +652,7 @@ func stackGraphOf(names []string, fns map[string]*stackFunc, succ map[string][]s
 			}
 			deep := ext[m[u]]
 			for _, e := range succ[m[u]] {
-				if j, in := idx[e.to]; in && vis&(1<<j) == 0 {
+				if j, in := idx[e.to]; in && !e.recursion && vis&(1<<j) == 0 {
 					deep = max(deep, walk(j, vis|1<<j))
 				}
 			}
@@ -597,7 +682,7 @@ func stackGraphOf(names []string, fns map[string]*stackFunc, succ map[string][]s
 		return v
 	}
 
-	return stackGraph{all: all, direct: direct, members: members, recursive: recursive, need: need}
+	return stackGraph{all: all, direct: direct, members: members, recursive: recursive, need: need, recursion: recursion, recurses: recurses}
 }
 
 // stackCName is the name the C gives the function the listing names n: without the
@@ -629,13 +714,20 @@ func narrowTargets(n string, fns map[string]*stackFunc, scan *octogo.CallScan, b
 	var sites []octogo.IfaceSite
 	var values []string
 	other := 0
-	seen := map[string]bool{}
+	// A function inlined twice brings its calls twice: visited once, a function
+	// calling `Eval` in two places, which calls through a table, was read as
+	// making one such call where its listing makes two, and was every taken
+	// function's -- an expression evaluator's recursion through `evAdd` went
+	// unseen. A function met again on the way to itself is no inlined copy.
+	on, visits := map[string]bool{}, 0
 	var visit func(string)
 	visit = func(name string) {
-		if seen[name] {
+		if on[name] || visits > maxInlineVisits {
+			visits = maxInlineVisits + 1
 			return
 		}
-		seen[name] = true
+		on[name] = true
+		visits++
 		fc := scan.Funcs[name]
 		sites, values, other = append(sites, fc.Iface...), append(values, fc.FV...), other+fc.Other
 		for _, d := range fc.Direct {
@@ -643,9 +735,10 @@ func narrowTargets(n string, fns map[string]*stackFunc, scan *octogo.CallScan, b
 				visit(d)
 			}
 		}
+		delete(on, name)
 	}
 	visit(cn)
-	if other != 0 || len(sites)+len(values) != f.indirect {
+	if visits > maxInlineVisits || other != 0 || len(sites)+len(values) != f.indirect {
 		return nil, false, false
 	}
 	have := map[string]bool{}

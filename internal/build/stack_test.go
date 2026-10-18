@@ -495,6 +495,57 @@ func main() {
 		if strings.Contains(string(built), "OGO_STACK_CHECK(") {
 			t.Errorf("a stack check where nothing recurses")
 		}
+		// A goroutine calling through a value of one type, beside a recursion
+		// through a table of another: the goroutine's call reaches every taken
+		// function for its stack's size, and that reached the recursion, so it was
+		// refused for one it never makes. And an evaluator whose operator calls
+		// Eval twice, inlined into it, was read as making one call through the
+		// table where its listing makes two, and so as no recursion.
+		both := `var out = make(chan int32)
+
+type job func(int32) int32
+
+func square(x int32) int32 { return x * x }
+
+var jobs = [1]job{square}
+
+func work() { out <- jobs[0](3) }
+
+type Node struct {
+	op   int
+	v    int32
+	l, r *Node
+}
+
+type evalFn func(n *Node) int32
+
+var ops [3]evalFn
+
+func init() { ops = [3]evalFn{evNum, evAdd, evNeg} }
+
+func Eval(n *Node) int32 { return ops[n.op](n) }
+
+func evNum(n *Node) int32 { return n.v }
+
+func evAdd(n *Node) int32 { return Eval(n.l) + Eval(n.r) }
+
+func evNeg(n *Node) int32 { return -Eval(n.l) }
+
+var a, b = Node{v: 2}, Node{v: 3}
+
+var d = Node{op: 2, l: &b}
+
+var c = Node{op: 1, l: &a, r: &d}
+
+func main() {
+	go work()
+	println(<-out, Eval(&c))
+}
+`
+		if _, err := compile(t, both, false); err != nil {
+			t.Fatalf("a goroutine beside a recursion through a table: %v", err)
+		}
+		checked(t, false, "evAdd", "evNeg")
 	})
 	t.Run("main", func(t *testing.T) {
 		_, err := compile(t, "func main() {\n\tvar big [140000]int\n\tbig[1] = 2\n\tfor i := range big {\n\t\tbig[i] += i\n\t}\n\tprintln(big[1] + big[139999])\n}\n", false)
