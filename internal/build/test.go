@@ -399,7 +399,7 @@ func testPackage(dir string, opts testOptions, stdout, stderr io.Writer) (int, e
 	// module root that is the top of fsys, in a module it is the package's directory.
 	runner := path.Join(rel, testRunnerFile)
 	all = append(all, testRunnerFile)
-	emitOpts := append([]octogo.EmitOption{octogo.Checked(), octogo.TestEntry("ogoTestMain")}, clockOpts...)
+	emitOpts := append([]octogo.EmitOption{octogo.Checked(), octogo.TestEntry("ogoTestMain"), octogo.FuncValueClasses()}, clockOpts...)
 	var overlay overlayFS
 	// emit builds the program with its runner, handing in what naming a subtest
 	// takes or not, and emits its C.

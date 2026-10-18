@@ -40,12 +40,24 @@ type CallScan struct {
 	// members, by member alone, the union over every table type.
 	slots   map[string]map[string][]string
 	members map[string][]string
+	// fvMembers is, by the C type of a function value, the functions a value of
+	// it may hold (ReadFuncValueClasses).
+	fvMembers map[string][]string
+}
+
+// FuncValueTargets answers the functions a call through a function value of C type
+// ct may reach, as the table FuncValueClasses had written says, and false where the
+// table says nothing of the type.
+func (s *CallScan) FuncValueTargets(ct string) ([]string, bool) {
+	fns, ok := s.fvMembers[ct]
+	return fns, ok
 }
 
 // FuncCalls is one function's calls.
 type FuncCalls struct {
 	Direct []string    // the functions the C defines that it calls by name
 	Iface  []IfaceSite // its calls through an interface's table
+	FV     []string    // its calls through a function value, by the value's C type (FuncValueClasses)
 	Other  int         // its other calls not proved to be by name
 }
 
@@ -249,6 +261,7 @@ func ScanCalls(c []byte) *CallScan {
 		slots:   map[string]map[string][]string{},
 		members: map[string][]string{},
 	}
+	scan.fvMembers, _ = ReadFuncValueClasses(c)
 	known := map[string]bool{} // a function or a macro: a call of it is by name
 	for _, n := range cLibNames {
 		known[n] = true
@@ -431,7 +444,13 @@ func ScanCalls(c []byte) *CallScan {
 					fc.Other++
 				}
 			case prev.s == ")":
-				if o := matchOpen(toks, i-1); o < 0 || !isCastGroup(toks[o+1:i-1], types) {
+				o := matchOpen(toks, i-1)
+				switch {
+				case o >= 1 && o+2 < i && toks[o-1].s == fvCallMacro && toks[o+1].ident && toks[o+2].s == ",":
+					// `OGO_FV(type, callee)(args)`: a call through a function value
+					// of the type (FuncValueClasses).
+					fc.FV = append(fc.FV, toks[o+1].s)
+				case o < 0 || !isCastGroup(toks[o+1:i-1], types):
 					fc.Other++
 				}
 			case prev.s == "]":

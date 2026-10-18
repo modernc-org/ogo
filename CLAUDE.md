@@ -168,8 +168,11 @@ the emitter (octogo.WithReport). And a check at the entry of each function on a
 recursion (2026-10-18, stackcheck.go), where it may run: main's cog and a goroutine
 of a --gostack slot panic "goroutine stack overflow" before a recursion writes past
 the end of the stack, what the panic needs kept free; the margins are the listing's,
-in rounds of compiles. A recursion through a function value is not seen, and so not
-checked (specs.go's TODO).
+in rounds of compiles. A recursion through a function value is seen by what the
+value's type may hold (funcclasses.go): the build spells each such call
+`OGO_FV(type, callee)` and the C carries a table of each type's functions, two
+defined types being two types to the checker since the same day -- for a recursion
+only, a stack's size still taking such a call to reach every taken function.
 
 **A program ends as Go's does, every cog with it** (the user's call, 2026-10-07): a
 debug build's panic stops every other cog and then its own (panicHaltC), and a return
@@ -1044,7 +1047,11 @@ section. A new finding goes there; the rule it leaves goes here too.
   program written to break it** (ONE PASS THROUGH AN INTERFACE); **A check the
   program pays at run time is written where the listing proves it needed, and
   sized off the listing of the program it is in** (A RECURSION IS CHECKED WHERE IT
-  RUNS).
+  RUNS); **A fact about the emitted code rides in its text: the emitter renders text
+  it throws away, and a record kept beside the text counts renderings that never
+  reached the C**; **A finer edge found for one question is read for that question:
+  what a recursion is told is no stack's size until the size can rest on it** (WHAT
+  A FUNCTION VALUE'S TYPE MAY HOLD).
 - **Two programs that should cost the same are compared by their BINARIES**.
 - **What the backend makes of a library call is read in the listing for what it
   holds while the arguments run**; **A goroutine's output is asked with main

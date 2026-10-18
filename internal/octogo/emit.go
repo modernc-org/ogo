@@ -6846,6 +6846,11 @@ func emitProgram(pkg *Package, w io.Writer, opts []EmitOption, rename map[string
 	if e.usesInline {
 		out.WriteString(inlineMacro)
 	}
+	if len(e.fvTypes) != 0 {
+		// A call through a function value spelled with the value's type for the
+		// build's reading (funcclasses.go): the callee, and nothing else.
+		out.WriteString("#define " + fvCallMacro + "(t, f) (f)\n")
+	}
 	// One slice header typedef per distinct element type, and append's ok-form
 	// result struct { slice, ok } per element type. Both are units of the typedef
 	// section like the struct bodies and the function typedefs, and the dependency
@@ -7440,6 +7445,9 @@ func emitProgram(pkg *Package, w io.Writer, opts []EmitOption, rename map[string
 	if e.report != nil {
 		e.fillReport(text, pkgs)
 	}
+	if e.fvTable {
+		text = append(text, e.funcValueClassesC(text)...)
+	}
 	_, err := w.Write(text)
 	return e.loopSeedsOut, err
 }
@@ -7809,6 +7817,7 @@ type emitter struct {
 	mkLenHelpers        map[string]bool         // the length checks of make called (emitMakeLen)
 	usesSBound64u       bool                    // ogo_sbound64u is called, for a slice bound of uint64
 	usesLUT             bool                    // p2.ReadLUT or p2.WriteLUT is called: emit ogo_rdlut and ogo_wrlut (lutHelperDef)
+	fvState                                     // what FuncValueClasses writes (funcclasses.go)
 	stackChecks         map[string]bool         // the functions, by C name, whose entry checks the stack (StackChecks); nil for none
 	stackPerCog         bool                    // the checks read each cog's end of stack, which a goroutine's trampoline records
 	stackChecked        map[string]bool         // the functions of stackChecks emitted with their check
@@ -8835,19 +8844,27 @@ func (e *emitter) recFuncValue(cname string) string {
 // literal (doc/complit-arg-in-cast.c), and a variadic argument's pack is one --
 // `st(k, 1)` did not build for the target where the host was right.
 func (e *emitter) recFuncCallee(ct, callee string) string {
-	callee = e.fnValueChecked(callee, ct)
+	raw := callee
+	callee = e.fnValueGuarded(callee, ct)
 	if ft := e.underlyingCType(ct); e.recFuncTypes[ft] {
-		return "((" + ft + "_call)" + callee + ")"
+		callee = "((" + ft + "_call)" + callee + ")"
 	}
-	return callee
+	return e.fvCallee(ct, raw, callee)
 }
 
 // fnValueChecked is the callee of a call through a function VALUE of C type ct,
+// nil-checked in a checked build (fnValueGuarded) and spelled with its type where
+// the build asks (fvCallee).
+func (e *emitter) fnValueChecked(callee, ct string) string {
+	return e.fvCallee(ct, callee, e.fnValueGuarded(callee, ct))
+}
+
+// fnValueGuarded is the callee of a call through a function value of C type ct,
 // nil-checked in a checked build: Go panics, "nil pointer dereference", and a call
 // through address zero here jumped to Hub RAM's first long -- on the host a crash,
 // on the target whatever was there, in silence. A value the summaries bind to a
 // declared function (boundFunc) is that function, and is not checked.
-func (e *emitter) fnValueChecked(callee, ct string) string {
+func (e *emitter) fnValueGuarded(callee, ct string) string {
 	if !e.checks || e.isCIdentBoundFunc(callee) {
 		return callee
 	}
@@ -12362,8 +12379,27 @@ func (e *emitter) collectFuncValues(ast []int32) {
 		if n.sym == Factor {
 			e.noteFuncValue(slices.Collect(it(n.ast)))
 		}
+		if n.sym == Element {
+			// A key names a field or an index and is no value: `box{run: hi}` made
+			// the function run one of hi's type.
+			if v, keyed := elementValue(n); keyed {
+				e.collectFuncValues(v.ast)
+				continue
+			}
+		}
 		e.collectFuncValues(n.ast)
 	}
+}
+
+// elementValue is the value of a composite literal's keyed Element, `k: v`, and
+// false for an Element of no key.
+func elementValue(n Node) (Node, bool) {
+	for c := range it(n.ast) {
+		if c.sym == ElementValue {
+			return c, true
+		}
+	}
+	return Node{}, false
 }
 
 // noteFuncValue records the function a Factor is, when it is one used as a value.
@@ -12378,7 +12414,13 @@ func (e *emitter) noteFuncValueMember(fv funcValueType, name, shown string) {
 }
 
 func (e *emitter) noteFuncValue(kids []Node) {
-	add := e.noteFuncValueMember
+	// And of the defined type the checker recorded it becomes where it stands, for
+	// what a call through a value of that type may reach (funcclasses.go).
+	ctx := e.fvContextOf(kids)
+	add := func(fv funcValueType, name, shown string) {
+		e.noteFuncValueMember(fv, name, shown)
+		e.noteFuncValueClass(fv, name, ctx)
+	}
 	if len(kids) == 1 && kids[0].sym == FuncLiteral {
 		for c := range it(kids[0].ast) {
 			if c.sym != Signature {
@@ -17638,6 +17680,7 @@ func (e *emitter) liftFuncLit(lit Node) (string, bool) {
 	cname := e.mangle(e.curPkgPrefix, fmt.Sprintf("ogo_lit%d", e.liftSeq))
 	e.liftSeq++
 	e.noteReportLit(cname, lit)
+	e.noteFuncValueLit(e.litKey(lit), cname)
 	// The escape summary collected under the literal's place (see collectCrossParams)
 	// is the lifted function's: a call by the C name, which is what a statement's
 	// literal and a deferred one make, is judged by it.
@@ -17661,6 +17704,7 @@ func (e *emitter) liftFuncLit(lit Node) (string, bool) {
 	// was judged by a union without it. Its types resolve here.
 	key := e.litKey(lit)
 	e.noteFuncValueMember(e.funcValueTypes[cname], key, "the function literal at "+strings.TrimPrefix(key, "lit@"))
+	e.noteFuncValueClass(e.funcValueTypes[cname], key, "")
 	e.funcSliceParams[cname] = e.paramSliceTypes(sig)
 	if _, at := e.variadicElem(sig); at >= 0 {
 		e.funcVariadic[cname] = at
@@ -25997,6 +26041,7 @@ func (e *emitter) floatConvHelper(ct string) (string, bool) {
 // string(rune), string([]byte) -- which needs the allocation this target does not
 // have, and is refused.
 func (e *emitter) emitConversion(ct string, arg Node) {
+	e.noteFuncValueConv(ct, arg)
 	// `uintptr(p)` of a pointer reaching this frame: the number carries the address
 	// where no lifetime rule can follow it, so it is refused as storing the pointer
 	// in a package variable is.
@@ -43627,19 +43672,6 @@ func (e *emitter) printArrayShape(idx int, arg Node) (arrDim, bool) {
 	return e.arrayShapeOf(arg.ast)
 }
 
-// arrayCallArg reports whether a print argument is a call returning an ARRAY, or a
-// receive of one, which has no value to print until the print binds it
-// (hoistPrintArgs).
-func (e *emitter) arrayCallArg(args []Node) bool {
-	return slices.ContainsFunc(args, func(a Node) bool {
-		if _, _, ok := e.arrayResultCall(a.ast); ok {
-			return true
-		}
-		_, _, _, isArr := e.arrayRecvInit(a.ast)
-		return isArr
-	})
-}
-
 // emptyArrayText is what an array with an EMPTY dimension prints as, which is all
 // brackets -- "[]" for [0]int, "[[] []]" for [2][0]int -- and whether it has one.
 // ok is false where a dimension before the empty one is not a plain number.
@@ -49032,6 +49064,7 @@ func (e *emitter) valueCallArgC(throughValue bool, params []string, i int, text 
 // it stands in Go's order: an operand before it that does something is bound
 // before it.
 func (e *emitter) valueResultC(ct, fn, call string) string {
+	fn = fvBareCallee(fn) // the callee as written, whatever type it is spelled with
 	if _, global := e.globals[fn]; e.declInit || e.deferReplay >= 0 || isCIdent(fn) && !global {
 		return call
 	}

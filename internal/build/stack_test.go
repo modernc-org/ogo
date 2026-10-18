@@ -246,7 +246,7 @@ func main() {
 				t.Fatal(err)
 			}
 			var c bytes.Buffer
-			if err := octogo.EmitC(pkg, &c, append([]octogo.EmitOption{octogo.Checked(), octogo.Inline()}, extra...)...); err != nil {
+			if err := octogo.EmitC(pkg, &c, append([]octogo.EmitOption{octogo.Checked(), octogo.Inline(), octogo.FuncValueClasses()}, extra...)...); err != nil {
 				t.Fatal(err)
 			}
 			return c.Bytes(), nil, nil
@@ -417,6 +417,84 @@ func main() {
 			t.Fatalf("recursion on main's cog: %v", err)
 		}
 		checked(t, false, "depth")
+		// Through a call of a function value, what the value's type holds: such a
+		// call was taken to reach every function the program takes the address of,
+		// a cycle through it walked once, and the recursion went unseen on either
+		// cog.
+		value := `var out = make(chan int)
+
+type visit func(n int) int
+
+var v visit
+
+func walk(n int) int {
+	if n == 0 {
+		return 0
+	}
+	return 1 + v(n-1)
+}
+
+func work(n int) {
+	out <- walk(n)
+}
+
+func init() { v = walk }
+
+func main() {
+	go work(200)
+	println(<-out)
+}
+`
+		_, err = compile(t, value, false)
+		if err == nil || !strings.Contains(err.Error(), "a goroutine recurses through walk") {
+			t.Fatalf("err=%v, want the goroutine's recursion through walk refused", err)
+		}
+		if _, err := compile(t, value, true); err != nil {
+			t.Fatalf("with the stack asked for: %v", err)
+		}
+		checked(t, true, "walk")
+		if _, err := compile(t, strings.Replace(value, "go work(200)\n\tprintln(<-out)", "println(walk(5))", 1), false); err != nil {
+			t.Fatalf("recursion through a value on main's cog: %v", err)
+		}
+		checked(t, false, "walk")
+		// And two tables of one signature, obeam's handlers and BIFs, each of its
+		// own defined type, reach only their own functions: a handler calling a
+		// BIF closes no cycle, where every taken function would have.
+		tables := `var out = make(chan int)
+
+type handler func(n int) int
+
+type bif func(n int) int
+
+func b1(n int) int { return n * 2 }
+
+var bifs = [1]bif{b1}
+
+func hAdd(n int) int { return n + 1 }
+
+func hCall(n int) int { return bifs[0](n) }
+
+var handlers = [2]handler{hAdd, hCall}
+
+func work(n int) {
+	s := 0
+	for op := 0; op < 2; op++ {
+		s += handlers[op](n)
+	}
+	out <- s
+}
+
+func main() {
+	go work(3)
+	println(<-out)
+}
+`
+		if _, err := compile(t, tables, false); err != nil {
+			t.Fatalf("two tables of one signature: %v", err)
+		}
+		if strings.Contains(string(built), "OGO_STACK_CHECK(") {
+			t.Errorf("a stack check where nothing recurses")
+		}
 	})
 	t.Run("main", func(t *testing.T) {
 		_, err := compile(t, "func main() {\n\tvar big [140000]int\n\tbig[1] = 2\n\tfor i := range big {\n\t\tbig[i] += i\n\t}\n\tprintln(big[1] + big[139999])\n}\n", false)

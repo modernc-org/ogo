@@ -795,6 +795,43 @@ func main() {
 		want: "panic: index out of range",
 	},
 	{
+		// A recursion through a call of a function value is checked as one through
+		// a direct call is: such a call was taken to reach every function the
+		// program takes the address of, its cycle walked once, and main recursing
+		// through a callback printed its first line on a P2-EDGE and then nothing,
+		// having run past the top of Hub RAM. Two tables of one signature, of two
+		// defined types, reach only their own functions. The host's stack has no
+		// check.
+		name:      "a recursion through a function value stops at the end of its stack",
+		boardOnly: true,
+		panics:    true,
+		src: `type visit func(n int) int
+
+type other func(n int) int
+
+var v visit
+
+var others = [1]other{twice}
+
+func twice(n int) int { return 2 * n }
+
+func walk(n int) int {
+	if n == 0 {
+		return others[0](0)
+	}
+	return 1 + v(n-1)
+}
+
+func init() { v = walk }
+
+func main() {
+	println(walk(100))
+	println(walk(1000000))
+}
+`,
+		want: "100\npanic: goroutine stack overflow",
+	},
+	{
 		// An alias of a type written out, `type Buf = []byte`, is that type: assignable
 		// both ways to the literal, to another alias of it and to a type defined over
 		// it, spelled by %T as the literal, written in a literal, a conversion and a

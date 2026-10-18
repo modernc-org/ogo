@@ -293,6 +293,7 @@ type File struct {
 	clauseFallthrough map[string]bool             // positions of "fallthrough" keywords checkSwitch has accounted for, so the statement walk reports only the misplaced ones
 	makeTypeArgs      map[string]bool             // positions of identifiers standing as make's first argument, which is a TYPE and not a value: "make(List, n)" over "type List []int" names one, and the bare-type-name check would otherwise report it as "cannot use type List as a value"
 	defineRedeclares  map[string]bool             // positions of ":=" targets already declared in the same scope, so the emitter assigns to them rather than declaring them again (see emitMultiAssign); file-scoped, read after checking
+	funcValueTypes    map[int32]definedType       // the values standing where a defined FUNCTION type is wanted, by their first token, and that type (see noteFuncValueType); read by the emitter
 	shiftTypes        map[*int32]Kind             // the shift operators whose left operand is an untyped constant, by their place in the AST, and the type the context gives it (see typeShiftOperands); read by the emitter
 	wholeConsts       map[*int32]Kind             // the constants written as FLOATS that stand where an integer type is wanted, `var u uint32 = 3e9`, by their place in the AST, and that type (see checkValueOverflow); read by the emitter
 	wholeConstToks    map[int32]Kind              // the same for a constant that is one token, by the token
@@ -15343,6 +15344,7 @@ func aliasesLiteral(s *Scope, td *TypeDeclaration) bool {
 // defined type and the unnamed spelling of it are assignable both ways, as they are
 // in Go -- so identity has to be decided here, where the names are.
 func (f *File) checkDefinedType(s *Scope, wantName string, value Node, what string) {
+	f.noteFuncValueType(s, wantName, value)
 	if wantName == "" || f.namesAliasedLiteral(s, wantName) {
 		return
 	}
@@ -15408,6 +15410,42 @@ func (f *File) checkDefinedType(s *Scope, wantName string, value Node, what stri
 		from = kindName(haveKind)
 	}
 	f.err(f.tok(value.Pos()).Position(), "cannot use %s of type %s as type %s in %s", f.exprSource(value), from, wantName, what)
+}
+
+// definedType names a type declared at package level: its package's import path
+// and its name.
+type definedType struct{ importPath, name string }
+
+// noteFuncValueType records a value standing where a value of a defined FUNCTION
+// type is wanted -- `var h handler = h1`, an element of a []handler, an argument of
+// one -- and that type, which a function the value names becomes: a call through a
+// value of the type reaches what the program made one of it (the emitter's
+// funcValueClasses). Recorded by the value's first token, and only for a value of
+// one Factor, which is the shape a function used as a value has. A type declared in
+// a function is not recorded, and a function used as a value where nothing is
+// recorded is taken to be of every type of its signature.
+func (f *File) noteFuncValueType(s *Scope, wantName string, value Node) {
+	if wantName == "" || f.kindlessCategory(s, wantName) != "func" {
+		return
+	}
+	if _, ok := f.soleFactorOf(value); !ok {
+		return
+	}
+	td, _, ok := f.typeDeclNamedIn(s, f.canonicalName(s, wantName), true)
+	if !ok || td.TypeSpec == nil || td.TypeSpec.Alias {
+		return
+	}
+	wf := f.fileOfToken(td.Token())
+	if wf == nil || wf.Package == nil || wf.Package.Scope == nil {
+		return
+	}
+	if g, global := wf.Package.Scope.Declarations[td.Name()].(*TypeDeclaration); !global || g != td {
+		return
+	}
+	if f.funcValueTypes == nil {
+		f.funcValueTypes = map[int32]definedType{}
+	}
+	f.funcValueTypes[value.Pos()] = definedType{wf.Package.ImportPath, td.Name()}
 }
 
 // definedTypeMismatch reports two operands of an operator whose DEFINED types

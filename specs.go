@@ -20,23 +20,23 @@
 // where every go statement of the program does. What is left: a goroutine
 // RECURSING through its own calls has no depth a listing bounds, and a program
 // starting one is refused unless --gostack gives the size -- through direct calls,
-// and since 2026-10-17 through interface calls too; a call through a function
-// value is taken to reach any function whose address the program takes, so a slot
+// and since 2026-10-17 through interface calls too, and since 2026-10-18 through
+// calls of function values, each reaching what the value's type may hold: the
+// functions the program made values of that type, or every one of its signature
+// where the program has a value of the type written out, `func(int) int`
+// (internal/octogo/funcclasses.go) -- so obeam's BIF and handler tables, of one
+// signature and two defined types, close no cycle. For a slot's size such a call
+// is still taken to reach any function whose address the program takes, so a slot
 // can be larger than it needs (a call through an interface reaches what its
-// table's slot holds, since 2026-10-07), and a cycle such a call closes is walked
-// once, since most of them no run makes (obeam's BIF and handler tables, of one
-// signature, each taken to reach the other's functions) -- which leaves a goroutine
-// really recursing through a function value unrefused, sized for one pass: telling
-// the tables apart needs the function values' flow by their defined types; and a
-// program with a go statement that may run more than once keeps the shared pool,
+// table's slot holds, since 2026-10-07); and a program with a go statement that may
+// run more than once keeps the shared pool,
 // seven slots of the deepest goroutine's size. The slot is fenced (since
 // 2026-08-20): a goroutine that overruns it and still ends panics "goroutine stack
 // overflow". And since 2026-10-18 a recursion is checked where it may run, on main's
 // cog and on a goroutine whose slots --gostack sized: the build puts a check at the
 // entry of each function on it (internal/octogo/stackcheck.go), which panics
 // "goroutine stack overflow" before the recursion writes past its stack, keeping
-// what the panic needs free; a recursion through a function value is not seen, and
-// so not checked.
+// what the panic needs free.
 // (The array TODO of 20260806 is DONE 2026-09-24: an array result may stand beside
 // another, `func f() ([3]int, int)`, held in the result struct and written through
 // an out parameter, which is copied with memcpy.)

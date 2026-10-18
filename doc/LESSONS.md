@@ -572,6 +572,45 @@ checked, by the method's margin. What went wrong first was elsewhere: the gorout
 test printed nothing because main printed what it received (A PRINT HOLDS A LOCK).
 **A check the program pays at run time is written where the listing proves it
 needed, and sized off the listing of the program it is in.**
+WHAT A FUNCTION VALUE'S TYPE MAY HOLD (2026-10-18, the hole ONE PASS THROUGH AN
+INTERFACE left): `main` recursing through a callback printed its first line on a
+P2-EDGE and then nothing, the stack check never written, since a call through a
+function value reached every function whose address the program takes and its
+cycle was walked once. What tells obeam's `bif` from its `handler` is their defined
+types, and the checker had never asked two defined function types to differ: the
+signatures were compared, and a `handler` went wherever a `bif` was wanted, thirty
+positions Go refuses; four positions -- a package `var` of a written type, an
+element appended, results forwarded whole, a name a `:=` list assigns -- asked no
+type's identity at all, a struct of another layout going in; `h, n := lookup()` of
+a defined function type could not be called, a local `var a, b = f()` typed
+neither name, and another package's function type was checked in this package's
+scope, refusing `c(lib.Celsius(3))` against main's own Celsius. With those fixed
+(7b9e8b5, 18210a1) a value of one defined type reaches another only by a
+conversion or through the type written out, and a call through a value reaches
+what its type may hold: the functions the checker saw made values of that type
+(noteFuncValueType, by the value's first token), those used where it saw none, and
+every function of the signature where the C declares anything of the type written
+out or converts between two of them (funcclasses.go). The edges are read for a
+recursion and nothing else: a stack is sized as before, so no slot shrinks on the
+strength of them. The first version recorded each call's type beside the C as the
+emitter wrote it, and a function making one call counted two: the type inference
+renders a call to learn its type and throws the text away (callChainType). So the
+type rides in the call's text, `OGO_FV(type, callee)(args)`, a macro that is its
+callee, and a rendering thrown away takes its mark with it -- not a comment, which
+the emitter's own readers of the callee text (valueResultC's isCIdent, cOperatorTop
+taking a `/` for an operator) would have answered otherwise. Every program of the
+corpus builds the binary it built without the macro and the table, and so do
+p2-11, its ten test binaries and obeam's VM, checked and unchecked. Of the corpus
+two programs read differently at first, both spurious: a struct literal's KEY named
+like a function was that function used as a value (collectFuncValues, older than
+this, widening the lifetime unions too), and a local bound to one literal, called
+through the type written out, reached every function of its signature -- the
+knowledge its nil check is left out on (boundFunc) now names the call's one
+function. With both fixed none of 1380 does. **A fact
+about the emitted code rides in its text: the emitter renders text it throws away,
+and a record kept beside the text counts renderings that never reached the C.**
+**A finer edge found for one question is read for that question: what a recursion
+is told is no stack's size until the size can rest on it.**
 
 **A TYPE SWITCH BEHIND AN INIT STATEMENT** (2026-10-07), `switch s := pick(); v :=
 s.(type)`, the last header shape on the open list: the grammar's SwitchTag takes `[

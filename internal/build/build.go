@@ -116,6 +116,10 @@ func compile(args []string, stdout, stderr io.Writer) (binary string, code int, 
 	if flags.goStack != 0 {
 		emitOpts = append(emitOpts, octogo.GoStack(flags.goStack))
 	}
+	// Each call through a function value spelled with its type, for the stack
+	// reader to see a recursion through one (readStackNeeds); the binary is the one
+	// built without.
+	emitOpts = append(emitOpts, octogo.FuncValueClasses())
 	// The small functions are marked for the backend to inline, unless
 	// --no-inline asks for the program without.
 	var rep octogo.Report

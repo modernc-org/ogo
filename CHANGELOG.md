@@ -26,13 +26,21 @@ shipped section tells a reader on that version that they have behaviour they do 
   evaluated on a goroutine through `Expr.Eval`, `a.l.Eval() + a.r.Eval()`, was
   given 176 longs, and 200 deep it printed nothing at all on a P2-EDGE; in the 256
   longs v0.57.0 gave every slot, 20 deep printed its answer and 60 deep nothing.
-  The error names the method. A recursion through a call of a function value is not
-  seen yet: such a call is taken to reach every function whose address the program
-  takes, which closes cycles no run makes -- obeam's BIF and instruction-handler
-  tables, of one signature, each reach the other's functions -- and such a cycle is
-  still sized for one pass. A recursion a function reaches by its own calls inside
-  such a cycle is one now, so `main`'s stack, reaching one through a test runner,
-  is reported as what it needs at the least.
+  The error names the method. A recursion a function reaches by its own calls
+  inside a cycle no run makes is one now, so `main`'s stack, reaching one through a
+  test runner, is reported as what it needs at the least.
+- **A goroutine recursing through a call of a function value is refused unless
+  `--gostack` sizes the stacks, and `main` recursing through one is checked**, as
+  one through a direct or an interface call is: such a call was taken to reach
+  every function whose address the program takes, which closes cycles no run makes
+  -- obeam's BIF and instruction-handler tables, of one signature, each reached the
+  other's functions -- so a cycle through one was sized for one pass, and on a
+  P2-EDGE `main` recursing through a callback printed its first line and then
+  nothing. A call through a value now reaches what the value's type may hold: the
+  functions the program made values of that type, or every function of its
+  signature the program uses as a value where the program has a value of the type
+  written out, `func(int) int`, or converts one defined type of it to another. A
+  stack's size is read as before.
 - **A recursion that runs out of stack panics before it writes past the end**:
   `main` recursing too deep ran on past the top of Hub RAM, a P2-EDGE printing
   nothing more, and a goroutine recursing in a slot `--gostack` sized ran over what
@@ -41,9 +49,8 @@ shipped section tells a reader on that version that they have behaviour they do 
   on `main`'s cog, about ten on a goroutine's -- which panics `goroutine stack
   overflow` with what the panic needs, about 600 bytes, still free: a recursion has
   that much less of its stack than before, and one that just fitted may panic now.
-  A recursion through a call of a function value is not seen and not checked. `ogo
-  build --report` names the functions checked, and says what `main`'s stack needs
-  up to them.
+  `ogo build --report` names the functions checked, and says what `main`'s stack
+  needs up to them.
 - **The names a local `var` declares from one value of several are typed**: `var
   sum, diff = sums(10, 3)`, `var v, ok = <-ch` and `var q, ok = x.(*P)` gave their
   names no type, so `var s string = sum` went to the C compiler and `q.y` was the
