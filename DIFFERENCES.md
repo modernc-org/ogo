@@ -162,6 +162,43 @@ Go prints:
 started 8
 ```
 
+### A recursion stops at the end of its stack
+
+A goroutine's stack is a slot of a fixed size, and `main`'s is the rest of Hub RAM. A
+recursion that would run past the end panics as it reaches it, where Go grows a stack
+to a gigabyte. The panic keeps what it needs free, about 600 bytes, so a recursion has
+a little less than the whole stack.
+
+<!-- board-only: the host's C stack is the host's, and has no check -->
+
+```go
+func depth(n int) int {
+	if n == 0 {
+		return 0
+	}
+	return 1 + depth(n-1)
+}
+
+func main() {
+	println(depth(100))
+	println(depth(100000))
+}
+```
+
+OctoGo prints:
+
+```
+100
+panic: goroutine stack overflow
+```
+
+Go prints:
+
+```
+100
+100000
+```
+
 ### A panic runs no deferred call
 
 A panic prints its message and stops every cog without running the deferred calls on

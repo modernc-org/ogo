@@ -152,8 +152,7 @@ calls: **a lifetime test writes its refused shape in a function other than main*
 
 **Later, from the same review** (recorded at the user's request, not scheduled): a
 `go` that reports a cog it could not start instead of panicking; explicit Load/Store operations
-beside the defined plain accesses; a `tryAppend` name for the ok form of append; a
-check at a goroutine function's entry that stops an overrun before it writes; and splitting
+beside the defined plain accesses; a `tryAppend` name for the ok form of append; and splitting
 specs.go into the rules, the implementation status and the rationale. Done since:
 stack slots sized per goroutine (2026-10-17, goslots.go): a go statement that runs
 at most once has a slot of its own, sized for its goroutine, where every one of the
@@ -165,7 +164,12 @@ the binary's own assembly assembled again (or, where the assembler will not take
 it back, of the C compiled with a listing, which the backend optimizes a little
 differently and the report says so), each object's size off a `sizeof` table built
 into a second compile and read out of its binary (octogo.SizeProbe), the names off
-the emitter (octogo.WithReport).
+the emitter (octogo.WithReport). And a check at the entry of each function on a
+recursion (2026-10-18, stackcheck.go), where it may run: main's cog and a goroutine
+of a --gostack slot panic "goroutine stack overflow" before a recursion writes past
+the end of the stack, what the panic needs kept free; the margins are the listing's,
+in rounds of compiles. A recursion through a function value is not seen, and so not
+checked (specs.go's TODO).
 
 **A program ends as Go's does, every cog with it** (the user's call, 2026-10-07): a
 debug build's panic stops every other cog and then its own (panicHaltC), and a return
@@ -1037,7 +1041,10 @@ section. A new finding goes there; the rule it leaves goes here too.
   graph's bound rests on is asked of every kind of edge the graph has: one written
   for direct calls is a row of the interface's and the function value's**; **A moat
   sweep measures the programs it sweeps: each rule the bound rests on is asked by a
-  program written to break it** (ONE PASS THROUGH AN INTERFACE).
+  program written to break it** (ONE PASS THROUGH AN INTERFACE); **A check the
+  program pays at run time is written where the listing proves it needed, and
+  sized off the listing of the program it is in** (A RECURSION IS CHECKED WHERE IT
+  RUNS).
 - **Two programs that should cost the same are compared by their BINARIES**.
 - **What the backend makes of a library call is read in the listing for what it
   holds while the arguments run**; **A goroutine's output is asked with main

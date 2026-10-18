@@ -33,6 +33,17 @@ shipped section tells a reader on that version that they have behaviour they do 
   still sized for one pass. A recursion a function reaches by its own calls inside
   such a cycle is one now, so `main`'s stack, reaching one through a test runner,
   is reported as what it needs at the least.
+- **A recursion that runs out of stack panics before it writes past the end**:
+  `main` recursing too deep ran on past the top of Hub RAM, a P2-EDGE printing
+  nothing more, and a goroutine recursing in a slot `--gostack` sized ran over what
+  followed its slot, the fence saying so only if it ended. The build puts a check at
+  the entry of each function on a recursion where it may run -- three instructions
+  on `main`'s cog, about ten on a goroutine's -- which panics `goroutine stack
+  overflow` with what the panic needs, about 600 bytes, still free: a recursion has
+  that much less of its stack than before, and one that just fitted may panic now.
+  A recursion through a call of a function value is not seen and not checked. `ogo
+  build --report` names the functions checked, and says what `main`'s stack needs
+  up to them.
 
 ### Toolchain
 

@@ -236,23 +236,29 @@ func main() {
 	println(<-out)
 }
 `
+	var built []byte // the C compiles built last
 	compiles := func(t *testing.T, src string, stackAsked bool) (slots []octogo.GoSlot, err error) {
 		dir := t.TempDir()
 		write(t, filepath.Join(dir, "main.ogo"), src)
-		pkg, err := octogo.Build(-1, []string{"main.ogo"}, os.DirFS(dir))
-		if err != nil {
-			t.Fatal(err)
+		emit := func(extra ...octogo.EmitOption) ([]byte, []func() ([]byte, error), error) {
+			pkg, err := octogo.Build(-1, []string{"main.ogo"}, os.DirFS(dir))
+			if err != nil {
+				t.Fatal(err)
+			}
+			var c bytes.Buffer
+			if err := octogo.EmitC(pkg, &c, append([]octogo.EmitOption{octogo.Checked(), octogo.Inline()}, extra...)...); err != nil {
+				t.Fatal(err)
+			}
+			return c.Bytes(), nil, nil
 		}
-		var c, said bytes.Buffer
-		if err := octogo.EmitC(pkg, &c, octogo.Checked(), octogo.Inline()); err != nil {
-			t.Fatal(err)
-		}
+		c, _, _ := emit()
+		var said bytes.Buffer
 		cFile := filepath.Join(dir, "prog.c")
-		if _, err := compileSized(c.Bytes(), nil, cFile, filepath.Join(dir, "prog.binary"), "", filepath.Join(dir, "kept.c"), false, stackAsked, &said, &said); err != nil {
+		if _, err := compileSized(c, nil, emit, cFile, filepath.Join(dir, "prog.binary"), "", filepath.Join(dir, "kept.c"), false, stackAsked, &said, &said); err != nil {
 			return nil, err
 		}
-		built, rerr := os.ReadFile(cFile)
-		if rerr != nil {
+		var rerr error
+		if built, rerr = os.ReadFile(cFile); rerr != nil {
 			t.Fatal(rerr)
 		}
 		return octogo.GoSlots(built), nil // none for a program starting no goroutine
@@ -317,10 +323,28 @@ func main() {
 			t.Fatalf("with the stack asked for: %v", err)
 		}
 	})
+	// checked asks the C built last for a stack check in each of fns, its margin
+	// and the reserve written, against each cog's end of stack or main's alone.
+	checked := func(t *testing.T, perCog bool, fns ...string) {
+		t.Helper()
+		margins, reserve := octogo.StackMargins(built)
+		for _, fn := range fns {
+			if !strings.Contains(string(built), "OGO_STACK_CHECK(OGO_STACK_MARGIN_"+fn+");") || margins[fn] <= 0 {
+				t.Errorf("no stack check of %d bytes in %s: margins %v", margins[fn], fn, margins)
+			}
+		}
+		if len(margins) != len(fns) || reserve <= 0 {
+			t.Errorf("margins %v, reserve %d; want one of %v each and a reserve", margins, reserve, fns)
+		}
+		if got := strings.Contains(string(built), "static unsigned ogo_stack_limit[8]"); got != perCog {
+			t.Errorf("each cog's end of stack kept: %v, want %v", got, perCog)
+		}
+	}
 	t.Run("recursion", func(t *testing.T) {
 		// No listing bounds a recursion's depth, and the default slot was a guess
 		// the fence checked only as the goroutine ended; --gostack is the size
-		// the program chooses.
+		// the program chooses, and a check at the entry of each function on the
+		// recursion stops it before it writes past the slot.
 		rec := `var out = make(chan int)
 
 func depth(n int) int {
@@ -346,6 +370,7 @@ func main() {
 		if _, err := compile(t, rec, true); err != nil {
 			t.Fatalf("with the stack asked for: %v", err)
 		}
+		checked(t, true, "depth")
 		// Through an interface's table, as an expression tree is evaluated: 200
 		// levels ran past the slot sized for one and hung the board in silence.
 		tree := `var out = make(chan int)
@@ -385,10 +410,13 @@ func main() {
 		if _, err := compile(t, tree, true); err != nil {
 			t.Fatalf("with the stack asked for: %v", err)
 		}
-		// A recursion on main's cog is main's stack, the rest of Hub RAM.
+		checked(t, true, "Add_Eval")
+		// A recursion on main's cog is main's stack, the rest of Hub RAM, checked
+		// against its end.
 		if _, err := compile(t, strings.Replace(rec, "go work(5)\n\tprintln(<-out)", "println(depth(5))", 1), false); err != nil {
 			t.Fatalf("recursion on main's cog: %v", err)
 		}
+		checked(t, false, "depth")
 	})
 	t.Run("main", func(t *testing.T) {
 		_, err := compile(t, "func main() {\n\tvar big [140000]int\n\tbig[1] = 2\n\tfor i := range big {\n\t\tbig[i] += i\n\t}\n\tprintln(big[1] + big[139999])\n}\n", false)
@@ -396,8 +424,9 @@ func main() {
 			t.Fatalf("err=%v, want main's stack not fitting", err)
 		}
 	})
-	// A recursion beside the frame leaves main's need unbounded, and the frame was
-	// asked nothing: the program built and printed nothing on the board.
+	// A recursion beside the frame left main's need unbounded, and the frame was
+	// asked nothing: the program built and printed nothing on the board. Its
+	// recursion checked, what main needs is the way to the checks, the frame in it.
 	t.Run("main with a recursion", func(t *testing.T) {
 		_, err := compile(t, `func depth(n int) int {
 	if n == 0 {
@@ -416,10 +445,53 @@ func big() int {
 
 func main() { println(depth(3), big()) }
 `, false)
-		if err == nil || !strings.Contains(err.Error(), "main's stack needs at least") {
-			t.Fatalf("err=%v, want main's stack not fitting at the least", err)
+		if err == nil || !strings.Contains(err.Error(), "main's stack needs 5") {
+			t.Fatalf("err=%v, want main's stack not fitting", err)
 		}
 	})
+}
+
+// TestStackNeedsChecks reads the stack checks off a listing: without them, the
+// recursion main reaches is the function to check; with them, each check's margin
+// is its function's frame and what its calls take until the next check -- the
+// panic left to the reserve, what it needs -- and main needs the way to its first
+// check. A table's entry the method was inlined into is checked as the method, and
+// a recursion through it names the method.
+func TestStackNeedsChecks(t *testing.T) {
+	const c = "int main(void) {\nint work(int n) {\nint helper(int n) {\nstatic void ogo_panic(const char* msg) {\n"
+	l := listingOf(fnListing("_main", 1, 0, "call\t#_work"),
+		fnListing("_work", 2, 0, "call\t#_work", "call\t#_helper", "if_a\tcall\t#_ogo_panic_0001"),
+		fnListing("_helper", 1, 80),
+		fnListing("_ogo_panic_0001", 3, 200))
+	r := readStackNeeds(l, []byte(c))
+	if len(r.margins) != 0 || r.mainCut >= 0 || strings.Join(r.recMain, ",") != "work" {
+		t.Fatalf("unchecked: margins %v, main %d, to check %v; want none, unbounded, work", r.margins, r.mainCut, r.recMain)
+	}
+	checked := c + "#define OGO_STACK_MARGIN_work 0\n#define OGO_STACK_RESERVE 0\n"
+	r = readStackNeeds(l, []byte(checked))
+	work, helper, main, panicNeed := 4*(2+3), 4*(1+3)+80, 4*(1+3), 4*(3+3)+200
+	if r.margins["work"] != work+helper || r.reserve != panicNeed || r.mainCut != main+work || len(r.recMain) != 0 {
+		t.Fatalf("checked: margins %v, reserve %d, main %d, to check %v; want work's %d, %d, %d, none",
+			r.margins, r.reserve, r.mainCut, r.recMain, work+helper, panicNeed, main+work)
+	}
+
+	const decls = `#define ogo_iface_vt(v) (v)
+struct I_vt { const char* _ogo_type; int (*ogo_m_M)(void*); };
+typedef struct I { void* data; const I_vt* vt; } I;
+int A_M(A* a) { I x = a->next; return ((const I_vt*)ogo_iface_vt(x.vt))->ogo_m_M(x.data); }
+static int I_A_M(void* p) { return A_M((A*)p); }
+static const I_vt I_vt_A = { "*main.A", I_A_M };
+int main(void) {
+`
+	tl := listingOf(fnListing("_main", 1, 0, "call\t#_I_A_M_0002"),
+		fnListing("_I_A_M_0002", 2, 0, "call\tlocal01"),
+		"ptr_a\n\tlong\t@_I_A_M_0002")
+	if r := readStackNeeds(tl, []byte(decls)); strings.Join(r.recMain, ",") != "A_M" {
+		t.Fatalf("through a thunk: to check %v, want A_M", r.recMain)
+	}
+	if r := readStackNeeds(tl, []byte(decls+"#define OGO_STACK_MARGIN_A_M 0\n")); len(r.recMain) != 0 || r.margins["A_M"] != 2*4*(2+3) {
+		t.Fatalf("through a checked thunk: margins %v, to check %v; want A_M's %d, none", r.margins, r.recMain, 2*4*(2+3))
+	}
 }
 
 // TestStackNeedsMainAtLeast reads what main's stack needs at the least where a

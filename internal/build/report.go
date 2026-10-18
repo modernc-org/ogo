@@ -64,12 +64,16 @@ func report(w io.Writer, rep *octogo.Report, cFile, out, inc string, stackAsked 
 	goName := func(listed string) string { return funcLabel(stackCName(listed), rep, scan) }
 
 	// Hub RAM.
-	mainNeed, mainLeast := needs.mainNeed, ""
-	if mainNeed < 0 {
+	mainNeed, mainLeast, mainUntil := needs.mainNeed, "", ""
+	switch {
+	case mainNeed >= 0:
+	case needs.mainCut >= 0 && len(needs.margins) != 0:
+		mainNeed, mainUntil = needs.mainCut+needs.reserve, " until its recursion is checked"
+	default:
 		mainNeed, mainLeast = needs.mainAtLeast, " at least"
 	}
-	fmt.Fprintf(w, "Hub RAM: %d of %d bytes in the binary; main's stack needs%s %d more, %d to spare\n",
-		len(built), hubRAMBytes, mainLeast, mainNeed, hubRAMBytes-(img.stack+len(built)-img.size)-mainNeed)
+	fmt.Fprintf(w, "Hub RAM: %d of %d bytes in the binary; main's stack needs%s %d more%s, %d to spare\n",
+		len(built), hubRAMBytes, mainLeast, mainNeed, mainUntil, hubRAMBytes-(img.stack+len(built)-img.size)-mainNeed)
 	if !exact {
 		d := len(binary) - len(built)
 		how := fmt.Sprintf("%d bytes larger", d)
@@ -146,6 +150,15 @@ func report(w io.Writer, rep *octogo.Report, cFile, out, inc string, stackAsked 
 			}
 			fmt.Fprintf(w, "  %6d %6s  %s\n", s.Longs, needed, strings.Join(what, ", "))
 		}
+	}
+
+	// Stack checks.
+	if margins, reserve := octogo.StackMargins(c); len(margins) != 0 {
+		var at []string
+		for _, fn := range slices.Sorted(maps.Keys(margins)) {
+			at = append(at, funcLabel(fn, rep, scan))
+		}
+		fmt.Fprintf(w, "Stack checks: a recursion stops %d bytes short of its stack's end, for the panic, checked at the entry of %s\n", reserve, strings.Join(at, ", "))
 	}
 
 	// Hardware locks.

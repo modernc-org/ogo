@@ -29,9 +29,14 @@
 // really recursing through a function value unrefused, sized for one pass: telling
 // the tables apart needs the function values' flow by their defined types; and a
 // program with a go statement that may run more than once keeps the shared pool,
-// seven slots of the deepest goroutine's size. The slot is fenced (since 2026-08-20): a goroutine that overruns
-// it and still ends panics "goroutine stack overflow". A depth check at function
-// entry would catch an overrun before it writes.
+// seven slots of the deepest goroutine's size. The slot is fenced (since
+// 2026-08-20): a goroutine that overruns it and still ends panics "goroutine stack
+// overflow". And since 2026-10-18 a recursion is checked where it may run, on main's
+// cog and on a goroutine whose slots --gostack sized: the build puts a check at the
+// entry of each function on it (internal/octogo/stackcheck.go), which panics
+// "goroutine stack overflow" before the recursion writes past its stack, keeping
+// what the panic needs free; a recursion through a function value is not seen, and
+// so not checked.
 // (The array TODO of 20260806 is DONE 2026-09-24: an array result may stand beside
 // another, `func f() ([3]int, int)`, held in the result struct and written through
 // an out parameter, which is copied with memcpy.)
@@ -3006,13 +3011,17 @@
 //     is refused unless --gostack gives the size. A goroutine recursing through
 //     a call of a function value is not yet seen: such a call is taken to reach
 //     every function whose address the program takes, which closes cycles no run
-//     makes, and a cycle it closes is sized for one pass. One
-//     that overruns its slot and then ends panics "goroutine stack overflow"; one
-//     still running has written past it by then, which is why the build refuses
-//     rather than guesses.
-//     The main function's stack is the rest of Hub RAM, and a program whose
-//     deepest main stack does not fit there beside its code and data is refused
-//     by the build.
+//     makes, and a cycle it closes is sized for one pass. A recursion the build
+//     sees is checked as it runs: the entry of each function on it compares the
+//     stack with the end of the cog's, and the recursion panics "goroutine stack
+//     overflow" before it writes past it, what the panic needs -- about 600
+//     bytes -- kept free. Any other goroutine that overruns its slot and then
+//     ends panics "goroutine stack overflow" too; one still running has written
+//     past it by then, which is why the build refuses rather than guesses.
+//     The main function's stack is the rest of Hub RAM, a recursion there checked
+//     against its end, and a program whose main stack does not fit there beside
+//     its code and data -- its deepest, or what it needs up to a recursion's
+//     checks -- is refused by the build.
 //   - Hardware Limit: The P2 hardware is strictly limited to 8 physical Cogs.
 //     The main function consumes the first Cog. Attempting to spawn more
 //     concurrent goroutines than there are available Cogs is a runtime panic.

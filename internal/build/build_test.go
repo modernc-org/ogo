@@ -763,7 +763,7 @@ func TestBuildSwitchFallback(t *testing.T) {
 	// every build sizes them.
 	dir := t.TempDir()
 	var said bytes.Buffer
-	if _, err := compileSized(chained, nil, filepath.Join(dir, "prog.c"), filepath.Join(dir, "prog.binary"), "", filepath.Join(dir, "kept.c"), false, false, &said, &said); err != nil {
+	if _, err := compileSized(chained, nil, nil, filepath.Join(dir, "prog.c"), filepath.Join(dir, "prog.binary"), "", filepath.Join(dir, "kept.c"), false, false, &said, &said); err != nil {
 		t.Fatalf("the program unmarked with chains does not build sized:\n%s", said.Bytes())
 	}
 	want, err := os.ReadFile(filepath.Join(dir, "prog.binary"))

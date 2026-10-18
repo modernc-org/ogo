@@ -405,15 +405,16 @@ broken.
   `--gostack` gives the size; one recursing through a call of a function value is not
   yet seen, such a call being taken to reach every function the program takes the
   address of, and its cycle is sized for one pass.
-  Recursion works — `main` runs on the cog's own stack and a goroutine on its pool
-  slot's — but a deep enough call chain in a goroutine overruns that slot, this part
-  having no memory protection. The slot is fenced, so a goroutine that
-  overruns it and still returns ends with `panic: goroutine stack overflow` rather
-  than the silence it used to end with. Measured on a P2-EDGE: a goroutine recursing
-  a hundred deep already trips the fence — and used to print the right answer while
-  quietly overwriting the next slot — and one recursing a few hundred deep loses
-  control before the fence can be read, which no check without memory protection can
-  catch.
+  Recursion works — `main` runs on the cog's own stack, the rest of Hub RAM, and a
+  goroutine on its pool slot's — and a recursion the build sees is checked as it
+  runs: the build puts a check at the entry of each function on it, which panics
+  `goroutine stack overflow` before the recursion writes past the end of its stack,
+  keeping free what the panic needs, about 600 bytes. Before 2026-10-18 nothing did:
+  `main` recursing too deep ran on past the top of Hub RAM in silence on a P2-EDGE,
+  and a goroutine in a `--gostack` slot over the slot after it. A check costs three
+  instructions on `main`'s cog and about ten on a goroutine's, and only a function on
+  a recursion has one. Any other goroutine is fenced too, so one that overruns its
+  slot and still returns ends with the same panic.
 * A **method value** in two shapes, neither an omission. One with a **value
   receiver**: Go copies the receiver where the value is made and there is nowhere to
   copy to, while binding the address instead would alias the variable, so the program

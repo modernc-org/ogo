@@ -151,6 +151,19 @@ func compile(args []string, stdout, stderr io.Writer) (binary string, code int, 
 		emitAgain(append(markedOpts[:len(markedOpts):len(markedOpts)], octogo.SwitchChains())...),
 		emitAgain(append(emitOpts[:len(emitOpts):len(emitOpts)], octogo.SwitchChains())...),
 	}
+	variants := func(extra ...octogo.EmitOption) ([]byte, []func() ([]byte, error), error) {
+		with := func(opts []octogo.EmitOption, more ...octogo.EmitOption) []octogo.EmitOption {
+			return append(append(slices.Clone(opts), more...), extra...)
+		}
+		c, err := emitAgain(with(markedOpts)...)()
+		if err != nil {
+			return nil, nil, err
+		}
+		return c, []func() ([]byte, error){
+			emitAgain(with(markedOpts, octogo.SwitchChains())...),
+			emitAgain(with(emitOpts, octogo.SwitchChains())...),
+		}, nil
+	}
 
 	if library {
 		fmt.Fprintf(stdout, "ok  \t%s\t[no func main, checked only]\n", dir)
@@ -177,7 +190,7 @@ func compile(args []string, stdout, stderr io.Writer) (binary string, code int, 
 		return "", 2, err
 	}
 	keepC := strings.TrimSuffix(out, filepath.Ext(out)) + ".c"
-	if code, err := compileSized(cbuf.Bytes(), plainer, cFile, out, root, keepC, flags.allowWarnings, flags.goStack != 0, stdout, stderr); err != nil {
+	if code, err := compileSized(cbuf.Bytes(), plainer, variants, cFile, out, root, keepC, flags.allowWarnings, flags.goStack != 0, stdout, stderr); err != nil {
 		return "", code, err
 	}
 	if flags.report {
@@ -188,6 +201,15 @@ func compile(args []string, stdout, stderr io.Writer) (binary string, code int, 
 	return out, 0, nil
 }
 
+// emitVariants emits a program again with options added to each way it is emitted:
+// its C, and the plainer ways compileMarked may compile it instead.
+type emitVariants func(extra ...octogo.EmitOption) ([]byte, []func() ([]byte, error), error)
+
+// stackCheckRounds is how many times a program is compiled again for its stack
+// checks to cover what its listing says: one to put them in, one to write their
+// margins, and the rest for a backend that lays a function out differently once.
+const stackCheckRounds = 4
+
 // compileSized is compileMarked, and then the program's stacks held to what its
 // listing says they need (readStackNeeds). Unless --gostack asked for a size, the
 // same C is compiled again with each slot of the goroutine pool holding what its
@@ -197,8 +219,13 @@ func compile(args []string, stdout, stderr io.Writer) (binary string, code int, 
 // recurses, whose need the listing cannot bound, is refused without one. And a
 // program whose main cog's deepest stack does not fit in Hub RAM beside its code
 // and data is told so, the binary removed: the stack grows into whatever lies past
-// the top, without a word.
-func compileSized(c []byte, plainer []func() ([]byte, error), cFile, out, inc, keepC string, allowWarnings, stackAsked bool, stdout, stderr io.Writer) (int, error) {
+// the top, without a word. A recursion where it may run -- on main's cog, and on a
+// goroutine whose slot --gostack sized -- is checked at the entry of every function
+// on it: variants emits the program again with the checks (octogo.StackChecks), and
+// it is compiled until each check covers what the listing says it must
+// (octogo.WithStackMargins), so a recursion panics before it writes past the end of
+// its stack. Without variants nothing is checked.
+func compileSized(c []byte, plainer []func() ([]byte, error), variants emitVariants, cFile, out, inc, keepC string, allowWarnings, stackAsked bool, stdout, stderr io.Writer) (int, error) {
 	if code, err := compileMarked(c, plainer, cFile, out, inc, keepC, allowWarnings, stdout, stderr); err != nil {
 		return code, err
 	}
@@ -221,6 +248,53 @@ func compileSized(c []byte, plainer []func() ([]byte, error), cFile, out, inc, k
 			through = " through " + needs.goRecurse
 		}
 		return 1, fmt.Errorf("ogo: a goroutine recurses%s, so its stack has no bound the backend's listing can read; give the goroutine stacks a size with --gostack longs", through)
+	}
+	toCheck := func(n stackNeeds) []string {
+		if stackAsked {
+			return union(n.recMain, n.recGo)
+		}
+		return n.recMain
+	}
+	if fns := toCheck(needs); variants != nil && len(fns) != 0 {
+		perCog := stackAsked && len(needs.recGo) != 0
+		var margins map[string]int
+		reserve := 0
+		for round := 0; ; round++ {
+			checked, checkedPlainer, err := variants(octogo.StackChecks(fns, perCog))
+			if err != nil {
+				return 1, err
+			}
+			if margins != nil {
+				checked, checkedPlainer = octogo.WithStackMargins(checked, margins, reserve), withStackMargins(checkedPlainer, margins, reserve)
+			}
+			if code, err := compileMarked(checked, checkedPlainer, cFile, out, inc, keepC, allowWarnings, stdout, stderr); err != nil {
+				return code, err
+			}
+			if built, err = os.ReadFile(cFile); err != nil {
+				return 1, err
+			}
+			if listing, err = os.ReadFile(strings.TrimSuffix(out, filepath.Ext(out)) + ".p2asm"); err != nil {
+				return 1, err
+			}
+			needs, plainer = readStackNeeds(listing, built), checkedPlainer
+			written, wroteReserve := octogo.StackMargins(built)
+			covered := needs.reserve <= wroteReserve
+			for fn, m := range needs.margins {
+				covered = covered && m <= written[fn]
+			}
+			grown := union(fns, toCheck(needs))
+			if covered && len(grown) == len(fns) {
+				break // a recursion no check can be put in stays as it was
+			}
+			if round == stackCheckRounds {
+				os.Remove(out)
+				return 1, fmt.Errorf("ogo: internal error: the stack checks of %s do not cover what the backend's listing says after %d compiles", strings.Join(fns, ", "), round+2)
+			}
+			fns, margins, reserve = grown, written, max(wroteReserve, needs.reserve)
+			for fn, m := range needs.margins {
+				margins[fn] = max(margins[fn], m)
+			}
+		}
 	}
 	if slots := octogo.GoSlots(built); !stackAsked && len(slots) != 0 {
 		_, hi, _ := octogo.GoStackRange()
@@ -274,7 +348,13 @@ func compileSized(c []byte, plainer []func() ([]byte, error), cFile, out, inc, k
 		}
 	}
 	mainNeed, atLeast := needs.mainNeed, ""
-	if mainNeed < 0 {
+	switch {
+	case mainNeed >= 0:
+	case needs.mainCut >= 0 && len(needs.margins) != 0:
+		// Every recursion main reaches is checked: what it needs is the way to the
+		// checks and what the panic of one takes.
+		mainNeed = needs.mainCut + needs.reserve
+	default:
 		// Recursion leaves the need unbounded; what it needs at the least still
 		// fits or does not.
 		mainNeed, atLeast = needs.mainAtLeast, " at least"
@@ -286,6 +366,34 @@ func compileSized(c []byte, plainer []func() ([]byte, error), cFile, out, inc, k
 		}
 	}
 	return 0, nil
+}
+
+// withStackMargins is plainer with the margins and the reserve of its stack checks
+// set (octogo.WithStackMargins).
+func withStackMargins(plainer []func() ([]byte, error), margins map[string]int, reserve int) []func() ([]byte, error) {
+	set := make([]func() ([]byte, error), len(plainer))
+	for i, f := range plainer {
+		set[i] = func() ([]byte, error) {
+			p, err := f()
+			if err != nil {
+				return nil, err
+			}
+			return octogo.WithStackMargins(p, margins, reserve), nil
+		}
+	}
+	return set
+}
+
+// union is the names in a or b, sorted.
+func union(a, b []string) []string {
+	u := slices.Clone(a)
+	for _, s := range b {
+		if !slices.Contains(u, s) {
+			u = append(u, s)
+		}
+	}
+	slices.Sort(u)
+	return u
 }
 
 // compileMarked writes the C of a program to cFile and compiles it into out. Where

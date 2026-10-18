@@ -546,6 +546,32 @@ recursion a function reaches by the calls it is known to make is one, cycle or n
 has: one written for direct calls is a row of the interface's and the function
 value's.** **A moat sweep measures the programs it sweeps: each rule the bound
 rests on is asked by a program written to break it.**
+A RECURSION IS CHECKED WHERE IT RUNS (2026-10-18, the review's entry check): a
+recursion's depth is the data's, so no listing bounds it, and a goroutine reaching
+one was refused unless --gostack sized the slots -- and then ran over what followed
+its slot -- while main's cog, the rest of Hub RAM its stack, ran on past the top:
+`depth(1000000)` on main printed the line before it and nothing more. The C can read
+the stack pointer, `_PTRA`, and `(unsigned)_PTRA > K` for a constant K is `cmp ptra,
+##K` and a conditional call, no register taken. So the build finds the recursions in
+the listing of a first compile, has the program emitted again with a check at the
+entry of each function on one (octogo.StackChecks), and compiles it again until each
+check's margin covers what its listing says: the function's frame and what its calls
+take up to the next check, the graph read with every checked function calling
+nothing. The panic is not in the margins but past them, as the reserve, since
+whatever calls it does so within a margin of a check; counted in both, a frame of 16
+bytes asked for 1152. On main's cog the end is Hub RAM's and the check one compare;
+on a goroutine of a --gostack slot the trampoline records its slot's end, the slot's
+high guard, for its cog, and a check reads its cog's -- ten instructions, and only
+there. A reserve is what Go keeps too, a stack guard at the bottom of every
+goroutine's stack for the runtime's own calls, and it costs what it costs: 30 levels
+of a function of 24 bytes fitted a slot of 256 longs and do not now, 568 of its 1024
+bytes held for the panic. An interface's thunk with the method inlined into it is
+the one function on the recursion in the listing, the check written in the method,
+so a function whose one call is to a checked function the backend inlined counts as
+checked, by the method's margin. What went wrong first was elsewhere: the goroutine
+test printed nothing because main printed what it received (A PRINT HOLDS A LOCK).
+**A check the program pays at run time is written where the listing proves it
+needed, and sized off the listing of the program it is in.**
 
 **A TYPE SWITCH BEHIND AN INIT STATEMENT** (2026-10-07), `switch s := pick(); v :=
 s.(type)`, the last header shape on the open list: the grammar's SwitchTag takes `[

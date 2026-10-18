@@ -463,12 +463,25 @@ func testPackage(dir string, opts testOptions, stdout, stderr io.Writer) (int, e
 		emitAgain(append(chains[:len(chains):len(chains)], octogo.Inline())...),
 		emitAgain(chains...),
 	}
+	variants := func(extra ...octogo.EmitOption) ([]byte, []func() ([]byte, error), error) {
+		with := func(opts []octogo.EmitOption, more ...octogo.EmitOption) []octogo.EmitOption {
+			return append(append(slices.Clone(opts), more...), extra...)
+		}
+		c, err := emitAgain(with(emitOpts, octogo.Inline())...)()
+		if err != nil {
+			return nil, nil, err
+		}
+		return c, []func() ([]byte, error){
+			emitAgain(with(chains, octogo.Inline())...),
+			emitAgain(with(chains)...),
+		}, nil
+	}
 	root, err := buildRoot(dir)
 	if err != nil {
 		return 2, err
 	}
 	keepC := filepath.Join(dir, dirPkgName(dir)+".test.c")
-	if code, err := compileSized(cbuf.Bytes(), plainer, cFile, binary, root, keepC, opts.allowWarnings, opts.stackAsked, stdout, stderr); err != nil {
+	if code, err := compileSized(cbuf.Bytes(), plainer, variants, cFile, binary, root, keepC, opts.allowWarnings, opts.stackAsked, stdout, stderr); err != nil {
 		return code, err
 	}
 	if compileOnly {

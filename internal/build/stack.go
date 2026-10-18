@@ -6,6 +6,7 @@ package build
 
 import (
 	"regexp"
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
@@ -53,6 +54,14 @@ import (
 // their defined types, which nothing records; until then a recursion only a wide
 // call closes goes unseen. A recursion a function reaches by the calls it is known
 // to make is one, cycle or not.
+//
+// A recursion where it may run -- on main's cog, and on a goroutine whose slots
+// --gostack sized -- is checked as it runs (compileSized, octogo.StackChecks), and
+// the listing says what the checks need: which functions the C checks, the margin
+// each check covers -- its function's frame and what its calls take until the next
+// check, read off the graph where a checked function calls nothing -- what the panic
+// of one needs past them (the reserve), what main needs up to its checks, and the
+// recursions no check covers yet.
 //
 // The program's side was as wide as the program: p2-11's disk cog, whose FAT code
 // calls the card through an interface, was charged the deepest path through every
@@ -139,6 +148,17 @@ type stackNeeds struct {
 	// mainAtLeast is what main's stack needs at the least, in bytes, recursion or
 	// not: the deepest chain of direct calls entering each component of them once.
 	mainAtLeast int
+	// margins is what each stack check the C carries covers, in bytes, by the C
+	// name of the function it is in, where no recursion it reaches is unchecked;
+	// reserve is what the panic of a check needs.
+	margins map[string]int
+	reserve int
+	// mainCut is what main's stack needs until its checks take over, -1 where a
+	// recursion it reaches is not checked.
+	mainCut int
+	// recMain and recGo are the recursions main's cog and the goroutines reach that
+	// no check covers, by the C names of the functions to check.
+	recMain, recGo []string
 }
 
 // readStackNeeds reads a program's stack needs off the listing the backend wrote
@@ -272,6 +292,179 @@ func readStackNeeds(listing, c []byte) (r stackNeeds) {
 		}
 	}
 
+	g := stackGraphOf(names, fns, succ, frame)
+	all, direct, members, recursive, need := g.all, g.direct, g.members, g.recursive, g.need
+
+	r.goKnown = true
+	r.goTramps = map[string]goNeed{}
+	sort.Strings(tramps)
+	for _, t := range tramps {
+		v := need(t)
+		if v < 0 {
+			name := recursingName(t, succ, recursive, need)
+			if fc := scan.Funcs[name]; fc != nil && scan.InTable(name) && len(fc.Direct) == 1 {
+				name = fc.Direct[0] // the method an interface's thunk calls
+			}
+			if r.goKnown {
+				r.goRecurse = name
+			}
+			r.goKnown = false
+			r.goTramps[stackCName(t)] = goNeed{-1, name}
+			continue
+		}
+		longs, name := cogStartLongs+(v+3)/4, goroutineName(fns[t].calls, need)
+		r.goTramps[stackCName(t)] = goNeed{longs, name}
+		if longs > r.goLongs {
+			r.goLongs, r.goName = longs, name
+		}
+	}
+	r.mainNeed = need("_main")
+	// Where main reaches a recursion, need has no answer, and a frame past Hub RAM
+	// on the way to it went unasked: a mutant's 512 KB array result, beside a
+	// recursive function, built and printed nothing at all. Any chain of direct
+	// calls is one the program may make, so the deepest one entering each
+	// component once is a bound from below; an indirect call's targets are every
+	// function its side takes the address of, which is no chain.
+	least := map[int]int{}
+	var atLeast func(string) int
+	atLeast = func(n string) int {
+		if v, ok := least[direct[n]]; ok {
+			return v
+		}
+		least[direct[n]] = 0 // a cycle back into the component adds nothing
+		deep := 0
+		for _, m := range members[all[n]] {
+			if direct[m] != direct[n] {
+				continue
+			}
+			for _, e := range succ[m] {
+				if !e.indirect && direct[e.to] != direct[n] && fns[e.to] != nil {
+					deep = max(deep, atLeast(e.to))
+				}
+			}
+		}
+		v := frame[n] + deep
+		least[direct[n]] = v
+		return v
+	}
+	if fns["_main"] != nil {
+		r.mainAtLeast = atLeast("_main")
+	}
+
+	// The stack checks the C carries (octogo.StackChecks): a function checked as it
+	// enters, and one whose only call is of a checked function the backend inlined
+	// into it -- an interface's thunk, a method value's wrapper -- which so checks as
+	// it enters too. A check covers what its function pushes until the next check:
+	// its frame and what its calls need in the graph where a checked function calls
+	// nothing, which is the check's margin.
+	written, _ := octogo.StackMargins(c)
+	inlinedInto := func(cn string) string { // the function inlined into cn, its one call
+		if fc := scan.Funcs[cn]; fc != nil && len(fc.Direct) == 1 && len(fc.Iface) == 0 && fc.Other == 0 && byCName[fc.Direct[0]] == "" {
+			return fc.Direct[0]
+		}
+		return ""
+	}
+	checked := map[string]string{} // by the listing's name, the function whose margin its check reads
+	for _, n := range names {
+		cn := stackCName(n)
+		if _, ok := written[cn]; ok {
+			checked[n] = cn
+		} else if d := inlinedInto(cn); d != "" {
+			if _, ok := written[d]; ok {
+				checked[n] = d
+			}
+		}
+	}
+	// The panic is the reserve's, past the margins and left out of them: whatever
+	// calls it calls it from no further than a margin past the check before.
+	panicFn := byCName["ogo_panic"]
+	cg := g
+	if len(checked) != 0 {
+		cut := map[string][]stackEdge{}
+		for n, es := range succ {
+			if _, ok := checked[n]; !ok {
+				for _, e := range es {
+					if e.to != panicFn {
+						cut[n] = append(cut[n], e)
+					}
+				}
+			}
+		}
+		cg = stackGraphOf(names, fns, cut, frame)
+	}
+	r.margins = map[string]int{}
+	for n, fn := range checked {
+		deep := 0
+		for _, e := range succ[n] {
+			if e.to == panicFn {
+				continue
+			}
+			v := cg.need(e.to)
+			if v < 0 {
+				deep = -1 // a recursion no check covers: a function to check, below
+				break
+			}
+			deep = max(deep, v)
+		}
+		if deep >= 0 {
+			r.margins[fn] = max(r.margins[fn], frame[n]+deep)
+		}
+	}
+	if panicFn != "" {
+		r.reserve = max(need(panicFn), 0)
+	}
+	r.mainCut = -1
+	if fns["_main"] != nil {
+		r.mainCut = cg.need("_main")
+	}
+	// The recursions no check covers, reached from main's cog and from the
+	// goroutines', by the functions to check: the program's own, an interface's
+	// thunk by the method inlined into it.
+	uncovered := func(roots []string) (to []string) {
+		seen := map[string]bool{}
+		var walk func(string)
+		walk = func(n string) {
+			if seen[n] || fns[n] == nil {
+				return
+			}
+			seen[n] = true
+			if cg.recursive[n] && isOwn(n) {
+				cn := stackCName(n)
+				if d := inlinedInto(cn); d != "" {
+					cn = d
+				}
+				if !slices.Contains(to, cn) {
+					to = append(to, cn)
+				}
+			}
+			for _, e := range succ[n] {
+				walk(e.to)
+			}
+		}
+		for _, n := range roots {
+			walk(n)
+		}
+		sort.Strings(to)
+		return to
+	}
+	r.recMain = uncovered([]string{"_main"})
+	r.recGo = uncovered(tramps)
+	return r
+}
+
+// stackGraph is what the stacks of a call graph need: need answers the bytes a call
+// of a function may take, its frame and what it calls, -1 where a recursion leaves
+// that unbounded.
+type stackGraph struct {
+	all, direct map[string]int // each function's component, over every call and over the direct ones
+	members     map[int][]string
+	recursive   map[string]bool // on a cycle of direct and interface calls
+	need        func(string) int
+}
+
+// stackGraphOf is the stacks the functions names, of the listing fns, need, by the
+// calls succ and the frames frame.
+func stackGraphOf(names []string, fns map[string]*stackFunc, succ map[string][]stackEdge, frame map[string]int) stackGraph {
 	all := stackComponents(names, succ, func(stackEdge) bool { return true })
 	direct := stackComponents(names, succ, func(e stackEdge) bool { return !e.indirect })
 	precise := stackComponents(names, succ, func(e stackEdge) bool { return !e.wide })
@@ -392,62 +585,7 @@ func readStackNeeds(listing, c []byte) (r stackNeeds) {
 		return v
 	}
 
-	r.goKnown = true
-	r.goTramps = map[string]goNeed{}
-	sort.Strings(tramps)
-	for _, t := range tramps {
-		v := need(t)
-		if v < 0 {
-			name := recursingName(t, succ, recursive, need)
-			if fc := scan.Funcs[name]; fc != nil && scan.InTable(name) && len(fc.Direct) == 1 {
-				name = fc.Direct[0] // the method an interface's thunk calls
-			}
-			if r.goKnown {
-				r.goRecurse = name
-			}
-			r.goKnown = false
-			r.goTramps[stackCName(t)] = goNeed{-1, name}
-			continue
-		}
-		longs, name := cogStartLongs+(v+3)/4, goroutineName(fns[t].calls, need)
-		r.goTramps[stackCName(t)] = goNeed{longs, name}
-		if longs > r.goLongs {
-			r.goLongs, r.goName = longs, name
-		}
-	}
-	r.mainNeed = need("_main")
-	// Where main reaches a recursion, need has no answer, and a frame past Hub RAM
-	// on the way to it went unasked: a mutant's 512 KB array result, beside a
-	// recursive function, built and printed nothing at all. Any chain of direct
-	// calls is one the program may make, so the deepest one entering each
-	// component once is a bound from below; an indirect call's targets are every
-	// function its side takes the address of, which is no chain.
-	least := map[int]int{}
-	var atLeast func(string) int
-	atLeast = func(n string) int {
-		if v, ok := least[direct[n]]; ok {
-			return v
-		}
-		least[direct[n]] = 0 // a cycle back into the component adds nothing
-		deep := 0
-		for _, m := range members[all[n]] {
-			if direct[m] != direct[n] {
-				continue
-			}
-			for _, e := range succ[m] {
-				if !e.indirect && direct[e.to] != direct[n] && fns[e.to] != nil {
-					deep = max(deep, atLeast(e.to))
-				}
-			}
-		}
-		v := frame[n] + deep
-		least[direct[n]] = v
-		return v
-	}
-	if fns["_main"] != nil {
-		r.mainAtLeast = atLeast("_main")
-	}
-	return r
+	return stackGraph{all: all, direct: direct, members: members, recursive: recursive, need: need}
 }
 
 // stackCName is the name the C gives the function the listing names n: without the
