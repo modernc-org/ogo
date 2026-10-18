@@ -16039,6 +16039,204 @@ func main() {
 			want: "cannot pass the address of local variable x to a func(*int) value, which may hold keep",
 		},
 		{
+			// A type naming itself, the state functions' pattern: the union a call
+			// through a value of it is judged by was asked under the key the type
+			// was minted by, which holds nothing, and every such call was taken.
+			name: "a state function that leaks its parameter, through a package variable",
+			src: `type M struct{ n int }
+
+type State func(m *M) State
+
+var kept *M
+
+func keep(m *M) State {
+	kept = m
+	return nil
+}
+
+func fine(m *M) State {
+	m.n++
+	if m.n > 3 {
+		return nil
+	}
+	return fine
+}
+
+var cur State
+
+func init() { cur = keep }
+
+func run() {
+	var mm M
+	cur(&mm)
+}
+
+func main() {
+	run()
+	println(kept != nil)
+}
+`,
+			want: "cannot pass the address of local variable mm to a func(*M) State value, which may hold keep",
+		},
+		{
+			// A type naming itself, the state functions' pattern: the union a call
+			// through a value of it is judged by was asked under the key the type
+			// was minted by, which holds nothing, and every such call was taken.
+			name: "a state function that leaks its parameter, through a table",
+			src: `type M struct{ n int }
+
+type State func(m *M) State
+
+var kept *M
+
+func keep(m *M) State {
+	kept = m
+	return nil
+}
+
+func fine(m *M) State {
+	m.n++
+	if m.n > 3 {
+		return nil
+	}
+	return fine
+}
+
+var tbl = [2]State{fine, keep}
+
+func run() {
+	var mm M
+	tbl[1](&mm)
+}
+
+func main() {
+	run()
+	println(kept != nil)
+}
+`,
+			want: "cannot pass the address of local variable mm to a func(*M) State value, which may hold keep",
+		},
+		{
+			// A type naming itself, the state functions' pattern: the union a call
+			// through a value of it is judged by was asked under the key the type
+			// was minted by, which holds nothing, and every such call was taken.
+			name: "a state function that leaks its parameter, through a field",
+			src: `type M struct{ n int }
+
+type State func(m *M) State
+
+var kept *M
+
+func keep(m *M) State {
+	kept = m
+	return nil
+}
+
+func fine(m *M) State {
+	m.n++
+	if m.n > 3 {
+		return nil
+	}
+	return fine
+}
+
+type D struct{ st State }
+
+var d = D{keep}
+
+func run() {
+	var mm M
+	d.st(&mm)
+}
+
+func main() {
+	run()
+	println(kept != nil)
+}
+`,
+			want: "cannot pass the address of local variable mm to a func(*M) State value, which may hold keep",
+		},
+		{
+			// A type naming itself, the state functions' pattern: the union a call
+			// through a value of it is judged by was asked under the key the type
+			// was minted by, which holds nothing, and every such call was taken.
+			name: "a state function that leaks its parameter, returned by a state",
+			src: `type M struct{ n int }
+
+type State func(m *M) State
+
+var kept *M
+
+func keep(m *M) State {
+	kept = m
+	return nil
+}
+
+func fine(m *M) State {
+	m.n++
+	if m.n > 3 {
+		return nil
+	}
+	return fine
+}
+
+func hop(m *M) State { return keep }
+
+func run() {
+	var mm M
+	st := State(hop)
+	for st != nil {
+		st = st(&mm)
+	}
+}
+
+func main() {
+	run()
+	println(kept != nil)
+}
+`,
+			want: "cannot pass the address of local variable mm to a func(*M) State value, which may hold keep",
+		},
+		{
+			// A type naming itself, the state functions' pattern: the union a call
+			// through a value of it is judged by was asked under the key the type
+			// was minted by, which holds nothing, and every such call was taken.
+			name: "state functions that leak nothing, driven over a local",
+			src: `type M struct{ n int }
+
+type State func(m *M) State
+
+var kept *M
+
+func keep(m *M) State {
+	kept = m
+	return nil
+}
+
+func fine(m *M) State {
+	m.n++
+	if m.n > 3 {
+		return nil
+	}
+	return fine
+}
+
+func run() {
+	var mm M
+	st := State(fine)
+	for st != nil {
+		st = st(&mm)
+	}
+}
+
+func main() {
+	run()
+	println(kept != nil)
+}
+`,
+			want: "",
+		},
+		{
 			name: "a frame-backed slice through a function value",
 			src: `var gs []int
 

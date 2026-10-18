@@ -936,6 +936,8 @@ section. A new finding goes there; the rule it leaves goes here too.
   a hole, and the second answer hides what the first lacks**.
 - **A table read by its value is asked by its key, and asked what else it holds: an
   empty struct's fields are nil, and so are an interface's** (isStruct, fieldEqCmp).
+  **Two keys for one type are two tables: the reader asks by the key the writer
+  wrote** (funcTypeID, dom53).
 - **A rule that refuses on failing to resolve is a false refusal waiting for a shape
   it does not know**; **A rule that refuses by failing to resolve is found by
   widening the resolver and running the rejects again**; **A rule refused by
@@ -952,7 +954,9 @@ section. A new finding goes there; the rule it leaves goes here too.
   only a name this file wrote is held to the export rule.** **A new bare-name lookup
   into a package-level registry asks bareGlobal**. **A map keyed by a source name is
   asked through the one function that knows what the name means here.** **A
-  dispatch on a name asks what the name means where it is written**.
+  dispatch on a name asks what the name means where it is written**. **A gate that
+  takes "not found" for "a qualifier" is a row of every scope a name can be found
+  in: a function literal's finds the import itself** (foundOrQualifier, dom53).
 - **a rule that declares a variable is asked which type Go gives it**; **`%T`
   against Go is the cheap oracle for what type a declaration gives**.
 - **A LABELED BREAK REFERS FROM ANY DEPTH** (a termination rule is written into a
@@ -1051,7 +1055,10 @@ section. A new finding goes there; the rule it leaves goes here too.
   it throws away, and a record kept beside the text counts renderings that never
   reached the C**; **A finer edge found for one question is read for that question:
   what a recursion is told is no stack's size until the size can rest on it** (WHAT
-  A FUNCTION VALUE'S TYPE MAY HOLD).
+  A FUNCTION VALUE'S TYPE MAY HOLD); **A question answered off a graph is asked of
+  the edges it is about: a size's edges answered a recursion**; **A copy is counted
+  as many times as it is made: a function inlined twice brings its calls twice**
+  (dom53).
 - **Two programs that should cost the same are compared by their BINARIES**.
 - **What the backend makes of a library call is read in the listing for what it
   holds while the arguments run**; **A goroutine's output is asked with main

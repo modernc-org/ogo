@@ -611,6 +611,39 @@ about the emitted code rides in its text: the emitter renders text it throws awa
 and a record kept beside the text counts renderings that never reached the C.**
 **A finer edge found for one question is read for that question: what a recursion
 is told is no stack's size until the size can rest on it.**
+dom53 (2026-10-18, the same evening, a domain program in the shape just changed: a
+state machine of `type State func(*Machine, Event) State`, a message bus of
+handler tables with method values, a console's command table, comparators, an
+evaluator recursing through an operator table, a worker cog taking jobs as
+functions over a channel) matched Go on the host and the P2-EDGE once four faults
+were out of its way. The first was the day's own: the edges read for a recursion
+were added beside the wide ones a stack is sized by, and need answered both
+questions, so a goroutine calling through any value reached the evaluator's
+recursion through its wide edge and was refused for one it never makes -- the rule
+written that afternoon, kept in the size and broken in the walk. The size and the
+recursion are two walks now (stackGraph.recurses), and the corpus reads as it did.
+The second: a function inlined twice was visited once for its calls, so `evAdd`,
+calling Eval in two places, was read as making one call through the table where
+its listing makes two, the counts disagreed, and its recursion went unchecked --
+long a precision loss for interface calls, a missed check for this. The third, a
+call of `strings.ToUpper`, which the package does not have, went to the C compiler
+from a literal in a table's initializer: a function literal's scope hangs off the
+file's, where the imports are, and every rule that takes a name the scope does not
+find for a qualifier found the import itself -- a call of any count, an unexported
+function, a constant called and a store of the wrong type into another package's
+variable were all taken in a literal (foundOrQualifier, and a sweep of 76
+statements asked in a body and in two literals). The fourth was the lifetime
+rules': for a type naming itself the union a call through a value of it is judged
+by was asked under the key the type was minted by, `self:State`, which holds
+nothing, so a state function storing the pointer it was handed took a local's
+through a package variable, a table, a field or a state's result -- the same
+program over a type that does not name itself was refused. **A gate that takes "not
+found" for "a qualifier" is a row of every scope a name can be found in: a
+function literal's finds the import itself.** **A question answered off a graph is
+asked of the edges it is about: a size's edges answered a recursion.** **A copy is
+counted as many times as it is made: a function inlined twice brings its calls
+twice.** **Two keys for one type are two tables: the reader asks by the key the
+writer wrote.**
 
 **A TYPE SWITCH BEHIND AN INIT STATEMENT** (2026-10-07), `switch s := pick(); v :=
 s.(type)`, the last header shape on the open list: the grammar's SwitchTag takes `[

@@ -116,6 +116,25 @@ func main() {
 }
 `, map[string][]string{"main": {"ogo_fvbound0", "ogo_functype0"}},
 			map[string][]string{"ogo_fvbound0": {"twice"}, "ogo_functype0": {"other", "twice"}}},
+		{"a type naming itself", `type State func(n int) State
+
+func a(n int) State {
+	if n == 0 {
+		return nil
+	}
+	return b
+}
+
+func b(n int) State { return a }
+
+func main() {
+	s := a
+	for n := 3; s != nil; n-- {
+		s = s(n)
+	}
+}
+`, map[string][]string{"main": {"ogo_functype0"}},
+			map[string][]string{"ogo_functype0": {"a", "b"}}},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			_, c := markedFuncs(t, test.src, FuncValueClasses())

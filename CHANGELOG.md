@@ -74,6 +74,13 @@ shipped section tells a reader on that version that they have behaviour they do 
   the C compiler as a call of nothing, and a call of the wrong count or types, of an
   unexported function or of a constant, and a store of the wrong type into another
   package's variable, were all taken in a literal.
+- **A state function that keeps what it is handed is refused through a value of
+  its type**, as any other function is: for a type naming itself, `type State
+  func(*M) State`, a call through a package variable, a table, a field or a state's
+  result was judged by none of the type's functions, so `cur(&m)` for a local m was
+  taken where the state stores its parameter in a package variable -- a pointer
+  into a frame that had returned. The same program over a type that does not name
+  itself was refused.
 
 ### Toolchain
 

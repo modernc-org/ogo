@@ -12613,8 +12613,17 @@ func (e *emitter) unionSummary(cname string) (culprit string, changed bool) {
 	return culprit, changed
 }
 
-// funcTypeID is the funcShapeID of a minted function typedef.
+// funcTypeID is the funcShapeID of a minted function typedef: for a type naming
+// itself, `type State func(*M) State`, the signature its functions are recorded by
+// (recFuncShapes), not the "self:" key it was minted under -- asked by that key,
+// a call through a package variable of the type was judged by no function at all,
+// and a state function keeping the address it was handed took a local's.
 func (e *emitter) funcTypeID(ct string) string {
+	for k, v := range e.recFuncShapes {
+		if v == ct {
+			return k
+		}
+	}
 	for k, v := range e.funcTypeNames {
 		if v == ct {
 			return k
