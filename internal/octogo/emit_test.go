@@ -320,7 +320,8 @@ func main() {
 		"\treturn (a + b);\n" +
 		"}\n\n" +
 		"int main(void) {\n" +
-		"\tprintf(\"%d\\n\", add(2, 3));\n" +
+		"\tint _ogo_t0 = add(2, 3);\n" +
+		"\tprintf(\"%d\\n\", _ogo_t0);\n" +
 		"\treturn 0;\n" +
 		"}\n"
 	if got := buf.String(); got != want {
@@ -1096,7 +1097,8 @@ func main() {
 		"\ta[0] = 1;\n" +
 		"\ta[1] = 2;\n" +
 		"\ta[2] = 3;\n" +
-		"\tprintf(\"%d\\n\", sum(a));\n" +
+		"\tint _ogo_t0 = sum(a);\n" +
+		"\tprintf(\"%d\\n\", _ogo_t0);\n" +
 		"\treturn 0;\n" +
 		"}\n"
 	if got := buf.String(); got != want {
@@ -1622,7 +1624,8 @@ func main() {
 		"\ta[1] = 20;\n" +
 		"\ta[2] = 30;\n" +
 		"\ta[3] = 40;\n" +
-		"\tprintf(\"%d\\n\", sum((ogo_slice_int){a + 1, 3 - 1, 4 - 1}));\n" +
+		"\tint _ogo_t0 = sum((ogo_slice_int){a + 1, 3 - 1, 4 - 1});\n" +
+		"\tprintf(\"%d\\n\", _ogo_t0);\n" +
 		"\treturn 0;\n" +
 		"}\n"
 	if got := buf.String(); got != want {
@@ -3030,7 +3033,8 @@ func main() {
 		"\tPoint pt = {0};\n" +
 		"\tpt.x = 3;\n" +
 		"\tpt.y = 4;\n" +
-		"\tprintf(\"%d\\n\", Point_Sum(pt));\n" +
+		"\tint _ogo_t0 = Point_Sum(pt);\n" +
+		"\tprintf(\"%d\\n\", _ogo_t0);\n" +
 		"\treturn 0;\n" +
 		"}\n"
 	if got := buf.String(); got != want {
@@ -3139,7 +3143,8 @@ func main() {
 		"\tBox box = {0};\n" +
 		"\tBox* pp = &box;\n" +
 		"\tBox_Set(pp, 9);\n" +
-		"\tprintf(\"%d\\n\", Box_Get(*pp));\n" +
+		"\tint _ogo_t0 = Box_Get(*pp);\n" +
+		"\tprintf(\"%d\\n\", _ogo_t0);\n" +
 		"\treturn 0;\n" +
 		"}\n"
 	if got := buf.String(); got != want {
@@ -3182,7 +3187,8 @@ func main() {
 		"}\n\n" +
 		"int main(void) {\n" +
 		"\tCelsius c = 5;\n" +
-		"\tprintf(\"%s\\n\", (Celsius_Freezing(c)) ? \"true\" : \"false\");\n" +
+		"\t_Bool _ogo_t0 = Celsius_Freezing(c);\n" +
+		"\tprintf(\"%s\\n\", (_ogo_t0) ? \"true\" : \"false\");\n" +
 		"\treturn 0;\n" +
 		"}\n"
 	if got := buf.String(); got != want {
@@ -3277,9 +3283,11 @@ func main() {
 		"int main(void) {\n" +
 		"\tCounter cnt = 42;\n" +
 		"\tCounter_Reset(&cnt);\n" +
-		"\tprintf(\"%d\\n\", Counter_Get(cnt));\n" +
+		"\tint _ogo_t0 = Counter_Get(cnt);\n" +
+		"\tprintf(\"%d\\n\", _ogo_t0);\n" +
 		"\tCounter* pp = &cnt;\n" +
-		"\tprintf(\"%d\\n\", Counter_Get(*pp));\n" +
+		"\tint _ogo_t1 = Counter_Get(*pp);\n" +
+		"\tprintf(\"%d\\n\", _ogo_t1);\n" +
 		"\treturn 0;\n" +
 		"}\n"
 	if got := buf.String(); got != want {
@@ -3418,10 +3426,12 @@ func main() {
 		"int main(void) {\n" +
 		"\tCounter cnt = 0;\n" +
 		"\tCounter_Set(&cnt, 7);\n" +
-		"\tprintf(\"%d\\n\", Counter_Get(cnt));\n" +
+		"\tint _ogo_t0 = Counter_Get(cnt);\n" +
+		"\tprintf(\"%d\\n\", _ogo_t0);\n" +
 		"\tCounter* pp = &cnt;\n" +
 		"\tCounter_Set(pp, 42);\n" +
-		"\tprintf(\"%d\\n\", Counter_Get(cnt));\n" +
+		"\tint _ogo_t1 = Counter_Get(cnt);\n" +
+		"\tprintf(\"%d\\n\", _ogo_t1);\n" +
 		"\treturn 0;\n" +
 		"}\n"
 	if got := buf.String(); got != want {
@@ -4998,8 +5008,10 @@ func main() {
 		"}\n\n" +
 		"int main(void) {\n" +
 		"\tf();\n" +
-		"\tprintf(\"%d\\n\", g(5));\n" +
-		"\tprintf(\"%d\\n\", g(0));\n" +
+		"\tint _ogo_t0 = g(5);\n" +
+		"\tprintf(\"%d\\n\", _ogo_t0);\n" +
+		"\tint _ogo_t1 = g(0);\n" +
+		"\tprintf(\"%d\\n\", _ogo_t1);\n" +
 		"\treturn 0;\n" +
 		"}\n"
 	if got := buf.String(); got != want {
@@ -5061,7 +5073,7 @@ func TestEmitCChannel(t *testing.T) {
 		"\togo_chan_init_int(&ogo_chan_cell_0, ogo_chan_lock0);\n",
 		"\togo_chan_int ch = (&ogo_chan_cell_0);\n",
 		"\togo_chan_send_int(ch, 2);\n",
-		"\tprintf(\"%d\\n\", ogo_chan_recv_int(ch));\n",
+		"\tint _ogo_t0 = ogo_chan_recv_int(ch);\n\tprintf(\"%d\\n\", _ogo_t0);\n",
 		"#include <propeller2.h>\n",
 	} {
 		if got := buf.String(); !strings.Contains(got, want) {
@@ -5107,10 +5119,10 @@ func main() {
 	for _, want := range []string{
 		"ogo_chan_int qof(int i);\n",
 		"\togo_chan_send_int(qof(0), 2);\n",
-		"\tprintf(\"%d\\n\", ogo_chan_recv_int(qof(1)));\n",
+		"\tint _ogo_t0 = ogo_chan_recv_int(qof(1));\n\tprintf(\"%d\\n\", _ogo_t0);\n",
 		"\togo_chan_send_int(q[0], 3);\n",
 		"\togo_chan_send_int((*p), 4);\n",
-		"\tprintf(\"%d\\n\", ogo_chan_recv_int((*p)));\n",
+		"\tint _ogo_t1 = ogo_chan_recv_int((*p));\n\tprintf(\"%d\\n\", _ogo_t1);\n",
 	} {
 		if got := buf.String(); !strings.Contains(got, want) {
 			t.Errorf("EmitC channel expression: missing %q in\n%s", want, got)
@@ -8008,7 +8020,8 @@ func main() {
 		"\treturn (s).len;\n" +
 		"}\n\n" +
 		"int main(void) {\n" +
-		"\tprintf(\"%d\\n\", size((ogo_slice_int){0}));\n" +
+		"\tint _ogo_t0 = size((ogo_slice_int){0});\n" +
+		"\tprintf(\"%d\\n\", _ogo_t0);\n" +
 		"\treturn 0;\n" +
 		"}\n"
 	if got := buf.String(); got != want {

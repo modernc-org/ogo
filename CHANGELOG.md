@@ -59,6 +59,19 @@ shipped section tells a reader on that version that they have behaviour they do 
   needs 160 longs, most of it the panic path's formatting. obeam, whose seven
   schedulers start in a loop, builds to the same bytes as before.
 
+### Fixed
+
+- **A goroutine that prints while `main` prints what it waits for runs**: `go
+  work(5); println(<-out)`, with `work` printing a number before it sends, printed
+  nothing at all on a P2-EDGE, where Go prints both, and a goroutine's panic while
+  `main` waited in such a print never said so. The target's compiler writes a
+  `printf` of a constant format as its own print calls under its I/O lock and
+  evaluates the arguments inside the lock, so `main` held the lock while it waited
+  and the goroutine waited for the lock. A print's argument that has an effect -- a
+  receive, a call -- is evaluated before the print now, one argument as several
+  were. Only a goroutine printing strings alone, which goes out a byte at a time
+  without the lock, had been spared.
+
 ## v0.57.0
 
 ### Fixed

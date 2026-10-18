@@ -40807,11 +40807,15 @@ func (e *emitter) emitPrint(newline bool, callSuffix []int32) {
 			return
 		}
 	}
-	// The arguments are evaluated BEFORE anything is written, as in Go. A single
-	// argument is already in that order -- there is nothing written before it -- so
-	// only the several-argument form asks, and a call returning an ARRAY, which has
-	// no value to print until it is bound (arrayCallArg).
-	if len(args) > 1 || e.arrayCallArg(args) {
+	// The arguments are evaluated BEFORE anything is written, as in Go -- and a
+	// single one too, which nothing is written ahead of: the target's compiler writes
+	// a printf of a constant format as its own print calls under the I/O lock, and
+	// evaluates the arguments inside it, so `println(<-done)` held the lock while it
+	// waited, and the goroutine it waited for hung on its first println of a number,
+	// a P2-EDGE printing nothing at all -- a goroutine's panic message among them.
+	// What hoistPrintArgs binds is what has an effect, and what a method the
+	// formatting calls can reach.
+	if len(args) != 0 {
 		saved := e.printArgs
 		e.printArgs = nil
 		e.hoistPrintArgs(args)
@@ -41275,11 +41279,11 @@ func (e *emitter) emitPrintfFormat(what, format string, rest []Node, at []int32)
 	// As in emitPrint: every argument is evaluated before anything is written. The
 	// format itself is a constant, so only the arguments after it are hoisted, and
 	// they are indexed from zero exactly as the verbs read them. A single argument
-	// is no exception where the format writes text ahead of its verb, as emitPrint's
-	// is: `printf("got %d\n", <-ch)` wrote "got " and then waited on the receive,
-	// mid-line, and `printf(" %d", f())` for an f that prints wrote its line into
-	// the middle of this one.
-	if len(rest) > 1 || len(rest) == 1 && len(items) > 0 && items[0].lit != "" || e.arrayCallArg(rest) {
+	// is no exception, as emitPrint's is not: `printf("got %d\n", <-ch)` wrote "got "
+	// and then waited on the receive, mid-line, `printf(" %d", f())` for an f that
+	// prints wrote its line into the middle of this one, and `printf("%d\n", <-ch)`
+	// waited under the target's I/O lock.
+	if len(rest) != 0 {
 		saved := e.printArgs
 		e.printArgs = nil
 		e.hoistPrintArgs(rest)

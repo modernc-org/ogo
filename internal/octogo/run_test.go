@@ -751,6 +751,50 @@ func main() {
 		want: "panic: index out of range",
 	},
 	{
+		// The target's compiler writes a printf of a constant format as its own
+		// print calls under the I/O lock and evaluates the arguments inside it, so
+		// main's `println(<-out)` held the lock while it waited, and the goroutine
+		// it waited for hung on its own println of a number: the P2-EDGE printed
+		// nothing at all. A print's argument with an effect is evaluated first.
+		name: "a goroutine prints while main prints what it waits for",
+		src: `var out = make(chan int)
+
+func work(n int) {
+	println(42)
+	printf("%d %d\n", n, n*2)
+	out <- n
+}
+
+func main() {
+	go work(5)
+	println(<-out)
+	go work(6)
+	printf("%d\n", <-out)
+}
+`,
+		want: "42\n5 10\n5\n42\n6 12\n6\n",
+	},
+	{
+		// The same lock held the message of a goroutine's panic: main waited in its
+		// print of a receive, and the panic waited for the lock, printing nothing.
+		name:   "a goroutine's panic while main prints what it waits for",
+		panics: true,
+		src: `var out = make(chan int)
+
+var back [3]int
+
+func work(i int) {
+	out <- back[i]
+}
+
+func main() {
+	go work(5)
+	println(<-out)
+}
+`,
+		want: "panic: index out of range",
+	},
+	{
 		// An alias of a type written out, `type Buf = []byte`, is that type: assignable
 		// both ways to the literal, to another alias of it and to a type defined over
 		// it, spelled by %T as the literal, written in a literal, a conversion and a

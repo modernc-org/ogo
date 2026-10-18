@@ -3343,6 +3343,22 @@ program -- so it is asked only of what `inferCType` cannot type. A CALL's array
 result was the cell nobody printed until 2026-09-24, `println(mk(1))` refused where a
 deferred print took it: the print binds it with its other arguments now
 (`hoistPrintArgs`, `arrayCallArg`).
+A PRINT HOLDS A LOCK (2026-10-18, found writing the stack checks' goroutine test):
+`go work(5); println(<-out)`, with work printing a number before it sends, printed
+nothing at all on a P2-EDGE, and so did a goroutine's panic while main waited in such
+a print -- the simplest program a goroutine can be in, and no run case had it: each
+one printing from a goroutine while main received printed a string, which goes out
+through putchar without the lock, or bound the receive first. The target's compiler
+writes a printf of a constant format as its own print calls between `__lockio` and
+the store that frees the lock, and evaluates the arguments in between, so main took
+the lock and waited in the receive while the goroutine waited for the lock. A wait of
+500 ms put into main's argument delayed the goroutine's panic by exactly that, and
+plain C with a cog printing while main waited outside a print showed nothing of it. A
+print's argument with an effect is evaluated before the print now, one argument as
+several were (hoistPrintArgs): 175 of 1378 corpus programs changed, each by that
+binding alone. **What the backend makes of a library call is read in the listing for
+what it holds while the arguments run.** **A goroutine's output is asked with main
+waiting in each way it can wait, a print of a receive among them.**
 
 **A TEMPORARY IS A COG REGISTER** (2026-09-20). flexcc gives every C local one
 (`local_N res 1` in COG_BSS) out of a pool the assembler checks with `fit 480`,

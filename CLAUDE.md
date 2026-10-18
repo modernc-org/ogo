@@ -1039,6 +1039,10 @@ section. A new finding goes there; the rule it leaves goes here too.
   sweep measures the programs it sweeps: each rule the bound rests on is asked by a
   program written to break it** (ONE PASS THROUGH AN INTERFACE).
 - **Two programs that should cost the same are compared by their BINARIES**.
+- **What the backend makes of a library call is read in the listing for what it
+  holds while the arguments run**; **A goroutine's output is asked with main
+  waiting in each way it can wait, a print of a receive among them** (A PRINT HOLDS
+  A LOCK).
 - **A STATIC INITIALIZER IS LAID OUT BY ANOTHER RULE THAN ITS TYPE**: **A rule about
   the target's layout is measured on the board in C first**; **The host's compiler
   is no witness for an initializer's layout**. **A ROW OF 64-BIT ELEMENTS INDEXED BY
