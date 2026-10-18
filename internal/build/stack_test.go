@@ -546,6 +546,51 @@ func main() {
 			t.Fatalf("a goroutine beside a recursion through a table: %v", err)
 		}
 		checked(t, false, "evAdd", "evNeg")
+		// A function inlined twice, each copy losing a call to its constant
+		// argument, makes fewer calls through a register than its C does, and its
+		// caller's calls were taken for unknown ones, reaching every taken function
+		// -- a recursion reached so is walked once -- though the C says what each
+		// may call. The recursion through walk went unseen on either cog, and main
+		// ran on past the end of its stack in silence on the board.
+		folded := `var out = make(chan int)
+
+type visit func(n int) int
+
+type other func(n int) int
+
+var v visit
+
+var others = [1]other{twice}
+
+func twice(n int) int { return 2 * n }
+
+func walk(n int) int {
+	if n == 0 {
+		return others[0](0)
+	}
+	return 1 + v(n-1)
+}
+
+func init() { v = walk }
+
+func work() { out <- walk(100) + walk(1000000) }
+
+func main() {
+	go work()
+	println(<-out)
+}
+`
+		if _, err := compile(t, folded, false); err == nil || !strings.Contains(err.Error(), "a goroutine recurses through walk") {
+			t.Fatalf("err=%v, want the goroutine's recursion through walk refused", err)
+		}
+		if _, err := compile(t, folded, true); err != nil {
+			t.Fatalf("with the stack asked for: %v", err)
+		}
+		checked(t, true, "walk")
+		if _, err := compile(t, strings.Replace(folded, "go work()\n\tprintln(<-out)", "println(walk(100))\n\tprintln(walk(1000000))", 1), false); err != nil {
+			t.Fatalf("recursion through a value inlined into main: %v", err)
+		}
+		checked(t, false, "walk")
 	})
 	t.Run("main", func(t *testing.T) {
 		_, err := compile(t, "func main() {\n\tvar big [140000]int\n\tbig[1] = 2\n\tfor i := range big {\n\t\tbig[i] += i\n\t}\n\tprintln(big[1] + big[139999])\n}\n", false)

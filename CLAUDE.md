@@ -1058,7 +1058,10 @@ section. A new finding goes there; the rule it leaves goes here too.
   A FUNCTION VALUE'S TYPE MAY HOLD); **A question answered off a graph is asked of
   the edges it is about: a size's edges answered a recursion**; **A copy is counted
   as many times as it is made: a function inlined twice brings its calls twice**
-  (dom53).
+  (dom53); **A test that a fact is exact answers whether it may stand for the
+  whole, not whether it is true: a copy that lost a call still makes the others**;
+  **A claim that a change leaves the binaries alone is measured by building them,
+  the newest run cases among them**.
 - **Two programs that should cost the same are compared by their BINARIES**.
 - **What the backend makes of a library call is read in the listing for what it
   holds while the arguments run**; **A goroutine's output is asked with main

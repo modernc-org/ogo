@@ -655,6 +655,29 @@ detector stops. On the P2-EDGE the 352 distinct binaries of the 724 both sides t
 printed what Go printed, three ending in `panic: goroutine stack overflow` where
 Go's ran out of its 250 MB -- one of them through a state function of the type
 naming itself, a recursion only once its union held its functions.
+The board run after the four commits were pushed found what the host had not: the
+run case written for the classes, a recursion through `v` that main enters twice,
+printed `100` and no panic. The backend had inlined walk into main twice and folded
+away, in each copy, the call its constant argument does not make, so main's listing
+made two calls through a register where its C, counted copy by copy, made four. The
+count is narrowTargets' test that the calls it knows are all the calls, which a
+stack's size may rest on, and failing it main's calls were taken to reach every
+taken function -- an edge the recursion walk does not follow, so nothing reached
+walk, and a goroutine entering walk the same way was given a slot sized for one
+pass. The first fix followed such edges for a recursion, and TestStackNeeds said why
+not: a call nothing narrowed reaches every taken function, most of them never
+there, and a recursion reached only so is walked once by design (ONE PASS THROUGH
+AN INTERFACE) -- walking it otherwise refused obeam's VM. The count decides only
+whether the known targets may stand for the call in a size; whatever it says, they
+are what the C calls, and they are read for a recursion now (narrowTargets' known
+beside exact). None of the 1380 corpus programs reads differently for it, nor
+p2-11, its ten test binaries or obeam's VM; but none of the 1380 is this run case:
+the corpus was kept before the case was written, and the commits had been called
+unchanged in their binaries off it and off dumpc's C, which carries no table.
+**A test that a fact is exact answers whether it may stand for the whole, not
+whether it is true: a copy that lost a call still makes the others.** **A claim that
+a change leaves the binaries alone is measured by building them, the newest run
+cases among them.**
 
 **A TYPE SWITCH BEHIND AN INIT STATEMENT** (2026-10-07), `switch s := pick(); v :=
 s.(type)`, the last header shape on the open list: the grammar's SwitchTag takes `[
