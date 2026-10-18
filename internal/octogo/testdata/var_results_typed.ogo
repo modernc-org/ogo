@@ -1,0 +1,33 @@
+// A local `var` of several names from one value, `var s, d = sums(10, 3)`, `var v,
+// ok = <-ch`, `var q, ok = x.(*P)`, types each name as `:=` does. They had no type,
+// so the misuses below went to the C compiler, and `q.y` was the emitter's error.
+
+type P struct{ x int }
+
+type bif func(n int) int
+
+func sums(a, b int) (int, int) { return a + b, a - b }
+
+func r2() (bif, int) { return nil, 1 }
+
+func main() {
+	var s, d = sums(10, 3)
+	// ERROR cannot use s of type int as type string in variable declaration
+	var x string = s
+	ch := make(chan int, 1)
+	ch <- 3
+	var v, ok = <-ch
+	// ERROR cannot use v of type int as type string in variable declaration
+	var y string = v
+	// ERROR cannot use ok of type bool as type int in variable declaration
+	var z int = ok
+	p := P{3}
+	var a any = &p
+	var q, isP = a.(*P)
+	// ERROR type P has no field y
+	println(q.y, isP)
+	var h, n = r2()
+	// ERROR cannot use "x" of type string as type int in argument to h
+	println(h("x"), n)
+	println(x, d, y, z)
+}

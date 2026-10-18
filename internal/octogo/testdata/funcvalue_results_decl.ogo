@@ -1,0 +1,42 @@
+// COMPILE
+
+// A name declared from a call's several results takes the result's type, and a
+// result of a defined function type is a function: `b, n := r2()` and its header
+// forms, a package `var pb, pn = r2()` and a method's results were "cannot call
+// non-function b", where `var b, n = r2()` was taken.
+
+type bif func(n int) int
+
+func h1(n int) int { return n + 1 }
+
+var gb bif = h1
+
+func r2() (bif, int) { return gb, 1 }
+
+func r3() (bif, int) { return r2() }
+
+type T struct{}
+
+func (t *T) get() (bif, int) { return gb, 3 }
+
+var t T
+
+var pb, pn = r2()
+
+func main() {
+	b, n := r2()
+	if c, m := r2(); m > 0 {
+		println(c(m))
+	}
+	switch c, m := r2(); m {
+	case 1:
+		println(c(m))
+	}
+	for c, m := r2(); m < 3; m++ {
+		println(c(m))
+	}
+	d, k := r3()
+	e, j := t.get()
+	var g, i = r2()
+	println(b(n), pb(pn), d(k), e(j), g(i))
+}

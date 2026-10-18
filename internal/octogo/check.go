@@ -3622,6 +3622,25 @@ func (f *File) typeFromResult(s *Scope, vd *VarDeclaration, res retResult, qual 
 			}
 		}
 	}
+	// A result of a function type is a function, called as a variable of its type
+	// is: `h, n := lookup()` for a `func lookup() (Handler, int)` was "cannot call
+	// non-function h" where `var h, n = lookup()` was taken. The signature is read
+	// where the result's type was written, and spelled as this file writes it.
+	if tn := res.typeNode; tn != nil && !vd.isFunc {
+		if wf := f.fileOfToken(tokOfTypeNode(tn)); wf != nil {
+			if sig := wf.funcSig(wf.Scope, tn); sig != nil {
+				vd.isFunc = true
+				switch {
+				case wf.Package == f.Package:
+					vd.funcSig = sig
+				case qual.IsValid():
+					if home, ok := f.importedPkgScope(qual); ok && wf.Package != nil && wf.Package.Scope == home {
+						vd.funcSig = f.sigWrittenHere(qual, sig)
+					}
+				}
+			}
+		}
+	}
 	if res.known {
 		vd.kind, vd.hasKind = res.kind, true
 	}
@@ -6208,6 +6227,27 @@ func (f *File) namedFuncSig(s *Scope, name, qual Token) *SignatureNode {
 	return f.funcSig(home, td.TypeSpec.TypeNode)
 }
 
+// sigWrittenHere is a signature read in the package this file imports as qual, its
+// types spelled as this file writes them (requalifiedSig), and sig itself where qual
+// is no qualifier. It is nil where the types cannot be carried across, and a call
+// checked against nil is not checked: read in this file's scope, another package's
+// `type Conv func(c Celsius) int` refused `c(lib.Celsius(3))` against this
+// package's own Celsius.
+func (f *File) sigWrittenHere(qual Token, sig *SignatureNode) *SignatureNode {
+	if !qual.IsValid() || sig == nil {
+		return sig
+	}
+	home, ok := f.importedPkgScope(qual)
+	if !ok {
+		return nil
+	}
+	r, ok := f.requalifiedSig(home, qual, sig)
+	if !ok {
+		return nil
+	}
+	return r
+}
+
 // namedIsPointer reports whether a DEFINED type is a pointer: `type PI *int` names
 // one, and a variable of it is dereferenced like any other pointer. The name alone
 // says nothing -- the "*" is in the type's own declaration -- so `b := PI(&n)` was
@@ -6465,7 +6505,7 @@ func (f *File) inferVarFrom(s *Scope, vd *VarDeclaration, init Node) {
 				// The named type reached through an ELEMENT or a field --
 				// `f := table[i]` for a table of a named func type -- which
 				// exprFuncSig does not answer for: resolve the name itself.
-				vd.funcSig, vd.isFunc = sig, true
+				vd.funcSig, vd.isFunc = f.sigWrittenHere(ql, sig), true
 			}
 			return
 		}
@@ -9066,14 +9106,23 @@ func (f *File) declareLocalVar(s *Scope, n Node) {
 			f.checkInferredOverflow(s, e)
 		}
 		ts := declaredAt(s, names)
+		// One value of several names, `var sum, diff = sums(10, 3)`, `var v, ok =
+		// <-ch`: each name takes the type in its position, as `:=` gives it. They
+		// had none, so `var x string = sum` and a call through a function result
+		// went to the C compiler, and `p.y` of a struct result was the emitter's
+		// error.
+		multiOf := func(*VarDeclaration, int) {}
+		if declType == nil && len(initExprs) == 1 && len(names) > 1 {
+			multiOf = f.headerValueTypes(s, initExprs[0], len(names))
+		}
 		for i, nm := range names {
 			vd := &VarDeclaration{declaration: declaration{token: nm}, kind: kind, hasKind: hasKind, isPtr: isPtr, typeName: typeName, typeQual: typeQual, elemKind: elemKind, hasElemKind: hasElemKind, isChan: isChan, chanElemKind: chanElemKind, hasChanElemKind: hasChanElemKind, chanElemName: chanElemName, chanElemQual: chanElemQual, chanElemPtr: chanElemPtr, elemTypeName: elemName, elemTypeNode: elemTypeNode, funcSig: funcSig, isFunc: funcSig != nil, declType: declType, declScope: ts, noValue: len(initExprs) == 0}
 			if declType == nil && len(names) == len(initExprs) {
 				// No type written: the variable takes the one its own initializer
-				// gives it, exactly as ":=" does. A multi-result call feeding
-				// several names pairs up with none of them and is left alone.
+				// gives it, exactly as ":=" does.
 				f.inferVarFrom(s, vd, initExprs[i])
 			}
+			multiOf(vd, i)
 			if err := s.add(vd); err != nil {
 				f.err(nm.Position(), "%v", err)
 				continue

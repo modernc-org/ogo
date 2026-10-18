@@ -44,6 +44,12 @@ shipped section tells a reader on that version that they have behaviour they do 
   A recursion through a call of a function value is not seen and not checked. `ogo
   build --report` names the functions checked, and says what `main`'s stack needs
   up to them.
+- **The names a local `var` declares from one value of several are typed**: `var
+  sum, diff = sums(10, 3)`, `var v, ok = <-ch` and `var q, ok = x.(*P)` gave their
+  names no type, so `var s string = sum` went to the C compiler and `q.y` was the
+  emitter's error; `:=` and a package-level `var` had typed them all along. And a
+  call through a value of another package's function type has its arguments
+  checked, `c(x)` for an `int` x where the type wants a `lib.Celsius`.
 
 ### Toolchain
 
@@ -82,6 +88,14 @@ shipped section tells a reader on that version that they have behaviour they do 
   receive, a call -- is evaluated before the print now, one argument as several
   were. Only a goroutine printing strings alone, which goes out a byte at a time
   without the lock, had been spared.
+- **A function value declared from a call's several results can be called**: `h,
+  n := lookup()` for a `func lookup() (Handler, int)` of a defined function type
+  was "cannot call non-function h" -- in a statement, an `if`, `switch` or `for`
+  header, a package-level `var` and from a method's results -- where `var h, n =
+  lookup()` was taken. And a call through a value of another package's function
+  type is checked in that package's terms: `c(lib.Celsius(3))` for a `type Conv
+  func(c Celsius) int` of lib's was refused where the calling package has a
+  `Celsius` of its own.
 
 ## v0.57.0
 

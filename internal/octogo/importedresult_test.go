@@ -455,3 +455,66 @@ func TestCheckQualifiedResultsAndChains(t *testing.T) {
 		})
 	}
 }
+
+// TestCheckImportedFuncResult: a function value of another package's function type,
+// declared from a call's results. Its signature was read in THIS package's scope,
+// so `c(lib.Celsius(3))` for a `type Conv func(c Celsius) int` of lib's was refused
+// against main's own Celsius, and `c(x)` for an int x taken where main has none; a
+// name declared from several results, `h, n := lib.Lookup()`, could not be called,
+// and one from a local `var h, n = lib.Lookup()` took any argument at all.
+func TestCheckImportedFuncResult(t *testing.T) {
+	const lib = `type Handler func(n int) int
+
+func h1(n int) int { return n + 1 }
+
+func Lookup() (Handler, int) { return h1, 2 }
+
+func One() Handler { return h1 }
+
+type T struct{ x int }
+
+func (t *T) Get() (Handler, int) { return h1, t.x }
+
+var V T
+
+type Celsius int
+
+type Conv func(c Celsius) int
+
+func c1(c Celsius) int { return int(c) * 2 }
+
+func GetConv() (Conv, int) { return c1, 1 }
+
+func OneConv() Conv { return c1 }
+`
+	for _, test := range []struct {
+		pre, body string
+		want      string // "" for one Go takes
+	}{
+		{"", "h, n := lib.Lookup()\n\tprintln(h(n))", ""},
+		{"", "if h, n := lib.V.Get(); n == 0 {\n\t\tprintln(h(n))\n\t}\n\tvar g, m = lib.Lookup()\n\tprintln(g(m))", ""},
+		{"", "c := lib.OneConv()\n\tprintln(c(lib.Celsius(3)), c(4))", ""},
+		{"", "c, n := lib.GetConv()\n\tprintln(c(lib.Celsius(3)), c(4), n)", ""},
+		{"type Celsius string\n\n", "c := lib.OneConv()\n\tvar s Celsius = \"x\"\n\tprintln(c(lib.Celsius(3)), s)", ""},
+		{"type Celsius string\n\n", "c, n := lib.GetConv()\n\tvar s Celsius = \"x\"\n\tprintln(c(lib.Celsius(3)), s, n)", ""},
+		{"", "h, n := lib.Lookup()\n\tprintln(h(\"x\"), n)", `cannot use "x" of type string as type int in argument to h`},
+		{"", "var h, n = lib.Lookup()\n\tprintln(h(\"x\"), n)", `cannot use "x" of type string as type int in argument to h`},
+		{"", "c := lib.OneConv()\n\tx := 3\n\tprintln(c(x))", "cannot use x of type int as type lib.Celsius in argument to c"},
+		{"", "c, n := lib.GetConv()\n\tx := 3\n\tprintln(c(x), n)", "cannot use x of type int as type lib.Celsius in argument to c"},
+	} {
+		t.Run(test.body, func(t *testing.T) {
+			src := "import \"lib\"\n\n" + test.pre + "func main() {\n\t" + test.body + "\n}\n"
+			fsys := fstest.MapFS{
+				"main.ogo":    &fstest.MapFile{Data: []byte(src)},
+				"lib/lib.ogo": &fstest.MapFile{Data: []byte(lib)},
+			}
+			_, err := Build(-1, []string{"main.ogo"}, fsys)
+			switch {
+			case test.want == "" && err != nil:
+				t.Fatalf("refused: %v", err)
+			case test.want != "" && (err == nil || !strings.Contains(err.Error(), test.want)):
+				t.Fatalf("got %v, want an error containing %q", err, test.want)
+			}
+		})
+	}
+}
