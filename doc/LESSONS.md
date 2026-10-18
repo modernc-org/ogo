@@ -644,6 +644,17 @@ asked of the edges it is about: a size's edges answered a recursion.** **A copy 
 counted as many times as it is made: a function inlined twice brings its calls
 twice.** **Two keys for one type are two tables: the reader asks by the key the
 writer wrote.**
+Its 1,600 mutants then had nine holes, all one: the elements of a literal of a
+struct type written out, `[...]struct{ name string; h H }{{"a", f}}`, the table a
+loop ranges over, were asked nothing -- checkElidedStructLit answered only an
+element type with a name, so a value of any type went into a field and a function
+literal there was a body no rule read (**A rule asked by name is a row of every
+type that has none**). The other 66 differences are the ones by design: unreachable
+code, a method value of a value receiver, a panic's shorter message, a deadlock no
+detector stops. On the P2-EDGE the 352 distinct binaries of the 724 both sides took
+printed what Go printed, three ending in `panic: goroutine stack overflow` where
+Go's ran out of its 250 MB -- one of them through a state function of the type
+naming itself, a recursion only once its union held its functions.
 
 **A TYPE SWITCH BEHIND AN INIT STATEMENT** (2026-10-07), `switch s := pick(); v :=
 s.(type)`, the last header shape on the open list: the grammar's SwitchTag takes `[

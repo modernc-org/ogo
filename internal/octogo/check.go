@@ -14229,6 +14229,17 @@ func (f *File) checkElidedStructLit(s *Scope, outer litType, elem TypeNode, valu
 		// "c"}`, and was checked as nothing.
 		f.checkElidedStructLit(s, outer, t.TypeNode, value)
 		return
+	case *TypeNodeStruct:
+		// An element of a struct type written out, `[...]struct{ h H }{{f}}`, the
+		// table a loop ranges over: a literal of that struct, as `struct{ h H }{f}`
+		// is (checkAnonStructLit). It was asked nothing -- a value of any type went
+		// into a field, and a function literal in one was a body no rule read.
+		elements := compositeLitElements(value)
+		for _, el := range elements {
+			f.checkNames(s, el.value)
+		}
+		f.checkStructLit(s, litType{spelled: f.structSpelling(t)}, t, f.tok(value.Pos()), elements)
+		return
 	}
 	id, ok := elem.(*TypeNodeIdent)
 	if !ok {

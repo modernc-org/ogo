@@ -1,0 +1,36 @@
+// The elements of an array or a slice literal of a struct type written out,
+// `[...]struct{ h H }{{f}}` -- the table a loop ranges over -- are literals of
+// that struct, and are asked what `struct{ h H }{f}` is. They were asked nothing: a
+// value of any type went into a field, and a function literal in one was a body no
+// rule read.
+
+type H func(n int) int
+
+func twice(n int) int { return 2 * n }
+
+func other(s string) int { return len(s) }
+
+func main() {
+	for _, s := range [...]struct {
+		name string
+		h    H
+	}{
+		{"twice", twice},
+		// ERROR cannot use other
+		{"other", other},
+		// ERROR cannot use 3 of type int as type string in struct literal
+		{3, twice},
+		{"lit", func(n int) int {
+			// ERROR cannot call non-function n
+			return n()
+		}},
+	} {
+		println(s.name, s.h(1))
+	}
+	xs := []struct{ n int }{
+		{1},
+		// ERROR cannot use "x" of type string as type int in struct literal
+		{"x"},
+	}
+	println(len(xs))
+}

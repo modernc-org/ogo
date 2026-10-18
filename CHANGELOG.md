@@ -81,6 +81,12 @@ shipped section tells a reader on that version that they have behaviour they do 
   taken where the state stores its parameter in a package variable -- a pointer
   into a frame that had returned. The same program over a type that does not name
   itself was refused.
+- **The elements of a literal of a struct type written out are checked**: in
+  `[...]struct{ name string; h H }{{"a", f}, ...}`, the table a loop ranges over,
+  each element was asked nothing -- a value of any type went into a field, and a
+  function literal there was a body no rule read, so a call of an `int`, a `return`
+  without its value, an unused variable and a constant's overflow went to the C
+  compiler.
 
 ### Toolchain
 
