@@ -8117,7 +8117,7 @@ func (f *File) suffixedTargetKind(s *Scope, head, postfix Node) (Kind, bool) {
 	}
 	// Another package's variable, `lib.G += v`, is the walk's below: read as a
 	// field of a variable named lib, it had no Kind, and `lib.G += true` was taken.
-	isQual := s.find(id.Src()) == nil && f.isImportQualifier(s, id.Src())
+	isQual := f.isImportQualifier(s, id.Src())
 	if field, ok := f.fieldSelector(postfix); ok && !isQual {
 		return f.fieldKind(s, id, field)
 	}
@@ -9458,7 +9458,7 @@ func (f *File) checkAssignment(s *Scope, head, postfix Node) {
 				f.blankRead(tok) // "_++" reads the blank identifier: illegal
 				continue
 			}
-			switch s.find(nm).(type) {
+			switch f.foundOrQualifier(s, nm).(type) {
 			case nil:
 				if !f.isImportQualifier(s, nm) {
 					f.errUndefined(tok.Position(), nm)
@@ -9504,7 +9504,7 @@ func (f *File) checkAssignment(s *Scope, head, postfix Node) {
 				f.blankRead(tok) // "_ += 1" reads the blank identifier: illegal
 				continue
 			}
-			switch s.find(nm).(type) {
+			switch f.foundOrQualifier(s, nm).(type) {
 			case nil:
 				if !f.isImportQualifier(s, nm) {
 					f.errUndefined(tok.Position(), nm)
@@ -9724,7 +9724,7 @@ func (f *File) checkAssignment(s *Scope, head, postfix Node) {
 				}
 				continue
 			}
-			switch s.find(nm).(type) {
+			switch f.foundOrQualifier(s, nm).(type) {
 			case nil:
 				if !f.isImportQualifier(s, nm) {
 					f.errUndefined(tok.Position(), nm)
@@ -12377,6 +12377,18 @@ func (f *File) isImportQualifier(s *Scope, name string) bool {
 		return d == imp
 	}
 	return false
+}
+
+// foundOrQualifier is what s finds of name, but nil for the import itself, as a
+// body's scope answers: a function literal's scope hangs off the file's, where the
+// imports are, so a switch whose nil case is a qualifier's asked nothing of a
+// qualified name in a literal -- `lib.V = "x"` was taken.
+func (f *File) foundOrQualifier(s *Scope, name string) Declaration {
+	d := s.find(name)
+	if _, isImport := d.(*ImportDeclaration); isImport && f.isImportQualifier(s, name) {
+		return nil
+	}
+	return d
 }
 
 // checkQualifiedRef validates a package-qualified reference "qual.member", where
@@ -17824,7 +17836,7 @@ func (f *File) callChainWalk(s *Scope, head Token, steps []Node) (w callChain) {
 	default:
 		// Another package's function called, `lib.F(x)`, or its variable, `lib.V`:
 		// the result's or the variable's type, resolved in that package.
-		if d != nil || !f.isImportQualifier(s, head.Src()) {
+		if !f.isImportQualifier(s, head.Src()) {
 			return w
 		}
 		home, ok := f.importedPkgScope(head)
@@ -20191,7 +20203,7 @@ func (f *File) checkWalkedTarget(s *Scope, ah Node, steps []Node, value Node, so
 	if sole && stars == 0 && len(steps) == 1 {
 		// checkFieldAssign's or checkIndexAssign's -- but for another package's
 		// variable, `lib.G = v`, which neither asks.
-		if s.find(base.Src()) != nil || !f.isImportQualifier(s, base.Src()) {
+		if !f.isImportQualifier(s, base.Src()) {
 			return
 		}
 	}
@@ -20452,7 +20464,7 @@ func (f *File) targetHead(ah Node) (base Token, stars int, ok bool) {
 // write -- and the scope the answer's names are resolved in.
 func (f *File) targetTypeNode(s *Scope, base Token, steps []Node, stars int) (TypeNode, *Scope) {
 	var t typeAt
-	switch d := s.find(base.Src()).(type) {
+	switch d := f.foundOrQualifier(s, base.Src()).(type) {
 	case *VarDeclaration:
 		var ok bool
 		if t, ok = f.varTypeAt(d); !ok {
@@ -25189,7 +25201,12 @@ func (f *File) checkFactorNames(s *Scope, n Node) {
 			}
 		}
 	}
-	if hasID && s.find(id.Src()) == nil {
+	// A name the scope does not find, or the import itself (foundOrQualifier): in a
+	// function literal every qualified call was skipped here -- `strings.ToUpper(s)`,
+	// which the package does not have, went to the C compiler as a call of nothing,
+	// and so did a call of a constant, an unexported function and arguments of any
+	// count.
+	if hasID && f.foundOrQualifier(s, id.Src()) == nil {
 		switch {
 		case id.Src() == "make" && hasSuffix && f.isSliceMake(s, suffix):
 			// make([]T, len[, cap]) builds a slice header over a statically-sized

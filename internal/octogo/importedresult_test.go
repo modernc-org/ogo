@@ -568,3 +568,87 @@ func TakeS(s S, n int) int { return s.X + n }
 		})
 	}
 }
+
+// TestCheckQualifiedInLiteral: another package's names used in a function literal
+// are asked what they are asked in a function's body. A literal's scope hangs off
+// the file's, where the imports are, and the rules gated on a name the scope does
+// not find found the import itself: `strings.ToUpper(s)`, which the package does
+// not have, went to the C compiler as a call of nothing, and so did a call of any
+// count, an unexported function and every store into another package's variable
+// of the wrong type.
+func TestCheckQualifiedInLiteral(t *testing.T) {
+	const lib = `type P struct{ X, y int }
+
+func (p P) Get() int { return p.X }
+
+type Fn func(int) int
+
+var V int
+
+var S string
+
+var Arr [3]int
+
+var G P
+
+var H Fn
+
+const K = 3
+
+func F(n int) int { return n }
+
+func hidden() {}
+`
+	for _, test := range []struct {
+		stmt, want string // want "" for one Go takes
+	}{
+		{`_ = strings.ToUpper("x")`, "undefined: strings.ToUpper"},
+		{`_ = strings.Index("a")`, "not enough arguments in call to Index"},
+		{`_ = lib.F()`, "not enough arguments in call to F"},
+		{`_ = lib.F("a")`, `cannot use "a" of type string as type int in argument to F`},
+		{`lib.hidden()`, "cannot refer to unexported name lib.hidden"},
+		{`_ = lib.K(1)`, "cannot call non-function lib.K"},
+		{`_ = lib.Nope`, "undefined: lib.Nope"},
+		{`lib.K = 1`, "cannot assign to lib.K"},
+		{`lib.V = "x"`, `cannot use "x" of type string as type int in assignment`},
+		{`lib.V += true`, "cannot use true of type bool as type int in assignment"},
+		{`lib.S = 3`, "cannot use 3 of type int as type string in assignment"},
+		{`lib.Arr[0] = "x"`, `cannot use "x" of type string as type int in assignment`},
+		{`lib.G.X = "s"`, `cannot use "s" of type string as type int in assignment`},
+		{`var x string = lib.G.Get(); _ = x`, "cannot use lib.G.Get() of type int as type string in variable declaration"},
+		{`lib.H = func(s string) int { return 0 }`, "cannot use func(s string) int"},
+		{`for i := range lib.Arr { lib.Arr[i] = "s" }`, `cannot use "s" of type string as type int in assignment`},
+		{`lib.V, lib.S = lib.F(1), "a"`, ""},
+		{`lib.H = lib.F; _ = lib.H(lib.K) + strings.Index("ab", "b")`, ""},
+		{`var x int = lib.G.Get(); lib.Arr[2] = x`, ""},
+	} {
+		t.Run(test.stmt, func(t *testing.T) {
+			var msgs []string
+			for _, src := range []string{
+				"func main() {\n\t" + test.stmt + "\n}\n",
+				"var f = func() {\n\t" + test.stmt + "\n}\n\nfunc main() { f() }\n",
+				"func main() {\n\tg := func() {\n\t\t" + test.stmt + "\n\t}\n\tg()\n}\n",
+			} {
+				src = "import (\n\t\"strings\"\n\n\t\"lib\"\n)\n\nvar _ = strings.Index\n\nvar _ = lib.K\n\n" + src
+				fsys := fstest.MapFS{
+					"main.ogo":    &fstest.MapFile{Data: []byte(src)},
+					"lib/lib.ogo": &fstest.MapFile{Data: []byte(lib)},
+				}
+				msg := ""
+				if _, err := Build(-1, []string{"main.ogo"}, fsys); err != nil {
+					msg = err.Error()
+					if _, after, ok := strings.Cut(msg, ": "); ok {
+						msg = after // the position differs
+					}
+				}
+				if test.want == "" && msg != "" || test.want != "" && !strings.Contains(msg, test.want) {
+					t.Fatalf("got %q, want %q, in\n%s", msg, test.want, src)
+				}
+				msgs = append(msgs, msg)
+			}
+			if msgs[1] != msgs[0] || msgs[2] != msgs[0] {
+				t.Fatalf("in a body %q, in literals %q and %q", msgs[0], msgs[1], msgs[2])
+			}
+		})
+	}
+}

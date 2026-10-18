@@ -67,6 +67,13 @@ shipped section tells a reader on that version that they have behaviour they do 
   a name a `:=` list assigns, `b, x := a, 2`. A struct of another type went in
   there, of any layout, so did a function of another signature, and in the last a
   string where an `int` was wanted.
+- **Another package's names in a function literal are checked as in a function's
+  body**: a literal's scope reaches the file's, where the imports are, and the
+  rules that take a name the scope does not find for a qualifier found the import
+  itself. So `strings.ToUpper(s)`, which OctoGo's `strings` does not have, went to
+  the C compiler as a call of nothing, and a call of the wrong count or types, of an
+  unexported function or of a constant, and a store of the wrong type into another
+  package's variable, were all taken in a literal.
 
 ### Toolchain
 
