@@ -1,0 +1,44 @@
+// A value of one defined type where another is wanted, in the four positions that
+// asked nothing of it: a package variable's written type, an element appended,
+// results forwarded whole and a name a `:=` list assigns. A struct of any layout went
+// in, and so did an int where a string was wanted in the last.
+
+type A struct{ x int }
+
+type B struct{ y string }
+
+type h func(int) int
+
+type g func(string) int
+
+var ga = A{1}
+
+// ERROR cannot use ga of type A as type B in variable declaration
+var pb B = ga
+
+var bs [4]B
+
+func two() (A, int) { return ga, 2 }
+
+func take(b B, n int) int { return len(b.y) + n }
+
+func twoH() (h, int) { return nil, 2 }
+
+func takeG(f g, n int) int { return n }
+
+func main() {
+	s := bs[:0]
+	// ERROR cannot use ga of type A as type B in argument to append
+	s = append(s, ga)
+	// ERROR cannot use result 1 of two\(\) \(type A\) as type B in argument to take
+	println(take(two()))
+	// ERROR cannot use result 1 of twoH\(\) \(type h\) as type g in argument to takeG
+	println(takeG(twoH()))
+	b := pb
+	// ERROR cannot use ga of type A as type B in assignment
+	b, x := ga, 2
+	n := 1
+	// ERROR cannot use "s" of type string as type int in assignment
+	n, z := "s", 2
+	println(len(s), b.y, x, n, z)
+}

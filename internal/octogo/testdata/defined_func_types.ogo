@@ -1,0 +1,115 @@
+// Two function types defined over one signature are two types, as two struct types
+// of one shape are: a value of one goes where the other is wanted by a conversion
+// alone. Every position below took it, the signatures being all that was compared.
+// The four marked "any type" took a struct of another type too, of any layout.
+
+type handler func(n int) int
+
+type bif func(n int) int
+
+type h2 handler
+
+func h1(n int) int { return n + 1 }
+
+var gh handler = h1
+
+var gb bif = h1
+
+type S struct{ f bif }
+
+var bs [4]bif
+
+var ch = make(chan bif, 1)
+
+// ERROR cannot use gh of type handler as type bif in variable declaration
+var pb bif = gh
+
+// ERROR cannot use gh of type handler as type bif in array or slice literal
+var tbl = [1]bif{gh}
+
+// ERROR cannot use gh of type handler as type bif in struct literal
+var gs = S{f: gh}
+
+func take(b bif) int { return b(1) }
+
+func takeAll(bs ...bif) int { return bs[0](1) }
+
+func takeTwo(b bif, n int) int { return b(n) }
+
+func rh() handler { return h1 }
+
+func two() (handler, int) { return h1, 2 }
+
+func ret() bif {
+	// ERROR cannot use gh of type handler as type bif in return statement
+	return gh
+}
+
+func retTwo() (bif, int) {
+	// ERROR cannot use gh of type handler as type bif in return statement
+	return gh, 1
+}
+
+type T struct{ n int }
+
+func (t *T) M(b bif) int { return b(t.n) }
+
+var t T
+
+func set(s *S) {
+	// ERROR cannot use gh of type handler as type bif in assignment
+	s.f = gh
+}
+
+func main() {
+	// ERROR cannot use gh of type handler as type bif in variable declaration
+	var b bif = gh
+	// ERROR cannot use gh of type handler as type h2 in variable declaration
+	var x h2 = gh
+	// ERROR cannot use handler\(h1\) of type handler as type bif in variable declaration
+	var c bif = handler(h1)
+	// ERROR cannot use gh of type handler as type bif in assignment
+	gb = gh
+	var n int
+	// ERROR cannot use gh of type handler as type bif in assignment
+	gb, n = gh, 1
+	// ERROR cannot use gh of type handler as type bif in argument to take
+	println(take(gh))
+	// ERROR cannot use gh of type handler as type bif in argument to takeAll
+	println(takeAll(gh))
+	// ERROR cannot use rh\(\) of type handler as type bif in argument to take
+	println(take(rh()))
+	// ERROR cannot use result 1 of two\(\) \(type handler\) as type bif in argument to takeTwo
+	println(takeTwo(two()))
+	// ERROR cannot use gh of type handler as type bif in argument to take
+	defer take(gh)
+	// ERROR cannot use gh of type handler as type bif in argument to M
+	println(t.M(gh))
+	// ERROR cannot use gh of type handler as type bif in send
+	ch <- gh
+	select {
+	// ERROR cannot use gh of type handler as type bif in send
+	case ch <- gh:
+	default:
+	}
+	s := bs[:0]
+	// ERROR cannot use gh of type handler as type bif in argument to append
+	s = append(s, gh)
+	// ERROR cannot use gh of type handler as type bif in array or slice literal
+	l := []bif{gh}
+	// ERROR cannot use gh of type handler as type bif in struct literal
+	v := S{gh}
+	// ERROR cannot use gh of type handler as type bif in assignment
+	v.f = gh
+	// ERROR cannot use gh of type handler as type bif in assignment
+	bs[0] = gh
+	p := &b
+	// ERROR cannot use gh of type handler as type bif in assignment
+	*p = gh
+	var ss [1]S
+	// ERROR cannot use gh of type handler as type bif in assignment
+	ss[0].f = gh
+	// ERROR cannot use gh of type handler as type bif in assignment
+	b, y := gh, 2
+	println(b(y), x(1), c(1), n, len(s), l[0](1), v.f(1), pb(1), tbl[0](1), gs.f(1))
+}

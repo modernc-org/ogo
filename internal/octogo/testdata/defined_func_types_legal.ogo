@@ -1,0 +1,115 @@
+// COMPILE
+
+// The controls of defined_func_types.ogo and defined_type_positions.ogo: where Go
+// takes a value of one type for another -- an alias, a function type written out on
+// either side, a function name, a literal or a method value, an interface, byte for
+// uint8 -- in the positions those refuse a defined type in.
+
+type bif func(n int) int
+
+type F = bif
+
+type U = func(n int) int
+
+func h1(n int) int { return n + 1 }
+
+var gb bif = h1
+
+type I interface{ M() int }
+
+type T struct{ n int }
+
+func (t *T) M() int { return t.n }
+
+func (t *T) Inc(n int) int { return t.n + n }
+
+var gt = T{5}
+
+type L []int
+
+type C int
+
+type P struct{ x int }
+
+type PA = P
+
+var pf F = gb
+
+var p1 bif = h1
+
+var p2 bif = func(n int) int { return n * 3 }
+
+var p4 U = gb
+
+var p5 bif = p4
+
+var pa PA = P{1}
+
+var pp P = pa
+
+var bs [8]bif
+
+var gl = [2]int{1, 2}
+
+func two() (bif, int) { return gb, 2 }
+
+func twoU() (U, int) { return h1, 3 }
+
+func takeB(b bif, n int) int { return b(n) }
+
+func takeU(u func(int) int, n int) int { return u(n) }
+
+func twoT() (*T, int) { return &gt, 1 }
+
+func takeI(i I, n int) int { return i.M() + n }
+
+func twoC() (C, int) { return 7, 1 }
+
+func takeC(c C, n int) int { return int(c) + n }
+
+func twoBy() (byte, rune) { return 65, 66 }
+
+func takeBy(b uint8, r int32) int { return int(b) + int(r) }
+
+func twoL() ([]int, int) { return gl[:], 0 }
+
+func takeL(l L, i int) int { return l[i] }
+
+func twoV() (int, bif) { return 1, gb }
+
+func twoVU() (int, U) { return 2, h1 }
+
+func takeV(n int, bs ...bif) int { return bs[0](n) }
+
+func errOf() error { return nil }
+
+type Op func(int) int
+
+func (o Op) Twice(x int) int { return o(o(x)) }
+
+func twoOp() (Op, int) { return Op(h1), 3 }
+
+func takeOp(o Op, n int) int { return o.Twice(n) }
+
+func main() {
+	var f F = gb
+	var b bif = f
+	var u U = b
+	var mv bif = gt.Inc
+	s := bs[:0]
+	s = append(s, h1, gb, u, func(n int) int { return -n }, gt.Inc)
+	println(f(1), b(2), u(3), pf(4), p1(1), p2(1), p4(1), p5(1), mv(1), len(s))
+	println(takeB(two()), takeB(twoU()), takeU(two()), takeI(twoT()), takeC(twoC()), takeBy(twoBy()), takeL(twoL()))
+	println(takeV(twoV()), takeV(twoVU()), takeOp(twoOp()), takeB(gt.Inc, 1))
+	b, x := h1, 2
+	b, y := gb, 3
+	b, z := u, 4
+	var i I
+	i, n := &gt, 5
+	e := errOf()
+	e, k := errOf(), 6
+	c := C(1)
+	c, m := 2, 7
+	var q PA = pp
+	println(b(x+y+z), i.M(), n, e == nil, k, c, m, q.x)
+}

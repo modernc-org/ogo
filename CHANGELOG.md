@@ -50,6 +50,16 @@ shipped section tells a reader on that version that they have behaviour they do 
   emitter's error; `:=` and a package-level `var` had typed them all along. And a
   call through a value of another package's function type has its arguments
   checked, `c(x)` for an `int` x where the type wants a `lib.Celsius`.
+- **Two defined types are two types in every position**: two function types
+  defined over one signature, `type handler func(int) int` and `type bif func(int)
+  int`, were one type to every rule but a range's assignment -- the signatures were
+  all that was compared -- and a `handler` went wherever a `bif` was wanted: a
+  declaration, an assignment, an argument, a return, a send, an element, a field.
+  And four positions asked no type's identity at all: a package-level `var` of a
+  written type, an element `append`ed, results forwarded whole, `take(two())`, and
+  a name a `:=` list assigns, `b, x := a, 2`. A struct of another type went in
+  there, of any layout, so did a function of another signature, and in the last a
+  string where an `int` was wanted.
 
 ### Toolchain
 

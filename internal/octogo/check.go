@@ -9914,6 +9914,18 @@ func (f *File) checkAssignment(s *Scope, head, postfix Node) {
 			f.checkResultsAssign(s, lhs, skip, rhs[0], nil)
 		}
 	}
+	// And one of a list, `b, x := "s", 2` for an int b, asked what `=` asks of its
+	// pair before any name is declared, which no value of the list may mean: it was
+	// asked nothing, a string or a struct of another type going into b.
+	if len(rhs) == len(lhs) && len(lhs) > 1 && !assertOK {
+		for i, id := range lhs {
+			if !id.IsValid() || id.Src() == "_" || i < len(lhsSuffixed) && lhsSuffixed[i] || parenAt[i] || s.Declarations[id.Src()] == nil {
+				continue
+			}
+			f.checkRecvAssign(s, id, rhs[i])
+			f.checkAssignType(s, id, rhs[i], true)
+		}
+	}
 	newCount := 0
 	for i, id := range lhs {
 		nm := id.Src()
@@ -14316,6 +14328,10 @@ func (f *File) kindlessCategory(s *Scope, nm string) string {
 			return "pointer"
 		case *TypeNodeChan:
 			return "chan"
+		case *FunctionType:
+			// A function type too: two defined over one signature are two types, and
+			// a value of one went wherever the other was wanted.
+			return "func"
 		case *TypeNodeIdent:
 			// Through a chain of definitions, each resolved where it is written. A
 			// qualified name met in ANOTHER package's scope is named as THAT package
@@ -27155,6 +27171,10 @@ func (f *File) checkAppendValues(s *Scope, argList Node, args []Node) {
 		if elemTN != nil {
 			f.checkNilValue(s, elemIn, elemTN, v, "append")
 			f.checkFuncAssign(s, f.funcSig(elemIn, elemTN), v, "argument to append")
+			// A value of one defined type where the element is of another, asked as
+			// an argument is (checkPointerArg): `append(bs, a)` for a []B and an A of
+			// B's shape was taken.
+			f.checkDefinedType(s, f.qualifiedTypeName(elemIn, f.typeNodeString(elemTN, false)), v, "argument to append")
 			// A slice or a pointer element, which has no Kind for the rules below:
 			// `append(ps, &g3)` for a []*[4]int went to the C compiler.
 			f.checkRefAssign(s, elemIn, elemTN, v, "argument to append")
@@ -27255,6 +27275,38 @@ func (f *File) forwardedResults(s *Scope, n Node) ([]retResult, bool) {
 		return nil, false
 	}
 	return results, true
+}
+
+// forwardedMismatch reports a result forwarded whole, `take(two())`, that cannot go
+// to its parameter for want of identity, which the Kinds compared beside it cannot
+// tell: a function of another signature, and a value of one defined type where
+// another is wanted or a predeclared one is -- a struct of B's shape or of none,
+// an int where a Celsius is. Every one of them was taken. An interface on either
+// side is assignability's own question, asked elsewhere; a type written out is
+// left alone but for a function's signature.
+func (f *File) forwardedMismatch(paramScope *Scope, r, p retResult) bool {
+	if r.typeNode == nil || p.typeNode == nil {
+		return false
+	}
+	rf := f.fileOfToken(tokOfTypeNode(r.typeNode))
+	if rf == nil || rf.ifaceResult(rf.Scope, r) || f.ifaceResult(paramScope, p) {
+		return false
+	}
+	ri, pi := "", ""
+	if id, ok := r.typeNode.(*TypeNodeIdent); ok {
+		ri = f.typeIdentityOf(id)
+	}
+	if id, ok := p.typeNode.(*TypeNodeIdent); ok {
+		pi = f.typeIdentityOf(id)
+	}
+	defined := func(id string) bool { return strings.Contains(id, ".") }
+	if rs, ps := rf.funcSig(rf.Scope, r.typeNode), f.funcSig(paramScope, p.typeNode); rs != nil && ps != nil {
+		if a, b := f.sigIdentity(rs), f.sigIdentity(ps); a != "" && b != "" && a != b {
+			return true
+		}
+		return defined(ri) && defined(pi) && ri != pi
+	}
+	return ri != "" && pi != "" && ri != pi && (defined(ri) || defined(pi))
 }
 
 // exprCallResults is the result list of the call an expression is, and whether the
@@ -27456,18 +27508,18 @@ func (f *File) checkCallArgs(s, paramScope *Scope, at Token, callee string, sig 
 					return
 				}
 				for i := 0; i < fixed; i++ {
-					if p := params[i]; p.known && results[i].known && !assignableKind(p.kind, results[i].kind) {
+					if p := params[i]; p.known && results[i].known && !assignableKind(p.kind, results[i].kind) || f.forwardedMismatch(paramScope, results[i], p) {
 						f.err(f.tok(args[0].Pos()).Position(), "cannot use result %d of %s (type %s) as type %s in argument to %s",
-							i+1, f.exprSource(args[0]), results[i].name, p.name, callee)
+							i+1, f.exprSource(args[0]), f.resultName(results[i]), p.name, callee)
 					}
 				}
 				last := sig.Params.List[len(sig.Params.List)-1]
 				if sl, isSlice := last.TypeNode.(*TypeNodeSlice); isSlice {
-					if elem := f.resultType(paramScope, sl.TypeNode); elem.known {
+					if elem := f.resultType(paramScope, sl.TypeNode); elem.known || elem.typeNode != nil {
 						for i := fixed; i < len(results); i++ {
-							if results[i].known && !assignableKind(elem.kind, results[i].kind) {
+							if elem.known && results[i].known && !assignableKind(elem.kind, results[i].kind) || f.forwardedMismatch(paramScope, results[i], elem) {
 								f.err(f.tok(args[0].Pos()).Position(), "cannot use result %d of %s (type %s) as type %s in argument to %s",
-									i+1, f.exprSource(args[0]), results[i].name, elem.name, callee)
+									i+1, f.exprSource(args[0]), f.resultName(results[i]), elem.name, callee)
 							}
 						}
 					}
@@ -27481,12 +27533,18 @@ func (f *File) checkCallArgs(s, paramScope *Scope, at Token, callee string, sig 
 				f.err(at.Position(), "too many arguments in call to %s", callee)
 			default:
 				for i, r := range results {
-					if p := params[i]; p.known && r.known && !assignableKind(p.kind, r.kind) {
+					p := params[i]
+					what := f.kindlessResult(s, r)
+					switch {
+					case p.known && r.known && !assignableKind(p.kind, r.kind):
 						f.err(f.tok(args[0].Pos()).Position(), "cannot use result %d of %s (type %s) as type %s in argument to %s",
-							i+1, f.exprSource(args[0]), r.name, p.name, callee)
-					} else if what := f.kindlessResult(s, r); p.known && what != "" {
+							i+1, f.exprSource(args[0]), f.resultName(r), p.name, callee)
+					case p.known && what != "":
 						f.err(f.tok(args[0].Pos()).Position(), "cannot use result %d of %s (%s of type %s) as type %s in argument to %s",
 							i+1, f.exprSource(args[0]), what, f.resultName(r), p.name, callee)
+					case f.forwardedMismatch(paramScope, r, p):
+						f.err(f.tok(args[0].Pos()).Position(), "cannot use result %d of %s (type %s) as type %s in argument to %s",
+							i+1, f.exprSource(args[0]), f.resultName(r), p.name, callee)
 					}
 				}
 			}
@@ -27718,6 +27776,14 @@ func (f *File) definedDeclOf(s *Scope, tn TypeNode) *TypeDeclaration {
 // resultName is how a message spells a call's result type.
 func (f *File) resultName(r retResult) string {
 	if r.name != "" {
+		// Another package's type is named as this file writes it, `lib.S`: as
+		// that package writes it, `S`, a message read "cannot use result 1 of
+		// lib.TwoS() (type S) as type S".
+		if r.typeNode != nil {
+			if wf := f.fileOfToken(tokOfTypeNode(r.typeNode)); wf != nil && wf.Package != nil && wf.Package != f.Package {
+				return f.qualifiedTypeName(wf.Package.Scope, r.name)
+			}
+		}
 		return r.name
 	}
 	if r.typeNode != nil {
@@ -29841,6 +29907,9 @@ func (f *File) varSpec(s *Scope, n Node) {
 					f.checkChanAssign(s, s, typ, e, "variable declaration")
 					f.checkRefAssign(s, s, typ, e, "variable declaration")
 					f.checkPointerValue(s, typIsPtr, f.typeNodeString(typ, false), e, "variable declaration")
+					// As a local's is: a value of one defined struct, array or
+					// function type went where another was wanted.
+					f.checkDefinedType(s, f.typeNodeString(typ, false), e, "variable declaration")
 					f.checkDeclType(s, kind, hasKind, typeName, e)
 					if typ != nil {
 						f.ifaceInits = append(f.ifaceInits, ifaceInit{f.ifaceTypeName(s, typ), e})

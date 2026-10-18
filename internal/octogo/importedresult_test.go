@@ -518,3 +518,53 @@ func OneConv() Conv { return c1 }
 		})
 	}
 }
+
+// TestCheckImportedDefinedTypes: a value of another package's defined type where
+// this package's type of the same shape and name is wanted, in the positions that
+// asked no identity of a function type or of any type: each was taken, and a
+// forwarded result was named as its own package writes it, "(type S) as type S".
+func TestCheckImportedDefinedTypes(t *testing.T) {
+	const lib = `type Handler func(n int) int
+
+func h1(n int) int { return n + 1 }
+
+func Lookup() (Handler, int) { return h1, 2 }
+
+func One() Handler { return h1 }
+
+func Take(h Handler, n int) int { return h(n) }
+
+type S struct{ X int }
+
+func TwoS() (S, int) { return S{4}, 1 }
+
+func TakeS(s S, n int) int { return s.X + n }
+`
+	for _, test := range []struct {
+		pre, body string
+		want      string // "" for one Go takes
+	}{
+		{"var pb lib.Handler = lib.One()\n\nvar hs [4]lib.Handler\n\nfunc mine(n int) int { return n * 10 }\n\nfunc take(h lib.Handler, n int) int { return h(n) }\n\n",
+			"s := hs[:0]\n\ts = append(s, lib.One(), mine, pb)\n\th := lib.One()\n\th, x := lib.One(), 2\n\tprintln(pb(1), len(s), s[1](1), lib.Take(lib.Lookup()), take(lib.Lookup()), h(x), lib.TakeS(lib.TwoS()))", ""},
+		{"type Handler func(n int) int\n\nvar pb Handler = lib.One()\n\n", "println(pb(1))", "cannot use lib.One() of type lib.Handler as type Handler in variable declaration"},
+		{"type Handler func(n int) int\n\nvar hs [4]Handler\n\n", "s := hs[:0]\n\ts = append(s, lib.One())\n\tprintln(s[0](1))", "cannot use lib.One() of type lib.Handler as type Handler in argument to append"},
+		{"type Handler func(n int) int\n\nfunc take(h Handler, n int) int { return h(n) }\n\n", "println(take(lib.Lookup()))", "cannot use result 1 of lib.Lookup() (type lib.Handler) as type Handler in argument to take"},
+		{"type S struct{ X int }\n\nfunc take(s S, n int) int { return s.X + n }\n\n", "println(take(lib.TwoS()))", "cannot use result 1 of lib.TwoS() (type lib.S) as type S in argument to take"},
+		{"type Handler func(n int) int\n\n", "var h Handler\n\th, x := lib.One(), 2\n\tprintln(h(x))", "cannot use lib.One() of type lib.Handler as type Handler in assignment"},
+	} {
+		t.Run(test.body, func(t *testing.T) {
+			src := "import \"lib\"\n\n" + test.pre + "func main() {\n\t" + test.body + "\n}\n"
+			fsys := fstest.MapFS{
+				"main.ogo":    &fstest.MapFile{Data: []byte(src)},
+				"lib/lib.ogo": &fstest.MapFile{Data: []byte(lib)},
+			}
+			_, err := Build(-1, []string{"main.ogo"}, fsys)
+			switch {
+			case test.want == "" && err != nil:
+				t.Fatalf("refused: %v", err)
+			case test.want != "" && (err == nil || !strings.Contains(err.Error(), test.want)):
+				t.Fatalf("got %v, want an error containing %q", err, test.want)
+			}
+		})
+	}
+}
