@@ -297,6 +297,14 @@ dead: it degraded over hours and only a board power cycle restored it (24/24 loa
 green `make board` afterwards). The transpiled loader measured identical to a native
 loadp2 and to a hand-written replica throughout -- do not start there.
 
+**A load lost to "Error writing port" or a timeout was the loader's until
+modernc.org/loadp2 v0.3.2** (2026-10-19): loading in a Go process, it took a write
+the runtime's preemption signals cut short for a failure and a select they
+interrupted for a timeout (obeam lost 8 loads of 10 on macOS). The board tests'
+"transient serial flake" retries were 5 to 26 a `make board` before it and 2 in the
+first run after; a retry that remains is not this until a load under signals says so
+(the harness: SIGURG to every thread every 100 µs, the loader's CLAUDE.md record).
+
 ## Code generation
 
 Four generated artifacts are checked in. Regenerate only when changing their

@@ -6,7 +6,7 @@ require (
 	modernc.org/ccgo/v4 v4.36.1
 	modernc.org/gc/v3 v3.1.5
 	modernc.org/libc v1.77.1
-	modernc.org/loadp2 v0.3.1
+	modernc.org/loadp2 v0.3.2
 	modernc.org/opt v0.2.0
 	modernc.org/token v1.1.0
 )

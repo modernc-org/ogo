@@ -115,6 +115,16 @@ shipped section tells a reader on that version that they have behaviour they do 
 
 ### Fixed
 
+- **A load is no longer lost to the Go runtime's signals**: `ogo run`, `ogo test`
+  and `modernc.org/ogo/loadp2` load through the transpiled loader in a Go
+  process, whose threads the Go runtime preempts with signals, and a signal cutting
+  a write to the port short ended the load in "Error writing port", one
+  interrupting the wait for the P2's answer in a timeout -- obeam, loading through
+  the package on macOS, lost 8 loads of 10 so. The loader (modernc.org/loadp2
+  v0.3.2) now writes what is left and waits out what is left of its timeout. On a
+  P2-EDGE, with SIGURG sent to every thread every 100 µs, 20 loads of 20 succeeded
+  where 5 of 5 had failed, and the board tests retried 2 loads where their last
+  fourteen runs had retried 5 to 26.
 - **A goroutine that prints while `main` prints what it waits for runs**: `go
   work(5); println(<-out)`, with `work` printing a number before it sends, printed
   nothing at all on a P2-EDGE, where Go prints both, and a goroutine's panic while
