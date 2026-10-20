@@ -12,6 +12,44 @@ import (
 	"testing/fstest"
 )
 
+// TestReportLeavesTheC holds WithReport to recording: every build asks for the
+// program's names, for its refusals to say, so the C each run case emits with it
+// is byte for byte the C it emits without.
+func TestReportLeavesTheC(t *testing.T) {
+	emit := func(src string, opts ...EmitOption) ([]byte, error) {
+		pkg, err := Build(-1, []string{"main.ogo"}, fstest.MapFS{"main.ogo": &fstest.MapFile{Data: []byte(src)}})
+		if err != nil {
+			return nil, err
+		}
+		var c bytes.Buffer
+		err = EmitC(pkg, &c, append([]EmitOption{Checked(), Inline(), FuncValueClasses()}, opts...)...)
+		return c.Bytes(), err
+	}
+	n := 0
+	for _, test := range emitRunCases {
+		plain, err := emit(test.src)
+		if err != nil {
+			continue
+		}
+		var r Report
+		reported, err := emit(test.src, WithReport(&r))
+		if err != nil {
+			t.Errorf("%s: refused only where reported: %v", test.name, err)
+			continue
+		}
+		if !bytes.Equal(plain, reported) {
+			t.Errorf("%s: the C differs where reported", test.name)
+		}
+		if len(r.Funcs) == 0 {
+			t.Errorf("%s: nothing reported", test.name)
+		}
+		n++
+	}
+	if n < len(emitRunCases)/2 {
+		t.Fatalf("%d of %d run cases emitted", n, len(emitRunCases))
+	}
+}
+
 // TestReport pins what EmitC tells `ogo build --report` of a program: the Go name of
 // each function the C defines, every object the C declares at file scope and the
 // package variable it is or whose value it holds, each go statement, and the locks.

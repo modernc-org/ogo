@@ -120,12 +120,12 @@ func compile(args []string, stdout, stderr io.Writer) (binary string, code int, 
 	// reader to see a recursion through one (readStackNeeds); the binary is the one
 	// built without.
 	emitOpts = append(emitOpts, octogo.FuncValueClasses())
+	// What the program calls its functions, for the report and for a refusal of
+	// compileSized's to say in the program's words.
+	var rep octogo.Report
+	emitOpts = append(emitOpts, octogo.WithReport(&rep))
 	// The small functions are marked for the backend to inline, unless
 	// --no-inline asks for the program without.
-	var rep octogo.Report
-	if flags.report {
-		emitOpts = append(emitOpts, octogo.WithReport(&rep))
-	}
 	markedOpts := emitOpts
 	if !flags.noInline {
 		markedOpts = append(emitOpts[:len(emitOpts):len(emitOpts)], octogo.Inline())
@@ -194,7 +194,7 @@ func compile(args []string, stdout, stderr io.Writer) (binary string, code int, 
 		return "", 2, err
 	}
 	keepC := strings.TrimSuffix(out, filepath.Ext(out)) + ".c"
-	if code, err := compileSized(cbuf.Bytes(), plainer, variants, cFile, out, root, keepC, flags.allowWarnings, flags.goStack != 0, stdout, stderr); err != nil {
+	if code, err := compileSized(cbuf.Bytes(), plainer, variants, rep.Funcs, cFile, out, root, keepC, flags.allowWarnings, flags.goStack != 0, stdout, stderr); err != nil {
 		return "", code, err
 	}
 	if flags.report {
@@ -228,8 +228,9 @@ const stackCheckRounds = 4
 // on it: variants emits the program again with the checks (octogo.StackChecks), and
 // it is compiled until each check covers what the listing says it must
 // (octogo.WithStackMargins), so a recursion panics before it writes past the end of
-// its stack. Without variants nothing is checked.
-func compileSized(c []byte, plainer []func() ([]byte, error), variants emitVariants, cFile, out, inc, keepC string, allowWarnings, stackAsked bool, stdout, stderr io.Writer) (int, error) {
+// its stack. Without variants nothing is checked. A refusal names a function as
+// names, the program's names of the C's functions (octogo.Report.Funcs), says.
+func compileSized(c []byte, plainer []func() ([]byte, error), variants emitVariants, names map[string]string, cFile, out, inc, keepC string, allowWarnings, stackAsked bool, stdout, stderr io.Writer) (int, error) {
 	if code, err := compileMarked(c, plainer, cFile, out, inc, keepC, allowWarnings, stdout, stderr); err != nil {
 		return code, err
 	}
@@ -249,7 +250,7 @@ func compileSized(c []byte, plainer []func() ([]byte, error), variants emitVaria
 		os.Remove(out)
 		through := ""
 		if needs.goRecurse != "" {
-			through = " through " + needs.goRecurse
+			through = " through " + goFuncName(needs.goRecurse, names)
 		}
 		return 1, fmt.Errorf("ogo: a goroutine recurses%s, so its stack has no bound the backend's listing can read; give the goroutine stacks a size with --gostack longs", through)
 	}
@@ -325,10 +326,13 @@ func compileSized(c []byte, plainer []func() ([]byte, error), variants emitVaria
 				// until it ended: a mutant's `var seen [65535]uint32` printed
 				// nothing on the board. --gostack takes it as asked, unmeasured.
 				os.Remove(out)
-				if who != "" {
-					who = "goroutine " + who
-				} else {
+				switch n := goFuncName(who, names); {
+				case who == "":
 					who = "a goroutine"
+				case strings.HasPrefix(n, "the function literal"):
+					who = "the goroutine of " + n
+				default:
+					who = "goroutine " + n
 				}
 				return 1, fmt.Errorf("ogo: %s needs a stack of %d longs by the backend's listing, and a goroutine's slot holds %d at most", who, deep, hi)
 			}
@@ -370,6 +374,15 @@ func compileSized(c []byte, plainer []func() ([]byte, error), variants emitVaria
 		}
 	}
 	return 0, nil
+}
+
+// goFuncName is what the program calls the function the C names cn, by names
+// (octogo.Report.Funcs); cn where names does not say.
+func goFuncName(cn string, names map[string]string) string {
+	if n, ok := names[cn]; ok {
+		return n
+	}
+	return cn
 }
 
 // withStackMargins is plainer with the margins and the reserve of its stack checks

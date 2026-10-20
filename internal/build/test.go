@@ -399,7 +399,9 @@ func testPackage(dir string, opts testOptions, stdout, stderr io.Writer) (int, e
 	// module root that is the top of fsys, in a module it is the package's directory.
 	runner := path.Join(rel, testRunnerFile)
 	all = append(all, testRunnerFile)
-	emitOpts := append([]octogo.EmitOption{octogo.Checked(), octogo.TestEntry("ogoTestMain"), octogo.FuncValueClasses()}, clockOpts...)
+	// What the program calls its functions, for a refusal of compileSized's.
+	var rep octogo.Report
+	emitOpts := append([]octogo.EmitOption{octogo.Checked(), octogo.TestEntry("ogoTestMain"), octogo.FuncValueClasses(), octogo.WithReport(&rep)}, clockOpts...)
 	var overlay overlayFS
 	// emit builds the program with its runner, handing in what naming a subtest
 	// takes or not, and emits its C.
@@ -481,7 +483,7 @@ func testPackage(dir string, opts testOptions, stdout, stderr io.Writer) (int, e
 		return 2, err
 	}
 	keepC := filepath.Join(dir, dirPkgName(dir)+".test.c")
-	if code, err := compileSized(cbuf.Bytes(), plainer, variants, cFile, binary, root, keepC, opts.allowWarnings, opts.stackAsked, stdout, stderr); err != nil {
+	if code, err := compileSized(cbuf.Bytes(), plainer, variants, rep.Funcs, cFile, binary, root, keepC, opts.allowWarnings, opts.stackAsked, stdout, stderr); err != nil {
 		return code, err
 	}
 	if compileOnly {

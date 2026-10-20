@@ -240,13 +240,14 @@ func main() {
 	compiles := func(t *testing.T, src string, stackAsked bool) (slots []octogo.GoSlot, err error) {
 		dir := t.TempDir()
 		write(t, filepath.Join(dir, "main.ogo"), src)
+		var rep octogo.Report
 		emit := func(extra ...octogo.EmitOption) ([]byte, []func() ([]byte, error), error) {
 			pkg, err := octogo.Build(-1, []string{"main.ogo"}, os.DirFS(dir))
 			if err != nil {
 				t.Fatal(err)
 			}
 			var c bytes.Buffer
-			if err := octogo.EmitC(pkg, &c, append([]octogo.EmitOption{octogo.Checked(), octogo.Inline(), octogo.FuncValueClasses()}, extra...)...); err != nil {
+			if err := octogo.EmitC(pkg, &c, append([]octogo.EmitOption{octogo.Checked(), octogo.Inline(), octogo.FuncValueClasses(), octogo.WithReport(&rep)}, extra...)...); err != nil {
 				t.Fatal(err)
 			}
 			return c.Bytes(), nil, nil
@@ -254,7 +255,7 @@ func main() {
 		c, _, _ := emit()
 		var said bytes.Buffer
 		cFile := filepath.Join(dir, "prog.c")
-		if _, err := compileSized(c, nil, emit, cFile, filepath.Join(dir, "prog.binary"), "", filepath.Join(dir, "kept.c"), false, stackAsked, &said, &said); err != nil {
+		if _, err := compileSized(c, nil, emit, rep.Funcs, cFile, filepath.Join(dir, "prog.binary"), "", filepath.Join(dir, "kept.c"), false, stackAsked, &said, &said); err != nil {
 			return nil, err
 		}
 		var rerr error
@@ -321,6 +322,17 @@ func main() {
 		}
 		if _, err := compile(t, big, true); err != nil {
 			t.Fatalf("with the stack asked for: %v", err)
+		}
+		// The goroutine is named as the program names it: a method by its
+		// receiver's type, a function literal by where it stands.
+		method := strings.Replace(big, "func work(n int) {", "type W struct{}\n\nfunc (w *W) work(n int) {", 1)
+		method = strings.Replace(method, "\tgo work(2)\n", "\tvar w W\n\tgo w.work(2)\n", 1)
+		if _, err := compile(t, method, false); err == nil || !strings.Contains(err.Error(), "goroutine (*W).work needs a stack of") {
+			t.Fatalf("err=%v, want goroutine (*W).work's stack not fitting a slot", err)
+		}
+		lit := strings.Replace(big, "\tgo work(2)\n", "\tgo func() {\n\t\tvar buf [10000]int\n\t\tbuf[3] = 4\n\t\twork(len(buf) + buf[3])\n\t}()\n", 1)
+		if _, err := compile(t, lit, false); err == nil || !strings.Contains(err.Error(), "the goroutine of the function literal at main.ogo:") {
+			t.Fatalf("err=%v, want the literal's goroutine's stack not fitting a slot", err)
 		}
 	})
 	// checked asks the C built last for a stack check in each of fns, its margin
@@ -404,8 +416,8 @@ func main() {
 }
 `
 		_, err = compile(t, tree, false)
-		if err == nil || !strings.Contains(err.Error(), "a goroutine recurses through Add_Eval") {
-			t.Fatalf("err=%v, want the goroutine's recursion through Add_Eval refused", err)
+		if err == nil || !strings.Contains(err.Error(), "a goroutine recurses through (*Add).Eval") {
+			t.Fatalf("err=%v, want the goroutine's recursion through (*Add).Eval refused", err)
 		}
 		if _, err := compile(t, tree, true); err != nil {
 			t.Fatalf("with the stack asked for: %v", err)

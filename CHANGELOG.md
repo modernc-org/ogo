@@ -113,6 +113,13 @@ shipped section tells a reader on that version that they have behaviour they do 
   needs 160 longs, most of it the panic path's formatting. obeam, whose seven
   schedulers start in a loop, builds to the same bytes as before.
 
+- **A goroutine's stack refused by `ogo build` or `ogo test` is named as the program
+  names it**: "a goroutine recurses through (*sorts.reverse).Less" and "goroutine
+  (*W).work needs a stack of ..." where the C's `sorts_reverse_Less` and `W_work`
+  stood, and a function literal by where it stands, "the function literal at
+  main.ogo:12". Every build now records its functions' names, as `--report` did,
+  which leaves the binary as it was.
+
 ### Fixed
 
 - **A load is no longer lost to the Go runtime's signals**: `ogo run`, `ogo test`
