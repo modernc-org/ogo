@@ -611,7 +611,7 @@ func testRunnerSrc(names, benches []string, br benchRun, run, bench *octogo.Test
 		// Two words a subtest's slot, of which a test has 256.
 		b.WriteString("var ogoFilterState [512]int32\n\n")
 	}
-	b.WriteString("func ogoTestMain() {\n\tfailed := 0\n\togoStart := p2.GetUs()\n")
+	b.WriteString("func ogoTestMain() {\n\tfailed := false\n\togoStart := p2.GetUs()\n")
 	if subtests {
 		b.WriteString("\ttesting.SetSubtests(ogoNotPrint[:], testing.FullName)\n")
 	}
@@ -622,7 +622,7 @@ func testRunnerSrc(names, benches []string, br benchRun, run, bench *octogo.Test
 			fmt.Fprintf(&b, "\ttesting.SetFilter(ogoRunFilter[:], ogoFilterState[:], %d, testing.MatchSub)\n", mask)
 		}
 		fmt.Fprintf(&b, "\ttesting.RunTest(&t%d, %q, %s)\n", i, nm, nm)
-		fmt.Fprintf(&b, "\tif t%d.Failed() {\n\t\tfailed++\n\t}\n", i)
+		fmt.Fprintf(&b, "\tif t%d.Failed() {\n\t\tfailed = true\n\t}\n", i)
 	}
 	if len(benches) != 0 {
 		// go test pads a result's name to one more than the longest name's length.
@@ -644,13 +644,13 @@ func testRunnerSrc(names, benches []string, br benchRun, run, bench *octogo.Test
 				}
 			}
 			fmt.Fprintf(&b, "\ttesting.RunBenchmark(&b%d, %q, %s)\n", i, nm, nm)
-			fmt.Fprintf(&b, "\tif b%d.Failed() {\n\t\tfailed++\n\t}\n", i)
+			fmt.Fprintf(&b, "\tif b%d.Failed() {\n\t\tfailed = true\n\t}\n", i)
 		}
 	}
-	// go test -v's PASS where nothing failed, and what failed of how many where
-	// something did; then the time, which "ogo test" reads off and prints on the
-	// package's line (testTimeLine).
-	fmt.Fprintf(&b, "\n\tif failed != 0 {\n\t\tprintln(\"FAIL\", failed, \"of\", %d)\n\t} else {\n\t\tprintln(\"PASS\")\n\t}\n\tprint(%q)\n\tprintln(p2.GetUs() - ogoStart)\n\tprintln(%q)\n}\n", len(names)+len(benches), testTimeLine, testDoneLine)
+	// go test -v's PASS where nothing failed and FAIL where something did; then the
+	// time, which "ogo test" reads off and prints on the package's line
+	// (testTimeLine).
+	fmt.Fprintf(&b, "\n\tif failed {\n\t\tprintln(\"FAIL\")\n\t} else {\n\t\tprintln(\"PASS\")\n\t}\n\tprint(%q)\n\tprintln(p2.GetUs() - ogoStart)\n\tprintln(%q)\n}\n", testTimeLine, testDoneLine)
 	return b.String()
 }
 

@@ -233,7 +233,7 @@ func TestSkipped(t *testing.T) {
 === RUN   TestSkipped
     stack_test.ogo:38: not on this board
 --- SKIP: TestSkipped
-FAIL 1 of 3
+FAIL
 `
 	for attempt := 1; ; attempt++ {
 		cmd := exec.Command(ogo, "test", "-p", port, ".")

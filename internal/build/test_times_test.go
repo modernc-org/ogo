@@ -97,7 +97,7 @@ func TestSkips(t *testing.T) {
 		`(?m)^--- PASS: TestSubs \(\d+\.\d\ds\)\n    --- PASS: TestSubs/a \(\d+\.\d\ds\)$`,
 		`(?m)^--- FAIL: TestFails \(\d+\.\d\ds\)$`,
 		`(?m)^--- SKIP: TestSkips \(\d+\.\d\ds\)$`,
-		`(?m)^FAIL 1 of 4\n` + regexp.QuoteMeta(testTimeLine) + `\d+\n` + testDoneLine + `\n$`,
+		`(?m)^FAIL\n` + regexp.QuoteMeta(testTimeLine) + `\d+\n` + testDoneLine + `\n$`,
 	} {
 		m := regexp.MustCompile(re).FindStringSubmatch(got)
 		if m == nil {

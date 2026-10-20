@@ -90,6 +90,8 @@ shipped section tells a reader on that version that they have behaviour they do 
 
 ### Toolchain
 
+- **`ogo test` ends a failing run with a plain `FAIL`, as `go test` does**, where it
+  printed how many of the tests and benchmarks had failed, `FAIL 1 of 3`.
 - **`ogo build --report` says what a binary takes of the P2**: Hub RAM by its parts
   (the cog runtime, code, string literals, the program's data, each Spin2 object's
   DAT, the library's) and what `main`'s stack needs beside them; each goroutine's
