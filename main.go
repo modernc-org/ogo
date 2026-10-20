@@ -255,8 +255,9 @@ report costs about a compile more than the build.
 	              than 8192, or recurses through its own calls or an
 	              interface's, which the listing cannot measure. A recursion is
 	              checked as it runs, and one that outruns its slot panics
-	              "goroutine stack overflow". The slots sit in hub RAM for the
-	              whole run.
+	              "goroutine stack overflow"; a slot smaller than what a
+	              goroutine's chains of direct calls need by the listing is
+	              refused. The slots sit in hub RAM for the whole run.
 	--xtal hz     the board's crystal (default 20MHz)
 	--allow-backend-warnings
 	              build a program the C backend warned about

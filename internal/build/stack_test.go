@@ -255,7 +255,7 @@ func main() {
 		c, _, _ := emit()
 		var said bytes.Buffer
 		cFile := filepath.Join(dir, "prog.c")
-		if _, err := compileSized(c, nil, emit, rep.Funcs, cFile, filepath.Join(dir, "prog.binary"), "", filepath.Join(dir, "kept.c"), false, stackAsked, &said, &said); err != nil {
+		if _, err := compileSized(c, nil, emit, rep.Funcs, rep.Goroutines, cFile, filepath.Join(dir, "prog.binary"), "", filepath.Join(dir, "kept.c"), false, stackAsked, &said, &said); err != nil {
 			return nil, err
 		}
 		var rerr error
@@ -304,24 +304,31 @@ func main() {
 		}
 	})
 	t.Run("asked", func(t *testing.T) {
-		longs, err := compile(t, deep, true)
+		// A slot --gostack asks for is left as asked, larger than the goroutine
+		// needs or not; one smaller than its chains of direct calls need is
+		// refused, which it overran in silence before.
+		longs, err := compile(t, strings.Replace(deep, "[600]int", "[100]int", 1), true)
 		if err != nil {
 			t.Fatal(err)
 		}
 		if longs != def {
 			t.Fatalf("slots of %d longs where the stack was asked for, want the %d the C was emitted with", longs, def)
 		}
+		if _, err := compile(t, deep, true); err == nil || !strings.Contains(err.Error(), "the goroutine started at main.ogo:16, work, needs a stack of at least 6") || !strings.Contains(err.Error(), "more than the "+strconv.Itoa(def)+" --gostack gives it") {
+			t.Fatalf("err=%v, want goroutine work's stack refused as more than the slot asked for", err)
+		}
 	})
 	t.Run("past the largest slot", func(t *testing.T) {
 		// Slots of the largest size would leave this goroutine 2,000 longs short,
-		// in silence; the build says so instead, and --gostack is the way past.
+		// in silence; the build says so instead, and so it does where --gostack
+		// asked for the slots, which it took as asked and the goroutine overran.
 		big := strings.Replace(deep, "[600]int", "[10000]int", 1)
 		_, err := compile(t, big, false)
 		if err == nil || !strings.Contains(err.Error(), "goroutine work needs a stack of") {
 			t.Fatalf("err=%v, want goroutine work's stack not fitting a slot", err)
 		}
-		if _, err := compile(t, big, true); err != nil {
-			t.Fatalf("with the stack asked for: %v", err)
+		if _, err := compile(t, big, true); err == nil || !strings.Contains(err.Error(), "the goroutine started at main.ogo:16, work, needs a stack of at least 100") {
+			t.Fatalf("with the stack asked for: err=%v, want goroutine work's stack refused", err)
 		}
 		// The goroutine is named as the program names it: a method by its
 		// receiver's type, a function literal by where it stands.

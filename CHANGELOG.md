@@ -20,6 +20,15 @@ shipped section tells a reader on that version that they have behaviour they do 
 
 ### Behaviour changes
 
+- **A slot `--gostack` asks for is refused when it is smaller than what a goroutine
+  needs at the least**, by the chains of direct calls the backend's listing shows:
+  such a goroutine ran past its slot into what follows, in silence. `--gostack 400`
+  for a goroutine holding a 4000-byte array built, and a goroutine needing more
+  than the 8192 longs of the largest slot, which the build refuses, built with
+  `--gostack 8192`. The error says what it needs: "the goroutine started at
+  main.ogo:20, work, needs a stack of at least 1050 longs by the backend's listing,
+  more than the 400 --gostack gives it". What a call through a register reaches is
+  no chain the floor counts, so a frame behind one is still the size's to cover.
 - **A goroutine recursing through an interface is refused unless `--gostack` sizes
   the stacks**, as one recursing through direct calls has been since v0.51.0: the
   build sized a cycle through an interface call for one pass, so an expression tree

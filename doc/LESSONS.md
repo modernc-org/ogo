@@ -678,6 +678,39 @@ unchanged in their binaries off it and off dumpc's C, which carries no table.
 whether it is true: a copy that lost a call still makes the others.** **A claim that
 a change leaves the binaries alone is measured by building them, the newest run
 cases among them.**
+dom55 (2026-10-20, a serial command console a firmware carries: a lexer unescaping
+quoted strings in place, a table of parameters with ranges, a table of commands of a
+defined `Handler` function type filled in an init, matched by unique prefix,
+sentinel errors and two wrapping ones with Unwrap, classified with errors.Is, As and
+a type switch, and the console on a cog of its own fed lines over channels) printed
+Go's output on the host and the board, and of its 1,600 mutants none was a hole and
+no output a fault: the differences were panics' wording, deadlocks Go reports and a
+cog waits out, and `go b.WriteByte(...)` races. Two refusals a user meets were by
+design and said so -- `strings.HasPrefix(s, string(b))`, where Go's compiler pays
+for any string longer than its 32-byte buffer, and a concatenation -- and one C a
+user never sees warned: a conjunction among a tagless case's conditions, `case k ==
+2 && !fixed, k != 1:`, went out bare inside the ||, gcc's -Wparentheses failing the
+host table. What it could not do was build without `--gostack`: a goroutine making a
+call through a function value is sized as reaching every function the program takes
+the address of, and Go's way of wrapping an error, an Error calling `e.Err.Error()`,
+makes the Error methods recurse through the interface, so the console's stack had no
+bound -- refused, in the name of a method it never calls. The classes a call through
+a value may reach were asked at run time whether they hold what the calls reach:
+`OGO_FV` redefined to look the callee up in its type's class, over the 119 run cases
+and 1,286 domain programs and mutants that make such calls, missed nothing once a
+value's WRAPPER counted as its member -- a method value's `ogo_mvN`, a result
+adapter's `_ogo_fv`, which the table names by the function they call and a size
+resting on it would have to count. Left to the user's call: the size is the
+classes' only on that evidence. Its board pass, built with `--gostack 400`, found
+one mutant printing nothing at all, a `var t [65535]byte` in the number printer the
+console calls, and the build had known: `--gostack` took a slot as asked,
+unmeasured, as a need off a listing whose register calls reach everything is a bound
+from above that would refuse sound programs -- but what the chains of direct calls
+need is a bound from below, the one main's stack has been held to since a mutant's
+512 KB result, and a goroutine of 1160 longs built at `--gostack 400`, one needing
+more than the largest slot at `--gostack 8192`. The floor is a slot's now too.
+**A size taken as asked is still held to the floor the build knows: what the user
+gave is no reason to run past it in silence.**
 
 **A TYPE SWITCH BEHIND AN INIT STATEMENT** (2026-10-07), `switch s := pick(); v :=
 s.(type)`, the last header shape on the open list: the grammar's SwitchTag takes `[

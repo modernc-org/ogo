@@ -756,10 +756,10 @@ had it on 2026-10-13"; the sections named in capitals below are its journal's.
   with the oracle test's gcc flags, not probe.sh's `-Wall -Werror`. On the board a
   sweep loads one seed at a time under the board lock and keeps the builds the
   backend warned about apart -- **a sweep that runs only what built silently misses
-  a fault the backend warned about**. Seeds 1-9500 have been swept on a P2-EDGE with
-  the generators of their day, the latest (9001-9500, e633ba9) with one failing,
-  seed 9051, the emitter reading the largest uint64 as -1; a seed that outgrows a
-  cog can take ten minutes to say so.
+  a fault the backend warned about**. Seeds 1-10000 have been swept on a P2-EDGE
+  with the generators of their day, the latest (9501-10000, f4399f4) with none
+  failing; 9051 of the one before found the emitter reading the largest uint64 as
+  -1. A seed that outgrows a cog can take ten minutes to say so.
 - A shadowing local whose initializer reads the shadowed name, `var x = x + 5`, is
   captured into a fresh temporary before the C variable shadows it (`initRefsName`,
   `newTmp`), and a declaration changing the KIND of the name it shadows forgets the
@@ -1046,8 +1046,10 @@ section. A new finding goes there; the rule it leaves goes here too.
   promise the language makes about the hardware is checked in the listing**
   (`__system___gc_` in it is the backend's heap).
 - **A GOROUTINE'S STACK IS READ OFF THE LISTING**: **A listing is a probe of what
-  the C costs**; **a bound with no answer still has a floor**; **A bound that is
-  capped is a bound that is not kept**; **The decision a precise bound rests on is
+  the C costs**; **a bound with no answer still has a floor**; **A size taken as
+  asked is still held to the floor the build knows: what the user gave is no reason
+  to run past it in silence** (dom55); **A bound that is capped is a bound that is
+  not kept**; **The decision a precise bound rests on is
   made where it is verifiable**; **A floor a measured bound replaces is asked, with
   a moat past the bound, what it was hiding**; **A runtime made general for a new
   shape keeps the old shape's C: a program at its limit pays for a generality it

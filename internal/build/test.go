@@ -498,7 +498,7 @@ func testPackage(dir string, opts testOptions, stdout, stderr io.Writer) (int, e
 		return 2, err
 	}
 	keepC := filepath.Join(dir, dirPkgName(dir)+".test.c")
-	if code, err := compileSized(cbuf.Bytes(), plainer, variants, rep.Funcs, cFile, binary, root, keepC, opts.allowWarnings, opts.stackAsked, stdout, stderr); err != nil {
+	if code, err := compileSized(cbuf.Bytes(), plainer, variants, rep.Funcs, rep.Goroutines, cFile, binary, root, keepC, opts.allowWarnings, opts.stackAsked, stdout, stderr); err != nil {
 		return code, err
 	}
 	if compileOnly {

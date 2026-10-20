@@ -128,6 +128,10 @@ type stackFunc struct {
 type goNeed struct {
 	longs int
 	name  string
+	// atLeast is what the goroutine's chains of direct calls need, in longs, its
+	// need unbounded or not, and fn its function by them.
+	atLeast int
+	fn      string
 }
 
 type stackEdge struct {
@@ -320,6 +324,35 @@ func readStackNeeds(listing, c []byte) (r stackNeeds) {
 	g := stackGraphOf(names, fns, succ, frame)
 	all, direct, members, recursive, need := g.all, g.direct, g.members, g.recursive, g.need
 
+	// Where main reaches a recursion, need has no answer, and a frame past Hub RAM
+	// on the way to it went unasked: a mutant's 512 KB array result, beside a
+	// recursive function, built and printed nothing at all. Any chain of direct
+	// calls is one the program may make, so the deepest one entering each
+	// component once is a bound from below; an indirect call's targets are every
+	// function its side takes the address of, which is no chain. A goroutine's is
+	// what a slot --gostack sizes is held to (goNeed.atLeast).
+	least := map[int]int{}
+	var atLeast func(string) int
+	atLeast = func(n string) int {
+		if v, ok := least[direct[n]]; ok {
+			return v
+		}
+		least[direct[n]] = 0 // a cycle back into the component adds nothing
+		deep := 0
+		for _, m := range members[all[n]] {
+			if direct[m] != direct[n] {
+				continue
+			}
+			for _, e := range succ[m] {
+				if !e.indirect && direct[e.to] != direct[n] && fns[e.to] != nil {
+					deep = max(deep, atLeast(e.to))
+				}
+			}
+		}
+		v := frame[n] + deep
+		least[direct[n]] = v
+		return v
+	}
 	r.goKnown = true
 	r.goTramps = map[string]goNeed{}
 	sort.Strings(tramps)
@@ -345,11 +378,11 @@ func readStackNeeds(listing, c []byte) (r stackNeeds) {
 				r.goRecurse = name
 			}
 			r.goKnown = false
-			r.goTramps[stackCName(t)] = goNeed{-1, name}
+			r.goTramps[stackCName(t)] = goNeed{-1, name, cogStartLongs + (atLeast(t)+3)/4, goroutineName(fns[t].calls, atLeast)}
 			continue
 		}
 		longs, name := cogStartLongs+(v+3)/4, goroutineName(fns[t].calls, need)
-		r.goTramps[stackCName(t)] = goNeed{longs, name}
+		r.goTramps[stackCName(t)] = goNeed{longs, name, cogStartLongs + (atLeast(t)+3)/4, name}
 		if longs > r.goLongs {
 			r.goLongs, r.goName = longs, name
 		}
@@ -357,34 +390,6 @@ func readStackNeeds(listing, c []byte) (r stackNeeds) {
 	r.mainNeed = need("_main")
 	if g.recurses("_main") != "" {
 		r.mainNeed = -1
-	}
-	// Where main reaches a recursion, need has no answer, and a frame past Hub RAM
-	// on the way to it went unasked: a mutant's 512 KB array result, beside a
-	// recursive function, built and printed nothing at all. Any chain of direct
-	// calls is one the program may make, so the deepest one entering each
-	// component once is a bound from below; an indirect call's targets are every
-	// function its side takes the address of, which is no chain.
-	least := map[int]int{}
-	var atLeast func(string) int
-	atLeast = func(n string) int {
-		if v, ok := least[direct[n]]; ok {
-			return v
-		}
-		least[direct[n]] = 0 // a cycle back into the component adds nothing
-		deep := 0
-		for _, m := range members[all[n]] {
-			if direct[m] != direct[n] {
-				continue
-			}
-			for _, e := range succ[m] {
-				if !e.indirect && direct[e.to] != direct[n] && fns[e.to] != nil {
-					deep = max(deep, atLeast(e.to))
-				}
-			}
-		}
-		v := frame[n] + deep
-		least[direct[n]] = v
-		return v
 	}
 	if fns["_main"] != nil {
 		r.mainAtLeast = atLeast("_main")

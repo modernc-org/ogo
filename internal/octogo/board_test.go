@@ -302,16 +302,27 @@ func TestTargetBuildFlags(t *testing.T) {
 // cleanly at 2048.
 func TestTargetGoStack(t *testing.T) {
 	ogo := buildOgoCLI(t)
-	const src = "func w() { println(1) }\n\nfunc main() { go w() }\n"
-	for _, test := range []struct{ arg, wantErr string }{
-		{arg: "64"},
+	// A goroutine that prints needs more than the least slot by its chains of
+	// direct calls, which --gostack is held to: at 64 it ran past its slot.
+	const prints = "func w() { println(1) }\n\nfunc main() { go w() }\n"
+	const counts = "var x int\n\nfunc w() { x++ }\n\nfunc main() { go w() }\n"
+	for _, test := range []struct{ name, src, arg, wantErr string }{
+		{arg: "64", src: counts},
 		{arg: "256"},
 		{arg: "8192"},
 		{arg: "63", wantErr: "must be between 64 and 8192"},
 		{arg: "8193", wantErr: "must be between 64 and 8192"},
 		{arg: "many", wantErr: "wants a number of longs"},
+		{name: "64 for a print", arg: "64", wantErr: "the goroutine started at prog.ogo:3, w, needs a stack of at least"},
 	} {
-		t.Run(test.arg, func(t *testing.T) {
+		name, src := test.name, test.src
+		if name == "" {
+			name = test.arg
+		}
+		if src == "" {
+			src = prints
+		}
+		t.Run(name, func(t *testing.T) {
 			t.Parallel()
 			dir := t.TempDir()
 			err := boardBuild(ogo, dir, "prog", src, filepath.Join(dir, "prog.binary"), "", "--gostack", test.arg)

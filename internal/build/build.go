@@ -194,7 +194,7 @@ func compile(args []string, stdout, stderr io.Writer) (binary string, code int, 
 		return "", 2, err
 	}
 	keepC := strings.TrimSuffix(out, filepath.Ext(out)) + ".c"
-	if code, err := compileSized(cbuf.Bytes(), plainer, variants, rep.Funcs, cFile, out, root, keepC, flags.allowWarnings, flags.goStack != 0, stdout, stderr); err != nil {
+	if code, err := compileSized(cbuf.Bytes(), plainer, variants, rep.Funcs, rep.Goroutines, cFile, out, root, keepC, flags.allowWarnings, flags.goStack != 0, stdout, stderr); err != nil {
 		return "", code, err
 	}
 	if flags.report {
@@ -229,8 +229,9 @@ const stackCheckRounds = 4
 // it is compiled until each check covers what the listing says it must
 // (octogo.WithStackMargins), so a recursion panics before it writes past the end of
 // its stack. Without variants nothing is checked. A refusal names a function as
-// names, the program's names of the C's functions (octogo.Report.Funcs), says.
-func compileSized(c []byte, plainer []func() ([]byte, error), variants emitVariants, names map[string]string, cFile, out, inc, keepC string, allowWarnings, stackAsked bool, stdout, stderr io.Writer) (int, error) {
+// names, the program's names of the C's functions (octogo.Report.Funcs), says, and
+// a goroutine by its go statement in gos (octogo.Report.Goroutines).
+func compileSized(c []byte, plainer []func() ([]byte, error), variants emitVariants, names, gos map[string]string, cFile, out, inc, keepC string, allowWarnings, stackAsked bool, stdout, stderr io.Writer) (int, error) {
 	if code, err := compileMarked(c, plainer, cFile, out, inc, keepC, allowWarnings, stdout, stderr); err != nil {
 		return code, err
 	}
@@ -301,6 +302,26 @@ func compileSized(c []byte, plainer []func() ([]byte, error), variants emitVaria
 			}
 		}
 	}
+	if stackAsked {
+		// --gostack takes a slot as asked, unmeasured: the listing's need is a bound
+		// from above, a call through a register reaching every function the program
+		// takes the address of. What a goroutine's chains of direct calls need is one
+		// from below, and a slot smaller is one it runs past, into what follows, in
+		// silence: `--gostack 400` for a goroutine whose one function holds 4000
+		// bytes built, where the listing says it needs 1160 longs.
+		for _, s := range octogo.GoSlots(built) {
+			tramps := s.Tramps
+			if tramps == nil {
+				tramps = slices.Sorted(maps.Keys(needs.goTramps)) // the shared pool's slots are every goroutine's
+			}
+			for _, t := range tramps {
+				if g, ok := needs.goTramps[t]; ok && g.atLeast > s.Longs {
+					os.Remove(out)
+					return 1, fmt.Errorf("ogo: %s needs a stack of at least %d longs by the backend's listing, more than the %d --gostack gives it", startedWho(t, gos, g.fn, names), g.atLeast, s.Longs)
+				}
+			}
+		}
+	}
 	if slots := octogo.GoSlots(built); !stackAsked && len(slots) != 0 {
 		_, hi, _ := octogo.GoStackRange()
 		longs := make([]int, len(slots))
@@ -326,15 +347,7 @@ func compileSized(c []byte, plainer []func() ([]byte, error), variants emitVaria
 				// until it ended: a mutant's `var seen [65535]uint32` printed
 				// nothing on the board. --gostack takes it as asked, unmeasured.
 				os.Remove(out)
-				switch n := goFuncName(who, names); {
-				case who == "":
-					who = "a goroutine"
-				case strings.HasPrefix(n, "the function literal"):
-					who = "the goroutine of " + n
-				default:
-					who = "goroutine " + n
-				}
-				return 1, fmt.Errorf("ogo: %s needs a stack of %d longs by the backend's listing, and a goroutine's slot holds %d at most", who, deep, hi)
+				return 1, fmt.Errorf("ogo: %s needs a stack of %d longs by the backend's listing, and a goroutine's slot holds %d at most", goroutineWho(who, names), deep, hi)
 			}
 			longs[i] = (deep + 15) &^ 15
 			changed = changed || longs[i] != s.Longs
@@ -374,6 +387,31 @@ func compileSized(c []byte, plainer []func() ([]byte, error), variants emitVaria
 		}
 	}
 	return 0, nil
+}
+
+// startedWho names the goroutine of the trampoline the C names tramp by the go
+// statement starting it, gos the report's (octogo.Report.Goroutines): what the
+// listing calls its function may be one it was inlined into, a library function
+// it calls. Where gos does not say, goroutineWho names it by fn.
+func startedWho(tramp string, gos map[string]string, fn string, names map[string]string) string {
+	if g, ok := gos[tramp]; ok {
+		at, what, _ := strings.Cut(g, " ")
+		return "the goroutine started at " + at + ", " + what + ","
+	}
+	return goroutineWho(fn, names)
+}
+
+// goroutineWho names the goroutine whose function the C names cn for a message:
+// by the program's name of the function, a literal by where it stands.
+func goroutineWho(cn string, names map[string]string) string {
+	switch n := goFuncName(cn, names); {
+	case cn == "":
+		return "a goroutine"
+	case strings.HasPrefix(n, "the function literal"):
+		return "the goroutine of " + n
+	default:
+		return "goroutine " + n
+	}
 }
 
 // goFuncName is what the program calls the function the C names cn, by names
