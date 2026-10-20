@@ -6180,9 +6180,14 @@ func (e *emitter) needShift(op, ctype string, count []int32) string {
 }
 
 // shiftCountU64 reports whether a shift's count is an unsigned integer of 64 bits
-// that is not a constant, which the guarded helper takes as it is (shiftHelperDef).
+// that is not a constant, which the guarded helper takes as it is (shiftHelperDef),
+// or a constant of such a type past the int64 range, which the int64 fold holds by
+// its bits as a negative number: `x >> M` for a `const M uint64 = math.MaxUint64`
+// panicked "negative shift amount" where Go has 0. Only an untyped count is held to
+// a uint's range, and the checker refuses a negative typed one (checkShiftCount).
 func (e *emitter) shiftCountU64(count []int32) bool {
-	if _, ok := e.foldIntegral(count); ok {
+	v, isConst := e.foldIntegral(count)
+	if isConst && v >= 0 {
 		return false
 	}
 	ct, ok := e.inferCType(count)
@@ -46694,6 +46699,28 @@ func (e *emitter) shiftNeedsGuard1(ctype string, rhs []int32) bool {
 	return true
 }
 
+// remByOne reports whether rhs, the divisor of a remainder in the C type ct, is the
+// constant 1 or -1, by which the remainder is zero whatever the dividend (see the
+// "%" case in emitExprNode). The int64 fold holds a uint64 constant by its bits, and
+// in an unsigned type its -1 is 1<<64 - 1, a divisor like any other: `x %
+// math.MaxUint64` was written as the `x * 0` of a remainder by -1, 0 where Go has x.
+// Found by the fuzzer's board sweep (seed 9051), and as wrong on the host. Where the
+// level's type is not known, the divisor's own is asked.
+func (e *emitter) remByOne(rhs []int32, ct string) bool {
+	switch v, ok := e.foldConstInt(rhs); {
+	case !ok:
+		return false
+	case v == 1:
+		return true
+	case v != -1:
+		return false
+	}
+	if ct == "" {
+		ct, _ = e.inferCType(rhs)
+	}
+	return !isUnsignedCType(e.underlyingCType(ct))
+}
+
 // emitAssignTail writes the classified tail after a target has been emitted. The
 // complemented operand is parenthesised, so `x &^= a | b` clears both bits rather
 // than complementing only a.
@@ -46705,11 +46732,9 @@ func (e *emitter) emitAssignTail(t assignTail) {
 	// `x %= 1` and `x %= -1` set x to zero, and the target's C compiler leaves x
 	// alone instead (see the "%" case in emitExprNode); `*= 0` is the same value
 	// and the same single evaluation of the target.
-	if t.op == "%=" {
-		if v, ok := e.foldConstInt(t.rhs); ok && (v == 1 || v == -1) {
-			e.emit(" *= 0;\n")
-			return
-		}
+	if t.op == "%=" && e.remByOne(t.rhs, t.targetCType) {
+		e.emit(" *= 0;\n")
+		return
 	}
 	e.emit(" " + t.op + " ")
 	switch lit, huge := e.hugeFloatConstC(t.rhs, t.targetCType); {
@@ -52724,12 +52749,10 @@ func (e *emitter) emitExprNode(n Node) {
 					// written as the multiplication by zero it is: the same value, the
 					// operand evaluated exactly once as Go evaluates it, and nothing
 					// left for a compiler to fold wrongly.
-					if op == "%" && i+1 < len(kids) {
-						if v, ok := e.foldConstInt(kids[i+1].ast); ok && (v == 1 || v == -1) {
-							e.emit(" * ")
-							zeroNext = true
-							return
-						}
+					if op == "%" && i+1 < len(kids) && e.remByOne(kids[i+1].ast, termType) {
+						e.emit(" * ")
+						zeroNext = true
+						return
 					}
 					if op == "&^" {
 						// C has no "&^". Go defines "a &^ b" as "a AND NOT b", so it

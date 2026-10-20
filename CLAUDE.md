@@ -756,9 +756,10 @@ had it on 2026-10-13"; the sections named in capitals below are its journal's.
   with the oracle test's gcc flags, not probe.sh's `-Wall -Werror`. On the board a
   sweep loads one seed at a time under the board lock and keeps the builds the
   backend warned about apart -- **a sweep that runs only what built silently misses
-  a fault the backend warned about**. Seeds 1-8500 have been swept on a P2-EDGE with
-  the generators of their day, the latest (8001-8500, 67448ad) with none failing; a
-  seed that outgrows a cog can take ten minutes to say so.
+  a fault the backend warned about**. Seeds 1-9500 have been swept on a P2-EDGE with
+  the generators of their day, the latest (9001-9500, e633ba9) with one failing,
+  seed 9051, the emitter reading the largest uint64 as -1; a seed that outgrows a
+  cog can take ten minutes to say so.
 - A shadowing local whose initializer reads the shadowed name, `var x = x + 5`, is
   captured into a fresh temporary before the C variable shadows it (`initRefsName`,
   `newTmp`), and a declaration changing the KIND of the name it shadows forgets the
@@ -1112,6 +1113,10 @@ section. A new finding goes there; the rule it leaves goes here too.
 - **An unsigned constant past INT32_MAX is a negative number to the backend: every
   place it reads a constant's value is asked of one** (doc/udiv-negative-power.c,
   doc/switch-case-span-overflow.c).
+- **An unsigned constant past INT64_MAX is a negative number to the emitter's fold: a
+  decision taken on a folded value's sign, or on its being -1, asks the type it is
+  of** (remByOne, shiftCountU64). **A rule written for an untyped constant asks
+  first whether the constant is typed** (checkShiftCount).
 - **A warning the backend gives a user's build is a fault until shown harmless**.
   **A run that reads a register nothing wrote can look right by luck: the listing is
   the measure, and a C harness passing a constant after a 64-bit argument is a

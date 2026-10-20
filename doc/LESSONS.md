@@ -2176,6 +2176,25 @@ case past MaxInt32 as the same int32_t. Such a division is written as the compar
 it comes to, a quotient by a divisor of 2^31 or more being 0 or 1. **An unsigned
 constant past INT32_MAX is a negative number to the backend: every place it reads a
 constant's value is asked of one.**
+Three days on, the next board sweep (seeds 9001-9500: 438 passed, 61 outgrew a cog)
+found the same misreading one word wider, in the emitter's own fold. Seed 9051 failed
+the part's checksum at `wrU64c_1 % WrMaxU64_1`, a uint64 by the largest uint64, and
+so did the host, whose oracle corpus no seed carrying it is in. The emitter folds a
+constant to an int64 and holds a uint64 past the int64 range by its bits, so 1<<64 -
+1 is -1 there, and the remainder by 1 or -1, which is written as the multiplication
+by zero it is (the target answers x), wrote `x * 0`: 0 where Go has x, through every
+spelling of the value with a name in it, `math.MaxUint64` and an untyped `1<<64 - 1`
+among them. A -1 in an unsigned type is that value, and the rewrite asks the
+remainder's type now (remByOne). The row, the uint64 constants past MaxInt64 under
+every operator, both ways round, compound and shifted, printed Go's 465 lines on
+the board and led to the next shape: the checker held a count of a TYPED constant to
+a uint's range, which Go asks only of an untyped one, so `x >> M` was refused where
+Go has 0; let through, the guarded shift took its bits as an int64's -1 and panicked
+"negative shift amount" (shiftCountU64 hands it to the helper of 64 unsigned bits).
+**An unsigned constant past INT64_MAX is a negative number to the emitter's fold: a
+decision taken on a folded value's sign, or on its being -1, asks the type it is
+of.** **A rule written for an untyped constant asks first whether the constant is
+typed.**
 **AN ARRAY RESULT IS A ROW** (2026-09-23). A call returning an array is a STATEMENT in
 C -- the caller hands the callee storage to write -- so every position one stands in
 has to supply that storage, and one probe after another the same afternoon found

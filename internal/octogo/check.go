@@ -19049,9 +19049,31 @@ func (f *File) checkShiftCount(s *Scope, n Node) {
 	}
 	pos := f.tok(n.Pos()).Position()
 	src := f.exprSource(n)
+	// A count of a TYPED constant is a value of its type, converted to none: any
+	// size of an integer type suits, `x >> M` for a `const M uint64 =
+	// math.MaxUint64` being 0 as Go has it, and only a negative one is refused, in
+	// Go's words for a typed constant. Asked as an untyped count, M overflowed a
+	// uint. A typed count of another kind is the type question's (checkShift and
+	// checkShiftAssignCount).
+	if k, ok := f.exprType(s, n); ok && !isUntypedKind(k) {
+		if isIntegerKind(k) && constant.Sign(cv) < 0 {
+			// Go describes a defined type by its underlying one as well,
+			// "constant -3 of int8 type Count".
+			t := "type " + kindName(k)
+			if name := f.operandTypeName(s, n, k); name != kindName(k) {
+				t = kindName(k) + " type " + name
+			}
+			f.err(pos, "invalid operation: negative shift count %s (constant %s of %s)", src, cv, t)
+		}
+		return
+	}
 	if cv.Kind() == constant.Float {
 		if iv := constant.ToInt(cv); iv.Kind() != constant.Int {
-			f.err(pos, "%s (untyped float constant) truncated to uint", src)
+			if src == cv.String() {
+				f.err(pos, "%s (untyped float constant) truncated to uint", src)
+			} else {
+				f.err(pos, "%s (untyped float constant %s) truncated to uint", src, cv)
+			}
 			return
 		}
 	}

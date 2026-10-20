@@ -5,6 +5,16 @@
 
 const N = -1
 
+const F = 2.5
+
+const K int = -1
+
+type Count int8
+
+const M uint64 = 1<<64 - 1
+
+const B uint64 = 1 << 40
+
 func main() {
 	x := 4
 	// ERROR invalid operation: negative shift count -1 \(untyped int constant\)
@@ -15,9 +25,24 @@ func main() {
 	println(x << N)
 	// ERROR 1.5 \(untyped float constant\) truncated to uint
 	println(x << 1.5)
+	// ERROR F \(untyped float constant 2.5\) truncated to uint
+	println(x >> F)
 	// ERROR invalid operation: negative shift count -1 \(untyped int constant\)
 	x <<= -1
 	// ERROR invalid operation: negative shift count -1 \(untyped int constant\)
 	println(1 << -1)
+	// ERROR invalid operation: negative shift count K \(constant -1 of type int\)
+	println(x >> K)
+	// ERROR invalid operation: negative shift count int8\(-2\) \(constant -2 of type int8\)
+	println(x >> int8(-2))
+	// ERROR invalid operation: negative shift count Count\(-3\) \(constant -3 of int8 type Count\)
+	println(x << Count(-3))
+	// ERROR invalid operation: negative shift count K \(constant -1 of type int\)
+	x >>= K
+	// ERROR \(1 << 40\) \(untyped int constant 1099511627776\) overflows uint
+	println(x >> (1 << 40))
+	// A typed count needs no conversion and may be any size of its type.
+	println(x>>M, x<<B, x>>uint64(1<<40), x>>(M-1))
+	x >>= M
 	println(x)
 }

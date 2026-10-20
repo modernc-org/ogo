@@ -122,6 +122,18 @@ shipped section tells a reader on that version that they have behaviour they do 
 
 ### Fixed
 
+- **A uint64 remainder by the largest uint64 is no longer 0**: `x % M` for a `const
+  M uint64 = math.MaxUint64` -- `math.MaxUint64` itself, an untyped `1<<64 - 1`,
+  any spelling through a name, and `x %= M` -- was 0 where Go has x, on the host
+  and on a P2: the emitter wrote it as the multiplication by zero that a remainder
+  by -1 is, the constant's bits being -1's in an int64. The literal and
+  `^uint64(0)` were right. Found by the fuzzer's board sweep.
+- **A shift by a count of a typed constant is taken at any size, as Go takes it**:
+  `x >> M` for a `const M uint64 = math.MaxUint64`, or a count of type uint64 of
+  `1 << 40`, was refused as an untyped constant overflowing a uint, which Go asks
+  only of an untyped count. It is 0, and -1 for a negative value shifted right. A
+  negative typed count is refused in Go's words, "negative shift count K (constant
+  -1 of type int)".
 - **A load is no longer lost to the Go runtime's signals**: `ogo run`, `ogo test`
   and `modernc.org/ogo/loadp2` load through the transpiled loader in a Go
   process, whose threads the Go runtime preempts with signals, and a signal cutting

@@ -4313,6 +4313,84 @@ func main() {
 		want: "int 0 0 0 -1\nint8 0 0\nuint32 0 6\nint64 0 -1\nassigned 0 0\nint16 0 0\nloop 0\n",
 	},
 	{
+		// The emitter's int64 fold holds a uint64 constant past the int64 range by
+		// its bits, and 1<<64 - 1 is -1 there: `x % M` for a `const M uint64 =
+		// math.MaxUint64` was written as the `x * 0` of a remainder by -1 above, 0
+		// where Go has x, on the host as on the board. Every spelling of the value
+		// through a name, both forms, and the remainders by one and by -1 still zero.
+		// Found by the fuzzer's board sweep, seed 9051.
+		name: "a remainder by the largest uint64 is no remainder by -1",
+		src: `import "math"
+
+const M uint64 = math.MaxUint64
+
+const N = 1<<64 - 1
+
+type U uint64
+
+const MU U = 1<<64 - 1
+
+var x uint64 = 14028052621511883401
+
+var u U = 14028052621511883401
+
+var i64 int64 = -7
+
+func get() uint64 { return x }
+
+func main() {
+	println(x%M, x%N, x%math.MaxUint64, get()%M, (x+1)%(M-0), u%MU)
+	a, b := x, u
+	a %= M
+	b %= MU
+	println(a, b)
+	println(i64%-1, x%1, i64%(-1), u%1)
+	c, d := i64, x
+	c %= -1
+	d %= 1
+	println(c, d)
+}
+`,
+		want: "14028052621511883401 14028052621511883401 14028052621511883401 14028052621511883401 14028052621511883402 14028052621511883401\n14028052621511883401 14028052621511883401\n0 0 0 0\n0 0\n",
+	},
+	{
+		// A shift's count is held to a uint's range only when it is an UNTYPED
+		// constant; one of a type is a value of it and may be any size: `x >> M` for
+		// a `const M uint64 = math.MaxUint64` is 0 in Go. It was refused as an untyped
+		// count overflowing a uint, and taken, it panicked "negative shift amount",
+		// its bits an int64's -1 to the helper. A negative value shifted right that
+		// far is -1.
+		name: "a shift by a typed constant count past a uint's range",
+		src: `import "math"
+
+const M uint64 = math.MaxUint64
+
+const H uint64 = 1 << 63
+
+const B uint64 = 1 << 40
+
+type C int8
+
+const K C = 9
+
+var x uint64 = 14028052621511883401
+
+var i int = -77
+
+var i8 int8 = 77
+
+func main() {
+	println(x>>M, x<<H, x>>B, x>>uint64(1<<40), x>>K)
+	println(i>>M, i<<H, i>>B, i8>>M, i8<<K)
+	a, b := x, i
+	a >>= M
+	b >>= H
+	println(a, b)
+}
+`,
+		want: "0 0 0 0 27398540276390397\n-1 0 -1 0 0\n0 -1\n",
+	},
+	{
 		// The bitwise complement of a 64-bit value: the target's C compiler computes
 		// `~` wrong in its HIGH word (doc/complement64-high-word.c), which reached
 		// `x &^= K` for a wide constant K -- the one complement the emitter still
