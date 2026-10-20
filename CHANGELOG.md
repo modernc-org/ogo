@@ -91,7 +91,11 @@ shipped section tells a reader on that version that they have behaviour they do 
 ### Toolchain
 
 - **`ogo test` ends a failing run with a plain `FAIL`, as `go test` does**, where it
-  printed how many of the tests and benchmarks had failed, `FAIL 1 of 3`.
+  printed how many of the tests and benchmarks had failed, `FAIL 1 of 3`; and a
+  run that names its packages, `ogo test .` or `ogo test ./...`, ends in go test's
+  last `FAIL` when one failed. A package that does not build is go test's `FAIL
+  <import path> [build failed]` when it is the only one too, where its error alone
+  was printed; `-c` with one package still fails with the error alone.
 - **`ogo build --report` says what a binary takes of the P2**: Hub RAM by its parts
   (the cog runtime, code, string literals, the program's data, each Spin2 object's
   DAT, the library's) and what `main`'s stack needs beside them; each goroutine's

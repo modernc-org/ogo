@@ -178,41 +178,56 @@ func Test(args []string, stdin io.Reader, stdout, stderr io.Writer) (int, error)
 			return 2, fmt.Errorf("test: %v", err)
 		}
 	}
-	dir := "."
+	dirs, many := []string{"."}, false
 	switch {
 	case len(rest) == 0:
 	case len(rest) == 1 && strings.HasSuffix(rest[0], "..."):
 		// `ogo test ./...` -- every package under a root, which is how a program of
 		// several packages is tested in one command. Each is built and run in turn:
 		// the board runs one binary at a time, so there is nothing to overlap.
-		dirs, err := packageDirs(rest[0])
-		if err != nil {
+		if dirs, err = packageDirs(rest[0]); err != nil {
 			return 2, err
 		}
-		worst := 0
-		for _, d := range dirs {
-			code, err := testPackage(d, opts, stdout, stderr)
-			if err != nil {
-				// Reported and passed over, as `go test ./...` does with a package
-				// that does not build: the other packages are still worth running,
-				// and the run fails as a whole at the end.
-				fmt.Fprintln(stderr, err)
-				fmt.Fprintf(stdout, "FAIL\t%s\t[build failed]\n", d)
-				if code == 0 {
-					code = 1
-				}
-			}
-			if code > worst {
-				worst = code
-			}
-		}
-		return worst, nil
+		many = true
 	case len(rest) == 1 && isDir(rest[0]):
-		dir = rest[0]
+		dirs = rest[:1]
 	default:
 		return 2, fmt.Errorf("test: expected at most one package directory")
 	}
-	return testPackage(dir, opts, stdout, stderr)
+	if compileOnly && !many {
+		// One package built and not run fails as a build does, with the error
+		// alone, as `go test -c` does.
+		return testPackage(dirs[0], opts, stdout, stderr)
+	}
+	worst := 0
+	for _, d := range dirs {
+		code, err := testPackage(d, opts, stdout, stderr)
+		if err != nil {
+			// Reported and passed over, as `go test ./...` does with a package
+			// that does not build: the other packages are still worth running,
+			// and the run fails as a whole at the end.
+			fmt.Fprintln(stderr, err)
+			fmt.Fprintf(stdout, "FAIL\t%s [build failed]\n", pkgName(d))
+			code = max(code, 1)
+		}
+		worst = max(worst, code)
+	}
+	// go test's last line where a run named its packages and one failed, in case
+	// the failure has scrolled away (printExitStatus in cmd/go): not after a build
+	// alone, and not in its local directory mode, a `go test` naming none.
+	if worst != 0 && len(rest) != 0 && !compileOnly {
+		fmt.Fprintln(stdout, "FAIL")
+	}
+	return worst, nil
+}
+
+// pkgName is how go test names the package in dir on a line of its own: by its
+// import path, or by the directory where the module it is in cannot be read.
+func pkgName(dir string) string {
+	if _, rel, modulePath, err := moduleContext(dir); err == nil {
+		return importPath(dir, rel, modulePath)
+	}
+	return dir
 }
 
 // testOptions is what every package in a run is tested with -- the same flags,

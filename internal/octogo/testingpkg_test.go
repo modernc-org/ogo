@@ -623,9 +623,10 @@ func TestCounts(t *testing.T) {
 // runAndResultLines is the RUN and result lines of go test -v's output, or ogo
 // test's, without go test's times.
 // pkgFailLine and pkgOkTime are the package's line of a run that failed and of one
-// that passed, as go test prints them: the import path, then the time the run took.
+// that passed, as go test prints them: the import path, then the time the run took
+// -- and after a failed one, go test's FAIL for a run that named its packages.
 var (
-	pkgFailLine = regexp.MustCompile(`(?m)^FAIL\t\S+\t\d+\.\d{3}s$`)
+	pkgFailLine = regexp.MustCompile(`(?m)^FAIL\t\S+\t\d+\.\d{3}s\nFAIL\n\z`)
 	pkgOkTime   = regexp.MustCompile(`(?m)^(ok  \t\S+)\t\d+\.\d{3}s$`)
 )
 

@@ -165,6 +165,39 @@ func TestOgoTestPattern(t *testing.T) {
 	}
 }
 
+// TestOgoTestBuildFailed: a package that does not build is go test's line for one,
+// "FAIL\tpkg [build failed]", whether it was named, matched or neither, and a run
+// that named its packages ends in go test's FAIL; `go test` naming none does not,
+// and neither does a build alone, which with one package fails with the error.
+func TestOgoTestBuildFailed(t *testing.T) {
+	root := t.TempDir()
+	write(t, filepath.Join(root, "ogo.mod"), "module example.com/proj\n")
+	write(t, filepath.Join(root, "bad", "bad.ogo"), "func x() int { return \"s\" }\n")
+	write(t, filepath.Join(root, "bad", "bad_test.ogo"), "import \"testing\"\n\nfunc TestX(t *testing.T) {}\n")
+	write(t, filepath.Join(root, "plain", "plain.ogo"), "func Nothing() int { return 0 }\n")
+	const bad, plain = "FAIL\texample.com/proj/bad [build failed]\n", "?   \texample.com/proj/plain\t[no test files]\n"
+	t.Chdir(filepath.Join(root, "bad"))
+	for _, tc := range []struct {
+		args []string
+		want string
+	}{
+		{[]string{filepath.Join(root, "bad")}, bad + "FAIL\n"},
+		{[]string{filepath.Join(root, "...")}, bad + plain + "FAIL\n"},
+		{nil, bad},
+		{[]string{"-c", filepath.Join(root, "...")}, bad + plain},
+	} {
+		var out, errb bytes.Buffer
+		code, err := Test(tc.args, nil, &out, &errb)
+		if code != 1 || err != nil || out.String() != tc.want || !strings.Contains(errb.String(), `cannot use "s"`) {
+			t.Errorf("ogo test %q: code %d, err %v\nstdout:\n%s\nstderr:\n%s\nwant stdout:\n%s", tc.args, code, err, &out, &errb, tc.want)
+		}
+	}
+	var out bytes.Buffer
+	if code, err := Test([]string{"-c", filepath.Join(root, "bad")}, nil, &out, &out); code != 1 || err == nil || out.Len() != 0 {
+		t.Errorf("ogo test -c of one package: code %d, err %v, output:\n%s", code, err, &out)
+	}
+}
+
 // TestOgoTestPatternMatchesNothing: a pattern that matches no package is an error,
 // not a silent success -- a run that tested nothing must not read as one that
 // passed.
