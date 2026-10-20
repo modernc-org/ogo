@@ -4391,6 +4391,46 @@ func main() {
 		want: "0 0 0 0 27398540276390397\n-1 0 -1 0 0\n0 -1\n",
 	},
 	{
+		// A constant argument to a 64-bit parameter is spelled at the parameter's
+		// width (wideConstArg), and its value was the int64 fold's, which divides a
+		// uint64 past the int64 range as the negative number its bits are: `mix(M /
+		// 3, M % 7)` for a `const M uint64 = math.MaxUint64` passed 0 and the largest
+		// uint64, on the host as on the board. A direct call, one after a 64-bit
+		// expression, a method and a function value; a variadic call was right.
+		name: "a constant uint64 argument past the int64 range",
+		src: `import "math"
+
+const M uint64 = math.MaxUint64
+
+const H uint64 = 1 << 63
+
+type T struct{ n uint64 }
+
+func (t *T) add(a, b uint64) uint64 { return t.n + a + b }
+
+var m uint64 = 7
+
+func mix(a uint64, b uint64) uint64 { return a ^ b }
+
+func sum(vs ...uint64) uint64 {
+	s := uint64(0)
+	for _, v := range vs {
+		s += v
+	}
+	return s
+}
+
+var fv func(a, b uint64) uint64 = mix
+
+func main() {
+	t := &T{1}
+	println(mix(M/3, M%7), mix(m+1, H/5), t.add(M>>2, M/9), fv(M%1000, H%9))
+	println(sum(M/3, M%7, H/5))
+}
+`,
+		want: "6148914691236517204 1844674407370955153 6661324248839560305 623\n7993589098607472367\n",
+	},
+	{
 		// The bitwise complement of a 64-bit value: the target's C compiler computes
 		// `~` wrong in its HIGH word (doc/complement64-high-word.c), which reached
 		// `x &^= K` for a wide constant K -- the one complement the emitter still

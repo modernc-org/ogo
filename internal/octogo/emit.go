@@ -49270,7 +49270,10 @@ func (e *emitter) wideConstArg(params []string, i int, arg Node) (string, bool) 
 	if ut != "int64_t" && ut != "uint64_t" {
 		return "", false
 	}
-	v, ok := e.foldConstInt(arg.ast)
+	// The value at the parameter's type, exact: the int64 fold divides a uint64
+	// past the int64 range as the negative number its bits are, and `f(M / 3)` for
+	// a `const M uint64 = math.MaxUint64` passed 0, `f(M % 7)` the largest uint64.
+	v, ok := e.constIntValueIn(arg.ast, ut)
 	if !ok {
 		return "", false
 	}

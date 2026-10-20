@@ -2191,7 +2191,13 @@ the board and led to the next shape: the checker held a count of a TYPED constan
 a uint's range, which Go asks only of an untyped one, so `x >> M` was refused where
 Go has 0; let through, the guarded shift took its bits as an int64's -1 and panicked
 "negative shift amount" (shiftCountU64 hands it to the helper of 64 unsigned bits).
-**An unsigned constant past INT64_MAX is a negative number to the emitter's fold: a
+The row's next column, the
+same constants as sub-expressions in every position a value goes -- operands,
+initializers, elements, fields, returns, cases, conversions, arguments -- found the
+argument: a constant handed to a 64-bit parameter is spelled at its width
+(wideConstArg) with the int64 fold's value, so `f(M / 3)` passed 0, `f(M % 7)` the
+largest uint64; it is folded at the parameter's type now (constIntValueIn), as an
+initializer always was. **An unsigned constant past INT64_MAX is a negative number to the emitter's fold: a
 decision taken on a folded value's sign, or on its being -1, asks the type it is
 of.** **A rule written for an untyped constant asks first whether the constant is
 typed.**

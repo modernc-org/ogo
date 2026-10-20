@@ -128,6 +128,12 @@ shipped section tells a reader on that version that they have behaviour they do 
 
 ### Fixed
 
+- **A constant argument of a uint64 past the int64 range is passed as Go has it**:
+  `f(M / 3)` for a `const M uint64 = math.MaxUint64` passed 0 and `f(M % 7)` the
+  largest uint64, on the host and on a P2, through a function, a method and a
+  function value alike: the constant was divided as the negative number its bits
+  are in an int64. A variadic argument, a variable's initializer and every operand
+  of an expression were right.
 - **A uint64 remainder by the largest uint64 is no longer 0**: `x % M` for a `const
   M uint64 = math.MaxUint64` -- `math.MaxUint64` itself, an untyped `1<<64 - 1`,
   any spelling through a name, and `x %= M` -- was 0 where Go has x, on the host
