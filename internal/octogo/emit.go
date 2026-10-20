@@ -34512,6 +34512,16 @@ func (e *emitter) emitCaseCond(guardVar string, exprs []Node) {
 				return
 			}
 		}
+		// A tagless switch's case is a condition of its own, and a case's are joined
+		// with ||: `case k == 2 && !fixed, k != 1:` read `k == 2 && !fixed || k !=
+		// 1`, which means what Go's does and is what gcc's -Wparentheses refuses
+		// under -Werror, so a conjunction beside another condition is parenthesised.
+		if cname == "" && len(exprs) > 1 && slices.ContainsFunc(slices.Collect(it(ex.ast)), func(c Node) bool { return c.sym == RelOp && e.opText(c.ast) == "&&" }) {
+			e.emit("(")
+			e.emitExpr(ex.ast)
+			e.emit(")")
+			return
+		}
 		e.emitExpr(ex.ast)
 	}
 	// The expressions of one case are tried left to right until one matches, which

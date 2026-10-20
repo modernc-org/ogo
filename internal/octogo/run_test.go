@@ -4431,6 +4431,47 @@ func main() {
 		want: "6148914691236517204 1844674407370955153 6661324248839560305 623\n7993589098607472367\n",
 	},
 	{
+		// A tagless switch's case of several conditions joins them with ||, and a
+		// conjunction among them was written bare, `a == 2 && !f || b != 1 && c >
+		// 0`: what Go means, and what gcc's -Wparentheses warns about, which fails
+		// this table on the host. Found writing a domain program, a command console
+		// whose `case v.Kind == lex.Fixed && !p.Fixed, ...:` would not build under
+		// -Werror. The conditions are tried left to right, the calls recorded.
+		name: "a tagless case list with a conjunction",
+		src: `var calls int
+
+func t(k int) bool {
+	calls = calls*10 + k
+	return k%2 == 0
+}
+
+func pick(a, b, c int, f bool) int {
+	switch {
+	case a == 2 && !f, b != 1 && c > 0:
+		return 1
+	case a > b || c < 0, t(a) && t(b), t(c):
+		return 2
+	case !(a == b) && f:
+		return 3
+	}
+	return 4
+}
+
+func main() {
+	for a := 0; a < 3; a++ {
+		for b := 0; b < 3; b++ {
+			for c := -1; c < 2; c++ {
+				print(pick(a, b, c, a == c), pick(a, b, c, b == c), " ")
+			}
+		}
+	}
+	println()
+	println(calls)
+}
+`,
+		want: "22 22 11 22 22 43 22 22 11 22 22 11 22 22 44 22 22 11 11 12 11 11 11 12 11 11 11 \n-474162078\n",
+	},
+	{
 		// The bitwise complement of a 64-bit value: the target's C compiler computes
 		// `~` wrong in its HIGH word (doc/complement64-high-word.c), which reached
 		// `x &^= K` for a wide constant K -- the one complement the emitter still
