@@ -693,8 +693,11 @@ had it on 2026-10-13"; the sections named in capitals below are its journal's.
   over `uint8_t` where it would move (`zeroSizedDecl`). Each Sizeof of a type the
   emitter names adds `sizeof(T) == v` to `ogo_layout_check` under `__FLEXC__`, so
   a wrong model fails the build. A conversion to a pointer to a type written out,
-  `(*[16]uint32)(unsafe.Pointer(a))`, works (`starLitCAt`, `sliceArrayPtrC`), and
-  so do a case and an assertion of a pointer to a predeclared, written-out or
+  `(*[16]uint32)(unsafe.Pointer(a))`, works (`starLitCAt`, `sliceArrayPtrC`), so
+  does one to a pointer of any other shape a parenthesised type has, `(**T)(p)`,
+  `(*chan T)(p)`, `(*error)(p)` (`pointerTypeAST`, 2026-10-21) but `*struct{...}`
+  and `*func(...)`, which do not parse in an expression, and so do a case and an
+  assertion of a pointer to a predeclared, written-out or
   defined array type, `case *int:`, `case *[3]int:`. Not yet: a type DEFINED over
   unsafe.Pointer (an alias is taken), `String`, `StringData`, `SliceData`, printf
   verbs but `%v` and `%T`, and a parenthesised qualified conversion `(lib.T)(x)`.
@@ -950,6 +953,9 @@ section. A new finding goes there; the rule it leaves goes here too.
   empty struct's fields are nil, and so are an interface's** (isStruct, fieldEqCmp).
   **Two keys for one type are two tables: the reader asks by the key the writer
   wrote** (funcTypeID, dom53).
+- **A mark a refusal reads is asked what else carries it: isPtr marks a type
+  switch's binding of an interface as well as a pointer** (A POINTER TYPE IN
+  PARENTHESES IS ANY TYPE).
 - **A rule that refuses on failing to resolve is a false refusal waiting for a shape
   it does not know**; **A rule that refuses by failing to resolve is found by
   widening the resolver and running the rejects again**; **A rule refused by

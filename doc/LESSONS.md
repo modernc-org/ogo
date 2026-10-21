@@ -753,6 +753,48 @@ and its frame is the call's.** **A bound a value's type gives is asked of every 
 memory is read as another type: a pointer converted, through unsafe.Pointer or not,
 makes a value of one type a value of another.**
 
+A POINTER TYPE IN PARENTHESES IS ANY TYPE (2026-10-21, found writing the moat's
+programs): `(**Op)(unsafe.Pointer(&slot))` was "cannot use type Op as a value". Go
+converts to a pointer type of any shape, and the checker and the emitter read four,
+`*T`, `*lib.T`, `*int` and `*[N]T`; the parenthesised half of every other was walked
+as an expression. Of sixteen probes Go took fifteen and the compiler refused eleven:
+`**T` in five spellings ("cannot use type int as a value"), `*chan int` and
+`*error` (a declaration the emitter could not type), `*interface{...}`,
+`*unsafe.Pointer` (refused as converting an unsafe.Pointer), and the two that do not
+parse, `*struct{...}` and `*func(...)`. The expression is rebuilt as a Type node over
+its own tokens (pointerTypeAST), which the checker's typ and the emitter's cType
+read as they read a declaration's type, the operand checked as Go checks it -- the
+base types' underlying types identical, Go's words when they are not -- and a
+local declared from one typed whole (typedVar). The sweep of where such a value
+goes found a method called on what a pointer to an interface points at,
+`(*p).Area()`, emitted as the shorthand a pointer to a struct takes, `p.Area()`: a
+call of the interface's own `S_Area`, which no C defines -- through a name, a
+call's result, a field, two pointers, deferred and started -- and `p.Area()`
+itself, which Go refuses, went to the C compiler the same way. The value is bound
+and called through its table now (derefShorthand, emitParenMethod), and the second
+is refused in Go's words. Two regressions were caught by the nets before the
+commit. The emitter's recogniser asked cType of the stars' name before asking that a
+call followed, and in a deferred call's argument, where `p` is no variable the
+replay knows, cType reported "unsupported type p": `defer show((*p).Area())`,
+which built, was refused; it asks the call first and the type quietly. And the
+refusal of a method on a pointer to an interface read the variable's isPtr, a mark
+a type switch's clause binding of an interface carries too: the errors package's
+`case wrapper: x.Unwrap()` was refused, and with it 191 of the fuzzer's first 400
+seeds and seven run cases -- which corpusdiff did not report, a refused program
+being a file the after-dump lacks: the listings' counts did. The rule asks the
+variable's type (ptrToIface). Measured after: the corpus's 1,388 programs the C
+they were, the 1,452 programs Go rejects the rows they were, and of 3,257 domain
+programs and mutants none with another verdict or message. **A mark a refusal reads
+is asked what else carries it: isPtr marks a type switch's binding of an interface
+as well as a pointer.** Left, loud: a conversion to a pointer to a struct or a
+function type written out, which the grammar does not parse in an expression (a
+struct type there wants a literal after it, a func type a body), nor a conversion
+to either; a store through two dereferences, `(**q).b = 7`, "only assignment to a
+simple variable"; an assertion on a parenthesised value but a name, `(*p).(*R)` and
+`(get()).(*R)`; a send whose channel is a conversion, `*(*chan int)(p) <- 5`; and a
+method on a field pointing to an interface, `h.p.Area()`, refused by the emitter in
+its own words where Go's are "pointer to interface, not interface".
+
 **A TYPE SWITCH BEHIND AN INIT STATEMENT** (2026-10-07), `switch s := pick(); v :=
 s.(type)`, the last header shape on the open list: the grammar's SwitchTag takes `[
 HeaderExpression ":=" ] HeaderExpression` (egg's ambiguity count unchanged, 10),

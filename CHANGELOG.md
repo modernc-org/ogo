@@ -153,6 +153,21 @@ shipped section tells a reader on that version that they have behaviour they do 
 
 ### Fixed
 
+- **A conversion to a pointer type of any shape a type in parentheses has
+  compiles**: `(**int)(unsafe.Pointer(&p))`, `(**T)(&pt)`, `(***int)(p)`, `(*chan
+  int)(p)`, `(*error)(p)`, `(*unsafe.Pointer)(p)` and `(*interface{ M() })(p)` were
+  refused -- "cannot use type int as a value", or a declaration nothing could type
+  -- where Go takes them; only `*T`, `*lib.T`, `*int` and `*[N]T` were read. One of
+  a pointer to another base type is refused in Go's words, "cannot convert &q
+  (value of type **int32) to type **int". A pointer to a struct or a function type
+  written out, `(*struct{ x int })(p)`, still does not parse.
+- **A method called on what a pointer to an interface points at is the
+  interface's**: `(*p).Area()` for a `p *S` -- through a name, a call's result, a
+  field, two pointers, deferred or started on a cog -- went to the C compiler as a
+  call of `S_Area`, which nothing defines, and the build failed with ogo's "please
+  report it". And `p.Area()`, which Go refuses, failed the same way; it is refused as
+  Go refuses it, "p.Area undefined (type *S is pointer to interface, not
+  interface)".
 - **A constant argument of a uint64 past the int64 range is passed as Go has it**:
   `f(M / 3)` for a `const M uint64 = math.MaxUint64` passed 0 and `f(M % 7)` the
   largest uint64, on the host and on a P2, through a function, a method and a

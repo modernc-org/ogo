@@ -4558,6 +4558,130 @@ func main() {
 		want: "13 2\n",
 	},
 	{
+		// A conversion to a pointer type of another shape than `*T` and `*[N]T`: a
+		// pointer to a pointer, through unsafe.Pointer and from a pointer of its
+		// base type, three stars deep, to a channel, to error, to unsafe.Pointer and
+		// to a defined function type. Each but the last two was "cannot use type
+		// int as a value" -- the parenthesised `**int` read as an expression -- or
+		// a declaration the emitter could not type.
+		name: "a conversion to a pointer to a pointer, a channel or an interface",
+		src: `import "unsafe"
+
+type Op func(n int) int
+
+type T struct{ a, b int }
+
+func sq(n int) int { return n * n }
+
+var x, y = 3, 4
+
+var p = &x
+
+var t = T{1, 2}
+
+var pt = &t
+
+var o Op = sq
+
+var po = &o
+
+var ch = make(chan int, 1)
+
+var e error
+
+var u = unsafe.Pointer(&y)
+
+func main() {
+	pp := (**int)(unsafe.Pointer(&p))
+	*pp = &y
+	println(*p)
+	*(**int)(unsafe.Pointer(&p)) = &x
+	**(**int)(unsafe.Pointer(&p)) += 10
+	println(x, *p)
+	q2 := (**T)(&pt)
+	(*q2).b = 7
+	println(t.b, (**q2).a)
+	ppp := &p
+	q3 := (***int)(unsafe.Pointer(&ppp))
+	println(***q3)
+	q4 := (*chan int)(unsafe.Pointer(&ch))
+	*q4 <- 5
+	println(<-*q4)
+	q5 := (*error)(unsafe.Pointer(&e))
+	println(*q5 == nil)
+	q7 := (*unsafe.Pointer)(unsafe.Pointer(&u))
+	println(*(*int)(*q7))
+	q8 := (**Op)(&po)
+	println((**q8)(6))
+}
+`,
+		want: "4\n13 13\n7 1\n13\n5\ntrue\n4\n36\n",
+	},
+	{
+		// A method called on what a pointer to an interface points at, `(*p).Grow(1)`:
+		// the interface's value, dispatched through its table, where it was emitted as
+		// the shorthand `p.Grow(1)` a pointer to a struct takes -- a call of the
+		// interface's own S_Grow, which no C defines. Through a name, a call's
+		// result, a field, two pointers, in a goroutine, and deferred, its receiver
+		// bound where the defer stands: Grow(100) is r's after s was set to &r2.
+		name: "a method called through a pointer to an interface",
+		src: `type S interface {
+	Area() int
+	Grow(n int)
+}
+
+type R struct{ w, h int }
+
+func (r *R) Area() int { return r.w * r.h }
+
+func (r *R) Grow(n int) { r.w += n }
+
+var r, r2 = R{2, 5}, R{1, 1}
+
+var s S = &r
+
+var calls int
+
+func ps() *S {
+	calls = calls*10 + 1
+	return &s
+}
+
+type H struct{ p *S }
+
+var done = make(chan bool)
+
+func grow(p *S) {
+	(*p).Grow(1)
+	done <- true
+}
+
+func run(p *S) {
+	defer (*p).Grow(100)
+	s = &r2
+}
+
+func main() {
+	p := &s
+	(*p).Grow(1)
+	println((*p).Area(), r.w)
+	(*ps()).Grow(2)
+	println((*ps()).Area(), calls)
+	h := H{p}
+	(*h.p).Grow(1)
+	println((*h.p).Area())
+	pp := &p
+	println((**pp).Area())
+	go grow(p)
+	<-done
+	defer println("deferred", (*p).Area())
+	run(p)
+	println(r.w, r2.w, (*p).Area())
+}
+`,
+		want: "15 3\n25 11\n30\n30\n107 1 1\ndeferred 35\n",
+	},
+	{
 		// The bitwise complement of a 64-bit value: the target's C compiler computes
 		// `~` wrong in its HIGH word (doc/complement64-high-word.c), which reached
 		// `x &^= K` for a wide constant K -- the one complement the emitter still

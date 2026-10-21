@@ -1,0 +1,62 @@
+// ERROR-free shapes are ptr_conv_shapes.ogo's. What Go refuses of a conversion to a
+// pointer type of another shape than `*T` and `*[N]T` -- a pointer to a pointer,
+// to a channel, to an interface -- refused in Go's terms: a pointer whose base type
+// is another, whether the variable's type was written or inferred, a value that is
+// no pointer, and a conversion standing as a statement. And a method called on a
+// pointer to an interface, which has no methods.
+
+import "unsafe"
+
+type Celsius int
+
+type S interface{ Area() int }
+
+type R struct{ w, h int }
+
+func (r *R) Area() int { return r.w * r.h }
+
+var x int
+
+var x32 int32
+
+var c Celsius
+
+var q32 *int32 = &x32
+
+var qc *Celsius = &c
+
+var qi *int = &x
+
+var cs chan string
+
+var r R
+
+var s S = &r
+
+var lit interface{ Area() int } = &r
+
+func main() {
+	// ERROR "cannot convert &q32 \(value of type \*\*int32\) to type \*\*int"
+	_ = (**int)(&q32)
+	// ERROR "cannot convert &qc \(value of type \*\*Celsius\) to type \*\*int"
+	_ = (**int)(&qc)
+	// ERROR "cannot convert qi \(variable of type \*int\) to type \*\*int"
+	_ = (**int)(qi)
+	q := &x
+	// ERROR "cannot convert q \(variable of type \*int\) to type \*\*int"
+	_ = (**int)(q)
+	// ERROR "cannot convert 5 \(untyped int constant\) to type \*\*int"
+	_ = (**int)(5)
+	// ERROR "cannot convert &cs \(value of type \*chan string\) to type \*chan int"
+	_ = (*chan int)(&cs)
+	// ERROR "cannot convert &x \(value of type \*int\) to type \*error"
+	_ = (*error)(&x)
+	// ERROR "\(\*\*int\)\(unsafe.Pointer\(&qi\)\) \(value of type \*\*int\) is not used"
+	(**int)(unsafe.Pointer(&qi))
+	p := &s
+	// ERROR "p.Area undefined \(type \*S is pointer to interface, not interface\)"
+	_ = p.Area()
+	pl := &lit
+	// ERROR "pl.Area undefined \(type \*interface{Area\(\) int} is pointer to interface, not interface\)"
+	_ = pl.Area()
+}

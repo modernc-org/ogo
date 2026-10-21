@@ -1968,6 +1968,8 @@ func (e *emitter) emitGo(nodes []Node) {
 			base, suffix = name, steps // `go (h.v).M(args)`
 		} else if pc, ok := e.ptrConvHead(head, suffix); ok && len(pc.rest) >= 2 {
 			base, suffix = e.bindPtrConv(pc), pc.rest
+		} else if name, ok := e.derefHead(head); ok && len(suffix) >= 2 && suffix[0].sym == Selector && !e.derefShorthand(name, suffix) {
+			base = e.bindDeref(name) // `go (*p).M(args)` for a pointer to an interface
 		}
 	}
 	// `go lib.C.Add(x)`: what follows another package's VARIABLE is a step on that
@@ -18338,9 +18340,6 @@ func (e *emitter) ptrConvParts(typ Node, steps []Node) (emPtrConv, bool) {
 	if base == "" {
 		base = e.starLitCAt(typ)
 	}
-	if base == "" {
-		return emPtrConv{}, false
-	}
 	if len(steps) == 0 || steps[0].sym != CallSuffix {
 		return emPtrConv{}, false
 	}
@@ -18348,7 +18347,26 @@ func (e *emitter) ptrConvParts(typ Node, steps []Node) (emPtrConv, bool) {
 	if len(args) != 1 {
 		return emPtrConv{}, false
 	}
-	return emPtrConv{ct: base + "*", arg: args[0], rest: steps[1:]}, true
+	ct := base + "*"
+	if base == "" {
+		// Another shape, `(**T)(p)`, `(*chan int)(p)`, `(*error)(p)`: the type as a
+		// declaration would write it. Stars leading to a variable are a call through
+		// what it points to, `(**pp)(x)`, and a name that is no type here is no
+		// conversion -- asked, cType reports it, so it is asked quietly.
+		ast, name, ok := e.f.pointerTypeAST(typ)
+		if !ok {
+			return emPtrConv{}, false
+		}
+		if _, isVar := e.varType(name); isVar {
+			return emPtrConv{}, false
+		}
+		saved := e.err
+		if ct = e.cType(ast); e.err != saved || ct == "" {
+			e.err = saved
+			return emPtrConv{}, false
+		}
+	}
+	return emPtrConv{ct: ct, arg: args[0], rest: steps[1:]}, true
 }
 
 // ptrConvOperand is what an expression that is exactly a conversion to a pointer
@@ -18368,8 +18386,8 @@ func (e *emitter) ptrConvOperand(ast []int32) ([]int32, bool) {
 
 // ptrConvShape is ptrConvAt by SHAPE alone, for the summaries, which read a body
 // before any local of it has a type and before a type declared in it has a name:
-// `(*T)(x)`, `(*pkg.T)(x)` and `(*[N]T)(x)`, with the steps written after the
-// conversion. The one
+// `(*T)(x)`, `(*pkg.T)(x)`, `(*[N]T)(x)` and the other shapes pointerTypeAST reads,
+// `(**T)(x)`, `(*chan T)(x)`, with the steps written after the conversion. The one
 // other thing of that shape, a call through a pointer to a function, `(*fp)(x)`, is
 // a call of what fp points at; read as a conversion as well it holds its argument,
 // which is the conservative reading of an unknown callee's result.
@@ -18378,45 +18396,11 @@ func (e *emitter) ptrConvShape(kids []Node) (arg Node, rest []Node, ok bool) {
 		kids[2].sym != 0 || e.f.ch(kids[2].tok) != RPAREN || kids[3].sym != FactorSuffix {
 		return Node{}, nil, false
 	}
-	nodes := slices.Collect(it(kids[1].ast))
-	for len(nodes) == 1 && (nodes[0].sym == Expression || nodes[0].sym == SimpleExpr || nodes[0].sym == Term) {
-		nodes = slices.Collect(it(nodes[0].ast))
-	}
-	if len(nodes) != 1 || nodes[0].sym != UnaryExpr {
-		return Node{}, nil, false
-	}
-	un := slices.Collect(it(nodes[0].ast))
-	if len(un) != 2 || un[0].sym != UnaryOp || un[1].sym != Factor {
-		return Node{}, nil, false
-	}
-	if tok, isOp := e.unaryOpTok(un[0].ast); !isOp || e.f.ch(tok) != MUL {
-		return Node{}, nil, false
-	}
-	fk := slices.Collect(it(un[1].ast))
-	if len(fk) == 0 || fk[0].sym != 0 {
-		return Node{}, nil, false
-	}
-	switch e.f.ch(fk[0].tok) {
-	case IDENT:
-	case LBRACK:
-		// `(*[4]byte)(x)` and `(*[]T)(x)`: a type written out, which has no literal
-		// after it and nothing else either.
-		if fk[len(fk)-1].sym != Type || slices.ContainsFunc(fk, func(n Node) bool { return n.sym == CompositeLit || n.sym == FactorSuffix }) {
+	if !e.ptrConvTypeShape(kids[1]) {
+		// `(**T)(x)`, `(*chan int)(x)` and the other shapes pointerTypeAST reads.
+		if _, _, isPtr := e.f.pointerTypeAST(kids[1]); !isPtr {
 			return Node{}, nil, false
 		}
-		fk = fk[:1]
-	default:
-		return Node{}, nil, false
-	}
-	if len(fk) == 2 {
-		if fk[1].sym != FactorSuffix {
-			return Node{}, nil, false
-		}
-		if sel := slices.Collect(it(fk[1].ast)); len(sel) != 1 || sel[0].sym != Selector {
-			return Node{}, nil, false
-		}
-	} else if len(fk) != 1 {
-		return Node{}, nil, false
 	}
 	steps := slices.Collect(it(kids[3].ast))
 	if len(steps) == 0 || steps[0].sym != CallSuffix {
@@ -18427,6 +18411,52 @@ func (e *emitter) ptrConvShape(kids []Node) (arg Node, rest []Node, ok bool) {
 		return Node{}, nil, false
 	}
 	return args[0], steps[1:], true
+}
+
+// ptrConvTypeShape reports whether the parenthesised half of a conversion is, by
+// shape alone, `*T`, `*pkg.T` or `*[N]T` (ptrConvShape).
+func (e *emitter) ptrConvTypeShape(typ Node) bool {
+	nodes := slices.Collect(it(typ.ast))
+	for len(nodes) == 1 && (nodes[0].sym == Expression || nodes[0].sym == SimpleExpr || nodes[0].sym == Term) {
+		nodes = slices.Collect(it(nodes[0].ast))
+	}
+	if len(nodes) != 1 || nodes[0].sym != UnaryExpr {
+		return false
+	}
+	un := slices.Collect(it(nodes[0].ast))
+	if len(un) != 2 || un[0].sym != UnaryOp || un[1].sym != Factor {
+		return false
+	}
+	if tok, isOp := e.unaryOpTok(un[0].ast); !isOp || e.f.ch(tok) != MUL {
+		return false
+	}
+	fk := slices.Collect(it(un[1].ast))
+	if len(fk) == 0 || fk[0].sym != 0 {
+		return false
+	}
+	switch e.f.ch(fk[0].tok) {
+	case IDENT:
+	case LBRACK:
+		// `(*[4]byte)(x)` and `(*[]T)(x)`: a type written out, which has no literal
+		// after it and nothing else either.
+		if fk[len(fk)-1].sym != Type || slices.ContainsFunc(fk, func(n Node) bool { return n.sym == CompositeLit || n.sym == FactorSuffix }) {
+			return false
+		}
+		fk = fk[:1]
+	default:
+		return false
+	}
+	if len(fk) == 2 {
+		if fk[1].sym != FactorSuffix {
+			return false
+		}
+		if sel := slices.Collect(it(fk[1].ast)); len(sel) != 1 || sel[0].sym != Selector {
+			return false
+		}
+	} else if len(fk) != 1 {
+		return false
+	}
+	return true
 }
 
 // selectorTypeNode is the Type a Selector step holds where it is a type assertion,
@@ -29643,6 +29673,14 @@ func (e *emitter) parenMethodResultType(kids []Node) (string, bool) {
 		return "", false
 	}
 	for i := 0; i < len(steps); i += 2 {
+		if u := e.underlyingCType(ct); e.isIfaceCType(u) {
+			m, ok := e.ifaceMethodRec(u, e.soleIdent(steps[i].ast))
+			if !ok || len(m.resList) != 1 {
+				return "", false
+			}
+			ct = m.resList[0]
+			continue
+		}
 		rets, isMethod := e.funcRet[e.methodCName(methodBaseType(ct), e.soleIdent(steps[i].ast))]
 		if !isMethod || len(rets) != 1 {
 			return "", false
@@ -29755,6 +29793,17 @@ func (e *emitter) emitParenMethod(kids []Node) bool {
 		return st.sym == CallSuffix && e.exprHasEffect(st.ast)
 	}) {
 		text = e.hoist(ct, func() { e.emit(text) })
+	}
+	// An INTERFACE, `(*q).Area()` and `(*get()).Area()` for a pointer to one: the
+	// method is its value's, called through the table as through a variable of the
+	// type, which the value is bound to -- the call reads it twice, for its table
+	// and its data. Read as a type's method it was the interface's own `S_Area`,
+	// which no C defines.
+	if e.isIfaceCType(e.underlyingCType(ct)) {
+		tmp := e.hoist(ct, func() { e.emit(text) })
+		e.locals[tmp] = ct
+		e.callOrFail(e.emitCallExpr(tmp, steps))
+		return true
 	}
 	for i := 0; i < len(steps); i += 2 {
 		method := e.soleIdent(steps[i].ast)
@@ -29948,10 +29997,14 @@ func derefCallSteps(steps []Node) bool { return containsSym(steps, CallSuffix) }
 // as Go defines both. An index of what a pointer to a SLICE points at does not:
 // `(*ps)[i](x)` calls an element, and emitted as `ps[i](x)` it named nothing the
 // call paths could reach -- the statement came out as `;` and the value as an
-// empty operand, so the call was dropped in silence.
+// empty operand, so the call was dropped in silence. Nor does a selector of what a
+// pointer to an INTERFACE points at: `(*q).Area()` calls the method of the value q
+// points to, and as `q.Area()` it named the interface's own `S_Area`, which no C
+// defines.
 func (e *emitter) derefShorthand(name string, steps []Node) bool {
 	if len(steps) != 0 && steps[0].sym == Selector {
-		return true
+		ct, _ := e.varType(name)
+		return !e.isIfaceCType(e.underlyingCType(e.elemType(ct)))
 	}
 	_, isArrPtr := e.arrayPtrVar(name)
 	return isArrPtr
@@ -35846,6 +35899,18 @@ func (e *emitter) deferReceiver(d *deferredCall, head Node, suffix []Node) (stri
 			}
 			base, suffix, isAddr = tmp, pc.rest, true
 			d.convRecv, d.convSteps = tmp, pc.rest
+		}
+		// `defer (*p).Show()` for a pointer to an INTERFACE: the receiver is the
+		// value p points at, bound here, where Go evaluates it (derefShorthand).
+		if name, isDeref := e.derefHead(head); !isAddr && isDeref && len(suffix) >= 2 && suffix[0].sym == Selector && !e.derefShorthand(name, suffix) {
+			var tmp string
+			_, pro := e.capturePrologue(func() { tmp = e.bindDeref(name) })
+			for _, line := range pro {
+				e.ind()
+				e.emit(line)
+			}
+			base, isAddr = tmp, true
+			d.convRecv, d.convSteps = tmp, suffix
 		}
 		if !isAddr {
 			return "", true
@@ -44353,6 +44418,11 @@ func (e *emitter) parenCallChain(head Node, postfix []Node) (int32, []Node, bool
 		if tok, ok := e.unaryOpTok(fac[0].ast); !ok || e.f.ch(tok) != MUL {
 			return 0, nil, false
 		}
+		// Not through a pointer to an INTERFACE, whose method is its value's
+		// (emitParenMethod): `pc().inc()` would name the interface's own.
+		if ct, ok := e.inferNode(fac[1]); ok && e.isIfaceCType(e.underlyingCType(e.elemType(ct))) {
+			return 0, nil, false
+		}
 		fac = e.factorKids(fac[1].ast) // `(*pc())`
 	}
 	if len(fac) != 2 || fac[0].sym != 0 || e.f.ch(fac[0].tok) != IDENT || fac[1].sym != FactorSuffix {
@@ -44377,7 +44447,7 @@ func (e *emitter) parenRecvHead(head Node, suffix []Node) (string, bool) {
 		return name, true
 	}
 	if name, ok := e.derefHead(head); ok {
-		return name, len(suffix) >= 2 && suffix[0].sym == Selector // not `(*p)(x)`
+		return name, len(suffix) >= 2 && suffix[0].sym == Selector && e.derefShorthand(name, suffix) // not `(*p)(x)`
 	}
 	kids := slices.Collect(it(head.ast))
 	if len(kids) != 3 || kids[0].sym != 0 || e.f.ch(kids[0].tok) != LPAREN ||

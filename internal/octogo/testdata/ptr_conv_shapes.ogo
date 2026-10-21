@@ -1,0 +1,76 @@
+// COMPILE
+//
+// A conversion to a pointer type of every shape a type in parentheses can have: a
+// pointer to a pointer, to a channel, to an interface written out or predeclared,
+// to unsafe.Pointer, to a defined function type, through unsafe.Pointer and from a
+// pointer of the same base type. And a method called on what a pointer to an
+// interface points at, in each place a call stands.
+
+import "unsafe"
+
+type Op func(n int) int
+
+type T struct{ a, b int }
+
+type S interface{ Area() int }
+
+type R struct{ w, h int }
+
+func (r *R) Area() int { return r.w * r.h }
+
+func sq(n int) int { return n * n }
+
+var x = 3
+
+var p = &x
+
+var pp = &p
+
+var t = T{1, 2}
+
+var pt = &t
+
+var o Op = sq
+
+var po = &o
+
+var ch = make(chan int, 1)
+
+var e error
+
+var a any
+
+var u = unsafe.Pointer(&x)
+
+var r R
+
+var s S = &r
+
+var lit interface{ Area() int } = &r
+
+func ps() *S { return &s }
+
+type H struct{ p *S }
+
+func main() {
+	q1 := (**int)(unsafe.Pointer(&p))
+	q2 := (**T)(&pt)
+	q3 := (***int)(unsafe.Pointer(&pp))
+	q4 := (*chan int)(unsafe.Pointer(&ch))
+	q5 := (*error)(unsafe.Pointer(&e))
+	q6 := (*any)(&a)
+	q7 := (*unsafe.Pointer)(unsafe.Pointer(&u))
+	q8 := (**Op)(&po)
+	q9 := (*interface{ Area() int })(&lit)
+	*q1 = &x
+	*(**int)(unsafe.Pointer(&p)) = &x
+	*q4 <- (**q2).b
+	println(***q3, <-*q4, *q5 == nil, *q6 == nil, *(*int)(*q7), (**q8)(2), (*q9).Area())
+	sp := &s
+	println((*sp).Area(), (*ps()).Area(), (*H{sp}.p).Area())
+	h := H{sp}
+	println((*h.p).Area())
+	defer println((*sp).Area())
+	spp := &sp
+	println((**spp).Area())
+}

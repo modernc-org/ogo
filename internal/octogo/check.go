@@ -2708,7 +2708,7 @@ func (f *File) checkCallStmt(s *Scope, head, stmt Node, kw string, kwTok Token, 
 			return
 		}
 		if pc, ok := f.ptrConvOfHead(s, head, steps); ok {
-			if len(pc.rest) == 0 && (pc.unnamed == "" || pc.lit.sym != 0) {
+			if len(pc.rest) == 0 && pc.named() {
 				f.err(pc.at.Position(), "%s requires function call, not conversion %s", kw, f.sourceSpan(head.Pos(), stmt.End()))
 				return
 			}
@@ -6384,6 +6384,17 @@ func (f *File) inferVarFrom(s *Scope, vd *VarDeclaration, init Node) {
 		vd.takeType(f.typedVar(s, vd.token, tn))
 		return
 	}
+	// `pp := (**int)(p)`, `pc := (*chan int)(p)`: the conversion's type, whole --
+	// recorded by name alone, `pu := (*unsafe.Pointer)(p)` made `*pu` a value of
+	// no Kind, and `(*int)(*pu)` was refused for converting an unsafe.Pointer.
+	if fac, ok := f.soleFactorOf(init); ok {
+		if pc, isConv := f.ptrConvOf(s, fac); isConv && len(pc.rest) == 0 {
+			if t, ok := f.ptrTypeOf(s, pc, true); ok {
+				vd.takeType(f.typedVar(s, vd.token, &TypeNodePointer{TypeNode: t}))
+				return
+			}
+		}
+	}
 	switch ek, hasEk, tn, tq, isPtr := f.addressOfInfo(s, init); {
 	case isPtr:
 		// `p := &x`: p is a pointer to x's type, recorded like `var p *T` so
@@ -9271,7 +9282,7 @@ func (f *File) checkAssignment(s *Scope, head, postfix Node) {
 	// `(*Row)(&c)[1]++` and `+= 2`: what a conversion heading a stepped target
 	// converts is asked as it is of a value and of an `=` target (convPlaceType).
 	if steps, _ := callSteps(postfix); stepOrCompound(f, postfix) {
-		if pc, ok := f.ptrConvOfHead(s, head, steps); ok && (pc.unnamed == "" || pc.lit.sym != 0) {
+		if pc, ok := f.ptrConvOfHead(s, head, steps); ok && pc.named() {
 			f.checkPtrConvArgs(s, pc)
 		}
 		// `*n++` and `*n += 1` for an int n: the `=` form's question, which these
@@ -9290,7 +9301,7 @@ func (f *File) checkAssignment(s *Scope, head, postfix Node) {
 		// `(*T)(x).m()`, a method called on a conversion to a pointer type; the
 		// conversion alone is a value nothing uses.
 		if pc, ok := f.ptrConvOfHead(s, head, steps); ok {
-			if len(pc.rest) == 0 && (pc.unnamed == "" || pc.lit.sym != 0) {
+			if len(pc.rest) == 0 && pc.named() {
 				f.err(pc.at.Position(), "%s (value of type *%s) is not used", f.sourceSpan(head.Pos(), postfix.End()), pc.typeName())
 				return
 			}
@@ -17117,6 +17128,19 @@ func (f *File) checkMethodCall(s *Scope, head, member Token, argList, suffix Nod
 		}
 		d = &VarDeclaration{typeName: nm, typeQual: namedTypeQual(tn)}
 	}
+	// A pointer to one has no methods (see checkMethodCallOn).
+	if !d.typeName.IsValid() {
+		t := d.declType
+		if t == nil && d.inferredType != nil {
+			t = d.inferredType.tn
+		}
+		if p, isPtr := t.(*TypeNodePointer); isPtr {
+			if x, isLit := p.TypeNode.(*TypeNodeInterface); isLit {
+				f.err(member.Position(), "%s.%s undefined (type *%s is pointer to interface, not interface)", head.Src(), member.Src(), f.ifaceLitName(s, x))
+				return
+			}
+		}
+	}
 	// A variable of an interface written out, `var v interface{ Name() string }`,
 	// has no type name, and its methods are its spec's. Asked nothing, `v.Name(1)`
 	// and `v.Nope()` reached the emitter, or the C compiler.
@@ -17251,6 +17275,33 @@ func (f *File) unnamedTypeNodeString(s *Scope, tn TypeNode) (string, bool) {
 	return "", false
 }
 
+// ptrToIface reports whether the variable d's type is a pointer to an interface, as
+// its written or inferred type says: isPtr alone does not, a type switch's clause
+// binding of an interface, `case wrapper:`, being marked one (the value holds a
+// pointer).
+func (f *File) ptrToIface(s *Scope, d *VarDeclaration) bool {
+	t := d.declType
+	if t == nil && d.inferredType != nil {
+		t = d.inferredType.tn
+	}
+	p, isPtr := t.(*TypeNodePointer)
+	if !isPtr || !d.isPtr {
+		return false
+	}
+	switch x := p.TypeNode.(type) {
+	case *TypeNodeInterface:
+		return true
+	case *TypeNodeIdent:
+		written := x.Name.Src()
+		if x.Qualifier.IsValid() {
+			written = x.Qualifier.Src() + "." + written
+		}
+		_, isIface := f.interfaceMethodsNamed(s, written)
+		return isIface
+	}
+	return false
+}
+
 // checkMethodCallOn is checkMethodCall for a value of the type d describes, spelt
 // base: a variable, or a value with no name (see checkStepsOn).
 func (f *File) checkMethodCallOn(s *Scope, d *VarDeclaration, base string, member Token, argList Node) {
@@ -17269,6 +17320,11 @@ func (f *File) checkMethodCallOn(s *Scope, d *VarDeclaration, base string, membe
 		return
 	}
 	if d.typeQual.IsValid() {
+		// A pointer to another package's interface has no methods (below).
+		if f.ptrToIface(s, d) {
+			f.err(member.Position(), "%s.%s undefined (type *%s.%s is pointer to interface, not interface)", base, member.Src(), d.typeQual.Src(), d.typeName.Src())
+			return
+		}
 		// A cross-package type: the method must be an exported method of the imported
 		// type (another package's unexported method is inaccessible).
 		f.checkCrossPkgMethod(d.typeQual, d.typeName, member)
@@ -17293,6 +17349,13 @@ func (f *File) checkMethodCallOn(s *Scope, d *VarDeclaration, base string, membe
 		return
 	}
 	if f.reportAmbiguousSelector(s, base, d.typeName, member) {
+		return
+	}
+	// A POINTER to an interface has no methods: a selector dereferences a pointer
+	// to a struct, and `p.Area()` for a `p *S` went to the C compiler as the
+	// interface's own S_Area, which nothing defines.
+	if f.ptrToIface(s, d) {
+		f.err(member.Position(), "%s.%s undefined (type *%s is pointer to interface, not interface)", base, member.Src(), d.typeName.Src())
 		return
 	}
 	fd := td.methods[member.Src()]
@@ -20321,13 +20384,15 @@ func (f *File) convPlaceType(s *Scope, open Token, inner Node, steps []Node) (t 
 	if pc, ok := f.ptrConvParts(s, open, inner, steps); ok {
 		// What is converted, as the conversion standing as a value is asked:
 		// `(*Row)(&c)[1] = 4` for a *Celsius was taken.
-		if pc.unnamed == "" || pc.lit.sym != 0 {
+		if pc.named() {
 			f.checkPtrConvArgs(s, pc)
 		}
 		var pointee TypeNode
 		switch {
 		case pc.lit.sym != 0:
 			pointee = f.typ(s, pc.lit)
+		case pc.ptrType != nil:
+			pointee, _ = f.ptrTypeOf(s, pc, true)
 		case pc.typ.IsValid():
 			pointee = &TypeNodeIdent{Qualifier: pc.qual, Name: pc.typ}
 		}
@@ -24068,6 +24133,9 @@ type ptrConvExpr struct {
 	args      []Node // what is converted: one value, or a count mismatch to report
 	at        Token  // where the conversion is written, for a message
 	rest      []Node // the steps after the conversion
+	// ptrType is the conversion's type as a Type node's body (pointerTypeAST), for a
+	// shape none of the above is: `**T`, `*chan T`, `*error`, `*unsafe.Pointer`.
+	ptrType []int32
 }
 
 // checkBracketConv checks a conversion to a slice or an array type written out,
@@ -24305,6 +24373,8 @@ func (f *File) ptrConvParts(s *Scope, at Token, typ Node, steps []Node) (ptrConv
 			if !slices.ContainsFunc(slices.Collect(it(lit.ast)), func(c Node) bool { return c.sym == 0 && f.ch(c.tok) == ELLIPSIS }) {
 				pc.lit = lit
 			}
+		} else if ast, base, isPtr := f.pointerTypeAST(typ); isPtr && f.namesType(s, base) {
+			pc.unnamed, pc.ptrType = f.exprSource(typ), ast
 		} else {
 			return ptrConvExpr{}, false
 		}
@@ -24379,6 +24449,122 @@ func (f *File) starTypeLiteral(s *Scope, e Node) (Node, bool) {
 	return kids[1], true
 }
 
+// pointerTypeAST is the type an expression is when it is one written with stars
+// before it, the parenthesised half of a conversion: `**T`, `*lib.T`, `*chan int`,
+// `*interface{ M() }`, `*error`, `*unsafe.Pointer`, `**[4]byte`. It answers the
+// body of a Type node over the expression's own tokens, which the checker's typ and
+// the emitter's cType read as they read a type a declaration writes, and the name
+// the stars lead to as written -- `T`, `lib.T`, "" for a type written out -- which
+// the caller asks is a type and not a variable: `(**pp)(x)` calls what pp points to
+// through. Any other shape is false.
+func (f *File) pointerTypeAST(x Node) (ast []int32, base string, ok bool) {
+	nodes := slices.Collect(it(x.ast))
+	for len(nodes) == 1 && (nodes[0].sym == Expression || nodes[0].sym == SimpleExpr || nodes[0].sym == Term) {
+		nodes = slices.Collect(it(nodes[0].ast))
+	}
+	if len(nodes) != 1 || nodes[0].sym != UnaryExpr {
+		return nil, "", false
+	}
+	kids := slices.Collect(it(nodes[0].ast))
+	if len(kids) < 2 || kids[len(kids)-1].sym != Factor {
+		return nil, "", false
+	}
+	var stars []int32
+	for _, k := range kids[:len(kids)-1] {
+		if k.sym != UnaryOp {
+			return nil, "", false
+		}
+		var op []Node
+		for c := range it(k.ast) {
+			op = append(op, c)
+		}
+		if len(op) != 1 || op[0].sym != 0 || f.ch(op[0].tok) != MUL {
+			return nil, "", false
+		}
+		stars = append(stars, op[0].tok)
+	}
+	fk := slices.Collect(it(kids[len(kids)-1].ast))
+	switch {
+	case len(fk) == 1 && fk[0].sym == 0 && f.ch(fk[0].tok) == IDENT:
+		ast, base = []int32{fk[0].tok}, f.tok(fk[0].tok).Src()
+	case len(fk) == 2 && fk[0].sym == 0 && f.ch(fk[0].tok) == IDENT && fk[1].sym == FactorSuffix:
+		steps := slices.Collect(it(fk[1].ast))
+		if len(steps) != 1 || steps[0].sym != Selector {
+			return nil, "", false
+		}
+		sel := slices.Collect(it(steps[0].ast))
+		if len(sel) != 2 || sel[0].sym != 0 || f.ch(sel[0].tok) != PERIOD || sel[1].sym != 0 || f.ch(sel[1].tok) != IDENT {
+			return nil, "", false
+		}
+		ast, base = []int32{fk[0].tok, sel[0].tok, sel[1].tok}, f.tok(fk[0].tok).Src()+"."+f.tok(sel[1].tok).Src()
+	case len(fk) != 0 && fk[0].sym == 0 && (f.ch(fk[0].tok) == CHAN || f.ch(fk[0].tok) == LBRACK):
+		// The Factor's children are the Type's own: "chan" and the element, or the
+		// brackets, the length and the element, with nothing after them.
+		for _, c := range fk {
+			switch {
+			case c.sym == 0:
+				ast = append(ast, c.tok)
+			case c.sym == CompositeLit || c.sym == FactorSuffix || c.sym == CallSuffix:
+				return nil, "", false
+			default:
+				ast = append(ast, encodeNode(c.sym, c.ast)...)
+			}
+		}
+	case len(fk) == 1 && fk[0].sym == InterfaceType:
+		ast = encodeNode(InterfaceType, fk[0].ast)
+	default:
+		return nil, "", false
+	}
+	for i := len(stars) - 1; i >= 0; i-- {
+		ast = append([]int32{stars[i]}, encodeNode(Type, ast)...)
+	}
+	return ast, base, true
+}
+
+// namesType reports whether the name a pointer type's stars lead to
+// (pointerTypeAST) is a type where s is: a type, a predeclared one or a package's
+// -- not `lib.FP`, a variable of another package's, through which `(*lib.FP)(x)`
+// calls.
+func (f *File) namesType(s *Scope, base string) bool {
+	if base == "" {
+		return true
+	}
+	if q, t, isQual := strings.Cut(base, "."); isQual {
+		if !f.isImportQualifier(s, q) {
+			return false
+		}
+		if imp, isImp := f.Scope.Declarations[q].(*ImportDeclaration); isImp && t == "Pointer" &&
+			imp.Import != nil && imp.Import.Pkg != nil && imp.Import.Pkg.ImportPath == "unsafe" {
+			return true
+		}
+		_, _, isType := f.typeDeclNamed(s, base)
+		return isType
+	}
+	switch s.find(base).(type) {
+	case *TypeDeclaration, *PredeclaredType:
+		return true
+	}
+	return false
+}
+
+// ptrTypeOf is the type a conversion to a pointer type of another shape than litType
+// knows points at (ptrConvExpr.ptrType), `*int` in `(**int)(p)`, with whatever
+// resolving it reports trimmed when quiet.
+func (f *File) ptrTypeOf(s *Scope, pc ptrConvExpr, quiet bool) (TypeNode, bool) {
+	if pc.ptrType == nil {
+		return nil, false
+	}
+	n0 := len(f.errList)
+	t := f.typ(s, Node{sym: Type, ast: pc.ptrType})
+	if quiet {
+		f.errList = f.errList[:n0]
+	}
+	if p, ok := t.(*TypeNodePointer); ok && p.TypeNode != nil {
+		return p.TypeNode, true
+	}
+	return nil, false
+}
+
 // litType is the type a conversion to a pointer to a type written out points at,
 // `[4]uint32` in `(*[4]uint32)(p)`, with whatever resolving it reports trimmed when
 // quiet -- checkPtrConv reports it, once, and every other question is that question
@@ -24397,6 +24583,12 @@ func (f *File) litType(s *Scope, pc ptrConvExpr, quiet bool) (TypeNode, bool) {
 		return t, true
 	}
 	return nil, false
+}
+
+// named reports whether the conversion names the type it points at, which only
+// `*[...]T` does not.
+func (pc ptrConvExpr) named() bool {
+	return pc.unnamed == "" || pc.lit.sym != 0 || pc.ptrType != nil
 }
 
 // typeName spells T as this file writes it.
@@ -24421,11 +24613,11 @@ func (f *File) checkPtrConv(s *Scope, pc ptrConvExpr) {
 		f.checkNames(s, a)
 	}
 	f.checkStepNames(s, pc.rest)
-	if pc.unnamed != "" && pc.lit.sym == 0 {
+	if !pc.named() {
 		f.err(pc.at.Position(), "invalid use of [...] array (outside a composite literal)")
 		return
 	}
-	if !f.checkPtrConvArgs(s, pc) || pc.lit.sym != 0 {
+	if !f.checkPtrConvArgs(s, pc) || pc.lit.sym != 0 || pc.ptrType != nil {
 		return
 	}
 	d := &VarDeclaration{typeName: pc.typ, typeQual: pc.qual, hasKind: pc.predecl}
@@ -24445,8 +24637,83 @@ func (f *File) checkPtrConvArgs(s *Scope, pc ptrConvExpr) bool {
 		}
 		return true
 	}
+	if pc.ptrType != nil {
+		if t, ok := f.ptrTypeOf(s, pc, false); ok {
+			f.checkTypedPtrConvOperand(s, pc, typeAt{t, s, f})
+		}
+		return true
+	}
 	f.checkPtrConvOperand(s, pc)
 	return true
+}
+
+// checkTypedPtrConvOperand checks what a conversion to a pointer type of another
+// shape converts (ptrConvExpr.ptrType), `(**T)(&p)`: nil, an unsafe.Pointer, or a
+// pointer whose base type has the underlying type of want, what the conversion
+// points at -- `&p` for a *T p, and not for a *U one. An operand whose type cannot
+// be followed is let pass.
+func (f *File) checkTypedPtrConvOperand(s *Scope, pc ptrConvExpr, want typeAt) {
+	arg := pc.args[0]
+	if f.isNilOperand(arg) || f.unsafePointerValue(s, arg) {
+		return
+	}
+	refuse := func(have typeAt, ptr bool) {
+		nm := f.typeAtMessage(have)
+		if nm == "" || strings.HasPrefix(nm, "a ") || strings.HasPrefix(nm, "an ") {
+			f.err(f.tok(arg.Pos()).Position(), "cannot convert %s to type %s", f.exprSource(arg), pc.unnamed)
+			return
+		}
+		if ptr {
+			nm = "*" + nm
+		}
+		what := "value"
+		if _, isName := f.exprIdent(arg); isName {
+			what = "variable"
+		}
+		f.err(f.tok(arg.Pos()).Position(), "cannot convert %s (%s of type %s) to type %s", f.exprSource(arg), what, nm, pc.unnamed)
+	}
+	if x, isAddr := f.addressOperand(s, arg); isAddr {
+		if have, ok := f.lenOperandType(s, x); ok {
+			if same, known := f.sameUnderlying(have, want); known && !same {
+				refuse(have, true)
+			}
+		}
+		return
+	}
+	have, ok := f.lenOperandType(s, arg)
+	if !ok {
+		// A pointer variable whose type was inferred, `q := &x`, which records its
+		// pointee by name or by Kind alone.
+		if id, isName := f.exprIdent(arg); isName {
+			if d, isVar := s.find(id.Src()).(*VarDeclaration); isVar && d.isPtr {
+				switch {
+				case d.typeName.IsValid():
+					base := typeAt{&TypeNodeIdent{Qualifier: d.typeQual, Name: d.typeName}, s, f}
+					if same, known := f.sameUnderlying(base, want); known && !same {
+						refuse(base, true)
+					}
+				case d.hasElemKind:
+					wu := f.underlyingTypeAt(want)
+					if k, isPre := underlyingKind(wu); isPre && k != d.elemKind || !isPre && isTypeLiteral(wu) {
+						f.err(f.tok(arg.Pos()).Position(), "cannot convert %s (variable of type *%s) to type %s", f.exprSource(arg), kindName(d.elemKind), pc.unnamed)
+					}
+				}
+				return
+			}
+		}
+		if k, known := f.exprType(s, arg); known && kindCategory(k) != catUnknown {
+			f.err(f.tok(arg.Pos()).Position(), "cannot convert %s (%s) to type %s", f.exprSource(arg), f.convOperandDesc(s, arg, k), pc.unnamed)
+		}
+		return
+	}
+	switch t := f.underlyingTypeAt(have).tn.(type) {
+	case *TypeNodePointer:
+		if same, known := f.sameUnderlying(typeAt{t.TypeNode, have.s, have.f}, want); known && !same {
+			refuse(have, false)
+		}
+	case *TypeNodeIdent, *TypeNodeArray, *TypeNodeSlice, *TypeNodeStruct, *TypeNodeChan, *FunctionType:
+		refuse(have, false)
+	}
 }
 
 // checkPtrConvOperand checks what a conversion to a pointer type converts (see
@@ -32890,6 +33157,9 @@ func (f *File) litOrConvType(s *Scope, n Node) (typeAt, bool) {
 	// and len reach through.
 	if pc, ok := f.ptrConvOf(s, n); ok && len(pc.rest) == 0 {
 		if t, ok := f.litType(s, pc, true); ok {
+			return typeAt{&TypeNodePointer{TypeNode: t}, s, f}, true
+		}
+		if t, ok := f.ptrTypeOf(s, pc, true); ok {
 			return typeAt{&TypeNodePointer{TypeNode: t}, s, f}, true
 		}
 		return typeAt{}, false
