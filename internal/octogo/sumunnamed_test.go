@@ -150,7 +150,7 @@ var gx int
 	for _, test := range []struct{ body, want string }{
 		{"x := 5\n\th := &gh\n\t*(h).pp = &x", "cannot store the address of local variable x through (*(h).pp)"},
 		{"x := 5\n\t*(geth()).pp = &x", "cannot store the address of local variable x through (*(geth()).pp)"},
-		{"x := 5\n\tput(&gh, &x)", "cannot pass the address of local variable x to put: it is stored through gh"},
+		{"x := 5\n\tput(&gh, &x)", "cannot pass the address of local variable x to put: its parameter 2 is stored where it outlives every frame"},
 		{"x := 5\n\tputCall(&x)", "cannot pass the address of local variable x to putCall: its parameter 1 is stored where it outlives every frame"},
 		{"x := 5\n\tputDeref(&x)", "cannot pass the address of local variable x to putDeref: its parameter 1 is stored where it outlives every frame"},
 		{"put(&gh, &gx)\n\tputCall(&gx)\n\tputDeref(&gx)\n\tx := 5\n\tputVal(&gh, &x)", ""},

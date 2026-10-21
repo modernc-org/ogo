@@ -20,6 +20,18 @@ shipped section tells a reader on that version that they have behaviour they do 
 
 ### Behaviour changes
 
+- **A callee storing its parameter past what it was handed keeps it where it
+  outlives every frame**: `func put(h *U, v *int) { h.q.p = v }` stores v through
+  h.q, a pointer loaded out of the caller's storage, and `put(&lu, &x)` was taken for
+  a local lu as a store into lu -- where lu.q pointed into a package variable, which
+  kept x's address after the frame ended, a later read finding other bytes. Every
+  shape of it now refuses a local's address passed for v, as Go moves such a local
+  to the heap: `(*hh).p = v` for a `**T`, `p := *hh; p.p = v`, a field of a parameter
+  passed by value or of the receiver, a slice field's element and `copy` into one, a
+  local holding a call's result, and a method or a function storing through what it
+  is handed, called on `p := *hh`, `u.q`, `*hh` or `get()`. A store into what the
+  parameter itself points at, `h.p = v`, is decided at the call site as before, and
+  a store of what holds no reference, as a Swap's of its elements, keeps nothing.
 - **A slot `--gostack` asks for is refused when it is smaller than what a goroutine
   needs at the least**, by the chains of direct calls the backend's listing shows:
   such a goroutine ran past its slot into what follows, in silence. `--gostack 400`

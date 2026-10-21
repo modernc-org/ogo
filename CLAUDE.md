@@ -993,8 +993,11 @@ section. A new finding goes there; the rule it leaves goes here too.
 - **A STORE RULE IS ASKED AT EVERY STORE SITE**: **A new place that stores calls
   both** (refuseStore and noteStoredThrough); **A new way a callee stores is read by
   those two and sunk by that one.**
-- **A RULE ASKED OF A ROOT MISSES WHAT A POINTER REACHES**. **A MARK IS MADE IN
-  EMISSION ORDER, AND A LOOP RUNS ITS BODY AGAIN**: **A mark is a fact about a
+- **A RULE ASKED OF A ROOT MISSES WHAT A POINTER REACHES**. **A STORE A SUMMARY
+  RECORDS IS ASKED HOW FAR IT GOES**: **one pointer from a value the caller or this
+  frame chose is the call site's question; any other lands where no rule can name**,
+  and **what a name's value is, is asked of its bindings, not of what is stored into
+  it**. **A MARK IS MADE IN EMISSION ORDER, AND A LOOP RUNS ITS BODY AGAIN**: **A mark is a fact about a
   variable at a point; a rule reading one asks what reaches that point -- a loop's
   back edge and an alias both do.**
 - **A PARENTHESISED HEAD IS A ROW OF EVERY SCAN**: **A new scan reads heads through

@@ -4708,6 +4708,37 @@ func (e *emitter) addTypedef(name, text string, ctypes ...string) {
 	e.typedefUnits = append(e.typedefUnits, typedefUnit{name: name, text: text, deps: e.typedefDeps(ctypes)})
 }
 
+// unminted runs fn, a question about types asked by a pass that must not change
+// the program, and forgets each type the asking minted: the typedef of an array's
+// row, a slice's header. The summaries type a store's target to count the pointers
+// it goes through, and a row of a `[2][2]int` field named that way was a typedef
+// in the C of a program that never wrote one (storesPast).
+func (e *emitter) unminted(fn func()) {
+	units := len(e.typedefUnits)
+	var elems []string
+	for el := range e.sliceElems {
+		elems = append(elems, el)
+	}
+	fn()
+	for _, u := range e.typedefUnits[units:] {
+		delete(e.namedArrays, u.name)
+		delete(e.typeNames, u.name)
+	}
+	e.typedefUnits = e.typedefUnits[:units]
+	if len(e.sliceElems) != len(elems) {
+		had := map[string]bool{}
+		for _, el := range elems {
+			had[el] = true
+		}
+		for el := range e.sliceElems {
+			if !had[el] {
+				delete(e.sliceElems, el)
+				delete(e.sliceElemByName, sliceCName(el))
+			}
+		}
+	}
+}
+
 // typedefDeps reduces C type texts to the names whose declaration must precede
 // them.
 //
@@ -7871,6 +7902,7 @@ type emitter struct {
 	locals              map[string]string       // current function's parameter/local name -> C type, for typing `x := y`
 	curFunc             string                  // name of the function whose body is being emitted (for its result-struct type)
 	pkgScope            bool                    // a package variable's initializer is being emitted, where this frame's storage does not exist
+	inUnminted          bool                    // a question unminted asks is under way: the types it mints are forgotten
 	curResultNames      []string                // current function's result C-variable names, for a bare "return" (naked return)
 	curArrayResult      string                  // the NAME its single array result was declared with, which a return copies into the caller's storage
 	curResultTypes      []string                // current function's result C types, for typing a `return nil` in a slice-returning function
@@ -13243,6 +13275,313 @@ func (e *emitter) collectFuncCross(fi funcInfo) {
 		}
 	}
 	sink := func(v []int32, flag leak) { sinkHeld(e.summaryReach(v), flag) }
+	// What a store through a name reaches is decided by how many pointers its
+	// target goes through (storesPast): one, from the name's own value, lands in what
+	// the name holds -- a parameter's pointee, which the caller chose, the
+	// receiver's, a local's -- and is the call site's question; any other lands past
+	// a pointer loaded out of storage, `h.q.p = v`, `(*hh).p = v`, `p := *hh; p.p =
+	// v`, which nothing here can name, and is taken to outlive every frame. Read as
+	// the name's alone, each such store was the caller's to decide by the argument's
+	// own storage, and `put(&lu, &x)` left x's address in the package variable lu
+	// pointed into, in silence.
+	//
+	// The target is typed from its root: a parameter, the receiver or a package
+	// variable (curOf); a local declared with a defined type (fi.locals); or a local
+	// every binding of which is typed from those, `p := *hh` and `q := h.q`. A local
+	// bound otherwise is not typed, and its store is read as it was.
+	bound := map[string][]Node{}
+	unbound := map[string]bool{}
+	e.eachStmt(body, func(nodes []Node) {
+		targets, into, values := e.summaryBinding(nodes)
+		if len(nodes) == 1 && nodes[0].sym == VarDecl && len(values) == 0 {
+			return // `var t T`: fi.locals types it
+		}
+		if len(targets) != len(values) {
+			for _, t := range targets {
+				unbound[t] = true // one call's several results
+			}
+			return
+		}
+		for i, t := range targets {
+			if !into[i] {
+				bound[t] = append(bound[t], Node{sym: Expression, ast: values[i]})
+			}
+		}
+	})
+	typing := map[string]bool{}
+	var rootCur func(name string) (accessCur, bool)
+	var exprCur func(n Node) (accessCur, bool)
+	rootCur = func(name string) (accessCur, bool) {
+		if cur, ok := curOf(name); ok {
+			return cur, true
+		}
+		if tn := fi.locals[name]; tn != "" && len(bound[name]) == 0 {
+			return e.plainOrSlice(tn), true // `var t T`
+		}
+		if unbound[name] || len(bound[name]) == 0 || typing[name] {
+			return accessCur{}, false
+		}
+		typing[name] = true
+		defer delete(typing, name)
+		var cur accessCur
+		for i, v := range bound[name] {
+			c, ok := exprCur(v)
+			if !ok || i != 0 && (c.ctype != cur.ctype || c.slice != cur.slice || c.elem != cur.elem || len(c.dims) != len(cur.dims)) {
+				return accessCur{}, false
+			}
+			cur = c
+		}
+		return cur, true
+	}
+	// walkTarget follows a target from its root, counting the pointers it goes
+	// through and whether the first is the root's own value, no step before it.
+	type walked struct {
+		root            string
+		cur             accessCur
+		hops            int
+		atRoot, stepped bool
+		unnamed         bool // the root is a call's result, `get().p`
+	}
+	var walkTarget func(n Node) (walked, bool)
+	walkTarget = func(n Node) (w walked, ok bool) {
+		for n.sym == Expression || n.sym == SimpleExpr || n.sym == Term {
+			kids := slices.Collect(it(n.ast))
+			if len(kids) != 1 {
+				return w, false
+			}
+			n = kids[0]
+		}
+		if n.sym == UnaryExpr {
+			// `*p` and `**pp`: the parser's `*` over a UnaryExpr, or the stars of a
+			// statement's head built over its nodes (commChanExpr), several in one.
+			kids := slices.Collect(it(n.ast))
+			if len(kids) == 1 {
+				n = kids[0]
+			} else {
+				for _, k := range kids[:len(kids)-1] {
+					if tok, isOp := e.unaryOpTok(k.ast); k.sym != UnaryOp || !isOp || e.f.ch(tok) != MUL {
+						return w, false
+					}
+				}
+				if w, ok = walkTarget(kids[len(kids)-1]); !ok {
+					return w, false
+				}
+				for range kids[:len(kids)-1] {
+					if !e.isPointer(w.cur.ctype) {
+						return w, false
+					}
+					if w.hops++; w.hops == 1 {
+						w.atRoot = !w.stepped
+					}
+					w.cur = e.plainOrSlice(e.elemType(w.cur.ctype))
+				}
+				return w, true
+			}
+		}
+		if n.sym != Factor {
+			return w, false
+		}
+		kids := slices.Collect(it(n.ast))
+		var steps []Node
+		if k := len(kids); k > 1 && kids[k-1].sym == FactorSuffix {
+			steps, kids = slices.Collect(it(kids[k-1].ast)), kids[:k-1]
+		}
+		switch {
+		case len(kids) == 1 && kids[0].sym == 0 && e.f.ch(kids[0].tok) == IDENT && len(steps) != 0 && steps[0].sym == CallSuffix:
+			// A call of a function this package declares, `get().p`: its result is
+			// storage no name here holds.
+			name := e.src(kids[0].tok)
+			rts := e.funcRet[e.funcCallC(name)]
+			if _, typed := rootCur(name); typed || len(bound[name]) != 0 || len(rts) != 1 || rts[0] == "" {
+				return w, false
+			}
+			w.cur, w.unnamed, w.stepped, steps = e.plainOrSlice(rts[0]), true, true, steps[1:]
+		case len(kids) == 1 && kids[0].sym == 0 && e.f.ch(kids[0].tok) == IDENT:
+			w.root = e.src(kids[0].tok)
+			if w.cur, ok = rootCur(w.root); !ok {
+				return w, false
+			}
+		case len(kids) == 3 && kids[0].sym == 0 && e.f.ch(kids[0].tok) == LPAREN && kids[1].sym == Expression:
+			if w, ok = walkTarget(kids[1]); !ok {
+				return w, false
+			}
+		default:
+			return w, false
+		}
+		for _, st := range steps {
+			hop := false
+			switch st.sym {
+			case Selector:
+				hop = e.isPointer(w.cur.ctype)
+			case Index:
+				if _, _, _, sliced := e.sliceParts(st.ast); !sliced {
+					hop = w.cur.slice || e.isPointer(w.cur.ctype)
+				}
+			default:
+				return w, false // a call: storedThroughUnnamed's
+			}
+			if hop {
+				if w.hops++; w.hops == 1 {
+					w.atRoot = !w.stepped
+				}
+			}
+			w.stepped = true
+			if w.cur, ok = e.accessChainTypeAt(w.cur, []Node{st}, true); !ok {
+				return w, false
+			}
+		}
+		return w, true
+	}
+	exprCur = func(n Node) (accessCur, bool) {
+		if f, ok := e.addrOperandFactor(n.ast); ok {
+			// `w := &t`, `w := &h.in`: a pointer to what the operand is
+			w, ok := walkTarget(f)
+			if !ok || w.cur.ctype == "" || w.cur.slice || len(w.cur.dims) != 0 {
+				return accessCur{}, false
+			}
+			return e.plainOrSlice(w.cur.ctype + "*"), true
+		}
+		w, ok := walkTarget(n)
+		return w.cur, ok
+	}
+	// valueKnown reports whether what a name points at is storage a name here has
+	// or the caller chose, by how the name is BOUND, not by what is stored into it: a
+	// parameter or the receiver the body never binds again, a package variable, or a
+	// local bound only to such names and to addresses of what they reach, `w := &t`
+	// and `w := &h.in`. A pointer loaded out of storage, `p := *hh` and `q := h.q`, a
+	// call's result and anything else point at what nothing here can name.
+	knowing := map[string]bool{}
+	var valueKnown func(name string) bool
+	valueKnown = func(name string) bool {
+		if unbound[name] {
+			return false
+		}
+		if knowing[name] {
+			return true // a binding of its own value: the others decide
+		}
+		knowing[name] = true
+		defer delete(knowing, name)
+		for _, v := range bound[name] {
+			if n, isName := e.exprIdent(e.unparenExpr(v.ast)); isName {
+				if !valueKnown(n) {
+					return false
+				}
+				continue
+			}
+			f, isAddr := e.addrOperandFactor(v.ast)
+			if !isAddr {
+				return false
+			}
+			w, ok := walkTarget(f)
+			if !ok || w.unnamed || w.hops > 1 || w.hops == 1 && !w.atRoot || !valueKnown(w.root) {
+				return false
+			}
+		}
+		return true
+	}
+	// storesPast reports whether a store lands past what its root's value points at
+	// (storesPast): deeper than one pointer, or one loaded out of storage.
+	var storesPast func(st storeShape) bool
+	storesPast = func(st storeShape) (past bool) {
+		if st.target == nil {
+			return false
+		}
+		if !e.inUnminted {
+			e.inUnminted = true
+			defer func() { e.inUnminted = false }()
+			e.unminted(func() { past = storesPast(st) })
+			return past
+		}
+		w, ok := walkTarget(Node{sym: Expression, ast: st.target})
+		if !ok {
+			return false
+		}
+		if st.elems && w.cur.slice {
+			if w.hops++; w.hops == 1 {
+				w.atRoot = !w.stepped
+			}
+		}
+		// A place that can hold no reference keeps nothing, however deep: the
+		// elements a Swap exchanges through `(*s)[i]`, a byte of a buffer.
+		placed := "" // the type of the place written; a slice header's carries one
+		switch {
+		case st.elems && w.cur.slice, len(w.cur.dims) != 0:
+			placed = w.cur.elem
+		case !w.cur.slice:
+			placed = w.cur.ctype
+		}
+		if placed != "" && !e.carriesReference(placed) {
+			return false
+		}
+		switch {
+		case w.hops == 0:
+			return false // into the root's own storage
+		case w.unnamed:
+			return true
+		case w.hops == 1 && w.atRoot:
+			return !valueKnown(w.root)
+		}
+		return true
+	}
+	// argPast reports whether a callee storing through its parameter, handed the
+	// argument a, stores past what a name here holds by value: `fill(h, v)` stores
+	// into what h points at, the caller's question; `fill(u.q, v)`, `fill(*hh, v)`
+	// and `fill(q, v)` for `q := u.q` into what a pointer loaded out of storage
+	// points at, which nothing here can name. An address, `fill(&t, v)`, stores into
+	// what it addresses.
+	var argPast func(a Node) bool
+	argPast = func(a Node) (past bool) {
+		if !e.inUnminted {
+			e.inUnminted = true
+			defer func() { e.inUnminted = false }()
+			e.unminted(func() { past = argPast(a) })
+			return past
+		}
+		w, ok := walked{}, false
+		if f, isAddr := e.addrOperandFactor(a.ast); isAddr {
+			if w, ok = walkTarget(f); !ok || w.hops == 0 {
+				return false
+			}
+		} else {
+			if w, ok = walkTarget(a); !ok || !e.isPointer(w.cur.ctype) && !w.cur.slice {
+				return false
+			}
+			if w.hops++; w.hops == 1 {
+				w.atRoot = !w.stepped
+			}
+		}
+		return w.unnamed || w.hops > 1 || !w.atRoot || !valueKnown(w.root)
+	}
+	// A method called on a LOCAL holding a pointer, `w := h; w.set(v)` or `p :=
+	// *hh; p.set(v)`, is called on what the local points at: the caller's storage
+	// behind a parameter it holds, its own receiver's, a local's of this frame --
+	// or, held otherwise, storage this cannot name, taken to outlive the caller.
+	fi.localRecv = func(name string) (base string, kind recvKind, at0 int, ok bool) {
+		if !e.inUnminted {
+			e.inUnminted = true
+			defer func() { e.inUnminted = false }()
+			e.unminted(func() { base, kind, at0, ok = fi.localRecv(name) })
+			return base, kind, at0, ok
+		}
+		if _, typed := curOf(name); typed || name == recvName {
+			return "", recvNone, argLocal, false // a parameter, the receiver, a package variable
+		}
+		cur, typed := rootCur(name)
+		if !typed || !e.isPointer(cur.ctype) {
+			return "", recvNone, argLocal, false
+		}
+		base = e.elemType(cur.ctype)
+		switch i := at(name); {
+		case !valueKnown(name):
+		case i >= 0 && i < intoBits:
+			return base, recvParam, i, true
+		case isRecv(name):
+			return base, recvOwn, argLocal, true
+		case !holdsPackageVar(name):
+			return base, recvLocal, argLocal, true
+		}
+		return base, recvOutlives, argLocal, true
+	}
 	// owners says what this call passed at each position, in the terms the
 	// CALLER's summary is written in: its own parameters by index, or a package
 	// variable, or something not to be followed. A callee's "stored through my
@@ -13252,6 +13591,8 @@ func (e *emitter) collectFuncCross(fi funcInfo) {
 		for j, a := range args {
 			root := e.crossRoot(a.ast)
 			switch i := at(root); {
+			case argPast(a):
+				out[j] = argOutlives
 			case i >= 0:
 				out[j] = i
 			case root != "" && e.outlivesByName(root):
@@ -13634,6 +13975,13 @@ func (e *emitter) collectFuncCross(fi funcInfo) {
 			}
 		}
 		for _, st := range through {
+			if storesPast(st) {
+				sinkHeld(reachOfStore(st), leakGlobal)
+				if st.value != nil {
+					derived(st.value, leakGlobal, -1)
+				}
+				continue
+			}
 			if isRecv(st.base) {
 				r := reachOf(reachOfStore(st))
 				for _, i := range r.vals {
@@ -15366,6 +15714,10 @@ type funcInfo struct {
 	// locals maps a local variable to the DEFINED type it was declared with, for
 	// the receivers only a body scan can name (see localTypeNames).
 	locals map[string]string
+	// localRecv types a local holding a POINTER as a receiver, by what it holds:
+	// the method's base type, the receiver's kind and the parameter it is behind
+	// (collectFuncCross).
+	localRecv func(name string) (string, recvKind, int, bool)
 }
 
 // eachStmt calls fn with the children of every Statement in ast, at any depth, so a
@@ -15417,6 +15769,10 @@ type storeShape struct {
 	base  string
 	value []int32 // the value stored, or nil where held says what it reaches
 	held  []held  // what the value reaches where it is no expression: a range clause's element
+	// target is the place stored into, as an expression, `h.q.p` and `(*hh).p`, and
+	// elems says the store writes its ELEMENTS, as copy does: what storesPast reads.
+	target []int32
+	elems  bool
 }
 
 // throughStores lists the stores a statement makes THROUGH a name -- a selector, an
@@ -15427,10 +15783,15 @@ type storeShape struct {
 // every setter makes, whose storage the call site knows the lifetime of; a bare `t =
 // v` rebinds the receiver variable, which dies with the call, and is not one.
 func (e *emitter) throughStores(nodes []Node) (out []storeShape) {
+	exprs := e.storeTargetExprs(nodes)
 	if base, values, suffixed, deref := e.assignThrough(nodes); base != "" {
 		if suffixed || deref {
 			for _, v := range values {
-				out = append(out, storeShape{base: base, value: v})
+				st := storeShape{base: base, value: v}
+				if len(exprs) != 0 {
+					st.target = exprs[0]
+				}
+				out = append(out, st)
 			}
 		}
 		return out
@@ -15441,8 +15802,38 @@ func (e *emitter) throughStores(nodes []Node) (out []storeShape) {
 	}
 	for i, t := range targets {
 		if into[i] && t != "" && t != "_" {
-			out = append(out, storeShape{base: t, value: values[i]})
+			st := storeShape{base: t, value: values[i]}
+			if i < len(exprs) {
+				st.target = exprs[i]
+			}
+			out = append(out, st)
 		}
+	}
+	return out
+}
+
+// storeTargetExprs is each target of an assignment statement as an expression, in
+// summaryBinding's order: the head and its steps, then each item of a list --
+// `h.q.p` of `h.q.p = v` and `*(*hh).p` of `n, *(*hh).p = 1, v` -- for the reader of
+// a target's shape that asks of an expression (storesPast).
+func (e *emitter) storeTargetExprs(nodes []Node) (out [][]int32) {
+	if len(nodes) != 2 || nodes[0].sym != AssignHead || nodes[1].sym != Postfix {
+		return nil
+	}
+	postfix := slices.Collect(it(nodes[1].ast))
+	if len(postfix) == 0 || postfix[len(postfix)-1].sym != PostfixOp {
+		return nil
+	}
+	out = append(out, e.commChanExpr(nodes[0], postfix[:len(postfix)-1]).ast)
+	for c := range it(postfix[len(postfix)-1].ast) {
+		if c.sym != LhsItem {
+			continue
+		}
+		if item := slices.Collect(it(c.ast)); len(item) != 0 && item[0].sym == AssignHead {
+			out = append(out, e.commChanExpr(item[0], item[1:]).ast)
+			continue
+		}
+		out = append(out, nil)
 	}
 	return out
 }
@@ -15462,7 +15853,7 @@ func (e *emitter) clauseStores(h forHeader) (pkg, through []storeShape) {
 		if base == "" || base == "_" {
 			return nil, nil
 		}
-		st := storeShape{base: base, held: asElem(e.summaryReach(h.rangeExpr))}
+		st := storeShape{base: base, held: asElem(e.summaryReach(h.rangeExpr)), target: h.valVar}
 		if e.outlivesByName(base) {
 			return []storeShape{st}, nil
 		}
@@ -15495,7 +15886,7 @@ func (e *emitter) clauseStores(h forHeader) (pkg, through []storeShape) {
 				continue
 			}
 			if _, whole := e.exprIdent(l); !whole {
-				through = append(through, storeShape{base: base, value: rhss[i]})
+				through = append(through, storeShape{base: base, value: rhss[i], target: l})
 			}
 		}
 	}
@@ -15722,7 +16113,7 @@ func (e *emitter) copyStores(nodes []Node, fi funcInfo) (pkg, through []storeSha
 						case e.copyIntoUnnamed(args[0].ast) || base != "" && e.outlivesByName(base):
 							pkg = append(pkg, st)
 						case base != "" && base != "_":
-							st.base = base
+							st.base, st.target, st.elems = base, args[0].ast, true
 							through = append(through, st)
 						}
 					}
@@ -15744,7 +16135,7 @@ func (e *emitter) copyStores(nodes []Node, fi funcInfo) (pkg, through []storeSha
 				case e.copyIntoUnnamed(args[0].ast) || base != "" && e.outlivesByName(base):
 					pkg = append(pkg, st)
 				case base != "" && base != "_":
-					st.base = base
+					st.base, st.target, st.elems = base, args[0].ast, true
 					through = append(through, st)
 				}
 			}
@@ -16735,6 +17126,15 @@ func (e *emitter) methodCallOf(recv string, suffix []Node, fi funcInfo) (methodC
 		// matched no case, so the call was no call at all to the summaries -- neither
 		// its receiver nor its arguments were followed.
 		ct, kind, copyOf = fi.paramType[i], recvLocal, recv
+	case i < 0 && fi.localRecv != nil && func() bool {
+		lct, lkind, lat, ok := fi.localRecv(recv)
+		if ok {
+			ct, kind, at = lct, lkind, lat
+		}
+		return ok
+	}():
+		// A LOCAL holding a pointer, `w := h; w.set(v)`, `p := *hh; p.set(v)`:
+		// called on what it points at, by what it holds (localRecv).
 	case fi.locals[recv] != "":
 		// A LOCAL, whose declaration the body scan read. It dies with the frame, so
 		// a store INTO it is no leak -- but a store THROUGH the parameter into a

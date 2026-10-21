@@ -2859,6 +2859,45 @@ result writes what that reaches, which is refused unless the pointer is known to
 point at a local of this frame, whose block then decides (`checkStoreThroughRef`,
 `targetThroughRef`). Found while making targets through calls writable, which would
 have widened it: the rule was asked on the way, not by a sweep.
+**A STORE A SUMMARY RECORDS IS ASKED HOW FAR IT GOES** (2026-10-21, found writing the
+summary rows of the star targets, `*(h).pp = v`). The store rules inside a function
+have asked what a pointer reaches since 2026-09-24 (A RULE ASKED OF A ROOT MISSES
+WHAT A POINTER REACHES); the summaries of what a callee keeps had not. A store
+through a parameter's name was recorded as one through that parameter whatever the
+chain after it, and the caller, passing `&lu` for a local lu, took the store to land
+in lu -- where `h.q.p = v` lands in what lu.q points at, a package variable as
+likely as not: `put(&lu, &x)` left x's address there, and read after run returned
+it printed 32766 on the host for Go's 42. Twenty-two shapes did the same: a field of
+the pointer a parameter points at, `(*hh).p` for a `**T`, a local loaded out of
+one, `p := *hh` and `q := h.q`, a package variable's pointer `q := gu.q`, a field of
+a parameter passed by value, the receiver's pointer, value and pointer receivers
+both, a slice field's element and `copy` into one, a list and a for clause, a local
+holding a call's result, `**hh = T{p: v}` -- and through a call, a method storing
+into its receiver called on `p := *hh`, `fill(u.q, v)`, `fill(*hh, v)`, `fill(q, v)`
+for `q := u.q`, `fill(get(), v)`. The summaries now type a store's target from its
+root -- a parameter, the receiver, a package variable, a local declared with a
+defined type, or one every binding of which types from those -- and count the
+pointers it goes through (storeDepth): one, from the value of a name the caller or
+this frame chose, is the call site's question as before; any other lands where no
+rule can name, and the value stored is kept where it outlives every frame, as Go's
+compiler moves such a local to the heap. An argument is asked the same of where the
+callee's store through it lands (argPast), and a local holding a pointer is a
+receiver by what it holds (localRecv). Three things the first version got wrong,
+each caught by the tests: what a name's value IS was asked of what it holds, which
+counts what is stored INTO it -- `*ps = (*ps)[1:]` made ps hold its own contents,
+and a stack's pop through a pointer to its slice was refused (valueKnown reads the
+bindings); a Swap exchanging elements through `(*s)[i]` was refused for a store two
+pointers deep of values holding no reference (a place that can hold none keeps
+nothing); and typing a target minted the typedef of a `[2][2]int` row into two run
+cases' C (unminted). The corpus's 1,393 programs emit the C they did and none is
+refused; of 4,858 domain programs and mutants none has another verdict (one is refused either
+way under another first message), and p2-11 and its tests build to the same bytes. Left: a local
+the summaries cannot type -- bound by a range clause, by a call of several results,
+by a type assertion -- keeps the old reading; and `(*hh).set(v)` for a `**T`, valid
+Go, is "unknown package hh", `(**hh).set(v)` "cannot call pointer method set on T".
+The rules: **one pointer from a value the caller or this frame chose is the call
+site's question; any other lands where no rule can name**, and **what a name's value
+is, is asked of its bindings, not of what is stored into it**.
 **A MARK IS MADE IN EMISSION ORDER, AND A LOOP RUNS ITS BODY AGAIN** (2026-10-08,
 found probing unsafe.Slice's views). The holder marks are set as statements are
 emitted, so a statement read a variable's mark as the statements BEFORE it had left
