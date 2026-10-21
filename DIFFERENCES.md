@@ -284,6 +284,39 @@ in String
 x=t
 ```
 
+### A panic in a method `printf` calls ends the program
+
+Go's `fmt` recovers a panic in the `String` or `Error` method it calls, writes
+`%!v(PANIC=String method: ...)` where the value would have gone, and goes on. There is
+no `recover` here, so the panic is the program's: the line stops where the method
+was called, and the program ends.
+
+```go
+type Level int
+
+var names = [2]string{"low", "high"}
+
+func (l Level) String() string { return names[l] }
+
+func main() {
+	printf("level=%v|\n", Level(3))
+	println("after")
+}
+```
+
+OctoGo prints:
+
+```
+level=panic: index out of range
+```
+
+Go prints:
+
+```
+level=%!v(PANIC=String method: runtime error: index out of range [3] with length 2)|
+after
+```
+
 ### `println` of a slice prints its elements
 
 Go's builtin `println` prints a slice's length, capacity and address. OctoGo's prints

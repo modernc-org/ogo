@@ -29608,7 +29608,19 @@ func (e *emitter) emitParenChain(kids []Node) bool {
 			}
 		}
 		if e.hasArrayField(ct) {
-			return false // the target's compiler copies no struct holding an array
+			// The target's compiler copies no struct holding an array; but where
+			// the head is a dereference, `(**q).b` and `(*get()).b`, the pointer
+			// it reads through is bound and the steps walk through it, a selector
+			// dereferencing it as Go's does.
+			if x, isDeref := e.derefExprOperand(kids[1]); isDeref && steps[0].sym == Selector {
+				if pct, ok := e.inferNode(x); ok && e.isPointer(pct) {
+					ptr := e.hoist(pct, func() { e.emitExprNode(x) })
+					e.locals[ptr] = pct
+					_, ok = e.emitAccessChainAt(ptr, e.plainOrSlice(pct), steps, true)
+					return ok
+				}
+			}
+			return false
 		}
 	}
 	tmp := e.hoist(ct, func() { e.emitExprNode(kids[1]) })
@@ -44352,6 +44364,33 @@ func (e *emitter) derefOperandNode(n Node) (Node, bool) {
 	return un[1], true
 }
 
+// derefExprOperand is what an expression that is a dereference, `*x` or `**q`,
+// dereferences: x, or the expression of the stars after the first.
+func (e *emitter) derefExprOperand(n Node) (Node, bool) {
+	nodes := slices.Collect(it(e.unparenExpr(n.ast)))
+	for len(nodes) == 1 && (nodes[0].sym == Expression || nodes[0].sym == SimpleExpr || nodes[0].sym == Term) {
+		nodes = slices.Collect(it(nodes[0].ast))
+	}
+	if len(nodes) != 1 || nodes[0].sym != UnaryExpr {
+		return Node{}, false
+	}
+	un := slices.Collect(it(nodes[0].ast))
+	if len(un) < 2 || un[0].sym != UnaryOp {
+		return Node{}, false
+	}
+	if tok, ok := e.unaryOpTok(un[0].ast); !ok || e.f.ch(tok) != MUL {
+		return Node{}, false
+	}
+	if len(un) == 2 {
+		return un[1], true
+	}
+	var rest []int32
+	for _, k := range un[1:] {
+		rest = append(rest, encodeNode(k.sym, k.ast)...)
+	}
+	return Node{sym: Expression, ast: encodeNode(SimpleExpr, encodeNode(Term, encodeNode(UnaryExpr, rest)))}, true
+}
+
 // derefExprHead is derefHead for a dereference of anything but a name, `(*f())` and
 // `(*h.get())`: the operand dereferenced.
 func (e *emitter) derefExprHead(head Node) (Node, bool) {
@@ -44360,24 +44399,16 @@ func (e *emitter) derefExprHead(head Node) (Node, bool) {
 		kids[2].sym != 0 || e.f.ch(kids[2].tok) != RPAREN || kids[1].sym != Expression {
 		return Node{}, false
 	}
-	nodes := slices.Collect(it(e.unparenExpr(kids[1].ast)))
-	for len(nodes) == 1 && (nodes[0].sym == Expression || nodes[0].sym == SimpleExpr || nodes[0].sym == Term) {
-		nodes = slices.Collect(it(nodes[0].ast))
-	}
-	if len(nodes) != 1 || nodes[0].sym != UnaryExpr {
+	// `(**q).b = 7` too: what is dereferenced is then `*q`, the stars after the
+	// first.
+	x, ok := e.derefExprOperand(kids[1])
+	if !ok {
 		return Node{}, false
 	}
-	un := slices.Collect(it(nodes[0].ast))
-	if len(un) != 2 || un[0].sym != UnaryOp {
-		return Node{}, false
-	}
-	if tok, ok := e.unaryOpTok(un[0].ast); !ok || e.f.ch(tok) != MUL {
-		return Node{}, false
-	}
-	if _, isName := e.exprIdent(e.unparenExpr(un[1].ast)); isName {
+	if _, isName := e.exprIdent(e.unparenExpr(x.ast)); isName && x.sym != Expression {
 		return Node{}, false // derefHead's, or no pointer at all
 	}
-	return un[1], true
+	return x, true
 }
 
 // parenHeadName reads a parenthesised assignment head naming a variable, `(x)`, or

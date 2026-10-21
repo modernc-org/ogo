@@ -153,6 +153,10 @@ shipped section tells a reader on that version that they have behaviour they do 
 
 ### Fixed
 
+- **A store through two dereferences compiles, `(**q).b = 7`**, and so does a read
+  through one of a struct holding an array, `x := (**q).b` and `(*get()).arr[1]`:
+  the first was "only assignment to a simple variable", the second "this form is not
+  supported yet".
 - **A value of a type that resolves to nothing earns Go's one error**, "undefined:
   lib.Nope", where a second said the value's type implemented no interface it was
   put in, naming as missing whichever method a map handed out first -- one method

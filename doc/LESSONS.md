@@ -790,10 +790,32 @@ as well as a pointer.** Left, loud: a conversion to a pointer to a struct or a
 function type written out, which the grammar does not parse in an expression (a
 struct type there wants a literal after it, a func type a body), nor a conversion
 to either; a store through two dereferences, `(**q).b = 7`, "only assignment to a
-simple variable"; an assertion on a parenthesised value but a name, `(*p).(*R)` and
+simple variable" (taken the same day, dom56 below); an assertion on a parenthesised value but a name, `(*p).(*R)` and
 `(get()).(*R)`; a send whose channel is a conversion, `*(*chan int)(p) <- 5`; and a
 method on a field pointing to an interface, `h.p.Area()`, refused by the emitter in
 its own words where Go's are "pointer to interface, not interface".
+
+dom56 (2026-10-21, a domain program in a shape none had taken: calendar time and a
+report, module example.com/clog -- dates from day numbers and back by Hinnant's
+algorithms, which divide negative numbers, leap years, ISO weeks, timestamps and
+Go-style durations written into fixed buffers, a log of records sorted, searched
+and summarised per channel, parse errors wrapped and asked by errors.Is and As, a
+report in printf's widths, flags and %v of structs and String methods, and a clock
+cog ticking through a select) matched Go on the host and on a P2-EDGE as written,
+once its Error method built its text in a buffer rather than by `+`, which needs a
+heap. Its 1,600 mutants found no compiler fault on the host: no program Go rejects
+taken, 23 refused that Go takes, every one by design (unreachable code, the
+compile-time printf and errors.As checks, the lifetime rule), and the 72 that ran
+differently each a known difference -- a panic's wording, a hang or a deadlock Go
+detects, a String method printing into the line printf writes -- but one, which was
+not written down: fmt recovers a panic in the String or Error method it calls and
+writes `%!v(PANIC=String method: ...)` in the value's place, and here the program
+ends there. It is DIFFERENCES.md's now, recover being planned. Besides, writing its
+run cases, a store through two dereferences, `(**q).b = 7`, and a read through one
+where the struct holds an array, `(*get()).arr[1]` -- the head took one star, and a
+struct holding an array is no value the target's compiler copies, where the pointer
+read through is what is bound now (derefExprOperand). Left: a star over such a
+chain, `*(**q).p = 6`.
 
 **A TYPE SWITCH BEHIND AN INIT STATEMENT** (2026-10-07), `switch s := pick(); v :=
 s.(type)`, the last header shape on the open list: the grammar's SwitchTag takes `[

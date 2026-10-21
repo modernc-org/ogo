@@ -4682,6 +4682,46 @@ func main() {
 		want: "15 3\n25 11\n30\n30\n107 1 1\ndeferred 35\n",
 	},
 	{
+		// A store through two dereferences, `(**q).b = 7`, was "only assignment to a
+		// simple variable": the head took one star. And reading through one where
+		// the struct holds an array, `x := (**q).b` and `(*get()).arr[1]`, was "this
+		// form is not supported yet": the value was to be copied, which the target's
+		// compiler cannot make of such a struct, where the pointer it is read
+		// through is what is bound. The calls are counted.
+		name: "a store and a read through two dereferences",
+		src: `type T struct {
+	a, b int
+	arr  [3]int
+}
+
+var t = T{a: 1, b: 2}
+
+var pt = &t
+
+var calls int
+
+func get() *T {
+	calls = calls*10 + 1
+	return pt
+}
+
+func main() {
+	q := &pt
+	r := &q
+	(**q).b++
+	(**q).b += 2
+	(**q).arr[1] = 3
+	(**q).arr[2] += (**q).b
+	(***r).a = 9
+	x := (**q).b
+	y := (*get()).arr[1] + (*get()).a
+	(*get()).arr[0] = 7
+	println(t.a, t.b, t.arr[0], t.arr[1], t.arr[2], x, y, calls, (***r).arr[2])
+}
+`,
+		want: "9 5 7 3 5 5 12 111 5\n",
+	},
+	{
 		// The bitwise complement of a 64-bit value: the target's C compiler computes
 		// `~` wrong in its HIGH word (doc/complement64-high-word.c), which reached
 		// `x &^= K` for a wide constant K -- the one complement the emitter still
