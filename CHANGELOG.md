@@ -153,6 +153,14 @@ shipped section tells a reader on that version that they have behaviour they do 
 
 ### Fixed
 
+- **A store through stars over a parenthesised head compiles**, `*(*q).p = 6`,
+  `*(t).p += 2`, `**(get()).in.pp = v`, as `*q.p = 6` did: it was "only assignment to
+  a simple variable". So does a read through a parenthesised call's result whose
+  struct holds an array, `(getv()).n`, as `getv().n` did: it was "this form is not
+  supported yet". A callee storing its parameter through such a target is summarised
+  as storing it, so a caller passing a local's address is refused as for `*h.pp = v`.
+  `ogo fmt` drops a doubled pair after the stars as gofmt does, `*((p)) = 5` to
+  `*(p) = 5`.
 - **A defined array type is called by its name** in the messages and in `ogo build
   --report`, as Go calls it: a method of `type Nat [8]uint32` was `(*mp.[8]uint32).Add`
   in the report, a variable of it `[8]uint32`, and `a == b` of a `type Row [3][]int`

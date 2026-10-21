@@ -411,6 +411,8 @@ func f(v any, ch chan int) {
 	}
 	((x)) = 5
 	((arr))[0] = 1
+	px := &x
+	*((px)) = 6
 }
 
 func a(n int) int { return n }
@@ -453,6 +455,8 @@ func f(v any, ch chan int) {
 	}
 	(x) = 5
 	(arr)[0] = 1
+	px := &x
+	*(px) = 6
 }
 
 func a(n int) int { return n }

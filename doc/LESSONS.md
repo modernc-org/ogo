@@ -817,8 +817,36 @@ ends there. It is DIFFERENCES.md's now, recover being planned. Besides, writing 
 run cases, a store through two dereferences, `(**q).b = 7`, and a read through one
 where the struct holds an array, `(*get()).arr[1]` -- the head took one star, and a
 struct holding an array is no value the target's compiler copies, where the pointer
-read through is what is bound now (derefExprOperand). Left: a star over such a
-chain, `*(**q).p = 6`.
+read through is what is bound now (derefExprOperand). A star over such a chain,
+`*(**q).p = 6`, was taken the next day (dom57).
+
+dom57 (2026-10-21, a domain program in a shape none had taken: a codec, module
+example.com/codec -- LZSS over hash chains with a multiplicative hash past
+INT32_MAX, canonical Huffman codes limited to 12 bits by JPEG's adjustment and
+decoded as zlib's puff decodes, base64 as RFC 4648 has it with an encoding copied
+and repadded, naturals of 256 bits as `type Nat [8]uint32` to a Lucas-Lehmer test,
+Adler-32 and a bitwise CRC-16, and a checksum cog fed blocks over channels) matched
+Go on the host and on a P2-EDGE once written as the target allows: an error
+declared in a package variable, a name from a table where `string(b)` was passed, a
+copy where `[]byte(s)` of a variable was, and its error tests split in four where
+one function held 167 of the cog's 480 registers -- each refused in words that say
+what to write. Its 1,600 mutants found no compiler fault on the host or the board:
+no program Go rejects taken, 26 refused that Go takes, all by design (unreachable
+code, the printf checks, the lifetime rule, a defer in a loop); of the 557 distinct
+binaries 552 printed Go's output on a P2-EDGE, four hung as Go hangs, one was slow
+and printed it given two minutes, and three outgrew Hub RAM. What it found was in
+the report and the messages: a method of a defined array type was
+`(*mp.[8]uint32).Add` and a refused comparison of one named the shape, `[3][]int
+cannot be compared`, where Go names the type, `a == b (Row cannot be compared)`
+(goArrayTypeName). And, sweeping `*(**q).p = 6`'s row, a store through stars over a
+parenthesised head, `*(*q).p = 6`, `*(t).p += 2`, `**(get()).in.pp = v`, was "only
+assignment to a simple variable" where `*q.p = 6` worked (starParenTarget), and a
+read through a parenthesised call's result whose struct holds an array,
+`(getv()).n`, "this form is not supported yet" where getv().n worked
+(peelCallChain); a callee storing through the new target was nobody's to the
+summaries (starParenHead), and `ogo fmt` kept the doubled pair of `*((p)) = 5`.
+Left: a list form with a starred chain, `*t.p, y = 1, 2`, with parentheses or
+without ("a dereferenced target with a field or index is not supported yet").
 
 **A TYPE SWITCH BEHIND AN INIT STATEMENT** (2026-10-07), `switch s := pick(); v :=
 s.(type)`, the last header shape on the open list: the grammar's SwitchTag takes `[

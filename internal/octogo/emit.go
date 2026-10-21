@@ -15168,6 +15168,10 @@ func (e *emitter) scanHead(head Node, steps []Node) (root, stars string, chain [
 	if name := e.soleIdent(head.ast); name != "" {
 		return name, e.derefStars(head.ast), steps
 	}
+	if inner, outer, ok := e.starParenHead(head); ok {
+		root, stars, chain = e.scanHead(inner, steps) // `*(h).pp` writes through h
+		return root, outer + stars, chain
+	}
 	kids := slices.Collect(it(head.ast))
 	if len(kids) != 3 || kids[0].sym != 0 || e.f.ch(kids[0].tok) != LPAREN ||
 		kids[2].sym != 0 || e.f.ch(kids[2].tok) != RPAREN || kids[1].sym != Expression {
@@ -15549,6 +15553,12 @@ func (e *emitter) assignThrough(nodes []Node) (base string, values [][]int32, su
 	if len(nodes) != 2 || nodes[0].sym != AssignHead || nodes[1].sym != Postfix {
 		return "", nil, false, false
 	}
+	// `*(h).pp = v` and `*(*q).p = v` store through what the parentheses reach, as
+	// `*h.pp = v` stores through h: read by name alone, they were nobody's.
+	if inner, _, ok := e.starParenHead(nodes[0]); ok {
+		base, values, suffixed, _ = e.assignThrough([]Node{inner, nodes[1]})
+		return base, values, suffixed, base != ""
+	}
 	// `(*q).p = v` and `(*pp) = v` store through q and pp, as `q.p = v` and `*pp =
 	// v` do: read by name alone, the head was nobody's, and a callee storing its
 	// parameter through another was summarised as storing nothing.
@@ -15630,6 +15640,15 @@ func (e *emitter) storedThroughUnnamed(nodes []Node) (values [][]int32) {
 func (e *emitter) targetThroughUnnamed(head Node, steps []Node) bool {
 	if _, ok := e.derefExprHead(head); ok {
 		return true
+	}
+	// `*(get()).pp = v`, `*(*get()).pp = v`: stars over a call's result, in the
+	// parentheses or a step after them, store through it.
+	if inner, _, ok := e.starParenHead(head); ok {
+		if _, ok := e.derefExprHead(inner); ok {
+			return true
+		}
+		root, _, chain := e.scanHead(inner, steps)
+		return root != "" && containsSym(chain, CallSuffix)
 	}
 	if e.soleIdent(head.ast) == "" {
 		return false
@@ -16316,6 +16335,14 @@ func (e *emitter) summaryBinding(nodes []Node) (targets []string, into []bool, v
 	}
 	if len(nodes) != 2 || nodes[0].sym != AssignHead || nodes[1].sym != Postfix {
 		return nil, nil, nil
+	}
+	if inner, _, ok := e.starParenHead(nodes[0]); ok {
+		// `*(h).pp = v` writes into what h reaches, as `*h.pp = v` does.
+		targets, into, values = e.summaryBinding([]Node{inner, nodes[1]})
+		if len(into) != 0 {
+			into[0] = true
+		}
+		return targets, into, values
 	}
 	head := e.soleIdent(nodes[0].ast)
 	derefHead := false
@@ -29620,6 +29647,13 @@ func (e *emitter) emitParenChain(kids []Node) bool {
 					return ok
 				}
 			}
+			// A call's result, `(getv()).n`: the parentheses group nothing, and the
+			// chain is read as getv().n reads it, the struct coming back through the
+			// call's out parameter.
+			if x, ok := e.peelCallChain(kids[1], steps); ok {
+				e.emitExprNode(x)
+				return true
+			}
 			return false
 		}
 	}
@@ -29632,6 +29666,27 @@ func (e *emitter) emitParenChain(kids []Node) bool {
 	// an INDEX step reads, and without them `(sl)[0]` typed nothing.
 	_, ok = e.emitAccessChainAt(tmp, e.plainOrSlice(ct), steps, true)
 	return ok
+}
+
+// peelCallChain answers `X.steps` for `(X).steps` where X is a call of a name or of
+// a chain from one, `get()` or `lib.T.get(1)`, whose parentheses group nothing:
+// the expression built over the nodes of both, as Go reads it.
+func (e *emitter) peelCallChain(paren Node, steps []Node) (Node, bool) {
+	kids, ok := e.soleFactor(e.unparenExpr(paren.ast))
+	if !ok || len(kids) != 2 || kids[0].sym != 0 || e.f.ch(kids[0].tok) != IDENT || kids[1].sym != FactorSuffix {
+		return Node{}, false
+	}
+	inner := slices.Collect(it(kids[1].ast))
+	if len(inner) == 0 || inner[len(inner)-1].sym != CallSuffix {
+		return Node{}, false
+	}
+	var suffix []int32
+	for _, st := range append(inner, steps...) {
+		suffix = append(suffix, encodeNode(st.sym, st.ast)...)
+	}
+	factor := append([]int32{kids[0].tok}, encodeNode(FactorSuffix, suffix)...)
+	unary := encodeNode(UnaryExpr, encodeNode(Factor, factor))
+	return Node{sym: Expression, ast: encodeNode(SimpleExpr, encodeNode(Term, unary))}, true
 }
 
 // parenChainType types what emitParenChain reads, a PARENTHESISED head read through
@@ -44851,6 +44906,51 @@ func (e *emitter) sendChanExpr(head Node, steps []Node) (elem, text string, ok b
 	return e.chanElemOfCType(ct), e.captureC(func() { e.emitCallExpr(recv, steps) }), true
 }
 
+// starParenTarget binds the pointer a target `*(X).steps` stores through -- stars
+// over a parenthesised head, then fields and indexes -- and answers it and the
+// stars. The value the stars dereference is read as the expression `(X).steps`,
+// built over the target's own nodes (commChanExpr), and bound ahead of the
+// statement. Nothing is emitted for a target of another shape: a head without
+// stars or parentheses, no step after it, a call among the steps -- a conversion's
+// `*(*T)(p)` is convTargetHead's -- or a list form.
+func (e *emitter) starParenTarget(head Node, postfix []Node) (string, string, bool) {
+	inner, stars, ok := e.starParenHead(head)
+	if !ok || len(postfix) < 2 || !isAccessChain(postfix[:len(postfix)-1]) ||
+		containsSym(slices.Collect(it(postfix[len(postfix)-1].ast)), LhsItem) {
+		return "", "", false
+	}
+	x := e.commChanExpr(inner, postfix[:len(postfix)-1])
+	ct, ok := e.inferNode(x)
+	if !ok || !e.isPointer(ct) {
+		return "", "", false
+	}
+	tmp := e.hoist(ct, func() { e.emitExprNode(x) })
+	e.locals[tmp] = ct
+	if e.derefShown == nil {
+		e.derefShown = map[string]string{}
+	}
+	e.derefShown[tmp] = e.f.exprSource(x)
+	return tmp, stars, true
+}
+
+// starParenHead answers, for a statement's head of stars over parentheses, `*(X)`
+// or `**(X)`, the parenthesised head under them and the stars: `*(h).pp = v` stores
+// through what `(h).pp` holds, as `*h.pp = v` does through h.pp. The readers of a
+// head by shape read the inner one, and what it writes is written through.
+func (e *emitter) starParenHead(head Node) (Node, string, bool) {
+	stars := e.derefStars(head.ast)
+	if stars == "" {
+		return Node{}, "", false
+	}
+	inner := Node{sym: head.sym, ast: head.ast[len(stars):]} // a star is one token
+	kids := slices.Collect(it(inner.ast))
+	if len(kids) != 3 || kids[0].sym != 0 || e.f.ch(kids[0].tok) != LPAREN ||
+		kids[1].sym != Expression || kids[2].sym != 0 || e.f.ch(kids[2].tok) != RPAREN {
+		return Node{}, "", false
+	}
+	return inner, stars, true
+}
+
 // emitChainDerefAssign emits an assignment whose target is a written-out
 // dereference of something reached through a CHAIN: `*h.p = v`, `*a[i] = v`,
 // `*o.in.p += 1`. The "*" binds looser than a selector or an index, here as in Go, so
@@ -44869,7 +44969,7 @@ func (e *emitter) emitChainDerefAssign(head Node, base, stars string, postfix []
 	fail := func(why string) {
 		e.failAtPos(head.Pos(), "cannot assign through this dereference: %s", why)
 	}
-	if !isAccessChain(steps) {
+	if len(steps) != 0 && !isAccessChain(steps) {
 		// A CALL in the chain, `*pick() = v`, `*bus.port(1).pa = v`: the pointer
 		// the chain reaches through the call is bound once (hoistResult, shared with
 		// whatever asked about the target's shape), and the rest of the chain, if
@@ -45032,6 +45132,21 @@ func (e *emitter) emitAssignment(head Node, postfix []Node) {
 			delete(e.derefShown, tmp)
 			return
 		}
+	}
+	// `*(*q).p = v`, `*(t).p += 1`, `**(get()).in.pp = v`: stars over a parenthesised
+	// head read through fields and indexes. What the stars dereference is the value
+	// `(X).steps`, which an expression reads (emitParenChain); it is bound first, the
+	// target's operands being evaluated ahead of the values stored, and the store goes
+	// through the binding as through `*p`. It was "only assignment to a simple
+	// variable", where `*q.p = v` worked.
+	if ptr, stars, ok := e.starParenTarget(head, postfix); ok && !e.pkgScope {
+		target := lifeTarget{deref: ptr}
+		op := slices.Collect(it(postfix[len(postfix)-1].ast))
+		e.checkStore(target, op)
+		e.noteStoredThroughOp(target, op)
+		e.emitChainDerefAssign(head, ptr, stars, postfix[len(postfix)-1:])
+		delete(e.derefShown, ptr)
+		return
 	}
 	base := e.soleIdent(head.ast)
 	if base == "" {

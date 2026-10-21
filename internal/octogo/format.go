@@ -1700,8 +1700,11 @@ func (f *formatter) holdsNamedLit(ast []int32) bool {
 
 func (f *formatter) markFactorParens(fac Node) {
 	// An AssignHead in parentheses, `((x)) = 5`, is the same pair doubled: gofmt
-	// prints `(x) = 5`.
+	// prints `(x) = 5`, and `*((p)) = 5` as `*(p) = 5`, the stars before the pair.
 	kids := slices.Collect(itRaw(fac.ast))
+	for fac.sym == AssignHead && len(kids) != 0 && kids[0].sym == 0 && Symbol(f.p.Token(kids[0].tok).Ch) == MUL {
+		kids = kids[1:]
+	}
 	if len(kids) < 3 || kids[0].sym != 0 || Symbol(f.p.Token(kids[0].tok).Ch) != LPAREN {
 		return
 	}

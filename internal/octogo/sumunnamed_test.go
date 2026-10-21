@@ -121,6 +121,55 @@ func main() {
 	}
 }
 
+// TestEmitCStarParenTargets: stars over a parenthesised head, `*(h).pp = v`, newly
+// writable, asked what a store through one is. A reference to the frame stored
+// through it is refused, what it reaches not being known to be this function's;
+// and a callee storing its parameter through one is summarised as storing it,
+// through the parameter or a call's result, as `*h.pp = v` and `*get().pp = v`
+// are -- read by name alone, the head was nobody's and the callee kept nothing.
+func TestEmitCStarParenTargets(t *testing.T) {
+	const head = `type H struct{ pp **int }
+
+var gq *int
+
+var gh = H{pp: &gq}
+
+func geth() *H { return &gh }
+
+func put(h *H, v *int) { *(h).pp = v }
+
+func putCall(v *int) { *(geth()).pp = v }
+
+func putDeref(v *int) { *(*geth()).pp = v }
+
+func putVal(h *H, v *int) { **(h).pp = *v }
+
+var gx int
+
+`
+	for _, test := range []struct{ body, want string }{
+		{"x := 5\n\th := &gh\n\t*(h).pp = &x", "cannot store the address of local variable x through (*(h).pp)"},
+		{"x := 5\n\t*(geth()).pp = &x", "cannot store the address of local variable x through (*(geth()).pp)"},
+		{"x := 5\n\tput(&gh, &x)", "cannot pass the address of local variable x to put: it is stored through gh"},
+		{"x := 5\n\tputCall(&x)", "cannot pass the address of local variable x to putCall: its parameter 1 is stored where it outlives every frame"},
+		{"x := 5\n\tputDeref(&x)", "cannot pass the address of local variable x to putDeref: its parameter 1 is stored where it outlives every frame"},
+		{"put(&gh, &gx)\n\tputCall(&gx)\n\tputDeref(&gx)\n\tx := 5\n\tputVal(&gh, &x)", ""},
+	} {
+		src := head + "func run() {\n\t" + test.body + "\n}\n\nfunc main() {\n\trun()\n}\n"
+		fsys := fstest.MapFS{"main.ogo": &fstest.MapFile{Data: []byte(src)}}
+		pkg, err := Build(-1, []string{"main.ogo"}, fsys)
+		if err == nil {
+			err = EmitC(pkg, io.Discard, Checked())
+		}
+		switch {
+		case test.want == "" && err != nil:
+			t.Errorf("refused: %v\n%s", err, src)
+		case test.want != "" && (err == nil || !strings.Contains(err.Error(), test.want)):
+			t.Errorf("got %v, want an error containing %q\n%s", err, test.want, src)
+		}
+	}
+}
+
 // TestEmitCSummaryStoreRow is the same rule through the rest of the ways a callee
 // stores: a star over a call, `*pq() = v`; a method on a call's result keeping its
 // argument, `gethp().set(v)`; copy into a package slice, a call's slice or a slice

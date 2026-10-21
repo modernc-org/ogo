@@ -4722,6 +4722,81 @@ func main() {
 		want: "9 5 7 3 5 5 12 111 5\n",
 	},
 	{
+		// Stars over a parenthesised head read through steps, `*(*q).p = 6` and
+		// `**(t).in.pp += 3`, were "only assignment to a simple variable" where `*q.p
+		// = 6` worked; and a read through a parenthesised call's result holding an
+		// array, `(getv()).n`, was "this form is not supported yet" where getv().n
+		// worked. The pointer the stars dereference is bound ahead of the values
+		// stored, as Go evaluates a target's operands; the calls are counted in order.
+		name: "a store through stars over a parenthesised head",
+		src: `type In struct {
+	p  *int
+	pp **int
+	a  [2]*int
+}
+
+type T struct {
+	p  *int
+	n  int
+	in In
+	ps []*int
+	ar [3]int
+}
+
+var x, y, z int
+
+var calls int
+
+var gt T
+
+func get() *T {
+	calls = calls*10 + 1
+	return &gt
+}
+
+func getv() T {
+	calls = calls*10 + 2
+	return gt
+}
+
+func idx() int {
+	calls = calls*10 + 3
+	return 1
+}
+
+func val() int {
+	calls = calls*10 + 4
+	return 40
+}
+
+func main() {
+	px := &x
+	gt = T{p: &x, in: In{p: &y, pp: &px, a: [2]*int{&y, &z}}, ps: []*int{&x, &y, &z}}
+	t := &gt
+	q := &t
+	s := []*T{t, t}
+	*(*q).p = 6
+	*(t).p += 2
+	*(**q).p++
+	*(*q).in.p = 7
+	*(*q).in.a[idx()] = val()
+	**(t).in.pp += 3
+	println(x, y, z, calls)
+	calls = 0
+	*(get()).ps[idx()] -= val()
+	*(s[idx()]).ps[2] = 9
+	*((*q)).in.a[0] *= 2
+	*(&gt.in).p += 1
+	println(x, y, z, calls)
+	calls = 0
+	*(getv()).in.a[idx()] = val()
+	v := *(getv()).ps[idx()] + (getv()).n + (getv()).ar[idx()]
+	println(x, y, z, v, calls)
+}
+`,
+		want: "12 7 40 34\n12 -65 9 1343\n12 -65 40 -65 23423223\n",
+	},
+	{
 		// The bitwise complement of a 64-bit value: the target's C compiler computes
 		// `~` wrong in its HIGH word (doc/complement64-high-word.c), which reached
 		// `x &^= K` for a wide constant K -- the one complement the emitter still
