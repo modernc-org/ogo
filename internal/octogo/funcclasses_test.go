@@ -91,7 +91,36 @@ var hs = [2]handler{func(n int) int { return n }, gt.M}
 
 func main() { println(hs[1](2)) }
 `, map[string][]string{"main": {"handler"}},
-			map[string][]string{"handler": {"T_M", "ogo_lit0"}}},
+			map[string][]string{"handler": {"ogo_lit0", "ogo_mv1"}}},
+		{"method values of two receivers", `type handler func(n int) int
+
+type T struct{ k int }
+
+func (t *T) M(n int) int { return t.k + n }
+
+var gt, gu T
+
+var hs = [2]handler{gt.M, gu.M}
+
+func main() { println(hs[1](2)) }
+`, map[string][]string{"main": {"handler"}},
+			map[string][]string{"handler": {"ogo_mv0", "ogo_mv1"}}},
+		{"a function of several results", `type pairer func(n int) (int, int)
+
+func two(n int) (int, int) { return n, -n }
+
+func one(n int) (int, int) { return n, n }
+
+var ps = [1]pairer{two}
+
+func main() {
+	f := one
+	a, b := ps[0](2)
+	c, d := f(3)
+	println(a, b, c, d)
+}
+`, map[string][]string{"main": {"pairer", "ogo_fvbound0"}},
+			map[string][]string{"pairer": {"one_ogo_fv", "two_ogo_fv"}, "ogo_fvbound0": {"one_ogo_fv"}}},
 		{"a key named like a function", `type box struct{ run func() }
 
 func hi() { println("hi") }
@@ -116,6 +145,99 @@ func main() {
 }
 `, map[string][]string{"main": {"ogo_fvbound0", "ogo_functype0"}},
 			map[string][]string{"ogo_fvbound0": {"twice"}, "ogo_functype0": {"other", "twice"}}},
+		{"a pointer read as another", `import "unsafe"
+
+type handler func(n int) int
+
+type op func(n int) int
+
+func deep(n int) int { return n * 2 }
+
+func shallow(n int) int { return n + 1 }
+
+var hs = [1]handler{deep}
+
+var ops = [1]op{shallow}
+
+func main() {
+	o := *(*op)(unsafe.Pointer(&hs[0]))
+	println(o(5), ops[0](1))
+}
+`, map[string][]string{"main": {"op", "op"}},
+			map[string][]string{"op": {"deep", "shallow"}}},
+		{"a pointer converted", `type handler func(n int) int
+
+type op func(n int) int
+
+func deep(n int) int { return n * 2 }
+
+func shallow(n int) int { return n + 1 }
+
+var hs = [1]handler{deep}
+
+var ops = [1]op{shallow}
+
+func main() {
+	p := (*op)(&hs[0])
+	println((*p)(5), ops[0](1))
+}
+`, map[string][]string{"main": {"op", "op"}},
+			map[string][]string{"op": {"deep", "shallow"}}},
+		{"a field read through unsafe.Pointer", `import "unsafe"
+
+type handler func(n int) int
+
+type op func(n int) int
+
+type hbox struct {
+	tag int
+	h   handler
+}
+
+type obox struct {
+	tag int
+	o   op
+}
+
+func deep(n int) int { return n * 2 }
+
+func shallow(n int) int { return n + 1 }
+
+var hb = hbox{1, deep}
+
+var ob = obox{2, shallow}
+
+var raw uintptr
+
+func main() {
+	raw = uintptr(unsafe.Pointer(&hb))
+	p := (*obox)(unsafe.Pointer(raw))
+	println(p.o(5), ob.o(1))
+}
+`, map[string][]string{"main": {"op", "op"}},
+			map[string][]string{"op": {"deep", "shallow"}}},
+		{"unsafe.Pointer of no function", `import "unsafe"
+
+type handler func(n int) int
+
+type op func(n int) int
+
+func deep(n int) int { return n * 2 }
+
+func shallow(n int) int { return n + 1 }
+
+var hs = [1]handler{deep}
+
+var ops = [1]op{shallow}
+
+var x [2]int32
+
+func main() {
+	p := (*uint32)(unsafe.Pointer(&x[1]))
+	println(hs[0](5), ops[0](1), *p)
+}
+`, map[string][]string{"main": {"handler", "op"}},
+			map[string][]string{"handler": {"deep"}, "op": {"shallow"}}},
 		{"a type naming itself", `type State func(n int) State
 
 func a(n int) State {

@@ -37,13 +37,20 @@ import (
 //     or converts a value of one defined type of it to another;
 //   - a value of any other defined type holds the functions made values of that
 //     type and those used as values where no type was recorded. Two defined types
-//     are two types to the checker, so nothing else reaches one.
+//     are two types to the checker, so nothing else reaches one -- but through a
+//     pointer read as a pointer to another type, `*(*Op)(unsafe.Pointer(&h))`, or
+//     converted to one, `(*Op)(&h)`, which Go allows of two types of one
+//     signature: such a conversion opens the signature of each function type
+//     either pointer reaches (noteFuncValuePun).
 //
 // The macro rides on the call's own text, so a rendering the emitter throws away --
 // one made to learn a type -- takes its mark with it, and the C compiles to the
-// binary it compiled to without. The build reads the classes to find a recursion
-// and nothing else: the size of a stack is read as before, a call through a value
-// reaching every function the program takes the address of.
+// binary it compiled to without. A member is what a value of the type IS, which is
+// not always the function made a value: a method value is a wrapper lifted with its
+// receiver bound, one by receiver, and a function of several results is taken
+// through one writing them out (fvHeld). The table named the function until
+// 2026-10-21, which was enough for a recursion and is not for a stack's size; the
+// build reads the classes for both.
 
 // FuncValueClasses has the emitter spell each call through a function value with
 // the type of the value, and write after the C what each such type may hold (see
@@ -66,8 +73,10 @@ type fvState struct {
 	// where no type was recorded.
 	fvAnyMembers map[string][]string
 	// fvOpen is the signatures whose defined types may hold each other's values: a
-	// conversion between two made them so.
-	fvOpen map[string]bool
+	// conversion between two made them so, or a pointer to one read as another
+	// (noteFuncValuePun); fvAllOpen says that of every signature.
+	fvOpen    map[string]bool
+	fvAllOpen bool
 	// fvTypes is the C types calls through function values were spelled with.
 	fvTypes map[string]bool
 	// fvLits is, by its place (litKey), the C functions a literal was lifted to.
@@ -76,6 +85,21 @@ type fvState struct {
 	// hold one function with, that function as funcValueMembers names it;
 	// fvBoundKey the same the other way round.
 	fvBound, fvBoundKey map[string]string
+	// fvHeld is, by the C name of a function a value is made of, the C functions
+	// the value is instead: the wrappers a method value is lifted to, one by its
+	// receiver, and the one a function of several results is taken through.
+	fvHeld map[string][]string
+}
+
+// noteFuncValueHeld records the C function wrapper as what a value of the function
+// cname is.
+func (e *emitter) noteFuncValueHeld(cname, wrapper string) {
+	if e.fvHeld == nil {
+		e.fvHeld = map[string][]string{}
+	}
+	if !slices.Contains(e.fvHeld[cname], wrapper) {
+		e.fvHeld[cname] = append(e.fvHeld[cname], wrapper)
+	}
 }
 
 // noteFuncValueLit records the literal at key lifted to the C function cname.
@@ -192,6 +216,54 @@ func (e *emitter) noteFuncValueConv(ct string, arg Node) {
 	e.fvOpen[e.funcTypeID(e.underlyingCType(ct))] = true
 }
 
+// noteFuncValuePun records a conversion between pointers, or between a pointer and
+// unsafe.Pointer, of the C types from and to, "" for one not known: what either
+// points at may now be read as the other, a value of one function type as one of
+// another of its signature -- `*(*Op)(unsafe.Pointer(&h))`, and `(*Op)(&h)`, which
+// needs no unsafe -- so each function type either holds opens its signature
+// (fvOpen). A type not known opens every signature.
+func (e *emitter) noteFuncValuePun(from, to string) {
+	for _, ct := range []string{from, to} {
+		if ct == "" {
+			e.fvAllOpen = true
+			continue
+		}
+		e.funcTypesHeld(ct, map[string]bool{}, func(ft string) {
+			if e.fvOpen == nil {
+				e.fvOpen = map[string]bool{}
+			}
+			e.fvOpen[e.funcTypeID(e.underlyingCType(ft))] = true
+		})
+	}
+}
+
+// funcTypesHeld calls each with every function type a value of the C type ct holds:
+// ct itself, a field's, an element's, and what a pointer, a slice or a channel
+// reaches.
+func (e *emitter) funcTypesHeld(ct string, seen map[string]bool, each func(string)) {
+	ct = e.unaliased(ct)
+	if seen[ct] {
+		return
+	}
+	seen[ct] = true
+	switch {
+	case e.isFuncCType(ct):
+		each(ct)
+	case strings.HasSuffix(ct, "*"):
+		e.funcTypesHeld(strings.TrimSuffix(ct, "*"), seen, each)
+	case e.isSliceCType(ct):
+		e.funcTypesHeld(sliceElemFromCName(ct), seen, each)
+	case e.isChanCType(ct):
+		e.funcTypesHeld(e.chanElemOfCType(ct), seen, each)
+	}
+	if a, ok := e.namedArrays[ct]; ok {
+		e.funcTypesHeld(a.elem, seen, each)
+	}
+	for _, f := range e.structs[e.underlyingCType(ct)] {
+		e.funcTypesHeld(f.ctype, seen, each)
+	}
+}
+
 // isFuncValueFactor reports whether a Factor names a function as a value: a
 // function, another package's, a literal, a method value or a method expression --
 // what noteFuncValue records.
@@ -255,6 +327,7 @@ func (e *emitter) funcValueClassesC(text []byte) string {
 		cts = append(cts, ct)
 	}
 	sort.Strings(cts)
+	used := map[string]bool{}
 	for _, ct := range cts {
 		var members []string
 		under := e.underlyingCType(ct)
@@ -264,7 +337,7 @@ func (e *emitter) funcValueClassesC(text []byte) string {
 			members = []string{fn}
 		case shape == "":
 			continue // no type of the emitter's: nothing is said of it
-		case under == ct || e.fvOpen[shape] || writtenOutUsed(text, under):
+		case under == ct || e.fvAllOpen || e.fvOpen[shape] || writtenOutUsed(text, under):
 			members = e.funcValueMembers[shape]
 		default:
 			members = append(slices.Clone(e.fvClassMembers[ct]), e.fvAnyMembers[shape]...)
@@ -272,8 +345,10 @@ func (e *emitter) funcValueClassesC(text []byte) string {
 		var names []string
 		for _, m := range members {
 			for _, cn := range e.fvMemberCNames(m) {
-				if !slices.Contains(names, cn) {
-					names = append(names, cn)
+				for _, held := range e.fvHeldBy(text, cn, used) {
+					if !slices.Contains(names, held) {
+						names = append(names, held)
+					}
 				}
 			}
 		}
@@ -285,6 +360,30 @@ func (e *emitter) funcValueClassesC(text []byte) string {
 	}
 	b.WriteString("*/\n")
 	return b.String()
+}
+
+// fvHeldBy is the C functions a value of the function cname may be, read against
+// text, the program's C: cname itself, or where the value is a wrapper, the wrappers
+// the C takes as values. A wrapper is lifted once and kept, a rendering thrown away
+// among those that lift one, so one the C names only where it declares and defines
+// it is no value's. used remembers the answer for each wrapper.
+func (e *emitter) fvHeldBy(text []byte, cname string, used map[string]bool) []string {
+	held, ok := e.fvHeld[cname]
+	if !ok {
+		return []string{cname}
+	}
+	var r []string
+	for _, w := range held {
+		u, asked := used[w]
+		if !asked {
+			u = len(regexp.MustCompile(`\b`+regexp.QuoteMeta(w)+`\b`).FindAllIndex(text, 3)) > 2
+			used[w] = u
+		}
+		if u {
+			r = append(r, w)
+		}
+	}
+	return r
 }
 
 // writtenOutUsed reports whether the C declares anything of the function typedef

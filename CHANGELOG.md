@@ -49,7 +49,7 @@ shipped section tells a reader on that version that they have behaviour they do 
   functions the program made values of that type, or every function of its
   signature the program uses as a value where the program has a value of the type
   written out, `func(int) int`, or converts one defined type of it to another. A
-  stack's size is read as before.
+  stack's size is read the same way (Toolchain, below).
 - **A recursion that runs out of stack panics before it writes past the end**:
   `main` recursing too deep ran on past the top of Hub RAM, a P2-EDGE printing
   nothing more, and a goroutine recursing in a slot `--gostack` sized ran over what
@@ -127,6 +127,22 @@ shipped section tells a reader on that version that they have behaviour they do 
   once, kept 14 KB of stacks and keeps 4 KB; a goroutine that sends on a channel
   needs 160 longs, most of it the panic path's formatting. obeam, whose seven
   schedulers start in a loop, builds to the same bytes as before.
+
+- **A goroutine calling through a function value has the stack what the value's
+  type may hold needs**, as one calling through an interface has what its table's
+  slot holds: such a call was taken to reach every function the program takes the
+  address of. A goroutine running a console's command table beside the errors
+  package's wrapping, whose Error calls `e.Err.Error()` and so recurses through the
+  interface, was refused unless `--gostack` sized the slots -- in the name of an
+  Error method it never calls -- and a goroutine calling small handlers was given
+  what the program's deepest taken function needs. Of 717 programs starting
+  goroutines none has a larger slot and 80 have smaller ones, a worker cog 160
+  longs where it had 304. obeam's seven schedulers, calling the BIFs and the
+  instruction handlers through tables, take 704 longs a slot where they took 800,
+  2.6 KB of Hub RAM, and 528 where 592 in the unchecked VM; p2-11, which calls
+  through no function value, builds to the same bytes. A pointer to one function
+  type read as a pointer to another, `*(*Op)(unsafe.Pointer(&h))` or `(*Op)(&h)`,
+  gives each type every function of its signature.
 
 - **A goroutine's stack refused by `ogo build` or `ogo test` is named as the program
   names it**: "a goroutine recurses through (*sorts.reverse).Less" and "goroutine

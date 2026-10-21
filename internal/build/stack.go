@@ -48,9 +48,8 @@ import (
 // reaches what the value's type may hold, as the build's table says
 // (octogo.FuncValueClasses): obeam's interpreter calls its BIFs and its instruction
 // handlers through two tables of one signature and two defined types, and each
-// reaches its own functions. That says where a recursion is and nothing else: for a
-// stack's size such a call still reaches every taken function. A cycle through any
-// other call through a register is walked once, the deepest simple path through
+// reaches its own functions. A cycle through any other call through a register is
+// walked once, the deepest simple path through
 // it: such a call is WIDE, taken to reach every function whose address its side
 // takes, so it closes cycles no run makes -- the library's flush calling a FILE's
 // function that can reach flush again -- and a recursion only a wide call closes
@@ -69,12 +68,29 @@ import (
 // calls the card through an interface, was charged the deepest path through every
 // PDP-11 device method a table holds, 809 longs where 432 are reachable. An
 // interface call reaches only the functions its table's slot holds, which the C
-// says (octogo.ScanCalls), so a program function whose calls through a register are
-// all interface calls -- in its own C and in the C of what was inlined into it, the
+// says (octogo.ScanCalls), and a call through a function value what the value's
+// type may hold, so a program function whose calls through a register are all
+// such calls -- in its own C and in the C of what was inlined into it, the
 // functions its C calls by name and its listing does not -- reaches those, where
-// the listing agrees: its calls through a register number exactly the interface
-// calls the C has there (narrowTargets). Any other function, and any that does not
-// agree, reaches every taken function of its side.
+// the listing agrees: its calls through a register number exactly the calls
+// through tables and values the C has there (narrowTargets). Any other function,
+// and any that does not agree, reaches every taken function of its side, and what
+// the tables and the types may hold says where it recurses.
+//
+// Until 2026-10-21 a call through a function value was every taken function's for a
+// stack's size, the classes read for a recursion alone: a value is the function
+// named, or the wrapper the emitter lifts for it -- a method value's, one by
+// receiver, and a function of several results' -- and the table named the function.
+// A goroutine of a command console calling its commands through a table, beside the
+// errors package's wrapping (dom55), was charged every taken function and did not
+// fit a slot without --gostack. The table names what the value is since, checked at
+// run time over the run cases and the probes' programs: every call through a value
+// landed on a function its type's table names. Programs written to break that found
+// the one way round a value's type: a pointer to one function type read as a
+// pointer to another, through unsafe.Pointer or by a conversion Go allows without
+// it, which the table now answers with every function of the signature; before it
+// did, a goroutine calling a Handler's deep function as an Op was given 160 longs
+// where it needs 460, and printed nothing at all on a P2-EDGE.
 
 // hubRAMBytes is the P2's Hub RAM, which a program's code, data and main stack
 // share.
@@ -142,8 +158,9 @@ type stackEdge struct {
 	// what its table's slot holds, and is not wide.
 	wide bool
 	// recursion is a call to what a table's slot or a function value's type may
-	// hold, read for a recursion alone: the stack it takes is read off the wide
-	// edges beside it, as before such calls were narrowed.
+	// hold, read for a recursion alone, where the calls are not known to be all
+	// the function makes through a register: the stack it takes is read off the
+	// wide edges beside it.
 	recursion bool
 }
 
@@ -297,18 +314,17 @@ func readStackNeeds(listing, c []byte) (r stackNeeds) {
 			var recursion []string
 			if isOwn(n) {
 				targets = ownTaken
-				switch t, known, exact, viaValue := narrowTargets(n, fns, scan, byCName); {
-				case exact && !viaValue:
+				switch t, known, exact := narrowTargets(n, fns, scan, byCName); {
+				case exact:
 					targets, wide = t, false
 				case known:
 					// What the tables and the values' types may hold says
 					// where a recursion is; a stack is sized as before, each
-					// call reaching every taken function: a value's type is
-					// no stack's size, and a listing making another number
-					// of calls through a register than the C does is no call
-					// the C makes left out -- a copy inlined into n loses a
-					// call its constant argument does not make, and n is
-					// still a caller of what the C calls.
+					// call reaching every taken function: a listing making
+					// another number of calls through a register than the C
+					// does is no call the C makes left out -- a copy inlined
+					// into n loses a call its constant argument does not
+					// make, and n is still a caller of what the C calls.
 					recursion = t
 				}
 			}
@@ -709,14 +725,13 @@ func stackCName(n string) string {
 // value may hold (octogo.FuncValueClasses). exact says they are all the calls n
 // makes through a register: every call in that C is by name, through a table or
 // through a value spelled with its type (no Other), and n's listing makes as many
-// calls through a register as the C makes through tables and values. viaValue says
-// some of them are through values. The caller reads the targets for a recursion
-// alone unless they are exact and none is through a value; anything else is the
-// caller's every-taken-function.
-func narrowTargets(n string, fns map[string]*stackFunc, scan *octogo.CallScan, byCName map[string]string) (targets []string, known, exact, viaValue bool) {
+// calls through a register as the C makes through tables and values. The caller
+// reads the targets for a recursion alone unless they are exact; anything else is
+// the caller's every-taken-function.
+func narrowTargets(n string, fns map[string]*stackFunc, scan *octogo.CallScan, byCName map[string]string) (targets []string, known, exact bool) {
 	f, cn := fns[n], stackCName(n)
 	if scan.Funcs[cn] == nil {
-		return nil, false, false, false
+		return nil, false, false
 	}
 	listed := map[string]bool{}
 	for _, c := range f.calls {
@@ -750,7 +765,7 @@ func narrowTargets(n string, fns map[string]*stackFunc, scan *octogo.CallScan, b
 	}
 	visit(cn)
 	if visits > maxInlineVisits {
-		return nil, false, false, false
+		return nil, false, false
 	}
 	have := map[string]bool{}
 	add := func(fs []string) bool {
@@ -769,17 +784,17 @@ func narrowTargets(n string, fns map[string]*stackFunc, scan *octogo.CallScan, b
 	for _, site := range sites {
 		fs, ok := scan.Targets(site)
 		if !ok || !add(fs) {
-			return nil, false, false, false
+			return nil, false, false
 		}
 	}
 	for _, ct := range values {
 		fs, ok := scan.FuncValueTargets(ct)
 		if !ok || !add(fs) {
-			return nil, false, false, false
+			return nil, false, false
 		}
 	}
 	sort.Strings(targets)
-	return targets, true, other == 0 && len(sites)+len(values) == f.indirect, len(values) != 0
+	return targets, true, other == 0 && len(sites)+len(values) == f.indirect
 }
 
 // goroutineName is the function a trampoline starts, the one of its direct calls

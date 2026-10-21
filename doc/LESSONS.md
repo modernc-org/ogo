@@ -712,6 +712,47 @@ more than the largest slot at `--gostack 8192`. The floor is a slot's now too.
 **A size taken as asked is still held to the floor the build knows: what the user
 gave is no reason to run past it in silence.**
 
+A VALUE'S TYPE IS A STACK'S SIZE (2026-10-21, the user's call on dom55's evidence):
+a call through a function value is sized by what the value's type may hold, as an
+interface call is by what its table's slot holds. Two things stood between the
+classes and a size. The table named the function a value was made of, and the value
+is not always that: a method value is a wrapper the emitter lifts with its receiver
+bound, one by receiver, and a function of several results is taken through one
+writing them out, and a call lands in the wrapper, whose frame is the call's. The
+table names the wrappers now (fvHeld), a wrapper the C names only where it declares
+and defines it being no value's -- a rendering thrown away lifts one too -- and the
+run-time check asked again without counting a wrapper for its member missed 23
+calls of the run cases on the old table and none of 119 run cases and 1,286
+programs on the new. The other was the moat sweep's: eleven programs written to
+break the rule, each a goroutine calling a Handler's deep function as an Op, found
+that a pointer to one function type read as a pointer to another makes a value of
+one type a value of the other -- through unsafe.Pointer, `*(*Op)(unsafe.Pointer(&h))`,
+the value's bits copied as a uintptr, a struct's field, unsafe.Add, across a
+package, or converted with no unsafe at all, `(*Op)(&h)`, which Go allows of two
+types of one signature. Every one missed on the host, and built with the size
+narrowed and the hole open every one printed nothing at all on a P2-EDGE, its slot
+160 longs where it needs 460 -- a hole the recursion's reading had had since
+2026-10-18. Such a conversion opens the signature of every function type either
+pointer reaches (noteFuncValuePun), and the eleven print Go's output in the slots
+the wide reading gave them. Of 717 programs starting goroutines -- the run cases
+that do, the domain programs and a sample of their mutants -- none has a slot that
+grew or is refused where it built: 80 have smaller slots, dom53's goroutine 160
+longs where it had 304, 86 a smaller main stack, and the 192 of dom55's console and
+its mutants, refused unless `--gostack` sized their slots, build. obeam's seven
+scheduler slots are 704 longs where they were 800, and its demo prints on a P2-EDGE
+what it printed in the larger ones but for the line that says which scheduler ran
+which process, which differs from run to run of one binary; p2-11 and its ten test
+binaries, calling through no function value, are the bytes they were. The
+assumption the exactness test rests on was measured, not argued: over 158 of those
+programs the listing of a program function never made more calls through a
+register than its C accounts for -- 838 functions, 337 calling through values,
+two making fewer and left wide -- so no call of the library's inlined into one
+can stand in for a call of the program's the backend dropped. **A table read
+for a size names what the value IS: a wrapper the emitter lifts for it is the value,
+and its frame is the call's.** **A bound a value's type gives is asked of every way
+memory is read as another type: a pointer converted, through unsafe.Pointer or not,
+makes a value of one type a value of another.**
+
 **A TYPE SWITCH BEHIND AN INIT STATEMENT** (2026-10-07), `switch s := pick(); v :=
 s.(type)`, the last header shape on the open list: the grammar's SwitchTag takes `[
 HeaderExpression ":=" ] HeaderExpression` (egg's ambiguity count unchanged, 10),

@@ -171,8 +171,11 @@ the end of the stack, what the panic needs kept free; the margins are the listin
 in rounds of compiles. A recursion through a function value is seen by what the
 value's type may hold (funcclasses.go): the build spells each such call
 `OGO_FV(type, callee)` and the C carries a table of each type's functions, two
-defined types being two types to the checker since the same day -- for a recursion
-only, a stack's size still taking such a call to reach every taken function.
+defined types being two types to the checker since the same day -- and a stack's
+size by the same table since 2026-10-21 (the user's call): it names what a value
+IS, a method value's lifted wrapper and a several-result function's among them
+(fvHeld), and a pointer to one function type read as a pointer to another, through
+unsafe.Pointer or converted, opens the signature (noteFuncValuePun).
 
 **A program ends as Go's does, every cog with it** (the user's call, 2026-10-07): a
 debug build's panic stops every other cog and then its own (panicHaltC), and a return
@@ -1072,7 +1075,11 @@ section. A new finding goes there; the rule it leaves goes here too.
   (dom53); **A test that a fact is exact answers whether it may stand for the
   whole, not whether it is true: a copy that lost a call still makes the others**;
   **A claim that a change leaves the binaries alone is measured by building them,
-  the newest run cases among them**.
+  the newest run cases among them**; **A table read for a size names what the value
+  IS: a wrapper the emitter lifts for it is the value, and its frame is the call's**;
+  **A bound a value's type gives is asked of every way memory is read as another
+  type: a pointer converted, through unsafe.Pointer or not, makes a value of one
+  type a value of another** (A VALUE'S TYPE IS A STACK'S SIZE).
 - **Two programs that should cost the same are compared by their BINARIES**.
 - **What the backend makes of a library call is read in the listing for what it
   holds while the arguments run**; **A goroutine's output is asked with main

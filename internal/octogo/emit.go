@@ -18154,6 +18154,7 @@ func (e *emitter) funcValueWrapper(cname string) (string, bool) {
 	e.liftedProtos = append(e.liftedProtos, proto)
 	e.liftedDefs = append(e.liftedDefs, proto+" {\n"+body+"}\n")
 	e.funcValueWrappers[cname] = wrapper
+	e.noteFuncValueHeld(cname, wrapper)
 	return wrapper, true
 }
 
@@ -18685,6 +18686,8 @@ func (e *emitter) ptrConvC(pc emPtrConv) string {
 	if a, toArray := e.arrayPtrCType(pc.ct); toArray && e.isSliceOperand(pc.arg.ast) {
 		return e.sliceArrayPtrC(pc.ct, a, pc.arg.ast)
 	}
+	src, _ := e.inferCType(pc.arg.ast)
+	e.noteFuncValuePun(src, pc.ct)
 	return "((" + pc.ct + ")(" + e.captureC(func() { e.emitExpr(pc.arg.ast) }) + "))"
 }
 
@@ -19196,6 +19199,7 @@ func (e *emitter) liftMethodValue(r mvRecv, method string) (string, bool) {
 	e.funcRet[cname] = fv.res
 	e.funcParams[cname] = fv.params
 	e.methodValueOf[key] = cname
+	e.noteFuncValueHeld(mcname, cname)
 	// The method's escape summary is the value's, with its receiver bound: a store
 	// into the receiver is a store into what the value was bound to, which is a
 	// package variable or a parameter's pointee -- a local's receiver cannot be
@@ -26056,6 +26060,10 @@ func (e *emitter) floatConvHelper(ct string) (string, bool) {
 // have, and is refused.
 func (e *emitter) emitConversion(ct string, arg Node) {
 	e.noteFuncValueConv(ct, arg)
+	if ct == cUnsafePtr {
+		src, _ := e.inferCType(arg.ast)
+		e.noteFuncValuePun(src, ct)
+	}
 	// `uintptr(p)` of a pointer reaching this frame: the number carries the address
 	// where no lifetime rule can follow it, so it is refused as storing the pointer
 	// in a package variable is.

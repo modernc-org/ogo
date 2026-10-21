@@ -164,6 +164,24 @@ static void ogo_go0(void* p) {
 	use(*(I*)p);
 }
 `
+	// A call through a value spelled with its type reaches what the table says a
+	// value of the type may hold (octogo.FuncValueClasses).
+	viaTyped := func(member string) string {
+		return "#define OGO_FV(t, f) (f)\n" + decls + `static int small(int n) { return n; }
+int use(I x) {
+	fnT f = small;
+	return ((const I_vt*)ogo_iface_vt(x.vt))->ogo_m_M(x.data) + OGO_FV(fnT, f)(1);
+}
+static void ogo_go0(void* p) {
+	use(*(I*)p);
+}
+
+/* ogo:funcvalues
+type fnT
+member fnT ` + member + `
+*/
+`
+	}
 	listing := func(useIndirect int) []byte {
 		body := []string{}
 		for range useIndirect {
@@ -174,7 +192,8 @@ static void ogo_go0(void* p) {
 			fnListing("_I_A_M_0002", 1, 40),
 			fnListing("_I_B_M_0003", 1, 80),
 			fnListing("_big_0004", 1, 4000),
-			"ptr_a\n\tlong\t@_I_A_M_0002\nptr_b\n\tlong\t@_I_B_M_0003\nptr_c\n\tlong\t@_big_0004")
+			fnListing("_small_0005", 1, 8),
+			"ptr_a\n\tlong\t@_I_A_M_0002\nptr_b\n\tlong\t@_I_B_M_0003\nptr_c\n\tlong\t@_big_0004\nptr_d\n\tlong\t@_small_0005")
 	}
 	narrow := 1 + (16+20+96+3)/4 // trampoline, use, I_B_M
 	wide := 1 + (16+20+4016+3)/4 // trampoline, use, big
@@ -185,8 +204,11 @@ static void ogo_go0(void* p) {
 		longs int
 	}{
 		{"an interface call reaches its slot", viaTable, 1, narrow},
-		{"a call through a function value reaches every taken function", viaValue, 2, wide},
+		{"a call through a function value of no type reaches every taken function", viaValue, 2, wide},
+		{"a call through a function value reaches what its type may hold", viaTyped("small"), 2, narrow},
+		{"a call through a function value reaches what its type may hold, the deepest", viaTyped("big"), 2, wide},
 		{"a listing the C does not account for", viaTable, 2, wide},
+		{"a listing the C does not account for, through a value", viaTyped("small"), 3, wide},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			if r := readStackNeeds(listing(tc.calls), []byte(tc.c)); r.goLongs != tc.longs || !r.goKnown {

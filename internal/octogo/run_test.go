@@ -4472,6 +4472,92 @@ func main() {
 		want: "22 22 11 22 22 43 22 22 11 22 22 11 22 22 44 22 22 11 11 12 11 11 11 12 11 11 11 \n-474162078\n",
 	},
 	{
+		// A goroutine's stack is sized by what a call through a function value of
+		// its type may reach, and a pointer to one function type read as a pointer
+		// to another of its signature -- through unsafe.Pointer, or converted, which
+		// Go allows without it -- makes a value of the one a value of the other: the
+		// deep function each goroutine reaches is a Handler's and is called as an
+		// Op. Sized by Op's functions alone, the slot was 160 longs where the
+		// goroutine needs 460, and the second goroutine panicked "goroutine stack
+		// overflow" on a P2-EDGE (the first ran past its slot in silence).
+		name: "a goroutine calling a function value read as another type",
+		src: `import "unsafe"
+
+type Handler func(n int) int
+
+type Op func(n int) int
+
+func deep(n int) int {
+	var buf [300]int
+	for i := range buf {
+		buf[i] = n + i
+	}
+	return buf[n%300]
+}
+
+func shallow(n int) int { return n + 1 }
+
+var hs = [2]Handler{shallow, deep}
+
+var ops = [1]Op{shallow}
+
+var done = make(chan int)
+
+func viaUnsafe(k int) {
+	op := *(*Op)(unsafe.Pointer(&hs[k]))
+	done <- op(5)
+}
+
+func viaPointer(k int) {
+	p := (*Op)(&hs[k])
+	done <- (*p)(6)
+}
+
+func main() {
+	go viaUnsafe(1)
+	println(<-done)
+	go viaPointer(1)
+	println(<-done, ops[0](1))
+}
+`,
+		want: "10\n12 2\n",
+	},
+	{
+		// A method value is a function lifted with its receiver bound, and a call
+		// through a value of its type reaches that function, which calls the
+		// method: the table of what a type may hold names it, and the goroutine's
+		// slot is sized through it.
+		name: "a goroutine calling a method value through a table",
+		src: `type Handler func(n int) int
+
+type T struct{ k int }
+
+func (t *T) Deep(n int) int {
+	var buf [300]int
+	for i := range buf {
+		buf[i] = n + i + t.k
+	}
+	return buf[n%300]
+}
+
+func shallow(n int) int { return n + 1 }
+
+var gt = T{3}
+
+var hs = [2]Handler{shallow, gt.Deep}
+
+var done = make(chan int)
+
+func work(k int) { done <- hs[k](5) }
+
+func main() {
+	go work(1)
+	println(<-done, hs[0](1))
+}
+`,
+		want: "13 2\n",
+	},
+	{
 		// The bitwise complement of a 64-bit value: the target's C compiler computes
 		// `~` wrong in its HIGH word (doc/complement64-high-word.c), which reached
 		// `x &^= K` for a wide constant K -- the one complement the emitter still
