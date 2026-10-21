@@ -51533,8 +51533,12 @@ func (e *emitter) stringCompareAt(kids []Node, i int) (op string, ok bool) {
 func structEqName(ctype string) string { return "ogo_eq_" + ctype }
 
 // goArrayTypeName renders an array's type in OctoGo's spelling, `[2][]int` rather
-// than the `[2]ogo_slice_int` the emitted C calls it.
+// than the `[2]ogo_slice_int` the emitted C calls it, and a defined one by its name,
+// as Go does: `Row cannot be compared` said `[3][]int`.
 func (e *emitter) goArrayTypeName(a arrDim) string {
+	if a.name != "" {
+		return e.goTypeName(a.name)
+	}
 	s := ""
 	for _, b := range a.bounds() {
 		s += "[" + b + "]"
@@ -51563,7 +51567,14 @@ func (e *emitter) goTypeName(ct string) string {
 		return "chan " + e.goTypeName(e.chanElemOfCType(ct))
 	}
 	if a, ok := e.namedArrays[ct]; ok {
-		return e.goArrayTypeName(a)
+		if a.name == "" {
+			// A name minted for the shape, or an alias of one written out: the
+			// shape is what the program wrote.
+			return e.goArrayTypeName(a)
+		}
+		// A defined array type is called by its name, as a struct is: `(*mp.Nat).Add`
+		// in the report was `(*mp.[8]uint32).Add`. An alias's name is its target's.
+		ct = a.name
 	}
 	if name, ok := e.typeDisplay[ct]; ok {
 		return name // a type of another package, as a program writes it
@@ -51699,10 +51710,11 @@ func (e *emitter) checkCompareAt(kids []Node, i int) bool {
 			return false
 		}
 		if inner, ok := e.comparableCType(ct); !ok {
+			cmp := e.f.exprSource(kids[i]) + " " + op + " " + e.f.exprSource(kids[i+2])
 			if what == "struct" {
-				e.fail("%v: invalid operation: struct containing %s cannot be compared", pos, inner)
+				e.fail("%v: invalid operation: %s (struct containing %s cannot be compared)", pos, cmp, inner)
 			} else {
-				e.fail("%v: invalid operation: %s cannot be compared", pos, e.goTypeName(ct))
+				e.fail("%v: invalid operation: %s (%s cannot be compared)", pos, cmp, e.goTypeName(ct))
 			}
 			return false
 		}
@@ -54393,7 +54405,8 @@ func (e *emitter) arrayCompareAt(kids []Node, i int) (op string, a arrDim, ok bo
 	// per-element helper would have compared with C's "==", which asks whether two
 	// headers are the same bytes rather than refusing.
 	if _, ok := e.comparableCType(l.elem); !ok {
-		e.fail("%v: invalid operation: %s cannot be compared", pos, e.goArrayTypeName(l))
+		e.fail("%v: invalid operation: %s %s %s (%s cannot be compared)", pos,
+			e.f.exprSource(kids[i]), op, e.f.exprSource(kids[i+2]), e.goArrayTypeName(l))
 		return "", arrDim{}, false
 	}
 	return op, l, true

@@ -153,6 +153,11 @@ shipped section tells a reader on that version that they have behaviour they do 
 
 ### Fixed
 
+- **A defined array type is called by its name** in the messages and in `ogo build
+  --report`, as Go calls it: a method of `type Nat [8]uint32` was `(*mp.[8]uint32).Add`
+  in the report, a variable of it `[8]uint32`, and `a == b` of a `type Row [3][]int`
+  "invalid operation: [3][]int cannot be compared". A refused comparison names its
+  operands too, in Go's words: "invalid operation: a == b (Row cannot be compared)".
 - **A store through two dereferences compiles, `(**q).b = 7`**, and so does a read
   through one of a struct holding an array, `x := (**q).b` and `(*get()).arr[1]`:
   the first was "only assignment to a simple variable", the second "this form is not

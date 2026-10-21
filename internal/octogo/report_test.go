@@ -73,9 +73,17 @@ func main() {
 	go work(1)
 	go func(n int) { out <- n }(2)
 	println(<-out, <-out, table[3], tbl[1], pp.n, t.n, lib.F(), lib.V)
+	set.add(3)
+	lib.N.Inc()
 }
+
+type Set [2]uint32
+
+var set Set
+
+func (s *Set) add(i uint) { s[i/32] |= 1 << (i % 32) }
 `
-	const lib = "var V = 7\n\nfunc F() int {\n\treturn V + 1\n}\n"
+	const lib = "var V = 7\n\nfunc F() int {\n\treturn V + 1\n}\n\ntype Nat [4]uint32\n\nvar N Nat\n\nfunc (z *Nat) Inc() { z[0]++ }\n"
 	fsys := fstest.MapFS{
 		"main.ogo":    &fstest.MapFile{Data: []byte(src)},
 		"lib/lib.ogo": &fstest.MapFile{Data: []byte(lib)},
@@ -93,7 +101,9 @@ func main() {
 	for _, n := range r.Funcs {
 		funcs[n] = true
 	}
-	for _, want := range []string{"main", "work", "(*T).bump", "lib.F", "the function literal at main.ogo:18"} {
+	// A method of a defined array type is named by the type's name, as a struct's
+	// is: (*lib.Nat).Inc was (*lib.[4]uint32).Inc.
+	for _, want := range []string{"main", "work", "(*T).bump", "lib.F", "the function literal at main.ogo:18", "(*Set).add", "(*lib.Nat).Inc"} {
 		if !funcs[want] {
 			t.Errorf("no function %q in %v", want, r.Funcs)
 		}
@@ -108,7 +118,7 @@ func main() {
 			types[s.Var] = s.Type
 		}
 	}
-	for v, want := range map[string]string{"out": "chan int", "table": "[100]uint32", "tbl": "[]int", "pp": "*T", "lib.V": "int"} {
+	for v, want := range map[string]string{"out": "chan int", "table": "[100]uint32", "tbl": "[]int", "pp": "*T", "lib.V": "int", "set": "Set", "lib.N": "lib.Nat"} {
 		if types[v] != want {
 			t.Errorf("variable %s of type %q, want %q", v, types[v], want)
 		}

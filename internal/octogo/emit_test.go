@@ -17927,15 +17927,19 @@ type holder struct {
 	xs []int
 }
 
+type row [3][]int
+
 `
 	for _, test := range []struct{ name, src, want, check string }{
 		{"struct ordering", "var p, q point\n_ = p < q", "", "operator < not defined on p: it is a struct"},
 		{"slice ordering", "var s, t []int\n_ = s < t", "", "operator < not defined on s: it is a slice"},
 		{"slice equality", "var s, t []int\n_ = s == t", "", "s == t (slice can only be compared to nil)"},
-		{"struct with a slice field", "var h, k holder\n_ = h == k", "invalid operation: struct containing []int cannot be compared", ""},
+		{"struct with a slice field", "var h, k holder\n_ = h == k", "invalid operation: h == k (struct containing []int cannot be compared)", ""},
 		{"array ordering", "var a, b [2]int\n_ = a <= b", "", "operator <= not defined on a: it is an array"},
-		{"array of slices", "var a, b [2][]int\n_ = a == b", "invalid operation: [2][]int cannot be compared", ""},
-		{"array of uncomparable structs", "var a, b [2]holder\n_ = a == b", "invalid operation: [2]holder cannot be compared", ""},
+		{"array of slices", "var a, b [2][]int\n_ = a == b", "invalid operation: a == b ([2][]int cannot be compared)", ""},
+		{"array of uncomparable structs", "var a, b [2]holder\n_ = a == b", "invalid operation: a == b ([2]holder cannot be compared)", ""},
+		// A defined array type is named as Go names it, not by its shape.
+		{"defined array of slices", "var a, b row\n_ = a == b", "invalid operation: a == b (row cannot be compared)", ""},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			src := decls + "func main() {\n" + test.src + "\n}\n"
