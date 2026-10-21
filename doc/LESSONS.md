@@ -803,7 +803,10 @@ and summarised per channel, parse errors wrapped and asked by errors.Is and As, 
 report in printf's widths, flags and %v of structs and String methods, and a clock
 cog ticking through a select) matched Go on the host and on a P2-EDGE as written,
 once its Error method built its text in a buffer rather than by `+`, which needs a
-heap. Its 1,600 mutants found no compiler fault on the host: no program Go rejects
+heap. Its 1,600 mutants found no compiler fault, on the host or on the board -- the
+830 both compilers take built without `--gostack`, sized by the listing, and of
+their 463 binaries 448 printed Go's output on a P2-EDGE and 15 a known difference
+of the host's below: no program Go rejects
 taken, 23 refused that Go takes, every one by design (unreachable code, the
 compile-time printf and errors.As checks, the lifetime rule), and the 72 that ran
 differently each a known difference -- a panic's wording, a hang or a deadlock Go
