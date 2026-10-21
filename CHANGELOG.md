@@ -153,6 +153,10 @@ shipped section tells a reader on that version that they have behaviour they do 
 
 ### Fixed
 
+- **A value of a type that resolves to nothing earns Go's one error**, "undefined:
+  lib.Nope", where a second said the value's type implemented no interface it was
+  put in, naming as missing whichever method a map handed out first -- one method
+  in one run and another in the next.
 - **A conversion to a pointer type of any shape a type in parentheses has
   compiles**: `(**int)(unsafe.Pointer(&p))`, `(**T)(&pt)`, `(***int)(p)`, `(*chan
   int)(p)`, `(*error)(p)`, `(*unsafe.Pointer)(p)` and `(*interface{ M() })(p)` were

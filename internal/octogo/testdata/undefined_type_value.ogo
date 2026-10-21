@@ -1,0 +1,25 @@
+// What Go says of a value whose type resolves to nothing -- another package's
+// name it does not declare, or a name nothing declares: that the name is undefined,
+// and nothing more. A second error said the value's type implemented no interface it
+// was put in, naming as missing whichever method a map handed out first, one from
+// one run and another from the next.
+
+import "strings"
+
+type I interface {
+	Swap()
+	Less()
+	Len()
+}
+
+// ERROR "undefined: strings.Nope"
+var q strings.Nope
+
+// ERROR "undefined: Nope"
+var r Nope
+
+func main() {
+	var i I = &q
+	var j I = &r
+	_, _ = i, j
+}

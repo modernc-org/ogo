@@ -15060,10 +15060,18 @@ func (f *File) implements(s *Scope, concrete string, valueIsPtr bool, iface stri
 	// (missing method Error)" -- the sentinel idiom, refused across every package.
 	td, home, isNamed := f.typeDeclNamedIn(s, concrete, true)
 	if !isNamed {
+		// A NAME that resolves to nothing was reported where it was written,
+		// "undefined: lib.Nope", and Go says nothing more of a value of it.
+		if q, t, isQual := strings.Cut(concrete, "."); isQual && token.IsIdentifier(t) && f.isImportQualifier(s, q) ||
+			!isQual && token.IsIdentifier(concrete) && s.find(concrete) == nil {
+			return "", "", "", "", "", true
+		}
 		// Not a named type: it carries no methods at all, so any non-empty
-		// interface is unsatisfied. An empty one is satisfied by everything.
-		for name := range set {
-			return name, "", "", "", "", false
+		// interface is unsatisfied, and the method named missing is the first by
+		// name, as Go's -- the first a map handed out named another from one run
+		// to the next. An empty one is satisfied by everything.
+		if names := sortedNames(set); len(names) != 0 {
+			return names[0], "", "", "", "", false
 		}
 		return "", "", "", "", "", true
 	}
