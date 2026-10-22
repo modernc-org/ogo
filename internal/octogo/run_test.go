@@ -975,7 +975,9 @@ func main() {
 		// storing a parameter through an assertion of an `any` one, `case **M:` among
 		// them -- with both sides of each store this frame's, which the lifetime
 		// rules take, or package storage: errors.As and an As(any) method of the
-		// idiom, a registration, an intrusive list's link.
+		// idiom, a registration, an intrusive list's link. A store two pointers deep,
+		// `case ***M: **d = src`, lands where no rule can name, and Go moves a local
+		// handed to it to the heap: its src is a package variable (fill3).
 		name: "a receiver stored through a parameter, and an any parameter asserted to a pointer to a pointer",
 		src: `import "errors"
 
@@ -1011,6 +1013,12 @@ func fill(src *M, dst any) bool {
 	case **M:
 		*d = src
 		return true
+	}
+	return false
+}
+
+func fill3(src *M, dst any) bool {
+	switch d := dst.(type) {
 	case ***M:
 		**d = src
 		return true
@@ -1049,7 +1057,7 @@ func run() {
 	var lr *M
 	println(fill(&b, &lr), lr.n, fill(&a, &lp), lp.n, fill(&a, &a))
 	pp := &lr
-	println(fill(&a, &pp), lr.n)
+	println(fill3(&gm, &pp), lr.n)
 	var ls *M
 	println(a.As(&ls), ls.n)
 	w := W{&b}
@@ -1074,7 +1082,7 @@ func main() {
 	println(gp.n, gq == gp)
 }
 `,
-		want: "1 2 2\ntrue 2 true 1 false\ntrue 1\ntrue 1\ntrue 2\n**M **M **int *M nil other 6\n9 true\n",
+		want: "1 2 2\ntrue 2 true 1 false\ntrue 9\ntrue 1\ntrue 2\n**M **M **int *M nil other 6\n9 true\n",
 	},
 	{
 		// A buffered channel's size in every spelling Go folds to a constant -- a

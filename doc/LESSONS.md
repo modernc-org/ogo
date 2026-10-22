@@ -2877,7 +2877,7 @@ into its receiver called on `p := *hh`, `fill(u.q, v)`, `fill(*hh, v)`, `fill(q,
 for `q := u.q`, `fill(get(), v)`. The summaries now type a store's target from its
 root -- a parameter, the receiver, a package variable, a local declared with a
 defined type, or one every binding of which types from those -- and count the
-pointers it goes through (storeDepth): one, from the value of a name the caller or
+pointers it goes through (storesPast): one, from the value of a name the caller or
 this frame chose, is the call site's question as before; any other lands where no
 rule can name, and the value stored is kept where it outlives every frame, as Go's
 compiler moves such a local to the heap. An argument is asked the same of where the
@@ -2893,11 +2893,68 @@ cases' C (unminted). The corpus's 1,393 programs emit the C they did and none is
 refused; of 4,858 domain programs and mutants none has another verdict (one is refused either
 way under another first message), and p2-11 and its tests build to the same bytes. Left: a local
 the summaries cannot type -- bound by a range clause, by a call of several results,
-by a type assertion -- keeps the old reading; and `(*hh).set(v)` for a `**T`, valid
+by a type assertion -- keeps the old reading (closed the next day, A BINDING IS EVERY
+FORM THAT GIVES A NAME A VALUE); and `(*hh).set(v)` for a `**T`, valid
 Go, is "unknown package hh", `(**hh).set(v)` "cannot call pointer method set on T".
 The rules: **one pointer from a value the caller or this frame chose is the call
 site's question; any other lands where no rule can name**, and **what a name's value
 is, is asked of its bindings, not of what is stored into it**.
+**A BINDING IS EVERY FORM THAT GIVES A NAME A VALUE** (2026-10-22, closing what the
+entry above left). The summaries typed a store's target from its root's bindings, and
+read a binding where a statement wrote one: a range clause's element, a for clause's
+init and post, one of a call's several results, a comma-ok form, a receive, a type
+switch's name, a declaration's written type, a literal, a method's and a function
+value's result were no binding at all, and a root bound only by them was not typed --
+and an untyped root's store was read as before, as one into the local's own storage.
+`for _, h := range hs { h.p = v }` left run's local address in what an element of hs
+pointed at, a package variable; so did `for h := u.q; ...`, `h, n := u.two()`,
+`h := x.(*U); h.q.p = v` and its comma-ok and type switch forms, `h := <-ch`, `for h
+:= range ch`, `q := u.next()`, `q := pick(u)`, `var ps [2]*T; ps[0] = u.q; ps[0].p =
+v`, `w := W{q: u.q}; w.q.p = v`, `ps := [2]*T{u.q, nil}` -- 27 shapes, each silent,
+each refused by its row of TestEmitCStoreBindingForms since. Each form is a binding
+now (ranged, results, declared, the type switch's name typed by its clause,
+clauseAt), and what it binds is asked as valueKnown asks: an element read, a result
+and a value received point where nothing here can name; an assertion on a name
+points where the name's interface does; a literal is this frame's. That still leaves
+names no walk types -- one name declared twice with two types, `{ h := W{} } { h :=
+u.q; h.p = v }`, was the probe that showed it -- so a target the walk cannot type is
+taken to go through a pointer it cannot see, where it lands no rule can name: KNOWN
+MEANS MUST, and "not typed" had been a permission. What the first versions got
+wrong: a literal written out, `ps := [2]*int{v, nil}; ps[1] = v`, was untyped and so
+refused, and a slice literal's backing, the frame's own, counted as storage nothing
+names (the controls caught both); and typing an assertion's type and a declaration's
+through cType MINTED what they wrote out -- the interface of `x.(interface{ Unwrap()
+error })`, a struct written out -- which emission then took for minted and never
+wrote: six run cases' C lost a typedef they use, which only the corpus diff showed
+(the summaries read a type off its tokens since, summaryCType; the rule is the old
+one, never ask cType from a pass gathering facts). And two run cases were refused,
+which the dump's listing showed and its diff did not (a refused program is a file
+missing). One was right: `case ***M: **d = src` in a function also asked `case **M:`
+stores two pointers deep, which the entry above refuses, and Go moves both locals
+handed to it to the heap; the run case's two-deep store takes a package variable
+since. The other was a summary that had no level: `func (p *pool) alloc() *node {
+return &p.nodes[i] }` was recorded as handing back its receiver (retRecv), so
+`n := p.alloc(v); n.next = p.head; p.head = n`, now typed, stored the receiver where
+it outlives every frame, and a linked list over a pool was refused for main's local
+pool -- where Go says "leaking param: p to result ~r0 level=1", one dereference
+past p. A return past the receiver's pointee is its contents now (deepRecvReturn,
+retRecvShallow), read so where the summaries follow a result -- a method on it, a
+relay, a sink -- and the call-site rules keep the receiver reading, which refuses
+more; `n := p.at(1); n.ptr = v` keeping a local's address in a package pool's
+backing, silent before, is refused by the same change. Measured: the corpus's 1,393
+programs emit the C they did but the changed run case's, none refused; of 4,858
+domain programs and mutants none has another verdict; p2-11 builds to the same
+bytes. Found beside it and left for its own
+change: a field promoted through an embedded pointer, `type P struct{ *T }` and
+`h.p = v`, is a store through that pointer which neither the summaries nor the
+store rules inside a function count -- `pp := P{T: &g}; pp.p = &local` keeps the
+address in g -- and a method promoted through any embedded field, `h.set(v)` for a
+`type E struct{ T }`, is no call to the summaries at all (methodCallOf names the
+method on E, which declares none), so `put(&ge, &local)` kept the address in ge. The
+rules: **a binding is every form that gives a name a value -- a
+statement, a clause, a header, a guard -- and a rule reading a name's bindings reads
+every form**, **a target no walk types is asked as one through a pointer**, and
+**what a call hands back of its receiver is asked how far past it the result is**.
 **A MARK IS MADE IN EMISSION ORDER, AND A LOOP RUNS ITS BODY AGAIN** (2026-10-08,
 found probing unsafe.Slice's views). The holder marks are set as statements are
 emitted, so a statement read a variable's mark as the statements BEFORE it had left

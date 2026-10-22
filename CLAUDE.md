@@ -997,7 +997,11 @@ section. A new finding goes there; the rule it leaves goes here too.
   RECORDS IS ASKED HOW FAR IT GOES**: **one pointer from a value the caller or this
   frame chose is the call site's question; any other lands where no rule can name**,
   and **what a name's value is, is asked of its bindings, not of what is stored into
-  it**. **A MARK IS MADE IN EMISSION ORDER, AND A LOOP RUNS ITS BODY AGAIN**: **A mark is a fact about a
+  it**. **A BINDING IS EVERY FORM THAT GIVES A NAME A VALUE**: **a binding is every
+  form that gives a name a value -- a statement, a clause, a header, a guard -- and a
+  rule reading a name's bindings reads every form**, **a target no walk types is
+  asked as one through a pointer**, and **what a call hands back of its receiver is
+  asked how far past it the result is**. **A MARK IS MADE IN EMISSION ORDER, AND A LOOP RUNS ITS BODY AGAIN**: **A mark is a fact about a
   variable at a point; a rule reading one asks what reaches that point -- a loop's
   back edge and an alias both do.**
 - **A PARENTHESISED HEAD IS A ROW OF EVERY SCAN**: **A new scan reads heads through

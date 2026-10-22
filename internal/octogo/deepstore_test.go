@@ -97,3 +97,171 @@ func get() *T { return &g }
 		}
 	}
 }
+
+// TestEmitCStoreBindingForms: the store a summary records is typed from every form
+// that binds the local it goes through -- a range clause's element, a for clause, one
+// of a call's several results, a comma-ok form, a receive, a type switch's name in
+// its clause, a declaration's written type, a literal, a method's or a function
+// value's result -- and a store whose target nothing types is taken to go where no
+// rule can name. Each refused row was read as a store into the local's own storage,
+// and `put` left run's local address where an element or a result pointed, in
+// silence.
+func TestEmitCStoreBindingForms(t *testing.T) {
+	const head = `type T struct {
+	p *int
+	n int
+}
+
+type U struct {
+	q  *T
+	hs []*T
+	ts [2]*T
+}
+
+type W struct{ q *T }
+
+type I interface{ get() int }
+
+func (t *T) get() int { return t.n }
+
+func (u *U) get() int { return 1 }
+
+func (t *T) set(v *int) { t.p = v }
+
+func (u *U) next() *T { return u.q }
+
+func (u *U) two() (*T, int) { return u.q, 1 }
+
+func fill(t *T, v *int) { t.p = v }
+
+func two(u *U) (*T, int) { return u.q, 1 }
+
+func first(u *U) *T { return u.q }
+
+func mk() (T, int) { return T{n: 5}, 1 }
+
+var pick = first
+
+var pick2 = two
+
+var g T
+
+var ch = make(chan *T)
+
+var cht = make(chan T)
+
+`
+	const call = "local := 42\n\tvar u U\n\tu.q, u.hs, u.ts[0] = &g, []*T{&g}, &g\n\tvar lt T\n\t"
+	for _, test := range []struct {
+		callee, call string
+		refused      bool
+	}{
+		{"func put(hs []*T, v *int) { for _, h := range hs { h.p = v } }", "put(u.hs, &local)", true},
+		{"func put(u *U, v *int) { for _, h := range u.hs { h.p = v } }", "put(&u, &local)", true},
+		{"func put(a *[2]*T, v *int) { for _, h := range a { h.p = v } }", "put(&u.ts, &local)", true},
+		{"func put(u *U, v *int) { for i, h := range u.ts { if i == 0 { h.p = v } } }", "put(&u, &local)", true},
+		{"func put(hs []*T, v *int) { for _, h := range hs[:1] { h.p = v } }", "put(u.hs, &local)", true},
+		{"func put(u *U, v *int) { var h *T; for _, h = range u.hs {}; h.p = v }", "put(&u, &local)", true},
+		{"func put(v *int) { for h := range ch { h.p = v; break } }", "put(&local)", true},
+		{"func put(hs []*T, v *int) { for _, h := range hs { h.set(v) } }", "put(u.hs, &local)", true},
+		{"func put(hs []*T, v *int) { for _, h := range hs { fill(h, v) } }", "put(u.hs, &local)", true},
+		{"func put(u *U, v *int) { for h := u.q; h != nil; h = nil { h.p = v } }", "put(&u, &local)", true},
+		{"func put(u *U, v *int) { var h *T; for h = u.q; h != nil; h = nil { h.p = v } }", "put(&u, &local)", true},
+		{"func put(u *U, v *int) { h, n := two(u); h.p = v; _ = n }", "put(&u, &local)", true},
+		{"func put(u *U, v *int) { h, n := u.two(); h.p = v; _ = n }", "put(&u, &local)", true},
+		{"func put(u *U, v *int) { h, n := pick2(u); h.p = v; _ = n }", "put(&u, &local)", true},
+		{"func put(x I, v *int) { h := x.(*U); h.q.p = v }", "put(&u, &local)", true},
+		{"func put(x I, v *int) { if h, ok := x.(*U); ok { h.q.p = v } }", "put(&u, &local)", true},
+		{"func put(x I, v *int) { switch h := x.(type) { case *U: h.q.p = v } }", "put(&u, &local)", true},
+		{"func put(v *int) { h := <-ch; h.p = v }", "put(&local)", true},
+		{"func put(v *int) { h, ok := <-ch; if ok { h.p = v } }", "put(&local)", true},
+		{"func put(u *U, v *int) { q := u.next(); q.p = v }", "put(&u, &local)", true},
+		{"func put(u *U, v *int) { q := pick(u); q.p = v }", "put(&u, &local)", true},
+		{"func put(u *U, v *int) { var ps [2]*T; ps[0] = u.q; ps[0].p = v }", "put(&u, &local)", true},
+		{"func put(u *U, v *int) { w := W{q: u.q}; w.q.p = v }", "put(&u, &local)", true},
+		{"func put(u *U, v *int) { w := &W{q: u.q}; w.q.p = v }", "put(&u, &local)", true},
+		{"func put(u *U, v *int) { ps := [2]*T{u.q, nil}; ps[0].p = v }", "put(&u, &local)", true},
+		{"func put(u *U, v *int) { ps := []*T{u.q}; ps[0].p = v }", "put(&u, &local)", true},
+		{"func put(u *U, v *int) { { h := W{}; _ = h }; { h := u.q; h.p = v } }", "put(&u, &local)", true},
+		// What lands in the caller's own storage, or in this frame's, is the
+		// caller's to decide.
+		{"func put(x I, v *int) { switch h := x.(type) { case *T: h.p = v } }", "put(&lt, &local)", false},
+		{"func put(x I, v *int) { switch h := x.(type) { case *T: h.set(v); fill(h, v) } }", "put(&lt, &local)", false},
+		{"func put(x I, v *int) { h := x.(*T); h.p = v }", "put(&lt, &local)", false},
+		{"func put(x I, v *int) { if h, ok := x.(*T); ok { h.p = v } }", "put(&lt, &local)", false},
+		{"func put(ts []T, v *int) { for i := range ts { ts[i].p = v } }", "var ls [2]T\n\tput(ls[:], &local)\n\t_ = ls", false},
+		{"func put(ts []T, v *int) int { s := 0; for _, t := range ts { t.p = v; s += *t.p }; return s }", "var ls [2]T\n\tput(ls[:], &local)\n\t_ = ls", false},
+		{"func put(v *int) int { t, n := mk(); t.p = v; return *t.p + n }", "put(&local)", false},
+		{"func put(v *int) int { var t T; s := 0; for p := &t; p != nil; p = nil { p.p = v; s += *p.p }; return s }", "put(&local)", false},
+		{"func put(v *int) int { t := <-cht; t.p = v; return *t.p }", "put(&local)", false},
+		{"func put(v *int) int { p := &T{}; p.p = v; return *p.p }", "put(&local)", false},
+		{"func put(v *int) int { var ps [2]*int; ps[0] = v; return *ps[0] }", "put(&local)", false},
+	} {
+		src := head + test.callee + "\n\nfunc run() {\n\t" + call + test.call + "\n\tprintln(u.q != nil, lt.n)\n}\n\nfunc main() {\n\trun()\n}\n"
+		fsys := fstest.MapFS{"main.ogo": &fstest.MapFile{Data: []byte(src)}}
+		pkg, err := Build(-1, []string{"main.ogo"}, fsys)
+		if err == nil {
+			err = EmitC(pkg, io.Discard, Checked())
+		}
+		switch {
+		case test.refused && (err == nil || !strings.Contains(err.Error(), "cannot pass the address of local variable local")):
+			t.Errorf("%s: got %v, want the local's address refused", test.callee, err)
+		case !test.refused && err != nil:
+			t.Errorf("%s: refused: %v", test.callee, err)
+		}
+	}
+}
+
+// TestEmitCRecvHandedBackDeep: a method handing back a place past what its
+// receiver points at, `return &p.nodes[i]`, hands back one of the receiver's
+// contents, not the receiver -- Go's "leaking param: p to result ~r0 level=1".
+// Read as the receiver, a linked list over a pool, `n := p.at(i); n.next =
+// p.head; p.head = n`, stored the receiver where it outlives every frame and was
+// refused for a local pool; what is stored through the result, or kept of it,
+// still goes where the receiver's contents go.
+func TestEmitCRecvHandedBackDeep(t *testing.T) {
+	const head = `type node struct {
+	ptr  *int
+	next *node
+}
+
+type pool struct {
+	nodes []node
+	head  *node
+}
+
+func (p *pool) at(i int) *node { return &p.nodes[i] }
+
+func (p *pool) get() *node { return p.at(1) }
+
+func (p *pool) push() { n := p.at(1); n.next = p.head; p.head = n }
+
+var storage [4]node
+
+var gq *node
+
+`
+	for _, test := range []struct {
+		decls, run string
+		refused    string
+	}{
+		{"", "lp := pool{storage[:], nil}\n\tlp.push()\n\tprintln(lp.head != nil)", ""},
+		{"func (p *pool) put(v *int) { n := p.at(1); n.ptr = v }", "local := 42\n\tlp := pool{storage[:], nil}\n\tlp.put(&local)", "local variable local"},
+		{"func put(p *pool, v *int) { n := p.get(); n.ptr = v }", "local := 42\n\tlp := pool{storage[:], nil}\n\tput(&lp, &local)", "local variable local"},
+		{"func keep(p *pool) { gq = p.get() }", "var arr [4]node\n\tlp := pool{arr[:], nil}\n\tkeep(&lp)", "local arr"},
+		{"func (p *pool) keep() { gq = p.at(1) }", "var arr [4]node\n\tlp := pool{arr[:], nil}\n\tlp.keep()", "local arr"},
+	} {
+		src := head + test.decls + "\n\nfunc run() {\n\t" + test.run + "\n}\n\nfunc main() {\n\trun()\n}\n"
+		fsys := fstest.MapFS{"main.ogo": &fstest.MapFile{Data: []byte(src)}}
+		pkg, err := Build(-1, []string{"main.ogo"}, fsys)
+		if err == nil {
+			err = EmitC(pkg, io.Discard, Checked())
+		}
+		switch {
+		case test.refused != "" && (err == nil || !strings.Contains(err.Error(), test.refused)):
+			t.Errorf("%s: got %v, want %q refused", test.decls, err, test.refused)
+		case test.refused == "" && err != nil:
+			t.Errorf("%s: refused: %v", test.decls, err)
+		}
+	}
+}

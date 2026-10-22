@@ -6646,7 +6646,7 @@ func typeNameCollisions(src []byte, names map[string]bool) map[string]bool {
 // emitProgram is EmitC's one pass. rename lists the main-package types spelled
 // ogo_T_<name> in C (see typeMangle).
 func emitProgram(pkg *Package, w io.Writer, opts []EmitOption, rename map[string]bool, seeds loopSeeds) (loopSeeds, error) {
-	e := &emitter{loopSeedsIn: seeds, loopSeedsOut: loopSeeds{}, renameTypes: rename, renamedTypes: map[string]string{}, includes: map[string]bool{}, funcRet: map[string][]string{}, funcSliceParams: map[string][]string{}, funcVariadic: map[string]int{}, nilHelpers: map[string]bool{}, initSkew: map[string]bool{}, arrPtrHelpers: map[string]arrDim{}, usliceHelpers: map[string]bool{}, funcArrayRet: map[string]arrDim{}, funcStructRet: map[string]string{}, funcArrayParams: map[string][]arrDim{}, anonStructNames: map[string]string{}, methodValueTypes: map[string]funcValueType{}, methodValueOf: map[string]string{}, methodExprNames: map[string]string{}, funcParams: map[string][]string{}, methodPtr: map[string]bool{}, recvByRef: map[string]bool{}, globals: map[string]string{}, structs: map[string][]structField{}, namedTypes: map[string]bool{}, typeNames: map[string]bool{}, interfaceTypes: map[string]bool{}, ifaceMethods: map[string][]ifaceMethod{}, anonIfaceNames: map[string]string{}, anonIfaceMinted: map[string]bool{}, ifaceASTs: map[string]ifaceAST{}, ifaceVTables: map[string]bool{}, namedUnderlying: map[string]string{}, namedArrays: map[string]arrDim{}, constInt: map[string]string{}, constVal: map[string]constant.Value{}, constBool: map[string]bool{}, constWide: map[string]string{}, constStr: map[string]string{}, constUntyped: map[string]bool{}, constHuge: map[string]bool{}, arrays: map[string]arrDim{}, globalArrays: map[string]arrDim{}, sliceVars: map[string]string{}, globalSliceVars: map[string]string{}, chanElems: map[string]bool{}, chanInitElems: map[string]bool{}, chanSendElems: map[string]bool{}, chanRecvElems: map[string]bool{}, chanTryRecvElems: map[string]bool{}, chanTrySendElems: map[string]bool{}, chanGatedSendElems: map[string]bool{}, chanSendClosedElems: map[string]bool{}, chanBufElems: map[string]bool{}, chanLenElems: map[string]bool{}, chanReadyElems: map[string]bool{}, aliasOf: map[string]string{}, aliasLits: map[string]bool{}, localTypes: map[string]string{}, gotoTargets: map[string]bool{}, chanCloseElems: map[string]bool{}, chanRecv2Elems: map[string]bool{}, mathWrappers: map[string]bool{}, chanElemByName: map[string]string{}, sliceElems: map[string]bool{}, sliceElemByName: map[string]string{}, appendElems: map[string]bool{}, tryappendElems: map[string]bool{}, appendSliceElems: map[string]bool{}, tryappendSliceEls: map[string]bool{}, appendokStructs: map[string]bool{}, copyElems: map[string]bool{}, resliceElems: map[string]bool{}, reslice3Elems: map[string]bool{}, mkLenHelpers: map[string]bool{}, clearElems: map[string]bool{}, minElems: map[string]bool{}, maxElems: map[string]bool{}, printSliceElems: map[string]bool{}, printStructs: map[string]string{}, printIfaces: map[string]string{}, printlnElems: map[string]bool{}, switchBreakUsed: map[string]bool{}, labelBreak: map[string]string{}, labelContinue: map[string]string{}, labelUsed: map[string]bool{}, eqStructs: map[string]bool{}, eqArrays: map[string]arrDim{}, frameBacked: map[string]bool{}, frameHolder: map[string]string{}, crossParams: map[string][]leak{}, crossContents: map[string][]leak{}, retContents: map[string][]bool{}, recvContents: map[string]leak{}, paramCalls: map[string][]paramCall{}, frameCalls: map[string][]frameCall{}, localConstSpecs: map[string]localConstSpec{}, inheritedTypes: map[string]bool{}, funcValueMembers: map[string][]string{}, methodExprMembers: map[string]emMethodExpr{}, memberShown: map[string]string{}, litLifted: map[string][]string{}, methodNames: map[string]bool{}, recvLeaks: map[string]leak{}, recvInto: map[string]uint32{}, retRecv: map[string]bool{}, crossInto: map[string][]uint32{}, ifaceSummaries: map[string]ifaceSummary{}, retParams: map[string][]bool{}, funcValueOf: map[string]string{}, crossNames: map[string]string{}, initNames: map[string]string{}, funcValueTypes: map[string]funcValueType{}, funcTypeNames: map[string]string{}, funcTypeRet: map[string][]string{}, funcTypeParams: map[string][]string{}, funcTypeVariadic: map[string]int{}, recFuncTypes: map[string]bool{}, recFuncShapes: map[string]string{}, retStructs: map[string]string{}, retStructByKey: map[string]string{}, shiftHelpers: map[string]shiftHelper{}, shiftCTypes: map[*int32]string{}, shiftWalked: map[shiftWalkKey]bool{}, shiftIn: map[*int32]bool{}, divHelpers: map[string][2]string{}, funcValueWrappers: map[string]string{}, stackChecked: map[string]bool{}, deferReplay: -1, iota: -1}
+	e := &emitter{loopSeedsIn: seeds, loopSeedsOut: loopSeeds{}, renameTypes: rename, renamedTypes: map[string]string{}, includes: map[string]bool{}, funcRet: map[string][]string{}, funcSliceParams: map[string][]string{}, funcVariadic: map[string]int{}, nilHelpers: map[string]bool{}, initSkew: map[string]bool{}, arrPtrHelpers: map[string]arrDim{}, usliceHelpers: map[string]bool{}, funcArrayRet: map[string]arrDim{}, funcStructRet: map[string]string{}, funcArrayParams: map[string][]arrDim{}, anonStructNames: map[string]string{}, methodValueTypes: map[string]funcValueType{}, methodValueOf: map[string]string{}, methodExprNames: map[string]string{}, funcParams: map[string][]string{}, methodPtr: map[string]bool{}, recvByRef: map[string]bool{}, globals: map[string]string{}, structs: map[string][]structField{}, namedTypes: map[string]bool{}, typeNames: map[string]bool{}, interfaceTypes: map[string]bool{}, ifaceMethods: map[string][]ifaceMethod{}, anonIfaceNames: map[string]string{}, anonIfaceMinted: map[string]bool{}, ifaceASTs: map[string]ifaceAST{}, ifaceVTables: map[string]bool{}, namedUnderlying: map[string]string{}, namedArrays: map[string]arrDim{}, constInt: map[string]string{}, constVal: map[string]constant.Value{}, constBool: map[string]bool{}, constWide: map[string]string{}, constStr: map[string]string{}, constUntyped: map[string]bool{}, constHuge: map[string]bool{}, arrays: map[string]arrDim{}, globalArrays: map[string]arrDim{}, sliceVars: map[string]string{}, globalSliceVars: map[string]string{}, chanElems: map[string]bool{}, chanInitElems: map[string]bool{}, chanSendElems: map[string]bool{}, chanRecvElems: map[string]bool{}, chanTryRecvElems: map[string]bool{}, chanTrySendElems: map[string]bool{}, chanGatedSendElems: map[string]bool{}, chanSendClosedElems: map[string]bool{}, chanBufElems: map[string]bool{}, chanLenElems: map[string]bool{}, chanReadyElems: map[string]bool{}, aliasOf: map[string]string{}, aliasLits: map[string]bool{}, localTypes: map[string]string{}, gotoTargets: map[string]bool{}, chanCloseElems: map[string]bool{}, chanRecv2Elems: map[string]bool{}, mathWrappers: map[string]bool{}, chanElemByName: map[string]string{}, sliceElems: map[string]bool{}, sliceElemByName: map[string]string{}, appendElems: map[string]bool{}, tryappendElems: map[string]bool{}, appendSliceElems: map[string]bool{}, tryappendSliceEls: map[string]bool{}, appendokStructs: map[string]bool{}, copyElems: map[string]bool{}, resliceElems: map[string]bool{}, reslice3Elems: map[string]bool{}, mkLenHelpers: map[string]bool{}, clearElems: map[string]bool{}, minElems: map[string]bool{}, maxElems: map[string]bool{}, printSliceElems: map[string]bool{}, printStructs: map[string]string{}, printIfaces: map[string]string{}, printlnElems: map[string]bool{}, switchBreakUsed: map[string]bool{}, labelBreak: map[string]string{}, labelContinue: map[string]string{}, labelUsed: map[string]bool{}, eqStructs: map[string]bool{}, eqArrays: map[string]arrDim{}, frameBacked: map[string]bool{}, frameHolder: map[string]string{}, crossParams: map[string][]leak{}, crossContents: map[string][]leak{}, retContents: map[string][]bool{}, recvContents: map[string]leak{}, paramCalls: map[string][]paramCall{}, frameCalls: map[string][]frameCall{}, localConstSpecs: map[string]localConstSpec{}, inheritedTypes: map[string]bool{}, funcValueMembers: map[string][]string{}, methodExprMembers: map[string]emMethodExpr{}, memberShown: map[string]string{}, litLifted: map[string][]string{}, methodNames: map[string]bool{}, recvLeaks: map[string]leak{}, recvInto: map[string]uint32{}, retRecv: map[string]bool{}, retRecvShallow: map[string]bool{}, crossInto: map[string][]uint32{}, ifaceSummaries: map[string]ifaceSummary{}, retParams: map[string][]bool{}, funcValueOf: map[string]string{}, crossNames: map[string]string{}, initNames: map[string]string{}, funcValueTypes: map[string]funcValueType{}, funcTypeNames: map[string]string{}, funcTypeRet: map[string][]string{}, funcTypeParams: map[string][]string{}, funcTypeVariadic: map[string]int{}, recFuncTypes: map[string]bool{}, recFuncShapes: map[string]string{}, retStructs: map[string]string{}, retStructByKey: map[string]string{}, shiftHelpers: map[string]shiftHelper{}, shiftCTypes: map[*int32]string{}, shiftWalked: map[shiftWalkKey]bool{}, shiftIn: map[*int32]bool{}, divHelpers: map[string][2]string{}, funcValueWrappers: map[string]string{}, stackChecked: map[string]bool{}, deferReplay: -1, iota: -1}
 	for _, opt := range opts {
 		opt(e)
 	}
@@ -7971,6 +7971,7 @@ type emitter struct {
 	recvEdges           []recvEdge              // how a receiver's keeping travels to callers (see recvEdge)
 	copyRecvEdges       []copyRecvEdge          // how a copied receiver's contents travel to callers (see copyRecvEdge)
 	retRecv             map[string]bool         // a pointer method returns its receiver, so its result is what it was called on
+	retRecvShallow      map[string]bool         // ...and some return is the receiver's own value or a place in its pointee, not only what is reached past that (see deepRecvReturn)
 	crossInto           map[string][]uint32     // per function, which PARAMETERS each parameter is stored through, as a bitmask of their indices. leakRecv answers this for a method's receiver; a plain function has no receiver and needed the general form (see pointerParamSlots)
 	recvInto            map[string]uint32       // a pointer method's RECEIVER stored through its parameters, a bitmask of their indices, as crossInto says it of a parameter: `*p = m` in a method of m (see checkRecvInto)
 	ifaceSummaries      map[string]ifaceSummary // "<iface>.<method>" -> the union of the summaries of every implementation, since which one a call reaches is the vtable's answer (see ifaceCallSummary)
@@ -12390,6 +12391,9 @@ func (e *emitter) gatesHold(via []viaGate, contents bool) (holds, contentsOut bo
 	for _, v := range via {
 		switch rp, rc := e.retParams[v.callee], e.retContents[v.callee]; {
 		case v.to < 0 && e.retRecv[v.callee]:
+			if !e.retRecvShallow[v.callee] {
+				contents = true // what is past the receiver's pointee (deepRecvReturn)
+			}
 		case v.to < 0:
 			return false, false
 		case v.to < len(rp) && rp[v.to]:
@@ -13287,18 +13291,42 @@ func (e *emitter) collectFuncCross(fi funcInfo) {
 	//
 	// The target is typed from its root: a parameter, the receiver or a package
 	// variable (curOf); a local declared with a defined type (fi.locals); or a local
-	// every binding of which is typed from those, `p := *hh` and `q := h.q`. A local
-	// bound otherwise is not typed, and its store is read as it was.
+	// every binding of which is typed from those, `p := *hh` and `q := h.q` -- and a
+	// binding is every form that gives a local a value: a statement's, a for
+	// clause's, a range clause's element (ranged), one of a call's several results
+	// (results), the value of a comma-ok form and a type switch's name, typed by its
+	// clause (switchBinds). A local bound otherwise is not typed, and its store is
+	// read as it was. Each form left out was a store read as one into the local's
+	// own storage: `for _, h := range hs { h.p = v }` kept v in what an element of
+	// hs points at, and the caller's local address went there unrecorded.
 	bound := map[string][]Node{}
 	unbound := map[string]bool{}
-	e.eachStmt(body, func(nodes []Node) {
-		targets, into, values := e.summaryBinding(nodes)
-		if len(nodes) == 1 && nodes[0].sym == VarDecl && len(values) == 0 {
-			return // `var t T`: fi.locals types it
-		}
+	type rangeBind struct {
+		x   Node // what is ranged
+		key bool // the clause's first name: a channel's element, an index otherwise
+	}
+	ranged := map[string][]rangeBind{}
+	type resultBind struct {
+		call Node
+		i    int
+	}
+	results := map[string][]resultBind{}
+	bind := func(targets []string, into []bool, values [][]int32) {
 		if len(targets) != len(values) {
-			for _, t := range targets {
-				unbound[t] = true // one call's several results
+			for i, t := range targets {
+				switch {
+				case len(values) != 1:
+					unbound[t] = true
+				case i < len(into) && into[i]:
+				case e.commaOKValue(values[0]):
+					if i == 0 {
+						bound[t] = append(bound[t], Node{sym: Expression, ast: values[0]}) // `h, ok := x.(*T)`
+					} else {
+						unbound[t] = true // the ok
+					}
+				default:
+					results[t] = append(results[t], resultBind{Node{sym: Expression, ast: values[0]}, i}) // `h, n := two(u)`
+				}
 			}
 			return
 		}
@@ -13307,31 +13335,170 @@ func (e *emitter) collectFuncCross(fi funcInfo) {
 				bound[t] = append(bound[t], Node{sym: Expression, ast: values[i]})
 			}
 		}
+	}
+	// declared holds the types a declaration writes, `var ps [2]*T`.
+	declared := map[string][][]int32{}
+	e.eachStmt(body, func(nodes []Node) {
+		targets, into, values := e.summaryBinding(nodes)
+		if len(nodes) == 1 && nodes[0].sym == VarDecl {
+			for sp := range it(nodes[0].ast) {
+				if sp.sym != VarSpec {
+					continue
+				}
+				var names []string
+				var ta []int32
+				for c := range it(sp.ast) {
+					switch c.sym {
+					case IdentifierList:
+						for id := range it(c.ast) {
+							if id.sym == 0 && e.f.ch(id.tok) == IDENT {
+								names = append(names, e.src(id.tok))
+							}
+						}
+					case Type:
+						ta = c.ast
+					}
+				}
+				for _, nm := range names {
+					if ta != nil {
+						declared[nm] = append(declared[nm], ta)
+					}
+				}
+			}
+			if len(values) == 0 {
+				return
+			}
+		}
+		bind(targets, into, values)
 	})
+	type clauseBind struct {
+		lo, hi int32 // the clause's tokens
+		cur    accessCur
+		typed  bool
+	}
+	switchBinds := map[string][]clauseBind{}
+	var walkBinds func(ast []int32)
+	walkBinds = func(ast []int32) {
+		for n := range it(ast) {
+			switch n.sym {
+			case 0:
+				continue
+			case ForHeader:
+				h, ok := e.parseForHeader(n)
+				switch {
+				case !ok:
+				case h.isRange:
+					x := Node{sym: Expression, ast: h.rangeExpr}
+					if v, isName := e.exprIdent(h.valVar); isName {
+						ranged[v] = append(ranged[v], rangeBind{x: x})
+					}
+					if k, isName := e.exprIdent(h.keyVar); isName {
+						ranged[k] = append(ranged[k], rangeBind{x: x, key: true})
+					}
+				default:
+					// The one-name forms fill the singles only, as summaryHolds reads them.
+					if len(h.initLHSs) == 0 && h.initLHS != nil && h.initRHS != nil {
+						h.initLHSs, h.initRHSs = [][]int32{h.initLHS}, [][]int32{h.initRHS}
+					}
+					if len(h.postLHSs) == 0 && h.postLHS != nil && h.postRHS != nil {
+						h.postLHSs, h.postRHSs = [][]int32{h.postLHS}, [][]int32{h.postRHS}
+					}
+					bind(e.forClauseBinding(h.initLHSs, h.initRHSs))
+					bind(e.forClauseBinding(h.postLHSs, h.postRHSs))
+				}
+			case SwitchStmt:
+				var guard []int32
+				var cases []Node
+				for c := range it(n.ast) {
+					switch c.sym {
+					case SwitchGuard:
+						guard = c.ast
+					case CaseClause:
+						cases = append(cases, c)
+					}
+				}
+				name, _, isType := "", "", false
+				if guard != nil {
+					name, _, isType = e.typeSwitchNames(guard)
+				}
+				for _, cc := range cases {
+					if !isType {
+						break
+					}
+					// One pointer type named binds the name at it; any other clause binds
+					// an interface, which no store goes through.
+					cb := clauseBind{lo: cc.Pos(), hi: cc.End()}
+					if exprs, isDefault := e.caseHead(cc.ast); !isDefault && len(exprs) == 1 {
+						if ct, ok := e.summaryCaseCType(exprs[0]); ok {
+							cb.cur, cb.typed = e.plainOrSlice(ct), true
+						}
+					}
+					switchBinds[name] = append(switchBinds[name], cb)
+				}
+			}
+			walkBinds(n.ast)
+		}
+	}
+	walkBinds(body)
+	clauseAt := func(name string, tok int32) (clauseBind, bool) {
+		for _, cb := range switchBinds[name] {
+			if cb.lo <= tok && tok <= cb.hi {
+				return cb, true
+			}
+		}
+		return clauseBind{}, false
+	}
 	typing := map[string]bool{}
 	var rootCur func(name string) (accessCur, bool)
 	var exprCur func(n Node) (accessCur, bool)
+	var rangedCur func(x Node, key bool) (accessCur, bool)
+	var resultCur func(call Node, i int) (accessCur, bool)
 	rootCur = func(name string) (accessCur, bool) {
 		if cur, ok := curOf(name); ok {
 			return cur, true
 		}
-		if tn := fi.locals[name]; tn != "" && len(bound[name]) == 0 {
+		others := len(bound[name]) + len(ranged[name]) + len(results[name]) + len(declared[name])
+		if tn := fi.locals[name]; tn != "" && others == len(declared[name]) {
 			return e.plainOrSlice(tn), true // `var t T`
 		}
-		if unbound[name] || len(bound[name]) == 0 || typing[name] {
+		if unbound[name] || others == 0 || typing[name] {
 			return accessCur{}, false
 		}
 		typing[name] = true
 		defer delete(typing, name)
 		var cur accessCur
-		for i, v := range bound[name] {
-			c, ok := exprCur(v)
-			if !ok || i != 0 && (c.ctype != cur.ctype || c.slice != cur.slice || c.elem != cur.elem || len(c.dims) != len(cur.dims)) {
+		first := true
+		agree := func(c accessCur, ok bool) bool {
+			if !ok || !first && (c.ctype != cur.ctype || c.slice != cur.slice || c.elem != cur.elem || len(c.dims) != len(cur.dims)) {
+				return false
+			}
+			cur, first = c, false
+			return true
+		}
+		for _, ta := range declared[name] {
+			if !agree(e.declaredCur(ta)) {
 				return accessCur{}, false
 			}
-			cur = c
 		}
-		return cur, true
+		for _, v := range bound[name] {
+			if e.isNilExpr(v.ast) {
+				continue // `h = nil`: of whatever type the others give
+			}
+			if !agree(exprCur(v)) {
+				return accessCur{}, false
+			}
+		}
+		for _, r := range ranged[name] {
+			if !agree(rangedCur(r.x, r.key)) {
+				return accessCur{}, false
+			}
+		}
+		for _, r := range results[name] {
+			if !agree(resultCur(r.call, r.i)) {
+				return accessCur{}, false
+			}
+		}
+		return cur, !first
 	}
 	// walkTarget follows a target from its root, counting the pointers it goes
 	// through and whether the first is the root's own value, no step before it.
@@ -13341,6 +13508,8 @@ func (e *emitter) collectFuncCross(fi funcInfo) {
 		hops            int
 		atRoot, stepped bool
 		unnamed         bool // the root is a call's result, `get().p`
+		lit             bool // the root is a composite literal, `&T{}`
+		call            bool // the walk stopped at a call in the chain
 	}
 	var walkTarget func(n Node) (walked, bool)
 	walkTarget = func(n Node) (w walked, ok bool) {
@@ -13355,6 +13524,19 @@ func (e *emitter) collectFuncCross(fi funcInfo) {
 			// `*p` and `**pp`: the parser's `*` over a UnaryExpr, or the stars of a
 			// statement's head built over its nodes (commChanExpr), several in one.
 			kids := slices.Collect(it(n.ast))
+			if len(kids) == 2 && kids[0].sym == UnaryOp {
+				if tok, isOp := e.unaryOpTok(kids[0].ast); isOp && e.f.ch(tok) == ARROW {
+					// `<-ch`: a value another frame sent, which no name here holds.
+					if w, ok = walkTarget(kids[1]); !ok {
+						return w, false
+					}
+					el, isChan := e.chanElemByName[e.underlyingCType(w.cur.ctype)]
+					if !isChan {
+						return w, false
+					}
+					return walked{cur: e.plainOrSlice(el), unnamed: true, stepped: true}, true
+				}
+			}
 			if len(kids) == 1 {
 				n = kids[0]
 			} else {
@@ -13398,17 +13580,49 @@ func (e *emitter) collectFuncCross(fi funcInfo) {
 			w.cur, w.unnamed, w.stepped, steps = e.plainOrSlice(rts[0]), true, true, steps[1:]
 		case len(kids) == 1 && kids[0].sym == 0 && e.f.ch(kids[0].tok) == IDENT:
 			w.root = e.src(kids[0].tok)
-			if w.cur, ok = rootCur(w.root); !ok {
+			if cb, inClause := clauseAt(w.root, kids[0].tok); inClause {
+				if w.cur, ok = cb.cur, cb.typed; !ok {
+					return w, false
+				}
+			} else if w.cur, ok = rootCur(w.root); !ok {
 				return w, false
 			}
 		case len(kids) == 3 && kids[0].sym == 0 && e.f.ch(kids[0].tok) == LPAREN && kids[1].sym == Expression:
 			if w, ok = walkTarget(kids[1]); !ok {
 				return w, false
 			}
+		case len(kids) >= 4 && kids[0].sym == 0 && e.f.ch(kids[0].tok) == LBRACK && kids[len(kids)-1].sym == CompositeLit:
+			// A literal of a type written out, `[2]*T{u.q, nil}`, `[]*T{u.q}`: the
+			// Factor's own nodes are the type, as arrayDim and sliceType read it.
+			if el := kids[len(kids)-2]; el.sym != Type || !e.summaryElemOK(el.ast) {
+				return w, false
+			}
+			if w.cur, ok = e.bracketCur(n.ast); !ok {
+				return w, false
+			}
+			w.lit = true
 		default:
-			return w, false
+			// A literal, `T{q: u.q}`, `lib.T{}`: storage of this frame, of the
+			// literal's type.
+			tn, _, isLit := e.factorCompositeLit(kids)
+			if !isLit || tn == "" {
+				return w, false
+			}
+			w.cur, w.lit = e.plainOrSlice(tn), true
 		}
 		for _, st := range steps {
+			if typeAST, isAssert := e.assertedType(st); isAssert {
+				// `x.(*T)`: the pointer the interface holds, the same value.
+				if typeAST == nil {
+					return w, false // `.(type)`
+				}
+				ct, typed := e.summaryCType(typeAST)
+				if !typed {
+					return w, false
+				}
+				w.cur = e.plainOrSlice(ct)
+				continue
+			}
 			hop := false
 			switch st.sym {
 			case Selector:
@@ -13418,6 +13632,7 @@ func (e *emitter) collectFuncCross(fi funcInfo) {
 					hop = w.cur.slice || e.isPointer(w.cur.ctype)
 				}
 			default:
+				w.call = true
 				return w, false // a call: storedThroughUnnamed's
 			}
 			if hop {
@@ -13441,19 +13656,78 @@ func (e *emitter) collectFuncCross(fi funcInfo) {
 			}
 			return e.plainOrSlice(w.cur.ctype + "*"), true
 		}
-		w, ok := walkTarget(n)
-		return w.cur, ok
+		if w, ok := walkTarget(n); ok {
+			return w.cur, true
+		}
+		if _, _, isCall := e.shapeCall(n.ast); isCall {
+			return resultCur(n, 0) // `b := pool.Get(id)`, `q := u.next()`
+		}
+		return accessCur{}, false
+	}
+	// rangedCur types a range clause's name: an element of what is ranged, or for
+	// its first name, the element of a channel; an index is no place to store
+	// through, and is not typed.
+	rangedCur = func(x Node, key bool) (accessCur, bool) {
+		w, ok := walkTarget(x)
+		if !ok {
+			return accessCur{}, false
+		}
+		if el, isChan := e.chanElemByName[e.underlyingCType(w.cur.ctype)]; isChan {
+			return e.plainOrSlice(el), key
+		}
+		if key {
+			return accessCur{}, false
+		}
+		cur, _, ok := e.accessIndex(w.cur, "?")
+		return cur, ok
+	}
+	// resultCur types one of a call's several results: a function's, a function
+	// value's, another package's function's or a method's, by its receiver.
+	resultCur = func(call Node, i int) (accessCur, bool) {
+		recv, suffix, ok := e.shapeCall(call.ast)
+		n := len(suffix)
+		if !ok || n == 0 {
+			return accessCur{}, false
+		}
+		var rts []string
+		switch prefix, isImport := e.importQualifiers[recv]; {
+		case n == 1:
+			if cur, typed := rootCur(recv); typed {
+				if e.isFuncCType(cur.ctype) {
+					rts = e.funcTypeRet[e.underlyingCType(cur.ctype)] // `pick(u)`
+				}
+			} else if _, isFunc := e.userFunc(recv); isFunc {
+				rts = e.funcRet[e.funcCallC(recv)]
+			}
+		case n == 2 && isImport && suffix[0].sym == Selector:
+			rts = e.funcRet[e.mangle(prefix, e.soleIdent(suffix[0].ast))]
+		case suffix[n-2].sym == Selector:
+			cur, typed := rootCur(recv)
+			if typed && n > 2 {
+				cur, typed = e.accessChainTypeAt(cur, suffix[:n-2], true)
+			}
+			if method := e.soleIdent(suffix[n-2].ast); typed && method != "" && cur.ctype != "" {
+				rts = e.funcRet[e.methodCName(methodBaseType(cur.ctype), method)]
+			}
+		}
+		if i >= len(rts) || rts[i] == "" {
+			return accessCur{}, false
+		}
+		return e.plainOrSlice(rts[i]), true
 	}
 	// valueKnown reports whether what a name points at is storage a name here has
 	// or the caller chose, by how the name is BOUND, not by what is stored into it: a
 	// parameter or the receiver the body never binds again, a package variable, or a
 	// local bound only to such names and to addresses of what they reach, `w := &t`
-	// and `w := &h.in`. A pointer loaded out of storage, `p := *hh` and `q := h.q`, a
-	// call's result and anything else point at what nothing here can name.
+	// and `w := &h.in`, or to what an interface such a name is holds, `h := x.(*T)`
+	// and a type switch's, or to a literal, `ps := []*T{v}`. A pointer loaded out of
+	// storage, `p := *hh` and `q := h.q`, an element a range clause reads, a call's
+	// result, a value received and anything else point at what nothing here can
+	// name.
 	knowing := map[string]bool{}
 	var valueKnown func(name string) bool
 	valueKnown = func(name string) bool {
-		if unbound[name] {
+		if unbound[name] || len(ranged[name]) != 0 || len(results[name]) != 0 {
 			return false
 		}
 		if knowing[name] {
@@ -13462,18 +13736,30 @@ func (e *emitter) collectFuncCross(fi funcInfo) {
 		knowing[name] = true
 		defer delete(knowing, name)
 		for _, v := range bound[name] {
+			if e.isNilExpr(v.ast) {
+				continue
+			}
+			if n, isName := e.assertedName(v.ast); isName {
+				if !valueKnown(n) {
+					return false
+				}
+				continue
+			}
 			if n, isName := e.exprIdent(e.unparenExpr(v.ast)); isName {
 				if !valueKnown(n) {
 					return false
 				}
 				continue
 			}
+			if w, ok := walkTarget(v); ok && w.lit && w.hops == 0 {
+				continue // `ps := []*T{v}`: a backing of this frame's
+			}
 			f, isAddr := e.addrOperandFactor(v.ast)
 			if !isAddr {
 				return false
 			}
 			w, ok := walkTarget(f)
-			if !ok || w.unnamed || w.hops > 1 || w.hops == 1 && !w.atRoot || !valueKnown(w.root) {
+			if !ok || w.unnamed || w.hops > 1 || w.hops == 1 && !w.atRoot || !w.lit && !valueKnown(w.root) {
 				return false
 			}
 		}
@@ -13494,7 +13780,10 @@ func (e *emitter) collectFuncCross(fi funcInfo) {
 		}
 		w, ok := walkTarget(Node{sym: Expression, ast: st.target})
 		if !ok {
-			return false
+			// A target the walk cannot type may go through any pointer: what it
+			// reaches is not known, and KNOWN MEANS MUST. A call in its chain is
+			// storedThroughUnnamed's.
+			return !w.call
 		}
 		if st.elems && w.cur.slice {
 			if w.hops++; w.hops == 1 {
@@ -13551,6 +13840,27 @@ func (e *emitter) collectFuncCross(fi funcInfo) {
 			}
 		}
 		return w.unnamed || w.hops > 1 || !w.atRoot || !valueKnown(w.root)
+	}
+	// deepRecvReturn reports a return that hands back a place past what the receiver
+	// points at, `&p.nodes[i]` and `&p.q.x`: one of its contents, not the receiver.
+	// Go's compiler says so, "leaking param: p to result ~r0 level=1"; read as the
+	// receiver itself, `n := p.alloc(v); n.next = p.head; p.head = n` stored the
+	// receiver where it outlives every frame, and a linked list over a pool was
+	// refused for a local pool.
+	var deepRecvReturn func(v []int32) bool
+	deepRecvReturn = func(v []int32) (deep bool) {
+		if !e.inUnminted {
+			e.inUnminted = true
+			defer func() { e.inUnminted = false }()
+			e.unminted(func() { deep = deepRecvReturn(v) })
+			return deep
+		}
+		f, isAddr := e.addrOperandFactor(v)
+		if !isAddr || recvName == "" {
+			return false
+		}
+		w, ok := walkTarget(f)
+		return ok && !w.unnamed && w.root == recvName && (w.hops > 1 || w.hops == 1 && !w.atRoot)
 	}
 	// A method called on a LOCAL holding a pointer, `w := h; w.set(v)` or `p :=
 	// *hh; p.set(v)`, is called on what the local points at: the caller's storage
@@ -14146,6 +14456,9 @@ func (e *emitter) collectFuncCross(fi funcInfo) {
 				}
 				if r.recvVal {
 					e.retRecv[cname] = true
+					if !deepRecvReturn(v) {
+						e.retRecvShallow[cname] = true
+					}
 				}
 				// `return idH(h).c`, `x := idH(h).c; return x`: what is read, sliced or
 				// addressed there (modeRets).
@@ -14855,9 +15168,12 @@ func (e *emitter) closeCrossParams() {
 				if !e.handsBack(g.callee, g.to) {
 					continue
 				}
+				// A method handing back what is past its receiver's pointee hands back
+				// the receiver's contents (deepRecvReturn).
+				deep := g.to < 0 && !e.retRecvShallow[g.callee]
 				// What a method's receiver holds, read through what it hands back,
 				// `return h.Self().c`: the caller's parameter's contents.
-				if g.contents {
+				if g.contents || deep && g.from >= 0 {
 					if cc := e.retContents[g.caller]; g.from >= 0 && g.from < len(cc) && !cc[g.from] {
 						cc[g.from] = true
 						changed = true
@@ -14867,6 +15183,10 @@ func (e *emitter) closeCrossParams() {
 				if g.from < 0 {
 					if !e.retRecv[g.caller] {
 						e.retRecv[g.caller] = true
+						changed = true
+					}
+					if !deep && !e.retRecvShallow[g.caller] {
+						e.retRecvShallow[g.caller] = true
 						changed = true
 					}
 				} else if caller := e.retParams[g.caller]; g.from < len(caller) && !caller[g.from] {
@@ -14915,6 +15235,16 @@ func (e *emitter) closeCrossParams() {
 			// A result carrying contents of what was passed: where the result goes,
 			// those contents go. The callee's RECEIVER is to < 0, the caller's from < 0.
 			returned := e.handsBack(g.callee, g.to)
+			if returned && g.to < 0 && !g.contents && !e.retRecvShallow[g.callee] {
+				// What is past the callee's receiver's pointee (deepRecvReturn): the
+				// receiver's contents go where the result went, not the receiver.
+				flags := g.sink
+				if g.slot >= 0 {
+					flags = leakGlobal // through a parameter, where no slot says
+				}
+				orContents(g.caller, g.from, flags)
+				continue
+			}
 			// A value read through the result, `gbp = idH(h).c`: what the result points
 			// at holds, which is what was handed back holds -- one level, as the
 			// summaries keep.
@@ -16778,6 +17108,218 @@ func (e *emitter) summaryBinding(nodes []Node) (targets []string, into []bool, v
 		return nil, nil, nil
 	}
 	return targets, into, values
+}
+
+// declaredCur is where a walk of a variable declared with a written type begins,
+// `var ps [2]*T`: the type summaryCType reads, or an array or a slice of one. It
+// asks as the summaries ask, minting nothing (unminted) and failing nothing:
+// emission names and refuses the type where it declares the variable.
+func (e *emitter) declaredCur(ta []int32) (cur accessCur, ok bool) {
+	if ct, isPlain := e.summaryCType(ta); isPlain {
+		return e.plainOrSlice(ct), true
+	}
+	if !e.summaryElemOK(ta) {
+		return accessCur{}, false
+	}
+	return e.bracketCur(ta)
+}
+
+// bracketCur is declaredCur for an array or a slice type written out, `[2]*T`, or
+// a literal's Factor, whose own nodes are the type as arrayDim and sliceType read it.
+func (e *emitter) bracketCur(ta []int32) (cur accessCur, ok bool) {
+	saved := e.err
+	e.unminted(func() {
+		if a, isArr := e.arrayDim(ta); isArr {
+			cur, ok = curArray(a), true
+		} else if el, isSlice := e.litSliceType(ta); isSlice {
+			cur, ok = accessCur{elem: el, slice: true}, true
+		}
+	})
+	if e.err != saved {
+		e.err, cur, ok = saved, accessCur{}, false
+	}
+	return cur, ok
+}
+
+// summaryCType is cType for the summaries: a pointer, at any depth, to a type a
+// declaration named -- this package's, another's, a predeclared one -- or such a
+// type itself, read off the tokens. cType MINTS a type written out where it is
+// first asked, and a mint made from a pass gathering facts is one emission takes
+// for its own and never writes: typing the assertion `x.(interface{ Unwrap() error
+// })` left that interface's typedef out of the C. Any other type is none here.
+func (e *emitter) summaryCType(ta []int32) (string, bool) {
+	nodes := slices.Collect(it(ta))
+	if len(nodes) == 2 && nodes[0].sym == 0 && e.f.ch(nodes[0].tok) == MUL && nodes[1].sym == Type {
+		inner, ok := e.summaryCType(nodes[1].ast)
+		return inner + "*", ok
+	}
+	var toks []int32
+	for _, n := range nodes {
+		if n.sym != 0 {
+			return "", false
+		}
+		toks = append(toks, n.tok)
+	}
+	switch {
+	case len(toks) == 1 && e.f.ch(toks[0]) == IDENT:
+		return e.summaryNamedC("", e.src(toks[0]))
+	case len(toks) == 3 && e.f.ch(toks[0]) == IDENT && e.f.ch(toks[1]) == PERIOD && e.f.ch(toks[2]) == IDENT:
+		return e.summaryNamedC(e.src(toks[0]), e.src(toks[2]))
+	}
+	return "", false
+}
+
+// summaryNamedC is the C name of a type named name, qualified by qual or not, as
+// cType resolves it, for a type that is declared: nothing is minted for it.
+func (e *emitter) summaryNamedC(qual, name string) (string, bool) {
+	mn := ""
+	if qual == "" {
+		if ct, ok := cTypes[name]; ok && e.universeType(name) {
+			return ct, ct != ""
+		}
+		mn = e.typeCName(name)
+	} else {
+		prefix, isImport := e.importQualifiers[qual]
+		if !isImport {
+			return "", false
+		}
+		mn = e.mangle(prefix, name)
+	}
+	mn = e.unaliased(mn)
+	_, isStruct := e.structs[mn]
+	_, isArr := e.namedArrays[mn]
+	if !isStruct && !isArr && !e.namedTypes[mn] {
+		return "", false
+	}
+	return mn, true
+}
+
+// summaryElemOK reports a type the summaries may hand arrayDim and sliceType: one
+// summaryCType reads, or an array or a slice of one, at any depth, so every cType
+// they ask of an element mints nothing that is not undone.
+func (e *emitter) summaryElemOK(ta []int32) bool {
+	if _, ok := e.summaryCType(ta); ok {
+		return true
+	}
+	nodes := slices.Collect(it(ta))
+	if len(nodes) < 3 || nodes[0].sym != 0 || e.f.ch(nodes[0].tok) != LBRACK || nodes[len(nodes)-1].sym != Type {
+		return false
+	}
+	return e.summaryElemOK(nodes[len(nodes)-1].ast)
+}
+
+// summaryCaseCType is the type a type switch's case of one type binds its name at,
+// for the summaries: a pointer to a type summaryNamedC names, `case *T:`, `case
+// **lib.E:`, read off the case's expression as caseTypeC reads it -- which mints
+// an interface written out.
+func (e *emitter) summaryCaseCType(ex Node) (string, bool) {
+	nodes := slices.Collect(it(ex.ast))
+	for len(nodes) == 1 && (nodes[0].sym == Expression || nodes[0].sym == SimpleExpr || nodes[0].sym == Term) {
+		nodes = slices.Collect(it(nodes[0].ast))
+	}
+	if len(nodes) != 1 || nodes[0].sym != UnaryExpr {
+		return "", false
+	}
+	kids := slices.Collect(it(nodes[0].ast))
+	for _, k := range kids[:len(kids)-1] {
+		if tok, isOp := e.unaryOpTok(k.ast); k.sym != UnaryOp || !isOp || e.f.ch(tok) != MUL {
+			return "", false
+		}
+	}
+	fac := kids[len(kids)-1]
+	for fac.sym == UnaryExpr {
+		// `**E`: the parser's star over a UnaryExpr
+		inner := slices.Collect(it(fac.ast))
+		if len(inner) != 2 {
+			return "", false
+		}
+		if tok, isOp := e.unaryOpTok(inner[0].ast); inner[0].sym != UnaryOp || !isOp || e.f.ch(tok) != MUL {
+			return "", false
+		}
+		kids, fac = append(kids, inner[0]), inner[1]
+	}
+	if fac.sym != Factor || len(kids) < 2 {
+		return "", false
+	}
+	fk := slices.Collect(it(fac.ast))
+	var ct string
+	var ok bool
+	switch {
+	case len(fk) == 1 && fk[0].sym == 0 && e.f.ch(fk[0].tok) == IDENT:
+		ct, ok = e.summaryNamedC("", e.src(fk[0].tok))
+	case len(fk) == 2 && fk[0].sym == 0 && e.f.ch(fk[0].tok) == IDENT && fk[1].sym == FactorSuffix:
+		steps := slices.Collect(it(fk[1].ast))
+		if len(steps) != 1 || steps[0].sym != Selector || e.soleIdent(steps[0].ast) == "" {
+			return "", false
+		}
+		ct, ok = e.summaryNamedC(e.src(fk[0].tok), e.soleIdent(steps[0].ast))
+	}
+	return ct + strings.Repeat("*", len(kids)-1), ok
+}
+
+// assertedType reads a step that is a type assertion, `.(*T)`, answering the type
+// asserted -- nil for a type switch's `.(type)`, which names none.
+func (e *emitter) assertedType(st Node) (typeAST []int32, ok bool) {
+	if st.sym != Selector {
+		return nil, false
+	}
+	for c := range it(st.ast) {
+		switch {
+		case c.sym == Type:
+			return c.ast, true
+		case c.sym == 0 && e.f.ch(c.tok) == TYPE:
+			return nil, true
+		}
+	}
+	return nil, false
+}
+
+// assertedName is the name an assertion or a type switch's guard is made on, `x`
+// of `x.(*T)`, `(x).(*T)` and `x.(type)`, by shape.
+func (e *emitter) assertedName(ast []int32) (string, bool) {
+	fac, ok := e.soleFactorNode(ast)
+	if !ok {
+		return "", false
+	}
+	kids := e.unparenKids(slices.Collect(it(fac.ast)))
+	if len(kids) != 2 || kids[0].sym != 0 || e.f.ch(kids[0].tok) != IDENT || kids[1].sym != FactorSuffix {
+		return "", false
+	}
+	if steps := slices.Collect(it(kids[1].ast)); len(steps) == 1 {
+		if _, isAssert := e.assertedType(steps[0]); isAssert {
+			return e.src(kids[0].tok), true
+		}
+	}
+	return "", false
+}
+
+// commaOKValue reports a value two names take as a value and an ok, by shape: an
+// assertion, `h, ok := x.(*T)`, or a receive, `h, ok := <-ch`.
+func (e *emitter) commaOKValue(ast []int32) bool {
+	nodes := slices.Collect(it(ast))
+	for len(nodes) == 1 && (nodes[0].sym == Expression || nodes[0].sym == SimpleExpr || nodes[0].sym == Term) {
+		nodes = slices.Collect(it(nodes[0].ast))
+	}
+	if len(nodes) == 1 && nodes[0].sym == UnaryExpr {
+		if kids := slices.Collect(it(nodes[0].ast)); len(kids) == 2 && kids[0].sym == UnaryOp {
+			tok, isOp := e.unaryOpTok(kids[0].ast)
+			return isOp && e.f.ch(tok) == ARROW
+		}
+	}
+	fac, ok := e.soleFactorNode(ast)
+	if !ok {
+		return false
+	}
+	kids := e.unparenKids(slices.Collect(it(fac.ast)))
+	if len(kids) < 2 || kids[len(kids)-1].sym != FactorSuffix {
+		return false
+	}
+	steps := slices.Collect(it(kids[len(kids)-1].ast))
+	if len(steps) == 0 {
+		return false
+	}
+	_, isAssert := e.assertedType(steps[len(steps)-1])
+	return isAssert
 }
 
 // storedInPackageVars returns the values a statement stores into package variables

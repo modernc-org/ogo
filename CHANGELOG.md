@@ -29,9 +29,15 @@ shipped section tells a reader on that version that they have behaviour they do 
   to the heap: `(*hh).p = v` for a `**T`, `p := *hh; p.p = v`, a field of a parameter
   passed by value or of the receiver, a slice field's element and `copy` into one, a
   local holding a call's result, and a method or a function storing through what it
-  is handed, called on `p := *hh`, `u.q`, `*hh` or `get()`. A store into what the
-  parameter itself points at, `h.p = v`, is decided at the call site as before, and
-  a store of what holds no reference, as a Swap's of its elements, keeps nothing.
+  is handed, called on `p := *hh`, `u.q`, `*hh` or `get()`. So does a store through
+  a local bound any other way: an element a range clause reads, `for _, h := range
+  hs { h.p = v }`, a for clause's variable, one of a call's several results, `h, n
+  := u.two()`, an assertion's into a deeper chain, a value received, a type
+  switch's name, a literal's field, `w := W{q: u.q}; w.q.p = v`, a method's or a
+  function value's result -- and a store whose target the compiler cannot type,
+  which may go through any pointer. A store into what the parameter itself points
+  at, `h.p = v`, is decided at the call site as before, and a store of what holds
+  no reference, as a Swap's of its elements, keeps nothing.
 - **A slot `--gostack` asks for is refused when it is smaller than what a goroutine
   needs at the least**, by the chains of direct calls the backend's listing shows:
   such a goroutine ran past its slot into what follows, in silence. `--gostack 400`
