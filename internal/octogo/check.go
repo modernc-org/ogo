@@ -22247,6 +22247,28 @@ func (f *File) addrThroughRef(s *Scope, e Node) bool {
 			return true
 		}
 	}
+	// A field promoted through an embedded pointer, `&pp.n` for a `type P struct{
+	// *T }`, at any step: what that member points at is addressed, as by `&pp.T.n`
+	// (fieldLookup). Read as pp's, `pp := P{T: &g}; gn = &pp.n` was "the address of
+	// local variable pp" of an address into a package variable.
+	for k, st := range steps {
+		if st.sym != Selector {
+			continue
+		}
+		t, ok := f.headStepsType(s, f.tok(kids[0].tok), steps[:k], true)
+		if !ok || t.f == nil {
+			continue
+		}
+		u := t.f.underlyingTypeAt(t)
+		if p, isPtr := u.tn.(*TypeNodePointer); isPtr && u.f != nil {
+			u = u.f.underlyingTypeAt(typeAt{p.TypeNode, u.s, u.f})
+		}
+		if sn, isStruct := u.tn.(*TypeNodeStruct); isStruct && u.f != nil {
+			if _, _, viaPtr, found := u.f.fieldLookup(u, sn, selectorIdent(f, st)); found && viaPtr {
+				return true
+			}
+		}
+	}
 	return false
 }
 

@@ -181,6 +181,11 @@ shipped section tells a reader on that version that they have behaviour they do 
 
 ### Fixed
 
+- **The address of a field promoted through an embedded pointer is what that pointer
+  holds**: for a `type P struct{ *T }`, `pp := P{T: &g}; gn = &pp.n` and `func
+  addr(pp P) *int { return &pp.n }` were "the address of local variable pp", which
+  Go takes -- the address is in what pp.T points at. Where that is a local, the
+  store is refused for it, "holds a pointer into local t".
 - **A store through stars over a parenthesised head compiles**, `*(*q).p = 6`,
   `*(t).p += 2`, `**(get()).in.pp = v`, as `*q.p = 6` did: it was "only assignment to
   a simple variable". So does a read through a parenthesised call's result whose

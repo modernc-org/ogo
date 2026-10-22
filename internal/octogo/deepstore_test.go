@@ -317,8 +317,12 @@ var ge E
 		{"func put(q *Q, v *int) { q.set(v) }", "q := Q{P{T: &g}}\n\tput(&q, &local)", true},
 		{"func put(h *E, v *int) { h.set(v) }", "put(&ge, &local)", true},
 		{"func put(h *E, v *int) { defer h.set(v) }", "put(&ge, &local)", true},
-		// An embedded value is storage of what it is part of.
+		{"var gn *int\n\nfunc addr(pp P) *int { return &pp.n }", "var t T\n\tgn = addr(P{T: &t})\n\tprintln(local)", true},
+		// An embedded value is storage of what it is part of; an embedded pointer's
+		// is what it holds, which the checker asked as the address of the local.
 		{"", "var le E\n\tle.p = &local\n\tle.set(&local)\n\tprintln(*le.p)", false},
+		{"var gn *int", "pp := P{T: &g}\n\tgn = &pp.n\n\tprintln(local)", false},
+		{"func addr(pp P) *int { return &pp.n }", "println(*addr(P{T: &g}), local)", false},
 		{"func put(h *E, v *int) { h.p = v; h.set(v) }", "var le E\n\tput(&le, &local)\n\tprintln(*le.p)", false},
 	} {
 		src := head + test.decls + "\n\nfunc run() {\n\tlocal := 42\n\t" + test.run + "\n}\n\nfunc main() {\n\trun()\n\tprintln(g.n, ge.n)\n}\n"
@@ -328,7 +332,7 @@ var ge E
 			err = EmitC(pkg, io.Discard, Checked())
 		}
 		switch {
-		case test.refused && (err == nil || !strings.Contains(err.Error(), "local variable local")):
+		case test.refused && (err == nil || !strings.Contains(err.Error(), "local variable")):
 			t.Errorf("%s / %s: got %v, want the local's address refused", test.decls, test.run, err)
 		case !test.refused && err != nil:
 			t.Errorf("%s / %s: refused: %v", test.decls, test.run, err)

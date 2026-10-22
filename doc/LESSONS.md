@@ -2973,9 +2973,11 @@ its row of TestEmitCEmbeddedPointerStores; a member embedded by value is the sto
 of what it is part of, as before. What the change newly refuses, its explicit
 spelling was refused already: `pp := P{T: &t}; pp.p = &x` for a local t is
 `u.q.p = &x`, which the store rule trusts no more than any pointer loaded out of
-storage, and Go moves x to the heap for it. Left: the CHECKER reads `&pp.n` as the
-address of local pp, refusing `gn = &pp.n` for a pp.T pointing into a package
-variable, which Go takes. The rule: **a promoted field or method is asked as the
+storage, and Go moves x to the heap for it. The CHECKER had the other half, a false
+refusal: its address test (addrThroughRef) read `&pp.n` as the address of local pp,
+refusing `gn = &pp.n` and `return &pp.n` for a pp.T pointing into a package
+variable, which Go takes; it asks fieldLookup's embedded-pointer answer since, and
+the emitter decides by what pp holds, refusing it for a pp.T into a local. The rule: **a promoted field or method is asked as the
 chain its promotion spells: every pointer step a rule asks of, it asks of the
 members the promotion goes through**.
 **A MARK IS MADE IN EMISSION ORDER, AND A LOOP RUNS ITS BODY AGAIN** (2026-10-08,
