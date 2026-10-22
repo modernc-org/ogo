@@ -198,6 +198,16 @@ shipped section tells a reader on that version that they have behaviour they do 
 
 ### Fixed
 
+- **A list assignment through a pointer stores the value its pointee's type
+  gives**: `*pu, k = 1<<40, 2` for a `pu *uint64` stored 0 -- on a P2-EDGE as on
+  the host -- the constant bound to an `int`, since the list form gave a starred
+  target no type; and `*pp, k = nil, 1` was "cannot infer the type of a value in a
+  multiple assignment". A list through a star over a chain, `*r.ctl, *r.cnt, k =
+  0xffffffff, 1<<40, 1`, compiles, each place fixed before the first store as Go
+  fixes it -- `*t.p, t.p = 4, &b` writes what t.p pointed at -- where it was "this
+  assignment form is not supported here"; and so does a store through a star over
+  parentheses with nothing after them, `*(t.p) = v` and `*(p) = v`, which was "only
+  assignment to a simple variable".
 - **A method value taken through a dereference is refused in the checker's words**:
   `f := (*hh).get`, `(**hh).get`, `(*h).get` and `take((*gp).get)` were "cannot
   infer a type" or "cannot read *hh through this suffix" from the emitter. Go

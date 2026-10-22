@@ -46220,13 +46220,26 @@ func (e *emitter) sendChanExpr(head Node, steps []Node) (elem, text string, ok b
 // stars. The value the stars dereference is read as the expression `(X).steps`,
 // built over the target's own nodes (commChanExpr), and bound ahead of the
 // statement. Nothing is emitted for a target of another shape: a head without
-// stars or parentheses, no step after it, a call among the steps -- a conversion's
-// `*(*T)(p)` is convTargetHead's -- or a list form.
+// stars or parentheses, a call among the steps -- a conversion's `*(*T)(p)` is
+// convTargetHead's -- or a list form. With no step after the parentheses, what they
+// hold is what the stars go through: a NAME, `*(p) = v`, is `*p = v` and is
+// answered unbound, the stores asking its marks; a chain, `*(t.p) = v`, is bound.
+// Both were "only assignment to a simple variable", where `*p = v` and `*t.p = v`
+// worked.
 func (e *emitter) starParenTarget(head Node, postfix []Node) (string, string, bool) {
 	inner, stars, ok := e.starParenHead(head)
-	if !ok || len(postfix) < 2 || !isAccessChain(postfix[:len(postfix)-1]) ||
+	if !ok || len(postfix) < 1 || len(postfix) > 1 && !isAccessChain(postfix[:len(postfix)-1]) ||
 		containsSym(slices.Collect(it(postfix[len(postfix)-1].ast)), LhsItem) {
 		return "", "", false
+	}
+	if len(postfix) == 1 {
+		kids := slices.Collect(it(inner.ast))
+		if name, isName := e.exprIdent(e.unparenExpr(kids[1].ast)); isName {
+			if ct, ok := e.varType(name); !ok || !e.isPointer(ct) {
+				return "", "", false
+			}
+			return name, stars, true
+		}
 	}
 	x := e.commChanExpr(inner, postfix[:len(postfix)-1])
 	ct, ok := e.inferNode(x)
@@ -46539,7 +46552,7 @@ func (e *emitter) emitAssignment(head Node, postfix []Node) {
 	// reads the star as the head's: the field path wrote `(*h) = v` and the index
 	// path dropped the star for `a[i] = v`, a store into the POINTER that is valid C
 	// and the wrong program.
-	if stars != "" && len(postfix) > 1 {
+	if stars != "" && len(postfix) > 1 && !containsSym(op, LhsItem) {
 		e.emitChainDerefAssign(head, base, stars, postfix)
 		return
 	}
@@ -48510,12 +48523,16 @@ type assignTarget struct {
 }
 
 // assignTargetCType is the C type a multiple assignment's target stores, where it
-// is known: a variable's, or what a chain from one reaches. A declared name has
-// none yet -- its value gives it one -- and neither has a pointee here.
+// is known: a variable's, what a chain from one reaches, or what either points at
+// through the stars written, `*p` and `*t.p` (storeTargetCType). A declared name
+// has none yet -- its value gives it one.
 func (e *emitter) assignTargetCType(t assignTarget, declare bool) (string, bool) {
 	switch {
-	case declare || t.name == "_" || t.stars != "":
+	case declare || t.name == "_":
 		return "", false
+	case t.stars != "":
+		ct := e.storeTargetCType(t)
+		return ct, ct != ""
 	case len(t.chain) == 0:
 		return e.varType(t.name)
 	}
@@ -48619,26 +48636,27 @@ func (e *emitter) emitStore(t assignTarget, declare bool, ctype, val string) {
 // names, read off the target as written, "" where that cannot be told without
 // emitting.
 func (e *emitter) storeTargetCType(t assignTarget) string {
+	ct, ok := "", false
 	if len(t.chain) != 0 {
-		if t.stars != "" {
-			return ""
+		var cur accessCur
+		if cur, ok = e.accessChainType(t.name, t.chain); ok && (t.stars == "" || len(cur.dims) == 0 && !cur.slice) {
+			ct = cur.ctype
 		}
-		cur, ok := e.accessChainType(t.name, t.chain)
-		if !ok {
-			return ""
-		}
-		return cur.ctype
+	} else {
+		ct, ok = e.varType(t.name)
 	}
-	ct, ok := e.varType(t.name)
-	switch {
-	case !ok:
+	if !ok || ct == "" {
 		return ""
-	case t.stars == "":
-		return ct
-	case t.stars == "*" && strings.HasSuffix(ct, "*"):
-		return strings.TrimSuffix(ct, "*")
 	}
-	return ""
+	// What the stars written go through, one pointer each: `*t.p` stores what t.p
+	// points at, `**pp` what *pp does.
+	for range len(t.stars) {
+		if !e.isPointer(ct) {
+			return ""
+		}
+		ct = e.elemType(ct)
+	}
+	return ct
 }
 
 // widenValC is val, a value of C type ctype, as a value of the interface tct it is
@@ -49260,6 +49278,39 @@ func (e *emitter) emitStoreArray(t assignTarget, declare bool, a arrDim, val str
 // `a[i], a[j] = a[j], a[i]` binds nothing, since the store to a[i] moves nothing
 // a[j] is found by. Answers false when it has failed.
 func (e *emitter) fixTargetAddrs(targets []assignTarget, declare []bool) bool {
+	// A target written through stars over a chain, `*t.p` and `**u.pp`, is stored
+	// through the pointer the chain reaches, an operand Go evaluates before the first
+	// store: that pointer is its place, bound here, nil-checked, whether or not a
+	// store before it moves it. It was "a dereferenced target with a field or index
+	// is not supported yet" in every list form.
+	for k, t := range targets {
+		if t.name == "_" || declare[k] || t.stars == "" || len(t.chain) == 0 || t.addr != "" {
+			continue
+		}
+		if !isAccessChain(t.chain) {
+			e.fail("a dereferenced target with a call in its chain is not supported yet in a multiple assignment")
+			return false
+		}
+		place, ct, _, ok := e.chainCText(t.name, t.chain)
+		if !ok {
+			e.fail("unsupported target in a multiple assignment")
+			return false
+		}
+		for i := range len(t.stars) {
+			if !e.isPointer(ct) {
+				e.fail("cannot assign through this dereference in a multiple assignment: what it reaches is not a pointer that deep")
+				return false
+			}
+			if i == len(t.stars)-1 {
+				break
+			}
+			place, ct = "(*"+e.nilCheckedC(place, ct)+")", e.elemType(ct)
+		}
+		tmp := e.newTmp()
+		e.ind()
+		e.emit(ct + " " + tmp + " = " + e.nilCheckedC(place, ct) + ";\n")
+		targets[k].addr = tmp
+	}
 	for k := 1; k < len(targets); k++ {
 		t := targets[k]
 		if t.name == "_" || declare[k] || t.plain() {

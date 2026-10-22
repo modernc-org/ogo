@@ -1121,6 +1121,79 @@ func main() {
 		want: "6 21 6\n4 10\n3 9 2\n4 18\n6 30 10\n9 10 24 7\n",
 	},
 	{
+		// A list assignment through a star over a chain, `*r.ctl, *r.cnt, k = ...`:
+		// each place is the pointer its chain reaches, fixed before the first store
+		// as Go fixes it, so `*t.p, t.p = 4, &b` writes a and `t.p, *t.p = &a, 6`
+		// writes b; and each value is typed by what its star points at -- a 64-bit
+		// constant, an interface, nil. It was "this assignment form is not
+		// supported here", and `*pu, k = 1<<40, 2` for a *uint64 stored 0 on a
+		// P2-EDGE, the constant bound to an int. `*(t.p) = 8` and `*(p) = v` were
+		// "only assignment to a simple variable".
+		name: "a list assignment through a star over a chain",
+		src: `type Shape interface{ Area() int }
+
+type Sq struct{ n int }
+
+func (s *Sq) Area() int { return s.n * s.n }
+
+type Regs struct {
+	ctl  *uint32
+	cnt  *uint64
+	cur  *Shape
+	last **Sq
+}
+
+var ctl uint32
+var cnt uint64
+var cur Shape
+var last *Sq
+var a, b int
+
+var sq = Sq{n: 3}
+var five = 5
+var box any = &five
+var ch = make(chan int)
+
+type T struct{ p *int }
+
+func pair() (uint32, uint64) { return 0x80000001, 1 << 36 }
+
+func send() { ch <- 7 }
+
+func main() {
+	r := Regs{ctl: &ctl, cnt: &cnt, cur: &cur, last: &last}
+	k := 0
+	*r.ctl, *r.cnt, k = 0xffffffff, 1<<40, 1
+	println(ctl, cnt, k)
+	*r.cur, *r.last, k = &sq, &sq, 2
+	println(cur.Area(), last.n, k)
+	*r.last, k = nil, 3
+	println(last == nil, k)
+	*r.ctl, *r.cnt = pair()
+	println(ctl, cnt)
+	t := T{p: &a}
+	*t.p, t.p = 4, &b
+	println(a, b, *t.p)
+	t.p, *t.p = &a, 6
+	println(a, b, *t.p)
+	var ok bool
+	var pp *int
+	h := struct{ q **int }{q: &pp}
+	*h.q, ok = box.(*int)
+	println(*pp, ok)
+	go send()
+	*t.p, ok = <-ch
+	println(a, ok)
+	*(t.p) = 8
+	*(t.p) += 1
+	p := &b
+	*(p) = *(t.p) * 2
+	println(a, b)
+}
+`,
+		want: "4294967295 1099511627776 1\n9 3 2\ntrue 3\n2147483649 68719476736\n4 0 0\n4 6 4\n5 true\n7 true\n9 18\n",
+	},
+	{
 		// A method storing its receiver through a parameter, `*p = m`, and a function
 		// storing a parameter through an assertion of an `any` one, `case **M:` among
 		// them -- with both sides of each store this frame's, which the lifetime

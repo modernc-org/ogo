@@ -3047,6 +3047,19 @@ takes all three, and where the pointer holds a local's address the refusal names
 that local. TestEmitCArrayViews holds 21 rows, of which HEAD failed 18, 11 in
 silence. The rule: **a slice of an array is the address of its first element:
 every rule asking where an address points asks it of the view**.
+The list forms the same evening, closing the open item of a starred chain: `*t.p,
+y = 1, 2` was refused -- the single-target path claimed every star over a chain
+before the list was recognised, and the list's stores refused one -- and, writing
+its probes, `*pu, k = 1<<40, 2` for a `*uint64` turned out to store 0, on a P2-EDGE
+as on the host, in every release: assignTargetCType gave a starred target no type
+("neither has a pointee here"), so its constant was bound at int's width. A
+starred target is typed by what its stars point at since (storeTargetCType), and a
+star over a chain is stored through the pointer the chain reaches, fixed with the
+other places before the first store (fixTargetAddrs). The sweep's last row was a
+store through stars over parentheses with no step after them, `*(t.p) = v` and
+`*(p) = v`, refused in both forms. **A type a rule does not know is asked which
+rules read it as a default**: an unknown target type was a refusal for a nil and
+a default width for a constant, and the default was the miscompile.
 **A MARK IS MADE IN EMISSION ORDER, AND A LOOP RUNS ITS BODY AGAIN** (2026-10-08,
 found probing unsafe.Slice's views). The holder marks are set as statements are
 emitted, so a statement read a variable's mark as the statements BEFORE it had left
