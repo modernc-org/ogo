@@ -1057,6 +1057,70 @@ func main() {
 		want: "8 8 8\n10 10\n10\n60 30 20 10\n20 30 12\n1020\n100 100\n",
 	},
 	{
+		// A slice of an array reached through a pointer, an embedded one, `p.buf[:]`
+		// for a `Port{ *Frame }`, and a field's, `l.rx.buf[2:]`: a view of what the
+		// pointer holds, here a package variable, which a slice stored in another
+		// may hold. Read as the root's own storage, each was refused as a view of
+		// the local p or l, and `payload(p)` as one of its parameter.
+		name: "a slice of an array reached through a pointer",
+		src: `type Frame struct {
+	buf [6]byte
+	n   int
+}
+
+func (f *Frame) bytes() []byte { return f.buf[:f.n] }
+
+type Port struct {
+	*Frame
+	id int
+}
+
+type Link struct {
+	rx *Frame
+	tx Frame
+}
+
+var rxFrame = Frame{buf: [6]byte{1, 2, 3, 4, 5, 6}, n: 4}
+
+var txFrame Frame
+
+var last []byte
+
+func payload(p Port) []byte { return p.buf[1:p.n] }
+
+func rxView(l Link) []byte { return l.rx.buf[:] }
+
+func sum(b []byte) (s int) {
+	for _, v := range b {
+		s += int(v)
+	}
+	return s
+}
+
+func main() {
+	p := Port{Frame: &rxFrame, id: 7}
+	last = p.buf[:]
+	println(len(last), sum(last), last[5])
+	last = p.bytes()
+	println(len(last), sum(last))
+	last = payload(p)
+	println(len(last), sum(last), last[0])
+	l := Link{rx: &rxFrame}
+	last = l.rx.buf[2:]
+	println(len(last), sum(last))
+	last = rxView(l)
+	rxFrame.buf[0] = 10
+	println(len(last), sum(last), last[0])
+	q := Port{Frame: &txFrame}
+	w := q.buf[:3]
+	w[1] = 9
+	copy(q.buf[3:], last)
+	println(txFrame.buf[1], txFrame.buf[3], sum(txFrame.buf[:]), p.id)
+}
+`,
+		want: "6 21 6\n4 10\n3 9 2\n4 18\n6 30 10\n9 10 24 7\n",
+	},
+	{
 		// A method storing its receiver through a parameter, `*p = m`, and a function
 		// storing a parameter through an assertion of an `any` one, `case **M:` among
 		// them -- with both sides of each store this frame's, which the lifetime

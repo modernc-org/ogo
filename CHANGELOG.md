@@ -20,6 +20,15 @@ shipped section tells a reader on that version that they have behaviour they do 
 
 ### Behaviour changes
 
+- **A slice of the array a pointer parameter points at is that parameter's
+  storage**: `func view(r *R) []byte { return r.buf[:] }` called as `gs =
+  view(&r)` for a local r kept a slice of r's array in a package variable after
+  run returned, a later read finding other bytes; so did the method form,
+  `r.bytes()`, one promoted from an embedded struct, `(*r).buf[:]`, an `append`
+  into `r.buf[:0]`, a relay through another call, and a callee storing such a
+  view in a package variable or sending it to another cog. Each is refused now,
+  as `&r.buf[0]` was. A slice of a slice FIELD, `r.xs[1:]`, views what the field
+  holds, as before.
 - **A method called through a dereference is asked what it keeps of the pointer it
   is called on**: `gp = (*h).self()`, for a method handing back its receiver, kept
   a local's address in a package variable where `gp = h.self()` was refused;
@@ -189,6 +198,12 @@ shipped section tells a reader on that version that they have behaviour they do 
 
 ### Fixed
 
+- **A slice of an array reached through a pointer is a view of what the pointer
+  holds**: for a `type UE struct{ *R }`, `ue := UE{R: &g}; gs = ue.buf[:]` was
+  refused as a view of local ue, and so were `v.p.buf[:]` for a field `p *R` and
+  `func view(u UE) []byte { return u.buf[:] }` -- Go takes all three, the array
+  being in g. Where the pointer holds a local's address, the store is refused
+  naming that local.
 - **What a pointer to a pointer points at is a pointer**: `p := *hh` for an `hh
   **Node` declared with its type, a parameter or a variable, or read out of a field
   or an element, was typed a `Node`, so a list walked through its cursor, `for p :=

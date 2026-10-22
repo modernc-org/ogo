@@ -3023,6 +3023,27 @@ ACROSS THE CATEGORIES); a dereference is asked what the walk types it as since
 "cannot infer a type". The rule: **a reader that drops a dereference asks whether Go's shorthand
 drops it: one star over a pointer to a struct or an array is the shorthand, and
 any other is what the call is made on**.
+**A VIEW IS AN ADDRESS** (2026-10-22, found by dom58, a driver framework of
+embedded Bases, Buses and Rings, in the first lifetime variant of its run). `gs =
+view(&u)` for a `func view(u *UART) []byte { return u.buf[:] }` kept a slice of a
+local's array in a package variable, in every release, while `gp = first(&r)` for
+`return &r.buf[0]` was refused: the summaries read an address rooted at a parameter
+as the parameter's value, and a slice step ending a chain as its CONTENTS -- right
+for a slice field, `r.xs[1:]`, whose backing is what the field holds, and wrong for
+an array field, which is in the storage the chain reaches. Handed back, stored by a
+callee, sent to a cog, through a method, a promoted method, `(*r).buf[:]`, an
+`append` into `r.buf[:0]` or a relay, each kept nothing of the caller's. The
+summaries ask the pass's walk where a sliced array is since (arrayView over
+walkTarget): in the root's own storage or what it points at, the root's value; past
+another pointer, its contents; untyped, both. The rule inside a function had the
+mirror fault, a false refusal: `gs = ue.buf[:]` for a `UE{ *R }`, `v.p.buf[:]` and a
+value parameter's `u.buf[:]` read the array as the root's own storage where it is in
+what a pointer on the way holds, the question addrCrossing answered for `&h.p.n` and
+sliceBackingIsFrame never asked (one helper for the two since, chainCrosses). Go
+takes all three, and where the pointer holds a local's address the refusal names
+that local. TestEmitCArrayViews holds 21 rows, of which HEAD failed 18, 11 in
+silence. The rule: **a slice of an array is the address of its first element:
+every rule asking where an address points asks it of the view**.
 **A MARK IS MADE IN EMISSION ORDER, AND A LOOP RUNS ITS BODY AGAIN** (2026-10-08,
 found probing unsafe.Slice's views). The holder marks are set as statements are
 emitted, so a statement read a variable's mark as the statements BEFORE it had left

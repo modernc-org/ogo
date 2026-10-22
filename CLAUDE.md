@@ -1007,7 +1007,8 @@ section. A new finding goes there; the rule it leaves goes here too.
   goes through**. **A STAR IS GO'S SHORTHAND OVER ONE POINTER**: **a reader that
   drops a dereference asks whether Go's shorthand drops it: one star over a pointer
   to a struct or an array is the shorthand, and any other is what the call is made
-  on**. **A MARK IS MADE IN EMISSION ORDER, AND A LOOP RUNS ITS BODY AGAIN**: **A mark is a fact about a
+  on**. **A VIEW IS AN ADDRESS**: **a slice of an array is the address of its first
+  element: every rule asking where an address points asks it of the view**. **A MARK IS MADE IN EMISSION ORDER, AND A LOOP RUNS ITS BODY AGAIN**: **A mark is a fact about a
   variable at a point; a rule reading one asks what reaches that point -- a loop's
   back edge and an alias both do.**
 - **A PARENTHESISED HEAD IS A ROW OF EVERY SCAN**: **A new scan reads heads through

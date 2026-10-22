@@ -413,3 +413,86 @@ func (t T) val() int    { return t.n }
 		}
 	}
 }
+
+// TestEmitCArrayViews: a slice of an ARRAY is a view of the storage the array is
+// in -- the root's own, or what a pointer on the way points at. The summaries read
+// `r.buf[:]` for an `r *R` as r's contents, which is a slice field's answer, so a
+// callee handing back, keeping or sending a view of its parameter's array kept
+// nothing of the caller's: every refused row kept a slice of a local's array past
+// its frame, in silence. And the rule inside a function read an array reached
+// through a pointer, a field's or an embedded one, as the root's own storage:
+// `gs = ue.buf[:]` for a `UE{ *R }` holding a package variable's address was
+// refused as a view of local ue, which Go takes.
+func TestEmitCArrayViews(t *testing.T) {
+	const head = `type R struct {
+	buf [4]byte
+	xs  []byte
+}
+
+type U struct {
+	R
+	k int
+}
+
+type UE struct{ *R }
+
+type V struct {
+	p *R
+	k int
+}
+
+var gs []byte
+
+var gback [4]byte
+
+var gr = &R{}
+
+var out = make(chan []byte)
+
+func (r *R) bytes() []byte { return r.buf[:] }
+
+func view(r *R) []byte { return r.buf[:] }
+
+func add(r *R) []byte { return append(r.buf[:0], 1) }
+
+`
+	for _, test := range []struct {
+		decls, run string
+		refused    string
+	}{
+		{"", "var r R\n\tgs = view(&r)", "local variable r"},
+		{"func view2(r *R) []byte { return r.buf[1:3] }", "var r R\n\tgs = view2(&r)", "local variable r"},
+		{"", "var r R\n\tgs = r.bytes()", "local variable r"},
+		{"", "var u U\n\tgs = u.bytes()", "local variable u"},
+		{"func viewU(u *U) []byte { return u.buf[:] }", "var u U\n\tgs = viewU(&u)", "local variable u"},
+		{"func dview(r *R) []byte { return (*r).buf[:] }", "var r R\n\tgs = dview(&r)", "local variable r"},
+		{"", "var r R\n\ts := view(&r)\n\tgs = s", "local s"},
+		{"func id(s []byte) []byte { return s }", "var r R\n\tgs = id(view(&r))", "local variable r"},
+		{"", "var r R\n\tgs = add(&r)", "local variable r"},
+		{"func keep(r *R) { gs = r.buf[:] }", "var r R\n\tkeep(&r)", "local variable r"},
+		{"func send(r *R) { out <- r.buf[:2] }", "var r R\n\tsend(&r)", "local variable r"},
+		{"", "var r R\n\tue := UE{R: &r}\n\tgs = ue.buf[:]", "local r"},
+		{"", "var r R\n\tv := V{p: &r}\n\tgs = v.p.buf[:]", "local r"},
+		{"func viewUV(u UE) []byte { return u.buf[:] }", "var r R\n\tgs = viewUV(UE{R: &r})", "local variable r"},
+		{"func tail(r *R) []byte { return r.xs[1:] }", "var r R\n\tr.xs = gback[:]\n\tgs = tail(&r)", ""},
+		{"", "gs = view(gr)\n\tgs = gr.bytes()\n\tgs = add(gr)", ""},
+		{"", "ue := UE{R: gr}\n\tgs = ue.buf[:]\n\tgs = ue.bytes()", ""},
+		{"", "v := V{p: gr}\n\tgs = v.p.buf[:]", ""},
+		{"func viewUV(u UE) []byte { return u.buf[:] }", "gs = viewUV(UE{R: gr})", ""},
+		{"func viewV(v V) []byte { return v.p.buf[:] }", "gs = viewV(V{p: gr})", ""},
+		{"", "var r R\n\tr.buf[1] = 2\n\tprintln(len(view(&r)), r.bytes()[1], len(add(&r)))", ""},
+	} {
+		src := head + test.decls + "\n\nfunc run() {\n\t" + test.run + "\n}\n\nfunc main() {\n\trun()\n\tprintln(len(gs), gback[0])\n}\n"
+		fsys := fstest.MapFS{"main.ogo": &fstest.MapFile{Data: []byte(src)}}
+		pkg, err := Build(-1, []string{"main.ogo"}, fsys)
+		if err == nil {
+			err = EmitC(pkg, io.Discard, Checked())
+		}
+		switch {
+		case test.refused != "" && (err == nil || !strings.Contains(err.Error(), test.refused)):
+			t.Errorf("%s / %s: got %v, want %q refused", test.decls, test.run, err, test.refused)
+		case test.refused == "" && err != nil:
+			t.Errorf("%s / %s: refused: %v", test.decls, test.run, err)
+		}
+	}
+}

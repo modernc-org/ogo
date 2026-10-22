@@ -7983,6 +7983,7 @@ type emitter struct {
 	crossNames          map[string]string       // C function name -> the name it was declared with, for crossParams diagnostics
 	frameHolder         map[string]string       // local -> the local whose storage it holds a reference to, a struct field having been given one (see noteFrameHolder)
 	tmpShown            map[string]string       // a temporary -> what it binds as the program wrote it, `*hh`, for a diagnostic (displayName)
+	arrayView           viewFunc                // while the summaries are collected: where an array a chain reaches is (summaryReach)
 	loopSeedsIn         loopSeeds               // the marks the pass before found each loop's body to make, given at its head (applyLoopSeeds)
 	loopSeedsOut        loopSeeds               // the marks this pass found a loop's body to make that its head did not have (noteLoopSeeds)
 	chanCells           []string                // file-scope static cell declarations for locally declared channels, discovered while emitting bodies (see emitLocalChanCell)
@@ -13513,6 +13514,27 @@ func (e *emitter) collectFuncCross(fi funcInfo) {
 		call            bool // the walk stopped at a call in the chain
 	}
 	var walkTarget func(n Node) (walked, bool)
+	// What a slice step of an ARRAY views is the storage the chain before it
+	// reaches (summaryReach): shallow where that is the root's own or what the
+	// root points at, and typed where the walk says what the chain is.
+	prevView := e.arrayView
+	defer func() { e.arrayView = prevView }()
+	e.arrayView = func(chain Node) (shallow, typed bool) {
+		if !e.inUnminted {
+			e.inUnminted = true
+			defer func() { e.inUnminted = false }()
+			e.unminted(func() { shallow, typed = e.arrayView(chain) })
+			return shallow, typed
+		}
+		w, ok := walkTarget(chain)
+		switch {
+		case !ok || w.unnamed || w.call:
+			return false, false
+		case w.cur.slice || len(w.cur.dims) == 0:
+			return false, true // a slice's backing, or a pointer's pointee: what it holds
+		}
+		return w.lit || w.hops == 0 || w.hops == 1 && w.atRoot, true
+	}
 	walkTarget = func(n Node) (w walked, ok bool) {
 		for n.sym == Expression || n.sym == SimpleExpr || n.sym == Term {
 			kids := slices.Collect(it(n.ast))
@@ -16757,6 +16779,23 @@ func (e *emitter) summaryReach(ast []int32) (out []held) {
 			if e.endsInSliceStep(steps) && len(steps) == 1 {
 				return []held{{base, heldAlias}}
 			}
+			// A slice of an ARRAY in the storage the root is or points at, `r.buf[:]`
+			// for an `r *R`, views that storage, which is the root's value as
+			// `&r.buf[0]` is (arrayView). Read as the root's contents -- right for a
+			// slice field, whose backing is what the field holds -- a callee keeping
+			// it or handing it back kept nothing of the caller's, and `gs =
+			// view(&r)` kept a slice of a local array past its frame. A chain no
+			// walk types may be either.
+			if e.endsInSliceStep(steps) && e.arrayView != nil {
+				if prefix, ok := e.factorWithout(fac, 1); ok {
+					switch shallow, typed := e.arrayView(prefix); {
+					case !typed:
+						return []held{{base, heldAlias}, {base, heldContents}}
+					case shallow:
+						return []held{{base, heldAlias}}
+					}
+				}
+			}
 			// A field no struct of the program gives a reference, `p.pos` of an
 			// int, holds nothing: read as p's contents, it was the parameter a
 			// local p held as a part, `p := parser{doc: doc}`, and a callee keeping
@@ -16769,17 +16808,65 @@ func (e *emitter) summaryReach(ast []int32) (out []held) {
 			}
 			return []held{{base, heldContents}}
 		}
+		// `(*p).buf[:]` is p.buf[:]: the root's value where the array is in what p
+		// points at (arrayView).
+		derefView := func(steps []Node) bool {
+			if !e.endsInSliceStep(steps) || e.arrayView == nil {
+				return false
+			}
+			prefix, ok := e.factorWithout(fac, 1)
+			if !ok {
+				return false
+			}
+			shallow, typed := e.arrayView(prefix)
+			return typed && shallow
+		}
 		if name, steps, isDeref := e.factorDerefChain(kids); isDeref && len(steps) != 0 {
+			if derefView(steps) {
+				return []held{{name, heldAlias}}
+			}
 			return []held{{name, heldContents}}
 		}
 		// The same by shape, as derefName is for `*p`: `g = (*q).p` read nothing
 		// held, and a callee keeping what its parameter's pointee held was
 		// summarised as keeping nothing.
-		if name, _, isDeref := e.factorDerefName(kids); isDeref {
+		if name, steps, isDeref := e.factorDerefName(kids); isDeref {
+			if derefView(steps) {
+				return []held{{name, heldAlias}}
+			}
 			return []held{{name, heldContents}}
 		}
 	}
 	return nil
+}
+
+// viewFunc answers where an array a chain reaches is (emitter.arrayView).
+type viewFunc func(chain Node) (shallow, typed bool)
+
+// factorWithout is the Factor fac with the last n steps of its suffix left out,
+// `r.buf` of `r.buf[:]`.
+func (e *emitter) factorWithout(fac Node, n int) (Node, bool) {
+	kids := slices.Collect(it(fac.ast))
+	k := len(kids)
+	if k < 2 || kids[k-1].sym != FactorSuffix {
+		return Node{}, false
+	}
+	steps := slices.Collect(it(kids[k-1].ast))
+	if len(steps) <= n {
+		return Node{}, false
+	}
+	var ast, suffix []int32
+	for _, kid := range kids[:k-1] {
+		if kid.sym == 0 {
+			ast = append(ast, kid.tok)
+			continue
+		}
+		ast = append(ast, encodeNode(kid.sym, kid.ast)...)
+	}
+	for _, st := range steps[:len(steps)-n] {
+		suffix = append(suffix, encodeNode(st.sym, st.ast)...)
+	}
+	return Node{sym: Factor, ast: append(ast, encodeNode(FactorSuffix, suffix)...)}, true
 }
 
 // fieldNameMayCarry reports whether a field of this name may hold a reference: a
@@ -18192,14 +18279,24 @@ func (e *emitter) addrCrossing(ast []int32) (string, bool) {
 	if ct, ok := e.varType(root); ok && (e.isPointer(ct) || e.isSliceCType(e.underlyingCType(ct))) {
 		return "", false // a pointer's or a slice's own: addrThroughPointer, addrOfSliceElem
 	}
-	steps := slices.Collect(it(fk[1].ast))
+	if e.chainCrosses(root, slices.Collect(it(fk[1].ast))) {
+		return root, true
+	}
+	return "", false
+}
+
+// chainCrosses reports a chain from root whose steps reach a pointer or a slice
+// before the last -- a field's, an element's, or an embedded member's a promoted
+// field is reached through (embeddedPtrs): what the last step is applied to is
+// storage root holds a reference to, not root's own.
+func (e *emitter) chainCrosses(root string, steps []Node) bool {
 	for k := 1; k < len(steps); k++ {
 		if steps[k-1].sym != Selector && steps[k-1].sym != Index {
-			return "", false
+			return false
 		}
 		cur, ok := e.accessChainType(root, steps[:k])
 		if ok && (cur.slice || e.isPointer(cur.ctype)) {
-			return root, true
+			return true
 		}
 	}
 	// A field promoted through an embedded pointer, `&pp.p` for a `P{ *T }`, at any
@@ -18215,10 +18312,10 @@ func (e *emitter) addrCrossing(ast []int32) (string, bool) {
 			before = cur.ctype
 		}
 		if ok && before != "" && e.embeddedPtrs(before, e.soleIdent(st.ast)) != 0 {
-			return root, true
+			return true
 		}
 	}
-	return "", false
+	return false
 }
 
 // addrOfSliceElem reports whether an expression is the address of what a slice
@@ -55973,7 +56070,17 @@ func (e *emitter) sliceBackingIsFrame(ast []int32) (string, bool) {
 	case len(cur.dims) != 0:
 		// An ARRAY's storage is wherever the array itself lives, so slicing one
 		// reached from a local root views this frame -- and one reached from a
-		// package root does not.
+		// package root does not. Reached through a pointer or a slice on the way, a
+		// field's or an embedded member's, `u.p.buf[:]` and `u.buf[:]` for a `U{ *R }`,
+		// it lives in what that holds, which the root's holder mark says: read as
+		// the root's, a slice of a package array was refused as one of local u, and
+		// one of a local r named u.
+		if e.chainCrosses(base, steps[:len(steps)-1]) {
+			if x, isLocal := strings.CutPrefix(e.frameHolder[base], "local "); isLocal && e.isFrameVar(x) {
+				return x, true
+			}
+			return base, e.frameHolder[base] != ""
+		}
 		return base, e.isFrameVar(base)
 	case cur.slice:
 		// A SLICE has a backing of its own, and its mark is what says where.
