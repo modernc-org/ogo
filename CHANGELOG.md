@@ -198,6 +198,12 @@ shipped section tells a reader on that version that they have behaviour they do 
 
 ### Fixed
 
+- **A method value taken through a dereference is refused in the checker's words**:
+  `f := (*hh).get`, `(**hh).get`, `(*h).get` and `take((*gp).get)` were "cannot
+  infer a type" or "cannot read *hh through this suffix" from the emitter. Go
+  evaluates the dereference when the value is taken and saves what it reads, which
+  a method value bound when the program is built cannot, as for `h.get`; a
+  function literal calling `(*hh).get` is the way round.
 - **A slice of an array reached through a pointer is a view of what the pointer
   holds**: for a `type UE struct{ *R }`, `ue := UE{R: &g}; gs = ue.buf[:]` was
   refused as a view of local ue, and so were `v.p.buf[:]` for a field `p *R` and

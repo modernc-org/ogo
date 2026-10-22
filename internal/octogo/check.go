@@ -10760,6 +10760,9 @@ func (f *File) reportUnsupportedFuncValue(s *Scope, n Node) bool {
 	if f.reportChainMethodValue(s, n) {
 		return true
 	}
+	if f.reportDerefMethodValue(s, n) {
+		return true
+	}
 	head, field, ok := f.exprFieldRead(n)
 	if !ok {
 		return false
@@ -10791,6 +10794,75 @@ func (f *File) reportUnsupportedFuncValue(s *Scope, n Node) bool {
 	default:
 		return false // supported: lifted with the receiver bound
 	}
+	return true
+}
+
+// reportDerefMethodValue refuses a method value taken through a dereference written
+// out, `(*h).get`, `(*hh).get` and `(**hh).get`: Go evaluates the dereference when
+// the value is taken and saves what it reads -- the pointer for a pointer method, a
+// copy for a value one -- which a binding made at compile time cannot. Asked
+// nothing here, the emitter met it and said "cannot infer a type".
+func (f *File) reportDerefMethodValue(s *Scope, n Node) bool {
+	fac, ok := f.soleFactor(n)
+	if !ok {
+		return false
+	}
+	kids := slices.Collect(it(fac.ast))
+	if len(kids) != 4 || kids[0].sym != 0 || f.ch(kids[0].tok) != LPAREN || kids[1].sym != Expression ||
+		kids[2].sym != 0 || f.ch(kids[2].tok) != RPAREN || kids[3].sym != FactorSuffix {
+		return false
+	}
+	steps := slices.Collect(it(kids[3].ast))
+	if len(steps) != 1 || steps[0].sym != Selector {
+		return false
+	}
+	field, has := f.selectorMember(steps[0])
+	if !has {
+		return false
+	}
+	ue, ok := f.soleUnaryExpr(kids[1])
+	if !ok {
+		return false
+	}
+	if ops := slices.Collect(it(ue.ast)); len(ops) < 2 || ops[0].sym != UnaryOp || f.unaryOp(s, ops[0]) != MUL {
+		return false
+	}
+	t, ok := f.valueTypeAt(s, kids[1])
+	if !ok || t.tn == nil {
+		return false
+	}
+	tn := t.tn
+	if p, isPtr := tn.(*TypeNodePointer); isPtr {
+		tn = p.TypeNode
+	}
+	id, isIdent := tn.(*TypeNodeIdent)
+	if !isIdent || id.Qualifier.IsValid() {
+		return false
+	}
+	tf := t.f
+	if tf == nil {
+		tf = f
+	}
+	td, _, isMethod := tf.methodOwnerScoped(t.s, id.Name.Src(), field.Src())
+	if !isMethod || td.methods[field.Src()] == nil {
+		return false
+	}
+	at := field.Position().String()
+	if f.mvReported[at] {
+		return true
+	}
+	if f.mvReported == nil {
+		f.mvReported = map[string]bool{}
+	}
+	f.mvReported[at] = true
+	recv := f.exprSource(kids[1])
+	if !td.ptrRecv[field.Src()] {
+		f.err(field.Position(), "cannot take (%s).%s as a value: a method value copies its receiver, and only a pointer-receiver method may be taken here",
+			recv, field.Src())
+		return true
+	}
+	f.err(field.Position(), "cannot take (%s).%s as a value: its receiver is a pointer, whose value Go saves when the method value is taken and one bound at compile time cannot; a function literal calling (%s).%s reads it at each call instead",
+		recv, field.Src(), recv, field.Src())
 	return true
 }
 
@@ -25492,6 +25564,8 @@ func (f *File) checkFactorNames(s *Scope, n Node) {
 				!slices.ContainsFunc(steps, func(n Node) bool { return n.sym == CallSuffix }) {
 				f.reportUnsupportedFuncValue(s, n)
 			}
+		} else {
+			f.reportDerefMethodValue(s, n) // `take((*hh).get)`
 		}
 		f.checkIndexExprs(s, suffix) // the "i" in a read "a[i]"
 		// `mk(1).data[1:]`: an array reached from a call's value has no storage to

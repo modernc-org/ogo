@@ -1,0 +1,30 @@
+// A method value taken through a dereference written out: Go evaluates the
+// dereference when the value is taken and saves what it reads -- the pointer for a
+// pointer method, a copy for a value one -- which a binding made when the program is
+// built cannot. The emitter met these and said "cannot infer a type".
+
+type T struct{ n int }
+
+func (t *T) get() int { return t.n }
+func (t T) val() int  { return t.n * 2 }
+
+func call(g func() int) int { return g() }
+
+var t T
+
+var gp = &t
+
+func main() {
+	h := &t
+	hh := &h
+	// ERROR cannot take \(\*hh\)\.get as a value: its receiver is a pointer
+	f := (*hh).get
+	// ERROR cannot take \(\*\*hh\)\.get as a value: its receiver is a pointer
+	g := (**hh).get
+	// ERROR cannot take \(\*gp\)\.get as a value: its receiver is a pointer
+	k := (*gp).get
+	// ERROR cannot take \(\*h\)\.val as a value: a method value copies its receiver
+	v := (*h).val
+	// ERROR cannot take \(\*hh\)\.get as a value: its receiver is a pointer
+	println(f(), g(), k(), v(), call((*hh).get))
+}

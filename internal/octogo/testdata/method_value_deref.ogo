@@ -1,0 +1,27 @@
+// COMPILE
+
+// The controls of method_value_deref_errors.ogo: a function a field holds, read
+// through a dereference, is a value as any field's is; a method expression is no
+// method value; and a call through a dereference calls the method.
+
+type T struct {
+	n  int
+	cb func() int
+}
+
+func (t *T) get() int { return t.n }
+func (t T) val() int  { return t.n * 2 }
+
+func seven() int { return 7 }
+
+var t = T{n: 3, cb: seven}
+
+func main() {
+	h := &t
+	hh := &h
+	f := (*h).cb
+	g := (*hh).cb
+	m := (*T).get
+	v := T.val
+	println(f(), g(), m(h), v(*h), (*hh).get(), (**hh).val())
+}

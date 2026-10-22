@@ -3019,8 +3019,11 @@ pointer, not to how many, and exprNamedType took a dereference for a value -- so
 the cursor walk `for p := *hh; p != nil; p = p.next` was refused, a pointer to a
 pointer being the first of the ways the checker misreads a category (FIFTEEN RULES
 ACROSS THE CATEGORIES); a dereference is asked what the walk types it as since
-(derefIsPointer). Still open: a method VALUE through one, `f := (*hh).get`, is
-"cannot infer a type". The rule: **a reader that drops a dereference asks whether Go's shorthand
+(derefIsPointer). And a method VALUE through one, `f := (*hh).get`, was the
+emitter's "cannot infer a type": the checker asks the method-value rule of a
+dereference written out since (reportDerefMethodValue), at a declaration and
+wherever a value stands, `take((*gp).get)` -- Go saves what the dereference reads
+when the value is taken. The rule: **a reader that drops a dereference asks whether Go's shorthand
 drops it: one star over a pointer to a struct or an array is the shorthand, and
 any other is what the call is made on**.
 **A VIEW IS AN ADDRESS** (2026-10-22, found by dom58, a driver framework of
