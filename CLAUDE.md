@@ -1001,7 +1001,10 @@ section. A new finding goes there; the rule it leaves goes here too.
   form that gives a name a value -- a statement, a clause, a header, a guard -- and a
   rule reading a name's bindings reads every form**, **a target no walk types is
   asked as one through a pointer**, and **what a call hands back of its receiver is
-  asked how far past it the result is**. **A MARK IS MADE IN EMISSION ORDER, AND A LOOP RUNS ITS BODY AGAIN**: **A mark is a fact about a
+  asked how far past it the result is**. **AN EMBEDDED POINTER IS A POINTER THE CHAIN
+  DOES NOT SPELL**: **a promoted field or method is asked as the chain its promotion
+  spells: every pointer step a rule asks of, it asks of the members the promotion
+  goes through**. **A MARK IS MADE IN EMISSION ORDER, AND A LOOP RUNS ITS BODY AGAIN**: **A mark is a fact about a
   variable at a point; a rule reading one asks what reaches that point -- a loop's
   back edge and an alias both do.**
 - **A PARENTHESISED HEAD IS A ROW OF EVERY SCAN**: **A new scan reads heads through

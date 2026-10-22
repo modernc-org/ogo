@@ -13623,10 +13623,13 @@ func (e *emitter) collectFuncCross(fi funcInfo) {
 				w.cur = e.plainOrSlice(ct)
 				continue
 			}
-			hop := false
+			hop, embedded := false, 0
 			switch st.sym {
 			case Selector:
 				hop = e.isPointer(w.cur.ctype)
+				if !w.cur.slice && len(w.cur.dims) == 0 && w.cur.ctype != "" {
+					embedded = e.embeddedPtrs(w.cur.ctype, e.soleIdent(st.ast))
+				}
 			case Index:
 				if _, _, _, sliced := e.sliceParts(st.ast); !sliced {
 					hop = w.cur.slice || e.isPointer(w.cur.ctype)
@@ -13641,6 +13644,9 @@ func (e *emitter) collectFuncCross(fi funcInfo) {
 				}
 			}
 			w.stepped = true
+			// Each embedded pointer a promoted field is reached through is a pointer
+			// loaded out of storage (embeddedPtrs), never the root's own value.
+			w.hops += embedded
 			if w.cur, ok = e.accessChainTypeAt(w.cur, []Node{st}, true); !ok {
 				return w, false
 			}
@@ -17799,7 +17805,27 @@ func (e *emitter) methodCallOf(recv string, suffix []Node, fi funcInfo) (methodC
 	}
 	cname := e.methodCName(methodBaseType(ct), method)
 	if _, isMethod := e.funcRet[cname]; !isMethod {
-		return methodCall{}, false
+		// A method PROMOTED through an embedded field, `h.set(v)` for an `E{ T }`:
+		// called on that member, as `h.T.set(v)` is -- in the storage a value
+		// member is part of, past a pointer one in what it holds. Named on E, which
+		// declares none, the call was no call to the summaries, and a method keeping
+		// its argument in its receiver kept the caller's local in silence.
+		pc, path, _, found := e.promotedMethod(ct, method)
+		if !found || len(path) == 0 {
+			return methodCall{}, false
+		}
+		m := methodBaseType(ct)
+		for _, f := range path {
+			mt, ok := e.structFieldDirect(m, f)
+			if !ok {
+				return methodCall{}, false
+			}
+			if e.isPointer(mt) {
+				kind, at = recvOutlives, argLocal
+			}
+			m = methodBaseType(mt)
+		}
+		cname, copyOf = pc, recv
 	}
 	return methodCall{callee: cname, recv: kind, recvAt: at, args: e.callArgExprs(suffix[1].ast), copyOf: copyOf}, true
 }
@@ -18024,6 +18050,22 @@ func (e *emitter) addrCrossing(ast []int32) (string, bool) {
 		}
 		cur, ok := e.accessChainType(root, steps[:k])
 		if ok && (cur.slice || e.isPointer(cur.ctype)) {
+			return root, true
+		}
+	}
+	// A field promoted through an embedded pointer, `&pp.p` for a `P{ *T }`, at any
+	// step: what that member holds is addressed (embeddedPtrs).
+	for k, st := range steps {
+		if st.sym != Selector {
+			continue
+		}
+		before, ok := e.varType(root)
+		if k > 0 {
+			var cur accessCur
+			cur, ok = e.accessChainType(root, steps[:k])
+			before = cur.ctype
+		}
+		if ok && before != "" && e.embeddedPtrs(before, e.soleIdent(st.ast)) != 0 {
 			return root, true
 		}
 	}
@@ -50913,6 +50955,29 @@ func (e *emitter) fieldPath(ctype, field string) ([]string, bool) {
 	return nil, false
 }
 
+// embeddedPtrs counts the embedded POINTERS a field is promoted through, `pp.p` for
+// a `type P struct{ *T }`: a store, a read or an address of it goes through what
+// each holds, as `pp.T.p` does, not into the storage of what it is selected on.
+// Every rule asking whether a chain's step goes through a pointer asks this of a
+// selector too: none did, and `pp := P{T: &g}; pp.p = &x` kept a local's address
+// in g in silence.
+func (e *emitter) embeddedPtrs(ctype, field string) (n int) {
+	path, ok := e.fieldPath(ctype, field)
+	if !ok || len(path) < 2 {
+		return 0
+	}
+	ct := ctype
+	for _, m := range path[:len(path)-1] {
+		if ct, ok = e.structFieldDirect(ct, m); !ok {
+			return n
+		}
+		if e.isPointer(ct) {
+			n++
+		}
+	}
+	return n
+}
+
 func (e *emitter) structFieldType(ctype, field string) (string, bool) {
 	// A promoted field is reached through the embedded members in front of it, and
 	// its type is what stands at the end of that path. selectC renders the same
@@ -57707,27 +57772,33 @@ func (e *emitter) targetThroughRef(base string, stars int, steps []Node) (throug
 	if stars > 0 {
 		return holder(stars == 1 && len(steps) == 0)
 	}
-	last := -1
+	last, lastEmbedded := -1, false
 	for i, st := range steps {
 		if st.sym != Selector && st.sym != Index {
 			continue
 		}
 		var ptr bool
+		before := ""
 		if i == 0 {
 			ct, ok := e.varType(base)
 			_, isArrPtr := e.arrayPtrVar(base)
-			ptr = ok && e.isPointer(ct) || isArrPtr
+			ptr, before = ok && e.isPointer(ct) || isArrPtr, ct
 		} else if cur, ok := e.accessChainType(base, steps[:i]); ok {
-			ptr = e.isPointer(cur.ctype)
+			ptr, before = e.isPointer(cur.ctype), cur.ctype
 		}
 		if ptr {
-			last = i
+			last, lastEmbedded = i, false
+		}
+		// A field promoted through an embedded pointer is written through what that
+		// member holds, which base being known says nothing of (embeddedPtrs).
+		if st.sym == Selector && before != "" && e.embeddedPtrs(before, e.soleIdent(st.ast)) != 0 {
+			last, lastEmbedded = i, true
 		}
 	}
 	if last < 0 {
 		return false, false, ""
 	}
-	return holder(last == 0)
+	return holder(last == 0 && !lastEmbedded)
 }
 
 // chainSource spells base followed by steps as the source writes them.

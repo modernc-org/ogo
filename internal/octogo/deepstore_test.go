@@ -265,3 +265,73 @@ var gq *node
 		}
 	}
 }
+
+// TestEmitCEmbeddedPointerStores: a field promoted through an embedded pointer,
+// `pp.p` for a `type P struct{ *T }`, is written, read and addressed through what
+// that member holds, and a method promoted through any embedded field is called on
+// that member -- as the explicit `pp.T.p` and `h.T.set(v)` are. No rule counted the
+// pointer the promotion hides, and the summaries named a promoted method on the
+// outer type, which declares none: every refused row kept a local's address in g
+// or ge, in silence.
+func TestEmitCEmbeddedPointerStores(t *testing.T) {
+	const head = `type T struct {
+	p *int
+	n int
+}
+
+func (t *T) set(v *int) { t.p = v }
+
+type E struct {
+	T
+	k int
+}
+
+type P struct {
+	*T
+	k int
+}
+
+type Q struct{ P }
+
+func fillp(pp **int, v *int) { *pp = v }
+
+var g T
+
+var ge E
+
+`
+	for _, test := range []struct {
+		decls, run string
+		refused    bool
+	}{
+		{"", "pp := P{T: &g}\n\tpp.p = &local", true},
+		{"", "q := Q{P{T: &g}}\n\tq.p = &local", true},
+		{"", "pp := P{T: &g}\n\tq := &pp\n\tq.p = &local", true},
+		{"", "pp := P{T: &g}\n\tfillp(&pp.p, &local)", true},
+		{"func put(h *P, v *int) { h.p = v }", "pp := P{T: &g}\n\tput(&pp, &local)", true},
+		{"func put(h P, v *int) { h.p = v }", "put(P{T: &g}, &local)", true},
+		{"func (h P) put(v *int) { h.p = v }", "pp := P{T: &g}\n\tpp.put(&local)", true},
+		{"func put(h *P, v *int) { w := h; w.p = v }", "pp := P{T: &g}\n\tput(&pp, &local)", true},
+		{"func put(h *P, v *int) { fillp(&h.p, v) }", "pp := P{T: &g}\n\tput(&pp, &local)", true},
+		{"func put(h *P, v *int) { h.set(v) }", "pp := P{T: &g}\n\tput(&pp, &local)", true},
+		{"func put(q *Q, v *int) { q.set(v) }", "q := Q{P{T: &g}}\n\tput(&q, &local)", true},
+		{"func put(h *E, v *int) { h.set(v) }", "put(&ge, &local)", true},
+		{"func put(h *E, v *int) { defer h.set(v) }", "put(&ge, &local)", true},
+		// An embedded value is storage of what it is part of.
+		{"", "var le E\n\tle.p = &local\n\tle.set(&local)\n\tprintln(*le.p)", false},
+		{"func put(h *E, v *int) { h.p = v; h.set(v) }", "var le E\n\tput(&le, &local)\n\tprintln(*le.p)", false},
+	} {
+		src := head + test.decls + "\n\nfunc run() {\n\tlocal := 42\n\t" + test.run + "\n}\n\nfunc main() {\n\trun()\n\tprintln(g.n, ge.n)\n}\n"
+		fsys := fstest.MapFS{"main.ogo": &fstest.MapFile{Data: []byte(src)}}
+		pkg, err := Build(-1, []string{"main.ogo"}, fsys)
+		if err == nil {
+			err = EmitC(pkg, io.Discard, Checked())
+		}
+		switch {
+		case test.refused && (err == nil || !strings.Contains(err.Error(), "local variable local")):
+			t.Errorf("%s / %s: got %v, want the local's address refused", test.decls, test.run, err)
+		case !test.refused && err != nil:
+			t.Errorf("%s / %s: refused: %v", test.decls, test.run, err)
+		}
+	}
+}

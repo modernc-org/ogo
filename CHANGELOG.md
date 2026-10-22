@@ -20,6 +20,16 @@ shipped section tells a reader on that version that they have behaviour they do 
 
 ### Behaviour changes
 
+- **A field promoted through an embedded pointer is stored through that pointer,
+  and a promoted method is called on the member it is promoted from**: for a `type
+  P struct{ *T }`, `pp := P{T: &g}; pp.p = &x` put a local's address in g, as did
+  `func put(h *P, v *int) { h.p = v }` called with a local's address, `&pp.p` passed
+  to a function storing through it, and a method promoted through any embedded
+  field, `h.set(v)` for a `type E struct{ T }` -- which the lifetime rules did not
+  follow at all, so `put(&ge, &x)` kept x's address in the package variable ge.
+  Each is refused now as its explicit spelling, `pp.T.p = &x` or `h.T.set(v)`, was;
+  a field or a method promoted through an embedded value is the storage of what it
+  is part of, as before.
 - **A callee storing its parameter past what it was handed keeps it where it
   outlives every frame**: `func put(h *U, v *int) { h.q.p = v }` stores v through
   h.q, a pointer loaded out of the caller's storage, and `put(&lu, &x)` was taken for

@@ -2944,8 +2944,8 @@ more; `n := p.at(1); n.ptr = v` keeping a local's address in a package pool's
 backing, silent before, is refused by the same change. Measured: the corpus's 1,393
 programs emit the C they did but the changed run case's, none refused; of 4,858
 domain programs and mutants none has another verdict; p2-11 builds to the same
-bytes. Found beside it and left for its own
-change: a field promoted through an embedded pointer, `type P struct{ *T }` and
+bytes. Found beside it and left for its own change (closed the same day, AN EMBEDDED
+POINTER IS A POINTER THE CHAIN DOES NOT SPELL): a field promoted through an embedded pointer, `type P struct{ *T }` and
 `h.p = v`, is a store through that pointer which neither the summaries nor the
 store rules inside a function count -- `pp := P{T: &g}; pp.p = &local` keeps the
 address in g -- and a method promoted through any embedded field, `h.set(v)` for a
@@ -2955,6 +2955,29 @@ rules: **a binding is every form that gives a name a value -- a
 statement, a clause, a header, a guard -- and a rule reading a name's bindings reads
 every form**, **a target no walk types is asked as one through a pointer**, and
 **what a call hands back of its receiver is asked how far past it the result is**.
+**AN EMBEDDED POINTER IS A POINTER THE CHAIN DOES NOT SPELL** (2026-10-22, found probing
+the binding forms beside it). A field promoted through an embedded pointer, `pp.p`
+for a `type P struct{ *T }`, is `pp.T.p`: written, read and addressed through what
+pp.T holds. Every rule asking whether a chain's step goes through a pointer asked
+the type the step applies to, P, and P is no pointer -- the store rule inside a
+function (targetThroughRef), the address test (addrCrossing) and the summaries'
+walk -- so `pp := P{T: &g}; pp.p = &x` kept a local's address in g, and so did `func
+put(h *P, v *int) { h.p = v }`, a value parameter's and a value receiver's, `w :=
+h; w.p = v`, `fillp(&h.p, v)` and `fillp(&pp.p, &x)` in silence, in every release.
+The method half was wider: a method promoted through ANY embedded field, `h.set(v)`
+for a `type E struct{ T }`, was named on E, which declares none, so the summaries
+took it for no call at all and `put(&ge, &x)` kept x in the package variable ge
+(methodCallOf resolves it through its path since, promotedMethod, each embedded
+pointer on the way storage it cannot name). Thirteen shapes, each refused since by
+its row of TestEmitCEmbeddedPointerStores; a member embedded by value is the storage
+of what it is part of, as before. What the change newly refuses, its explicit
+spelling was refused already: `pp := P{T: &t}; pp.p = &x` for a local t is
+`u.q.p = &x`, which the store rule trusts no more than any pointer loaded out of
+storage, and Go moves x to the heap for it. Left: the CHECKER reads `&pp.n` as the
+address of local pp, refusing `gn = &pp.n` for a pp.T pointing into a package
+variable, which Go takes. The rule: **a promoted field or method is asked as the
+chain its promotion spells: every pointer step a rule asks of, it asks of the
+members the promotion goes through**.
 **A MARK IS MADE IN EMISSION ORDER, AND A LOOP RUNS ITS BODY AGAIN** (2026-10-08,
 found probing unsafe.Slice's views). The holder marks are set as statements are
 emitted, so a statement read a variable's mark as the statements BEFORE it had left
