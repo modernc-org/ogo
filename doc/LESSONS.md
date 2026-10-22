@@ -2980,6 +2980,43 @@ variable, which Go takes; it asks fieldLookup's embedded-pointer answer since, a
 the emitter decides by what pp holds, refusing it for a pp.T into a local. The rule: **a promoted field or method is asked as the
 chain its promotion spells: every pointer step a rule asks of, it asks of the
 members the promotion goes through**.
+**A STAR IS GO'S SHORTHAND OVER ONE POINTER** (2026-10-22, the open item the entry
+above left). Go reads `(*p).m()` as `p.m()` because a selector dereferences one
+pointer; over a pointer to a POINTER, `(*hh).m()` for a `**T`, the dereference is
+the point of the call: the method is called on the pointer hh points at. Two readers
+dropped the star regardless. The emitter's (derefShorthand) wrote `hh.m()` and named
+a package hh, "unknown package", read `(**hh)` as a value with no address, "cannot
+call pointer method", and refused the `defer` and `go` forms -- loud refusals of
+valid Go. Behind them, the summaries' readers (scanHead, parenFactorShape) hand a
+head's name on without its stars and named no method of a `**T` at all. Making the
+emitter right (bindDeref, as for a pointer to a slice or an interface) made seven
+shapes compile that the summaries said nothing of: a callee calling `(*hh).keep()`,
+`(**hh).keep()`, deferring or starting it, or storing through `(*hh).put(v)`, each
+kept the caller's local in a package variable; and the temporary bindDeref binds,
+carrying no mark, let `(*hh).keep()` keep it in the function itself. **A shape that
+newly compiles is asked every lifetime question**: the refusal had stood in front of
+all seven. The summaries read a head's stars since (methodCallThrough): over a
+pointer to a pointer the receiver is a pointer loaded out of storage, a store into
+it lands where no rule can name, and what the method keeps of it the caller keeps of
+hh's contents (recvLoaded); the temporary carries what the pointee is marked to hold
+(pointeeMarks, which frameRefOf's `*p` asks too). Sweeping the row found three older
+holes, silent in every release. `gp = (*h).self()`, for a method handing back its
+receiver, kept a local's address where `gp = h.self()` was refused: frameRefOf read
+no dereference head, and neither did summarisedCall, which asks it the same question
+for a declaration (one helper for the two since, derefCall). `(*q).Keep()` through a
+pointer to an interface holding a local's address let the method keep it, in the
+function and in a callee handed q (ifaceMethodCallsThrough). And `p := *hh;
+p.keep()` in a callee: localRecv takes such a local for storage that outlives, a
+store INTO which is a leak -- and keeping storage that outlives is none, so the
+callee kept nothing of the caller's. KNOWN MEANS MUST once more: "outlives" was the
+store rule's assumption, read by the keeping rule as a permission; what the method
+keeps of such a receiver, the caller keeps of what the local holds (recvName). A
+diagnostic names a bound dereference as written, `*hh`, never `_ogo_t0`
+(tmpShown). TestEmitCDerefPointerToPointerCalls holds 26 rows, of which HEAD failed
+24. Still open: a method VALUE through one, `f := (*hh).get`, is "cannot infer a
+type". The rule: **a reader that drops a dereference asks whether Go's shorthand
+drops it: one star over a pointer to a struct or an array is the shorthand, and
+any other is what the call is made on**.
 **A MARK IS MADE IN EMISSION ORDER, AND A LOOP RUNS ITS BODY AGAIN** (2026-10-08,
 found probing unsafe.Slice's views). The holder marks are set as statements are
 emitted, so a statement read a variable's mark as the statements BEFORE it had left

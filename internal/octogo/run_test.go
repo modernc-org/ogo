@@ -971,6 +971,94 @@ func main() {
 		want: "2 5 2 3 5 2 []uint8 []uint8\n15 6 3 true [3]int [4 5 6]\n12 20 true struct { X int; Y int } *struct { X int; Y int }\n6 8 func(int) int\n8 5 2 8 8 chan int\n42 6\nbuf2 pair row fn ?\ntrue 4 false true true\n",
 	},
 	{
+		// A method called through a pointer to a pointer, `(*hh).set(v)` and
+		// `(**hh).set(v)` for a `**Node` -- plain, deferred, started, on a call's
+		// result and chained -- and through a pointer to an interface, `(*pv).Value()`:
+		// on the pointer hh points at, as Go reads it. The first was "unknown package
+		// hh", the second "cannot call pointer method set on Node".
+		name: "a method called through a pointer to a pointer",
+		src: `type Node struct {
+	val  int
+	next *Node
+}
+
+func (n *Node) set(v int)       { n.val = v }
+func (n *Node) bump() *Node     { n.val++; return n }
+func (n Node) get() int         { return n.val }
+func (n *Node) link(m *Node)    { n.next = m }
+func (n *Node) work(c chan int) { n.val *= 10; c <- n.val }
+
+type Valuer interface{ Value() int }
+
+func (n *Node) Value() int { return n.val + 1000 }
+
+var calls int
+
+var pool [3]Node
+
+var head *Node
+
+var out = make(chan int)
+
+var ptrs [3]*Node
+
+func at(i int) **Node {
+	calls = calls*10 + i
+	return &ptrs[i]
+}
+
+// insert threads n in front of *hh, the cursor of an intrusive list.
+func insert(hh **Node, n *Node) {
+	n.link(*hh)
+	*hh = n
+}
+
+func sum(hh **Node) (s int) {
+	var p *Node = *hh
+	for p != nil {
+		s += p.get()
+		p = p.next
+	}
+	return s
+}
+
+func setVia(hh **Node, v int) {
+	(*hh).set(v)
+	(**hh).set((**hh).get() + 1)
+	defer (*hh).set(v * 2)
+}
+
+func main() {
+	for i := range ptrs {
+		ptrs[i] = &pool[i]
+	}
+	h := &pool[0]
+	hh := &h
+	(*hh).set(7)
+	(**hh).set((*hh).get() + 1)
+	println(pool[0].val, (*hh).get(), (**hh).get())
+	println((*hh).bump().bump().get(), pool[0].val)
+	setVia(hh, 5)
+	println(pool[0].val)
+	head = nil
+	cur := &head
+	insert(cur, &pool[0])
+	insert(cur, &pool[1])
+	insert(cur, &pool[2])
+	(*cur).set(30)
+	(*cur).next.set(20)
+	println(sum(cur), head.val, head.next.val, head.next.next.val)
+	println((*at(1)).get(), (**at(2)).get(), calls)
+	var v Valuer = &pool[1]
+	pv := &v
+	println((*pv).Value())
+	go (*hh).work(out)
+	println(<-out, pool[0].val)
+}
+`,
+		want: "8 8 8\n10 10\n10\n60 30 20 10\n20 30 12\n1020\n100 100\n",
+	},
+	{
 		// A method storing its receiver through a parameter, `*p = m`, and a function
 		// storing a parameter through an assertion of an `any` one, `case **M:` among
 		// them -- with both sides of each store this frame's, which the lifetime

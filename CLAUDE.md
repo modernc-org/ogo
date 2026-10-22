@@ -1004,7 +1004,10 @@ section. A new finding goes there; the rule it leaves goes here too.
   asked how far past it the result is**. **AN EMBEDDED POINTER IS A POINTER THE CHAIN
   DOES NOT SPELL**: **a promoted field or method is asked as the chain its promotion
   spells: every pointer step a rule asks of, it asks of the members the promotion
-  goes through**. **A MARK IS MADE IN EMISSION ORDER, AND A LOOP RUNS ITS BODY AGAIN**: **A mark is a fact about a
+  goes through**. **A STAR IS GO'S SHORTHAND OVER ONE POINTER**: **a reader that
+  drops a dereference asks whether Go's shorthand drops it: one star over a pointer
+  to a struct or an array is the shorthand, and any other is what the call is made
+  on**. **A MARK IS MADE IN EMISSION ORDER, AND A LOOP RUNS ITS BODY AGAIN**: **A mark is a fact about a
   variable at a point; a rule reading one asks what reaches that point -- a loop's
   back edge and an alias both do.**
 - **A PARENTHESISED HEAD IS A ROW OF EVERY SCAN**: **A new scan reads heads through

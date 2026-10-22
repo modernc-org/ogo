@@ -20,6 +20,14 @@ shipped section tells a reader on that version that they have behaviour they do 
 
 ### Behaviour changes
 
+- **A method called through a dereference is asked what it keeps of the pointer it
+  is called on**: `gp = (*h).self()`, for a method handing back its receiver, kept
+  a local's address in a package variable where `gp = h.self()` was refused;
+  `(*q).Keep()` for a `q *Keeper`, an interface holding a local's address, let the
+  method keep it, in the function or in a callee handed q; and a callee calling a
+  method on a pointer it loaded out of its parameter, `p := *hh; p.keep()`, was
+  taken to keep nothing of what the caller handed it. Each is refused now as its
+  plain spelling is.
 - **A field promoted through an embedded pointer is stored through that pointer,
   and a promoted method is called on the member it is promoted from**: for a `type
   P struct{ *T }`, `pp := P{T: &g}; pp.p = &x` put a local's address in g, as did
@@ -181,6 +189,12 @@ shipped section tells a reader on that version that they have behaviour they do 
 
 ### Fixed
 
+- **A method called through a pointer to a pointer compiles**: `(*hh).set(v)` for an
+  `hh **T` was "unknown package hh", `(**hh).set(v)` "cannot call pointer method set
+  on T", and `defer (*hh).set(v)` and `go (*hh).set(v)` were refused too. The call is
+  on the pointer hh points at, as in Go, and is asked what that pointer holds: called
+  on a local's address, a method keeping its receiver, or storing a local's address
+  in it, is refused.
 - **The address of a field promoted through an embedded pointer is what that pointer
   holds**: for a `type P struct{ *T }`, `pp := P{T: &g}; gn = &pp.n` and `func
   addr(pp P) *int { return &pp.n }` were "the address of local variable pp", which

@@ -7982,6 +7982,7 @@ type emitter struct {
 	derivedEdges        []derivedEdge           // a call's result, derived from a parameter, stored or crossed (see derivedEdge)
 	crossNames          map[string]string       // C function name -> the name it was declared with, for crossParams diagnostics
 	frameHolder         map[string]string       // local -> the local whose storage it holds a reference to, a struct field having been given one (see noteFrameHolder)
+	tmpShown            map[string]string       // a temporary -> what it binds as the program wrote it, `*hh`, for a diagnostic (displayName)
 	loopSeedsIn         loopSeeds               // the marks the pass before found each loop's body to make, given at its head (applyLoopSeeds)
 	loopSeedsOut        loopSeeds               // the marks this pass found a loop's body to make that its head did not have (noteLoopSeeds)
 	chanCells           []string                // file-scope static cell declarations for locally declared channels, discovered while emitting bodies (see emitLocalChanCell)
@@ -13898,6 +13899,24 @@ func (e *emitter) collectFuncCross(fi funcInfo) {
 		}
 		return base, recvOutlives, argLocal, true
 	}
+	// What a POINTER name points at, by the type of what the name is -- a
+	// parameter, the receiver, a package variable, or a local by its bindings.
+	fi.pointeeType = func(name string) (ct string, ok bool) {
+		if !e.inUnminted {
+			e.inUnminted = true
+			defer func() { e.inUnminted = false }()
+			e.unminted(func() { ct, ok = fi.pointeeType(name) })
+			return ct, ok
+		}
+		cur, typed := curOf(name)
+		if !typed {
+			cur, typed = rootCur(name)
+		}
+		if !typed || !e.isPointer(cur.ctype) {
+			return "", false
+		}
+		return e.elemType(cur.ctype), true
+	}
 	// owners says what this call passed at each position, in the terms the
 	// CALLER's summary is written in: its own parameters by index, or a package
 	// variable, or something not to be followed. A callee's "stored through my
@@ -14365,9 +14384,9 @@ func (e *emitter) collectFuncCross(fi funcInfo) {
 				// `go (w).send()`, `(&w).send()` and `(*w).send()` are `go w.send()`;
 				// and a method at the end of a chain, `go p[1].send()`, is called on what
 				// the chain reaches (methodCallOf), which only `go w.send()` was.
-				if recv, _, chain := e.scanHead(nodes[1], nodes[2:]); recv != "" &&
+				if recv, stars, chain := e.scanHead(nodes[1], nodes[2:]); recv != "" &&
 					(len(chain) == 2 && chain[0].sym == Selector && chain[1].sym == CallSuffix || fieldMethodSuffix(chain)) {
-					if c, isM := e.methodCallOf(recv, chain, fi); isM {
+					if c, isM := e.methodCallThrough(recv, stars, chain, fi); isM {
 						ptrName := c.recv == recvParam || c.recv == recvOwn && recvPtr
 						switch ptrMethod := e.methodPtr[c.callee]; {
 						case ptrName && ptrMethod:
@@ -14376,6 +14395,13 @@ func (e *emitter) collectFuncCross(fi funcInfo) {
 							sinkHeld([]held{{recv, heldContents}}, leakCog)
 						case c.copyOf != "" && !ptrMethod:
 							sinkHeld([]held{{recv, heldAlias}}, leakCog)
+						case c.recvName != "" && ptrMethod:
+							// A pointer a local holds, or one loaded out of what a
+							// name points at: the cog is handed that pointer, or a
+							// copy of what it points at.
+							sinkHeld([]held{c.recvHeld()}, leakCog)
+						case c.recvName != "":
+							sinkHeld([]held{{c.recvName, heldContents}}, leakCog)
 						}
 					}
 				}
@@ -14669,9 +14695,11 @@ func (e *emitter) collectFuncCross(fi funcInfo) {
 				}
 			}
 			// An interface's method is handed what the interface value holds: what
-			// the callee keeps of its receiver, this function keeps of that.
+			// the callee keeps of its receiver, this function keeps of that -- and so
+			// is a method called on a pointer a local holds, or one loaded out of what
+			// a name points at (recvLoaded), its contents.
 			if c.recvName != "" {
-				r := reachOf([]held{{c.recvName, heldAlias}})
+				r := reachOf([]held{c.recvHeld()})
 				for _, i := range r.vals {
 					e.recvEdges = append(e.recvEdges, recvEdge{caller: cname, from: i, callee: c.callee, to: -1, argOwner: owner})
 				}
@@ -14680,6 +14708,9 @@ func (e *emitter) collectFuncCross(fi funcInfo) {
 				}
 				if r.recvVal {
 					e.recvEdges = append(e.recvEdges, recvEdge{caller: cname, from: -1, callee: c.callee, to: -1, argOwner: owner})
+				}
+				if r.recvCont {
+					e.recvEdges = append(e.recvEdges, recvEdge{caller: cname, from: -1, callee: c.callee, to: -1, contents: true, argOwner: owner})
 				}
 			}
 		}
@@ -15816,6 +15847,35 @@ func (e *emitter) derefName(ast []int32) (string, bool) {
 	return e.exprIdent(e.unparenExpr(kids[1].ast))
 }
 
+// derefNameStars is derefName of any number of stars, `**hh` and `*(*hh)`: the
+// name and the stars.
+func (e *emitter) derefNameStars(ast []int32) (string, string, bool) {
+	nodes := slices.Collect(it(ast))
+	for len(nodes) == 1 && (nodes[0].sym == Expression || nodes[0].sym == SimpleExpr || nodes[0].sym == Term) {
+		nodes = slices.Collect(it(nodes[0].ast))
+	}
+	if len(nodes) != 1 || nodes[0].sym != UnaryExpr {
+		return "", "", false
+	}
+	kids := slices.Collect(it(nodes[0].ast))
+	stars := ""
+	for len(kids) > 1 && kids[0].sym == UnaryOp {
+		if tok, ok := e.unaryOpTok(kids[0].ast); !ok || e.f.ch(tok) != MUL {
+			return "", "", false
+		}
+		stars, kids = stars+"*", kids[1:]
+	}
+	if stars == "" || len(kids) != 1 {
+		return "", "", false
+	}
+	inner := e.unparenExpr(kids[0].ast)
+	if name, ok := e.exprIdent(inner); ok {
+		return name, stars, true
+	}
+	name, more, ok := e.derefNameStars(inner)
+	return name, stars + more, ok
+}
+
 // derefHeadName is derefHead by shape: a statement's head written as a dereference,
 // `(*p)`, answering p. derefHead asks the pointer's type, which the summaries,
 // collected before any body has declared a local, cannot.
@@ -15877,8 +15937,8 @@ func (e *emitter) parenInnerShape(ast []int32) (root, stars string, path []Node,
 	if name, isName := e.exprIdent(inner); isName {
 		return name, "", nil, true
 	}
-	if name, isDeref := e.derefName(inner); isDeref {
-		return name, "*", nil, true
+	if name, stars, isDeref := e.derefNameStars(inner); isDeref {
+		return name, stars, nil, true
 	}
 	if name, steps, isAddr := e.addrChainShape(inner); isAddr {
 		return name, "", steps, true
@@ -15894,11 +15954,18 @@ func (e *emitter) parenInnerShape(ast []int32) (root, stars string, path []Node,
 // `(h.d).f(v)` are h.d.f(v) -- the name and the steps from it. The scans reading a
 // call as a name and its suffix, `IDENT FactorSuffix`, took these for no call.
 func (e *emitter) parenFactorShape(kids []Node) (string, []Node, bool) {
-	root, _, path, ok := e.parenFactorHead(kids)
+	root, _, steps, ok := e.parenFactorStars(kids)
+	return root, steps, ok
+}
+
+// parenFactorStars is parenFactorShape with the stars of a dereference, `(*p).m()`:
+// "*", for the readers that ask what p points at (methodCallThrough).
+func (e *emitter) parenFactorStars(kids []Node) (string, string, []Node, bool) {
+	root, stars, path, ok := e.parenFactorHead(kids)
 	if !ok {
-		return "", nil, false
+		return "", "", nil, false
 	}
-	return root, append(path, slices.Collect(it(kids[3].ast))...), true
+	return root, stars, append(path, slices.Collect(it(kids[3].ast))...), true
 }
 
 // parenFactorHead is parenInnerShape of a Factor's parentheses, when the Factor is
@@ -16054,6 +16121,9 @@ type funcInfo struct {
 	// the method's base type, the receiver's kind and the parameter it is behind
 	// (collectFuncCross).
 	localRecv func(name string) (string, recvKind, int, bool)
+	// pointeeType types what a POINTER name points at, `*T` for `hh` of a `**T`
+	// (collectFuncCross), for a method called through it (methodCallThrough).
+	pointeeType func(name string) (string, bool)
 }
 
 // eachStmt calls fn with the children of every Statement in ast, at any depth, so a
@@ -17437,12 +17507,25 @@ type methodCall struct {
 	recvAt int
 	args   []Node
 	// recvName is the name an interface's method was called on, which may hold one
-	// of the caller's parameters (see ifaceMethodCallsOf).
-	recvName string
+	// of the caller's parameters (see ifaceMethodCallsOf), or a pointer's a method
+	// is called on where the receiver is storage nothing here names (recvOutlives):
+	// what the method keeps of its receiver, the caller keeps of what the name
+	// holds -- or, for recvLoaded, of the name's contents, the receiver being a
+	// pointer loaded out of what the name points at (methodCallThrough).
+	recvName   string
+	recvLoaded bool
 	// copyOf names what the receiver is a COPY of, or the address of: a local, a
 	// value parameter, the caller's own value receiver. What the method keeps of its
 	// receiver's contents, the caller keeps of that name's contents (copyRecvEdge).
 	copyOf string
+}
+
+// recvHeld is what the receiver of a call with a recvName is, by that name.
+func (c methodCall) recvHeld() held {
+	if c.recvLoaded {
+		return held{c.recvName, heldContents}
+	}
+	return held{c.recvName, heldAlias}
 }
 
 // stmtMethodCalls finds the METHOD calls a statement makes, which stmtCalls does not:
@@ -17472,18 +17555,18 @@ func (e *emitter) stmtMethodCalls(nodes []Node, fi funcInfo) []methodCall {
 	// A deferred method call is a call for everything handed to it, only later.
 	if len(nodes) >= 4 && nodes[0].sym == 0 && e.f.ch(nodes[0].tok) == DEFER && nodes[1].sym == AssignHead {
 		// `defer (c).m()`, `(&c).m()` and `(*c).m()` are `defer c.m()` (scanHead).
-		if recv, _, chain := e.scanHead(nodes[1], nodes[2:]); recv != "" && len(chain) == 2 && chain[0].sym == Selector && chain[1].sym == CallSuffix {
-			if c, isM := e.methodCallOf(recv, chain, fi); isM {
+		if recv, stars, chain := e.scanHead(nodes[1], nodes[2:]); recv != "" && len(chain) == 2 && chain[0].sym == Selector && chain[1].sym == CallSuffix {
+			if c, isM := e.methodCallThrough(recv, stars, chain, fi); isM {
 				out = append(out, c)
 			} else {
-				out = append(out, e.ifaceMethodCallsOf(recv, chain, fi)...)
+				out = append(out, e.ifaceMethodCallsThrough(recv, stars, chain, fi)...)
 			}
 		} else if recv != "" && fieldMethodSuffix(chain) {
 			// `defer p[1].m()`, `defer p.arr[1].m()`: a method at the end of a
 			// chain, as the statement form below reads it. Only `defer c.m()` was a
 			// call, so a callee keeping what it deferred a method on was summarised as
 			// keeping nothing of it.
-			if c, isM := e.methodCallOf(recv, chain, fi); isM {
+			if c, isM := e.methodCallThrough(recv, stars, chain, fi); isM {
 				out = append(out, c)
 			}
 		}
@@ -17494,16 +17577,16 @@ func (e *emitter) stmtMethodCalls(nodes []Node, fi funcInfo) []methodCall {
 			if c, isM := e.methodExprCallOf(me, fi); isM {
 				out = append(out, c)
 			}
-		} else if recv, _, chain := e.scanHead(nodes[0], suffix); recv != "" {
+		} else if recv, stars, chain := e.scanHead(nodes[0], suffix); recv != "" {
 			suffix := chain // `(c).m()`, `(&c).m()` and `(*c).m()` are c.m() (scanHead)
 			if len(suffix) == 2 && suffix[0].sym == Selector && suffix[1].sym == CallSuffix {
-				if c, isM := e.methodCallOf(recv, suffix, fi); isM {
+				if c, isM := e.methodCallThrough(recv, stars, suffix, fi); isM {
 					out = append(out, c)
 				} else {
-					out = append(out, e.ifaceMethodCallsOf(recv, suffix, fi)...)
+					out = append(out, e.ifaceMethodCallsThrough(recv, stars, suffix, fi)...)
 				}
 			} else if fieldMethodSuffix(suffix) {
-				if c, isM := e.methodCallOf(recv, suffix, fi); isM {
+				if c, isM := e.methodCallThrough(recv, stars, suffix, fi); isM {
 					out = append(out, c)
 				}
 			}
@@ -17518,8 +17601,9 @@ func (e *emitter) stmtMethodCalls(nodes []Node, fi funcInfo) []methodCall {
 			if n.sym == Factor {
 				kids := slices.Collect(it(n.ast))
 				recv, suffix, ok := e.factorCall(kids)
+				stars := ""
 				if !ok {
-					recv, suffix, ok = e.parenFactorShape(kids) // `(c).m()` is c.m()
+					recv, stars, suffix, ok = e.parenFactorStars(kids) // `(c).m()` is c.m()
 				}
 				if me, isME := e.methodExprAt(kids); isME {
 					if c, isM := e.methodExprCallOf(me, fi); isM {
@@ -17527,13 +17611,13 @@ func (e *emitter) stmtMethodCalls(nodes []Node, fi funcInfo) []methodCall {
 					}
 				} else if ok && len(suffix) == 2 &&
 					suffix[0].sym == Selector && suffix[1].sym == CallSuffix {
-					if c, isM := e.methodCallOf(recv, suffix, fi); isM {
+					if c, isM := e.methodCallThrough(recv, stars, suffix, fi); isM {
 						out = append(out, c)
 					} else {
-						out = append(out, e.ifaceMethodCallsOf(recv, suffix, fi)...)
+						out = append(out, e.ifaceMethodCallsThrough(recv, stars, suffix, fi)...)
 					}
 				} else if ok && fieldMethodSuffix(suffix) {
-					if c, isM := e.methodCallOf(recv, suffix, fi); isM {
+					if c, isM := e.methodCallThrough(recv, stars, suffix, fi); isM {
 						out = append(out, c)
 					}
 				}
@@ -17588,13 +17672,36 @@ func (e *emitter) ifaceMethodCallsOf(recv string, suffix []Node, fi funcInfo) (o
 	if ct == "" || !e.isIfaceCType(ct) {
 		return nil
 	}
-	args := e.callArgExprs(suffix[1].ast)
+	return e.ifaceCallsOn(ct, method, e.callArgExprs(suffix[1].ast), recv, false)
+}
+
+// ifaceMethodCallsThrough is ifaceMethodCallsOf for a head written through a star,
+// `(*q).Keep()`: where q points at an INTERFACE the method is called on what that
+// interface value holds, loaded out of what q points at (recvLoaded). Read as
+// q.Keep(), it was no interface's call, and a callee keeping its receiver kept the
+// caller's local in silence.
+func (e *emitter) ifaceMethodCallsThrough(recv, stars string, suffix []Node, fi funcInfo) []methodCall {
+	if stars != "" && fi.pointeeType != nil && len(suffix) == 2 {
+		if ct, typed := fi.pointeeType(recv); typed && e.isIfaceCType(e.underlyingCType(ct)) {
+			if method := e.soleIdent(suffix[0].ast); method != "" {
+				return e.ifaceCallsOn(ct, method, e.callArgExprs(suffix[1].ast), recv, true)
+			}
+			return nil
+		}
+	}
+	return e.ifaceMethodCallsOf(recv, suffix, fi)
+}
+
+// ifaceCallsOn is a call of method on an interface of type ct: a call of the method
+// of every type implementing it, its receiver what recvName holds (recvLoaded: what
+// recvName points at holds).
+func (e *emitter) ifaceCallsOn(ct, method string, args []Node, recvName string, loaded bool) (out []methodCall) {
 	for _, concrete := range slices.Sorted(maps.Keys(e.typeNames)) {
 		if e.isIfaceCType(concrete) || !e.implementsIface(concrete, ct) {
 			continue
 		}
 		if cname, _, _, ok := e.promotedMethod(concrete, method); ok {
-			out = append(out, methodCall{callee: cname, recv: recvOutlives, recvAt: argLocal, args: args, recvName: recv})
+			out = append(out, methodCall{callee: cname, recv: recvOutlives, recvAt: argLocal, args: args, recvName: recvName, recvLoaded: loaded})
 		}
 	}
 	return out
@@ -17653,7 +17760,7 @@ func (e *emitter) methodCallOf(recv string, suffix []Node, fi funcInfo) (methodC
 	if method == "" {
 		return methodCall{}, false
 	}
-	ct, kind, at, copyOf := "", recvNone, argLocal, ""
+	ct, kind, at, copyOf, recvName := "", recvNone, argLocal, "", ""
 	switch i := slices.Index(fi.params, recv); {
 	case recv == fi.recvName && fi.recvCType != "":
 		ct, kind = fi.recvCType, recvOwn
@@ -17679,10 +17786,17 @@ func (e *emitter) methodCallOf(recv string, suffix []Node, fi funcInfo) (methodC
 		if ok {
 			ct, kind, at = lct, lkind, lat
 		}
+		if lkind == recvOutlives {
+			recvName = recv
+		}
 		return ok
 	}():
 		// A LOCAL holding a pointer, `w := h; w.set(v)`, `p := *hh; p.set(v)`:
-		// called on what it points at, by what it holds (localRecv).
+		// called on what it points at, by what it holds (localRecv). Where that is
+		// storage nothing here names, what the method keeps of it, the caller keeps
+		// of what the local holds (recvName): taken to outlive the caller, `p :=
+		// *hh; p.keep()` was a call on a package variable's, and a callee keeping
+		// its receiver kept the caller's local in silence.
 	case fi.locals[recv] != "":
 		// A LOCAL, whose declaration the body scan read. It dies with the frame, so
 		// a store INTO it is no leak -- but a store THROUGH the parameter into a
@@ -17714,6 +17828,41 @@ func (e *emitter) methodCallOf(recv string, suffix []Node, fi funcInfo) (methodC
 		}
 	}
 	if ct == "" || kind == recvNone {
+		return methodCall{}, false
+	}
+	m, ok := e.methodCallFrom(recv, ct, kind, at, copyOf, fields, suffix)
+	m.recvName = recvName
+	return m, ok
+}
+
+// methodCallThrough is methodCallOf for a head written through stars, `(*hh).m()`
+// and `(**hh).m()`, the stars by shape (scanHead). Where hh points at a POINTER, the
+// method is called on what that pointer points at, a pointer loaded out of
+// storage: no name here holds it, so a store into it lands where no rule can name
+// (recvOutlives), and what the method keeps of its receiver, the caller keeps of
+// hh's contents (recvLoaded). Read as hh.m(), which Go refuses, it named no method
+// of a `**T`, and the call was none to the summaries.
+func (e *emitter) methodCallThrough(recv, stars string, suffix []Node, fi funcInfo) (methodCall, bool) {
+	if stars == "" || fi.pointeeType == nil || len(suffix) < 2 {
+		return e.methodCallOf(recv, suffix, fi)
+	}
+	ct, typed := fi.pointeeType(recv)
+	if !typed || !e.isPointer(ct) {
+		return e.methodCallOf(recv, suffix, fi)
+	}
+	for e.isPointer(ct) {
+		ct = e.elemType(ct)
+	}
+	m, ok := e.methodCallFrom(recv, ct, recvOutlives, argLocal, "", suffix[:len(suffix)-2], suffix[len(suffix)-2:])
+	m.recvName, m.recvLoaded = recv, true
+	return m, ok
+}
+
+// methodCallFrom is the rest of methodCallOf, from the receiver's type and kind:
+// the fields after the name, then the method selected and called (suffix).
+func (e *emitter) methodCallFrom(recv, ct string, kind recvKind, at int, copyOf string, fields, suffix []Node) (methodCall, bool) {
+	method := e.soleIdent(suffix[0].ast)
+	if method == "" {
 		return methodCall{}, false
 	}
 	if len(fields) != 0 {
@@ -18542,6 +18691,7 @@ func (e *emitter) emitFuncDecl(ast []int32) {
 	e.sliceVars = map[string]string{}
 	e.frameBacked = map[string]bool{}
 	e.frameHolder = map[string]string{}
+	e.tmpShown = nil
 	e.tmp = 0
 	e.defers = nil
 	e.deferReplay = -1
@@ -20601,6 +20751,7 @@ func (e *emitter) emitMain(sig, body []int32) {
 	e.sliceVars = map[string]string{}
 	e.frameBacked = map[string]bool{}
 	e.frameHolder = map[string]string{}
+	e.tmpShown = nil
 	e.tmp = 0
 	e.defers = nil
 	e.deferReplay = -1
@@ -30883,8 +31034,10 @@ func (e *emitter) emitParenMethod(kids []Node) bool {
 			if !isPtr {
 				// A DEREFERENCE is addressable, its address the pointer: `(*get()).m()`
 				// is `get().m()`, `&(*p)` in the C. It was refused as no address at
-				// all, where the statement form had always been taken.
-				if x, isDeref := e.derefOperandNode(kids[1]); i == 0 && isDeref {
+				// all, where the statement form had always been taken -- and
+				// `(**hh).m()` still was, until the stars after the first were read
+				// as the pointer (derefExprOperand).
+				if x, isDeref := e.derefExprOperand(kids[1]); i == 0 && isDeref {
 					// The method is handed the pointer, and is asked what it keeps of
 					// it as for any receiver: `(*(&l)).keep()` keeps the local l.
 					r := recvRef{root: e.f.exprSource(kids[1]), storage: e.f.exprSource(kids[1])}
@@ -31051,11 +31204,14 @@ func derefCallSteps(steps []Node) bool { return containsSym(steps, CallSuffix) }
 // empty operand, so the call was dropped in silence. Nor does a selector of what a
 // pointer to an INTERFACE points at: `(*q).Area()` calls the method of the value q
 // points to, and as `q.Area()` it named the interface's own `S_Area`, which no C
-// defines.
+// defines. Nor of what a pointer to a POINTER points at: `(*hh).set(v)` for a `**T`
+// calls the method of the *T hh points to, and `hh.set(v)`, which Go refuses, was
+// read as a call into a package named hh.
 func (e *emitter) derefShorthand(name string, steps []Node) bool {
 	if len(steps) != 0 && steps[0].sym == Selector {
 		ct, _ := e.varType(name)
-		return !e.isIfaceCType(e.underlyingCType(e.elemType(ct)))
+		pt := e.elemType(ct)
+		return !e.isIfaceCType(e.underlyingCType(pt)) && !e.isPointer(pt)
 	}
 	_, isArrPtr := e.arrayPtrVar(name)
 	return isArrPtr
@@ -31067,6 +31223,11 @@ func (e *emitter) derefShorthand(name string, steps []Node) bool {
 // it binds is a slice's header or a pointer, never an array or a struct, which are
 // shorthands: the copy shares what a step reaches, so a call or a store through an
 // element reaches the program's storage.
+//
+// The binding carries what the value it copies carries (pointeeMarks), as `t :=
+// *p` does: bound unmarked, `(*hh).keep()` for an hh pointing at a local h = &t
+// kept the address of t in a package variable, the temporary being nothing the
+// receiver rules knew.
 func (e *emitter) bindDeref(name string) string {
 	ct, _ := e.varType(name)
 	pt := e.elemType(ct)
@@ -31075,34 +31236,98 @@ func (e *emitter) bindDeref(name string) string {
 	if u := e.underlyingCType(pt); e.isSliceCType(u) {
 		e.sliceVars[tmp] = sliceElemFromCName(u)
 	}
+	origin, backed := e.pointeeMarks(name)
+	if origin != "" {
+		e.frameHolder[tmp] = origin
+	}
+	if backed != "" {
+		e.frameBacked[tmp] = true
+	}
+	if e.tmpShown == nil {
+		e.tmpShown = map[string]string{}
+	}
+	e.tmpShown[tmp] = "*" + e.displayName(name)
 	return tmp
+}
+
+// pointeeMarks answers what the value `*ptr` carries of this frame, read off the
+// marks of the local the pointer ptr is marked to point at: that local's holder
+// mark, the origin of a reference it holds, and the local itself where it is a
+// slice viewing this frame's storage (backed). A pointer into the ELEMENTS of a
+// slice, `p := &s[i]`, reaches an element, which carries what the slice's
+// elements carry -- the slice's own holder mark -- and not the slice.
+func (e *emitter) pointeeMarks(ptr string) (origin, backed string) {
+	if x, isLocal := strings.CutPrefix(e.frameHolder[ptr], "local "); isLocal && e.isFrameVar(x) {
+		if e.frameBacked[x] {
+			backed = x
+		}
+		return e.frameHolder[x], backed
+	}
+	if x, isElem := strings.CutPrefix(e.frameHolder[ptr], elemOriginPrefix); isElem && e.isFrameVar(x) {
+		return e.frameHolder[x], ""
+	}
+	return "", ""
 }
 
 // derefCallResultCType types a call through a dereference that is no shorthand,
 // `(*ps)[i](x)`, as the same call on a name holding the pointee, without binding
 // one: the name is registered for the question and the entries it displaced are
 // put back.
-func (e *emitter) derefCallResultCType(name string, steps []Node) (string, bool) {
+func (e *emitter) derefCallResultCType(name string, steps []Node) (ct string, ok bool) {
+	e.asDerefName(name, func(tmp string) { ct, ok = e.callResultCType(tmp, steps) })
+	return ct, ok
+}
+
+// asDerefName runs fn with a name registered for what the pointer name points at,
+// as bindDeref binds it -- its type and the marks it carries (pointeeMarks) -- and
+// binding nothing: the entries it displaced are put back.
+func (e *emitter) asDerefName(name string, fn func(tmp string)) {
 	ct, _ := e.varType(name)
 	pt := e.elemType(ct)
 	const tmp = "_ogo_deref"
 	oldLocal, hadLocal := e.locals[tmp]
 	oldSlice, hadSlice := e.sliceVars[tmp]
+	oldHolder, hadHolder := e.frameHolder[tmp]
+	oldBacked, hadBacked := e.frameBacked[tmp]
+	oldShown, hadShown := e.tmpShown[tmp]
 	defer func() {
 		delete(e.locals, tmp)
 		delete(e.sliceVars, tmp)
+		delete(e.frameHolder, tmp)
+		delete(e.frameBacked, tmp)
+		delete(e.tmpShown, tmp)
+		if hadShown {
+			e.tmpShown[tmp] = oldShown
+		}
 		if hadLocal {
 			e.locals[tmp] = oldLocal
 		}
 		if hadSlice {
 			e.sliceVars[tmp] = oldSlice
 		}
+		if hadHolder {
+			e.frameHolder[tmp] = oldHolder
+		}
+		if hadBacked {
+			e.frameBacked[tmp] = oldBacked
+		}
 	}()
 	e.locals[tmp] = pt
 	if u := e.underlyingCType(pt); e.isSliceCType(u) {
 		e.sliceVars[tmp] = sliceElemFromCName(u)
 	}
-	return e.callResultCType(tmp, steps)
+	origin, backed := e.pointeeMarks(name)
+	if origin != "" {
+		e.frameHolder[tmp] = origin
+	}
+	if backed != "" {
+		e.frameBacked[tmp] = true
+	}
+	if e.tmpShown == nil {
+		e.tmpShown = map[string]string{}
+	}
+	e.tmpShown[tmp] = "*" + e.displayName(name)
+	fn(tmp)
 }
 
 // callOrFail refuses a call the call paths declined, where nothing else will be
@@ -31357,6 +31582,9 @@ func (e *emitter) globalC(name string) string { return e.mangle(e.curPkgPrefix, 
 // program that says `geo.Sl` describes the compiler's own symbol rather than the
 // source. Every other name is its own.
 func (e *emitter) displayName(name string) string {
+	if shown, isTmp := e.tmpShown[name]; isTmp {
+		return shown // a temporary binding what the program wrote (bindDeref)
+	}
 	if _, isGlobal := e.globals[name]; !isGlobal {
 		if _, isArr := e.globalArrays[name]; !isArr {
 			return name
@@ -47078,7 +47306,20 @@ func (e *emitter) summarisedCall(n Node) bool {
 		return ok && known
 	}
 	recv, suffix, isCall := e.factorCall(kids)
-	if !isCall || len(suffix) == 0 || suffix[len(suffix)-1].sym != CallSuffix {
+	if !isCall {
+		// `(*p).m()`, `(*hh).m()`, `(**hh).m()`: a call on a name (derefCall).
+		known := false
+		if e.derefCall(kids, func(recv string, steps []Node) { known = e.summarisedCallOf(recv, steps) }) {
+			return known
+		}
+		return false
+	}
+	return e.summarisedCallOf(recv, suffix)
+}
+
+// summarisedCallOf is summarisedCall of a call on a name, recv and the steps after it.
+func (e *emitter) summarisedCallOf(recv string, suffix []Node) bool {
+	if len(suffix) == 0 || suffix[len(suffix)-1].sym != CallSuffix {
 		return false
 	}
 	if len(suffix) != 1 && !isAccessChain(suffix[:len(suffix)-1]) {
@@ -55899,8 +56140,14 @@ func addrLitRef() frameRef {
 	}
 }
 
-func holderRef(name, origin string) frameRef {
-	return originRef("local "+name+", which holds a pointer into "+origin, origin)
+// holderRef is the reference a local marked with origin holds, named as the
+// program wrote it: a temporary binding a dereference is the dereference (tmpShown).
+func (e *emitter) holderRef(name, origin string) frameRef {
+	shown := "local " + name
+	if s, isTmp := e.tmpShown[name]; isTmp {
+		shown = s
+	}
+	return originRef(shown+", which holds a pointer into "+origin, origin)
 }
 
 // originRef is the reference a value described by what holds into the storage origin
@@ -56264,7 +56511,7 @@ func (e *emitter) frameRefAny(ast []int32) (frameRef, bool) {
 	}
 	if name, ok := e.exprIdent(ast); ok {
 		if origin := e.frameHolder[name]; origin != "" {
-			return holderRef(name, origin), true
+			return e.holderRef(name, origin), true
 		}
 	}
 	// THROUGH a local pointer that holds a local's address, `p := &lb`. The value
@@ -56274,21 +56521,10 @@ func (e *emitter) frameRefAny(ast []int32) (frameRef, bool) {
 	// pointer because what one points at is usually the caller's, and this one is
 	// known not to be.
 	if ptr, ok := e.derefOperand(ast); ok {
-		if x, isLocal := strings.CutPrefix(e.frameHolder[ptr], "local "); isLocal && e.isFrameVar(x) {
-			if origin := e.frameHolder[x]; origin != "" {
-				return readHolderRef(e.f.exprSource(Node{sym: Expression, ast: ast}), origin), true
-			}
-			if e.frameBacked[x] {
-				return sliceRef(x), true
-			}
-		}
-		// A pointer into the ELEMENTS of a slice, `p := &s[i]`: `*p` is an element,
-		// which reaches what the slice's elements reach -- the slice's own holder
-		// mark -- and not the slice.
-		if x, isElem := strings.CutPrefix(e.frameHolder[ptr], elemOriginPrefix); isElem && e.isFrameVar(x) {
-			if origin := e.frameHolder[x]; origin != "" {
-				return readHolderRef(e.f.exprSource(Node{sym: Expression, ast: ast}), origin), true
-			}
+		if origin, backed := e.pointeeMarks(ptr); origin != "" {
+			return readHolderRef(e.f.exprSource(Node{sym: Expression, ast: ast}), origin), true
+		} else if backed != "" {
+			return sliceRef(backed), true
 		}
 	}
 	// The same with steps after the dereference, `(*ps)[0]` and `(*ph).s[0]`: a
@@ -56465,6 +56701,19 @@ func (e *emitter) frameRefAny(ast []int32) (frameRef, bool) {
 			recv, suffix, isCall = e.factorAddrCall(kids)
 		}
 	}
+	if !isCall {
+		// `(*p).Self()` is `p.Self()` where the dereference is Go's shorthand, and
+		// through a pointer to a pointer, `(*hh).Self()` and `(**hh).Self()`, the same
+		// call on the pointer hh points at (derefCall). It handed back nothing either
+		// way, so `g = (*h).Self()` stored what `g = h.Self()` is refused for.
+		if kids := e.factorKids(ast); kids != nil {
+			var r frameRef
+			var ok bool
+			if e.derefCall(kids, func(recv string, steps []Node) { r, ok = e.callFrameRef(recv, steps) }) {
+				return r, ok
+			}
+		}
+	}
 	// A method called on what a call returns, `id(&lb).Self()`, which directCall
 	// declines: what it hands back of its arguments, and of its receiver what that
 	// call does. It handed back nothing.
@@ -56484,7 +56733,57 @@ func (e *emitter) frameRefAny(ast []int32) (frameRef, bool) {
 		}
 		return frameRef{}, false
 	}
-	if isCall && len(suffix) != 0 && suffix[len(suffix)-1].sym == CallSuffix {
+	if isCall {
+		return e.callFrameRef(recv, suffix)
+	}
+	return frameRef{}, false
+}
+
+// derefCall reads a call through a parenthesised dereference of a name as a call on
+// a name, handing it to fn: `(*p).m()` on p where the dereference is Go's shorthand
+// (derefShorthand), and otherwise on what the pointer points at, registered for fn
+// (asDerefName) -- `(*hh).m()` on the pointer a `**T` points at, and so is `(**hh).m()`,
+// what that pointer points at taking the steps as Go's shorthand does. It reports
+// whether kids is such a call.
+func (e *emitter) derefCall(kids []Node, fn func(recv string, steps []Node)) bool {
+	if len(kids) != 4 || kids[0].sym != 0 || e.f.ch(kids[0].tok) != LPAREN || kids[1].sym != Expression ||
+		kids[2].sym != 0 || e.f.ch(kids[2].tok) != RPAREN || kids[3].sym != FactorSuffix {
+		return false
+	}
+	steps := slices.Collect(it(kids[3].ast))
+	if !derefCallSteps(steps) {
+		return false
+	}
+	if name, isDeref := e.derefOperand(e.unparenExpr(kids[1].ast)); isDeref {
+		if e.derefShorthand(name, steps) {
+			fn(name, steps)
+			return true
+		}
+		e.asDerefName(name, func(tmp string) { fn(tmp, steps) })
+		return true
+	}
+	x, isDeref := e.derefExprOperand(kids[1])
+	if !isDeref || steps[0].sym != Selector {
+		return false
+	}
+	name, isDeref := e.derefOperand(x.ast)
+	if !isDeref {
+		return false
+	}
+	handled := false
+	e.asDerefName(name, func(tmp string) {
+		if ct, _ := e.varType(tmp); e.isPointer(ct) && e.derefShorthand(tmp, steps) {
+			fn(tmp, steps)
+			handled = true
+		}
+	})
+	return handled
+}
+
+// callFrameRef is frameRefOf of a call, recv and the steps after it: what the
+// callee hands back of its arguments and its receiver.
+func (e *emitter) callFrameRef(recv string, suffix []Node) (frameRef, bool) {
+	if len(suffix) != 0 && suffix[len(suffix)-1].sym == CallSuffix {
 		// A CONVERSION to a slice type is not a call: it renames the same header
 		// over the same storage, so whatever the operand referred to, the result
 		// refers to. `g = L(a[:])` for a local a laundered the reference past every
@@ -57031,7 +57330,7 @@ func (e *emitter) receiverFrameRef(recv string, wantPtr bool) (frameRef, bool) {
 		}
 	}
 	if origin := e.frameHolder[recv]; origin != "" {
-		if r := holderRef(recv, origin); !e.outlivesCogs(r) {
+		if r := e.holderRef(recv, origin); !e.outlivesCogs(r) {
 			return r, true
 		}
 	}

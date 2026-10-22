@@ -339,3 +339,77 @@ var ge E
 		}
 	}
 }
+
+// TestEmitCDerefPointerToPointerCalls: a method called through a dereference of a
+// pointer to a pointer, `(*hh).m()` and `(**hh).m()` for a `**T`, is called on the
+// pointer hh points at -- and through a pointer to an interface, `(*q).Keep()`, on
+// what that interface value holds. The emitter read the first as a call into a
+// package named hh and refused the second ("cannot call pointer method"); the
+// summaries named no method of a `**T`, and asked nothing of a method's result
+// written `(*h).self()`. The refused rows keep a local's address where it outlives
+// the frame; the allowed ones are the same calls on a package variable.
+func TestEmitCDerefPointerToPointerCalls(t *testing.T) {
+	const head = `type T struct {
+	n int
+	p *int
+}
+
+type Keeper interface{ Keep() }
+
+var gp *T
+
+var g T
+
+func (t *T) keep()      { gp = t }
+func (t *T) put(v *int) { t.p = v }
+func (t *T) self() *T   { return t }
+func (t *T) Keep()      { gp = t }
+func (t T) val() int    { return t.n }
+
+`
+	const local = "var t T\n\th := &t\n\t"
+	for _, test := range []struct {
+		decls, run string
+		refused    string
+	}{
+		{"", local + "hh := &h\n\t(*hh).keep()", "cannot call keep on t"},
+		{"", local + "hh := &h\n\t(**hh).keep()", "cannot call keep on local t"},
+		{"", local + "hh := &h\n\tdefer (*hh).keep()", "cannot call keep on t"},
+		{"", "h := &g\n\thh := &h\n\tx := 42\n\t(*hh).put(&x)", "receiver *hh"},
+		{"", local + "hh := &h\n\tgp = (*hh).self()", "local variable t"},
+		{"", local + "hh := &h\n\tgp = (**hh).self()", "local variable t"},
+		{"", local + "hh := &h\n\tx := (**hh).self()\n\tgp = x", "pointer into local t"},
+		{"", local + "gp = (*h).self()", "local variable t"},
+		{"", local + "var s Keeper = &t\n\tq := &s\n\t(*q).Keep()\n\tprintln(h.n)", "cannot call Keep on t"},
+		{"func f(hh **T) { (*hh).keep() }", local + "f(&h)", "pointer into local t"},
+		{"func f(hh **T) { (**hh).keep() }", local + "f(&h)", "pointer into local t"},
+		{"func f(hh **T) { defer (*hh).keep() }", local + "f(&h)", "pointer into local t"},
+		{"func f(hh **T) { go (*hh).keep() }", local + "f(&h)", "pointer into local t"},
+		{"func f(hh **T) {\n\tp := *hh\n\tp.keep()\n}", local + "f(&h)", "pointer into local t"},
+		{"func f(hh **T) { gp = (*hh).self() }", local + "f(&h)", "pointer into local t"},
+		{"func f(hh **T, v *int) { (*hh).put(v) }", "h := &g\n\tx := 42\n\tf(&h, &x)", "local variable x"},
+		{"func f(hh **T, v *int) { (**hh).put(v) }", "h := &g\n\tx := 42\n\tf(&h, &x)", "local variable x"},
+		{"func f(q *Keeper) { (*q).Keep() }", local + "var s Keeper = &t\n\tf(&s)\n\tprintln(h.n)", "pointer into local t"},
+		{"func f(q *Keeper) { defer (*q).Keep() }", local + "var s Keeper = &t\n\tf(&s)\n\tprintln(h.n)", "pointer into local t"},
+		{"", "h := &g\n\thh := &h\n\t(*hh).keep()\n\t(**hh).keep()\n\tgp = (*hh).self()\n\tgp = (**hh).self()\n\tx := (*hh).self()\n\ty := (**hh).self()\n\tgp = x\n\tgp = y", ""},
+		{"func f(hh **T) { (*hh).keep() }", "h := &g\n\tf(&h)", ""},
+		{"func f(hh **T) {\n\tp := *hh\n\tp.keep()\n}", "h := &g\n\tf(&h)", ""},
+		{"func f(hh **T) { gp = (**hh).self() }", "h := &g\n\tf(&h)", ""},
+		{"func f(hh **T, v *int) { (*hh).put(v) }", "h := &g\n\tf(&h, &g.n)", ""},
+		{"func f(hh **T) int { return (*hh).val() + (**hh).val() }", local + "println(f(&h))", ""},
+		{"func f(q *Keeper) { (*q).Keep() }", "var s Keeper = &g\n\tf(&s)", ""},
+	} {
+		src := head + test.decls + "\n\nfunc run() {\n\t" + test.run + "\n}\n\nfunc main() {\n\trun()\n\tprintln(g.n, gp != nil)\n}\n"
+		fsys := fstest.MapFS{"main.ogo": &fstest.MapFile{Data: []byte(src)}}
+		pkg, err := Build(-1, []string{"main.ogo"}, fsys)
+		if err == nil {
+			err = EmitC(pkg, io.Discard, Checked())
+		}
+		switch {
+		case test.refused != "" && (err == nil || !strings.Contains(err.Error(), test.refused)):
+			t.Errorf("%s / %s: got %v, want %q refused", test.decls, test.run, err, test.refused)
+		case test.refused == "" && err != nil:
+			t.Errorf("%s / %s: refused: %v", test.decls, test.run, err)
+		}
+	}
+}
