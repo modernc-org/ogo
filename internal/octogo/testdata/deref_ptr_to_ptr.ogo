@@ -1,0 +1,54 @@
+// COMPILE
+
+// What a pointer to a POINTER points at is a pointer: `p := *hh` for a `**Node` is a
+// *Node, however hh got its type -- written, a parameter's, inferred from `&h` --
+// and wherever it is read from, a field, an element, a field through a pointer. A
+// declaration's pointer flag says that a type is a pointer and not to how many, and
+// p was typed a Node, so walking a list through its cursor, `p = p.next`, was
+// refused as an address stored into a Node.
+
+type Node struct {
+	val  int
+	next *Node
+}
+
+type H struct{ pp **Node }
+
+var head = &Node{val: 1, next: &Node{val: 2}}
+
+func sum(hh **Node) (s int) {
+	for p := *hh; p != nil; p = p.next {
+		s += p.val
+	}
+	return s
+}
+
+func last(hh **Node) *Node {
+	p := *hh
+	for p.next != nil {
+		p = p.next
+	}
+	return p
+}
+
+func main() {
+	var hh **Node = &head
+	p := *hh
+	var q = *hh
+	p = p.next
+	q = p
+	h := head
+	h2 := &h
+	r := *h2
+	r = r.next
+	hv := H{pp: &head}
+	f := *hv.pp
+	f = f.next
+	ps := [1]**Node{&head}
+	e := *ps[0]
+	e = e.next
+	hp := &H{pp: &head}
+	g := *hp.pp
+	g = g.next
+	println(sum(hh), last(hh).val, p.val, q.val, r.val, f.val, e.val, g.val)
+}

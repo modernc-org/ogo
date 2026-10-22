@@ -1014,10 +1014,8 @@ func insert(hh **Node, n *Node) {
 }
 
 func sum(hh **Node) (s int) {
-	var p *Node = *hh
-	for p != nil {
+	for p := *hh; p != nil; p = p.next {
 		s += p.get()
-		p = p.next
 	}
 	return s
 }

@@ -189,6 +189,11 @@ shipped section tells a reader on that version that they have behaviour they do 
 
 ### Fixed
 
+- **What a pointer to a pointer points at is a pointer**: `p := *hh` for an `hh
+  **Node` declared with its type, a parameter or a variable, or read out of a field
+  or an element, was typed a `Node`, so a list walked through its cursor, `for p :=
+  *hh; p != nil; p = p.next`, was refused as "cannot use p.next (an address) as
+  Node value in assignment".
 - **A method called through a pointer to a pointer compiles**: `(*hh).set(v)` for an
   `hh **T` was "unknown package hh", `(**hh).set(v)` "cannot call pointer method set
   on T", and `defer (*hh).set(v)` and `go (*hh).set(v)` were refused too. The call is

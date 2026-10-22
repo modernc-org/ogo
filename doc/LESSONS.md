@@ -3013,8 +3013,14 @@ store rule's assumption, read by the keeping rule as a permission; what the meth
 keeps of such a receiver, the caller keeps of what the local holds (recvName). A
 diagnostic names a bound dereference as written, `*hh`, never `_ogo_t0`
 (tmpShown). TestEmitCDerefPointerToPointerCalls holds 26 rows, of which HEAD failed
-24. Still open: a method VALUE through one, `f := (*hh).get`, is "cannot infer a
-type". The rule: **a reader that drops a dereference asks whether Go's shorthand
+24. Its run case found the checker's half the same day: `p := *hh` for an hh
+declared `**Node` was typed a Node -- a declaration records THAT its type is a
+pointer, not to how many, and exprNamedType took a dereference for a value -- so
+the cursor walk `for p := *hh; p != nil; p = p.next` was refused, a pointer to a
+pointer being the first of the ways the checker misreads a category (FIFTEEN RULES
+ACROSS THE CATEGORIES); a dereference is asked what the walk types it as since
+(derefIsPointer). Still open: a method VALUE through one, `f := (*hh).get`, is
+"cannot infer a type". The rule: **a reader that drops a dereference asks whether Go's shorthand
 drops it: one star over a pointer to a struct or an array is the shorthand, and
 any other is what the call is made on**.
 **A MARK IS MADE IN EMISSION ORDER, AND A LOOP RUNS ITS BODY AGAIN** (2026-10-08,

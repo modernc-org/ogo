@@ -1,0 +1,20 @@
+// The errors of deref_ptr_to_ptr.ogo: what `*hh` gives is a pointer, and goes
+// nowhere a Node value is wanted.
+
+type Node struct {
+	val  int
+	next *Node
+}
+
+var head = &Node{val: 1}
+
+func take(n Node) int { return n.val }
+
+func main() {
+	var hh **Node = &head
+	p := *hh
+	// ERROR cannot use p \(an address\) as Node value in variable declaration
+	var x Node = p
+	// ERROR cannot use p \(an address\) as Node value in argument to take
+	println(x.val, take(p))
+}

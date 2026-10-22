@@ -21817,6 +21817,22 @@ func (f *File) parenNamedType(s *Scope, fac Node) (Token, Token, bool) {
 // assignment's type, an unknown field, an unknown method) was silently skipped for
 // it while "var p P = P{1, 2}" was checked. Neither the emitter's C nor the target's
 // compiler was fooled; the errors simply surfaced there instead, as C diagnostics.
+// derefIsPointer reports a dereference whose value is itself a pointer, `*hh` of a
+// `**T`, by the type the walk gives it (valueTypeAt): a declaration's pointer flag
+// says that it is a pointer and not to how many, so `p := *hh` was typed a T and `p =
+// p.next` refused, an address stored into a T.
+func (f *File) derefIsPointer(s *Scope, n Node) bool {
+	t, ok := f.valueTypeAt(s, n)
+	if !ok || t.tn == nil {
+		return false
+	}
+	tf := t.f
+	if tf == nil {
+		tf = f
+	}
+	return tf.isPointerType(t.s, t.tn)
+}
+
 func (f *File) exprNamedType(s *Scope, n Node) (name, qual Token, isPtr, ok bool) {
 	// A value produced from one of a named type by an operation has that type, as
 	// Go types it: `a + 1`, `-a`, `a << 2`, `(a)`. Without this a variable inferred
@@ -21876,16 +21892,22 @@ func (f *File) exprNamedType(s *Scope, n Node) (name, qual Token, isPtr, ok bool
 	if !facSet {
 		return Token{}, Token{}, false, false
 	}
-	isDeref := false
+	isDeref, derefPtr := false, false
+	defer func() {
+		if isDeref && name.IsValid() && !isPtr {
+			isPtr = derefPtr
+		}
+	}()
 	switch {
 	case len(ops) == 0:
 		// the value itself
 	case len(ops) == 1 && f.unaryOp(s, ops[0]) == AND:
 		isPtr = true // "&T{...}" / "&p"
 	case len(ops) == 1 && f.unaryOp(s, ops[0]) == MUL:
-		// "v := *p": the POINTEE's type, and the value is not a pointer. Without
-		// this the variable carried no type at all.
-		isDeref = true
+		// "v := *p": the POINTEE's type, and the value is not a pointer -- but where
+		// the pointee is one, `*hh` of a `**T` (derefIsPointer). Without this the
+		// variable carried no type at all.
+		isDeref, derefPtr = true, f.derefIsPointer(s, n)
 	case len(ops) == 1 && f.unaryOp(s, ops[0]) == ARROW:
 		// "<-ch": the channel's element type, which `v := <-ch` recorded on v
 		// (inferRecvFrom) while the value itself had none: `var b B = <-ch` for a
