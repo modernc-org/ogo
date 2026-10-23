@@ -17281,6 +17281,12 @@ func (e *emitter) summaryBinding(nodes []Node) (targets []string, into []bool, v
 					targets, into = append(targets, ptr), append(into, true)
 					continue
 				}
+				// `n, (t.p) = 1, v` by shape: a callee's locals have no types yet
+				// when its summary reads it, and lhsItemTarget asks for them.
+				if root, _ := e.parenChainShape(item[0]); root != "" {
+					targets, into = append(targets, root), append(into, true)
+					continue
+				}
 			}
 			t, _ := e.lhsItemTarget(c.ast)
 			targets, into = append(targets, t.name), append(into, len(t.chain) != 0 || t.stars != "")
@@ -46019,6 +46025,36 @@ func (e *emitter) parenChainParts(expr []int32, after []Node) (Node, string, []N
 	if len(after) == 0 || after[0].sym != Selector && after[0].sym != Index {
 		return Node{}, "", nil, false
 	}
+	id, name, steps, ok := e.parenChainOf(expr)
+	if !ok {
+		return Node{}, "", nil, false
+	}
+	return id, name, append(steps, after...), true
+}
+
+// parenChainTarget is parenChainSteps for a statement's target, the operator
+// standing where a step is asked for: `(t.p) = v` is `t.p = v`, and `(t.np).q++` is
+// `t.np.q++`. Both were "only assignment to a simple variable", which the summaries
+// and the scans read as the chain already (parenChainShape, scanHead).
+func (e *emitter) parenChainTarget(head Node, postfix []Node) (string, []Node, bool) {
+	kids := slices.Collect(it(head.ast))
+	if len(kids) != 3 || kids[0].sym != 0 || e.f.ch(kids[0].tok) != LPAREN ||
+		kids[2].sym != 0 || e.f.ch(kids[2].tok) != RPAREN || kids[1].sym != Expression ||
+		len(postfix) == 0 || postfix[len(postfix)-1].sym != PostfixOp {
+		return "", nil, false
+	}
+	_, name, steps, ok := e.parenChainOf(kids[1].ast)
+	if !ok {
+		return "", nil, false
+	}
+	return name, append(steps, postfix...), true
+}
+
+// parenChainOf is the chain on a variable an expression between parentheses is,
+// `xs[0]` or `h.v`: its identifier, the variable and the steps, a fresh slice. A
+// call or a slice step makes a value, and a qualifier at the head names another
+// package; neither is answered for.
+func (e *emitter) parenChainOf(expr []int32) (Node, string, []Node, bool) {
 	fac := e.factorKids(e.unparenExpr(expr))
 	if len(fac) != 2 || fac[0].sym != 0 || e.f.ch(fac[0].tok) != IDENT || fac[1].sym != FactorSuffix {
 		return Node{}, "", nil, false
@@ -46038,7 +46074,7 @@ func (e *emitter) parenChainParts(expr []int32, after []Node) (Node, string, []N
 			return Node{}, "", nil, false
 		}
 	}
-	return fac[0], name, append(slices.Clone(steps), after...), true
+	return fac[0], name, steps, true
 }
 
 // spliceParenChain is parenChainSteps for a Factor calling a method: `(xs[0]).Inc(1)`
@@ -46537,6 +46573,13 @@ func (e *emitter) emitAssignment(head Node, postfix []Node) {
 		// = 2`: the steps that reach the value addressed lead the ones written
 		// after it, which is the shorthand Go reads it as.
 		if name, steps, ok := e.addrChainSteps(head, postfix); ok {
+			base, postfix = name, steps
+		}
+	}
+	if base == "" {
+		// And the chain itself in parentheses, `(t.p) = v`, `(xs[0]).n++`
+		// (parenChainTarget).
+		if name, steps, ok := e.parenChainTarget(head, postfix); ok {
 			base, postfix = name, steps
 		}
 	}
@@ -48861,6 +48904,16 @@ func (e *emitter) headTarget(head Node, steps []Node) (assignTarget, bool) {
 			return assignTarget{}, false
 		}
 		return e.qualifiedTarget(assignTarget{name: name, chain: steps, tok: -1}), true
+	}
+	// `y, (t.p) = 1, v` and `case (t.np).q = <-ch:`: a parenthesised chain is the
+	// chain, its steps leading the ones after it (parenChainOf).
+	if kids := slices.Collect(it(head.ast)); len(kids) == 3 && kids[0].sym == 0 && e.f.ch(kids[0].tok) == LPAREN && kids[1].sym == Expression {
+		if _, name, path, ok := e.parenChainOf(kids[1].ast); ok {
+			if len(steps) != 0 && !isAccessChain(steps) {
+				return assignTarget{}, false
+			}
+			return assignTarget{name: name, chain: append(path, steps...), tok: -1}, true
+		}
 	}
 	name := e.soleIdent(head.ast)
 	if name != "" && e.derefStars(head.ast) == "" && containsSym(steps, CallSuffix) {

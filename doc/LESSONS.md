@@ -3073,7 +3073,13 @@ store three ways, alone, as a list's head and after another target, and a callee
 too: of 25 rows HEAD took 3 in silence and refused the 46 list forms, which agree
 with the single form since. **A shape made to compile is asked of a callee's
 summary as well as of the function it stands in: the summary reads the statement
-by its own readers, and a head none of them knows stores nothing.**
+by its own readers, and a head none of them knows stores nothing.** The same day
+the parenthesised chain itself compiled, `(t.p) = v` and `(t.np).q = 7`, and the
+same sweep caught its first version: a list's item, `k, (t.p) = 1, v`, was read
+through lhsItemTarget, which asked the variable's type, and a callee's summary
+reads its body before its locals have one -- the item was nobody's, and
+`put(&gt, &x)` was taken. The summaries read it by shape since (parenChainShape),
+as the rule written down for the fact-gathering passes says: never ask a type there.
 **A RUN OF PREFIX OPERATORS IS ONE NODE** (2026-10-23, found asking those list
 forms what a nil pointer under them does). `**pp, y = 1, 2` of a pp holding nil
 crashed the host where Go panics, and so did `**pp = 1` and `y = **pp`, in every

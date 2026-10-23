@@ -1475,6 +1475,63 @@ func main() {
 		panics: true,
 	},
 	{
+		// A store through a parenthesised chain, `(t.p) = &h`, `(t.np).q = 7`,
+		// `(t.xs[0]) += 10`, `(arr[1]).q = 11`, alone, in a list -- its targets'
+		// indexes evaluated before the values -- and in a select's receive clause:
+		// Go reads the parentheses as nothing, and each was "only assignment to a
+		// simple variable" or "unsupported target".
+		name: "a store through a parenthesised chain",
+		src: `type N struct {
+	q int
+	r [3]int
+}
+type T struct {
+	p  *int
+	n  N
+	np *N
+	xs []int
+}
+
+var g, h int
+var gn N
+var calls int
+
+func mark(k int) int {
+	calls = calls*10 + k
+	return k
+}
+
+func main() {
+	t := T{p: &g, np: &gn, xs: []int{1, 2, 3}}
+	arr := [2]N{}
+	(t.p) = &h
+	*t.p = 5
+	(t.n).q = 6
+	(t.np).q = 7
+	(t.n.r[1]) = 8
+	(t.xs[0]) += 10
+	(t.n).q++
+	((t.n)).r[2] = 9
+	(arr[1]).q = 11
+	(arr[0].r)[1] = 12
+	println(g, h, t.n.q, gn.q, t.n.r[1], t.n.r[2], t.xs[0], arr[1].q, arr[0].r[1])
+	y := 0
+	(t.n).q, y = 20, 1
+	y, (t.np).q = 2, 21
+	(t.xs[mark(1)]), (t.n.r[mark(2)]) = mark(3), mark(4)
+	println(t.n.q, gn.q, y, t.xs[1], t.n.r[2], calls)
+	ch := make(chan int, 1)
+	ch <- 30
+	select {
+	case (t.n).q = <-ch:
+	default:
+	}
+	println(t.n.q)
+}
+`,
+		want: "0 5 7 7 8 9 11 11 12\n20 21 2 3 4 1234\n30\n",
+	},
+	{
 		// A method storing its receiver through a parameter, `*p = m`, and a function
 		// storing a parameter through an assertion of an `any` one, `case **M:` among
 		// them -- with both sides of each store this frame's, which the lifetime

@@ -29,6 +29,11 @@ shipped section tells a reader on that version that they have behaviour they do 
 
 ### Fixed
 
+- **A store through a parenthesised chain compiles**: `(t.p) = v`, `(t.np).q = 7`,
+  `(t.xs[0]) += 10` and `(arr[1]).q = 11`, as a list's target, `y, (t.np).q = 2,
+  21`, and in a select's receive clause, `case (t.n).q = <-ch:`, were "only
+  assignment to a simple variable" or "unsupported target", where Go reads the
+  parentheses as nothing.
 - **A narrow value negated or complemented through a pointer is a value of its
   type**: on a P2-EDGE `-*p8` for an int8 of -128 printed 128 where Go has -128,
   and `-*pu8` and `^*pu8` of a uint8 5 printed 4294967291 and 4294967290 where Go

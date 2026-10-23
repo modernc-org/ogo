@@ -506,6 +506,9 @@ func add(r *R) []byte { return append(r.buf[:0], 1) }
 // and asking them found the single form's hole: a callee storing its parameter
 // through stars over a parenthesised chain, `*(t.pp) = v`, `**(&t.pp) = v`, was
 // summarised as storing nothing, so `put(&gt, &x)` kept a local's address in gp.
+// A parenthesised chain, `(t.p)` and `(t.np).q`, is asked the same way: it was
+// refused in every form, and a list's item of one, read for a callee's summary
+// before its locals had types, would have been nobody's.
 func TestEmitCParenHeadListStores(t *testing.T) {
 	const head = `type N struct{ q *int }
 
@@ -553,6 +556,20 @@ func get() *T { return &gt }
 		{"func put(v *int) { STORE }", local + "put(&x)", "(*get()).p", "v", "local variable x"},
 		{"func put(v *int) { STORE }", "put(&g)", "(*get()).p", "v", ""},
 		{"func put(v *int) { STORE }", local + "put(&x)", "*(get().pp)", "v", "local variable x"},
+		{"", local, "(gt.p)", "&x", "local variable x"},
+		{"", local, "(gt.p)", "&g", ""},
+		{"", local + "var t T\n\t", "(t.p)", "&x", ""},
+		{"", local, "(gt.np).q", "&x", "local variable x"},
+		{"", local, "(gt.np).q", "&g", ""},
+		{"", local + "t := T{np: &gn}\n\t", "(t.np).q", "&x", "local variable x"},
+		{"", local, "((gt.p))", "&x", "local variable x"},
+		{"func put(t *T, v *int) { STORE }", local + "put(&gt, &x)", "(t.p)", "v", "local variable x"},
+		{"func put(t *T, v *int) { STORE }", local + "var lt T\n\tput(&lt, &x)", "(t.p)", "v", ""},
+		{"func put(t *T, v *int) { STORE }", "put(&gt, &g)", "(t.p)", "v", ""},
+		{"func put(t *T, v *int) { STORE }", local + "put(&gt, &x)", "(t.np).q", "v", "local variable x"},
+		{"func put(t *T, v *int) { STORE }", "put(&gt, &g)", "(t.np).q", "v", ""},
+		{"func put(t T, v *int) { STORE }", local + "put(gt, &x)", "(t.np).q", "v", "local variable x"},
+		{"func put(t T, v *int) { STORE }", local + "put(gt, &x)", "(t.p)", "v", ""},
 	} {
 		for _, form := range []string{"%s = %s", "%s, k = %s, 1", "k, %s = 1, %s"} {
 			store := "k := 0\n\t" + fmt.Sprintf(form, test.target, test.value) + "\n\t_ = k"
