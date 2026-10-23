@@ -29105,7 +29105,10 @@ func pointerDesc(isPtr bool) string {
 // known at all. An address-of and a plainly-named variable answer; anything else
 // does not.
 func (f *File) exprPointerness(s *Scope, n Node) (isPtr, known bool) {
-	if _, _, ok := f.addressOperandRoot(s, n); ok {
+	// An address, whatever it is of: `&(*h.p)[1]` and `&(**pp).f` have no root
+	// addressOperandRoot names, and fell to the Kind below, which exprType answers
+	// an address with its pointee's -- "cannot use &(*h.p)[1] (a value) as *int16".
+	if f.isAddrOperand(s, n) {
 		return true, true
 	}
 	if id, ok := f.exprIdent(n); ok {

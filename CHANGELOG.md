@@ -47,6 +47,15 @@ shipped section tells a reader on that version that they have behaviour they do 
   it or sent, and a callee returning `(*h.p)[1:]` of its parameter. Each is
   refused as a view of a local, as `return a[1:]` is. And `(*ppa)[1:]` of a `ppa
   := &pa` whose pa points at a package array, refused as a view of pa, is taken.
+- **An address through a dereference in parentheses points where Go's does**:
+  `&(*h.p)[1]`, `&(**ppa)[0]` and `&(**pps).f` were "cannot use ... (a value) as
+  *int16" wherever the checker asked -- a typed declaration, an assignment to a
+  pointer, a return -- and where it did not, into a field, an element or a
+  declared variable, the lifetime rules asked nothing: `ghp.p = &(*pa)[1]` of a
+  local array kept a dead frame's address, `-32768` for `5` on a P2-EDGE. Each is
+  asked of what the pointer points at, refused where that is a local and taken
+  where it is not; a callee's `return &h.p[1]` and `return &(**pp)[1]` hand back
+  what its parameter points at, so `addrF(&h)` over a package array is taken.
 - **A value of a predeclared type is told from a defined type over it wherever
   the walk types it**: `var y T = -*p16` for a `type T int16`, `takeT(<-*pc16)`,
   `var y int16 = -**ppt` of a T, `var z T = arr[0]` of a `type A [3]int16`, `var
@@ -88,6 +97,12 @@ shipped section tells a reader on that version that they have behaviour they do 
 
 ### Fixed
 
+- **The address of a field through a dereference in parentheses is the field's**:
+  `f := &(*h.ps).f`, `&(**pps).f` and `&(*get()).f` took the address of a field of
+  a copy of the struct, so `*f = 40` left the struct as it was -- `4 0` where Go
+  prints `40 7`, on a P2-EDGE, in v0.58.0 too -- and `(**pps).g[:]` of an array
+  field was "cannot slice unaddressable value". An index that writes the struct,
+  `(*get()).g[bump()]`, read the copy taken before it.
 - **An array a pointer points at, read or sliced through parentheses**:
   `(*h.p)[1]`, `(*get())[2]` and `(**ppa)[0]` built to C the target's compiler
   took and read garbage from -- `-2558 -25744 1` for `2 3 1` on a P2-EDGE -- and

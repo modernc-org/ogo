@@ -3253,6 +3253,22 @@ reslice asks what it reslices. What the per-variable holder mark costs stays: `h
 &H{p: &ga}` holds the frame's literal, and a view through any of its fields is
 refused. **A view's storage is asked of what is sliced: a slice of a pointer to an
 array views what the pointer reaches, which the pointer's root is not.**
+An address is a view of one element, and ptr-addr (seventeen addresses by eight
+sinks) found the same shapes unasked: `&(*pa)[1]`, `&(*h.p)[1]`, `&(**ppa)[1]`
+stored into a field, an element or a declared variable kept a local's address --
+`ghp.p = &(*pa)[1]` printed `-32768` for `5` on a P2-EDGE -- where the checker did
+not refuse them first as "a value" (exprPointerness asked an address its root, and
+had none, so it fell to the pointee's Kind): 58 false refusals and 22 dangling
+addresses of 240 at e8db0ee. Fixing the false refusal handed the emitter a shape it
+copied: `&(*h.ps).f` of a struct took a field of a temporary copy, so `*f = 40` left
+the struct alone -- `4 0` for `40 7` on the board, in v0.58.0 behind a declaration
+the checker asked nothing of -- the struct counterpart of the array copy above. A
+dereference in parentheses is bound as its pointer since, a struct's as an array's,
+and an address through one asks what the pointer reaches (parenDerefAddrPtr), the
+callee's summary as well. **A false refusal fixed in the checker is a program the
+emitter is handed next**, and this one was a copy where Go names storage:
+**a dereference is storage, and a head the emitter binds asks whether Go could take
+its address.**
 **A MARK IS MADE IN EMISSION ORDER, AND A LOOP RUNS ITS BODY AGAIN** (2026-10-08,
 found probing unsafe.Slice's views). The holder marks are set as statements are
 emitted, so a statement read a variable's mark as the statements BEFORE it had left

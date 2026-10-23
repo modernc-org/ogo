@@ -1075,7 +1075,9 @@ section. A new finding goes there; the rule it leaves goes here too.
   operators is one node, and the operand of the first is the rest of the run.**
 - **A head the emitter binds to a temporary is asked whether C copies it: an array
   a pointer points at is reached through the pointer** (emitParenChain; A VALUE IS
-  ASKED WHERE IT GOES).
+  ASKED WHERE IT GOES); **a dereference is storage, and a head the emitter binds
+  asks whether Go could take its address** (a struct's too, `&(*h.ps).f`; A VIEW
+  THROUGH A POINTER IS OF WHAT IT POINTS AT).
 - **A rule that dispatches on a table asks for the table it compares with, not only
   the one it stores.** **A type the emitter writes after the globals names its
   members with the `ogo_` prefix**.

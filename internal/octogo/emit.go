@@ -7985,6 +7985,7 @@ type emitter struct {
 	frameHolder         map[string]string       // local -> the local whose storage it holds a reference to, a struct field having been given one (see noteFrameHolder)
 	tmpShown            map[string]string       // a temporary -> what it binds as the program wrote it, `*hh`, for a diagnostic (displayName)
 	arrayView           viewFunc                // while the summaries are collected: where an array a chain reaches is (summaryReach)
+	summaryRecv         string                  // while the summaries are collected: the method's receiver, whose handing back is a value and a depth (deepRecvReturn)
 	loopSeedsIn         loopSeeds               // the marks the pass before found each loop's body to make, given at its head (applyLoopSeeds)
 	loopSeedsOut        loopSeeds               // the marks this pass found a loop's body to make that its head did not have (noteLoopSeeds)
 	chanCells           []string                // file-scope static cell declarations for locally declared channels, discovered while emitting bodies (see emitLocalChanCell)
@@ -13518,8 +13519,9 @@ func (e *emitter) collectFuncCross(fi funcInfo) {
 	// What a slice step of an ARRAY views is the storage the chain before it
 	// reaches (summaryReach): shallow where that is the root's own or what the
 	// root points at, and typed where the walk says what the chain is.
-	prevView := e.arrayView
-	defer func() { e.arrayView = prevView }()
+	prevView, prevRecv := e.arrayView, e.summaryRecv
+	defer func() { e.arrayView, e.summaryRecv = prevView, prevRecv }()
+	e.summaryRecv = recvName
 	e.arrayView = func(chain Node) (shallow, typed bool) {
 		if !e.inUnminted {
 			e.inUnminted = true
@@ -16763,16 +16765,42 @@ func (e *emitter) summaryReach(ast []int32) (out []held) {
 	if arg, ok := e.unsafeSliceAddrOperand(ast); ok {
 		return e.summaryReach(arg)
 	}
+	// `&h.p[1]` of a field pointing at an array: the element is in what h.p points
+	// at, the root's contents, as a slice step's view is (arrayView). Read as the
+	// root's value, `addrF(&h)` handed back the address of a local h, and was refused
+	// where h.p held a package array's address. Not of the receiver, whose handing
+	// back is its value and how deep (deepRecvReturn): read as its contents, what
+	// `return &p.nodes[i]` handed back was lost.
+	if operand, ok := e.addrOperandFactor(ast); ok && operand.sym == Factor && e.arrayView != nil {
+		if base, steps, isChain := e.factorAccessChain(slices.Collect(it(operand.ast))); isChain && len(steps) > 1 &&
+			base != e.summaryRecv && steps[len(steps)-1].sym == Index && !e.endsInSliceStep(steps) {
+			if prefix, ok := e.factorWithout(operand, 1); ok {
+				if shallow, typed := e.arrayView(prefix); typed && !shallow {
+					return []held{{base, heldContents}}
+				}
+			}
+		}
+	}
 	if name, ok := e.addrOfRoot(ast); ok {
 		return []held{{name, heldAlias}}
 	}
 	// `&(*p)[1]`, `&(h.v).x`: an address through a parenthesised head, read by shape
 	// as the head written without the parentheses (parenFactorShape). Unread, a
 	// callee passing `&(*p)[1]` on to a keeper was summarised as passing nothing,
-	// where `&p[1]` was followed.
+	// where `&p[1]` was followed. Through two stars or more, `&(**pp)[1]`, it is in
+	// what *pp points at, pp's contents: read as pp's value, `addrPP(&pa)` was the
+	// address of a local pa.
 	if operand, ok := e.addrOperandFactor(ast); ok && operand.sym == Factor {
-		if root, _, ok := e.parenFactorShape(slices.Collect(it(operand.ast))); ok {
+		if root, stars, _, ok := e.parenFactorStars(slices.Collect(it(operand.ast))); ok {
+			if len(stars) > 1 {
+				return []held{{root, heldContents}}
+			}
 			return []held{{root, heldAlias}}
+		}
+		// `&(*h.p)[1]`, `&(**pp)[0]`: a pointer into what the dereferenced value
+		// reaches, its contents. Unread, `return &(*h.p)[1]` handed back nothing.
+		if x, ok := e.parenDerefOperand(slices.Collect(it(operand.ast))); ok {
+			return asElem(e.summaryReach(x))
 		}
 	}
 	if lit, isLit := e.summaryLit(ast); isLit {
@@ -16894,17 +16922,54 @@ func (e *emitter) summaryReach(ast []int32) (out []held) {
 		// shorthand through a pointer to an array, reads. Unread, `return
 		// (*h.p)[1:]` handed back nothing, and `g = view(&h)` kept a view of a local
 		// array past its frame where `return h.p[1:]` was followed.
-		if len(kids) == 4 && kids[0].sym == 0 && e.f.ch(kids[0].tok) == LPAREN && kids[1].sym == Expression && kids[3].sym == FactorSuffix {
-			if x, isDeref := e.derefExprOperand(kids[1]); isDeref {
-				ptr := x.ast
-				if x.sym == Factor {
-					ptr = encodeNode(SimpleExpr, encodeNode(Term, encodeNode(UnaryExpr, encodeNode(Factor, x.ast))))
-				}
-				return asElem(e.summaryReach(ptr))
-			}
+		if x, ok := e.parenDerefOperand(kids); ok {
+			return asElem(e.summaryReach(x))
 		}
 	}
 	return nil
+}
+
+// parenDerefOperand is X of a Factor `( *X ) FactorSuffix`, the operand of the
+// dereference in parentheses -- `h.p` of `(*h.p)[1:]`, `*pp` of `(**pp).f` -- as an
+// expression's children.
+func (e *emitter) parenDerefOperand(kids []Node) ([]int32, bool) {
+	if len(kids) != 4 || kids[0].sym != 0 || e.f.ch(kids[0].tok) != LPAREN || kids[1].sym != Expression || kids[3].sym != FactorSuffix {
+		return nil, false
+	}
+	x, isDeref := e.derefExprOperand(kids[1])
+	if !isDeref {
+		return nil, false
+	}
+	if x.sym == Factor { // `*q`: the operand of one star is a Factor, not an expression
+		return encodeNode(SimpleExpr, encodeNode(Term, encodeNode(UnaryExpr, encodeNode(Factor, x.ast)))), true
+	}
+	return x.ast, true
+}
+
+// parenDerefAddrPtr is the pointer an address through a dereference in parentheses
+// points through, `&(*h.p)[1]`, `&(**pp)[0]`, `&(*pick(&h)).f`: the dereference's
+// own value where it is a pointer the first step goes through, `(*ppa)[1]` of a
+// `**A`, and its operand otherwise. It renders nothing.
+func (e *emitter) parenDerefAddrPtr(ast []int32) ([]int32, bool) {
+	un, ok := e.unaryExprKids(ast)
+	if !ok || len(un) != 2 || un[0].sym != UnaryOp || un[1].sym != Factor {
+		return nil, false
+	}
+	if tok, ok := e.unaryOpTok(un[0].ast); !ok || e.f.ch(tok) != AND {
+		return nil, false
+	}
+	kids := slices.Collect(it(un[1].ast))
+	x, ok := e.parenDerefOperand(kids)
+	if !ok {
+		return nil, false
+	}
+	var ct string
+	var typed bool
+	e.capturePrologue(func() { ct, typed = e.inferCType(kids[1].ast) })
+	if typed && e.isPointer(ct) {
+		return kids[1].ast, true
+	}
+	return x, true
 }
 
 // viewFunc answers where an array a chain reaches is (emitter.arrayView).
@@ -30954,11 +31019,25 @@ func (e *emitter) emitParenChain(kids []Node) bool {
 		_, ok = e.emitAccessChainAt(tmp, e.plainOrSlice(ct), steps, true)
 		return ok
 	}
+	// A STRUCT a pointer points at, `(*h.ps).f`, `(**pps).f`, `(*get()).f`: the
+	// pointer is bound and the steps walk through it, as an array's are above. A
+	// dereference is no value but the storage it names: copied, `&(*h.ps).f` was the
+	// address of a field of the copy -- `*f = 40` wrote it, and gs.f still printed 4 --
+	// `(**pps).g[:]` was "cannot slice unaddressable value", and an index calling a
+	// function that writes the struct read the element of the copy taken before it.
+	if x, isDeref := e.derefExprOperand(kids[1]); isDeref && e.isStruct(ct) {
+		if pct, ok := e.inferNode(x); ok && e.isPointer(pct) {
+			ptr := e.hoist(pct, func() { e.emitExprNode(x) })
+			e.locals[ptr] = pct
+			_, ok = e.emitAccessChainAt(ptr, e.plainOrSlice(pct), steps, true)
+			return ok
+		}
+	}
 	if e.isStruct(ct) {
-		// A struct head is a VALUE -- a call's result, a dereference -- and the
-		// temporary is a copy of it, which is what Go reads a field of one out of.
-		// What a copy cannot give is a view: Go refuses to slice an unaddressable
-		// value, and so does the literal form of this (emitStructLitChain).
+		// A struct head is a VALUE -- a call's result -- and the temporary is a copy
+		// of it, which is what Go reads a field of one out of. What a copy cannot give
+		// is a view: Go refuses to slice an unaddressable value, and so does the
+		// literal form of this (emitStructLitChain).
 		for _, st := range steps {
 			if st.sym != Index {
 				continue
@@ -30969,21 +31048,10 @@ func (e *emitter) emitParenChain(kids []Node) bool {
 			}
 		}
 		if e.hasArrayField(ct) {
-			// The target's compiler copies no struct holding an array; but where
-			// the head is a dereference, `(**q).b` and `(*get()).b`, the pointer
-			// it reads through is bound and the steps walk through it, a selector
-			// dereferencing it as Go's does.
-			if x, isDeref := e.derefExprOperand(kids[1]); isDeref && steps[0].sym == Selector {
-				if pct, ok := e.inferNode(x); ok && e.isPointer(pct) {
-					ptr := e.hoist(pct, func() { e.emitExprNode(x) })
-					e.locals[ptr] = pct
-					_, ok = e.emitAccessChainAt(ptr, e.plainOrSlice(pct), steps, true)
-					return ok
-				}
-			}
-			// A call's result, `(getv()).n`: the parentheses group nothing, and the
-			// chain is read as getv().n reads it, the struct coming back through the
-			// call's out parameter.
+			// The target's compiler copies no struct holding an array; a dereference
+			// is walked through its pointer, above. A call's result, `(getv()).n`:
+			// the parentheses group nothing, and the chain is read as getv().n reads
+			// it, the struct coming back through the call's out parameter.
 			if x, ok := e.peelCallChain(kids[1], steps); ok {
 				e.emitExprNode(x)
 				return true
@@ -47538,6 +47606,18 @@ func (e *emitter) noteDeclFrameHolder(ctype, name string, initExpr []int32) {
 		e.frameHolder[name] = r.origin
 		return
 	}
+	// An address through a dereference in parentheses is decided by what its pointer
+	// reaches (parenDerefAddrPtr), which frameRefOf has asked: descended into, `q :=
+	// &(*ppa)[1]` took ppa's mark, a pointer to local pa, for what q holds.
+	if _, decided := e.parenDerefAddrPtr(initExpr); decided {
+		return
+	}
+	// So is a summarised call's result with steps after it, `&pick(&h)[1]`
+	// (callStepsRef): descended into, q took &h for what it holds, whatever pick
+	// hands back. A call nothing summarises is walked into still, below.
+	if e.summarisedStepsCall(initExpr) {
+		return
+	}
 	// A composite literal: each element is its own expression, and any one of them
 	// carrying a reference makes the whole value carry it.
 	//
@@ -47566,6 +47646,17 @@ func (e *emitter) noteDeclFrameHolder(ctype, name string, initExpr []int32) {
 			return
 		}
 	}
+}
+
+// summarisedStepsCall reports a call's result with steps after it, read or
+// addressed, `pick(&h)[1]`, `&pick(&h)[1]` (callSteps), whose callee is summarised:
+// a value callStepsRef answers for by what the summary says.
+func (e *emitter) summarisedStepsCall(ast []int32) bool {
+	if f, isAddr := e.addrOperandFactor(ast); isAddr && f.sym == Factor {
+		ast = encodeNode(SimpleExpr, encodeNode(Term, encodeNode(UnaryExpr, encodeNode(Factor, f.ast))))
+	}
+	call, _, ok := e.callSteps(ast)
+	return ok && e.summarisedCall(Node{sym: Expression, ast: call})
 }
 
 // summarisedCall reports whether n is a call -- or nothing but one, under the levels
@@ -56981,6 +57072,19 @@ func (e *emitter) frameRefAny(ast []int32) (frameRef, bool) {
 	}
 	if r, frame, isPtrView := e.arrayPtrViewRef(ast); isPtrView {
 		return r, frame
+	}
+	// An address through a dereference in parentheses, `&(*h.p)[1]`, `&(**pp)[0]`,
+	// `&(*pick(&h)).f`: a pointer into what the pointer reaches, asked of the
+	// pointer as a view through one is (arrayPtrViewRef). Read by its root, it was
+	// the address of h -- refused over a package array -- or of nothing, and
+	// `gp = &(*h.p)[1]` of an `h := H{p: &a}` kept a dead frame's address.
+	if ptr, ok := e.parenDerefAddrPtr(ast); ok {
+		pr, frame := e.frameRefAny(ptr)
+		if !frame {
+			return frameRef{}, false
+		}
+		return frameRef{origin: pr.origin, name: pr.name, backing: pr.backing,
+			what: e.f.exprSource(Node{sym: Expression, ast: ast}) + ", which points into " + pr.origin}, true
 	}
 	if name, frame := e.sliceBackingIsFrame(ast); frame {
 		return sliceRef(name), true

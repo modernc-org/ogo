@@ -1619,6 +1619,86 @@ func main() {
 		want: "8 2\n30 30 2 2 1\n",
 	},
 	{
+		// An address through a dereference in parentheses, `&(*h.p)[1]`,
+		// `&(**ppa)[0]`, `&(**pps).f`, and a callee's `return &(*h.p)[1]`: the checker
+		// took each for a value, "cannot use &(*h.p)[1] (a value) as *int16", and
+		// where it asked nothing -- a field, an element, a declaration -- the address
+		// of a field through `(*h.ps)`, `(**pps)` or `(*get())` was the address of a
+		// field of a COPY, so `*f = 40` left the struct as it was. And a slice of an
+		// array field through one, `(**ppt).g[:]`, was "cannot slice unaddressable
+		// value", and an index writing the struct, `(*getT()).g[bump()]`, read the
+		// copy taken before it.
+		name: "an address through a dereference in parentheses",
+		src: `type A [3]int16
+
+type H struct{ p *A }
+
+type S struct{ f int16 }
+
+type P struct{ p *int16 }
+
+type T struct {
+	f int16
+	g [2]int16
+}
+
+var ga = A{1, 2, 3}
+var gs = S{f: 4}
+var gp *int16
+var ghp P
+var gt = T{f: 4}
+var cnt int
+
+func pick(h *H) *A { return h.p }
+
+func addrP(h *H) *int16 { return &(*h.p)[1] }
+
+func addrPP(pp **A) *int16 { return &(**pp)[2] }
+
+func addrF(h *H) *int16 { return &h.p[0] }
+
+func getT() *T { return &gt }
+
+func bump() int {
+	gt.g[1] = 9
+	cnt++
+	return 1
+}
+
+func run() {
+	h := H{p: &ga}
+	pa := &ga
+	ppa := &pa
+	var q *int16 = &(*h.p)[1]
+	*q = 20
+	gp = &(*ppa)[2]
+	ghp.p = &(**ppa)[0]
+	ps := &gs
+	pps := &ps
+	f := &(**pps).f
+	*f = 40
+	var a A
+	a = A{7, 8, 9}
+	l := &(*(&a))[1]
+	println(*l, *addrP(&h), *addrPP(&pa), *addrF(&h), *(&(*pick(&h))[2]))
+	pt := &gt
+	ppt := &pt
+	tf := &(*getT()).f
+	*tf = 50
+	sg := (**ppt).g[:]
+	sg[0] = 60
+	println((*getT()).g[bump()], cnt)
+}
+
+func main() {
+	run()
+	*gp = 30
+	println(ga[0], ga[1], ga[2], *gp, *ghp.p, gs.f, gt.f, gt.g[0])
+}
+`,
+		want: "8 20 3 1 3\n9 1\n1 20 30 30 1 40 50 60\n",
+	},
+	{
 		// `!*pb` of a nil pb read address zero on the target, the boot area, where Go panics.
 		name: "a prefix operator over a nil pointer's dereference panics",
 		src: `func main() {

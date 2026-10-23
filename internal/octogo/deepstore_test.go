@@ -739,3 +739,65 @@ func viewPP(pp **A) []int16 { return (**pp)[1:] }
 		}
 	}
 }
+
+// TestEmitCArrayPtrAddrs is TestEmitCArrayPtrViews for an ADDRESS through a
+// dereference in parentheses, `&(*h.p)[1]`, `&(**ppa)[1]`, `&(*pick(&h))[1]`, and a
+// callee's `return &(*h.p)[1]`: a pointer into what the pointer reaches. Read by its
+// root it was the address of h, refused over a package array, or of nothing, and
+// `ghp.p = &(*pa)[1]` kept a dead frame's address, `-32768` for `5` on a P2-EDGE. A
+// callee's `return &h.p[1]` and `return &(**pp)[1]` were the address of what it was
+// handed, so `addrF(&h)` was refused over a package array.
+func TestEmitCArrayPtrAddrs(t *testing.T) {
+	const head = `type A [3]int16
+
+type H struct{ p *A }
+
+type P struct{ p *int16 }
+
+var ga = A{1, 2, 3}
+var gp *int16
+var ghp P
+var gpa [1]*int16
+
+func pick(h *H) *A { return h.p }
+
+func addrF(h *H) *int16 { return &h.p[1] }
+
+func addrP(h *H) *int16 { return &(*h.p)[1] }
+
+func addrPP(pp **A) *int16 { return &(**pp)[1] }
+`
+	for _, test := range []struct {
+		run, refused string
+	}{
+		{"pa := &a\n\tghp.p = &(*pa)[1]", "cannot store &(*pa)[1], which points into local a"},
+		{"h := H{p: &a}\n\tgp = &(*h.p)[1]", "cannot store &(*h.p)[1], which points into local a"},
+		{"h := H{p: &a}\n\tgpa[0] = &(*h.p)[0]", "which points into local a"},
+		{"pa := &a\n\tppa := &pa\n\tgp = &(**ppa)[1]", "which points into local a"},
+		{"pa := &a\n\tppa := &pa\n\tgp = &(*ppa)[1]", "which points into local a"},
+		{"h := H{p: &a}\n\tq := &(*pick(&h))[1]\n\tgp = q", "pointer into local a"},
+		{"h := H{p: &a}\n\tgp = addrP(&h)", "pointer into local a"},
+		{"pa := &a\n\tgp = addrPP(&pa)", "pointer into local a"},
+		{"h := H{p: &ga}\n\tgp = &(*h.p)[1]", ""},
+		{"pa := &ga\n\tppa := &pa\n\tgp = &(*ppa)[1]", ""},
+		{"pa := &ga\n\tppa := &pa\n\tq := &(**ppa)[1]\n\tgp = q", ""},
+		{"h := H{p: &ga}\n\tq := &pick(&h)[1]\n\tgp = q", ""},
+		{"h := H{p: &ga}\n\tgp = addrF(&h)", ""},
+		{"h := H{p: &ga}\n\tgp = addrP(&h)", ""},
+		{"pa := &ga\n\tgp = addrPP(&pa)", ""},
+		{"h := H{p: &a}\n\tq := &(*h.p)[1]\n\tprintln(*q)", ""},
+	} {
+		src := head + "\nfunc run() {\n\tvar a A\n\t_ = a\n\t" + test.run + "\n}\n\nfunc main() {\n\trun()\n\tprintln(gp != nil)\n}\n"
+		fsys := fstest.MapFS{"main.ogo": &fstest.MapFile{Data: []byte(src)}}
+		pkg, err := Build(-1, []string{"main.ogo"}, fsys)
+		if err == nil {
+			err = EmitC(pkg, io.Discard, Checked())
+		}
+		switch {
+		case test.refused != "" && (err == nil || !strings.Contains(err.Error(), test.refused)):
+			t.Errorf("%s: got %v, want %q refused", test.run, err, test.refused)
+		case test.refused == "" && err != nil:
+			t.Errorf("%s: refused: %v", test.run, err)
+		}
+	}
+}
