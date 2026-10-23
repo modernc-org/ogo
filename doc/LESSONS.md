@@ -3176,6 +3176,28 @@ had a zero token -- a type named by one was named "", which no scope declares.
 the flags say a type, and every pointer to the variable is untyped until the walk
 reads them.** **A list of names kept beside the declarations it names is asked of
 each declaration: six predeclared types had none.**
+**A HEAD IS READ BY EVERY TARGET READER** (2026-10-23, the prefix-run sweep across
+the package boundary). The store readers dispatch on a target's head -- a name, a
+star over one, a name and a field -- and each read another package's variable as
+one of its own: `*lib.PK` matched "a star over a field of a variable lib"
+(derefFieldAssignTarget), which no variable lib answers; a sole `*lib.PK = v` was
+handed on to checkDerefAssign, written for a local pointer; the compound path's
+suffixedTargetKind ended at a head that was no name; and targetTypeNode's qualified
+branch refused any type lib's package scope had not written -- the predeclared one
+a Kind says, `var K = 7`, and one lib's file wrote, `var K = Two()`. So `lib.K =
+"a"` for a `var K = 7` was taken and `lib.K = 1.5` stored 1 on a P2-EDGE, `*lib.P8
+= 300` of an int8 printed 44, and a read through two stars, `var y int8 =
+**lib.PPKc` of a lib.C, was taken: 94 of 192 stores and reads of twelve
+declarations. The parenthesised chain beside it, made a target by d8f0c6f, stored
+1 too, `(*h.p).F = 1.5`: the checker's target readers took a dereference behind
+steps for nothing, and asked it nothing -- 45 of 110 targets by forms, `(**h.pp).F`
+and the header form among them, and 21 of 66 stores into another package's
+composites. Each reader asks the qualifier since, and a chain in parentheses is
+typed by walking what is between them and then the steps after
+(parenTargetType). **A target reader that dispatches on its head asks what a
+qualifier is: `*lib.P` is a star over another package's variable, not over a field
+of one named lib.** **A shape that newly compiles is asked every type question too:
+a reader that reads it as nothing stores whatever it is handed.**
 **A MARK IS MADE IN EMISSION ORDER, AND A LOOP RUNS ITS BODY AGAIN** (2026-10-08,
 found probing unsafe.Slice's views). The holder marks are set as statements are
 emitted, so a statement read a variable's mark as the statements BEFORE it had left

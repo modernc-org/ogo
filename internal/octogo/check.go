@@ -3703,6 +3703,13 @@ func (f *File) checkHeaderAssign(s *Scope, targets, values []Node) {
 		}
 		base, steps, stars, ok := f.exprTarget(t)
 		if !ok {
+			// A chain in parentheses no base, steps and stars say, `for (**h.pp).f
+			// = v; ...`: its type.
+			if inner, after, isParen := f.parenFactorTarget(t); isParen {
+				if tn, in := f.parenTargetType(s, inner, after); tn != nil {
+					f.checkStoreInto(s, in, tn, values[i], "assignment")
+				}
+			}
 			continue
 		}
 		// An element of a string, `if s[0] = 'x'; ...`, as the statement refuses it.
@@ -3901,15 +3908,78 @@ func (f *File) parenExprTarget(kids []Node, stars int) (base Token, steps []Node
 			after = append(after, st)
 		}
 	}
+	return parenTargetSteps(inBase, inSteps, inStars, after, stars)
+}
+
+// parenFactorTarget matches a target written as an expression that is a factor in
+// parentheses and the steps after it, `(**h.pp).f`, answering what is between them
+// and the steps.
+func (f *File) parenFactorTarget(n Node) (Node, []Node, bool) {
+	ue, ok := f.soleUnaryExpr(n)
+	if !ok {
+		return Node{}, nil, false
+	}
+	kids := slices.Collect(it(ue.ast))
+	if len(kids) != 1 || kids[0].sym != Factor {
+		return Node{}, nil, false
+	}
+	fk := slices.Collect(it(kids[0].ast))
+	if len(fk) < 3 || len(fk) > 4 || fk[0].sym != 0 || f.ch(fk[0].tok) != LPAREN || fk[1].sym != Expression ||
+		fk[2].sym != 0 || f.ch(fk[2].tok) != RPAREN || len(fk) == 4 && fk[3].sym != FactorSuffix {
+		return Node{}, nil, false
+	}
+	var after []Node
+	if len(fk) == 4 {
+		after = slices.Collect(it(fk[3].ast))
+	}
+	return fk[1], after, true
+}
+
+// parenTargetSteps joins what a parenthesised target reads as, base, steps and
+// stars of the target between the parentheses, with the steps after them and the
+// stars before: `(p.q).x` is p.q.x, and one star followed by steps is Go's
+// shorthand, `(*p).x` p.x and `(*h.p).x` h.p.x. More stars behind steps are left
+// unmodelled. Read as nothing behind steps, `(*h.p).f = "a"` of an int f was asked
+// nothing.
+func parenTargetSteps(inBase Token, inSteps []Node, inStars int, after []Node, stars int) (Token, []Node, int, bool) {
 	switch {
 	case len(after) == 0:
 		return inBase, inSteps, inStars + stars, true
-	case inStars == 0:
+	case inStars == 0 || inStars == 1:
 		return inBase, append(slices.Clone(inSteps), after...), stars, true
-	case inStars == 1 && len(inSteps) == 0:
-		return inBase, after, stars, true
 	}
 	return Token{}, nil, 0, false
+}
+
+// parenHeadInner is the expression between the parentheses of an AssignHead
+// written in them, `(*h.p)` of `(*h.p).f = v`.
+func (f *File) parenHeadInner(ah Node) (Node, bool) {
+	kids := slices.Collect(it(ah.ast))
+	if len(kids) != 3 || kids[0].sym != 0 || f.ch(kids[0].tok) != LPAREN ||
+		kids[1].sym != Expression || kids[2].sym != 0 || f.ch(kids[2].tok) != RPAREN {
+		return Node{}, false
+	}
+	return kids[1], true
+}
+
+// parenTargetType is the type of a target written as a chain in parentheses,
+// inner, with the steps after them: what is between them walked as a target is
+// walked (exprTarget, targetTypeNode), and the steps after from what it reaches --
+// `(*h.p).f`, `(*lib.PS).f` and `(**h.pp).f`, whose dereferences stand between two
+// steps. Read as nothing, `(*h.p).f = "a"` of an int f was asked nothing.
+func (f *File) parenTargetType(s *Scope, inner Node, after []Node) (TypeNode, *Scope) {
+	if slices.ContainsFunc(after, func(n Node) bool { return n.sym != Selector && n.sym != Index }) {
+		return nil, nil
+	}
+	base, steps, stars, ok := f.exprTarget(inner)
+	if !ok || len(steps) == 0 && stars == 0 && len(after) == 0 {
+		return nil, nil
+	}
+	tn, in := f.targetTypeNode(s, base, steps, stars)
+	if tn == nil || len(after) == 0 {
+		return tn, in
+	}
+	return f.targetTypeNodeIn(in, tn, after, 0)
 }
 
 // checkRange checks a range header: the ranged operand is an integer, a slice or
@@ -5919,7 +5989,10 @@ func (f *File) exprType(s *Scope, n Node) (Kind, bool) {
 		// reaches, where it is a Kind. The variable's own Kind is its POINTEE's,
 		// one level, so `var s string = **pp` was asked nothing and reached C, and
 		// so was `x = 300` of an `x := -**pp8`.
-		if facSet && len(ops) > 1 && slices.ContainsFunc(ops, func(op Node) bool { o := f.unaryOp(s, op); return o == MUL || o == ARROW }) {
+		// And a single one of what no name says, `*lib.PK` of another package's
+		// pointer: `var y string = *lib.PK` was asked nothing.
+		if facSet && (len(ops) > 1 && slices.ContainsFunc(ops, func(op Node) bool { o := f.unaryOp(s, op); return o == MUL || o == ARROW }) ||
+			len(ops) == 1 && f.unaryOp(s, ops[0]) == MUL) {
 			e := Node{sym: Expression, ast: encodeNode(SimpleExpr, encodeNode(Term, encodeNode(UnaryExpr, n.ast)))}
 			if t, _, ok := f.operandTypeAt(s, e); ok && t.tn != nil && !t.f.isPointerType(t.s, t.tn) {
 				if k, ok := t.f.typeKind(t.s, t.tn); ok {
@@ -8140,45 +8213,62 @@ func (f *File) suffixedTargetKind(s *Scope, head, postfix Node) (Kind, bool) {
 		}
 		return 0, false
 	}
-	if base, field, ok := f.derefFieldAssignTarget(head, postfix); ok {
+	// `*lib.PK`, another package's pointer, is no field of a variable lib: the
+	// walk's below, which `*lib.PK += 1.5` was asked nothing for.
+	if base, field, ok := f.derefFieldAssignTarget(head, postfix); ok && !f.isImportQualifier(s, base.Src()) {
 		if tn := f.fieldTypeNode(s, base, field); tn != nil && f.isPointerType(s, tn) {
 			return f.elemTypeKind(s, tn)
 		}
 		return 0, false
 	}
-	id, ok := f.assignHeadIdent(head)
-	if !ok {
-		return 0, false
-	}
-	// Another package's variable, `lib.G += v`, is the walk's below: read as a
-	// field of a variable named lib, it had no Kind, and `lib.G += true` was taken.
-	isQual := f.isImportQualifier(s, id.Src())
-	if field, ok := f.fieldSelector(postfix); ok && !isQual {
-		return f.fieldKind(s, id, field)
-	}
-	if base, ok := f.indexAssignTarget(head, postfix); ok {
-		d, isVar := s.find(base.Src()).(*VarDeclaration)
-		if isVar && d.hasElemKind && !d.isPtr {
-			return d.elemKind, true
-		}
-		if !isVar {
-			return 0, false
-		}
-		// `p[i]` of a pointer to an array, whose element nothing recorded on p: walked
-		// from p's type below. `p[0]++` for a *[4]string went to the C compiler. And
-		// `t[i]` of another package's array type, `t[0] += true` for a `t
-		// lib.Taps`, which recorded no element either.
-	}
-	// A longer chain, `h.s.n` or `ps[1].n`, walked from the base (targetTypeNode).
-	base, stars, ok := f.targetHead(head)
-	if !ok {
-		return 0, false
-	}
+	// A starred head of another package's pointer, `*lib.PK`, is the walk's
+	// below, as every other starred head was answered above.
 	var steps []Node
 	for c := range it(postfix.ast) {
 		if c.sym == Selector || c.sym == Index || c.sym == CallSuffix {
 			steps = append(steps, c)
 		}
+	}
+	// A target in parentheses, `(*h.p).f += 1.5`, `(*px) += 1.5`.
+	if inner, ok := f.parenHeadInner(head); ok {
+		if tn, in := f.parenTargetType(s, inner, steps); tn != nil {
+			if rt := f.resultType(in, tn); rt.known {
+				return rt.kind, true
+			}
+		}
+		return 0, false
+	}
+	id, ok := f.assignHeadIdent(head)
+	if !ok {
+		if base, stars, isHead := f.targetHead(head); !isHead || stars == 0 || !f.isImportQualifier(s, base.Src()) {
+			return 0, false
+		}
+	} else {
+		// Another package's variable, `lib.G += v`, is the walk's below: read as a
+		// field of a variable named lib, it had no Kind, and `lib.G += true` was
+		// taken.
+		isQual := f.isImportQualifier(s, id.Src())
+		if field, ok := f.fieldSelector(postfix); ok && !isQual {
+			return f.fieldKind(s, id, field)
+		}
+		if base, ok := f.indexAssignTarget(head, postfix); ok {
+			d, isVar := s.find(base.Src()).(*VarDeclaration)
+			if isVar && d.hasElemKind && !d.isPtr {
+				return d.elemKind, true
+			}
+			if !isVar {
+				return 0, false
+			}
+			// `p[i]` of a pointer to an array, whose element nothing recorded on p:
+			// walked from p's type below. `p[0]++` for a *[4]string went to the C
+			// compiler. And `t[i]` of another package's array type, `t[0] += true`
+			// for a `t lib.Taps`, which recorded no element either.
+		}
+	}
+	// A longer chain, `h.s.n` or `ps[1].n`, walked from the base (targetTypeNode).
+	base, stars, ok := f.targetHead(head)
+	if !ok {
+		return 0, false
 	}
 	tn, in := f.targetTypeNode(s, base, steps, stars)
 	if tn == nil {
@@ -9589,8 +9679,12 @@ func (f *File) checkAssignment(s *Scope, head, postfix Node) {
 		// A dereference, `*p += v`, is a pointee and has no name in lhs: the block
 		// below was never entered for one, so `*p += true` went through.
 		deref := f.headIsDeref(head)
-		if !reported && !isShiftAssign(op) && len(lhs) == 1 && len(rhs) == 1 && (lhs[0].IsValid() || deref) {
-			if !deref {
+		// And a target in parentheses with no name of its own, `(*h.p).f += 1.5`,
+		// `(*px) += 1.5`: `(x)` is x's, asked above.
+		_, paren := f.parenHeadInner(head)
+		paren = paren && !lhs[0].IsValid()
+		if !reported && !isShiftAssign(op) && len(lhs) == 1 && len(rhs) == 1 && (lhs[0].IsValid() || deref || paren) {
+			if !deref && lhs[0].IsValid() {
 				f.checkAssignType(s, lhs[0], rhs[0], !lhsSuffixed[0])
 			}
 			// checkAssignType reads the BASE's declaration, which is the target only
@@ -9624,7 +9718,7 @@ func (f *File) checkAssignment(s *Scope, head, postfix Node) {
 					}
 				}
 			}
-			if lhsSuffixed[0] || deref {
+			if lhsSuffixed[0] || deref || paren {
 				if k, ok := f.suffixedTargetKind(s, head, postfix); ok {
 					// And its category, which checkAssignType asks of a bare name
 					// alone: `h.n += "x"` for an int field was left to the emitter,
@@ -15314,6 +15408,27 @@ func (f *File) typeIdentity(s *Scope, n Node) (string, bool) {
 			}
 		}
 	}
+	// Dereferences, `**lib.PPK` of a pointer to a pointer to a lib.C: the type the
+	// walk reaches, named as this file writes it. Asked of nothing past one star,
+	// `var y int8 = **lib.PPK` was taken.
+	if ue, ok := f.soleUnaryExpr(n); ok {
+		kids := slices.Collect(it(ue.ast))
+		if len(kids) > 2 && !slices.ContainsFunc(kids[:len(kids)-1], func(k Node) bool { return k.sym != UnaryOp || f.unaryOp(s, k) != MUL }) {
+			if t, ok := f.valueTypeAt(s, n); ok && t.tn != nil {
+				if id, isID := t.tn.(*TypeNodeIdent); isID && t.s == Universe && !id.Qualifier.IsValid() {
+					return "", true
+				}
+				if nm, ql, isPtr, ok := f.inferredTypeName(s, t); ok && !isPtr && nm.IsValid() {
+					nm, ql = f.canonicalType(s, nm, ql)
+					if ql.IsValid() {
+						name, ok := f.definedName(s, ql.Src()+"."+nm.Src())
+						return f.canonicalQualified(name), ok
+					}
+					return f.definedName(s, nm.Src())
+				}
+			}
+		}
+	}
 	// A Kind with no type token is NOT evidence of a predeclared type. A range
 	// value over a []Word records Word's Kind and no name, so reading the silence
 	// as "int32" reported "t += w" inside "for _, w := range ws" against a Word t
@@ -20448,8 +20563,11 @@ func (f *File) checkWalkedTarget(s *Scope, ah Node, steps []Node, value Node, so
 		}
 		return
 	}
-	if sole && stars == 1 && len(steps) <= 1 && f.resultType(in, tn).known {
-		return // checkDerefAssign's or checkDerefFieldAssign's: a pointee of a Kind
+	if sole && stars == 1 && len(steps) <= 1 && f.resultType(in, tn).known && !f.isImportQualifier(s, base.Src()) {
+		// checkDerefAssign's or checkDerefFieldAssign's: a pointee of a Kind. Not
+		// another package's pointer, `*lib.PK = v`, which neither reads, and which
+		// was asked nothing whatever lib wrote.
+		return
 	}
 	f.checkStoreInto(s, in, tn, value, "assignment")
 }
@@ -20585,7 +20703,16 @@ func (f *File) convPlaceType(s *Scope, open Token, inner Node, steps []Node) (t 
 // own, checkAssignType's through its place in lhs.
 func (f *File) checkParenTarget(s *Scope, ah Node, steps []Node, value Node) {
 	id, op, ok := f.parenTargetName(ah)
-	if !ok || id.Src() == "_" || op == 0 && len(steps) == 0 {
+	if !ok {
+		// A chain between the parentheses, `(*h.p).f = v`, `(*lib.PS).f = v`.
+		if inner, ok := f.parenHeadInner(ah); ok {
+			if tn, in := f.parenTargetType(s, inner, steps); tn != nil {
+				f.checkStoreInto(s, in, tn, value, "assignment")
+			}
+		}
+		return
+	}
+	if id.Src() == "_" || op == 0 && len(steps) == 0 {
 		return
 	}
 	switch {
@@ -20730,7 +20857,15 @@ func (f *File) targetTypeNode(s *Scope, base Token, steps []Node, stars int) (Ty
 			return nil, nil
 		}
 		vt, ok := f.varTypeAt(vd)
-		if !ok || vt.s != home {
+		if ok && vt.s == Universe {
+			// `var G = 7` there: the predeclared type its Kind says, which is
+			// the universe's here as well. Asked of nothing, `lib.G = "a"` was
+			// taken.
+			return f.targetTypeNodeIn(Universe, vt.tn, steps[1:], stars)
+		}
+		// A type lib's file wrote, `var G = F()` of F's result, is resolved there,
+		// and named as lib's package scope names it.
+		if !ok || vt.s != home && (vt.s == nil || vt.s.Kind != FileScope || vt.s.Parent != home) {
 			return nil, nil
 		}
 		rq, ok := f.requalifiedType(home, base, vt.tn)

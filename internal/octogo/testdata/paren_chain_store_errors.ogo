@@ -1,0 +1,68 @@
+// A store through a chain in parentheses is asked what the chain's target is:
+// `(*h.p).F = "a"` and `(*h.pa)[0] = "a"` -- a dereference behind steps, which a
+// target read as nothing -- and `(**h.pp).F`, `(*px) += 1.5` and the header forms
+// were taken, `(*h.p).F = 1.5` storing 1. The last lines are the valid forms.
+
+type T struct {
+	F int
+	G C
+}
+
+type C int8
+
+type H struct {
+	p  *T
+	pa *[2]int8
+	pp **T
+	n  int
+}
+
+var S T
+
+var A [2]int8
+
+var ps = &S
+
+var h = H{p: &S, pa: &A, pp: &ps}
+
+var hs = [1]H{{p: &S}}
+
+var x int
+
+var px = &x
+
+func main() {
+	// ERROR cannot use "a" of type string as type int in assignment
+	(*h.p).F = "a"
+	// ERROR constant 1.5 truncated to int
+	(*h.p).F = 1.5
+	// ERROR cannot use "a" of type string as type int8 in assignment
+	(*h.pa)[0] = "a"
+	// ERROR cannot use "a" of type string as type int in assignment
+	(*hs[0].p).F = "a"
+	// ERROR constant 300 overflows C
+	(*h.p).G = 300
+	// ERROR constant 1.5 truncated to int
+	(*h.p).F += 1.5
+	// ERROR cannot use "a" of type string as type int in assignment
+	(**h.pp).F = "a"
+	// ERROR constant 1.5 truncated to int
+	(*(h.p)).F = 1.5
+	// ERROR constant 1.5 truncated to int
+	(*px) += 1.5
+	// ERROR constant 1.5 truncated to int
+	(h).n += 1.5
+	// ERROR cannot use "a" of type string as type int in assignment
+	(*h.p).F, x = "a", 1
+	// ERROR cannot use "a" of type string as type int in assignment
+	for (*h.p).F = "a"; false; {
+	}
+	// ERROR constant 1.5 truncated to int
+	for (**h.pp).F = 1.5; false; {
+	}
+	(*h.p).F = 3
+	(**h.pp).F += 2
+	(*h.pa)[1] = 4
+	(*px)++
+	println(S.F, A[1], x)
+}

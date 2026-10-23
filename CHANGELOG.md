@@ -20,6 +20,17 @@ shipped section tells a reader on that version that they have behaviour they do 
 
 ### Behaviour changes
 
+- **A store into another package's variable is asked what it stores**: `lib.K =
+  "a"` for a `var K = 7`, a `var K = Two()` or any other written without a type
+  was taken, and on a P2-EDGE `lib.K = 1.5` stored 1 -- and so was every store
+  through a pointer to one, whatever lib wrote: `*lib.P8 = 300` of an int8 printed
+  44, and `**lib.PPK = "a"`, `*lib.PK += 1.5` and `(*lib.PS).F = "a"` went to the C
+  compiler, as did the reads `var y string = *lib.PK` and `var y int8 = **lib.PPKc`
+  of a lib.C. Each is refused as Go refuses it.
+- **A store through a chain in parentheses is asked what it stores**: `(*h.p).F =
+  1.5` built, and stored 1 on a P2-EDGE, and `(*h.pa)[0] = "a"`, `(**h.pp).F =
+  "a"`, `(*px) += 1.5`, `(h).n += 1.5` and a header's `for (*h.p).F = "a"; ...`
+  were taken.
 - **A value written as a run of prefix operators has a type, and each operator is
   asked of it**: `x := <-*pch`, `x, ok := <-*pch`, `x := -**pp8` and `x := *&t`
   declared a variable no use of which was asked anything -- on a P2-EDGE `x = 300`

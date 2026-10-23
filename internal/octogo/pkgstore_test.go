@@ -200,3 +200,75 @@ var A [3]*Node
 		}
 	}
 }
+
+// TestCheckStoreAcrossPackages holds the stores into another package's variables
+// that were asked nothing: one written without a type, `lib.K = "a"` for a `var K
+// = 7`, and every store through a pointer to one, `*lib.PK = 1.5` and `(*lib.PS).F =
+// "a"`, whatever lib wrote; and a read through two, `var y int8 = **lib.PPKc` of a
+// lib.C. The last row is each form stored and read as Go takes it.
+func TestCheckStoreAcrossPackages(t *testing.T) {
+	const lib = `type C int8
+
+type T struct {
+	F int
+	G C
+}
+
+func Two() int { return 2 }
+
+var K = 7
+
+var PK = &K
+
+var PPK = &PK
+
+var Kc = C(5)
+
+var PKc = &Kc
+
+var PPKc = &PKc
+
+var R = Two()
+
+var S T
+
+var PS = &S
+
+var A [2]int8
+
+var PA = &A
+`
+	for _, test := range []struct {
+		body, refused string
+	}{
+		{"lib.K = 1.5", "constant 1.5 truncated to int"},
+		{`lib.K = "a"`, `cannot use "a" of type string as type int`},
+		{"*lib.PK = 1.5", "constant 1.5 truncated to int"},
+		{`**lib.PPK = "a"`, `cannot use "a" of type string as type int`},
+		{"*lib.PK += 1.5", "constant 1.5 truncated to int"},
+		{`lib.R = "a"`, `cannot use "a" of type string as type int`},
+		{"var y string = *lib.PK\n\t_ = y", "cannot use *lib.PK of type int as type string"},
+		{"var y int8 = **lib.PPKc\n\t_ = y", "cannot use **lib.PPKc of type lib.C as type int8"},
+		{`(*lib.PS).F = "a"`, `cannot use "a" of type string as type int`},
+		{"(*lib.PS).G = 300", "constant 300 overflows"},
+		{`(*lib.PA)[0] = "a"`, `cannot use "a" of type string as type int8`},
+		{"(*lib.PS).F += 1.5", "constant 1.5 truncated to int"},
+		{"lib.K = 3\n\t*lib.PK = 4\n\t**lib.PPK += 5\n\t(*lib.PS).F = 6\n\t(*lib.PS).G = lib.C(7)\n\t(*lib.PA)[1] = 8\n\tvar y lib.C = **lib.PPKc\n\tprintln(lib.K, y, lib.S.F, lib.S.G, lib.A[1], lib.R)", ""},
+	} {
+		src := "import \"lib\"\n\nfunc main() {\n\t" + test.body + "\n}\n"
+		fsys := fstest.MapFS{
+			"main.ogo":    &fstest.MapFile{Data: []byte(src)},
+			"lib/lib.ogo": &fstest.MapFile{Data: []byte(lib)},
+		}
+		pkg, err := Build(-1, []string{"main.ogo"}, fsys)
+		if err == nil {
+			err = EmitC(pkg, io.Discard, Checked())
+		}
+		switch {
+		case test.refused != "" && (err == nil || !strings.Contains(err.Error(), test.refused)):
+			t.Errorf("%s: got %v, want %q refused", test.body, err, test.refused)
+		case test.refused == "" && err != nil:
+			t.Errorf("%s: refused: %v", test.body, err)
+		}
+	}
+}

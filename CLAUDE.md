@@ -966,6 +966,11 @@ section. A new finding goes there; the rule it leaves goes here too.
 - **A RUN HAS A TYPE AT EVERY OPERATOR**: **A check asked of a run's innermost
   operator is asked of each operator out: the operand of each is what the operators
   inside it yield.**
+- **A HEAD IS READ BY EVERY TARGET READER**: **A target reader that dispatches on
+  its head asks what a qualifier is: `*lib.P` is a star over another package's
+  variable, not over a field of one named lib.** **A shape that newly compiles is
+  asked every type question too: a reader that reads it as nothing stores whatever
+  it is handed.**
 - **A rule that refuses on failing to resolve is a false refusal waiting for a shape
   it does not know**; **A rule that refuses by failing to resolve is found by
   widening the resolver and running the rejects again**; **A rule refused by
