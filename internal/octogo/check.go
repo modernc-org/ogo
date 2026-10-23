@@ -5914,10 +5914,12 @@ func (f *File) exprType(s *Scope, n Node) (Kind, bool) {
 				}
 			}
 		}
-		// Two dereferences or more, `**pp` of a `pp **int`: what the walk reaches,
-		// where it is a Kind. The variable's own Kind is its POINTEE's, one level,
-		// so `var s string = **pp` was asked nothing and reached C.
-		if facSet && len(ops) > 1 && !slices.ContainsFunc(ops, func(op Node) bool { return f.unaryOp(s, op) != MUL }) {
+		// Two dereferences or more, `**pp` of a `pp **int`, and a run with a
+		// dereference or a receive in it, `-**pp8`, `^<-*pc`: what the walk
+		// reaches, where it is a Kind. The variable's own Kind is its POINTEE's,
+		// one level, so `var s string = **pp` was asked nothing and reached C, and
+		// so was `x = 300` of an `x := -**pp8`.
+		if facSet && len(ops) > 1 && slices.ContainsFunc(ops, func(op Node) bool { o := f.unaryOp(s, op); return o == MUL || o == ARROW }) {
 			e := Node{sym: Expression, ast: encodeNode(SimpleExpr, encodeNode(Term, encodeNode(UnaryExpr, n.ast)))}
 			if t, _, ok := f.operandTypeAt(s, e); ok && t.tn != nil && !t.f.isPointerType(t.s, t.tn) {
 				if k, ok := t.f.typeKind(t.s, t.tn); ok {
@@ -6325,6 +6327,27 @@ func (f *File) inferredTypeName(s *Scope, t typeAt) (name, qual Token, isPtr, ok
 	return f.namedAcross(t, Token{})
 }
 
+// nameInferred records the NAME of t, the type a variable was inferred to have, where
+// nothing else recorded one.
+func (f *File) nameInferred(s *Scope, vd *VarDeclaration, t typeAt) {
+	if vd.typeName.IsValid() || vd.isChan || vd.isFunc || vd.builderVar || vd.declType != nil {
+		return
+	}
+	if nm, ql, isPtr, ok := f.inferredTypeName(s, t); ok {
+		vd.typeName, vd.typeQual, vd.isPtr = nm, ql, isPtr
+		// A named FUNCTION type, `f := tab.fs[0]` of a [2]F: callable, with the
+		// signature its type has.
+		if !isPtr && t.f != nil {
+			if ft, isFunc := t.f.underlyingTypeAt(t).tn.(*FunctionType); isFunc && ft.Signature != nil {
+				vd.isFunc = true
+				if !ql.IsValid() {
+					vd.funcSig = ft.Signature
+				}
+			}
+		}
+	}
+}
+
 // inferVarFrom records on vd the type its initializer gives it, for a variable
 // declared without a written one: "x := e", "var x = e" and the package-level
 // "var x = e" alike. All three mean the same thing in Go and now say so through one
@@ -6346,24 +6369,7 @@ func (f *File) inferVarFrom(s *Scope, vd *VarDeclaration, init Node) {
 		// &r.routes[i]` of a field's element was typed by the walk and named by
 		// nothing, so every rule asking a name -- a field function called, a member
 		// missing, an interface wanted -- said nothing of it.
-		defer func() {
-			if vd.typeName.IsValid() || vd.isChan || vd.isFunc || vd.builderVar || vd.declType != nil {
-				return
-			}
-			if nm, ql, isPtr, ok := f.inferredTypeName(s, t); ok {
-				vd.typeName, vd.typeQual, vd.isPtr = nm, ql, isPtr
-				// A named FUNCTION type, `f := tab.fs[0]` of a [2]F: callable,
-				// with the signature its type has.
-				if !isPtr && t.f != nil {
-					if ft, isFunc := t.f.underlyingTypeAt(t).tn.(*FunctionType); isFunc && ft.Signature != nil {
-						vd.isFunc = true
-						if !ql.IsValid() {
-							vd.funcSig = ft.Signature
-						}
-					}
-				}
-			}
-		}()
+		defer f.nameInferred(s, vd, t)
 		// A slice of what has a DEFINED slice or string type, `d := h.xs[1:]`, `u :=
 		// r.name[1:4]`, is of that type: named here for the rules asking a name --
 		// methods above all -- whatever the branches below record.
@@ -9919,6 +9925,7 @@ func (f *File) checkAssignment(s *Scope, head, postfix Node) {
 	recvPtr, recvKind, recvHasKind, recvOK := false, Kind(0), false, false
 	var recvChan TypeNode
 	var recvSig *SignatureNode
+	var recvRun *typeAt
 	if len(rhs) == 1 && len(lhs) == 2 && !assertOK {
 		recvName, recvQual, recvPtr, recvKind, recvHasKind, recvOK = f.recvElemInfo(s, rhs[0])
 		if fac, isRecv := f.receiveFactor(s, rhs[0]); isRecv {
@@ -9926,6 +9933,15 @@ func (f *File) checkAssignment(s *Scope, head, postfix Node) {
 			// A function received is called, as `v := <-ch`'s is (inferRecvFrom).
 			if recvSig = f.recvFuncSig(s, fac); recvSig != nil {
 				recvOK = true
+			}
+		} else if ue, ok := f.soleUnaryExpr(rhs[0]); ok && !recvOK {
+			// A receive through a run of operators, `v, ok := <-*pch`: v has the
+			// type the walk gives the run, as `v := <-*pch` does. It had none,
+			// and every use of v was asked nothing.
+			if ops := slices.Collect(it(ue.ast)); len(ops) > 2 && ops[0].sym == UnaryOp && f.unaryOp(s, ops[0]) == ARROW {
+				if t, ok := f.valueTypeAt(s, rhs[0]); ok {
+					recvRun = &t
+				}
 			}
 		}
 	}
@@ -10016,6 +10032,18 @@ func (f *File) checkAssignment(s *Scope, head, postfix Node) {
 				}
 				if recvSig != nil {
 					vd.funcSig, vd.isFunc = recvSig, true
+				}
+			case 1:
+				vd.kind, vd.hasKind = PredeclaredBool, true
+			}
+		}
+		if recvRun != nil {
+			switch i {
+			case 0:
+				vd.inferredType = recvRun
+				f.nameInferred(s, vd, *recvRun)
+				if k, ok := f.exprType(s, rhs[0]); ok {
+					vd.kind, vd.hasKind = defaultKind(k), true
 				}
 			case 1:
 				vd.kind, vd.hasKind = PredeclaredBool, true
@@ -21179,6 +21207,20 @@ func (f *File) checkUnaryExpr(s *Scope, n Node) {
 	if f.multiValueOperandErr(s, fac) {
 		return
 	}
+	// A run, `-<-*pch`, `!*p8`: what the innermost operator yields is asked of
+	// the next, and so on out, once the innermost has been asked below and found
+	// nothing (checkUnaryRun).
+	if len(ops) > 1 {
+		switch f.unaryOp(s, ops[len(ops)-1]) {
+		case MUL, ARROW, AND:
+			n0 := len(f.errList)
+			defer func() {
+				if len(f.errList) == n0 {
+					f.checkUnaryRun(s, n, ops)
+				}
+			}()
+		}
+	}
 	// The innermost operator (nearest the factor) applies first. "*" (pointer
 	// dereference) and "<-" (channel receive) require the factor to be a pointer
 	// or channel respectively; a known value of any other type is an error, and
@@ -21278,6 +21320,84 @@ func (f *File) checkUnaryExpr(s *Scope, n Node) {
 	}
 	for i := len(ops) - 1; i >= 0 && ok; i-- {
 		k, ok = f.checkUnaryOp(s, ops[i], k)
+	}
+}
+
+// checkUnaryRun asks each operator of the run n, `{ UnaryOp } Factor`, but the
+// innermost, which checkUnaryExpr asks of the factor, of the type of what follows
+// it: the rest of the run, typed by valueTypeAt. The innermost dereference or
+// receive was asked and what it yields was asked nothing, so `-*pb` of a *bool
+// negated a C bool, `!*p8` of an *int8 was C's logical not, and `-<-*pch` of a
+// channel of structs went to the C compiler once the emitter typed it. A type the
+// walk does not know ends the check: what is unknown is not refused.
+func (f *File) checkUnaryRun(s *Scope, n Node, ops []Node) {
+	views := make([][]int32, len(ops))
+	views[0] = n.ast
+	for i := 1; i < len(ops); i++ {
+		views[i] = afterFirstChild(views[i-1])
+	}
+	for i := len(ops) - 2; i >= 0; i-- {
+		operand := Node{sym: UnaryExpr, ast: views[i+1]}
+		op, pos, sym, src := f.unaryOp(s, ops[i]), f.tok(ops[i].Pos()).Position(), f.tok(ops[i].Pos()).Src(), f.exprSource(operand)
+		t, ok := f.valueTypeAt(s, operand)
+		if !ok || t.f == nil || t.tn == nil {
+			// A variable typed by its Kind alone, `pb := &b` of a `b := true`, has
+			// no type to walk, and its Kind is what an arithmetic operator asks.
+			if k, hasKind := f.exprType(s, operand); hasKind && (op == SUB || op == ADD || op == XOR || op == NOT) {
+				if _, ok := f.checkUnaryOp(s, ops[i], k); ok {
+					continue
+				}
+			}
+			return
+		}
+		k, hasKind := t.f.typeKind(t.s, t.tn)
+		what, isKindless := t.f.nonBoolType(t.s, t.tn)
+		switch op {
+		case SUB, ADD, XOR, NOT:
+			switch {
+			case hasKind:
+				if _, ok := f.checkUnaryOp(s, ops[i], k); !ok {
+					return
+				}
+			case isKindless:
+				f.err(pos, "invalid operation: operator %s not defined on %s: it is %s", sym, src, what)
+				return
+			default:
+				return
+			}
+		case MUL:
+			if _, isPtr := t.f.underlyingTypeAt(t).tn.(*TypeNodePointer); isPtr {
+				continue
+			}
+			switch {
+			case hasKind:
+				f.err(pos, "invalid operation: cannot indirect %s (value of type %s)", src, kindName(k))
+			case isKindless:
+				f.err(pos, "invalid operation: cannot indirect %s: it is %s", src, what)
+			}
+			return
+		case ARROW:
+			ch, _ := t.f.chanTypeUnder(t.s, t.tn)
+			switch {
+			case ch != nil && ch.Dir == sendDir:
+				f.err(pos, "invalid operation: cannot receive from send-only channel %s", src)
+				return
+			case ch != nil:
+				continue
+			case hasKind || isKindless:
+				f.err(pos, "invalid operation: cannot receive from non-channel %s", src)
+			}
+			return
+		case AND:
+			// Only a dereference in a run is addressable, `&*p`: `&<-ch` and
+			// `&-*p` take the address of a value, which the C took of a temporary.
+			if inner := slices.Collect(it(views[i+1])); len(inner) == 0 || inner[0].sym != UnaryOp || f.unaryOp(s, inner[0]) != MUL {
+				f.err(pos, "invalid operation: cannot take address of %s", src)
+				return
+			}
+		default:
+			return
+		}
 	}
 }
 
@@ -23221,6 +23341,15 @@ func (f *File) operandTypeAt(s *Scope, n Node) (t typeAt, variable, ok bool) {
 			}
 			return typeAt{&TypeNodePointer{TypeNode: inner.tn}, inner.s, inner.f}, false, true
 		}
+		if len(kids) > 2 && kids[0].sym == UnaryOp && slices.ContainsFunc(kids[:len(kids)-1], func(k Node) bool {
+			return k.sym == UnaryOp && f.unaryOp(s, k) != MUL
+		}) {
+			// A run of operators other than dereferences, `*<-cp`, `<-*pch`,
+			// `-**pp`: valueTypeAt's walk, an operator at a time, storage where
+			// the outermost is a dereference.
+			t, ok := f.operandType(s, n, true)
+			return t, f.unaryOp(s, kids[0]) == MUL, ok
+		}
 		if len(kids) != 1 {
 			t, ok := f.lenOperandType(s, n)
 			return t, true, ok // `*p`: storage
@@ -23607,7 +23736,9 @@ func (f *File) checkUnaryOp(s *Scope, opNode Node, k Kind) (Kind, bool) {
 		}
 		return PredeclaredBool, true
 	case ADD, SUB, XOR, TILDE:
-		if kindCategory(k) != catNumeric {
+		// `^` complements the bits of an integer: of a float, `^f`, it was C's `~`
+		// on a double, which no C compiler takes.
+		if kindCategory(k) != catNumeric || op == XOR && !isIntegerKind(k) {
 			f.err(pos, "invalid operation: operator %s not defined on %s", sym, kindName(k))
 			return 0, false
 		}
@@ -32846,29 +32977,17 @@ func (f *File) valueTypeAt(s *Scope, n Node) (typeAt, bool) {
 func (f *File) operandType(s *Scope, n Node, calls bool) (typeAt, bool) {
 	for n.sym == Expression || n.sym == SimpleExpr || n.sym == Term || n.sym == UnaryExpr {
 		kids := slices.Collect(it(n.ast))
-		if n.sym == UnaryExpr && len(kids) > 2 && calls && kids[len(kids)-1].sym == Factor && !slices.ContainsFunc(kids[:len(kids)-1], func(k Node) bool {
-			return k.sym != UnaryOp || f.unaryOp(s, k) != ARROW
-		}) {
-			// Receives of receives, `<-<-cc` of a channel of reply channels: each
-			// arrow one channel's element.
-			t, ok := f.recvElemType(s, kids[len(kids)-1])
-			for range len(kids) - 2 {
-				if !ok || t.f == nil {
-					return typeAt{}, false
-				}
-				ch, _ := t.f.chanTypeUnder(t.s, t.tn)
-				if ch == nil {
-					return typeAt{}, false
-				}
-				t = typeAt{ch.TypeNode, t.s, t.f}
-			}
-			if !ok || t.f == nil {
-				return typeAt{}, false
-			}
-			return t, true
+		if n.sym == UnaryExpr && len(kids) > 2 && kids[0].sym == UnaryOp {
+			// A run of prefix operators is one node, `{ UnaryOp } Factor`, and the
+			// operand of the first is the rest of the run: `<-*pch`, `-**pp`,
+			// `*<-cp`, each operator's type read off the type of what follows it.
+			// Read as an operator and a Factor, a mixed run had no type, and `x :=
+			// <-*pch` declared a variable every use of which was asked nothing.
+			kids = []Node{kids[0], {sym: UnaryExpr, ast: afterFirstChild(n.ast)}}
 		}
-		if n.sym == UnaryExpr && len(kids) == 2 && kids[0].sym == UnaryOp && kids[1].sym == Factor {
-			if op := f.unaryOp(s, kids[0]); op == AND && calls {
+		if n.sym == UnaryExpr && len(kids) == 2 && kids[0].sym == UnaryOp && (kids[1].sym == Factor || kids[1].sym == UnaryExpr) {
+			switch op := f.unaryOp(s, kids[0]); {
+			case op == AND && calls:
 				// `&arr[1]`, `&h.v`: a pointer to what the operand is. Untyped, a
 				// variable declared from one had no type to read its address's off,
 				// `pp := &p` for a `p := &arr[1]`, which the flags then took for a
@@ -32879,8 +32998,7 @@ func (f *File) operandType(s *Scope, n Node, calls bool) (typeAt, bool) {
 					return typeAt{}, false
 				}
 				return typeAt{&TypeNodePointer{TypeNode: t.tn}, t.s, t.f}, true
-			}
-			if op := f.unaryOp(s, kids[0]); op == ARROW && calls {
+			case op == ARROW && calls && kids[1].sym == Factor:
 				// A receive, `(<-reqs[0]).ID`, `(<-h.in)[1]`: the channel's element,
 				// as recvElemType reads it. Untyped, every step after it was asked
 				// nothing, and `var x int = (<-in).S` of a string field built.
@@ -32891,37 +33009,33 @@ func (f *File) operandType(s *Scope, n Node, calls bool) (typeAt, bool) {
 					return typeAt{}, false
 				}
 				return t, true
-			}
-			if f.unaryOp(s, kids[0]) != MUL {
-				return typeAt{}, false
-			}
-			t, ok := f.operandType(s, kids[1], calls)
-			if !ok {
-				return typeAt{}, false
-			}
-			p, ok := f.underlyingTypeAt(t).tn.(*TypeNodePointer)
-			if !ok {
-				return typeAt{}, false
-			}
-			return typeAt{p.TypeNode, t.s, t.f}, true
-		}
-		// `**pp`, a dereference at a time: what a pointer to a pointer reaches had no
-		// type, so `var s string = **pp` of a `pp **int` was asked nothing.
-		if n.sym == UnaryExpr && len(kids) > 2 && kids[len(kids)-1].sym == Factor && !slices.ContainsFunc(kids[:len(kids)-1], func(k Node) bool {
-			return k.sym != UnaryOp || f.unaryOp(s, k) != MUL
-		}) {
-			t, ok := f.operandType(s, kids[len(kids)-1], calls)
-			for range len(kids) - 1 {
+			case op == ARROW && calls:
+				// `<-*pch`, `<-<-cc`: the element of the channel the rest is.
+				t, ok := f.operandType(s, kids[1], calls)
 				if !ok || t.f == nil {
+					return typeAt{}, false
+				}
+				ch, _ := t.f.chanTypeUnder(t.s, t.tn)
+				if ch == nil {
+					return typeAt{}, false
+				}
+				return typeAt{ch.TypeNode, t.s, t.f}, true
+			case op == MUL:
+				t, ok := f.operandType(s, kids[1], calls)
+				if !ok {
 					return typeAt{}, false
 				}
 				p, isPtr := f.underlyingTypeAt(t).tn.(*TypeNodePointer)
 				if !isPtr {
 					return typeAt{}, false
 				}
-				t = typeAt{p.TypeNode, t.s, t.f}
+				return typeAt{p.TypeNode, t.s, t.f}, true
+			case (op == SUB || op == ADD || op == XOR || op == NOT) && calls:
+				// `-**pp8` is an int8 and `!*pb` of the operand's bool type: an
+				// arithmetic operator keeps its operand's type.
+				return f.operandType(s, kids[1], calls)
 			}
-			return t, ok
+			return typeAt{}, false
 		}
 		if len(kids) != 1 {
 			return typeAt{}, false
@@ -33197,7 +33311,8 @@ func (f *File) stepsTypeIn(at *Scope, t typeAt, steps []Node) (typeAt, bool) {
 // varTypeAt is a variable's type as lenOperandType reads it: the one written, or the
 // one its declaration gives it (inferredType) -- a literal's, a conversion's, another
 // variable's, a call's result, a range's element -- or, for a variable no inference
-// recorded one on, the one its initializer writes. It never chases an initializer
+// recorded one on, the one its initializer writes, and failing that the one its
+// Kind, its type's name or its signature says. It never chases an initializer
 // itself: asked later than the declaration, a scope may hold a name declared after
 // it, and two variables could answer each other.
 func (f *File) varTypeAt(d *VarDeclaration) (typeAt, bool) {
@@ -33230,9 +33345,44 @@ func (f *File) varTypeAt(d *VarDeclaration) (typeAt, bool) {
 		}
 		// And a slice MADE, `s := make([]item, 2)`: `s[1].v = 2.5` was asked
 		// nothing where the literal's `s[1].v` was.
-		return wf.madeSliceType(d.declScope, d.init)
+		if t, ok := wf.madeSliceType(d.declScope, d.init); ok {
+			return t, true
+		}
+	}
+	// A variable typed by its Kind alone, `f := 2.5`, `n := 7`, `s := "x"`: the
+	// predeclared type the Kind names. Untyped, a pointer to it was a pointer to
+	// nothing, and so was a pointer to that: `**ppf = 1.5` of a `pf := &f` of an
+	// `f := 7` stored a float into an int, and `var s string = **ppf` was asked
+	// nothing.
+	if d.hasKind && !d.isPtr && !d.typeName.IsValid() && !d.isChan && !d.isFunc && !d.builderVar && !d.hasElemKind {
+		return wf.predeclaredTypeAt(d.kind)
+	}
+	// The same of one typed by a NAME alone, `f := int8(7)`, `c := C(3)`: the type
+	// the name declares where the variable is.
+	if d.typeName.IsValid() && !d.typeQual.IsValid() && !d.isPtr && !d.isChan && !d.isFunc && !d.builderVar && !d.hasElemKind && d.declScope != nil {
+		switch d.declScope.find(d.typeName.Src()).(type) {
+		case *PredeclaredType, *TypeDeclaration:
+			return typeAt{&TypeNodeIdent{Name: d.typeName}, d.declScope, wf}, true
+		}
+	}
+	// And one holding a function, `fn := two`: its signature, as this file writes
+	// it, so `!*pfn` of a `pfn := &fn` is asked what a function is.
+	if d.isFunc && d.funcSig != nil && !d.isPtr && !d.typeName.IsValid() && d.declScope != nil {
+		return typeAt{&FunctionType{Signature: d.funcSig}, d.declScope, wf}, true
 	}
 	return typeAt{}, false
+}
+
+// predeclaredTypeAt is the predeclared type of kind k, as the universe declares it.
+func (f *File) predeclaredTypeAt(k Kind) (typeAt, bool) {
+	if isUntypedKind(k) {
+		return typeAt{}, false
+	}
+	pd, ok := Universe.Declarations[kindName(k)].(*PredeclaredType)
+	if !ok {
+		return typeAt{}, false
+	}
+	return typeAt{&TypeNodeIdent{Name: pd.Token()}, Universe, f}, true
 }
 
 // addrOfName matches `&x` for a bare name x, through any single-operand levels

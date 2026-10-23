@@ -52513,6 +52513,16 @@ func (e *emitter) inferNode(n Node) (string, bool) {
 						return "", false
 					}
 					ct = e.elemType(ct)
+				case ARROW:
+					// `^<-*pc`, `*<-*pcp`: the element of the channel the rest is.
+					// A receive inside a run was no type, and the declaration
+					// "cannot infer a type" of a value Go types.
+					if !e.isChanCType(ct) {
+						return "", false
+					}
+					if ct = e.chanElemOfCType(ct); ct == "" {
+						return "", false
+					}
 				case ADD, SUB, XOR:
 					// the operand's type
 				case NOT:

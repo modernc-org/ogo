@@ -1,0 +1,64 @@
+// The errors of a value written as a run of prefix operators, each operator asked
+// of the type of what follows it, and of a pointer to a pointer to a variable no
+// type was written for -- each asked nothing before, and taken.
+
+type T struct{ f int }
+
+func two() int { return 2 }
+
+func main() {
+	ch := make(chan T, 1)
+	pch := &ch
+	var i8 int8 = 7
+	p8 := &i8
+	pp8 := &p8
+	b := true
+	pb := &b
+	f := 2.5
+	pf := &f
+	var chs chan<- T = ch
+	pchs := &chs
+	fn := two
+	pfn := &fn
+	k := 7
+	pk := &k
+	ppk := &pk
+	x := <-*pch
+	// ERROR type T has no method nope
+	x.nope()
+	n := -**pp8
+	// ERROR constant 300 overflows int8
+	n = 300
+	v, ok := <-*pch
+	// ERROR cannot use v as string value in variable declaration: it is a struct
+	var s string = v
+	// ERROR operator - not defined on <-\*pch: it is a struct
+	_ = -<-*pch
+	// ERROR operator - not defined on bool
+	_ = -*pb
+	// ERROR operator ! not defined on int8
+	_ = !*p8
+	// ERROR operator \^ not defined on float64
+	_ = ^f
+	// ERROR operator \^ not defined on float64
+	_ = ^*pf
+	// ERROR cannot receive from non-channel <-\*pch
+	_ = <-<-*pch
+	// ERROR cannot receive from send-only channel \*pchs
+	_ = <-*pchs
+	// ERROR cannot indirect -\*p8 \(value of type int8\)
+	_ = *-*p8
+	// ERROR cannot take address of <-\*pch
+	_ = &<-*pch
+	// ERROR operator - not defined on &\*p8: it is a pointer
+	_ = -&*p8
+	// ERROR operator ! not defined on \*pfn: it is a function
+	_ = !*pfn
+	// ERROR cannot indirect <-\*pch: it is a struct
+	_ = *<-*pch
+	// ERROR constant 1.5 truncated to int
+	**ppk = 1.5
+	// ERROR cannot use \*\*ppk of type int as type string in variable declaration
+	var t string = **ppk
+	_, _, _, _ = s, t, ok, n
+}

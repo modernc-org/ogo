@@ -16,12 +16,19 @@ const preclaredNames = `// any is an alias for interface{} and is equivalent to 
 any
 // bool is the set of boolean values, true and false.
 bool
+// Builder is the compiler-known string builder over a buffer the caller hands it.
+Builder
 // byte is an alias for uint8 and is equivalent to uint8 in all ways. It is
 // used, by convention, to distinguish byte values from 8-bit unsigned integer
 // values.
 byte
 // false is an untyped boolean false value
 false
+// float32 is the set of all IEEE 754 32-bit floating-point numbers.
+float32
+// float64 is the set of all IEEE 754 64-bit floating-point numbers in Go; on the
+// target it is 32 bits wide today (DIFFERENCES.md).
+float64
 // int is the set of all signed integers of the target's word size, 32 bits.
 // It is a type of its own, distinct from int32, as it is in Go.
 int
@@ -32,6 +39,9 @@ int16
 int32
 // int8 is the set of all signed 8-bit integers. Range: -128 through 127.
 int8
+// int64 is the set of all signed 64-bit integers. Range: -9223372036854775808
+// through 9223372036854775807.
+int64
 // error is the conventional interface for representing an error condition, with
 // the nil value representing no error. It is interface{ Error() string } under a
 // name the universe holds, so a value of it is a pointer beside a table like every
@@ -45,6 +55,9 @@ nil
 rune
 // true is an untyped boolean true value
 true
+// string is the set of all strings of 8-bit bytes, not necessarily representing
+// UTF-8-encoded text.
+string
 // uint is the set of all unsigned integers of the target's word size, 32 bits.
 // It is a type of its own, distinct from uint32, as it is in Go.
 uint
@@ -53,6 +66,9 @@ uint16
 // uint32 is the set of all unsigned 32-bit integers. Range: 0 through
 // 4294967295.
 uint32
+// uint64 is the set of all unsigned 64-bit integers. Range: 0 through
+// 18446744073709551615.
+uint64
 // uint8 is the set of all unsigned 8-bit integers. Range: 0 through 255.
 uint8
 // uintptr is an integer type that is large enough to hold the bit pattern of

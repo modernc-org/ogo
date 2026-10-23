@@ -958,6 +958,14 @@ section. A new finding goes there; the rule it leaves goes here too.
   PARENTHESES IS ANY TYPE). **A type the flags cannot say is recorded whole, as a
   declaration would write it: an unnamed variable is one every rule asking a name
   skips** (`pp := &w.head`, dom59).
+- **WHAT THE FLAGS SAY IS A TYPE**: **A walk that types by what was written answers
+  for a variable that has only flags: the flags say a type, and every pointer to the
+  variable is untyped until the walk reads them.** **A list of names kept beside the
+  declarations it names is asked of each declaration: six predeclared types had
+  none.**
+- **A RUN HAS A TYPE AT EVERY OPERATOR**: **A check asked of a run's innermost
+  operator is asked of each operator out: the operand of each is what the operators
+  inside it yield.**
 - **A rule that refuses on failing to resolve is a false refusal waiting for a shape
   it does not know**; **A rule that refuses by failing to resolve is found by
   widening the resolver and running the rejects again**; **A rule refused by

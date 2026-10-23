@@ -20,6 +20,21 @@ shipped section tells a reader on that version that they have behaviour they do 
 
 ### Behaviour changes
 
+- **A value written as a run of prefix operators has a type, and each operator is
+  asked of it**: `x := <-*pch`, `x, ok := <-*pch`, `x := -**pp8` and `x := *&t`
+  declared a variable no use of which was asked anything -- on a P2-EDGE `x = 300`
+  of an int8 built and printed 44, and `x = "a"` into a struct and `x.nope()` went
+  to the C compiler -- and an operator over what a dereference or a receive yields
+  was asked nothing either: `-*pb` negated a bool, `!*p8` was C's logical not of an
+  int8, and `-<-*pch`, `&<-*pch` and `<-*pchs` of a send-only channel reached C.
+  Each is refused as Go refuses it.
+- **`^` takes an integer**: `^f` of a float32 or a float64 variable built, and on
+  a P2-EDGE `println(^f, ^g)` of 2.5 and 1 printed `-3 -2`, where Go refuses it.
+- **A pointer to a pointer to a variable written without a type is typed**: `f :=
+  7; pf := &f; ppf := &pf; **ppf = 1.5` built, and printed 1 on a P2-EDGE where Go
+  refuses the store, and `var s string = **ppf` went to the C compiler -- for `f :=
+  2.5`, `s := "x"`, `f := int8(7)`, `c := C(5)` and `fn := two` alike. Each such
+  use is asked what it is asked of a variable with its type written.
 - **A method storing its receiver's address into the receiver keeps the local it
   is called on as holding a pointer into itself**: for an `Init` threading a free
   list through a pool, `w.free = &w.pool[0]`, a local `var w W; w.Init()` was
@@ -39,6 +54,8 @@ shipped section tells a reader on that version that they have behaviour they do 
 
 ### Fixed
 
+- **A receive inside a run of prefix operators is typed**: `x := ^<-*pc8` and `x :=
+  *<-*pcp` were "cannot infer a type for the declaration of x".
 - **The address of a field or an element that is a pointer is a pointer to a
   pointer**: `pp := &w.head`, `pp := &slots[i]` and `var pp = &l.head` -- the
   cursor of the list idiom `for pp := &l.head; *pp != nil; pp = &(*pp).next` --

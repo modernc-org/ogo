@@ -3138,6 +3138,44 @@ store two or three stars deep; no fuzzer seed did, the generator writing no star
 after another operator. **A rule written for an operator and its operand asks what
 the grammar's repetition hands it: a run of prefix operators is one node, and the
 operand of the first is the rest of the run.**
+**A RUN HAS A TYPE AT EVERY OPERATOR** (2026-10-23, the open item the paragraph
+above left: the checker's readers of a run). The emitter re-entered a run as its
+first operator over the rest; the checker's three readers of a value's type did
+not. valueTypeAt (operandType) knew an operator over a Factor, a run of stars and a
+run of arrows, and nothing mixed, so `x := <-*pch`, `x, ok := <-*pch`, `x :=
+-**pp8` and `x := *&t` declared a variable no rule asked anything of: 46 of 144
+declaration-and-use pairs differed from Go -- `x = 300` into an int8 built and
+printed 44 on a P2-EDGE, `x = "a"` into a struct and `x.nope()` reached C -- and
+the emitter, typing no receive inside a run, refused `x := ^<-*pc8` as "cannot
+infer a type". The Kind reader (exprType) and operandTypeAt had the same shapes.
+And checkUnaryExpr asked the innermost operator of the factor and the next one of
+nothing but a pointer, so what a dereference or a receive yields was asked nothing:
+`-*pb` negated a bool, `!*p8` was C's logical not, and `-<-*pch`, `&<-*pch` and
+`<-*pchs` of a send-only channel went to C -- 32 of 74 runs across the
+categories, where `^f` of a float turned up beside them: checkUnaryOp let `^` take
+any number, and on a P2-EDGE `println(^f, ^g)` of 2.5 and 1 printed `-3 -2`. Each
+reader reduces a run to its first operator over the rest since, an arithmetic
+operator keeping its operand's type, and checkUnaryRun asks each operator out from
+the innermost of the type of what follows it. **A check asked of a run's innermost
+operator is asked of each operator out: the operand of each is what the operators
+inside it yield.**
+**WHAT THE FLAGS SAY IS A TYPE** (2026-10-23, the prefix-run sweep's `!**ppf`). A
+variable declared with no type written and none a walk could give it, `f := 7`, `f
+:= 2.5`, `s := "x"`, `f := int8(7)`, `c := C(5)`, `fn := two`, carried flags -- a
+Kind, a type's name, a signature -- and varTypeAt answered nothing for it, so a
+pointer to it was a pointer to nothing and a pointer to that untyped: `f := 7; pf :=
+&f; ppf := &pf; **ppf = 1.5` built and printed 1 on a P2-EDGE, and `var s string =
+**ppf` reached C -- 93 of 221 pairs of seventeen declaration forms by thirteen uses.
+varTypeAt answers what the flags say since: the predeclared type of the Kind, the
+type the name declares where the variable is, the signature. The first version of
+it answered nothing either: the universe's predeclared types are declared under
+tokens scanned from a list of their names (preclaredNames) that had not been kept in
+step with the declarations, and float32, float64, int64, uint64, string and Builder
+had a zero token -- a type named by one was named "", which no scope declares.
+**A walk that types by what was written answers for a variable that has only flags:
+the flags say a type, and every pointer to the variable is untyped until the walk
+reads them.** **A list of names kept beside the declarations it names is asked of
+each declaration: six predeclared types had none.**
 **A MARK IS MADE IN EMISSION ORDER, AND A LOOP RUNS ITS BODY AGAIN** (2026-10-08,
 found probing unsafe.Slice's views). The holder marks are set as statements are
 emitted, so a statement read a variable's mark as the statements BEFORE it had left

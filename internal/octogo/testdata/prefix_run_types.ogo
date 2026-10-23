@@ -1,0 +1,63 @@
+// COMPILE
+
+// A value written as a run of prefix operators, `<-*pch`, `-**pp8`, `*<-*pcp`,
+// has the type Go gives it, each operator's read off the type of what follows
+// it, and a variable declared from one has that type for every rule asking one.
+
+type T struct{ f int }
+
+func (t *T) m() int { return t.f }
+
+type C int8
+
+func (c C) twice() C { return c * 2 }
+
+func main() {
+	ch := make(chan T, 2)
+	ch <- T{f: 4}
+	ch <- T{f: 5}
+	pch := &ch
+	x := <-*pch
+	var tx T = x
+	println(tx.f)
+	v, ok := <-*pch
+	var tv T = v
+	var b bool = ok
+	println(tv.f, b)
+	cp := make(chan *T, 2)
+	cp <- &T{f: 6}
+	cp <- &T{f: 7}
+	pcp := &cp
+	y := <-*pcp
+	println(y.m())
+	z := *<-*pcp
+	z.f = 8
+	println(z.m())
+	var i8 int8 = 7
+	p8 := &i8
+	pp8 := &p8
+	n := -**pp8
+	var m int8 = n
+	println(m, -*p8, ^*p8, - -**pp8)
+	c8 := make(chan C, 2)
+	c8 <- 3
+	c8 <- 4
+	pc8 := &c8
+	w := ^<-*pc8
+	var cw C = w.twice()
+	println(cw, -<-*pc8)
+	t := T{f: 9}
+	pt := &t
+	ppt := &pt
+	q := *&t
+	r := **ppt
+	println(q.f, r.f, (&*pt).m(), *&*p8)
+	chch := make(chan chan T, 1)
+	chch <- ch
+	pchch := &chch
+	ch <- T{f: 10}
+	u := <-<-*pchch
+	println(u.f)
+	pb := &ok
+	println(!*pb, !!*pb)
+}

@@ -1421,6 +1421,100 @@ func main() {
 		want: "-7 -8 7 7 7 7 -7 7 -7\n-128 127 251 250 4294905615 4294905616 9000000000 8999999999 18446744073709551615 18446744073709551614\nfalse true -2.5 2.5 -6 8 49 49\ntrue 7 true 7\n41 false\n-128 9000000001 -128 251\n16 16\n40\n31 2\n-62 11\nyes\ncase\n0\n1\ntrue true\n",
 	},
 	{
+		// A value written as a run of prefix operators, `<-*pch`, `-**pp8`,
+		// `*<-*pcp`, and a variable declared from one: the checker read a run as one
+		// operator over a Factor, so a mixed run had no type and every use of the
+		// variable was asked nothing, and the emitter typed no receive inside a run
+		// ("cannot infer a type for the declaration of z"). And a pointer to a
+		// pointer to a variable typed by its Kind or name alone, `k := 7`, `cv :=
+		// C(5)`, `fn := two`, which had no type to walk: `**ppk = 1.5` was taken.
+		name: "values of a run of prefix operators, and pointers to what no type was written for",
+		src: `type T struct{ f int }
+
+func (t *T) m() int { return t.f }
+
+type C int8
+
+func (c C) twice() C { return c * 2 }
+
+func two() int { return 2 }
+
+func main() {
+	ch := make(chan T, 2)
+	ch <- T{f: 4}
+	ch <- T{f: 5}
+	pch := &ch
+	x := <-*pch
+	var tx T = x
+	println(tx.f)
+	v, ok := <-*pch
+	var tv T = v
+	var b bool = ok
+	println(tv.f, b)
+	cp := make(chan *T, 2)
+	cp <- &T{f: 6}
+	cp <- &T{f: 7}
+	pcp := &cp
+	y := <-*pcp
+	println(y.m())
+	z := *<-*pcp
+	z.f = 8
+	println(z.m())
+	var i8 int8 = 7
+	p8 := &i8
+	pp8 := &p8
+	n := -**pp8
+	var m int8 = n
+	println(m, -*p8, ^*p8, - -**pp8)
+	c8 := make(chan C, 2)
+	c8 <- 3
+	c8 <- 4
+	pc8 := &c8
+	w := ^<-*pc8
+	var cw C = w.twice()
+	println(cw, -<-*pc8)
+	t := T{f: 9}
+	pt := &t
+	ppt := &pt
+	q := *&t
+	r := **ppt
+	println(q.f, r.f, (&*pt).m(), *&*p8)
+	chch := make(chan chan T, 1)
+	chch <- ch
+	pchch := &chch
+	ch <- T{f: 10}
+	u := <-<-*pchch
+	println(u.f)
+	pb := &ok
+	println(!*pb, !!*pb)
+	// A variable typed by its Kind alone, and pointers to it.
+	k := 7
+	pk := &k
+	ppk := &pk
+	**ppk = 9
+	println(k, **ppk+1, -**ppk)
+	s := "ab"
+	ps := &s
+	pps := &ps
+	**pps = "abc"
+	println(s, len(**pps))
+	g := 2.5
+	pg := &g
+	ppg := &pg
+	**ppg *= 2
+	println(g, -**ppg)
+	cv := C(5)
+	pcv := &cv
+	ppcv := &pcv
+	println((**ppcv).twice(), -**ppcv)
+	fn := two
+	pfn := &fn
+	println((*pfn)())
+}
+`,
+		want: "4\n5 true\n6\n8\n-7 -7 -8 7\n-8 -4\n9 9 9 7\n10\nfalse true\n9 10 -9\nabc 3\n5 -5\n10 -5\n2\n",
+	},
+	{
 		// `!*pb` of a nil pb read address zero on the target, the boot area, where Go panics.
 		name: "a prefix operator over a nil pointer's dereference panics",
 		src: `func main() {
