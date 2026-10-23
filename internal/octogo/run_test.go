@@ -1864,6 +1864,71 @@ func main() {
 		want: "true true true true\nfull at 17\n16 16 true false 15 15\ntick10 2 2 4\n881628331 24 2 2 5 12\n70 true 20653831 86\nfalse 6 1 1\n1 true 15423511 618\n7432 7 4 20118331\n6 6\n",
 	},
 	{
+		// A pool whose Init threads its free list through its own slab: what the
+		// pool hands out points into it. A package-level pool hands it anywhere; a
+		// local's is read and dropped in its frame. Handed out of the frame, the
+		// local's is refused (TestEmitCRecvSelfStores).
+		name: "a pool threading its free list through its own storage",
+		src: `type T struct {
+	next *T
+	v    int
+}
+
+type Pool struct {
+	free *T
+	slab [4]T
+	n    int
+}
+
+// Init threads the free list through the pool's own slab.
+func (p *Pool) Init() {
+	p.free = nil
+	for i := len(p.slab) - 1; i >= 0; i-- {
+		p.slab[i] = T{v: i * 10}
+		p.slab[i].next = p.free
+		p.free = &p.slab[i]
+	}
+	p.n = len(p.slab)
+}
+
+func (p *Pool) Get() *T {
+	t := p.free
+	if t != nil {
+		p.free = t.next
+		p.n--
+	}
+	return t
+}
+
+func (p *Pool) Put(t *T) {
+	t.next = p.free
+	p.free = t
+	p.n++
+}
+
+var pool Pool
+
+// local's pool and what it hands out die together: a pointer into p read and
+// dropped here keeps nothing past the frame.
+func local() int {
+	var p Pool
+	p.Init()
+	a, b := p.Get(), p.Get()
+	return (a.v+b.v)*10 + p.n
+}
+
+func main() {
+	pool.Init()
+	x := pool.Get()
+	y := pool.Get()
+	pool.Put(x)
+	z := pool.Get()
+	println(x.v, y.v, z == x, pool.n, local())
+}
+`,
+		want: "0 10 true 2 102\n",
+	},
+	{
 		// A method storing its receiver through a parameter, `*p = m`, and a function
 		// storing a parameter through an assertion of an `any` one, `case **M:` among
 		// them -- with both sides of each store this frame's, which the lifetime

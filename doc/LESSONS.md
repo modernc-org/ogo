@@ -3094,6 +3094,26 @@ through lhsItemTarget, which asked the variable's type, and a callee's summary
 reads its body before its locals have one -- the item was nobody's, and
 `put(&gt, &x)` was taken. The summaries read it by shape since (parenChainShape),
 as the rule written down for the fact-gathering passes says: never ask a type there.
+**WHAT GOES NOWHERE MAY STAY BEHIND** (2026-10-23, found by dom59's lifetime
+variants, written by hand, the mutators having gone with the scratchpads). `func
+get() *Timer { var w Wheel; w.Init(); return w.alloc() }` built and handed out a
+pointer into the dead frame's pool: Init threads the free list through the wheel's
+own array, `w.free = &w.pool[i]`, and the summaries took a receiver stored into
+its own storage for nothing -- "into its own receiver, the receiver goes nowhere",
+the edge propagation said, which is true of outliving and says nothing of what the
+storage now holds. Written in the function, `w.free = &w.pool[0]` marked w; through
+a function, `initW(&w)`, the parameter stored through itself marked it too; as a
+method, `w.Init()`, nothing did, and `return w.free`, `g = w.first()` and a copy
+`lw := w; g = lw.free` handed the address out, in every release. The receiver has
+the parameter's slot since (recvSelf): recorded where a store through the receiver
+carries its value, carried to a method calling it on its own receiver, to a
+function calling it on its parameter and to a method handing its receiver to one,
+and read at the call as the same store's mark. Go moves w to the heap in each, and
+in the four of the probes the mark newly refuses -- a local pool used through
+methods storing its contents through a pointer, and `defer w.Init()` before a
+return -- Go moves it too. **A store a summary
+drops for keeping nothing is asked what it leaves behind: the receiver into itself
+goes nowhere, and its storage holds a pointer into itself.**
 **A RUN OF PREFIX OPERATORS IS ONE NODE** (2026-10-23, found asking those list
 forms what a nil pointer under them does). `**pp, y = 1, 2` of a pp holding nil
 crashed the host where Go panics, and so did `**pp = 1` and `y = **pp`, in every

@@ -20,6 +20,16 @@ shipped section tells a reader on that version that they have behaviour they do 
 
 ### Behaviour changes
 
+- **A method storing its receiver's address into the receiver keeps the local it
+  is called on as holding a pointer into itself**: for an `Init` threading a free
+  list through a pool, `w.free = &w.pool[0]`, a local `var w W; w.Init()` was
+  taken to hold nothing of its own, so `g = w.free`, `return w.alloc()` and `g =
+  w.first()` handed a dead frame's address out, in silence -- also through a
+  method calling Init on its receiver, a function calling it on its parameter and
+  a method handing its receiver to one. Each is refused now, as the same store
+  written in the function was. Go moves such a local to the heap; a pointer read
+  out of it and dropped in the frame is taken, and a package-level pool, the
+  usual place for one, is as before.
 - **A callee storing its parameter through stars over a parenthesised chain keeps
   it where it outlives every frame**: `func put(t *T, v *int) { *(t.pp) = v }`,
   and `**(&t.pp) = v` and `*((t.pp)) = v` the same, was summarised as storing

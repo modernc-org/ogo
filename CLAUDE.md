@@ -1022,7 +1022,10 @@ section. A new finding goes there; the rule it leaves goes here too.
   BACK IS ASKED ONCE**: **A new way to call is a row there, and a new kind of
   parameter -- packed, received, bound -- is asked what it HOLDS.** **A walk over
   what names hold carries its path**.
-- **A slot a summary has for a parameter, it has for the receiver**. **A new way to
+- **A slot a summary has for a parameter, it has for the receiver**. **WHAT GOES
+  NOWHERE MAY STAY BEHIND**: **A store a summary drops for keeping nothing is asked
+  what it leaves behind: the receiver into itself goes nowhere, and its storage holds
+  a pointer into itself.** **A new way to
   reach a receiver is a row in methodCallOf, under a plain call, `defer` and `go`.**
   **A summary is asked what the value it records can hold**. **A new place a pointer
   can stand -- an operand, a header, a clause's name -- is a row in

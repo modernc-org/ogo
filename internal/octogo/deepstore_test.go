@@ -592,3 +592,81 @@ func get() *T { return &gt }
 		}
 	}
 }
+
+// TestEmitCRecvSelfStores: a method storing its receiver's address into the
+// receiver's own storage, an Init threading a free list through a pool, leaves what
+// it is called on holding a pointer into itself. The same store written in the
+// function marked the local, and so did a function storing through its parameter,
+// `initW(&w)`; the method's summary had no slot for it -- "into its own receiver,
+// the receiver goes nowhere" -- so `w.Init(); g = w.free` kept a dead frame's
+// address in a package variable, in silence, directly, through a method calling it
+// on its receiver, a function calling it on its parameter and a method handing its
+// receiver to one. Go moves w to the heap in each.
+func TestEmitCRecvSelfStores(t *testing.T) {
+	const head = `type T struct {
+	next *T
+	v    int
+}
+
+type W struct {
+	free *T
+	pool [2]T
+}
+
+func (w *W) Init() {
+	w.pool[0].v = 7
+	w.free = &w.pool[0]
+}
+
+func (w *W) alloc() *T {
+	t := w.free
+	w.free = t.next
+	return t
+}
+
+func (w *W) first() *T { return w.free }
+
+func (w *W) reset() { w.Init() }
+
+func initW(w *W) { w.Init() }
+
+func (w *W) viaFunc() { initW(w) }
+
+func setup(w *W) { w.free = &w.pool[1] }
+
+func (w *W) viaSetup() { setup(w) }
+
+var g *T
+var gw W
+`
+	for _, test := range []struct {
+		run, refused string
+	}{
+		{"var w W\n\tw.Init()\n\tg = w.free", "pointer into local w"},
+		{"var w W\n\tw.Init()\n\tg = w.alloc()", "pointer into local w"},
+		{"var w W\n\tw.Init()\n\tg = w.first()", "pointer into local w"},
+		{"var w W\n\tpw := &w\n\tpw.Init()\n\tg = w.free", "pointer into local w"},
+		{"var w W\n\tw.reset()\n\tg = w.free", "pointer into local w"},
+		{"var w W\n\tinitW(&w)\n\tg = w.free", "pointer into local w"},
+		{"var w W\n\tw.viaFunc()\n\tg = w.free", "pointer into local w"},
+		{"var w W\n\tw.viaSetup()\n\tg = w.free", "pointer into local w"},
+		{"var w W\n\tw.Init()\n\tlw := w\n\tg = lw.free", "pointer into local w"},
+		{"var w W\n\tw.Init()\n\tx := w.alloc()\n\tprintln(x.v)", ""},
+		{"var w W\n\tw.Init()\n\tprintln(w.first().v)", ""},
+		{"gw.Init()\n\tg = gw.free", ""},
+		{"gw.reset()\n\tg = gw.alloc()", ""},
+	} {
+		src := head + "\nfunc run() {\n\t" + test.run + "\n}\n\nfunc main() {\n\trun()\n\tprintln(g != nil)\n}\n"
+		fsys := fstest.MapFS{"main.ogo": &fstest.MapFile{Data: []byte(src)}}
+		pkg, err := Build(-1, []string{"main.ogo"}, fsys)
+		if err == nil {
+			err = EmitC(pkg, io.Discard, Checked())
+		}
+		switch {
+		case test.refused != "" && (err == nil || !strings.Contains(err.Error(), test.refused)):
+			t.Errorf("%s: got %v, want %q refused", test.run, err, test.refused)
+		case test.refused == "" && err != nil:
+			t.Errorf("%s: refused: %v", test.run, err)
+		}
+	}
+}
