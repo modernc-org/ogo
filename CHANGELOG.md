@@ -29,6 +29,14 @@ shipped section tells a reader on that version that they have behaviour they do 
 
 ### Fixed
 
+- **The address of a field or an element that is a pointer is a pointer to a
+  pointer**: `pp := &w.head`, `pp := &slots[i]` and `var pp = &l.head` -- the
+  cursor of the list idiom `for pp := &l.head; *pp != nil; pp = &(*pp).next` --
+  typed `*pp` as the struct two steps away, and `*pp != nil` was refused as "nil
+  is no value of struct". And `pp := &hd` for a pointer variable hd gave its
+  method calls nothing to be asked of: `(*pp).m(1)` of a method nobody declared
+  and `(*pp).get("a")` of an int parameter went to the C compiler. Found by a
+  domain program of a timer wheel and an LRU cache over static node pools.
 - **A store through a parenthesised chain compiles**: `(t.p) = v`, `(t.np).q = 7`,
   `(t.xs[0]) += 10` and `(arr[1]).q = 11`, as a list's target, `y, (t.np).q = 2,
   21`, and in a select's receive clause, `case (t.n).q = <-ch:`, were "only

@@ -1,0 +1,68 @@
+// COMPILE
+
+// The address of a field or an element that is itself a pointer is a pointer to a
+// pointer: `pp := &w.head`, `pp := &slots[i]`, the cursor the indirect-pointer
+// list idiom walks with, `for *pp != nil { pp = &(*pp).next }`. The declaration
+// recorded it as one pointer, so `*pp` was the struct two steps away and `*pp !=
+// nil` was refused for comparing a struct with nil.
+
+type Node struct {
+	val  int
+	next *Node
+}
+
+type List struct {
+	head  *Node
+	slots [4]*Node
+	ps    []*Node
+}
+
+var slots [4]*Node
+var grid [2][3]*Node
+var l List
+
+func remove(l *List, v int) bool {
+	for pp := &l.head; *pp != nil; pp = &(*pp).next {
+		if (*pp).val == v {
+			*pp = (*pp).next
+			return true
+		}
+	}
+	return false
+}
+
+func insertSorted(l *List, n *Node) {
+	pp := &l.slots[n.val%4]
+	for *pp != nil && (*pp).val < n.val {
+		pp = &(*pp).next
+	}
+	n.next = *pp
+	*pp = n
+}
+
+func count(pp **Node) (k int) {
+	for p := *pp; p != nil; p = p.next {
+		k++
+	}
+	return k
+}
+
+var gpp = &l.head
+
+func main() {
+	a, b, c := Node{val: 1}, Node{val: 2}, Node{val: 3}
+	l.head = &a
+	a.next, b.next = &b, &c
+	println(remove(&l, 2), remove(&l, 9), count(&l.head))
+	insertSorted(&l, &Node{val: 5})
+	pq := &slots[1]
+	var pr = &grid[1][2]
+	k, ps := 0, &l.slots[1]
+	if pt := &l.head; *pt != nil {
+		k = (*pt).val
+	}
+	*pq = *ps
+	*pr = l.head
+	t := *pq
+	println(k, t != nil, (*pr).val, count(pq), *gpp == l.head)
+}

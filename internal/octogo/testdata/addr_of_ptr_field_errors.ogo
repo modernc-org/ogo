@@ -1,0 +1,32 @@
+// The errors of addr_of_ptr_field.ogo: what `*pp` of a `pp := &w.head` gives is a
+// pointer, which takes no int and goes nowhere a Node value is wanted, and its
+// methods are a Node's -- of `pp := &hd` for a pointer variable hd too, whose
+// `(*pp).m(1)` was asked nothing.
+
+type Node struct {
+	val  int
+	next *Node
+}
+
+func (n *Node) get(k int) int { return n.val + k }
+
+type List struct{ head *Node }
+
+var l List
+var hd *Node
+
+func take(n Node) int { return n.val }
+
+func main() {
+	pp := &l.head
+	// ERROR cannot use 5 \(untyped int constant\) as \*Node value in assignment
+	*pp = 5
+	p := *pp
+	// ERROR cannot use p \(an address\) as Node value in argument to take
+	println(take(p))
+	pq := &hd
+	// ERROR type Node has no method m
+	(*pq).m(1)
+	// ERROR cannot use "a" of type string as type int in argument to get
+	println((*pp).get("a"))
+}

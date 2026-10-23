@@ -1532,6 +1532,338 @@ func main() {
 		want: "0 5 7 7 8 9 11 11 12\n20 21 2 3 4 1234\n30\n",
 	},
 	{
+		// dom59, a domain program: a timer wheel and an LRU cache over static node
+		// pools, lists edited through a pointer to the link that points at a node,
+		// `for pp := &l.head; *pp != nil; pp = &(*pp).next`. Its cursor, `pp :=
+		// &w.slots[i]`, was typed a pointer to the struct, and `*pp != nil` refused.
+		name: "dom59: a timer wheel and an LRU cache over static node pools",
+		src: `// dom59: a timer wheel and an LRU cache over static node pools, the way firmware
+// without a heap keeps them: free lists threaded through arrays, lists edited
+// through pointers to the link that points at a node, and a hash table of fixed
+// size with open addressing.
+
+const (
+	wheelSlots = 8
+	poolSize   = 16
+	cacheSize  = 6
+	tableSize  = 13
+)
+
+type Timer struct {
+	next     *Timer
+	deadline uint32
+	id       int
+	period   uint32
+	fired    int
+}
+
+type Wheel struct {
+	slots [wheelSlots]*Timer
+	now   uint32
+	free  *Timer
+	pool  [poolSize]Timer
+	live  int
+}
+
+func (w *Wheel) Init() {
+	w.free = nil
+	for i := len(w.pool) - 1; i >= 0; i-- {
+		w.pool[i] = Timer{}
+		w.pool[i].next = w.free
+		w.free = &w.pool[i]
+	}
+	for i := range w.slots {
+		w.slots[i] = nil
+	}
+	w.now = 0
+	w.live = 0
+}
+
+func (w *Wheel) alloc() *Timer {
+	t := w.free
+	if t == nil {
+		return nil
+	}
+	w.free = t.next
+	*t = Timer{}
+	w.live++
+	return t
+}
+
+func (w *Wheel) release(t *Timer) {
+	t.next = w.free
+	w.free = t
+	w.live--
+}
+
+// insert keeps each slot sorted by deadline, editing the link that points at
+// the place the timer goes.
+func (w *Wheel) insert(t *Timer) {
+	pp := &w.slots[t.deadline%wheelSlots]
+	for *pp != nil && (*pp).deadline <= t.deadline {
+		pp = &(*pp).next
+	}
+	t.next = *pp
+	*pp = t
+}
+
+func (w *Wheel) Start(id int, after, period uint32) bool {
+	t := w.alloc()
+	if t == nil {
+		return false
+	}
+	t.id = id
+	t.deadline = w.now + after
+	t.period = period
+	w.insert(t)
+	return true
+}
+
+// Cancel unlinks the timer with this id wherever it is.
+func (w *Wheel) Cancel(id int) bool {
+	for i := range w.slots {
+		for pp := &w.slots[i]; *pp != nil; pp = &(*pp).next {
+			if (*pp).id == id {
+				t := *pp
+				*pp = t.next
+				w.release(t)
+				return true
+			}
+		}
+	}
+	return false
+}
+
+// Tick advances the clock by one and fires what is due, re-arming periodic
+// timers; it returns a checksum of the ids fired, in order.
+func (w *Wheel) Tick() int {
+	w.now++
+	sum := 0
+	head := &w.slots[w.now%wheelSlots]
+	for *head != nil && (*head).deadline <= w.now {
+		t := *head
+		*head = t.next
+		t.fired++
+		sum = sum*31 + t.id
+		if t.period != 0 {
+			t.deadline += t.period
+			w.insert(t)
+		} else {
+			w.release(t)
+		}
+	}
+	return sum
+}
+
+func (w *Wheel) Pending() int {
+	n := 0
+	for i := range w.slots {
+		for t := w.slots[i]; t != nil; t = t.next {
+			n++
+		}
+	}
+	return n
+}
+
+// The cache: a doubly linked list of entries, most recently used first, and a
+// table of indexes into the entries, keyed by a hash of the key.
+
+type Entry struct {
+	prev, next *Entry
+	key        uint32
+	val        int
+	used       bool
+}
+
+type Cache struct {
+	ents    [cacheSize]Entry
+	head    *Entry
+	tail    *Entry
+	table   [tableSize]int8 // -1 empty, else an index into ents
+	n       int
+	hits    int
+	misses  int
+	evicted uint32
+}
+
+func hash(k uint32) int {
+	k ^= k >> 16
+	k *= 0x45d9f3b
+	k ^= k >> 16
+	return int(k % tableSize)
+}
+
+func (c *Cache) Init() {
+	for i := range c.table {
+		c.table[i] = -1
+	}
+	c.head, c.tail = nil, nil
+	c.n = 0
+}
+
+func (c *Cache) unlink(e *Entry) {
+	if e.prev != nil {
+		e.prev.next = e.next
+	} else {
+		c.head = e.next
+	}
+	if e.next != nil {
+		e.next.prev = e.prev
+	} else {
+		c.tail = e.prev
+	}
+	e.prev, e.next = nil, nil
+}
+
+func (c *Cache) pushFront(e *Entry) {
+	e.next = c.head
+	e.prev = nil
+	if c.head != nil {
+		c.head.prev = e
+	}
+	c.head = e
+	if c.tail == nil {
+		c.tail = e
+	}
+}
+
+// slot finds the table slot holding key, or the empty one where it would go.
+func (c *Cache) slot(key uint32) (int, bool) {
+	h := hash(key)
+	for i := 0; i < tableSize; i++ {
+		s := (h + i) % tableSize
+		ix := c.table[s]
+		if ix < 0 {
+			return s, false
+		}
+		if c.ents[ix].key == key {
+			return s, true
+		}
+	}
+	return -1, false
+}
+
+// remove deletes the table slot s by backward-shift, keeping every probe chain
+// unbroken.
+func (c *Cache) remove(s int) {
+	c.table[s] = -1
+	for i := (s + 1) % tableSize; c.table[i] >= 0; i = (i + 1) % tableSize {
+		ix := c.table[i]
+		c.table[i] = -1
+		t, _ := c.slot(c.ents[ix].key)
+		c.table[t] = ix
+	}
+}
+
+func (c *Cache) Get(key uint32) (int, bool) {
+	s, ok := c.slot(key)
+	if !ok {
+		c.misses++
+		return 0, false
+	}
+	e := &c.ents[c.table[s]]
+	c.unlink(e)
+	c.pushFront(e)
+	c.hits++
+	return e.val, true
+}
+
+func (c *Cache) Put(key uint32, val int) {
+	if s, ok := c.slot(key); ok {
+		e := &c.ents[c.table[s]]
+		e.val = val
+		c.unlink(e)
+		c.pushFront(e)
+		return
+	}
+	var e *Entry
+	if c.n < cacheSize {
+		e = &c.ents[c.n]
+		c.n++
+	} else {
+		e = c.tail
+		c.unlink(e)
+		s, _ := c.slot(e.key)
+		c.remove(s)
+		c.evicted = c.evicted*7 + e.key
+	}
+	ix := int8(0)
+	for i := range c.ents {
+		if &c.ents[i] == e {
+			ix = int8(i)
+		}
+	}
+	*e = Entry{key: key, val: val, used: true}
+	s, _ := c.slot(key)
+	c.table[s] = ix
+	c.pushFront(e)
+}
+
+func (c *Cache) Order() uint32 {
+	var sum uint32
+	for e := c.head; e != nil; e = e.next {
+		sum = sum*13 + e.key
+	}
+	return sum
+}
+
+var wheel Wheel
+var cache Cache
+
+func main() {
+	wheel.Init()
+	println(wheel.Start(1, 3, 0), wheel.Start(2, 3, 5), wheel.Start(3, 11, 0), wheel.Start(4, 1, 2))
+	for i := 5; i < 20; i++ {
+		if !wheel.Start(i, uint32(i%7+1), 0) {
+			println("full at", i)
+			break
+		}
+	}
+	live := wheel.live
+	println(live, wheel.Pending(), wheel.Cancel(3), wheel.Cancel(99), wheel.Pending(), wheel.live)
+	sum := 0
+	for i := 0; i < 24; i++ {
+		s := wheel.Tick()
+		sum = sum*7 + s
+		if i == 10 {
+			println("tick10", wheel.Pending(), wheel.live, s)
+		}
+	}
+	println(sum, wheel.now, wheel.live, wheel.Pending(), wheel.pool[1].fired, wheel.pool[3].fired)
+
+	cache.Init()
+	for k := uint32(1); k <= 9; k++ {
+		cache.Put(k*k, int(k)*10)
+	}
+	v, ok := cache.Get(49)
+	println(v, ok, cache.Order(), cache.evicted)
+	_, ok = cache.Get(4)
+	println(ok, cache.n, cache.hits, cache.misses)
+	cache.Put(36, 1)
+	cache.Put(100, 2)
+	cache.Put(64, 3)
+	v2, ok2 := cache.Get(36)
+	println(v2, ok2, cache.Order(), cache.evicted)
+	keys := [...]uint32{81, 100, 7, 36, 64, 49, 121, 144}
+	got := 0
+	for _, k := range keys {
+		if v, ok := cache.Get(k); ok {
+			got = got*3 + v
+		}
+	}
+	println(got, cache.hits, cache.misses, cache.Order())
+	used := 0
+	for i := range cache.table {
+		if cache.table[i] >= 0 {
+			used++
+		}
+	}
+	println(used, cache.n)
+}
+`,
+		want: "true true true true\nfull at 17\n16 16 true false 15 15\ntick10 2 2 4\n881628331 24 2 2 5 12\n70 true 20653831 86\nfalse 6 1 1\n1 true 15423511 618\n7432 7 4 20118331\n6 6\n",
+	},
+	{
 		// A method storing its receiver through a parameter, `*p = m`, and a function
 		// storing a parameter through an assertion of an `any` one, `case **M:` among
 		// them -- with both sides of each store this frame's, which the lifetime

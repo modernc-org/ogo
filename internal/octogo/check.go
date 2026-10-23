@@ -6396,6 +6396,15 @@ func (f *File) inferVarFrom(s *Scope, vd *VarDeclaration, init Node) {
 		}
 	}
 	switch ek, hasEk, tn, tq, isPtr := f.addressOfInfo(s, init); {
+	case isPtr && vd.inferredType != nil && vd.inferredType.f != nil && vd.inferredType.f.Package == f.Package &&
+		(vd.inferredType.s == f.Package.Scope || onScopeChain(s, vd.inferredType.s)) && f.addrOfPointer(s, init):
+		// `pp := &w.head`, `pp := &slots[i]`, `pp := &p`: a pointer to a pointer,
+		// which the flags say as one pointer. Its type is taken whole as the walk
+		// gives it, as `var pp **T` writes it, where it was written in this
+		// package's scopes: recorded as `*T`, `*pp` was the struct two steps away,
+		// and `for *pp != nil` refused; recorded as nothing, `(*pp).m(1)` of a
+		// method m nobody declared was asked nothing.
+		vd.takeType(f.typedVar(vd.inferredType.s, vd.token, vd.inferredType.tn))
 	case isPtr:
 		// `p := &x`: p is a pointer to x's type, recorded like `var p *T` so
 		// `*p` reads and writes are admitted and checked.
@@ -21370,6 +21379,28 @@ func (f *File) addressOfInfo(s *Scope, n Node) (elemKind Kind, hasElem bool, typ
 		}
 	}
 	return 0, false, Token{}, Token{}, true // &s.f / &a[i]: a pointer, element kind unmodelled
+}
+
+// addrOfPointer reports `&x` for an x that is itself a pointer: a variable, `&p`
+// (addrOfPointerVar), and a field or an element of a pointer type, `&w.head` and
+// `&slots[0]`, by the type the walk gives the address (valueTypeAt). The flags
+// record a pointer to a pointer as one pointer, so such a variable takes the walk's
+// type whole (inferVarFrom): named, `pp := &w.head` made `*pp` the struct two steps
+// away, and the list idiom's `for *pp != nil` was refused for comparing a struct
+// with nil.
+func (f *File) addrOfPointer(s *Scope, n Node) bool {
+	if f.addrOfPointerVar(s, n) {
+		return true
+	}
+	t, ok := f.valueTypeAt(s, n)
+	if !ok || t.tn == nil {
+		return false
+	}
+	p, isPtr := t.tn.(*TypeNodePointer)
+	if !isPtr {
+		return false
+	}
+	return f.isPointerType(t.s, p.TypeNode)
 }
 
 // addrOfPointerVar reports `&p` for a variable p that is itself a pointer.

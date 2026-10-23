@@ -955,7 +955,9 @@ section. A new finding goes there; the rule it leaves goes here too.
   wrote** (funcTypeID, dom53).
 - **A mark a refusal reads is asked what else carries it: isPtr marks a type
   switch's binding of an interface as well as a pointer** (A POINTER TYPE IN
-  PARENTHESES IS ANY TYPE).
+  PARENTHESES IS ANY TYPE). **A type the flags cannot say is recorded whole, as a
+  declaration would write it: an unnamed variable is one every rule asking a name
+  skips** (`pp := &w.head`, dom59).
 - **A rule that refuses on failing to resolve is a false refusal waiting for a shape
   it does not know**; **A rule that refuses by failing to resolve is found by
   widening the resolver and running the rejects again**; **A rule refused by

@@ -3026,6 +3026,20 @@ wherever a value stands, `take((*gp).get)` -- Go saves what the dereference read
 when the value is taken. The rule: **a reader that drops a dereference asks whether Go's shorthand
 drops it: one star over a pointer to a struct or an array is the shorthand, and
 any other is what the call is made on**.
+The address side of the same flag, a day later (2026-10-23, dom59, a timer wheel
+and an LRU cache over static node pools, refused on its first build): `pp :=
+&w.head` and `pp := &slots[i]`, the cursor of the list idiom `for pp := &l.head;
+*pp != nil; pp = &(*pp).next`, were recorded as one pointer to a Node -- the
+address and the field's own pointer folded into the flag -- and `*pp != nil` was
+"nil is no value of struct". The first fix left such a variable unnamed, as `pp :=
+&hd` for a pointer variable had been left since the flag was found wanting, and the
+mistakes asked of the probe then showed what that costs: `(*pp).m(1)` of a method
+nobody declared and `(*pp).get("a")` went to the C compiler, for `pp := &hd` in
+every release. A declared `var pp **Node` was right everywhere, its type written
+whole beside the flags and read first; the inferred one is recorded the same way
+since, the walk's type taken whole where this package wrote it. **A type the
+flags cannot say is recorded whole, as a declaration would write it: an unnamed
+variable is one every rule asking a name skips.**
 **A VIEW IS AN ADDRESS** (2026-10-22, found by dom58, a driver framework of
 embedded Bases, Buses and Rings, in the first lifetime variant of its run). `gs =
 view(&u)` for a `func view(u *UART) []byte { return u.buf[:] }` kept a slice of a
