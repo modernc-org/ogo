@@ -3074,6 +3074,26 @@ too: of 25 rows HEAD took 3 in silence and refused the 46 list forms, which agre
 with the single form since. **A shape made to compile is asked of a callee's
 summary as well as of the function it stands in: the summary reads the statement
 by its own readers, and a head none of them knows stores nothing.**
+**A RUN OF PREFIX OPERATORS IS ONE NODE** (2026-10-23, found asking those list
+forms what a nil pointer under them does). `**pp, y = 1, 2` of a pp holding nil
+crashed the host where Go panics, and so did `**pp = 1` and `y = **pp`, in every
+form: the stores checked the outer pointer only (a comment said "a deeper `**pp`
+guards nothing yet"), and the read checked neither. The read's cause was wider.
+UnaryExpr is `{ UnaryOp } Factor`, so `**pp`, `-*p` and `!*pb` are one node of
+three children, and every lowering in the unary case was written for an operator
+and its operand, `len(kids) == 2`: the nil check, the narrow negation and
+complement, the 64-bit negation, the unary plus on a float. A star after another
+operator took no nil check -- `!*pb` of a nil pb read address zero on the target
+-- and a narrow value through a pointer was C's int: on a P2-EDGE `-*p8` of an
+int8 -128 printed 128, and `-*pu8` and `^*pu8` of a uint8 5 printed 4294967291 and
+4294967290. The receive had met the run already, `<-*p`, and re-entered the rest as
+a UnaryExpr of its own (afterFirstChild); the unary case does the same since, the
+operand of the first operator the rest of the run, and each store's stars are
+checked a level at a time (starsC). Twelve run cases changed C, each a read or a
+store two or three stars deep; no fuzzer seed did, the generator writing no star
+after another operator. **A rule written for an operator and its operand asks what
+the grammar's repetition hands it: a run of prefix operators is one node, and the
+operand of the first is the rest of the run.**
 **A MARK IS MADE IN EMISSION ORDER, AND A LOOP RUNS ITS BODY AGAIN** (2026-10-08,
 found probing unsafe.Slice's views). The holder marks are set as statements are
 emitted, so a statement read a variable's mark as the statements BEFORE it had left

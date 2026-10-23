@@ -32476,6 +32476,23 @@ func (e *emitter) nilCheckedPtrVar(name string) string {
 	return e.nilCheckedC(e.varRef(name), ct)
 }
 
+// starsC is the place stars written over a pointer reach, `**pp`: text, a pointer of
+// C type ct, read through one star per level, each level nil-checked as one star's
+// read is. Only the outer one was: a nil `*pp` under `**pp = v` or `**pp, y = v,
+// 1` wrote address zero on the target, the boot area, in silence, where Go panics. A
+// level whose type is not a pointer is written as it stands.
+func (e *emitter) starsC(text, ct string, stars int) string {
+	for range stars {
+		if e.isPointer(ct) && !e.isIfaceCType(ct) {
+			text = "(*" + e.nilCheckedC(text, ct) + ")"
+			ct = e.elemType(ct)
+			continue
+		}
+		text = "(*" + text + ")"
+	}
+	return text
+}
+
 // emitIndex emits an index expression, wrapping it in a bounds check ogo_bound(i,
 // len) unless checks are disabled, the container's length is unknown (lenExpr ""),
 // or the index is provably in range (indexInRange). lenExpr is the container's length:
@@ -46402,17 +46419,11 @@ func (e *emitter) emitChainDerefAssign(head Node, base, stars string, postfix []
 		return
 	}
 	t.targetCType = pointee
-	// The nil check guards the outermost dereference, the one whose pointer this
-	// expression names, and only when there is exactly one -- a deeper `**pp` guards
-	// nothing yet, as it does not for a plain variable either.
-	guarded := text
-	if stars == "*" {
-		guarded = e.nilCheckedC(text, ct)
-	}
-	// Parenthesised because C's "++" binds tighter than its unary "*": `*p++` there
-	// is `*(p++)`, which increments the pointer and throws the load away, where Go's
-	// is `(*p)++`.
-	target := "(" + stars + guarded + ")"
+	// Every dereference takes the nil check, `**h.pp` the pointer h.pp holds and the
+	// one that holds (starsC). Parenthesised because C's "++" binds tighter than its
+	// unary "*": `*p++` there is `*(p++)`, which increments the pointer and throws the
+	// load away, where Go's is `(*p)++`.
+	target := e.starsC(text, ct, len(stars))
 	e.emitAssignTailOrCopy(func() { e.emit(target) }, t)
 }
 
@@ -46901,11 +46912,12 @@ func (e *emitter) emitAssignment(head Node, postfix []Node) {
 		//
 		// A store through the pointer takes the nil check as a read through it does:
 		// address zero on this target is the boot area, and a write there was the
-		// one dereference that said nothing. A deeper `**pp` guards nothing yet.
-		if stars == "*" {
-			lhs = e.nilCheckedPtrVar(base)
+		// one dereference that said nothing -- at every level of `**pp` (starsC).
+		if ct, ok := e.varType(base); ok {
+			lhs = e.starsC(lhs, ct, len(stars))
+		} else {
+			lhs = "(" + stars + lhs + ")"
 		}
-		lhs = "(" + stars + lhs + ")"
 	}
 
 	// A whole ARRAY FIELD written over, `s.a = b` / `s.a = [3]int{1, 2, 3}`: the
@@ -48662,9 +48674,12 @@ func (e *emitter) emitStore(t assignTarget, declare bool, ctype, val string) {
 	}
 	e.ind()
 	if len(t.chain) == 0 {
-		if t.stars == "*" {
-			e.emit("(*" + e.nilCheckedPtrVar(t.name) + ")") // a store through the pointer takes the nil check
-		} else {
+		switch ct, ok := e.varType(t.name); {
+		case ok && t.stars != "":
+			e.emit(e.starsC(e.varRef(t.name), ct, len(t.stars))) // a store through a pointer takes the nil check
+		case t.stars == "*":
+			e.emit("(*" + e.varRef(t.name) + ")")
+		default:
 			e.emit(t.stars + e.varRef(t.name))
 		}
 	} else {
@@ -54659,6 +54674,15 @@ func (e *emitter) emitExprNode(n Node) {
 			return
 		}
 		kids = e.unparenKids(kids)
+		// A run of prefix operators, `-*p`, `!*pb`, `**pp`: UnaryExpr is `{ UnaryOp }
+		// Factor`, so the operand of the first is the rest of the run, a UnaryExpr of
+		// its own that the parse builds no node for (afterFirstChild), and each level
+		// is lowered as one operator over its operand is. Written out token by token,
+		// a star after another operator took no nil check, and `!*pb` of a nil pb
+		// read address zero on the target where Go panics.
+		if n.sym == UnaryExpr && len(kids) > 2 && kids[0].sym == UnaryOp {
+			kids = []Node{kids[0], {sym: UnaryExpr, ast: afterFirstChild(n.ast)}}
+		}
 		// A negated wide literal, "-987654321098". It reaches no binary level, so it
 		// is folded here as well: written out as C source it is a unary minus, which
 		// the target's compiler folds in no aggregate initializer at all. The fold

@@ -1043,6 +1043,9 @@ section. A new finding goes there; the rule it leaves goes here too.
   head the emitter writes as text is asked where its effects land against the
   arguments'**. **A call is asked of every head a call can follow: a name, a
   parenthesis, a dereference, a conversion, a call** (nodeHasEffect).
+- **A RUN OF PREFIX OPERATORS IS ONE NODE**: **A rule written for an operator and
+  its operand asks what the grammar's repetition hands it: a run of prefix
+  operators is one node, and the operand of the first is the rest of the run.**
 - **A rule that dispatches on a table asks for the table it compares with, not only
   the one it stores.** **A type the emitter writes after the globals names its
   members with the `ogo_` prefix**.

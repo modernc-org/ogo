@@ -1333,6 +1333,148 @@ func main() {
 		want: "5 0 true\n6 0 true\n4 0 true\n4 7 true\n1234 3 4\n5678 7 8 9\n9 70 80\n11 true\ntrue true\n21 true\n22 true\nboom 1\n33 2\n44 3\na 31\ng 32\ng 33 true\n55 5\n",
 	},
 	{
+		// A run of prefix operators over a dereference, `-*p`, `!*pb`, `**pp`,
+		// `-**pp`: each level is lowered as one operator over its operand. Written
+		// out token by token, a narrow value negated or complemented through a
+		// pointer was C's int -- on a P2-EDGE `-*p8` of an int8 -128 printed 128 and
+		// `-*pu8` of a uint8 5 printed 4294967291 -- and no level took the nil
+		// check.
+		name: "a run of prefix operators over a dereference",
+		src: `type Q struct{ pp **int }
+
+var calls int
+
+func mark(k int) int {
+	calls = calls*10 + k
+	return k
+}
+
+func get(p *int) *int {
+	mark(1)
+	return p
+}
+
+func main() {
+	x := 7
+	p := &x
+	pp := &p
+	ppp := &pp
+	var i8 int8 = -128
+	p8 := &i8
+	var u8 uint8 = 5
+	pu8 := &u8
+	var u uint32 = 0xf0f0
+	pu := &u
+	var w int64 = -9000000000
+	pw := &w
+	var uw uint64 = 1
+	puw := &uw
+	t := true
+	pb := &t
+	f := 2.5
+	pf := &f
+	ch := make(chan int, 4)
+	pch := &ch
+	q := Q{pp: &p}
+
+	println(-*p, ^*p, - -*p, -(-*p), +*p, **pp, -**pp, ***ppp, -***ppp)
+	println(-*p8, ^*p8, -*pu8, ^*pu8, ^*pu, -*pu, -*pw, ^*pw, -*puw, ^*puw)
+	println(!*pb, !!*pb, -*pf, +*pf, -*p+1, 1 - -*p, *p**p, -*p*-*p)
+	println(&*p == p, *&*p, &**pp == p, **&p)
+	*pch <- 41
+	*pch <- 42
+	println(<-*pch, *(pp) == nil)
+	var b8 int8 = -*p8
+	var c64 = -*pw + 1
+	println(b8, c64, int(-*p8), uint8(-*pu8))
+	**pp = 10
+	**pp += 5
+	**pp++
+	println(x, **q.pp)
+	**q.pp = 20
+	***ppp *= 2
+	println(x)
+	y := 0
+	y, **pp = 1, 30
+	**pp, y = 31, 2
+	println(x, y)
+	calls = 0
+	z := -*get(p) + -*get(p)
+	println(z, calls)
+	if !*pb {
+		println("no")
+	} else {
+		println("yes")
+	}
+	switch -*p {
+	case -31:
+		println("case")
+	default:
+		println("default")
+	}
+	for i := 0; !!*pb && i < 2; i++ {
+		println(i)
+	}
+	println(-*p8 == i8, ^*p8 == 127)
+}
+`,
+		want: "-7 -8 7 7 7 7 -7 7 -7\n-128 127 251 250 4294905615 4294905616 9000000000 8999999999 18446744073709551615 18446744073709551614\nfalse true -2.5 2.5 -6 8 49 49\ntrue 7 true 7\n41 false\n-128 9000000001 -128 251\n16 16\n40\n31 2\n-62 11\nyes\ncase\n0\n1\ntrue true\n",
+	},
+	{
+		// `!*pb` of a nil pb read address zero on the target, the boot area, where Go panics.
+		name: "a prefix operator over a nil pointer's dereference panics",
+		src: `func main() {
+	var pb *bool
+	println("before")
+	println(!*pb)
+}
+`,
+		want:   "before\npanic: nil pointer dereference",
+		panics: true,
+	},
+	{
+		// `**pp` of a pp holding a nil pointer checked no level and read address zero.
+		name: "a read through a nil pointer two stars deep panics",
+		src: `func main() {
+	var p *int
+	pp := &p
+	println("before")
+	println(**pp)
+}
+`,
+		want:   "before\npanic: nil pointer dereference",
+		panics: true,
+	},
+	{
+		// `**pp = 1` checked only the outer pointer, and wrote address zero on the target.
+		name: "a store through a nil pointer two stars deep panics",
+		src: `func main() {
+	var p *int
+	pp := &p
+	println("before")
+	**pp = 1
+	println(p == nil)
+}
+`,
+		want:   "before\npanic: nil pointer dereference",
+		panics: true,
+	},
+	{
+		// `y, **pp = 1, 2` stores y and then panics, as Go does.
+		name: "a list's store through a nil pointer two stars deep panics",
+		src: `func main() {
+	var p *int
+	pp := &p
+	y := 0
+	println("before")
+	y, **pp = 1, 2
+	println(y)
+}
+`,
+		want:   "before\npanic: nil pointer dereference",
+		panics: true,
+	},
+	{
 		// A method storing its receiver through a parameter, `*p = m`, and a function
 		// storing a parameter through an assertion of an `any` one, `case **M:` among
 		// them -- with both sides of each store this frame's, which the lifetime

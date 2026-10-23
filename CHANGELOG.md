@@ -29,6 +29,18 @@ shipped section tells a reader on that version that they have behaviour they do 
 
 ### Fixed
 
+- **A narrow value negated or complemented through a pointer is a value of its
+  type**: on a P2-EDGE `-*p8` for an int8 of -128 printed 128 where Go has -128,
+  and `-*pu8` and `^*pu8` of a uint8 5 printed 4294967291 and 4294967290 where Go
+  has 251 and 250; on the host `int(-*p8)` and `-*p8 == i8` were wrong too. A run
+  of prefix operators, `-*p`, `!*pb`, `- -*p`, is lowered an operator at a time,
+  each as one over a variable is.
+- **Every pointer a dereference goes through takes the nil check**: a star after
+  another prefix operator, `!*pb`, `-*p`, `^*p`, and every level of `**pp` and
+  `***ppp`, read through a nil pointer in a checked build read address zero, the
+  target's boot area, where Go panics; `**pp = v`, `**pp += 1`, `**h.pp = v` and
+  `y, **pp = 1, v` checked only the outer pointer, and wrote there. Each panics
+  "nil pointer dereference" now.
 - **A list assignment through a pointer no variable holds compiles**: `*(t.p), y =
   9, 10`, `(*h.pp).n, y = 5, 6`, `y, *(t).p = 1, 2` and `**(pr).q, y = 33, 2`, in
   a value list, a call's results, a comma-ok, and a select's receive clause, `case
