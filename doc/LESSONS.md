@@ -3198,6 +3198,43 @@ typed by walking what is between them and then the steps after
 qualifier is: `*lib.P` is a star over another package's variable, not over a field
 of one named lib.** **A shape that newly compiles is asked every type question too:
 a reader that reads it as nothing stores whatever it is handed.**
+**A VALUE IS ASKED WHERE IT GOES, IN EVERY SHAPE IT COMES IN** (2026-10-23, the
+prefix runs put into positions). ef10d27 typed a run where it declares a variable;
+prefix-pos puts eighteen runs into the 45 positions a value goes into -- a typed
+declaration, an argument, a return, a send, a literal's field, an operand, a
+condition, an index -- and 129 of the 810 differed from Go at 9b7550d. Most were
+one hole: typeIdentity walked runs of stars only, so `var y T = -*p16` of an int16
+went into a `type T int16`, and so did `**pl` of a `var l int16`, the predeclared
+type written where the pointee was declared being read as no name. A sweep of
+bodies over runs -- ranges, pointer stores and conversions, a select's receive,
+builtins -- found the readers beside it (33 of 82): isAddrOperand and
+addressOperand knew `&x` as two children, so `(*int8)(&**pp16)` read an int16 as
+an int8 and `for ...; &*p8 = 2 {` was taken; the emitter's derefKids the same, so
+`range **ppa` and `range *<-ca` of a pointer to an array were "ranging an
+integer"; a select's `case y := <-ca:` and a range over a channel that is no name
+recorded what the flags could say and no type -- rangeElem took `*pch` of a chan
+int16 for an integer range and its variable for an int, and `y = 70000` printed
+4464 on a P2-EDGE in every release; and typeIdentity asked names, so an element of
+a variable of a defined array type, `arr[0]` of a `type A [3]int16`, went into a T,
+and so did a variable declared from one. The worst was no run's at all: a chain in
+parentheses over an ARRAY a pointer points at, `(*h.p)[1]`, `(*get())[2]`,
+`(**ppa)[0]`, was bound to a temporary of the array's type, `A t = (*p);`, which is
+not C -- gcc refused it, and the target's compiler took it and read garbage,
+`-2558 -25744 1` for `2 3 1` on a P2-EDGE -- and `(*h.p)[1:]` sliced the copy, so a
+store through the slice never reached the array. v0.58.0 built every one; no run
+case read an array through a dereference in parentheses of anything but a
+variable, and the sweep reached one only because a run in parentheses is such a
+dereference. The pointer is bound since and the steps walk through it
+(emitParenChain), and a received array is walked from the temporary its receive
+fills.
+**A sweep that types a shape where it declares a variable asks it in every position
+a value goes into.**
+**A question answered by a name is asked of the walk where no name answers: an
+element of a defined array has a type and no name.**
+**A binding a clause makes is typed as the statement's: a select's receive and a
+range's are declarations.**
+**A head the emitter binds to a temporary is asked whether C copies it: an array a
+pointer points at is reached through the pointer.**
 **A MARK IS MADE IN EMISSION ORDER, AND A LOOP RUNS ITS BODY AGAIN** (2026-10-08,
 found probing unsafe.Slice's views). The holder marks are set as statements are
 emitted, so a statement read a variable's mark as the statements BEFORE it had left

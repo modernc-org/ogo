@@ -1,0 +1,73 @@
+// A value written as a run of prefix operators, or reached through an element or a
+// receive, where a value goes into something typed already -- a defined type, a
+// pointer conversion, a header's target, a range -- each taken before.
+
+type T int16
+
+type A [3]int16
+
+var v16 int16 = 5
+var p16 = &v16
+var pp16 = &p16
+var arr = A{1, 2, 3}
+
+func takeT(v T) { println(v) }
+
+func main() {
+	c := make(chan int16, 1)
+	pc16 := &c
+	// ERROR cannot use -\*p16 of type int16 as type T in variable declaration
+	var y T = -*p16
+	// ERROR cannot use <-\*pc16 of type int16 as type T in argument to takeT
+	takeT(<-*pc16)
+	vt := T(3)
+	pt := &vt
+	ppt := &pt
+	// ERROR cannot use -\*\*ppt of type T as type int16 in variable declaration
+	var w int16 = -**ppt
+	var l int16 = 3
+	pl := &l
+	ppl := &pl
+	// ERROR cannot use \*\*ppl of type int16 as type T in variable declaration
+	var u T = **ppl
+	// ERROR cannot use arr\[0\] of type int16 as type T in variable declaration
+	var z T = arr[0]
+	pa := &arr
+	// ERROR cannot use \(\*pa\)\[0\] of type int16 as type T in variable declaration
+	var z2 T = (*pa)[0]
+	// ERROR cannot use 2 \* arr\[0\] of type int16 as type T in variable declaration
+	var z3 T = 2 * arr[0]
+	var i8 int8 = 7
+	p8 := &i8
+	// ERROR cannot assign to &\*p8
+	for i := 0; i < 1; &*p8 = 2 {
+	}
+	// ERROR cannot range over &\*p16 \(value of type \*int16\)
+	for i := range &*p16 {
+		println(i)
+	}
+	// ERROR cannot convert &\*\*pp16 \(value of type \*int16\) to type \*int8
+	x := (*int8)(&**pp16)
+	ca := make(chan *A, 1)
+	pca := &ca
+	select {
+	case r := <-*pca:
+		// ERROR cannot use r\[1\] of type int16 as type int8 in variable declaration
+		var e int8 = r[1]
+		_ = e
+	}
+	cs := make(chan int16, 1)
+	pcs := &cs
+	for r := range *pcs {
+		// ERROR constant 70000 overflows int16
+		r = 70000
+		println(r)
+	}
+	z4 := arr[0] + 1
+	// ERROR cannot use z4 of type int16 as type T in variable declaration
+	var w2 T = z4
+	z5 := **pp16
+	// ERROR cannot use z5 of type int16 as type T in variable declaration
+	var w3 T = z5
+	_, _, _, _, _, _, _, _, _ = y, w, u, z, z2, z3, x, w2, w3
+}

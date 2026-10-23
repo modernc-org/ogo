@@ -39,6 +39,21 @@ shipped section tells a reader on that version that they have behaviour they do 
   was asked nothing either: `-*pb` negated a bool, `!*p8` was C's logical not of an
   int8, and `-<-*pch`, `&<-*pch` and `<-*pchs` of a send-only channel reached C.
   Each is refused as Go refuses it.
+- **A value of a predeclared type is told from a defined type over it wherever
+  the walk types it**: `var y T = -*p16` for a `type T int16`, `takeT(<-*pc16)`,
+  `var y int16 = -**ppt` of a T, `var z T = arr[0]` of a `type A [3]int16`, `var
+  z T = (*pa)[0]` and `2 * arr[0]` were taken, and so was a variable declared from
+  any of them, `z := arr[0] + 1; var w T = z`, where Go wants a conversion.
+- **A range over a channel that is no name, and a select's receive from one, give
+  the variable the channel's element**: `for y := range *pch` of a chan int16 typed
+  y as an int, so `y = 70000` built and printed 4464 on a P2-EDGE where Go refuses
+  it, and an
+  index of a received `*[3]int16` was refused; `range h.c`, `range get()` and
+  `case y := <-*pca:` gave y no type, and `case y := <-ca:` none its index had, so
+  `var z int8 = y[1]` of an int16 element was taken.
+- **An address over a run of prefix operators is an address**: `(*int8)(&**pp16)`
+  read an int16 as an int8, `for ...; &*p8 = 2 {` was taken, and so was `range
+  &*p16`. Each is refused as Go refuses it.
 - **`^` takes an integer**: `^f` of a float32 or a float64 variable built, and on
   a P2-EDGE `println(^f, ^g)` of 2.5 and 1 printed `-3 -2`, where Go refuses it.
 - **A pointer to a pointer to a variable written without a type is typed**: `f :=
@@ -65,6 +80,14 @@ shipped section tells a reader on that version that they have behaviour they do 
 
 ### Fixed
 
+- **An array a pointer points at, read or sliced through parentheses**:
+  `(*h.p)[1]`, `(*get())[2]` and `(**ppa)[0]` built to C the target's compiler
+  took and read garbage from -- `-2558 -25744 1` for `2 3 1` on a P2-EDGE -- and
+  `(*h.p)[1:]` sliced a copy, so a store through the slice never reached the
+  array; and an array received, `(<-cv)[1]`, built the same copy. In v0.58.0 too.
+- **A range over an array reached through a run of prefix operators, `range
+  **ppa`, `range *<-ch`, or received, `range <-cv`**, was refused as "ranging an
+  integer yields only the index".
 - **A receive inside a run of prefix operators is typed**: `x := ^<-*pc8` and `x :=
   *<-*pcp` were "cannot infer a type for the declaration of x".
 - **The address of a field or an element that is a pointer is a pointer to a

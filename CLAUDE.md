@@ -971,6 +971,12 @@ section. A new finding goes there; the rule it leaves goes here too.
   variable, not over a field of one named lib.** **A shape that newly compiles is
   asked every type question too: a reader that reads it as nothing stores whatever
   it is handed.**
+- **A VALUE IS ASKED WHERE IT GOES, IN EVERY SHAPE IT COMES IN**: **A sweep that
+  types a shape where it declares a variable asks it in every position a value goes
+  into.** **A question answered by a name is asked of the walk where no name
+  answers: an element of a defined array has a type and no name.** **A binding a
+  clause makes is typed as the statement's: a select's receive and a range's are
+  declarations.**
 - **A rule that refuses on failing to resolve is a false refusal waiting for a shape
   it does not know**; **A rule that refuses by failing to resolve is found by
   widening the resolver and running the rejects again**; **A rule refused by
@@ -1064,6 +1070,9 @@ section. A new finding goes there; the rule it leaves goes here too.
 - **A RUN OF PREFIX OPERATORS IS ONE NODE**: **A rule written for an operator and
   its operand asks what the grammar's repetition hands it: a run of prefix
   operators is one node, and the operand of the first is the rest of the run.**
+- **A head the emitter binds to a temporary is asked whether C copies it: an array
+  a pointer points at is reached through the pointer** (emitParenChain; A VALUE IS
+  ASKED WHERE IT GOES).
 - **A rule that dispatches on a table asks for the table it compares with, not only
   the one it stores.** **A type the emitter writes after the globals names its
   members with the `ogo_` prefix**.

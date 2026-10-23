@@ -4033,6 +4033,22 @@ func (f *File) checkRange(s *Scope, kw string, fi forInfo) {
 					}
 				}
 			}
+		} else if declared {
+			// A channel that is no name, `range *pch`, `range h.c`, `range get()`:
+			// the element of the channel the walk reaches, in the terms of the
+			// file it was written in, and its name. The variable had neither, and
+			// `var z int8 = v[1]` of a *[3]int16 was taken.
+			if t, ok := f.valueTypeAt(s, fi.rangeExpr); ok && t.f != nil {
+				if ch, _ := t.f.chanTypeUnder(t.s, t.tn); ch != nil && ch.TypeNode != nil {
+					if kid, ok := f.exprSoleIdent(fi.keyVar); ok {
+						if vd, ok := s.find(kid.Src()).(*VarDeclaration); ok && vd.declType == nil {
+							et := typeAt{ch.TypeNode, t.s, t.f}
+							vd.inferredType = &et
+							f.nameInferred(s, vd, et)
+						}
+					}
+				}
+			}
 		}
 		if tn := f.recvChanType(s, fi.rangeExpr); declared && tn != nil {
 			if id, ok := f.exprSoleIdent(fi.keyVar); ok {
@@ -4156,7 +4172,11 @@ func (f *File) checkRangeable(s *Scope, expr Node) {
 	// `range &m.Len` of a uint8 was taken, the address's Kind being its pointee's
 	// to exprType, and ranged as an integer.
 	if inner, isAddr := f.addressOperand(s, expr); isAddr {
-		ie := Node{sym: Expression, ast: encodeNode(SimpleExpr, encodeNode(Term, encodeNode(UnaryExpr, encodeNode(Factor, inner.ast))))}
+		ue := inner.ast
+		if inner.sym == Factor {
+			ue = encodeNode(Factor, inner.ast)
+		}
+		ie := Node{sym: Expression, ast: encodeNode(SimpleExpr, encodeNode(Term, encodeNode(UnaryExpr, ue)))}
 		what, known := f.nonBoolOperand(s, ie)
 		switch k, ok := f.exprType(s, ie); {
 		case known && what == "an array":
@@ -4356,6 +4376,13 @@ func (f *File) rangeElem(s *Scope, expr Node) (elem Kind, hasElem, isInt, isChan
 	// and a call's result, `range f()`: the element written for its type. Unknown,
 	// the value variable was asked nothing, `var s string = v` among it.
 	if t, ok := f.valueTypeAt(s, expr); ok && t.f != nil {
+		// A channel the walk reaches, `range *pch`: its element. Read as no channel,
+		// `*pch` of a chan int16 was an integer range to the numeric case below, its
+		// variable an int.
+		if ch, _ := t.f.chanTypeUnder(t.s, t.tn); ch != nil && ch.TypeNode != nil {
+			k, hasK := t.f.typeKind(t.s, ch.TypeNode)
+			return k, hasK, false, true
+		}
 		u := f.underlyingTypeAt(t)
 		if p, isPtr := u.tn.(*TypeNodePointer); isPtr {
 			u = f.underlyingTypeAt(typeAt{p.TypeNode, u.s, u.f})
@@ -6436,7 +6463,16 @@ func (f *File) inferVarFrom(s *Scope, vd *VarDeclaration, init Node) {
 	// The type the initializer's written types give it, a call's result and another
 	// variable's included -- read now, while the scope holds only the names declared
 	// before the variable (see inferredType).
-	if t, ok := f.valueTypeAt(s, init); ok {
+	t, ok := f.valueTypeAt(s, init)
+	if !ok {
+		// An arithmetic level, `z := arr[0] + 1`: the type of its typed operand,
+		// which every typed one shares, as Go types it. The walk types no level, and
+		// the variable of an int16 element went into a T.
+		if o, _, shared, isLevel := f.levelOperand(s, init); isLevel && shared {
+			t, ok = f.valueTypeAt(s, o)
+		}
+	}
+	if ok {
 		vd.inferredType = &t
 		// And its NAME, where nothing below records one: `b := d.blobs[n]`, `rt :=
 		// &r.routes[i]` of a field's element was typed by the walk and named by
@@ -8516,6 +8552,21 @@ func (f *File) checkSelect(s *Scope, results []retResult, n Node) {
 					}
 					if sig := f.recvFuncSig(s, ce); sig != nil {
 						vd.funcSig, vd.isFunc = sig, true // a function received, called
+					}
+					// The element's type whole, for the walks over the variable
+					// (varTypeAt), as `v := <-ch` has it: `case y := <-ca:` of a
+					// chan *[3]int16 read `y[1]` as nothing, and `var z int8 = y[1]`
+					// was taken; a channel reached through a run, `<-*pca`, gave the
+					// flags above nothing either.
+					if t, ok := f.valueTypeAt(s, ce); ok && t.f != nil {
+						if ch, _ := t.f.chanTypeUnder(t.s, t.tn); ch != nil && ch.TypeNode != nil {
+							et := typeAt{ch.TypeNode, t.s, t.f}
+							vd.inferredType = &et
+							f.nameInferred(s, vd, et)
+							if k, ok := t.f.typeKind(t.s, ch.TypeNode); ok && !vd.hasKind && kindCategory(k) != catUnknown {
+								vd.kind, vd.hasKind = k, true
+							}
+						}
 					}
 				}
 				f.declareLocal(cs, vd)
@@ -15406,26 +15457,46 @@ func (f *File) typeIdentity(s *Scope, n Node) (string, bool) {
 					return "", true
 				}
 			}
+			// The type the walk gave it where it was declared (inferredType), `z :=
+			// arr[0]`, `z := -*p`, `z := **pp`: named, the variable of an int16
+			// went into a T. What the walk recorded is no flag, and asks no trap.
+			if d.inferredType != nil {
+				if name, ok := f.typeAtIdentity(s, *d.inferredType); ok {
+					return name, true
+				}
+			}
 		}
 	}
-	// Dereferences, `**lib.PPK` of a pointer to a pointer to a lib.C: the type the
-	// walk reaches, named as this file writes it. Asked of nothing past one star,
-	// `var y int8 = **lib.PPK` was taken.
+	// A run of prefix operators, `**lib.PPK` of a pointer to a pointer to a lib.C,
+	// `-*p`, `<-*pch`: the type the walk reaches at the outermost operator, named as
+	// this file writes it. Asked of nothing past one star, `var y int8 = **lib.PPK`
+	// was taken; asked of stars only, so was `var y T = -*p` of an int16 p. A
+	// predeclared type is one wherever it was written, `var v int16` as well as
+	// what the flags say: read as no name, `var y T = **pp` was taken too.
 	if ue, ok := f.soleUnaryExpr(n); ok {
 		kids := slices.Collect(it(ue.ast))
-		if len(kids) > 2 && !slices.ContainsFunc(kids[:len(kids)-1], func(k Node) bool { return k.sym != UnaryOp || f.unaryOp(s, k) != MUL }) {
-			if t, ok := f.valueTypeAt(s, n); ok && t.tn != nil {
-				if id, isID := t.tn.(*TypeNodeIdent); isID && t.s == Universe && !id.Qualifier.IsValid() {
-					return "", true
+		if len(kids) > 2 && kids[0].sym == UnaryOp {
+			if t, ok := f.valueTypeAt(s, ue); ok {
+				if name, ok := f.typeAtIdentity(s, t); ok {
+					return name, true
 				}
-				if nm, ql, isPtr, ok := f.inferredTypeName(s, t); ok && !isPtr && nm.IsValid() {
-					nm, ql = f.canonicalType(s, nm, ql)
-					if ql.IsValid() {
-						name, ok := f.definedName(s, ql.Src()+"."+nm.Src())
-						return f.canonicalQualified(name), ok
-					}
-					return f.definedName(s, nm.Src())
-				}
+			}
+		}
+	}
+	// An arithmetic level, `2 * arr[0]`: the identity its typed operands share, an
+	// untyped constant taking it, and a shift's its left operand's -- as
+	// operationNamedType names one, asked of operands that have no name.
+	if name, ok, isLevel := f.operationIdentity(s, n); isLevel {
+		return name, ok
+	}
+	// An element, `arr[0]` of a variable of a defined array type, `(*pa)[0]`,
+	// `(<-ch)[1]`: the type the walk reaches, named as above. Asked of fields and
+	// calls only, `var z T = arr[0]` of a `type A [3]int16` was taken. Not of a
+	// name: what the flags say of one is the trap below.
+	if _, isName := f.exprSoleIdent(n); !isName {
+		if t, ok := f.valueTypeAt(s, n); ok {
+			if name, ok := f.typeAtIdentity(s, t); ok {
+				return name, true
 			}
 		}
 	}
@@ -15435,6 +15506,88 @@ func (f *File) typeIdentity(s *Scope, n Node) (string, bool) {
 	// -- a value of exactly the right type. Where the name is not recorded the type
 	// is unknown, and unknown is where this stops.
 	return "", false
+}
+
+// operationIdentity is typeIdentity for an arithmetic level of several operands,
+// reporting whether n is one: the identity the typed operands share, an untyped
+// one taking it, and a shift's left operand's. Operands of two identities, or of
+// one that cannot be told, have none here; the mismatch is definedTypeMismatch's.
+func (f *File) operationIdentity(s *Scope, n Node) (name string, ok, isLevel bool) {
+	_, name, ok, isLevel = f.levelOperand(s, n)
+	return name, ok, isLevel
+}
+
+// levelOperand is operationIdentity's walk, answering also with the first typed
+// operand, whose type the level's is.
+func (f *File) levelOperand(s *Scope, n Node) (operand Node, name string, ok, isLevel bool) {
+	for n.sym == Expression || n.sym == SimpleExpr || n.sym == Term {
+		kids := slices.Collect(it(n.ast))
+		if len(kids) == 1 {
+			n = kids[0]
+			continue
+		}
+		if n.sym == Expression {
+			return Node{}, "", false, false // a comparison or a logical operator
+		}
+		var operands []Node
+		shift := false
+		for _, c := range kids {
+			switch c.sym {
+			case Term, UnaryExpr:
+				operands = append(operands, c)
+			case MulOp:
+				for t := range it(c.ast) {
+					if t.sym == 0 && (f.ch(t.tok) == SHL || f.ch(t.tok) == SHR) {
+						shift = true
+					}
+				}
+			}
+		}
+		if shift {
+			operands = operands[:1]
+		}
+		typed := false
+		for _, o := range operands {
+			if k, known := f.exprType(s, o); known && isUntypedKind(k) {
+				continue
+			}
+			id, known := f.typeIdentity(s, o)
+			if !known || typed && id != name {
+				return Node{}, "", false, true
+			}
+			if !typed {
+				operand = o
+			}
+			name, typed = id, true
+		}
+		return operand, name, typed, true
+	}
+	return Node{}, "", false, false
+}
+
+// typeAtIdentity is typeIdentity for a type the walk reached: "" for a predeclared
+// one, wherever it was written, `var v int16` as well as what the flags say, and
+// the defined type's name as this file writes it -- not-ok for a pointer or what
+// names nothing.
+func (f *File) typeAtIdentity(s *Scope, t typeAt) (string, bool) {
+	if t.tn == nil {
+		return "", false
+	}
+	if id, isID := t.tn.(*TypeNodeIdent); isID && t.s != nil && !id.Qualifier.IsValid() {
+		if _, predeclared := t.s.find(id.Name.Src()).(*PredeclaredType); predeclared {
+			return "", true
+		}
+	}
+	nm, ql, isPtr, ok := f.inferredTypeName(s, t)
+	if !ok || isPtr || !nm.IsValid() {
+		return "", false
+	}
+	nm, ql = f.canonicalType(s, nm, ql)
+	if ql.IsValid() {
+		name, ok := f.definedName(s, ql.Src()+"."+nm.Src())
+		return f.canonicalQualified(name), ok
+	}
+	return f.definedName(s, nm.Src())
 }
 
 // namedTypeIdentity is typeIdentity for a type WRITTEN as a name, resolved in s: the
@@ -25201,6 +25354,21 @@ func (f *File) checkPtrConvOperand(s *Scope, pc ptrConvExpr) {
 	}
 	// A pointer to a variable of a predeclared type -- `&x`, or a pointer variable
 	// of one: the base's Kind against what T's chain of definitions ends in.
+	// The address a run of prefix operators begins with, `&*p`, `&**pp`: a pointer
+	// to what the rest of the run is, which no root names. Let pass, `(*int8)(&*p)`
+	// read an int16 as an int8.
+	if x, isAddr := f.addressOperand(s, arg); isAddr && x.sym == UnaryExpr {
+		if have, ok := f.valueTypeAt(s, x); ok && have.f != nil {
+			if same, known := f.sameUnderlying(have, want); known && !same {
+				if nm := f.typeAtMessage(have); nm != "" && !strings.HasPrefix(nm, "a ") && !strings.HasPrefix(nm, "an ") {
+					refuse("*" + nm)
+				} else {
+					f.err(f.tok(arg.Pos()).Position(), "cannot convert %s to type %s", f.exprSource(arg), target)
+				}
+			}
+		}
+		return
+	}
 	var base Kind
 	baseKnown, isPointer := false, false
 	if root, suffixed, isAddr := f.addressOperandRoot(s, arg); isAddr {
@@ -25386,14 +25554,22 @@ func (f *File) typeAtMessage(t typeAt) string {
 	return t.f.typeNodeMessage(t.s, t.tn)
 }
 
-// addressOperand is x of an operand that is exactly `&x`.
+// addressOperand is x of an operand that is exactly `&x`: a Factor, or the rest of
+// a run of prefix operators, `&*p`, `&**pp`, which is one node. Read as an operator
+// and a Factor only, `range &*p` and `(*int8)(&*p16)` were asked nothing.
 func (f *File) addressOperand(s *Scope, n Node) (Node, bool) {
 	ue, ok := f.soleUnaryExpr(n)
 	if !ok {
 		return Node{}, false
 	}
 	kids := slices.Collect(it(ue.ast))
-	if len(kids) != 2 || kids[0].sym != UnaryOp || kids[1].sym != Factor || f.unaryOp(s, kids[0]) != AND {
+	if len(kids) < 2 || kids[0].sym != UnaryOp || f.unaryOp(s, kids[0]) != AND {
+		return Node{}, false
+	}
+	if len(kids) > 2 {
+		return Node{sym: UnaryExpr, ast: afterFirstChild(ue.ast)}, true
+	}
+	if kids[1].sym != Factor {
 		return Node{}, false
 	}
 	return kids[1], true
@@ -28868,14 +29044,16 @@ func (f *File) checkPointerValue(s *Scope, want bool, wantName string, e Node, w
 }
 
 // isAddrOperand reports an operand that is exactly an address, `&x`, `&h.f`,
-// `&T{...}` -- the value exprType answers with its pointee's Kind.
+// `&T{...}` -- the value exprType answers with its pointee's Kind -- and the address
+// a run of prefix operators begins with, `&*p`, `&**pp`, the run being one node:
+// `for ...; &*p = 2 {` was taken.
 func (f *File) isAddrOperand(s *Scope, n Node) bool {
 	ue, ok := f.soleUnaryExpr(n)
 	if !ok {
 		return false
 	}
 	kids := slices.Collect(it(ue.ast))
-	return len(kids) == 2 && kids[0].sym == UnaryOp && f.unaryOp(s, kids[0]) == AND
+	return len(kids) >= 2 && kids[0].sym == UnaryOp && f.unaryOp(s, kids[0]) == AND
 }
 
 // checkPointerInto is checkPointerValue for a store whose target's type is tn,

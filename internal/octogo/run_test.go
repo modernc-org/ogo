@@ -1515,6 +1515,66 @@ func main() {
 		want: "4\n5 true\n6\n8\n-7 -7 -8 7\n-8 -4\n9 9 9 7\n10\nfalse true\n9 10 -9\nabc 3\n5 -5\n10 -5\n2\n",
 	},
 	{
+		// An array a pointer points at, read through parentheses, `(*h.p)[1]`,
+		// `(*get())[2]`, `(**ppa)[0]`, and sliced: the emitter bound the array as a
+		// value, `A t = (*p);`, which the host's compiler refused and the target's
+		// took, reading garbage (-2558 for a 2 on a P2-EDGE) and slicing a copy the
+		// store never left. And an array received, `(<-cv)[2]`, `range <-cv`, one
+		// reached through a run, `range **ppa`, `range *<-ca` (refused as an
+		// integer's range), and a channel reached through one, `range *pc16`, whose
+		// variable the checker typed as an int.
+		name: "an array a pointer points at, read and sliced through parentheses",
+		src: `type A [3]int16
+
+type H struct{ p *A }
+
+var arr = A{1, 2, 3}
+
+func get() *A { return &arr }
+
+func main() {
+	pa := &arr
+	ppa := &pa
+	h := H{p: pa}
+	println((*h.p)[1], (*get())[2], (**ppa)[0])
+	s := (*h.p)[1:]
+	s[0] = 9
+	println(arr[1], s[0], len(s), cap((**ppa)[:2]))
+	(*get())[2] = 7
+	println(arr[2])
+	ca := make(chan *A, 2)
+	ca <- pa
+	ca <- pa
+	pca := &ca
+	println((*<-*pca)[0])
+	for i, x := range *<-ca {
+		println(i, x)
+	}
+	for i, x := range **ppa {
+		arr[2] = 5
+		println(i, x)
+	}
+	cv := make(chan A, 1)
+	cv <- arr
+	println((<-cv)[2])
+	cv <- A{4, 5, 6}
+	for i, x := range <-cv {
+		println(i, x)
+	}
+	c16 := make(chan int16, 2)
+	c16 <- 4
+	c16 <- 5
+	close(c16)
+	pc16 := &c16
+	for y := range *pc16 {
+		var z int16 = y
+		println(z)
+	}
+}
+`,
+		want: "2 3 1\n9 9 2 3\n7\n1\n0 1\n1 9\n2 7\n0 1\n1 9\n2 7\n5\n0 4\n1 5\n2 6\n4\n5\n",
+	},
+	{
 		// `!*pb` of a nil pb read address zero on the target, the boot area, where Go panics.
 		name: "a prefix operator over a nil pointer's dereference panics",
 		src: `func main() {

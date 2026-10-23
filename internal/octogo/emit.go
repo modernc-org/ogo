@@ -25468,16 +25468,25 @@ func (e *emitter) unaryExprKids(ast []int32) ([]Node, bool) {
 
 // derefKids recognises the children of a unary expression `*x` for an operand x of
 // any shape, answering with x and the star's token. derefOperand is the form for a
-// variable x.
+// variable x. A run of prefix operators is one node, and the operand of its first
+// star is the rest of the run: read as a star and a Factor, `range **pp` and `range
+// *<-ch` of a pointer to an array were taken for an integer's.
 func (e *emitter) derefKids(kids []Node) (Node, int32, bool) {
-	if len(kids) != 2 || kids[0].sym != UnaryOp {
+	if len(kids) < 2 || kids[0].sym != UnaryOp {
 		return Node{}, 0, false
 	}
 	tok, ok := e.unaryOpTok(kids[0].ast)
 	if !ok || e.f.ch(tok) != MUL {
 		return Node{}, 0, false
 	}
-	return kids[1], tok, true
+	if len(kids) == 2 {
+		return kids[1], tok, true
+	}
+	var rest []int32
+	for _, k := range kids[1:] {
+		rest = append(rest, encodeNode(k.sym, k.ast)...)
+	}
+	return Node{sym: Expression, ast: encodeNode(SimpleExpr, encodeNode(Term, encodeNode(UnaryExpr, rest)))}, tok, true
 }
 
 // arrayPtrExprShape is the shape of the array `*x` reads for an x that is an
@@ -30903,10 +30912,27 @@ func (e *emitter) emitParenChain(kids []Node) bool {
 	if !ok || ct == "" {
 		return false
 	}
+	// An ARRAY a pointer points at, `(*h.p)[1]`, `(*get())[1:]`, `(**pp)[0]`: the
+	// pointer is bound and the steps walk through it, as through a pointer to an
+	// array variable -- an index reads the array where it is, and a slice is a view
+	// of it, the pointee being addressable. Bound as the array, the copy was `A t =
+	// (*p);`, which is not C: the host's compiler refused it, and the target's took
+	// it (arrayPtrExprDeref read garbage from the same C on a P2-EDGE).
+	if x, isDeref := e.derefExprOperand(kids[1]); isDeref {
+		if pct, ok := e.inferNode(x); ok {
+			if _, isArr := e.arrayPtrCType(pct); isArr {
+				ptr := e.hoist(pct, func() { e.emitExprNode(x) })
+				e.locals[ptr] = pct
+				_, ok = e.emitAccessChainAt(ptr, e.plainOrSlice(pct), steps, true)
+				return ok
+			}
+		}
+	}
 	// A receive of a struct holding an array is a temporary already, filled through
 	// the helper's out parameter (chanStructByPtr): the steps are walked from it.
-	// Bound again below, it would be copied, which the target's compiler cannot.
-	if elem, _, isRecv := e.recvChanOf(kids[1].ast); isRecv && e.chanStructByPtr(elem) {
+	// Bound again below, it would be copied, which the target's compiler cannot. So
+	// is a receive of an array, `(<-ch)[1]`: copied, it was `A t = t2;`.
+	if elem, _, isRecv := e.recvChanOf(kids[1].ast); isRecv && (e.chanStructByPtr(elem) || e.namedArrays[elem].elem != "") {
 		tmp := e.captureC(func() { e.emitExprNode(kids[1]) })
 		if e.err != nil {
 			return true
@@ -33919,6 +33945,12 @@ func (e *emitter) emitRange(h *forHeader, body []int32) {
 		// Bound here for the same reason a literal is.
 		name = e.rangeArrayResultVar(h.rangeExpr)
 	}
+	if name == "" {
+		// `range <-ch` of a channel of ARRAYS: received into a temporary, as a
+		// declaration from one is, and the loop ranges that. Read as no array, it
+		// was refused as an integer's range.
+		name = e.rangeRecvArrayVar(h.rangeExpr)
+	}
 	switch {
 	case name != "":
 		if h.valVar == nil || e.exprC(h.valVar) == "_" {
@@ -34349,6 +34381,24 @@ func (e *emitter) rangeArrayResultVar(rangeExpr []int32) string {
 	e.ind()
 	e.emit(a.elem + " " + name + a.declSuffix() + ";\n")
 	e.emitArrayResultCall(name, cname, rangeExpr)
+	e.arrays[name] = a
+	return name
+}
+
+// rangeRecvArrayVar binds a range operand that receives an ARRAY, `range <-ch`, to
+// a temporary the element's receive helper fills, and returns its name; it returns
+// "" for any other operand.
+func (e *emitter) rangeRecvArrayVar(rangeExpr []int32) string {
+	elem, base, a, ok := e.arrayRecvInit(rangeExpr)
+	if !ok {
+		return ""
+	}
+	e.chanRecvElems[elem] = true
+	name := e.newTmp()
+	e.ind()
+	e.emit(a.elem + " " + name + a.declSuffix() + ";\n")
+	e.ind()
+	e.emit(chanRecvCName(elem) + "(" + base + ", " + name + ");\n")
 	e.arrays[name] = a
 	return name
 }
