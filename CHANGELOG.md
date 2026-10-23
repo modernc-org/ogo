@@ -47,6 +47,10 @@ shipped section tells a reader on that version that they have behaviour they do 
   it or sent, and a callee returning `(*h.p)[1:]` of its parameter. Each is
   refused as a view of a local, as `return a[1:]` is. And `(*ppa)[1:]` of a `ppa
   := &pa` whose pa points at a package array, refused as a view of pa, is taken.
+- **A reslice of a view is asked what the view is of**: `var a [3]int16; gs =
+  a[:][1:]`, `gs = a[1:][1:]` and `gs = h.s.g[:][1:]` of a local kept a view of it
+  in a package variable, in every release, where `s := a[:]; gs = s[1:]` was
+  refused. Each is refused as that is.
 - **An address through a dereference in parentheses points where Go's does**:
   `&(*h.p)[1]`, `&(**ppa)[0]` and `&(**pps).f` were "cannot use ... (a value) as
   *int16" wherever the checker asked -- a typed declaration, an assignment to a
@@ -97,6 +101,21 @@ shipped section tells a reader on that version that they have behaviour they do 
 
 ### Fixed
 
+- **A call in an index with steps after it runs once**: `*s[idx()].ps[2] = 9` and
+  `*a[idx()].ps[0] += 4` ran idx() twice, on the host too, the slice's text
+  written for its .ptr and again for its .len; a read, `v := *s[idx()].ps[1]`,
+  `len(s[idx()].ps)`, `vs[idx()].xs[2]`, bound a slice header of three words from
+  text holding the call, which the target's compiler copies a word at a time, so
+  idx() ran three times on a P2-EDGE; and an increment, `s[idx()].xs[one()]++`,
+  ran it twice. In v0.58.0 too. The pointer such an index yields, or the address of
+  the struct element, is bound first, one word.
+- **A chain in parentheses names the storage it reads**: `f := &(h.s).n; *f = 40`
+  took the address of a field of a copy of h.s and left h as it was, as did
+  `&(arr[1]).n` and `&(gh.s).n` -- in v0.58.0 too, where `var f *int = &(h.s).n`
+  was refused as a value instead -- and `(h.s).g[:]`, `(h.s).n` and `&(gss[1]).g[1]`
+  of a struct holding an array were "not supported yet" or "cannot slice
+  unaddressable value". Each is the chain written without the parentheses now, its
+  address and its views refused where they keep a local, as those are.
 - **The address of a field through a dereference in parentheses is the field's**:
   `f := &(*h.ps).f`, `&(**pps).f` and `&(*get()).f` took the address of a field of
   a copy of the struct, so `*f = 40` left the struct as it was -- `4 0` where Go

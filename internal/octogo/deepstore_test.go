@@ -801,3 +801,62 @@ func addrPP(pp **A) *int16 { return &(**pp)[1] }
 		}
 	}
 }
+
+// TestEmitCParenChainLifetimes holds the lifetime rules to a chain in parentheses,
+// which the emitter writes as the chain without them (spliceParenSteps): an address
+// or a view of a local through `(h.s)`, `(h).s`, `(arr[1])` and a callee's `return
+// &(h.s).n` is refused as the same without the parentheses is, and a reslice of a
+// view, `a[:][1:]`, as the view -- typed as a slice, it was asked for marks a value
+// no variable holds has none of, and `gsl = a[:][1:]` of a local array was taken.
+func TestEmitCParenChainLifetimes(t *testing.T) {
+	const head = `type S struct {
+	n int16
+	g [2]int16
+}
+
+type H struct {
+	s  S
+	ss [2]S
+}
+
+var gh H
+var gp *int16
+var gsl []int16
+
+func addrS(h *H) *int16 { return &(h.s).n }
+
+func viewS(h *H) []int16 { return (h.s).g[:] }
+`
+	for _, test := range []struct {
+		run, refused string
+	}{
+		{"gp = &(h.s).n", "local variable h"},
+		{"gp = &(h).s.n", "local variable h"},
+		{"gp = &((h.s)).g[1]", "local variable h"},
+		{"q := &(h.ss[1]).n\n\tgp = q", "pointer into local h"},
+		{"gsl = (h.s).g[:]", "backed by local h"},
+		{"gsl = (h.s).g[:][1:]", "backed by local h"},
+		{"gsl = h.s.g[1:][:1]", "backed by local h"},
+		{"var a [3]int16\n\tgsl = a[:][1:]", "backed by local a"},
+		{"gp = addrS(&h)", "local variable h"},
+		{"gsl = viewS(&h)", "local variable h"},
+		{"gp = &(gh.s).n", ""},
+		{"gsl = (gh.ss[1]).g[1:]", ""},
+		{"gp = addrS(&gh)", ""},
+		{"gsl = viewS(&gh)", ""},
+		{"f := &(h.s).n\n\t*f = 7\n\tprintln(h.s.n)", ""},
+	} {
+		src := head + "\nfunc run() {\n\tvar h H\n\t_ = h\n\t" + test.run + "\n}\n\nfunc main() {\n\trun()\n\tprintln(gp != nil, len(gsl))\n}\n"
+		fsys := fstest.MapFS{"main.ogo": &fstest.MapFile{Data: []byte(src)}}
+		pkg, err := Build(-1, []string{"main.ogo"}, fsys)
+		if err == nil {
+			err = EmitC(pkg, io.Discard, Checked())
+		}
+		switch {
+		case test.refused != "" && (err == nil || !strings.Contains(err.Error(), test.refused)):
+			t.Errorf("%s: got %v, want %q refused", test.run, err, test.refused)
+		case test.refused == "" && err != nil:
+			t.Errorf("%s: refused: %v", test.run, err)
+		}
+	}
+}

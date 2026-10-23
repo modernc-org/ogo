@@ -1699,6 +1699,164 @@ func main() {
 		want: "8 20 3 1 3\n9 1\n1 20 30 30 1 40 50 60\n",
 	},
 	{
+		// A chain from a variable in parentheses, `(h.s).n`, `(arr[1]).g[:]`, `(h).s`:
+		// the emitter bound it to a temporary as the value it reads, so `&(h.s).n` was
+		// the address of a field of the copy -- `*f = 40` left h as it was, in silence
+		// -- and a struct holding an array was "not supported yet". It is the chain
+		// written without the parentheses, which name nothing.
+		name: "a chain in parentheses names the storage it reads",
+		src: `type S struct {
+	n int16
+	g [2]int16
+}
+
+type H struct {
+	s  S
+	ss [2]S
+}
+
+var gh H
+var gsl []int16
+
+func run() {
+	var h H
+	h.s.n = 4
+	f := &(h.s).n
+	*f = 40
+	s := (h.s).g[:]
+	s[1] = 41
+	(h.ss[1]).n = 42
+	q := &(h).s.g[0]
+	*q = 43
+	arr := [2]S{{n: 1}, {n: 2}}
+	p := &(arr[1]).n
+	*p += 10
+	println(h.s.n, h.s.g[0], h.s.g[1], h.ss[1].n, arr[1].n, (h.s).g[1], len((arr[0]).g[1:]))
+	gsl = (gh.s).g[:][1:]
+	gsl[0] = 44
+	r := &((gh.ss[0])).n
+	*r = 45
+}
+
+func main() {
+	run()
+	println(gh.s.g[1], gh.ss[0].n, len(gsl))
+}
+`,
+		want: "40 43 41 42 12 41 1\n44 45 1\n",
+	},
+	{
+		// A call in an index with steps after it, `s[idx()].ps[1]`, `vs[idx()].xs`: the
+		// store wrote the slice's text twice, its .ptr and its .len, and ran idx()
+		// twice, on the host too; a read bound the slice header, three words, from
+		// text holding the call, and the target's compiler copied it a word at a time,
+		// idx() run for each -- 333 for 3 on a P2-EDGE; an increment rendered its
+		// target twice. The pointer or the struct element's address such an index
+		// yields is bound first, one word, and every form below runs each call once.
+		name: "a call in an index with steps after it, in every statement form",
+		src: `// A call in an index with steps after it, in every statement form: each row resets
+// the record, runs once and prints what it read and the order the calls ran in, so
+// a call evaluated twice -- by the C written twice, or by the target's compiler
+// copying a value of several words a word at a time -- shows as a longer number.
+
+type In struct {
+	v  int
+	ar [3]int16
+}
+
+type T struct {
+	n  int
+	ps []*int
+	in In
+	pi *In
+	s  string
+	xs []int16
+}
+
+func (t *T) get() int { return t.n }
+
+func (t T) val() int { return t.n + 1 }
+
+var x, y, z int
+
+var calls int
+
+var gin = In{v: 5, ar: [3]int16{7, 8, 9}}
+
+func idx() int {
+	calls = calls*10 + 3
+	return 1
+}
+
+func one() int {
+	calls = calls*10 + 1
+	return 0
+}
+
+func take(v int) int { return v * 2 }
+
+func takes(s []int16) int { return len(s) }
+
+func main() {
+	t0 := T{n: 1, ps: []*int{&x, &y, &z}, pi: &gin, s: "abc", xs: []int16{1, 2, 3}}
+	t1 := T{n: 2, ps: []*int{&y, &z, &x}, pi: &gin, s: "hello", xs: []int16{4, 5, 6, 7}}
+	s := []*T{&t0, &t1}
+	a := [2]*T{&t0, &t1}
+	vs := []T{t0, t1}
+
+	calls = 0
+	*s[idx()].ps[2] = 9
+	println("store", x, calls)
+	calls = 0
+	v := *s[idx()].ps[1]
+	println("read", v, calls)
+	calls = 0
+	println("len", len(s[idx()].ps), cap(s[idx()].xs), calls)
+	calls = 0
+	*a[idx()].ps[0] += 4
+	println("compound", y, calls)
+	calls = 0
+	s[idx()].xs[one()]++
+	println("incdec", t1.xs[0], calls)
+	calls = 0
+	sl := s[idx()].xs[1:]
+	println("slice", len(sl), sl[0], calls)
+	calls = 0
+	p := &s[idx()].xs[2]
+	println("addr", *p, calls)
+	calls = 0
+	println("arg", take(*s[idx()].ps[0]), takes(s[idx()].xs), calls)
+	calls = 0
+	n := 0
+	for _, e := range s[idx()].xs {
+		n += int(e)
+	}
+	println("range", n, calls)
+	calls = 0
+	println("method", s[idx()].get(), vs[idx()].val(), calls)
+	calls = 0
+	println("string", len(s[idx()].s), s[idx()].s[one()], calls)
+	calls = 0
+	println("pi", s[idx()].pi.ar[one()], len(s[idx()].pi.ar), calls)
+	calls = 0
+	s[idx()].pi.ar[idx()] = 70
+	println("pistore", gin.ar[1], calls)
+	calls = 0
+	println("value", vs[idx()].xs[2], len(vs[idx()].ps), calls)
+	calls = 0
+	vs[idx()].xs[0] = 40
+	println("vstore", vs[1].xs[0], t1.xs[0], calls)
+	calls = 0
+	q := s[idx()]
+	q.n = 8
+	println("bind", t1.n, calls)
+	calls = 0
+	println("cmp", s[idx()].ps[0] == &y, s[idx()].s == "hello", calls)
+}
+`,
+		want: "store 9 3\nread 0 3\nlen 3 4 33\ncompound 4 3\nincdec 5 31\nslice 3 5 3\naddr 6 3\narg 8 4 33\nrange 23 3\nmethod 2 3 33\nstring 5 104 331\npi 7 3 313\npistore 70 33\nvalue 6 3 33\nvstore 40 40 3\nbind 8 3\ncmp true true 33\n",
+	},
+	{
 		// `!*pb` of a nil pb read address zero on the target, the boot area, where Go panics.
 		name: "a prefix operator over a nil pointer's dereference panics",
 		src: `func main() {

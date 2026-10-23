@@ -3268,7 +3268,25 @@ and an address through one asks what the pointer reaches (parenDerefAddrPtr), th
 callee's summary as well. **A false refusal fixed in the checker is a program the
 emitter is handed next**, and this one was a copy where Go names storage:
 **a dereference is storage, and a head the emitter binds asks whether Go could take
-its address.**
+its address.** So is a chain in parentheses, `(h.s).n`: bound as the value it reads,
+`&(h.s).n` was the address of a copy too, in every release, and the same fix of the
+checker made `var f *int = &(h.s).n` compile into it; the parentheses group nothing,
+and the emitter writes the chain without them since (spliceParenSteps), the lifetime
+readers and the summaries splicing it alike. Sweeping its lifetimes found a hole
+older than any of it: `gs = a[:][1:]` of a local array, a reslice typed as a slice
+and asked for marks no variable holds. And the board found what the host could not:
+the splice moved a run case onto the plain chain path, which wrote `*s[idx()].ps[2]
+= 9` with the slice's text twice (idx() ran twice on the host as well) and read
+`s[idx()].ps` by binding its header, three words, from text holding the call -- the
+target's compiler copies such a value a word at a time and evaluated idx() for each,
+333 for 3, in v0.58.0 too. The walks bind it in one word now (emitAccessChainAt,
+chainCText, chainHoistPointAt), and a statement's target renders once whoever reads
+it first (emitAssignTailOrCopy). Bound before a method call as well, the first
+version changed the C of 239 corpus programs, most fuzzer seeds, a temporary each
+for nothing -- a call takes its receiver once -- and bound only where a field or an
+element is read after it, five.
+**A call on the way to a value of several words is bound in the one word it yields:
+a pointer, or a struct element's address.**
 **A MARK IS MADE IN EMISSION ORDER, AND A LOOP RUNS ITS BODY AGAIN** (2026-10-08,
 found probing unsafe.Slice's views). The holder marks are set as statements are
 emitted, so a statement read a variable's mark as the statements BEFORE it had left

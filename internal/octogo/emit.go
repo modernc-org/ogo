@@ -16754,6 +16754,12 @@ func (e *emitter) summaryReach(ast []int32) (out []held) {
 	if name, ok := e.exprIdent(ast); ok {
 		return []held{{name, heldAlias}}
 	}
+	// `(h.s).g[:]` is `h.s.g[:]` (spliceParenShape), as the emitter writes it.
+	if kids, ok := e.soleFactor(ast); ok {
+		if spliced, ok := e.spliceParenShape(kids); ok {
+			return e.summaryReach(encodeNode(SimpleExpr, encodeNode(Term, encodeNode(UnaryExpr, encodeNode(Factor, spliced.ast)))))
+		}
+	}
 	// `f := func(w []int) { ... }`: the literal, by the key its summary is under --
 	// a name nothing else can spell, so it resolves as one and is what a call
 	// through f is a call of (valueCalls).
@@ -30410,6 +30416,20 @@ func (e *emitter) emitAccessChainAt(prefix string, cur accessCur, steps []Node, 
 			indexed = true
 			if e.exprHasEffect(low) {
 				effect = true
+				// A pointer it yields that steps after it read through, `s[idx()].ps`:
+				// bound, one word, so nothing after reads the index again -- a slice
+				// header copied out of the text was copied a word at a time by the
+				// target's compiler, idx() run for each (chainHoistPointAt).
+				switch {
+				case !last && e.isPointer(next.ctype):
+					inner := prefix
+					prefix, effect = e.hoist(next.ctype, func() { e.emit(inner) }), false
+				case !last && e.isStruct(next.ctype) && (cur.slice || len(cur.dims) != 0):
+					// A STRUCT element of a slice or an array, `vs[idx()].xs`: its
+					// address is bound, one word, and the steps go on through it.
+					inner := prefix
+					prefix, effect = "(*"+e.hoist(next.ctype+"*", func() { e.emit("&" + inner) })+")", false
+				}
 			}
 			cur = next
 		default:
@@ -30474,6 +30494,8 @@ func (e *emitter) emitChainSlice(cur accessCur, prefix string, low, high, max []
 func (e *emitter) chainHoistPointAt(cur accessCur, steps []Node) (int, string, bool) {
 	ok := true
 	named := true
+	// The last pointer an index that does something yields, `s[idx()]`, and where.
+	effAt, effCT := -1, ""
 	for i, n := range steps {
 		switch n.sym {
 		case Selector:
@@ -30481,11 +30503,19 @@ func (e *emitter) chainHoistPointAt(cur accessCur, steps []Node) (int, string, b
 				return 0, "", false
 			}
 		case Index:
-			_, _, _, isSlice := e.sliceParts(n.ast)
+			low, _, _, isSlice := e.sliceParts(n.ast)
 			if (isSlice || cur.slice || cur.ctype == cString) && !named {
 				ctype, ok := e.chainValueCType(cur)
 				if !ok {
 					return 0, "", false
+				}
+				// A value reached through a pointer such an index yields, `s[idx()].ps`
+				// of a slice header: the pointer is bound instead, one word. Bound as
+				// the header, three words, the target's compiler copied it a word at
+				// a time and evaluated its source for each, so idx() ran three times
+				// on a P2-EDGE (doc/multi-long-arg-evaluated-per-long.c).
+				if effAt > 0 {
+					return effAt, effCT, true
 				}
 				return i, ctype, true
 			}
@@ -30501,6 +30531,9 @@ func (e *emitter) chainHoistPointAt(cur accessCur, steps []Node) (int, string, b
 			// The prefix only has to be non-empty here; its text is not read.
 			if cur, _, ok = e.accessIndex(cur, "?"); !ok {
 				return 0, "", false
+			}
+			if low != nil && e.exprHasEffect(low) && e.isPointer(cur.ctype) && i+1 < len(steps) {
+				effAt, effCT = i+1, cur.ctype
 			}
 			named = false
 		default:
@@ -30980,6 +31013,15 @@ func (e *emitter) emitParenChain(kids []Node) bool {
 	}
 	if name, isAddr := e.addrOperand(kids[1].ast); isAddr && e.addrStepRefused(name, steps) {
 		return true // `(&pp).x`, `(&ps)[0]`: refused in Go's words
+	}
+	// A chain from a variable in parentheses, `(h.s).n`, `(arr[1]).g[:]`: the chain
+	// written without them, `h.s.n`, which names the same storage -- the parentheses
+	// group nothing (parenChainParts). Bound below as the value it reads, a copy,
+	// `&(h.s).n` was the address of a field of the copy, so `*f = 40` left h as it
+	// was, in silence, and a struct holding an array was "not supported yet".
+	if spliced, ok := e.spliceParenSteps(kids); ok {
+		e.emitExprNode(spliced)
+		return true
 	}
 	ct, ok := e.inferNode(kids[1])
 	if !ok || ct == "" {
@@ -40919,6 +40961,26 @@ func (e *emitter) chainCText(base string, steps []Node) (text, ctype string, add
 			text = pre + e.accessDeref(cur, text) + open + e.indexCText(low, lenExpr) + closing
 			if e.exprHasEffect(low) {
 				effect = true
+				// A pointer it yields that steps after it read through, `*s[idx()].ps[2]
+				// = 9`: bound, one word, as the walk binds it (emitAccessChainAt).
+				// Written out, the slice's text stood twice, its .ptr and its .len,
+				// and idx() ran twice.
+				// Only where a field or an element is read after it: a method called
+				// on what it yields takes it as its receiver once, as the call's
+				// argument, and a binding would cost the function a register for
+				// nothing.
+				readOn := i+1 < len(steps) && (steps[i+1].sym == Index ||
+					steps[i+1].sym == Selector && (i+2 == len(steps) || steps[i+2].sym != CallSuffix))
+				switch {
+				case !readOn:
+				case e.isPointer(next.ctype):
+					inner := text
+					text, effect = e.hoist(next.ctype, func() { e.emit(inner) }), false
+				case e.isStruct(next.ctype) && (cur.slice || len(cur.dims) != 0):
+					// A STRUCT element, `vs[idx()].xs[0] = 40`: its address, as above.
+					inner := text
+					text, effect = "(*"+e.hoist(next.ctype+"*", func() { e.emit("&" + inner) })+")", false
+				}
 			}
 			cur, addr = next, true
 		default:
@@ -46260,6 +46322,56 @@ func (e *emitter) spliceParenChain(kids []Node) (Node, bool) {
 	return Node{sym: Factor, ast: append([]int32{id.tok}, encodeNode(FactorSuffix, suffix)...)}, true
 }
 
+// spliceParenSteps is spliceParenChain for any steps: `(h.s).n`, `(arr[1]).g[:]`
+// and `((h.s)).n` are the Factors `h.s.n` and `arr[1].g[:]`, a chain from a variable
+// in parentheses naming the storage the chain written without them does
+// (parenChainParts).
+func (e *emitter) spliceParenSteps(kids []Node) (Node, bool) {
+	if len(kids) != 4 || kids[0].sym != 0 || e.f.ch(kids[0].tok) != LPAREN || kids[1].sym != Expression ||
+		kids[2].sym != 0 || e.f.ch(kids[2].tok) != RPAREN || kids[3].sym != FactorSuffix {
+		return Node{}, false
+	}
+	after := slices.Collect(it(kids[3].ast))
+	// A variable alone, `(h).s.n`.
+	if fk := e.factorKids(e.unparenExpr(kids[1].ast)); len(fk) == 1 && fk[0].sym == 0 && e.f.ch(fk[0].tok) == IDENT {
+		if _, isVar := e.varType(e.src(fk[0].tok)); isVar && len(after) != 0 && (after[0].sym == Selector || after[0].sym == Index) {
+			return chainFactor(fk[0].tok, after), true
+		}
+	}
+	id, _, steps, ok := e.parenChainParts(kids[1].ast, after)
+	if !ok {
+		return Node{}, false
+	}
+	return chainFactor(id.tok, steps), true
+}
+
+// spliceParenShape is spliceParenSteps by shape alone, for the summaries, which are
+// collected before any local is declared: parentheses holding a name and steps,
+// `(h.s)`, followed by steps, `.g[:]`, are the name and every step.
+func (e *emitter) spliceParenShape(kids []Node) (Node, bool) {
+	if len(kids) != 4 || kids[0].sym != 0 || e.f.ch(kids[0].tok) != LPAREN || kids[1].sym != Expression ||
+		kids[2].sym != 0 || e.f.ch(kids[2].tok) != RPAREN || kids[3].sym != FactorSuffix {
+		return Node{}, false
+	}
+	fk := e.factorKids(e.unparenExpr(kids[1].ast))
+	if len(fk) == 1 && fk[0].sym == 0 && e.f.ch(fk[0].tok) == IDENT {
+		return chainFactor(fk[0].tok, slices.Collect(it(kids[3].ast))), true // `(h).s.n`
+	}
+	if len(fk) != 2 || fk[0].sym != 0 || e.f.ch(fk[0].tok) != IDENT || fk[1].sym != FactorSuffix {
+		return Node{}, false
+	}
+	return chainFactor(fk[0].tok, append(slices.Collect(it(fk[1].ast)), slices.Collect(it(kids[3].ast))...)), true
+}
+
+// chainFactor is the Factor of a name and the steps after it.
+func chainFactor(name int32, steps []Node) Node {
+	var suffix []int32
+	for _, st := range steps {
+		suffix = append(suffix, encodeNode(st.sym, st.ast)...)
+	}
+	return Node{sym: Factor, ast: append([]int32{name}, encodeNode(FactorSuffix, suffix)...)}
+}
+
 // addrChainStepRefused is addrStepRefused for an address of a CHAIN: the step
 // after `(&h.p)` is asked of what the chain reaches, so a pointer field's `.x`, a
 // slice field's `[0]` and a function field's call are refused as Go refuses them.
@@ -48127,6 +48239,17 @@ func (e *emitter) emitArrayTargetAssign(dst string, a arrDim, rhs []int32) {
 // way, and not at all if the copy is refused, so a refusal leaves no half-written
 // statement.
 func (e *emitter) emitAssignTailOrCopy(target func(), t assignTail) {
+	// Rendered once, whoever asks first: guardedAssignC and hoistCompoundTarget read
+	// its text and may decline, and the store renders it again. A target binding a
+	// pointer an index that calls yields bound it each time, so `s[idx()].xs[one()]++`
+	// ran idx() twice.
+	render, once, rendered := target, "", false
+	target = func() {
+		if !rendered {
+			once, rendered = e.captureC(render), true
+		}
+		e.emit(once)
+	}
 	// The value is stored as the target's type, so an untyped shift in it is
 	// computed in that type. A shift assignment's operand is a count, which is not.
 	if t.rhs != nil && t.targetCType != "" && t.op != "<<=" && t.op != ">>=" {
@@ -56491,6 +56614,15 @@ func (e *emitter) sliceBackingIsFrame(ast []int32) (string, bool) {
 	if !isChain || !e.endsInSliceStep(steps) {
 		return "", false
 	}
+	// A reslice, `a[:][1:]`, `h.s.g[:][1:]`: what the slice it reslices views. Typed
+	// as a slice below, the slice expression was asked for marks of its own, which a
+	// value no variable holds has none of, and `gs = a[:][1:]` of a local array was
+	// taken where `s := a[:]; gs = s[1:]` was refused.
+	if len(steps) > 1 && e.endsInSliceStep(steps[:len(steps)-1]) {
+		if inner, ok := e.factorWithoutLastStep(ast); ok {
+			return e.sliceBackingIsFrame(inner)
+		}
+	}
 	// Through a POINTER the chain reaches what the pointer points at, and only the
 	// holder mark knows where that is: `p := &pkgArray` is a local pointing at
 	// storage that outlives the call, and reading the pointer's own would refuse it.
@@ -57068,6 +57200,19 @@ func (e *emitter) frameRefAny(ast []int32) (frameRef, bool) {
 	if kids, ok := e.soleFactor(ast); ok {
 		if spliced, ok := e.spliceParenChain(kids); ok {
 			ast = encodeNode(Factor, spliced.ast)
+		} else if spliced, ok := e.spliceParenSteps(kids); ok {
+			// `(h.s).g[:]` is `h.s.g[:]` (spliceParenSteps), which the emitter writes:
+			// read with the parentheses, `gsl = (h.s).g[:]` kept a view of a local.
+			ast = encodeNode(Factor, spliced.ast)
+		}
+	}
+	// And the address of one, `&(h.s).n`, is the address of `h.s.n`: unread, `gp =
+	// &(h.s).n` kept a local's address once the emitter wrote it as that.
+	if un, ok := e.unaryExprKids(ast); ok && len(un) == 2 && un[0].sym == UnaryOp && un[1].sym == Factor {
+		if tok, ok := e.unaryOpTok(un[0].ast); ok && e.f.ch(tok) == AND {
+			if spliced, ok := e.spliceParenSteps(slices.Collect(it(un[1].ast))); ok {
+				ast = encodeNode(UnaryExpr, append(encodeNode(UnaryOp, un[0].ast), encodeNode(Factor, spliced.ast)...))
+			}
 		}
 	}
 	if r, frame, isPtrView := e.arrayPtrViewRef(ast); isPtrView {
