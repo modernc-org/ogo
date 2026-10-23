@@ -3039,7 +3039,11 @@ every release. A declared `var pp **Node` was right everywhere, its type written
 whole beside the flags and read first; the inferred one is recorded the same way
 since, the walk's type taken whole where this package wrote it. **A type the
 flags cannot say is recorded whole, as a declaration would write it: an unnamed
-variable is one every rule asking a name skips.**
+variable is one every rule asking a name skips.** Across the package boundary the
+row was still open, `pp := &lib.L.Head`, the first version leaving another
+package's type on the old path because its unnamed fallback read this file's
+value through lib's tokens; it is written as this file names it, `**lib.Node`,
+since (acrossPointerType), and 24 rows of three shapes agree with Go.
 **A VIEW IS AN ADDRESS** (2026-10-22, found by dom58, a driver framework of
 embedded Bases, Buses and Rings, in the first lifetime variant of its run). `gs =
 view(&u)` for a `func view(u *UART) []byte { return u.buf[:] }` kept a slice of a

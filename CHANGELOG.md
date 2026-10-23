@@ -43,7 +43,8 @@ shipped section tells a reader on that version that they have behaviour they do 
   pointer**: `pp := &w.head`, `pp := &slots[i]` and `var pp = &l.head` -- the
   cursor of the list idiom `for pp := &l.head; *pp != nil; pp = &(*pp).next` --
   typed `*pp` as the struct two steps away, and `*pp != nil` was refused as "nil
-  is no value of struct". And `pp := &hd` for a pointer variable hd gave its
+  is no value of struct" -- of another package's too, `pp := &lib.L.Head`. And
+  `pp := &hd` for a pointer variable hd gave its
   method calls nothing to be asked of: `(*pp).m(1)` of a method nobody declared
   and `(*pp).get("a")` of an int parameter went to the C compiler. Found by a
   domain program of a timer wheel and an LRU cache over static node pools.

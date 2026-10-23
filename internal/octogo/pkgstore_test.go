@@ -149,3 +149,54 @@ func main() { keep(&gx) }
 		})
 	}
 }
+
+// TestCheckAddrOfPointerAcrossPackages: the address of another package's pointer,
+// `pp := &lib.L.Head`, is a pointer to a pointer of lib's type, as `var pp
+// **lib.Node` declares it. Recorded as one pointer, `*pp` was the struct two steps
+// away and the list idiom's `for *pp != nil` was refused for comparing a struct
+// with nil; and its mistakes are refused in lib's names.
+func TestCheckAddrOfPointerAcrossPackages(t *testing.T) {
+	const lib = `type Node struct {
+	Val  int
+	Next *Node
+}
+
+func (n *Node) Get(k int) int { return n.Val + k }
+
+type List struct{ Head *Node }
+
+var G *Node
+
+var L List
+
+var A [3]*Node
+`
+	walk := "\n\tfor *pp != nil && (*pp).Val < 3 {\n\t\tpp = &(*pp).Next\n\t}\n\tk := 0\n\tif *pp != nil {\n\t\tk = (*pp).Get(1)\n\t}\n\tprintln(k)"
+	for _, test := range []struct {
+		body, refused string
+	}{
+		{"pp := &lib.G" + walk, ""},
+		{"pp := &lib.L.Head" + walk, ""},
+		{"var pp = &lib.A[1]" + walk, ""},
+		{"pp := &lib.L.Head\n\t(*pp).M(1)", "type lib.Node has no method M"},
+		{"pp := &lib.G\n\tprintln((*pp).Get(\"a\"))", `cannot use "a"`},
+		{"pp := &lib.G\n\t**pp = 3", "cannot use 3"},
+		{"pp := &lib.A[0]\n\t*pp = 3", "cannot use 3"},
+	} {
+		src := "import \"lib\"\n\nfunc main() {\n\t" + test.body + "\n}\n"
+		fsys := fstest.MapFS{
+			"main.ogo":    &fstest.MapFile{Data: []byte(src)},
+			"lib/lib.ogo": &fstest.MapFile{Data: []byte(lib)},
+		}
+		pkg, err := Build(-1, []string{"main.ogo"}, fsys)
+		if err == nil {
+			err = EmitC(pkg, io.Discard, Checked())
+		}
+		switch {
+		case test.refused != "" && (err == nil || !strings.Contains(err.Error(), test.refused)):
+			t.Errorf("%s: got %v, want %q refused", test.body, err, test.refused)
+		case test.refused == "" && err != nil:
+			t.Errorf("%s: refused: %v", test.body, err)
+		}
+	}
+}

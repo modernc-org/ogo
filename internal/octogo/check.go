@@ -6395,6 +6395,15 @@ func (f *File) inferVarFrom(s *Scope, vd *VarDeclaration, init Node) {
 			}
 		}
 	}
+	// The same of a pointer to a pointer another package wrote, `q := &lib.G` and
+	// `pp := &lib.L.Head`: its type as this file writes it, `**lib.Node`
+	// (acrossPointerType), where the walk's would be read in lib's terms.
+	if t := vd.inferredType; t != nil && t.f != nil && t.f.Package != f.Package && f.addrOfPointer(s, init) {
+		if tn, ok := f.acrossPointerType(*t); ok {
+			vd.takeType(f.typedVar(s, vd.token, tn))
+			return
+		}
+	}
 	switch ek, hasEk, tn, tq, isPtr := f.addressOfInfo(s, init); {
 	case isPtr && vd.inferredType != nil && vd.inferredType.f != nil && vd.inferredType.f.Package == f.Package &&
 		(vd.inferredType.s == f.Package.Scope || onScopeChain(s, vd.inferredType.s)) && f.addrOfPointer(s, init):
@@ -21401,6 +21410,32 @@ func (f *File) addrOfPointer(s *Scope, n Node) bool {
 		return false
 	}
 	return f.isPointerType(t.s, p.TypeNode)
+}
+
+// acrossPointerType is t, the walk's type of a pointer to a pointer another package
+// wrote, `**Node` read off lib, as this file writes it, `**lib.Node`: the stars over
+// the name namedAcross gives, which is what `var q **lib.Node` declares.
+func (f *File) acrossPointerType(t typeAt) (TypeNode, bool) {
+	tn, stars := t.tn, 0
+	for {
+		p, isPtr := tn.(*TypeNodePointer)
+		if !isPtr {
+			break
+		}
+		tn, stars = p.TypeNode, stars+1
+	}
+	if stars < 2 {
+		return nil, false
+	}
+	name, qual, _, ok := f.namedAcross(typeAt{tn, t.s, t.f}, Token{})
+	if !ok {
+		return nil, false
+	}
+	var out TypeNode = &TypeNodeIdent{Qualifier: qual, Name: name}
+	for range stars {
+		out = &TypeNodePointer{TypeNode: out}
+	}
+	return out, true
 }
 
 // addrOfPointerVar reports `&p` for a variable p that is itself a pointer.
