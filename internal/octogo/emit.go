@@ -16889,6 +16889,20 @@ func (e *emitter) summaryReach(ast []int32) (out []held) {
 			}
 			return []held{{name, heldContents}}
 		}
+		// A dereference of anything else in parentheses, `(*h.p)[1:]`, `(**pp).f`:
+		// what the dereferenced value reaches, as contents -- what `h.p[1:]`, Go's
+		// shorthand through a pointer to an array, reads. Unread, `return
+		// (*h.p)[1:]` handed back nothing, and `g = view(&h)` kept a view of a local
+		// array past its frame where `return h.p[1:]` was followed.
+		if len(kids) == 4 && kids[0].sym == 0 && e.f.ch(kids[0].tok) == LPAREN && kids[1].sym == Expression && kids[3].sym == FactorSuffix {
+			if x, isDeref := e.derefExprOperand(kids[1]); isDeref {
+				ptr := x.ast
+				if x.sym == Factor {
+					ptr = encodeNode(SimpleExpr, encodeNode(Term, encodeNode(UnaryExpr, encodeNode(Factor, x.ast))))
+				}
+				return asElem(e.summaryReach(ptr))
+			}
+		}
 	}
 	return nil
 }
@@ -56345,6 +56359,9 @@ func (e *emitter) sliceBackingIsFrame(ast []int32) (string, bool) {
 	// of a SHAPE, which they hide: `return (a[:])` was returned, stored, sent and
 	// launched where `return a[:]` was refused.
 	ast = e.unparenExpr(ast)
+	if r, frame, isPtrView := e.arrayPtrViewRef(ast); isPtrView {
+		return r.name, frame
+	}
 	if name, ok := e.exprIdent(ast); ok {
 		return name, e.frameBacked[name]
 	}
@@ -56414,6 +56431,92 @@ func (e *emitter) sliceBackingIsFrame(ast []int32) (string, bool) {
 		return base, e.frameBacked[base] || e.frameHolder[base] != ""
 	}
 	return "", false
+}
+
+// arrayPtrViewRef answers for a slice of what a POINTER to an array points at --
+// `h.p[1:]` of a field holding one, `(*h.p)[1:]`, `(**pp)[1:]`, `ps[0][1:]`,
+// `pick(&h)[1:]` -- reporting whether the value is one: the view reaches what the
+// pointer reaches, and is asked of the pointer as every sink asks one. Read by its
+// root, `h.p[1:]` of an `h := H{p: &a}` viewed nothing of the frame and was returned
+// over a dead array, and `(*pp)[1:]` of a pp pointing at a local p holding a package
+// array's address viewed p. A pointer VARIABLE sliced, `p[1:]` and `(*p)[1:]`, is the
+// root rule's below.
+func (e *emitter) arrayPtrViewRef(ast []int32) (r frameRef, frame, isPtrView bool) {
+	ptr, ok := e.slicedArrayPtr(ast)
+	if !ok {
+		return frameRef{}, false, false
+	}
+	pr, frame := e.frameRefAny(ptr)
+	if !frame {
+		return frameRef{}, false, true
+	}
+	return frameRef{origin: pr.origin, name: pr.name, view: true, backing: pr.backing,
+		what: e.f.exprSource(Node{sym: Expression, ast: ast}) + ", which views " + pr.origin}, true, true
+}
+
+// slicedArrayPtr is the pointer a slice of an array reached through one views
+// through (arrayPtrViewRef): the operand of the last step where it is a pointer to an
+// array, the pointer an array operand dereferences, `(*q)`, `**pp`, and a reslice's
+// of the slice it reslices. It renders nothing.
+func (e *emitter) slicedArrayPtr(ast []int32) ([]int32, bool) {
+	fac, ok := e.soleFactorNode(ast)
+	if !ok {
+		return nil, false
+	}
+	kids := slices.Collect(it(fac.ast))
+	if len(kids) < 2 || kids[len(kids)-1].sym != FactorSuffix {
+		return nil, false
+	}
+	steps := slices.Collect(it(kids[len(kids)-1].ast))
+	if !e.endsInSliceStep(steps) {
+		return nil, false
+	}
+	var b []int32
+	for _, k := range kids[:len(kids)-1] {
+		if k.sym == 0 {
+			b = append(b, k.tok) // a terminal is its token
+			continue
+		}
+		b = append(b, encodeNode(k.sym, k.ast)...)
+	}
+	if len(steps) > 1 {
+		var sfx []int32
+		for _, st := range steps[:len(steps)-1] {
+			sfx = append(sfx, encodeNode(st.sym, st.ast)...)
+		}
+		b = append(b, encodeNode(FactorSuffix, sfx)...)
+	}
+	operand := encodeNode(SimpleExpr, encodeNode(Term, encodeNode(UnaryExpr, encodeNode(Factor, b))))
+	// A reslice, `(*h.p)[1:][1:]`, views what the slice it reslices views.
+	if len(steps) > 1 && e.endsInSliceStep(steps[:len(steps)-1]) {
+		return e.slicedArrayPtr(operand)
+	}
+	isArrayPtr := func(x []int32) bool {
+		var ct string
+		var ok bool
+		e.capturePrologue(func() { ct, ok = e.inferCType(x) })
+		if !ok {
+			return false
+		}
+		_, ok = e.arrayPtrCType(ct)
+		return ok
+	}
+	if _, isName := e.exprIdent(e.unparenExpr(operand)); isName {
+		return nil, false
+	}
+	if isArrayPtr(operand) {
+		return operand, true
+	}
+	if x, isDeref := e.derefExprOperand(Node{sym: Expression, ast: operand}); isDeref {
+		ptr := x.ast
+		if x.sym == Factor { // `*q`: the operand of one star is a Factor, not an expression
+			ptr = encodeNode(SimpleExpr, encodeNode(Term, encodeNode(UnaryExpr, encodeNode(Factor, x.ast))))
+		}
+		if _, isName := e.exprIdent(e.unparenExpr(ptr)); !isName && isArrayPtr(ptr) {
+			return ptr, true
+		}
+	}
+	return nil, false
 }
 
 // endsInSliceStep reports whether the last step of a chain is a SLICE rather than an
@@ -56875,6 +56978,9 @@ func (e *emitter) frameRefAny(ast []int32) (frameRef, bool) {
 		if spliced, ok := e.spliceParenChain(kids); ok {
 			ast = encodeNode(Factor, spliced.ast)
 		}
+	}
+	if r, frame, isPtrView := e.arrayPtrViewRef(ast); isPtrView {
+		return r, frame
 	}
 	if name, frame := e.sliceBackingIsFrame(ast); frame {
 		return sliceRef(name), true

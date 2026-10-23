@@ -670,3 +670,72 @@ var gw W
 		}
 	}
 }
+
+// TestEmitCArrayPtrViews holds the lifetime rules to a slice of what a POINTER to
+// an array points at -- `h.p[1:]` of a field holding one, `(*h.p)[1:]`,
+// `(**ppa)[1:]`, `(*ps[0])[1:]`, `pick(&h)[1:]` and a reslice of any: the view is
+// of what the pointer reaches, and was asked of the root, which a struct holding
+// the address of a local array is no view of. Each was returned, stored, passed to
+// a callee keeping it and sent over a dead frame's array -- `104 836` for `5 6` on a
+// P2-EDGE -- and `(*ppa)[1:]` of a ppa pointing at a pa holding a package array's
+// address was refused as a view of pa. A callee's summary read `return (*h.p)[1:]`
+// as handing back nothing, and `g = viewP(&h)` was taken.
+func TestEmitCArrayPtrViews(t *testing.T) {
+	const head = `type A [3]int16
+
+type H struct{ p *A }
+
+type W struct{ h H }
+
+type G struct{ s []int16 }
+
+var ga = A{1, 2, 3}
+var g []int16
+var gs [1][]int16
+var gh G
+var gc = make(chan []int16, 1)
+
+func pick(h *H) *A { return h.p }
+
+func keep(s []int16) { g = s }
+
+func viewP(h *H) []int16 { return (*h.p)[1:] }
+
+func viewPP(pp **A) []int16 { return (**pp)[1:] }
+`
+	for _, test := range []struct {
+		run, refused string
+	}{
+		{"h := H{p: &a}\n\treturn h.p[1:]", "cannot return h.p[1:], which views local a"},
+		{"h := H{p: &a}\n\tg = viewP(&h)\n\treturn nil", "pointer into local a"},
+		{"pa := &a\n\treturn viewPP(&pa)", "pointer into local a"},
+		{"h := H{p: &ga}\n\tg = viewP(&h)\n\treturn nil", ""},
+		{"h := H{p: &a}\n\tg = (*h.p)[1:]\n\treturn nil", "cannot store (*h.p)[1:], which views local a"},
+		{"var h H\n\th.p = &a\n\tkeep(h.p[:2])\n\treturn nil", "cannot pass h.p[:2], which views local a"},
+		{"pa := &a\n\tppa := &pa\n\treturn (**ppa)[1:]", "which views local a"},
+		{"ps := [1]*A{&a}\n\tgs[0] = (*ps[0])[1:]\n\treturn nil", "which views local a"},
+		{"w := W{h: H{p: &a}}\n\tgh.s = w.h.p[1:]\n\treturn nil", "which views local a"},
+		{"h := H{p: &a}\n\treturn pick(&h)[1:]", "which views local a"},
+		{"h := H{p: &a}\n\ts := (*h.p)[1:]\n\tg = s\n\treturn nil", "cannot store a slice backed by local s"},
+		{"h := H{p: &a}\n\treturn (*h.p)[1:][1:]", "which views local a"},
+		{"h := H{p: &a}\n\tgc <- h.p[1:]\n\treturn nil", "cannot send h.p[1:], which views local a"},
+		{"h := H{p: &ga}\n\treturn h.p[1:]", ""},
+		{"pa := &ga\n\tppa := &pa\n\treturn (*ppa)[1:]", ""},
+		{"h := H{p: &ga}\n\treturn (*pick(&h))[1:]", ""},
+		{"h := H{p: &a}\n\tprintln(len(h.p[1:]))\n\treturn nil", ""},
+		{"h := H{p: &a}\n\ts := h.p[1:]\n\tprintln(s[0])\n\treturn nil", ""},
+	} {
+		src := head + "\nfunc run() []int16 {\n\tvar a A\n\t_ = a\n\t" + test.run + "\n}\n\nfunc main() {\n\tprintln(len(run()))\n}\n"
+		fsys := fstest.MapFS{"main.ogo": &fstest.MapFile{Data: []byte(src)}}
+		pkg, err := Build(-1, []string{"main.ogo"}, fsys)
+		if err == nil {
+			err = EmitC(pkg, io.Discard, Checked())
+		}
+		switch {
+		case test.refused != "" && (err == nil || !strings.Contains(err.Error(), test.refused)):
+			t.Errorf("%s: got %v, want %q refused", test.run, err, test.refused)
+		case test.refused == "" && err != nil:
+			t.Errorf("%s: refused: %v", test.run, err)
+		}
+	}
+}

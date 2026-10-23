@@ -1575,6 +1575,50 @@ func main() {
 		want: "2 3 1\n9 9 2 3\n7\n1\n0 1\n1 9\n2 7\n0 1\n1 9\n2 7\n5\n0 4\n1 5\n2 6\n4\n5\n",
 	},
 	{
+		// A slice of what a pointer to an array points at, kept past the function
+		// where the array is a package's: `(*ppa)[1:]` of a ppa pointing at a pa
+		// holding ga's address was refused as a view of pa, and the view rule asks
+		// the pointer since (arrayPtrViewRef) -- which refuses the same views of a
+		// local array, `return h.p[1:]` of an `h := H{p: &a}` among them, read on a
+		// P2-EDGE over the dead frame (`104 836` for `5 6`).
+		name: "a slice of what a pointer to an array points at, kept past the function",
+		src: `type A [3]int16
+
+type H struct{ p *A }
+
+var ga = A{1, 2, 3}
+var g, g2, g3 []int16
+
+func pick(h *H) *A { return h.p }
+
+func viewP(h *H) []int16 { return (*h.p)[1:] }
+
+func viewPP(pp **A) []int16 { return (**pp)[:2] }
+
+func run() []int16 {
+	h := H{p: &ga}
+	pa := &ga
+	ppa := &pa
+	g = (*ppa)[1:]
+	g2 = viewP(&h)
+	g3 = viewPP(ppa)
+	var a A
+	a = A{7, 8, 9}
+	hl := H{p: &a}
+	s := hl.p[1:]
+	println(s[0], len((*hl.p)[:2]))
+	return (*pick(&h))[1:][1:]
+}
+
+func main() {
+	r := run()
+	ga[2] = 30
+	println(r[0], g[1], g2[0], g3[1], len(r))
+}
+`,
+		want: "8 2\n30 30 2 2 1\n",
+	},
+	{
 		// `!*pb` of a nil pb read address zero on the target, the boot area, where Go panics.
 		name: "a prefix operator over a nil pointer's dereference panics",
 		src: `func main() {

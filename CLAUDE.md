@@ -1030,6 +1030,9 @@ section. A new finding goes there; the rule it leaves goes here too.
   to a struct or an array is the shorthand, and any other is what the call is made
   on**. **A VIEW IS AN ADDRESS**: **a slice of an array is the address of its first
   element: every rule asking where an address points asks it of the view**; **A
+  VIEW THROUGH A POINTER IS OF WHAT IT POINTS AT**: **A view's storage is asked of
+  what is sliced: a slice of a pointer to an array views what the pointer reaches,
+  which the pointer's root is not.** **A
   type a rule does not know is asked which rules read it as a default**. **A MARK IS MADE IN EMISSION ORDER, AND A LOOP RUNS ITS BODY AGAIN**: **A mark is a fact about a
   variable at a point; a rule reading one asks what reaches that point -- a loop's
   back edge and an alias both do.**

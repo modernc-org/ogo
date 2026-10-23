@@ -39,6 +39,14 @@ shipped section tells a reader on that version that they have behaviour they do 
   was asked nothing either: `-*pb` negated a bool, `!*p8` was C's logical not of an
   int8, and `-<-*pch`, `&<-*pch` and `<-*pchs` of a send-only channel reached C.
   Each is refused as Go refuses it.
+- **A slice of what a pointer to an array points at is asked where that array
+  lives**: `h := H{p: &a}; return h.p[1:]` of a local array a built, and on a
+  P2-EDGE the slice read the dead frame -- `104 836` where Go prints `5 6` -- and
+  so did `(*h.p)[1:]`, `(**ppa)[1:]`, `(*ps[0])[1:]`, `w.h.p[1:]`, `pick(&h)[1:]`
+  and a reslice of each, stored in a package variable, passed to a callee keeping
+  it or sent, and a callee returning `(*h.p)[1:]` of its parameter. Each is
+  refused as a view of a local, as `return a[1:]` is. And `(*ppa)[1:]` of a `ppa
+  := &pa` whose pa points at a package array, refused as a view of pa, is taken.
 - **A value of a predeclared type is told from a defined type over it wherever
   the walk types it**: `var y T = -*p16` for a `type T int16`, `takeT(<-*pc16)`,
   `var y int16 = -**ppt` of a T, `var z T = arr[0]` of a `type A [3]int16`, `var

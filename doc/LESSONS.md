@@ -3235,6 +3235,24 @@ element of a defined array has a type and no name.**
 range's are declarations.**
 **A head the emitter binds to a temporary is asked whether C copies it: an array a
 pointer points at is reached through the pointer.**
+**A VIEW THROUGH A POINTER IS OF WHAT IT POINTS AT** (2026-10-23, the paragraph
+above's last fix made `(*h.p)[1:]` a view of the array). Asked whether such a view
+dangles, the lifetime rules said no: sliceBackingIsFrame reads a slice by its root,
+and a struct holding a local array's address is no array -- `h := H{p: &a}; return
+h.p[1:]` built, and read `104 836` for `5 6` on a P2-EDGE, the dead frame reused by
+the next call, in every release; and the parenthesised and run spellings,
+`(*h.p)[1:]`, `(**ppa)[1:]`, `(*ps[0])[1:]`, read no root at all. ptr-view, twenty
+ways to reach an array through a pointer by eleven sinks over a local and a package
+array, found 164 dangling views of 528 at 93d40a6, 22 through a callee whose summary
+read `return (*h.p)[1:]` as handing back nothing (summaryReach knew a dereference in
+parentheses over a name only), and 11 false refusals the other way: `(*ppa)[1:]` of
+a ppa pointing at a pa that holds a package array's address was a view of pa. A
+slice whose operand is a pointer to an array, or a dereference of one, asks what the
+pointer reaches since (arrayPtrViewRef), as every sink asks a pointer, and a
+reslice asks what it reslices. What the per-variable holder mark costs stays: `hh :=
+&H{p: &ga}` holds the frame's literal, and a view through any of its fields is
+refused. **A view's storage is asked of what is sliced: a slice of a pointer to an
+array views what the pointer reaches, which the pointer's root is not.**
 **A MARK IS MADE IN EMISSION ORDER, AND A LOOP RUNS ITS BODY AGAIN** (2026-10-08,
 found probing unsafe.Slice's views). The holder marks are set as statements are
 emitted, so a statement read a variable's mark as the statements BEFORE it had left
