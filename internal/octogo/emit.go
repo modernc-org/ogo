@@ -3281,7 +3281,7 @@ func (e *emitter) emitSelect(ast []int32) {
 			target, okTgt := c.target, c.okTgt
 			if !c.declare {
 				bound, ok := true, true
-				if target.name != "" {
+				if target.name != "" || target.ptr.ast != nil {
 					target, bound = e.bindTarget(target)
 				}
 				if c.hasOk {
@@ -15922,6 +15922,26 @@ func (e *emitter) parenNameShape(head Node) string {
 	return name
 }
 
+// parenChainShape is a statement's head written as a parenthesised chain from a
+// name, `(t.pp)` or `(&t.pp)` -- what parentheses hold read by shape
+// (parenInnerShape) -- answering the name and the steps from it; "" for a name
+// alone, a dereference and a chain holding a call, which their own readers take.
+// Under stars, `*(t.pp) = v` stores through what t.pp holds as `*t.pp = v` does,
+// and `**(&t.pp) = v` the same: read for a name alone, the head was nobody's, and a
+// callee storing its parameter so was summarised as storing nothing.
+func (e *emitter) parenChainShape(head Node) (string, []Node) {
+	kids := slices.Collect(it(head.ast))
+	if len(kids) != 3 || kids[0].sym != 0 || e.f.ch(kids[0].tok) != LPAREN ||
+		kids[2].sym != 0 || e.f.ch(kids[2].tok) != RPAREN || kids[1].sym != Expression {
+		return "", nil
+	}
+	root, stars, path, ok := e.parenInnerShape(kids[1].ast)
+	if !ok || stars != "" || len(path) == 0 || !isAccessChain(path) {
+		return "", nil
+	}
+	return root, path
+}
+
 // scanHead is an assignment's head and the steps after it read by SHAPE, for the
 // passes that scan a body before its locals have types: the variable written, the
 // steps from it, and stars for a head that writes THROUGH the variable, `*p` and
@@ -16382,10 +16402,14 @@ func (e *emitter) assignThrough(nodes []Node) (base string, values [][]int32, su
 	// v` do: read by name alone, the head was nobody's, and a callee storing its
 	// parameter through another was summarised as storing nothing.
 	written, isDeref := e.derefHeadName(nodes[0])
+	chained := false
 	if base = e.soleIdent(nodes[0].ast); base == "" && !isDeref {
-		// `(g) = v` stores into g, as `g = v` does.
+		// `(g) = v` stores into g, as `g = v` does, and `(t.pp) = v` through t.
 		if base = e.parenNameShape(nodes[0]); base == "" {
-			return "", nil, false, false
+			if base, _ = e.parenChainShape(nodes[0]); base == "" {
+				return "", nil, false, false
+			}
+			chained = true
 		}
 	}
 	if isDeref {
@@ -16404,7 +16428,7 @@ func (e *emitter) assignThrough(nodes []Node) (base string, values [][]int32, su
 			values = append(values, n.ast)
 		}
 	}
-	return base, values, len(postfix) > 1, isDeref || e.derefStars(nodes[0].ast) != ""
+	return base, values, len(postfix) > 1 || chained, isDeref || e.derefStars(nodes[0].ast) != ""
 }
 
 // storedThroughUnnamed returns the values a statement stores through a pointer no
@@ -17231,11 +17255,14 @@ func (e *emitter) summaryBinding(nodes []Node) (targets []string, into []bool, v
 	head := e.soleIdent(nodes[0].ast)
 	derefHead := false
 	if head == "" {
-		// `(*p).x, n = v, 1` writes into what p points at, as `p.x` would, and
-		// `(g), n = v, 1` into g.
+		// `(*p).x, n = v, 1` writes into what p points at, as `p.x` would,
+		// `(g), n = v, 1` into g, and `(t.pp), n = v, 1` into what t reaches.
 		if head, derefHead = e.derefHeadName(nodes[0]); !derefHead {
 			if head = e.parenNameShape(nodes[0]); head == "" {
-				return nil, nil, nil
+				if head, _ = e.parenChainShape(nodes[0]); head == "" {
+					return nil, nil, nil
+				}
+				derefHead = true
 			}
 		}
 	}
@@ -46455,6 +46482,14 @@ func (e *emitter) emitAssignment(head Node, postfix []Node) {
 			return
 		}
 	}
+	// The two in a list, `*(t.p), y = 9, 10` and `(*h.pp).n, y = 5, 6`: each target
+	// is bound ahead of the stores, left to right (bindPtrTarget).
+	if op := slices.Collect(it(postfix[len(postfix)-1].ast)); containsSym(op, LhsItem) && !e.pkgScope {
+		if _, isPtr := e.ptrExprTarget(head, postfix[:len(postfix)-1]); isPtr {
+			e.emitMultiAssign(head, "", "", postfix[:len(postfix)-1], op)
+			return
+		}
+	}
 	// `*(*q).p = v`, `*(t).p += 1`, `**(get()).in.pp = v`: stars over a parenthesised
 	// head read through fields and indexes. What the stars dereference is the value
 	// `(X).steps`, which an expression reads (emitParenChain); it is bound first, the
@@ -48520,6 +48555,12 @@ type assignTarget struct {
 	// wherever Go has a shorthand for it -- `(*p)` is `*p`, `(*p).x` is `p.x` and
 	// `(*pa)[i]` is `pa[i]` -- and bindDerefTarget lowers the rest.
 	deref string
+	// ptr is the pointer a target is written through where no variable holds it:
+	// `h.pp` of `(*h.pp).n`, chain the steps after the parentheses, and `(t).p` of
+	// `*(t).p`, stars the stars over it. It is bound ahead of the statement
+	// (bindPtrTarget), and name is meanwhile its first name, what a reader of the
+	// statement's shape asks of.
+	ptr Node
 }
 
 // assignTargetCType is the C type a multiple assignment's target stores, where it
@@ -48794,6 +48835,9 @@ func (e *emitter) headTarget(head Node, steps []Node) (assignTarget, bool) {
 	if ptr, isDeref := e.derefHead(head); isDeref {
 		return e.derefTarget(ptr, steps)
 	}
+	if t, isPtr := e.ptrExprTarget(head, steps); isPtr {
+		return t, t.name != "" || t.ptr.ast != nil
+	}
 	// `s, (x) = "q", 7` and `a, (p).x, (&v).y = ...`: a parenthesised name is the name,
 	// and its address before a step is it too, as a statement's head reads them
 	// (parenTargetBase) -- asked, as there, what the step takes (addrStepRefused).
@@ -48836,6 +48880,9 @@ func (e *emitter) bindCallTarget(t assignTarget) (assignTarget, bool) {
 // evaluates a target's operands: a call in its chain (bindCallTarget), or what a
 // dereference it is written through reaches (bindDerefTarget).
 func (e *emitter) bindTarget(t assignTarget) (assignTarget, bool) {
+	if t.ptr.ast != nil {
+		return e.bindPtrTarget(t)
+	}
 	if t.deref != "" {
 		return e.bindDerefTarget(t)
 	}
@@ -48886,6 +48933,63 @@ func (e *emitter) bindDerefTarget(t assignTarget) (assignTarget, bool) {
 	return t, true
 }
 
+// ptrExprTarget reads a target written through a pointer no variable holds, the two
+// shapes a statement's single target binds on its own (emitAssignment): a
+// dereference of an expression, `(*h.pp).n`, `(**q).b`, `(*get())[0]`, and stars
+// over parentheses, `*(t.p)`, `*(t).p`, `**(get()).in.pp` -- where `*(p)` over a
+// name is the name's `*p`. isPtr reports the head's shape, and the target is the
+// zero one where the steps after it are none a target takes. Both were "only
+// assignment to a simple variable" as the head of a list and "unsupported target"
+// after it, where the single target compiled.
+func (e *emitter) ptrExprTarget(head Node, steps []Node) (t assignTarget, isPtr bool) {
+	x, isDeref := e.derefExprHead(head)
+	inner, stars, isStar := e.starParenHead(head)
+	switch {
+	case !isDeref && !isStar:
+		return assignTarget{}, false
+	case len(steps) != 0 && !isAccessChain(steps):
+		return assignTarget{}, true
+	case isDeref:
+		return assignTarget{name: e.firstIdent(x.ast), chain: steps, tok: -1, ptr: x}, true
+	}
+	if len(steps) == 0 {
+		kids := slices.Collect(it(inner.ast))
+		if name, isName := e.exprIdent(e.unparenExpr(kids[1].ast)); isName {
+			return e.qualifiedTarget(assignTarget{name: name, stars: stars, tok: -1}), true
+		}
+	}
+	x = e.commChanExpr(inner, steps)
+	return assignTarget{name: e.firstIdent(x.ast), stars: stars, tok: -1, ptr: x}, true
+}
+
+// bindPtrTarget binds the pointer a target is written through where no variable
+// holds it (ptrExprTarget) ahead of the statement, as the single target binds it:
+// Go evaluates the operand of a pointer indirection on the left before any store,
+// so `(*h.pp).n, h.pp = 5, &m` writes what h.pp pointed at. The target is then the
+// binding's dereference, `(*tmp).n` or `**tmp`, which the store rules ask of as
+// one through a pointer whose end they cannot see. What the binding stands for is
+// what a message names (derefShown).
+func (e *emitter) bindPtrTarget(t assignTarget) (assignTarget, bool) {
+	ct, ok := e.inferNode(t.ptr)
+	if !ok || !e.isPointer(ct) || e.pkgScope {
+		return t, false
+	}
+	tmp := e.hoist(ct, func() { e.emitExprNode(t.ptr) })
+	e.locals[tmp] = ct
+	if e.derefShown == nil {
+		e.derefShown = map[string]string{}
+	}
+	e.derefShown[tmp] = e.f.exprSource(t.ptr)
+	d, ok := e.derefTarget(tmp, t.chain)
+	if !ok {
+		return t, false
+	}
+	if t.stars != "" {
+		d.stars = t.stars // `**(get()).pp`
+	}
+	return e.bindDerefTarget(d)
+}
+
 // emitMultiAssign emits a destructuring assignment `a, b = f()` or `a, b := f()`
 // (any target may be the blank identifier). C has no multiple assignment, so the
 // multi-result call's struct is bound to a temporary and each target reads its
@@ -48919,6 +49023,12 @@ func (e *emitter) emitMultiAssign(head Node, first, stars string, headChain []No
 			return
 		}
 		targets[0] = t
+	} else if t, isPtr := e.ptrExprTarget(head, headChain); isPtr {
+		if t.name == "" && t.ptr.ast == nil {
+			e.fail("unsupported target in a multiple assignment")
+			return
+		}
+		targets[0] = t // `*(t.p), y = 9, 10`, `(*h.pp).n, y = 5, 6`
 	}
 	var ok bool
 	if targets[0], ok = e.bindTarget(targets[0]); !ok {

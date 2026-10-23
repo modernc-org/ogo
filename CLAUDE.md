@@ -1026,7 +1026,10 @@ section. A new finding goes there; the rule it leaves goes here too.
   can stand -- an operand, a header, a clause's name -- is a row in
   TestEmitCAssertLifetime's matrix, and a statement form a header can hold is a row
   of eachStmt.** **Making a shape WRITABLE asks the summaries what they read of
-  it**. **A shape that newly compiles is asked every lifetime question**.
+  it**. **A shape that newly compiles is asked every lifetime question**. **A shape
+  made to compile is asked of a callee's summary as well as of the function it
+  stands in: the summary reads the statement by its own readers, and a head none of
+  them knows stores nothing.**
 
 **The emitter: order and binding**
 

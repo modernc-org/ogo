@@ -5,6 +5,7 @@
 package octogo
 
 import (
+	"fmt"
 	"io"
 	"strings"
 	"testing"
@@ -493,6 +494,84 @@ func add(r *R) []byte { return append(r.buf[:0], 1) }
 			t.Errorf("%s / %s: got %v, want %q refused", test.decls, test.run, err, test.refused)
 		case test.refused == "" && err != nil:
 			t.Errorf("%s / %s: refused: %v", test.decls, test.run, err)
+		}
+	}
+}
+
+// TestEmitCParenHeadListStores: a store through a pointer no variable holds -- a
+// dereference of an expression, `(*gt.np).q`, or stars over parentheses, `*(t.pp)`
+// -- is asked as a single target, as a list's head and after another target, and
+// the three agree. The list forms were refused, `*(t.pp), k = v, 1` "only
+// assignment to a simple variable" and `k, *(t.pp) = 1, v` "unsupported target",
+// and asking them found the single form's hole: a callee storing its parameter
+// through stars over a parenthesised chain, `*(t.pp) = v`, `**(&t.pp) = v`, was
+// summarised as storing nothing, so `put(&gt, &x)` kept a local's address in gp.
+func TestEmitCParenHeadListStores(t *testing.T) {
+	const head = `type N struct{ q *int }
+
+type T struct {
+	p  *int
+	pp **int
+	np *N
+}
+
+var g int
+var gp *int
+var gn N
+var gt = T{pp: &gp, np: &gn}
+
+func get() *T { return &gt }
+
+`
+	const local = "x := 1\n\t_ = x\n\t"
+	for _, test := range []struct {
+		decls, run, target, value string
+		refused                   string
+	}{
+		{"", local, "*(gt.pp)", "&x", "local variable x"},
+		{"", local, "*(gt.pp)", "&g", ""},
+		{"", local, "(*gt.np).q", "&x", "local variable x"},
+		{"", local, "(*gt.np).q", "&g", ""},
+		{"", local, "(*get()).p", "&x", "local variable x"},
+		{"", local, "(*get()).p", "&g", ""},
+		{"", local, "*(get()).pp", "&x", "local variable x"},
+		{"", local, "*(get().pp)", "&g", ""},
+		{"", local, "(*get().np).q", "&x", "local variable x"},
+		{"", local + "var t T\n\tt.pp = &gp\n\t", "*(t.pp)", "&x", "local variable x"},
+		{"", local + "var t T\n\tt.np = &gn\n\t", "(*t.np).q", "&x", "local variable x"},
+		{"", local + "pt := &gt\n\t", "*(pt).pp", "&x", "local variable x"},
+		{"", local + "pt := &gt\n\t", "**(pt).pp", "x", ""},
+		{"func put(t *T, v *int) { STORE }", local + "put(&gt, &x)", "*(t.pp)", "v", "local variable x"},
+		{"func put(t *T, v *int) { STORE }", local + "put(&gt, &x)", "**(&t.pp)", "v", "local variable x"},
+		{"func put(t *T, v *int) { STORE }", local + "put(&gt, &x)", "*((t.pp))", "v", "local variable x"},
+		{"func put(t *T, v *int) { STORE }", "put(&gt, &g)", "*(t.pp)", "v", ""},
+		{"func put(t *T, v *int) { STORE }", local + "put(&gt, &x)", "(*t.np).q", "v", "local variable x"},
+		{"func put(t *T, v *int) { STORE }", "put(&gt, &g)", "(*t.np).q", "v", ""},
+		{"func put(t *T, v *int) { STORE }", local + "put(&gt, &x)", "*(t).pp", "v", "local variable x"},
+		{"func put(t *T, v *int) { STORE }", local + "var lt T\n\tput(&lt, &x)", "(*t).p", "v", ""},
+		{"func put(t *T, v *int) { STORE }", local + "put(&gt, &x)", "(*t).p", "v", "local variable x"},
+		{"func put(v *int) { STORE }", local + "put(&x)", "(*get()).p", "v", "local variable x"},
+		{"func put(v *int) { STORE }", "put(&g)", "(*get()).p", "v", ""},
+		{"func put(v *int) { STORE }", local + "put(&x)", "*(get().pp)", "v", "local variable x"},
+	} {
+		for _, form := range []string{"%s = %s", "%s, k = %s, 1", "k, %s = 1, %s"} {
+			store := "k := 0\n\t" + fmt.Sprintf(form, test.target, test.value) + "\n\t_ = k"
+			decls, run := strings.Replace(test.decls, "STORE", store, 1), test.run
+			if test.decls == "" {
+				run += store
+			}
+			src := head + decls + "\n\nfunc run() {\n\t" + run + "\n}\n\nfunc main() {\n\trun()\n\tprintln(g, gp != nil)\n}\n"
+			fsys := fstest.MapFS{"main.ogo": &fstest.MapFile{Data: []byte(src)}}
+			pkg, err := Build(-1, []string{"main.ogo"}, fsys)
+			if err == nil {
+				err = EmitC(pkg, io.Discard, Checked())
+			}
+			switch where := fmt.Sprintf(form, test.target, test.value); {
+			case test.refused != "" && (err == nil || !strings.Contains(err.Error(), test.refused)):
+				t.Errorf("%s / %s: got %v, want %q refused", where, test.run, err, test.refused)
+			case test.refused == "" && err != nil:
+				t.Errorf("%s / %s: refused: %v", where, test.run, err)
+			}
 		}
 	}
 }

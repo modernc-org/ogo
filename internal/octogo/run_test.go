@@ -1194,6 +1194,145 @@ func main() {
 		want: "4294967295 1099511627776 1\n9 3 2\ntrue 3\n2147483649 68719476736\n4 0 0\n4 6 4\n5 true\n7 true\n9 18\n",
 	},
 	{
+		// A list assignment through a pointer no variable holds: a dereference of an
+		// expression, `(*gh.pp).n`, and stars over parentheses, `*(gt.p)`, `**(pr).q`,
+		// as a list's head and after another target, in a value list, a call's
+		// results, a comma-ok and a select's receive clause. Each pointer is read
+		// before the first store, so a target changing it writes what it pointed at,
+		// and the targets' calls run before the values', left to right. All were
+		// refused where the single target compiled.
+		name: "a list assignment through a parenthesised head",
+		src: `type T struct{ p *int }
+type N struct {
+	n int
+	e error
+}
+type H struct{ pp *N }
+type W struct{ in *H }
+type P struct{ q **int }
+
+type myErr struct{ s string }
+
+func (m *myErr) Error() string { return m.s }
+
+var a, b, c int
+var g, m N
+var calls int
+
+func mark(k int) int {
+	calls = calls*10 + k
+	return k
+}
+
+func getH(k int) *H {
+	mark(k)
+	return &gh
+}
+
+func getT(k int) *T {
+	mark(k)
+	return &gt
+}
+
+func two() (int, int) {
+	mark(9)
+	return 70, 80
+}
+
+var gh = H{pp: &g}
+var gt = T{p: &a}
+var me = myErr{s: "boom"}
+
+func main() {
+	y := 0
+	// The pointer is read before any store.
+	(*gh.pp).n, gh.pp = 5, &m
+	println(g.n, m.n, gh.pp == &m)
+	gh.pp = &g
+	gh.pp, (*gh.pp).n = &m, 6
+	println(g.n, m.n, gh.pp == &m)
+	gh.pp = &g
+	*(gt.p), gt.p = 4, &b
+	println(a, b, gt.p == &b)
+	gt.p, *(gt.p) = &a, 7
+	println(a, b, gt.p == &a)
+
+	// Order: targets' operands, then values, left to right.
+	calls = 0
+	(*getH(1).pp).n, *(getT(2).p) = mark(3), mark(4)
+	println(calls, g.n, a)
+	calls = 0
+	y, *(getT(5)).p, (*getH(6)).pp.n = mark(7), mark(8), 9
+	println(calls, y, a, g.n)
+
+	// A call's several results.
+	calls = 0
+	(*gh.pp).n, *(gt.p) = two()
+	println(calls, g.n, a)
+
+	// Comma-ok forms.
+	var e any = &c
+	var ok bool
+	pi := &gt
+	*(pi).p, ok = 11, true
+	println(a, ok)
+	var ip *int
+	ip, ok = e.(*int)
+	*(&ip), ok = e.(*int)
+	println(ip == &c, ok)
+	ch := make(chan int, 2)
+	ch <- 21
+	ch <- 22
+	*(gt.p), ok = <-ch
+	println(a, ok)
+	(*gh.pp).n, ok = <-ch
+	println(g.n, ok)
+
+	// An interface field, widened from a pointer.
+	(*gh.pp).e, y = &me, 1
+	println(g.e.Error(), y)
+
+	// Two stars.
+	x := 3
+	px := &x
+	pr := P{q: &px}
+	**(pr).q, y = 33, 2
+	println(x, y)
+	y, **(&pr).q = 3, 44
+	println(x, y)
+
+	// Select receive clauses.
+	ch <- 31
+	select {
+	case *(gt.p) = <-ch:
+		println("a", a)
+	default:
+		println("none")
+	}
+	ch <- 32
+	select {
+	case (*gh.pp).n = <-ch:
+		println("g", g.n)
+	default:
+		println("none")
+	}
+	ch <- 33
+	select {
+	case (*getH(1).pp).n, ok = <-ch:
+		println("g", g.n, ok)
+	default:
+		println("none")
+	}
+	// Through a deeper chain.
+	w := W{in: &gh}
+	(*w.in.pp).n, y = 55, 5
+	println(g.n, y)
+	_ = calls
+}
+`,
+		want: "5 0 true\n6 0 true\n4 0 true\n4 7 true\n1234 3 4\n5678 7 8 9\n9 70 80\n11 true\ntrue true\n21 true\n22 true\nboom 1\n33 2\n44 3\na 31\ng 32\ng 33 true\n55 5\n",
+	},
+	{
 		// A method storing its receiver through a parameter, `*p = m`, and a function
 		// storing a parameter through an assertion of an `any` one, `case **M:` among
 		// them -- with both sides of each store this frame's, which the lifetime

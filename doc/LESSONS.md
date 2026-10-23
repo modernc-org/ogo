@@ -3060,6 +3060,20 @@ store through stars over parentheses with no step after them, `*(t.p) = v` and
 `*(p) = v`, refused in both forms. **A type a rule does not know is asked which
 rules read it as a default**: an unknown target type was a refusal for a nil and
 a default width for a constant, and the default was the miscompile.
+That last row shipped with a hole (2026-10-23, found making the same targets work
+in a list). `*(t.pp) = v` compiled from that evening, and the store rules inside a
+function asked it; the CALLEE's summary did not: assignThrough and summaryBinding
+read the head under the stars as a name or as nothing, and `(t.pp)` is neither, so
+`func put(t *T, v *int) { *(t.pp) = v }` stored nothing, and `put(&gt, &x)` kept a
+local's address in a package variable -- in v0.58.0, released the morning after.
+`*(t).pp = v` had been read, the step standing outside the parentheses. The scans
+had read the inner chain by shape all along (scanHead, parenInnerShape); the two
+summary readers do since (parenChainShape). The sweep that found it asked each
+store three ways, alone, as a list's head and after another target, and a callee's
+too: of 25 rows HEAD took 3 in silence and refused the 46 list forms, which agree
+with the single form since. **A shape made to compile is asked of a callee's
+summary as well as of the function it stands in: the summary reads the statement
+by its own readers, and a head none of them knows stores nothing.**
 **A MARK IS MADE IN EMISSION ORDER, AND A LOOP RUNS ITS BODY AGAIN** (2026-10-08,
 found probing unsafe.Slice's views). The holder marks are set as statements are
 emitted, so a statement read a variable's mark as the statements BEFORE it had left

@@ -16,6 +16,27 @@ same area is a new entry under **Unreleased**, not an edit to the old one. Amend
 shipped section tells a reader on that version that they have behaviour they do not.
 `git show vX.Y.Z:CHANGELOG.md` is the check.
 
+## Unreleased
+
+### Behaviour changes
+
+- **A callee storing its parameter through stars over a parenthesised chain keeps
+  it where it outlives every frame**: `func put(t *T, v *int) { *(t.pp) = v }`,
+  and `**(&t.pp) = v` and `*((t.pp)) = v` the same, was summarised as storing
+  nothing, so `put(&gt, &x)` for a local x kept x's address in the package
+  variable gt.pp points at -- in v0.58.0, which made the form compile. Each is
+  refused now as `*t.pp = v` is.
+
+### Fixed
+
+- **A list assignment through a pointer no variable holds compiles**: `*(t.p), y =
+  9, 10`, `(*h.pp).n, y = 5, 6`, `y, *(t).p = 1, 2` and `**(pr).q, y = 33, 2`, in
+  a value list, a call's results, a comma-ok, and a select's receive clause, `case
+  (*h.pp).n = <-ch:`, were "only assignment to a simple variable", "unsupported
+  target in a multiple assignment" or "unsupported target in a receive clause",
+  where the single target compiled. Each pointer is read before the first store,
+  as Go reads it: `(*h.pp).n, h.pp = 5, &m` writes what h.pp pointed at.
+
 ## v0.58.0
 
 ### Behaviour changes
