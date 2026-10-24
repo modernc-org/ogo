@@ -1,0 +1,47 @@
+// A pointer declared from the address of an element or a field, `p := &a[1]`,
+// `u := &t.n`, has a type the walk gives it and no Kind; a store through it, `*p =
+// v`, was asked nothing, where `p := &x` and `var p *int8 = &a[1]` were.
+
+type T struct{ n int8 }
+
+type C int8
+
+func main() {
+	var a [3]int8
+	p3 := &a[1]
+	// ERROR constant 300 overflows int8
+	*p3 = 300
+	// ERROR cannot use "x" of type string as type int8 in assignment
+	*p3 = "x"
+	var t T
+	u := &t.n
+	// ERROR constant 500 overflows int8
+	*u = 500
+	// ERROR cannot use "y" of type string as type int8 in assignment
+	*u = "y"
+	var b [2]T
+	q := &b[0].n
+	// ERROR constant 400 overflows int8
+	*q = 400
+	s := a[:]
+	r := &s[0]
+	// ERROR constant 1.5 truncated to int8
+	*r = 1.5
+	var cs [2]C
+	pc := &cs[0]
+	var i8 int8
+	// ERROR cannot use
+	*pc = i8
+	// The other store forms through such a pointer, asked already.
+	var k int
+	// ERROR overflows
+	k, *p3 = 1, 300
+	// ERROR overflows
+	*p3 += 300
+	pp := &p3
+	// ERROR overflows
+	**pp = 300
+	// ERROR cannot use
+	var str string = *p3
+	println(a[1], t.n, b[0].n, k, str, cs[0])
+}

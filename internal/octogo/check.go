@@ -21287,15 +21287,22 @@ func (f *File) checkDerefAssign(s *Scope, base Token, rhsNode Node) {
 	if d.hasElemKind {
 		f.checkElemAssignType(s, d.elemKind, rhsNode)
 	}
-	if !d.hasElemKind && !d.typeName.IsValid() {
+	if !d.hasElemKind {
 		// No flag says what d points at -- `pp := &p` for a pointer p, a pointer to
 		// a pointer (addressOfInfo) -- and the type its declaration gives it does.
+		// So for a NAME without a Kind, which the walk gives an element's or a
+		// field's address, `p := &a[1]`, `u := &t.n` (nameInferred): read as a
+		// defined type's, it asked nothing of `*p = 300` for an int8 element nor of
+		// `*p = "x"`, and a constant stored into a float64 so was no float64.
 		if t, ok := f.varTypeAt(d); ok && t.f != nil {
 			if p, isPtr := t.tn.(*TypeNodePointer); isPtr {
 				t.f.checkStoreInto(s, t.s, p.TypeNode, rhsNode, "assignment")
+				return // the defined type's question among the others
 			}
 		}
-		return
+		if !d.typeName.IsValid() {
+			return
+		}
 	}
 	if d.typeName.IsValid() {
 		// The pointee is a DEFINED type: `*c = v` for a `c *Counter` and an int v

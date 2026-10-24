@@ -973,7 +973,9 @@ section. A new finding goes there; the rule it leaves goes here too.
   switch's binding of an interface as well as a pointer** (A POINTER TYPE IN
   PARENTHESES IS ANY TYPE). **A type the flags cannot say is recorded whole, as a
   declaration would write it: an unnamed variable is one every rule asking a name
-  skips** (`pp := &w.head`, dom59).
+  skips** (`pp := &w.head`, dom59). **A name a walk records is a mark like the
+  flags: a check reading a name as a defined type's asks the type the walk gave
+  first** (`p := &a[1]; *p = 300`, A FLOAT64 IS ASKED WHAT A DOUBLE WAS).
 - **WHAT THE FLAGS SAY IS A TYPE**: **A walk that types by what was written answers
   for a variable that has only flags: the flags say a type, and every pointer to the
   variable is untyped until the walk reads them.** **A list of names kept beside the
@@ -1119,7 +1121,10 @@ section. A new finding goes there; the rule it leaves goes here too.
   program can fit in a cog is no function.**
 - **A FLOAT64 OF TWO WORDS**: **A new representation is asked every workaround its
   width already has: grep the gates for the int64 and the struct, and add the type,
-  before the board finds them one at a time.**
+  before the board finds them one at a time.** **A FLOAT64 IS ASKED WHAT A DOUBLE
+  WAS**: **A new spelling of a type is grepped for in every test of the old one:
+  each `"double"` the float64 was not added to was a question it had not been
+  asked.**
 - **A TEMPORARY IS A COG REGISTER**: every C local takes one of a pool of 480
   (`grep -c '\tres\t1' prog.p2asm` counts them), so a new lowering is asked what it
   hands a call BY VALUE.

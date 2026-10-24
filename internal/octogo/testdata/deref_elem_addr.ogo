@@ -1,0 +1,31 @@
+// COMPILE
+// What a pointer to an element or a field takes: a value of its type, a constant
+// that fits, and a constant of a float64 element spelled as one.
+
+type T struct {
+	n int8
+	f float64
+}
+
+type C int8
+
+func main() {
+	var a [3]int8
+	p3 := &a[1]
+	*p3 = 127
+	*p3 = -128
+	var t T
+	u := &t.n
+	*u = 'a'
+	w := &t.f
+	*w = 1 << 41
+	var fs [2]float64
+	pf := &fs[1]
+	*pf = 1 << 62
+	*pf = 0.1
+	var cs [2]C
+	pc := &cs[0]
+	*pc = 3
+	*pc = C(4)
+	println(a[1], t.n, t.f, fs[1], cs[0])
+}

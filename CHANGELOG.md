@@ -108,6 +108,10 @@ shipped section tells a reader on that version that they have behaviour they do 
   nothing, so `put(&gt, &x)` for a local x kept x's address in the package
   variable gt.pp points at -- in v0.58.0, which made the form compile. Each is
   refused now as `*t.pp = v` is.
+- **A store through a pointer to an element or a field is asked what it stores**:
+  `p := &a[1]; *p = 300` of an int8 element built, and printed 44 on a P2-EDGE
+  where Go refuses it, and `*p = "x"`, `u := &t.n; *u = 500` and `q := &b[0].n`
+  alike went through, where `p := &x` and `var p *int8 = &a[1]` were refused.
 
 ### Language
 
@@ -133,6 +137,10 @@ shipped section tells a reader on that version that they have behaviour they do 
 
 ### Fixed
 
+- **A typed float constant is rounded at each step of its type**, as Go rounds
+  one: `const F float32 = 0.1`, `F*3*11` printed 3.3 on a P2-EDGE built by v0.58.0
+  where Go prints 3.3000002, and `const G = F*3*11` and `var g float32 = F*3*17`
+  the same -- the expression was computed exactly and rounded once at the end.
 - **A chain of calls that rebinds the same names compiles**: `p1, p2 = g(p1, z2)`
   and the like, a 128-bit arithmetic routine's shape, took the compiler 1.3
   seconds for six statements and ran it out of memory at eight, in every release;

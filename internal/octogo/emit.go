@@ -29108,15 +29108,27 @@ func (e *emitter) foldValSeq(kids []Node) (constant.Value, bool) {
 		if acc, ok = foldValOp(acc, text, rhs); !ok {
 			return nil, false
 		}
+		// An operation of a typed float yields one, rounded to its type, as Go
+		// rounds every typed constant: `const B float64 = 0.1`, `B * 3` is the tie
+		// 0.3000000000000000166 rounded to even, 0.30000000000000004, where the
+		// value computed exactly and rounded once at the end was 0.3.
+		if accT != "" {
+			acc = roundConstTo(acc, e.underlyingCType(accT))
+		}
 	}
 	return acc, true
 }
 
 // constOfCType is an untyped constant's value as an operand of the type ct: an
 // integer for an integer type -- none where the value is not whole, which Go
-// refuses -- and the value as it is for any other.
+// refuses -- the float of a float type, rounded as Go converts it, and the value as
+// it is for any other.
 func constOfCType(v constant.Value, ct string, e *emitter) (constant.Value, bool) {
-	if _, isInt := cIntWidths[e.underlyingCType(ct)]; !isInt || v.Kind() != constant.Float {
+	ut := e.underlyingCType(ct)
+	if _, isInt := cIntWidths[ut]; !isInt || v.Kind() != constant.Float {
+		if isFloatCType(ut) {
+			return roundConstTo(v, ut), true
+		}
 		return v, true
 	}
 	iv := constant.ToInt(v)
@@ -29262,7 +29274,7 @@ func (e *emitter) convFoldVal(kids []Node) (constant.Value, bool) {
 	}
 	ut := e.underlyingCType(ct)
 	_, isInt := cIntWidths[ut]
-	if !isInt && ut != "double" && ut != "float" {
+	if !isInt && ut != "double" && ut != "float" && ut != cF64 {
 		return nil, false
 	}
 	args := e.callArgExprs(suffix[0].ast)
@@ -29362,15 +29374,20 @@ func unaryValOp(op token.Token, x constant.Value) (v constant.Value, ok bool) {
 // constant is rounded to its type: float32 to the nearest float32, double to the
 // nearest double, an integer type to the integer it already is.
 func roundConstTo(v constant.Value, ut string) constant.Value {
+	var f float64
 	switch ut {
 	case "float":
-		f, _ := constant.Float32Val(v)
-		return constant.MakeFloat64(float64(f))
-	case "double":
-		f, _ := constant.Float64Val(v)
-		return constant.MakeFloat64(f)
+		f32, _ := constant.Float32Val(v)
+		f = float64(f32)
+	case "double", cF64:
+		f, _ = constant.Float64Val(v)
+	default:
+		return v
 	}
-	return v
+	if math.IsInf(f, 0) {
+		return v // past the type, which the checker refuses
+	}
+	return constant.MakeFloat64(f)
 }
 
 // floatSpelling spells an exact value as a C double literal holding the nearest

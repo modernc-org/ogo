@@ -3401,6 +3401,35 @@ measured on obeam, had given up on every program whose C defines a helper in bot
 branches of an `#ifdef`, and keeps it whole now. **A function ported into a
 library is built alone for the target before it is called done: a function no
 program can fit in a cog is no function.**
+**A FLOAT64 IS ASKED WHAT A DOUBLE WAS** (2026-10-24, dom61's mutants against their
+Go twins). Of 400, two differed: a deadlock Go reports and the host waits out, and
+`2*math.Pi*230*t` turned into `2/math.Pi*230*t`, which printed 21.71249907149966
+for Go's 21.712499071499664, a ULP. A level of float64s was written a step at a
+time (emitF64Level), ahead of emitFloatPrefixFold, which has folded the constant
+operands leading a double's level as Go does since September and was not reached
+for the new type: `2/3*x` was 0.666... where Go divides the untyped integers to 0,
+`1e300*1e300/1e300*x` +Inf, and `1<<3*x` was refused. The emitter's tests of
+`"double"` held two more. roundConstTo rounded a typed constant to a double and
+not to the ogo_f64, so `const B float64 = 0.1; B*3` was 0.3 where Go's is
+0.30000000000000004, the tie rounded to even; and convFoldVal folded no conversion
+to a float64, so `const X = float64(0.1) * 3` wrote helper calls into a static
+initializer, which C refuses. Under them, the fold rounded a typed float at no
+step, the float32 too, in releases: `const F float32 = 0.1`, `F*3*11` printed 3.3
+on a P2-EDGE built by v0.58.0, where Go rounds F*3 first and prints 3.3000002.
+foldValSeq rounds now after each operation of a typed float, and an untyped operand
+meeting one is rounded as Go converts it. And `*p = 1 << 41` through `p :=
+&a[1]` of a float64 element wrote the integer to C: the checker spells a constant
+as the float64 it becomes where it checks the store, and checkDerefAssign read the
+type NAME the walk gives an element's address (nameInferred) as a defined type's
+and asked only checkDefinedType -- so `*p = 300` of an int8 element was taken too,
+and printed 44 on a P2-EDGE built by v0.58.0. Five run cases build differently, a
+constant conversion now folded, and print the same on the board; no fuzzer seed's C
+changed, genF64 never putting two constants ahead of a variable. CLAUDE.md's rule
+for a migration was asked of the workarounds (A FLOAT64 OF TWO WORDS) and not of
+the folds. **A new spelling of a type is grepped for in every test of the old one:
+each `"double"` the float64 was not added to was a question it had not been
+asked.** **A name a walk records is a mark like the flags: a check reading a name
+as a defined type's asks the type the walk gave first.**
 **A MARK IS MADE IN EMISSION ORDER, AND A LOOP RUNS ITS BODY AGAIN** (2026-10-08,
 found probing unsafe.Slice's views). The holder marks are set as statements are
 emitted, so a statement read a variable's mark as the statements BEFORE it had left

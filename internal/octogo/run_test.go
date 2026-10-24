@@ -42384,6 +42384,39 @@ func main() {
 `,
 		want: "1\n0.30000000000000004 false\n0.33333333333333331 1\n0 2\n0.33333334 false\n5e-324 0\n1.7976931348623157e+308 +Inf\n",
 	}, {
+		// The constant operands leading a level of float64s are one constant to Go,
+		// folded exactly: written a step at a time in float64s, 2/3*x was 0.666...
+		// (Go's untyped integers divide to 0), 1e300*1e300/1e300*x +Inf, the first
+		// bits a ULP off, and 1<<3*x was refused. And a typed float64 constant is
+		// rounded at each step, as Go rounds one: B*3 is the tie rounded to even.
+		// The constant stored through a pointer to an element was an integer to C.
+		name: "a float64 level's constant operands folded as Go folds them",
+		src: `import "math"
+
+const third = 1.0 / 3
+
+const B float64 = 0.1
+
+const B3 = B * 3
+
+const X = float64(0.1) * 3
+
+func bits(f float64) uint64 { return math.Float64bits(f) }
+
+func main() {
+	var x, t float64 = 1, 0.003
+	println(2/3*x, 7/2*x, 1<<3*x)
+	println(bits(2/math.Pi*230*t), bits(third*3*x))
+	println(1e300*1e300/1e300*x, bits(0.1*3*x))
+	println(bits(B*3), bits(B3), bits(X), bits(B*3*7*x))
+	var a [2]float64
+	p := &a[1]
+	*p = 1 << 41
+	println(a[1], 2/3*x == 0)
+}
+`,
+		want: "0 3 8\n4601584762290033189 4607182418800017408\n1e+300 4599075939470750515\n4599075939470750516 4599075939470750516 4599075939470750516 4611911198408756430\n2.199023255552e+12 true\n",
+	}, {
 		// The rest of Go's math package, its own pure Go source as the rest is
 		// (mathSrc): the hyperbolic functions and their inverses, Cbrt, Hypot, Dim,
 		// Max, Min, Remainder, Nextafter and Nextafter32, Expm1, Log1p, Logb and

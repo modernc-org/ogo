@@ -213,8 +213,11 @@ func (e *emitter) emitF64Level(kids []Node) bool {
 	if !any {
 		return false
 	}
-	acc := e.f64OperandC(kids[0])
-	for i := 1; i+1 < len(kids); i += 2 {
+	acc, first := e.f64ConstPrefix(kids)
+	if first == 1 {
+		acc = e.f64OperandC(kids[0])
+	}
+	for i := first; i+1 < len(kids); i += 2 {
 		op := e.opText(kids[i].ast)
 		fn, ok := f64Ops[op]
 		if !ok {
@@ -225,6 +228,40 @@ func (e *emitter) emitF64Level(kids []Node) bool {
 	}
 	e.emit(acc)
 	return true
+}
+
+// f64ConstPrefix folds the constant operands leading a level of float64s, two or
+// more, as Go folds them: one constant expression, `2/math.Pi*230` in
+// `2/math.Pi*230*t`, computed exactly and rounded once where it meets the float64
+// -- or, where a typed constant takes part, rounded at each step of that type, as
+// foldValSeq computes it. It answers the folded operand and the index of the
+// operator following it, or 1 where nothing folds. Computed a step at a time in
+// float64s it was a ULP off there, `2/3*x` was 0.666... where Go's is 0 (an
+// integer division), `1e300*1e300/1e300*x` was +Inf, and `1<<3*x` was refused, the
+// shift taken for one of float64s.
+func (e *emitter) f64ConstPrefix(kids []Node) (string, int) {
+	if _, ok := e.foldValNode(kids[0]); !ok {
+		return "", 1
+	}
+	k := 1
+	for k+1 < len(kids) {
+		if _, ok := e.foldValNode(kids[k+1]); !ok {
+			break
+		}
+		k += 2
+	}
+	if k < 3 || k == len(kids) {
+		return "", 1
+	}
+	v, ok := e.foldValSeq(kids[:k])
+	if !ok || !numericConst(v) {
+		return "", 1
+	}
+	f, _ := constant.Float64Val(constant.ToFloat(v))
+	if math.IsInf(f, 0) {
+		return "", 1 // past float64, which the checker refuses
+	}
+	return e.f64ConstC(f), k
 }
 
 // f64CompareAt reports whether kids[i..i+2] compares two float64s, one of which is
