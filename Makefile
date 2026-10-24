@@ -27,10 +27,15 @@ generate:
 parser: internal/octogo/parser.go
 	make -C internal/octogo parser.go
 
+# The sources formatted are the ones git tracks or would add: the git-ignored
+# build/ holds the probes' generated programs, some of them deliberately not Go,
+# and gofmt over `.` failed on them before a test ran.
+SOURCES = git ls-files --cached --others --exclude-standard
+
 test:
-	gofmt -l -s -w .
+	gofmt -l -s -w $$($(SOURCES) '*.go')
 	go install
-	ogo fmt -l -w --exclude='\/testdata\/' .
+	ogo fmt -l -w --exclude='\/testdata\/' $$($(SOURCES) '*.ogo')
 	go test -timeout 24h -count=1 -failfast ./...
 
 # board runs the emitRunCases table on a real Propeller 2 board (ogo build ->
