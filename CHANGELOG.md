@@ -122,6 +122,13 @@ shipped section tells a reader on that version that they have behaviour they do 
 
 ### Fixed
 
+- **A chain of calls that rebinds the same names compiles**: `p1, p2 = g(p1, z2)`
+  and the like, a 128-bit arithmetic routine's shape, took the compiler 1.3
+  seconds for six statements and ran it out of memory at eight, in every release;
+  each now takes milliseconds. The lifetime analysis followed every argument
+  through every call its names had held, and now leaves a number or a bool, which
+  can hold no reference, alone.
+
 - **A struct or an array holding float64s is compared with `==` and `!=`**, and
   switched on: NaN unequal to itself, the two zeros equal, as Go compares them.
   Since a float64 is two words, `C{x, 1} == C{y, 1}` for a `struct{ re, im

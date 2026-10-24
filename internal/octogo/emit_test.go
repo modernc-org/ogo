@@ -13,6 +13,7 @@ import (
 	"strings"
 	"testing"
 	"testing/fstest"
+	"time"
 )
 
 // TestEmitCMain pins the walking-skeleton emitter: an empty `func main()` must
@@ -19305,5 +19306,40 @@ func main() { _ = f() }
 				t.Errorf("got %v, want %q", err, test.want)
 			}
 		})
+	}
+}
+
+// TestEmitCChainedRebindings holds a compile of names a chain of calls rebinds,
+// `p1, p2 = g(p1, z2)`, to taking no time worth the name. The lifetime summaries
+// followed each argument through every call the name holds, a branch per argument
+// at each of eight levels: six such statements took 1.3 seconds, eight ran the
+// compiler out of 3.8 GB, and Go's math.FMA, a dozen of them over uint64s, never
+// finished. A number or a bool reaches nothing, and is not walked.
+func TestEmitCChainedRebindings(t *testing.T) {
+	var b strings.Builder
+	b.WriteString("func g(a, b uint64) (uint64, uint64) { return a + b, a ^ b }\n\nfunc f(x, y uint64) uint64 {\n\tp1, p2 := g(x, y)\n\tz1, z2 := g(y, x)\n")
+	for i := 0; i < 16; i++ {
+		if i%2 == 0 {
+			b.WriteString("\tp1, p2 = g(p1, z2)\n")
+		} else {
+			b.WriteString("\tz1, z2 = g(z1<<1, p2)\n")
+		}
+	}
+	b.WriteString("\treturn p1 + p2 + z1 + z2\n}\n\nfunc main() {\n\tprintln(f(1, 2))\n}\n")
+	done := make(chan error, 1)
+	go func() {
+		pkg, err := Build(-1, []string{"main.ogo"}, fstest.MapFS{"main.ogo": &fstest.MapFile{Data: []byte(b.String())}})
+		if err == nil {
+			err = EmitC(pkg, io.Discard, Checked())
+		}
+		done <- err
+	}()
+	select {
+	case err := <-done:
+		if err != nil {
+			t.Fatal(err)
+		}
+	case <-time.After(30 * time.Second):
+		t.Fatal("the compile of sixteen chained rebindings took more than 30 seconds")
 	}
 }

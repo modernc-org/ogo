@@ -127,14 +127,17 @@ func (e *emitter) f64TypedConstC(n Node) (string, bool) {
 // f64TypedConst reports whether n is a constant of a float64 type, which it is
 // wherever it stands.
 func (e *emitter) f64TypedConst(n Node) bool {
+	// The fold first: it gives up at the first operand that is no constant, where
+	// asking whether the node is untyped walks all of it, at every level of a deep
+	// polynomial (J0's, Erf's).
+	if v, ok := e.foldValNode(n); !ok || !numericConst(v) {
+		return false
+	}
 	if e.operandUntyped(n) {
 		return false
 	}
-	if ct, ok := e.inferNode(n); !ok || e.underlyingCType(ct) != cF64 {
-		return false
-	}
-	v, ok := e.foldValNode(n)
-	return ok && numericConst(v)
+	ct, ok := e.inferNode(n)
+	return ok && e.underlyingCType(ct) == cF64
 }
 
 // emitValueAs emits ast where a value of the C type ct is wanted -- a temporary

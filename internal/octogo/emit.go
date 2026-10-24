@@ -14220,6 +14220,35 @@ func (e *emitter) collectFuncCross(fi funcInfo) {
 			}
 		}
 		var walk func(a []int32, via []viaGate, path []*int32, elem bool)
+		// holdsNothing reports whether an argument the pass types is a number or a
+		// bool, which can hold no reference and so reaches nothing (a uintptr is
+		// still walked). Walked, the names a chain of calls rebinds, `pm2, c =
+		// add64(pm2, zm2, 0)`, were followed through every call each one holds, a
+		// branch per argument at each of the eight levels: math.FMA's dozen such
+		// statements ran the compiler out of memory, and eight of `p1, p2 = g(p1,
+		// z2)` took it to 3.8 GB.
+		//
+		// The callee's parameter says so first, what is handed it being of its type
+		// whatever the expression, `mul64(xm<<10, ym<<11)`; outside a variadic pack,
+		// and otherwise what the pass types the argument as.
+		holdsNothing := func(callee string, j int, n Node) bool {
+			scalar := func(ct string) bool {
+				switch u := e.underlyingCType(ct); {
+				case u == "uintptr_t":
+					return false
+				case isIntCType(u), u == "float", u == "double", u == cF64, u == cBool:
+					return true
+				}
+				return false
+			}
+			if ps := e.funcParams[callee]; j < len(ps) {
+				if at := e.packAt(callee); at < 0 || j < at {
+					return scalar(ps[j])
+				}
+			}
+			cur, ok := exprCur(n)
+			return ok && !cur.slice && len(cur.dims) == 0 && cur.elem == "" && scalar(cur.ctype)
+		}
 		// through is one call c's callees and arguments, with how the value read
 		// after it reaches the argument (m, a resMode per callee; nil for the whole
 		// result): gated by each callee, and on into the arguments' own calls.
@@ -14237,6 +14266,9 @@ func (e *emitter) collectFuncCross(fi funcInfo) {
 						}
 						el = el || elem
 						for jj, ia := range vc.args {
+							if holdsNothing(callee, jj, ia) {
+								continue
+							}
 							gates := append(slices.Clone(via), viaGate{callee, jj})
 							reached(e.summaryReach(ia.ast), gates, el)
 							walk(ia.ast, gates, inner, el) // `keep(trim(pass(v)))`
