@@ -94,18 +94,17 @@ func funcHeaderName(line []byte) string {
 func dropUnreachedData(c []byte, funcs map[string]bool) []byte {
 	lines := bytes.Split(c, []byte("\n"))
 	type span struct{ from, to int } // lines [from, to]
-	defs := map[string]span{}        // the functions the C defines
-	data := map[string]int{}         // a static datum's definition line
-	protos := map[int]string{}       // a prototype's line, by what it declares
+	// The functions the C defines: one defined in two branches of a conditional,
+	// `#ifdef __FLEXC__`, is one function of two bodies.
+	defs := map[string][]span{}
+	data := map[string]int{}   // a static datum's definition line
+	protos := map[int]string{} // a prototype's line, by what it declares
 	var roots [][]byte
 	for i := 0; i < len(lines); i++ {
 		line := lines[i]
 		if name := funcHeaderName(line); name != "" {
-			if _, dup := defs[name]; dup {
-				return c
-			}
 			if bytes.HasSuffix(bytes.TrimSpace(line), []byte("}")) {
-				defs[name] = span{i, i} // a body of one line
+				defs[name] = append(defs[name], span{i, i}) // a body of one line
 				continue
 			}
 			j := i + 1
@@ -115,7 +114,7 @@ func dropUnreachedData(c []byte, funcs map[string]bool) []byte {
 			if j == len(lines) {
 				return c // not the shape this reads: keep everything
 			}
-			defs[name] = span{i, j}
+			defs[name] = append(defs[name], span{i, j})
 			i = j
 			continue
 		}
@@ -137,8 +136,12 @@ func dropUnreachedData(c []byte, funcs map[string]bool) []byte {
 		roots = append(roots, line)
 	}
 	text := func(name string) []byte {
-		f := defs[name]
-		return bytes.Join(lines[f.from:f.to+1], []byte("\n"))
+		var b []byte
+		for _, f := range defs[name] {
+			b = append(b, bytes.Join(lines[f.from:f.to+1], []byte("\n"))...)
+			b = append(b, '\n')
+		}
+		return b
 	}
 	// What main reaches: the closure over the names the roots and the reached
 	// bodies spell.
@@ -235,8 +238,10 @@ func dropUnreachedData(c []byte, funcs map[string]bool) []byte {
 		}
 	}
 	for name := range drop {
-		for i := defs[name].from; i <= defs[name].to; i++ {
-			gone[i] = true
+		for _, f := range defs[name] {
+			for i := f.from; i <= f.to; i++ {
+				gone[i] = true
+			}
 		}
 	}
 	for i, name := range protos {

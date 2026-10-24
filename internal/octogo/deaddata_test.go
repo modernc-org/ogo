@@ -14,7 +14,8 @@ import (
 // float64 constant only it names -- and nothing else: not a function a reached
 // one calls or a root names, not one a kept function names though nothing reaches
 // it, not a table such a function reads or a root names, not a program's own, and
-// not anything in C it cannot read.
+// not anything in C it cannot read -- a function defined in two branches of a
+// conditional being one it can.
 func TestDropUnreachedData(t *testing.T) {
 	c := `typedef struct { uint32_t lo, hi; } ogo_f64;
 static const ogo_f64 ogo_f64k_3ff0000000000000 = {0x00000000u, 0x3ff00000u};
@@ -54,6 +55,16 @@ ogo_f64 math_Keep(ogo_f64 x) {
 void user_unused(void) {
 	(void)math_Keep(ogo_f64k_3ff0000000000000);
 }
+
+#ifdef __FLEXC__
+static int64_t ogo_shl32_int64_t(int64_t x) __attribute__((inline)) {
+	return x << 32;
+}
+#else
+static inline int64_t ogo_shl32_int64_t(int64_t x) {
+	return x << 32;
+}
+#endif
 
 int main(void) {
 	ogo_f64 y = math_Used(ogo_f64k_3ff0000000000000);
