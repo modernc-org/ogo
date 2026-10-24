@@ -1060,6 +1060,9 @@ section. A new finding goes there; the rule it leaves goes here too.
   BACK IS ASKED ONCE**: **A new way to call is a row there, and a new kind of
   parameter -- packed, received, bound -- is asked what it HOLDS.** **A walk over
   what names hold carries its path**.
+- **A WALK ASKS WHAT ITS VALUE CAN HOLD**: **A walk for what reaches the frame asks
+  first whether the value can hold a reference: a number reaches nothing, and
+  walking it costs what the walk's branching costs.**
 - **A slot a summary has for a parameter, it has for the receiver**. **WHAT GOES
   NOWHERE MAY STAY BEHIND**: **A store a summary drops for keeping nothing is asked
   what it leaves behind: the receiver into itself goes nowhere, and its storage holds

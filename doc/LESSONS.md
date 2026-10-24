@@ -3376,6 +3376,18 @@ the C library's float32 with the CORDIC behind it; 6 KB of code for the arithmet
 and printing; a goroutine printing one 1,536 longs of stack to 671; obeam 14 KB
 larger, past the 507,904 bytes the ROM boots from an SD card. A program with no
 float64 builds byte for byte as before, p2-11 included.
+**A WALK ASKS WHAT ITS VALUE CAN HOLD** (2026-10-24, porting the rest of Go's math).
+math.FMA's source, a dozen statements rebinding uint64s through calls, `pm2, c =
+add64(pm2, zm2, 0)`, made every program importing math hang the compiler: the
+lifetime summaries followed each argument of a call through every call its names
+held, a branch per argument at each of eight levels, and with no answer kept for a
+name already asked; eight statements of `p1, p2 = g(p1, z2)` took 3.8 GB, in every
+release. A number or a bool can hold no reference, so the walk does not enter one,
+by the callee's parameter type first, an argument becoming its type whatever the
+expression, and by the pass's own typing otherwise; a uintptr is still walked. The
+binaries of all 995 run cases are the bytes they were. **A walk for what reaches
+the frame asks first whether the value can hold a reference: a number reaches
+nothing, and walking it costs what the walk's branching costs.**
 **A MARK IS MADE IN EMISSION ORDER, AND A LOOP RUNS ITS BODY AGAIN** (2026-10-08,
 found probing unsafe.Slice's views). The holder marks are set as statements are
 emitted, so a statement read a variable's mark as the statements BEFORE it had left
