@@ -3287,6 +3287,57 @@ for nothing -- a call takes its receiver once -- and bound only where a field or
 element is read after it, five.
 **A call on the way to a value of several words is bound in the one word it yields:
 a pointer, or a struct element's address.**
+**A VALUE OF SEVERAL WORDS IS A ROW OF EVERY POSITION, ON THE BOARD** (2026-10-24,
+the mw-effect sweep, build/probes/sweeps/mw-effect). The fuzzer's genMultiWord hands
+a value of two to four words where a call stands to an ARGUMENT, and the fault
+7560f41 fixed was a call in an index on the way to one in a declaration; the sweep
+asks the rest: eight types -- a string, a slice, an int64, structs of two, three and
+five words, an interface, an array -- read through 24 shapes that call on the way
+(`ga[at(1)]`, `pt(1).v`, `gq[at(1)][at(2)]`, `ghs[at(1)].ps[at(2)]`, a receive, a
+method), in 47 positions a value goes into, about 7,000 rows held to Go on the host
+and on a P2-EDGE, and a second part with the shapes as a statement's TARGET, 1,680
+rows. On the host 108 rows differed at first. An interface compared or called
+through an index that calls, `ga[at(1)] == x`, `case ga[at(1)]:`, `ga[at(1)].m()`,
+wrote the element once for each of its two words and called at(1) twice
+(ifaceOperandOnceC, chainCText); an interface in a BUFFERED channel came out as the
+last value sent from every receive, the compiler's struct table holding an
+interface as a struct of no fields and goZeroSized reading that as no bytes, every
+value going into one slot (in every release since buffered channels) -- **A table
+read by its value is asked by its key, and asked what else it holds** once more; a
+string or a slice reached through an index that calls and indexed on,
+`gsl(1)[at(2)][1]`, wrote the header for its .str and its .len. The board found
+more than the host: `gq[at(1)][at(2)]` of anything wider than a long read garbage
+and called at(2) first, and so did a plain checked program, `c := grid[y][x]` of a
+`[3][4]Cell` -- the backend fault doc/wide-row-call-index.c measured for an int64
+on 2026-10-06 is a fault of every element of more than four bytes, a struct, a
+string, an interface, a slice header, the store of a whole element lost besides,
+and wideRowC had been written for the int64 alone. The address of such an element is
+right, `&m.pages[space][a>>13]` in p2-11's MMU, and keeps its C: rewritten too, the
+first version changed p2-11's binary by four instructions for nothing. **A backend fault measured for
+one type is asked of every type of its size: the target's compiler lays out bytes,
+not Go's types.** And C's order of evaluation is no order: the target's compiler
+evaluated the later of two indexes first, gcc the right side of `ghp.ps[at(1)] =
+ga[at(4)]` before its target, and a target's index after a call of several results,
+`ghp.ps[at(1)], y = two()`, in every release; the earlier is bound first now
+(indexOnceC, bindTargetOrder, emitMultiAssign, emitValueList), the order measured,
+not assumed. **Two operands that do something in one C expression are bound in Go's
+order, whichever compiler builds it.** The array rows found the last of it: an array
+bound for an argument's order was initialized from another, which C has no
+initializer for -- gcc refused it, the target's compiler built it and the callee read
+garbage -- a row of an array of arrays was not bound at all, and a list's or a loop
+header's declaration from a receive, `x, n := <-rc, at(3)`, printed garbage on the
+board; arrayShapeOf, called to check an argument's shape, bound the call it read
+through into the statement, so `dig2(at(3), pt(1).v)` called pt(1) first -- **A walk
+that answers a question must not change the program**, and its doc comment said it
+was pure. The compiler crashed on `mkh(1).v[1:]`, a pre-pass typing a call it had no
+memo for, which 769f5e1 had brought (capturePrologue lends one). Open, all loud or
+right on the board: an array reached through a call or a pointer, `(*pt(1)).v`,
+`gsl(1)[at(2)]`, `pa(1)[at(2)]`, `(*ghp.pa)[at(1)]`, is typed as nothing, or as an
+int in a range, so it is refused a dozen ways, and `*q = (*pt(1)).v` is a C array
+assignment the target's compiler gets right and gcc refuses. **A sweep of a value's
+shapes is run on the board before it is called clean: the host's compiler evaluates
+in another order what C leaves to it, and reads right what the target's reads
+wrong.**
 **A MARK IS MADE IN EMISSION ORDER, AND A LOOP RUNS ITS BODY AGAIN** (2026-10-08,
 found probing unsafe.Slice's views). The holder marks are set as statements are
 emitted, so a statement read a variable's mark as the statements BEFORE it had left

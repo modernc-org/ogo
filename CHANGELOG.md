@@ -101,6 +101,44 @@ shipped section tells a reader on that version that they have behaviour they do 
 
 ### Fixed
 
+- **A table of elements wider than a long, indexed by variables**: `c :=
+  grid[y][x]` of a `[3][4]Cell` of two int32 fields read garbage on a P2-EDGE and
+  `grid[y][x] = c` stored nothing, in every release, and so did a two-dimensional
+  table of strings, interface values or slices. The target's compiler reads and
+  writes such an element wrong when a row index holds a call, and a checked build's
+  bound check is one (doc/wide-row-call-index.c). The rows of an int64 table were
+  written through their first element's address since v0.49.0; those of every
+  element of more than four bytes are now.
+- **An interface value in a buffered channel**: `make(chan I, 3)`, and a channel of a
+  struct or an array holding an interface, kept every value in one slot, so every
+  receive gave the last value sent. The compiler took an interface for a type of no
+  bytes, in every release since buffered channels came in v0.54.0.
+- **An interface read through an index that calls is read once**: `ga[at(1)] == x`,
+  `x != ga[at(1)]`, `case ga[at(1)]:` and `ga[at(1)].m()` wrote the element once for
+  each of its two words and called at(1) twice, on the host and on a P2-EDGE, in
+  v0.58.0 too.
+- **Two indexes that call run in the order written**: `gq[at(1)][at(2)]` left their
+  order to C, and the target's compiler called at(2) first wherever the element was
+  wider than a long. The earlier index is bound first now, and a list assignment
+  binds its targets' indexes in order whenever two of them call.
+- **A target's index operands run before the value stored**: `ghp.ps[at(1)] =
+  ga[at(4)]`, `(*h.pa)[at(1)] = f()` and `pt(1).ps[at(2)] = f()`, a target reached
+  through a chain or a dereference, ran the value first on the host -- one C
+  assignment, its order the C compiler's -- and `ghp.ps[at(1)], y = two()` ran two()
+  before at(1), in every release. A target of one index on a variable was bound so
+  already.
+- **A string or a slice read through an index that calls, then indexed or sliced**:
+  `gsl(1)[at(2)][1]`, `gss(1)[at(2)][1:]` and `pa(1)[at(2)][1]` called at(2) twice
+  or three times, on the host too, in v0.58.0 too.
+- **An array argument beside one that calls**: `f(at(3), gs[at(1)])` for a slice of
+  arrays bound the array with an initializer C has none of, which gcc refused and
+  the target's compiler built, the callee reading garbage; `f(at(3), ga[at(1)])` of
+  an array of arrays and `f(at(3), pt(1).v)` called at(1) or pt(1) first. An array
+  received into a list's declaration, `x, n := <-rc, at(3)`, or a loop header's,
+  `for y := <-rc; ; {}`, printed garbage on the board, in v0.58.0 too. `defer
+  take(ga[at(1)])` of an array of arrays declared its capture `= 0`, which gcc
+  refused. `for z := mk(); ; {}` of a call returning an array, "cannot infer the type
+  of a for-loop init variable" before, builds.
 - **A call in an index with steps after it runs once**: `*s[idx()].ps[2] = 9` and
   `*a[idx()].ps[0] += 4` ran idx() twice, on the host too, the slice's text
   written for its .ptr and again for its .len; a read, `v := *s[idx()].ps[1]`,

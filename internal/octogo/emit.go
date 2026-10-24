@@ -3783,7 +3783,7 @@ func (e *emitter) goZeroSized(ct string, depth int) bool {
 		return e.arrayGoZeroSized(a, depth)
 	}
 	fields, ok := e.structs[u]
-	if !ok {
+	if !ok || e.isIfaceCType(u) { // an interface is a struct of no fields here, and two words
 		return false
 	}
 	for _, fld := range fields {
@@ -7930,6 +7930,7 @@ type emitter struct {
 	curParams           map[string]bool         // the parameter names of the function being emitted. A parameter's own storage is this frame's, but what it POINTS AT is the caller's, which isFrameVar deliberately does not distinguish and the receiver-leak rule must (see checkRecvLeak).
 	litPath             string                  // the C path from the composite literal being rendered to the element now being rendered -- "[1]", ".xs", "[0].xs". Empty outside one.
 	litUnderAddr        bool                    // the composite literal about to be rendered is the operand of &: its elements' storage is what the address points at (see litDerefMark)
+	underAddr           bool                    // the operand of & is being rendered, an index's value excepted: what it reaches is addressed, not read (see wideRowC)
 	litFixups           []litFixup              // that literal's elements C cannot spell in an initializer, deferred to a copy after the declaration (see recordLitFixup)
 	litFixable          bool                    // the literal being rendered has an owner that will emit those copies -- one that gives it a NAME. False in the positions that have no storage to copy into.
 	frameBacked         map[string]bool         // local slice variables whose backing array is storage of this frame, so returning one would dangle (see checkReturnBacking)
@@ -23054,6 +23055,13 @@ func (e *emitter) hoist(ctype string, emitValue func()) string {
 // which the target's C compiler initializes from another only at some sizes
 // (holdsArray) -- copied into, or brace-initialized from a literal's braces.
 func (e *emitter) bindC(ctype, tmp, text string) []string {
+	if _, isArr := e.namedArrays[ctype]; isArr {
+		// An ARRAY, `dig2(at(3), gs[at(1)])` bound for its order: C initializes no
+		// array from another, which gcc refused and the target's compiler took,
+		// handing the callee garbage. Copied, as Go copies it.
+		e.includes["string.h"] = true
+		return []string{ctype + " " + tmp + ";\n", "memcpy(" + tmp + ", " + text + ", sizeof(" + tmp + "));\n"}
+	}
 	if !e.holdsArray(ctype) {
 		return []string{ctype + " " + tmp + " = " + text + ";\n"}
 	}
@@ -25327,7 +25335,18 @@ func (e *emitter) arrayOperandAST(ast []int32) []int32 {
 //
 // It answers false for anything else, and a caller must read that as "not known",
 // never as "not an array": a shape this cannot see is not a mismatch.
-func (e *emitter) arrayShapeOf(ast []int32) (arrDim, bool) {
+//
+// A chain from a call is read through a binding of the call (callReadBase), which
+// the question left in the statement's prologue: checkArrayArgs asked of
+// `dig2(at(3), pt(1).v)` and pt(1) ran before at(3). What reading it binds is
+// thrown away, and the rendering that copies the array binds it in its turn.
+func (e *emitter) arrayShapeOf(ast []int32) (dim arrDim, ok bool) {
+	e.capturePrologue(func() { dim, ok = e.arrayShapeOfC(ast) })
+	return dim, ok
+}
+
+// arrayShapeOfC is arrayShapeOf, leaving what it binds on the way in the prologue.
+func (e *emitter) arrayShapeOfC(ast []int32) (arrDim, bool) {
 	if dim, _, ok := e.sliceArrayConv(ast); ok {
 		return dim, true
 	}
@@ -25412,7 +25431,21 @@ func (e *emitter) arraySourceC(ast []int32) (string, bool) {
 	if text, _, ok := e.arrayChainOperand(ast); ok {
 		return text, true
 	}
-	return e.hoistArrayLitExpr(ast)
+	if text, ok := e.hoistArrayLitExpr(ast); ok {
+		return text, true
+	}
+	// An array no shape above reads and the value's type says is one: a receive,
+	// `*q = <-rc`, or a field through a dereference of a call, `*q = (*pt(1)).v`.
+	// Its C names the array -- a receive's is the temporary it fills -- and a copy
+	// reads it. Left to the ordinary path, `(*q) = tmp` was written, which gcc
+	// refuses and the target's compiler took, storing garbage.
+	var ct string
+	var typed bool
+	e.capturePrologue(func() { ct, typed = e.inferCType(ast) })
+	if _, isArr := e.namedArrays[ct]; typed && isArr {
+		return e.captureC(func() { e.emitExpr(ast) }), true
+	}
+	return "", false
 }
 
 // derefOperand recognises `*p` where p is a pointer VARIABLE, answering with its
@@ -30146,19 +30179,29 @@ func (e *emitter) accessDeref(cur accessCur, prefix string) string {
 	return e.wideRowC(cur, prefix)
 }
 
-// wideRowC is a ROW of an array of 64-bit elements, reached by an index and about
-// to be indexed, as a pointer to its first element: `(&r[I][0])[J]` for `r[I][J]`.
-// The target's C compiler reads and writes the element of `r[I][J]` wrong for an
-// int64 or uint64 r of two or more dimensions whenever I holds a call -- the bound
-// check ogo_bound is one, so every element of such a table indexed by a variable
-// in a checked build (doc/wide-row-call-index.c): a store was lost, a read gave
-// garbage, in silence. Through the row's address it does neither; measured on a
-// P2-EDGE, as a cast of the row or `I + 0` did not help. Pure, so nothing moves.
+// wideRowC is a ROW of an array of elements wider than a long, reached by an index
+// and about to be indexed, as a pointer to its first element: `(&r[I][0])[J]` for
+// `r[I][J]`. The target's C compiler reads and writes the element of `r[I][J]`
+// wrong for an r of two or more dimensions whose element is wider than a long
+// whenever I holds a call -- the bound check ogo_bound is one, so every element of such a table
+// indexed by a variable in a checked build (doc/wide-row-call-index.c): a store was
+// lost, a read gave garbage, in silence. Through the row's address it does neither;
+// measured on a P2-EDGE, as a cast of the row or `I + 0` did not help. Pure, so
+// nothing moves. An int64 was the element measured first (2026-10-06); a struct of
+// two words, a string, an interface and a slice header are read and written as
+// wrong, and an element of a long or less -- int16, a struct of three bytes or of
+// one int32 -- is right (2026-10-24): `c := grid[y][x]` of a `[3][4]Cell` gave
+// garbage on the board in every release.
+//
+// An element whose address is taken, `p := &m.pages[space][a>>13]`, is right without
+// it, a whole element read through that address too (measured on a P2-EDGE): only
+// the element read or written where it stands is wrong, so the operand of & keeps
+// its C -- and p2-11's MMU, which addresses a table of pages so, its bytes.
 func (e *emitter) wideRowC(cur accessCur, prefix string) string {
-	if cur.slice || len(cur.dims) == 0 || !strings.HasSuffix(prefix, "]") {
+	if cur.slice || len(cur.dims) == 0 || !strings.HasSuffix(prefix, "]") || e.underAddr {
 		return prefix
 	}
-	if cIntWidths[e.underlyingCType(cur.elem)] != 64 {
+	if size, _, ok := e.cLayout(cur.elem, 0); ok && size <= 4 {
 		return prefix
 	}
 	return "(&" + prefix + "[0])"
@@ -30412,7 +30455,7 @@ func (e *emitter) emitAccessChainAt(prefix string, cur accessCur, steps []Node, 
 				base = e.hoist(cur.ctype, func() { e.emit(prefix) })
 				effect = false
 			}
-			prefix = pre + e.accessDeref(cur, base) + open + e.indexCText(low, lenExpr) + closing
+			prefix = pre + e.accessDeref(cur, base) + open + e.indexOnceC(low, lenExpr, steps[i+1:]) + closing
 			indexed = true
 			if e.exprHasEffect(low) {
 				effect = true
@@ -32683,6 +32726,10 @@ func (e *emitter) starsC(text, ct string, stars int) string {
 // or the index is provably in range (indexInRange). lenExpr is the container's length:
 // a slice's ".len", or an array's compile-time bound.
 func (e *emitter) emitIndex(idxAST []int32, lenExpr string) {
+	// An index is a value read, whatever its container is: `&q[r[f()][0]][1]` reads
+	// r's element (see underAddr).
+	defer func(saved bool) { e.underAddr = saved }(e.underAddr)
+	e.underAddr = false
 	idx := func() { e.emitExpr(idxAST) }
 	// An integral float constant, `x[Two]`, as the integer it is (foldIntegral):
 	// written out it is a double, which C does not index by.
@@ -33620,7 +33667,22 @@ func (e *emitter) emitFor(nodes []Node) {
 			initName = e.exprC(h.initLHS)
 		}
 		var ok bool
-		if _, isArr := e.arrayShapeOf(h.initRHS); isArr {
+		_, isArr := e.arrayShapeOf(h.initRHS)
+		if !isArr {
+			// An array arrayShapeOf does not read, a receive or a call returning
+			// one: the receive was declared `T x = tmp`, which C has no such
+			// initializer for -- gcc refused it and x printed garbage on the board
+			// -- and the call was refused, where the statement form takes both.
+			_, _, isArr = e.arrayResultCall(h.initRHS)
+			if !isArr {
+				var ct string
+				var typed bool
+				e.capturePrologue(func() { ct, typed = e.inferCType(h.initRHS) })
+				_, isArr = e.namedArrays[ct]
+				isArr = isArr && typed
+			}
+		}
+		if isArr {
 			// An ARRAY is declared with its extents and filled, which C's init
 			// clause has no room for: the statement form's declaration
 			// (emitInferredLocal) in a block around the loop, where Go scopes it too
@@ -33904,11 +33966,26 @@ func (e *emitter) capturePrologue(emit func()) (text string, pro []string) {
 	// temporary no declaration reached the output, and the next real emission of
 	// the same call would read it.
 	savedHoists := maps.Clone(e.hoistedArrayCalls)
+	// A pass gathering facts before the function is emitted types an operand by
+	// rendering it (ptrArrayOperand, slicedArrayPtr), and a call bound on the way,
+	// `mkh(1).v[1:]` of a struct holding an array, records itself in the memo and its
+	// temporary among the locals -- neither of which such a pass has: the compiler
+	// panicked. They are lent for the rendering and taken back.
+	noLocals := e.locals == nil
+	if noLocals {
+		e.locals = map[string]string{}
+	}
+	if e.hoistedArrayCalls == nil {
+		e.hoistedArrayCalls = map[int32]string{}
+	}
 	e.prologue = nil
 	text = e.captureC(emit)
 	pro = e.prologue
 	e.prologue = saved
 	e.hoistedArrayCalls = savedHoists
+	if noLocals {
+		e.locals = nil
+	}
 	return text, pro
 }
 
@@ -37163,6 +37240,14 @@ func (e *emitter) emitDefer(nodes []Node) {
 			e.fail("cannot infer the type of a deferred call argument")
 			return
 		}
+		if dim, isArr := e.namedArrays[ct]; isArr && (i >= len(paramDims) || paramDims[i].bound == "" ||
+			dim.elem == paramDims[i].elem && dim.declSuffix() == paramDims[i].declSuffix()) {
+			// An array arrayShapeOf does not read -- an element of an array of arrays
+			// indexed by a call, `defer take(ga[at(1)])` -- is an array still: its
+			// temporary was declared `= 0`, which C refuses for an array.
+			d.args = append(d.args, deferArg{arr: dim, expr: a.ast})
+			continue
+		}
 		// A constant is captured as its PARAMETER's type, which is what Go converts
 		// it to, rather than as the type its spelling defaults to: `defer
 		// show(-3000000000)` for a float32 parameter captured the value into an int
@@ -40243,6 +40328,56 @@ func (e *emitter) indexCText(idxAST []int32, lenExpr string) string {
 	return buf.String()
 }
 
+// indexOnceC is indexCText of an index a chain's step takes, bound to a temporary
+// where it does something and a step after it does something too: C leaves the
+// order of the two to its compiler, and the target's evaluates the later one first
+// -- `gq[at(1)][at(2)]` called at(2) before at(1) on a P2-EDGE, where Go calls them
+// in the order written. Bound, the index is evaluated, and checked, before the
+// rest of the chain is.
+func (e *emitter) indexOnceC(low []int32, lenExpr string, rest []Node) string {
+	text := e.indexCText(low, lenExpr)
+	if e.declInit || e.deferReplay >= 0 || !e.unboundEffect(low) || !unsequencedEffect(e, rest) {
+		return text
+	}
+	return e.hoist("int", func() { e.emit(text) })
+}
+
+// unboundEffect is exprHasEffect of an operand the statement has not bound already
+// (bindOperandsInOrder), whose rendering is its temporary.
+func (e *emitter) unboundEffect(ast []int32) bool {
+	if len(ast) != 0 {
+		if _, bound := e.boundOperands[&ast[0]]; bound {
+			return false
+		}
+	}
+	return e.exprHasEffect(ast)
+}
+
+// unsequencedEffect reports whether a chain's steps do something C evaluates in no
+// order against what comes before them: an index, or a call's arguments, that
+// call. A call itself is sequenced after its operands.
+func unsequencedEffect(e *emitter, steps []Node) bool {
+	for _, st := range steps {
+		switch st.sym {
+		case Index:
+			if low, _, _, isSlice := e.sliceParts(st.ast); !isSlice && len(low) != 0 {
+				if e.unboundEffect(low) {
+					return true
+				}
+				continue
+			}
+			if e.exprHasEffect(st.ast) {
+				return true
+			}
+		case CallSuffix:
+			if e.exprHasEffect(st.ast) {
+				return true
+			}
+		}
+	}
+	return false
+}
+
 // chainReceiver bridges an accumulated receiver expression to the form a method
 // declares, like emitMethodReceiver but over text and reporting failure instead of
 // emitting: a pointer method wants `&recv`, which is invalid C for a
@@ -40652,11 +40787,19 @@ func (e *emitter) chainCText(base string, steps []Node) (text, ctype string, add
 				// Written twice, the call ran twice, and on the target the two-word
 				// result read through a function pointer's call where it stood came
 				// back as garbage; the direct `pick(1).Area()` was bound already.
-				if !addr && !isCIdent(text) {
+				switch {
+				case !addr && !isCIdent(text):
 					// A temporary a step before bound already names the value once, and
 					// another copy would only spend a cog register (see hoist).
 					bound := text
 					text, addr = e.hoist(cur.ctype, func() { e.emit(bound) }), true
+				case effect:
+					// Storage reached through an index that calls, `ga[at(1)].m()`: its
+					// address, one word -- the two words copied out of the text are
+					// copied a word at a time by the target's compiler, the index run
+					// for each. Written twice, at(1) ran twice, on the host too.
+					bound := text
+					text, effect = "(*"+e.hoist(cur.ctype+"*", func() { e.emit("&" + bound) })+")", false
 				}
 				// A NIL interface panics, as a call on an interface variable does
 				// (ifaceCallC). Reached through an element, a field or a call's result
@@ -40958,7 +41101,7 @@ func (e *emitter) chainCText(base string, steps []Node) (text, ctype string, add
 				inner := text
 				text, effect = e.hoist(cur.ctype, func() { e.emit(inner) }), false
 			}
-			text = pre + e.accessDeref(cur, text) + open + e.indexCText(low, lenExpr) + closing
+			text = pre + e.accessDeref(cur, text) + open + e.indexOnceC(low, lenExpr, steps[i+1:]) + closing
 			if e.exprHasEffect(low) {
 				effect = true
 				// A pointer it yields that steps after it read through, `*s[idx()].ps[2]
@@ -40971,15 +41114,26 @@ func (e *emitter) chainCText(base string, steps []Node) (text, ctype string, add
 				// nothing.
 				readOn := i+1 < len(steps) && (steps[i+1].sym == Index ||
 					steps[i+1].sym == Selector && (i+2 == len(steps) || steps[i+2].sym != CallSuffix))
+				// An element is storage, of an array a pointer reaches too, `pa(1)[at(2)]`.
+				_, viaPtr := e.arrayPtrCType(cur.ctype)
+				elem := cur.slice || len(cur.dims) != 0 || viaPtr
 				switch {
 				case !readOn:
 				case e.isPointer(next.ctype):
 					inner := text
 					text, effect = e.hoist(next.ctype, func() { e.emit(inner) }), false
-				case e.isStruct(next.ctype) && (cur.slice || len(cur.dims) != 0):
+				case e.isStruct(next.ctype) && elem:
 					// A STRUCT element, `vs[idx()].xs[0] = 40`: its address, as above.
 					inner := text
 					text, effect = "(*"+e.hoist(next.ctype+"*", func() { e.emit("&" + inner) })+")", false
+				case (next.slice || e.underlyingCType(next.ctype) == cString) && elem:
+					// A SLICE or STRING element indexed or sliced on, `gsl(1)[at(2)][1]`:
+					// its address too. The step after reads the header's .len beside
+					// its .ptr or .str, and at(2) ran once for each.
+					if ct, okc := e.chainValueCType(next); okc {
+						inner := text
+						text, effect = "(*"+e.hoist(ct+"*", func() { e.emit("&" + inner) })+")", false
+					}
 				}
 			}
 			cur, addr = next, true
@@ -46774,6 +46928,7 @@ func (e *emitter) emitAssignment(head Node, postfix []Node) {
 		}
 		e.checkStore(target, op)
 		e.noteStoredThroughOp(target, op)
+		defer e.bindTargetOrder("", postfix[:len(postfix)-1], op)()
 		e.emitDerefAssign(name, postfix)
 		return
 	}
@@ -46797,6 +46952,7 @@ func (e *emitter) emitAssignment(head Node, postfix []Node) {
 			target := lifeTarget{deref: tmp, steps: postfix[:len(postfix)-1]}
 			e.checkStore(target, op)
 			e.noteStoredThroughOp(target, op)
+			defer e.bindTargetOrder("", postfix[:len(postfix)-1], op)()
 			e.emitDerefAssign(tmp, postfix)
 			delete(e.derefShown, tmp)
 			return
@@ -46908,6 +47064,7 @@ func (e *emitter) emitAssignment(head Node, postfix []Node) {
 	e.checkStore(target, op)
 	e.noteFrameHolder(storedIn, op)
 	e.noteStoredThroughOp(target, op)
+	defer e.bindTargetOrder(base, postfix[:len(postfix)-1], op)()
 	// A written-out dereference applies to the WHOLE target and not to its head:
 	// `*h.p = v` is `*(h.p) = v` and `*a[i] = v` is `*(a[i]) = v`, C's precedence and
 	// Go's alike. Claimed here, ahead of every shape below, because each of those
@@ -49436,6 +49593,13 @@ func (e *emitter) emitMultiAssign(head Node, first, stars string, headChain []No
 	// One expression for several targets distributes a multi-result call; a matching
 	// count is a value list assigned pairwise.
 	if len(rhs) == 1 {
+		// The targets' index operands run before the call, as Go evaluates them:
+		// `ghp.ps[at(1)], y = two()` ran two() first, in every release.
+		var idx []Node
+		for _, t := range targets {
+			idx = append(idx, e.targetIndexOperands(t.chain)...)
+		}
+		defer e.bindOperandsInOrder(idx, true)()
 		e.emitDestructure(targets, declare, rhs[0].ast)
 		return
 	}
@@ -49469,6 +49633,43 @@ func (e *emitter) declareTargets(define bool, targets []assignTarget) []bool {
 	return declare
 }
 
+// bindTargetOrder binds what a single target's steps evaluate ahead of a value
+// that does something, as Go evaluates a target's index operands before the value:
+// `ghp.ps[at(1)] = ga[at(4)]` runs 1 then 4. Written as one C assignment the order
+// was the C compiler's, and gcc's ran the value first, in every release; a target
+// of one index on a variable was bound so already (emitIndexAssign), one reached
+// through a chain or a dereference was not.
+//
+// A call in the steps, `pt(1).ps[at(2)] = ga[at(4)]`, runs before the index after
+// it: it is bound first, once per occurrence (callTargetBase, whose binding the
+// store's rendering reads back).
+func (e *emitter) bindTargetOrder(base string, steps []Node, op []Node) (release func()) {
+	if len(op) == 2 && op[0].sym == 0 && !containsSym(op, LhsItem) {
+		if rhs := e.rhsExprs(op[1]); len(rhs) == 1 && e.exprHasEffect(rhs[0].ast) {
+			idx := e.targetIndexOperands(steps)
+			if base != "" && len(idx) != 0 && containsSym(steps, CallSuffix) {
+				e.callTargetBase(base, steps)
+			}
+			return e.bindEffectOperands(append(idx, rhs[0]))
+		}
+	}
+	return func() {}
+}
+
+// targetIndexOperands are the index operands of a target's steps that do something
+// when evaluated, in order: what Go evaluates before the values a statement stores.
+func (e *emitter) targetIndexOperands(steps []Node) (idx []Node) {
+	for _, st := range steps {
+		if st.sym != Index {
+			continue
+		}
+		if low, _, _, isSlice := e.sliceParts(st.ast); !isSlice && len(low) != 0 && e.exprHasEffect(low) {
+			idx = append(idx, Node{sym: Expression, ast: low})
+		}
+	}
+	return idx
+}
+
 // emitValueList lowers `a, b = c, d` (or `:=`). Every value is evaluated into a
 // temporary first, then each target takes its temporary, so all right-hand sides
 // see the pre-assignment values -- which is what makes `a, b = b, a` a swap.
@@ -49477,18 +49678,14 @@ func (e *emitter) emitValueList(targets []assignTarget, declare []bool, rhs []No
 	// right: `sl[f(1)], sl[f(2)] = f(3), f(4)` runs 1 2 3 4. The values are bound
 	// below, ahead of the stores, and the stores read their indexes after them -- so
 	// an index that does something is bound first, when a value does something too.
-	if slices.ContainsFunc(rhs, func(r Node) bool { return e.exprHasEffect(r.ast) }) {
-		var idx []Node
-		for _, t := range targets {
-			for _, st := range t.chain {
-				if st.sym != Index {
-					continue
-				}
-				if low, _, _, isSlice := e.sliceParts(st.ast); !isSlice && len(low) != 0 && e.exprHasEffect(low) {
-					idx = append(idx, Node{sym: Expression, ast: low})
-				}
-			}
-		}
+	// And so are they when two of them do something, whatever the values do: a
+	// target's chain binds an index ahead of a later one that calls (indexOnceC),
+	// and `gt[at(1)][at(3)], gn[at(1)][at(2)] = "x", 50` ran 1 1 3 2.
+	var idx []Node
+	for _, t := range targets {
+		idx = append(idx, e.targetIndexOperands(t.chain)...)
+	}
+	if len(idx) > 1 || len(idx) != 0 && slices.ContainsFunc(rhs, func(r Node) bool { return e.exprHasEffect(r.ast) }) {
 		defer e.bindOperandsInOrder(idx, true)()
 	}
 	// The places of the targets are fixed next, before any value is computed: the
@@ -49610,6 +49807,15 @@ func (e *emitter) emitValueList(targets []assignTarget, declare []bool, rhs []No
 		if b, bound := e.boundOperands[&r.ast[0]]; bound {
 			b.used = true
 			tmps[i] = b.name
+			continue
+		}
+		// An ARRAY arrayShapeOf does not read, a receive, `x, n := <-rc, at(3)`, is
+		// copied as the one it reads is: initialized from the receive's temporary,
+		// which C has no such initializer for, x printed garbage on the board.
+		if a, isArr := e.namedArrays[ct]; isArr {
+			src := e.captureC(func() { e.emitExpr(r.ast) })
+			tmps[i], dims[i] = e.newTmp(), a
+			e.emitArrayCopy(tmps[i], src, a)
 			continue
 		}
 		// A struct holding an array is copied into its temporary, never initialized
@@ -53833,9 +54039,20 @@ func (e *emitter) ifaceComparableConcrete(iface string, n Node) bool {
 // ONCE -- both words of it are read, and an operand that is a call must not be
 // evaluated twice -- which emitStructOperand's hoist already arranges.
 func (e *emitter) emitIfaceCompareTriple(op string, l, r Node) {
-	lt := e.captureC(func() { e.emitStructOperand(l) })
 	lct, _ := e.inferCType(l.ast)
-	e.emitIfaceCompareC(op, lt, lct, r)
+	e.emitIfaceCompareC(op, e.ifaceOperandOnceC(l, lct), lct, r)
+}
+
+// ifaceOperandOnceC renders an interface operand a comparison reads both words of,
+// bound to a temporary where it does something and is no call, which
+// emitStructOperand binds already: `ga[at(1)] == x` wrote the element twice, its
+// table and its data, and called at(1) twice, on the host and on the board.
+func (e *emitter) ifaceOperandOnceC(n Node, ct string) string {
+	text := e.captureC(func() { e.emitStructOperand(n) })
+	if ct == "" || isCIdent(text) || e.declInit || e.deferReplay >= 0 || !e.exprHasEffect(n.ast) {
+		return text
+	}
+	return e.hoist(ct, func() { e.emit(text) })
 }
 
 // emitIfaceCompareC is emitIfaceCompareTriple for a left operand already in C, lt,
@@ -53890,14 +54107,15 @@ func (e *emitter) emitIfaceCompareC(op, lt, lct string, r Node) {
 				return
 			}
 			e.prologue = append(e.prologue, text)
-			rt := e.captureC(func() { e.emitStructOperand(r) })
+			rt := e.ifaceOperandOnceC(r, rct)
 			e.emit("(" + dst + ".vt " + eq + " " + rt + ".vt" + join + dst + ".data " + eq + " " + rt + ".data)")
 		default:
 			e.fail("cannot compare %s with %s", e.goTypeName(lct), e.goTypeName(rct))
 		}
 		return
 	}
-	rt := e.captureC(func() { e.emitStructOperand(r) })
+	rct, _ := e.inferCType(r.ast)
+	rt := e.ifaceOperandOnceC(r, rct)
 	e.emit("(" + lt + ".vt " + eq + " " + rt + ".vt" + join + lt + ".data " + eq + " " + rt + ".data)")
 }
 
@@ -55824,6 +56042,14 @@ func (e *emitter) emitUnaryKids(kids []Node) {
 						return
 					}
 				}
+				if e.f.ch(tok) == AND && i+2 == len(kids) && kids[i+1].sym == Factor {
+					e.emitExprNode(c)
+					saved := e.underAddr
+					e.underAddr = true
+					e.emitExprNode(kids[i+1])
+					e.underAddr = saved
+					return
+				}
 				if ch := e.f.ch(tok); (ch == SUB || ch == ADD) && e.firstTokenCh(kids[i+1:]) == ch {
 					e.emitOperandToken(tok)
 					e.emit("(")
@@ -56550,7 +56776,20 @@ func (e *emitter) hoistArgs(cname string, params []string, args []Node) ([]strin
 		}
 		ct, ok := e.inferCType(a.ast)
 		if !ok {
-			return fail()
+			// A ROW of an array of arrays, `ga[at(1)]` of a [3][3]int32, has no C
+			// type to infer: it is copied into one of its shape (bindC), in its
+			// turn. Given up, the arguments went in place and their order to C:
+			// `dig2(at(3), ga[at(1)])` called at(1) first on the host.
+			dim, isArr := e.arrayShapeOf(a.ast)
+			if dims := e.funcArrayParams[cname]; !isArr && i < len(dims) && dims[i].bound != "" {
+				// What this cannot read the shape of, `gsl(1)[at(2)]`, has the
+				// parameter's: the checker held the two to one type.
+				dim, isArr = dims[i], true
+			}
+			if !isArr {
+				return fail()
+			}
+			ct = e.arrayTypedef(dim)
 		}
 		names = append(names, e.hoist(ct, func() { e.emitExpr(a.ast) }))
 	}

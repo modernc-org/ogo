@@ -1857,6 +1857,559 @@ func main() {
 		want: "store 9 3\nread 0 3\nlen 3 4 33\ncompound 4 3\nincdec 5 31\nslice 3 5 3\naddr 6 3\narg 8 4 33\nrange 23 3\nmethod 2 3 33\nstring 5 104 331\npi 7 3 313\npistore 70 33\nvalue 6 3 33\nvstore 40 40 3\nbind 8 3\ncmp true true 33\n",
 	},
 	{
+		name: "a table of elements wider than a long, indexed by variables",
+		src: `// A table of two dimensions or more whose element is wider than a long, indexed by
+// variables: a checked build's bound check is a call, and the target's compiler
+// read and wrote such an element wrong whenever a row index held one -- garbage
+// for a read, nothing for a store -- for an int64 first and for every element of
+// more than four bytes. An element of four bytes or less is the control.
+
+type Cell struct {
+	kind  int32
+	level int32
+}
+
+type Tag struct {
+	name string
+	n    int32
+}
+
+type Small struct {
+	a, b int16
+}
+
+type Shape interface {
+	Area() int32
+}
+
+type Sq struct {
+	s int32
+}
+
+func (q *Sq) Area() int32 { return q.s * q.s }
+
+var grid [3][4]Cell
+
+var names [2][3]string
+
+var tags [2][2]Tag
+
+var small [2][3]Small
+
+var cube [2][2][2]Cell
+
+var sqs = [3]Sq{{2}, {3}, {4}}
+
+var shapes [2][2]Shape
+
+var rows [2][2][]int32
+
+var backing = [4]int32{5, 6, 7, 8}
+
+func main() {
+	for y := 0; y < 3; y++ {
+		for x := 0; x < 4; x++ {
+			grid[y][x] = Cell{int32(y), int32(x * 10)}
+		}
+	}
+	sum := int32(0)
+	for y := 0; y < 3; y++ {
+		for x := 0; x < 4; x++ {
+			c := grid[y][x]
+			sum = sum*3 + c.kind + c.level
+		}
+	}
+	println("grid", sum, grid[2][3].level)
+	i, j := 1, 2
+	names[i][j] = "hello"
+	names[i-1][j-1] = "go"
+	n := names[i][j]
+	println("names", n, len(names[i-1][j-1]))
+	tags[i][i-1] = Tag{"t", 7}
+	t := tags[i][0]
+	println("tags", t.name, t.n)
+	small[i][j] = Small{3, 4}
+	s := small[i][j]
+	println("small", s.a, s.b)
+	cube[i][i][i-1] = Cell{5, 6}
+	k := cube[i][j-1][0]
+	println("cube", k.kind, k.level)
+	shapes[i][j-2] = &sqs[j]
+	println("shape", shapes[i][0].Area())
+	rows[i][i] = backing[i:]
+	r := rows[i][1]
+	println("rows", len(r), r[0])
+	var local [2][2]Cell
+	local[i][i-1] = Cell{8, 9}
+	c := local[i][0]
+	println("local", c.kind, c.level)
+}
+`,
+		want: "grid 1199060 30\nnames hello 2\ntags t 7\nsmall 3 4\ncube 5 6\nshape 16\nrows 3 6\nlocal 8 9\n",
+	},
+	{
+		name: "an interface value in a buffered channel, alone and in a struct or an array",
+		src: `// An interface value in a buffered channel, alone and in a struct or an array: the
+// ring took an interface, a struct of no fields to the compiler's tables, for a
+// value of no bytes, and every value went into one slot -- the last one sent came
+// out of every receive.
+
+import "errors"
+
+type I interface {
+	m() int32
+}
+
+type Impl struct {
+	v int32
+}
+
+func (p *Impl) m() int32 { return p.v }
+
+type W struct {
+	i I
+}
+
+var gimpl = [3]Impl{{3}, {5}, {7}}
+
+var e1 = errors.New("one")
+
+var e2 = errors.New("two")
+
+var pc = make(chan I, 3)
+
+func main() {
+	rc := make(chan I, 3)
+	rc <- &gimpl[2]
+	rc <- &gimpl[1]
+	rc <- &gimpl[0]
+	x := <-rc
+	y := <-rc
+	println("iface", x.m(), y.m(), len(rc))
+	wc := make(chan W, 2)
+	wc <- W{&gimpl[1]}
+	wc <- W{&gimpl[2]}
+	w := <-wc
+	println("struct", w.i.m())
+	ac := make(chan [2]I, 2)
+	ac <- [2]I{&gimpl[0], &gimpl[1]}
+	ac <- [2]I{&gimpl[2], &gimpl[0]}
+	a := <-ac
+	println("array", a[0].m(), a[1].m())
+	ec := make(chan error, 2)
+	ec <- e1
+	ec <- e2
+	println("error", (<-ec).Error())
+	anyc := make(chan any, 2)
+	anyc <- &gimpl[1]
+	anyc <- &gimpl[2]
+	v := <-anyc
+	println("any", v.(*Impl).v)
+	pc <- &gimpl[0]
+	pc <- &gimpl[2]
+	p := <-pc
+	println("package", p.m())
+}
+`,
+		want: "iface 7 5 1\nstruct 5\narray 3 5\nerror one\nany 5\npackage 3\n",
+	},
+	{
+		name: "an interface read through an index that calls, compared and called",
+		src: `// An interface read through an index that calls, compared and called: both words
+// of it are read, the table and the data, and the element was written once for
+// each, so at(1) ran twice -- in every comparison, every case and every method
+// call, on the host and on the board. A binding a lazy operand needs is made only
+// where Go evaluates it.
+
+type I interface {
+	m() int32
+}
+
+type Impl struct {
+	v int32
+}
+
+func (p *Impl) m() int32 { return p.v }
+
+type H struct {
+	is []I
+}
+
+var gimpl = [3]Impl{{3}, {5}, {7}}
+
+var ga = [3]I{&gimpl[0], &gimpl[1], &gimpl[2]}
+
+var gq = [2][3]I{{&gimpl[0], &gimpl[1], &gimpl[2]}, {&gimpl[2], &gimpl[1], &gimpl[0]}}
+
+var gh = H{ga[:]}
+
+var calls int
+
+func at(k int) int {
+	calls = calls*10 + k
+	return 2 - k%2
+}
+
+func pt(k int) *H {
+	calls = calls*10 + k
+	return &gh
+}
+
+func main() {
+	if ga[at(1)] == ga[2] {
+		println("eq", calls)
+	} else {
+		println("eq not", calls)
+	}
+	calls = 0
+	println("neq", ga[1] != ga[at(1)], calls)
+	calls = 0
+	println("method", ga[at(1)].m(), pt(2).is[at(1)].m(), calls)
+	calls = 0
+	switch ga[at(1)] {
+	case ga[2]:
+		println("tag", calls)
+	default:
+		println("tag default", calls)
+	}
+	calls = 0
+	switch ga[2] {
+	case ga[2]:
+		println("first", calls)
+	case ga[at(1)]:
+		println("second")
+	}
+	calls = 0
+	switch ga[1] {
+	case ga[2]:
+	case ga[at(3)]:
+		println("third", calls)
+	}
+	calls = 0
+	if ga[0] == ga[1] {
+		println("a")
+	} else if ga[at(1)] == ga[2] {
+		println("elseif", calls)
+	} else {
+		println("else", calls)
+	}
+	calls = 0
+	ok := ga[0] == ga[1] && ga[at(3)] == ga[2]
+	println("and", ok, calls)
+	calls = 0
+	ok = ga[0] == ga[0] || ga[at(3)] == ga[2]
+	println("or", ok, calls)
+	calls = 0
+	n := 0
+	for ga[at(1)] != ga[1] && n < 3 {
+		n++
+	}
+	println("for", n, calls)
+	calls = 0
+	println("rows", gq[at(1)-1][at(2)].m(), gq[at(1)-1][at(2)] == ga[1], calls)
+}
+`,
+		want: "eq not 1\nneq false 1\nmethod 5 5 121\ntag default 1\nfirst 0\nthird 3\nelse 1\nand false 0\nor true 0\nfor 0 1\nrows 7 false 1212\n",
+	},
+	{
+		name: "two indexes that call, in the order written",
+		src: `// Two indexes that call, in the order written: C leaves the order of a[f()][g()]
+// to its compiler, and the target's evaluated the later index first wherever the
+// element was wider than a long -- and read garbage there besides. Each row prints
+// what it read and the order its calls ran in.
+
+type P struct {
+	a, b int32
+}
+
+type B struct {
+	ps []int32
+}
+
+var gq = [3][3]P{{{1, 2}, {3, 4}, {5, 6}}, {{7, 8}, {9, 10}, {11, 12}}, {{13, 14}, {15, 16}, {17, 18}}}
+
+var gw = [2][3]int64{{1, 2, 3}, {4, 5, 6 << 33}}
+
+var gn = [2][3]int32{{1, 2, 3}, {4, 5, 6}}
+
+var gt = [2][2]string{{"ab", "cd"}, {"efg", "hijk"}}
+
+var back = [3]int32{7, 8, 9}
+
+var gb = [3]B{{back[:1]}, {back[:2]}, {back[:]}}
+
+var calls int
+
+func at(k int) int {
+	calls = calls*10 + k
+	return 2 - k%2
+}
+
+func take(k int, p P) int32 { return int32(k)*100 + p.a }
+
+func main() {
+	p := gq[at(1)][at(2)]
+	println("struct", p.a, p.b, calls)
+	calls = 0
+	println("int64", gw[at(1)][at(2)], calls)
+	calls = 0
+	println("int32", gn[at(1)][at(2)], calls)
+	calls = 0
+	println("string", gt[at(1)][at(3)], calls)
+	calls = 0
+	println("field", gq[at(1)][at(2)].b, calls)
+	calls = 0
+	println("slice", gb[at(2)].ps[at(1)], calls)
+	calls = 0
+	println("arg", take(at(3), gq[at(1)][at(2)]), calls)
+	calls = 0
+	gq[at(1)][at(2)] = P{40, 41}
+	println("store", gq[1][2].a, calls)
+	calls = 0
+	gq[at(1)][at(2)].b += 3
+	println("compound", gq[1][2].b, calls)
+	calls = 0
+	gw[at(1)][at(2)]++
+	println("incr", gw[1][2], calls)
+	calls = 0
+	gt[at(1)][at(3)], gn[at(1)][at(2)] = "x", 50
+	println("list", gt[1][1], gn[1][2], calls)
+}
+`,
+		want: "struct 11 12 12\nint64 51539607552 12\nint32 6 12\nstring hijk 13\nfield 12 12\nslice 8 21\narg 111 312\nstore 40 12\ncompound 44 12\nincr 51539607553 12\nlist x 50 1312\n",
+	},
+	{
+		name: "a string or a slice reached through an index that calls, indexed on",
+		src: `// A string or a slice reached through an index that calls, indexed or sliced on:
+// the header was written once for its pointer and once for its length, so the
+// call ran twice or three times. Of an array a pointer reaches too, pa(1)[at(2)].
+// And a slice of a field of a struct a call returns, mkh(1).v[1:], which the
+// compiler crashed on.
+
+type H struct {
+	v   []int32
+	arr [3]int32
+}
+
+var gq = [3][3]string{{"a0", "b00", "c000"}, {"d0", "e00", "f000"}, {"g0", "h00", "i000"}}
+
+var gs = [][]int32{{1, 2, 3}, {4, 5, 6}, {7, 8, 9}}
+
+var gp = [3][]int32{{1, 2}, {3, 4, 5}, {6, 7, 8, 9}}
+
+var gb = [3]int32{1, 2, 3}
+
+var gh = H{v: gb[:]}
+
+var calls int32
+
+func at(k int32) int {
+	calls = calls*10 + k
+	return int(2 - k%2)
+}
+
+func gsl(k int32) []string {
+	calls = calls*10 + k
+	return gq[1][:]
+}
+
+func gss(k int32) [][]int32 {
+	calls = calls*10 + k
+	return gs
+}
+
+func pa(k int32) *[3][]int32 {
+	calls = calls*10 + k
+	return &gp
+}
+
+func pas(k int32) *[3][3]string {
+	calls = calls*10 + k
+	return &gq
+}
+
+func mkh(k int32) H {
+	calls = calls*10 + k
+	return gh
+}
+
+func dig(x []int32) int32 { return int32(len(x))*10 + x[0] }
+
+func main() {
+	println("string", gsl(1)[at(2)][1], calls)
+	calls = 0
+	x := gsl(1)[at(2)][1:]
+	println("substring", x, calls)
+	calls = 0
+	println("slice", gss(1)[at(2)][1], calls)
+	calls = 0
+	y := gss(1)[at(2)][1:]
+	println("reslice", len(y), y[0], calls)
+	calls = 0
+	println("ptr", pa(1)[at(2)][1], calls)
+	calls = 0
+	w := pa(1)[at(2)][1:]
+	println("ptrslice", len(w), w[0], calls)
+	calls = 0
+	println("ptrstring", pas(1)[at(2)][at(1)][1], calls)
+	calls = 0
+	println("field", dig(mkh(1).v[1:]), calls)
+}
+`,
+		want: "string 48 12\nsubstring 000 12\nslice 8 12\nreslice 2 8 12\nptr 7 12\nptrslice 3 7 12\nptrstring 48 121\nfield 22 1\n",
+	},
+	{
+		name: "an array argument beside one that calls, deferred, and received",
+		src: `// An array argument beside another that calls: the arguments are bound to
+// temporaries in Go's order, and an array was bound by a C initializer, which C
+// has none of for an array -- gcc refused it and the target's compiler handed the
+// callee garbage. A row of an array of arrays was not bound at all and went in
+// place, the order left to C. Deferred, an array element was captured into a
+// temporary declared = 0. And an array received, in a list's declaration or a
+// loop's header, was initialized from the receive's temporary.
+
+type A [3]int32
+
+var ga = [3][3]int32{{1, 2, 3}, {4, 5, 6}, {7, 8, 9}}
+
+var gs = [][3]int32{{11, 12, 13}, {14, 15, 16}}
+
+var gd = [2]A{{21, 22, 23}, {24, 25, 26}}
+
+var calls int32
+
+func at(k int32) int {
+	calls = calls*10 + k
+	return int(2 - k%2)
+}
+
+func dig2(k int, x [3]int32) int32 { return int32(k)*100 + x[0] + x[1]*3 + x[2]*9 }
+
+func dig3(x [3]int32, k int) int32 { return x[0] + x[1]*3 + x[2]*9 + int32(k)*100 }
+
+func digA(k int, x A) int32 { return int32(k)*100 + x[2] }
+
+func take(x [3]int32) { println("deferred", x[0], x[1], x[2], calls) }
+
+func later() {
+	defer take(ga[at(1)])
+	defer take(gs[at(1)-1])
+	calls = calls*10 + 9
+	ga[1][0] = 99
+	gs[0][0] = 98
+}
+
+func main() {
+	println("row", dig2(at(3), ga[at(1)]), calls)
+	calls = 0
+	println("slice", dig2(at(3), gs[at(1)-1]), calls)
+	calls = 0
+	println("after", dig3(ga[at(2)], at(3)), calls)
+	calls = 0
+	println("defined", digA(at(3), gd[at(1)]), calls)
+	calls = 0
+	later()
+	rc := make(chan [3]int32, 4)
+	rc <- ga[1]
+	rc <- ga[2]
+	rc <- ga[0]
+	rc <- ga[2]
+	x, n := <-rc, at(3)
+	println("list", x[0], x[2], n)
+	for y := <-rc; ; {
+		println("header", y[0], y[2])
+		break
+	}
+	for z := mk(); ; {
+		println("call", z[0], z[2])
+		break
+	}
+	w, ok := <-rc
+	println("ok", w[1], ok)
+}
+
+func mk() [3]int32 { return ga[0] }
+`,
+		want: "row 173 31\nslice 264 31\nafter 212 23\ndefined 126 31\ndeferred 11 12 13 119\ndeferred 4 5 6 119\nlist 99 6 1\nheader 7 9\ncall 1 3\nok 2 true\n",
+	},
+	{
+		name: "a target's index operands run before the value stored",
+		src: `// A target's index operands run before the value stored, as Go evaluates them: a
+// target reached through a chain or a dereference was written as one C assignment
+// with the value, whose order was the C compiler's, and gcc's ran the value first.
+// So did a target of a call of several results. Each row prints what it stored and
+// the order its calls ran in.
+
+type S5 struct {
+	a, b, c, d, e int32
+}
+
+type H struct {
+	ps []int64
+	pa *[3]int64
+	qs []S5
+}
+
+var back = [3]int64{1, 2, 3}
+
+var sb = [3]S5{}
+
+var gh = H{ps: back[:], pa: &back, qs: sb[:]}
+
+var ghp = &gh
+
+var ga = [3]int64{7, 8, 9}
+
+var calls int
+
+func at(k int) int {
+	calls = calls*10 + k
+	return 2 - k%2
+}
+
+func two() (int64, int) {
+	calls = calls*10 + 5
+	return 70, 3
+}
+
+func mk(k int) S5 {
+	calls = calls*10 + k
+	return S5{1, 2, 3, 4, 5}
+}
+
+func pt(k int) *H {
+	calls = calls*10 + k
+	return &gh
+}
+
+func main() {
+	ghp.ps[at(1)] = ga[at(4)]
+	println("chain", back[1], calls)
+	calls = 0
+	(*ghp.pa)[at(1)] = ga[at(4)]
+	println("deref", back[1], calls)
+	calls = 0
+	pt(1).ps[at(2)] = ga[at(4)]
+	println("call", back[2], calls)
+	calls = 0
+	var y int
+	ghp.ps[at(1)], y = two()
+	println("results", back[1], y, calls)
+	calls = 0
+	ghp.qs[at(1)] = mk(3)
+	println("struct", sb[1].e, calls)
+	calls = 0
+	ghp.ps[at(1)] += ga[at(4)]
+	println("compound", back[1], calls)
+	calls = 0
+	xs := back[:]
+	xs[at(1)] = ga[at(4)]
+	println("local", back[1], calls)
+}
+`,
+		want: "chain 9 14\nderef 9 14\ncall 9 124\nresults 70 3 15\nstruct 5 13\ncompound 79 14\nlocal 9 14\n",
+	},
+	{
 		// `!*pb` of a nil pb read address zero on the target, the boot area, where Go panics.
 		name: "a prefix operator over a nil pointer's dereference panics",
 		src: `func main() {

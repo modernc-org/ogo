@@ -20,6 +20,15 @@
 // board where the host and Go agreed. The emitter writes such a row as
 // `(&r[I][0])` before it is indexed (wideRowC).
 //
+// It is not the int64's: any element wider than a long is read and written as
+// wrong -- a struct of two or three int32 (s2, s3 below), and so a string header,
+// an interface value and a slice header -- while one of a long or less, a struct
+// of two int16 or of one int32 (h2, s1), is right, and so is the ADDRESS of a wide
+// element, and a whole element read through it (addr). Measured 2026-10-24, when
+// `c := grid[y][x]` of a [3][4] array of a two-field struct printed garbage on a
+// P2-EDGE in every release; wideRowC takes the row's address for every element of
+// more than four bytes since.
+//
 // gcc prints, and the target should print:
 //
 //	r1 4294967303 4294967304
@@ -28,11 +37,28 @@
 //	r4 4294967303 4294967306
 //	r5 7 10
 //	read 10
+//	s2 15 16 99 41 42
+//	s3 22 23 24
+//	h2 15 16
+//	s1 8
+//	addr 9 10 11 12
 //
-// The target prints r2 and r3 as 0 0, and the read as garbage.
+// The target prints r2 and r3 as 0 0, the read as garbage, s2's and s3's reads
+// as garbage, and s2's element as 13 14: the store of a whole element is lost, and
+// the store of a field of one is right.
 
 #include <stdio.h>
 #include <stdint.h>
+
+typedef struct { int32_t a, b; } S2;
+typedef struct { int32_t a, b, c; } S3;
+typedef struct { int16_t a, b; } H2;
+typedef struct { int32_t a; } S1;
+
+S2 q2[3][3] = {{{1, 2}, {3, 4}, {5, 6}}, {{7, 8}, {9, 10}, {11, 12}}, {{13, 14}, {15, 16}, {17, 18}}};
+S3 q3[3][3] = {{{1, 2, 3}, {4, 5, 6}, {7, 8, 9}}, {{10, 11, 12}, {13, 14, 15}, {16, 17, 18}}, {{19, 20, 21}, {22, 23, 24}, {25, 26, 27}}};
+H2 qh[3][3] = {{{1, 2}, {3, 4}, {5, 6}}, {{7, 8}, {9, 10}, {11, 12}}, {{13, 14}, {15, 16}, {17, 18}}};
+S1 q1[3][3] = {{{1}, {2}, {3}}, {{4}, {5}, {6}}, {{7}, {8}, {9}}};
 
 static int f(int i, int n) {
 	if ((unsigned)i >= (unsigned)n) {
@@ -66,5 +92,20 @@ int main(void) {
 	printf("r4 %lld %lld\n", r4[0][0], r4[1][1]);
 	printf("r5 %d %d\n", r5[0][0], r5[1][1]);
 	printf("read %lld\n", sum);
+	int j = 1;
+	S2 a = q2[f(2, 3)][j];
+	q2[f(2, 3)][j + 1].b = 99;
+	S2 sv = {41, 42};
+	q2[f(2, 3)][0] = sv;
+	printf("s2 %d %d %d %d %d\n", a.a, a.b, q2[2][2].b, q2[2][0].a, q2[2][0].b);
+	S3 b = q3[f(2, 3)][j];
+	printf("s3 %d %d %d\n", b.a, b.b, b.c);
+	H2 c = qh[f(2, 3)][j];
+	printf("h2 %d %d\n", c.a, c.b);
+	S1 d = q1[f(2, 3)][j];
+	printf("s1 %d\n", d.a);
+	S2* pa = &q2[f(1, 3)][j];
+	S2 pv = *(&q2[f(1, 3)][j + 1]);
+	printf("addr %d %d %d %d\n", pa->a, pa->b, pv.a, pv.b);
 	return 0;
 }

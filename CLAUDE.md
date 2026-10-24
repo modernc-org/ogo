@@ -898,6 +898,10 @@ section. A new finding goes there; the rule it leaves goes here too.
   probes left behind, not only the corpus.** **an ERROR line in a COMPILE file is an
   expectation nobody checks**.
 - **A probe that makes the backend lay out a gigabyte of data costs the machine**.
+- **A VALUE OF SEVERAL WORDS IS A ROW OF EVERY POSITION, ON THE BOARD**: **A sweep of
+  a value's shapes is run on the board before it is called clean: the host's
+  compiler evaluates in another order what C leaves to it, and reads right what the
+  target's reads wrong.**
 - Open items: "Known open items, all loud refusals or design walls" and "Latent
   ones" (measured, not faults today).
 
@@ -1086,6 +1090,9 @@ section. A new finding goes there; the rule it leaves goes here too.
 - **A call on the way to a value of several words is bound in the one word it
   yields: a pointer, or a struct element's address** (the target's compiler copies
   such a value a word at a time; A VIEW THROUGH A POINTER IS OF WHAT IT POINTS AT).
+- **Two operands that do something in one C expression are bound in Go's order,
+  whichever compiler builds it** (indexOnceC, bindTargetOrder; A VALUE OF SEVERAL
+  WORDS IS A ROW OF EVERY POSITION, ON THE BOARD).
 - **A STRUCT HOLDING AN ARRAY IS COPIED, NEVER ASSIGNED**. **A STRUCT OF MORE THAN
   FOUR WORDS PASSED WHERE A CALL STANDS**: **A new place a struct-valued call is
   handed on binds it first**.
@@ -1147,6 +1154,9 @@ section. A new finding goes there; the rule it leaves goes here too.
   holds while the arguments run**; **A goroutine's output is asked with main
   waiting in each way it can wait, a print of a receive among them** (A PRINT HOLDS
   A LOCK).
+- **A backend fault measured for one type is asked of every type of its size: the
+  target's compiler lays out bytes, not Go's types** (wideRowC; A VALUE OF SEVERAL
+  WORDS IS A ROW OF EVERY POSITION, ON THE BOARD).
 - **A STATIC INITIALIZER IS LAID OUT BY ANOTHER RULE THAN ITS TYPE**: **A rule about
   the target's layout is measured on the board in C first**; **The host's compiler
   is no witness for an initializer's layout**. **A ROW OF 64-BIT ELEMENTS INDEXED BY
