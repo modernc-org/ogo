@@ -6,8 +6,11 @@ package octosmith
 
 import (
 	"fmt"
+	"go/constant"
+	"go/token"
 	"math"
 	"math/rand"
+	"slices"
 	"strconv"
 	"strings"
 )
@@ -35,7 +38,8 @@ var fdLocals = []string{"fa", "fb"}
 // genF64 writes a procedure of float64 arithmetic at a float64's whole precision,
 // which the target computes in software (the emitter's float64.go): sums,
 // differences, products and quotients of package variables, locals, an element, a
-// pointer's target, a call's result and constants, with the values drawn across the
+// pointer's target, a call's result -- the order of the calls in its counter -- and
+// constants, a run of them leading a level among them, with the values drawn across the
 // whole range -- subnormals, the neighbours of 2^53, long mantissas and short
 // decimals no float holds exactly -- the conversions to and from the integer types
 // and float32, the comparisons, compound assignments, and the math functions whose
@@ -164,13 +168,33 @@ func fdLit(v float64) string {
 	return s
 }
 
-// fdExpr is an expression genF64 wrote: its text, its value and whether it is a
+// fdExpr is an expression genF64 wrote: its text, its value, whether it is a
 // constant, which Go folds exactly and converts to a float64 once, so no operation
-// joins two of them.
+// joins two of them but a run of constants leading a level (constRun), and what
+// its calls of fdId_1 fold into the counter, in the order Go makes them.
 type fdExpr struct {
-	text string
-	v    float64
-	k    bool
+	text  string
+	v     float64
+	k     bool
+	calls []int32
+}
+
+// fdHash is what a call of fdId_1 with x folds into fdCalls_1, so the counter says
+// in what order the calls were made: a NaN's bits being no value Go defines, every
+// NaN folds the same.
+func fdHash(x float64) int32 {
+	if x != x {
+		return 7
+	}
+	return int32(math.Float64bits(x) >> 40)
+}
+
+// commit folds the calls of x into the counter, as the statement writing x makes
+// them; an expression that is not written makes none.
+func (p *f64Part) commit(x fdExpr) {
+	for _, h := range x.calls {
+		p.calls = p.calls*31 + h
+	}
 }
 
 // fdOp is the float64 Go computes for a op b, rounded on its own: the conversion is
@@ -238,11 +262,10 @@ func (p *f64Part) expr(depth int) fdExpr {
 		if x.k && v == 0 {
 			v = 0 // a constant's negation, folded: no negative zero
 		}
-		return fdExpr{text: "-" + p.paren(x), v: v, k: x.k}
+		return fdExpr{text: "-" + p.paren(x), v: v, k: x.k, calls: x.calls}
 	case 1:
 		x := p.expr(depth - 1)
-		p.calls++
-		return fdExpr{text: "fdId_1(" + x.text + ")", v: x.v}
+		return fdExpr{text: "fdId_1(" + x.text + ")", v: x.v, calls: append(slices.Clone(x.calls), fdHash(x.v))}
 	case 2:
 		x := p.nonConst(depth - 1)
 		fn := []string{"Sqrt", "Abs", "Floor", "Ceil", "Trunc"}[r.Intn(5)]
@@ -259,7 +282,11 @@ func (p *f64Part) expr(depth int) fdExpr {
 		default:
 			v = math.Trunc(x.v)
 		}
-		return fdExpr{text: "math." + fn + "(" + x.text + ")", v: v}
+		return fdExpr{text: "math." + fn + "(" + x.text + ")", v: v, calls: x.calls}
+	case 3:
+		if x, ok := p.constRun(depth); ok {
+			return x
+		}
 	}
 	l := p.expr(depth - 1)
 	rt := p.expr(depth - 1)
@@ -270,7 +297,63 @@ func (p *f64Part) expr(depth int) fdExpr {
 	if op == '/' && rt.k && rt.v == 0 {
 		op = '+' // a constant zero divisor is refused, as Go refuses it
 	}
-	return fdExpr{text: "(" + l.text + " " + string(op) + " " + rt.text + ")", v: fdOp(op, l.v, rt.v)}
+	return fdExpr{text: "(" + l.text + " " + string(op) + " " + rt.text + ")", v: fdOp(op, l.v, rt.v), calls: append(slices.Clone(l.calls), rt.calls...)}
+}
+
+// constRun draws constants leading a level, `2 / 3 * x`, which Go folds as one
+// constant expression -- exactly, a division of untyped integers an integer one --
+// and converts to a float64 once, before the operation with what follows them. A
+// run past a float64, which Go refuses, is not drawn.
+func (p *f64Part) constRun(depth int) (fdExpr, bool) {
+	r := p.r
+	ops := "+-"
+	if r.Intn(2) == 0 {
+		ops = "*/"
+	}
+	var acc constant.Value
+	var text strings.Builder
+	for i, n := 0, 2+r.Intn(2); i < n; i++ {
+		lit := p.runLit()
+		kind := token.INT
+		if strings.ContainsAny(lit, ".e") {
+			kind = token.FLOAT
+		}
+		v := constant.MakeFromLiteral(lit, kind, 0)
+		if i == 0 {
+			acc = v
+			text.WriteString(lit)
+			continue
+		}
+		op := ops[r.Intn(2)]
+		tok := map[byte]token.Token{'+': token.ADD, '-': token.SUB, '*': token.MUL, '/': token.QUO}[op]
+		if tok == token.QUO && acc.Kind() == constant.Int && v.Kind() == constant.Int {
+			tok = token.QUO_ASSIGN // Go's division of two untyped integers
+		}
+		acc = constant.BinaryOp(acc, tok, v)
+		fmt.Fprintf(&text, " %c %s", op, lit)
+	}
+	c, _ := constant.Float64Val(constant.ToFloat(acc))
+	if math.IsInf(c, 0) {
+		return fdExpr{}, false
+	}
+	x := p.nonConst(depth - 1)
+	op := ops[r.Intn(2)]
+	return fdExpr{text: "(" + text.String() + " " + string(op) + " " + x.text + ")", v: fdOp(op, c, x.v), calls: x.calls}, true
+}
+
+// runLit draws a constant of a run: a small integer, a short decimal no float
+// holds, or a magnitude past a float64's whose run may still come back into range.
+func (p *f64Part) runLit() string {
+	r := p.r
+	switch r.Intn(4) {
+	case 0:
+		return strconv.Itoa(1 + r.Intn(20))
+	case 1:
+		return strconv.Itoa(1 + r.Intn(9))
+	case 2:
+		return []string{"0.1", "0.2", "0.3", "2.5", "1e300", "1e-300", "0.7", "1.1"}[r.Intn(8)]
+	}
+	return strconv.FormatFloat(float64(1+r.Intn(999))/100, 'g', -1, 64)
 }
 
 // nonConst is an expression that is not a constant.
@@ -312,6 +395,7 @@ func (p *f64Part) assign(b *strings.Builder) {
 	t := p.target()
 	x := p.nonConst(3)
 	fmt.Fprintf(b, "\t%s = %s\n", t, x.text)
+	p.commit(x)
 	p.vals[fdKey(t)] = x.v
 }
 
@@ -323,6 +407,7 @@ func (p *f64Part) compound(b *strings.Builder) {
 		op = '-'
 	}
 	fmt.Fprintf(b, "\t%s %c= %s\n", t, op, x.text)
+	p.commit(x)
 	p.vals[fdKey(t)] = fdOp(op, p.vals[fdKey(t)], x.v)
 }
 
@@ -350,45 +435,44 @@ func (p *f64Part) compare(b *strings.Builder) {
 	}
 	k := int32(p.r.Int31())
 	fmt.Fprintf(b, "\tif %s %s %s {\n\t\tr ^= %d\n\t}\n", l.text, op, r.text, k)
+	p.commit(l)
+	p.commit(r)
 	if t {
 		p.res ^= k
 	}
 }
 
-// toInt folds a conversion to an integer type into r, where Go defines it. An
-// expression it does not write takes back the calls it counted.
+// toInt folds a conversion to an integer type into r, where Go defines it.
 func (p *f64Part) toInt(b *strings.Builder) {
-	calls := p.calls
 	x := p.nonConst(2)
 	a := math.Abs(x.v)
 	switch {
 	case math.IsNaN(x.v) || math.IsInf(x.v, 0):
-		p.calls = calls
 	case a < 1<<31 && p.r.Intn(2) == 0:
 		fmt.Fprintf(b, "\tr = r*31 + int(%s)\n", x.text)
+		p.commit(x)
 		p.res = p.res*31 + int32(x.v)
 	case a < 1<<63 && p.r.Intn(2) == 0:
 		fmt.Fprintf(b, "\tr = r*31 + int(int32(int64(%s)>>20))\n", x.text)
+		p.commit(x)
 		p.res = p.res*31 + int32(int64(x.v)>>20)
 	case x.v >= 0 && x.v < 1<<32:
 		fmt.Fprintf(b, "\tr = r*31 + int(uint32(%s)>>1)\n", x.text)
+		p.commit(x)
 		p.res = p.res*31 + int32(uint32(x.v)>>1)
-	default:
-		p.calls = calls
 	}
 }
 
 // viaFloat32 rounds a float64 to the float32 variable and reads it back: one a
 // float32 holds, Go leaving the result of one past its range to the implementation.
 func (p *f64Part) viaFloat32(b *strings.Builder) {
-	calls := p.calls
 	x := p.nonConst(2)
 	if math.Abs(x.v) > math.MaxFloat32 {
-		p.calls = calls
 		return
 	}
 	f := float32(x.v)
 	fmt.Fprintf(b, "\tfdF_1 = float32(%s)\n", x.text)
+	p.commit(x)
 	p.f32 = f
 	t := p.target()
 	fmt.Fprintf(b, "\t%s = float64(fdF_1)\n", t)
@@ -428,6 +512,7 @@ func (p *f64Part) write(f *Fuzzer, body string) {
 	fmt.Fprintf(out, "var fdP_1 = [3]float64{%s, %s, %s}\n\n", fdLit(p.init["fdP_1[0]"]), fdLit(p.init["fdP_1[1]"]), fdLit(p.init["fdP_1[2]"]))
 	fmt.Fprintf(out, "var fdI_1 int64 = %d\n\nvar fdN_1 int32 = %d\n\nvar fdU_1 uint32 = %d\n\n", p.ints["fdI_1"], p.ints["fdN_1"], p.ints["fdU_1"])
 	fmt.Fprintf(out, "var fdF_1 float32 = %s\n\n", fdLit(float64(p.f32_0)))
-	fmt.Fprint(out, "func fdId_1(x float64) float64 {\n\tfdCalls_1++\n\treturn x\n}\n\n")
+	// The counter says in what order the calls were made (fdHash).
+	fmt.Fprint(out, "func fdId_1(x float64) float64 {\n\th := 7\n\tif x == x {\n\t\th = int(math.Float64bits(x) >> 40)\n\t}\n\tfdCalls_1 = fdCalls_1*31 + h\n\treturn x\n}\n\n")
 	fmt.Fprintf(out, "func fdRun_1() int {\n\tr := 0\n%s\treturn r\n}\n\n", body)
 }

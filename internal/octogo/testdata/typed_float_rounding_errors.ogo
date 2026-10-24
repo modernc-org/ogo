@@ -1,0 +1,14 @@
+// A typed float constant holds what its type holds, rounded where it is declared,
+// converted and computed, as Go has it: B*3*10 is 3.0000000000000004.
+
+const B float64 = 0.1
+
+// ERROR truncated
+const K1 = int(B * 3 * 10)
+
+// ERROR truncated
+const K4 = int(float64(0.1) * 3 * 10)
+
+func main() {
+	println(K1, K4)
+}

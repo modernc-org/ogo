@@ -3430,6 +3430,36 @@ the folds. **A new spelling of a type is grepped for in every test of the old on
 each `"double"` the float64 was not added to was a question it had not been
 asked.** **A name a walk records is a mark like the flags: a check reading a name
 as a defined type's asks the type the walk gave first.**
+**A COUNTER THAT COUNTS PASSES EVERY ORDER** (2026-10-24, the same evening). Probing
+the positions the fold reaches, `k(1) + k(2)` of two float64 calls ran k(2) first
+on the host: an operation of float64s is a helper's call, `ogo_f64_add(k(1),
+k(2))`, C leaves the order of its arguments open, and bindOperandsInOrder bound no
+operand of a type bindableCType did not know -- `"double"` was there, the ogo_f64
+was not. gcc reversed a store's value, a compound's, a return's, a method's
+argument, a condition, a switch, a literal and a for header; the board's compiler
+evaluates left to right, but `k(3) > k(4)` is `ogo_f64_lt(k(4), k(3))`, so on a
+P2-EDGE that one ran k(4) first. None of it shipped, the float64 being a day old,
+and no run case or seed had seen it: genF64's fdId_1 counted its calls, and a count
+is the same in every order. It folds its argument's bits into the counter now,
+`fdCalls_1*31 + h`, each expression carrying its calls in Go's order to the
+statement that writes it; built by the emitter before the fix, seed 29 fails its
+checksum. Two more that evening. The checker rounded no typed float at all, so
+`const K = int(B*3*10)` of a `const B float64 = 0.1` built and printed 3 on a
+P2-EDGE built by v0.58.0, Go refusing 3.0000000000000004; typedAs rounds now, where
+a constant is declared, converted and computed. And the fix of the evening before,
+pushed, made the compiler PANIC on obeam: checkDerefAssign asked the store through
+`t.f.checkStoreInto`, the FILE the pointer's type was written in, which read the
+value's tokens by its own table -- index 3022 of 2014 in obeam's vm package, and
+where an index happened to fit, another token, silently. The value's file asks
+now, the type going by its scope, as checkHeaderAssign always had it, and
+checkConvTarget had the same fault latent; TestCrossFileConsts puts the store in a file
+longer than the type's. The suite had passed: no run case nor spec is one package
+of several files of any size, and obeam was built only after the push. **A
+fuzzer's counter records the order of its calls: one that counts them passes every
+order the emitter writes.** **A check reading a value against a type reads each by
+its own file: the value's file asks, and the type goes by its scope.** **A change to
+the checker is built against obeam and p2-11 before it is pushed: they are the
+packages of several files the suite does not have.**
 **A MARK IS MADE IN EMISSION ORDER, AND A LOOP RUNS ITS BODY AGAIN** (2026-10-08,
 found probing unsafe.Slice's views). The holder marks are set as statements are
 emitted, so a statement read a variable's mark as the statements BEFORE it had left

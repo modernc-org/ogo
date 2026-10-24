@@ -429,6 +429,7 @@ var generatedConstructs = []struct {
 	{"float64: through a pointer", `\n\t\*fdq [-+*/]?= `},
 	{"float64: a compound assignment", `\n\t(fd\w+|fa|fb|\*fdq|fdP_1\[\d\]) [-+*/]= `},
 	{"float64: a call's result", `fdId_1\(`},
+	{"float64: constants leading a level", `\((\d[\d.e-]* [-+*/] ){2,}`},
 	{"float64: a subnormal constant", `\de-3[01]\d\b`},
 	{"float64: a hexadecimal constant", `0x1\.[0-9a-f]+p[-+]\d+`},
 	{"float64: an integer constant past 2^53", `\b900719925474099[2-9]\b`},

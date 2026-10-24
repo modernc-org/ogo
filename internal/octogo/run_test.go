@@ -42384,6 +42384,122 @@ func main() {
 `,
 		want: "1\n0.30000000000000004 false\n0.33333333333333331 1\n0 2\n0.33333334 false\n5e-324 0\n1.7976931348623157e+308 +Inf\n",
 	}, {
+		// A float64 is a struct of two words, its operations helper calls, and C
+		// leaves the order of a call's arguments open: no operand was bound, a
+		// float64 being no type bindableCType knew, so gcc ran k(2) before k(1)
+		// in every position here, and on a P2-EDGE `k(3) > k(4)`, written as
+		// ogo_f64_lt(k(4), k(3)), called k(4) first.
+		name: "float64 operands with effects run in Go's order",
+		src: `import "math"
+
+var calls int
+
+func k(n int) float64 {
+	calls = calls*10 + n
+	return float64(n)
+}
+
+func ix(n int) int {
+	calls = calls*10 + n
+	return n - 1
+}
+
+type P struct{ x, y float64 }
+
+func (p *P) m(v float64) float64 {
+	calls = calls*10 + 9
+	return p.x + v
+}
+
+var gp = [3]P{{0, 0}, {1, 0}, {2, 0}}
+
+func pp(n int) *P {
+	calls = calls*10 + n
+	return &gp[n]
+}
+
+func sum(a, b float64) float64 { return a + b }
+
+func ret() float64 { return k(1) * k(2) / k(3) }
+
+func show(tag string) {
+	println(tag, calls)
+	calls = 0
+}
+
+func main() {
+	var a [4]float64
+	a[ix(1)] = k(2) + k(3)
+	show("store")
+	a[ix(2)] += k(3) * k(4)
+	show("compound")
+	println(a[ix(1)]*k(2) + a[ix(3)])
+	show("index operands")
+	println(ret())
+	show("return")
+	println(pp(1).m(k(2)) + k(3))
+	show("method")
+	println(int(k(1) + k(2)))
+	show("conversion")
+	println(math.Max(k(1), k(2)), math.Abs(k(3)-k(4)))
+	show("math")
+	if k(1) <= k(2) && k(3) > k(4) || k(5) == k(6) {
+		println("cond")
+	}
+	show("condition")
+	switch k(1) + k(2) {
+	case k(3):
+		println("case3")
+	case k(4):
+	}
+	show("switch")
+	s := []float64{k(1) - k(2), k(3) / k(4)}
+	println(s[0], s[1])
+	show("slice literal")
+	println(sum(k(1)+k(2), k(3)*k(4)))
+	show("arguments")
+	var f32 float32 = 2
+	println(float64(f32)*k(1) + k(2))
+	show("float32")
+	var i8 int8 = 3
+	println(k(1) + float64(i8) + k(2))
+	show("int8")
+	x := -k(1) - -k(2)
+	println(x)
+	show("negations")
+	for i := k(1); i < k(2)+k(3); i += k(4) {
+		println(i)
+	}
+	show("for")
+}
+`,
+		want: "store 123\ncompound 234\n10\nindex operands 123\n0.6666666666666666\nreturn 123\n6\nmethod 1293\n3\nconversion 12\n2 1\nmath 1234\ncondition 123456\ncase3\nswitch 123\n-1 0.75\nslice literal 1234\n15\narguments 1234\n4\nfloat32 12\n6\nint8 12\n1\nnegations 12\n1\nfor 123423\n",
+	}, {
+		// Go rounds a typed float constant to its type at each step: F*3 is a
+		// float32 before it is multiplied by 11. Computed exactly and rounded once,
+		// `F*3*11` printed 3.3 on a P2-EDGE built by v0.58.0, and the checker took
+		// int(B*3*10), 3.0000000000000004 in Go, for 3.
+		name: "a typed float constant rounded at each step",
+		src: `const F float32 = 0.1
+
+const G = F * 3 * 11
+
+const B float64 = 0.1
+
+const K = int(B * 10 * 3)
+
+func main() {
+	var y float32 = 1
+	var g float32 = F * 3 * 17
+	printf("%v %v %v\n", F*3*11, G, g)
+	printf("%v %v\n", F*3*22*y, F*3*25+y-1)
+	var x float64 = 1
+	printf("%v %v %v\n", B*3, B*3*7*x, K)
+	printf("%v %v\n", F*3*11 == 3.3, B*3 == 0.3)
+}
+`,
+		want: "3.3000002 3.3000002 5.1000004\n6.6000004 7.5\n0.30000000000000004 2.1000000000000005 3\nfalse false\n",
+	}, {
 		// The constant operands leading a level of float64s are one constant to Go,
 		// folded exactly: written a step at a time in float64s, 2/3*x was 0.666...
 		// (Go's untyped integers divide to 0), 1e300*1e300/1e300*x +Inf, the first

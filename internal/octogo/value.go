@@ -6,6 +6,7 @@ package octogo
 
 import (
 	"go/constant"
+	"math"
 )
 
 var (
@@ -52,9 +53,39 @@ type constVal struct {
 }
 
 // typedAs returns l with the type k, for the conversion that gives a constant one.
+// A float's value is the one its type holds, as Go rounds a typed float constant
+// where it is declared, converted and computed: `const B float64 = 0.1`, B*3*10
+// is 3.0000000000000004, which int() refuses, where the value computed exactly was
+// 3 and taken.
 func (l constVal) typedAs(k Kind) constVal {
 	l.typ, l.typed = k, true
+	if l.cv != nil && isFloatKind(k) {
+		l.cv = roundedToFloat(l.cv, k)
+	}
 	return l
+}
+
+// roundedToFloat is v as the float kind k holds it, an integer staying an integer;
+// past the type's range it is v, which the overflow checks report.
+func roundedToFloat(v constant.Value, k Kind) constant.Value {
+	if v.Kind() != constant.Int && v.Kind() != constant.Float {
+		return v
+	}
+	var f float64
+	if k == PredeclaredFloat32 {
+		f32, _ := constant.Float32Val(v)
+		f = float64(f32)
+	} else {
+		f, _ = constant.Float64Val(v)
+	}
+	if math.IsInf(f, 0) {
+		return v
+	}
+	r := constant.MakeFloat64(f)
+	if v.Kind() == constant.Int {
+		return constant.ToInt(r)
+	}
+	return r
 }
 
 // sameTypeAs returns l carrying the type of whichever of the operands of a

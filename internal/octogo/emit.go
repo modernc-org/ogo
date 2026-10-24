@@ -23323,11 +23323,13 @@ func (e *emitter) bindOperandsInOrder(kids []Node, all bool) (release func()) {
 }
 
 // bindableCType reports whether a temporary of C type ct holds a value as the value
-// is: a number, a bool, a pointer, or a string or slice header.
+// is: a number, a bool, a pointer, or a string or slice header. A float64 is one,
+// its two words a struct: left out, `k(1) + k(2)` of two float64 calls was
+// ogo_f64_add(k(1), k(2)), the order C's, and gcc called k(2) first.
 func (e *emitter) bindableCType(ct string) bool {
 	u := e.underlyingCType(ct)
 	switch {
-	case cIntWidths[u] != 0, u == "float", u == "double", u == cBool, u == cString:
+	case cIntWidths[u] != 0, u == "float", u == "double", u == cF64, u == cBool, u == cString:
 		return true
 	case e.isSliceCType(u), e.isPointer(u) && !e.isIfaceCType(u):
 		return true

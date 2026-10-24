@@ -112,6 +112,11 @@ shipped section tells a reader on that version that they have behaviour they do 
   `p := &a[1]; *p = 300` of an int8 element built, and printed 44 on a P2-EDGE
   where Go refuses it, and `*p = "x"`, `u := &t.n; *u = 500` and `q := &b[0].n`
   alike went through, where `p := &x` and `var p *int8 = &a[1]` were refused.
+- **A typed float constant converted to an integer is the value Go gives it**:
+  `const B float64 = 0.1; const K = int(B*3*10)` built, and printed 3 on a P2-EDGE
+  built by v0.58.0, where Go refuses it -- B*3 is 0.30000000000000004 to Go and ten
+  of it 3.0000000000000004, no integer. The checker rounds a typed float to its
+  type where it is declared, converted and computed, as Go does.
 
 ### Language
 

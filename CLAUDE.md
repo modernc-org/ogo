@@ -32,7 +32,9 @@ Each of these was learned by breaking it; the stories are in `doc/LESSONS.md` (s
   status is the verdict: 0 compiled, 1 refused, anything else a compiler FAULT --
   never logged as a refusal.
 - **A commit is gated on the suite log's `exit=0` line and the absence of `FAIL`**,
-  never on `cat log &&`. No edits to `internal/octogo/*.go` while a full suite
+  never on `cat log &&`. **A change to the checker is built against obeam and
+  p2-11 before it is pushed**: they are the packages of several files the suite
+  does not have. No edits to `internal/octogo/*.go` while a full suite
   runs: `TestTargetGoStack` and `TestTargetBuildExamples` build `ogo` from the
   working tree as they go.
 - **A change to what the emitter writes around every call or every dereference --
@@ -975,7 +977,9 @@ section. A new finding goes there; the rule it leaves goes here too.
   declaration would write it: an unnamed variable is one every rule asking a name
   skips** (`pp := &w.head`, dom59). **A name a walk records is a mark like the
   flags: a check reading a name as a defined type's asks the type the walk gave
-  first** (`p := &a[1]; *p = 300`, A FLOAT64 IS ASKED WHAT A DOUBLE WAS).
+  first** (`p := &a[1]; *p = 300`, A FLOAT64 IS ASKED WHAT A DOUBLE WAS). **A check
+  reading a value against a type reads each by its own file: the value's file asks,
+  and the type goes by its scope** (A COUNTER THAT COUNTS PASSES EVERY ORDER).
 - **WHAT THE FLAGS SAY IS A TYPE**: **A walk that types by what was written answers
   for a variable that has only flags: the flags say a type, and every pointer to the
   variable is untyped until the walk reads them.** **A list of names kept beside the
@@ -1212,7 +1216,9 @@ section. A new finding goes there; the rule it leaves goes here too.
   and a fallback with one step is asked what a second change needs of it**
   (compileMarked, plainerC).
 - **A generator's model of a statement is held to Go before it is held to the
-  compiler** (genSwitches).
+  compiler** (genSwitches). **A fuzzer's counter records the order of its calls:
+  one that counts them passes every order the emitter writes** (A COUNTER THAT
+  COUNTS PASSES EVERY ORDER).
 - **A build the sweep's cap killed is built by the compiler before the change before
   it is called slow** (doc/switch-case-span-overflow.c).
 - **A fuzzer that keeps to what C defines never reaches a guard the emitter writes
