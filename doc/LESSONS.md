@@ -3473,7 +3473,7 @@ expansions holding every argument and the checks' panic paths; split into three
 stages it matched Go on the host and the board. Of its 400 mutants one was a
 deadlock (now DIFFERENCES.md's), and one Go's own compiler crashed on, go1.27.3 on
 every GOARCH: a loop storing zero into the diagonal of a zeroed local 2-D array
-(build/probes/go-ice, not reported). **A program written as Go that fails the
+(build/probes/_go-ice, not reported). **A program written as Go that fails the
 cog's registers is split where its message says, and the split is the
 program's: the backend keeps every printf argument live through the call.**
 **A MARK IS MADE IN EMISSION ORDER, AND A LOOP RUNS ITS BODY AGAIN** (2026-10-08,
