@@ -3360,10 +3360,15 @@
 // being IEEE double precision here (see Numeric types) and the target's C library's
 // double having 32 bits. Sqrt is the arithmetic's own correctly rounded square
 // root; Float64bits, Float64frombits, Float32bits and Float32frombits read and write
-// the representation; the rest -- Abs, Copysign, Signbit, Inf, NaN, IsNaN, IsInf,
-// Floor, Ceil, Trunc, Round, RoundToEven, Modf, Frexp, Ldexp, Exp, Exp2, Log, Log2,
-// Log10, Pow, Sin, Cos, Tan, Asin, Acos, Atan, Atan2 and Mod -- are OctoGo compiled
-// as any package is, so a program pays for the functions it calls and no other. The
+// the representation; the rest of Go's package -- Abs, Copysign, Signbit, Inf, NaN,
+// IsNaN, IsInf, Floor, Ceil, Trunc, Round, RoundToEven, Modf, Frexp, Ldexp, Exp,
+// Exp2, Expm1, Log, Log2, Log10, Log1p, Logb, Ilogb, Pow, Pow10, Sin, Cos, Tan,
+// Sincos, Asin, Acos, Atan, Atan2, Sinh, Cosh, Tanh, Asinh, Acosh, Atanh, Cbrt,
+// Hypot, Mod, Remainder, Dim, Max, Min, Nextafter, Nextafter32, FMA, Erf, Erfc,
+// Erfinv, Erfcinv, Gamma, Lgamma, J0, J1, Jn, Y0, Y1 and Yn -- are OctoGo compiled
+// as any package is, so a program pays for the functions it calls and no other,
+// their tables included. Lgamma is three functions here, the same operations: Go's
+// one took more of a cog's registers than a program has. The
 // package declares Go's constants: Pi, E and the rest, the limits of the integer
 // types -- int and uint being 32 bits -- and MaxFloat32, MaxFloat64,
 // SmallestNonzeroFloat32 and SmallestNonzeroFloat64.

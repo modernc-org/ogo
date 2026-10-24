@@ -3388,6 +3388,19 @@ expression, and by the pass's own typing otherwise; a uintptr is still walked. T
 binaries of all 995 run cases are the bytes they were. **A walk for what reaches
 the frame asks first whether the value can hold a reference: a number reaches
 nothing, and walking it costs what the walk's branching costs.**
+**A LIBRARY FUNCTION IS BUILT ALONE FOR THE TARGET** (2026-10-24, the same port).
+The rest of Go's math, 33 functions, matched Go on the host on all 832 values of a
+test, and Lgamma could not be used: a program calling it and printing the result
+needed 522 of a cog's 480 registers, Lgamma alone 151, each float64 local and the
+backend's temporaries of its nested polynomials two longs. Its three arms are
+functions of their own now, the same operations in the same order, and it fits. A
+minimal program of each of the 36 functions was built for the target; only Lgamma
+had failed. The tables of the new functions cost a program that calls none of them
+nothing, because of the pass that leaves out what main does not reach -- which,
+measured on obeam, had given up on every program whose C defines a helper in both
+branches of an `#ifdef`, and keeps it whole now. **A function ported into a
+library is built alone for the target before it is called done: a function no
+program can fit in a cog is no function.**
 **A MARK IS MADE IN EMISSION ORDER, AND A LOOP RUNS ITS BODY AGAIN** (2026-10-08,
 found probing unsafe.Slice's views). The holder marks are set as statements are
 emitted, so a statement read a variable's mark as the statements BEFORE it had left

@@ -364,13 +364,12 @@ broken.
   of Go's — the functions that answer a question about a string or return a
   substring of one, each meaning exactly what Go's of the same name means, checked
   by running the same program under Go — and `bytes` is the same part of Go's for
-  a byte slice. `math` is the elementary functions on the
-  same terms, its bodies Go's own pure Go source — `Abs`, `Ceil`, `Floor`,
-  `Trunc`, `Round`, `RoundToEven`, `Sqrt`, `Pow`, `Exp`, `Exp2`, the three
-  logarithms, the trigonometric functions, `Atan2`, `Mod`, `Modf`, `Frexp`,
-  `Ldexp`, `Copysign`, `Inf`, `NaN`, `IsNaN`, `IsInf`, `Signbit`, the four that
-  read and write a float's bits, Go's mathematical constants and the limits of the
-  integer and the float types. `errors` is Go's but for `Join` (and there is no `fmt.Errorf`): `New`
+  a byte slice. `math` is the whole of Go's on the same
+  terms, its bodies Go's own pure Go source — the roots, powers, exponentials and
+  logarithms, the trigonometric and hyperbolic functions and their inverses,
+  `Hypot`, `FMA`, `Erf`, `Gamma`, `Lgamma`, the Bessel functions and the rest,
+  Go's mathematical constants and the limits of the integer and the float types; a
+  program carries only the functions it calls. `errors` is Go's but for `Join` (and there is no `fmt.Errorf`): `New`
   makes its error where the call stands, there being no heap, so a sentinel,
   `var ErrTimeout = errors.New("timeout")`, is declared at package level and a
   function returns one of those; `errors.New` in a function makes an error that

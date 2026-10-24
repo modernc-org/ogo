@@ -1114,6 +1114,9 @@ section. A new finding goes there; the rule it leaves goes here too.
 
 **The target and its backend**
 
+- **A LIBRARY FUNCTION IS BUILT ALONE FOR THE TARGET**: **A function ported into a
+  library is built alone for the target before it is called done: a function no
+  program can fit in a cog is no function.**
 - **A FLOAT64 OF TWO WORDS**: **A new representation is asked every workaround its
   width already has: grep the gates for the int64 and the struct, and add the type,
   before the board finds them one at a time.**

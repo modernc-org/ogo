@@ -109,6 +109,17 @@ shipped section tells a reader on that version that they have behaviour they do 
   variable gt.pp points at -- in v0.58.0, which made the form compile. Each is
   refused now as `*t.pp = v` is.
 
+### Language
+
+- **The math package is the whole of Go's**: Sinh, Cosh, Tanh, Asinh, Acosh,
+  Atanh, Cbrt, Hypot, Dim, Max, Min, Remainder, Nextafter, Nextafter32, Expm1,
+  Log1p, Logb, Ilogb, Pow10, Sincos, Erf, Erfc, Erfinv, Erfcinv, Gamma, Lgamma,
+  J0, J1, Jn, Y0, Y1, Yn and FMA, beside the functions it had, each Go's own pure
+  Go source and every value Go's on a P2-EDGE. A program carries the functions it
+  calls and their tables, and no other. A build of a program importing math takes
+  longer in the compiler, about 0.8 seconds where it took 0.24, the package being
+  three times the source.
+
 ### Toolchain
 
 - **A program carries the data the code it runs names**: a function of a
@@ -117,8 +128,8 @@ shipped section tells a reader on that version that they have behaviour they do 
   or a constant only such functions read. The backend dropped those functions but
   kept their data: a program calling math.Sqrt carried 800 bytes of math's tables
   and constants, a test program up to 644 bytes of the testing package's. Of the
-  run cases, the 22 that import such a package are smaller and every other one is
-  the binary it was.
+  run cases, the 23 that import such a package are smaller and every other one is
+  the binary it was; so are obeam's VMs, by 692 bytes.
 
 ### Fixed
 
