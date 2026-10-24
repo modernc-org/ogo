@@ -120,6 +120,9 @@ shipped section tells a reader on that version that they have behaviour they do 
 
 ### Language
 
+- **Arrays are swapped through pointers in a multiple assignment**: `*x, *y = *y,
+  *x` for two pointers to arrays, the row swap of a pivoting elimination, was "a
+  dereferenced array target is not supported yet", where `*x = *y` built.
 - **The math package is the whole of Go's**: Sinh, Cosh, Tanh, Asinh, Acosh,
   Atanh, Cbrt, Hypot, Dim, Max, Min, Remainder, Nextafter, Nextafter32, Expm1,
   Log1p, Logb, Ilogb, Pow10, Sincos, Erf, Erfc, Erfinv, Erfcinv, Gamma, Lgamma,

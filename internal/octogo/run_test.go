@@ -42485,6 +42485,35 @@ func main() {
 `,
 		want: "store 123\ncompound 234\n10\nindex operands 123\n0.6666666666666666\nreturn 123\n6\nmethod 1293\n3\nconversion 12\n2 1\nmath 1234\ncondition 123456\ncase3\nswitch 123\n-1 0.75\nslice literal 1234\n15\narguments 1234\n4\nfloat32 12\n6\nint8 12\n1\nnegations 12\n1\nfor 123423\n",
 	}, {
+		// Rows swapped through pointers, `*x, *y = *y, *x`, as a pivoting
+		// elimination swaps them (dom63): "a dereferenced array target is not
+		// supported yet" in a multiple assignment, where `*x = *y` built. The last
+		// writes through the p Go evaluated before p was stored.
+		name: "arrays swapped through pointers in a multiple assignment",
+		src: `type Vec [3]float64
+
+type IV [2]int16
+
+var gm [2]IV
+
+func main() {
+	m := [2]Vec{{1, 2, 3}, {4, 5, 6}}
+	x, y := &m[0], &m[1]
+	*x, *y = *y, *x
+	println(m[0][0], m[1][0], m[0][2], m[1][2])
+	p, q := &gm[0], &gm[1]
+	gm[0][1] = 7
+	*p, *q = *q, *p
+	println(gm[0][1], gm[1][1])
+	var n IV
+	*p, n = IV{3, 4}, *q
+	println(gm[0][0], n[1])
+	p, *p = q, IV{9, 9}
+	println(gm[0][0], gm[1][0])
+}
+`,
+		want: "4 1 6 3\n0 7\n3 7\n9 0\n",
+	}, {
 		// Go rounds a typed float constant to its type at each step: F*3 is a
 		// float32 before it is multiplied by 11. Computed exactly and rounded once,
 		// `F*3*11` printed 3.3 on a P2-EDGE built by v0.58.0, and the checker took

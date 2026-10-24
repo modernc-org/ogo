@@ -50088,20 +50088,31 @@ func (e *emitter) emitStoreArray(t assignTarget, declare bool, a arrDim, val str
 		e.emitArrayCopy(t.name, val, a)
 		return
 	}
-	if t.stars != "" {
+	var dst arrDim
+	text, size := "", ""
+	switch {
+	case t.stars == "*" && len(t.chain) == 0:
+		// `*x, *y = *y, *x`, rows swapped through pointers: the array the pointer
+		// points at, through the pointer nil-checked, or the place
+		// fixTargetAddrs bound where a store before it moves the pointer.
+		d, isArrPtr := e.arrayPtrVar(t.name)
+		if !isArrPtr {
+			e.fail("cannot assign %s through %s, which is not a pointer to an array", e.goArrayTypeName(a), t.name)
+			return
+		}
+		text, dst = "(*"+e.nilCheckedPtrVar(t.name)+")", d
+		size = "sizeof(*" + e.varRef(t.name) + ")" // the check is the copy's, not the size's
+	case t.stars != "":
 		e.fail("a dereferenced array target is not supported yet")
 		return
-	}
-	var dst arrDim
-	text := ""
-	if len(t.chain) == 0 {
+	case len(t.chain) == 0:
 		d, isArr := e.arrayVar(t.name)
 		if !isArr {
 			e.fail("cannot assign %s to %s, which is not an array", e.goArrayTypeName(a), t.name)
 			return
 		}
 		text, dst = e.varRef(t.name), d
-	} else {
+	default:
 		// Typed before anything is emitted, so an unsupported chain fails without
 		// leaving a half-written statement behind, as the scalar store does.
 		cur, ok := e.accessChainType(t.name, t.chain)
@@ -50117,11 +50128,14 @@ func (e *emitter) emitStoreArray(t assignTarget, declare bool, a arrDim, val str
 		return
 	}
 	if t.addr != "" {
-		text = "(*" + t.addr + ")"
+		text, size = "(*"+t.addr+")", ""
+	}
+	if size == "" {
+		size = "sizeof(" + text + ")"
 	}
 	e.includes["string.h"] = true
 	e.ind()
-	e.emit("memcpy(" + text + ", " + val + ", sizeof(" + text + "));\n")
+	e.emit("memcpy(" + text + ", " + val + ", " + size + ");\n")
 }
 
 // fixTargetAddrs settles, ahead of the stores of a multiple assignment, WHERE a
