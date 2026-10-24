@@ -31767,6 +31767,24 @@ func main() {
 		want: "got 1 true\ngot 4 true\ngot 9 true\nclosed 0 false 14\nassigned 1 true\nassigned 4 true\nassigned 0 false\ndrained 0 false\n",
 	},
 	{
+		// The shortest form is the one Go's roundShortest finds, its upperdelta
+		// included: rounding up is allowed only once the digits have parted from the
+		// upper bound's, and a difference of one followed by nines over zeros is no
+		// parting yet. Without it 202 of 1,992,125 float32s printed a digit short,
+		// 2.4154078e+09 for Go's 2.4154079e+09, in every release (found 2026-10-24,
+		// porting the formatter for a float64).
+		name: "a float32 near its upper neighbour prints in Go's shortest form",
+		src: `func main() {
+	vs := [5]float32{2.4154079e+09, -5.7098797e+08, -7.3604717e+08, -1.05083437e+09, 6.0187117e+08}
+	for _, v := range vs {
+		println(v)
+	}
+	printf("%v %g\n", vs[0], vs[4])
+}
+`,
+		want: "2.4154079e+09\n-5.7098797e+08\n-7.3604717e+08\n-1.05083437e+09\n6.0187117e+08\n2.4154079e+09 6.0187117e+08\n",
+	},
+	{
 		// A float prints as Go prints one: print, println, %v and %g write the
 		// fewest significant digits that read back to the same float32 --
 		// 0.33333334, not the 0.333333 of C's %g, which is a different number --

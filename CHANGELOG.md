@@ -101,6 +101,12 @@ shipped section tells a reader on that version that they have behaviour they do 
 
 ### Fixed
 
+- **A float32 prints in Go's shortest form near its upper neighbour**: 202 of
+  1,992,125 float32s printed a digit short under print, println, %v and %g --
+  2.4154078e+09 for Go's 2.4154079e+09 -- the shortest-form walk lacking Go's
+  upperdelta, which allows rounding up only once the digits have parted from the
+  upper bound's. In every release.
+
 - **A table of elements wider than a long, indexed by variables**: `c :=
   grid[y][x]` of a `[3][4]Cell` of two int32 fields read garbage on a P2-EDGE and
   `grid[y][x] = c` stored nothing, in every release, and so did a two-dimensional

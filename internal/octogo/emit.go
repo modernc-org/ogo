@@ -1330,7 +1330,7 @@ static void ogo_dec_roundup(ogo_dec* a, int nd) {
 }
 static void ogo_dec_round(ogo_dec* a, int nd) { if (nd < 0 || nd >= a->nd) { return; } if (ogo_dec_up(a, nd)) { ogo_dec_roundup(a, nd); } else { ogo_dec_rounddown(a, nd); } }
 static void ogo_dec_shortest(ogo_dec* d, unsigned mant, int exp) {
-	ogo_dec upper, lower; unsigned mantlo; int explo, inclusive, ui, mi, li, okdown, okup; char l, m, u;
+	ogo_dec upper, lower; unsigned mantlo; int explo, inclusive, ui, mi, li, okdown, okup, upperdelta = 0; char l, m, u;
 	if (mant == 0) { d->nd = 0; d->dp = 0; return; }
 	if (exp > -126 && 332 * (d->dp - d->nd) >= 100 * (exp - 23)) { return; }
 	ogo_dec_assign(&upper, mant * 2 + 1); ogo_dec_shift(&upper, exp - 23 - 1);
@@ -1345,7 +1345,12 @@ static void ogo_dec_shortest(ogo_dec* d, unsigned mant, int exp) {
 		m = '0'; if (mi >= 0) { m = d->d[mi]; }
 		u = '0'; if (ui < upper.nd) { u = upper.d[ui]; }
 		okdown = l != m || (inclusive && li + 1 == lower.nd);
-		okup = m != u && (inclusive || m + 1 < u || ui + 1 < upper.nd);
+		// upperdelta: 0 while d's digits and upper's agree, 1 after a difference
+		// of one followed by m's nines over u's zeros, 2 past that (Go's).
+		if (upperdelta == 0 && m + 1 < u) { upperdelta = 2; }
+		else if (upperdelta == 0 && m != u) { upperdelta = 1; }
+		else if (upperdelta == 1 && (m != '9' || u != '0')) { upperdelta = 2; }
+		okup = upperdelta > 0 && (inclusive || upperdelta > 1 || ui + 1 < upper.nd);
 		if (okdown && okup) { ogo_dec_round(d, mi + 1); return; }
 		if (okdown) { ogo_dec_rounddown(d, mi + 1); return; }
 		if (okup) { ogo_dec_roundup(d, mi + 1); return; }
