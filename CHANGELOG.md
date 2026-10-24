@@ -131,6 +131,10 @@ shipped section tells a reader on that version that they have behaviour they do 
 
 ### Toolchain
 
+- **[DIFFERENCES.md](DIFFERENCES.md) says a deadlock is not reported**: with no
+  scheduler behind the cogs, a program whose goroutines all wait waits for ever,
+  where Go ends it with "all goroutines are asleep". Its example is a test, run on
+  the host for three seconds and on the board.
 - **A program carries the data the code it runs names**: a function of a
   package the compiler carries as source -- math, testing, errors, strings,
   bytes -- that the program never calls is not written, and neither is a table

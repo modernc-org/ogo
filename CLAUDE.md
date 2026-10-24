@@ -804,7 +804,9 @@ helpers (guarded with `//lint:ignore U1000`); prefer them for temporary tracing.
 `TestDifferencesGo` runs it under Go and holds the "Go prints" block to what Go
 prints (a panic's trace dropped). `<!-- board-only: ... -->` keeps an entry off the
 host (its stack has no check, `boardOnly`), `<!-- go-varies: ... -->` leaves
-Go's output unchecked. **A behaviour that differs from Go is an entry there**, not
+Go's output unchecked, and `<!-- hangs: ... -->` marks a program OctoGo never ends
+(`hangs`): the host runs it for three seconds, built with the shim's
+`OGO_UNBUFFERED`, and asks that it did not end. **A behaviour that differs from Go is an entry there**, not
 only a paragraph of specs.go -- the page is what a Go programmer reads first.
 
 ## Probe harness (`scripts/`)

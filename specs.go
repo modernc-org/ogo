@@ -3043,6 +3043,9 @@
 //   - Termination: When the invoked function terminates, its associated Cog is
 //     freed and returned to the hardware pool. If the function has any return
 //     values, they are discarded when the function completes.
+//   - Deadlock: with no scheduler behind the cogs, nothing sees that every one
+//     of them waits; a program whose goroutines all wait waits for ever, where Go
+//     ends it with "all goroutines are asleep" (DIFFERENCES.md).
 //   - The bound is on goroutines running at one time, not on how many a program
 //     may start: a finished goroutine's slot is reused, so a loop may spawn any
 //     number of them in turn. A go statement whose predecessor is still in the

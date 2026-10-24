@@ -10,6 +10,14 @@
 #include <stdlib.h>
 #include <time.h>
 
+#ifdef OGO_UNBUFFERED
+/* OGO_UNBUFFERED writes stdout as it is printed, for a program the harness stops: one
+   that waits for ever, as a deadlock does, is killed with its output in the pipe and
+   not in a buffer that dies with it. */
+#include <stdio.h>
+__attribute__((constructor)) static void ogo_unbuffered(void) { setvbuf(stdout, NULL, _IONBF, 0); }
+#endif
+
 /* _waitms and _waitus really wait. They used to return at once, so a program that
    paces itself -- which is most of what a driver does -- behaved one way here and
    another on the board: _getms is a real clock in both, so "wait 2ms, then check the

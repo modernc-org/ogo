@@ -133,6 +133,42 @@ Go prints:
 started 8
 ```
 
+### A deadlock is not reported
+
+A goroutine is a cog and a channel a lock over a cell in Hub RAM, with no scheduler
+behind them to see that every cog waits: a program whose goroutines all wait waits
+for ever, where Go ends it with a fatal error. Below, main waits on a channel no
+goroutine sends to, after printing what the one goroutine printed.
+
+<!-- hangs: the program never ends -->
+
+```go
+var done = make(chan bool)
+
+func work(n int) {
+	println("worked", n)
+}
+
+func main() {
+	go work(1)
+	<-done
+	println("done")
+}
+```
+
+OctoGo prints:
+
+```
+worked 1
+```
+
+Go prints:
+
+```
+worked 1
+fatal error: all goroutines are asleep - deadlock!
+```
+
 ### A recursion stops at the end of its stack
 
 A goroutine's stack is a slot of a fixed size, and `main`'s is the rest of Hub RAM. A

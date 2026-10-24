@@ -25,8 +25,8 @@ var differencesFile = filepath.Join("..", "..", "DIFFERENCES.md")
 // Go print, and the two marks an entry may carry -- an example the host cannot run as
 // the target does, and one whose Go output varies from run to run.
 type difference struct {
-	title, src, ogo, goOut string
-	boardOnly, goVaries    bool
+	title, src, ogo, goOut     string
+	boardOnly, goVaries, hangs bool
 }
 
 // differences are the page's examples, and differencesErr what reading it failed
@@ -41,14 +41,15 @@ func init() {
 			want:      d.ogo,
 			panics:    strings.Contains(d.ogo, "panic:"),
 			boardOnly: d.boardOnly,
+			hangs:     d.hangs,
 		})
 	}
 }
 
 // parseDifferences reads the page: an example is a "### " heading, a "go" code
 // block, and the blocks after the lines "OctoGo prints:" and "Go prints:". The marks
-// are HTML comments under the heading, `<!-- board-only: why -->` and `<!--
-// go-varies: why -->`.
+// are HTML comments under the heading, `<!-- board-only: why -->`, `<!--
+// go-varies: why -->` and `<!-- hangs: why -->`, an example OctoGo never ends.
 func parseDifferences(path string) ([]difference, error) {
 	f, err := os.Open(path)
 	if err != nil {
@@ -85,6 +86,8 @@ func parseDifferences(path string) ([]difference, error) {
 			cur.boardOnly = true
 		case strings.HasPrefix(text, "<!-- go-varies"):
 			cur.goVaries = true
+		case strings.HasPrefix(text, "<!-- hangs"):
+			cur.hangs = true
 		case text == "OctoGo prints:":
 			next = "ogo"
 		case text == "Go prints:":
@@ -125,9 +128,9 @@ func TestDifferencesParse(t *testing.T) {
 	}
 }
 
-// panicTail is what follows the first line of a panic in Go's output -- the goroutine
-// trace -- which the page leaves out.
-var panicTail = regexp.MustCompile(`(?s)(panic: [^\n]*\n).*`)
+// panicTail is what follows the first line of a panic or a fatal error in Go's
+// output -- the goroutine trace -- which the page leaves out.
+var panicTail = regexp.MustCompile(`(?s)((?:panic|fatal error): [^\n]*\n).*`)
 
 // TestDifferencesGo runs each example of the page under Go and holds its output to
 // the page's: what Go prints is a claim about Go, and Go can be asked. A package

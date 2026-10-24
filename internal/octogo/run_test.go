@@ -6,6 +6,7 @@ package octogo
 
 import (
 	"bytes"
+	"context"
 	"fmt"
 	"io"
 	"os"
@@ -14,6 +15,7 @@ import (
 	"strings"
 	"testing"
 	"testing/fstest"
+	"time"
 )
 
 // emitRunCase is one program and its expected output. The same table drives
@@ -40,7 +42,15 @@ type emitRunCase struct {
 	// check. It is built for the target and run on the board, and not run on the
 	// host.
 	boardOnly bool
+	// hangs marks a program that waits for ever, as a deadlock does: the host runs
+	// it for hangsFor and asks that it did not end, what it printed being want; the
+	// board reads to want, as for any case.
+	hangs bool
 }
+
+// hangsFor is how long the host runs a program marked hangs before taking it for
+// one that waits for ever.
+const hangsFor = 3 * time.Second
 
 var emitRunCases = []emitRunCase{
 	{
@@ -55357,11 +55367,15 @@ func runCorpus(t *testing.T, checked bool, opts []EmitOption, keep func(emitRunC
 			// to model the target off-board, so it must model the target's wrapping;
 			// this is fidelity, not a workaround (the emitted C run on the P2 is
 			// already correct). Found by the smith oracle at a wide seed sweep.
-			out, err := exec.Command(cc, "-std=gnu11", "-fwrapv", "-Wall", "-Wextra",
+			args := []string{"-std=gnu11", "-fwrapv", "-Wall", "-Wextra",
 				"-Wno-unused-function", "-Wno-format", "-I", shim,
 				// -lm: the host's math functions live in libm, where the target's
 				// are compiler builtins and need no library at all.
-				"-o", bin, csrc, "-lpthread", "-lm").CombinedOutput()
+				"-o", bin, csrc, "-lpthread", "-lm"}
+			if test.hangs {
+				args = append(args, "-DOGO_UNBUFFERED")
+			}
+			out, err := exec.Command(cc, args...).CombinedOutput()
 			if err != nil {
 				t.Fatalf("cc: %v\n%s\n--- emitted ---\n%s", err, out, buf.String())
 			}
@@ -55369,6 +55383,18 @@ func runCorpus(t *testing.T, checked bool, opts []EmitOption, keep func(emitRunC
 				t.Errorf("cc warned:\n%s\n--- emitted ---\n%s", out, buf.String())
 			}
 
+			if test.hangs {
+				ctx, cancel := context.WithTimeout(context.Background(), hangsFor)
+				defer cancel()
+				got, runErr := exec.CommandContext(ctx, bin).CombinedOutput()
+				if ctx.Err() == nil {
+					t.Fatalf("expected the program to wait for ever, but it ended (%v) with %q", runErr, got)
+				}
+				if g := strings.ReplaceAll(string(got), "\r\n", "\n"); g != test.want {
+					t.Errorf("output before the wait:\n got %q\nwant %q", g, test.want)
+				}
+				return
+			}
 			got, runErr := exec.Command(bin).CombinedOutput()
 			if test.panics {
 				if runErr == nil {
