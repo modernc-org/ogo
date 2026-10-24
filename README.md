@@ -222,8 +222,8 @@ the **Status** section below is the shorter answer to what works today, and
 [CHANGELOG.md](CHANGELOG.md) records what changed in each release — including the
 cases where a new release rejects a program the last one accepted.
 [DIFFERENCES.md](DIFFERENCES.md) lists what builds both as OctoGo and as Go and runs
-differently — `float64` precision, a panic and its deferred calls, among
-others — each with a program and what each compiler makes of it, run
+differently — a panic and its deferred calls, a recursion at the end of its
+stack, among others — each with a program and what each compiler makes of it, run
 as a test on a P2 board and under Go.
 
 ## **Architecture & Design**
@@ -365,12 +365,12 @@ broken.
   substring of one, each meaning exactly what Go's of the same name means, checked
   by running the same program under Go — and `bytes` is the same part of Go's for
   a byte slice. `math` is the elementary functions on the
-  same terms — `Abs`, `Ceil`, `Floor`, `Trunc`, `Round`, `Sqrt`, `Pow`, `Exp`, the
-  three logarithms, the six trigonometric functions, `Atan2`, `Mod`, `Copysign`,
-  `Inf`, `NaN`, `IsNaN`, `IsInf`, `Signbit`, Go's mathematical constants and the
-  limits of the integer types and of `float32` — and what it leaves out is
-  `MaxFloat64` and `SmallestNonzeroFloat64`, which name values a 32-bit float
-  cannot hold. `errors` is Go's but for `Join` (and there is no `fmt.Errorf`): `New`
+  same terms, its bodies Go's own pure Go source — `Abs`, `Ceil`, `Floor`,
+  `Trunc`, `Round`, `RoundToEven`, `Sqrt`, `Pow`, `Exp`, `Exp2`, the three
+  logarithms, the trigonometric functions, `Atan2`, `Mod`, `Modf`, `Frexp`,
+  `Ldexp`, `Copysign`, `Inf`, `NaN`, `IsNaN`, `IsInf`, `Signbit`, the four that
+  read and write a float's bits, Go's mathematical constants and the limits of the
+  integer and the float types. `errors` is Go's but for `Join` (and there is no `fmt.Errorf`): `New`
   makes its error where the call stands, there being no heap, so a sentinel,
   `var ErrTimeout = errors.New("timeout")`, is declared at package level and a
   function returns one of those; `errors.New` in a function makes an error that
@@ -454,17 +454,17 @@ broken.
   out there.
 
 Floating point (float32/float64) is supported, exponent literals included
-(`1e3`, `1.5e-3`): the P2's C toolchain provides it,
-so float arithmetic, comparison, int conversions and printing all work. Note the
-target has no double-precision hardware, so `float64` is 32-bit here, same as
-`float32` (~7 significant digits, not ~15) -- the name is kept for Go source
-compatibility but carries no extra precision; a 64-bit `float64`, computed in
-software, is planned. Printing, though, is EXACT: the
+(`1e3`, `1.5e-3`), as Go defines it: `float32` is IEEE single precision and
+`float64` IEEE double precision, 53 bits of significand, every operation rounded
+to nearest even. The P2 has no floating-point hardware, so both are software: a
+`float32` the C toolchain's, a `float64` routines the compiler writes into a
+program that uses one -- about 6 KB with its printing, and an addition about 860
+clocks, a multiplication 1,720 and a division 2,900 at 160 MHz, against a
+`float32`'s 660, 580 and 560. Printing is EXACT: the
 compiler renders a float from its own exact decimal value rather than through the
 target's `printf`, so `%f`, `%e`, `%g` and `%v` all produce the digits Go produces
 -- `21.0` prints `21.000000`, and `%v` gives the shortest form that round-trips to
-the same float. What the ~7 significant digits bound is the value, not its
-rendering. (The compiler's integer-to-float conversion rounds an exact tie to even,
+the same float. (The compiler's integer-to-float conversion rounds an exact tie to even,
 as IEEE 754 and Go do, so `float32(16777217)` is 16777216 here as it is in Go.) Constant expressions are evaluated exactly, as
 Go evaluates them -- `0.1+0.2 == 0.3` is true, `7 / 2.0` is 3.5 -- and a constant
 beside a `float32` operand is a `float32`, so `f == 0.3` compares two of them.

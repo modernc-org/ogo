@@ -3338,6 +3338,44 @@ assignment the target's compiler gets right and gcc refuses. **A sweep of a valu
 shapes is run on the board before it is called clean: the host's compiler evaluates
 in another order what C leaves to it, and reads right what the target's reads
 wrong.**
+**A FLOAT64 OF TWO WORDS** (2026-10-24, the `float64` branch, built for the user
+to weigh before it is merged). float64 as IEEE binary64 in software: `ogo_f64`, a
+struct of two words, its arithmetic in words after SoftFloat-2 (an earlier version
+in 64-bit C met three of the backend's 64-bit faults on the board and was
+rewritten), held to Go on 39.5 million vectors on the host and 5,002 on a P2-EDGE
+before it was wired in; printing Go's strconv, ported; math Go's own pure Go
+source. Being a struct, every operator the emitter missed was a C compile error,
+not a silent wrong value, and the host suite went from 38 failing run cases to none
+that way. Then the board: the multi-package program printed 2 for 100 where a
+method converted its float64 receiver, a fuzzer seed's pairs part failed its
+checksum, six run cases differed, math.Copysign(1, 0) was +Inf in one program and 1
+in another. Each was a backend fault the emitter already routes around for a type
+of the same width, which the new type had not been given. The runtime read the
+second word of a pair a call returned straight off the call
+(doc/member-of-struct-result.c): `int(t)` was t's high word. The conversion to an
+int64 cast the helper's 64-bit result to a 64-bit type, and emitMathArgs cast
+Float64frombits' argument, `(uint64_t)(a | b)` -- a cast to a 64-bit type of a
+64-bit expression, which emitConversion's comment has named since August; with the
+same C, Copysign was right or +Inf by what the registers held. A call through a
+function value returning one was read as one word (valueResultC knew the int64s), a
+float64 element of an array in a literal was refused, the target taking no
+unbraced aggregate there (structBraceC knew the structs), and a compound literal
+inside a conversion helper was what emitConversion had bound since its first
+board run. **A new representation is asked every workaround its width already has:
+grep the gates for the int64 and the struct, and add the type, before the board
+finds them one at a time.** The fuzzer had no float64 a float32 could not hold --
+the pairs part drew quarter-integers -- so genF64 draws across the range,
+subnormals, 2^53 and its neighbours, long mantissas, hex constants, and computes
+each step in Go with an explicit conversion, Go's spec allowing a multiply and an
+add to fuse otherwise; asked to fail first, it caught ties rounded up instead of to
+even in five seeds of a hundred. Go's math recursed in one place, `Pow(-Inf, y)` as
+`Pow(-0, -y)`, which made a goroutine calling Pow unbounded: written out. The cost
+is the user's to weigh: an addition 860 clocks to a float32's 660, a division 2,900
+to 560, math.Sin 34,000 to 4,000 and Pow 108,000 to 5,900, the master's math being
+the C library's float32 with the CORDIC behind it; 6 KB of code for the arithmetic
+and printing; a goroutine printing one 1,536 longs of stack to 671; obeam 14 KB
+larger, past the 507,904 bytes the ROM boots from an SD card. A program with no
+float64 builds byte for byte as before, p2-11 included.
 **A MARK IS MADE IN EMISSION ORDER, AND A LOOP RUNS ITS BODY AGAIN** (2026-10-08,
 found probing unsafe.Slice's views). The holder marks are set as statements are
 emitted, so a statement read a variable's mark as the statements BEFORE it had left

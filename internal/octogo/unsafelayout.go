@@ -22,8 +22,8 @@ var unsafeLayoutFuncs = map[string]bool{"Sizeof": true, "Alignof": true, "Offset
 // 2026-10-08:
 //
 //   - a bool, an int8 and a uint8 take a byte, an int16 and a uint16 two, aligned
-//     so; every other scalar four, float64 included, which is 32 bits here; an
-//     int64 and a uint64 eight, aligned on four;
+//     so; an int64, a uint64 and a float64 eight, aligned on four, a float64 being
+//     two words (cF64); every other scalar four;
 //   - a pointer, a channel, a function and an unsafe.Pointer four; a string eight,
 //     a pointer and a length; a slice twelve, a pointer, a length and a capacity;
 //     an interface eight, its data and its table -- each aligned on four;
@@ -53,7 +53,7 @@ func (f *File) targetLayout(t typeAt, depth int) (size, align int64, ok bool) {
 			return 1, 1, true
 		case PredeclaredInt16, PredeclaredUint16:
 			return 2, 2, true
-		case PredeclaredInt64, PredeclaredUint64:
+		case PredeclaredInt64, PredeclaredUint64, PredeclaredFloat64:
 			return 8, 4, true
 		case PredeclaredString:
 			return 8, 4, true
@@ -313,7 +313,7 @@ func (f *File) unsafeLayoutConst(s *Scope, fn string, arg Node) (int64, string) 
 	case kindKnown && (k == UntypedInt || k == UntypedRune):
 		size, align = 4, 4 // an untyped constant's default type: int, rune
 	case kindKnown && k == UntypedFloat:
-		size, align = 4, 4 // float64, 32 bits here
+		size, align = 8, 4 // float64, two words
 	case kindKnown && k == UntypedBool:
 		size, align = 1, 1
 	case kindKnown && k == UntypedString:
@@ -330,7 +330,7 @@ func (f *File) unsafeLayoutConst(s *Scope, fn string, arg Node) (int64, string) 
 				size, align = 1, 1
 			case PredeclaredInt16, PredeclaredUint16:
 				size, align = 2, 2
-			case PredeclaredInt64, PredeclaredUint64, PredeclaredString:
+			case PredeclaredInt64, PredeclaredUint64, PredeclaredFloat64, PredeclaredString:
 				size, align = 8, 4
 			default:
 				size, align = 4, 4

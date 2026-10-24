@@ -60,204 +60,1690 @@ var unsafePointerDecl = &PredeclaredType{
 	kinder:      kinder(PredeclaredUnsafePointer),
 }
 
-// mathSrc is the math package. Every function whose body is missing is one call of
-// the C backend's math library, substituted at the call site (mathIntrinsics in
-// emit.go) rather than emitted -- so a call costs the library call and nothing more.
-// The two that HAVE bodies are written in OctoGo over the others, because the
-// library's own are unusable: see Round and Trunc below.
-//
-// Go's signatures, spelled with float64 as Go spells them. The target has no
-// double-precision hardware, so a float64 is 32 bits here and every result carries
-// about seven significant digits rather than sixteen -- which is true of float64
-// arithmetic in this language generally and is not particular to this package. A
-// program written against Go's math compiles and means the same thing; what it
-// loses is precision it could not have had on this hardware anyway.
+// mathSrc is the math package: Go's own pure Go source over the float64 the
+// arithmetic computes in software (float64.go), but for the functions without a
+// body, each substituted at the call site by the C it is (mathIntrinsics in
+// emit.go): the square root, an operation of the arithmetic, and the four that read
+// and write a float's bits.
 const mathSrc = `// Package math is the allocation-free part of Go's math: the elementary functions,
-// each meaning exactly what Go's of the same name means.
+// each meaning exactly what Go's of the same name means, computed as Go's are.
 //
-// The target has no double-precision hardware, so a float64 is 32 bits here and a
-// result carries about seven significant digits. That is a property of float64 in
-// this language rather than of this package -- see the Numeric types section of the
-// language spec -- and it is why a program that compares a result against a literal
-// should compare to the precision it has.
-//
-// Inf, NaN, IsNaN, IsInf and Signbit are written here, in OctoGo: the target's
-// floats are IEEE 754 in everything they answer -- a NaN is unequal to itself, a
-// division by zero is an infinity of the right sign, 1/-0 is -Inf -- measured on a
-// P2-EDGE. What is missing is MaxFloat64 and SmallestNonzeroFloat64, which name values
-// a 32-bit float cannot hold.
+// A float64 is IEEE 754 binary64 here, in software, and so the functions are Go's
+// own: its pure Go implementations, not the target's C library, whose double is 32
+// bits. Copyright 2009 The Go Authors; their BSD-style license is the LICENSE file
+// of the Go distribution. Only what Go writes in assembly for a 386, Floor, Ceil and
+// Trunc, is its pure Go form here, which answers the same; Sqrt is the exact
+// operation of the arithmetic, and the four functions reading and writing a float's
+// bits are the representation's.
 
-// Mathematical constants, as Go declares them. Each is exact until it is used: the
-// compiler evaluates constant expressions exactly, so Pi/2 is right to the last bit
-// the target can hold.
+// Sqrt returns the square root of x, correctly rounded.
+func Sqrt(x float64) float64
+
+// Float64bits returns the IEEE 754 binary representation of f, Float64frombits the
+// floating-point number of the representation b.
+func Float64bits(f float64) uint64
+
+func Float64frombits(b uint64) float64
+
+// Float32bits and Float32frombits are the same for a float32.
+func Float32bits(f float32) uint32
+
+func Float32frombits(b uint32) float32
+
+// mul64, add64 and leadingZeros64 are math/bits's Mul64, Add64 and LeadingZeros64,
+// which trigReduce reads.
+func mul64(x, y uint64) (hi, lo uint64) {
+	const mask32 = 1<<32 - 1
+	x0 := x & mask32
+	x1 := x >> 32
+	y0 := y & mask32
+	y1 := y >> 32
+	w0 := x0 * y0
+	t := x1*y0 + w0>>32
+	w1 := t & mask32
+	w2 := t >> 32
+	w1 += x0 * y1
+	hi = x1*y1 + w2 + w1>>32
+	lo = x * y
+	return
+}
+
+func add64(x, y, carry uint64) (sum, carryOut uint64) {
+	sum = x + y + carry
+	carryOut = ((x & y) | ((x | y) &^ sum)) >> 63
+	return
+}
+
+func leadingZeros64(x uint64) int {
+	if x == 0 {
+		return 64
+	}
+	n := 0
+	for x&(1<<63) == 0 {
+		x <<= 1
+		n++
+	}
+	return n
+}
+
+// From Go's math/const.go.
+// Package math provides basic constants and mathematical functions.
+//
+// This package does not guarantee bit-identical results across architectures.
+
+// Mathematical constants.
 const (
-	E   = 2.71828182845904523536028747135266249775724709369995957496696763
-	Pi  = 3.14159265358979323846264338327950288419716939937510582097494459
-	Phi = 1.61803398874989484820458683436563811772030917980576286213544862
+	E   = 2.71828182845904523536028747135266249775724709369995957496696763 // https://oeis.org/A001113
+	Pi  = 3.14159265358979323846264338327950288419716939937510582097494459 // https://oeis.org/A000796
+	Phi = 1.61803398874989484820458683436563811772030917980576286213544862 // https://oeis.org/A001622
 
-	Sqrt2   = 1.41421356237309504880168872420969807856967187537694806841700392
-	SqrtE   = 1.64872127070012814684865078781416357165377610071014801157507931
-	SqrtPi  = 1.77245385090551602729816748334114518279754945612238712821380779
-	SqrtPhi = 1.27201964951406896425242246173749149171560804184009624861664038
+	Sqrt2   = 1.41421356237309504880168872420969807856967187537694807317667974 // https://oeis.org/A002193
+	SqrtE   = 1.64872127070012814684865078781416357165377610071014801157507931 // https://oeis.org/A019774
+	SqrtPi  = 1.77245385090551602729816748334114518279754945612238712821380779 // https://oeis.org/A002161
+	SqrtPhi = 1.27201964951406896425242246173749149171560804184009624861664038 // https://oeis.org/A139339
 
-	Ln2    = 0.693147180559945309417232121458176568075500134360255254120680009
+	Ln2    = 0.693147180559945309417232121458176568075500134360255254120680009 // https://oeis.org/A002162
 	Log2E  = 1 / Ln2
-	Ln10   = 2.30258509299404568401799145468436420760110148862877297603332790
+	Ln10   = 2.30258509299404568401799145468436420760110148862877297603332790 // https://oeis.org/A002392
 	Log10E = 1 / Ln10
 )
 
-// The limits of float32, as Go declares them: the largest finite value and the
-// smallest positive, subnormal, one.
+// Floating-point limit values.
+// Max is the largest finite value representable by the type.
+// SmallestNonzero is the smallest positive, non-zero value representable by the type.
 const (
-	MaxFloat32             = 3.40282346638528859811704183484516925440e+38
-	SmallestNonzeroFloat32 = 1.401298464324817070923729583289916131280e-45
+	MaxFloat32             = 0x1p127 * (1 + (1 - 0x1p-23)) // 3.40282346638528859811704183484516925440e+38
+	SmallestNonzeroFloat32 = 0x1p-126 * 0x1p-23            // 1.401298464324817070923729583289916131280e-45
+
+	MaxFloat64             = 0x1p1023 * (1 + (1 - 0x1p-52)) // 1.79769313486231570814527423731704356798070e+308
+	SmallestNonzeroFloat64 = 0x1p-1022 * 0x1p-52            // 4.9406564584124654417656879286822137236505980e-324
 )
 
-// The limits of the integer types, as Go declares them, int and uint being 32 bits
-// here.
+// Integer limit values.
 const (
-	intSize = 32
+	intSize = 32 // int and uint are 32 bits here
 
-	MaxInt    = 1<<(intSize-1) - 1
-	MinInt    = -1 << (intSize - 1)
-	MaxInt8   = 1<<7 - 1
-	MinInt8   = -1 << 7
-	MaxInt16  = 1<<15 - 1
-	MinInt16  = -1 << 15
-	MaxInt32  = 1<<31 - 1
-	MinInt32  = -1 << 31
-	MaxInt64  = 1<<63 - 1
-	MinInt64  = -1 << 63
-	MaxUint   = 1<<intSize - 1
-	MaxUint8  = 1<<8 - 1
-	MaxUint16 = 1<<16 - 1
-	MaxUint32 = 1<<32 - 1
-	MaxUint64 = 1<<64 - 1
+	MaxInt    = 1<<(intSize-1) - 1  // MaxInt32 or MaxInt64 depending on intSize.
+	MinInt    = -1 << (intSize - 1) // MinInt32 or MinInt64 depending on intSize.
+	MaxInt8   = 1<<7 - 1            // 127
+	MinInt8   = -1 << 7             // -128
+	MaxInt16  = 1<<15 - 1           // 32767
+	MinInt16  = -1 << 15            // -32768
+	MaxInt32  = 1<<31 - 1           // 2147483647
+	MinInt32  = -1 << 31            // -2147483648
+	MaxInt64  = 1<<63 - 1           // 9223372036854775807
+	MinInt64  = -1 << 63            // -9223372036854775808
+	MaxUint   = 1<<intSize - 1      // MaxUint32 or MaxUint64 depending on intSize.
+	MaxUint8  = 1<<8 - 1            // 255
+	MaxUint16 = 1<<16 - 1           // 65535
+	MaxUint32 = 1<<32 - 1           // 4294967295
+	MaxUint64 = 1<<64 - 1           // 18446744073709551615
 )
 
-// Abs returns the absolute value of x.
-func Abs(x float64) float64
-
-// Ceil returns the least integer value greater than or equal to x, and Floor the
-// greatest integer value less than or equal to it.
-func Ceil(x float64) float64
-
-func Floor(x float64) float64
-
-// Sqrt returns the square root of x.
-func Sqrt(x float64) float64
-
-// Pow returns x raised to the power y.
-func Pow(x float64, y float64) float64
-
-// Exp returns e raised to the power x.
-func Exp(x float64) float64
-
-// Log returns the natural logarithm of x, Log2 the binary logarithm and Log10 the
-// decimal one.
-func Log(x float64) float64
-
-func Log2(x float64) float64
-
-func Log10(x float64) float64
-
-// Sin, Cos and Tan return the sine, cosine and tangent of the radian argument x.
-func Sin(x float64) float64
-
-func Cos(x float64) float64
-
-func Tan(x float64) float64
-
-// Asin, Acos and Atan return the inverse sine, cosine and tangent of x, in radians.
-func Asin(x float64) float64
-
-func Acos(x float64) float64
-
-func Atan(x float64) float64
-
-// Atan2 returns the arc tangent of y/x, using the signs of the two to determine the
-// quadrant of the return value.
-func Atan2(y float64, x float64) float64
-
-// Mod returns the floating-point remainder of x/y. The magnitude of the result is
-// less than y and its sign agrees with that of x.
-func Mod(x float64, y float64) float64
-
-// Copysign returns a value with the magnitude of f and the sign of sign.
-func Copysign(f float64, sign float64) float64
-
-// Trunc returns the integer value of x, rounding toward zero.
-//
-// Written here rather than mapped to the library's, which this target does not
-// provide at all.
-func Trunc(x float64) float64 {
-	if x < 0 {
-		return Ceil(x)
-	}
-	return Floor(x)
-}
-
-// zero is a variable, so that dividing by it is done at run time: the infinities
-// and the NaN are what the target's division makes of it.
-var zero float64
+// From Go's math/bits.go.
+const (
+	uvnan    = 0x7FF8000000000001
+	uvinf    = 0x7FF0000000000000
+	uvneginf = 0xFFF0000000000000
+	uvone    = 0x3FF0000000000000
+	mask     = 0x7FF
+	shift    = 64 - 11 - 1
+	bias     = 1023
+	signMask = 1 << 63
+	fracMask = 1<<shift - 1
+)
 
 // Inf returns positive infinity if sign >= 0, negative infinity if sign < 0.
 func Inf(sign int) float64 {
+	var v uint64
 	if sign >= 0 {
-		return 1 / zero
+		v = uvinf
+	} else {
+		v = uvneginf
 	}
-	return -1 / zero
+	return Float64frombits(v)
 }
 
-// NaN returns an IEEE 754 "not-a-number" value.
-func NaN() float64 {
-	return zero / zero
-}
+// NaN returns an IEEE 754 “not-a-number” value.
+func NaN() float64 { return Float64frombits(uvnan) }
 
-// IsNaN reports whether f is an IEEE 754 "not-a-number" value.
-func IsNaN(f float64) bool {
+// IsNaN reports whether f is an IEEE 754 “not-a-number” value.
+func IsNaN(f float64) (is bool) {
+	// IEEE 754 says that only NaNs satisfy f != f.
+	// To avoid the floating-point hardware, could use:
+	//	x := Float64bits(f);
+	//	return uint32(x>>shift)&mask == mask && x != uvinf && x != uvneginf
 	return f != f
 }
 
-// IsInf reports whether f is an infinity, according to sign: positive infinity if
-// sign > 0, negative infinity if sign < 0, either if sign == 0. A float64 being 32
-// bits, anything past MaxFloat32 is one.
+// IsInf reports whether f is an infinity, according to sign.
+// If sign > 0, IsInf reports whether f is positive infinity.
+// If sign < 0, IsInf reports whether f is negative infinity.
+// If sign == 0, IsInf reports whether f is either infinity.
 func IsInf(f float64, sign int) bool {
-	return sign >= 0 && f > MaxFloat32 || sign <= 0 && f < -MaxFloat32
+	// Test for infinity by comparing against maximum float.
+	// To avoid the floating-point hardware, could use:
+	//	x := Float64bits(f);
+	//	return sign >= 0 && x == uvinf || sign <= 0 && x == uvneginf;
+	if sign == 0 {
+		f = Abs(f)
+	} else if sign < 0 {
+		f = -f
+	}
+	return f > MaxFloat64
 }
 
-// Signbit reports whether x is negative or negative zero. The sign of a NaN is not
-// read: Signbit of one is false here, where Go reads the bit.
+// normalize returns a normal number y and exponent exp
+// satisfying x == y × 2**exp. It assumes x is finite and non-zero.
+func normalize(x float64) (y float64, exp int) {
+	const SmallestNormal = 2.2250738585072014e-308 // 2**-1022
+	if Abs(x) < SmallestNormal {
+		return x * (1 << 52), -52
+	}
+	return x, 0
+}
+
+// From Go's math/abs.go.
+// Abs returns the absolute value of x.
+//
+// Special cases are:
+//
+//	Abs(±Inf) = +Inf
+//	Abs(NaN) = NaN
+func Abs(x float64) float64 {
+	return Float64frombits(Float64bits(x) &^ signMask)
+}
+
+// From Go's math/copysign.go.
+// Copysign returns a value with the magnitude of f
+// and the sign of sign.
+func Copysign(f, sign float64) float64 {
+	return Float64frombits(Float64bits(f)&^signMask | Float64bits(sign)&signMask)
+}
+
+// From Go's math/signbit.go.
+// Signbit reports whether x is negative or negative zero.
 func Signbit(x float64) bool {
-	return x < 0 || x == 0 && 1/x < 0
+	return int64(Float64bits(x)) < 0
+}
+
+// From Go's math/floor.go.
+// Floor returns the greatest integer value less than or equal to x.
+//
+// Special cases are:
+//
+//	Floor(±0) = ±0
+//	Floor(±Inf) = ±Inf
+//	Floor(NaN) = NaN
+func Floor(x float64) float64 {
+	return floor(x)
+}
+
+func floor(x float64) float64 {
+	if x == 0 || IsNaN(x) || IsInf(x, 0) {
+		return x
+	}
+	if x < 0 {
+		d, fract := Modf(-x)
+		if fract != 0.0 {
+			d = d + 1
+		}
+		return -d
+	}
+	d, _ := Modf(x)
+	return d
+}
+
+// Ceil returns the least integer value greater than or equal to x.
+//
+// Special cases are:
+//
+//	Ceil(±0) = ±0
+//	Ceil(±Inf) = ±Inf
+//	Ceil(NaN) = NaN
+func Ceil(x float64) float64 {
+	return ceil(x)
+}
+
+func ceil(x float64) float64 {
+	return -Floor(-x)
+}
+
+// Trunc returns the integer value of x.
+//
+// Special cases are:
+//
+//	Trunc(±0) = ±0
+//	Trunc(±Inf) = ±Inf
+//	Trunc(NaN) = NaN
+func Trunc(x float64) float64 {
+	return trunc(x)
+}
+
+func trunc(x float64) float64 {
+	if Abs(x) < 1 {
+		return Copysign(0, x)
+	}
+
+	b := Float64bits(x)
+	e := uint(b>>shift)&mask - bias
+
+	// Keep the top 12+e bits, the integer part; clear the rest.
+	if e < 64-12 {
+		b &^= 1<<(64-12-e) - 1
+	}
+	return Float64frombits(b)
 }
 
 // Round returns the nearest integer, rounding half away from zero.
 //
-// Written here rather than mapped to the library's round(), which on this target is
-// a compiler builtin that yields an INTEGER: correct where something converts it,
-// and clamped at 2147483647 for anything larger -- Round(1e30) came back as 2.1e9.
-// Building it from Floor has no such limit. See doc/round-is-an-integer.c, reported
-// as flexprop issue 108.
+// Special cases are:
 //
-// The sign comes from x, so that Round(-0) is -0 and Round(-0.2) is -0, as Go has
-// them: a sign test on x answered +0 for both.
-//
-// The fraction is compared on its own rather than rounded by adding one half, which
-// was the first spelling, Floor(Abs(x) + 0.5), and was wrong on the board, where a
-// float64 is 32 bits: the + 0.5 is itself rounded, so every odd integer between 2^23
-// and 2^24 lands on a tie that goes to its even neighbour -- Round(8388609) was
-// 8388610 -- and the float just below one half sums to exactly 1. The host's 64-bit
-// double moved the same traps out of reach of every value tested, so only the board
-// saw it. a - t is exact: the two are within a factor of two of each other, or t is
-// zero.
+//	Round(±0) = ±0
+//	Round(±Inf) = ±Inf
+//	Round(NaN) = NaN
 func Round(x float64) float64 {
-	a := Abs(x)
-	t := Floor(a)
-	if a-t >= 0.5 {
-		t++
+	// Round is a faster implementation of:
+	//
+	// func Round(x float64) float64 {
+	//   t := Trunc(x)
+	//   if Abs(x-t) >= 0.5 {
+	//     return t + Copysign(1, x)
+	//   }
+	//   return t
+	// }
+	bits := Float64bits(x)
+	e := uint(bits>>shift) & mask
+	if e < bias {
+		// Round abs(x) < 1 including denormals.
+		bits &= signMask // +-0
+		if e == bias-1 {
+			bits |= uvone // +-1
+		}
+	} else if e < bias+shift {
+		// Round any abs(x) >= 1 containing a fractional component [0,1).
+		//
+		// Numbers with larger exponents are returned unchanged since they
+		// must be either an integer, infinity, or NaN.
+		const half = 1 << (shift - 1)
+		e -= bias
+		bits += half >> e
+		bits &^= fracMask >> e
 	}
-	return Copysign(t, x)
+	return Float64frombits(bits)
+}
+
+// RoundToEven returns the nearest integer, rounding ties to even.
+//
+// Special cases are:
+//
+//	RoundToEven(±0) = ±0
+//	RoundToEven(±Inf) = ±Inf
+//	RoundToEven(NaN) = NaN
+func RoundToEven(x float64) float64 {
+	// RoundToEven is a faster implementation of:
+	//
+	// func RoundToEven(x float64) float64 {
+	//   t := math.Trunc(x)
+	//   odd := math.Remainder(t, 2) != 0
+	//   if d := math.Abs(x - t); d > 0.5 || (d == 0.5 && odd) {
+	//     return t + math.Copysign(1, x)
+	//   }
+	//   return t
+	// }
+	bits := Float64bits(x)
+	e := uint(bits>>shift) & mask
+	if e >= bias {
+		// Round abs(x) >= 1.
+		// - Large numbers without fractional components, infinity, and NaN are unchanged.
+		// - Add 0.499.. or 0.5 before truncating depending on whether the truncated
+		//   number is even or odd (respectively).
+		const halfMinusULP = (1 << (shift - 1)) - 1
+		e -= bias
+		bits += (halfMinusULP + (bits>>(shift-e))&1) >> e
+		bits &^= fracMask >> e
+	} else if e == bias-1 && bits&fracMask != 0 {
+		// Round 0.5 < abs(x) < 1.
+		bits = bits&signMask | uvone // +-1
+	} else {
+		// Round abs(x) <= 0.5 including denormals.
+		bits &= signMask // +-0
+	}
+	return Float64frombits(bits)
+}
+
+// From Go's math/modf.go.
+// Modf returns integer and fractional floating-point numbers
+// that sum to f. Both values have the same sign as f.
+//
+// Special cases are:
+//
+//	Modf(±Inf) = ±Inf, NaN
+//	Modf(NaN) = NaN, NaN
+func Modf(f float64) (integer float64, fractional float64) {
+	integer = Trunc(f)
+	fractional = Copysign(f-integer, f)
+	return
+}
+
+// From Go's math/frexp.go.
+// Frexp breaks f into a normalized fraction
+// and an integral power of two.
+// It returns frac and exp satisfying f == frac × 2**exp,
+// with the absolute value of frac in the interval [½, 1).
+//
+// Special cases are:
+//
+//	Frexp(±0) = ±0, 0
+//	Frexp(±Inf) = ±Inf, 0
+//	Frexp(NaN) = NaN, 0
+func Frexp(f float64) (frac float64, exp int) {
+	return frexp(f)
+}
+
+func frexp(f float64) (frac float64, exp int) {
+	// special cases
+	switch {
+	case f == 0:
+		return f, 0 // correctly return -0
+	case IsInf(f, 0) || IsNaN(f):
+		return f, 0
+	}
+	f, exp = normalize(f)
+	x := Float64bits(f)
+	exp += int((x>>shift)&mask) - bias + 1
+	x &^= mask << shift
+	x |= (-1 + bias) << shift
+	frac = Float64frombits(x)
+	return
+}
+
+// From Go's math/ldexp.go.
+// Ldexp is the inverse of [Frexp].
+// It returns frac × 2**exp.
+//
+// Special cases are:
+//
+//	Ldexp(±0, exp) = ±0
+//	Ldexp(±Inf, exp) = ±Inf
+//	Ldexp(NaN, exp) = NaN
+func Ldexp(frac float64, exp int) float64 {
+	return ldexp(frac, exp)
+}
+
+func ldexp(frac float64, exp int) float64 {
+	// special cases
+	switch {
+	case frac == 0:
+		return frac // correctly return -0
+	case IsInf(frac, 0) || IsNaN(frac):
+		return frac
+	}
+	frac, e := normalize(frac)
+	exp += e
+	x := Float64bits(frac)
+	exp += int(x>>shift)&mask - bias
+	if exp < -1075 {
+		return Copysign(0, frac) // underflow
+	}
+	if exp > 1023 { // overflow
+		if frac < 0 {
+			return Inf(-1)
+		}
+		return Inf(1)
+	}
+	var m float64 = 1
+	if exp < -1022 { // denormal
+		exp += 53
+		m = 1.0 / (1 << 53) // 2**-53
+	}
+	x &^= mask << shift
+	x |= uint64(exp+bias) << shift
+	return m * Float64frombits(x)
+}
+
+// From Go's math/exp.go.
+// Exp returns e**x, the base-e exponential of x.
+//
+// Special cases are:
+//
+//	Exp(+Inf) = +Inf
+//	Exp(NaN) = NaN
+//
+// Very large values overflow to 0 or +Inf.
+// Very small values underflow to 1.
+func Exp(x float64) float64 {
+	return exp(x)
+}
+
+// The original C code, the long comment, and the constants
+// below are from FreeBSD's /usr/src/lib/msun/src/e_exp.c
+// and came with this notice. The go code is a simplified
+// version of the original C.
+//
+// ====================================================
+// Copyright (C) 2004 by Sun Microsystems, Inc. All rights reserved.
+//
+// Permission to use, copy, modify, and distribute this
+// software is freely granted, provided that this notice
+// is preserved.
+// ====================================================
+//
+//
+// exp(x)
+// Returns the exponential of x.
+//
+// Method
+//   1. Argument reduction:
+//      Reduce x to an r so that |r| <= 0.5*ln2 ~ 0.34658.
+//      Given x, find r and integer k such that
+//
+//               x = k*ln2 + r,  |r| <= 0.5*ln2.
+//
+//      Here r will be represented as r = hi-lo for better
+//      accuracy.
+//
+//   2. Approximation of exp(r) by a special rational function on
+//      the interval [0,0.34658]:
+//      Write
+//          R(r**2) = r*(exp(r)+1)/(exp(r)-1) = 2 + r*r/6 - r**4/360 + ...
+//      We use a special Remez algorithm on [0,0.34658] to generate
+//      a polynomial of degree 5 to approximate R. The maximum error
+//      of this polynomial approximation is bounded by 2**-59. In
+//      other words,
+//          R(z) ~ 2.0 + P1*z + P2*z**2 + P3*z**3 + P4*z**4 + P5*z**5
+//      (where z=r*r, and the values of P1 to P5 are listed below)
+//      and
+//          |                  5          |     -59
+//          | 2.0+P1*z+...+P5*z   -  R(z) | <= 2
+//          |                             |
+//      The computation of exp(r) thus becomes
+//                             2*r
+//              exp(r) = 1 + -------
+//                            R - r
+//                                 r*R1(r)
+//                     = 1 + r + ----------- (for better accuracy)
+//                                2 - R1(r)
+//      where
+//                               2       4             10
+//              R1(r) = r - (P1*r  + P2*r  + ... + P5*r   ).
+//
+//   3. Scale back to obtain exp(x):
+//      From step 1, we have
+//         exp(x) = 2**k * exp(r)
+//
+// Special cases:
+//      exp(INF) is INF, exp(NaN) is NaN;
+//      exp(-INF) is 0, and
+//      for finite argument, only exp(0)=1 is exact.
+//
+// Accuracy:
+//      according to an error analysis, the error is always less than
+//      1 ulp (unit in the last place).
+//
+// Misc. info.
+//      For IEEE double
+//          if x >  7.09782712893383973096e+02 then exp(x) overflow
+//          if x < -7.45133219101941108420e+02 then exp(x) underflow
+//
+// Constants:
+// The hexadecimal values are the intended ones for the following
+// constants. The decimal values may be used, provided that the
+// compiler will convert from decimal to binary accurately enough
+// to produce the hexadecimal values shown.
+
+func exp(x float64) float64 {
+	const (
+		Ln2Hi = 6.93147180369123816490e-01
+		Ln2Lo = 1.90821492927058770002e-10
+		Log2e = 1.44269504088896338700e+00
+
+		Overflow  = 7.09782712893383973096e+02
+		Underflow = -7.45133219101941108420e+02
+		NearZero  = 1.0 / (1 << 28) // 2**-28
+	)
+
+	// special cases
+	switch {
+	case IsNaN(x):
+		return x
+	case x > Overflow: // handles case where x is +∞
+		return Inf(1)
+	case x < Underflow: // handles case where x is -∞
+		return 0
+	case -NearZero < x && x < NearZero:
+		return 1 + x
+	}
+
+	// reduce; computed as r = hi - lo for extra precision.
+	var k int
+	switch {
+	case x < 0:
+		k = int(Log2e*x - 0.5)
+	case x > 0:
+		k = int(Log2e*x + 0.5)
+	}
+	hi := x - float64(k)*Ln2Hi
+	lo := float64(k) * Ln2Lo
+
+	// compute
+	return expmulti(hi, lo, k)
+}
+
+// Exp2 returns 2**x, the base-2 exponential of x.
+//
+// Special cases are the same as [Exp].
+func Exp2(x float64) float64 {
+	return exp2(x)
+}
+
+func exp2(x float64) float64 {
+	const (
+		Ln2Hi = 6.93147180369123816490e-01
+		Ln2Lo = 1.90821492927058770002e-10
+
+		Overflow  = 1.0239999999999999e+03
+		Underflow = -1.0740e+03
+	)
+
+	// special cases
+	switch {
+	case IsNaN(x):
+		return x
+	case x > Overflow: // handles case where x is +∞
+		return Inf(1)
+	case x < Underflow: // handles case where x is -∞
+		return 0
+	}
+
+	// argument reduction; x = r×lg(e) + k with |r| ≤ ln(2)/2.
+	// computed as r = hi - lo for extra precision.
+	var k int
+	switch {
+	case x > 0:
+		k = int(x + 0.5)
+	case x < 0:
+		k = int(x - 0.5)
+	}
+	t := x - float64(k)
+	hi := t * Ln2Hi
+	lo := -t * Ln2Lo
+
+	// compute
+	return expmulti(hi, lo, k)
+}
+
+// exp1 returns e**r × 2**k where r = hi - lo and |r| ≤ ln(2)/2.
+func expmulti(hi, lo float64, k int) float64 {
+	const (
+		P1 = 1.66666666666666657415e-01  /* 0x3FC55555; 0x55555555 */
+		P2 = -2.77777777770155933842e-03 /* 0xBF66C16C; 0x16BEBD93 */
+		P3 = 6.61375632143793436117e-05  /* 0x3F11566A; 0xAF25DE2C */
+		P4 = -1.65339022054652515390e-06 /* 0xBEBBBD41; 0xC5D26BF1 */
+		P5 = 4.13813679705723846039e-08  /* 0x3E663769; 0x72BEA4D0 */
+	)
+
+	r := hi - lo
+	t := r * r
+	c := r - t*(P1+t*(P2+t*(P3+t*(P4+t*P5))))
+	y := 1 - ((lo - (r*c)/(2-c)) - hi)
+	// TODO(rsc): make sure Ldexp can handle boundary k
+	return Ldexp(y, k)
+}
+
+// From Go's math/log.go.
+/*
+	Floating-point logarithm.
+*/
+
+// The original C code, the long comment, and the constants
+// below are from FreeBSD's /usr/src/lib/msun/src/e_log.c
+// and came with this notice. The go code is a simpler
+// version of the original C.
+//
+// ====================================================
+// Copyright (C) 1993 by Sun Microsystems, Inc. All rights reserved.
+//
+// Developed at SunPro, a Sun Microsystems, Inc. business.
+// Permission to use, copy, modify, and distribute this
+// software is freely granted, provided that this notice
+// is preserved.
+// ====================================================
+//
+// __ieee754_log(x)
+// Return the logarithm of x
+//
+// Method :
+//   1. Argument Reduction: find k and f such that
+//			x = 2**k * (1+f),
+//	   where  sqrt(2)/2 < 1+f < sqrt(2) .
+//
+//   2. Approximation of log(1+f).
+//	Let s = f/(2+f) ; based on log(1+f) = log(1+s) - log(1-s)
+//		 = 2s + 2/3 s**3 + 2/5 s**5 + .....,
+//	     	 = 2s + s*R
+//      We use a special Reme algorithm on [0,0.1716] to generate
+//	a polynomial of degree 14 to approximate R.  The maximum error
+//	of this polynomial approximation is bounded by 2**-58.45. In
+//	other words,
+//		        2      4      6      8      10      12      14
+//	    R(z) ~ L1*s +L2*s +L3*s +L4*s +L5*s  +L6*s  +L7*s
+//	(the values of L1 to L7 are listed in the program) and
+//	    |      2          14          |     -58.45
+//	    | L1*s +...+L7*s    -  R(z) | <= 2
+//	    |                             |
+//	Note that 2s = f - s*f = f - hfsq + s*hfsq, where hfsq = f*f/2.
+//	In order to guarantee error in log below 1ulp, we compute log by
+//		log(1+f) = f - s*(f - R)		(if f is not too large)
+//		log(1+f) = f - (hfsq - s*(hfsq+R)).	(better accuracy)
+//
+//	3. Finally,  log(x) = k*Ln2 + log(1+f).
+//			    = k*Ln2_hi+(f-(hfsq-(s*(hfsq+R)+k*Ln2_lo)))
+//	   Here Ln2 is split into two floating point number:
+//			Ln2_hi + Ln2_lo,
+//	   where n*Ln2_hi is always exact for |n| < 2000.
+//
+// Special cases:
+//	log(x) is NaN with signal if x < 0 (including -INF) ;
+//	log(+INF) is +INF; log(0) is -INF with signal;
+//	log(NaN) is that NaN with no signal.
+//
+// Accuracy:
+//	according to an error analysis, the error is always less than
+//	1 ulp (unit in the last place).
+//
+// Constants:
+// The hexadecimal values are the intended ones for the following
+// constants. The decimal values may be used, provided that the
+// compiler will convert from decimal to binary accurately enough
+// to produce the hexadecimal values shown.
+
+// Log returns the natural logarithm of x.
+//
+// Special cases are:
+//
+//	Log(+Inf) = +Inf
+//	Log(0) = -Inf
+//	Log(x < 0) = NaN
+//	Log(NaN) = NaN
+func Log(x float64) float64 {
+	return log(x)
+}
+
+func log(x float64) float64 {
+	const (
+		Ln2Hi = 6.93147180369123816490e-01 /* 3fe62e42 fee00000 */
+		Ln2Lo = 1.90821492927058770002e-10 /* 3dea39ef 35793c76 */
+		L1    = 6.666666666666735130e-01   /* 3FE55555 55555593 */
+		L2    = 3.999999999940941908e-01   /* 3FD99999 9997FA04 */
+		L3    = 2.857142874366239149e-01   /* 3FD24924 94229359 */
+		L4    = 2.222219843214978396e-01   /* 3FCC71C5 1D8E78AF */
+		L5    = 1.818357216161805012e-01   /* 3FC74664 96CB03DE */
+		L6    = 1.531383769920937332e-01   /* 3FC39A09 D078C69F */
+		L7    = 1.479819860511658591e-01   /* 3FC2F112 DF3E5244 */
+	)
+
+	// special cases
+	switch {
+	case IsNaN(x) || IsInf(x, 1):
+		return x
+	case x < 0:
+		return NaN()
+	case x == 0:
+		return Inf(-1)
+	}
+
+	// reduce
+	f1, ki := Frexp(x)
+	if f1 < Sqrt2/2 {
+		f1 *= 2
+		ki--
+	}
+	f := f1 - 1
+	k := float64(ki)
+
+	// compute
+	s := f / (2 + f)
+	s2 := s * s
+	s4 := s2 * s2
+	t1 := s2 * (L1 + s4*(L3+s4*(L5+s4*L7)))
+	t2 := s4 * (L2 + s4*(L4+s4*L6))
+	R := t1 + t2
+	hfsq := 0.5 * f * f
+	return k*Ln2Hi - ((hfsq - (s*(hfsq+R) + k*Ln2Lo)) - f)
+}
+
+// From Go's math/log10.go.
+// Log10 returns the decimal logarithm of x.
+// The special cases are the same as for [Log].
+func Log10(x float64) float64 {
+	return log10(x)
+}
+
+func log10(x float64) float64 {
+	return Log(x) * (1 / Ln10)
+}
+
+// Log2 returns the binary logarithm of x.
+// The special cases are the same as for [Log].
+func Log2(x float64) float64 {
+	return log2(x)
+}
+
+func log2(x float64) float64 {
+	frac, exp := Frexp(x)
+	// Make sure exact powers of two give an exact answer.
+	// Don't depend on Log(0.5)*(1/Ln2)+exp being exactly exp-1.
+	if frac == 0.5 {
+		return float64(exp - 1)
+	}
+	return Log(frac)*(1/Ln2) + float64(exp)
+}
+
+// From Go's math/pow.go.
+func isOddInt(x float64) bool {
+	if Abs(x) >= (1 << 53) {
+		// 1 << 53 is the largest exact integer in the float64 format.
+		// Any number outside this range will be truncated before the decimal point and therefore will always be
+		// an even integer.
+		// Without this check and if x overflows int64 the int64(xi) conversion below may produce incorrect results
+		// on some architectures (and does so on arm64). See issue #57465.
+		return false
+	}
+
+	xi, xf := Modf(x)
+	return xf == 0 && int64(xi)&1 == 1
+}
+
+// Special cases taken from FreeBSD's /usr/src/lib/msun/src/e_pow.c
+// updated by IEEE Std. 754-2008 "Section 9.2.1 Special values".
+
+// Pow returns x**y, the base-x exponential of y.
+//
+// Special cases are (in order):
+//
+//	Pow(x, ±0) = 1 for any x
+//	Pow(1, y) = 1 for any y
+//	Pow(x, 1) = x for any x
+//	Pow(NaN, y) = NaN
+//	Pow(x, NaN) = NaN
+//	Pow(±0, y) = ±Inf for y an odd integer < 0
+//	Pow(±0, -Inf) = +Inf
+//	Pow(±0, +Inf) = +0
+//	Pow(±0, y) = +Inf for finite y < 0 and not an odd integer
+//	Pow(±0, y) = ±0 for y an odd integer > 0
+//	Pow(±0, y) = +0 for finite y > 0 and not an odd integer
+//	Pow(-1, ±Inf) = 1
+//	Pow(x, +Inf) = +Inf for |x| > 1
+//	Pow(x, -Inf) = +0 for |x| > 1
+//	Pow(x, +Inf) = +0 for |x| < 1
+//	Pow(x, -Inf) = +Inf for |x| < 1
+//	Pow(+Inf, y) = +Inf for y > 0
+//	Pow(+Inf, y) = +0 for y < 0
+//	Pow(-Inf, y) = Pow(-0, -y)
+//	Pow(x, y) = NaN for finite x < 0 and finite non-integer y
+func Pow(x, y float64) float64 {
+	return pow(x, y)
+}
+
+func pow(x, y float64) float64 {
+	switch {
+	case y == 0 || x == 1:
+		return 1
+	case y == 1:
+		return x
+	case IsNaN(x) || IsNaN(y):
+		return NaN()
+	case x == 0:
+		switch {
+		case y < 0:
+			if Signbit(x) && isOddInt(y) {
+				return Inf(-1)
+			}
+			return Inf(1)
+		case y > 0:
+			if Signbit(x) && isOddInt(y) {
+				return x
+			}
+			return 0
+		}
+	case IsInf(y, 0):
+		switch {
+		case x == -1:
+			return 1
+		case (Abs(x) < 1) == IsInf(y, 1):
+			return 0
+		default:
+			return Inf(1)
+		}
+	case IsInf(x, 0):
+		if IsInf(x, -1) {
+			// Go's Pow(1/x, -y), Pow(-0, -y), written out: a library function a
+			// goroutine may call does not recurse.
+			switch {
+			case y > 0 && isOddInt(y):
+				return Inf(-1)
+			case y > 0:
+				return Inf(1)
+			case isOddInt(y):
+				return Copysign(0, -1)
+			}
+			return 0
+		}
+		switch {
+		case y < 0:
+			return 0
+		case y > 0:
+			return Inf(1)
+		}
+	case y == 0.5:
+		return Sqrt(x)
+	case y == -0.5:
+		return 1 / Sqrt(x)
+	}
+
+	yi, yf := Modf(Abs(y))
+	if yf != 0 && x < 0 {
+		return NaN()
+	}
+	if yi >= 1<<63 {
+		// yi is a large even int that will lead to overflow (or underflow to 0)
+		// for all x except -1 (x == 1 was handled earlier)
+		switch {
+		case x == -1:
+			return 1
+		case (Abs(x) < 1) == (y > 0):
+			return 0
+		default:
+			return Inf(1)
+		}
+	}
+
+	// ans = a1 * 2**ae (= 1 for now).
+	a1 := 1.0
+	ae := 0
+
+	// ans *= x**yf
+	if yf != 0 {
+		if yf > 0.5 {
+			yf--
+			yi++
+		}
+		a1 = Exp(yf * Log(x))
+	}
+
+	// ans *= x**yi
+	// by multiplying in successive squarings
+	// of x according to bits of yi.
+	// accumulate powers of two into exp.
+	x1, xe := Frexp(x)
+	for i := int64(yi); i != 0; i >>= 1 {
+		if xe < -1<<12 || 1<<12 < xe {
+			// catch xe before it overflows the left shift below
+			// Since i !=0 it has at least one bit still set, so ae will accumulate xe
+			// on at least one more iteration, ae += xe is a lower bound on ae
+			// the lower bound on ae exceeds the size of a float64 exp
+			// so the final call to Ldexp will produce under/overflow (0/Inf)
+			ae += xe
+			break
+		}
+		if i&1 == 1 {
+			a1 *= x1
+			ae += xe
+		}
+		x1 *= x1
+		xe <<= 1
+		if x1 < .5 {
+			x1 += x1
+			xe--
+		}
+	}
+
+	// ans = a1*2**ae
+	// if y < 0 { ans = 1 / ans }
+	// but in the opposite order
+	if y < 0 {
+		a1 = 1 / a1
+		ae = -ae
+	}
+	return Ldexp(a1, ae)
+}
+
+// From Go's math/sin.go.
+/*
+	Floating-point sine and cosine.
+*/
+
+// The original C code, the long comment, and the constants
+// below were from http://netlib.sandia.gov/cephes/cmath/sin.c,
+// available from http://www.netlib.org/cephes/cmath.tgz.
+// The go code is a simplified version of the original C.
+//
+//      sin.c
+//
+//      Circular sine
+//
+// SYNOPSIS:
+//
+// double x, y, sin();
+// y = sin( x );
+//
+// DESCRIPTION:
+//
+// Range reduction is into intervals of pi/4.  The reduction error is nearly
+// eliminated by contriving an extended precision modular arithmetic.
+//
+// Two polynomial approximating functions are employed.
+// Between 0 and pi/4 the sine is approximated by
+//      x  +  x**3 P(x**2).
+// Between pi/4 and pi/2 the cosine is represented as
+//      1  -  x**2 Q(x**2).
+//
+// ACCURACY:
+//
+//                      Relative error:
+// arithmetic   domain      # trials      peak         rms
+//    DEC       0, 10       150000       3.0e-17     7.8e-18
+//    IEEE -1.07e9,+1.07e9  130000       2.1e-16     5.4e-17
+//
+// Partial loss of accuracy begins to occur at x = 2**30 = 1.074e9.  The loss
+// is not gradual, but jumps suddenly to about 1 part in 10e7.  Results may
+// be meaningless for x > 2**49 = 5.6e14.
+//
+//      cos.c
+//
+//      Circular cosine
+//
+// SYNOPSIS:
+//
+// double x, y, cos();
+// y = cos( x );
+//
+// DESCRIPTION:
+//
+// Range reduction is into intervals of pi/4.  The reduction error is nearly
+// eliminated by contriving an extended precision modular arithmetic.
+//
+// Two polynomial approximating functions are employed.
+// Between 0 and pi/4 the cosine is approximated by
+//      1  -  x**2 Q(x**2).
+// Between pi/4 and pi/2 the sine is represented as
+//      x  +  x**3 P(x**2).
+//
+// ACCURACY:
+//
+//                      Relative error:
+// arithmetic   domain      # trials      peak         rms
+//    IEEE -1.07e9,+1.07e9  130000       2.1e-16     5.4e-17
+//    DEC        0,+1.07e9   17000       3.0e-17     7.2e-18
+//
+// Cephes Math Library Release 2.8:  June, 2000
+// Copyright 1984, 1987, 1989, 1992, 2000 by Stephen L. Moshier
+//
+// The readme file at http://netlib.sandia.gov/cephes/ says:
+//    Some software in this archive may be from the book _Methods and
+// Programs for Mathematical Functions_ (Prentice-Hall or Simon & Schuster
+// International, 1989) or from the Cephes Mathematical Library, a
+// commercial product. In either event, it is copyrighted by the author.
+// What you see here may be used freely but it comes with no support or
+// guarantee.
+//
+//   The two known misprints in the book are repaired here in the
+// source listings for the gamma function and the incomplete beta
+// integral.
+//
+//   Stephen L. Moshier
+//   moshier@na-net.ornl.gov
+
+// sin coefficients
+var _sin = [...]float64{
+	1.58962301576546568060e-10, // 0x3de5d8fd1fd19ccd
+	-2.50507477628578072866e-8, // 0xbe5ae5e5a9291f5d
+	2.75573136213857245213e-6,  // 0x3ec71de3567d48a1
+	-1.98412698295895385996e-4, // 0xbf2a01a019bfdf03
+	8.33333333332211858878e-3,  // 0x3f8111111110f7d0
+	-1.66666666666666307295e-1, // 0xbfc5555555555548
+}
+
+// cos coefficients
+var _cos = [...]float64{
+	-1.13585365213876817300e-11, // 0xbda8fa49a0861a9b
+	2.08757008419747316778e-9,   // 0x3e21ee9d7b4e3f05
+	-2.75573141792967388112e-7,  // 0xbe927e4f7eac4bc6
+	2.48015872888517045348e-5,   // 0x3efa01a019c844f5
+	-1.38888888888730564116e-3,  // 0xbf56c16c16c14f91
+	4.16666666666665929218e-2,   // 0x3fa555555555554b
+}
+
+// Cos returns the cosine of the radian argument x.
+//
+// Special cases are:
+//
+//	Cos(±Inf) = NaN
+//	Cos(NaN) = NaN
+func Cos(x float64) float64 {
+	return cos(x)
+}
+
+func cos(x float64) float64 {
+	const (
+		PI4A = 7.85398125648498535156e-1  // 0x3fe921fb40000000, Pi/4 split into three parts
+		PI4B = 3.77489470793079817668e-8  // 0x3e64442d00000000,
+		PI4C = 2.69515142907905952645e-15 // 0x3ce8469898cc5170,
+	)
+	// special cases
+	switch {
+	case IsNaN(x) || IsInf(x, 0):
+		return NaN()
+	}
+
+	// make argument positive
+	sign := false
+	x = Abs(x)
+
+	var j uint64
+	var y, z float64
+	if x >= reduceThreshold {
+		j, z = trigReduce(x)
+	} else {
+		j = uint64(x * (4 / Pi)) // integer part of x/(Pi/4), as integer for tests on the phase angle
+		y = float64(j)           // integer part of x/(Pi/4), as float
+
+		// map zeros to origin
+		if j&1 == 1 {
+			j++
+			y++
+		}
+		j &= 7                               // octant modulo 2Pi radians (360 degrees)
+		z = ((x - y*PI4A) - y*PI4B) - y*PI4C // Extended precision modular arithmetic
+	}
+
+	if j > 3 {
+		j -= 4
+		sign = !sign
+	}
+	if j > 1 {
+		sign = !sign
+	}
+
+	zz := z * z
+	if j == 1 || j == 2 {
+		y = z + z*zz*((((((_sin[0]*zz)+_sin[1])*zz+_sin[2])*zz+_sin[3])*zz+_sin[4])*zz+_sin[5])
+	} else {
+		y = 1.0 - 0.5*zz + zz*zz*((((((_cos[0]*zz)+_cos[1])*zz+_cos[2])*zz+_cos[3])*zz+_cos[4])*zz+_cos[5])
+	}
+	if sign {
+		y = -y
+	}
+	return y
+}
+
+// Sin returns the sine of the radian argument x.
+//
+// Special cases are:
+//
+//	Sin(±0) = ±0
+//	Sin(±Inf) = NaN
+//	Sin(NaN) = NaN
+func Sin(x float64) float64 {
+	return sin(x)
+}
+
+func sin(x float64) float64 {
+	const (
+		PI4A = 7.85398125648498535156e-1  // 0x3fe921fb40000000, Pi/4 split into three parts
+		PI4B = 3.77489470793079817668e-8  // 0x3e64442d00000000,
+		PI4C = 2.69515142907905952645e-15 // 0x3ce8469898cc5170,
+	)
+	// special cases
+	switch {
+	case x == 0 || IsNaN(x):
+		return x // return ±0 || NaN()
+	case IsInf(x, 0):
+		return NaN()
+	}
+
+	// make argument positive but save the sign
+	sign := false
+	if x < 0 {
+		x = -x
+		sign = true
+	}
+
+	var j uint64
+	var y, z float64
+	if x >= reduceThreshold {
+		j, z = trigReduce(x)
+	} else {
+		j = uint64(x * (4 / Pi)) // integer part of x/(Pi/4), as integer for tests on the phase angle
+		y = float64(j)           // integer part of x/(Pi/4), as float
+
+		// map zeros to origin
+		if j&1 == 1 {
+			j++
+			y++
+		}
+		j &= 7                               // octant modulo 2Pi radians (360 degrees)
+		z = ((x - y*PI4A) - y*PI4B) - y*PI4C // Extended precision modular arithmetic
+	}
+	// reflect in x axis
+	if j > 3 {
+		sign = !sign
+		j -= 4
+	}
+	zz := z * z
+	if j == 1 || j == 2 {
+		y = 1.0 - 0.5*zz + zz*zz*((((((_cos[0]*zz)+_cos[1])*zz+_cos[2])*zz+_cos[3])*zz+_cos[4])*zz+_cos[5])
+	} else {
+		y = z + z*zz*((((((_sin[0]*zz)+_sin[1])*zz+_sin[2])*zz+_sin[3])*zz+_sin[4])*zz+_sin[5])
+	}
+	if sign {
+		y = -y
+	}
+	return y
+}
+
+// From Go's math/tan.go.
+/*
+	Floating-point tangent.
+*/
+
+// The original C code, the long comment, and the constants
+// below were from http://netlib.sandia.gov/cephes/cmath/sin.c,
+// available from http://www.netlib.org/cephes/cmath.tgz.
+// The go code is a simplified version of the original C.
+//
+//      tan.c
+//
+//      Circular tangent
+//
+// SYNOPSIS:
+//
+// double x, y, tan();
+// y = tan( x );
+//
+// DESCRIPTION:
+//
+// Returns the circular tangent of the radian argument x.
+//
+// Range reduction is modulo pi/4.  A rational function
+//       x + x**3 P(x**2)/Q(x**2)
+// is employed in the basic interval [0, pi/4].
+//
+// ACCURACY:
+//                      Relative error:
+// arithmetic   domain     # trials      peak         rms
+//    DEC      +-1.07e9      44000      4.1e-17     1.0e-17
+//    IEEE     +-1.07e9      30000      2.9e-16     8.1e-17
+//
+// Partial loss of accuracy begins to occur at x = 2**30 = 1.074e9.  The loss
+// is not gradual, but jumps suddenly to about 1 part in 10e7.  Results may
+// be meaningless for x > 2**49 = 5.6e14.
+// [Accuracy loss statement from sin.go comments.]
+//
+// Cephes Math Library Release 2.8:  June, 2000
+// Copyright 1984, 1987, 1989, 1992, 2000 by Stephen L. Moshier
+//
+// The readme file at http://netlib.sandia.gov/cephes/ says:
+//    Some software in this archive may be from the book _Methods and
+// Programs for Mathematical Functions_ (Prentice-Hall or Simon & Schuster
+// International, 1989) or from the Cephes Mathematical Library, a
+// commercial product. In either event, it is copyrighted by the author.
+// What you see here may be used freely but it comes with no support or
+// guarantee.
+//
+//   The two known misprints in the book are repaired here in the
+// source listings for the gamma function and the incomplete beta
+// integral.
+//
+//   Stephen L. Moshier
+//   moshier@na-net.ornl.gov
+
+// tan coefficients
+var _tanP = [...]float64{
+	-1.30936939181383777646e4, // 0xc0c992d8d24f3f38
+	1.15351664838587416140e6,  // 0x413199eca5fc9ddd
+	-1.79565251976484877988e7, // 0xc1711fead3299176
+}
+var _tanQ = [...]float64{
+	1.00000000000000000000e0,
+	1.36812963470692954678e4,  // 0x40cab8a5eeb36572
+	-1.32089234440210967447e6, // 0xc13427bc582abc96
+	2.50083801823357915839e7,  // 0x4177d98fc2ead8ef
+	-5.38695755929454629881e7, // 0xc189afe03cbe5a31
+}
+
+// Tan returns the tangent of the radian argument x.
+//
+// Special cases are:
+//
+//	Tan(±0) = ±0
+//	Tan(±Inf) = NaN
+//	Tan(NaN) = NaN
+func Tan(x float64) float64 {
+	return tan(x)
+}
+
+func tan(x float64) float64 {
+	const (
+		PI4A = 7.85398125648498535156e-1  // 0x3fe921fb40000000, Pi/4 split into three parts
+		PI4B = 3.77489470793079817668e-8  // 0x3e64442d00000000,
+		PI4C = 2.69515142907905952645e-15 // 0x3ce8469898cc5170,
+	)
+	// special cases
+	switch {
+	case x == 0 || IsNaN(x):
+		return x // return ±0 || NaN()
+	case IsInf(x, 0):
+		return NaN()
+	}
+
+	// make argument positive but save the sign
+	sign := false
+	if x < 0 {
+		x = -x
+		sign = true
+	}
+	var j uint64
+	var y, z float64
+	if x >= reduceThreshold {
+		j, z = trigReduce(x)
+	} else {
+		j = uint64(x * (4 / Pi)) // integer part of x/(Pi/4), as integer for tests on the phase angle
+		y = float64(j)           // integer part of x/(Pi/4), as float
+
+		/* map zeros and singularities to origin */
+		if j&1 == 1 {
+			j++
+			y++
+		}
+
+		z = ((x - y*PI4A) - y*PI4B) - y*PI4C
+	}
+	zz := z * z
+
+	if zz > 1e-14 {
+		y = z + z*(zz*(((_tanP[0]*zz)+_tanP[1])*zz+_tanP[2])/((((zz+_tanQ[1])*zz+_tanQ[2])*zz+_tanQ[3])*zz+_tanQ[4]))
+	} else {
+		y = z
+	}
+	if j&2 == 2 {
+		y = -1 / y
+	}
+	if sign {
+		y = -y
+	}
+	return y
+}
+
+// From Go's math/trig_reduce.go.
+// reduceThreshold is the maximum value of x where the reduction using Pi/4
+// in 3 float64 parts still gives accurate results. This threshold
+// is set by y*C being representable as a float64 without error
+// where y is given by y = floor(x * (4 / Pi)) and C is the leading partial
+// terms of 4/Pi. Since the leading terms (PI4A and PI4B in sin.go) have 30
+// and 32 trailing zero bits, y should have less than 30 significant bits.
+//
+//	y < 1<<30  -> floor(x*4/Pi) < 1<<30 -> x < (1<<30 - 1) * Pi/4
+//
+// So, conservatively we can take x < 1<<29.
+// Above this threshold Payne-Hanek range reduction must be used.
+const reduceThreshold = 1 << 29
+
+// trigReduce implements Payne-Hanek range reduction by Pi/4
+// for x > 0. It returns the integer part mod 8 (j) and
+// the fractional part (z) of x / (Pi/4).
+// The implementation is based on:
+// "ARGUMENT REDUCTION FOR HUGE ARGUMENTS: Good to the Last Bit"
+// K. C. Ng et al, March 24, 1992
+// The simulated multi-precision calculation of x*B uses 64-bit integer arithmetic.
+func trigReduce(x float64) (j uint64, z float64) {
+	const PI4 = Pi / 4
+	if x < PI4 {
+		return 0, x
+	}
+	// Extract out the integer and exponent such that,
+	// x = ix * 2 ** exp.
+	ix := Float64bits(x)
+	exp := int(ix>>shift&mask) - bias - shift
+	ix &^= mask << shift
+	ix |= 1 << shift
+	// Use the exponent to extract the 3 appropriate uint64 digits from mPi4,
+	// B ~ (z0, z1, z2), such that the product leading digit has the exponent -61.
+	// Note, exp >= -53 since x >= PI4 and exp < 971 for maximum float64.
+	digit, bitshift := uint(exp+61)/64, uint(exp+61)%64
+	z0 := (mPi4[digit] << bitshift) | (mPi4[digit+1] >> (64 - bitshift))
+	z1 := (mPi4[digit+1] << bitshift) | (mPi4[digit+2] >> (64 - bitshift))
+	z2 := (mPi4[digit+2] << bitshift) | (mPi4[digit+3] >> (64 - bitshift))
+	// Multiply mantissa by the digits and extract the upper two digits (hi, lo).
+	z2hi, _ := mul64(z2, ix)
+	z1hi, z1lo := mul64(z1, ix)
+	z0lo := z0 * ix
+	lo, c := add64(z1lo, z2hi, 0)
+	hi, _ := add64(z0lo, z1hi, c)
+	// The top 3 bits are j.
+	j = hi >> 61
+	// Extract the fraction and find its magnitude.
+	hi = hi<<3 | lo>>61
+	lz := uint(leadingZeros64(hi))
+	e := uint64(bias - (lz + 1))
+	// Clear implicit mantissa bit and shift into place.
+	hi = (hi << (lz + 1)) | (lo >> (64 - (lz + 1)))
+	hi >>= 64 - shift
+	// Include the exponent and convert to a float.
+	hi |= e << shift
+	z = Float64frombits(hi)
+	// Map zeros to origin.
+	if j&1 == 1 {
+		j++
+		j &= 7
+		z--
+	}
+	// Multiply the fractional part by pi/4.
+	return j, z * PI4
+}
+
+// mPi4 is the binary digits of 4/pi as a uint64 array,
+// that is, 4/pi = Sum mPi4[i]*2^(-64*i)
+// 19 64-bit digits and the leading one bit give 1217 bits
+// of precision to handle the largest possible float64 exponent.
+var mPi4 = [...]uint64{
+	0x0000000000000001,
+	0x45f306dc9c882a53,
+	0xf84eafa3ea69bb81,
+	0xb6c52b3278872083,
+	0xfca2c757bd778ac3,
+	0x6e48dc74849ba5c0,
+	0x0c925dd413a32439,
+	0xfc3bd63962534e7d,
+	0xd1046bea5d768909,
+	0xd338e04d68befc82,
+	0x7323ac7306a673e9,
+	0x3908bf177bf25076,
+	0x3ff12fffbc0b301f,
+	0xde5e2316b414da3e,
+	0xda6cfd9e4f96136e,
+	0x9e8c7ecd3cbfd45a,
+	0xea4f758fd7cbe2f6,
+	0x7a0e73ef14a525d4,
+	0xd7f6bf623f1aba10,
+	0xac06608df8f6d757,
+}
+
+// From Go's math/asin.go.
+/*
+	Floating-point arcsine and arccosine.
+
+	They are implemented by computing the arctangent
+	after appropriate range reduction.
+*/
+
+// Asin returns the arcsine, in radians, of x.
+//
+// Special cases are:
+//
+//	Asin(±0) = ±0
+//	Asin(x) = NaN if x < -1 or x > 1
+func Asin(x float64) float64 {
+	return asin(x)
+}
+
+func asin(x float64) float64 {
+	if x == 0 {
+		return x // special case
+	}
+	sign := false
+	if x < 0 {
+		x = -x
+		sign = true
+	}
+	if x > 1 {
+		return NaN() // special case
+	}
+
+	temp := Sqrt(1 - x*x)
+	if x > 0.7 {
+		temp = Pi/2 - satan(temp/x)
+	} else {
+		temp = satan(x / temp)
+	}
+
+	if sign {
+		temp = -temp
+	}
+	return temp
+}
+
+// Acos returns the arccosine, in radians, of x.
+//
+// Special case is:
+//
+//	Acos(x) = NaN if x < -1 or x > 1
+func Acos(x float64) float64 {
+	return acos(x)
+}
+
+func acos(x float64) float64 {
+	return Pi/2 - Asin(x)
+}
+
+// From Go's math/atan.go.
+/*
+	Floating-point arctangent.
+*/
+
+// The original C code, the long comment, and the constants below were
+// from http://netlib.sandia.gov/cephes/cmath/atan.c, available from
+// http://www.netlib.org/cephes/cmath.tgz.
+// The go code is a version of the original C.
+//
+// atan.c
+// Inverse circular tangent (arctangent)
+//
+// SYNOPSIS:
+// double x, y, atan();
+// y = atan( x );
+//
+// DESCRIPTION:
+// Returns radian angle between -pi/2 and +pi/2 whose tangent is x.
+//
+// Range reduction is from three intervals into the interval from zero to 0.66.
+// The approximant uses a rational function of degree 4/5 of the form
+// x + x**3 P(x)/Q(x).
+//
+// ACCURACY:
+//                      Relative error:
+// arithmetic   domain    # trials  peak     rms
+//    DEC       -10, 10   50000     2.4e-17  8.3e-18
+//    IEEE      -10, 10   10^6      1.8e-16  5.0e-17
+//
+// Cephes Math Library Release 2.8:  June, 2000
+// Copyright 1984, 1987, 1989, 1992, 2000 by Stephen L. Moshier
+//
+// The readme file at http://netlib.sandia.gov/cephes/ says:
+//    Some software in this archive may be from the book _Methods and
+// Programs for Mathematical Functions_ (Prentice-Hall or Simon & Schuster
+// International, 1989) or from the Cephes Mathematical Library, a
+// commercial product. In either event, it is copyrighted by the author.
+// What you see here may be used freely but it comes with no support or
+// guarantee.
+//
+//   The two known misprints in the book are repaired here in the
+// source listings for the gamma function and the incomplete beta
+// integral.
+//
+//   Stephen L. Moshier
+//   moshier@na-net.ornl.gov
+
+// xatan evaluates a series valid in the range [0, 0.66].
+func xatan(x float64) float64 {
+	const (
+		P0 = -8.750608600031904122785e-01
+		P1 = -1.615753718733365076637e+01
+		P2 = -7.500855792314704667340e+01
+		P3 = -1.228866684490136173410e+02
+		P4 = -6.485021904942025371773e+01
+		Q0 = +2.485846490142306297962e+01
+		Q1 = +1.650270098316988542046e+02
+		Q2 = +4.328810604912902668951e+02
+		Q3 = +4.853903996359136964868e+02
+		Q4 = +1.945506571482613964425e+02
+	)
+	z := x * x
+	z = z * ((((P0*z+P1)*z+P2)*z+P3)*z + P4) / (((((z+Q0)*z+Q1)*z+Q2)*z+Q3)*z + Q4)
+	z = x*z + x
+	return z
+}
+
+// satan reduces its argument (known to be positive)
+// to the range [0, 0.66] and calls xatan.
+func satan(x float64) float64 {
+	const (
+		Morebits = 6.123233995736765886130e-17 // pi/2 = PIO2 + Morebits
+		Tan3pio8 = 2.41421356237309504880      // tan(3*pi/8)
+	)
+	if x <= 0.66 {
+		return xatan(x)
+	}
+	if x > Tan3pio8 {
+		return Pi/2 - xatan(1/x) + Morebits
+	}
+	return Pi/4 + xatan((x-1)/(x+1)) + 0.5*Morebits
+}
+
+// Atan returns the arctangent, in radians, of x.
+//
+// Special cases are:
+//
+//	Atan(±0) = ±0
+//	Atan(±Inf) = ±Pi/2
+func Atan(x float64) float64 {
+	return atan(x)
+}
+
+func atan(x float64) float64 {
+	if x == 0 {
+		return x
+	}
+	if x > 0 {
+		return satan(x)
+	}
+	return -satan(-x)
+}
+
+// From Go's math/atan2.go.
+// Atan2 returns the arc tangent of y/x, using
+// the signs of the two to determine the quadrant
+// of the return value.
+//
+// Special cases are (in order):
+//
+//	Atan2(y, NaN) = NaN
+//	Atan2(NaN, x) = NaN
+//	Atan2(+0, x>=0) = +0
+//	Atan2(-0, x>=0) = -0
+//	Atan2(+0, x<=-0) = +Pi
+//	Atan2(-0, x<=-0) = -Pi
+//	Atan2(y>0, 0) = +Pi/2
+//	Atan2(y<0, 0) = -Pi/2
+//	Atan2(+Inf, +Inf) = +Pi/4
+//	Atan2(-Inf, +Inf) = -Pi/4
+//	Atan2(+Inf, -Inf) = 3Pi/4
+//	Atan2(-Inf, -Inf) = -3Pi/4
+//	Atan2(y, +Inf) = 0
+//	Atan2(y>0, -Inf) = +Pi
+//	Atan2(y<0, -Inf) = -Pi
+//	Atan2(+Inf, x) = +Pi/2
+//	Atan2(-Inf, x) = -Pi/2
+func Atan2(y, x float64) float64 {
+	return atan2(y, x)
+}
+
+func atan2(y, x float64) float64 {
+	// special cases
+	switch {
+	case IsNaN(y) || IsNaN(x):
+		return NaN()
+	case y == 0:
+		if x >= 0 && !Signbit(x) {
+			return Copysign(0, y)
+		}
+		return Copysign(Pi, y)
+	case x == 0:
+		return Copysign(Pi/2, y)
+	case IsInf(x, 0):
+		if IsInf(x, 1) {
+			switch {
+			case IsInf(y, 0):
+				return Copysign(Pi/4, y)
+			default:
+				return Copysign(0, y)
+			}
+		}
+		switch {
+		case IsInf(y, 0):
+			return Copysign(3*Pi/4, y)
+		default:
+			return Copysign(Pi, y)
+		}
+	case IsInf(y, 0):
+		return Copysign(Pi/2, y)
+	}
+
+	// Call atan and determine the quadrant.
+	q := Atan(y / x)
+	if x < 0 {
+		if q <= 0 {
+			return q + Pi
+		}
+		return q - Pi
+	}
+	return q
+}
+
+// From Go's math/mod.go.
+/*
+	Floating-point mod function.
+*/
+
+// Mod returns the floating-point remainder of x/y.
+// The magnitude of the result is less than y and its
+// sign agrees with that of x.
+//
+// Special cases are:
+//
+//	Mod(±Inf, y) = NaN
+//	Mod(NaN, y) = NaN
+//	Mod(x, 0) = NaN
+//	Mod(x, ±Inf) = x
+//	Mod(x, NaN) = NaN
+func Mod(x, y float64) float64 {
+	return mod(x, y)
+}
+
+func mod(x, y float64) float64 {
+	if y == 0 || IsInf(x, 0) || IsNaN(x) || IsNaN(y) {
+		return NaN()
+	}
+	y = Abs(y)
+
+	yfr, yexp := Frexp(y)
+	r := x
+	if x < 0 {
+		r = -x
+	}
+
+	for r >= y {
+		rfr, rexp := Frexp(r)
+		if rfr < yfr {
+			rexp = rexp - 1
+		}
+		r = r - Ldexp(y, rexp-yexp)
+	}
+	if x < 0 {
+		r = -r
+	}
+	return r
 }
 `
 
@@ -1996,9 +3482,10 @@ func prettyPrint(x float64, unit string) {
 }
 
 // printNsPerOp prints ns/n as prettyPrint lays it out, " ns/op" after it. It is
-// computed exactly in integers, where a float64 is 32 bits and its seven digits
-// would round a long benchmark's time: the places prettyPrint's bounds choose,
-// rounded half to even as Go rounds a float it prints.
+// computed exactly in integers, the places prettyPrint's bounds choose, rounded half
+// to even as Go rounds a float it prints: written while a float64 had 32 bits, whose
+// seven digits would round a long benchmark's time, and kept, integers costing the
+// target less than a float64 in software.
 func printNsPerOp(ns, n uint64) {
 	digits := 7
 	for k, scale := 0, uint64(100); k < 7; k, scale = k+1, scale*10 {

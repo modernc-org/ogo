@@ -609,9 +609,9 @@ func backendFault(c []byte, out, keepC string, said []byte) (int, error) {
 // harmlessWarnings are backend diagnostics examined and found to say nothing about
 // a program's meaning.
 var harmlessWarnings = []string{
-	// A CORDIC operation whose result nothing reads -- `go math.Sqrt(2)`, the
-	// result of a function started on a cog being discarded -- is deleted. Nothing
-	// read it, so nothing changes.
+	// A CORDIC operation whose result nothing reads is deleted -- `go
+	// math.Sqrt(2)` while math.Sqrt was the C library's, the result of a function
+	// started on a cog being discarded. Nothing read it, so nothing changes.
 	"Deleting apparently unused cordic instruction",
 	// A product of a value the backend has propagated to a constant, computed
 	// twice -- `n := 1000; a := n * 1000; b := n * 1000` -- is merged into one

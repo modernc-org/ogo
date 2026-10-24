@@ -244,6 +244,9 @@ func (f *Fuzzer) GenerateProgram(vm Machine, mem Memory) error {
 	// -1, shifts at and past the width (see genWraps).
 	wrCall, wrWant, wrOK := f.genWraps()
 
+	// 4.17. A float64's arithmetic at its whole precision (see genF64).
+	fdCall, fdWant, fdOK := f.genF64()
+
 	// 5. Generate the main function
 	// FuncDecl = "func" identifier "(" ")" Block
 	fmt.Fprint(f.Out, "func main() {\n")
@@ -299,6 +302,10 @@ func (f *Fuzzer) GenerateProgram(vm Machine, mem Memory) error {
 	// And the procedure of what Go defines and C does not.
 	if wrOK {
 		f.checkAtTop("wraps", wrCall, wrWant)
+	}
+	// And the procedure of float64s.
+	if fdOK {
+		f.checkAtTop("float64", fdCall, fdWant)
 	}
 
 	// Generate 20 sequential statements to mutate the checksum

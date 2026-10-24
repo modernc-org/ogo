@@ -618,21 +618,25 @@
 // not a runtime panic (it yields the IEEE infinity or NaN). Complex numeric types
 // are planned, and not implemented yet: see Complex types (planned).
 //
-// (OctoGo Specific): the Propeller 2 has no double-precision hardware, and its C
-// toolchain implements C double as 32-bit. So on this target float64 has the same
-// representation and precision as float32 -- 32-bit IEEE single precision, about 7
-// significant decimal digits, NOT the ~15 of a 64-bit double. float64 is kept as a
-// distinct type name for Go source compatibility (Go's default float), but it does
-// not carry extra precision here. Programs needing more than ~7 digits must scale
-// to integers.
+// (OctoGo Specific): the Propeller 2 has no floating-point hardware for either
+// width, so both are computed in software. A float32 is IEEE single precision,
+// computed by the C toolchain's own routines. A float64 is IEEE double precision,
+// as Go's is -- 53 bits of significand, about 16 significant decimal digits, every
+// operation rounded to nearest, ties to even -- computed by routines the compiler
+// writes into a program that uses a float64, and into no other. It costs more than
+// a float32. Measured on a P2-EDGE at 160 MHz: an addition takes about 860 clocks
+// (a float32's 660), a multiplication 1,720 (580), a division 2,900 (560) and a
+// square root 6,200; the arithmetic and its printing add about 6 KB to a program,
+// and printing one takes about 3.5 KB more stack than a float32's, the decimal
+// expansion being exact. A
+// program that needs no more than a float32's ~7 digits and is short of time or
+// memory can say float32, as it would in Go -- but for the math package, whose
+// functions are of float64, as Go's are.
 //
-// Planned (the decision of 2026-10-08): float64 is to become IEEE double precision
-// computed in software, as Go's is. The P2 has no floating-point hardware for either
-// width -- float32 is computed in software already -- so a float64 is to cost a
-// factor more in time and code, not the difference between a floating-point unit and
-// none. Refusing float64 instead was considered and declined: an untyped float
-// constant would have to default to float32, and `x := 0.5` would differ from Go
-// in its type.
+// Until the decision of 2026-10-08 was carried out, a float64 was a float32 under
+// its Go name. Refusing float64 instead was considered and declined: an untyped
+// float constant would have to default to float32, and `x := 0.5` would differ from
+// Go in its type.
 //
 // # Complex types (planned)
 //
@@ -651,8 +655,7 @@
 //     untyped complex constant whose real part is zero.
 //   - A value is a pair of floats, its real part and then its imaginary part, of
 //     float32 for complex64 and float64 for complex128, so complex128 is as precise
-//     as float64 is: float32's precision on this target today (see Numeric types),
-//     and double precision once float64 is.
+//     as float64 is: double precision (see Numeric types).
 //   - Constant arithmetic is exact, as for every numeric constant, and an untyped
 //     complex constant whose imaginary part is zero is taken by a float or an
 //     integer context where its real part is representable there, as in Go.
@@ -1062,9 +1065,9 @@
 // embedded structs but no embedded pointer. The values are the TARGET's layout, which
 // is not Go's on a 32-bit host in every case:
 //
-//   - a bool, an int8 and a uint8 take a byte and an int16 and a uint16 two; every
-//     other scalar four, a float64 included, which is 32 bits here; an int64 and a
-//     uint64 eight, aligned on four;
+//   - a bool, an int8 and a uint8 take a byte and an int16 and a uint16 two; an
+//     int64, a uint64 and a float64 eight, aligned on four; every other scalar
+//     four;
 //   - a pointer, a channel, a function value and a Pointer four; a string eight, a
 //     slice twelve, an interface eight;
 //   - an array its elements, aligned as its element;
@@ -2536,7 +2539,6 @@
 // one byte of it; a float, under every verb and under println, is laid out from
 // its exact decimal expansion with fmt's rounding -- half to even on an exact tie
 // -- rather than by the backend's printf, whose digits are wrong past the seventh.
-// A float64 is a float32 on the target, so the digits are the float32's.
 //
 // %T is answered at compile time for everything but an interface, whose dynamic
 // type is read from the value at run time and costs one pointer. A type prints as
@@ -3354,18 +3356,17 @@
 // compiler and under Go, and required to print the same bytes.
 //
 // math is the elementary functions, each meaning exactly what Go's of the same name
-// means. Every one whose body the package does not carry is one call of the C
-// backend's math library, substituted where it is written, so it costs that call and
-// nothing more; naming one as a VALUE emits a definition for it, there being nothing
-// for a function pointer to point at otherwise. Trunc and Round are written in
-// OctoGo over the others: the target has no trunc at all, and its round is a builtin
-// that yields an INTEGER, which would have clamped Round(1e30) to 2147483647. Inf,
-// NaN, IsNaN, IsInf and Signbit are written in OctoGo too, the target's floats being
-// IEEE 754 in everything they answer, and the package declares Go's limits of the
-// integer types -- MaxInt32, MinInt64, MaxUint64 and the rest, int and uint being 32
-// bits -- and of float32. What it leaves out is MaxFloat64 and
-// SmallestNonzeroFloat64, which name values a 32-bit float cannot hold; and Signbit
-// of a NaN is false, the sign of a NaN not being read.
+// means and computed as Go's are: its body is Go's own pure Go source, a float64
+// being IEEE double precision here (see Numeric types) and the target's C library's
+// double having 32 bits. Sqrt is the arithmetic's own correctly rounded square
+// root; Float64bits, Float64frombits, Float32bits and Float32frombits read and write
+// the representation; the rest -- Abs, Copysign, Signbit, Inf, NaN, IsNaN, IsInf,
+// Floor, Ceil, Trunc, Round, RoundToEven, Modf, Frexp, Ldexp, Exp, Exp2, Log, Log2,
+// Log10, Pow, Sin, Cos, Tan, Asin, Acos, Atan, Atan2 and Mod -- are OctoGo compiled
+// as any package is, so a program pays for the functions it calls and no other. The
+// package declares Go's constants: Pi, E and the rest, the limits of the integer
+// types -- int and uint being 32 bits -- and MaxFloat32, MaxFloat64,
+// SmallestNonzeroFloat32 and SmallestNonzeroFloat64.
 //
 // errors is Go's but for Join: New, Is, As, Unwrap and ErrUnsupported, each meaning
 // what Go's of the same name means, held to it as strings is. New makes its error

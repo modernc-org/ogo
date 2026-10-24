@@ -85,9 +85,13 @@ func (f *Fuzzer) genLib() (call string, want Int32, ok bool) {
 func (f *Fuzzer) drawImports() {
 	f.lbOn = f.lbRand.Intn(2) == 0
 	f.pkOn = f.pkMode && f.pkRand.Intn(4) != 0
+	f.fdOn = f.fdRand.Intn(3) != 0
 	var imps []string
 	if f.lbOn {
 		imps = append(imps, "bytes", "errors")
+	}
+	if f.fdOn {
+		imps = append(imps, "math")
 	}
 	if f.pkOn {
 		imps = append(imps, "pkx")

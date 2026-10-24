@@ -11,35 +11,6 @@ board, and must print what is written under "OctoGo prints". Under Go each must 
 what is written under "Go prints", unless the entry says Go's output varies.
 `printf` is OctoGo's builtin; in Go it stands for `fmt.Printf`.
 
-### `float64` is a 32-bit float
-
-The P2's C toolchain has no 64-bit floating point, so `float64` is `float32` under its
-Go name. A program gets about 7 significant digits from either, not 15. Printing is
-exact (`%v` gives the shortest decimal that reads back the same float), so it is the
-value that is short of digits, not its rendering. A `float64` of 64 bits, computed in
-software, is planned.
-
-<!-- board-only: the host's C double has 64 bits -->
-
-```go
-func main() {
-	var x float64 = 16777217
-	println(int(x - 16777216))
-}
-```
-
-OctoGo prints:
-
-```
-0
-```
-
-Go prints:
-
-```
-1
-```
-
 ### `int` and `uint` have 32 bits
 
 As on Go's 32-bit targets, `int`, `uint` and `uintptr` are 32 bits wide, and

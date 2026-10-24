@@ -258,6 +258,10 @@ type Fuzzer struct {
 	paRand *rand.Rand
 	swRand *rand.Rand
 	wrRand *rand.Rand
+	// fdRand is genF64's, and fdOn whether the program has its part, drawn first
+	// for the import of math it needs (drawImports).
+	fdRand *rand.Rand
+	fdOn   bool
 	lbOn   bool
 	pkOn   bool
 	pkMode bool
@@ -280,6 +284,7 @@ func NewFuzzer(seed int64, out io.Writer) *Fuzzer {
 		paRand:       rand.New(rand.NewSource(seed ^ 0x70616972)),
 		swRand:       rand.New(rand.NewSource(seed ^ 0x73776368)),
 		wrRand:       rand.New(rand.NewSource(seed ^ 0x77726170)),
+		fdRand:       rand.New(rand.NewSource(seed ^ 0x66363421)),
 		Rand:         rng,
 		Out:          out,
 		GlobalEnv:    global,

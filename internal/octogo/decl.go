@@ -26,8 +26,8 @@ byte
 false
 // float32 is the set of all IEEE 754 32-bit floating-point numbers.
 float32
-// float64 is the set of all IEEE 754 64-bit floating-point numbers in Go; on the
-// target it is 32 bits wide today (DIFFERENCES.md).
+// float64 is the set of all IEEE 754 64-bit floating-point numbers, computed in
+// software on the target (float64.go).
 float64
 // int is the set of all signed integers of the target's word size, 32 bits.
 // It is a type of its own, distinct from int32, as it is in Go.

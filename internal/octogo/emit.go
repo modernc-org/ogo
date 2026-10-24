@@ -466,44 +466,21 @@ func lutHelperDef(checks bool) string {
 		"#endif\n"
 }
 
-// mathIntrinsics maps the math package's bodyless functions to the C library call
-// each one is. The package is ORDINARY embedded source -- its constants are emitted
-// and folded like any package's, and Round and Trunc have real OctoGo bodies -- so
-// only these calls are substituted, and only where one is made.
-//
-// The DOUBLE spellings, not the "f" ones: float64 is C double here, and the
-// target's double is 32 bits, so the two are the same code under two names. Using
-// the name the type asks for keeps the C honest.
-//
-// round() is deliberately ABSENT. On this target it is a compiler builtin that
-// yields an INTEGER, so it is right only where something converts the result --
-// `(double)round(1e30)` came back 2147483647 on a P2-EDGE, and passing it to printf
-// printed the integer's bits as a float. math.Round is built from Floor instead.
-// doc/round-is-an-integer.c is the measurement; reported as flexprop issue 108.
-// trunc() is absent because the target's math library does not have it at all.
+// mathIntrinsics maps the math package's bodyless functions to the C each one is.
+// The package is ORDINARY embedded source, Go's own pure Go functions over the
+// float64 the arithmetic computes (float64.go), so only these calls are
+// substituted, and only where one is made. None is the target's C library, whose
+// double has 32 bits: its round() yields an integer besides
+// (doc/round-is-an-integer.c, flexprop issue 108) and it has no trunc().
 var mathIntrinsics = map[string]string{
-	"Abs":   "fabs",
-	"Ceil":  "ceil",
-	"Floor": "floor",
-	"Sqrt":  "sqrt",
-	"Pow":   "pow",
-	"Exp":   "exp",
-	"Log":   "log",
-	"Log2":  "log2",
-	"Log10": "log10",
-	"Sin":   "sin",
-	"Cos":   "cos",
-	"Tan":   "tan",
-	"Asin":  "asin",
-	"Acos":  "acos",
-	"Atan":  "atan",
-	"Atan2": "atan2",
-	// fmodf, not fmod: the target's math.h defines the double-named forms as macros
-	// over compiler builtins and has no fmod at all -- `ogo build` reported "unknown
-	// identifier fmod" where the host, whose libm has both, was content. Passing a
-	// double to it costs nothing here, the target's double being 32 bits already.
-	"Mod":      "fmodf",
-	"Copysign": "copysign",
+	// The square root is an operation of the arithmetic, correctly rounded
+	// (f64Runtime); the rest of the package is Go's own source.
+	"Sqrt": "ogo_f64_sqrt",
+	// A float's bits, read and written: the representation's own.
+	"Float64bits":     "ogo_f64_bits",
+	"Float64frombits": "ogo_f64_frombits",
+	"Float32bits":     "ogo_f32_bits",
+	"Float32frombits": "ogo_f32_frombits",
 }
 
 // needMathWrapper records that a math function was named as a VALUE rather than
@@ -530,16 +507,21 @@ func (e *emitter) needMathWrapper(pkg, name string) {
 		params = append(params, e.abiParamCType(pt)+" "+nm) // a by-ref one is handed on as the pointer
 		args = append(args, nm)
 	}
+	res := cF64
+	if rts := e.funcRet[cname]; len(rts) == 1 {
+		res = rts[0]
+	}
 	e.liftedDefs = append(e.liftedDefs,
-		"double "+cname+"("+strings.Join(params, ", ")+") { return "+c+"("+strings.Join(args, ", ")+"); }\n")
+		res+" "+cname+"("+strings.Join(params, ", ")+") { return "+c+"("+strings.Join(args, ", ")+"); }\n")
 }
 
-// emitMathArgs emits the arguments of a math intrinsic's call, each CONVERTED to
-// its declared parameter's type, `sqrt((double)(2))`. A C prototype would convert
-// them, and the host's libm has one; the target's math.h defines these as macros
-// over compiler builtins, and a builtin handed an int computes on the int: `sqrt(2)`
-// was 1 on a P2-EDGE, the integer square root, where `sqrt(x)` for a float x was
-// right (doc/sqrt-of-an-int.c). The conversion is what Go does at the call.
+// emitMathArgs emits the arguments of a math intrinsic's call, each a value of its
+// declared parameter's type, as Go converts it at the call: a constant spelled at
+// that type, `ogo_f64_sqrt(ogo_f64k_4000000000000000)` for Sqrt(2), and anything
+// else as itself, Go's rules having typed it so. When the intrinsics were the C
+// library's, a builtin handed an int computed on the int, `sqrt(2)` the integer
+// square root on a P2-EDGE (doc/sqrt-of-an-int.c), which is why every argument is
+// spelled at its parameter's type.
 //
 // A deferred call replays from temporaries captured at the defer, already of the
 // parameters' types, and is emitted as any call's arguments are.
@@ -559,27 +541,44 @@ func (e *emitter) emitMathArgs(cname string, callSuffix []int32) {
 		if i != 0 {
 			e.emit(", ")
 		}
-		ct := "double"
+		ct := cF64
 		if i < len(params) {
 			ct = params[i]
 		}
-		e.emit("(" + ct + ")(")
+		if e.underlyingCType(ct) == cF64 {
+			// No cast converts to a float64, the struct its words are: a constant is
+			// spelled as one (f64OperandC), and anything else is one already.
+			if names != nil {
+				e.emit(names[i])
+			} else {
+				e.emit(e.f64OperandC(a))
+			}
+			continue
+		}
+		// An argument is of its parameter's type already, Go's rules holding it
+		// there, and a constant is spelled at that type. No cast: one to a 64-bit
+		// type of a 64-bit expression is what the target's C compiler miscompiles
+		// (emitConversion), and `(uint64_t)(a | b)` handed to Float64frombits made
+		// math.Copysign(1, 0) +Inf on the board.
 		switch {
 		case names != nil:
 			e.emit(names[i])
 		default:
+			if lit, ok := e.wideConstArg(params, i, a); ok {
+				e.emit(lit)
+				break
+			}
 			e.typeUntypedShifts(a.ast, ct)
-			e.emitExpr(a.ast)
+			e.emitValueAs(ct, a.ast)
 		}
-		e.emit(")")
 	}
 }
 
-// mathIntrinsic answers with the C library call a math function is, and whether the
-// name is one at all. pkg is the package a call was written on -- "math" for a
-// qualified call from outside, and the empty string for an unqualified one, which is
-// a math intrinsic only while the math package's own source is being emitted (Round
-// and Trunc call Floor and Abs).
+// mathIntrinsic answers with the C a math function is, and whether the name is one
+// at all. pkg is the package a call was written on -- "math" for a qualified call
+// from outside, and the empty string for an unqualified one, which is a math
+// intrinsic only while the math package's own source is being emitted (its Sqrt
+// and Float64bits calls).
 func (e *emitter) mathIntrinsic(pkg, name string) (string, bool) {
 	switch pkg {
 	case "math":
@@ -778,11 +777,10 @@ var cTypes = map[string]string{
 	// The compiler-known string builder; see registerBuilder. Mapping it here lets
 	// "*Builder" appear in a signature (-> ogo_builder*).
 	"Builder": "ogo_builder",
-	// float64 -> C double, but note the P2 toolchain's double is 32-bit (no
-	// double-precision hardware), so float64 has float32 precision here (~7 digits).
-	// The name is kept for Go compatibility; %g's 6-digit default matches the real
-	// precision, so no spurious digits are printed. See the Numeric types spec.
-	"float32": "float", "float64": "double",
+	// float64 -> the pair of words its software arithmetic computes on (float64.go):
+	// the target has no floating-point hardware, and its C compiler's double is 32
+	// bits.
+	"float32": "float", "float64": cF64,
 	// A Go string is an immutable { pointer, length } header -- a value type that
 	// will later support slicing -- so it maps to the ogo_string struct.
 	"string": cString,
@@ -797,7 +795,7 @@ var goCTypeNames = map[string]string{
 	"unsigned": "uint", cBool: "bool", cString: "string",
 	"int8_t": "int8", "int16_t": "int16", "int32_t": "int32", "int64_t": "int64",
 	"uint8_t": "uint8", "uint16_t": "uint16", "uint32_t": "uint32", "uint64_t": "uint64",
-	"uintptr_t": "uintptr", "float": "float32", "double": "float64",
+	"uintptr_t": "uintptr", "float": "float32", "double": "float64", cF64: "float64",
 	"ogo_builder": "Builder",
 }
 
@@ -1282,9 +1280,9 @@ const runeQuoteHelper = `static void ogo_print_qrune(long long v) {
 // form), and the width and the '-', '+', ' ' and '0' flags are applied around the
 // text here, which is what lets '0' work where the target's printf ignored it.
 //
-// A float64 is a float32 on the target, so its digits are the float32's; the same
-// helper serves the host so that a program prints one text under both. Not a
-// number and the infinities print as NaN, +Inf and -Inf, padded with spaces.
+// A float64 has a helper of its own (f64FmtHelper); this one serves the host too,
+// so that a program prints one text under both. Not a number and the infinities
+// print as NaN, +Inf and -Inf, padded with spaces.
 //
 // sharp is the '#' flag, ported from fmt's fmtFloat: the text keeps a decimal point
 // always, `%#.0f` of 2 being "2." -- and %g and %G keep their trailing zeros, to
@@ -1743,6 +1741,10 @@ type goSite struct {
 	// nilFn says the trampoline checks the value for nil before calling it, in a
 	// checked build.
 	nilFn bool
+	// paramsOf names the function whose parameters type the slots where the callee
+	// is the C a function stands for, a math intrinsic: `go math.Sqrt(2)` declared
+	// the slot an int, the constant's default, and assigned it a float64.
+	paramsOf string
 	// pack says the callee is VARIADIC and the call wrote values rather than a
 	// spread: the slots from packFrom on hold them, each as packElem, and the
 	// trampoline packs them into an array of the goroutine's own stack, which lives
@@ -2222,7 +2224,7 @@ func (e *emitter) emitGo(nodes []Node) {
 				break
 			}
 			if c, ok := e.mathIntrinsic(base, name); ok {
-				site = goSite{callee: c, discard: true, id: len(e.goSites)}
+				site = goSite{callee: c, discard: true, paramsOf: e.mangle("math", name), id: len(e.goSites)}
 				break
 			}
 			// The imported function is emitted in its own package's namespace, so the
@@ -2433,6 +2435,9 @@ func (e *emitter) emitGo(nodes []Node) {
 	// The receiver, when there is one, is site.args[0] already; cParamTypes excludes
 	// it, so the parameters line up with the arguments one for one either way.
 	params := e.funcParams[site.callee]
+	if site.paramsOf != "" {
+		params = e.funcParams[site.paramsOf]
+	}
 	if site.fnCType != "" {
 		params = e.funcTypeParams[site.fnCType]
 	}
@@ -3598,7 +3603,7 @@ func (e *emitter) zeroInitC(ctype string) string {
 	// all. The written name is still tested first, since a type that IS one of these
 	// has no underlying to resolve to.
 	aggregate := func(ct string) bool {
-		return e.isStruct(ct) || ct == cString || e.isSliceCType(ct) || ct == "ogo_builder"
+		return e.isStruct(ct) || ct == cString || e.isSliceCType(ct) || ct == "ogo_builder" || ct == cF64
 	}
 	if aggregate(ctype) || aggregate(e.underlyingCType(ctype)) {
 		if e.leadsZeroSized(e.underlyingCType(ctype)) {
@@ -3725,7 +3730,7 @@ func (e *emitter) cLayout(ct string, depth int) (size, align int64, ok bool) {
 		return 2, 2, true
 	case "int", "unsigned", "int32_t", "uint32_t", "uintptr_t", "float", "double":
 		return 4, 4, true
-	case "int64_t", "uint64_t":
+	case "int64_t", "uint64_t", cF64:
 		return 8, 4, true
 	case cString:
 		return 8, 4, true
@@ -6937,6 +6942,8 @@ func emitProgram(pkg *Package, w io.Writer, opts []EmitOption, rename map[string
 	if e.usesStringPrint || e.usesStringPad || e.usesBytesPrint || e.usesRuneDecode || e.usesStringCmp || e.usesStringEq {
 		e.usesString = true
 	}
+	// The float64 typedef and its arithmetic, where the C names one (f64Section).
+	out.WriteString(f64TypedefMark)
 	if e.usesString || forwards.Len() != 0 || typedefUnits.Len() != 0 {
 		if e.usesString {
 			out.WriteString(stringTypedef)
@@ -6954,6 +6961,7 @@ func emitProgram(pkg *Package, w io.Writer, opts []EmitOption, rename map[string
 		out.Write(typedefUnits.Bytes())
 		out.WriteByte('\n')
 	}
+	out.WriteString(f64RuntimeMark)
 	if e.usesStringPrint {
 		out.WriteString(stringHelpers)
 		out.WriteByte('\n')
@@ -6969,6 +6977,10 @@ func emitProgram(pkg *Package, w io.Writer, opts []EmitOption, rename map[string
 	}
 	if e.usesFloatFmt {
 		out.WriteString(floatFmtHelper)
+		out.WriteByte('\n')
+	}
+	if e.usesF64Fmt {
+		out.WriteString(f64FmtHelper)
 		out.WriteByte('\n')
 	}
 	if e.usesIntPrint {
@@ -7269,6 +7281,10 @@ func emitProgram(pkg *Package, w io.Writer, opts []EmitOption, rename map[string
 		return "a " + op + " b"
 	}
 	for _, ct := range sortedKeys(e.minElems) {
+		if ct == cF64 {
+			helperDefs.WriteString(f64MinMaxC(minCName(ct), true))
+			continue
+		}
 		if isFloatCType(ct) {
 			// Go's min of floats: NaN if either argument is one, and negative zero
 			// below positive zero -- which `a < b ? a : b` gets wrong both ways,
@@ -7280,6 +7296,10 @@ func emitProgram(pkg *Package, w io.Writer, opts []EmitOption, rename map[string
 		fmt.Fprintf(&helperDefs, "static %s %s(%s a, %s b) { return %s ? a : b; }\n", ct, minCName(ct), ct, ct, minMaxCmp(ct, "<"))
 	}
 	for _, ct := range sortedKeys(e.maxElems) {
+		if ct == cF64 {
+			helperDefs.WriteString(f64MinMaxC(maxCName(ct), false))
+			continue
+		}
 		if isFloatCType(ct) {
 			// Go's max of floats, the mirror of min above: NaN wins, and positive
 			// zero is above negative zero.
@@ -7484,7 +7504,7 @@ func emitProgram(pkg *Package, w io.Writer, opts []EmitOption, rename map[string
 	if len(e.layoutChecks) != 0 {
 		out.WriteString("\n#ifdef __FLEXC__\nstatic char ogo_layout_check[(" + strings.Join(e.layoutChecks, " && ") + ") ? 1 : -1];\n#endif\n")
 	}
-	text := wrapLongLines(ensureStdint(insertStringLits(e.endProgramC(out.Bytes(), endsCogs), e.stringLitDecls)))
+	text := wrapLongLines(ensureStdint(insertStringLits(e.endProgramC(e.f64Section(out.Bytes()), endsCogs), e.stringLitDecls)))
 	if e.report != nil {
 		e.fillReport(text, pkgs)
 	}
@@ -7870,6 +7890,7 @@ type emitter struct {
 	usliceHelpers       map[string]bool         // element C types unsafe.Slice makes a slice of: emit each one's helper
 	usesNonzero         bool                    // ogo_nonzero is called: emit the divide-by-zero-check helper
 	usesFloatFmt        bool                    // ogo_print_float is called: a float printed by print, println or any float verb (see floatFmtHelper)
+	usesF64Fmt          bool                    // ogo_print_f64 is called: the same for a float64 (f64FmtHelper)
 	usesBytesPrint      bool                    // ogo_print_hex_bytes / ogo_print_qbytes are called: %x, %X or %q over a string or a byte slice
 	usesRuneQuote       bool                    // ogo_print_qrune is called: %q of an integer
 	usesQuoteFmt        bool                    // %q under a flag, a width or a precision: emit quoteFmtHelpers
@@ -11809,7 +11830,7 @@ func (e *emitter) declareConst(ev constEval) {
 	}
 	// A float constant (foldedFloat): an expression reading one is folded exactly
 	// (emitFloatPrefixFold).
-	if ut := e.underlyingCType(ctype); (ut == "double" || ut == "float") && ev.hasVal {
+	if ut := e.underlyingCType(ctype); (ut == "double" || ut == "float" || ut == cF64) && ev.hasVal {
 		return
 	}
 	// A constant string -- a literal or a concatenation of constants -- is recorded
@@ -24324,6 +24345,19 @@ func (e *emitter) pkgInitLitFixups(target string, fixups []litFixup) {
 func (e *emitter) emitLitElement(v Node, expect structField, brace bool) {
 	expectType := expect.ctype
 	e.typeUntypedShiftsNode(v, expectType) // the element's type is the value's context
+	// A float64 constant element is its words in braces: what a struct member takes
+	// in any aggregate initializer, a static one above all, where the name of the
+	// const holding them is no constant expression.
+	if brace && expect.dim.bound == "" && e.underlyingCType(expectType) == cF64 {
+		saved := e.declInit
+		e.declInit = true
+		c, ok := e.f64ConstOf(v.ast)
+		e.declInit = saved
+		if ok {
+			e.emit(c)
+			return
+		}
+	}
 	// An INTERFACE-typed position takes the two words, not whatever was written: a
 	// pointer standing here has to become {data, table} the way it does at an
 	// assignment or an argument. Put in raw, the C compiler refused the literal --
@@ -24458,6 +24492,19 @@ func (e *emitter) emitLitElement(v Node, expect structField, brace bool) {
 			base = e.hoist(expectType, func() { e.notLitOwner(v, func() { e.emitExpr(v.ast) }) })
 		}
 		e.emit(e.structBraceC(base, expectType))
+		return
+	}
+	// So is a float64 value, the struct of its two words, which the struct table
+	// does not hold: `[3]float64{ga[0], x}` was "expected unsigned int but got"
+	// the struct from the target's compiler.
+	if brace && e.underlyingCType(expectType) == cF64 && !e.declInit {
+		base, isName := e.exprIdent(v.ast)
+		if isName {
+			base = e.varRef(base)
+		} else {
+			base = e.hoist(expectType, func() { e.notLitOwner(v, func() { e.emitValueAs(expectType, v.ast) }) })
+		}
+		e.emit("{" + base + ".lo, " + base + ".hi}")
 		return
 	}
 	if lit, ok := e.floatConstC(v.ast, expectType); ok {
@@ -27581,6 +27628,10 @@ func (e *emitter) emitConversion(ct string, arg Node) {
 		return
 	}
 	e.typeUntypedShifts(arg.ast, ct) // the conversion's type is its untyped operand's
+	if text, ok := e.f64ConversionC(ct, arg); ok {
+		e.emit(text)
+		return
+	}
 	if isScalarCType(e.underlyingCType(ct)) {
 		// A constant no integer type holds converted to a float, `float32(huge)`,
 		// is the float Go converts it to: there is no integer to cast.
@@ -29374,6 +29425,10 @@ func nearFloat32Tie(s string) bool {
 // convert the integer themselves and were right already, so they are left alone.
 func (e *emitter) floatConstC(ast []int32, ctype string) (string, bool) {
 	ut := e.underlyingCType(ctype)
+	if ut == cF64 {
+		// Every constant: no literal converts to a float64 (f64ConstOf).
+		return e.f64ConstOf(ast)
+	}
 	if ut != "float" && ut != "double" {
 		return "", false
 	}
@@ -29450,6 +29505,17 @@ func (e *emitter) floatConstRef(cname string) (string, bool) {
 		ct = e.globals[cname]
 	}
 	ut := e.underlyingCType(ct)
+	if ut == cF64 && !e.constUntyped[cname] {
+		// A constant of a float64 type is a float64 wherever it stands. An untyped
+		// one is a float64 by default only: where it meets one, the operation, the
+		// argument or the declaration spells it so (f64ConstOf, noteF64Const); a
+		// float32 takes it as the literal C converts.
+		f, _ := constant.Float64Val(constant.ToFloat(v))
+		return e.f64ConstC(f), true
+	}
+	if ut == cF64 {
+		ut = "double"
+	}
 	if ut != "double" && ut != "float" {
 		return "", false
 	}
@@ -33872,11 +33938,12 @@ condition:
 			// with nowhere to declare the temporary a value might need.
 			post, postPro := e.capturePrologue(func() {
 				lhs := e.exprC(h.postLHS)
+				lct, _ := e.inferCType(h.postLHS)
 				switch h.postOp {
 				case INC:
-					e.emit(incDecC(lhs, "++"))
+					e.emit(e.incDecTypedC(lhs, lct, "++"))
 				case DEC:
-					e.emit(incDecC(lhs, "--"))
+					e.emit(e.incDecTypedC(lhs, lct, "--"))
 				case ASSIGN, DEFINE:
 					e.emitPostAssign(h.postLHS, lhs, "=", h.postRHS, false)
 				default:
@@ -36263,6 +36330,10 @@ func (e *emitter) emitCaseCond(guardVar string, exprs []Node) {
 					}
 					e.emit(")")
 					return
+				case e.underlyingCType(ct) == cF64:
+					// A float64 as the operator compares one (emitF64CompareTriple).
+					e.emit("ogo_f64_eq(" + cname + ", " + e.f64OperandC(ex) + ")")
+					return
 				}
 			}
 		}
@@ -36687,11 +36758,12 @@ func (e *emitter) emitHeaderStep(head Node, op Symbol, value Node, hasValue bool
 	}
 	text := e.captureC(func() {
 		lhs := e.exprC(head.ast)
+		lct, _ := e.inferCType(head.ast)
 		switch op {
 		case INC:
-			e.emit(incDecC(lhs, "++"))
+			e.emit(e.incDecTypedC(lhs, lct, "++"))
 		case DEC:
-			e.emit(incDecC(lhs, "--"))
+			e.emit(e.incDecTypedC(lhs, lct, "--"))
 		default:
 			c, ok := cAssignOps[op]
 			if !ok || !hasValue {
@@ -37528,7 +37600,7 @@ func (e *emitter) emitDeferCaptures(d *deferredCall) {
 		// `mk()[1]` -- is written here, in its turn: ahead of the statement it ran
 		// before the arguments captured before it, `defer rec(use(), mk()[1])`
 		// calling mk first.
-		text, pro := e.capturePrologue(func() { e.emitExpr(a.expr) })
+		text, pro := e.capturePrologue(func() { e.emitValueAs(a.ctype, a.expr) })
 		for _, line := range pro {
 			e.ind()
 			e.emit(line)
@@ -42290,7 +42362,7 @@ func (e *emitter) minMaxCType(args []Node) (string, bool) {
 // comparison helper. Go orders exactly these -- its min and max take any ordered
 // type -- and a bool, a slice, a struct and a pointer are ordered by neither.
 func isOrderedCType(ct string) bool {
-	return isIntCType(ct) || ct == "float" || ct == "double" || ct == cString
+	return isIntCType(ct) || ct == "float" || ct == "double" || ct == cF64 || ct == cString
 }
 
 // emitMinMax emits the builtin min or max over one or more ordered arguments. It
@@ -42328,10 +42400,17 @@ func (e *emitter) emitMinMax(recv string, callSuffix []int32) {
 	for range args[1:] {
 		e.emit(fn + "(")
 	}
-	e.emitExpr(args[0].ast)
-	for _, arg := range args[1:] {
+	arg := func(a Node) {
+		if ct == cF64 {
+			e.emit(e.f64OperandC(a)) // a constant among them is a float64 too
+			return
+		}
+		e.emitExpr(a.ast)
+	}
+	arg(args[0])
+	for _, a := range args[1:] {
 		e.emit(", ")
-		e.emitExpr(arg.ast)
+		arg(a)
 		e.emit(")")
 	}
 }
@@ -42541,7 +42620,7 @@ func (e *emitter) hoistPrintArgs(args []Node) bool {
 		// the target's took in silence. It is copied as an array is, below.
 		ct, ok := e.inferCType(a.ast)
 		if ok && ct != "" && e.namedArrays[ct].bound == "" && e.namedArrays[e.underlyingCType(ct)].bound == "" {
-			hoisted[i] = printArg{ctype: ct, name: e.hoist(ct, func() { e.emitExpr(a.ast) })}
+			hoisted[i] = printArg{ctype: ct, name: e.hoist(ct, func() { e.emitValueAs(ct, a.ast) })}
 			continue
 		}
 		// A call returning an ARRAY writes a temporary of its shape, which is the
@@ -42745,6 +42824,14 @@ func (e *emitter) emitReplayArg(idx int, arg Node) {
 	if a, ok := e.hoistedArg(idx); ok {
 		e.emit(a.name)
 		return
+	}
+	// A constant whose type is float64, its default -- `println(1.5)`, a printf
+	// argument -- meets no typed destination the checker records (noteF64Const).
+	if ct, ok := e.inferCType(arg.ast); ok && e.underlyingCType(ct) == cF64 {
+		if c, ok := e.f64ConstOf(arg.ast); ok {
+			e.emit(c)
+			return
+		}
 	}
 	e.emitExpr(arg.ast)
 }
@@ -43864,9 +43951,7 @@ func (e *emitter) printValueC(expr, ct string, methods bool, plus string) (code,
 	case isIntCType(u):
 		return "printf(\"" + scalarPrintVerb(u) + "\", " + expr + ");", ""
 	case isFloatCType(u):
-		e.usesFloatFmt = true
-		e.includes["string.h"] = true
-		return "ogo_print_float(0, 0, 0, 0, 0, 0, 'g', -1, " + expr + ");", ""
+		return e.floatPrintFn(u) + "(0, 0, 0, 0, 0, 0, 'g', -1, " + expr + ");", ""
 	case e.isIfaceCType(u):
 		if methods {
 			// fmt asks the dynamic value for Error() and String() whether or not the
@@ -44520,7 +44605,7 @@ func cDigits(s string) bool {
 // lays the text out itself (see floatFmtHelper), so it takes the width, the '-',
 // '+', ' ' and '0' flags and the precision apart. No precision is 6 for %e and %f
 // and -1, the shortest form, for %g, as fmt has them.
-func (e *emitter) emitFloatVerb(item printfItem, verb byte, value func()) {
+func (e *emitter) emitFloatVerb(item printfItem, verb byte, ct string, value func()) {
 	width, _ := item.width()
 	prec, hasPrec := item.precision()
 	if !hasPrec {
@@ -44535,10 +44620,8 @@ func (e *emitter) emitFloatVerb(item printfItem, verb byte, value func()) {
 		}
 		return "0"
 	}
-	e.usesFloatFmt = true
-	e.includes["string.h"] = true
 	e.ind()
-	e.emit("ogo_print_float(" + strconv.Itoa(width) + ", " + flag('-') + ", " + flag('+') + ", " + flag(' ') + ", " +
+	e.emit(e.floatPrintFn(ct) + "(" + strconv.Itoa(width) + ", " + flag('-') + ", " + flag('+') + ", " + flag(' ') + ", " +
 		flag('0') + ", " + flag('#') + ", '" + string(verb) + "', " + strconv.Itoa(prec) + ", ")
 	value()
 	e.emit(");\n")
@@ -45182,7 +45265,7 @@ func (e *emitter) emitScalarVerb(item printfItem, ct string, value func(), wrong
 		// floatFmtHelper): Go's shortest form under %g, Go's rounding under a
 		// precision, and Go's padding under a width -- not the target's printf,
 		// whose digits are wrong past the seventh.
-		e.emitFloatVerb(item, verb, value)
+		e.emitFloatVerb(item, verb, e.underlyingCType(ct), value)
 	case 'c':
 		if !isIntCType(ct) {
 			return wrong("an integer")
@@ -45384,7 +45467,7 @@ func intPrintfVerb(verb byte, ct, spec string) string {
 }
 
 // isFloatCType reports whether ct is one of the floating C types.
-func isFloatCType(ct string) bool { return ct == "double" || ct == "float" }
+func isFloatCType(ct string) bool { return ct == "double" || ct == "float" || ct == cF64 }
 
 // emitPrintOne emits print/println of a single argument, appending a newline when
 // newline is set. Integer and string output are folded into one call (preserving
@@ -45539,9 +45622,8 @@ func (e *emitter) emitPrintOne(newline bool, idx int, arg Node) {
 	if verb == "%g" {
 		// A float prints in Go's shortest form, as Go's println prints one (see
 		// floatFmtHelper): C's %g would print six significant digits.
-		e.usesFloatFmt = true
-		e.includes["string.h"] = true
-		e.emit("ogo_print_float(0, 0, 0, 0, 0, 0, 'g', -1, ")
+		ct, _ := e.printArgCType(idx, arg)
+		e.emit(e.floatPrintFn(e.underlyingCType(ct)) + "(0, 0, 0, 0, 0, 0, 'g', -1, ")
 		e.emitReplayArg(idx, arg)
 		e.emit(");\n")
 		if newline {
@@ -45672,8 +45754,7 @@ func (e *emitter) emitPrintSlice(newline bool, elem string, emitArg func()) {
 		return
 	}
 	if isFloatCType(e.underlyingCType(elem)) {
-		e.usesFloatFmt = true
-		e.includes["string.h"] = true
+		e.floatPrintFn(e.underlyingCType(elem))
 	}
 	e.needSlice(elem)
 	e.ind()
@@ -45780,7 +45861,7 @@ func scalarPrintVerb(ct string) string {
 	switch ct {
 	case "unsigned", "uint8_t", "uint16_t", "uint32_t", "uintptr_t":
 		return "%u"
-	case "double", "float":
+	case "double", "float", cF64:
 		return "%g" // concise, like Go's fmt for a float (7.0 -> "7", 0.25 -> "0.25")
 	case "int64_t":
 		return "%lld"
@@ -46017,6 +46098,8 @@ func sliceElemPrintf(el string) string {
 		// In Go's shortest form, as println prints a float (see floatFmtHelper, which
 		// the output places ahead of these printers).
 		return `ogo_print_float(0, 0, 0, 0, 0, 0, 'g', -1, s.ptr[_i]);`
+	case cF64:
+		return `ogo_print_f64(0, 0, 0, 0, 0, 0, 'g', -1, s.ptr[_i]);`
 	}
 	return fmt.Sprintf(`printf("%s", s.ptr[_i]);`, scalarPrintVerb(el))
 }
@@ -47445,11 +47528,11 @@ func (e *emitter) emitAssignment(head Node, postfix []Node) {
 		switch e.f.ch(op[0].tok) {
 		case INC:
 			e.ind()
-			e.emit(incDecC(lhs, "++") + ";\n")
+			e.emit(e.incDecTypedC(lhs, lhsCType, "++") + ";\n")
 			return
 		case DEC:
 			e.ind()
-			e.emit(incDecC(lhs, "--") + ";\n")
+			e.emit(e.incDecTypedC(lhs, lhsCType, "--") + ";\n")
 			return
 		}
 	}
@@ -48460,6 +48543,11 @@ func (e *emitter) emitAssignTailOrCopy(target func(), t assignTail) {
 			return
 		}
 	}
+	if t.op != "=" && e.underlyingCType(t.targetCType) == cF64 {
+		e.ind()
+		e.emit(e.f64CompoundC(target, t) + ";\n")
+		return
+	}
 	e.ind()
 	if text, ok := e.guardedAssignC(target, t); ok {
 		e.emit(text + ";\n")
@@ -48477,11 +48565,24 @@ func (e *emitter) emitAssignTailOrCopy(target func(), t assignTail) {
 		return
 	}
 	if t.rhs == nil { // "++" or "--"
-		e.emit(incDecC(e.captureC(target), t.op) + ";\n")
+		e.emit(e.incDecTypedC(e.captureC(target), t.targetCType, t.op) + ";\n")
 		return
 	}
 	target()
 	e.emitAssignTail(t)
+}
+
+// incDecTypedC is incDecC of a target of the C type ct: a float64 is incremented as
+// its value plus one, stored (f64Ops), a C increment applying to no struct.
+func (e *emitter) incDecTypedC(lhs, ct, op string) string {
+	if e.underlyingCType(ct) != cF64 {
+		return incDecC(lhs, op)
+	}
+	fn := "ogo_f64_add"
+	if op == "--" {
+		fn = "ogo_f64_sub"
+	}
+	return lhs + " = " + fn + "(" + lhs + ", " + e.f64ConstC(1) + ")"
 }
 
 // incDecC spells `x++` or `x--` of a target given as its C text. One that is no
@@ -51381,7 +51482,7 @@ func (e *emitter) valueCallArgC(throughValue bool, params []string, i int, text 
 	if !throughValue || i >= len(params) || e.declInit || e.deferReplay >= 0 || isCIdent(strings.TrimSpace(text)) {
 		return text
 	}
-	if ut := e.underlyingCType(params[i]); ut != "int64_t" && ut != "uint64_t" {
+	if ut := e.underlyingCType(params[i]); ut != "int64_t" && ut != "uint64_t" && ut != cF64 {
 		return text
 	}
 	return e.hoist(params[i], func() { e.emit(text) })
@@ -51409,7 +51510,7 @@ func (e *emitter) valueResultC(ct, fn, call string) string {
 	if len(rets) != 1 {
 		return call
 	}
-	if ut := e.underlyingCType(rets[0]); ut != "int64_t" && ut != "uint64_t" {
+	if ut := e.underlyingCType(rets[0]); ut != "int64_t" && ut != "uint64_t" && ut != cF64 {
 		return call
 	}
 	return e.hoist(rets[0], func() { e.emit(call) })
@@ -52771,7 +52872,7 @@ func untypedCTypeRank(ct string) int {
 		return 1
 	case "int32_t":
 		return 2
-	case "double":
+	case "double", cF64:
 		return 3
 	}
 	return 0
@@ -53460,7 +53561,7 @@ func (e *emitter) inferNode(n Node) (string, bool) {
 			e.includes["stdint.h"] = true
 			return "int32_t", true
 		case FLOAT:
-			return "double", true // an untyped float literal defaults to float64 (C double)
+			return cF64, true // an untyped float literal defaults to float64
 		case STRING:
 			return cString, true
 		case IDENT:
@@ -53704,6 +53805,14 @@ func (e *emitter) emitExpr(ast []int32) {
 			b.used = true
 			e.emit(b.name)
 			return
+		}
+		// An untyped constant where a float64 is wanted is the float64 Go converts
+		// it to (noteF64Const): a float64 is no C type a literal converts to.
+		if e.f.f64Consts[&ast[0]] {
+			if c, ok := e.f64ConstOf(ast); ok {
+				e.emit(c)
+				return
+			}
 		}
 		if kind, ok := e.f.wholeConsts[&ast[0]]; ok {
 			if lit, ok := e.wholeConstC(ast, kind); ok {
@@ -54569,6 +54678,12 @@ func (e *emitter) emitKidsStringCompare(kids []Node) {
 			seen++
 			continue
 		}
+		if op, ok := e.f64CompareAt(kids, i); ok {
+			e.emitF64CompareTriple(op, kids[i], kids[i+2])
+			i += 3
+			seen++
+			continue
+		}
 		if op, ok := e.stringCompareAt(kids, i); ok {
 			e.emitStringCompareTriple(kids[i], kids[i+2], op)
 			i += 3
@@ -54627,6 +54742,12 @@ func (e *emitter) constCompareC(kids []Node, i int) (string, bool) {
 				return "0", true
 			}
 		}
+	}
+	// So is a comparison of two constants one of which is of a float64 type, `Boil >
+	// Neg`: the values compared are the float64s they are, and a float64 is no C
+	// type C's operators compare.
+	if text, ok := e.f64ConstCompareC(kids, i, op); ok {
+		return text, true
 	}
 	ct, ok := e.compareOperandCType(kids, i)
 	if !ok || cIntWidths[ct] != 64 {
@@ -54956,6 +55077,12 @@ func (e *emitter) emitExprNode(n Node) {
 			e.emit(b.name)
 			return
 		}
+		if e.f.f64Consts[&n.ast[0]] {
+			if c, ok := e.f64ConstOf(n.ast); ok {
+				e.emit(c)
+				return
+			}
+		}
 		if kind, ok := e.f.wholeConsts[&n.ast[0]]; ok {
 			if lit, ok := e.wholeConstC(n.ast, kind); ok {
 				e.emit(lit)
@@ -54970,11 +55097,18 @@ func (e *emitter) emitExprNode(n Node) {
 			e.emitExprNode(kids[0])
 			return
 		}
+		if c, ok := e.f64TypedConstC(n); ok {
+			e.emit(c)
+			return
+		}
 		e.typeUntypedShiftsNode(n, "") // operands beside an untyped shift type it
 		// A chain of && or || is a sequence of evaluations, not one, and binds per
 		// operand (emitShortCircuit).
 		if !slices.ContainsFunc(kids, func(c Node) bool { return c.sym == RelOp && e.isLogicalOp(c) }) {
 			defer e.bindEffectOperands(kids)()
+		}
+		if e.emitF64Level(kids) {
+			return
 		}
 		// A constant expression whose value does not fit a C int is emitted as that
 		// value: C would compute it in int and get a different answer (see intCLit).
@@ -55053,8 +55187,15 @@ func (e *emitter) emitExprNode(n Node) {
 			e.emitExprNode(kids[0])
 			return
 		}
+		if c, ok := e.f64TypedConstC(n); ok {
+			e.emit(c)
+			return
+		}
 		e.typeUntypedShiftsNode(n, "") // operands beside an untyped shift type it
 		defer e.bindEffectOperands(kids)()
+		if e.emitF64Level(kids) {
+			return
+		}
 		if lit, ok := e.levelConstLit(n.ast); ok {
 			e.emit(lit)
 			return
@@ -55260,6 +55401,10 @@ func (e *emitter) emitExprNode(n Node) {
 				return
 			}
 		}
+		if c, ok := e.f64TypedConstC(n); ok {
+			e.emit(c)
+			return
+		}
 		if len(kids) == 3 && kids[0].sym == 0 && e.f.ch(kids[0].tok) == LPAREN {
 			e.emit("(")
 			e.emitExprNode(kids[1])
@@ -55324,6 +55469,19 @@ func (e *emitter) emitExprNode(n Node) {
 							return
 						}
 					}
+				}
+			}
+		}
+		// A float64 negated is its sign bit flipped, and kept by a plus.
+		if n.sym == UnaryExpr && len(kids) == 2 && e.isF64Node(kids[1]) {
+			if tok, ok := e.prefixOpTok(kids[0]); ok {
+				switch e.f.ch(tok) {
+				case SUB:
+					e.emit("ogo_f64_neg(" + e.f64OperandC(kids[1]) + ")")
+					return
+				case ADD:
+					e.emitExprNode(kids[1])
+					return
 				}
 			}
 		}
@@ -56778,6 +56936,16 @@ func (e *emitter) hoistArgs(cname string, params []string, args []Node) ([]strin
 		if lit, ok := e.wideConstArg(params, i, a); ok {
 			names = append(names, e.hoist(params[i], func() { e.emit(lit) }))
 			continue
+		}
+		// An untyped constant is bound at the parameter's type, which is the type it
+		// converts to: bound at its default, 242.75 for a float32 parameter was a
+		// float64, which converts to no float32 in C.
+		if i < len(params) && params[i] != "" && e.operandUntyped(a) && e.isFloatParam(params[i]) {
+			if _, isConst := e.foldConstVal(a.ast); isConst {
+				pt := params[i]
+				names = append(names, e.hoist(pt, func() { e.emitValueAs(pt, a.ast) }))
+				continue
+			}
 		}
 		ct, ok := e.inferCType(a.ast)
 		if !ok {

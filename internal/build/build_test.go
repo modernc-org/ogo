@@ -1246,22 +1246,29 @@ func TestBuildHubOverflow(t *testing.T) {
 	}
 }
 
-// TestBuildHarmlessWarning builds the one program known to make the backend warn
-// about nothing that matters, a discarded square root started on a cog, and holds
-// it to building: the allowlist is what keeps the rule above from refusing it.
+// TestBuildHarmlessWarning holds a build the backend warned about nothing that
+// matters to passing -- a discarded CORDIC instruction, the one harmless line seen
+// in a build -- and one it warned about anything else to failing: the allowlist is
+// what keeps the rule above from refusing the first.
 func TestBuildHarmlessWarning(t *testing.T) {
+	// The backend said it of `go math.Sqrt(2)` while math.Sqrt was the C library's
+	// square root, a CORDIC instruction whose result the trampoline drops. Since a
+	// float64 is computed in software no program known makes it say so, and the
+	// line is handed to the filter as the backend wrote it.
 	dir := t.TempDir()
-	write(t, filepath.Join(dir, "prog", "main.ogo"), "import \"math\"\n\nfunc main() { go math.Sqrt(2) }\n")
 	out := filepath.Join(dir, "prog.binary")
-	var buf bytes.Buffer
-	code, err := Build([]string{"-o", out, filepath.Join(dir, "prog")}, nil, &buf, &buf)
+	write(t, out, "binary")
+	said := "/tmp/ogo-build-1/prog.c:12: warning: Deleting apparently unused cordic instruction\n"
+	code, err := backendFault([]byte("int main(void) { return 0; }\n"), out, filepath.Join(dir, "prog.c"), []byte(said))
 	if err != nil || code != 0 {
-		t.Fatalf("code=%d err=%v\n%s", code, err, buf.String())
-	}
-	if !strings.Contains(buf.String(), "unused cordic instruction") {
-		t.Logf("the backend no longer warns about it:\n%s", buf.String())
+		t.Fatalf("code=%d err=%v", code, err)
 	}
 	if _, err := os.Stat(out); err != nil {
 		t.Fatal(err)
+	}
+	// And a line it does not list fails the build, so the filter is asked to fail.
+	code, err = backendFault([]byte("int main(void) { return 0; }\n"), out, filepath.Join(dir, "prog.c"), []byte(said+"/tmp/ogo-build-1/prog.c:13: warning: Redefining x\n"))
+	if err == nil || code == 0 {
+		t.Fatalf("an unlisted warning passed: code=%d err=%v", code, err)
 	}
 }

@@ -297,6 +297,7 @@ type File struct {
 	shiftTypes        map[*int32]Kind             // the shift operators whose left operand is an untyped constant, by their place in the AST, and the type the context gives it (see typeShiftOperands); read by the emitter
 	wholeConsts       map[*int32]Kind             // the constants written as FLOATS that stand where an integer type is wanted, `var u uint32 = 3e9`, by their place in the AST, and that type (see checkValueOverflow); read by the emitter
 	wholeConstToks    map[int32]Kind              // the same for a constant that is one token, by the token
+	f64Consts         map[*int32]bool             // the untyped constants that stand where a float64 is wanted, `var x float64 = 1.5`, `f(2)`, by their place in the AST (see noteF64Const); read by the emitter, a float64 being no C type a literal converts to
 	chanTDirs         map[*int32][]chanDir        // a format's argument of an unnamed channel type with a direction in it, by its place in the AST, and each channel level's direction (see noteChanTDirs); read by the emitter for %T
 	lenConsts         map[*int32]int64            // the len and cap calls Go makes constants, by their parentheses' place in the AST, and their values (see constLenCap); read by the emitter
 	chanSizes         map[*int32]int64            // a buffered channel's size, by the place of make's second argument in the AST, as the checker computed it (checkChanMake); read by the emitter, which folds no size of its own
@@ -31983,6 +31984,15 @@ func (f *File) checkConstFits(s *Scope, dst retResult, n Node, implicit bool) {
 		f.checkFloat32Overflow(s, dst, n)
 		return
 	}
+	if dst.kind == PredeclaredFloat64 {
+		f.checkFloat64Overflow(s, dst, n)
+		if k, ok := f.exprType(s, n); ok && implicit && (k == UntypedFloat || k == UntypedInt || k == UntypedRune) {
+			if _, isConst := f.constNumeric(s, n); isConst {
+				f.noteF64Const(n)
+			}
+		}
+		return
+	}
 	if _, _, ok := intKindRange(dst.kind); !ok {
 		return
 	}
@@ -32102,14 +32112,44 @@ func (f *File) noteWholeConst(n Node, kind Kind) {
 	}
 }
 
+// noteF64Const records n, an untyped constant standing where a float64 is wanted, at
+// every node of one child it is written as, as noteWholeConst records: the emitter
+// spells it as the float64 Go converts it to, the value rounded once (f64ConstC).
+func (f *File) noteF64Const(n Node) {
+	for len(n.ast) != 0 && n.sym != 0 {
+		if f.f64Consts == nil {
+			f.f64Consts = map[*int32]bool{}
+		}
+		f.f64Consts[&n.ast[0]] = true
+		kids := slices.Collect(it(n.ast))
+		if len(kids) != 1 {
+			return
+		}
+		n = kids[0]
+	}
+}
+
+// checkFloat64Overflow is checkFloat32Overflow for a float64: "var x float64 =
+// 1e400" is "constant 1e+400 overflows float64", as Go refuses it.
+func (f *File) checkFloat64Overflow(s *Scope, dst retResult, n Node) {
+	cv, ok := f.constNumeric(s, n)
+	if !ok {
+		return
+	}
+	if v, _ := constant.Float64Val(constant.ToFloat(cv)); !math.IsInf(v, 0) {
+		return
+	}
+	name := dst.name
+	if name == "" || name == "?" {
+		name = kindName(dst.kind)
+	}
+	f.err(f.tok(n.Pos()).Position(), "constant %s overflows %s", cv, name)
+}
+
 // checkFloat32Overflow reports a constant used where a float32 is required that
 // rounds to an infinity there: "var f float32 = 1e40" is "constant 1e+40 overflows
 // float32", as Go refuses it. Every other position a constant meets a float32 in
 // took the infinity silently, a conversion included.
-//
-// float64 is not range-checked. It is 32 bits wide on this target (see specs.go),
-// and a constant past a float32's range that Go's float64 holds is a question about
-// the target, not one Go asks.
 func (f *File) checkFloat32Overflow(s *Scope, dst retResult, n Node) {
 	cv, ok := f.constNumeric(s, n)
 	if !ok {

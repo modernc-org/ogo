@@ -35,9 +35,10 @@ type emitRunCase struct {
 	// wrong answer until aa300e2. Listing an exception here keeps it visible rather
 	// than swallowed, and each one should say why it is not a defect.
 	backendWarning string
-	// boardOnly marks a program the host cannot run as the target does: a float64
-	// is a C double, 64 bits on the host and 32 on the target (DIFFERENCES.md). It
-	// is built for the target and run on the board, and not run on the host.
+	// boardOnly marks a program the host cannot run as the target does: a
+	// recursion stopped at the end of its stack, which the host's stack does not
+	// check. It is built for the target and run on the board, and not run on the
+	// host.
 	boardOnly bool
 }
 
@@ -16613,7 +16614,7 @@ func main() {
 		name: "unsafe.Sizeof, Offsetof and Alignof of the target's layout",
 		src: `// unsafe.Sizeof, Offsetof and Alignof report the TARGET's layout: a member aligned on
 // four where it takes four bytes or more and on its own alignment otherwise, a
-// float64 four bytes, an int64 eight aligned on four, and a struct laid out twice, as
+// float64 and an int64 eight aligned on four, and a struct laid out twice, as
 // its C compiler does (targetLayout). Each value was measured against that compiler's
 // sizeof and offsetof on a P2-EDGE.
 import "unsafe"
@@ -16712,7 +16713,7 @@ func main() {
 	println("al", unsafe.Alignof(a.b), unsafe.Alignof(b.z), unsafe.Alignof(b.v), unsafe.Alignof(h.b), unsafe.Alignof(j.n), unsafe.Alignof(b.x))
 }
 `,
-		want: "0 0 true 0 0 0 0 0 0\nA 12 2 4 8\nB 36 8 12 18 20 28 32\nC 48 4 12 24 32 36 40\nD 20 4 16 12\nE 28 24 25 26\nG 12 4 8 4\nH 16 2 4 5 8\nI 16 1 2 4 8 12\nJ 8 4 4\nal 2 4 4 2 4 4\n",
+		want: "0 0 true 0 0 0 0 0 0\nA 12 2 4 8\nB 40 8 12 18 20 28 36\nC 48 4 12 24 32 36 40\nD 20 4 16 12\nE 28 24 25 26\nG 12 4 8 4\nH 16 2 4 5 8\nI 16 1 2 4 8 12\nJ 8 4 4\nal 2 4 4 2 4 4\n",
 	},
 	{
 		name: "unsafe layout of structs a second pass sizes",
@@ -42355,6 +42356,33 @@ func main() {
 }
 `,
 		want: "wrap32 -2147483648 2147483647 -2 -2147483648 -2147483648 -2 0\ncmp32 false false false true false\ndiv32 -2147483648 0 0 -1 -1073741824 0 -3 -1\ninc32 -2147483648 2147483647 -2147483648 0\nsub32 true 2147483647 -2147483648 true\nmul32 1 0 -2147483648 true -1\nwrap64 -9223372036854775808 9223372036854775807 -2 -9223372036854775808 -9223372036854775808\ncmp64 false false true false\ndiv64 -9223372036854775808 0 0 -1 -4611686018427387904\nmul64 1 0 -9223372036854775808 true\nu32 0 4294967295 1 0 0 4294967295 1\nucmp false true true -2147483648 -1 -2147483648\nu64 0 18446744073709551615 1 18446744073709551615 -1 4294967295 65535 255\nshl 0 1 2147483647 -2147483648 4294967295 1 4294967295\nshr 0 2147483647 -2147483648 4294967295 -2147483648 4294967295 -7\nshl 1 2 -2 0 4294967294 2 8589934590\nshr 1 1073741823 -1073741824 2147483647 -1073741824 2147483647 -4\nshl 31 -2147483648 -2147483648 0 2147483648 2147483648 9223372034707292160\nshr 31 0 -1 1 -1 1 -1\nshl 32 0 0 0 0 4294967296 18446744069414584320\nshr 32 0 -1 0 -1 0 -1\nshl 33 0 0 0 0 8589934592 18446744065119617024\nshr 33 0 -1 0 -1 0 -1\nshl 63 0 0 0 0 -9223372036854775808 9223372036854775808\nshr 63 0 -1 0 -1 0 -1\nshl 64 0 0 0 0 0 0\nshr 64 0 -1 0 -1 0 -1\nshl8 -2 -128 0 254 0 63 127 -1\ni8 -128 127 1 -128 -128 -1 -2 -128 127 -128 0\ni8cmp true true true false\ni8inc -128 127 -128\nu8 0 255 1 255 254 255 255 0\n16 -32768 0 -1020 65025\nconv -1 0 -1 0 255 4294967295 18446744073709551615 -1\nconv2 -1 -2147483648 4294967295 65535 -1 4294967295 0\nconv3 4294967295 9223372036854775808 0 -1 4294967295\n",
+	}, {
+		// A float64 is IEEE binary64, computed in software on the target (float64.go):
+		// 53 bits of significand, so 2^24 + 1 is held and 2^53 + 1 is not, 0.1 + 0.2 is
+		// not 0.3, a third is a float64's third and its float32 another, and the
+		// smallest subnormal and the largest finite value are Go's. The program was
+		// DIFFERENCES.md's first entry while a float64 was a float32, printing 0 on the
+		// board for the first line.
+		name: "a float64 has 53 bits of significand",
+		src: `func main() {
+	var x float64 = 16777217
+	println(int(x - 16777216))
+	a, b := 0.1, 0.2
+	printf("%v %v\n", a+b, a+b == 0.3)
+	var third float64 = 1
+	third /= 3
+	printf("%.17g %v\n", third, third*3)
+	var big float64 = 1 << 53
+	printf("%v %v\n", int64(big+1)-int64(big), int64(big+2)-int64(big))
+	var f32 float32 = float32(third)
+	printf("%v %v\n", f32, float64(f32) == third)
+	var tiny float64 = 5e-324
+	printf("%v %v\n", tiny, tiny/2)
+	var huge float64 = 1.7976931348623157e308
+	printf("%v %v\n", huge, huge*2)
+}
+`,
+		want: "1\n0.30000000000000004 false\n0.33333333333333331 1\n0 2\n0.33333334 false\n5e-324 0\n1.7976931348623157e+308 +Inf\n",
 	}, {
 		// The floating point edges in float32, which every float is on this target:
 		// rounding per operation, the special values and their comparisons, conversions

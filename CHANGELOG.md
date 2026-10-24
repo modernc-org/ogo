@@ -20,6 +20,16 @@ shipped section tells a reader on that version that they have behaviour they do 
 
 ### Behaviour changes
 
+- **A float64 is IEEE double precision**, as Go's is: 53 bits of significand,
+  every operation rounded to nearest even, computed in software (the P2 has no
+  floating-point hardware), where it was a float32 under its Go name. `var x
+  float64 = 16777217; println(int(x - 16777216))` printed 0 on a P2-EDGE and prints
+  1, as Go does, and DIFFERENCES.md's first entry is gone. `math` is Go's own pure
+  Go source over it, and declares MaxFloat64 and SmallestNonzeroFloat64. It costs:
+  an addition about 860 clocks at 160 MHz (a float32's 660), a division 2,900
+  (560), math.Sin 34,000 where the float32 library took 4,000; 6 KB of code where a
+  program uses one; a goroutine that prints one a stack of 1,536 longs. A program
+  with no float64 builds to the binary it did. unsafe.Sizeof of a float64 is 8.
 - **A store into another package's variable is asked what it stores**: `lib.K =
   "a"` for a `var K = 7`, a `var K = Two()` or any other written without a type
   was taken, and on a P2-EDGE `lib.K = 1.5` stored 1 -- and so was every store

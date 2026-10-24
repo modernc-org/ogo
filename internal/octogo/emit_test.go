@@ -2048,7 +2048,7 @@ func main() {
 	go p2.WriteByte('A')
 	go p2.WriteLUT(3, 7)
 	go p2.Rnd()
-	go math.Floor(2.5)
+	go math.Sqrt(2)
 	p2.WaitMs(10)
 }
 `
@@ -2065,14 +2065,15 @@ func main() {
 		"_txraw(a->ogo_a0);",
 		"ogo_wrlut(a->ogo_a0, a->ogo_a1);",
 		"(void)_rnd();",
-		"(void)floor(a->ogo_a0);",
+		"(void)ogo_f64_sqrt(a->ogo_a0);",
+		"typedef struct { int ogo_slot; ogo_f64 ogo_a0; }",
 		`if (a > 255) ogo_panic("LUT address out of range");`,
 	} {
 		if !strings.Contains(c, want) {
 			t.Errorf("missing %q in\n%s", want, c)
 		}
 	}
-	for _, bad := range []string{"p2_", "math_Floor(a->"} {
+	for _, bad := range []string{"p2_", "math_Sqrt(a->"} {
 		if strings.Contains(c, bad) {
 			t.Errorf("%q in\n%s", bad, c)
 		}

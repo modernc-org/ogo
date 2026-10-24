@@ -103,16 +103,25 @@ Until then an imaginary literal (the scanner) and complex64/complex128 where the
 program declares no such name (`errUndefined`) say "complex numbers are not
 supported yet"; flexcc has no `_Complex`, so the emitter will lower them itself.
 
-**float64 is to be IEEE double precision, in software, eventually** (the user's
-call, 2026-10-08, following an outside review). Today it is a float32 under its Go
-name, the target's C double having 32 bits, and that is DIFFERENCES.md's first
-entry. The P2 has no floating-point hardware at all, so float32 is software already
-and a binary64 costs a factor more, not an FPU's worth; refusing float64 was
+**float64 is IEEE double precision, in software** (the user's call, 2026-10-08,
+following an outside review; built on the `float64` branch 2026-10-24 for the user
+to weigh before it is merged). A float64 is `ogo_f64`, a struct of its two words
+(`internal/octogo/float64.go`): the arithmetic in words (SoftFloat-2's structure),
+the conversions, Go's strconv ported for printing, all emitted only where the C
+names the type (f64Section), so a program with no float64 has the C it had. Every
+untyped constant meeting a float64 is spelled as the float64 Go rounds it to
+(the checker's f64Consts, f64ConstOf), no literal converting to a struct. `math` is
+Go's own pure Go source (mathSrc), but Sqrt and the bits functions. The P2 has no
+floating-point hardware, so float32 is software already and binary64 costs a
+factor more: an addition 860 clocks to a float32's 660, a division 2,900 to 560,
+math.Sin 34,000 to the CORDIC-assisted C library's 4,000. Refusing float64 was
 declined, since an untyped float constant would then default to float32 and `x :=
-0.5` would differ from Go in its type. A release-sized job -- the arithmetic and
-conversion helpers over uint64, the constant fold, `math`, the exact printing, the
-fuzzer -- not scheduled; nothing before it should assume float64 is 32 bits where
-it can avoid it.
+0.5` would differ from Go in its type. **A new representation is asked every
+workaround its width already has**: each board fault the branch met was one the
+emitter routes around for an int64 or a struct, which the two-word float64 had not
+been given (a member of a call's result, a 64-bit cast of a 64-bit expression, a
+function value's two-word result, an aggregate element). The whole account is in
+`doc/LESSONS.md`, "A FLOAT64 OF TWO WORDS".
 
 **A channel is made as Go makes one** (the user's call, 2026-10-08, the review's
 first item; done 2026-10-09): `var ch chan T` is nil, `make(chan T)` makes one
@@ -789,7 +798,7 @@ helpers (guarded with `//lint:ignore U1000`); prefer them for temporary tracing.
 <title>", so it runs on the host, builds for the target and runs in `make board`;
 `TestDifferencesGo` runs it under Go and holds the "Go prints" block to what Go
 prints (a panic's trace dropped). `<!-- board-only: ... -->` keeps an entry off the
-host (a float64 is 64 bits there, `boardOnly`), `<!-- go-varies: ... -->` leaves
+host (its stack has no check, `boardOnly`), `<!-- go-varies: ... -->` leaves
 Go's output unchecked. **A behaviour that differs from Go is an entry there**, not
 only a paragraph of specs.go -- the page is what a Go programmer reads first.
 
@@ -1099,6 +1108,9 @@ section. A new finding goes there; the rule it leaves goes here too.
 
 **The target and its backend**
 
+- **A FLOAT64 OF TWO WORDS**: **A new representation is asked every workaround its
+  width already has: grep the gates for the int64 and the struct, and add the type,
+  before the board finds them one at a time.**
 - **A TEMPORARY IS A COG REGISTER**: every C local takes one of a pool of 480
   (`grep -c '\tres\t1' prog.p2asm` counts them), so a new lowering is asked what it
   hands a call BY VALUE.
