@@ -109,6 +109,17 @@ shipped section tells a reader on that version that they have behaviour they do 
   variable gt.pp points at -- in v0.58.0, which made the form compile. Each is
   refused now as `*t.pp = v` is.
 
+### Toolchain
+
+- **A program carries the data the code it runs names**: a function of a
+  package the compiler carries as source -- math, testing, errors, strings,
+  bytes -- that the program never calls is not written, and neither is a table
+  or a constant only such functions read. The backend dropped those functions but
+  kept their data: a program calling math.Sqrt carried 800 bytes of math's tables
+  and constants, a test program up to 644 bytes of the testing package's. Of the
+  run cases, the 22 that import such a package are smaller and every other one is
+  the binary it was.
+
 ### Fixed
 
 - **A struct or an array holding float64s is compared with `==` and `!=`**, and

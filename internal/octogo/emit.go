@@ -7504,7 +7504,9 @@ func emitProgram(pkg *Package, w io.Writer, opts []EmitOption, rename map[string
 	if len(e.layoutChecks) != 0 {
 		out.WriteString("\n#ifdef __FLEXC__\nstatic char ogo_layout_check[(" + strings.Join(e.layoutChecks, " && ") + ") ? 1 : -1];\n#endif\n")
 	}
-	text := wrapLongLines(ensureStdint(insertStringLits(e.endProgramC(e.f64Section(out.Bytes()), endsCogs), e.stringLitDecls)))
+	text := ensureStdint(insertStringLits(e.endProgramC(e.f64Section(out.Bytes()), endsCogs), e.stringLitDecls))
+	// The data the code main reaches does not name is not written (deaddata.go).
+	text = wrapLongLines(dropUnreachedData(text, e.embeddedFuncs))
 	if e.report != nil {
 		e.fillReport(text, pkgs)
 	}
@@ -7771,6 +7773,7 @@ type emitter struct {
 	goSlotSites       [][]int                   // the sites of each slot of its own, by slot
 	report            *Report                   // filled from the C this pass writes, for ogo build --report (WithReport)
 	reportFuncs       map[string]string         // the Go name of each function the C defines, by its C name (noteReportFunc)
+	embeddedFuncs     map[string]bool           // the functions the C defines of the packages the compiler carries as source, by their C names (noteEmbeddedFunc)
 	reportGos         map[string]string         // each go statement, by its trampoline's C name (noteReportGo)
 	chanElems         map[string]bool           // element C types that need an ogo_chan_<T> cell and helpers
 	chanInitElems     map[string]bool           // element types whose channel init helper is reached
@@ -18980,6 +18983,7 @@ func (e *emitter) emitFuncDecl(ast []int32) {
 		proto = e.funcSignatureC(cname, sig)
 		e.curFunc = cname
 		e.noteReportFunc(cname, name, "")
+		e.noteEmbeddedFunc(cname)
 	} else {
 		var recvNamed bool
 		recvName, recvCType, recvNamed = e.receiverInfo(recv)
@@ -18987,6 +18991,7 @@ func (e *emitter) emitFuncDecl(ast []int32) {
 		proto = e.methodSignatureC(cname, recvName, recvCType, sig)
 		e.curFunc = cname
 		e.noteReportFunc(cname, name, recvCType)
+		e.noteEmbeddedFunc(cname)
 		if a, isArr := e.namedArrays[recvCType]; isArr {
 			// Recorded as an ARRAY, not a plain local: that is what makes `r[i]`
 			// index it, `len(r)` fold to its extent and a bounds check apply.
