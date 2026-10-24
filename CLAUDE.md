@@ -1133,7 +1133,9 @@ section. A new finding goes there; the rule it leaves goes here too.
   asked.**
 - **A TEMPORARY IS A COG REGISTER**: every C local takes one of a pool of 480
   (`grep -c '\tres\t1' prog.p2asm` counts them), so a new lowering is asked what it
-  hands a call BY VALUE.
+  hands a call BY VALUE. **A program written as Go that fails the cog's registers is
+  split where its message says, and the split is the program's: the backend keeps
+  every printf argument live through the call** (dom63).
 - **A CALL IS DEAR, AND THE BACKEND INLINES WHAT IT IS TOLD TO**: **every inlined
   copy brings the registers of its locals to where it lands**; **A policy is
   measured by what it breaks**; **no program fails to build for having been made

@@ -3460,6 +3460,22 @@ order the emitter writes.** **A check reading a value against a type reads each 
 its own file: the value's file asks, and the type goes by its scope.** **A change to
 the checker is built against obeam and p2-11 before it is pushed: they are the
 packages of several files the suite does not have.**
+**dom63, linear algebra over float64** (2026-10-25). A 4x4 matrix type with
+methods, elimination with partial pivoting, an LU factorization behind an
+interface beside a Jacobi iteration, an inverse, least squares, a power iteration,
+norms from a table of function values, a product's rows from goroutines -- written
+as Go. One find: the row swap through pointers, `*x, *y = *y, *x`, was "a
+dereferenced array target is not supported yet" in a multiple assignment, where
+`*x = *y` built (5b90c09). The no-heap refusals named their remedies -- an
+errors.New in a function, a make of a non-constant length -- and main, as one
+function, held 132 locals checked and did not fit a cog, the backend's printf
+expansions holding every argument and the checks' panic paths; split into three
+stages it matched Go on the host and the board. Of its 400 mutants one was a
+deadlock (now DIFFERENCES.md's), and one Go's own compiler crashed on, go1.27.3 on
+every GOARCH: a loop storing zero into the diagonal of a zeroed local 2-D array
+(build/probes/go-ice, not reported). **A program written as Go that fails the
+cog's registers is split where its message says, and the split is the
+program's: the backend keeps every printf argument live through the call.**
 **A MARK IS MADE IN EMISSION ORDER, AND A LOOP RUNS ITS BODY AGAIN** (2026-10-08,
 found probing unsafe.Slice's views). The holder marks are set as statements are
 emitted, so a statement read a variable's mark as the statements BEFORE it had left
