@@ -20760,7 +20760,9 @@ func (f *File) checkConvTarget(s *Scope, ah Node, steps []Node, value Node) bool
 	if stars == 0 && !place {
 		return true // `(*T)(p) = v` stores into no place, which is another check's
 	}
-	t.f.checkStoreInto(s, t.s, t.tn, value, "assignment")
+	// This file's: the value is read here, and t's type node through its scope. The
+	// type's own file read the value's tokens by its own table.
+	f.checkStoreInto(s, t.s, t.tn, value, "assignment")
 	return true
 }
 
@@ -21296,7 +21298,10 @@ func (f *File) checkDerefAssign(s *Scope, base Token, rhsNode Node) {
 		// `*p = "x"`, and a constant stored into a float64 so was no float64.
 		if t, ok := f.varTypeAt(d); ok && t.f != nil {
 			if p, isPtr := t.tn.(*TypeNodePointer); isPtr {
-				t.f.checkStoreInto(s, t.s, p.TypeNode, rhsNode, "assignment")
+				// This file's, which the value is: the file the type was written in
+				// read the value's tokens by its own table, and panicked past it
+				// (obeam, its vm package in several files).
+				f.checkStoreInto(s, t.s, p.TypeNode, rhsNode, "assignment")
 				return // the defined type's question among the others
 			}
 		}

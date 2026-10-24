@@ -57741,6 +57741,15 @@ func TestCrossFileConsts(t *testing.T) {
 			want: "true\n",
 		},
 		{
+			// A store through the address of a field or an element of a type b.ogo
+			// declares, its value read by b.ogo's token table: past its end, the
+			// checker panicked (obeam, d714d01).
+			name: "a store through an address of what the other file's type holds",
+			a:    "func main() {\n\tvar t T\n\tvar a [2]T\n\tx, y, z := 1, 2, 3\n\tprintln(x + y + z)\n\tu := &t.n\n\t*u = 100 + 20 + 7\n\tw := &a[1].n\n\t*w = 7 + 8\n\tf := &t.f\n\t*f = 1 << 41\n\tprintln(t.n, a[1].n, t.f)\n}\n",
+			b:    "type T struct {\n\tn int8\n\tf float64\n}\n",
+			want: "6\n127 15 2.199023255552e+12\n",
+		},
+		{
 			// b.ogo's 2 sits at the index of a.ogo's 7, which is what was folded.
 			name: "a range check of the value the constant has",
 			a:    "const A = B * 100\n\nconst X = 7 + 8 + 9 + 10\n\nvar u8 uint8 = A\n\nfunc main() {\n\tprintln(A, X, u8, arr[0])\n}\n",
