@@ -104,8 +104,11 @@ program declares no such name (`errUndefined`) say "complex numbers are not
 supported yet"; flexcc has no `_Complex`, so the emitter will lower them itself.
 
 **float64 is IEEE double precision, in software** (the user's call, 2026-10-08,
-following an outside review; built on the `float64` branch 2026-10-24 for the user
-to weigh before it is merged). A float64 is `ogo_f64`, a struct of its two words
+following an outside review; built on a branch 2026-10-24, its costs weighed by the
+user and merged the same day, c9eb76c, with obeam's arenas shrunk to keep its VMs
+within the SD card's boot limit and the speed of the math functions left for
+later: a faster multiplication, which every one of them rests on, and a square
+root seeded by the CORDIC). A float64 is `ogo_f64`, a struct of its two words
 (`internal/octogo/float64.go`): the arithmetic in words (SoftFloat-2's structure),
 the conversions, Go's strconv ported for printing, all emitted only where the C
 names the type (f64Section), so a program with no float64 has the C it had. Every
