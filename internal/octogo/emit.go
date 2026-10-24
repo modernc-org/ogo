@@ -54474,6 +54474,11 @@ func (e *emitter) fieldEqCmp(ct, l, r string) string {
 		return structEqName(ct) + "(&(" + l + "), &(" + r + "))"
 	case e.isStruct(ct):
 		return structEqName(ct) + "(" + l + ", " + r + ")"
+	case e.underlyingCType(ct) == cF64:
+		// A float64 member or element as the operator compares one, NaN unequal to
+		// itself and the zeros equal (emitF64CompareTriple): C's == takes no struct,
+		// and `C{x, 1} == C{y, 1}` was refused by both compilers.
+		return "ogo_f64_eq(" + l + ", " + r + ")"
 	default:
 		return l + " == " + r
 	}

@@ -42384,6 +42384,45 @@ func main() {
 `,
 		want: "1\n0.30000000000000004 false\n0.33333333333333331 1\n0 2\n0.33333334 false\n5e-324 0\n1.7976931348623157e+308 +Inf\n",
 	}, {
+		// A struct or an array holding float64s compares each one as the operator
+		// does: NaN unequal to itself, the two zeros equal, a defined type over
+		// float64 the same, a nested array and a switch's case too. The equality
+		// helpers compared a member with C's ==, which takes no struct, and both
+		// compilers refused the program (dom61's variants, 2026-10-24).
+		name: "a struct or an array of float64s compared",
+		src: `import "math"
+
+type C struct{ re, im float64 }
+
+type Celsius float64
+
+type T struct {
+	n int
+	v [2]float64
+	c Celsius
+}
+
+func main() {
+	z := 0.0
+	nz := -z
+	n := math.NaN()
+	a := [2]float64{n, 1}
+	b := a
+	println(C{nz, 1} == C{z, 1}, C{n, 0} == C{n, 0}, C{1, n} != C{1, n}, a == b, a != b)
+	t1 := T{1, [2]float64{nz, 2}, 36.6}
+	t2 := T{1, [2]float64{z, 2}, 36.6}
+	t3 := T{1, [2]float64{z, 2}, Celsius(n)}
+	println(t1 == t2, t2 == t3, t3 == t3)
+	switch (C{0.5, nz}) {
+	case C{0.5, 1}:
+		println("one")
+	case C{0.5, z}:
+		println("zero")
+	}
+}
+`,
+		want: "true false true false true\ntrue false false\nzero\n",
+	}, {
 		// The floating point edges in float32, which every float is on this target:
 		// rounding per operation, the special values and their comparisons, conversions
 		// each way and how each prints, measured against Go on a P2-EDGE on 2026-09-18.

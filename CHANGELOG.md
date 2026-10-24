@@ -111,6 +111,11 @@ shipped section tells a reader on that version that they have behaviour they do 
 
 ### Fixed
 
+- **A struct or an array holding float64s is compared with `==` and `!=`**, and
+  switched on: NaN unequal to itself, the two zeros equal, as Go compares them.
+  Since a float64 is two words, `C{x, 1} == C{y, 1}` for a `struct{ re, im
+  float64 }` was refused by the C compiler of both the host and the target.
+
 - **A float32 prints in Go's shortest form near its upper neighbour**: 202 of
   1,992,125 float32s printed a digit short under print, println, %v and %g --
   2.4154078e+09 for Go's 2.4154079e+09 -- the shortest-form walk lacking Go's
