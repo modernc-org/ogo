@@ -116,9 +116,9 @@ shipped section tells a reader on that version that they have behaviour they do 
   Log1p, Logb, Ilogb, Pow10, Sincos, Erf, Erfc, Erfinv, Erfcinv, Gamma, Lgamma,
   J0, J1, Jn, Y0, Y1, Yn and FMA, beside the functions it had, each Go's own pure
   Go source and every value Go's on a P2-EDGE. A program carries the functions it
-  calls and their tables, and no other. A build of a program importing math takes
-  longer in the compiler, about 0.8 seconds where it took 0.24, the package being
-  three times the source.
+  calls and their tables, and no other, and the compiler emits only those: a
+  program calling math.Sqrt takes it 0.19 seconds, most of them the check of the
+  package, where it took 0.24 before.
 
 ### Toolchain
 

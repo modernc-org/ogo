@@ -6769,6 +6769,7 @@ func emitProgram(pkg *Package, w io.Writer, opts []EmitOption, rename map[string
 	// in `x := f()` and destructuring `a, b := f()`), and emit a result-struct
 	// typedef for each multi-result function (C has no multiple return, so a
 	// function returning N>1 values returns a struct of N fields).
+	e.noteMathReach(pkgs) // what of math is emitted at all (mathreach.go)
 	forEachFile(func() { e.collectResults(e.f.AST) })
 
 	// Pass 0.5: package-level constant declarations, emitted (in source order)
@@ -7774,6 +7775,8 @@ type emitter struct {
 	report            *Report                   // filled from the C this pass writes, for ogo build --report (WithReport)
 	reportFuncs       map[string]string         // the Go name of each function the C defines, by its C name (noteReportFunc)
 	embeddedFuncs     map[string]bool           // the functions the C defines of the packages the compiler carries as source, by their C names (noteEmbeddedFunc)
+	mathReach         map[string]bool           // the functions of math the program reaches, by name; nil emits all (noteMathReach)
+	mathVars          map[string]bool           // math's package variables, by name (noteMathReach)
 	reportGos         map[string]string         // each go statement, by its trampoline's C name (noteReportGo)
 	chanElems         map[string]bool           // element C types that need an ogo_chan_<T> cell and helpers
 	chanInitElems     map[string]bool           // element types whose channel init helper is reached
@@ -8104,7 +8107,9 @@ func (e *emitter) emitTopLevelDecl(ast []int32) {
 	for n := range it(ast) {
 		switch n.sym {
 		case FuncDecl:
-			e.emitFuncDecl(n.ast)
+			if !e.unreachedMath(n.ast) {
+				e.emitFuncDecl(n.ast)
+			}
 		case ConstDecl:
 			// Package-level constants are emitted in an earlier pass
 			// (emitPackageConsts), before the functions that reference them.
@@ -10766,7 +10771,7 @@ func (e *emitter) emitPackageVars(ast []int32) {
 				continue
 			}
 			for d := range it(c.ast) {
-				if d.sym == VarDecl {
+				if d.sym == VarDecl && !e.unreachedMathVar(d.ast) {
 					e.emitPackageVarDecl(d.ast)
 				}
 			}
@@ -18661,7 +18666,7 @@ func (e *emitter) eachFuncDeclAST(ast []int32, fn func(d []int32)) {
 				continue
 			}
 			for d := range it(c.ast) {
-				if d.sym == FuncDecl {
+				if d.sym == FuncDecl && !e.unreachedMath(d.ast) {
 					fn(d.ast)
 				}
 			}
