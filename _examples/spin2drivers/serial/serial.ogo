@@ -1,0 +1,22 @@
+// Package serial is Stephen Moraco's isp_octoport_serial.spin2, the eight-port
+// serial driver Rayman's VTS PLC runs its Modbus port and its gauges on, called from
+// OctoGo: each function here has no body and is the PUB method of its name.
+
+// The pull-ups AddPort takes for a transmit pin: PullNone floats its high level,
+// for a line pulled up outside, and a bare P2-EDGE's console line is not.
+const (
+	PullNone = 0
+	Pull1K5  = 1
+)
+
+func AddPort(rxp, txp, mode, baudrate, txPullup int32) int32
+
+func Start() int32
+
+func Stop()
+
+func Tx(portHandle, nChar int32)
+
+func TxComplete(portHandle int32) int32
+
+func RxCheck(portHandle int32) int32

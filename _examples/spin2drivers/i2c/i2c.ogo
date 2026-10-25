@@ -1,0 +1,29 @@
+// Package i2c is Jon McPhalen's jm_i2c.spin2, as Rayman's VTS PLC uses it to talk
+// to its front panel's PCA9673 expanders, called from OctoGo: each function here
+// has no body and is the PUB method of its name in jm_i2c.spin2.
+
+// The pull-ups Setup takes, jm_i2c's PU_ constants.
+const (
+	PullExternal = 0
+	Pull1K5      = 1
+	Pull3K3      = 2
+	Pull15K      = 3
+)
+
+// The acknowledgement Read sends and Write answers: 0 acknowledged, 1 not.
+const (
+	Ack = 0
+	Nak = 1
+)
+
+func Setup(scl, sda, khz, pullup int32)
+
+func Present(slaveid int32) int32
+
+func Start()
+
+func Write(b int32) int32
+
+func Read(ackbit int32) int32
+
+func Stop()

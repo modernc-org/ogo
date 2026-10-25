@@ -1,0 +1,81 @@
+// Spin2 drivers called from OctoGo as they are: the two that Rayman's vacuum PLC
+// (../vacuum) runs on, Jon McPhalen's jm_i2c and Stephen Moraco's eight-port serial
+// driver isp_octoport_serial, both MIT-licensed, their files here unchanged. Each
+// sits in a package of its own beside an .ogo file declaring the methods used as
+// functions without a body, which bind to the PUB method of the same name; the
+// arguments and results cross as longs.
+//
+// The serial driver runs on the console's pins, 63 and 62, where the PLC answers
+// Modbus, and says everything this program says: printf would fight it for pin 62.
+// jm_i2c scans the panel's bus on pins 36 and 37, where nothing answers on a bare
+// P2-EDGE. Its transmit pin is given a 1.5k pull-up: the driver's PullNone floats
+// the line's high level, for a line pulled up outside the chip.
+import (
+	"i2c"
+	"p2"
+	"serial"
+)
+
+var port int32
+
+func send(s string) {
+	for i := 0; i < len(s); i++ {
+		serial.Tx(port, int32(s[i]))
+		for serial.TxComplete(port) == 0 {
+		}
+	}
+}
+
+func sendNum(n int32) {
+	var buf [12]byte
+	i := len(buf)
+	neg := n < 0
+	if neg {
+		n = -n
+	}
+	for {
+		i--
+		buf[i] = byte('0' + n%10)
+		n /= 10
+		if n == 0 {
+			break
+		}
+	}
+	if neg {
+		i--
+		buf[i] = '-'
+	}
+	for _, c := range buf[i:] {
+		serial.Tx(port, int32(c))
+		for serial.TxComplete(port) == 0 {
+		}
+	}
+}
+
+func main() {
+	port = serial.AddPort(63, 62, 0, 230400, serial.Pull1K5)
+	ok := serial.Start()
+	send("octoport port ")
+	sendNum(port)
+	send(" started ")
+	sendNum(ok)
+	send("\r\n")
+
+	i2c.Setup(36, 37, 100, i2c.Pull3K3)
+	found := int32(0)
+	for a := int32(0x08); a < 0x78; a++ {
+		if i2c.Present(a<<1) != 0 {
+			found++
+		}
+	}
+	send("i2c devices ")
+	sendNum(found)
+	i2c.Start()
+	ack := i2c.Write(0x48)
+	i2c.Stop()
+	send(", PCA9673 at $48 ack ")
+	sendNum(ack)
+	send("\r\n")
+	p2.WaitMs(10)
+	serial.Stop()
+}

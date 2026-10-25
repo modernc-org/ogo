@@ -136,6 +136,14 @@ shipped section tells a reader on that version that they have behaviour they do 
 
 ### Toolchain
 
+- **`_examples/vacuum`**: a vacuum system's PLC, after the Spin2 one Rayman
+  posted on the Parallax forum -- a scan loop driving pumps and valves and a front
+  panel on I2C expanders, a Modbus RTU server and the gauges' serial lines on cogs
+  of their own, interlocks, a safe state, an LCD status screen -- its hardware
+  modelled, so it imports nothing and is held to Go's output on the host and the
+  board. **`_examples/spin2drivers`** calls the two Spin2 drivers that PLC runs
+  on, jm_i2c and isp_octoport_serial, unchanged, from packages of bodyless
+  functions.
 - **A function passing many slices or strings to calls fits a cog**: the backend
   kept every value of several words a function held in registers -- a slice
   passed as an argument, a string, a 64-bit value -- in registers of its own to

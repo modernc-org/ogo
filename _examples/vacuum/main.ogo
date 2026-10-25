@@ -1,0 +1,1285 @@
+// A vacuum system's PLC, after the one Rayman wrote in Spin2 for a P2 and posted
+// on the Parallax forum in October 2026 (VTS_ModbusRTC_1j), written the way a Go
+// programmer would write it. The main cog runs a scan loop: it reads the inputs,
+// drives the pumps and valves, lights the front panel's start/stop buttons through
+// two PCA9673 I2C expanders and takes the buttons pushed. A Modbus RTU server runs
+// on a goroutine of its own, a cog, and the vacuum gauges' serial lines are parsed
+// on another. Turning an output on goes through the interlocks; an expander that
+// stops answering for three scans puts the plant in a safe state; a gauge that
+// falls silent goes stale on its own. The goroutines meet the scan loop over
+// channels: the Modbus server asks the scan loop to make each write, inside a
+// select, so the PLC's state has one owner.
+//
+// The hardware is modelled, so the example runs anywhere and prints the same on a
+// P2 as under Go: the pins, the I2C bus with its two expanders (the second stops
+// answering for a while), the gauges over a chamber whose pressure the pumps and
+// valves move, a Modbus master sending good frames and bad ones, and the 160x128
+// status screen of the panel's 1.8" LCD, which is drawn and checksummed. The
+// operator's scenario is in operator and master. On the real board the models give
+// way to the pins and to Spin2 drivers like the ones in ../spin2drivers, which
+// call Rayman's own unchanged.
+import (
+	"bytes"
+	"errors"
+	"math"
+)
+
+// The PLC's inputs, as its terminals number them.
+const (
+	InLocalRemote = iota // 1: the Modbus master has control
+	InAutoManual
+	InOverTemp  // 1: the diffusion pump is too hot
+	InWaterFlow // 1: cooling water flows
+	InGateOpen
+	InGateClosed
+	InSystemStart
+	InSystemStop
+	NumInputs
+)
+
+// The outputs, in the one order the panel, the coils and the status bits use.
+const (
+	OutRoughPump = iota
+	OutDiffusionPump
+	OutHoldingPump
+	OutRoughingValve
+	OutHoldingValve
+	OutBackingValve
+	OutGateValve
+	OutControlOnline
+	NumOutputs
+)
+
+var outNames = [NumOutputs]string{
+	"rough pump", "diffusion pump", "holding pump", "roughing valve",
+	"holding valve", "backing valve", "gate valve", "online",
+}
+
+// PinBank is the P2's pins the PLC uses: the inputs as the plant sets them and the
+// outputs as the PLC drives them.
+type PinBank struct {
+	in, out uint32
+	drives  int
+}
+
+func (p *PinBank) Input(n int) bool {
+	return p.in>>uint(n)&1 != 0
+}
+
+func (p *PinBank) SetInput(n int, v bool) {
+	if v {
+		p.in |= 1 << uint(n)
+	} else {
+		p.in &^= 1 << uint(n)
+	}
+}
+
+func (p *PinBank) Output(n int) bool { return p.out>>uint(n)&1 != 0 }
+
+func (p *PinBank) Drive(n int, v bool) {
+	if v {
+		p.out |= 1 << uint(n)
+	} else {
+		p.out &^= 1 << uint(n)
+	}
+	p.drives++
+}
+
+// I2C is the bus the expanders hang on, as jm_i2c drives it.
+type I2C interface {
+	Start()
+	Write(b byte) bool // reports the acknowledgement
+	Read(more bool) byte
+	Stop()
+}
+
+// Expander is a PCA9673: sixteen quasi-bidirectional pins written and read as two
+// bytes, the high one first. The upper eight light the panel's buttons, lit when
+// written 0; the lower eight read the buttons. A stop button holds its pin low
+// until pushed, a start button lets its pin float high until pushed.
+type Expander struct {
+	addr   byte
+	latch  uint16
+	pins   uint16
+	dead   bool
+	writes int
+	reads  int
+}
+
+const idleButtons = 0x55 // every start pin high, every stop pin low
+
+func (x *Expander) read() uint16 { return x.latch&0xFF00 | x.pins&0x00FF }
+
+// Bus models the I2C bus and the two expanders on it.
+type Bus struct {
+	dev  [2]Expander
+	sel  int // the expander addressed, -1 for none
+	rd   bool
+	n    int // bytes since the address
+	hi   byte
+	acks int
+	naks int
+}
+
+func (b *Bus) Start() {
+	b.sel, b.n = -1, -1
+}
+
+func (b *Bus) Write(v byte) bool {
+	if b.n < 0 {
+		b.n = 0
+		for i := range b.dev {
+			if b.dev[i].addr == v&^1 && !b.dev[i].dead {
+				b.sel, b.rd = i, v&1 != 0
+				b.acks++
+				return true
+			}
+		}
+		b.naks++
+		return false
+	}
+	if b.sel < 0 || b.rd {
+		b.naks++
+		return false
+	}
+	switch b.n {
+	case 0:
+		b.hi = v
+	case 1:
+		b.dev[b.sel].latch = uint16(b.hi)<<8 | uint16(v)
+		b.dev[b.sel].writes++
+	}
+	b.n++
+	b.acks++
+	return true
+}
+
+func (b *Bus) Read(more bool) byte {
+	if b.sel < 0 || !b.rd {
+		return 0xFF
+	}
+	v := b.dev[b.sel].read()
+	b.n++
+	if b.n == 1 {
+		return byte(v >> 8)
+	}
+	b.dev[b.sel].reads++
+	return byte(v)
+}
+
+func (b *Bus) Stop() { b.sel = -1 }
+
+// The panel: two expanders of four start/stop pairs each, the outputs they show.
+// The first pair of the second is the online lamp, which no button sets.
+var (
+	expanderAddr = [2]byte{0x48, 0x4C}
+	panelLayout  = [2][4]int{
+		{OutRoughingValve, OutHoldingPump, OutDiffusionPump, OutRoughPump},
+		{OutControlOnline, OutGateValve, OutBackingValve, OutHoldingValve},
+	}
+)
+
+var (
+	ErrLocal     = errors.New("the panel has control")
+	ErrRemote    = errors.New("the master has control")
+	ErrInterlock = errors.New("interlock")
+	ErrFault     = errors.New("fault")
+)
+
+const (
+	MaxNaks      = 3  // scans the panel may fail before the plant is made safe
+	WarmUp       = 6  // scans the diffusion pump takes to work
+	RegCrossover = 0  // holding register: the pressure, mTorr, below which the gate may open
+	RegScan      = 1  // holding register: written by the master, read back
+	NumHolding   = 4  // holding registers
+	NumInputRegs = 10 // input registers
+	NumDiscrete  = 11 // discrete inputs: the eight inputs, the fault, two stale gauges
+)
+
+// PLC is the controller's state, the scan loop's own.
+type PLC struct {
+	pins     PinBank
+	bus      I2C
+	scan     int
+	fault    bool
+	faults   int
+	nakScans int
+	mt       [3]int32 // the gauges of the first line, mTorr, -1 for no reading
+	nt       int32    // the high-vac gauge, nTorr, -1 for no reading
+	stale    [2]bool
+	holding  [NumHolding]uint16
+	dpOnAt   int
+	refused  int
+	lights   [2]uint16
+}
+
+func onOff(on bool) string {
+	if on {
+		return "on"
+	}
+	return "off"
+}
+
+// drive sets output o, saying so when it changes.
+func (c *PLC) drive(o int, on bool) {
+	if c.pins.Output(o) == on {
+		return
+	}
+	c.pins.Drive(o, on)
+	if o == OutDiffusionPump && on {
+		c.dpOnAt = c.scan
+	}
+	printf("%3d %-14s %s\n", c.scan, outNames[o], onOff(on))
+}
+
+// permit says whether output o may come on now.
+func (c *PLC) permit(o int) error {
+	p := &c.pins
+	switch o {
+	case OutDiffusionPump:
+		if !p.Input(InWaterFlow) || p.Input(InOverTemp) || !p.Output(OutHoldingPump) {
+			return ErrInterlock
+		}
+	case OutGateValve:
+		if !c.dpHot() || p.Output(OutRoughingValve) || c.mt[0] < 0 || c.mt[0] > int32(c.holding[RegCrossover]) {
+			return ErrInterlock
+		}
+	case OutRoughingValve:
+		if !p.Output(OutRoughPump) || p.Output(OutGateValve) {
+			return ErrInterlock
+		}
+	case OutBackingValve:
+		if !p.Output(OutRoughPump) {
+			return ErrInterlock
+		}
+	case OutHoldingValve:
+		if !p.Output(OutHoldingPump) {
+			return ErrInterlock
+		}
+	case OutControlOnline:
+		return ErrInterlock
+	}
+	return nil
+}
+
+func (c *PLC) dpHot() bool {
+	return c.pins.Output(OutDiffusionPump) && c.scan-c.dpOnAt >= WarmUp
+}
+
+// request turns output o on or off for the panel or the master.
+func (c *PLC) request(o int, on, remote bool) error {
+	err := c.set(o, on, remote)
+	if err != nil {
+		c.refused++
+		who := "panel"
+		if remote {
+			who = "master"
+		}
+		printf("%3d %-6s %-14s %-3s refused: %v\n", c.scan, who, outNames[o], onOff(on), err)
+	}
+	return err
+}
+
+func (c *PLC) set(o int, on, remote bool) error {
+	if c.pins.Input(InLocalRemote) != remote {
+		if remote {
+			return ErrLocal
+		}
+		return ErrRemote
+	}
+	if on {
+		if c.fault {
+			return ErrFault
+		}
+		if err := c.permit(o); err != nil {
+			return err
+		}
+	}
+	c.drive(o, on)
+	return nil
+}
+
+// trips takes back what the interlocks no longer allow.
+func (c *PLC) trips() {
+	p := &c.pins
+	if p.Output(OutDiffusionPump) && (!p.Input(InWaterFlow) || p.Input(InOverTemp)) {
+		printf("%3d trip: diffusion pump, water %v, overtemp %v\n", c.scan, p.Input(InWaterFlow), p.Input(InOverTemp))
+		c.drive(OutGateValve, false)
+		c.drive(OutDiffusionPump, false)
+	}
+	if p.Output(OutGateValve) && !p.Output(OutDiffusionPump) {
+		c.drive(OutGateValve, false)
+	}
+	if p.Output(OutRoughingValve) && !p.Output(OutRoughPump) {
+		c.drive(OutRoughingValve, false)
+	}
+}
+
+// safe is the plant's state when the panel stops answering: the chamber closed off
+// and the diffusion pump stopped; the mechanical pumps run on.
+func (c *PLC) safe() {
+	for _, o := range [...]int{OutGateValve, OutRoughingValve, OutDiffusionPump} {
+		c.drive(o, false)
+	}
+}
+
+func (c *PLC) write16(addr byte, v uint16) bool {
+	c.bus.Start()
+	defer c.bus.Stop()
+	return c.bus.Write(addr) && c.bus.Write(byte(v>>8)) && c.bus.Write(byte(v))
+}
+
+func (c *PLC) read16(addr byte) (uint16, bool) {
+	c.bus.Start()
+	defer c.bus.Stop()
+	if !c.bus.Write(addr | 1) {
+		return 0, false
+	}
+	hi := c.bus.Read(true)
+	lo := c.bus.Read(false)
+	return uint16(hi)<<8 | uint16(lo), true
+}
+
+// panel lights the buttons to show the outputs and takes the buttons pushed. It
+// reports whether both expanders answered.
+func (c *PLC) panel() bool {
+	ok := true
+	for e := range panelLayout {
+		out := uint16(0xFFFF)
+		for i, o := range panelLayout[e] {
+			if c.pins.Output(o) {
+				out &^= 1 << uint(8+2*i+1) // the start lamp
+			} else {
+				out &^= 1 << uint(8+2*i) // the stop lamp
+			}
+		}
+		if !c.write16(expanderAddr[e], out) {
+			ok = false
+			continue
+		}
+		c.lights[e] = out
+		in, good := c.read16(expanderAddr[e])
+		if !good {
+			ok = false
+			continue
+		}
+		for i, o := range panelLayout[e] {
+			if o == OutControlOnline {
+				continue
+			}
+			if in>>uint(7-2*i)&1 == 1 {
+				c.request(o, false, false)
+			}
+			if in>>uint(6-2*i)&1 == 0 {
+				c.request(o, true, false)
+			}
+		}
+	}
+	return ok
+}
+
+// step is one scan of the loop.
+func (c *PLC) step() {
+	c.trips()
+	if c.panel() {
+		if c.nakScans >= MaxNaks {
+			printf("%3d panel answers again\n", c.scan)
+			c.fault = false
+		}
+		c.nakScans = 0
+	} else if c.nakScans++; c.nakScans == MaxNaks {
+		c.fault = true
+		c.faults++
+		printf("%3d fault: the panel does not answer, plant made safe\n", c.scan)
+		c.safe()
+	}
+	c.drive(OutControlOnline, !c.fault)
+}
+
+// Chamber is the vacuum the PLC works: its pressure and the foreline's, Torr.
+type Chamber struct {
+	p, pf float32
+}
+
+func (ch *Chamber) step(pins *PinBank, dpHot bool) {
+	ch.p += 2e-7 + ch.p*0.002
+	ch.pf += 1e-4
+	if pins.Output(OutRoughPump) && pins.Output(OutRoughingValve) {
+		ch.p -= (ch.p - 5e-3) * 0.3
+	}
+	if pins.Output(OutRoughPump) && pins.Output(OutBackingValve) || pins.Output(OutHoldingPump) && pins.Output(OutHoldingValve) {
+		ch.pf -= (ch.pf - 2e-3) * 0.4
+	}
+	if dpHot && pins.Output(OutGateValve) && ch.pf < 0.1 {
+		ch.p -= (ch.p - 4e-8) * 0.45
+	}
+	ch.p = min(max(ch.p, 1e-9), 760)
+	ch.pf = min(max(ch.pf, 1e-4), 760)
+}
+
+// sci appends x as a gauge prints it, "1.23e-03".
+func sci(dst []byte, x float32) []byte {
+	v := float64(x)
+	e := int(math.Floor(math.Log10(v)))
+	m := int(math.Round(v / math.Pow(10, float64(e)) * 100))
+	switch {
+	case m >= 1000:
+		m = (m + 5) / 10
+		e++
+	case m < 100:
+		m *= 10
+		e--
+	}
+	dst = append(dst, byte('0'+m/100), '.', byte('0'+m/10%10), byte('0'+m%10), 'e')
+	if e < 0 {
+		dst = append(dst, '-')
+		e = -e
+	} else {
+		dst = append(dst, '+')
+	}
+	return append(dst, byte('0'+e/10), byte('0'+e%10))
+}
+
+// The gauges' serial lines, a byte at a time, Silent for a line's time with no byte.
+const Silent = -1
+
+var (
+	vac1     = make(chan int)
+	vac2     = make(chan int)
+	readings = make(chan Reading)
+)
+
+// Reading is what the gauge cog makes of a line from each gauge.
+type Reading struct {
+	MT1, MT2, MT3 int32
+	NT            int32
+	Stale1        bool
+	Stale2        bool
+}
+
+// getLine reads a line, or the silence of one, off a gauge's serial line.
+func getLine(ch chan int, buf []byte) (int, bool) {
+	n := 0
+	for {
+		c, ok := <-ch
+		switch {
+		case !ok:
+			return 0, false
+		case c == Silent:
+			return -1, true
+		case c == '\n':
+			return n, true
+		case c == '\r':
+		default:
+			if n < len(buf) {
+				buf[n] = byte(c)
+				n++
+			}
+		}
+	}
+}
+
+// reading parses "VACn=d.dde-xx" into the pressure times 10^shift, -1 for a token
+// it cannot read, 0 for "RANGE".
+func reading(tok []byte, n byte, shift int) int32 {
+	if len(tok) < 6 || !bytes.HasPrefix(tok, []byte("VAC")) || tok[3] != n || tok[4] != '=' {
+		return -1
+	}
+	v := tok[5:]
+	if bytes.Equal(v, []byte("RANGE")) {
+		return 0
+	}
+	mant, frac, e, i := 0, 0, 0, 0
+	dot := false
+	for ; i < len(v) && v[i] != 'e'; i++ {
+		switch c := v[i]; {
+		case c == '.' && !dot:
+			dot = true
+		case '0' <= c && c <= '9':
+			mant = mant*10 + int(c-'0')
+			if dot {
+				frac++
+			}
+		default:
+			return -1
+		}
+	}
+	if i+2 >= len(v) || v[i+1] != '-' && v[i+1] != '+' {
+		return -1
+	}
+	neg := v[i+1] == '-'
+	for _, c := range v[i+2:] {
+		if c < '0' || c > '9' {
+			return -1
+		}
+		e = e*10 + int(c-'0')
+	}
+	if neg {
+		e = -e
+	}
+	sig := float32(mant) / float32(math.Pow10(frac))
+	return int32(math.Round(float64(sig * float32(math.Pow10(e+shift)))))
+}
+
+// gauges is the gauge cog: a line from the high-vac gauge, then one from the
+// thermocouple gauges, and what it made of them for each pair.
+func gauges() {
+	var line [64]byte
+	for {
+		var r Reading
+		n, ok := getLine(vac2, line[:])
+		if !ok {
+			close(readings)
+			return
+		}
+		if n < 0 {
+			r.Stale2, r.NT = true, -1
+		} else {
+			r.NT = reading(line[:n], '1', 9)
+		}
+		if n, ok = getLine(vac1, line[:]); !ok {
+			close(readings)
+			return
+		}
+		r.MT1, r.MT2, r.MT3 = -1, -1, -1
+		if n < 0 {
+			r.Stale1 = true
+		} else {
+			rest := line[:n]
+			for k := byte('1'); k <= '3'; k++ {
+				tok, after, _ := bytes.Cut(rest, []byte(" "))
+				rest = after
+				v := reading(tok, k, 3)
+				switch k {
+				case '1':
+					r.MT1 = v
+				case '2':
+					r.MT2 = v
+				case '3':
+					r.MT3 = v
+				}
+			}
+		}
+		readings <- r
+	}
+}
+
+var (
+	plc     PLC
+	bus     Bus
+	chamber = Chamber{p: 760, pf: 760}
+	gaugeTx [64]byte
+)
+
+// send writes a gauge's line on its serial line, or silence.
+func send(ch chan int, line []byte, silent bool) {
+	if silent {
+		ch <- Silent
+		return
+	}
+	for _, b := range line {
+		ch <- int(b)
+	}
+}
+
+// gaugeTick is the gauges sending their lines, and the PLC taking what the gauge cog
+// read: the high-vac gauge reads from 1e-9 to 1e-3 Torr, the thermocouple below 2
+// Torr, the foreline gauge always, and the third is the vent line's.
+func gaugeTick(silent2, silent1 bool) {
+	l := gaugeTx[:0]
+	l = append(l, "VAC1="...)
+	if chamber.p < 1e-3 {
+		l = sci(l, chamber.p)
+	} else {
+		l = append(l, "RANGE"...)
+	}
+	l = append(l, '\r', '\n')
+	send(vac2, l, silent2)
+	l = gaugeTx[:0]
+	l = append(l, "VAC1="...)
+	if chamber.p < 2 && chamber.p >= 1e-3 {
+		l = sci(l, chamber.p)
+	} else {
+		l = append(l, "RANGE"...)
+	}
+	l = append(l, " VAC2="...)
+	l = sci(l, chamber.pf)
+	l = append(l, " VAC3=7.60e+02\r\n"...)
+	send(vac1, l, silent1)
+	r := <-readings
+	plc.nt = r.NT
+	plc.stale[0], plc.stale[1] = r.Stale1, r.Stale2
+	if !r.Stale1 {
+		plc.mt = [3]int32{r.MT1, r.MT2, r.MT3}
+	}
+}
+
+// Modbus RTU.
+const (
+	SlaveID         = 0x0A
+	Gap             = -1 // three and a half characters of silence: a frame ends
+	IllegalFunction = 1
+	IllegalAddress  = 2
+	IllegalValue    = 3
+	DeviceFailure   = 4
+)
+
+var crcTab [256]uint16
+
+func init() {
+	for i := range crcTab {
+		c := uint16(i)
+		for k := 0; k < 8; k++ {
+			if c&1 != 0 {
+				c = c>>1 ^ 0xA001
+			} else {
+				c >>= 1
+			}
+		}
+		crcTab[i] = c
+	}
+}
+
+func crc16(p []byte) uint16 {
+	crc := uint16(0xFFFF)
+	for _, b := range p {
+		crc = crc>>8 ^ crcTab[byte(crc)^b]
+	}
+	return crc
+}
+
+// crc16Bits is the same CRC a bit at a time, as v3_crc16 computes it with CRCNIB.
+func crc16Bits(p []byte) uint16 {
+	crc := uint16(0xFFFF)
+	for _, b := range p {
+		crc ^= uint16(b)
+		for k := 0; k < 8; k++ {
+			lsb := crc & 1
+			crc >>= 1
+			if lsb != 0 {
+				crc ^= 0xA001
+			}
+		}
+	}
+	return crc
+}
+
+func be16(b []byte) int { return int(b[0])<<8 | int(b[1]) }
+
+var (
+	mbRx     = make(chan int) // master to server: bytes, then Gap
+	mbTx     = make(chan int) // server to master
+	cmds     = make(chan Cmd) // server to PLC: a write it was asked for
+	verdicts = make(chan byte)
+	mbFrame  [256]byte
+	mbReply  [256]byte
+	crcBad   int
+	frames   int
+)
+
+const (
+	CoilWrite = iota + 1
+	RegWrite
+)
+
+// Cmd is a write the master asked for, which the PLC takes or refuses.
+type Cmd struct {
+	Kind, Addr, Value int
+}
+
+// modbus is the server's cog: a frame at a time, its reply, then a gap -- a reply
+// of no bytes where none is to be sent.
+func modbus() {
+	for {
+		n := 0
+		for {
+			c, ok := <-mbRx
+			if !ok {
+				close(mbTx)
+				return
+			}
+			if c == Gap {
+				break
+			}
+			if n < len(mbFrame) {
+				mbFrame[n] = byte(c)
+			}
+			n++
+		}
+		m := 0
+		if n <= len(mbFrame) {
+			m = serve(mbFrame[:n])
+		}
+		for _, b := range mbReply[:m] {
+			mbTx <- int(b)
+		}
+		mbTx <- Gap
+	}
+}
+
+// serve answers the frame q into mbReply and reports how long the answer is.
+func serve(q []byte) int {
+	if len(q) < 4 || q[0] != SlaveID && q[0] != 0 {
+		return 0
+	}
+	if crc16(q[:len(q)-2]) != uint16(q[len(q)-1])<<8|uint16(q[len(q)-2]) {
+		crcBad++
+		return 0
+	}
+	frames++
+	r := append(mbReply[:0], q[0], q[1])
+	body := q[2 : len(q)-2]
+	var ex byte
+	switch fn := q[1]; fn {
+	case 1, 2:
+		r, ex = readBits(r, fn, body)
+	case 3, 4:
+		r, ex = readRegs(r, fn, body)
+	case 5:
+		r, ex = writeCoil(r, body)
+	case 6:
+		r, ex = writeReg(r, body)
+	case 15:
+		r, ex = writeCoils(r, body)
+	case 17:
+		r = append(r, 9, SlaveID, 0xFF)
+		r = append(r, "VTS-OGO"...)
+	default:
+		ex = IllegalFunction
+	}
+	if ex != 0 {
+		r = append(mbReply[:1], q[1]|0x80, ex)
+	}
+	if q[0] == 0 {
+		return 0 // a broadcast is not answered
+	}
+	c := crc16(r)
+	r = append(r, byte(c), byte(c>>8))
+	return len(r)
+}
+
+func bit(fn byte, n int) bool {
+	if fn == 1 {
+		return plc.pins.Output(n)
+	}
+	switch {
+	case n < NumInputs:
+		return plc.pins.Input(n)
+	case n == 8:
+		return plc.fault
+	}
+	return plc.stale[n-9]
+}
+
+func readBits(r []byte, fn byte, b []byte) ([]byte, byte) {
+	if len(b) != 4 {
+		return r, IllegalValue
+	}
+	start, count := be16(b), be16(b[2:])
+	if count < 1 || count > 2000 {
+		return r, IllegalValue
+	}
+	limit := NumOutputs
+	if fn == 2 {
+		limit = NumDiscrete
+	}
+	if start+count > limit {
+		return r, IllegalAddress
+	}
+	nb := (count + 7) / 8
+	r = append(r, byte(nb))
+	for i := 0; i < nb; i++ {
+		var v byte
+		for k := 0; k < 8 && i*8+k < count; k++ {
+			if bit(fn, start+i*8+k) {
+				v |= 1 << uint(k)
+			}
+		}
+		r = append(r, v)
+	}
+	return r, 0
+}
+
+// reg is a register: a holding one, or an input one -- the gauges' readings as
+// 32-bit values, the high word first, then the scan and the faults.
+func reg(fn byte, i int) uint16 {
+	if fn == 3 {
+		return plc.holding[i]
+	}
+	var v int32
+	switch i / 2 {
+	case 0, 1, 2:
+		v = plc.mt[i/2]
+	case 3:
+		v = plc.nt
+	default:
+		if i == 8 {
+			return uint16(plc.scan)
+		}
+		return uint16(plc.faults)
+	}
+	if i%2 == 0 {
+		return uint16(uint32(v) >> 16)
+	}
+	return uint16(v)
+}
+
+func readRegs(r []byte, fn byte, b []byte) ([]byte, byte) {
+	if len(b) != 4 {
+		return r, IllegalValue
+	}
+	start, count := be16(b), be16(b[2:])
+	if count < 1 || count > 125 {
+		return r, IllegalValue
+	}
+	limit := NumHolding
+	if fn == 4 {
+		limit = NumInputRegs
+	}
+	if start+count > limit {
+		return r, IllegalAddress
+	}
+	r = append(r, byte(2*count))
+	for i := start; i < start+count; i++ {
+		v := reg(fn, i)
+		r = append(r, byte(v>>8), byte(v))
+	}
+	return r, 0
+}
+
+// ask hands a write to the PLC and waits for its verdict.
+func ask(kind, addr, value int) byte {
+	cmds <- Cmd{Kind: kind, Addr: addr, Value: value}
+	return <-verdicts
+}
+
+func writeCoil(r []byte, b []byte) ([]byte, byte) {
+	if len(b) != 4 {
+		return r, IllegalValue
+	}
+	addr, v := be16(b), be16(b[2:])
+	if v != 0xFF00 && v != 0 {
+		return r, IllegalValue
+	}
+	if addr >= NumOutputs {
+		return r, IllegalAddress
+	}
+	if ex := ask(CoilWrite, addr, v); ex != 0 {
+		return r, ex
+	}
+	return append(r, b...), 0
+}
+
+func writeReg(r []byte, b []byte) ([]byte, byte) {
+	if len(b) != 4 {
+		return r, IllegalValue
+	}
+	addr := be16(b)
+	if addr >= NumHolding {
+		return r, IllegalAddress
+	}
+	if ex := ask(RegWrite, addr, be16(b[2:])); ex != 0 {
+		return r, ex
+	}
+	return append(r, b...), 0
+}
+
+func writeCoils(r []byte, b []byte) ([]byte, byte) {
+	if len(b) < 5 {
+		return r, IllegalValue
+	}
+	start, count, nb := be16(b), be16(b[2:]), int(b[4])
+	if count < 1 || count > 1968 || nb != (count+7)/8 || len(b) != 5+nb {
+		return r, IllegalValue
+	}
+	if start+count > NumOutputs {
+		return r, IllegalAddress
+	}
+	for k := 0; k < count; k++ {
+		v := 0
+		if b[5+k/8]>>uint(k%8)&1 != 0 {
+			v = 0xFF00
+		}
+		if ex := ask(CoilWrite, start+k, v); ex != 0 {
+			return r, ex
+		}
+	}
+	return append(r, b[:4]...), 0
+}
+
+// command is the PLC taking a write the server was asked for.
+func (c *PLC) command(cmd Cmd) byte {
+	switch cmd.Kind {
+	case CoilWrite:
+		if c.request(cmd.Addr, cmd.Value != 0, true) != nil {
+			return DeviceFailure
+		}
+	case RegWrite:
+		if cmd.Addr == RegCrossover && (cmd.Value < 1 || cmd.Value > 1000) {
+			return IllegalValue
+		}
+		c.holding[cmd.Addr] = uint16(cmd.Value)
+	}
+	return 0
+}
+
+// The master's side.
+var (
+	mreq [64]byte
+	mrep [256]byte
+)
+
+// frame builds a request to slave of function fn, its words big-endian.
+func frame(slave, fn byte, words ...int) []byte {
+	q := append(mreq[:0], slave, fn)
+	for _, w := range words {
+		q = append(q, byte(w>>8), byte(w))
+	}
+	c := crc16(q)
+	return append(q, byte(c), byte(c>>8))
+}
+
+// transact sends q and answers the PLC's side of every write the server asks for
+// until the reply has come, which it returns -- empty where the server said nothing.
+func transact(q []byte) []byte {
+	for _, b := range q {
+		mbRx <- int(b)
+	}
+	mbRx <- Gap
+	n := 0
+	for {
+		select {
+		case cmd := <-cmds:
+			verdicts <- plc.command(cmd)
+		case b := <-mbTx:
+			if b == Gap {
+				return mrep[:n]
+			}
+			mrep[n] = byte(b)
+			n++
+		}
+	}
+}
+
+// show sends q and prints what came back, its CRC checked.
+func show(what string, q []byte) {
+	r := transact(q)
+	ok := "no reply"
+	if len(r) >= 4 {
+		ok = "crc ok"
+		if crc16(r[:len(r)-2]) != uint16(r[len(r)-1])<<8|uint16(r[len(r)-2]) {
+			ok = "CRC BAD"
+		}
+	}
+	printf("%3d mb %-22s % x (%s)\n", plc.scan, what, r, ok)
+}
+
+// The LCD: 160x128 pixels of RGB565.
+const (
+	LCDW = 160
+	LCDH = 128
+)
+
+var (
+	fb     [LCDH][LCDW]uint16
+	glyphs [96][5]byte
+	crcT32 [256]uint32
+)
+
+func init() {
+	// Stand-ins for the panel's 5x7 font, every glyph distinct.
+	for c := range glyphs {
+		for col := range glyphs[c] {
+			h := uint32(c+32)*2654435761 ^ uint32(col)*40503
+			glyphs[c][col] = byte(h>>13) & 0x7F
+		}
+	}
+	glyphs[0] = [5]byte{}
+	for i := range crcT32 {
+		c := uint32(i)
+		for k := 0; k < 8; k++ {
+			if c&1 != 0 {
+				c = 0xEDB88320 ^ c>>1
+			} else {
+				c >>= 1
+			}
+		}
+		crcT32[i] = c
+	}
+}
+
+func rgb(r, g, b int) uint16 { return uint16(r>>3<<11 | g>>2<<5 | b>>3) }
+
+func glyph(x, y int, ch byte, fg uint16) {
+	if ch < 32 || ch > 127 {
+		ch = '?'
+	}
+	if ch >= 'a' && ch <= 'z' {
+		ch -= 'a' - 'A'
+	}
+	for col := 0; col < 5; col++ {
+		bits := glyphs[ch-32][col]
+		for row := 0; row < 7; row++ {
+			if bits>>uint(row)&1 != 0 && y+row < LCDH && x+col < LCDW {
+				fb[y+row][x+col] = fg
+			}
+		}
+	}
+}
+
+func text(x, y int, s string, fg uint16) int {
+	for i := 0; i < len(s); i++ {
+		glyph(x, y, s[i], fg)
+		x += 6
+	}
+	return x
+}
+
+func textB(x, y int, s []byte, fg uint16) int {
+	for _, c := range s {
+		glyph(x, y, c, fg)
+		x += 6
+	}
+	return x
+}
+
+// bar draws a pressure on a log scale, 1e-8 Torr at the left, 1e3 at the right.
+func bar(y int, p float32, col uint16) {
+	f := (math.Log10(float64(p)) + 8) / 11
+	w := int(math.Round(f * (LCDW - 8)))
+	w = min(max(w, 0), LCDW-8)
+	for x := 4; x < 4+w; x++ {
+		for r := y; r < y+5; r++ {
+			fb[r][x] = col
+		}
+	}
+}
+
+// screen draws the status and answers the CRC-32 of the frame buffer.
+func screen() uint32 {
+	bg := rgb(0, 0, 32)
+	for y := range fb {
+		for x := range fb[y] {
+			fb[y][x] = bg
+		}
+	}
+	white, green, red, amber := rgb(255, 255, 255), rgb(0, 224, 0), rgb(240, 0, 0), rgb(255, 176, 0)
+	x := text(4, 2, "VTS PLC ", white)
+	if plc.pins.Input(InLocalRemote) {
+		text(x, 2, "REMOTE", amber)
+	} else {
+		text(x, 2, "LOCAL", green)
+	}
+	for o := 0; o < NumOutputs; o++ {
+		y := 14 + 9*o
+		text(4, y, outNames[o], white)
+		col := red
+		if plc.pins.Output(o) {
+			col = green
+		}
+		text(100, y, onOff(plc.pins.Output(o)), col)
+	}
+	var num [16]byte
+	text(4, 90, "CHAMBER", white)
+	textB(60, 90, sci(num[:0], chamber.p), amber)
+	bar(99, chamber.p, amber)
+	text(4, 108, "FORELINE", white)
+	textB(60, 108, sci(num[:0], chamber.pf), amber)
+	bar(117, chamber.pf, green)
+	if plc.fault {
+		text(112, 2, "FAULT", red)
+	}
+	crc := ^uint32(0)
+	for y := range fb {
+		for _, px := range fb[y] {
+			crc = crcT32[byte(crc)^byte(px)] ^ crc>>8
+			crc = crcT32[byte(crc)^byte(px>>8)] ^ crc>>8
+		}
+	}
+	return ^crc
+}
+
+// The plant around the PLC: the gate valve's travel, the buttons pushed.
+var gatePos int // 0 closed, 2 open
+
+func world() {
+	if plc.pins.Output(OutGateValve) {
+		gatePos = min(gatePos+1, 2)
+	} else {
+		gatePos = max(gatePos-1, 0)
+	}
+	plc.pins.SetInput(InGateOpen, gatePos == 2)
+	plc.pins.SetInput(InGateClosed, gatePos == 0)
+}
+
+// push presses the start or the stop button of output o for one scan.
+func push(o int, start bool) {
+	for e := range panelLayout {
+		for i, p := range panelLayout[e] {
+			if p != o {
+				continue
+			}
+			if start {
+				bus.dev[e].pins &^= 1 << uint(6-2*i)
+			} else {
+				bus.dev[e].pins |= 1 << uint(7-2*i)
+			}
+		}
+	}
+}
+
+func release() {
+	for e := range bus.dev {
+		bus.dev[e].pins = idleButtons
+	}
+}
+
+// operator is the scenario, scan by scan: the panel at first, then the master.
+func operator(scan int) {
+	switch scan {
+	case 2:
+		push(OutRoughPump, true)
+	case 3:
+		push(OutRoughingValve, true)
+		push(OutGateValve, true) // too early
+	case 5:
+		push(OutHoldingPump, true)
+		push(OutDiffusionPump, true) // the holding pump is not on yet
+	case 6:
+		push(OutHoldingValve, true)
+		push(OutDiffusionPump, true)
+	case 14:
+		push(OutGateValve, true) // the roughing valve is still open
+	case 30:
+		push(OutGateValve, true) // the roughing valve is still open
+	case 34:
+		push(OutRoughingValve, false)
+		push(OutBackingValve, true)
+	case 35:
+		push(OutGateValve, true)
+	case 40:
+		plc.pins.SetInput(InLocalRemote, true)
+		push(OutBackingValve, false) // the panel no longer has control
+	case 56:
+		plc.pins.SetInput(InWaterFlow, false)
+	case 58:
+		plc.pins.SetInput(InWaterFlow, true)
+	case 70:
+		bus.dev[1].dead = true
+	case 76:
+		bus.dev[1].dead = false
+	case 90:
+		plc.pins.SetInput(InLocalRemote, false)
+	}
+}
+
+// master is the Modbus master's scenario.
+func master(scan int) {
+	switch scan {
+	case 41:
+		show("read coils 0-7", frame(SlaveID, 1, 0, 8))
+		show("read inputs 0-10", frame(SlaveID, 2, 0, 11))
+		show("read pressures", frame(SlaveID, 4, 0, 8))
+		show("read scan, faults", frame(SlaveID, 4, 8, 2))
+		show("report slave id", frame(SlaveID, 17))
+	case 42:
+		show("gate valve off", frame(SlaveID, 5, OutGateValve, 0))
+		show("read coils 4-7", frame(SlaveID, 1, 4, 4))
+		show("gate valve on", frame(SlaveID, 5, OutGateValve, 0xFF00))
+		show("coil value 0x1234", frame(SlaveID, 5, OutGateValve, 0x1234))
+		show("coil 8", frame(SlaveID, 5, 8, 0xFF00))
+		show("coil 32", frame(SlaveID, 5, 32, 0xFF00))
+	case 43:
+		show("function 7", frame(SlaveID, 7))
+		show("125 registers", frame(SlaveID, 4, 0, 125))
+		show("126 registers", frame(SlaveID, 4, 0, 126))
+		show("0 registers", frame(SlaveID, 4, 0, 0))
+		show("past the end", frame(SlaveID, 4, 6, 6))
+		show("2000 coils", frame(SlaveID, 1, 0, 2000))
+		q := frame(SlaveID, 3, 0, 2)
+		q[len(q)-1] ^= 0x40
+		show("bad crc", q)
+		show("another slave", frame(0x0B, 3, 0, 2))
+	case 44:
+		show("crossover 5000", frame(SlaveID, 6, RegCrossover, 5000))
+		show("crossover 80", frame(SlaveID, 6, RegCrossover, 80))
+		show("scan register", frame(SlaveID, 6, RegScan, 44))
+		show("read holding 0-3", frame(SlaveID, 3, 0, 4))
+	case 46:
+		q := frame(SlaveID, 15, OutRoughPump, 8)
+		q = append(q[:6], 1, 0x3D) // rough, holding, roughing valve, holding valve, backing valve
+		c := crc16(q)
+		q = append(q, byte(c), byte(c>>8))
+		show("write coils 0-7", q)
+		show("read coils 0-7", frame(SlaveID, 1, 0, 8))
+	case 48:
+		show("broadcast backing off", frame(0, 5, OutBackingValve, 0))
+		show("read coils 0-7", frame(SlaveID, 1, 0, 8))
+	case 60:
+		show("diffusion on", frame(SlaveID, 5, OutDiffusionPump, 0xFF00))
+		show("roughing valve on", frame(SlaveID, 5, OutRoughingValve, 0xFF00))
+	case 72:
+		show("read inputs 0-10", frame(SlaveID, 2, 0, 11))
+	case 84:
+		show("read pressures", frame(SlaveID, 4, 0, 8))
+		show("read inputs 0-10", frame(SlaveID, 2, 0, 11))
+	case 92:
+		show("rough pump off", frame(SlaveID, 5, OutRoughPump, 0))
+	}
+}
+
+const Scans = 100
+
+func setup() {
+	printf("crc %04x %04x\n", crc16([]byte{0x0A, 0x01, 0, 0, 0, 0x01}), crc16Bits([]byte{0x0A, 0x01, 0, 0, 0, 0x01}))
+	bus.dev[0] = Expander{addr: expanderAddr[0], pins: idleButtons}
+	bus.dev[1] = Expander{addr: expanderAddr[1], pins: idleButtons}
+	bus.sel = -1
+	plc.bus = &bus
+	plc.mt = [3]int32{-1, -1, -1}
+	plc.nt = -1
+	plc.holding[RegCrossover] = 100
+	plc.pins.SetInput(InWaterFlow, true)
+	plc.pins.SetInput(InAutoManual, true)
+	go modbus()
+	go gauges()
+}
+
+func run() {
+	for scan := 0; scan < Scans; scan++ {
+		plc.scan = scan
+		operator(scan)
+		world()
+		plc.step()
+		chamber.step(&plc.pins, plc.dpHot())
+		if scan%4 == 0 {
+			gaugeTick(scan >= 80 && scan < 88, false)
+		}
+		master(scan)
+		release()
+		switch scan {
+		case 20, 50, 74, 99:
+			printf("%3d lcd %08x chamber %.3g foreline %.3g\n", scan, screen(), chamber.p, chamber.pf)
+		}
+	}
+}
+
+func summary() {
+	close(mbRx)
+	for range mbTx {
+	}
+	close(vac2)
+	close(vac1)
+	for range readings {
+	}
+	printf("outputs %08b inputs %08b drives %d refused %d faults %d\n", plc.pins.out, plc.pins.in, plc.pins.drives, plc.refused, plc.faults)
+	printf("frames %d bad crc %d, i2c acks %d naks %d, expanders %d/%d %d/%d, lights %04x %04x\n",
+		frames, crcBad, bus.acks, bus.naks, bus.dev[0].writes, bus.dev[0].reads, bus.dev[1].writes, bus.dev[1].reads, plc.lights[0], plc.lights[1])
+	printf("gauges %d %d %d nt %d, stale %v %v\n", plc.mt[0], plc.mt[1], plc.mt[2], plc.nt, plc.stale[0], plc.stale[1])
+}
+
+func main() {
+	setup()
+	run()
+	summary()
+}

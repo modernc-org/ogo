@@ -36,6 +36,11 @@ func exampleGoTwin(src string) string {
 	return "package main\n\nimport \"fmt\"\n\n" + printfCall.ReplaceAllString(src, "fmt.Printf(")
 }
 
+// importsP2 matches an import of "p2", alone or in a group: `import "p2"` alone
+// was all that was looked for, and spin2drivers, importing it in a group, was
+// taken for an example to run on the host.
+var importsP2 = regexp.MustCompile(`(?m)^(import\s+|\s+)"p2"\s*$`)
+
 // portableExamples returns the examples that are pure language -- no import of
 // "p2", so no pin, no cog and no board. Those are the ones that can be run on a
 // host and compared against Go; blink, counter and gopher drive hardware and mean
@@ -55,7 +60,7 @@ func portableExamples(t *testing.T) map[string]string {
 		if err != nil {
 			continue // a directory that is not an example
 		}
-		if src := string(b); !strings.Contains(src, `import "p2"`) {
+		if src := string(b); !importsP2.MatchString(src) {
 			out[e.Name()] = src
 		}
 	}

@@ -185,6 +185,24 @@ Code: the largest of 219 functions
 > nor what its output looks like. The clock is a build-time choice — `ogo build
 > --clock 200MHz` — and 160 MHz is the default.
 
+### A machine controller
+
+`_examples/vacuum` is a vacuum system's PLC, after the one Rayman wrote in Spin2
+for a P2 and posted on the Parallax forum: a scan loop on the main cog that reads
+the inputs, drives the pumps and valves and runs the front panel through two I2C
+expanders, a Modbus RTU server on a cog of its own, the vacuum gauges' serial lines
+parsed on another, interlocks, a safe state when the panel stops answering, and
+the status screen of a 1.8" LCD. The hardware is modelled, so it imports nothing
+and is held to Go's output on the host and on a P2-EDGE, as `life` is.
+`_examples/spin2drivers` calls the two Spin2 drivers that PLC runs on, Jon
+McPhalen's jm_i2c and the eight-port serial driver, as they are, from two OctoGo
+packages of bodyless functions.
+
+```sh
+ogo run _examples/vacuum
+ogo run _examples/spin2drivers
+```
+
 ### Drawing on an oscilloscope
 
 `_examples/gopher` puts the Go gopher on a scope in X/Y mode: two smart pins run as
