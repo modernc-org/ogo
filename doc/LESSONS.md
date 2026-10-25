@@ -3476,6 +3476,25 @@ every GOARCH: a loop storing zero into the diagonal of a zeroed local 2-D array
 (build/probes/_go-ice, not reported). **A program written as Go that fails the
 cog's registers is split where its message says, and the split is the
 program's: the backend keeps every printf argument live through the call.**
+**dom64, field-oriented motor control in float32** (2026-10-25). Clarke and Park
+transforms with the angle's sine and cosine from Go's math through float64, PI
+current controllers, an inverse Park, space-vector modulation into timer compare
+values, a sine table built in init, a rotor model, a PWM sink behind an
+interface, the control loop on a goroutine answering each sample: matched Go on
+the host and the board on its first build. A mutant, `theta += speed + dt`, sent
+the angle round its wrap loop, `theta -= TwoPi`, and the host printed a ULP off
+Go: a compound assignment to a float32 wrote its constant as a double,
+`theta -= 6.283185307179586`, which gcc computes in doubles where Go subtracts
+float32(2*Pi) in float32 -- right on the board, whose double is a float, and wrong
+in every host run since. It is spelled as the float32 now, as a level's constants
+are (float32CompoundLitC). The plain store of the same constant was right both
+ways -- 25 constants stored, assigned and multiplied in, on both -- which is the
+rule this broke: a plain store right says nothing of its compound form. Probing
+it, math.Float32bits in a program with no float64 named a helper the C did not
+define: the float32's two bits helpers were written with the float64 runtime,
+whose gate is the float64. **A helper is written by the gate of what it serves:
+two float32 helpers in the float64 runtime were missing from every program that
+called them and had no float64.**
 **A MARK IS MADE IN EMISSION ORDER, AND A LOOP RUNS ITS BODY AGAIN** (2026-10-08,
 found probing unsafe.Slice's views). The holder marks are set as statements are
 emitted, so a statement read a variable's mark as the statements BEFORE it had left

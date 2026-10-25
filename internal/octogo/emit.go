@@ -49045,9 +49045,33 @@ func (e *emitter) emitAssignTail(t assignTail) {
 			e.emit(")")
 			break
 		}
+		if lit, ok := e.float32CompoundLitC(t); ok {
+			e.emit(lit)
+			break
+		}
 		e.emitExpr(t.rhs)
 	}
 	e.emit(";\n")
+}
+
+// float32CompoundLitC spells the constant of a compound assignment to a float32,
+// `theta -= TwoPi`, as the float32 Go converts it to, which is what the operation
+// is computed with: written as a double, the host's compiler computed `f /= Third`
+// in doubles, a ULP from Go's 150.00014 (the target's double being a float, it
+// was right there). A level is spelled by emitFloatPrefixFold already.
+func (e *emitter) float32CompoundLitC(t assignTail) (string, bool) {
+	if t.op == "=" || e.underlyingCType(t.targetCType) != "float" {
+		return "", false
+	}
+	v, ok := e.foldConstVal(t.rhs)
+	if !ok || !numericConst(v) {
+		return "", false
+	}
+	lit, ok := floatSpelling(v, "float")
+	if !ok {
+		return "", false
+	}
+	return e.parenNegative(lit), true
 }
 
 // compoundDivisorGuard names the check a compound division's divisor is handed

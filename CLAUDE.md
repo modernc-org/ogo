@@ -1107,7 +1107,9 @@ section. A new finding goes there; the rule it leaves goes here too.
   THROUGH A POINTER IS OF WHAT IT POINTS AT).
 - **A rule that dispatches on a table asks for the table it compares with, not only
   the one it stores.** **A type the emitter writes after the globals names its
-  members with the `ogo_` prefix**.
+  members with the `ogo_` prefix**. **A helper is written by the gate of what it
+  serves: two float32 helpers in the float64 runtime were missing from every
+  program that called them and had no float64** (dom64).
 - **A method the compiler writes in C asks of its receiver what a body's dereference
   would** (the Builder's helpers and a nil *Builder).
 - **A call on the way to a value of several words is bound in the one word it

@@ -58,8 +58,23 @@ func (e *emitter) f64Section(src []byte) []byte {
 		}
 		typedef, runtime = b.String(), f64Runtime+"\n"
 	}
+	// A float32's bits, math.Float32bits and Float32frombits, are no float64's:
+	// written with the float64 runtime, a program calling one with no float64 in it
+	// named a function the C did not define.
+	for _, h := range f32BitsHelpers {
+		if bytes.Contains(src, []byte(h.name+"(")) {
+			runtime += h.def
+		}
+	}
 	src = bytes.Replace(src, []byte(f64TypedefMark), []byte(typedef), 1)
 	return bytes.Replace(src, []byte(f64RuntimeMark), []byte(runtime), 1)
+}
+
+// f32BitsHelpers are math's Float32bits and Float32frombits, through a union the
+// target reads as memory.
+var f32BitsHelpers = []struct{ name, def string }{
+	{"ogo_f32_bits", "static uint32_t ogo_f32_bits(float x) { union { float f; uint32_t u; } v; v.f = x; return v.u; }\n"},
+	{"ogo_f32_frombits", "static float ogo_f32_frombits(uint32_t b) { union { float f; uint32_t u; } v; v.u = b; return v.f; }\n"},
 }
 
 // f64ConstName names the static const holding the float64 of the bits b.
@@ -350,8 +365,6 @@ const f64Runtime = `// A float's bits, through a union the target reads as memor
 typedef union { ogo_f64 f; uint64_t u; } ogo_f64u;
 static uint64_t ogo_f64_bits(ogo_f64 x) { ogo_f64u v; v.f = x; return v.u; }
 static ogo_f64 ogo_f64_frombits(uint64_t b) { ogo_f64u v; v.u = b; return v.f; }
-static uint32_t ogo_f32_bits(float x) { union { float f; uint32_t u; } v; v.f = x; return v.u; }
-static float ogo_f32_frombits(uint32_t b) { union { float f; uint32_t u; } v; v.u = b; return v.f; }
 typedef struct { uint32_t w0, w1; } ogo_w2;
 
 static inline ogo_f64 ogo_f64_w(uint32_t hi, uint32_t lo) { ogo_f64 r; r.lo = lo; r.hi = hi; return r; }
