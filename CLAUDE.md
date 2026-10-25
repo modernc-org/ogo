@@ -75,6 +75,8 @@ silent fault puts the count back to 0. Each round's account is in
 - dom65 (2026-10-25), a firmware update path over Intel HEX: clean -- 1
 - dom66 (2026-10-25), text on a character display: silent (%q wrote a rune that
   does not print as it stood) -- 0
+- dom67 (2026-10-25), a vacuum system's PLC: clean, one false refusal fixed (an
+  inner block's slice holding a view of an outer block's storage) -- 1
 
 ## Language feature policy (read before assuming something is excluded)
 

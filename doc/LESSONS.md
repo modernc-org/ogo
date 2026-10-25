@@ -3578,6 +3578,11 @@ the gauge cog made its note going back for the next line, while the scan loop ra
 serial driver, were bound unchanged as two packages and run on the board, the serial
 one printing through the console's pins once its transmit pin had a pull-up
 (PU_NONE floats the line's high level, the same from a plain Spin2 top object).
+Its 400 mutants against Go on the host: 339 print what Go prints, 23 panic as Go
+does, Go and the compiler refuse 34 alike, and the four that differ are three
+deadlocks Go reports and OctoGo waits out (DIFFERENCES.md) and a float far past
+int32's range converted, which Go leaves to the implementation. On the board 362 of
+362 print Go's output. No fuzzer part changed since dom66: a clean round.
 **A MARK IS MADE IN EMISSION ORDER, AND A LOOP RUNS ITS BODY AGAIN** (2026-10-08,
 found probing unsafe.Slice's views). The holder marks are set as statements are
 emitted, so a statement read a variable's mark as the statements BEFORE it had left
