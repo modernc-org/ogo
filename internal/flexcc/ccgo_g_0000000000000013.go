@@ -491,6 +491,7 @@ func s__CompileFunctionBody(tls *libc.TLS, cc *CC, f uintptr) {
 		x__EmitLabel(tls, cc, irl, jumpover)
 	}
 	s__EmitFunctionEpilog(tls, cc, irl, f)
+	s__SplitLocalStructs(tls, cc, irl)
 	x__OptimizeIRLocal(tls, cc, irl, f)
 	x__HashFuncIRL(tls, cc, f)
 }

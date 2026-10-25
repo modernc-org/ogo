@@ -1,550 +1,622 @@
-// OctoSmith generated program. Seed: 73
-import (
-	"bytes"
-	"errors"
-	"strings"
-)
-
+// OctoSmith generated program. Seed: 114
 var octosmith_checksum int = 0
 
 var octosmith_calls int = 0
 
-type D_1 int8
-type complex uint8
-type D_3 uint32
+type read struct {
+	f_2 int
+	f_3 int
+}
 
-type L_4 []int
-type L_5 []int
+func (r read) get_4() int { return r.f_2 }
+
+func (r *read) set_5(v int) int {
+	r.f_2 = v
+	return r.f_2
+}
+
+func (r read) shadow_6(v int) int {
+	r.f_2 = v
+	return r.f_2
+}
+
+func (r read) emit_7() { octosmith_checksum = octosmith_checksum ^ r.f_2 }
+
+func (r *read) Val() int { return r.f_2 }
+
+type S_8 struct {
+	f_9   int
+	close int
+	f_11  int
+}
+
+func (r S_8) uint8_t() int { return r.f_9 }
+
+func (r *S_8) set_13(v int) int {
+	r.f_9 = v
+	return r.f_9
+}
+
+func (r S_8) shadow_14(v int) int {
+	r.f_9 = v
+	return r.f_9
+}
+
+func (r S_8) emit_15() { octosmith_checksum = octosmith_checksum ^ r.f_9 }
+
+func (r *S_8) Val() int { return r.f_9 }
+
+type Valuer interface {
+	Val() int
+}
+
+type D_16 int8
+type D_17 uint8
+type recover int16
+type D_19 uint16
 
 const (
-	k_6 = -13622
-	k_7 = (k_6 * 3)
-	k_8 = (k_7 - k_6)
-	k_9 = 103
+	signed = 48
+	k_21   = 'H'
+	k_22   = -44
+	k_23   = -12961
+	k_24   = 0x92b524aa
+	k_25   = 0xf5cfd6f2
 )
 
 const (
-	k_10 = iota*6 + 11
-	k_11
+	k_26 = iota*5 + 15
+	k_27
+	k_28
 )
 
-const stdin int64 = 2185424863576162702
-const k_13 int64 = 1215807739850240171
+const k_29 int64 = 401782386895368287
+const k_30 uint16 = 58345
 
-func fn_14(p_15 int) int64 {
+func fn_31(p_32 int64, p_33 int64) int64 {
 	octosmith_calls = octosmith_calls + 1
-	return int64(p_15)
+	return (p_33 & (36 | (16 | 44)))
 }
 
-func fn_16(p_17 int64, register int64) int64 {
+func fn_34(p_35 int, p_36 int) (int, int) {
 	octosmith_calls = octosmith_calls + 16
-	return ((p_17 &^ (register &^ p_17)) ^ p_17)
+	return (((p_35 | 32) &^ p_35) & 59), 94
 }
 
-func fn_19(p_20 int) int {
+func fn_37(p_38 int, p_39 int, p_40 int) int64 {
 	octosmith_calls = octosmith_calls + 256
-	if (p_20 ^ (p_20 &^ 7)) < 7 {
-		if p_20 == 16 {
-			return (((p_20 | p_20) ^ (96 | p_20)) | 20)
-		}
-		return (((p_20 &^ p_20) ^ (46 | p_20)) & ((p_20 ^ p_20) ^ (p_20 | 68)))
+	return int64(p_39)
+}
+
+func fn_41(p_42 int, union int, p_44 int) int {
+	octosmith_calls = octosmith_calls + 4096
+	switch {
+	case (union <= 78):
+		return p_42
+	case (p_44 > 66):
+		return 61
+	default:
+		return (((36 ^ 10) &^ p_42) &^ (35 & 89))
 	}
-	return p_20
 }
 
-var bytefill = make(chan int, 2)
+func sink_46(v int) { octosmith_checksum = octosmith_checksum ^ v }
 
-func cog_21(c chan int, p_23 int) {
-	c <- ((p_23 & (p_23 &^ 13)) | (94 & 56))
+func dp_45() {
+	v := 913890
+	defer sink_46(v)
+	v = 555122
+	octosmith_checksum = octosmith_checksum ^ v
 }
 
-func gr_26(p_25 int) int {
-	return ((p_25 & (gv_24 ^ gv_24)) | (79 ^ (40 | 5)))
+var ch_48 = make(chan int)
+
+func cog_47(c chan int, p_49 int) {
+	c <- 48
 }
 
-var gv_27 = gv_24 & 67
-var gv_24 = 52 | 72
+var ch_51 = make(chan int)
 
-type ST_28 struct {
+func free(c chan int, p_52 int) {
+	c <- p_52
+	c <- p_52
+}
+
+func gr_56(p_55 int) int {
+	return p_55
+}
+
+var NULL, gv_60 = fn_34(41, 6)
+var gv_54 = gv_53
+var gv_57 = 82
+var gv_53 = 35
+var gv_58 = gr_56(gv_54)
+
+type ST_61 struct {
 	h int16
-	a [5]uint16
+	a [7]uint8
 	t uint8
 }
 
-var tb_28 = ST_28{14732, [5]uint16{34938, 42729, 54972, 39180, 49368}, 182}
+var tb_61 = ST_61{16678, [7]uint8{92, 15, 96, 38, 184, 119, 132}, 112}
 
-var tsl_28 = []ST_28{{-12431, [5]uint16{25362, 23423, 50928, 57651, 29948}, 4}}
+var tsl_61 = []ST_61{{-23764, [7]uint8{73, 84, 210, 247, 252, 110, 69}, 143}}
 
-type AG_1 struct {
-	q [6]int32
-	k [3]uint16
-	m int16
-	t [6]int8
-	h int64
-}
+var paV_1 int64 = 5807599407562032054
 
-func agMk_1(p int) AG_1 {
-	var v AG_1
-	v.q[0] = int32(p*47 + 826)
-	v.q[1] = int32(p*43 + 193)
-	v.q[2] = int32(p*-52 + 403)
-	v.q[3] = int32(p*10 + -1415)
-	v.q[4] = int32(p*-55 + -713)
-	v.q[5] = int32(p*-30 + 668)
-	v.k[0] = uint16(p*-13 + 208)
-	v.k[1] = uint16(p*-12 + 1292)
-	v.k[2] = uint16(p*1 + 384)
-	v.m = int16(p*-23 + -1526)
-	v.t[0] = int8(p*39 + -173)
-	v.t[1] = int8(p*-6 + -1926)
-	v.t[2] = int8(p*-1 + -1209)
-	v.t[3] = int8(p*3 + 737)
-	v.t[4] = int8(p*-48 + 1705)
-	v.t[5] = int8(p*-24 + 659)
-	v.h = int64(p*53 + 56)
-	return v
-}
+var paU_1 uint64 = 10356244246297186260
 
-func agMod_1(v AG_1, d int) AG_1 {
-	v.h *= 3
-	return v
-}
+var paF_1 float32 = 327.75
 
-func agSum_1(v AG_1) int {
-	return int(v.q[0])*14 + int(v.q[1])*15 + int(v.q[2])*4 + int(v.q[3])*16 + int(v.q[4])*9 + int(v.q[5])*16 + int(v.k[0])*19 + int(v.k[1])*5 + int(v.k[2])*1 + int(v.m)*18 + int(v.t[0])*6 + int(v.t[1])*18 + int(v.t[2])*2 + int(v.t[3])*12 + int(v.t[4])*6 + int(v.t[5])*14 + int(v.h)*10 + int(v.h>>32)*3
-}
+var paD_1 float64 = -164.0
 
-func agPtr_1(p *AG_1, d int) {
-	p.q[3] += int32(d * 9)
-}
+var paI_1 int32 = -1025780116
 
-func agArr_1(a [3]AG_1, d int) int {
-	a[1] = agMod_1(a[1], d)
-	return agSum_1(a[0]) + agSum_1(a[1])*7 + agSum_1(a[2])
-}
+var paN_1 int = -1623048189
 
-func agPair_1(v AG_1, d int) (AG_1, int) {
-	v.h = int64(d)
-	return v, agSum_1(v)
-}
+var paB_1, paC_1 int8 = -14, 2
 
-func (v AG_1) sum() int { return agSum_1(v) }
+var paE_1 uint8 = 77
 
-func (v *AG_1) bump(d int) {
-	v.q[1] ^= int32(d + 6)
-}
+var paW_1 uint16 = 14384
 
-func agRun_1() int {
+var paT_1 = true
+
+func paFn_1_0(a uint64, b uint8, c int64, d uint8) int {
 	r := 0
-	v := agMk_1(-135)
-	w := agMod_1(v, -6)
-	r = r*31 + agSum_1(v)
-	r = r*31 + agSum_1(w)
-	r = r*31 + agSum_1(agMod_1(agMk_1(-14), 41))
-	agPtr_1(&v, 38)
-	r = r*31 + v.sum()
-	var a [3]AG_1
-	a[0], a[1], a[2] = v, w, agMk_1(195)
-	r = r*31 + agArr_1(a, 43)
-	r = r*31 + agSum_1(a[1])
-	u, n := agPair_1(w, 21)
-	r = r*31 + agSum_1(u) + n
-	r = r*31 + int(agMk_1(113).q[4]) + int(agMod_1(v, -38).k[0]>>3)
-	s := a[:]
-	s[2].bump(25)
-	r = r*31 + agSum_1(a[2])
-	e := v
-	if e == v {
+	r = r*31 + int(a>>32)*3 + int(a)
+	r = r*31 + int(b)
+	r = r*31 + int(c>>32)*3 + int(c)
+	r = r*31 + int(d)
+	return r
+}
+
+func paFn_1_1(a uint64, b float64, c float64) int {
+	r := 0
+	r = r*31 + int(a>>32)*3 + int(a)
+	r = r*31 + int(b*4)
+	r = r*31 + int(c*4)
+	return r
+}
+
+func paFn_1_2(a uint64, b int32, c uint8, d uint16) int {
+	r := 0
+	r = r*31 + int(a>>32)*3 + int(a)
+	r = r*31 + int(b)
+	r = r*31 + int(c)
+	r = r*31 + int(d)
+	return r
+}
+
+func paFn_1_3(a int64, b bool) int {
+	r := 0
+	r = r*31 + int(a>>32)*3 + int(a)
+	if b {
+		r = r*31 + 7
+	} else {
+		r = r*31 + 3
+	}
+	return r
+}
+
+type PaQ_1 int64
+
+func (q PaQ_1) mix(b float32, c PaQ_1) int {
+	r := 0
+	r = r*31 + int(int64(q)>>32)*3 + int(int64(q))
+	r = r*31 + int(b*4)
+	r = r*31 + int(int64(c)>>32)*3 + int(int64(c))
+	return r
+}
+
+type PaS_1 interface {
+	sc(a int64, b float32, c int64) int
+}
+
+type PaR_1 struct{ n int }
+
+var paR_1 = PaR_1{879}
+
+func (s *PaR_1) sc(a int64, b float32, c int64) int {
+	r := s.n
+	r = r*31 + int(a>>32)*3 + int(a)
+	r = r*31 + int(b*4)
+	r = r*31 + int(c>>32)*3 + int(c)
+	return r
+}
+
+func paId_1(v int64) int64 { return v + 5 }
+
+func paIdU_1(v uint64) uint64 { return v ^ 0x5555 }
+
+func paR64_1(a int64) int64 { return a*3 + 1 }
+
+var paFw_1 = paR64_1
+
+func paOne_1(c int64) int { return int(c>>32)*11 + int(c) }
+
+var paOneV_1 = paOne_1
+
+var paFnV_1 = paFn_1_0
+
+func paVa_1(a int64, b float32, rest ...float32) int {
+	r := 0
+	r = r*31 + int(a>>32)*3 + int(a)
+	r = r*31 + int(b*4)
+	for _, x := range rest {
+		r = r*31 + int(x*4)
+	}
+	return r
+}
+
+func paRun_1() int {
+	q := PaQ_1(paV_1)
+	r := 0
+	{
+		fv := paFn_1_2
+		r = r*31 + fv(paU_1+387, paI_1*3, 138, 9630)
+	}
+	r = r*31 + paFnV_1(paU_1<<32, paE_1, paId_1(paV_1), paE_1*3)
+	r = r*31 + (q * 8).mix(paF_1+1, PaQ_1(159))
+	{
+		var s PaS_1 = &paR_1
+		r = r*31 + s.sc(paV_1&^546, paF_1, paV_1)
+	}
+	r = r*31 + (-q).mix(paF_1+1, PaQ_1(365))
+	r = r*31 + (-q).mix(paF_1+1, PaQ_1(63))
+	{
+		var s PaS_1 = &paR_1
+		r = r*31 + s.sc(paV_1<<32, paF_1, paId_1(paV_1))
+	}
+	r = r*31 + int(paV_1>>40) + int(paU_1>>40) + int(paF_1*4) + int(paD_1*4) + int(paI_1) + paN_1
+	r = r*31 + int(paB_1) + int(paC_1) + int(paE_1) + int(paW_1) + paR_1.n
+	if paT_1 {
 		r++
 	}
-	e.t[0]++
-	if e != v {
-		r += 2
-	}
-	r = r*31 + agLate_1(w, 24)
-	r = r*31 + agLog_1
-	r = r*31 + agWide_1(-53, -11)
 	return r
 }
 
-var agLog_1 int
+type SwK_1 uint8
 
-func (v AG_1) note(m int) { agLog_1 = agLog_1*31 + agSum_1(v)*m }
+const (
+	SwKa_1 SwK_1 = iota
+	SwKb_1
+	SwKc_1
+	SwKd_1
+	SwKe_1
+	SwKf_1
+	SwKg_1
+	SwKh_1
+)
 
-func agNote_1(v AG_1, m int) { agLog_1 = agLog_1*31 + agSum_1(v)*m }
+var swI8_1 int8 = -60
 
-func agLate_1(v AG_1, d int) int {
-	agLog_1 = 0
-	defer v.note(9)
-	defer func(w AG_1, m int) { agLog_1 = agLog_1*31 + agSum_1(w)*m }(v, 6)
-	defer agNote_1(v, 8)
-	v.bump(d)
-	agPtr_1(&v, d)
-	return agSum_1(v)
+var swU8_1 uint8 = 160
+
+var swI16_1 int16 = 16457
+
+var swU16_1 uint16 = 33382
+
+var swI32_1 int32 = 533095824
+
+var swU32_1 uint32 = 3884954010
+
+var swN_1 int = 564477849
+
+var swUn_1 uint = 3319710958
+
+var swK_1 SwK_1 = 11
+
+var swW_1 int64 = -3575261979219707335
+
+var swCount_1 int
+
+func swNext_1() int {
+	swCount_1++
+	return swCount_1*7 - 3
 }
 
-func agRow_1(i int) int { return i }
-
-func agWide_1(k, d int) int {
-	var t [3][2]int64
-	var u [2][3]uint64
-	for i := 0; i < 3; i++ {
-		for j := 0; j < 2; j++ {
-			t[agRow_1(i)][j] = int64(k+i)<<33 + int64(d*j+1)
-			u[j][agRow_1(i)] = uint64(d+j)<<40 | uint64(k*i+j)
-		}
-	}
+func swRun_1() int {
 	r := 0
-	for i := 0; i < 3; i++ {
-		for j := 0; j < 2; j++ {
-			t[agRow_1(i)][j] += t[i][1-j] >> 3
-			u[j][i] ^= u[agRow_1(1-j)][i] >> 7
-			r = r*31 + int(t[agRow_1(i)][j]>>33) + int(t[i][j])
-			r = r*31 + int(u[agRow_1(j)][i]>>40) + int(uint32(u[j][i]))
+	switch swW_1 & 243 {
+	case -9223372036854775808:
+		if r&1 == 0 {
+			r += 60
+			break
 		}
-	}
-	return r
-}
-
-type EMB_1 struct {
-	a int32
-	b uint32
-}
-
-func (p *EMB_1) bump(d int32) int32 {
-	p.a += d
-	return p.a
-}
-
-func (v EMB_1) sumb() int32 {
-	return v.a*6 + int32(v.b)*12
-}
-
-type EMP_1 struct {
-	n int32
-}
-
-func (p *EMP_1) inc(d int32) int32 {
-	p.n += d
-	return p.n
-}
-
-func (p *EMP_1) get() int32 {
-	return p.n
-}
-
-type EMO_1 struct {
-	EMB_1
-	*EMP_1
-	b int32
-	c int32
-}
-
-func (o *EMO_1) own() int32 {
-	return o.c*3 + o.b
-}
-
-type EMI_1 interface {
-	sumb() int32
-	get() int32
-}
-
-var emP_1 = EMP_1{n: -1316}
-
-var emO_1 = EMO_1{EMB_1: EMB_1{a: -715765147, b: 291928945}, EMP_1: &emP_1, b: -808539098, c: -2574}
-
-var emBuf_1 = []byte("12afA1g2d ")
-
-var emArr_1 = [4]int32{-966, 7, 650, 283}
-
-func emSum_1(base int32, xs ...int32) int32 {
-	s := base
-	for i, x := range xs {
-		s += x * int32(i+1)
-	}
-	return s
-}
-
-func emRun_1(k int) int {
-	r := 0
-	cp := emO_1
-	cp.a += 43
-	cp.inc(61)
-	r = r*31 + int(cp.a) - int(emO_1.a)
-	r = r*31 + int(emP_1.n)
-	r = r*31 + len(string(emBuf_1[4:]))
-	r = r*31 + int(emSum_1(int32(k), -6, -100, 12))
-	if string(emBuf_1[4:9]) == "" {
-		r += 3
-	}
-	r = r*31 + int(emO_1.sumb())
-	switch string(emBuf_1[6:10]) {
-	case "a":
-		r += 5
-	case "g2d ", "F":
-		r += 7
+		r = r*31 + 482
+	case 51:
+		r = r*31 + 951
+		fallthrough
+	case 48:
+		r = r*31 + 881
+		fallthrough
 	default:
-		r += 11
+		if r&1 == 0 {
+			r += 23
+			break
+		}
+		r = r*31 + 11
+	case 46:
+		if r&1 == 0 {
+			r += 77
+			break
+		}
+		r = r*31 + 572
 	}
-	r = r*31 + int(emO_1.inc(47))
-	r = r*31 + int(emP_1.n)
-	r = r*31 + int(emO_1.bump(-52))
-	po := &emO_1
-	r = r*31 + int(po.bump(-32))
-	r = r*31 + int(po.a) + int(po.get())
-	var ei EMI_1 = &emO_1
-	r = r*31 + int(ei.sumb())
-	r = r*31 + int(ei.get())
-	r = r*31 + int(emSum_1(int32(k)))
-	r = r*31 + int(emO_1.b) + int(emO_1.EMB_1.b)*3
-	mv := emO_1.bump
-	r = r*31 + int(mv(-53))
-	emO_1.a += -10
-	r = r*31 + int(emO_1.EMB_1.a)
+	switch swK_1 {
+	case 0xfe:
+		if r&1 == 0 {
+			r += 84
+			break
+		}
+		r = r*31 + 3
+	case 0xc, 8:
+		r = r*31 + 283
+	case 0:
+		r = r*31 + 318
+	}
+	switch swUn_1 {
+	case 0xc5dec4ef, 0xc5dec4ec:
+		fallthrough
+	case 3319710955:
+	case 0xc5dec4f2:
+		if r&1 == 0 {
+			r += 50
+			break
+		}
+	case 2117912169, 3319710957, 3319710958:
+		fallthrough
+	default:
+		r = r*31 + 70
+	case 0x0, 0xc5dec26c:
+		r = r*31 + 873
+	}
+	switch swI8_1 >> 7 {
+	default:
+		r = r*31 + 35
+		fallthrough
+	case -4:
+		r = r*31 + 908
+		fallthrough
+	case -128:
+	case 127, 1:
+		r = r*31 + 57
+	case 0:
+		r = r*31 + 895
+	}
+	switch swI32_1 >> 12 {
+	case 130148, -50544852:
+		r = r*31 + 861
+		fallthrough
+	case 130396, 130841, 130150:
+		r = r*31 + 498
+	}
+	switch swI8_1 {
+	case -113, -60:
+		r = r*31 + 875
+		fallthrough
+	case -128, -62:
+		if r&1 == 0 {
+			r += 42
+			break
+		}
+		r = r*31 + 70
+	}
+	r = r*31 + swCount_1
+	r = r*31 + int(swI8_1) + int(swU8_1) + int(swI16_1) + int(swU16_1) + int(swI32_1) + int(swU32_1) + swN_1 + int(swUn_1) + int(swK_1) + int(swW_1>>40)
 	return r
 }
 
-var lbS_1 = [6]string{" \n\nab", "\xc3", "", "\u0085", "\u00a0\n€ab", "\xff\u0085\tA"}
+type WrD_1 int64
 
-var lbB_1 = [6][]byte{[]byte(""), []byte("\n"), []byte("0é\u00a0"), []byte("\u00a0\né"), []byte("\xc3\xff"), []byte("abbAb")}
+type WrC_1 uint64
 
-func lbH_1(s string) int {
-	h := len(s)
-	for i := 0; i < len(s); i++ {
-		h = h*31 + int(s[i])
-	}
-	return h
+var wrCalls_1 int
+
+var wrU8a_1 uint8 = 255
+
+var wrU8b_1 uint8 = 128
+
+var wrU8d_1 uint8 = 255
+
+var wrAU8_1 = [2]uint8{84, 16}
+
+const WrMaxU8_1 uint8 = 255
+
+var wrI32d_1 int32 = 2147483646
+
+var wrI64a_1 int64 = (-9223372036854775808)
+
+var wrU64b_1 uint64 = 9223372036854775808
+
+var wrDb_1 WrD_1 = (-1)
+
+const WrMaxD_1 WrD_1 = 9223372036854775807
+
+func wrFU8_1(x uint8) uint8 {
+	wrCalls_1++
+	return x
 }
 
-func lbHB_1(b []byte) int {
-	h := len(b)
-	for i := 0; i < len(b); i++ {
-		h = h*31 + int(b[i])
-	}
-	return h
-}
+var wrKU16b_1 uint16 = 16
 
-func lbI_1(b bool) int {
-	if b {
-		return 1
-	}
-	return 0
-}
+var wrKDb_1 WrD_1 = 4294967296
 
-func lbE_1(e error) int {
-	if e != nil {
-		return 1
-	}
-	return 0
-}
-
-var lbE0_1 = errors.New("e0")
-
-var lbE1_1 = errors.New("e1")
-
-type LBE_1 struct {
-	c int
-	e error
-}
-
-func (x *LBE_1) Error() string { return "lbe" }
-
-func (x *LBE_1) Unwrap() error { return x.e }
-
-var lbW0_1 = LBE_1{1, lbE0_1}
-
-var lbW1_1 = LBE_1{2, &lbW0_1}
-
-var lbW2_1 = LBE_1{3, &lbW1_1}
-
-func lbRun_1() int {
+func wrRun_1() int {
 	r := 0
-	r = r*31 + lbH_1(strings.TrimSpace(lbS_1[0]))
-	r = r*31 + lbHB_1(bytes.TrimSpace(lbB_1[0]))
-	r = r*31 + strings.LastIndex(lbS_1[3], lbS_1[0])
-	r = r*31 + bytes.LastIndex(lbB_1[3], lbB_1[0])
-	r = r*31 + strings.Compare(lbS_1[1], lbS_1[5])
-	r = r*31 + bytes.Compare(lbB_1[1], lbB_1[5])
-	r = r*31 + lbI_1(bytes.Equal(lbB_1[1], lbB_1[5]))
-	r = r*31 + lbI_1(strings.ContainsAny(lbS_1[5], lbS_1[2]))
-	r = r*31 + lbI_1(bytes.ContainsAny(lbB_1[5], lbS_1[2]))
-	r = r*31 + lbH_1(strings.TrimPrefix(lbS_1[2], lbS_1[4]))
-	r = r*31 + lbH_1(strings.TrimSuffix(lbS_1[4], lbS_1[2]))
-	r = r*31 + lbHB_1(bytes.TrimPrefix(lbB_1[2], lbB_1[4]))
-	r = r*31 + lbHB_1(bytes.TrimSuffix(lbB_1[4], lbB_1[2]))
-	r = r*31 + strings.IndexAny(lbS_1[1], lbS_1[2])
-	r = r*31 + bytes.IndexAny(lbB_1[1], lbS_1[2])
-	r = r*31 + strings.IndexByte(lbS_1[3], 195)
-	r = r*31 + bytes.IndexByte(lbB_1[3], 195)
-	r = r*31 + strings.LastIndexByte(lbS_1[3], 195)
-	r = r*31 + bytes.LastIndexByte(lbB_1[3], 195)
-	r = r*31 + strings.Count(lbS_1[5], lbS_1[3])
-	r = r*31 + bytes.Count(lbB_1[5], lbB_1[3])
-	bf, af, found := strings.Cut(lbS_1[5], lbS_1[2])
-	r = r*31 + lbH_1(bf)*7 + lbH_1(af) + lbI_1(found)
-	bb, ab, foundb := bytes.Cut(lbB_1[5], lbB_1[2])
-	r = r*31 + lbHB_1(bb)*7 + lbHB_1(ab) + lbI_1(foundb)
-	r = r*31 + lbI_1(strings.ContainsRune(lbS_1[0], 1114112))
-	r = r*31 + lbI_1(bytes.ContainsRune(lbB_1[0], 1114112))
+	if ((WrMaxU8_1 * wrU8d_1) * (wrU8d_1 & wrFU8_1(wrU8d_1))) >= (wrU8a_1 << wrKU16b_1) {
+		r = r*31 + 558
+	} else {
+		r = r*31 + 84
+	}
+	r = r*31 + int(((wrI32d_1 & 2147483646) + int32(wrI32d_1)))
+	wrDb_1 *= WrMaxD_1
+	wt1 := wrDb_1
+	r = r*31 + (int(wt1) ^ int(wt1>>32))
+	wrAU8_1[0] |= (wrU8b_1 + (137 << wrKDb_1))
+	r = r*31 + int(wrAU8_1[0])
+	wt2 := wrU64b_1
+	wt2--
+	wt3 := wt2
+	r = r*31 + (int(wt3) ^ int(wt3>>32))
+	if (wrI64a_1 - (-7938971462702988647)) <= wrI64a_1 {
+		r = r*31 + 778
+	} else {
+		r = r*31 + 915
+	}
+	r = r*31 + wrCalls_1
 	return r
 }
 
 func main() {
 	octosmith_calls = 0
-	if gv_24 != 124 {
+	if gv_53 != 35 {
 		panic("OctoSmith Checksum Failure: init order")
 	}
-	if gv_27 != 64 {
+	if gv_54 != 35 {
 		panic("OctoSmith Checksum Failure: init order")
 	}
-	if int(tb_28.h)+int(tb_28.a[0])+int(tb_28.a[1])+int(tb_28.a[2])+int(tb_28.a[3])+int(tb_28.a[4])+int(tb_28.t) != 236101 {
+	if gv_57 != 82 {
+		panic("OctoSmith Checksum Failure: init order")
+	}
+	if gv_58 != 35 {
+		panic("OctoSmith Checksum Failure: init order")
+	}
+	if NULL != 0 {
+		panic("OctoSmith Checksum Failure: init order")
+	}
+	if gv_60 != 94 {
+		panic("OctoSmith Checksum Failure: init order")
+	}
+	if int(tb_61.h)+int(tb_61.a[0])+int(tb_61.a[1])+int(tb_61.a[2])+int(tb_61.a[3])+int(tb_61.a[4])+int(tb_61.a[5])+int(tb_61.a[6])+int(tb_61.t) != 17466 {
 		panic("OctoSmith Checksum Failure: tables")
 	}
-	if int(tsl_28[0].h)+int(tsl_28[0].a[0])+int(tsl_28[0].a[1])+int(tsl_28[0].a[2])+int(tsl_28[0].a[3])+int(tsl_28[0].a[4])+int(tsl_28[0].t) != 174885 {
+	if int(tsl_61[0].h)+int(tsl_61[0].a[0])+int(tsl_61[0].a[1])+int(tsl_61[0].a[2])+int(tsl_61[0].a[3])+int(tsl_61[0].a[4])+int(tsl_61[0].a[5])+int(tsl_61[0].a[6])+int(tsl_61[0].t) != -22576 {
 		panic("OctoSmith Checksum Failure: tables")
 	}
-	if agRun_1() != -1798235960 {
-		panic("OctoSmith Checksum Failure: aggregates")
+	if paRun_1() != 396133063 {
+		panic("OctoSmith Checksum Failure: pairs")
 	}
-	if emRun_1(-99) != -577211637 {
-		panic("OctoSmith Checksum Failure: embedding")
+	if swRun_1() != 239365442 {
+		panic("OctoSmith Checksum Failure: switches")
 	}
-	if lbRun_1() != -1903009807 {
-		panic("OctoSmith Checksum Failure: library")
+	if wrRun_1() != 1198565933 {
+		panic("OctoSmith Checksum Failure: wraps")
 	}
+	var a_62 [3]int
+	octosmith_checksum = (octosmith_checksum ^ (a_62[2] * (((k_22 - a_62[2]) * a_62[1]) / ((18 + 1) * (signed % k_21)))))
 	{
-		var z_29 uint16 = 0
-		if (z_29 - 60906) < k_11 {
-			octosmith_checksum = (octosmith_checksum ^ 507060121)
-		}
-		octosmith_checksum = (octosmith_checksum ^ int((z_29 - 47425)))
-	}
-	octosmith_checksum = (octosmith_checksum ^ (fn_19(k_8) & (37 ^ (fn_19(gv_27) & gv_24))))
-	var idle_32 = make(chan int)
-
-	{
-		go cog_21(bytefill, gv_24)
-		select {
-		case r_30 := <-bytefill:
-			octosmith_checksum = octosmith_checksum ^ r_30
-		case r_31 := <-idle_32:
-			octosmith_checksum = octosmith_checksum ^ (r_31 * 7)
-		}
-	}
-	{
-		var t_33 string = "🚀go"
-		octosmith_checksum = (octosmith_checksum ^ len(t_33))
-		octosmith_checksum = (octosmith_checksum ^ len(t_33[2:4]))
-		if t_33 == "🚀go" {
-			octosmith_checksum = (octosmith_checksum ^ 1998800025)
-		}
-	}
-	octosmith_checksum = (octosmith_checksum ^ ((((gv_27 &^ gv_27) & (fn_19(fn_19(gv_24)) ^ 77)) - fn_19((84 * fn_19(97)))) + 90))
-	switch fn_19(90) % (((k_7 % gv_24) % (gv_27 * gv_24)) ^ ((97 ^ gv_27) & gv_27)) {
-	case 25:
-	case 26, 24:
-		switch 9 + (fn_19(16) >> ((58 ^ 60) ^ fn_19(13))) {
-		case 10:
-		case 11, 9:
-			octosmith_checksum = (octosmith_checksum ^ gv_24)
-			if (fn_19((((7 & gv_24) + gv_27) | (fn_19(fn_19(46)) ^ k_7))) != gv_27) && !((gv_27 & gv_27) >= gv_24) {
-				{
-					var t_34 string = "the quick brown fox"
-					octosmith_checksum = (octosmith_checksum ^ len(t_34))
-					octosmith_checksum = (octosmith_checksum ^ len(t_34[17:17]))
-					if t_34 == "the quick brown fox" {
-						octosmith_checksum = (octosmith_checksum ^ 543084442)
-					}
-				}
-				octosmith_checksum = (octosmith_checksum ^ 19)
-			}
+		var i_63 int = 0
+		for i_63 < 1 {
 			{
-				var g_35 [3][3]int
-				g_35[0][0] = gv_27
-				octosmith_checksum = (octosmith_checksum ^ g_35[0][0])
-				octosmith_checksum = (octosmith_checksum ^ len(g_35))
-				octosmith_checksum = (octosmith_checksum ^ len(g_35[0]))
-				for i_36 := range g_35 {
-					for write, v_38 := range g_35[i_36] {
-						_ = write
-						{
-							octosmith_checksum = (octosmith_checksum ^ v_38)
+				var i_64 int = 0
+				for i_64 < 1 {
+					var b_65 bool = ((i_64 - (((fn_41(a_62[0], NULL, gv_58) / 50) + fn_41(a_62[1], gv_60, fn_41(42, gv_58, gv_60))) &^ a_62[0])) <= (((a_62[2] % gv_60) ^ a_62[2]) / fn_41((69^(a_62[1]-a_62[2])), fn_41((a_62[1]*k_26), (i_63*i_63), fn_41(gv_60, gv_54, k_26)), (fn_41(k_22, a_62[0], fn_41(gv_58, a_62[1], 16))^54))))
+					{
+						var t_66 string = "äöüß"
+						octosmith_checksum = (octosmith_checksum ^ len(t_66))
+						octosmith_checksum = (octosmith_checksum ^ int(t_66[3]))
+						if t_66 == "0123456789" {
+							octosmith_checksum = (octosmith_checksum ^ 1893603883)
 						}
 					}
+					if b_65 {
+						octosmith_checksum = (octosmith_checksum ^ 275951112)
+					}
+					i_64 = (i_64 + 1)
 				}
 			}
-		default:
+			gv_57 &^= (81 &^ a_62[0])
+			i_63 = (i_63 + 1)
 		}
-		var s_39 L_5 = make(L_5, 2, 3)
-		if !(gv_24 == (((cap(s_39) &^ (17 * k_10)) ^ (80 * gv_27)) ^ (((gv_24 / 1) << (s_39[0] * cap(s_39))) + (80 + (89 + 91))))) {
-			octosmith_checksum = (octosmith_checksum ^ ((((gv_27 & len(s_39)) * (21 ^ gv_27)) / ((gv_27 / gv_27) - (cap(s_39) - s_39[1]))) - (69 * gv_27)))
-			if (gv_24 % (gv_27 ^ 75)) != gv_27 {
-				{
-					var cp_40 []int = make([]int, 4, 4)
-					cn_41 := copy(cp_40, s_39)
-					octosmith_checksum = (octosmith_checksum ^ cn_41)
-					octosmith_checksum = (octosmith_checksum ^ cp_40[0])
-					octosmith_checksum = (octosmith_checksum ^ cp_40[1])
-					octosmith_checksum = (octosmith_checksum ^ cp_40[2])
-					octosmith_checksum = (octosmith_checksum ^ cp_40[3])
-					vw_42 := cp_40[3:3:4]
-					octosmith_checksum = (octosmith_checksum ^ len(vw_42))
-					octosmith_checksum = (octosmith_checksum ^ cap(vw_42))
-					clear(cp_40)
-					octosmith_checksum = (octosmith_checksum ^ cp_40[0])
-					octosmith_checksum = (octosmith_checksum ^ cp_40[1])
-					octosmith_checksum = (octosmith_checksum ^ cp_40[2])
-					octosmith_checksum = (octosmith_checksum ^ cp_40[3])
+	}
+	var v_67 int = ((16 - 89) | gv_53)
+	var uintptr int = ((a_62[1] | a_62[0]) & 0)
+	if (((fn_41(a_62[0], 17, 75) | gv_54) * NULL) <= a_62[1]) || (58 <= (gv_53 & a_62[1])) {
+		octosmith_checksum = (octosmith_checksum ^ (a_62[1] - k_22))
+	}
+	var s_69 []int = make([]int, 1, 3)
+	s_69[0] = (k_27 * gv_58)
+	{
+		var fl_70 float32 = 7
+		fl_70 = (fl_70 * 1e-3)
+		fl_70 = (fl_70 - 1.5)
+		if fl_70 != -1.493 {
+			octosmith_checksum = (octosmith_checksum ^ 488482478)
+		}
+		if fl_70 < 0.1 {
+			octosmith_checksum = (octosmith_checksum ^ 1250548264)
+		}
+		octosmith_checksum = (octosmith_checksum ^ int(fl_70))
+	}
+	{
+		var i_71 int = 0
+		for i_71 < 1 {
+			{
+				var memcpy S_8
+				var double Valuer = &memcpy
+				octosmith_checksum = (octosmith_checksum ^ double.Val())
+				octosmith_checksum = (octosmith_checksum ^ double.(*S_8).Val())
+				switch x := double.(type) {
+				case *read:
+					octosmith_checksum = octosmith_checksum ^ (x.Val() * 2)
+				case *S_8:
+					octosmith_checksum = octosmith_checksum ^ (x.Val() * 3)
+				default:
+					octosmith_checksum = octosmith_checksum ^ 99
 				}
-				octosmith_checksum = (octosmith_checksum ^ (((s_39[0] - 92) ^ ((98 % gv_27) ^ gv_27)) + 28))
 			}
+			i_71 = (i_71 + 1)
+		}
+	}
+	var idle_76 = make(chan int)
+
+	{
+		go cog_47(ch_48, (97 ^ s_69[0]))
+		select {
+		case r_74 := <-ch_48:
+			octosmith_checksum = octosmith_checksum ^ r_74
+		case imag := <-idle_76:
+			octosmith_checksum = octosmith_checksum ^ (imag * 7)
+		}
+	}
+	var index []int = make([]int, 1, 2)
+	s_69[0] = gv_58
+	{
+		go free(ch_51, ((a_62[1] % 41) / ((len(index) ^ 7) + (a_62[1] ^ gv_60))))
+		r_78 := <-ch_51
+		octosmith_checksum = (octosmith_checksum ^ r_78)
+		delete := <-ch_51
+		octosmith_checksum = (octosmith_checksum ^ delete)
+	}
+	a_62[2] = (a_62[0] + (((len(s_69) | 43) ^ (gv_54 * gv_53)) * fn_41(fn_41(fn_41(s_69[0], a_62[1], len(s_69)), s_69[0], a_62[0]), (5&67), (gv_54&s_69[0]))))
+	switch a_62[0] {
+	case 1:
+	case 2, 0:
+		var b_80 bool = (k_27 == gv_53)
+		if b_80 {
+			octosmith_checksum = (octosmith_checksum ^ 472741429)
 		}
 	default:
 	}
-	octosmith_checksum = (octosmith_checksum ^ gv_24)
-	if !(!(!(((35 / gv_24) / (85 + gv_24)) < ((30 + (gv_27 ^ gv_27)) & (((gv_27 % gv_27) &^ 44) ^ (0 / (78 ^ 54))))))) {
-		octosmith_checksum = (octosmith_checksum ^ gv_24)
-		octosmith_checksum = (octosmith_checksum ^ 98)
-	}
-	var size_t int = (gv_24 << (38 & k_7))
-	{
-		var exit int = 0
-		for exit < 1 {
-			{
-				var lv_46 func(int) int = func(p_45 int) int {
-					octosmith_calls = octosmith_calls + 16
-					return (((10 ^ p_45) ^ (97 ^ p_45)) | 98)
-				}
-				octosmith_checksum = (octosmith_checksum ^ lv_46(13))
-			}
-			exit = (exit + 1)
+	octosmith_checksum = (octosmith_checksum ^ 91)
+	if !((gv_53 &^ a_62[1]) < (cap(s_69) & (38 << len(index)))) {
+		gv_53 %= (k_28 & ((16 - a_62[1]) + gv_54))
+		var sizeof bool = (((s_69[0] &^ 61) / ((k_26 ^ s_69[0]) | ((gv_57 & gv_57) % (gv_58 | 10)))) < (a_62[2] % (gv_53 << ((a_62[0] ^ gv_57) &^ (a_62[1] & gv_58)))))
+		var new []int = make([]int, 0, 3)
+		octosmith_checksum = (octosmith_checksum ^ len(new))
+		if sizeof {
+			octosmith_checksum = (octosmith_checksum ^ 571502638)
 		}
 	}
-	var s_47 L_4 = make(L_4, 2, 4)
-	s_47[0], s_47[1] = s_47[1], s_47[0]
-	if s_47[0] != gv_24 {
-		var a_48 [3]int
-		var a_49 [3]int
-		octosmith_checksum = (octosmith_checksum ^ a_48[0])
-		octosmith_checksum = (octosmith_checksum ^ a_49[0])
-	}
-	octosmith_checksum = (octosmith_checksum ^ ((13 ^ ((42 ^ gv_24) * (gv_27 - cap(s_47)))) + cap(s_47)))
-	octosmith_checksum = (octosmith_checksum ^ (32 * (size_t ^ (size_t &^ s_47[1]))))
-	octosmith_checksum = (octosmith_checksum ^ s_47[0])
-	octosmith_checksum = (octosmith_checksum ^ (22 | gv_24))
-	if !(gv_24 == (((gv_27 & (gv_24 & gv_27)) ^ s_47[0]) ^ size_t)) {
-		octosmith_checksum = (octosmith_checksum ^ gv_24)
-	}
-	if !(s_47[1] < ((95 &^ ((s_47[1] + gv_27) % (cap(s_47) * gv_24))) * (len(s_47) & gv_27))) || (((((gv_24 * s_47[0]) &^ (gv_24 | size_t)) << (s_47[1] &^ (83 ^ 35))) / ((k_10 ^ k_6) + ((s_47[0] ^ 94) | (gv_24 - size_t)))) > (size_t % ((63 % (30 * gv_27)) | 78))) {
-		var auto []int = make([]int, 3, 4)
-		octosmith_checksum = (octosmith_checksum ^ size_t)
-		octosmith_checksum = (octosmith_checksum ^ ((s_47[1] - ((len(auto) ^ 58) &^ (size_t &^ s_47[1]))) & (auto[1] & auto[2])))
-	}
-	s_47[0] = ((32 - ((size_t - k_11) - gv_24)) / gv_24)
-	if octosmith_calls != 3088 {
+	index = append(index, a_62[0])
+	octosmith_checksum = (octosmith_checksum ^ (v_67 % (k_26 ^ ((a_62[0] * a_62[0]) ^ (a_62[2] << index[0])))))
+	octosmith_checksum = (octosmith_checksum ^ uintptr)
+	if octosmith_calls != 49152 {
 		panic("OctoSmith Call Count Failure!")
 	}
-	if octosmith_checksum != -1467873143 {
+	if octosmith_checksum != 2028668095 {
 		panic("OctoSmith Checksum Failure!")
 	}
 	println("OctoSmith OK")

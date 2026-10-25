@@ -3535,6 +3535,23 @@ the six batches of dom61-dom66 gave the verdicts they had but for a fault fixed
 since (dom64's m0353), a 64-bit overflow and a loop of 2^31 passes that times out. **A harness's header is checked against what it runs.** dom66's mutants on the
 board: 359 of 359 print Go's output, one of them only once the harness read a
 carriage return as Go wrote it -- run.py had read it as a line end.
+**A STRUCT'S REGISTERS ARE GIVEN BACK** (2026-10-25). The cost dom63 and dom65 met,
+three cog registers for every slice a function passes to a call, to the end of the
+function, was the backend's: spin2cpp keeps a register local of several longs in
+consecutive registers and its optimizer gives no subregister back. The user chose a
+backend fix over an ogo fallback; SplitLocalStructs, carried in outasm.c.diff, splits
+such a local into one local a long wherever nothing reads the longs as a block (the
+record is doc/REGEN-HISTORY.md's of the day). It made 1165 of 1503 programs build
+differently and smaller, every one printing on the board what it printed, and it made
+one larger: functions that lost their moves fell under the backend's threshold for
+inlining a marked function, and obeam's unchecked VM, its arena sized to the room
+its checks leave, outgrew Hub RAM by 3 KB. The build's ladder, which compiles a
+program plainer when it outgrows the cog, asks the hub too since. **A change that
+makes code smaller makes more of it small enough to inline: a build at its limit is
+asked again without the marks.** The two tests whose programs had been chosen for
+the old limit, a crash past it and a switch's fallback, needed programs of the new
+one: a hundred register arrays indexed in place for the crash, which the split
+leaves together, and the fuzzer's seed 114 for the switch.
 **A MARK IS MADE IN EMISSION ORDER, AND A LOOP RUNS ITS BODY AGAIN** (2026-10-08,
 found probing unsafe.Slice's views). The holder marks are set as statements are
 emitted, so a statement read a variable's mark as the statements BEFORE it had left

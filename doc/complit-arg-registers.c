@@ -29,6 +29,13 @@
 //
 // To check whether this is still so, compile this with and without -DSTATIC and
 // count the `res 1` lines of the .p2asm, or read the error.
+//
+// LIFTED 2026-10-25 by internal/outasm.c.diff's second hunk (SplitLocalStructs):
+// spin2cpp kept a register local of several longs in consecutive registers for the
+// whole function, and ReuseLocalRegisters gave no subregister back; the hunk splits
+// such a local into one local a long where nothing reads the longs as a block. With
+// it this builds and spends 21, as -DSTATIC does, and the sixty inlined `area(P p)`
+// calls 21 where they spent 250; a native build of b5993a84 without it still fails.
 
 #include <stdio.h>
 

@@ -462,6 +462,35 @@ func s__BCIR_OptReplaceJumpToOpWithItself(tls *libc.TLS, cc *CC) (r uint8) {
 	return didWork
 }
 
+func s__CanSplitLocal(tls *libc.TLS, cc *CC, irl uintptr, base uintptr) (r uint8) {
+	var ir, prev uintptr
+	_, _ = ir, prev
+	prev = libc.UintptrFromInt32(0)
+	ir = (*_IRList)(unsafe.Pointer(irl)).Fhead
+	for {
+		if !(ir != 0) {
+			break
+		}
+		if s__AddressesBase(tls, cc, (*_IR)(unsafe.Pointer(ir)).Fdst, base) != 0 || s__AddressesBase(tls, cc, (*_IR)(unsafe.Pointer(ir)).Fsrc, base) != 0 {
+			return libc.BoolUint8(m_false != 0)
+		}
+		if s__RefersToBase(tls, cc, (*_IR)(unsafe.Pointer(ir)).Fdst, base) != 0 || s__RefersToBase(tls, cc, (*_IR)(unsafe.Pointer(ir)).Fsrc, base) != 0 {
+			if libc.Uint32FromInt32((*_IR)(unsafe.Pointer(ir)).Fflags)&uint32(_FLAG_USER_INSTR) != 0 {
+				return libc.BoolUint8(m_false != 0)
+			}
+			if prev != 0 && ((*_IR)(unsafe.Pointer(prev)).Fopc == int32(_OPC_SETQ) || (*_IR)(unsafe.Pointer(prev)).Fopc == int32(_OPC_SETQ2)) {
+				return libc.BoolUint8(m_false != 0)
+			}
+		}
+		goto _1
+	_1:
+		;
+		prev = ir
+		ir = (*_IR)(unsafe.Pointer(ir)).Fnext
+	}
+	return libc.BoolUint8(m_true != 0)
+}
+
 // C documentation
 //
 //	//

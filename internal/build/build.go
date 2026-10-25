@@ -459,10 +459,14 @@ func union(a, b []string) []string {
 // of its locals to where it lands, the backend gives registers back between a C
 // switch's arms in some functions and fewer in others, a cog has 480 for
 // everything, and a program that fits a plainer way is not to fail for having been
-// made faster. A plainer program whose C is the C tried already is not compiled
-// again. Nothing is said of an attempt that outgrew the cog; a program that fits no
-// way is told what the last attempt said, and which of its functions hold the
-// registers (cogHint).
+// made faster. Every copy brings its code too, and a program that outgrows Hub RAM
+// is compiled plainer the same way: obeam's unchecked VM, its arena sized to the
+// room its checks leave, fitted with every marked function inlined until the
+// backend of 2026-10-25 made more of them small enough to inline, and then fitted
+// only without the marks. A plainer program whose C is the C tried already is not
+// compiled again. Nothing is said of an attempt that outgrew the cog or the hub; a
+// program that fits no way is told what the last attempt said, and which of its
+// functions hold the registers (cogHint).
 func compileMarked(c []byte, plainer []func() ([]byte, error), cFile, out, inc, keepC string, allowWarnings bool, stdout, stderr io.Writer) (int, error) {
 	listing := strings.TrimSuffix(out, filepath.Ext(out)) + ".p2asm"
 	for {
@@ -473,7 +477,7 @@ func compileMarked(c []byte, plainer []func() ([]byte, error), cFile, out, inc, 
 		var said, saidErr bytes.Buffer
 		code, err := compileC(cFile, out, inc, &said, &saidErr)
 		all := append(said.Bytes(), saidErr.Bytes()...)
-		if err != nil && outgrewCog(all) {
+		if err != nil && outgrewCog(all) || outgrewHub(all) {
 			next, nerr := plainerC(c, &plainer)
 			if nerr != nil {
 				return 1, nerr
@@ -729,6 +733,17 @@ var (
 // limit of one function's locals.
 func outgrewCog(said []byte) bool {
 	return bytes.Contains(said, []byte("fit 480 failed")) || bytes.Contains(said, []byte("exceeded local register limit"))
+}
+
+// outgrewHub reports whether the backend said the program does not fit Hub RAM
+// (hubOverflow), a warning it gives about a binary it writes anyway.
+func outgrewHub(said []byte) bool {
+	for _, line := range strings.Split(string(said), "\n") {
+		if hubOverflow(line) {
+			return true
+		}
+	}
+	return false
 }
 
 // buildFlags is what a build command line says, beyond the sources themselves.

@@ -432,44 +432,46 @@ inputs, and never hand-edit the outputs.
    `freopen`, and the `ungetc`/`abort` todo-stub redirects — that libc lacks or
    stubs for both darwin arches).
 
-   > **Backend regenerated 2026-10-14 at the same pin, spin2cpp `b5993a84`, with two
-   > fixes of its own** (inside flexprop `v7.7.0`; ccgo v4.36.1, libc v1.77.1):
-   > `internal/functions.c.diff` and `internal/outasm.c.diff` beside
-   > optimize_ir.c.diff's CORDIC hunk, both for a value of two to four longs, which
-   > the target passes and returns in registers. An ARGUMENT of one whose expression
-   > has a side effect was evaluated once per long -- `take2(*get2())` called get2
-   > twice, OctoGo's `takeS(strs[idx()])` idx twice and `takeX(rows[idx()])` three
-   > times, a value receiver, a send and a string comparison alike -- because
-   > CheckFunctionCalls passes such an argument through `_parm_` temporaries by a
-   > multiple assignment and BuildExprlistFromObject splits a non-call right side into
-   > one member reference per long, each evaluating it again
-   > (doc/multi-long-arg-evaluated-per-long.c, the held fault #13 widened); the fix
-   > evaluates the side effects of what the argument reads through, an index and a
-   > pointer, into temporaries of one long first (ExtractArgSideEffects), and splits
-   > the 64-bit branch's identifier rather than the original expression. A MEMBER past
-   > the first long of one a call returns was read from a register nothing wrote,
-   > AST_METHODREF offsetting the call's first result (doc/member-of-struct-result.c);
-   > the fix takes the call's result of that index. The emitter had bound a call
-   > before reading such a field everywhere but `len(<-ch)` and `cap(<-ch)`, fixed the
-   > same day in the emitter as well. Both faults are old: the backend before built
-   > the reproducers to the same binaries. Measured natively before adoption, b5993a84
-   > with the CORDIC hunk against the same with both fixes: spin2cpp's `make
-   > test_offline` 588 of 588 under both; of 1423 programs (the run cases, seeds
-   > 1-400, doc/) 192 build differently, and every one prints on a P2-EDGE what it
-   > printed before (ten loads lost to the loader and rerun) -- most of them a nil
-   > check of the pointer an argument is read through, run once where it ran once per
-   > long -- while the two reproducers, an OctoGo probe and the new run case print
-   > gcc's and Go's values. A first version of the functions.c fix handed the argument
-   > to ExtractSideEffects, the assignment's helper, which copies an array whose base
-   > has a side effect into a temporary of the array's type: the run case "probe round
-   > 20: bit-packed telemetry" printed 23 mismatches on the board, and the narrower
-   > extraction replaced it. Each builder's turn changed its own target only (the fold
-   > expanded and hashed after each), and the five scripts/flexcc lists are a native
-   > build's of the same tree but for doc/register-limit-crash.c, a crash both ways.
-   > Sent upstream the same day as spin2cpp#519. Host suite and `make board` (999
-   > passing, seed 6 outgrowing a cog as before) green, the run cases "a value of
-   > several words passed where its expression calls" and "len and cap of a value
-   > received" among them.
+   > **Backend regenerated 2026-10-25 at the same pin, spin2cpp `b5993a84`, with a third
+   > fix of its own** (inside flexprop `v7.7.0`; ccgo v4.36.1, libc v1.77.1):
+   > `internal/outasm.c.diff`'s second hunk, SplitLocalStructs, for a cost, not a fault. A
+   > local of several longs held in registers -- a struct, a slice or string header, a
+   > 64-bit value -- is a base register with a subregister a long past the first, and
+   > RenameSubregs keeps its longs in consecutive registers; ReuseLocalRegisters gives no
+   > subregister back, so every such local held its registers to the end of its function,
+   > and every slice a function passed to a call, a temporary of its own, held three. A
+   > Go-shaped main outgrew the cog's 480: dom63's and dom65's had to be split
+   > (doc/complit-arg-registers.c, the limit's reproducer since 2026-09-25, 210
+   > registers). The hunk splits such a local, before the function's first
+   > optimization, into one local a long wherever nothing reads its longs as a block --
+   > its register's address taken for an indexed access (an IMM_COG_LABEL of its name),
+   > inline assembly, an instruction after a SETQ -- and ReuseLocalRegisters then treats
+   > them as it treats an int's. Measured natively before adoption, b5993a84 with the
+   > three carried diffs against the same with the hunk: forty slice arguments of every
+   > spelling took 120 registers and take none, their longs moved straight into the
+   > argument registers (build/probes/regs); the reproducer builds in 21, dom65's unsplit
+   > main takes 9 for 117. spin2cpp's `make test_offline`: 15 of its asm goldens changed,
+   > each read -- nine only reserve no register for a local the optimizer had already
+   > removed, six shorter and right, two of them making functions identical that the
+   > backend then merges -- and 552 of 552 pass on the updated goldens. Of 1503 programs
+   > (the run cases, seeds 1-400, doc/) 1165 build differently, 44 that did not build now
+   > do, and on a P2-EDGE every one prints what the old backend's build printed (the run
+   > cases and seeds held to the host's run of the same C, the reproducers to the old
+   > backend's own run; build/probes/s2c/boardcmp.py): a test's elapsed time aside, the
+   > held faults' lines read registers nothing wrote both ways, and two loads lost to the
+   > loader matched rerun. doc/register-limit-crash.c, the backend's crash past its
+   > register limit, no longer reached the limit in its shape of thirty struct locals; it
+   > is a hundred local arrays indexed in place now, which the hunk leaves together, and
+   > crashes both ways. Each builder's turn changed its own target only (the fold
+   > expanded and hashed after each), and the five scripts/flexcc lists are the native
+   > build's but for doc/switch-case-span-overflow.c, which the linux transpiles' qsort
+   > never finishes, before the change as after. Programs come out smaller where they fit
+   > before -- p2-11's 390 KB main 2.4 KB, obeam's checked VM 3.8 KB -- but a marked
+   > function now small enough to inline is inlined: obeam's unchecked VM, its arena sized
+   > to the room its checks leave, outgrew Hub RAM by 3 KB with its marks, so a build
+   > outgrowing the hub is built plainer as one outgrowing the cog is (compileMarked,
+   > outgrewHub), and it builds unmarked 3.4 KB smaller than before. p2-11's 72 tests
+   > pass on the board; host suite and `make board` (1031 passing, seed 6 outgrowing a cog as before) green.
    >
    > Every regeneration's record, this one included, is in `doc/REGEN-HISTORY.md`,
    > newest first; the next one goes there and replaces the entry above. What still
@@ -1168,7 +1170,9 @@ section. A new finding goes there; the rule it leaves goes here too.
   measured by what it breaks**; **no program fails to build for having been made
   faster**; **that the copies are right where they land is verified on the board
   and nowhere else**; **Whatever emits what a build emits passes both** (`Checked()`
-  and `Inline()`).
+  and `Inline()`); **A change that makes code smaller makes more of it small enough
+  to inline: a build at its limit is asked again without the marks** (A STRUCT'S
+  REGISTERS ARE GIVEN BACK).
 - **A CHECK THE PROGRAM PROVES IS NOT WRITTEN**: **A check the emitter writes is a
   cost the program pays at every run; one Go's own compiler proves away is one this
   one should**; **a change to how narrow values are written is measured on the

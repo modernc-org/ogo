@@ -706,11 +706,15 @@ func TestBuildInlineFallback(t *testing.T) {
 // TestBuildSwitchFallback holds a build to not failing for its switches either. A
 // switch of constant cases on an integer is a C switch, and the backend gives
 // registers back between a C switch's arms in some functions and fewer in others
-// than between a chain's: testdata/switchfallback is the fuzzer's seed 73 of
-// 2026-10-16, whose main outgrows the cog with its functions marked whatever its
+// than between a chain's: testdata/switchfallback is the fuzzer's seed 114 of
+// 2026-10-25, whose main outgrows the cog with its functions marked whatever its
 // switches are, and without the marks still outgrows it with C switches and fits
 // with chains. It is built without the marks and with chains then, as it was built
-// before its switches were C switches, and nothing is said of the attempts.
+// before its switches were C switches, and nothing is said of the attempts. It was
+// seed 73 of 2026-10-16 until the backend gave the registers of a value of several
+// longs back (outasm.c.diff's SplitLocalStructs), and that one fitted unmarked with
+// its C switches; of the day's seeds 1-400, ten outgrow the cog unmarked with C
+// switches and fit with chains.
 func TestBuildSwitchFallback(t *testing.T) {
 	src, err := os.ReadFile(filepath.Join("testdata", "switchfallback", "main.ogo"))
 	if err != nil {
@@ -792,6 +796,28 @@ func TestOutgrewCog(t *testing.T) {
 	} {
 		if got := outgrewCog([]byte(test.said)); got != test.want {
 			t.Errorf("outgrewCog(%q) = %v, want %v", test.said, got, test.want)
+		}
+	}
+}
+
+// TestOutgrewHub pins what the backend says of a program larger than Hub RAM, which
+// compileMarked builds again plainer, as it does one that outgrows the cog: a
+// warning among others, the assembler's word for a call out of reach, and nothing
+// else taken for them.
+func TestOutgrewHub(t *testing.T) {
+	for _, test := range []struct {
+		said string
+		want bool
+	}{
+		{"warning: final output size of 527484 bytes exceeds maximum of 524288 by 3196 bytes\n", true},
+		{"prog.c:3: warning: something\nwarning: final output size of 600000 bytes exceeds maximum of 524288 by 75712 bytes\n", true},
+		{"prog.p2asm:120: error: Operand for call is out of range\n", true},
+		{"prog.p2asm:3941: error: fit 480 failed: pc is 546\n", false},
+		{"prog.c:12: error: unknown identifier x\n", false},
+		{"", false},
+	} {
+		if got := outgrewHub([]byte(test.said)); got != test.want {
+			t.Errorf("outgrewHub(%q) = %v, want %v", test.said, got, test.want)
 		}
 	}
 }

@@ -4235,6 +4235,10 @@ func s__AddToLVS(tls *libc.TLS, cc *CC, lvs uintptr, entry uintptr) {
 	(*_LoopValueSet)(unsafe.Pointer(lvs)).Ftail = entry
 }
 
+func s__AddressesBase(tls *libc.TLS, cc *CC, op uintptr, base uintptr) (r uint8) {
+	return libc.BoolUint8(op != 0 && (*_Operand)(unsafe.Pointer(op)).Fkind == int32(_IMM_COG_LABEL) && (*_Operand)(unsafe.Pointer(op)).Fname != 0 && !(libc.Xstrcmp(tls, (*_Operand)(unsafe.Pointer(op)).Fname, (*_Operand)(unsafe.Pointer(base)).Fname) != 0))
+}
+
 func s__AdjustParamForByRef(tls *libc.TLS, cc *CC, param uintptr) (r uintptr) {
 	var typ uintptr
 	_ = typ
@@ -10439,6 +10443,22 @@ func s__ReduceTemplateConstants(tls *libc.TLS, cc *CC, body uintptr) (r uintptr)
  * types are deduced from the types in the provided function call
  * returns an identifier for the specialized function
  */
+
+// C documentation
+//
+//	/*
+//	 * A local struct (or 64 bit value) held in registers is a base register with a
+//	 * subregister for each long past the first, and RenameSubregs keeps its longs in
+//	 * consecutive registers; ReuseLocalRegisters gives no subregister back, so such a
+//	 * local holds all its registers for the whole function. A function passing many
+//	 * struct values to calls, each a temporary of its own, runs out of them. Where
+//	 * nothing reads the longs as a block -- the register's address taken for an
+//	 * indexed access, inline assembly, a SETQ burst -- the local is split into one
+//	 * local a long, which the optimizer treats as it treats any other.
+//	 */
+func s__RefersToBase(tls *libc.TLS, cc *CC, op uintptr, base uintptr) (r uint8) {
+	return libc.BoolUint8(op != 0 && (op == base || (*_Operand)(unsafe.Pointer(op)).Fkind == int32(_REG_SUBREG) && (*_Operand)(unsafe.Pointer(op)).Fname == base))
+}
 
 func s__RemapIdentifiers(tls *libc.TLS, cc *CC, list uintptr, newIdent uintptr, oldName uintptr) {
 	bp := tls.Alloc(16)

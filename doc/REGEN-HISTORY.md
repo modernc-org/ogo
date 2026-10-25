@@ -7,6 +7,47 @@ adoption and on the board, and the faults each cleared or carried. CLAUDE.md kee
 the procedure, the latest entry and the facts that still stand; the next
 regeneration's record goes here, at the top, and replaces the entry CLAUDE.md keeps.
 
+**Backend regenerated 2026-10-25 at the same pin, spin2cpp `b5993a84`, with a third
+fix of its own** (inside flexprop `v7.7.0`; ccgo v4.36.1, libc v1.77.1):
+`internal/outasm.c.diff`'s second hunk, SplitLocalStructs, for a cost, not a fault. A
+local of several longs held in registers -- a struct, a slice or string header, a
+64-bit value -- is a base register with a subregister a long past the first, and
+RenameSubregs keeps its longs in consecutive registers; ReuseLocalRegisters gives no
+subregister back, so every such local held its registers to the end of its function,
+and every slice a function passed to a call, a temporary of its own, held three. A
+Go-shaped main outgrew the cog's 480: dom63's and dom65's had to be split
+(doc/complit-arg-registers.c, the limit's reproducer since 2026-09-25, 210
+registers). The hunk splits such a local, before the function's first
+optimization, into one local a long wherever nothing reads its longs as a block --
+its register's address taken for an indexed access (an IMM_COG_LABEL of its name),
+inline assembly, an instruction after a SETQ -- and ReuseLocalRegisters then treats
+them as it treats an int's. Measured natively before adoption, b5993a84 with the
+three carried diffs against the same with the hunk: forty slice arguments of every
+spelling took 120 registers and take none, their longs moved straight into the
+argument registers (build/probes/regs); the reproducer builds in 21, dom65's unsplit
+main takes 9 for 117. spin2cpp's `make test_offline`: 15 of its asm goldens changed,
+each read -- nine only reserve no register for a local the optimizer had already
+removed, six shorter and right, two of them making functions identical that the
+backend then merges -- and 552 of 552 pass on the updated goldens. Of 1503 programs
+(the run cases, seeds 1-400, doc/) 1165 build differently, 44 that did not build now
+do, and on a P2-EDGE every one prints what the old backend's build printed (the run
+cases and seeds held to the host's run of the same C, the reproducers to the old
+backend's own run; build/probes/s2c/boardcmp.py): a test's elapsed time aside, the
+held faults' lines read registers nothing wrote both ways, and two loads lost to the
+loader matched rerun. doc/register-limit-crash.c, the backend's crash past its
+register limit, no longer reached the limit in its shape of thirty struct locals; it
+is a hundred local arrays indexed in place now, which the hunk leaves together, and
+crashes both ways. Each builder's turn changed its own target only (the fold
+expanded and hashed after each), and the five scripts/flexcc lists are the native
+build's but for doc/switch-case-span-overflow.c, which the linux transpiles' qsort
+never finishes, before the change as after. Programs come out smaller where they fit
+before -- p2-11's 390 KB main 2.4 KB, obeam's checked VM 3.8 KB -- but a marked
+function now small enough to inline is inlined: obeam's unchecked VM, its arena sized
+to the room its checks leave, outgrew Hub RAM by 3 KB with its marks, so a build
+outgrowing the hub is built plainer as one outgrowing the cog is (compileMarked,
+outgrewHub), and it builds unmarked 3.4 KB smaller than before. p2-11's 72 tests
+pass on the board; host suite and `make board` (1031 passing, seed 6 outgrowing a cog as before) green.
+
 **Backend regenerated 2026-10-14 at the same pin, spin2cpp `b5993a84`, with two
 fixes of its own** (inside flexprop `v7.7.0`; ccgo v4.36.1, libc v1.77.1):
 `internal/functions.c.diff` and `internal/outasm.c.diff` beside optimize_ir.c.diff's

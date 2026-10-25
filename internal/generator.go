@@ -183,7 +183,15 @@ var (
 	// `takeS(strs[idx()])` idx twice for an OctoGo string (the split into longs
 	// repeated the expression; doc/multi-long-arg-evaluated-per-long.c), and a
 	// MEMBER past the first long of one a call returns was read from a register
-	// nothing wrote (doc/member-of-struct-result.c).
+	// nothing wrote (doc/member-of-struct-result.c). outasm.c.diff's second hunk,
+	// since 2026-10-25, is no fault but a cost: a local of several longs held in
+	// registers, a struct or a 64-bit value, kept its longs in consecutive registers
+	// for the whole function, so every slice value a function passed to a call held
+	// three registers to its end, and a Go-shaped main outgrew the cog
+	// (doc/complit-arg-registers.c). SplitLocalStructs splits such a local into one
+	// local a long where nothing reads its longs as a block -- its address taken for
+	// an indexed access, inline assembly, a SETQ burst -- and the optimizer reuses
+	// their registers as it reuses a scalar's.
 	spin2cppDiffs = []string{"mcpp_main.c.diff", "optimize_ir.c.diff", "functions.c.diff", "outasm.c.diff"}
 	target        = fmt.Sprintf("%s/%s", goos, goarch)
 )

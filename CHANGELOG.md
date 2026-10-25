@@ -136,6 +136,17 @@ shipped section tells a reader on that version that they have behaviour they do 
 
 ### Toolchain
 
+- **A function passing many slices or strings to calls fits a cog**: the backend
+  kept every value of several words a function held in registers -- a slice
+  passed as an argument, a string, a 64-bit value -- in registers of its own to
+  the end of the function, so a Go-shaped main of a few dozen `f(buf[i:])` calls
+  ran out of the cog's 480 and had to be split ("fit 480 failed"). A fix of the
+  backend's own (spin2cpp's SplitLocalStructs, carried in internal/outasm.c.diff)
+  gives such a value one register a word, which the optimizer reuses as it
+  reuses an int's: a probe's main took 117 registers and takes 9, and a program
+  built before is smaller, 2.4 KB of p2-11's 390. A program that would outgrow
+  Hub RAM with the functions ogo marks for inlining is built without the marks,
+  as one that would outgrow the cog was.
 - **[DIFFERENCES.md](DIFFERENCES.md) says a deadlock is not reported**: with no
   scheduler behind the cogs, a program whose goroutines all wait waits for ever,
   where Go ends it with "all goroutines are asleep". Its example is a test, run on
