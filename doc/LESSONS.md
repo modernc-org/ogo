@@ -3473,7 +3473,10 @@ expansions holding every argument and the checks' panic paths; split into three
 stages it matched Go on the host and the board. Of its 400 mutants one was a
 deadlock (now DIFFERENCES.md's), and one Go's own compiler crashed on, go1.27.3 on
 every GOARCH: a loop storing zero into the diagonal of a zeroed local 2-D array
-(build/probes/_go-ice, not reported). **A program written as Go that fails the
+(build/probes/_go-ice): golang/go#80534, fixed for Go 1.28, whose cause, #80519,
+the rewrite of such a loop into a clear, also clears the wrong row in silence
+where the index is declared outside the loop -- go1.25 to go1.27 are no oracle
+for an index-dependent zeroing loop. **A program written as Go that fails the
 cog's registers is split where its message says, and the split is the
 program's: the backend keeps every printf argument live through the call.**
 **dom64, field-oriented motor control in float32** (2026-10-25). Clarke and Park

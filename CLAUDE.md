@@ -53,6 +53,26 @@ Each of these was learned by breaking it; the stories are in `doc/LESSONS.md` (s
   (spin2cpp, flexprop) is shown to the user and approved first, and spin2cpp
   commits carry no Claude trailers.
 
+## The v1.0 exit criterion
+
+v1.0 is gated on a measured criterion, not a date (the user's call, 2026-10-25).
+A ROUND is a new domain program written as Go (A DOMAIN PROGRAM IS A PROBE), its
+mutants -- about 400 -- against Go on the host and on the board, and a board
+sweep of any fuzzer part changed since the round before. A round is CLEAN when it
+finds no silent fault: no wrong output, on the host or the board, and no program
+Go rejects accepted. A refusal of valid Go is a gap, fixed or listed, not a
+fault. A release candidate follows three clean rounds in a row; a round with a
+silent fault puts the count back to 0. Each round's account is in
+`doc/LESSONS.md`, its count here:
+
+- dom61 (2026-10-24), a measurement chain over float64: silent (float64 folds
+  and call order, a typed float constant's rounding) -- 0
+- dom62 (2026-10-24), an expression calculator: clean -- 1
+- dom63 (2026-10-25), linear algebra over float64: clean, one refusal (the row
+  swap through pointers) -- 2
+- dom64 (2026-10-25), motor control in float32: silent (a float32 compound
+  constant computed in doubles on the host) -- 0
+
 ## Language feature policy (read before assuming something is excluded)
 
 **The goal is to support what pre-generics Go supports, wherever that is feasible
