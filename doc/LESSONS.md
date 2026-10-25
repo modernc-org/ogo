@@ -3532,7 +3532,9 @@ no room for" was 1750 bytes.** The same batch showed the mutant harness, run.py,
 building its Go twins for amd64 where its header said 386: an int of 64 bits on
 one side, so a mutant only a 32-bit int makes invalid passed as Go. Rerun at 386,
 the six batches of dom61-dom66 gave the verdicts they had but for a fault fixed
-since (dom64's m0353), a 64-bit overflow and a loop of 2^31 passes that times out. **A harness's header is checked against what it runs.**
+since (dom64's m0353), a 64-bit overflow and a loop of 2^31 passes that times out. **A harness's header is checked against what it runs.** dom66's mutants on the
+board: 359 of 359 print Go's output, one of them only once the harness read a
+carriage return as Go wrote it -- run.py had read it as a line end.
 **A MARK IS MADE IN EMISSION ORDER, AND A LOOP RUNS ITS BODY AGAIN** (2026-10-08,
 found probing unsafe.Slice's views). The holder marks are set as statements are
 emitted, so a statement read a variable's mark as the statements BEFORE it had left
