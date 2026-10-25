@@ -3497,7 +3497,42 @@ it, math.Float32bits in a program with no float64 named a helper the C did not
 define: the float32's two bits helpers were written with the float64 runtime,
 whose gate is the float64. **A helper is written by the gate of what it serves:
 two float32 helpers in the float64 runtime were missing from every program that
-called them and had no float64.**
+called them and had no float64.** dom64's mutants on the board: 319 of 325 print
+Go's output; the six others convert a float out of int16's range or a NaN, whose
+result Go leaves to the implementation, and diverge after it -- m0161 and m0356
+at their one such conversion. The board's NaN compares as Go's does, every
+operator, and converts to -1 as an int16 and to MaxInt32 as an int32, where
+GOARCH=386 gives 0 and MinInt32 (build/probes/progs/nancmp).
+**dom65, a firmware update path** (2026-10-25), integer and byte work after four
+float rounds: Intel HEX parsed a line at a time over bytes.Cut, segment
+addressing with its offset wrapping in the segment, bad lines reported through
+errors.As on a pool of *LineError, a 64 KiB image with a bitmap of the bytes
+written, a firmware image encoded to HEX by append over a fixed buffer and read
+back, five checksums from a table of function values, a NOR flash behind an
+interface with a stuck bit, the controller on a goroutine, the boot check. The
+host matched Go on its first build; the board's build did not fit a cog, main
+holding 117 registers, most of them the three words of slice values passed as
+arguments: the backend never gives such a temporary's registers back
+(build/probes/regs: a compound literal, a block's local, one variable assigned
+again -- three registers a site every way, short of a real call), so a Go-shaped
+main with many `f(buf[i:])` is what outgrows the cog. Split, it matched on the
+board. Its mutants: no silent fault, the three DIFFs documented differences.
+**dom66, text on a character display** (2026-10-25): UTF-8 decoded by hand against
+Go's range over a string, invalid bytes among the messages, word wrap with
+hyphenation, the HD44780 ROM's codes by binary search, custom characters, the
+display RAM printed through %q. Host and board matched Go on the first build. A
+mutant put the bytes C2 8D in a row, and %q wrote them as they stood where Go
+writes \u008d: the quoting helpers wrote every valid UTF-8 sequence as it stood,
+and specs.go said so, Go's table of printable runes being one "this target has
+no room for". The table the testing package had been handed for subtest names
+since September is 1750 bytes; ogo_isprint reads it now, under %q of a string, a
+byte slice and a rune, and %#U, refused for the same reason, is written.
+**A limit kept for its cost is measured at its cost: the table "this target has
+no room for" was 1750 bytes.** The same batch showed the mutant harness, run.py,
+building its Go twins for amd64 where its header said 386: an int of 64 bits on
+one side, so a mutant only a 32-bit int makes invalid passed as Go. Rerun at 386,
+the six batches of dom61-dom66 gave the verdicts they had but for a fault fixed
+since (dom64's m0353), a 64-bit overflow and a loop of 2^31 passes that times out. **A harness's header is checked against what it runs.**
 **A MARK IS MADE IN EMISSION ORDER, AND A LOOP RUNS ITS BODY AGAIN** (2026-10-08,
 found probing unsafe.Slice's views). The holder marks are set as statements are
 emitted, so a statement read a variable's mark as the statements BEFORE it had left

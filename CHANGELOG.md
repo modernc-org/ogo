@@ -120,6 +120,8 @@ shipped section tells a reader on that version that they have behaviour they do 
 
 ### Language
 
+- **`%#U` writes the character after the number** where it prints, "U+00E9 'é'",
+  as fmt does, under a width, '-' and a precision; it was refused.
 - **Arrays are swapped through pointers in a multiple assignment**: `*x, *y = *y,
   *x` for two pointers to arrays, the row swap of a pivoting elimination, was "a
   dereferenced array target is not supported yet", where `*x = *y` built.
@@ -149,6 +151,13 @@ shipped section tells a reader on that version that they have behaviour they do 
 
 ### Fixed
 
+- **`%q` escapes a rune that does not print, as Go does**: a valid UTF-8
+  sequence was written as it stood whatever its rune, so `%q` of a C1 control, a
+  no-break space, a soft hyphen, a line separator or an unassigned rune wrote its
+  bytes where Go writes `\u0085`, `\u00a0`, `\u00ad`, `\u2028` or `\u0378` --
+  as a string, a byte slice and a rune, under every flag but '#'. specs.go said so;
+  the table of what prints that it called too big for the target is 1,750 bytes,
+  carried by a program that quotes.
 - **A typed float constant is rounded at each step of its type**, as Go rounds
   one: `const F float32 = 0.1`, `F*3*11` printed 3.3 on a P2-EDGE built by v0.58.0
   where Go prints 3.3000002, and `const G = F*3*11` and `var g float32 = F*3*17`

@@ -2424,11 +2424,11 @@
 //	%q          a string or a []byte double-quoted with Go's escapes, or an
 //	            integer as the character in single quotes. A byte that is not
 //	            part of a valid UTF-8 sequence is written \xNN, as Go writes it;
-//	            a valid sequence is written as it stands, which is what Go writes
-//	            for the printable runes text is made of, and differs from Go only
-//	            for a rune that is valid and NOT printable, which Go escapes
-//	            \uXXXX from a table of Unicode printability this target has no
-//	            room for
+//	            a valid sequence is written as it stands where strconv.IsPrint
+//	            says its rune prints, and \uXXXX or \UXXXXXXXX where it does
+//	            not -- a C1 control, a no-break space, an unassigned rune -- by
+//	            the Unicode tables of the Go that built ogo, which a program
+//	            quoting carries (1750 bytes)
 //	%U          a rune as U+04X
 //	%t          a bool, as the word true or false
 //	%f          a float, fixed-point
@@ -2501,13 +2501,13 @@
 // zero of an octal number, after any zeros "0" pads with, as fmt places it:
 // "%#08x" of 255 is "0x000000ff"; and on the hex dump and %q, as above. On the
 // float verbs it keeps the decimal point, "%#.0f" of 2 being "2.", and %g's
-// trailing zeros, "%#g" of 1.5 being "1.50000". Under %s, %c and %t it means
-// nothing, as in fmt. It is refused on the other verbs, whose alternate forms are
-// not written yet -- the backend's printf ignores the flag, and a program that
-// compiles here is meant to mean what it means in Go rather than approximately
-// that. %#U is one: it writes the character only where strconv.IsPrint says it is
-// printable, a table this target has no room for; %#v, Go's syntax for a value,
-// is the other.
+// trailing zeros, "%#g" of 1.5 being "1.50000". On %U it writes the character
+// after the number where strconv.IsPrint says it prints, "%#U" of 'é' being
+// "U+00E9 'é'", as %q decides it. Under %s, %c and %t it means nothing, as in fmt.
+// It is refused on the other verbs, whose alternate forms are not written yet --
+// %#v, Go's syntax for a value, among them: the backend's printf ignores the
+// flag, and a program that compiles here is meant to mean what it means in Go
+// rather than approximately that.
 //
 // %v takes a flag, a width and a precision as fmt does, laid out as the type's
 // default verb -- %d, %g, %s or %t, element by element for a slice or an array --

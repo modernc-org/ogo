@@ -72,6 +72,9 @@ silent fault puts the count back to 0. Each round's account is in
   swap through pointers) -- 2
 - dom64 (2026-10-25), motor control in float32: silent (a float32 compound
   constant computed in doubles on the host) -- 0
+- dom65 (2026-10-25), a firmware update path over Intel HEX: clean -- 1
+- dom66 (2026-10-25), text on a character display: silent (%q wrote a rune that
+  does not print as it stood) -- 0
 
 ## Language feature policy (read before assuming something is excluded)
 
@@ -908,7 +911,8 @@ section. A new finding goes there; the rule it leaves goes here too.
   emitter's probe; one that breaks them is the checker's**. **A program's own
   mutations are the run cases' mutations for the shapes it brings**. **A batch's
   REJ/REJ list is a net too**. **When a mutant is taken, probe its line alone before
-  writing a rule: what is missing may be the variable's type.**
+  writing a rule: what is missing may be the variable's type.** **A harness's
+  header is checked against what it runs** (run.py's twins, amd64 for 386).
 - **A PROGRAM GO REJECTS IS A ROW** (`scripts/rejects.sh`): **What `ogo build` does
   with such a program is the measure** -- **And measure with a struct of MORE THAN
   ONE WORD, and RUN the binary**.
@@ -922,7 +926,8 @@ section. A new finding goes there; the rule it leaves goes here too.
   compiler is probed before it is answered: a note it read may be months behind the
   code.** **A note calling a row "by design" is checked against specs.go before it
   is believed.** **A limitation listed for users is checked against the compiler
-  like any other note**.
+  like any other note**. **A limit kept for its cost is measured at its cost: the
+  table "this target has no room for" was 1750 bytes.**
 - **The target's build of every program the probes left behind is a probe of its
   own**; **A probe's program is a target-build test too, and the warnings are
   read.** **A form the host's compiler refuses is a form nothing tests, and is run

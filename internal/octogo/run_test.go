@@ -26511,6 +26511,52 @@ func main() {
 		want: "['h' 'i' '!']\n['h' '\\t' '😀']\n[\"hi\" \"a\\\"b\"]\n[]\n['h'] \"tail\"\n",
 	},
 	{
+		// A rune strconv.IsPrint says does not print is escaped as Go escapes it
+		// under every %q form: a C1 control, a no-break space, a soft hyphen, a line
+		// separator, a byte order mark, a private and an unassigned rune, as a string,
+		// a byte slice and a rune, under '+', a width and a precision; '#' backquotes
+		// them as they are. Until 2026-10-25 a valid sequence was written as it stood
+		// (dom66).
+		name: "%q of a rune that does not print",
+		src: `var runes = [...]rune{
+	'a', 0x7f, 0x80, 0x85, 0x8d, 0x9f, 0xa0, 0xa1, 0xad, 0xff, 0x100, 0x2028, 0x3000,
+	0x200b, 0xfeff, 0xfffd, 0xe000, 0x0378, 0x0301, 0x10fff, 0x1f600, 0xe0001, 0x10ffff, 0x1d173,
+}
+
+func main() {
+	var buf [8]byte
+	for _, r := range runes {
+		s := string(r)
+		n := copy(buf[:], s)
+		printf("%q %q %q %+q %#q %8q|%-8q|%.1q %+q %5q\n", s, buf[:n], r, s, s, s, s, s, r, r)
+	}
+	printf("%q\n", "x\u0085y z­w\U000e0001v")
+	b := []byte("\xc2\x8d\xe2\x80\xa8ok\xf3\xa0\x80\x81")
+	printf("%q %x\n", b, b)
+}
+`,
+		want: "\"a\" \"a\" 'a' \"a\" `a`      \"a\"|\"a\"     |\"a\" 'a'   'a'\n\"\\x7f\" \"\\x7f\" '\\x7f' \"\\x7f\" \"\\x7f\"   \"\\x7f\"|\"\\x7f\"  |\"\\x7f\" '\\x7f' '\\x7f'\n\"\\u0080\" \"\\u0080\" '\\u0080' \"\\u0080\" `\u0080` \"\\u0080\"|\"\\u0080\"|\"\\u0080\" '\\u0080' '\\u0080'\n\"\\u0085\" \"\\u0085\" '\\u0085' \"\\u0085\" `\u0085` \"\\u0085\"|\"\\u0085\"|\"\\u0085\" '\\u0085' '\\u0085'\n\"\\u008d\" \"\\u008d\" '\\u008d' \"\\u008d\" `\u008d` \"\\u008d\"|\"\\u008d\"|\"\\u008d\" '\\u008d' '\\u008d'\n\"\\u009f\" \"\\u009f\" '\\u009f' \"\\u009f\" `\u009f` \"\\u009f\"|\"\\u009f\"|\"\\u009f\" '\\u009f' '\\u009f'\n\"\\u00a0\" \"\\u00a0\" '\\u00a0' \"\\u00a0\" `\u00a0` \"\\u00a0\"|\"\\u00a0\"|\"\\u00a0\" '\\u00a0' '\\u00a0'\n\"¡\" \"¡\" '¡' \"\\u00a1\" `¡`      \"¡\"|\"¡\"     |\"¡\" '\\u00a1'   '¡'\n\"\\u00ad\" \"\\u00ad\" '\\u00ad' \"\\u00ad\" `\u00ad` \"\\u00ad\"|\"\\u00ad\"|\"\\u00ad\" '\\u00ad' '\\u00ad'\n\"ÿ\" \"ÿ\" 'ÿ' \"\\u00ff\" `ÿ`      \"ÿ\"|\"ÿ\"     |\"ÿ\" '\\u00ff'   'ÿ'\n\"Ā\" \"Ā\" 'Ā' \"\\u0100\" `Ā`      \"Ā\"|\"Ā\"     |\"Ā\" '\\u0100'   'Ā'\n\"\\u2028\" \"\\u2028\" '\\u2028' \"\\u2028\" `\u2028` \"\\u2028\"|\"\\u2028\"|\"\\u2028\" '\\u2028' '\\u2028'\n\"\\u3000\" \"\\u3000\" '\\u3000' \"\\u3000\" `\u3000` \"\\u3000\"|\"\\u3000\"|\"\\u3000\" '\\u3000' '\\u3000'\n\"\\u200b\" \"\\u200b\" '\\u200b' \"\\u200b\" `\u200b` \"\\u200b\"|\"\\u200b\"|\"\\u200b\" '\\u200b' '\\u200b'\n\"\\ufeff\" \"\\ufeff\" '\\ufeff' \"\\ufeff\" \"\\ufeff\" \"\\ufeff\"|\"\\ufeff\"|\"\\ufeff\" '\\ufeff' '\\ufeff'\n\"�\" \"�\" '�' \"\\ufffd\" `�`      \"�\"|\"�\"     |\"�\" '\\ufffd'   '�'\n\"\\ue000\" \"\\ue000\" '\\ue000' \"\\ue000\" `\ue000` \"\\ue000\"|\"\\ue000\"|\"\\ue000\" '\\ue000' '\\ue000'\n\"\\u0378\" \"\\u0378\" '\\u0378' \"\\u0378\" `\u0378` \"\\u0378\"|\"\\u0378\"|\"\\u0378\" '\\u0378' '\\u0378'\n\"́\" \"́\" '́' \"\\u0301\" `́`      \"́\"|\"́\"     |\"́\" '\\u0301'   '́'\n\"\\U00010fff\" \"\\U00010fff\" '\\U00010fff' \"\\U00010fff\" `\U00010fff` \"\\U00010fff\"|\"\\U00010fff\"|\"\\U00010fff\" '\\U00010fff' '\\U00010fff'\n\"😀\" \"😀\" '😀' \"\\U0001f600\" `😀`      \"😀\"|\"😀\"     |\"😀\" '\\U0001f600'   '😀'\n\"\\U000e0001\" \"\\U000e0001\" '\\U000e0001' \"\\U000e0001\" `\U000e0001` \"\\U000e0001\"|\"\\U000e0001\"|\"\\U000e0001\" '\\U000e0001' '\\U000e0001'\n\"\\U0010ffff\" \"\\U0010ffff\" '\\U0010ffff' \"\\U0010ffff\" `\U0010ffff` \"\\U0010ffff\"|\"\\U0010ffff\"|\"\\U0010ffff\" '\\U0010ffff' '\\U0010ffff'\n\"\\U0001d173\" \"\\U0001d173\" '\\U0001d173' \"\\U0001d173\" `\U0001d173` \"\\U0001d173\"|\"\\U0001d173\"|\"\\U0001d173\" '\\U0001d173' '\\U0001d173'\n\"x\\u0085y\\u00a0z\\u00adw\\U000e0001v\"\n\"\\u008d\\u2028ok\\U000e0001\" c28de280a86f6bf3a08081\n",
+	},
+	{
+		// %#U writes the character after the number where strconv.IsPrint says it
+		// prints, under a width, '-' and a precision, as fmt's fmtUnicode does; a
+		// rune that does not print, a surrogate, a value past the last rune and a
+		// negative one have none. Refused until 2026-10-25, when the quoting helpers
+		// were given Go's table.
+		name: "%#U writes the character where it prints",
+		src: `func main() {
+	rs := [...]rune{'x', 'é', 0x8d, 0xa0, 0xd800, 0x1f600, 0x10ffff, 0x110000, -1, 0}
+	for _, r := range rs {
+		printf("%#U|%#14U|%-#14U|%#.6U|%U\n", r, r, r, r, r)
+	}
+	var b byte = 'Z'
+	var u uint64 = 0x2603
+	printf("%#U %#U %#3U\n", b, u, int16(-2))
+}
+`,
+		want: "U+0078 'x'|    U+0078 'x'|U+0078 'x'    |U+000078 'x'|U+0078\nU+00E9 'é'|    U+00E9 'é'|U+00E9 'é'    |U+0000E9 'é'|U+00E9\nU+008D|        U+008D|U+008D        |U+00008D|U+008D\nU+00A0|        U+00A0|U+00A0        |U+0000A0|U+00A0\nU+D800|        U+D800|U+D800        |U+00D800|U+D800\nU+1F600 '😀'|   U+1F600 '😀'|U+1F600 '😀'   |U+01F600 '😀'|U+1F600\nU+10FFFF|      U+10FFFF|U+10FFFF      |U+10FFFF|U+10FFFF\nU+110000|      U+110000|U+110000      |U+110000|U+110000\nU+FFFFFFFFFFFFFFFF|U+FFFFFFFFFFFFFFFF|U+FFFFFFFFFFFFFFFF|U+FFFFFFFFFFFFFFFF|U+FFFFFFFFFFFFFFFF\nU+0000|        U+0000|U+0000        |U+000000|U+0000\nU+005A 'Z' U+2603 '☃' U+FFFFFFFFFFFFFFFE\n",
+	},
+	{
 		// `type A = B` is another NAME for B, not a type: literals written via the
 		// alias, identity in both directions, methods and fields through it, a
 		// predeclared target, a defined ARRAY target with its elements and method,

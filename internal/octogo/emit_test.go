@@ -6041,13 +6041,6 @@ func main() {
 			want: "printf: %5v does not take a flag, a width or a precision yet (%v of this type is printed without a width here)",
 		},
 		{
-			// %#U writes the character only where strconv.IsPrint says it is
-			// printable, a table this target has not got.
-			name: "the # flag on %U",
-			src:  "func main() {\n\tprintf(\"%#U\\n\", 'x')\n}\n",
-			want: "printf: the '#' flag is not supported on %#U yet",
-		},
-		{
 			name: "%q of a float",
 			src:  "func main() {\n\tprintf(\"%q\\n\", 1.5)\n}\n",
 			want: "printf: %q wants a string, a byte slice or an integer, or a slice of either, not float64",

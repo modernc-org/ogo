@@ -1053,6 +1053,27 @@ const unicodePrintHelper = "static void ogo_print_unicode(long long v, int wid, 
 	"\twhile (n) putchar(d[--n]);\n" +
 	"\tif (left) for (int i = 0; i < pad; i++) putchar(' ');\n}\n"
 
+// unicodeSharpHelper is %#U, fmt's fmtUnicode under '#': ogo_print_unicode, and
+// after the number the character in single quotes where strconv.IsPrint says it
+// prints (ogo_isprint), "U+00E9 'é'", the width counting it. A helper of its own,
+// so that a program printing %U without the flag keeps its C.
+const unicodeSharpHelper = `static void ogo_print_unicode_sharp(long long v, int wid, int prec, int left) {
+	unsigned long long u = (unsigned long long)v;
+	int ch = u <= 0x10FFFF && ogo_isprint((int)u);
+	char d[16]; int n = 0;
+	do { d[n++] = "0123456789ABCDEF"[u & 15]; u >>= 4; } while (u);
+	int z = (prec > 4 ? prec : 4) - n;
+	if (z < 0) z = 0;
+	int pad = wid - (2 + z + n) - (ch ? 4 : 0);
+	if (!left) for (int i = 0; i < pad; i++) putchar(' ');
+	putchar('U'); putchar('+');
+	for (int i = 0; i < z; i++) putchar('0');
+	while (n) putchar(d[--n]);
+	if (ch) { putchar(' '); putchar('\''); ogo_print_rune((int32_t)v); putchar('\''); }
+	if (left) for (int i = 0; i < pad; i++) putchar(' ');
+}
+`
+
 // bytesPrintHelpers are the verbs a protocol logger reaches for over raw bytes: the
 // hex dump %x and %X write of a string or a byte slice, and the quoted form %q
 // writes of either.
@@ -1071,14 +1092,14 @@ const unicodePrintHelper = "static void ogo_print_unicode(long long v, int wid, 
 // empty dump pads the whole width. fl holds the flags as ogo_print_int reads them
 // (1 '-', 4 ' ', 8 '0', 32 '#'); '+' means nothing here, as in fmt.
 //
-// The quoting is Go's: the escapes strconv writes for ASCII, \xNN for any other
-// byte below 0x20 or at 0x7f, and \xNN for a byte that is not part of a valid
-// UTF-8 sequence, which ogo_decode_rune is what decides -- so the bytes a device
-// sends are shown exactly as Go shows them. A valid sequence is written as it
-// stands, which is what Go writes for the printable runes text is made of; a
-// NON-printable rune above ASCII differs, Go escaping it \uXXXX from a table of
-// Unicode printability this target has no room for. The limit is documented in
-// specs.go beside the verb.
+// The quoting, qbytesHelper's, is Go's: the escapes strconv writes for ASCII,
+// \xNN for any other byte below 0x20 or at 0x7f, and \xNN for a byte that is not
+// part of a valid UTF-8 sequence, which ogo_decode_rune is what decides -- so the
+// bytes a device sends are shown exactly as Go shows them. A valid sequence is
+// written as it stands where strconv.IsPrint says its rune prints (ogo_isprint),
+// and \uXXXX or \UXXXXXXXX where it does not, as Go writes a C1 control, a
+// no-break space or an unassigned rune. Until 2026-10-25 every valid sequence was
+// written as it stood, the table thought too large for the target (dom66).
 const bytesPrintHelpers = `static void ogo_print_hex_bytes_pl(const char* p, int n, int upper) {
 	const char* d = upper ? "0123456789ABCDEF" : "0123456789abcdef";
 	for (int i = 0; i < n; i++) {
@@ -1111,7 +1132,10 @@ static void ogo_print_bytes_as_str_pl(const char* p, int n) {
 	for (int i = 0; i < n; i++) { putchar(p[i]); }
 }
 static void ogo_print_bytes_as_str(ogo_string s) { ogo_print_bytes_as_str_pl(s.str, s.len); }
-static void ogo_print_qbytes_pl(const char* p, int n) {
+`
+
+// qbytesHelper is %q of a string or a byte slice (see bytesPrintHelpers).
+const qbytesHelper = `static void ogo_print_qbytes_pl(const char* p, int n) {
 	ogo_string s = {p, n};
 	putchar('"');
 	for (int i = 0; i < s.len; ) {
@@ -1119,7 +1143,9 @@ static void ogo_print_qbytes_pl(const char* p, int n) {
 		if (c >= 0x80) {
 			int w = 1, r = ogo_decode_rune(s, i, &w);
 			if (r == 0xFFFD && w == 1) { printf("\\x%02x", c); i++; continue; }
-			for (int k = 0; k < w; k++) { putchar(s.str[i+k]); }
+			if (ogo_isprint(r)) { for (int k = 0; k < w; k++) { putchar(s.str[i+k]); } }
+			else if (r < 0x10000) { printf("\\u%04x", (unsigned)r); }
+			else { printf("\\U%08x", (unsigned)r); }
 			i += w;
 			continue;
 		}
@@ -1173,7 +1199,7 @@ static int ogo_q_ascii(int c, int quote, int print) {
 	return 1;
 }
 static int ogo_q_wide(int r, int plus, int print) {
-	if (!plus) { if (print) ogo_print_rune((int32_t)r); return 1; }
+	if (!plus && ogo_isprint(r)) { if (print) ogo_print_rune((int32_t)r); return 1; }
 	if (r < 0x10000) { if (print) { putchar('\\'); putchar('u'); ogo_q_hex((unsigned)r, 4); } return 6; }
 	if (print) { putchar('\\'); putchar('U'); ogo_q_hex((unsigned)r, 8); }
 	return 10;
@@ -1239,12 +1265,13 @@ static void ogo_print_qrune_fmt(long long v, int wid, int fl) {
 
 // runeQuoteHelper is %q of an integer: the character in single quotes, with the
 // escapes ogo_print_qbytes writes and \' in place of \", as Go writes one. A rune
-// at or above 0x80 is written as its UTF-8, which ogo_print_rune encodes. A value
-// that is no rune at all, negative or past 0x10FFFF, is U+FFFD, as fmt takes it:
-// a negative one was caught as a control character and written as its unsigned
+// at or above 0x80 is written as its UTF-8, which ogo_print_rune encodes, where it
+// prints (ogo_isprint), and \u or \U where it does not. A value that is no rune at
+// all, negative, a surrogate or past 0x10FFFF, is U+FFFD, as fmt takes it: a
+// negative one was caught as a control character and written as its unsigned
 // bits, '\xffffffff' for -1 where Go writes '�'.
 const runeQuoteHelper = `static void ogo_print_qrune(long long v) {
-	if (v < 0 || v > 0x10FFFF) v = 0xFFFD;
+	if (v < 0 || v > 0x10FFFF || (v >= 0xD800 && v <= 0xDFFF)) v = 0xFFFD;
 	putchar('\'');
 	switch (v) {
 	case '\'': printf("\\'"); putchar('\''); return;
@@ -1258,7 +1285,9 @@ const runeQuoteHelper = `static void ogo_print_qrune(long long v) {
 	case '\v': printf("\\v"); putchar('\''); return;
 	}
 	if (v < 0x20 || v == 0x7f) { printf("\\x%02x", (unsigned)v); putchar('\''); return; }
-	ogo_print_rune((int32_t)v);
+	if (ogo_isprint((int)v)) { ogo_print_rune((int32_t)v); }
+	else if (v < 0x10000) { printf("\\u%04x", (unsigned)v); }
+	else { printf("\\U%08x", (unsigned)v); }
 	putchar('\'');
 }
 `
@@ -6992,8 +7021,15 @@ func emitProgram(pkg *Package, w io.Writer, opts []EmitOption, rename map[string
 		out.WriteString(unicodePrintHelper)
 		out.WriteByte('\n')
 	}
+	// Ahead of each helper that quotes: they ask it which runes print.
+	if e.usesQBytes || e.usesQuoteFmt || e.usesRuneQuote || e.usesUnicodeSharp {
+		out.WriteString(isPrintHelper())
+	}
 	if e.usesRuneQuote {
 		out.WriteString(runeQuoteHelper)
+	}
+	if e.usesUnicodeSharp {
+		out.WriteString(unicodeSharpHelper)
 	}
 	if e.usesStringCmp {
 		out.WriteString(stringCmpHelper)
@@ -7020,6 +7056,9 @@ func emitProgram(pkg *Package, w io.Writer, opts []EmitOption, rename map[string
 	// from a byte that has to be escaped.
 	if e.usesBytesPrint {
 		out.WriteString(bytesPrintHelpers)
+	}
+	if e.usesQBytes {
+		out.WriteString(qbytesHelper)
 	}
 	// After the decoder and the rune printer, which they call.
 	if e.usesQuoteFmt {
@@ -7898,9 +7937,11 @@ type emitter struct {
 	usesFloatFmt        bool                    // ogo_print_float is called: a float printed by print, println or any float verb (see floatFmtHelper)
 	usesF64Fmt          bool                    // ogo_print_f64 is called: the same for a float64 (f64FmtHelper)
 	usesBytesPrint      bool                    // ogo_print_hex_bytes / ogo_print_qbytes are called: %x, %X or %q over a string or a byte slice
+	usesQBytes          bool                    // ogo_print_qbytes is called: %q over a string or a byte slice (qbytesHelper)
 	usesRuneQuote       bool                    // ogo_print_qrune is called: %q of an integer
 	usesQuoteFmt        bool                    // %q under a flag, a width or a precision: emit quoteFmtHelpers
 	usesUnicodePrint    bool                    // %U under a width or a precision: emit unicodePrintHelper
+	usesUnicodeSharp    bool                    // %#U: emit unicodeSharpHelper
 	stringLits          map[string]string       // a constant string's value -> the file-scope ogo_string holding its header (stringLitName)
 	stringLitDecls      []stringLitDecl         // the declarations of stringLits, in the order they were named
 	userTypeNames       map[string]string       // C name -> source name of every type the program DECLARES, in any package (see typeNameForT)
@@ -43771,6 +43812,7 @@ func (e *emitter) emitStringerElems(idx int, arg Node, verb byte, value func()) 
 		e.usesString = true
 		e.usesRuneDecode = true
 		print = "ogo_print_qbytes(" + text + ");"
+		e.usesQBytes = verb == 'q' || e.usesQBytes
 		if verb != 'q' {
 			print = "ogo_print_hex_bytes(" + text + ", " + strconv.Itoa(boolToInt(verb == 'X')) + ");"
 		}
@@ -44594,6 +44636,7 @@ func (e *emitter) isByteSliceCType(ct string) bool {
 // loop printing it.
 func (e *emitter) emitBytesVerb(ct, helper, extra string, value func()) {
 	e.usesBytesPrint = true
+	e.usesQBytes = helper == "ogo_print_qbytes" || e.usesQBytes
 	e.usesString = true
 	e.usesRuneDecode = true // ogo_print_qbytes decodes, and one helper text carries all three
 	text := e.captureC(value)
@@ -44725,10 +44768,10 @@ func (e *emitter) emitPrintfVerb(item printfItem, idx int, arg Node) bool {
 	// of a string or a byte slice, which ogo_print_hex_fmt lays out.
 	hexDump := (verb == 'x' || verb == 'X') && (ct == cString || e.isByteSliceCType(ct))
 	// fmt gives '#' no meaning under %s, %c and %t, so it is taken and changes
-	// nothing -- it was refused. %#U stays refused: it writes the character only
-	// where strconv.IsPrint says it is printable, a table this target has no room
-	// for (the limit %q documents).
-	if item.hasFlag('#') && !hexDump && verb != 'q' && strings.IndexByte("sct", verb) < 0 && !(strings.IndexByte("eEfFgG", verb) >= 0 && isFloatCType(ct)) && !(strings.IndexByte("dxXoOb", verb) >= 0 && e.intsToPrint(idx, arg, ct)) {
+	// nothing -- it was refused. %#U writes the character after the number where
+	// strconv.IsPrint says it prints (unicodeSharpHelper), refused until the
+	// quoting helpers had the table, 2026-10-25.
+	if item.hasFlag('#') && !hexDump && verb != 'q' && verb != 'U' && strings.IndexByte("sct", verb) < 0 && !(strings.IndexByte("eEfFgG", verb) >= 0 && isFloatCType(ct)) && !(strings.IndexByte("dxXoOb", verb) >= 0 && e.intsToPrint(idx, arg, ct)) {
 		e.failAt(arg.ast, "printf: the '#' flag is not supported on %%%s%c yet; "+
 			"it is on the integer verbs %%x, %%X, %%o and %%b", spec, verb)
 		return false
@@ -44799,6 +44842,7 @@ func (e *emitter) emitPrintfVerb(item printfItem, idx int, arg Node) bool {
 				e.usesString = true
 				e.usesRuneDecode = true
 				print = "ogo_print_qbytes(" + text + ")"
+				e.usesQBytes = verb == 'q' && spec == "" || e.usesQBytes
 				switch {
 				case hexDump && spec != "":
 					print = "ogo_print_hex_fmt(" + text + hexDumpSpec(item, verb == 'X') + ")"
@@ -45237,9 +45281,16 @@ func (e *emitter) emitScalarVerb(item printfItem, ct string, value func(), wrong
 			if !hasP {
 				p = -1
 			}
-			e.usesUnicodePrint = true
+			helper := "ogo_print_unicode("
+			if item.hasFlag('#') {
+				e.usesUnicodeSharp = true
+				e.usesRunePrint = true
+				helper = "ogo_print_unicode_sharp("
+			} else {
+				e.usesUnicodePrint = true
+			}
 			e.ind()
-			e.emit("ogo_print_unicode(")
+			e.emit(helper)
 			e.emitWideArg(ct, "long long", value)
 			e.emit(fmt.Sprintf(", %d, %d, %d);\n", w, p, boolToInt(item.leftAlign())))
 			return true

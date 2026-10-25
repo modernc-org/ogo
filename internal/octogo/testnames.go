@@ -7,6 +7,7 @@ package octogo
 import (
 	"bytes"
 	"encoding/binary"
+	"fmt"
 	"strconv"
 	"strings"
 	"sync"
@@ -51,6 +52,46 @@ var notPrintTable = sync.OnceValue(func() []byte {
 // Unicode tables of the Go that built ogo, which are go test's where that Go runs
 // it.
 func NotPrintTable() []byte { return notPrintTable() }
+
+// isPrintHelper is ogo_isprint, strconv.IsPrint for the helpers that quote (%q):
+// Latin-1 by strconv's own rule, and past it by NotPrintTable, read as the testing
+// package's widePrint reads it. Where a program quotes, the table is in its C:
+// 1750 bytes for Go 1.27.
+var isPrintHelper = sync.OnceValue(func() string {
+	var b strings.Builder
+	t := NotPrintTable()
+	fmt.Fprintf(&b, "static const unsigned char ogo_notprint[%d] = {", len(t))
+	for i, c := range t {
+		if i%16 == 0 {
+			b.WriteString("\n\t")
+		}
+		fmt.Fprintf(&b, "0x%02x,", c)
+	}
+	b.WriteString("\n};\n")
+	b.WriteString(`static int ogo_isprint(int r) {
+	if (r < 0x100) return (r >= 0x20 && r < 0x7f) || (r >= 0xa1 && r != 0xad);
+	const unsigned char* t = ogo_notprint;
+	int nb = t[0] | t[1] << 8, lo = 0, hi = nb;
+	while (lo < hi) {
+		int m = (lo + hi) / 2, k = 2 + 5 * m;
+		if ((t[k] | t[k+1] << 8 | t[k+2] << 16) <= r) lo = m + 1; else hi = m;
+	}
+	if (lo == 0) return 1;
+	int k = 2 + 5 * (lo - 1), at = t[k] | t[k+1] << 8 | t[k+2] << 16;
+	int p = t[k+3] | t[k+4] << 8, end = lo < nb ? (t[k+8] | t[k+9] << 8) : (int)sizeof ogo_notprint;
+	int odd = 1;
+	while (p < end) {
+		int d = 0;
+		for (int shift = 0; ; shift += 7) { int c = t[p++]; d |= (c & 0x7f) << shift; if (c < 0x80) break; }
+		if (at + d > r) break;
+		at += d;
+		odd = !odd;
+	}
+	return !odd;
+}
+`)
+	return b.String()
+})
 
 // MayRunSubtests reports whether the program whose main package is p may run a
 // subtest or a sub-benchmark: whether a package of it but those the compiler
