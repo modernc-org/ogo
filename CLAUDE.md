@@ -1083,7 +1083,9 @@ section. A new finding goes there; the rule it leaves goes here too.
   element: every rule asking where an address points asks it of the view**; **A
   VIEW THROUGH A POINTER IS OF WHAT IT POINTS AT**: **A view's storage is asked of
   what is sliced: a slice of a pointer to an array views what the pointer reaches,
-  which the pointer's root is not.** **A
+  which the pointer's root is not.** **A slice holds no storage: a rule asking
+  where a view's storage lives asks what it views, not where the slice is
+  declared** (dom67, markBacked). **A
   type a rule does not know is asked which rules read it as a default**. **A MARK IS MADE IN EMISSION ORDER, AND A LOOP RUNS ITS BODY AGAIN**: **A mark is a fact about a
   variable at a point; a rule reading one asks what reaches that point -- a loop's
   back edge and an alias both do.**

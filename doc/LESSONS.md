@@ -3552,6 +3552,32 @@ asked again without the marks.** The two tests whose programs had been chosen fo
 the old limit, a crash past it and a switch's fallback, needed programs of the new
 one: a hundred register arrays indexed in place for the crash, which the split
 leaves together, and the fuzzer's seed 114 for the switch.
+**dom67, a vacuum system's PLC** (2026-10-25), after the Spin2 one Rayman posted on
+the forum: the scan loop over pins and two modelled I2C expanders, interlocks, a
+safe state when the panel stops answering, a Modbus RTU server on a goroutine
+handing its writes to the scan loop over a channel the loop answers inside a
+select, the gauge cog parsing the gauges' lines, the LCD's status screen. Written as
+Go, it met two refusals. A method value through a parameter, `in := c.pins.Input`,
+is refused by design, and the refusal advised a function literal, which would
+capture c and is refused as well: it says to call the method now. And a FALSE one,
+older than this: a slice declared in a loop's body, `next := rest[1:]`, or from a
+call's result, `tok, after, _ := bytes.Cut(rest, sep)`, holding a view of the
+function's array could not be given back to rest, declared outside -- "backed by
+local after ... does not outlive the block". The block rule asked where the SLICE
+was declared, the mark that a slice views this frame being a bool; it carries the
+block depth of the storage now, the deepest the slice was given, unknown where a
+site cannot say (which answers the slice's own block, the old reading, and the
+right bound: a view of storage deeper than its slice is refused where it is given).
+The corpus's C was unchanged, every sweep in build/probes gave its verdicts, and the
+rows refused stayed refused -- a view the inner block's own array, one given it on a
+branch, two hops of views, a call's result, a range value. **A slice holds no
+storage: a rule asking where a view's storage lives asks what it views, not where
+the slice is declared.** Its first run differed from Go by its call counter alone:
+the gauge cog made its note going back for the next line, while the scan loop ran on
+-- the program's race. Then Rayman's own drivers, jm_i2c.spin2 and the eight-port
+serial driver, were bound unchanged as two packages and run on the board, the serial
+one printing through the console's pins once its transmit pin had a pull-up
+(PU_NONE floats the line's high level, the same from a plain Spin2 top object).
 **A MARK IS MADE IN EMISSION ORDER, AND A LOOP RUNS ITS BODY AGAIN** (2026-10-08,
 found probing unsafe.Slice's views). The holder marks are set as statements are
 emitted, so a statement read a variable's mark as the statements BEFORE it had left

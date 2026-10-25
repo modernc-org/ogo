@@ -5,7 +5,8 @@
 // reads when the value is taken -- a pointer on the way, a slice's header, an index
 // that is not a constant -- is refused, in every position a value stands, and so
 // is a local's address, which dies with its frame. A function literal calling the
-// method is the way round.
+// method is the way round where it captures nothing; one calling a local's method
+// would capture the local, so the method is called where the value would be.
 
 type Reg struct{ val int32 }
 
@@ -52,7 +53,7 @@ func give() func() int32 {
 
 func run(i int) {
 	var local [2]Reg
-	// ERROR cannot take local\[1\]\.get as a value: a method value binds the address of its receiver, so the receiver must be reached from a package-level variable; a function literal calling local\[1\]\.get is the way round
+	// ERROR cannot take local\[1\]\.get as a value: a method value binds the address of its receiver, so the receiver must be reached from a package-level variable, and a function literal calling local\[1\]\.get would capture local, which needs a heap too: call the method where the value would be called
 	l := local[1].get
 	// ERROR cannot take rs\[i\]\.get as a value: its receiver's index is not a constant, and Go evaluates it when the method value is taken where one bound at compile time cannot; a function literal calling rs\[i\]\.get evaluates it at each call instead
 	v := rs[i].get

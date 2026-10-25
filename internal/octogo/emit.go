@@ -6685,7 +6685,7 @@ func typeNameCollisions(src []byte, names map[string]bool) map[string]bool {
 // emitProgram is EmitC's one pass. rename lists the main-package types spelled
 // ogo_T_<name> in C (see typeMangle).
 func emitProgram(pkg *Package, w io.Writer, opts []EmitOption, rename map[string]bool, seeds loopSeeds) (loopSeeds, error) {
-	e := &emitter{loopSeedsIn: seeds, loopSeedsOut: loopSeeds{}, renameTypes: rename, renamedTypes: map[string]string{}, includes: map[string]bool{}, funcRet: map[string][]string{}, funcSliceParams: map[string][]string{}, funcVariadic: map[string]int{}, nilHelpers: map[string]bool{}, initSkew: map[string]bool{}, arrPtrHelpers: map[string]arrDim{}, usliceHelpers: map[string]bool{}, funcArrayRet: map[string]arrDim{}, funcStructRet: map[string]string{}, funcArrayParams: map[string][]arrDim{}, anonStructNames: map[string]string{}, methodValueTypes: map[string]funcValueType{}, methodValueOf: map[string]string{}, methodExprNames: map[string]string{}, funcParams: map[string][]string{}, methodPtr: map[string]bool{}, recvByRef: map[string]bool{}, globals: map[string]string{}, structs: map[string][]structField{}, namedTypes: map[string]bool{}, typeNames: map[string]bool{}, interfaceTypes: map[string]bool{}, ifaceMethods: map[string][]ifaceMethod{}, anonIfaceNames: map[string]string{}, anonIfaceMinted: map[string]bool{}, ifaceASTs: map[string]ifaceAST{}, ifaceVTables: map[string]bool{}, namedUnderlying: map[string]string{}, namedArrays: map[string]arrDim{}, constInt: map[string]string{}, constVal: map[string]constant.Value{}, constBool: map[string]bool{}, constWide: map[string]string{}, constStr: map[string]string{}, constUntyped: map[string]bool{}, constHuge: map[string]bool{}, arrays: map[string]arrDim{}, globalArrays: map[string]arrDim{}, sliceVars: map[string]string{}, globalSliceVars: map[string]string{}, chanElems: map[string]bool{}, chanInitElems: map[string]bool{}, chanSendElems: map[string]bool{}, chanRecvElems: map[string]bool{}, chanTryRecvElems: map[string]bool{}, chanTrySendElems: map[string]bool{}, chanGatedSendElems: map[string]bool{}, chanSendClosedElems: map[string]bool{}, chanBufElems: map[string]bool{}, chanLenElems: map[string]bool{}, chanReadyElems: map[string]bool{}, aliasOf: map[string]string{}, aliasLits: map[string]bool{}, localTypes: map[string]string{}, gotoTargets: map[string]bool{}, chanCloseElems: map[string]bool{}, chanRecv2Elems: map[string]bool{}, mathWrappers: map[string]bool{}, chanElemByName: map[string]string{}, sliceElems: map[string]bool{}, sliceElemByName: map[string]string{}, appendElems: map[string]bool{}, tryappendElems: map[string]bool{}, appendSliceElems: map[string]bool{}, tryappendSliceEls: map[string]bool{}, appendokStructs: map[string]bool{}, copyElems: map[string]bool{}, resliceElems: map[string]bool{}, reslice3Elems: map[string]bool{}, mkLenHelpers: map[string]bool{}, clearElems: map[string]bool{}, minElems: map[string]bool{}, maxElems: map[string]bool{}, printSliceElems: map[string]bool{}, printStructs: map[string]string{}, printIfaces: map[string]string{}, printlnElems: map[string]bool{}, switchBreakUsed: map[string]bool{}, labelBreak: map[string]string{}, labelContinue: map[string]string{}, labelUsed: map[string]bool{}, eqStructs: map[string]bool{}, eqArrays: map[string]arrDim{}, frameBacked: map[string]bool{}, frameHolder: map[string]string{}, crossParams: map[string][]leak{}, crossContents: map[string][]leak{}, retContents: map[string][]bool{}, recvContents: map[string]leak{}, paramCalls: map[string][]paramCall{}, frameCalls: map[string][]frameCall{}, localConstSpecs: map[string]localConstSpec{}, inheritedTypes: map[string]bool{}, funcValueMembers: map[string][]string{}, methodExprMembers: map[string]emMethodExpr{}, memberShown: map[string]string{}, litLifted: map[string][]string{}, methodNames: map[string]bool{}, recvLeaks: map[string]leak{}, recvInto: map[string]uint32{}, recvSelf: map[string]bool{}, retRecv: map[string]bool{}, retRecvShallow: map[string]bool{}, crossInto: map[string][]uint32{}, ifaceSummaries: map[string]ifaceSummary{}, retParams: map[string][]bool{}, funcValueOf: map[string]string{}, crossNames: map[string]string{}, initNames: map[string]string{}, funcValueTypes: map[string]funcValueType{}, funcTypeNames: map[string]string{}, funcTypeRet: map[string][]string{}, funcTypeParams: map[string][]string{}, funcTypeVariadic: map[string]int{}, recFuncTypes: map[string]bool{}, recFuncShapes: map[string]string{}, retStructs: map[string]string{}, retStructByKey: map[string]string{}, shiftHelpers: map[string]shiftHelper{}, shiftCTypes: map[*int32]string{}, shiftWalked: map[shiftWalkKey]bool{}, shiftIn: map[*int32]bool{}, divHelpers: map[string][2]string{}, funcValueWrappers: map[string]string{}, stackChecked: map[string]bool{}, deferReplay: -1, iota: -1}
+	e := &emitter{loopSeedsIn: seeds, loopSeedsOut: loopSeeds{}, renameTypes: rename, renamedTypes: map[string]string{}, includes: map[string]bool{}, funcRet: map[string][]string{}, funcSliceParams: map[string][]string{}, funcVariadic: map[string]int{}, nilHelpers: map[string]bool{}, initSkew: map[string]bool{}, arrPtrHelpers: map[string]arrDim{}, usliceHelpers: map[string]bool{}, funcArrayRet: map[string]arrDim{}, funcStructRet: map[string]string{}, funcArrayParams: map[string][]arrDim{}, anonStructNames: map[string]string{}, methodValueTypes: map[string]funcValueType{}, methodValueOf: map[string]string{}, methodExprNames: map[string]string{}, funcParams: map[string][]string{}, methodPtr: map[string]bool{}, recvByRef: map[string]bool{}, globals: map[string]string{}, structs: map[string][]structField{}, namedTypes: map[string]bool{}, typeNames: map[string]bool{}, interfaceTypes: map[string]bool{}, ifaceMethods: map[string][]ifaceMethod{}, anonIfaceNames: map[string]string{}, anonIfaceMinted: map[string]bool{}, ifaceASTs: map[string]ifaceAST{}, ifaceVTables: map[string]bool{}, namedUnderlying: map[string]string{}, namedArrays: map[string]arrDim{}, constInt: map[string]string{}, constVal: map[string]constant.Value{}, constBool: map[string]bool{}, constWide: map[string]string{}, constStr: map[string]string{}, constUntyped: map[string]bool{}, constHuge: map[string]bool{}, arrays: map[string]arrDim{}, globalArrays: map[string]arrDim{}, sliceVars: map[string]string{}, globalSliceVars: map[string]string{}, chanElems: map[string]bool{}, chanInitElems: map[string]bool{}, chanSendElems: map[string]bool{}, chanRecvElems: map[string]bool{}, chanTryRecvElems: map[string]bool{}, chanTrySendElems: map[string]bool{}, chanGatedSendElems: map[string]bool{}, chanSendClosedElems: map[string]bool{}, chanBufElems: map[string]bool{}, chanLenElems: map[string]bool{}, chanReadyElems: map[string]bool{}, aliasOf: map[string]string{}, aliasLits: map[string]bool{}, localTypes: map[string]string{}, gotoTargets: map[string]bool{}, chanCloseElems: map[string]bool{}, chanRecv2Elems: map[string]bool{}, mathWrappers: map[string]bool{}, chanElemByName: map[string]string{}, sliceElems: map[string]bool{}, sliceElemByName: map[string]string{}, appendElems: map[string]bool{}, tryappendElems: map[string]bool{}, appendSliceElems: map[string]bool{}, tryappendSliceEls: map[string]bool{}, appendokStructs: map[string]bool{}, copyElems: map[string]bool{}, resliceElems: map[string]bool{}, reslice3Elems: map[string]bool{}, mkLenHelpers: map[string]bool{}, clearElems: map[string]bool{}, minElems: map[string]bool{}, maxElems: map[string]bool{}, printSliceElems: map[string]bool{}, printStructs: map[string]string{}, printIfaces: map[string]string{}, printlnElems: map[string]bool{}, switchBreakUsed: map[string]bool{}, labelBreak: map[string]string{}, labelContinue: map[string]string{}, labelUsed: map[string]bool{}, eqStructs: map[string]bool{}, eqArrays: map[string]arrDim{}, frameBacked: map[string]int{}, frameHolder: map[string]string{}, crossParams: map[string][]leak{}, crossContents: map[string][]leak{}, retContents: map[string][]bool{}, recvContents: map[string]leak{}, paramCalls: map[string][]paramCall{}, frameCalls: map[string][]frameCall{}, localConstSpecs: map[string]localConstSpec{}, inheritedTypes: map[string]bool{}, funcValueMembers: map[string][]string{}, methodExprMembers: map[string]emMethodExpr{}, memberShown: map[string]string{}, litLifted: map[string][]string{}, methodNames: map[string]bool{}, recvLeaks: map[string]leak{}, recvInto: map[string]uint32{}, recvSelf: map[string]bool{}, retRecv: map[string]bool{}, retRecvShallow: map[string]bool{}, crossInto: map[string][]uint32{}, ifaceSummaries: map[string]ifaceSummary{}, retParams: map[string][]bool{}, funcValueOf: map[string]string{}, crossNames: map[string]string{}, initNames: map[string]string{}, funcValueTypes: map[string]funcValueType{}, funcTypeNames: map[string]string{}, funcTypeRet: map[string][]string{}, funcTypeParams: map[string][]string{}, funcTypeVariadic: map[string]int{}, recFuncTypes: map[string]bool{}, recFuncShapes: map[string]string{}, retStructs: map[string]string{}, retStructByKey: map[string]string{}, shiftHelpers: map[string]shiftHelper{}, shiftCTypes: map[*int32]string{}, shiftWalked: map[shiftWalkKey]bool{}, shiftIn: map[*int32]bool{}, divHelpers: map[string][2]string{}, funcValueWrappers: map[string]string{}, stackChecked: map[string]bool{}, deferReplay: -1, iota: -1}
 	for _, opt := range opts {
 		opt(e)
 	}
@@ -8006,7 +8006,7 @@ type emitter struct {
 	underAddr           bool                    // the operand of & is being rendered, an index's value excepted: what it reaches is addressed, not read (see wideRowC)
 	litFixups           []litFixup              // that literal's elements C cannot spell in an initializer, deferred to a copy after the declaration (see recordLitFixup)
 	litFixable          bool                    // the literal being rendered has an owner that will emit those copies -- one that gives it a NAME. False in the positions that have no storage to copy into.
-	frameBacked         map[string]bool         // local slice variables whose backing array is storage of this frame, so returning one would dangle (see checkReturnBacking)
+	frameBacked         map[string]int          // local slice variables whose backing array is storage of this frame, so returning one would dangle (see checkReturnBacking), each with the block depth of that storage where it is known (markBacked)
 	crossParams         map[string][]leak       // per function, how each parameter lets a value escape the caller's frame -- a cog crossing or a store that outlives it, directly or through a call (see collectCrossParams)
 	crossContents       map[string][]leak       // per function, how each parameter's CONTENTS escape -- what its elements, or its pointee's fields, hold -- `gp = v[0]` (see heldKind)
 	retContents         map[string][]bool       // per function, which parameters' CONTENTS a result carries, `return v[0]`
@@ -19041,7 +19041,7 @@ func (e *emitter) emitFuncDecl(ast []int32) {
 	e.curParams = map[string]bool{}
 	e.arrays = map[string]arrDim{}
 	e.sliceVars = map[string]string{}
-	e.frameBacked = map[string]bool{}
+	e.frameBacked = map[string]int{}
 	e.frameHolder = map[string]string{}
 	e.tmpShown = nil
 	e.tmp = 0
@@ -19246,7 +19246,7 @@ func (e *emitter) liftFuncLit(lit Node) (string, bool) {
 		locals                         map[string]string
 		arrays                         map[string]arrDim
 		sliceVars                      map[string]string
-		frameBacked                    map[string]bool
+		frameBacked                    map[string]int
 		frameHolder                    map[string]string
 		labelHeads                     map[string]loopHead
 		tmp, indent, deferReplay       int
@@ -19333,7 +19333,7 @@ func (e *emitter) liftFuncLit(lit Node) (string, bool) {
 	e.curParams = map[string]bool{}
 	e.arrays = map[string]arrDim{}
 	e.sliceVars = map[string]string{}
-	e.frameBacked = map[string]bool{}
+	e.frameBacked = map[string]int{}
 	e.frameHolder = map[string]string{}
 	e.tmp, e.indent, e.deferReplay, e.defers, e.prologue = 0, 0, -1, nil, nil
 	e.curFunc, e.curArrayResult = cname, ""
@@ -21103,7 +21103,7 @@ func (e *emitter) emitMain(sig, body []int32) {
 	e.curParams, e.curParamOrder, e.funcParamAlias = map[string]bool{}, nil, map[string]string{}
 	e.arrays = map[string]arrDim{}
 	e.sliceVars = map[string]string{}
-	e.frameBacked = map[string]bool{}
+	e.frameBacked = map[string]int{}
 	e.frameHolder = map[string]string{}
 	e.tmpShown = nil
 	e.tmp = 0
@@ -22357,9 +22357,9 @@ func (e *emitter) enterScope() func() {
 			_, ok := arrays[n]
 			return ok
 		}
-		for n, marked := range e.frameBacked {
-			if marked && outer(n) {
-				frameBacked[n] = true
+		for n, d := range e.frameBacked {
+			if outer(n) {
+				mergeBacked(frameBacked, n, d)
 			}
 		}
 		for n, origin := range e.frameHolder {
@@ -23733,6 +23733,10 @@ func (e *emitter) emitVarSpec(names []string, typeAST []int32, initExprs [][]int
 			// dead frame -- the plainest way there is to write it. Asked before the
 			// name is taken, since the value may read the name it shadows.
 			views := initExpr != nil && e.initViewsFrame(initExpr)
+			depth := backedUnknown
+			if views {
+				depth = e.viewDepth(initExpr)
+			}
 			elemOrigin, elemRefs := "", false
 			if initExpr != nil {
 				elemOrigin, elemRefs, _ = e.sliceElemOrigin(initExpr)
@@ -23741,7 +23745,7 @@ func (e *emitter) emitVarSpec(names []string, typeAST []int32, initExprs [][]int
 			e.sliceVars[nm] = elem
 			e.locals[nm] = cname
 			if views {
-				e.frameBacked[nm] = true
+				e.markBacked(nm, depth)
 			}
 			if elemRefs {
 				e.frameHolder[nm] = elemOrigin // what its elements reach (noteSliceElemRefs)
@@ -23816,7 +23820,7 @@ func (e *emitter) emitVarSpec(names []string, typeAST []int32, initExprs [][]int
 		if u := e.underlyingCType(ctype); initExpr != nil && e.isSliceCType(u) {
 			e.sliceVars[nm] = sliceElemFromCName(u)
 			if e.initViewsFrame(initExpr) {
-				e.frameBacked[nm] = true
+				e.markBacked(nm, backedUnknown)
 			}
 		}
 		if initExpr != nil {
@@ -25260,7 +25264,7 @@ func (e *emitter) emitSliceLitVar(name, elem, cname string, lit Node, values []*
 		e.shadow(name)
 		e.sliceVars[name] = elem
 		e.locals[name] = cname
-		e.frameBacked[name] = true // the backing array is a local of this frame
+		e.markBacked(name, backedUnknown) // the backing array is a local of this frame
 	}
 	backing := e.newBacking()
 	n := strconv.Itoa(length)
@@ -26760,6 +26764,10 @@ func (e *emitter) emitVarList(names []string, typeAST []int32, inits [][]int32) 
 		// = a[:], b[:]` and `var p, q *T = &x, &y` each carried a reference to this
 		// frame that no sink could see.
 		views := e.initViewsFrame(inits[i])
+		depth := backedUnknown
+		if views {
+			depth = e.viewDepth(inits[i])
+		}
 		e.shadow(nm)
 		if elem, ok := e.sliceType(typeAST); ok {
 			e.sliceVars[nm] = elem
@@ -26768,7 +26776,7 @@ func (e *emitter) emitVarList(names []string, typeAST []int32, inits [][]int32) 
 		}
 		e.locals[nm] = ctype
 		if _, isSlice := e.sliceVars[nm]; isSlice && views {
-			e.frameBacked[nm] = true
+			e.markBacked(nm, depth)
 		}
 		e.noteDeclFrameHolder(ctype, nm, inits[i])
 		e.emitVarDeclInit(ctype, nm, inits[i])
@@ -31766,7 +31774,7 @@ func (e *emitter) bindDeref(name string) string {
 		e.frameHolder[tmp] = origin
 	}
 	if backed != "" {
-		e.frameBacked[tmp] = true
+		e.markBacked(tmp, backedUnknown)
 	}
 	if e.tmpShown == nil {
 		e.tmpShown = map[string]string{}
@@ -31783,7 +31791,7 @@ func (e *emitter) bindDeref(name string) string {
 // elements carry -- the slice's own holder mark -- and not the slice.
 func (e *emitter) pointeeMarks(ptr string) (origin, backed string) {
 	if x, isLocal := strings.CutPrefix(e.frameHolder[ptr], "local "); isLocal && e.isFrameVar(x) {
-		if e.frameBacked[x] {
+		if e.isBacked(x) {
 			backed = x
 		}
 		return e.frameHolder[x], backed
@@ -31846,7 +31854,7 @@ func (e *emitter) asDerefName(name string, fn func(tmp string)) {
 		e.frameHolder[tmp] = origin
 	}
 	if backed != "" {
-		e.frameBacked[tmp] = true
+		e.markBacked(tmp, backedUnknown)
 	}
 	if e.tmpShown == nil {
 		e.tmpShown = map[string]string{}
@@ -33198,7 +33206,7 @@ func (e *emitter) emitMakeSliceVar(name, cname, elem string, lenAST, capAST []in
 	}
 	backing := e.newBacking()
 	if !static {
-		e.frameBacked[name] = true // the backing array is a local of this frame
+		e.markBacked(name, backedUnknown) // the backing array is a local of this frame
 	}
 	// Backing array.
 	if static {
@@ -47984,7 +47992,7 @@ func (e *emitter) emitInferredLocal(name string, initExpr []int32) {
 		// A slice copied from another views the same storage, so it inherits where
 		// that storage lives; otherwise returning the copy would dodge the check.
 		if e.initViewsFrame(initExpr) {
-			e.frameBacked[name] = true
+			e.markBacked(name, e.viewDepth(initExpr))
 		}
 	}
 	e.noteDeclFrameHolder(ct, name, initExpr)
@@ -48012,7 +48020,8 @@ func (e *emitter) declareCopy(name, tmp string) {
 		return
 	}
 	elem, isSlice := e.sliceVars[tmp]
-	backed, holder, fn := e.frameBacked[tmp], e.frameHolder[tmp], e.funcValueOf[tmp]
+	depth, backed := e.frameBacked[tmp]
+	holder, fn := e.frameHolder[tmp], e.funcValueOf[tmp]
 	fields := map[string]string{}
 	for k, v := range e.funcValueOf {
 		if strings.HasPrefix(k, tmp+".") {
@@ -48025,7 +48034,7 @@ func (e *emitter) declareCopy(name, tmp string) {
 		e.sliceVars[name] = elem
 	}
 	if backed {
-		e.frameBacked[name] = true
+		e.markBacked(name, depth)
 	}
 	if holder != "" {
 		e.frameHolder[name] = holder
@@ -57144,7 +57153,7 @@ func (e *emitter) sliceBackingIsFrame(ast []int32) (string, bool) {
 		return r.name, frame
 	}
 	if name, ok := e.exprIdent(ast); ok {
-		return name, e.frameBacked[name]
+		return name, e.isBacked(name)
 	}
 	// A CONVERSION to a slice type views the same storage: `L(a[:])` is backed by
 	// whatever `a[:]` is. Followed here as well as in frameRefOf, because a
@@ -57173,7 +57182,7 @@ func (e *emitter) sliceBackingIsFrame(ast []int32) (string, bool) {
 		// A pointer at a local SLICE, `ps := &s`, reslices s: s's backing decides,
 		// and `(*ps)[1:]` of an `s := gs` views package storage.
 		if x, isLocal := strings.CutPrefix(e.frameHolder[name], "local "); isLocal && len(steps) == 1 && e.isFrameVar(x) && e.isSliceVar(x) {
-			return x, e.frameBacked[x]
+			return x, e.isBacked(x)
 		}
 		return name, e.frameHolder[name] != ""
 	}
@@ -57218,7 +57227,7 @@ func (e *emitter) sliceBackingIsFrame(ast []int32) (string, bool) {
 		return base, e.isFrameVar(base)
 	case cur.slice:
 		// A SLICE has a backing of its own, and its mark is what says where.
-		return base, e.frameBacked[base] || e.frameHolder[base] != ""
+		return base, e.isBacked(base) || e.frameHolder[base] != ""
 	}
 	return "", false
 }
@@ -57535,7 +57544,7 @@ func (e *emitter) noteRangeValue(h *forHeader, val, elem string) {
 		}
 	}
 	if whole && isSlice {
-		e.frameBacked[root] = true
+		e.markBacked(root, e.refDepth(r))
 		return
 	}
 	e.frameHolder[root] = r.origin
@@ -57862,7 +57871,7 @@ func (e *emitter) frameRefAny(ast []int32) (frameRef, bool) {
 	// of a slice's VALUE alone (sliceBackingIsFrame), never of an address into it:
 	// `keep(&s[0])` and `p := &s[0]; keep(p)` were taken where `keep(&xs[0])` was
 	// refused, and left a pointer into a dead frame in a package variable.
-	if name, ok := e.addrOfSliceElem(ast); ok && e.frameBacked[name] {
+	if name, ok := e.addrOfSliceElem(ast); ok && e.isBacked(name) {
 		return sliceElemRef(name), true
 	}
 	if name, ok := e.exprIdent(ast); ok {
@@ -59285,7 +59294,7 @@ func (e *emitter) refuseStoreThroughSlice(base string, steps []Node, v Node, r f
 	// slice written ONCE, directly as a view of this frame, is known to view it
 	// (frameViewValue); one reached through a step is not, its holder's mark being
 	// the union of what its elements or fields view.
-	if last == 0 && e.frameBacked[base] && e.onceBound(base) && e.frameViewValue(e.bindValue[base]) {
+	if last == 0 && e.isBacked(base) && e.onceBound(base) && e.frameViewValue(e.bindValue[base]) {
 		return false
 	}
 	e.fail("%v: cannot store %s in an element of %s: its storage is not this function's, "+
@@ -59477,7 +59486,7 @@ func (e *emitter) noteHolderRef(base string, r frameRef) {
 		// already models, and the one its wording fits. Taken for a holder, a slice
 		// declared in a list, `s, u := []*int{&gx}, ...`, had its literal's backing
 		// recorded as what its ELEMENTS reach, and `g = s[0]` was refused.
-		e.frameBacked[base] = true
+		e.markBacked(base, e.refDepth(r))
 		return
 	}
 	e.frameHolder[base] = r.origin
@@ -59546,13 +59555,75 @@ func (e *emitter) refuseStoreBacking(base string, n Node, r frameRef) {
 // version of Go, back to 1.0, and taking its address had the same defect. The rule
 // is written about blocks so both fall out of it.
 func (e *emitter) refuseBlockOutlives(base string, n Node, r frameRef) bool {
-	if !e.isFrameVar(base) || e.blockDepthOf(r.name) <= e.blockDepthOf(base) {
+	if !e.isFrameVar(base) || e.refDepth(r) <= e.blockDepthOf(base) {
 		return false
 	}
 	e.fail("%v: cannot store %s in %s: %s does not outlive the block it is declared in, "+
 		"and %s does; declare it where %s is",
 		e.f.tok(n.Pos()).Position(), r.what, base, r.origin, base, base)
 	return true
+}
+
+// backedUnknown is the depth of a frame-backed slice's storage where nothing says
+// how deep it is: the slice's own block is answered for it (backingDepth).
+const backedUnknown = -1
+
+// markBacked records that the slice variable name views storage of this frame
+// declared at block depth d, or backedUnknown. A variable views whatever it has
+// been given, so its depth is the deepest it was given, and unknown where any was.
+func (e *emitter) markBacked(name string, d int) { mergeBacked(e.frameBacked, name, d) }
+
+func mergeBacked(m map[string]int, name string, d int) {
+	if old, ok := m[name]; ok && (old == backedUnknown || d != backedUnknown && old > d) {
+		d = old
+	}
+	m[name] = d
+}
+
+// isBacked reports whether the local slice name views storage of this frame.
+func (e *emitter) isBacked(name string) bool {
+	_, ok := e.frameBacked[name]
+	return ok
+}
+
+// backingDepth is the block depth of the storage the frame-backed slice name views.
+// Where no mark says, it is the slice's own block: a view of storage declared
+// deeper than the slice is refused where the slice is given it
+// (refuseBlockOutlives), so no slice holds one. Read as the slice's own block
+// always, `next := rest[1:]` in a loop's body over a `rest` viewing the function's
+// array could not be given back to rest (dom67).
+func (e *emitter) backingDepth(name string) int {
+	if d, ok := e.frameBacked[name]; ok && d != backedUnknown {
+		return d
+	}
+	return e.blockDepthOf(name)
+}
+
+// refDepth is the block depth of the storage r reaches: what a frame-backed
+// slice views where r names the slice, `s` of `rest = s` and `&s[i]`, and the
+// variable r names otherwise.
+func (e *emitter) refDepth(r frameRef) int {
+	if (r.view || r.backing) && r.name != "" && e.isSliceVar(r.name) && e.isBacked(r.name) {
+		return e.backingDepth(r.name)
+	}
+	return e.blockDepthOf(r.name)
+}
+
+// viewDepth is the block depth of the storage a declaration's value views, which
+// initViewsFrame said is this frame's: what it reaches, or what the variable it
+// slices views -- that variable's own block where it is not a slice, its storage
+// being no deeper than it (backingDepth).
+func (e *emitter) viewDepth(initExpr []int32) int {
+	if name, frame := e.sliceBackingIsFrame(initExpr); frame && name != "" && e.isFrameVar(name) {
+		if e.isSliceVar(name) && e.isBacked(name) {
+			return e.backingDepth(name)
+		}
+		return e.blockDepthOf(name)
+	}
+	if r, ok := e.frameRefOf(initExpr); ok {
+		return e.refDepth(r)
+	}
+	return backedUnknown
 }
 
 // carriedRef is what the value a list form is about to store carries of this frame
@@ -60018,7 +60089,7 @@ func (e *emitter) chainStorage(base string, steps []Node) (storage string, local
 		}
 		switch {
 		case cur.slice:
-			if k != 0 || !e.frameBacked[base] {
+			if k != 0 || !e.isBacked(base) {
 				return storage, false, false
 			}
 			// What the slice MAY view is its mark; what it views on every path is
@@ -61366,7 +61437,7 @@ func (e *emitter) contentsRef(ast []int32) (frameRef, bool) {
 	// `*ps` or `(*ps)[1:]` kept a view of the caller's array, the backing mark being
 	// one no contents question asked.
 	view := func(x string) (frameRef, bool) {
-		if !e.isFrameVar(x) || !e.isSliceVar(x) || !e.frameBacked[x] {
+		if !e.isFrameVar(x) || !e.isSliceVar(x) || !e.isBacked(x) {
 			return frameRef{}, false
 		}
 		r := sliceRef(x)
@@ -61536,7 +61607,7 @@ func (e *emitter) calleeSummaryName(recv string) string {
 // noteLoopSeeds finds what its body added.
 type loopHead struct {
 	key     *int32
-	backed  map[string]bool
+	backed  map[string]int
 	holder  map[string]string
 	visible map[string]bool
 	header  map[string]bool
@@ -61557,7 +61628,7 @@ func (e *emitter) applyLoopSeeds(key *int32, header bool) {
 			continue
 		}
 		if m.backed {
-			e.frameBacked[n] = true
+			e.markBacked(n, backedUnknown)
 		}
 		if m.holder != "" && e.frameHolder[n] == "" {
 			e.frameHolder[n] = m.holder
@@ -61595,8 +61666,8 @@ func (e *emitter) noteLoopSeeds(h loopHead) {
 		w.header = m.header
 		e.loopSeedsOut[h.key][n] = w
 	}
-	for n, b := range e.frameBacked {
-		if b && !h.backed[n] {
+	for n := range e.frameBacked {
+		if _, was := h.backed[n]; !was {
 			note(n, loopMark{backed: true})
 		}
 	}

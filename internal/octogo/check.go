@@ -11204,7 +11204,10 @@ func (f *File) chainRecvUnfixed(s *Scope, head Token, steps []Node, first int) (
 	if first == 0 {
 		_, isVar := s.find(head.Src()).(*VarDeclaration)
 		if sc, _ := s.find2(head.Src()); !isVar || sc == nil || sc.Kind != PackageScope {
-			return "a method value binds the address of its receiver, so the receiver must be reached from a package-level variable; a function literal calling %s is the way round", false
+			// A function literal calling the method would capture the local or the
+			// parameter the receiver is reached through, which needs a heap as
+			// well (dom67: `in := c.pins.Input` in a method of c).
+			return fmt.Sprintf("a method value binds the address of its receiver, so the receiver must be reached from a package-level variable, and a function literal calling %%s would capture %s, which needs a heap too: call the method where the value would be called", head.Src()), false
 		}
 	}
 	for i := first; i < len(steps); i++ {

@@ -162,6 +162,15 @@ shipped section tells a reader on that version that they have behaviour they do 
 
 ### Fixed
 
+- **A slice declared in an inner block may hold a view of an outer one's
+  storage, and be given to a slice outside**: `next := rest[1:]; rest = next` in a
+  loop's body, `tok, after, _ := bytes.Cut(rest, sep); rest = after`, and
+  `{ s := buf[:n]; tail = s }` over a function's array were refused as "a slice
+  backed by local next ... does not outlive the block", the rule asking the
+  slice's own block where its storage's belonged. A view of the inner block's own
+  storage is refused as before. And the refusal of a method value whose receiver a
+  local reaches, `in := c.pins.Input`, no longer advises a function literal, which
+  would capture the local: it says to call the method.
 - **`%q` escapes a rune that does not print, as Go does**: a valid UTF-8
   sequence was written as it stood whatever its rune, so `%q` of a C1 control, a
   no-break space, a soft hyphen, a line separator or an unassigned rune wrote its

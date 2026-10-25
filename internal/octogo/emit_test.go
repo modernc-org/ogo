@@ -8920,6 +8920,160 @@ func main() { println(run(5)) }
 }
 `,
 		},
+		// A slice declared in an inner block holds what it views, not storage of its
+		// own: given a view of storage of an outer block, it may be stored where that
+		// storage lives. Each of these was refused as "backed by local next" until
+		// 2026-10-25, the depth asked being the slice's own (dom67).
+		{
+			name: "a view in the loop body over the function's array, given back",
+			src: `func main() {
+	var line [8]int
+	rest := line[:5]
+	n := 0
+	for len(rest) > 0 {
+		next := rest[1:]
+		rest = next
+		n++
+	}
+	println(n)
+}
+`,
+		},
+		{
+			name: "a view in a block over the function's array, kept outside",
+			src: `func main() {
+	var line [8]int
+	var rest []int
+	{
+		s := line[:5]
+		rest = s
+	}
+	println(len(rest))
+}
+`,
+		},
+		{
+			name: "a call's result in the loop body over the function's array, given back",
+			src: `func cut(s []int) (before, after []int) {
+	for i, v := range s {
+		if v == 0 {
+			return s[:i], s[i+1:]
+		}
+	}
+	return s, s[len(s):]
+}
+
+func main() {
+	line := [6]int{1, 0, 2, 0, 3, 4}
+	rest := line[:]
+	n := 0
+	for len(rest) > 0 {
+		tok, after := cut(rest)
+		rest = after
+		n += len(tok)
+	}
+	println(n)
+}
+`,
+		},
+		{
+			name: "a view of a view of the function's array, two blocks in",
+			src: `func main() {
+	var line [8]int
+	var rest []int
+	for i := 0; i < 2; i++ {
+		a := line[i:]
+		{
+			b := a[1:]
+			rest = b
+		}
+	}
+	println(len(rest))
+}
+`,
+		},
+		// And what it views decides: storage of the block, however the view came.
+		{
+			name: "a view in a block given the block's array, kept outside",
+			src: `func main() {
+	var line [8]int
+	var rest []int
+	{
+		var buf [4]int
+		s := line[:5]
+		s = buf[:]
+		rest = s
+	}
+	println(len(rest))
+}
+`,
+			want: "does not outlive the block it is declared in",
+		},
+		{
+			name: "a view of a view of the block's array",
+			src: `func main() {
+	var rest []int
+	for i := 0; i < 2; i++ {
+		var buf [4]int
+		a := buf[:]
+		b := a[1:]
+		rest = b
+	}
+	println(len(rest))
+}
+`,
+			want: "does not outlive the block it is declared in",
+		},
+		{
+			name: "a view given the block's array on one branch",
+			src: `func main() {
+	var line [8]int
+	rest := line[:]
+	for i := 0; i < 2; i++ {
+		var buf [4]int
+		next := rest[1:]
+		if i == 1 {
+			next = buf[:]
+		}
+		rest = next
+	}
+	println(len(rest))
+}
+`,
+			want: "does not outlive the block it is declared in",
+		},
+		{
+			name: "a call's result over the block's array",
+			src: `func id(s []int) []int { return s }
+
+func main() {
+	var rest []int
+	for i := 0; i < 2; i++ {
+		var buf [4]int
+		after := id(buf[:])
+		rest = after
+	}
+	println(len(rest))
+}
+`,
+			want: "does not outlive the block it is declared in",
+		},
+		{
+			name: "a range value viewing the block's array",
+			src: `func main() {
+	var rest []int
+	for i := 0; i < 2; i++ {
+		var buf [4]int
+		views := [2][]int{buf[:], buf[1:]}
+		for _, v := range views {
+			rest = v
+		}
+	}
+	println(len(rest))
+}
+`,
+			want: "does not outlive the block it is declared in",
+		},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			fsys := fstest.MapFS{"main.ogo": &fstest.MapFile{Data: []byte(decls + test.src)}}

@@ -26557,6 +26557,43 @@ func main() {
 		want: "U+0078 'x'|    U+0078 'x'|U+0078 'x'    |U+000078 'x'|U+0078\nU+00E9 'é'|    U+00E9 'é'|U+00E9 'é'    |U+0000E9 'é'|U+00E9\nU+008D|        U+008D|U+008D        |U+00008D|U+008D\nU+00A0|        U+00A0|U+00A0        |U+0000A0|U+00A0\nU+D800|        U+D800|U+D800        |U+00D800|U+D800\nU+1F600 '😀'|   U+1F600 '😀'|U+1F600 '😀'   |U+01F600 '😀'|U+1F600\nU+10FFFF|      U+10FFFF|U+10FFFF      |U+10FFFF|U+10FFFF\nU+110000|      U+110000|U+110000      |U+110000|U+110000\nU+FFFFFFFFFFFFFFFF|U+FFFFFFFFFFFFFFFF|U+FFFFFFFFFFFFFFFF|U+FFFFFFFFFFFFFFFF|U+FFFFFFFFFFFFFFFF\nU+0000|        U+0000|U+0000        |U+000000|U+0000\nU+005A 'Z' U+2603 '☃' U+FFFFFFFFFFFFFFFE\n",
 	},
 	{
+		// A slice declared in a loop's body or in a block holds a view, not storage:
+		// viewing the function's array, it may be given to a slice declared outside,
+		// as bytes.Cut's result, a reslice and a view kept. Each was refused as
+		// "backed by local after" until 2026-10-25 (dom67), the block of the slice
+		// asked where the block of its storage belonged.
+		name: "a view declared in an inner block, given to a slice outside",
+		src: `import "bytes"
+
+func main() {
+	var buf [32]byte
+	n := copy(buf[:], "alpha beta  gamma delta")
+	rest := buf[:n]
+	count := 0
+	for len(rest) > 0 {
+		tok, after, _ := bytes.Cut(rest, []byte(" "))
+		rest = after
+		if len(tok) > 0 {
+			count++
+			printf("%s|", tok)
+		}
+	}
+	var tail []byte
+	{
+		s := buf[6:n]
+		tail = s
+	}
+	hops := buf[:n]
+	for len(hops) > 3 {
+		next := hops[4:]
+		hops = next
+	}
+	printf("\n%d [%s] [%s]\n", count, tail, hops)
+}
+`,
+		want: "alpha|beta|gamma|delta|\n4 [beta  gamma delta] [lta]\n",
+	},
+	{
 		// `type A = B` is another NAME for B, not a type: literals written via the
 		// alias, identity in both directions, methods and fields through it, a
 		// predeclared target, a defined ARRAY target with its elements and method,
