@@ -10779,6 +10779,642 @@ func main() { run(); println(len(gk), ga.k, gb.k) }
 	}
 }
 
+// TestEmitCStoreThroughPart holds where a store through a name lands when the name
+// HOLDS a pointer as a part of what it is or points at, `f.fs = fs; f.name = name`:
+// in the name's storage or what it points at, one pointer deep, and past the part
+// only through it (dom72, sweeps/part-store). Followed as the name's value, the
+// part made every store through f one into the receiver, refusing every method
+// that fills a caller's struct with a pointer to itself.
+func TestEmitCStoreThroughPart(t *testing.T) {
+	const decls = `type FS struct {
+	n int
+	p *int
+	s string
+	b []byte
+}
+
+type File struct {
+	fs *FS
+	g  *FS
+	p  *int
+	s  string
+	b  []byte
+}
+
+var vol FS
+
+`
+	for _, test := range []struct {
+		name string
+		src  string
+		want string // "" means the program must be accepted
+	}{
+		{
+			name: "a method filling a caller's struct with itself and a string",
+			src: `func (fs *FS) open(s string, f *File) {
+	f.fs = fs
+	f.s = s
+}
+
+func run() {
+	var b [4]byte
+	b[0] = 'x'
+	sb := NewBuilder(b[:])
+	sb.WriteString("ab")
+	var f File
+	vol.open(sb.String(), &f)
+	printf("%s %t\n", f.s, f.fs == &vol)
+}
+
+func main() {
+	run()
+	_ = vol.n
+}
+`,
+			want: "",
+		},
+		{
+			name: "the same as a literal through the pointer",
+			src: `func (fs *FS) open(s string, f *File) {
+	*f = File{fs: fs, s: s}
+}
+
+func run() {
+	var b [4]byte
+	sb := NewBuilder(b[:])
+	sb.WriteString("ab")
+	var f File
+	vol.open(sb.String(), &f)
+	printf("%s %t\n", f.s, f.fs == &vol)
+}
+
+func main() {
+	run()
+	_ = vol.n
+}
+`,
+			want: "",
+		},
+		{
+			name: "a function storing two pointers through a third",
+			src: `func open(fs *FS, p *int, f *File) {
+	f.fs = fs
+	f.p = p
+}
+
+func run() {
+	x := 7
+	var f File
+	open(&vol, &x, &f)
+	printf("%d %t\n", *f.p, f.fs == &vol)
+}
+
+func main() {
+	run()
+	_ = vol.n
+}
+`,
+			want: "",
+		},
+		{
+			name: "a package variable's address and a pointer stored through a parameter",
+			src: `func open(p *int, f *File) {
+	f.g = &vol
+	f.p = p
+}
+
+func run() {
+	x := 7
+	var f File
+	open(&x, &f)
+	printf("%d %t\n", *f.p, f.g == &vol)
+}
+
+func main() {
+	run()
+	_ = vol.n
+}
+`,
+			want: "",
+		},
+		{
+			name: "a view stored beside the receiver",
+			src: `func (fs *FS) open(v []byte, f *File) {
+	f.fs = fs
+	f.b = v
+}
+
+func run() {
+	var a [3]byte
+	a[1] = 'q'
+	var f File
+	vol.open(a[:], &f)
+	printf("%c %t\n", f.b[1], f.fs == &vol)
+}
+
+func main() {
+	run()
+	_ = vol.n
+}
+`,
+			want: "",
+		},
+		{
+			name: "a local pointer given the receiver, then a pointer",
+			src: `func (fs *FS) use(p *int) int {
+	var l File
+	q := &l
+	q.fs = fs
+	q.p = p
+	return *q.p + q.fs.n
+}
+
+func run() {
+	x := 7
+	vol.n = 2
+	printf("%d\n", vol.use(&x))
+}
+
+func main() {
+	run()
+	_ = vol.n
+}
+`,
+			want: "",
+		},
+		{
+			name: "a local struct given the receiver, then a pointer",
+			src: `func (fs *FS) use(p *int) int {
+	var w File
+	w.fs = fs
+	w.p = p
+	return *w.p + w.fs.n
+}
+
+func run() {
+	x := 7
+	vol.n = 3
+	printf("%d\n", vol.use(&x))
+}
+
+func main() {
+	run()
+	_ = vol.n
+}
+`,
+			want: "",
+		},
+		{
+			name: "a slice parameter given an element's address and a pointer",
+			src: `func set(fs *FS, v *int, s []*int) {
+	s[0] = &fs.n
+	s[1] = v
+}
+
+func run() {
+	x := 9
+	var s [2]*int
+	set(&vol, &x, s[:])
+	printf("%d %t\n", *s[1], s[0] == &vol.n)
+}
+
+func main() {
+	run()
+	_ = vol.n
+}
+`,
+			want: "",
+		},
+		{
+			name: "a package error and a view of the receiver into the receiver",
+			src: `
+type xErr struct{ n int }
+
+func (e *xErr) Error() string { return "x" }
+
+var errX error = &xErr{}
+
+type B struct {
+	buf [4]byte
+	err error
+	v   []byte
+}
+
+func (b *B) fail(bad bool) {
+	err := error(nil)
+	if bad {
+		err = errX
+	}
+	b.err = err
+	copy(b.buf[0:2], b.buf[2:4])
+	b.v = b.buf[:]
+}
+
+func run() {
+	var b B
+	b.buf[2] = 'k'
+	b.fail(true)
+	printf("%c %v %d\n", b.buf[0], b.err, len(b.v))
+}
+
+func main() {
+	run()
+	_ = vol.n
+}
+`,
+			want: "",
+		},
+		{
+			name: "a callee storing through the parameter that holds the receiver",
+			src: `func fill(h *File, p *int) { h.p = p }
+
+func (fs *FS) open(p *int, f *File) {
+	f.fs = fs
+	fill(f, p)
+}
+
+func run() {
+	x := 5
+	var f File
+	vol.open(&x, &f)
+	printf("%d\n", *f.p)
+}
+
+func main() {
+	run()
+	_ = vol.n
+}
+`,
+			want: "",
+		},
+		{
+			name: "a callee storing through a local that holds the receiver",
+			src: `func fill(h *File, p *int) { h.p = p }
+
+func (fs *FS) use(p *int) int {
+	var l File
+	l.fs = fs
+	fill(&l, p)
+	return *l.p
+}
+
+func run() {
+	x := 6
+	printf("%d\n", vol.use(&x))
+}
+
+func main() {
+	run()
+	_ = vol.n
+}
+`,
+			want: "",
+		},
+		{
+			name: "a method on a local pointer that holds a package variable",
+			src: `func (f *File) set(p *int) { f.p = p }
+
+func run() {
+	x := 4
+	var l File
+	q := &l
+	q.g = &vol
+	q.set(&x)
+	printf("%d %t\n", *l.p, l.g == &vol)
+}
+
+func main() {
+	run()
+	_ = vol.n
+}
+`,
+			want: "",
+		},
+		{
+			name: "two fields given the receiver, then a string",
+			src: `func (fs *FS) open(s string, f *File) {
+	f.fs = fs
+	f.g = fs
+	f.s = s
+	f.fs.n++
+}
+
+func run() {
+	var b [4]byte
+	sb := NewBuilder(b[:])
+	sb.WriteString("cd")
+	var f File
+	vol.open(sb.String(), &f)
+	printf("%s %d\n", f.s, vol.n)
+}
+
+func main() {
+	run()
+	_ = vol.n
+}
+`,
+			want: "",
+		},
+		{
+			name: "a pointer stored past the receiver a parameter holds",
+			src: `func (fs *FS) open(p *int, f *File) {
+	f.fs = fs
+	f.fs.p = p
+}
+
+func run() {
+	x := 7
+	var f File
+	vol.open(&x, &f)
+	printf("%d\n", *vol.p)
+}
+
+func main() {
+	run()
+	_ = vol.n
+}
+`,
+			want: "its parameter 1 is stored where it outlives every frame",
+		},
+		{
+			name: "a pointer stored past a package variable a parameter holds",
+			src: `func open(p *int, f *File) {
+	f.g = &vol
+	f.g.p = p
+}
+
+func run() {
+	x := 7
+	var f File
+	open(&x, &f)
+	printf("%d\n", *vol.p)
+}
+
+func main() {
+	run()
+	_ = vol.n
+}
+`,
+			want: "its parameter 1 is stored where it outlives every frame",
+		},
+		{
+			name: "a pointer stored through an alias of the receiver",
+			src: `func (fs *FS) set(p *int) {
+	w := fs
+	w.p = p
+}
+
+func run() {
+	x := 7
+	vol.set(&x)
+	printf("%d\n", *vol.p)
+}
+
+func main() {
+	run()
+	_ = vol.n
+}
+`,
+			want: "it is stored in the receiver vol",
+		},
+		{
+			name: "a pointer stored through an alias of a parameter",
+			src: `var gfile File
+
+func set(p *int, f *File) {
+	w := f
+	w.p = p
+}
+
+func run() {
+	x := 7
+	set(&x, &gfile)
+	printf("%d\n", *gfile.p)
+}
+
+func main() {
+	run()
+	_ = vol.n
+}
+`,
+			want: "it is stored through gfile",
+		},
+		{
+			name: "a pointer stored through an alias of a package variable",
+			src: `func set(p *int) {
+	w := &vol
+	w.p = p
+}
+
+func run() {
+	x := 7
+	set(&x)
+	printf("%d\n", *vol.p)
+}
+
+func main() {
+	run()
+	_ = vol.n
+}
+`,
+			want: "its parameter 1 is stored where it outlives every frame",
+		},
+		{
+			name: "a pointer stored past a package variable a local holds",
+			src: `func set(p *int) {
+	var w File
+	w.g = &vol
+	w.g.p = p
+}
+
+func run() {
+	x := 7
+	set(&x)
+	printf("%d\n", *vol.p)
+}
+
+func main() {
+	run()
+	_ = vol.n
+}
+`,
+			want: "its parameter 1 is stored where it outlives every frame",
+		},
+		{
+			name: "a view stored through a parameter pointing at a package variable",
+			src: `var gfile File
+
+func (fs *FS) open(v []byte, f *File) {
+	f.fs = fs
+	f.b = v
+}
+
+func run() {
+	var a [3]byte
+	vol.open(a[:], &gfile)
+	printf("%d\n", len(gfile.b))
+}
+
+func main() {
+	run()
+	_ = vol.n
+}
+`,
+			want: "it is stored through gfile",
+		},
+		{
+			name: "a pointer stored through a pointer loaded out of a parameter",
+			src: `func (fs *FS) open(p *int, f *File) {
+	f.fs = fs
+	q := f.fs
+	q.p = p
+}
+
+func run() {
+	x := 7
+	var f File
+	vol.open(&x, &f)
+	printf("%d\n", *vol.p)
+}
+
+func main() {
+	run()
+	_ = vol.n
+}
+`,
+			want: "its parameter 1 is stored where it outlives every frame",
+		},
+		{
+			name: "a pointer stored through an element holding the receiver",
+			src: `func (fs *FS) set(p *int) {
+	arr := [1]*FS{fs}
+	w := arr[0]
+	w.p = p
+}
+
+func run() {
+	x := 7
+	vol.set(&x)
+	printf("%d\n", *vol.p)
+}
+
+func main() {
+	run()
+	_ = vol.n
+}
+`,
+			want: "its parameter 1 is stored where it outlives every frame",
+		},
+		{
+			name: "a pointer stored past the receiver a local holds",
+			src: `func (fs *FS) set(p *int) {
+	var w File
+	w.fs = fs
+	w.fs.p = p
+}
+
+func run() {
+	x := 7
+	vol.set(&x)
+	printf("%d\n", *vol.p)
+}
+
+func main() {
+	run()
+	_ = vol.n
+}
+`,
+			want: "its parameter 1 is stored where it outlives every frame",
+		},
+		{
+			name: "a callee storing through the receiver a parameter holds",
+			src: `func fill(h *FS, p *int) { h.p = p }
+
+func (fs *FS) open(p *int, f *File) {
+	f.fs = fs
+	fill(f.fs, p)
+}
+
+func run() {
+	x := 7
+	var f File
+	vol.open(&x, &f)
+	printf("%d\n", *vol.p)
+}
+
+func main() {
+	run()
+	_ = vol.n
+}
+`,
+			want: "its parameter 1 is stored where it outlives every frame",
+		},
+		{
+			name: "a pointer stored through a parameter and read back into the receiver",
+			src: `func (fs *FS) open(p *int, f *File) {
+	f.fs = fs
+	f.p = p
+	fs.p = f.p
+}
+
+func run() {
+	x := 7
+	var f File
+	vol.open(&x, &f)
+	printf("%d\n", *vol.p)
+}
+
+func main() {
+	run()
+	_ = vol.n
+}
+`,
+			want: "it is stored in the receiver vol",
+		},
+		{
+			name: "a pointer stored past a package variable a slice parameter holds",
+			src: `func set(p *int, s []*FS) {
+	s[0] = &vol
+	s[0].p = p
+}
+
+func run() {
+	x := 7
+	var s [1]*FS
+	set(&x, s[:])
+	printf("%d\n", *vol.p)
+}
+
+func main() {
+	run()
+	_ = vol.n
+}
+`,
+			want: "its parameter 1 is stored where it outlives every frame",
+		},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			fsys := fstest.MapFS{"main.ogo": &fstest.MapFile{Data: []byte(decls + test.src)}}
+			pkg, err := Build(-1, []string{"main.ogo"}, fsys)
+			if err != nil {
+				t.Fatalf("Build: %v", err)
+			}
+			var buf bytes.Buffer
+			err = EmitC(pkg, &buf, Checked())
+			switch {
+			case test.want == "":
+				if err != nil {
+					t.Errorf("EmitC: unexpected refusal: %v", err)
+				}
+			case err == nil:
+				t.Errorf("EmitC: accepted a reference outliving its frame; want %q", test.want)
+			case !strings.Contains(err.Error(), test.want):
+				t.Errorf("EmitC error %q does not mention %q", err, test.want)
+			}
+		})
+	}
+}
+
 func TestEmitCRuneStringEscape(t *testing.T) {
 	const decls = `var g string
 

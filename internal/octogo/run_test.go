@@ -27000,6 +27000,81 @@ func main() {
 		want: "9 3\n1 3\n8\n7\n53\n5 3\n",
 	},
 	{
+		// A store through a name that holds a pointer as a PART lands where the name
+		// points, not where the part does: a method filling a caller's struct with a
+		// pointer to itself, `*f = File{fs: fs, name: name}`, was taken to store the
+		// name into the receiver, and a store through a receiver holding a package
+		// error, `w.err = err`, one into the package variable (dom72).
+		name: "a store through a name that holds the receiver",
+		src: `type FS struct{ n int }
+
+type File struct {
+	fs   *FS
+	name string
+	b    []byte
+	p    *int
+}
+
+var vol FS
+
+func (fs *FS) open(name string, b []byte, f *File) {
+	*f = File{fs: fs, name: name}
+	f.b = b
+	fs.n++
+}
+
+func fill(h *File, p *int) { h.p = p }
+
+func (fs *FS) use(p *int) int {
+	var l File
+	l.fs = fs
+	fill(&l, p)
+	return *l.p + l.fs.n
+}
+
+type xErr struct{ n int }
+
+func (e *xErr) Error() string { return "short" }
+
+var errShort error = &xErr{}
+
+type W struct {
+	buf [4]byte
+	err error
+	v   []byte
+}
+
+func (w *W) fail() {
+	err := error(nil)
+	if w.buf[0] == 0 {
+		err = errShort
+	}
+	w.err = err
+	copy(w.buf[0:2], w.buf[2:4])
+	w.v = w.buf[:]
+}
+
+func run() {
+	var back [8]byte
+	sb := NewBuilder(back[:])
+	sb.WriteString("log1")
+	var a [3]byte
+	a[1] = 'q'
+	var f File
+	vol.open(sb.String(), a[:], &f)
+	x := 7
+	println(f.name, f.b[1], f.fs == &vol, vol.n, vol.use(&x))
+	var w W
+	w.buf[2] = 'k'
+	w.fail()
+	println(w.buf[0], w.err.Error(), len(w.v))
+}
+
+func main() { run() }
+`,
+		want: "log1 113 true 1 8\n107 short 4\n",
+	},
+	{
 		// The error of a call of several results beside a view of a local buffer,
 		// returned: through a method on a field, an interface whose methods hand back
 		// nothing in the error, one of them forwarding to another's `return a.gen(dst,

@@ -81,6 +81,16 @@ shipped section tells a reader on that version that they have behaviour they do 
   `*p = nil` for a `p *error` or a `*[]byte`, and `*p = &x`, were written as stores
   of one word, C that neither compiler takes -- "the C compiler refused the C ogo
   wrote".
+- **A store through a name that holds a pointer lands where the name points**:
+  `f.fs = fs; f.name = name`, a method filling a caller's struct with a pointer to
+  itself, was taken to store the name into the receiver -- "cannot pass sb.String()
+  ... to Create: it is stored in the receiver vol" for a name built in a local
+  buffer and a File of the same frame -- and so was a callee handed such a local,
+  `fill(&l, p)`, and a method called on it. And a receiver holding a package error,
+  `b.err = err` with `err = ErrShortWrite`, made every store through it one into
+  the package variable, refusing a buffered writer over a local one. A store goes
+  past what the name points at only through the pointer it holds, `f.fs.p = p`,
+  and that is refused as before.
 
 ## v0.59.0
 

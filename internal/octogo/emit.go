@@ -13274,18 +13274,43 @@ func (e *emitter) collectFuncCross(fi funcInfo) {
 		})
 		return r
 	}
-	// ats is every parameter a name may hold by value, and at the first of them.
+	// ats is every parameter a name may hold by value, a part of it among them:
+	// what a call through the name may call, `w.f = p; w.f()`.
 	ats := func(name string) []int { return reachOf([]held{{name, heldAlias}}).vals }
-	at := func(name string) int {
-		if is := ats(name); len(is) != 0 {
-			return is[0]
+	// landsIn is what a store through a name lands in, one pointer from the name's
+	// value (storesPast says when it goes further), and what a callee handed the
+	// name, or a method called on it, stores into: the parameters, the receiver and
+	// the package variables the value may BE, through the bindings that hand it a
+	// value whole. A binding that makes a value a PART of the name keeps it in the
+	// name's storage or in what the name points at, and a store there is a store into
+	// that storage, not into what the part points at: `f.fs = fs; f.name = name`
+	// stores the name where f points, and read through the part it was stored in the
+	// receiver, refusing every method that fills a caller's struct with a pointer to
+	// itself; and `b.err = err` with `err = ErrShortWrite` made every store through b
+	// one into the package variable.
+	landsIn := func(root string) (r reached, pkg bool) {
+		seen := map[string]bool{}
+		var walk func(n string)
+		walk = func(n string) {
+			if n == "" || seen[n] || len(seen) > 512 {
+				return
+			}
+			seen[n] = true
+			if i := slices.Index(params, n); i >= 0 && !slices.Contains(r.vals, i) {
+				r.vals = append(r.vals, i)
+			}
+			if recvName != "" && n == recvName && recvPtr {
+				r.recvVal = true
+			}
+			pkg = pkg || e.outlivesByName(n)
+			for _, h := range holds[n] {
+				if h.kind == heldAlias {
+					walk(h.name)
+				}
+			}
 		}
-		return -1
-	}
-	isRecv := func(root string) bool { return reachOf([]held{{root, heldAlias}}).recvVal }
-	holdsPackageVar := func(root string) (found bool) {
-		resolve([]held{{root, heldAlias}}, func(n string, contents bool) { found = found || !contents && e.outlivesByName(n) })
-		return found
+		walk(root)
+		return r, pkg
 	}
 	// A call through a function value nothing names -- a package variable, a field,
 	// an element, another package's variable, a call's result -- is a call of every
@@ -14198,13 +14223,14 @@ func (e *emitter) collectFuncCross(fi funcInfo) {
 			return "", recvNone, argLocal, false
 		}
 		base = e.elemType(cur.ctype)
-		switch i := at(name); {
+		r, inPkg := landsIn(name)
+		switch {
 		case !valueKnown(name):
-		case i >= 0 && i < intoBits:
-			return base, recvParam, i, true
-		case isRecv(name):
+		case len(r.vals) != 0 && r.vals[0] < intoBits:
+			return base, recvParam, r.vals[0], true
+		case r.recvVal:
 			return base, recvOwn, argLocal, true
-		case !holdsPackageVar(name):
+		case !inPkg:
 			return base, recvLocal, argLocal, true
 		}
 		return base, recvOutlives, argLocal, true
@@ -14235,14 +14261,15 @@ func (e *emitter) collectFuncCross(fi funcInfo) {
 		out := make([]int, len(args))
 		for j, a := range args {
 			root := e.crossRoot(a.ast)
-			switch i := at(root); {
+			r, _ := landsIn(root)
+			switch {
 			case argPast(a):
 				out[j] = argOutlives
-			case i >= 0:
-				out[j] = i
+			case len(r.vals) != 0:
+				out[j] = r.vals[0]
 			case root != "" && e.outlivesByName(root):
 				out[j] = argOutlives
-			case root != "" && isRecv(root):
+			case root != "" && r.recvVal:
 				out[j] = argRecv
 			default:
 				out[j] = argLocal
@@ -14258,7 +14285,8 @@ func (e *emitter) collectFuncCross(fi funcInfo) {
 	// the body (checkIntoArgsIn, checkRecvLeak); the summary read the local as
 	// holding nothing, so `set(&k, buf); return k` handed buf back unrecorded.
 	frameLocal := func(n string) bool {
-		return n != "" && n != "_" && !strings.ContainsAny(n, "@?") && at(n) < 0 && !isRecv(n) && !e.outlivesByName(n)
+		r, _ := landsIn(n)
+		return n != "" && n != "_" && !strings.ContainsAny(n, "@?") && len(r.vals) == 0 && !r.recvVal && !e.outlivesByName(n)
 	}
 	noteInto := func(callee string, site int, args []Node, owner []int, recvCopy string) {
 		var vals [][]held
@@ -14752,7 +14780,7 @@ func (e *emitter) collectFuncCross(fi funcInfo) {
 	}
 	storesInto := func(pkg, through []storeShape) {
 		for _, st := range through {
-			if !e.outlivesByName(st.base) && holdsPackageVar(st.base) {
+			if _, inPkg := landsIn(st.base); !e.outlivesByName(st.base) && inPkg {
 				pkg = append(pkg, st)
 			}
 		}
@@ -14770,7 +14798,7 @@ func (e *emitter) collectFuncCross(fi funcInfo) {
 				}
 				continue
 			}
-			if isRecv(st.base) {
+			if r, _ := landsIn(st.base); r.recvVal {
 				r := reachOf(reachOfStore(st))
 				for _, i := range r.vals {
 					e.crossParams[cname][i] |= leakRecv
@@ -14790,7 +14818,7 @@ func (e *emitter) collectFuncCross(fi funcInfo) {
 					derived(st.value, leakRecv, -1)
 				}
 			}
-			for _, slot := range e.pointerParamSlots(fi, st.base, ats) {
+			for _, slot := range e.pointerParamSlots(fi, st.base, func(n string) []int { r, _ := landsIn(n); return r.vals }) {
 				r := reachOf(reachOfStore(st))
 				for _, i := range r.vals {
 					e.crossInto[cname][i] |= 1 << slot
