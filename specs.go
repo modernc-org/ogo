@@ -2290,6 +2290,16 @@
 // rule does: a store, a store through a pointer parameter, and a store into a
 // method's receiver.
 //
+// The blocks are Go's. A parameter, a result and the receiver are of the function's
+// outermost block, with the body's own declarations, and live as long, so one may
+// hold a view or an address of a local declared there -- `var zero [32]byte; if
+// len(salt) == 0 { salt = zero[:] }`. A goto back to a label runs the declarations
+// after the label again, each a new variable as a loop body's is, so a reference
+// to one kept past the next pass by a variable declared before the label is
+// refused. One refusal is stricter than the heap requires: a variable of an `if`
+// or another block that runs at most once while the reference lives, kept past the
+// block, is refused as a loop body's is; declare it in the enclosing block.
+//
 // A reference wrapped in a struct counts as one. Assigning a local's address or a
 // slice of a local array to a field -- or filling the field in a composite literal --
 // marks the variable, and a copy of it carries the mark, so returning it, storing it

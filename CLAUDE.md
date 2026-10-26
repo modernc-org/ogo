@@ -84,6 +84,12 @@ silent fault puts the count back to 0. Each round's account is in
   local buffer) -- 0
 - dom70 (2026-10-26), a CAN network: silent (an array of structs holding an array,
   a literal's field, copied as one element) -- 0
+- dom71 (2026-10-26), a sealed telemetry link (SHA-256, HKDF, ChaCha20-Poly1305):
+  silent (a goto back's declarations kept from the first pass; a deferred call's
+  change to a named result lost after a forwarded call), three false refusals
+  fixed (a parameter given a view of the body's local, an error beside a view
+  through a field, an interface and a forwarded call), one listed (an if's local
+  kept by a parameter) -- 0
 
 ## Language feature policy (read before assuming something is excluded)
 
@@ -1102,7 +1108,13 @@ section. A new finding goes there; the rule it leaves goes here too.
   every result every argument** (resultPos). **A return is asked in every form: a
   bare one returns the named results, and under a defer every return does.** **A
   binding a callee makes is asked of the closed summaries: a local whose address a
-  call hands on holds what the callee stores there** (applyIntoCands; dom69).
+  call hands on holds what the callee stores there** (applyIntoCands; dom69). **A
+  position a summary keeps is asked wherever a call's results are taken apart: at a
+  call site, in a callee's summary, through an interface, and where a return hands
+  them on.** **A return is asked in every form, a forwarded call among them.**
+  **A block is counted as Go declares it: the parameters are of the body's
+  outermost block.** **A loop is every way a statement runs again: a goto back is
+  one** (dom71).
 - **A PARENTHESISED HEAD IS A ROW OF EVERY SCAN**: **A new scan reads heads through
   them, and a new shape the emitter reads through parentheses is a row in each
   scan.**

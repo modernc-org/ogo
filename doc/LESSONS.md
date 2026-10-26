@@ -3641,7 +3641,12 @@ local whose address a call hands on holds what the callee stores there.** With t
 refusal lifted the host's compiler refused dom69's C: a named result the body
 declares again, `state, _, err := header(sec)` in a loop, every return listing its
 values, was declared and never read; it is marked used where the body redeclares it
-(bodyRedeclares). The round found silent faults: the count goes back to 0.
+(bodyRedeclares). Its 400 mutants against Go on the host: 233 print what Go
+prints, 79 panic as Go does, 88 are refused alike, each for Go's reason, and none
+differ; on the board 292 of 292 print Go's output, the 20 that run for ever on both
+sides left out -- 7 of them still printing when the fifteen seconds the capture gave
+ran out, a cut loop run to its end, and matching read to the end. The round found
+silent faults: the count goes back to 0.
 **dom70, a CAN network** (2026-10-26): three controllers on cogs and a bus that is
 main's, every bit time each node's driven bit taken over a channel and the wired AND
 handed back -- `level &= <-tx[i]`, channels an array of a package variable's makes,
@@ -3662,8 +3667,57 @@ nothing tests**, again. An array position takes the array's copy now; the interf
 branch above it already asked. **A check asked of a position's C type asks first
 whether the position is an array: an array's ctype is its element's.** Its 400
 mutants on the host: 345 print what Go prints, 11 panic as Go does, 39 are refused
-alike for Go's reasons, and the 5 that differ deadlock (DIFFERENCES.md). A round
-with a silent fault: the count stays 0.
+alike for Go's reasons, and the 5 that differ deadlock (DIFFERENCES.md); on the
+board 356 of 356 print Go's output. A round with a silent fault: the count stays 0.
+**dom71, a sealed telemetry link** (2026-10-26): SHA-256, HMAC, HKDF, ChaCha20,
+Poly1305 in limbs of 26 bits and the ChaCha20-Poly1305 AEAD, written as Go's crypto
+packages write them -- a digest copied to finish, Sum appending to the caller's
+slice, Seal and Open behind cipher.AEAD's interface forwarding to generic ones --
+and checked first against their RFCs' vectors; above them a device cog pairing with
+the gateway by nonces, records sealed under (direction, epoch, sequence) nonces and
+rekeyed every sixteen, a radio cog that drops, duplicates, swaps, replays, flips and
+cuts, and a replay window of 64. Its first build was refused three times, each a
+false refusal of a plain way to write it. A parameter given a view of a local of the
+function's block, `var zero [32]byte; if len(salt) == 0 { salt = zero[:] }`: the
+block rule counted the parameters a block outside the body's, where Go declares them
+with its outermost locals, and advised "declare it where salt is" (blockDepthOf); a
+function literal's were counted inside the blocks around it. **A block is counted as
+Go declares it: the parameters are of the body's outermost block.** Then the error of
+a method on a field beside a view of a local buffer, `b, err := gw.auth.Open(opened[:0],
+...)`, and the error of the AEAD's Open, through the interface and forwarding `return
+c.openGeneric(...)`: the per-result summaries were asked of a plain call alone
+(resultsCarryNothing), of no implementation of an interface, and not inside a callee's
+own summary, where a binding from a call of several results took the whole call and a
+return forwarding one listed nothing (heldCallPos, forwards, posSummary).
+**A position a summary keeps is asked wherever a call's results are taken apart: at
+a call site, in a callee's summary, through an interface, and where a return hands
+them on.**
+Sweeping those rows (sweeps/param-block, 29 rows; sweeps/fwd-defer, 14) found four
+faults, each in every release. The block rule's miscount had refused, by accident, a
+bare return of a named result holding a local's storage, which no rule asked
+(checkNamedReturns): **A rule refused by accident is a rule nobody wrote**, again. A
+goto back runs what follows its label again, every declaration a new variable, and
+the block rule counted that as the declarations before the label: `p = a[:]` of a
+`var a` after the label kept the first pass's array, which the next pass zeroed and
+wrote over, 3 printed where Go prints 1; a label a goto goes back to opens a block to
+the rules now (emitLabeledStatement). **A loop is every way a statement runs again: a
+goto back is one.** A deferred call's change to a named result was lost after `return
+two()`, `1 2` printed for Go's `11 2`, through the registers and the caller's
+storage, a method, an interface, a function value and a widened result, and a
+deferred call reading the results saw zeros (emitDeferredThroughNamed); and the
+summaries did not count a named result a deferred call sets after such a return, so
+`defer put(&k, buf); return split(buf)` handed a caller's buffer back unasked.
+**A return is asked in every form, a forwarded call among them.** Loud beside them:
+`*p = nil` and `*p = &x` through a pointer to an interface or a slice stored one
+word where the value is two or three, C no compiler takes (pointeeCType). One false
+refusal stays, listed: an if's local kept by a parameter past the if, which needs no
+heap where the block runs once (param-block r01). Its 400 mutants against Go on
+the host: 303 print what Go prints, 33 panic as Go does, 50 are refused alike, each
+for Go's reason; of the 14 that differ one deadlocks, and the others are a print
+writing what it evaluated before a later argument panics (7, DIFFERENCES.md) or a
+panic on the device's cog racing main's lines, which Go orders no better (9; 3 are
+both). On the board 335 of 335 print Go's output, a 336th running on past Go's
+time limit. A round with silent faults: the count stays 0.
 **A MARK IS MADE IN EMISSION ORDER, AND A LOOP RUNS ITS BODY AGAIN** (2026-10-08,
 found probing unsafe.Slice's views). The holder marks are set as statements are
 emitted, so a statement read a variable's mark as the statements BEFORE it had left
@@ -4538,7 +4592,10 @@ the literal read the package's x where Go reads the local. It is asked of the lo
 now (`Scope.find2` records what leaves a literal's scope, `litOf`); a rule about what
 a name MEANS belongs where names are resolved.
 
-Known open items, all loud refusals or design walls (2026-09-17): an
+Known open items, all loud refusals or design walls (2026-09-17): a
+local of an if's block whose view a parameter keeps past the if, `if len(key) > 64 {
+s := Sum256(key); key = s[:] }` (the block rule asks blocks, not loops, and that
+block runs once while the parameter lives; dom71, sweeps/param-block r01); an
 array-returning call as a package literal element; a function returning an ARRAY
 taken as a value, `mb := mkb`, "cannot infer a type" and, with the type written,
 "cannot return an array beside another result" (a function value's type has no out
