@@ -27147,6 +27147,58 @@ func main() {
 		want: "fra 7 frame\nlocal 1\n4  frame #\nopen failed\neq frame kept\n",
 	},
 	{
+		// A struct passed by value that the target's compiler keeps whole -- a member
+		// narrower than a long, or an aggregate one -- named like a member the
+		// function selects, of whatever struct: "Expecting identifier after '.'"
+		// (doc/param-named-like-any-member.c, dom72).
+		name: "a struct passed by value, named like another struct's member",
+		src: `type FS struct{ n int }
+
+type dir struct {
+	fs    *FS
+	first uint16
+}
+
+type iter struct {
+	d dir
+	i int
+}
+
+type flags struct {
+	on bool
+	n  int
+}
+
+type pair struct {
+	d  int
+	on int
+}
+
+func (d dir) fill(it *iter) int {
+	it.d = d
+	return int(d.first)
+}
+
+func show(on flags, p *pair) int {
+	p.on = 5
+	if on.on {
+		return p.on + on.n
+	}
+	return 0
+}
+
+func main() {
+	fs := FS{7}
+	var it iter
+	d := dir{&fs, 2}
+	println(d.fill(&it), it.d.fs.n, it.d.first)
+	var p pair
+	println(show(flags{true, 3}, &p), p.on)
+}
+`,
+		want: "2 7 2\n8 5\n",
+	},
+	{
 		// The error of a call of several results beside a view of a local buffer,
 		// returned: through a method on a field, an interface whose methods hand back
 		// nothing in the error, one of them forwarding to another's `return a.gen(dst,

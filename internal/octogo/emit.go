@@ -22783,13 +22783,50 @@ func paramArgName(name string) string { return paramArgPrefix + userIdent(name) 
 // after '.'" (doc/param-named-like-member.c), where a local of the name is right:
 // it is received under paramArgName and copied into a local of its own name on
 // entry (emitParamCopies, emitRecvCopy).
+//
+// A struct the backend keeps whole rather than split over registers -- one with an
+// aggregate member or a member narrower than a long, a byte, a bool, a uint16 -- is
+// refused the same way wherever the function selects ANY member named like the
+// parameter, of whatever struct: `it->d = x` in a `func (d dir) create(..., it
+// *dirIter)` of a `dir{fs *FS; first uint16}`. So such a parameter is received under
+// another name wherever its name is one a member may have, the program's structs'
+// or the runtime's (memberNameUsed).
 func (e *emitter) memberShadowParam(name, ct string) bool {
 	if name == "" || name == "_" || e.isPointer(ct) || e.byRefParam(ct) {
 		return false
 	}
-	for _, f := range e.structs[e.underlyingCType(ct)] {
-		if f.name == name && (e.zeroInitC(f.ctype) == "{0}" || e.isIfaceCType(f.ctype)) {
+	fields := e.structs[e.underlyingCType(ct)]
+	whole := false
+	for _, f := range fields {
+		aggregate := e.zeroInitC(f.ctype) == "{0}" || e.isIfaceCType(f.ctype)
+		if f.name == name && aggregate {
 			return true
+		}
+		switch e.underlyingCType(f.ctype) {
+		case cBool, "uint8_t", "int8_t", "uint16_t", "int16_t":
+			aggregate = true
+		}
+		whole = whole || aggregate
+	}
+	return whole && e.memberNameUsed(name)
+}
+
+// memberNameUsed reports whether a C member may be named name: a field of a struct
+// of the program, or a member of the runtime's own structs -- a string's, a slice's,
+// an interface value's, a Builder's and a result struct's.
+func (e *emitter) memberNameUsed(name string) bool {
+	switch name {
+	case "str", "len", "ptr", "cap", "data", "vt":
+		return true
+	}
+	if rest, ok := strings.CutPrefix(name, "_"); ok && rest != "" && strings.Trim(rest, "0123456789") == "" {
+		return true
+	}
+	for _, fields := range e.structs {
+		for _, f := range fields {
+			if f.name == name {
+				return true
+			}
 		}
 	}
 	return false

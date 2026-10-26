@@ -99,8 +99,17 @@ shipped section tells a reader on that version that they have behaviour they do 
   keeping it or handing a field of it back, a range value over a literal holding it,
   one of several results, `t, _ := strings.CutPrefix(s, "f")`, and a send, in every
   release; only `gs = sb.String()` written out was refused. Each is refused now. A
-  string read out of a struct that holds a view of the frame in another field is
-  refused with it, a string field having no provenance of its own.
+  constant string field beside a buffer, `h := H{buf: a[:], name: "x"}; g =
+  h.name`, is taken still; a callee keeping such a field is refused with the
+  buffer, the summaries giving a string field no provenance of its own.
+- **A struct passed by value, named like a member the function selects, builds for
+  the target**: `func (d dir) create(..., it *dirIter)` storing `it.d = d`, for a
+  `dir{fs *FS; first uint16}`, was "the C compiler refused the C ogo wrote" --
+  "Expecting identifier after '.'" -- though it ran on the host. The target's
+  compiler refuses such a member wherever the parameter's struct has a member
+  narrower than a long or an aggregate one, whatever struct the member is of; only
+  a member of the parameter's own struct was routed around
+  (doc/param-named-like-any-member.c).
 
 ## v0.59.0
 
