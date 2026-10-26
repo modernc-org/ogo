@@ -26641,6 +26641,51 @@ func main() {
 		want: "ogo ogo <nil>\nshort\n",
 	},
 	{
+		// A named result the body mentions only through another variable of its
+		// name, every return listing its values: the C declared the result and
+		// nothing read it, which the host's compiler refuses (dom69).
+		name: "a named result shadowed in a loop, every return explicit",
+		src: `import "errors"
+
+var ErrOdd = errors.New("odd")
+
+func header(i int) (byte, error) {
+	if i%2 != 0 {
+		return 0, ErrOdd
+	}
+	return byte(i * 3), nil
+}
+
+func scan(n int) (count, last int, err error) {
+	last = -1
+	for i := 0; i < n; i += 2 {
+		b, err := header(i)
+		if err != nil {
+			return 0, -1, err
+		}
+		count++
+		last = int(b)
+	}
+	return count, last, nil
+}
+
+func main() {
+	c, l, err := scan(7)
+	println(c, l, err == nil)
+	_, _, err = header2()
+	println(err != nil)
+}
+
+func header2() (a, b int, err error) {
+	if _, err := header(1); err != nil {
+		return 1, 2, err
+	}
+	return 0, 0, nil
+}
+`,
+		want: "4 18 true\ntrue\n",
+	},
+	{
 		// `type A = B` is another NAME for B, not a type: literals written via the
 		// alias, identity in both directions, methods and fields through it, a
 		// predeclared target, a defined ARRAY target with its elements and method,

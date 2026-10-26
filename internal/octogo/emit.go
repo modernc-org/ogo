@@ -21042,6 +21042,14 @@ func (e *emitter) declareNamedResults(sig, body []int32) (declared map[string]bo
 		// zero for an aggregate, and "= 0" is an invalid initializer there.
 		e.emit(types[i] + " " + e.localIdent(nm) + " = " + e.zeroInitC(types[i]) + ";\n")
 		declared[nm] = true
+		// What the body mentions may be another variable of the name, `state, _,
+		// err := header(sec)` in a loop of a function whose result is err, every
+		// return listing its values: Go leaves a named result unused, and the
+		// host's compiler refuses an unused C local. A naked return reads it.
+		if !naked && e.bodyRedeclares(body, nm) {
+			e.ind()
+			e.emit("(void)" + e.localIdent(nm) + ";\n")
+		}
 	}
 	return declared
 }
@@ -21112,6 +21120,32 @@ func (e *emitter) bodyMentions(ast []int32, name string) bool {
 			continue
 		}
 		if e.bodyMentions(n.ast, name) {
+			return true
+		}
+	}
+	return false
+}
+
+// bodyRedeclares reports whether ast declares another variable of name: `name :=`,
+// a list ending in `:=` that names it, or `var name`.
+func (e *emitter) bodyRedeclares(ast []int32, name string) bool {
+	for n := range it(ast) {
+		if n.sym != 0 {
+			if n.sym != Selector && e.bodyRedeclares(n.ast, name) {
+				return true
+			}
+			continue
+		}
+		if e.f.ch(n.tok) != IDENT || e.src(n.tok) != name {
+			continue
+		}
+		t := e.f.tok(n.tok)
+		if Symbol(t.Prev().Ch) == VAR {
+			return true
+		}
+		for t = t.Next(); Symbol(t.Ch) == COMMA; t = t.Next().Next() {
+		}
+		if Symbol(t.Ch) == DEFINE {
 			return true
 		}
 	}
