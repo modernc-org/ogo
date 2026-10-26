@@ -16,6 +16,30 @@ same area is a new entry under **Unreleased**, not an edit to the old one. Amend
 shipped section tells a reader on that version that they have behaviour they do not.
 `git show vX.Y.Z:CHANGELOG.md` is the check.
 
+## Unreleased
+
+### Behaviour changes
+
+- **A bare return returns the named results, to the lifetime rules too**: `func
+  f(buf []byte) (k []byte) { k = buf; return }` was taken to hand nothing back, so
+  a caller storing what it returned kept a view of its own frame -- `gk =
+  f(local[:])`, the frame gone, printed `70 0 0 0` where Go prints `10 11 12 13` --
+  and so did a method handing back its receiver in a named result, a function
+  literal, an interface's method and two results set in a list, in every release.
+  Each is refused now, as the same function returning `k` by name was.
+
+### Fixed
+
+- **What a call of several results hands back is asked of each result**: `k, err
+  := s.key(&r, buf[:])` gave err the provenance of the local buffer too, so `if err
+  != nil { return err }` -- reading into a buffer of one's own and passing on what
+  went wrong -- was refused, "cannot return local err, which holds a pointer into
+  local buf". A result whose expressions in the callee's returns reach no
+  parameter, no receiver and nothing a parameter points at carries nothing of the
+  call's. A callee one of whose returns forwards a call of several results, and a
+  call through an interface or a function value, are judged as the whole call
+  still.
+
 ## v0.59.0
 
 ### Behaviour changes

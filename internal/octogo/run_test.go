@@ -26594,6 +26594,53 @@ func main() {
 		want: "alpha|beta|gamma|delta|\n4 [beta  gamma delta] [lta]\n",
 	},
 	{
+		// A call of several results hands back to each result what that result's
+		// expression reaches (resultPos): the error of a read into a local buffer is
+		// returned while the view of the buffer stays in the frame, and so is the
+		// named error of a bare return.
+		name: "the error of a read into a local buffer, returned beside the view",
+		src: `import "errors"
+
+var ErrShort = errors.New("short")
+
+var src = [...]byte{'o', 'g', 'o'}
+
+func read(buf []byte) ([]byte, error) {
+	n := copy(buf, src[:])
+	if n < len(src) {
+		return buf[:n], ErrShort
+	}
+	return buf[:n], nil
+}
+
+func readNamed(buf []byte) (got []byte, err error) {
+	got = buf[:copy(buf, src[:])]
+	if len(got) < len(src) {
+		err = ErrShort
+	}
+	return
+}
+
+func load(size int) error {
+	var buf [4]byte
+	k, err := read(buf[:size])
+	if err != nil {
+		return err
+	}
+	printf("%s ", k)
+	k, err = readNamed(buf[:size])
+	printf("%s ", k)
+	return err
+}
+
+func main() {
+	printf("%v\n", load(4))
+	printf("%v\n", load(2))
+}
+`,
+		want: "ogo ogo <nil>\nshort\n",
+	},
+	{
 		// `type A = B` is another NAME for B, not a type: literals written via the
 		// alias, identity in both directions, methods and fields through it, a
 		// predeclared target, a defined ARRAY target with its elements and method,

@@ -6685,7 +6685,7 @@ func typeNameCollisions(src []byte, names map[string]bool) map[string]bool {
 // emitProgram is EmitC's one pass. rename lists the main-package types spelled
 // ogo_T_<name> in C (see typeMangle).
 func emitProgram(pkg *Package, w io.Writer, opts []EmitOption, rename map[string]bool, seeds loopSeeds) (loopSeeds, error) {
-	e := &emitter{loopSeedsIn: seeds, loopSeedsOut: loopSeeds{}, renameTypes: rename, renamedTypes: map[string]string{}, includes: map[string]bool{}, funcRet: map[string][]string{}, funcSliceParams: map[string][]string{}, funcVariadic: map[string]int{}, nilHelpers: map[string]bool{}, initSkew: map[string]bool{}, arrPtrHelpers: map[string]arrDim{}, usliceHelpers: map[string]bool{}, funcArrayRet: map[string]arrDim{}, funcStructRet: map[string]string{}, funcArrayParams: map[string][]arrDim{}, anonStructNames: map[string]string{}, methodValueTypes: map[string]funcValueType{}, methodValueOf: map[string]string{}, methodExprNames: map[string]string{}, funcParams: map[string][]string{}, methodPtr: map[string]bool{}, recvByRef: map[string]bool{}, globals: map[string]string{}, structs: map[string][]structField{}, namedTypes: map[string]bool{}, typeNames: map[string]bool{}, interfaceTypes: map[string]bool{}, ifaceMethods: map[string][]ifaceMethod{}, anonIfaceNames: map[string]string{}, anonIfaceMinted: map[string]bool{}, ifaceASTs: map[string]ifaceAST{}, ifaceVTables: map[string]bool{}, namedUnderlying: map[string]string{}, namedArrays: map[string]arrDim{}, constInt: map[string]string{}, constVal: map[string]constant.Value{}, constBool: map[string]bool{}, constWide: map[string]string{}, constStr: map[string]string{}, constUntyped: map[string]bool{}, constHuge: map[string]bool{}, arrays: map[string]arrDim{}, globalArrays: map[string]arrDim{}, sliceVars: map[string]string{}, globalSliceVars: map[string]string{}, chanElems: map[string]bool{}, chanInitElems: map[string]bool{}, chanSendElems: map[string]bool{}, chanRecvElems: map[string]bool{}, chanTryRecvElems: map[string]bool{}, chanTrySendElems: map[string]bool{}, chanGatedSendElems: map[string]bool{}, chanSendClosedElems: map[string]bool{}, chanBufElems: map[string]bool{}, chanLenElems: map[string]bool{}, chanReadyElems: map[string]bool{}, aliasOf: map[string]string{}, aliasLits: map[string]bool{}, localTypes: map[string]string{}, gotoTargets: map[string]bool{}, chanCloseElems: map[string]bool{}, chanRecv2Elems: map[string]bool{}, mathWrappers: map[string]bool{}, chanElemByName: map[string]string{}, sliceElems: map[string]bool{}, sliceElemByName: map[string]string{}, appendElems: map[string]bool{}, tryappendElems: map[string]bool{}, appendSliceElems: map[string]bool{}, tryappendSliceEls: map[string]bool{}, appendokStructs: map[string]bool{}, copyElems: map[string]bool{}, resliceElems: map[string]bool{}, reslice3Elems: map[string]bool{}, mkLenHelpers: map[string]bool{}, clearElems: map[string]bool{}, minElems: map[string]bool{}, maxElems: map[string]bool{}, printSliceElems: map[string]bool{}, printStructs: map[string]string{}, printIfaces: map[string]string{}, printlnElems: map[string]bool{}, switchBreakUsed: map[string]bool{}, labelBreak: map[string]string{}, labelContinue: map[string]string{}, labelUsed: map[string]bool{}, eqStructs: map[string]bool{}, eqArrays: map[string]arrDim{}, frameBacked: map[string]int{}, frameHolder: map[string]string{}, crossParams: map[string][]leak{}, crossContents: map[string][]leak{}, retContents: map[string][]bool{}, recvContents: map[string]leak{}, paramCalls: map[string][]paramCall{}, frameCalls: map[string][]frameCall{}, localConstSpecs: map[string]localConstSpec{}, inheritedTypes: map[string]bool{}, funcValueMembers: map[string][]string{}, methodExprMembers: map[string]emMethodExpr{}, memberShown: map[string]string{}, litLifted: map[string][]string{}, methodNames: map[string]bool{}, recvLeaks: map[string]leak{}, recvInto: map[string]uint32{}, recvSelf: map[string]bool{}, retRecv: map[string]bool{}, retRecvShallow: map[string]bool{}, crossInto: map[string][]uint32{}, ifaceSummaries: map[string]ifaceSummary{}, retParams: map[string][]bool{}, funcValueOf: map[string]string{}, crossNames: map[string]string{}, initNames: map[string]string{}, funcValueTypes: map[string]funcValueType{}, funcTypeNames: map[string]string{}, funcTypeRet: map[string][]string{}, funcTypeParams: map[string][]string{}, funcTypeVariadic: map[string]int{}, recFuncTypes: map[string]bool{}, recFuncShapes: map[string]string{}, retStructs: map[string]string{}, retStructByKey: map[string]string{}, shiftHelpers: map[string]shiftHelper{}, shiftCTypes: map[*int32]string{}, shiftWalked: map[shiftWalkKey]bool{}, shiftIn: map[*int32]bool{}, divHelpers: map[string][2]string{}, funcValueWrappers: map[string]string{}, stackChecked: map[string]bool{}, deferReplay: -1, iota: -1}
+	e := &emitter{loopSeedsIn: seeds, loopSeedsOut: loopSeeds{}, renameTypes: rename, renamedTypes: map[string]string{}, includes: map[string]bool{}, funcRet: map[string][]string{}, funcSliceParams: map[string][]string{}, funcVariadic: map[string]int{}, nilHelpers: map[string]bool{}, initSkew: map[string]bool{}, arrPtrHelpers: map[string]arrDim{}, usliceHelpers: map[string]bool{}, funcArrayRet: map[string]arrDim{}, funcStructRet: map[string]string{}, funcArrayParams: map[string][]arrDim{}, anonStructNames: map[string]string{}, methodValueTypes: map[string]funcValueType{}, methodValueOf: map[string]string{}, methodExprNames: map[string]string{}, funcParams: map[string][]string{}, methodPtr: map[string]bool{}, recvByRef: map[string]bool{}, globals: map[string]string{}, structs: map[string][]structField{}, namedTypes: map[string]bool{}, typeNames: map[string]bool{}, interfaceTypes: map[string]bool{}, ifaceMethods: map[string][]ifaceMethod{}, anonIfaceNames: map[string]string{}, anonIfaceMinted: map[string]bool{}, ifaceASTs: map[string]ifaceAST{}, ifaceVTables: map[string]bool{}, namedUnderlying: map[string]string{}, namedArrays: map[string]arrDim{}, constInt: map[string]string{}, constVal: map[string]constant.Value{}, constBool: map[string]bool{}, constWide: map[string]string{}, constStr: map[string]string{}, constUntyped: map[string]bool{}, constHuge: map[string]bool{}, arrays: map[string]arrDim{}, globalArrays: map[string]arrDim{}, sliceVars: map[string]string{}, globalSliceVars: map[string]string{}, chanElems: map[string]bool{}, chanInitElems: map[string]bool{}, chanSendElems: map[string]bool{}, chanRecvElems: map[string]bool{}, chanTryRecvElems: map[string]bool{}, chanTrySendElems: map[string]bool{}, chanGatedSendElems: map[string]bool{}, chanSendClosedElems: map[string]bool{}, chanBufElems: map[string]bool{}, chanLenElems: map[string]bool{}, chanReadyElems: map[string]bool{}, aliasOf: map[string]string{}, aliasLits: map[string]bool{}, localTypes: map[string]string{}, gotoTargets: map[string]bool{}, chanCloseElems: map[string]bool{}, chanRecv2Elems: map[string]bool{}, mathWrappers: map[string]bool{}, chanElemByName: map[string]string{}, sliceElems: map[string]bool{}, sliceElemByName: map[string]string{}, appendElems: map[string]bool{}, tryappendElems: map[string]bool{}, appendSliceElems: map[string]bool{}, tryappendSliceEls: map[string]bool{}, appendokStructs: map[string]bool{}, copyElems: map[string]bool{}, resliceElems: map[string]bool{}, reslice3Elems: map[string]bool{}, mkLenHelpers: map[string]bool{}, clearElems: map[string]bool{}, minElems: map[string]bool{}, maxElems: map[string]bool{}, printSliceElems: map[string]bool{}, printStructs: map[string]string{}, printIfaces: map[string]string{}, printlnElems: map[string]bool{}, switchBreakUsed: map[string]bool{}, labelBreak: map[string]string{}, labelContinue: map[string]string{}, labelUsed: map[string]bool{}, eqStructs: map[string]bool{}, eqArrays: map[string]arrDim{}, frameBacked: map[string]int{}, frameHolder: map[string]string{}, crossParams: map[string][]leak{}, crossContents: map[string][]leak{}, retContents: map[string][]bool{}, recvContents: map[string]leak{}, paramCalls: map[string][]paramCall{}, frameCalls: map[string][]frameCall{}, localConstSpecs: map[string]localConstSpec{}, inheritedTypes: map[string]bool{}, funcValueMembers: map[string][]string{}, methodExprMembers: map[string]emMethodExpr{}, memberShown: map[string]string{}, litLifted: map[string][]string{}, methodNames: map[string]bool{}, recvLeaks: map[string]leak{}, recvInto: map[string]uint32{}, recvSelf: map[string]bool{}, retRecv: map[string]bool{}, retRecvShallow: map[string]bool{}, retPosUnknown: map[string]bool{}, crossInto: map[string][]uint32{}, ifaceSummaries: map[string]ifaceSummary{}, retParams: map[string][]bool{}, funcValueOf: map[string]string{}, crossNames: map[string]string{}, initNames: map[string]string{}, funcValueTypes: map[string]funcValueType{}, funcTypeNames: map[string]string{}, funcTypeRet: map[string][]string{}, funcTypeParams: map[string][]string{}, funcTypeVariadic: map[string]int{}, recFuncTypes: map[string]bool{}, recFuncShapes: map[string]string{}, retStructs: map[string]string{}, retStructByKey: map[string]string{}, shiftHelpers: map[string]shiftHelper{}, shiftCTypes: map[*int32]string{}, shiftWalked: map[shiftWalkKey]bool{}, shiftIn: map[*int32]bool{}, divHelpers: map[string][2]string{}, funcValueWrappers: map[string]string{}, stackChecked: map[string]bool{}, deferReplay: -1, iota: -1}
 	for _, opt := range opts {
 		opt(e)
 	}
@@ -8046,6 +8046,7 @@ type emitter struct {
 	copyRecvEdges       []copyRecvEdge          // how a copied receiver's contents travel to callers (see copyRecvEdge)
 	retRecv             map[string]bool         // a pointer method returns its receiver, so its result is what it was called on
 	retRecvShallow      map[string]bool         // ...and some return is the receiver's own value or a place in its pointee, not only what is reached past that (see deepRecvReturn)
+	retPosUnknown       map[string]bool         // a function some return of which does not list each of its several results: its summary by position (resultPos) is not kept
 	crossInto           map[string][]uint32     // per function, which PARAMETERS each parameter is stored through, as a bitmask of their indices. leakRecv answers this for a method's receiver; a plain function has no receiver and needed the general form (see pointerParamSlots)
 	recvInto            map[string]uint32       // a pointer method's RECEIVER stored through its parameters, a bitmask of their indices, as crossInto says it of a parameter: `*p = m` in a method of m (see checkRecvInto)
 	recvSelf            map[string]bool         // a pointer method's RECEIVER stored into the receiver's own storage, `w.free = &w.pool[0]`: what it is called on holds a pointer into itself from the call on (checkRecvAt)
@@ -12464,6 +12465,53 @@ func (e *emitter) handsBack(callee string, to int) bool {
 	return to < len(rp) && rp[to]
 }
 
+// resultPos names the summary of the i-th of cname's several results alone: what
+// the expressions its returns put at that position hand back of its parameters
+// and its receiver (retSummary in collectFuncCross), kept as a function's is.
+func resultPos(cname string, i int) string { return cname + "#" + strconv.Itoa(i) }
+
+// resultsCarryNothing says, for each of the n results of the call rhs, whether it
+// hands back nothing of the call's arguments or its receiver, by the callee's
+// summary of that position (resultPos); nil where the call has no such summary --
+// a function value, an interface's method, a callee some return of which does not
+// list its results. emitDestructure gives a result that carries nothing no
+// provenance of the call's.
+func (e *emitter) resultsCarryNothing(rhs []int32, n int) []bool {
+	recv, suffix, ok := e.directCall(rhs)
+	if !ok {
+		return nil
+	}
+	var cname string
+	switch {
+	case len(suffix) == 1 && suffix[0].sym == CallSuffix:
+		if ct, isVar := e.varType(recv); isVar && e.isFuncCType(ct) {
+			return nil
+		}
+		cname = e.funcCallC(recv)
+	case len(suffix) == 2 && suffix[0].sym == Selector && suffix[1].sym == CallSuffix:
+		cn, _, ok := e.callResultInfo(recv, suffix)
+		if !ok || cn == "" {
+			return nil
+		}
+		cname = cn
+	default:
+		return nil
+	}
+	if _, known := e.retParams[cname]; !known || e.retPosUnknown[cname] {
+		return nil
+	}
+	out := make([]bool, n)
+	for i := range out {
+		pn := resultPos(cname, i)
+		rp, seen := e.retParams[pn]
+		if !seen {
+			return nil
+		}
+		out[i] = !slices.Contains(rp, true) && !slices.Contains(e.retContents[pn], true) && !e.retRecv[pn]
+	}
+	return out
+}
+
 // gatesHold is viaHolds for the gates via of an edge carrying contents or not. A
 // gate at the callee's RECEIVER, to < 0, holds where the method hands it back
 // (retRecv): `keep(m.Self())`.
@@ -12949,6 +12997,22 @@ func (e *emitter) litKey(lit Node) string {
 	return "lit@" + e.f.tok(lit.Pos()).Position().String()
 }
 
+// namedResultToks is the tokens of the names a signature gives its results, in
+// order, nil where it names none.
+func (e *emitter) namedResultToks(sig []int32) (out []int32) {
+	for n := range it(sig) {
+		if n.sym != ResultList {
+			continue
+		}
+		for _, d := range e.f.paramDecls(n.ast) {
+			for _, nm := range d.Names {
+				out = append(out, nm.index)
+			}
+		}
+	}
+	return out
+}
+
 // litParamNames is funcParamNames for a function literal.
 func (e *emitter) litParamNames(lit Node) (funcInfo, bool) {
 	var sig, body []int32
@@ -12963,7 +13027,7 @@ func (e *emitter) litParamNames(lit Node) (funcInfo, bool) {
 	if sig == nil || body == nil {
 		return funcInfo{}, false
 	}
-	fi := funcInfo{cname: e.litKey(lit), srcName: "func", body: body, locals: e.localTypeNames(body)}
+	fi := funcInfo{cname: e.litKey(lit), srcName: "func", body: body, locals: e.localTypeNames(body), resultToks: e.namedResultToks(sig)}
 	// A literal's parameters are typed from its signature: nothing else has, this
 	// early. One naming a type its function declares does not resolve yet, and the
 	// error that would latch is put back.
@@ -14568,143 +14632,189 @@ func (e *emitter) collectFuncCross(fi funcInfo) {
 		// from is what lets the caller follow it to the storage it chose -- unless
 		// what it hands back can hold no reference at all (returnsNoRef).
 		if len(nodes) != 0 && nodes[0].sym == 0 && e.f.ch(nodes[0].tok) == RETURN && !e.returnsNoRef(cname) {
-			var heldRets []stmtCall // `x := id(p); return x` returns what id(p) does
-			// modeRets records what a return hands back through a call whose result it
-			// reads as m says, by callee (resModeOf), gated by via: `return idH(h).c`
-			// hands back what h holds, where idH hands back h. precise lists those
-			// calls, by the first argument's token, for the return's own calls not to
-			// say it again of the whole result (stmtCalls).
-			precise := map[int32]bool{}
-			var modeRets func(vc valueCallT, m func(string) resMode, via []viaGate)
-			modeRets = func(vc valueCallT, m func(string) resMode, via []viaGate) {
-				if len(via) > 8 {
-					return
-				}
-				if len(vc.args) != 0 {
-					precise[vc.args[0].Pos()] = true
-				}
-				edge := func(callee string, to int, hs []held, mode resMode) {
-					r := reachOf(hs)
-					for _, el := range [2]bool{false, true} {
-						if el && mode == resWhole || !el && mode == resContents {
-							continue
-						}
-						for _, i := range r.vals {
-							e.retEdges = append(e.retEdges, crossEdge{caller: cname, from: i, callee: callee, to: to, contents: el, via: via})
-						}
-						for _, i := range r.conts {
-							e.retEdges = append(e.retEdges, crossEdge{caller: cname, from: i, callee: callee, to: to, contents: true, via: via})
-						}
-						if r.recvVal && !el {
-							e.retEdges = append(e.retEdges, crossEdge{caller: cname, from: -1, callee: callee, to: to, via: via})
-						}
+			// retSummary records what exprs, returned, hand back, as the summary of
+			// cname: the calls of the statement it asks are those inSpan says stand
+			// in exprs.
+			retSummary := func(cname string, exprs [][]int32, inSpan func(args []Node) bool) {
+				var heldRets []stmtCall // `x := id(p); return x` returns what id(p) does
+				// modeRets records what a return hands back through a call whose result it
+				// reads as m says, by callee (resModeOf), gated by via: `return idH(h).c`
+				// hands back what h holds, where idH hands back h. precise lists those
+				// calls, by the first argument's token, for the return's own calls not to
+				// say it again of the whole result (stmtCalls).
+				precise := map[int32]bool{}
+				var modeRets func(vc valueCallT, m func(string) resMode, via []viaGate)
+				modeRets = func(vc valueCallT, m func(string) resMode, via []viaGate) {
+					if len(via) > 8 {
+						return
 					}
-				}
-				for _, callee := range vc.callees {
-					mode := m(callee)
-					for j, a := range vc.args {
-						edge(callee, j, e.summaryReach(a.ast), mode)
+					if len(vc.args) != 0 {
+						precise[vc.args[0].Pos()] = true
 					}
-					if vc.recv != nil {
-						edge(callee, -1, vc.recv, mode)
-					}
-					if vc.recvCall != nil {
-						inner := m
-						if vc.recvSteps != 0 {
-							inner = func(string) resMode { return resBoth }
-						}
-						for _, ic := range callsOfExpr(vc.recvCall) {
-							modeRets(ic, inner, append(slices.Clone(via), viaGate{callee, -1}))
-						}
-					}
-				}
-			}
-			for _, v := range e.returnedExprs(nodes) {
-				r := reachOf(e.summaryReach(v))
-				for _, i := range r.vals {
-					e.retParams[cname][i] = true
-				}
-				for _, i := range r.conts {
-					e.retContents[cname][i] = true
-				}
-				if r.recvVal {
-					e.retRecv[cname] = true
-					if !deepRecvReturn(v) {
-						e.retRecvShallow[cname] = true
-					}
-				}
-				// `return idH(h).c`, `x := idH(h).c; return x`: what is read, sliced or
-				// addressed there (modeRets).
-				for _, x := range append([][]int32{v}, heldCalls(v)...) {
-					if call, rest, addr, ok := e.callStepsShape(x); ok {
-						for _, c := range callsOfExpr(call) {
-							modeRets(c, stepsMode(rest, addr), nil)
-						}
-					}
-				}
-				for _, c := range resultCalls(v) {
-					// `return id(b).Self()`: the method's receiver is that call's
-					// result, handed back where the method hands back its receiver.
-					if c.recvCall != nil {
-						modeRets(c, func(string) resMode { return resWhole }, nil)
-						continue
-					}
-					for _, callee := range c.callees {
-						heldRets = append(heldRets, stmtCall{callee: callee, args: c.args})
-						// `return m.Self()`, `return p.Self()`: what the method hands
-						// back of its receiver, this function hands back of what the
-						// receiver was.
-						if c.recv != nil {
-							r := reachOf(c.recv)
+					edge := func(callee string, to int, hs []held, mode resMode) {
+						r := reachOf(hs)
+						for _, el := range [2]bool{false, true} {
+							if el && mode == resWhole || !el && mode == resContents {
+								continue
+							}
 							for _, i := range r.vals {
-								e.retEdges = append(e.retEdges, crossEdge{caller: cname, from: i, callee: callee, to: -1})
+								e.retEdges = append(e.retEdges, crossEdge{caller: cname, from: i, callee: callee, to: to, contents: el, via: via})
 							}
-							if r.recvVal {
-								e.retEdges = append(e.retEdges, crossEdge{caller: cname, from: -1, callee: callee, to: -1})
+							for _, i := range r.conts {
+								e.retEdges = append(e.retEdges, crossEdge{caller: cname, from: i, callee: callee, to: to, contents: true, via: via})
+							}
+							if r.recvVal && !el {
+								e.retEdges = append(e.retEdges, crossEdge{caller: cname, from: -1, callee: callee, to: to, via: via})
+							}
+						}
+					}
+					for _, callee := range vc.callees {
+						mode := m(callee)
+						for j, a := range vc.args {
+							edge(callee, j, e.summaryReach(a.ast), mode)
+						}
+						if vc.recv != nil {
+							edge(callee, -1, vc.recv, mode)
+						}
+						if vc.recvCall != nil {
+							inner := m
+							if vc.recvSteps != 0 {
+								inner = func(string) resMode { return resBoth }
+							}
+							for _, ic := range callsOfExpr(vc.recvCall) {
+								modeRets(ic, inner, append(slices.Clone(via), viaGate{callee, -1}))
 							}
 						}
 					}
 				}
-			}
-			// `return g(p)`: whatever g hands back of its own parameter, this
-			// function hands back of the parameter it passed there -- and through a
-			// function value, whatever each function it may be hands back.
-			var rcalls []stmtCall
-			for _, c := range e.stmtCalls(nodes) {
-				if len(c.args) == 0 || !precise[c.args[0].Pos()] {
-					rcalls = append(rcalls, c)
-				}
-			}
-			rcalls = append(rcalls, heldRets...)
-			for _, c := range e.valueCalls(nodes) {
-				resolve([]held{{c.name, heldAlias}}, func(n string, contents bool) {
-					switch _, isFunc := e.userFunc(n); {
-					case contents || n == c.name:
-					case strings.HasPrefix(n, "lit@"):
-						rcalls = append(rcalls, stmtCall{callee: n, args: c.args})
-					case isFunc:
-						rcalls = append(rcalls, stmtCall{callee: e.funcCallC(n), args: c.args})
-					}
-				})
-				for _, u := range valueUnions(c.name, len(c.args), true) {
-					rcalls = append(rcalls, stmtCall{callee: u, args: c.args})
-				}
-			}
-			rcalls = append(rcalls, chainCalls(nodes)...)
-			for _, c := range rcalls {
-				args, _ := fwdArgs(c.args)
-				for j, a := range args {
-					e.retEdges = append(e.retEdges, viaEdges(crossEdge{caller: cname, callee: c.callee, to: j}, a.ast, true)...)
-					r := reachOf(e.summaryReach(a.ast))
+				for _, v := range exprs {
+					r := reachOf(e.summaryReach(v))
 					for _, i := range r.vals {
-						e.retEdges = append(e.retEdges, crossEdge{caller: cname, from: i, callee: c.callee, to: j})
-					}
-					if r.recvVal {
-						// `return id(m)`: the receiver, from < 0.
-						e.retEdges = append(e.retEdges, crossEdge{caller: cname, from: -1, callee: c.callee, to: j})
+						e.retParams[cname][i] = true
 					}
 					for _, i := range r.conts {
-						e.retEdges = append(e.retEdges, crossEdge{caller: cname, from: i, callee: c.callee, to: j, contents: true})
+						e.retContents[cname][i] = true
+					}
+					if r.recvVal {
+						e.retRecv[cname] = true
+						if !deepRecvReturn(v) {
+							e.retRecvShallow[cname] = true
+						}
+					}
+					// `return idH(h).c`, `x := idH(h).c; return x`: what is read, sliced or
+					// addressed there (modeRets).
+					for _, x := range append([][]int32{v}, heldCalls(v)...) {
+						if call, rest, addr, ok := e.callStepsShape(x); ok {
+							for _, c := range callsOfExpr(call) {
+								modeRets(c, stepsMode(rest, addr), nil)
+							}
+						}
+					}
+					for _, c := range resultCalls(v) {
+						// `return id(b).Self()`: the method's receiver is that call's
+						// result, handed back where the method hands back its receiver.
+						if c.recvCall != nil {
+							modeRets(c, func(string) resMode { return resWhole }, nil)
+							continue
+						}
+						for _, callee := range c.callees {
+							heldRets = append(heldRets, stmtCall{callee: callee, args: c.args})
+							// `return m.Self()`, `return p.Self()`: what the method hands
+							// back of its receiver, this function hands back of what the
+							// receiver was.
+							if c.recv != nil {
+								r := reachOf(c.recv)
+								for _, i := range r.vals {
+									e.retEdges = append(e.retEdges, crossEdge{caller: cname, from: i, callee: callee, to: -1})
+								}
+								if r.recvVal {
+									e.retEdges = append(e.retEdges, crossEdge{caller: cname, from: -1, callee: callee, to: -1})
+								}
+							}
+						}
+					}
+				}
+				// `return g(p)`: whatever g hands back of its own parameter, this
+				// function hands back of the parameter it passed there -- and through a
+				// function value, whatever each function it may be hands back.
+				var rcalls []stmtCall
+				for _, c := range e.stmtCalls(nodes) {
+					if !inSpan(c.args) {
+						continue
+					}
+					if len(c.args) == 0 || !precise[c.args[0].Pos()] {
+						rcalls = append(rcalls, c)
+					}
+				}
+				rcalls = append(rcalls, heldRets...)
+				for _, c := range e.valueCalls(nodes) {
+					if !inSpan(c.args) {
+						continue
+					}
+					resolve([]held{{c.name, heldAlias}}, func(n string, contents bool) {
+						switch _, isFunc := e.userFunc(n); {
+						case contents || n == c.name:
+						case strings.HasPrefix(n, "lit@"):
+							rcalls = append(rcalls, stmtCall{callee: n, args: c.args})
+						case isFunc:
+							rcalls = append(rcalls, stmtCall{callee: e.funcCallC(n), args: c.args})
+						}
+					})
+					for _, u := range valueUnions(c.name, len(c.args), true) {
+						rcalls = append(rcalls, stmtCall{callee: u, args: c.args})
+					}
+				}
+				for _, c := range chainCalls(nodes) {
+					if inSpan(c.args) {
+						rcalls = append(rcalls, c)
+					}
+				}
+				for _, c := range rcalls {
+					args, _ := fwdArgs(c.args)
+					for j, a := range args {
+						e.retEdges = append(e.retEdges, viaEdges(crossEdge{caller: cname, callee: c.callee, to: j}, a.ast, true)...)
+						r := reachOf(e.summaryReach(a.ast))
+						for _, i := range r.vals {
+							e.retEdges = append(e.retEdges, crossEdge{caller: cname, from: i, callee: c.callee, to: j})
+						}
+						if r.recvVal {
+							// `return id(m)`: the receiver, from < 0.
+							e.retEdges = append(e.retEdges, crossEdge{caller: cname, from: -1, callee: c.callee, to: j})
+						}
+						for _, i := range r.conts {
+							e.retEdges = append(e.retEdges, crossEdge{caller: cname, from: i, callee: c.callee, to: j, contents: true})
+						}
+					}
+				}
+			}
+			exprs := e.returnedExprs(nodes)
+			// A bare return returns the named results. Read as returning nothing,
+			// `k = buf; return` handed the caller's buffer back in silence, and a
+			// caller keeping k kept a view of its own frame past its return.
+			if len(exprs) == 0 {
+				for _, t := range fi.resultToks {
+					exprs = append(exprs, []int32{t})
+				}
+			}
+			retSummary(cname, exprs, func([]Node) bool { return true })
+			// And each result of several on its own (resultPos), what the caller
+			// binding them asks of each: `k, err := e.key(buf[:])` hands buf back in
+			// k and not in err, which a summary of the whole call cannot say. A
+			// return that does not list each result -- a bare one, one forwarding a
+			// call of several -- leaves the positions to the whole summary.
+			if res := e.funcRet[cname]; len(res) > 1 {
+				if len(exprs) != len(res) {
+					e.retPosUnknown[cname] = true
+				} else {
+					for i, v := range exprs {
+						pn := resultPos(cname, i)
+						if _, seen := e.retParams[pn]; !seen {
+							e.retParams[pn], e.retContents[pn] = make([]bool, len(params)), make([]bool, len(params))
+						}
+						lo, hi := firstIndex(v), lastIndex(v)
+						retSummary(pn, [][]int32{v}, func(args []Node) bool {
+							return len(args) != 0 && args[0].Pos() >= lo && args[0].Pos() <= hi
+						})
 					}
 				}
 			}
@@ -15723,7 +15833,7 @@ func (e *emitter) funcParamNames(d []int32) (funcInfo, bool) {
 	if !ok || name == "" || body == nil {
 		return funcInfo{}, false
 	}
-	fi := funcInfo{cname: e.mangle(e.curPkgPrefix, name), srcName: name, body: body, locals: e.localTypeNames(body)}
+	fi := funcInfo{cname: e.mangle(e.curPkgPrefix, name), srcName: name, body: body, locals: e.localTypeNames(body), resultToks: e.namedResultToks(sig)}
 	if recv != nil {
 		rn, rct, _ := e.receiverInfo(recv)
 		fi.cname = e.methodCName(methodBaseType(rct), name)
@@ -16293,6 +16403,9 @@ type funcInfo struct {
 	// function declares, which nothing can resolve before the bodies are walked.
 	paramCType []string
 	body       []int32
+	// resultToks is the tokens of the names the signature gives its results, in
+	// order: what a bare return returns (namedResultToks).
+	resultToks []int32
 	recvName   string
 	recvCType  string
 	// locals maps a local variable to the DEFINED type it was declared with, for
@@ -50415,6 +50528,9 @@ func (e *emitter) emitDestructure(targets []assignTarget, declare []bool, rhs []
 	if ref, ok := e.frameRefOf(rhs); ok {
 		e.storeCarries = &carriedRef{r: ref, at: Node{sym: Expression, ast: rhs}, typed: true}
 	}
+	// ...but not through a result the callee's summary of its position says hands
+	// back nothing of the call's (resultsCarryNothing).
+	clean := e.resultsCarryNothing(rhs, len(targets))
 	if !e.fixTargetAddrs(targets, declare) {
 		return
 	}
@@ -50512,7 +50628,7 @@ func (e *emitter) emitDestructure(targets []assignTarget, declare []bool, rhs []
 				e.emit(";\n")
 			}
 			for i, tgt := range targets {
-				e.emitStore(tgt, declare[i], res[i], fmt.Sprintf("%s._%d", tmp, i))
+				e.destructStore(clean, i, tgt, declare[i], res[i], fmt.Sprintf("%s._%d", tmp, i))
 			}
 			return
 		}
@@ -50538,7 +50654,7 @@ func (e *emitter) emitDestructure(targets []assignTarget, declare []bool, rhs []
 				e.emit(");\n")
 			}
 			for i, tgt := range targets {
-				e.emitStore(tgt, declare[i], res[i], fmt.Sprintf("%s._%d", tmp, i))
+				e.destructStore(clean, i, tgt, declare[i], res[i], fmt.Sprintf("%s._%d", tmp, i))
 			}
 			return
 		}
@@ -50582,7 +50698,7 @@ func (e *emitter) emitDestructure(targets []assignTarget, declare []bool, rhs []
 		e.ind()
 		e.emit(e.ifaceCallC(ct, recvText, method, call, tmp) + ";\n")
 		for i, tgt := range targets {
-			e.emitStore(tgt, declare[i], resTypes[i], fmt.Sprintf("%s._%d", tmp, i))
+			e.destructStore(clean, i, tgt, declare[i], resTypes[i], fmt.Sprintf("%s._%d", tmp, i))
 		}
 		return
 	}
@@ -50596,7 +50712,7 @@ func (e *emitter) emitDestructure(targets []assignTarget, declare []bool, rhs []
 		e.ind()
 		e.emit(text + ";\n")
 		for i, tgt := range targets {
-			e.emitStore(tgt, declare[i], resTypes[i], fmt.Sprintf("%s._%d", tmp, i))
+			e.destructStore(clean, i, tgt, declare[i], resTypes[i], fmt.Sprintf("%s._%d", tmp, i))
 		}
 		return
 	}
@@ -50614,7 +50730,7 @@ func (e *emitter) emitDestructure(targets []assignTarget, declare []bool, rhs []
 		e.ind()
 		e.emit(text + ";\n")
 		for i, tgt := range targets {
-			e.emitStore(tgt, declare[i], resTypes[i], fmt.Sprintf("%s._%d", tmp, i))
+			e.destructStore(clean, i, tgt, declare[i], resTypes[i], fmt.Sprintf("%s._%d", tmp, i))
 		}
 		return
 	}
@@ -50656,8 +50772,19 @@ func (e *emitter) emitDestructure(targets []assignTarget, declare []bool, rhs []
 	}
 	e.emit(";\n")
 	for i, tgt := range targets {
-		e.emitStore(tgt, declare[i], resTypes[i], fmt.Sprintf("%s._%d", tmp, i))
+		e.destructStore(clean, i, tgt, declare[i], resTypes[i], fmt.Sprintf("%s._%d", tmp, i))
 	}
+}
+
+// destructStore is emitStore of the i-th target of a destructure, without the
+// call's provenance where the callee's i-th result carries none of it (clean, by
+// resultsCarryNothing).
+func (e *emitter) destructStore(clean []bool, i int, t assignTarget, declare bool, ctype, val string) {
+	if i < len(clean) && clean[i] {
+		defer func(saved *carriedRef) { e.storeCarries = saved }(e.storeCarries)
+		e.storeCarries = nil
+	}
+	e.emitStore(t, declare, ctype, val)
 }
 
 // variadicPack names the element type of a callee's variadic parameter and the

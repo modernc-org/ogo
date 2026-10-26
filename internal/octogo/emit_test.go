@@ -9097,6 +9097,635 @@ func main() {
 	}
 }
 
+// TestEmitCResultsByPosition holds what a call of several results hands back to
+// each result on its own (resultPos, resultsCarryNothing): `k, err := f(buf[:])`
+// gives k the buffer and err nothing, where every result that could hold a
+// reference was taken to hold the buffer and `return err` was refused. A position
+// whose expression reaches a parameter, a call handing one back, the receiver or
+// what a parameter points at is refused as the whole call was. And a bare return
+// returns the named results, read as returning nothing until 2026-10-26: `k = buf;
+// return` handed the caller's buffer back with nothing recorded, and a caller
+// keeping k kept a view of its own frame (dom69).
+func TestEmitCResultsByPosition(t *testing.T) {
+	const decls = `import "errors"
+
+var ErrX = errors.New("x")
+
+type E struct{ p *int }
+
+func (e *E) Error() string { return "e" }
+
+type H struct{ n int }
+
+func (h *H) two() (int, *H) { return 1, h }
+
+func g(p []byte) []byte { return p }
+
+var gk []byte
+var gerr error
+var gp *H
+var gq *int
+var gn int
+var ge E
+var gbuf [4]byte
+
+`
+	for _, test := range []struct {
+		name string
+		src  string
+		want string // "" means the program must be accepted
+	}{
+		{
+			name: "the error beside a view of the buffer, kept",
+			src: `func view(buf []byte) ([]byte, error) { return buf[:2], nil }
+
+func run() {
+	var buf [4]byte
+	k, err := view(buf[:])
+	gerr = err
+	println(len(k))
+}
+
+func main() { run() }
+`,
+			want: "",
+		},
+		{
+			name: "the view of the buffer, kept",
+			src: `func view(buf []byte) ([]byte, error) { return buf[:2], nil }
+
+func run() {
+	var buf [4]byte
+	k, err := view(buf[:])
+	gk = k
+	_ = err
+}
+
+func main() { run() }
+`,
+			want: "cannot store a slice backed by local k in package variable gk",
+		},
+		{
+			name: "a number beside an error that is the parameter, kept",
+			src: `func f(p *E) (int, error) { return 0, p }
+
+func run() {
+	var le E
+	n, err := f(&le)
+	gn = n
+	println(err != nil)
+}
+
+func main() { run() }
+`,
+			want: "",
+		},
+		{
+			name: "an error that is the parameter, kept",
+			src: `func f(p *E) (int, error) { return 0, p }
+
+func run() {
+	var le E
+	n, err := f(&le)
+	gerr = err
+	println(n)
+}
+
+func main() { run() }
+`,
+			want: "cannot store local err, which holds a pointer into local le in package variable gerr",
+		},
+		{
+			name: "the error before a view of the buffer, kept",
+			src: `func f(buf []byte) (error, []byte) { return nil, buf }
+
+func run() {
+	var buf [4]byte
+	err, k := f(buf[:])
+	gerr = err
+	println(len(k))
+}
+
+func main() { run() }
+`,
+			want: "",
+		},
+		{
+			name: "a view of the buffer after the error, kept",
+			src: `func f(buf []byte) (error, []byte) { return nil, buf }
+
+func run() {
+	var buf [4]byte
+	err, k := f(buf[:])
+	gk = k
+	println(err == nil)
+}
+
+func main() { run() }
+`,
+			want: "cannot store a slice backed by local k in package variable gk",
+		},
+		{
+			name: "a view in a named result, returned bare",
+			src: `func f(buf []byte) (k []byte, err error) {
+	k = buf
+	return
+}
+
+func run() {
+	var buf [4]byte
+	k, err := f(buf[:])
+	gk = k
+	_ = err
+}
+
+func main() { run() }
+`,
+			want: "cannot store a slice backed by local k in package variable gk",
+		},
+		{
+			name: "a call handing the buffer back, in the second result",
+			src: `func f(buf []byte) (int, []byte) { return 0, g(buf) }
+
+func run() {
+	var buf [4]byte
+	n, k := f(buf[:])
+	gk = k
+	println(n)
+}
+
+func main() { run() }
+`,
+			want: "cannot store a slice backed by local k in package variable gk",
+		},
+		{
+			name: "a number beside a call handing the buffer back, kept",
+			src: `func f(buf []byte) ([]byte, int) { return g(buf), 1 }
+
+func run() {
+	var buf [4]byte
+	k, n := f(buf[:])
+	gn = n
+	println(len(k))
+}
+
+func main() { run() }
+`,
+			want: "",
+		},
+		{
+			name: "a call handing the buffer back, in the first result",
+			src: `func f(buf []byte) ([]byte, int) { return g(buf), 1 }
+
+func run() {
+	var buf [4]byte
+	k, n := f(buf[:])
+	gk = k
+	println(n)
+}
+
+func main() { run() }
+`,
+			want: "cannot store a slice backed by local k in package variable gk",
+		},
+		{
+			name: "a number beside the receiver handed back, kept",
+			src: `func run() {
+	var h H
+	n, p := h.two()
+	gn = n
+	println(p.n)
+}
+
+func main() { run() }
+`,
+			want: "",
+		},
+		{
+			name: "the receiver handed back in the second result, kept",
+			src: `func run() {
+	var h H
+	n, p := h.two()
+	gp = p
+	println(n)
+}
+
+func main() { run() }
+`,
+			want: "cannot store local p, which holds a pointer into local h in package variable gp",
+		},
+		{
+			name: "what a parameter points at, handed back in the second result",
+			src: `func f(pp **int) (int, *int) { return 0, *pp }
+
+func run() {
+	x := 5
+	px := &x
+	n, q := f(&px)
+	gq = q
+	println(n)
+}
+
+func main() { run() }
+`,
+			want: "cannot store local q, which holds a pointer into local x in package variable gq",
+		},
+		{
+			name: "a local view of the parameter, returned in the second result",
+			src: `func f(buf []byte) (int, []byte) {
+	k := buf[1:]
+	return 0, k
+}
+
+func run() {
+	var buf [4]byte
+	n, k := f(buf[:])
+	gk = k
+	println(n)
+}
+
+func main() { run() }
+`,
+			want: "cannot store a slice backed by local k in package variable gk",
+		},
+		{
+			name: "a local holding a call that hands the parameter back",
+			src: `func f(buf []byte) (int, []byte) {
+	k := g(buf)
+	return 0, k
+}
+
+func run() {
+	var buf [4]byte
+	n, k := f(buf[:])
+	gk = k
+	println(n)
+}
+
+func main() { run() }
+`,
+			want: "cannot store a slice backed by local k in package variable gk",
+		},
+		{
+			name: "two parameters, the local one handed back in the error",
+			src: `func f(buf []byte, e *E) ([]byte, error) { return buf, e }
+
+func run() {
+	var le E
+	k, err := f(gbuf[:], &le)
+	gerr = err
+	println(len(k))
+}
+
+func main() { run() }
+`,
+			want: "cannot store local err, which holds a pointer into local le in package variable gerr",
+		},
+		{
+			name: "a view in one return of two",
+			src: `func f(buf []byte, c bool) ([]byte, error) {
+	if c {
+		return nil, nil
+	}
+	return buf, nil
+}
+
+func run() {
+	var buf [4]byte
+	k, err := f(buf[:], true)
+	gk = k
+	_ = err
+}
+
+func main() { run() }
+`,
+			want: "cannot store a slice backed by local k in package variable gk",
+		},
+		{
+			name: "an error that is a parameter in one return of two",
+			src: `func f(buf []byte, e *E, c bool) ([]byte, error) {
+	if c {
+		return buf, nil
+	}
+	return nil, e
+}
+
+func run() {
+	var le E
+	k, err := f(gbuf[:], &le, true)
+	gerr = err
+	println(len(k))
+}
+
+func main() { run() }
+`,
+			want: "cannot store local err, which holds a pointer into local le in package variable gerr",
+		},
+		{
+			name: "the error beside the view, assigned and kept",
+			src: `func run() {
+	var buf [4]byte
+	var k []byte
+	var err error
+	k, err = view2(buf[:])
+	gerr = err
+	println(len(k))
+}
+
+func view2(buf []byte) ([]byte, error) { return buf[:2], nil }
+
+func main() { run() }
+`,
+			want: "",
+		},
+		{
+			name: "the view, assigned and kept",
+			src: `func run() {
+	var buf [4]byte
+	var k []byte
+	var err error
+	k, err = view2(buf[:])
+	gk = k
+	_ = err
+}
+
+func view2(buf []byte) ([]byte, error) { return buf[:2], nil }
+
+func main() { run() }
+`,
+			want: "cannot store a slice backed by local k in package variable gk",
+		},
+		{
+			name: "the error returned beside a view",
+			src: `func run() error {
+	var buf [4]byte
+	k, err := view3(buf[:])
+	println(len(k))
+	return err
+}
+
+func view3(buf []byte) ([]byte, error) { return buf, ErrX }
+
+func main() { run() }
+`,
+			want: "",
+		},
+		{
+			name: "the view kept, the error returned",
+			src: `func run() error {
+	var buf [4]byte
+	k, err := view3(buf[:])
+	gk = k
+	return err
+}
+
+func view3(buf []byte) ([]byte, error) { return buf, ErrX }
+
+func main() { run() }
+`,
+			want: "cannot store a slice backed by local k in package variable gk",
+		},
+		{
+			name: "an error a call hands back of the parameter",
+			src: `func pass(e error) error { return e }
+
+func f(p *E) (int, error) { return 0, pass(p) }
+
+func run() {
+	var le E
+	n, err := f(&le)
+	gerr = err
+	println(n)
+}
+
+func main() { run() }
+`,
+			want: "cannot store local err, which holds a pointer into local le in package variable gerr",
+		},
+		{
+			name: "an error in a struct result, kept",
+			src: `type W struct{ e error }
+
+func f(p *E) (int, W) { return 0, W{p} }
+
+func run() {
+	var le E
+	n, w := f(&le)
+	gerr = w.e
+	println(n)
+}
+
+func main() { run() }
+`,
+			want: "cannot store w.e, which holds a pointer into local le in package variable gerr",
+		},
+		{
+			name: "a named result returned by name",
+			src: `func view(buf []byte) ([]byte, error) { return buf[:2], nil }
+
+func f(buf []byte) (k []byte, err error) {
+	k = buf
+	return k, nil
+}
+
+func run() {
+	var buf [4]byte
+	k, err := f(buf[:])
+	gk = k
+	_ = err
+}
+
+func main() { run() }
+`,
+			want: "cannot store a slice backed by local k in package variable gk",
+		},
+		{
+			name: "a single named result returned bare",
+			src: `func view(buf []byte) ([]byte, error) { return buf[:2], nil }
+
+func f(buf []byte) (k []byte) {
+	k = buf
+	return
+}
+
+func run() {
+	var buf [4]byte
+	gk = f(buf[:])
+}
+
+func main() { run() }
+`,
+			want: "cannot store a slice backed by local buf in package variable gk",
+		},
+		{
+			name: "a named error returned bare beside a count",
+			src: `func view(buf []byte) ([]byte, error) { return buf[:2], nil }
+
+var src = [...]byte{1, 2, 3}
+
+func read(buf []byte) (n int, err error) {
+	n = copy(buf, src[:])
+	if n < 3 {
+		err = ErrX
+	}
+	return
+}
+
+func run() error {
+	var buf [4]byte
+	n, err := read(buf[:])
+	println(n)
+	return err
+}
+
+func main() { println(run() == nil) }
+`,
+			want: "",
+		},
+		{
+			name: "a named error that is the parameter, returned bare",
+			src: `func view(buf []byte) ([]byte, error) { return buf[:2], nil }
+
+func read(buf []byte, e *E) (n int, err error) {
+	n = len(buf)
+	err = e
+	return
+}
+
+func run() {
+	var le E
+	n, err := read(gbuf[:], &le)
+	gerr = err
+	println(n)
+}
+
+func main() { run() }
+`,
+			want: "cannot store local err, which holds a pointer into local le in package variable gerr",
+		},
+		{
+			name: "the receiver in a named result, returned bare",
+			src: `func view(buf []byte) ([]byte, error) { return buf[:2], nil }
+
+func (h *H) self() (p *H) {
+	p = h
+	return
+}
+
+func run() {
+	var h H
+	gp = h.self()
+}
+
+func main() { run() }
+`,
+			want: "cannot store the address of local variable h in package variable gp",
+		},
+		{
+			name: "a function literal returning a named result bare",
+			src: `func view(buf []byte) ([]byte, error) { return buf[:2], nil }
+
+func run() {
+	f := func(buf []byte) (k []byte) {
+		k = buf
+		return
+	}
+	var buf [4]byte
+	gk = f(buf[:])
+}
+
+func main() { run() }
+`,
+			want: "cannot store a slice backed by local buf in package variable gk",
+		},
+		{
+			name: "an interface method returning a named result bare",
+			src: `func view(buf []byte) ([]byte, error) { return buf[:2], nil }
+
+type V interface{ view(b []byte) []byte }
+
+type T struct{}
+
+func (t *T) view(b []byte) (k []byte) {
+	k = b
+	return
+}
+
+var gt T
+
+func run() {
+	var v V = &gt
+	var buf [4]byte
+	gk = v.view(buf[:])
+}
+
+func main() { run() }
+`,
+			want: "cannot store a slice backed by local buf in package variable gk",
+		},
+		{
+			name: "a count beside a view in named results, returned bare",
+			src: `func view(buf []byte) ([]byte, error) { return buf[:2], nil }
+
+func f(buf []byte) (k []byte, n int) {
+	k, n = buf, len(buf)
+	return
+}
+
+func run() {
+	var buf [4]byte
+	k, n := f(buf[:])
+	gn = n
+	println(len(k))
+}
+
+func main() { run() }
+`,
+			want: "",
+		},
+		{
+			name: "two named results set in a list, returned bare",
+			src: `func view(buf []byte) ([]byte, error) { return buf[:2], nil }
+
+func f(buf []byte) (k []byte, n int) {
+	k, n = buf, len(buf)
+	return
+}
+
+func run() {
+	var buf [4]byte
+	k, n := f(buf[:])
+	gk = k
+	println(n)
+}
+
+func main() { run() }
+`,
+			want: "cannot store a slice backed by local k in package variable gk",
+		},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			fsys := fstest.MapFS{"main.ogo": &fstest.MapFile{Data: []byte(decls + test.src)}}
+			pkg, err := Build(-1, []string{"main.ogo"}, fsys)
+			if err != nil {
+				t.Fatalf("Build: %v", err)
+			}
+			var buf bytes.Buffer
+			err = EmitC(pkg, &buf, Checked())
+			switch {
+			case test.want == "":
+				if err != nil {
+					t.Errorf("EmitC: unexpected refusal: %v", err)
+				}
+			case err == nil:
+				t.Errorf("EmitC: accepted a reference outliving its frame; want %q", test.want)
+			case !strings.Contains(err.Error(), test.want):
+				t.Errorf("EmitC error %q does not mention %q", err, test.want)
+			}
+		})
+	}
+}
+
 func TestEmitCRuneStringEscape(t *testing.T) {
 	const decls = `var g string
 
