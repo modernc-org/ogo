@@ -3775,7 +3775,15 @@ of whatever struct (doc/param-named-like-any-member.c, measured in twenty
 variants). **A backend fault measured for one type is asked of every type of its
 size**, again: the struct's layout, not the member's owner, was the row. Its 400
 mutants on the host: 317 print what Go prints, 11 panic as Go does, 72 are refused
-alike; none differs. A round with silent faults: the count stays 0.
+alike; none differs. On the board 325 of 325 print Go's output, three more running
+on past Go's time limit. One, m0215, stopped reading at its tenth line: the FAT
+count written a byte late leaves it 0 and the root directory over the FAT, whose
+first entries, listed as a name, hold the bytes 0xFF 0x00 -- loadp2's exit
+sequence, which ends its terminal under `-t` whatever the program goes on to
+print, and so `ogo run`'s and `ogo test`'s readings (their help says so now). With
+the names printed by `%q`, in Go and here alike, the board prints all 92 lines of
+Go's output; board.sh names a mutant whose Go output holds the sequence now,
+rather than calling it a difference. A round with silent faults: the count stays 0.
 **A MARK IS MADE IN EMISSION ORDER, AND A LOOP RUNS ITS BODY AGAIN** (2026-10-08,
 found probing unsafe.Slice's views). The holder marks are set as statements are
 emitted, so a statement read a variable's mark as the statements BEFORE it had left

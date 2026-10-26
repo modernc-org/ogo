@@ -276,6 +276,10 @@ clock as it starts, which is why the frequency has to be chosen at build time.
 
 Press Ctrl-] to leave the terminal.
 
+The terminal also ends where the program writes the bytes 0xFF 0x00, the
+loader's exit sequence, and run exits with the byte after them as its status. A
+program sending binary data over its serial line is read with another terminal.
+
 On Windows, run this from cmd.exe or PowerShell, not a Unix-emulation shell
 (git-bash, MSYS2, Cygwin): the serial handshake is flaky there and the exit key
 may not respond (use Ctrl-C).
@@ -379,6 +383,10 @@ Tests run ON THE BOARD and nowhere else. A host emulation would be faster and
 would sometimes be wrong -- the two C compilers disagree about semantics, not only
 about warnings -- and a test reporting "ok" from somewhere the program will never
 run is worse than a test that did not run.
+
+What a test prints is read back over the serial line, and the bytes 0xFF 0x00
+end the reading there, as they end ogo run's terminal: a package whose test
+writes them is reported "[the board produced no result]".
 
 	-c          build the tests and do not run them, leaving <pkg>.test.binary
 	            beside the package. It is what CI without a board can honestly do.

@@ -28,11 +28,11 @@
 # What a good probe counts: the calls. Give every accessor a side effect on a
 # package counter and print the counter beside the values, so an operand
 # evaluated twice, or at the return instead of at the defer, shows as a number.
-# Fixture traps met so far: a value receiver on a struct holding an array and a
-# struct holding an array as a channel element are refused by the ABI wall, not
-# by a gap; `append([]int{}, ...)` has no capacity here; an unused package
-# variable fails the host build; at most seven goroutines are live at once; and
-# main must not write what a worker reads, or the "miscompile" is a race.
+# Fixture traps met so far: `append([]int{}, ...)` has no capacity here; an
+# unused package variable fails the host build; at most seven goroutines are live
+# at once; and main must not write what a worker reads, or the "miscompile" is a
+# race. (A struct holding an array, by value and as a channel element, was a wall
+# of the backend's once and is taken now, on the board too.)
 set -u
 unset CDPATH # a set CDPATH makes cd echo the directory, doubling every $(cd ... && pwd)
 root=$(cd "$(dirname "$0")/.." && pwd)

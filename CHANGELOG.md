@@ -52,6 +52,15 @@ shipped section tells a reader on that version that they have behaviour they do 
   the first pass's storage, which the next pass zeroed and wrote over -- `3` where
   Go prints `1` -- in every release.
 
+### Toolchain
+
+- **`ogo run` and `ogo test` say where their reading of the board ends**: the
+  loader takes the bytes 0xFF 0x00 a program writes for its exit sequence, so
+  `ogo run`'s terminal ends there with the byte after them as its exit status, and
+  `ogo test` reports a package whose test writes them "[the board produced no
+  result]". Their help says so; a program sending binary data over its serial
+  line is read with another terminal.
+
 ### Fixed
 
 - **An array of structs that hold an array, as a literal's field, is copied
