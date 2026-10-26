@@ -27199,6 +27199,70 @@ func main() {
 		want: "2 7 2\n8 5\n",
 	},
 	{
+		// A Builder held in a field and in an array's element: its String is a view
+		// of what the holder holds, and an array of Builders was C of types nothing
+		// declared, the Builder's needs minted first by a question that forgets
+		// what it mints (needBuilder, dom72).
+		name: "a Builder in a field and in an array's element",
+		src: `type W struct{ sb Builder }
+
+type P struct {
+	back [16]byte
+	sb   Builder
+}
+
+var gback, gback2 [16]byte
+var gw W
+var gp P
+
+func (p *P) set(s string) string {
+	p.sb = NewBuilder(p.back[:])
+	p.sb.WriteString(s)
+	return p.sb.String()
+}
+
+func run() string {
+	var back [8]byte
+	var w W
+	w.sb = NewBuilder(back[:])
+	w.sb.WriteString("here")
+	println(w.sb.String(), w.sb.Len())
+	var bs [2]Builder
+	bs[1] = NewBuilder(gback[:])
+	bs[1].WriteString("pe")
+	var ls [1]Builder
+	ls[0] = NewBuilder(back[:])
+	ls[0].WriteByte('x')
+	println(ls[0].String(), bs[1].Len())
+	return bs[1].String()
+}
+
+func main() {
+	gw.sb = NewBuilder(gback2[:])
+	gw.sb.WriteString("pkg")
+	s := run()
+	println(s, gw.sb.String(), gp.set("own"))
+}
+`,
+		want: "here 4\nx 2\npe pkg own\n",
+	},
+	{
+		// An array of Builders the program's only Builder type: its needs were
+		// minted first by a question that forgets what it mints, and the helpers
+		// named types no C declared (needBuilder, dom72).
+		name: "an array of Builders, the only Builder named",
+		src: `var gback [16]byte
+
+func main() {
+	var bs [2]Builder
+	bs[1] = NewBuilder(gback[:])
+	bs[1].WriteString("pe")
+	println(bs[1].String(), bs[0].Len())
+}
+`,
+		want: "pe 0\n",
+	},
+	{
 		// The error of a call of several results beside a view of a local buffer,
 		// returned: through a method on a field, an interface whose methods hand back
 		// nothing in the error, one of them forwarding to another's `return a.gen(dst,

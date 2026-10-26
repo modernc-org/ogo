@@ -11418,7 +11418,8 @@ func main() {
 // TestEmitCStringView holds a string a Builder over a local array hands out,
 // sb.String(), to the lifetime rules wherever it travels: bound to a local,
 // resliced, a field, an element, a helper's result, a callee's parameter, a
-// channel (dom72, sweeps/string-view). A holder declared from a literal whose
+// channel (dom72, sweeps/string-view), and the Builder itself held in a field or an
+// element. A holder declared from a literal whose
 // references hold no string is plain, and a string read out of it is no view until
 // the holder is marked again, ahead of the read in a loop too (frameHolderPlain). Each was taken, in every release, and
 // printed the frame's leftovers once it was gone; the ordinary strings beside them
@@ -11463,6 +11464,272 @@ func clobber(k int) int {
 		src     string
 		want    string // "" means the program must be accepted
 	}{
+		{
+			name:    "a Builder over a local array in a field, the holder stored",
+			imports: ``,
+			src: `type W struct{ sb Builder }
+
+var gw W
+
+func run() {
+	var back [8]byte
+	var w W
+	w.sb = NewBuilder(back[:])
+	gw = w
+}
+
+func main() {
+	run()
+	gback[15] = 0
+	println(clobber(3) != 0)
+	printf("%q %q\n", gs, ge.name)
+}
+`,
+			want: "which holds a pointer into local",
+		},
+		{
+			name:    "a field Builder's String",
+			imports: ``,
+			src: `type W struct{ sb Builder }
+
+func run() {
+	var back [8]byte
+	var w W
+	w.sb = NewBuilder(back[:])
+	w.sb.WriteString("field")
+	gs = w.sb.String()
+}
+
+func main() {
+	run()
+	gback[15] = 0
+	println(clobber(3) != 0)
+	printf("%q %q\n", gs, ge.name)
+}
+`,
+			want: "which holds a pointer into local",
+		},
+		{
+			name:    "an element Builder's String",
+			imports: ``,
+			src: `func run() {
+	var back [8]byte
+	var bs [2]Builder
+	bs[0] = NewBuilder(back[:])
+	bs[0].WriteString("elem")
+	gs = bs[0].String()
+}
+
+func main() {
+	run()
+	gback[15] = 0
+	println(clobber(3) != 0)
+	printf("%q %q\n", gs, ge.name)
+}
+`,
+			want: "which holds a pointer into local",
+		},
+		{
+			name:    "a method handing back its field Builder's String",
+			imports: ``,
+			src: `type W struct{ sb Builder }
+
+func (w *W) name() string { return w.sb.String() }
+
+func run() {
+	var back [8]byte
+	var w W
+	w.sb = NewBuilder(back[:])
+	w.sb.WriteString("meth")
+	gs = w.name()
+}
+
+func main() {
+	run()
+	gback[15] = 0
+	println(clobber(3) != 0)
+	printf("%q %q\n", gs, ge.name)
+}
+`,
+			want: "which holds a pointer into local",
+		},
+		{
+			name:    "a Builder over a local array stored",
+			imports: ``,
+			src: `var gb Builder
+
+func run() {
+	var back [8]byte
+	gb = NewBuilder(back[:])
+}
+
+func main() {
+	run()
+	gback[15] = 0
+	println(clobber(3) != 0)
+	printf("%q %q\n", gs, ge.name)
+}
+`,
+			want: "cannot store a slice backed by local back in package variable gb",
+		},
+		{
+			name:    "a Builder over a local array returned",
+			imports: ``,
+			src: `func mk() Builder {
+	var back [8]byte
+	return NewBuilder(back[:])
+}
+
+func run() {
+	sb := mk()
+	sb.WriteString("x")
+	gs = "x"
+}
+
+func main() {
+	run()
+	gback[15] = 0
+	println(clobber(3) != 0)
+	printf("%q %q\n", gs, ge.name)
+}
+`,
+			want: "cannot return a slice backed by local back",
+		},
+		{
+			name:    "a field Builder declared in a literal",
+			imports: ``,
+			src: `type W struct{ sb Builder }
+
+func run() {
+	var back [8]byte
+	w := W{sb: NewBuilder(back[:])}
+	w.sb.WriteString("lit")
+	gs = w.sb.String()
+}
+
+func main() {
+	run()
+	gback[15] = 0
+	println(clobber(3) != 0)
+	printf("%q %q\n", gs, ge.name)
+}
+`,
+			want: "which holds a pointer into local",
+		},
+		{
+			name:    "a field Builder used where it stands",
+			imports: ``,
+			src: `type W struct{ sb Builder }
+
+func run() {
+	var back [8]byte
+	var w W
+	w.sb = NewBuilder(back[:])
+	w.sb.WriteString("here")
+	printf("%s %d\n", w.sb.String(), w.sb.Len())
+	gs = "ok"
+}
+
+func main() {
+	run()
+	gback[15] = 0
+	println(clobber(3) != 0)
+	printf("%q %q\n", gs, ge.name)
+}
+`,
+			want: "",
+		},
+		{
+			name:    "Builders handed to a callee that keeps nothing",
+			imports: ``,
+			src: `func count(b *Builder) int { return b.Len() }
+
+func run() {
+	var back [8]byte
+	sb := NewBuilder(back[:])
+	sb.WriteString("abc")
+	sb2 := NewBuilder(back[:])
+	printf("%d %d\n", count(&sb), count(&sb2))
+	gs = "n"
+}
+
+func main() {
+	run()
+	gback[15] = 0
+	println(clobber(3) != 0)
+	printf("%q %q\n", gs, ge.name)
+}
+`,
+			want: "",
+		},
+		{
+			name:    "a field Builder over a package array",
+			imports: ``,
+			src: `type W struct{ sb Builder }
+
+var gw W
+
+func run() {
+	gw.sb = NewBuilder(gback[:])
+	gw.sb.WriteString("pkg")
+	gs = gw.sb.String()
+}
+
+func main() {
+	run()
+	gback[15] = 0
+	println(clobber(3) != 0)
+	printf("%q %q\n", gs, ge.name)
+}
+`,
+			want: "",
+		},
+		{
+			name:    "an element Builder over a package array",
+			imports: ``,
+			src: `func run() {
+	var bs [2]Builder
+	bs[1] = NewBuilder(gback[:])
+	bs[1].WriteString("pe")
+	gs = bs[1].String()
+}
+
+func main() {
+	run()
+	gback[15] = 0
+	println(clobber(3) != 0)
+	printf("%q %q\n", gs, ge.name)
+}
+`,
+			want: "",
+		},
+		{
+			name:    "a Builder over its holder's own array",
+			imports: ``,
+			src: `type P struct {
+	back [16]byte
+	sb   Builder
+}
+
+var gp P
+
+func (p *P) set(s string) string {
+	p.sb = NewBuilder(p.back[:])
+	p.sb.WriteString(s)
+	return p.sb.String()
+}
+
+func run() { gs = gp.set("own") }
+
+func main() {
+	run()
+	gback[15] = 0
+	println(clobber(3) != 0)
+	printf("%q %q\n", gs, ge.name)
+}
+`,
+			want: "",
+		},
 		{
 			name:    "a constant in a literal",
 			imports: ``,

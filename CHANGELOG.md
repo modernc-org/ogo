@@ -110,6 +110,14 @@ shipped section tells a reader on that version that they have behaviour they do 
   narrower than a long or an aggregate one, whatever struct the member is of; only
   a member of the parameter's own struct was routed around
   (doc/param-named-like-any-member.c).
+- **A Builder over a local array is a view of that frame wherever it is held**:
+  `w.sb = NewBuilder(back[:]); gw = w` kept a Builder over a dead frame in a package
+  variable, every later write through it writing into that frame, and `gs =
+  w.sb.String()`, `gs = bs[0].String()` and a method handing back its field
+  Builder's String kept its bytes, in every release: only a Builder declared over
+  the array was followed. Each is refused now. And an array of Builders, `var bs
+  [2]Builder`, where nothing else named the type, was "the C compiler refused the C
+  ogo wrote": the Builder's helpers named types no C declared.
 
 ## v0.59.0
 

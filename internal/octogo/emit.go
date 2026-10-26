@@ -42990,6 +42990,14 @@ func (e *emitter) registerBuilder() {
 // emitted, and pulls in what they reference: the byte-slice header, the string type,
 // and the stdint/string.h headers.
 func (e *emitter) needBuilder() {
+	// Asked by a pass that must not change the program (unminted), nothing is
+	// needed: what it mints is forgotten, the typedefs of `error` and of the pair
+	// among them, while the names they were minted under stay -- and usesBuilder
+	// stayed set, so the emission's own call minted nothing, and `var bs
+	// [2]Builder` wrote helpers of types no C declared.
+	if e.inUnminted {
+		return
+	}
 	if !e.usesBuilder {
 		// The writes answer Go's results, (int, error) and error: the C types of
 		// `error` and of the pair are minted here, where a Builder is first needed,
@@ -58554,6 +58562,15 @@ func (e *emitter) frameRefAny(ast []int32) (frameRef, bool) {
 		}
 		ast = e.unparenExpr(arg)
 	}
+	// NewBuilder(back) is a Builder over back, reaching what back reaches, at every
+	// sink and every mark: the declaration's walk alone knew (noteDeclFrameHolder),
+	// and `w.sb = NewBuilder(back[:]); gw = w` kept a Builder over a dead frame in a
+	// package variable, every later write through it writing into that frame.
+	if recv, suffix, ok := e.directCall(ast); ok && recv == "NewBuilder" && e.universe(recv) && len(suffix) == 1 && suffix[0].sym == CallSuffix {
+		if args := e.callArgExprs(suffix[0].ast); len(args) == 1 {
+			return e.frameRefAny(args[0].ast)
+		}
+	}
 	// And `(arr[0]).Self()` is `arr[0].Self()` (spliceParenChain): it reaches what
 	// the chain written without the parentheses does.
 	if kids, ok := e.soleFactor(ast); ok {
@@ -58765,6 +58782,22 @@ func (e *emitter) frameRefAny(ast []int32) (frameRef, bool) {
 				if ct, okc := e.callResultCType(base, steps); okc &&
 					(ct == cString || e.carriesReference(ct)) {
 					return readHolderRef(e.f.exprSource(fac), origin), true
+				}
+			}
+		}
+		// The String() of a Builder a holder's chain reaches, a field's or an
+		// element's, `w.sb.String()` and `bs[0].String()`: a view of what the holder
+		// holds. Read as two steps alone, each kept a dead frame's bytes.
+		if base, steps, isCall := e.factorCall(kids); isCall && len(steps) > 2 {
+			n := len(steps)
+			if steps[n-1].sym == CallSuffix && steps[n-2].sym == Selector && e.soleIdent(steps[n-2].ast) == "String" &&
+				len(e.callArgExprs(steps[n-1].ast)) == 0 && !containsSym(steps[:n-2], CallSuffix) {
+				if cur, walked := e.accessChainType(base, steps[:n-2]); walked {
+					if u := e.underlyingCType(cur.ctype); u == "ogo_builder" || u == "ogo_builder*" {
+						if origin := e.viewedHolder(base); origin != "" {
+							return readHolderRef(e.f.exprSource(fac), origin), true
+						}
+					}
 				}
 			}
 		}
