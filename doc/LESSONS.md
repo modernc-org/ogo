@@ -3718,6 +3718,64 @@ writing what it evaluated before a later argument panics (7, DIFFERENCES.md) or 
 panic on the device's cog racing main's lines, which Go orders no better (9; 3 are
 both). On the board 335 of 335 print Go's output, a 336th running on past Go's
 time limit. A round with silent faults: the count stays 0.
+**dom72, an SD card's FAT16 file system** (2026-10-26): under a data logger, written
+against Go's os and io surface -- a block device behind an interface, a RAM disk of
+128 sectors that fails a write or loses every write after a power cut, a one-sector
+write-back cache, two FAT copies, a root of 64 entries and subdirectories of
+clusters, VFAT long names in UTF-16 with their checksums and numeric tails, Files
+with Read, Write, Seek, Truncate, Sync and Close answering as os.File does (EOF, a
+*PathError that Unwraps to the device's *DeviceError), a bufio-shaped writer over a
+CRC-32 writer over the file, a sensor cog, rotation, a sorted listing, read-back by
+CRC, a seek past the end, a full card, a full root, a failed write and an fsck
+repairing a power cut. The first domain program to build its strings in Builders
+(the twin's Builder aliases its backing through unsafe, as OctoGo's String does).
+Its first build was refused twice, both false. A method filling a caller's struct
+with a pointer to itself, `*f = File{fs: fs, name: name}`, was taken to store the
+name into the receiver; and a buffered writer whose receiver held a package error,
+`b.err = err` with `err = ErrShortWrite`, to store through b into the package
+variable. A store into a name's storage makes the value a PART of the name, which
+is what a copy of the name carries; the question where a store THROUGH the name
+lands followed the part as the name's value (landsIn; sweeps/part-store, 26 rows, 11
+of them refused in every release). **A store through a name is asked what the name
+IS, not what it holds: a pointer stored into it is reached only by a target that
+goes through it.** Sweeping the row past its refusals found a hole in every
+release: a string a Builder over a local array hands out is a view of that frame,
+and only `gs = sb.String()` written out was refused. `s := sb.String(); gs = s`
+printed eight NUL bytes for Go's "sensor-1", and so did a reslice, a struct's field
+or an array's element given it, a helper building it over the caller's bytes, a
+callee keeping it or handing a field back, a range value, one of several results
+and a send (sweeps/string-view, 47 rows, 20 of them silent). Every gate asking a TYPE
+whether a value can carry a reference -- the declaration's mark, a holder's field
+read, the summaries' field names, a range value, a list form's result -- left the
+string out, by a choice made for the ordinary string field, and the provenance that
+knew better was asked at one spelling. **A value that may be a reference is asked
+at every gate that asks a type whether it can carry one: a string a Builder hands
+out was followed only where `sb.String()` stood written.** The marks are per
+variable, so a string field read out of a struct that holds a view of the frame in
+another field would be refused with it, and is not where the holder was declared
+from a literal whose references hold no string, until it is marked again, ahead
+of the read in a loop too (frameHolderPlain, carried by the loop seeds); a callee
+keeping such a field is refused with it (listed, string-view o09). The Builder
+itself held in an aggregate was the next row: `w.sb = NewBuilder(back[:]); gw = w`
+kept a Builder over a dead frame in a package variable, each later write through it
+writing into that frame, and `w.sb.String()` and `bs[0].String()` kept its bytes --
+only a Builder DECLARED over the array was followed, the declaration's walk the one
+place that knew NewBuilder holds its argument. And `var bs [2]Builder`, the only
+Builder a program named, was C no compiler took: the Builder's needs were first met
+inside a question that forgets what it mints (unminted), which dropped the
+typedefs of `error` and of the pair while the names they were minted under, and
+the flag saying the Builder was provided for, stayed. **What a question forgets of
+what it minted, it forgets whole: a name cached and a flag set are minting too.**
+Of 3865 probe programs none changed verdict. Then the board refused dom72's C: "Expecting
+identifier after '.'" for `it.d = d` in `func (d dir) create(..., it *dirIter)`.
+The backend's fault recorded for a parameter named like a member of its OWN struct
+is wider: a by-value struct the backend keeps whole -- a member narrower than a
+long, or an aggregate one -- cannot be named like any member the function selects,
+of whatever struct (doc/param-named-like-any-member.c, measured in twenty
+variants). **A backend fault measured for one type is asked of every type of its
+size**, again: the struct's layout, not the member's owner, was the row. Its 400
+mutants on the host: 317 print what Go prints, 11 panic as Go does, 72 are refused
+alike; none differs. A round with silent faults: the count stays 0.
 **A MARK IS MADE IN EMISSION ORDER, AND A LOOP RUNS ITS BODY AGAIN** (2026-10-08,
 found probing unsafe.Slice's views). The holder marks are set as statements are
 emitted, so a statement read a variable's mark as the statements BEFORE it had left
@@ -4595,7 +4653,13 @@ a name MEANS belongs where names are resolved.
 Known open items, all loud refusals or design walls (2026-09-17): a
 local of an if's block whose view a parameter keeps past the if, `if len(key) > 64 {
 s := Sum256(key); key = s[:] }` (the block rule asks blocks, not loops, and that
-block runs once while the parameter lives; dom71, sweeps/param-block r01); an
+block runs once while the parameter lives; dom71, sweeps/param-block r01); a callee
+keeping the constant string field of a struct that holds a view of the frame in
+another field, `keep(&h)` for an `h := H{buf: a[:], name: "kept"}` (the summaries
+give a string field no provenance of its own; dom72, sweeps/string-view o09); a
+Builder passed by value, `count(sb)` for a `func count(b Builder)`, "cannot use sb
+as Builder value in argument to count: it is a struct" (a pointer is the spelling
+that works); an
 array-returning call as a package literal element; a function returning an ARRAY
 taken as a value, `mb := mkb`, "cannot infer a type" and, with the type written,
 "cannot return an array beside another result" (a function value's type has no out

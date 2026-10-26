@@ -90,6 +90,12 @@ silent fault puts the count back to 0. Each round's account is in
   fixed (a parameter given a view of the body's local, an error beside a view
   through a field, an interface and a forwarded call), one listed (an if's local
   kept by a parameter) -- 0
+- dom72 (2026-10-26), an SD card's FAT16 file system under a data logger: silent
+  (a string a Builder over a local array hands out, and the Builder itself held in
+  a field, kept past the frame), two false refusals fixed (a store through a name
+  that holds a pointer), two loud C refusals fixed (a by-value struct named like a
+  member, on the board; an array of Builders), one listed (a callee keeping a
+  string field beside a buffer) -- 0
 
 ## Language feature policy (read before assuming something is excluded)
 
@@ -1114,7 +1120,11 @@ section. A new finding goes there; the rule it leaves goes here too.
   them on.** **A return is asked in every form, a forwarded call among them.**
   **A block is counted as Go declares it: the parameters are of the body's
   outermost block.** **A loop is every way a statement runs again: a goto back is
-  one** (dom71).
+  one** (dom71). **A store through a name is asked what the name IS, not what it
+  holds: a pointer stored into it is reached only by a target that goes through
+  it.** **A value that may be a reference is asked at every gate that asks a type
+  whether it can carry one: a string a Builder hands out was followed only where
+  `sb.String()` stood written** (dom72).
 - **A PARENTHESISED HEAD IS A ROW OF EVERY SCAN**: **A new scan reads heads through
   them, and a new shape the emitter reads through parentheses is a row in each
   scan.**
@@ -1144,7 +1154,8 @@ section. A new finding goes there; the rule it leaves goes here too.
 
 - **A walk that answers a question must not change the program**. **An owner of
   deferred work is the storage the literal fills, not whatever is being rendered
-  when it is found.**
+  when it is found.** **What a question forgets of what it minted, it forgets
+  whole: a name cached and a flag set are minting too** (dom72).
 - **Where a statement renders a part of itself that Go evaluates conditionally,
   later, or repeatedly, that part is rendered inside emitOwnPrologue**; **a
   statement that renders parts of itself asks where each part's hoisted statements

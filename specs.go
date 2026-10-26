@@ -803,12 +803,16 @@
 // error, "short write" (Go's io.ErrShortWrite), so a truncation is seen where it
 // happens. A statement that ignores the results is the Go one that ignores them.
 //
-// String() returns an ordinary string aliasing the backing, so it makes no copy. It
-// stays valid across further writes, which land after it, but not across a Reset
-// followed by a write, which overwrites the bytes it shows: take the String when the
-// building is done. Go's strings.Builder starts a fresh buffer on Reset so its
-// earlier results survive; there is no heap to do that with here. A *Builder may be
-// passed to a function, so building can be factored into helpers.
+// String() returns an ordinary string aliasing the backing, so it makes no copy, and
+// the lifetime rules hold it as they hold a slice of the backing: over a local array
+// it may not outlive the array -- returned, stored where it outlives the function,
+// sent, or handed to a goroutine -- however it travels there, through a variable, a
+// field, a reslice or a helper's result. It stays valid across further writes,
+// which land after it, but not across a Reset followed by a write, which overwrites
+// the bytes it shows: take the String when the building is done. Go's
+// strings.Builder starts a fresh buffer on Reset so its earlier results survive;
+// there is no heap to do that with here. A *Builder may be passed to a function, so
+// building can be factored into helpers.
 //
 // Intent: Builder is predeclared for now, and is meant to move into the strings
 // package, which exists, as strings.Builder. Its methods already have Go's names and
