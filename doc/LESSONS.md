@@ -3583,6 +3583,65 @@ does, Go and the compiler refuse 34 alike, and the four that differ are three
 deadlocks Go reports and OctoGo waits out (DIFFERENCES.md) and a float far past
 int32's range converted, which Go leaves to the implementation. On the board 362 of
 362 print Go's output. No fuzzer part changed since dom66: a clean round.
+**dom68, a G-code interpreter and motion planner** (2026-10-26): the job read a line
+at a time -- comments, line numbers and RepRap checksums, numbers parsed by hand,
+inches and millimetres, absolute and relative positions, G92's offset -- arcs cut
+into chords within a tolerance, a planner of eight blocks limiting each junction's
+speed by the deviation it allows and planning the entry speeds back from a stop and
+forward from the block leaving, and each block's trapezoid handed over a buffered
+channel of a struct holding float64s to a stepper goroutine, a Bresenham line over
+the axes with AVR446's integer ramp, every step hashed through an interface. Written
+against Go first, its two faults were its own: a whole circle cut into one chord of
+no length -- the start's Atan2 at -pi, -0 being its y, the end's at +pi -- fixed by
+the radii's cross and dot products, as grbl has it; and a modal G3 that made `G90
+G20` an arc. math.Hypot is not used: Go's 386 build has it in x87 assembly, which may
+round otherwise than the pure Go one this compiler takes. Host and board matched Go
+at the first build, no refusal, main unsplit, and 19 variants on its own structures
+gave their verdicts. Its 400 mutants against Go on the host: 314 print what Go
+prints, 8 panic as Go does, 65 are refused alike, each for Go's reason; of the 13
+that differ, 11 convert a NaN, an infinity or a float far past int32's range to an
+int32, which Go leaves to the implementation (-2147483648 under Go's 386, 0 on the
+host), one deadlocks (DIFFERENCES.md) and one panics on the stepper's cog while main
+prints on. On the board 320 of 320 print Go's output, the two that loop for ever on
+both sides left out. No fuzzer part changed since its board sweep (the float64
+part's, seeds 1-300 drawing it, the night of 2026-10-25): a clean round.
+**dom69, a device's settings in NOR flash** (2026-10-26): a log-structured key-value
+store over a flash interface whose model loses its power after a given number of
+bytes -- records committed in two steps under a CRC-16 and a sequence, a sector's
+rollover, the oldest sector collected, mounting that repairs what a loss left -- and
+the power cut at every byte of an update, of an update that collects and of a
+delete, the key read back old or new and every other key whole. Its first build was
+REFUSED, a false refusal of the plainest way to read into a buffer of one's own: `k,
+err := s.key(&r, buf[:]); if err != nil { return -1, err }` -- "cannot return local
+err, which holds a pointer into local buf". The summaries kept one answer for a
+function, which parameters it hands back and not where, and a call of several results
+gave every result that could hold a reference all of it. Each result position of a
+return is summarised on its own now (resultPos, retSummary), by the same walk and the
+same fixed point under a name of its own, and a destructure gives a result whose
+position reaches no parameter, no receiver and nothing a parameter points at none of
+the call's provenance (resultsCarryNothing). **A summary of a call is asked by
+result: one answer for the whole call gives every result every argument.** Sweeping
+the row found the summaries' two holes under it, both in every release, both a
+caller handed back a view of its own dead frame -- `70 0 0 0` printed where Go prints
+`10 11 12 13`. A BARE return returned nothing to them: `func f(buf []byte) (k
+[]byte) { k = buf; return }`, in seven forms (one result and two, a method's
+receiver, a function literal, an interface's method, a list assignment, an error); a
+bare return returns the named results now (namedResultToks). **A return is asked in
+every form: a bare one returns the named results, and under a defer every return
+does.** And what a callee stores through a local's ADDRESS was never the local's to
+the summaries -- `set(&k, buf); return k`, a method storing into a local receiver, a
+store through a local pointer, `errors.As` into a local that is returned, a struct a
+callee fills -- the call site's check marking the local for the body
+(checkIntoArgsIn) and argLocal saying nothing propagates. A call handing a callee a
+local's address is recorded (intoCand); once the summaries are closed, what the
+callee stores there is what the local holds, and the functions whose locals gain a
+binding are summarised again and the summaries closed again until none does
+(applyIntoCands). **A binding a callee makes is asked of the closed summaries: a
+local whose address a call hands on holds what the callee stores there.** With the
+refusal lifted the host's compiler refused dom69's C: a named result the body
+declares again, `state, _, err := header(sec)` in a loop, every return listing its
+values, was declared and never read; it is marked used where the body redeclares it
+(bodyRedeclares). The round found silent faults: the count goes back to 0.
 **A MARK IS MADE IN EMISSION ORDER, AND A LOOP RUNS ITS BODY AGAIN** (2026-10-08,
 found probing unsafe.Slice's views). The holder marks are set as statements are
 emitted, so a statement read a variable's mark as the statements BEFORE it had left

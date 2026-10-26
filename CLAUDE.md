@@ -77,6 +77,11 @@ silent fault puts the count back to 0. Each round's account is in
   does not print as it stood) -- 0
 - dom67 (2026-10-25), a vacuum system's PLC: clean, one false refusal fixed (an
   inner block's slice holding a view of an outer block's storage) -- 1
+- dom68 (2026-10-26), a G-code interpreter and motion planner: clean -- 2
+- dom69 (2026-10-26), settings in NOR flash: silent (the lifetime summaries: a
+  bare return handed back nothing, and a callee's store through a local's address
+  was not the local's), one false refusal fixed (a call's error beside a view of a
+  local buffer) -- 0
 
 ## Language feature policy (read before assuming something is excluded)
 
@@ -1091,6 +1096,11 @@ section. A new finding goes there; the rule it leaves goes here too.
   type a rule does not know is asked which rules read it as a default**. **A MARK IS MADE IN EMISSION ORDER, AND A LOOP RUNS ITS BODY AGAIN**: **A mark is a fact about a
   variable at a point; a rule reading one asks what reaches that point -- a loop's
   back edge and an alias both do.**
+- **A summary of a call is asked by result: one answer for the whole call gives
+  every result every argument** (resultPos). **A return is asked in every form: a
+  bare one returns the named results, and under a defer every return does.** **A
+  binding a callee makes is asked of the closed summaries: a local whose address a
+  call hands on holds what the callee stores there** (applyIntoCands; dom69).
 - **A PARENTHESISED HEAD IS A ROW OF EVERY SCAN**: **A new scan reads heads through
   them, and a new shape the emitter reads through parentheses is a row in each
   scan.**
