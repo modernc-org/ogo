@@ -37,7 +37,20 @@ shipped section tells a reader on that version that they have behaviour they do 
   the local, `errors.As` into a local that is returned, a local struct a callee
   fills, the local kept in a package variable or stored through an out parameter,
   and a deferred call setting a named result after `return nil`, in every release.
-  Each is refused now.
+  Each is refused now, and so is the deferred call's store after a return handing
+  on a call of several results, `defer put(&k, buf); return split(buf)`.
+- **A parameter is of the function's block, as Go declares it**: a parameter, a
+  result and the receiver live as long as the body's outermost locals, so one may
+  hold a view or an address of the other -- `var zero [32]byte; if len(salt) == 0 {
+  salt = zero[:] }`, `p = &x` -- in a function and in a function literal. It was
+  refused, "declare it where salt is", advice no program could follow. What such a
+  name takes out of the frame is refused as before, and so is a bare return of a
+  named result holding the frame's storage.
+- **A goto back runs again what follows its label**: each declaration there is a
+  new variable each time, as a loop body's is, so a view or an address of one kept
+  past the next pass by a variable declared before the label is refused. It kept
+  the first pass's storage, which the next pass zeroed and wrote over -- `3` where
+  Go prints `1` -- in every release.
 
 ### Fixed
 
@@ -53,9 +66,21 @@ shipped section tells a reader on that version that they have behaviour they do 
   went wrong -- was refused, "cannot return local err, which holds a pointer into
   local buf". A result whose expressions in the callee's returns reach no
   parameter, no receiver and nothing a parameter points at carries nothing of the
-  call's. A callee one of whose returns forwards a call of several results, and a
-  call through an interface or a function value, are judged as the whole call
-  still.
+  call's. So it is through a method on what a chain reaches, `gw.auth.Open(buf[:0],
+  ...)`, an interface's method (by every implementation's results), a call two
+  levels down, `b, err := inner(buf)` in the callee, and a callee forwarding a call
+  of several results, `return c.openGeneric(dst, ...)`, the shape of an AEAD's
+  Open. A call through a function value is judged as the whole call still.
+- **A deferred call's change to a named result is what a forwarded call returns**:
+  `defer inc(&a); return two()` returned `1 2` where Go returns `11 2`, and a
+  deferred call reading the results saw zeros -- in the registers and through the
+  caller's storage, for a method, an interface, a function value and a result
+  widened, in every release. Go assigns the call's results to the results and then
+  runs the defers.
+- **nil, and a pointer, stored through a pointer to an interface or a slice**:
+  `*p = nil` for a `p *error` or a `*[]byte`, and `*p = &x`, were written as stores
+  of one word, C that neither compiler takes -- "the C compiler refused the C ogo
+  wrote".
 
 ## v0.59.0
 

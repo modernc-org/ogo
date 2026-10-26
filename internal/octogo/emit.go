@@ -7851,6 +7851,7 @@ type emitter struct {
 	aliasLits           map[string]bool          // `type A = [2]int`: mangled names of the aliases of an array written out, which name no defined type
 	localTypes          map[string]string        // a LOCAL type declaration's source name -> its minted C name, per function
 	gotoTargets         map[string]bool          // labels a goto of the CURRENT function names, scanned before its body is emitted
+	gotoLast            map[string]int32         // the token of the last goto naming each of gotoTargets: a label before it is gone back to (emitLabeledStatement)
 	labelHeads          map[string]loopHead      // the marks at each goto target of the current function emitted so far, a goto back to which is a loop's end (noteLoopSeeds)
 	aliasedLocals       map[string]bool          // locals of the CURRENT function whose storage something else may reach (see scanAliasedLocals)
 	localTypeSeq        int                      // uniquifies minted local-type names across the program
@@ -7990,6 +7991,8 @@ type emitter struct {
 	pkgScope            bool                         // a package variable's initializer is being emitted, where this frame's storage does not exist
 	inUnminted          bool                         // a question unminted asks is under way: the types it mints are forgotten
 	curResultNames      []string                     // current function's result C-variable names, for a bare "return" (naked return)
+	curResultToks       []int32                      // the tokens naming the current function's named results, which a bare return returns (checkNamedReturns)
+	curAddressed        map[string]bool              // the names the current function's body addresses (addressedNames), when it defers: what a deferred call may store into
 	curArrayResult      string                       // the NAME its single array result was declared with, which a return copies into the caller's storage
 	curResultTypes      []string                     // current function's result C types, for typing a `return nil` in a slice-returning function
 	tmp                 int                          // per-function counter for generated temporaries (destructuring)
@@ -8037,6 +8040,7 @@ type emitter struct {
 	litLifted           map[string][]string          // a function literal's summary key -> the C names it was lifted to, whose frameCalls are its own
 	typeCallees         []string                     // the "type:" callees the summaries have edges to, refreshed by the fixed point (unionSummary)
 	heldCallValues      map[string][]int32           // the call a "call@" name in a function's summary holds stands for (see summaryHolds)
+	heldCallPos         map[string]int               // the position of a call's several results a "call@" name stands for, where a binding took one (see summaryHolds)
 	methodNames         map[string]bool              // the name of every method of every type, which a selector calling one is known by (scanBindings)
 	bindWrites          map[string]int               // in the function being emitted, how often a name -- or one field of it, funcFieldKey -- is declared or assigned (see boundFunc)
 	bindBlock           map[string]int               // ... the block all those writes are in, or -1 for more than one
@@ -9424,7 +9428,7 @@ func (e *emitter) ifaceStoreC(target, key, iface string, rhs []int32) string {
 		// Already an interface value: the same two words, copied. A variable's
 		// provenance travels with them, since what the copy points at is what the
 		// original pointed at.
-		if name, isName := e.exprIdent(rhs); isName {
+		if name, isName := e.exprIdent(rhs); isName && key != "" {
 			// key is the variable's name, which the marks are kept by; target is
 			// its C spelling, which differs for a keyword or a macro.
 			if origin := e.frameHolder[name]; origin != "" {
@@ -12482,6 +12486,21 @@ func (e *emitter) handsBack(callee string, to int) bool {
 	return to < len(rp) && rp[to]
 }
 
+// posSummary is the summary a name resultPos made stands for once every function
+// is collected: the result's own where its callee has one, the whole call's where
+// it has none -- some return of the callee does not list its results
+// (retPosUnknown), or none returns at all.
+func (e *emitter) posSummary(name string) string {
+	base, _, isPos := strings.Cut(name, "#")
+	if !isPos {
+		return name
+	}
+	if _, seen := e.retParams[name]; !seen || e.retPosUnknown[base] {
+		return base
+	}
+	return name
+}
+
 // resultPos names the summary of the i-th of cname's several results alone: what
 // the expressions its returns put at that position hand back of its parameters
 // and its receiver (retSummary in collectFuncCross), kept as a function's is.
@@ -12498,6 +12517,13 @@ func (e *emitter) resultsCarryNothing(rhs []int32, n int) []bool {
 	if !ok {
 		return nil
 	}
+	// A method of an interface, `a.Open(buf[:0], ...)`: the table picks the
+	// implementation, so a result carries nothing where none of them hands back
+	// anything there. Asked of none, the error of an AEAD's Open was taken to hold
+	// the buffer it opened into, and returning it was refused (dom71).
+	if ict, m, isIface := e.ifaceChainMethod(recv, suffix); isIface {
+		return e.ifaceResultsCarryNothing(ict, m.name, n)
+	}
 	var cname string
 	switch {
 	case len(suffix) == 1 && suffix[0].sym == CallSuffix:
@@ -12505,7 +12531,11 @@ func (e *emitter) resultsCarryNothing(rhs []int32, n int) []bool {
 			return nil
 		}
 		cname = e.funcCallC(recv)
-	case len(suffix) == 2 && suffix[0].sym == Selector && suffix[1].sym == CallSuffix:
+	case len(suffix) >= 2 && suffix[len(suffix)-2].sym == Selector && suffix[len(suffix)-1].sym == CallSuffix:
+		// A method on the receiver, `t.open(buf[:0])`, or on what a chain reaches,
+		// `gw.auth.open(buf[:0])`: asked of the first only, the second's error was
+		// taken to hold the buffer, and returning it was refused (dom71). A field
+		// holding a function value and an interface's method name no callee.
 		cn, _, ok := e.callResultInfo(recv, suffix)
 		if !ok || cn == "" {
 			return nil
@@ -12514,6 +12544,11 @@ func (e *emitter) resultsCarryNothing(rhs []int32, n int) []bool {
 	default:
 		return nil
 	}
+	return e.calleeResultsCarryNothing(cname, n)
+}
+
+// calleeResultsCarryNothing is resultsCarryNothing for a call of cname.
+func (e *emitter) calleeResultsCarryNothing(cname string, n int) []bool {
 	if _, known := e.retParams[cname]; !known || e.retPosUnknown[cname] {
 		return nil
 	}
@@ -12525,6 +12560,35 @@ func (e *emitter) resultsCarryNothing(rhs []int32, n int) []bool {
 			return nil
 		}
 		out[i] = !slices.Contains(rp, true) && !slices.Contains(e.retContents[pn], true) && !e.retRecv[pn]
+	}
+	return out
+}
+
+// ifaceResultsCarryNothing is resultsCarryNothing for a call of the interface's
+// method: each result carries nothing where it carries nothing in every
+// implementation (ifaceCallSummary's), and nil where one has no summary of the
+// position or none is known.
+func (e *emitter) ifaceResultsCarryNothing(iface, method string, n int) []bool {
+	var out []bool
+	for _, concrete := range slices.Sorted(maps.Keys(e.typeNames)) {
+		if e.isIfaceCType(concrete) || !e.implementsIface(concrete, iface) {
+			continue
+		}
+		cname, _, _, ok := e.promotedMethod(concrete, method)
+		if !ok {
+			continue
+		}
+		pos := e.calleeResultsCarryNothing(cname, n)
+		if pos == nil {
+			return nil
+		}
+		if out == nil {
+			out = pos
+			continue
+		}
+		for i := range out {
+			out[i] = out[i] && pos[i]
+		}
 	}
 	return out
 }
@@ -14255,12 +14319,24 @@ func (e *emitter) collectFuncCross(fi funcInfo) {
 	// return summary says later whether the result was that parameter.
 	// heldCalls is every call whose result a value may be by way of the names it
 	// reaches, `x` for `x := id(v)` -- by value, not as contents.
-	heldCalls := func(v []int32) (out [][]int32) {
+	// heldCallsPos is heldCalls with, for each call, the position of its several
+	// results a binding took, `k, err := f(buf)`, or -1 for the whole call
+	// (summaryHolds).
+	heldCallsPos := func(v []int32) (out [][]int32, pos []int) {
 		resolve(e.summaryReach(v), func(n string, contents bool) {
 			if !contents && strings.HasPrefix(n, "call@") {
 				out = append(out, e.heldCallValues[n])
+				p, ok := e.heldCallPos[n]
+				if !ok {
+					p = -1
+				}
+				pos = append(pos, p)
 			}
 		})
+		return out, pos
+	}
+	heldCalls := func(v []int32) [][]int32 {
+		out, _ := heldCallsPos(v)
 		return out
 	}
 	// callsOfExpr resolves one call to its callees and arguments: a declared
@@ -14280,6 +14356,17 @@ func (e *emitter) collectFuncCross(fi funcInfo) {
 		// selectors and indexes between the two, `id(b).in.Self()`.
 		recvCall  []int32
 		recvSteps int
+		// result is 1 + the position of the call's several results the value is,
+		// `err` of `k, err := f(buf)`, 0 for the whole call: what is handed back is
+		// that result's own (resultPos), which posSummary resolves.
+		result int
+	}
+	// summaryOf is what a callee of c hands back of the value c is.
+	summaryOf := func(c valueCallT, callee string) string {
+		if c.result > 0 {
+			return resultPos(callee, c.result-1)
+		}
+		return callee
 	}
 	recvHeld := func(recv string, suffix []Node) []held {
 		if len(suffix) == 2 {
@@ -14288,6 +14375,31 @@ func (e *emitter) collectFuncCross(fi funcInfo) {
 		return []held{{recv, heldContents}}
 	}
 	var callsOfExpr func(c []int32) []valueCallT
+	// forwards reports whether a return's expressions are one call handing on the
+	// function's n results, `return f(x)`, every function it may call having n, and
+	// the call's arguments. By shape, as callsOfExpr resolves: no body has declared
+	// a local yet.
+	forwards := func(exprs [][]int32, n int) ([]Node, bool) {
+		if len(exprs) != 1 || n < 2 {
+			return nil, false
+		}
+		for _, c := range e.callExprsIn(exprs[0]) {
+			if firstIndex(c) != firstIndex(exprs[0]) || lastIndex(c) != lastIndex(exprs[0]) {
+				continue
+			}
+			vcs := callsOfExpr(c)
+			if len(vcs) != 1 || len(vcs[0].callees) == 0 {
+				return nil, false
+			}
+			for _, callee := range vcs[0].callees {
+				if len(e.funcRet[callee]) != n {
+					return nil, false
+				}
+			}
+			return vcs[0].args, true
+		}
+		return nil, false
+	}
 	callsOfExpr = func(c []int32) (out []valueCallT) {
 		if callee, args, ok := e.valueCall(c); ok {
 			return []valueCallT{{callees: []string{callee}, args: args}}
@@ -14394,8 +14506,15 @@ func (e *emitter) collectFuncCross(fi funcInfo) {
 	// resultCalls is every call whose result a value may carry: in its own shape
 	// (callExprsIn) and by way of the names it reaches (heldCalls).
 	resultCalls := func(v []int32) (out []valueCallT) {
-		for _, c := range append(e.callExprsIn(v), heldCalls(v)...) {
+		for _, c := range e.callExprsIn(v) {
 			out = append(out, callsOfExpr(c)...)
+		}
+		calls, pos := heldCallsPos(v)
+		for k, c := range calls {
+			for _, vc := range callsOfExpr(c) {
+				vc.result = pos[k] + 1
+				out = append(out, vc)
+			}
 		}
 		return out
 	}
@@ -14491,13 +14610,15 @@ func (e *emitter) collectFuncCross(fi funcInfo) {
 		// through is one call c's callees and arguments, with how the value read
 		// after it reaches the argument (m, a resMode per callee; nil for the whole
 		// result): gated by each callee, and on into the arguments' own calls.
-		through := func(c []int32, via []viaGate, inner []*int32, elem bool, m func(string) resMode) {
+		through := func(c []int32, pos int, via []viaGate, inner []*int32, elem bool, m func(string) resMode) {
 			for _, vc := range callsOfExpr(c) {
+				vc.result = pos + 1
 				for _, callee := range vc.callees {
 					mode := resWhole
 					if m != nil {
 						mode = m(callee)
 					}
+					gc := summaryOf(vc, callee)
 					for _, el := range [2]bool{false, true} {
 						switch {
 						case el && mode == resWhole, !el && mode == resContents:
@@ -14508,16 +14629,16 @@ func (e *emitter) collectFuncCross(fi funcInfo) {
 							if holdsNothing(callee, jj, ia) {
 								continue
 							}
-							gates := append(slices.Clone(via), viaGate{callee, jj})
+							gates := append(slices.Clone(via), viaGate{gc, jj})
 							reached(e.summaryReach(ia.ast), gates, el)
 							walk(ia.ast, gates, inner, el) // `keep(trim(pass(v)))`
 						}
 						if vc.recv != nil {
-							reached(vc.recv, append(slices.Clone(via), viaGate{callee, -1}), el) // `keep(m.Self())`
+							reached(vc.recv, append(slices.Clone(via), viaGate{gc, -1}), el) // `keep(m.Self())`
 						}
 						if vc.recvCall != nil {
 							// `keep(id(b).Self())`: the receiver is that call's result.
-							gates := append(slices.Clone(via), viaGate{callee, -1})
+							gates := append(slices.Clone(via), viaGate{gc, -1})
 							walk(vc.recvCall, gates, inner, el)
 							if vc.recvSteps != 0 {
 								walk(vc.recvCall, gates, inner, true)
@@ -14531,7 +14652,9 @@ func (e *emitter) collectFuncCross(fi funcInfo) {
 			if len(via) > 8 {
 				return // a nest of calls this deep is not written
 			}
-			for _, c := range append(e.callExprsIn(a), heldCalls(a)...) {
+			direct := e.callExprsIn(a)
+			held, heldPos := heldCallsPos(a)
+			for k, c := range append(direct, held...) {
 				// A call already on this path is not entered again: a name assigned a
 				// call's result HOLDS that call, so following the call's own
 				// arguments through what they hold came back to the call itself,
@@ -14541,7 +14664,11 @@ func (e *emitter) collectFuncCross(fi funcInfo) {
 				if len(c) == 0 || slices.Contains(path, &c[0]) {
 					continue
 				}
-				through(c, via, append(slices.Clone(path), &c[0]), elem, nil)
+				pos := -1
+				if k >= len(direct) {
+					pos = heldPos[k-len(direct)]
+				}
+				through(c, pos, via, append(slices.Clone(path), &c[0]), elem, nil)
 			}
 			// A call's result with steps after it, `keep(idH(h).c)`, written or held:
 			// the call, with what a read through its result reaches -- its contents,
@@ -14551,7 +14678,7 @@ func (e *emitter) collectFuncCross(fi funcInfo) {
 				if !ok || len(call) == 0 || slices.Contains(path, &call[0]) {
 					continue
 				}
-				through(call, via, append(slices.Clone(path), &call[0]), elem, func(callee string) resMode { return e.resModeOf(callee, rest, addr) })
+				through(call, -1, via, append(slices.Clone(path), &call[0]), elem, func(callee string) resMode { return e.resModeOf(callee, rest, addr) })
 			}
 		}
 		walk(a, nil, nil, false)
@@ -14764,7 +14891,13 @@ func (e *emitter) collectFuncCross(fi funcInfo) {
 			// retSummary records what exprs, returned, hand back, as the summary of
 			// cname: the calls of the statement it asks are those inSpan says stand
 			// in exprs.
-			retSummary := func(cname string, exprs [][]int32, inSpan func(args []Node) bool) {
+			// fwd is the position of a forwarded call's several results the summary is
+			// of, `return c.openGeneric(dst, ...)`, the call the one with fwdArgs for
+			// its arguments (fwdAt), and -1 for a summary of what the return lists.
+			retSummary := func(cname string, exprs [][]int32, inSpan func(args []Node) bool, fwd int, fwdAt []Node) {
+				isFwd := func(args []Node) bool {
+					return fwd >= 0 && len(args) == len(fwdAt) && (len(args) == 0 || args[0].Pos() == fwdAt[0].Pos())
+				}
 				var heldRets []stmtCall // `x := id(p); return x` returns what id(p) does
 				// modeRets records what a return hands back through a call whose result it
 				// reads as m says, by callee (resModeOf), gated by via: `return idH(h).c`
@@ -14846,7 +14979,13 @@ func (e *emitter) collectFuncCross(fi funcInfo) {
 							modeRets(c, func(string) resMode { return resWhole }, nil)
 							continue
 						}
+						if isFwd(c.args) {
+							c.result = fwd + 1
+						}
 						for _, callee := range c.callees {
+							// `k, err := f(buf); return err`: what err is of f's
+							// results, f hands back of buf (resultPos).
+							callee := summaryOf(c, callee)
 							heldRets = append(heldRets, stmtCall{callee: callee, args: c.args})
 							// `return m.Self()`, `return p.Self()`: what the method hands
 							// back of its receiver, this function hands back of what the
@@ -14899,6 +15038,11 @@ func (e *emitter) collectFuncCross(fi funcInfo) {
 					}
 				}
 				for _, c := range rcalls {
+					// The forwarded call, a function's as stmtCalls finds it; one
+					// heldRets has is named for its result already.
+					if isFwd(c.args) && !strings.Contains(c.callee, "#") {
+						c.callee = resultPos(c.callee, fwd)
+					}
 					args, _ := fwdArgs(c.args)
 					for j, a := range args {
 						e.retEdges = append(e.retEdges, viaEdges(crossEdge{caller: cname, callee: c.callee, to: j}, a.ast, true)...)
@@ -14929,7 +15073,7 @@ func (e *emitter) collectFuncCross(fi funcInfo) {
 			// And under a defer every return returns them, whatever it lists: a
 			// deferred call may set them after the values are, `defer set(&k, buf);
 			// return nil` handing buf back.
-			alsoNamed := deferred && !bare && len(fi.resultToks) == len(exprs)
+			alsoNamed := deferred && !bare && len(fi.resultToks) != 0
 			whole := exprs
 			if alsoNamed {
 				whole = slices.Clone(exprs)
@@ -14937,29 +15081,46 @@ func (e *emitter) collectFuncCross(fi funcInfo) {
 					whole = append(whole, []int32{t})
 				}
 			}
-			retSummary(cname, whole, func([]Node) bool { return true })
+			retSummary(cname, whole, func([]Node) bool { return true }, -1, nil)
 			// And each result of several on its own (resultPos), what the caller
 			// binding them asks of each: `k, err := e.key(buf[:])` hands buf back in
 			// k and not in err, which a summary of the whole call cannot say. A
 			// return that does not list each result -- a bare one, one forwarding a
 			// call of several -- leaves the positions to the whole summary.
 			if res := e.funcRet[cname]; len(res) > 1 {
-				if len(exprs) != len(res) {
-					e.retPosUnknown[cname] = true
-				} else {
-					for i, v := range exprs {
-						pn := resultPos(cname, i)
-						if _, seen := e.retParams[pn]; !seen {
-							e.retParams[pn], e.retContents[pn] = make([]bool, len(params)), make([]bool, len(params))
+				posSum := func(i int) string {
+					pn := resultPos(cname, i)
+					if _, seen := e.retParams[pn]; !seen {
+						e.retParams[pn], e.retContents[pn] = make([]bool, len(params)), make([]bool, len(params))
+					}
+					return pn
+				}
+				switch fa, fwd := forwards(exprs, len(res)); {
+				case fwd:
+					// `return c.openGeneric(dst, ...)`: each result is the forwarded
+					// call's result there, what it hands back of its arguments. Taken for
+					// a return listing nothing, the error of an AEAD's Open handed back
+					// the buffer it opened into (dom71).
+					for i := range res {
+						list := [][]int32{exprs[0]}
+						if alsoNamed && i < len(fi.resultToks) {
+							list = append(list, []int32{fi.resultToks[i]})
 						}
+						retSummary(posSum(i), list, func([]Node) bool { return true }, i, fa)
+					}
+				case len(exprs) != len(res):
+					e.retPosUnknown[cname] = true
+				default:
+					for i, v := range exprs {
+						pn := posSum(i)
 						lo, hi := firstIndex(v), lastIndex(v)
 						list := [][]int32{v}
-						if alsoNamed {
+						if alsoNamed && i < len(fi.resultToks) {
 							list = append(list, []int32{fi.resultToks[i]})
 						}
 						retSummary(pn, list, func(args []Node) bool {
 							return len(args) != 0 && args[0].Pos() >= lo && args[0].Pos() <= hi
-						})
+						}, -1, nil)
 					}
 				}
 			}
@@ -15381,6 +15542,27 @@ type copyRecvEdge struct {
 // until it stops changing. Every pass over the edges can only set flags, and there
 // are finitely many, so it terminates.
 func (e *emitter) closeCrossParams() {
+	// A result's own summary, which a binding took one of several results for
+	// (resultPos), is the callee's to have: every function collected, an edge asks
+	// the whole call's where it has none (posSummary).
+	posVia := func(via []viaGate) {
+		for i := range via {
+			via[i].callee = e.posSummary(via[i].callee)
+		}
+	}
+	for i := range e.retEdges {
+		e.retEdges[i].callee = e.posSummary(e.retEdges[i].callee)
+		posVia(e.retEdges[i].via)
+	}
+	for i := range e.crossEdges {
+		posVia(e.crossEdges[i].via)
+	}
+	for i := range e.recvEdges {
+		posVia(e.recvEdges[i].via)
+	}
+	for i := range e.derivedEdges {
+		posVia(e.derivedEdges[i].via)
+	}
 	// The edges of each call, for pairing a callback with what is handed to it.
 	type siteKey struct {
 		site   int
@@ -17556,14 +17738,15 @@ func (e *emitter) litCallExprs(lit Node) (out [][]int32) {
 // variable with nothing recorded.
 func (e *emitter) summaryHolds(body []int32) map[string][]held {
 	holds := map[string][]held{}
-	e.heldCallValues = map[string][]int32{}
+	e.heldCallValues, e.heldCallPos = map[string][]int32{}, map[string]int{}
 	put := func(target string, hs []held) {
 		if target != "" && target != "_" {
 			holds[target] = append(holds[target], hs...)
 		}
 	}
 	add := func(targets []string, into []bool, values [][]int32) {
-		reach := func(i int, v []int32) []held {
+		// pos is the position of a call's several results a target takes, or -1.
+		reach := func(i int, v []int32, pos int) []held {
 			hs := e.summaryReach(v)
 			if len(hs) == 0 {
 				// `f := pick()`: a function value nothing names, which is every
@@ -17581,6 +17764,11 @@ func (e *emitter) summaryHolds(body []int32) map[string][]held {
 			for _, c := range e.callExprsIn(v) {
 				key := fmt.Sprintf("call@%d", len(e.heldCallValues))
 				e.heldCallValues[key] = c
+				// The call the value is, of several results, hands each target its
+				// own (resultPos): `k, err := f(buf)` hands buf to k and not to err.
+				if pos >= 0 && firstIndex(c) == firstIndex(v) && lastIndex(c) == lastIndex(v) {
+					e.heldCallPos[key] = pos
+				}
 				hs = append(hs, held{key, heldAlias})
 			}
 			// `x := idH(h).c`: the value with its steps, which a sink reading x reads
@@ -17598,13 +17786,13 @@ func (e *emitter) summaryHolds(body []int32) map[string][]held {
 		switch {
 		case len(targets) == len(values):
 			for i, t := range targets {
-				put(t, reach(i, values[i]))
+				put(t, reach(i, values[i], -1))
 			}
 		case len(values) == 1:
 			// Several targets from one value -- a multi-result call -- each may hold
 			// what it reaches.
 			for i, t := range targets {
-				put(t, reach(i, values[0]))
+				put(t, reach(i, values[0], i))
 			}
 		}
 	}
@@ -19298,7 +19486,7 @@ func (e *emitter) emitFuncDecl(ast []int32) {
 	}
 	e.locals = map[string]string{}
 	e.localTypes = map[string]string{}
-	e.gotoTargets, e.labelHeads = map[string]bool{}, map[string]loopHead{}
+	e.gotoTargets, e.labelHeads, e.gotoLast = map[string]bool{}, map[string]loopHead{}, map[string]int32{}
 	e.scanGotoTargets(body)
 	e.aliasedLocals = map[string]bool{}
 	e.scanAliasedLocals(body)
@@ -19317,6 +19505,7 @@ func (e *emitter) emitFuncDecl(ast []int32) {
 	e.deferReplay = -1
 	e.curResultNames = nil
 	e.curResultTypes = nil
+	e.curResultToks, e.curAddressed = nil, nil
 	e.curArrayResult = ""
 	// A method is a function with a mangled name and its receiver as the first
 	// parameter, bound in the local environment so the body reads it like any local
@@ -19407,6 +19596,7 @@ func (e *emitter) emitFuncDecl(ast []int32) {
 		e.emit("(void)" + emptyRecvName + ";\n")
 	}
 	declared := e.declareNamedResults(sig, body)
+	e.noteNamedResults(sig, body)
 	// A bare "return" (legal only when every result is named) returns these. A
 	// blank result "_" has no C variable, so it contributes its zero value, and nor
 	// has a named one the body never names (declareNamedResults): a return with a
@@ -19521,11 +19711,18 @@ func (e *emitter) liftFuncLit(lit Node) (string, bool) {
 		defers                         []deferredCall
 		curFunc, curArrayResult        string
 		curResultNames, curResultTypes []string
-		prologue                       []string
-		w                              io.Writer
-		hoistedArrayCalls              map[int32]string
-		pkgScope                       bool
-		aliasedLocals                  map[string]bool
+		curResultToks                  []int32
+		curAddressed                   map[string]bool
+		gotoLast                       map[string]int32
+		// The blocks open around the literal, which are none of its own: counted
+		// with them, a literal's parameter was a block outside its body's locals,
+		// and `p = a[:]` was refused (blockDepthOf).
+		scopeNames        []map[string]bool
+		prologue          []string
+		w                 io.Writer
+		hoistedArrayCalls map[int32]string
+		pkgScope          bool
+		aliasedLocals     map[string]bool
 		// Which function a name holds, and what may have changed it (boundFunc),
 		// and which names are the enclosing function's parameters: the literal's
 		// own replaced them, and the enclosing function read the literal's after it.
@@ -19559,6 +19756,8 @@ func (e *emitter) liftFuncLit(lit Node) (string, bool) {
 		frameBacked: e.frameBacked, frameHolder: e.frameHolder,
 		tmp: e.tmp, indent: e.indent, deferReplay: e.deferReplay, defers: e.defers,
 		curFunc: e.curFunc, curResultNames: e.curResultNames, curResultTypes: e.curResultTypes,
+		curResultToks: e.curResultToks, curAddressed: e.curAddressed, gotoLast: e.gotoLast,
+		scopeNames:     e.scopeNames,
 		curArrayResult: e.curArrayResult,
 		prologue:       e.prologue, w: e.w,
 		hoistedArrayCalls: e.hoistedArrayCalls, pkgScope: e.pkgScope,
@@ -19590,7 +19789,7 @@ func (e *emitter) liftFuncLit(lit Node) (string, bool) {
 			e.inheritedTypes[n] = true
 		}
 	}
-	e.gotoTargets, e.labelHeads = map[string]bool{}, map[string]loopHead{}
+	e.gotoTargets, e.labelHeads, e.gotoLast = map[string]bool{}, map[string]loopHead{}, map[string]int32{}
 	e.scanGotoTargets(body)
 	e.aliasedLocals = map[string]bool{}
 	e.scanAliasedLocals(body)
@@ -19605,6 +19804,7 @@ func (e *emitter) liftFuncLit(lit Node) (string, bool) {
 	e.frameHolder = map[string]string{}
 	e.tmp, e.indent, e.deferReplay, e.defers, e.prologue = 0, 0, -1, nil, nil
 	e.curFunc, e.curArrayResult = cname, ""
+	e.scopeNames = nil
 	// A literal written in main is not main: its bare `return` returns nothing. Left
 	// set, the flag made it `return 0;` in a void function, which the host's C
 	// compiler refuses.
@@ -19623,6 +19823,7 @@ func (e *emitter) liftFuncLit(lit Node) (string, bool) {
 		e.emitParamCopies(sig)
 		e.emitParamVoids(sig, body)
 		declared := e.declareNamedResults(sig, body)
+		e.noteNamedResults(sig, body)
 		e.curResultNames, e.curResultTypes = e.resultInfo(sig)
 		for i, nm := range e.curResultNames {
 			if nm == "" || nm == "_" || !declared[nm] {
@@ -19664,6 +19865,8 @@ func (e *emitter) liftFuncLit(lit Node) (string, bool) {
 	e.frameBacked, e.frameHolder = saved.frameBacked, saved.frameHolder
 	e.tmp, e.indent, e.deferReplay, e.defers = saved.tmp, saved.indent, saved.deferReplay, saved.defers
 	e.curFunc, e.curResultNames, e.curResultTypes = saved.curFunc, saved.curResultNames, saved.curResultTypes
+	e.curResultToks, e.curAddressed, e.gotoLast = saved.curResultToks, saved.curAddressed, saved.gotoLast
+	e.scopeNames = saved.scopeNames
 	e.curArrayResult = saved.curArrayResult
 	e.aliasedLocals = saved.aliasedLocals
 	e.prologue, e.w = saved.prologue, saved.w
@@ -21406,7 +21609,7 @@ func (e *emitter) emitMain(sig, body []int32) {
 	}
 	e.locals = map[string]string{}
 	e.localTypes = map[string]string{}
-	e.gotoTargets, e.labelHeads = map[string]bool{}, map[string]loopHead{}
+	e.gotoTargets, e.labelHeads, e.gotoLast = map[string]bool{}, map[string]loopHead{}, map[string]int32{}
 	e.scanGotoTargets(body)
 	e.mainOutlives = !e.f.backwardGoto(body) && !e.mainReferenced()
 	e.aliasedLocals = map[string]bool{}
@@ -22641,7 +22844,9 @@ func (e *emitter) emitParamVoids(sig, body []int32) {
 func (e *emitter) enterScope() func() {
 	// The names visible on the way IN, so a later question can tell which block
 	// declared a variable: one declared here is absent from this snapshot and from
-	// every outer one (see blockDepthOf).
+	// every outer one (see blockDepthOf). The block's end drops the snapshots taken
+	// inside it, a label's a goto goes back to among them (emitLabeledStatement).
+	depth := len(e.scopeNames)
 	e.scopeNames = append(e.scopeNames, e.visibleLocals())
 	locals, arrays, sliceVars := maps.Clone(e.locals), maps.Clone(e.arrays), maps.Clone(e.sliceVars)
 	localConsts, localConstSpecs := maps.Clone(e.localConsts), maps.Clone(e.localConstSpecs)
@@ -22686,7 +22891,7 @@ func (e *emitter) enterScope() func() {
 				frameHolder[n] = origin
 			}
 		}
-		e.scopeNames = e.scopeNames[:len(e.scopeNames)-1]
+		e.scopeNames = e.scopeNames[:depth]
 		e.locals, e.arrays, e.sliceVars = locals, arrays, sliceVars
 		e.localConsts, e.localConstSpecs = localConsts, localConstSpecs
 		e.frameBacked, e.frameHolder = frameBacked, frameHolder
@@ -23338,6 +23543,7 @@ func (e *emitter) scanGotoTargets(ast []int32) {
 		if e.f.ch(n.tok) == GOTO {
 			if next := n.tok + 1; e.f.ch(next) == IDENT {
 				e.gotoTargets[e.src(next)] = true
+				e.gotoLast[e.src(next)] = max(e.gotoLast[e.src(next)], n.tok)
 			}
 		}
 	}
@@ -23358,6 +23564,15 @@ func (e *emitter) emitLabeledStatement(label string, inner []int32) {
 		// A goto after it is a loop's end, this its head (loopSeeds).
 		e.applyLoopSeeds(&inner[0], false)
 		e.labelHeads[label] = e.loopHeadAt(&inner[0], nil)
+		// And what follows the label to the end of its block runs again, every
+		// declaration in it a new variable each time, as a loop's body is: it is a
+		// block of its own to the lifetime rules (blockDepthOf), ended with the block
+		// the label stands in (enterScope). Counted as the declarations before the
+		// label, `p = a[:]` of a `var a` after it kept the first pass's array, which
+		// the next pass zeroed and wrote over -- 3 printed where Go prints 1 (dom71).
+		if e.gotoLast[label] > firstIndex(inner) {
+			e.scopeNames = append(e.scopeNames, e.visibleLocals())
+		}
 	}
 	switch e.stmtKind(inner) {
 	case FOR:
@@ -38805,10 +39020,36 @@ func (e *emitter) emitWidenedForward(ex Node) bool {
 	}) {
 		return false
 	}
-	e.emitDeferred()
+	e.emitDeferredThroughNamed(dst)
 	e.ind()
 	e.emit("return " + dst + ";\n")
 	return true
+}
+
+// emitDeferredThroughNamed runs the defers of a return whose values are held in
+// the result struct hold, a C lvalue: through the named results, into which they
+// are stored first and from which they are taken back after, since Go assigns the
+// values to the results and only then runs the defers, which may change a named
+// one -- and that change is what the caller gets. Returned as held, `defer
+// inc(&a); return two()` returned 1 2 where Go returns 11 2, in every release
+// (dom71). emitTupleOutReturn does the same through the caller's storage.
+func (e *emitter) emitDeferredThroughNamed(hold string) {
+	if len(e.defers) == 0 {
+		return
+	}
+	for i := range e.curResultTypes {
+		if name := e.resultC(e.curResultNames[i]); name != "0" {
+			e.ind()
+			e.emit(fmt.Sprintf("%s = %s._%d;\n", name, hold, i))
+		}
+	}
+	e.emitDeferred()
+	for i := range e.curResultTypes {
+		if name := e.resultC(e.curResultNames[i]); name != "0" {
+			e.ind()
+			e.emit(fmt.Sprintf("%s._%d = %s;\n", hold, i, name))
+		}
+	}
 }
 
 // widenForwardInto binds the call of emitWidenedForward and writes each of its
@@ -38875,6 +39116,7 @@ func (e *emitter) emitReturn(nodes []Node) {
 		}
 	}
 	e.checkReturnBacking(exprs)
+	e.checkNamedReturns(nodes[0], len(exprs) == 0)
 	// An ARRAY result is written through the out parameter the caller supplied, not
 	// returned: C cannot return an array. The copy is by size, so a
 	// multi-dimensional result travels as one block.
@@ -39009,7 +39251,7 @@ func (e *emitter) emitReturn(nodes []Node) {
 		} else {
 			e.emit(e.retStructNameOf(e.curResultTypes) + " " + tmp + " = " + text + ";\n")
 		}
-		e.emitDeferred()
+		e.emitDeferredThroughNamed(tmp)
 		e.ind()
 		e.emit("return " + tmp + ";\n")
 		return
@@ -39414,7 +39656,20 @@ func (e *emitter) emitTupleOutReturn(rt string, exprs []Node) {
 			return
 		}
 		if defers {
+			// Into the named results first, where the defers may change them, and
+			// back after (emitDeferredThroughNamed).
+			held := func(i int) string { return fmt.Sprintf("%s._%d", hold, i) }
+			for i, ct := range types {
+				if named(i) {
+					store(ct, e.resultC(names[i]), held(i))
+				}
+			}
 			e.emitDeferred()
+			for i, ct := range types {
+				if named(i) {
+					store(ct, held(i), e.resultC(names[i]))
+				}
+			}
 			e.includes["string.h"] = true
 			e.ind()
 			e.emit("memcpy(" + arrayResultParam + ", &" + hold + ", sizeof(" + rt + "));\n")
@@ -47631,14 +47886,25 @@ func (e *emitter) emitAssignment(head Node, postfix []Node) {
 	}
 	// A concrete value written into an interface variable: two words rather than one
 	// assignment, and the pair decides which table.
-	if len(postfix) == 1 && stars == "" && len(op) == 2 && op[0].sym == 0 && e.f.ch(op[0].tok) == ASSIGN {
-		if ct, ok := e.varType(base); ok && e.isIfaceCType(ct) {
+	if len(postfix) == 1 && len(op) == 2 && op[0].sym == 0 && e.f.ch(op[0].tok) == ASSIGN {
+		ct, ok := e.varType(base)
+		target, key := e.varRef(base), base
+		if ok && stars != "" {
+			// And through a pointer to one, `*p = &x` and `*p = nil` for a p
+			// *error: the pointee's two words, behind the nil check. Read as a
+			// word, the first was a pointer stored over two and the second `= 0`,
+			// which neither compiler takes (dom71). What the store keeps is the
+			// store rules' to ask, so no variable's mark is copied (key).
+			target, key = e.starsC(e.varRef(base), ct, len(stars)), ""
+			ct, ok = e.pointeeCType(ct, len(stars))
+		}
+		if ok && e.isIfaceCType(ct) {
 			// nil is not excluded here: ifaceStoreC writes the ZERO interface for
 			// it. Leaving it out sent "j = nil" down the ordinary path, which
 			// assigns the null POINTER constant -- "j = 0" for a two-word struct,
 			// which the host compiler refuses outright and this one miscounts.
 			if rhs := e.rhsExprs(op[1]); len(rhs) == 1 {
-				if text := e.ifaceStoreC(e.varRef(base), base, ct, rhs[0].ast); text != "" {
+				if text := e.ifaceStoreC(target, key, ct, rhs[0].ast); text != "" {
 					e.ind()
 					e.emit(text)
 				}
@@ -48094,6 +48360,8 @@ func (e *emitter) emitAssignment(head Node, postfix []Node) {
 			ct, ok := e.varType(base)
 			if len(fields) != 0 {
 				ct, ok = e.fieldType(base, fields)
+			} else if ok && stars != "" {
+				ct, ok = e.pointeeCType(ct, len(stars)) // `*p = nil` for a p *[]byte
 			}
 			switch {
 			case ok && e.isSliceCType(e.underlyingCType(ct)):
@@ -49431,6 +49699,14 @@ func (e *emitter) emitAssignTail(t assignTail) {
 			e.emit(lit)
 			break
 		}
+		// nil stored where the target is a struct of words, an interface or a
+		// slice, is the type's zero: `*p = nil` through an *error or a *[]byte was
+		// `= 0`, which no C compiler takes, the target's saying "Expected multiple
+		// values" (dom71).
+		if t.op == "=" && t.targetCType != "" && e.zeroInitC(t.targetCType) == "{0}" && e.isNilExpr(t.rhs) {
+			e.emit("(" + t.targetCType + "){0}")
+			break
+		}
 		e.emitExpr(t.rhs)
 	}
 	e.emit(";\n")
@@ -49766,6 +50042,18 @@ func (e *emitter) emitStore(t assignTarget, declare bool, ctype, val string) {
 		e.emitAccessChain(t.name, t.chain)
 	}
 	e.emit(" = " + val + ";\n")
+}
+
+// pointeeCType is what n stars over a value of C type ct reach, one pointer each,
+// and false where one of them is not a pointer.
+func (e *emitter) pointeeCType(ct string, n int) (string, bool) {
+	for range n {
+		if !e.isPointer(ct) {
+			return "", false
+		}
+		ct = e.elemType(ct)
+	}
+	return ct, ct != ""
 }
 
 // storeTargetCType is the C type of the place a target of a multiple assignment
@@ -59851,6 +60139,60 @@ func (e *emitter) checkReturnBacking(exprs []Node) {
 	}
 }
 
+// noteNamedResults records what a return of the function being emitted may hand
+// back besides what it lists (checkNamedReturns): the names its signature gives its
+// results, and where it defers, what its body addresses.
+func (e *emitter) noteNamedResults(sig, body []int32) {
+	e.curResultToks, e.curAddressed = e.namedResultToks(sig), nil
+	if len(e.curResultToks) != 0 && e.bodyDefers(body) {
+		e.curAddressed = e.addressedNames(body)
+	}
+}
+
+// addressedNames is the names body takes the address of, `&k`, `&k.f`, `&k[i]`, or
+// selects from, `k.set(v)` taking it for its receiver: what a call may store into
+// after the statement it stands in. A bitwise and, `x & k`, counts too, which
+// costs a refusal at most.
+func (e *emitter) addressedNames(body []int32) map[string]bool {
+	out := map[string]bool{}
+	lo, hi := firstIndex(body), lastIndex(body)
+	for t := lo; t <= hi; t++ {
+		if e.f.ch(t) != IDENT {
+			continue
+		}
+		if e.f.ch(t-1) == AND || e.f.ch(t+1) == '.' {
+			out[e.src(t)] = true
+		}
+	}
+	return out
+}
+
+// checkNamedReturns refuses a return, at ret, that hands back a named result
+// reaching storage of this frame. A bare return returns the named results, which
+// checkReturnBacking, asking the expressions a return lists, never saw: `k = a[:];
+// return` handed the caller a view of a dead frame, refused only while the block
+// rule took a parameter's block for one outside the body's (blockDepthOf; dom71).
+// And under a defer every return returns them, whatever it lists, after the
+// deferred calls ran, which may store into one through its address: asked of the
+// results the body addresses (noteNamedResults).
+func (e *emitter) checkNamedReturns(ret Node, bare bool) {
+	if !bare && e.curAddressed == nil {
+		return
+	}
+	for _, t := range e.curResultToks {
+		name := e.src(t)
+		if name == "_" || !bare && !e.curAddressed[name] {
+			continue
+		}
+		ident := encodeNode(Expression, encodeNode(SimpleExpr, encodeNode(Term, encodeNode(UnaryExpr, encodeNode(Factor, []int32{t})))))
+		if r, ok := e.frameRefOf(ident); ok {
+			e.fail("%v: cannot return %s in result %s: its storage does not outlive the function; %s",
+				e.f.tok(ret.Pos()).Position(), r.what, name, r.returnAdvice())
+			return
+		}
+	}
+}
+
 // refuseStoreBacking refuses storing n, which carries r, in something rooted at a
 // package-level variable base: a slice whose backing array is a local of this frame,
 // the address of one, anything reaching it.
@@ -62046,15 +62388,23 @@ func (e *emitter) visibleLocals() map[string]bool {
 	return out
 }
 
-// blockDepthOf says how deeply nested the block declaring name is: 0 for a
-// parameter, 1 for a local of the function body, one more for each block inside it.
-// A name that names nothing local -- a package variable -- is 0, outliving them all.
+// blockDepthOf says how deeply nested the block declaring name is: 1 for a
+// parameter, a result, the receiver and a local of the function body, one more for
+// each block inside it. A name that names nothing local -- a package variable -- is
+// 0, outliving them all.
 //
 // It is counted rather than recorded, from the snapshots enterScope keeps: a
 // variable declared in block k is absent from the snapshots of every block from the
 // outermost through k, and present in the ones taken after. That needs no
 // cooperation from the many places a local is registered, which is what makes it
 // reliable -- a declaration form nobody thought of here still gets a depth.
+//
+// A parameter is in every snapshot, the body's among them, and counts 0 -- but Go
+// declares the parameters in the function's block, which is the body's outermost
+// one, and both live as long as the call. Counted a block outside the body's,
+// `var zero [32]byte; if len(salt) == 0 { salt = zero[:] }` was refused, a
+// parameter outliving the local beside it, with "declare it where salt is" for
+// advice no program can follow (dom71).
 //
 // An empty name is the storage the emitter MINTS for a value with no variable of its
 // own -- a slice literal's backing, the temporary behind `&T{...}` -- which belongs
@@ -62071,6 +62421,9 @@ func (e *emitter) blockDepthOf(name string) int {
 		if !seen[name] {
 			d++
 		}
+	}
+	if d == 0 {
+		d = 1 // the function's block (see above)
 	}
 	return d
 }

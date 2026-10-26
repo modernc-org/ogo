@@ -10032,6 +10032,753 @@ func main() { run() }
 	}
 }
 
+// TestEmitCFunctionBlock holds a parameter, a result and the receiver to the
+// function's block, which Go declares with the body's outermost locals: they die
+// together, so one may hold a view or an address of the other (blockDepthOf). They
+// were counted a block outside the body's, and `var zero [32]byte; if len(salt) ==
+// 0 { salt = zero[:] }` was refused, with "declare it where salt is" for advice. The
+// frame rule still holds what such a name takes out of the frame -- a bare return of
+// a named result among it, which nothing asked until the block rule stopped refusing
+// it by accident (checkNamedReturns) -- and the block rule what a block inside keeps,
+// a goto back's among them: what follows the label runs again, each declaration a new
+// variable, and the first pass's array was kept and written over (dom71).
+func TestEmitCFunctionBlock(t *testing.T) {
+	const decls = `type Box struct{ d []byte }
+
+type H struct{ n int }
+
+var gk []byte
+var gp *int
+var gb Box
+var ch = make(chan Box, 1)
+
+func sum(p []byte) int {
+	s := 0
+	for _, b := range p {
+		s += int(b)
+	}
+	return s
+}
+
+func use(p []byte) { println(len(p)) }
+
+`
+	for _, test := range []struct {
+		name string
+		src  string
+		want string // "" means the program must be accepted
+	}{
+		{
+			name: "a parameter given a view of a local, read",
+			src: `func first(p []byte) byte {
+	var zero [4]byte
+	zero[0] = 9
+	if len(p) == 0 {
+		p = zero[:]
+	}
+	return p[0]
+}
+
+func main() {
+	var b [2]byte
+	b[0] = 3
+	println(first(nil), first(b[:]))
+}
+`,
+			want: "",
+		},
+		{
+			name: "a parameter given a view of a local, handed on",
+			src: `func extract(salt []byte) int {
+	var zero [8]byte
+	zero[7] = 1
+	if len(salt) == 0 {
+		salt = zero[:]
+	}
+	return sum(salt)
+}
+
+func main() { println(extract(nil), extract([]byte("ab"))) }
+`,
+			want: "",
+		},
+		{
+			name: "a named result left alone beside a view of a local",
+			src: `func f() (k []byte, n int) {
+	var a [3]byte
+	a[1] = 4
+	s := a[:]
+	n = int(s[1])
+	return
+}
+
+func main() {
+	k, n := f()
+	println(k == nil, n)
+}
+`,
+			want: "",
+		},
+		{
+			name: "a value receiver's field given a view of a local",
+			src: `func (b Box) f() byte {
+	var a [4]byte
+	a[0] = 7
+	b.d = a[:]
+	return b.d[0]
+}
+
+func main() {
+	var b Box
+	println(b.f())
+}
+`,
+			want: "",
+		},
+		{
+			name: "a pointer parameter given a local's address",
+			src: `func f(p *int) int {
+	x := 7
+	p = &x
+	*p += 1
+	return x
+}
+
+func main() { println(f(nil)) }
+`,
+			want: "",
+		},
+		{
+			name: "a function literal's parameter given a view of its local",
+			src: `func main() {
+	f := func(p []byte) byte {
+		var a [2]byte
+		a[0] = 5
+		if p == nil {
+			p = a[:]
+		}
+		return p[0]
+	}
+	println(f(nil), f([]byte("x")))
+}
+`,
+			want: "",
+		},
+		{
+			name: "a method's parameter given a view of a local",
+			src: `func (h *H) pick(p []byte) byte {
+	var a [2]byte
+	a[0] = byte(6 + h.n)
+	if p == nil {
+		p = a[:]
+	}
+	return p[0]
+}
+
+func main() {
+	h := H{n: 1}
+	println(h.pick(nil))
+}
+`,
+			want: "",
+		},
+		{
+			name: "a parameter and a struct parameter given views",
+			src: `func f(p []byte, b Box) int {
+	var a [3]byte
+	a[0], a[1], a[2] = 1, 2, 3
+	p = a[1:]
+	b.d = a[:2]
+	return sum(p)*10 + sum(b.d)
+}
+
+func main() { println(f(nil, Box{})) }
+`,
+			want: "",
+		},
+		{
+			name: "a named result given a view and then a view of nothing",
+			src: `func f(p []byte) (q []byte, n int) {
+	var a [2]byte
+	a[1] = 8
+	q = a[:]
+	p = q
+	n = int(p[1])
+	q = p[:0:0]
+	return nil, n
+}
+
+func main() {
+	q, n := f(nil)
+	println(len(q), n)
+}
+`,
+			want: "",
+		},
+		{
+			name: "a defer, a view of a local, and nil returned",
+			src: `func f() (k []byte) {
+	var a [4]byte
+	a[2] = 6
+	s := a[:]
+	defer use(s)
+	println(s[2])
+	return nil
+}
+
+func main() { println(f() == nil) }
+`,
+			want: "",
+		},
+		{
+			name: "a parameter given a view of a local a goto back declares again",
+			src: `func f(p []byte) byte {
+	n := 0
+L:
+	var a [2]byte
+	a[0] = byte(n + 1)
+	if n == 0 {
+		p = a[:]
+	}
+	n++
+	if n < 3 {
+		goto L
+	}
+	return p[0]
+}
+
+func main() { println(f(nil)) }
+`,
+			want: "local a does not outlive the block it is declared in, and p does",
+		},
+		{
+			name: "a local given a view of a local a goto back declares again",
+			src: `func f() byte {
+	var p []byte
+	n := 0
+L:
+	var a [2]byte
+	a[0] = byte(n + 1)
+	if n == 0 {
+		p = a[:]
+	}
+	n++
+	if n < 3 {
+		goto L
+	}
+	return p[0]
+}
+
+func main() { println(f()) }
+`,
+			want: "local a does not outlive the block it is declared in, and p does",
+		},
+		{
+			name: "a parameter given a view of a local of an if's block",
+			src: `func f(p []byte) int {
+	if len(p) == 0 {
+		var a [2]byte
+		p = a[:]
+	}
+	return len(p)
+}
+
+func main() { println(f(nil)) }
+`,
+			want: "local a does not outlive the block it is declared in, and p does",
+		},
+		{
+			name: "a parameter given a view of a loop body's local",
+			src: `func f(p []byte) byte {
+	for i := 0; i < 2; i++ {
+		var a [2]byte
+		a[0] = byte(i)
+		if i == 0 {
+			p = a[:]
+		}
+	}
+	return p[0]
+}
+
+func main() { println(f(nil)) }
+`,
+			want: "local a does not outlive the block it is declared in, and p does",
+		},
+		{
+			name: "a parameter given a view of a local, returned",
+			src: `func f(p []byte) []byte {
+	var a [4]byte
+	p = a[:]
+	return p
+}
+
+func main() { println(len(f(nil))) }
+`,
+			want: "cannot return a slice backed by local p",
+		},
+		{
+			name: "a named result given a view of a local, a bare return",
+			src: `func f() (k []byte) {
+	var a [4]byte
+	k = a[:]
+	return
+}
+
+func main() { println(len(f())) }
+`,
+			want: "cannot return a slice backed by local k in result k",
+		},
+		{
+			name: "a parameter given a view of a local, kept",
+			src: `func f(p []byte) {
+	var a [4]byte
+	p = a[:]
+	gk = p
+}
+
+func main() {
+	f(nil)
+	println(len(gk))
+}
+`,
+			want: "in package variable gk",
+		},
+		{
+			name: "a pointer parameter given a local's address, kept",
+			src: `func f(p *int) {
+	x := 7
+	p = &x
+	gp = p
+}
+
+func main() {
+	f(nil)
+	println(*gp)
+}
+`,
+			want: "in package variable gp",
+		},
+		{
+			name: "a parameter given a view of a local, handed to a goroutine",
+			src: `func f(p []byte) {
+	var a [4]byte
+	p = a[:]
+	go use(p)
+}
+
+func main() { f(nil) }
+`,
+			want: "to a goroutine",
+		},
+		{
+			name: "a pointer receiver's field given a view of a local",
+			src: `func (b *Box) f() {
+	var a [4]byte
+	b.d = a[:]
+}
+
+func main() {
+	var b Box
+	b.f()
+	println(len(b.d))
+}
+`,
+			want: "through b.d",
+		},
+		{
+			name: "a value receiver given a view of a local, returned",
+			src: `func (b Box) f() Box {
+	var a [4]byte
+	b.d = a[:]
+	return b
+}
+
+func main() {
+	var b Box
+	println(len(b.f().d))
+}
+`,
+			want: "cannot return local b, which holds a pointer into local a",
+		},
+		{
+			name: "a function literal's parameter given a view, returned",
+			src: `func main() {
+	f := func(p []byte) []byte {
+		var a [2]byte
+		p = a[:]
+		return p
+	}
+	println(len(f(nil)))
+}
+`,
+			want: "cannot return a slice backed by local p",
+		},
+		{
+			name: "a struct parameter given a view of a local, sent",
+			src: `func f(b Box) {
+	var a [4]byte
+	b.d = a[:]
+	ch <- b
+}
+
+func main() {
+	f(Box{})
+	println(len((<-ch).d))
+}
+`,
+			want: "cannot send local b",
+		},
+		{
+			name: "a struct parameter given a view of a local, kept",
+			src: `func f(b Box) {
+	var a [4]byte
+	b.d = a[:]
+	gb = b
+}
+
+func main() {
+	f(Box{})
+	println(len(gb.d))
+}
+`,
+			want: "in package variable gb",
+		},
+		{
+			name: "a named result given a view of a local, returned under a defer",
+			src: `func f() (k []byte, err error) {
+	var a [4]byte
+	k = a[:]
+	defer func() {}()
+	return k, nil
+}
+
+func main() {
+	k, _ := f()
+	println(len(k))
+}
+`,
+			want: "cannot return a slice backed by local k",
+		},
+		{
+			name: "a named result given a view and then nil, a bare return",
+			src: `func f() (k []byte, n int) {
+	var a [3]byte
+	a[1] = 4
+	k = a[:]
+	n = int(k[1])
+	k = nil
+	return
+}
+
+func main() {
+	k, n := f()
+	println(k == nil, n)
+}
+`,
+			want: "in result k",
+		},
+		{
+			name: "a named result a deferred call gives a view of a local",
+			src: `func put(p *[]byte, v []byte) { *p = v }
+
+func f() (k []byte) {
+	var a [4]byte
+	defer put(&k, a[:])
+	return nil
+}
+
+func main() { println(len(f())) }
+`,
+			want: "in result k",
+		},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			fsys := fstest.MapFS{"main.ogo": &fstest.MapFile{Data: []byte(decls + test.src)}}
+			pkg, err := Build(-1, []string{"main.ogo"}, fsys)
+			if err != nil {
+				t.Fatalf("Build: %v", err)
+			}
+			var buf bytes.Buffer
+			err = EmitC(pkg, &buf, Checked())
+			switch {
+			case test.want == "":
+				if err != nil {
+					t.Errorf("EmitC: unexpected refusal: %v", err)
+				}
+			case err == nil:
+				t.Errorf("EmitC: accepted a reference outliving its storage; want %q", test.want)
+			case !strings.Contains(err.Error(), test.want):
+				t.Errorf("EmitC error %q does not mention %q", err, test.want)
+			}
+		})
+	}
+}
+
+// TestEmitCResultsThroughCalls holds each result of several to its own summary
+// where the call is reached through more than a name (resultPos): a method on what
+// a chain reaches, `gw.auth.Open(buf[:0])`; an interface's method, by every
+// implementation's (ifaceResultsCarryNothing); a name bound from a call, `b, err :=
+// inner(buf)`, inside the callee's own summary (heldCallPos); and a return handing
+// on a call of several results, `return a.gen(dst, n)` (forwards). Asked of the
+// whole call, an AEAD's Open forwarding to its generic one gave the error the
+// buffer it opened into, and returning it was refused. Beside them, a named result a
+// deferred call sets is handed back by a forwarding return too, which the summary
+// did not count (dom71).
+func TestEmitCResultsThroughCalls(t *testing.T) {
+	const decls = `import "errors"
+
+var ErrX = errors.New("x")
+
+type E struct{ p *int }
+
+func (e *E) Error() string { return "e" }
+
+var gk []byte
+var gerr error
+
+type Opener interface {
+	Open(dst []byte, n int) ([]byte, error)
+}
+
+type A struct{ k int }
+
+func (a *A) gen(dst []byte, n int) ([]byte, error) {
+	if n > 100 {
+		return nil, ErrX
+	}
+	return dst[:1], nil
+}
+
+func (a *A) Open(dst []byte, n int) ([]byte, error) {
+	if n < 0 {
+		return nil, ErrX
+	}
+	return a.gen(dst, n)
+}
+
+type B struct{ k int }
+
+func (b *B) Open(dst []byte, n int) ([]byte, error) {
+	if n > 100 {
+		return nil, ErrX
+	}
+	return dst[:1], nil
+}
+
+type G struct{ b B }
+
+var ga A
+var gb B
+var gg G
+
+func inner(buf []byte) ([]byte, error) {
+	if len(buf) > 100 {
+		return nil, ErrX
+	}
+	return buf[:1], nil
+}
+
+func outer(buf []byte) ([]byte, error) {
+	b, err := inner(buf)
+	if err != nil {
+		return nil, err
+	}
+	return b, nil
+}
+
+func mk(e *E) (int, error) { return 1, e }
+
+func fw(e *E) (int, error) { return mk(e) }
+
+func put(p *[]byte, v []byte) { *p = v }
+
+func split(buf []byte) ([]byte, int) { return nil, len(buf) }
+
+func fwd(buf []byte) (k []byte, n int) {
+	defer put(&k, buf)
+	return split(buf)
+}
+
+`
+	for _, test := range []struct {
+		name string
+		src  string
+		want string // "" means the program must be accepted
+	}{
+		{
+			name: "the error of a method on a field, beside a view, returned",
+			src: `func run() error {
+	var buf [8]byte
+	b, err := gg.b.Open(buf[:0], 3)
+	if err != nil {
+		return err
+	}
+	println(len(b))
+	return nil
+}
+
+func main() { println(run() == nil, ga.k) }
+`,
+			want: "",
+		},
+		{
+			name: "the error of an interface's method, beside a view, returned",
+			src: `func run() error {
+	var buf [8]byte
+	var o Opener = &gb
+	if len(buf) > 9 {
+		o = &ga
+	}
+	b, err := o.Open(buf[:0], 3)
+	if err != nil {
+		return err
+	}
+	println(len(b))
+	return nil
+}
+
+func main() { println(run() == nil) }
+`,
+			want: "",
+		},
+		{
+			name: "an error two calls down, beside a view, returned",
+			src: `func run() error {
+	var buf [8]byte
+	b, err := outer(buf[:])
+	if err != nil {
+		return err
+	}
+	println(len(b))
+	return nil
+}
+
+func main() { println(run() == nil, ga.k, gb.k) }
+`,
+			want: "",
+		},
+		{
+			name: "the error of a method forwarding a call of several results, returned",
+			src: `func run() error {
+	var buf [8]byte
+	_, err := ga.Open(buf[:0], 3)
+	return err
+}
+
+func main() { println(run() == nil, gb.k) }
+`,
+			want: "",
+		},
+		{
+			name: "the view two calls down, kept",
+			src: `func run() {
+	var buf [8]byte
+	k, _ := outer(buf[:])
+	gk = k
+}
+
+func main() { run(); println(len(gk), ga.k, gb.k) }
+`,
+			want: "in package variable gk",
+		},
+		{
+			name: "the view through an interface's method, kept",
+			src: `func run() {
+	var buf [8]byte
+	var o Opener = &gb
+	if len(buf) > 9 {
+		o = &ga
+	}
+	k, _ := o.Open(buf[:0], 3)
+	gk = k
+}
+
+func main() { run(); println(len(gk)) }
+`,
+			want: "in package variable gk",
+		},
+		{
+			name: "the view a forwarding method hands back, kept",
+			src: `func run() {
+	var buf [8]byte
+	k, _ := ga.Open(buf[:0], 3)
+	gk = k
+}
+
+func main() { run(); println(len(gk), gb.k) }
+`,
+			want: "in package variable gk",
+		},
+		{
+			name: "a forwarded call's error that is the parameter, kept",
+			src: `func run() {
+	var le E
+	_, err := fw(&le)
+	gerr = err
+}
+
+func main() { run(); println(gerr != nil, ga.k, gb.k) }
+`,
+			want: "pointer into local le in package variable gerr",
+		},
+		{
+			name: "an interface's error that is its receiver's, kept",
+			src: `type C struct{ e E }
+
+func (c *C) Open(dst []byte, n int) ([]byte, error) {
+	return nil, &c.e
+}
+
+func run() {
+	var buf [8]byte
+	var c C
+	var o Opener = &gb
+	if len(buf) > 9 {
+		o = &c
+	}
+	_, err := o.Open(buf[:0], 3)
+	gerr = err
+}
+
+func main() { run(); println(gerr != nil, ga.k) }
+`,
+			want: "in package variable gerr",
+		},
+		{
+			name: "a named result a deferred call sets, after a forwarded call, kept",
+			src: `func run() {
+	var b [4]byte
+	k, _ := fwd(b[:])
+	gk = k
+}
+
+func main() { run(); println(len(gk), ga.k, gb.k) }
+`,
+			want: "in package variable gk",
+		},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			fsys := fstest.MapFS{"main.ogo": &fstest.MapFile{Data: []byte(decls + test.src)}}
+			pkg, err := Build(-1, []string{"main.ogo"}, fsys)
+			if err != nil {
+				t.Fatalf("Build: %v", err)
+			}
+			var buf bytes.Buffer
+			err = EmitC(pkg, &buf, Checked())
+			switch {
+			case test.want == "":
+				if err != nil {
+					t.Errorf("EmitC: unexpected refusal: %v", err)
+				}
+			case err == nil:
+				t.Errorf("EmitC: accepted a reference outliving its frame; want %q", test.want)
+			case !strings.Contains(err.Error(), test.want):
+				t.Errorf("EmitC error %q does not mention %q", err, test.want)
+			}
+		})
+	}
+}
+
 func TestEmitCRuneStringEscape(t *testing.T) {
 	const decls = `var g string
 

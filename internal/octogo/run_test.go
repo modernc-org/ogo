@@ -26744,6 +26744,378 @@ func main() {
 		want: "7 1 3 6\n7 6531 6 6531\n6531 8\n6531 6531\n6531 6533\n6531 6531 5 6531\n",
 	},
 	{
+		// A deferred call that changes a named result, after `return f()` hands on a
+		// call of several results: Go assigns the call's results to the results, runs the
+		// defers and returns what they leave. The call's own values were returned, `1 2`
+		// for Go's `11 2`, in every form a forwarded call takes -- in the registers and
+		// through the caller's storage, a struct holding an array, an array, a blank name,
+		// a method, an interface, a function value, a conditional defer -- and a deferred
+		// call reading the results saw zeros, in every release (dom71).
+		name: "a deferred call changing a named result, after a forwarded call",
+		src: `func inc(p *int) { *p += 10 }
+
+func inc64(p *int64) { *p += 10 }
+
+func show(a, b *int) { println(*a, *b) }
+
+func two() (int, int) { return 1, 2 }
+
+func three() (int, string, int) { return 1, "x", 3 }
+
+type R struct{ v [2]int }
+
+func bump(r *R) { r.v[0] += 10 }
+
+func mkR() (R, int) { return R{[2]int{1, 2}}, 3 }
+
+func bumpA(a *[2]int) { a[1] += 10 }
+
+func mkA() ([2]int, int) { return [2]int{1, 2}, 3 }
+
+func wide() (int64, bool) { return 1, true }
+
+type T struct{ k int }
+
+func (t *T) Two() (int, int) { return t.k, 2 }
+
+type Twoer interface{ Two() (int, int) }
+
+var fv = two
+
+func f1() (a, b int) {
+	defer inc(&a)
+	return two()
+}
+
+func f2() (a int, s string, c int) {
+	defer inc(&c)
+	return three()
+}
+
+func f3() (r R, n int) {
+	defer bump(&r)
+	return mkR()
+}
+
+func f4() (a [2]int, n int) {
+	defer bumpA(&a)
+	return mkA()
+}
+
+func f5() (_ int, b int) {
+	defer inc(&b)
+	return two()
+}
+
+func (t *T) f6() (a, b int) {
+	defer inc(&a)
+	return t.Two()
+}
+
+func f7(t Twoer) (a, b int) {
+	defer inc(&b)
+	return t.Two()
+}
+
+func f8() (a, b int) {
+	defer inc(&a)
+	return fv()
+}
+
+func f9(c bool) (a, b int) {
+	if c {
+		defer inc(&a)
+	}
+	return two()
+}
+
+func f10() (a, b int) {
+	defer show(&a, &b)
+	return two()
+}
+
+func f11() (a int64, ok bool) {
+	defer inc64(&a)
+	return wide()
+}
+
+func main() {
+	println(f1())
+	println(f2())
+	r, n := f3()
+	println(r.v[0], r.v[1], n)
+	a, n := f4()
+	println(a[0], a[1], n)
+	println(f5())
+	t := T{k: 4}
+	println(t.f6())
+	println(f7(&t))
+	println(f8())
+	println(f9(true))
+	println(f9(false))
+	println(f10())
+	println(f11())
+}
+`,
+		want: "11 2\n1 x 13\n11 2 3\n1 12 3\n1 12\n14 2\n4 12\n11 2\n11 2\n1 2\n1 2\n1 2\n11 true\n",
+	},
+	{
+		// nil, and a pointer, stored through a pointer to an interface or to a slice,
+		// `*p = nil` for a p *error, `**pp = other`, `*h.pb = nil`: the target was read as
+		// one word, nil as `= 0` and a pointer stored as it was, which neither compiler
+		// takes (dom71).
+		name: "nil and a value stored through a pointer to an interface or a slice",
+		src: `type E struct{ n int }
+
+func (e *E) Error() string { return "e" }
+
+type Shape interface{ Area() int }
+
+func (e *E) Area() int { return e.n }
+
+var ge = E{n: 7}
+var ge2 = E{n: 8}
+
+func clearErr(p *error) { *p = nil }
+
+func setErr(p *error) { *p = &ge2 }
+
+func clearShape(p *Shape) { *p = nil }
+
+func clearSlice(p *[]byte) { *p = nil }
+
+type H struct {
+	pe *error
+	pb *[]byte
+}
+
+var gbuf [3]byte
+
+func main() {
+	var err error = &ge
+	clearErr(&err)
+	println(err == nil)
+	setErr(&err)
+	println(err == nil, err.Error())
+	var s Shape = &ge
+	clearShape(&s)
+	println(s == nil)
+	b := gbuf[:]
+	clearSlice(&b)
+	println(b == nil, len(b))
+	es := [2]error{&ge, &ge}
+	pes := &es[1]
+	*pes = nil
+	println(es[0] == nil, es[1] == nil)
+	h := H{pe: &err, pb: &b}
+	var other error = &ge
+	pp := &h.pe
+	**pp = other
+	println(err == other)
+	*h.pe = nil
+	println(err == nil)
+	*h.pb = gbuf[1:]
+	println(len(b))
+	*h.pb = nil
+	println(b == nil)
+}
+`,
+		want: "true\nfalse e\ntrue\ntrue 0\nfalse true\ntrue\ntrue\n2\ntrue\n",
+	},
+	{
+		// A parameter, a receiver and a literal's parameter given a view or an address
+		// of a local of the function's own block, which Go declares in one block with
+		// them: counted a block outside the body's, `if len(salt) == 0 { salt =
+		// zero[:] }` was refused, with advice no program could follow (dom71).
+		name: "a parameter given a view of a local of the function's own block",
+		src: `type Box struct{ d []byte }
+
+func sum(p []byte) int {
+	s := 0
+	for _, b := range p {
+		s += int(b)
+	}
+	return s
+}
+
+func first(p []byte) byte {
+	var zero [4]byte
+	zero[0] = 9
+	if len(p) == 0 {
+		p = zero[:]
+	}
+	return p[0]
+}
+
+func extract(salt []byte) int {
+	var zero [8]byte
+	zero[7] = 1
+	if len(salt) == 0 {
+		salt = zero[:]
+	}
+	return sum(salt)
+}
+
+func bump(p *int) int {
+	x := 7
+	p = &x
+	*p += 1
+	return x
+}
+
+func (b Box) peek() byte {
+	var a [4]byte
+	a[0] = 7
+	b.d = a[:]
+	return b.d[0]
+}
+
+func both(p []byte, b Box) int {
+	var a [3]byte
+	a[0], a[1], a[2] = 1, 2, 3
+	p = a[1:]
+	b.d = a[:2]
+	return sum(p)*10 + sum(b.d)
+}
+
+func main() {
+	var b [2]byte
+	b[0] = 3
+	println(first(nil), first(b[:]))
+	println(extract(nil), extract(b[:]))
+	println(bump(nil))
+	println(Box{}.peek())
+	println(both(nil, Box{}))
+	f := func(p []byte) byte {
+		var a [2]byte
+		a[0] = 5
+		if p == nil {
+			p = a[:]
+		}
+		return p[0]
+	}
+	println(f(nil), f(b[:]))
+}
+`,
+		want: "9 3\n1 3\n8\n7\n53\n5 3\n",
+	},
+	{
+		// The error of a call of several results beside a view of a local buffer,
+		// returned: through a method on a field, an interface whose methods hand back
+		// nothing in the error, one of them forwarding to another's `return a.gen(dst,
+		// n)`, and a call two levels down. Each was taken to hold the buffer and returning
+		// it was refused; the AEAD's Open of a sealed link is the shape (dom71).
+		name: "an error beside a view of a local buffer, through a field, an interface and a forwarded call",
+		src: `import "errors"
+
+var ErrX = errors.New("x")
+
+type Opener interface {
+	Open(dst []byte, n int) ([]byte, error)
+}
+
+type A struct{ k byte }
+
+func (a *A) gen(dst []byte, n int) ([]byte, error) {
+	if n > 100 {
+		return nil, ErrX
+	}
+	dst = dst[:n]
+	for i := range dst {
+		dst[i] = a.k + byte(i)
+	}
+	return dst, nil
+}
+
+func (a *A) Open(dst []byte, n int) ([]byte, error) {
+	if n < 0 {
+		return nil, ErrX
+	}
+	return a.gen(dst, n)
+}
+
+type B struct{ k byte }
+
+func (b *B) Open(dst []byte, n int) ([]byte, error) {
+	if n > 100 {
+		return nil, ErrX
+	}
+	dst = dst[:n]
+	for i := range dst {
+		dst[i] = b.k
+	}
+	return dst, nil
+}
+
+type G struct{ b B }
+
+var ga = A{k: 10}
+var gg = G{b: B{k: 20}}
+
+func inner(buf []byte, n int) ([]byte, error) {
+	if n > len(buf) {
+		return nil, ErrX
+	}
+	return buf[:n], nil
+}
+
+func outer(buf []byte, n int) ([]byte, error) {
+	b, err := inner(buf, n)
+	if err != nil {
+		return nil, err
+	}
+	return b, nil
+}
+
+func sum(p []byte) int {
+	s := 0
+	for _, b := range p {
+		s += int(b)
+	}
+	return s
+}
+
+func viaField(n int) (int, error) {
+	var buf [8]byte
+	b, err := gg.b.Open(buf[:0], n)
+	if err != nil {
+		return 0, err
+	}
+	return sum(b), nil
+}
+
+func viaIface(o Opener, n int) (int, error) {
+	var buf [8]byte
+	b, err := o.Open(buf[:0], n)
+	if err != nil {
+		return 0, err
+	}
+	return sum(b), nil
+}
+
+func twoDown(n int) (int, error) {
+	var buf [8]byte
+	b, err := outer(buf[:], n)
+	if err != nil {
+		return 0, err
+	}
+	return sum(b), nil
+}
+
+func main() {
+	println(viaField(3))
+	println(viaIface(&ga, 4))
+	println(viaIface(&gg.b, 2))
+	_, err := viaIface(&ga, 200)
+	println(err == ErrX)
+	println(twoDown(5))
+	_, err = twoDown(9)
+	println(err == ErrX)
+}
+`,
+		want: "60 (0x0,0x0)\n46 (0x0,0x0)\n40 (0x0,0x0)\ntrue\n0 (0x0,0x0)\ntrue\n",
+	},
+	{
 		// `type A = B` is another NAME for B, not a type: literals written via the
 		// alias, identity in both directions, methods and fields through it, a
 		// predeclared target, a defined ARRAY target with its elements and method,
